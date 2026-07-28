@@ -3,10 +3,17 @@
 #include <exception>
 #include <windows.h>
 
-int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int showCommand) {
+int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int showCommand) {
     try {
         mm::Application application(instance);
-        return application.run(showCommand);
+        std::optional<std::filesystem::path> startupDxf;
+        if (commandLine && *commandLine) {
+            std::wstring value(commandLine);
+            if (value.size() >= 2 && value.front() == L'"' && value.back() == L'"')
+                value = value.substr(1, value.size() - 2);
+            startupDxf = std::filesystem::path(value);
+        }
+        return application.run(showCommand, startupDxf);
     } catch (const std::exception& error) {
         MessageBoxA(nullptr, error.what(), "Model Maker - Fatal Error", MB_OK | MB_ICONERROR);
         return 1;

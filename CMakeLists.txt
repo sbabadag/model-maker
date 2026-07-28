@@ -9,6 +9,8 @@ add_library(model_maker_core
     src/geometry.cpp
     src/camera.cpp
     src/view_cube.cpp
+    src/ribbon_layout.cpp
+    src/dxf.cpp
     src/document.cpp
     src/drafting.cpp
 )
@@ -20,7 +22,7 @@ add_executable(model-maker WIN32
     src/application.cpp
     src/renderer.cpp
 )
-target_link_libraries(model-maker PRIVATE model_maker_core gdi32 comdlg32)
+target_link_libraries(model-maker PRIVATE model_maker_core gdi32 comdlg32 comctl32 msimg32)
 target_link_options(model-maker PRIVATE -municode -static -static-libgcc -static-libstdc++)
 target_compile_definitions(model-maker PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
 target_compile_options(model-maker PRIVATE -Wall -Wextra -Wpedantic)
@@ -29,6 +31,7 @@ include(CTest)
 if(BUILD_TESTING)
     add_executable(model_maker_tests tests/test_core.cpp)
     target_link_libraries(model_maker_tests PRIVATE model_maker_core)
+    target_link_options(model_maker_tests PRIVATE -static -static-libgcc -static-libstdc++)
     target_compile_options(model_maker_tests PRIVATE -Wall -Wextra -Wpedantic)
     add_test(NAME model_maker_tests COMMAND model_maker_tests)
 endif()

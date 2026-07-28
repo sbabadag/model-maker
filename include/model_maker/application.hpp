@@ -4,11 +4,18 @@
 #include "model_maker/document.hpp"
 #include "model_maker/drafting.hpp"
 #include "model_maker/renderer.hpp"
+#include "model_maker/ribbon_layout.hpp"
 
 #include <windows.h>
+#include <atomic>
+#include <chrono>
+#include <cstdint>
+#include <mutex>
 #include <filesystem>
 #include <optional>
 #include <string>
+#include <vector>
+#include <thread>
 
 namespace mm {
 
@@ -16,7 +23,7 @@ class Application {
 public:
     explicit Application(HINSTANCE instance);
     ~Application();
-    int run(int showCommand);
+    int run(int showCommand, std::optional<std::filesystem::path> startupDxf = std::nullopt);
 
 private:
     static LRESULT CALLBACK windowProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
@@ -26,14 +33,31 @@ private:
 
     void createMainWindow(int showCommand);
     void createControlPanel();
-    HWND createButton(const wchar_t* text, int id, int x, int y, int width, int height, DWORD style = BS_PUSHBUTTON);
+    HWND createButton(const wchar_t* text, int id, int x, int y, int width, int height,
+                      DWORD style = BS_PUSHBUTTON);
     void layoutChildren(int width, int height);
+    void paintRibbon();
+    void activateRibbonTab(RibbonTab tab);
     void onCanvasPaint();
     void onLeftButtonDown(int x, int y);
+    void onLeftButtonUp(int x, int y);
     void onMouseMove(int x, int y, WPARAM buttons);
     void onCharacter(wchar_t character);
     void executeCommand(int id);
     void selectTool(DrawTool tool);
+    void startTransformCommand(TransformCommand command);
+    void cancelTransformCommand();
+    void toggle3DView();
+    void startWorkPlaneCommand();
+    void zoomExtents2D();
+    void startZoomWindow2D();
+    void cancelZoomWindow2D();
+    void completeZoomWindow2D(int x, int y);
+    void cancelWorkPlaneCommand();
+    void commitWorkPlanePoint(const Vec3& point);
+    void commitTransformPoint(const Vec3& point);
+    bool toggleModelSelection(int x, int y);
+    void completeWindowSelection(int x, int y);
     void commitPoint(const Vec3& point);
     void cancelDrawing();
     void updateHover(int x, int y);
@@ -44,16 +68,20 @@ private:
     void addPyramid();
     void saveDocument();
     void openDocument();
+    void importDxf();
+    void beginDxfImport(const std::filesystem::path& path);
+    void finishDxfImport();
+    void exportDxf();
     void showError(const wchar_t* action, const std::exception& error) const;
-    std::optional<std::filesystem::path> chooseFile(bool save) const;
+    std::optional<std::filesystem::path> chooseFile(bool save, bool dxf = false) const;
     Vec3 screenTo2D(int x, int y) const noexcept;
     DraftView draftView() const;
 
     HINSTANCE instance_{};
     HWND window_{};
-    HWND panel_{};
     HWND canvas_{};
     HWND status_{};
+    HWND dxfProgressBar_{};
     HWND lineButton_{};
     HWND polylineButton_{};
     HWND rectangleButton_{};
@@ -61,6 +89,16 @@ private:
     HWND snapButton_{};
     HWND gridSnapButton_{};
     HWND dynamicInputButton_{};
+    HWND moveButton_{};
+    HWND copyButton_{};
+    HWND view3DButton_{};
+    HWND workPlaneButton_{};
+    HWND zoomWindowButton_{};
+    std::vector<HWND> ribbonTabButtons_;
+    std::vector<HWND> ribbonCommandButtons_;
+    RibbonTab activeRibbonTab_{RibbonTab::Drawing};
+    HCURSOR draftingCursor_{};
+    HCURSOR modifyCursor_{};
     HFONT uiFont_{};
     HFONT titleFont_{};
     Document document_;
@@ -72,13 +110,40 @@ private:
     std::optional<SnapResult> hover_;
     bool snapEnabled_{true};
     bool gridSnapEnabled_{true};
+    bool orthoEnabled_{false};
     bool dynamicInputEnabled_{true};
     bool drawingActive_{true};
-    double workPlaneZ_{};
+    TransformCommand transformCommand_{TransformCommand::None};
+    TransformPhase transformPhase_{TransformPhase::Selecting};
+    std::vector<std::size_t> selectedModels_;
+    std::optional<POINT> selectionFirstCorner_;
+    std::optional<Vec3> transformBase_;
+    WorkPlane workPlane_{};
+    bool workPlanePicking_{};
+    std::vector<Vec3> workPlanePoints_;
     std::wstring input_;
     bool rotating_{};
+    bool panning2D_{};
+    bool wheelNavigating_{};
+    double wheelPreviewFactor_{1.0};
+    Vec2 wheelPreviewOffset_{};
+    bool snapPreviewActive_{};
+    bool snapPreviewTimerArmed_{};
+    std::chrono::steady_clock::time_point lastLargeSnapEvaluation_{};
+    bool zoomWindowActive_{};
+    std::optional<POINT> zoomWindowFirstCorner_;
+    bool viewCubeManipulating_{};
+    bool viewCubeDragged_{};
+    std::optional<StandardView> viewCubePressedView_;
     POINT lastMouse_{};
     POINT cursorScreen_{};
+    std::jthread dxfImportThread_;
+    std::mutex dxfImportMutex_;
+    std::optional<Document> pendingDxfDocument_;
+    std::string pendingDxfError_;
+    std::atomic_bool dxfImportInProgress_{};
+    std::atomic<std::uint64_t> dxfBytesRead_{};
+    std::atomic<std::uint64_t> dxfTotalBytes_{};
 };
 
 } // namespace mm

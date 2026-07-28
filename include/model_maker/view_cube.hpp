@@ -10,6 +10,7 @@ namespace mm {
 struct CubePoint {
     int x{};
     int y{};
+    bool operator==(const CubePoint&) const = default;
 };
 
 struct CubeRect {
@@ -19,21 +20,32 @@ struct CubeRect {
     int bottom{};
 };
 
+struct ViewCubeFace {
+    StandardView view{StandardView::Front};
+    std::array<CubePoint, 4> points{};
+    bool visible{};
+    double depth{};
+};
+
 struct ViewCubeLayout {
     int centerX{};
-    std::array<CubePoint, 4> topFace{};
-    std::array<CubePoint, 4> frontFace{};
-    std::array<CubePoint, 4> rightFace{};
-    CubeRect leftControl{};
-    CubeRect backControl{};
-    CubeRect bottomControl{};
+    int centerY{};
+    std::array<CubePoint, 8> corners{};
+    std::array<ViewCubeFace, 6> faces{};
+    CubeRect bodyBounds{};
     CubeRect homeControl{};
+    CubePoint axisOrigin{};
+    CubePoint xAxis{};
+    CubePoint yAxis{};
+    CubePoint zAxis{};
 };
 
 class ViewCube {
 public:
-    static ViewCubeLayout layout(int viewportWidth) noexcept;
-    static std::optional<StandardView> hitTest(int x, int y, int viewportWidth) noexcept;
+    static ViewCubeLayout layout(int viewportWidth, const Camera& camera) noexcept;
+    static std::optional<StandardView> hitTest(int x, int y, int viewportWidth,
+                                               const Camera& camera) noexcept;
+    static bool containsWidget(int x, int y, int viewportWidth) noexcept;
 };
 
 } // namespace mm
