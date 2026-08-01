@@ -52,7 +52,7 @@ struct EntityProperties {
     int transparency{};
     bool visible{true};
     std::uint32_t effectiveColor{0x68CAFF};
-    int effectiveLineWeight{25};
+    int effectiveLineWeight{};
     std::string effectiveLineType{"CONTINUOUS"};
     bool operator==(const EntityProperties&) const = default;
 };
@@ -81,6 +81,7 @@ public:
     const EntityProperties& properties() const noexcept;
     void setProperties(EntityProperties properties);
     void translate(const Vec3& offset) noexcept;
+    void rotateAroundZ(const Vec3& center, double radians) noexcept;
 
 private:
     std::vector<Vec3> vertices_;

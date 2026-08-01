@@ -2,6 +2,7 @@
 
 #include <fstream>
 #include <algorithm>
+#include <iterator>
 #include <numeric>
 #include <stdexcept>
 #include <string>
@@ -46,6 +47,26 @@ void Document::copyModels(const std::vector<std::size_t>& indices, const Vec3& d
         }
     }
     models_.insert(models_.end(), copies.begin(), copies.end());
+    invalidateSpatialIndex();
+}
+
+void Document::deleteModels(const std::vector<std::size_t>& indices) {
+    std::vector<std::size_t> valid;
+    valid.reserve(indices.size());
+    for (const auto index : indices)
+        if (index < models_.size()) valid.push_back(index);
+    std::sort(valid.begin(), valid.end(), std::greater<>{});
+    valid.erase(std::unique(valid.begin(), valid.end()), valid.end());
+    for (const auto index : valid)
+        models_.erase(models_.begin() + static_cast<std::ptrdiff_t>(index));
+    if (!valid.empty()) invalidateSpatialIndex();
+}
+
+void Document::replaceModel(std::size_t index, std::vector<WireframeModel> replacements) {
+    if (index >= models_.size()) return;
+    const auto position = models_.erase(models_.begin() + static_cast<std::ptrdiff_t>(index));
+    models_.insert(position, std::make_move_iterator(replacements.begin()),
+                   std::make_move_iterator(replacements.end()));
     invalidateSpatialIndex();
 }
 

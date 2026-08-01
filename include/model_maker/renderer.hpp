@@ -12,8 +12,52 @@
 namespace mm {
 
 enum class EditMode { Draw2D, View3D };
-enum class TransformCommand { None, Move, Copy };
+enum class TransformCommand {
+    None, Move, Copy, Offset, Mirror, Delete, LinearArray, PolarArray, Trim, Extend
+};
 enum class TransformPhase { Selecting, BasePoint, Destination };
+
+constexpr bool modifierUsesPointCursor(TransformCommand command, TransformPhase phase,
+                                       bool arrayItemCountReady = false,
+                                       bool offsetDistanceReady = false) noexcept {
+    if (command == TransformCommand::None || phase == TransformPhase::Selecting ||
+        command == TransformCommand::Delete || command == TransformCommand::Trim ||
+        command == TransformCommand::Extend)
+        return false;
+    if (command == TransformCommand::Offset)
+        return phase == TransformPhase::Destination && offsetDistanceReady;
+    if (command == TransformCommand::LinearArray || command == TransformCommand::PolarArray)
+        return arrayItemCountReady;
+    return phase == TransformPhase::BasePoint || phase == TransformPhase::Destination;
+}
+
+constexpr bool modifierCompletesAfterCommit(TransformCommand command) noexcept {
+    return command != TransformCommand::None;
+}
+
+constexpr bool modifierRequires2DView(TransformCommand) noexcept {
+    return false;
+}
+
+constexpr bool commandAllowsSnapping(bool drawingCommandActive, TransformCommand command,
+                                     TransformPhase phase, bool arrayItemCountReady = false,
+                                     bool offsetDistanceReady = false) noexcept {
+    return drawingCommandActive ||
+           modifierUsesPointCursor(command, phase, arrayItemCountReady, offsetDistanceReady);
+}
+
+constexpr bool commandShowsSnapFeedback(bool drawingCommandActive, bool workPlanePicking,
+                                        TransformCommand command, TransformPhase phase,
+                                        bool arrayItemCountReady = false,
+                                        bool offsetDistanceReady = false) noexcept {
+    return drawingCommandActive || workPlanePicking ||
+           modifierUsesPointCursor(command, phase, arrayItemCountReady, offsetDistanceReady);
+}
+
+constexpr bool shouldRepeatLastModifierOnEnter(bool drawingCommandActive, bool inputPending,
+                                                bool otherModalInteractionActive) noexcept {
+    return !drawingCommandActive && !inputPending && !otherModalInteractionActive;
+}
 
 struct DraftView {
     DrawTool tool{DrawTool::Line};
@@ -23,6 +67,8 @@ struct DraftView {
     bool drawingActive{true};
     bool snapEnabled{true};
     bool gridSnapEnabled{true};
+    bool polarTrackingEnabled{};
+    bool polarTrackingLocked{};
     bool dynamicInputEnabled{true};
     double workPlaneZ{};
     WorkPlane workPlane{};
@@ -35,6 +81,9 @@ struct DraftView {
     std::vector<std::size_t> selectedModels;
     std::optional<POINT> selectionFirstCorner;
     std::optional<Vec3> transformBase;
+    std::optional<double> offsetDistance;
+    std::optional<std::size_t> arrayItemCount;
+    std::vector<WireframeModel> modifierBoundaries;
     bool zoomWindowActive{};
     std::optional<POINT> zoomWindowFirstCorner;
     bool interactiveNavigation{};

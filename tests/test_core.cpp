@@ -4,6 +4,7 @@
 #include "model_maker/geometry.hpp"
 #include "model_maker/view_cube.hpp"
 #include "model_maker/ribbon_layout.hpp"
+#include "model_maker/renderer.hpp"
 #include "model_maker/dxf.hpp"
 
 #include <algorithm>
@@ -207,10 +208,87 @@ void test_ribbon_groups_commands_into_function_tabs() {
             "File tab must expose native and DXF read/write commands");
     require(drawing == std::vector<int>({200, 201, 202, 203}),
             "Drawing tab must contain only drawing commands in tool order");
-    require(modify == std::vector<int>({500, 501}),
-            "Modify tab must group Move and Copy together");
+    require(modify == std::vector<int>({509, 500, 501, 502, 503, 504, 505, 506, 507, 508}),
+            "Modify tab must start with the neutral arrow followed by every modifier");
     require(view == std::vector<int>({300, 301, 302, 303, 304, 305, 306}),
             "View tab must group 3D, work-plane, and zoom commands");
+    require(mm::RibbonLayout::commands(mm::RibbonTab::Aids) == std::vector<int>({400, 401, 402, 403, 404}),
+            "Aids tab must expose snap settings and F10 Polar Tracking");
+}
+
+void test_modifier_point_cursor_policy_matches_interaction_phase() {
+    using mm::TransformCommand;
+    using mm::TransformPhase;
+    require(!mm::modifierUsesPointCursor(TransformCommand::Move, TransformPhase::Selecting),
+            "Entity selection must retain the square pickbox cursor");
+    require(mm::modifierUsesPointCursor(TransformCommand::Move, TransformPhase::BasePoint),
+            "Move base-point selection must use the crosshair cursor");
+    require(mm::modifierUsesPointCursor(TransformCommand::Mirror, TransformPhase::Destination),
+            "Mirror axis-point selection must use the crosshair cursor");
+    require(!mm::modifierUsesPointCursor(TransformCommand::Offset, TransformPhase::BasePoint,
+                                         false, false),
+            "Numeric Offset distance entry is not a point-pick phase");
+    require(mm::modifierUsesPointCursor(TransformCommand::Offset, TransformPhase::Destination,
+                                        false, true),
+            "Offset side-point selection must use the crosshair cursor");
+    require(!mm::modifierUsesPointCursor(TransformCommand::PolarArray, TransformPhase::BasePoint,
+                                         false, false) &&
+            mm::modifierUsesPointCursor(TransformCommand::PolarArray, TransformPhase::BasePoint,
+                                        true, false),
+            "Polar Array must switch to crosshair only after item-count entry");
+    require(!mm::modifierUsesPointCursor(TransformCommand::Trim, TransformPhase::Destination),
+            "Trim target-segment selection must retain the square pickbox cursor");
+}
+
+void test_every_modifier_is_single_shot_after_one_committed_operation() {
+    require(mm::modifierCompletesAfterCommit(mm::TransformCommand::Move) &&
+            mm::modifierCompletesAfterCommit(mm::TransformCommand::Copy) &&
+            mm::modifierCompletesAfterCommit(mm::TransformCommand::Trim) &&
+            mm::modifierCompletesAfterCommit(mm::TransformCommand::Extend),
+            "Every modifier must finish after one committed operation");
+    require(!mm::modifierCompletesAfterCommit(mm::TransformCommand::None),
+            "The idle state is not a completed modifier operation");
+}
+
+void test_snap_evaluation_requires_an_active_command() {
+    using mm::TransformCommand;
+    using mm::TransformPhase;
+    require(!mm::commandAllowsSnapping(false, TransformCommand::None, TransformPhase::Selecting),
+            "Snap must be inactive while the neutral arrow has no command running");
+    require(mm::commandAllowsSnapping(true, TransformCommand::None, TransformPhase::Selecting),
+            "An active drawing command must allow snap evaluation");
+    require(!mm::commandAllowsSnapping(false, TransformCommand::Move, TransformPhase::Selecting),
+            "Modifier entity selection must not evaluate object snaps");
+    require(mm::commandAllowsSnapping(false, TransformCommand::Move, TransformPhase::BasePoint),
+            "Modifier point picking must allow snap evaluation");
+    require(mm::commandShowsSnapFeedback(false, false, TransformCommand::LinearArray,
+                                         TransformPhase::BasePoint, true, false),
+            "3D Linear Array point picking must render its snap marker and tooltip");
+    require(mm::commandShowsSnapFeedback(false, false, TransformCommand::PolarArray,
+                                         TransformPhase::BasePoint, true, false),
+            "3D Polar Array center picking must render its snap marker and tooltip");
+}
+
+void test_every_modifier_preserves_the_current_3d_view() {
+    using mm::TransformCommand;
+    constexpr std::array commands{
+        TransformCommand::Move, TransformCommand::Copy, TransformCommand::Offset,
+        TransformCommand::Mirror, TransformCommand::Delete, TransformCommand::LinearArray,
+        TransformCommand::PolarArray, TransformCommand::Trim, TransformCommand::Extend};
+    for (const auto command : commands)
+        require(!mm::modifierRequires2DView(command),
+                "No modifier may implicitly switch an active 3D view back to 2D");
+}
+
+void test_idle_enter_repeat_never_steals_keyboard_point_input() {
+    require(mm::shouldRepeatLastModifierOnEnter(false, false, false),
+            "Truly idle Enter must repeat the last modifier");
+    require(!mm::shouldRepeatLastModifierOnEnter(true, false, false),
+            "Enter must commit keyboard coordinates while a drawing command is active");
+    require(!mm::shouldRepeatLastModifierOnEnter(false, true, false),
+            "Enter must commit a pending dynamic input instead of repeating a modifier");
+    require(!mm::shouldRepeatLastModifierOnEnter(false, false, true),
+            "Enter must not repeat a modifier while another modal interaction is active");
 }
 
 void test_ribbon_compact_buttons_fit_above_full_width_canvas() {
@@ -292,6 +370,23 @@ void test_dxf_round_trip_preserves_entity_properties() {
             "DXF export must preserve layer, true color, lineweight, linetype, scale, and transparency");
 }
 
+void test_dxf_import_defaults_entity_and_rendered_thickness_to_zero() {
+    const auto path = std::filesystem::temp_directory_path() / "model-maker-zero-thickness.dxf";
+    {
+        std::ofstream output(path);
+        output << "0\nSECTION\n2\nENTITIES\n"
+                  "0\nLINE\n10\n0\n20\n0\n11\n1\n21\n0\n"
+                  "0\nENDSEC\n0\nEOF\n";
+    }
+    const auto loaded = mm::DxfFile::read(path);
+    std::filesystem::remove(path);
+    require(loaded.models().size() == 1, "Zero-thickness fixture must import one entity");
+    require(loaded.models().front().properties().thickness == 0.0,
+            "DXF entity thickness must default to zero");
+    require(loaded.models().front().properties().effectiveLineWeight == 0,
+            "Rendered DXF line thickness must default to zero");
+}
+
 void test_dxf_reads_closed_lwpolyline() {
     const auto path = std::filesystem::temp_directory_path() / "model-maker-polyline.dxf";
     std::ofstream output(path);
@@ -334,6 +429,8 @@ void test_dxf_insert_expands_block_with_base_scale_rotation_and_byblock_style() 
             "INSERT must honor block base point, nonuniform scale, rotation, and insertion point");
     require(line.properties().layer == "PIPES" && line.properties().effectiveColor == 0x00FF00,
             "Layer 0 and BYBLOCK color inside a block must inherit from INSERT");
+    require(line.properties().thickness == 0.0 && line.properties().effectiveLineWeight == 0,
+            "Expanded block geometry must preserve zero default entity and rendered thickness");
 }
 
 void test_dxf_insert_expands_nested_blocks() {
@@ -356,6 +453,44 @@ void test_dxf_insert_expands_nested_blocks() {
     require(std::abs(vertices[0].x - 14.0) < 1e-9 && std::abs(vertices[0].y - 5.0) < 1e-9 &&
             std::abs(vertices[1].x - 14.0) < 1e-9 && std::abs(vertices[1].y - 7.0) < 1e-9,
             "Nested block transforms must compose in parent-to-child order");
+}
+
+void test_dxf_insert_rejects_undefined_block_reference() {
+    const auto path = std::filesystem::temp_directory_path() / "model-maker-undefined-block.dxf";
+    {
+        std::ofstream output(path);
+        output << "0\nSECTION\n2\nENTITIES\n"
+                  "0\nINSERT\n2\nMISSING\n10\n0\n20\n0\n"
+                  "0\nENDSEC\n0\nEOF\n";
+    }
+    bool rejected = false;
+    try {
+        (void)mm::DxfFile::read(path);
+    } catch (const std::runtime_error& error) {
+        rejected = std::string(error.what()).find("undefined block") != std::string::npos;
+    }
+    std::filesystem::remove(path);
+    require(rejected, "INSERT referencing an undefined block must report a parser error");
+}
+
+void test_dxf_insert_rejects_recursive_block_references() {
+    const auto path = std::filesystem::temp_directory_path() / "model-maker-recursive-block.dxf";
+    {
+        std::ofstream output(path);
+        output << "0\nSECTION\n2\nBLOCKS\n"
+                  "0\nBLOCK\n2\nA\n10\n0\n20\n0\n0\nINSERT\n2\nB\n10\n0\n20\n0\n0\nENDBLK\n"
+                  "0\nBLOCK\n2\nB\n10\n0\n20\n0\n0\nINSERT\n2\nA\n10\n0\n20\n0\n0\nENDBLK\n"
+                  "0\nENDSEC\n0\nSECTION\n2\nENTITIES\n"
+                  "0\nINSERT\n2\nA\n10\n0\n20\n0\n0\nENDSEC\n0\nEOF\n";
+    }
+    bool rejected = false;
+    try {
+        (void)mm::DxfFile::read(path);
+    } catch (const std::runtime_error& error) {
+        rejected = std::string(error.what()).find("Cyclic DXF block reference") != std::string::npos;
+    }
+    std::filesystem::remove(path);
+    require(rejected, "Recursive INSERT chains must be rejected instead of expanding forever");
 }
 
 void test_dxf_dimension_displays_generated_block_lines_arrows_and_text() {
@@ -519,6 +654,166 @@ void test_document_copies_selected_models_and_preserves_metadata() {
             "Copy must preserve analytic radius metadata");
 }
 
+void test_document_deletes_only_selected_models() {
+    mm::Document document;
+    document.addLine({0.0, 0.0, 0.0}, {1.0, 0.0, 0.0});
+    document.addLine({0.0, 1.0, 0.0}, {1.0, 1.0, 0.0});
+    document.addLine({0.0, 2.0, 0.0}, {1.0, 2.0, 0.0});
+    document.deleteModels({2, 0, 2, 999});
+    require(document.models().size() == 1,
+            "Delete must remove each valid selected model once and ignore invalid indices");
+    require(document.models().front().vertices().front() == mm::Vec3{0.0, 1.0, 0.0},
+            "Delete must retain unselected model geometry");
+}
+
+void test_document_replaces_one_model_with_trimmed_segments_in_place() {
+    mm::Document document;
+    document.addLine({0.0, 0.0, 0.0}, {1.0, 0.0, 0.0});
+    document.addLine({0.0, 1.0, 0.0}, {10.0, 1.0, 0.0});
+    document.addLine({0.0, 2.0, 0.0}, {1.0, 2.0, 0.0});
+    std::vector<mm::WireframeModel> replacements;
+    replacements.push_back(mm::WireframeModel::line({0.0, 1.0, 0.0}, {3.0, 1.0, 0.0}));
+    replacements.push_back(mm::WireframeModel::line({7.0, 1.0, 0.0}, {10.0, 1.0, 0.0}));
+    document.replaceModel(1, std::move(replacements));
+    require(document.models().size() == 4,
+            "Replacing one target with two trimmed segments must grow the document by one");
+    require(document.models()[1].vertices()[1] == mm::Vec3{3.0, 1.0, 0.0} &&
+            document.models()[2].vertices()[0] == mm::Vec3{7.0, 1.0, 0.0} &&
+            document.models()[3].vertices()[0] == mm::Vec3{0.0, 2.0, 0.0},
+            "Trim replacement segments must occupy the original target position");
+}
+
+void test_linear_array_creates_evenly_spaced_property_preserving_copies() {
+    auto source = mm::WireframeModel::line({0.0, 0.0, 0.0}, {1.0, 0.0, 0.0});
+    mm::EntityProperties properties;
+    properties.layer = "ARRAY";
+    properties.effectiveColor = 0xFF4040;
+    source.setProperties(properties);
+    const auto copies = mm::linearArray2D(source, 4, {2.0, -1.0, 0.0});
+    require(copies.size() == 3, "A four-item linear array must generate three copies");
+    require(copies[0].vertices()[0] == mm::Vec3{2.0, -1.0, 0.0} &&
+            copies[2].vertices()[1] == mm::Vec3{7.0, -3.0, 0.0},
+            "Linear array copies must use integer multiples of the spacing vector");
+    require(copies[2].properties() == properties,
+            "Linear array copies must preserve source properties");
+}
+
+void test_polar_array_distributes_copies_around_center_and_preserves_metadata() {
+    auto source = mm::WireframeModel::circle({2.0, 0.0, 0.0}, 0.5, 32);
+    mm::EntityProperties properties;
+    properties.layer = "POLAR";
+    source.setProperties(properties);
+    const auto copies = mm::polarArray2D(source, 4, {0.0, 0.0, 0.0});
+    require(copies.size() == 3, "A four-item polar array must generate three copies");
+    require(copies[0].analyticCenter().has_value() &&
+            std::abs(copies[0].analyticCenter()->x) < 1e-9 &&
+            std::abs(copies[0].analyticCenter()->y - 2.0) < 1e-9,
+            "First polar copy must rotate by one equal angular step");
+    require(copies[1].analyticCenter().has_value() &&
+            std::abs(copies[1].analyticCenter()->x + 2.0) < 1e-9 &&
+            std::abs(copies[1].analyticCenter()->y) < 1e-9,
+            "Polar array must distribute copies over a full circle");
+    require(copies[2].analyticRadius() == source.analyticRadius() &&
+            copies[2].properties() == properties,
+            "Polar array must preserve analytic and rendering metadata");
+}
+
+void test_trim_line_removes_the_picked_side_at_cutting_edge() {
+    auto target = mm::WireframeModel::line({0.0, 0.0, 0.0}, {10.0, 0.0, 0.0});
+    mm::EntityProperties properties;
+    properties.layer = "TRIMMED";
+    properties.effectiveColor = 0x40A0FF;
+    target.setProperties(properties);
+    const auto boundary = mm::WireframeModel::line({4.0, -2.0, 0.0}, {4.0, 2.0, 0.0});
+    const auto result = mm::trimLine2D(target, {boundary}, {2.0, 0.0, 0.0});
+    require(result.has_value() && result->size() == 1,
+            "Trim must produce the portion opposite the picked side");
+    require((*result)[0].vertices()[0] == mm::Vec3{4.0, 0.0, 0.0} &&
+            (*result)[0].vertices()[1] == mm::Vec3{10.0, 0.0, 0.0},
+            "Trim must cut the target at its cutting-edge intersection");
+    require((*result)[0].properties() == properties,
+            "Trimmed geometry must preserve source properties");
+}
+
+void test_extend_line_moves_picked_endpoint_to_boundary() {
+    auto target = mm::WireframeModel::line({0.0, 0.0, 0.0}, {4.0, 0.0, 0.0});
+    mm::EntityProperties properties;
+    properties.layer = "EXTENDED";
+    properties.effectiveLineType = "DASHED";
+    target.setProperties(properties);
+    const auto boundary = mm::WireframeModel::line({10.0, -2.0, 0.0}, {10.0, 2.0, 0.0});
+    const auto result = mm::extendLine2D(target, {boundary}, {3.5, 0.0, 0.0});
+    require(result.has_value(), "Extend must find a cutting edge beyond the picked endpoint");
+    require(result->vertices()[0] == mm::Vec3{0.0, 0.0, 0.0} &&
+            result->vertices()[1] == mm::Vec3{10.0, 0.0, 0.0},
+            "Extend must move only the picked endpoint to the nearest boundary");
+    require(result->properties() == properties,
+            "Extended geometry must preserve source properties");
+}
+
+void test_current_entity_style_resolves_layer_color_and_linetype_choices() {
+    std::unordered_map<std::string, mm::EntityProperties> layers;
+    mm::EntityProperties wallLayer;
+    wallLayer.layer = "Walls";
+    wallLayer.effectiveColor = 0xCC4422;
+    wallLayer.effectiveLineType = "DASHED";
+    layers.emplace(wallLayer.layer, wallLayer);
+
+    const auto byLayer = mm::resolveEntityStyle({"Walls", std::nullopt, "BYLAYER"}, layers);
+    require(byLayer.layer == "Walls" && byLayer.colorIndex == 256 && !byLayer.trueColor,
+            "Layer dropdown must preserve BYLAYER color semantics");
+    require(byLayer.effectiveColor == 0xCC4422 && byLayer.effectiveLineType == "DASHED",
+            "BYLAYER selections must resolve the selected layer's effective style");
+
+    const auto explicitStyle = mm::resolveEntityStyle({"Walls", 0x00FF00u, "CENTER"}, layers);
+    require(explicitStyle.trueColor == 0x00FF00u && explicitStyle.effectiveColor == 0x00FF00u,
+            "Color dropdown selection must override the layer color");
+    require(explicitStyle.lineType == "CENTER" && explicitStyle.effectiveLineType == "CENTER",
+            "Linetype dropdown selection must override the layer linetype");
+}
+
+void test_offset_line_creates_parallel_copy_on_selected_side() {
+    mm::WireframeModel line = mm::WireframeModel::line({0.0, 0.0, 0.0}, {4.0, 0.0, 0.0});
+    mm::EntityProperties properties;
+    properties.layer = "OFFSET_SOURCE";
+    line.setProperties(properties);
+
+    const auto above = mm::offsetModel2D(line, 2.0, {1.0, 5.0, 0.0});
+    const auto below = mm::offsetModel2D(line, 2.0, {1.0, -5.0, 0.0});
+
+    require(above.has_value() && below.has_value(), "A straight line must support 2D offset");
+    require(above->vertices()[0] == mm::Vec3{0.0, 2.0, 0.0} &&
+            above->vertices()[1] == mm::Vec3{4.0, 2.0, 0.0},
+            "Offset must place a parallel line at the requested distance on the picked side");
+    require(below->vertices()[0] == mm::Vec3{0.0, -2.0, 0.0} &&
+            below->vertices()[1] == mm::Vec3{4.0, -2.0, 0.0},
+            "Offset side selection must work on either side of the source line");
+    require(above->properties() == properties, "Offset geometry must preserve entity properties");
+}
+
+void test_offset_circle_uses_inside_or_outside_pick() {
+    const auto circle = mm::WireframeModel::circle({3.0, 4.0, 0.0}, 5.0, 32);
+    const auto outside = mm::offsetModel2D(circle, 2.0, {10.0, 4.0, 0.0});
+    const auto inside = mm::offsetModel2D(circle, 2.0, {3.0, 4.0, 0.0});
+    require(outside && outside->analyticRadius() == 7.0,
+            "Picking outside a circle must increase its radius by the offset distance");
+    require(inside && inside->analyticRadius() == 3.0,
+            "Picking inside a circle must decrease its radius by the offset distance");
+}
+
+void test_mirror_reflects_geometry_across_two_point_axis() {
+    mm::EntityProperties properties;
+    properties.layer = "MIRROR_TEST";
+    auto source = mm::WireframeModel::line({1.0, 2.0, 0.0}, {3.0, 4.0, 0.0});
+    source.setProperties(properties);
+    const auto mirrored = mm::mirrorModel2D(source, {0.0, -5.0, 0.0}, {0.0, 5.0, 0.0});
+    require(mirrored.has_value(), "A non-degenerate mirror axis must produce reflected geometry");
+    require(mirrored->vertices()[0] == mm::Vec3{-1.0, 2.0, 0.0} &&
+            mirrored->vertices()[1] == mm::Vec3{-3.0, 4.0, 0.0},
+            "Mirror must reflect every vertex across the selected axis");
+    require(mirrored->properties() == properties, "Mirror must preserve entity properties");
+}
+
 void test_entity_hit_test_selects_nearest_model_edge() {
     mm::Document document;
     document.addLine({0.0, 0.0, 0.0}, {4.0, 0.0, 0.0});
@@ -574,12 +869,56 @@ void test_snap_prefers_nearby_endpoint() {
     require(result.point == mm::Vec3{1.0, 2.0, 0.0}, "Endpoint snap coordinate mismatch");
 }
 
+void test_snap_marker_symbols_match_cad_reference_conventions() {
+    using mm::SnapMarkerSymbol;
+    require(mm::snapMarkerSymbol(mm::SnapType::Endpoint) == SnapMarkerSymbol::Square,
+            "Endpoint snap must use a square marker");
+    require(mm::snapMarkerSymbol(mm::SnapType::Midpoint) == SnapMarkerSymbol::Triangle,
+            "Midpoint snap must use a triangle marker");
+    require(mm::snapMarkerSymbol(mm::SnapType::Center) == SnapMarkerSymbol::Circle,
+            "Center snap must use a circle marker");
+    require(mm::snapMarkerSymbol(mm::SnapType::Node) == SnapMarkerSymbol::CrossedCircle,
+            "Node snap must use a crossed-circle marker");
+    require(mm::snapMarkerSymbol(mm::SnapType::Quadrant) == SnapMarkerSymbol::Diamond,
+            "Quadrant snap must use a diamond marker");
+    require(mm::snapMarkerSymbol(mm::SnapType::Intersection) == SnapMarkerSymbol::Cross,
+            "Intersection snap must use an X marker");
+    require(mm::snapMarkerSymbol(mm::SnapType::Insertion) == SnapMarkerSymbol::LinkedSquares,
+            "Insertion snap must use linked squares");
+    require(mm::snapMarkerSymbol(mm::SnapType::Perpendicular) == SnapMarkerSymbol::RightAngle,
+            "Perpendicular snap must use a right-angle marker");
+    require(mm::snapMarkerSymbol(mm::SnapType::Tangent) == SnapMarkerSymbol::TangentCircle,
+            "Tangent snap must use a tangent circle marker");
+    require(mm::snapMarkerSymbol(mm::SnapType::Nearest) == SnapMarkerSymbol::Hourglass,
+            "Nearest snap must use an hourglass marker");
+    require(mm::snapMarkerSymbol(mm::SnapType::ApparentIntersection) == SnapMarkerSymbol::BoxedCross,
+            "Apparent intersection snap must use a boxed X marker");
+    require(mm::snapMarkerSymbol(mm::SnapType::Parallel) == SnapMarkerSymbol::ParallelLines,
+            "Parallel snap must use two parallel strokes");
+}
+
 void test_snap_finds_edge_midpoint() {
     mm::Document document;
     document.addLine({0.0, 0.0, 0.0}, {4.0, 0.0, 0.0});
     const auto result = mm::SnapEngine::snap({2.04, 0.03, 0.0}, document, 0.15, 1.0);
     require(result.type == mm::SnapType::Midpoint, "Edge center must midpoint-snap");
     require(result.point == mm::Vec3{2.0, 0.0, 0.0}, "Midpoint snap coordinate mismatch");
+}
+
+void test_snap_respects_individual_type_enablement() {
+    mm::Document document;
+    document.addLine({0.0, 0.0, 0.0}, {4.0, 0.0, 0.0});
+    mm::SnapTypeMask enabled{};
+    enabled[static_cast<std::size_t>(mm::SnapType::Midpoint)] = true;
+    const auto midpoint = mm::SnapEngine::snap({2.04, 0.03, 0.0}, document, 0.15, 1.0,
+                                                true, false, std::nullopt, &enabled);
+    require(midpoint.type == mm::SnapType::Midpoint,
+            "An individually enabled midpoint snap must remain available");
+    enabled[static_cast<std::size_t>(mm::SnapType::Midpoint)] = false;
+    const auto disabled = mm::SnapEngine::snap({2.04, 0.03, 0.0}, document, 0.15, 1.0,
+                                                true, false, std::nullopt, &enabled);
+    require(disabled.type == mm::SnapType::None,
+            "An individually disabled snap type must not be selected");
 }
 
 void test_snap_finds_line_intersection() {
@@ -709,6 +1048,13 @@ void test_ortho_preserves_explicit_object_snaps() {
             "An explicit object snap must override the F8 Ortho constraint");
 }
 
+void test_modifier_ortho_strictly_constrains_destination_even_near_object_snap() {
+    const mm::SnapResult endpoint{{3.0, 1.0, 0.0}, mm::SnapType::Endpoint, 0.01};
+    const auto constrained = mm::applyOrtho({0.0, 0.0, 0.0}, endpoint, false);
+    require(constrained.point == mm::Vec3{3.0, 0.0, 0.0} && constrained.type == mm::SnapType::None,
+            "Modifier F8 must strictly constrain its destination and clear a displaced snap label");
+}
+
 void test_3d_ortho_constrains_to_all_three_global_axes() {
     mm::Camera camera;
     constexpr int width = 900;
@@ -733,6 +1079,138 @@ void test_3d_ortho_constrains_to_all_three_global_axes() {
     require(mm::applyOrtho3D(anchor, alongAxis({0.0, 0.0, 1.0}, 2.0), endpoint,
                              camera, width, height).point == endpoint.point,
             "Explicit 3D object snaps must override all-axis F8 Ortho");
+}
+
+void test_3d_ortho_uses_the_active_work_plane_axes() {
+    mm::Camera camera;
+    constexpr int width = 900;
+    constexpr int height = 700;
+    const double diagonal = std::sqrt(0.5);
+    const mm::WorkPlane tiltedPlane{{2.0, -1.0, 3.0},
+                                    {diagonal, 0.0, diagonal},
+                                    {0.0, 1.0, 0.0},
+                                    {-diagonal, 0.0, diagonal}};
+    const mm::Vec3 anchor = tiltedPlane.origin + tiltedPlane.u * 1.5 + tiltedPlane.v * 0.75;
+    const auto alongU = camera.project(anchor + tiltedPlane.u * 4.0, width, height);
+    const auto alongV = camera.project(anchor - tiltedPlane.v * 2.5, width, height);
+    const auto alongNormal = camera.project(anchor + tiltedPlane.normal * 3.25, width, height);
+
+    const auto uLocked = mm::constrainOrtho3D(anchor, alongU, camera, width, height, tiltedPlane);
+    const auto vLocked = mm::constrainOrtho3D(anchor, alongV, camera, width, height, tiltedPlane);
+    const auto normalLocked = mm::constrainOrtho3D(anchor, alongNormal, camera, width, height,
+                                                   tiltedPlane, true);
+    const auto magnitude = [](const mm::Vec3& value) {
+        return std::sqrt(value.x * value.x + value.y * value.y + value.z * value.z);
+    };
+    const auto normalOffset = [&](const mm::Vec3& point) {
+        const mm::Vec3 delta = point - tiltedPlane.origin;
+        return delta.x * tiltedPlane.normal.x + delta.y * tiltedPlane.normal.y +
+               delta.z * tiltedPlane.normal.z;
+    };
+    require(magnitude(uLocked - (anchor + tiltedPlane.u * 4.0)) < 1e-9,
+            "F8 must lock to the newly defined work-plane U axis");
+    require(magnitude(vLocked - (anchor - tiltedPlane.v * 2.5)) < 1e-9,
+            "F8 must lock to the newly defined work-plane V axis");
+    require(magnitude(normalLocked - (anchor + tiltedPlane.normal * 3.25)) < 1e-9,
+            "Modify F8 must also lock to the work-plane normal/local Z axis");
+    require(std::abs(normalOffset(uLocked)) < 1e-9 && std::abs(normalOffset(vLocked)) < 1e-9,
+            "Drawing F8 must stay on the work-plane U/V surface");
+}
+
+void test_planar_modifiers_use_the_active_tilted_work_plane() {
+    const double diagonal = std::sqrt(0.5);
+    const mm::WorkPlane plane{{3.0, -2.0, 5.0},
+                              {diagonal, 0.0, diagonal},
+                              {0.0, 1.0, 0.0},
+                              {-diagonal, 0.0, diagonal}};
+    const auto world = [&](double u, double v) { return plane.fromPlane({u, v}); };
+    const auto normalOffset = [&](const mm::Vec3& point) {
+        const auto delta = point - plane.origin;
+        return delta.x * plane.normal.x + delta.y * plane.normal.y + delta.z * plane.normal.z;
+    };
+    const auto requireLocal = [&](const mm::Vec3& point, double u, double v, const std::string& message) {
+        const auto local = plane.toPlane(point);
+        require(std::hypot(local.x - u, local.y - v) < 1e-8 &&
+                    std::abs(normalOffset(point)) < 1e-8, message);
+    };
+
+    const auto baseLine = mm::WireframeModel::line(world(0.0, 0.0), world(4.0, 0.0));
+    const auto offset = mm::offsetModelOnPlane(baseLine, 1.0, world(2.0, 3.0), plane);
+    require(offset && offset->vertices().size() == 2,
+            "Tilted work-plane Offset must produce a line");
+    requireLocal(offset->vertices()[0], 0.0, 1.0,
+                 "Offset start must stay on the tilted work plane");
+    requireLocal(offset->vertices()[1], 4.0, 1.0,
+                 "Offset end must stay on the tilted work plane");
+
+    const auto aboveAxis = mm::WireframeModel::line(world(1.0, 1.0), world(3.0, 1.0));
+    const auto mirrored = mm::mirrorModelOnPlane(aboveAxis, world(0.0, 0.0), world(4.0, 0.0), plane);
+    require(mirrored && mirrored->vertices().size() == 2,
+            "Tilted work-plane Mirror must produce geometry");
+    requireLocal(mirrored->vertices()[0], 1.0, -1.0,
+                 "Mirror must reflect in plane-local coordinates");
+    requireLocal(mirrored->vertices()[1], 3.0, -1.0,
+                 "Mirror result must remain on the tilted work plane");
+
+    const auto polarSource = mm::WireframeModel::point(world(2.0, 0.0));
+    const auto polar = mm::polarArrayOnPlane(polarSource, 4, world(0.0, 0.0), plane);
+    require(polar.size() == 3, "Tilted work-plane Polar Array must create all copies");
+    requireLocal(polar[0].vertices().front(), 0.0, 2.0,
+                 "Polar Array must rotate around the work-plane normal");
+    requireLocal(polar[1].vertices().front(), -2.0, 0.0,
+                 "Polar Array half-turn must remain plane-local");
+
+    const auto trimSource = mm::WireframeModel::line(world(-2.0, 0.0), world(2.0, 0.0));
+    const std::vector<mm::WireframeModel> trimBoundaries{
+        mm::WireframeModel::line(world(-1.0, -1.0), world(-1.0, 1.0)),
+        mm::WireframeModel::line(world(1.0, -1.0), world(1.0, 1.0))};
+    const auto trimmed = mm::trimLineOnPlane(trimSource, trimBoundaries, world(0.0, 0.0), plane);
+    require(trimmed && trimmed->size() == 2,
+            "Trim must find intersections in tilted work-plane coordinates");
+    requireLocal((*trimmed)[0].vertices().back(), -1.0, 0.0,
+                 "Trim first cut must remain on the work plane");
+    requireLocal((*trimmed)[1].vertices().front(), 1.0, 0.0,
+                 "Trim second cut must remain on the work plane");
+
+    const auto extendSource = mm::WireframeModel::line(world(0.0, 0.0), world(1.0, 0.0));
+    const std::vector<mm::WireframeModel> extendBoundaries{
+        mm::WireframeModel::line(world(2.0, -1.0), world(2.0, 1.0))};
+    const auto extended = mm::extendLineOnPlane(extendSource, extendBoundaries,
+                                                world(0.9, 0.0), plane);
+    require(extended && extended->vertices().size() == 2,
+            "Extend must find a tilted work-plane boundary");
+    requireLocal(extended->vertices().back(), 2.0, 0.0,
+                 "Extended endpoint must remain on the tilted work plane");
+}
+
+void test_polar_tracking_locks_only_near_90_degree_rays() {
+    const mm::Vec3 anchor{1.0, 2.0, 3.0};
+    const double tenDegrees = 10.0 * std::numbers::pi / 180.0;
+    const mm::SnapResult nearHorizontal{{anchor.x + 10.0 * std::cos(tenDegrees),
+                                         anchor.y + 10.0 * std::sin(tenDegrees), anchor.z},
+                                        mm::SnapType::None, 0.0};
+    const auto locked = mm::applyPolarTracking(anchor, nearHorizontal, 90.0, 12.0, true);
+    require(std::abs(locked.point.x - 11.0) < 1e-9 &&
+            std::abs(locked.point.y - anchor.y) < 1e-9 && locked.point.z == anchor.z,
+            "Polar Tracking must lock a near-horizontal cursor to the 0-degree ray");
+
+    const double thirtyDegrees = 30.0 * std::numbers::pi / 180.0;
+    const mm::SnapResult freeCandidate{{anchor.x + 10.0 * std::cos(thirtyDegrees),
+                                        anchor.y + 10.0 * std::sin(thirtyDegrees), anchor.z},
+                                       mm::SnapType::None, 0.0};
+    require(mm::applyPolarTracking(anchor, freeCandidate, 90.0, 12.0, true).point == freeCandidate.point,
+            "Polar Tracking must leave cursor movement free outside its angular aperture");
+
+    const mm::SnapResult endpoint{{8.0, 9.0, 4.0}, mm::SnapType::Endpoint, 0.0};
+    require(mm::applyPolarTracking(anchor, endpoint, 90.0, 12.0, true).point == endpoint.point,
+            "Explicit object snaps must override Polar Tracking");
+
+    const mm::WorkPlane xzPlane{{}, {1.0, 0.0, 0.0}, {0.0, 0.0, 1.0}, {0.0, -1.0, 0.0}};
+    const mm::SnapResult nearPlaneVertical{{1.5, 2.0, 11.0}, mm::SnapType::None, 0.0};
+    const auto planeLocked = mm::applyPolarTracking(anchor, nearPlaneVertical, xzPlane,
+                                                     90.0, 12.0, true);
+    require(std::abs(planeLocked.point.x - anchor.x) < 1e-9 && planeLocked.point.y == anchor.y,
+            "3D Polar Tracking must use the active work-plane axes");
 }
 
 void test_dynamic_input_parses_absolute_coordinates() {
@@ -763,6 +1241,12 @@ void test_dynamic_input_parses_3d_coordinates() {
     const auto point = mm::parseDynamicPoint(L"12.5,-3.25,7.75", std::nullopt);
     require(point.has_value(), "Absolute 3D dynamic coordinate must parse");
     require(*point == mm::Vec3{12.5, -3.25, 7.75}, "Absolute 3D coordinate mismatch");
+
+    const auto relative = mm::parseDynamicPoint(L"@4,-2,3", mm::Vec3{1.0, 2.0, 3.0});
+    require(relative.has_value(), "Relative @dX,dY,dZ coordinate must parse");
+    require(*relative == mm::Vec3{5.0, 0.0, 6.0}, "Relative 3D coordinate mismatch");
+    require(!mm::parseDynamicPoint(L"@4,-2,3", std::nullopt).has_value(),
+            "Relative coordinates require an established first point");
 }
 
 void test_camera_wheel_zoom_keeps_2d_cursor_world_point_fixed() {
@@ -870,6 +1354,16 @@ void test_projected_snap_finds_3d_endpoint() {
                                                 900, 700, 8.0, 1.0, 0.0);
     require(result.type == mm::SnapType::Endpoint, "Projected cursor must snap to a 3D endpoint");
     require(result.point == endpoint, "Projected 3D endpoint snap coordinate mismatch");
+
+    mm::Document cubeDocument;
+    cubeDocument.addModel(mm::WireframeModel::cube(2.6));
+    const auto cubeEndpoint = cubeDocument.models().front().vertices().front();
+    const auto cubeScreen = camera.project(cubeEndpoint, 1532, 754);
+    const auto cubeResult = mm::SnapEngine::snap3D(cubeScreen, cubeDocument, camera,
+                                                   1532, 754, 10.0, 1.0, 0.0);
+    require(cubeResult.type == mm::SnapType::Endpoint,
+            "Projected cursor must snap to a 3D cube endpoint before grid fallback");
+    require(cubeResult.point == cubeEndpoint, "Projected 3D cube endpoint coordinate mismatch");
 }
 
 void test_rectangle_and_circle_geometry() {
@@ -919,13 +1413,21 @@ int main() {
         test_view_cube_hit_testing();
         test_view_cube_rotates_with_camera_and_global_axes();
         test_ribbon_groups_commands_into_function_tabs();
+        test_modifier_point_cursor_policy_matches_interaction_phase();
+        test_every_modifier_is_single_shot_after_one_committed_operation();
+        test_snap_evaluation_requires_an_active_command();
+        test_every_modifier_preserves_the_current_3d_view();
+        test_idle_enter_repeat_never_steals_keyboard_point_input();
         test_ribbon_compact_buttons_fit_above_full_width_canvas();
         test_document_round_trip();
         test_dxf_round_trip_preserves_supported_entities();
         test_dxf_round_trip_preserves_entity_properties();
+        test_dxf_import_defaults_entity_and_rendered_thickness_to_zero();
         test_dxf_reads_closed_lwpolyline();
         test_dxf_insert_expands_block_with_base_scale_rotation_and_byblock_style();
         test_dxf_insert_expands_nested_blocks();
+        test_dxf_insert_rejects_undefined_block_reference();
+        test_dxf_insert_rejects_recursive_block_references();
         test_dxf_dimension_displays_generated_block_lines_arrows_and_text();
         test_dxf_import_preserves_layer_color_lineweight_and_linetype();
         test_dxf_import_resolves_extended_aci_and_hidden_layers();
@@ -933,12 +1435,24 @@ int main() {
         test_document_spatial_index_limits_large_drawing_queries();
         test_document_moves_selected_models_by_displacement();
         test_document_copies_selected_models_and_preserves_metadata();
+        test_document_deletes_only_selected_models();
+        test_document_replaces_one_model_with_trimmed_segments_in_place();
+        test_linear_array_creates_evenly_spaced_property_preserving_copies();
+        test_polar_array_distributes_copies_around_center_and_preserves_metadata();
+        test_trim_line_removes_the_picked_side_at_cutting_edge();
+        test_extend_line_moves_picked_endpoint_to_boundary();
+        test_current_entity_style_resolves_layer_color_and_linetype_choices();
+        test_offset_line_creates_parallel_copy_on_selected_side();
+        test_offset_circle_uses_inside_or_outside_pick();
+        test_mirror_reflects_geometry_across_two_point_axis();
         test_entity_hit_test_selects_nearest_model_edge();
         test_left_to_right_window_selects_only_fully_contained_models();
         test_right_to_left_crossing_selects_touching_and_contained_models();
         test_projected_3d_window_and_crossing_selection();
         test_snap_prefers_nearby_endpoint();
+        test_snap_marker_symbols_match_cad_reference_conventions();
         test_snap_finds_edge_midpoint();
+        test_snap_respects_individual_type_enablement();
         test_snap_finds_line_intersection();
         test_snap_finds_circle_center_and_quadrant();
         test_snap_finds_polygon_geometric_center();
@@ -950,7 +1464,11 @@ int main() {
         test_snap_policy_disables_selection_and_zoom_phases();
         test_ortho_constrains_cursor_to_dominant_axis();
         test_ortho_preserves_explicit_object_snaps();
+        test_modifier_ortho_strictly_constrains_destination_even_near_object_snap();
         test_3d_ortho_constrains_to_all_three_global_axes();
+        test_3d_ortho_uses_the_active_work_plane_axes();
+        test_planar_modifiers_use_the_active_tilted_work_plane();
+        test_polar_tracking_locks_only_near_90_degree_rays();
         test_dynamic_input_parses_absolute_coordinates();
         test_dynamic_input_parses_distance_angle();
         test_dynamic_input_single_distance_follows_cursor_direction();
@@ -966,7 +1484,7 @@ int main() {
         test_rectangle_and_circle_geometry();
         test_rectangle_preserves_3d_work_plane_height();
         test_planar_shapes_follow_arbitrary_work_plane_basis();
-        std::cout << "All 61 tests passed.\n";
+        std::cout << "All 82 tests passed.\n";
         return 0;
     } catch (const std::exception& error) {
         std::cerr << "Test failed: " << error.what() << '\n';

@@ -9,6 +9,7 @@
 #include <cmath>
 #include <cwchar>
 #include <exception>
+#include <iterator>
 #include <stdexcept>
 #include <string>
 
@@ -23,11 +24,58 @@ enum CommandId {
     CmdNew = 100, CmdOpen, CmdSave, CmdImportDxf, CmdExportDxf,
     CmdLine = 200, CmdPolyline, CmdRectangle, CmdCircle,
     CmdCube = 300, CmdPyramid, CmdResetView, CmdView3D, CmdWorkPlane, CmdZoomExtents, CmdZoomWindow,
-    CmdOsnap = 400, CmdGridSnap, CmdDynamicInput,
-    CmdMove = 500, CmdCopy,
+    CmdOsnap = 400, CmdGridSnap, CmdDynamicInput, CmdSnapSettings, CmdPolarTracking,
+    CmdMove = 500, CmdCopy, CmdOffset, CmdMirror, CmdDelete, CmdLinearArray, CmdPolarArray,
+    CmdTrim, CmdExtend, CmdNeutral,
     CmdTabFile = 600, CmdTabDrawing, CmdTabModify, CmdTabView, CmdTabAids,
-    CmdDxfProgress = 700
+    CmdDxfProgress = 700, CmdSnapTypeFirst = 720,
+    CmdLayerCombo = 800, CmdColorCombo, CmdLineTypeCombo
 };
+
+struct SnapChoice { SnapType type; const wchar_t* label; };
+constexpr std::array<SnapChoice, 14> snapChoices{{
+    {SnapType::Endpoint, L"Endpoint"}, {SnapType::Midpoint, L"Midpoint"},
+    {SnapType::Center, L"Center"}, {SnapType::GeometricCenter, L"Geometric Center"},
+    {SnapType::Node, L"Node"}, {SnapType::Quadrant, L"Quadrant"},
+    {SnapType::Intersection, L"Intersection"},
+    {SnapType::ApparentIntersection, L"Apparent Intersection"},
+    {SnapType::Extension, L"Extension"}, {SnapType::Insertion, L"Insertion"},
+    {SnapType::Perpendicular, L"Perpendicular"}, {SnapType::Tangent, L"Tangent"},
+    {SnapType::Nearest, L"Nearest"}, {SnapType::Parallel, L"Parallel"}
+}};
+
+struct ColorChoice { const wchar_t* label; std::optional<std::uint32_t> color; };
+constexpr std::array<ColorChoice, 8> colorChoices{{
+    {L"ByLayer", std::nullopt}, {L"White", 0xFFFFFFu}, {L"Red", 0xFF4040u},
+    {L"Yellow", 0xFFFF00u}, {L"Green", 0x40FF40u}, {L"Cyan", 0x68CAFFu},
+    {L"Blue", 0x4080FFu}, {L"Magenta", 0xFF40FFu}
+}};
+struct LineTypeChoice { const wchar_t* label; const char* value; };
+constexpr std::array<LineTypeChoice, 5> lineTypeChoices{{
+    {L"ByLayer", "BYLAYER"}, {L"Continuous", "CONTINUOUS"}, {L"Dashed", "DASHED"},
+    {L"Center", "CENTER"}, {L"Dotted", "DOTTED"}
+}};
+
+std::wstring utf8ToWide(const std::string& text) {
+    if (text.empty()) return {};
+    const int size = MultiByteToWideChar(CP_UTF8, 0, text.data(), static_cast<int>(text.size()),
+                                         nullptr, 0);
+    if (size <= 0) return std::wstring(text.begin(), text.end());
+    std::wstring result(static_cast<std::size_t>(size), L'\0');
+    MultiByteToWideChar(CP_UTF8, 0, text.data(), static_cast<int>(text.size()), result.data(), size);
+    return result;
+}
+
+std::string wideToUtf8(const std::wstring& text) {
+    if (text.empty()) return {};
+    const int size = WideCharToMultiByte(CP_UTF8, 0, text.data(), static_cast<int>(text.size()),
+                                         nullptr, 0, nullptr, nullptr);
+    if (size <= 0) return std::string(text.begin(), text.end());
+    std::string result(static_cast<std::size_t>(size), '\0');
+    WideCharToMultiByte(CP_UTF8, 0, text.data(), static_cast<int>(text.size()),
+                        result.data(), size, nullptr, nullptr);
+    return result;
+}
 
 HCURSOR createSquarePickboxCursor(HINSTANCE instance) {
     constexpr int cursorSize = 32;
@@ -55,7 +103,9 @@ HCURSOR createSquarePickboxCursor(HINSTANCE instance) {
 }
 }
 
-Application::Application(HINSTANCE instance) : instance_(instance) {}
+Application::Application(HINSTANCE instance) : instance_(instance) {
+    enabledSnapTypes_.fill(true);
+}
 
 Application::~Application() {
     if (dxfImportThread_.joinable()) {
@@ -81,7 +131,8 @@ int Application::run(int showCommand, std::optional<std::filesystem::path> start
 void Application::createMainWindow(int showCommand) {
     draftingCursor_ = LoadCursorW(nullptr, IDC_CROSS);
     modifyCursor_ = createSquarePickboxCursor(instance_);
-    if (!draftingCursor_ || !modifyCursor_)
+    neutralCursor_ = LoadCursorW(nullptr, IDC_ARROW);
+    if (!draftingCursor_ || !modifyCursor_ || !neutralCursor_)
         throw std::runtime_error("Drawing cursors could not be created");
 
     WNDCLASSEXW windowClass{};
@@ -172,9 +223,21 @@ void Application::createControlPanel() {
     snapButton_ = addCommand(L"◎\r\nOSNAP F3", CmdOsnap, BS_AUTOCHECKBOX | BS_PUSHLIKE);
     gridSnapButton_ = addCommand(L"#\r\nGrid F9", CmdGridSnap, BS_AUTOCHECKBOX | BS_PUSHLIKE);
     dynamicInputButton_ = addCommand(L"123\r\nDinamik", CmdDynamicInput, BS_AUTOCHECKBOX | BS_PUSHLIKE);
+    snapSettingsButton_ = addCommand(L"☑\r\nSnap Türleri", CmdSnapSettings,
+                                     BS_AUTOCHECKBOX | BS_PUSHLIKE);
+    polarTrackingButton_ = addCommand(L"∠\r\nPolar F10", CmdPolarTracking,
+                                      BS_AUTOCHECKBOX | BS_PUSHLIKE);
 
+    neutralButton_ = addCommand(L"↖\r\nPasif", CmdNeutral, BS_AUTOCHECKBOX | BS_PUSHLIKE);
     moveButton_ = addCommand(L"↔\r\nTaşı", CmdMove, BS_AUTOCHECKBOX | BS_PUSHLIKE);
     copyButton_ = addCommand(L"⧉\r\nKopyala", CmdCopy, BS_AUTOCHECKBOX | BS_PUSHLIKE);
+    offsetButton_ = addCommand(L"⇶\r\nOfset", CmdOffset, BS_AUTOCHECKBOX | BS_PUSHLIKE);
+    mirrorButton_ = addCommand(L"◁│▷\r\nAyna", CmdMirror, BS_AUTOCHECKBOX | BS_PUSHLIKE);
+    deleteButton_ = addCommand(L"✕\r\nSil", CmdDelete, BS_AUTOCHECKBOX | BS_PUSHLIKE);
+    linearArrayButton_ = addCommand(L"▦\r\nDoğrusal", CmdLinearArray, BS_AUTOCHECKBOX | BS_PUSHLIKE);
+    polarArrayButton_ = addCommand(L"◌\r\nDairesel", CmdPolarArray, BS_AUTOCHECKBOX | BS_PUSHLIKE);
+    trimButton_ = addCommand(L"✂\r\nTrim", CmdTrim, BS_AUTOCHECKBOX | BS_PUSHLIKE);
+    extendButton_ = addCommand(L"↗\r\nExtend", CmdExtend, BS_AUTOCHECKBOX | BS_PUSHLIKE);
 
     canvas_ = CreateWindowExW(WS_EX_CLIENTEDGE, canvasClassName, nullptr,
                               WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_CLIPSIBLINGS,
@@ -188,6 +251,43 @@ void Application::createControlPanel() {
                                       0, 0, 280, statusHeight - 6, window_,
                                       reinterpret_cast<HMENU>(static_cast<INT_PTR>(CmdDxfProgress)), instance_, nullptr);
     SendMessageW(dxfProgressBar_, PBM_SETRANGE32, 0, 100);
+    snapPanel_ = CreateWindowExW(WS_EX_CLIENTEDGE, L"STATIC", L"  Aktif Nesne Yakalamaları",
+                                 WS_CHILD | WS_CLIPSIBLINGS | SS_LEFT,
+                                 0, 0, 365, 250, window_, nullptr, instance_, nullptr);
+    SendMessageW(snapPanel_, WM_SETFONT, reinterpret_cast<WPARAM>(uiFont_), TRUE);
+    for (std::size_t i = 0; i < snapChoices.size(); ++i) {
+        snapTypeCheckboxes_[i] = createButton(snapChoices[i].label,
+            CmdSnapTypeFirst + static_cast<int>(i), 0, 0, 170, 27, BS_AUTOCHECKBOX);
+        SendMessageW(snapTypeCheckboxes_[i], BM_SETCHECK, BST_CHECKED, 0);
+        ShowWindow(snapTypeCheckboxes_[i], SW_HIDE);
+    }
+    const auto createStyleLabel = [&](const wchar_t* text) {
+        HWND label = CreateWindowExW(0, L"STATIC", text, WS_CHILD | WS_VISIBLE | SS_LEFT,
+                                     0, 0, 120, 17, window_, nullptr, instance_, nullptr);
+        SendMessageW(label, WM_SETFONT, reinterpret_cast<WPARAM>(uiFont_), TRUE);
+        return label;
+    };
+    const auto createCombo = [&](int id, int width) {
+        HWND combo = CreateWindowExW(WS_EX_CLIENTEDGE, WC_COMBOBOXW, nullptr,
+            WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_VSCROLL | CBS_DROPDOWNLIST | CBS_HASSTRINGS,
+            0, 0, width, 220, window_, reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)),
+            instance_, nullptr);
+        SendMessageW(combo, WM_SETFONT, reinterpret_cast<WPARAM>(uiFont_), TRUE);
+        return combo;
+    };
+    styleLabels_[0] = createStyleLabel(L"Layer");
+    styleLabels_[1] = createStyleLabel(L"Line Color");
+    styleLabels_[2] = createStyleLabel(L"Line Type");
+    layerCombo_ = createCombo(CmdLayerCombo, 150);
+    colorCombo_ = createCombo(CmdColorCombo, 120);
+    lineTypeCombo_ = createCombo(CmdLineTypeCombo, 130);
+    for (const auto& choice : colorChoices)
+        SendMessageW(colorCombo_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(choice.label));
+    for (const auto& choice : lineTypeChoices)
+        SendMessageW(lineTypeCombo_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(choice.label));
+    SendMessageW(colorCombo_, CB_SETCURSEL, 0, 0);
+    SendMessageW(lineTypeCombo_, CB_SETCURSEL, 0, 0);
+    refreshLayerCombo();
     activateRibbonTab(RibbonTab::Drawing);
 }
 
@@ -214,6 +314,18 @@ void Application::layoutChildren(int width, int height) {
                    progressWidth - 4, statusHeight - 6, TRUE);
         ShowWindow(dxfProgressBar_, showProgress ? SW_SHOW : SW_HIDE);
     }
+    if (snapPanel_) {
+        const int panelX = std::max(8, width - 375);
+        const int panelY = ribbonHeight + 8;
+        MoveWindow(snapPanel_, panelX, panelY, 365, 250, TRUE);
+        for (std::size_t i = 0; i < snapTypeCheckboxes_.size(); ++i) {
+            const int column = static_cast<int>(i / 7);
+            const int row = static_cast<int>(i % 7);
+            MoveWindow(snapTypeCheckboxes_[i], panelX + 10 + column * 176,
+                       panelY + 27 + row * 29, 170, 27, TRUE);
+        }
+        updateSnapPanelVisibility();
+    }
 
     for (std::size_t i = 0; i < ribbonTabButtons_.size(); ++i)
         MoveWindow(ribbonTabButtons_[i], 10 + static_cast<int>(i) * 88, 5, 84, 29, TRUE);
@@ -223,6 +335,27 @@ void Application::layoutChildren(int width, int height) {
             const auto& r = item.rect;
             MoveWindow(button, r.left, r.top, r.right - r.left, r.bottom - r.top, TRUE);
         }
+    }
+    const int styleX = std::max(500, width - 426);
+    const std::array<int, 3> xPositions{{styleX, styleX + 158, styleX + 286}};
+    const std::array<int, 3> widths{{150, 120, 130}};
+    for (std::size_t i = 0; i < styleLabels_.size(); ++i) {
+        if (styleLabels_[i]) MoveWindow(styleLabels_[i], xPositions[i], 38, widths[i], 17, TRUE);
+    }
+    if (layerCombo_) MoveWindow(layerCombo_, xPositions[0], 56, widths[0], 220, TRUE);
+    if (colorCombo_) MoveWindow(colorCombo_, xPositions[1], 56, widths[1], 220, TRUE);
+    if (lineTypeCombo_) MoveWindow(lineTypeCombo_, xPositions[2], 56, widths[2], 220, TRUE);
+}
+
+void Application::updateSnapPanelVisibility() {
+    if (snapPanel_) ShowWindow(snapPanel_, snapPanelOpen_ ? SW_SHOW : SW_HIDE);
+    for (HWND checkbox : snapTypeCheckboxes_)
+        if (checkbox) ShowWindow(checkbox, snapPanelOpen_ ? SW_SHOW : SW_HIDE);
+    if (snapPanelOpen_) {
+        SetWindowPos(snapPanel_, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+        for (HWND checkbox : snapTypeCheckboxes_)
+            if (checkbox) SetWindowPos(checkbox, HWND_TOP, 0, 0, 0, 0,
+                                       SWP_NOMOVE | SWP_NOSIZE);
     }
 }
 
@@ -298,6 +431,12 @@ LRESULT Application::handleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
         return 0;
     case WM_COMMAND:
         if (HIWORD(wParam) == BN_CLICKED) executeCommand(LOWORD(wParam));
+        else if (HIWORD(wParam) == CBN_SELCHANGE &&
+                 (LOWORD(wParam) == CmdLayerCombo || LOWORD(wParam) == CmdColorCombo ||
+                  LOWORD(wParam) == CmdLineTypeCombo)) {
+            updateStatus();
+            SetFocus(canvas_);
+        }
         return 0;
     case WM_APP + 2:
         finishDxfImport();
@@ -319,6 +458,7 @@ LRESULT Application::handleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
             wheelNavigating_ = false;
             wheelPreviewFactor_ = 1.0;
             wheelPreviewOffset_ = {};
+            updateHover(cursorScreen_.x, cursorScreen_.y);
             invalidateCanvas();
             return 0;
         }
@@ -348,9 +488,22 @@ LRESULT Application::handleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
 LRESULT Application::handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lParam) {
     switch (message) {
     case WM_APP + 1: return reinterpret_cast<LRESULT>(GetCursor()); // GUI smoke-test probe.
+    case WM_APP + 2: return hover_.has_value() ? TRUE : FALSE; // Effective-snap smoke-test probe.
+    case WM_APP + 3: return hover_ ? static_cast<LRESULT>(hover_->type) : 0; // Snap-type probe.
+    case WM_APP + 4: { // First model/vertex projection probe for native 3D snap verification.
+        if (document_.models().empty() || document_.models().front().vertices().empty()) return 0;
+        RECT rect{};
+        GetClientRect(canvas_, &rect);
+        const auto& vertices = document_.models().front().vertices();
+        const std::size_t index = std::min<std::size_t>(static_cast<std::size_t>(wParam),
+                                                        vertices.size() - 1);
+        const Vec2 point = camera_.project(vertices[index], rect.right, rect.bottom);
+        return MAKELPARAM(static_cast<short>(std::lround(point.x)),
+                          static_cast<short>(std::lround(point.y)));
+    }
     case WM_SETCURSOR:
         if (LOWORD(lParam) == HTCLIENT) {
-            SetCursor(transformCommand_ != TransformCommand::None ? modifyCursor_ : draftingCursor_);
+            SetCursor(currentCanvasCursor());
             return TRUE;
         }
         return DefWindowProcW(canvas_, message, wParam, lParam);
@@ -361,7 +514,7 @@ LRESULT Application::handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lPa
         SetFocus(canvas_);
         if (zoomWindowActive_) cancelZoomWindow2D();
         else if (workPlanePicking_) cancelWorkPlaneCommand();
-        else if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
+        else if (transformCommand_ != TransformCommand::None) onCharacter(L'\r');
         else cancelDrawing();
         if (mode_ == EditMode::View3D) drawingActive_ = false;
         updateControls(); invalidateCanvas(); return 0;
@@ -375,7 +528,12 @@ LRESULT Application::handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lPa
         return 0;
     case WM_LBUTTONUP: onLeftButtonUp(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)); return 0;
     case WM_MBUTTONUP:
-        rotating_ = false; panning2D_ = false; ReleaseCapture(); invalidateCanvas(); return 0;
+        rotating_ = false;
+        panning2D_ = false;
+        ReleaseCapture();
+        updateHover(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
+        invalidateCanvas();
+        return 0;
     case WM_CAPTURECHANGED:
         rotating_ = false;
         panning2D_ = false;
@@ -421,8 +579,15 @@ LRESULT Application::handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lPa
             else cancelDrawing();
             if (mode_ == EditMode::View3D) drawingActive_ = false;
         } else if (wParam == VK_F3) snapEnabled_ = !snapEnabled_;
-        else if (wParam == VK_F8) orthoEnabled_ = !orthoEnabled_;
+        else if (wParam == VK_F8) {
+            orthoEnabled_ = !orthoEnabled_;
+            if (orthoEnabled_) polarTrackingEnabled_ = false;
+        }
         else if (wParam == VK_F9) gridSnapEnabled_ = !gridSnapEnabled_;
+        else if (wParam == VK_F10) {
+            polarTrackingEnabled_ = !polarTrackingEnabled_;
+            if (polarTrackingEnabled_) orthoEnabled_ = false;
+        }
         else if (wParam == VK_F12) dynamicInputEnabled_ = !dynamicInputEnabled_;
         else if (wParam == 'L') selectTool(DrawTool::Line);
         else if (wParam == 'P') selectTool(DrawTool::Polyline);
@@ -430,16 +595,17 @@ LRESULT Application::handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lPa
         else if (wParam == 'C') selectTool(DrawTool::Circle);
         else if (wParam == 'M') startTransformCommand(TransformCommand::Move);
         else if (wParam == 'K') startTransformCommand(TransformCommand::Copy);
+        else if (wParam == 'O' && !(GetKeyState(VK_CONTROL) & 0x8000))
+            startTransformCommand(TransformCommand::Offset);
+        else if (wParam == 'I') startTransformCommand(TransformCommand::Mirror);
+        else if (wParam == 'T') startTransformCommand(TransformCommand::Trim);
+        else if (wParam == 'E') startTransformCommand(TransformCommand::Extend);
         else if (wParam == 'V') toggle3DView();
         else if (wParam == 'W') startWorkPlaneCommand();
         else if (wParam == 'B') addCube();
         else if (wParam == 'Y') addPyramid();
         else if (wParam == 'R' && mode_ == EditMode::View3D) camera_.reset();
-        else if (wParam == VK_DELETE) {
-            document_.clear();
-            if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
-            else cancelDrawing();
-        }
+        else if (wParam == VK_DELETE) startTransformCommand(TransformCommand::Delete);
         else if (wParam == 'S' && (GetKeyState(VK_CONTROL) & 0x8000)) saveDocument();
         else if (wParam == 'O' && (GetKeyState(VK_CONTROL) & 0x8000)) openDocument();
         updateHover(cursorScreen_.x, cursorScreen_.y); updateControls(); invalidateCanvas();
@@ -464,7 +630,7 @@ void Application::onCanvasPaint() {
 void Application::onLeftButtonDown(int x, int y) {
     RECT client{};
     GetClientRect(canvas_, &client);
-    if (zoomWindowActive_ && mode_ == EditMode::Draw2D) {
+    if (zoomWindowActive_) {
         if (zoomWindowFirstCorner_) completeZoomWindow2D(x, y);
         else zoomWindowFirstCorner_ = POINT{x, y};
         updateControls(); invalidateCanvas(); return;
@@ -490,13 +656,30 @@ void Application::onLeftButtonDown(int x, int y) {
             if (selectionFirstCorner_) completeWindowSelection(x, y);
             else if (!toggleModelSelection(x, y)) selectionFirstCorner_ = POINT{x, y};
         } else {
-            updateHover(x, y);
-            if (hover_) commitTransformPoint(hover_->point);
+            if (transformCommand_ == TransformCommand::Trim ||
+                transformCommand_ == TransformCommand::Extend) {
+                if (transformPhase_ == TransformPhase::Destination) {
+                    cursorScreen_ = {x, y};
+                    if (mode_ == EditMode::Draw2D) commitTransformPoint(screenTo2D(x, y));
+                    else {
+                        RECT viewport{}; GetClientRect(canvas_, &viewport);
+                        WorkPlane targetPlane = workPlane_;
+                        if (!modifierBoundaries_.empty() && !modifierBoundaries_.front().vertices().empty())
+                            targetPlane.origin = modifierBoundaries_.front().vertices().front();
+                        if (const auto point = camera_.unprojectToPlane(
+                                {static_cast<double>(x), static_cast<double>(y)},
+                                std::max(1L, viewport.right), std::max(1L, viewport.bottom), targetPlane))
+                            commitTransformPoint(*point);
+                    }
+                } else MessageBeep(MB_ICONWARNING);
+            } else {
+                updateHover(x, y);
+                if (hover_) commitTransformPoint(hover_->point);
+            }
         }
-        updateStatus(); invalidateCanvas(); return;
+        updateControls(); updateStatus(); invalidateCanvas(); return;
     }
-    const bool drafting = mode_ == EditMode::Draw2D || drawingActive_;
-    if (drafting) {
+    if (drawingActive_) {
         updateHover(x, y);
         if (hover_) commitPoint(hover_->point);
     } else if (mode_ == EditMode::View3D) {
@@ -520,8 +703,10 @@ void Application::onLeftButtonUp(int x, int y) {
         invalidateCanvas();
         return;
     }
+    const bool wasRotating = rotating_;
     rotating_ = false;
     ReleaseCapture();
+    if (wasRotating) updateHover(x, y);
     invalidateCanvas();
 }
 
@@ -567,6 +752,7 @@ void Application::onMouseMove(int x, int y, WPARAM buttons) {
         redraw = true;
         snapRedraw = true;
     }
+    if (snapRedraw) updateStatus();
     if (redraw) {
         if (snapRedraw && document_.models().size() > 5'000) {
             KillTimer(window_, 4);
@@ -580,22 +766,79 @@ void Application::onMouseMove(int x, int y, WPARAM buttons) {
 }
 
 void Application::onCharacter(wchar_t character) {
+    if (character == L'\r' && transformCommand_ == TransformCommand::None &&
+        lastTransformCommand_ != TransformCommand::None &&
+        shouldRepeatLastModifierOnEnter(drawingActive_, !input_.empty(),
+                                        zoomWindowActive_ || workPlanePicking_)) {
+        startTransformCommand(lastTransformCommand_);
+        updateControls();
+        updateStatus();
+        invalidateCanvas();
+        return;
+    }
     const bool transforming = transformCommand_ != TransformCommand::None;
-    if (!transforming && ((mode_ != EditMode::Draw2D && !drawingActive_) || !dynamicInputEnabled_)) return;
+    if (!transforming && !workPlanePicking_ &&
+        ((mode_ != EditMode::Draw2D && !drawingActive_) || !dynamicInputEnabled_)) return;
     if (character == L'\r') {
         if (transforming && transformPhase_ == TransformPhase::Selecting) {
             if (selectionFirstCorner_) selectionFirstCorner_.reset();
-            else if (!selectedModels_.empty()) transformPhase_ = TransformPhase::BasePoint;
+            else if (!selectedModels_.empty() &&
+                     (transformCommand_ != TransformCommand::Offset || selectedModels_.size() == 1)) {
+                if (transformCommand_ == TransformCommand::Delete) {
+                    document_.deleteModels(selectedModels_);
+                    cancelTransformCommand();
+                } else if (transformCommand_ == TransformCommand::Trim ||
+                           transformCommand_ == TransformCommand::Extend) {
+                    modifierBoundaries_.clear();
+                    modifierBoundaries_.reserve(selectedModels_.size());
+                    for (const auto index : selectedModels_)
+                        if (index < document_.models().size())
+                            modifierBoundaries_.push_back(document_.models()[index]);
+                    selectedModels_.clear();
+                    transformPhase_ = TransformPhase::Destination;
+                } else transformPhase_ = TransformPhase::BasePoint;
+            }
             else MessageBeep(MB_ICONWARNING);
+        } else if ((transformCommand_ == TransformCommand::LinearArray ||
+                    transformCommand_ == TransformCommand::PolarArray) &&
+                   transformPhase_ == TransformPhase::BasePoint && !arrayItemCount_ && !input_.empty()) {
+            try {
+                std::size_t used{};
+                const auto count = std::stoull(input_, &used);
+                if (used != input_.size() || count < 2 || count > 1000)
+                    throw std::invalid_argument("array count");
+                arrayItemCount_ = static_cast<std::size_t>(count);
+                input_.clear();
+            } catch (...) {
+                MessageBeep(MB_ICONWARNING);
+            }
+        } else if (transformCommand_ == TransformCommand::Offset &&
+                   transformPhase_ == TransformPhase::BasePoint && !input_.empty()) {
+            try {
+                std::size_t used{};
+                const double distance = std::stod(input_, &used);
+                if (used != input_.size() || !std::isfinite(distance) || distance <= 0.0)
+                    throw std::invalid_argument("offset distance");
+                offsetDistance_ = distance;
+                transformPhase_ = TransformPhase::Destination;
+                input_.clear();
+            } catch (...) {
+                MessageBeep(MB_ICONWARNING);
+            }
         } else if (transforming && transformPhase_ == TransformPhase::Destination && input_.empty() &&
-                   transformCommand_ == TransformCommand::Copy) {
+                   (transformCommand_ == TransformCommand::Copy ||
+                    transformCommand_ == TransformCommand::Trim ||
+                    transformCommand_ == TransformCommand::Extend)) {
             cancelTransformCommand();
         } else
         if (!input_.empty()) {
-            const auto origin = transforming ? transformBase_ : anchor_;
+            const auto origin = workPlanePicking_ && !workPlanePoints_.empty()
+                ? std::optional<Vec3>{workPlanePoints_.back()}
+                : (transforming ? transformBase_ : anchor_);
             if (const auto point = parseDynamicPoint(input_, origin, hover_ ? std::optional<Vec3>{hover_->point}
                                                                              : std::nullopt)) {
-                if (transforming) commitTransformPoint(*point);
+                if (workPlanePicking_) commitWorkPlanePoint(*point);
+                else if (transforming) commitTransformPoint(*point);
                 else commitPoint(*point);
                 input_.clear();
             }
@@ -604,7 +847,9 @@ void Application::onCharacter(wchar_t character) {
     } else if (character == L'\b') {
         if (!input_.empty()) input_.pop_back();
     } else if ((character >= L'0' && character <= L'9') || character == L'-' || character == L'+' ||
-               character == L'.' || character == L',' || character == L'<') input_.push_back(character);
+               character == L'.' || character == L',' || character == L'<' || character == L'@')
+        input_.push_back(character);
+    SetCursor(currentCanvasCursor());
     updateStatus(); invalidateCanvas();
 }
 
@@ -613,19 +858,19 @@ void Application::commitPoint(const Vec3& point) {
     const Vec3 start = *anchor_;
     switch (tool_) {
     case DrawTool::Line:
-        if (point != start) document_.addLine(start, point);
+        if (point != start) addStyledModel(WireframeModel::line(start, point));
         anchor_.reset();
         break;
     case DrawTool::Polyline:
-        if (point != start) document_.addLine(start, point);
+        if (point != start) addStyledModel(WireframeModel::line(start, point));
         anchor_ = point;
         break;
     case DrawTool::Rectangle:
         if (point != start) {
             if (mode_ == EditMode::View3D)
-                document_.addModel(WireframeModel::rectangleOnPlane(workPlane_, workPlane_.toPlane(start),
-                                                                    workPlane_.toPlane(point)));
-            else document_.addModel(WireframeModel::rectangle(start, point));
+                addStyledModel(WireframeModel::rectangleOnPlane(workPlane_, workPlane_.toPlane(start),
+                                                                 workPlane_.toPlane(point)));
+            else addStyledModel(WireframeModel::rectangle(start, point));
         }
         anchor_.reset();
         break;
@@ -635,10 +880,10 @@ void Application::commitPoint(const Vec3& point) {
             const Vec2 center = workPlane_.toPlane(start);
             const Vec2 edge = workPlane_.toPlane(point);
             radius = std::hypot(edge.x - center.x, edge.y - center.y);
-            if (radius > 0.0) document_.addModel(WireframeModel::circleOnPlane(workPlane_, center, radius));
+            if (radius > 0.0) addStyledModel(WireframeModel::circleOnPlane(workPlane_, center, radius));
         } else {
             radius = std::hypot(point.x - start.x, point.y - start.y);
-            if (radius > 0.0) document_.addModel(WireframeModel::circle(start, radius));
+            if (radius > 0.0) addStyledModel(WireframeModel::circle(start, radius));
         }
         anchor_.reset(); break;
     }}
@@ -650,14 +895,18 @@ void Application::startTransformCommand(TransformCommand command) {
     cancelZoomWindow2D();
     if (workPlanePicking_) cancelWorkPlaneCommand();
     cancelDrawing();
+    lastTransformCommand_ = command;
     transformCommand_ = command;
     transformPhase_ = TransformPhase::Selecting;
     selectedModels_.clear();
     selectionFirstCorner_.reset();
     transformBase_.reset();
+    offsetDistance_.reset();
+    arrayItemCount_.reset();
+    modifierBoundaries_.clear();
     drawingActive_ = false;
     hover_.reset();
-    if (modifyCursor_) SetCursor(modifyCursor_);
+    SetCursor(currentCanvasCursor());
 }
 
 void Application::toggle3DView() {
@@ -670,21 +919,22 @@ void Application::toggle3DView() {
 }
 
 void Application::zoomExtents2D() {
-    mode_ = EditMode::Draw2D;
-    drawingActive_ = true;
     cancelZoomWindow2D();
     RECT client{}; GetClientRect(canvas_, &client);
     const auto bounds = document_.bounds();
     if (!bounds) camera_.reset();
-    else camera_.fit2D(bounds->minimum, bounds->maximum, std::max(1L, client.right),
-                       std::max(1L, client.bottom), 50.0);
+    else if (mode_ == EditMode::View3D)
+        camera_.fit3D(bounds->minimum, bounds->maximum, std::max(1L, client.right),
+                      std::max(1L, client.bottom), 50.0);
+    else
+        camera_.fit2D(bounds->minimum, bounds->maximum, std::max(1L, client.right),
+                      std::max(1L, client.bottom), 50.0);
 }
 
 void Application::startZoomWindow2D() {
     if (workPlanePicking_) cancelWorkPlaneCommand();
     if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
     cancelDrawing();
-    mode_ = EditMode::Draw2D;
     drawingActive_ = false;
     zoomWindowActive_ = true;
     zoomWindowFirstCorner_.reset();
@@ -700,16 +950,25 @@ void Application::cancelZoomWindow2D() {
 void Application::completeZoomWindow2D(int x, int y) {
     if (!zoomWindowFirstCorner_) return;
     const POINT first = *zoomWindowFirstCorner_;
-    const Vec3 a = screenTo2D(first.x, first.y);
-    const Vec3 b = screenTo2D(x, y);
     RECT client{}; GetClientRect(canvas_, &client);
     if (std::abs(x - first.x) >= 4 && std::abs(y - first.y) >= 4) {
-        camera_.fit2D({std::min(a.x, b.x), std::min(a.y, b.y), 0.0},
-                      {std::max(a.x, b.x), std::max(a.y, b.y), 0.0},
-                      std::max(1L, client.right), std::max(1L, client.bottom), 0.0);
+        if (mode_ == EditMode::View3D) {
+            const double factor = std::min(static_cast<double>(std::max(1L, client.right)) /
+                                               static_cast<double>(std::abs(x - first.x)),
+                                           static_cast<double>(std::max(1L, client.bottom)) /
+                                               static_cast<double>(std::abs(y - first.y)));
+            camera_.zoom3DAt({0.5 * (first.x + x), 0.5 * (first.y + y)}, factor,
+                             std::max(1L, client.right), std::max(1L, client.bottom));
+        } else {
+            const Vec3 a = screenTo2D(first.x, first.y);
+            const Vec3 b = screenTo2D(x, y);
+            camera_.fit2D({std::min(a.x, b.x), std::min(a.y, b.y), 0.0},
+                          {std::max(a.x, b.x), std::max(a.y, b.y), 0.0},
+                          std::max(1L, client.right), std::max(1L, client.bottom), 0.0);
+        }
     }
     cancelZoomWindow2D();
-    drawingActive_ = true;
+    drawingActive_ = mode_ == EditMode::Draw2D;
     updateHover(x, y);
 }
 
@@ -749,9 +1008,12 @@ void Application::cancelTransformCommand() {
     selectedModels_.clear();
     selectionFirstCorner_.reset();
     transformBase_.reset();
+    offsetDistance_.reset();
+    arrayItemCount_.reset();
+    modifierBoundaries_.clear();
     input_.clear();
-    drawingActive_ = mode_ == EditMode::Draw2D;
-    if (draftingCursor_) SetCursor(draftingCursor_);
+    drawingActive_ = false;
+    SetCursor(currentCanvasCursor());
 }
 
 bool Application::toggleModelSelection(int x, int y) {
@@ -764,6 +1026,11 @@ bool Application::toggleModelSelection(int x, int y) {
                              std::max(1L, client.right), std::max(1L, client.bottom), 10.0);
     }
     if (!hit) return false;
+    if (transformCommand_ == TransformCommand::Offset) {
+        selectedModels_.assign(1, *hit);
+        selectionFirstCorner_.reset();
+        return true;
+    }
     const auto existing = std::find(selectedModels_.begin(), selectedModels_.end(), *hit);
     if (existing == selectedModels_.end()) selectedModels_.push_back(*hit);
     else selectedModels_.erase(existing);
@@ -792,24 +1059,146 @@ void Application::completeWindowSelection(int x, int y) {
 }
 
 void Application::commitTransformPoint(const Vec3& point) {
+    if (transformCommand_ == TransformCommand::Trim ||
+        transformCommand_ == TransformCommand::Extend) {
+        if (transformPhase_ != TransformPhase::Destination || modifierBoundaries_.empty()) return;
+        std::optional<std::size_t> target;
+        if (mode_ == EditMode::Draw2D)
+            target = hitTestModel2D(point, document_, 10.0 / (60.0 * camera_.zoom()));
+        else {
+            RECT viewport{}; GetClientRect(canvas_, &viewport);
+            target = hitTestModel3D({static_cast<double>(cursorScreen_.x),
+                                     static_cast<double>(cursorScreen_.y)},
+                                    document_, camera_, std::max(1L, viewport.right),
+                                    std::max(1L, viewport.bottom), 10.0);
+        }
+        if (!target || *target >= document_.models().size()) {
+            MessageBeep(MB_ICONWARNING);
+            return;
+        }
+        if (transformCommand_ == TransformCommand::Trim) {
+            auto result = mode_ == EditMode::View3D
+                ? trimLineOnPlane(document_.models()[*target], modifierBoundaries_, point, workPlane_)
+                : trimLine2D(document_.models()[*target], modifierBoundaries_, point);
+            if (!result) {
+                MessageBeep(MB_ICONWARNING);
+                return;
+            }
+            document_.replaceModel(*target, std::move(*result));
+        } else {
+            auto result = mode_ == EditMode::View3D
+                ? extendLineOnPlane(document_.models()[*target], modifierBoundaries_, point, workPlane_)
+                : extendLine2D(document_.models()[*target], modifierBoundaries_, point);
+            if (!result) {
+                MessageBeep(MB_ICONWARNING);
+                return;
+            }
+            std::vector<WireframeModel> replacement;
+            replacement.push_back(std::move(*result));
+            document_.replaceModel(*target, std::move(replacement));
+        }
+        if (modifierCompletesAfterCommit(transformCommand_)) cancelTransformCommand();
+        return;
+    }
+    if (transformCommand_ == TransformCommand::Offset) {
+        if (transformPhase_ != TransformPhase::Destination || !offsetDistance_ ||
+            selectedModels_.size() != 1 || selectedModels_.front() >= document_.models().size()) return;
+        const auto offset = mode_ == EditMode::View3D
+            ? offsetModelOnPlane(document_.models()[selectedModels_.front()],
+                                 *offsetDistance_, point, workPlane_)
+            : offsetModel2D(document_.models()[selectedModels_.front()], *offsetDistance_, point);
+        if (offset) {
+            document_.addModel(*offset);
+            cancelTransformCommand();
+        } else {
+            MessageBeep(MB_ICONWARNING);
+        }
+        return;
+    }
+    if (transformCommand_ == TransformCommand::PolarArray) {
+        if (transformPhase_ != TransformPhase::BasePoint || !arrayItemCount_) {
+            MessageBeep(MB_ICONWARNING);
+            return;
+        }
+        std::vector<WireframeModel> copies;
+        for (const auto index : selectedModels_) {
+            if (index >= document_.models().size()) continue;
+            auto generated = mode_ == EditMode::View3D
+                ? polarArrayOnPlane(document_.models()[index], *arrayItemCount_, point, workPlane_)
+                : polarArray2D(document_.models()[index], *arrayItemCount_, point);
+            copies.insert(copies.end(), std::make_move_iterator(generated.begin()),
+                          std::make_move_iterator(generated.end()));
+        }
+        for (auto& model : copies) document_.addModel(std::move(model));
+        cancelTransformCommand();
+        return;
+    }
     if (transformPhase_ == TransformPhase::BasePoint) {
+        if (transformCommand_ == TransformCommand::LinearArray && !arrayItemCount_) {
+            MessageBeep(MB_ICONWARNING);
+            return;
+        }
         transformBase_ = point;
         transformPhase_ = TransformPhase::Destination;
+        SetCursor(currentCanvasCursor());
         return;
     }
     if (transformPhase_ != TransformPhase::Destination || !transformBase_) return;
+    if (transformCommand_ == TransformCommand::Mirror) {
+        std::vector<WireframeModel> mirrored;
+        mirrored.reserve(selectedModels_.size());
+        for (const auto index : selectedModels_) {
+            if (index >= document_.models().size()) continue;
+            const auto model = mode_ == EditMode::View3D
+                ? mirrorModelOnPlane(document_.models()[index], *transformBase_, point, workPlane_)
+                : mirrorModel2D(document_.models()[index], *transformBase_, point);
+            if (!model) {
+                MessageBeep(MB_ICONWARNING);
+                return;
+            }
+            mirrored.push_back(std::move(*model));
+        }
+        for (auto& model : mirrored) document_.addModel(std::move(model));
+        cancelTransformCommand();
+        return;
+    }
     const Vec3 displacement = point - *transformBase_;
+    if (transformCommand_ == TransformCommand::LinearArray) {
+        std::vector<WireframeModel> copies;
+        for (const auto index : selectedModels_) {
+            if (index >= document_.models().size()) continue;
+            auto generated = linearArray2D(document_.models()[index], *arrayItemCount_, displacement);
+            copies.insert(copies.end(), std::make_move_iterator(generated.begin()),
+                          std::make_move_iterator(generated.end()));
+        }
+        if (copies.empty()) {
+            MessageBeep(MB_ICONWARNING);
+            return;
+        }
+        for (auto& model : copies) document_.addModel(std::move(model));
+        cancelTransformCommand();
+        return;
+    }
     if (transformCommand_ == TransformCommand::Move) {
         document_.moveModels(selectedModels_, displacement);
         cancelTransformCommand();
     } else if (transformCommand_ == TransformCommand::Copy) {
         document_.copyModels(selectedModels_, displacement);
+        if (modifierCompletesAfterCommit(transformCommand_)) cancelTransformCommand();
     }
 }
 
 void Application::updateHover(int x, int y) {
     if (!canvas_) return;
     cursorScreen_ = {x, y};
+    polarTrackingLocked_ = false;
+    const bool snapCommandActive = workPlanePicking_ ||
+        commandAllowsSnapping(drawingActive_, transformCommand_, transformPhase_,
+                              arrayItemCount_.has_value(), offsetDistance_.has_value());
+    if (!snapCommandActive) {
+        hover_.reset();
+        return;
+    }
     const bool selectingEntities = transformCommand_ != TransformCommand::None &&
                                    transformPhase_ == TransformPhase::Selecting;
     const bool cameraNavigating = wheelNavigating_ || panning2D_ || rotating_ || viewCubeManipulating_;
@@ -817,10 +1206,27 @@ void Application::updateHover(int x, int y) {
         hover_.reset();
         return;
     }
+    if (transformCommand_ == TransformCommand::Offset &&
+        transformPhase_ == TransformPhase::Destination) {
+        if (mode_ == EditMode::Draw2D) hover_ = SnapResult{screenTo2D(x, y), SnapType::None, 0.0};
+        else {
+            RECT viewport{}; GetClientRect(canvas_, &viewport);
+            WorkPlane sidePlane = workPlane_;
+            if (!selectedModels_.empty() && selectedModels_.front() < document_.models().size() &&
+                !document_.models()[selectedModels_.front()].vertices().empty())
+                sidePlane.origin = document_.models()[selectedModels_.front()].vertices().front();
+            if (const auto point = camera_.unprojectToPlane({static_cast<double>(x), static_cast<double>(y)},
+                                                            std::max(1L, viewport.right),
+                                                            std::max(1L, viewport.bottom), sidePlane))
+                hover_ = SnapResult{*point, SnapType::None, 0.0};
+            else hover_.reset();
+        }
+        return;
+    }
     if (mode_ == EditMode::Draw2D) {
         const auto reference = transformPhase_ == TransformPhase::Destination ? transformBase_ : anchor_;
         hover_ = SnapEngine::snap(screenTo2D(x, y), document_, 10.0 / (60.0 * camera_.zoom()), 1.0,
-                                  snapEnabled_, gridSnapEnabled_, reference);
+                                  snapEnabled_, gridSnapEnabled_, reference, &enabledSnapTypes_);
     } else {
         RECT client{}; GetClientRect(canvas_, &client);
         const int width = std::max(1L, client.right);
@@ -830,21 +1236,42 @@ void Application::updateHover(int x, int y) {
         if (reference && !workPlanePicking_) activePlane.origin = *reference;
         hover_ = SnapEngine::snap3D({static_cast<double>(x), static_cast<double>(y)}, document_, camera_,
                                     width, height, 10.0, 1.0, activePlane,
-                                    snapEnabled_, gridSnapEnabled_, reference);
+                                    snapEnabled_, gridSnapEnabled_, reference, &enabledSnapTypes_);
     }
-    const auto orthoAnchor = transformPhase_ == TransformPhase::Destination ? transformBase_ : anchor_;
+    auto orthoAnchor = transformPhase_ == TransformPhase::Destination ? transformBase_ : anchor_;
+    if (!orthoAnchor && workPlanePicking_ && !workPlanePoints_.empty())
+        orthoAnchor = workPlanePoints_.back();
     if (orthoEnabled_ && orthoAnchor && hover_) {
         if (mode_ == EditMode::View3D) {
             RECT client{}; GetClientRect(canvas_, &client);
+            const bool modifying = transformCommand_ != TransformCommand::None;
             hover_ = applyOrtho3D(*orthoAnchor, {static_cast<double>(x), static_cast<double>(y)}, *hover_,
-                                  camera_, std::max(1L, client.right), std::max(1L, client.bottom));
+                                  camera_, std::max(1L, client.right), std::max(1L, client.bottom),
+                                  workPlane_, modifying, !modifying);
         } else {
-            hover_ = applyOrtho(*orthoAnchor, *hover_);
+            hover_ = applyOrtho(*orthoAnchor, *hover_, transformCommand_ == TransformCommand::None);
         }
+    } else if (polarTrackingEnabled_ && orthoAnchor && hover_) {
+        const SnapResult original = *hover_;
+        hover_ = mode_ == EditMode::View3D
+            ? applyPolarTracking(*orthoAnchor, *hover_, workPlane_, 90.0, 12.0, true)
+            : applyPolarTracking(*orthoAnchor, *hover_, 90.0, 12.0, true);
+        polarTrackingLocked_ = hover_->point != original.point;
     }
 }
 
 void Application::executeCommand(int id) {
+    if (id >= CmdSnapTypeFirst && id < CmdSnapTypeFirst + static_cast<int>(snapChoices.size())) {
+        const auto choiceIndex = static_cast<std::size_t>(id - CmdSnapTypeFirst);
+        const auto snapIndex = static_cast<std::size_t>(snapChoices[choiceIndex].type);
+        enabledSnapTypes_[snapIndex] =
+            SendMessageW(snapTypeCheckboxes_[choiceIndex], BM_GETCHECK, 0, 0) == BST_CHECKED;
+        updateHover(cursorScreen_.x, cursorScreen_.y);
+        updateControls();
+        invalidateCanvas();
+        SetFocus(canvas_);
+        return;
+    }
     switch (id) {
     case CmdTabFile: activateRibbonTab(RibbonTab::File); break;
     case CmdTabDrawing: activateRibbonTab(RibbonTab::Drawing); break;
@@ -853,10 +1280,11 @@ void Application::executeCommand(int id) {
     case CmdTabAids: activateRibbonTab(RibbonTab::Aids); break;
     case CmdNew:
         document_.clear();
+        refreshLayerCombo();
         if (workPlanePicking_) cancelWorkPlaneCommand();
         if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
         else cancelDrawing();
-        mode_ = EditMode::Draw2D; drawingActive_ = true;
+        drawingActive_ = mode_ == EditMode::Draw2D;
         break;
     case CmdOpen: openDocument(); break;
     case CmdSave: saveDocument(); break;
@@ -876,8 +1304,24 @@ void Application::executeCommand(int id) {
     case CmdOsnap: snapEnabled_ = !snapEnabled_; break;
     case CmdGridSnap: gridSnapEnabled_ = !gridSnapEnabled_; break;
     case CmdDynamicInput: dynamicInputEnabled_ = !dynamicInputEnabled_; break;
+    case CmdPolarTracking:
+        polarTrackingEnabled_ = !polarTrackingEnabled_;
+        if (polarTrackingEnabled_) orthoEnabled_ = false;
+        break;
+    case CmdSnapSettings:
+        snapPanelOpen_ = !snapPanelOpen_;
+        updateSnapPanelVisibility();
+        break;
+    case CmdNeutral: deactivateAllCommands(); break;
     case CmdMove: startTransformCommand(TransformCommand::Move); break;
     case CmdCopy: startTransformCommand(TransformCommand::Copy); break;
+    case CmdOffset: startTransformCommand(TransformCommand::Offset); break;
+    case CmdMirror: startTransformCommand(TransformCommand::Mirror); break;
+    case CmdDelete: startTransformCommand(TransformCommand::Delete); break;
+    case CmdLinearArray: startTransformCommand(TransformCommand::LinearArray); break;
+    case CmdPolarArray: startTransformCommand(TransformCommand::PolarArray); break;
+    case CmdTrim: startTransformCommand(TransformCommand::Trim); break;
+    case CmdExtend: startTransformCommand(TransformCommand::Extend); break;
     default: break;
     }
     updateHover(cursorScreen_.x, cursorScreen_.y);
@@ -892,6 +1336,17 @@ void Application::selectTool(DrawTool tool) {
     updateHover(cursorScreen_.x, cursorScreen_.y); updateControls(); invalidateCanvas();
 }
 
+void Application::deactivateAllCommands() {
+    cancelZoomWindow2D();
+    if (workPlanePicking_) cancelWorkPlaneCommand();
+    if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
+    cancelDrawing();
+    drawingActive_ = false;
+    lastTransformCommand_ = TransformCommand::None;
+    hover_.reset();
+    SetCursor(currentCanvasCursor());
+}
+
 void Application::updateControls() {
     const auto check = [](HWND control, bool value) {
         if (control) SendMessageW(control, BM_SETCHECK, value ? BST_CHECKED : BST_UNCHECKED, 0);
@@ -903,12 +1358,65 @@ void Application::updateControls() {
     check(snapButton_, snapEnabled_);
     check(gridSnapButton_, gridSnapEnabled_);
     check(dynamicInputButton_, dynamicInputEnabled_);
+    check(snapSettingsButton_, snapPanelOpen_);
+    check(polarTrackingButton_, polarTrackingEnabled_);
+    check(neutralButton_, !drawingActive_ && transformCommand_ == TransformCommand::None &&
+                          !workPlanePicking_ && !zoomWindowActive_);
     check(moveButton_, transformCommand_ == TransformCommand::Move);
     check(copyButton_, transformCommand_ == TransformCommand::Copy);
+    check(offsetButton_, transformCommand_ == TransformCommand::Offset);
+    check(mirrorButton_, transformCommand_ == TransformCommand::Mirror);
+    check(deleteButton_, transformCommand_ == TransformCommand::Delete);
+    check(linearArrayButton_, transformCommand_ == TransformCommand::LinearArray);
+    check(polarArrayButton_, transformCommand_ == TransformCommand::PolarArray);
+    check(trimButton_, transformCommand_ == TransformCommand::Trim);
+    check(extendButton_, transformCommand_ == TransformCommand::Extend);
     check(view3DButton_, mode_ == EditMode::View3D);
     check(workPlaneButton_, workPlanePicking_);
     check(zoomWindowButton_, zoomWindowActive_);
     updateStatus();
+}
+
+void Application::refreshLayerCombo() {
+    if (!layerCombo_) return;
+    wchar_t previous[256]{};
+    GetWindowTextW(layerCombo_, previous, static_cast<int>(std::size(previous)));
+    std::vector<std::string> layers{"0"};
+    for (const auto& [name, properties] : document_.layers()) {
+        (void)properties;
+        if (name != "0") layers.push_back(name);
+    }
+    std::sort(layers.begin() + 1, layers.end());
+    SendMessageW(layerCombo_, CB_RESETCONTENT, 0, 0);
+    for (const auto& name : layers) {
+        const auto wideName = utf8ToWide(name);
+        SendMessageW(layerCombo_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(wideName.c_str()));
+    }
+    LRESULT selection = previous[0]
+        ? SendMessageW(layerCombo_, CB_FINDSTRINGEXACT, static_cast<WPARAM>(-1),
+                       reinterpret_cast<LPARAM>(previous))
+        : CB_ERR;
+    if (selection == CB_ERR) selection = 0;
+    SendMessageW(layerCombo_, CB_SETCURSEL, selection, 0);
+}
+
+EntityProperties Application::currentEntityProperties() const {
+    wchar_t layerText[256]{L'0', L'\0'};
+    if (layerCombo_) GetWindowTextW(layerCombo_, layerText, static_cast<int>(std::size(layerText)));
+    EntityStyleSelection selection;
+    selection.layer = wideToUtf8(layerText);
+    const LRESULT colorIndex = colorCombo_ ? SendMessageW(colorCombo_, CB_GETCURSEL, 0, 0) : 0;
+    if (colorIndex >= 0 && static_cast<std::size_t>(colorIndex) < colorChoices.size())
+        selection.trueColor = colorChoices[static_cast<std::size_t>(colorIndex)].color;
+    const LRESULT lineTypeIndex = lineTypeCombo_ ? SendMessageW(lineTypeCombo_, CB_GETCURSEL, 0, 0) : 0;
+    if (lineTypeIndex >= 0 && static_cast<std::size_t>(lineTypeIndex) < lineTypeChoices.size())
+        selection.lineType = lineTypeChoices[static_cast<std::size_t>(lineTypeIndex)].value;
+    return resolveEntityStyle(selection, document_.layers());
+}
+
+void Application::addStyledModel(WireframeModel model) {
+    model.setProperties(currentEntityProperties());
+    document_.addModel(std::move(model));
 }
 
 void Application::updateStatus() {
@@ -941,22 +1449,59 @@ void Application::updateStatus() {
                                        : L"  |  ZOOM WINDOW — ilk köşeyi belirtin";
     } else if (transformCommand_ != TransformCommand::None) {
         text += L"  |  Komut: ";
-        text += transformCommand_ == TransformCommand::Move ? L"MOVE" : L"COPY";
+        if (transformCommand_ == TransformCommand::Move) text += L"MOVE";
+        else if (transformCommand_ == TransformCommand::Copy) text += L"COPY";
+        else if (transformCommand_ == TransformCommand::Offset) text += L"OFFSET";
+        else if (transformCommand_ == TransformCommand::Mirror) text += L"MIRROR";
+        else if (transformCommand_ == TransformCommand::Delete) text += L"DELETE";
+        else if (transformCommand_ == TransformCommand::LinearArray) text += L"LINEAR ARRAY";
+        else if (transformCommand_ == TransformCommand::PolarArray) text += L"POLAR ARRAY";
+        else if (transformCommand_ == TransformCommand::Trim) text += L"TRIM";
+        else text += L"EXTEND";
         text += L" — ";
         if (transformPhase_ == TransformPhase::Selecting) {
-            text += selectionFirstCorner_ ? L"Diğer köşeyi belirtin" : L"Nesneleri seçin, Enter";
+            if (transformCommand_ == TransformCommand::Offset) text += L"Bir çizgi veya daire seçin, Enter";
+            else if (transformCommand_ == TransformCommand::Trim ||
+                     transformCommand_ == TransformCommand::Extend)
+                text += selectionFirstCorner_ ? L"Diğer köşeyi belirtin" : L"Sınır nesnelerini seçin, Enter";
+            else text += selectionFirstCorner_ ? L"Diğer köşeyi belirtin" : L"Nesneleri seçin, Enter";
             text += L" (" + std::to_wstring(selectedModels_.size()) + L")";
-        } else if (transformPhase_ == TransformPhase::BasePoint) text += L"Baz noktayı belirtin";
-        else text += transformCommand_ == TransformCommand::Copy
-            ? L"İkinci noktayı belirtin; kopyalamaya devam edin, Enter ile bitir"
-            : L"İkinci noktayı belirtin";
+        } else if (transformPhase_ == TransformPhase::BasePoint) {
+            if (transformCommand_ == TransformCommand::Offset) text += L"Ofset mesafesini yazın, Enter";
+            else if ((transformCommand_ == TransformCommand::LinearArray ||
+                      transformCommand_ == TransformCommand::PolarArray) && !arrayItemCount_)
+                text += L"Öğe sayısını yazın (2-1000), Enter";
+            else if (transformCommand_ == TransformCommand::PolarArray) text += L"Merkez noktasını belirtin";
+            else if (transformCommand_ == TransformCommand::Mirror) text += L"Ayna ekseninin ilk noktasını belirtin";
+            else text += L"Baz noktayı belirtin";
+        } else if (transformCommand_ == TransformCommand::Offset) {
+            text += L"Ofset tarafını belirtin";
+        } else if (transformCommand_ == TransformCommand::Mirror) {
+            text += L"Ayna ekseninin ikinci noktasını belirtin";
+        } else if (transformCommand_ == TransformCommand::LinearArray) {
+            text += L"Öğeler arası aralık için ikinci noktayı belirtin";
+        } else if (transformCommand_ == TransformCommand::Trim) {
+            text += L"Kesilecek çizgi bölümünü seçin; Enter ile bitir";
+        } else if (transformCommand_ == TransformCommand::Extend) {
+            text += L"Uzatılacak çizginin uç tarafını seçin; Enter ile bitir";
+        } else text += L"İkinci noktayı belirtin";
+    } else if (!drawingActive_) {
+        text += L"  |  PASİF — Komut yok; Snap pasif";
     } else {
         text += L"  |  Araç: "; text += toolLabel(tool_);
     }
     text += L"  |  Nesne: " + std::to_wstring(document_.models().size());
-    text += L"  |  OSNAP: "; text += snapEnabled_ ? L"Açık" : L"Kapalı";
+    const bool snapEffective = snapEnabled_ && (workPlanePicking_ ||
+        commandAllowsSnapping(drawingActive_, transformCommand_, transformPhase_,
+                              arrayItemCount_.has_value(), offsetDistance_.has_value()));
+    text += L"  |  OSNAP: ";
+    text += snapEffective ? L"Açık" : (!drawingActive_ && transformCommand_ == TransformCommand::None
+                                       ? L"Pasif (komut yok)" : L"Kapalı");
     text += L"  |  ORTHO F8: "; text += orthoEnabled_ ? L"Açık" : L"Kapalı";
-    if (orthoEnabled_ && mode_ == EditMode::View3D) text += L" (X/Y/Z)";
+    if (orthoEnabled_ && mode_ == EditMode::View3D)
+        text += transformCommand_ == TransformCommand::None ? L" (U/V)" : L" (U/V/N)";
+    text += L"  |  POLAR F10: ";
+    text += polarTrackingEnabled_ ? (polarTrackingLocked_ ? L"90° İzleme" : L"90° Açık") : L"Kapalı";
     text += L"  |  GRID: "; text += gridSnapEnabled_ ? L"Açık" : L"Kapalı";
     text += L"  |  DYN: "; text += dynamicInputEnabled_ ? L"Açık" : L"Kapalı";
     if (hover_) {
@@ -974,14 +1519,14 @@ void Application::addCube() {
     if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
     auto cube = WireframeModel::cube(2.6);
     cube.translate({static_cast<double>(document_.models().size() % 4) * 0.45, 0.0, 0.0});
-    document_.addModel(std::move(cube)); mode_ = EditMode::View3D;
+    addStyledModel(std::move(cube)); mode_ = EditMode::View3D;
     cancelDrawing(); drawingActive_ = false;
 }
 
 void Application::addPyramid() {
     if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
     auto pyramid = WireframeModel::pyramid(3.0, 3.2); pyramid.translate({0.0, 0.0, -1.0});
-    document_.addModel(std::move(pyramid)); mode_ = EditMode::View3D;
+    addStyledModel(std::move(pyramid)); mode_ = EditMode::View3D;
     cancelDrawing(); drawingActive_ = false;
 }
 
@@ -991,18 +1536,30 @@ Vec3 Application::screenTo2D(int x, int y) const noexcept {
                                client.right, client.bottom);
 }
 
+HCURSOR Application::currentCanvasCursor() const noexcept {
+    if (transformCommand_ == TransformCommand::None)
+        return (drawingActive_ || workPlanePicking_ || zoomWindowActive_) ? draftingCursor_ : neutralCursor_;
+    return modifierUsesPointCursor(transformCommand_, transformPhase_, arrayItemCount_.has_value(),
+                                   offsetDistance_.has_value())
+        ? draftingCursor_ : modifyCursor_;
+}
+
 DraftView Application::draftView() const {
     DraftView view;
     view.tool = tool_; view.anchor = anchor_;
     if (hover_) { view.cursor = hover_->point; view.snapType = hover_->type; }
     view.drawingActive = drawingActive_; view.snapEnabled = snapEnabled_;
     view.gridSnapEnabled = gridSnapEnabled_; view.dynamicInputEnabled = dynamicInputEnabled_;
+    view.polarTrackingEnabled = polarTrackingEnabled_; view.polarTrackingLocked = polarTrackingLocked_;
     view.workPlaneZ = workPlane_.origin.z; view.workPlane = workPlane_;
     view.workPlanePicking = workPlanePicking_; view.workPlanePoints = workPlanePoints_;
     view.input = input_; view.cursorScreen = cursorScreen_;
     view.transformCommand = transformCommand_; view.transformPhase = transformPhase_;
     view.selectedModels = selectedModels_; view.selectionFirstCorner = selectionFirstCorner_;
     view.transformBase = transformBase_;
+    view.offsetDistance = offsetDistance_;
+    view.arrayItemCount = arrayItemCount_;
+    view.modifierBoundaries = modifierBoundaries_;
     view.zoomWindowActive = zoomWindowActive_; view.zoomWindowFirstCorner = zoomWindowFirstCorner_;
     view.interactiveNavigation = rotating_ || panning2D_ || viewCubeManipulating_ ||
                                  wheelNavigating_ || snapPreviewActive_;
@@ -1035,6 +1592,7 @@ void Application::openDocument() {
     const auto path = chooseFile(false); if (!path) return;
     try {
         document_.load(*path);
+        refreshLayerCombo();
         if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
         else cancelDrawing();
     } catch (const std::exception& error) { showError(L"Dosya açılamadı", error); }
@@ -1107,27 +1665,18 @@ void Application::finishDxfImport() {
         cancelDrawing();
         hover_.reset();
         document_ = std::move(*loaded);
+        refreshLayerCombo();
         const auto bounds = document_.bounds();
-        bool nonPlanar = false;
+        drawingActive_ = mode_ == EditMode::Draw2D;
         if (bounds) {
-            const double xSpan = bounds->maximum.x - bounds->minimum.x;
-            const double ySpan = bounds->maximum.y - bounds->minimum.y;
-            const double zSpan = bounds->maximum.z - bounds->minimum.z;
-            nonPlanar = zSpan > std::max(1e-6, std::max(xSpan, ySpan) * 1e-6);
-        }
-        if (nonPlanar && bounds) {
-            mode_ = EditMode::View3D;
-            drawingActive_ = false;
-            camera_.reset();
-            camera_.setView(StandardView::Isometric);
             RECT canvasClient{};
             GetClientRect(canvas_, &canvasClient);
-            camera_.fit3D(bounds->minimum, bounds->maximum,
-                          std::max(1L, canvasClient.right), std::max(1L, canvasClient.bottom), 50.0);
-        } else {
-            mode_ = EditMode::Draw2D;
-            drawingActive_ = true;
-            zoomExtents2D();
+            if (mode_ == EditMode::View3D)
+                camera_.fit3D(bounds->minimum, bounds->maximum,
+                              std::max(1L, canvasClient.right), std::max(1L, canvasClient.bottom), 50.0);
+            else
+                camera_.fit2D(bounds->minimum, bounds->maximum,
+                              std::max(1L, canvasClient.right), std::max(1L, canvasClient.bottom), 50.0);
         }
         updateControls();
         invalidateCanvas();

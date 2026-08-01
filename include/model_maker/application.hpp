@@ -7,6 +7,7 @@
 #include "model_maker/ribbon_layout.hpp"
 
 #include <windows.h>
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <cstdint>
@@ -45,6 +46,7 @@ private:
     void onCharacter(wchar_t character);
     void executeCommand(int id);
     void selectTool(DrawTool tool);
+    void deactivateAllCommands();
     void startTransformCommand(TransformCommand command);
     void cancelTransformCommand();
     void toggle3DView();
@@ -62,6 +64,10 @@ private:
     void cancelDrawing();
     void updateHover(int x, int y);
     void updateControls();
+    void updateSnapPanelVisibility();
+    void refreshLayerCombo();
+    EntityProperties currentEntityProperties() const;
+    void addStyledModel(WireframeModel model);
     void updateStatus();
     void invalidateCanvas();
     void addCube();
@@ -75,6 +81,7 @@ private:
     void showError(const wchar_t* action, const std::exception& error) const;
     std::optional<std::filesystem::path> chooseFile(bool save, bool dxf = false) const;
     Vec3 screenTo2D(int x, int y) const noexcept;
+    HCURSOR currentCanvasCursor() const noexcept;
     DraftView draftView() const;
 
     HINSTANCE instance_{};
@@ -89,8 +96,24 @@ private:
     HWND snapButton_{};
     HWND gridSnapButton_{};
     HWND dynamicInputButton_{};
+    HWND snapSettingsButton_{};
+    HWND polarTrackingButton_{};
+    HWND snapPanel_{};
+    std::array<HWND, 14> snapTypeCheckboxes_{};
+    std::array<HWND, 3> styleLabels_{};
+    HWND layerCombo_{};
+    HWND colorCombo_{};
+    HWND lineTypeCombo_{};
+    HWND neutralButton_{};
     HWND moveButton_{};
     HWND copyButton_{};
+    HWND offsetButton_{};
+    HWND mirrorButton_{};
+    HWND deleteButton_{};
+    HWND linearArrayButton_{};
+    HWND polarArrayButton_{};
+    HWND trimButton_{};
+    HWND extendButton_{};
     HWND view3DButton_{};
     HWND workPlaneButton_{};
     HWND zoomWindowButton_{};
@@ -99,6 +122,7 @@ private:
     RibbonTab activeRibbonTab_{RibbonTab::Drawing};
     HCURSOR draftingCursor_{};
     HCURSOR modifyCursor_{};
+    HCURSOR neutralCursor_{};
     HFONT uiFont_{};
     HFONT titleFont_{};
     Document document_;
@@ -109,15 +133,23 @@ private:
     std::optional<Vec3> anchor_;
     std::optional<SnapResult> hover_;
     bool snapEnabled_{true};
+    SnapTypeMask enabledSnapTypes_{};
+    bool snapPanelOpen_{};
     bool gridSnapEnabled_{true};
     bool orthoEnabled_{false};
+    bool polarTrackingEnabled_{false};
+    bool polarTrackingLocked_{false};
     bool dynamicInputEnabled_{true};
     bool drawingActive_{true};
     TransformCommand transformCommand_{TransformCommand::None};
+    TransformCommand lastTransformCommand_{TransformCommand::None};
     TransformPhase transformPhase_{TransformPhase::Selecting};
     std::vector<std::size_t> selectedModels_;
     std::optional<POINT> selectionFirstCorner_;
     std::optional<Vec3> transformBase_;
+    std::optional<double> offsetDistance_;
+    std::optional<std::size_t> arrayItemCount_;
+    std::vector<WireframeModel> modifierBoundaries_;
     WorkPlane workPlane_{};
     bool workPlanePicking_{};
     std::vector<Vec3> workPlanePoints_;

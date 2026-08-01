@@ -22,6 +22,7 @@ COLORREF nativeColor(std::uint32_t rgb) noexcept {
 }
 
 int lineWeightPixels(int hundredthsMillimeter) noexcept {
+    if (hundredthsMillimeter <= 0) return 0;
     if (hundredthsMillimeter <= 25) return 2;
     if (hundredthsMillimeter <= 50) return 3;
     if (hundredthsMillimeter <= 100) return 5;
@@ -511,14 +512,109 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         SelectObject(dc, stockPen);
         DeleteObject(trackerPen);
 
-        const Vec3 displacement = *draft.cursor - *draft.transformBase;
         HPEN transformPreview = CreatePen(PS_DASH, 1, RGB(255, 206, 84));
         SelectObject(dc, transformPreview);
         for (const auto index : draft.selectedModels) {
-            if (index < document.models().size()) drawModel(document.models()[index], displacement);
+            if (index >= document.models().size()) continue;
+            if (draft.transformCommand == TransformCommand::Mirror) {
+                const auto preview = mode == EditMode::View3D
+                    ? mirrorModelOnPlane(document.models()[index], *draft.transformBase,
+                                         *draft.cursor, draft.workPlane)
+                    : mirrorModel2D(document.models()[index], *draft.transformBase, *draft.cursor);
+                if (preview) drawModel(*preview);
+            } else if (draft.transformCommand == TransformCommand::LinearArray && draft.arrayItemCount) {
+                for (const auto& preview : linearArray2D(document.models()[index], *draft.arrayItemCount,
+                                                         *draft.cursor - *draft.transformBase))
+                    drawModel(preview);
+            } else {
+                drawModel(document.models()[index], *draft.cursor - *draft.transformBase);
+            }
         }
         SelectObject(dc, stockPen);
         DeleteObject(transformPreview);
+    }
+
+    if (draft.transformCommand == TransformCommand::PolarArray &&
+        draft.transformPhase == TransformPhase::BasePoint && draft.arrayItemCount && draft.cursor) {
+        HPEN previewPen = CreatePen(PS_DASH, 1, RGB(255, 206, 84));
+        SelectObject(dc, previewPen);
+        for (const auto index : draft.selectedModels) {
+            if (index >= document.models().size()) continue;
+            const auto previews = mode == EditMode::View3D
+                ? polarArrayOnPlane(document.models()[index], *draft.arrayItemCount,
+                                    *draft.cursor, draft.workPlane)
+                : polarArray2D(document.models()[index], *draft.arrayItemCount, *draft.cursor);
+            for (const auto& preview : previews)
+                drawModel(preview);
+        }
+        SelectObject(dc, stockPen);
+        DeleteObject(previewPen);
+    }
+
+    if ((draft.transformCommand == TransformCommand::Trim ||
+         draft.transformCommand == TransformCommand::Extend) &&
+        draft.transformPhase == TransformPhase::Destination && !draft.modifierBoundaries.empty()) {
+        HPEN boundaryPen = CreatePen(PS_SOLID, 2, RGB(90, 255, 145));
+        SelectObject(dc, boundaryPen);
+        for (const auto& boundary : draft.modifierBoundaries) drawModel(boundary);
+        SelectObject(dc, stockPen);
+        DeleteObject(boundaryPen);
+
+        Vec3 pick{};
+        std::optional<std::size_t> target;
+        if (mode == EditMode::Draw2D) {
+            pick = camera.unproject2D({static_cast<double>(draft.cursorScreen.x),
+                                       static_cast<double>(draft.cursorScreen.y)}, width, height);
+            target = hitTestModel2D(pick, document, 10.0 / (60.0 * camera.zoom()));
+        } else {
+            WorkPlane targetPlane = draft.workPlane;
+            if (!draft.modifierBoundaries.front().vertices().empty())
+                targetPlane.origin = draft.modifierBoundaries.front().vertices().front();
+            if (const auto projectedPick = camera.unprojectToPlane(
+                    {static_cast<double>(draft.cursorScreen.x), static_cast<double>(draft.cursorScreen.y)},
+                    width, height, targetPlane))
+                pick = *projectedPick;
+            target = hitTestModel3D({static_cast<double>(draft.cursorScreen.x),
+                                     static_cast<double>(draft.cursorScreen.y)},
+                                    document, camera, width, height, 10.0);
+        }
+        if (target && *target < document.models().size()) {
+            HPEN previewPen = CreatePen(PS_DASH, 2, RGB(255, 206, 84));
+            SelectObject(dc, previewPen);
+            if (draft.transformCommand == TransformCommand::Trim) {
+                const auto result = mode == EditMode::View3D
+                    ? trimLineOnPlane(document.models()[*target], draft.modifierBoundaries,
+                                      pick, draft.workPlane)
+                    : trimLine2D(document.models()[*target], draft.modifierBoundaries, pick);
+                if (result)
+                    for (const auto& segment : *result) drawModel(segment);
+            } else {
+                const auto result = mode == EditMode::View3D
+                    ? extendLineOnPlane(document.models()[*target], draft.modifierBoundaries,
+                                        pick, draft.workPlane)
+                    : extendLine2D(document.models()[*target], draft.modifierBoundaries, pick);
+                if (result) drawModel(*result);
+            }
+            SelectObject(dc, stockPen);
+            DeleteObject(previewPen);
+        }
+    }
+
+    if (draft.transformCommand == TransformCommand::Offset &&
+        draft.transformPhase == TransformPhase::Destination && draft.offsetDistance && draft.cursor &&
+        draft.selectedModels.size() == 1 && draft.selectedModels.front() < document.models().size()) {
+        const auto preview = mode == EditMode::View3D
+            ? offsetModelOnPlane(document.models()[draft.selectedModels.front()],
+                                 *draft.offsetDistance, *draft.cursor, draft.workPlane)
+            : offsetModel2D(document.models()[draft.selectedModels.front()],
+                            *draft.offsetDistance, *draft.cursor);
+        if (preview) {
+            HPEN previewPen = CreatePen(PS_DASH, 1, RGB(255, 206, 84));
+            SelectObject(dc, previewPen);
+            drawModel(*preview);
+            SelectObject(dc, stockPen);
+            DeleteObject(previewPen);
+        }
     }
 
     if (draft.workPlanePicking) {
@@ -548,9 +644,36 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         }
     }
 
+    if (draft.polarTrackingEnabled && draft.polarTrackingLocked && draft.cursor) {
+        std::optional<Vec3> polarAnchor = draft.transformPhase == TransformPhase::Destination
+            ? draft.transformBase : draft.anchor;
+        if (!polarAnchor && draft.workPlanePicking && !draft.workPlanePoints.empty())
+            polarAnchor = draft.workPlanePoints.back();
+        if (polarAnchor) {
+            const POINT from = projectPoint(*polarAnchor);
+            const POINT through = projectPoint(*draft.cursor);
+            const double dx = static_cast<double>(through.x - from.x);
+            const double dy = static_cast<double>(through.y - from.y);
+            const double length = std::hypot(dx, dy);
+            if (length > 0.5) {
+                const double extension = static_cast<double>(std::max(width, height));
+                const POINT to{through.x + static_cast<LONG>(dx * extension / length),
+                               through.y + static_cast<LONG>(dy * extension / length)};
+                HPEN polarPen = CreatePen(PS_DOT, 1, RGB(80, 225, 255));
+                SelectObject(dc, polarPen);
+                line(dc, from.x, from.y, to.x, to.y);
+                SelectObject(dc, stockPen);
+                DeleteObject(polarPen);
+                drawText(dc, through.x + 12, through.y - 22, L"POLAR 90°", RGB(80, 225, 255));
+            }
+        }
+    }
+
     if (mode == EditMode::View3D) drawViewCube(dc, width, draft.cursorScreen, camera);
 
-    const bool drafting = mode == EditMode::Draw2D || draft.drawingActive;
+    const bool drafting = commandShowsSnapFeedback(
+        draft.drawingActive, draft.workPlanePicking, draft.transformCommand, draft.transformPhase,
+        draft.arrayItemCount.has_value(), draft.offsetDistance.has_value());
     if (drafting && draft.anchor && draft.cursor) {
         const POINT a = projectPoint(*draft.anchor);
         const POINT b = projectPoint(*draft.cursor);
@@ -593,32 +716,79 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         HPEN snapPen = CreatePen(PS_SOLID, 2, RGB(90, 255, 145));
         SelectObject(dc, snapPen);
         HGDIOBJ oldBrush = SelectObject(dc, GetStockObject(NULL_BRUSH));
-        if (draft.snapType == SnapType::Midpoint) {
+        switch (snapMarkerSymbol(draft.snapType)) {
+        case SnapMarkerSymbol::Triangle: {
             POINT triangle[4]{{p.x, p.y - 7}, {p.x - 7, p.y + 6}, {p.x + 7, p.y + 6}, {p.x, p.y - 7}};
             Polyline(dc, triangle, 4);
-        } else if (draft.snapType == SnapType::Center || draft.snapType == SnapType::GeometricCenter) {
+            break;
+        }
+        case SnapMarkerSymbol::Circle:
+            Ellipse(dc, p.x - 7, p.y - 7, p.x + 8, p.y + 8);
+            break;
+        case SnapMarkerSymbol::CircleCross:
             Ellipse(dc, p.x - 7, p.y - 7, p.x + 8, p.y + 8);
             line(dc, p.x - 4, p.y, p.x + 5, p.y); line(dc, p.x, p.y - 4, p.x, p.y + 5);
-        } else if (draft.snapType == SnapType::Quadrant) {
+            break;
+        case SnapMarkerSymbol::CrossedCircle:
+            Ellipse(dc, p.x - 7, p.y - 7, p.x + 8, p.y + 8);
+            line(dc, p.x - 6, p.y - 6, p.x + 7, p.y + 7);
+            line(dc, p.x - 6, p.y + 6, p.x + 7, p.y - 7);
+            break;
+        case SnapMarkerSymbol::Diamond: {
             POINT diamond[5]{{p.x, p.y - 7}, {p.x + 7, p.y}, {p.x, p.y + 7},
                              {p.x - 7, p.y}, {p.x, p.y - 7}};
             Polyline(dc, diamond, 5);
-        } else if (draft.snapType == SnapType::Intersection ||
-                   draft.snapType == SnapType::ApparentIntersection) {
+            break;
+        }
+        case SnapMarkerSymbol::Cross:
             line(dc, p.x - 6, p.y - 6, p.x + 7, p.y + 7);
             line(dc, p.x - 6, p.y + 6, p.x + 7, p.y - 7);
-        } else if (draft.snapType == SnapType::Perpendicular) {
-            POINT rightAngle[4]{{p.x - 6, p.y + 6}, {p.x - 6, p.y - 5},
-                                {p.x + 5, p.y - 5}, {p.x + 5, p.y + 6}};
-            Polyline(dc, rightAngle, 4);
-        } else if (draft.snapType == SnapType::Tangent) {
+            break;
+        case SnapMarkerSymbol::BoxedCross:
+            Rectangle(dc, p.x - 7, p.y - 7, p.x + 8, p.y + 8);
+            line(dc, p.x - 5, p.y - 5, p.x + 6, p.y + 6);
+            line(dc, p.x - 5, p.y + 5, p.x + 6, p.y - 6);
+            break;
+        case SnapMarkerSymbol::ExtensionLine:
+            line(dc, p.x - 9, p.y, p.x - 5, p.y);
+            line(dc, p.x - 2, p.y, p.x + 3, p.y);
+            line(dc, p.x + 6, p.y, p.x + 10, p.y);
+            break;
+        case SnapMarkerSymbol::LinkedSquares:
+            Rectangle(dc, p.x - 7, p.y - 7, p.x + 2, p.y + 2);
+            Rectangle(dc, p.x - 1, p.y - 1, p.x + 8, p.y + 8);
+            break;
+        case SnapMarkerSymbol::RightAngle:
+            line(dc, p.x - 7, p.y + 7, p.x - 7, p.y - 5);
+            line(dc, p.x - 7, p.y - 5, p.x + 6, p.y - 5);
+            line(dc, p.x - 2, p.y - 5, p.x - 2, p.y + 1);
+            line(dc, p.x - 2, p.y + 1, p.x + 4, p.y + 1);
+            break;
+        case SnapMarkerSymbol::TangentCircle:
             Ellipse(dc, p.x - 6, p.y - 6, p.x + 7, p.y + 7);
-            line(dc, p.x - 8, p.y + 7, p.x + 8, p.y - 7);
-        } else if (draft.snapType == SnapType::Extension || draft.snapType == SnapType::Parallel) {
+            line(dc, p.x - 8, p.y - 7, p.x + 9, p.y - 7);
+            break;
+        case SnapMarkerSymbol::Hourglass: {
+            POINT hourglass[5]{{p.x - 7, p.y - 6}, {p.x + 7, p.y - 6},
+                               {p.x - 7, p.y + 6}, {p.x + 7, p.y + 6},
+                               {p.x - 7, p.y - 6}};
+            Polyline(dc, hourglass, 5);
+            break;
+        }
+        case SnapMarkerSymbol::ParallelLines:
+            line(dc, p.x - 8, p.y + 5, p.x, p.y - 5);
+            line(dc, p.x, p.y + 5, p.x + 8, p.y - 5);
+            break;
+        case SnapMarkerSymbol::GridCross:
             line(dc, p.x - 7, p.y, p.x + 8, p.y);
             line(dc, p.x, p.y - 7, p.x, p.y + 8);
-        } else {
+            Rectangle(dc, p.x - 3, p.y - 3, p.x + 4, p.y + 4);
+            break;
+        case SnapMarkerSymbol::Square:
             Rectangle(dc, p.x - 6, p.y - 6, p.x + 7, p.y + 7);
+            break;
+        case SnapMarkerSymbol::None:
+            break;
         }
         SelectObject(dc, oldBrush);
         SelectObject(dc, stockPen);

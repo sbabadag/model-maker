@@ -161,4 +161,19 @@ void WireframeModel::translate(const Vec3& offset) noexcept {
     if (analyticCenter_) *analyticCenter_ = *analyticCenter_ + offset;
 }
 
+void WireframeModel::rotateAroundZ(const Vec3& center, double radians) noexcept {
+    const double cosine = std::cos(radians);
+    const double sine = std::sin(radians);
+    const auto rotatePoint = [&](Vec3 point) {
+        const double x = point.x - center.x;
+        const double y = point.y - center.y;
+        point.x = center.x + x * cosine - y * sine;
+        point.y = center.y + x * sine + y * cosine;
+        return point;
+    };
+    for (auto& vertex : vertices_) vertex = rotatePoint(vertex);
+    if (insertionPoint_) *insertionPoint_ = rotatePoint(*insertionPoint_);
+    if (analyticCenter_) *analyticCenter_ = rotatePoint(*analyticCenter_);
+}
+
 } // namespace mm

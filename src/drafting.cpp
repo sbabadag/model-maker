@@ -228,7 +228,14 @@ std::vector<Candidate> objectCandidates(const Vec3& cursor, const Document& docu
     return candidates;
 }
 
-SnapResult choose(std::vector<Candidate> candidates, const Vec3& raw) {
+SnapResult choose(std::vector<Candidate> candidates, const Vec3& raw,
+                  const SnapTypeMask* enabledTypes = nullptr) {
+    if (enabledTypes) {
+        std::erase_if(candidates, [&](const Candidate& candidate) {
+            const auto index = static_cast<std::size_t>(candidate.type);
+            return index >= enabledTypes->size() || !(*enabledTypes)[index];
+        });
+    }
     const bool hasPrecise = std::any_of(candidates.begin(), candidates.end(), [](const Candidate& candidate) {
         return candidate.type != SnapType::Nearest && candidate.type != SnapType::Extension &&
                candidate.type != SnapType::Parallel;
@@ -286,18 +293,21 @@ std::optional<double> parseNumber(std::wstring_view text) noexcept {
 SnapResult SnapEngine::snap(const Vec3& cursor, const Document& document,
                             double objectTolerance, double gridSpacing,
                             bool objectSnapEnabled, bool gridSnapEnabled,
-                            std::optional<Vec3> referencePoint) {
+                            std::optional<Vec3> referencePoint,
+                            const SnapTypeMask* enabledTypes) {
     if (objectSnapEnabled) {
         const auto nearby = document.query2D({cursor.x - objectTolerance, cursor.y - objectTolerance, cursor.z},
                                              {cursor.x + objectTolerance, cursor.y + objectTolerance, cursor.z});
         auto result = choose(objectCandidates(cursor, document, objectTolerance,
-            [&](const Vec3& point) { return distance2D(cursor, point); }, referencePoint, &nearby), cursor);
+            [&](const Vec3& point) { return distance2D(cursor, point); }, referencePoint, &nearby),
+            cursor, enabledTypes);
         if (result.type == SnapType::None && nearby.size() != document.models().size()) {
             const double trackingRange = std::max(1.0, objectTolerance * 64.0);
             const auto tracked = document.query2D({cursor.x - trackingRange, cursor.y - trackingRange, cursor.z},
                                                   {cursor.x + trackingRange, cursor.y + trackingRange, cursor.z});
             result = choose(objectCandidates(cursor, document, objectTolerance,
-                [&](const Vec3& point) { return distance2D(cursor, point); }, referencePoint, &tracked), cursor);
+                [&](const Vec3& point) { return distance2D(cursor, point); }, referencePoint, &tracked),
+                cursor, enabledTypes);
         }
         if (result.type != SnapType::None) return result;
     }
@@ -313,19 +323,21 @@ SnapResult SnapEngine::snap3D(const Vec2& screenCursor, const Document& document
                               const Camera& camera, int viewportWidth, int viewportHeight,
                               double objectTolerancePixels, double gridSpacing, double workPlaneZ,
                               bool objectSnapEnabled, bool gridSnapEnabled,
-                              std::optional<Vec3> referencePoint) {
+                              std::optional<Vec3> referencePoint,
+                              const SnapTypeMask* enabledTypes) {
     return snap3D(screenCursor, document, camera, viewportWidth, viewportHeight,
                   objectTolerancePixels, gridSpacing,
                   WorkPlane{{0.0, 0.0, workPlaneZ}, {1.0, 0.0, 0.0},
                             {0.0, 1.0, 0.0}, {0.0, 0.0, 1.0}},
-                  objectSnapEnabled, gridSnapEnabled, referencePoint);
+                  objectSnapEnabled, gridSnapEnabled, referencePoint, enabledTypes);
 }
 
 SnapResult SnapEngine::snap3D(const Vec2& screenCursor, const Document& document,
                               const Camera& camera, int viewportWidth, int viewportHeight,
                               double objectTolerancePixels, double gridSpacing, const WorkPlane& workPlane,
                               bool objectSnapEnabled, bool gridSnapEnabled,
-                              std::optional<Vec3> referencePoint) {
+                              std::optional<Vec3> referencePoint,
+                              const SnapTypeMask* enabledTypes) {
     const auto raw = camera.unprojectToPlane(screenCursor, viewportWidth, viewportHeight, workPlane);
     if (!raw) return {workPlane.origin, SnapType::None, 0.0};
     if (objectSnapEnabled) {
@@ -374,7 +386,7 @@ SnapResult SnapEngine::snap3D(const Vec2& screenCursor, const Document& document
                                  objectTolerancePixels, metric);
             }
         }
-        auto result = choose(std::move(candidates), *raw);
+        auto result = choose(std::move(candidates), *raw, enabledTypes);
         if (result.type != SnapType::None) return result;
     }
     if (gridSnapEnabled && gridSpacing > 0.0) {
@@ -390,6 +402,12 @@ SnapResult SnapEngine::snap3D(const Vec2& screenCursor, const Document& document
 
 std::optional<Vec3> parseDynamicPoint(std::wstring_view text, std::optional<Vec3> origin,
                                       std::optional<Vec3> directionPoint) noexcept {
+    const bool relative = !text.empty() && text.front() == L'@';
+    if (relative) {
+        if (!origin) return std::nullopt;
+        text.remove_prefix(1);
+        if (text.empty()) return std::nullopt;
+    }
     const auto comma = text.find(L',');
     if (comma != std::wstring_view::npos) {
         const auto secondComma = text.find(L',', comma + 1);
@@ -400,9 +418,11 @@ std::optional<Vec3> parseDynamicPoint(std::wstring_view text, std::optional<Vec3
         if (secondComma != std::wstring_view::npos) {
             const auto z = parseNumber(text.substr(secondComma + 1));
             if (!z) return std::nullopt;
-            return Vec3{*x, *y, *z};
+            const Vec3 point{*x, *y, *z};
+            return relative ? std::optional<Vec3>{*origin + point} : std::optional<Vec3>{point};
         }
-        return Vec3{*x, *y, 0.0};
+        const Vec3 point{*x, *y, 0.0};
+        return relative ? std::optional<Vec3>{*origin + point} : std::optional<Vec3>{point};
     }
     const auto angleMark = text.find(L'<');
     if (angleMark != std::wstring_view::npos && origin) {
@@ -445,6 +465,26 @@ const wchar_t* snapTypeLabel(SnapType type) noexcept {
     }
 }
 
+EntityProperties resolveEntityStyle(
+    const EntityStyleSelection& selection,
+    const std::unordered_map<std::string, EntityProperties>& layers) {
+    EntityProperties properties;
+    properties.layer = selection.layer.empty() ? "0" : selection.layer;
+    const auto layer = layers.find(properties.layer);
+    if (layer != layers.end()) {
+        properties.effectiveColor = layer->second.effectiveColor;
+        properties.effectiveLineType = layer->second.effectiveLineType;
+        properties.effectiveLineWeight = layer->second.effectiveLineWeight;
+    }
+    if (selection.trueColor) {
+        properties.trueColor = selection.trueColor;
+        properties.effectiveColor = *selection.trueColor;
+    }
+    properties.lineType = selection.lineType.empty() ? "BYLAYER" : selection.lineType;
+    if (properties.lineType != "BYLAYER") properties.effectiveLineType = properties.lineType;
+    return properties;
+}
+
 const wchar_t* toolLabel(DrawTool tool) noexcept {
     switch (tool) {
     case DrawTool::Line: return L"LINE";
@@ -463,9 +503,12 @@ Vec3 constrainOrtho(const Vec3& anchor, const Vec3& cursor) noexcept {
         : Vec3{anchor.x, cursor.y, cursor.z};
 }
 
-SnapResult applyOrtho(const Vec3& anchor, SnapResult candidate) noexcept {
-    if (candidate.type == SnapType::None || candidate.type == SnapType::Grid)
+SnapResult applyOrtho(const Vec3& anchor, SnapResult candidate, bool preserveObjectSnaps) noexcept {
+    if (!preserveObjectSnaps || candidate.type == SnapType::None || candidate.type == SnapType::Grid) {
+        const Vec3 original = candidate.point;
         candidate.point = constrainOrtho(anchor, candidate.point);
+        if (!preserveObjectSnaps && candidate.point != original) candidate.type = SnapType::None;
+    }
     return candidate;
 }
 
@@ -496,11 +539,94 @@ Vec3 constrainOrtho3D(const Vec3& anchor, const Vec2& screenCursor, const Camera
     return bestPoint;
 }
 
+Vec3 constrainOrtho3D(const Vec3& anchor, const Vec2& screenCursor, const Camera& camera,
+                      int viewportWidth, int viewportHeight, const WorkPlane& workPlane,
+                      bool includePlaneNormal) noexcept {
+    const Vec2 origin = camera.project(anchor, viewportWidth, viewportHeight);
+    const Vec2 cursorDelta{screenCursor.x - origin.x, screenCursor.y - origin.y};
+    const std::array<Vec3, 3> axes{{workPlane.u, workPlane.v, workPlane.normal}};
+
+    Vec3 bestPoint = anchor;
+    double bestResidual = std::numeric_limits<double>::infinity();
+    const std::size_t axisCount = includePlaneNormal ? axes.size() : axes.size() - 1;
+    for (std::size_t index = 0; index < axisCount; ++index) {
+        const auto& axis = axes[index];
+        const Vec2 projected = camera.project(anchor + axis, viewportWidth, viewportHeight);
+        const Vec2 axisScreen{projected.x - origin.x, projected.y - origin.y};
+        const double lengthSquared = axisScreen.x * axisScreen.x + axisScreen.y * axisScreen.y;
+        if (lengthSquared <= epsilon) continue;
+
+        const double planeDistance = (cursorDelta.x * axisScreen.x + cursorDelta.y * axisScreen.y) /
+                                     lengthSquared;
+        const double residualX = cursorDelta.x - planeDistance * axisScreen.x;
+        const double residualY = cursorDelta.y - planeDistance * axisScreen.y;
+        const double residual = residualX * residualX + residualY * residualY;
+        if (residual < bestResidual) {
+            bestResidual = residual;
+            bestPoint = anchor + axis * planeDistance;
+        }
+    }
+    return bestPoint;
+}
+
 SnapResult applyOrtho3D(const Vec3& anchor, const Vec2& screenCursor, SnapResult candidate,
-                        const Camera& camera, int viewportWidth, int viewportHeight) noexcept {
-    if (candidate.type == SnapType::None || candidate.type == SnapType::Grid)
+                        const Camera& camera, int viewportWidth, int viewportHeight,
+                        bool preserveObjectSnaps) noexcept {
+    if (!preserveObjectSnaps || candidate.type == SnapType::None || candidate.type == SnapType::Grid) {
+        const Vec3 original = candidate.point;
         candidate.point = constrainOrtho3D(anchor, screenCursor, camera, viewportWidth, viewportHeight);
+        if (!preserveObjectSnaps && candidate.point != original) candidate.type = SnapType::None;
+    }
     return candidate;
+}
+
+SnapResult applyOrtho3D(const Vec3& anchor, const Vec2& screenCursor, SnapResult candidate,
+                        const Camera& camera, int viewportWidth, int viewportHeight,
+                        const WorkPlane& workPlane, bool includePlaneNormal,
+                        bool preserveObjectSnaps) noexcept {
+    if (!preserveObjectSnaps || candidate.type == SnapType::None || candidate.type == SnapType::Grid) {
+        const Vec3 original = candidate.point;
+        candidate.point = constrainOrtho3D(anchor, screenCursor, camera, viewportWidth,
+                                           viewportHeight, workPlane, includePlaneNormal);
+        if (!preserveObjectSnaps && candidate.point != original) candidate.type = SnapType::None;
+    }
+    return candidate;
+}
+
+SnapResult applyPolarTracking(const Vec3& anchor, SnapResult candidate, const WorkPlane& plane,
+                              double incrementDegrees, double apertureDegrees,
+                              bool preserveObjectSnaps) noexcept {
+    if (preserveObjectSnaps && candidate.type != SnapType::None && candidate.type != SnapType::Grid)
+        return candidate;
+    if (!std::isfinite(incrementDegrees) || incrementDegrees <= 0.0 ||
+        !std::isfinite(apertureDegrees) || apertureDegrees < 0.0)
+        return candidate;
+
+    const Vec3 delta = candidate.point - anchor;
+    const double alongU = delta.x * plane.u.x + delta.y * plane.u.y + delta.z * plane.u.z;
+    const double alongV = delta.x * plane.v.x + delta.y * plane.v.y + delta.z * plane.v.z;
+    const double radius = std::hypot(alongU, alongV);
+    if (radius <= epsilon) return candidate;
+
+    const double increment = incrementDegrees * std::numbers::pi / 180.0;
+    const double angle = std::atan2(alongV, alongU);
+    const double lockedAngle = std::round(angle / increment) * increment;
+    const double difference = std::abs(std::remainder(angle - lockedAngle, 2.0 * std::numbers::pi));
+    if (difference > apertureDegrees * std::numbers::pi / 180.0) return candidate;
+
+    const Vec3 original = candidate.point;
+    candidate.point = anchor + plane.u * (radius * std::cos(lockedAngle)) +
+                      plane.v * (radius * std::sin(lockedAngle));
+    if (!preserveObjectSnaps && candidate.point != original) candidate.type = SnapType::None;
+    return candidate;
+}
+
+SnapResult applyPolarTracking(const Vec3& anchor, SnapResult candidate,
+                              double incrementDegrees, double apertureDegrees,
+                              bool preserveObjectSnaps) noexcept {
+    return applyPolarTracking(anchor, candidate,
+                              WorkPlane{{}, {1.0, 0.0, 0.0}, {0.0, 1.0, 0.0}, {0.0, 0.0, 1.0}},
+                              incrementDegrees, apertureDegrees, preserveObjectSnaps);
 }
 
 namespace {
@@ -651,8 +777,324 @@ std::vector<std::size_t> selectModelsInRect3D(const Vec2& firstCorner, const Vec
     });
 }
 
+std::optional<WireframeModel> offsetModel2D(const WireframeModel& source, double distance,
+                                            const Vec3& sidePoint) {
+    if (!std::isfinite(distance) || distance <= epsilon) return std::nullopt;
+    if (source.analyticCenter() && source.analyticRadius()) {
+        const Vec3 center = *source.analyticCenter();
+        const double radius = *source.analyticRadius();
+        const bool outside = distance2D(sidePoint, center) >= radius;
+        const double offsetRadius = outside ? radius + distance : radius - distance;
+        if (offsetRadius <= epsilon) return std::nullopt;
+        WireframeModel result = WireframeModel::circle(center, offsetRadius,
+            std::max<std::size_t>(3, source.vertices().size()));
+        result.setProperties(source.properties());
+        return result;
+    }
+    if (source.vertices().size() != 2 ||
+        source.edges().size() != 1 || source.edges().front() != Edge{0, 1}) return std::nullopt;
+    const Vec3& from = source.vertices()[0];
+    const Vec3& to = source.vertices()[1];
+    const double dx = to.x - from.x;
+    const double dy = to.y - from.y;
+    const double length = std::hypot(dx, dy);
+    if (length <= epsilon) return std::nullopt;
+    const double side = dx * (sidePoint.y - from.y) - dy * (sidePoint.x - from.x);
+    if (std::abs(side) <= epsilon) return std::nullopt;
+    const double sign = side > 0.0 ? 1.0 : -1.0;
+    const Vec3 displacement{-dy * sign * distance / length,
+                             dx * sign * distance / length, 0.0};
+    WireframeModel result = WireframeModel::line(from + displacement, to + displacement);
+    result.setProperties(source.properties());
+    return result;
+}
+
+std::optional<WireframeModel> mirrorModel2D(const WireframeModel& source, const Vec3& axisStart,
+                                            const Vec3& axisEnd) {
+    const double axisX = axisEnd.x - axisStart.x;
+    const double axisY = axisEnd.y - axisStart.y;
+    const double lengthSquared = axisX * axisX + axisY * axisY;
+    if (lengthSquared <= epsilon * epsilon) return std::nullopt;
+    const auto reflect = [&](const Vec3& point) {
+        const double projection = ((point.x - axisStart.x) * axisX +
+                                   (point.y - axisStart.y) * axisY) / lengthSquared;
+        const double closestX = axisStart.x + projection * axisX;
+        const double closestY = axisStart.y + projection * axisY;
+        return Vec3{2.0 * closestX - point.x, 2.0 * closestY - point.y, point.z};
+    };
+
+    WireframeModel result;
+    if (source.isPointEntity() && !source.vertices().empty()) {
+        result = WireframeModel::point(reflect(source.vertices().front()));
+    } else if (source.analyticCenter() && source.analyticRadius()) {
+        result = WireframeModel::circle(reflect(*source.analyticCenter()), *source.analyticRadius(),
+                                        std::max<std::size_t>(3, source.vertices().size()));
+    } else {
+        std::vector<Vec3> vertices;
+        vertices.reserve(source.vertices().size());
+        for (const auto& vertex : source.vertices()) vertices.push_back(reflect(vertex));
+        result = WireframeModel(std::move(vertices), source.edges());
+    }
+    result.setProperties(source.properties());
+    return result;
+}
+
+std::vector<WireframeModel> linearArray2D(const WireframeModel& source, std::size_t itemCount,
+                                          const Vec3& spacing) {
+    std::vector<WireframeModel> copies;
+    if (itemCount < 2 || (std::abs(spacing.x) <= epsilon && std::abs(spacing.y) <= epsilon &&
+                          std::abs(spacing.z) <= epsilon)) return copies;
+    copies.reserve(itemCount - 1);
+    for (std::size_t index = 1; index < itemCount; ++index) {
+        copies.push_back(source);
+        copies.back().translate(spacing * static_cast<double>(index));
+    }
+    return copies;
+}
+
+std::vector<WireframeModel> polarArray2D(const WireframeModel& source, std::size_t itemCount,
+                                         const Vec3& center) {
+    std::vector<WireframeModel> copies;
+    if (itemCount < 2) return copies;
+    copies.reserve(itemCount - 1);
+    const double step = 2.0 * std::numbers::pi / static_cast<double>(itemCount);
+    for (std::size_t index = 1; index < itemCount; ++index) {
+        copies.push_back(source);
+        copies.back().rotateAroundZ(center, step * static_cast<double>(index));
+    }
+    return copies;
+}
+
+std::optional<std::vector<WireframeModel>> trimLine2D(
+    const WireframeModel& source, const std::vector<WireframeModel>& boundaries,
+    const Vec3& pickPoint) {
+    if (source.vertices().size() != 2 || source.edges().size() != 1 ||
+        source.edges().front() != Edge{0, 1}) return std::nullopt;
+    const Vec3& start = source.vertices()[0];
+    const Vec3& end = source.vertices()[1];
+    const Vec3 direction = end - start;
+    const double lengthSquared = dot2D(direction, direction);
+    if (lengthSquared <= epsilon * epsilon) return std::nullopt;
+
+    std::vector<double> cuts;
+    for (const auto& boundary : boundaries) {
+        for (const auto& edge : boundary.edges()) {
+            if (edge.from >= boundary.vertices().size() || edge.to >= boundary.vertices().size()) continue;
+            if (const auto intersection = segmentIntersection(start, end,
+                    boundary.vertices()[edge.from], boundary.vertices()[edge.to])) {
+                const double parameter = dot2D(*intersection - start, direction) / lengthSquared;
+                if (parameter > epsilon && parameter < 1.0 - epsilon)
+                    cuts.push_back(parameter);
+            }
+        }
+    }
+    if (cuts.empty()) return std::nullopt;
+    std::sort(cuts.begin(), cuts.end());
+    cuts.erase(std::unique(cuts.begin(), cuts.end(), [](double a, double b) {
+        return std::abs(a - b) <= epsilon;
+    }), cuts.end());
+    const double picked = dot2D(pickPoint - start, direction) / lengthSquared;
+    const auto makeSegment = [&](double from, double to) {
+        auto segment = WireframeModel::line(start + direction * from, start + direction * to);
+        segment.setProperties(source.properties());
+        return segment;
+    };
+
+    std::vector<WireframeModel> result;
+    const auto upper = std::upper_bound(cuts.begin(), cuts.end(), picked);
+    if (upper == cuts.begin()) {
+        result.push_back(makeSegment(cuts.front(), 1.0));
+    } else if (upper == cuts.end()) {
+        result.push_back(makeSegment(0.0, cuts.back()));
+    } else {
+        result.push_back(makeSegment(0.0, *std::prev(upper)));
+        result.push_back(makeSegment(*upper, 1.0));
+    }
+    return result;
+}
+
+std::optional<WireframeModel> extendLine2D(
+    const WireframeModel& source, const std::vector<WireframeModel>& boundaries,
+    const Vec3& pickPoint) {
+    if (source.vertices().size() != 2 || source.edges().size() != 1 ||
+        source.edges().front() != Edge{0, 1}) return std::nullopt;
+    const Vec3& start = source.vertices()[0];
+    const Vec3& end = source.vertices()[1];
+    const Vec3 direction = end - start;
+    const double lengthSquared = dot2D(direction, direction);
+    if (lengthSquared <= epsilon * epsilon) return std::nullopt;
+    const double picked = dot2D(pickPoint - start, direction) / lengthSquared;
+    const bool extendStart = picked <= 0.5;
+    std::optional<double> best;
+
+    for (const auto& boundary : boundaries) {
+        for (const auto& edge : boundary.edges()) {
+            if (edge.from >= boundary.vertices().size() || edge.to >= boundary.vertices().size()) continue;
+            const Vec3& first = boundary.vertices()[edge.from];
+            const Vec3& second = boundary.vertices()[edge.to];
+            const double sx = second.x - first.x;
+            const double sy = second.y - first.y;
+            const double denominator = direction.x * sy - direction.y * sx;
+            if (std::abs(denominator) <= epsilon) continue;
+            const double dx = first.x - start.x;
+            const double dy = first.y - start.y;
+            const double targetParameter = (dx * sy - dy * sx) / denominator;
+            const double boundaryParameter = (dx * direction.y - dy * direction.x) / denominator;
+            if (boundaryParameter < -epsilon || boundaryParameter > 1.0 + epsilon) continue;
+            const double targetZ = start.z + targetParameter * direction.z;
+            const double boundaryZ = first.z + boundaryParameter * (second.z - first.z);
+            if (std::abs(targetZ - boundaryZ) > 1e-7) continue;
+            if (extendStart && targetParameter < -epsilon &&
+                (!best || targetParameter > *best)) best = targetParameter;
+            if (!extendStart && targetParameter > 1.0 + epsilon &&
+                (!best || targetParameter < *best)) best = targetParameter;
+        }
+    }
+    if (!best) return std::nullopt;
+    auto result = extendStart
+        ? WireframeModel::line(start + direction * *best, end)
+        : WireframeModel::line(start, start + direction * *best);
+    result.setProperties(source.properties());
+    return result;
+}
+
+namespace {
+Vec3 toPlaneCoordinates(const Vec3& point, const WorkPlane& plane) noexcept {
+    const Vec3 delta = point - plane.origin;
+    const Vec2 planar = plane.toPlane(point);
+    return {planar.x, planar.y,
+            delta.x * plane.normal.x + delta.y * plane.normal.y + delta.z * plane.normal.z};
+}
+
+Vec3 fromPlaneCoordinates(const Vec3& point, const WorkPlane& plane) noexcept {
+    return plane.origin + plane.u * point.x + plane.v * point.y + plane.normal * point.z;
+}
+
+WireframeModel modelToPlaneCoordinates(const WireframeModel& source, const WorkPlane& plane) {
+    WireframeModel result;
+    if (source.isPointEntity() && !source.vertices().empty()) {
+        result = WireframeModel::point(toPlaneCoordinates(source.vertices().front(), plane));
+    } else if (source.analyticCenter() && source.analyticRadius()) {
+        result = WireframeModel::circle(toPlaneCoordinates(*source.analyticCenter(), plane),
+                                        *source.analyticRadius(),
+                                        std::max<std::size_t>(3, source.vertices().size()));
+    } else {
+        std::vector<Vec3> vertices;
+        vertices.reserve(source.vertices().size());
+        for (const auto& vertex : source.vertices())
+            vertices.push_back(toPlaneCoordinates(vertex, plane));
+        result = WireframeModel(std::move(vertices), source.edges());
+    }
+    result.setProperties(source.properties());
+    return result;
+}
+
+WireframeModel modelFromPlaneCoordinates(const WireframeModel& source, const WorkPlane& plane) {
+    WireframeModel result;
+    if (source.isPointEntity() && !source.vertices().empty()) {
+        result = WireframeModel::point(fromPlaneCoordinates(source.vertices().front(), plane));
+    } else if (source.analyticCenter() && source.analyticRadius()) {
+        const Vec3 localCenter = *source.analyticCenter();
+        WorkPlane shiftedPlane = plane;
+        shiftedPlane.origin = shiftedPlane.origin + shiftedPlane.normal * localCenter.z;
+        result = WireframeModel::circleOnPlane(shiftedPlane, {localCenter.x, localCenter.y},
+                                               *source.analyticRadius(),
+                                               std::max<std::size_t>(3, source.vertices().size()));
+    } else {
+        std::vector<Vec3> vertices;
+        vertices.reserve(source.vertices().size());
+        for (const auto& vertex : source.vertices())
+            vertices.push_back(fromPlaneCoordinates(vertex, plane));
+        result = WireframeModel(std::move(vertices), source.edges());
+    }
+    result.setProperties(source.properties());
+    return result;
+}
+
+std::vector<WireframeModel> modelsToPlaneCoordinates(const std::vector<WireframeModel>& source,
+                                                     const WorkPlane& plane) {
+    std::vector<WireframeModel> result;
+    result.reserve(source.size());
+    for (const auto& model : source) result.push_back(modelToPlaneCoordinates(model, plane));
+    return result;
+}
+} // namespace
+
+std::optional<WireframeModel> offsetModelOnPlane(const WireframeModel& source, double distance,
+                                                 const Vec3& sidePoint, const WorkPlane& plane) {
+    const auto local = offsetModel2D(modelToPlaneCoordinates(source, plane), distance,
+                                     toPlaneCoordinates(sidePoint, plane));
+    if (!local) return std::nullopt;
+    return modelFromPlaneCoordinates(*local, plane);
+}
+
+std::optional<WireframeModel> mirrorModelOnPlane(const WireframeModel& source,
+                                                 const Vec3& axisStart, const Vec3& axisEnd,
+                                                 const WorkPlane& plane) {
+    const auto local = mirrorModel2D(modelToPlaneCoordinates(source, plane),
+                                     toPlaneCoordinates(axisStart, plane),
+                                     toPlaneCoordinates(axisEnd, plane));
+    if (!local) return std::nullopt;
+    return modelFromPlaneCoordinates(*local, plane);
+}
+
+std::vector<WireframeModel> polarArrayOnPlane(const WireframeModel& source, std::size_t itemCount,
+                                              const Vec3& center, const WorkPlane& plane) {
+    auto localCopies = polarArray2D(modelToPlaneCoordinates(source, plane), itemCount,
+                                    toPlaneCoordinates(center, plane));
+    std::vector<WireframeModel> result;
+    result.reserve(localCopies.size());
+    for (const auto& copy : localCopies) result.push_back(modelFromPlaneCoordinates(copy, plane));
+    return result;
+}
+
+std::optional<std::vector<WireframeModel>> trimLineOnPlane(
+    const WireframeModel& source, const std::vector<WireframeModel>& boundaries,
+    const Vec3& pickPoint, const WorkPlane& plane) {
+    const auto local = trimLine2D(modelToPlaneCoordinates(source, plane),
+                                  modelsToPlaneCoordinates(boundaries, plane),
+                                  toPlaneCoordinates(pickPoint, plane));
+    if (!local) return std::nullopt;
+    std::vector<WireframeModel> result;
+    result.reserve(local->size());
+    for (const auto& segment : *local) result.push_back(modelFromPlaneCoordinates(segment, plane));
+    return result;
+}
+
+std::optional<WireframeModel> extendLineOnPlane(
+    const WireframeModel& source, const std::vector<WireframeModel>& boundaries,
+    const Vec3& pickPoint, const WorkPlane& plane) {
+    const auto local = extendLine2D(modelToPlaneCoordinates(source, plane),
+                                    modelsToPlaneCoordinates(boundaries, plane),
+                                    toPlaneCoordinates(pickPoint, plane));
+    if (!local) return std::nullopt;
+    return modelFromPlaneCoordinates(*local, plane);
+}
+
 bool shouldEvaluateSnapping(bool selectingEntities, bool zoomPhase, bool cameraNavigating) noexcept {
     return !selectingEntities && !zoomPhase && !cameraNavigating;
+}
+
+SnapMarkerSymbol snapMarkerSymbol(SnapType type) noexcept {
+    switch (type) {
+    case SnapType::None: return SnapMarkerSymbol::None;
+    case SnapType::Grid: return SnapMarkerSymbol::GridCross;
+    case SnapType::Endpoint: return SnapMarkerSymbol::Square;
+    case SnapType::Midpoint: return SnapMarkerSymbol::Triangle;
+    case SnapType::Center: return SnapMarkerSymbol::Circle;
+    case SnapType::GeometricCenter: return SnapMarkerSymbol::CircleCross;
+    case SnapType::Node: return SnapMarkerSymbol::CrossedCircle;
+    case SnapType::Quadrant: return SnapMarkerSymbol::Diamond;
+    case SnapType::Intersection: return SnapMarkerSymbol::Cross;
+    case SnapType::ApparentIntersection: return SnapMarkerSymbol::BoxedCross;
+    case SnapType::Extension: return SnapMarkerSymbol::ExtensionLine;
+    case SnapType::Insertion: return SnapMarkerSymbol::LinkedSquares;
+    case SnapType::Perpendicular: return SnapMarkerSymbol::RightAngle;
+    case SnapType::Tangent: return SnapMarkerSymbol::TangentCircle;
+    case SnapType::Nearest: return SnapMarkerSymbol::Hourglass;
+    case SnapType::Parallel: return SnapMarkerSymbol::ParallelLines;
+    }
+    return SnapMarkerSymbol::None;
 }
 
 } // namespace mm

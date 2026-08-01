@@ -8,9 +8,9 @@ std::vector<int> RibbonLayout::commands(RibbonTab tab) {
     switch (tab) {
     case RibbonTab::File: return {100, 101, 102, 103, 104};
     case RibbonTab::Drawing: return {200, 201, 202, 203};
-    case RibbonTab::Modify: return {500, 501};
+    case RibbonTab::Modify: return {509, 500, 501, 502, 503, 504, 505, 506, 507, 508};
     case RibbonTab::View: return {300, 301, 302, 303, 304, 305, 306};
-    case RibbonTab::Aids: return {400, 401, 402};
+    case RibbonTab::Aids: return {400, 401, 402, 403, 404};
     }
     return {};
 }

@@ -185,7 +185,7 @@ EntityProperties readLayerProperties(const std::vector<Pair>& values) {
         layer.trueColor = static_cast<std::uint32_t>(*trueColor) & 0xFFFFFFu;
     layer.lineWeight = optionalInteger(values, 370).value_or(-3);
     layer.effectiveColor = layer.trueColor.value_or(aciColor(layer.colorIndex));
-    layer.effectiveLineWeight = layer.lineWeight >= 0 ? layer.lineWeight : 25;
+    layer.effectiveLineWeight = layer.lineWeight >= 0 ? layer.lineWeight : 0;
     layer.effectiveLineType = layer.lineType;
     return layer;
 }
@@ -210,7 +210,7 @@ EntityProperties readEntityProperties(const std::vector<Pair>& values, const Lay
     else if (result.colorIndex > 0 && result.colorIndex < 256) result.effectiveColor = aciColor(result.colorIndex);
     else result.effectiveColor = layer ? layer->effectiveColor : aciColor(7);
     result.effectiveLineWeight = result.lineWeight >= 0 ? result.lineWeight
-                                : layer ? layer->effectiveLineWeight : 25;
+                                : layer ? layer->effectiveLineWeight : 0;
     result.effectiveLineType = (result.lineType != "BYLAYER" && result.lineType != "BYBLOCK")
                              ? result.lineType
                              : layer ? layer->effectiveLineType : "CONTINUOUS";
@@ -516,7 +516,8 @@ void expandInsert(Document& document, const std::vector<Pair>& sourceFields, boo
     if (depth > 32) throw std::runtime_error("DXF nested INSERT depth exceeded");
     const std::string name = blockKey(text(sourceFields, 2));
     const auto found = blocks.find(name);
-    if (found == blocks.end()) return;
+    if (found == blocks.end())
+        throw std::runtime_error("DXF INSERT references undefined block: " + name);
     std::vector<Pair> dimensionFields;
     const std::vector<Pair>* insertFields = &sourceFields;
     if (dimension) {

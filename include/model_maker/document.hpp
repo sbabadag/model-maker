@@ -23,6 +23,8 @@ public:
     void reserveModels(std::size_t count);
     void moveModels(const std::vector<std::size_t>& indices, const Vec3& displacement);
     void copyModels(const std::vector<std::size_t>& indices, const Vec3& displacement);
+    void deleteModels(const std::vector<std::size_t>& indices);
+    void replaceModel(std::size_t index, std::vector<WireframeModel> replacements);
     void clear() noexcept;
 
     const std::vector<WireframeModel>& models() const noexcept;
