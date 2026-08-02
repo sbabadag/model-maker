@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <array>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -41,6 +42,8 @@ struct Edge {
     bool operator==(const Edge& other) const noexcept = default;
 };
 
+using Face = std::vector<std::size_t>;
+
 struct EntityProperties {
     std::string layer{"0"};
     std::string lineType{"BYLAYER"};
@@ -60,10 +63,12 @@ struct EntityProperties {
 class WireframeModel {
 public:
     WireframeModel() = default;
-    WireframeModel(std::vector<Vec3> vertices, std::vector<Edge> edges);
+    WireframeModel(std::vector<Vec3> vertices, std::vector<Edge> edges,
+                   std::vector<Face> faces = {});
 
     static WireframeModel line(Vec3 from, Vec3 to);
     static WireframeModel point(Vec3 position);
+    static WireframeModel face3D(const std::array<Vec3, 4>& corners);
     static WireframeModel rectangle(Vec3 firstCorner, Vec3 oppositeCorner);
     static WireframeModel circle(Vec3 center, double radius, std::size_t segments = 64);
     static WireframeModel rectangleOnPlane(const WorkPlane& plane, Vec2 firstCorner, Vec2 oppositeCorner);
@@ -74,7 +79,9 @@ public:
 
     const std::vector<Vec3>& vertices() const noexcept;
     const std::vector<Edge>& edges() const noexcept;
+    const std::vector<Face>& faces() const noexcept;
     bool isPointEntity() const noexcept;
+    bool isFace3D() const noexcept;
     std::optional<Vec3> insertionPoint() const noexcept;
     std::optional<Vec3> analyticCenter() const noexcept;
     std::optional<double> analyticRadius() const noexcept;
@@ -86,7 +93,9 @@ public:
 private:
     std::vector<Vec3> vertices_;
     std::vector<Edge> edges_;
+    std::vector<Face> faces_;
     bool pointEntity_{};
+    bool face3D_{};
     std::optional<Vec3> insertionPoint_;
     std::optional<Vec3> analyticCenter_;
     std::optional<double> analyticRadius_;

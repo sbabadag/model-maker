@@ -1,4 +1,5 @@
-"""Verify the explicit 3D-view switch and three-point work-plane GUI flow."""
+"""Verify a gray borderless work-plane grid with local XYZ arrows at its base point."""
+import argparse
 import ctypes
 import math
 import subprocess
@@ -7,6 +8,7 @@ from ctypes import wintypes
 from pathlib import Path
 
 from PIL import ImageChops
+from smoke_mirror_snap import find_process_window
 from smoke_view_cube import capture
 
 user32 = ctypes.windll.user32
@@ -17,15 +19,6 @@ BM_CLICK = 0x00F5
 MK_LBUTTON = 0x0001
 SW_MAXIMIZE = 3
 
-
-def find_window(timeout: float = 5.0) -> int:
-    deadline = time.time() + timeout
-    while time.time() < deadline:
-        hwnd = user32.FindWindowW("ModelMakerWindow", None)
-        if hwnd:
-            return hwnd
-        time.sleep(0.05)
-    raise RuntimeError("Model Maker window was not found")
 
 
 def click(hwnd: int, x: int, y: int) -> None:
@@ -64,11 +57,15 @@ def project(point: tuple[float, float, float], width: int, height: int) -> tuple
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--keep-open", action="store_true")
+    args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
     process = subprocess.Popen([str(root / "build" / "model-maker.exe")])
     window = 0
+    keep = False
     try:
-        window = find_window()
+        window = find_process_window(process.pid)
         user32.ShowWindow(window, SW_MAXIMIZE)
         time.sleep(0.2)
         canvas = user32.FindWindowExW(window, 0, "ModelMakerCanvas", None)
@@ -108,21 +105,39 @@ def main() -> None:
         scene_box = (40, 40, max(41, width - 190), height - 30)
         if ImageChops.difference(before.crop(scene_box), after.crop(scene_box)).getbbox() is None:
             raise AssertionError("The visible grid did not reorient to the three-point work plane")
-        cyan = sum(1 for r, g, b in after.get_flattened_data()
-                   if g > 145 and b > 150 and r < 115)
-        if cyan < 80:
-            raise AssertionError(f"Active work-plane grid/border is not visibly highlighted: cyan={cyan}")
+        scene = after.crop(scene_box)
+        pixels = list(scene.get_flattened_data())
+        gray = sum(1 for r, g, b in pixels if 48 <= r <= 90 and abs(r - g) <= 8 and abs(g - b) <= 8)
+        cyan_border = sum(1 for r, g, b in pixels if r < 110 and g > 165 and b > 175)
+        before_cyan = sum(1 for r, g, b in before.crop(scene_box).get_flattened_data()
+                          if r < 110 and g > 165 and b > 175)
+        red_axis = sum(1 for r, g, b in pixels if r > 175 and g < 125 and b < 150)
+        green_axis = sum(1 for r, g, b in pixels if g > 170 and r < 125 and b < 165)
+        blue_axis = sum(1 for r, g, b in pixels if b > 190 and r < 130 and g < 170)
+        if gray < 1000:
+            raise AssertionError(f"Work-plane grid is not visibly gray: gray={gray}")
+        if cyan_border > before_cyan + 20:
+            raise AssertionError(
+                f"Legacy cyan work-plane border/label added pixels: before={before_cyan}, after={cyan_border}")
+        if min(red_axis, green_axis, blue_axis) < 10:
+            raise AssertionError(
+                f"Local XYZ arrows are not all visible: red={red_axis}, green={green_axis}, blue={blue_axis}")
 
         capture(window, root / "build" / "work-plane-maximized-window.png")
-        print(f"Work-plane GUI smoke passed ({width}x{height}): 3D switch, 3-point command, and reoriented visible grid; cyan={cyan}")
+        print(f"Work-plane GUI smoke passed ({width}x{height}): gray={gray}, cyan={before_cyan}->{cyan_border}, "
+              f"XYZ={red_axis}/{green_axis}/{blue_axis}; grid reoriented without an outer contour.")
+        if args.keep_open:
+            keep = True
+            print(f"Verified maximized work-plane instance left open; PID={process.pid}.")
     finally:
-        if window:
+        if window and not keep:
             user32.PostMessageW(window, WM_CLOSE, 0, 0)
-        try:
-            process.wait(timeout=3)
-        except subprocess.TimeoutExpired:
-            process.terminate()
-            process.wait(timeout=3)
+        if not keep:
+            try:
+                process.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                process.terminate()
+                process.wait(timeout=3)
 
 
 if __name__ == "__main__":

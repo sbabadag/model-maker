@@ -351,9 +351,12 @@ SnapResult SnapEngine::snap3D(const Vec2& screenCursor, const Document& document
                                            referencePoint, &nearby);
         struct ProjectedEdge { Vec3 a; Vec3 b; Vec2 pa; Vec2 pb; };
         std::vector<ProjectedEdge> edges;
-        std::size_t drawingEdgeCount{};
-        for (const auto& model : document.models()) drawingEdgeCount += model.edges().size();
         constexpr std::size_t apparentIntersectionEdgeLimit = 512;
+        std::size_t drawingEdgeCount{};
+        for (const auto& model : document.models()) {
+            drawingEdgeCount += model.edges().size();
+            if (drawingEdgeCount > apparentIntersectionEdgeLimit) break;
+        }
         if (drawingEdgeCount <= apparentIntersectionEdgeLimit) {
             for (const auto& model : document.models()) {
                 for (const auto& edge : model.edges()) {
@@ -491,6 +494,7 @@ const wchar_t* toolLabel(DrawTool tool) noexcept {
     case DrawTool::Polyline: return L"POLYLINE";
     case DrawTool::Rectangle: return L"RECTANGLE";
     case DrawTool::Circle: return L"CIRCLE";
+    case DrawTool::Face3D: return L"3DFACE";
     }
     return L"";
 }
@@ -629,6 +633,88 @@ SnapResult applyPolarTracking(const Vec3& anchor, SnapResult candidate,
                               incrementDegrees, apertureDegrees, preserveObjectSnaps);
 }
 
+TemporaryTrackingResult resolveTemporaryPointTracking(
+    SnapResult candidate, const std::vector<Vec3>& acquiredPoints, const WorkPlane& plane,
+    double tolerance) noexcept {
+    TemporaryTrackingResult tracking;
+    tracking.result = candidate;
+    const bool explicitObjectSnap = candidate.type != SnapType::None && candidate.type != SnapType::Grid;
+    double bestDistance = std::max(0.0, tolerance);
+    const auto normalDistance = [&](const Vec3& point) {
+        const Vec3 relative = point - plane.origin;
+        return relative.x * plane.normal.x + relative.y * plane.normal.y + relative.z * plane.normal.z;
+    };
+    const Vec2 cursorLocal = plane.toPlane(candidate.point);
+    const double cursorNormal = normalDistance(candidate.point);
+    for (std::size_t first = 0; first < acquiredPoints.size(); ++first) {
+        for (std::size_t second = first + 1; second < acquiredPoints.size(); ++second) {
+            tracking.guides.push_back({acquiredPoints[first], acquiredPoints[second]});
+            const Vec3 midpoint = (acquiredPoints[first] + acquiredPoints[second]) * 0.5;
+            const Vec2 midpointLocal = plane.toPlane(midpoint);
+            if (!explicitObjectSnap) {
+                const double distance = std::hypot(cursorLocal.x - midpointLocal.x,
+                                                   cursorLocal.y - midpointLocal.y);
+                if (distance <= bestDistance) {
+                    bestDistance = distance;
+                    tracking.result = {midpoint, SnapType::Midpoint, distance};
+                    tracking.locked = true;
+                }
+            }
+
+            const Vec2 firstLocal = plane.toPlane(acquiredPoints[first]);
+            const Vec2 secondLocal = plane.toPlane(acquiredPoints[second]);
+            const double firstNormal = normalDistance(acquiredPoints[first]);
+            const double secondNormal = normalDistance(acquiredPoints[second]);
+            if (std::abs(firstNormal - secondNormal) > std::max(tolerance, epsilon)) continue;
+            const double normal = (firstNormal + secondNormal) * 0.5;
+            const std::array<Vec3, 2> corners{
+                plane.fromPlane({firstLocal.x, secondLocal.y}) + plane.normal * normal,
+                plane.fromPlane({secondLocal.x, firstLocal.y}) + plane.normal * normal};
+            for (const auto& corner : corners) {
+                if (std::find(acquiredPoints.begin(), acquiredPoints.end(), corner) != acquiredPoints.end())
+                    continue;
+                if (std::find(tracking.derivedPoints.begin(), tracking.derivedPoints.end(), corner) ==
+                    tracking.derivedPoints.end())
+                    tracking.derivedPoints.push_back(corner);
+                if (explicitObjectSnap) continue;
+                const Vec2 cornerLocal = plane.toPlane(corner);
+                const double distance = std::hypot(
+                    std::hypot(cursorLocal.x - cornerLocal.x, cursorLocal.y - cornerLocal.y),
+                    cursorNormal - normal);
+                if (distance <= bestDistance) {
+                    bestDistance = distance;
+                    tracking.result = {corner, SnapType::Intersection, distance};
+                    tracking.locked = true;
+                }
+            }
+        }
+    }
+    if (!explicitObjectSnap && !tracking.locked) {
+        std::optional<TrackingGuide> activeAxisGuide;
+        for (const auto& acquired : acquiredPoints) {
+            const Vec2 acquiredLocal = plane.toPlane(acquired);
+            const double acquiredNormal = normalDistance(acquired);
+            const std::array<Vec3, 2> projected{
+                plane.fromPlane({cursorLocal.x, acquiredLocal.y}) + plane.normal * acquiredNormal,
+                plane.fromPlane({acquiredLocal.x, cursorLocal.y}) + plane.normal * acquiredNormal};
+            for (const auto& point : projected) {
+                const Vec2 local = plane.toPlane(point);
+                const double distance = std::hypot(
+                    std::hypot(cursorLocal.x - local.x, cursorLocal.y - local.y),
+                    cursorNormal - acquiredNormal);
+                if (distance < bestDistance - epsilon) {
+                    bestDistance = distance;
+                    tracking.result = {point, SnapType::Extension, distance};
+                    tracking.locked = true;
+                    activeAxisGuide = TrackingGuide{acquired, point};
+                }
+            }
+        }
+        if (activeAxisGuide) tracking.guides.push_back(*activeAxisGuide);
+    }
+    return tracking;
+}
+
 namespace {
 double pointSegmentDistance(const Vec2& point, const Vec2& from, const Vec2& to) noexcept {
     const double dx = to.x - from.x;
@@ -743,6 +829,34 @@ std::vector<std::size_t> selectModelsInRect(const Vec2& firstCorner, const Vec2&
     }
     return selected;
 }
+
+template <typename Project>
+std::optional<Vec3> crossingSelectionPickPoint(const WireframeModel& model,
+                                               const Vec2& firstCorner, const Vec2& secondCorner,
+                                               Project project) {
+    if (model.vertices().size() != 2 || model.edges().size() != 1 ||
+        model.edges().front() != Edge{0, 1}) return std::nullopt;
+    const SelectionBounds bounds = selectionBounds(firstCorner, secondCorner);
+    const Vec3& start = model.vertices()[0];
+    const Vec3& end = model.vertices()[1];
+    const Vec2 a = project(start);
+    const Vec2 b = project(end);
+    const double dx = b.x - a.x;
+    const double dy = b.y - a.y;
+    double lower = 0.0;
+    double upper = 1.0;
+    const auto clip = [&](double p, double q) {
+        if (std::abs(p) <= epsilon) return q >= -epsilon;
+        const double ratio = q / p;
+        if (p < 0.0) lower = std::max(lower, ratio);
+        else upper = std::min(upper, ratio);
+        return lower <= upper + epsilon;
+    };
+    if (!clip(-dx, a.x - bounds.left) || !clip(dx, bounds.right - a.x) ||
+        !clip(-dy, a.y - bounds.top) || !clip(dy, bounds.bottom - a.y)) return std::nullopt;
+    const double parameter = std::clamp((lower + upper) * 0.5, 0.0, 1.0);
+    return start + (end - start) * parameter;
+}
 }
 
 std::optional<std::size_t> hitTestModel2D(const Vec3& cursor, const Document& document,
@@ -773,6 +887,22 @@ std::vector<std::size_t> selectModelsInRect3D(const Vec2& firstCorner, const Vec
                                               const Document& document, const Camera& camera,
                                               int viewportWidth, int viewportHeight, bool crossing) {
     return selectModelsInRect(firstCorner, secondCorner, document, crossing, [&](const Vec3& point) {
+        return camera.project(point, viewportWidth, viewportHeight);
+    });
+}
+
+std::optional<Vec3> crossingSelectionPickPoint2D(const WireframeModel& model,
+                                                 const Vec3& firstCorner, const Vec3& secondCorner) {
+    return crossingSelectionPickPoint(model, {firstCorner.x, firstCorner.y},
+                                      {secondCorner.x, secondCorner.y},
+                                      [](const Vec3& point) { return Vec2{point.x, point.y}; });
+}
+
+std::optional<Vec3> crossingSelectionPickPoint3D(const WireframeModel& model,
+                                                 const Vec2& firstCorner, const Vec2& secondCorner,
+                                                 const Camera& camera, int viewportWidth,
+                                                 int viewportHeight) {
+    return crossingSelectionPickPoint(model, firstCorner, secondCorner, [&](const Vec3& point) {
         return camera.project(point, viewportWidth, viewportHeight);
     });
 }
@@ -826,6 +956,9 @@ std::optional<WireframeModel> mirrorModel2D(const WireframeModel& source, const 
     WireframeModel result;
     if (source.isPointEntity() && !source.vertices().empty()) {
         result = WireframeModel::point(reflect(source.vertices().front()));
+    } else if (source.isFace3D() && source.vertices().size() == 4) {
+        result = WireframeModel::face3D({reflect(source.vertices()[0]), reflect(source.vertices()[1]),
+                                         reflect(source.vertices()[2]), reflect(source.vertices()[3])});
     } else if (source.analyticCenter() && source.analyticRadius()) {
         result = WireframeModel::circle(reflect(*source.analyticCenter()), *source.analyticRadius(),
                                         std::max<std::size_t>(3, source.vertices().size()));
@@ -833,7 +966,7 @@ std::optional<WireframeModel> mirrorModel2D(const WireframeModel& source, const 
         std::vector<Vec3> vertices;
         vertices.reserve(source.vertices().size());
         for (const auto& vertex : source.vertices()) vertices.push_back(reflect(vertex));
-        result = WireframeModel(std::move(vertices), source.edges());
+        result = WireframeModel(std::move(vertices), source.edges(), source.faces());
     }
     result.setProperties(source.properties());
     return result;
@@ -974,6 +1107,11 @@ WireframeModel modelToPlaneCoordinates(const WireframeModel& source, const WorkP
     WireframeModel result;
     if (source.isPointEntity() && !source.vertices().empty()) {
         result = WireframeModel::point(toPlaneCoordinates(source.vertices().front(), plane));
+    } else if (source.isFace3D() && source.vertices().size() == 4) {
+        result = WireframeModel::face3D({toPlaneCoordinates(source.vertices()[0], plane),
+                                         toPlaneCoordinates(source.vertices()[1], plane),
+                                         toPlaneCoordinates(source.vertices()[2], plane),
+                                         toPlaneCoordinates(source.vertices()[3], plane)});
     } else if (source.analyticCenter() && source.analyticRadius()) {
         result = WireframeModel::circle(toPlaneCoordinates(*source.analyticCenter(), plane),
                                         *source.analyticRadius(),
@@ -983,7 +1121,7 @@ WireframeModel modelToPlaneCoordinates(const WireframeModel& source, const WorkP
         vertices.reserve(source.vertices().size());
         for (const auto& vertex : source.vertices())
             vertices.push_back(toPlaneCoordinates(vertex, plane));
-        result = WireframeModel(std::move(vertices), source.edges());
+        result = WireframeModel(std::move(vertices), source.edges(), source.faces());
     }
     result.setProperties(source.properties());
     return result;
@@ -993,6 +1131,11 @@ WireframeModel modelFromPlaneCoordinates(const WireframeModel& source, const Wor
     WireframeModel result;
     if (source.isPointEntity() && !source.vertices().empty()) {
         result = WireframeModel::point(fromPlaneCoordinates(source.vertices().front(), plane));
+    } else if (source.isFace3D() && source.vertices().size() == 4) {
+        result = WireframeModel::face3D({fromPlaneCoordinates(source.vertices()[0], plane),
+                                         fromPlaneCoordinates(source.vertices()[1], plane),
+                                         fromPlaneCoordinates(source.vertices()[2], plane),
+                                         fromPlaneCoordinates(source.vertices()[3], plane)});
     } else if (source.analyticCenter() && source.analyticRadius()) {
         const Vec3 localCenter = *source.analyticCenter();
         WorkPlane shiftedPlane = plane;
@@ -1005,7 +1148,7 @@ WireframeModel modelFromPlaneCoordinates(const WireframeModel& source, const Wor
         vertices.reserve(source.vertices().size());
         for (const auto& vertex : source.vertices())
             vertices.push_back(fromPlaneCoordinates(vertex, plane));
-        result = WireframeModel(std::move(vertices), source.edges());
+        result = WireframeModel(std::move(vertices), source.edges(), source.faces());
     }
     result.setProperties(source.properties());
     return result;
@@ -1069,6 +1212,107 @@ std::optional<WireframeModel> extendLineOnPlane(
                                     toPlaneCoordinates(pickPoint, plane));
     if (!local) return std::nullopt;
     return modelFromPlaneCoordinates(*local, plane);
+}
+
+std::optional<FilletResult> filletLinesOnPlane(
+    const WireframeModel& first, const Vec3& firstPick,
+    const WireframeModel& second, const Vec3& secondPick,
+    double radius, const WorkPlane& plane) {
+    if (radius <= epsilon || first.vertices().size() != 2 || first.edges().size() != 1 ||
+        second.vertices().size() != 2 || second.edges().size() != 1)
+        return std::nullopt;
+
+    const auto firstLocal = modelToPlaneCoordinates(first, plane);
+    const auto secondLocal = modelToPlaneCoordinates(second, plane);
+    const Vec3 a = firstLocal.vertices()[0];
+    const Vec3 b = firstLocal.vertices()[1];
+    const Vec3 c = secondLocal.vertices()[0];
+    const Vec3 d = secondLocal.vertices()[1];
+    if (std::max({std::abs(a.z), std::abs(b.z), std::abs(c.z), std::abs(d.z)}) > 1e-6)
+        return std::nullopt;
+
+    const Vec2 r{b.x - a.x, b.y - a.y};
+    const Vec2 s{d.x - c.x, d.y - c.y};
+    const auto cross = [](const Vec2& lhs, const Vec2& rhs) {
+        return lhs.x * rhs.y - lhs.y * rhs.x;
+    };
+    const double denominator = cross(r, s);
+    const double firstLength = std::hypot(r.x, r.y);
+    const double secondLength = std::hypot(s.x, s.y);
+    if (std::abs(denominator) <= epsilon || firstLength <= epsilon || secondLength <= epsilon)
+        return std::nullopt;
+    const Vec2 ca{c.x - a.x, c.y - a.y};
+    const double firstParameter = cross(ca, s) / denominator;
+    const Vec2 intersection{a.x + r.x * firstParameter, a.y + r.y * firstParameter};
+
+    const auto pickedRay = [&](const Vec2& lineDirection, double lineLength, const Vec3& pick) {
+        Vec2 direction{lineDirection.x / lineLength, lineDirection.y / lineLength};
+        const Vec2 localPick{plane.toPlane(pick).x, plane.toPlane(pick).y};
+        if ((localPick.x - intersection.x) * direction.x +
+            (localPick.y - intersection.y) * direction.y < 0.0) {
+            direction.x = -direction.x;
+            direction.y = -direction.y;
+        }
+        return direction;
+    };
+    const Vec2 firstDirection = pickedRay(r, firstLength, firstPick);
+    const Vec2 secondDirection = pickedRay(s, secondLength, secondPick);
+    const double cosine = std::clamp(firstDirection.x * secondDirection.x +
+                                     firstDirection.y * secondDirection.y, -1.0, 1.0);
+    const double angle = std::acos(cosine);
+    if (angle <= 1e-6 || std::abs(std::numbers::pi - angle) <= 1e-6) return std::nullopt;
+    const double tangentDistance = radius / std::tan(angle * 0.5);
+    const double centerDistance = radius / std::sin(angle * 0.5);
+    const Vec2 bisectorRaw{firstDirection.x + secondDirection.x,
+                           firstDirection.y + secondDirection.y};
+    const double bisectorLength = std::hypot(bisectorRaw.x, bisectorRaw.y);
+    if (bisectorLength <= epsilon || !std::isfinite(tangentDistance)) return std::nullopt;
+    const Vec2 tangentFirst{intersection.x + firstDirection.x * tangentDistance,
+                            intersection.y + firstDirection.y * tangentDistance};
+    const Vec2 tangentSecond{intersection.x + secondDirection.x * tangentDistance,
+                             intersection.y + secondDirection.y * tangentDistance};
+    const Vec2 center{intersection.x + bisectorRaw.x / bisectorLength * centerDistance,
+                      intersection.y + bisectorRaw.y / bisectorLength * centerDistance};
+
+    const auto farEndpoint = [&](const WireframeModel& line, const Vec2& direction) {
+        const Vec3& p0 = line.vertices()[0];
+        const Vec3& p1 = line.vertices()[1];
+        const double t0 = (p0.x - intersection.x) * direction.x +
+                          (p0.y - intersection.y) * direction.y;
+        const double t1 = (p1.x - intersection.x) * direction.x +
+                          (p1.y - intersection.y) * direction.y;
+        return t0 >= t1 ? p0 : p1;
+    };
+    auto firstLine = WireframeModel::line(
+        fromPlaneCoordinates(farEndpoint(firstLocal, firstDirection), plane),
+        plane.fromPlane(tangentFirst));
+    auto secondLine = WireframeModel::line(
+        fromPlaneCoordinates(farEndpoint(secondLocal, secondDirection), plane),
+        plane.fromPlane(tangentSecond));
+    firstLine.setProperties(first.properties());
+    secondLine.setProperties(second.properties());
+
+    double startAngle = std::atan2(tangentFirst.y - center.y, tangentFirst.x - center.x);
+    double endAngle = std::atan2(tangentSecond.y - center.y, tangentSecond.x - center.x);
+    double sweep = endAngle - startAngle;
+    while (sweep > std::numbers::pi) sweep -= 2.0 * std::numbers::pi;
+    while (sweep < -std::numbers::pi) sweep += 2.0 * std::numbers::pi;
+    const std::size_t segments = std::max<std::size_t>(8,
+        static_cast<std::size_t>(std::ceil(std::abs(sweep) / (std::numbers::pi / 32.0))));
+    std::vector<Vec3> arcVertices;
+    std::vector<Edge> arcEdges;
+    arcVertices.reserve(segments + 1);
+    arcEdges.reserve(segments);
+    for (std::size_t index = 0; index <= segments; ++index) {
+        const double fraction = static_cast<double>(index) / static_cast<double>(segments);
+        const double current = startAngle + sweep * fraction;
+        arcVertices.push_back(plane.fromPlane({center.x + radius * std::cos(current),
+                                              center.y + radius * std::sin(current)}));
+        if (index) arcEdges.push_back({index - 1, index});
+    }
+    WireframeModel arc(std::move(arcVertices), std::move(arcEdges));
+    arc.setProperties(first.properties());
+    return FilletResult{std::move(firstLine), std::move(secondLine), std::move(arc)};
 }
 
 bool shouldEvaluateSnapping(bool selectingEntities, bool zoomPhase, bool cameraNavigating) noexcept {

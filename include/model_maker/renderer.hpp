@@ -11,9 +11,20 @@
 
 namespace mm {
 
+enum class VisualStyle { Wireframe, Solid, Transparent };
+
+constexpr unsigned char visualStyleFaceAlpha(VisualStyle style) noexcept {
+    switch (style) {
+    case VisualStyle::Wireframe: return 0;
+    case VisualStyle::Solid: return 255;
+    case VisualStyle::Transparent: return 96;
+    }
+    return 0;
+}
+
 enum class EditMode { Draw2D, View3D };
 enum class TransformCommand {
-    None, Move, Copy, Offset, Mirror, Delete, LinearArray, PolarArray, Trim, Extend
+    None, Move, Copy, Offset, Mirror, Delete, LinearArray, PolarArray, Trim, Extend, Fillet
 };
 enum class TransformPhase { Selecting, BasePoint, Destination };
 
@@ -22,7 +33,7 @@ constexpr bool modifierUsesPointCursor(TransformCommand command, TransformPhase 
                                        bool offsetDistanceReady = false) noexcept {
     if (command == TransformCommand::None || phase == TransformPhase::Selecting ||
         command == TransformCommand::Delete || command == TransformCommand::Trim ||
-        command == TransformCommand::Extend)
+        command == TransformCommand::Extend || command == TransformCommand::Fillet)
         return false;
     if (command == TransformCommand::Offset)
         return phase == TransformPhase::Destination && offsetDistanceReady;
@@ -32,7 +43,8 @@ constexpr bool modifierUsesPointCursor(TransformCommand command, TransformPhase 
 }
 
 constexpr bool modifierCompletesAfterCommit(TransformCommand command) noexcept {
-    return command != TransformCommand::None;
+    return command != TransformCommand::None && command != TransformCommand::Trim &&
+           command != TransformCommand::Extend;
 }
 
 constexpr bool modifierRequires2DView(TransformCommand) noexcept {
@@ -59,9 +71,23 @@ constexpr bool shouldRepeatLastModifierOnEnter(bool drawingCommandActive, bool i
     return !drawingCommandActive && !inputPending && !otherModalInteractionActive;
 }
 
+struct WorkPlaneAxisGlyph {
+    Vec3 origin{};
+    Vec3 x{};
+    Vec3 y{};
+    Vec3 z{};
+};
+
+inline WorkPlaneAxisGlyph workPlaneAxisGlyph(const WorkPlane& plane, double length) noexcept {
+    return {plane.origin, plane.origin + plane.u * length,
+            plane.origin + plane.v * length, plane.origin + plane.normal * length};
+}
+
 struct DraftView {
     DrawTool tool{DrawTool::Line};
+    VisualStyle visualStyle{VisualStyle::Wireframe};
     std::optional<Vec3> anchor;
+    std::vector<Vec3> facePoints;
     std::optional<Vec3> cursor;
     SnapType snapType{SnapType::None};
     bool drawingActive{true};
@@ -69,6 +95,10 @@ struct DraftView {
     bool gridSnapEnabled{true};
     bool polarTrackingEnabled{};
     bool polarTrackingLocked{};
+    bool temporaryTrackingLocked{};
+    std::vector<Vec3> temporaryTrackingPoints;
+    std::vector<TrackingGuide> temporaryTrackingGuides;
+    std::vector<Vec3> temporaryDerivedPoints;
     bool dynamicInputEnabled{true};
     double workPlaneZ{};
     WorkPlane workPlane{};
@@ -82,6 +112,8 @@ struct DraftView {
     std::optional<POINT> selectionFirstCorner;
     std::optional<Vec3> transformBase;
     std::optional<double> offsetDistance;
+    double filletRadius{1.0};
+    std::optional<Vec3> filletFirstPick;
     std::optional<std::size_t> arrayItemCount;
     std::vector<WireframeModel> modifierBoundaries;
     bool zoomWindowActive{};

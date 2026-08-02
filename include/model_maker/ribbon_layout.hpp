@@ -1,5 +1,6 @@
 #pragma once
 
+#include <string>
 #include <vector>
 
 namespace mm {
@@ -24,15 +25,21 @@ struct RibbonButtonLayout {
     UiRect rect{};
 };
 
+struct RibbonGroupLayout {
+    std::wstring label;
+    UiRect rect{};
+};
+
 struct RibbonGeometry {
     int ribbonHeight{};
     UiRect canvas{};
     std::vector<RibbonButtonLayout> commandButtons;
+    std::vector<RibbonGroupLayout> groups;
 };
 
 class RibbonLayout {
 public:
-    static constexpr int height = 104;
+    static constexpr int height = 148;
     static std::vector<int> commands(RibbonTab tab);
     static RibbonGeometry layout(RibbonTab tab, int windowWidth);
 };

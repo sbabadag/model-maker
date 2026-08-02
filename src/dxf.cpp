@@ -6,6 +6,7 @@
 #include <cmath>
 #include <fstream>
 #include <iomanip>
+#include <numeric>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -364,19 +365,17 @@ void addSimpleEntity(Document& document, const std::string& type, const std::vec
         if ((integer(values, 70) & 1) && vertices.size() > 1) edges.push_back({vertices.size() - 1, 0});
         model.emplace(std::move(vertices), std::move(edges));
     } else if (type == "3DFACE") {
-        std::vector<Vec3> vertices{point(values, 10, 20, 30), point(values, 11, 21, 31),
-                                   point(values, 12, 22, 32), point(values, 13, 23, 33)};
-        if (vertices[3] == vertices[2]) vertices.pop_back();
-        std::vector<Edge> edges;
-        for (std::size_t i = 0; i < vertices.size(); ++i) edges.push_back({i, (i + 1) % vertices.size()});
-        model.emplace(std::move(vertices), std::move(edges));
+        model = WireframeModel::face3D({point(values, 10, 20, 30), point(values, 11, 21, 31),
+                                        point(values, 12, 22, 32), point(values, 13, 23, 33)});
     } else if (type == "SOLID" || type == "TRACE") {
         std::vector<Vec3> vertices{point(values, 10, 20, 30), point(values, 11, 21, 31),
                                    point(values, 13, 23, 33), point(values, 12, 22, 32)};
         if (vertices[2] == vertices[3]) vertices.pop_back();
         std::vector<Edge> edges;
         for (std::size_t i = 0; i < vertices.size(); ++i) edges.push_back({i, (i + 1) % vertices.size()});
-        model.emplace(std::move(vertices), std::move(edges));
+        Face face(vertices.size());
+        std::iota(face.begin(), face.end(), std::size_t{0});
+        model.emplace(std::move(vertices), std::move(edges), std::vector<Face>{std::move(face)});
     } else if (type == "TEXT" || type == "MTEXT") {
         model = textStrokeModel(values);
     }
@@ -499,11 +498,16 @@ WireframeModel transformedModel(const WireframeModel& source, const AffineTransf
     WireframeModel result;
     if (source.isPointEntity() && !source.vertices().empty()) {
         result = WireframeModel::point(transform.point(source.vertices().front()));
+    } else if (source.isFace3D() && source.vertices().size() == 4) {
+        result = WireframeModel::face3D({transform.point(source.vertices()[0]),
+                                         transform.point(source.vertices()[1]),
+                                         transform.point(source.vertices()[2]),
+                                         transform.point(source.vertices()[3])});
     } else {
         std::vector<Vec3> vertices;
         vertices.reserve(source.vertices().size());
         for (const auto& vertex : source.vertices()) vertices.push_back(transform.point(vertex));
-        result = WireframeModel(std::move(vertices), source.edges());
+        result = WireframeModel(std::move(vertices), source.edges(), source.faces());
     }
     result.setProperties(std::move(properties));
     return result;
@@ -722,6 +726,16 @@ void DxfFile::write(const Document& document, const std::filesystem::path& path)
     writePair(output, 0, "SECTION"); writePair(output, 2, "ENTITIES");
 
     for (const auto& model : document.models()) {
+        if (model.isFace3D() && model.vertices().size() == 4) {
+            writePair(output, 0, "3DFACE"); writeProperties(output, model.properties());
+            for (std::size_t index = 0; index < 4; ++index) {
+                const auto& vertex = model.vertices()[index];
+                writePair(output, static_cast<int>(10 + index), vertex.x);
+                writePair(output, static_cast<int>(20 + index), vertex.y);
+                writePair(output, static_cast<int>(30 + index), vertex.z);
+            }
+            continue;
+        }
         if (model.isPointEntity() && !model.vertices().empty()) {
             const auto p = model.vertices().front();
             writePair(output, 0, "POINT"); writeProperties(output, model.properties());

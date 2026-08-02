@@ -72,56 +72,81 @@ def main() -> None:
         cx, cy = rect.right // 2, rect.bottom // 2
         user32.SendMessageW(canvas, WM_KEYDOWN, VK_F9, 0)  # exact unquantized test geometry
 
-        # Trim scene: a vertical cutting edge crossing a horizontal target.
+        # Trim scene: one vertical cutting edge crossing two horizontal targets.
         command(window, 601); command(window, 200)
         trim_boundary_x = cx
-        trim_target_y = cy - 150
-        click(canvas, trim_boundary_x, cy - 240); click(canvas, trim_boundary_x, cy - 60)
-        click(canvas, cx - 180, trim_target_y); click(canvas, cx + 180, trim_target_y)
-        if count_models(window) != 2:
-            raise AssertionError("Trim source geometry was not created")
+        trim_target_ys = [cy - 180, cy - 80]
+        click(canvas, trim_boundary_x, cy - 260); click(canvas, trim_boundary_x, cy - 20)
+        for target_y in trim_target_ys:
+            click(canvas, cx - 180, target_y); click(canvas, cx + 180, target_y)
+        if count_models(window) != 3:
+            raise AssertionError("Multi-Trim source geometry was not created")
         command(window, 602); command(window, 507)
-        click(canvas, trim_boundary_x, cy - 210)
+        # Crossing-select the boundary in the first phase (right-to-left green window).
+        click(canvas, trim_boundary_x + 35, cy - 215)
+        send_mouse(canvas, WM_MOUSEMOVE, trim_boundary_x - 35, cy - 245)
+        capture(canvas, root / "build" / "trim-boundary-crossing.png")
+        click(canvas, trim_boundary_x - 35, cy - 245)
         user32.SendMessageW(canvas, WM_CHAR, 13, 0)
         require_status(window, "Kesilecek çizgi")
-        send_mouse(canvas, WM_MOUSEMOVE, cx - 90, trim_target_y)
-        time.sleep(0.1)
-        capture(canvas, root / "build" / "trim-preview.png")
-        click(canvas, cx - 90, trim_target_y)
-        if count_models(window) != 2:
-            raise AssertionError("Trim unexpectedly changed the model count for a single cut")
+        # A second right-to-left crossing window trims both target portions in one gesture.
+        click(canvas, cx - 60, trim_target_ys[1] + 20)
+        send_mouse(canvas, WM_MOUSEMOVE, cx - 130, trim_target_ys[0] - 20)
+        capture(canvas, root / "build" / "trim-target-crossing.png")
+        click(canvas, cx - 130, trim_target_ys[0] - 20)
+        require_status(window, "Kesilecek çizgi")
+        user32.SendMessageW(canvas, WM_CHAR, 13, 0)
+        if count_models(window) != 3:
+            raise AssertionError("Multi-Trim unexpectedly changed model count for end cuts")
         trimmed = capture(canvas, root / "build" / "trim-result.png")
-        removed = red_count(trimmed, (cx - 170, trim_target_y - 4, cx - 10, trim_target_y + 5))
-        retained = red_count(trimmed, (cx + 10, trim_target_y - 4, cx + 170, trim_target_y + 5))
-        if removed > 8 or retained < 120:
-            raise AssertionError(f"Trim result mismatch: removed-side={removed}, retained-side={retained}")
-        # Extend scene: horizontal target stops short of a separate vertical boundary.
+        trim_counts = []
+        for target_y in trim_target_ys:
+            removed = red_count(trimmed, (cx - 170, target_y - 4, cx - 10, target_y + 5))
+            retained = red_count(trimmed, (cx + 10, target_y - 4, cx + 170, target_y + 5))
+            trim_counts.append((removed, retained))
+            if removed > 8 or retained < 120:
+                raise AssertionError(
+                    f"Multi-Trim result mismatch at y={target_y}: removed={removed}, retained={retained}")
+
+        # Extend scene: one boundary and two independently extended horizontal targets.
         command(window, 601); command(window, 200)
-        extend_target_y = cy + 120
+        extend_target_ys = [cy + 90, cy + 190]
         extend_boundary_x = cx + 300
-        click(canvas, extend_boundary_x, cy + 30); click(canvas, extend_boundary_x, cy + 210)
-        click(canvas, cx - 180, extend_target_y); click(canvas, cx + 60, extend_target_y)
-        if count_models(window) != 4:
-            raise AssertionError("Extend source geometry was not created")
+        click(canvas, extend_boundary_x, cy + 20); click(canvas, extend_boundary_x, cy + 260)
+        for target_y in extend_target_ys:
+            click(canvas, cx - 180, target_y); click(canvas, cx + 60, target_y)
+        if count_models(window) != 6:
+            raise AssertionError("Multi-Extend source geometry was not created")
         command(window, 602); command(window, 508)
-        click(canvas, extend_boundary_x, cy + 60)
+        # Crossing-select the shared Extend boundary.
+        click(canvas, extend_boundary_x + 35, cy + 55)
+        send_mouse(canvas, WM_MOUSEMOVE, extend_boundary_x - 35, cy + 25)
+        capture(canvas, root / "build" / "extend-boundary-crossing.png")
+        click(canvas, extend_boundary_x - 35, cy + 25)
         user32.SendMessageW(canvas, WM_CHAR, 13, 0)
         require_status(window, "Uzatılacak çizginin")
-        send_mouse(canvas, WM_MOUSEMOVE, cx + 40, extend_target_y)
-        time.sleep(0.1)
-        capture(canvas, root / "build" / "extend-preview.png")
-        click(canvas, cx + 40, extend_target_y)
-        if count_models(window) != 4:
-            raise AssertionError("Extend must replace, not duplicate, the target line")
+        # Crossing-select both target endpoints and extend them in one gesture.
+        click(canvas, cx + 100, extend_target_ys[1] + 20)
+        send_mouse(canvas, WM_MOUSEMOVE, cx + 20, extend_target_ys[0] - 20)
+        capture(canvas, root / "build" / "extend-target-crossing.png")
+        click(canvas, cx + 20, extend_target_ys[0] - 20)
+        require_status(window, "Uzatılacak çizginin")
+        user32.SendMessageW(canvas, WM_CHAR, 13, 0)
+        if count_models(window) != 6:
+            raise AssertionError("Multi-Extend must replace, not duplicate, both target lines")
         extended = capture(canvas, root / "build" / "extend-result.png")
-        extension = red_count(extended, (cx + 70, extend_target_y - 4,
-                                         extend_boundary_x - 10, extend_target_y + 5))
-        if extension < 180:
-            raise AssertionError(f"Extend did not reach the selected boundary ({extension} pixels)")
+        extension_counts = []
+        for target_y in extend_target_ys:
+            extension = red_count(extended, (cx + 70, target_y - 4,
+                                              extend_boundary_x - 10, target_y + 5))
+            extension_counts.append(extension)
+            if extension < 180:
+                raise AssertionError(
+                    f"Multi-Extend did not reach the boundary at y={target_y} ({extension} pixels)")
         command(window, 602)
         capture(window, root / "build" / "trim-extend-modifiers.png")
-        print(f"Trim/Extend GUI smoke passed: trim retained={retained}, removed={removed}; "
-              f"extend pixels={extension}; models=4; PID={process.pid}.")
+        print(f"Trim/Extend multi-target GUI smoke passed: trims={trim_counts}; "
+              f"extensions={extension_counts}; models=6; PID={process.pid}.")
         if args.keep_open:
             keep = True
             print("Verified maximized instance left running on the Modify tab.")

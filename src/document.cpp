@@ -205,11 +205,18 @@ void Document::save(const std::filesystem::path& path) const {
     if (!output) throw std::runtime_error("Could not open file for writing");
 
     output.precision(17);
-    output << "MMW1\n" << models_.size() << '\n';
+    output << "MMW2\n" << models_.size() << '\n';
     for (const auto& model : models_) {
-        output << model.vertices().size() << ' ' << model.edges().size() << '\n';
+        output << model.vertices().size() << ' ' << model.edges().size() << ' '
+               << model.faces().size() << ' ' << model.isPointEntity() << ' '
+               << model.isFace3D() << '\n';
         for (const auto& vertex : model.vertices()) output << vertex.x << ' ' << vertex.y << ' ' << vertex.z << '\n';
         for (const auto& edge : model.edges()) output << edge.from << ' ' << edge.to << '\n';
+        for (const auto& face : model.faces()) {
+            output << face.size();
+            for (const auto index : face) output << ' ' << index;
+            output << '\n';
+        }
     }
     if (!output) throw std::runtime_error("Could not write document");
 }
@@ -220,26 +227,49 @@ void Document::load(const std::filesystem::path& path) {
 
     std::string signature;
     std::size_t modelCount{};
-    if (!(input >> signature >> modelCount) || signature != "MMW1" || modelCount > 100000) {
+    if (!(input >> signature >> modelCount) ||
+        (signature != "MMW1" && signature != "MMW2") || modelCount > 100000) {
         throw std::runtime_error("Invalid Model Maker file");
     }
+    const bool version2 = signature == "MMW2";
 
     std::vector<WireframeModel> loaded;
     loaded.reserve(modelCount);
     for (std::size_t i = 0; i < modelCount; ++i) {
-        std::size_t vertexCount{}, edgeCount{};
-        if (!(input >> vertexCount >> edgeCount) || vertexCount > 1000000 || edgeCount > 2000000) {
+        std::size_t vertexCount{}, edgeCount{}, faceCount{};
+        bool pointEntity{}, face3D{};
+        if (!(input >> vertexCount >> edgeCount) ||
+            (version2 && !(input >> faceCount >> pointEntity >> face3D)) ||
+            vertexCount > 1000000 || edgeCount > 2000000 || faceCount > 1000000) {
             throw std::runtime_error("Invalid model data");
         }
         std::vector<Vec3> vertices(vertexCount);
         std::vector<Edge> edges(edgeCount);
+        std::vector<Face> faces;
+        faces.reserve(faceCount);
         for (auto& vertex : vertices) {
             if (!(input >> vertex.x >> vertex.y >> vertex.z)) throw std::runtime_error("Invalid vertex data");
         }
         for (auto& edge : edges) {
             if (!(input >> edge.from >> edge.to)) throw std::runtime_error("Invalid edge data");
         }
-        loaded.emplace_back(std::move(vertices), std::move(edges));
+        for (std::size_t faceIndex = 0; faceIndex < faceCount; ++faceIndex) {
+            std::size_t cornerCount{};
+            if (!(input >> cornerCount) || cornerCount < 3 || cornerCount > vertexCount)
+                throw std::runtime_error("Invalid face data");
+            Face face(cornerCount);
+            for (auto& index : face)
+                if (!(input >> index) || index >= vertexCount) throw std::runtime_error("Invalid face data");
+            faces.push_back(std::move(face));
+        }
+        if (pointEntity && vertices.size() == 1) {
+            loaded.push_back(WireframeModel::point(vertices.front()));
+        } else if (face3D && vertices.size() == 4) {
+            loaded.push_back(WireframeModel::face3D(
+                {vertices[0], vertices[1], vertices[2], vertices[3]}));
+        } else {
+            loaded.emplace_back(std::move(vertices), std::move(edges), std::move(faces));
+        }
     }
     models_ = std::move(loaded);
     invalidateSpatialIndex();

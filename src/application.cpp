@@ -22,11 +22,14 @@ constexpr wchar_t canvasClassName[] = L"ModelMakerCanvas";
 
 enum CommandId {
     CmdNew = 100, CmdOpen, CmdSave, CmdImportDxf, CmdExportDxf,
-    CmdLine = 200, CmdPolyline, CmdRectangle, CmdCircle,
+    CmdLine = 200, CmdPolyline, CmdRectangle, CmdCircle, CmdFace3D,
     CmdCube = 300, CmdPyramid, CmdResetView, CmdView3D, CmdWorkPlane, CmdZoomExtents, CmdZoomWindow,
+    CmdVisualStyle, CmdStandardView, CmdWireframe = 310, CmdSolid, CmdTransparent,
+    CmdViewFront = 320, CmdViewBack, CmdViewLeft, CmdViewRight, CmdViewIsometric,
+    CmdViewTop, CmdViewBottom,
     CmdOsnap = 400, CmdGridSnap, CmdDynamicInput, CmdSnapSettings, CmdPolarTracking,
     CmdMove = 500, CmdCopy, CmdOffset, CmdMirror, CmdDelete, CmdLinearArray, CmdPolarArray,
-    CmdTrim, CmdExtend, CmdNeutral,
+    CmdTrim, CmdExtend, CmdNeutral, CmdFillet,
     CmdTabFile = 600, CmdTabDrawing, CmdTabModify, CmdTabView, CmdTabAids,
     CmdDxfProgress = 700, CmdSnapTypeFirst = 720,
     CmdLayerCombo = 800, CmdColorCombo, CmdLineTypeCombo
@@ -115,6 +118,10 @@ Application::~Application() {
     if (modifyCursor_) DestroyCursor(modifyCursor_);
     if (uiFont_) DeleteObject(uiFont_);
     if (titleFont_) DeleteObject(titleFont_);
+    if (iconFont_) DeleteObject(iconFont_);
+    if (windowBrush_) DeleteObject(windowBrush_);
+    if (panelBrush_) DeleteObject(panelBrush_);
+    if (statusBrush_) DeleteObject(statusBrush_);
 }
 
 int Application::run(int showCommand, std::optional<std::filesystem::path> startupDxf) {
@@ -135,6 +142,9 @@ void Application::createMainWindow(int showCommand) {
     if (!draftingCursor_ || !modifyCursor_ || !neutralCursor_)
         throw std::runtime_error("Drawing cursors could not be created");
 
+    windowBrush_ = CreateSolidBrush(RGB(31, 38, 48));
+    panelBrush_ = CreateSolidBrush(RGB(57, 68, 84));
+    statusBrush_ = CreateSolidBrush(RGB(29, 36, 46));
     WNDCLASSEXW windowClass{};
     windowClass.cbSize = sizeof(windowClass);
     windowClass.style = CS_HREDRAW | CS_VREDRAW;
@@ -142,7 +152,7 @@ void Application::createMainWindow(int showCommand) {
     windowClass.hInstance = instance_;
     windowClass.hCursor = LoadCursorW(nullptr, IDC_ARROW);
     windowClass.hIcon = LoadIconW(nullptr, IDI_APPLICATION);
-    windowClass.hbrBackground = GetSysColorBrush(COLOR_BTNFACE);
+    windowClass.hbrBackground = windowBrush_;
     windowClass.lpszClassName = className;
     if (!RegisterClassExW(&windowClass) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS)
         throw std::runtime_error("Main window class could not be registered");
@@ -182,6 +192,9 @@ void Application::createControlPanel() {
     titleFont_ = CreateFontW(-18, 0, 0, 0, FW_SEMIBOLD, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
                              OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
                              DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
+    iconFont_ = CreateFontW(-25, 0, 0, 0, FW_LIGHT, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
+                            OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
+                            DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI Symbol");
 
     const auto addTab = [&](const wchar_t* text, int id, DWORD extra = 0) {
         HWND tab = createButton(text, id, 0, 0, 82, 30,
@@ -189,7 +202,7 @@ void Application::createControlPanel() {
         ribbonTabButtons_.push_back(tab);
         return tab;
     };
-    addTab(L"Dosya", CmdTabFile, WS_GROUP);
+    addTab(L"M", CmdTabFile, WS_GROUP);
     addTab(L"Çizim", CmdTabDrawing);
     addTab(L"Düzenle", CmdTabModify);
     addTab(L"Görünüm", CmdTabView);
@@ -211,6 +224,7 @@ void Application::createControlPanel() {
     polylineButton_ = addCommand(L"⌁\r\nPolyline", CmdPolyline, BS_AUTOCHECKBOX | BS_PUSHLIKE);
     rectangleButton_ = addCommand(L"□\r\nDikdört.", CmdRectangle, BS_AUTOCHECKBOX | BS_PUSHLIKE);
     circleButton_ = addCommand(L"○\r\nDaire", CmdCircle, BS_AUTOCHECKBOX | BS_PUSHLIKE);
+    face3DButton_ = addCommand(L"▱\r\n3DFACE", CmdFace3D, BS_AUTOCHECKBOX | BS_PUSHLIKE);
 
     addCommand(L"◇\r\nKüp", CmdCube);
     addCommand(L"△\r\nPiramit", CmdPyramid);
@@ -219,6 +233,8 @@ void Application::createControlPanel() {
     workPlaneButton_ = addCommand(L"▱\r\nDüzlem", CmdWorkPlane, BS_AUTOCHECKBOX | BS_PUSHLIKE);
     addCommand(L"⤢\r\nExtents", CmdZoomExtents);
     zoomWindowButton_ = addCommand(L"⌗\r\nPencere", CmdZoomWindow, BS_AUTOCHECKBOX | BS_PUSHLIKE);
+    visualStyleButton_ = addCommand(L"◇\r\nWireframe ▼", CmdVisualStyle);
+    standardViewButton_ = addCommand(L"▦\r\nGörünüş ▼", CmdStandardView);
 
     snapButton_ = addCommand(L"◎\r\nOSNAP F3", CmdOsnap, BS_AUTOCHECKBOX | BS_PUSHLIKE);
     gridSnapButton_ = addCommand(L"#\r\nGrid F9", CmdGridSnap, BS_AUTOCHECKBOX | BS_PUSHLIKE);
@@ -238,12 +254,13 @@ void Application::createControlPanel() {
     polarArrayButton_ = addCommand(L"◌\r\nDairesel", CmdPolarArray, BS_AUTOCHECKBOX | BS_PUSHLIKE);
     trimButton_ = addCommand(L"✂\r\nTrim", CmdTrim, BS_AUTOCHECKBOX | BS_PUSHLIKE);
     extendButton_ = addCommand(L"↗\r\nExtend", CmdExtend, BS_AUTOCHECKBOX | BS_PUSHLIKE);
+    filletButton_ = addCommand(L"⌒\r\nFillet", CmdFillet, BS_AUTOCHECKBOX | BS_PUSHLIKE);
 
     canvas_ = CreateWindowExW(WS_EX_CLIENTEDGE, canvasClassName, nullptr,
                               WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_CLIPSIBLINGS,
                               0, ribbonHeight, 800, 600, window_, nullptr, instance_, this);
     status_ = CreateWindowExW(0, L"STATIC", nullptr,
-                              WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS | SS_LEFT | SS_CENTERIMAGE | SS_SUNKEN,
+                              WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS | SS_LEFT | SS_CENTERIMAGE,
                               0, 700, 1000, statusHeight, window_, nullptr, instance_, nullptr);
     SendMessageW(status_, WM_SETFONT, reinterpret_cast<WPARAM>(uiFont_), TRUE);
     dxfProgressBar_ = CreateWindowExW(0, PROGRESS_CLASSW, nullptr,
@@ -292,8 +309,9 @@ void Application::createControlPanel() {
 }
 
 HWND Application::createButton(const wchar_t* text, int id, int x, int y, int width, int height, DWORD style) {
+    const DWORD ownerDrawStyle = (style & ~BS_TYPEMASK) | BS_OWNERDRAW;
     HWND button = CreateWindowExW(0, L"BUTTON", text,
-                                   WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_CLIPSIBLINGS | style,
+                                   WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_CLIPSIBLINGS | ownerDrawStyle,
                                    x, y, width, height, window_, reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)),
                                    instance_, nullptr);
     SendMessageW(button, WM_SETFONT, reinterpret_cast<WPARAM>(uiFont_), TRUE);
@@ -327,8 +345,10 @@ void Application::layoutChildren(int width, int height) {
         updateSnapPanelVisibility();
     }
 
-    for (std::size_t i = 0; i < ribbonTabButtons_.size(); ++i)
-        MoveWindow(ribbonTabButtons_[i], 10 + static_cast<int>(i) * 88, 5, 84, 29, TRUE);
+    for (std::size_t i = 0; i < ribbonTabButtons_.size(); ++i) {
+        if (i == 0) MoveWindow(ribbonTabButtons_[i], 8, 3, 35, 27, TRUE);
+        else MoveWindow(ribbonTabButtons_[i], 8 + static_cast<int>(i - 1) * 92, 32, 90, 29, TRUE);
+    }
     const auto geometry = RibbonLayout::layout(activeRibbonTab_, width);
     for (const auto& item : geometry.commandButtons) {
         if (HWND button = GetDlgItem(window_, item.commandId)) {
@@ -336,15 +356,16 @@ void Application::layoutChildren(int width, int height) {
             MoveWindow(button, r.left, r.top, r.right - r.left, r.bottom - r.top, TRUE);
         }
     }
-    const int styleX = std::max(500, width - 426);
+    const int commandsRight = geometry.commandButtons.empty() ? 350 : geometry.commandButtons.back().rect.right;
+    const int styleX = std::min(std::max(commandsRight + 24, 365), std::max(365, width - 426));
     const std::array<int, 3> xPositions{{styleX, styleX + 158, styleX + 286}};
     const std::array<int, 3> widths{{150, 120, 130}};
     for (std::size_t i = 0; i < styleLabels_.size(); ++i) {
-        if (styleLabels_[i]) MoveWindow(styleLabels_[i], xPositions[i], 38, widths[i], 17, TRUE);
+        if (styleLabels_[i]) MoveWindow(styleLabels_[i], xPositions[i], 65, widths[i], 17, TRUE);
     }
-    if (layerCombo_) MoveWindow(layerCombo_, xPositions[0], 56, widths[0], 220, TRUE);
-    if (colorCombo_) MoveWindow(colorCombo_, xPositions[1], 56, widths[1], 220, TRUE);
-    if (lineTypeCombo_) MoveWindow(lineTypeCombo_, xPositions[2], 56, widths[2], 220, TRUE);
+    if (layerCombo_) MoveWindow(layerCombo_, xPositions[0], 83, widths[0], 220, TRUE);
+    if (colorCombo_) MoveWindow(colorCombo_, xPositions[1], 83, widths[1], 220, TRUE);
+    if (lineTypeCombo_) MoveWindow(lineTypeCombo_, xPositions[2], 83, widths[2], 220, TRUE);
 }
 
 void Application::updateSnapPanelVisibility() {
@@ -362,6 +383,11 @@ void Application::updateSnapPanelVisibility() {
 void Application::activateRibbonTab(RibbonTab tab) {
     activeRibbonTab_ = tab;
     for (HWND button : ribbonCommandButtons_) ShowWindow(button, SW_HIDE);
+    const bool showProperties = tab == RibbonTab::Drawing || tab == RibbonTab::Modify;
+    for (HWND label : styleLabels_) if (label) ShowWindow(label, showProperties ? SW_SHOW : SW_HIDE);
+    if (layerCombo_) ShowWindow(layerCombo_, showProperties ? SW_SHOW : SW_HIDE);
+    if (colorCombo_) ShowWindow(colorCombo_, showProperties ? SW_SHOW : SW_HIDE);
+    if (lineTypeCombo_) ShowWindow(lineTypeCombo_, showProperties ? SW_SHOW : SW_HIDE);
     const auto geometry = RibbonLayout::layout(tab, window_ ? [] (HWND window) {
         RECT client{}; GetClientRect(window, &client); return std::max(1L, client.right);
     }(window_) : 1280);
@@ -383,19 +409,103 @@ void Application::paintRibbon() {
     HDC dc = BeginPaint(window_, &paint);
     RECT client{};
     GetClientRect(window_, &client);
+    HBRUSH titleBrush = CreateSolidBrush(RGB(31, 38, 48));
+    HBRUSH commandBrush = CreateSolidBrush(RGB(58, 69, 85));
+    HBRUSH dividerBrush = CreateSolidBrush(RGB(76, 89, 108));
     RECT ribbon{0, 0, client.right, ribbonHeight};
-    FillRect(dc, &ribbon, GetSysColorBrush(COLOR_BTNFACE));
-    RECT commandBand{0, 36, client.right, ribbonHeight};
-    FillRect(dc, &commandBand, GetSysColorBrush(COLOR_3DFACE));
-    DrawEdge(dc, &commandBand, EDGE_ETCHED, BF_TOP | BF_BOTTOM);
+    FillRect(dc, &ribbon, titleBrush);
+    RECT commandBand{0, 61, client.right, ribbonHeight};
+    FillRect(dc, &commandBand, commandBrush);
+    RECT bandLine{0, 60, client.right, 61};
+    FillRect(dc, &bandLine, dividerBrush);
 
-    const auto oldFont = SelectObject(dc, titleFont_);
+    const auto geometry = RibbonLayout::layout(activeRibbonTab_, std::max(1L, client.right));
+    const auto oldFont = SelectObject(dc, uiFont_);
     SetBkMode(dc, TRANSPARENT);
-    SetTextColor(dc, RGB(55, 65, 78));
-    RECT title{std::max(455L, client.right - 210), 4, client.right - 14, 34};
-    DrawTextW(dc, L"MODEL MAKER", -1, &title, DT_RIGHT | DT_SINGLELINE | DT_VCENTER);
+    SetTextColor(dc, RGB(225, 232, 241));
+    RECT title{160, 3, client.right - 160, 30};
+    DrawTextW(dc, L"MODEL MAKER — PROFESSIONAL CAD", -1, &title,
+              DT_CENTER | DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
+    SetTextColor(dc, RGB(220, 227, 236));
+    for (const auto& group : geometry.groups) {
+        RECT divider{group.rect.right - 1, group.rect.top + 3,
+                     group.rect.right, group.rect.bottom - 4};
+        FillRect(dc, &divider, dividerBrush);
+        RECT caption{group.rect.left, group.rect.bottom - 21,
+                     group.rect.right - 2, group.rect.bottom - 2};
+        DrawTextW(dc, group.label.c_str(), -1, &caption,
+                  DT_CENTER | DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
+    }
     SelectObject(dc, oldFont);
+    DeleteObject(dividerBrush);
+    DeleteObject(commandBrush);
+    DeleteObject(titleBrush);
     EndPaint(window_, &paint);
+}
+
+void Application::drawOwnerButton(const DRAWITEMSTRUCT& item) {
+    const int id = GetDlgCtrlID(item.hwndItem);
+    const bool appButton = id == CmdTabFile;
+    const bool tabButton = id >= CmdTabFile && id <= CmdTabAids;
+    const bool selected = (item.itemState & ODS_SELECTED) != 0;
+    const bool checked = SendMessageW(item.hwndItem, BM_GETCHECK, 0, 0) == BST_CHECKED;
+    COLORREF background = tabButton ? RGB(31, 38, 48) : RGB(58, 69, 85);
+    if (appButton) background = selected ? RGB(230, 36, 86) : RGB(215, 24, 75);
+    else if (selected) background = RGB(77, 92, 113);
+    else if (checked) background = RGB(54, 101, 139);
+    HBRUSH backgroundBrush = CreateSolidBrush(background);
+    FillRect(item.hDC, &item.rcItem, backgroundBrush);
+    DeleteObject(backgroundBrush);
+
+    RECT content = item.rcItem;
+    if (selected) OffsetRect(&content, 1, 1);
+    SetBkMode(item.hDC, TRANSPARENT);
+    SetTextColor(item.hDC, (item.itemState & ODS_DISABLED)
+        ? RGB(135, 145, 158) : RGB(231, 237, 245));
+    wchar_t label[128]{};
+    GetWindowTextW(item.hwndItem, label, static_cast<int>(std::size(label)));
+    const std::wstring text(label);
+    if (appButton) {
+        HGDIOBJ old = SelectObject(item.hDC, titleFont_);
+        DrawTextW(item.hDC, text.c_str(), -1, &content,
+                  DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+        SelectObject(item.hDC, old);
+    } else if (tabButton) {
+        HGDIOBJ old = SelectObject(item.hDC, uiFont_);
+        DrawTextW(item.hDC, text.c_str(), -1, &content,
+                  DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+        SelectObject(item.hDC, old);
+        if (checked) {
+            HBRUSH accent = CreateSolidBrush(RGB(71, 174, 227));
+            RECT underline{item.rcItem.left + 7, item.rcItem.bottom - 2,
+                           item.rcItem.right - 7, item.rcItem.bottom};
+            FillRect(item.hDC, &underline, accent);
+            DeleteObject(accent);
+        }
+    } else {
+        const auto separator = text.find(L"\r\n");
+        const std::wstring glyph = separator == std::wstring::npos ? L"" : text.substr(0, separator);
+        const std::wstring caption = separator == std::wstring::npos ? text : text.substr(separator + 2);
+        RECT glyphRect{content.left + 2, content.top + 2, content.right - 2, content.top + 37};
+        RECT captionRect{content.left + 2, content.top + 37, content.right - 2, content.bottom - 1};
+        HGDIOBJ old = SelectObject(item.hDC, iconFont_);
+        DrawTextW(item.hDC, glyph.c_str(), -1, &glyphRect,
+                  DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+        SelectObject(item.hDC, uiFont_);
+        DrawTextW(item.hDC, caption.c_str(), -1, &captionRect,
+                  DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX);
+        SelectObject(item.hDC, old);
+        if (checked || selected) {
+            HBRUSH borderBrush = CreateSolidBrush(checked ? RGB(99, 181, 225) : RGB(110, 127, 150));
+            FrameRect(item.hDC, &item.rcItem, borderBrush);
+            DeleteObject(borderBrush);
+        }
+    }
+    if (item.itemState & ODS_FOCUS) {
+        RECT focus = item.rcItem;
+        InflateRect(&focus, -3, -3);
+        DrawFocusRect(item.hDC, &focus);
+    }
 }
 
 LRESULT CALLBACK Application::windowProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
@@ -429,6 +539,28 @@ LRESULT Application::handleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
     case WM_PAINT:
         paintRibbon();
         return 0;
+    case WM_DRAWITEM:
+        if (const auto* item = reinterpret_cast<const DRAWITEMSTRUCT*>(lParam);
+            item && item->CtlType == ODT_BUTTON) {
+            drawOwnerButton(*item);
+            return TRUE;
+        }
+        return DefWindowProcW(window_, message, wParam, lParam);
+    case WM_CTLCOLORSTATIC: {
+        HDC dc = reinterpret_cast<HDC>(wParam);
+        SetTextColor(dc, RGB(226, 233, 241));
+        SetBkColor(dc, reinterpret_cast<HWND>(lParam) == status_
+            ? RGB(29, 36, 46) : RGB(57, 68, 84));
+        return reinterpret_cast<LRESULT>(reinterpret_cast<HWND>(lParam) == status_
+            ? statusBrush_ : panelBrush_);
+    }
+    case WM_CTLCOLOREDIT:
+    case WM_CTLCOLORLISTBOX: {
+        HDC dc = reinterpret_cast<HDC>(wParam);
+        SetTextColor(dc, RGB(232, 238, 246));
+        SetBkColor(dc, RGB(44, 53, 67));
+        return reinterpret_cast<LRESULT>(panelBrush_);
+    }
     case WM_COMMAND:
         if (HIWORD(wParam) == BN_CLICKED) executeCommand(LOWORD(wParam));
         else if (HIWORD(wParam) == CBN_SELCHANGE &&
@@ -442,6 +574,25 @@ LRESULT Application::handleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
         finishDxfImport();
         return 0;
     case WM_TIMER:
+        if (wParam == 5) {
+            KillTimer(window_, 5);
+            if (temporaryPointDwellCandidate_ && hover_ && polarTrackingEnabled_ &&
+                temporaryPointDwellCandidate_->point == hover_->point &&
+                temporaryPointDwellCandidate_->type == hover_->type) {
+                const Vec3 point = temporaryPointDwellCandidate_->point;
+                if (std::find(temporaryTrackingPoints_.begin(), temporaryTrackingPoints_.end(), point) ==
+                    temporaryTrackingPoints_.end()) {
+                    if (temporaryTrackingPoints_.size() == 8)
+                        temporaryTrackingPoints_.erase(temporaryTrackingPoints_.begin());
+                    temporaryTrackingPoints_.push_back(point);
+                }
+            }
+            temporaryPointDwellCandidate_.reset();
+            updateHover(cursorScreen_.x, cursorScreen_.y);
+            updateStatus();
+            invalidateCanvas();
+            return 0;
+        }
         if (wParam == 4) {
             KillTimer(window_, 4);
             if (!snapPreviewActive_) invalidateCanvas();
@@ -497,7 +648,23 @@ LRESULT Application::handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lPa
         const auto& vertices = document_.models().front().vertices();
         const std::size_t index = std::min<std::size_t>(static_cast<std::size_t>(wParam),
                                                         vertices.size() - 1);
-        const Vec2 point = camera_.project(vertices[index], rect.right, rect.bottom);
+        const Vec2 point = mode_ == EditMode::Draw2D
+            ? camera_.project2D(vertices[index], rect.right, rect.bottom)
+            : camera_.project(vertices[index], rect.right, rect.bottom);
+        return MAKELPARAM(static_cast<short>(std::lround(point.x)),
+                          static_cast<short>(std::lround(point.y)));
+    }
+    case WM_APP + 10: {
+        const std::size_t modelIndex = static_cast<std::size_t>(wParam);
+        const std::size_t vertexIndex = static_cast<std::size_t>(lParam);
+        if (modelIndex >= document_.models().size() ||
+            vertexIndex >= document_.models()[modelIndex].vertices().size()) return 0;
+        RECT rect{};
+        GetClientRect(canvas_, &rect);
+        const Vec3 point3D = document_.models()[modelIndex].vertices()[vertexIndex];
+        const Vec2 point = mode_ == EditMode::Draw2D
+            ? camera_.project2D(point3D, rect.right, rect.bottom)
+            : camera_.project(point3D, rect.right, rect.bottom);
         return MAKELPARAM(static_cast<short>(std::lround(point.x)),
                           static_cast<short>(std::lround(point.y)));
     }
@@ -581,18 +748,23 @@ LRESULT Application::handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lPa
         } else if (wParam == VK_F3) snapEnabled_ = !snapEnabled_;
         else if (wParam == VK_F8) {
             orthoEnabled_ = !orthoEnabled_;
-            if (orthoEnabled_) polarTrackingEnabled_ = false;
+            if (orthoEnabled_) {
+                polarTrackingEnabled_ = false;
+                clearTemporaryTracking();
+            }
         }
         else if (wParam == VK_F9) gridSnapEnabled_ = !gridSnapEnabled_;
         else if (wParam == VK_F10) {
             polarTrackingEnabled_ = !polarTrackingEnabled_;
             if (polarTrackingEnabled_) orthoEnabled_ = false;
+            else clearTemporaryTracking();
         }
         else if (wParam == VK_F12) dynamicInputEnabled_ = !dynamicInputEnabled_;
         else if (wParam == 'L') selectTool(DrawTool::Line);
         else if (wParam == 'P') selectTool(DrawTool::Polyline);
         else if (wParam == 'A') selectTool(DrawTool::Rectangle);
         else if (wParam == 'C') selectTool(DrawTool::Circle);
+        else if (wParam == 'F') selectTool(DrawTool::Face3D);
         else if (wParam == 'M') startTransformCommand(TransformCommand::Move);
         else if (wParam == 'K') startTransformCommand(TransformCommand::Copy);
         else if (wParam == 'O' && !(GetKeyState(VK_CONTROL) & 0x8000))
@@ -600,6 +772,7 @@ LRESULT Application::handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lPa
         else if (wParam == 'I') startTransformCommand(TransformCommand::Mirror);
         else if (wParam == 'T') startTransformCommand(TransformCommand::Trim);
         else if (wParam == 'E') startTransformCommand(TransformCommand::Extend);
+        else if (wParam == 'G') startTransformCommand(TransformCommand::Fillet);
         else if (wParam == 'V') toggle3DView();
         else if (wParam == 'W') startWorkPlaneCommand();
         else if (wParam == 'B') addCube();
@@ -648,11 +821,50 @@ void Application::onLeftButtonDown(int x, int y) {
     }
     if (workPlanePicking_) {
         updateHover(x, y);
-        if (hover_) commitWorkPlanePoint(hover_->point);
+        if (hover_) {
+            const Vec3 point = hover_->point;
+            clearTemporaryTracking();
+            commitWorkPlanePoint(point);
+        }
         updateControls(); invalidateCanvas(); return;
     }
     if (transformCommand_ != TransformCommand::None) {
-        if (transformPhase_ == TransformPhase::Selecting) {
+        if (transformCommand_ == TransformCommand::Fillet &&
+            transformPhase_ == TransformPhase::Selecting) {
+            const auto hit = trimExtendTargetAt(x, y);
+            std::optional<Vec3> pick;
+            if (mode_ == EditMode::Draw2D) pick = screenTo2D(x, y);
+            else {
+                RECT viewport{}; GetClientRect(canvas_, &viewport);
+                pick = camera_.unprojectToPlane({static_cast<double>(x), static_cast<double>(y)},
+                    std::max(1L, viewport.right), std::max(1L, viewport.bottom), workPlane_);
+            }
+            if (!hit || !pick || *hit >= document_.models().size()) {
+                MessageBeep(MB_ICONWARNING);
+            } else if (selectedModels_.empty()) {
+                selectedModels_.push_back(*hit);
+                filletFirstPick_ = *pick;
+            } else if (*hit == selectedModels_.front() || !filletFirstPick_) {
+                MessageBeep(MB_ICONWARNING);
+            } else {
+                const std::size_t firstIndex = selectedModels_.front();
+                const auto result = filletLinesOnPlane(
+                    document_.models()[firstIndex], *filletFirstPick_,
+                    document_.models()[*hit], *pick, filletRadius_, workPlane_);
+                if (!result) {
+                    MessageBeep(MB_ICONWARNING);
+                } else {
+                    std::vector<WireframeModel> firstReplacement;
+                    firstReplacement.push_back(result->first);
+                    std::vector<WireframeModel> secondReplacement;
+                    secondReplacement.push_back(result->second);
+                    document_.replaceModel(firstIndex, std::move(firstReplacement));
+                    document_.replaceModel(*hit, std::move(secondReplacement));
+                    document_.addModel(result->arc);
+                    cancelTransformCommand();
+                }
+            }
+        } else if (transformPhase_ == TransformPhase::Selecting) {
             if (selectionFirstCorner_) completeWindowSelection(x, y);
             else if (!toggleModelSelection(x, y)) selectionFirstCorner_ = POINT{x, y};
         } else {
@@ -660,8 +872,12 @@ void Application::onLeftButtonDown(int x, int y) {
                 transformCommand_ == TransformCommand::Extend) {
                 if (transformPhase_ == TransformPhase::Destination) {
                     cursorScreen_ = {x, y};
-                    if (mode_ == EditMode::Draw2D) commitTransformPoint(screenTo2D(x, y));
-                    else {
+                    if (selectionFirstCorner_) {
+                        completeTrimExtendTargetSelection(x, y);
+                    } else if (const auto target = trimExtendTargetAt(x, y)) {
+                        if (mode_ == EditMode::Draw2D) {
+                            applyTrimExtendTarget(*target, screenTo2D(x, y));
+                        } else {
                         RECT viewport{}; GetClientRect(canvas_, &viewport);
                         WorkPlane targetPlane = workPlane_;
                         if (!modifierBoundaries_.empty() && !modifierBoundaries_.front().vertices().empty())
@@ -669,19 +885,30 @@ void Application::onLeftButtonDown(int x, int y) {
                         if (const auto point = camera_.unprojectToPlane(
                                 {static_cast<double>(x), static_cast<double>(y)},
                                 std::max(1L, viewport.right), std::max(1L, viewport.bottom), targetPlane))
-                            commitTransformPoint(*point);
+                                applyTrimExtendTarget(*target, *point);
+                        }
+                    } else {
+                        selectionFirstCorner_ = POINT{x, y};
                     }
                 } else MessageBeep(MB_ICONWARNING);
             } else {
                 updateHover(x, y);
-                if (hover_) commitTransformPoint(hover_->point);
+                if (hover_) {
+                    const Vec3 point = hover_->point;
+                    clearTemporaryTracking();
+                    commitTransformPoint(point);
+                }
             }
         }
         updateControls(); updateStatus(); invalidateCanvas(); return;
     }
     if (drawingActive_) {
         updateHover(x, y);
-        if (hover_) commitPoint(hover_->point);
+        if (hover_) {
+            const Vec3 point = hover_->point;
+            clearTemporaryTracking();
+            commitPoint(point);
+        }
     } else if (mode_ == EditMode::View3D) {
         rotating_ = true; lastMouse_ = {x, y}; SetCapture(canvas_);
     }
@@ -780,7 +1007,22 @@ void Application::onCharacter(wchar_t character) {
     if (!transforming && !workPlanePicking_ &&
         ((mode_ != EditMode::Draw2D && !drawingActive_) || !dynamicInputEnabled_)) return;
     if (character == L'\r') {
-        if (transforming && transformPhase_ == TransformPhase::Selecting) {
+        if (transformCommand_ == TransformCommand::Fillet &&
+            transformPhase_ == TransformPhase::Selecting && !input_.empty()) {
+            try {
+                std::size_t used{};
+                const double radius = std::stod(input_, &used);
+                if (used != input_.size() || !std::isfinite(radius) || radius <= 0.0)
+                    throw std::invalid_argument("fillet radius");
+                filletRadius_ = radius;
+                input_.clear();
+            } catch (...) {
+                MessageBeep(MB_ICONWARNING);
+            }
+        } else if (transformCommand_ == TransformCommand::Fillet &&
+                   transformPhase_ == TransformPhase::Selecting) {
+            cancelTransformCommand();
+        } else if (transforming && transformPhase_ == TransformPhase::Selecting) {
             if (selectionFirstCorner_) selectionFirstCorner_.reset();
             else if (!selectedModels_.empty() &&
                      (transformCommand_ != TransformCommand::Offset || selectedModels_.size() == 1)) {
@@ -837,13 +1079,14 @@ void Application::onCharacter(wchar_t character) {
                 : (transforming ? transformBase_ : anchor_);
             if (const auto point = parseDynamicPoint(input_, origin, hover_ ? std::optional<Vec3>{hover_->point}
                                                                              : std::nullopt)) {
+                clearTemporaryTracking();
                 if (workPlanePicking_) commitWorkPlanePoint(*point);
                 else if (transforming) commitTransformPoint(*point);
                 else commitPoint(*point);
                 input_.clear();
             }
             else MessageBeep(MB_ICONWARNING);
-        } else if (tool_ == DrawTool::Polyline) cancelDrawing();
+        } else if (tool_ == DrawTool::Polyline || tool_ == DrawTool::Face3D) cancelDrawing();
     } else if (character == L'\b') {
         if (!input_.empty()) input_.pop_back();
     } else if ((character >= L'0' && character <= L'9') || character == L'-' || character == L'+' ||
@@ -854,6 +1097,21 @@ void Application::onCharacter(wchar_t character) {
 }
 
 void Application::commitPoint(const Vec3& point) {
+    if (tool_ == DrawTool::Face3D) {
+        if (!facePoints_.empty() && point == facePoints_.back()) {
+            MessageBeep(MB_ICONWARNING);
+            return;
+        }
+        facePoints_.push_back(point);
+        anchor_ = point;
+        if (facePoints_.size() == 4) {
+            addStyledModel(WireframeModel::face3D(
+                {facePoints_[0], facePoints_[1], facePoints_[2], facePoints_[3]}));
+            facePoints_.clear();
+            anchor_.reset();
+        }
+        return;
+    }
     if (!anchor_) { anchor_ = point; return; }
     const Vec3 start = *anchor_;
     switch (tool_) {
@@ -886,10 +1144,28 @@ void Application::commitPoint(const Vec3& point) {
             if (radius > 0.0) addStyledModel(WireframeModel::circle(start, radius));
         }
         anchor_.reset(); break;
-    }}
+    }
+    case DrawTool::Face3D:
+        break;
+    }
 }
 
-void Application::cancelDrawing() { anchor_.reset(); input_.clear(); }
+void Application::clearTemporaryTracking() {
+    if (window_) KillTimer(window_, 5);
+    temporaryPointDwellCandidate_.reset();
+    temporaryTrackingPoints_.clear();
+    temporaryTrackingGuides_.clear();
+    temporaryDerivedPoints_.clear();
+    polarTrackingLocked_ = false;
+    temporaryTrackingLocked_ = false;
+}
+
+void Application::cancelDrawing() {
+    anchor_.reset();
+    facePoints_.clear();
+    input_.clear();
+    clearTemporaryTracking();
+}
 
 void Application::startTransformCommand(TransformCommand command) {
     cancelZoomWindow2D();
@@ -902,6 +1178,7 @@ void Application::startTransformCommand(TransformCommand command) {
     selectionFirstCorner_.reset();
     transformBase_.reset();
     offsetDistance_.reset();
+    filletFirstPick_.reset();
     arrayItemCount_.reset();
     modifierBoundaries_.clear();
     drawingActive_ = false;
@@ -916,6 +1193,16 @@ void Application::toggle3DView() {
     cancelDrawing();
     mode_ = mode_ == EditMode::View3D ? EditMode::Draw2D : EditMode::View3D;
     drawingActive_ = mode_ == EditMode::Draw2D;
+}
+
+void Application::setStandardView(StandardView view) {
+    cancelZoomWindow2D();
+    if (workPlanePicking_) cancelWorkPlaneCommand();
+    if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
+    cancelDrawing();
+    camera_.setView(view);
+    mode_ = EditMode::View3D;
+    drawingActive_ = false;
 }
 
 void Application::zoomExtents2D() {
@@ -987,6 +1274,7 @@ void Application::cancelWorkPlaneCommand() {
     workPlanePicking_ = false;
     workPlanePoints_.clear();
     hover_.reset();
+    clearTemporaryTracking();
 }
 
 void Application::commitWorkPlanePoint(const Vec3& point) {
@@ -1009,10 +1297,12 @@ void Application::cancelTransformCommand() {
     selectionFirstCorner_.reset();
     transformBase_.reset();
     offsetDistance_.reset();
+    filletFirstPick_.reset();
     arrayItemCount_.reset();
     modifierBoundaries_.clear();
     input_.clear();
     drawingActive_ = false;
+    clearTemporaryTracking();
     SetCursor(currentCanvasCursor());
 }
 
@@ -1058,6 +1348,79 @@ void Application::completeWindowSelection(int x, int y) {
     }
 }
 
+std::optional<std::size_t> Application::trimExtendTargetAt(int x, int y) const {
+    if (mode_ == EditMode::Draw2D)
+        return hitTestModel2D(screenTo2D(x, y), document_, 10.0 / (60.0 * camera_.zoom()));
+    RECT viewport{};
+    GetClientRect(canvas_, &viewport);
+    return hitTestModel3D({static_cast<double>(x), static_cast<double>(y)}, document_, camera_,
+                          std::max(1L, viewport.right), std::max(1L, viewport.bottom), 10.0);
+}
+
+bool Application::applyTrimExtendTarget(std::size_t target, const Vec3& pickPoint) {
+    if (target >= document_.models().size() || modifierBoundaries_.empty()) return false;
+    if (transformCommand_ == TransformCommand::Trim) {
+        auto result = mode_ == EditMode::View3D
+            ? trimLineOnPlane(document_.models()[target], modifierBoundaries_, pickPoint, workPlane_)
+            : trimLine2D(document_.models()[target], modifierBoundaries_, pickPoint);
+        if (!result) return false;
+        document_.replaceModel(target, std::move(*result));
+        return true;
+    }
+    if (transformCommand_ == TransformCommand::Extend) {
+        auto result = mode_ == EditMode::View3D
+            ? extendLineOnPlane(document_.models()[target], modifierBoundaries_, pickPoint, workPlane_)
+            : extendLine2D(document_.models()[target], modifierBoundaries_, pickPoint);
+        if (!result) return false;
+        std::vector<WireframeModel> replacement;
+        replacement.push_back(std::move(*result));
+        document_.replaceModel(target, std::move(replacement));
+        return true;
+    }
+    return false;
+}
+
+void Application::completeTrimExtendTargetSelection(int x, int y) {
+    if (!selectionFirstCorner_) return;
+    const POINT first = *selectionFirstCorner_;
+    selectionFirstCorner_.reset();
+    if (first.x == x || first.y == y) return;
+    const bool crossing = x < first.x;
+    std::vector<std::pair<std::size_t, Vec3>> targets;
+    if (mode_ == EditMode::Draw2D) {
+        const Vec3 firstWorld = screenTo2D(first.x, first.y);
+        const Vec3 secondWorld = screenTo2D(x, y);
+        const auto hits = selectModelsInRect2D(firstWorld, secondWorld, document_, crossing);
+        for (const auto index : hits) {
+            if (index >= document_.models().size()) continue;
+            if (const auto pick = crossingSelectionPickPoint2D(document_.models()[index],
+                                                                firstWorld, secondWorld))
+                targets.emplace_back(index, *pick);
+        }
+    } else {
+        RECT viewport{}; GetClientRect(canvas_, &viewport);
+        const Vec2 firstScreen{static_cast<double>(first.x), static_cast<double>(first.y)};
+        const Vec2 secondScreen{static_cast<double>(x), static_cast<double>(y)};
+        const auto hits = selectModelsInRect3D(firstScreen, secondScreen, document_, camera_,
+                                               std::max(1L, viewport.right),
+                                               std::max(1L, viewport.bottom), crossing);
+        for (const auto index : hits) {
+            if (index >= document_.models().size()) continue;
+            if (const auto pick = crossingSelectionPickPoint3D(
+                    document_.models()[index], firstScreen, secondScreen, camera_,
+                    std::max(1L, viewport.right), std::max(1L, viewport.bottom)))
+                targets.emplace_back(index, *pick);
+        }
+    }
+    std::sort(targets.begin(), targets.end(), [](const auto& left, const auto& right) {
+        return left.first > right.first;
+    });
+    bool changed = false;
+    for (const auto& [index, pick] : targets)
+        changed = applyTrimExtendTarget(index, pick) || changed;
+    if (!changed) MessageBeep(MB_ICONWARNING);
+}
+
 void Application::commitTransformPoint(const Vec3& point) {
     if (transformCommand_ == TransformCommand::Trim ||
         transformCommand_ == TransformCommand::Extend) {
@@ -1076,26 +1439,9 @@ void Application::commitTransformPoint(const Vec3& point) {
             MessageBeep(MB_ICONWARNING);
             return;
         }
-        if (transformCommand_ == TransformCommand::Trim) {
-            auto result = mode_ == EditMode::View3D
-                ? trimLineOnPlane(document_.models()[*target], modifierBoundaries_, point, workPlane_)
-                : trimLine2D(document_.models()[*target], modifierBoundaries_, point);
-            if (!result) {
-                MessageBeep(MB_ICONWARNING);
-                return;
-            }
-            document_.replaceModel(*target, std::move(*result));
-        } else {
-            auto result = mode_ == EditMode::View3D
-                ? extendLineOnPlane(document_.models()[*target], modifierBoundaries_, point, workPlane_)
-                : extendLine2D(document_.models()[*target], modifierBoundaries_, point);
-            if (!result) {
-                MessageBeep(MB_ICONWARNING);
-                return;
-            }
-            std::vector<WireframeModel> replacement;
-            replacement.push_back(std::move(*result));
-            document_.replaceModel(*target, std::move(replacement));
+        if (!applyTrimExtendTarget(*target, point)) {
+            MessageBeep(MB_ICONWARNING);
+            return;
         }
         if (modifierCompletesAfterCommit(transformCommand_)) cancelTransformCommand();
         return;
@@ -1192,10 +1538,12 @@ void Application::updateHover(int x, int y) {
     if (!canvas_) return;
     cursorScreen_ = {x, y};
     polarTrackingLocked_ = false;
+    temporaryTrackingLocked_ = false;
     const bool snapCommandActive = workPlanePicking_ ||
         commandAllowsSnapping(drawingActive_, transformCommand_, transformPhase_,
                               arrayItemCount_.has_value(), offsetDistance_.has_value());
     if (!snapCommandActive) {
+        clearTemporaryTracking();
         hover_.reset();
         return;
     }
@@ -1203,6 +1551,10 @@ void Application::updateHover(int x, int y) {
                                    transformPhase_ == TransformPhase::Selecting;
     const bool cameraNavigating = wheelNavigating_ || panning2D_ || rotating_ || viewCubeManipulating_;
     if (!shouldEvaluateSnapping(selectingEntities, zoomWindowActive_, cameraNavigating)) {
+        KillTimer(window_, 5);
+        temporaryPointDwellCandidate_.reset();
+        temporaryTrackingGuides_.clear();
+        temporaryDerivedPoints_.clear();
         hover_.reset();
         return;
     }
@@ -1238,6 +1590,35 @@ void Application::updateHover(int x, int y) {
                                     width, height, 10.0, 1.0, activePlane,
                                     snapEnabled_, gridSnapEnabled_, reference, &enabledSnapTypes_);
     }
+    const SnapResult rawSnap = *hover_;
+    const bool acquirable = polarTrackingEnabled_ && rawSnap.type != SnapType::None &&
+                            rawSnap.type != SnapType::Grid;
+    const bool alreadyAcquired = std::find(temporaryTrackingPoints_.begin(),
+        temporaryTrackingPoints_.end(), rawSnap.point) != temporaryTrackingPoints_.end();
+    if (acquirable && !alreadyAcquired) {
+        if (!temporaryPointDwellCandidate_ || temporaryPointDwellCandidate_->point != rawSnap.point ||
+            temporaryPointDwellCandidate_->type != rawSnap.type) {
+            KillTimer(window_, 5);
+            temporaryPointDwellCandidate_ = rawSnap;
+            SetTimer(window_, 5, 450, nullptr);
+        }
+    } else {
+        KillTimer(window_, 5);
+        temporaryPointDwellCandidate_.reset();
+    }
+
+    temporaryTrackingGuides_.clear();
+    temporaryDerivedPoints_.clear();
+    if (polarTrackingEnabled_ && !orthoEnabled_ && !temporaryTrackingPoints_.empty()) {
+        const double trackingTolerance = 10.0 / (60.0 * camera_.zoom());
+        auto tracking = resolveTemporaryPointTracking(*hover_, temporaryTrackingPoints_, workPlane_,
+                                                       trackingTolerance);
+        hover_ = tracking.result;
+        temporaryTrackingGuides_ = std::move(tracking.guides);
+        temporaryDerivedPoints_ = std::move(tracking.derivedPoints);
+        polarTrackingLocked_ = tracking.locked;
+        temporaryTrackingLocked_ = tracking.locked;
+    }
     auto orthoAnchor = transformPhase_ == TransformPhase::Destination ? transformBase_ : anchor_;
     if (!orthoAnchor && workPlanePicking_ && !workPlanePoints_.empty())
         orthoAnchor = workPlanePoints_.back();
@@ -1251,7 +1632,7 @@ void Application::updateHover(int x, int y) {
         } else {
             hover_ = applyOrtho(*orthoAnchor, *hover_, transformCommand_ == TransformCommand::None);
         }
-    } else if (polarTrackingEnabled_ && orthoAnchor && hover_) {
+    } else if (polarTrackingEnabled_ && !polarTrackingLocked_ && orthoAnchor && hover_) {
         const SnapResult original = *hover_;
         hover_ = mode_ == EditMode::View3D
             ? applyPolarTracking(*orthoAnchor, *hover_, workPlane_, 90.0, 12.0, true)
@@ -1284,6 +1665,7 @@ void Application::executeCommand(int id) {
         if (workPlanePicking_) cancelWorkPlaneCommand();
         if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
         else cancelDrawing();
+        camera_.reset();
         drawingActive_ = mode_ == EditMode::Draw2D;
         break;
     case CmdOpen: openDocument(); break;
@@ -1294,6 +1676,7 @@ void Application::executeCommand(int id) {
     case CmdPolyline: selectTool(DrawTool::Polyline); break;
     case CmdRectangle: selectTool(DrawTool::Rectangle); break;
     case CmdCircle: selectTool(DrawTool::Circle); break;
+    case CmdFace3D: selectTool(DrawTool::Face3D); break;
     case CmdCube: addCube(); break;
     case CmdPyramid: addPyramid(); break;
     case CmdResetView: camera_.reset(); break;
@@ -1301,12 +1684,58 @@ void Application::executeCommand(int id) {
     case CmdWorkPlane: startWorkPlaneCommand(); break;
     case CmdZoomExtents: zoomExtents2D(); break;
     case CmdZoomWindow: startZoomWindow2D(); break;
+    case CmdVisualStyle: {
+        HMENU menu = CreatePopupMenu();
+        AppendMenuW(menu, MF_STRING | (visualStyle_ == VisualStyle::Wireframe ? MF_CHECKED : 0),
+                    CmdWireframe, L"Wireframe");
+        AppendMenuW(menu, MF_STRING | (visualStyle_ == VisualStyle::Solid ? MF_CHECKED : 0),
+                    CmdSolid, L"Solid");
+        AppendMenuW(menu, MF_STRING | (visualStyle_ == VisualStyle::Transparent ? MF_CHECKED : 0),
+                    CmdTransparent, L"Saydam");
+        RECT buttonRect{};
+        GetWindowRect(visualStyleButton_, &buttonRect);
+        const UINT selected = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_LEFTALIGN | TPM_TOPALIGN,
+                                             buttonRect.left, buttonRect.bottom, 0, window_, nullptr);
+        DestroyMenu(menu);
+        if (selected) SendMessageW(window_, WM_COMMAND, selected, 0);
+        break;
+    }
+    case CmdStandardView: {
+        HMENU menu = CreatePopupMenu();
+        AppendMenuW(menu, MF_STRING, CmdViewTop, L"Üstten Görünüş");
+        AppendMenuW(menu, MF_STRING, CmdViewBottom, L"Alttan Görünüş");
+        AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+        AppendMenuW(menu, MF_STRING, CmdViewFront, L"Önden Görünüş");
+        AppendMenuW(menu, MF_STRING, CmdViewBack, L"Arkadan Görünüş");
+        AppendMenuW(menu, MF_STRING, CmdViewLeft, L"Sol Görünüş");
+        AppendMenuW(menu, MF_STRING, CmdViewRight, L"Sağ Görünüş");
+        AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+        AppendMenuW(menu, MF_STRING, CmdViewIsometric, L"ISO Görünüş");
+        RECT buttonRect{};
+        GetWindowRect(standardViewButton_, &buttonRect);
+        const UINT selected = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_LEFTALIGN | TPM_TOPALIGN,
+                                             buttonRect.left, buttonRect.bottom, 0, window_, nullptr);
+        DestroyMenu(menu);
+        if (selected) SendMessageW(window_, WM_COMMAND, selected, 0);
+        break;
+    }
+    case CmdWireframe: visualStyle_ = VisualStyle::Wireframe; break;
+    case CmdSolid: visualStyle_ = VisualStyle::Solid; break;
+    case CmdTransparent: visualStyle_ = VisualStyle::Transparent; break;
+    case CmdViewFront: setStandardView(StandardView::Front); break;
+    case CmdViewBack: setStandardView(StandardView::Back); break;
+    case CmdViewLeft: setStandardView(StandardView::Left); break;
+    case CmdViewRight: setStandardView(StandardView::Right); break;
+    case CmdViewIsometric: setStandardView(StandardView::Isometric); break;
+    case CmdViewTop: setStandardView(StandardView::Top); break;
+    case CmdViewBottom: setStandardView(StandardView::Bottom); break;
     case CmdOsnap: snapEnabled_ = !snapEnabled_; break;
     case CmdGridSnap: gridSnapEnabled_ = !gridSnapEnabled_; break;
     case CmdDynamicInput: dynamicInputEnabled_ = !dynamicInputEnabled_; break;
     case CmdPolarTracking:
         polarTrackingEnabled_ = !polarTrackingEnabled_;
         if (polarTrackingEnabled_) orthoEnabled_ = false;
+        else clearTemporaryTracking();
         break;
     case CmdSnapSettings:
         snapPanelOpen_ = !snapPanelOpen_;
@@ -1322,6 +1751,7 @@ void Application::executeCommand(int id) {
     case CmdPolarArray: startTransformCommand(TransformCommand::PolarArray); break;
     case CmdTrim: startTransformCommand(TransformCommand::Trim); break;
     case CmdExtend: startTransformCommand(TransformCommand::Extend); break;
+    case CmdFillet: startTransformCommand(TransformCommand::Fillet); break;
     default: break;
     }
     updateHover(cursorScreen_.x, cursorScreen_.y);
@@ -1355,6 +1785,7 @@ void Application::updateControls() {
     check(polylineButton_, drawingActive_ && tool_ == DrawTool::Polyline);
     check(rectangleButton_, drawingActive_ && tool_ == DrawTool::Rectangle);
     check(circleButton_, drawingActive_ && tool_ == DrawTool::Circle);
+    check(face3DButton_, drawingActive_ && tool_ == DrawTool::Face3D);
     check(snapButton_, snapEnabled_);
     check(gridSnapButton_, gridSnapEnabled_);
     check(dynamicInputButton_, dynamicInputEnabled_);
@@ -1371,7 +1802,14 @@ void Application::updateControls() {
     check(polarArrayButton_, transformCommand_ == TransformCommand::PolarArray);
     check(trimButton_, transformCommand_ == TransformCommand::Trim);
     check(extendButton_, transformCommand_ == TransformCommand::Extend);
+    check(filletButton_, transformCommand_ == TransformCommand::Fillet);
     check(view3DButton_, mode_ == EditMode::View3D);
+    if (visualStyleButton_) {
+        const wchar_t* label = L"◇\r\nWireframe ▼";
+        if (visualStyle_ == VisualStyle::Solid) label = L"◆\r\nSolid ▼";
+        else if (visualStyle_ == VisualStyle::Transparent) label = L"◈\r\nSaydam ▼";
+        SetWindowTextW(visualStyleButton_, label);
+    }
     check(workPlaneButton_, workPlanePicking_);
     check(zoomWindowButton_, zoomWindowActive_);
     updateStatus();
@@ -1438,7 +1876,7 @@ void Application::updateStatus() {
         return;
     }
     std::wstring text = L"   ";
-    text += mode_ == EditMode::View3D ? L"3B Paralel" : L"2B";
+    text += mode_ == EditMode::View3D ? L"3B Paralel" : L"2B Plan XY";
     if (workPlanePicking_) {
         text += L"  |  WORK PLANE — ";
         if (workPlanePoints_.empty()) text += L"1. noktayı belirtin";
@@ -1457,10 +1895,18 @@ void Application::updateStatus() {
         else if (transformCommand_ == TransformCommand::LinearArray) text += L"LINEAR ARRAY";
         else if (transformCommand_ == TransformCommand::PolarArray) text += L"POLAR ARRAY";
         else if (transformCommand_ == TransformCommand::Trim) text += L"TRIM";
-        else text += L"EXTEND";
+        else if (transformCommand_ == TransformCommand::Extend) text += L"EXTEND";
+        else text += L"FILLET";
         text += L" — ";
         if (transformPhase_ == TransformPhase::Selecting) {
-            if (transformCommand_ == TransformCommand::Offset) text += L"Bir çizgi veya daire seçin, Enter";
+            if (transformCommand_ == TransformCommand::Fillet) {
+                wchar_t radius[64]{};
+                std::swprintf(radius, std::size(radius), L"R=%.3f — ", filletRadius_);
+                text += radius;
+                text += selectedModels_.empty()
+                    ? L"İlk çizginin korunacak tarafını seçin; yeni yarıçapı yazıp Enter'a basabilirsiniz"
+                    : L"İkinci çizginin korunacak tarafını seçin";
+            } else if (transformCommand_ == TransformCommand::Offset) text += L"Bir çizgi veya daire seçin, Enter";
             else if (transformCommand_ == TransformCommand::Trim ||
                      transformCommand_ == TransformCommand::Extend)
                 text += selectionFirstCorner_ ? L"Diğer köşeyi belirtin" : L"Sınır nesnelerini seçin, Enter";
@@ -1481,14 +1927,16 @@ void Application::updateStatus() {
         } else if (transformCommand_ == TransformCommand::LinearArray) {
             text += L"Öğeler arası aralık için ikinci noktayı belirtin";
         } else if (transformCommand_ == TransformCommand::Trim) {
-            text += L"Kesilecek çizgi bölümünü seçin; Enter ile bitir";
+            text += L"Kesilecek çizgi bölümünü tıklayın veya crossing pencere çizin; Enter ile bitir";
         } else if (transformCommand_ == TransformCommand::Extend) {
-            text += L"Uzatılacak çizginin uç tarafını seçin; Enter ile bitir";
+            text += L"Uzatılacak çizginin uçlarını tıklayın veya crossing pencere çizin; Enter ile bitir";
         } else text += L"İkinci noktayı belirtin";
     } else if (!drawingActive_) {
         text += L"  |  PASİF — Komut yok; Snap pasif";
     } else {
         text += L"  |  Araç: "; text += toolLabel(tool_);
+        if (tool_ == DrawTool::Face3D)
+            text += L" — " + std::to_wstring(facePoints_.size() + 1) + L". köşeyi belirtin (4 köşe)";
     }
     text += L"  |  Nesne: " + std::to_wstring(document_.models().size());
     const bool snapEffective = snapEnabled_ && (workPlanePicking_ ||
@@ -1502,8 +1950,22 @@ void Application::updateStatus() {
         text += transformCommand_ == TransformCommand::None ? L" (U/V)" : L" (U/V/N)";
     text += L"  |  POLAR F10: ";
     text += polarTrackingEnabled_ ? (polarTrackingLocked_ ? L"90° İzleme" : L"90° Açık") : L"Kapalı";
+    if (polarTrackingEnabled_ && !temporaryTrackingPoints_.empty()) {
+        text += L"  |  TEMP: " + std::to_wstring(temporaryTrackingPoints_.size());
+        if (temporaryTrackingLocked_ && hover_) {
+            text += L" (";
+            text += snapTypeLabel(hover_->type);
+            text += L")";
+        }
+    }
     text += L"  |  GRID: "; text += gridSnapEnabled_ ? L"Açık" : L"Kapalı";
     text += L"  |  DYN: "; text += dynamicInputEnabled_ ? L"Açık" : L"Kapalı";
+    text += L"  |  Görünüm: ";
+    switch (visualStyle_) {
+    case VisualStyle::Wireframe: text += L"Wireframe"; break;
+    case VisualStyle::Solid: text += L"Solid"; break;
+    case VisualStyle::Transparent: text += L"Saydam"; break;
+    }
     if (hover_) {
         wchar_t coordinates[96]{};
         std::swprintf(coordinates, std::size(coordinates), L"  |  X %.3f  Y %.3f  Z %.3f",
@@ -1546,11 +2008,15 @@ HCURSOR Application::currentCanvasCursor() const noexcept {
 
 DraftView Application::draftView() const {
     DraftView view;
-    view.tool = tool_; view.anchor = anchor_;
+    view.tool = tool_; view.visualStyle = visualStyle_; view.anchor = anchor_; view.facePoints = facePoints_;
     if (hover_) { view.cursor = hover_->point; view.snapType = hover_->type; }
     view.drawingActive = drawingActive_; view.snapEnabled = snapEnabled_;
     view.gridSnapEnabled = gridSnapEnabled_; view.dynamicInputEnabled = dynamicInputEnabled_;
     view.polarTrackingEnabled = polarTrackingEnabled_; view.polarTrackingLocked = polarTrackingLocked_;
+    view.temporaryTrackingLocked = temporaryTrackingLocked_;
+    view.temporaryTrackingPoints = temporaryTrackingPoints_;
+    view.temporaryTrackingGuides = temporaryTrackingGuides_;
+    view.temporaryDerivedPoints = temporaryDerivedPoints_;
     view.workPlaneZ = workPlane_.origin.z; view.workPlane = workPlane_;
     view.workPlanePicking = workPlanePicking_; view.workPlanePoints = workPlanePoints_;
     view.input = input_; view.cursorScreen = cursorScreen_;
@@ -1558,6 +2024,8 @@ DraftView Application::draftView() const {
     view.selectedModels = selectedModels_; view.selectionFirstCorner = selectionFirstCorner_;
     view.transformBase = transformBase_;
     view.offsetDistance = offsetDistance_;
+    view.filletRadius = filletRadius_;
+    view.filletFirstPick = filletFirstPick_;
     view.arrayItemCount = arrayItemCount_;
     view.modifierBoundaries = modifierBoundaries_;
     view.zoomWindowActive = zoomWindowActive_; view.zoomWindowFirstCorner = zoomWindowFirstCorner_;

@@ -12,7 +12,7 @@
 
 namespace mm {
 
-enum class DrawTool { Line, Polyline, Rectangle, Circle };
+enum class DrawTool { Line, Polyline, Rectangle, Circle, Face3D };
 enum class SnapType {
     None, Grid, Endpoint, Midpoint, Center, GeometricCenter, Node, Quadrant,
     Intersection, ApparentIntersection, Extension, Insertion, Perpendicular,
@@ -28,6 +28,24 @@ struct SnapResult {
     Vec3 point{};
     SnapType type{SnapType::None};
     double distance{};
+};
+
+struct TrackingGuide {
+    Vec3 from{};
+    Vec3 to{};
+};
+
+struct TemporaryTrackingResult {
+    SnapResult result{};
+    std::vector<TrackingGuide> guides;
+    std::vector<Vec3> derivedPoints;
+    bool locked{};
+};
+
+struct FilletResult {
+    WireframeModel first;
+    WireframeModel second;
+    WireframeModel arc;
 };
 
 struct EntityStyleSelection {
@@ -89,6 +107,9 @@ SnapResult applyPolarTracking(const Vec3& anchor, SnapResult candidate,
 SnapResult applyPolarTracking(const Vec3& anchor, SnapResult candidate, const WorkPlane& plane,
                               double incrementDegrees = 90.0, double apertureDegrees = 12.0,
                               bool preserveObjectSnaps = true) noexcept;
+TemporaryTrackingResult resolveTemporaryPointTracking(
+    SnapResult candidate, const std::vector<Vec3>& acquiredPoints, const WorkPlane& plane,
+    double tolerance) noexcept;
 std::optional<std::size_t> hitTestModel2D(const Vec3& cursor, const Document& document,
                                          double tolerance);
 std::optional<std::size_t> hitTestModel3D(const Vec2& cursor, const Document& document,
@@ -99,6 +120,12 @@ std::vector<std::size_t> selectModelsInRect2D(const Vec3& firstCorner, const Vec
 std::vector<std::size_t> selectModelsInRect3D(const Vec2& firstCorner, const Vec2& secondCorner,
                                               const Document& document, const Camera& camera,
                                               int viewportWidth, int viewportHeight, bool crossing);
+std::optional<Vec3> crossingSelectionPickPoint2D(const WireframeModel& model,
+                                                 const Vec3& firstCorner, const Vec3& secondCorner);
+std::optional<Vec3> crossingSelectionPickPoint3D(const WireframeModel& model,
+                                                 const Vec2& firstCorner, const Vec2& secondCorner,
+                                                 const Camera& camera, int viewportWidth,
+                                                 int viewportHeight);
 std::optional<WireframeModel> offsetModel2D(const WireframeModel& source, double distance,
                                             const Vec3& sidePoint);
 std::optional<WireframeModel> mirrorModel2D(const WireframeModel& source, const Vec3& axisStart,
@@ -126,5 +153,9 @@ std::optional<std::vector<WireframeModel>> trimLineOnPlane(
 std::optional<WireframeModel> extendLineOnPlane(
     const WireframeModel& source, const std::vector<WireframeModel>& boundaries,
     const Vec3& pickPoint, const WorkPlane& plane);
+std::optional<FilletResult> filletLinesOnPlane(
+    const WireframeModel& first, const Vec3& firstPick,
+    const WireframeModel& second, const Vec3& secondPick,
+    double radius, const WorkPlane& plane);
 
 } // namespace mm

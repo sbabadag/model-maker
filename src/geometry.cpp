@@ -1,5 +1,6 @@
 #include "model_maker/geometry.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <numbers>
 #include <stdexcept>
@@ -48,12 +49,18 @@ Vec2 WorkPlane::toPlane(Vec3 point) const noexcept {
     return {dot3(relative, u), dot3(relative, v)};
 }
 
-WireframeModel::WireframeModel(std::vector<Vec3> vertices, std::vector<Edge> edges)
-    : vertices_(std::move(vertices)), edges_(std::move(edges)) {
+WireframeModel::WireframeModel(std::vector<Vec3> vertices, std::vector<Edge> edges,
+                               std::vector<Face> faces)
+    : vertices_(std::move(vertices)), edges_(std::move(edges)), faces_(std::move(faces)) {
     for (const auto& edge : edges_) {
         if (edge.from >= vertices_.size() || edge.to >= vertices_.size()) {
             throw std::invalid_argument("Edge references a missing vertex");
         }
+    }
+    for (const auto& face : faces_) {
+        if (face.size() < 3 || std::any_of(face.begin(), face.end(), [&](std::size_t index) {
+                return index >= vertices_.size();
+            })) throw std::invalid_argument("Face references a missing vertex");
     }
 }
 
@@ -64,6 +71,13 @@ WireframeModel WireframeModel::line(Vec3 from, Vec3 to) {
 WireframeModel WireframeModel::point(Vec3 position) {
     WireframeModel model({position}, {});
     model.pointEntity_ = true;
+    return model;
+}
+
+WireframeModel WireframeModel::face3D(const std::array<Vec3, 4>& corners) {
+    WireframeModel model({corners.begin(), corners.end()}, {{0, 1}, {1, 2}, {2, 3}, {3, 0}},
+                         {{0, 1, 2, 3}});
+    model.face3D_ = true;
     return model;
 }
 
@@ -129,7 +143,9 @@ WireframeModel WireframeModel::cube(double size) {
         {{-h, -h, -h}, {h, -h, -h}, {h, h, -h}, {-h, h, -h},
          {-h, -h, h},  {h, -h, h},  {h, h, h},  {-h, h, h}},
         {{0, 1}, {1, 2}, {2, 3}, {3, 0}, {4, 5}, {5, 6},
-         {6, 7}, {7, 4}, {0, 4}, {1, 5}, {2, 6}, {3, 7}}
+         {6, 7}, {7, 4}, {0, 4}, {1, 5}, {2, 6}, {3, 7}},
+        {{0, 3, 2, 1}, {4, 5, 6, 7}, {0, 1, 5, 4},
+         {1, 2, 6, 5}, {2, 3, 7, 6}, {3, 0, 4, 7}}
     };
     model.insertionPoint_ = Vec3{};
     return model;
@@ -140,7 +156,8 @@ WireframeModel WireframeModel::pyramid(double baseSize, double height) {
     const double h = baseSize / 2.0;
     WireframeModel model{
         {{-h, -h, 0.0}, {h, -h, 0.0}, {h, h, 0.0}, {-h, h, 0.0}, {0.0, 0.0, height}},
-        {{0, 1}, {1, 2}, {2, 3}, {3, 0}, {0, 4}, {1, 4}, {2, 4}, {3, 4}}
+        {{0, 1}, {1, 2}, {2, 3}, {3, 0}, {0, 4}, {1, 4}, {2, 4}, {3, 4}},
+        {{0, 3, 2, 1}, {0, 1, 4}, {1, 2, 4}, {2, 3, 4}, {3, 0, 4}}
     };
     model.insertionPoint_ = Vec3{};
     return model;
@@ -148,7 +165,9 @@ WireframeModel WireframeModel::pyramid(double baseSize, double height) {
 
 const std::vector<Vec3>& WireframeModel::vertices() const noexcept { return vertices_; }
 const std::vector<Edge>& WireframeModel::edges() const noexcept { return edges_; }
+const std::vector<Face>& WireframeModel::faces() const noexcept { return faces_; }
 bool WireframeModel::isPointEntity() const noexcept { return pointEntity_; }
+bool WireframeModel::isFace3D() const noexcept { return face3D_; }
 std::optional<Vec3> WireframeModel::insertionPoint() const noexcept { return insertionPoint_; }
 std::optional<Vec3> WireframeModel::analyticCenter() const noexcept { return analyticCenter_; }
 std::optional<double> WireframeModel::analyticRadius() const noexcept { return analyticRadius_; }

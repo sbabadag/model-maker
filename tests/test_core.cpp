@@ -8,6 +8,7 @@
 #include "model_maker/dxf.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdio>
 #include <filesystem>
@@ -26,16 +27,63 @@ void test_vector_arithmetic() {
     require(result == mm::Vec3{5.0, 0.0, 4.0}, "Vec3 addition failed");
 }
 
+void test_work_plane_axis_glyph_uses_local_xyz_basis() {
+    const mm::WorkPlane plane{{1.0, 2.0, 3.0}, {0.0, 1.0, 0.0},
+                              {0.0, 0.0, 1.0}, {1.0, 0.0, 0.0}};
+    const auto glyph = mm::workPlaneAxisGlyph(plane, 2.0);
+    require(glyph.origin == plane.origin, "Work-plane XYZ glyph must start at the base point");
+    require(glyph.x == mm::Vec3{1.0, 4.0, 3.0}, "Glyph X must follow work-plane U");
+    require(glyph.y == mm::Vec3{1.0, 2.0, 5.0}, "Glyph Y must follow work-plane V");
+    require(glyph.z == mm::Vec3{3.0, 2.0, 3.0}, "Glyph Z must follow work-plane normal");
+}
+
 void test_cube_geometry() {
     const auto cube = mm::WireframeModel::cube(2.0);
     require(cube.vertices().size() == 8, "Cube must have 8 vertices");
     require(cube.edges().size() == 12, "Cube must have 12 edges");
+    require(cube.faces().size() == 6 &&
+                std::all_of(cube.faces().begin(), cube.faces().end(),
+                            [](const auto& face) { return face.size() == 4; }),
+            "Cube must expose six quad surfaces for Solid and Transparent rendering");
 }
 
 void test_pyramid_geometry() {
     const auto pyramid = mm::WireframeModel::pyramid(2.0, 3.0);
     require(pyramid.vertices().size() == 5, "Pyramid must have 5 vertices");
     require(pyramid.edges().size() == 8, "Pyramid must have 8 edges");
+    require(pyramid.faces().size() == 5,
+            "Pyramid must expose its base and four side surfaces for filled rendering");
+}
+
+void test_3dface_geometry_preserves_four_ordered_corners_and_identity() {
+    const std::array<mm::Vec3, 4> corners{{{0.0, 0.0, 0.0}, {4.0, 0.0, 1.0},
+                                           {4.0, 3.0, 2.0}, {0.0, 3.0, 1.0}}};
+    const auto face = mm::WireframeModel::face3D(corners);
+    require(face.isFace3D(), "3DFACE factory must preserve entity identity for DXF export");
+    require(face.vertices() == std::vector<mm::Vec3>(corners.begin(), corners.end()),
+            "3DFACE must preserve all four selected world-space corners in order");
+    require(face.edges() == std::vector<mm::Edge>({{0, 1}, {1, 2}, {2, 3}, {3, 0}}),
+            "3DFACE must expose its four boundary edges as one selectable model");
+    require(face.faces() == std::vector<std::vector<std::size_t>>({{0, 1, 2, 3}}),
+            "3DFACE must expose one fillable four-corner surface");
+}
+
+void test_visual_styles_define_wireframe_opaque_and_transparent_face_alpha() {
+    require(mm::visualStyleFaceAlpha(mm::VisualStyle::Wireframe) == 0,
+            "Wireframe mode must not fill object surfaces");
+    require(mm::visualStyleFaceAlpha(mm::VisualStyle::Solid) == 255,
+            "Solid mode must render opaque object surfaces");
+    require(mm::visualStyleFaceAlpha(mm::VisualStyle::Transparent) > 0 &&
+                mm::visualStyleFaceAlpha(mm::VisualStyle::Transparent) < 255,
+            "Transparent mode must use partial surface opacity");
+}
+
+void test_mirror_preserves_3dface_identity_for_later_dxf_export() {
+    const auto face = mm::WireframeModel::face3D(
+        {{{0.0, 0.0, 0.0}, {2.0, 0.0, 1.0}, {2.0, 2.0, 2.0}, {0.0, 2.0, 1.0}}});
+    const auto mirrored = mm::mirrorModel2D(face, {0.0, -1.0, 0.0}, {0.0, 3.0, 0.0});
+    require(mirrored.has_value() && mirrored->isFace3D(),
+            "Mirroring a 3DFACE must preserve its entity identity for DXF export");
 }
 
 void test_camera_projects_origin_to_view_center() {
@@ -148,6 +196,10 @@ void test_camera_standard_view_presets() {
     require(std::abs(camera.yaw()) < 0.001, "Top view yaw mismatch");
     require(std::abs(camera.pitch() - 1.5707963267948966) < 0.001, "Top view pitch mismatch");
 
+    camera.setView(mm::StandardView::Bottom);
+    require(std::abs(camera.yaw()) < 0.001, "Bottom view yaw mismatch");
+    require(std::abs(camera.pitch() + 1.5707963267948966) < 0.001, "Bottom view pitch mismatch");
+
     camera.setView(mm::StandardView::Front);
     require(std::abs(camera.yaw()) < 0.001, "Front view yaw mismatch");
     require(std::abs(camera.pitch()) < 0.001, "Front view pitch mismatch");
@@ -206,12 +258,12 @@ void test_ribbon_groups_commands_into_function_tabs() {
 
     require(file == std::vector<int>({100, 101, 102, 103, 104}),
             "File tab must expose native and DXF read/write commands");
-    require(drawing == std::vector<int>({200, 201, 202, 203}),
-            "Drawing tab must contain only drawing commands in tool order");
-    require(modify == std::vector<int>({509, 500, 501, 502, 503, 504, 505, 506, 507, 508}),
+    require(drawing == std::vector<int>({200, 201, 202, 203, 204}),
+            "Drawing tab must contain Line, Polyline, Rectangle, Circle, and 3DFACE in tool order");
+    require(modify == std::vector<int>({509, 500, 501, 502, 503, 504, 505, 506, 507, 508, 510}),
             "Modify tab must start with the neutral arrow followed by every modifier");
-    require(view == std::vector<int>({300, 301, 302, 303, 304, 305, 306}),
-            "View tab must group 3D, work-plane, and zoom commands");
+    require(view == std::vector<int>({300, 301, 302, 303, 304, 305, 306, 307, 308}),
+            "View tab must expose dropdown buttons for visual styles and standard camera views");
     require(mm::RibbonLayout::commands(mm::RibbonTab::Aids) == std::vector<int>({400, 401, 402, 403, 404}),
             "Aids tab must expose snap settings and F10 Polar Tracking");
 }
@@ -240,12 +292,13 @@ void test_modifier_point_cursor_policy_matches_interaction_phase() {
             "Trim target-segment selection must retain the square pickbox cursor");
 }
 
-void test_every_modifier_is_single_shot_after_one_committed_operation() {
+void test_trim_and_extend_remain_active_for_multiple_targets() {
     require(mm::modifierCompletesAfterCommit(mm::TransformCommand::Move) &&
-            mm::modifierCompletesAfterCommit(mm::TransformCommand::Copy) &&
-            mm::modifierCompletesAfterCommit(mm::TransformCommand::Trim) &&
-            mm::modifierCompletesAfterCommit(mm::TransformCommand::Extend),
-            "Every modifier must finish after one committed operation");
+            mm::modifierCompletesAfterCommit(mm::TransformCommand::Copy),
+            "Move and Copy must remain single-shot modifiers");
+    require(!mm::modifierCompletesAfterCommit(mm::TransformCommand::Trim) &&
+            !mm::modifierCompletesAfterCommit(mm::TransformCommand::Extend),
+            "Trim and Extend must remain in target-picking mode for multiple objects");
     require(!mm::modifierCompletesAfterCommit(mm::TransformCommand::None),
             "The idle state is not a completed modifier operation");
 }
@@ -294,7 +347,8 @@ void test_idle_enter_repeat_never_steals_keyboard_point_input() {
 void test_ribbon_compact_buttons_fit_above_full_width_canvas() {
     constexpr int width = 1280;
     const auto layout = mm::RibbonLayout::layout(mm::RibbonTab::Drawing, width);
-    require(layout.ribbonHeight <= 112, "Top ribbon must stay compact");
+    require(layout.ribbonHeight >= 140 && layout.ribbonHeight <= 156,
+            "AutoCAD-style ribbon must provide title, tab, command, and group-label bands");
     require(layout.canvas.left == 0 && layout.canvas.top == layout.ribbonHeight,
             "Canvas must use the full window width directly below the ribbon");
     require(layout.canvas.right == width, "Ribbon must not reserve a left sidebar");
@@ -304,12 +358,18 @@ void test_ribbon_compact_buttons_fit_above_full_width_canvas() {
         require(button.rect.right - button.rect.left <= 74,
                 "Ribbon command buttons must use compact icon-button sizing");
     }
+    require(layout.groups.size() == 1 && layout.groups.front().label == L"Draw",
+            "Drawing commands must sit in a labeled AutoCAD-style Draw panel");
+    require(layout.groups.front().rect.bottom == layout.ribbonHeight,
+            "Ribbon group captions must occupy the bottom of the command band");
 }
 
 void test_document_round_trip() {
     mm::Document original;
     original.addModel(mm::WireframeModel::cube(2.0));
     original.addLine({-1.0, 2.0, 0.0}, {3.0, 4.0, 0.0});
+    original.addModel(mm::WireframeModel::face3D(
+        {{{0.0, 0.0, 0.0}, {2.0, 0.0, 1.0}, {2.0, 2.0, 2.0}, {0.0, 2.0, 1.0}}}));
 
     const auto path = std::filesystem::temp_directory_path() / "model-maker-test.mmw";
     original.save(path);
@@ -318,9 +378,13 @@ void test_document_round_trip() {
     loaded.load(path);
     std::filesystem::remove(path);
 
-    require(loaded.models().size() == 2, "Round trip model count mismatch");
+    require(loaded.models().size() == 3, "Round trip model count mismatch");
     require(loaded.models()[0].edges().size() == 12, "Round trip cube mismatch");
+    require(loaded.models()[0].faces().size() == 6,
+            "Native round trip must preserve cube faces for Solid/Transparent rendering");
     require(loaded.models()[1].vertices()[1] == mm::Vec3{3.0, 4.0, 0.0}, "Round trip line mismatch");
+    require(loaded.models()[2].isFace3D() && loaded.models()[2].faces().size() == 1,
+            "Native round trip must preserve explicit 3DFACE identity and fill surface");
 }
 
 void test_dxf_round_trip_preserves_supported_entities() {
@@ -343,6 +407,27 @@ void test_dxf_round_trip_preserves_supported_entities() {
     require(loaded.models()[2].isPointEntity() &&
             loaded.models()[2].vertices()[0] == mm::Vec3{-4.0, 7.0, 2.0},
             "DXF POINT must preserve point identity and position");
+}
+
+void test_dxf_round_trip_writes_and_reads_a_four_corner_3dface_entity() {
+    const std::array<mm::Vec3, 4> corners{{{1.0, 2.0, 3.0}, {5.0, 2.0, 4.0},
+                                           {5.0, 6.0, 7.0}, {1.0, 6.0, 5.0}}};
+    mm::Document original;
+    original.addModel(mm::WireframeModel::face3D(corners));
+    const auto path = std::filesystem::temp_directory_path() / "model-maker-3dface-roundtrip.dxf";
+    mm::DxfFile::write(original, path);
+    std::ifstream input(path);
+    const std::string text((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
+    input.close();
+    const mm::Document loaded = mm::DxfFile::read(path);
+    std::filesystem::remove(path);
+
+    require(text.find("0\n3DFACE\n") != std::string::npos,
+            "DXF export must emit a real 3DFACE entity instead of a generic polyline");
+    require(loaded.models().size() == 1 && loaded.models().front().isFace3D(),
+            "DXF import must preserve 3DFACE entity identity");
+    require(loaded.models().front().vertices() == std::vector<mm::Vec3>(corners.begin(), corners.end()),
+            "DXF 3DFACE round trip must preserve all four XYZ corners");
 }
 
 void test_dxf_round_trip_preserves_entity_properties() {
@@ -751,6 +836,36 @@ void test_extend_line_moves_picked_endpoint_to_boundary() {
             "Extended geometry must preserve source properties");
 }
 
+void test_fillet_trims_two_picked_line_arms_and_adds_tangent_arc() {
+    auto horizontal = mm::WireframeModel::line({-5.0, 0.0, 0.0}, {5.0, 0.0, 0.0});
+    auto vertical = mm::WireframeModel::line({0.0, -5.0, 0.0}, {0.0, 5.0, 0.0});
+    mm::EntityProperties properties;
+    properties.layer = "FILLET";
+    properties.effectiveColor = 0xFF8844;
+    horizontal.setProperties(properties);
+    vertical.setProperties(properties);
+
+    const auto result = mm::filletLinesOnPlane(horizontal, {4.0, 0.0, 0.0},
+                                                vertical, {0.0, 4.0, 0.0},
+                                                1.0, mm::WorkPlane{});
+    require(result.has_value(), "Perpendicular lines must support a positive-radius fillet");
+    const auto closeEnough = [](const mm::Vec3& a, const mm::Vec3& b) {
+        return std::hypot(a.x - b.x, a.y - b.y) < 1e-8 && std::abs(a.z - b.z) < 1e-8;
+    };
+    require(closeEnough(result->first.vertices()[0], mm::Vec3{5.0, 0.0, 0.0}) &&
+            closeEnough(result->first.vertices()[1], mm::Vec3{1.0, 0.0, 0.0}),
+            "Fillet must retain the picked horizontal arm and trim it at tangency");
+    require(closeEnough(result->second.vertices()[0], mm::Vec3{0.0, 5.0, 0.0}) &&
+            closeEnough(result->second.vertices()[1], mm::Vec3{0.0, 1.0, 0.0}),
+            "Fillet must retain the picked vertical arm and trim it at tangency");
+    require(closeEnough(result->arc.vertices().front(), mm::Vec3{1.0, 0.0, 0.0}) &&
+            closeEnough(result->arc.vertices().back(), mm::Vec3{0.0, 1.0, 0.0}),
+            "Fillet arc endpoints must equal both tangent points");
+    require(result->first.properties() == properties && result->second.properties() == properties &&
+            result->arc.properties() == properties,
+            "Fillet replacements and arc must preserve source rendering properties");
+}
+
 void test_current_entity_style_resolves_layer_color_and_linetype_choices() {
     std::unordered_map<std::string, mm::EntityProperties> layers;
     mm::EntityProperties wallLayer;
@@ -843,6 +958,28 @@ void test_right_to_left_crossing_selects_touching_and_contained_models() {
     const auto selected = mm::selectModelsInRect2D({5.0, 5.0, 0.0}, {0.0, 0.0, 0.0}, document, true);
     require(selected == std::vector<std::size_t>({0, 1}),
             "Right-to-left crossing selection must select contained and boundary-touching objects");
+}
+
+void test_crossing_selection_chooses_the_target_portion_inside_the_window() {
+    const auto target = mm::WireframeModel::line({0.0, 0.0, 0.0}, {10.0, 0.0, 0.0});
+    const auto pick = mm::crossingSelectionPickPoint2D(target, {4.0, 1.0, 0.0},
+                                                       {2.0, -1.0, 0.0});
+    require(pick.has_value(), "Crossing target selection must find the line portion inside the window");
+    require(std::abs(pick->x - 3.0) < 1e-9 && std::abs(pick->y) < 1e-9,
+            "Crossing target pick must use the midpoint of the clipped line portion");
+}
+
+void test_projected_3d_crossing_selection_preserves_the_world_target_point() {
+    mm::Camera camera;
+    camera.setView(mm::StandardView::Front);
+    const auto target = mm::WireframeModel::line({-4.0, 0.0, 2.0}, {4.0, 0.0, 2.0});
+    const auto first = camera.project({1.0, 1.0, 2.0}, 800, 600);
+    const auto second = camera.project({-1.0, -1.0, 2.0}, 800, 600);
+    const auto pick = mm::crossingSelectionPickPoint3D(target, first, second, camera, 800, 600);
+    require(pick.has_value(), "Projected 3D crossing target selection must find the clipped line");
+    require(std::abs(pick->x) < 1e-9 && std::abs(pick->y) < 1e-9 &&
+                std::abs(pick->z - 2.0) < 1e-9,
+            "Projected crossing selection must interpolate the original world-space line");
 }
 
 void test_projected_3d_window_and_crossing_selection() {
@@ -1213,6 +1350,41 @@ void test_polar_tracking_locks_only_near_90_degree_rays() {
             "3D Polar Tracking must use the active work-plane axes");
 }
 
+void test_temporary_tracking_snaps_to_midpoint_between_acquired_points() {
+    const std::vector<mm::Vec3> acquired{{0.0, 0.0, 0.0}, {10.0, 0.0, 0.0}};
+    const mm::SnapResult raw{{5.0, 0.15, 0.0}, mm::SnapType::None, 0.0};
+    const auto tracking = mm::resolveTemporaryPointTracking(raw, acquired, mm::WorkPlane{}, 0.25);
+    require(tracking.result.type == mm::SnapType::Midpoint &&
+                tracking.result.point == mm::Vec3{5.0, 0.0, 0.0},
+            "Two acquired Temp Points must snap at their exact midpoint");
+    require(tracking.guides.size() == 1 && tracking.guides.front().from == acquired[0] &&
+                tracking.guides.front().to == acquired[1],
+            "Two acquired Temp Points must expose their connecting tracking line");
+}
+
+void test_temporary_tracking_creates_perpendicular_corner_points() {
+    const std::vector<mm::Vec3> acquired{{0.0, 0.0, 0.0}, {10.0, 8.0, 0.0}};
+    const mm::SnapResult raw{{0.1, 7.9, 0.0}, mm::SnapType::None, 0.0};
+    const auto tracking = mm::resolveTemporaryPointTracking(raw, acquired, mm::WorkPlane{}, 0.25);
+    require(tracking.result.type == mm::SnapType::Intersection &&
+                tracking.result.point == mm::Vec3{0.0, 8.0, 0.0},
+            "Perpendicular U/V rays from two Temp Points must snap at their crossing");
+    require(std::find(tracking.derivedPoints.begin(), tracking.derivedPoints.end(),
+                      mm::Vec3{0.0, 8.0, 0.0}) != tracking.derivedPoints.end(),
+            "A perpendicular tracking crossing must be exposed as a derived Temp Point");
+}
+
+void test_temporary_tracking_locks_to_acquired_point_axes() {
+    const std::vector<mm::Vec3> acquired{{2.0, 3.0, 0.0}};
+    const mm::SnapResult raw{{9.0, 3.15, 0.0}, mm::SnapType::None, 0.0};
+    const auto tracking = mm::resolveTemporaryPointTracking(raw, acquired, mm::WorkPlane{}, 0.25);
+    require(tracking.locked && tracking.result.point == mm::Vec3{9.0, 3.0, 0.0},
+            "A cursor near a Temp Point U/V ray must lock to that tracking axis");
+    require(tracking.guides.size() == 1 && tracking.guides.front().from == acquired.front() &&
+                tracking.guides.front().to == tracking.result.point,
+            "An active Temp Point axis must expose its tracking guide");
+}
+
 void test_dynamic_input_parses_absolute_coordinates() {
     const auto point = mm::parseDynamicPoint(L"12.5,-3.25", std::nullopt);
     require(point.has_value(), "Absolute dynamic coordinate must parse");
@@ -1400,8 +1572,12 @@ void test_planar_shapes_follow_arbitrary_work_plane_basis() {
 int main() {
     try {
         test_vector_arithmetic();
+        test_work_plane_axis_glyph_uses_local_xyz_basis();
         test_cube_geometry();
         test_pyramid_geometry();
+        test_3dface_geometry_preserves_four_ordered_corners_and_identity();
+        test_visual_styles_define_wireframe_opaque_and_transparent_face_alpha();
+        test_mirror_preserves_3dface_identity_for_later_dxf_export();
         test_camera_projects_origin_to_view_center();
         test_camera_zoom_scales_the_initial_2d_view();
         test_camera_2d_projection_round_trips_after_zoom();
@@ -1414,13 +1590,14 @@ int main() {
         test_view_cube_rotates_with_camera_and_global_axes();
         test_ribbon_groups_commands_into_function_tabs();
         test_modifier_point_cursor_policy_matches_interaction_phase();
-        test_every_modifier_is_single_shot_after_one_committed_operation();
+        test_trim_and_extend_remain_active_for_multiple_targets();
         test_snap_evaluation_requires_an_active_command();
         test_every_modifier_preserves_the_current_3d_view();
         test_idle_enter_repeat_never_steals_keyboard_point_input();
         test_ribbon_compact_buttons_fit_above_full_width_canvas();
         test_document_round_trip();
         test_dxf_round_trip_preserves_supported_entities();
+        test_dxf_round_trip_writes_and_reads_a_four_corner_3dface_entity();
         test_dxf_round_trip_preserves_entity_properties();
         test_dxf_import_defaults_entity_and_rendered_thickness_to_zero();
         test_dxf_reads_closed_lwpolyline();
@@ -1441,6 +1618,7 @@ int main() {
         test_polar_array_distributes_copies_around_center_and_preserves_metadata();
         test_trim_line_removes_the_picked_side_at_cutting_edge();
         test_extend_line_moves_picked_endpoint_to_boundary();
+        test_fillet_trims_two_picked_line_arms_and_adds_tangent_arc();
         test_current_entity_style_resolves_layer_color_and_linetype_choices();
         test_offset_line_creates_parallel_copy_on_selected_side();
         test_offset_circle_uses_inside_or_outside_pick();
@@ -1448,6 +1626,8 @@ int main() {
         test_entity_hit_test_selects_nearest_model_edge();
         test_left_to_right_window_selects_only_fully_contained_models();
         test_right_to_left_crossing_selects_touching_and_contained_models();
+        test_crossing_selection_chooses_the_target_portion_inside_the_window();
+        test_projected_3d_crossing_selection_preserves_the_world_target_point();
         test_projected_3d_window_and_crossing_selection();
         test_snap_prefers_nearby_endpoint();
         test_snap_marker_symbols_match_cad_reference_conventions();
@@ -1469,6 +1649,9 @@ int main() {
         test_3d_ortho_uses_the_active_work_plane_axes();
         test_planar_modifiers_use_the_active_tilted_work_plane();
         test_polar_tracking_locks_only_near_90_degree_rays();
+        test_temporary_tracking_snaps_to_midpoint_between_acquired_points();
+        test_temporary_tracking_creates_perpendicular_corner_points();
+        test_temporary_tracking_locks_to_acquired_point_axes();
         test_dynamic_input_parses_absolute_coordinates();
         test_dynamic_input_parses_distance_angle();
         test_dynamic_input_single_distance_follows_cursor_direction();
@@ -1484,7 +1667,7 @@ int main() {
         test_rectangle_and_circle_geometry();
         test_rectangle_preserves_3d_work_plane_height();
         test_planar_shapes_follow_arbitrary_work_plane_basis();
-        std::cout << "All 82 tests passed.\n";
+        std::cout << "All tests passed.\n";
         return 0;
     } catch (const std::exception& error) {
         std::cerr << "Test failed: " << error.what() << '\n';
