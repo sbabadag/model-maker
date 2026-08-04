@@ -1,0 +1,7 @@
+TABLE:  "FRAME SECTION PROPERTIES 01 - GENERAL"
+SectionName=IPE200   Material=S275   Shape="I/Wide Flange"   t3=0,200000   t2=0,100000
+TABLE:  "JOINT COORDINATES"
+Joint=1   CoordSys=GLOBAL   CoordType=Cartesian   XorR=0,000000   Y=0,000000   Z=0,000000   SpecialJt=Yes
+Joint=2   CoordSys=GLOBAL   CoordType=Cartesian   XorR=5,000000   Y=0,000000   Z=0,000000   SpecialJt=Yes
+TABLE:  "CONNECTIVITY - FRAME"
+Frame=2   JointI=1   JointJ=2   IsCurved=No

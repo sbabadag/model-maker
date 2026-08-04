@@ -1,0 +1,11 @@
+build*/
+build-*/
+*.exe
+*.o
+*.obj
+*.d
+*.a
+*.lib
+*.ilk
+*.pdb
+.DS_Store
