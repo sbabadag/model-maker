@@ -233,3 +233,61 @@ viewport culling ve BVH/spatial query performansı.
    birleştirmek) — bu görevde hariç tutuldu; 10k+ görünür entity'de kalan en büyük kazanç.
 2. Renderer'da `entityPen` anahtarını hafifletmek (std::string → intern/pointer).
 3. Dirty-region (kısmi) redraw — en yüksek getirili ama en riskli refactor.
+
+
+---
+
+## Qt Merge — main'deki Qt6 Değişikliklerinin hermes-nightly'ye Uygulanması
+
+**Merge commit:** `29c9374` (parents: `cc2927c` + `8f4a232`)
+**Kaynak:** `main` üzerindeki `8f4a232` "feat: Qt6 ribbon UI integration + layer manager crash fixes"
+
+### Ne Getirildi
+
+- Qt6 ribbon UI entegrasyonu (application/renderer/main + CMakeLists: AUTOMOC/AUTORCC/AUTOUIC,
+  Qt6::Widgets/Core/Gui, `qt_main_window`, OpenGL render backend referansı, GPU hattı
+  (`useGpuLines`), `draft.snapOnly` hızlı yolu, GL metrikleri)
+- Layer manager çökme düzeltmeleri (document/dxf/ribbon_layer değişiklikleri)
+
+### Çakışma Çözümleri
+
+- **Perf tarafı korundu** (kendi değişikliklerimin olduğu dosyalar): camera trig cache +
+  `pixelsPerUnit()` getter; document effective-properties cache; drafting sphere-prefilter
+  (adaptif 3B pick/pencere seçimi); renderer'da `effectiveProperties(index)` satırları
+  Qt sürümüne yeniden uygulandı.
+- **Qt tarafı korundu** (dokunmadığım dosyalar): application.hpp/cpp, renderer.hpp, dxf.cpp,
+  main.cpp, ribbon_layout.hpp/cpp.
+- **Checkpoint (3032c96) + Qt commit (8f4a232) örtüşmesinden doğan mükerrer tanımlar**
+  (`setModelLayer/Color/Profile/LineType`, `Camera::setOrbitCenter`) temizlendi — cache
+  invalidation'lı sürümler korundu.
+- **CMakeLists adaptasyonu:** `find_package(Qt6 QUIET ...)` + eksik-kaynak koruması eklendi;
+  Qt bulunamazsa `model-maker` exe hedefi atlanıyor, çekirdek + testler + benchmark'lar
+  her zaman derleniyor.
+
+### ⚠️ KRİTİK: Qt Commit'i Eksik Dosyalar İçeriyor
+
+`8f4a232` commit'i aşağıdaki dosyaları CMakeLists'te ve #include'larda referans ediyor
+ama **bu dosyalar commit'te yok** (Windows'ta untracked kalmış olmalı):
+
+- `src/qt_main_window.cpp`
+- `include/model_maker/qt_main_window.hpp`
+- `src/opengl_render_backend.cpp`
+- `include/model_maker/opengl_render_backend.hpp`
+
+Bu dosyalar repoya eklenene kadar **Qt exe hedefi hiçbir makinede derlenemez**
+(CMake koruması sayesinde çekirdek/test/benchmark etkilenmez). Dosyaların Windows
+makineden commit edilmesi gerekiyor.
+
+### Doğrulama (Linux)
+
+- Çekirdek (`model_maker_core`) + her iki benchmark derlendi, exit 0.
+- Task 1 benchmark: değişmedi (projection_1m=6.7ms, cull3d=0.10ms).
+- Task 2 benchmark: değişmedi (pick3d 264x kazanç korunuyor, sonuçlar referansla birebir aynı).
+- 3 correctness probu (kamera bit-exact, effective-cache, 800 karşılaştırmalı eşdeğerlik) — ALL PASS.
+
+### Windows'ta Yapılması Gereken Doğrulamalar
+
+1. Eksik 4 Qt/OpenGL dosyasını commit etmek (yukarıdaki liste).
+2. `cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release` (Qt6 6.9.3 mingw_64 ile) + `ctest`.
+3. Qt ribbon UI, layer manager ve OpenGL render backend smoke testleri (scripts/).
+4. GDI + OpenGL yollarının görsel karşılaştırması (F11 overlay).
