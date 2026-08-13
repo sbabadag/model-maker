@@ -121,6 +121,20 @@ int main() {
         return static_cast<double>(matches);
     }, 5);
 
+    // Isolated projection cost: exercises Camera::viewTransform for every vertex.
+    constexpr int projectionSamples = 1'000'000;
+    const auto projection1M = medianMilliseconds([&] {
+        double checksum = 0.0;
+        for (int i = 0; i < projectionSamples; ++i) {
+            const mm::Vec3 p{static_cast<double>(i % 1000),
+                             static_cast<double>((i / 1000) % 1000),
+                             static_cast<double>(i / 1'000'000)};
+            const mm::Vec2 projected = camera.project(p, viewportWidth, viewportHeight);
+            checksum += projected.x + projected.y;
+        }
+        return checksum;
+    });
+
     std::cout << std::fixed << std::setprecision(3)
               << "entities=" << entityCount
               << " visible=" << visible.size()
@@ -135,7 +149,8 @@ int main() {
               << " linear_selection_ms=" << linearSelectionMembership
               << " stamped_selection_ms=" << stampedSelectionMembership
               << " selection_speedup=" << (stampedSelectionMembership > 0.0
-                    ? linearSelectionMembership / stampedSelectionMembership : 0.0) << "x\n";
+                    ? linearSelectionMembership / stampedSelectionMembership : 0.0) << "x"
+              << " projection_1m_ms=" << projection1M << "\n";
     return visible.size() == entityCount && !culled3DModels.empty() &&
            culled3DModels.size() < entityCount && benchmarkSink != 0.0 ? 0 : 1;
 }
