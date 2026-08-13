@@ -370,20 +370,18 @@ SnapResult SnapEngine::snap3D(const Vec2& screenCursor, const Document& document
         struct ProjectedEdge { Vec3 a; Vec3 b; Vec2 pa; Vec2 pb; };
         std::vector<ProjectedEdge> edges;
         constexpr std::size_t apparentIntersectionEdgeLimit = 512;
-        std::size_t drawingEdgeCount{};
-        for (const auto& model : document.models()) {
-            drawingEdgeCount += model.edges().size();
-            if (drawingEdgeCount > apparentIntersectionEdgeLimit) break;
-        }
-        if (drawingEdgeCount <= apparentIntersectionEdgeLimit) {
-            for (const auto& model : document.models()) {
-                for (const auto& edge : model.edges()) {
-                    const Vec3& a = model.vertices()[edge.from];
-                    const Vec3& b = model.vertices()[edge.to];
-                    edges.push_back({a, b, camera.project(a, viewportWidth, viewportHeight),
-                                           camera.project(b, viewportWidth, viewportHeight)});
-                }
+        // Only iterate nearby models (spatial-index filtered), not the entire document
+        for (const auto index : nearby) {
+            if (index >= document.models().size()) continue;
+            const auto& model = document.models()[index];
+            for (const auto& edge : model.edges()) {
+                if (edges.size() >= apparentIntersectionEdgeLimit) break;
+                const Vec3& a = model.vertices()[edge.from];
+                const Vec3& b = model.vertices()[edge.to];
+                edges.push_back({a, b, camera.project(a, viewportWidth, viewportHeight),
+                                       camera.project(b, viewportWidth, viewportHeight)});
             }
+            if (edges.size() >= apparentIntersectionEdgeLimit) break;
         }
         for (std::size_t first = 0; first < edges.size(); ++first) {
             for (std::size_t second = first + 1; second < edges.size(); ++second) {

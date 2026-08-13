@@ -1,4 +1,5 @@
 #include "model_maker/renderer.hpp"
+#include "model_maker/opengl_render_backend.hpp"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -127,7 +128,9 @@ void Renderer::drawText(HDC dc, int x, int y, const wchar_t* text, COLORREF colo
 
 void Renderer::draw(HDC target, const RECT& client, const Document& document, const Camera& camera,
                     EditMode mode, const DraftView& draft, IRenderBackend* backend) const {
-    (void)backend; // Backend reference for future DX11 migration
+    // Phase 1 GPU-retained rendering: detect OpenGL backend
+    const bool useGpuLines = backend && backend->isHardwareAccelerated();
+    auto* glBackend = useGpuLines ? static_cast<OpenGLRenderBackend*>(backend) : nullptr;
     const auto frameStart = std::chrono::steady_clock::now();
     const double frameIntervalSeconds = hasPreviousFrameTime_
         ? std::chrono::duration<double>(frameStart - previousFrameTime_).count() : 0.0;
@@ -149,12 +152,14 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         finishPerformanceSample(true);
         return;
     }
-    HDC dc = ensureBackBuffer(target, width, height);
+    HDC dc = draft.snapOnly ? target : ensureBackBuffer(target, width, height);
     if (!dc) return;
 
+    if (!draft.snapOnly) {
     HBRUSH background = CreateSolidBrush(RGB(15, 18, 26));
     FillRect(dc, &client, background);
     DeleteObject(background);
+    }
     HFONT font = CreateFontW(-15, 0, 0, 0, FW_SEMIBOLD, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
                              OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
                              DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
@@ -168,74 +173,76 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
                      static_cast<LONG>(projected.y + canvas.top)};
     };
     HGDIOBJ stockPen = GetCurrentObject(dc, OBJ_PEN);
-    HPEN gridPen = CreatePen(PS_SOLID, 1,
-                             mode == EditMode::View3D ? RGB(66, 68, 72) : RGB(34, 40, 53));
-    SelectObject(dc, gridPen);
-    if (mode == EditMode::Draw2D) {
-        const POINT origin = projectPoint({0.0, 0.0, 0.0});
-        const POINT unit = projectPoint({1.0, 0.0, 0.0});
-        const int gridSpacing = std::max(1, static_cast<int>(std::abs(unit.x - origin.x)));
-        for (int x = origin.x % gridSpacing; x < canvas.right; x += gridSpacing)
-            line(dc, x, canvas.top, x, canvas.bottom);
-        for (int y = origin.y % gridSpacing; y < canvas.bottom; y += gridSpacing)
-            line(dc, canvas.left, y, canvas.right, y);
-    } else {
-        constexpr int gridExtent = 10;
-        for (int coordinate = -gridExtent; coordinate <= gridExtent; ++coordinate) {
-            const POINT verticalA = projectPoint(draft.workPlane.fromPlane({static_cast<double>(coordinate), -gridExtent}));
-            const POINT verticalB = projectPoint(draft.workPlane.fromPlane({static_cast<double>(coordinate), gridExtent}));
-            const POINT horizontalA = projectPoint(draft.workPlane.fromPlane({-gridExtent, static_cast<double>(coordinate)}));
-            const POINT horizontalB = projectPoint(draft.workPlane.fromPlane({gridExtent, static_cast<double>(coordinate)}));
-            line(dc, verticalA.x, verticalA.y, verticalB.x, verticalB.y);
-            line(dc, horizontalA.x, horizontalA.y, horizontalB.x, horizontalB.y);
-        }
-    }
-    SelectObject(dc, stockPen);
-    DeleteObject(gridPen);
-
-    const auto axisGlyph = workPlaneAxisGlyph(draft.workPlane, 2.0);
-    const POINT axisOrigin = projectPoint(axisGlyph.origin);
-    const auto drawAxisArrow = [&](const Vec3& worldEnd, COLORREF color, const wchar_t* label) {
-        const POINT end = projectPoint(worldEnd);
-        const double dx = static_cast<double>(end.x - axisOrigin.x);
-        const double dy = static_cast<double>(end.y - axisOrigin.y);
-        const double length = std::hypot(dx, dy);
-        HPEN pen = CreatePen(PS_SOLID, 2, color);
-        SelectObject(dc, pen);
-        if (length >= 7.0) {
-            line(dc, axisOrigin.x, axisOrigin.y, end.x, end.y);
-            const double ux = dx / length;
-            const double uy = dy / length;
-            const POINT headA{static_cast<LONG>(std::lround(end.x - ux * 8.0 - uy * 4.0)),
-                              static_cast<LONG>(std::lround(end.y - uy * 8.0 + ux * 4.0))};
-            const POINT headB{static_cast<LONG>(std::lround(end.x - ux * 8.0 + uy * 4.0)),
-                              static_cast<LONG>(std::lround(end.y - uy * 8.0 - ux * 4.0))};
-            line(dc, end.x, end.y, headA.x, headA.y);
-            line(dc, end.x, end.y, headB.x, headB.y);
-            drawText(dc, end.x + static_cast<int>(std::lround(ux * 5.0)) - 4,
-                     end.y + static_cast<int>(std::lround(uy * 5.0)) - 8, label, color);
+    if (!draft.interactiveNavigation) {
+        HPEN gridPen = CreatePen(PS_SOLID, 1,
+                                 mode == EditMode::View3D ? RGB(66, 68, 72) : RGB(34, 40, 53));
+        SelectObject(dc, gridPen);
+        if (mode == EditMode::Draw2D) {
+            const POINT origin = projectPoint({0.0, 0.0, 0.0});
+            const POINT unit = projectPoint({1.0, 0.0, 0.0});
+            const int gridSpacing = std::max(1, static_cast<int>(std::abs(unit.x - origin.x)));
+            for (int x = origin.x % gridSpacing; x < canvas.right; x += gridSpacing)
+                line(dc, x, canvas.top, x, canvas.bottom);
+            for (int y = origin.y % gridSpacing; y < canvas.bottom; y += gridSpacing)
+                line(dc, canvas.left, y, canvas.right, y);
         } else {
-            HGDIOBJ oldBrush = SelectObject(dc, GetStockObject(NULL_BRUSH));
-            Ellipse(dc, axisOrigin.x - 5, axisOrigin.y - 5,
-                    axisOrigin.x + 6, axisOrigin.y + 6);
-            SelectObject(dc, oldBrush);
-            SetPixel(dc, axisOrigin.x, axisOrigin.y, color);
-            drawText(dc, axisOrigin.x + 7, axisOrigin.y - 10, label, color);
+            constexpr int gridExtent = 10;
+            for (int coordinate = -gridExtent; coordinate <= gridExtent; ++coordinate) {
+                const POINT verticalA = projectPoint(draft.workPlane.fromPlane({static_cast<double>(coordinate), -gridExtent}));
+                const POINT verticalB = projectPoint(draft.workPlane.fromPlane({static_cast<double>(coordinate), gridExtent}));
+                const POINT horizontalA = projectPoint(draft.workPlane.fromPlane({-gridExtent, static_cast<double>(coordinate)}));
+                const POINT horizontalB = projectPoint(draft.workPlane.fromPlane({gridExtent, static_cast<double>(coordinate)}));
+                line(dc, verticalA.x, verticalA.y, verticalB.x, verticalB.y);
+                line(dc, horizontalA.x, horizontalA.y, horizontalB.x, horizontalB.y);
+            }
         }
         SelectObject(dc, stockPen);
-        DeleteObject(pen);
-    };
-    drawAxisArrow(axisGlyph.x, RGB(235, 82, 96), L"X");
-    drawAxisArrow(axisGlyph.y, RGB(72, 211, 121), L"Y");
-    drawAxisArrow(axisGlyph.z, RGB(78, 148, 255), L"Z");
+        DeleteObject(gridPen);
 
-    HPEN basePointPen = CreatePen(PS_SOLID, 1, RGB(190, 194, 202));
-    SelectObject(dc, basePointPen);
-    HGDIOBJ oldBaseBrush = SelectObject(dc, GetStockObject(NULL_BRUSH));
-    Ellipse(dc, axisOrigin.x - 3, axisOrigin.y - 3, axisOrigin.x + 4, axisOrigin.y + 4);
-    SelectObject(dc, oldBaseBrush);
-    SelectObject(dc, stockPen);
-    DeleteObject(basePointPen);
+        const auto axisGlyph = workPlaneAxisGlyph(draft.workPlane, 2.0);
+        const POINT axisOrigin = projectPoint(axisGlyph.origin);
+        const auto drawAxisArrow = [&](const Vec3& worldEnd, COLORREF color, const wchar_t* label) {
+            const POINT end = projectPoint(worldEnd);
+            const double dx = static_cast<double>(end.x - axisOrigin.x);
+            const double dy = static_cast<double>(end.y - axisOrigin.y);
+            const double length = std::hypot(dx, dy);
+            HPEN pen = CreatePen(PS_SOLID, 2, color);
+            SelectObject(dc, pen);
+            if (length >= 7.0) {
+                line(dc, axisOrigin.x, axisOrigin.y, end.x, end.y);
+                const double ux = dx / length;
+                const double uy = dy / length;
+                const POINT headA{static_cast<LONG>(std::lround(end.x - ux * 8.0 - uy * 4.0)),
+                                  static_cast<LONG>(std::lround(end.y - uy * 8.0 + ux * 4.0))};
+                const POINT headB{static_cast<LONG>(std::lround(end.x - ux * 8.0 + uy * 4.0)),
+                                  static_cast<LONG>(std::lround(end.y - uy * 8.0 - ux * 4.0))};
+                line(dc, end.x, end.y, headA.x, headA.y);
+                line(dc, end.x, end.y, headB.x, headB.y);
+                drawText(dc, end.x + static_cast<int>(std::lround(ux * 5.0)) - 4,
+                         end.y + static_cast<int>(std::lround(uy * 5.0)) - 8, label, color);
+            } else {
+                HGDIOBJ oldBrush = SelectObject(dc, GetStockObject(NULL_BRUSH));
+                Ellipse(dc, axisOrigin.x - 5, axisOrigin.y - 5,
+                        axisOrigin.x + 6, axisOrigin.y + 6);
+                SelectObject(dc, oldBrush);
+                SetPixel(dc, axisOrigin.x, axisOrigin.y, color);
+                drawText(dc, axisOrigin.x + 7, axisOrigin.y - 10, label, color);
+            }
+            SelectObject(dc, stockPen);
+            DeleteObject(pen);
+        };
+        drawAxisArrow(axisGlyph.x, RGB(235, 82, 96), L"X");
+        drawAxisArrow(axisGlyph.y, RGB(72, 211, 121), L"Y");
+        drawAxisArrow(axisGlyph.z, RGB(78, 148, 255), L"Z");
+
+        HPEN basePointPen = CreatePen(PS_SOLID, 1, RGB(190, 194, 202));
+        SelectObject(dc, basePointPen);
+        HGDIOBJ oldBaseBrush = SelectObject(dc, GetStockObject(NULL_BRUSH));
+        Ellipse(dc, axisOrigin.x - 3, axisOrigin.y - 3, axisOrigin.x + 4, axisOrigin.y + 4);
+        SelectObject(dc, oldBaseBrush);
+        SelectObject(dc, stockPen);
+        DeleteObject(basePointPen);
+    }
 
     std::vector<POINT> projectedChain;
     std::size_t interactiveModelStride = 1;
@@ -366,7 +373,7 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         COLORREF edgeColor{};
     };
     const unsigned char faceAlpha = visualStyleFaceAlpha(draft.visualStyle);
-    if (faceAlpha != 0 && !draft.interactiveNavigation) {
+    if (!draft.snapOnly && faceAlpha != 0 && !draft.interactiveNavigation) {
         std::vector<ProjectedFace> projectedFaces;
         for (const auto index : visibleModels) {
             if (index >= document.models().size()) continue;
@@ -447,6 +454,25 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         SelectObject(dc, oldPen);
     }
 
+    // Phase 1 GPU-retained line rendering:
+    // Collect models for GPU. Actual rendering happens AFTER GDI BitBlt
+    // so lines appear on top of GDI-drawn background/grid/axis.
+    std::vector<std::pair<std::size_t, mm::WireframeModel>> gpuBatch;
+    if (!draft.snapOnly && useGpuLines) {
+        gpuBatch.reserve(visibleModels.size());
+        for (const auto index : visibleModels) {
+            if (index >= document.models().size()) continue;
+            const auto& model = document.models()[index];
+            if (model.edges().empty()) continue;
+            if (isSelected(index)) continue;
+            const auto properties = document.effectiveProperties(index);
+            if (!properties.visible) continue;
+            auto modelCopy = model;
+            modelCopy.setProperties(properties);
+            gpuBatch.emplace_back(index, std::move(modelCopy));
+        }
+    }
+
     using PenKey = std::tuple<std::uint32_t, int, std::string, int>;
     std::map<PenKey, HPEN> entityPens;
     const auto entityPen = [&](const EntityProperties& properties) {
@@ -458,6 +484,7 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         entityPens.emplace(key, pen);
         return pen;
     };
+    if (!draft.snapOnly) {
     for (std::size_t visibleIndex = 0; visibleIndex < visibleModels.size(); ++visibleIndex) {
         const auto index = visibleModels[visibleIndex];
         if (index >= document.models().size() || isSelected(index)) continue;
@@ -466,6 +493,8 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         if (!properties.visible) continue;
         if (draft.visualStyle == VisualStyle::Solid && !draft.interactiveNavigation &&
             !model.faces().empty()) continue;
+        // Phase 1 GPU: edges already rendered; skip non-selected model GDI pass
+        if (useGpuLines) continue;
         if (draft.interactiveNavigation) {
             bool representative = index % interactiveModelStride == 0 || model.vertices().size() >= 1'000;
             if (interactiveTiles[index] >= 0) {
@@ -485,21 +514,23 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         (void)key;
         DeleteObject(pen);
     }
+    } // !draft.snapOnly
 
-    if (!draft.selectedModels.empty()) {
-        HPEN selectedPen = CreatePen(PS_SOLID, 3, RGB(90, 255, 145));
-        SelectObject(dc, selectedPen);
-        for (const auto index : draft.selectedModels) {
-            if (document.modelIsEditable(index)) {
-                drawModel(document.models()[index]);
-                ++performance.renderedEntities;
+    if (!draft.interactiveNavigation) {
+        if (!draft.selectedModels.empty()) {
+            HPEN selectedPen = CreatePen(PS_SOLID, 3, RGB(90, 255, 145));
+            SelectObject(dc, selectedPen);
+            for (const auto index : draft.selectedModels) {
+                if (document.modelIsEditable(index)) {
+                    drawModel(document.models()[index]);
+                    ++performance.renderedEntities;
+                }
             }
+            SelectObject(dc, stockPen);
+            DeleteObject(selectedPen);
         }
-        SelectObject(dc, stockPen);
-        DeleteObject(selectedPen);
-    }
 
-    const bool trimExtendTargetSelection =
+        const bool trimExtendTargetSelection =
         (draft.transformCommand == TransformCommand::Trim ||
          draft.transformCommand == TransformCommand::Extend) &&
         draft.transformPhase == TransformPhase::Destination;
@@ -1051,6 +1082,8 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         drawText(dc, p.x + 10, p.y + 8, snapTypeLabel(draft.snapType), RGB(90, 255, 145));
     }
 
+    if (!draft.snapOnly) {
+
     if (drafting && draft.dynamicInputEnabled && draft.cursor &&
         !(draft.transformCommand != TransformCommand::None && draft.transformPhase == TransformPhase::Selecting)) {
         wchar_t info[128]{};
@@ -1222,12 +1255,34 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         metric(L"GDI Geometry Calls: %zu", stats.drawCalls);
         metric(L"Projected Vertices: %zu", stats.projectedVertices);
         metric(L"Tracked Buffer Growths: %zu", stats.frameBufferGrowths);
-        drawText(dc, 24, y, L"GPU Frame / Upload: N/A (GDI)", RGB(160, 174, 191));
+        if (glBackend && glBackend->isHardwareAccelerated()) {
+            metric(L"GL Draw Calls: %zu   Lines: %zu", glBackend->drawCallsPerFrame(),
+                   glBackend->renderedLineCount());
+            metric(L"GL Upload: %zu KB   Rebuilds: %zu",
+                   glBackend->bufferUploadBytes() / 1024,
+                   glBackend->bufferRebuildCount());
+        } else {
+            drawText(dc, 24, y, L"GPU Frame / Upload: N/A (GDI)", RGB(160, 174, 191));
+        }
     }
+    }
+    } // !draft.snapOnly (dynamic input + perf overlay)
 
     SelectObject(dc, oldFont);
     DeleteObject(font);
-    BitBlt(target, 0, 0, width, height, dc, 0, 0, SRCCOPY);
+    if (!draft.snapOnly)
+        BitBlt(target, 0, 0, width, height, dc, 0, 0, SRCCOPY);
+
+    // GPU renders lines on top of GDI content
+    if (useGpuLines) {
+        FrameInfo frameInfo{width, height, false, 1.0, 0.0, 0.0};
+        glBackend->beginFrame(frameInfo);
+        if (!gpuBatch.empty()) glBackend->renderWireframeBatch(gpuBatch, camera);
+        if (guiOverlay_) guiOverlay_();
+        glBackend->endFrame();
+        performance.drawCalls += glBackend->drawCallsPerFrame();
+    }
+
     finishPerformanceSample(false);
 }
 

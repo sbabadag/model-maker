@@ -8,6 +8,7 @@
 
 #include <windows.h>
 #include <chrono>
+#include <functional>
 #include <optional>
 #include <string>
 #include <unordered_set>
@@ -170,6 +171,8 @@ struct DraftView {
     std::optional<POINT> nodeSelectionFirstCorner;
     const std::unordered_map<std::size_t, BeamLoad>* beamLoads{};
     Vec2 rasterZoomOffset{};
+    // Lightweight repaint: only snap markers, skip model rendering
+    bool snapOnly{};
     // OpenSees result visualization
     int resultView{0}; // 0=None, 1=Deformed, 2=My, 3=Mz, 4=N, 5=Vy, 6=Vz
     double resultScale{1.0};
@@ -190,6 +193,7 @@ public:
     Renderer& operator=(const Renderer&) = delete;
     void draw(HDC target, const RECT& client, const Document& document, const Camera& camera,
               EditMode mode, const DraftView& draft, IRenderBackend* backend = nullptr) const;
+    void setGuiOverlay(std::function<void()> callback) { guiOverlay_ = std::move(callback); }
     const FramePerformanceSample& performanceStats() const noexcept;
 
 private:
@@ -205,6 +209,7 @@ private:
     mutable int backBufferHeight_{};
     mutable FramePerformanceTracker performanceTracker_{};
     mutable FrameIndexStampSet selectedIndexSet_{};
+    mutable std::function<void()> guiOverlay_{};
     mutable std::chrono::steady_clock::time_point previousFrameTime_{};
     mutable bool hasPreviousFrameTime_{};
 };
