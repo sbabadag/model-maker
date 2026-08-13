@@ -42,6 +42,7 @@ public:
     double yaw() const noexcept;
     double pitch() const noexcept;
     double zoom() const noexcept;
+    double pixelsPerUnit() const noexcept;
 
 private:
     double yaw_{-0.55};

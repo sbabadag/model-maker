@@ -245,5 +245,6 @@ void Camera::setView(StandardView view) noexcept {
 double Camera::yaw() const noexcept { return yaw_; }
 double Camera::pitch() const noexcept { return pitch_; }
 double Camera::zoom() const noexcept { return zoom_; }
+double Camera::pixelsPerUnit() const noexcept { return pixelsPerUnit_; }
 
 } // namespace mm

@@ -87,6 +87,35 @@ std::optional<Vec3> segmentIntersection(const Vec3& a, const Vec3& b,
     return {(first + second) * 0.5};
 }
 
+// Screen-space bounding sphere of a world AABB. The view transform is an isometry
+// scaled by the camera zoom, so every point of the box projects inside the circle
+// (center, halfDiagonal * screenScale) around the projected box center. This is a
+// conservative (superset) bound that costs a single projection instead of eight.
+struct ProjectedSphere { Vec2 center{}; double screenRadius{}; };
+
+ProjectedSphere projectedSphere(const Bounds3& bounds, const Camera& camera,
+                                int viewportWidth, int viewportHeight,
+                                double screenScale) noexcept {
+    const double dx = bounds.maximum.x - bounds.minimum.x;
+    const double dy = bounds.maximum.y - bounds.minimum.y;
+    const double dz = bounds.maximum.z - bounds.minimum.z;
+    const double radius = 0.5 * std::sqrt(dx * dx + dy * dy + dz * dz);
+    const Vec2 center = camera.project({(bounds.minimum.x + bounds.maximum.x) * 0.5,
+                                        (bounds.minimum.y + bounds.maximum.y) * 0.5,
+                                        (bounds.minimum.z + bounds.maximum.z) * 0.5},
+                                       viewportWidth, viewportHeight);
+    return {center, radius * screenScale};
+}
+
+// Exact screen stretch bound: project() scales camera-space coordinates by
+// pixelsPerUnit * zoom, and the view rotation is an isometry, so the maximum
+// projected distance between any two points of a world sphere of radius r is
+// exactly r * pixelsPerUnit * zoom. (Measuring via a single axis is wrong:
+// e.g. the isometric view foreshortens the world X axis to ~0.816x.)
+double cameraScreenScale(const Camera& camera) noexcept {
+    return camera.pixelsPerUnit() * camera.zoom();
+}
+
 struct Candidate { Vec3 point{}; SnapType type{SnapType::None}; double distance{}; };
 using Metric = std::function<double(const Vec3&)>;
 
@@ -257,24 +286,13 @@ SnapResult choose(std::vector<Candidate> candidates, const Vec3& raw,
 std::vector<std::size_t> projectedCandidates(const Vec2& cursor, const Document& document,
                                              const Camera& camera, int viewportWidth,
                                              int viewportHeight, double margin) {
+    const double screenScale = cameraScreenScale(camera);
     const auto intersects = [&](const Bounds3& bound) {
-        double minimumX = std::numeric_limits<double>::infinity();
-        double minimumY = std::numeric_limits<double>::infinity();
-        double maximumX = -std::numeric_limits<double>::infinity();
-        double maximumY = -std::numeric_limits<double>::infinity();
-        for (int corner = 0; corner < 8; ++corner) {
-            const Vec3 point{
-                (corner & 1) ? bound.maximum.x : bound.minimum.x,
-                (corner & 2) ? bound.maximum.y : bound.minimum.y,
-                (corner & 4) ? bound.maximum.z : bound.minimum.z};
-            const Vec2 projected = camera.project(point, viewportWidth, viewportHeight);
-            minimumX = std::min(minimumX, projected.x);
-            minimumY = std::min(minimumY, projected.y);
-            maximumX = std::max(maximumX, projected.x);
-            maximumY = std::max(maximumY, projected.y);
-        }
-        return cursor.x >= minimumX - margin && cursor.x <= maximumX + margin &&
-               cursor.y >= minimumY - margin && cursor.y <= maximumY + margin;
+        const ProjectedSphere sphere = projectedSphere(bound, camera, viewportWidth,
+                                                       viewportHeight, screenScale);
+        const double pad = sphere.screenRadius + margin;
+        return cursor.x >= sphere.center.x - pad && cursor.x <= sphere.center.x + pad &&
+               cursor.y >= sphere.center.y - pad && cursor.y <= sphere.center.y + pad;
     };
     return document.queryBounds(intersects);
 }
@@ -904,9 +922,16 @@ std::optional<std::size_t> hitTestModel2D(const Vec3& cursor, const Document& do
 std::optional<std::size_t> hitTestModel3D(const Vec2& cursor, const Document& document,
                                          const Camera& camera, int viewportWidth, int viewportHeight,
                                          double tolerancePixels) {
+    // Spatial prefilter: only models whose projected bounds are within the pixel
+    // tolerance of the cursor can possibly contain a hit edge. The projected-bounds
+    // test is a conservative superset of the per-edge distance test, so results are
+    // identical to a full scan (candidate order stays sorted ascending, preserving
+    // the <= tie-break that prefers the highest model index).
+    const auto nearby = projectedCandidates(cursor, document, camera, viewportWidth,
+                                            viewportHeight, tolerancePixels);
     return hitTestModel(cursor, document, tolerancePixels, [&](const Vec3& point) {
         return camera.project(point, viewportWidth, viewportHeight);
-    });
+    }, &nearby);
 }
 
 std::vector<std::size_t> selectModelsInRect2D(const Vec3& firstCorner, const Vec3& secondCorner,
@@ -920,9 +945,36 @@ std::vector<std::size_t> selectModelsInRect2D(const Vec3& firstCorner, const Vec
 std::vector<std::size_t> selectModelsInRect3D(const Vec2& firstCorner, const Vec2& secondCorner,
                                               const Document& document, const Camera& camera,
                                               int viewportWidth, int viewportHeight, bool crossing) {
-    return selectModelsInRect(firstCorner, secondCorner, document, crossing, [&](const Vec3& point) {
-        return camera.project(point, viewportWidth, viewportHeight);
+    // Spatial prefilter: any model that is fully inside or crossing the screen rect
+    // must have a projected bounding box that overlaps the rect (superset), so the
+    // BVH query returns the same selected vector as a full scan, in the same sorted
+    // ascending order. When the rect covers a large fraction of the viewport the
+    // prefilter returns nearly every model and adds traversal + sort overhead on top
+    // of the same per-vertex work, so a direct scan is used instead (same results).
+    const SelectionBounds bounds = selectionBounds(firstCorner, secondCorner);
+    const double rectArea = std::max(0.0, bounds.right - bounds.left) *
+                            std::max(0.0, bounds.bottom - bounds.top);
+    const double viewportArea = static_cast<double>(viewportWidth) *
+                                static_cast<double>(viewportHeight);
+    const auto scan = [&] {
+        return selectModelsInRect(firstCorner, secondCorner, document, crossing,
+                                  [&](const Vec3& point) {
+            return camera.project(point, viewportWidth, viewportHeight);
+        });
+    };
+    if (viewportArea <= 0.0 || rectArea >= 0.06 * viewportArea) return scan();
+    const double screenScale = cameraScreenScale(camera);
+    const auto candidates = document.queryBounds([&](const Bounds3& bound) {
+        const ProjectedSphere sphere = projectedSphere(bound, camera, viewportWidth,
+                                                       viewportHeight, screenScale);
+        const double pad = sphere.screenRadius + epsilon;
+        return sphere.center.x >= bounds.left - pad && sphere.center.x <= bounds.right + pad &&
+               sphere.center.y >= bounds.top - pad && sphere.center.y <= bounds.bottom + pad;
     });
+    return selectModelsInRect(firstCorner, secondCorner, document, crossing,
+                              [&](const Vec3& point) {
+        return camera.project(point, viewportWidth, viewportHeight);
+    }, &candidates);
 }
 
 std::optional<Vec3> crossingSelectionPickPoint2D(const WireframeModel& model,
