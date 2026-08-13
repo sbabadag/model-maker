@@ -277,8 +277,8 @@ void test_ribbon_groups_commands_into_function_tabs() {
             "Drawing tab must contain the drawing tools followed by the Layer Manager command");
     require(modify == std::vector<int>({509, 500, 501, 502, 503, 504, 505, 506, 507, 508, 510, 511, 512}),
             "Modify tab must start with the neutral arrow followed by every modifier");
-    require(view == std::vector<int>({300, 301, 302, 303, 304, 305, 306, 307, 308, 900}),
-            "View tab must expose dropdown buttons for visual styles, standard camera views, and UCS");
+    require(view == std::vector<int>({300, 301, 302, 303, 304, 305, 306, 307, 308, 900, 820, 824}),
+            "View tab must expose dropdown buttons for visual styles, standard camera views, UCS, and Properties/Filter");
     require(mm::RibbonLayout::commands(mm::RibbonTab::Aids) == std::vector<int>({400, 401, 402, 403, 404}),
             "Aids tab must expose snap settings and F10 Polar Tracking");
 }
@@ -397,7 +397,7 @@ void test_idle_enter_repeat_never_steals_keyboard_point_input() {
 void test_ribbon_compact_buttons_fit_above_full_width_canvas() {
     constexpr int width = 1280;
     const auto layout = mm::RibbonLayout::layout(mm::RibbonTab::Drawing, width);
-    require(layout.ribbonHeight >= 140 && layout.ribbonHeight <= 156,
+    require(layout.ribbonHeight == 110,
             "AutoCAD-style ribbon must provide title, tab, command, and group-label bands");
     require(layout.canvas.left == 0 && layout.canvas.top == layout.ribbonHeight,
             "Canvas must use the full window width directly below the ribbon");
