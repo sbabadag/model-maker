@@ -55,7 +55,7 @@ Document::Document() {
 
 void Document::addModel(WireframeModel model) {
     models_.push_back(std::move(model));
-    invalidateSpatialIndex();
+    invalidateDerivedState();
 }
 void Document::addLine(const Vec3& from, const Vec3& to) { addModel(WireframeModel::line(from, to)); }
 void Document::reserveModels(std::size_t count) { models_.reserve(count); }
@@ -64,7 +64,7 @@ void Document::moveModels(const std::vector<std::size_t>& indices, const Vec3& d
     for (const auto index : indices) {
         if (index < models_.size()) models_[index].translate(displacement);
     }
-    invalidateSpatialIndex();
+    invalidateDerivedState();
 }
 
 void Document::copyModels(const std::vector<std::size_t>& indices, const Vec3& displacement) {
@@ -77,7 +77,7 @@ void Document::copyModels(const std::vector<std::size_t>& indices, const Vec3& d
         }
     }
     models_.insert(models_.end(), copies.begin(), copies.end());
-    invalidateSpatialIndex();
+    invalidateDerivedState();
 }
 
 std::size_t Document::setModelLayer(const std::vector<std::size_t>& indices, const std::string& layer) {
@@ -90,6 +90,7 @@ std::size_t Document::setModelLayer(const std::vector<std::size_t>& indices, con
         models_[index].setProperties(std::move(properties));
         ++changed;
     }
+    effectiveCacheDirty_ = true;
     return changed;
 }
 
@@ -105,6 +106,7 @@ std::size_t Document::setModelColor(const std::vector<std::size_t>& indices,
         models_[index].setProperties(std::move(properties));
         ++changed;
     }
+    effectiveCacheDirty_ = true;
     return changed;
 }
 
@@ -118,6 +120,7 @@ std::size_t Document::setModelProfile(const std::vector<std::size_t>& indices,
         models_[index].setProperties(properties);
         ++changed;
     }
+    effectiveCacheDirty_ = true;
     return changed;
 }
 
@@ -133,6 +136,7 @@ std::size_t Document::setModelLineType(const std::vector<std::size_t>& indices,
         models_[index].setProperties(std::move(properties));
         ++changed;
     }
+    effectiveCacheDirty_ = true;
     return changed;
 }
 
@@ -145,7 +149,7 @@ void Document::deleteModels(const std::vector<std::size_t>& indices) {
     valid.erase(std::unique(valid.begin(), valid.end()), valid.end());
     for (const auto index : valid)
         models_.erase(models_.begin() + static_cast<std::ptrdiff_t>(index));
-    if (!valid.empty()) invalidateSpatialIndex();
+    if (!valid.empty()) invalidateDerivedState();
 }
 
 void Document::replaceModel(std::size_t index, std::vector<WireframeModel> replacements) {
@@ -153,7 +157,7 @@ void Document::replaceModel(std::size_t index, std::vector<WireframeModel> repla
     const auto position = models_.erase(models_.begin() + static_cast<std::ptrdiff_t>(index));
     models_.insert(position, std::make_move_iterator(replacements.begin()),
                    std::make_move_iterator(replacements.end()));
-    invalidateSpatialIndex();
+    invalidateDerivedState();
 }
 
 void Document::clear() noexcept {
@@ -162,7 +166,7 @@ void Document::clear() noexcept {
     undoStack_.clear();
     redoStack_.clear();
     nodeConstraints_.clear();
-    invalidateSpatialIndex();
+    invalidateDerivedState();
     documentBounds_.reset();
 }
 
@@ -219,7 +223,7 @@ void Document::pushSnapshot() {
 void Document::restoreSnapshot(const DocumentSnapshot& snapshot) {
     models_ = snapshot.models;
     layers_ = snapshot.layers;
-    invalidateSpatialIndex();
+    invalidateDerivedState();
 }
 
 bool Document::undo() {
@@ -263,6 +267,7 @@ const std::vector<WireframeModel>& Document::models() const noexcept { return mo
 void Document::setLayerProperties(EntityProperties properties) {
     if (properties.layer.empty()) return;
     layers_[properties.layer] = std::move(properties);
+    effectiveCacheDirty_ = true;
 }
 const std::unordered_map<std::string, EntityProperties>& Document::layers() const noexcept { return layers_; }
 
@@ -275,6 +280,7 @@ bool Document::createLayer(std::string name) {
     layer.trueColor = layer.effectiveColor = 0xFFFFFFu;
     layer.lineWeight = layer.effectiveLineWeight = 0;
     layers_.emplace(layer.layer, std::move(layer));
+    effectiveCacheDirty_ = true;
     return true;
 }
 
@@ -283,6 +289,7 @@ bool Document::deleteLayer(const std::string& name) {
     if (std::any_of(models_.begin(), models_.end(), [&](const WireframeModel& model) {
             return model.properties().layer == name;
         })) return false;
+    effectiveCacheDirty_ = true;
     return layers_.erase(name) == 1;
 }
 
@@ -300,6 +307,7 @@ bool Document::renameLayer(const std::string& oldName, std::string newName) {
         properties.layer = newName;
         model.setProperties(std::move(properties));
     }
+    effectiveCacheDirty_ = true;
     return true;
 }
 
@@ -320,7 +328,8 @@ std::vector<std::string> Document::layerNames(std::string filter) const {
     return result;
 }
 
-EntityProperties Document::effectiveProperties(const WireframeModel& model) const {
+EntityProperties Document::resolveEffectiveProperties(std::size_t index) const {
+    const WireframeModel& model = models_[index];
     EntityProperties result = model.properties();
     const auto found = layers_.find(result.layer);
     if (found == layers_.end()) return result;
@@ -339,13 +348,34 @@ EntityProperties Document::effectiveProperties(const WireframeModel& model) cons
     return result;
 }
 
+EntityProperties Document::effectiveProperties(const WireframeModel& model) const {
+    const std::size_t index = static_cast<std::size_t>(&model - models_.data());
+    return effectiveProperties(index);
+}
+
+const EntityProperties& Document::effectiveProperties(std::size_t index) const {
+    ensureEffectiveCache();
+    return effectiveCache_[index];
+}
+
+void Document::ensureEffectiveCache() const {
+    if (!effectiveCacheDirty_) return;
+    effectiveCache_.resize(models_.size());
+    for (std::size_t i = 0; i < models_.size(); ++i)
+        effectiveCache_[i] = resolveEffectiveProperties(i);
+    effectiveCacheDirty_ = false;
+}
+
 bool Document::modelIsEditable(std::size_t index) const {
     if (index >= models_.size()) return false;
-    const auto properties = effectiveProperties(models_[index]);
+    const auto& properties = effectiveProperties(index);
     return properties.visible && !properties.locked;
 }
 
-void Document::invalidateSpatialIndex() noexcept { spatialIndexDirty_ = true; }
+void Document::invalidateDerivedState() noexcept {
+    spatialIndexDirty_ = true;
+    effectiveCacheDirty_ = true;
+}
 
 void Document::ensureSpatialIndex() const {
     if (!spatialIndexDirty_) return;
@@ -540,7 +570,7 @@ void Document::load(const std::filesystem::path& path) {
         }
     }
     models_ = std::move(loaded);
-    invalidateSpatialIndex();
+    invalidateDerivedState();
 }
 
 } // namespace mm

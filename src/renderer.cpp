@@ -371,7 +371,7 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         for (const auto index : visibleModels) {
             if (index >= document.models().size()) continue;
             const auto& model = document.models()[index];
-            const auto properties = document.effectiveProperties(model);
+            const auto& properties = document.effectiveProperties(index);
             if (!properties.visible) continue;
             for (const auto& face : model.faces()) {
                 ProjectedFace projected;
@@ -462,7 +462,7 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         const auto index = visibleModels[visibleIndex];
         if (index >= document.models().size() || isSelected(index)) continue;
         const auto& model = document.models()[index];
-        const auto properties = document.effectiveProperties(model);
+        const auto& properties = document.effectiveProperties(index);
         if (!properties.visible) continue;
         if (draft.visualStyle == VisualStyle::Solid && !draft.interactiveNavigation &&
             !model.faces().empty()) continue;

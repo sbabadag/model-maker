@@ -55,6 +55,7 @@ public:
     bool renameLayer(const std::string& oldName, std::string newName);
     std::vector<std::string> layerNames(std::string filter = {}) const;
     EntityProperties effectiveProperties(const WireframeModel& model) const;
+    const EntityProperties& effectiveProperties(std::size_t index) const;
     bool modelIsEditable(std::size_t index) const;
     std::optional<Bounds3> bounds() const;
     const std::vector<Bounds3>& modelBounds() const;
@@ -85,8 +86,9 @@ private:
         std::size_t right{static_cast<std::size_t>(-1)};
     };
 
-    void invalidateSpatialIndex() noexcept;
+    void invalidateDerivedState() noexcept;
     void ensureSpatialIndex() const;
+    void ensureEffectiveCache() const;
     std::size_t buildSpatialNode(std::size_t begin, std::size_t end) const;
     void querySpatialNode(std::size_t node, const Bounds3& area,
                           std::vector<std::size_t>& result) const;
@@ -96,7 +98,10 @@ private:
     std::unordered_map<std::string, EntityProperties> layers_;
     std::deque<DocumentSnapshot> undoStack_;
     std::deque<DocumentSnapshot> redoStack_;
+    EntityProperties resolveEffectiveProperties(std::size_t index) const;
     mutable bool spatialIndexDirty_{true};
+    mutable bool effectiveCacheDirty_{true};
+    mutable std::vector<EntityProperties> effectiveCache_;
     mutable std::vector<Bounds3> modelBounds_;
     mutable std::vector<std::size_t> spatialOrder_;
     mutable std::vector<SpatialNode> spatialNodes_;
