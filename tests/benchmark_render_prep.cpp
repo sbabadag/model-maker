@@ -135,6 +135,14 @@ int main() {
         return checksum;
     });
 
+    // Cached per-model resolved-properties scan (const-ref, no map lookup).
+    const auto effectivePropsScan = medianMilliseconds([&] {
+        std::size_t checksum = 0;
+        for (std::size_t i = 0; i < entityCount; ++i)
+            checksum += document.effectiveProperties(i).effectiveColor;
+        return static_cast<double>(checksum);
+    });
+
     std::cout << std::fixed << std::setprecision(3)
               << "entities=" << entityCount
               << " visible=" << visible.size()
@@ -150,7 +158,8 @@ int main() {
               << " stamped_selection_ms=" << stampedSelectionMembership
               << " selection_speedup=" << (stampedSelectionMembership > 0.0
                     ? linearSelectionMembership / stampedSelectionMembership : 0.0) << "x"
-              << " projection_1m_ms=" << projection1M << "\n";
+              << " projection_1m_ms=" << projection1M
+              << " effective_props_scan_ms=" << effectivePropsScan << "\n";
     return visible.size() == entityCount && !culled3DModels.empty() &&
            culled3DModels.size() < entityCount && benchmarkSink != 0.0 ? 0 : 1;
 }
