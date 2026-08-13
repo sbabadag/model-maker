@@ -24,10 +24,13 @@ enum class SnapMarkerSymbol {
 };
 using SnapTypeMask = std::array<bool, static_cast<std::size_t>(SnapType::Parallel) + 1>;
 
+enum class OrthoAxis { None, X, Y, Z };
+
 struct SnapResult {
     Vec3 point{};
     SnapType type{SnapType::None};
     double distance{};
+    OrthoAxis orthoAxis{OrthoAxis::None};
 };
 
 struct TrackingGuide {
@@ -41,6 +44,10 @@ struct TemporaryTrackingResult {
     std::vector<Vec3> derivedPoints;
     bool locked{};
 };
+
+bool projectedBoundsIntersectsViewport(const Bounds3& bounds, const Camera& camera,
+                                       int viewportWidth, int viewportHeight,
+                                       double marginPixels = 2.0);
 
 struct FilletResult {
     WireframeModel first;
@@ -87,13 +94,19 @@ SnapMarkerSymbol snapMarkerSymbol(SnapType type) noexcept;
 const wchar_t* toolLabel(DrawTool tool) noexcept;
 bool shouldEvaluateSnapping(bool selectingEntities, bool zoomPhase, bool cameraNavigating) noexcept;
 Vec3 constrainOrtho(const Vec3& anchor, const Vec3& cursor) noexcept;
+Vec3 constrainOrtho(const Vec3& anchor, const Vec3& cursor, OrthoAxis& chosenAxis) noexcept;
 SnapResult applyOrtho(const Vec3& anchor, SnapResult candidate,
                       bool preserveObjectSnaps = true) noexcept;
 Vec3 constrainOrtho3D(const Vec3& anchor, const Vec2& screenCursor, const Camera& camera,
                       int viewportWidth, int viewportHeight) noexcept;
 Vec3 constrainOrtho3D(const Vec3& anchor, const Vec2& screenCursor, const Camera& camera,
+                      int viewportWidth, int viewportHeight, OrthoAxis& chosenAxis) noexcept;
+Vec3 constrainOrtho3D(const Vec3& anchor, const Vec2& screenCursor, const Camera& camera,
                       int viewportWidth, int viewportHeight, const WorkPlane& workPlane,
                       bool includePlaneNormal = false) noexcept;
+Vec3 constrainOrtho3D(const Vec3& anchor, const Vec2& screenCursor, const Camera& camera,
+                      int viewportWidth, int viewportHeight, const WorkPlane& workPlane,
+                      bool includePlaneNormal, OrthoAxis& chosenAxis) noexcept;
 SnapResult applyOrtho3D(const Vec3& anchor, const Vec2& screenCursor, SnapResult candidate,
                         const Camera& camera, int viewportWidth, int viewportHeight,
                         bool preserveObjectSnaps = true) noexcept;
@@ -145,6 +158,14 @@ std::optional<WireframeModel> offsetModelOnPlane(const WireframeModel& source, d
 std::optional<WireframeModel> mirrorModelOnPlane(const WireframeModel& source,
                                                  const Vec3& axisStart, const Vec3& axisEnd,
                                                  const WorkPlane& plane);
+std::optional<WireframeModel> rotateModel2D(const WireframeModel& source,
+                                            const Vec3& center, double angleDeg);
+std::optional<WireframeModel> rotateModelOnPlane(const WireframeModel& source,
+                                                 const Vec3& center, double angleDeg,
+                                                 const WorkPlane& plane);
+std::optional<WireframeModel> rotateModelAroundAxis(const WireframeModel& source,
+                                                    const Vec3& center, const Vec3& axis,
+                                                    double angleDeg);
 std::vector<WireframeModel> polarArrayOnPlane(const WireframeModel& source, std::size_t itemCount,
                                               const Vec3& center, const WorkPlane& plane);
 std::optional<std::vector<WireframeModel>> trimLineOnPlane(

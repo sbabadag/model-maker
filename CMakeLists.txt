@@ -10,6 +10,7 @@ add_library(model_maker_core
     src/camera.cpp
     src/view_cube.cpp
     src/ribbon_layout.cpp
+    src/performance.cpp
     src/dxf.cpp
     src/document.cpp
     src/drafting.cpp
@@ -21,6 +22,9 @@ add_executable(model-maker WIN32
     src/main.cpp
     src/application.cpp
     src/renderer.cpp
+    src/view_cube_renderer.cpp
+    src/gdi_render_backend.cpp
+    src/force_diagram.cpp
 )
 target_link_libraries(model-maker PRIVATE model_maker_core gdi32 comdlg32 comctl32 msimg32)
 target_link_options(model-maker PRIVATE -municode -static -static-libgcc -static-libstdc++)

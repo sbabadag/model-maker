@@ -42,6 +42,7 @@ struct ViewCubeLayout {
 
 class ViewCube {
 public:
+    static CubeRect hostBounds(int canvasWidth, int canvasHeight) noexcept;
     static ViewCubeLayout layout(int viewportWidth, const Camera& camera) noexcept;
     static std::optional<StandardView> hitTest(int x, int y, int viewportWidth,
                                                const Camera& camera) noexcept;

@@ -27,6 +27,7 @@ public:
     std::optional<Vec3> unprojectToPlane(Vec2 screenPoint, int viewportWidth, int viewportHeight,
                                          const WorkPlane& plane) const noexcept;
     void rotate(double yawDelta, double pitchDelta) noexcept;
+    void setOrbitCenter(const Vec3& worldPoint) noexcept;
     void zoomBy(double factor) noexcept;
     void zoom2DAt(Vec2 screenPoint, double factor, int viewportWidth, int viewportHeight) noexcept;
     void zoom3DAt(Vec2 screenPoint, double factor, int viewportWidth, int viewportHeight) noexcept;
@@ -45,6 +46,11 @@ public:
 private:
     double yaw_{-0.55};
     double pitch_{0.45};
+    double roll_{0.0};
+    bool useIso_{false};
+    double isoM00_{}, isoM01_{}, isoM02_{};
+    double isoM10_{}, isoM11_{}, isoM12_{};
+    double isoM20_{}, isoM21_{}, isoM22_{};
     double zoom_{1.0};
     double pixelsPerUnit_{65.0};
     Vec2 center2D_{};

@@ -6,10 +6,10 @@ namespace mm {
 
 std::vector<int> RibbonLayout::commands(RibbonTab tab) {
     switch (tab) {
-    case RibbonTab::File: return {100, 101, 102, 103, 104};
-    case RibbonTab::Drawing: return {200, 201, 202, 203, 204};
-    case RibbonTab::Modify: return {509, 500, 501, 502, 503, 504, 505, 506, 507, 508, 510};
-    case RibbonTab::View: return {300, 301, 302, 303, 304, 305, 306, 307, 308};
+    case RibbonTab::File: return {100, 101, 102, 103, 104, 610, 611, 710, 711, 712, 713, 714, 750, 751, 800, 801, 802, 803, 804, 805, 806, 807, 808, 809};
+    case RibbonTab::Drawing: return {200, 201, 202, 203, 204, 205};
+    case RibbonTab::Modify: return {509, 500, 501, 502, 503, 504, 505, 506, 507, 508, 510, 511, 512};
+    case RibbonTab::View: return {300, 301, 302, 303, 304, 305, 306, 307, 308, 900};
     case RibbonTab::Aids: return {400, 401, 402, 403, 404};
     }
     return {};
@@ -28,12 +28,12 @@ RibbonGeometry RibbonLayout::layout(RibbonTab tab, int windowWidth) {
     constexpr int groupGap = 10;
     std::vector<std::pair<std::wstring, std::size_t>> groups;
     switch (tab) {
-    case RibbonTab::File: groups = {{L"File", 5}}; break;
-    case RibbonTab::Drawing: groups = {{L"Draw", 5}}; break;
+    case RibbonTab::File: groups = {{L"File", 5}, {L"Undo", 2}, {L"Export", 1}, {L"OpenSees", 4}, {L"Yükler", 2}, {L"Sonuçlar", 10}}; break;
+    case RibbonTab::Drawing: groups = {{L"Draw", 5}, {L"Layers", 1}}; break;
     case RibbonTab::Modify:
-        groups = {{L"Tools", 1}, {L"Modify", 5}, {L"Pattern", 2}, {L"Edit", 3}};
+        groups = {{L"Tools", 1}, {L"Modify", 5}, {L"Pattern", 2}, {L"Edit", 5}};
         break;
-    case RibbonTab::View: groups = {{L"Model", 5}, {L"Navigate", 4}}; break;
+    case RibbonTab::View: groups = {{L"Model", 5}, {L"Navigate", 5}}; break;
     case RibbonTab::Aids: groups = {{L"Drafting Aids", 5}}; break;
     }
     const auto tabCommands = commands(tab);

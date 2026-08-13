@@ -180,7 +180,12 @@ EntityProperties readLayerProperties(const std::vector<Pair>& values) {
     layer.layer = text(values, 2, "0");
     layer.lineType = text(values, 6, "CONTINUOUS");
     const int rawColor = optionalInteger(values, 62).value_or(7);
-    layer.visible = rawColor >= 0 && !(integer(values, 70) & 1);
+    const int flags = integer(values, 70);
+    layer.visible = rawColor >= 0;
+    layer.frozen = (flags & 1) != 0;
+    layer.locked = (flags & 4) != 0;
+    layer.plottable = optionalInteger(values, 290).value_or(1) != 0;
+    layer.description = text(values, 4, "");
     layer.colorIndex = std::abs(rawColor);
     if (const auto trueColor = optionalInteger(values, 420))
         layer.trueColor = static_cast<std::uint32_t>(*trueColor) & 0xFFFFFFu;
@@ -206,7 +211,6 @@ EntityProperties readEntityProperties(const std::vector<Pair>& values, const Lay
     result.transparency = optionalInteger(values, 440).value_or(0);
     const auto layerIt = layers.find(result.layer);
     const EntityProperties* layer = layerIt == layers.end() ? nullptr : &layerIt->second;
-    result.visible = result.visible && (!layer || layer->visible);
     if (result.trueColor) result.effectiveColor = *result.trueColor;
     else if (result.colorIndex > 0 && result.colorIndex < 256) result.effectiveColor = aciColor(result.colorIndex);
     else result.effectiveColor = layer ? layer->effectiveColor : aciColor(7);
@@ -478,7 +482,7 @@ EntityProperties inheritBlockProperties(EntityProperties properties, const Entit
     if (properties.layer == "0") properties.layer = insert.layer;
     const auto layerIt = layers.find(properties.layer);
     const EntityProperties* layer = layerIt == layers.end() ? nullptr : &layerIt->second;
-    properties.visible = properties.visible && insert.visible && (!layer || layer->visible);
+    properties.visible = properties.visible && insert.visible;
     if (properties.trueColor) properties.effectiveColor = *properties.trueColor;
     else if (properties.colorIndex == 0) properties.effectiveColor = insert.effectiveColor;
     else if (properties.colorIndex > 0 && properties.colorIndex < 256)
@@ -715,11 +719,15 @@ void DxfFile::write(const Document& document, const std::filesystem::path& path)
     writePair(output, 70, exportLayers.size());
     for (const auto& [name, layer] : exportLayers) {
         writePair(output, 0, "LAYER"); writePair(output, 2, name);
-        writePair(output, 70, layer.visible ? 0 : 1);
-        writePair(output, 62, layer.colorIndex > 0 && layer.colorIndex < 256 ? layer.colorIndex : 7);
+        writePair(output, 70, (layer.frozen ? 1 : 0) | (layer.locked ? 4 : 0));
+        const int layerColor = layer.colorIndex > 0 && layer.colorIndex < 256 ? layer.colorIndex : 7;
+        writePair(output, 62, layer.visible ? layerColor : -layerColor);
         if (layer.trueColor) writePair(output, 420, *layer.trueColor);
         writePair(output, 6, layer.effectiveLineType.empty() ? "CONTINUOUS" : layer.effectiveLineType);
         writePair(output, 370, layer.effectiveLineWeight);
+        writePair(output, 290, layer.plottable ? 1 : 0);
+        if (layer.transparency) writePair(output, 440, layer.transparency);
+        if (!layer.description.empty()) writePair(output, 4, layer.description);
     }
     writePair(output, 0, "ENDTAB"); writePair(output, 0, "ENDSEC");
 
