@@ -30,24 +30,25 @@ Vec2 Camera::project(Vec3 point, int viewportWidth, int viewportHeight) const no
     };
 }
 
+void Camera::ensureViewCache() const noexcept {
+    if (!viewCacheDirty_) return;
+    cy_ = std::cos(yaw_); sy_ = std::sin(yaw_);
+    cp_ = std::cos(pitch_); sp_ = std::sin(pitch_);
+    cr_ = std::cos(roll_); sr_ = std::sin(roll_);
+    viewCacheDirty_ = false;
+}
+
 Vec3 Camera::viewTransform(Vec3 point) const noexcept {
     if (useIso_) {
         return {isoM00_ * point.x + isoM01_ * point.y + isoM02_ * point.z,
                 isoM10_ * point.x + isoM11_ * point.y + isoM12_ * point.z,
                 isoM20_ * point.x + isoM21_ * point.y + isoM22_ * point.z};
     }
-    const double cy = std::cos(yaw_);
-    const double sy = std::sin(yaw_);
-    const Vec3 yawed{point.x * cy + point.z * sy, point.y, -point.x * sy + point.z * cy};
-
-    const double cp = std::cos(pitch_);
-    const double sp = std::sin(pitch_);
-    const Vec3 pitched{yawed.x, yawed.y * cp - yawed.z * sp, yawed.y * sp + yawed.z * cp};
-
-    const double cr = std::cos(roll_);
-    const double sr = std::sin(roll_);
-    return {pitched.x * cr - pitched.y * sr,
-            pitched.x * sr + pitched.y * cr, pitched.z};
+    ensureViewCache();
+    const Vec3 yawed{point.x * cy_ + point.z * sy_, point.y, -point.x * sy_ + point.z * cy_};
+    const Vec3 pitched{yawed.x, yawed.y * cp_ - yawed.z * sp_, yawed.y * sp_ + yawed.z * cp_};
+    return {pitched.x * cr_ - pitched.y * sr_,
+            pitched.x * sr_ + pitched.y * cr_, pitched.z};
 }
 
 std::optional<Vec3> Camera::unprojectToPlane(Vec2 screenPoint, int viewportWidth, int viewportHeight,
@@ -72,18 +73,13 @@ std::optional<Vec3> Camera::unprojectToPlane(Vec2 screenPoint, int viewportWidth
                     isoM01_ * px + isoM11_ * py + isoM21_ * pz,
                     isoM02_ * px + isoM12_ * py + isoM22_ * pz};
         }
-        const double cy = std::cos(yaw_);
-        const double sy = std::sin(yaw_);
-        const double cp = std::cos(pitch_);
-        const double sp = std::sin(pitch_);
-        const double cr = std::cos(roll_);
-        const double sr = std::sin(roll_);
-        const Vec3 yawed{point.x, point.y * cp + point.z * sp,
-                         -point.y * sp + point.z * cp};
-        const Vec3 unrolled{yawed.x * cy - yawed.z * sy, yawed.y,
-                            yawed.x * sy + yawed.z * cy};
-        return Vec3{unrolled.x * cr - unrolled.y * sr,
-                    unrolled.x * sr + unrolled.y * cr, unrolled.z};
+        ensureViewCache();
+        const Vec3 yawed{point.x, point.y * cp_ + point.z * sp_,
+                         -point.y * sp_ + point.z * cp_};
+        const Vec3 unrolled{yawed.x * cy_ - yawed.z * sy_, yawed.y,
+                            yawed.x * sy_ + yawed.z * cy_};
+        return Vec3{unrolled.x * cr_ - unrolled.y * sr_,
+                    unrolled.x * sr_ + unrolled.y * cr_, unrolled.z};
     };
 
     const Vec3 origin = center3D_ + inverseRotate({cameraX, cameraY, -1.0});
@@ -106,6 +102,7 @@ void Camera::rotate(double yawDelta, double pitchDelta) noexcept {
     }
     yaw_ += yawDelta;
     pitch_ = std::clamp(pitch_ + pitchDelta, -1.5, 1.5);
+    invalidateViewCache();
 }
 
 void Camera::setOrbitCenter(const Vec3& worldPoint) noexcept {
@@ -221,6 +218,7 @@ void Camera::reset() noexcept {
     zoom_ = 1.0;
     center2D_ = {};
     center3D_ = {};
+    invalidateViewCache();
 }
 
 void Camera::setView(StandardView view) noexcept {
@@ -241,6 +239,7 @@ void Camera::setView(StandardView view) noexcept {
     case StandardView::Left: yaw_ = halfPi; pitch_ = 0.0; roll_ = 0.0; useIso_ = false; break;
     case StandardView::Right: yaw_ = -halfPi; pitch_ = 0.0; roll_ = 0.0; useIso_ = false; break;
     }
+    invalidateViewCache();
 }
 
 double Camera::yaw() const noexcept { return yaw_; }

@@ -55,6 +55,13 @@ private:
     double pixelsPerUnit_{65.0};
     Vec2 center2D_{};
     Vec3 center3D_{};
+
+    // Cached trig for the non-isometric view rotation. Recomputed lazily so the
+    // per-vertex hot path (project / viewTransform) avoids 6 sin/cos calls each.
+    mutable double cy_{1.0}, sy_{0.0}, cp_{1.0}, sp_{0.0}, cr_{1.0}, sr_{0.0};
+    mutable bool viewCacheDirty_{true};
+    void invalidateViewCache() noexcept { viewCacheDirty_ = true; }
+    void ensureViewCache() const noexcept;
 };
 
 } // namespace mm
