@@ -5,3 +5,14 @@ build/
 .vscode/
 __pycache__/
 *.py[cod]
+build-local/
+build-release-local/
+vendor/
+OpenSees3.8.0*
+*.s2k
+bench_lines_*.dxf
+ref_r12.dxf
+test_pp*
+test_imgui_inc.cpp
+.hermes.md
+.hermes/
