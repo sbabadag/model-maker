@@ -2,6 +2,8 @@
 #include "model_maker/dxf.hpp"
 #include "model_maker/view_cube.hpp"
 
+#include <QComboBox>
+
 #include <commdlg.h>
 #include <commctrl.h>
 #include <windowsx.h>
@@ -32,7 +34,9 @@ enum CommandId {
     CmdTrim, CmdExtend, CmdNeutral, CmdFillet,
     CmdTabFile = 600, CmdTabDrawing, CmdTabModify, CmdTabView, CmdTabAids,
     CmdDxfProgress = 700, CmdSnapTypeFirst = 720,
-    CmdLayerCombo = 800, CmdColorCombo, CmdLineTypeCombo
+    CmdLayerCombo = 800, CmdColorCombo, CmdLineTypeCombo,
+    CmdProperties = 820, CmdPropsSearch = 821, CmdPropsList = 822, CmdPropsFilter = 823,
+    CmdFilterPopup = 824, CmdFilterFind = 825, CmdFilterSelect = 826,
 };
 
 struct SnapChoice { SnapType type; const wchar_t* label; };
@@ -106,7 +110,7 @@ HCURSOR createSquarePickboxCursor(HINSTANCE instance) {
 }
 }
 
-Application::Application(HINSTANCE instance) : instance_(instance) {
+Application::Application(HINSTANCE instance, HWND /*parentCanvas*/) : instance_(instance) {
     enabledSnapTypes_.fill(true);
 }
 
@@ -192,12 +196,12 @@ void Application::createControlPanel() {
     titleFont_ = CreateFontW(-18, 0, 0, 0, FW_SEMIBOLD, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
                              OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
                              DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
-    iconFont_ = CreateFontW(-25, 0, 0, 0, FW_LIGHT, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
+    iconFont_ = CreateFontW(-18, 0, 0, 0, FW_LIGHT, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
                             OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
                             DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI Symbol");
 
     const auto addTab = [&](const wchar_t* text, int id, DWORD extra = 0) {
-        HWND tab = createButton(text, id, 0, 0, 82, 30,
+        HWND tab = createButton(text, id, 0, 0, 42, 17,
                                 BS_AUTORADIOBUTTON | BS_PUSHLIKE | extra);
         ribbonTabButtons_.push_back(tab);
         return tab;
@@ -209,52 +213,52 @@ void Application::createControlPanel() {
     addTab(L"Yardımcılar", CmdTabAids);
 
     const auto addCommand = [&](const wchar_t* text, int id, DWORD style = BS_PUSHBUTTON) {
-        HWND button = createButton(text, id, 0, 0, 64, 57, style | BS_MULTILINE);
+        HWND button = createButton(text, id, 0, 0, 40, 40, style | BS_MULTILINE);
         ribbonCommandButtons_.push_back(button);
         return button;
     };
 
-    addCommand(L"＋\r\nYeni", CmdNew);
-    addCommand(L"▣\r\nAç", CmdOpen);
-    addCommand(L"▤\r\nKaydet", CmdSave);
-    addCommand(L"⇩\r\nDXF Aç", CmdImportDxf);
-    addCommand(L"⇧\r\nDXF Yaz", CmdExportDxf);
+    addCommand(L"＋", CmdNew);
+    addCommand(L"▣", CmdOpen);
+    addCommand(L"▤", CmdSave);
+    addCommand(L"⇩", CmdImportDxf);
+    addCommand(L"⇧", CmdExportDxf);
 
-    lineButton_ = addCommand(L"╱\r\nÇizgi", CmdLine, BS_AUTOCHECKBOX | BS_PUSHLIKE);
-    polylineButton_ = addCommand(L"⌁\r\nPolyline", CmdPolyline, BS_AUTOCHECKBOX | BS_PUSHLIKE);
-    rectangleButton_ = addCommand(L"□\r\nDikdört.", CmdRectangle, BS_AUTOCHECKBOX | BS_PUSHLIKE);
-    circleButton_ = addCommand(L"○\r\nDaire", CmdCircle, BS_AUTOCHECKBOX | BS_PUSHLIKE);
-    face3DButton_ = addCommand(L"▱\r\n3DFACE", CmdFace3D, BS_AUTOCHECKBOX | BS_PUSHLIKE);
+    lineButton_ = addCommand(L"╱", CmdLine, BS_AUTOCHECKBOX | BS_PUSHLIKE);
+    polylineButton_ = addCommand(L"⌁", CmdPolyline, BS_AUTOCHECKBOX | BS_PUSHLIKE);
+    rectangleButton_ = addCommand(L"□", CmdRectangle, BS_AUTOCHECKBOX | BS_PUSHLIKE);
+    circleButton_ = addCommand(L"○", CmdCircle, BS_AUTOCHECKBOX | BS_PUSHLIKE);
+    face3DButton_ = addCommand(L"▱", CmdFace3D, BS_AUTOCHECKBOX | BS_PUSHLIKE);
 
-    addCommand(L"◇\r\nKüp", CmdCube);
-    addCommand(L"△\r\nPiramit", CmdPyramid);
-    addCommand(L"⌂\r\nSıfırla", CmdResetView);
-    view3DButton_ = addCommand(L"3B\r\n2B / 3B", CmdView3D, BS_AUTOCHECKBOX | BS_PUSHLIKE);
-    workPlaneButton_ = addCommand(L"▱\r\nDüzlem", CmdWorkPlane, BS_AUTOCHECKBOX | BS_PUSHLIKE);
-    addCommand(L"⤢\r\nExtents", CmdZoomExtents);
-    zoomWindowButton_ = addCommand(L"⌗\r\nPencere", CmdZoomWindow, BS_AUTOCHECKBOX | BS_PUSHLIKE);
-    visualStyleButton_ = addCommand(L"◇\r\nWireframe ▼", CmdVisualStyle);
-    standardViewButton_ = addCommand(L"▦\r\nGörünüş ▼", CmdStandardView);
+    addCommand(L"◇", CmdCube);
+    addCommand(L"△", CmdPyramid);
+    addCommand(L"⌂", CmdResetView);
+    view3DButton_ = addCommand(L"3B", CmdView3D, BS_AUTOCHECKBOX | BS_PUSHLIKE);
+    workPlaneButton_ = addCommand(L"▱", CmdWorkPlane, BS_AUTOCHECKBOX | BS_PUSHLIKE);
+    addCommand(L"⤢", CmdZoomExtents);
+    zoomWindowButton_ = addCommand(L"⌗", CmdZoomWindow, BS_AUTOCHECKBOX | BS_PUSHLIKE);
+    visualStyleButton_ = addCommand(L"◇", CmdVisualStyle);
+    standardViewButton_ = addCommand(L"▦", CmdStandardView);
+    addCommand(L"📋", CmdProperties, BS_AUTOCHECKBOX | BS_PUSHLIKE);
+    addCommand(L"🔍", CmdFilterPopup, BS_PUSHBUTTON);
 
-    snapButton_ = addCommand(L"◎\r\nOSNAP F3", CmdOsnap, BS_AUTOCHECKBOX | BS_PUSHLIKE);
-    gridSnapButton_ = addCommand(L"#\r\nGrid F9", CmdGridSnap, BS_AUTOCHECKBOX | BS_PUSHLIKE);
-    dynamicInputButton_ = addCommand(L"123\r\nDinamik", CmdDynamicInput, BS_AUTOCHECKBOX | BS_PUSHLIKE);
-    snapSettingsButton_ = addCommand(L"☑\r\nSnap Türleri", CmdSnapSettings,
-                                     BS_AUTOCHECKBOX | BS_PUSHLIKE);
-    polarTrackingButton_ = addCommand(L"∠\r\nPolar F10", CmdPolarTracking,
-                                      BS_AUTOCHECKBOX | BS_PUSHLIKE);
+    snapButton_ = addCommand(L"◎", CmdOsnap, BS_AUTOCHECKBOX | BS_PUSHLIKE);
+    gridSnapButton_ = addCommand(L"#", CmdGridSnap, BS_AUTOCHECKBOX | BS_PUSHLIKE);
+    dynamicInputButton_ = addCommand(L"123", CmdDynamicInput, BS_AUTOCHECKBOX | BS_PUSHLIKE);
+    snapSettingsButton_ = addCommand(L"☑", CmdSnapSettings, BS_AUTOCHECKBOX | BS_PUSHLIKE);
+    polarTrackingButton_ = addCommand(L"∠", CmdPolarTracking, BS_AUTOCHECKBOX | BS_PUSHLIKE);
 
-    neutralButton_ = addCommand(L"↖\r\nPasif", CmdNeutral, BS_AUTOCHECKBOX | BS_PUSHLIKE);
-    moveButton_ = addCommand(L"↔\r\nTaşı", CmdMove, BS_AUTOCHECKBOX | BS_PUSHLIKE);
-    copyButton_ = addCommand(L"⧉\r\nKopyala", CmdCopy, BS_AUTOCHECKBOX | BS_PUSHLIKE);
-    offsetButton_ = addCommand(L"⇶\r\nOfset", CmdOffset, BS_AUTOCHECKBOX | BS_PUSHLIKE);
-    mirrorButton_ = addCommand(L"◁│▷\r\nAyna", CmdMirror, BS_AUTOCHECKBOX | BS_PUSHLIKE);
-    deleteButton_ = addCommand(L"✕\r\nSil", CmdDelete, BS_AUTOCHECKBOX | BS_PUSHLIKE);
-    linearArrayButton_ = addCommand(L"▦\r\nDoğrusal", CmdLinearArray, BS_AUTOCHECKBOX | BS_PUSHLIKE);
-    polarArrayButton_ = addCommand(L"◌\r\nDairesel", CmdPolarArray, BS_AUTOCHECKBOX | BS_PUSHLIKE);
-    trimButton_ = addCommand(L"✂\r\nTrim", CmdTrim, BS_AUTOCHECKBOX | BS_PUSHLIKE);
-    extendButton_ = addCommand(L"↗\r\nExtend", CmdExtend, BS_AUTOCHECKBOX | BS_PUSHLIKE);
-    filletButton_ = addCommand(L"⌒\r\nFillet", CmdFillet, BS_AUTOCHECKBOX | BS_PUSHLIKE);
+    neutralButton_ = addCommand(L"↖", CmdNeutral, BS_AUTOCHECKBOX | BS_PUSHLIKE);
+    moveButton_ = addCommand(L"↔", CmdMove, BS_AUTOCHECKBOX | BS_PUSHLIKE);
+    copyButton_ = addCommand(L"⧉", CmdCopy, BS_AUTOCHECKBOX | BS_PUSHLIKE);
+    offsetButton_ = addCommand(L"⇶", CmdOffset, BS_AUTOCHECKBOX | BS_PUSHLIKE);
+    mirrorButton_ = addCommand(L"◁│▷", CmdMirror, BS_AUTOCHECKBOX | BS_PUSHLIKE);
+    deleteButton_ = addCommand(L"✕", CmdDelete, BS_AUTOCHECKBOX | BS_PUSHLIKE);
+    linearArrayButton_ = addCommand(L"▦", CmdLinearArray, BS_AUTOCHECKBOX | BS_PUSHLIKE);
+    polarArrayButton_ = addCommand(L"◌", CmdPolarArray, BS_AUTOCHECKBOX | BS_PUSHLIKE);
+    trimButton_ = addCommand(L"✂", CmdTrim, BS_AUTOCHECKBOX | BS_PUSHLIKE);
+    extendButton_ = addCommand(L"↗", CmdExtend, BS_AUTOCHECKBOX | BS_PUSHLIKE);
+    filletButton_ = addCommand(L"⌒", CmdFillet, BS_AUTOCHECKBOX | BS_PUSHLIKE);
 
     canvas_ = CreateWindowExW(WS_EX_CLIENTEDGE, canvasClassName, nullptr,
                               WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_CLIPSIBLINGS,
@@ -263,6 +267,65 @@ void Application::createControlPanel() {
                               WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS | SS_LEFT | SS_CENTERIMAGE,
                               0, 700, 1000, statusHeight, window_, nullptr, instance_, nullptr);
     SendMessageW(status_, WM_SETFONT, reinterpret_cast<WPARAM>(uiFont_), TRUE);
+    // Tooltip control for all ribbon buttons
+    tooltipWnd_ = CreateWindowExW(0, TOOLTIPS_CLASSW, nullptr,
+                                   WS_POPUP | TTS_NOPREFIX | TTS_ALWAYSTIP,
+                                   CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
+                                   window_, nullptr, instance_, nullptr);
+    if (tooltipWnd_) {
+        SendMessageW(tooltipWnd_, TTM_SETMAXTIPWIDTH, 0, 300);
+        // Register every ribbon button with the tooltip
+        std::vector<std::pair<HWND, std::wstring>> tooltips;
+        auto regTT = [&](HWND btn, const wchar_t* tip) {
+            if (btn) tooltips.push_back({btn, tip});
+        };
+        regTT(GetDlgItem(window_, CmdNew), L"Yeni");
+        regTT(GetDlgItem(window_, CmdOpen), L"Aç");
+        regTT(GetDlgItem(window_, CmdSave), L"Kaydet");
+        regTT(GetDlgItem(window_, CmdImportDxf), L"DXF Aç");
+        regTT(GetDlgItem(window_, CmdExportDxf), L"DXF Yaz");
+        regTT(GetDlgItem(window_, CmdLine), L"Çizgi");
+        regTT(GetDlgItem(window_, CmdPolyline), L"Polyline");
+        regTT(GetDlgItem(window_, CmdRectangle), L"Dikdörtgen");
+        regTT(GetDlgItem(window_, CmdCircle), L"Daire");
+        regTT(GetDlgItem(window_, CmdFace3D), L"3DFACE");
+        regTT(GetDlgItem(window_, CmdCube), L"Küp");
+        regTT(GetDlgItem(window_, CmdPyramid), L"Piramit");
+        regTT(GetDlgItem(window_, CmdResetView), L"Sıfırla");
+        regTT(GetDlgItem(window_, CmdView3D), L"2B / 3B");
+        regTT(GetDlgItem(window_, CmdWorkPlane), L"Düzlem");
+        regTT(GetDlgItem(window_, CmdZoomExtents), L"Extents");
+        regTT(GetDlgItem(window_, CmdZoomWindow), L"Pencere");
+        regTT(GetDlgItem(window_, CmdVisualStyle), L"Wireframe");
+        regTT(GetDlgItem(window_, CmdStandardView), L"Görünüş");
+        regTT(GetDlgItem(window_, CmdProperties), L"Özellikler");
+        regTT(GetDlgItem(window_, CmdFilterPopup), L"Filtrele");
+        regTT(GetDlgItem(window_, CmdOsnap), L"OSNAP F3");
+        regTT(GetDlgItem(window_, CmdGridSnap), L"Grid F9");
+        regTT(GetDlgItem(window_, CmdDynamicInput), L"Dinamik");
+        regTT(GetDlgItem(window_, CmdSnapSettings), L"Snap Türleri");
+        regTT(GetDlgItem(window_, CmdPolarTracking), L"Polar F10");
+        regTT(GetDlgItem(window_, CmdNeutral), L"Pasif");
+        regTT(GetDlgItem(window_, CmdMove), L"Taşı");
+        regTT(GetDlgItem(window_, CmdCopy), L"Kopyala");
+        regTT(GetDlgItem(window_, CmdOffset), L"Ofset");
+        regTT(GetDlgItem(window_, CmdMirror), L"Ayna");
+        regTT(GetDlgItem(window_, CmdDelete), L"Sil");
+        regTT(GetDlgItem(window_, CmdLinearArray), L"Doğrusal");
+        regTT(GetDlgItem(window_, CmdPolarArray), L"Dairesel");
+        regTT(GetDlgItem(window_, CmdTrim), L"Trim");
+        regTT(GetDlgItem(window_, CmdExtend), L"Extend");
+        regTT(GetDlgItem(window_, CmdFillet), L"Fillet");
+        for (const auto& [btn, tip] : tooltips) {
+            TOOLINFOW ti{};
+            ti.cbSize = sizeof(ti);
+            ti.uFlags = TTF_IDISHWND | TTF_SUBCLASS;
+            ti.hwnd = window_;
+            ti.uId = reinterpret_cast<UINT_PTR>(btn);
+            ti.lpszText = const_cast<wchar_t*>(tip.c_str());
+            SendMessageW(tooltipWnd_, TTM_ADDTOOLW, 0, reinterpret_cast<LPARAM>(&ti));
+        }
+    }
     dxfProgressBar_ = CreateWindowExW(0, PROGRESS_CLASSW, nullptr,
                                       WS_CHILD | WS_CLIPSIBLINGS | PBS_SMOOTH,
                                       0, 0, 280, statusHeight - 6, window_,
@@ -273,8 +336,11 @@ void Application::createControlPanel() {
                                  0, 0, 365, 250, window_, nullptr, instance_, nullptr);
     SendMessageW(snapPanel_, WM_SETFONT, reinterpret_cast<WPARAM>(uiFont_), TRUE);
     for (std::size_t i = 0; i < snapChoices.size(); ++i) {
-        snapTypeCheckboxes_[i] = createButton(snapChoices[i].label,
-            CmdSnapTypeFirst + static_cast<int>(i), 0, 0, 170, 27, BS_AUTOCHECKBOX);
+        snapTypeCheckboxes_[i] = CreateWindowExW(0, L"BUTTON", snapChoices[i].label,
+            WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
+            0, 0, 170, 27, window_, reinterpret_cast<HMENU>(static_cast<INT_PTR>(CmdSnapTypeFirst + static_cast<int>(i))),
+            instance_, nullptr);
+        SendMessageW(snapTypeCheckboxes_[i], WM_SETFONT, reinterpret_cast<WPARAM>(uiFont_), TRUE);
         SendMessageW(snapTypeCheckboxes_[i], BM_SETCHECK, BST_CHECKED, 0);
         ShowWindow(snapTypeCheckboxes_[i], SW_HIDE);
     }
@@ -305,6 +371,87 @@ void Application::createControlPanel() {
     SendMessageW(colorCombo_, CB_SETCURSEL, 0, 0);
     SendMessageW(lineTypeCombo_, CB_SETCURSEL, 0, 0);
     refreshLayerCombo();
+
+    // Properties panel (floating popup window with filter toggle)
+    propsPanel_ = CreateWindowExW(WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE, L"STATIC", L"Ozellikler",
+        WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,
+        100, 100, 320, 400, window_, nullptr, instance_, nullptr);
+    propsSearch_ = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", nullptr,
+        WS_CHILD | WS_TABSTOP | ES_AUTOHSCROLL,
+        8, 8, 288, 25, propsPanel_, reinterpret_cast<HMENU>(static_cast<INT_PTR>(CmdPropsSearch)), instance_, nullptr);
+    SendMessageW(propsSearch_, WM_SETFONT, reinterpret_cast<WPARAM>(uiFont_), TRUE);
+    SendMessageW(propsSearch_, EM_SETCUEBANNER, TRUE, reinterpret_cast<LPARAM>(L"Ozellik ara..."));
+    ShowWindow(propsSearch_, SW_HIDE); // hidden until filter toggled
+    propsList_ = CreateWindowExW(WS_EX_CLIENTEDGE, WC_LISTVIEWW, nullptr,
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP | LVS_REPORT | LVS_SINGLESEL | LVS_SHOWSELALWAYS,
+        8, 8, 288, 300, propsPanel_, reinterpret_cast<HMENU>(static_cast<INT_PTR>(CmdPropsList)), instance_, nullptr);
+    SendMessageW(propsList_, WM_SETFONT, reinterpret_cast<WPARAM>(uiFont_), TRUE);
+    ListView_SetExtendedListViewStyle(propsList_, LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES | LVS_EX_DOUBLEBUFFER);
+    ListView_SetBkColor(propsList_, RGB(57, 68, 84));
+    ListView_SetTextBkColor(propsList_, RGB(57, 68, 84));
+    ListView_SetTextColor(propsList_, RGB(235, 240, 247));
+    LVCOLUMNW col{};
+    col.mask = LVCF_TEXT | LVCF_WIDTH;
+    col.pszText = const_cast<wchar_t*>(L"Ozellik");
+    col.cx = 135;
+    ListView_InsertColumn(propsList_, 0, &col);
+    col.pszText = const_cast<wchar_t*>(L"Deger");
+    col.cx = 135;
+    ListView_InsertColumn(propsList_, 1, &col);
+    // Toolbar: filter toggle + close buttons at top of client area
+    propsClose_ = CreateWindowExW(0, L"BUTTON", L"\u00d7",
+        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+        252, 8, 28, 25, propsPanel_, reinterpret_cast<HMENU>(static_cast<INT_PTR>(CmdProperties)), instance_, nullptr);
+    SendMessageW(propsClose_, WM_SETFONT, reinterpret_cast<WPARAM>(uiFont_), TRUE);
+    propsFilterBtn_ = CreateWindowExW(0, L"BUTTON", L"\U0001f50d",
+        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+        220, 8, 28, 25, propsPanel_, reinterpret_cast<HMENU>(static_cast<INT_PTR>(CmdPropsFilter)), instance_, nullptr);
+    SendMessageW(propsFilterBtn_, WM_SETFONT, reinterpret_cast<WPARAM>(uiFont_), TRUE);
+    // Subclass popup to hide on close instead of destroy
+    SetWindowLongPtrW(propsPanel_, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(this));
+    SetWindowLongPtrW(propsPanel_, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(propsWndProc));
+
+    // Filter popup (separate window for entity property filtering)
+    filterPopup_ = CreateWindowExW(WS_EX_TOOLWINDOW, L"STATIC", L"Filtrele",
+        WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME,
+        150, 150, 300, 230, window_, nullptr, instance_, nullptr);
+    SetWindowLongPtrW(filterPopup_, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(this));
+    SetWindowLongPtrW(filterPopup_, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(propsWndProc));
+    // Labels
+    auto makeLabel = [&](const wchar_t* text, int x, int y, int w, int h) {
+        HWND lbl = CreateWindowExW(0, L"STATIC", text,
+            WS_CHILD | WS_VISIBLE | SS_LEFT | SS_CENTERIMAGE,
+            x, y, w, h, filterPopup_, nullptr, instance_, nullptr);
+        SendMessageW(lbl, WM_SETFONT, reinterpret_cast<WPARAM>(uiFont_), TRUE);
+        return lbl;
+    };
+    makeLabel(L"Katman:", 10, 12, 60, 25);
+    makeLabel(L"Renk:", 10, 50, 60, 25);
+    makeLabel(L"Uzunluk:", 10, 88, 60, 25);
+    // Edit boxes
+    filterLayerEdit_ = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", nullptr,
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL,
+        75, 12, 180, 25, filterPopup_, reinterpret_cast<HMENU>(static_cast<INT_PTR>(CmdFilterPopup+1)), instance_, nullptr);
+    SendMessageW(filterLayerEdit_, WM_SETFONT, reinterpret_cast<WPARAM>(uiFont_), TRUE);
+    filterColorEdit_ = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", nullptr,
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL,
+        75, 50, 180, 25, filterPopup_, reinterpret_cast<HMENU>(static_cast<INT_PTR>(CmdFilterPopup+2)), instance_, nullptr);
+    SendMessageW(filterColorEdit_, WM_SETFONT, reinterpret_cast<WPARAM>(uiFont_), TRUE);
+    filterLengthEdit_ = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", nullptr,
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL,
+        75, 88, 180, 25, filterPopup_, reinterpret_cast<HMENU>(static_cast<INT_PTR>(CmdFilterPopup+3)), instance_, nullptr);
+    SendMessageW(filterLengthEdit_, WM_SETFONT, reinterpret_cast<WPARAM>(uiFont_), TRUE);
+    // Buttons
+    filterBtnFind_ = CreateWindowExW(0, L"BUTTON", L"Bul",
+        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+        30, 140, 100, 32, filterPopup_, reinterpret_cast<HMENU>(static_cast<INT_PTR>(CmdFilterFind)), instance_, nullptr);
+    SendMessageW(filterBtnFind_, WM_SETFONT, reinterpret_cast<WPARAM>(uiFont_), TRUE);
+    filterBtnSelect_ = CreateWindowExW(0, L"BUTTON", L"Sec",
+        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+        145, 140, 100, 32, filterPopup_, reinterpret_cast<HMENU>(static_cast<INT_PTR>(CmdFilterSelect)), instance_, nullptr);
+    SendMessageW(filterBtnSelect_, WM_SETFONT, reinterpret_cast<WPARAM>(uiFont_), TRUE);
+    ShowWindow(filterPopup_, SW_HIDE);
+
     activateRibbonTab(RibbonTab::Drawing);
 }
 
@@ -345,9 +492,20 @@ void Application::layoutChildren(int width, int height) {
         updateSnapPanelVisibility();
     }
 
+    int tabX = 8;
     for (std::size_t i = 0; i < ribbonTabButtons_.size(); ++i) {
-        if (i == 0) MoveWindow(ribbonTabButtons_[i], 8, 3, 35, 27, TRUE);
-        else MoveWindow(ribbonTabButtons_[i], 8 + static_cast<int>(i - 1) * 92, 32, 90, 29, TRUE);
+        wchar_t label[64]{};
+        GetWindowTextW(ribbonTabButtons_[i], label, 63);
+        HDC dc = GetDC(ribbonTabButtons_[i]);
+        HGDIOBJ old = SelectObject(dc, uiFont_);
+        SIZE sz{};
+        GetTextExtentPoint32W(dc, label, static_cast<int>(wcslen(label)), &sz);
+        SelectObject(dc, old);
+        ReleaseDC(ribbonTabButtons_[i], dc);
+        const int tabW = sz.cx + 24; // text width + generous padding
+        const int tabH = sz.cy + 12;
+        MoveWindow(ribbonTabButtons_[i], tabX, 4, tabW, tabH, TRUE);
+        tabX += tabW + 4;
     }
     const auto geometry = RibbonLayout::layout(activeRibbonTab_, width);
     for (const auto& item : geometry.commandButtons) {
@@ -366,6 +524,59 @@ void Application::layoutChildren(int width, int height) {
     if (layerCombo_) MoveWindow(layerCombo_, xPositions[0], 83, widths[0], 220, TRUE);
     if (colorCombo_) MoveWindow(colorCombo_, xPositions[1], 83, widths[1], 220, TRUE);
     if (lineTypeCombo_) MoveWindow(lineTypeCombo_, xPositions[2], 83, widths[2], 220, TRUE);
+
+#ifndef NDEBUG
+    // --- Overlap validation rule ---
+    // Collect all ribbon child rects and verify no two intersect.
+    // This catches layout bugs at window resize / tab switch.
+    auto rectsOverlap = [](RECT a, RECT b) -> bool {
+        return a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
+    };
+    std::vector<std::pair<HWND, RECT>> ribbonRects;
+    auto addRect = [&](HWND hwnd, POINT offset) {
+        if (!hwnd) return;
+        RECT r{};
+        if (GetWindowRect(hwnd, &r)) {
+            MapWindowPoints(HWND_DESKTOP, window_, reinterpret_cast<POINT*>(&r), 2);
+            r.left += offset.x; r.right += offset.x;
+            r.top += offset.y; r.bottom += offset.y;
+            ribbonRects.push_back({hwnd, r});
+        }
+    };
+    POINT zero{};
+    for (HWND btn : ribbonTabButtons_) addRect(btn, zero);
+    for (const auto& item : geometry.commandButtons) {
+        if (HWND btn = GetDlgItem(window_, item.commandId)) addRect(btn, zero);
+    }
+    for (std::size_t i = 0; i < styleLabels_.size(); ++i) addRect(styleLabels_[i], zero);
+    addRect(layerCombo_, zero);
+    addRect(colorCombo_, zero);
+    addRect(lineTypeCombo_, zero);
+    for (std::size_t i = 0; i < ribbonRects.size(); ++i) {
+        for (std::size_t j = i + 1; j < ribbonRects.size(); ++j) {
+            if (rectsOverlap(ribbonRects[i].second, ribbonRects[j].second)) {
+                wchar_t buf[256]{};
+                swprintf(buf, 255, L"OVERLAP: %p vs %p at (%d,%d,%d,%d) & (%d,%d,%d,%d)\n",
+                         ribbonRects[i].first, ribbonRects[j].first,
+                         ribbonRects[i].second.left, ribbonRects[i].second.top,
+                         ribbonRects[i].second.right, ribbonRects[i].second.bottom,
+                         ribbonRects[j].second.left, ribbonRects[j].second.top,
+                         ribbonRects[j].second.right, ribbonRects[j].second.bottom);
+                OutputDebugStringW(buf);
+            }
+        }
+    }
+    // Command buttons must not extend below ribbon height
+    for (const auto& item : geometry.commandButtons) {
+        if (item.rect.bottom > RibbonLayout::height) {
+            wchar_t buf[128]{};
+            swprintf(buf, 127, L"OVERFLOW: cmd %d bottom %d > ribbon %d\n",
+                     item.commandId, item.rect.bottom, RibbonLayout::height);
+            OutputDebugStringW(buf);
+        }
+    }
+#endif
+
 }
 
 void Application::updateSnapPanelVisibility() {
@@ -377,6 +588,154 @@ void Application::updateSnapPanelVisibility() {
         for (HWND checkbox : snapTypeCheckboxes_)
             if (checkbox) SetWindowPos(checkbox, HWND_TOP, 0, 0, 0, 0,
                                        SWP_NOMOVE | SWP_NOSIZE);
+    }
+}
+
+void Application::updatePropertiesPanel() {
+    if (!propsPanel_) return;
+    if (propsPanelOpen_) {
+        ShowWindow(propsPanel_, SW_SHOW);
+        SetWindowPos(propsPanel_, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
+    } else {
+        ShowWindow(propsPanel_, SW_HIDE);
+        return;
+    }
+
+    if (!propsPanelOpen_ || !propsList_) return;
+    // Layout: list starts at top if filter hidden, or below filter box if shown
+    const bool filterVisible = IsWindowVisible(propsSearch_);
+    const int listTop = filterVisible ? 38 : 8;
+    RECT rc; GetClientRect(propsPanel_, &rc);
+    if (filterVisible) MoveWindow(propsSearch_, 8, 8, std::max(1, static_cast<int>(rc.right) - 16), 25, TRUE);
+    MoveWindow(propsList_, 8, listTop, std::max(1, static_cast<int>(rc.right) - 16), std::max(1, static_cast<int>(rc.bottom) - listTop - 8), TRUE);
+
+    ListView_DeleteAllItems(propsList_);
+
+    // If nothing selected, show a hint
+    if (selectedModels_.empty()) {
+        LVITEMW item{};
+        item.mask = LVIF_TEXT;
+        item.pszText = const_cast<wchar_t*>(L"Secili obje yok");
+        item.iItem = 0;
+        ListView_InsertItem(propsList_, &item);
+        return;
+    }
+
+    // Gather properties from first selected entity
+    const auto& model = document_.models()[selectedModels_.front()];
+    const auto& props = model.properties();
+    const auto& verts = model.vertices();
+
+    struct Prop { const wchar_t* name; std::wstring value; };
+    std::vector<Prop> properties;
+
+    // Entity type
+    if (model.isFace3D()) properties.push_back({L"Tip", L"3DFACE"});
+    else if (model.isPointEntity()) properties.push_back({L"Tip", L"NOKTA"});
+    else properties.push_back({L"Tip", L"CIZGI"});
+
+    // Basic properties
+    properties.push_back({L"Katman", utf8ToWide(props.layer)});
+    properties.push_back({L"Renk indeksi", std::to_wstring(props.colorIndex)});
+    properties.push_back({L"Cizgi tipi", utf8ToWide(props.lineType)});
+    properties.push_back({L"Cizgi kalinligi", std::to_wstring(props.lineWeight)});
+    if (props.trueColor)
+        properties.push_back({L"Gercek renk", std::to_wstring(*props.trueColor)});
+
+    // Geometry
+    if (verts.size() >= 2) {
+        auto fmt = [](const Vec3& v) {
+            return std::to_wstring(v.x) + L", " + std::to_wstring(v.y) + L", " + std::to_wstring(v.z);
+        };
+        properties.push_back({L"Baslangic", fmt(verts.front())});
+        properties.push_back({L"Bitis", fmt(verts.back())});
+        if (verts.size() == 2) {
+            double dx = verts[1].x - verts[0].x;
+            double dy = verts[1].y - verts[0].y;
+            double dz = verts[1].z - verts[0].z;
+            double len = std::sqrt(dx*dx + dy*dy + dz*dz);
+            properties.push_back({L"Uzunluk", std::to_wstring(len)});
+        }
+    }
+
+    // Filter: search across ALL models and select matching ones
+    wchar_t filter[256]{};
+    if (propsSearch_) GetWindowTextW(propsSearch_, filter, 256);
+    std::wstring filterStr(filter);
+    
+    if (!filterStr.empty()) {
+        // Search all entities for matching properties
+        std::wstring lowerFilter = filterStr;
+        for (auto& c : lowerFilter) c = std::towlower(c);
+        
+        std::vector<std::size_t> matched;
+        for (std::size_t idx = 0; idx < document_.models().size(); ++idx) {
+            const auto& m = document_.models()[idx];
+            const auto& p = m.properties();
+            // Check layer name
+            std::wstring layer = utf8ToWide(p.layer);
+            for (auto& c : layer) c = std::towlower(c);
+            if (layer.find(lowerFilter) != std::wstring::npos) {
+                matched.push_back(idx); continue;
+            }
+            // Check color index
+            if (std::to_wstring(p.colorIndex).find(lowerFilter) != std::wstring::npos) {
+                matched.push_back(idx); continue;
+            }
+            // Check line type
+            std::wstring ltype = utf8ToWide(p.lineType);
+            for (auto& c : ltype) c = std::towlower(c);
+            if (ltype.find(lowerFilter) != std::wstring::npos) {
+                matched.push_back(idx); continue;
+            }
+            // Check length for 2-vertex models
+            const auto& v = m.vertices();
+            if (v.size() == 2) {
+                double dx = v[1].x - v[0].x, dy = v[1].y - v[0].y, dz = v[1].z - v[0].z;
+                double len = std::sqrt(dx*dx + dy*dy + dz*dz);
+                std::wstring lenStr = std::to_wstring(len);
+                // Truncate for matching
+                if (lenStr.find(lowerFilter) != std::wstring::npos) {
+                    matched.push_back(idx); continue;
+                }
+            }
+            // Also check coordinates
+            for (const auto& vert : v) {
+                std::wstring coord = std::to_wstring(vert.x) + L"," + std::to_wstring(vert.y);
+                if (coord.find(lowerFilter) != std::wstring::npos) {
+                    matched.push_back(idx); goto next_model;
+                }
+            }
+            next_model:;
+        }
+        selectedModels_ = matched;
+        
+        // Show match count and first entity details
+        LVITEMW item{};
+        item.mask = LVIF_TEXT;
+        item.pszText = const_cast<wchar_t*>(L"Eslesen obje");
+        item.iItem = 0;
+        ListView_InsertItem(propsList_, &item);
+        ListView_SetItemText(propsList_, 0, 1, const_cast<wchar_t*>(std::to_wstring(matched.size()).c_str()));
+        
+        if (!matched.empty()) {
+            // Append first matched entity's properties
+            goto show_properties;
+        }
+        return;
+    }
+    
+    show_properties:
+    int row = ListView_GetItemCount(propsList_);
+    for (const auto& prop : properties) {
+        LVITEMW item{};
+        item.mask = LVIF_TEXT;
+        item.iItem = row;
+        item.iSubItem = 0;
+        item.pszText = const_cast<wchar_t*>(prop.name);
+        ListView_InsertItem(propsList_, &item);
+        ListView_SetItemText(propsList_, row, 1, const_cast<wchar_t*>(prop.value.c_str()));
+        ++row;
     }
 }
 
@@ -414,9 +773,9 @@ void Application::paintRibbon() {
     HBRUSH dividerBrush = CreateSolidBrush(RGB(76, 89, 108));
     RECT ribbon{0, 0, client.right, ribbonHeight};
     FillRect(dc, &ribbon, titleBrush);
-    RECT commandBand{0, 61, client.right, ribbonHeight};
+    RECT commandBand{0, 34, client.right, ribbonHeight};
     FillRect(dc, &commandBand, commandBrush);
-    RECT bandLine{0, 60, client.right, 61};
+    RECT bandLine{0, 33, client.right, 34};
     FillRect(dc, &bandLine, dividerBrush);
 
     const auto geometry = RibbonLayout::layout(activeRibbonTab_, std::max(1L, client.right));
@@ -483,17 +842,10 @@ void Application::drawOwnerButton(const DRAWITEMSTRUCT& item) {
             DeleteObject(accent);
         }
     } else {
-        const auto separator = text.find(L"\r\n");
-        const std::wstring glyph = separator == std::wstring::npos ? L"" : text.substr(0, separator);
-        const std::wstring caption = separator == std::wstring::npos ? text : text.substr(separator + 2);
-        RECT glyphRect{content.left + 2, content.top + 2, content.right - 2, content.top + 37};
-        RECT captionRect{content.left + 2, content.top + 37, content.right - 2, content.bottom - 1};
+        // Icon-only button: center the text in the full button rect
         HGDIOBJ old = SelectObject(item.hDC, iconFont_);
-        DrawTextW(item.hDC, glyph.c_str(), -1, &glyphRect,
+        DrawTextW(item.hDC, text.c_str(), -1, &content,
                   DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
-        SelectObject(item.hDC, uiFont_);
-        DrawTextW(item.hDC, caption.c_str(), -1, &captionRect,
-                  DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX);
         SelectObject(item.hDC, old);
         if (checked || selected) {
             HBRUSH borderBrush = CreateSolidBrush(checked ? RGB(99, 181, 225) : RGB(110, 127, 150));
@@ -534,6 +886,59 @@ LRESULT CALLBACK Application::canvasProc(HWND window, UINT message, WPARAM wPara
     return app ? app->handleCanvasMessage(message, wParam, lParam) : DefWindowProcW(window, message, wParam, lParam);
 }
 
+LRESULT CALLBACK Application::propsWndProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
+    auto* app = reinterpret_cast<Application*>(GetWindowLongPtrW(window, GWLP_USERDATA));
+    if (message == WM_CLOSE) {
+        if (app) {
+            if (window == app->filterPopup_) {
+                app->filterPopupOpen_ = false;
+                ShowWindow(app->filterPopup_, SW_HIDE);
+            } else {
+                app->propsPanelOpen_ = false;
+                app->updatePropertiesPanel();
+            }
+        }
+        return 0;
+    }
+    if (message == WM_COMMAND && app) {
+        return SendMessageW(app->window_, WM_COMMAND, wParam, lParam);
+    }
+    if (message == WM_CTLCOLORBTN || message == WM_CTLCOLOREDIT || message == WM_CTLCOLORSTATIC) {
+        // Forward to main window for dark theme handling
+        HWND target = app ? app->window_ : GetParent(window);
+        return SendMessageW(target, message, wParam, lParam);
+    }
+    if (message == WM_CTLCOLORSTATIC) {
+        // Dark background for popup static controls
+        HDC dc = reinterpret_cast<HDC>(wParam);
+        SetTextColor(dc, RGB(226, 233, 241));
+        SetBkColor(dc, RGB(44, 53, 67));
+        return reinterpret_cast<LRESULT>(app ? app->panelBrush_ : GetStockObject(DC_BRUSH));
+    }
+    if (message == WM_ERASEBKGND) {
+        // Dark background for popup window
+        HDC dc = reinterpret_cast<HDC>(wParam);
+        RECT rc; GetClientRect(window, &rc);
+        HBRUSH bg = CreateSolidBrush(RGB(44, 53, 67));
+        FillRect(dc, &rc, bg);
+        DeleteObject(bg);
+        return TRUE;
+    }
+    if (message == WM_SIZE && app && app->propsList_) {
+        RECT rc; GetClientRect(window, &rc);
+        const int cw = std::max(1L, static_cast<long>(rc.right));
+        // Reposition toolbar buttons
+        if (app->propsClose_) MoveWindow(app->propsClose_, cw - 36, 4, 28, 25, TRUE);
+        if (app->propsFilterBtn_) MoveWindow(app->propsFilterBtn_, cw - 68, 4, 28, 25, TRUE);
+        // Reposition search and list
+        const bool filterVisible = IsWindowVisible(app->propsSearch_);
+        const int listTop = filterVisible ? 38 : 34;
+        if (filterVisible) MoveWindow(app->propsSearch_, 8, 8, std::max(1, cw - 16), 25, TRUE);
+        MoveWindow(app->propsList_, 8, listTop, std::max(1, cw - 16), std::max(1L, static_cast<long>(rc.bottom) - listTop - 4), TRUE);
+    }
+    return DefWindowProcW(window, message, wParam, lParam);
+}
+
 LRESULT Application::handleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
     switch (message) {
     case WM_PAINT:
@@ -561,8 +966,17 @@ LRESULT Application::handleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
         SetBkColor(dc, RGB(44, 53, 67));
         return reinterpret_cast<LRESULT>(panelBrush_);
     }
+    case WM_CTLCOLORBTN: {
+        HDC dc = reinterpret_cast<HDC>(wParam);
+        SetTextColor(dc, RGB(226, 233, 241));
+        SetBkColor(dc, RGB(31, 38, 48));
+        return reinterpret_cast<LRESULT>(GetStockObject(DC_BRUSH));
+    }
     case WM_COMMAND:
         if (HIWORD(wParam) == BN_CLICKED) executeCommand(LOWORD(wParam));
+        else if (HIWORD(wParam) == EN_CHANGE && LOWORD(wParam) == CmdPropsSearch) {
+            if (propsPanelOpen_) updatePropertiesPanel();
+        }
         else if (HIWORD(wParam) == CBN_SELCHANGE &&
                  (LOWORD(wParam) == CmdLayerCombo || LOWORD(wParam) == CmdColorCombo ||
                   LOWORD(wParam) == CmdLineTypeCombo)) {
@@ -909,10 +1323,15 @@ void Application::onLeftButtonDown(int x, int y) {
             clearTemporaryTracking();
             commitPoint(point);
         }
+    } else if (mode_ == EditMode::Draw2D && transformCommand_ == TransformCommand::None) {
+        // Neutral selection: single click toggle, drag for window
+        if (selectionFirstCorner_) completeWindowSelection(x, y);
+        else if (!toggleModelSelection(x, y)) selectionFirstCorner_ = POINT{x, y};
+        updateHover(x, y);
     } else if (mode_ == EditMode::View3D) {
         rotating_ = true; lastMouse_ = {x, y}; SetCapture(canvas_);
     }
-    updateStatus(); invalidateCanvas();
+    updateStatus(); updateControls(); invalidateCanvas();
 }
 
 void Application::onLeftButtonUp(int x, int y) {
@@ -1165,6 +1584,9 @@ void Application::cancelDrawing() {
     facePoints_.clear();
     input_.clear();
     clearTemporaryTracking();
+    drawingActive_ = false;
+    selectedModels_.clear();
+    selectionFirstCorner_.reset();
 }
 
 void Application::startTransformCommand(TransformCommand command) {
@@ -1193,6 +1615,63 @@ void Application::toggle3DView() {
     cancelDrawing();
     mode_ = mode_ == EditMode::View3D ? EditMode::Draw2D : EditMode::View3D;
     drawingActive_ = mode_ == EditMode::Draw2D;
+}
+
+void Application::toggleSnapType(SnapType type) noexcept {
+    auto idx = static_cast<std::size_t>(type);
+    if (idx < enabledSnapTypes_.size()) enabledSnapTypes_[idx] = !enabledSnapTypes_[idx];
+}
+
+void Application::setCurrentColorChoice(int index) noexcept {
+    if (index >= 0 && index < static_cast<int>(colorChoices.size()))
+        currentColorChoice_ = index;
+}
+
+void Application::setCurrentLineTypeChoice(int index) noexcept {
+    if (index >= 0 && index < static_cast<int>(lineTypeChoices.size()))
+        currentLineTypeChoice_ = index;
+}
+
+void Application::refreshLayerList() { refreshLayerCombo(); }
+
+std::vector<std::string> Application::layerNames() const {
+    return document_.layerNames();
+}
+
+bool Application::createLayer(std::string name) {
+    bool ok = document_.createLayer(std::move(name));
+    if (ok) refreshLayerList();
+    return ok;
+}
+
+bool Application::deleteLayer(const std::string& name) {
+    if (name == "0") return false; // cannot delete default layer
+    bool ok = document_.deleteLayer(name);
+    if (ok) refreshLayerList();
+    return ok;
+}
+
+bool Application::renameLayer(const std::string& oldName, std::string newName) {
+    if (oldName == "0") return false; // cannot rename default layer
+    bool ok = document_.renameLayer(oldName, std::move(newName));
+    if (ok) refreshLayerList();
+    return ok;
+}
+
+const std::unordered_map<std::string, EntityProperties>&
+Application::layerProperties() const {
+    return document_.layers();
+}
+
+const std::vector<std::pair<const wchar_t*, std::optional<std::uint32_t>>>&
+Application::colorPalette() {
+    static const std::vector<std::pair<const wchar_t*, std::optional<std::uint32_t>>> palette = []() {
+        std::vector<std::pair<const wchar_t*, std::optional<std::uint32_t>>> p;
+        for (const auto& c : colorChoices)
+            p.emplace_back(c.label, c.color);
+        return p;
+    }();
+    return palette;
 }
 
 void Application::setStandardView(StandardView view) {
@@ -1659,6 +2138,82 @@ void Application::executeCommand(int id) {
     case CmdTabModify: activateRibbonTab(RibbonTab::Modify); break;
     case CmdTabView: activateRibbonTab(RibbonTab::View); break;
     case CmdTabAids: activateRibbonTab(RibbonTab::Aids); break;
+    case CmdFilterPopup:
+        filterPopupOpen_ = !filterPopupOpen_;
+        ShowWindow(filterPopup_, filterPopupOpen_ ? SW_SHOW : SW_HIDE);
+        if (filterPopupOpen_) {
+            SetWindowPos(filterPopup_, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
+            SetFocus(filterLayerEdit_);
+        }
+        SetFocus(canvas_);
+        break;
+    case CmdFilterFind:
+    case CmdFilterSelect: {
+        // Read filter criteria
+        wchar_t layerBuf[256]{}, colorBuf[256]{}, lenBuf[256]{};
+        GetWindowTextW(filterLayerEdit_, layerBuf, 256);
+        GetWindowTextW(filterColorEdit_, colorBuf, 256);
+        GetWindowTextW(filterLengthEdit_, lenBuf, 256);
+        std::wstring layerStr(layerBuf), colorStr(colorBuf), lenStr(lenBuf);
+        
+        std::vector<std::size_t> matched;
+        for (std::size_t idx = 0; idx < document_.models().size(); ++idx) {
+            const auto& m = document_.models()[idx];
+            const auto& p = m.properties();
+            bool ok = true;
+            if (!layerStr.empty()) {
+                std::wstring l = utf8ToWide(p.layer);
+                for (auto& c : l) c = std::towlower(c);
+                auto lf = layerStr;
+                for (auto& c : lf) c = std::towlower(c);
+                if (l.find(lf) == std::wstring::npos) ok = false;
+            }
+            if (!colorStr.empty()) {
+                // Exact integer match for color
+                try {
+                    int targetColor = std::stoi(colorStr);
+                    if (p.colorIndex != targetColor) ok = false;
+                } catch (...) { ok = false; }
+            }
+            if (!lenStr.empty()) {
+                const auto& v = m.vertices();
+                if (v.size() == 2) {
+                    double dx = v[1].x - v[0].x, dy = v[1].y - v[0].y, dz = v[1].z - v[0].z;
+                    double len = std::sqrt(dx*dx + dy*dy + dz*dz);
+                    try {
+                        double targetLen = std::stod(lenStr);
+                        if (std::abs(len - targetLen) > 0.01) ok = false;
+                    } catch (...) { ok = false; }
+                } else ok = false;
+            }
+            if (ok) matched.push_back(idx);
+        }
+        if (id == CmdFilterFind) {
+            // Just select/highlight
+            selectedModels_ = matched;
+        } else {
+            // Select and zoom to matches
+            selectedModels_ = matched;
+        }
+        updateControls();
+        invalidateCanvas();
+        if (propsPanelOpen_) updatePropertiesPanel();
+        break;
+    }
+    case CmdProperties:
+        propsPanelOpen_ = !propsPanelOpen_;
+        updatePropertiesPanel();
+        SetFocus(canvas_);
+        updateControls();
+        invalidateCanvas();
+        break;
+    case CmdPropsFilter: {
+        const bool vis = IsWindowVisible(propsSearch_);
+        ShowWindow(propsSearch_, vis ? SW_HIDE : SW_SHOW);
+        updatePropertiesPanel();
+        if (!vis) SetFocus(propsSearch_);
+        break;
+    }
     case CmdNew:
         document_.clear();
         refreshLayerCombo();
@@ -1813,18 +2368,36 @@ void Application::updateControls() {
     check(workPlaneButton_, workPlanePicking_);
     check(zoomWindowButton_, zoomWindowActive_);
     updateStatus();
+    if (propsPanelOpen_) updatePropertiesPanel();
 }
 
 void Application::refreshLayerCombo() {
-    if (!layerCombo_) return;
-    wchar_t previous[256]{};
-    GetWindowTextW(layerCombo_, previous, static_cast<int>(std::size(previous)));
     std::vector<std::string> layers{"0"};
     for (const auto& [name, properties] : document_.layers()) {
         (void)properties;
         if (name != "0") layers.push_back(name);
     }
     std::sort(layers.begin() + 1, layers.end());
+
+    if (layerComboWidget_) {
+        // Qt widget owns the combo — always use Qt API to keep the model in sync
+        QComboBox* combo = layerComboWidget_;
+        const QString previous = combo->currentText();
+        combo->blockSignals(true);
+        combo->clear();
+        for (const auto& name : layers) {
+            combo->addItem(QString::fromStdString(name));
+        }
+        int selection = combo->findText(previous);
+        if (selection < 0) selection = 0;
+        combo->setCurrentIndex(selection);
+        combo->blockSignals(false);
+        return;
+    }
+
+    if (!layerCombo_) return;
+    wchar_t previous[256]{};
+    GetWindowTextW(layerCombo_, previous, static_cast<int>(std::size(previous)));
     SendMessageW(layerCombo_, CB_RESETCONTENT, 0, 0);
     for (const auto& name : layers) {
         const auto wideName = utf8ToWide(name);

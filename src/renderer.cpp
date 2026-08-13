@@ -1,10 +1,10 @@
 #include "model_maker/renderer.hpp"
-#include "model_maker/view_cube.hpp"
-
+#include "model_maker/opengl_render_backend.hpp"
 #include <algorithm>
 #include <array>
 #include <cmath>
 #include <cctype>
+#include <cstdio>
 #include <cwchar>
 #include <map>
 #include <string>
@@ -58,110 +58,6 @@ HPEN createEntityPen(const EntityProperties& properties) {
     HPEN pen = ExtCreatePen(PS_GEOMETRIC | PS_USERSTYLE | PS_ENDCAP_FLAT | PS_JOIN_ROUND,
                             width, &brush, static_cast<DWORD>(pattern.size()), pattern.data());
     return pen ? pen : CreatePen(PS_SOLID, width, color);
-}
-
-
-template <std::size_t Size>
-void polygon(HDC dc, const std::array<CubePoint, Size>& points, COLORREF fill, COLORREF border) {
-    std::array<POINT, Size> native{};
-    for (std::size_t i = 0; i < Size; ++i) native[i] = {points[i].x, points[i].y};
-    HBRUSH brush = CreateSolidBrush(fill);
-    HPEN pen = CreatePen(PS_SOLID, 1, border);
-    HGDIOBJ oldBrush = SelectObject(dc, brush);
-    HGDIOBJ oldPen = SelectObject(dc, pen);
-    Polygon(dc, native.data(), static_cast<int>(native.size()));
-    SelectObject(dc, oldPen);
-    SelectObject(dc, oldBrush);
-    DeleteObject(pen);
-    DeleteObject(brush);
-}
-
-void drawViewCube(HDC dc, int viewportWidth, const POINT& cursor, const Camera& camera) {
-    const auto cube = ViewCube::layout(viewportWidth, camera);
-    const auto hovered = ViewCube::hitTest(cursor.x, cursor.y, viewportWidth, camera);
-
-    RECT panel{cube.centerX - 76, 48, cube.centerX + 76, 238};
-    HBRUSH panelBrush = CreateSolidBrush(RGB(20, 26, 37));
-    HGDIOBJ oldBrush = SelectObject(dc, panelBrush);
-    HPEN panelPen = CreatePen(PS_SOLID, 1, RGB(75, 88, 108));
-    HGDIOBJ oldPen = SelectObject(dc, panelPen);
-    RoundRect(dc, panel.left, panel.top, panel.right, panel.bottom, 12, 12);
-    SelectObject(dc, oldPen);
-    SelectObject(dc, oldBrush);
-    DeleteObject(panelPen);
-    DeleteObject(panelBrush);
-
-    SetBkMode(dc, TRANSPARENT);
-    SetTextColor(dc, RGB(244, 247, 252));
-    const auto label = [](StandardView view) {
-        switch (view) {
-        case StandardView::Top: return L"ÜST";
-        case StandardView::Bottom: return L"ALT";
-        case StandardView::Front: return L"ÖN";
-        case StandardView::Back: return L"ARKA";
-        case StandardView::Left: return L"SOL";
-        case StandardView::Right: return L"SAĞ";
-        default: return L"";
-        }
-    };
-
-    std::array<const ViewCubeFace*, 6> visible{};
-    std::size_t visibleCount = 0;
-    for (const auto& face : cube.faces) if (face.visible) visible[visibleCount++] = &face;
-    for (std::size_t i = 0; i < visibleCount; ++i) {
-        for (std::size_t j = i + 1; j < visibleCount; ++j) {
-            if (visible[j]->depth < visible[i]->depth) std::swap(visible[i], visible[j]);
-        }
-    }
-    for (std::size_t i = 0; i < visibleCount; ++i) {
-        const auto& face = *visible[i];
-        const COLORREF normal = face.view == StandardView::Top || face.view == StandardView::Bottom
-            ? RGB(112, 133, 155)
-            : (face.view == StandardView::Front || face.view == StandardView::Back
-                ? RGB(72, 92, 116) : RGB(55, 73, 96));
-        polygon(dc, face.points, hovered == face.view ? RGB(42, 155, 220) : normal,
-                RGB(210, 222, 235));
-    }
-    // Paint labels after all faces so an adjacent face never clips the text.
-    for (std::size_t i = 0; i < visibleCount; ++i) {
-        const auto& face = *visible[i];
-        long long twiceArea = 0;
-        for (std::size_t point = 0; point < face.points.size(); ++point) {
-            const auto& a = face.points[point];
-            const auto& b = face.points[(point + 1) % face.points.size()];
-            twiceArea += static_cast<long long>(a.x) * b.y - static_cast<long long>(b.x) * a.y;
-        }
-        if (std::abs(twiceArea) < 700) continue;
-        int centerX = 0;
-        int centerY = 0;
-        for (const auto& point : face.points) { centerX += point.x; centerY += point.y; }
-        centerX /= 4; centerY /= 4;
-        RECT text{centerX - 24, centerY - 10, centerX + 24, centerY + 10};
-        DrawTextW(dc, label(face.view), -1, &text, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
-    }
-
-    const auto drawAxis = [&](const CubePoint& end, COLORREF color, const wchar_t* name) {
-        HPEN axisPen = CreatePen(PS_SOLID, 2, color);
-        HGDIOBJ previous = SelectObject(dc, axisPen);
-        line(dc, cube.axisOrigin.x, cube.axisOrigin.y, end.x, end.y);
-        SelectObject(dc, previous);
-        DeleteObject(axisPen);
-        RECT text{end.x - 7, end.y - 9, end.x + 8, end.y + 9};
-        SetTextColor(dc, color);
-        DrawTextW(dc, name, -1, &text, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
-    };
-    drawAxis(cube.xAxis, RGB(235, 82, 96), L"X");
-    drawAxis(cube.yAxis, RGB(72, 211, 121), L"Y");
-    drawAxis(cube.zAxis, RGB(78, 148, 255), L"Z");
-    SetTextColor(dc, RGB(244, 247, 252));
-
-    RECT home{cube.homeControl.left, cube.homeControl.top, cube.homeControl.right, cube.homeControl.bottom};
-    HBRUSH homeBrush = CreateSolidBrush(hovered == StandardView::Isometric
-                                        ? RGB(42, 155, 220) : RGB(74, 86, 105));
-    FillRect(dc, &home, homeBrush);
-    DeleteObject(homeBrush);
-    FrameRect(dc, &home, static_cast<HBRUSH>(GetStockObject(GRAY_BRUSH)));
-    DrawTextW(dc, L"ISO", -1, &home, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
 }
 }
 
@@ -231,17 +127,39 @@ void Renderer::drawText(HDC dc, int x, int y, const wchar_t* text, COLORREF colo
 }
 
 void Renderer::draw(HDC target, const RECT& client, const Document& document, const Camera& camera,
-                    EditMode mode, const DraftView& draft) const {
+                    EditMode mode, const DraftView& draft, IRenderBackend* backend) const {
+    // Phase 1 GPU-retained rendering: detect OpenGL backend
+    const bool useGpuLines = backend && backend->isHardwareAccelerated();
+    auto* glBackend = useGpuLines ? static_cast<OpenGLRenderBackend*>(backend) : nullptr;
+    const auto frameStart = std::chrono::steady_clock::now();
+    const double frameIntervalSeconds = hasPreviousFrameTime_
+        ? std::chrono::duration<double>(frameStart - previousFrameTime_).count() : 0.0;
+    previousFrameTime_ = frameStart;
+    hasPreviousFrameTime_ = true;
+    FramePerformanceSample performance;
+    performance.totalEntities = document.models().size();
+    const auto finishPerformanceSample = [&](bool rasterPreview) {
+        performance.rasterPreview = rasterPreview;
+        performance.cpuFrameMilliseconds = std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - frameStart).count();
+        performanceTracker_.record(performance, frameIntervalSeconds);
+    };
     const int width = std::max(1L, client.right - client.left);
     const int height = std::max(1L, client.bottom - client.top);
     if (draft.rasterZoomPreview &&
-        presentRasterZoom(target, width, height, draft.rasterZoomOffset, draft.rasterZoomFactor)) return;
-    HDC dc = ensureBackBuffer(target, width, height);
+        presentRasterZoom(target, width, height, draft.rasterZoomOffset, draft.rasterZoomFactor)) {
+        performance.drawCalls = 1;
+        finishPerformanceSample(true);
+        return;
+    }
+    HDC dc = draft.snapOnly ? target : ensureBackBuffer(target, width, height);
     if (!dc) return;
 
+    if (!draft.snapOnly) {
     HBRUSH background = CreateSolidBrush(RGB(15, 18, 26));
     FillRect(dc, &client, background);
     DeleteObject(background);
+    }
     HFONT font = CreateFontW(-15, 0, 0, 0, FW_SEMIBOLD, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
                              OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
                              DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
@@ -255,74 +173,76 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
                      static_cast<LONG>(projected.y + canvas.top)};
     };
     HGDIOBJ stockPen = GetCurrentObject(dc, OBJ_PEN);
-    HPEN gridPen = CreatePen(PS_SOLID, 1,
-                             mode == EditMode::View3D ? RGB(66, 68, 72) : RGB(34, 40, 53));
-    SelectObject(dc, gridPen);
-    if (mode == EditMode::Draw2D) {
-        const POINT origin = projectPoint({0.0, 0.0, 0.0});
-        const POINT unit = projectPoint({1.0, 0.0, 0.0});
-        const int gridSpacing = std::max(1, static_cast<int>(std::abs(unit.x - origin.x)));
-        for (int x = origin.x % gridSpacing; x < canvas.right; x += gridSpacing)
-            line(dc, x, canvas.top, x, canvas.bottom);
-        for (int y = origin.y % gridSpacing; y < canvas.bottom; y += gridSpacing)
-            line(dc, canvas.left, y, canvas.right, y);
-    } else {
-        constexpr int gridExtent = 10;
-        for (int coordinate = -gridExtent; coordinate <= gridExtent; ++coordinate) {
-            const POINT verticalA = projectPoint(draft.workPlane.fromPlane({static_cast<double>(coordinate), -gridExtent}));
-            const POINT verticalB = projectPoint(draft.workPlane.fromPlane({static_cast<double>(coordinate), gridExtent}));
-            const POINT horizontalA = projectPoint(draft.workPlane.fromPlane({-gridExtent, static_cast<double>(coordinate)}));
-            const POINT horizontalB = projectPoint(draft.workPlane.fromPlane({gridExtent, static_cast<double>(coordinate)}));
-            line(dc, verticalA.x, verticalA.y, verticalB.x, verticalB.y);
-            line(dc, horizontalA.x, horizontalA.y, horizontalB.x, horizontalB.y);
-        }
-    }
-    SelectObject(dc, stockPen);
-    DeleteObject(gridPen);
-
-    const auto axisGlyph = workPlaneAxisGlyph(draft.workPlane, 2.0);
-    const POINT axisOrigin = projectPoint(axisGlyph.origin);
-    const auto drawAxisArrow = [&](const Vec3& worldEnd, COLORREF color, const wchar_t* label) {
-        const POINT end = projectPoint(worldEnd);
-        const double dx = static_cast<double>(end.x - axisOrigin.x);
-        const double dy = static_cast<double>(end.y - axisOrigin.y);
-        const double length = std::hypot(dx, dy);
-        HPEN pen = CreatePen(PS_SOLID, 2, color);
-        SelectObject(dc, pen);
-        if (length >= 7.0) {
-            line(dc, axisOrigin.x, axisOrigin.y, end.x, end.y);
-            const double ux = dx / length;
-            const double uy = dy / length;
-            const POINT headA{static_cast<LONG>(std::lround(end.x - ux * 8.0 - uy * 4.0)),
-                              static_cast<LONG>(std::lround(end.y - uy * 8.0 + ux * 4.0))};
-            const POINT headB{static_cast<LONG>(std::lround(end.x - ux * 8.0 + uy * 4.0)),
-                              static_cast<LONG>(std::lround(end.y - uy * 8.0 - ux * 4.0))};
-            line(dc, end.x, end.y, headA.x, headA.y);
-            line(dc, end.x, end.y, headB.x, headB.y);
-            drawText(dc, end.x + static_cast<int>(std::lround(ux * 5.0)) - 4,
-                     end.y + static_cast<int>(std::lround(uy * 5.0)) - 8, label, color);
+    if (!draft.interactiveNavigation) {
+        HPEN gridPen = CreatePen(PS_SOLID, 1,
+                                 mode == EditMode::View3D ? RGB(66, 68, 72) : RGB(34, 40, 53));
+        SelectObject(dc, gridPen);
+        if (mode == EditMode::Draw2D) {
+            const POINT origin = projectPoint({0.0, 0.0, 0.0});
+            const POINT unit = projectPoint({1.0, 0.0, 0.0});
+            const int gridSpacing = std::max(1, static_cast<int>(std::abs(unit.x - origin.x)));
+            for (int x = origin.x % gridSpacing; x < canvas.right; x += gridSpacing)
+                line(dc, x, canvas.top, x, canvas.bottom);
+            for (int y = origin.y % gridSpacing; y < canvas.bottom; y += gridSpacing)
+                line(dc, canvas.left, y, canvas.right, y);
         } else {
-            HGDIOBJ oldBrush = SelectObject(dc, GetStockObject(NULL_BRUSH));
-            Ellipse(dc, axisOrigin.x - 5, axisOrigin.y - 5,
-                    axisOrigin.x + 6, axisOrigin.y + 6);
-            SelectObject(dc, oldBrush);
-            SetPixel(dc, axisOrigin.x, axisOrigin.y, color);
-            drawText(dc, axisOrigin.x + 7, axisOrigin.y - 10, label, color);
+            constexpr int gridExtent = 10;
+            for (int coordinate = -gridExtent; coordinate <= gridExtent; ++coordinate) {
+                const POINT verticalA = projectPoint(draft.workPlane.fromPlane({static_cast<double>(coordinate), -gridExtent}));
+                const POINT verticalB = projectPoint(draft.workPlane.fromPlane({static_cast<double>(coordinate), gridExtent}));
+                const POINT horizontalA = projectPoint(draft.workPlane.fromPlane({-gridExtent, static_cast<double>(coordinate)}));
+                const POINT horizontalB = projectPoint(draft.workPlane.fromPlane({gridExtent, static_cast<double>(coordinate)}));
+                line(dc, verticalA.x, verticalA.y, verticalB.x, verticalB.y);
+                line(dc, horizontalA.x, horizontalA.y, horizontalB.x, horizontalB.y);
+            }
         }
         SelectObject(dc, stockPen);
-        DeleteObject(pen);
-    };
-    drawAxisArrow(axisGlyph.x, RGB(235, 82, 96), L"X");
-    drawAxisArrow(axisGlyph.y, RGB(72, 211, 121), L"Y");
-    drawAxisArrow(axisGlyph.z, RGB(78, 148, 255), L"Z");
+        DeleteObject(gridPen);
 
-    HPEN basePointPen = CreatePen(PS_SOLID, 1, RGB(190, 194, 202));
-    SelectObject(dc, basePointPen);
-    HGDIOBJ oldBaseBrush = SelectObject(dc, GetStockObject(NULL_BRUSH));
-    Ellipse(dc, axisOrigin.x - 3, axisOrigin.y - 3, axisOrigin.x + 4, axisOrigin.y + 4);
-    SelectObject(dc, oldBaseBrush);
-    SelectObject(dc, stockPen);
-    DeleteObject(basePointPen);
+        const auto axisGlyph = workPlaneAxisGlyph(draft.workPlane, 2.0);
+        const POINT axisOrigin = projectPoint(axisGlyph.origin);
+        const auto drawAxisArrow = [&](const Vec3& worldEnd, COLORREF color, const wchar_t* label) {
+            const POINT end = projectPoint(worldEnd);
+            const double dx = static_cast<double>(end.x - axisOrigin.x);
+            const double dy = static_cast<double>(end.y - axisOrigin.y);
+            const double length = std::hypot(dx, dy);
+            HPEN pen = CreatePen(PS_SOLID, 2, color);
+            SelectObject(dc, pen);
+            if (length >= 7.0) {
+                line(dc, axisOrigin.x, axisOrigin.y, end.x, end.y);
+                const double ux = dx / length;
+                const double uy = dy / length;
+                const POINT headA{static_cast<LONG>(std::lround(end.x - ux * 8.0 - uy * 4.0)),
+                                  static_cast<LONG>(std::lround(end.y - uy * 8.0 + ux * 4.0))};
+                const POINT headB{static_cast<LONG>(std::lround(end.x - ux * 8.0 + uy * 4.0)),
+                                  static_cast<LONG>(std::lround(end.y - uy * 8.0 - ux * 4.0))};
+                line(dc, end.x, end.y, headA.x, headA.y);
+                line(dc, end.x, end.y, headB.x, headB.y);
+                drawText(dc, end.x + static_cast<int>(std::lround(ux * 5.0)) - 4,
+                         end.y + static_cast<int>(std::lround(uy * 5.0)) - 8, label, color);
+            } else {
+                HGDIOBJ oldBrush = SelectObject(dc, GetStockObject(NULL_BRUSH));
+                Ellipse(dc, axisOrigin.x - 5, axisOrigin.y - 5,
+                        axisOrigin.x + 6, axisOrigin.y + 6);
+                SelectObject(dc, oldBrush);
+                SetPixel(dc, axisOrigin.x, axisOrigin.y, color);
+                drawText(dc, axisOrigin.x + 7, axisOrigin.y - 10, label, color);
+            }
+            SelectObject(dc, stockPen);
+            DeleteObject(pen);
+        };
+        drawAxisArrow(axisGlyph.x, RGB(235, 82, 96), L"X");
+        drawAxisArrow(axisGlyph.y, RGB(72, 211, 121), L"Y");
+        drawAxisArrow(axisGlyph.z, RGB(78, 148, 255), L"Z");
+
+        HPEN basePointPen = CreatePen(PS_SOLID, 1, RGB(190, 194, 202));
+        SelectObject(dc, basePointPen);
+        HGDIOBJ oldBaseBrush = SelectObject(dc, GetStockObject(NULL_BRUSH));
+        Ellipse(dc, axisOrigin.x - 3, axisOrigin.y - 3, axisOrigin.x + 4, axisOrigin.y + 4);
+        SelectObject(dc, oldBaseBrush);
+        SelectObject(dc, stockPen);
+        DeleteObject(basePointPen);
+    }
 
     std::vector<POINT> projectedChain;
     std::size_t interactiveModelStride = 1;
@@ -341,8 +261,10 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
                 edges.back() != Edge{vertices.size() - 1, 0}) chain = false;
         }
         if (chain) {
+            const auto previousCapacity = projectedChain.capacity();
             projectedChain.clear();
             projectedChain.reserve(vertices.size() / stride + 2);
+            if (projectedChain.capacity() > previousCapacity) ++performance.frameBufferGrowths;
             for (std::size_t index = 0; index < vertices.size(); index += stride)
                 projectedChain.push_back(projectPoint(vertices[index] + offset));
             if ((vertices.size() - 1) % stride != 0)
@@ -352,6 +274,8 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
             for (std::size_t begin = 0; begin + 1 < projectedChain.size(); begin += chunkSize - 1) {
                 const std::size_t count = std::min(chunkSize, projectedChain.size() - begin);
                 Polyline(dc, projectedChain.data() + begin, static_cast<int>(count));
+                ++performance.drawCalls;
+                performance.projectedVertices += count;
                 if (begin + count == projectedChain.size()) break;
             }
             return;
@@ -361,21 +285,52 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
             const POINT from = projectPoint(vertices[edge.from] + offset);
             const POINT to = projectPoint(vertices[edge.to] + offset);
             line(dc, from.x, from.y, to.x, to.y);
+            ++performance.drawCalls;
+            performance.projectedVertices += 2;
         }
     };
+    if (selectedIndexSet_.assign(document.models().size(), draft.selectedModels))
+        ++performance.frameBufferGrowths;
     const auto isSelected = [&](std::size_t index) {
-        return std::find(draft.selectedModels.begin(), draft.selectedModels.end(), index) != draft.selectedModels.end();
+        return selectedIndexSet_.contains(index);
     };
 
     std::vector<std::size_t> visibleModels;
+    const auto spatialQueryStart = std::chrono::steady_clock::now();
     if (mode == EditMode::Draw2D) {
         const Vec3 topLeft = camera.unproject2D({0.0, 0.0}, width, height);
         const Vec3 bottomRight = camera.unproject2D({static_cast<double>(width),
                                                      static_cast<double>(height)}, width, height);
-        visibleModels = document.query2D(topLeft, bottomRight);
+        visibleModels = document.query2D(
+            {std::min(topLeft.x, bottomRight.x), std::min(topLeft.y, bottomRight.y), -1e100},
+            {std::max(topLeft.x, bottomRight.x), std::max(topLeft.y, bottomRight.y), 1e100});
     } else {
-        visibleModels.resize(document.models().size());
-        for (std::size_t i = 0; i < visibleModels.size(); ++i) visibleModels[i] = i;
+        visibleModels = document.queryBounds([&](const Bounds3& bounds) {
+            return projectedBoundsIntersectsViewport(bounds, camera, width, height);
+        });
+    }
+    performance.spatialQueryMilliseconds = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - spatialQueryStart).count();
+    performance.visibleEntities = visibleModels.size();
+
+    // Z-depth clipping: filter visible models to workplane range
+    if (draft.depthClipEnabled && draft.resultsLoaded && draft.resultView > 0) {
+        std::vector<std::size_t> clipped;
+        clipped.reserve(visibleModels.size());
+        for (const auto index : visibleModels) {
+            if (index >= document.models().size()) continue;
+            const auto& vertices = document.models()[index].vertices();
+            if (vertices.size() < 2) { clipped.push_back(index); continue; }
+            const Vec3 mid = (vertices.front() + vertices.back()) * 0.5;
+            const Vec3 rel = mid - draft.workPlane.origin;
+            const double signedDist = rel.x * draft.workPlane.normal.x +
+                                      rel.y * draft.workPlane.normal.y +
+                                      rel.z * draft.workPlane.normal.z;
+            if (signedDist >= draft.depthClipZMin && signedDist <= draft.depthClipZMax)
+                clipped.push_back(index);
+        }
+        visibleModels = std::move(clipped);
+        performance.visibleEntities = visibleModels.size();
     }
 
     if (draft.interactiveNavigation) {
@@ -392,6 +347,7 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
     if (draft.interactiveNavigation) {
         interactiveCoverage.resize(static_cast<std::size_t>(coverageColumns * coverageRows));
         interactiveTiles.assign(document.models().size(), -1);
+        performance.frameBufferGrowths += 2;
         const auto& cachedBounds = document.modelBounds();
         for (const auto index : visibleModels) {
             if (index >= document.models().size()) continue;
@@ -417,12 +373,13 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         COLORREF edgeColor{};
     };
     const unsigned char faceAlpha = visualStyleFaceAlpha(draft.visualStyle);
-    if (faceAlpha != 0 && !draft.interactiveNavigation) {
+    if (!draft.snapOnly && faceAlpha != 0 && !draft.interactiveNavigation) {
         std::vector<ProjectedFace> projectedFaces;
         for (const auto index : visibleModels) {
             if (index >= document.models().size()) continue;
             const auto& model = document.models()[index];
-            if (!model.properties().visible) continue;
+            const auto properties = document.effectiveProperties(model);
+            if (!properties.visible) continue;
             for (const auto& face : model.faces()) {
                 ProjectedFace projected;
                 projected.points.reserve(face.size());
@@ -432,8 +389,8 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
                     projected.depth += camera.viewTransform(vertex).z;
                 }
                 projected.depth /= static_cast<double>(face.size());
-                projected.color = shadedFaceColor(model.properties().effectiveColor);
-                projected.edgeColor = nativeColor(model.properties().effectiveColor);
+                projected.color = shadedFaceColor(properties.effectiveColor);
+                projected.edgeColor = nativeColor(properties.effectiveColor);
                 projectedFaces.push_back(std::move(projected));
             }
         }
@@ -450,6 +407,8 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
                 HPEN borderPen = CreatePen(PS_SOLID, 1, face.edgeColor);
                 HGDIOBJ previousPen = SelectObject(dc, borderPen);
                 Polygon(dc, face.points.data(), static_cast<int>(face.points.size()));
+                ++performance.drawCalls;
+                performance.projectedVertices += face.points.size();
                 SelectObject(dc, previousPen);
                 SelectObject(dc, oldBrush);
                 DeleteObject(borderPen);
@@ -480,6 +439,8 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
             HGDIOBJ oldOverlayBrush = SelectObject(overlayDc, brush);
             HGDIOBJ oldOverlayPen = SelectObject(overlayDc, GetStockObject(NULL_PEN));
             Polygon(overlayDc, localPoints.data(), static_cast<int>(localPoints.size()));
+            ++performance.drawCalls;
+            performance.projectedVertices += localPoints.size();
             SelectObject(overlayDc, oldOverlayPen);
             SelectObject(overlayDc, oldOverlayBrush);
             BLENDFUNCTION blend{AC_SRC_OVER, 0, faceAlpha, 0};
@@ -493,6 +454,25 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         SelectObject(dc, oldPen);
     }
 
+    // Phase 1 GPU-retained line rendering:
+    // Collect models for GPU. Actual rendering happens AFTER GDI BitBlt
+    // so lines appear on top of GDI-drawn background/grid/axis.
+    std::vector<std::pair<std::size_t, mm::WireframeModel>> gpuBatch;
+    if (!draft.snapOnly && useGpuLines) {
+        gpuBatch.reserve(visibleModels.size());
+        for (const auto index : visibleModels) {
+            if (index >= document.models().size()) continue;
+            const auto& model = document.models()[index];
+            if (model.edges().empty()) continue;
+            if (isSelected(index)) continue;
+            const auto properties = document.effectiveProperties(model);
+            if (!properties.visible) continue;
+            auto modelCopy = model;
+            modelCopy.setProperties(properties);
+            gpuBatch.emplace_back(index, std::move(modelCopy));
+        }
+    }
+
     using PenKey = std::tuple<std::uint32_t, int, std::string, int>;
     std::map<PenKey, HPEN> entityPens;
     const auto entityPen = [&](const EntityProperties& properties) {
@@ -504,13 +484,17 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         entityPens.emplace(key, pen);
         return pen;
     };
+    if (!draft.snapOnly) {
     for (std::size_t visibleIndex = 0; visibleIndex < visibleModels.size(); ++visibleIndex) {
         const auto index = visibleModels[visibleIndex];
         if (index >= document.models().size() || isSelected(index)) continue;
         const auto& model = document.models()[index];
-        if (!model.properties().visible) continue;
+        const auto properties = document.effectiveProperties(model);
+        if (!properties.visible) continue;
         if (draft.visualStyle == VisualStyle::Solid && !draft.interactiveNavigation &&
             !model.faces().empty()) continue;
+        // Phase 1 GPU: edges already rendered; skip non-selected model GDI pass
+        if (useGpuLines) continue;
         if (draft.interactiveNavigation) {
             bool representative = index % interactiveModelStride == 0 || model.vertices().size() >= 1'000;
             if (interactiveTiles[index] >= 0) {
@@ -521,31 +505,40 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
             }
             if (!representative) continue;
         }
-        SelectObject(dc, entityPen(model.properties()));
+        SelectObject(dc, entityPen(properties));
         drawModel(model);
+        ++performance.renderedEntities;
     }
     SelectObject(dc, stockPen);
     for (const auto& [key, pen] : entityPens) {
         (void)key;
         DeleteObject(pen);
     }
+    } // !draft.snapOnly
 
-    if (!draft.selectedModels.empty()) {
-        HPEN selectedPen = CreatePen(PS_SOLID, 3, RGB(90, 255, 145));
-        SelectObject(dc, selectedPen);
-        for (const auto index : draft.selectedModels) {
-            if (index < document.models().size()) drawModel(document.models()[index]);
+    if (!draft.interactiveNavigation) {
+        if (!draft.selectedModels.empty()) {
+            HPEN selectedPen = CreatePen(PS_SOLID, 3, RGB(90, 255, 145));
+            SelectObject(dc, selectedPen);
+            for (const auto index : draft.selectedModels) {
+                if (document.modelIsEditable(index)) {
+                    drawModel(document.models()[index]);
+                    ++performance.renderedEntities;
+                }
+            }
+            SelectObject(dc, stockPen);
+            DeleteObject(selectedPen);
         }
-        SelectObject(dc, stockPen);
-        DeleteObject(selectedPen);
-    }
 
-    const bool trimExtendTargetSelection =
+        const bool trimExtendTargetSelection =
         (draft.transformCommand == TransformCommand::Trim ||
          draft.transformCommand == TransformCommand::Extend) &&
         draft.transformPhase == TransformPhase::Destination;
-    if (draft.transformCommand != TransformCommand::None &&
-        (draft.transformPhase == TransformPhase::Selecting || trimExtendTargetSelection) &&
+    const bool neutralSelection = draft.transformCommand == TransformCommand::None &&
+                                  !draft.drawingActive;
+    if ((neutralSelection ||
+         (draft.transformCommand != TransformCommand::None &&
+          (draft.transformPhase == TransformPhase::Selecting || trimExtendTargetSelection))) &&
         draft.selectionFirstCorner) {
         const POINT first = *draft.selectionFirstCorner;
         const POINT second = draft.cursorScreen;
@@ -579,6 +572,20 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
                  crossing ? L"CROSSING" : L"WINDOW", color);
     }
 
+    // Draw node window selection rectangle
+    if (draft.nodeConstraintsVisible && draft.nodeSelectionFirstCorner) {
+        const POINT first = *draft.nodeSelectionFirstCorner;
+        const POINT second = draft.cursorScreen;
+        RECT sel{std::min(first.x, second.x), std::min(first.y, second.y),
+                 std::max(first.x, second.x), std::max(first.y, second.y)};
+        HPEN border = CreatePen(PS_DASH, 1, RGB(255, 206, 84));
+        HGDIOBJ oldPen = SelectObject(dc, border);
+        HGDIOBJ oldBrush = SelectObject(dc, GetStockObject(NULL_BRUSH));
+        Rectangle(dc, sel.left, sel.top, sel.right, sel.bottom);
+        SelectObject(dc, oldPen); SelectObject(dc, oldBrush);
+        DeleteObject(border);
+    }
+
     if (draft.zoomWindowActive && draft.zoomWindowFirstCorner) {
         const POINT first = *draft.zoomWindowFirstCorner;
         const POINT second = draft.cursorScreen;
@@ -610,7 +617,15 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         draft.transformPhase == TransformPhase::Destination && draft.transformBase && draft.cursor) {
         const POINT basePoint = projectPoint(*draft.transformBase);
         const POINT destinationPoint = projectPoint(*draft.cursor);
-        HPEN trackerPen = CreatePen(PS_DOT, 1, RGB(255, 206, 84));
+        const COLORREF trackerColor = [&]() -> COLORREF {
+            switch (draft.orthoAxis) {
+            case OrthoAxis::X: return RGB(235, 82, 96);   // Red
+            case OrthoAxis::Y: return RGB(72, 211, 121);  // Green
+            case OrthoAxis::Z: return RGB(78, 148, 255);  // Blue
+            default: return RGB(255, 206, 84);            // Yellow (no ortho)
+            }
+        }();
+        HPEN trackerPen = CreatePen(PS_DOT, 1, trackerColor);
         SelectObject(dc, trackerPen);
         line(dc, basePoint.x, basePoint.y, destinationPoint.x, destinationPoint.y);
         SelectObject(dc, stockPen);
@@ -630,12 +645,85 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
                 for (const auto& preview : linearArray2D(document.models()[index], *draft.arrayItemCount,
                                                          *draft.cursor - *draft.transformBase))
                     drawModel(preview);
+            } else if (draft.transformCommand == TransformCommand::Rotate) {
+                constexpr double pi = 3.14159265358979323846;
+                const double angleDeg = std::atan2(draft.cursor->y - draft.transformBase->y,
+                                                   draft.cursor->x - draft.transformBase->x) * 180.0 / pi;
+                const auto preview = mode == EditMode::View3D
+                    ? rotateModelOnPlane(document.models()[index], *draft.transformBase, angleDeg, draft.workPlane)
+                    : rotateModel2D(document.models()[index], *draft.transformBase, angleDeg);
+                if (preview) drawModel(*preview);
+            } else if (draft.transformCommand == TransformCommand::Rotate3D && draft.rotateAxis) {
+                constexpr double pi = 3.14159265358979323846;
+                const Vec3 axisDir = *draft.rotateAxis - *draft.transformBase;
+                if (axisDir.x * axisDir.x + axisDir.y * axisDir.y + axisDir.z * axisDir.z > 1e-12) {
+                    const double angleDeg = std::atan2(draft.cursor->y - draft.transformBase->y,
+                                                       draft.cursor->x - draft.transformBase->x) * 180.0 / pi;
+                    const auto preview = rotateModelAroundAxis(document.models()[index],
+                                                               *draft.transformBase, axisDir, angleDeg);
+                    if (preview) drawModel(*preview);
+                }
             } else {
                 drawModel(document.models()[index], *draft.cursor - *draft.transformBase);
             }
         }
         SelectObject(dc, stockPen);
         DeleteObject(transformPreview);
+    }
+
+    // Draw node constraints — always visible when they exist
+    if (draft.nodeConstraints && !draft.nodeConstraints->empty()) {
+        for (const auto& [key, constraint] : *draft.nodeConstraints) {
+            Vec3 pt{};
+            if (std::sscanf(key.c_str(), "%lf,%lf,%lf", &pt.x, &pt.y, &pt.z) != 3) continue;
+            const auto projected = projectPoint(pt);
+            const int px = projected.x;
+            const int py = projected.y;
+            if (px < 0 || px > client.right || py < 0 || py > client.bottom) continue;
+            const bool selected = draft.selectedNodeKeys && draft.selectedNodeKeys->count(key);
+            COLORREF color;
+            int radius;
+            if (selected) { color = RGB(255, 206, 84); radius = 7; }
+            else if (constraint.isFixed()) { color = RGB(235, 82, 96); radius = 6; }
+            else if (constraint.isPinned()) { color = RGB(72, 211, 121); radius = 5; }
+            else { color = RGB(78, 148, 255); radius = 4; }
+            HPEN nodePen = CreatePen(PS_SOLID, selected ? 3 : 2, color);
+            HBRUSH nodeBrush = selected ? (HBRUSH)GetStockObject(NULL_BRUSH) : CreateSolidBrush(color);
+            SelectObject(dc, nodePen);
+            SelectObject(dc, nodeBrush);
+            Ellipse(dc, px - radius, py - radius, px + radius, py + radius);
+            DeleteObject(nodePen);
+            if (!selected) DeleteObject(nodeBrush);
+            SelectObject(dc, stockPen);
+        }
+    }
+
+    // Draw beam load arrows
+    if (draft.beamLoads && !draft.beamLoads->empty()) {
+        for (const auto& [modelIdx, load] : *draft.beamLoads) {
+            if (load.wY == 0.0 && load.wZ == 0.0) continue;
+            if (modelIdx >= document.models().size()) continue;
+            const auto& m = document.models()[modelIdx];
+            if (m.vertices().size() != 2) continue;
+            const POINT p1 = projectPoint(m.vertices()[0]);
+            const POINT p2 = projectPoint(m.vertices()[1]);
+            const double len = std::hypot(p2.x - p1.x, p2.y - p1.y);
+            if (len < 1.0) continue;
+            const int steps = std::max(1, static_cast<int>(len / 25.0));
+            const double w = load.wY + load.wZ; // total load magnitude for arrow size
+            const double arrowLen = std::clamp(std::abs(w) * 3.0, 6.0, 20.0);
+            HPEN loadPen = CreatePen(PS_SOLID, 2, w > 0 ? RGB(235, 82, 96) : RGB(72, 211, 121));
+            SelectObject(dc, loadPen);
+            for (int i = 0; i <= steps; ++i) {
+                const double t = (steps == 0) ? 0.5 : static_cast<double>(i) / steps;
+                const int cx = static_cast<int>(p1.x + (p2.x - p1.x) * t);
+                const int cy = static_cast<int>(p1.y + (p2.y - p1.y) * t);
+                MoveToEx(dc, cx, cy, NULL);
+                LineTo(dc, cx, cy + static_cast<int>(arrowLen));
+            }
+            DeleteObject(loadPen);
+            SelectObject(dc, stockPen);
+        }
     }
 
     if (draft.transformCommand == TransformCommand::PolarArray &&
@@ -851,12 +939,18 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         }
     }
 
-    if (mode == EditMode::View3D) drawViewCube(dc, width, draft.cursorScreen, camera);
-
     if (drafting && draft.anchor && draft.cursor) {
         const POINT a = projectPoint(*draft.anchor);
         const POINT b = projectPoint(*draft.cursor);
-        HPEN preview = CreatePen(PS_DASH, 1, RGB(255, 206, 84));
+        const COLORREF previewColor = [&]() -> COLORREF {
+            switch (draft.orthoAxis) {
+            case OrthoAxis::X: return RGB(235, 82, 96);
+            case OrthoAxis::Y: return RGB(72, 211, 121);
+            case OrthoAxis::Z: return RGB(78, 148, 255);
+            default: return RGB(255, 206, 84);
+            }
+        }();
+        HPEN preview = CreatePen(PS_DASH, 1, previewColor);
         SelectObject(dc, preview);
         const auto drawPreviewModel = [&](const WireframeModel& model) {
             for (const auto& edge : model.edges()) {
@@ -988,6 +1082,8 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         drawText(dc, p.x + 10, p.y + 8, snapTypeLabel(draft.snapType), RGB(90, 255, 145));
     }
 
+    if (!draft.snapOnly) {
+
     if (drafting && draft.dynamicInputEnabled && draft.cursor &&
         !(draft.transformCommand != TransformCommand::None && draft.transformPhase == TransformPhase::Selecting)) {
         wchar_t info[128]{};
@@ -1016,9 +1112,182 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
     }
 
 
+    if (draft.resultsLoaded && draft.resultView > 0 && draft.nodeDisplacements && draft.elementForces &&
+        draft.nodeDisplacements->size() > 0 && draft.resultView <= 6) {
+        const auto& nodeDisp = *draft.nodeDisplacements;
+        const auto& elemForce = *draft.elementForces;
+        const double userScale = draft.resultScale;
+
+        // Determine force type index: 1=Deformed, 2=My, 3=Mz, 4=N, 5=Vy, 6=Vz
+        int forceOffset = 0; // 0=N, 1=Vy, 2=Vz, 4=Mz, 5=My (localForce order)
+        if (draft.resultView == 2) forceOffset = 5; // My
+        else if (draft.resultView == 3) forceOffset = 4; // Mz
+        else if (draft.resultView == 4) forceOffset = 0; // N
+        else if (draft.resultView == 5) forceOffset = 1; // Vy
+        else if (draft.resultView == 6) forceOffset = 2; // Vz
+
+        // First pass: find max absolute value for normalization
+        double maxVal = 0.0;
+        std::vector<std::pair<double,double>> elemValues;
+        elemValues.reserve(visibleModels.size());
+        std::vector<POINT> elemScreen[2]; // just reuse later
+        for (const auto index : visibleModels) {
+            if (index >= document.models().size()) { elemValues.push_back({0,0}); continue; }
+            const auto& model = document.models()[index];
+            const auto& vertices = model.vertices();
+            if (vertices.size() != 2 || draft.resultView == 1) { elemValues.push_back({0,0}); continue; }
+            const std::size_t fi = index < elemForce.size() / 12 ? index * 12 : static_cast<std::size_t>(-1);
+            if (fi >= elemForce.size()) { elemValues.push_back({0,0}); continue; }
+            double f1 = elemForce[fi + forceOffset];
+            double f2 = elemForce[fi + forceOffset + 6];
+            elemValues.push_back({f1, f2});
+            maxVal = std::max(maxVal, std::max(std::abs(f1), std::abs(f2)));
+        }
+        if (maxVal < 1e-30) {
+            // no significant forces — skip drawing (no SelectObject needed since we haven't selected)
+        } else {
+            const COLORREF baseColor =
+                draft.resultView == 1 ? RGB(90,255,145) :
+                draft.resultView == 2 || draft.resultView == 3 ? RGB(235,82,96) :
+                draft.resultView == 4 ? RGB(78,148,255) :
+                RGB(255,206,84);
+            const COLORREF fillColor =
+                draft.resultView == 1 ? RGB(36,102,58) :
+                draft.resultView == 2 || draft.resultView == 3 ? RGB(94,33,38) :
+                draft.resultView == 4 ? RGB(31,59,102) :
+                RGB(102,82,34);
+            HPEN resultPen = CreatePen(PS_SOLID, 2, baseColor);
+            SelectObject(dc, resultPen);
+            // Scale factor: normalize so max = ~40 pixels offset
+            const double pixelScale = 40.0 / maxVal * userScale;
+
+            for (std::size_t vi = 0; vi < visibleModels.size(); ++vi) {
+                const auto index = visibleModels[vi];
+                if (index >= document.models().size()) continue;
+                const auto& model = document.models()[index];
+                const auto& vertices = model.vertices();
+                if (vertices.size() < 2) continue;
+
+                // Z-depth clipping relative to workplane
+                if (draft.depthClipEnabled) {
+                    const Vec3 mid = (vertices.front() + vertices.back()) * 0.5;
+                    const Vec3 rel = mid - draft.workPlane.origin;
+                    const double signedDist = rel.x * draft.workPlane.normal.x +
+                                              rel.y * draft.workPlane.normal.y +
+                                              rel.z * draft.workPlane.normal.z;
+                    if (signedDist < draft.depthClipZMin || signedDist > draft.depthClipZMax)
+                        continue;
+                }
+
+                if (draft.resultView == 1) {
+                    // Deformed shape — still line-based for clarity
+                    Vec3 pt0 = vertices[0];
+                    if (vi < nodeDisp.size()) pt0 = pt0 + nodeDisp[vi] * (userScale * 100.0);
+                    const POINT from = projectPoint(pt0);
+                    for (std::size_t vi2 = 1; vi2 < vertices.size(); ++vi2) {
+                        Vec3 pt = vertices[vi2];
+                        if (vi2 < nodeDisp.size()) pt = pt + nodeDisp[vi2] * (userScale * 100.0);
+                        const POINT to = projectPoint(pt);
+                        line(dc, from.x, from.y, to.x, to.y);
+                    }
+                    continue;
+                }
+
+                const auto [f1, f2] = vi < elemValues.size() ? elemValues[vi] : std::pair{0.0, 0.0};
+                if (vertices.size() != 2) continue;
+
+                const POINT p1 = projectPoint(vertices[0]);
+                const POINT p2 = projectPoint(vertices[1]);
+                const double lenX = static_cast<double>(p2.x - p1.x);
+                const double lenY = static_cast<double>(p2.y - p1.y);
+                const double length = std::hypot(lenX, lenY);
+                if (length < 2.0) continue;
+                const double ux = lenX / length, uy = lenY / length;
+                const double px = -uy, py = ux; // perpendicular
+
+                const double off1 = f1 * pixelScale;
+                const double off2 = f2 * pixelScale;
+                const POINT q1{static_cast<LONG>(p1.x + px * off1), static_cast<LONG>(p1.y + py * off1)};
+                const POINT q2{static_cast<LONG>(p2.x + px * off2), static_cast<LONG>(p2.y + py * off2)};
+
+                // filled polygon: original line + diagram line
+                POINT poly[4] = {p1, p2, q2, q1};
+                HBRUSH fillBrush = CreateSolidBrush(fillColor);
+                HGDIOBJ oldBrush = SelectObject(dc, fillBrush);
+                Polygon(dc, poly, 4);
+                SelectObject(dc, oldBrush);
+                DeleteObject(fillBrush);
+                // border on diagram side only
+                line(dc, q1.x, q1.y, q2.x, q2.y);
+            }
+            SelectObject(dc, stockPen);
+            DeleteObject(resultPen);
+        }
+    }
+
+    if (draft.performanceOverlayEnabled) {
+        const auto& stats = performanceTracker_.latest();
+        RECT panel{12, 12, 302, 222};
+        HBRUSH panelBrush = CreateSolidBrush(RGB(20, 27, 37));
+        FillRect(dc, &panel, panelBrush);
+        DeleteObject(panelBrush);
+        HPEN panelPen = CreatePen(PS_SOLID, 1, RGB(74, 91, 112));
+        HGDIOBJ oldPanelPen = SelectObject(dc, panelPen);
+        HGDIOBJ oldPanelBrush = SelectObject(dc, GetStockObject(NULL_BRUSH));
+        Rectangle(dc, panel.left, panel.top, panel.right, panel.bottom);
+        SelectObject(dc, oldPanelBrush);
+        SelectObject(dc, oldPanelPen);
+        DeleteObject(panelPen);
+
+        drawText(dc, 24, 22, L"PERFORMANCE  [F11]", RGB(90, 205, 255));
+        wchar_t value[128]{};
+        int y = 46;
+        const auto metric = [&](const wchar_t* format, auto... arguments) {
+            std::swprintf(value, std::size(value), format, arguments...);
+            drawText(dc, 24, y, value, RGB(225, 232, 241));
+            y += 19;
+        };
+        metric(L"Paint FPS: %.1f", stats.framesPerSecond);
+        metric(L"CPU Frame: %.3f ms", stats.cpuFrameMilliseconds);
+        metric(L"Spatial Query: %.3f ms", stats.spatialQueryMilliseconds);
+        metric(L"Entities: %zu total / %zu visible", stats.totalEntities, stats.visibleEntities);
+        metric(L"Rendered: %zu   Culled: %zu", stats.renderedEntities, stats.culledEntities);
+        metric(L"GDI Geometry Calls: %zu", stats.drawCalls);
+        metric(L"Projected Vertices: %zu", stats.projectedVertices);
+        metric(L"Tracked Buffer Growths: %zu", stats.frameBufferGrowths);
+        if (glBackend && glBackend->isHardwareAccelerated()) {
+            metric(L"GL Draw Calls: %zu   Lines: %zu", glBackend->drawCallsPerFrame(),
+                   glBackend->renderedLineCount());
+            metric(L"GL Upload: %zu KB   Rebuilds: %zu",
+                   glBackend->bufferUploadBytes() / 1024,
+                   glBackend->bufferRebuildCount());
+        } else {
+            drawText(dc, 24, y, L"GPU Frame / Upload: N/A (GDI)", RGB(160, 174, 191));
+        }
+    }
+    }
+    } // !draft.snapOnly (dynamic input + perf overlay)
+
     SelectObject(dc, oldFont);
     DeleteObject(font);
-    BitBlt(target, 0, 0, width, height, dc, 0, 0, SRCCOPY);
+    if (!draft.snapOnly)
+        BitBlt(target, 0, 0, width, height, dc, 0, 0, SRCCOPY);
+
+    // GPU renders lines on top of GDI content
+    if (useGpuLines) {
+        FrameInfo frameInfo{width, height, false, 1.0, 0.0, 0.0};
+        glBackend->beginFrame(frameInfo);
+        if (!gpuBatch.empty()) glBackend->renderWireframeBatch(gpuBatch, camera);
+        if (guiOverlay_) guiOverlay_();
+        glBackend->endFrame();
+        performance.drawCalls += glBackend->drawCallsPerFrame();
+    }
+
+    finishPerformanceSample(false);
+}
+
+const FramePerformanceSample& Renderer::performanceStats() const noexcept {
+    return performanceTracker_.latest();
 }
 
 } // namespace mm

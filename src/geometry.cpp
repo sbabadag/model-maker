@@ -49,6 +49,71 @@ Vec2 WorkPlane::toPlane(Vec3 point) const noexcept {
     return {dot3(relative, u), dot3(relative, v)};
 }
 
+WorkPlane WorkPlane::world() noexcept {
+    return WorkPlane{};
+}
+
+WorkPlane WorkPlane::fromAxisAndPoint(Vec3 origin, Vec3 zPoint) noexcept {
+    const auto normalAxis = normalized(zPoint - origin);
+    if (!normalAxis) return WorkPlane{};
+    Vec3 ref{0.0, 1.0, 0.0};
+    if (std::abs(dot3(*normalAxis, ref)) > 0.99) ref = {1.0, 0.0, 0.0};
+    const auto uAxis = normalized(cross3(ref, *normalAxis));
+    if (!uAxis) return WorkPlane{};
+    const auto vAxis = normalized(cross3(*normalAxis, *uAxis));
+    if (!vAxis) return WorkPlane{};
+    return WorkPlane{origin, *uAxis, *vAxis, *normalAxis};
+}
+
+WorkPlane WorkPlane::fromCurrentView(Vec3 origin, const Vec3& viewDir, const Vec3& viewUp) noexcept {
+    const auto normalAxis = normalized(viewDir);
+    if (!normalAxis) return WorkPlane{};
+    const auto uAxis = normalized(cross3(viewUp, *normalAxis));
+    if (!uAxis) return WorkPlane{};
+    const auto vAxis = normalized(cross3(*normalAxis, *uAxis));
+    if (!vAxis) return WorkPlane{};
+    return WorkPlane{origin, *uAxis, *vAxis, *normalAxis};
+}
+
+WorkPlane WorkPlane::fromViewDirection(Vec3 origin, Vec3 viewDirection) noexcept {
+    const auto normalAxis = normalized(viewDirection);
+    if (!normalAxis) return WorkPlane{};
+    Vec3 ref{0.0, 0.0, 1.0};
+    if (std::abs(dot3(*normalAxis, ref)) > 0.99) ref = {0.0, 1.0, 0.0};
+    const auto uAxis = normalized(cross3(ref, *normalAxis));
+    if (!uAxis) return WorkPlane{};
+    const auto vAxis = normalized(cross3(*normalAxis, *uAxis));
+    if (!vAxis) return WorkPlane{};
+    return WorkPlane{origin, *uAxis, *vAxis, *normalAxis};
+}
+
+WorkPlane WorkPlane::rotatedX(double angleDeg) const noexcept {
+    const double rad = angleDeg * 3.14159265358979323846 / 180.0;
+    const double c = std::cos(rad), s = std::sin(rad);
+    return WorkPlane{origin,
+        u,
+        v * c + normal * s,
+        normal * c - v * s};
+}
+
+WorkPlane WorkPlane::rotatedY(double angleDeg) const noexcept {
+    const double rad = angleDeg * 3.14159265358979323846 / 180.0;
+    const double c = std::cos(rad), s = std::sin(rad);
+    return WorkPlane{origin,
+        u * c - normal * s,
+        v,
+        normal * c + u * s};
+}
+
+WorkPlane WorkPlane::rotatedZ(double angleDeg) const noexcept {
+    const double rad = angleDeg * 3.14159265358979323846 / 180.0;
+    const double c = std::cos(rad), s = std::sin(rad);
+    return WorkPlane{origin,
+        u * c + v * s,
+        v * c - u * s,
+        normal};
+}
+
 WireframeModel::WireframeModel(std::vector<Vec3> vertices, std::vector<Edge> edges,
                                std::vector<Face> faces)
     : vertices_(std::move(vertices)), edges_(std::move(edges)), faces_(std::move(faces)) {
@@ -188,6 +253,26 @@ void WireframeModel::rotateAroundZ(const Vec3& center, double radians) noexcept 
         const double y = point.y - center.y;
         point.x = center.x + x * cosine - y * sine;
         point.y = center.y + x * sine + y * cosine;
+        return point;
+    };
+    for (auto& vertex : vertices_) vertex = rotatePoint(vertex);
+    if (insertionPoint_) *insertionPoint_ = rotatePoint(*insertionPoint_);
+    if (analyticCenter_) *analyticCenter_ = rotatePoint(*analyticCenter_);
+}
+
+void WireframeModel::rotateAroundAxis(const Vec3& center, const Vec3& axis, double radians) noexcept {
+    const double cosine = std::cos(radians);
+    const double sine = std::sin(radians);
+    const double axisLength = std::sqrt(axis.x * axis.x + axis.y * axis.y + axis.z * axis.z);
+    if (axisLength <= 1e-12) return;
+    const Vec3 n{axis.x / axisLength, axis.y / axisLength, axis.z / axisLength};
+    const auto rotatePoint = [&](Vec3 point) {
+        const Vec3 p = point - center;
+        const double dotVal = p.x * n.x + p.y * n.y + p.z * n.z;
+        const Vec3 cross = {p.y * n.z - p.z * n.y, p.z * n.x - p.x * n.z, p.x * n.y - p.y * n.x};
+        point.x = center.x + p.x * cosine + cross.x * sine + n.x * dotVal * (1.0 - cosine);
+        point.y = center.y + p.y * cosine + cross.y * sine + n.y * dotVal * (1.0 - cosine);
+        point.z = center.z + p.z * cosine + cross.z * sine + n.z * dotVal * (1.0 - cosine);
         return point;
     };
     for (auto& vertex : vertices_) vertex = rotatePoint(vertex);

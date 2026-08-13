@@ -112,7 +112,7 @@ std::vector<Candidate> objectCandidates(const Vec3& cursor, const Document& docu
     }
     std::size_t totalVertices{}, totalEdges{};
     for (const auto modelIndex : *candidateIndices) {
-        if (modelIndex >= document.models().size()) continue;
+        if (!document.modelIsEditable(modelIndex)) continue;
         totalVertices += document.models()[modelIndex].vertices().size();
         totalEdges += document.models()[modelIndex].edges().size();
     }
@@ -123,7 +123,7 @@ std::vector<Candidate> objectCandidates(const Vec3& cursor, const Document& docu
                                                              candidateBudget);
 
     for (const auto modelIndex : *candidateIndices) {
-        if (modelIndex >= document.models().size()) continue;
+        if (!document.modelIsEditable(modelIndex)) continue;
         const auto& model = document.models()[modelIndex];
         const auto circle = detectCircle(model);
         const auto& vertices = model.vertices();
@@ -352,20 +352,18 @@ SnapResult SnapEngine::snap3D(const Vec2& screenCursor, const Document& document
         struct ProjectedEdge { Vec3 a; Vec3 b; Vec2 pa; Vec2 pb; };
         std::vector<ProjectedEdge> edges;
         constexpr std::size_t apparentIntersectionEdgeLimit = 512;
-        std::size_t drawingEdgeCount{};
-        for (const auto& model : document.models()) {
-            drawingEdgeCount += model.edges().size();
-            if (drawingEdgeCount > apparentIntersectionEdgeLimit) break;
-        }
-        if (drawingEdgeCount <= apparentIntersectionEdgeLimit) {
-            for (const auto& model : document.models()) {
-                for (const auto& edge : model.edges()) {
-                    const Vec3& a = model.vertices()[edge.from];
-                    const Vec3& b = model.vertices()[edge.to];
-                    edges.push_back({a, b, camera.project(a, viewportWidth, viewportHeight),
-                                           camera.project(b, viewportWidth, viewportHeight)});
-                }
+        // Only iterate nearby models (spatial-index filtered), not the entire document
+        for (const auto index : nearby) {
+            if (index >= document.models().size()) continue;
+            const auto& model = document.models()[index];
+            for (const auto& edge : model.edges()) {
+                if (edges.size() >= apparentIntersectionEdgeLimit) break;
+                const Vec3& a = model.vertices()[edge.from];
+                const Vec3& b = model.vertices()[edge.to];
+                edges.push_back({a, b, camera.project(a, viewportWidth, viewportHeight),
+                                       camera.project(b, viewportWidth, viewportHeight)});
             }
+            if (edges.size() >= apparentIntersectionEdgeLimit) break;
         }
         for (std::size_t first = 0; first < edges.size(); ++first) {
             for (std::size_t second = first + 1; second < edges.size(); ++second) {
@@ -500,8 +498,14 @@ const wchar_t* toolLabel(DrawTool tool) noexcept {
 }
 
 Vec3 constrainOrtho(const Vec3& anchor, const Vec3& cursor) noexcept {
+    OrthoAxis axis = OrthoAxis::None;
+    return constrainOrtho(anchor, cursor, axis);
+}
+
+Vec3 constrainOrtho(const Vec3& anchor, const Vec3& cursor, OrthoAxis& chosenAxis) noexcept {
     const double dx = std::abs(cursor.x - anchor.x);
     const double dy = std::abs(cursor.y - anchor.y);
+    chosenAxis = (dx >= dy) ? OrthoAxis::X : OrthoAxis::Y;
     return dx >= dy
         ? Vec3{cursor.x, anchor.y, cursor.z}
         : Vec3{anchor.x, cursor.y, cursor.z};
@@ -510,7 +514,9 @@ Vec3 constrainOrtho(const Vec3& anchor, const Vec3& cursor) noexcept {
 SnapResult applyOrtho(const Vec3& anchor, SnapResult candidate, bool preserveObjectSnaps) noexcept {
     if (!preserveObjectSnaps || candidate.type == SnapType::None || candidate.type == SnapType::Grid) {
         const Vec3 original = candidate.point;
-        candidate.point = constrainOrtho(anchor, candidate.point);
+        OrthoAxis axis = OrthoAxis::None;
+        candidate.point = constrainOrtho(anchor, candidate.point, axis);
+        candidate.orthoAxis = axis;
         if (!preserveObjectSnaps && candidate.point != original) candidate.type = SnapType::None;
     }
     return candidate;
@@ -518,17 +524,25 @@ SnapResult applyOrtho(const Vec3& anchor, SnapResult candidate, bool preserveObj
 
 Vec3 constrainOrtho3D(const Vec3& anchor, const Vec2& screenCursor, const Camera& camera,
                       int viewportWidth, int viewportHeight) noexcept {
+    OrthoAxis axis = OrthoAxis::None;
+    return constrainOrtho3D(anchor, screenCursor, camera, viewportWidth, viewportHeight, axis);
+}
+
+Vec3 constrainOrtho3D(const Vec3& anchor, const Vec2& screenCursor, const Camera& camera,
+                      int viewportWidth, int viewportHeight, OrthoAxis& chosenAxis) noexcept {
     const Vec2 origin = camera.project(anchor, viewportWidth, viewportHeight);
     const Vec2 cursorDelta{screenCursor.x - origin.x, screenCursor.y - origin.y};
     const std::array<Vec3, 3> axes{{{1.0, 0.0, 0.0}, {0.0, 1.0, 0.0}, {0.0, 0.0, 1.0}}};
 
     Vec3 bestPoint = anchor;
     double bestResidual = std::numeric_limits<double>::infinity();
-    for (const auto& axis : axes) {
+    std::size_t bestIndex = 0;
+    for (std::size_t index = 0; index < axes.size(); ++index) {
+        const auto& axis = axes[index];
         const Vec2 projected = camera.project(anchor + axis, viewportWidth, viewportHeight);
         const Vec2 axisScreen{projected.x - origin.x, projected.y - origin.y};
         const double lengthSquared = axisScreen.x * axisScreen.x + axisScreen.y * axisScreen.y;
-        if (lengthSquared <= epsilon) continue; // Axis points directly into the current view.
+        if (lengthSquared <= epsilon) continue;
 
         const double worldDistance = (cursorDelta.x * axisScreen.x + cursorDelta.y * axisScreen.y) /
                                      lengthSquared;
@@ -538,20 +552,31 @@ Vec3 constrainOrtho3D(const Vec3& anchor, const Vec2& screenCursor, const Camera
         if (residual < bestResidual) {
             bestResidual = residual;
             bestPoint = anchor + axis * worldDistance;
+            bestIndex = index;
         }
     }
+    chosenAxis = static_cast<OrthoAxis>(bestIndex + 1);
     return bestPoint;
 }
 
 Vec3 constrainOrtho3D(const Vec3& anchor, const Vec2& screenCursor, const Camera& camera,
                       int viewportWidth, int viewportHeight, const WorkPlane& workPlane,
                       bool includePlaneNormal) noexcept {
+    OrthoAxis axis = OrthoAxis::None;
+    return constrainOrtho3D(anchor, screenCursor, camera, viewportWidth, viewportHeight,
+                            workPlane, includePlaneNormal, axis);
+}
+
+Vec3 constrainOrtho3D(const Vec3& anchor, const Vec2& screenCursor, const Camera& camera,
+                      int viewportWidth, int viewportHeight, const WorkPlane& workPlane,
+                      bool includePlaneNormal, OrthoAxis& chosenAxis) noexcept {
     const Vec2 origin = camera.project(anchor, viewportWidth, viewportHeight);
     const Vec2 cursorDelta{screenCursor.x - origin.x, screenCursor.y - origin.y};
     const std::array<Vec3, 3> axes{{workPlane.u, workPlane.v, workPlane.normal}};
 
     Vec3 bestPoint = anchor;
     double bestResidual = std::numeric_limits<double>::infinity();
+    std::size_t bestIndex = 0;
     const std::size_t axisCount = includePlaneNormal ? axes.size() : axes.size() - 1;
     for (std::size_t index = 0; index < axisCount; ++index) {
         const auto& axis = axes[index];
@@ -568,8 +593,10 @@ Vec3 constrainOrtho3D(const Vec3& anchor, const Vec2& screenCursor, const Camera
         if (residual < bestResidual) {
             bestResidual = residual;
             bestPoint = anchor + axis * planeDistance;
+            bestIndex = index;
         }
     }
+    chosenAxis = static_cast<OrthoAxis>(bestIndex + 1);
     return bestPoint;
 }
 
@@ -578,7 +605,10 @@ SnapResult applyOrtho3D(const Vec3& anchor, const Vec2& screenCursor, SnapResult
                         bool preserveObjectSnaps) noexcept {
     if (!preserveObjectSnaps || candidate.type == SnapType::None || candidate.type == SnapType::Grid) {
         const Vec3 original = candidate.point;
-        candidate.point = constrainOrtho3D(anchor, screenCursor, camera, viewportWidth, viewportHeight);
+        OrthoAxis axis = OrthoAxis::None;
+        candidate.point = constrainOrtho3D(anchor, screenCursor, camera, viewportWidth,
+                                           viewportHeight, axis);
+        candidate.orthoAxis = axis;
         if (!preserveObjectSnaps && candidate.point != original) candidate.type = SnapType::None;
     }
     return candidate;
@@ -590,8 +620,10 @@ SnapResult applyOrtho3D(const Vec3& anchor, const Vec2& screenCursor, SnapResult
                         bool preserveObjectSnaps) noexcept {
     if (!preserveObjectSnaps || candidate.type == SnapType::None || candidate.type == SnapType::Grid) {
         const Vec3 original = candidate.point;
+        OrthoAxis axis = OrthoAxis::None;
         candidate.point = constrainOrtho3D(anchor, screenCursor, camera, viewportWidth,
-                                           viewportHeight, workPlane, includePlaneNormal);
+                                           viewportHeight, workPlane, includePlaneNormal, axis);
+        candidate.orthoAxis = axis;
         if (!preserveObjectSnaps && candidate.point != original) candidate.type = SnapType::None;
     }
     return candidate;
@@ -739,7 +771,7 @@ std::optional<std::size_t> hitTestModel(const Vec2& cursor, const Document& docu
         candidates = &allIndices;
     }
     for (const auto index : *candidates) {
-        if (index >= document.models().size()) continue;
+        if (!document.modelIsEditable(index)) continue;
         const auto& model = document.models()[index];
         for (const auto& edge : model.edges()) {
             const double distance = pointSegmentDistance(cursor, project(model.vertices()[edge.from]),
@@ -807,7 +839,7 @@ std::vector<std::size_t> selectModelsInRect(const Vec2& firstCorner, const Vec2&
         candidates = &allIndices;
     }
     for (const auto index : *candidates) {
-        if (index >= document.models().size()) continue;
+        if (!document.modelIsEditable(index)) continue;
         const auto& model = document.models()[index];
         const bool allInside = !model.vertices().empty() &&
             std::all_of(model.vertices().begin(), model.vertices().end(), [&](const Vec3& vertex) {
@@ -870,9 +902,11 @@ std::optional<std::size_t> hitTestModel2D(const Vec3& cursor, const Document& do
 std::optional<std::size_t> hitTestModel3D(const Vec2& cursor, const Document& document,
                                          const Camera& camera, int viewportWidth, int viewportHeight,
                                          double tolerancePixels) {
+    const auto nearby = projectedCandidates(cursor, document, camera, viewportWidth,
+                                            viewportHeight, tolerancePixels);
     return hitTestModel(cursor, document, tolerancePixels, [&](const Vec3& point) {
         return camera.project(point, viewportWidth, viewportHeight);
-    });
+    }, &nearby);
 }
 
 std::vector<std::size_t> selectModelsInRect2D(const Vec3& firstCorner, const Vec3& secondCorner,
@@ -886,9 +920,24 @@ std::vector<std::size_t> selectModelsInRect2D(const Vec3& firstCorner, const Vec
 std::vector<std::size_t> selectModelsInRect3D(const Vec2& firstCorner, const Vec2& secondCorner,
                                               const Document& document, const Camera& camera,
                                               int viewportWidth, int viewportHeight, bool crossing) {
+    // Query spatial index: project selection corners to world space for bounds
+    const auto proj = [&](double x, double y) {
+        return camera.unproject2D({x, y}, viewportWidth, viewportHeight);
+    };
+    const Vec3 c1 = proj(firstCorner.x, firstCorner.y);
+    const Vec3 c2 = proj(secondCorner.x, secondCorner.y);
+    // Build a deep-enough world bounds from the projected corners
+    const double zPad = 10000.0;
+    const Vec3 lo{std::min(c1.x, c2.x), std::min(c1.y, c2.y), std::min(c1.z, c2.z) - zPad};
+    const Vec3 hi{std::max(c1.x, c2.x), std::max(c1.y, c2.y), std::max(c1.z, c2.z) + zPad};
+    const auto nearby = document.queryBounds([&](const Bounds3& bounds) {
+        return bounds.maximum.x >= lo.x && bounds.minimum.x <= hi.x &&
+               bounds.maximum.y >= lo.y && bounds.minimum.y <= hi.y &&
+               bounds.maximum.z >= lo.z && bounds.minimum.z <= hi.z;
+    });
     return selectModelsInRect(firstCorner, secondCorner, document, crossing, [&](const Vec3& point) {
         return camera.project(point, viewportWidth, viewportHeight);
-    });
+    }, &nearby);
 }
 
 std::optional<Vec3> crossingSelectionPickPoint2D(const WireframeModel& model,
@@ -1163,6 +1212,36 @@ std::vector<WireframeModel> modelsToPlaneCoordinates(const std::vector<Wireframe
 }
 } // namespace
 
+bool projectedBoundsIntersectsViewport(const Bounds3& bounds, const Camera& camera,
+                                       int viewportWidth, int viewportHeight,
+                                       double marginPixels) {
+    if (viewportWidth <= 0 || viewportHeight <= 0) return false;
+    const std::array<Vec3, 8> corners{{
+        {bounds.minimum.x, bounds.minimum.y, bounds.minimum.z},
+        {bounds.maximum.x, bounds.minimum.y, bounds.minimum.z},
+        {bounds.minimum.x, bounds.maximum.y, bounds.minimum.z},
+        {bounds.maximum.x, bounds.maximum.y, bounds.minimum.z},
+        {bounds.minimum.x, bounds.minimum.y, bounds.maximum.z},
+        {bounds.maximum.x, bounds.minimum.y, bounds.maximum.z},
+        {bounds.minimum.x, bounds.maximum.y, bounds.maximum.z},
+        {bounds.maximum.x, bounds.maximum.y, bounds.maximum.z},
+    }};
+    double minX = std::numeric_limits<double>::infinity();
+    double minY = std::numeric_limits<double>::infinity();
+    double maxX = -std::numeric_limits<double>::infinity();
+    double maxY = -std::numeric_limits<double>::infinity();
+    for (const auto& corner : corners) {
+        const Vec2 projected = camera.project(corner, viewportWidth, viewportHeight);
+        minX = std::min(minX, projected.x);
+        minY = std::min(minY, projected.y);
+        maxX = std::max(maxX, projected.x);
+        maxY = std::max(maxY, projected.y);
+    }
+    return maxX >= -marginPixels && maxY >= -marginPixels &&
+           minX <= static_cast<double>(viewportWidth) + marginPixels &&
+           minY <= static_cast<double>(viewportHeight) + marginPixels;
+}
+
 std::optional<WireframeModel> offsetModelOnPlane(const WireframeModel& source, double distance,
                                                  const Vec3& sidePoint, const WorkPlane& plane) {
     const auto local = offsetModel2D(modelToPlaneCoordinates(source, plane), distance,
@@ -1179,6 +1258,55 @@ std::optional<WireframeModel> mirrorModelOnPlane(const WireframeModel& source,
                                      toPlaneCoordinates(axisEnd, plane));
     if (!local) return std::nullopt;
     return modelFromPlaneCoordinates(*local, plane);
+}
+
+std::optional<WireframeModel> rotateModel2D(const WireframeModel& source,
+                                            const Vec3& center, double angleDeg) {
+    const double radians = angleDeg * std::numbers::pi / 180.0;
+    const double cosA = std::cos(radians);
+    const double sinA = std::sin(radians);
+    const auto rotate = [&](const Vec3& point) {
+        const double dx = point.x - center.x;
+        const double dy = point.y - center.y;
+        return Vec3{center.x + cosA * dx - sinA * dy,
+                    center.y + sinA * dx + cosA * dy, point.z};
+    };
+
+    WireframeModel result;
+    if (source.isPointEntity() && !source.vertices().empty()) {
+        result = WireframeModel::point(rotate(source.vertices().front()));
+    } else if (source.isFace3D() && source.vertices().size() == 4) {
+        result = WireframeModel::face3D({rotate(source.vertices()[0]), rotate(source.vertices()[1]),
+                                         rotate(source.vertices()[2]), rotate(source.vertices()[3])});
+    } else if (source.analyticCenter() && source.analyticRadius()) {
+        result = WireframeModel::circle(rotate(*source.analyticCenter()), *source.analyticRadius(),
+                                        std::max<std::size_t>(3, source.vertices().size()));
+    } else {
+        std::vector<Vec3> vertices;
+        vertices.reserve(source.vertices().size());
+        for (const auto& vertex : source.vertices()) vertices.push_back(rotate(vertex));
+        result = WireframeModel(std::move(vertices), source.edges(), source.faces());
+    }
+    result.setProperties(source.properties());
+    return result;
+}
+
+std::optional<WireframeModel> rotateModelOnPlane(const WireframeModel& source,
+                                                 const Vec3& center, double angleDeg,
+                                                 const WorkPlane& plane) {
+    const auto local = rotateModel2D(modelToPlaneCoordinates(source, plane),
+                                     toPlaneCoordinates(center, plane), angleDeg);
+    if (!local) return std::nullopt;
+    return modelFromPlaneCoordinates(*local, plane);
+}
+
+std::optional<WireframeModel> rotateModelAroundAxis(const WireframeModel& source,
+                                                    const Vec3& center, const Vec3& axis,
+                                                    double angleDeg) {
+    if (axis.x * axis.x + axis.y * axis.y + axis.z * axis.z <= epsilon) return std::nullopt;
+    WireframeModel copy = source;
+    copy.rotateAroundAxis(center, axis, angleDeg * std::numbers::pi / 180.0);
+    return copy;
 }
 
 std::vector<WireframeModel> polarArrayOnPlane(const WireframeModel& source, std::size_t itemCount,

@@ -36,6 +36,19 @@ CubePoint projected(const Camera& camera, Vec3 point, int centerX, int centerY, 
 
 } // namespace
 
+CubeRect ViewCube::hostBounds(int canvasWidth, int canvasHeight) noexcept {
+    constexpr int width = 192;
+    constexpr int height = 238;
+    constexpr int margin = 12;
+    canvasWidth = std::max(1, canvasWidth);
+    canvasHeight = std::max(1, canvasHeight);
+    const int hostWidth = std::min(width, canvasWidth);
+    const int hostHeight = std::min(height, canvasHeight);
+    const int left = std::max(0, canvasWidth - margin - hostWidth);
+    const int top = canvasHeight >= height + margin ? margin : std::max(0, canvasHeight - hostHeight);
+    return {left, top, left + hostWidth, top + hostHeight};
+}
+
 ViewCubeLayout ViewCube::layout(int viewportWidth, const Camera& camera) noexcept {
     ViewCubeLayout result;
     result.centerX = std::max(96, viewportWidth - 96);
@@ -57,12 +70,12 @@ ViewCubeLayout ViewCube::layout(int viewportWidth, const Camera& camera) noexcep
         Vec3 normal;
     };
     constexpr std::array<FaceDefinition, 6> definitions{{
-        {StandardView::Left,   {0, 3, 7, 4}, {-1.0, 0.0, 0.0}},
-        {StandardView::Right,  {1, 5, 6, 2}, { 1.0, 0.0, 0.0}},
-        {StandardView::Bottom, {0, 4, 5, 1}, {0.0, -1.0, 0.0}},
-        {StandardView::Top,    {3, 2, 6, 7}, {0.0,  1.0, 0.0}},
-        {StandardView::Back,   {0, 1, 2, 3}, {0.0, 0.0, -1.0}},
-        {StandardView::Front,  {4, 7, 6, 5}, {0.0, 0.0,  1.0}}
+        {StandardView::Left,   {0, 3, 7, 4}, {-1.0, 0.0, 0.0}},  // YZ plane, looking from +X
+        {StandardView::Right,  {1, 5, 6, 2}, { 1.0, 0.0, 0.0}},  // YZ plane, looking from -X
+        {StandardView::Bottom, {0, 4, 5, 1}, {0.0, 0.0, -1.0}},  // XY plane, looking from -Z
+        {StandardView::Top,    {3, 2, 6, 7}, {0.0, 0.0,  1.0}},  // XY plane, looking from +Z
+        {StandardView::Back,   {0, 1, 2, 3}, {0.0, -1.0, 0.0}},  // XZ plane, looking from -Y
+        {StandardView::Front,  {4, 7, 6, 5}, {0.0,  1.0, 0.0}}   // XZ plane, looking from +Y
     }};
     for (std::size_t faceIndex = 0; faceIndex < definitions.size(); ++faceIndex) {
         const auto& definition = definitions[faceIndex];

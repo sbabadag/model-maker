@@ -3,6 +3,7 @@
 #include <fstream>
 #include <algorithm>
 #include <iterator>
+#include <cctype>
 #include <numeric>
 #include <stdexcept>
 #include <string>
@@ -10,6 +11,23 @@
 
 namespace mm {
 namespace {
+EntityProperties defaultLayerProperties() {
+    EntityProperties layer;
+    layer.layer = "0";
+    layer.lineType = layer.effectiveLineType = "CONTINUOUS";
+    layer.colorIndex = 7;
+    layer.trueColor = layer.effectiveColor = 0xFFFFFFu;
+    layer.lineWeight = layer.effectiveLineWeight = 0;
+    return layer;
+}
+
+std::string lowerAscii(std::string value) {
+    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char character) {
+        return static_cast<char>(std::tolower(character));
+    });
+    return value;
+}
+
 Bounds3 mergeBounds(const Bounds3& a, const Bounds3& b) noexcept {
     return {{std::min(a.minimum.x, b.minimum.x), std::min(a.minimum.y, b.minimum.y),
              std::min(a.minimum.z, b.minimum.z)},
@@ -21,6 +39,18 @@ bool intersects2D(const Bounds3& a, const Bounds3& b) noexcept {
     return a.maximum.x >= b.minimum.x && a.minimum.x <= b.maximum.x &&
            a.maximum.y >= b.minimum.y && a.minimum.y <= b.maximum.y;
 }
+
+std::vector<std::size_t> uniqueIndices(const std::vector<std::size_t>& indices) {
+    std::vector<std::size_t> result = indices;
+    std::sort(result.begin(), result.end());
+    result.erase(std::unique(result.begin(), result.end()), result.end());
+    return result;
+}
+}
+
+Document::Document() {
+    auto layer = defaultLayerProperties();
+    layers_.emplace(layer.layer, std::move(layer));
 }
 
 void Document::addModel(WireframeModel model) {
@@ -50,6 +80,62 @@ void Document::copyModels(const std::vector<std::size_t>& indices, const Vec3& d
     invalidateSpatialIndex();
 }
 
+std::size_t Document::setModelLayer(const std::vector<std::size_t>& indices, const std::string& layer) {
+    if (!layers_.contains(layer)) return 0;
+    std::size_t changed{};
+    for (const auto index : uniqueIndices(indices)) {
+        if (!modelIsEditable(index)) continue;
+        auto properties = models_[index].properties();
+        properties.layer = layer;
+        models_[index].setProperties(std::move(properties));
+        ++changed;
+    }
+    return changed;
+}
+
+std::size_t Document::setModelColor(const std::vector<std::size_t>& indices,
+                                    std::optional<std::uint32_t> color) {
+    std::size_t changed{};
+    for (const auto index : uniqueIndices(indices)) {
+        if (!modelIsEditable(index)) continue;
+        auto properties = models_[index].properties();
+        properties.trueColor = color;
+        properties.colorIndex = 256;
+        if (color) properties.effectiveColor = *color;
+        models_[index].setProperties(std::move(properties));
+        ++changed;
+    }
+    return changed;
+}
+
+std::size_t Document::setModelProfile(const std::vector<std::size_t>& indices,
+                                      const std::string& profileName) {
+    std::size_t changed{};
+    for (const auto index : uniqueIndices(indices)) {
+        if (!modelIsEditable(index)) continue;
+        auto properties = models_[index].properties();
+        properties.profileName = profileName;
+        models_[index].setProperties(properties);
+        ++changed;
+    }
+    return changed;
+}
+
+std::size_t Document::setModelLineType(const std::vector<std::size_t>& indices,
+                                       const std::string& lineType) {
+    if (lineType.empty()) return 0;
+    std::size_t changed{};
+    for (const auto index : uniqueIndices(indices)) {
+        if (!modelIsEditable(index)) continue;
+        auto properties = models_[index].properties();
+        properties.lineType = lineType;
+        if (lineType != "BYLAYER") properties.effectiveLineType = lineType;
+        models_[index].setProperties(std::move(properties));
+        ++changed;
+    }
+    return changed;
+}
+
 void Document::deleteModels(const std::vector<std::size_t>& indices) {
     std::vector<std::size_t> valid;
     valid.reserve(indices.size());
@@ -70,12 +156,194 @@ void Document::replaceModel(std::size_t index, std::vector<WireframeModel> repla
     invalidateSpatialIndex();
 }
 
-void Document::clear() noexcept { models_.clear(); invalidateSpatialIndex(); }
+void Document::clear() noexcept {
+    models_.clear();
+    layers_.clear();
+    undoStack_.clear();
+    redoStack_.clear();
+    nodeConstraints_.clear();
+    invalidateSpatialIndex();
+    documentBounds_.reset();
+}
+
+static std::string jointKey(const Vec3& pt) {
+    auto s = [](double v) { return std::to_string(v); };
+    return s(pt.x) + "," + s(pt.y) + "," + s(pt.z);
+}
+
+void Document::setNodeConstraint(const Vec3& position, NodeConstraint constraint) {
+    nodeConstraints_[jointKey(position)] = constraint;
+}
+
+std::optional<NodeConstraint> Document::getNodeConstraint(const Vec3& position) const {
+    auto it = nodeConstraints_.find(jointKey(position));
+    if (it != nodeConstraints_.end()) return it->second;
+    return std::nullopt;
+}
+
+const std::unordered_map<std::string, NodeConstraint>& Document::nodeConstraints() const noexcept {
+    return nodeConstraints_;
+}
+
+void Document::clearNodeConstraints() {
+    nodeConstraints_.clear();
+}
+
+void Document::setBeamLoad(std::size_t modelIndex, BeamLoad load) {
+    beamLoads_[modelIndex] = load;
+}
+
+std::optional<BeamLoad> Document::getBeamLoad(std::size_t modelIndex) const {
+    auto it = beamLoads_.find(modelIndex);
+    if (it != beamLoads_.end()) return it->second;
+    return std::nullopt;
+}
+
+const std::unordered_map<std::size_t, BeamLoad>& Document::beamLoads() const noexcept {
+    return beamLoads_;
+}
+
+void Document::clearBeamLoads() {
+    beamLoads_.clear();
+}
+void Document::pushSnapshot() {
+    DocumentSnapshot snapshot;
+    snapshot.models = models_;
+    snapshot.layers = layers_;
+    undoStack_.push_back(std::move(snapshot));
+    if (undoStack_.size() > kMaxUndoEntries)
+        undoStack_.pop_front();
+    redoStack_.clear();
+}
+
+void Document::restoreSnapshot(const DocumentSnapshot& snapshot) {
+    models_ = snapshot.models;
+    layers_ = snapshot.layers;
+    invalidateSpatialIndex();
+}
+
+bool Document::undo() {
+    if (undoStack_.empty()) return false;
+    DocumentSnapshot current;
+    current.models = models_;
+    current.layers = layers_;
+    redoStack_.push_back(std::move(current));
+    restoreSnapshot(undoStack_.back());
+    undoStack_.pop_back();
+    return true;
+}
+
+bool Document::redo() {
+    if (redoStack_.empty()) return false;
+    DocumentSnapshot current;
+    current.models = models_;
+    current.layers = layers_;
+    undoStack_.push_back(std::move(current));
+    if (undoStack_.size() > kMaxUndoEntries)
+        undoStack_.pop_front();
+    restoreSnapshot(redoStack_.back());
+    redoStack_.pop_back();
+    return true;
+}
+
+bool Document::canUndo() const noexcept {
+    return !undoStack_.empty();
+}
+
+bool Document::canRedo() const noexcept {
+    return !redoStack_.empty();
+}
+
+void Document::clearHistory() noexcept {
+    undoStack_.clear();
+    redoStack_.clear();
+}
+std::vector<WireframeModel>& Document::mutableModels() noexcept { return models_; }
 const std::vector<WireframeModel>& Document::models() const noexcept { return models_; }
 void Document::setLayerProperties(EntityProperties properties) {
+    if (properties.layer.empty()) return;
     layers_[properties.layer] = std::move(properties);
 }
 const std::unordered_map<std::string, EntityProperties>& Document::layers() const noexcept { return layers_; }
+
+bool Document::createLayer(std::string name) {
+    if (name.empty() || layers_.contains(name)) return false;
+    EntityProperties layer;
+    layer.layer = std::move(name);
+    layer.lineType = layer.effectiveLineType = "CONTINUOUS";
+    layer.colorIndex = 7;
+    layer.trueColor = layer.effectiveColor = 0xFFFFFFu;
+    layer.lineWeight = layer.effectiveLineWeight = 0;
+    layers_.emplace(layer.layer, std::move(layer));
+    return true;
+}
+
+bool Document::deleteLayer(const std::string& name) {
+    if (name.empty() || name == "0" || !layers_.contains(name)) return false;
+    if (std::any_of(models_.begin(), models_.end(), [&](const WireframeModel& model) {
+            return model.properties().layer == name;
+        })) return false;
+    return layers_.erase(name) == 1;
+}
+
+bool Document::renameLayer(const std::string& oldName, std::string newName) {
+    if (oldName.empty() || oldName == "0" || newName.empty() || layers_.contains(newName)) return false;
+    const auto found = layers_.find(oldName);
+    if (found == layers_.end()) return false;
+    EntityProperties layer = found->second;
+    layers_.erase(found);
+    layer.layer = newName;
+    layers_.emplace(newName, std::move(layer));
+    for (auto& model : models_) {
+        if (model.properties().layer != oldName) continue;
+        EntityProperties properties = model.properties();
+        properties.layer = newName;
+        model.setProperties(std::move(properties));
+    }
+    return true;
+}
+
+std::vector<std::string> Document::layerNames(std::string filter) const {
+    const std::string loweredFilter = lowerAscii(std::move(filter));
+    std::vector<std::string> result;
+    result.reserve(layers_.size());
+    for (const auto& [name, properties] : layers_) {
+        (void)properties;
+        if (loweredFilter.empty() || lowerAscii(name).find(loweredFilter) != std::string::npos)
+            result.push_back(name);
+    }
+    std::sort(result.begin(), result.end(), [](const std::string& left, const std::string& right) {
+        if (left == "0") return right != "0";
+        if (right == "0") return false;
+        return lowerAscii(left) < lowerAscii(right);
+    });
+    return result;
+}
+
+EntityProperties Document::effectiveProperties(const WireframeModel& model) const {
+    EntityProperties result = model.properties();
+    const auto found = layers_.find(result.layer);
+    if (found == layers_.end()) return result;
+    const EntityProperties& layer = found->second;
+    result.visible = result.visible && layer.visible && !layer.frozen;
+    result.frozen = layer.frozen;
+    result.locked = layer.locked;
+    result.plottable = layer.plottable;
+    result.description = layer.description;
+    if (!result.trueColor && (result.colorIndex <= 0 || result.colorIndex >= 256))
+        result.effectiveColor = layer.effectiveColor;
+    if (result.lineType.empty() || result.lineType == "BYLAYER" || result.lineType == "BYBLOCK")
+        result.effectiveLineType = layer.effectiveLineType;
+    if (result.lineWeight < 0) result.effectiveLineWeight = layer.effectiveLineWeight;
+    if (result.transparency == 0) result.transparency = layer.transparency;
+    return result;
+}
+
+bool Document::modelIsEditable(std::size_t index) const {
+    if (index >= models_.size()) return false;
+    const auto properties = effectiveProperties(models_[index]);
+    return properties.visible && !properties.locked;
+}
 
 void Document::invalidateSpatialIndex() noexcept { spatialIndexDirty_ = true; }
 

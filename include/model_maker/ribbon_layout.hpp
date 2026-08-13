@@ -39,7 +39,7 @@ struct RibbonGeometry {
 
 class RibbonLayout {
 public:
-    static constexpr int height = 148;
+    static constexpr int height = 110;
     static std::vector<int> commands(RibbonTab tab);
     static RibbonGeometry layout(RibbonTab tab, int windowWidth);
 };

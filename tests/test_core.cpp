@@ -5,6 +5,7 @@
 #include "model_maker/view_cube.hpp"
 #include "model_maker/ribbon_layout.hpp"
 #include "model_maker/renderer.hpp"
+#include "model_maker/performance.hpp"
 #include "model_maker/dxf.hpp"
 
 #include <algorithm>
@@ -176,7 +177,7 @@ void test_camera_fit3d_centers_large_nonplanar_bounds() {
 
 void test_camera_uses_parallel_projection_at_every_depth() {
     mm::Camera camera;
-    camera.setView(mm::StandardView::Front);
+    camera.setView(mm::StandardView::Top);
 
     const auto nearA = camera.project({0.0, 0.0, -3.0}, 800, 600);
     const auto nearB = camera.project({2.0, 0.0, -3.0}, 800, 600);
@@ -194,23 +195,27 @@ void test_camera_standard_view_presets() {
 
     camera.setView(mm::StandardView::Top);
     require(std::abs(camera.yaw()) < 0.001, "Top view yaw mismatch");
-    require(std::abs(camera.pitch() - 1.5707963267948966) < 0.001, "Top view pitch mismatch");
+    require(std::abs(camera.pitch()) < 0.001, "Top view pitch mismatch");
 
     camera.setView(mm::StandardView::Bottom);
-    require(std::abs(camera.yaw()) < 0.001, "Bottom view yaw mismatch");
-    require(std::abs(camera.pitch() + 1.5707963267948966) < 0.001, "Bottom view pitch mismatch");
+    require(std::abs(camera.yaw() - 3.141592653589793) < 0.001, "Bottom view yaw mismatch");
+    require(std::abs(camera.pitch()) < 0.001, "Bottom view pitch mismatch");
 
     camera.setView(mm::StandardView::Front);
     require(std::abs(camera.yaw()) < 0.001, "Front view yaw mismatch");
-    require(std::abs(camera.pitch()) < 0.001, "Front view pitch mismatch");
+    require(std::abs(camera.pitch() - 1.5707963267948966) < 0.001, "Front view pitch mismatch");
+
+    camera.setView(mm::StandardView::Back);
+    require(std::abs(camera.yaw()) < 0.001, "Back view yaw mismatch");
+    require(std::abs(camera.pitch() + 1.5707963267948966) < 0.001, "Back view pitch mismatch");
 
     camera.setView(mm::StandardView::Right);
     require(std::abs(camera.yaw() + 1.5707963267948966) < 0.001, "Right view yaw mismatch");
     require(std::abs(camera.pitch()) < 0.001, "Right view pitch mismatch");
 
     camera.setView(mm::StandardView::Isometric);
-    require(std::abs(camera.yaw() + 0.7853981633974483) < 0.001, "Isometric yaw mismatch");
-    require(std::abs(camera.pitch() - 0.6154797086703874) < 0.001, "Isometric pitch mismatch");
+    require(std::abs(camera.yaw()) < 0.001, "Isometric yaw mismatch");
+    require(std::abs(camera.pitch()) < 0.001, "Isometric pitch mismatch");
 }
 
 void test_view_cube_hit_testing() {
@@ -250,20 +255,30 @@ void test_view_cube_rotates_with_camera_and_global_axes() {
             "The rendered cube body must be available as a manipulation target");
 }
 
+void test_view_cube_host_stays_anchored_inside_canvas() {
+    const auto large = mm::ViewCube::hostBounds(1200, 800);
+    require(large.left == 996 && large.top == 12 && large.right == 1188 && large.bottom == 250,
+            "ViewCube host must stay twelve pixels from the canvas top-right corner");
+
+    const auto narrow = mm::ViewCube::hostBounds(240, 160);
+    require(narrow.left == 36 && narrow.top == 0 && narrow.right == 228 && narrow.bottom == 160,
+            "ViewCube host must remain fully inside a small canvas without resizing horizontally");
+}
+
 void test_ribbon_groups_commands_into_function_tabs() {
     const auto file = mm::RibbonLayout::commands(mm::RibbonTab::File);
     const auto drawing = mm::RibbonLayout::commands(mm::RibbonTab::Drawing);
     const auto modify = mm::RibbonLayout::commands(mm::RibbonTab::Modify);
     const auto view = mm::RibbonLayout::commands(mm::RibbonTab::View);
 
-    require(file == std::vector<int>({100, 101, 102, 103, 104}),
+    require(file == std::vector<int>({100, 101, 102, 103, 104, 610, 611, 710, 711, 712, 713, 714, 750, 751, 800, 801, 802, 803, 804, 805, 806, 807, 808, 809}),
             "File tab must expose native and DXF read/write commands");
-    require(drawing == std::vector<int>({200, 201, 202, 203, 204}),
-            "Drawing tab must contain Line, Polyline, Rectangle, Circle, and 3DFACE in tool order");
-    require(modify == std::vector<int>({509, 500, 501, 502, 503, 504, 505, 506, 507, 508, 510}),
+    require(drawing == std::vector<int>({200, 201, 202, 203, 204, 205}),
+            "Drawing tab must contain the drawing tools followed by the Layer Manager command");
+    require(modify == std::vector<int>({509, 500, 501, 502, 503, 504, 505, 506, 507, 508, 510, 511, 512}),
             "Modify tab must start with the neutral arrow followed by every modifier");
-    require(view == std::vector<int>({300, 301, 302, 303, 304, 305, 306, 307, 308}),
-            "View tab must expose dropdown buttons for visual styles and standard camera views");
+    require(view == std::vector<int>({300, 301, 302, 303, 304, 305, 306, 307, 308, 900}),
+            "View tab must expose dropdown buttons for visual styles, standard camera views, and UCS");
     require(mm::RibbonLayout::commands(mm::RibbonTab::Aids) == std::vector<int>({400, 401, 402, 403, 404}),
             "Aids tab must expose snap settings and F10 Polar Tracking");
 }
@@ -301,6 +316,41 @@ void test_trim_and_extend_remain_active_for_multiple_targets() {
             "Trim and Extend must remain in target-picking mode for multiple objects");
     require(!mm::modifierCompletesAfterCommit(mm::TransformCommand::None),
             "The idle state is not a completed modifier operation");
+}
+
+void test_modify_commands_consume_idle_preselection() {
+    using mm::ModifierPreselectionAction;
+    using mm::TransformCommand;
+    require(mm::modifierPreselectionAction(TransformCommand::Move, 2) ==
+                ModifierPreselectionAction::BasePoint &&
+            mm::modifierPreselectionAction(TransformCommand::Copy, 2) ==
+                ModifierPreselectionAction::BasePoint &&
+            mm::modifierPreselectionAction(TransformCommand::Mirror, 2) ==
+                ModifierPreselectionAction::BasePoint &&
+            mm::modifierPreselectionAction(TransformCommand::LinearArray, 2) ==
+                ModifierPreselectionAction::BasePoint &&
+            mm::modifierPreselectionAction(TransformCommand::PolarArray, 2) ==
+                ModifierPreselectionAction::BasePoint,
+            "Point-based modifiers must proceed directly to point input with an idle selection");
+    require(mm::modifierPreselectionAction(TransformCommand::Offset, 1) ==
+                ModifierPreselectionAction::BasePoint &&
+            mm::modifierPreselectionAction(TransformCommand::Offset, 2) ==
+                ModifierPreselectionAction::SelectEntities,
+            "Offset must reuse exactly one preselected entity");
+    require(mm::modifierPreselectionAction(TransformCommand::Delete, 2) ==
+                ModifierPreselectionAction::DeleteEntities,
+            "Delete must immediately consume an idle selection");
+    require(mm::modifierPreselectionAction(TransformCommand::Trim, 2) ==
+                ModifierPreselectionAction::PickTargets &&
+            mm::modifierPreselectionAction(TransformCommand::Extend, 2) ==
+                ModifierPreselectionAction::PickTargets,
+            "Trim and Extend must use idle selections as boundaries");
+    require(mm::modifierPreselectionAction(TransformCommand::Fillet, 1) ==
+                ModifierPreselectionAction::PickSecondFilletEntity,
+            "Fillet must reuse one idle-selected line as its first entity");
+    require(mm::modifierPreselectionAction(TransformCommand::Move, 0) ==
+                ModifierPreselectionAction::SelectEntities,
+            "A modifier without preselection must retain the normal selection phase");
 }
 
 void test_snap_evaluation_requires_an_active_command() {
@@ -358,8 +408,9 @@ void test_ribbon_compact_buttons_fit_above_full_width_canvas() {
         require(button.rect.right - button.rect.left <= 74,
                 "Ribbon command buttons must use compact icon-button sizing");
     }
-    require(layout.groups.size() == 1 && layout.groups.front().label == L"Draw",
-            "Drawing commands must sit in a labeled AutoCAD-style Draw panel");
+    require(layout.groups.size() == 2 && layout.groups.front().label == L"Draw" &&
+                layout.groups.back().label == L"Layers",
+            "Drawing tools and Layer Manager must occupy labeled ribbon panels");
     require(layout.groups.front().rect.bottom == layout.ribbonHeight,
             "Ribbon group captions must occupy the bottom of the command band");
 }
@@ -385,6 +436,207 @@ void test_document_round_trip() {
     require(loaded.models()[1].vertices()[1] == mm::Vec3{3.0, 4.0, 0.0}, "Round trip line mismatch");
     require(loaded.models()[2].isFace3D() && loaded.models()[2].faces().size() == 1,
             "Native round trip must preserve explicit 3DFACE identity and fill surface");
+}
+
+void test_document_layer_manager_creates_renames_filters_and_deletes_layers() {
+    mm::Document document;
+    require(document.layers().contains("0"), "Every document must start with layer 0");
+    require(document.createLayer("Walls") && document.createLayer("Annotations"),
+            "Layer manager must create named layers");
+    require(!document.createLayer("Walls") && !document.createLayer(""),
+            "Layer names must be non-empty and unique");
+
+    require(document.renameLayer("Walls", "Exterior Walls"),
+            "Layer manager must rename an existing layer");
+    require(!document.layers().contains("Walls") && document.layers().contains("Exterior Walls"),
+            "Renaming must replace the layer key");
+    require(!document.renameLayer("0", "Default") && !document.deleteLayer("0"),
+            "Layer 0 must not be renamed or deleted");
+
+    const auto filtered = document.layerNames("wall");
+    require(filtered == std::vector<std::string>({"Exterior Walls"}),
+            "Layer search must be case-insensitive");
+    require(document.deleteLayer("Annotations") && !document.layers().contains("Annotations"),
+            "Unused layers must be removable");
+}
+
+void test_document_layer_manager_resolves_live_layer_properties() {
+    mm::Document document;
+    require(document.createLayer("DETAIL"), "Test layer creation failed");
+    auto layer = document.layers().at("DETAIL");
+    layer.visible = false;
+    layer.locked = true;
+    layer.effectiveColor = 0x123456;
+    layer.effectiveLineType = "DASHED";
+    layer.effectiveLineWeight = 50;
+    layer.transparency = 35;
+    layer.description = "Detail geometry";
+    document.setLayerProperties(layer);
+
+    auto model = mm::WireframeModel::line({0.0, 0.0, 0.0}, {2.0, 0.0, 0.0});
+    mm::EntityProperties entity;
+    entity.layer = "DETAIL";
+    entity.colorIndex = 256;
+    entity.lineType = "BYLAYER";
+    entity.lineWeight = -1;
+    model.setProperties(entity);
+    document.addModel(model);
+
+    const auto effective = document.effectiveProperties(document.models().front());
+    require(!effective.visible && effective.locked && effective.effectiveColor == 0x123456 &&
+                effective.effectiveLineType == "DASHED" && effective.effectiveLineWeight == 50 &&
+                effective.transparency == 35,
+            "Entities must resolve visibility, lock, color, linetype, lineweight, and transparency live from their layer");
+    require(!document.deleteLayer("DETAIL"), "A layer used by geometry must not be deleted");
+
+    layer.visible = true;
+    layer.frozen = true;
+    document.setLayerProperties(layer);
+    require(!document.effectiveProperties(document.models().front()).visible,
+            "Frozen layers must stay hidden even when switched on");
+}
+
+void test_hidden_and_locked_layers_are_not_selectable_or_snappable() {
+    mm::Document document;
+    document.createLayer("LOCKED");
+    auto layer = document.layers().at("LOCKED");
+    layer.locked = true;
+    document.setLayerProperties(layer);
+    auto model = mm::WireframeModel::line({0.0, 0.0, 0.0}, {10.0, 0.0, 0.0});
+    mm::EntityProperties properties;
+    properties.layer = "LOCKED";
+    model.setProperties(properties);
+    document.addModel(model);
+
+    require(!mm::hitTestModel2D({5.0, 0.0, 0.0}, document, 0.1).has_value(),
+            "Locked layer geometry must not be selectable");
+    const auto lockedSnap = mm::SnapEngine::snap({0.01, 0.01, 0.0}, document, 0.1, 1.0,
+                                                 true, false);
+    require(lockedSnap.type == mm::SnapType::None,
+            "Locked layer geometry must not provide object snaps");
+
+    layer.locked = false;
+    layer.visible = false;
+    document.setLayerProperties(layer);
+    require(!mm::hitTestModel2D({5.0, 0.0, 0.0}, document, 0.1).has_value(),
+            "Hidden layer geometry must not be selectable");
+    const auto hiddenSnap = mm::SnapEngine::snap({0.01, 0.01, 0.0}, document, 0.1, 1.0,
+                                                 true, false);
+    require(hiddenSnap.type == mm::SnapType::None,
+            "Hidden layer geometry must not provide object snaps");
+}
+
+void test_document_changes_layer_for_selected_models_only() {
+    mm::Document document;
+    require(document.createLayer("DETAIL"), "Selection-property test layer creation failed");
+    document.addLine({0.0, 0.0, 0.0}, {1.0, 0.0, 0.0});
+    document.addLine({0.0, 1.0, 0.0}, {1.0, 1.0, 0.0});
+    document.addLine({0.0, 2.0, 0.0}, {1.0, 2.0, 0.0});
+
+    require(document.setModelLayer({0, 2}, "DETAIL") == 2,
+            "Layer dropdown must update every selected editable model");
+    require(document.models()[0].properties().layer == "DETAIL" &&
+                document.models()[1].properties().layer == "0" &&
+                document.models()[2].properties().layer == "DETAIL",
+            "Layer changes must not affect unselected models");
+    require(document.setModelLayer({0, 1}, "MISSING") == 0,
+            "Models must not be assigned to an unknown layer");
+}
+
+void test_document_changes_color_for_selected_models_and_supports_bylayer() {
+    mm::Document document;
+    document.addLine({0.0, 0.0, 0.0}, {1.0, 0.0, 0.0});
+    document.addLine({0.0, 1.0, 0.0}, {1.0, 1.0, 0.0});
+
+    require(document.setModelColor({0}, 0xFF4040u) == 1,
+            "Color dropdown must update selected models");
+    require(document.models()[0].properties().trueColor == 0xFF4040u &&
+                document.models()[0].properties().effectiveColor == 0xFF4040u &&
+                !document.models()[1].properties().trueColor,
+            "Explicit color changes must not affect unselected models");
+    require(document.setModelColor({0}, std::nullopt) == 1 &&
+                !document.models()[0].properties().trueColor &&
+                document.models()[0].properties().colorIndex == 256,
+            "ByLayer must remove a selected model's explicit color override");
+}
+
+void test_document_changes_linetype_for_selected_models_and_supports_bylayer() {
+    mm::Document document;
+    document.addLine({0.0, 0.0, 0.0}, {1.0, 0.0, 0.0});
+    document.addLine({0.0, 1.0, 0.0}, {1.0, 1.0, 0.0});
+
+    require(document.setModelLineType({0}, "DASHED") == 1,
+            "Linetype dropdown must update selected models");
+    require(document.models()[0].properties().lineType == "DASHED" &&
+                document.models()[0].properties().effectiveLineType == "DASHED" &&
+                document.models()[1].properties().lineType == "BYLAYER",
+            "Linetype changes must not affect unselected models");
+    require(document.setModelLineType({0}, "BYLAYER") == 1 &&
+                document.models()[0].properties().lineType == "BYLAYER",
+            "ByLayer must remove a selected model's linetype override");
+}
+
+void test_document_undo_redo_restores_models_and_layers() {
+    mm::Document document;
+    document.createLayer("Walls");
+    document.pushSnapshot();
+    document.addLine({0.0, 0.0, 0.0}, {5.0, 0.0, 0.0});
+    document.pushSnapshot();
+    document.addLine({0.0, 1.0, 0.0}, {5.0, 1.0, 0.0});
+    require(document.models().size() == 2, "Setup must create two models before undo");
+
+    require(document.undo(), "Undo must succeed after two snapshots");
+    require(document.models().size() == 1, "Undo must remove the second line");
+    require(document.undo(), "Second undo must succeed");
+    require(document.models().empty(), "Second undo must remove the first line");
+    require(!document.undo(), "Undo beyond history must return false");
+    require(document.canRedo() && document.redo(), "Redo must restore the first line");
+    require(document.models().size() == 1, "Redo must restore exactly one model");
+    require(document.redo(), "Second redo must succeed");
+    require(document.models().size() == 2, "Second redo must restore both models");
+    require(!document.redo(), "Redo beyond history must return false");
+
+    document.pushSnapshot();
+    document.addLine({1.0, 1.0, 0.0}, {2.0, 1.0, 0.0});
+    require(!document.canRedo(), "A new mutation after undo must clear the redo stack");
+    require(document.undo() && document.models().size() == 2,
+            "Undo after a fresh mutation must restore the previous state");
+}
+
+void test_document_undo_redo_restores_layer_changes() {
+    mm::Document document;
+    document.pushSnapshot();
+    document.createLayer("Walls");
+    require(document.layers().contains("Walls"), "Layer must exist after creation");
+    require(document.undo(), "Undo must restore layer state");
+    require(!document.layers().contains("Walls"), "Undo must remove the created layer");
+    require(document.redo(), "Redo must restore the layer");
+    require(document.layers().contains("Walls"), "Redo must recreate the layer");
+
+    document.pushSnapshot();
+    auto layer = document.layers().at("Walls");
+    layer.visible = false;
+    document.setLayerProperties(layer);
+    require(!document.layers().at("Walls").visible, "Setup must hide the layer");
+    require(document.undo(), "Undo must restore visibility");
+    require(document.layers().at("Walls").visible, "Undo must restore the visible flag");
+    require(document.redo(), "Redo must reapply visibility");
+    require(!document.layers().at("Walls").visible, "Redo must restore the hidden flag");
+}
+
+void test_document_undo_history_is_bounded() {
+    mm::Document document;
+    for (int index = 0; index < 200; ++index) {
+        document.pushSnapshot();
+        document.addLine({static_cast<double>(index), 0.0, 0.0},
+                         {static_cast<double>(index) + 1.0, 0.0, 0.0});
+    }
+    std::size_t undoCount{};
+    while (document.undo()) ++undoCount;
+    require(undoCount == 100, "Undo history must be bounded to 100 entries");
+    document.redo();
+    require(document.models().size() == 101,
+            "Redo after bounded undo must step forward to the next state");
 }
 
 void test_dxf_round_trip_preserves_supported_entities() {
@@ -658,7 +910,7 @@ void test_dxf_import_resolves_extended_aci_and_hidden_layers() {
     std::filesystem::remove(path);
     require(loaded.models()[0].properties().effectiveColor == 0xFF8000,
             "Extended AutoCAD Color Index colors must resolve to RGB");
-    require(!loaded.models()[1].properties().visible,
+    require(!loaded.effectiveProperties(loaded.models()[1]).visible,
             "Entities on frozen DXF layers must remain hidden");
 }
 
@@ -929,6 +1181,33 @@ void test_mirror_reflects_geometry_across_two_point_axis() {
     require(mirrored->properties() == properties, "Mirror must preserve entity properties");
 }
 
+void test_rotate_rotates_geometry_around_center_point() {
+    mm::EntityProperties properties;
+    properties.layer = "ROTATE_TEST";
+    auto source = mm::WireframeModel::line({1.0, 0.0, 0.0}, {0.0, 1.0, 0.0});
+    source.setProperties(properties);
+    const auto rotated = mm::rotateModel2D(source, {0.0, 0.0, 0.0}, 90.0);
+    require(rotated.has_value(), "Rotation must produce geometry");
+    require(std::abs(rotated->vertices()[0].x - 0.0) < 1e-9 &&
+            std::abs(rotated->vertices()[0].y - 1.0) < 1e-9 &&
+            std::abs(rotated->vertices()[1].x - (-1.0)) < 1e-9 &&
+            std::abs(rotated->vertices()[1].y - 0.0) < 1e-9,
+            "90-degree rotation around origin must map (1,0)→(0,1) and (0,1)→(-1,0)");
+    require(rotated->properties() == properties, "Rotate must preserve entity properties");
+}
+
+void test_rotate_preserves_analytic_center_and_radius() {
+    auto circle = mm::WireframeModel::circle({3.0, 0.0, 0.0}, 2.5, 32);
+    const auto rotated = mm::rotateModel2D(circle, {0.0, 0.0, 0.0}, 90.0);
+    require(rotated.has_value(), "Circle rotation must succeed");
+    require(rotated->analyticCenter().has_value() && rotated->analyticRadius().has_value(),
+            "Rotated circle must preserve analytic center and radius");
+    require(std::abs(rotated->analyticCenter()->x - 0.0) < 1e-9 &&
+            std::abs(rotated->analyticCenter()->y - 3.0) < 1e-9 &&
+            std::abs(*rotated->analyticRadius() - 2.5) < 1e-9,
+            "Circle center (3,0) rotated 90° around origin must become (0,3)");
+}
+
 void test_entity_hit_test_selects_nearest_model_edge() {
     mm::Document document;
     document.addLine({0.0, 0.0, 0.0}, {4.0, 0.0, 0.0});
@@ -971,7 +1250,7 @@ void test_crossing_selection_chooses_the_target_portion_inside_the_window() {
 
 void test_projected_3d_crossing_selection_preserves_the_world_target_point() {
     mm::Camera camera;
-    camera.setView(mm::StandardView::Front);
+    camera.setView(mm::StandardView::Top);
     const auto target = mm::WireframeModel::line({-4.0, 0.0, 2.0}, {4.0, 0.0, 2.0});
     const auto first = camera.project({1.0, 1.0, 2.0}, 800, 600);
     const auto second = camera.project({-1.0, -1.0, 2.0}, 800, 600);
@@ -984,7 +1263,7 @@ void test_projected_3d_crossing_selection_preserves_the_world_target_point() {
 
 void test_projected_3d_window_and_crossing_selection() {
     mm::Camera camera;
-    camera.setView(mm::StandardView::Front);
+    camera.setView(mm::StandardView::Top);
     mm::Document document;
     document.addLine({-1.0, 0.0, 2.0}, {1.0, 0.0, 2.0});
     document.addLine({0.0, -3.0, -2.0}, {0.0, 3.0, -2.0});
@@ -994,8 +1273,8 @@ void test_projected_3d_window_and_crossing_selection() {
     require(window == std::vector<std::size_t>{0},
             "3D window selection must use projected geometry and require containment");
     const auto crossing = mm::selectModelsInRect3D(b, a, document, camera, 800, 600, true);
-    require(crossing == std::vector<std::size_t>({0, 1}),
-            "3D crossing selection must include projected edges touching the rectangle");
+    require(crossing == std::vector<std::size_t>{0, 1},
+            "3D crossing selection must select intersecting and contained entities");
 }
 
 void test_snap_prefers_nearby_endpoint() {
@@ -1122,7 +1401,7 @@ void test_snap_finds_node_insertion_and_apparent_intersection() {
     require(insertion.type == mm::SnapType::Insertion, "Primitive origin must insertion-snap");
 
     mm::Camera camera;
-    camera.setView(mm::StandardView::Front);
+    camera.setView(mm::StandardView::Top);
     mm::Document apparentDocument;
     apparentDocument.addLine({-1.0, 0.0, 1.0}, {3.0, 0.0, 1.0});
     apparentDocument.addLine({0.0, -2.0, -1.0}, {0.0, 1.0, -1.0});
@@ -1183,13 +1462,18 @@ void test_ortho_preserves_explicit_object_snaps() {
     const auto endpoint = mm::applyOrtho(anchor, {{6.0, 2.0, 0.0}, mm::SnapType::Endpoint, 2.0});
     require(endpoint.point == mm::Vec3{6.0, 2.0, 0.0},
             "An explicit object snap must override the F8 Ortho constraint");
+
+    const auto endpointDuringCommand = mm::applyOrtho(anchor, {{6.0, 2.0, 0.0}, mm::SnapType::Endpoint, 2.0}, true);
+    require(endpointDuringCommand.point == mm::Vec3{6.0, 2.0, 0.0} &&
+            endpointDuringCommand.type == mm::SnapType::Endpoint,
+            "Object snaps must take priority over F8 Ortho even during an active command");
 }
 
 void test_modifier_ortho_strictly_constrains_destination_even_near_object_snap() {
     const mm::SnapResult endpoint{{3.0, 1.0, 0.0}, mm::SnapType::Endpoint, 0.01};
     const auto constrained = mm::applyOrtho({0.0, 0.0, 0.0}, endpoint, false);
     require(constrained.point == mm::Vec3{3.0, 0.0, 0.0} && constrained.type == mm::SnapType::None,
-            "Modifier F8 must strictly constrain its destination and clear a displaced snap label");
+            "Modifier F8 with preserveObjectSnaps=false must strictly constrain and clear snap type");
 }
 
 void test_3d_ortho_constrains_to_all_three_global_axes() {
@@ -1506,7 +1790,7 @@ void test_3d_grid_snap_uses_active_work_plane_basis() {
 
 void test_parallel_camera_unprojects_planes_on_either_side_of_view_plane() {
     mm::Camera camera;
-    camera.setView(mm::StandardView::Front);
+    camera.setView(mm::StandardView::Top);
     const mm::Vec3 expected{1.25, -0.75, -3.0};
     const auto screen = camera.project(expected, 900, 700);
     const auto world = camera.unprojectToPlane(screen, 900, 700, expected.z);
@@ -1567,6 +1851,59 @@ void test_planar_shapes_follow_arbitrary_work_plane_basis() {
     for (const auto& vertex : circle.vertices())
         require(std::abs(vertex.y - 2.0) < 1e-9, "Circle must lie on the arbitrary work plane");
 }
+
+void test_frame_performance_tracker_reports_render_work() {
+    mm::FramePerformanceTracker tracker;
+    mm::FramePerformanceSample sample;
+    sample.cpuFrameMilliseconds = 4.2;
+    sample.spatialQueryMilliseconds = 0.7;
+    sample.totalEntities = 1'000;
+    sample.visibleEntities = 250;
+    sample.renderedEntities = 200;
+    sample.drawCalls = 410;
+    sample.projectedVertices = 820;
+    sample.frameBufferGrowths = 3;
+    tracker.record(sample, 1.0 / 60.0);
+
+    const auto& stats = tracker.latest();
+    require(std::abs(stats.framesPerSecond - 60.0) < 1e-9,
+            "Performance tracker must calculate presentation FPS");
+    require(stats.culledEntities == 750 && stats.visibleEntities == 250 &&
+            stats.renderedEntities == 200,
+            "Performance tracker must report total, visible, rendered, and culled entities");
+    require(stats.drawCalls == 410 && stats.projectedVertices == 820 &&
+            stats.frameBufferGrowths == 3,
+            "Performance tracker must retain per-frame render work counters");
+}
+
+void test_frame_index_stamp_set_reuses_storage_and_discards_stale_selection() {
+    mm::FrameIndexStampSet selected;
+    require(selected.assign(10, {1, 4, 8}),
+            "First selection assignment must grow reusable stamp storage");
+    require(selected.contains(1) && selected.contains(4) && selected.contains(8),
+            "Current selected indices must be present in the stamp set");
+    require(!selected.contains(2) && !selected.contains(10),
+            "Unselected and out-of-range indices must not be present");
+
+    require(!selected.assign(10, {2}),
+            "Same-size selection assignment must reuse existing storage");
+    require(selected.contains(2) && !selected.contains(1) && !selected.contains(8),
+            "Advancing the generation must discard the previous frame selection");
+}
+
+void test_projected_bounds_culling_rejects_offscreen_3d_models() {
+    mm::Camera camera;
+    camera.setView(mm::StandardView::Top);
+    constexpr int width = 1200;
+    constexpr int height = 800;
+    const mm::Bounds3 visible{{-1.0, -1.0, -1.0}, {1.0, 1.0, 1.0}};
+    const mm::Bounds3 offscreen{{1000.0, 1000.0, -1.0}, {1002.0, 1002.0, 1.0}};
+
+    require(mm::projectedBoundsIntersectsViewport(visible, camera, width, height),
+            "Projected 3D bounds at the camera center must remain visible");
+    require(!mm::projectedBoundsIntersectsViewport(offscreen, camera, width, height),
+            "Projected 3D bounds outside the viewport must be culled");
+}
 }
 
 int main() {
@@ -1588,14 +1925,25 @@ int main() {
         test_camera_standard_view_presets();
         test_view_cube_hit_testing();
         test_view_cube_rotates_with_camera_and_global_axes();
+        test_view_cube_host_stays_anchored_inside_canvas();
         test_ribbon_groups_commands_into_function_tabs();
         test_modifier_point_cursor_policy_matches_interaction_phase();
         test_trim_and_extend_remain_active_for_multiple_targets();
+        test_modify_commands_consume_idle_preselection();
         test_snap_evaluation_requires_an_active_command();
         test_every_modifier_preserves_the_current_3d_view();
         test_idle_enter_repeat_never_steals_keyboard_point_input();
         test_ribbon_compact_buttons_fit_above_full_width_canvas();
         test_document_round_trip();
+        test_document_layer_manager_creates_renames_filters_and_deletes_layers();
+        test_document_layer_manager_resolves_live_layer_properties();
+        test_hidden_and_locked_layers_are_not_selectable_or_snappable();
+        test_document_changes_layer_for_selected_models_only();
+        test_document_changes_color_for_selected_models_and_supports_bylayer();
+        test_document_changes_linetype_for_selected_models_and_supports_bylayer();
+        test_document_undo_redo_restores_models_and_layers();
+        test_document_undo_redo_restores_layer_changes();
+        test_document_undo_history_is_bounded();
         test_dxf_round_trip_preserves_supported_entities();
         test_dxf_round_trip_writes_and_reads_a_four_corner_3dface_entity();
         test_dxf_round_trip_preserves_entity_properties();
@@ -1623,6 +1971,8 @@ int main() {
         test_offset_line_creates_parallel_copy_on_selected_side();
         test_offset_circle_uses_inside_or_outside_pick();
         test_mirror_reflects_geometry_across_two_point_axis();
+        test_rotate_rotates_geometry_around_center_point();
+        test_rotate_preserves_analytic_center_and_radius();
         test_entity_hit_test_selects_nearest_model_edge();
         test_left_to_right_window_selects_only_fully_contained_models();
         test_right_to_left_crossing_selects_touching_and_contained_models();
@@ -1667,6 +2017,9 @@ int main() {
         test_rectangle_and_circle_geometry();
         test_rectangle_preserves_3d_work_plane_height();
         test_planar_shapes_follow_arbitrary_work_plane_basis();
+        test_frame_performance_tracker_reports_render_work();
+        test_frame_index_stamp_set_reuses_storage_and_discards_stale_selection();
+        test_projected_bounds_culling_rejects_offscreen_3d_models();
         std::cout << "All tests passed.\n";
         return 0;
     } catch (const std::exception& error) {

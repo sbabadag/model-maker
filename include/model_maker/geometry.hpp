@@ -31,7 +31,14 @@ struct WorkPlane {
     Vec3 v{0.0, 1.0, 0.0};
     Vec3 normal{0.0, 0.0, 1.0};
 
+    static WorkPlane world() noexcept;
     static std::optional<WorkPlane> fromThreePoints(Vec3 first, Vec3 second, Vec3 third) noexcept;
+    static WorkPlane fromAxisAndPoint(Vec3 origin, Vec3 zPoint) noexcept;
+    static WorkPlane fromCurrentView(Vec3 origin, const Vec3& viewDir, const Vec3& viewUp) noexcept;
+    static WorkPlane fromViewDirection(Vec3 origin, Vec3 viewDirection) noexcept;
+    WorkPlane rotatedX(double angleDeg) const noexcept;
+    WorkPlane rotatedY(double angleDeg) const noexcept;
+    WorkPlane rotatedZ(double angleDeg) const noexcept;
     Vec3 fromPlane(Vec2 point) const noexcept;
     Vec2 toPlane(Vec3 point) const noexcept;
 };
@@ -46,6 +53,7 @@ using Face = std::vector<std::size_t>;
 
 struct EntityProperties {
     std::string layer{"0"};
+    std::string profileName;
     std::string lineType{"BYLAYER"};
     int colorIndex{256};
     std::optional<std::uint32_t> trueColor;
@@ -54,6 +62,10 @@ struct EntityProperties {
     double lineTypeScale{1.0};
     int transparency{};
     bool visible{true};
+    bool frozen{};
+    bool locked{};
+    bool plottable{true};
+    std::string description;
     std::uint32_t effectiveColor{0x68CAFF};
     int effectiveLineWeight{};
     std::string effectiveLineType{"CONTINUOUS"};
@@ -89,6 +101,7 @@ public:
     void setProperties(EntityProperties properties);
     void translate(const Vec3& offset) noexcept;
     void rotateAroundZ(const Vec3& center, double radians) noexcept;
+    void rotateAroundAxis(const Vec3& center, const Vec3& axis, double radians) noexcept;
 
 private:
     std::vector<Vec3> vertices_;
@@ -101,5 +114,27 @@ private:
     std::optional<double> analyticRadius_;
     EntityProperties properties_;
 };
-
+struct ProfileDefinition {
+    const wchar_t* label;
+    const char* name;
+    const char* type;
+    double h; // height mm
+    double b; // width mm
+    double tf; // flange thickness mm
+    double tw; // web thickness mm
+    double area; // cm²
+};
+struct NodeConstraint {
+    bool ux{}, uy{}, uz{}, rx{}, ry{}, rz{};
+    bool isPinned() const noexcept { return ux && uy && uz && !rx && !ry && !rz; }
+    bool isFixed() const noexcept { return ux && uy && uz && rx && ry && rz; }
+    bool isFree() const noexcept { return !ux && !uy && !uz && !rx && !ry && !rz; }
+    void setPinned() noexcept { ux = uy = uz = true; rx = ry = rz = false; }
+    void setFixed() noexcept { ux = uy = uz = rx = ry = rz = true; }
+    void setFree() noexcept { ux = uy = uz = rx = ry = rz = false; }
+};
+struct BeamLoad {
+    double wY{}; // vertical distributed load (kN/m, positive = -Y direction)
+    double wZ{}; // lateral distributed load (kN/m)
+};
 } // namespace mm

@@ -31,13 +31,23 @@ Vec2 Camera::project(Vec3 point, int viewportWidth, int viewportHeight) const no
 }
 
 Vec3 Camera::viewTransform(Vec3 point) const noexcept {
+    if (useIso_) {
+        return {isoM00_ * point.x + isoM01_ * point.y + isoM02_ * point.z,
+                isoM10_ * point.x + isoM11_ * point.y + isoM12_ * point.z,
+                isoM20_ * point.x + isoM21_ * point.y + isoM22_ * point.z};
+    }
     const double cy = std::cos(yaw_);
     const double sy = std::sin(yaw_);
     const Vec3 yawed{point.x * cy + point.z * sy, point.y, -point.x * sy + point.z * cy};
 
     const double cp = std::cos(pitch_);
     const double sp = std::sin(pitch_);
-    return {yawed.x, yawed.y * cp - yawed.z * sp, yawed.y * sp + yawed.z * cp};
+    const Vec3 pitched{yawed.x, yawed.y * cp - yawed.z * sp, yawed.y * sp + yawed.z * cp};
+
+    const double cr = std::cos(roll_);
+    const double sr = std::sin(roll_);
+    return {pitched.x * cr - pitched.y * sr,
+            pitched.x * sr + pitched.y * cr, pitched.z};
 }
 
 std::optional<Vec3> Camera::unprojectToPlane(Vec2 screenPoint, int viewportWidth, int viewportHeight,
@@ -54,16 +64,26 @@ std::optional<Vec3> Camera::unprojectToPlane(Vec2 screenPoint, int viewportWidth
     const double scale = pixelsPerUnit_ * zoom_;
     const double cameraX = (screenPoint.x - viewportWidth * 0.5) / scale;
     const double cameraY = (viewportHeight * 0.5 - screenPoint.y) / scale;
-    const double cy = std::cos(yaw_);
-    const double sy = std::sin(yaw_);
-    const double cp = std::cos(pitch_);
-    const double sp = std::sin(pitch_);
 
-    const auto inverseRotate = [&](const Vec3& point) {
+    auto inverseRotate = [&](const Vec3& point) -> Vec3 {
+        if (useIso_) {
+            const double px = point.x, py = point.y, pz = point.z;
+            return {isoM00_ * px + isoM10_ * py + isoM20_ * pz,
+                    isoM01_ * px + isoM11_ * py + isoM21_ * pz,
+                    isoM02_ * px + isoM12_ * py + isoM22_ * pz};
+        }
+        const double cy = std::cos(yaw_);
+        const double sy = std::sin(yaw_);
+        const double cp = std::cos(pitch_);
+        const double sp = std::sin(pitch_);
+        const double cr = std::cos(roll_);
+        const double sr = std::sin(roll_);
         const Vec3 yawed{point.x, point.y * cp + point.z * sp,
                          -point.y * sp + point.z * cp};
-        return Vec3{yawed.x * cy - yawed.z * sy, yawed.y,
-                    yawed.x * sy + yawed.z * cy};
+        const Vec3 unrolled{yawed.x * cy - yawed.z * sy, yawed.y,
+                            yawed.x * sy + yawed.z * cy};
+        return Vec3{unrolled.x * cr - unrolled.y * sr,
+                    unrolled.x * sr + unrolled.y * cr, unrolled.z};
     };
 
     const Vec3 origin = center3D_ + inverseRotate({cameraX, cameraY, -1.0});
@@ -78,8 +98,18 @@ std::optional<Vec3> Camera::unprojectToPlane(Vec2 screenPoint, int viewportWidth
 }
 
 void Camera::rotate(double yawDelta, double pitchDelta) noexcept {
+    if (useIso_) {
+        useIso_ = false;
+        yaw_ = -0.55;
+        pitch_ = 0.45;
+        roll_ = 0.0;
+    }
     yaw_ += yawDelta;
     pitch_ = std::clamp(pitch_ + pitchDelta, -1.5, 1.5);
+}
+
+void Camera::setOrbitCenter(const Vec3& worldPoint) noexcept {
+    center3D_ = worldPoint;
 }
 
 void Camera::zoomBy(double factor) noexcept {
@@ -104,11 +134,21 @@ void Camera::zoom3DAt(Vec2 screenPoint, double factor, int viewportWidth, int vi
     const double newScale = pixelsPerUnit_ * zoom_;
     const double newX = (screenPoint.x - viewportWidth * 0.5) / newScale;
     const double newY = (viewportHeight * 0.5 - screenPoint.y) / newScale;
+    const Vec3 cameraDelta{oldX - newX, oldY - newY, 0.0};
+    if (useIso_) {
+        const double dx = cameraDelta.x, dy = cameraDelta.y;
+        center3D_ = center3D_ + Vec3{isoM00_ * dx + isoM10_ * dy,
+                                     isoM01_ * dx + isoM11_ * dy,
+                                     isoM02_ * dx + isoM12_ * dy};
+        return;
+    }
     const double cy = std::cos(yaw_), sy = std::sin(yaw_);
     const double cp = std::cos(pitch_), sp = std::sin(pitch_);
-    const Vec3 cameraDelta{oldX - newX, oldY - newY, 0.0};
-    const Vec3 yawed{cameraDelta.x, cameraDelta.y * cp + cameraDelta.z * sp,
-                     -cameraDelta.y * sp + cameraDelta.z * cp};
+    const double cr = std::cos(roll_), sr = std::sin(roll_);
+    const Vec3 unrolled{cameraDelta.x * cr + cameraDelta.y * sr,
+                        -cameraDelta.x * sr + cameraDelta.y * cr, 0.0};
+    const Vec3 yawed{unrolled.x, unrolled.y * cp + unrolled.z * sp,
+                     -unrolled.y * sp + unrolled.z * cp};
     center3D_ = center3D_ + Vec3{yawed.x * cy - yawed.z * sy, yawed.y,
                                  yawed.x * sy + yawed.z * cy};
 }
@@ -176,6 +216,8 @@ bool Camera::fit3D(Vec3 minimum, Vec3 maximum, int viewportWidth, int viewportHe
 void Camera::reset() noexcept {
     yaw_ = -0.55;
     pitch_ = 0.45;
+    roll_ = 0.0;
+    useIso_ = false;
     zoom_ = 1.0;
     center2D_ = {};
     center3D_ = {};
@@ -186,15 +228,18 @@ void Camera::setView(StandardView view) noexcept {
     constexpr double pi = 3.14159265358979323846;
     switch (view) {
     case StandardView::Isometric:
-        yaw_ = -0.78539816339744830962;
-        pitch_ = 0.61547970867038734107;
+        useIso_ = true;
+        isoM00_ =  0.7071067811865476; isoM01_ = -0.7071067811865476; isoM02_ =  0.0;
+        isoM10_ = -0.4082482904638630; isoM11_ = -0.4082482904638630; isoM12_ =  0.8164965809277260;
+        isoM20_ =  0.5773502691896257; isoM21_ =  0.5773502691896257; isoM22_ =  0.5773502691896257;
+        yaw_ = 0.0; pitch_ = 0.0; roll_ = 0.0;
         break;
-    case StandardView::Top: yaw_ = 0.0; pitch_ = halfPi; break;
-    case StandardView::Bottom: yaw_ = 0.0; pitch_ = -halfPi; break;
-    case StandardView::Front: yaw_ = 0.0; pitch_ = 0.0; break;
-    case StandardView::Back: yaw_ = pi; pitch_ = 0.0; break;
-    case StandardView::Left: yaw_ = halfPi; pitch_ = 0.0; break;
-    case StandardView::Right: yaw_ = -halfPi; pitch_ = 0.0; break;
+    case StandardView::Top: yaw_ = 0.0; pitch_ = 0.0; roll_ = 0.0; useIso_ = false; break;
+    case StandardView::Bottom: yaw_ = pi; pitch_ = 0.0; roll_ = 0.0; useIso_ = false; break;
+    case StandardView::Front: yaw_ = 0.0; pitch_ = halfPi; roll_ = 0.0; useIso_ = false; break;
+    case StandardView::Back: yaw_ = 0.0; pitch_ = -halfPi; roll_ = 0.0; useIso_ = false; break;
+    case StandardView::Left: yaw_ = halfPi; pitch_ = 0.0; roll_ = 0.0; useIso_ = false; break;
+    case StandardView::Right: yaw_ = -halfPi; pitch_ = 0.0; roll_ = 0.0; useIso_ = false; break;
     }
 }
 
