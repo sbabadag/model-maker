@@ -110,3 +110,126 @@ fatal: could not read Username for 'https://github.com': No such device or addre
    tasarruf); görsel/sıra doğruluğu dikkatle doğrulanmalı.
 5. **CI**: Linux'ta çekirdek + benchmark'ı derleyip koşan bir GitHub Actions işi, bu tür regresyonları
    erkenden yakalar.
+
+---
+
+## Task 2 — Spatial Query / Selection Optimization
+
+**Kapsam:** 10.000–250.000 CAD objesi ölçeğinde selection/picking, snap candidate search,
+viewport culling ve BVH/spatial query performansı.
+
+### Başlangıç Mimarisi
+
+- `Document::query2D` / `queryBounds`: medyan-bölmeli BVH (`SpatialNode`) üzerinden lazy build,
+  sonuç **her zaman artan index sırasına göre sıralı** döndürülüyor.
+- `hitTestModel2D` / `selectModelsInRect2D` / `SnapEngine::snap`: zaten `query2D` uzaysal filtresi kullanıyor (hızlı).
+- **`hitTestModel3D` ve `selectModelsInRect3D` uzaysal filtre KULLANMIYORDU** — her çağrıda
+  tüm modelleri tarıyordu (`allIndices = 0..N-1`). 3B hover/click (`toggleModelSelection`,
+  `trimExtendTargetAt`) her fare hareketinde bu tam taramayı çalıştırıyordu.
+
+### Bulunan Darboğazlar
+
+| Darboğaz | Etki |
+|---|---|
+| `hitTestModel3D` tam tarama (her hover/click) | 250k objede ~9.2 ms/çağrı — O(N) |
+| `selectModelsInRect3D` tam tarama | 250k objede ~4.6–5.3 ms/pencere seçimi |
+| 3B prefilter'da 8 köşe projeksiyonlu bounds testi | ilk denemede orta boy dikdörtgenlerde tam taramadan yavaş |
+| `query2D/queryBounds` sıralaması | **reddedildi** (kanıtla) — bkz. aşağıda |
+
+### Yapılan Optimizasyonlar
+
+1. **3B picking uzaysal prefilter** (`hitTestModel3D`): imlece `tolerance` piksel içinde
+   olabilecek modeller `projectedCandidates` (BVH sorgusu) ile ön filtreleniyor; adaylar
+   artan sırada kaldığı için `<=` tie-break davranışı birebir korunuyor.
+2. **3B pencere seçimi adaptif prefilter** (`selectModelsInRect3D`): dikdörtgen alanı viewport'un
+   <%6'sı ise BVH prefilter, değilse doğrudan tarama. Her iki yol da **birebir aynı sonuç vektörünü**
+   üretiyor (prefilter muhafazakâr süper küme).
+3. **Ucuz bounds reddi — bounding-sphere testi**: dünya AABB'sinin ekran-uzayı çemberi
+   (merkez + yarım köşegen × `pixelsPerUnit × zoom`) **tek projeksiyonla** test ediliyor
+   (önceki 8 köşe yerine). Kesin ölçek için `Camera::pixelsPerUnit()` getter'ı eklendi.
+   Aynı test `projectedCandidates` (snap3D prefilter'ı) için de kullanılıyor.
+
+### Değiştirilmiş Dosyalar
+
+- `include/model_maker/camera.hpp` — `pixelsPerUnit()` getter
+- `src/camera.cpp` — getter uygulaması
+- `src/drafting.cpp` — sphere yardımcıları, `projectedCandidates`, `hitTestModel3D`,
+  `selectModelsInRect3D` (adaptif)
+- `tests/benchmark_spatial_query.cpp` — **yeni** çok ölçekli benchmark
+- `CMakeLists.txt` — yeni benchmark hedefi
+
+### Commit SHA'ları
+
+| SHA | Açıklama |
+|---|---|
+| `0279185` | bench: add multi-scale spatial query benchmark (10k-250k) |
+| `637d203` | perf: spatial-prefilter 3D picking and window selection |
+
+### Benchmark Önce → Sonra (Linux, g++ 14.2, -O2, izometrik fit kamera)
+
+**3B nokta picking** (`hitTestModel3D`, ızgara merkezi, 10px tolerans):
+
+| Ölçek | Önce (tam tarama) | Sonra (prefilter) | Hızlanma |
+|---|---|---|---|
+| 10k | 0.324 ms | 0.012 ms | **27x** (%96 azalma) |
+| 50k | 1.615 ms | 0.022 ms | **73x** (%98.6) |
+| 100k | 3.369 ms | 0.027 ms | **125x** (%99.2) |
+| 250k | 9.227 ms | 0.035 ms | **264x** (%99.6) |
+
+**3B pencere seçimi, küçük dikdörtgen (%1.4 viewport alanı):**
+
+| Ölçek | Sonra (prefilter) | Eşdeğer tam tarama | Hızlanma |
+|---|---|---|---|
+| 10k | 0.057 ms | 0.201 ms | ~3.5x |
+| 50k | 0.322 ms | 0.820 ms | ~2.5x |
+| 100k | 0.664 ms | 1.687 ms | ~2.5x |
+| 250k | 1.099 ms | 4.604 ms | **~4.2x** |
+
+**Büyük dikdörtgen (%16 alan, doğrudan tarama yolu):** 0.20 / 0.82 / 1.69 / 4.60 ms — **regresyon yok**
+(aynı kod yolu korundu).
+
+**Diğer:** `snap3d` 0.07–0.26 ms (tüm ölçekler), `pick2d`/`snap2d` ~0.00 ms (zaten uzaysal), `cull3d`
+0.01–0.26 ms (Task 1 trig cache faydası korunuyor).
+
+### Correctness Testleri
+
+- **Eşdeğerlik probu (Linux, geçti):** rastgele 400 dikdörtgen (window+crossing × 4 boyut sınıfı)
+  `selectModelsInRect3D` sonuç vektörü referans tam taramayla **birebir aynı**; rastgele 400 nokta
+  `hitTestModel3D` referansla aynı (üst üste/çakışık objeler dahil).
+- **Snap:** endpoint / midpoint / kesişim tipi ve konumu doğru.
+- **Katman görünürlüğü:** gizli katmandaki entity pick edilemiyor, crossing seçime girmiyor.
+- **Viewport sınırı:** kenar noktalarında pick referansla aynı.
+- **Regresyon:** Task 1 benchmark'ı değişmedi (exit 0; projection_1m=6.7ms, cull3d=0.10ms).
+
+### Başarısız / Reddedilen Optimizasyon Fikirleri
+
+1. **`query2D/queryBounds` sıralamasını kaldırmak — REDDEDİLDİ (kanıtlı).** Sıralama davranışsal
+   olarak gerekli: (a) renderer'ın sonuç-görünümü pasosu `visibleModels[vi]` ile `nodeDisp[vi]`'yi
+   konumsal eşleştiriyor — sıra değişirse Windows'ta deformasyon eşleşmesi bozulur; (b) pick'teki
+   `<=` tie-break ve snap'teki `min_element` ilk-minimum, çakışık/eşit-uzaklıktaki objelerde
+   iterasyon sırasına duyarlı (davranış değişir); (c) pencere seçimi sonuç sırası `selectedModels_`
+   sırasını belirliyor. → Sıralama tüm tüketicilerde gerekli, kaldırılmadı.
+2. **8 köşe projeksiyonlu AABB prefilter — DEĞİŞTİRİLDİ.** Orta boy dikdörtgenlerde (28% alan,
+   250k) 19 ms ile tam taramadan (5.3 ms) yavaş kaldı; yerine tek projeksiyonlu sphere testi geldi.
+3. **Sphere ölçeğini eksen ölçümüyle bulmak — BAŞARISIZ OLDU (false negative).** İzometrik görünümde
+   dünya X ekseni ekranda ~0.816x kısalıyor; `project(1,0,0)` ile ölçülen ölçek gerçek maksimum
+   germeyi (pixelsPerUnit×zoom) küçümsüyor → prefilter 2 testte model kaçırdı (eşdeğerlik probu
+   yakaladı). Kesin ölçek `Camera::pixelsPerUnit()` ile alınarak düzeltildi; prob sonrası tam geçti.
+4. **Büyük BVH refactor** — talimat gereği yapılmadı.
+5. **`queryBounds`'ta `std::function`'ı şablona çevirmek** — ertelendi (ölçülen pay küçük, API'yi
+   header'a taşımayı gerektirir).
+
+### Windows'ta Yapılması Gereken Doğrulamalar
+
+1. Tam build + `ctest` (MSVC/MinGW) — Linux'ta yalnızca platform-bağımsız çekirdek derlendi.
+2. 3B hover/click akıcılığı (büyük modelde) — `F11` overlay ile doğrulanmalı.
+3. Trim/Extend hedef seçimi (`trimExtendTargetAt`) artık prefilter kullanıyor — davranış birebir
+   aynı olmalı; elle smoke test önerilir.
+4. `renderer.cpp` Task 2'de değiştirilmedi.
+
+### Sonraki En Yüksek Getirili Optimizasyon
+
+1. **GDI render batching** (aynı pen/style'a sahip ardışık entity'leri tek Polyline/PolyPolyline'da
+   birleştirmek) — bu görevde hariç tutuldu; 10k+ görünür entity'de kalan en büyük kazanç.
+2. Renderer'da `entityPen` anahtarını hafifletmek (std::string → intern/pointer).
+3. Dirty-region (kısmi) redraw — en yüksek getirili ama en riskli refactor.
