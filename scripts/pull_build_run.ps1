@@ -2,9 +2,12 @@
 # Calistirma: PowerShell'de -> .\scripts\pull_build_run.ps1
 Set-Location $PSScriptRoot\..
 
-# --- MinGW toolchain'i PATH'e ekle (Qt ile gelen, varsa) ---
+# --- MinGW toolchain + Qt DLL'lerini PATH'e ekle (varsa) ---
 $mingw = 'C:\Qt\Tools\mingw1310_64\bin'
 if (Test-Path $mingw) { $env:PATH = "$mingw;$env:PATH" }
+# Qt DLL'leri: exe'nin CALISMASI icin sart (Qt6Widgets.dll, qwindows.dll vb.)
+$qtbin = 'C:\Qt\6.9.3\mingw_64\bin'
+if (Test-Path $qtbin) { $env:PATH = "$qtbin;$env:PATH" }
 
 Write-Host '== 1) Fetch + hermes-nightly ==' -ForegroundColor Cyan
 git fetch origin
