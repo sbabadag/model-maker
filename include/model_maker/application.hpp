@@ -268,6 +268,7 @@ private:
     bool profilePanelOpen_{};
     std::string currentLayer_{"0"};
     int currentColorChoice_{};
+    std::wstring lastTrimExtendStatus_{};
     int currentLineTypeChoice_{};
     int currentProfileChoice_{};
     std::vector<Vec3> openseesDisplacements_;

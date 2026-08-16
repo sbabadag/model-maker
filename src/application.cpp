@@ -1627,6 +1627,7 @@ void Application::startTransformCommand(TransformCommand command) {
     filletFirstPick_.reset();
     arrayItemCount_.reset();
     modifierBoundaries_.clear();
+    lastTrimExtendStatus_.clear();
     drawingActive_ = false;
     hover_.reset();
     SetCursor(currentCanvasCursor());
@@ -1883,6 +1884,8 @@ bool Application::applyTrimExtendTarget(std::size_t target, const Vec3& pickPoin
             ? trimLineOnPlane(document_.models()[target], modifierBoundaries_, pickPoint, workPlane_)
             : trimLine2D(document_.models()[target], modifierBoundaries_, pickPoint);
         if (!result) return false;
+        lastTrimExtendStatus_ = L"Trim: " + std::to_wstring(result->size()) +
+                                (result->size() == 1 ? L" parça" : L" parça");
         document_.replaceModel(target, std::move(*result));
         return true;
     }
@@ -1891,6 +1894,7 @@ bool Application::applyTrimExtendTarget(std::size_t target, const Vec3& pickPoin
             ? extendLineOnPlane(document_.models()[target], modifierBoundaries_, pickPoint, workPlane_)
             : extendLine2D(document_.models()[target], modifierBoundaries_, pickPoint);
         if (!result) return false;
+        lastTrimExtendStatus_ = L"Extend: uygulandı";
         std::vector<WireframeModel> replacement;
         replacement.push_back(std::move(*result));
         document_.replaceModel(target, std::move(replacement));
@@ -2559,6 +2563,10 @@ void Application::updateStatus() {
         } else if (transformCommand_ == TransformCommand::Extend) {
             text += L"Uzatılacak çizginin uçlarını tıklayın veya crossing pencere çizin; Enter ile bitir";
         } else text += L"İkinci noktayı belirtin";
+        if (!lastTrimExtendStatus_.empty()) {
+            text += L"  |  ";
+            text += lastTrimExtendStatus_;
+        }
     } else if (!drawingActive_) {
         text += L"  |  PASİF — Komut yok; Snap pasif";
     } else {
