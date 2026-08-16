@@ -26,6 +26,8 @@ if ($LASTEXITCODE -ne 0) {
     Write-Host 'HATA: cmake configure basarisiz. Qt yolu farkliysa: -DQT_ROOT=C:\yol\qt' -ForegroundColor Red
     exit 1
 }
+# Derleme öncesi eski çalışan kopyayı kapat (exe kilitli kalmasın)
+taskkill /IM model-maker.exe /F 2>$null | Out-Null
 cmake --build build-release
 if ($LASTEXITCODE -ne 0) { Write-Host 'HATA: derleme basarisiz' -ForegroundColor Red; exit 1 }
 
