@@ -747,11 +747,9 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
          draft.transformCommand == TransformCommand::Extend) &&
         draft.transformPhase == TransformPhase::Destination && !draft.modifierBoundaries.empty() &&
         !draft.trimExtendPreviewSuppressed) {
-        HPEN boundaryPen = CreatePen(PS_SOLID, 2, RGB(90, 255, 145));
-        SelectObject(dc, boundaryPen);
-        for (const auto& boundary : draft.modifierBoundaries) drawModel(boundary);
-        SelectObject(dc, stockPen);
-        DeleteObject(boundaryPen);
+        // Sınır çizgileri yeşil vurgu ile üstten çizilmez: vurgu, kesilen
+        // bölgeden geçtiği için sonuç "eski çizgi hâlâ duruyor" gibi
+        // okunuyordu. Sınırlar zaten temel geçişte kendi rengiyle çiziliyor.
 
         Vec3 pick{};
         std::optional<std::size_t> target;
