@@ -72,6 +72,20 @@ public:
     static const std::vector<std::pair<const wchar_t*, std::optional<std::uint32_t>>>&
     colorPalette();
 
+    // File operations (Qt menu / shortcuts)
+    void newDocument();
+    void saveDocument();
+    void openDocument();
+    void importDxf();
+    void beginDxfImport(const std::filesystem::path& path);
+    void finishDxfImport();
+    void exportDxf();
+    void exportS2K();
+    void exportOpenSees();
+    void runOpenSees();
+    void loadOpenSeesResults();
+    void clearOpenSeesResults();
+
 private:
     static LRESULT CALLBACK windowProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
     static LRESULT CALLBACK canvasProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
@@ -138,18 +152,6 @@ private:
     void activate3DNavigation();
     void addCube();
     void addPyramid();
-    void newDocument();
-    void saveDocument();
-    void openDocument();
-    void importDxf();
-    void beginDxfImport(const std::filesystem::path& path);
-    void finishDxfImport();
-    void exportDxf();
-    void exportS2K();
-    void exportOpenSees();
-    void runOpenSees();
-    void loadOpenSeesResults();
-    void clearOpenSeesResults();
     void analyzeOpenSees();
     void showOpenSeesOutput(const std::wstring& output);
     void hideOpenSeesOutput();
