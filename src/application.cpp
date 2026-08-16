@@ -1317,12 +1317,19 @@ void Application::onLeftButtonDown(int x, int y) {
             }
         }
         updateControls(); updateStatus(); invalidateCanvas();
-        // Trim/Extend sonucunu hemen çizdir: Qt gömme sırasında ertelenen
-        // WM_PAINT kuyruğa takılabiliyor; UpdateWindow güncelleme bölgesini
-        // eşzamanlı boyar, böylece tıklama anında yeni durum ekrana yansır.
+        // Trim/Extend: WM_PAINT kuyruğu Qt gömme ortamında gecikebiliyor ve
+        // sonuç ancak bir sonraki fare hareketinde görünüyor. Kuyruktan
+        // bağımsız olarak sonucu eşzamanlı çiz (sonraki WM_PAINT aynı
+        // durumu tekrar boyar, zararsız).
         if (transformCommand_ == TransformCommand::Trim ||
-            transformCommand_ == TransformCommand::Extend)
-            UpdateWindow(canvas_);
+            transformCommand_ == TransformCommand::Extend) {
+            if (HDC dc = GetDC(canvas_)) {
+                RECT client{};
+                GetClientRect(canvas_, &client);
+                renderer_.draw(dc, client, document_, camera_, mode_, draftView());
+                ReleaseDC(canvas_, dc);
+            }
+        }
         return;
     }
     if (drawingActive_) {
