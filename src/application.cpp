@@ -1656,16 +1656,47 @@ void Application::startTransformCommand(TransformCommand command) {
     cancelZoomWindow2D();
     if (workPlanePicking_) cancelWorkPlaneCommand();
     cancelDrawing();
+
+    // Noun-verb: boş ekranda seçilmiş modeller komutun verisidir.
+    if (command == TransformCommand::Delete && !selectedModels_.empty()) {
+        document_.deleteModels(selectedModels_);
+        selectedModels_.clear();
+        cancelTransformCommand();
+        updateControls();
+        updateStatus();
+        invalidateCanvas();
+        return;
+    }
+
     lastTransformCommand_ = command;
     transformCommand_ = command;
-    transformPhase_ = TransformPhase::Selecting;
-    selectedModels_.clear();
+    if (command == TransformCommand::Trim || command == TransformCommand::Extend) {
+        if (!selectedModels_.empty()) {
+            // Seçili modeller sınır (kesici) olur; doğrudan hedef seçimine geç.
+            modifierBoundaries_.clear();
+            modifierBoundaries_.reserve(selectedModels_.size());
+            for (const auto index : selectedModels_)
+                if (index < document_.models().size())
+                    modifierBoundaries_.push_back(document_.models()[index]);
+            selectedModels_.clear();
+            transformPhase_ = TransformPhase::Destination;
+        } else {
+            modifierBoundaries_.clear();
+            transformPhase_ = TransformPhase::Selecting;
+        }
+    } else if (command == TransformCommand::Offset && selectedModels_.size() != 1) {
+        selectedModels_.clear();
+        transformPhase_ = TransformPhase::Selecting;
+    } else if (!selectedModels_.empty()) {
+        transformPhase_ = TransformPhase::BasePoint;
+    } else {
+        transformPhase_ = TransformPhase::Selecting;
+    }
     selectionFirstCorner_.reset();
     transformBase_.reset();
     offsetDistance_.reset();
     filletFirstPick_.reset();
     arrayItemCount_.reset();
-    modifierBoundaries_.clear();
     lastTrimExtendStatus_.clear();
     drawingActive_ = false;
     hover_.reset();
