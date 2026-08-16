@@ -24,6 +24,8 @@
 #include <QLabel>
 #include <QWindow>
 #include <QResizeEvent>
+#include <QShowEvent>
+#include <QEvent>
 
 #include <algorithm>
 #include <fstream>
@@ -47,6 +49,7 @@ QtMainWindow::QtMainWindow(QWidget* parent)
     // Create a plain widget for central area — fills all space between docks
     canvasContainer_ = new QWidget(this);
     setCentralWidget(canvasContainer_);
+    canvasContainer_->installEventFilter(this);
 
     // Create Application's window, then embed its canvas
     app_.createMainWindow(SW_HIDE);
@@ -72,6 +75,24 @@ QtMainWindow::~QtMainWindow() = default;
 
 void QtMainWindow::resizeEvent(QResizeEvent* event) {
     QMainWindow::resizeEvent(event);
+    resizeEmbeddedCanvas();
+}
+
+void QtMainWindow::showEvent(QShowEvent* event) {
+    QMainWindow::showEvent(event);
+    // The central widget only reaches its final size during the first layout
+    // pass after the window is shown; without this the embedded GDI canvas
+    // keeps the tiny pre-layout rect from the constructor (top-left corner).
+    QTimer::singleShot(0, this, [this]() { resizeEmbeddedCanvas(); });
+}
+
+bool QtMainWindow::eventFilter(QObject* watched, QEvent* event) {
+    if (watched == canvasContainer_ && event->type() == QEvent::Resize)
+        resizeEmbeddedCanvas();
+    return QMainWindow::eventFilter(watched, event);
+}
+
+void QtMainWindow::resizeEmbeddedCanvas() {
     HWND canvas = app_.canvasHandle();
     if (canvas && canvasContainer_) {
         RECT rc;
@@ -275,6 +296,7 @@ void QtMainWindow::createToolbar() {
         for (const auto& n : names) layerCombo->addItem(QString::fromStdString(n));
         layerCombo->setCurrentText(QString::fromStdString(app_.currentLayer()));
     }
+    app_.setLayerComboWidget(layerCombo); // Qt modu: stil state uygulama uyelerinden okunur
     QObject::connect(layerCombo, QOverload<const QString&>::of(&QComboBox::currentTextChanged),
         this, [this](const QString& text) { app_.setCurrentLayer(text.toStdString()); });
     ribbon->addWidget(layerCombo);

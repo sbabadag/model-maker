@@ -21,11 +21,14 @@ public:
 
 protected:
     void resizeEvent(QResizeEvent* event) override;
+    void showEvent(QShowEvent* event) override;
+    bool eventFilter(QObject* watched, QEvent* event) override;
 
 private:
     void createMenus();
     void createToolbar();
     void createDockPanels();
+    void resizeEmbeddedCanvas();
 
     Application app_;
     QWidget* canvasContainer_{};

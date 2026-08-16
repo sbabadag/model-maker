@@ -2434,9 +2434,20 @@ void Application::refreshLayerCombo() {
 }
 
 EntityProperties Application::currentEntityProperties() const {
+    EntityStyleSelection selection;
+    if (layerComboWidget_) {
+        // Qt UI: style state lives in the Application members updated by the
+        // ribbon/menu widgets (setCurrentLayer/setCurrentColorChoice/
+        // setCurrentLineTypeChoice), not in hidden GDI combos.
+        selection.layer = currentLayer_;
+        if (currentColorChoice_ >= 0 && static_cast<std::size_t>(currentColorChoice_) < colorChoices.size())
+            selection.trueColor = colorChoices[static_cast<std::size_t>(currentColorChoice_)].color;
+        if (currentLineTypeChoice_ >= 0 && static_cast<std::size_t>(currentLineTypeChoice_) < lineTypeChoices.size())
+            selection.lineType = lineTypeChoices[static_cast<std::size_t>(currentLineTypeChoice_)].value;
+        return resolveEntityStyle(selection, document_.layers());
+    }
     wchar_t layerText[256]{L'0', L'\0'};
     if (layerCombo_) GetWindowTextW(layerCombo_, layerText, static_cast<int>(std::size(layerText)));
-    EntityStyleSelection selection;
     selection.layer = wideToUtf8(layerText);
     const LRESULT colorIndex = colorCombo_ ? SendMessageW(colorCombo_, CB_GETCURSEL, 0, 0) : 0;
     if (colorIndex >= 0 && static_cast<std::size_t>(colorIndex) < colorChoices.size())
