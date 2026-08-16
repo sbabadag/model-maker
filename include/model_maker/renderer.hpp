@@ -218,6 +218,8 @@ private:
     mutable int motionBaseWidth_{};
     mutable int motionBaseHeight_{};
     mutable bool motionBaseValid_{};
+    mutable int fastPathSequence_{};
+    mutable int fallbackSequence_{};
     mutable FramePerformanceTracker performanceTracker_{};
     mutable FrameIndexStampSet selectedIndexSet_{};
     mutable std::function<void()> guiOverlay_{};

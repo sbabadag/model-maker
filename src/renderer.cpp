@@ -560,6 +560,11 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
     // temel geometriyi hiç yeniden çizme — komutlar obje sayısından bağımsızlaşır.
     if (draft.motionOverlay && !draft.snapOnly && !useGpuLines && motionBaseValid_ &&
         motionBaseWidth_ == width && motionBaseHeight_ == height) {
+        if (fastPathSequence_ < 20) {
+            ++fastPathSequence_;
+            FILE* diag = fopen("model-maker-render.log", "a");
+            if (diag) { fprintf(diag, "FASTPATH\n"); fclose(diag); }
+        }
         BitBlt(dc, 0, 0, width, height, motionBaseDc_, 0, 0, SRCCOPY);
         drawMotionFeedback();
         if (!draft.snapOnly)
@@ -607,6 +612,11 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
     }
 
     if (draft.interactiveNavigation) {
+        if (fallbackSequence_ < 20) {
+            ++fallbackSequence_;
+            FILE* diag = fopen("model-maker-render.log", "a");
+            if (diag) { fprintf(diag, "FALLBACK\n"); fclose(diag); }
+        }
         constexpr std::size_t interactiveModelBudget = 6'000;
         interactiveModelStride = std::max<std::size_t>(1,
             (document.models().size() + interactiveModelBudget - 1) / interactiveModelBudget);
