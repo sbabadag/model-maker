@@ -55,7 +55,7 @@ echo "== 6) Benchmark: spatial query =="
 
 echo
 echo "== 7) Correctness probları =="
-for probe in mm_verify_camera mm_probe_effcache mm_probe_task2; do
+for probe in mm_verify_camera mm_probe_effcache mm_probe_task2 mm_probe_trim; do
     src="/opt/data/$probe.cpp"
     [ -f "$src" ] || { echo "ATLA: $src yok" >&2; continue; }
     g++ -std=c++20 -O2 -I include "$src" "$BUILD/libmodel_maker_core.a" -o "/opt/data/$probe" || exit 1
