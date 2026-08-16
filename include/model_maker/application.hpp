@@ -269,6 +269,7 @@ private:
     std::string currentLayer_{"0"};
     int currentColorChoice_{};
     std::wstring lastTrimExtendStatus_{};
+    bool trimRegionRefreshed_{false};
     int currentLineTypeChoice_{};
     int currentProfileChoice_{};
     std::vector<Vec3> openseesDisplacements_;

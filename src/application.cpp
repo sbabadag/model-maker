@@ -8,6 +8,7 @@
 #include <commctrl.h>
 #include <windowsx.h>
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cwchar>
 #include <exception>
@@ -1344,8 +1345,9 @@ void Application::onLeftButtonDown(int x, int y) {
         // sonuç ancak bir sonraki fare hareketinde görünüyor. Kuyruktan
         // bağımsız olarak sonucu eşzamanlı çiz (sonraki WM_PAINT aynı
         // durumu tekrar boyar, zararsız).
-        if (transformCommand_ == TransformCommand::Trim ||
-            transformCommand_ == TransformCommand::Extend) {
+        if ((transformCommand_ == TransformCommand::Trim ||
+             transformCommand_ == TransformCommand::Extend) &&
+            !trimRegionRefreshed_) {
             trimExtendLog(L"SYNC DRAW baslıyor");
             if (HDC dc = GetDC(canvas_)) {
                 RECT client{};
@@ -1362,6 +1364,7 @@ void Application::onLeftButtonDown(int x, int y) {
             // bir kez daha yeniden çiz (kısa gecikmeli garantili kare).
             SetTimer(window_, 6, 80, nullptr);
         }
+        trimRegionRefreshed_ = false;
         return;
     }
     if (drawingActive_) {
@@ -1918,10 +1921,76 @@ bool Application::applyTrimExtendTarget(std::size_t target, const Vec3& pickPoin
         if (!result) return false;
         lastTrimExtendStatus_ = L"Trim: " + std::to_wstring(result->size()) +
                                 (result->size() == 1 ? L" parça" : L" parça");
+
+        // Bölgesel yenileme: eski model + yeni parçaların ekran kapsama
+        // alanını hesapla, yalnızca o bölgeyi eşzamanlı boya. Büyük
+        // modellerde tam kare maliyeti olmadan kesim anında görünür.
+        RECT client{};
+        GetClientRect(canvas_, &client);
+        const int canvasW = std::max(1L, client.right);
+        const int canvasH = std::max(1L, client.bottom);
+        RECT refreshRect{};
+        bool haveRefresh = false;
+        const auto includeWorldBounds = [&](const Bounds3& bounds) {
+            const std::array<Vec3, 8> corners = {{
+                {bounds.minimum.x, bounds.minimum.y, bounds.minimum.z},
+                {bounds.maximum.x, bounds.minimum.y, bounds.minimum.z},
+                {bounds.minimum.x, bounds.maximum.y, bounds.minimum.z},
+                {bounds.maximum.x, bounds.maximum.y, bounds.minimum.z},
+                {bounds.minimum.x, bounds.minimum.y, bounds.maximum.z},
+                {bounds.maximum.x, bounds.minimum.y, bounds.maximum.z},
+                {bounds.minimum.x, bounds.maximum.y, bounds.maximum.z},
+                {bounds.maximum.x, bounds.maximum.y, bounds.maximum.z}}};
+            for (const auto& corner : corners) {
+                const Vec2 projected = mode_ == EditMode::Draw2D
+                    ? camera_.project2D(corner, canvasW, canvasH)
+                    : camera_.project(corner, canvasW, canvasH);
+                const LONG px = static_cast<LONG>(std::lround(projected.x));
+                const LONG py = static_cast<LONG>(std::lround(projected.y));
+                if (!haveRefresh) {
+                    refreshRect = {px, py, px, py};
+                    haveRefresh = true;
+                } else {
+                    refreshRect.left = std::min(refreshRect.left, px);
+                    refreshRect.top = std::min(refreshRect.top, py);
+                    refreshRect.right = std::max(refreshRect.right, px);
+                    refreshRect.bottom = std::max(refreshRect.bottom, py);
+                }
+            }
+        };
+        const auto pieceBounds = [](const WireframeModel& piece) -> std::optional<Bounds3> {
+            if (piece.vertices().empty()) return std::nullopt;
+            Bounds3 bounds{piece.vertices().front(), piece.vertices().front()};
+            for (const auto& vertex : piece.vertices()) {
+                bounds.minimum.x = std::min(bounds.minimum.x, vertex.x);
+                bounds.minimum.y = std::min(bounds.minimum.y, vertex.y);
+                bounds.minimum.z = std::min(bounds.minimum.z, vertex.z);
+                bounds.maximum.x = std::max(bounds.maximum.x, vertex.x);
+                bounds.maximum.y = std::max(bounds.maximum.y, vertex.y);
+                bounds.maximum.z = std::max(bounds.maximum.z, vertex.z);
+            }
+            return bounds;
+        };
+        if (target < document_.modelBounds().size())
+            includeWorldBounds(document_.modelBounds()[target]);
+        for (const auto& piece : *result)
+            if (const auto bounds = pieceBounds(piece)) includeWorldBounds(*bounds);
+
         document_.replaceModel(target, std::move(*result));
+
+        if (haveRefresh) {
+            constexpr LONG inflate = 24;
+            refreshRect.left -= inflate;
+            refreshRect.top -= inflate;
+            refreshRect.right += inflate;
+            refreshRect.bottom += inflate;
+            InvalidateRect(canvas_, &refreshRect, FALSE);
+            UpdateWindow(canvas_);
+            trimRegionRefreshed_ = true;
+        }
         trimExtendLog(L"APPLY OK target=" + std::to_wstring(target) +
-                      L" pieces=" + std::to_wstring(result->size()) +
-                      L" models=" + std::to_wstring(document_.models().size()));
+                      L" models=" + std::to_wstring(document_.models().size()) +
+                      (haveRefresh ? L" region_refresh=OK" : L" region_refresh=YOK"));
         return true;
     }
     if (transformCommand_ == TransformCommand::Extend) {
