@@ -1005,20 +1005,86 @@ std::optional<WireframeModel> offsetModel2D(const WireframeModel& source, double
         result.setProperties(source.properties());
         return result;
     }
-    if (source.vertices().size() != 2 ||
-        source.edges().size() != 1 || source.edges().front() != Edge{0, 1}) return std::nullopt;
-    const Vec3& from = source.vertices()[0];
-    const Vec3& to = source.vertices()[1];
-    const double dx = to.x - from.x;
-    const double dy = to.y - from.y;
-    const double length = std::hypot(dx, dy);
-    if (length <= epsilon) return std::nullopt;
-    const double side = dx * (sidePoint.y - from.y) - dy * (sidePoint.x - from.x);
-    if (std::abs(side) <= epsilon) return std::nullopt;
-    const double sign = side > 0.0 ? 1.0 : -1.0;
-    const Vec3 displacement{-dy * sign * distance / length,
-                             dx * sign * distance / length, 0.0};
-    WireframeModel result = WireframeModel::line(from + displacement, to + displacement);
+    const auto& vertices = source.vertices();
+    const auto& edges = source.edges();
+    const std::size_t n = vertices.size();
+    if (n < 2 || edges.empty()) return std::nullopt;
+
+    const bool singleSegment = n == 2 && edges.size() == 1 && edges.front() == Edge{0, 1};
+    bool chain = singleSegment;
+    bool closed = false;
+    if (!singleSegment) {
+        chain = true;
+        for (std::size_t i = 0; i + 1 < edges.size(); ++i)
+            if (edges[i] != Edge{i, i + 1}) { chain = false; break; }
+        if (chain && edges.size() == n) {
+            closed = edges.back() == Edge{n - 1, 0};
+            chain = chain && edges.back() == Edge{n - 1, 0};
+        }
+    }
+    if (!chain) return std::nullopt;
+
+    // Her segmentin ofset doğrusu (tıklanan tarafa göre paralel)
+    struct OffsetLine { Vec3 a; Vec3 b; };
+    std::vector<OffsetLine> lines;
+    lines.reserve(edges.size());
+    for (const auto& edge : edges) {
+        const Vec3& from = vertices[edge.from];
+        const Vec3& to = vertices[edge.to];
+        const double dx = to.x - from.x;
+        const double dy = to.y - from.y;
+        const double length = std::hypot(dx, dy);
+        if (length <= epsilon) return std::nullopt;
+        const double side = dx * (sidePoint.y - from.y) - dy * (sidePoint.x - from.x);
+        if (std::abs(side) <= epsilon) return std::nullopt;
+        const double sign = side > 0.0 ? 1.0 : -1.0;
+        const Vec3 displacement{-dy * sign * distance / length,
+                                 dx * sign * distance / length, 0.0};
+        lines.push_back({from + displacement, to + displacement});
+    }
+
+    if (singleSegment) {
+        WireframeModel result = WireframeModel::line(lines.front().a, lines.front().b);
+        result.setProperties(source.properties());
+        return result;
+    }
+
+    // Köşe birleştirme: komşu ofset doğrularının kesişimi (miter); paralelse uç nokta
+    const auto intersect = [](const OffsetLine& l1, const OffsetLine& l2) -> Vec3 {
+        const double r1x = l1.b.x - l1.a.x;
+        const double r1y = l1.b.y - l1.a.y;
+        const double r2x = l2.b.x - l2.a.x;
+        const double r2y = l2.b.y - l2.a.y;
+        const double denom = r1x * r2y - r1y * r2x;
+        if (std::abs(denom) <= epsilon) return l1.b;
+        const double t = ((l2.a.x - l1.a.x) * r2y - (l2.a.y - l1.a.y) * r2x) / denom;
+        return {l1.a.x + t * r1x, l1.a.y + t * r1y, l1.a.z};
+    };
+
+    std::vector<Vec3> offsetVertices;
+    offsetVertices.reserve(n);
+    for (std::size_t i = 0; i < n; ++i) {
+        const bool hasPrev = closed || i > 0;
+        const bool hasNext = closed || i + 1 < n;
+        if (hasPrev && hasNext) {
+            const std::size_t prevEdge = closed && i == 0 ? edges.size() - 1 : i - 1;
+            offsetVertices.push_back(intersect(lines[prevEdge], lines[i]));
+        } else if (i == 0) {
+            offsetVertices.push_back(lines.front().a);
+        } else {
+            offsetVertices.push_back(lines.back().b);
+        }
+    }
+
+    WireframeModel result;
+    if (closed) {
+        std::vector<Edge> closedEdges;
+        closedEdges.reserve(n);
+        for (std::size_t i = 0; i < n; ++i) closedEdges.push_back(Edge{i, (i + 1) % n});
+        result = WireframeModel{offsetVertices, closedEdges};
+    } else {
+        result = WireframeModel::polyline(offsetVertices);
+    }
     result.setProperties(source.properties());
     return result;
 }
