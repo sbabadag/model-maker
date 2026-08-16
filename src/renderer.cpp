@@ -173,7 +173,7 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
                      static_cast<LONG>(projected.y + canvas.top)};
     };
     HGDIOBJ stockPen = GetCurrentObject(dc, OBJ_PEN);
-    if (!draft.interactiveNavigation) {
+    {
         HPEN gridPen = CreatePen(PS_SOLID, 1,
                                  mode == EditMode::View3D ? RGB(66, 68, 72) : RGB(34, 40, 53));
         SelectObject(dc, gridPen);
@@ -242,7 +242,7 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         SelectObject(dc, oldBaseBrush);
         SelectObject(dc, stockPen);
         DeleteObject(basePointPen);
-    }
+    } // grid + eksenler: interaktif karelerde de çizilir (flicker önleme)
 
     std::vector<POINT> projectedChain;
     std::size_t interactiveModelStride = 1;
