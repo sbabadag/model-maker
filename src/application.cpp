@@ -1231,7 +1231,14 @@ void Application::onCanvasPaint() {
     RECT client{};
     GetClientRect(canvas_, &client);
     const bool wasSnapPreview = snapPreviewActive_;
+    const auto paintStart = std::chrono::steady_clock::now();
     renderer_.draw(dc, client, document_, camera_, mode_, draftView());
+    const double paintMs = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - paintStart).count();
+    if (paintMs > 5.0 && document_.models().size() > 5'000)
+        trimExtendLog(L"PAINT ms=" + std::to_wstring(paintMs) +
+                      L" interactive=" + std::to_wstring(wasSnapPreview ? 1 : 0) +
+                      L" models=" + std::to_wstring(document_.models().size()));
     snapPreviewActive_ = false;
     if (wasSnapPreview) SetTimer(window_, 4, 150, nullptr);
     EndPaint(canvas_, &paint);
@@ -1460,8 +1467,14 @@ void Application::onMouseMove(int x, int y, WPARAM buttons) {
         const auto now = std::chrono::steady_clock::now();
         if (!largeSnapTracking || lastLargeSnapEvaluation_.time_since_epoch().count() == 0 ||
             now - lastLargeSnapEvaluation_ >= std::chrono::milliseconds(50)) {
+            const auto hoverStart = std::chrono::steady_clock::now();
             updateHover(x, y);
             if (largeSnapTracking) lastLargeSnapEvaluation_ = now;
+            const double hoverMs = std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - hoverStart).count();
+            if (hoverMs > 2.0)
+                trimExtendLog(L"HOVER ms=" + std::to_wstring(hoverMs) +
+                              L" models=" + std::to_wstring(document_.models().size()));
         }
         redraw = true;
         snapRedraw = commandAllowsSnapping(drawingActive_, transformCommand_, transformPhase_,
