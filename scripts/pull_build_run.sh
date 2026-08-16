@@ -64,4 +64,15 @@ for probe in mm_verify_camera mm_probe_effcache mm_probe_task2; do
 done
 
 echo
+echo "== 8) Exe (yalnızca Qt bulunan ortamda) =="
+if cmake --build "$BUILD" --target model-maker -j"$(nproc)" >/dev/null 2>&1; then
+    echo "model-maker.exe derlendi, başlatılıyor..."
+    "$BUILD/model-maker" &
+    echo "model-maker başlatıldı"
+else
+    echo "ATLA: model-maker exe hedefi yok — Qt6 bu makinede kurulu değil."
+    echo "Windows'ta scripts/pull_build_run.ps1 son adımda exe'yi başlatır."
+fi
+
+echo
 echo "== TAMAM: pull + build + run başarılı =="
