@@ -384,6 +384,39 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
                 SelectObject(dc, stockPen);
                 DeleteObject(transformPreview);
             }
+            if (draft.transformCommand == TransformCommand::Offset &&
+                draft.transformPhase == TransformPhase::Destination && draft.offsetDistance &&
+                draft.cursor && draft.selectedModels.size() == 1 &&
+                draft.selectedModels.front() < document.models().size()) {
+                const auto preview = mode == EditMode::View3D
+                    ? offsetModelOnPlane(document.models()[draft.selectedModels.front()],
+                                         *draft.offsetDistance, *draft.cursor, draft.workPlane)
+                    : offsetModel2D(document.models()[draft.selectedModels.front()],
+                                    *draft.offsetDistance, *draft.cursor);
+                if (preview) {
+                    HPEN previewPen = CreatePen(PS_DASH, 1, RGB(255, 206, 84));
+                    SelectObject(dc, previewPen);
+                    drawModel(*preview);
+                    SelectObject(dc, stockPen);
+                    DeleteObject(previewPen);
+                }
+            }
+            if (draft.workPlanePicking) {
+                HPEN pickPen = CreatePen(PS_DASH, 2, RGB(255, 206, 84));
+                SelectObject(dc, pickPen);
+                for (std::size_t index = 1; index < draft.workPlanePoints.size(); ++index) {
+                    const POINT a = projectPoint(draft.workPlanePoints[index - 1]);
+                    const POINT b = projectPoint(draft.workPlanePoints[index]);
+                    line(dc, a.x, a.y, b.x, b.y);
+                }
+                if (!draft.workPlanePoints.empty() && draft.cursor) {
+                    const POINT a = projectPoint(draft.workPlanePoints.back());
+                    const POINT b = projectPoint(*draft.cursor);
+                    line(dc, a.x, a.y, b.x, b.y);
+                }
+                SelectObject(dc, stockPen);
+                DeleteObject(pickPen);
+            }
             if ((draft.transformCommand == TransformCommand::Trim ||
                  draft.transformCommand == TransformCommand::Extend) &&
                 draft.transformPhase == TransformPhase::Destination &&
