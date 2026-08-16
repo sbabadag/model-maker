@@ -17,10 +17,16 @@ struct Bounds3 {
     Vec3 maximum{};
 };
 
-struct DocumentSnapshot {
-    std::vector<WireframeModel> models;
-    std::unordered_map<std::string, EntityProperties> layers;
+struct UndoOp {
+    enum class Kind { Add, Delete, Replace, Move };
+    Kind kind{Kind::Add};
+    std::size_t index{};
+    std::vector<WireframeModel> beforeModels; // delete: silinenler; replace: eski model
+    std::vector<WireframeModel> afterModels;  // add: eklenen; replace: yeni modeller
+    std::vector<std::size_t> indices;         // delete (azalan) / move: etkilenen indeksler
+    Vec3 displacement{};                      // move: uygulanan yer değiştirme
 };
+using UndoRecord = std::vector<UndoOp>;
 
 class Document {
 public:
@@ -92,12 +98,13 @@ private:
     std::size_t buildSpatialNode(std::size_t begin, std::size_t end) const;
     void querySpatialNode(std::size_t node, const Bounds3& area,
                           std::vector<std::size_t>& result) const;
-    void restoreSnapshot(const DocumentSnapshot& snapshot);
+    void recordUndoOp(UndoOp op);
+    void applyUndoOp(const UndoOp& op, bool forward);
 
     std::vector<WireframeModel> models_;
     std::unordered_map<std::string, EntityProperties> layers_;
-    std::deque<DocumentSnapshot> undoStack_;
-    std::deque<DocumentSnapshot> redoStack_;
+    std::deque<UndoRecord> undoStack_;
+    std::deque<UndoRecord> redoStack_;
     EntityProperties resolveEffectiveProperties(std::size_t index) const;
     mutable bool spatialIndexDirty_{true};
     mutable bool effectiveCacheDirty_{true};

@@ -54,6 +54,11 @@ Document::Document() {
 }
 
 void Document::addModel(WireframeModel model) {
+    UndoOp op;
+    op.kind = UndoOp::Kind::Add;
+    op.index = models_.size();
+    op.afterModels.push_back(model);
+    recordUndoOp(std::move(op));
     models_.push_back(std::move(model));
     invalidateDerivedState();
 }
@@ -61,6 +66,11 @@ void Document::addLine(const Vec3& from, const Vec3& to) { addModel(WireframeMod
 void Document::reserveModels(std::size_t count) { models_.reserve(count); }
 
 void Document::moveModels(const std::vector<std::size_t>& indices, const Vec3& displacement) {
+    UndoOp op;
+    op.kind = UndoOp::Kind::Move;
+    op.indices = indices;
+    op.displacement = displacement;
+    recordUndoOp(std::move(op));
     for (const auto index : indices) {
         if (index < models_.size()) models_[index].translate(displacement);
     }
@@ -74,6 +84,11 @@ void Document::copyModels(const std::vector<std::size_t>& indices, const Vec3& d
         if (index < models_.size()) {
             copies.push_back(models_[index]);
             copies.back().translate(displacement);
+            UndoOp op;
+            op.kind = UndoOp::Kind::Add;
+            op.index = models_.size() + copies.size() - 1;
+            op.afterModels.push_back(copies.back());
+            recordUndoOp(std::move(op));
         }
     }
     models_.insert(models_.end(), copies.begin(), copies.end());
@@ -147,6 +162,11 @@ void Document::deleteModels(const std::vector<std::size_t>& indices) {
         if (index < models_.size()) valid.push_back(index);
     std::sort(valid.begin(), valid.end(), std::greater<>{});
     valid.erase(std::unique(valid.begin(), valid.end()), valid.end());
+    UndoOp op;
+    op.kind = UndoOp::Kind::Delete;
+    op.indices = valid;
+    for (const auto index : valid) op.beforeModels.push_back(models_[index]);
+    recordUndoOp(std::move(op));
     for (const auto index : valid)
         models_.erase(models_.begin() + static_cast<std::ptrdiff_t>(index));
     if (!valid.empty()) invalidateDerivedState();
@@ -154,6 +174,12 @@ void Document::deleteModels(const std::vector<std::size_t>& indices) {
 
 void Document::replaceModel(std::size_t index, std::vector<WireframeModel> replacements) {
     if (index >= models_.size()) return;
+    UndoOp op;
+    op.kind = UndoOp::Kind::Replace;
+    op.index = index;
+    op.beforeModels.push_back(models_[index]);
+    for (const auto& replacement : replacements) op.afterModels.push_back(replacement);
+    recordUndoOp(std::move(op));
     const auto position = models_.erase(models_.begin() + static_cast<std::ptrdiff_t>(index));
     models_.insert(position, std::make_move_iterator(replacements.begin()),
                    std::make_move_iterator(replacements.end()));
@@ -210,48 +236,90 @@ const std::unordered_map<std::size_t, BeamLoad>& Document::beamLoads() const noe
 void Document::clearBeamLoads() {
     beamLoads_.clear();
 }
+void Document::recordUndoOp(UndoOp op) {
+    if (undoStack_.empty()) return; // kayıt açık değil (toplu yükleme vb.) — geri alınmaz
+    undoStack_.back().push_back(std::move(op));
+}
+
 void Document::pushSnapshot() {
-    DocumentSnapshot snapshot;
-    snapshot.models = models_;
-    snapshot.layers = layers_;
-    undoStack_.push_back(std::move(snapshot));
+    // Yeni bir geri-alma kaydı açar; sonraki mutasyonlar bu kayda delta olarak eklenir.
+    undoStack_.push_back(UndoRecord{});
     if (undoStack_.size() > kMaxUndoEntries)
         undoStack_.pop_front();
     redoStack_.clear();
 }
 
-void Document::restoreSnapshot(const DocumentSnapshot& snapshot) {
-    models_ = snapshot.models;
-    layers_ = snapshot.layers;
+void Document::applyUndoOp(const UndoOp& op, bool forward) {
+    switch (op.kind) {
+    case UndoOp::Kind::Add:
+        if (forward) {
+            if (!op.afterModels.empty())
+                models_.insert(models_.begin() + static_cast<std::ptrdiff_t>(op.index),
+                               op.afterModels.front());
+        } else if (op.index < models_.size()) {
+            models_.erase(models_.begin() + static_cast<std::ptrdiff_t>(op.index));
+        }
+        break;
+    case UndoOp::Kind::Delete:
+        if (forward) {
+            for (auto it = op.indices.rbegin(); it != op.indices.rend(); ++it)
+                if (*it < models_.size())
+                    models_.erase(models_.begin() + static_cast<std::ptrdiff_t>(*it));
+        } else {
+            // indices azalan sırada; sondan başa (artan) geri ekle
+            for (std::size_t k = op.indices.size(); k-- > 0;) {
+                const std::size_t index = op.indices[k];
+                if (k < op.beforeModels.size() && index <= models_.size())
+                    models_.insert(models_.begin() + static_cast<std::ptrdiff_t>(index),
+                                   op.beforeModels[k]);
+            }
+        }
+        break;
+    case UndoOp::Kind::Replace:
+        if (op.index < models_.size()) {
+            if (forward && !op.afterModels.empty()) models_[op.index] = op.afterModels.front();
+            else if (!forward && !op.beforeModels.empty()) models_[op.index] = op.beforeModels.front();
+        }
+        break;
+    case UndoOp::Kind::Move:
+        for (const auto index : op.indices)
+            if (index < models_.size())
+                models_[index].translate(forward ? op.displacement
+                                                 : Vec3{-op.displacement.x, -op.displacement.y,
+                                                        -op.displacement.z});
+        break;
+    }
     invalidateDerivedState();
 }
 
 bool Document::undo() {
+    while (!undoStack_.empty() && undoStack_.back().empty())
+        undoStack_.pop_back();
     if (undoStack_.empty()) return false;
-    DocumentSnapshot current;
-    current.models = models_;
-    current.layers = layers_;
-    redoStack_.push_back(std::move(current));
-    restoreSnapshot(undoStack_.back());
+    UndoRecord record = std::move(undoStack_.back());
     undoStack_.pop_back();
+    for (auto it = record.rbegin(); it != record.rend(); ++it)
+        applyUndoOp(*it, false);
+    redoStack_.push_back(std::move(record));
     return true;
 }
 
 bool Document::redo() {
     if (redoStack_.empty()) return false;
-    DocumentSnapshot current;
-    current.models = models_;
-    current.layers = layers_;
-    undoStack_.push_back(std::move(current));
+    UndoRecord record = std::move(redoStack_.back());
+    redoStack_.pop_back();
+    for (const auto& op : record)
+        applyUndoOp(op, true);
+    undoStack_.push_back(std::move(record));
     if (undoStack_.size() > kMaxUndoEntries)
         undoStack_.pop_front();
-    restoreSnapshot(redoStack_.back());
-    redoStack_.pop_back();
     return true;
 }
 
 bool Document::canUndo() const noexcept {
-    return !undoStack_.empty();
+    for (auto it = undoStack_.rbegin(); it != undoStack_.rend(); ++it)
+        if (!it->empty()) return true;
+    return false;
 }
 
 bool Document::canRedo() const noexcept {
