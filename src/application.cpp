@@ -1606,6 +1606,10 @@ void Application::startTransformCommand(TransformCommand command) {
     drawingActive_ = false;
     hover_.reset();
     SetCursor(currentCanvasCursor());
+    updateHover(cursorScreen_.x, cursorScreen_.y);
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
 }
 
 void Application::toggle3DView() {
@@ -1615,6 +1619,10 @@ void Application::toggle3DView() {
     cancelDrawing();
     mode_ = mode_ == EditMode::View3D ? EditMode::Draw2D : EditMode::View3D;
     drawingActive_ = mode_ == EditMode::Draw2D;
+    updateHover(cursorScreen_.x, cursorScreen_.y);
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
 }
 
 void Application::toggleSnapType(SnapType type) noexcept {
@@ -1695,6 +1703,10 @@ void Application::zoomExtents2D() {
     else
         camera_.fit2D(bounds->minimum, bounds->maximum, std::max(1L, client.right),
                       std::max(1L, client.bottom), 50.0);
+    updateHover(cursorScreen_.x, cursorScreen_.y);
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
 }
 
 void Application::startZoomWindow2D() {
@@ -1705,6 +1717,10 @@ void Application::startZoomWindow2D() {
     zoomWindowActive_ = true;
     zoomWindowFirstCorner_.reset();
     hover_.reset();
+    updateHover(cursorScreen_.x, cursorScreen_.y);
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
 }
 
 void Application::cancelZoomWindow2D() {
@@ -2330,6 +2346,10 @@ void Application::deactivateAllCommands() {
     lastTransformCommand_ = TransformCommand::None;
     hover_.reset();
     SetCursor(currentCanvasCursor());
+    updateHover(cursorScreen_.x, cursorScreen_.y);
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
 }
 
 void Application::updateControls() {
