@@ -1289,8 +1289,9 @@ void Application::onLeftButtonDown(int x, int y) {
                     if (selectionFirstCorner_) {
                         completeTrimExtendTargetSelection(x, y);
                     } else if (const auto target = trimExtendTargetAt(x, y)) {
+                        bool applied = false;
                         if (mode_ == EditMode::Draw2D) {
-                            applyTrimExtendTarget(*target, screenTo2D(x, y));
+                            applied = applyTrimExtendTarget(*target, screenTo2D(x, y));
                         } else {
                         RECT viewport{}; GetClientRect(canvas_, &viewport);
                         WorkPlane targetPlane = workPlane_;
@@ -1299,8 +1300,9 @@ void Application::onLeftButtonDown(int x, int y) {
                         if (const auto point = camera_.unprojectToPlane(
                                 {static_cast<double>(x), static_cast<double>(y)},
                                 std::max(1L, viewport.right), std::max(1L, viewport.bottom), targetPlane))
-                                applyTrimExtendTarget(*target, *point);
+                                applied = applyTrimExtendTarget(*target, *point);
                         }
+                        if (!applied) MessageBeep(MB_ICONWARNING);
                     } else {
                         selectionFirstCorner_ = POINT{x, y};
                     }
