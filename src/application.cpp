@@ -1493,11 +1493,14 @@ void Application::onMouseMove(int x, int y, WPARAM buttons) {
     if (redraw) {
         // Motion overlay her boyutta: tam kare temiz tabanı motion buffer'a
         // yazar; hareket kareleri yalnızca taban + geri bildirim çizer.
+        // HER hareket anında bir kare tetikler; timer-3 son çare yenileme,
+        // timer-4 ise hareket durduktan sonraki tam karedir.
         KillTimer(window_, 4);
         snapPreviewActive_ = true;
         KillTimer(window_, 3);
         SetTimer(window_, 3, 50, nullptr);
         snapPreviewTimerArmed_ = true;
+        invalidateCanvas();
     }
 }
 
