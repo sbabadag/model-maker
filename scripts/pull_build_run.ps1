@@ -38,5 +38,9 @@ Write-Host '== 4) Benchmarklar ==' -ForegroundColor Cyan
 & .\build-release\model_maker_spatial_query_benchmark.exe
 
 Write-Host '== 5) Uygulama baslatiliyor ==' -ForegroundColor Cyan
+# Eski acik kopyalari kapat — aksi halde birden fazla pencere ayni anda
+# calisir ve test eski (duzeltmeleri icermeyen) pencerede yapilir.
+taskkill /IM model-maker.exe /F 2>$null | Out-Null
+Start-Sleep -Milliseconds 300
 Start-Process .\build-release\model-maker.exe
 Write-Host 'TAMAM: model-maker.exe baslatildi.' -ForegroundColor Green
