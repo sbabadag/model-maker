@@ -28,6 +28,22 @@ std::string lowerAscii(std::string value) {
     return value;
 }
 
+Bounds3 computeModelBounds(const WireframeModel& model) {
+    const auto& vertices = model.vertices();
+    if (vertices.empty()) return Bounds3{};
+    Bounds3 bounds{vertices.front(), vertices.front()};
+    for (std::size_t i = 1; i < vertices.size(); ++i) {
+        bounds.minimum.x = std::min(bounds.minimum.x, vertices[i].x);
+        bounds.minimum.y = std::min(bounds.minimum.y, vertices[i].y);
+        bounds.minimum.z = std::min(bounds.minimum.z, vertices[i].z);
+        bounds.maximum.x = std::max(bounds.maximum.x, vertices[i].x);
+        bounds.maximum.y = std::max(bounds.maximum.y, vertices[i].y);
+        bounds.maximum.z = std::max(bounds.maximum.z, vertices[i].z);
+    }
+    return bounds;
+}
+
+
 Bounds3 mergeBounds(const Bounds3& a, const Bounds3& b) noexcept {
     return {{std::min(a.minimum.x, b.minimum.x), std::min(a.minimum.y, b.minimum.y),
              std::min(a.minimum.z, b.minimum.z)},
@@ -60,7 +76,19 @@ void Document::addModel(WireframeModel model) {
     op.afterModels.push_back(model);
     recordUndoOp(std::move(op));
     models_.push_back(std::move(model));
-    invalidateDerivedState();
+    const std::size_t index = models_.size() - 1;
+    if (modelBounds_.size() == index) {
+        modelBounds_.push_back(computeModelBounds(models_.back()));
+        if (!effectiveCacheDirty_ && effectiveCache_.size() == index)
+            effectiveCache_.push_back(resolveEffectiveProperties(index));
+        else if (effectiveCache_.size() != models_.size()) effectiveCacheDirty_ = true;
+    } else {
+        modelBounds_.resize(models_.size());
+        effectiveCacheDirty_ = true;
+    }
+    pendingIndexRebuild_.push_back(index);
+    spatialIndexDirty_ = true;
+    documentBounds_.reset();
 }
 void Document::addLine(const Vec3& from, const Vec3& to) { addModel(WireframeModel::line(from, to)); }
 void Document::reserveModels(std::size_t count) { models_.reserve(count); }
@@ -72,9 +100,14 @@ void Document::moveModels(const std::vector<std::size_t>& indices, const Vec3& d
     op.displacement = displacement;
     recordUndoOp(std::move(op));
     for (const auto index : indices) {
-        if (index < models_.size()) models_[index].translate(displacement);
+        if (index >= models_.size()) continue;
+        models_[index].translate(displacement);
+        if (modelBounds_.size() == models_.size())
+            modelBounds_[index] = computeModelBounds(models_[index]);
+        pendingIndexRebuild_.push_back(index);
     }
-    invalidateDerivedState();
+    spatialIndexDirty_ = true;
+    documentBounds_.reset();
 }
 
 void Document::copyModels(const std::vector<std::size_t>& indices, const Vec3& displacement) {
@@ -91,8 +124,23 @@ void Document::copyModels(const std::vector<std::size_t>& indices, const Vec3& d
             recordUndoOp(std::move(op));
         }
     }
+    const std::size_t firstCopy = models_.size();
     models_.insert(models_.end(), copies.begin(), copies.end());
-    invalidateDerivedState();
+    if (modelBounds_.size() == firstCopy && effectiveCache_.size() == firstCopy &&
+        !effectiveCacheDirty_) {
+        for (std::size_t k = 0; k < copies.size(); ++k) {
+            modelBounds_.push_back(computeModelBounds(models_[firstCopy + k]));
+            effectiveCache_.push_back(resolveEffectiveProperties(firstCopy + k));
+            pendingIndexRebuild_.push_back(firstCopy + k);
+        }
+    } else {
+        modelBounds_.resize(models_.size());
+        effectiveCacheDirty_ = true;
+        for (std::size_t k = 0; k < copies.size(); ++k)
+            pendingIndexRebuild_.push_back(firstCopy + k);
+    }
+    spatialIndexDirty_ = true;
+    documentBounds_.reset();
 }
 
 std::size_t Document::setModelLayer(const std::vector<std::size_t>& indices, const std::string& layer) {
@@ -105,7 +153,12 @@ std::size_t Document::setModelLayer(const std::vector<std::size_t>& indices, con
         models_[index].setProperties(std::move(properties));
         ++changed;
     }
-    effectiveCacheDirty_ = true;
+    if (effectiveCache_.size() != models_.size()) effectiveCacheDirty_ = true;
+    else {
+        for (const auto index : uniqueIndices(indices)) {
+            if (index < models_.size()) effectiveCache_[index] = resolveEffectiveProperties(index);
+        }
+    }
     return changed;
 }
 
@@ -121,7 +174,12 @@ std::size_t Document::setModelColor(const std::vector<std::size_t>& indices,
         models_[index].setProperties(std::move(properties));
         ++changed;
     }
-    effectiveCacheDirty_ = true;
+    if (effectiveCache_.size() != models_.size()) effectiveCacheDirty_ = true;
+    else {
+        for (const auto index : uniqueIndices(indices)) {
+            if (index < models_.size()) effectiveCache_[index] = resolveEffectiveProperties(index);
+        }
+    }
     return changed;
 }
 
@@ -135,7 +193,12 @@ std::size_t Document::setModelProfile(const std::vector<std::size_t>& indices,
         models_[index].setProperties(properties);
         ++changed;
     }
-    effectiveCacheDirty_ = true;
+    if (effectiveCache_.size() != models_.size()) effectiveCacheDirty_ = true;
+    else {
+        for (const auto index : uniqueIndices(indices)) {
+            if (index < models_.size()) effectiveCache_[index] = resolveEffectiveProperties(index);
+        }
+    }
     return changed;
 }
 
@@ -151,7 +214,12 @@ std::size_t Document::setModelLineType(const std::vector<std::size_t>& indices,
         models_[index].setProperties(std::move(properties));
         ++changed;
     }
-    effectiveCacheDirty_ = true;
+    if (effectiveCache_.size() != models_.size()) effectiveCacheDirty_ = true;
+    else {
+        for (const auto index : uniqueIndices(indices)) {
+            if (index < models_.size()) effectiveCache_[index] = resolveEffectiveProperties(index);
+        }
+    }
     return changed;
 }
 
@@ -167,8 +235,22 @@ void Document::deleteModels(const std::vector<std::size_t>& indices) {
     op.indices = valid;
     for (const auto index : valid) op.beforeModels.push_back(models_[index]);
     recordUndoOp(std::move(op));
-    for (const auto index : valid)
+    for (const auto index : valid) {
         models_.erase(models_.begin() + static_cast<std::ptrdiff_t>(index));
+        if (modelBounds_.size() == models_.size() + 1)
+            modelBounds_.erase(modelBounds_.begin() + static_cast<std::ptrdiff_t>(index));
+        if (effectiveCache_.size() == models_.size() + 1 && !effectiveCacheDirty_)
+            effectiveCache_.erase(effectiveCache_.begin() + static_cast<std::ptrdiff_t>(index));
+    }
+    if (modelBounds_.size() != models_.size()) modelBounds_.resize(models_.size());
+    if (effectiveCache_.size() != models_.size()) effectiveCacheDirty_ = true;
+    // Ortadan silme sonraki tüm ağaç girdilerini kaydırır — delta güvensiz,
+    // yeniden kuruluma zorla (nadir işlem).
+    spatialOrder_.clear();
+    spatialNodes_.clear();
+    pendingIndexRebuild_.clear();
+    spatialIndexDirty_ = true;
+    documentBounds_.reset();
     if (!valid.empty()) invalidateDerivedState();
 }
 
@@ -183,7 +265,33 @@ void Document::replaceModel(std::size_t index, std::vector<WireframeModel> repla
     const auto position = models_.erase(models_.begin() + static_cast<std::ptrdiff_t>(index));
     models_.insert(position, std::make_move_iterator(replacements.begin()),
                    std::make_move_iterator(replacements.end()));
-    invalidateDerivedState();
+    const std::ptrdiff_t delta = static_cast<std::ptrdiff_t>(replacements.size()) - 1;
+    if (modelBounds_.size() == models_.size() - delta) {
+        modelBounds_.erase(modelBounds_.begin() + static_cast<std::ptrdiff_t>(index));
+        for (std::size_t k = 0; k < replacements.size(); ++k)
+            modelBounds_.insert(modelBounds_.begin() + static_cast<std::ptrdiff_t>(index + k),
+                                computeModelBounds(models_[index + k]));
+    } else {
+        modelBounds_.resize(models_.size());
+    }
+    if (!effectiveCacheDirty_ && effectiveCache_.size() == models_.size() - delta) {
+        effectiveCache_.erase(effectiveCache_.begin() + static_cast<std::ptrdiff_t>(index));
+        for (std::size_t k = 0; k < replacements.size(); ++k)
+            effectiveCache_.insert(effectiveCache_.begin() + static_cast<std::ptrdiff_t>(index + k),
+                                   resolveEffectiveProperties(index + k));
+    } else {
+        effectiveCacheDirty_ = true;
+    }
+    if (delta != 0) {
+        // Boyut değişimi sonraki ağaç girdilerini kaydırır — yeniden kur (nadir).
+        spatialOrder_.clear();
+        spatialNodes_.clear();
+        pendingIndexRebuild_.clear();
+    } else {
+        pendingIndexRebuild_.push_back(index);
+    }
+    spatialIndexDirty_ = true;
+    documentBounds_.reset();
 }
 
 void Document::clear() noexcept {
@@ -191,6 +299,14 @@ void Document::clear() noexcept {
     layers_.clear();
     undoStack_.clear();
     redoStack_.clear();
+    modelBounds_.clear();
+    effectiveCache_.clear();
+    pendingIndexRebuild_.clear();
+    spatialOrder_.clear();
+    spatialNodes_.clear();
+    documentBounds_.reset();
+    spatialIndexDirty_ = true;
+    effectiveCacheDirty_ = false;
     nodeConstraints_.clear();
     invalidateDerivedState();
     documentBounds_.reset();
@@ -303,7 +419,6 @@ void Document::applyUndoOp(const UndoOp& op, bool forward) {
                                                         -op.displacement.z});
         break;
     }
-    invalidateDerivedState();
 }
 
 bool Document::undo() {
@@ -315,6 +430,7 @@ bool Document::undo() {
     for (auto it = record.rbegin(); it != record.rend(); ++it)
         applyUndoOp(*it, false);
     redoStack_.push_back(std::move(record));
+    rebuildDerivedState();
     return true;
 }
 
@@ -327,6 +443,7 @@ bool Document::redo() {
     undoStack_.push_back(std::move(record));
     if (undoStack_.size() > kMaxUndoEntries)
         undoStack_.pop_front();
+    rebuildDerivedState();
     return true;
 }
 
@@ -454,6 +571,18 @@ bool Document::modelIsEditable(std::size_t index) const {
     return properties.visible && !properties.locked;
 }
 
+void Document::rebuildDerivedState() {
+    modelBounds_.resize(models_.size());
+    for (std::size_t i = 0; i < models_.size(); ++i)
+        modelBounds_[i] = computeModelBounds(models_[i]);
+    pendingIndexRebuild_.clear();
+    spatialOrder_.clear();
+    spatialNodes_.clear();
+    documentBounds_.reset();
+    effectiveCacheDirty_ = true;
+    spatialIndexDirty_ = true;
+}
+
 void Document::invalidateDerivedState() noexcept {
     spatialIndexDirty_ = true;
     effectiveCacheDirty_ = true;
@@ -461,8 +590,21 @@ void Document::invalidateDerivedState() noexcept {
 
 void Document::ensureSpatialIndex() const {
     if (!spatialIndexDirty_) return;
-    modelBounds_.clear();
-    modelBounds_.resize(models_.size());
+    // Amortize: küçük delta setleri için bayat ağaç + taze delta sorguları
+    // yeterli; ağaç yalnızca delta büyüyünce / yapı bozulunca kurulur.
+    const bool pendingLarge = pendingIndexRebuild_.size() > kMaxPendingIndexEntries;
+    const bool shrunkALot = spatialOrder_.size() > models_.size() + models_.size() / 4 + 4'096;
+    const bool boundsStale = modelBounds_.size() != models_.size();
+    const bool treeMissing = spatialNodes_.empty() && !models_.empty();
+    if (!pendingLarge && !shrunkALot && !boundsStale && !treeMissing) {
+        spatialIndexDirty_ = false;
+        return;
+    }
+    if (boundsStale) {
+        modelBounds_.resize(models_.size());
+        for (std::size_t i = 0; i < models_.size(); ++i)
+            modelBounds_[i] = computeModelBounds(models_[i]);
+    }
     spatialOrder_.clear();
     spatialOrder_.reserve(models_.size());
     documentBounds_.reset();
@@ -485,6 +627,7 @@ void Document::ensureSpatialIndex() const {
     spatialNodes_.clear();
     spatialNodes_.reserve(spatialOrder_.size() * 2);
     if (!spatialOrder_.empty()) buildSpatialNode(0, spatialOrder_.size());
+    pendingIndexRebuild_.clear();
     spatialIndexDirty_ = false;
 }
 
@@ -525,6 +668,7 @@ void Document::querySpatialNode(std::size_t nodeIndex, const Bounds3& area,
     if (node.left == noNode) {
         for (std::size_t i = node.begin; i < node.end; ++i) {
             const auto modelIndex = spatialOrder_[i];
+            if (modelIndex >= models_.size()) continue; // silinmiş bayat girdi
             if (intersects2D(modelBounds_[modelIndex], area)) result.push_back(modelIndex);
         }
         return;
@@ -535,6 +679,13 @@ void Document::querySpatialNode(std::size_t nodeIndex, const Bounds3& area,
 
 std::optional<Bounds3> Document::bounds() const {
     ensureSpatialIndex();
+    if (!documentBounds_) {
+        for (std::size_t i = 0; i < models_.size(); ++i) {
+            if (models_[i].vertices().empty()) continue;
+            documentBounds_ = documentBounds_ ? mergeBounds(*documentBounds_, modelBounds_[i])
+                                              : modelBounds_[i];
+        }
+    }
     return documentBounds_;
 }
 
@@ -557,6 +708,7 @@ std::vector<std::size_t> Document::queryBounds(
         if (node.left == static_cast<std::size_t>(-1)) {
             for (std::size_t position = node.begin; position < node.end; ++position) {
                 const std::size_t modelIndex = spatialOrder_[position];
+                if (modelIndex >= models_.size()) continue; // silinmiş bayat girdi
                 if (intersects(modelBounds_[modelIndex])) result.push_back(modelIndex);
             }
         } else {
@@ -564,7 +716,12 @@ std::vector<std::size_t> Document::queryBounds(
             pending.push_back(node.left);
         }
     }
+    for (const auto index : pendingIndexRebuild_) {
+        if (index >= models_.size()) continue;
+        if (intersects(modelBounds_[index])) result.push_back(index);
+    }
     std::sort(result.begin(), result.end());
+    result.erase(std::unique(result.begin(), result.end()), result.end());
     return result;
 }
 
@@ -576,7 +733,12 @@ std::vector<std::size_t> Document::query2D(Vec3 minimum, Vec3 maximum) const {
                   std::max(minimum.z, maximum.z)}};
     std::vector<std::size_t> result;
     if (!spatialNodes_.empty()) querySpatialNode(0, area, result);
+    for (const auto index : pendingIndexRebuild_) {
+        if (index >= models_.size()) continue;
+        if (intersects2D(modelBounds_[index], area)) result.push_back(index);
+    }
     std::sort(result.begin(), result.end());
+    result.erase(std::unique(result.begin(), result.end()), result.end());
     return result;
 }
 
