@@ -632,10 +632,13 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
             FILE* diag = fopen("model-maker-render.log", "a");
             if (diag) { fprintf(diag, "FASTPATH\n"); fclose(diag); }
         }
-        BitBlt(dc, 0, 0, width, height, motionBaseDc_, 0, 0, SRCCOPY);
+        // Doğrudan hedefe: taban tek blit + geri bildirim — ara tampon ve
+        // ikinci tam ekran kopyası gereksiz (taban zaten kırpışmasız zemin).
+        BitBlt(target, 0, 0, width, height, motionBaseDc_, 0, 0, SRCCOPY);
+        HDC overlayDc = dc;
+        dc = target;
         drawMotionFeedback();
-        if (!draft.snapOnly)
-            BitBlt(target, 0, 0, width, height, dc, 0, 0, SRCCOPY);
+        dc = overlayDc;
         finishPerformanceSample(false);
         return;
     }

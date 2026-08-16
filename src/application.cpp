@@ -1244,7 +1244,7 @@ void Application::onCanvasPaint() {
     const bool wasSnapPreview = snapPreviewActive_;
     const auto paintStart = std::chrono::steady_clock::now();
     renderer_.draw(dc, client, document_, camera_, mode_, draftView());
-    if (paintSequence_ <= 10)
+    if (paintSequence_ <= 10 && paintSequence_ > 0)
         trimExtendLog(L"PAINT-EXIT " + std::to_wstring(paintSequence_ - 1));
     const double paintMs = std::chrono::duration<double, std::milli>(
         std::chrono::steady_clock::now() - paintStart).count();

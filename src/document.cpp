@@ -748,13 +748,16 @@ std::vector<std::size_t> Document::query2D(Vec3 minimum, Vec3 maximum) const {
                  {std::max(minimum.x, maximum.x), std::max(minimum.y, maximum.y),
                   std::max(minimum.z, maximum.z)}};
     std::vector<std::size_t> result;
+    // Ağaç yaprakları her modeli tam olarak bir kez üretir; pending listesi
+    // ağaçta olmayan modelleri kapsar — kümeler ayrık. sort+unique gereksizdi
+    // ve büyük pencerelerde sorgunun maliyetinin büyük kısmıydı.
     if (!spatialNodes_.empty()) querySpatialNode(0, area, result);
+    if (!pendingIndexRebuild_.empty())
+        result.reserve(result.size() + pendingIndexRebuild_.size());
     for (const auto index : pendingIndexRebuild_) {
         if (index >= models_.size()) continue;
         if (intersects2D(modelBounds_[index], area)) result.push_back(index);
     }
-    std::sort(result.begin(), result.end());
-    result.erase(std::unique(result.begin(), result.end()), result.end());
     return result;
 }
 
