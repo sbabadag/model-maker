@@ -11,6 +11,7 @@
 #include <cmath>
 #include <cwchar>
 #include <exception>
+#include <fstream>
 #include <iterator>
 #include <stdexcept>
 #include <string>
@@ -860,6 +861,14 @@ void Application::drawOwnerButton(const DRAWITEMSTRUCT& item) {
     }
 }
 
+static void trimExtendLog(const std::wstring& message) noexcept {
+    try {
+        std::ofstream log("model-maker-trim.log", std::ios::app);
+        log << "[" << GetTickCount() << "] " << wideToUtf8(message) << "\n";
+    } catch (...) {
+    }
+}
+
 LRESULT CALLBACK Application::windowProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
     Application* app = nullptr;
     if (message == WM_NCCREATE) {
@@ -1203,6 +1212,9 @@ LRESULT Application::handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lPa
 }
 
 void Application::onCanvasPaint() {
+    if (transformCommand_ == TransformCommand::Trim ||
+        transformCommand_ == TransformCommand::Extend)
+        trimExtendLog(L"WM_PAINT models=" + std::to_wstring(document_.models().size()));
     PAINTSTRUCT paint{};
     HDC dc = BeginPaint(canvas_, &paint);
     RECT client{};
@@ -1243,6 +1255,12 @@ void Application::onLeftButtonDown(int x, int y) {
         updateControls(); invalidateCanvas(); return;
     }
     if (transformCommand_ != TransformCommand::None) {
+        if (transformCommand_ == TransformCommand::Trim ||
+            transformCommand_ == TransformCommand::Extend) {
+            trimExtendLog(L"DOWN x=" + std::to_wstring(x) + L" y=" + std::to_wstring(y) +
+                          L" phase=" + std::to_wstring(static_cast<int>(transformPhase_)) +
+                          L" models=" + std::to_wstring(document_.models().size()));
+        }
         if (transformCommand_ == TransformCommand::Fillet &&
             transformPhase_ == TransformPhase::Selecting) {
             const auto hit = trimExtendTargetAt(x, y);
@@ -1323,11 +1341,17 @@ void Application::onLeftButtonDown(int x, int y) {
         // durumu tekrar boyar, zararsız).
         if (transformCommand_ == TransformCommand::Trim ||
             transformCommand_ == TransformCommand::Extend) {
+            trimExtendLog(L"SYNC DRAW baslıyor");
             if (HDC dc = GetDC(canvas_)) {
                 RECT client{};
                 GetClientRect(canvas_, &client);
                 renderer_.draw(dc, client, document_, camera_, mode_, draftView());
                 ReleaseDC(canvas_, dc);
+                trimExtendLog(L"SYNC DRAW tamam client=" +
+                              std::to_wstring(client.right) + L"x" +
+                              std::to_wstring(client.bottom));
+            } else {
+                trimExtendLog(L"SYNC DRAW GetDC BASARISIZ");
             }
         }
         return;
@@ -1887,6 +1911,9 @@ bool Application::applyTrimExtendTarget(std::size_t target, const Vec3& pickPoin
         lastTrimExtendStatus_ = L"Trim: " + std::to_wstring(result->size()) +
                                 (result->size() == 1 ? L" parça" : L" parça");
         document_.replaceModel(target, std::move(*result));
+        trimExtendLog(L"APPLY OK target=" + std::to_wstring(target) +
+                      L" pieces=" + std::to_wstring(result->size()) +
+                      L" models=" + std::to_wstring(document_.models().size()));
         return true;
     }
     if (transformCommand_ == TransformCommand::Extend) {
