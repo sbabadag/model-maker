@@ -611,34 +611,6 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         interactiveModelStride = std::max<std::size_t>(1,
             (document.models().size() + interactiveModelBudget - 1) / interactiveModelBudget);
     }
-    constexpr int coverageTileSize = 24;
-    const int coverageColumns = (width + coverageTileSize - 1) / coverageTileSize;
-    const int coverageRows = (height + coverageTileSize - 1) / coverageTileSize;
-    std::vector<bool> interactiveCoverage;
-    std::vector<int> interactiveTiles;
-    std::size_t onScreenSmallModels = 0;
-    if (draft.interactiveNavigation) {
-        interactiveCoverage.resize(static_cast<std::size_t>(coverageColumns * coverageRows));
-        interactiveTiles.assign(document.models().size(), -1);
-        performance.frameBufferGrowths += 2;
-        const auto& cachedBounds = document.modelBounds();
-        for (const auto index : visibleModels) {
-            if (index >= document.models().size()) continue;
-            const auto& vertices = document.models()[index].vertices();
-            if (vertices.empty() || vertices.size() >= 1'000) continue;
-            const auto& bounds = cachedBounds[index];
-            const POINT center = projectPoint((bounds.minimum + bounds.maximum) * 0.5);
-            if (center.x >= 0 && center.y >= 0 && center.x < width && center.y < height) {
-                interactiveTiles[index] = (center.y / coverageTileSize) * coverageColumns +
-                                          center.x / coverageTileSize;
-                ++onScreenSmallModels;
-            }
-        }
-    }
-    constexpr std::size_t completeOnScreenBudget = 8'000;
-    const bool renderAllOnScreen = onScreenSmallModels <= completeOnScreenBudget ||
-                                   onScreenSmallModels * 4 < document.models().size() * 3;
-
     struct ProjectedFace {
         std::vector<POINT> points;
         double depth{};
@@ -769,13 +741,8 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         // Phase 1 GPU: edges already rendered; skip non-selected model GDI pass
         if (useGpuLines) continue;
         if (draft.interactiveNavigation) {
-            bool representative = index % interactiveModelStride == 0 || model.vertices().size() >= 1'000;
-            if (interactiveTiles[index] >= 0) {
-                const std::size_t tile = static_cast<std::size_t>(interactiveTiles[index]);
-                if (renderAllOnScreen || !interactiveCoverage[tile])
-                    representative = true;
-                if (representative) interactiveCoverage[tile] = true;
-            }
+            const bool representative = index % interactiveModelStride == 0 ||
+                                        model.vertices().size() >= 1'000;
             if (!representative) continue;
         }
         // Ekran-boyutu LOD: zoom-out'ta minik görünen objeler tek piksel
