@@ -1655,7 +1655,10 @@ void Application::cancelDrawing() {
 void Application::startTransformCommand(TransformCommand command) {
     cancelZoomWindow2D();
     if (workPlanePicking_) cancelWorkPlaneCommand();
+    // cancelDrawing seçimi de temizler; noun-verb akışı için koru.
+    auto preservedSelection = std::move(selectedModels_);
     cancelDrawing();
+    selectedModels_ = std::move(preservedSelection);
 
     // Noun-verb: boş ekranda seçilmiş modeller komutun verisidir.
     if (command == TransformCommand::Delete && !selectedModels_.empty()) {
