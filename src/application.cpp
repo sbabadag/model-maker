@@ -1110,6 +1110,7 @@ LRESULT Application::handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lPa
         SetFocus(canvas_);
         if (zoomWindowActive_) cancelZoomWindow2D();
         else if (workPlanePicking_) cancelWorkPlaneCommand();
+        else if (transformCommand_ == TransformCommand::Copy) cancelTransformCommand();
         else if (transformCommand_ != TransformCommand::None) onCharacter(L'\r');
         else cancelDrawing();
         if (mode_ == EditMode::View3D) drawingActive_ = false;
@@ -2246,7 +2247,9 @@ void Application::commitTransformPoint(const Vec3& point) {
     } else if (transformCommand_ == TransformCommand::Copy) {
         pushUndoSnapshot();
         document_.copyModels(selectedModels_, displacement);
-        if (modifierCompletesAfterCommit(transformCommand_)) cancelTransformCommand();
+        // AutoCAD tarzı: her hedef tıklaması yeni bir kopya üretir;
+        // komut sağ tık veya Escape ile bitirilinceye kadar Destination
+        // fazında kalır.
     }
 }
 
