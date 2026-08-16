@@ -437,6 +437,7 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
                 SelectObject(dc, stockPen);
                 DeleteObject(preview);
             }
+   }
             const bool trimExtendTargetSelection =
                 (draft.transformCommand == TransformCommand::Trim ||
                  draft.transformCommand == TransformCommand::Extend) &&
@@ -503,7 +504,7 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
                 SelectObject(dc, oldSelectionPen); SelectObject(dc, oldSelectionBrush); DeleteObject(border);
                 drawText(dc, selection.left + 3, std::max(3L, selection.top - 19), L"ZOOM", RGB(54, 142, 224));
             }
-        }
+     
         if (motionDrafting && draft.cursor && draft.snapType != SnapType::None) {
             const POINT p = projectPoint(*draft.cursor);
             HPEN snapPen = CreatePen(PS_SOLID, 2, RGB(90, 255, 145));
