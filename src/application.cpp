@@ -1110,7 +1110,12 @@ LRESULT Application::handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lPa
         SetFocus(canvas_);
         if (zoomWindowActive_) cancelZoomWindow2D();
         else if (workPlanePicking_) cancelWorkPlaneCommand();
-        else if (transformCommand_ == TransformCommand::Copy) cancelTransformCommand();
+        else if (transformCommand_ == TransformCommand::Copy) {
+            if (transformPhase_ == TransformPhase::Selecting && !selectedModels_.empty())
+                onCharacter(L'\r');      // seçim bitti -> baz noktasına geç
+            else
+                cancelTransformCommand(); // Destination'da sağ tık -> komut biter
+        }
         else if (transformCommand_ != TransformCommand::None) onCharacter(L'\r');
         else cancelDrawing();
         if (mode_ == EditMode::View3D) drawingActive_ = false;
