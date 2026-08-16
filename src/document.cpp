@@ -56,6 +56,11 @@ bool intersects2D(const Bounds3& a, const Bounds3& b) noexcept {
            a.maximum.y >= b.minimum.y && a.minimum.y <= b.maximum.y;
 }
 
+bool contains2D(const Bounds3& outer, const Bounds3& inner) noexcept {
+    return outer.minimum.x <= inner.minimum.x && outer.minimum.y <= inner.minimum.y &&
+           outer.maximum.x >= inner.maximum.x && outer.maximum.y >= inner.maximum.y;
+}
+
 std::vector<std::size_t> uniqueIndices(const std::vector<std::size_t>& indices) {
     std::vector<std::size_t> result = indices;
     std::sort(result.begin(), result.end());
@@ -682,6 +687,15 @@ void Document::querySpatialNode(std::size_t nodeIndex, const Bounds3& area,
     if (!intersects2D(node.bounds, area)) return;
     constexpr std::size_t noNode = static_cast<std::size_t>(-1);
     if (node.left == noNode) {
+        // Yaprak tamamen sorgu alanı içindeyse tüm modelleri kapsar — model
+        // başına sınır testi gerekmez; tek seferde reserve + aralık kopyası.
+        if (contains2D(area, node.bounds)) {
+            for (std::size_t i = node.begin; i < node.end; ++i) {
+                const auto modelIndex = spatialOrder_[i];
+                if (modelIndex < models_.size()) result.push_back(modelIndex);
+            }
+            return;
+        }
         for (std::size_t i = node.begin; i < node.end; ++i) {
             const auto modelIndex = spatialOrder_[i];
             if (modelIndex >= models_.size()) continue; // silinmiş bayat girdi
