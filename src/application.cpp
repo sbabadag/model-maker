@@ -997,6 +997,11 @@ LRESULT Application::handleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
         finishDxfImport();
         return 0;
     case WM_TIMER:
+        if (wParam == 6) {
+            KillTimer(window_, 6);
+            invalidateCanvas();
+            return 0;
+        }
         if (wParam == 5) {
             KillTimer(window_, 5);
             if (temporaryPointDwellCandidate_ && hover_ && polarTrackingEnabled_ &&
@@ -1353,6 +1358,9 @@ void Application::onLeftButtonDown(int x, int y) {
             } else {
                 trimExtendLog(L"SYNC DRAW GetDC BASARISIZ");
             }
+            // Parent/üst pencere boyamaları canvas'ı ezebiliyor; 80ms sonra
+            // bir kez daha yeniden çiz (kısa gecikmeli garantili kare).
+            SetTimer(window_, 6, 80, nullptr);
         }
         return;
     }

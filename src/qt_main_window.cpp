@@ -39,7 +39,9 @@ QtMainWindow::QtMainWindow(QWidget* parent)
     : QMainWindow(parent)
     , app_(GetModuleHandleW(nullptr))
 {
-    setWindowTitle("Model Maker — Professional Wireframe CAD");
+    setWindowTitle(QString("Model Maker — Professional Wireframe CAD  [%1 %2]")
+                       .arg(__DATE__)
+                       .arg(__TIME__));
     resize(1400, 900);
 
     createMenus();
@@ -61,6 +63,10 @@ QtMainWindow::QtMainWindow(QWidget* parent)
     canvasContainer_->winId(); // force native handle
     HWND qtHwnd = reinterpret_cast<HWND>(canvasContainer_->winId());
     SetParent(canvas, qtHwnd);
+    // Qt kendi arka deposunu boyarken child canvas alanını ezecektir;
+    // WS_CLIPCHILDREN konteynerin canvas bölgesine hiç dokunmamasını sağlar.
+    SetWindowLongPtrW(qtHwnd, GWL_STYLE,
+                      GetWindowLongPtrW(qtHwnd, GWL_STYLE) | WS_CLIPCHILDREN);
     ShowWindow(appWnd, SW_HIDE);
 
     RECT rc;
