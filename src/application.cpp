@@ -1398,7 +1398,15 @@ void Application::onMouseMove(int x, int y, WPARAM buttons) {
             if (largeSnapTracking) lastLargeSnapEvaluation_ = now;
         }
         redraw = true;
-        snapRedraw = true;
+        // Transform commands (Trim/Extend/Move/...) have live visual feedback
+        // (selection window, boundary highlight, dashed previews) that the
+        // snap-preview throttle would suppress on large documents: deferred
+        // frames are drawn in interactiveNavigation mode which skips that
+        // feedback layer entirely. Throttle only when no transform command
+        // is active (snap tracking while drawing / neutral browsing).
+        snapRedraw = commandAllowsSnapping(drawingActive_, transformCommand_, transformPhase_,
+                                           arrayItemCount_.has_value(), offsetDistance_.has_value()) &&
+                     transformCommand_ == TransformCommand::None;
     }
     if (snapRedraw) updateStatus();
     if (redraw) {
