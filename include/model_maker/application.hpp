@@ -340,6 +340,7 @@ private:
     Vec2 wheelPreviewOffset_{};
     bool snapPreviewActive_{};
     bool snapPreviewTimerArmed_{};
+    int paintSequence_{};
     std::chrono::steady_clock::time_point lastLargeSnapEvaluation_{};
     bool zoomWindowActive_{};
     std::optional<POINT> zoomWindowFirstCorner_;

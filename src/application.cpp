@@ -1232,6 +1232,11 @@ void Application::onCanvasPaint() {
     if (transformCommand_ == TransformCommand::Trim ||
         transformCommand_ == TransformCommand::Extend)
         trimExtendLog(L"WM_PAINT models=" + std::to_wstring(document_.models().size()));
+    if (paintSequence_ < 10) {
+        trimExtendLog(L"PAINT-ENTER " + std::to_wstring(paintSequence_) +
+                      L" models=" + std::to_wstring(document_.models().size()));
+        ++paintSequence_;
+    }
     PAINTSTRUCT paint{};
     HDC dc = BeginPaint(canvas_, &paint);
     RECT client{};
@@ -1239,6 +1244,8 @@ void Application::onCanvasPaint() {
     const bool wasSnapPreview = snapPreviewActive_;
     const auto paintStart = std::chrono::steady_clock::now();
     renderer_.draw(dc, client, document_, camera_, mode_, draftView());
+    if (paintSequence_ <= 10)
+        trimExtendLog(L"PAINT-EXIT " + std::to_wstring(paintSequence_ - 1));
     const double paintMs = std::chrono::duration<double, std::milli>(
         std::chrono::steady_clock::now() - paintStart).count();
     if (paintMs > 5.0 && document_.models().size() > 5'000)

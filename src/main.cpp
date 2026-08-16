@@ -5,7 +5,27 @@
 #include <QApplication>
 #include <windows.h>
 
+#include <cstdio>
+
+static void milestone(const char* message) {
+    FILE* log = fopen("model-maker-startup.log", "a");
+    if (log) { fprintf(log, "%s\n", message); fclose(log); }
+}
+
+static LONG WINAPI crashFilter(EXCEPTION_POINTERS* info) {
+    FILE* log = fopen("model-maker-crash.log", "w");
+    if (log) {
+        fprintf(log, "code=0x%08lX addr=%p\n",
+                static_cast<unsigned long>(info->ExceptionRecord->ExceptionCode),
+                info->ExceptionRecord->ExceptionAddress);
+        fclose(log);
+    }
+    return EXCEPTION_EXECUTE_HANDLER;
+}
+
 int main(int argc, char* argv[]) {
+    SetUnhandledExceptionFilter(crashFilter);
+    milestone("main-start");
     try {
         HINSTANCE instance = GetModuleHandleW(nullptr);
         mm::registerForceDiagramClass(instance);
@@ -31,9 +51,12 @@ int main(int argc, char* argv[]) {
         app.setPalette(darkPalette);
 
         mm::QtMainWindow window;
+        milestone("window-created");
         window.show();
-
-        return app.exec();
+        milestone("window-shown");
+        const int result = app.exec();
+        milestone("exec-exit");
+        return result;
     } catch (const std::exception& error) {
         MessageBoxA(nullptr, error.what(), "Model Maker - Fatal Error", MB_OK | MB_ICONERROR);
         return 1;
