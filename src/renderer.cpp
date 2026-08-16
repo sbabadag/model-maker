@@ -66,12 +66,37 @@ RECT Renderer::canvasRect(const RECT& client) noexcept {
 }
 
 Renderer::~Renderer() {
-    if (!backBufferDc_) return;
-    if (backBufferBitmap_) {
-        SelectObject(backBufferDc_, backBufferDefaultBitmap_);
-        DeleteObject(backBufferBitmap_);
+    if (backBufferDc_) {
+        if (backBufferBitmap_) {
+            SelectObject(backBufferDc_, backBufferDefaultBitmap_);
+            DeleteObject(backBufferBitmap_);
+        }
+        DeleteDC(backBufferDc_);
     }
-    DeleteDC(backBufferDc_);
+    if (motionBaseDc_) {
+        if (motionBaseBitmap_) {
+            SelectObject(motionBaseDc_, motionBaseDefaultBitmap_);
+            DeleteObject(motionBaseBitmap_);
+        }
+        DeleteDC(motionBaseDc_);
+    }
+}
+
+void Renderer::ensureMotionBase(HDC target, int width, int height) const {
+    if (motionBaseDc_ && motionBaseWidth_ == width && motionBaseHeight_ == height) return;
+    if (motionBaseDc_) {
+        if (motionBaseBitmap_) {
+            SelectObject(motionBaseDc_, motionBaseDefaultBitmap_);
+            DeleteObject(motionBaseBitmap_);
+        }
+        DeleteDC(motionBaseDc_);
+    }
+    motionBaseDc_ = CreateCompatibleDC(target);
+    motionBaseBitmap_ = CreateCompatibleBitmap(target, width, height);
+    motionBaseDefaultBitmap_ = SelectObject(motionBaseDc_, motionBaseBitmap_);
+    motionBaseWidth_ = width;
+    motionBaseHeight_ = height;
+    motionBaseValid_ = false;
 }
 
 HDC Renderer::ensureBackBuffer(HDC target, int width, int height) const {
@@ -294,6 +319,254 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
     const auto isSelected = [&](std::size_t index) {
         return selectedIndexSet_.contains(index);
     };
+
+    // Hareket kareleri geri bildirim katmanı: seçim vurgusu, transform
+    // izleyicisi/hayaletleri, trim/extend önizlemesi, çizim lastik bandı,
+    // snap işareti ve dinamik giriş. Temel geometri motion tabanından gelir.
+    const auto drawMotionFeedback = [&]() {
+        const bool motionDrafting = commandShowsSnapFeedback(
+            draft.drawingActive, draft.workPlanePicking, draft.transformCommand,
+            draft.transformPhase, draft.arrayItemCount.has_value(),
+            draft.offsetDistance.has_value());
+        const bool feedbackActive = draft.transformCommand != TransformCommand::None ||
+                                    !draft.selectedModels.empty() ||
+                                    (draft.drawingActive && draft.anchor && draft.cursor);
+        if (feedbackActive) {
+            if (!draft.selectedModels.empty()) {
+                HPEN selectedPen = CreatePen(PS_SOLID, 3, RGB(90, 255, 145));
+                SelectObject(dc, selectedPen);
+                for (const auto index : draft.selectedModels) {
+                    if (index < document.models().size() && document.modelIsEditable(index))
+                        drawModel(document.models()[index]);
+                }
+                SelectObject(dc, stockPen);
+                DeleteObject(selectedPen);
+            }
+            if (draft.transformCommand != TransformCommand::None &&
+                draft.transformPhase == TransformPhase::Destination &&
+                draft.transformBase && draft.cursor) {
+                const POINT basePoint = projectPoint(*draft.transformBase);
+                const POINT destinationPoint = projectPoint(*draft.cursor);
+                const COLORREF trackerColor = [&]() -> COLORREF {
+                    switch (draft.orthoAxis) {
+                    case OrthoAxis::X: return RGB(235, 82, 96);
+                    case OrthoAxis::Y: return RGB(72, 211, 121);
+                    case OrthoAxis::Z: return RGB(78, 148, 255);
+                    default: return RGB(255, 206, 84);
+                    }
+                }();
+                HPEN trackerPen = CreatePen(PS_DOT, 1, trackerColor);
+                SelectObject(dc, trackerPen);
+                line(dc, basePoint.x, basePoint.y, destinationPoint.x, destinationPoint.y);
+                SelectObject(dc, stockPen);
+                DeleteObject(trackerPen);
+
+                HPEN transformPreview = CreatePen(PS_DASH, 1, RGB(255, 206, 84));
+                SelectObject(dc, transformPreview);
+                for (const auto index : draft.selectedModels) {
+                    if (index >= document.models().size()) continue;
+                    if (draft.transformCommand == TransformCommand::Mirror) {
+                        const auto preview = mode == EditMode::View3D
+                            ? mirrorModelOnPlane(document.models()[index], *draft.transformBase,
+                                                 *draft.cursor, draft.workPlane)
+                            : mirrorModel2D(document.models()[index], *draft.transformBase, *draft.cursor);
+                        if (preview) drawModel(*preview);
+                    } else if (draft.transformCommand == TransformCommand::LinearArray &&
+                               draft.arrayItemCount) {
+                        for (const auto& preview : linearArray2D(document.models()[index],
+                                                                 *draft.arrayItemCount,
+                                                                 *draft.cursor - *draft.transformBase))
+                            drawModel(preview);
+                    } else {
+                        drawModel(document.models()[index], *draft.cursor - *draft.transformBase);
+                    }
+                }
+                SelectObject(dc, stockPen);
+                DeleteObject(transformPreview);
+            }
+            if ((draft.transformCommand == TransformCommand::Trim ||
+                 draft.transformCommand == TransformCommand::Extend) &&
+                draft.transformPhase == TransformPhase::Destination &&
+                !draft.modifierBoundaries.empty() && !draft.trimExtendPreviewSuppressed) {
+                Vec3 pick{};
+                std::optional<std::size_t> target;
+                if (mode == EditMode::Draw2D) {
+                    pick = camera.unproject2D({static_cast<double>(draft.cursorScreen.x),
+                                               static_cast<double>(draft.cursorScreen.y)},
+                                              width, height);
+                    target = hitTestModel2D(pick, document, 10.0 / (60.0 * camera.zoom()));
+                } else {
+                    WorkPlane targetPlane = draft.workPlane;
+                    if (!draft.modifierBoundaries.front().vertices().empty())
+                        targetPlane.origin = draft.modifierBoundaries.front().vertices().front();
+                    if (const auto projectedPick = camera.unprojectToPlane(
+                            {static_cast<double>(draft.cursorScreen.x),
+                             static_cast<double>(draft.cursorScreen.y)}, width, height, targetPlane))
+                        pick = *projectedPick;
+                    target = hitTestModel3D({static_cast<double>(draft.cursorScreen.x),
+                                             static_cast<double>(draft.cursorScreen.y)},
+                                            document, camera, width, height, 10.0);
+                }
+                if (target && *target < document.models().size()) {
+                    HPEN previewPen = CreatePen(PS_DASH, 2, RGB(255, 206, 84));
+                    SelectObject(dc, previewPen);
+                    if (draft.transformCommand == TransformCommand::Trim) {
+                        const auto result = mode == EditMode::View3D
+                            ? trimLineOnPlane(document.models()[*target], draft.modifierBoundaries,
+                                              pick, draft.workPlane)
+                            : trimLine2D(document.models()[*target], draft.modifierBoundaries, pick);
+                        if (result)
+                            for (const auto& segment : *result) drawModel(segment);
+                    } else {
+                        const auto result = mode == EditMode::View3D
+                            ? extendLineOnPlane(document.models()[*target], draft.modifierBoundaries,
+                                                pick, draft.workPlane)
+                            : extendLine2D(document.models()[*target], draft.modifierBoundaries, pick);
+                        if (result) drawModel(*result);
+                    }
+                    SelectObject(dc, stockPen);
+                    DeleteObject(previewPen);
+                }
+            }
+            if (draft.drawingActive && draft.anchor && draft.cursor) {
+                const POINT a = projectPoint(*draft.anchor);
+                const POINT b = projectPoint(*draft.cursor);
+                HPEN preview = CreatePen(PS_DASH, 1, RGB(255, 206, 84));
+                SelectObject(dc, preview);
+                line(dc, a.x, a.y, b.x, b.y);
+                SelectObject(dc, stockPen);
+                DeleteObject(preview);
+            }
+        }
+        if (motionDrafting && draft.cursor && draft.snapType != SnapType::None) {
+            const POINT p = projectPoint(*draft.cursor);
+            HPEN snapPen = CreatePen(PS_SOLID, 2, RGB(90, 255, 145));
+            SelectObject(dc, snapPen);
+            HGDIOBJ oldBrush = SelectObject(dc, GetStockObject(NULL_BRUSH));
+            switch (snapMarkerSymbol(draft.snapType)) {
+            case SnapMarkerSymbol::Triangle: {
+                POINT triangle[4]{{p.x, p.y - 7}, {p.x - 7, p.y + 6}, {p.x + 7, p.y + 6}, {p.x, p.y - 7}};
+                Polyline(dc, triangle, 4);
+                break;
+            }
+            case SnapMarkerSymbol::Circle:
+                Ellipse(dc, p.x - 7, p.y - 7, p.x + 8, p.y + 8);
+                break;
+            case SnapMarkerSymbol::CircleCross:
+                Ellipse(dc, p.x - 7, p.y - 7, p.x + 8, p.y + 8);
+                line(dc, p.x - 4, p.y, p.x + 5, p.y); line(dc, p.x, p.y - 4, p.x, p.y + 5);
+                break;
+            case SnapMarkerSymbol::CrossedCircle:
+                Ellipse(dc, p.x - 7, p.y - 7, p.x + 8, p.y + 8);
+                line(dc, p.x - 6, p.y - 6, p.x + 7, p.y + 7);
+                line(dc, p.x - 6, p.y + 6, p.x + 7, p.y - 7);
+                break;
+            case SnapMarkerSymbol::Diamond: {
+                POINT diamond[5]{{p.x, p.y - 7}, {p.x + 7, p.y}, {p.x, p.y + 7},
+                                 {p.x - 7, p.y}, {p.x, p.y - 7}};
+                Polyline(dc, diamond, 5);
+                break;
+            }
+            case SnapMarkerSymbol::Cross:
+                line(dc, p.x - 6, p.y - 6, p.x + 7, p.y + 7);
+                line(dc, p.x - 6, p.y + 6, p.x + 7, p.y - 7);
+                break;
+            case SnapMarkerSymbol::BoxedCross:
+                Rectangle(dc, p.x - 7, p.y - 7, p.x + 8, p.y + 8);
+                line(dc, p.x - 5, p.y - 5, p.x + 6, p.y + 6);
+                line(dc, p.x - 5, p.y + 5, p.x + 6, p.y - 6);
+                break;
+            case SnapMarkerSymbol::ExtensionLine:
+                line(dc, p.x - 9, p.y, p.x - 5, p.y);
+                line(dc, p.x - 2, p.y, p.x + 3, p.y);
+                line(dc, p.x + 6, p.y, p.x + 10, p.y);
+                break;
+            case SnapMarkerSymbol::LinkedSquares:
+                Rectangle(dc, p.x - 7, p.y - 7, p.x + 2, p.y + 2);
+                Rectangle(dc, p.x - 1, p.y - 1, p.x + 8, p.y + 8);
+                break;
+            case SnapMarkerSymbol::RightAngle:
+                line(dc, p.x - 7, p.y + 7, p.x - 7, p.y - 5);
+                line(dc, p.x - 7, p.y - 5, p.x + 6, p.y - 5);
+                line(dc, p.x - 2, p.y - 5, p.x - 2, p.y + 1);
+                line(dc, p.x - 2, p.y + 1, p.x + 4, p.y + 1);
+                break;
+            case SnapMarkerSymbol::TangentCircle:
+                Ellipse(dc, p.x - 6, p.y - 6, p.x + 7, p.y + 7);
+                line(dc, p.x - 8, p.y - 7, p.x + 9, p.y - 7);
+                break;
+            case SnapMarkerSymbol::Hourglass: {
+                POINT hourglass[5]{{p.x - 7, p.y - 6}, {p.x + 7, p.y - 6},
+                                   {p.x - 7, p.y + 6}, {p.x + 7, p.y + 6},
+                                   {p.x - 7, p.y - 6}};
+                Polyline(dc, hourglass, 5);
+                break;
+            }
+            case SnapMarkerSymbol::ParallelLines:
+                line(dc, p.x - 8, p.y + 5, p.x, p.y - 5);
+                line(dc, p.x, p.y + 5, p.x + 8, p.y - 5);
+                break;
+            case SnapMarkerSymbol::GridCross:
+                line(dc, p.x - 7, p.y, p.x + 8, p.y);
+                line(dc, p.x, p.y - 7, p.x, p.y + 8);
+                Rectangle(dc, p.x - 3, p.y - 3, p.x + 4, p.y + 4);
+                break;
+            case SnapMarkerSymbol::Square:
+                Rectangle(dc, p.x - 6, p.y - 6, p.x + 7, p.y + 7);
+                break;
+            case SnapMarkerSymbol::None:
+                break;
+            }
+            SelectObject(dc, oldBrush);
+            SelectObject(dc, stockPen);
+            DeleteObject(snapPen);
+            drawText(dc, p.x + 10, p.y + 8, snapTypeLabel(draft.snapType), RGB(90, 255, 145));
+        }
+        if (motionDrafting && draft.dynamicInputEnabled && draft.cursor &&
+            !(draft.transformCommand != TransformCommand::None &&
+              draft.transformPhase == TransformPhase::Selecting)) {
+            wchar_t info[128]{};
+            if (!draft.input.empty()) {
+                std::swprintf(info, std::size(info), L"> %ls", draft.input.c_str());
+            } else if (draft.anchor) {
+                const double dx = draft.cursor->x - draft.anchor->x;
+                const double dy = draft.cursor->y - draft.anchor->y;
+                const double dz = draft.cursor->z - draft.anchor->z;
+                const double angle = std::atan2(dy, dx) * 180.0 / 3.14159265358979323846;
+                std::swprintf(info, std::size(info), L"%.3f < %.1f°  dZ %.3f",
+                              std::sqrt(dx * dx + dy * dy + dz * dz), angle, dz);
+            } else {
+                std::swprintf(info, std::size(info), L"X %.3f  Y %.3f  Z %.3f",
+                              draft.cursor->x, draft.cursor->y, draft.cursor->z);
+            }
+            const int boxX = std::clamp(static_cast<int>(draft.cursorScreen.x + 18),
+                                        static_cast<int>(canvas.left + 4),
+                                        std::max(static_cast<int>(canvas.left + 4),
+                                                 static_cast<int>(canvas.right - 190)));
+            const int boxY = std::clamp(static_cast<int>(draft.cursorScreen.y + 18),
+                                        static_cast<int>(canvas.top + 4),
+                                        std::max(static_cast<int>(canvas.top + 4),
+                                                 static_cast<int>(canvas.bottom - 30)));
+            RECT inputBox{boxX, boxY, boxX + 184, boxY + 25};
+            HBRUSH inputBrush = CreateSolidBrush(RGB(35, 43, 58));
+            FillRect(dc, &inputBox, inputBrush); DeleteObject(inputBrush);
+            FrameRect(dc, &inputBox, static_cast<HBRUSH>(GetStockObject(GRAY_BRUSH)));
+            drawText(dc, boxX + 7, boxY + 4, info,
+                     draft.input.empty() ? RGB(221, 228, 241) : RGB(255, 216, 104));
+        }
+    };
+
+    // Hızlı yol: geçerli motion tabanı varsa (kamera sabit hover hareketi)
+    // temel geometriyi hiç yeniden çizme — komutlar obje sayısından bağımsızlaşır.
+    if (draft.motionOverlay && !draft.snapOnly && !useGpuLines && motionBaseValid_ &&
+        motionBaseWidth_ == width && motionBaseHeight_ == height) {
+        BitBlt(dc, 0, 0, width, height, motionBaseDc_, 0, 0, SRCCOPY);
+        drawMotionFeedback();
+        if (!draft.snapOnly)
+            BitBlt(target, 0, 0, width, height, dc, 0, 0, SRCCOPY);
+        finishPerformanceSample(false);
+        return;
+    }
 
     std::vector<std::size_t> visibleModels;
     const auto spatialQueryStart = std::chrono::steady_clock::now();
@@ -533,6 +806,13 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         DeleteObject(pen);
     }
     } // !draft.snapOnly
+    if (!draft.snapOnly && !draft.interactiveNavigation && !useGpuLines) {
+        // Tam kare: temiz taban (arka plan + grid + eksenler + modeller) — henüz
+        // geri bildirim katmanı çizilmedi. Motion tabanını tazele.
+        ensureMotionBase(target, width, height);
+        BitBlt(motionBaseDc_, 0, 0, width, height, dc, 0, 0, SRCCOPY);
+        motionBaseValid_ = true;
+    }
 
     if (!draft.interactiveNavigation) {
         if (!draft.selectedModels.empty()) {
@@ -1289,6 +1569,10 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
     // geometri seyrek/kaba çizilirken seçim vurgusu, trim/extend önizlemesi
     // ve çizim lastik bandı yine de görünür — akıcılık + canlı geri bildirim.
     if (draft.interactiveNavigation && !draft.snapOnly) {
+        drawMotionFeedback();
+        /* Eski satır içi geri bildirim bloğu lambda'ya taşındı — bu kalan
+           kısım ölü kod; derleyiciyi sessiz tutmak için koşul false. */
+        if (false) {
         const bool feedbackActive = draft.transformCommand != TransformCommand::None ||
                                     !draft.selectedModels.empty() ||
                                     (draft.drawingActive && draft.anchor && draft.cursor);
@@ -1398,6 +1682,7 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
                 SelectObject(dc, stockPen);
                 DeleteObject(preview);
             }
+        }
         }
     }
 

@@ -2898,6 +2898,8 @@ DraftView Application::draftView() const {
     view.zoomWindowActive = zoomWindowActive_; view.zoomWindowFirstCorner = zoomWindowFirstCorner_;
     view.interactiveNavigation = rotating_ || panning2D_ || viewCubeManipulating_ ||
                                  wheelNavigating_ || snapPreviewActive_;
+    view.motionOverlay = snapPreviewActive_ && !rotating_ && !panning2D_ &&
+                         !viewCubeManipulating_ && !wheelNavigating_;
     view.rasterZoomPreview = document_.models().size() > 20'000 && wheelNavigating_ &&
                              std::abs(wheelPreviewFactor_ - 1.0) > 1e-12;
     view.rasterZoomFactor = wheelPreviewFactor_;

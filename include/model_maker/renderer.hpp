@@ -163,6 +163,9 @@ struct DraftView {
     bool zoomWindowActive{};
     std::optional<POINT> zoomWindowFirstCorner;
     bool interactiveNavigation{};
+    // Fare hover hareketi sırasında: temel geometri önbellekli tampondan
+    // basılır (kamera sabit), yalnızca geri bildirim katmanı yeniden çizilir.
+    bool motionOverlay{};
     bool rasterZoomPreview{};
     bool performanceOverlayEnabled{};
     double rasterZoomFactor{1.0};
@@ -199,6 +202,7 @@ public:
 
 private:
     HDC ensureBackBuffer(HDC target, int width, int height) const;
+    void ensureMotionBase(HDC target, int width, int height) const;
     bool presentRasterZoom(HDC target, int width, int height, Vec2 offset, double factor) const;
     static RECT canvasRect(const RECT& client) noexcept;
     static void drawText(HDC dc, int x, int y, const wchar_t* text, COLORREF color);
@@ -208,6 +212,12 @@ private:
     mutable HGDIOBJ backBufferDefaultBitmap_{};
     mutable int backBufferWidth_{};
     mutable int backBufferHeight_{};
+    mutable HDC motionBaseDc_{};
+    mutable HBITMAP motionBaseBitmap_{};
+    mutable HGDIOBJ motionBaseDefaultBitmap_{};
+    mutable int motionBaseWidth_{};
+    mutable int motionBaseHeight_{};
+    mutable bool motionBaseValid_{};
     mutable FramePerformanceTracker performanceTracker_{};
     mutable FrameIndexStampSet selectedIndexSet_{};
     mutable std::function<void()> guiOverlay_{};
