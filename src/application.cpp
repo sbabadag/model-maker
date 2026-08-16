@@ -1379,8 +1379,15 @@ void Application::onLeftButtonDown(int x, int y) {
         }
     } else if (mode_ == EditMode::Draw2D && transformCommand_ == TransformCommand::None) {
         // Neutral selection: single click toggle, drag for window
-        if (selectionFirstCorner_) completeWindowSelection(x, y);
-        else if (!toggleModelSelection(x, y)) selectionFirstCorner_ = POINT{x, y};
+        if (selectionFirstCorner_) {
+            completeWindowSelection(x, y);
+            trimExtendLog(L"SECIM-PENCERE sel=" + std::to_wstring(selectedModels_.size()));
+        } else {
+            const bool toggled = toggleModelSelection(x, y);
+            if (!toggled) selectionFirstCorner_ = POINT{x, y};
+            trimExtendLog(L"SECIM-TIK toggled=" + std::to_wstring(toggled) +
+                          L" sel=" + std::to_wstring(selectedModels_.size()));
+        }
         updateHover(x, y);
     } else if (mode_ == EditMode::View3D) {
         rotating_ = true; lastMouse_ = {x, y}; SetCapture(canvas_);
@@ -1656,9 +1663,12 @@ void Application::startTransformCommand(TransformCommand command) {
     cancelZoomWindow2D();
     if (workPlanePicking_) cancelWorkPlaneCommand();
     // cancelDrawing seçimi de temizler; noun-verb akışı için koru.
+    trimExtendLog(L"STARTCMD cmd=" + std::to_wstring(static_cast<int>(command)) +
+                  L" sel-giris=" + std::to_wstring(selectedModels_.size()));
     auto preservedSelection = std::move(selectedModels_);
     cancelDrawing();
     selectedModels_ = std::move(preservedSelection);
+    trimExtendLog(L"STARTCMD cancel-sonrasi sel=" + std::to_wstring(selectedModels_.size()));
 
     // Noun-verb: boş ekranda seçilmiş modeller komutun verisidir.
     if (command == TransformCommand::Delete && !selectedModels_.empty()) {
@@ -1708,6 +1718,7 @@ void Application::startTransformCommand(TransformCommand command) {
     updateControls();
     updateStatus();
     invalidateCanvas();
+    trimExtendLog(L"APP BASLADI build=" __DATE__ " " __TIME__);
 }
 
 void Application::toggle3DView() {
