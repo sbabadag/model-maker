@@ -262,9 +262,10 @@ void Document::applyUndoOp(const UndoOp& op, bool forward) {
         break;
     case UndoOp::Kind::Delete:
         if (forward) {
-            for (auto it = op.indices.rbegin(); it != op.indices.rend(); ++it)
-                if (*it < models_.size())
-                    models_.erase(models_.begin() + static_cast<std::ptrdiff_t>(*it));
+            // indices azalan sırada saklı — bu sırayla silme güvenli
+            for (const auto index : op.indices)
+                if (index < models_.size())
+                    models_.erase(models_.begin() + static_cast<std::ptrdiff_t>(index));
         } else {
             // indices azalan sırada; sondan başa (artan) geri ekle
             for (std::size_t k = op.indices.size(); k-- > 0;) {
