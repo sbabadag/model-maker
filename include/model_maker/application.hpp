@@ -48,6 +48,8 @@ public:
     void setSnapEnabled(bool enabled) noexcept { snapEnabled_ = enabled; }
     bool orthoEnabled() const noexcept { return orthoEnabled_; }
     void setOrthoEnabled(bool enabled) noexcept { orthoEnabled_ = enabled; }
+    bool gridSnapEnabled() const noexcept { return gridSnapEnabled_; }
+    void setGridSnapEnabled(bool enabled) noexcept { gridSnapEnabled_ = enabled; }
     const SnapTypeMask& enabledSnapTypes() const noexcept { return enabledSnapTypes_; }
     void toggleSnapType(SnapType type) noexcept;
     std::string currentLayer() const noexcept { return currentLayer_; }

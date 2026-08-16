@@ -214,6 +214,13 @@ void QtMainWindow::createToolbar() {
     });
     QObject::connect(snapBtn, &QPushButton::customContextMenuRequested, this, [this, snapBtn](const QPoint& pos) {
         QMenu menu(snapBtn);
+        QAction* gridAct = menu.addAction("Grid Snap");
+        gridAct->setCheckable(true);
+        gridAct->setChecked(app_.gridSnapEnabled());
+        QObject::connect(gridAct, &QAction::triggered, this, [this, gridAct]() {
+            app_.setGridSnapEnabled(gridAct->isChecked());
+        });
+        menu.addSeparator();
         const auto& mask = app_.enabledSnapTypes();
         auto addSnapItem = [&](const QString& label, SnapType type) {
             QAction* act = menu.addAction(label);
