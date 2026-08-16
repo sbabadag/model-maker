@@ -286,3 +286,23 @@ Qt veya kaynaklar yoksa exe atlanır, çekirdek/test/benchmark etkilenmez).
 2. `cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release` (Qt6 6.9.3 mingw_64 ile) + `ctest`.
 3. Qt ribbon UI, layer manager ve OpenGL render backend smoke testleri (scripts/).
 4. GDI + OpenGL yollarının görsel karşılaştırması (F11 overlay).
+
+
+---
+
+## Trim Düzeltmeleri (UI + Circle Desteği)
+
+- **Qt menü/ribbon komut girişleri artık ekranı tazeliyor** (`98ccdcb`): `startTransformCommand`,
+  `deactivateAllCommands`, `toggle3DView`, `zoomExtents2D`, `startZoomWindow2D` metodları artık
+  kendiliğinden `updateHover + updateControls + updateStatus + invalidateCanvas` çağırıyor.
+  GDI araç çubuğu ve klavye yolları bu tazelemeyi zaten yapıyordu; Qt ribbon/menü doğrudan
+  çağırıp atlıyordu → komut anında ekran eski karede kalıyordu.
+- **Circle/rectangle/polyline trim desteği** (`66310ef`): `trimLine2D` tek segmentli çizgi
+  dışındaki her modeli reddediyordu. Artık tüm eğri `kenarİndeksi+yerelT` ile parametrize
+  ediliyor; açık eğriler ve kapalı döngüler (wrap yayı dahil) doğru trim ediliyor.
+  Tek segmentli davranış bit-identical (300 rastgele vaka referansla doğrulandı).
+- **Başarısız trim tıklamasına uyarı sesi** (`2d6a44f`): kesişim yoksa/basarısızsa sessiz
+  no-op yerine bip.
+- Doğrulama: 654 kontrollü trim probu + 28 kontrollü uygulama-akış probu (hitTest → sınır
+  kopyası → applyTrimExtendTarget → replaceModel; circle-circle ve 3D dahil) — hepsi PASS.
+  Kullanıcı Windows'ta görsel olarak doğruladı. ✓
