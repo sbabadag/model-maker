@@ -269,6 +269,7 @@ private:
     std::string currentLayer_{"0"};
     int currentColorChoice_{};
     std::wstring lastTrimExtendStatus_{};
+    std::optional<std::size_t> polylineModelIndex_{};
     bool trimRegionRefreshed_{false};
     bool trimExtendPreviewSuppressed_{false};
     int currentLineTypeChoice_{};

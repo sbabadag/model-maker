@@ -1613,7 +1613,22 @@ void Application::commitPoint(const Vec3& point) {
         anchor_.reset();
         break;
     case DrawTool::Polyline:
-        if (point != start) addStyledModel(WireframeModel::line(start, point));
+        if (point != start) {
+            if (polylineModelIndex_ && *polylineModelIndex_ < document_.models().size()) {
+                // Mevcut polyline'i tek obje olarak uzat.
+                const auto& existing = document_.models()[*polylineModelIndex_];
+                std::vector<Vec3> vertices = existing.vertices();
+                vertices.push_back(point);
+                WireframeModel extended = WireframeModel::polyline(vertices);
+                extended.setProperties(existing.properties());
+                document_.replaceModel(*polylineModelIndex_,
+                                       std::vector<WireframeModel>{std::move(extended)});
+            } else {
+                pushUndoSnapshot();
+                addStyledModel(WireframeModel::polyline(std::vector<Vec3>{start, point}));
+                polylineModelIndex_ = document_.models().size() - 1;
+            }
+        }
         anchor_ = point;
         break;
     case DrawTool::Rectangle:
@@ -1654,6 +1669,7 @@ void Application::clearTemporaryTracking() {
 }
 
 void Application::cancelDrawing() {
+    polylineModelIndex_.reset();
     anchor_.reset();
     facePoints_.clear();
     input_.clear();
@@ -2655,6 +2671,7 @@ void Application::pushUndoSnapshot() { document_.pushSnapshot(); }
 void Application::undo() {
     if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
     if (!document_.undo()) return;
+    polylineModelIndex_.reset();
     selectedModels_.clear();
     selectionFirstCorner_.reset();
     refreshLayerCombo();
@@ -2667,6 +2684,7 @@ void Application::undo() {
 void Application::redo() {
     if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
     if (!document_.redo()) return;
+    polylineModelIndex_.reset();
     selectedModels_.clear();
     selectionFirstCorner_.reset();
     refreshLayerCombo();

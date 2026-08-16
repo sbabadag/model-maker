@@ -79,6 +79,7 @@ public:
                    std::vector<Face> faces = {});
 
     static WireframeModel line(Vec3 from, Vec3 to);
+    static WireframeModel polyline(const std::vector<Vec3>& vertices);
     static WireframeModel point(Vec3 position);
     static WireframeModel face3D(const std::array<Vec3, 4>& corners);
     static WireframeModel rectangle(Vec3 firstCorner, Vec3 oppositeCorner);

@@ -133,6 +133,15 @@ WireframeModel WireframeModel::line(Vec3 from, Vec3 to) {
     return {{from, to}, {{0, 1}}};
 }
 
+WireframeModel WireframeModel::polyline(const std::vector<Vec3>& vertices) {
+    if (vertices.size() < 2) return {vertices, {}};
+    std::vector<Edge> edges;
+    edges.reserve(vertices.size() - 1);
+    for (std::size_t i = 0; i + 1 < vertices.size(); ++i)
+        edges.push_back(Edge{i, i + 1});
+    return {vertices, edges};
+}
+
 WireframeModel WireframeModel::point(Vec3 position) {
     WireframeModel model({position}, {});
     model.pointEntity_ = true;
