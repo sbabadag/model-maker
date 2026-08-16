@@ -1456,7 +1456,7 @@ void Application::onMouseMove(int x, int y, WPARAM buttons) {
                (transformCommand_ != TransformCommand::None && transformPhase_ == TransformPhase::Selecting) ||
                workPlanePicking_ || mode_ == EditMode::Draw2D || drawingActive_ ||
                (transformCommand_ != TransformCommand::None && transformPhase_ != TransformPhase::Selecting)) {
-        const bool largeSnapTracking = document_.models().size() > 5'000;
+        const bool largeSnapTracking = document_.models().size() > 20'000;
         const auto now = std::chrono::steady_clock::now();
         if (!largeSnapTracking || lastLargeSnapEvaluation_.time_since_epoch().count() == 0 ||
             now - lastLargeSnapEvaluation_ >= std::chrono::milliseconds(50)) {
@@ -1469,13 +1469,14 @@ void Application::onMouseMove(int x, int y, WPARAM buttons) {
     }
     if (snapRedraw) updateStatus();
     if (redraw) {
-        if (document_.models().size() > 5'000) {
+        if (document_.models().size() > 20'000) {
             KillTimer(window_, 4);
             snapPreviewActive_ = true;
-            if (!snapPreviewTimerArmed_) {
-                SetTimer(window_, 3, 50, nullptr);
-                snapPreviewTimerArmed_ = true;
-            }
+            // Debounce: her hareket sayacı sıfırlar — tam kare yalnızca
+            // hareket DURDUKTAN sonra gelir (interaktif kareler kararlı kalır).
+            KillTimer(window_, 3);
+            SetTimer(window_, 3, 50, nullptr);
+            snapPreviewTimerArmed_ = true;
         } else invalidateCanvas();
     }
 }
@@ -2876,7 +2877,7 @@ DraftView Application::draftView() const {
     view.zoomWindowActive = zoomWindowActive_; view.zoomWindowFirstCorner = zoomWindowFirstCorner_;
     view.interactiveNavigation = rotating_ || panning2D_ || viewCubeManipulating_ ||
                                  wheelNavigating_ || snapPreviewActive_;
-    view.rasterZoomPreview = document_.models().size() > 5'000 && wheelNavigating_ &&
+    view.rasterZoomPreview = document_.models().size() > 20'000 && wheelNavigating_ &&
                              std::abs(wheelPreviewFactor_ - 1.0) > 1e-12;
     view.rasterZoomFactor = wheelPreviewFactor_;
     view.rasterZoomOffset = wheelPreviewOffset_;

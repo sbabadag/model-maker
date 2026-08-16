@@ -334,7 +334,7 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
     }
 
     if (draft.interactiveNavigation) {
-        constexpr std::size_t interactiveModelBudget = 1'500;
+        constexpr std::size_t interactiveModelBudget = 6'000;
         interactiveModelStride = std::max<std::size_t>(1,
             (document.models().size() + interactiveModelBudget - 1) / interactiveModelBudget);
     }
