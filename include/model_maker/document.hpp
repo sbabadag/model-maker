@@ -26,7 +26,11 @@ struct UndoOp {
     std::vector<std::size_t> indices;         // delete (azalan) / move: etkilenen indeksler
     Vec3 displacement{};                      // move: uygulanan yer değiştirme
 };
-using UndoRecord = std::vector<UndoOp>;
+struct UndoRecord {
+    std::vector<UndoOp> ops;
+    std::unordered_map<std::string, EntityProperties> layersBefore;
+    std::unordered_map<std::string, EntityProperties> layersAfter;
+};
 
 class Document {
 public:
@@ -101,6 +105,7 @@ private:
     void querySpatialNode(std::size_t node, const Bounds3& area,
                           std::vector<std::size_t>& result) const;
     void recordUndoOp(UndoOp op);
+    void recordLayerState();
     void applyUndoOp(const UndoOp& op, bool forward);
 
     std::vector<WireframeModel> models_;

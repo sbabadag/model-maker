@@ -354,12 +354,20 @@ void Document::clearBeamLoads() {
 }
 void Document::recordUndoOp(UndoOp op) {
     if (undoStack_.empty()) return; // kayıt açık değil (toplu yükleme vb.) — geri alınmaz
-    undoStack_.back().push_back(std::move(op));
+    undoStack_.back().ops.push_back(std::move(op));
+}
+
+void Document::recordLayerState() {
+    if (undoStack_.empty()) return;
+    undoStack_.back().layersAfter = layers_;
 }
 
 void Document::pushSnapshot() {
     // Yeni bir geri-alma kaydı açar; sonraki mutasyonlar bu kayda delta olarak eklenir.
-    undoStack_.push_back(UndoRecord{});
+    UndoRecord record;
+    record.layersBefore = layers_;
+    record.layersAfter = layers_;
+    undoStack_.push_back(std::move(record));
     if (undoStack_.size() > kMaxUndoEntries)
         undoStack_.pop_front();
     redoStack_.clear();
@@ -422,13 +430,15 @@ void Document::applyUndoOp(const UndoOp& op, bool forward) {
 }
 
 bool Document::undo() {
-    while (!undoStack_.empty() && undoStack_.back().empty())
+    while (!undoStack_.empty() && undoStack_.back().ops.empty() &&
+           undoStack_.back().layersBefore == undoStack_.back().layersAfter)
         undoStack_.pop_back();
     if (undoStack_.empty()) return false;
     UndoRecord record = std::move(undoStack_.back());
     undoStack_.pop_back();
-    for (auto it = record.rbegin(); it != record.rend(); ++it)
+    for (auto it = record.ops.rbegin(); it != record.ops.rend(); ++it)
         applyUndoOp(*it, false);
+    layers_ = record.layersBefore;
     redoStack_.push_back(std::move(record));
     rebuildDerivedState();
     return true;
@@ -438,8 +448,9 @@ bool Document::redo() {
     if (redoStack_.empty()) return false;
     UndoRecord record = std::move(redoStack_.back());
     redoStack_.pop_back();
-    for (const auto& op : record)
+    for (const auto& op : record.ops)
         applyUndoOp(op, true);
+    layers_ = record.layersAfter;
     undoStack_.push_back(std::move(record));
     if (undoStack_.size() > kMaxUndoEntries)
         undoStack_.pop_front();
@@ -449,7 +460,7 @@ bool Document::redo() {
 
 bool Document::canUndo() const noexcept {
     for (auto it = undoStack_.rbegin(); it != undoStack_.rend(); ++it)
-        if (!it->empty()) return true;
+        if (!it->ops.empty() || it->layersBefore != it->layersAfter) return true;
     return false;
 }
 
@@ -466,6 +477,7 @@ const std::vector<WireframeModel>& Document::models() const noexcept { return mo
 void Document::setLayerProperties(EntityProperties properties) {
     if (properties.layer.empty()) return;
     layers_[properties.layer] = std::move(properties);
+    recordLayerState();
     effectiveCacheDirty_ = true;
 }
 const std::unordered_map<std::string, EntityProperties>& Document::layers() const noexcept { return layers_; }
@@ -479,6 +491,7 @@ bool Document::createLayer(std::string name) {
     layer.trueColor = layer.effectiveColor = 0xFFFFFFu;
     layer.lineWeight = layer.effectiveLineWeight = 0;
     layers_.emplace(layer.layer, std::move(layer));
+    recordLayerState();
     effectiveCacheDirty_ = true;
     return true;
 }
@@ -488,8 +501,10 @@ bool Document::deleteLayer(const std::string& name) {
     if (std::any_of(models_.begin(), models_.end(), [&](const WireframeModel& model) {
             return model.properties().layer == name;
         })) return false;
+    const bool erased = layers_.erase(name) == 1;
+    if (erased) recordLayerState();
     effectiveCacheDirty_ = true;
-    return layers_.erase(name) == 1;
+    return erased;
 }
 
 bool Document::renameLayer(const std::string& oldName, std::string newName) {
@@ -506,6 +521,7 @@ bool Document::renameLayer(const std::string& oldName, std::string newName) {
         properties.layer = newName;
         model.setProperties(std::move(properties));
     }
+    recordLayerState();
     effectiveCacheDirty_ = true;
     return true;
 }
