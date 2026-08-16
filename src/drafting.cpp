@@ -1085,47 +1085,141 @@ std::vector<WireframeModel> polarArray2D(const WireframeModel& source, std::size
 std::optional<std::vector<WireframeModel>> trimLine2D(
     const WireframeModel& source, const std::vector<WireframeModel>& boundaries,
     const Vec3& pickPoint) {
-    if (source.vertices().size() != 2 || source.edges().size() != 1 ||
-        source.edges().front() != Edge{0, 1}) return std::nullopt;
-    const Vec3& start = source.vertices()[0];
-    const Vec3& end = source.vertices()[1];
-    const Vec3 direction = end - start;
-    const double lengthSquared = dot2D(direction, direction);
-    if (lengthSquared <= epsilon * epsilon) return std::nullopt;
+    // Trims single-segment lines as well as multi-segment open curves (polyline,
+    // rectangle) and closed loops (circle, rectangle): the picked sub-curve is
+    // removed and the remaining piece(s) are returned. Points and 3D faces are
+    // not trimmable. Curve positions are encoded as edgeIndex + localT, so edge
+    // e spans [e, e+1] and the whole curve spans [0, segmentCount].
+    const auto& vertices = source.vertices();
+    const auto& edges = source.edges();
+    if (source.isPointEntity() || source.isFace3D()) return std::nullopt;
+    if (vertices.size() < 2 || edges.empty()) return std::nullopt;
+    const std::size_t segmentCount = edges.size();
+    const double curveLength = static_cast<double>(segmentCount);
+    const bool closed = segmentCount >= 2 && edges.back().to == 0;
 
     std::vector<double> cuts;
-    for (const auto& boundary : boundaries) {
-        for (const auto& edge : boundary.edges()) {
-            if (edge.from >= boundary.vertices().size() || edge.to >= boundary.vertices().size()) continue;
-            if (const auto intersection = segmentIntersection(start, end,
-                    boundary.vertices()[edge.from], boundary.vertices()[edge.to])) {
-                const double parameter = dot2D(*intersection - start, direction) / lengthSquared;
-                if (parameter > epsilon && parameter < 1.0 - epsilon)
-                    cuts.push_back(parameter);
+    for (std::size_t edgeIndex = 0; edgeIndex < segmentCount; ++edgeIndex) {
+        if (edges[edgeIndex].from >= vertices.size() || edges[edgeIndex].to >= vertices.size()) continue;
+        const Vec3& a = vertices[edges[edgeIndex].from];
+        const Vec3& b = vertices[edges[edgeIndex].to];
+        const Vec3 ab = b - a;
+        const double lengthSquared = dot2D(ab, ab);
+        if (lengthSquared <= epsilon * epsilon) continue;
+        for (const auto& boundary : boundaries) {
+            for (const auto& boundaryEdge : boundary.edges()) {
+                if (boundaryEdge.from >= boundary.vertices().size() ||
+                    boundaryEdge.to >= boundary.vertices().size()) continue;
+                const auto intersection = segmentIntersection(a, b,
+                    boundary.vertices()[boundaryEdge.from], boundary.vertices()[boundaryEdge.to]);
+                if (!intersection) continue;
+                const double localT = dot2D(*intersection - a, ab) / lengthSquared;
+                if (localT > epsilon && localT < 1.0 - epsilon)
+                    cuts.push_back(static_cast<double>(edgeIndex) + localT);
             }
         }
     }
     if (cuts.empty()) return std::nullopt;
     std::sort(cuts.begin(), cuts.end());
-    cuts.erase(std::unique(cuts.begin(), cuts.end(), [](double a, double b) {
-        return std::abs(a - b) <= epsilon;
+    cuts.erase(std::unique(cuts.begin(), cuts.end(), [](double left, double right) {
+        return std::abs(left - right) <= epsilon;
     }), cuts.end());
-    const double picked = dot2D(pickPoint - start, direction) / lengthSquared;
-    const auto makeSegment = [&](double from, double to) {
-        auto segment = WireframeModel::line(start + direction * from, start + direction * to);
-        segment.setProperties(source.properties());
-        return segment;
+    if (closed && cuts.size() >= 2) {
+        // Cuts at the start/end wrap of a closed loop describe the same point.
+        if (cuts.front() <= epsilon && curveLength - cuts.back() <= epsilon) cuts.erase(cuts.begin());
+    }
+    if (closed && cuts.size() < 2) return std::nullopt;
+
+    // Picked location: closest point on the whole curve (2D).
+    double pickedPosition = 0.0;
+    {
+        double bestDistanceSquared = std::numeric_limits<double>::infinity();
+        for (std::size_t edgeIndex = 0; edgeIndex < segmentCount; ++edgeIndex) {
+            if (edges[edgeIndex].from >= vertices.size() || edges[edgeIndex].to >= vertices.size()) continue;
+            const Vec3& a = vertices[edges[edgeIndex].from];
+            const Vec3& b = vertices[edges[edgeIndex].to];
+            const Vec3 ab = b - a;
+            const double lengthSquared = dot2D(ab, ab);
+            const double localT = lengthSquared <= epsilon * epsilon ? 0.0
+                : std::clamp(dot2D(pickPoint - a, ab) / lengthSquared, 0.0, 1.0);
+            const Vec3 closest = a + ab * localT;
+            const double distanceSquared = dot2D(pickPoint - closest, pickPoint - closest);
+            if (distanceSquared < bestDistanceSquared) {
+                bestDistanceSquared = distanceSquared;
+                pickedPosition = static_cast<double>(edgeIndex) + localT;
+            }
+        }
+    }
+
+    const auto buildPiece = [&](double from, double to) {
+        const auto pointAt = [&](double position) {
+            double g = closed ? std::fmod(position, curveLength)
+                              : std::clamp(position, 0.0, curveLength);
+            if (g < 0.0) g += curveLength;
+            std::size_t edgeIndex = static_cast<std::size_t>(std::floor(g));
+            if (edgeIndex >= segmentCount) edgeIndex = segmentCount - 1;
+            const double localT = std::clamp(g - static_cast<double>(edgeIndex), 0.0, 1.0);
+            const Vec3& a = vertices[edges[edgeIndex].from];
+            const Vec3& b = vertices[edges[edgeIndex].to];
+            return a + (b - a) * localT;
+        };
+        std::vector<Vec3> pieceVertices;
+        pieceVertices.push_back(pointAt(from));
+        double cursor = from;
+        std::size_t guard = 0;
+        while (to - cursor > epsilon && guard++ < segmentCount + 2) {
+            const std::size_t edgeIndex = static_cast<std::size_t>(std::floor(cursor));
+            const double edgeEnd = static_cast<double>(edgeIndex + 1);
+            if (edgeEnd > to - epsilon) break;
+            pieceVertices.push_back(vertices[edges[edgeIndex % segmentCount].to]);
+            cursor = edgeEnd;
+        }
+        const Vec3 tail = pointAt(to);
+        if (pieceVertices.size() < 2 || !(pieceVertices.back() == tail)) pieceVertices.push_back(tail);
+        std::vector<Edge> pieceEdges;
+        pieceEdges.reserve(pieceVertices.size() - 1);
+        for (std::size_t i = 0; i + 1 < pieceVertices.size(); ++i)
+            pieceEdges.push_back({i, i + 1});
+        WireframeModel piece(std::move(pieceVertices), std::move(pieceEdges));
+        piece.setProperties(source.properties());
+        return piece;
     };
 
     std::vector<WireframeModel> result;
-    const auto upper = std::upper_bound(cuts.begin(), cuts.end(), picked);
-    if (upper == cuts.begin()) {
-        result.push_back(makeSegment(cuts.front(), 1.0));
-    } else if (upper == cuts.end()) {
-        result.push_back(makeSegment(0.0, cuts.back()));
+    if (!closed) {
+        const auto upper = std::upper_bound(cuts.begin(), cuts.end(), pickedPosition);
+        if (upper == cuts.begin()) {
+            result.push_back(buildPiece(cuts.front(), curveLength));
+        } else if (upper == cuts.end()) {
+            result.push_back(buildPiece(0.0, cuts.back()));
+        } else {
+            result.push_back(buildPiece(0.0, *std::prev(upper)));
+            result.push_back(buildPiece(*upper, curveLength));
+        }
+        return result;
+    }
+
+    // Closed loop: the removed arc is the one containing the pick; the
+    // complementary arc (possibly wrapping past the start vertex) is kept.
+    const double origin = cuts.front();
+    std::vector<double> unwrapped;
+    unwrapped.reserve(cuts.size());
+    for (const double position : cuts) unwrapped.push_back(position - origin);
+    double picked = pickedPosition - origin;
+    if (picked < 0.0) picked += curveLength;
+    const std::size_t count = unwrapped.size();
+    const auto upper = std::upper_bound(unwrapped.begin(), unwrapped.end(), picked);
+    std::size_t index = static_cast<std::size_t>(upper - unwrapped.begin());
+    if (index == 0) index = count;
+    --index;
+    if (index == count - 1) {
+        // Removed arc crosses the start vertex: kept arc runs between the
+        // first and last cuts without wrapping.
+        result.push_back(buildPiece(cuts.front(), cuts.back()));
     } else {
-        result.push_back(makeSegment(0.0, *std::prev(upper)));
-        result.push_back(makeSegment(*upper, 1.0));
+        // Removed arc lies between two interior cuts: kept arc wraps past
+        // the start vertex from cuts[index+1] to cuts[index] + curveLength.
+        result.push_back(buildPiece(cuts[index + 1], cuts[index] + curveLength));
     }
     return result;
 }
