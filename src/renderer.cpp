@@ -1303,6 +1303,48 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
                 SelectObject(dc, stockPen);
                 DeleteObject(selectedPen);
             }
+            if (draft.transformCommand != TransformCommand::None &&
+                draft.transformPhase == TransformPhase::Destination &&
+                draft.transformBase && draft.cursor) {
+                const POINT basePoint = projectPoint(*draft.transformBase);
+                const POINT destinationPoint = projectPoint(*draft.cursor);
+                const COLORREF trackerColor = [&]() -> COLORREF {
+                    switch (draft.orthoAxis) {
+                    case OrthoAxis::X: return RGB(235, 82, 96);   // Red
+                    case OrthoAxis::Y: return RGB(72, 211, 121);  // Green
+                    case OrthoAxis::Z: return RGB(78, 148, 255);  // Blue
+                    default: return RGB(255, 206, 84);            // Yellow (no ortho)
+                    }
+                }();
+                HPEN trackerPen = CreatePen(PS_DOT, 1, trackerColor);
+                SelectObject(dc, trackerPen);
+                line(dc, basePoint.x, basePoint.y, destinationPoint.x, destinationPoint.y);
+                SelectObject(dc, stockPen);
+                DeleteObject(trackerPen);
+
+                HPEN transformPreview = CreatePen(PS_DASH, 1, RGB(255, 206, 84));
+                SelectObject(dc, transformPreview);
+                for (const auto index : draft.selectedModels) {
+                    if (index >= document.models().size()) continue;
+                    if (draft.transformCommand == TransformCommand::Mirror) {
+                        const auto preview = mode == EditMode::View3D
+                            ? mirrorModelOnPlane(document.models()[index], *draft.transformBase,
+                                                 *draft.cursor, draft.workPlane)
+                            : mirrorModel2D(document.models()[index], *draft.transformBase, *draft.cursor);
+                        if (preview) drawModel(*preview);
+                    } else if (draft.transformCommand == TransformCommand::LinearArray &&
+                               draft.arrayItemCount) {
+                        for (const auto& preview : linearArray2D(document.models()[index],
+                                                                 *draft.arrayItemCount,
+                                                                 *draft.cursor - *draft.transformBase))
+                            drawModel(preview);
+                    } else {
+                        drawModel(document.models()[index], *draft.cursor - *draft.transformBase);
+                    }
+                }
+                SelectObject(dc, stockPen);
+                DeleteObject(transformPreview);
+            }
             if ((draft.transformCommand == TransformCommand::Trim ||
                  draft.transformCommand == TransformCommand::Extend) &&
                 draft.transformPhase == TransformPhase::Destination &&
