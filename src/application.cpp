@@ -1191,6 +1191,9 @@ LRESULT Application::handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lPa
         else if (wParam == VK_F12) dynamicInputEnabled_ = !dynamicInputEnabled_;
         else if (wParam == 'Z' && (GetKeyState(VK_CONTROL) & 0x8000)) undo();
         else if (wParam == 'Y' && (GetKeyState(VK_CONTROL) & 0x8000)) redo();
+        else if (wParam == 'N' && (GetKeyState(VK_CONTROL) & 0x8000)) newDocument();
+        else if (wParam == 'O' && (GetKeyState(VK_CONTROL) & 0x8000)) openDocument();
+        else if (wParam == 'S' && (GetKeyState(VK_CONTROL) & 0x8000)) saveDocument();
         else if (wParam == 'L') selectTool(DrawTool::Line);
         else if (wParam == 'P') selectTool(DrawTool::Polyline);
         else if (wParam == 'A') selectTool(DrawTool::Rectangle);
@@ -2891,6 +2894,20 @@ std::optional<std::filesystem::path> Application::chooseFile(bool save, bool dxf
     const BOOL accepted = save ? GetSaveFileNameW(&dialog) : GetOpenFileNameW(&dialog);
     if (!accepted) return std::nullopt;
     return std::filesystem::path(filename);
+}
+
+void Application::newDocument() {
+    document_.clear();
+    refreshLayerCombo();
+    if (workPlanePicking_) cancelWorkPlaneCommand();
+    if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
+    else cancelDrawing();
+    camera_.reset();
+    drawingActive_ = mode_ == EditMode::Draw2D;
+    updateHover(cursorScreen_.x, cursorScreen_.y);
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
 }
 
 void Application::saveDocument() {

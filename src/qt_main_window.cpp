@@ -54,6 +54,12 @@ QtMainWindow::QtMainWindow(QWidget* parent)
     QObject::connect(undoShortcut, &QShortcut::activated, this, [this]() { app_.undo(); });
     auto* redoShortcut = new QShortcut(QKeySequence::Redo, this);
     QObject::connect(redoShortcut, &QShortcut::activated, this, [this]() { app_.redo(); });
+    auto* newShortcut = new QShortcut(QKeySequence::New, this);
+    QObject::connect(newShortcut, &QShortcut::activated, this, [this]() { app_.newDocument(); });
+    auto* openShortcut = new QShortcut(QKeySequence::Open, this);
+    QObject::connect(openShortcut, &QShortcut::activated, this, [this]() { app_.openDocument(); });
+    auto* saveShortcut = new QShortcut(QKeySequence::Save, this);
+    QObject::connect(saveShortcut, &QShortcut::activated, this, [this]() { app_.saveDocument(); });
 
     // Create a plain widget for central area — fills all space between docks
     canvasContainer_ = new QWidget(this);
@@ -117,7 +123,15 @@ void QtMainWindow::resizeEmbeddedCanvas() {
 
 void QtMainWindow::createMenus() {
     QMenu* fileMenu = menuBar()->addMenu("&Dosya");
-    fileMenu->addAction("&Yeni", this, [this]() { app_.selectTool(DrawTool::Line); });
+    fileMenu->addAction("&Yeni", this, [this]() { app_.newDocument(); });
+    fileMenu->addAction("&Aç...", this, [this]() { app_.openDocument(); });
+    fileMenu->addAction("&Kaydet", this, [this]() { app_.saveDocument(); });
+    fileMenu->addSeparator();
+    fileMenu->addAction("DXF &İçe Aktar...", this, [this]() { app_.importDxf(); });
+    fileMenu->addAction("DXF &Dışa Aktar...", this, [this]() { app_.exportDxf(); });
+    fileMenu->addSeparator();
+    fileMenu->addAction("S2K Dışa Aktar...", this, [this]() { app_.exportS2K(); });
+    fileMenu->addAction("OpenSees Dışa Aktar...", this, [this]() { app_.exportOpenSees(); });
     fileMenu->addAction("DXF &İçe Aktar...", this, []() {});
     fileMenu->addAction("DXF &Dışa Aktar...", this, []() {});
     fileMenu->addSeparator();

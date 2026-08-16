@@ -138,6 +138,7 @@ private:
     void activate3DNavigation();
     void addCube();
     void addPyramid();
+    void newDocument();
     void saveDocument();
     void openDocument();
     void importDxf();
