@@ -505,6 +505,24 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
             }
             if (!representative) continue;
         }
+        // Ekran-boyutu LOD: zoom-out'ta minik görünen objeler tek piksel
+        // işaret olarak çizilir, görünmez boyuttakiler atlanır — büyük
+        // çizimlerde tam kare maliyeti ekrandaki detaya bağlı kalır.
+        if (!draft.interactiveNavigation && model.faces().empty() && !model.isPointEntity()) {
+            const Bounds3& bounds = document.modelBounds()[index];
+            const POINT cornerA = projectPoint(bounds.minimum);
+            const POINT cornerB = projectPoint(bounds.maximum);
+            const double screenSize = std::max(
+                std::abs(static_cast<double>(cornerB.x - cornerA.x)),
+                std::abs(static_cast<double>(cornerB.y - cornerA.y)));
+            if (screenSize < 0.5) { ++performance.renderedEntities; continue; }
+            if (screenSize < 1.5) {
+                SetPixel(dc, (cornerA.x + cornerB.x) / 2, (cornerA.y + cornerB.y) / 2,
+                         properties.effectiveColor);
+                ++performance.renderedEntities;
+                continue;
+            }
+        }
         SelectObject(dc, entityPen(properties));
         drawModel(model);
         ++performance.renderedEntities;
