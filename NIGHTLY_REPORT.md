@@ -264,19 +264,14 @@ viewport culling ve BVH/spatial query performansı.
   Qt bulunamazsa `model-maker` exe hedefi atlanıyor, çekirdek + testler + benchmark'lar
   her zaman derleniyor.
 
-### ⚠️ KRİTİK: Qt Commit'i Eksik Dosyalar İçeriyor
+### ⚠️ Qt Commit'i Eksik Dosyalar İçeriyordu — ÇÖZÜLDÜ
 
-`8f4a232` commit'i aşağıdaki dosyaları CMakeLists'te ve #include'larda referans ediyor
-ama **bu dosyalar commit'te yok** (Windows'ta untracked kalmış olmalı):
-
-- `src/qt_main_window.cpp`
-- `include/model_maker/qt_main_window.hpp`
-- `src/opengl_render_backend.cpp`
-- `include/model_maker/opengl_render_backend.hpp`
-
-Bu dosyalar repoya eklenene kadar **Qt exe hedefi hiçbir makinede derlenemez**
-(CMake koruması sayesinde çekirdek/test/benchmark etkilenmez). Dosyaların Windows
-makineden commit edilmesi gerekiyor.
+`8f4a232` commit'i `qt_main_window.cpp/hpp` ve `opengl_render_backend.cpp/hpp`
+dosyalarını referans ediyor ama commit içermiyordu. Bu dosyalar Windows'tan
+`afba550` ("feat: add render backend abstraction, Qt main window and performance
+HUD sources") ile gönderildi ve `314c80b` merge'iyle hermes-nightly'ye alındı.
+Qt6 bulunan bir Windows ortamında exe hedefi artık derlenebilir (CMake koruması:
+Qt veya kaynaklar yoksa exe atlanır, çekirdek/test/benchmark etkilenmez).
 
 ### Doğrulama (Linux)
 
