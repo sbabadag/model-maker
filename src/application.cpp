@@ -1316,7 +1316,14 @@ void Application::onLeftButtonDown(int x, int y) {
                 }
             }
         }
-        updateControls(); updateStatus(); invalidateCanvas(); return;
+        updateControls(); updateStatus(); invalidateCanvas();
+        // Trim/Extend sonucunu hemen çizdir: Qt gömme sırasında ertelenen
+        // WM_PAINT kuyruğa takılabiliyor; UpdateWindow güncelleme bölgesini
+        // eşzamanlı boyar, böylece tıklama anında yeni durum ekrana yansır.
+        if (transformCommand_ == TransformCommand::Trim ||
+            transformCommand_ == TransformCommand::Extend)
+            UpdateWindow(canvas_);
+        return;
     }
     if (drawingActive_) {
         updateHover(x, y);
