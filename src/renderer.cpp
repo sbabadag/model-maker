@@ -437,6 +437,72 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
                 SelectObject(dc, stockPen);
                 DeleteObject(preview);
             }
+            const bool trimExtendTargetSelection =
+                (draft.transformCommand == TransformCommand::Trim ||
+                 draft.transformCommand == TransformCommand::Extend) &&
+                draft.transformPhase == TransformPhase::Destination;
+            const bool neutralSelection = draft.transformCommand == TransformCommand::None &&
+                                          !draft.drawingActive;
+            if ((neutralSelection ||
+                 (draft.transformCommand != TransformCommand::None &&
+                  (draft.transformPhase == TransformPhase::Selecting || trimExtendTargetSelection))) &&
+                draft.selectionFirstCorner) {
+                const POINT first = *draft.selectionFirstCorner;
+                const POINT second = draft.cursorScreen;
+                const bool crossing = second.x < first.x;
+                RECT selection{std::min(first.x, second.x), std::min(first.y, second.y),
+                               std::max(first.x, second.x), std::max(first.y, second.y)};
+                const COLORREF color = crossing ? RGB(74, 188, 112) : RGB(54, 142, 224);
+                const int selectionWidth = std::max(1L, selection.right - selection.left);
+                const int selectionHeight = std::max(1L, selection.bottom - selection.top);
+                HDC overlayDc = CreateCompatibleDC(dc);
+                HBITMAP overlayBitmap = CreateCompatibleBitmap(dc, selectionWidth, selectionHeight);
+                HGDIOBJ oldOverlayBitmap = SelectObject(overlayDc, overlayBitmap);
+                RECT overlayRect{0, 0, selectionWidth, selectionHeight};
+                HBRUSH overlayBrush = CreateSolidBrush(crossing ? RGB(34, 139, 74) : RGB(36, 104, 181));
+                FillRect(overlayDc, &overlayRect, overlayBrush);
+                BLENDFUNCTION blend{AC_SRC_OVER, 0, 72, 0};
+                AlphaBlend(dc, selection.left, selection.top, selectionWidth, selectionHeight,
+                           overlayDc, 0, 0, selectionWidth, selectionHeight, blend);
+                SelectObject(overlayDc, oldOverlayBitmap);
+                DeleteObject(overlayBrush);
+                DeleteObject(overlayBitmap);
+                DeleteDC(overlayDc);
+                HGDIOBJ oldSelectionBrush = SelectObject(dc, GetStockObject(NULL_BRUSH));
+                HPEN border = CreatePen(crossing ? PS_DASH : PS_SOLID, 1, color);
+                HGDIOBJ oldSelectionPen = SelectObject(dc, border);
+                Rectangle(dc, selection.left, selection.top, selection.right, selection.bottom);
+                SelectObject(dc, oldSelectionPen);
+                SelectObject(dc, oldSelectionBrush);
+                DeleteObject(border);
+                drawText(dc, selection.left + 3, std::max(3L, selection.top - 19),
+                         crossing ? L"CROSSING" : L"WINDOW", color);
+            }
+            if (draft.zoomWindowActive && draft.zoomWindowFirstCorner) {
+                const POINT first = *draft.zoomWindowFirstCorner;
+                const POINT second = draft.cursorScreen;
+                RECT selection{std::min(first.x, second.x), std::min(first.y, second.y),
+                               std::max(first.x, second.x), std::max(first.y, second.y)};
+                const int selectionWidth = std::max(1L, selection.right - selection.left);
+                const int selectionHeight = std::max(1L, selection.bottom - selection.top);
+                HDC overlayDc = CreateCompatibleDC(dc);
+                HBITMAP overlayBitmap = CreateCompatibleBitmap(dc, selectionWidth, selectionHeight);
+                HGDIOBJ oldOverlayBitmap = SelectObject(overlayDc, overlayBitmap);
+                RECT overlayRect{0, 0, selectionWidth, selectionHeight};
+                HBRUSH overlayBrush = CreateSolidBrush(RGB(36, 104, 181));
+                FillRect(overlayDc, &overlayRect, overlayBrush);
+                BLENDFUNCTION blend{AC_SRC_OVER, 0, 64, 0};
+                AlphaBlend(dc, selection.left, selection.top, selectionWidth, selectionHeight,
+                           overlayDc, 0, 0, selectionWidth, selectionHeight, blend);
+                SelectObject(overlayDc, oldOverlayBitmap);
+                DeleteObject(overlayBrush); DeleteObject(overlayBitmap); DeleteDC(overlayDc);
+                HGDIOBJ oldSelectionBrush = SelectObject(dc, GetStockObject(NULL_BRUSH));
+                HPEN border = CreatePen(PS_SOLID, 1, RGB(54, 142, 224));
+                HGDIOBJ oldSelectionPen = SelectObject(dc, border);
+                Rectangle(dc, selection.left, selection.top, selection.right, selection.bottom);
+                SelectObject(dc, oldSelectionPen); SelectObject(dc, oldSelectionBrush); DeleteObject(border);
+                drawText(dc, selection.left + 3, std::max(3L, selection.top - 19), L"ZOOM", RGB(54, 142, 224));
+            }
         }
         if (motionDrafting && draft.cursor && draft.snapType != SnapType::None) {
             const POINT p = projectPoint(*draft.cursor);
