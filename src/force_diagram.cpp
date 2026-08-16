@@ -14,7 +14,7 @@ constexpr int kRowH   = 85;
 constexpr int kGraphW = kWidth - kMargin - 20;
 
 void drawDiagram(HDC dc, int yBase, double vi, double vj, double maxVal,
-                 const wchar_t* title, const wchar_t* unit, COLORREF color) {
+                 double w, double L, const wchar_t* title, const wchar_t* unit, COLORREF color) {
     const int yMid = yBase + kRowH / 2;
     SetTextColor(dc, RGB(200, 200, 200)); SetBkMode(dc, TRANSPARENT);
     RECT tr{kMargin, yBase, kWidth - 5, yBase + 16};
@@ -34,11 +34,30 @@ void drawDiagram(HDC dc, int yBase, double vi, double vj, double maxVal,
     RECT vr{kWidth - 5, yBase + 20, kWidth + 50, yBase + 36};
     DrawTextW(dc, vbuf, -1, &vr, DT_LEFT | DT_VCENTER);
     if (maxVal < 1e-12) { DeleteObject(axisPen); return; }
-    const int di = static_cast<int>(-vi * scale);
-    const int dj = static_cast<int>(-vj * scale);
     HPEN diagPen = CreatePen(PS_SOLID, 2, color);
     SelectObject(dc, diagPen);
-    MoveToEx(dc, kMargin, yMid + di, NULL); LineTo(dc, kWidth - 20, yMid + dj);
+    if (std::abs(w) > 1e-9) {
+        // Parabolic: M(x)=Mi*(1-t)+Mj*t + w*L²*t*(1-t)/2
+        const double parabolicScale = w * L * L * 0.5;
+        constexpr int segments = 40;
+        for (int i = 0; i < segments; ++i) {
+            const double t0 = static_cast<double>(i) / segments;
+            const double t1 = static_cast<double>(i + 1) / segments;
+            const double parabola0 = parabolicScale * t0 * (1.0 - t0);
+            const double parabola1 = parabolicScale * t1 * (1.0 - t1);
+            const double v0 = vi * (1.0 - t0) + vj * t0 + parabola0;
+            const double v1 = vi * (1.0 - t1) + vj * t1 + parabola1;
+            const int x0 = kMargin + static_cast<int>(t0 * kGraphW);
+            const int y0 = yMid + static_cast<int>(-v0 * scale);
+            const int x1 = kMargin + static_cast<int>(t1 * kGraphW);
+            const int y1 = yMid + static_cast<int>(-v1 * scale);
+            MoveToEx(dc, x0, y0, NULL); LineTo(dc, x1, y1);
+        }
+    } else {
+        const int di = static_cast<int>(-vi * scale);
+        const int dj = static_cast<int>(-vj * scale);
+        MoveToEx(dc, kMargin, yMid + di, NULL); LineTo(dc, kWidth - 20, yMid + dj);
+    }
     DeleteObject(diagPen);
     DeleteObject(axisPen);
 }
@@ -81,13 +100,13 @@ LRESULT CALLBACK forceDiagramProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPa
         const double maxV = std::max({std::abs(data->shearYI), std::abs(data->shearYJ),
                                        std::abs(data->shearZI), std::abs(data->shearZJ)});
         const double maxN = std::max(std::abs(data->axialI), std::abs(data->axialJ));
-        drawDiagram(dc, 100, data->momentYI, data->momentYJ, maxM,
-                    L"Moment Y (My)", L"kN·m", RGB(78, 148, 255));
-        drawDiagram(dc, 185, data->momentZI, data->momentZJ, maxM,
-                    L"Moment Z (Mz)", L"kN·m", RGB(78, 200, 255));
-        drawDiagram(dc, 265, data->shearYI, data->shearYJ, maxV,
+        drawDiagram(dc, 100, data->momentYI, data->momentYJ, maxM, data->wY, data->elementLength,
+                    L"Moment Y (My)", L"kN.m", RGB(78, 148, 255));
+        drawDiagram(dc, 185, data->momentZI, data->momentZJ, maxM, data->wZ, data->elementLength,
+                    L"Moment Z (Mz)", L"kN.m", RGB(78, 200, 255));
+        drawDiagram(dc, 265, data->shearYI, data->shearYJ, maxV, 0.0, data->elementLength,
                     L"Shear Y (Vy)", L"kN", RGB(72, 211, 121));
-        drawDiagram(dc, 345, data->axialI, data->axialJ, maxN,
+        drawDiagram(dc, 345, data->axialI, data->axialJ, maxN, 0.0, data->elementLength,
                     L"Axial (N)", L"kN", RGB(235, 145, 82));
         EndPaint(hwnd, &ps);
         return 0;

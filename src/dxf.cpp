@@ -482,7 +482,7 @@ EntityProperties inheritBlockProperties(EntityProperties properties, const Entit
     if (properties.layer == "0") properties.layer = insert.layer;
     const auto layerIt = layers.find(properties.layer);
     const EntityProperties* layer = layerIt == layers.end() ? nullptr : &layerIt->second;
-    properties.visible = properties.visible && insert.visible;
+    properties.visible = properties.visible && insert.visible && (!layer || layer->visible);
     if (properties.trueColor) properties.effectiveColor = *properties.trueColor;
     else if (properties.colorIndex == 0) properties.effectiveColor = insert.effectiveColor;
     else if (properties.colorIndex > 0 && properties.colorIndex < 256)
@@ -498,14 +498,84 @@ EntityProperties inheritBlockProperties(EntityProperties properties, const Entit
 }
 
 WireframeModel transformedModel(const WireframeModel& source, const AffineTransform& transform,
-                                const EntityProperties& properties) {
-    std::vector<Vec3> vertices;
-    vertices.reserve(source.vertices().size());
-    for (const auto& vertex : source.vertices())
-        vertices.push_back(transform.point(vertex));
-    WireframeModel result(std::move(vertices), source.edges(), source.faces());
-    result.setProperties(properties);
+                                EntityProperties properties) {
+    WireframeModel result;
+    if (source.isPointEntity() && !source.vertices().empty()) {
+        result = WireframeModel::point(transform.point(source.vertices().front()));
+    } else if (source.isFace3D() && source.vertices().size() == 4) {
+        result = WireframeModel::face3D({transform.point(source.vertices()[0]),
+                                         transform.point(source.vertices()[1]),
+                                         transform.point(source.vertices()[2]),
+                                         transform.point(source.vertices()[3])});
+    } else {
+        std::vector<Vec3> vertices;
+        vertices.reserve(source.vertices().size());
+        for (const auto& vertex : source.vertices())
+            vertices.push_back(transform.point(vertex));
+        result = WireframeModel(std::move(vertices), source.edges(), source.faces());
+    }
+    result.setProperties(std::move(properties));
     return result;
+}
+
+void expandInsert(Document& document, const std::vector<Pair>& sourceFields, bool dimension,
+                  const BlockMap& blocks, const LayerMap& layers,
+                  const AffineTransform& parentTransform, const EntityProperties& parentInsert,
+                  std::unordered_set<std::string>& stack, std::size_t& expandedCount, int depth) {
+    if (depth > 32) throw std::runtime_error("DXF nested INSERT depth exceeded");
+    const std::string name = blockKey(text(sourceFields, 2));
+    const auto found = blocks.find(name);
+    if (found == blocks.end())
+        throw std::runtime_error("DXF INSERT references undefined block: " + name);
+    std::vector<Pair> dimensionFields;
+    const std::vector<Pair>* insertFields = &sourceFields;
+    if (dimension) {
+        dimensionFields.push_back({2, text(sourceFields, 2)});
+        for (const auto& field : sourceFields) {
+            if (field.code == 8 || field.code == 6 || field.code == 62 || field.code == 420 ||
+                field.code == 370 || field.code == 39 || field.code == 48 || field.code == 60 || field.code == 440)
+                dimensionFields.push_back(field);
+        }
+        dimensionFields.push_back({10, std::to_string(found->second.base.x)});
+        dimensionFields.push_back({20, std::to_string(found->second.base.y)});
+        dimensionFields.push_back({30, std::to_string(found->second.base.z)});
+        insertFields = &dimensionFields;
+    }
+    if (!stack.insert(name).second) throw std::runtime_error("Cyclic DXF block reference");
+    const auto& block = found->second;
+    EntityProperties insertProperties = inheritBlockProperties(
+        readEntityProperties(*insertFields, layers), parentInsert, layers);
+    const int columns = std::max(1, integer(*insertFields, 70, 1));
+    const int rows = std::max(1, integer(*insertFields, 71, 1));
+    if (columns > 10'000 || rows > 10'000 || static_cast<std::uint64_t>(columns) * rows > 2'000'000)
+        throw std::runtime_error("DXF INSERT array limit exceeded");
+    for (int row = 0; row < rows; ++row) {
+        for (int column = 0; column < columns; ++column) {
+            const auto worldTransform = compose(parentTransform,
+                insertTransform(*insertFields, block.base, column, row));
+            for (const auto& model : block.models) {
+                if (++expandedCount > 2'000'000) throw std::runtime_error("DXF entity limit exceeded");
+                document.addModel(transformedModel(model, worldTransform,
+                    inheritBlockProperties(model.properties(), insertProperties, layers)));
+            }
+            for (const auto& nested : block.inserts)
+                expandInsert(document, nested.fields, nested.dimension, blocks, layers, worldTransform,
+                             insertProperties, stack, expandedCount, depth + 1);
+        }
+    }
+    stack.erase(name);
+}
+
+void appendBlockEntity(BlockDefinition& block, const std::string& type, PairReader& reader,
+                       const std::vector<Pair>& entityFields, const LayerMap& layers) {
+    if (type == "INSERT" || type == "DIMENSION") {
+        block.inserts.push_back({entityFields, type == "DIMENSION"});
+        return;
+    }
+    Document temporary;
+    if (type == "POLYLINE") readLegacyPolyline(temporary, reader, entityFields, layers);
+    else addSimpleEntity(temporary, type, entityFields, layers);
+    for (const auto& model : temporary.models()) block.models.push_back(model);
 }
 
 } // anonymous namespace
@@ -526,104 +596,65 @@ Document DxfFile::read(const std::filesystem::path& path, std::stop_token stopTo
 
     PairReader reader(input, stopToken, totalBytes, std::move(progress));
     Document document;
+    document.reserveModels(4096);
+    std::string section;
     LayerMap layers;
     BlockMap blocks;
-    std::vector<InsertRecord> inserts;
-    bool inEntities{};
-    std::string blockName;
-    bool inBlock{};
-
-    while (const auto marker = reader.next()) {
-        if (marker->code != 0) continue;
-        if (marker->value == "SECTION") {
-            auto sectionFields = fields(reader);
-            std::string sectionName;
-            for (const auto& field : sectionFields)
-                if (field.code == 2) sectionName = field.value;
-            if (sectionName == "ENTITIES") inEntities = true;
-            else if (sectionName == "TABLES") {
-                while (const auto tablePair = reader.next()) {
-                    if (tablePair->code == 0 && tablePair->value == "LAYER") {
-                        auto layerFields = fields(reader);
-                        auto props = readLayerProperties(layerFields);
-                        layers.emplace(props.layer, props);
-                    } else if (tablePair->code == 0 && tablePair->value == "ENDSEC") {
-                        break;
-                    }
+    std::string activeBlock;
+    EntityProperties defaultLayer;
+    defaultLayer.layer = "0";
+    defaultLayer.lineType = defaultLayer.effectiveLineType = "CONTINUOUS";
+    defaultLayer.colorIndex = 7;
+    defaultLayer.effectiveColor = aciColor(7);
+    layers.emplace("0", defaultLayer);
+    document.setLayerProperties(defaultLayer);
+    std::size_t entityCount{};
+    while (const auto pair = reader.next()) {
+        if (pair->code != 0) continue;
+        if (pair->value == "SECTION") {
+            const auto name = reader.next();
+            section = name && name->code == 2 ? name->value : std::string{};
+            continue;
+        }
+        if (pair->value == "ENDSEC") { section.clear(); activeBlock.clear(); continue; }
+        if (pair->value == "EOF") break;
+        if (section == "TABLES" && pair->value == "LAYER") {
+            auto layer = readLayerProperties(fields(reader));
+            document.setLayerProperties(layer);
+            layers[layer.layer] = std::move(layer);
+            continue;
+        }
+        if (section == "BLOCKS") {
+            if (pair->value == "BLOCK") {
+                const auto header = fields(reader);
+                activeBlock = blockKey(text(header, 2, text(header, 3)));
+                if (!activeBlock.empty()) {
+                    auto& block = blocks[activeBlock];
+                    block = BlockDefinition{};
+                    block.base = point(header, 10, 20, 30);
                 }
-            } else if (sectionName == "BLOCKS") {
-                while (const auto blockPair = reader.next()) {
-                    if (blockPair->code == 0) {
-                        if (blockPair->value == "BLOCK") {
-                            auto blockFields = fields(reader);
-                            blockName = text(blockFields, 2);
-                            BlockDefinition def;
-                            def.base = point(blockFields, 10, 20, 30);
-                            blocks.emplace(blockKey(blockName), std::move(def));
-                            inBlock = true;
-                        } else if (blockPair->value == "ENDBLK" && inBlock && !blockName.empty()) {
-                            auto it = blocks.find(blockKey(blockName));
-                            if (it != blocks.end()) {
-                                while (const auto entityPair = reader.next()) {
-                                    if (entityPair->code == 0) {
-                                        if (entityPair->value == "ENDBLK") break;
-                                        if (entityPair->value == "INSERT") {
-                                            it->second.inserts.push_back({fields(reader)});
-                                        } else {
-                                            reader.putBack(*entityPair);
-                                            addSimpleEntity(document, entityPair->value,
-                                                           fields(reader), layers);
-                                        }
-                                    }
-                                }
-                            }
-                            inBlock = false; blockName.clear();
-                        } else if (blockPair->value == "ENDSEC") break;
-                    }
-                }
+            } else if (pair->value == "ENDBLK") {
+                (void)fields(reader);
+                activeBlock.clear();
+            } else if (!activeBlock.empty()) {
+                const auto entityFields = fields(reader);
+                appendBlockEntity(blocks.at(activeBlock), pair->value, reader, entityFields, layers);
             }
-        } else if (marker->value == "ENDSEC") {
-            inEntities = false;
-        } else if (inEntities && marker->value == "INSERT") {
-            inserts.push_back({fields(reader)});
-        } else if (inEntities && marker->value == "POLYLINE") {
-            readLegacyPolyline(document, reader, fields(reader), layers);
-        } else if (inEntities && marker->value == "DIMENSION") {
-            auto dimFields = fields(reader);
-            InsertRecord record{std::move(dimFields), true};
-            inserts.push_back(std::move(record));
-        } else if (inEntities && marker->value != "EOF") {
-            auto entityFields = fields(reader);
-            if (!entityFields.empty()) {
-                std::string entityType = marker->value;
-                if (entityType == "VERTEX" || entityType == "SEQEND") continue;
-                addSimpleEntity(document, entityType, entityFields, layers);
-            }
+            continue;
         }
-    }
-
-    // Process inserts after all blocks are loaded
-    for (auto& record : inserts) {
-        auto blockIt = blocks.find(blockKey(text(record.fields, 2)));
-        if (blockIt == blocks.end()) continue;
-        const EntityProperties insertProps = readEntityProperties(record.fields, layers);
-        const AffineTransform transform = insertTransform(record.fields, blockIt->second.base);
-        for (auto& model : blockIt->second.models) {
-            model.setProperties(inheritBlockProperties(model.properties(), insertProps, layers));
-            document.addModel(transformedModel(model, transform, model.properties()));
-        }
-        for (auto& nested : blockIt->second.inserts) {
-            auto nestedBlock = blocks.find(blockKey(text(nested.fields, 2)));
-            if (nestedBlock == blocks.end()) continue;
-            const EntityProperties nestedProps = readEntityProperties(nested.fields, layers);
-            const AffineTransform nestedTransform = compose(transform,
-                insertTransform(nested.fields, nestedBlock->second.base));
-            const EntityProperties effective = inheritBlockProperties({}, nestedProps, layers);
-            for (auto& m : nestedBlock->second.models) {
-                m.setProperties(inheritBlockProperties(m.properties(), nestedProps, layers));
-                document.addModel(transformedModel(m, nestedTransform, m.properties()));
-            }
-        }
+        if (section != "ENTITIES") continue;
+        if (++entityCount > 2'000'000) throw std::runtime_error("DXF entity limit exceeded");
+        const auto entityFields = fields(reader);
+        if (pair->value == "INSERT" || pair->value == "DIMENSION") {
+            std::unordered_set<std::string> stack;
+            std::size_t expandedCount = document.models().size();
+            const auto root = layers.find("0");
+            const EntityProperties rootProperties = root == layers.end() ? EntityProperties{} : root->second;
+            expandInsert(document, entityFields, pair->value == "DIMENSION", blocks, layers,
+                         AffineTransform{}, rootProperties,
+                         stack, expandedCount, 0);
+        } else if (pair->value == "POLYLINE") readLegacyPolyline(document, reader, entityFields, layers);
+        else addSimpleEntity(document, pair->value, entityFields, layers);
     }
     return document;
 }
@@ -665,55 +696,81 @@ bool isPlanarChain(const WireframeModel& model, bool& closed) {
 }
 
 void DxfFile::write(const Document& document, const std::filesystem::path& path) {
-    FILE* fp = fopen(path.string().c_str(), "wb");
-    if (!fp) throw std::runtime_error("Could not open DXF file for writing");
+    std::ofstream output(path, std::ios::binary);
+    if (!output) throw std::runtime_error("Could not open DXF file for writing");
+    output << std::setprecision(17);
+    writePair(output, 0, "SECTION"); writePair(output, 2, "HEADER");
+    writePair(output, 9, "$ACADVER"); writePair(output, 1, "AC1015"); writePair(output, 0, "ENDSEC");
 
-    auto w = [fp](int code, const auto& val) {
-        using T = std::decay_t<decltype(val)>;
-        if constexpr (std::is_same_v<T, std::string> || std::is_same_v<T, const char*> ||
-                      std::is_same_v<T, char*>) {
-            fprintf(fp, "%d\r\n%s\r\n", code,
-                    std::string{val}.c_str());
-        } else if constexpr (std::is_integral_v<T>) {
-            fprintf(fp, "%d\r\n%d\r\n", code, static_cast<int>(val));
-        } else {
-            fprintf(fp, "%d\r\n%.12f\r\n", code, static_cast<double>(val));
-        }
-    };
+    LayerMap exportLayers = document.layers();
+    for (const auto& model : document.models()) {
+        const auto& entity = model.properties();
+        if (exportLayers.contains(entity.layer)) continue;
+        EntityProperties layer;
+        layer.layer = entity.layer;
+        layer.lineType = layer.effectiveLineType = entity.effectiveLineType;
+        layer.trueColor = layer.effectiveColor = entity.effectiveColor;
+        layer.lineWeight = layer.effectiveLineWeight = entity.effectiveLineWeight;
+        exportLayers.emplace(layer.layer, std::move(layer));
+    }
+    writePair(output, 0, "SECTION"); writePair(output, 2, "TABLES");
+    writePair(output, 0, "TABLE"); writePair(output, 2, "LAYER");
+    writePair(output, 70, exportLayers.size());
+    for (const auto& [name, layer] : exportLayers) {
+        writePair(output, 0, "LAYER"); writePair(output, 2, name);
+        writePair(output, 70, layer.visible ? 0 : 1);
+        writePair(output, 62, layer.colorIndex > 0 && layer.colorIndex < 256 ? layer.colorIndex : 7);
+        if (layer.trueColor) writePair(output, 420, *layer.trueColor);
+        writePair(output, 6, layer.effectiveLineType.empty() ? "CONTINUOUS" : layer.effectiveLineType);
+        writePair(output, 370, layer.effectiveLineWeight);
+    }
+    writePair(output, 0, "ENDTAB"); writePair(output, 0, "ENDSEC");
 
-    w(0, "SECTION"); w(2, "HEADER");
-    w(9, "$ACADVER"); w(1, "AC1009");
-    w(0, "ENDSEC");
-
-    w(0, "SECTION"); w(2, "TABLES");
-    w(0, "TABLE"); w(2, "LAYER"); w(70, 0);
-    w(0, "ENDTAB"); w(0, "ENDSEC");
-
-    w(0, "SECTION"); w(2, "BLOCKS");
-    w(0, "ENDSEC");
-
-    w(0, "SECTION"); w(2, "ENTITIES");
+    writePair(output, 0, "SECTION"); writePair(output, 2, "ENTITIES");
 
     for (const auto& model : document.models()) {
         if (model.isFace3D() && model.vertices().size() == 4) {
-            w(0, "3DFACE"); w(8, model.properties().layer);
-            for (std::size_t i = 0; i < 4; ++i) {
-                w(static_cast<int>(10+i), model.vertices()[i].x);
-                w(static_cast<int>(20+i), model.vertices()[i].y);
-                w(static_cast<int>(30+i), model.vertices()[i].z);
+            writePair(output, 0, "3DFACE"); writeProperties(output, model.properties());
+            for (std::size_t index = 0; index < 4; ++index) {
+                const auto& vertex = model.vertices()[index];
+                writePair(output, static_cast<int>(10 + index), vertex.x);
+                writePair(output, static_cast<int>(20 + index), vertex.y);
+                writePair(output, static_cast<int>(30 + index), vertex.z);
             }
             continue;
         }
-        for (const auto& edge : model.edges()) {
-            const auto& a = model.vertices()[edge.from];
-            const auto& b = model.vertices()[edge.to];
-            w(0, "LINE"); w(8, model.properties().layer);
-            w(10, a.x); w(20, a.y); w(30, a.z);
-            w(11, b.x); w(21, b.y); w(31, b.z);
+        if (model.isPointEntity() && !model.vertices().empty()) {
+            const auto point = model.vertices().front();
+            writePair(output, 0, "POINT"); writeProperties(output, model.properties());
+            writePair(output, 10, point.x); writePair(output, 20, point.y); writePair(output, 30, point.z);
+            continue;
         }
+        if (model.analyticCenter() && model.analyticRadius()) {
+            const Vec3 center = *model.analyticCenter();
+            const bool xyCircle = std::all_of(model.vertices().begin(), model.vertices().end(),
+                [&](const Vec3& vertex) { return std::abs(vertex.z - center.z) <= 1e-9; });
+            if (xyCircle) {
+                writePair(output, 0, "CIRCLE"); writeProperties(output, model.properties());
+                writePair(output, 10, center.x); writePair(output, 20, center.y); writePair(output, 30, center.z);
+                writePair(output, 40, *model.analyticRadius());
+                continue;
+            }
+        }
+        bool closed{};
+        if (isPlanarChain(model, closed)) {
+            writePair(output, 0, "LWPOLYLINE"); writeProperties(output, model.properties());
+            writePair(output, 90, model.vertices().size()); writePair(output, 70, closed ? 1 : 0);
+            writePair(output, 38, model.vertices().front().z);
+            for (const auto& vertex : model.vertices()) {
+                writePair(output, 10, vertex.x); writePair(output, 20, vertex.y);
+            }
+            continue;
+        }
+        for (const auto& edge : model.edges())
+            writeLine(output, model.vertices()[edge.from], model.vertices()[edge.to], model.properties());
     }
-    w(0, "ENDSEC"); w(0, "EOF");
-    fclose(fp);
+    writePair(output, 0, "ENDSEC"); writePair(output, 0, "EOF");
+    if (!output) throw std::runtime_error("Could not write DXF file");
 }
 
 } // namespace mm

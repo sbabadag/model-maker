@@ -116,5 +116,7 @@ inline RenderRect toRenderRect(int left, int top, int right, int bottom) noexcep
 
 // Factory functions for backend creation
 std::unique_ptr<IRenderBackend> createGdiRenderBackend();
+class OpenGLRenderBackend;
+std::unique_ptr<IRenderBackend> createOpenGLRenderBackend();
 
 } // namespace mm

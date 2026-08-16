@@ -11,6 +11,8 @@ struct ForceDiagramData {
     double axialJ{}, shearYJ{}, shearZJ{}, torsionJ{}, momentYJ{}, momentZJ{};
     double elementLength{1.0};
     std::wstring sectionName;
+    double wY{};  // distributed load (kN/m) for parabolic moment diagram
+    double wZ{};
 };
 
 bool registerForceDiagramClass(HINSTANCE instance);
