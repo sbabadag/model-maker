@@ -129,9 +129,6 @@ void QtMainWindow::createMenus() {
     fileMenu->addSeparator();
     fileMenu->addAction("DXF &İçe Aktar...", this, [this]() { app_.importDxf(); });
     fileMenu->addAction("DXF &Dışa Aktar...", this, [this]() { app_.exportDxf(); });
-    fileMenu->addSeparator();
-    fileMenu->addAction("S2K Dışa Aktar...", this, [this]() { app_.exportS2K(); });
-    fileMenu->addAction("OpenSees Dışa Aktar...", this, [this]() { app_.exportOpenSees(); });
     fileMenu->addAction("DXF &İçe Aktar...", this, []() {});
     fileMenu->addAction("DXF &Dışa Aktar...", this, []() {});
     fileMenu->addSeparator();
