@@ -12,6 +12,8 @@
 #include <QPushButton>
 #include <QComboBox>
 #include <QColorDialog>
+#include <QShortcut>
+#include <QKeySequence>
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QMenu>
@@ -47,6 +49,11 @@ QtMainWindow::QtMainWindow(QWidget* parent)
     createMenus();
     createToolbar();
     createDockPanels();
+
+    auto* undoShortcut = new QShortcut(QKeySequence::Undo, this);
+    QObject::connect(undoShortcut, &QShortcut::activated, this, [this]() { app_.undo(); });
+    auto* redoShortcut = new QShortcut(QKeySequence::Redo, this);
+    QObject::connect(redoShortcut, &QShortcut::activated, this, [this]() { app_.redo(); });
 
     // Create a plain widget for central area — fills all space between docks
     canvasContainer_ = new QWidget(this);
@@ -186,6 +193,8 @@ void QtMainWindow::createToolbar() {
         QObject::connect(btn, &QPushButton::clicked, this, action);
         modLayout->addWidget(btn);
     };
+    addModBtn("↶ Geri",   [this]() { app_.undo(); });
+    addModBtn("↷ İleri",  [this]() { app_.redo(); });
     addModBtn("↖ Pasif",  [this]() { app_.deactivateAllCommands(); });
     addModBtn("↔ Taşı",   [this]() { app_.startTransformCommand(TransformCommand::Move); });
     addModBtn("⧉ Kopya",  [this]() { app_.startTransformCommand(TransformCommand::Copy); });

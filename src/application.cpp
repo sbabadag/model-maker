@@ -1189,6 +1189,8 @@ LRESULT Application::handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lPa
             else clearTemporaryTracking();
         }
         else if (wParam == VK_F12) dynamicInputEnabled_ = !dynamicInputEnabled_;
+        else if (wParam == 'Z' && (GetKeyState(VK_CONTROL) & 0x8000)) undo();
+        else if (wParam == 'Y' && (GetKeyState(VK_CONTROL) & 0x8000)) redo();
         else if (wParam == 'L') selectTool(DrawTool::Line);
         else if (wParam == 'P') selectTool(DrawTool::Polyline);
         else if (wParam == 'A') selectTool(DrawTool::Rectangle);
@@ -1296,6 +1298,7 @@ void Application::onLeftButtonDown(int x, int y) {
                     firstReplacement.push_back(result->first);
                     std::vector<WireframeModel> secondReplacement;
                     secondReplacement.push_back(result->second);
+                    pushUndoSnapshot();
                     document_.replaceModel(firstIndex, std::move(firstReplacement));
                     document_.replaceModel(*hit, std::move(secondReplacement));
                     document_.addModel(result->arc);
@@ -1516,6 +1519,7 @@ void Application::onCharacter(wchar_t character) {
             else if (!selectedModels_.empty() &&
                      (transformCommand_ != TransformCommand::Offset || selectedModels_.size() == 1)) {
                 if (transformCommand_ == TransformCommand::Delete) {
+                    pushUndoSnapshot();
                     document_.deleteModels(selectedModels_);
                     cancelTransformCommand();
                 } else if (transformCommand_ == TransformCommand::Trim ||
@@ -1672,6 +1676,7 @@ void Application::startTransformCommand(TransformCommand command) {
 
     // Noun-verb: boş ekranda seçilmiş modeller komutun verisidir.
     if (command == TransformCommand::Delete && !selectedModels_.empty()) {
+        pushUndoSnapshot();
         document_.deleteModels(selectedModels_);
         selectedModels_.clear();
         cancelTransformCommand();
@@ -2027,6 +2032,7 @@ bool Application::applyTrimExtendTarget(std::size_t target, const Vec3& pickPoin
 
         document_.replaceModel(target, std::move(*result));
 
+        pushUndoSnapshot();
         if (haveRefresh) {
             constexpr LONG inflate = 24;
             refreshRect.left -= inflate;
@@ -2048,6 +2054,7 @@ bool Application::applyTrimExtendTarget(std::size_t target, const Vec3& pickPoin
             : extendLine2D(document_.models()[target], modifierBoundaries_, pickPoint);
         if (!result) return false;
         lastTrimExtendStatus_ = L"Extend: uygulandı";
+        pushUndoSnapshot();
         std::vector<WireframeModel> replacement;
         replacement.push_back(std::move(*result));
         document_.replaceModel(target, std::move(replacement));
@@ -2130,6 +2137,7 @@ void Application::commitTransformPoint(const Vec3& point) {
                                  *offsetDistance_, point, workPlane_)
             : offsetModel2D(document_.models()[selectedModels_.front()], *offsetDistance_, point);
         if (offset) {
+            pushUndoSnapshot();
             document_.addModel(*offset);
             cancelTransformCommand();
         } else {
@@ -2151,6 +2159,7 @@ void Application::commitTransformPoint(const Vec3& point) {
             copies.insert(copies.end(), std::make_move_iterator(generated.begin()),
                           std::make_move_iterator(generated.end()));
         }
+        pushUndoSnapshot();
         for (auto& model : copies) document_.addModel(std::move(model));
         cancelTransformCommand();
         return;
@@ -2180,6 +2189,7 @@ void Application::commitTransformPoint(const Vec3& point) {
             }
             mirrored.push_back(std::move(*model));
         }
+        pushUndoSnapshot();
         for (auto& model : mirrored) document_.addModel(std::move(model));
         cancelTransformCommand();
         return;
@@ -2197,14 +2207,17 @@ void Application::commitTransformPoint(const Vec3& point) {
             MessageBeep(MB_ICONWARNING);
             return;
         }
+        pushUndoSnapshot();
         for (auto& model : copies) document_.addModel(std::move(model));
         cancelTransformCommand();
         return;
     }
     if (transformCommand_ == TransformCommand::Move) {
+        pushUndoSnapshot();
         document_.moveModels(selectedModels_, displacement);
         cancelTransformCommand();
     } else if (transformCommand_ == TransformCommand::Copy) {
+        pushUndoSnapshot();
         document_.copyModels(selectedModels_, displacement);
         if (modifierCompletesAfterCommit(transformCommand_)) cancelTransformCommand();
     }
@@ -2637,7 +2650,34 @@ EntityProperties Application::currentEntityProperties() const {
     return resolveEntityStyle(selection, document_.layers());
 }
 
+void Application::pushUndoSnapshot() { document_.pushUndoSnapshot(); }
+
+void Application::undo() {
+    if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
+    if (!document_.undo()) return;
+    selectedModels_.clear();
+    selectionFirstCorner_.reset();
+    refreshLayerCombo();
+    updateHover(cursorScreen_.x, cursorScreen_.y);
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
+}
+
+void Application::redo() {
+    if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
+    if (!document_.redo()) return;
+    selectedModels_.clear();
+    selectionFirstCorner_.reset();
+    refreshLayerCombo();
+    updateHover(cursorScreen_.x, cursorScreen_.y);
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
+}
+
 void Application::addStyledModel(WireframeModel model) {
+    pushUndoSnapshot();
     model.setProperties(currentEntityProperties());
     document_.addModel(std::move(model));
 }
