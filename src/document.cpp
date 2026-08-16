@@ -276,12 +276,25 @@ void Document::applyUndoOp(const UndoOp& op, bool forward) {
             }
         }
         break;
-    case UndoOp::Kind::Replace:
-        if (op.index < models_.size()) {
-            if (forward && !op.afterModels.empty()) models_[op.index] = op.afterModels.front();
-            else if (!forward && !op.beforeModels.empty()) models_[op.index] = op.beforeModels.front();
+    case UndoOp::Kind::Replace: {
+        if (forward) {
+            if (op.index < models_.size())
+                models_.erase(models_.begin() + static_cast<std::ptrdiff_t>(op.index));
+            for (std::size_t k = 0; k < op.afterModels.size(); ++k)
+                models_.insert(models_.begin() + static_cast<std::ptrdiff_t>(op.index + k),
+                               op.afterModels[k]);
+        } else {
+            const std::size_t available = op.index < models_.size()
+                ? models_.size() - op.index : 0;
+            const std::size_t count = std::min(op.afterModels.size(), available);
+            for (std::size_t k = count; k-- > 0;)
+                models_.erase(models_.begin() + static_cast<std::ptrdiff_t>(op.index + k));
+            if (!op.beforeModels.empty())
+                models_.insert(models_.begin() + static_cast<std::ptrdiff_t>(op.index),
+                               op.beforeModels.front());
         }
         break;
+    }
     case UndoOp::Kind::Move:
         for (const auto index : op.indices)
             if (index < models_.size())
