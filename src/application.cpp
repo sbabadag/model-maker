@@ -1340,6 +1340,9 @@ void Application::onLeftButtonDown(int x, int y) {
                 }
             }
         }
+        if (transformCommand_ == TransformCommand::Trim ||
+            transformCommand_ == TransformCommand::Extend)
+            trimExtendPreviewSuppressed_ = true;
         updateControls(); updateStatus(); invalidateCanvas();
         // Trim/Extend: WM_PAINT kuyruğu Qt gömme ortamında gecikebiliyor ve
         // sonuç ancak bir sonraki fare hareketinde görünüyor. Kuyruktan
@@ -1409,6 +1412,7 @@ void Application::onLeftButtonUp(int x, int y) {
 
 void Application::onMouseMove(int x, int y, WPARAM buttons) {
     cursorScreen_ = {x, y};
+    trimExtendPreviewSuppressed_ = false;
     bool redraw = false;
     bool snapRedraw = false;
     if (viewCubeManipulating_ && (buttons & MK_LBUTTON) && mode_ == EditMode::View3D) {
@@ -2768,6 +2772,7 @@ DraftView Application::draftView() const {
     view.filletFirstPick = filletFirstPick_;
     view.arrayItemCount = arrayItemCount_;
     view.modifierBoundaries = modifierBoundaries_;
+    view.trimExtendPreviewSuppressed = trimExtendPreviewSuppressed_;
     view.zoomWindowActive = zoomWindowActive_; view.zoomWindowFirstCorner = zoomWindowFirstCorner_;
     view.interactiveNavigation = rotating_ || panning2D_ || viewCubeManipulating_ ||
                                  wheelNavigating_ || snapPreviewActive_;

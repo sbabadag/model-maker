@@ -159,6 +159,7 @@ struct DraftView {
     std::optional<Vec3> filletFirstPick;
     std::optional<std::size_t> arrayItemCount;
     std::vector<WireframeModel> modifierBoundaries;
+    bool trimExtendPreviewSuppressed{false};
     bool zoomWindowActive{};
     std::optional<POINT> zoomWindowFirstCorner;
     bool interactiveNavigation{};

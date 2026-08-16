@@ -745,7 +745,8 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
 
     if ((draft.transformCommand == TransformCommand::Trim ||
          draft.transformCommand == TransformCommand::Extend) &&
-        draft.transformPhase == TransformPhase::Destination && !draft.modifierBoundaries.empty()) {
+        draft.transformPhase == TransformPhase::Destination && !draft.modifierBoundaries.empty() &&
+        !draft.trimExtendPreviewSuppressed) {
         HPEN boundaryPen = CreatePen(PS_SOLID, 2, RGB(90, 255, 145));
         SelectObject(dc, boundaryPen);
         for (const auto& boundary : draft.modifierBoundaries) drawModel(boundary);

@@ -270,6 +270,7 @@ private:
     int currentColorChoice_{};
     std::wstring lastTrimExtendStatus_{};
     bool trimRegionRefreshed_{false};
+    bool trimExtendPreviewSuppressed_{false};
     int currentLineTypeChoice_{};
     int currentProfileChoice_{};
     std::vector<Vec3> openseesDisplacements_;
