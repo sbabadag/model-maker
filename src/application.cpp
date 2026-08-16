@@ -2650,7 +2650,7 @@ EntityProperties Application::currentEntityProperties() const {
     return resolveEntityStyle(selection, document_.layers());
 }
 
-void Application::pushUndoSnapshot() { document_.pushUndoSnapshot(); }
+void Application::pushUndoSnapshot() { document_.pushSnapshot(); }
 
 void Application::undo() {
     if (transformCommand_ != TransformCommand::None) cancelTransformCommand();

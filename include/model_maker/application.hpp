@@ -63,6 +63,9 @@ public:
     void setCurrentLineTypeChoice(int index) noexcept;
     void refreshLayerList();
     void setLayerComboWidget(QComboBox* combo) noexcept { layerComboWidget_ = combo; }
+    void pushUndoSnapshot();
+    void undo();
+    void redo();
     std::vector<std::string> layerNames() const;
     const std::unordered_map<std::string, EntityProperties>& layerProperties() const;
     // Color palette
@@ -127,9 +130,6 @@ private:
     void editLayerProperty(const std::string& name, int subItem, POINT screenPoint);
     void beginLayerTextEdit(const std::string& name, int row, int subItem);
     void commitLayerTextEdit();
-    void pushUndoSnapshot();
-    void undo();
-    void redo();
     EntityProperties currentEntityProperties() const;
     void addStyledModel(WireframeModel model);
     void updateStatus();
