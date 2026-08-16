@@ -1273,7 +1273,7 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
     if (draft.interactiveNavigation && !draft.snapOnly) {
         const bool feedbackActive = draft.transformCommand != TransformCommand::None ||
                                     !draft.selectedModels.empty() ||
-                                    (drafting && draft.anchor && draft.cursor);
+                                    (draft.drawingActive && draft.anchor && draft.cursor);
         if (feedbackActive) {
             if (!draft.selectedModels.empty()) {
                 HPEN selectedPen = CreatePen(PS_SOLID, 3, RGB(90, 255, 145));
@@ -1329,7 +1329,7 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
                     DeleteObject(previewPen);
                 }
             }
-            if (drafting && draft.anchor && draft.cursor) {
+            if (draft.drawingActive && draft.anchor && draft.cursor) {
                 const POINT a = projectPoint(*draft.anchor);
                 const POINT b = projectPoint(*draft.cursor);
                 HPEN preview = CreatePen(PS_DASH, 1, RGB(255, 206, 84));
