@@ -1267,6 +1267,80 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
     }
     } // !draft.snapOnly (dynamic input + perf overlay)
 
+    // İnteraktif karelerde komut geri bildirimi: büyük çizimlerde temel
+    // geometri seyrek/kaba çizilirken seçim vurgusu, trim/extend önizlemesi
+    // ve çizim lastik bandı yine de görünür — akıcılık + canlı geri bildirim.
+    if (draft.interactiveNavigation && !draft.snapOnly) {
+        const bool feedbackActive = draft.transformCommand != TransformCommand::None ||
+                                    !draft.selectedModels.empty() ||
+                                    (drafting && draft.anchor && draft.cursor);
+        if (feedbackActive) {
+            if (!draft.selectedModels.empty()) {
+                HPEN selectedPen = CreatePen(PS_SOLID, 3, RGB(90, 255, 145));
+                SelectObject(dc, selectedPen);
+                for (const auto index : draft.selectedModels) {
+                    if (index < document.models().size() && document.modelIsEditable(index))
+                        drawModel(document.models()[index]);
+                }
+                SelectObject(dc, stockPen);
+                DeleteObject(selectedPen);
+            }
+            if ((draft.transformCommand == TransformCommand::Trim ||
+                 draft.transformCommand == TransformCommand::Extend) &&
+                draft.transformPhase == TransformPhase::Destination &&
+                !draft.modifierBoundaries.empty() && !draft.trimExtendPreviewSuppressed) {
+                Vec3 pick{};
+                std::optional<std::size_t> target;
+                if (mode == EditMode::Draw2D) {
+                    pick = camera.unproject2D({static_cast<double>(draft.cursorScreen.x),
+                                               static_cast<double>(draft.cursorScreen.y)},
+                                              width, height);
+                    target = hitTestModel2D(pick, document, 10.0 / (60.0 * camera.zoom()));
+                } else {
+                    WorkPlane targetPlane = draft.workPlane;
+                    if (!draft.modifierBoundaries.front().vertices().empty())
+                        targetPlane.origin = draft.modifierBoundaries.front().vertices().front();
+                    if (const auto projectedPick = camera.unprojectToPlane(
+                            {static_cast<double>(draft.cursorScreen.x),
+                             static_cast<double>(draft.cursorScreen.y)}, width, height, targetPlane))
+                        pick = *projectedPick;
+                    target = hitTestModel3D({static_cast<double>(draft.cursorScreen.x),
+                                             static_cast<double>(draft.cursorScreen.y)},
+                                            document, camera, width, height, 10.0);
+                }
+                if (target && *target < document.models().size()) {
+                    HPEN previewPen = CreatePen(PS_DASH, 2, RGB(255, 206, 84));
+                    SelectObject(dc, previewPen);
+                    if (draft.transformCommand == TransformCommand::Trim) {
+                        const auto result = mode == EditMode::View3D
+                            ? trimLineOnPlane(document.models()[*target], draft.modifierBoundaries,
+                                              pick, draft.workPlane)
+                            : trimLine2D(document.models()[*target], draft.modifierBoundaries, pick);
+                        if (result)
+                            for (const auto& segment : *result) drawModel(segment);
+                    } else {
+                        const auto result = mode == EditMode::View3D
+                            ? extendLineOnPlane(document.models()[*target], draft.modifierBoundaries,
+                                                pick, draft.workPlane)
+                            : extendLine2D(document.models()[*target], draft.modifierBoundaries, pick);
+                        if (result) drawModel(*result);
+                    }
+                    SelectObject(dc, stockPen);
+                    DeleteObject(previewPen);
+                }
+            }
+            if (drafting && draft.anchor && draft.cursor) {
+                const POINT a = projectPoint(*draft.anchor);
+                const POINT b = projectPoint(*draft.cursor);
+                HPEN preview = CreatePen(PS_DASH, 1, RGB(255, 206, 84));
+                SelectObject(dc, preview);
+                line(dc, a.x, a.y, b.x, b.y);
+                SelectObject(dc, stockPen);
+                DeleteObject(preview);
+            }
+        }
+    }
+
     SelectObject(dc, oldFont);
     DeleteObject(font);
     if (!draft.snapOnly)

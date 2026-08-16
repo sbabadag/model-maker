@@ -1461,19 +1461,12 @@ void Application::onMouseMove(int x, int y, WPARAM buttons) {
             if (largeSnapTracking) lastLargeSnapEvaluation_ = now;
         }
         redraw = true;
-        // Transform commands (Trim/Extend/Move/...) have live visual feedback
-        // (selection window, boundary highlight, dashed previews) that the
-        // snap-preview throttle would suppress on large documents: deferred
-        // frames are drawn in interactiveNavigation mode which skips that
-        // feedback layer entirely. Throttle only when no transform command
-        // is active (snap tracking while drawing / neutral browsing).
         snapRedraw = commandAllowsSnapping(drawingActive_, transformCommand_, transformPhase_,
-                                           arrayItemCount_.has_value(), offsetDistance_.has_value()) &&
-                     transformCommand_ == TransformCommand::None;
+                                           arrayItemCount_.has_value(), offsetDistance_.has_value());
     }
     if (snapRedraw) updateStatus();
     if (redraw) {
-        if (snapRedraw && document_.models().size() > 5'000) {
+        if (document_.models().size() > 5'000) {
             KillTimer(window_, 4);
             snapPreviewActive_ = true;
             if (!snapPreviewTimerArmed_) {
@@ -2050,6 +2043,7 @@ bool Application::applyTrimExtendTarget(std::size_t target, const Vec3& pickPoin
 
         pushUndoSnapshot();
         if (haveRefresh) {
+            snapPreviewActive_ = false; // tıklama boyaması tam kare olmalı
             constexpr LONG inflate = 24;
             refreshRect.left -= inflate;
             refreshRect.top -= inflate;
