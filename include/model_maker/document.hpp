@@ -83,6 +83,7 @@ public:
 
 private:
     static constexpr std::size_t kMaxUndoEntries = 100;
+    static constexpr std::size_t kMaxPendingIndexEntries = 4'096;
 
     struct SpatialNode {
         Bounds3 bounds{};
@@ -93,6 +94,7 @@ private:
     };
 
     void invalidateDerivedState() noexcept;
+    void rebuildDerivedState();
     void ensureSpatialIndex() const;
     void ensureEffectiveCache() const;
     std::size_t buildSpatialNode(std::size_t begin, std::size_t end) const;
@@ -111,6 +113,7 @@ private:
     mutable std::vector<EntityProperties> effectiveCache_;
     mutable std::vector<Bounds3> modelBounds_;
     mutable std::vector<std::size_t> spatialOrder_;
+    mutable std::vector<std::size_t> pendingIndexRebuild_;
     mutable std::vector<SpatialNode> spatialNodes_;
     mutable std::optional<Bounds3> documentBounds_;
     std::unordered_map<std::string, NodeConstraint> nodeConstraints_;
