@@ -672,6 +672,13 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         dc = target;
         drawMotionFeedback();
         dc = overlayDc;
+        // GDI SINIRI DUZELTMESI: font satir 188'de yaratilip secilmisti; hizli
+        // yol erken donuyordu ve font'u ne geri birakiyor ne de siliyordu ->
+        // motion karesi basina 1 GDI nesnesi siziyor, ~10k kareden sonra
+        // CreatePen NULL donup grid + cizgiler default SIYAH pen ile ciziliyordu
+        // ("belli bir cizimden sonra kararma"). Font'u birak + sil.
+        SelectObject(dc, oldFont);
+        DeleteObject(font);
         finishPerformanceSample(false);
         return;
     }
