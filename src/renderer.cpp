@@ -1074,12 +1074,16 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
             else { color = RGB(78, 148, 255); radius = 4; }
             HPEN nodePen = CreatePen(PS_SOLID, selected ? 3 : 2, color);
             HBRUSH nodeBrush = selected ? (HBRUSH)GetStockObject(NULL_BRUSH) : CreateSolidBrush(color);
-            SelectObject(dc, nodePen);
-            SelectObject(dc, nodeBrush);
+            const HGDIOBJ oldNodePen = SelectObject(dc, nodePen);
+            const HGDIOBJ oldNodeBrush = SelectObject(dc, nodeBrush);
             Ellipse(dc, px - radius, py - radius, px + radius, py + radius);
+            // Once eski nesneleri geri sec, SONRA sil — DC'ye secili nesne
+            // silinirse DeleteObject sessizce basarisiz olur ve GDI nesnesi
+            // sizar (node basina frame basina 1 pen + 1 brush).
+            SelectObject(dc, oldNodeBrush);
+            SelectObject(dc, oldNodePen);
             DeleteObject(nodePen);
             if (!selected) DeleteObject(nodeBrush);
-            SelectObject(dc, stockPen);
         }
     }
 
@@ -1098,7 +1102,7 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
             const double w = load.wY + load.wZ; // total load magnitude for arrow size
             const double arrowLen = std::clamp(std::abs(w) * 3.0, 6.0, 20.0);
             HPEN loadPen = CreatePen(PS_SOLID, 2, w > 0 ? RGB(235, 82, 96) : RGB(72, 211, 121));
-            SelectObject(dc, loadPen);
+            const HGDIOBJ oldLoadPen = SelectObject(dc, loadPen);
             for (int i = 0; i <= steps; ++i) {
                 const double t = (steps == 0) ? 0.5 : static_cast<double>(i) / steps;
                 const int cx = static_cast<int>(p1.x + (p2.x - p1.x) * t);
@@ -1106,8 +1110,8 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
                 MoveToEx(dc, cx, cy, NULL);
                 LineTo(dc, cx, cy + static_cast<int>(arrowLen));
             }
+            SelectObject(dc, oldLoadPen);
             DeleteObject(loadPen);
-            SelectObject(dc, stockPen);
         }
     }
 
