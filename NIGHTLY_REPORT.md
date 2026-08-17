@@ -306,3 +306,24 @@ Qt veya kaynaklar yoksa exe atlanır, çekirdek/test/benchmark etkilenmez).
 - Doğrulama: 654 kontrollü trim probu + 28 kontrollü uygulama-akış probu (hitTest → sınır
   kopyası → applyTrimExtendTarget → replaceModel; circle-circle ve 3D dahil) — hepsi PASS.
   Kullanıcı Windows'ta görsel olarak doğruladı. ✓
+
+
+## Pending overlap / stale-leaf düzeltmesi (cb59c6b, Aug 2026)
+
+- **Bulgu:** moveModels / aynı-boyut replaceModel ağaçta duran indeksi pendingIndexRebuild_`e
+  de ekliyordu; geniş sorgular aynı modeli iki kez (tekrarlı move`da üç kez) döndürüyor, kapsanan
+  bayat yaprak kısayolu (e0ae2e7) taşınan modeli ESKİ bölgede yanlış seçiyordu. sort+unique
+  kaldırılması (c69939c) duplicate`i maskesiz bırakmıştı; false positive`i zaten düzeltemezdi.
+  Kanıt: `/opt/data/mm_probe_pending_overlap` (S1: 2 kopya, S2: 3 kopya, S3: 2 kopya,
+  S4: eski bölgede yanlış seçim — 4 FAIL).
+- **Düzeltme (27 satır, 2 dosya):** `pendingMask_` O(1) üyelik maskesi; `markPending()`
+  benzersiz üyelik + maske bakımı; querySpatialNode`un İKİ ağaç-emisyon yolu (normal yaprak +
+  kapsanan-yaprak bulk append) pending üyelerini atlıyor; tüm pending clear noktaları maskeyi
+  de temizliyor. query2D sıralamasız kalıyor; move/replace`te zorunlu rebuild YOK;
+  contained-leaf optimizasyonu korundu.
+- **Doğrulama:** mm_probe_pending_overlap 9/9 PASS; mevcut 8 probun tamamı PASS
+  (camera, effcache, task2, trim 654, polyline 32, undo 77, delta_index 21, snap 3).
+  250k benchmark 3x önce/sonra: win2d 12.00→10.88, cross2d 11.39→10.98, q2d_win 0.40→0.51
+  (maske bakışı; ±30% VM gürültüsü içinde), pick3d/snap3d/cull3d/win3d_mid değişmedi.
+- **Sırada (uygulanmadı):** AABB fast path (D) — selectModelsInRect2D WINDOW/CROSSING
+  sınıflandırması; ayrıntı `references/bvh-next-optimizations.md`.
