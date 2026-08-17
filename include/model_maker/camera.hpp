@@ -32,6 +32,7 @@ public:
     void zoom2DAt(Vec2 screenPoint, double factor, int viewportWidth, int viewportHeight) noexcept;
     void zoom3DAt(Vec2 screenPoint, double factor, int viewportWidth, int viewportHeight) noexcept;
     void pan2DByPixels(double deltaX, double deltaY) noexcept;
+    void pan3DByPixels(double deltaX, double deltaY) noexcept;
     bool fit2D(Vec3 minimum, Vec3 maximum, int viewportWidth, int viewportHeight,
                double marginPixels = 40.0) noexcept;
     bool fit3D(Vec3 minimum, Vec3 maximum, int viewportWidth, int viewportHeight,

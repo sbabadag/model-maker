@@ -1122,11 +1122,15 @@ LRESULT Application::handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lPa
         updateControls(); invalidateCanvas(); return 0;
     case WM_MBUTTONDOWN:
         SetFocus(canvas_);
-        if (mode_ == EditMode::View3D) {
-            rotating_ = true; lastMouse_ = {GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)}; SetCapture(canvas_);
+        // 3B: orta tus surukleme = rotate; Alt + orta tus = pan.
+        // 2B: orta tus surukleme = pan.
+        if (mode_ == EditMode::View3D && !(GetKeyState(VK_MENU) & 0x8000)) {
+            rotating_ = true;
         } else {
-            panning2D_ = true; lastMouse_ = {GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)}; SetCapture(canvas_);
+            panning2D_ = true;
         }
+        lastMouse_ = {GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
+        SetCapture(canvas_);
         return 0;
     case WM_LBUTTONUP: onLeftButtonUp(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)); return 0;
     case WM_MBUTTONUP:
@@ -1416,7 +1420,18 @@ void Application::onLeftButtonDown(int x, int y) {
         }
         updateHover(x, y);
     } else if (mode_ == EditMode::View3D) {
-        rotating_ = true; lastMouse_ = {x, y}; SetCapture(canvas_);
+        // 3B'de sol surukleme kamerayi dondurmez — 2B'deki gibi notr secim
+        // penceresi cizer (rotate yalniz orta tusta; Alt+orta tus pan).
+        if (selectionFirstCorner_) {
+            completeWindowSelection(x, y);
+            trimExtendLog(L"SECIM-PENCERE3D sel=" + std::to_wstring(selectedModels_.size()));
+        } else {
+            const bool toggled = toggleModelSelection(x, y);
+            if (!toggled) selectionFirstCorner_ = POINT{x, y};
+            trimExtendLog(L"SECIM-TIK3D toggled=" + std::to_wstring(toggled) +
+                          L" sel=" + std::to_wstring(selectedModels_.size()));
+        }
+        updateHover(x, y);
     }
     updateStatus(); updateControls(); invalidateCanvas();
 }
@@ -1467,14 +1482,19 @@ void Application::onMouseMove(int x, int y, WPARAM buttons) {
             if (drawingActive_) updateHover(x, y);
             redraw = true;
         }
-    } else if (panning2D_ && (buttons & MK_MBUTTON) && mode_ == EditMode::Draw2D) {
-        camera_.pan2DByPixels(x - lastMouse_.x, y - lastMouse_.y);
+    } else if (panning2D_ && (buttons & MK_MBUTTON)) {
+        if (mode_ == EditMode::Draw2D) {
+            camera_.pan2DByPixels(x - lastMouse_.x, y - lastMouse_.y);
+        } else {
+            camera_.pan3DByPixels(x - lastMouse_.x, y - lastMouse_.y);
+        }
         lastMouse_ = {x, y};
         updateHover(x, y);
         redraw = true;
     } else if (zoomWindowActive_ ||
                (transformCommand_ != TransformCommand::None && transformPhase_ == TransformPhase::Selecting) ||
                workPlanePicking_ || mode_ == EditMode::Draw2D || drawingActive_ ||
+               (mode_ == EditMode::View3D && selectionFirstCorner_) ||
                (transformCommand_ != TransformCommand::None && transformPhase_ != TransformPhase::Selecting)) {
         {
             const auto hoverStart = std::chrono::steady_clock::now();

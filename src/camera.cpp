@@ -158,6 +158,29 @@ void Camera::pan2DByPixels(double deltaX, double deltaY) noexcept {
     center2D_.y += deltaY / scale;
 }
 
+void Camera::pan3DByPixels(double deltaX, double deltaY) noexcept {
+    const double scale = pixelsPerUnit_ * zoom_;
+    if (scale <= 0.0) return;
+    // Ekran x saga, y ASAGI artar. Icerik fareyle ayni yone kayar -> merkez
+    // ters yone tasinir (isaretler pan2DByPixels ile ayni). Gorunum-uzayi
+    // eksenleri zoom3DAt ile ayni ters-dondurme kalibiyla dunyaya cevrilir.
+    const Vec3 cameraDelta{-deltaX / scale, deltaY / scale, 0.0};
+    if (useIso_) {
+        const double dx = cameraDelta.x, dy = cameraDelta.y;
+        center3D_ = center3D_ + Vec3{isoM00_ * dx + isoM10_ * dy,
+                                     isoM01_ * dx + isoM11_ * dy,
+                                     isoM02_ * dx + isoM12_ * dy};
+        return;
+    }
+    ensureViewCache();
+    const Vec3 unrolled{cameraDelta.x * cr_ + cameraDelta.y * sr_,
+                        -cameraDelta.x * sr_ + cameraDelta.y * cr_, 0.0};
+    const Vec3 yawed{unrolled.x, unrolled.y * cp_ + unrolled.z * sp_,
+                     -unrolled.y * sp_ + unrolled.z * cp_};
+    center3D_ = center3D_ + Vec3{yawed.x * cy_ - yawed.z * sy_, yawed.y,
+                                 yawed.x * sy_ + yawed.z * cy_};
+}
+
 bool Camera::fit2D(Vec3 minimum, Vec3 maximum, int viewportWidth, int viewportHeight,
                    double marginPixels) noexcept {
     constexpr double pixelsPerUnit2D = 60.0;
