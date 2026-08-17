@@ -106,6 +106,7 @@ private:
                           std::vector<std::size_t>& result) const;
     void recordUndoOp(UndoOp op);
     void recordLayerState();
+    void markPending(std::size_t index);
     void applyUndoOp(const UndoOp& op, bool forward);
 
     std::vector<WireframeModel> models_;
@@ -119,6 +120,7 @@ private:
     mutable std::vector<Bounds3> modelBounds_;
     mutable std::vector<std::size_t> spatialOrder_;
     mutable std::vector<std::size_t> pendingIndexRebuild_;
+    mutable std::vector<unsigned char> pendingMask_; // pending uyelik maskesi (O(1))
     mutable std::vector<SpatialNode> spatialNodes_;
     mutable std::optional<Bounds3> documentBounds_;
     std::unordered_map<std::string, NodeConstraint> nodeConstraints_;

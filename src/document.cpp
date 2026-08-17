@@ -91,7 +91,7 @@ void Document::addModel(WireframeModel model) {
         modelBounds_.resize(models_.size());
         effectiveCacheDirty_ = true;
     }
-    pendingIndexRebuild_.push_back(index);
+    markPending(index);
     spatialIndexDirty_ = true;
     documentBounds_.reset();
 }
@@ -109,7 +109,7 @@ void Document::moveModels(const std::vector<std::size_t>& indices, const Vec3& d
         models_[index].translate(displacement);
         if (modelBounds_.size() == models_.size())
             modelBounds_[index] = computeModelBounds(models_[index]);
-        pendingIndexRebuild_.push_back(index);
+        markPending(index);
     }
     spatialIndexDirty_ = true;
     documentBounds_.reset();
@@ -136,13 +136,13 @@ void Document::copyModels(const std::vector<std::size_t>& indices, const Vec3& d
         for (std::size_t k = 0; k < copies.size(); ++k) {
             modelBounds_.push_back(computeModelBounds(models_[firstCopy + k]));
             effectiveCache_.push_back(resolveEffectiveProperties(firstCopy + k));
-            pendingIndexRebuild_.push_back(firstCopy + k);
+            markPending(firstCopy + k);
         }
     } else {
         modelBounds_.resize(models_.size());
         effectiveCacheDirty_ = true;
         for (std::size_t k = 0; k < copies.size(); ++k)
-            pendingIndexRebuild_.push_back(firstCopy + k);
+            markPending(firstCopy + k);
     }
     spatialIndexDirty_ = true;
     documentBounds_.reset();
@@ -254,6 +254,7 @@ void Document::deleteModels(const std::vector<std::size_t>& indices) {
     spatialOrder_.clear();
     spatialNodes_.clear();
     pendingIndexRebuild_.clear();
+    pendingMask_.clear();
     spatialIndexDirty_ = true;
     documentBounds_.reset();
     if (!valid.empty()) invalidateDerivedState();
@@ -292,8 +293,9 @@ void Document::replaceModel(std::size_t index, std::vector<WireframeModel> repla
         spatialOrder_.clear();
         spatialNodes_.clear();
         pendingIndexRebuild_.clear();
+    pendingMask_.clear();
     } else {
-        pendingIndexRebuild_.push_back(index);
+        markPending(index);
     }
     spatialIndexDirty_ = true;
     documentBounds_.reset();
@@ -307,6 +309,7 @@ void Document::clear() noexcept {
     modelBounds_.clear();
     effectiveCache_.clear();
     pendingIndexRebuild_.clear();
+    pendingMask_.clear();
     spatialOrder_.clear();
     spatialNodes_.clear();
     documentBounds_.reset();
@@ -597,11 +600,23 @@ void Document::rebuildDerivedState() {
     for (std::size_t i = 0; i < models_.size(); ++i)
         modelBounds_[i] = computeModelBounds(models_[i]);
     pendingIndexRebuild_.clear();
+    pendingMask_.clear();
     spatialOrder_.clear();
     spatialNodes_.clear();
     documentBounds_.reset();
     effectiveCacheDirty_ = true;
     spatialIndexDirty_ = true;
+}
+
+void Document::markPending(std::size_t index) {
+    // Pending uyelerini agac emisyonundan dislamak icin O(1) maske.
+    // Benzersiz uyelik: ayni indeks pending'de yalnizca BIR kez bulunur.
+    // move/replace agacta zaten var olan indeksi de isaretler; agac gezintisi
+    // onu atlar, pending taramasi taze sinirlarla TEK kopya uretir.
+    if (index >= pendingMask_.size()) pendingMask_.resize(models_.size(), 0);
+    if (pendingMask_[index]) return;
+    pendingMask_[index] = 1;
+    pendingIndexRebuild_.push_back(index);
 }
 
 void Document::invalidateDerivedState() noexcept {
@@ -649,6 +664,7 @@ void Document::ensureSpatialIndex() const {
     spatialNodes_.reserve(spatialOrder_.size() * 2);
     if (!spatialOrder_.empty()) buildSpatialNode(0, spatialOrder_.size());
     pendingIndexRebuild_.clear();
+    pendingMask_.clear();
     spatialIndexDirty_ = false;
 }
 
@@ -692,13 +708,16 @@ void Document::querySpatialNode(std::size_t nodeIndex, const Bounds3& area,
         if (contains2D(area, node.bounds)) {
             for (std::size_t i = node.begin; i < node.end; ++i) {
                 const auto modelIndex = spatialOrder_[i];
-                if (modelIndex < models_.size()) result.push_back(modelIndex);
+                if (modelIndex >= models_.size()) continue; // silinmis bayat girdi
+                if (modelIndex < pendingMask_.size() && pendingMask_[modelIndex]) continue; // pending uyesi
+                result.push_back(modelIndex);
             }
             return;
         }
         for (std::size_t i = node.begin; i < node.end; ++i) {
             const auto modelIndex = spatialOrder_[i];
             if (modelIndex >= models_.size()) continue; // silinmiş bayat girdi
+            if (modelIndex < pendingMask_.size() && pendingMask_[modelIndex]) continue; // pending uyesi
             if (intersects2D(modelBounds_[modelIndex], area)) result.push_back(modelIndex);
         }
         return;
