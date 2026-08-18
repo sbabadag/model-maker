@@ -1305,8 +1305,12 @@ void Application::onCanvasPaint() {
     // F1: GPU hatti — backend YALNIZ F9 ile GL acilinca uretilir; GDI
     // varsayilanda canvas'a hicbir GL dokunmaz (ilk boyamada init edilen GL
     // context'i GDI cizimini bozup "cizgiler kayboldu" hatasi uretiyordu).
+    // 2B'de GL overlay kapali: FBO+AlphaBlend kompoziti DWM tarafinda arka
+    // planda "gradient" flicker uretiyordu (drawing/koordinatlar saglikliydi).
+    // 3B modunda GL acik kalir; F5 (kalici VBO + GPU kompozit) 2B'ye geri doner.
     IRenderBackend* activeBackend =
-        (renderBackend_ && gpuLinesEnabled_) ? renderBackend_.get() : nullptr;
+        (renderBackend_ && gpuLinesEnabled_ && mode_ == EditMode::View3D)
+            ? renderBackend_.get() : nullptr;
     const auto paintStart = std::chrono::steady_clock::now();
     renderer_.draw(dc, client, document_, camera_, mode_, draftView(), activeBackend);
     if (paintSequence_ <= 10 && paintSequence_ > 0)
