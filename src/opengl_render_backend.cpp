@@ -641,7 +641,7 @@ bool OpenGLRenderBackend::renderBatchToDc(
             fprintf(diag,
                 "GLDIAG %d READBACK center=%u,%u,%u,%u opaque=%zu/%zu firstOpaque=%zu,%zu "
                 "probe(302,413)=%u,%u,%u,%u lines=%zu gdiObjs=%d\n",
-                glDiagCount, px(center), px(center + 1), px(center + 2), px(center + 3),
+                glDiagCount_, px(center), px(center + 1), px(center + 2), px(center + 3),
                 opaque, blitBuffer_.size() / 4,
                 firstOpaque == blitBuffer_.size() ? 0 : (firstOpaque / 4) % static_cast<std::size_t>(width),
                 firstOpaque == blitBuffer_.size() ? 0 : (firstOpaque / 4) / static_cast<std::size_t>(width),
