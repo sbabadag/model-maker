@@ -1033,6 +1033,11 @@ LRESULT Application::handleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
             if (snapPreviewActive_) invalidateCanvas();
             return 0;
         }
+        if (wParam == 7) {
+            KillTimer(window_, 7);
+            runRenderBenchmark();
+            return 0;
+        }
         if (wParam == 2) {
             KillTimer(window_, 2);
             wheelNavigating_ = false;
@@ -1325,12 +1330,13 @@ void Application::onCanvasPaint() {
         }
     }
     {
-        // OTOMATIK BENCHMARK: ilk model gorundugunde kendiliginden calisir
-        // (F5/menu etkilesimi gerekmez — teshis sonrasi kaldirilacak).
-        static bool benchRan = false;
-        if (!benchRan && document_.models().size() > 0) {
-            benchRan = true;
-            runRenderBenchmark();
+        // OTOMATIK BENCHMARK: acilistan ~2s sonra kendiliginden calisir;
+        // cizim yoksa kendi sentetik geometrisini uretir (teshis sonrasi
+        // kaldirilacak). Kullanici etkilesimi: sifir.
+        static bool benchScheduled = false;
+        if (!benchScheduled) {
+            benchScheduled = true;
+            SetTimer(window_, 7, 2000, nullptr);
         }
     }
     const auto paintStart = std::chrono::steady_clock::now();
@@ -3051,6 +3057,20 @@ DraftView Application::draftView() const {
 
 void Application::runRenderBenchmark() {
     if (!canvas_) return;
+    if (document_.models().empty()) {
+        // Sentetik benchmark geometrisi: 20k deterministik cizgi (LCG).
+        std::uint32_t seed = 12345u;
+        const auto rnd = [&seed]() {
+            seed = seed * 1664525u + 1013904223u;
+            return (seed >> 8) / 16777215.0; // [0,1)
+        };
+        document_.reserveModels(20'000);
+        for (int i = 0; i < 20'000; ++i) {
+            const Vec3 a{(rnd() - 0.5) * 100.0, (rnd() - 0.5) * 100.0, (rnd() - 0.5) * 100.0};
+            const Vec3 b{a.x + (rnd() - 0.5) * 4.0, a.y + (rnd() - 0.5) * 4.0, a.z + (rnd() - 0.5) * 4.0};
+            document_.addModel(WireframeModel::line(a, b));
+        }
+    }
     {
         FILE* diag = fopen("model-maker-render.log", "a");
         if (diag) {
