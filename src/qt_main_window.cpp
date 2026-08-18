@@ -28,7 +28,161 @@
 #include <QResizeEvent>
 #include <QShowEvent>
 #include <QEvent>
+#include <QPainter>
+#include <QPolygon>
+#include <QPixmap>
+#include <QIcon>
+#include <QPen>
+#include <QBrush>
+#include <cmath>
 
+namespace {
+// AutoCAD tarzi renkli ribbon ikonlari: QPainter ile runtime'da cizilir
+// (harici asset yok). 24x24, antialiased, koyu tema uzerinde okunur renkler.
+enum class ToolGlyph {
+    Line, Polyline, Rect, Circle, Face3D,
+    Undo, Redo, Pan, Move, Copy, Offset, Mirror, Delete,
+    LinearArray, PolarArray, Trim, Extend, Fillet,
+    Toggle3D, Extents, Plane, Reset, New, Open, Save, Import, Export
+};
+
+static QIcon makeToolIcon(ToolGlyph glyph) {
+    QPixmap pm(24, 24);
+    pm.fill(Qt::transparent);
+    QPainter p(&pm);
+    p.setRenderHint(QPainter::Antialiasing);
+    QPen pen;
+    pen.setWidth(2);
+    pen.setCapStyle(Qt::RoundCap);
+    pen.setJoinStyle(Qt::RoundJoin);
+    const QColor blue(74, 144, 217), yellow(245, 194, 75), green(87, 193, 90),
+        red(226, 92, 92), cyan(85, 201, 216), orange(232, 163, 61),
+        gray(154, 160, 166), purple(180, 140, 232), lightblue(127, 179, 232),
+        white(232, 232, 232);
+    switch (glyph) {
+    case ToolGlyph::Line:
+        pen.setColor(blue); p.setPen(pen); p.drawLine(4, 20, 20, 4); break;
+    case ToolGlyph::Polyline:
+        pen.setColor(yellow); p.setPen(pen);
+        p.drawPolyline(QPolygonF() << QPointF(4, 20) << QPointF(8, 11)
+                                   << QPointF(13, 15) << QPointF(20, 4)); break;
+    case ToolGlyph::Rect:
+        pen.setColor(green); p.setPen(pen); p.drawRect(4, 6, 16, 12); break;
+    case ToolGlyph::Circle:
+        pen.setColor(red); p.setPen(pen); p.drawEllipse(4, 4, 16, 16); break;
+    case ToolGlyph::Face3D:
+        pen.setColor(cyan); p.setPen(pen);
+        p.drawPolygon(QPolygonF() << QPointF(12, 3) << QPointF(21, 19) << QPointF(3, 19)); break;
+    case ToolGlyph::Undo:
+        pen.setColor(orange); p.setPen(pen);
+        p.drawArc(QRectF(5, 5, 10, 13), 30 * 16, 190 * 16);
+        p.drawPolyline(QPolygonF() << QPointF(17, 6) << QPointF(14, 4) << QPointF(15, 8)); break;
+    case ToolGlyph::Redo: {
+        QIcon base = makeToolIcon(ToolGlyph::Undo);
+        QPixmap mirrored(24, 24); mirrored.fill(Qt::transparent);
+        QPainter m(&mirrored);
+        m.setRenderHint(QPainter::Antialiasing);
+        m.translate(24, 0); m.scale(-1, 1);
+        base.paint(&m, QRect(0, 0, 24, 24));
+        m.end();
+        return QIcon(mirrored);
+    }
+    case ToolGlyph::Pan:
+        pen.setColor(gray); p.setPen(pen);
+        p.drawLine(5, 5, 19, 19); p.drawLine(19, 5, 5, 19); break;
+    case ToolGlyph::Move:
+        pen.setColor(purple); p.setPen(pen);
+        p.drawLine(12, 2, 12, 22); p.drawLine(2, 12, 22, 12);
+        p.setBrush(purple);
+        p.drawPolygon(QPolygonF() << QPointF(12, 2) << QPointF(9, 7) << QPointF(15, 7));
+        p.drawPolygon(QPolygonF() << QPointF(12, 22) << QPointF(9, 17) << QPointF(15, 17));
+        p.drawPolygon(QPolygonF() << QPointF(2, 12) << QPointF(7, 9) << QPointF(7, 15));
+        p.drawPolygon(QPolygonF() << QPointF(22, 12) << QPointF(17, 9) << QPointF(17, 15));
+        p.setBrush(Qt::NoBrush); break;
+    case ToolGlyph::Copy:
+        pen.setColor(lightblue); p.setPen(pen); p.drawRect(9, 9, 11, 11);
+        pen.setColor(blue); p.setPen(pen); p.drawRect(4, 4, 11, 11); break;
+    case ToolGlyph::Offset:
+        pen.setColor(green); p.setPen(pen);
+        p.drawLine(3, 9, 21, 9); p.drawLine(3, 15, 21, 15);
+        p.drawPolyline(QPolygonF() << QPointF(12, 17) << QPointF(12, 7) << QPointF(14, 9)); break;
+    case ToolGlyph::Mirror:
+        pen.setColor(cyan); p.setPen(pen);
+        p.drawPolygon(QPolygonF() << QPointF(4, 8) << QPointF(9, 6) << QPointF(9, 10));
+        p.drawPolygon(QPolygonF() << QPointF(20, 8) << QPointF(15, 6) << QPointF(15, 10));
+        pen.setStyle(Qt::DashLine); p.drawLine(12, 3, 12, 21); break;
+    case ToolGlyph::Delete:
+        pen.setColor(red); pen.setWidth(3); p.setPen(pen);
+        p.drawLine(5, 5, 19, 19); p.drawLine(19, 5, 5, 19); break;
+    case ToolGlyph::LinearArray:
+        pen.setColor(white); p.setPen(pen); p.setBrush(white);
+        for (const QPointF& pt : {QPointF(5, 6), QPointF(12, 6), QPointF(19, 6),
+                                  QPointF(5, 14), QPointF(12, 14), QPointF(19, 14)})
+            p.drawEllipse(pt, 2.0, 2.0);
+        p.setBrush(Qt::NoBrush); break;
+    case ToolGlyph::PolarArray:
+        pen.setColor(white); p.setPen(pen); p.setBrush(white);
+        for (int i = 0; i < 6; ++i) {
+            const double ang = 3.14159265358979323846 / 3.0 * i;
+            p.drawEllipse(QPointF(12 + 7 * std::cos(ang), 12 + 7 * std::sin(ang)), 1.8, 1.8);
+        }
+        p.setBrush(Qt::NoBrush); break;
+    case ToolGlyph::Trim:
+        pen.setColor(yellow); p.setPen(pen);
+        p.drawLine(4, 16, 20, 8);
+        p.drawLine(9, 9, 9, 15); p.drawLine(15, 15, 15, 9); break;
+    case ToolGlyph::Extend:
+        pen.setColor(yellow); p.setPen(pen);
+        p.drawLine(6, 18, 16, 8);
+        p.drawPolyline(QPolygonF() << QPointF(16, 8) << QPointF(20, 4)
+                                   << QPointF(21, 6) << QPointF(18, 9)); break;
+    case ToolGlyph::Fillet:
+        pen.setColor(orange); p.setPen(pen);
+        p.drawLine(4, 19, 4, 9); p.drawLine(4, 9, 19, 9);
+        p.drawArc(QRectF(4, 5, 8, 8), 180 * 16, 90 * 16); break;
+    case ToolGlyph::Toggle3D:
+        pen.setColor(cyan); p.setPen(pen);
+        p.drawRect(8, 8, 10, 10);
+        p.drawPolygon(QPolygonF() << QPointF(8, 8) << QPointF(13, 3) << QPointF(23, 3) << QPointF(18, 8));
+        p.drawPolygon(QPolygonF() << QPointF(18, 8) << QPointF(23, 3) << QPointF(23, 13) << QPointF(18, 18)); break;
+    case ToolGlyph::Extents:
+        pen.setColor(white); p.setPen(pen);
+        p.drawEllipse(5, 5, 12, 12);
+        p.drawLine(15, 15, 20, 20); break;
+    case ToolGlyph::Plane:
+        pen.setColor(cyan); p.setPen(pen);
+        p.drawPolygon(QPolygonF() << QPointF(12, 3) << QPointF(21, 12) << QPointF(12, 21) << QPointF(3, 12));
+        p.drawLine(12, 3, 12, 21); p.drawLine(3, 12, 21, 12); break;
+    case ToolGlyph::Reset:
+        pen.setColor(orange); p.setPen(pen);
+        p.drawArc(QRectF(5, 5, 14, 14), 40 * 16, 280 * 16);
+        p.drawPolygon(QPolygonF() << QPointF(19, 4) << QPointF(15, 2) << QPointF(17, 7)); break;
+    case ToolGlyph::New:
+        pen.setColor(white); p.setPen(pen);
+        p.drawRect(6, 4, 12, 16); p.drawLine(6, 9, 18, 9);
+        pen.setColor(green); p.drawLine(10, 12, 14, 12); p.drawLine(12, 10, 12, 14); break;
+    case ToolGlyph::Open:
+        pen.setColor(orange); p.setPen(pen);
+        p.drawPolygon(QPolygonF() << QPointF(3, 8) << QPointF(9, 8) << QPointF(11, 10)
+                                  << QPointF(21, 10) << QPointF(21, 19) << QPointF(3, 19)); break;
+    case ToolGlyph::Save:
+        pen.setColor(blue); p.setPen(pen);
+        p.drawRect(6, 3, 12, 18); p.drawRect(8, 3, 8, 5); p.drawLine(8, 15, 16, 15); break;
+    case ToolGlyph::Import:
+        pen.setColor(green); p.setPen(pen);
+        p.drawPolyline(QPolygonF() << QPointF(3, 17) << QPointF(14, 17) << QPointF(14, 7)
+                                   << QPointF(21, 7));
+        p.drawPolyline(QPolygonF() << QPointF(17, 4) << QPointF(21, 7) << QPointF(17, 10)); break;
+    case ToolGlyph::Export:
+        pen.setColor(blue); p.setPen(pen);
+        p.drawPolyline(QPolygonF() << QPointF(3, 7) << QPointF(10, 7) << QPointF(10, 17)
+                                   << QPointF(21, 17));
+        p.drawPolyline(QPolygonF() << QPointF(17, 14) << QPointF(21, 17) << QPointF(17, 20)); break;
+    }
+    p.end();
+    return QIcon(pm);
+}
+} // namespace
 #include <algorithm>
 #include <fstream>
 #include <string>
@@ -123,75 +277,83 @@ void QtMainWindow::resizeEmbeddedCanvas() {
 
 void QtMainWindow::createMenus() {
     QMenu* fileMenu = menuBar()->addMenu("&Dosya");
-    fileMenu->addAction("&Yeni", this, [this]() { app_.newDocument(); });
-    fileMenu->addAction("&Aç...", this, [this]() { app_.openDocument(); });
-    fileMenu->addAction("&Kaydet", this, [this]() { app_.saveDocument(); });
+    fileMenu->addAction("&Yeni", this, [this]() { app_.newDocument(); })->setIcon(makeToolIcon(ToolGlyph::New));
+    fileMenu->addAction("&Aç...", this, [this]() { app_.openDocument(); })->setIcon(makeToolIcon(ToolGlyph::Open));
+    fileMenu->addAction("&Kaydet", this, [this]() { app_.saveDocument(); })->setIcon(makeToolIcon(ToolGlyph::Save));
     fileMenu->addSeparator();
-    fileMenu->addAction("DXF &İçe Aktar...", this, [this]() { app_.importDxf(); });
-    fileMenu->addAction("DXF &Dışa Aktar...", this, [this]() { app_.exportDxf(); });
+    fileMenu->addAction("DXF &İçe Aktar...", this, [this]() { app_.importDxf(); })->setIcon(makeToolIcon(ToolGlyph::Import));
+    fileMenu->addAction("DXF &Dışa Aktar...", this, [this]() { app_.exportDxf(); })->setIcon(makeToolIcon(ToolGlyph::Export));
     fileMenu->addAction("DXF &İçe Aktar...", this, []() {});
     fileMenu->addAction("DXF &Dışa Aktar...", this, []() {});
     fileMenu->addSeparator();
     fileMenu->addAction("Çı&kış", qApp, &QApplication::quit);
 
     QMenu* drawMenu = menuBar()->addMenu("Çi&zim");
-    drawMenu->addAction("Çiz&gi", this, [this]() { app_.selectTool(DrawTool::Line); });
-    drawMenu->addAction("&Polyline", this, [this]() { app_.selectTool(DrawTool::Polyline); });
-    drawMenu->addAction("Dikdört&gen", this, [this]() { app_.selectTool(DrawTool::Rectangle); });
-    drawMenu->addAction("Dai&re", this, [this]() { app_.selectTool(DrawTool::Circle); });
-    drawMenu->addAction("&3DFACE", this, [this]() { app_.selectTool(DrawTool::Face3D); });
+    drawMenu->addAction("Çiz&gi", this, [this]() { app_.selectTool(DrawTool::Line); })->setIcon(makeToolIcon(ToolGlyph::Line));
+    drawMenu->addAction("&Polyline", this, [this]() { app_.selectTool(DrawTool::Polyline); })->setIcon(makeToolIcon(ToolGlyph::Polyline));
+    drawMenu->addAction("Dikdört&gen", this, [this]() { app_.selectTool(DrawTool::Rectangle); })->setIcon(makeToolIcon(ToolGlyph::Rect));
+    drawMenu->addAction("Dai&re", this, [this]() { app_.selectTool(DrawTool::Circle); })->setIcon(makeToolIcon(ToolGlyph::Circle));
+    drawMenu->addAction("&3DFACE", this, [this]() { app_.selectTool(DrawTool::Face3D); })->setIcon(makeToolIcon(ToolGlyph::Face3D));
 
     QMenu* modifyMenu = menuBar()->addMenu("Dü&zenle");
-    modifyMenu->addAction("&Pasif", this, [this]() { app_.deactivateAllCommands(); });
+    modifyMenu->addAction("&Pasif", this, [this]() { app_.deactivateAllCommands(); })->setIcon(makeToolIcon(ToolGlyph::Pan));
     modifyMenu->addSeparator();
-    modifyMenu->addAction("&Taşı", this, [this]() { app_.startTransformCommand(TransformCommand::Move); });
-    modifyMenu->addAction("&Kopyala", this, [this]() { app_.startTransformCommand(TransformCommand::Copy); });
-    modifyMenu->addAction("&Ofset", this, [this]() { app_.startTransformCommand(TransformCommand::Offset); });
-    modifyMenu->addAction("A&yna", this, [this]() { app_.startTransformCommand(TransformCommand::Mirror); });
-    modifyMenu->addAction("&Sil", this, [this]() { app_.startTransformCommand(TransformCommand::Delete); });
+    modifyMenu->addAction("&Taşı", this, [this]() { app_.startTransformCommand(TransformCommand::Move); })->setIcon(makeToolIcon(ToolGlyph::Move));
+    modifyMenu->addAction("&Kopyala", this, [this]() { app_.startTransformCommand(TransformCommand::Copy); })->setIcon(makeToolIcon(ToolGlyph::Copy));
+    modifyMenu->addAction("&Ofset", this, [this]() { app_.startTransformCommand(TransformCommand::Offset); })->setIcon(makeToolIcon(ToolGlyph::Offset));
+    modifyMenu->addAction("A&yna", this, [this]() { app_.startTransformCommand(TransformCommand::Mirror); })->setIcon(makeToolIcon(ToolGlyph::Mirror));
+    modifyMenu->addAction("&Sil", this, [this]() { app_.startTransformCommand(TransformCommand::Delete); })->setIcon(makeToolIcon(ToolGlyph::Delete));
     modifyMenu->addSeparator();
-    modifyMenu->addAction("Doğrusal &Dizi", this, [this]() { app_.startTransformCommand(TransformCommand::LinearArray); });
-    modifyMenu->addAction("Dairesel Di&zi", this, [this]() { app_.startTransformCommand(TransformCommand::PolarArray); });
+    modifyMenu->addAction("Doğrusal &Dizi", this, [this]() { app_.startTransformCommand(TransformCommand::LinearArray); })->setIcon(makeToolIcon(ToolGlyph::LinearArray));
+    modifyMenu->addAction("Dairesel Di&zi", this, [this]() { app_.startTransformCommand(TransformCommand::PolarArray); })->setIcon(makeToolIcon(ToolGlyph::PolarArray));
     modifyMenu->addSeparator();
-    modifyMenu->addAction("&Trim", this, [this]() { app_.startTransformCommand(TransformCommand::Trim); });
-    modifyMenu->addAction("E&xtend", this, [this]() { app_.startTransformCommand(TransformCommand::Extend); });
-    modifyMenu->addAction("&Fillet", this, [this]() { app_.startTransformCommand(TransformCommand::Fillet); });
+    modifyMenu->addAction("&Trim", this, [this]() { app_.startTransformCommand(TransformCommand::Trim); })->setIcon(makeToolIcon(ToolGlyph::Trim));
+    modifyMenu->addAction("E&xtend", this, [this]() { app_.startTransformCommand(TransformCommand::Extend); })->setIcon(makeToolIcon(ToolGlyph::Extend));
+    modifyMenu->addAction("&Fillet", this, [this]() { app_.startTransformCommand(TransformCommand::Fillet); })->setIcon(makeToolIcon(ToolGlyph::Fillet));
 
     QMenu* viewMenu = menuBar()->addMenu("G&örünüm");
-    viewMenu->addAction("&Zoom Extents", this, [this]() { app_.zoomExtents2D(); });
-    viewMenu->addAction("Zoom &Window", this, [this]() { app_.startZoomWindow2D(); });
-    viewMenu->addAction("2&B / 3B", this, [this]() { app_.toggle3DView(); });
+    viewMenu->addAction("&Zoom Extents", this, [this]() { app_.zoomExtents2D(); })->setIcon(makeToolIcon(ToolGlyph::Extents));
+    viewMenu->addAction("Zoom &Window", this, [this]() { app_.startZoomWindow2D(); })->setIcon(makeToolIcon(ToolGlyph::Extents));
+    viewMenu->addAction("2&B / 3B", this, [this]() { app_.toggle3DView(); })->setIcon(makeToolIcon(ToolGlyph::Toggle3D));
     viewMenu->addSeparator();
-    viewMenu->addAction("Çalışma &Düzlemi (3 Nokta)", this, [this]() { app_.startWorkPlaneCommand(); });
-    viewMenu->addAction("Düzlemi &Sıfırla (Dünya)", this, [this]() { app_.resetWorkPlane(); });
+    viewMenu->addAction("Çalışma &Düzlemi (3 Nokta)", this, [this]() { app_.startWorkPlaneCommand(); })->setIcon(makeToolIcon(ToolGlyph::Plane));
+    viewMenu->addAction("Düzlemi &Sıfırla (Dünya)", this, [this]() { app_.resetWorkPlane(); })->setIcon(makeToolIcon(ToolGlyph::Reset));
 }
 
 void QtMainWindow::createToolbar() {
     QToolBar* ribbon = addToolBar("Ribbon");
     ribbon->setMovable(false);
+    ribbon->setStyleSheet(
+        "QToolBar { background: #2B2B30; border: none; spacing: 2px; }"
+        "QTabWidget::pane { border: none; }"
+        "QTabBar::tab { background: #1E1E24; color: #B8B8C0; padding: 4px 12px; }"
+        "QTabBar::tab:selected { background: #2B2B30; color: #FFFFFF; }");
 
     QTabWidget* tabs = new QTabWidget(ribbon);
     tabs->setDocumentMode(true);
     tabs->setTabPosition(QTabWidget::North);
-    tabs->setMaximumWidth(620);
 
     // ---- Çizim tab ----
     QWidget* drawTab = new QWidget();
     QHBoxLayout* drawLayout = new QHBoxLayout(drawTab);
     drawLayout->setContentsMargins(4, 2, 4, 2);
     drawLayout->setSpacing(2);
-    auto addDrawBtn = [&](const QString& text, DrawTool tool) {
-        QPushButton* btn = new QPushButton(text, drawTab);
-        btn->setFixedSize(55, 36);
-        btn->setStyleSheet("QPushButton { font-size: 9pt; }");
-        QObject::connect(btn, &QPushButton::clicked, this, [this, tool]() { app_.selectTool(tool); });
+    auto addDrawBtn = [&](const ToolGlyph glyph, const QString& text, DrawTool tool) {
+        QToolButton* btn = new QToolButton(drawTab);
+        btn->setIcon(makeToolIcon(glyph));
+        btn->setIconSize(QSize(22, 22));
+        btn->setText(text);
+        btn->setToolButtonStyle(Qt::ToolButtonTextUnderIcon);
+        btn->setFixedSize(58, 48);
+        btn->setStyleSheet("QToolButton { font-size: 7.5pt; color: #E8E8E8; border: none; border-radius: 3px; background: transparent; }" "QToolButton:hover { background: #3C3C44; }" "QToolButton:pressed { background: #23232B; }");
+        QObject::connect(btn, &QToolButton::clicked, this, [this, tool]() { app_.selectTool(tool); });
         drawLayout->addWidget(btn);
     };
-    addDrawBtn("╱ Çizgi", DrawTool::Line);
-    addDrawBtn("⌁ PL", DrawTool::Polyline);
-    addDrawBtn("□ Rect", DrawTool::Rectangle);
-    addDrawBtn("○ Daire", DrawTool::Circle);
-    addDrawBtn("▱ 3DF", DrawTool::Face3D);
+    addDrawBtn(ToolGlyph::Line, "Çizgi", DrawTool::Line);
+    addDrawBtn(ToolGlyph::Polyline, "Polyline", DrawTool::Polyline);
+    addDrawBtn(ToolGlyph::Rect, "Dikdörtgen", DrawTool::Rectangle);
+    addDrawBtn(ToolGlyph::Circle, "Daire", DrawTool::Circle);
+    addDrawBtn(ToolGlyph::Face3D, "3DFACE", DrawTool::Face3D);
     drawLayout->addStretch();
     tabs->addTab(drawTab, "Çizim");
 
@@ -200,26 +362,30 @@ void QtMainWindow::createToolbar() {
     QHBoxLayout* modLayout = new QHBoxLayout(modTab);
     modLayout->setContentsMargins(4, 2, 4, 2);
     modLayout->setSpacing(2);
-    auto addModBtn = [&](const QString& text, auto action) {
-        QPushButton* btn = new QPushButton(text, modTab);
-        btn->setFixedSize(55, 36);
-        btn->setStyleSheet("QPushButton { font-size: 9pt; }");
-        QObject::connect(btn, &QPushButton::clicked, this, action);
+    auto addModBtn = [&](const ToolGlyph glyph, const QString& text, auto action) {
+        QToolButton* btn = new QToolButton(modTab);
+        btn->setIcon(makeToolIcon(glyph));
+        btn->setIconSize(QSize(20, 20));
+        btn->setText(text);
+        btn->setToolButtonStyle(Qt::ToolButtonTextUnderIcon);
+        btn->setFixedSize(52, 48);
+        btn->setStyleSheet("QToolButton { font-size: 7.5pt; color: #E8E8E8; border: none; border-radius: 3px; background: transparent; }" "QToolButton:hover { background: #3C3C44; }" "QToolButton:pressed { background: #23232B; }");
+        QObject::connect(btn, &QToolButton::clicked, this, action);
         modLayout->addWidget(btn);
     };
-    addModBtn("↶ Geri",   [this]() { app_.undo(); });
-    addModBtn("↷ İleri",  [this]() { app_.redo(); });
-    addModBtn("↖ Pasif",  [this]() { app_.deactivateAllCommands(); });
-    addModBtn("↔ Taşı",   [this]() { app_.startTransformCommand(TransformCommand::Move); });
-    addModBtn("⧉ Kopya",  [this]() { app_.startTransformCommand(TransformCommand::Copy); });
-    addModBtn("⇶ Ofset",  [this]() { app_.startTransformCommand(TransformCommand::Offset); });
-    addModBtn("◁▷ Ayna", [this]() { app_.startTransformCommand(TransformCommand::Mirror); });
-    addModBtn("✕ Sil",    [this]() { app_.startTransformCommand(TransformCommand::Delete); });
-    addModBtn("▦ Dizi",  [this]() { app_.startTransformCommand(TransformCommand::LinearArray); });
-    addModBtn("◌ Daire", [this]() { app_.startTransformCommand(TransformCommand::PolarArray); });
-    addModBtn("✂ Trim",   [this]() { app_.startTransformCommand(TransformCommand::Trim); });
-    addModBtn("↗ Extend", [this]() { app_.startTransformCommand(TransformCommand::Extend); });
-    addModBtn("⌒ Fillet", [this]() { app_.startTransformCommand(TransformCommand::Fillet); });
+    addModBtn(ToolGlyph::Undo,  "Geri",   [this]() { app_.undo(); });
+    addModBtn(ToolGlyph::Redo,  "İleri",  [this]() { app_.redo(); });
+    addModBtn(ToolGlyph::Pan,   "Pasif",  [this]() { app_.deactivateAllCommands(); });
+    addModBtn(ToolGlyph::Move,  "Taşı",   [this]() { app_.startTransformCommand(TransformCommand::Move); });
+    addModBtn(ToolGlyph::Copy,  "Kopyala",[this]() { app_.startTransformCommand(TransformCommand::Copy); });
+    addModBtn(ToolGlyph::Offset,"Ofset",  [this]() { app_.startTransformCommand(TransformCommand::Offset); });
+    addModBtn(ToolGlyph::Mirror,"Ayna",   [this]() { app_.startTransformCommand(TransformCommand::Mirror); });
+    addModBtn(ToolGlyph::Delete,"Sil",    [this]() { app_.startTransformCommand(TransformCommand::Delete); });
+    addModBtn(ToolGlyph::LinearArray, "Dizi",   [this]() { app_.startTransformCommand(TransformCommand::LinearArray); });
+    addModBtn(ToolGlyph::PolarArray,  "D.Dizi", [this]() { app_.startTransformCommand(TransformCommand::PolarArray); });
+    addModBtn(ToolGlyph::Trim,   "Trim",   [this]() { app_.startTransformCommand(TransformCommand::Trim); });
+    addModBtn(ToolGlyph::Extend, "Extend", [this]() { app_.startTransformCommand(TransformCommand::Extend); });
+    addModBtn(ToolGlyph::Fillet, "Fillet", [this]() { app_.startTransformCommand(TransformCommand::Fillet); });
     modLayout->addStretch();
     tabs->addTab(modTab, "Düzenle");
 
@@ -228,17 +394,21 @@ void QtMainWindow::createToolbar() {
     QHBoxLayout* viewLayout = new QHBoxLayout(viewTab);
     viewLayout->setContentsMargins(4, 2, 4, 2);
     viewLayout->setSpacing(2);
-    auto addViewBtn = [&](const QString& text, auto action) {
-        QPushButton* btn = new QPushButton(text, viewTab);
-        btn->setFixedSize(55, 36);
-        btn->setStyleSheet("QPushButton { font-size: 9pt; }");
-        QObject::connect(btn, &QPushButton::clicked, this, action);
+    auto addViewBtn = [&](const ToolGlyph glyph, const QString& text, auto action) {
+        QToolButton* btn = new QToolButton(viewTab);
+        btn->setIcon(makeToolIcon(glyph));
+        btn->setIconSize(QSize(22, 22));
+        btn->setText(text);
+        btn->setToolButtonStyle(Qt::ToolButtonTextUnderIcon);
+        btn->setFixedSize(58, 48);
+        btn->setStyleSheet("QToolButton { font-size: 7.5pt; color: #E8E8E8; border: none; border-radius: 3px; background: transparent; }" "QToolButton:hover { background: #3C3C44; }" "QToolButton:pressed { background: #23232B; }");
+        QObject::connect(btn, &QToolButton::clicked, this, action);
         viewLayout->addWidget(btn);
     };
-    addViewBtn("▣ 2B/3B",   [this]() { app_.toggle3DView(); });
-    addViewBtn("⛶ Extents", [this]() { app_.zoomExtents2D(); });
-    addViewBtn("◈ Düzlem",  [this]() { app_.startWorkPlaneCommand(); });
-    addViewBtn("◎ Sıfırla",  [this]() { app_.resetWorkPlane(); });
+    addViewBtn(ToolGlyph::Toggle3D, "2B/3B",   [this]() { app_.toggle3DView(); });
+    addViewBtn(ToolGlyph::Extents,  "Extents", [this]() { app_.zoomExtents2D(); });
+    addViewBtn(ToolGlyph::Plane,    "Düzlem",  [this]() { app_.startWorkPlaneCommand(); });
+    addViewBtn(ToolGlyph::Reset,    "Sıfırla", [this]() { app_.resetWorkPlane(); });
     viewLayout->addStretch();
     tabs->addTab(viewTab, "Görünüm");
 
