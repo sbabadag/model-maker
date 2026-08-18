@@ -28,6 +28,8 @@ namespace GLConst {
     constexpr GLenum ARRAY_BUFFER = 0x8892;
     constexpr GLenum ELEMENT_ARRAY_BUFFER = 0x8893;
     constexpr GLenum STATIC_DRAW = 0x88E4;
+    constexpr GLenum DYNAMIC_DRAW = 0x88E8;
+    constexpr GLenum UNIFORM_BUFFER = 0x8A11;
     constexpr GLenum LINES = 0x0001;
     constexpr GLenum BLEND_MODE = 0x0BE2;
     constexpr GLenum SRC_ALPHA = 0x0302;
@@ -127,6 +129,7 @@ PFNGLDELETEPROGRAMPROC glDeleteProgram = nullptr;
 PFNGLGETUNIFORMLOCATIONPROC glGetUniformLocation = nullptr;
 PFNGLUNIFORMMATRIX4FVPROC glUniformMatrix4fv = nullptr;
 PFNGLUNIFORM2FPROC glUniform2f = nullptr;
+PFNGLBINDBUFFERBASEPROC glBindBufferBase = nullptr;
 PFNGLVERTEXATTRIBPOINTERPROC glVertexAttribPointer = nullptr;
 PFNGLENABLEVERTEXATTRIBARRAYPROC glEnableVertexAttribArray = nullptr;
 PFNGLDISABLEVERTEXATTRIBARRAYPROC glDisableVertexAttribArray = nullptr;
@@ -163,7 +166,9 @@ const char* vertexShaderSource = R"GLSL(
 #version 330 core
 layout(location = 0) in vec3 position;
 layout(location = 1) in vec4 colorIn;
-uniform mat4 mvp;
+layout(std140) uniform CameraBlock {
+    mat4 mvp; // F3: UBO — kamera matrisi kalici tamponda
+};
 out vec4 fragColor;
 void main() {
     gl_Position = mvp * vec4(position, 1.0);
@@ -235,6 +240,7 @@ bool loadWglExtensions(HDC hdc) {
     LOAD_GL(glDeleteProgram);
     LOAD_GL(glGetUniformLocation);
     LOAD_GL(glUniformMatrix4fv);
+    LOAD_GL(glBindBufferBase);
     LOAD_GL(glUniform2f);
     LOAD_GL(glVertexAttribPointer);
     LOAD_GL(glEnableVertexAttribArray);
@@ -679,6 +685,13 @@ bool OpenGLRenderBackend::compileShaders() {
     shaderProgram_ = program;
     uniformMvp_ = mvpLoc;
     uniformScreenSize_ = screenLoc;
+    // F3: kamera UBO'su (64 bayt = mat4) — her karede glBufferSubData ile
+    // guncellenir, glUniform cagrisi ve string lookup yok.
+    glGenBuffers(1, &cameraUbo_);
+    glBindBuffer(GLConst::UNIFORM_BUFFER, cameraUbo_);
+    glBufferData(GLConst::UNIFORM_BUFFER, 64, nullptr, GLConst::DYNAMIC_DRAW);
+    glBindBufferBase(GLConst::UNIFORM_BUFFER, 0, cameraUbo_);
+    glBindBuffer(GLConst::UNIFORM_BUFFER, 0);
     return true;
 }
 
@@ -809,7 +822,9 @@ void OpenGLRenderBackend::renderBatch(const GpuLineBatch& batch, const Camera& c
             fclose(diag);
         }
     }
-    glUniformMatrix4fv(uniformMvp_, 1, GLConst::GL_FALSE, mvp);
+    glBindBuffer(GLConst::UNIFORM_BUFFER, cameraUbo_);
+    glBufferSubData(GLConst::UNIFORM_BUFFER, 0, 64, mvp.data());
+    glBindBuffer(GLConst::UNIFORM_BUFFER, 0);
     glEnable(GLConst::BLEND_MODE);
     glBlendFunc(GLConst::SRC_ALPHA, GLConst::ONE_MINUS_SRC_ALPHA);
     glBindVertexArray(batch.vao);
@@ -839,6 +854,7 @@ void OpenGLRenderBackend::cleanupGL() {
     if (lineBatch_.vbo) { glDeleteBuffers(1, &lineBatch_.vbo); lineBatch_.vbo = 0; }
     if (lineBatch_.ebo) { glDeleteBuffers(1, &lineBatch_.ebo); lineBatch_.ebo = 0; }
     if (shaderProgram_) { glDeleteProgram(shaderProgram_); shaderProgram_ = 0; }
+    if (cameraUbo_) { glDeleteBuffers(1, &cameraUbo_); cameraUbo_ = 0; }
     if (fbo_) { glDeleteFramebuffers(1, &fbo_); fbo_ = 0; }
     if (fboColor_) { glDeleteRenderbuffers(1, &fboColor_); fboColor_ = 0; }
     if (fboDepth_) { glDeleteRenderbuffers(1, &fboDepth_); fboDepth_ = 0; }

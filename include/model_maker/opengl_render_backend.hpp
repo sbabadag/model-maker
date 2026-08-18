@@ -139,6 +139,7 @@ private:
     std::uint32_t shaderProgram_{};
     std::int32_t uniformMvp_{};
     std::int32_t uniformScreenSize_{};
+    unsigned int cameraUbo_{0}; // F3: kamera UBO (std140 mat4)
 
     // Line batch
     GpuLineBatch lineBatch_;
