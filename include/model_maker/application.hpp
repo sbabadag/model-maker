@@ -355,6 +355,11 @@ private:
     bool panning2D_{};
     bool wheelNavigating_{};
     double wheelPreviewFactor_{1.0};
+    // Momentum tekerlek hiz sinirlayici: patlama halindeki detentler
+    // biriktirilir, 120ms'de en fazla bir zoom uygulanir (free-spin
+    // tekerlek tek dokunusta 3-4 adim zoom yapiyordu — gorunum kayiyordu).
+    double wheelPendingFactor_{1.0};
+    unsigned long long lastWheelApplyMs_{0};
     Vec2 wheelPreviewOffset_{};
     bool snapPreviewActive_{};
     bool snapPreviewTimerArmed_{};

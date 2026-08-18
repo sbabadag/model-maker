@@ -1036,6 +1036,20 @@ LRESULT Application::handleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
         if (wParam == 2) {
             KillTimer(window_, 2);
             wheelNavigating_ = false;
+            if (wheelPendingFactor_ != 1.0) {
+                // Momentum burst'unden kalan birikmis zoom artigi: tek seferde
+                // uygula (120ms hiz limiti disinda kalan adimlar kaybolmaz).
+                RECT wc{}; GetClientRect(canvas_, &wc);
+                const double applied = wheelPendingFactor_;
+                wheelPendingFactor_ = 1.0;
+                lastWheelApplyMs_ = GetTickCount64();
+                if (mode_ == EditMode::Draw2D)
+                    camera_.zoom2DAt({static_cast<double>(cursorScreen_.x), static_cast<double>(cursorScreen_.y)},
+                                     applied, std::max(1L, wc.right), std::max(1L, wc.bottom));
+                else
+                    camera_.zoom3DAt({static_cast<double>(cursorScreen_.x), static_cast<double>(cursorScreen_.y)},
+                                     applied, std::max(1L, wc.right), std::max(1L, wc.bottom));
+            }
             wheelPreviewFactor_ = 1.0;
             wheelPreviewOffset_ = {};
             updateHover(cursorScreen_.x, cursorScreen_.y);
@@ -1184,16 +1198,28 @@ LRESULT Application::handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lPa
         RECT zoomClient{}; GetClientRect(canvas_, &zoomClient);
         const double factor = wheelDelta > 0 ? 1.12 : 1.0 / 1.12;
         if (!wheelNavigating_) { wheelPreviewFactor_ = 1.0; wheelPreviewOffset_ = {}; }
-        if (mode_ == EditMode::Draw2D)
-            camera_.zoom2DAt({static_cast<double>(zoomCursor.x), static_cast<double>(zoomCursor.y)}, factor,
-                             std::max(1L, zoomClient.right), std::max(1L, zoomClient.bottom));
-        else
-            camera_.zoom3DAt({static_cast<double>(zoomCursor.x), static_cast<double>(zoomCursor.y)}, factor,
-                             std::max(1L, zoomClient.right), std::max(1L, zoomClient.bottom));
+        // HIZ SINIRLAYICI: free-spin tekerlek tek dokunusta 3-4 detent
+        // (31-47ms arayla) uretiyor — her biri %12 zoom = gorunum kac kez
+        // atliyor, tiklamalar "yanlis yere" dusuyor ve redraw'lar flicker
+        // uretiyor. Detentler BIRIKTIRILIR; 120ms'de en fazla BIR zoom
+        // uygulanir, artan zamanlayiciya birakilir (case 2 flush).
+        wheelPendingFactor_ *= factor;
+        const auto wheelNowMs = GetTickCount64();
+        if (wheelNowMs - lastWheelApplyMs_ >= 120 || lastWheelApplyMs_ == 0) {
+            const double applied = wheelPendingFactor_;
+            wheelPendingFactor_ = 1.0;
+            lastWheelApplyMs_ = wheelNowMs;
+            if (mode_ == EditMode::Draw2D)
+                camera_.zoom2DAt({static_cast<double>(zoomCursor.x), static_cast<double>(zoomCursor.y)}, applied,
+                                 std::max(1L, zoomClient.right), std::max(1L, zoomClient.bottom));
+            else
+                camera_.zoom3DAt({static_cast<double>(zoomCursor.x), static_cast<double>(zoomCursor.y)}, applied,
+                                 std::max(1L, zoomClient.right), std::max(1L, zoomClient.bottom));
+            wheelPreviewOffset_.x = applied * wheelPreviewOffset_.x + (1.0 - applied) * zoomCursor.x;
+            wheelPreviewOffset_.y = applied * wheelPreviewOffset_.y + (1.0 - applied) * zoomCursor.y;
+            wheelPreviewFactor_ *= applied;
+        }
         wheelNavigating_ = true;
-        wheelPreviewOffset_.x = factor * wheelPreviewOffset_.x + (1.0 - factor) * zoomCursor.x;
-        wheelPreviewOffset_.y = factor * wheelPreviewOffset_.y + (1.0 - factor) * zoomCursor.y;
-        wheelPreviewFactor_ *= factor;
         if (mode_ == EditMode::Draw2D || drawingActive_ || workPlanePicking_ ||
             (transformCommand_ != TransformCommand::None && transformPhase_ != TransformPhase::Selecting))
             updateHover(cursorScreen_.x, cursorScreen_.y);
