@@ -1881,7 +1881,8 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
     // GPU cizgileri offscreen FBO'da cizer, sonucu GDI AlphaBlend ile hedef
     // DC'ye kompozite eder — GL pencere yuzeyine dokunmaz (surucu-bagimsiz).
     if (useGpuLines) {
-        glBackend->renderBatchToDc(gpuBatch, camera, width, height, target);
+        glBackend->renderBatchToDc(gpuBatch, camera, width, height, target,
+                                    mode == EditMode::Draw2D);
         if (guiOverlay_) guiOverlay_();
         performance.drawCalls += glBackend->drawCallsPerFrame();
     }
