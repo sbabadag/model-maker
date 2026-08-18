@@ -323,6 +323,8 @@ void QtMainWindow::createMenus() {
     viewMenu->addSeparator();
     viewMenu->addAction("Çalışma &Düzlemi (3 Nokta)", this, [this]() { app_.startWorkPlaneCommand(); })->setIcon(makeToolIcon(ToolGlyph::Plane));
     viewMenu->addAction("Düzlemi &Sıfırla (Dünya)", this, [this]() { app_.resetWorkPlane(); })->setIcon(makeToolIcon(ToolGlyph::Reset));
+    viewMenu->addSeparator();
+    viewMenu->addAction("&Benchmark (GDI vs GL)", this, [this]() { app_.runRenderBenchmark(); });
 }
 
 void QtMainWindow::createToolbar() {

@@ -3039,6 +3039,7 @@ void Application::runRenderBenchmark() {
             fclose(diag);
         }
     }
+    if (statusCallback_) statusCallback_(L"Benchmark çalışıyor — GDI fazı...");
 
     const EditMode originalMode = mode_;
     const bool originalGpu = gpuLinesEnabled_;
@@ -3094,6 +3095,8 @@ void Application::runRenderBenchmark() {
 
     if (gpuLinesEnabled_ != originalGpu) toggleGpuLines();
     mode_ = originalMode;
+    if (statusCallback_) statusCallback_(L"Benchmark tamamlandı — render.log'a bakın");
+    updateStatus();
     invalidateCanvas();
 }
 
