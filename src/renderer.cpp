@@ -1877,13 +1877,11 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
     if (!draft.snapOnly)
         BitBlt(target, 0, 0, width, height, dc, 0, 0, SRCCOPY);
 
-    // GPU renders lines on top of GDI content
+    // GPU cizgileri offscreen FBO'da cizer, sonucu GDI AlphaBlend ile hedef
+    // DC'ye kompozite eder — GL pencere yuzeyine dokunmaz (surucu-bagimsiz).
     if (useGpuLines) {
-        FrameInfo frameInfo{width, height, false, 1.0, 0.0, 0.0};
-        glBackend->beginFrame(frameInfo);
-        if (!gpuBatch.empty()) glBackend->renderWireframeBatch(gpuBatch, camera);
+        glBackend->renderBatchToDc(gpuBatch, camera, width, height, target);
         if (guiOverlay_) guiOverlay_();
-        glBackend->endFrame();
         performance.drawCalls += glBackend->drawCallsPerFrame();
     }
 

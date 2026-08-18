@@ -94,6 +94,14 @@ public:
     // (from the FBO readback) onto the target GDI DC.
     bool blitToDC(void* target, int width, int height);
 
+    // ── FBO composite frame (tek cagrida) ────────────────────────
+    // Offscreen GL render (seffaf FBO) + GDI AlphaBlend hedef DC'ye:
+    // GL pencere yuzeyine HIC cizmez — surucu-bagimsiz GDI+GL interop,
+    // Qt/thread guvenligi, sunum tek GDI hattindan.
+    bool renderBatchToDc(
+        const std::vector<std::pair<std::size_t, WireframeModel>>& models,
+        const Camera& camera, int width, int height, void* targetHdc);
+
     // ── Performance counters ─────────────────────────────────────
     std::size_t drawCallsPerFrame() const noexcept { return drawCalls_; }
     std::size_t bufferUploadBytes() const noexcept { return uploadBytes_; }

@@ -553,11 +553,49 @@ bool OpenGLRenderBackend::blitToDC(void* target, int width, int height) {
 
     HDC memDC = CreateCompatibleDC(hdcTarget);
     HGDIOBJ oldBmp = SelectObject(memDC, hBmp);
-    BitBlt(hdcTarget, 0, 0, width, height, memDC, 0, 0, SRCCOPY);
+    // AlphaBlend: seffaf FBO zemini (A=0) alttaki GDI icerigini korur,
+    // opak cizgiler (A=255) ustune biner.
+    BLENDFUNCTION blend{AC_SRC_OVER, 0, 255, 0};
+    AlphaBlend(hdcTarget, 0, 0, width, height, memDC, 0, 0, width, height, blend);
     SelectObject(memDC, oldBmp);
     DeleteDC(memDC);
     DeleteObject(hBmp);
     return true;
+}
+
+bool OpenGLRenderBackend::renderBatchToDc(
+    const std::vector<std::pair<std::size_t, WireframeModel>>& models,
+    const Camera& camera, int width, int height, void* targetHdc) {
+    if (!initialized_ || models.empty()) return false;
+    HDC hdc = static_cast<HDC>(deviceContext_);
+    if (!wglMakeCurrent(hdc, static_cast<HGLRC>(glContext_))) return false;
+
+    drawCalls_ = 0; uploadBytes_ = 0; renderedLines_ = 0;
+
+    ensureFbo(width, height);
+    if (fbo_ == 0) { wglMakeCurrent(hdc, nullptr); return false; }
+    glBindFramebuffer(GLConst::FRAMEBUFFER, fbo_);
+    glViewport(0, 0, width, height);
+    // Seffaf zemin: GDI icerigi AlphaBlend ile alttan gorunur, yalniz
+    // cizgiler kompozite edilir.
+    glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+    glClear(GLConst::COLOR_BUFFER_BIT);
+
+    ensureBatch(models);
+    if (lineBatch_.indexCount != 0) {
+        renderBatch(lineBatch_, camera, width, height);
+        drawCalls_ = 1;
+        renderedLines_ = lineBatch_.indexCount / 2;
+    }
+
+    glFinish();
+    ensureBlitBuffer(width, height);
+    glReadPixels(0, 0, width, height, GLConst::BGRA_EXT, GLConst::UNSIGNED_BYTE_TYPE,
+                 blitBuffer_.data());
+    glBindFramebuffer(GLConst::FRAMEBUFFER, 0);
+    wglMakeCurrent(hdc, nullptr);
+
+    return blitToDC(targetHdc, width, height);
 }
 
 // ── Shader compilation ───────────────────────────────────────────
