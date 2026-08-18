@@ -1933,6 +1933,11 @@ void Application::startWorkPlaneCommand() {
     workPlanePicking_ = true;
     workPlanePoints_.clear();
     hover_.reset();
+    // Qt menü/ribbon dogrudan cagirdiginda kendi kendini yenile (5 yontem kurali)
+    updateHover(cursorScreen_.x, cursorScreen_.y);
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
 }
 
 void Application::cancelWorkPlaneCommand() {
@@ -1940,6 +1945,16 @@ void Application::cancelWorkPlaneCommand() {
     workPlanePoints_.clear();
     hover_.reset();
     clearTemporaryTracking();
+}
+
+void Application::resetWorkPlane() {
+    cancelWorkPlaneCommand();
+    workPlane_ = WorkPlane::world();
+    hover_.reset();
+    updateHover(cursorScreen_.x, cursorScreen_.y);
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
 }
 
 void Application::commitWorkPlanePoint(const Vec3& point) {

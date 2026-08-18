@@ -161,6 +161,9 @@ void QtMainWindow::createMenus() {
     viewMenu->addAction("&Zoom Extents", this, [this]() { app_.zoomExtents2D(); });
     viewMenu->addAction("Zoom &Window", this, [this]() { app_.startZoomWindow2D(); });
     viewMenu->addAction("2&B / 3B", this, [this]() { app_.toggle3DView(); });
+    viewMenu->addSeparator();
+    viewMenu->addAction("Çalışma &Düzlemi (3 Nokta)", this, [this]() { app_.startWorkPlaneCommand(); });
+    viewMenu->addAction("Düzlemi &Sıfırla (Dünya)", this, [this]() { app_.resetWorkPlane(); });
 }
 
 void QtMainWindow::createToolbar() {
@@ -219,6 +222,25 @@ void QtMainWindow::createToolbar() {
     addModBtn("⌒ Fillet", [this]() { app_.startTransformCommand(TransformCommand::Fillet); });
     modLayout->addStretch();
     tabs->addTab(modTab, "Düzenle");
+
+    // ---- Görünüm tab (UCS / çalışma düzlemi) ----
+    QWidget* viewTab = new QWidget();
+    QHBoxLayout* viewLayout = new QHBoxLayout(viewTab);
+    viewLayout->setContentsMargins(4, 2, 4, 2);
+    viewLayout->setSpacing(2);
+    auto addViewBtn = [&](const QString& text, auto action) {
+        QPushButton* btn = new QPushButton(text, viewTab);
+        btn->setFixedSize(55, 36);
+        btn->setStyleSheet("QPushButton { font-size: 9pt; }");
+        QObject::connect(btn, &QPushButton::clicked, this, action);
+        viewLayout->addWidget(btn);
+    };
+    addViewBtn("▣ 2B/3B",   [this]() { app_.toggle3DView(); });
+    addViewBtn("⛶ Extents", [this]() { app_.zoomExtents2D(); });
+    addViewBtn("◈ Düzlem",  [this]() { app_.startWorkPlaneCommand(); });
+    addViewBtn("◎ Sıfırla",  [this]() { app_.resetWorkPlane(); });
+    viewLayout->addStretch();
+    tabs->addTab(viewTab, "Görünüm");
 
     ribbon->addWidget(tabs);
 

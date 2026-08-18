@@ -114,6 +114,7 @@ private:
     void completeZoomWindow2D(int x, int y);
     void cancelWorkPlaneCommand();
     void commitWorkPlanePoint(const Vec3& point);
+    void resetWorkPlane();
     void commitTransformPoint(const Vec3& point);
     bool applyTrimExtendTarget(std::size_t target, const Vec3& pickPoint);
     std::optional<std::size_t> trimExtendTargetAt(int x, int y) const;
