@@ -946,9 +946,10 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         if (!properties.visible) continue;
         if (draft.visualStyle == VisualStyle::Solid && !draft.interactiveNavigation &&
             !model.faces().empty()) continue;
-        // F1 dogrulama doneminde GDI modelleri HER IKI MODDA cizer: GL katmani
-        // yalniz overlay (secili olmayan modeller) — canvas asla bos/eksik kalamaz.
-        // F3/F5 (UBO + kalici VBO) perf kazanci kanitlaninca bu satir geri gelir.
+        // F7: GL modunda modeller yalniz GPU'da cizilir — GDI pass yalniz
+        // arka plan/grid/eksen/feedback. Hizalama delta=0.0 ile kanitli,
+        // siyah canvas gizli pencere ile cozuldu; skip guvenle geri doner.
+        if (useGpuLines) continue;
         if (draft.interactiveNavigation) {
             const bool representative = index % interactiveModelStride == 0 ||
                                         model.vertices().size() >= 1'000;
