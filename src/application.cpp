@@ -2798,6 +2798,12 @@ void Application::updateStatus() {
     }
     std::wstring text = L"   ";
     text += mode_ == EditMode::View3D ? L"3B Paralel" : L"2B Plan XY";
+    {
+        // GPU modu gostergesi: her durum guncellemesinde aktif modu gosterir.
+        const bool glActive = gpuLinesEnabled_ && renderBackend_ &&
+                              renderBackend_->isHardwareAccelerated();
+        text += glActive ? L"  |  GPU: GL" : L"  |  GPU: GDI";
+    }
     if (workPlanePicking_) {
         text += L"  |  WORK PLANE — ";
         if (workPlanePoints_.empty()) text += L"1. noktayı belirtin";
