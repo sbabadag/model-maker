@@ -377,21 +377,21 @@ bool OpenGLRenderBackend::initialize(void* windowHandle, int initialWidth, int i
     deviceContext_ = hdc;
 
     if (!loadWglExtensions(hdc)) {
-        ReleaseDC(hwnd, hdc); deviceContext_ = nullptr;
+        ReleaseDC(static_cast<HWND>(wglWindow_), hdc); deviceContext_ = nullptr;
         FreeLibrary(openglModule); openglModule = nullptr;
         return false;
     }
 
     glContext_ = createGL33Context(hdc);
     if (!glContext_) {
-        ReleaseDC(hwnd, hdc); deviceContext_ = nullptr;
+        ReleaseDC(static_cast<HWND>(wglWindow_), hdc); deviceContext_ = nullptr;
         FreeLibrary(openglModule); openglModule = nullptr;
         return false;
     }
 
     if (!wglMakeCurrent(hdc, static_cast<HGLRC>(glContext_))) {
         wglDeleteContext(static_cast<HGLRC>(glContext_)); glContext_ = nullptr;
-        ReleaseDC(hwnd, hdc); deviceContext_ = nullptr;
+        ReleaseDC(static_cast<HWND>(wglWindow_), hdc); deviceContext_ = nullptr;
         FreeLibrary(openglModule); openglModule = nullptr;
         return false;
     }
@@ -399,7 +399,7 @@ bool OpenGLRenderBackend::initialize(void* windowHandle, int initialWidth, int i
     if (!compileShaders()) {
         wglMakeCurrent(hdc, nullptr);
         wglDeleteContext(static_cast<HGLRC>(glContext_)); glContext_ = nullptr;
-        ReleaseDC(hwnd, hdc); deviceContext_ = nullptr;
+        ReleaseDC(static_cast<HWND>(wglWindow_), hdc); deviceContext_ = nullptr;
         FreeLibrary(openglModule); openglModule = nullptr;
         return false;
     }
