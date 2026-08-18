@@ -104,7 +104,7 @@ public:
     bool renderBatchToDc(
         const std::vector<std::pair<std::size_t, WireframeModel>>& models,
         const Camera& camera, int width, int height, void* targetHdc,
-        bool useProjection2D = false);
+        bool useProjection2D = false, std::uint64_t contentRevision = 0);
 
     // ── Performance counters ─────────────────────────────────────
     std::size_t drawCallsPerFrame() const noexcept { return drawCalls_; }

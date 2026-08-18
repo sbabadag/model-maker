@@ -75,6 +75,7 @@ Document::Document() {
 }
 
 void Document::addModel(WireframeModel model) {
+    ++revision_;
     UndoOp op;
     op.kind = UndoOp::Kind::Add;
     op.index = models_.size();
@@ -99,6 +100,7 @@ void Document::addLine(const Vec3& from, const Vec3& to) { addModel(WireframeMod
 void Document::reserveModels(std::size_t count) { models_.reserve(count); }
 
 void Document::moveModels(const std::vector<std::size_t>& indices, const Vec3& displacement) {
+    ++revision_;
     UndoOp op;
     op.kind = UndoOp::Kind::Move;
     op.indices = indices;
@@ -116,6 +118,7 @@ void Document::moveModels(const std::vector<std::size_t>& indices, const Vec3& d
 }
 
 void Document::copyModels(const std::vector<std::size_t>& indices, const Vec3& displacement) {
+    ++revision_;
     std::vector<WireframeModel> copies;
     copies.reserve(indices.size());
     for (const auto index : indices) {
@@ -149,6 +152,7 @@ void Document::copyModels(const std::vector<std::size_t>& indices, const Vec3& d
 }
 
 std::size_t Document::setModelLayer(const std::vector<std::size_t>& indices, const std::string& layer) {
+    ++revision_;
     if (!layers_.contains(layer)) return 0;
     std::size_t changed{};
     for (const auto index : uniqueIndices(indices)) {
@@ -168,6 +172,7 @@ std::size_t Document::setModelLayer(const std::vector<std::size_t>& indices, con
 }
 
 std::size_t Document::setModelColor(const std::vector<std::size_t>& indices,
+    ++revision_;
                                     std::optional<std::uint32_t> color) {
     std::size_t changed{};
     for (const auto index : uniqueIndices(indices)) {
@@ -189,6 +194,7 @@ std::size_t Document::setModelColor(const std::vector<std::size_t>& indices,
 }
 
 std::size_t Document::setModelProfile(const std::vector<std::size_t>& indices,
+    ++revision_;
                                       const std::string& profileName) {
     std::size_t changed{};
     for (const auto index : uniqueIndices(indices)) {
@@ -209,6 +215,7 @@ std::size_t Document::setModelProfile(const std::vector<std::size_t>& indices,
 
 std::size_t Document::setModelLineType(const std::vector<std::size_t>& indices,
                                        const std::string& lineType) {
+    ++revision_;
     if (lineType.empty()) return 0;
     std::size_t changed{};
     for (const auto index : uniqueIndices(indices)) {
@@ -229,6 +236,7 @@ std::size_t Document::setModelLineType(const std::vector<std::size_t>& indices,
 }
 
 void Document::deleteModels(const std::vector<std::size_t>& indices) {
+    ++revision_;
     std::vector<std::size_t> valid;
     valid.reserve(indices.size());
     for (const auto index : indices)
@@ -261,6 +269,7 @@ void Document::deleteModels(const std::vector<std::size_t>& indices) {
 }
 
 void Document::replaceModel(std::size_t index, std::vector<WireframeModel> replacements) {
+    ++revision_;
     if (index >= models_.size()) return;
     UndoOp op;
     op.kind = UndoOp::Kind::Replace;
@@ -302,6 +311,7 @@ void Document::replaceModel(std::size_t index, std::vector<WireframeModel> repla
 }
 
 void Document::clear() noexcept {
+    ++revision_;
     models_.clear();
     layers_.clear();
     undoStack_.clear();
@@ -438,6 +448,7 @@ void Document::applyUndoOp(const UndoOp& op, bool forward) {
 }
 
 bool Document::undo() {
+    ++revision_;
     while (!undoStack_.empty() && undoStack_.back().ops.empty() &&
            undoStack_.back().layersBefore == undoStack_.back().layersAfter)
         undoStack_.pop_back();
@@ -453,6 +464,7 @@ bool Document::undo() {
 }
 
 bool Document::redo() {
+    ++revision_;
     if (redoStack_.empty()) return false;
     UndoRecord record = std::move(redoStack_.back());
     redoStack_.pop_back();

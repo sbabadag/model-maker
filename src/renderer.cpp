@@ -1904,7 +1904,7 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
             }
         }
         glBackend->renderBatchToDc(gpuBatch, camera, width, height, target,
-                                    mode == EditMode::Draw2D);
+                                    mode == EditMode::Draw2D, document.revision());
         if (guiOverlay_) guiOverlay_();
         performance.drawCalls += glBackend->drawCallsPerFrame();
     }

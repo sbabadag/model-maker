@@ -55,6 +55,9 @@ public:
     bool canUndo() const noexcept;
     bool canRedo() const noexcept;
     void clearHistory() noexcept;
+    // Her mutasyonda artan icerik surumu — GPU batch yenileme etiketi
+    // (boyut degismeyen pozisyon degisikliklerini de yakalar).
+    std::uint64_t revision() const noexcept { return revision_; }
 
     std::vector<WireframeModel>& mutableModels() noexcept;
     const std::vector<WireframeModel>& models() const noexcept;
@@ -87,6 +90,7 @@ public:
 
 private:
     static constexpr std::size_t kMaxUndoEntries = 100;
+    std::uint64_t revision_{0};
     static constexpr std::size_t kMaxPendingIndexEntries = 4'096;
 
     struct SpatialNode {
