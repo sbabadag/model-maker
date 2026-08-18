@@ -2945,6 +2945,7 @@ DraftView Application::draftView() const {
                                  wheelNavigating_ || snapPreviewActive_;
     view.motionOverlay = snapPreviewActive_ && !rotating_ && !panning2D_ &&
                          !viewCubeManipulating_ && !wheelNavigating_;
+    view.snapPreviewActive = snapPreviewActive_;
     view.wheelNavigating = wheelNavigating_; view.rotating = rotating_;
     view.panning = panning2D_; view.viewCubeActive = viewCubeManipulating_;
     view.rasterZoomPreview = document_.models().size() > 20'000 && wheelNavigating_ &&

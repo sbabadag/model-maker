@@ -721,7 +721,8 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         motionBaseProbe_[1].x == probe1.x && motionBaseProbe_[1].y == probe1.y &&
         motionBaseProbe_[2].x == probe2.x && motionBaseProbe_[2].y == probe2.y &&
         motionBaseProbe_[3].x == probe3.x && motionBaseProbe_[3].y == probe3.y;
-    if (!draft.snapOnly && !useGpuLines && motionBaseValid_ && cameraUnchanged &&
+    if (draft.snapPreviewActive && !draft.snapOnly && !useGpuLines &&
+        motionBaseValid_ && cameraUnchanged &&
         motionBaseWidth_ == width && motionBaseHeight_ == height) {
         if (lastMotionPath_ != 0) {
             lastMotionPath_ = 0;

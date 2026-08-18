@@ -166,6 +166,10 @@ struct DraftView {
     // Fare hover hareketi sırasında: temel geometri önbellekli tampondan
     // basılır (kamera sabit), yalnızca geri bildirim katmanı yeniden çizilir.
     bool motionOverlay{};
+    // Ham motion sinyali (nav bayraklarindan bagimsiz): fast path yalnizca
+    // gercek motion karelerinde calisir; tam kareler tabani yenilemeye devam
+    // eder (yeni cizilen obje eski tabanda kaybolmasin).
+    bool snapPreviewActive{};
     // Hangisi motion overlay'i kapatti (teshis icin)
     bool wheelNavigating{};
     bool rotating{};
