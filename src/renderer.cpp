@@ -462,11 +462,62 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
                 }
             }
             if (draft.drawingActive && draft.anchor && draft.cursor) {
+                // Tam kare yolundaki cizim onizlemesinin BIREBIR aynasi:
+                // ortho-eksen renkli track + arac ozel onizleme (dikdortgen,
+                // daire, 3DFACE) — sadece sari duz cizgi degil.
                 const POINT a = projectPoint(*draft.anchor);
                 const POINT b = projectPoint(*draft.cursor);
-                HPEN preview = CreatePen(PS_DASH, 1, RGB(255, 206, 84));
+                const COLORREF previewColor = [&]() -> COLORREF {
+                    switch (draft.orthoAxis) {
+                    case OrthoAxis::X: return RGB(235, 82, 96);
+                    case OrthoAxis::Y: return RGB(72, 211, 121);
+                    case OrthoAxis::Z: return RGB(78, 148, 255);
+                    default: return RGB(255, 206, 84);
+                    }
+                }();
+                HPEN preview = CreatePen(PS_DASH, 1, previewColor);
                 SelectObject(dc, preview);
-                line(dc, a.x, a.y, b.x, b.y);
+                const auto drawPreviewEdges = [&](const WireframeModel& model) {
+                    for (const auto& edge : model.edges()) {
+                        const POINT from = projectPoint(model.vertices()[edge.from]);
+                        const POINT to = projectPoint(model.vertices()[edge.to]);
+                        line(dc, from.x, from.y, to.x, to.y);
+                    }
+                };
+                if (draft.tool == DrawTool::Face3D) {
+                    for (std::size_t index = 1; index < draft.facePoints.size(); ++index) {
+                        const POINT from = projectPoint(draft.facePoints[index - 1]);
+                        const POINT to = projectPoint(draft.facePoints[index]);
+                        line(dc, from.x, from.y, to.x, to.y);
+                    }
+                    const POINT from = projectPoint(draft.facePoints.empty() ? *draft.anchor
+                                                                             : draft.facePoints.back());
+                    line(dc, from.x, from.y, b.x, b.y);
+                    if (draft.facePoints.size() == 3) {
+                        const POINT first = projectPoint(draft.facePoints.front());
+                        line(dc, b.x, b.y, first.x, first.y);
+                    }
+                } else if (draft.tool == DrawTool::Rectangle) {
+                    if (mode == EditMode::View3D)
+                        drawPreviewEdges(WireframeModel::rectangleOnPlane(draft.workPlane,
+                            draft.workPlane.toPlane(*draft.anchor), draft.workPlane.toPlane(*draft.cursor)));
+                    else drawPreviewEdges(WireframeModel::rectangle(*draft.anchor, *draft.cursor));
+                } else if (draft.tool == DrawTool::Circle) {
+                    double radius{};
+                    if (mode == EditMode::View3D) {
+                        const Vec2 center = draft.workPlane.toPlane(*draft.anchor);
+                        const Vec2 edge = draft.workPlane.toPlane(*draft.cursor);
+                        radius = std::hypot(edge.x - center.x, edge.y - center.y);
+                        if (radius > 0.0)
+                            drawPreviewEdges(WireframeModel::circleOnPlane(draft.workPlane, center, radius));
+                    } else {
+                        radius = std::hypot(draft.cursor->x - draft.anchor->x,
+                                            draft.cursor->y - draft.anchor->y);
+                        if (radius > 0.0) drawPreviewEdges(WireframeModel::circle(*draft.anchor, radius));
+                    }
+                } else {
+                    line(dc, a.x, a.y, b.x, b.y);
+                }
                 SelectObject(dc, stockPen);
                 DeleteObject(preview);
             }
