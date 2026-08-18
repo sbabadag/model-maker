@@ -54,6 +54,8 @@ public:
     // ── Lifecycle ──────────────────────────────────────────────
     virtual bool initialize(void* windowHandle, int initialWidth, int initialHeight) = 0;
     virtual void shutdown() = 0;
+    // Tanı sayaçlarını sıfırla — yalnız OpenGL backend'de iş görür.
+    virtual void resetDiagnostics() {}
     virtual void resize(int width, int height) = 0;
 
     // ── Frame management ───────────────────────────────────────
