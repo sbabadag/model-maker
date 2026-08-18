@@ -776,7 +776,14 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         if (lastMotionPath_ != 1) {
             lastMotionPath_ = 1;
             FILE* diag = fopen("model-maker-render.log", "a");
-            if (diag) { fprintf(diag, "FALLBACK\n"); fclose(diag); }
+            if (diag) {
+                const char* reason = !motionBaseValid_ ? "NOBASE"
+                    : (motionBaseWidth_ != width || motionBaseHeight_ != height)
+                        ? "SIZE" : "OVERLAY";
+                fprintf(diag, "FALLBACK %s %dx%d (taban %dx%d)\n", reason,
+                        width, height, motionBaseWidth_, motionBaseHeight_);
+                fclose(diag);
+            }
         }
         constexpr std::size_t interactiveModelBudget = 6'000;
         interactiveModelStride = std::max<std::size_t>(1,
