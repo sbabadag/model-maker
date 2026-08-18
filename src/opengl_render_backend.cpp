@@ -412,6 +412,12 @@ bool OpenGLRenderBackend::initialize(void* windowHandle, int initialWidth, int i
         return false;
     }
 
+    // Context'i current birakma: ayni pencerede GL context'i current iken GDI
+    // cizimi (BeginPaint) bazi suruculerde bozuluyor — GDI varsayilan modda
+    // cizgiler tamamen kayboluyordu. beginFrame() cizim icin tekrar alir,
+    // endFrame()'den sonra yine birakir.
+    wglMakeCurrent(hdc, nullptr);
+
     // Create FBO for offscreen rendering
     ensureFbo(width_, height_);
 
