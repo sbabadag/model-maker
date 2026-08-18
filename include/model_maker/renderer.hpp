@@ -242,6 +242,14 @@ public:
         return performanceTracker_.latest();
     }
     mutable FrameIndexStampSet selectedIndexSet_{};
+    // F8: GL batch onbellegi — kameradan bagimsiz (GPU klipsler); yalniz
+    // document revizyonu / secim kumesi / model sayisi degisince yeniden kurulur.
+    mutable std::vector<std::pair<std::size_t, WireframeModel>> cachedGpuBatch_{};
+    mutable std::uint64_t cachedGpuRevision_{0};
+    mutable std::size_t cachedGpuSelectionSig_{0};
+    mutable std::size_t cachedGpuModelCount_{0};
+    mutable bool cachedGpuBatchValid_{false};
+    mutable std::vector<std::pair<std::size_t, WireframeModel>> emptyGpuBatch_{};
     mutable std::function<void()> guiOverlay_{};
     mutable std::chrono::steady_clock::time_point previousFrameTime_{};
     mutable bool hasPreviousFrameTime_{};

@@ -904,20 +904,38 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
     // Phase 1 GPU-retained line rendering:
     // Collect models for GPU. Actual rendering happens AFTER GDI BitBlt
     // so lines appear on top of GDI-drawn background/grid/axis.
-    std::vector<std::pair<std::size_t, mm::WireframeModel>> gpuBatch;
+    // F8: GL batch'i onbelleklenir — kamera hareketinde (orbit/zoom/pan)
+    // CPU O(n) model dolasimi YAPMAZ; yalniz document revizyonu, secim
+    // kumesi veya model sayisi degistiginde yeniden kurulur. Culling yok:
+    // off-screen cizgileri GPU klipsler (zaten GPU yolunun ana kazanimi).
+    const std::vector<std::pair<std::size_t, mm::WireframeModel>>* gpuBatchPtr = nullptr;
     if (!draft.snapOnly && useGpuLines) {
-        gpuBatch.reserve(visibleModels.size());
-        for (const auto index : visibleModels) {
-            if (index >= document.models().size()) continue;
-            const auto& model = document.models()[index];
-            if (model.edges().empty()) continue;
-            if (isSelected(index)) continue;
-            const auto properties = document.effectiveProperties(index);
-            if (!properties.visible) continue;
-            auto modelCopy = model;
-            modelCopy.setProperties(properties);
-            gpuBatch.emplace_back(index, std::move(modelCopy));
+        std::size_t selectionSig = draft.selectedModels.size();
+        for (const auto index : draft.selectedModels) {
+            selectionSig ^= index * 2654435761u;
         }
+        const std::uint64_t revision = document.revision();
+        const std::size_t modelCount = document.models().size();
+        if (!cachedGpuBatchValid_ || revision != cachedGpuRevision_ ||
+            selectionSig != cachedGpuSelectionSig_ || modelCount != cachedGpuModelCount_) {
+            cachedGpuBatch_.clear();
+            cachedGpuBatch_.reserve(modelCount);
+            for (std::size_t index = 0; index < modelCount; ++index) {
+                const auto& model = document.models()[index];
+                if (model.edges().empty()) continue;
+                if (isSelected(index)) continue;
+                const auto properties = document.effectiveProperties(index);
+                if (!properties.visible) continue;
+                auto modelCopy = model;
+                modelCopy.setProperties(properties);
+                cachedGpuBatch_.emplace_back(index, std::move(modelCopy));
+            }
+            cachedGpuRevision_ = revision;
+            cachedGpuSelectionSig_ = selectionSig;
+            cachedGpuModelCount_ = modelCount;
+            cachedGpuBatchValid_ = true;
+        }
+        gpuBatchPtr = &cachedGpuBatch_;
     }
 
     using PenKey = std::tuple<std::uint32_t, int, std::string, int>;
@@ -1904,8 +1922,9 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
                 }
             }
         }
-        glBackend->renderBatchToDc(gpuBatch, camera, width, height, target,
-                                    mode == EditMode::Draw2D, document.revision());
+        glBackend->renderBatchToDc(
+            gpuBatchPtr ? *gpuBatchPtr : emptyGpuBatch_, camera, width, height, target,
+            mode == EditMode::Draw2D, document.revision());
         if (guiOverlay_) guiOverlay_();
         performance.drawCalls += glBackend->drawCallsPerFrame();
     }
