@@ -584,7 +584,7 @@ bool OpenGLRenderBackend::renderBatchToDc(
     const Camera& camera, int width, int height, void* targetHdc,
     bool useProjection2D) {
     if (!initialized_ || models.empty()) return false;
-    const auto glDiag = [](const char* step) {
+    const auto glDiag = [this](const char* step) {
         if (glDiagCount_ >= 8) return;
         FILE* diag = fopen("model-maker-render.log", "a");
         if (diag) { fprintf(diag, "GLDIAG %d %s\n", glDiagCount_, step); fclose(diag); }
@@ -622,7 +622,7 @@ bool OpenGLRenderBackend::renderBatchToDc(
     // Readback taramasi: TUM tampon + ilk opak pikselin satiri + beklenen
     // cizgi bolgesinden 3x3 ornek (eski 20k taramasi ust satirlari kapsiyordu
     // ve asagi cizilen cizgiyi kaciriyordu).
-    if (glDiagCount < 5 && !blitBuffer_.empty()) {
+    if (glDiagCount_ < 5 && !blitBuffer_.empty()) {
         const auto px = [&](std::size_t idx) {
             return static_cast<unsigned>(blitBuffer_[idx]);
         };
@@ -659,7 +659,7 @@ bool OpenGLRenderBackend::renderBatchToDc(
 
     const bool blitOk = blitToDC(targetHdc, width, height);
     glDiag(blitOk ? "BLIT-OK" : "BLIT-FAIL");
-    ++glDiagCount;
+    ++glDiagCount_;
     return blitOk;
 }
 
