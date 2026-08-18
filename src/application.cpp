@@ -1324,6 +1324,15 @@ void Application::onCanvasPaint() {
             if (diag) { fprintf(diag, "SESSION-START build=2026-08-18-bench\n"); fclose(diag); }
         }
     }
+    {
+        // OTOMATIK BENCHMARK: ilk model gorundugunde kendiliginden calisir
+        // (F5/menu etkilesimi gerekmez — teshis sonrasi kaldirilacak).
+        static bool benchRan = false;
+        if (!benchRan && document_.models().size() > 0) {
+            benchRan = true;
+            runRenderBenchmark();
+        }
+    }
     const auto paintStart = std::chrono::steady_clock::now();
     renderer_.draw(dc, client, document_, camera_, mode_, draftView(), activeBackend);
     if (paintSequence_ <= 10 && paintSequence_ > 0)
