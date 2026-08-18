@@ -232,6 +232,15 @@ private:
     mutable int lastMotionPath_{-1}; // 0=FAST 1=FALLBACK — gecis logu icin
     mutable int fallbackSequence_{};
     mutable FramePerformanceTracker performanceTracker_{};
+public:
+    // Otomatik benchmark icin: kare sayaci (paint tamamlanma tespiti) ve
+    // son ornek (frame ms / FPS).
+    std::uint64_t performanceFrameNumber() const noexcept {
+        return performanceTracker_.latest().frameNumber;
+    }
+    FramePerformanceSample latestPerformanceSample() const noexcept {
+        return performanceTracker_.latest();
+    }
     mutable FrameIndexStampSet selectedIndexSet_{};
     mutable std::function<void()> guiOverlay_{};
     mutable std::chrono::steady_clock::time_point previousFrameTime_{};

@@ -86,6 +86,9 @@ public:
     // Work plane (UCS) — Qt menü/ribbon erişimi için public
     // F1: GPU hatti — GL backend uretimi + F9 ile GDI/GL gecisi
     void toggleGpuLines();
+    // F5: GDI ve GL arkaplanlarini script'li orbit/zoom/pan ile otomatik
+    // olculer; sonuclar BENCH-RESULT satirlariyla render.log'a yazilir.
+    void runRenderBenchmark();
     bool gpuLinesEnabled() const noexcept { return gpuLinesEnabled_; }
     // Qt durum cubuguna canli metin akisi (GDI status_ STATIC'i Qt penceresinde
     // gorunmuyor — updateStatus metni bu callback ile Qt'ye tasinir).

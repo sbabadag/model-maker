@@ -1254,6 +1254,7 @@ LRESULT Application::handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lPa
         }
         else if (wParam == VK_F12) dynamicInputEnabled_ = !dynamicInputEnabled_;
         else if (wParam == VK_F11) { performanceOverlayEnabled_ = !performanceOverlayEnabled_; invalidateCanvas(); }
+        else if (wParam == VK_F5) runRenderBenchmark();
         else if (wParam == 'Z' && (GetKeyState(VK_CONTROL) & 0x8000)) undo();
         else if (wParam == 'Y' && (GetKeyState(VK_CONTROL) & 0x8000)) redo();
         else if (wParam == 'N' && (GetKeyState(VK_CONTROL) & 0x8000)) newDocument();
@@ -3026,6 +3027,73 @@ DraftView Application::draftView() const {
     view.rasterZoomFactor = wheelPreviewFactor_;
     view.rasterZoomOffset = wheelPreviewOffset_;
     return view;
+}
+
+void Application::runRenderBenchmark() {
+    if (!canvas_) return;
+    {
+        FILE* diag = fopen("model-maker-render.log", "a");
+        if (diag) {
+            fprintf(diag, "BENCH-START models=%zu\n", document_.models().size());
+            fclose(diag);
+        }
+    }
+
+    const EditMode originalMode = mode_;
+    const bool originalGpu = gpuLinesEnabled_;
+    mode_ = EditMode::View3D; // 2B'de GL overlay kapali — karsilastirma 3B'de
+
+    RECT wc{}; GetClientRect(canvas_, &wc);
+    const int vw = std::max(1L, wc.right), vh = std::max(1L, wc.bottom);
+
+    const auto pumpUntilFrame = [&](std::uint64_t target) {
+        for (int guard = 0; guard < 400; ++guard) {
+            MSG msg;
+            while (PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE)) {
+                TranslateMessage(&msg);
+                DispatchMessageW(&msg);
+                if (renderer_.performanceFrameNumber() >= target) return true;
+            }
+            if (renderer_.performanceFrameNumber() >= target) return true;
+            Sleep(5);
+        }
+        return false;
+    };
+
+    const auto benchBackend = [&](const char* label) {
+        double total = 0, mn = 1e9, mx = 0; int n = 0;
+        const auto step = [&](auto&& apply) {
+            apply();
+            invalidateCanvas();
+            const std::uint64_t target = renderer_.performanceFrameNumber() + 1;
+            if (!pumpUntilFrame(target)) return;
+            const auto sample = renderer_.latestPerformanceSample();
+            total += sample.cpuFrameMilliseconds; ++n;
+            mn = std::min(mn, sample.cpuFrameMilliseconds);
+            mx = std::max(mx, sample.cpuFrameMilliseconds);
+        };
+        for (int i = 0; i < 8; ++i) step([] {});
+        for (int i = 0; i < 24; ++i) step([&] { camera_.rotate(0.04, 0.0); });
+        for (int i = 0; i < 24; ++i)
+            step([&] { camera_.zoom3DAt({vw / 2.0, vh / 2.0}, 1.03, vw, vh); });
+        for (int i = 0; i < 24; ++i) step([&] { camera_.pan3DByPixels(6.0, 3.0); });
+        FILE* f = fopen("model-maker-render.log", "a");
+        if (f) {
+            fprintf(f, "BENCH-RESULT %s frames=%d avg=%.3f ms min=%.3f ms max=%.3f ms\n",
+                    label, n, n ? total / n : 0.0, n ? mn : 0.0, n ? mx : 0.0);
+            fclose(f);
+        }
+    };
+
+    if (gpuLinesEnabled_) toggleGpuLines();
+    benchBackend("GDI");
+
+    if (!gpuLinesEnabled_) toggleGpuLines();
+    benchBackend("GL");
+
+    if (gpuLinesEnabled_ != originalGpu) toggleGpuLines();
+    mode_ = originalMode;
+    invalidateCanvas();
 }
 
 void Application::toggleGpuLines() {
