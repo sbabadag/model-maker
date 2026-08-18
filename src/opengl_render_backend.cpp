@@ -308,50 +308,32 @@ namespace mm {
 namespace {
 
 void computeMVPMatrix(const Camera& camera, int width, int height, float* out) {
-    Vec3 rX = camera.viewTransform({1.0, 0.0, 0.0});
-    Vec3 rY = camera.viewTransform({0.0, 1.0, 0.0});
-    Vec3 rZ = camera.viewTransform({0.0, 0.0, 1.0});
-
-    // ppu'yu kameradan ORNEKLE: sabit 65.0 degeri viewport buyuklugune ve zoom
-    // gecmisine gore degisen gercek GDI olcegiyle uyusmuyor, GL cizgileri grid'e
-    // gore yanlis yerlere dusuyordu ("koordinatlar bozulmus" + GDI geri bildirim
-    // katmaninin ortulmesi). Iki izdusum farki = tam ppu (kamera ic yapisindan
-    // bagimsiz, 2B/3B her iki modda).
-    const Vec2 originScreen = camera.project({0.0, 0.0, 0.0}, width, height);
-    const Vec2 unitXScreen = camera.project({1.0, 0.0, 0.0}, width, height);
-    const Vec2 unitYScreen = camera.project({0.0, 1.0, 0.0}, width, height);
-    const double scale = std::max(
-        std::hypot(unitXScreen.x - originScreen.x, unitXScreen.y - originScreen.y),
-        std::hypot(unitYScreen.x - originScreen.x, unitYScreen.y - originScreen.y));
-    Vec3 rotCenter{
-        (static_cast<double>(width) * 0.5 - originScreen.x) / scale,
-        (originScreen.y - static_cast<double>(height) * 0.5) / scale,
-        0.0
+    // BAZ-ORNEKLEMELI AFFINE: viewTransform/rotasyon bilesenlerine guvenme —
+    // 2B kameranin viewTransform'u birim vektorlerde ortogonal olmayan
+    // bilesenler tasiyor ve GL cizgileri GDI konumundan kayiyordu ("cizgiler
+    // kayboluyor" = yanlis yerde ciziliyor). Bunun yerine 4 baz noktasinin
+    // EKRAN izdusumunu ornekle ve dunya→NDC affine haritasini dogrudan kur:
+    // tanim geregi GDI ile birebir ayni (ayni project() fonksiyonu).
+    const auto toNdc = [&](Vec2 s) -> Vec2 {
+        return { 2.0 * s.x / static_cast<double>(width) - 1.0,
+                 1.0 - 2.0 * s.y / static_cast<double>(height) };
     };
-
-    float view[16] = {
-        static_cast<float>(rX.x), static_cast<float>(rX.y), static_cast<float>(rX.z), 0,
-        static_cast<float>(rY.x), static_cast<float>(rY.y), static_cast<float>(rY.z), 0,
-        static_cast<float>(rZ.x), static_cast<float>(rZ.y), static_cast<float>(rZ.z), 0,
-        static_cast<float>(-rotCenter.x), static_cast<float>(-rotCenter.y),
-        static_cast<float>(-rotCenter.z), 1
-    };
-
-    float scaleX = static_cast<float>(2.0 * scale / static_cast<double>(width));
-    float scaleY = static_cast<float>(-2.0 * scale / static_cast<double>(height));
-    float proj[16] = { scaleX, 0, 0, 0, 0, scaleY, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1 };
-
-    std::memset(out, 0, 16 * sizeof(float));
-    for (int c = 0; c < 4; ++c) {
-        for (int r = 0; r < 4; ++r) {
-            float sum = 0;
-            for (int k = 0; k < 4; ++k)
-                sum += proj[k * 4 + r] * view[c * 4 + k];
-            out[c * 4 + r] = sum;
-        }
-    }
+    const Vec2 o  = toNdc(camera.project({0.0, 0.0, 0.0}, width, height));
+    const Vec2 ex = toNdc(camera.project({1.0, 0.0, 0.0}, width, height));
+    const Vec2 ey = toNdc(camera.project({0.0, 1.0, 0.0}, width, height));
+    const Vec2 ez = toNdc(camera.project({0.0, 0.0, 1.0}, width, height));
+    // Sutun-bas (column-major) affine: clip = M * [x, y, z, 1]
+    out[0] = static_cast<float>(ex.x - o.x);
+    out[4] = static_cast<float>(ey.x - o.x);
+    out[8] = static_cast<float>(ez.x - o.x);
+    out[12] = static_cast<float>(o.x);
+    out[1] = static_cast<float>(ex.y - o.y);
+    out[5] = static_cast<float>(ey.y - o.y);
+    out[9] = static_cast<float>(ez.y - o.y);
+    out[13] = static_cast<float>(o.y);
+    out[2] = 0.0f; out[6] = 0.0f; out[10] = 0.0f; out[14] = 0.0f;
+    out[3] = 0.0f; out[7] = 0.0f; out[11] = 0.0f; out[15] = 1.0f;
 }
-
 std::uint32_t toRGBA8(std::uint32_t rgb24) {
     const auto r = static_cast<std::uint8_t>((rgb24 >> 16) & 0xFF);
     const auto g = static_cast<std::uint8_t>((rgb24 >> 8) & 0xFF);
