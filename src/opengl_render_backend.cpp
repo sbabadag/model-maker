@@ -768,7 +768,7 @@ void OpenGLRenderBackend::uploadBatch(GpuLineBatch& batch) {
 }
 
 void OpenGLRenderBackend::renderBatch(const GpuLineBatch& batch, const Camera& camera,
-                                       int width, int height, bool useProjection2D = false) {
+                                       int width, int height, bool useProjection2D) {
     if (batch.indexCount == 0 || batch.vao == 0) return;
     glUseProgram(shaderProgram_);
     float mvp[16];
