@@ -357,12 +357,22 @@ bool OpenGLRenderBackend::initialize(void* windowHandle, int initialWidth, int i
     windowHandle_ = windowHandle;
     width_ = initialWidth;
     height_ = initialHeight;
-    HWND hwnd = static_cast<HWND>(windowHandle);
+    (void)windowHandle; // canvas HWND'si YALNIZ boyut izleme icin — GL baglami
+                        // gizli yardimci pencerede kurulur.
+
+    // GIZLI YARDIMCI PENCERE: canvas'a SetPixelFormat uygulamak pencereyi GL
+    // piksel formatina cevirip DWM/Qt kompozisyonunda GDI sunumunu kapatir —
+    // canvas tamamen SIYAH kalir ("GL'ye gecince her sey yok oluyor"). FBO
+    // offscreen renderi zaten gercek pencere gerektirmez; context gizli
+    // pencerede yasar, canvas'a HIC dokunulmaz.
+    wglWindow_ = CreateWindowExW(0, L"STATIC", L"", WS_POPUP, 0, 0, 1, 1,
+                                 nullptr, nullptr, GetModuleHandleW(nullptr), nullptr);
+    if (!wglWindow_) return false;
 
     openglModule = LoadLibraryA("opengl32.dll");
     if (!openglModule) return false;
 
-    HDC hdc = GetDC(hwnd);
+    HDC hdc = GetDC(static_cast<HWND>(wglWindow_));
     if (!hdc) { FreeLibrary(openglModule); openglModule = nullptr; return false; }
     deviceContext_ = hdc;
 
@@ -410,6 +420,12 @@ bool OpenGLRenderBackend::initialize(void* windowHandle, int initialWidth, int i
 }
 
 void OpenGLRenderBackend::shutdown() {
+    if (deviceContext_ && wglWindow_) {
+        wglMakeCurrent(static_cast<HDC>(deviceContext_), nullptr);
+        ReleaseDC(static_cast<HWND>(wglWindow_), static_cast<HDC>(deviceContext_));
+        deviceContext_ = nullptr;
+    }
+    if (wglWindow_) { DestroyWindow(static_cast<HWND>(wglWindow_)); wglWindow_ = nullptr; }
     if (!initialized_) return;
     HDC hdc = static_cast<HDC>(deviceContext_);
     if (hdc) wglMakeCurrent(hdc, nullptr);
@@ -422,6 +438,7 @@ void OpenGLRenderBackend::shutdown() {
     if (openglModule) { FreeLibrary(openglModule); openglModule = nullptr; }
     initialized_ = false;
     hasWindowsGL = false;
+    if (wglWindow_) { DestroyWindow(static_cast<HWND>(wglWindow_)); wglWindow_ = nullptr; }
 }
 
 void OpenGLRenderBackend::resize(int width, int height) {

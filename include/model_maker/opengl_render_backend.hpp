@@ -124,6 +124,7 @@ private:
 
     // WGL/OpenGL context
     void* windowHandle_{};
+    void* wglWindow_{}; // GIZLI yardimci pencere — canvas'a SetPixelFormat uygulanmaz
     void* glContext_{};  // HGLRC
     void* deviceContext_{};  // HDC
 
