@@ -1881,6 +1881,28 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
     // GPU cizgileri offscreen FBO'da cizer, sonucu GDI AlphaBlend ile hedef
     // DC'ye kompozite eder — GL pencere yuzeyine dokunmaz (surucu-bagimsiz).
     if (useGpuLines) {
+        {
+            // Present sonrasi pencere icerigi (GL blit'inden ONCE): GDI
+            // katmaninin gercekten sunulup sunulmadigini kanitlar.
+            static int presentDiagCount = 0;
+            if (presentDiagCount < 3) {
+                ++presentDiagCount;
+                const COLORREF p1 = GetPixel(target, 10, 10);
+                const COLORREF p2 = GetPixel(target, width / 2, height / 2);
+                const COLORREF p3 = GetPixel(target, width - 10, height - 10);
+                FILE* diag = fopen("model-maker-render.log", "a");
+                if (diag) {
+                    fprintf(diag,
+                            "GLDIAG PRESENTPIX topLeft=%d,%d,%d center=%d,%d,%d "
+                            "bottomRight=%d,%d,%d snapOnly=%d\n",
+                            GetRValue(p1), GetGValue(p1), GetBValue(p1),
+                            GetRValue(p2), GetGValue(p2), GetBValue(p2),
+                            GetRValue(p3), GetGValue(p3), GetBValue(p3),
+                            draft.snapOnly ? 1 : 0);
+                    fclose(diag);
+                }
+            }
+        }
         glBackend->renderBatchToDc(gpuBatch, camera, width, height, target,
                                     mode == EditMode::Draw2D);
         if (guiOverlay_) guiOverlay_();
