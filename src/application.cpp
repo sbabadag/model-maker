@@ -1074,6 +1074,7 @@ LRESULT Application::handleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
         // Canvas odagi yokken F10 dis pencereye duser — toggle'i burada da
         // yakala (canvas odakliyken canvasProc halledince buraya gelmez).
         if (wParam == VK_F6) { toggleGpuLines(); return 0; }
+        if (wParam == VK_F5) { runRenderBenchmark(); return 0; }
         return 0;
     case WM_DESTROY:
         if (renderBackend_) { renderBackend_->shutdown(); renderBackend_.reset(); }
@@ -3047,7 +3048,7 @@ void Application::runRenderBenchmark() {
     const int vw = std::max(1L, wc.right), vh = std::max(1L, wc.bottom);
 
     const auto pumpUntilFrame = [&](std::uint64_t target) {
-        for (int guard = 0; guard < 400; ++guard) {
+        for (int guard = 0; guard < 120; ++guard) {
             MSG msg;
             while (PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE)) {
                 TranslateMessage(&msg);
