@@ -3043,6 +3043,8 @@ void Application::toggleGpuLines() {
         fprintf(diag, "BACKEND-TOGGLE %s\n", glWillBeActive ? "GL" : "GDI");
         fclose(diag);
     }
+    if (gpuLinesEnabled_ && renderBackend_)
+        renderBackend_->resetDiagnostics(); // taze GLDIAG verisi
     updateStatus();
     invalidateCanvas();
 }
