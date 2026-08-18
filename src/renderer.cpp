@@ -332,7 +332,14 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
                                     !draft.selectedModels.empty() ||
                                     (draft.drawingActive && draft.anchor && draft.cursor);
         if (feedbackActive) {
-            if (!draft.selectedModels.empty()) {
+            // Statik secim hover'inda secili objeler tabana gomuludur — yeniden
+            // cizme. Yalnizca: transform (hayalet), secim penceresi suruklemesi
+            // ve tam/nav kareleri (tabanda gomulu olmayan) cizer.
+            if (!draft.selectedModels.empty() &&
+                (draft.transformCommand != TransformCommand::None ||
+                 draft.selectionFirstCorner || !draft.snapPreviewActive ||
+                 draft.rotating || draft.panning ||
+                 draft.wheelNavigating || draft.viewCubeActive)) {
                 HPEN selectedPen = CreatePen(PS_SOLID, 3, RGB(90, 255, 145));
                 SelectObject(dc, selectedPen);
                 for (const auto index : draft.selectedModels) {
@@ -927,7 +934,13 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
     if (!draft.snapOnly) {
     for (std::size_t visibleIndex = 0; visibleIndex < visibleModels.size(); ++visibleIndex) {
         const auto index = visibleModels[visibleIndex];
-        if (index >= document.models().size() || isSelected(index)) continue;
+        // Statik secimde secili objeler tabana NORMAL renkte cizilir; vurgu
+        // katmani ustlerine yesil cizer ve snapshot yesil halini tabana gomer
+        // (hover kareleri saf blit olur). Transform aktifken secili objeler
+        // tabana hic girmesin — hayalet onizleme kendi basina cizilir.
+        if (index >= document.models().size() ||
+            (isSelected(index) && draft.transformCommand != TransformCommand::None))
+            continue;
         const auto& model = document.models()[index];
         const auto& properties = document.effectiveProperties(index);
         if (!properties.visible) continue;
@@ -968,19 +981,6 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         DeleteObject(pen);
     }
     } // !draft.snapOnly
-    if (!draft.snapOnly && !draft.interactiveNavigation && !useGpuLines) {
-        // Tam kare: temiz taban (arka plan + grid + eksenler + modeller) — henüz
-        // geri bildirim katmanı çizilmedi. Motion tabanını tazele.
-        ensureMotionBase(target, width, height);
-        BitBlt(motionBaseDc_, 0, 0, width, height, dc, 0, 0, SRCCOPY);
-        motionBaseValid_ = true;
-        // Kamera parmak izi: taban yalniz bu kamera altinda kullanilabilir
-        // (fallback karelerde lambda zaten secim vurgusunu ciziyor — 1738).
-        motionBaseProbe_[0] = projectPoint(Vec3{0.0, 0.0, 0.0});
-        motionBaseProbe_[1] = projectPoint(Vec3{1.0, 0.0, 0.0});
-        motionBaseProbe_[2] = projectPoint(Vec3{0.0, 1.0, 0.0});
-        motionBaseProbe_[3] = projectPoint(Vec3{0.0, 0.0, 1.0});
-    }
 
     if (!draft.interactiveNavigation) {
         if (!draft.selectedModels.empty()) {
@@ -994,6 +994,20 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
             }
             SelectObject(dc, stockPen);
             DeleteObject(selectedPen);
+        }
+
+        // Snapshot vurgudan SONRA: statik secim yesil haliyle tabana gomulur —
+        // hover motion kareleri taban blit + yalniz imlec katmani olur, secili
+        // objeler her karede yeniden cizilmez (per-frame maliyet ve flicker yok).
+        if (!draft.snapOnly && !useGpuLines) {
+            ensureMotionBase(target, width, height);
+            BitBlt(motionBaseDc_, 0, 0, width, height, dc, 0, 0, SRCCOPY);
+            motionBaseValid_ = true;
+            // Kamera parmak izi: taban yalniz bu kamera altinda kullanilabilir.
+            motionBaseProbe_[0] = projectPoint(Vec3{0.0, 0.0, 0.0});
+            motionBaseProbe_[1] = projectPoint(Vec3{1.0, 0.0, 0.0});
+            motionBaseProbe_[2] = projectPoint(Vec3{0.0, 1.0, 0.0});
+            motionBaseProbe_[3] = projectPoint(Vec3{0.0, 0.0, 1.0});
         }
 
         const bool trimExtendTargetSelection =
