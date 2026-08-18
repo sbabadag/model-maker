@@ -129,6 +129,8 @@ PFNGLDELETEPROGRAMPROC glDeleteProgram = nullptr;
 PFNGLGETUNIFORMLOCATIONPROC glGetUniformLocation = nullptr;
 PFNGLUNIFORMMATRIX4FVPROC glUniformMatrix4fv = nullptr;
 PFNGLUNIFORM2FPROC glUniform2f = nullptr;
+// MinGW basliklarinda PFNGLBINDBUFFERBASEPROC tanimli degil — elle bildir.
+using PFNGLBINDBUFFERBASEPROC = void(APIENTRY*)(GLenum, GLuint, GLuint);
 PFNGLBINDBUFFERBASEPROC glBindBufferBase = nullptr;
 PFNGLVERTEXATTRIBPOINTERPROC glVertexAttribPointer = nullptr;
 PFNGLENABLEVERTEXATTRIBARRAYPROC glEnableVertexAttribArray = nullptr;
@@ -829,7 +831,7 @@ void OpenGLRenderBackend::renderBatch(const GpuLineBatch& batch, const Camera& c
         }
     }
     glBindBuffer(GLConst::UNIFORM_BUFFER, cameraUbo_);
-    glBufferSubData(GLConst::UNIFORM_BUFFER, 0, 64, mvp.data());
+    glBufferSubData(GLConst::UNIFORM_BUFFER, 0, 64, mvp);
     glBindBuffer(GLConst::UNIFORM_BUFFER, 0);
     glEnable(GLConst::BLEND_MODE);
     glBlendFunc(GLConst::SRC_ALPHA, GLConst::ONE_MINUS_SRC_ALPHA);

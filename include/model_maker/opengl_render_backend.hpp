@@ -114,7 +114,8 @@ public:
 
 private:
     bool compileShaders();
-    void ensureBatch(const std::vector<std::pair<std::size_t, WireframeModel>>& models);
+    void ensureBatch(const std::vector<std::pair<std::size_t, WireframeModel>>& models,
+                     std::uint64_t contentRevision = 0);
     void uploadBatch(GpuLineBatch& batch);
     void renderBatch(const GpuLineBatch& batch, const Camera& camera,
                      int width, int height, bool useProjection2D = false);
