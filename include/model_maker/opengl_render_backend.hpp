@@ -98,6 +98,9 @@ public:
     // Offscreen GL render (seffaf FBO) + GDI AlphaBlend hedef DC'ye:
     // GL pencere yuzeyine HIC cizmez — surucu-bagimsiz GDI+GL interop,
     // Qt/thread guvenligi, sunum tek GDI hattindan.
+    // Her GL oturumunda tanı sayaçlarını tazeler (F6 toggle çağırır).
+    void resetDiagnostics();
+
     bool renderBatchToDc(
         const std::vector<std::pair<std::size_t, WireframeModel>>& models,
         const Camera& camera, int width, int height, void* targetHdc,
@@ -126,6 +129,9 @@ private:
     // WGL/OpenGL context
     void* windowHandle_{};
     void* wglWindow_{}; // GIZLI yardimci pencere — canvas'a SetPixelFormat uygulanmaz
+    int glDiagCount_{0};
+    int mvpDiagCount_{0};
+    int errDiagCount_{0};
     void* glContext_{};  // HGLRC
     void* deviceContext_{};  // HDC
 

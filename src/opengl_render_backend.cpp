@@ -532,6 +532,14 @@ void OpenGLRenderBackend::ensureBlitBuffer(int width, int height) {
     }
 }
 
+void OpenGLRenderBackend::resetDiagnostics() {
+    // Her GL oturumu basinda tanilar tazelenir (statik sayaçlar islem
+    // omru boyunca kesilir ve guncel oturumun verisi kaybolurdu).
+    glDiagCount_ = 0;
+    mvpDiagCount_ = 0;
+    errDiagCount_ = 0;
+}
+
 bool OpenGLRenderBackend::blitToDC(void* target, int width, int height) {
     if (blitBuffer_.empty() || width <= 0 || height <= 0) return false;
     HDC hdcTarget = static_cast<HDC>(target);
@@ -576,22 +584,21 @@ bool OpenGLRenderBackend::renderBatchToDc(
     const Camera& camera, int width, int height, void* targetHdc,
     bool useProjection2D) {
     if (!initialized_ || models.empty()) return false;
-    static int glDiagCount = 0;
     const auto glDiag = [](const char* step) {
-        if (glDiagCount >= 8) return;
+        if (glDiagCount_ >= 8) return;
         FILE* diag = fopen("model-maker-render.log", "a");
-        if (diag) { fprintf(diag, "GLDIAG %d %s\n", glDiagCount, step); fclose(diag); }
+        if (diag) { fprintf(diag, "GLDIAG %d %s\n", glDiagCount_, step); fclose(diag); }
     };
     HDC hdc = static_cast<HDC>(deviceContext_);
     if (!wglMakeCurrent(hdc, static_cast<HGLRC>(glContext_))) {
-        ++glDiagCount; glDiag("MAKECURRENT-FAIL"); return false;
+        ++glDiagCount_; glDiag("MAKECURRENT-FAIL"); return false;
     }
     glDiag("CURRENT-OK");
 
     drawCalls_ = 0; uploadBytes_ = 0; renderedLines_ = 0;
 
     ensureFbo(width, height);
-    if (fbo_ == 0) { ++glDiagCount; glDiag("FBO-FAIL"); wglMakeCurrent(hdc, nullptr); return false; }
+    if (fbo_ == 0) { ++glDiagCount_; glDiag("FBO-FAIL"); wglMakeCurrent(hdc, nullptr); return false; }
     glDiag("FBO-OK");
     glBindFramebuffer(GLConst::FRAMEBUFFER, fbo_);
     glViewport(0, 0, width, height);
@@ -773,9 +780,8 @@ void OpenGLRenderBackend::renderBatch(const GpuLineBatch& batch, const Camera& c
     glUseProgram(shaderProgram_);
     float mvp[16];
     computeMVPMatrix(camera, width, height, mvp, useProjection2D);
-    static int mvpDiagCount = 0;
-    if (mvpDiagCount < 5) {
-        ++mvpDiagCount;
+    if (mvpDiagCount_ < 5) {
+        ++mvpDiagCount_;
         const float vx = batch.vertices.empty() ? 0.0f : batch.vertices[0].x;
         const float vy = batch.vertices.empty() ? 0.0f : batch.vertices[0].y;
         const float vz = batch.vertices.empty() ? 0.0f : batch.vertices[0].z;
@@ -809,9 +815,8 @@ void OpenGLRenderBackend::renderBatch(const GpuLineBatch& batch, const Camera& c
     glDrawElements(GLConst::LINES, static_cast<GLsizei>(batch.indexCount),
                    GLConst::UNSIGNED_INT_TYPE, nullptr);
     glBindVertexArray(0);
-    static int errDiagCount = 0;
-    if (errDiagCount < 3) {
-        ++errDiagCount;
+    if (errDiagCount_ < 3) {
+        ++errDiagCount_;
         FILE* diag = fopen("model-maker-render.log", "a");
         if (diag) {
             if (glGetError)
