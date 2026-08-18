@@ -2962,7 +2962,11 @@ DraftView Application::draftView() const {
     view.snapPreviewActive = snapPreviewActive_;
     view.wheelNavigating = wheelNavigating_; view.rotating = rotating_;
     view.panning = panning2D_; view.viewCubeActive = viewCubeManipulating_;
-    view.rasterZoomPreview = document_.models().size() > 20'000 && wheelNavigating_ &&
+    // Esik 8'000'e indirildi: 18k'lik cizimde tekerlek zoom'u stride-4 seyrek
+    // fallback kareler uretiyordu (modellerin ~%75'i kaybolup geri geliyordu
+    // = zoom sirasinda nabiz/flicker). Raster preview son tam kareyi esnetir —
+    // zoom suresince hic seyrek cizim yapilmaz.
+    view.rasterZoomPreview = document_.models().size() > 8'000 && wheelNavigating_ &&
                              std::abs(wheelPreviewFactor_ - 1.0) > 1e-12;
     view.rasterZoomFactor = wheelPreviewFactor_;
     view.rasterZoomOffset = wheelPreviewOffset_;
