@@ -1261,13 +1261,17 @@ void Application::onCanvasPaint() {
     // context'i GDI cizimini bozup "cizgiler kayboldu" hatasi uretiyordu).
     IRenderBackend* activeBackend =
         (renderBackend_ && gpuLinesEnabled_) ? renderBackend_.get() : nullptr;
-    if (!paintSequence_) {
-        // Her oturumun basinda kosulsuz isaret: log dosyasinin yazilabildigini
-        // ve hangi modda acildigimizi kanitlar (teshis icin).
-        FILE* diag = fopen("model-maker-render.log", "a");
-        if (diag) {
-            fprintf(diag, "SESSION-START GDI-ONLY (F10=GL acar)\n");
-            fclose(diag);
+    {
+        // Her oturumun basinda kosulsuz isaret (static bayrak — paintSequence_
+        // bu noktadan once arttigindan !paintSequence_ calismiyordu).
+        static bool sessionLogged = false;
+        if (!sessionLogged) {
+            sessionLogged = true;
+            FILE* diag = fopen("model-maker-render.log", "a");
+            if (diag) {
+                fprintf(diag, "SESSION-START GDI-ONLY (F10=GL acar)\n");
+                fclose(diag);
+            }
         }
     }
     const auto paintStart = std::chrono::steady_clock::now();
