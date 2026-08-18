@@ -1057,6 +1057,7 @@ LRESULT Application::handleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
         if (canvas_) SetFocus(canvas_);
         return 0;
     case WM_DESTROY:
+        if (renderBackend_) { renderBackend_->shutdown(); renderBackend_.reset(); }
         if (dxfImportThread_.joinable()) dxfImportThread_.request_stop();
         PostQuitMessage(0);
         return 0;
@@ -1198,6 +1199,7 @@ LRESULT Application::handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lPa
                 clearTemporaryTracking();
             }
         }
+        else if (wParam == VK_F9) toggleGpuLines();
         else if (wParam == VK_F9) gridSnapEnabled_ = !gridSnapEnabled_;
         else if (wParam == VK_F10) {
             polarTrackingEnabled_ = !polarTrackingEnabled_;
@@ -1233,7 +1235,9 @@ LRESULT Application::handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lPa
         else if (wParam == 'O' && (GetKeyState(VK_CONTROL) & 0x8000)) openDocument();
         updateHover(cursorScreen_.x, cursorScreen_.y); updateControls(); invalidateCanvas();
         return 0;
-    case WM_SIZE: invalidateCanvas(); return 0;
+    case WM_SIZE:
+        if (renderBackend_) renderBackend_->resize(LOWORD(lParam), HIWORD(lParam));
+        invalidateCanvas(); return 0;
     default: return DefWindowProcW(canvas_, message, wParam, lParam);
     }
 }
@@ -1252,8 +1256,26 @@ void Application::onCanvasPaint() {
     RECT client{};
     GetClientRect(canvas_, &client);
     const bool wasSnapPreview = snapPreviewActive_;
+    // F1: GPU hatti — ilk boyamada backend uretilir (GL basarisizsa GDI),
+    // F9 ile GDI/GL arasinda gecis yapilir.
+    if (!backendInitTried_) {
+        backendInitTried_ = true;
+        renderBackend_ = createOpenGLRenderBackend();
+        if (!renderBackend_ || !renderBackend_->initialize(canvas_, client.right, client.bottom)) {
+            renderBackend_ = createGdiRenderBackend();
+            if (renderBackend_) renderBackend_->initialize(canvas_, client.right, client.bottom);
+        }
+        FILE* diag = fopen("model-maker-render.log", "a");
+        if (diag) {
+            const bool glActive = renderBackend_ && renderBackend_->isHardwareAccelerated();
+            fprintf(diag, "BACKEND %s\n", glActive ? "GL" : "GDI");
+            fclose(diag);
+        }
+    }
+    IRenderBackend* activeBackend =
+        (renderBackend_ && gpuLinesEnabled_) ? renderBackend_.get() : nullptr;
     const auto paintStart = std::chrono::steady_clock::now();
-    renderer_.draw(dc, client, document_, camera_, mode_, draftView());
+    renderer_.draw(dc, client, document_, camera_, mode_, draftView(), activeBackend);
     if (paintSequence_ <= 10 && paintSequence_ > 0)
         trimExtendLog(L"PAINT-EXIT " + std::to_wstring(paintSequence_ - 1));
     const double paintMs = std::chrono::duration<double, std::milli>(
@@ -2953,6 +2975,19 @@ DraftView Application::draftView() const {
     view.rasterZoomFactor = wheelPreviewFactor_;
     view.rasterZoomOffset = wheelPreviewOffset_;
     return view;
+}
+
+void Application::toggleGpuLines() {
+    gpuLinesEnabled_ = !gpuLinesEnabled_;
+    FILE* diag = fopen("model-maker-render.log", "a");
+    if (diag) {
+        const bool glWillBeActive = gpuLinesEnabled_ && renderBackend_ &&
+                                    renderBackend_->isHardwareAccelerated();
+        fprintf(diag, "BACKEND-TOGGLE %s\n", glWillBeActive ? "GL" : "GDI");
+        fclose(diag);
+    }
+    updateStatus();
+    invalidateCanvas();
 }
 
 std::optional<std::filesystem::path> Application::chooseFile(bool save, bool dxf) const {

@@ -4,6 +4,7 @@
 #include "model_maker/document.hpp"
 #include "model_maker/drafting.hpp"
 #include "model_maker/render_backend.hpp"
+#include "model_maker/render_backend.hpp"
 #include "model_maker/renderer.hpp"
 #include "model_maker/ribbon_layout.hpp"
 #include "model_maker/view_cube_renderer.hpp"
@@ -82,6 +83,11 @@ public:
     void exportDxf();
 
     // Work plane (UCS) — Qt menü/ribbon erişimi için public
+    // F1: GPU hatti — GL backend uretimi + F9 ile GDI/GL gecisi
+    void toggleGpuLines();
+    bool gpuLinesEnabled() const noexcept { return gpuLinesEnabled_; }
+    IRenderBackend* activeRenderBackend() noexcept { return renderBackend_.get(); }
+
     void startWorkPlaneCommand();
     void cancelWorkPlaneCommand();
     void commitWorkPlanePoint(const Vec3& point);
@@ -253,6 +259,8 @@ private:
     Renderer renderer_;
     ViewCubeRenderer viewCubeRenderer_;
     std::unique_ptr<IRenderBackend> renderBackend_;
+    bool gpuLinesEnabled_ = true;
+    bool backendInitTried_ = false;
     EditMode mode_{EditMode::Draw2D};
     DrawTool tool_{DrawTool::Line};
     std::optional<Vec3> anchor_;
