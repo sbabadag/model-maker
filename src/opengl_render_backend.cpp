@@ -747,6 +747,25 @@ void OpenGLRenderBackend::renderBatch(const GpuLineBatch& batch, const Camera& c
     glUseProgram(shaderProgram_);
     float mvp[16];
     computeMVPMatrix(camera, width, height, mvp);
+    static int mvpDiagCount = 0;
+    if (mvpDiagCount < 5) {
+        ++mvpDiagCount;
+        const float vx = batch.vertices.empty() ? 0.0f : batch.vertices[0].x;
+        const float vy = batch.vertices.empty() ? 0.0f : batch.vertices[0].y;
+        const float vz = batch.vertices.empty() ? 0.0f : batch.vertices[0].z;
+        const float cx = mvp[0] * vx + mvp[4] * vy + mvp[8] * vz + mvp[12];
+        const float cy = mvp[1] * vx + mvp[5] * vy + mvp[9] * vz + mvp[13];
+        const float cw = mvp[3] * vx + mvp[7] * vy + mvp[11] * vz + mvp[15];
+        FILE* diag = fopen("model-maker-render.log", "a");
+        if (diag) {
+            fprintf(diag, "GLDIAG MVP scaleXY=(%.3f,%.3f) trans=(%.1f,%.1f) "
+                    "v0=(%.2f,%.2f,%.2f) clip=(%.2f,%.2f,w=%.2f) idx=%zu\n",
+                    mvp[0], mvp[5], mvp[12], mvp[13], vx, vy, vz,
+                    cw != 0.0f ? cx / cw : cx, cw != 0.0f ? cy / cw : cy, cw,
+                    batch.indexCount);
+            fclose(diag);
+        }
+    }
     glUniformMatrix4fv(uniformMvp_, 1, GLConst::GL_FALSE, mvp);
     glUniform2f(uniformScreenSize_, static_cast<GLfloat>(width), static_cast<GLfloat>(height));
     glEnable(GLConst::BLEND_MODE);
