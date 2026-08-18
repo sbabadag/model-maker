@@ -768,11 +768,11 @@ void OpenGLRenderBackend::uploadBatch(GpuLineBatch& batch) {
 }
 
 void OpenGLRenderBackend::renderBatch(const GpuLineBatch& batch, const Camera& camera,
-                                       int width, int height) {
+                                       int width, int height, bool useProjection2D = false) {
     if (batch.indexCount == 0 || batch.vao == 0) return;
     glUseProgram(shaderProgram_);
     float mvp[16];
-    computeMVPMatrix(camera, width, height, mvp);
+    computeMVPMatrix(camera, width, height, mvp, useProjection2D);
     static int mvpDiagCount = 0;
     if (mvpDiagCount < 5) {
         ++mvpDiagCount;
