@@ -1314,6 +1314,16 @@ void Application::onCanvasPaint() {
     IRenderBackend* activeBackend =
         (renderBackend_ && gpuLinesEnabled_ && mode_ == EditMode::View3D)
             ? renderBackend_.get() : nullptr;
+    {
+        // Kosulsuz oturum isareti: log yolunun calistigini ve bu build'in
+        // aktif oldugunu kanitlar (teshis icin).
+        static bool sessionLogged = false;
+        if (!sessionLogged) {
+            sessionLogged = true;
+            FILE* diag = fopen("model-maker-render.log", "a");
+            if (diag) { fprintf(diag, "SESSION-START build=2026-08-18-bench\n"); fclose(diag); }
+        }
+    }
     const auto paintStart = std::chrono::steady_clock::now();
     renderer_.draw(dc, client, document_, camera_, mode_, draftView(), activeBackend);
     if (paintSequence_ <= 10 && paintSequence_ > 0)

@@ -324,7 +324,11 @@ void QtMainWindow::createMenus() {
     viewMenu->addAction("Çalışma &Düzlemi (3 Nokta)", this, [this]() { app_.startWorkPlaneCommand(); })->setIcon(makeToolIcon(ToolGlyph::Plane));
     viewMenu->addAction("Düzlemi &Sıfırla (Dünya)", this, [this]() { app_.resetWorkPlane(); })->setIcon(makeToolIcon(ToolGlyph::Reset));
     viewMenu->addSeparator();
-    viewMenu->addAction("&Benchmark (GDI vs GL)", this, [this]() { app_.runRenderBenchmark(); });
+    viewMenu->addAction("&Benchmark (GDI vs GL)", this, [this]() {
+        FILE* diag = fopen("model-maker-render.log", "a");
+        if (diag) { fprintf(diag, "MENU-BENCH-CLICKED\n"); fclose(diag); }
+        app_.runRenderBenchmark();
+    });
 }
 
 void QtMainWindow::createToolbar() {
