@@ -603,20 +603,37 @@ bool OpenGLRenderBackend::renderBatchToDc(
     ensureBlitBuffer(width, height);
     glReadPixels(0, 0, width, height, GLConst::BGRA_EXT, GLConst::UNSIGNED_BYTE_TYPE,
                  blitBuffer_.data());
-    // Readback orneklemesi: merkez piksel + kose + ilk saydamlik taramasi
+    // Readback taramasi: TUM tampon + ilk opak pikselin satiri + beklenen
+    // cizgi bolgesinden 3x3 ornek (eski 20k taramasi ust satirlari kapsiyordu
+    // ve asagi cizilen cizgiyi kaciriyordu).
     if (glDiagCount < 5 && !blitBuffer_.empty()) {
         const auto px = [&](std::size_t idx) {
             return static_cast<unsigned>(blitBuffer_[idx]);
         };
         const std::size_t center = (static_cast<std::size_t>(height / 2) * width + width / 2) * 4;
-        int opaque = 0; const std::size_t scan = std::min<std::size_t>(blitBuffer_.size(), 4 * 20000);
-        for (std::size_t i = 3; i < scan; i += 4) if (blitBuffer_[i] > 32) ++opaque;
+        std::size_t opaque = 0; std::size_t firstOpaque = blitBuffer_.size();
+        for (std::size_t i = 3; i < blitBuffer_.size(); i += 4) {
+            if (blitBuffer_[i] > 32) {
+                ++opaque;
+                if (i < firstOpaque) firstOpaque = i;
+            }
+        }
+        const std::size_t probePx = 302 + 413 * static_cast<std::size_t>(width);
+        const std::size_t probe = probePx * 4;
         FILE* diag = fopen("model-maker-render.log", "a");
         if (diag) {
             fprintf(diag,
-                "GLDIAG %d READBACK center=%u,%u,%u,%u opaqueSampled=%d/%zu lines=%zu\n",
+                "GLDIAG %d READBACK center=%u,%u,%u,%u opaque=%zu/%zu firstOpaqueAt=%zu,"
+                "row%zu probe(302,413)=%u,%u,%u,%u lines=%zu\n",
                 glDiagCount, px(center), px(center + 1), px(center + 2), px(center + 3),
-                opaque, scan / 4, renderedLines_);
+                opaque, blitBuffer_.size() / 4,
+                firstOpaque == blitBuffer_.size() ? 0 : (firstOpaque / 4) % width,
+                firstOpaque == blitBuffer_.size() ? 0 : (firstOpaque / 4) / width,
+                probe < blitBuffer_.size() ? px(probe) : 0,
+                probe < blitBuffer_.size() ? px(probe + 1) : 0,
+                probe < blitBuffer_.size() ? px(probe + 2) : 0,
+                probe < blitBuffer_.size() ? px(probe + 3) : 0,
+                renderedLines_);
             fclose(diag);
         }
     }
@@ -774,13 +791,15 @@ void OpenGLRenderBackend::renderBatch(const GpuLineBatch& batch, const Camera& c
                    GLConst::UNSIGNED_INT_TYPE, nullptr);
     glBindVertexArray(0);
     static int errDiagCount = 0;
-    if (errDiagCount < 3 && glGetError) {
+    if (errDiagCount < 3) {
         ++errDiagCount;
-        GLenum err = glGetError();
         FILE* diag = fopen("model-maker-render.log", "a");
         if (diag) {
-            fprintf(diag, "GLDIAG GLERROR=0x%X after draw (idx=%zu)\n",
-                    static_cast<unsigned>(err), batch.indexCount);
+            if (glGetError)
+                fprintf(diag, "GLDIAG GLERROR=0x%X after draw (idx=%zu)\n",
+                        static_cast<unsigned>(glGetError()), batch.indexCount);
+            else
+                fprintf(diag, "GLDIAG GLERROR-PTR-NULL (load basarisiz)\n");
             fclose(diag);
         }
     }
