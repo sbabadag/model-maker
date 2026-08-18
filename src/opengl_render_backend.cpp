@@ -515,11 +515,13 @@ bool OpenGLRenderBackend::blitToDC(void* target, int width, int height) {
     std::size_t needed = static_cast<std::size_t>(width) * static_cast<std::size_t>(height) * 4;
     if (blitBuffer_.size() < needed) return false;
 
-    // glReadPixels reads bottom-to-top; use positive height for bottom-up DIB
+    // glReadPixels bottom-to-top okur; POZITIF biHeight (bottom-up DIB) ile
+    // readback satir duzeni birebir korunur — negatif (top-down) DIB'de
+    // goruntu dikey aynalanmis cikiyordu ("GL ekrani bozuyor").
     BITMAPINFO bmi = {};
     bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
     bmi.bmiHeader.biWidth = width;
-    bmi.bmiHeader.biHeight = -height; // top-down DIB
+    bmi.bmiHeader.biHeight = height; // bottom-up DIB — readback ile ayni duzen
     bmi.bmiHeader.biPlanes = 1;
     bmi.bmiHeader.biBitCount = 32;
     bmi.bmiHeader.biCompression = BI_RGB;
