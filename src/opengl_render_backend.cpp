@@ -509,6 +509,11 @@ bool OpenGLRenderBackend::beginFrame(const FrameInfo& /* info */) {
 void OpenGLRenderBackend::endFrame() {
     if (!initialized_) return;
     glFinish();
+    // Context'i SERBEST BIRAK: current birakilirsa ayni UI thread'inde calisan
+    // Qt kendi cizimini bu GL context'i altinda yapar ve ekran bozulur
+    // ("F9'a basinca ekran bozuldu"). beginFrame() bir sonraki karede tekrar
+    // alir — GL yalnizca cizim suresince current kalir.
+    wglMakeCurrent(static_cast<HDC>(deviceContext_), nullptr);
     perFrameMetricsReset_ = false;
 }
 
