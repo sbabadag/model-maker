@@ -100,7 +100,8 @@ public:
     // Qt/thread guvenligi, sunum tek GDI hattindan.
     bool renderBatchToDc(
         const std::vector<std::pair<std::size_t, WireframeModel>>& models,
-        const Camera& camera, int width, int height, void* targetHdc);
+        const Camera& camera, int width, int height, void* targetHdc,
+        bool useProjection2D = false);
 
     // ── Performance counters ─────────────────────────────────────
     std::size_t drawCallsPerFrame() const noexcept { return drawCalls_; }

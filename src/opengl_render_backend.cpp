@@ -307,7 +307,8 @@ namespace mm {
 // ── MVP matrix computation ───────────────────────────────────────
 namespace {
 
-void computeMVPMatrix(const Camera& camera, int width, int height, float* out) {
+void computeMVPMatrix(const Camera& camera, int width, int height, float* out,
+                      bool useProjection2D) {
     // BAZ-ORNEKLEMELI AFFINE: viewTransform/rotasyon bilesenlerine guvenme —
     // 2B kameranin viewTransform'u birim vektorlerde ortogonal olmayan
     // bilesenler tasiyor ve GL cizgileri GDI konumundan kayiyordu ("cizgiler
@@ -318,10 +319,16 @@ void computeMVPMatrix(const Camera& camera, int width, int height, float* out) {
         return { 2.0 * s.x / static_cast<double>(width) - 1.0,
                  1.0 - 2.0 * s.y / static_cast<double>(height) };
     };
-    const Vec2 o  = toNdc(camera.project({0.0, 0.0, 0.0}, width, height));
-    const Vec2 ex = toNdc(camera.project({1.0, 0.0, 0.0}, width, height));
-    const Vec2 ey = toNdc(camera.project({0.0, 1.0, 0.0}, width, height));
-    const Vec2 ez = toNdc(camera.project({0.0, 0.0, 1.0}, width, height));
+    // 2B modda GDI project2D kullanir; 3B'de project. Yanlis izdusumle
+    // orneklenen matris 2B cizgileri GDI'ya gore kaydiriyordu ("cift cizgi").
+    const auto sample = [&](const Vec3& p) -> Vec2 {
+        return useProjection2D ? toNdc(camera.project2D(p, width, height))
+                               : toNdc(camera.project(p, width, height));
+    };
+    const Vec2 o  = sample({0.0, 0.0, 0.0});
+    const Vec2 ex = sample({1.0, 0.0, 0.0});
+    const Vec2 ey = sample({0.0, 1.0, 0.0});
+    const Vec2 ez = sample({0.0, 0.0, 1.0});
     // Sutun-bas (column-major) affine: clip = M * [x, y, z, 1]
     out[0] = static_cast<float>(ex.x - o.x);
     out[4] = static_cast<float>(ey.x - o.x);
@@ -566,7 +573,8 @@ bool OpenGLRenderBackend::blitToDC(void* target, int width, int height) {
 
 bool OpenGLRenderBackend::renderBatchToDc(
     const std::vector<std::pair<std::size_t, WireframeModel>>& models,
-    const Camera& camera, int width, int height, void* targetHdc) {
+    const Camera& camera, int width, int height, void* targetHdc,
+    bool useProjection2D) {
     if (!initialized_ || models.empty()) return false;
     static int glDiagCount = 0;
     const auto glDiag = [](const char* step) {
@@ -595,7 +603,7 @@ bool OpenGLRenderBackend::renderBatchToDc(
     ensureBatch(models);
     glDiag("BATCH-OK");
     if (lineBatch_.indexCount != 0) {
-        renderBatch(lineBatch_, camera, width, height);
+        renderBatch(lineBatch_, camera, width, height, useProjection2D);
         drawCalls_ = 1;
         renderedLines_ = lineBatch_.indexCount / 2;
     }
