@@ -1161,6 +1161,21 @@ LRESULT Application::handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lPa
         ScreenToClient(canvas_, &zoomCursor);
         cursorScreen_ = zoomCursor;
         const int wheelDelta = GET_WHEEL_DELTA_WPARAM(wParam);
+        {
+            // Serseri tekerlek olaylarinin desenini yakala (ilk 60 olay):
+            // delta degeri + zaman damgasi — filtre tasarimi bu veriden.
+            static int wheelLogCount = 0;
+            if (wheelLogCount < 60) {
+                ++wheelLogCount;
+                FILE* diag = fopen("model-maker-render.log", "a");
+                if (diag) {
+                    fprintf(diag, "WHEEL-EVT n=%d delta=%d t=%llu\n",
+                            wheelLogCount, wheelDelta,
+                            static_cast<unsigned long long>(GetTickCount64()));
+                    fclose(diag);
+                }
+            }
+        }
         // Touchpad/gevsemis tekerlek mikro delta'lari (|delta| < WHEEL_DELTA/4)
         // gercek zoom sayilmaz: her biri %12 zoom + 350ms wheelNavigating_ acip
         // motion overlay'i kapatir, hover kareleri fallback'e duser -> flicker.
