@@ -1059,7 +1059,7 @@ LRESULT Application::handleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
     case WM_KEYDOWN:
         // Canvas odagi yokken F10 dis pencereye duser — toggle'i burada da
         // yakala (canvas odakliyken canvasProc halledince buraya gelmez).
-        if (wParam == VK_F10) { toggleGpuLines(); return 0; }
+        if (wParam == VK_F6) { toggleGpuLines(); return 0; }
         return 0;
     case WM_DESTROY:
         if (renderBackend_) { renderBackend_->shutdown(); renderBackend_.reset(); }
@@ -1204,7 +1204,7 @@ LRESULT Application::handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lPa
                 clearTemporaryTracking();
             }
         }
-        else if (wParam == VK_F10) toggleGpuLines(); // F9 = GRID SNAP (README), cakismasin
+        else if (wParam == VK_F6) toggleGpuLines(); // F10 menulerce SYSKEY olarak yutuluyor + Polar Tracking'in tusuydu
         else if (wParam == VK_F9) gridSnapEnabled_ = !gridSnapEnabled_;
         else if (wParam == VK_F10) {
             polarTrackingEnabled_ = !polarTrackingEnabled_;
