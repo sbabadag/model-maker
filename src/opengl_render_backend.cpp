@@ -138,6 +138,7 @@ PFNGLENABLEPROC glEnable = nullptr;
 PFNGLDISABLEPROC glDisable = nullptr;
 PFNGLBLENDFUNCPROC glBlendFunc = nullptr;
 PFNGLFINISHPROC glFinish = nullptr;
+PFNGLGETERRORPROC glGetError = nullptr;
 // FBO
 PFNGLGENFRAMEBUFFERSPROC glGenFramebuffers = nullptr;
 PFNGLBINDFRAMEBUFFERPROC glBindFramebuffer = nullptr;
@@ -161,13 +162,9 @@ const char* vertexShaderSource = R"GLSL(
 layout(location = 0) in vec3 position;
 layout(location = 1) in vec4 colorIn;
 uniform mat4 mvp;
-uniform vec2 screenSize;
 out vec4 fragColor;
 void main() {
-    vec4 clip = mvp * vec4(position, 1.0);
-    vec2 pixelCorrect = vec2(1.0) / screenSize;
-    clip.xy += clip.w * pixelCorrect * 0.5;
-    gl_Position = clip;
+    gl_Position = mvp * vec4(position, 1.0);
     fragColor = colorIn;
 }
 )GLSL";
@@ -175,7 +172,7 @@ void main() {
 const char* fragmentShaderSource = R"GLSL(
 #version 330 core
 in vec4 fragColor;
-out vec4 outColor;
+layout(location = 0) out vec4 outColor;
 void main() {
     outColor = fragColor;
 }
@@ -248,6 +245,7 @@ bool loadWglExtensions(HDC hdc) {
     LOAD_GL(glDisable);
     LOAD_GL(glBlendFunc);
     LOAD_GL(glFinish);
+    LOAD_GL(glGetError);
     // FBO
     LOAD_GL(glGenFramebuffers);
     LOAD_GL(glBindFramebuffer);
@@ -767,13 +765,23 @@ void OpenGLRenderBackend::renderBatch(const GpuLineBatch& batch, const Camera& c
         }
     }
     glUniformMatrix4fv(uniformMvp_, 1, GLConst::GL_FALSE, mvp);
-    glUniform2f(uniformScreenSize_, static_cast<GLfloat>(width), static_cast<GLfloat>(height));
     glEnable(GLConst::BLEND_MODE);
     glBlendFunc(GLConst::SRC_ALPHA, GLConst::ONE_MINUS_SRC_ALPHA);
     glBindVertexArray(batch.vao);
     glDrawElements(GLConst::LINES, static_cast<GLsizei>(batch.indexCount),
                    GLConst::UNSIGNED_INT_TYPE, nullptr);
     glBindVertexArray(0);
+    static int errDiagCount = 0;
+    if (errDiagCount < 3 && glGetError) {
+        ++errDiagCount;
+        GLenum err = glGetError();
+        FILE* diag = fopen("model-maker-render.log", "a");
+        if (diag) {
+            fprintf(diag, "GLDIAG GLERROR=0x%X after draw (idx=%zu)\n",
+                    static_cast<unsigned>(err), batch.indexCount);
+            fclose(diag);
+        }
+    }
     glDisable(GLConst::BLEND_MODE);
     glUseProgram(0);
 }
