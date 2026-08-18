@@ -1266,59 +1266,6 @@ void Application::onCanvasPaint() {
     // context'i GDI cizimini bozup "cizgiler kayboldu" hatasi uretiyordu).
     IRenderBackend* activeBackend =
         (renderBackend_ && gpuLinesEnabled_) ? renderBackend_.get() : nullptr;
-    // GL SMOKE TEST: ilk model yuklendiginde/cizildiginde 5 kare boyunca GL
-    // yolunu kendiliginden dene (bos acilista GL batch'i bos kalir, test
-    // anlamsiz olurdu) — sonra GDI'ya don. Teshisten sonra kaldirilacak.
-    static bool smokeDone = false;
-    static bool smokeArmed = false;
-    static int smokeFrame = 0;
-    static std::size_t lastModels = 0;
-    if (!smokeDone) {
-        const std::size_t modelCount = document_.models().size();
-        if (modelCount > 0 && lastModels == 0 && !smokeArmed) {
-            smokeArmed = true;
-            smokeFrame = 0;
-        }
-        lastModels = modelCount;
-        if (smokeArmed) {
-            if (smokeFrame == 0) {
-                if (!backendInitTried_) {
-                    backendInitTried_ = true;
-                    RECT canvasRect{}; GetClientRect(canvas_, &canvasRect);
-                    renderBackend_ = createOpenGLRenderBackend();
-                    if (!renderBackend_ ||
-                        !renderBackend_->initialize(canvas_, canvasRect.right, canvasRect.bottom)) {
-                        renderBackend_ = createGdiRenderBackend();
-                        if (renderBackend_)
-                            renderBackend_->initialize(canvas_, canvasRect.right, canvasRect.bottom);
-                    }
-                }
-                FILE* diag = fopen("model-maker-render.log", "a");
-                if (diag) {
-                    const bool gl = renderBackend_ && renderBackend_->isHardwareAccelerated();
-                    fprintf(diag, "GL-SMOKE %s models=%zu\n",
-                            gl ? "GL-ACTIVE-5-FRAME" : "GL-UNAVAILABLE", modelCount);
-                    fclose(diag);
-                }
-            }
-            if (renderBackend_ && renderBackend_->isHardwareAccelerated() && smokeFrame < 5)
-                activeBackend = renderBackend_.get();
-            if (++smokeFrame >= 5) smokeDone = true;
-        }
-    }
-    {
-        // Her oturumun basinda kosulsuz isaret (static bayrak — paintSequence_
-        // bu noktadan once arttigindan !paintSequence_ calismiyordu).
-        static bool sessionLogged = false;
-        if (!sessionLogged) {
-            sessionLogged = true;
-            FILE* diag = fopen("model-maker-render.log", "a");
-            if (diag) {
-                fprintf(diag, "SESSION-START GDI-ONLY (F10=GL acar)\n");
-                fclose(diag);
-            }
-        }
-    }
     const auto paintStart = std::chrono::steady_clock::now();
     renderer_.draw(dc, client, document_, camera_, mode_, draftView(), activeBackend);
     if (paintSequence_ <= 10 && paintSequence_ > 0)
