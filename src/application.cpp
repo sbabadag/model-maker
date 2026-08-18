@@ -1266,6 +1266,32 @@ void Application::onCanvasPaint() {
     // context'i GDI cizimini bozup "cizgiler kayboldu" hatasi uretiyordu).
     IRenderBackend* activeBackend =
         (renderBackend_ && gpuLinesEnabled_) ? renderBackend_.get() : nullptr;
+    // GL SMOKE TEST: acilista 5 kare boyunca GL yolunu kendiliginden dene
+    // (F10'a gerek kalmadan) — sonra GDI'ya don. Teshisten sonra kaldirilacak.
+    static bool smokeDone = false;
+    if (!smokeDone && paintSequence_ >= 2 && paintSequence_ <= 7) {
+        if (!backendInitTried_) {
+            backendInitTried_ = true;
+            RECT canvasRect{}; GetClientRect(canvas_, &canvasRect);
+            renderBackend_ = createOpenGLRenderBackend();
+            if (!renderBackend_ ||
+                !renderBackend_->initialize(canvas_, canvasRect.right, canvasRect.bottom)) {
+                renderBackend_ = createGdiRenderBackend();
+                if (renderBackend_)
+                    renderBackend_->initialize(canvas_, canvasRect.right, canvasRect.bottom);
+            }
+            FILE* diag = fopen("model-maker-render.log", "a");
+            if (diag) {
+                const bool gl = renderBackend_ && renderBackend_->isHardwareAccelerated();
+                fprintf(diag, "GL-SMOKE %s\n", gl ? "GL-ACTIVE-5-FRAME" : "GL-UNAVAILABLE");
+                fclose(diag);
+            }
+        }
+        if (renderBackend_ && renderBackend_->isHardwareAccelerated())
+            activeBackend = renderBackend_.get();
+    } else if (paintSequence_ > 7) {
+        smokeDone = true;
+    }
     {
         // Her oturumun basinda kosulsuz isaret (static bayrak — paintSequence_
         // bu noktadan once arttigindan !paintSequence_ calismiyordu).
