@@ -313,7 +313,6 @@ private:
     std::optional<SnapResult> temporaryPointDwellCandidate_;
     bool dynamicInputEnabled_{true};
     bool performanceOverlayEnabled_{false}; // F11 performans overlayi
-    bool performanceOverlayEnabled_{};
     bool nodeConstraintVisible_{};
     std::unordered_set<std::string> selectedNodeConstraints_;
     std::optional<POINT> nodeSelectionFirstCorner_;
