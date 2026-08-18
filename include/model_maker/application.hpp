@@ -4,6 +4,7 @@
 #include "model_maker/document.hpp"
 #include "model_maker/drafting.hpp"
 #include "model_maker/render_backend.hpp"
+#include <functional>
 #include "model_maker/render_backend.hpp"
 #include "model_maker/renderer.hpp"
 #include "model_maker/ribbon_layout.hpp"
@@ -86,6 +87,11 @@ public:
     // F1: GPU hatti — GL backend uretimi + F9 ile GDI/GL gecisi
     void toggleGpuLines();
     bool gpuLinesEnabled() const noexcept { return gpuLinesEnabled_; }
+    // Qt durum cubuguna canli metin akisi (GDI status_ STATIC'i Qt penceresinde
+    // gorunmuyor — updateStatus metni bu callback ile Qt'ye tasinir).
+    void setStatusCallback(std::function<void(const std::wstring&)> callback) {
+        statusCallback_ = std::move(callback);
+    }
     IRenderBackend* activeRenderBackend() noexcept { return renderBackend_.get(); }
 
     void startWorkPlaneCommand();
@@ -261,6 +267,7 @@ private:
     std::unique_ptr<IRenderBackend> renderBackend_;
     bool gpuLinesEnabled_ = false; // GL yolu dogrulanana kadar varsayilan GDI (F9 = GL)
     bool backendInitTried_ = false;
+    std::function<void(const std::wstring&)> statusCallback_;
     EditMode mode_{EditMode::Draw2D};
     DrawTool tool_{DrawTool::Line};
     std::optional<Vec3> anchor_;

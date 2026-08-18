@@ -242,6 +242,11 @@ QtMainWindow::QtMainWindow(QWidget* parent)
                  SWP_NOZORDER | SWP_SHOWWINDOW);
 
     statusBar()->showMessage("Hazır");
+    // Application'in updateStatus metni canli olarak Qt durum cubuguna akar
+    // (GPU modu gostergesi dahil — GDI STATIC status cubugu Qt'de gorunmez).
+    app_.setStatusCallback([this](const std::wstring& text) {
+        statusBar()->showMessage(QString::fromStdWString(text));
+    });
 }
 
 QtMainWindow::~QtMainWindow() = default;

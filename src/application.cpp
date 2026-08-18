@@ -2793,6 +2793,7 @@ void Application::updateStatus() {
                         std::to_wstring(total / (1024 * 1024)) + L" MB)";
         }
         progress += L"  |  Uygulama kullanıma açık  |  İptal: DXF Aç düğmesine tekrar basın";
+        if (statusCallback_) statusCallback_(progress);
         SetWindowTextW(status_, progress.c_str());
         return;
     }
@@ -2903,6 +2904,7 @@ void Application::updateStatus() {
                       hover_->point.x, hover_->point.y, hover_->point.z);
         text += coordinates;
     }
+    if (statusCallback_) statusCallback_(text);
     SetWindowTextW(status_, text.c_str());
 }
 
