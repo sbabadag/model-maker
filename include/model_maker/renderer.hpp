@@ -166,6 +166,11 @@ struct DraftView {
     // Fare hover hareketi sırasında: temel geometri önbellekli tampondan
     // basılır (kamera sabit), yalnızca geri bildirim katmanı yeniden çizilir.
     bool motionOverlay{};
+    // Hangisi motion overlay'i kapatti (teshis icin)
+    bool wheelNavigating{};
+    bool rotating{};
+    bool panning{};
+    bool viewCubeActive{};
     bool rasterZoomPreview{};
     bool performanceOverlayEnabled{};
     double rasterZoomFactor{1.0};

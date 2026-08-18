@@ -1154,8 +1154,14 @@ LRESULT Application::handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lPa
         POINT zoomCursor{GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
         ScreenToClient(canvas_, &zoomCursor);
         cursorScreen_ = zoomCursor;
+        const int wheelDelta = GET_WHEEL_DELTA_WPARAM(wParam);
+        // Touchpad/gevsemis tekerlek mikro delta'lari (|delta| < WHEEL_DELTA/4)
+        // gercek zoom sayilmaz: her biri %12 zoom + 350ms wheelNavigating_ acip
+        // motion overlay'i kapatir, hover kareleri fallback'e duser -> flicker.
+        if (wheelDelta == 0 || (wheelDelta > 0 ? wheelDelta : -wheelDelta) < WHEEL_DELTA / 4)
+            return 0;
         RECT zoomClient{}; GetClientRect(canvas_, &zoomClient);
-        const double factor = GET_WHEEL_DELTA_WPARAM(wParam) > 0 ? 1.12 : 1.0 / 1.12;
+        const double factor = wheelDelta > 0 ? 1.12 : 1.0 / 1.12;
         if (!wheelNavigating_) { wheelPreviewFactor_ = 1.0; wheelPreviewOffset_ = {}; }
         if (mode_ == EditMode::Draw2D)
             camera_.zoom2DAt({static_cast<double>(zoomCursor.x), static_cast<double>(zoomCursor.y)}, factor,
@@ -2939,6 +2945,8 @@ DraftView Application::draftView() const {
                                  wheelNavigating_ || snapPreviewActive_;
     view.motionOverlay = snapPreviewActive_ && !rotating_ && !panning2D_ &&
                          !viewCubeManipulating_ && !wheelNavigating_;
+    view.wheelNavigating = wheelNavigating_; view.rotating = rotating_;
+    view.panning = panning2D_; view.viewCubeActive = viewCubeManipulating_;
     view.rasterZoomPreview = document_.models().size() > 20'000 && wheelNavigating_ &&
                              std::abs(wheelPreviewFactor_ - 1.0) > 1e-12;
     view.rasterZoomFactor = wheelPreviewFactor_;

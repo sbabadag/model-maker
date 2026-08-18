@@ -780,8 +780,12 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
                 const char* reason = !motionBaseValid_ ? "NOBASE"
                     : (motionBaseWidth_ != width || motionBaseHeight_ != height)
                         ? "SIZE" : "OVERLAY";
-                fprintf(diag, "FALLBACK %s %dx%d (taban %dx%d)\n", reason,
-                        width, height, motionBaseWidth_, motionBaseHeight_);
+                fprintf(diag, "FALLBACK %s %dx%d (taban %dx%d) %s%s%s%s\n", reason,
+                        width, height, motionBaseWidth_, motionBaseHeight_,
+                        draft.wheelNavigating ? "WHEEL " : "",
+                        draft.rotating ? "ROT " : "",
+                        draft.panning ? "PAN " : "",
+                        draft.viewCubeActive ? "VCUBE " : "");
                 fclose(diag);
             }
         }
