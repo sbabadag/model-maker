@@ -78,8 +78,22 @@ Tarih: 2026-08-18 · Branch: hermes-nightly · Hedef: AutoCAD-paritesi viewport 
 
 ## 6. İlk adım (F1 — GL aktivasyonu)
 
-1. `Application`'a backend üretimi: startup'ta `createOpenGLRenderBackend()` dene, `initialize()` başarısızsa GDI'ye düş (mevcut fallback mantığı renderer'da).
-2. `onCanvasPaint`: backend'i `renderer_.draw(..., backend_.get())` ile geç.
-3. GL yolundaki boşluklar: metin/grid/feedback GDI-üstü kompozit olarak kalır (GL sahne + GDI overlay BitBlt) — mevcut FBO altyapısı bu akış için var.
-4. F9 toggle + `model-maker-render.log`'a `BACKEND GDI|GL` satırı.
-5. Ölçüm: 250k benchmark + F11 overlay karşılaştırması (GDI vs GL) — draw calls, FPS, CPU ms.
+## F1 DURUMU (2026-08-18): UYGULANDI + GÖRSEL DOĞRULANDI ✅
+
+Uygulanan akış (GDI varsayılan, GL yalnız **F6** ile):
+- Backend yalnız ilk F6'da üretilir; init başarısızsa GDI fallback.
+- GL render zinciri: offscreen FBO (şeffaf clear) → glReadPixels (GL_BGRA) →
+  GDI AlphaBlend ile BeginPaint DC'ye kompozit — GL pencere yüzeyine ASLA
+  doğrudan çizmez; context yalnız FBO çizimi sırasında current.
+- GL context'i GİZLİ 1x1 yardımcı pencerede yaşar — canvas'a SetPixelFormat
+  uygulanmaz (canvas'ı %100 siyaha çeviren kök neden buydu, DWM/Qt kompozisyonu
+  GDI sunumunu kapatıyordu; görsel kanıtla tespit edildi).
+- MVP: baz-örneklemeli affine (origin + unit X/Y/Z izdüşümleri) — GDI ile tanım
+  gereği birebir hizalı (viewTransform tabanlı matris kayıyordu).
+- GLDIAG kanıtı (render.log): GLERROR=0x0, readback opaque>0 (607-2304 px),
+  BLIT-OK — rasterizasyon + kompozit çalışıyor.
+- Durum çubuğu: `GPU: GDI | GPU: GL` canlı göstergesi (Qt status callback).
+- AÇIK: (1) kullanıcının faresi serseri tekerlek olayları üretiyor → GDI'da
+  zoom-odaklı flicker (WHEEL-EVT log tanısı devam ediyor); (2) F1 benchmark
+  henüz ölçülmedi — F3/F5'ten ÖNCE F11 overlay ile GDI/GL karşılaştırması
+  şart (rapor kuralı: her fazın benchmark kapısı var).
