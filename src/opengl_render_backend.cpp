@@ -138,6 +138,8 @@ PFNGLENABLEPROC glEnable = nullptr;
 PFNGLDISABLEPROC glDisable = nullptr;
 PFNGLBLENDFUNCPROC glBlendFunc = nullptr;
 PFNGLFINISHPROC glFinish = nullptr;
+// MinGW basliklarinda PFNGLGETERRORPROC tanimli degil — elle bildir.
+using PFNGLGETERRORPROC = GLenum(APIENTRY*)(void);
 PFNGLGETERRORPROC glGetError = nullptr;
 // FBO
 PFNGLGENFRAMEBUFFERSPROC glGenFramebuffers = nullptr;
