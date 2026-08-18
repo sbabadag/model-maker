@@ -1056,6 +1056,11 @@ LRESULT Application::handleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
     case WM_SETFOCUS:
         if (canvas_) SetFocus(canvas_);
         return 0;
+    case WM_KEYDOWN:
+        // Canvas odagi yokken F10 dis pencereye duser — toggle'i burada da
+        // yakala (canvas odakliyken canvasProc halledince buraya gelmez).
+        if (wParam == VK_F10) { toggleGpuLines(); return 0; }
+        return 0;
     case WM_DESTROY:
         if (renderBackend_) { renderBackend_->shutdown(); renderBackend_.reset(); }
         if (dxfImportThread_.joinable()) dxfImportThread_.request_stop();
