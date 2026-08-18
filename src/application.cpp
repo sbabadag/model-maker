@@ -1266,31 +1266,45 @@ void Application::onCanvasPaint() {
     // context'i GDI cizimini bozup "cizgiler kayboldu" hatasi uretiyordu).
     IRenderBackend* activeBackend =
         (renderBackend_ && gpuLinesEnabled_) ? renderBackend_.get() : nullptr;
-    // GL SMOKE TEST: acilista 5 kare boyunca GL yolunu kendiliginden dene
-    // (F10'a gerek kalmadan) — sonra GDI'ya don. Teshisten sonra kaldirilacak.
+    // GL SMOKE TEST: ilk model yuklendiginde/cizildiginde 5 kare boyunca GL
+    // yolunu kendiliginden dene (bos acilista GL batch'i bos kalir, test
+    // anlamsiz olurdu) — sonra GDI'ya don. Teshisten sonra kaldirilacak.
     static bool smokeDone = false;
-    if (!smokeDone && paintSequence_ >= 2 && paintSequence_ <= 7) {
-        if (!backendInitTried_) {
-            backendInitTried_ = true;
-            RECT canvasRect{}; GetClientRect(canvas_, &canvasRect);
-            renderBackend_ = createOpenGLRenderBackend();
-            if (!renderBackend_ ||
-                !renderBackend_->initialize(canvas_, canvasRect.right, canvasRect.bottom)) {
-                renderBackend_ = createGdiRenderBackend();
-                if (renderBackend_)
-                    renderBackend_->initialize(canvas_, canvasRect.right, canvasRect.bottom);
-            }
-            FILE* diag = fopen("model-maker-render.log", "a");
-            if (diag) {
-                const bool gl = renderBackend_ && renderBackend_->isHardwareAccelerated();
-                fprintf(diag, "GL-SMOKE %s\n", gl ? "GL-ACTIVE-5-FRAME" : "GL-UNAVAILABLE");
-                fclose(diag);
-            }
+    static bool smokeArmed = false;
+    static int smokeFrame = 0;
+    static std::size_t lastModels = 0;
+    if (!smokeDone) {
+        const std::size_t modelCount = document_.models().size();
+        if (modelCount > 0 && lastModels == 0 && !smokeArmed) {
+            smokeArmed = true;
+            smokeFrame = 0;
         }
-        if (renderBackend_ && renderBackend_->isHardwareAccelerated())
-            activeBackend = renderBackend_.get();
-    } else if (paintSequence_ > 7) {
-        smokeDone = true;
+        lastModels = modelCount;
+        if (smokeArmed) {
+            if (smokeFrame == 0) {
+                if (!backendInitTried_) {
+                    backendInitTried_ = true;
+                    RECT canvasRect{}; GetClientRect(canvas_, &canvasRect);
+                    renderBackend_ = createOpenGLRenderBackend();
+                    if (!renderBackend_ ||
+                        !renderBackend_->initialize(canvas_, canvasRect.right, canvasRect.bottom)) {
+                        renderBackend_ = createGdiRenderBackend();
+                        if (renderBackend_)
+                            renderBackend_->initialize(canvas_, canvasRect.right, canvasRect.bottom);
+                    }
+                }
+                FILE* diag = fopen("model-maker-render.log", "a");
+                if (diag) {
+                    const bool gl = renderBackend_ && renderBackend_->isHardwareAccelerated();
+                    fprintf(diag, "GL-SMOKE %s models=%zu\n",
+                            gl ? "GL-ACTIVE-5-FRAME" : "GL-UNAVAILABLE", modelCount);
+                    fclose(diag);
+                }
+            }
+            if (renderBackend_ && renderBackend_->isHardwareAccelerated() && smokeFrame < 5)
+                activeBackend = renderBackend_.get();
+            if (++smokeFrame >= 5) smokeDone = true;
+        }
     }
     {
         // Her oturumun basinda kosulsuz isaret (static bayrak — paintSequence_
