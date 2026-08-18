@@ -794,8 +794,9 @@ void OpenGLRenderBackend::renderBatch(const GpuLineBatch& batch, const Camera& c
         const float glPy = (1.0f - ndcY) * 0.5f * static_cast<float>(height);
         FILE* diag = fopen("model-maker-render.log", "a");
         if (diag) {
-            fprintf(diag, "GLDIAG MVP v0=(%.2f,%.2f,%.2f) clip=(%.2f,%.2f) idx=%zu "
+            fprintf(diag, "GLDIAG MVP proj=%s v0=(%.2f,%.2f,%.2f) clip=(%.2f,%.2f) idx=%zu "
                     "gdiPx=(%.1f,%.1f) glPx=(%.1f,%.1f) delta=(%.1f,%.1f)\n",
+                    useProjection2D ? "2D" : "3D",
                     vx, vy, vz, ndcX, ndcY, batch.indexCount,
                     gdiP.x, gdiP.y, glPx, glPy, glPx - gdiP.x, glPy - gdiP.y);
             fclose(diag);
