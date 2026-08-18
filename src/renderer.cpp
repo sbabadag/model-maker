@@ -711,8 +711,8 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
     // temel geometriyi hiç yeniden çizme — komutlar obje sayısından bağımsızlaşır.
     if (draft.motionOverlay && !draft.snapOnly && !useGpuLines && motionBaseValid_ &&
         motionBaseWidth_ == width && motionBaseHeight_ == height) {
-        if (fastPathSequence_ < 20) {
-            ++fastPathSequence_;
+        if (lastMotionPath_ != 0) {
+            lastMotionPath_ = 0;
             FILE* diag = fopen("model-maker-render.log", "a");
             if (diag) { fprintf(diag, "FASTPATH\n"); fclose(diag); }
         }
@@ -773,8 +773,8 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
     }
 
     if (draft.interactiveNavigation) {
-        if (fallbackSequence_ < 20) {
-            ++fallbackSequence_;
+        if (lastMotionPath_ != 1) {
+            lastMotionPath_ = 1;
             FILE* diag = fopen("model-maker-render.log", "a");
             if (diag) { fprintf(diag, "FALLBACK\n"); fclose(diag); }
         }
@@ -944,6 +944,20 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         DeleteObject(pen);
     }
     } // !draft.snapOnly
+    if (draft.interactiveNavigation && !draft.snapOnly && !useGpuLines &&
+        !draft.selectedModels.empty()) {
+        // FALLBACK interaktif karelerde secim vurgusu: fast path disinda kalan
+        // motion karelerinde yesil vurgu kaybolup 'flicker' yapiyordu. Ayni vurgu
+        // tum kare tiplerinde cizilsin (b188bae deseni, motion-base oncesi).
+        HPEN selectedPen = CreatePen(PS_SOLID, 3, RGB(90, 255, 145));
+        SelectObject(dc, selectedPen);
+        for (const auto index : draft.selectedModels) {
+            if (index < document.models().size() && document.modelIsEditable(index))
+                drawModel(document.models()[index]);
+        }
+        SelectObject(dc, stockPen);
+        DeleteObject(selectedPen);
+    }
     if (!draft.snapOnly && !draft.interactiveNavigation && !useGpuLines) {
         // Tam kare: temiz taban (arka plan + grid + eksenler + modeller) — henüz
         // geri bildirim katmanı çizilmedi. Motion tabanını tazele.

@@ -219,6 +219,7 @@ private:
     mutable int motionBaseHeight_{};
     mutable bool motionBaseValid_{};
     mutable int fastPathSequence_{};
+    mutable int lastMotionPath_{-1}; // 0=FAST 1=FALLBACK — gecis logu icin
     mutable int fallbackSequence_{};
     mutable FramePerformanceTracker performanceTracker_{};
     mutable FrameIndexStampSet selectedIndexSet_{};
