@@ -172,8 +172,8 @@ std::size_t Document::setModelLayer(const std::vector<std::size_t>& indices, con
 }
 
 std::size_t Document::setModelColor(const std::vector<std::size_t>& indices,
-    ++revision_;
                                     std::optional<std::uint32_t> color) {
+    ++revision_;
     std::size_t changed{};
     for (const auto index : uniqueIndices(indices)) {
         if (!modelIsEditable(index)) continue;
@@ -194,8 +194,8 @@ std::size_t Document::setModelColor(const std::vector<std::size_t>& indices,
 }
 
 std::size_t Document::setModelProfile(const std::vector<std::size_t>& indices,
-    ++revision_;
                                       const std::string& profileName) {
+    ++revision_;
     std::size_t changed{};
     for (const auto index : uniqueIndices(indices)) {
         if (!modelIsEditable(index)) continue;
