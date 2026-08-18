@@ -782,13 +782,22 @@ void OpenGLRenderBackend::renderBatch(const GpuLineBatch& batch, const Camera& c
         const float cx = mvp[0] * vx + mvp[4] * vy + mvp[8] * vz + mvp[12];
         const float cy = mvp[1] * vx + mvp[5] * vy + mvp[9] * vz + mvp[13];
         const float cw = mvp[3] * vx + mvp[7] * vy + mvp[11] * vz + mvp[15];
+        // GDI ile hizalama tanisi: ayni vertex'in GDI izdusumu (project2D/project)
+        // ve GL matrisinden hesaplanan piksel konumu — delta 0 ise birebir.
+        const Vec3 v0world{static_cast<double>(vx), static_cast<double>(vy),
+                           static_cast<double>(vz)};
+        const Vec2 gdiP = useProjection2D ? camera.project2D(v0world, width, height)
+                                          : camera.project(v0world, width, height);
+        const float ndcX = cw != 0.0f ? cx / cw : cx;
+        const float ndcY = cw != 0.0f ? cy / cw : cy;
+        const float glPx = (ndcX + 1.0f) * 0.5f * static_cast<float>(width);
+        const float glPy = (1.0f - ndcY) * 0.5f * static_cast<float>(height);
         FILE* diag = fopen("model-maker-render.log", "a");
         if (diag) {
-            fprintf(diag, "GLDIAG MVP scaleXY=(%.3f,%.3f) trans=(%.1f,%.1f) "
-                    "v0=(%.2f,%.2f,%.2f) clip=(%.2f,%.2f,w=%.2f) idx=%zu\n",
-                    mvp[0], mvp[5], mvp[12], mvp[13], vx, vy, vz,
-                    cw != 0.0f ? cx / cw : cx, cw != 0.0f ? cy / cw : cy, cw,
-                    batch.indexCount);
+            fprintf(diag, "GLDIAG MVP v0=(%.2f,%.2f,%.2f) clip=(%.2f,%.2f) idx=%zu "
+                    "gdiPx=(%.1f,%.1f) glPx=(%.1f,%.1f) delta=(%.1f,%.1f)\n",
+                    vx, vy, vz, ndcX, ndcY, batch.indexCount,
+                    gdiP.x, gdiP.y, glPx, glPy, glPx - gdiP.x, glPy - gdiP.y);
             fclose(diag);
         }
     }
