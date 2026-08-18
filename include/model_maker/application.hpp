@@ -81,6 +81,12 @@ public:
     void finishDxfImport();
     void exportDxf();
 
+    // Work plane (UCS) — Qt menü/ribbon erişimi için public
+    void startWorkPlaneCommand();
+    void cancelWorkPlaneCommand();
+    void commitWorkPlanePoint(const Vec3& point);
+    void resetWorkPlane();
+
 private:
     static LRESULT CALLBACK windowProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
     static LRESULT CALLBACK canvasProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
@@ -109,12 +115,8 @@ private:
     void executeCommand(int id);
     void cancelTransformCommand();
     void setStandardView(StandardView view);
-    void startWorkPlaneCommand();
     void cancelZoomWindow2D();
     void completeZoomWindow2D(int x, int y);
-    void cancelWorkPlaneCommand();
-    void commitWorkPlanePoint(const Vec3& point);
-    void resetWorkPlane();
     void commitTransformPoint(const Vec3& point);
     bool applyTrimExtendTarget(std::size_t target, const Vec3& pickPoint);
     std::optional<std::size_t> trimExtendTargetAt(int x, int y) const;
