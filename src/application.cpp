@@ -1199,7 +1199,7 @@ LRESULT Application::handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lPa
                 clearTemporaryTracking();
             }
         }
-        else if (wParam == VK_F9) toggleGpuLines();
+        else if (wParam == VK_F10) toggleGpuLines(); // F9 = GRID SNAP (README), cakismasin
         else if (wParam == VK_F9) gridSnapEnabled_ = !gridSnapEnabled_;
         else if (wParam == VK_F10) {
             polarTrackingEnabled_ = !polarTrackingEnabled_;
