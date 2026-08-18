@@ -1256,22 +1256,9 @@ void Application::onCanvasPaint() {
     RECT client{};
     GetClientRect(canvas_, &client);
     const bool wasSnapPreview = snapPreviewActive_;
-    // F1: GPU hatti — ilk boyamada backend uretilir (GL basarisizsa GDI),
-    // F9 ile GDI/GL arasinda gecis yapilir.
-    if (!backendInitTried_) {
-        backendInitTried_ = true;
-        renderBackend_ = createOpenGLRenderBackend();
-        if (!renderBackend_ || !renderBackend_->initialize(canvas_, client.right, client.bottom)) {
-            renderBackend_ = createGdiRenderBackend();
-            if (renderBackend_) renderBackend_->initialize(canvas_, client.right, client.bottom);
-        }
-        FILE* diag = fopen("model-maker-render.log", "a");
-        if (diag) {
-            const bool glActive = renderBackend_ && renderBackend_->isHardwareAccelerated();
-            fprintf(diag, "BACKEND %s\n", glActive ? "GL" : "GDI");
-            fclose(diag);
-        }
-    }
+    // F1: GPU hatti — backend YALNIZ F9 ile GL acilinca uretilir; GDI
+    // varsayilanda canvas'a hicbir GL dokunmaz (ilk boyamada init edilen GL
+    // context'i GDI cizimini bozup "cizgiler kayboldu" hatasi uretiyordu).
     IRenderBackend* activeBackend =
         (renderBackend_ && gpuLinesEnabled_) ? renderBackend_.get() : nullptr;
     const auto paintStart = std::chrono::steady_clock::now();
@@ -2979,6 +2966,18 @@ DraftView Application::draftView() const {
 
 void Application::toggleGpuLines() {
     gpuLinesEnabled_ = !gpuLinesEnabled_;
+    if (gpuLinesEnabled_ && !backendInitTried_) {
+        // Ilk GL acilisinda backend uretilir (GL basarisizsa GDI'ye dus).
+        backendInitTried_ = true;
+        RECT canvasRect{}; GetClientRect(canvas_, &canvasRect);
+        renderBackend_ = createOpenGLRenderBackend();
+        if (!renderBackend_ ||
+            !renderBackend_->initialize(canvas_, canvasRect.right, canvasRect.bottom)) {
+            renderBackend_ = createGdiRenderBackend();
+            if (renderBackend_)
+                renderBackend_->initialize(canvas_, canvasRect.right, canvasRect.bottom);
+        }
+    }
     FILE* diag = fopen("model-maker-render.log", "a");
     if (diag) {
         const bool glWillBeActive = gpuLinesEnabled_ && renderBackend_ &&
