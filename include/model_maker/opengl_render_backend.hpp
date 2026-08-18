@@ -114,7 +114,7 @@ private:
     void ensureBatch(const std::vector<std::pair<std::size_t, WireframeModel>>& models);
     void uploadBatch(GpuLineBatch& batch);
     void renderBatch(const GpuLineBatch& batch, const Camera& camera,
-                     int width, int height);
+                     int width, int height, bool useProjection2D = false);
     void ensureFbo(int width, int height);
     void ensureBlitBuffer(int width, int height);
     void cleanupGL();
