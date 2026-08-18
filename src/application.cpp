@@ -1253,6 +1253,7 @@ LRESULT Application::handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lPa
             else clearTemporaryTracking();
         }
         else if (wParam == VK_F12) dynamicInputEnabled_ = !dynamicInputEnabled_;
+        else if (wParam == VK_F11) { performanceOverlayEnabled_ = !performanceOverlayEnabled_; invalidateCanvas(); }
         else if (wParam == 'Z' && (GetKeyState(VK_CONTROL) & 0x8000)) undo();
         else if (wParam == 'Y' && (GetKeyState(VK_CONTROL) & 0x8000)) redo();
         else if (wParam == 'N' && (GetKeyState(VK_CONTROL) & 0x8000)) newDocument();
@@ -2990,6 +2991,7 @@ DraftView Application::draftView() const {
     if (hover_) { view.cursor = hover_->point; view.snapType = hover_->type; }
     view.drawingActive = drawingActive_; view.snapEnabled = snapEnabled_;
     view.gridSnapEnabled = gridSnapEnabled_; view.dynamicInputEnabled = dynamicInputEnabled_;
+    view.performanceOverlayEnabled = performanceOverlayEnabled_;
     view.polarTrackingEnabled = polarTrackingEnabled_; view.polarTrackingLocked = polarTrackingLocked_;
     view.temporaryTrackingLocked = temporaryTrackingLocked_;
     view.temporaryTrackingPoints = temporaryTrackingPoints_;

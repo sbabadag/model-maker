@@ -312,6 +312,7 @@ private:
     std::vector<Vec3> temporaryDerivedPoints_;
     std::optional<SnapResult> temporaryPointDwellCandidate_;
     bool dynamicInputEnabled_{true};
+    bool performanceOverlayEnabled_{false}; // F11 performans overlayi
     bool performanceOverlayEnabled_{};
     bool nodeConstraintVisible_{};
     std::unordered_set<std::string> selectedNodeConstraints_;
