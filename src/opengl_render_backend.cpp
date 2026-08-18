@@ -588,7 +588,7 @@ bool OpenGLRenderBackend::blitToDC(void* target, int width, int height) {
 bool OpenGLRenderBackend::renderBatchToDc(
     const std::vector<std::pair<std::size_t, WireframeModel>>& models,
     const Camera& camera, int width, int height, void* targetHdc,
-    bool useProjection2D) {
+    bool useProjection2D, std::uint64_t contentRevision) {
     if (!initialized_ || models.empty()) return false;
     const auto glDiag = [this](const char* step) {
         if (glDiagCount_ >= 8) return;
@@ -613,7 +613,7 @@ bool OpenGLRenderBackend::renderBatchToDc(
     glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
     glClear(GLConst::COLOR_BUFFER_BIT);
 
-    ensureBatch(models);
+    ensureBatch(models, contentRevision);
     glDiag("BATCH-OK");
     if (lineBatch_.indexCount != 0) {
         renderBatch(lineBatch_, camera, width, height, useProjection2D);
@@ -700,7 +700,7 @@ void OpenGLRenderBackend::renderWireframeBatch(
     const std::vector<std::pair<std::size_t, WireframeModel>>& models,
     const Camera& camera) {
     if (!initialized_ || models.empty()) return;
-    ensureBatch(models);
+    ensureBatch(models, 0);
     if (lineBatch_.indexCount == 0) return;
     renderBatch(lineBatch_, camera, width_, height_);
     perFrameMetricsReset_ = false;
@@ -709,10 +709,16 @@ void OpenGLRenderBackend::renderWireframeBatch(
 }
 
 void OpenGLRenderBackend::ensureBatch(
-    const std::vector<std::pair<std::size_t, WireframeModel>>& models) {
+    const std::vector<std::pair<std::size_t, WireframeModel>>& models,
+    std::uint64_t contentRevision) {
     std::size_t totalEdges = 0;
     for (const auto& [idx, model] : models) totalEdges += model.edges().size();
-    std::size_t tag = models.size() ^ (totalEdges << 16);
+    // F5: icerik surumu birincil etiket — pozisyon degistiren komutlar
+    // (move/trim) boyut ayni kalsa da batch'i yeniler (eski tag bayat
+    // geometri birakiyordu). Surum yoksa boyut bazli eski davranis.
+    std::size_t tag = contentRevision
+        ? static_cast<std::size_t>(contentRevision)
+        : (models.size() ^ (totalEdges << 16));
     if (tag == lineBatch_.versionTag && !lineBatch_.dirty) return;
 
     lineBatch_.versionTag = tag;
