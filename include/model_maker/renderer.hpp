@@ -223,6 +223,7 @@ private:
     mutable int motionBaseWidth_{};
     mutable int motionBaseHeight_{};
     mutable bool motionBaseValid_{};
+    mutable POINT motionBaseProbe_[4]{}; // taban cekildigindeki kamera parmak izi
     mutable int fastPathSequence_{};
     mutable int lastMotionPath_{-1}; // 0=FAST 1=FALLBACK — gecis logu icin
     mutable int fallbackSequence_{};

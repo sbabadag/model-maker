@@ -707,9 +707,21 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         }
     };
 
-    // Hızlı yol: geçerli motion tabanı varsa (kamera sabit hover hareketi)
-    // temel geometriyi hiç yeniden çizme — komutlar obje sayısından bağımsızlaşır.
-    if (draft.motionOverlay && !draft.snapOnly && !useGpuLines && motionBaseValid_ &&
+    // Hızlı yol: geçerli motion tabanı VARSA ve kamera taban çekildiğinden beri
+    // değişmediyse (parmak izi) temel geometriyi hiç yeniden çizme. motionOverlay
+    // bayrağına güvenilmez: spurious navigasyon bayrakları (touchpad mikro
+    // delta'lari vb.) hover karelerini fallback'e düşürüp FAST/FALLBACK karışımından
+    // seçim vurgusunda flicker üretiyordu — karar artık gerçek kamera durumuna bağlı.
+    const POINT probe0 = projectPoint(Vec3{0.0, 0.0, 0.0});
+    const POINT probe1 = projectPoint(Vec3{1.0, 0.0, 0.0});
+    const POINT probe2 = projectPoint(Vec3{0.0, 1.0, 0.0});
+    const POINT probe3 = projectPoint(Vec3{0.0, 0.0, 1.0});
+    const bool cameraUnchanged =
+        motionBaseProbe_[0].x == probe0.x && motionBaseProbe_[0].y == probe0.y &&
+        motionBaseProbe_[1].x == probe1.x && motionBaseProbe_[1].y == probe1.y &&
+        motionBaseProbe_[2].x == probe2.x && motionBaseProbe_[2].y == probe2.y &&
+        motionBaseProbe_[3].x == probe3.x && motionBaseProbe_[3].y == probe3.y;
+    if (!draft.snapOnly && !useGpuLines && motionBaseValid_ && cameraUnchanged &&
         motionBaseWidth_ == width && motionBaseHeight_ == height) {
         if (lastMotionPath_ != 0) {
             lastMotionPath_ = 0;
@@ -955,26 +967,18 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         DeleteObject(pen);
     }
     } // !draft.snapOnly
-    if (draft.interactiveNavigation && !draft.snapOnly && !useGpuLines &&
-        !draft.selectedModels.empty()) {
-        // FALLBACK interaktif karelerde secim vurgusu: fast path disinda kalan
-        // motion karelerinde yesil vurgu kaybolup 'flicker' yapiyordu. Ayni vurgu
-        // tum kare tiplerinde cizilsin (b188bae deseni, motion-base oncesi).
-        HPEN selectedPen = CreatePen(PS_SOLID, 3, RGB(90, 255, 145));
-        SelectObject(dc, selectedPen);
-        for (const auto index : draft.selectedModels) {
-            if (index < document.models().size() && document.modelIsEditable(index))
-                drawModel(document.models()[index]);
-        }
-        SelectObject(dc, stockPen);
-        DeleteObject(selectedPen);
-    }
     if (!draft.snapOnly && !draft.interactiveNavigation && !useGpuLines) {
         // Tam kare: temiz taban (arka plan + grid + eksenler + modeller) — henüz
         // geri bildirim katmanı çizilmedi. Motion tabanını tazele.
         ensureMotionBase(target, width, height);
         BitBlt(motionBaseDc_, 0, 0, width, height, dc, 0, 0, SRCCOPY);
         motionBaseValid_ = true;
+        // Kamera parmak izi: taban yalniz bu kamera altinda kullanilabilir
+        // (fallback karelerde lambda zaten secim vurgusunu ciziyor — 1738).
+        motionBaseProbe_[0] = projectPoint(Vec3{0.0, 0.0, 0.0});
+        motionBaseProbe_[1] = projectPoint(Vec3{1.0, 0.0, 0.0});
+        motionBaseProbe_[2] = projectPoint(Vec3{0.0, 1.0, 0.0});
+        motionBaseProbe_[3] = projectPoint(Vec3{0.0, 0.0, 1.0});
     }
 
     if (!draft.interactiveNavigation) {
