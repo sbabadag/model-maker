@@ -3057,19 +3057,28 @@ DraftView Application::draftView() const {
 
 void Application::runRenderBenchmark() {
     if (!canvas_) return;
-    if (document_.models().empty()) {
-        // Sentetik benchmark geometrisi: 20k deterministik cizgi (LCG).
+    // Uc olcekte olc: 20k / 100k / 250k — GL'nin sabit kompozit maliyetine
+    // karsi GDI'nin cizgi-basina maliyeti; kirilma noktasi bu uc noktadan cikar.
+    const std::size_t scales[] = {20'000, 100'000, 250'000};
+    for (const std::size_t scale : scales) {
+        document_.clear();
         std::uint32_t seed = 12345u;
         const auto rnd = [&seed]() {
             seed = seed * 1664525u + 1013904223u;
             return (seed >> 8) / 16777215.0; // [0,1)
         };
-        document_.reserveModels(20'000);
-        for (int i = 0; i < 20'000; ++i) {
+        document_.reserveModels(scale);
+        for (std::size_t i = 0; i < scale; ++i) {
             const Vec3 a{(rnd() - 0.5) * 100.0, (rnd() - 0.5) * 100.0, (rnd() - 0.5) * 100.0};
             const Vec3 b{a.x + (rnd() - 0.5) * 4.0, a.y + (rnd() - 0.5) * 4.0, a.z + (rnd() - 0.5) * 4.0};
             document_.addModel(WireframeModel::line(a, b));
         }
+        FILE* scaleLog = fopen("model-maker-render.log", "a");
+        if (scaleLog) { fprintf(scaleLog, "BENCH-SCALE %zu\n", scale); fclose(scaleLog); }
+        if (gpuLinesEnabled_) toggleGpuLines();
+        benchBackend("GDI");
+        if (!gpuLinesEnabled_) toggleGpuLines();
+        benchBackend("GL");
     }
     {
         FILE* diag = fopen("model-maker-render.log", "a");
@@ -3125,12 +3134,6 @@ void Application::runRenderBenchmark() {
             fclose(f);
         }
     };
-
-    if (gpuLinesEnabled_) toggleGpuLines();
-    benchBackend("GDI");
-
-    if (!gpuLinesEnabled_) toggleGpuLines();
-    benchBackend("GL");
 
     if (gpuLinesEnabled_ != originalGpu) toggleGpuLines();
     mode_ = originalMode;
