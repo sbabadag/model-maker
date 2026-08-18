@@ -567,13 +567,23 @@ bool OpenGLRenderBackend::renderBatchToDc(
     const std::vector<std::pair<std::size_t, WireframeModel>>& models,
     const Camera& camera, int width, int height, void* targetHdc) {
     if (!initialized_ || models.empty()) return false;
+    static int glDiagCount = 0;
+    const auto glDiag = [](const char* step) {
+        if (glDiagCount >= 8) return;
+        FILE* diag = fopen("model-maker-render.log", "a");
+        if (diag) { fprintf(diag, "GLDIAG %d %s\n", glDiagCount, step); fclose(diag); }
+    };
     HDC hdc = static_cast<HDC>(deviceContext_);
-    if (!wglMakeCurrent(hdc, static_cast<HGLRC>(glContext_))) return false;
+    if (!wglMakeCurrent(hdc, static_cast<HGLRC>(glContext_))) {
+        ++glDiagCount; glDiag("MAKECURRENT-FAIL"); return false;
+    }
+    glDiag("CURRENT-OK");
 
     drawCalls_ = 0; uploadBytes_ = 0; renderedLines_ = 0;
 
     ensureFbo(width, height);
-    if (fbo_ == 0) { wglMakeCurrent(hdc, nullptr); return false; }
+    if (fbo_ == 0) { ++glDiagCount; glDiag("FBO-FAIL"); wglMakeCurrent(hdc, nullptr); return false; }
+    glDiag("FBO-OK");
     glBindFramebuffer(GLConst::FRAMEBUFFER, fbo_);
     glViewport(0, 0, width, height);
     // Seffaf zemin: GDI icerigi AlphaBlend ile alttan gorunur, yalniz
@@ -582,6 +592,7 @@ bool OpenGLRenderBackend::renderBatchToDc(
     glClear(GLConst::COLOR_BUFFER_BIT);
 
     ensureBatch(models);
+    glDiag("BATCH-OK");
     if (lineBatch_.indexCount != 0) {
         renderBatch(lineBatch_, camera, width, height);
         drawCalls_ = 1;
@@ -592,10 +603,30 @@ bool OpenGLRenderBackend::renderBatchToDc(
     ensureBlitBuffer(width, height);
     glReadPixels(0, 0, width, height, GLConst::BGRA_EXT, GLConst::UNSIGNED_BYTE_TYPE,
                  blitBuffer_.data());
+    // Readback orneklemesi: merkez piksel + kose + ilk saydamlik taramasi
+    if (glDiagCount < 5 && !blitBuffer_.empty()) {
+        const auto px = [&](std::size_t idx) {
+            return static_cast<unsigned>(blitBuffer_[idx]);
+        };
+        const std::size_t center = (static_cast<std::size_t>(height / 2) * width + width / 2) * 4;
+        int opaque = 0; const std::size_t scan = std::min<std::size_t>(blitBuffer_.size(), 4 * 20000);
+        for (std::size_t i = 3; i < scan; i += 4) if (blitBuffer_[i] > 32) ++opaque;
+        FILE* diag = fopen("model-maker-render.log", "a");
+        if (diag) {
+            fprintf(diag,
+                "GLDIAG %d READBACK center=%u,%u,%u,%u opaqueSampled=%d/%zu lines=%zu\n",
+                glDiagCount, px(center), px(center + 1), px(center + 2), px(center + 3),
+                opaque, scan / 4, renderedLines_);
+            fclose(diag);
+        }
+    }
     glBindFramebuffer(GLConst::FRAMEBUFFER, 0);
     wglMakeCurrent(hdc, nullptr);
 
-    return blitToDC(targetHdc, width, height);
+    const bool blitOk = blitToDC(targetHdc, width, height);
+    glDiag(blitOk ? "BLIT-OK" : "BLIT-FAIL");
+    ++glDiagCount;
+    return blitOk;
 }
 
 // ── Shader compilation ───────────────────────────────────────────
