@@ -259,7 +259,7 @@ private:
     Renderer renderer_;
     ViewCubeRenderer viewCubeRenderer_;
     std::unique_ptr<IRenderBackend> renderBackend_;
-    bool gpuLinesEnabled_ = true;
+    bool gpuLinesEnabled_ = false; // GL yolu dogrulanana kadar varsayilan GDI (F9 = GL)
     bool backendInitTried_ = false;
     EditMode mode_{EditMode::Draw2D};
     DrawTool tool_{DrawTool::Line};

@@ -312,13 +312,20 @@ void computeMVPMatrix(const Camera& camera, int width, int height, float* out) {
     Vec3 rY = camera.viewTransform({0.0, 1.0, 0.0});
     Vec3 rZ = camera.viewTransform({0.0, 0.0, 1.0});
 
-    constexpr double pixelsPerUnit = 65.0;
-    const double zoom = camera.zoom();
-    const double scale = pixelsPerUnit * zoom;
-    Vec2 screen = camera.project({0.0, 0.0, 0.0}, width, height);
+    // ppu'yu kameradan ORNEKLE: sabit 65.0 degeri viewport buyuklugune ve zoom
+    // gecmisine gore degisen gercek GDI olcegiyle uyusmuyor, GL cizgileri grid'e
+    // gore yanlis yerlere dusuyordu ("koordinatlar bozulmus" + GDI geri bildirim
+    // katmaninin ortulmesi). Iki izdusum farki = tam ppu (kamera ic yapisindan
+    // bagimsiz, 2B/3B her iki modda).
+    const Vec2 originScreen = camera.project({0.0, 0.0, 0.0}, width, height);
+    const Vec2 unitXScreen = camera.project({1.0, 0.0, 0.0}, width, height);
+    const Vec2 unitYScreen = camera.project({0.0, 1.0, 0.0}, width, height);
+    const double scale = std::max(
+        std::hypot(unitXScreen.x - originScreen.x, unitXScreen.y - originScreen.y),
+        std::hypot(unitYScreen.x - originScreen.x, unitYScreen.y - originScreen.y));
     Vec3 rotCenter{
-        (static_cast<double>(width) * 0.5 - screen.x) / scale,
-        (screen.y - static_cast<double>(height) * 0.5) / scale,
+        (static_cast<double>(width) * 0.5 - originScreen.x) / scale,
+        (originScreen.y - static_cast<double>(height) * 0.5) / scale,
         0.0
     };
 
