@@ -35,6 +35,7 @@ double boxVolume(double x, double y, double z) {
     return props.Mass();
 }
 
+#ifndef MM_OCC_NO_STEP
 bool writeBoxStep(const std::filesystem::path& path, double x, double y, double z) {
     STEPControl_Writer writer;
     if (writer.Transfer(BRepPrimAPI_MakeBox(x, y, z).Shape(),
@@ -52,6 +53,7 @@ double readStepVolume(const std::filesystem::path& path) {
     BRepGProp::VolumeProperties(reader.OneShape(), props);
     return props.Mass();
 }
+#endif // MM_OCC_NO_STEP
 
 WireframeModel shapeToWireframe(const TopoDS_Shape& shape, int circleSegments) {
     // Once cakisan kenarlari birlestir (kutu: 24 topolojik kenar -> 12

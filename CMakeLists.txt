@@ -134,7 +134,7 @@ if(MODELMAKER_OCC_READY AND WIN32 AND BUILD_OCC_BRIDGE_DLL)
     target_link_libraries(model_maker_occ_bridge PUBLIC model_maker_core ${OCC_BRIDGE_LIBS})
     target_link_directories(model_maker_occ_bridge PUBLIC ${OCC_ROOT}/lib)
     target_include_directories(model_maker_occ_bridge PUBLIC include ${OCC_INCLUDE_DIR})
-    target_compile_definitions(model_maker_occ_bridge PRIVATE MM_HAS_OCC _USE_MATH_DEFINES)
+    target_compile_definitions(model_maker_occ_bridge PRIVATE MM_HAS_OCC _USE_MATH_DEFINES MM_OCC_NO_STEP)
     # GCC runtime'ini DLL icine gom — Qt uygulamasinin (GCC 13) libstdc++'si
     # ile MSYS2'nin (GCC 16) libstdc++'si ayni dizinde cakisinca cokme oluyor.
     target_link_options(model_maker_occ_bridge PRIVATE -static-libgcc -static-libstdc++)
