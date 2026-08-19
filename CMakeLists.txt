@@ -1,4 +1,15 @@
 cmake_minimum_required(VERSION 3.20)
+
+# Derleyiciyi Qt'nin mingw1310 toolchain'ine sabitle — PATH'teki ilk g++
+# (ornegin scoop'un GCC'si) Qt6 ile ABI uyusmazligi ve OCC import
+# kutuphaneleriyle surum karisikligi yaratir. Qt yoksa PATH'teki derleyici
+# kullanilir (Linux dahil).
+set(QT_ROOT "C:/Qt/6.9.3/mingw_64" CACHE PATH "Qt6 root directory")
+if(WIN32 AND EXISTS "C:/Qt/Tools/mingw1310_64/bin/g++.exe")
+    set(CMAKE_CXX_COMPILER "C:/Qt/Tools/mingw1310_64/bin/g++.exe" CACHE FILEPATH "C++ compiler" FORCE)
+    set(CMAKE_C_COMPILER "C:/Qt/Tools/mingw1310_64/bin/gcc.exe" CACHE FILEPATH "C compiler" FORCE)
+endif()
+
 project(ModelMaker VERSION 0.1.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
@@ -9,7 +20,6 @@ set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
 # Qt6 (optional for the ribbon UI). Override with -DQT_ROOT=<path>.
-set(QT_ROOT "C:/Qt/6.9.3/mingw_64" CACHE PATH "Qt6 root directory")
 list(PREPEND CMAKE_PREFIX_PATH "${QT_ROOT}")
 find_package(Qt6 QUIET COMPONENTS Widgets Core Gui)
 
@@ -106,6 +116,10 @@ if(MODELMAKER_OCC_READY)
         target_link_directories(model_maker_occ PUBLIC ${OCC_ROOT}/lib)
     endif()
     target_compile_definitions(model_maker_occ PUBLIC MM_HAS_OCC)
+    if(WIN32)
+        # OCCT basliklari siki ISO modunda M_PI/M_PI_2 gormez.
+        target_compile_definitions(model_maker_occ PUBLIC _USE_MATH_DEFINES)
+    endif()
     target_compile_options(model_maker_occ PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
