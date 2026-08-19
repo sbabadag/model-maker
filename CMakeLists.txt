@@ -62,11 +62,15 @@ else()
 endif()
 
 # --- OpenCASCADE (OCC) — 3B kati modelleme (istege bagli) ---
-# Linux: -DOCC_ROOT=<prefix> (kaynaktan kurulan OCCT — config saglikli)
-# Windows/MSYS2: OpenCASCADEConfig, VTK hedeflerini (TKIVtk) kendi
-# yuklemeden referans verir ve VTK zinciri (fast_float/nlohmann_json/
-# OpenMP) de eksik gelir — bu yuzden Windows'ta import kutuphanelerine
-# DOGRUDAN baglaniriz (smoke + ilk entegrasyon icin 17 TK kitapligi).
+# Uc yol:
+# 1) vcpkg (ONERILEN, Windows): configure'i vcpkg toolchain dosyasiyla
+#    yap — find_package(OpenCASCADE) vcpkg kurulumunu bulur, uygulama
+#    OCC'yi DOGRUDAN baglar (ayni mingw1310 derleyici ailesi — DLL/runtime
+#    catismasi yok, statik triplet ile exe'ye gomulur).
+# 2) Linux: -DOCC_ROOT=<prefix> (kaynaktan kurulan OCCT — config saglikli).
+# 3) Windows/MSYS2: OpenCASCADEConfig VTK hedeflerini (TKIVtk) referans
+#    verir ama VTK zinciri yuklenmemistir; import kutuphanelerine dogrudan
+#    baglaniriz (mm_occ.dll koprusu icin — uygulama OCC'siz kalir).
 set(OCC_ROOT "" CACHE PATH "OpenCASCADE install prefix")
 if(OCC_ROOT)
     list(PREPEND CMAKE_PREFIX_PATH "${OCC_ROOT}")
@@ -93,7 +97,7 @@ else()
         set(MODELMAKER_OCC_READY TRUE)
         message(STATUS "OpenCASCADE bulundu: ${OpenCASCADE_DIR}")
     else()
-        message(STATUS "OpenCASCADE bulunamadi — OCC modulu kapali (Linux: -DOCC_ROOT=<prefix>; Windows: MSYS2 mingw-w64-x86_64-opencascade + -DOCC_ROOT=C:/msys64/mingw64)")
+        message(STATUS "OpenCASCADE bulunamadi — OCC modulu kapali (vcpkg toolchain dosyasi ya da -DOCC_ROOT)")
     endif()
 endif()
 
@@ -119,6 +123,15 @@ if(MODELMAKER_OCC_READY)
         target_compile_definitions(model_maker_occ PUBLIC _USE_MATH_DEFINES)
     endif()
     target_compile_options(model_maker_occ PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+# Uygulama OCC'yi YALNIZ CONFIG yolunda (vcpkg/Linux) dogrudan kullanir —
+# ayni derleyici ailesi garantilidir. MSYS2 (el ile) yolunda uygulama
+# OCC'siz derlenir; kopru LoadLibrary ile yuklenir.
+if(OpenCASCADE_FOUND AND TARGET model-maker)
+    target_link_libraries(model-maker PRIVATE model_maker_occ)
+    target_compile_definitions(model-maker PRIVATE MM_HAS_OCC)
+    message(STATUS "Uygulama OCC'yi dogrudan bagliyor (ayni toolchain)")
 endif()
 
 # mm_occ.dll: Qt uygulamasinin LoadLibrary ile yukledigi C-API koprusu.

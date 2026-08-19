@@ -1,5 +1,8 @@
 #include "model_maker/application.hpp"
 #include "model_maker/dxf.hpp"
+#ifdef MM_HAS_OCC
+#include "model_maker/occ_geometry.hpp"
+#endif
 #include "model_maker/view_cube.hpp"
 
 #include <QComboBox>
@@ -3038,6 +3041,17 @@ void Application::ensureOccBridge() {
 
 void Application::addCube() {
     if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
+#ifdef MM_HAS_OCC
+    // vcpkg/Linux: OCC ayni derleyiciyle dogrudan derlenmistir — kopru
+    // gereksiz, gercek BRep kutu dogrudan uretilir.
+    {
+        auto cube = mm::solidBoxWireframe(2.6, 2.6, 2.6);
+        cube.translate({static_cast<double>(document_.models().size() % 4) * 0.45, 0.0, 0.0});
+        addStyledModel(std::move(cube)); mode_ = EditMode::View3D;
+        cancelDrawing(); drawingActive_ = false;
+        return;
+    }
+#endif
 #ifdef _WIN32
     // OCC koprusu varsa gercek BRep kutu uret; yoksa eski analitik
     // WireframeModel::cube yolu aynen calisir.
