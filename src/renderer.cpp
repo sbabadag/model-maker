@@ -1381,6 +1381,11 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         }
     }
 
+    // Drafting geri bildirimi (track line, polar kilavuz, cizim onizlemesi,
+    // snap marker, dinamik giris) lambda olarak cikarildi: GL modunda model
+    // katmaninin UZERINE cizilmelidir — aksi halde GL blend'i ustlerini
+    // orter ve markerlar kaybolur.
+    const auto drawDraftingFeedback = [&]() {
     const bool drafting = commandShowsSnapFeedback(
         draft.drawingActive, draft.workPlanePicking, draft.transformCommand, draft.transformPhase,
         draft.arrayItemCount.has_value(), draft.offsetDistance.has_value());
@@ -1901,7 +1906,9 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         }
     }
 
-    SelectObject(dc, oldFont);
+
+    };
+    if (!useGpuLines) drawDraftingFeedback();    SelectObject(dc, oldFont);
     DeleteObject(font);
 
     // GPU cizgileri offscreen FBO'da cizer, sonucu GDI AlphaBlend ile
@@ -1915,6 +1922,8 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
             mode == EditMode::Draw2D, document.revision());
         performance.drawCalls += glBackend->drawCallsPerFrame();
     }
+
+    if (useGpuLines) drawDraftingFeedback();
 
     if (!draft.snapOnly)
         BitBlt(target, 0, 0, width, height, dc, 0, 0, SRCCOPY);
