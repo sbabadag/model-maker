@@ -756,7 +756,15 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
 
     std::vector<std::size_t> visibleModels;
     const auto spatialQueryStart = std::chrono::steady_clock::now();
-    if (mode == EditMode::Draw2D) {
+    // F8: GL wireframe modunda CPU culling'i atla — 3B queryBounds yuklemi
+    // HER modelin sinir kutusunu izdusurur (250k'da ~10-20ms/kare). GPU
+    // off-screen cizgileri zaten klipsler. Solid/Saydam yuz stili aktifse
+    // (GDI yuzleri cizer) sorgu dogruluk icin korunur.
+    const bool glWireframeSkip = useGpuLines && visualStyleFaceAlpha(draft.visualStyle) == 0;
+    if (glWireframeSkip) {
+        visibleModels.clear();
+        performance.visibleEntities = document.models().size();
+    } else if (mode == EditMode::Draw2D) {
         const Vec3 topLeft = camera.unproject2D({0.0, 0.0}, width, height);
         const Vec3 bottomRight = camera.unproject2D({static_cast<double>(width),
                                                      static_cast<double>(height)}, width, height);
@@ -770,7 +778,8 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
     }
     performance.spatialQueryMilliseconds = std::chrono::duration<double, std::milli>(
         std::chrono::steady_clock::now() - spatialQueryStart).count();
-    performance.visibleEntities = visibleModels.size();
+    performance.visibleEntities = glWireframeSkip
+        ? document.models().size() : visibleModels.size();
 
     // Z-depth clipping: filter visible models to workplane range
     if (draft.depthClipEnabled && draft.resultsLoaded && draft.resultView > 0) {
