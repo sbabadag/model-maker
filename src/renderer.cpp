@@ -1011,6 +1011,17 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
     }
     } // !draft.snapOnly
 
+    // GL blend'i model gecisinin hemen sonrasina tasindi: buradan itibaren
+    // cizilen her sey (secim vurgusu, transform hayaletleri, track line,
+    // snap marker, dinamik giris) GL model katmaninin UZERINE biner —
+    // aksi halde blend feedback'i orter ve OSNAP isaretleri kaybolurdu.
+    if (useGpuLines) {
+        glBackend->renderBatchToDc(
+            gpuBatchPtr ? *gpuBatchPtr : emptyGpuBatch_, camera, width, height, dc,
+            mode == EditMode::Draw2D, document.revision());
+        performance.drawCalls += glBackend->drawCallsPerFrame();
+    }
+
     if (!draft.interactiveNavigation) {
         if (!draft.selectedModels.empty()) {
             HPEN selectedPen = CreatePen(PS_SOLID, 3, RGB(90, 255, 145));
@@ -1381,11 +1392,6 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         }
     }
 
-    // Drafting geri bildirimi (track line, polar kilavuz, cizim onizlemesi,
-    // snap marker, dinamik giris) lambda olarak cikarildi: GL modunda model
-    // katmaninin UZERINE cizilmelidir — aksi halde GL blend'i ustlerini
-    // orter ve markerlar kaybolur.
-    const auto drawDraftingFeedback = [&]() {
     const bool drafting = commandShowsSnapFeedback(
         draft.drawingActive, draft.workPlanePicking, draft.transformCommand, draft.transformPhase,
         draft.arrayItemCount.has_value(), draft.offsetDistance.has_value());
@@ -1906,9 +1912,7 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         }
     }
 
-
-    };
-    if (!useGpuLines) drawDraftingFeedback();    SelectObject(dc, oldFont);
+    SelectObject(dc, oldFont);
     DeleteObject(font);
 
     // GPU cizgileri offscreen FBO'da cizer, sonucu GDI AlphaBlend ile
@@ -1916,15 +1920,6 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
     // sunum (once present, sonra GL blend) ara durumda model katmaninin
     // kaybolmasina neden oluyordu: zoom/orbit karelerinde "silinip tekrar
     // cizilme" hissi.
-    if (useGpuLines) {
-        glBackend->renderBatchToDc(
-            gpuBatchPtr ? *gpuBatchPtr : emptyGpuBatch_, camera, width, height, dc,
-            mode == EditMode::Draw2D, document.revision());
-        performance.drawCalls += glBackend->drawCallsPerFrame();
-    }
-
-    if (useGpuLines) drawDraftingFeedback();
-
     if (!draft.snapOnly)
         BitBlt(target, 0, 0, width, height, dc, 0, 0, SRCCOPY);
 
