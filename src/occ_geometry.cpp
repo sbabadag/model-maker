@@ -1,15 +1,30 @@
 #ifdef MM_HAS_OCC
 #include "model_maker/occ_geometry.hpp"
 
+#include <BRepAdaptor_Curve.hxx>
+#include <BRepTools.hxx>
+#include <ShapeUpgrade_UnifySameDomain.hxx>
+#include <TopExp.hxx>
 #include <BRepGProp.hxx>
 #include <BRepPrimAPI_MakeBox.hxx>
+#include <BRepPrimAPI_MakeCylinder.hxx>
+#include <GeomAbs_CurveType.hxx>
+#include <TopExp_Explorer.hxx>
+#include <TopoDS.hxx>
+#include <TopoDS_Edge.hxx>
+#include <gp_Pnt.hxx>
 #include <GProp_GProps.hxx>
 #include <IFSelect_ReturnStatus.hxx>
 #include <STEPControl_Reader.hxx>
 #include <STEPControl_Writer.hxx>
 #include <TopoDS_Shape.hxx>
 
+#include <algorithm>
+#include <cmath>
+#include <map>
+#include <set>
 #include <stdexcept>
+#include <tuple>
 
 namespace mm {
 
@@ -36,6 +51,110 @@ double readStepVolume(const std::filesystem::path& path) {
     GProp_GProps props;
     BRepGProp::VolumeProperties(reader.OneShape(), props);
     return props.Mass();
+}
+
+WireframeModel shapeToWireframe(const TopoDS_Shape& shape, int circleSegments) {
+    // Once cakisan kenarlari birlestir (kutu: 24 topolojik kenar -> 12
+    // paylasilan kenar), boylece asagidaki yuz-paylasim filtresi dogru
+    // calisir.
+    ShapeUpgrade_UnifySameDomain unify;
+    unify.Initialize(shape, true, true, false);
+    unify.SetAngularTolerance(1.0e-3);
+    unify.SetLinearTolerance(1.0e-5);
+    unify.Build();
+    const TopoDS_Shape unified = unify.Shape();
+
+    // Kenar -> yuz atalari: gercek tel kafes kenari en az iki yuzde
+    // paylasilir; yuz insa artigi (silindir kapaklarindaki merkez/radyal
+    // cizgiler, dikiş kenarlari) tek yuzdedir.
+    TopTools_IndexedDataMapOfShapeListOfShape edgeFaces;
+    TopExp::MapShapesAndAncestors(unified, TopAbs_EDGE, TopAbs_FACE, edgeFaces);
+    const auto sharedByTwoFaces = [&](const TopoDS_Edge& edge) {
+        return edgeFaces.FindFromKey(edge).Extent() >= 2;
+    };
+
+    std::vector<Vec3> vertices;
+    std::vector<Edge> edges;
+    std::map<std::tuple<long, long, long>, std::size_t> dedupe;
+    const auto vertexIndex = [&](const gp_Pnt& p) -> std::size_t {
+        // 1e-7 toleransla anahtarlayip paylasilan koseleri birlestir.
+        const auto key = std::make_tuple(
+            static_cast<long>(std::llround(p.X() * 1e7)),
+            static_cast<long>(std::llround(p.Y() * 1e7)),
+            static_cast<long>(std::llround(p.Z() * 1e7)));
+        const auto existing = dedupe.find(key);
+        if (existing != dedupe.end()) return existing->second;
+        const std::size_t index = vertices.size();
+        vertices.push_back({p.X(), p.Y(), p.Z()});
+        dedupe.emplace(key, index);
+        return index;
+    };
+    // OCCT katilarinda ayni fiziksel kenar iki komsu yuzde birer kez
+    // bulunur (kutu: 24 topolojik kenar = 12 cift). Vertex birlesmesinden
+    // sonra cakisan kenarlar ayni uclara sahiptir — siralanmis uclarla
+    // kenar seviyesinde de dedupe yap.
+    // Her yuzun DIS telini (OuterWire) topla: yuz insa artigi ic kenarlar
+    // (silindir kapaklarindaki merkez/radyal cizgiler) dis telde yoktur,
+    // boylece temiz tel kafes dogal olarak elde edilir. Cakisan kenarlar
+    // (iki komsu yuzun ortak siniri) siralanmis uclarla dedupe edilir.
+    std::set<std::pair<std::size_t, std::size_t>> addedEdges;
+    const auto tessellateEdge = [&](const TopoDS_Edge& topoEdge) {
+        BRepAdaptor_Curve curve(topoEdge);
+        std::size_t segments = 1;
+        if (curve.GetType() != GeomAbs_Line)
+            segments = static_cast<std::size_t>(std::max(2, circleSegments));
+        const double first = curve.FirstParameter();
+        const double last = curve.LastParameter();
+        std::size_t previous = vertexIndex(curve.Value(first));
+        for (std::size_t i = 1; i <= segments; ++i) {
+            const double t = first + (last - first) * static_cast<double>(i) / segments;
+            const std::size_t current = vertexIndex(curve.Value(t));
+            const auto edgeKey = current < previous
+                ? std::make_pair(current, previous) : std::make_pair(previous, current);
+            if (addedEdges.insert(edgeKey).second)
+                edges.push_back({previous, current});
+            previous = current;
+        }
+    };
+    for (TopExp_Explorer faces(unified, TopAbs_FACE); faces.More(); faces.Next()) {
+        const TopoDS_Wire outer = BRepTools::OuterWire(TopoDS::Face(faces.Current()));
+        for (TopExp_Explorer wireEdges(outer, TopAbs_EDGE); wireEdges.More(); wireEdges.Next()) {
+            const TopoDS_Edge edge = TopoDS::Edge(wireEdges.Current());
+            if (!sharedByTwoFaces(edge)) continue;
+            tessellateEdge(edge);
+        }
+    }
+    return WireframeModel(std::move(vertices), std::move(edges));
+}
+
+WireframeModel solidBoxWireframe(double dx, double dy, double dz) {
+    return shapeToWireframe(BRepPrimAPI_MakeBox(dx, dy, dz).Shape(), 48);
+}
+
+WireframeModel solidCylinderWireframe(double radius, double height, int circleSegments) {
+    // Analitik kurulum: alt/ust daire + iki meridyen cizgisi. Genel
+    // tesselatoru kullanmaz — OCCT'nin silindir ilkelinin kapak insa
+    // artefaktlari (merkez/radyal cizgiler) tel kafese sizamaz.
+    const int segments = std::max(8, circleSegments);
+    std::vector<Vec3> vertices;
+    std::vector<Edge> edges;
+    vertices.reserve(static_cast<std::size_t>(segments) * 2);
+    edges.reserve(static_cast<std::size_t>(segments) * 2 + 2);
+    const auto addRing = [&](double z) -> std::size_t {
+        const std::size_t base = vertices.size();
+        for (int i = 0; i < segments; ++i) {
+            const double angle = 2.0 * 3.14159265358979323846 * i / segments;
+            vertices.push_back({radius * std::cos(angle), radius * std::sin(angle), z});
+        }
+        for (int i = 0; i < segments; ++i)
+            edges.push_back({base + i, base + (i + 1) % segments});
+        return base;
+    };
+    const std::size_t top = addRing(height);
+    const std::size_t bottom = addRing(0.0);
+    edges.push_back({top, bottom});                              // 0° meridyeni
+    edges.push_back({top + segments / 2, bottom + segments / 2}); // 180° meridyeni
+    return WireframeModel(std::move(vertices), std::move(edges));
 }
 
 } // namespace mm

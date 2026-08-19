@@ -99,6 +99,7 @@ endif()
 
 if(MODELMAKER_OCC_READY)
     add_library(model_maker_occ src/occ_geometry.cpp)
+    target_link_libraries(model_maker_occ PUBLIC model_maker_core)
     target_include_directories(model_maker_occ PUBLIC include)
     if(OCC_INCLUDE_DIR)
         target_include_directories(model_maker_occ PUBLIC ${OCC_INCLUDE_DIR})
