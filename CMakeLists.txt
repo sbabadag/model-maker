@@ -1,5 +1,7 @@
 cmake_minimum_required(VERSION 3.20)
-project(ModelMaker VERSION 0.1.0 LANGUAGES CXX)
+project(ModelMaker VERSION 0.1.0 LANGUAGES C CXX)
+# Not: C dili yalniz OCC/VTK bagimliliklari icin gerekli (VTK'nin FindHDF5
+# denetimi .c derler); proje kodu tamamen C++20.
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
