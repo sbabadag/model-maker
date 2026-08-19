@@ -3009,7 +3009,15 @@ void Application::ensureOccBridge() {
         reinterpret_cast<void*>(GetProcAddress(GetModuleHandleW(L"kernel32.dll"), "AddDllDirectory")));
     if (addDllDir) addDllDir((exeDir / L"occ").c_str());
     occBridgeDll_ = LoadLibraryW(dllPath.c_str());
-    if (!occBridgeDll_) return;
+    if (!occBridgeDll_) {
+        FILE* diag = fopen("model-maker-render.log", "a");
+        if (diag) {
+            fprintf(diag, "OCC-BRIDGE-LOAD-FAILED err=%lu path=%ls\n",
+                    static_cast<unsigned long>(GetLastError()), dllPath.c_str());
+            fclose(diag);
+        }
+        return;
+    }
     occBridgeVersion_ = reinterpret_cast<decltype(occBridgeVersion_)>(
         reinterpret_cast<void*>(GetProcAddress(occBridgeDll_, "mm_occ_version")));
     {
