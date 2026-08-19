@@ -141,7 +141,7 @@ if(BUILD_TESTING)
     add_test(NAME model_maker_tests COMMAND model_maker_tests)
 
     if(MODELMAKER_OCC_READY)
-        add_executable(model_maker_occ_smoke tests/occ_smoke.cpp)
+        add_executable(model_maker_occ_smoke tests/occ_smoke.cpp src/occ_bridge.cpp)
         target_link_libraries(model_maker_occ_smoke PRIVATE model_maker_occ)
         add_test(NAME model_maker_occ_smoke COMMAND model_maker_occ_smoke)
         if(UNIX)

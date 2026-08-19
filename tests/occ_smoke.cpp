@@ -1,4 +1,5 @@
 #ifdef MM_HAS_OCC
+#include "model_maker/occ_bridge_api.h"
 #include "model_maker/occ_geometry.hpp"
 
 #include <cmath>
@@ -43,9 +44,20 @@ int main() {
         return 1;
     }
 
+    // 4) Kopru C-API'si: ayni kutu, POD tamponlar uzerinden
+    float* verts = nullptr; int nv = 0;
+    unsigned int* ed = nullptr; int ne = 0;
+    if (mm_occ_solid_box(1.0, 2.0, 3.0, &verts, &nv, &ed, &ne) != 0 ||
+        nv != 8 || ne != 12) {
+        std::printf("HATA: kopru C-API %d kose / %d kenar (beklenen 8/12)\n", nv, ne);
+        return 1;
+    }
+    mm_occ_free(verts);
+    mm_occ_free(ed);
+
     std::printf("OCC SMOKE OK — kutu 10x10x10 hacim=%.6f, STEP yazildi/okundu hacim=%.6f, "
-                "tesselasyon: kutu 8/12, silindir %zu kenar\n",
-                volume, readBack, cyl.edges().size());
+                "tesselasyon: kutu 8/12, silindir %zu kenar, kopru C-API 8/12, surum %s\n",
+                volume, readBack, cyl.edges().size(), mm_occ_version());
     return 0;
 }
 #else
