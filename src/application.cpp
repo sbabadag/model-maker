@@ -1207,11 +1207,11 @@ LRESULT Application::handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lPa
         // HIZ SINIRLAYICI: free-spin tekerlek tek dokunusta 3-4 detent
         // (31-47ms arayla) uretiyor — her biri %12 zoom = gorunum kac kez
         // atliyor, tiklamalar "yanlis yere" dusuyor ve redraw'lar flicker
-        // uretiyor. Detentler BIRIKTIRILIR; 120ms'de en fazla BIR zoom
+        // uretiyor. Detentler BIRIKTIRILIR; 64ms'de en fazla BIR zoom
         // uygulanir, artan zamanlayiciya birakilir (case 2 flush).
         wheelPendingFactor_ *= factor;
         const auto wheelNowMs = GetTickCount64();
-        if (wheelNowMs - lastWheelApplyMs_ >= 120 || lastWheelApplyMs_ == 0) {
+        if (wheelNowMs - lastWheelApplyMs_ >= 64 || lastWheelApplyMs_ == 0) {
             const double applied = wheelPendingFactor_;
             wheelPendingFactor_ = 1.0;
             lastWheelApplyMs_ = wheelNowMs;
@@ -1230,7 +1230,11 @@ LRESULT Application::handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lPa
             (transformCommand_ != TransformCommand::None && transformPhase_ != TransformPhase::Selecting))
             updateHover(cursorScreen_.x, cursorScreen_.y);
         else hover_.reset();
-        SetTimer(window_, 2, 350, nullptr);
+        // Flush: teker durduktan ~120ms sonra kalan zoom artigi uygulanir
+        // (350ms'lik eski deger "gorevi ertelenmis/yavas zoom" hissi
+        // veriyordu; GL kompozit artig tek sunumlu oldugundan hiz siniri
+        // daraltilabilir).
+        SetTimer(window_, 2, 120, nullptr);
         invalidateCanvas();
         }
         return 0;
