@@ -1330,14 +1330,9 @@ void Application::onCanvasPaint() {
         }
     }
     {
-        // OTOMATIK BENCHMARK: acilistan ~2s sonra kendiliginden calisir;
-        // cizim yoksa kendi sentetik geometrisini uretir (teshis sonrasi
-        // kaldirilacak). Kullanici etkilesimi: sifir.
-        static bool benchScheduled = false;
-        if (!benchScheduled) {
-            benchScheduled = true;
-            SetTimer(window_, 7, 2000, nullptr);
-        }
+        // F8 dogrulamasi tamamlandi (benchmark tablosu render.log'da) —
+        // otomatik tetikleyici kaldirildi; benchmark artik yalniz F5 veya
+        // Gorunum > Benchmark menu ogesiyle calisir.
     }
     const auto paintStart = std::chrono::steady_clock::now();
     renderer_.draw(dc, client, document_, camera_, mode_, draftView(), activeBackend);
