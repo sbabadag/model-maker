@@ -3000,7 +3000,14 @@ void Application::ensureOccBridge() {
     tried = true;
     wchar_t exePath[MAX_PATH]{};
     GetModuleFileNameW(nullptr, exePath, MAX_PATH);
-    const auto dllPath = std::filesystem::path(exePath).parent_path() / L"mm_occ.dll";
+    const auto exeDir = std::filesystem::path(exePath).parent_path();
+    const auto dllPath = exeDir / L"occ" / L"mm_occ.dll";
+    // OCC DLL'leri occ\ alt dizininde yasar; MSYS2 runtime'lari da oradadir.
+    // LoadLibrary'den ONCE o dizini DLL arama yoluna ekle ki uygulamanin
+    // kendi runtime'ina (Qt GCC13 libstdc++) dokunulmasin.
+    const auto addDllDir = reinterpret_cast<void* (WINAPI*)(PCWSTR)>(
+        reinterpret_cast<void*>(GetProcAddress(GetModuleHandleW(L"kernel32.dll"), "AddDllDirectory")));
+    if (addDllDir) addDllDir((exeDir / L"occ").c_str());
     occBridgeDll_ = LoadLibraryW(dllPath.c_str());
     if (!occBridgeDll_) return;
     occBridgeVersion_ = reinterpret_cast<decltype(occBridgeVersion_)>(
