@@ -3005,6 +3005,15 @@ void Application::ensureOccBridge() {
     if (!occBridgeDll_) return;
     occBridgeVersion_ = reinterpret_cast<decltype(occBridgeVersion_)>(
         reinterpret_cast<void*>(GetProcAddress(occBridgeDll_, "mm_occ_version")));
+    {
+        // Kanit satiri: koprunun yuklendigini ve surumunu loga yaz.
+        FILE* diag = fopen("model-maker-render.log", "a");
+        if (diag) {
+            fprintf(diag, "OCC-BRIDGE-OK version=%s\n",
+                    occBridgeVersion_ ? occBridgeVersion_() : "?");
+            fclose(diag);
+        }
+    }
     occBridgeSolidBox_ = reinterpret_cast<decltype(occBridgeSolidBox_)>(
         reinterpret_cast<void*>(GetProcAddress(occBridgeDll_, "mm_occ_solid_box")));
     occBridgeFree_ = reinterpret_cast<decltype(occBridgeFree_)>(
