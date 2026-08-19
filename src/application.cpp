@@ -2481,9 +2481,20 @@ void Application::updateHover(int x, int y) {
         if (mode_ == EditMode::View3D) {
             RECT client{}; GetClientRect(canvas_, &client);
             const bool modifying = transformCommand_ != TransformCommand::None;
-            hover_ = applyOrtho3D(*orthoAnchor, {static_cast<double>(x), static_cast<double>(y)}, *hover_,
-                                  camera_, std::max(1L, client.right), std::max(1L, client.bottom),
-                                  workPlane_, modifying, !modifying);
+            if (modifying) {
+                // Transform: is duzleminin U/V eksenleri (README davranisi).
+                hover_ = applyOrtho3D(*orthoAnchor, {static_cast<double>(x), static_cast<double>(y)}, *hover_,
+                                      camera_, std::max(1L, client.right), std::max(1L, client.bottom),
+                                      workPlane_, true, false);
+            } else {
+                // Cizim: DUNYA X/Y/Z eksenleri — uc renkli ortho guide'in
+                // kilitlendigi eksenlerle birebir ayni kume. Eski kod is
+                // duzlemi normalini (gorus yonu) kullandigi icin Z yonunde
+                // izleme calismiyordu.
+                hover_ = applyOrtho3D(*orthoAnchor, {static_cast<double>(x), static_cast<double>(y)}, *hover_,
+                                      camera_, std::max(1L, client.right), std::max(1L, client.bottom),
+                                      false);
+            }
         } else {
             hover_ = applyOrtho(*orthoAnchor, *hover_, transformCommand_ == TransformCommand::None);
         }
@@ -3014,7 +3025,12 @@ HCURSOR Application::currentCanvasCursor() const noexcept {
 DraftView Application::draftView() const {
     DraftView view;
     view.tool = tool_; view.visualStyle = visualStyle_; view.anchor = anchor_; view.facePoints = facePoints_;
-    if (hover_) { view.cursor = hover_->point; view.snapType = hover_->type; }
+    if (hover_) {
+        view.cursor = hover_->point;
+        view.snapType = hover_->type;
+        view.orthoAxis = hover_->orthoAxis;
+    }
+    view.orthoEnabled = orthoEnabled_;
     view.drawingActive = drawingActive_; view.snapEnabled = snapEnabled_;
     view.gridSnapEnabled = gridSnapEnabled_; view.dynamicInputEnabled = dynamicInputEnabled_;
     view.performanceOverlayEnabled = performanceOverlayEnabled_;

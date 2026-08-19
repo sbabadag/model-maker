@@ -1462,6 +1462,33 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         }
     }
 
+    // 3B ORTHO: dunya X/Y/Z eksen guide'lari — aktif eksen dolu cizgi,
+    // digerleri noktali. Renkler: X=kirmizi, Y=yesil, Z=mavi.
+    if (draft.orthoEnabled && mode == EditMode::View3D && draft.anchor && draft.cursor) {
+        const POINT origin = projectPoint(*draft.anchor);
+        const auto axisGuideDir = [&](const Vec3& axis) {
+            const POINT end = projectPoint(*draft.anchor + axis);
+            double dx = static_cast<double>(end.x - origin.x);
+            double dy = static_cast<double>(end.y - origin.y);
+            const double len = std::hypot(dx, dy);
+            if (len < 1e-6) return POINT{0, 0};
+            dx /= len; dy /= len;
+            return POINT{static_cast<LONG>(dx * 100000.0), static_cast<LONG>(dy * 100000.0)};
+        };
+        const auto drawAxisGuide = [&](const Vec3& axis, COLORREF color, bool active) {
+            const POINT dir = axisGuideDir(axis);
+            if (dir.x == 0 && dir.y == 0) return; // eksen ekranda bir nokta
+            HPEN guidePen = CreatePen(active ? PS_SOLID : PS_DOT, active ? 2 : 1, color);
+            SelectObject(dc, guidePen);
+            line(dc, origin.x - dir.x, origin.y - dir.y, origin.x + dir.x, origin.y + dir.y);
+            SelectObject(dc, stockPen);
+            DeleteObject(guidePen);
+        };
+        drawAxisGuide({1.0, 0.0, 0.0}, RGB(235, 82, 96), draft.orthoAxis == OrthoAxis::X);
+        drawAxisGuide({0.0, 1.0, 0.0}, RGB(72, 211, 121), draft.orthoAxis == OrthoAxis::Y);
+        drawAxisGuide({0.0, 0.0, 1.0}, RGB(78, 148, 255), draft.orthoAxis == OrthoAxis::Z);
+    }
+
     if (drafting && draft.anchor && draft.cursor) {
         const POINT a = projectPoint(*draft.anchor);
         const POINT b = projectPoint(*draft.cursor);

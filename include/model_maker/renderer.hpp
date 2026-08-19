@@ -132,6 +132,7 @@ struct DraftView {
     std::optional<Vec3> cursor;
     SnapType snapType{SnapType::None};
     OrthoAxis orthoAxis{OrthoAxis::None};
+    bool orthoEnabled{false}; // F8: 3B ortho'da X/Y/Z eksen guide'lari icin
     bool drawingActive{true};
     bool snapEnabled{true};
     bool gridSnapEnabled{true};
