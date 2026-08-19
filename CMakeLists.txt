@@ -77,9 +77,11 @@ if(WIN32 AND OCC_ROOT)
     find_path(OCC_INCLUDE_DIR NAMES BRepPrimAPI_MakeBox.hxx
               PATH_SUFFIXES include/opencascade HINTS ${OCC_ROOT} NO_DEFAULT_PATH)
     if(OCC_INCLUDE_DIR)
+        # OCCT 7.9 (MSYS2): STEP toolkit'leri tek TKDESTEP altinda
+        # (eski TKSTEPBase/Attr/209/STEP kaldirildi).
         set(OCC_MANUAL_LIBS TKernel TKMath TKG2d TKG3d TKGeomBase TKBRep
             TKGeomAlgo TKTopAlgo TKPrim TKBO TKBool TKShHealing TKXSBase
-            TKSTEPBase TKSTEPAttr TKSTEP209 TKSTEP)
+            TKDESTEP)
         set(MODELMAKER_OCC_READY TRUE)
         message(STATUS "OpenCASCADE bulundu (el ile baglanti): ${OCC_INCLUDE_DIR}")
     else()
