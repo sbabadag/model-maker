@@ -1,7 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(ModelMaker VERSION 0.1.0 LANGUAGES C CXX)
-# Not: C dili yalniz OCC/VTK bagimliliklari icin gerekli (VTK'nin FindHDF5
-# denetimi .c derler); proje kodu tamamen C++20.
+project(ModelMaker VERSION 0.1.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -62,28 +60,53 @@ else()
 endif()
 
 # --- OpenCASCADE (OCC) — 3B kati modelleme (istege bagli) ---
-# Linux: -DOCC_ROOT=<prefix>  (kaynaktan kurulan OCCT: lib/cmake/opencascade)
-# Windows: MSYS2 "pacman -S mingw-w64-x86_64-opencascade" — CMake'de
-#          -DOCC_ROOT=C:/msys64/mingw64
+# Linux: -DOCC_ROOT=<prefix> (kaynaktan kurulan OCCT — config saglikli)
+# Windows/MSYS2: OpenCASCADEConfig, VTK hedeflerini (TKIVtk) kendi
+# yuklemeden referans verir ve VTK zinciri (fast_float/nlohmann_json/
+# OpenMP) de eksik gelir — bu yuzden Windows'ta import kutuphanelerine
+# DOGRUDAN baglaniriz (smoke + ilk entegrasyon icin 17 TK kitapligi).
 set(OCC_ROOT "" CACHE PATH "OpenCASCADE install prefix")
 if(OCC_ROOT)
     list(PREPEND CMAKE_PREFIX_PATH "${OCC_ROOT}")
 endif()
-# OCCT'nin CMake config'i VTK hedeflerine (TKIVtk/TKIVtkDraw) referans
-# verir ama VTK'yi kendisi bulmaz — tuketici once find_package(VTK)
-# cagirmali, yoksa tum konfigurasyon duser (MSYS2'de VTK paketi
-# kuruluyken bile).
-find_package(VTK QUIET)
-find_package(OpenCASCADE QUIET)
-if(OpenCASCADE_FOUND)
-    message(STATUS "OpenCASCADE bulundu: ${OpenCASCADE_DIR}")
+
+set(MODELMAKER_OCC_READY FALSE)
+if(WIN32 AND OCC_ROOT)
+    find_path(OCC_INCLUDE_DIR NAMES BRepPrimAPI_MakeBox.hxx
+              PATH_SUFFIXES include/opencascade HINTS ${OCC_ROOT} NO_DEFAULT_PATH)
+    if(OCC_INCLUDE_DIR)
+        set(OCC_MANUAL_LIBS TKernel TKMath TKG2d TKG3d TKGeomBase TKBRep
+            TKGeomAlgo TKTopAlgo TKPrim TKBO TKBool TKShHealing TKXSBase
+            TKSTEPBase TKSTEPAttr TKSTEP209 TKSTEP)
+        set(MODELMAKER_OCC_READY TRUE)
+        message(STATUS "OpenCASCADE bulundu (el ile baglanti): ${OCC_INCLUDE_DIR}")
+    else()
+        message(STATUS "OCC_ROOT verildi ama opencascade basliklari bulunamadi: ${OCC_ROOT}")
+    endif()
+else()
+    find_package(OpenCASCADE QUIET)
+    if(OpenCASCADE_FOUND)
+        set(MODELMAKER_OCC_READY TRUE)
+        message(STATUS "OpenCASCADE bulundu: ${OpenCASCADE_DIR}")
+    else()
+        message(STATUS "OpenCASCADE bulunamadi — OCC modulu kapali (Linux: -DOCC_ROOT=<prefix>; Windows: MSYS2 mingw-w64-x86_64-opencascade + -DOCC_ROOT=C:/msys64/mingw64)")
+    endif()
+endif()
+
+if(MODELMAKER_OCC_READY)
     add_library(model_maker_occ src/occ_geometry.cpp)
     target_include_directories(model_maker_occ PUBLIC include)
-    target_link_libraries(model_maker_occ PUBLIC ${OpenCASCADE_LIBRARIES})
+    if(OCC_INCLUDE_DIR)
+        target_include_directories(model_maker_occ PUBLIC ${OCC_INCLUDE_DIR})
+    endif()
+    if(OpenCASCADE_FOUND)
+        target_link_libraries(model_maker_occ PUBLIC ${OpenCASCADE_LIBRARIES})
+    else()
+        target_link_libraries(model_maker_occ PUBLIC ${OCC_MANUAL_LIBS})
+        target_link_directories(model_maker_occ PUBLIC ${OCC_ROOT}/lib)
+    endif()
     target_compile_definitions(model_maker_occ PUBLIC MM_HAS_OCC)
     target_compile_options(model_maker_occ PRIVATE -Wall -Wextra -Wpedantic)
-else()
-    message(STATUS "OpenCASCADE bulunamadi — OCC modulu kapali (Linux: -DOCC_ROOT=<prefix>; Windows: MSYS2 mingw-w64-x86_64-opencascade)")
 endif()
 
 include(CTest)
@@ -94,7 +117,7 @@ if(BUILD_TESTING)
     target_compile_options(model_maker_tests PRIVATE -Wall -Wextra -Wpedantic)
     add_test(NAME model_maker_tests COMMAND model_maker_tests)
 
-    if(OpenCASCADE_FOUND)
+    if(MODELMAKER_OCC_READY)
         add_executable(model_maker_occ_smoke tests/occ_smoke.cpp)
         target_link_libraries(model_maker_occ_smoke PRIVATE model_maker_occ)
         add_test(NAME model_maker_occ_smoke COMMAND model_maker_occ_smoke)
