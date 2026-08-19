@@ -16,3 +16,6 @@ test_pp*
 test_imgui_inc.cpp
 .hermes.md
 .hermes/
+
+build-linux/
+build-occ/

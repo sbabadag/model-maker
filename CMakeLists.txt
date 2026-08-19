@@ -97,6 +97,9 @@ else()
     endif()
 endif()
 
+option(BUILD_OCC_BRIDGE_DLL
+    "Build mm_occ.dll — the C-API bridge for the Qt app (use MSYS2 toolchain)" OFF)
+
 if(MODELMAKER_OCC_READY)
     add_library(model_maker_occ src/occ_geometry.cpp)
     target_link_libraries(model_maker_occ PUBLIC model_maker_core)
@@ -116,6 +119,17 @@ if(MODELMAKER_OCC_READY)
         target_compile_definitions(model_maker_occ PUBLIC _USE_MATH_DEFINES)
     endif()
     target_compile_options(model_maker_occ PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+# mm_occ.dll: Qt uygulamasinin LoadLibrary ile yukledigi C-API koprusu.
+# YALNIZ MSYS2 toolchain'iyle derlenir (build-occ'de -DBUILD_OCC_BRIDGE_DLL=ON).
+if(MODELMAKER_OCC_READY AND WIN32 AND BUILD_OCC_BRIDGE_DLL)
+    add_library(model_maker_occ_bridge SHARED src/occ_bridge.cpp src/occ_geometry.cpp)
+    target_link_libraries(model_maker_occ_bridge PUBLIC model_maker_core ${OCC_MANUAL_LIBS})
+    target_link_directories(model_maker_occ_bridge PUBLIC ${OCC_ROOT}/lib)
+    target_include_directories(model_maker_occ_bridge PUBLIC include ${OCC_INCLUDE_DIR})
+    target_compile_definitions(model_maker_occ_bridge PRIVATE MM_HAS_OCC _USE_MATH_DEFINES)
+    set_target_properties(model_maker_occ_bridge PROPERTIES OUTPUT_NAME "mm_occ")
 endif()
 
 include(CTest)

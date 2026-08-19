@@ -2993,8 +2993,54 @@ void Application::updateStatus() {
 
 void Application::invalidateCanvas() { if (canvas_) InvalidateRect(canvas_, nullptr, FALSE); }
 
+#ifdef _WIN32
+void Application::ensureOccBridge() {
+    static bool tried = false;
+    if (tried || occBridgeDll_) return;
+    tried = true;
+    wchar_t exePath[MAX_PATH]{};
+    GetModuleFileNameW(nullptr, exePath, MAX_PATH);
+    const auto dllPath = std::filesystem::path(exePath).parent_path() / L"mm_occ.dll";
+    occBridgeDll_ = LoadLibraryW(dllPath.c_str());
+    if (!occBridgeDll_) return;
+    occBridgeVersion_ = reinterpret_cast<decltype(occBridgeVersion_)>(
+        reinterpret_cast<void*>(GetProcAddress(occBridgeDll_, "mm_occ_version")));
+    occBridgeSolidBox_ = reinterpret_cast<decltype(occBridgeSolidBox_)>(
+        reinterpret_cast<void*>(GetProcAddress(occBridgeDll_, "mm_occ_solid_box")));
+    occBridgeFree_ = reinterpret_cast<decltype(occBridgeFree_)>(
+        reinterpret_cast<void*>(GetProcAddress(occBridgeDll_, "mm_occ_free")));
+}
+#endif
+
 void Application::addCube() {
     if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
+#ifdef _WIN32
+    // OCC koprusu varsa gercek BRep kutu uret; yoksa eski analitik
+    // WireframeModel::cube yolu aynen calisir.
+    ensureOccBridge();
+    if (occBridgeSolidBox_ && occBridgeFree_) {
+        float* verts = nullptr; int nv = 0;
+        unsigned int* ed = nullptr; int ne = 0;
+        if (occBridgeSolidBox_(2.6, 2.6, 2.6, &verts, &nv, &ed, &ne) == 0 &&
+            verts && ed && nv > 0 && ne > 0) {
+            std::vector<Vec3> vertices(static_cast<std::size_t>(nv));
+            for (int i = 0; i < nv; ++i)
+                vertices[static_cast<std::size_t>(i)] = {verts[i * 3], verts[i * 3 + 1], verts[i * 3 + 2]};
+            std::vector<Edge> edges(static_cast<std::size_t>(ne));
+            for (int i = 0; i < ne; ++i)
+                edges[static_cast<std::size_t>(i)] = {ed[i * 2], ed[i * 2 + 1]};
+            occBridgeFree_(verts);
+            occBridgeFree_(ed);
+            auto cube = WireframeModel(std::move(vertices), std::move(edges));
+            cube.translate({static_cast<double>(document_.models().size() % 4) * 0.45, 0.0, 0.0});
+            addStyledModel(std::move(cube)); mode_ = EditMode::View3D;
+            cancelDrawing(); drawingActive_ = false;
+            return;
+        }
+        if (verts) occBridgeFree_(verts);
+        if (ed) occBridgeFree_(ed);
+    }
+#endif
     auto cube = WireframeModel::cube(2.6);
     cube.translate({static_cast<double>(document_.models().size() % 4) * 0.45, 0.0, 0.0});
     addStyledModel(std::move(cube)); mode_ = EditMode::View3D;

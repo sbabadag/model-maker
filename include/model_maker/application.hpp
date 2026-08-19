@@ -268,6 +268,14 @@ private:
     Renderer renderer_;
     ViewCubeRenderer viewCubeRenderer_;
     std::unique_ptr<IRenderBackend> renderBackend_;
+#ifdef _WIN32
+    // OCC kopru DLL'i (mm_occ.dll) — C-API uzerinden, ABI riski yok.
+    HMODULE occBridgeDll_{};
+    const char* (*occBridgeVersion_)();
+    int (*occBridgeSolidBox_)(double, double, double, float**, int*, unsigned int**, int*);
+    void (*occBridgeFree_)(void*);
+    void ensureOccBridge();
+#endif
     bool gpuLinesEnabled_ = false; // GL yolu dogrulanana kadar varsayilan GDI (F9 = GL)
     bool backendInitTried_ = false;
     std::function<void(const std::wstring&)> statusCallback_;
