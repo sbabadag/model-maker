@@ -1903,40 +1903,25 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
 
     SelectObject(dc, oldFont);
     DeleteObject(font);
+
+    // GPU cizgileri offscreen FBO'da cizer, sonucu GDI AlphaBlend ile
+    // BACKBUFFER'a kompozite eder — pencereye TEK BitBlt gider. Iki-fazli
+    // sunum (once present, sonra GL blend) ara durumda model katmaninin
+    // kaybolmasina neden oluyordu: zoom/orbit karelerinde "silinip tekrar
+    // cizilme" hissi.
+    if (useGpuLines) {
+        glBackend->renderBatchToDc(
+            gpuBatchPtr ? *gpuBatchPtr : emptyGpuBatch_, camera, width, height, dc,
+            mode == EditMode::Draw2D, document.revision());
+        performance.drawCalls += glBackend->drawCallsPerFrame();
+    }
+
     if (!draft.snapOnly)
         BitBlt(target, 0, 0, width, height, dc, 0, 0, SRCCOPY);
 
-    // GPU cizgileri offscreen FBO'da cizer, sonucu GDI AlphaBlend ile hedef
-    // DC'ye kompozite eder — GL pencere yuzeyine dokunmaz (surucu-bagimsiz).
-    if (useGpuLines) {
-        {
-            // Present sonrasi pencere icerigi (GL blit'inden ONCE): GDI
-            // katmaninin gercekten sunulup sunulmadigini kanitlar.
-            static int presentDiagCount = 0;
-            if (presentDiagCount < 3) {
-                ++presentDiagCount;
-                const COLORREF p1 = GetPixel(target, 10, 10);
-                const COLORREF p2 = GetPixel(target, width / 2, height / 2);
-                const COLORREF p3 = GetPixel(target, width - 10, height - 10);
-                FILE* diag = fopen("model-maker-render.log", "a");
-                if (diag) {
-                    fprintf(diag,
-                            "GLDIAG PRESENTPIX topLeft=%d,%d,%d center=%d,%d,%d "
-                            "bottomRight=%d,%d,%d snapOnly=%d\n",
-                            GetRValue(p1), GetGValue(p1), GetBValue(p1),
-                            GetRValue(p2), GetGValue(p2), GetBValue(p2),
-                            GetRValue(p3), GetGValue(p3), GetBValue(p3),
-                            draft.snapOnly ? 1 : 0);
-                    fclose(diag);
-                }
-            }
-        }
-        glBackend->renderBatchToDc(
-            gpuBatchPtr ? *gpuBatchPtr : emptyGpuBatch_, camera, width, height, target,
-            mode == EditMode::Draw2D, document.revision());
-        if (guiOverlay_) guiOverlay_();
-        performance.drawCalls += glBackend->drawCallsPerFrame();
-    }
+    // View cube vb. Qt overlay'leri en ust katman: tek sunumdan sonra dogrudan
+    // pencereye cizilir (kucuk alan, sabit icerik — flicker riski yok).
+    if (useGpuLines && guiOverlay_) guiOverlay_();
 
     finishPerformanceSample(false);
 }
