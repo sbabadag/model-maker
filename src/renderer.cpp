@@ -1489,7 +1489,10 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         drawAxisGuide({0.0, 0.0, 1.0}, RGB(78, 148, 255), draft.orthoAxis == OrthoAxis::Z);
     }
 
-    if (drafting && draft.anchor && draft.cursor) {
+    // Ortho acik ama henuz eksen kilitlenmemisken sari onizleme cizme —
+    // guide'lar uc ekseni gosterir, renk yalniz kilitli eksenin rengidir.
+    const bool orthoGuideUnlocked = draft.orthoEnabled && draft.orthoAxis == OrthoAxis::None;
+    if (drafting && draft.anchor && draft.cursor && !orthoGuideUnlocked) {
         const POINT a = projectPoint(*draft.anchor);
         const POINT b = projectPoint(*draft.cursor);
         const COLORREF previewColor = [&]() -> COLORREF {
