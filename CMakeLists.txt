@@ -1,14 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-# Derleyiciyi Qt'nin mingw1310 toolchain'ine sabitle — PATH'teki ilk g++
-# (ornegin scoop'un GCC'si) Qt6 ile ABI uyusmazligi ve OCC import
-# kutuphaneleriyle surum karisikligi yaratir. Qt yoksa PATH'teki derleyici
-# kullanilir (Linux dahil).
 set(QT_ROOT "C:/Qt/6.9.3/mingw_64" CACHE PATH "Qt6 root directory")
-if(WIN32 AND EXISTS "C:/Qt/Tools/mingw1310_64/bin/g++.exe")
-    set(CMAKE_CXX_COMPILER "C:/Qt/Tools/mingw1310_64/bin/g++.exe" CACHE FILEPATH "C++ compiler" FORCE)
-    set(CMAKE_C_COMPILER "C:/Qt/Tools/mingw1310_64/bin/gcc.exe" CACHE FILEPATH "C compiler" FORCE)
-endif()
 
 project(ModelMaker VERSION 0.1.0 LANGUAGES CXX)
 
