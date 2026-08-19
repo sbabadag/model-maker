@@ -125,7 +125,13 @@ endif()
 # YALNIZ MSYS2 toolchain'iyle derlenir (build-occ'de -DBUILD_OCC_BRIDGE_DLL=ON).
 if(MODELMAKER_OCC_READY AND WIN32 AND BUILD_OCC_BRIDGE_DLL)
     add_library(model_maker_occ_bridge SHARED src/occ_bridge.cpp src/occ_geometry.cpp)
-    target_link_libraries(model_maker_occ_bridge PUBLIC model_maker_core ${OCC_MANUAL_LIBS})
+    # Kopru YALNIZ modelleme cekirdegini baglar — TKDESTEP/TKXSBase'i
+    # DISARIDA birak. STEP kuyrugu TKService->TKDraw->tcl/tk86 ve VTK'ye
+    # uzandigi icin (MSYS2'nin OCCT paketi) izole occ\ dizininde yukleme
+    # zinciri kiriliyordu (hata 203). Kutu/silindir icin gerek yok.
+    set(OCC_BRIDGE_LIBS TKernel TKMath TKG2d TKG3d TKGeomBase TKBRep
+        TKGeomAlgo TKTopAlgo TKPrim TKBO TKBool TKShHealing)
+    target_link_libraries(model_maker_occ_bridge PUBLIC model_maker_core ${OCC_BRIDGE_LIBS})
     target_link_directories(model_maker_occ_bridge PUBLIC ${OCC_ROOT}/lib)
     target_include_directories(model_maker_occ_bridge PUBLIC include ${OCC_INCLUDE_DIR})
     target_compile_definitions(model_maker_occ_bridge PRIVATE MM_HAS_OCC _USE_MATH_DEFINES)
