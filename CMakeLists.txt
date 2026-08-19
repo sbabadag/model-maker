@@ -91,6 +91,12 @@ if(BUILD_TESTING)
         add_executable(model_maker_occ_smoke tests/occ_smoke.cpp)
         target_link_libraries(model_maker_occ_smoke PRIVATE model_maker_occ)
         add_test(NAME model_maker_occ_smoke COMMAND model_maker_occ_smoke)
+        if(UNIX)
+            # ctest ortaminda OCCT paylasimli kutuphaneleri bul (Windows'ta
+            # DLL'ler exe yaninda/ PATH'te olur — bu blok yalniz Linux).
+            set_tests_properties(model_maker_occ_smoke PROPERTIES
+                ENVIRONMENT "LD_LIBRARY_PATH=${OCC_ROOT}/lib:$ENV{LD_LIBRARY_PATH}")
+        endif()
     endif()
 
     add_executable(model_maker_render_prep_benchmark tests/benchmark_render_prep.cpp)
