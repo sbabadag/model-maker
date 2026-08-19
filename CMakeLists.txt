@@ -67,6 +67,11 @@ set(OCC_ROOT "" CACHE PATH "OpenCASCADE install prefix")
 if(OCC_ROOT)
     list(PREPEND CMAKE_PREFIX_PATH "${OCC_ROOT}")
 endif()
+# OCCT'nin CMake config'i VTK hedeflerine (TKIVtk/TKIVtkDraw) referans
+# verir ama VTK'yi kendisi bulmaz — tuketici once find_package(VTK)
+# cagirmali, yoksa tum konfigurasyon duser (MSYS2'de VTK paketi
+# kuruluyken bile).
+find_package(VTK QUIET)
 find_package(OpenCASCADE QUIET)
 if(OpenCASCADE_FOUND)
     message(STATUS "OpenCASCADE bulundu: ${OpenCASCADE_DIR}")
