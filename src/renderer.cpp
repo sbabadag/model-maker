@@ -198,18 +198,18 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
                      static_cast<LONG>(projected.y + canvas.top)};
     };
     HGDIOBJ stockPen = GetCurrentObject(dc, OBJ_PEN);
-    {
+    const auto drawGridAndAxes = [&](HDC targetDc) {
         HPEN gridPen = CreatePen(PS_SOLID, 1,
                                  mode == EditMode::View3D ? RGB(66, 68, 72) : RGB(34, 40, 53));
-        SelectObject(dc, gridPen);
+        SelectObject(targetDc, gridPen);
         if (mode == EditMode::Draw2D) {
             const POINT origin = projectPoint({0.0, 0.0, 0.0});
             const POINT unit = projectPoint({1.0, 0.0, 0.0});
             const int gridSpacing = std::max(1, static_cast<int>(std::abs(unit.x - origin.x)));
             for (int x = origin.x % gridSpacing; x < canvas.right; x += gridSpacing)
-                line(dc, x, canvas.top, x, canvas.bottom);
+                line(targetDc, x, canvas.top, x, canvas.bottom);
             for (int y = origin.y % gridSpacing; y < canvas.bottom; y += gridSpacing)
-                line(dc, canvas.left, y, canvas.right, y);
+                line(targetDc, canvas.left, y, canvas.right, y);
         } else {
             constexpr int gridExtent = 10;
             for (int coordinate = -gridExtent; coordinate <= gridExtent; ++coordinate) {
@@ -217,11 +217,11 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
                 const POINT verticalB = projectPoint(draft.workPlane.fromPlane({static_cast<double>(coordinate), gridExtent}));
                 const POINT horizontalA = projectPoint(draft.workPlane.fromPlane({-gridExtent, static_cast<double>(coordinate)}));
                 const POINT horizontalB = projectPoint(draft.workPlane.fromPlane({gridExtent, static_cast<double>(coordinate)}));
-                line(dc, verticalA.x, verticalA.y, verticalB.x, verticalB.y);
-                line(dc, horizontalA.x, horizontalA.y, horizontalB.x, horizontalB.y);
+                line(targetDc, verticalA.x, verticalA.y, verticalB.x, verticalB.y);
+                line(targetDc, horizontalA.x, horizontalA.y, horizontalB.x, horizontalB.y);
             }
         }
-        SelectObject(dc, stockPen);
+        SelectObject(targetDc, stockPen);
         DeleteObject(gridPen);
 
         const auto axisGlyph = workPlaneAxisGlyph(draft.workPlane, 2.0);
@@ -232,28 +232,28 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
             const double dy = static_cast<double>(end.y - axisOrigin.y);
             const double length = std::hypot(dx, dy);
             HPEN pen = CreatePen(PS_SOLID, 2, color);
-            SelectObject(dc, pen);
+            SelectObject(targetDc, pen);
             if (length >= 7.0) {
-                line(dc, axisOrigin.x, axisOrigin.y, end.x, end.y);
+                line(targetDc, axisOrigin.x, axisOrigin.y, end.x, end.y);
                 const double ux = dx / length;
                 const double uy = dy / length;
                 const POINT headA{static_cast<LONG>(std::lround(end.x - ux * 8.0 - uy * 4.0)),
                                   static_cast<LONG>(std::lround(end.y - uy * 8.0 + ux * 4.0))};
                 const POINT headB{static_cast<LONG>(std::lround(end.x - ux * 8.0 + uy * 4.0)),
                                   static_cast<LONG>(std::lround(end.y - uy * 8.0 - ux * 4.0))};
-                line(dc, end.x, end.y, headA.x, headA.y);
-                line(dc, end.x, end.y, headB.x, headB.y);
-                drawText(dc, end.x + static_cast<int>(std::lround(ux * 5.0)) - 4,
+                line(targetDc, end.x, end.y, headA.x, headA.y);
+                line(targetDc, end.x, end.y, headB.x, headB.y);
+                drawText(targetDc, end.x + static_cast<int>(std::lround(ux * 5.0)) - 4,
                          end.y + static_cast<int>(std::lround(uy * 5.0)) - 8, label, color);
             } else {
-                HGDIOBJ oldBrush = SelectObject(dc, GetStockObject(NULL_BRUSH));
-                Ellipse(dc, axisOrigin.x - 5, axisOrigin.y - 5,
+                HGDIOBJ oldBrush = SelectObject(targetDc, GetStockObject(NULL_BRUSH));
+                Ellipse(targetDc, axisOrigin.x - 5, axisOrigin.y - 5,
                         axisOrigin.x + 6, axisOrigin.y + 6);
-                SelectObject(dc, oldBrush);
-                SetPixel(dc, axisOrigin.x, axisOrigin.y, color);
-                drawText(dc, axisOrigin.x + 7, axisOrigin.y - 10, label, color);
+                SelectObject(targetDc, oldBrush);
+                SetPixel(targetDc, axisOrigin.x, axisOrigin.y, color);
+                drawText(targetDc, axisOrigin.x + 7, axisOrigin.y - 10, label, color);
             }
-            SelectObject(dc, stockPen);
+            SelectObject(targetDc, stockPen);
             DeleteObject(pen);
         };
         drawAxisArrow(axisGlyph.x, RGB(235, 82, 96), L"X");
@@ -261,13 +261,14 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         drawAxisArrow(axisGlyph.z, RGB(78, 148, 255), L"Z");
 
         HPEN basePointPen = CreatePen(PS_SOLID, 1, RGB(190, 194, 202));
-        SelectObject(dc, basePointPen);
-        HGDIOBJ oldBaseBrush = SelectObject(dc, GetStockObject(NULL_BRUSH));
-        Ellipse(dc, axisOrigin.x - 3, axisOrigin.y - 3, axisOrigin.x + 4, axisOrigin.y + 4);
-        SelectObject(dc, oldBaseBrush);
-        SelectObject(dc, stockPen);
+        SelectObject(targetDc, basePointPen);
+        HGDIOBJ oldBaseBrush = SelectObject(targetDc, GetStockObject(NULL_BRUSH));
+        Ellipse(targetDc, axisOrigin.x - 3, axisOrigin.y - 3, axisOrigin.x + 4, axisOrigin.y + 4);
+        SelectObject(targetDc, oldBaseBrush);
+        SelectObject(targetDc, stockPen);
         DeleteObject(basePointPen);
     } // grid + eksenler: interaktif karelerde de çizilir (flicker önleme)
+    if (!useGpuLines) drawGridAndAxes(dc);
 
     std::vector<POINT> projectedChain;
     std::size_t interactiveModelStride = 1;
@@ -1022,6 +1023,10 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
             gpuBatchPtr ? *gpuBatchPtr : emptyGpuBatch_, camera, width, height, dc,
             mode == EditMode::Draw2D, document.revision(), faceAlpha);
         performance.drawCalls += glBackend->drawCallsPerFrame();
+        // GL modunda grid + eksenler referans katmani olarak kompozitin
+        // USTUNE cizilir — dolu yuzlerin altinda kaybolmaz (kullanicinin
+        // bekledigi CAD referans davranisi).
+        drawGridAndAxes(dc);
     }
 
     if (!draft.interactiveNavigation) {
