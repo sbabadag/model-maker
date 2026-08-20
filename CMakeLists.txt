@@ -24,7 +24,7 @@ add_library(model_maker_core
     src/dxf.cpp
     src/document.cpp
     src/drafting.cpp
-)
+    src/profile_database.cpp)
 target_include_directories(model_maker_core PUBLIC include)
 target_compile_options(model_maker_core PRIVATE -Wall -Wextra -Wpedantic)
 
@@ -157,10 +157,13 @@ endif()
 include(CTest)
 if(BUILD_TESTING)
     add_executable(model_maker_tests tests/test_core.cpp)
+    add_executable(model_maker_profile_test tests/profile_database_test.cpp)
+    target_link_libraries(model_maker_profile_test PRIVATE model_maker_core)
     target_link_libraries(model_maker_tests PRIVATE model_maker_core)
     target_link_options(model_maker_tests PRIVATE -static -static-libgcc -static-libstdc++)
     target_compile_options(model_maker_tests PRIVATE -Wall -Wextra -Wpedantic)
     add_test(NAME model_maker_tests COMMAND model_maker_tests)
+    add_test(NAME model_maker_profile_test COMMAND model_maker_profile_test)
 
     if(MODELMAKER_OCC_READY)
         add_executable(model_maker_occ_smoke tests/occ_smoke.cpp src/occ_bridge.cpp)
