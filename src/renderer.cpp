@@ -1027,6 +1027,13 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         // USTUNE cizilir — dolu yuzlerin altinda kaybolmaz (kullanicinin
         // bekledigi CAD referans davranisi).
         drawGridAndAxes(dc);
+        {
+            static int gridTopDiag = 0;
+            if (gridTopDiag++ < 3) {
+                FILE* diag = fopen("model-maker-render.log", "a");
+                if (diag) { fprintf(diag, "GRIDTOP drawn (GL ust katman)\n"); fclose(diag); }
+            }
+        }
     }
 
     if (!draft.interactiveNavigation) {
