@@ -532,7 +532,9 @@ void Application::layoutChildren(int width, int height) {
         }
     }
     const int commandsRight = geometry.commandButtons.empty() ? 350 : geometry.commandButtons.back().rect.right;
-    const int styleX = std::min(std::max(commandsRight + 24, 365), std::max(365, width - 426));
+    // 4. sutun (Profil) icin sag bosluk buyutuldu — dar pencerelerde
+    // combo ekran disina tasiyordu (gorunmez dropdown hatasi).
+    const int styleX = std::min(std::max(commandsRight + 24, 365), std::max(365, width - 570));
     const std::array<int, 4> xPositions{{styleX, styleX + 148, styleX + 268, styleX + 388}};
     const std::array<int, 4> widths{{140, 110, 110, 150}};
     for (std::size_t i = 0; i < styleLabels_.size(); ++i) {
