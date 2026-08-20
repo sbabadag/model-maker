@@ -380,6 +380,13 @@ void Application::createControlPanel() {
     lineTypeCombo_ = createCombo(CmdLineTypeCombo, 130);
     profileCombo_ = createCombo(CmdProfileCombo, 150);
     styleLabels_[3] = createStyleLabel(L"Profil");
+    // Z-order: profil combosu ustte kalsin (ozel boyalı ribbonun altinda
+    // kalma ihtimaline karsi).
+    if (profileCombo_) SetWindowPos(profileCombo_, HWND_TOP, 0, 0, 0, 0,
+                                    SWP_NOMOVE | SWP_NOSIZE);
+    // Ebeveyn pencere cocuklarin uzerine boyamasin (WS_CLIPCHILDREN).
+    SetWindowLongPtrW(window_, GWL_STYLE,
+                      GetWindowLongPtrW(window_, GWL_STYLE) | WS_CLIPCHILDREN);
     for (const auto& choice : colorChoices)
         SendMessageW(colorCombo_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(choice.label));
     for (const auto& choice : lineTypeChoices)
@@ -554,6 +561,19 @@ void Application::layoutChildren(int width, int height) {
                 fprintf(diag, "PROFILE-COMBO rect=(%ld,%ld)-(%ld,%ld) windowWidth=%ld\n",
                         comboRect.left, comboRect.top, comboRect.right, comboRect.bottom,
                         clientRect.right);
+                fclose(diag);
+            }
+        }
+        if (profileCombo_ && profileLayoutDiag++ < 4) {
+            RECT comboRect{}; GetWindowRect(profileCombo_, &comboRect);
+            RECT clientRect{}; GetClientRect(window_, &clientRect);
+            FILE* diag = fopen("model-maker-render.log", "a");
+            if (diag) {
+                fprintf(diag, "PROFILE-COMBO rect=(%ld,%ld)-(%ld,%ld) windowWidth=%ld "
+                        "visible=%d items=%d\n",
+                        comboRect.left, comboRect.top, comboRect.right, comboRect.bottom,
+                        clientRect.right, IsWindowVisible(profileCombo_) ? 1 : 0,
+                        static_cast<int>(SendMessageW(profileCombo_, CB_GETCOUNT, 0, 0)));
                 fclose(diag);
             }
         }
