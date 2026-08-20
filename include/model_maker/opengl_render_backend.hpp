@@ -155,6 +155,10 @@ private:
 
     // Line batch
     GpuLineBatch lineBatch_;
+    // Asenkron readback: iki PBO donusumlu — glReadPixels bir kare onceki
+    // tamponu bekletmeden geri okur (zoom gecikmesinin asil nedeni buydu).
+    std::uint32_t pboPair_[2]{};
+    std::uint32_t pboFrame_{};
     GpuLineBatch faceBatch_;  // ayni vertex duzeni; indeksler GL_TRIANGLES
     std::uint8_t faceAlpha_{};
     std::size_t renderedTriangles_{};

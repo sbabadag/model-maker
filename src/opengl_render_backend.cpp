@@ -36,6 +36,9 @@ namespace GLConst {
     constexpr GLenum DEPTH_FUNC = 0x0B74;
     constexpr GLenum LEQUAL = 0x0203;
     constexpr GLenum POLYGON_OFFSET_FILL = 0x8037;
+    constexpr GLenum PIXEL_PACK_BUFFER = 0x88EB;
+    constexpr GLenum STREAM_READ = 0x88E1;
+    constexpr GLenum READ_ONLY = 0x88B8;
     constexpr GLenum BLEND_MODE = 0x0BE2;
     constexpr GLenum SRC_ALPHA = 0x0302;
     constexpr GLenum ONE_MINUS_SRC_ALPHA = 0x0303;
@@ -94,6 +97,8 @@ using PFNGLUNIFORM1FPROC = void (APIENTRY *)(GLint, GLfloat);
 using PFNGLDEPTHFUNCPROC = void (APIENTRY *)(GLenum);
 using PFNGLDEPTHMASKPROC = void (APIENTRY *)(GLboolean);
 using PFNGLPOLYGONOFFSETPROC = void (APIENTRY *)(GLfloat, GLfloat);
+using PFNGLMAPBUFFERPROC = void* (APIENTRY *)(GLenum, GLenum);
+using PFNGLUNMAPBUFFERPROC = GLboolean (APIENTRY *)(GLenum);
 using PFNGLDISABLEPROC = void (APIENTRY *)(GLenum);
 using PFNGLBLENDFUNCPROC = void (APIENTRY *)(GLenum, GLenum);
 using PFNGLFINISHPROC = void (APIENTRY *)();
@@ -155,6 +160,8 @@ PFNGLUNIFORM1FPROC glUniform1f = nullptr;
 PFNGLDEPTHFUNCPROC glDepthFunc = nullptr;
 PFNGLDEPTHMASKPROC glDepthMask = nullptr;
 PFNGLPOLYGONOFFSETPROC glPolygonOffset = nullptr;
+PFNGLMAPBUFFERPROC glMapBuffer = nullptr;
+PFNGLUNMAPBUFFERPROC glUnmapBuffer = nullptr;
 PFNGLFINISHPROC glFinish = nullptr;
 // MinGW basliklarinda PFNGLGETERRORPROC tanimli degil — elle bildir.
 using PFNGLGETERRORPROC = GLenum(APIENTRY*)(void);
@@ -272,6 +279,8 @@ bool loadWglExtensions(HDC hdc) {
     LOAD_GL(glDepthFunc);
     LOAD_GL(glDepthMask);
     LOAD_GL(glPolygonOffset);
+    LOAD_GL(glMapBuffer);
+    LOAD_GL(glUnmapBuffer);
     LOAD_GL(glFinish);
     LOAD_GL(glGetError);
     // FBO
@@ -555,6 +564,16 @@ void OpenGLRenderBackend::ensureBlitBuffer(int width, int height) {
     if (blitBuffer_.size() != needed) {
         blitBuffer_.resize(needed);
         if (blitDib_) { DeleteObject(static_cast<HBITMAP>(blitDib_)); blitDib_ = nullptr; }
+        // PBO cifti boyut degisince yeniden kurulur (asenkron readback).
+        if (pboPair_[0] != 0) { glDeleteBuffers(2, pboPair_); pboPair_[0] = pboPair_[1] = 0; }
+        glGenBuffers(2, pboPair_);
+        for (const std::uint32_t pbo : pboPair_) {
+            glBindBuffer(GLConst::PIXEL_PACK_BUFFER, pbo);
+            glBufferData(GLConst::PIXEL_PACK_BUFFER, static_cast<GLsizeiptr>(needed),
+                         nullptr, GLConst::STREAM_READ);
+        }
+        glBindBuffer(GLConst::PIXEL_PACK_BUFFER, 0);
+        pboFrame_ = 0;
     }
 }
 
@@ -654,8 +673,27 @@ bool OpenGLRenderBackend::renderBatchToDc(
 
     glFinish();
     ensureBlitBuffer(width, height);
-    glReadPixels(0, 0, width, height, GLConst::BGRA_EXT, GLConst::UNSIGNED_BYTE_TYPE,
-                 blitBuffer_.data());
+    if (pboPair_[0] != 0 && glMapBuffer) {
+        // Asenkron: bu kareyi diger PBO'ya yaz (bekleme yok), onceki karenin
+        // PBO'sundan kopyala — zoom sirasindaki GPU beklemesi kaybolur.
+        const std::size_t needed = blitBuffer_.size();
+        glBindBuffer(GLConst::PIXEL_PACK_BUFFER, pboPair_[pboFrame_ % 2]);
+        glReadPixels(0, 0, width, height, GLConst::BGRA_EXT, GLConst::UNSIGNED_BYTE_TYPE,
+                     nullptr);
+        if (pboFrame_ >= 2) {
+            glBindBuffer(GLConst::PIXEL_PACK_BUFFER, pboPair_[(pboFrame_ + 1) % 2]);
+            const void* mapped = glMapBuffer(GLConst::PIXEL_PACK_BUFFER, GLConst::READ_ONLY);
+            if (mapped) {
+                std::memcpy(blitBuffer_.data(), mapped, needed);
+                glUnmapBuffer(GLConst::PIXEL_PACK_BUFFER);
+            }
+        }
+        glBindBuffer(GLConst::PIXEL_PACK_BUFFER, 0);
+        ++pboFrame_;
+    } else {
+        glReadPixels(0, 0, width, height, GLConst::BGRA_EXT, GLConst::UNSIGNED_BYTE_TYPE,
+                     blitBuffer_.data());
+    }
     // Readback taramasi: TUM tampon + ilk opak pikselin satiri + beklenen
     // cizgi bolgesinden 3x3 ornek (eski 20k taramasi ust satirlari kapsiyordu
     // ve asagi cizilen cizgiyi kaciriyordu).
