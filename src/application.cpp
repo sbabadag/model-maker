@@ -3,6 +3,12 @@
 #ifdef MM_HAS_OCC
 #include "model_maker/occ_geometry.hpp"
 #endif
+#ifdef MM_HAS_OCC
+#include <BRepBuilderAPI_Transform.hxx>
+#include <BRepPrimAPI_MakeBox.hxx>
+#include <BRepPrimAPI_MakeCylinder.hxx>
+#include <gp_Trsf.hxx>
+#endif
 #include "model_maker/view_cube.hpp"
 
 #include <QComboBox>
@@ -1300,6 +1306,13 @@ LRESULT Application::handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lPa
         else if (wParam == 'B') addCube();
         else if (wParam == 'Y') addPyramid();
         else if (wParam == 'S') addCylinder();
+#ifdef MM_HAS_OCC
+        else if (wParam == 'J') {
+            if (GetKeyState(VK_CONTROL) < 0) addBooleanCommon();
+            else if (GetKeyState(VK_SHIFT) < 0) addBooleanCut();
+            else addBooleanFuse();
+        }
+#endif
         else if (wParam == 'R' && mode_ == EditMode::View3D) camera_.reset();
         else if (wParam == VK_DELETE) startTransformCommand(TransformCommand::Delete);
         else if (wParam == 'S' && (GetKeyState(VK_CONTROL) & 0x8000)) saveDocument();
@@ -3058,13 +3071,20 @@ void Application::addCube() {
     // vcpkg/Linux: OCC ayni derleyiciyle dogrudan derlenmistir — kopru
     // gereksiz, gercek BRep kutu dogrudan uretilir.
     {
-        auto cube = mm::solidBoxSolid(2.6, 2.6, 2.6);
-        cube.translate({static_cast<double>(document_.models().size() % 4) * 0.45, 0.0, 0.0});
+        TopoDS_Shape shape = BRepPrimAPI_MakeBox(2.6, 2.6, 2.6).Shape();
+        const double offset = static_cast<double>(document_.models().size() % 4) * 0.45;
+        if (offset != 0.0) {
+            gp_Trsf trsf; trsf.SetTranslation(gp_Vec(offset, 0.0, 0.0));
+            shape = BRepBuilderAPI_Transform(shape, trsf).Shape();
+        }
+        occShapes_.push_back(shape);
+        auto cube = mm::shapeToWireframeWithFaces(shape, 0.15);
+        cube.translate({offset, 0.0, 0.0});
         addStyledModel(std::move(cube)); mode_ = EditMode::View3D;
         cancelDrawing(); drawingActive_ = false;
         wchar_t message[96]{};
         std::swprintf(message, std::size(message), L"Kutu (BRep) hacmi: %.2f birim³",
-                      mm::boxVolume(2.6, 2.6, 2.6));
+                      mm::shapeVolume(shape));
         solidStatusMessage_ = message;
         updateStatus();
         return;
@@ -3115,13 +3135,20 @@ void Application::addCylinder() {
 #ifdef MM_HAS_OCC
     {
         // OCC BRep silindir: r=1.3, h=3.0 (kutu/piramit ile ayni sabit-olusum akisi)
-        auto cylinder = mm::solidCylinderSolid(1.3, 3.0);
-        cylinder.translate({static_cast<double>(document_.models().size() % 4) * 0.45, 0.0, 0.0});
+        TopoDS_Shape shape = BRepPrimAPI_MakeCylinder(1.3, 1.3, 3.0).Shape();
+        const double offset = static_cast<double>(document_.models().size() % 4) * 0.45;
+        if (offset != 0.0) {
+            gp_Trsf trsf; trsf.SetTranslation(gp_Vec(offset, 0.0, 0.0));
+            shape = BRepBuilderAPI_Transform(shape, trsf).Shape();
+        }
+        occShapes_.push_back(shape);
+        auto cylinder = mm::shapeToWireframeWithFaces(shape, 0.15);
+        cylinder.translate({offset, 0.0, 0.0});
         addStyledModel(std::move(cylinder)); mode_ = EditMode::View3D;
         cancelDrawing(); drawingActive_ = false;
         wchar_t message[96]{};
         std::swprintf(message, std::size(message), L"Silindir (BRep) hacmi: %.2f birim³",
-                      mm::solidCylinderVolume(1.3, 3.0));
+                      mm::shapeVolume(shape));
         solidStatusMessage_ = message;
         updateStatus();
         return;
@@ -3137,6 +3164,66 @@ void Application::addCylinder() {
     mode_ = EditMode::View3D;
     cancelDrawing(); drawingActive_ = false;
 }
+
+#ifdef MM_HAS_OCC
+void Application::addBooleanFuse() {
+    if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
+    if (occShapes_.size() < 2) {
+        SetWindowTextW(status_, L"Boolean: en az 2 kati gerekli (B ve S ile ekleyin)");
+        return;
+    }
+    const TopoDS_Shape result =
+        mm::booleanFuseShape(occShapes_[occShapes_.size() - 2], occShapes_.back());
+    occShapes_.push_back(result);
+    auto model = mm::shapeToWireframeWithFaces(result, 0.15);
+    addStyledModel(std::move(model)); mode_ = EditMode::View3D;
+    cancelDrawing(); drawingActive_ = false;
+    wchar_t message[96]{};
+    std::swprintf(message, std::size(message), L"Birlesim (Fuse) hacmi: %.2f birim³",
+                  mm::shapeVolume(result));
+    solidStatusMessage_ = message;
+    updateStatus();
+}
+
+void Application::addBooleanCommon() {
+    if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
+    if (occShapes_.size() < 2) {
+        SetWindowTextW(status_, L"Boolean: en az 2 kati gerekli (B ve S ile ekleyin)");
+        return;
+    }
+    const TopoDS_Shape result =
+        mm::booleanCommonShape(occShapes_[occShapes_.size() - 2], occShapes_.back());
+    occShapes_.push_back(result);
+    auto model = mm::shapeToWireframeWithFaces(result, 0.15);
+    addStyledModel(std::move(model)); mode_ = EditMode::View3D;
+    cancelDrawing(); drawingActive_ = false;
+    wchar_t message[96]{};
+    std::swprintf(message, std::size(message), L"Kesisim (Common) hacmi: %.2f birim³",
+                  mm::shapeVolume(result));
+    solidStatusMessage_ = message;
+    updateStatus();
+}
+
+void Application::addBooleanCut() {
+    if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
+    if (occShapes_.size() < 2) {
+        SetWindowTextW(status_, L"Boolean: en az 2 kati gerekli (B ve S ile ekleyin)");
+        return;
+    }
+    // Sondan bir onceki sekilden sonuncusunu cikar (A - B).
+    const TopoDS_Shape result =
+        mm::booleanCutShape(occShapes_[occShapes_.size() - 2], occShapes_.back());
+    occShapes_.push_back(result);
+    auto model = mm::shapeToWireframeWithFaces(result, 0.15);
+    addStyledModel(std::move(model)); mode_ = EditMode::View3D;
+    cancelDrawing(); drawingActive_ = false;
+    wchar_t message[96]{};
+    std::swprintf(message, std::size(message), L"Cikarma (Cut) hacmi: %.2f birim³",
+                  mm::shapeVolume(result));
+    solidStatusMessage_ = message;
+    updateStatus();
+}
+#endif
 
 Vec3 Application::screenTo2D(int x, int y) const noexcept {
     RECT client{}; GetClientRect(canvas_, &client);

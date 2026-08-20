@@ -36,6 +36,14 @@ WireframeModel solidBoxSolid(double dx, double dy, double dz, double faceDeflect
 WireframeModel solidCylinderSolid(double radius, double height, double faceDeflection = 0.15,
                                   int circleSegments = 48);
 
+// --- Boolean islemler: iki BRep kati uzerinde ---
+TopoDS_Shape booleanFuseShape(const TopoDS_Shape& a, const TopoDS_Shape& b);
+TopoDS_Shape booleanCommonShape(const TopoDS_Shape& a, const TopoDS_Shape& b);
+TopoDS_Shape booleanCutShape(const TopoDS_Shape& a, const TopoDS_Shape& b);
+
+// Herhangi bir seklin hacmi (br^3).
+double shapeVolume(const TopoDS_Shape& shape);
+
 WireframeModel solidBoxWireframe(double dx, double dy, double dz);
 
 WireframeModel solidCylinderWireframe(double radius, double height, int circleSegments = 48);

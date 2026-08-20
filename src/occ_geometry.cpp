@@ -2,6 +2,9 @@
 #include "model_maker/occ_geometry.hpp"
 
 #include <BRepAdaptor_Curve.hxx>
+#include <BRepAlgoAPI_Common.hxx>
+#include <BRepAlgoAPI_Cut.hxx>
+#include <BRepAlgoAPI_Fuse.hxx>
 #include <BRepMesh_IncrementalMesh.hxx>
 #include <BRepTools.hxx>
 #include <BRep_Tool.hxx>
@@ -190,6 +193,24 @@ WireframeModel shapeToWireframeWithFaces(const TopoDS_Shape& shape, double faceD
         }
     }
     return WireframeModel(std::move(vertices), std::move(edges), std::move(faceList));
+}
+
+TopoDS_Shape booleanFuseShape(const TopoDS_Shape& a, const TopoDS_Shape& b) {
+    return BRepAlgoAPI_Fuse(a, b).Shape();
+}
+
+TopoDS_Shape booleanCommonShape(const TopoDS_Shape& a, const TopoDS_Shape& b) {
+    return BRepAlgoAPI_Common(a, b).Shape();
+}
+
+TopoDS_Shape booleanCutShape(const TopoDS_Shape& a, const TopoDS_Shape& b) {
+    return BRepAlgoAPI_Cut(a, b).Shape();
+}
+
+double shapeVolume(const TopoDS_Shape& shape) {
+    GProp_GProps props;
+    BRepGProp::VolumeProperties(shape, props);
+    return props.Mass();
 }
 
 WireframeModel solidBoxSolid(double dx, double dy, double dz, double faceDeflection) {

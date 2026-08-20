@@ -1,6 +1,9 @@
 #ifdef MM_HAS_OCC
 #include "model_maker/occ_bridge_api.h"
 #include "model_maker/occ_geometry.hpp"
+#include <BRepPrimAPI_MakeBox.hxx>
+#include <gp_Pnt.hxx>
+#include <cmath>
 
 #include <cmath>
 #include <cstdio>
@@ -72,6 +75,21 @@ int main() {
     std::printf("OCC SMOKE OK — kutu 10x10x10 hacim=%.6f, STEP yazildi/okundu hacim=%.6f, "
                 "tesselasyon: kutu 8/12, silindir %zu kenar, kopru C-API 8/12, surum %s\n",
                 volume, readBack, cyl.edges().size(), mm_occ_version());
+    // 6) Boolean: 10^3 kutu @(0,0,0) + 10^3 kutu @(5,0,0) —
+    // birlesim 1500 (1000+1000-500), kesisim 500, cikarma 500.
+    const TopoDS_Shape boxA = BRepPrimAPI_MakeBox(10.0, 10.0, 10.0).Shape();
+    const TopoDS_Shape boxB = BRepPrimAPI_MakeBox(gp_Pnt(5.0, 0.0, 0.0),
+                                                  10.0, 10.0, 10.0).Shape();
+    const double fuseVolume = mm::shapeVolume(mm::booleanFuseShape(boxA, boxB));
+    const double commonVolume = mm::shapeVolume(mm::booleanCommonShape(boxA, boxB));
+    const double cutVolume = mm::shapeVolume(mm::booleanCutShape(boxA, boxB));
+    if (std::abs(fuseVolume - 1500.0) > 1.0 || std::abs(commonVolume - 500.0) > 1.0 ||
+        std::abs(cutVolume - 500.0) > 1.0) {
+        std::printf("HATA: boolean hacimleri fuse=%.2f common=%.2f cut=%.2f "
+                    "(beklenen 1500/500/500)\n", fuseVolume, commonVolume, cutVolume);
+        return 1;
+    }
+
     std::printf("OCC KATI OK — kutu %zu ucgen, silindir %zu ucgen\n",
                 boxSolid.faces().size(), cylSolid.faces().size());
     return 0;

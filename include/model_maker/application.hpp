@@ -166,6 +166,11 @@ private:
     void addCube();
     void addPyramid();
     void addCylinder();
+#ifdef MM_HAS_OCC
+    void addBooleanFuse();
+    void addBooleanCommon();
+    void addBooleanCut();
+#endif
     void saveOptions();
     void loadOptions();
     void processCommandLine(const std::wstring& command);
@@ -270,6 +275,11 @@ private:
     ViewCubeRenderer viewCubeRenderer_;
     // Son kati komutunun olcum mesaji (hacim) — updateStatus bunu status
     // cubuguna ekler; sadece yeni bir kati komutu degistirir.
+#ifdef MM_HAS_OCC
+    // OCC kati sekilleri: model vektorune paralel saklanir — Boolean
+    // islemleri tesselasyonun kaybettigi BRep geometrisine erisir.
+    std::vector<TopoDS_Shape> occShapes_;
+#endif
     std::wstring solidStatusMessage_;
     std::unique_ptr<IRenderBackend> renderBackend_;
 #ifdef _WIN32
