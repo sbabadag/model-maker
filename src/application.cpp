@@ -3380,6 +3380,9 @@ void Application::refreshProfileCombo() {
         SendMessageW(profileCombo_, CB_ADDSTRING, 0,
                      reinterpret_cast<LPARAM>(wide));
     }
+    // Ilk profil secili baslasin — kapali kutu bos gorunup gozden kaciyordu.
+    if (!profileCatalog_.empty())
+        SendMessageW(profileCombo_, CB_SETCURSEL, 0, 0);
 }
 
 void Application::assignProfileToSelection(const std::string& profileName) {
