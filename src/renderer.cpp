@@ -267,7 +267,7 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         SelectObject(targetDc, oldBaseBrush);
         SelectObject(targetDc, stockPen);
         DeleteObject(basePointPen);
-    } // grid + eksenler: interaktif karelerde de çizilir (flicker önleme)
+    }; // drawGridAndAxes (grid + eksenler: interaktif karelerde de çizilir)
     if (!useGpuLines) drawGridAndAxes(dc);
 
     std::vector<POINT> projectedChain;
