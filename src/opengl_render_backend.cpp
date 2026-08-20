@@ -673,27 +673,11 @@ bool OpenGLRenderBackend::renderBatchToDc(
 
     glFinish();
     ensureBlitBuffer(width, height);
-    if (pboPair_[0] != 0 && glMapBuffer) {
-        // Asenkron: bu kareyi diger PBO'ya yaz (bekleme yok), onceki karenin
-        // PBO'sundan kopyala — zoom sirasindaki GPU beklemesi kaybolur.
-        const std::size_t needed = blitBuffer_.size();
-        glBindBuffer(GLConst::PIXEL_PACK_BUFFER, pboPair_[pboFrame_ % 2]);
-        glReadPixels(0, 0, width, height, GLConst::BGRA_EXT, GLConst::UNSIGNED_BYTE_TYPE,
-                     nullptr);
-        if (pboFrame_ >= 2) {
-            glBindBuffer(GLConst::PIXEL_PACK_BUFFER, pboPair_[(pboFrame_ + 1) % 2]);
-            const void* mapped = glMapBuffer(GLConst::PIXEL_PACK_BUFFER, GLConst::READ_ONLY);
-            if (mapped) {
-                std::memcpy(blitBuffer_.data(), mapped, needed);
-                glUnmapBuffer(GLConst::PIXEL_PACK_BUFFER);
-            }
-        }
-        glBindBuffer(GLConst::PIXEL_PACK_BUFFER, 0);
-        ++pboFrame_;
-    } else {
-        glReadPixels(0, 0, width, height, GLConst::BGRA_EXT, GLConst::UNSIGNED_BYTE_TYPE,
-                     blitBuffer_.data());
-    }
+    // PBO asenkron denemesi (d409420) geri alindi: glMapBuffer bu makinede
+    // yine de bekliyordu ve zoom 80-90 FPS'ten 30-50'ye dustu. Senkron
+    // readback kanitli: kare basina ~3ms, GDI paritesine yakin.
+    glReadPixels(0, 0, width, height, GLConst::BGRA_EXT, GLConst::UNSIGNED_BYTE_TYPE,
+                 blitBuffer_.data());
     // Readback taramasi: TUM tampon + ilk opak pikselin satiri + beklenen
     // cizgi bolgesinden 3x3 ornek (eski 20k taramasi ust satirlari kapsiyordu
     // ve asagi cizilen cizgiyi kaciriyordu).
