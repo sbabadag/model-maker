@@ -46,7 +46,7 @@ enum CommandId {
     CmdTrim, CmdExtend, CmdNeutral, CmdFillet,
     CmdTabFile = 600, CmdTabDrawing, CmdTabModify, CmdTabView, CmdTabAids,
     CmdDxfProgress = 700, CmdSnapTypeFirst = 720,
-    CmdLayerCombo = 800, CmdColorCombo, CmdLineTypeCombo,
+    CmdLayerCombo = 800, CmdColorCombo, CmdLineTypeCombo, CmdProfileCombo,
     CmdProperties = 820, CmdPropsSearch = 821, CmdPropsList = 822, CmdPropsFilter = 823,
     CmdFilterPopup = 824, CmdFilterFind = 825, CmdFilterSelect = 826,
 };
@@ -378,6 +378,8 @@ void Application::createControlPanel() {
     layerCombo_ = createCombo(CmdLayerCombo, 150);
     colorCombo_ = createCombo(CmdColorCombo, 120);
     lineTypeCombo_ = createCombo(CmdLineTypeCombo, 130);
+    profileCombo_ = createCombo(CmdProfileCombo, 150);
+    styleLabels_[3] = createStyleLabel(L"Profil");
     for (const auto& choice : colorChoices)
         SendMessageW(colorCombo_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(choice.label));
     for (const auto& choice : lineTypeChoices)
@@ -385,6 +387,7 @@ void Application::createControlPanel() {
     SendMessageW(colorCombo_, CB_SETCURSEL, 0, 0);
     SendMessageW(lineTypeCombo_, CB_SETCURSEL, 0, 0);
     refreshLayerCombo();
+    refreshProfileCombo();
 
     // Properties panel (floating popup window with filter toggle)
     propsPanel_ = CreateWindowExW(WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE, L"STATIC", L"Ozellikler",
@@ -530,14 +533,15 @@ void Application::layoutChildren(int width, int height) {
     }
     const int commandsRight = geometry.commandButtons.empty() ? 350 : geometry.commandButtons.back().rect.right;
     const int styleX = std::min(std::max(commandsRight + 24, 365), std::max(365, width - 426));
-    const std::array<int, 3> xPositions{{styleX, styleX + 158, styleX + 286}};
-    const std::array<int, 3> widths{{150, 120, 130}};
+    const std::array<int, 4> xPositions{{styleX, styleX + 148, styleX + 268, styleX + 388}};
+    const std::array<int, 4> widths{{140, 110, 110, 150}};
     for (std::size_t i = 0; i < styleLabels_.size(); ++i) {
         if (styleLabels_[i]) MoveWindow(styleLabels_[i], xPositions[i], 65, widths[i], 17, TRUE);
     }
     if (layerCombo_) MoveWindow(layerCombo_, xPositions[0], 83, widths[0], 220, TRUE);
     if (colorCombo_) MoveWindow(colorCombo_, xPositions[1], 83, widths[1], 220, TRUE);
     if (lineTypeCombo_) MoveWindow(lineTypeCombo_, xPositions[2], 83, widths[2], 220, TRUE);
+    if (profileCombo_) MoveWindow(profileCombo_, xPositions[3], 83, widths[3], 220, TRUE);
 
 #ifndef NDEBUG
     // --- Overlap validation rule ---
@@ -761,6 +765,7 @@ void Application::activateRibbonTab(RibbonTab tab) {
     if (layerCombo_) ShowWindow(layerCombo_, showProperties ? SW_SHOW : SW_HIDE);
     if (colorCombo_) ShowWindow(colorCombo_, showProperties ? SW_SHOW : SW_HIDE);
     if (lineTypeCombo_) ShowWindow(lineTypeCombo_, showProperties ? SW_SHOW : SW_HIDE);
+    if (profileCombo_) ShowWindow(profileCombo_, showProperties ? SW_SHOW : SW_HIDE);
     const auto geometry = RibbonLayout::layout(tab, window_ ? [] (HWND window) {
         RECT client{}; GetClientRect(window, &client); return std::max(1L, client.right);
     }(window_) : 1280);
@@ -998,6 +1003,13 @@ LRESULT Application::handleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
         if (HIWORD(wParam) == BN_CLICKED) executeCommand(LOWORD(wParam));
         else if (HIWORD(wParam) == EN_CHANGE && LOWORD(wParam) == CmdPropsSearch) {
             if (propsPanelOpen_) updatePropertiesPanel();
+        }
+        else if (HIWORD(wParam) == CBN_SELCHANGE && LOWORD(wParam) == CmdProfileCombo) {
+            const int selection = static_cast<int>(
+                SendMessageW(profileCombo_, CB_GETCURSEL, 0, 0));
+            if (selection >= 0 && selection < static_cast<int>(profileCatalog_.size()))
+                assignProfileToSelection(profileCatalog_[static_cast<std::size_t>(selection)].name);
+            SetFocus(canvas_);
         }
         else if (HIWORD(wParam) == CBN_SELCHANGE &&
                  (LOWORD(wParam) == CmdLayerCombo || LOWORD(wParam) == CmdColorCombo ||
@@ -1408,6 +1420,21 @@ void Application::onLeftButtonDown(int x, int y) {
             commitWorkPlanePoint(point);
         }
         updateControls(); invalidateCanvas(); return;
+    }
+    if (GetKeyState(VK_CONTROL) < 0) {
+        // Ctrl+tiklama: bos modda nesne secimi (profil atama icin).
+        updateHover(x, y);
+        if (!toggleModelSelection(x, y)) {
+            selectedModels_.clear();
+            SetWindowTextW(status_, L"Secim temizlendi");
+        } else {
+            wchar_t message[96]{};
+            std::swprintf(message, std::size(message), L"%zu nesne secili",
+                          selectedModels_.size());
+            SetWindowTextW(status_, message);
+        }
+        invalidateCanvas();
+        return;
     }
     if (transformCommand_ != TransformCommand::None) {
         if (transformCommand_ == TransformCommand::Trim ||
@@ -3319,6 +3346,41 @@ void Application::commitProfileAssignment() {
                   profile->name.c_str(), profile->crossSectionArea,
                   profile->inertiaX / 1.0e4, profile->sectionModulusX / 1.0e3,
                   profile->weightPerUnitLength);
+    SetWindowTextW(status_, message);
+    updateControls(); invalidateCanvas();
+}
+
+void Application::refreshProfileCombo() {
+    ensureProfileCatalog();
+    if (!profileCombo_) return;
+    SendMessageW(profileCombo_, CB_RESETCONTENT, 0, 0);
+    for (const auto& profile : profileCatalog_) {
+        wchar_t wide[128]{};
+        MultiByteToWideChar(CP_UTF8, 0, profile.name.c_str(), -1, wide,
+                            static_cast<int>(std::size(wide)));
+        SendMessageW(profileCombo_, CB_ADDSTRING, 0,
+                     reinterpret_cast<LPARAM>(wide));
+    }
+}
+
+void Application::assignProfileToSelection(const std::string& profileName) {
+    const auto* profile = mm::findProfile(profileCatalog_, profileName);
+    if (!profile) {
+        SetWindowTextW(status_, L"Profil bulunamadi");
+        return;
+    }
+    if (selectedModels_.empty()) {
+        SetWindowTextW(status_, L"Once nesne secin (Ctrl+tiklama)");
+        return;
+    }
+    document_.setModelProfile(selectedModels_, profile->name);
+    solidStatusMessage_ = L"";
+    wchar_t message[220]{};
+    std::swprintf(message, std::size(message),
+                  L"%hs -> %zu nesne: A=%.0f mm², Ix=%.0f cm⁴, Wx=%.0f cm³, G=%.2f kg/m",
+                  profile->name.c_str(), selectedModels_.size(),
+                  profile->crossSectionArea, profile->inertiaX / 1.0e4,
+                  profile->sectionModulusX / 1.0e3, profile->weightPerUnitLength);
     SetWindowTextW(status_, message);
     updateControls(); invalidateCanvas();
 }

@@ -212,6 +212,7 @@ private:
     HWND snapButton_{};
     HWND gridSnapButton_{};
     HWND dynamicInputButton_{};
+    HWND profileCombo_{};
     HWND snapSettingsButton_{};
     HWND polarTrackingButton_{};
     HWND snapPanel_{};
@@ -288,6 +289,8 @@ private:
     void startProfileAssignment();
     void commitProfileAssignment();
     void ensureProfileCatalog();
+    void refreshProfileCombo();
+    void assignProfileToSelection(const std::string& profileName);
     std::vector<SteelProfile> profileCatalog_;
     bool profileCatalogTried_{};
     bool profileAssignmentActive_{};
