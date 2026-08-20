@@ -268,6 +268,9 @@ private:
     Camera camera_;
     Renderer renderer_;
     ViewCubeRenderer viewCubeRenderer_;
+    // Son kati komutunun olcum mesaji (hacim) — updateStatus bunu status
+    // cubuguna ekler; sadece yeni bir kati komutu degistirir.
+    std::wstring solidStatusMessage_;
     std::unique_ptr<IRenderBackend> renderBackend_;
 #ifdef _WIN32
     // OCC kopru DLL'i (mm_occ.dll) — C-API uzerinden, ABI riski yok.

@@ -2988,6 +2988,8 @@ void Application::updateStatus() {
     case VisualStyle::Solid: text += L"Solid"; break;
     case VisualStyle::Transparent: text += L"Saydam"; break;
     }
+    if (!solidStatusMessage_.empty())
+        text += L"  |  " + solidStatusMessage_;
     if (hover_) {
         wchar_t coordinates[96]{};
         std::swprintf(coordinates, std::size(coordinates), L"  |  X %.3f  Y %.3f  Z %.3f",
@@ -3056,7 +3058,8 @@ void Application::addCube() {
         wchar_t message[96]{};
         std::swprintf(message, std::size(message), L"Kutu (BRep) hacmi: %.2f birim³",
                       mm::boxVolume(2.6, 2.6, 2.6));
-        SetWindowTextW(status_, message);
+        solidStatusMessage_ = message;
+        updateStatus();
         return;
     }
 #endif
@@ -3112,7 +3115,8 @@ void Application::addCylinder() {
         wchar_t message[96]{};
         std::swprintf(message, std::size(message), L"Silindir (BRep) hacmi: %.2f birim³",
                       mm::solidCylinderVolume(1.3, 3.0));
-        SetWindowTextW(status_, message);
+        solidStatusMessage_ = message;
+        updateStatus();
         return;
     }
 #endif
