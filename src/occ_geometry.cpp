@@ -16,6 +16,10 @@
 #include <BRepGProp.hxx>
 #include <BRepPrimAPI_MakeBox.hxx>
 #include <BRepPrimAPI_MakeCylinder.hxx>
+#include <BRepBuilderAPI_MakePolygon.hxx>
+#include <BRepBuilderAPI_MakeFace.hxx>
+#include <BRepPrimAPI_MakePrism.hxx>
+#include <BRepBuilderAPI_Transform.hxx>
 #include <GeomAbs_CurveType.hxx>
 #include <TopExp_Explorer.hxx>
 #include <TopTools_IndexedDataMapOfShapeListOfShape.hxx>
@@ -140,6 +144,45 @@ WireframeModel shapeToWireframe(const TopoDS_Shape& shape, int circleSegments) {
 
 WireframeModel solidBoxWireframe(double dx, double dy, double dz) {
     return shapeToWireframe(BRepPrimAPI_MakeBox(dx, dy, dz).Shape(), 48);
+}
+
+TopoDS_Shape extrudeProfileSolid(const SteelProfile& profile, const Vec3& from, const Vec3& to) {
+    const double w = profile.width > 0.0 ? profile.width : 50.0;
+    const double h = profile.height > 0.0 ? profile.height : 50.0;
+    const double t = profile.plateThickness > 0.0 ? profile.plateThickness : 0.0;
+    const double hw = w / 2.0;
+    const double hh = h / 2.0;
+
+    TopoDS_Shape section;
+    const auto rectFace = [&](double halfW, double halfH) {
+        BRepBuilderAPI_MakePolygon polygon(gp_Pnt(-halfW, -halfH, 0.0),
+                                           gp_Pnt(halfW, -halfH, 0.0),
+                                           gp_Pnt(halfW, halfH, 0.0),
+                                           gp_Pnt(-halfW, halfH, 0.0));
+        polygon.Close();
+        return BRepBuilderAPI_MakeFace(polygon.Wire()).Shape();
+    };
+    const double innerW = w - 2.0 * t;
+    const double innerH = h - 2.0 * t;
+    if (innerW > 1.0 && innerH > 1.0) {
+        // ici bos kutu (KKR): dis - ic
+        const TopoDS_Shape outer = rectFace(hw, hh);
+        const TopoDS_Shape inner = rectFace(innerW / 2.0, innerH / 2.0);
+        BRepAlgoAPI_Cut cut(outer, inner);
+        section = cut.Shape();
+    } else {
+        section = rectFace(hw, hh);
+    }
+
+    const gp_Vec direction(to.x - from.x, to.y - from.y, to.z - from.z);
+    const double length = direction.Magnitude();
+    if (length < 1e-12) return {};
+    // Prism yuksekligi = cizgi uzunlugu (birim vektor degil!)
+    auto prism = BRepPrimAPI_MakePrism(section, gp_Vec(0.0, 0.0, length));
+    gp_Trsf trsf;
+    trsf.SetTransformation(gp_Ax3(gp_Pnt(0.0, 0.0, 0.0), gp_Dir(0.0, 0.0, 1.0)),
+                           gp_Ax3(gp_Pnt(from.x, from.y, from.z), gp_Dir(direction)));
+    return BRepBuilderAPI_Transform(prism.Shape(), trsf).Shape();
 }
 
 WireframeModel shapeToWireframeWithFaces(const TopoDS_Shape& shape, double faceDeflection,

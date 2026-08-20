@@ -3552,6 +3552,36 @@ void Application::assignProfileToSelection(const std::string& profileName) {
     // profile summary from the selected models and publishes it to Qt.
     updateControls();
     invalidateCanvas();
+#ifdef MM_HAS_OCC
+    // 3B extruded gorsel: secili cizgiler icin profil kesitini cizgi ekseni
+    // boyunca extrude edip kati olarak ekle (cizgi merkez eksen kalir).
+    {
+        std::vector<std::size_t> solidIndices;
+        for (const auto index : selectedModels_) {
+            if (index >= document_.models().size()) continue;
+            const auto& model = document_.models()[index];
+            if (model.vertices().size() != 2 || model.edges().size() != 1) continue;
+            const Vec3 from = model.vertices()[0].position;
+            const Vec3 to = model.vertices()[1].position;
+            const TopoDS_Shape solid = mm::extrudeProfileSolid(*profile, from, to);
+            if (solid.IsNull()) continue;
+            auto solidModel = mm::shapeToWireframeWithFaces(solid, 0.15);
+            auto solidProps = solidModel.properties();
+            solidProps.profileName = profile->name;
+            solidModel.setProperties(std::move(solidProps));
+            addStyledModel(std::move(solidModel));
+            solidIndices.push_back(document_.models().size() - 1);
+        }
+        if (!solidIndices.empty()) {
+            FILE* diag = fopen("model-maker-render.log", "a");
+            if (diag) {
+                fprintf(diag, "PROFILE-EXTRUDE count=%zu profile=%s\n",
+                        solidIndices.size(), profile->name.c_str());
+                fclose(diag);
+            }
+        }
+    }
+#endif
 }
 
 Vec3 Application::screenTo2D(int x, int y) const noexcept {

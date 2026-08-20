@@ -2,8 +2,12 @@
 #include "model_maker/occ_bridge_api.h"
 #include "model_maker/occ_geometry.hpp"
 #include <BRepPrimAPI_MakeBox.hxx>
+#include <BRepGProp.hxx>
+#include <GProp_GProps.hxx>
 #include <gp_Pnt.hxx>
 #include <cmath>
+
+using mm::Vec3;
 
 #include <cmath>
 #include <cstdio>
@@ -92,6 +96,30 @@ int main() {
 
     std::printf("OCC KATI OK — kutu %zu ucgen, silindir %zu ucgen\n",
                 boxSolid.faces().size(), cylSolid.faces().size());
+    // Profil extrude: KKR30*3 (30x30x3, A=301 mm²) x 100 mm -> V=30100 mm³
+    {
+        mm::SteelProfile kkr;
+        kkr.name = "KKR30*3";
+        kkr.width = 30.0;
+        kkr.height = 30.0;
+        kkr.plateThickness = 3.0;
+        kkr.crossSectionArea = 301.0;
+        const auto solid = mm::extrudeProfileSolid(kkr, Vec3{0.0, 0.0, 0.0}, Vec3{0.0, 0.0, 100.0});
+        if (solid.IsNull()) {
+            std::printf("HATA: extrude bos dondu\n");
+            return 1;
+        }
+        GProp_GProps extrudedProps;
+        BRepGProp::VolumeProperties(solid, extrudedProps);
+        const double volume = extrudedProps.Mass();
+        // Keskin koseli kutu: A = 30² - 24² = 324 mm² (Tekla'nin 301'i kose
+        // yuvarlatmali — gorsel yaklasimda keskin koseler kabul).
+        if (std::abs(volume - 32400.0) > 5.0) {
+            std::printf("HATA: extrude hacmi %.1f beklenen 30100\n", volume);
+            return 1;
+        }
+        std::printf("OCC EXTRUDE OK — KKR30*3 x 100mm hacim=%.1f mm³\n", volume);
+    }
     return 0;
 }
 #else

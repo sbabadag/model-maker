@@ -1,6 +1,7 @@
 #pragma once
 #ifdef MM_HAS_OCC
 #include "model_maker/geometry.hpp"
+#include "model_maker/profile_database.hpp"
 
 #include <TopoDS_Shape.hxx>
 
@@ -28,6 +29,10 @@ WireframeModel shapeToWireframe(const TopoDS_Shape& shape, int circleSegments = 
 // Yuzey tesselasyonu acikken (faceDeflection > 0) katilarin yuzleri BRepMesh
 // ile ucgenlere ayrilir ve modelin faces() listesine eklenir — dolu (solid)
 // gorunum stilinde yuzeyler boyali gorunur; 0 iken yalniz tel kafes.
+// Profil kesitini (SteelProfile) from->to ekseni boyunca extrude eder.
+// KKR/box profiller icin ici bos kutu; digerleri icin dolu dikdortgen.
+TopoDS_Shape extrudeProfileSolid(const SteelProfile& profile, const Vec3& from, const Vec3& to);
+
 WireframeModel shapeToWireframeWithFaces(const TopoDS_Shape& shape, double faceDeflection,
                                          int circleSegments = 48);
 
