@@ -3103,16 +3103,18 @@ void Application::addPyramid() {
 void Application::addCylinder() {
     if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
 #ifdef MM_HAS_OCC
-    // OCC BRep silindir: r=1.3, h=3.0 (kutu/pramit ile ayni sabit-olusum akisi)
-    auto cylinder = mm::solidCylinderWireframe(1.3, 3.0, 48);
-    cylinder.translate({static_cast<double>(document_.models().size() % 4) * 0.45, 0.0, 0.0});
-    addStyledModel(std::move(cylinder)); mode_ = EditMode::View3D;
-    cancelDrawing(); drawingActive_ = false;
-    wchar_t message[96]{};
-    std::swprintf(message, std::size(message), L"Silindir (BRep) hacmi: %.2f birim³",
-                  mm::solidCylinderVolume(1.3, 3.0));
-    SetWindowTextW(status_, message);
-    return;
+    {
+        // OCC BRep silindir: r=1.3, h=3.0 (kutu/piramit ile ayni sabit-olusum akisi)
+        auto cylinder = mm::solidCylinderWireframe(1.3, 3.0, 48);
+        cylinder.translate({static_cast<double>(document_.models().size() % 4) * 0.45, 0.0, 0.0});
+        addStyledModel(std::move(cylinder)); mode_ = EditMode::View3D;
+        cancelDrawing(); drawingActive_ = false;
+        wchar_t message[96]{};
+        std::swprintf(message, std::size(message), L"Silindir (BRep) hacmi: %.2f birim³",
+                      mm::solidCylinderVolume(1.3, 3.0));
+        SetWindowTextW(status_, message);
+        return;
+    }
 #endif
     // OCC yoksa yaklasik tel kafes silindir (2 daire + 2 dik cizgi)
     auto cylinder = WireframeModel::circle({0.0, 0.0, 0.0}, 1.3, 48);
