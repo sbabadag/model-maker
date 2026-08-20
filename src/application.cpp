@@ -763,7 +763,9 @@ void Application::activateRibbonTab(RibbonTab tab) {
     activeRibbonTab_ = tab;
     for (HWND button : ribbonCommandButtons_) ShowWindow(button, SW_HIDE);
     const bool showProperties = tab == RibbonTab::Drawing || tab == RibbonTab::Modify;
-    for (HWND label : styleLabels_) if (label) ShowWindow(label, showProperties ? SW_SHOW : SW_HIDE);
+    for (std::size_t i = 0; i < styleLabels_.size(); ++i)
+        if (styleLabels_[i]) ShowWindow(styleLabels_[i],
+            showProperties || i == 3 ? SW_SHOW : SW_HIDE);
     if (layerCombo_) ShowWindow(layerCombo_, showProperties ? SW_SHOW : SW_HIDE);
     if (colorCombo_) ShowWindow(colorCombo_, showProperties ? SW_SHOW : SW_HIDE);
     if (lineTypeCombo_) ShowWindow(lineTypeCombo_, showProperties ? SW_SHOW : SW_HIDE);
