@@ -1489,6 +1489,44 @@ void Application::onCanvasPaint() {
         // otomatik tetikleyici kaldirildi; benchmark artik yalniz F5 veya
         // Gorunum > Benchmark menu ogesiyle calisir.
     }
+    {
+        static int runtimeDump = 0;
+        if (runtimeDump++ < 3) {
+            FILE* diag = fopen("model-maker-render.log", "a");
+            if (diag) {
+                RECT winRect{}; GetWindowRect(window_, &winRect);
+                fprintf(diag, "RUNTIME-DUMP win=(%ld,%ld)-(%ld,%ld) winVisible=%d\n",
+                        winRect.left, winRect.top, winRect.right, winRect.bottom,
+                        IsWindowVisible(window_) ? 1 : 0);
+                std::vector<HWND> children;
+                EnumChildWindows(window_, [](HWND child, LPARAM param) -> BOOL {
+                    auto* list = reinterpret_cast<std::vector<HWND>*>(param);
+                    list->push_back(child);
+                    return TRUE;
+                }, reinterpret_cast<LPARAM>(&children));
+                for (const auto child : children) {
+                    wchar_t className[64]{};
+                    wchar_t text[96]{};
+                    GetClassNameW(child, className,
+                                   static_cast<int>(std::size(className)));
+                    GetWindowTextW(child, text, static_cast<int>(std::size(text)));
+                    RECT rect{}; GetWindowRect(child, &rect);
+                    const bool interesting =
+                        (std::wstring(className) == L"ComboBox") ||
+                        (std::wstring(className) == L"Button" &&
+                         std::wstring(text).find(L"Profil") != std::wstring::npos);
+                    if (interesting)
+                        fprintf(diag,
+                            "  class=%-12ls visible=%d rect=(%ld,%ld)-(%ld,%ld) "
+                            "clientX=%ld text=%.50ls\n",
+                            className, IsWindowVisible(child) ? 1 : 0,
+                            rect.left, rect.top, rect.right, rect.bottom,
+                            rect.left - winRect.left, text);
+                }
+                fclose(diag);
+            }
+        }
+    }
     const auto paintStart = std::chrono::steady_clock::now();
     renderer_.draw(dc, client, document_, camera_, mode_, draftView(), activeBackend);
     if (paintSequence_ <= 10 && paintSequence_ > 0)
