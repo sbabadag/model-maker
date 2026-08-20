@@ -25,6 +25,17 @@ double readStepVolume(const std::filesystem::path& path);
 // parcadir. Paylasilan kose noktalari tek vertex'te birlesir.
 WireframeModel shapeToWireframe(const TopoDS_Shape& shape, int circleSegments = 48);
 
+// Yuzey tesselasyonu acikken (faceDeflection > 0) katilarin yuzleri BRepMesh
+// ile ucgenlere ayrilir ve modelin faces() listesine eklenir — dolu (solid)
+// gorunum stilinde yuzeyler boyali gorunur; 0 iken yalniz tel kafes.
+WireframeModel shapeToWireframeWithFaces(const TopoDS_Shape& shape, double faceDeflection,
+                                         int circleSegments = 48);
+
+WireframeModel solidBoxSolid(double dx, double dy, double dz, double faceDeflection = 0.15);
+
+WireframeModel solidCylinderSolid(double radius, double height, double faceDeflection = 0.15,
+                                  int circleSegments = 48);
+
 WireframeModel solidBoxWireframe(double dx, double dy, double dz);
 
 WireframeModel solidCylinderWireframe(double radius, double height, int circleSegments = 48);

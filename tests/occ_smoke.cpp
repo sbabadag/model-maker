@@ -55,9 +55,25 @@ int main() {
     mm_occ_free(verts);
     mm_occ_free(ed);
 
+    // 5) Dolu katilar: kutu = 12 ucgen yuz, silindir = >50 ucgen yuz
+    const auto boxSolid = mm::solidBoxSolid(1.0, 1.0, 1.0, 0.1);
+    if (boxSolid.faces().size() != 12) {
+        std::printf("HATA: kutu kati %zu yuz (beklenen 12)\n", boxSolid.faces().size());
+        return 1;
+    }
+    for (const auto& face : boxSolid.faces())
+        if (face.size() != 3) { std::printf("HATA: yuz ucgen degil\n"); return 1; }
+    const auto cylSolid = mm::solidCylinderSolid(1.5, 5.0, 0.2, 32);
+    if (cylSolid.faces().size() < 50) {
+        std::printf("HATA: silindir kati %zu yuz (beklenen >50)\n", cylSolid.faces().size());
+        return 1;
+    }
+
     std::printf("OCC SMOKE OK — kutu 10x10x10 hacim=%.6f, STEP yazildi/okundu hacim=%.6f, "
                 "tesselasyon: kutu 8/12, silindir %zu kenar, kopru C-API 8/12, surum %s\n",
                 volume, readBack, cyl.edges().size(), mm_occ_version());
+    std::printf("OCC KATI OK — kutu %zu ucgen, silindir %zu ucgen\n",
+                boxSolid.faces().size(), cylSolid.faces().size());
     return 0;
 }
 #else

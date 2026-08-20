@@ -3051,7 +3051,7 @@ void Application::addCube() {
     // vcpkg/Linux: OCC ayni derleyiciyle dogrudan derlenmistir — kopru
     // gereksiz, gercek BRep kutu dogrudan uretilir.
     {
-        auto cube = mm::solidBoxWireframe(2.6, 2.6, 2.6);
+        auto cube = mm::solidBoxSolid(2.6, 2.6, 2.6);
         cube.translate({static_cast<double>(document_.models().size() % 4) * 0.45, 0.0, 0.0});
         addStyledModel(std::move(cube)); mode_ = EditMode::View3D;
         cancelDrawing(); drawingActive_ = false;
@@ -3108,7 +3108,7 @@ void Application::addCylinder() {
 #ifdef MM_HAS_OCC
     {
         // OCC BRep silindir: r=1.3, h=3.0 (kutu/piramit ile ayni sabit-olusum akisi)
-        auto cylinder = mm::solidCylinderWireframe(1.3, 3.0, 48);
+        auto cylinder = mm::solidCylinderSolid(1.3, 3.0);
         cylinder.translate({static_cast<double>(document_.models().size() % 4) * 0.45, 0.0, 0.0});
         addStyledModel(std::move(cylinder)); mode_ = EditMode::View3D;
         cancelDrawing(); drawingActive_ = false;

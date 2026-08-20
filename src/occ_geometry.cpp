@@ -2,7 +2,12 @@
 #include "model_maker/occ_geometry.hpp"
 
 #include <BRepAdaptor_Curve.hxx>
+#include <BRepMesh_IncrementalMesh.hxx>
 #include <BRepTools.hxx>
+#include <BRep_Tool.hxx>
+#include <Poly_Triangulation.hxx>
+#include <TopLoc_Location.hxx>
+#include <TopoDS_Face.hxx>
 #include <ShapeUpgrade_UnifySameDomain.hxx>
 #include <TopExp.hxx>
 #include <BRepGProp.hxx>
@@ -132,6 +137,70 @@ WireframeModel shapeToWireframe(const TopoDS_Shape& shape, int circleSegments) {
 
 WireframeModel solidBoxWireframe(double dx, double dy, double dz) {
     return shapeToWireframe(BRepPrimAPI_MakeBox(dx, dy, dz).Shape(), 48);
+}
+
+WireframeModel shapeToWireframeWithFaces(const TopoDS_Shape& shape, double faceDeflection,
+                                         int circleSegments) {
+    // Tel kafes kisim = shapeToWireframe ile ayni; yuzler sonradan eklenir.
+    auto wireframe = shapeToWireframe(shape, circleSegments);
+    if (faceDeflection <= 0.0) return wireframe;
+
+    std::vector<Vec3> vertices = wireframe.vertices();
+    std::vector<Edge> edges = wireframe.edges();
+    std::vector<Face> faceList;
+
+    // Yuz koordinatlari tel kafes vertex'leriyle AYNI dedupe anahtariyla
+    // birlestirilir: kutu kose noktalari paylasilir, egri yuzeylerin ic
+    // dugumleri yeni vertex olarak eklenir.
+    std::map<std::tuple<long, long, long>, std::size_t> dedupe;
+    for (std::size_t i = 0; i < vertices.size(); ++i) {
+        const auto key = std::make_tuple(
+            static_cast<long>(std::llround(vertices[i].x * 1e7)),
+            static_cast<long>(std::llround(vertices[i].y * 1e7)),
+            static_cast<long>(std::llround(vertices[i].z * 1e7)));
+        dedupe.emplace(key, i);
+    }
+    const auto nodeIndex = [&](const gp_Pnt& p) -> std::size_t {
+        const auto key = std::make_tuple(
+            static_cast<long>(std::llround(p.X() * 1e7)),
+            static_cast<long>(std::llround(p.Y() * 1e7)),
+            static_cast<long>(std::llround(p.Z() * 1e7)));
+        const auto existing = dedupe.find(key);
+        if (existing != dedupe.end()) return existing->second;
+        const std::size_t index = vertices.size();
+        vertices.push_back({p.X(), p.Y(), p.Z()});
+        dedupe.emplace(key, index);
+        return index;
+    };
+
+    BRepMesh_IncrementalMesh mesher(shape, faceDeflection);
+    for (TopExp_Explorer faces(shape, TopAbs_FACE); faces.More(); faces.Next()) {
+        const TopoDS_Face& face = TopoDS::Face(faces.Current());
+        TopLoc_Location location;
+        const Handle(Poly_Triangulation) triangulation = BRep_Tool::Triangulation(face, location);
+        if (triangulation.IsNull()) continue;
+        const gp_Trsf transform = location.Transformation();
+        for (int t = 1; t <= triangulation->NbTriangles(); ++t) {
+            int n1 = 0, n2 = 0, n3 = 0;
+            triangulation->Triangle(t).Get(n1, n2, n3);
+            const std::size_t v1 = nodeIndex(triangulation->Node(n1).Transformed(transform));
+            const std::size_t v2 = nodeIndex(triangulation->Node(n2).Transformed(transform));
+            const std::size_t v3 = nodeIndex(triangulation->Node(n3).Transformed(transform));
+            faceList.push_back({v1, v2, v3});
+        }
+    }
+    return WireframeModel(std::move(vertices), std::move(edges), std::move(faceList));
+}
+
+WireframeModel solidBoxSolid(double dx, double dy, double dz, double faceDeflection) {
+    return shapeToWireframeWithFaces(BRepPrimAPI_MakeBox(dx, dy, dz).Shape(),
+                                     faceDeflection, 48);
+}
+
+WireframeModel solidCylinderSolid(double radius, double height, double faceDeflection,
+                                  int circleSegments) {
+    return shapeToWireframeWithFaces(BRepPrimAPI_MakeCylinder(radius, radius, height).Shape(),
+                                     faceDeflection, circleSegments);
 }
 
 double solidCylinderVolume(double radius, double height) {
