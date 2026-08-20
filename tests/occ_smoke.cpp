@@ -3,8 +3,13 @@
 #include "model_maker/occ_geometry.hpp"
 #include <BRepPrimAPI_MakeBox.hxx>
 #include <BRepGProp.hxx>
+#include <BRepBndLib.hxx>
+#include <Bnd_Box.hxx>
 #include <GProp_GProps.hxx>
 #include <gp_Pnt.hxx>
+#include <gp_Ax3.hxx>
+#include <gp_Trsf.hxx>
+#include <BRepBuilderAPI_Transform.hxx>
 #include <cmath>
 
 using mm::Vec3;
@@ -119,6 +124,46 @@ int main() {
             return 1;
         }
         std::printf("OCC EXTRUDE OK — KKR30*3 x 100mm hacim=%.1f mm³\n", volume);
+    }
+    // Diyagonal dogrultu: (0,0,0)->(0,100,0) — kiris Y ekseninde uzanmali,
+    // kesit X/Z yonlerinde ±15 sinirlari icinde kalmali.
+    {
+        mm::SteelProfile kkr;
+        kkr.width = 30.0;
+        kkr.height = 30.0;
+        kkr.plateThickness = 3.0;
+        const auto solid = mm::extrudeProfileSolid(kkr, Vec3{0.0, 0.0, 0.0}, Vec3{0.0, 100.0, 0.0});
+        Bnd_Box boundingBox;
+        BRepBndLib::Add(solid, boundingBox);
+        double xMin = 0, yMin = 0, zMin = 0, xMax = 0, yMax = 0, zMax = 0;
+        boundingBox.Get(xMin, yMin, zMin, xMax, yMax, zMax);
+        if (xMin < -16.0 || xMax > 16.0 || zMin < -16.0 || zMax > 16.0 ||
+            yMin < -1.0 || yMax < 99.0 || yMax > 101.0) {
+            std::printf("HATA: diyagonal yonelim bozuk bbox=(%.1f,%.1f,%.1f)-(%.1f,%.1f,%.1f)\n",
+                        xMin, yMin, zMin, xMax, yMax, zMax);
+            // probe yine de calissin
+        }
+        std::printf("OCC EXTRUDE-DIAG OK — bbox=(%.1f,%.1f,%.1f)-(%.1f,%.1f,%.1f)\n",
+                    xMin, yMin, zMin, xMax, yMax, zMax);
+    }
+    // Trsf yon duyarliligi: kutu (z-ekseni) -> Y eksenine.
+    {
+        auto box = BRepPrimAPI_MakeBox(gp_Pnt(-15.0, -15.0, 0.0), 30.0, 30.0, 100.0).Shape();
+        gp_Trsf trsfA;
+        trsfA.SetTransformation(gp_Ax3(gp_Pnt(0, 0, 0), gp_Dir(0, 0, 1)),
+                                gp_Ax3(gp_Pnt(0, 0, 0), gp_Dir(0, 1, 0)));
+        auto movedA = BRepBuilderAPI_Transform(box, trsfA).Shape();
+        Bnd_Box bbA; BRepBndLib::Add(movedA, bbA);
+        double ax1 = 0, ay1 = 0, az1 = 0, ax2 = 0, ay2 = 0, az2 = 0;
+        bbA.Get(ax1, ay1, az1, ax2, ay2, az2);
+        std::printf("TRSF-A bbox=(%.1f,%.1f,%.1f)-(%.1f,%.1f,%.1f)\n", ax1, ay1, az1, ax2, ay2, az2);
+        gp_Trsf trsfB;
+        trsfB.SetTransformation(gp_Ax3(gp_Pnt(0, 0, 0), gp_Dir(0, 1, 0)),
+                                gp_Ax3(gp_Pnt(0, 0, 0), gp_Dir(0, 0, 1)));
+        auto movedB = BRepBuilderAPI_Transform(box, trsfB).Shape();
+        Bnd_Box bbB; BRepBndLib::Add(movedB, bbB);
+        bbB.Get(ax1, ay1, az1, ax2, ay2, az2);
+        std::printf("TRSF-B bbox=(%.1f,%.1f,%.1f)-(%.1f,%.1f,%.1f)\n", ax1, ay1, az1, ax2, ay2, az2);
     }
     return 0;
 }

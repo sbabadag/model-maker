@@ -180,8 +180,10 @@ TopoDS_Shape extrudeProfileSolid(const SteelProfile& profile, const Vec3& from, 
     // Prism yuksekligi = cizgi uzunlugu (birim vektor degil!)
     auto prism = BRepPrimAPI_MakePrism(section, gp_Vec(0.0, 0.0, length));
     gp_Trsf trsf;
-    trsf.SetTransformation(gp_Ax3(gp_Pnt(0.0, 0.0, 0.0), gp_Dir(0.0, 0.0, 1.0)),
-                           gp_Ax3(gp_Pnt(from.x, from.y, from.z), gp_Dir(direction)));
+    // OCC 7.9'da ilk sistem HEDEF, ikinci KAYNAK (probe ile dogrulandi:
+    // SetTransformation(hedef, kaynak) — tersi durumda kiriş X ekseninde kalir).
+    trsf.SetTransformation(gp_Ax3(gp_Pnt(from.x, from.y, from.z), gp_Dir(direction)),
+                           gp_Ax3(gp_Pnt(0.0, 0.0, 0.0), gp_Dir(0.0, 0.0, 1.0)));
     return BRepBuilderAPI_Transform(prism.Shape(), trsf).Shape();
 }
 
