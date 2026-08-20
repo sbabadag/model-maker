@@ -1307,6 +1307,7 @@ LRESULT Application::handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lPa
         else if (wParam == 'B') addCube();
         else if (wParam == 'Y') addPyramid();
         else if (wParam == 'S') addCylinder();
+        else if (wParam == 'X') startProfileAssignment();
 #ifdef MM_HAS_OCC
         else if (wParam == 'J') {
             if (GetKeyState(VK_CONTROL) < 0) addBooleanCommon();
@@ -1644,6 +1645,26 @@ void Application::onMouseMove(int x, int y, WPARAM buttons) {
 }
 
 void Application::onCharacter(wchar_t character) {
+    if (profileAssignmentActive_) {
+        if (character == L'\r') { commitProfileAssignment(); return; }
+        if (character == 27) { // Esc
+            profileAssignmentActive_ = false;
+            profileInput_.clear();
+            updateStatus(); invalidateCanvas();
+            return;
+        }
+        if (character == L'\b') {
+            if (!profileInput_.empty()) profileInput_.pop_back();
+        } else if (iswalnum(character) || character == L'*' || character == L'-' ||
+                   character == L'.' || character == L' ') {
+            profileInput_ += static_cast<wchar_t>(towupper(character));
+        } else {
+            return;
+        }
+        std::wstring prompt = L"Profil adı: " + profileInput_;
+        SetWindowTextW(status_, prompt.c_str());
+        return;
+    }
     if (character == L'\r' && transformCommand_ == TransformCommand::None &&
         lastTransformCommand_ != TransformCommand::None &&
         shouldRepeatLastModifierOnEnter(drawingActive_, !input_.empty(),
@@ -3225,6 +3246,82 @@ void Application::addBooleanCut() {
     updateStatus();
 }
 #endif
+
+void Application::ensureProfileCatalog() {
+    if (profileCatalogTried_) return;
+    profileCatalogTried_ = true;
+    const wchar_t* candidates[] = {
+        L"C:\\TeklaStructures\\2025.0\\Environments\\default\\General\\Shared\\Profil",
+        L"C:\\TeklaStructures\\2023.0\\Environments\\default\\General\\Shared\\Profil",
+    };
+    for (const auto* directory : candidates) {
+        std::error_code errorCode;
+        if (!std::filesystem::exists(directory, errorCode)) continue;
+        profileCatalog_ = mm::loadProfileCatalog(directory);
+        if (!profileCatalog_.empty()) {
+            FILE* diag = fopen("model-maker-render.log", "a");
+            if (diag) {
+                fprintf(diag, "PROFILE-CATALOG loaded=%zu\n", profileCatalog_.size());
+                fclose(diag);
+            }
+            return;
+        }
+    }
+}
+
+void Application::startProfileAssignment() {
+    if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
+    ensureProfileCatalog();
+    if (profileCatalog_.empty()) {
+        SetWindowTextW(status_, L"Profil katalogu bulunamadi — Tekla .lis dosyalari yok");
+        return;
+    }
+    profileAssignmentActive_ = true;
+    profileInput_.clear();
+    SetWindowTextW(status_, L"Profil adı: (Esc = iptal)");
+    invalidateCanvas();
+}
+
+void Application::commitProfileAssignment() {
+    profileAssignmentActive_ = false;
+    if (profileInput_.empty()) { updateStatus(); return; }
+    // Genis -> UTF-8 (profil adlari ASCII olsa da O gibi karakterler icin)
+    char utf8Buffer[128]{};
+    WideCharToMultiByte(CP_UTF8, 0, profileInput_.c_str(), -1, utf8Buffer,
+                        static_cast<int>(std::size(utf8Buffer)), nullptr, nullptr);
+    const std::string name(utf8Buffer);
+    profileInput_.clear();
+    const auto* profile = mm::findProfile(profileCatalog_, name);
+    if (!profile) {
+        wchar_t message[160]{};
+        std::swprintf(message, std::size(message), L"Profil bulunamadi: %hs", name.c_str());
+        SetWindowTextW(status_, message);
+        updateStatus();
+        return;
+    }
+    if (document_.models().empty()) {
+        SetWindowTextW(status_, L"Once bir cizgi cizin (L)");
+        updateStatus();
+        return;
+    }
+    const std::size_t index = document_.models().size() - 1;
+    const auto& model = document_.models()[index];
+    if (model.vertices().size() != 2 || model.edges().size() != 1) {
+        SetWindowTextW(status_, L"Son eklenen nesne cizgi degil — once cizgi cizin (L)");
+        updateStatus();
+        return;
+    }
+    document_.setModelProfile({index}, profile->name);
+    solidStatusMessage_ = L"";
+    wchar_t message[220]{};
+    std::swprintf(message, std::size(message),
+                  L"%hs atandi: A=%.0f mm², Ix=%.0f cm⁴, Wx=%.0f cm³, G=%.2f kg/m",
+                  profile->name.c_str(), profile->crossSectionArea,
+                  profile->inertiaX / 1.0e4, profile->sectionModulusX / 1.0e3,
+                  profile->weightPerUnitLength);
+    SetWindowTextW(status_, message);
+    updateControls(); invalidateCanvas();
+}
 
 Vec3 Application::screenTo2D(int x, int y) const noexcept {
     RECT client{}; GetClientRect(canvas_, &client);

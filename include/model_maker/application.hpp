@@ -3,6 +3,7 @@
 #include "model_maker/camera.hpp"
 #include "model_maker/document.hpp"
 #include "model_maker/drafting.hpp"
+#include "model_maker/profile_database.hpp"
 #include "model_maker/render_backend.hpp"
 #include <functional>
 #include "model_maker/render_backend.hpp"
@@ -283,6 +284,15 @@ private:
     // islemleri tesselasyonun kaybettigi BRep geometrisine erisir.
     std::vector<TopoDS_Shape> occShapes_;
 #endif
+    // Profil atama (X): Tekla .lis katalogundan kesit secimi
+    void startProfileAssignment();
+    void commitProfileAssignment();
+    void ensureProfileCatalog();
+    std::vector<SteelProfile> profileCatalog_;
+    bool profileCatalogTried_{};
+    bool profileAssignmentActive_{};
+    std::wstring profileInput_;
+
     std::wstring solidStatusMessage_;
     std::unique_ptr<IRenderBackend> renderBackend_;
 #ifdef _WIN32
