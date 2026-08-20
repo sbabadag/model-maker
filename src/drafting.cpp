@@ -776,6 +776,9 @@ double pointSegmentDistance(const Vec2& point, const Vec2& from, const Vec2& to)
     return std::hypot(point.x - (from.x + t * dx), point.y - (from.y + t * dy));
 }
 
+// Işın atma: nokta (basit/cokgen) cokgen icinde mi — yuz (ucgen) isabeti icin.
+bool pointInPolygon(const Vec2& point, const std::vector<Vec2>& polygon) noexcept;
+
 template <typename Project>
 std::optional<std::size_t> hitTestModel(const Vec2& cursor, const Document& document,
                                         double tolerance, Project project,
@@ -791,6 +794,28 @@ std::optional<std::size_t> hitTestModel(const Vec2& cursor, const Document& docu
     for (const auto index : *candidates) {
         if (!document.modelIsEditable(index)) continue;
         const auto& model = document.models()[index];
+        // Yuz isabeti: 3B katilarin dolgulu yuzlerine tiklanabilir (kenar
+        // testi tek basina yuz ortasini kaciriyordu — modify secilemiyordu).
+        bool faceHit = false;
+        for (const auto& face : model.faces()) {
+            if (face.size() < 3) continue;
+            std::vector<Vec2> projected;
+            projected.reserve(face.size());
+            bool valid = true;
+            for (const auto vertexIndex : face) {
+                if (vertexIndex >= model.vertices().size()) { valid = false; break; }
+                projected.push_back(project(model.vertices()[vertexIndex]));
+            }
+            if (!valid || projected.size() < 3) continue;
+            if (pointInPolygon(cursor, projected)) {
+                faceHit = true;
+                break;
+            }
+        }
+        if (faceHit) {
+            if (0.0 <= bestDistance) { bestDistance = 0.0; bestIndex = index; }
+            continue;
+        }
         for (const auto& edge : model.edges()) {
             const double distance = pointSegmentDistance(cursor, project(model.vertices()[edge.from]),
                                                          project(model.vertices()[edge.to]));
@@ -821,6 +846,22 @@ bool pointInBounds(const Vec2& point, const SelectionBounds& bounds) noexcept {
 
 double orientation(const Vec2& a, const Vec2& b, const Vec2& c) noexcept {
     return (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+}
+
+// Işın atma: nokta (basit/cokgen) cokgen icinde mi — yuz (ucgen) isabeti icin.
+bool pointInPolygon(const Vec2& point, const std::vector<Vec2>& polygon) noexcept {
+    bool inside = false;
+    for (std::size_t i = 0, j = polygon.size() - 1; i < polygon.size(); j = i++) {
+        const bool straddles = (polygon[i].y > point.y) != (polygon[j].y > point.y);
+        if (straddles) {
+            const double crossX = (polygon[j].x - polygon[i].x) *
+                                      (point.y - polygon[i].y) /
+                                      (polygon[j].y - polygon[i].y) +
+                                  polygon[i].x;
+            if (point.x < crossX) inside = !inside;
+        }
+    }
+    return inside;
 }
 
 bool segmentsTouch(const Vec2& a, const Vec2& b, const Vec2& c, const Vec2& d) noexcept {
