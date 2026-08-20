@@ -20,6 +20,10 @@
 #include <BRepBuilderAPI_MakeFace.hxx>
 #include <BRepPrimAPI_MakePrism.hxx>
 #include <BRepBuilderAPI_Transform.hxx>
+#include <BRepBuilderAPI_MakeEdge.hxx>
+#include <BRepBuilderAPI_MakeWire.hxx>
+#include <gp_Circ.hxx>
+#include <gp_Ax2.hxx>
 #include <GeomAbs_CurveType.hxx>
 #include <TopExp_Explorer.hxx>
 #include <TopTools_IndexedDataMapOfShapeListOfShape.hxx>
@@ -154,6 +158,34 @@ TopoDS_Shape extrudeProfileSolid(const SteelProfile& profile, const Vec3& from, 
     const double hh = h / 2.0;
 
     TopoDS_Shape section;
+
+    // Yuvarlak profil mi? (CHS/CFCHS/ROD/D/P/TUBE/O/Ø — rakamdan onceki harf kumesi)
+    std::string alphaPrefix;
+    for (const char c : profile.name) {
+        if (c >= '0' && c <= '9') break;
+        if (c >= 'A' && c <= 'Z') alphaPrefix += c;
+    }
+    const bool isRound = (alphaPrefix == "CHS" || alphaPrefix == "CFCHS" ||
+                          alphaPrefix == "ROD" || alphaPrefix == "D" ||
+                          alphaPrefix == "P" || alphaPrefix == "TUBE" ||
+                          alphaPrefix == "O");
+
+    if (isRound) {
+        const double outerR = std::max(w, h) / 2.0;
+        const double innerR = outerR - t;
+        const auto circleFace = [&](double radius) {
+            gp_Circ circle(gp_Ax2(gp_Pnt(0.0, 0.0, 0.0), gp_Dir(0.0, 0.0, 1.0)), radius);
+            BRepBuilderAPI_MakeEdge edge(circle);
+            BRepBuilderAPI_MakeWire wire(edge);
+            return BRepBuilderAPI_MakeFace(wire).Shape();
+        };
+        if (innerR > 1.0) {
+            BRepAlgoAPI_Cut cut(circleFace(outerR), circleFace(innerR));
+            section = cut.Shape();
+        } else {
+            section = circleFace(outerR);
+        }
+    } else {
     const auto rectFace = [&](double halfW, double halfH) {
         BRepBuilderAPI_MakePolygon polygon(gp_Pnt(-halfW, -halfH, 0.0),
                                            gp_Pnt(halfW, -halfH, 0.0),
@@ -172,6 +204,7 @@ TopoDS_Shape extrudeProfileSolid(const SteelProfile& profile, const Vec3& from, 
         section = cut.Shape();
     } else {
         section = rectFace(hw, hh);
+    }
     }
 
     const gp_Vec direction(to.x - from.x, to.y - from.y, to.z - from.z);

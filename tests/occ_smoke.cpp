@@ -125,6 +125,23 @@ int main() {
         }
         std::printf("OCC EXTRUDE OK — KKR30*3 x 100mm hacim=%.1f mm³\n", volume);
     }
+    // Yuvarlak boru: CFCHS127x2.5 — A = pi/4(127²-122²) ≈ 977.8 mm²
+    {
+        mm::SteelProfile chs;
+        chs.name = "CFCHS127x2.5";
+        chs.width = 127.0;
+        chs.height = 127.0;
+        chs.plateThickness = 2.5;
+        const auto pipe = mm::extrudeProfileSolid(chs, Vec3{0.0, 0.0, 0.0}, Vec3{0.0, 0.0, 100.0});
+        GProp_GProps pipeProps;
+        BRepGProp::VolumeProperties(pipe, pipeProps);
+        const double expected = 3.14159265358979 / 4.0 * (127.0 * 127.0 - 122.0 * 122.0) * 100.0;
+        if (std::abs(pipeProps.Mass() - expected) > 20.0) {
+            std::printf("HATA: boru hacmi %.1f beklenen %.1f\n", pipeProps.Mass(), expected);
+            return 1;
+        }
+        std::printf("OCC EXTRUDE-ROUND OK — CFCHS127x2.5 x 100 hacim=%.1f mm³\n", pipeProps.Mass());
+    }
     // Diyagonal dogrultu: (0,0,0)->(0,100,0) — kiris Y ekseninde uzanmali,
     // kesit X/Z yonlerinde ±15 sinirlari icinde kalmali.
     {
