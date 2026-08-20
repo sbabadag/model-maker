@@ -47,6 +47,7 @@ enum CommandId {
     CmdTabFile = 600, CmdTabDrawing, CmdTabModify, CmdTabView, CmdTabAids,
     CmdDxfProgress = 700, CmdSnapTypeFirst = 720,
     CmdLayerCombo = 800, CmdColorCombo, CmdLineTypeCombo, CmdProfileCombo,
+    CmdProfileButton, CmdProfilePopup,
     CmdProperties = 820, CmdPropsSearch = 821, CmdPropsList = 822, CmdPropsFilter = 823,
     CmdFilterPopup = 824, CmdFilterFind = 825, CmdFilterSelect = 826,
 };
@@ -380,6 +381,26 @@ void Application::createControlPanel() {
     lineTypeCombo_ = createCombo(CmdLineTypeCombo, 130);
     profileCombo_ = createCombo(CmdProfileCombo, 150);
     styleLabels_[3] = createStyleLabel(L"Profil");
+    profileButton_ = CreateWindowExW(0, L"BUTTON", L"Profil: KKR30*3",
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+        0, 0, 150, 24, window_,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(CmdProfileButton)),
+        instance_, nullptr);
+    if (profileButton_) {
+        SendMessageW(profileButton_, WM_SETFONT,
+                     reinterpret_cast<WPARAM>(uiFont_), TRUE);
+    }
+    // Popup liste: WS_POPUP — ribbon boyasinin altinda kalma ihtimali yok.
+    profilePopup_ = CreateWindowExW(WS_EX_TOPMOST | WS_EX_TOOLWINDOW,
+        L"LISTBOX", nullptr,
+        WS_POPUP | WS_BORDER | WS_VSCROLL | LBS_NOTIFY | LBS_NOINTEGRALHEIGHT,
+        0, 0, 240, 420, window_,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(CmdProfilePopup)),
+        instance_, nullptr);
+    if (profilePopup_) {
+        SendMessageW(profilePopup_, WM_SETFONT,
+                     reinterpret_cast<WPARAM>(uiFont_), TRUE);
+    }
     // Z-order: profil combosu ustte kalsin (ozel boyalı ribbonun altinda
     // kalma ihtimaline karsi).
     if (profileCombo_) SetWindowPos(profileCombo_, HWND_TOP, 0, 0, 0, 0,
@@ -551,6 +572,7 @@ void Application::layoutChildren(int width, int height) {
     if (colorCombo_) MoveWindow(colorCombo_, xPositions[1], 83, widths[1], 220, TRUE);
     if (lineTypeCombo_) MoveWindow(lineTypeCombo_, xPositions[2], 83, widths[2], 220, TRUE);
     if (profileCombo_) MoveWindow(profileCombo_, xPositions[3], 83, widths[3], 220, TRUE);
+    if (profileButton_) MoveWindow(profileButton_, xPositions[3], 81, widths[3], 25, TRUE);
     {
         static int profileLayoutDiag = 0;
         if (profileCombo_ && profileLayoutDiag++ < 4) {
@@ -805,6 +827,7 @@ void Application::activateRibbonTab(RibbonTab tab) {
     if (lineTypeCombo_) ShowWindow(lineTypeCombo_, showProperties ? SW_SHOW : SW_HIDE);
     // Profil secimi SABIT kontrol: her sekmede gorunur (kullanici istegi).
     if (profileCombo_) ShowWindow(profileCombo_, SW_SHOW);
+    if (profileButton_) ShowWindow(profileButton_, SW_SHOW);
     const auto geometry = RibbonLayout::layout(tab, window_ ? [] (HWND window) {
         RECT client{}; GetClientRect(window, &client); return std::max(1L, client.right);
     }(window_) : 1280);
@@ -1042,6 +1065,17 @@ LRESULT Application::handleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
         if (HIWORD(wParam) == BN_CLICKED) executeCommand(LOWORD(wParam));
         else if (HIWORD(wParam) == EN_CHANGE && LOWORD(wParam) == CmdPropsSearch) {
             if (propsPanelOpen_) updatePropertiesPanel();
+        }
+        else if (LOWORD(wParam) == CmdProfileButton) {
+            toggleProfilePopup();
+            return 0;
+        }
+        else if (LOWORD(wParam) == CmdProfilePopup) {
+            if (HIWORD(wParam) == LBN_SELCHANGE || HIWORD(wParam) == LBN_DBLCLK) {
+                applyProfilePopupSelection();
+                SetFocus(canvas_);
+            }
+            return 0;
         }
         else if (HIWORD(wParam) == CBN_SELCHANGE && LOWORD(wParam) == CmdProfileCombo) {
             const int selection = static_cast<int>(
@@ -1304,6 +1338,11 @@ LRESULT Application::handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lPa
     case WM_CHAR: onCharacter(static_cast<wchar_t>(wParam)); return 0;
     case WM_KEYDOWN:
         if (wParam == VK_ESCAPE) {
+            if (profilePopup_ && IsWindowVisible(profilePopup_)) {
+                ShowWindow(profilePopup_, SW_HIDE);
+                SetFocus(canvas_);
+                return 0;
+            }
             input_.clear();
             if (zoomWindowActive_) cancelZoomWindow2D();
             else if (workPlanePicking_) cancelWorkPlaneCommand();
@@ -1358,7 +1397,7 @@ LRESULT Application::handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lPa
         else if (wParam == 'B') addCube();
         else if (wParam == 'Y') addPyramid();
         else if (wParam == 'S') addCylinder();
-        else if (wParam == 'X') startProfileAssignment();
+        else if (wParam == 'X') toggleProfilePopup();
 #ifdef MM_HAS_OCC
         else if (wParam == 'J') {
             if (GetKeyState(VK_CONTROL) < 0) addBooleanCommon();
@@ -3400,9 +3439,56 @@ void Application::refreshProfileCombo() {
         SendMessageW(profileCombo_, CB_ADDSTRING, 0,
                      reinterpret_cast<LPARAM>(wide));
     }
-    // Ilk profil secili baslasin — kapali kutu bos gorunup gozden kaciyordu.
     if (!profileCatalog_.empty())
         SendMessageW(profileCombo_, CB_SETCURSEL, 0, 0);
+    if (profilePopup_) {
+        SendMessageW(profilePopup_, LB_RESETCONTENT, 0, 0);
+        for (const auto& profile : profileCatalog_) {
+            wchar_t wide[128]{};
+            MultiByteToWideChar(CP_UTF8, 0, profile.name.c_str(), -1, wide,
+                                static_cast<int>(std::size(wide)));
+            SendMessageW(profilePopup_, LB_ADDSTRING, 0,
+                         reinterpret_cast<LPARAM>(wide));
+        }
+    }
+    if (profileButton_ && !profileCatalog_.empty()) {
+        wchar_t wide[128]{};
+        MultiByteToWideChar(CP_UTF8, 0, profileCatalog_.front().name.c_str(), -1,
+                            wide, static_cast<int>(std::size(wide)));
+        std::wstring caption = L"Profil: " + std::wstring(wide);
+        SetWindowTextW(profileButton_, caption.c_str());
+    }
+}
+
+void Application::toggleProfilePopup() {
+    if (!profilePopup_) return;
+    ensureProfileCatalog();
+    if (profileCatalog_.empty()) {
+        SetWindowTextW(status_, L"Profil katalogu bulunamadi — Tekla .lis dosyalari yok");
+        return;
+    }
+    const bool visible = IsWindowVisible(profilePopup_);
+    if (!visible) {
+        RECT buttonRect{};
+        GetWindowRect(profileButton_, &buttonRect);
+        SetWindowPos(profilePopup_, HWND_TOPMOST, buttonRect.left,
+                     buttonRect.bottom + 2, 240, 420,
+                     SWP_NOACTIVATE);
+        ShowWindow(profilePopup_, SW_SHOWNOACTIVATE);
+        SetFocus(profilePopup_);
+    } else {
+        ShowWindow(profilePopup_, SW_HIDE);
+    }
+}
+
+void Application::applyProfilePopupSelection() {
+    if (!profilePopup_) return;
+    const LRESULT selection = SendMessageW(profilePopup_, LB_GETCURSEL, 0, 0);
+    ShowWindow(profilePopup_, SW_HIDE);
+    if (selection < 0 ||
+        selection >= static_cast<LRESULT>(profileCatalog_.size())) return;
+    assignProfileToSelection(
+        profileCatalog_[static_cast<std::size_t>(selection)].name);
 }
 
 void Application::assignProfileToSelection(const std::string& profileName) {
