@@ -3561,8 +3561,8 @@ void Application::assignProfileToSelection(const std::string& profileName) {
             if (index >= document_.models().size()) continue;
             const auto& model = document_.models()[index];
             if (model.vertices().size() != 2 || model.edges().size() != 1) continue;
-            const Vec3 from = model.vertices()[0].position;
-            const Vec3 to = model.vertices()[1].position;
+            const Vec3 from = model.vertices()[0];
+            const Vec3 to = model.vertices()[1];
             const TopoDS_Shape solid = mm::extrudeProfileSolid(*profile, from, to);
             if (solid.IsNull()) continue;
             auto solidModel = mm::shapeToWireframeWithFaces(solid, 0.15);
