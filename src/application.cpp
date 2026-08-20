@@ -1268,6 +1268,13 @@ LRESULT Application::handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lPa
             else clearTemporaryTracking();
         }
         else if (wParam == VK_F12) dynamicInputEnabled_ = !dynamicInputEnabled_;
+        else if (wParam == VK_F2) {
+            // Gorsel stil dongusu: Wireframe -> Solid -> Transparent
+            visualStyle_ = visualStyle_ == VisualStyle::Wireframe ? VisualStyle::Solid
+                         : visualStyle_ == VisualStyle::Solid ? VisualStyle::Transparent
+                         : VisualStyle::Wireframe;
+            updateControls(); invalidateCanvas();
+        }
         else if (wParam == VK_F11) { performanceOverlayEnabled_ = !performanceOverlayEnabled_; invalidateCanvas(); }
         else if (wParam == VK_F5) runRenderBenchmark();
         else if (wParam == 'Z' && (GetKeyState(VK_CONTROL) & 0x8000)) undo();
