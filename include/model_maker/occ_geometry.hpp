@@ -29,5 +29,8 @@ WireframeModel solidBoxWireframe(double dx, double dy, double dz);
 
 WireframeModel solidCylinderWireframe(double radius, double height, int circleSegments = 48);
 
+// BRep kati hacmi (br^3) — GProp_GProps uzerinden.
+double solidCylinderVolume(double radius, double height);
+
 } // namespace mm
 #endif // MM_HAS_OCC

@@ -30,7 +30,7 @@ constexpr wchar_t canvasClassName[] = L"ModelMakerCanvas";
 enum CommandId {
     CmdNew = 100, CmdOpen, CmdSave, CmdImportDxf, CmdExportDxf,
     CmdLine = 200, CmdPolyline, CmdRectangle, CmdCircle, CmdFace3D,
-    CmdCube = 300, CmdPyramid, CmdResetView, CmdView3D, CmdWorkPlane, CmdZoomExtents, CmdZoomWindow,
+    CmdCube = 300, CmdPyramid, CmdCylinder, CmdResetView, CmdView3D, CmdWorkPlane, CmdZoomExtents, CmdZoomWindow,
     CmdVisualStyle, CmdStandardView, CmdWireframe = 310, CmdSolid, CmdTransparent,
     CmdViewFront = 320, CmdViewBack, CmdViewLeft, CmdViewRight, CmdViewIsometric,
     CmdViewTop, CmdViewBottom,
@@ -237,6 +237,7 @@ void Application::createControlPanel() {
 
     addCommand(L"◇", CmdCube);
     addCommand(L"△", CmdPyramid);
+    addCommand(L"⬤", CmdCylinder);
     addCommand(L"⌂", CmdResetView);
     view3DButton_ = addCommand(L"3B", CmdView3D, BS_AUTOCHECKBOX | BS_PUSHLIKE);
     workPlaneButton_ = addCommand(L"▱", CmdWorkPlane, BS_AUTOCHECKBOX | BS_PUSHLIKE);
@@ -296,6 +297,7 @@ void Application::createControlPanel() {
         regTT(GetDlgItem(window_, CmdFace3D), L"3DFACE");
         regTT(GetDlgItem(window_, CmdCube), L"Küp");
         regTT(GetDlgItem(window_, CmdPyramid), L"Piramit");
+        regTT(GetDlgItem(window_, CmdCylinder), L"Silindir");
         regTT(GetDlgItem(window_, CmdResetView), L"Sıfırla");
         regTT(GetDlgItem(window_, CmdView3D), L"2B / 3B");
         regTT(GetDlgItem(window_, CmdWorkPlane), L"Düzlem");
@@ -1290,6 +1292,7 @@ LRESULT Application::handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lPa
         else if (wParam == 'W') startWorkPlaneCommand();
         else if (wParam == 'B') addCube();
         else if (wParam == 'Y') addPyramid();
+        else if (wParam == 'S') addCylinder();
         else if (wParam == 'R' && mode_ == EditMode::View3D) camera_.reset();
         else if (wParam == VK_DELETE) startTransformCommand(TransformCommand::Delete);
         else if (wParam == 'S' && (GetKeyState(VK_CONTROL) & 0x8000)) saveDocument();
@@ -2624,6 +2627,7 @@ void Application::executeCommand(int id) {
     case CmdFace3D: selectTool(DrawTool::Face3D); break;
     case CmdCube: addCube(); break;
     case CmdPyramid: addPyramid(); break;
+    case CmdCylinder: addCylinder(); break;
     case CmdResetView: camera_.reset(); break;
     case CmdView3D: toggle3DView(); break;
     case CmdWorkPlane: startWorkPlaneCommand(); break;
@@ -3049,6 +3053,10 @@ void Application::addCube() {
         cube.translate({static_cast<double>(document_.models().size() % 4) * 0.45, 0.0, 0.0});
         addStyledModel(std::move(cube)); mode_ = EditMode::View3D;
         cancelDrawing(); drawingActive_ = false;
+        wchar_t message[96]{};
+        std::swprintf(message, std::size(message), L"Kutu (BRep) hacmi: %.2f birim³",
+                      mm::boxVolume(2.6, 2.6, 2.6));
+        SetWindowTextW(status_, message);
         return;
     }
 #endif
@@ -3089,6 +3097,31 @@ void Application::addPyramid() {
     if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
     auto pyramid = WireframeModel::pyramid(3.0, 3.2); pyramid.translate({0.0, 0.0, -1.0});
     addStyledModel(std::move(pyramid)); mode_ = EditMode::View3D;
+    cancelDrawing(); drawingActive_ = false;
+}
+
+void Application::addCylinder() {
+    if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
+#ifdef MM_HAS_OCC
+    // OCC BRep silindir: r=1.3, h=3.0 (kutu/pramit ile ayni sabit-olusum akisi)
+    auto cylinder = mm::solidCylinderWireframe(1.3, 3.0, 48);
+    cylinder.translate({static_cast<double>(document_.models().size() % 4) * 0.45, 0.0, 0.0});
+    addStyledModel(std::move(cylinder)); mode_ = EditMode::View3D;
+    cancelDrawing(); drawingActive_ = false;
+    wchar_t message[96]{};
+    std::swprintf(message, std::size(message), L"Silindir (BRep) hacmi: %.2f birim³",
+                  mm::solidCylinderVolume(1.3, 3.0));
+    SetWindowTextW(status_, message);
+    return;
+#endif
+    // OCC yoksa yaklasik tel kafes silindir (2 daire + 2 dik cizgi)
+    auto cylinder = WireframeModel::circle({0.0, 0.0, 0.0}, 1.3, 48);
+    auto top = WireframeModel::circle({0.0, 0.0, 3.0}, 1.3, 48);
+    addStyledModel(std::move(cylinder));
+    addStyledModel(std::move(top));
+    addStyledModel(WireframeModel::line({1.3, 0.0, 0.0}, {1.3, 0.0, 3.0}));
+    addStyledModel(WireframeModel::line({-1.3, 0.0, 0.0}, {-1.3, 0.0, 3.0}));
+    mode_ = EditMode::View3D;
     cancelDrawing(); drawingActive_ = false;
 }
 

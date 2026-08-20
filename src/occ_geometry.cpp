@@ -134,6 +134,13 @@ WireframeModel solidBoxWireframe(double dx, double dy, double dz) {
     return shapeToWireframe(BRepPrimAPI_MakeBox(dx, dy, dz).Shape(), 48);
 }
 
+double solidCylinderVolume(double radius, double height) {
+    const TopoDS_Shape cylinder = BRepPrimAPI_MakeCylinder(radius, radius, height).Shape();
+    GProp_GProps props;
+    BRepGProp::VolumeProperties(cylinder, props);
+    return props.Mass();
+}
+
 WireframeModel solidCylinderWireframe(double radius, double height, int circleSegments) {
     // Analitik kurulum: alt/ust daire + iki meridyen cizgisi. Genel
     // tesselatoru kullanmaz — OCCT'nin silindir ilkelinin kapak insa

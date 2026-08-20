@@ -165,6 +165,7 @@ private:
     void activate3DNavigation();
     void addCube();
     void addPyramid();
+    void addCylinder();
     void saveOptions();
     void loadOptions();
     void processCommandLine(const std::wstring& command);
