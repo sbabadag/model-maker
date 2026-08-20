@@ -828,6 +828,39 @@ void Application::activateRibbonTab(RibbonTab tab) {
     // Profil secimi SABIT kontrol: her sekmede gorunur (kullanici istegi).
     if (profileCombo_) ShowWindow(profileCombo_, SW_SHOW);
     if (profileButton_) ShowWindow(profileButton_, SW_SHOW);
+    {
+        static int hierarchyDump = 0;
+        if (hierarchyDump++ < 2) {
+            FILE* diag = fopen("model-maker-render.log", "a");
+            struct ChildInfo { HWND window; };
+            std::vector<ChildInfo> children;
+            EnumChildWindows(window_, [](HWND child, LPARAM param) -> BOOL {
+                auto* list = reinterpret_cast<std::vector<ChildInfo>*>(param);
+                list->push_back(ChildInfo{child});
+                return TRUE;
+            }, reinterpret_cast<LPARAM>(&children));
+            if (diag) {
+                fprintf(diag, "CHILD-DUMP count=%zu\n", children.size());
+                for (const auto& child : children) {
+                    wchar_t className[64]{};
+                    wchar_t text[96]{};
+                    GetClassNameW(child.window, className,
+                                   static_cast<int>(std::size(className)));
+                    GetWindowTextW(child.window, text,
+                                   static_cast<int>(std::size(text)));
+                    RECT rect{}; GetWindowRect(child.window, &rect);
+                    RECT parentRect{}; GetWindowRect(window_, &parentRect);
+                    fprintf(diag,
+                        "  child class=%-12ls visible=%d rect=(%ld,%ld)-(%ld,%ld) "
+                        "clientX=%ld text=%.40ls\n",
+                        className, IsWindowVisible(child.window) ? 1 : 0,
+                        rect.left, rect.top, rect.right, rect.bottom,
+                        rect.left - parentRect.left, text);
+                }
+                fclose(diag);
+            }
+        }
+    }
     const auto geometry = RibbonLayout::layout(tab, window_ ? [] (HWND window) {
         RECT client{}; GetClientRect(window, &client); return std::max(1L, client.right);
     }(window_) : 1280);
