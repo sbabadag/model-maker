@@ -3575,8 +3575,17 @@ void Application::assignProfileToSelection(const std::string& profileName) {
         if (!solidIndices.empty()) {
             FILE* diag = fopen("model-maker-render.log", "a");
             if (diag) {
-                fprintf(diag, "PROFILE-EXTRUDE count=%zu profile=%s\n",
-                        solidIndices.size(), profile->name.c_str());
+                const auto& firstLine = document_.models()[selectedModels_.front()];
+                const Vec3 diagFrom = firstLine.vertices()[0];
+                const Vec3 diagTo = firstLine.vertices()[1];
+                fprintf(diag,
+                        "PROFILE-EXTRUDE count=%zu profile=%s "
+                        "line=(%.2f,%.2f,%.2f)->(%.2f,%.2f,%.2f) dir=(%.2f,%.2f,%.2f)\n",
+                        solidIndices.size(), profile->name.c_str(),
+                        diagFrom.x, diagFrom.y, diagFrom.z,
+                        diagTo.x, diagTo.y, diagTo.z,
+                        diagTo.x - diagFrom.x, diagTo.y - diagFrom.y,
+                        diagTo.z - diagFrom.z);
                 fclose(diag);
             }
         }
