@@ -10,6 +10,7 @@
 #include <BRepPrimAPI_MakeCylinder.hxx>
 #include <GeomAbs_CurveType.hxx>
 #include <TopExp_Explorer.hxx>
+#include <TopTools_IndexedDataMapOfShapeListOfShape.hxx>
 #include <TopoDS.hxx>
 #include <TopoDS_Edge.hxx>
 #include <gp_Pnt.hxx>
