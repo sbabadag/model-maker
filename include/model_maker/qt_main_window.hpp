@@ -9,6 +9,8 @@
 
 #include "model_maker/application.hpp"
 
+class QComboBox;
+
 namespace mm {
 
 class QtMainWindow : public QMainWindow {
@@ -32,6 +34,8 @@ private:
 
     Application app_;
     QWidget* canvasContainer_{};
+    QComboBox* profileSelector_{};
+    bool profileUiLogged_{};
 };
 
 } // namespace mm

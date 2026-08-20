@@ -573,33 +573,6 @@ void Application::layoutChildren(int width, int height) {
     if (lineTypeCombo_) MoveWindow(lineTypeCombo_, xPositions[2], 83, widths[2], 220, TRUE);
     if (profileCombo_) MoveWindow(profileCombo_, xPositions[3], 83, widths[3], 220, TRUE);
     if (profileButton_) MoveWindow(profileButton_, xPositions[3], 81, widths[3], 25, TRUE);
-    {
-        static int profileLayoutDiag = 0;
-        if (profileCombo_ && profileLayoutDiag++ < 4) {
-            RECT comboRect{}; GetWindowRect(profileCombo_, &comboRect);
-            RECT clientRect{}; GetClientRect(window_, &clientRect);
-            FILE* diag = fopen("model-maker-render.log", "a");
-            if (diag) {
-                fprintf(diag, "PROFILE-COMBO rect=(%ld,%ld)-(%ld,%ld) windowWidth=%ld\n",
-                        comboRect.left, comboRect.top, comboRect.right, comboRect.bottom,
-                        clientRect.right);
-                fclose(diag);
-            }
-        }
-        if (profileCombo_ && profileLayoutDiag++ < 4) {
-            RECT comboRect{}; GetWindowRect(profileCombo_, &comboRect);
-            RECT clientRect{}; GetClientRect(window_, &clientRect);
-            FILE* diag = fopen("model-maker-render.log", "a");
-            if (diag) {
-                fprintf(diag, "PROFILE-COMBO rect=(%ld,%ld)-(%ld,%ld) windowWidth=%ld "
-                        "visible=%d items=%d\n",
-                        comboRect.left, comboRect.top, comboRect.right, comboRect.bottom,
-                        clientRect.right, IsWindowVisible(profileCombo_) ? 1 : 0,
-                        static_cast<int>(SendMessageW(profileCombo_, CB_GETCOUNT, 0, 0)));
-                fclose(diag);
-            }
-        }
-    }
 
 #ifndef NDEBUG
     // --- Overlap validation rule ---
@@ -825,42 +798,10 @@ void Application::activateRibbonTab(RibbonTab tab) {
     if (layerCombo_) ShowWindow(layerCombo_, showProperties ? SW_SHOW : SW_HIDE);
     if (colorCombo_) ShowWindow(colorCombo_, showProperties ? SW_SHOW : SW_HIDE);
     if (lineTypeCombo_) ShowWindow(lineTypeCombo_, showProperties ? SW_SHOW : SW_HIDE);
-    // Profil secimi SABIT kontrol: her sekmede gorunur (kullanici istegi).
+    // Native controls remain as a standalone fallback. The shipped Qt shell
+    // uses its own always-visible profile toolbar.
     if (profileCombo_) ShowWindow(profileCombo_, SW_SHOW);
     if (profileButton_) ShowWindow(profileButton_, SW_SHOW);
-    {
-        static int hierarchyDump = 0;
-        if (hierarchyDump++ < 2) {
-            FILE* diag = fopen("model-maker-render.log", "a");
-            struct ChildInfo { HWND window; };
-            std::vector<ChildInfo> children;
-            EnumChildWindows(window_, [](HWND child, LPARAM param) -> BOOL {
-                auto* list = reinterpret_cast<std::vector<ChildInfo>*>(param);
-                list->push_back(ChildInfo{child});
-                return TRUE;
-            }, reinterpret_cast<LPARAM>(&children));
-            if (diag) {
-                fprintf(diag, "CHILD-DUMP count=%zu\n", children.size());
-                for (const auto& child : children) {
-                    wchar_t className[64]{};
-                    wchar_t text[96]{};
-                    GetClassNameW(child.window, className,
-                                   static_cast<int>(std::size(className)));
-                    GetWindowTextW(child.window, text,
-                                   static_cast<int>(std::size(text)));
-                    RECT rect{}; GetWindowRect(child.window, &rect);
-                    RECT parentRect{}; GetWindowRect(window_, &parentRect);
-                    fprintf(diag,
-                        "  child class=%-12ls visible=%d rect=(%ld,%ld)-(%ld,%ld) "
-                        "clientX=%ld text=%.40ls\n",
-                        className, IsWindowVisible(child.window) ? 1 : 0,
-                        rect.left, rect.top, rect.right, rect.bottom,
-                        rect.left - parentRect.left, text);
-                }
-                fclose(diag);
-            }
-        }
-    }
     const auto geometry = RibbonLayout::layout(tab, window_ ? [] (HWND window) {
         RECT client{}; GetClientRect(window, &client); return std::max(1L, client.right);
     }(window_) : 1280);
@@ -1095,13 +1036,17 @@ LRESULT Application::handleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
         return reinterpret_cast<LRESULT>(GetStockObject(DC_BRUSH));
     }
     case WM_COMMAND:
+        // Handle the profile button before the generic BN_CLICKED path. The
+        // old ordering swallowed this command in executeCommand(), so even a
+        // visible native fallback button could never open its picker.
+        if (HIWORD(wParam) == BN_CLICKED && LOWORD(wParam) == CmdProfileButton) {
+            if (profilePickerCallback_) profilePickerCallback_();
+            else toggleProfilePopup();
+            return 0;
+        }
         if (HIWORD(wParam) == BN_CLICKED) executeCommand(LOWORD(wParam));
         else if (HIWORD(wParam) == EN_CHANGE && LOWORD(wParam) == CmdPropsSearch) {
             if (propsPanelOpen_) updatePropertiesPanel();
-        }
-        else if (LOWORD(wParam) == CmdProfileButton) {
-            toggleProfilePopup();
-            return 0;
         }
         else if (LOWORD(wParam) == CmdProfilePopup) {
             if (HIWORD(wParam) == LBN_SELCHANGE || HIWORD(wParam) == LBN_DBLCLK) {
@@ -1430,7 +1375,12 @@ LRESULT Application::handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lPa
         else if (wParam == 'B') addCube();
         else if (wParam == 'Y') addPyramid();
         else if (wParam == 'S') addCylinder();
-        else if (wParam == 'X') toggleProfilePopup();
+        else if (wParam == 'X') {
+            // In the Qt shell X opens the actual visible QComboBox. Retain
+            // the Win32 popup only as a standalone Application fallback.
+            if (profilePickerCallback_) profilePickerCallback_();
+            else toggleProfilePopup();
+        }
 #ifdef MM_HAS_OCC
         else if (wParam == 'J') {
             if (GetKeyState(VK_CONTROL) < 0) addBooleanCommon();
@@ -1489,44 +1439,6 @@ void Application::onCanvasPaint() {
         // otomatik tetikleyici kaldirildi; benchmark artik yalniz F5 veya
         // Gorunum > Benchmark menu ogesiyle calisir.
     }
-    {
-        static int runtimeDump = 0;
-        if (runtimeDump++ < 3) {
-            FILE* diag = fopen("model-maker-render.log", "a");
-            if (diag) {
-                RECT winRect{}; GetWindowRect(window_, &winRect);
-                fprintf(diag, "RUNTIME-DUMP win=(%ld,%ld)-(%ld,%ld) winVisible=%d\n",
-                        winRect.left, winRect.top, winRect.right, winRect.bottom,
-                        IsWindowVisible(window_) ? 1 : 0);
-                std::vector<HWND> children;
-                EnumChildWindows(window_, [](HWND child, LPARAM param) -> BOOL {
-                    auto* list = reinterpret_cast<std::vector<HWND>*>(param);
-                    list->push_back(child);
-                    return TRUE;
-                }, reinterpret_cast<LPARAM>(&children));
-                for (const auto child : children) {
-                    wchar_t className[64]{};
-                    wchar_t text[96]{};
-                    GetClassNameW(child, className,
-                                   static_cast<int>(std::size(className)));
-                    GetWindowTextW(child, text, static_cast<int>(std::size(text)));
-                    RECT rect{}; GetWindowRect(child, &rect);
-                    const bool interesting =
-                        (std::wstring(className) == L"ComboBox") ||
-                        (std::wstring(className) == L"Button" &&
-                         std::wstring(text).find(L"Profil") != std::wstring::npos);
-                    if (interesting)
-                        fprintf(diag,
-                            "  class=%-12ls visible=%d rect=(%ld,%ld)-(%ld,%ld) "
-                            "clientX=%ld text=%.50ls\n",
-                            className, IsWindowVisible(child) ? 1 : 0,
-                            rect.left, rect.top, rect.right, rect.bottom,
-                            rect.left - winRect.left, text);
-                }
-                fclose(diag);
-            }
-        }
-    }
     const auto paintStart = std::chrono::steady_clock::now();
     renderer_.draw(dc, client, document_, camera_, mode_, draftView(), activeBackend);
     if (paintSequence_ <= 10 && paintSequence_ > 0)
@@ -1573,15 +1485,11 @@ void Application::onLeftButtonDown(int x, int y) {
     if (GetKeyState(VK_CONTROL) < 0) {
         // Ctrl+tiklama: bos modda nesne secimi (profil atama icin).
         updateHover(x, y);
-        if (!toggleModelSelection(x, y)) {
-            selectedModels_.clear();
-            SetWindowTextW(status_, L"Secim temizlendi");
-        } else {
-            wchar_t message[96]{};
-            std::swprintf(message, std::size(message), L"%zu nesne secili",
-                          selectedModels_.size());
-            SetWindowTextW(status_, message);
-        }
+        if (!toggleModelSelection(x, y)) selectedModels_.clear();
+        // updateStatus publishes to both the hidden Win32 fallback status and
+        // the visible Qt status bar; direct SetWindowTextW only reached the
+        // hidden host.
+        updateStatus();
         invalidateCanvas();
         return;
     }
@@ -3113,6 +3021,41 @@ void Application::updateStatus() {
                               renderBackend_->isHardwareAccelerated();
         text += glActive ? L"  |  GPU: GL" : L"  |  GPU: GDI";
     }
+    // Keep selection and section data near the start of the Qt status bar so
+    // A/Ix/Wx/G remain visible even when the remaining CAD state is lengthy.
+    if (!selectedModels_.empty()) {
+        text += L"  |  Seçim: " + std::to_wstring(selectedModels_.size());
+        bool haveProfile = false;
+        bool mixedProfiles = false;
+        std::string selectedProfile;
+        for (const auto index : selectedModels_) {
+            if (index >= document_.models().size()) continue;
+            const auto& name = document_.models()[index].properties().profileName;
+            if (!haveProfile) {
+                selectedProfile = name;
+                haveProfile = true;
+            } else if (name != selectedProfile) {
+                mixedProfiles = true;
+                break;
+            }
+        }
+        if (haveProfile && mixedProfiles) {
+            text += L"  |  Profil: karma";
+        } else if (haveProfile && selectedProfile.empty()) {
+            text += L"  |  Profil: atanmamış";
+        } else if (haveProfile) {
+            text += L"  |  Profil: " + utf8ToWide(selectedProfile);
+            if (const auto* profile = mm::findProfile(profileCatalog_, selectedProfile)) {
+                wchar_t section[192]{};
+                std::swprintf(section, std::size(section),
+                              L"  |  A=%.0f mm²  Ix=%.0f cm⁴  Wx=%.0f cm³  G=%.2f kg/m",
+                              profile->crossSectionArea, profile->inertiaX / 1.0e4,
+                              profile->sectionModulusX / 1.0e3,
+                              profile->weightPerUnitLength);
+                text += section;
+            }
+        }
+    }
     if (workPlanePicking_) {
         text += L"  |  WORK PLANE — ";
         if (workPlanePoints_.empty()) text += L"1. noktayı belirtin";
@@ -3216,6 +3159,11 @@ void Application::updateStatus() {
     }
     if (statusCallback_) statusCallback_(text);
     SetWindowTextW(status_, text.c_str());
+}
+
+void Application::publishStatus(const std::wstring& text) {
+    if (statusCallback_) statusCallback_(text);
+    if (status_) SetWindowTextW(status_, text.c_str());
 }
 
 void Application::invalidateCanvas() { if (canvas_) InvalidateRect(canvas_, nullptr, FALSE); }
@@ -3445,6 +3393,15 @@ void Application::ensureProfileCatalog() {
     }
 }
 
+std::vector<std::string> Application::profileNames() {
+    ensureProfileCatalog();
+    std::vector<std::string> names;
+    names.reserve(profileCatalog_.size());
+    for (const auto& profile : profileCatalog_) names.push_back(profile.name);
+    std::sort(names.begin(), names.end());
+    return names;
+}
+
 void Application::startProfileAssignment() {
     if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
     ensureProfileCatalog();
@@ -3563,25 +3520,38 @@ void Application::applyProfilePopupSelection() {
 }
 
 void Application::assignProfileToSelection(const std::string& profileName) {
+    ensureProfileCatalog();
     const auto* profile = mm::findProfile(profileCatalog_, profileName);
     if (!profile) {
-        SetWindowTextW(status_, L"Profil bulunamadi");
+        publishStatus(L"Profil bulunamadı: " + utf8ToWide(profileName));
         return;
     }
     if (selectedModels_.empty()) {
-        SetWindowTextW(status_, L"Once nesne secin (Ctrl+tiklama)");
+        publishStatus(L"Önce çizgiyi Ctrl+tıklama ile seçin, sonra profili seçin.");
         return;
     }
-    document_.setModelProfile(selectedModels_, profile->name);
+    const std::size_t assigned = document_.setModelProfile(selectedModels_, profile->name);
+    if (assigned == 0) {
+        publishStatus(L"Profil atanamadı — seçili nesne kilitli olabilir.");
+        return;
+    }
     solidStatusMessage_ = L"";
-    wchar_t message[220]{};
-    std::swprintf(message, std::size(message),
-                  L"%hs -> %zu nesne: A=%.0f mm², Ix=%.0f cm⁴, Wx=%.0f cm³, G=%.2f kg/m",
-                  profile->name.c_str(), selectedModels_.size(),
-                  profile->crossSectionArea, profile->inertiaX / 1.0e4,
-                  profile->sectionModulusX / 1.0e3, profile->weightPerUnitLength);
-    SetWindowTextW(status_, message);
-    updateControls(); invalidateCanvas();
+    {
+        FILE* diag = fopen("model-maker-render.log", "a");
+        if (diag) {
+            fprintf(diag,
+                    "PROFILE-ASSIGN name=%s requested=%zu assigned=%zu "
+                    "A=%.0f Ix=%.0f Wx=%.0f G=%.2f\n",
+                    profile->name.c_str(), selectedModels_.size(), assigned,
+                    profile->crossSectionArea, profile->inertiaX,
+                    profile->sectionModulusX, profile->weightPerUnitLength);
+            fclose(diag);
+        }
+    }
+    // updateControls() calls updateStatus(), which derives the persistent
+    // profile summary from the selected models and publishes it to Qt.
+    updateControls();
+    invalidateCanvas();
 }
 
 Vec3 Application::screenTo2D(int x, int y) const noexcept {

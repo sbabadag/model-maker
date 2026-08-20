@@ -69,6 +69,13 @@ public:
     void setCurrentLineTypeChoice(int index) noexcept;
     void refreshLayerList();
     void setLayerComboWidget(QComboBox* combo) noexcept { layerComboWidget_ = combo; }
+    // The visible application shell is Qt; expose the profile catalog and
+    // assignment action so its native toolbar can own the real picker.
+    std::vector<std::string> profileNames();
+    void assignProfileToSelection(const std::string& profileName);
+    void setProfilePickerCallback(std::function<void()> callback) {
+        profilePickerCallback_ = std::move(callback);
+    }
     void pushUndoSnapshot();
     void undo();
     void redo();
@@ -164,6 +171,7 @@ private:
     EntityProperties currentEntityProperties() const;
     void addStyledModel(WireframeModel model);
     void updateStatus();
+    void publishStatus(const std::wstring& text);
     void invalidateCanvas();
     void invalidateViewCube();
     void activate3DNavigation();
@@ -291,7 +299,6 @@ private:
     void commitProfileAssignment();
     void ensureProfileCatalog();
     void refreshProfileCombo();
-    void assignProfileToSelection(const std::string& profileName);
     void toggleProfilePopup();
     void applyProfilePopupSelection();
     std::vector<SteelProfile> profileCatalog_;
@@ -312,6 +319,7 @@ private:
     bool gpuLinesEnabled_ = false; // GL yolu dogrulanana kadar varsayilan GDI (F9 = GL)
     bool backendInitTried_ = false;
     std::function<void(const std::wstring&)> statusCallback_;
+    std::function<void()> profilePickerCallback_;
     EditMode mode_{EditMode::Draw2D};
     DrawTool tool_{DrawTool::Line};
     std::optional<Vec3> anchor_;

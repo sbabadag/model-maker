@@ -11,6 +11,7 @@
 #include <QTabWidget>
 #include <QPushButton>
 #include <QComboBox>
+#include <QCompleter>
 #include <QColorDialog>
 #include <QShortcut>
 #include <QKeySequence>
@@ -23,6 +24,7 @@
 #include <QInputDialog>
 #include <QTimer>
 #include <QMessageBox>
+#include <QLineEdit>
 #include <QLabel>
 #include <QWindow>
 #include <QResizeEvent>
@@ -262,6 +264,28 @@ void QtMainWindow::showEvent(QShowEvent* event) {
     // pass after the window is shown; without this the embedded GDI canvas
     // keeps the tiny pre-layout rect from the constructor (top-left corner).
     QTimer::singleShot(0, this, [this]() { resizeEmbeddedCanvas(); });
+    if (!profileUiLogged_ && profileSelector_) {
+        profileUiLogged_ = true;
+        // Log after Qt's first layout pass.  This describes the widget the
+        // user actually sees, not the deliberately hidden Win32 host window.
+        QTimer::singleShot(0, this, [this]() {
+            if (!profileSelector_) return;
+            const QPoint topLeft = profileSelector_->mapToGlobal(QPoint(0, 0));
+            const QByteArray current = profileSelector_->currentText().toUtf8();
+            FILE* diag = fopen("model-maker-render.log", "a");
+            if (diag) {
+                fprintf(diag,
+                        "PROFILE-QT-PICKER visible=%d enabled=%d items=%d "
+                        "rect=(%d,%d)-(%d,%d) current=%s\n",
+                        profileSelector_->isVisibleTo(this) ? 1 : 0,
+                        profileSelector_->isEnabled() ? 1 : 0,
+                        profileSelector_->count(), topLeft.x(), topLeft.y(),
+                        topLeft.x() + profileSelector_->width(),
+                        topLeft.y() + profileSelector_->height(), current.constData());
+                fclose(diag);
+            }
+        });
+    }
 }
 
 bool QtMainWindow::eventFilter(QObject* watched, QEvent* event) {
@@ -826,6 +850,94 @@ void QtMainWindow::createToolbar() {
         });
     });
     ribbon->addWidget(layerBtn);
+
+    // The Win32 window created by Application is intentionally hidden and
+    // only its canvas is reparented into this QMainWindow.  Consequently any
+    // controls parented to that Win32 host can never be part of the visible
+    // UI.  Keep profile selection in a dedicated Qt toolbar row so it remains
+    // visible on every ribbon tab and cannot overflow behind the tab widget.
+    addToolBarBreak(Qt::TopToolBarArea);
+    QToolBar* profileBar = new QToolBar("Çelik Profil", this);
+    profileBar->setObjectName("profileToolbar");
+    profileBar->setMovable(false);
+    profileBar->setFloatable(false);
+    profileBar->setAllowedAreas(Qt::TopToolBarArea);
+    profileBar->setStyleSheet(
+        "QToolBar { background: #34343B; border-top: 1px solid #4B4B55; "
+        "border-bottom: 1px solid #1C1C22; spacing: 8px; padding: 3px 8px; }"
+        "QLabel { color: #F0F0F4; font-weight: 600; }");
+    addToolBar(Qt::TopToolBarArea, profileBar);
+
+    QLabel* profileLabel = new QLabel("Çelik profil:", profileBar);
+    profileLabel->setObjectName("profileSelectorLabel");
+    profileBar->addWidget(profileLabel);
+
+    profileSelector_ = new QComboBox(profileBar);
+    profileSelector_->setObjectName("profileSelector");
+    profileSelector_->setAccessibleName("Çelik profil seçici");
+    profileSelector_->setEditable(true);
+    profileSelector_->setInsertPolicy(QComboBox::NoInsert);
+    profileSelector_->setMinimumWidth(280);
+    profileSelector_->setMaximumWidth(420);
+    profileSelector_->setMinimumContentsLength(24);
+    profileSelector_->setMaxVisibleItems(22);
+    profileSelector_->setToolTip(
+        "Ctrl+tıklama ile çizgileri seçin; ardından atanacak Tekla profilini seçin (X ile açılır).");
+
+    const auto profileNames = app_.profileNames();
+    profileLabel->setText(QString("Çelik profil (%1):").arg(
+        static_cast<int>(profileNames.size())));
+    for (const auto& name : profileNames)
+        profileSelector_->addItem(QString::fromStdString(name));
+    if (profileNames.empty()) {
+        profileSelector_->addItem("Profil kataloğu bulunamadı");
+        profileSelector_->setEnabled(false);
+    } else {
+        profileSelector_->setCurrentIndex(0);
+        if (QCompleter* completer = profileSelector_->completer()) {
+            completer->setCaseSensitivity(Qt::CaseInsensitive);
+            completer->setFilterMode(Qt::MatchContains);
+            completer->setCompletionMode(QCompleter::PopupCompletion);
+        }
+    }
+    profileBar->addWidget(profileSelector_);
+
+    QLabel* profileHint = new QLabel("Ctrl+tıkla seç  →  profili seç", profileBar);
+    profileHint->setObjectName("profileSelectorHint");
+    profileHint->setStyleSheet("color: #C8CCD4; font-weight: 400;");
+    profileBar->addWidget(profileHint);
+
+    QObject::connect(profileSelector_, &QComboBox::textActivated, this,
+        [this](const QString& text) {
+            const QString name = text.trimmed();
+            if (name.isEmpty()) return;
+            const QByteArray utf8 = name.toUtf8();
+            FILE* diag = fopen("model-maker-render.log", "a");
+            if (diag) {
+                fprintf(diag, "PROFILE-QT-SELECT name=%s\n", utf8.constData());
+                fclose(diag);
+            }
+            app_.assignProfileToSelection(utf8.toStdString());
+            if (HWND canvas = app_.canvasHandle()) SetFocus(canvas);
+        });
+    app_.setProfilePickerCallback([this]() {
+        if (!profileSelector_ || !profileSelector_->isEnabled()) return;
+        // Queue out of the native canvas WndProc before entering a Qt popup.
+        QTimer::singleShot(0, profileSelector_, [this]() {
+            if (!profileSelector_) return;
+            profileSelector_->setFocus(Qt::ShortcutFocusReason);
+            profileSelector_->showPopup();
+        });
+    });
+
+    {
+        FILE* diag = fopen("model-maker-render.log", "a");
+        if (diag) {
+            fprintf(diag, "PROFILE-QT-CREATED items=%d object=profileSelector\n",
+                    profileSelector_->count());
+            fclose(diag);
+        }
+    }
 }
 
 void QtMainWindow::createDockPanels() {
