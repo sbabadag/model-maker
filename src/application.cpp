@@ -767,7 +767,8 @@ void Application::activateRibbonTab(RibbonTab tab) {
     if (layerCombo_) ShowWindow(layerCombo_, showProperties ? SW_SHOW : SW_HIDE);
     if (colorCombo_) ShowWindow(colorCombo_, showProperties ? SW_SHOW : SW_HIDE);
     if (lineTypeCombo_) ShowWindow(lineTypeCombo_, showProperties ? SW_SHOW : SW_HIDE);
-    if (profileCombo_) ShowWindow(profileCombo_, showProperties ? SW_SHOW : SW_HIDE);
+    // Profil secimi SABIT kontrol: her sekmede gorunur (kullanici istegi).
+    if (profileCombo_) ShowWindow(profileCombo_, SW_SHOW);
     const auto geometry = RibbonLayout::layout(tab, window_ ? [] (HWND window) {
         RECT client{}; GetClientRect(window, &client); return std::max(1L, client.right);
     }(window_) : 1280);
