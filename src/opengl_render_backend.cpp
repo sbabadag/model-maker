@@ -31,6 +31,11 @@ namespace GLConst {
     constexpr GLenum DYNAMIC_DRAW = 0x88E8;
     constexpr GLenum UNIFORM_BUFFER = 0x8A11;
     constexpr GLenum LINES = 0x0001;
+    constexpr GLenum TRIANGLES = 0x0004;
+    constexpr GLenum DEPTH_TEST = 0x0B71;
+    constexpr GLenum DEPTH_FUNC = 0x0B74;
+    constexpr GLenum LEQUAL = 0x0203;
+    constexpr GLenum POLYGON_OFFSET_FILL = 0x8037;
     constexpr GLenum BLEND_MODE = 0x0BE2;
     constexpr GLenum SRC_ALPHA = 0x0302;
     constexpr GLenum ONE_MINUS_SRC_ALPHA = 0x0303;
@@ -85,6 +90,10 @@ using PFNGLCLEARCOLORPROC = void (APIENTRY *)(GLfloat, GLfloat, GLfloat, GLfloat
 using PFNGLVIEWPORTPROC = void (APIENTRY *)(GLint, GLint, GLsizei, GLsizei);
 using PFNGLDRAWELEMENTSPROC = void (APIENTRY *)(GLenum, GLsizei, GLenum, const void*);
 using PFNGLENABLEPROC = void (APIENTRY *)(GLenum);
+using PFNGLUNIFORM1FPROC = void (APIENTRY *)(GLint, GLfloat);
+using PFNGLDEPTHFUNCPROC = void (APIENTRY *)(GLenum);
+using PFNGLDEPTHMASKPROC = void (APIENTRY *)(GLboolean);
+using PFNGLPOLYGONOFFSETPROC = void (APIENTRY *)(GLfloat, GLfloat);
 using PFNGLDISABLEPROC = void (APIENTRY *)(GLenum);
 using PFNGLBLENDFUNCPROC = void (APIENTRY *)(GLenum, GLenum);
 using PFNGLFINISHPROC = void (APIENTRY *)();
@@ -142,6 +151,10 @@ PFNGLDRAWELEMENTSPROC glDrawElements = nullptr;
 PFNGLENABLEPROC glEnable = nullptr;
 PFNGLDISABLEPROC glDisable = nullptr;
 PFNGLBLENDFUNCPROC glBlendFunc = nullptr;
+PFNGLUNIFORM1FPROC glUniform1f = nullptr;
+PFNGLDEPTHFUNCPROC glDepthFunc = nullptr;
+PFNGLDEPTHMASKPROC glDepthMask = nullptr;
+PFNGLPOLYGONOFFSETPROC glPolygonOffset = nullptr;
 PFNGLFINISHPROC glFinish = nullptr;
 // MinGW basliklarinda PFNGLGETERRORPROC tanimli degil — elle bildir.
 using PFNGLGETERRORPROC = GLenum(APIENTRY*)(void);
@@ -182,8 +195,9 @@ const char* fragmentShaderSource = R"GLSL(
 #version 330 core
 in vec4 fragColor;
 layout(location = 0) out vec4 outColor;
+uniform float uAlpha;
 void main() {
-    outColor = fragColor;
+    outColor = vec4(fragColor.rgb, fragColor.a * uAlpha);
 }
 )GLSL";
 
@@ -254,6 +268,10 @@ bool loadWglExtensions(HDC hdc) {
     LOAD_GL(glEnable);
     LOAD_GL(glDisable);
     LOAD_GL(glBlendFunc);
+    LOAD_GL(glUniform1f);
+    LOAD_GL(glDepthFunc);
+    LOAD_GL(glDepthMask);
+    LOAD_GL(glPolygonOffset);
     LOAD_GL(glFinish);
     LOAD_GL(glGetError);
     // FBO
@@ -590,7 +608,8 @@ bool OpenGLRenderBackend::blitToDC(void* target, int width, int height) {
 bool OpenGLRenderBackend::renderBatchToDc(
     const std::vector<std::pair<std::size_t, WireframeModel>>& models,
     const Camera& camera, int width, int height, void* targetHdc,
-    bool useProjection2D, std::uint64_t contentRevision) {
+    bool useProjection2D, std::uint64_t contentRevision,
+    std::uint8_t faceAlpha) {
     if (!initialized_ || models.empty()) return false;
     const auto glDiag = [this](const char* step) {
         if (glDiagCount_ >= 8) return;
@@ -617,6 +636,16 @@ bool OpenGLRenderBackend::renderBatchToDc(
 
     ensureBatch(models, contentRevision);
     glDiag("BATCH-OK");
+    faceAlpha_ = faceAlpha;
+    renderedTriangles_ = 0;
+    if (faceAlpha != 0) {
+        // Yuzler once, derinlik testiyle: opak dolgu + dogru ortme;
+        // tel kafes cizgileri ustte kalir (depth yazilmaz/yok sayilir).
+        ensureFaceBatch(models, contentRevision);
+        renderFaceBatch(faceBatch_, camera, width, height, useProjection2D, faceAlpha);
+        renderedTriangles_ = faceBatch_.indexCount / 3;
+        glClear(GLConst::DEPTH_BUFFER_BIT);
+    }
     if (lineBatch_.indexCount != 0) {
         renderBatch(lineBatch_, camera, width, height, useProjection2D);
         drawCalls_ = 1;
@@ -687,6 +716,10 @@ bool OpenGLRenderBackend::compileShaders() {
     shaderProgram_ = program;
     uniformMvp_ = mvpLoc;
     uniformScreenSize_ = screenLoc;
+    uniformAlpha_ = glGetUniformLocation(shaderProgram_, "uAlpha");
+    glUseProgram(shaderProgram_);
+    if (uniformAlpha_ >= 0) glUniform1f(uniformAlpha_, 1.0f);
+    glUseProgram(0);
     // F3: kamera UBO'su (64 bayt = mat4) — her karede glBufferSubData ile
     // guncellenir, glUniform cagrisi ve string lookup yok.
     glGenBuffers(1, &cameraUbo_);
@@ -762,6 +795,97 @@ void OpenGLRenderBackend::ensureBatch(
     }
     lineBatch_.indexCount = lineBatch_.indices.size();
     uploadBatch(lineBatch_);
+}
+
+void OpenGLRenderBackend::ensureFaceBatch(
+    const std::vector<std::pair<std::size_t, WireframeModel>>& models,
+    std::uint64_t contentRevision) {
+    std::size_t totalFaces = 0;
+    for (const auto& [idx, model] : models) totalFaces += model.faces().size();
+    std::size_t tag = contentRevision
+        ? static_cast<std::size_t>(contentRevision)
+        : (models.size() ^ (totalFaces << 16));
+    if (tag == faceBatch_.versionTag && !faceBatch_.dirty) return;
+
+    faceBatch_.versionTag = tag;
+    faceBatch_.dirty = true;
+    faceBatch_.modelCount = models.size();
+
+    std::size_t totalVertices = 0, totalIndices = 0;
+    for (const auto& [idx, model] : models) {
+        if (model.faces().empty()) continue;
+        totalVertices += model.vertices().size();
+        for (const auto& face : model.faces())
+            totalIndices += face.size() >= 3 ? (face.size() - 2) * 3 : 0;
+    }
+
+    faceBatch_.vertices.clear();
+    faceBatch_.vertices.reserve(totalVertices);
+    faceBatch_.indices.clear();
+    faceBatch_.indices.reserve(totalIndices);
+
+    std::size_t vertexBase = 0;
+    for (const auto& [modelIdx, model] : models) {
+        const auto& vertices = model.vertices();
+        const auto& faces = model.faces();
+        if (vertices.empty() || faces.empty()) continue;
+        const auto props = model.properties();
+        const std::uint32_t rgba = toRGBA8(props.effectiveColor);
+        for (const auto& v : vertices) {
+            GpuLineBatch::GpuVertex gv;
+            gv.x = static_cast<float>(v.x);
+            gv.y = static_cast<float>(v.y);
+            gv.z = static_cast<float>(v.z);
+            gv.color = rgba;
+            faceBatch_.vertices.push_back(gv);
+        }
+        for (const auto& face : faces) {
+            if (face.size() < 3) continue;
+            // N-gen yelpaze ucgenlemesi (ucgen yuzler icin birebir ayni).
+            for (std::size_t i = 1; i + 1 < face.size(); ++i) {
+                faceBatch_.indices.push_back(static_cast<std::uint32_t>(vertexBase + face[0]));
+                faceBatch_.indices.push_back(static_cast<std::uint32_t>(vertexBase + face[i]));
+                faceBatch_.indices.push_back(static_cast<std::uint32_t>(vertexBase + face[i + 1]));
+            }
+        }
+        vertexBase += vertices.size();
+    }
+    faceBatch_.indexCount = faceBatch_.indices.size();
+    uploadBatch(faceBatch_);
+}
+
+void OpenGLRenderBackend::renderFaceBatch(const GpuLineBatch& batch, const Camera& camera,
+                                          int width, int height, bool useProjection2D,
+                                          std::uint8_t faceAlpha) {
+    if (batch.indexCount == 0 || batch.vao == 0) return;
+    glUseProgram(shaderProgram_);
+    float mvp[16];
+    computeMVPMatrix(camera, width, height, mvp, useProjection2D);
+    glBindBuffer(GLConst::UNIFORM_BUFFER, cameraUbo_);
+    glBufferSubData(GLConst::UNIFORM_BUFFER, 0, 64, mvp);
+    glBindBuffer(GLConst::UNIFORM_BUFFER, 0);
+    if (uniformAlpha_ >= 0)
+        glUniform1f(uniformAlpha_, static_cast<float>(faceAlpha) / 255.0f);
+
+    glEnable(GLConst::DEPTH_TEST);
+    glDepthFunc(GLConst::LEQUAL);
+    glClear(GLConst::DEPTH_BUFFER_BIT);
+    glEnable(GLConst::BLEND_MODE);
+    glBlendFunc(GLConst::SRC_ALPHA, GLConst::ONE_MINUS_SRC_ALPHA);
+    glDepthMask(faceAlpha == 255 ? GLConst::GL_TRUE : GLConst::GL_FALSE);
+    // Cizgilerin yuzeyle ayni duzlemde kaybolmasini onle: yuzleri hafifce
+    // geri it (poligon ofseti) — tel kafes her zaman gorunur kalir.
+    glEnable(GLConst::POLYGON_OFFSET_FILL);
+    glPolygonOffset(1.0f, 1.0f);
+    glBindVertexArray(batch.vao);
+    glDrawElements(GLConst::TRIANGLES, static_cast<GLsizei>(batch.indexCount),
+                   GLConst::UNSIGNED_INT_TYPE, nullptr);
+    glBindVertexArray(0);
+    glDisable(GLConst::POLYGON_OFFSET_FILL);
+    glDisable(GLConst::BLEND_MODE);
+    glDepthMask(GLConst::GL_TRUE);
+    glDisable(GLConst::DEPTH_TEST);
+    if (uniformAlpha_ >= 0) glUniform1f(uniformAlpha_, 1.0f);
 }
 
 void OpenGLRenderBackend::uploadBatch(GpuLineBatch& batch) {

@@ -829,7 +829,9 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         COLORREF edgeColor{};
     };
     const unsigned char faceAlpha = visualStyleFaceAlpha(draft.visualStyle);
-    if (!draft.snapOnly && faceAlpha != 0 && !draft.interactiveNavigation) {
+    // GL modunda yuzler GPU batch'inde cizilir (F8 mimarisi); GDI dolgusu
+    // yalniz saf-GDI yolunda calisir — cift cizim ve DWM titremesi onlenir.
+    if (!useGpuLines && !draft.snapOnly && faceAlpha != 0 && !draft.interactiveNavigation) {
         std::vector<ProjectedFace> projectedFaces;
         for (const auto index : visibleModels) {
             if (index >= document.models().size()) continue;
@@ -1018,7 +1020,7 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
     if (useGpuLines) {
         glBackend->renderBatchToDc(
             gpuBatchPtr ? *gpuBatchPtr : emptyGpuBatch_, camera, width, height, dc,
-            mode == EditMode::Draw2D, document.revision());
+            mode == EditMode::Draw2D, document.revision(), faceAlpha);
         performance.drawCalls += glBackend->drawCallsPerFrame();
     }
 
