@@ -212,7 +212,6 @@ private:
     HWND snapButton_{};
     HWND gridSnapButton_{};
     HWND dynamicInputButton_{};
-    HWND profileCombo_{};
     HWND snapSettingsButton_{};
     HWND polarTrackingButton_{};
     HWND snapPanel_{};
