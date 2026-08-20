@@ -8,6 +8,7 @@
 #include <BRepPrimAPI_MakeBox.hxx>
 #include <BRepPrimAPI_MakeCylinder.hxx>
 #include <gp_Trsf.hxx>
+#include <gp_Vec.hxx>
 #endif
 #include "model_maker/view_cube.hpp"
 

@@ -1,4 +1,7 @@
 #pragma once
+#ifdef MM_HAS_OCC
+#include <TopoDS_Shape.hxx>
+#endif
 
 #include "model_maker/camera.hpp"
 #include "model_maker/document.hpp"
