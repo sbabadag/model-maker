@@ -544,6 +544,20 @@ void Application::layoutChildren(int width, int height) {
     if (colorCombo_) MoveWindow(colorCombo_, xPositions[1], 83, widths[1], 220, TRUE);
     if (lineTypeCombo_) MoveWindow(lineTypeCombo_, xPositions[2], 83, widths[2], 220, TRUE);
     if (profileCombo_) MoveWindow(profileCombo_, xPositions[3], 83, widths[3], 220, TRUE);
+    {
+        static int profileLayoutDiag = 0;
+        if (profileCombo_ && profileLayoutDiag++ < 4) {
+            RECT comboRect{}; GetWindowRect(profileCombo_, &comboRect);
+            RECT clientRect{}; GetClientRect(window_, &clientRect);
+            FILE* diag = fopen("model-maker-render.log", "a");
+            if (diag) {
+                fprintf(diag, "PROFILE-COMBO rect=(%ld,%ld)-(%ld,%ld) windowWidth=%ld\n",
+                        comboRect.left, comboRect.top, comboRect.right, comboRect.bottom,
+                        clientRect.right);
+                fclose(diag);
+            }
+        }
+    }
 
 #ifndef NDEBUG
     // --- Overlap validation rule ---
