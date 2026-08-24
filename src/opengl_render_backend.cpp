@@ -855,7 +855,17 @@ void OpenGLRenderBackend::ensureFaceBatch(
         const auto& faces = model.faces();
         if (vertices.empty() || faces.empty()) continue;
         const auto props = model.properties();
-        const std::uint32_t rgba = toRGBA8(props.effectiveColor);
+        // GDI ile ayni yuz gölgelendirmesi: renk x 0.42 (yuz dolgusu
+        // parlarken tel kafes/kenarlar tam renkte kalir).
+        const auto shadeChannel = [](std::uint32_t channel) {
+            return (static_cast<std::uint32_t>(static_cast<double>(channel) * 0.42)) & 0xFFu;
+        };
+        const std::uint32_t baseColor = props.effectiveColor;
+        const std::uint32_t shadedRgb =
+            (shadeChannel((baseColor >> 16) & 0xFFu) << 16) |
+            (shadeChannel((baseColor >> 8) & 0xFFu) << 8) |
+            shadeChannel(baseColor & 0xFFu);
+        const std::uint32_t rgba = toRGBA8(shadedRgb);
         for (const auto& v : vertices) {
             GpuLineBatch::GpuVertex gv;
             gv.x = static_cast<float>(v.x);
