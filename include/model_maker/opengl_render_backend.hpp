@@ -123,6 +123,8 @@ private:
     void ensureBatch(const std::vector<std::pair<std::size_t, WireframeModel>>& models,
                      std::uint64_t contentRevision = 0);
     void uploadBatch(GpuLineBatch& batch);
+    void renderContourLines(const std::vector<std::pair<std::size_t, WireframeModel>>& models,
+                            const Camera& camera, int width, int height, bool useProjection2D);
     void renderBatch(const GpuLineBatch& batch, const Camera& camera,
                      int width, int height, bool useProjection2D = false);
     void ensureFaceBatch(const std::vector<std::pair<std::size_t, WireframeModel>>& models,

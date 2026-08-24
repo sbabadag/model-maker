@@ -36,6 +36,7 @@ namespace GLConst {
     constexpr GLenum DEPTH_FUNC = 0x0B74;
     constexpr GLenum LEQUAL = 0x0203;
     constexpr GLenum POLYGON_OFFSET_FILL = 0x8037;
+    constexpr GLenum POLYGON_OFFSET_LINE = 0x2A02;
     constexpr GLenum PIXEL_PACK_BUFFER = 0x88EB;
     constexpr GLenum STREAM_READ = 0x88E1;
     constexpr GLenum READ_ONLY = 0x88B8;
@@ -663,6 +664,7 @@ bool OpenGLRenderBackend::renderBatchToDc(
         ensureFaceBatch(models, contentRevision);
         renderFaceBatch(faceBatch_, camera, width, height, useProjection2D, faceAlpha);
         renderedTriangles_ = faceBatch_.indexCount / 3;
+        renderContourLines(models, camera, width, height, useProjection2D);
         glClear(GLConst::DEPTH_BUFFER_BIT);
     }
     if (lineBatch_.indexCount != 0) {
@@ -908,6 +910,93 @@ void OpenGLRenderBackend::renderFaceBatch(const GpuLineBatch& batch, const Camer
     glDepthMask(GLConst::GL_TRUE);
     glDisable(GLConst::DEPTH_TEST);
     if (uniformAlpha_ >= 0) glUniform1f(uniformAlpha_, 1.0f);
+}
+
+void OpenGLRenderBackend::renderContourLines(
+    const std::vector<std::pair<std::size_t, WireframeModel>>& models,
+    const Camera& camera, int width, int height, bool useProjection2D) {
+    // Siluet (dis kontur) cizgileri: bir ucgen yuzu one, digeri arkaya bakan
+    // kenarlar. Izduşum sonrası 2B yonlenme (winding) ile belirlenir —
+    // kamera bagimli, ekran-uzayi testi (goz konumu gerekmez).
+    std::vector<std::array<Vec3, 2>> segments;
+    for (const auto& [modelIndex, model] : models) {
+        (void)modelIndex;
+        const auto& vertices = model.vertices();
+        const auto& faces = model.faces();
+        if (vertices.empty() || faces.empty()) continue;
+        std::map<std::pair<std::size_t, std::size_t>, int> frontCount;
+        std::map<std::pair<std::size_t, std::size_t>, int> backCount;
+        for (const auto& face : faces) {
+            if (face.size() < 3) continue;
+            for (std::size_t i = 1; i + 1 < face.size(); ++i) {
+                const Vec2 p0 = camera.project(vertices[face[0]], width, height);
+                const Vec2 p1 = camera.project(vertices[face[i]], width, height);
+                const Vec2 p2 = camera.project(vertices[face[i + 1]], width, height);
+                const double area = (p1.x - p0.x) * (p2.y - p0.y) -
+                                    (p1.y - p0.y) * (p2.x - p0.x);
+                const bool front = area > 0.0;
+                const std::array<std::size_t, 3> triangle = {face[0], face[i], face[i + 1]};
+                for (std::size_t edge = 0; edge < 3; ++edge) {
+                    std::size_t va = triangle[edge];
+                    std::size_t vb = triangle[(edge + 1) % 3];
+                    if (va > vb) std::swap(va, vb);
+                    const auto key = std::make_pair(va, vb);
+                    ++(front ? frontCount[key] : backCount[key]);
+                }
+            }
+        }
+        for (const auto& [key, count] : frontCount) {
+            if (count > 0 && backCount[key] > 0)
+                segments.push_back({vertices[key.first], vertices[key.second]});
+        }
+    }
+    if (segments.empty()) return;
+
+    GpuLineBatch batch;
+    const std::uint32_t color = 0xFF22242A; // koyu kontur
+    for (const auto& segment : segments) {
+        const std::uint32_t base = static_cast<std::uint32_t>(batch.vertices.size());
+        for (const Vec3& point : {segment[0], segment[1]}) {
+            GpuLineBatch::GpuVertex vertex;
+            vertex.x = static_cast<float>(point.x);
+            vertex.y = static_cast<float>(point.y);
+            vertex.z = static_cast<float>(point.z);
+            vertex.color = color;
+            batch.vertices.push_back(vertex);
+        }
+        batch.indices.push_back(base);
+        batch.indices.push_back(base + 1);
+    }
+    batch.indexCount = batch.indices.size();
+    uploadBatch(batch);
+
+    glUseProgram(shaderProgram_);
+    float mvp[16];
+    computeMVPMatrix(camera, width, height, mvp, useProjection2D);
+    glBindBuffer(GLConst::UNIFORM_BUFFER, cameraUbo_);
+    glBufferSubData(GLConst::UNIFORM_BUFFER, 0, 64, mvp);
+    glBindBuffer(GLConst::UNIFORM_BUFFER, 0);
+    if (uniformAlpha_ >= 0) glUniform1f(uniformAlpha_, 1.0f);
+    glEnable(GLConst::DEPTH_TEST);
+    glDepthFunc(GLConst::LEQUAL);
+    glDepthMask(GLConst::GL_FALSE);
+    glEnable(GLConst::BLEND_MODE);
+    glBlendFunc(GLConst::SRC_ALPHA, GLConst::ONE_MINUS_SRC_ALPHA);
+    glEnable(GLConst::POLYGON_OFFSET_LINE);
+    glPolygonOffset(-1.0f, -1.0f);
+    glLineWidth(1.5f);
+    glBindVertexArray(batch.vao);
+    glDrawElements(GLConst::LINES, static_cast<GLsizei>(batch.indexCount),
+                   GLConst::UNSIGNED_INT_TYPE, nullptr);
+    glBindVertexArray(0);
+    glLineWidth(1.0f);
+    glDisable(GLConst::POLYGON_OFFSET_LINE);
+    glDisable(GLConst::BLEND_MODE);
+    glDepthMask(GLConst::GL_TRUE);
+    glDisable(GLConst::DEPTH_TEST);
+    glDeleteVertexArrays(1, &batch.vao);
+    glDeleteBuffers(1, &batch.vbo);
+    glDeleteBuffers(1, &batch.ebo);
 }
 
 void OpenGLRenderBackend::uploadBatch(GpuLineBatch& batch) {
