@@ -985,12 +985,10 @@ void OpenGLRenderBackend::renderContourLines(
     glBlendFunc(GLConst::SRC_ALPHA, GLConst::ONE_MINUS_SRC_ALPHA);
     glEnable(GLConst::POLYGON_OFFSET_LINE);
     glPolygonOffset(-1.0f, -1.0f);
-    glLineWidth(1.5f);
     glBindVertexArray(batch.vao);
     glDrawElements(GLConst::LINES, static_cast<GLsizei>(batch.indexCount),
                    GLConst::UNSIGNED_INT_TYPE, nullptr);
     glBindVertexArray(0);
-    glLineWidth(1.0f);
     glDisable(GLConst::POLYGON_OFFSET_LINE);
     glDisable(GLConst::BLEND_MODE);
     glDepthMask(GLConst::GL_TRUE);
