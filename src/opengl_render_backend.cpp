@@ -1020,13 +1020,16 @@ void OpenGLRenderBackend::renderContourLines(
     // Siluet (dis kontur) cizgileri: bir ucgen yuzu one, digeri arkaya bakan
     // kenarlar. Izduşum sonrası 2B yonlenme (winding) ile belirlenir —
     // kamera bagimli, ekran-uzayi testi (goz konumu gerekmez).
-    std::vector<std::array<Vec3, 2>> segments;
+    std::vector<std::pair<std::array<Vec3, 2>, std::uint32_t>> segments;
 
     for (const auto& [modelIndex, model] : models) {
         (void)modelIndex;
         const auto& vertices = model.vertices();
         const auto& faces = model.faces();
         if (vertices.empty() || faces.empty()) continue;
+        // Kontur rengi = varligin tam rengi (yarisaydam stilindeki
+        // kenarlarla ayni gorunum).
+        const std::uint32_t contourColor = toRGBA8(model.properties().effectiveColor);
         std::map<std::pair<std::size_t, std::size_t>, int> frontCount;
         std::map<std::pair<std::size_t, std::size_t>, int> backCount;
         for (const auto& face : faces) {
@@ -1059,7 +1062,9 @@ void OpenGLRenderBackend::renderContourLines(
         }
         for (const auto& [key, count] : frontCount) {
             if (count > 0 && backCount[key] > 0)
-                segments.push_back({vertices[key.first], vertices[key.second]});
+                segments.push_back(
+                    {std::array<Vec3, 2>{vertices[key.first], vertices[key.second]},
+                     contourColor});
         }
     }
     static std::size_t lastLoggedCount = static_cast<std::size_t>(-1);
