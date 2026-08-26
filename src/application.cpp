@@ -2190,7 +2190,7 @@ Application::layerProperties() const {
     return document_.layers();
 }
 
-const std::vector<std::pair<const wchar_t*, std::optional<std::uint32_t>>>&
+const std::vector<std::string>&
 Application::lineTypePalette() {
     static std::vector<std::string> values;
     if (values.empty()) {
@@ -2201,6 +2201,7 @@ Application::lineTypePalette() {
     return values;
 }
 
+const std::vector<std::pair<const wchar_t*, std::optional<std::uint32_t>>>&
 Application::colorPalette() {
     static const std::vector<std::pair<const wchar_t*, std::optional<std::uint32_t>>> palette = []() {
         std::vector<std::pair<const wchar_t*, std::optional<std::uint32_t>>> p;
