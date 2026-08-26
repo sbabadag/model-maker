@@ -4039,7 +4039,16 @@ void Application::assignProfileToSelection(const std::string& profileName) {
         for (const auto index : selectedModels_) {
             if (index >= document_.models().size()) continue;
             const auto& model = document_.models()[index];
-            if (model.vertices().size() != 2 || model.edges().size() != 1) continue;
+            if (model.vertices().size() != 2 || model.edges().size() != 1) {
+                FILE* assignDiag = fopen("model-maker-render.log", "a");
+                if (assignDiag) {
+                    fprintf(assignDiag,
+                            "ASSIGN-SKIP index=%zu verts=%zu edges=%zu (cizgi degil)\n",
+                            index, model.vertices().size(), model.edges().size());
+                    fclose(assignDiag);
+                }
+                continue;
+            }
             const Vec3 from = model.vertices()[0];
             const Vec3 to = model.vertices()[1];
             const TopoDS_Shape solid = mm::extrudeProfileSolid(
