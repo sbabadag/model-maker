@@ -2,6 +2,7 @@
 #include "model_maker/document.hpp"
 
 #include <cmath>
+#include <algorithm>
 #include <cstdio>
 #include <filesystem>
 
@@ -9,6 +10,28 @@ int main() {
     const auto fixture = std::filesystem::path(__FILE__).parent_path() /
                          "data" / "sample_profiles.lis";
     const auto profiles = mm::parseTeklaProfileDatabase(fixture);
+
+    // Gömülü Avrupa kataloğu: 123 profil (HEA/HEB/HEM/IPE/IPN/UPN)
+    const auto european = std::filesystem::path(__FILE__).parent_path().parent_path() /
+                          "profiles" / "european.lis";
+    const auto euProfiles = mm::parseTeklaProfileDatabase(european);
+    if (euProfiles.size() != 123) {
+        std::printf("HATA: Avrupa katalogu %zu profil (123 bekleniyor)\n",
+                    euProfiles.size());
+        return 1;
+    }
+    const auto hea300 = std::find_if(euProfiles.begin(), euProfiles.end(),
+                                     [](const mm::SteelProfile& profile) {
+                                         return profile.name == "HEA300";
+                                     });
+    if (hea300 == euProfiles.end() ||
+        std::abs(hea300->crossSectionArea - 11250.0) > 50.0) {
+        std::printf("HATA: HEA300 yok veya alan yanlis (A=%.1f mm2)\n",
+                    hea300 == euProfiles.end() ? -1.0 : hea300->crossSectionArea);
+        return 1;
+    }
+    std::printf("EU-PROFILES OK — 123 profil, HEA300 A=%.1f mm2, Ix=%.0f mm4\n",
+                hea300->crossSectionArea, hea300->inertiaX);
     if (profiles.size() != 2) {
         std::printf("HATA: %zu profil beklenen 2\n", profiles.size());
         return 1;

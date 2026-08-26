@@ -28,6 +28,7 @@
 #include <iterator>
 #include <stdexcept>
 #include <string>
+#include <unordered_set>
 
 namespace mm {
 namespace {
@@ -3568,13 +3569,32 @@ void Application::ensureProfileCatalog() {
         std::error_code errorCode;
         if (!std::filesystem::exists(directory, errorCode)) continue;
         profileCatalog_ = mm::loadProfileCatalog(directory);
-        if (!profileCatalog_.empty()) {
-            FILE* diag = fopen("model-maker-render.log", "a");
-            if (diag) {
-                fprintf(diag, "PROFILE-CATALOG loaded=%zu\n", profileCatalog_.size());
-                fclose(diag);
-            }
-            return;
+        if (!profileCatalog_.empty()) break;
+    }
+    // Gömülü Avrupa kataloğu (HEA/HEB/HEM/IPE/IPN/UPN — 123 profil):
+    // exe'nin yanindaki profiles klasöründen eklenir. Tekla yoksa bile
+    // bu katalog her zaman yuklenir.
+    wchar_t exePath[MAX_PATH]{};
+    GetModuleFileNameW(nullptr, exePath, MAX_PATH);
+    std::filesystem::path european(exePath);
+    european = european.parent_path() / "profiles" / "european.lis";
+    {
+        std::error_code europeanError;
+        if (std::filesystem::exists(european, europeanError)) {
+            auto europeanProfiles = mm::parseTeklaProfileDatabase(european);
+            std::unordered_set<std::string> existing;
+            for (const auto& profile : profileCatalog_)
+                existing.insert(profile.name);
+            for (auto& profile : europeanProfiles)
+                if (existing.insert(profile.name).second)
+                    profileCatalog_.push_back(std::move(profile));
+        }
+    }
+    if (!profileCatalog_.empty()) {
+        FILE* diag = fopen("model-maker-render.log", "a");
+        if (diag) {
+            fprintf(diag, "PROFILE-CATALOG loaded=%zu\n", profileCatalog_.size());
+            fclose(diag);
         }
     }
 }
