@@ -727,7 +727,12 @@ bool OpenGLRenderBackend::renderBatchToDc(
         renderContourLines(models, camera, width, height, useProjection2D);
         glClear(GLConst::DEPTH_BUFFER_BIT);
     }
-    if (lineBatch_.indexCount != 0) {
+    // Solid stilde (tam opak yuzler) tel kafes cizilmez: gorunum yalniz
+    // dolu yuzler + dis siluet (kontur). Ic kiris kenarlari ve arkadaki
+    // kenarlar boylece gizlenir — AutoCAD solid gorusu davranisi.
+    // Wireframe (faceAlpha==0) ve saydam (0<faceAlpha<255) stillerinde
+    // cizgiler her zamanki gibi cizilir.
+    if (lineBatch_.indexCount != 0 && faceAlpha != 255) {
         renderBatch(lineBatch_, camera, width, height, useProjection2D);
         drawCalls_ = 1;
         renderedLines_ = lineBatch_.indexCount / 2;
