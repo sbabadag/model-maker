@@ -29,6 +29,11 @@ WireframeModel shapeToWireframe(const TopoDS_Shape& shape, int circleSegments = 
 // Yuzey tesselasyonu acikken (faceDeflection > 0) katilarin yuzleri BRepMesh
 // ile ucgenlere ayrilir ve modelin faces() listesine eklenir — dolu (solid)
 // gorunum stilinde yuzeyler boyali gorunur; 0 iken yalniz tel kafes.
+// Katiyi bir duzlemle keser (yarim uzay): planePoint + planeNormal ile
+// tanimlanan duzlemin keepPositive tarafindaki tarafi birakir.
+TopoDS_Shape cutSolidByPlane(const TopoDS_Shape& shape, const Vec3& planePoint,
+                             const Vec3& planeNormal, bool keepPositive);
+
 // Profil kesitini (SteelProfile) from->to ekseni boyunca extrude eder.
 // KKR/box profiller icin ici bos kutu; digerleri icin dolu dikdortgen.
 TopoDS_Shape extrudeProfileSolid(const SteelProfile& profile, const Vec3& from, const Vec3& to);

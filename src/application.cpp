@@ -1493,6 +1493,77 @@ void Application::onLeftButtonDown(int x, int y) {
         invalidateCanvas();
         return;
     }
+    if (transformCommand_ == TransformCommand::Trim && mode_ == EditMode::View3D) {
+        // 3B kati trim: kati -> kesim cizgisi -> kalacak taraf.
+        const auto hit = trimExtendTargetAt(x, y);
+        if (trimSolidPhase_ == 0) {
+            if (hit && *hit < document_.models().size() &&
+                !document_.models()[*hit].faces().empty()) {
+                trimSolidIndex_ = *hit;
+                trimSolidPhase_ = 1;
+                publishStatus(L"Kesim çizgisini seçin (katiyi kesecek çizgi)");
+                invalidateCanvas();
+            }
+            return;
+        }
+        if (trimSolidPhase_ == 1) {
+            if (hit && *hit < document_.models().size()) {
+                const auto& cutLine = document_.models()[*hit];
+                if (cutLine.vertices().size() == 2) {
+                    const Vec3 a = cutLine.vertices()[0];
+                    const Vec3 b = cutLine.vertices()[1];
+                    Vec3 direction{b.x - a.x, b.y - a.y, b.z - a.z};
+                    const double length = std::sqrt(direction.x * direction.x +
+                                                    direction.y * direction.y +
+                                                    direction.z * direction.z);
+                    if (length > 1e-9) {
+                        direction = {direction.x / length, direction.y / length,
+                                     direction.z / length};
+                        // Kesim duzlemi: cizgi dogrultusu + UCS normali (cizginin
+                        // z duzlemi = calisma duzleminin dikeyi).
+                        const Vec3& n = workPlane_.normal;
+                        Vec3 planeNormal{direction.y * n.z - direction.z * n.y,
+                                         direction.z * n.x - direction.x * n.z,
+                                         direction.x * n.y - direction.y * n.x};
+                        const double normalLength =
+                            std::sqrt(planeNormal.x * planeNormal.x +
+                                      planeNormal.y * planeNormal.y +
+                                      planeNormal.z * planeNormal.z);
+                        if (normalLength > 1e-9) {
+                            planeNormal = {planeNormal.x / normalLength,
+                                           planeNormal.y / normalLength,
+                                           planeNormal.z / normalLength};
+                            trimPlanePoint_ = a;
+                            trimPlaneNormal_ = planeNormal;
+                            trimSolidPhase_ = 2;
+                            publishStatus(L"Kalacak tarafa tıklayın");
+                            invalidateCanvas();
+                        }
+                    }
+                } else {
+                    MessageBeep(MB_ICONWARNING);
+                }
+            }
+            return;
+        }
+        if (trimSolidPhase_ == 2) {
+            RECT viewport{}; GetClientRect(canvas_, &viewport);
+            if (const auto point = camera_.unprojectToPlane(
+                    {static_cast<double>(x), static_cast<double>(y)},
+                    std::max(1L, viewport.right), std::max(1L, viewport.bottom), workPlane_)) {
+                const Vec3 delta{point->x - trimPlanePoint_.x,
+                                 point->y - trimPlanePoint_.y,
+                                 point->z - trimPlanePoint_.z};
+                const double side = delta.x * trimPlaneNormal_.x +
+                                    delta.y * trimPlaneNormal_.y +
+                                    delta.z * trimPlaneNormal_.z;
+                executeSolidTrim(side >= 0.0);
+                trimSolidPhase_ = 0;
+                cancelTransformCommand();
+            }
+            return;
+        }
+    }
     if (transformCommand_ != TransformCommand::None) {
         if (transformCommand_ == TransformCommand::Trim ||
             transformCommand_ == TransformCommand::Extend) {
@@ -3223,7 +3294,7 @@ void Application::addCube() {
             gp_Trsf trsf; trsf.SetTranslation(gp_Vec(offset, 0.0, 0.0));
             shape = BRepBuilderAPI_Transform(shape, trsf).Shape();
         }
-        occShapes_.push_back(shape);
+        occShapes_.emplace(document_.models().size() - 1, shape);
         auto cube = mm::shapeToWireframeWithFaces(shape, 0.15);
         cube.translate({offset, 0.0, 0.0});
         addStyledModel(std::move(cube)); mode_ = EditMode::View3D;
@@ -3287,7 +3358,7 @@ void Application::addCylinder() {
             gp_Trsf trsf; trsf.SetTranslation(gp_Vec(offset, 0.0, 0.0));
             shape = BRepBuilderAPI_Transform(shape, trsf).Shape();
         }
-        occShapes_.push_back(shape);
+        occShapes_.emplace(document_.models().size() - 1, shape);
         auto cylinder = mm::shapeToWireframeWithFaces(shape, 0.15);
         cylinder.translate({offset, 0.0, 0.0});
         addStyledModel(std::move(cylinder)); mode_ = EditMode::View3D;
@@ -3315,12 +3386,12 @@ void Application::addCylinder() {
 void Application::addBooleanFuse() {
     if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
     if (occShapes_.size() < 2) {
-        SetWindowTextW(status_, L"Boolean: en az 2 kati gerekli (B ve S ile ekleyin)");
+        publishStatus(L"Boolean: en az 2 kati gerekli (B ve S ile ekleyin)");
         return;
     }
     const TopoDS_Shape result =
-        mm::booleanFuseShape(occShapes_[occShapes_.size() - 2], occShapes_.back());
-    occShapes_.push_back(result);
+        mm::booleanFuseShape(std::prev(occShapes_.end(), 2)->second, occShapes_.rbegin()->second);
+    occShapes_.emplace(document_.models().size() - 1, result);
     auto model = mm::shapeToWireframeWithFaces(result, 0.15);
     addStyledModel(std::move(model)); mode_ = EditMode::View3D;
     cancelDrawing(); drawingActive_ = false;
@@ -3334,12 +3405,12 @@ void Application::addBooleanFuse() {
 void Application::addBooleanCommon() {
     if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
     if (occShapes_.size() < 2) {
-        SetWindowTextW(status_, L"Boolean: en az 2 kati gerekli (B ve S ile ekleyin)");
+        publishStatus(L"Boolean: en az 2 kati gerekli (B ve S ile ekleyin)");
         return;
     }
     const TopoDS_Shape result =
-        mm::booleanCommonShape(occShapes_[occShapes_.size() - 2], occShapes_.back());
-    occShapes_.push_back(result);
+        mm::booleanCommonShape(std::prev(occShapes_.end(), 2)->second, occShapes_.rbegin()->second);
+    occShapes_.emplace(document_.models().size() - 1, result);
     auto model = mm::shapeToWireframeWithFaces(result, 0.15);
     addStyledModel(std::move(model)); mode_ = EditMode::View3D;
     cancelDrawing(); drawingActive_ = false;
@@ -3353,13 +3424,13 @@ void Application::addBooleanCommon() {
 void Application::addBooleanCut() {
     if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
     if (occShapes_.size() < 2) {
-        SetWindowTextW(status_, L"Boolean: en az 2 kati gerekli (B ve S ile ekleyin)");
+        publishStatus(L"Boolean: en az 2 kati gerekli (B ve S ile ekleyin)");
         return;
     }
     // Sondan bir onceki sekilden sonuncusunu cikar (A - B).
     const TopoDS_Shape result =
-        mm::booleanCutShape(occShapes_[occShapes_.size() - 2], occShapes_.back());
-    occShapes_.push_back(result);
+        mm::booleanCutShape(std::prev(occShapes_.end(), 2)->second, occShapes_.rbegin()->second);
+    occShapes_.emplace(document_.models().size() - 1, result);
     auto model = mm::shapeToWireframeWithFaces(result, 0.15);
     addStyledModel(std::move(model)); mode_ = EditMode::View3D;
     cancelDrawing(); drawingActive_ = false;
@@ -3519,6 +3590,37 @@ void Application::applyProfilePopupSelection() {
         profileCatalog_[static_cast<std::size_t>(selection)].name);
 }
 
+#ifdef MM_HAS_OCC
+void Application::executeSolidTrim(bool keepPositive) {
+    if (trimSolidIndex_ >= document_.models().size()) {
+        publishStatus(L"Trim: kati bulunamadi");
+        return;
+    }
+    const auto found = occShapes_.find(trimSolidIndex_);
+    if (found == occShapes_.end() || found->second.IsNull()) {
+        publishStatus(L"Trim: bu kati icin BRep sekli yok (Boolean/extrude ile olusturun)");
+        return;
+    }
+    const TopoDS_Shape result =
+        mm::cutSolidByPlane(found->second, trimPlanePoint_, trimPlaneNormal_, keepPositive);
+    if (result.IsNull()) {
+        MessageBeep(MB_ICONWARNING);
+        return;
+    }
+    auto model = mm::shapeToWireframeWithFaces(result, 0.15);
+    const auto oldProps = document_.models()[trimSolidIndex_].properties();
+    auto props = model.properties();
+    props.profileName = oldProps.profileName;
+    model.setProperties(std::move(props));
+    pushUndoSnapshot();
+    document_.replaceModel(trimSolidIndex_, {std::move(model)});
+    found->second = result;
+    publishStatus(L"Kati duzlemle kesildi");
+    updateControls();
+    invalidateCanvas();
+}
+#endif
+
 void Application::assignProfileToSelection(const std::string& profileName) {
     ensureProfileCatalog();
     const auto* profile = mm::findProfile(profileCatalog_, profileName);
@@ -3571,6 +3673,7 @@ void Application::assignProfileToSelection(const std::string& profileName) {
             solidModel.setProperties(std::move(solidProps));
             addStyledModel(std::move(solidModel));
             solidIndices.push_back(document_.models().size() - 1);
+            occShapes_.emplace(document_.models().size() - 1, solid);
         }
         if (!solidIndices.empty()) {
             FILE* diag = fopen("model-maker-render.log", "a");

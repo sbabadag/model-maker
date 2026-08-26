@@ -20,6 +20,7 @@
 #include <BRepBuilderAPI_MakeFace.hxx>
 #include <BRepPrimAPI_MakePrism.hxx>
 #include <BRepBuilderAPI_Transform.hxx>
+#include <BRepPrimAPI_MakeHalfSpace.hxx>
 #include <BRepBuilderAPI_MakeEdge.hxx>
 #include <BRepBuilderAPI_MakeWire.hxx>
 #include <gp_Circ.hxx>
@@ -148,6 +149,22 @@ WireframeModel shapeToWireframe(const TopoDS_Shape& shape, int circleSegments) {
 
 WireframeModel solidBoxWireframe(double dx, double dy, double dz) {
     return shapeToWireframe(BRepPrimAPI_MakeBox(dx, dy, dz).Shape(), 48);
+}
+
+TopoDS_Shape cutSolidByPlane(const TopoDS_Shape& shape, const Vec3& planePoint,
+                             const Vec3& planeNormal, bool keepPositive) {
+    const gp_Pnt origin(planePoint.x, planePoint.y, planePoint.z);
+    const gp_Dir direction(planeNormal.x, planeNormal.y, planeNormal.z);
+    const gp_Pln plane(origin, direction);
+    // 7.8 API'si: (Face, RefPnt) — yarim uzay, referans noktasinin bulundugu
+    // taraf. Referans nokta = tutulacak tarafta (normal yonunde bir nokta).
+    const gp_Pnt reference = keepPositive
+        ? origin.Translated(direction.XYZ() * 1.0)
+        : origin.Translated(direction.XYZ() * -1.0);
+    BRepBuilderAPI_MakeFace planeFace(plane);
+    BRepPrimAPI_MakeHalfSpace halfSpace(planeFace.Face(), reference);
+    BRepAlgoAPI_Cut cut(shape, halfSpace.Solid());
+    return cut.Shape();
 }
 
 TopoDS_Shape extrudeProfileSolid(const SteelProfile& profile, const Vec3& from, const Vec3& to) {

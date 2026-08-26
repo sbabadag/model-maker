@@ -142,6 +142,26 @@ int main() {
         }
         std::printf("OCC EXTRUDE-ROUND OK — CFCHS127x2.5 x 100 hacim=%.1f mm³\n", pipeProps.Mass());
     }
+    // Yarim uzay kesimi: 10x10x10 kutu, X=5 duzlemi -> 500 mm³ yarim
+    {
+        const auto box = BRepPrimAPI_MakeBox(gp_Pnt(0, 0, 0), 10.0, 10.0, 10.0).Shape();
+        const auto keepPositive = mm::cutSolidByPlane(box, Vec3{5.0, 0.0, 0.0},
+                                                      Vec3{1.0, 0.0, 0.0}, true);
+        GProp_GProps cutProps;
+        BRepGProp::VolumeProperties(keepPositive, cutProps);
+        if (std::abs(cutProps.Mass() - 500.0) > 1.0) {
+            std::printf("HATA: yarim uzay hacmi %.1f beklenen 500\n", cutProps.Mass());
+            return 1;
+        }
+        const auto keepNegative = mm::cutSolidByPlane(box, Vec3{5.0, 0.0, 0.0},
+                                                      Vec3{1.0, 0.0, 0.0}, false);
+        BRepGProp::VolumeProperties(keepNegative, cutProps);
+        if (std::abs(cutProps.Mass() - 500.0) > 1.0) {
+            std::printf("HATA: negatif taraf hacmi %.1f beklenen 500\n", cutProps.Mass());
+            return 1;
+        }
+        std::printf("OCC CUT-PLANE OK — iki yarim 500/500 mm³\n");
+    }
     // Diyagonal dogrultu: (0,0,0)->(0,100,0) — kiris Y ekseninde uzanmali,
     // kesit X/Z yonlerinde ±15 sinirlari icinde kalmali.
     {

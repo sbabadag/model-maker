@@ -24,6 +24,7 @@
 #include <string>
 #include <unordered_set>
 #include <vector>
+#include <map>
 #include <thread>
 #ifdef MM_HAS_OCC
 #include <TopoDS_Shape.hxx>
@@ -302,6 +303,15 @@ private:
     void toggleProfilePopup();
     void applyProfilePopupSelection();
     std::vector<SteelProfile> profileCatalog_;
+    // BRep sekil tablosu: model indeksi -> sekil (B/S/J/extrude/trim).
+    // std::map = indekse gore sirali; boolean "son iki"yi sondan alir.
+    std::map<std::size_t, TopoDS_Shape> occShapes_;
+    // 3B kati trim alt-akisi: 1 = kesim cizgisi bekleniyor, 2 = kalacak taraf
+    int trimSolidPhase_{};
+    std::size_t trimSolidIndex_{};
+    Vec3 trimPlanePoint_{};
+    Vec3 trimPlaneNormal_{};
+    void executeSolidTrim(bool keepPositive);
     bool profileCatalogTried_{};
     bool profileAssignmentActive_{};
     std::wstring profileInput_;
