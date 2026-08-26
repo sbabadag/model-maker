@@ -291,9 +291,6 @@ private:
     // Son kati komutunun olcum mesaji (hacim) — updateStatus bunu status
     // cubuguna ekler; sadece yeni bir kati komutu degistirir.
 #ifdef MM_HAS_OCC
-    // OCC kati sekilleri: model vektorune paralel saklanir — Boolean
-    // islemleri tesselasyonun kaybettigi BRep geometrisine erisir.
-    std::vector<TopoDS_Shape> occShapes_;
 #endif
     // Profil atama (X): Tekla .lis katalogundan kesit secimi
     void startProfileAssignment();
