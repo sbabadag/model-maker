@@ -3733,6 +3733,7 @@ void Application::setSelectedEntityProfileRotation(double degrees) {
                 }
                 auto props = solidModel.properties();
                 props.profileName = profileName;
+                props.profileRotation = degrees;
                 if (oldProps) {
                     props.material = oldProps->material;
                     props.trueColor = oldProps->trueColor;
@@ -3759,6 +3760,17 @@ void Application::setSelectedEntityProfileRotation(double degrees) {
                             document_.models().size());
                     fclose(rotationDiag);
                 }
+                // Ayni profilli diger katilar (onceki kopyalama artiklari)
+                // silinir — cift/multipl kati kalmasin.
+                std::vector<std::size_t> duplicates;
+                for (std::size_t i = 0; i < document_.models().size(); ++i) {
+                    const auto& modelProps = document_.models()[i].properties();
+                    if (existingSolid && i == *existingSolid) continue;
+                    if (!modelProps.profileName.empty() &&
+                        !document_.models()[i].faces().empty() &&
+                        modelProps.profileName == profileName)
+                        duplicates.push_back(i);
+                }
                 pushUndoSnapshot();
                 if (existingSolid) {
                     document_.replaceModel(*existingSolid, {std::move(solidModel)});
@@ -3767,6 +3779,9 @@ void Application::setSelectedEntityProfileRotation(double degrees) {
                     addStyledModel(std::move(solidModel));
                     occShapes_.emplace(document_.models().size() - 1, solid);
                 }
+                // replaceModel 1:1 degistirir (model sayisi ayni) — indeksler
+                // kaymaz, dogrudan silinir.
+                if (!duplicates.empty()) document_.deleteModels(duplicates);
             }
         }
     }
@@ -4057,6 +4072,7 @@ void Application::assignProfileToSelection(const std::string& profileName) {
             auto solidModel = mm::shapeToWireframeWithFaces(solid, 0.15);
             auto solidProps = solidModel.properties();
             solidProps.profileName = profile->name;
+            solidProps.profileRotation = model.properties().profileRotation;
             solidModel.setProperties(std::move(solidProps));
             addStyledModel(std::move(solidModel));
             solidIndices.push_back(document_.models().size() - 1);
