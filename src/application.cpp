@@ -1526,6 +1526,17 @@ void Application::onLeftButtonDown(int x, int y) {
                 return;
         }
         if (trimSolidPhase_ == 1) {
+            {
+                FILE* lineLog = fopen("model-maker-render.log", "a");
+                if (lineLog) {
+                    int lineCandidates = 0;
+                    for (std::size_t i = 0; i < document_.models().size(); ++i)
+                        if (document_.models()[i].faces().empty()) ++lineCandidates;
+                    fprintf(lineLog, "TRIM-PHASE1 hit=%d candidates=%d\n",
+                            hit ? static_cast<int>(*hit) : -1, lineCandidates);
+                    fclose(lineLog);
+                }
+            }
             if (hit && *hit < document_.models().size()) {
                 const auto& cutLine = document_.models()[*hit];
                 if (cutLine.vertices().size() == 2) {
