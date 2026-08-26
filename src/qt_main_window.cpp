@@ -523,8 +523,8 @@ void QtMainWindow::createToolbar() {
             int bestIdx = 0;
             int bestDist = 0x7FFFFFFF;
             for (std::size_t i = 0; i < palette.size(); ++i) {
-                if (!palette[i].color) continue; // ByLayer
-                uint32_t c = *palette[i].color;
+                if (!palette[i].second) continue; // ByLayer
+                uint32_t c = *palette[i].second;
                 int dr = static_cast<int>((c >> 16) & 0xFF) - color.red();
                 int dg = static_cast<int>((c >>  8) & 0xFF) - color.green();
                 int db = static_cast<int>((c >>  0) & 0xFF) - color.blue();
@@ -1091,8 +1091,8 @@ void QtMainWindow::createDockPanels() {
         propsColor->clear();
         const auto& palette = Application::colorPalette();
         for (const auto& entry : palette) {
-            const QString label = QString::fromWCharArray(entry.label);
-            if (entry.color)
+            const QString label = QString::fromWCharArray(entry.first);
+            if (entry.second)
                 propsColor->addItem(label);
             else
                 propsColor->addItem(label + " (ByLayer)");
