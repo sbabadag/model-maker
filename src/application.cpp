@@ -9,6 +9,8 @@
 #include <BRepPrimAPI_MakeCylinder.hxx>
 #include <gp_Trsf.hxx>
 #include <gp_Vec.hxx>
+#include <TopExp_Explorer.hxx>
+#include <TopAbs.hxx>
 #endif
 #include "model_maker/view_cube.hpp"
 
