@@ -1597,23 +1597,6 @@ void Application::onLeftButtonDown(int x, int y) {
             cancelTransformCommand();
             return;
         }
-        if (trimSolidPhase_ == 2) {
-            RECT viewport{}; GetClientRect(canvas_, &viewport);
-            if (const auto point = camera_.unprojectToPlane(
-                    {static_cast<double>(x), static_cast<double>(y)},
-                    std::max(1L, viewport.right), std::max(1L, viewport.bottom), workPlane_)) {
-                const Vec3 delta{point->x - trimPlanePoint_.x,
-                                 point->y - trimPlanePoint_.y,
-                                 point->z - trimPlanePoint_.z};
-                const double side = delta.x * trimPlaneNormal_.x +
-                                    delta.y * trimPlaneNormal_.y +
-                                    delta.z * trimPlaneNormal_.z;
-                executeSolidTrim(side >= 0.0);
-                trimSolidPhase_ = 0;
-                cancelTransformCommand();
-            }
-            return;
-        }
     }
     if (transformCommand_ != TransformCommand::None) {
         if (transformCommand_ == TransformCommand::Trim ||
