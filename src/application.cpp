@@ -1504,6 +1504,14 @@ void Application::onLeftButtonDown(int x, int y) {
                 publishStatus(L"Kesim çizgisini seçin (katiyi kesecek çizgi)");
                 invalidateCanvas();
             }
+            FILE* phaseLog = fopen("model-maker-render.log", "a");
+            if (phaseLog) {
+                fprintf(phaseLog, "TRIM-PHASE0 hit=%d hasFaces=%d\n",
+                        hit ? static_cast<int>(*hit) : -1,
+                        (hit && *hit < document_.models().size() &&
+                         !document_.models()[*hit].faces().empty()) ? 1 : 0);
+                fclose(phaseLog);
+            }
             return;
         }
         if (trimSolidPhase_ == 1) {
@@ -3592,6 +3600,13 @@ void Application::applyProfilePopupSelection() {
 
 #ifdef MM_HAS_OCC
 void Application::executeSolidTrim(bool keepPositive) {
+    FILE* trace = fopen("model-maker-render.log", "a");
+    if (trace) {
+        fprintf(trace, "TRIM-TRACE index=%zu models=%zu shapes=%zu keepPos=%d\n",
+                trimSolidIndex_, document_.models().size(), occShapes_.size(),
+                keepPositive ? 1 : 0);
+        fclose(trace);
+    }
     if (trimSolidIndex_ >= document_.models().size()) {
         publishStatus(L"Trim: kati bulunamadi");
         return;
