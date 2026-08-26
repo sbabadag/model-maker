@@ -81,6 +81,8 @@ public:
     std::string selectedEntityTypeLabel() const;
     std::string selectedEntityLineType() const;
     std::string selectedEntityMaterial() const;
+    double selectedEntityProfileRotation() const;
+    void setSelectedEntityProfileRotation(double degrees);
     void setSelectedEntityLineType(const std::string& lineType);
     void setSelectedEntityMaterial(const std::string& material);
     std::string selectedEntityLengthLabel() const;

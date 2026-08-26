@@ -211,7 +211,8 @@ TopoDS_Shape cutSolidByPlane(const TopoDS_Shape& shape, const Vec3& planePoint,
     return unifier.Shape();
 }
 
-TopoDS_Shape extrudeProfileSolid(const SteelProfile& profile, const Vec3& from, const Vec3& to) {
+TopoDS_Shape extrudeProfileSolid(const SteelProfile& profile, const Vec3& from,
+                                     const Vec3& to, double rotationDegrees) {
     const double w = profile.width > 0.0 ? profile.width : 50.0;
     const double h = profile.height > 0.0 ? profile.height : 50.0;
     const double t = profile.plateThickness > 0.0 ? profile.plateThickness : 0.0;
@@ -295,6 +296,16 @@ TopoDS_Shape extrudeProfileSolid(const SteelProfile& profile, const Vec3& from, 
     } else {
         section = rectFace(hw, hh);
     }
+    }
+
+    // Kesit, profil ekseni (Z) etrafinda dondurulur — Tekla Rotation.
+    if (std::abs(rotationDegrees) > 1e-9) {
+        gp_Trsf sectionRotation;
+        sectionRotation.SetRotation(
+            gp_Ax1(gp_Pnt(0.0, 0.0, 0.0), gp_Dir(0.0, 0.0, 1.0)),
+            rotationDegrees * M_PI / 180.0);
+        BRepBuilderAPI_Transform rotated(section, sectionRotation);
+        section = rotated.Shape();
     }
 
     const gp_Vec direction(to.x - from.x, to.y - from.y, to.z - from.z);

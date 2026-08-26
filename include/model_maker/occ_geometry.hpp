@@ -36,7 +36,8 @@ TopoDS_Shape cutSolidByPlane(const TopoDS_Shape& shape, const Vec3& planePoint,
 
 // Profil kesitini (SteelProfile) from->to ekseni boyunca extrude eder.
 // KKR/box profiller icin ici bos kutu; digerleri icin dolu dikdortgen.
-TopoDS_Shape extrudeProfileSolid(const SteelProfile& profile, const Vec3& from, const Vec3& to);
+TopoDS_Shape extrudeProfileSolid(const SteelProfile& profile, const Vec3& from,
+                                     const Vec3& to, double rotationDegrees = 0.0);
 
 WireframeModel shapeToWireframeWithFaces(const TopoDS_Shape& shape, double faceDeflection,
                                          int circleSegments = 48);

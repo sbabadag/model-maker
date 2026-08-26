@@ -27,6 +27,7 @@
 #include <QInputDialog>
 #include <QTimer>
 #include <QSignalBlocker>
+#include <QDoubleSpinBox>
 #include <QMessageBox>
 #include <QLineEdit>
 #include <QLabel>
@@ -1050,6 +1051,18 @@ void QtMainWindow::createDockPanels() {
     propsMaterial->setInsertPolicy(QComboBox::NoInsert);
     propsLayout->addWidget(propsMaterial);
 
+    // Profil rotasyonu (derece)
+    QLabel* rotationCaption = new QLabel("Rotasyon (°)", propsWidget);
+    rotationCaption->setStyleSheet("color: #C8CCD4; font-size: 8pt;");
+    propsLayout->addWidget(rotationCaption);
+    QDoubleSpinBox* propsRotation = new QDoubleSpinBox(propsWidget);
+    propsRotation->setObjectName("propsRotation");
+    propsRotation->setRange(0.0, 360.0);
+    propsRotation->setDecimals(1);
+    propsRotation->setSingleStep(5.0);
+    propsRotation->setSuffix("°");
+    propsLayout->addWidget(propsRotation);
+
     // Uzunluk (salt okunur)
     QLabel* lengthCaption = new QLabel("Uzunluk", propsWidget);
     lengthCaption->setStyleSheet("color: #C8CCD4; font-size: 8pt;");
@@ -1070,7 +1083,7 @@ void QtMainWindow::createDockPanels() {
     refreshTimer->setInterval(500);
     QObject::connect(refreshTimer, &QTimer::timeout, this, [this, propsProfile, propsLayer,
                                                            propsColor, propsLineType, propsMaterial,
-                                                           typeLabel, lengthValue]() {
+                                                           propsRotation, typeLabel, lengthValue]() {
         static int lastIndex = -2;
         static QString lastProfile;
         const int index = app_.selectedModelIndex();
@@ -1140,6 +1153,11 @@ void QtMainWindow::createDockPanels() {
         if (propsMaterial->count() == 0) propsMaterial->addItems(materials);
         if (!currentMaterial.isEmpty()) propsMaterial->setCurrentText(currentMaterial);
         materialBlocker.unblock();
+
+        // Rotasyon
+        QSignalBlocker rotationBlocker(propsRotation);
+        propsRotation->setValue(app_.selectedEntityProfileRotation());
+        rotationBlocker.unblock();
     });
     refreshTimer->start();
 
@@ -1160,6 +1178,8 @@ void QtMainWindow::createDockPanels() {
             if (!text.trimmed().isEmpty())
                 app_.setSelectedEntityMaterial(text.trimmed().toStdString());
         });
+    QObject::connect(propsRotation, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this,
+        [this](double degrees) { app_.setSelectedEntityProfileRotation(degrees); });
 }
 
 } // namespace mm

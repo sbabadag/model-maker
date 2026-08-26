@@ -3670,6 +3670,51 @@ std::string Application::selectedEntityLineType() const {
     return document_.models()[selectedModels_.front()].properties().lineType;
 }
 
+double Application::selectedEntityProfileRotation() const {
+    if (selectedModels_.empty() ||
+        selectedModels_.front() >= document_.models().size())
+        return 0.0;
+    return document_.models()[selectedModels_.front()].properties().profileRotation;
+}
+
+void Application::setSelectedEntityProfileRotation(double degrees) {
+    if (selectedModels_.empty() ||
+        selectedModels_.front() >= document_.models().size())
+        return;
+    const auto& selected = document_.models()[selectedModels_.front()];
+    // Rotasyon eksen cizgisinde saklanir; kati seciliyse ayni profilli
+    // eksen cizgisi aranir ve o guncellenir.
+    std::size_t lineIndex = selectedModels_.front();
+    if (!selected.properties().profileName.empty() && selected.faces().empty()) {
+        lineIndex = selectedModels_.front();
+    } else {
+        for (std::size_t i = 0; i < document_.models().size(); ++i) {
+            const auto& props = document_.models()[i].properties();
+            if (!props.profileName.empty() && document_.models()[i].faces().empty()) {
+                lineIndex = i;
+                break;
+            }
+        }
+    }
+    if (lineIndex >= document_.models().size()) return;
+    auto props = document_.models()[lineIndex].properties();
+    props.profileRotation = degrees;
+    std::vector<WireframeModel> replacement;
+    replacement.push_back(document_.models()[lineIndex]);
+    replacement.back().setProperties(std::move(props));
+    pushUndoSnapshot();
+    document_.replaceModel(lineIndex, std::move(replacement));
+    // Eksen cizgisine profil atanmissa katiyi yeniden uret.
+    const std::string profileName = document_.models()[lineIndex].properties().profileName;
+    if (!profileName.empty()) {
+        selectedModels_.assign(1, lineIndex);
+        assignProfileToSelection(profileName);
+    } else {
+        updateControls();
+        invalidateCanvas();
+    }
+}
+
 std::string Application::selectedEntityMaterial() const {
     if (selectedModels_.empty() ||
         selectedModels_.front() >= document_.models().size())
@@ -3938,7 +3983,8 @@ void Application::assignProfileToSelection(const std::string& profileName) {
             if (model.vertices().size() != 2 || model.edges().size() != 1) continue;
             const Vec3 from = model.vertices()[0];
             const Vec3 to = model.vertices()[1];
-            const TopoDS_Shape solid = mm::extrudeProfileSolid(*profile, from, to);
+            const TopoDS_Shape solid = mm::extrudeProfileSolid(
+                *profile, from, to, model.properties().profileRotation);
             if (solid.IsNull()) continue;
             auto solidModel = mm::shapeToWireframeWithFaces(solid, 0.15);
             auto solidProps = solidModel.properties();

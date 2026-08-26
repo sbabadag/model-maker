@@ -54,6 +54,7 @@ using Face = std::vector<std::size_t>;
 struct EntityProperties {
     std::string layer{"0"};
     std::string profileName;
+    double profileRotation{};
     std::string lineType{"BYLAYER"};
     std::string material;
     int colorIndex{256};
