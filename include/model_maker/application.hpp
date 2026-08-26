@@ -310,6 +310,7 @@ private:
     Vec3 trimPlaneNormal_{};
     void executeSolidTrim(bool keepPositive);
     std::optional<std::size_t> solidTrimTargetAt(int x, int y) const;
+    std::optional<std::size_t> trimLineTargetAt(int x, int y) const;
     bool profileCatalogTried_{};
     bool profileAssignmentActive_{};
     std::wstring profileInput_;

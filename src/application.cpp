@@ -1500,7 +1500,8 @@ void Application::onLeftButtonDown(int x, int y) {
         // kalacak taraf. Tiklanan nesne kati ise (yuzu varsa) 3B akis,
         // degilse mevcut cizgi trim'i calisir.
         const auto hit = trimSolidPhase_ == 0 ? solidTrimTargetAt(x, y)
-                                                 : trimExtendTargetAt(x, y);
+                : trimSolidPhase_ == 1 ? trimLineTargetAt(x, y)
+                                       : trimExtendTargetAt(x, y);
         if (trimSolidPhase_ == 0) {
             if (hit && *hit < document_.models().size() &&
                 !document_.models()[*hit].faces().empty()) {
@@ -2360,6 +2361,23 @@ std::optional<std::size_t> Application::solidTrimTargetAt(int x, int y) const {
     return hitTestModelCandidates3D({static_cast<double>(x), static_cast<double>(y)}, document_,
                                     camera_, std::max(1L, viewport.right),
                                     std::max(1L, viewport.bottom), 10.0, solids);
+}
+
+std::optional<std::size_t> Application::trimLineTargetAt(int x, int y) const {
+    // Kesim cizgisi secimi: yalniz yuzsuz (cizgi/egri) modeller — katinin
+    // dolgulu yuzu cizginin uzerindeyse bile cizgiyi calamasin.
+    std::vector<std::size_t> lines;
+    for (std::size_t i = 0; i < document_.models().size(); ++i)
+        if (document_.models()[i].faces().empty()) lines.push_back(i);
+    if (lines.empty()) return std::nullopt;
+    if (mode_ == EditMode::Draw2D)
+        return hitTestModelCandidates2D(screenTo2D(x, y), document_,
+                                        10.0 / (60.0 * camera_.zoom()), lines);
+    RECT viewport{};
+    GetClientRect(canvas_, &viewport);
+    return hitTestModelCandidates3D({static_cast<double>(x), static_cast<double>(y)}, document_,
+                                    camera_, std::max(1L, viewport.right),
+                                    std::max(1L, viewport.bottom), 10.0, lines);
 }
 
 std::optional<std::size_t> Application::trimExtendTargetAt(int x, int y) const {
