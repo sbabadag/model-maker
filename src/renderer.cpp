@@ -861,16 +861,15 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         for (const auto& face : projectedFaces) {
             if (face.points.size() < 3) continue;
             if (faceAlpha == 255) {
+                // Yalniz dolgu: kenar kalemi ucgen sinirlarini cizer ve
+                // duz yuzeylerde "mesh cizgileri" olarak gorunur (GDI
+                // sorununun kok nedeni). NULL_PEN zaten secili.
                 HBRUSH brush = CreateSolidBrush(face.color);
                 HGDIOBJ oldBrush = SelectObject(dc, brush);
-                HPEN borderPen = CreatePen(PS_SOLID, 1, face.edgeColor);
-                HGDIOBJ previousPen = SelectObject(dc, borderPen);
                 Polygon(dc, face.points.data(), static_cast<int>(face.points.size()));
                 ++performance.drawCalls;
                 performance.projectedVertices += face.points.size();
-                SelectObject(dc, previousPen);
                 SelectObject(dc, oldBrush);
-                DeleteObject(borderPen);
                 DeleteObject(brush);
                 continue;
             }
