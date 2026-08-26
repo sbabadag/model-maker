@@ -2,6 +2,7 @@
 #include "model_maker/occ_geometry.hpp"
 
 #include <BRepAdaptor_Curve.hxx>
+#include <BRepAdaptor_Surface.hxx>
 #include <BRepAlgoAPI_Common.hxx>
 #include <BRepAlgoAPI_Cut.hxx>
 #include <BRepBndLib.hxx>
@@ -94,6 +95,29 @@ WireframeModel shapeToWireframe(const TopoDS_Shape& shape, int circleSegments) {
     const auto sharedByTwoFaces = [&](const TopoDS_Edge& edge) {
         return edgeFaces.FindFromKey(edge).Extent() >= 2;
     };
+    // Duşuzlemsel komşu yuzler arasındaki dikis kenarlari (duz yuzeyde
+    // gorunen "mesh" cizgileri) tel kafesten cikarilir: yalniz gercek
+    // kivrimlar (normal yon degisimi) cizilir.
+    const auto isCreaseEdge = [&](const TopoDS_Edge& edge) -> bool {
+        const auto faceList = edgeFaces.FindFromKey(edge);
+        if (faceList.Extent() < 2) return false;
+        const auto planeNormal = [](const TopoDS_Face& face, gp_Dir& normal) -> bool {
+            BRepAdaptor_Surface surface(face, true);
+            if (surface.GetType() != GeomAbs_Plane) return false;
+            normal = surface.Plane().Axis().Direction();
+            return true;
+        };
+        gp_Dir normals[2];
+        int normalCount = 0;
+        for (TopTools_ListIteratorOfListOfShape it(faceList);
+             it.More() && normalCount < 2; it.Next()) {
+            if (!planeNormal(TopoDS::Face(it.Value()), normals[normalCount]))
+                return true; // egri yuz: ciz
+            ++normalCount;
+        }
+        if (normalCount < 2) return true;
+        return std::abs(normals[0].Dot(normals[1])) < 0.999;
+    };
 
     std::vector<Vec3> vertices;
     std::vector<Edge> edges;
@@ -142,7 +166,7 @@ WireframeModel shapeToWireframe(const TopoDS_Shape& shape, int circleSegments) {
         const TopoDS_Wire outer = BRepTools::OuterWire(TopoDS::Face(faces.Current()));
         for (TopExp_Explorer wireEdges(outer, TopAbs_EDGE); wireEdges.More(); wireEdges.Next()) {
             const TopoDS_Edge edge = TopoDS::Edge(wireEdges.Current());
-            if (!sharedByTwoFaces(edge)) continue;
+            if (!isCreaseEdge(edge)) continue;
             tessellateEdge(edge);
         }
     }
