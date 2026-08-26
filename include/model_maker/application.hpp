@@ -79,6 +79,10 @@ public:
     std::string selectedEntityLayer() const;
     int selectedEntityColorIndex() const;
     std::string selectedEntityTypeLabel() const;
+    std::string selectedEntityLineType() const;
+    std::string selectedEntityMaterial() const;
+    void setSelectedEntityLineType(const std::string& lineType);
+    void setSelectedEntityMaterial(const std::string& material);
     std::string selectedEntityLengthLabel() const;
     void assignProfileToSelection(const std::string& profileName);
     void setProfilePickerCallback(std::function<void()> callback) {
@@ -92,6 +96,7 @@ public:
     // Color palette
     static const std::vector<std::pair<const wchar_t*, std::optional<std::uint32_t>>>&
     colorPalette();
+    static const std::vector<std::string>& lineTypePalette();
 
     // File operations (Qt menu / shortcuts)
     void newDocument();

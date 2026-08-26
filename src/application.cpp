@@ -2150,8 +2150,13 @@ void Application::setCurrentColorChoice(int index) noexcept {
 }
 
 void Application::setCurrentLineTypeChoice(int index) noexcept {
-    if (index >= 0 && index < static_cast<int>(lineTypeChoices.size()))
-        currentLineTypeChoice_ = index;
+    if (index < 0 || index >= static_cast<int>(lineTypeChoices.size())) return;
+    currentLineTypeChoice_ = index;
+    if (selectedModels_.empty()) return;
+    const auto& choice = lineTypeChoices[static_cast<std::size_t>(index)];
+    document_.setModelLineType(selectedModels_, choice.value);
+    updateControls();
+    invalidateCanvas();
 }
 
 void Application::refreshLayerList() { refreshLayerCombo(); }
@@ -2186,6 +2191,16 @@ Application::layerProperties() const {
 }
 
 const std::vector<std::pair<const wchar_t*, std::optional<std::uint32_t>>>&
+Application::lineTypePalette() {
+    static std::vector<std::string> values;
+    if (values.empty()) {
+        values.reserve(lineTypeChoices.size());
+        for (const auto& choice : lineTypeChoices)
+            values.push_back(choice.value);
+    }
+    return values;
+}
+
 Application::colorPalette() {
     static const std::vector<std::pair<const wchar_t*, std::optional<std::uint32_t>>> palette = []() {
         std::vector<std::pair<const wchar_t*, std::optional<std::uint32_t>>> p;
@@ -3646,6 +3661,34 @@ int Application::selectedEntityColorIndex() const {
         if (colorChoices[i].color && *colorChoices[i].color == color)
             return static_cast<int>(i);
     return -1;
+}
+
+std::string Application::selectedEntityLineType() const {
+    if (selectedModels_.empty() ||
+        selectedModels_.front() >= document_.models().size())
+        return {};
+    return document_.models()[selectedModels_.front()].properties().lineType;
+}
+
+std::string Application::selectedEntityMaterial() const {
+    if (selectedModels_.empty() ||
+        selectedModels_.front() >= document_.models().size())
+        return {};
+    return document_.models()[selectedModels_.front()].properties().material;
+}
+
+void Application::setSelectedEntityLineType(const std::string& lineType) {
+    if (selectedModels_.empty()) return;
+    document_.setModelLineType(selectedModels_, lineType);
+    updateControls();
+    invalidateCanvas();
+}
+
+void Application::setSelectedEntityMaterial(const std::string& material) {
+    if (selectedModels_.empty()) return;
+    document_.setModelMaterial(selectedModels_, material);
+    updateControls();
+    invalidateCanvas();
 }
 
 std::string Application::selectedEntityTypeLabel() const {

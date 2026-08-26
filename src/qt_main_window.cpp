@@ -1032,6 +1032,24 @@ void QtMainWindow::createDockPanels() {
     propsColor->setObjectName("propsColor");
     propsLayout->addWidget(propsColor);
 
+    // Çizgi Tipi
+    QLabel* lineTypeCaption = new QLabel("Çizgi Tipi", propsWidget);
+    lineTypeCaption->setStyleSheet("color: #C8CCD4; font-size: 8pt;");
+    propsLayout->addWidget(lineTypeCaption);
+    QComboBox* propsLineType = new QComboBox(propsWidget);
+    propsLineType->setObjectName("propsLineType");
+    propsLayout->addWidget(propsLineType);
+
+    // Malzeme
+    QLabel* materialCaption = new QLabel("Malzeme", propsWidget);
+    materialCaption->setStyleSheet("color: #C8CCD4; font-size: 8pt;");
+    propsLayout->addWidget(materialCaption);
+    QComboBox* propsMaterial = new QComboBox(propsWidget);
+    propsMaterial->setObjectName("propsMaterial");
+    propsMaterial->setEditable(true);
+    propsMaterial->setInsertPolicy(QComboBox::NoInsert);
+    propsLayout->addWidget(propsMaterial);
+
     // Uzunluk (salt okunur)
     QLabel* lengthCaption = new QLabel("Uzunluk", propsWidget);
     lengthCaption->setStyleSheet("color: #C8CCD4; font-size: 8pt;");
@@ -1051,7 +1069,8 @@ void QtMainWindow::createDockPanels() {
     QTimer* refreshTimer = new QTimer(this);
     refreshTimer->setInterval(500);
     QObject::connect(refreshTimer, &QTimer::timeout, this, [this, propsProfile, propsLayer,
-                                                           propsColor, typeLabel, lengthValue]() {
+                                                           propsColor, propsLineType, propsMaterial,
+                                                           typeLabel, lengthValue]() {
         static int lastIndex = -2;
         static QString lastProfile;
         const int index = app_.selectedModelIndex();
@@ -1101,6 +1120,26 @@ void QtMainWindow::createDockPanels() {
         if (colorIndex >= 0 && colorIndex < propsColor->count())
             propsColor->setCurrentIndex(colorIndex);
         colorBlocker.unblock();
+
+        // Cizgi tipleri
+        QSignalBlocker lineTypeBlocker(propsLineType);
+        propsLineType->clear();
+        for (const auto& choice : Application::lineTypePalette())
+            propsLineType->addItem(QString::fromStdString(choice));
+        const QString currentLineType =
+            QString::fromStdString(app_.selectedEntityLineType());
+        if (!currentLineType.isEmpty()) propsLineType->setCurrentText(currentLineType);
+        lineTypeBlocker.unblock();
+
+        // Malzeme
+        QSignalBlocker materialBlocker(propsMaterial);
+        const QString currentMaterial =
+            QString::fromStdString(app_.selectedEntityMaterial());
+        const QStringList materials = {"S235JR", "S275JR", "S355J2", "S450",
+                                       "S690QL", "BETON", "DİĞER"};
+        if (propsMaterial->count() == 0) propsMaterial->addItems(materials);
+        if (!currentMaterial.isEmpty()) propsMaterial->setCurrentText(currentMaterial);
+        materialBlocker.unblock();
     });
     refreshTimer->start();
 
@@ -1114,6 +1153,13 @@ void QtMainWindow::createDockPanels() {
         [this](const QString& text) { app_.setCurrentLayer(text.toStdString()); });
     QObject::connect(propsColor, QOverload<int>::of(&QComboBox::activated), this,
         [this](int index) { app_.setCurrentColorChoice(index); });
+    QObject::connect(propsLineType, QOverload<int>::of(&QComboBox::activated), this,
+        [this](int index) { app_.setCurrentLineTypeChoice(index); });
+    QObject::connect(propsMaterial, &QComboBox::textActivated, this,
+        [this](const QString& text) {
+            if (!text.trimmed().isEmpty())
+                app_.setSelectedEntityMaterial(text.trimmed().toStdString());
+        });
 }
 
 } // namespace mm

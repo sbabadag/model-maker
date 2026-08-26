@@ -46,6 +46,7 @@ public:
     std::size_t setModelProfile(const std::vector<std::size_t>& indices,
                                 const std::string& profileName);
     std::size_t setModelLineType(const std::vector<std::size_t>& indices, const std::string& lineType);
+    std::size_t setModelMaterial(const std::vector<std::size_t>& indices, const std::string& material);
     void deleteModels(const std::vector<std::size_t>& indices);
     void replaceModel(std::size_t index, std::vector<WireframeModel> replacements);
     void clear() noexcept;

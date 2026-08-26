@@ -213,6 +213,20 @@ std::size_t Document::setModelProfile(const std::vector<std::size_t>& indices,
     return changed;
 }
 
+std::size_t Document::setModelMaterial(const std::vector<std::size_t>& indices,
+                                       const std::string& material) {
+    ++revision_;
+    std::size_t changed{};
+    for (const auto index : uniqueIndices(indices)) {
+        if (!modelIsEditable(index)) continue;
+        auto properties = models_[index].properties();
+        properties.material = material;
+        models_[index].setProperties(std::move(properties));
+        ++changed;
+    }
+    return changed;
+}
+
 std::size_t Document::setModelLineType(const std::vector<std::size_t>& indices,
                                        const std::string& lineType) {
     ++revision_;
