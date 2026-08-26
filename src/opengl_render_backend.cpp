@@ -212,7 +212,30 @@ void main() {
 
 // ── WGL / loading helpers ────────────────────────────────────────
 
+// WGL_ARB_multisample / WGL_ARB_pixel_format sabitleri (wglext.h yerine)
+constexpr int WGL_DRAW_TO_WINDOW_ARB = 0x2001;
+constexpr int WGL_SUPPORT_OPENGL_ARB = 0x2010;
+constexpr int WGL_ACCELERATION_ARB = 0x2003;
+constexpr int WGL_FULL_ACCELERATION_ARB = 0x2027;
+constexpr int WGL_COLOR_BITS_ARB = 0x2014;
+constexpr int WGL_ALPHA_BITS_ARB = 0x201B;
+constexpr int WGL_DEPTH_BITS_ARB = 0x2022;
+constexpr int WGL_DOUBLE_BUFFER_ARB = 0x2011;
+constexpr int WGL_SAMPLE_BUFFERS_ARB = 0x2041;
+constexpr int WGL_SAMPLES_ARB = 0x2042;
+using PFNWGLCHOOSEPIXELFORMATARBPROC = BOOL(WINAPI*)(HDC, const int*, const FLOAT*, UINT, int*, UINT*);
+static PFNWGLCHOOSEPIXELFORMATARBPROC wglChoosePixelFormatARB = nullptr;
+
 bool loadWglExtensions(HDC hdc) {
+    (void)hdc; // gercek HDC'nin piksel formati MSAA secimi icin temiz kalir
+    // Gecici gizli pencere uzerinde gecici context: WGL uzantilari yuklenir,
+    // gercek pencerenin piksel formati sonra MSAA'li secilir.
+    HWND tempWindow = CreateWindowExA(0, "STATIC", "temp", WS_POPUP, 0, 0, 1, 1,
+                                      nullptr, nullptr, nullptr, nullptr);
+    if (!tempWindow) return false;
+    HDC tempHdc = GetDC(tempWindow);
+    if (!tempHdc) { DestroyWindow(tempWindow); return false; }
+
     PIXELFORMATDESCRIPTOR pfd = {};
     pfd.nSize = sizeof(PIXELFORMATDESCRIPTOR);
     pfd.nVersion = 1;
@@ -222,18 +245,25 @@ bool loadWglExtensions(HDC hdc) {
     pfd.cDepthBits = 24;
     pfd.iLayerType = PFD_MAIN_PLANE;
 
-    int format = ChoosePixelFormat(hdc, &pfd);
-    if (!format) return false;
-    if (!SetPixelFormat(hdc, format, &pfd)) {
-        if (GetPixelFormat(hdc) == 0) return false;
+    int format = ChoosePixelFormat(tempHdc, &pfd);
+    if (!format) { ReleaseDC(tempWindow, tempHdc); DestroyWindow(tempWindow); return false; }
+    if (!SetPixelFormat(tempHdc, format, &pfd)) {
+        ReleaseDC(tempWindow, tempHdc); DestroyWindow(tempWindow);
+        return false;
     }
 
-    HGLRC tempContext = wglCreateContext(hdc);
-    if (!tempContext) return false;
-    if (!wglMakeCurrent(hdc, tempContext)) { wglDeleteContext(tempContext); return false; }
+    HGLRC tempContext = wglCreateContext(tempHdc);
+    if (!tempContext) { ReleaseDC(tempWindow, tempHdc); DestroyWindow(tempWindow); return false; }
+    if (!wglMakeCurrent(tempHdc, tempContext)) {
+        wglDeleteContext(tempContext);
+        ReleaseDC(tempWindow, tempHdc); DestroyWindow(tempWindow);
+        return false;
+    }
 
     wglCreateContextAttribsARB = reinterpret_cast<PFNWGLCREATECONTEXTATTRIBSARBPROC>(
         wglGetProcAddress("wglCreateContextAttribsARB"));
+    wglChoosePixelFormatARB = reinterpret_cast<PFNWGLCHOOSEPIXELFORMATARBPROC>(
+        wglGetProcAddress("wglChoosePixelFormatARB"));
 
     auto loadProc = [](const char* name) -> void* {
         void* proc = reinterpret_cast<void*>(wglGetProcAddress(name));
@@ -300,8 +330,10 @@ bool loadWglExtensions(HDC hdc) {
     LOAD_GL(glReadBuffer);
     #undef LOAD_GL
 
-    wglMakeCurrent(hdc, nullptr);
+    wglMakeCurrent(nullptr, nullptr);
     wglDeleteContext(tempContext);
+    ReleaseDC(tempWindow, tempHdc);
+    DestroyWindow(tempWindow);
     return glCreateShader && glCreateProgram && glGenVertexArrays && glGenBuffers
            && glGenFramebuffers && glBindFramebuffer;
 }
@@ -426,6 +458,31 @@ bool OpenGLRenderBackend::initialize(void* windowHandle, int initialWidth, int i
         return false;
     }
 
+    // MSAA 4x piksel formati (WGL_ARB_multisample — modern GPU'larda standart).
+    // Secilemezse varsayilan format kalir, uygulama yine calisir.
+    if (wglChoosePixelFormatARB) {
+        const int msaaAttribs[] = {
+            WGL_DRAW_TO_WINDOW_ARB, 1,
+            WGL_SUPPORT_OPENGL_ARB, 1,
+            WGL_ACCELERATION_ARB, WGL_FULL_ACCELERATION_ARB,
+            WGL_COLOR_BITS_ARB, 24,
+            WGL_ALPHA_BITS_ARB, 8,
+            WGL_DEPTH_BITS_ARB, 24,
+            WGL_DOUBLE_BUFFER_ARB, 1,
+            WGL_SAMPLE_BUFFERS_ARB, 1,
+            WGL_SAMPLES_ARB, 4,
+            0, 0
+        };
+        UINT formatCount = 0;
+        int msaaFormat = 0;
+        if (wglChoosePixelFormatARB(hdc, msaaAttribs, nullptr, 1, &msaaFormat, &formatCount) &&
+            formatCount > 0) {
+            PIXELFORMATDESCRIPTOR msaaPfd = {};
+            DescribePixelFormat(hdc, msaaFormat, sizeof(msaaPfd), &msaaPfd);
+            SetPixelFormat(hdc, msaaFormat, &msaaPfd);
+        }
+    }
+
     glContext_ = createGL33Context(hdc);
     if (!glContext_) {
         ReleaseDC(static_cast<HWND>(wglWindow_), hdc); deviceContext_ = nullptr;
@@ -439,6 +496,8 @@ bool OpenGLRenderBackend::initialize(void* windowHandle, int initialWidth, int i
         FreeLibrary(openglModule); openglModule = nullptr;
         return false;
     }
+
+    glEnable(0x809D); // GL_MULTISAMPLE — MSAA 4x kenar yumusatma
 
     if (!compileShaders()) {
         wglMakeCurrent(hdc, nullptr);
@@ -836,12 +895,16 @@ void OpenGLRenderBackend::ensureFaceBatch(
     faceBatch_.dirty = true;
     faceBatch_.modelCount = models.size();
 
+    // Isikli golgelendirme: renk ucgen basina sabit (flat) oldugundan her
+    // ucgen kendi 3 kosesini tasir — paylasimli koseler 3'e katlanir.
     std::size_t totalVertices = 0, totalIndices = 0;
     for (const auto& [idx, model] : models) {
         if (model.faces().empty()) continue;
-        totalVertices += model.vertices().size();
         for (const auto& face : model.faces())
-            totalIndices += face.size() >= 3 ? (face.size() - 2) * 3 : 0;
+            if (face.size() >= 3) {
+                totalVertices += (face.size() - 2) * 3;
+                totalIndices += (face.size() - 2) * 3;
+            }
     }
 
     faceBatch_.vertices.clear();
@@ -850,40 +913,56 @@ void OpenGLRenderBackend::ensureFaceBatch(
     faceBatch_.indices.reserve(totalIndices);
 
     std::size_t vertexBase = 0;
+    // Sabit lamba yonu (normalize ~1.0) — ust-sol-on; OCC viewer benzeri.
+    constexpr double lightX = 0.45, lightY = -0.5, lightZ = 0.74;
     for (const auto& [modelIdx, model] : models) {
         const auto& vertices = model.vertices();
         const auto& faces = model.faces();
         if (vertices.empty() || faces.empty()) continue;
         const auto props = model.properties();
-        // GDI ile ayni yuz gölgelendirmesi: renk x 0.42 (yuz dolgusu
-        // parlarken tel kafes/kenarlar tam renkte kalir).
-        const auto shadeChannel = [](std::uint32_t channel) {
-            return (static_cast<std::uint32_t>(static_cast<double>(channel) * 0.42)) & 0xFFu;
-        };
         const std::uint32_t baseColor = props.effectiveColor;
-        const std::uint32_t shadedRgb =
-            (shadeChannel((baseColor >> 16) & 0xFFu) << 16) |
-            (shadeChannel((baseColor >> 8) & 0xFFu) << 8) |
-            shadeChannel(baseColor & 0xFFu);
-        const std::uint32_t rgba = toRGBA8(shadedRgb);
-        for (const auto& v : vertices) {
-            GpuLineBatch::GpuVertex gv;
-            gv.x = static_cast<float>(v.x);
-            gv.y = static_cast<float>(v.y);
-            gv.z = static_cast<float>(v.z);
-            gv.color = rgba;
-            faceBatch_.vertices.push_back(gv);
-        }
+        const double baseR = static_cast<double>((baseColor >> 16) & 0xFFu);
+        const double baseG = static_cast<double>((baseColor >> 8) & 0xFFu);
+        const double baseB = static_cast<double>(baseColor & 0xFFu);
         for (const auto& face : faces) {
             if (face.size() < 3) continue;
-            // N-gen yelpaze ucgenlemesi (ucgen yuzler icin birebir ayni).
             for (std::size_t i = 1; i + 1 < face.size(); ++i) {
-                faceBatch_.indices.push_back(static_cast<std::uint32_t>(vertexBase + face[0]));
-                faceBatch_.indices.push_back(static_cast<std::uint32_t>(vertexBase + face[i]));
-                faceBatch_.indices.push_back(static_cast<std::uint32_t>(vertexBase + face[i + 1]));
+                const auto& v0 = vertices[face[0]];
+                const auto& v1 = vertices[face[i]];
+                const auto& v2 = vertices[face[i + 1]];
+                const double e1x = v1.x - v0.x, e1y = v1.y - v0.y, e1z = v1.z - v0.z;
+                const double e2x = v2.x - v0.x, e2y = v2.y - v0.y, e2z = v2.z - v0.z;
+                double nx = e1y * e2z - e1z * e2y;
+                double ny = e1z * e2x - e1x * e2z;
+                double nz = e1x * e2y - e1y * e2x;
+                const double normalLength = std::sqrt(nx * nx + ny * ny + nz * nz);
+                if (normalLength > 1e-12) {
+                    nx /= normalLength; ny /= normalLength; nz /= normalLength;
+                } else {
+                    nx = 0.0; ny = 0.0; nz = 1.0;
+                }
+                double lambert = nx * lightX + ny * lightY + nz * lightZ;
+                if (lambert < 0.0) lambert = 0.0;
+                // Ortam + difuz: 0.35 taban, 0.65 lamba katkisi.
+                const double factor = 0.35 + 0.65 * lambert;
+                const std::uint32_t color = toRGBA8(
+                    ((static_cast<std::uint32_t>(baseR * factor) & 0xFFu) << 16) |
+                    ((static_cast<std::uint32_t>(baseG * factor) & 0xFFu) << 8) |
+                    (static_cast<std::uint32_t>(baseB * factor) & 0xFFu));
+                for (const auto* v : {&v0, &v1, &v2}) {
+                    GpuLineBatch::GpuVertex gv;
+                    gv.x = static_cast<float>(v->x);
+                    gv.y = static_cast<float>(v->y);
+                    gv.z = static_cast<float>(v->z);
+                    gv.color = color;
+                    faceBatch_.vertices.push_back(gv);
+                }
+                faceBatch_.indices.push_back(static_cast<std::uint32_t>(vertexBase));
+                faceBatch_.indices.push_back(static_cast<std::uint32_t>(vertexBase + 1));
+                faceBatch_.indices.push_back(static_cast<std::uint32_t>(vertexBase + 2));
+                vertexBase += 3;
             }
         }
-        vertexBase += vertices.size();
     }
     faceBatch_.indexCount = faceBatch_.indices.size();
     uploadBatch(faceBatch_);
