@@ -6,6 +6,9 @@
 #include <QToolButton>
 #include <QLabel>
 #include <QStatusBar>
+#include <QStandardItemModel>
+#include <cctype>
+#include <map>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QTabWidget>
@@ -887,13 +890,57 @@ void QtMainWindow::createToolbar() {
     const auto profileNames = app_.profileNames();
     profileLabel->setText(QString("Çelik profil (%1):").arg(
         static_cast<int>(profileNames.size())));
+    const auto upperName = [](std::string text) {
+        for (auto& character : text)
+            character = static_cast<char>(
+                ::toupper(static_cast<unsigned char>(character)));
+        return text;
+    };
+    const auto categoryOf = [&upperName](const std::string& name) -> const char* {
+        const std::string u = upperName(name);
+        if (u.rfind("HE", 0) == 0 || u.rfind("HL", 0) == 0 || u.rfind("HD", 0) == 0 ||
+            u.rfind("HP", 0) == 0 || u.rfind("UB", 0) == 0 || u.rfind("UC", 0) == 0)
+            return "I Kirişleri (HEA/HEB/HEM/HL/UB...)";
+        if (u.rfind("IPE", 0) == 0 || u.rfind("INP", 0) == 0) return "IPE Profiller";
+        if (u.rfind("KKR", 0) == 0 || u.rfind("SHS", 0) == 0 || u.rfind("RHS", 0) == 0)
+            return "Kutu Profiller (KKR/SHS/RHS)";
+        if (u.rfind("CFCHS", 0) == 0 || u.rfind("CHS", 0) == 0 || u.rfind("ROD", 0) == 0 ||
+            u.rfind("PHI", 0) == 0 || u.rfind("PIPE", 0) == 0)
+            return "Boru Profiller (CHS/CFCHS/PHI)";
+        if (u.rfind("UNP", 0) == 0 || u.rfind("UPN", 0) == 0) return "U Kanallar (UNP/UPN)";
+        if (u.rfind("PL", 0) == 0 || u.rfind("FL", 0) == 0) return "Lamalar (PL/FL)";
+        if (u.rfind("L", 0) == 0) return "Köşebentler (L)";
+        if (u.rfind("T", 0) == 0) return "T Profiller";
+        return "Diğer";
+    };
+    std::map<std::string, std::vector<std::string>> groups;
     for (const auto& name : profileNames)
-        profileSelector_->addItem(QString::fromStdString(name));
+        groups[categoryOf(name)].push_back(name);
+    for (const auto& entry : groups) {
+        profileSelector_->insertSeparator(profileSelector_->count());
+        profileSelector_->addItem(QString::fromStdString(entry.first));
+        if (auto* standardModel =
+                qobject_cast<QStandardItemModel*>(profileSelector_->model())) {
+            QStandardItem* header =
+                standardModel->item(profileSelector_->count() - 1);
+            header->setEnabled(false);
+            header->setBackground(QBrush(QColor(58, 69, 85)));
+            header->setForeground(QBrush(QColor(240, 240, 244)));
+        }
+        for (const auto& name : entry.second)
+            profileSelector_->addItem(QString::fromStdString(name));
+    }
     if (profileNames.empty()) {
         profileSelector_->addItem("Profil kataloğu bulunamadı");
         profileSelector_->setEnabled(false);
     } else {
-        profileSelector_->setCurrentIndex(0);
+        for (int index = 0; index < profileSelector_->count(); ++index) {
+            const QModelIndex modelIndex = profileSelector_->model()->index(index, 0);
+            if (profileSelector_->model()->flags(modelIndex) & Qt::ItemIsEnabled) {
+                profileSelector_->setCurrentIndex(index);
+                break;
+            }
+        }
         if (QCompleter* completer = profileSelector_->completer()) {
             completer->setCaseSensitivity(Qt::CaseInsensitive);
             completer->setFilterMode(Qt::MatchContains);
