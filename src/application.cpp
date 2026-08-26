@@ -3751,6 +3751,14 @@ void Application::setSelectedEntityProfileRotation(double degrees) {
                         break;
                     }
                 }
+                FILE* rotationDiag = fopen("model-maker-render.log", "a");
+                if (rotationDiag) {
+                    fprintf(rotationDiag,
+                            "ROTATION-APPLY line=%zu existingSolid=%d models=%zu\n",
+                            lineIndex, existingSolid ? static_cast<int>(*existingSolid) : -1,
+                            document_.models().size());
+                    fclose(rotationDiag);
+                }
                 pushUndoSnapshot();
                 if (existingSolid) {
                     document_.replaceModel(*existingSolid, {std::move(solidModel)});
