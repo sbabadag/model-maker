@@ -180,7 +180,11 @@ TopoDS_Shape cutSolidByPlane(const TopoDS_Shape& shape, const Vec3& planePoint,
     BRepBuilderAPI_MakeFace planeFace(plane, -margin, margin, -margin, margin);
     auto slab = BRepPrimAPI_MakePrism(planeFace.Face(), removeVector);
     BRepAlgoAPI_Cut cut(shape, slab.Shape());
-    return cut.Shape();
+    // Kesim yuzu boolean'dan bolunmus parcalar halinde gelebilir (gozle
+    // gorulur dikis cizgileri); es-düzlemsel yuzleri birlestir.
+    ShapeUpgrade_UnifySameDomain unifier(cut.Shape(), true, true, true);
+    unifier.Build();
+    return unifier.Shape();
 }
 
 TopoDS_Shape extrudeProfileSolid(const SteelProfile& profile, const Vec3& from, const Vec3& to) {
