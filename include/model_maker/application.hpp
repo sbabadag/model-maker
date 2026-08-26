@@ -60,7 +60,7 @@ public:
     const SnapTypeMask& enabledSnapTypes() const noexcept { return enabledSnapTypes_; }
     void toggleSnapType(SnapType type) noexcept;
     std::string currentLayer() const noexcept { return currentLayer_; }
-    void setCurrentLayer(const std::string& layer) { currentLayer_ = layer; }
+    void setCurrentLayer(const std::string& layer);
     bool createLayer(std::string name);
     bool deleteLayer(const std::string& name);
     bool renameLayer(const std::string& oldName, std::string newName);

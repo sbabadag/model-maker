@@ -2127,9 +2127,26 @@ void Application::toggleSnapType(SnapType type) noexcept {
     if (idx < enabledSnapTypes_.size()) enabledSnapTypes_[idx] = !enabledSnapTypes_[idx];
 }
 
+void Application::setCurrentLayer(const std::string& layer) {
+    currentLayer_ = layer;
+    // Secili nesneler varsa katman dogrudan atanir (AutoCAD davranisi).
+    if (!selectedModels_.empty()) {
+        document_.setModelLayer(selectedModels_, layer);
+        updateControls();
+        invalidateCanvas();
+    }
+}
+
 void Application::setCurrentColorChoice(int index) noexcept {
-    if (index >= 0 && index < static_cast<int>(colorChoices.size()))
-        currentColorChoice_ = index;
+    if (index < 0 || index >= static_cast<int>(colorChoices.size())) return;
+    currentColorChoice_ = index;
+    // Secili nesne varsa renk dogrudan atanir (AutoCAD davranisi);
+    // yoksa renk sonraki cizimlerin rengi olur.
+    const auto choice = colorChoices[static_cast<std::size_t>(index)];
+    if (!choice.second || selectedModels_.empty()) return; // ByLayer = atama yok
+    document_.setModelColor(selectedModels_, *choice.second);
+    updateControls();
+    invalidateCanvas();
 }
 
 void Application::setCurrentLineTypeChoice(int index) noexcept {
