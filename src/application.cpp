@@ -1526,56 +1526,75 @@ void Application::onLeftButtonDown(int x, int y) {
                 return;
         }
         if (trimSolidPhase_ == 1) {
-            {
-                FILE* lineLog = fopen("model-maker-render.log", "a");
-                if (lineLog) {
-                    int lineCandidates = 0;
-                    for (std::size_t i = 0; i < document_.models().size(); ++i)
-                        if (document_.models()[i].faces().empty()) ++lineCandidates;
-                    fprintf(lineLog, "TRIM-PHASE1 hit=%d candidates=%d\n",
-                            hit ? static_cast<int>(*hit) : -1, lineCandidates);
-                    fclose(lineLog);
-                }
+            // En yakin cizgi otomatik secilir — isabet testi gerektirmez.
+            RECT viewport{}; GetClientRect(canvas_, &viewport);
+            std::optional<Vec3> pickPoint;
+            if (mode_ == EditMode::Draw2D) pickPoint = screenTo2D(x, y);
+            else pickPoint = camera_.unprojectToPlane({static_cast<double>(x), static_cast<double>(y)},
+                std::max(1L, viewport.right), std::max(1L, viewport.bottom), workPlane_);
+            if (!pickPoint) return;
+            double bestDistance = 1e18;
+            std::optional<std::size_t> bestLine;
+            for (std::size_t i = 0; i < document_.models().size(); ++i) {
+                const auto& candidate = document_.models()[i];
+                if (!candidate.faces().empty() || candidate.vertices().size() != 2) continue;
+                const Vec3 a = candidate.vertices()[0];
+                const Vec3 b = candidate.vertices()[1];
+                // nokta-dogru parcasi uzakligi
+                const double abx = b.x - a.x, aby = b.y - a.y, abz = b.z - a.z;
+                const double lengthSq = abx * abx + aby * aby + abz * abz;
+                double t = 0.0;
+                if (lengthSq > 1e-12)
+                    t = std::clamp(((pickPoint->x - a.x) * abx + (pickPoint->y - a.y) * aby +
+                                    (pickPoint->z - a.z) * abz) / lengthSq, 0.0, 1.0);
+                const double dx = pickPoint->x - (a.x + t * abx);
+                const double dy = pickPoint->y - (a.y + t * aby);
+                const double dz = pickPoint->z - (a.z + t * abz);
+                const double distance = std::sqrt(dx * dx + dy * dy + dz * dz);
+                if (distance < bestDistance) { bestDistance = distance; bestLine = i; }
             }
-            if (hit && *hit < document_.models().size()) {
-                const auto& cutLine = document_.models()[*hit];
-                if (cutLine.vertices().size() == 2) {
-                    const Vec3 a = cutLine.vertices()[0];
-                    const Vec3 b = cutLine.vertices()[1];
-                    Vec3 direction{b.x - a.x, b.y - a.y, b.z - a.z};
-                    const double length = std::sqrt(direction.x * direction.x +
-                                                    direction.y * direction.y +
-                                                    direction.z * direction.z);
-                    if (length > 1e-9) {
-                        direction = {direction.x / length, direction.y / length,
-                                     direction.z / length};
-                        // Kesim duzlemi: cizgi dogrultusu + UCS normali (cizginin
-                        // z duzlemi = calisma duzleminin dikeyi).
-                        const Vec3& n = workPlane_.normal;
-                        Vec3 planeNormal{direction.y * n.z - direction.z * n.y,
-                                         direction.z * n.x - direction.x * n.z,
-                                         direction.x * n.y - direction.y * n.x};
-                        const double normalLength =
-                            std::sqrt(planeNormal.x * planeNormal.x +
-                                      planeNormal.y * planeNormal.y +
-                                      planeNormal.z * planeNormal.z);
-                        if (normalLength > 1e-9) {
-                            planeNormal = {planeNormal.x / normalLength,
-                                           planeNormal.y / normalLength,
-                                           planeNormal.z / normalLength};
-                            trimPlanePoint_ = a;
-                            trimPlaneNormal_ = planeNormal;
-                            trimSolidPhase_ = 2;
-                            selectedModels_.push_back(*hit);
-                            publishStatus(L"Kalacak tarafa tıklayın");
-                            updateControls();
-                            invalidateCanvas();
-                        }
-                    }
-                } else {
-                    MessageBeep(MB_ICONWARNING);
-                }
+            if (!bestLine) {
+                publishStatus(L"Yakin cizgi bulunamadi — once bir cizgi cizin");
+                return;
             }
+            const auto& cutLine = document_.models()[*bestLine];
+            const Vec3 a = cutLine.vertices()[0];
+            const Vec3 b = cutLine.vertices()[1];
+            Vec3 direction{b.x - a.x, b.y - a.y, b.z - a.z};
+            const double length = std::sqrt(direction.x * direction.x +
+                                            direction.y * direction.y +
+                                            direction.z * direction.z);
+            if (length <= 1e-9) return;
+            direction = {direction.x / length, direction.y / length, direction.z / length};
+            const Vec3& n = workPlane_.normal;
+            Vec3 planeNormal{direction.y * n.z - direction.z * n.y,
+                             direction.z * n.x - direction.x * n.z,
+                             direction.x * n.y - direction.y * n.x};
+            const double normalLength = std::sqrt(planeNormal.x * planeNormal.x +
+                                                  planeNormal.y * planeNormal.y +
+                                                  planeNormal.z * planeNormal.z);
+            if (normalLength <= 1e-9) return;
+            planeNormal = {planeNormal.x / normalLength, planeNormal.y / normalLength,
+                           planeNormal.z / normalLength};
+            trimPlanePoint_ = a;
+            trimPlaneNormal_ = planeNormal;
+            // Kalacak taraf: katinin merkezi (kose ortalamasi) hangi taraftaysa.
+            const auto& solidModel = document_.models()[trimSolidIndex_];
+            Vec3 center{0.0, 0.0, 0.0};
+            for (const auto& vertex : solidModel.vertices()) {
+                center.x += vertex.x; center.y += vertex.y; center.z += vertex.z;
+            }
+            const double count = static_cast<double>(std::max<std::size_t>(1, solidModel.vertices().size()));
+            center = {center.x / count, center.y / count, center.z / count};
+            const double side = (center.x - a.x) * planeNormal.x +
+                                (center.y - a.y) * planeNormal.y +
+                                (center.z - a.z) * planeNormal.z;
+            selectedModels_.push_back(*bestLine);
+            updateControls();
+            invalidateCanvas();
+            executeSolidTrim(side >= 0.0);
+            trimSolidPhase_ = 0;
+            cancelTransformCommand();
             return;
         }
         if (trimSolidPhase_ == 2) {
