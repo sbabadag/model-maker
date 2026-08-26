@@ -1072,6 +1072,13 @@ void QtMainWindow::createDockPanels() {
     lengthValue->setStyleSheet("color: #F0F0F4; font-size: 9pt;");
     propsLayout->addWidget(lengthValue);
 
+    QPushButton* propsApply = new QPushButton("UYGULA", propsWidget);
+    propsApply->setObjectName("propsApply");
+    propsApply->setStyleSheet(
+        "QPushButton { background: #2E6B4F; color: #F0F0F4; font-weight: 700; "
+        "padding: 6px; border-radius: 3px; }"
+        "QPushButton:hover { background: #37805F; }");
+    propsLayout->addWidget(propsApply);
     propsLayout->addStretch(1);
     propsDock->setWidget(propsWidget);
     propsDock->setMinimumWidth(250);
@@ -1178,8 +1185,12 @@ void QtMainWindow::createDockPanels() {
             if (!text.trimmed().isEmpty())
                 app_.setSelectedEntityMaterial(text.trimmed().toStdString());
         });
-    QObject::connect(propsRotation, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this,
-        [this](double degrees) { app_.setSelectedEntityProfileRotation(degrees); });
+    // Rotasyon canli uygulanmaz — UYGULA ile uygulanir (Tekla tarzi);
+    // panelden cikinca eski duruma donme sorununu da ortadan kaldirir.
+    QObject::connect(propsApply, &QPushButton::clicked, this,
+        [this, propsRotation]() {
+            app_.setSelectedEntityProfileRotation(propsRotation->value());
+        });
 }
 
 } // namespace mm
