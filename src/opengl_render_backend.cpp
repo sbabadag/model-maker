@@ -931,29 +931,36 @@ void OpenGLRenderBackend::ensureFaceBatch(
         const double baseB = static_cast<double>(baseColor & 0xFFu);
         for (const auto& face : faces) {
             if (face.size() < 3) continue;
+            // Yuz basina TEK normal ve TEK renk (arastirma bulgusu):
+            // ucgen basina capraz carpim normalleri es-duzlemsel komsularda
+            // float farkindan 1-bit renk süreksizligi uretir ve bunlar
+            // gozle gorulur "ucgen cizgisi" gibi algilanir. Normal ilk
+            // uc ucgenden hesaplanir, tum yuz ayni rengi tasir.
+            const Vec3& n0 = vertices[face[0]];
+            const Vec3& n1 = vertices[face[1]];
+            const Vec3& n2 = vertices[face[2]];
+            const double e1x = n1.x - n0.x, e1y = n1.y - n0.y, e1z = n1.z - n0.z;
+            const double e2x = n2.x - n0.x, e2y = n2.y - n0.y, e2z = n2.z - n0.z;
+            double nx = e1y * e2z - e1z * e2y;
+            double ny = e1z * e2x - e1x * e2z;
+            double nz = e1x * e2y - e1y * e2x;
+            const double normalLength = std::sqrt(nx * nx + ny * ny + nz * nz);
+            if (normalLength > 1e-12) {
+                nx /= normalLength; ny /= normalLength; nz /= normalLength;
+            } else {
+                nx = 0.0; ny = 0.0; nz = 1.0;
+            }
+            double lambert = nx * lightX + ny * lightY + nz * lightZ;
+            if (lambert < 0.0) lambert = 0.0;
+            const double factor = 0.35 + 0.65 * lambert;
+            const std::uint32_t color = toRGBA8(
+                ((static_cast<std::uint32_t>(baseR * factor) & 0xFFu) << 16) |
+                ((static_cast<std::uint32_t>(baseG * factor) & 0xFFu) << 8) |
+                (static_cast<std::uint32_t>(baseB * factor) & 0xFFu));
             for (std::size_t i = 1; i + 1 < face.size(); ++i) {
                 const auto& v0 = vertices[face[0]];
                 const auto& v1 = vertices[face[i]];
                 const auto& v2 = vertices[face[i + 1]];
-                const double e1x = v1.x - v0.x, e1y = v1.y - v0.y, e1z = v1.z - v0.z;
-                const double e2x = v2.x - v0.x, e2y = v2.y - v0.y, e2z = v2.z - v0.z;
-                double nx = e1y * e2z - e1z * e2y;
-                double ny = e1z * e2x - e1x * e2z;
-                double nz = e1x * e2y - e1y * e2x;
-                const double normalLength = std::sqrt(nx * nx + ny * ny + nz * nz);
-                if (normalLength > 1e-12) {
-                    nx /= normalLength; ny /= normalLength; nz /= normalLength;
-                } else {
-                    nx = 0.0; ny = 0.0; nz = 1.0;
-                }
-                double lambert = nx * lightX + ny * lightY + nz * lightZ;
-                if (lambert < 0.0) lambert = 0.0;
-                // Ortam + difuz: 0.35 taban, 0.65 lamba katkisi.
-                const double factor = 0.35 + 0.65 * lambert;
-                const std::uint32_t color = toRGBA8(
-                    ((static_cast<std::uint32_t>(baseR * factor) & 0xFFu) << 16) |
-                    ((static_cast<std::uint32_t>(baseG * factor) & 0xFFu) << 8) |
-                    (static_cast<std::uint32_t>(baseB * factor) & 0xFFu));
                 for (const auto* v : {&v0, &v1, &v2}) {
                     GpuLineBatch::GpuVertex gv;
                     gv.x = static_cast<float>(v->x);
