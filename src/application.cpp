@@ -1495,15 +1495,19 @@ void Application::onLeftButtonDown(int x, int y) {
         invalidateCanvas();
         return;
     }
-    if (transformCommand_ == TransformCommand::Trim && mode_ == EditMode::View3D) {
-        // 3B kati trim: kati -> kesim cizgisi -> kalacak taraf.
+    if (transformCommand_ == TransformCommand::Trim) {
+        // 3B kati trim (2B/3B her iki modda): kati -> kesim cizgisi ->
+        // kalacak taraf. Tiklanan nesne kati ise (yuzu varsa) 3B akis,
+        // degilse mevcut cizgi trim'i calisir.
         const auto hit = trimExtendTargetAt(x, y);
         if (trimSolidPhase_ == 0) {
             if (hit && *hit < document_.models().size() &&
                 !document_.models()[*hit].faces().empty()) {
                 trimSolidIndex_ = *hit;
                 trimSolidPhase_ = 1;
+                selectedModels_.assign(1, *hit);
                 publishStatus(L"Kesim çizgisini seçin (katiyi kesecek çizgi)");
+                updateControls();
                 invalidateCanvas();
             }
             FILE* phaseLog = fopen("model-maker-render.log", "a");
@@ -1514,7 +1518,10 @@ void Application::onLeftButtonDown(int x, int y) {
                          !document_.models()[*hit].faces().empty()) ? 1 : 0);
                 fclose(phaseLog);
             }
-            return;
+            // Kati degilse asagi akisa dus (normal cizgi trim'i).
+            if (!(hit && *hit < document_.models().size() &&
+                  !document_.models()[*hit].faces().empty()))
+                return;
         }
         if (trimSolidPhase_ == 1) {
             if (hit && *hit < document_.models().size()) {
@@ -1546,7 +1553,9 @@ void Application::onLeftButtonDown(int x, int y) {
                             trimPlanePoint_ = a;
                             trimPlaneNormal_ = planeNormal;
                             trimSolidPhase_ = 2;
+                            selectedModels_.push_back(*hit);
                             publishStatus(L"Kalacak tarafa tıklayın");
+                            updateControls();
                             invalidateCanvas();
                         }
                     }
@@ -2278,6 +2287,8 @@ void Application::commitWorkPlanePoint(const Vec3& point) {
 void Application::cancelTransformCommand() {
     transformCommand_ = TransformCommand::None;
     transformPhase_ = TransformPhase::Selecting;
+    trimSolidPhase_ = 0;
+    trimSolidIndex_ = 0;
     selectedModels_.clear();
     selectionFirstCorner_.reset();
     transformBase_.reset();
