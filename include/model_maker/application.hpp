@@ -73,6 +73,13 @@ public:
     // The visible application shell is Qt; expose the profile catalog and
     // assignment action so its native toolbar can own the real picker.
     std::vector<std::string> profileNames();
+    // Ozellikler kutusu icin: secili nesnenin degerleri (secim yoksa -1/bos)
+    int selectedModelIndex() const;
+    std::string selectedEntityProfile() const;
+    std::string selectedEntityLayer() const;
+    int selectedEntityColorIndex() const;
+    std::string selectedEntityTypeLabel() const;
+    std::string selectedEntityLengthLabel() const;
     void assignProfileToSelection(const std::string& profileName);
     void setProfilePickerCallback(std::function<void()> callback) {
         profilePickerCallback_ = std::move(callback);

@@ -26,6 +26,7 @@
 #include <QHeaderView>
 #include <QInputDialog>
 #include <QTimer>
+#include <QSignalBlocker>
 #include <QMessageBox>
 #include <QLineEdit>
 #include <QLabel>
@@ -989,9 +990,129 @@ void QtMainWindow::createToolbar() {
 
 void QtMainWindow::createDockPanels() {
     QDockWidget* propsDock = new QDockWidget("Özellikler", this);
-    propsDock->setWidget(new QWidget(propsDock));
+    QWidget* propsWidget = new QWidget(propsDock);
+    QVBoxLayout* propsLayout = new QVBoxLayout(propsWidget);
+    propsLayout->setContentsMargins(8, 8, 8, 8);
+    propsLayout->setSpacing(6);
+
+    // Tip (salt okunur)
+    QLabel* typeLabel = new QLabel("-", propsWidget);
+    typeLabel->setObjectName("propsType");
+    typeLabel->setStyleSheet("color: #9FA6B2; font-size: 9pt;");
+    propsLayout->addWidget(typeLabel);
+
+    // Profil
+    QLabel* profileCaption = new QLabel("Profil", propsWidget);
+    profileCaption->setStyleSheet("color: #C8CCD4; font-size: 8pt;");
+    propsLayout->addWidget(profileCaption);
+    QComboBox* propsProfile = new QComboBox(propsWidget);
+    propsProfile->setObjectName("propsProfile");
+    propsProfile->setEditable(true);
+    propsProfile->setInsertPolicy(QComboBox::NoInsert);
+    propsProfile->setMinimumContentsLength(18);
+    if (QCompleter* completer = propsProfile->completer()) {
+        completer->setCaseSensitivity(Qt::CaseInsensitive);
+        completer->setFilterMode(Qt::MatchContains);
+    }
+    propsLayout->addWidget(propsProfile);
+
+    // Katman
+    QLabel* layerCaption = new QLabel("Katman", propsWidget);
+    layerCaption->setStyleSheet("color: #C8CCD4; font-size: 8pt;");
+    propsLayout->addWidget(layerCaption);
+    QComboBox* propsLayer = new QComboBox(propsWidget);
+    propsLayer->setObjectName("propsLayer");
+    propsLayout->addWidget(propsLayer);
+
+    // Renk
+    QLabel* colorCaption = new QLabel("Renk", propsWidget);
+    colorCaption->setStyleSheet("color: #C8CCD4; font-size: 8pt;");
+    propsLayout->addWidget(colorCaption);
+    QComboBox* propsColor = new QComboBox(propsWidget);
+    propsColor->setObjectName("propsColor");
+    propsLayout->addWidget(propsColor);
+
+    // Uzunluk (salt okunur)
+    QLabel* lengthCaption = new QLabel("Uzunluk", propsWidget);
+    lengthCaption->setStyleSheet("color: #C8CCD4; font-size: 8pt;");
+    propsLayout->addWidget(lengthCaption);
+    QLabel* lengthValue = new QLabel("-", propsWidget);
+    lengthValue->setObjectName("propsLength");
+    lengthValue->setStyleSheet("color: #F0F0F4; font-size: 9pt;");
+    propsLayout->addWidget(lengthValue);
+
+    propsLayout->addStretch(1);
+    propsDock->setWidget(propsWidget);
     propsDock->setMinimumWidth(250);
     addDockWidget(Qt::RightDockWidgetArea, propsDock);
+
+    // Secim degisince ozellikleri tazele (500ms yoklama — Application
+    // QObject degil, sinyal altyapisi yok).
+    QTimer* refreshTimer = new QTimer(this);
+    refreshTimer->setInterval(500);
+    QObject::connect(refreshTimer, &QTimer::timeout, this, [this, propsProfile, propsLayer,
+                                                           propsColor, typeLabel, lengthValue]() {
+        static int lastIndex = -2;
+        static QString lastProfile;
+        const int index = app_.selectedModelIndex();
+        const QString profile = QString::fromStdString(app_.selectedEntityProfile());
+        if (index == lastIndex && profile == lastProfile) return;
+        lastIndex = index;
+        lastProfile = profile;
+
+        const bool hasSelection = index >= 0;
+        typeLabel->setText(hasSelection
+            ? QString::fromStdString(app_.selectedEntityTypeLabel())
+            : "Seçili obje yok");
+        lengthValue->setText(hasSelection
+            ? QString::fromStdString(app_.selectedEntityLengthLabel())
+            : "-");
+
+        // Profil: katalog + mevcut deger
+        QSignalBlocker profileBlocker(propsProfile);
+        propsProfile->clear();
+        const auto names = app_.profileNames();
+        for (const auto& name : names)
+            propsProfile->addItem(QString::fromStdString(name));
+        if (!profile.isEmpty()) propsProfile->setCurrentText(profile);
+        profileBlocker.unblock();
+
+        // Katmanlar
+        QSignalBlocker layerBlocker(propsLayer);
+        propsLayer->clear();
+        const auto layers = app_.layerNames();
+        for (const auto& layer : layers)
+            propsLayer->addItem(QString::fromStdString(layer));
+        propsLayer->setCurrentText(QString::fromStdString(app_.selectedEntityLayer()));
+        layerBlocker.unblock();
+
+        // Renkler
+        QSignalBlocker colorBlocker(propsColor);
+        propsColor->clear();
+        const auto& palette = Application::colorPalette();
+        for (const auto& entry : palette) {
+            if (entry.second)
+                propsColor->addItem(QString::fromStdString(entry.first));
+            else
+                propsColor->addItem(QString::fromStdString(entry.first) + " (ByLayer)");
+        }
+        const int colorIndex = app_.selectedEntityColorIndex();
+        if (colorIndex >= 0 && colorIndex < propsColor->count())
+            propsColor->setCurrentIndex(colorIndex);
+        colorBlocker.unblock();
+    });
+    refreshTimer->start();
+
+    // Profil degisince atama (secilene uygulanir)
+    QObject::connect(propsProfile, &QComboBox::textActivated, this,
+        [this](const QString& text) {
+            if (!text.trimmed().isEmpty())
+                app_.assignProfileToSelection(text.trimmed().toStdString());
+        });
+    QObject::connect(propsLayer, &QComboBox::textActivated, this,
+        [this](const QString& text) { app_.setCurrentLayer(text.toStdString()); });
+    QObject::connect(propsColor, QOverload<int>::of(&QComboBox::activated), this,
+        [this](int index) { app_.setCurrentColorChoice(index); });
 }
 
 } // namespace mm

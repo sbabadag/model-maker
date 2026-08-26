@@ -3616,6 +3616,64 @@ void Application::ensureProfileCatalog() {
     }
 }
 
+int Application::selectedModelIndex() const {
+    return selectedModels_.empty()
+        ? -1
+        : static_cast<int>(selectedModels_.front());
+}
+
+std::string Application::selectedEntityProfile() const {
+    if (selectedModels_.empty() ||
+        selectedModels_.front() >= document_.models().size())
+        return {};
+    return document_.models()[selectedModels_.front()].properties().profileName;
+}
+
+std::string Application::selectedEntityLayer() const {
+    if (selectedModels_.empty() ||
+        selectedModels_.front() >= document_.models().size())
+        return {};
+    return document_.models()[selectedModels_.front()].properties().layer;
+}
+
+int Application::selectedEntityColorIndex() const {
+    if (selectedModels_.empty() ||
+        selectedModels_.front() >= document_.models().size())
+        return -1;
+    const auto& props = document_.models()[selectedModels_.front()].properties();
+    const auto color = props.trueColor.value_or(0xFFFFFFFFu);
+    for (std::size_t i = 0; i < colorChoices.size(); ++i)
+        if (colorChoices[i].second && *colorChoices[i].second == color)
+            return static_cast<int>(i);
+    return -1;
+}
+
+std::string Application::selectedEntityTypeLabel() const {
+    if (selectedModels_.empty() ||
+        selectedModels_.front() >= document_.models().size())
+        return {};
+    const auto& model = document_.models()[selectedModels_.front()];
+    if (!model.properties().profileName.empty()) return "PROFIL (3B kati)";
+    if (model.isFace3D()) return "3DFACE";
+    if (model.isPointEntity()) return "NOKTA";
+    return "CIZGI";
+}
+
+std::string Application::selectedEntityLengthLabel() const {
+    if (selectedModels_.empty() ||
+        selectedModels_.front() >= document_.models().size())
+        return {};
+    const auto& model = document_.models()[selectedModels_.front()];
+    if (model.vertices().size() < 2) return {};
+    const Vec3 a = model.vertices().front();
+    const Vec3 b = model.vertices().back();
+    const double dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z;
+    const double length = std::sqrt(dx * dx + dy * dy + dz * dz);
+    char buffer[64]{};
+    std::snprintf(buffer, sizeof(buffer), "%.2f mm", length);
+    return buffer;
+}
+
 std::vector<std::string> Application::profileNames() {
     ensureProfileCatalog();
     std::vector<std::string> names;
