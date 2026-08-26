@@ -2352,20 +2352,14 @@ std::optional<std::size_t> Application::solidTrimTargetAt(int x, int y) const {
     for (std::size_t i = 0; i < document_.models().size(); ++i)
         if (!document_.models()[i].faces().empty()) solids.push_back(i);
     if (solids.empty()) return std::nullopt;
-    if (mode_ == EditMode::Draw2D) {
-        const Vec3 world = screenTo2D(x, y);
-        return hitTestModel(Vec2{world.x, world.y}, document_,
-                            10.0 / (60.0 * camera_.zoom()),
-                            [](const Vec3& p) { return Vec2{p.x, p.y}; }, &solids);
-    }
+    if (mode_ == EditMode::Draw2D)
+        return hitTestModelCandidates2D(screenTo2D(x, y), document_,
+                                        10.0 / (60.0 * camera_.zoom()), solids);
     RECT viewport{};
     GetClientRect(canvas_, &viewport);
-    return hitTestModel({static_cast<double>(x), static_cast<double>(y)}, document_, 10.0,
-                        [&](const Vec3& p) {
-                            return camera_.project(p, std::max(1L, viewport.right),
-                                                   std::max(1L, viewport.bottom));
-                        },
-                        &solids);
+    return hitTestModelCandidates3D({static_cast<double>(x), static_cast<double>(y)}, document_,
+                                    camera_, std::max(1L, viewport.right),
+                                    std::max(1L, viewport.bottom), 10.0, solids);
 }
 
 std::optional<std::size_t> Application::trimExtendTargetAt(int x, int y) const {

@@ -128,6 +128,15 @@ std::optional<std::size_t> hitTestModel2D(const Vec3& cursor, const Document& do
 std::optional<std::size_t> hitTestModel3D(const Vec2& cursor, const Document& document,
                                          const Camera& camera, int viewportWidth, int viewportHeight,
                                          double tolerancePixels);
+// Yalniz belirtilen aday modeller uzerinde isabet testi (orn. kati trim
+// icin yalniz yuzu olan modeller).
+std::optional<std::size_t> hitTestModelCandidates2D(const Vec3& cursor, const Document& document,
+                                                    double tolerance,
+                                                    const std::vector<std::size_t>& candidates);
+std::optional<std::size_t> hitTestModelCandidates3D(const Vec2& cursor, const Document& document,
+                                                    const Camera& camera, int viewportWidth,
+                                                    int viewportHeight, double tolerancePixels,
+                                                    const std::vector<std::size_t>& candidates);
 std::vector<std::size_t> selectModelsInRect2D(const Vec3& firstCorner, const Vec3& secondCorner,
                                               const Document& document, bool crossing);
 std::vector<std::size_t> selectModelsInRect3D(const Vec2& firstCorner, const Vec2& secondCorner,

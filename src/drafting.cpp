@@ -973,6 +973,24 @@ std::optional<std::size_t> hitTestModel3D(const Vec2& cursor, const Document& do
     }, &nearby);
 }
 
+std::optional<std::size_t> hitTestModelCandidates2D(const Vec3& cursor, const Document& document,
+                                                    double tolerance,
+                                                    const std::vector<std::size_t>& candidates) {
+    return hitTestModel(Vec2{cursor.x, cursor.y}, document, tolerance,
+                        [](const Vec3& point) { return Vec2{point.x, point.y}; }, &candidates);
+}
+
+std::optional<std::size_t> hitTestModelCandidates3D(const Vec2& cursor, const Document& document,
+                                                    const Camera& camera, int viewportWidth,
+                                                    int viewportHeight, double tolerancePixels,
+                                                    const std::vector<std::size_t>& candidates) {
+    return hitTestModel(cursor, document, tolerancePixels,
+                        [&](const Vec3& point) {
+                            return camera.project(point, viewportWidth, viewportHeight);
+                        },
+                        &candidates);
+}
+
 std::vector<std::size_t> selectModelsInRect2D(const Vec3& firstCorner, const Vec3& secondCorner,
                                               const Document& document, bool crossing) {
     const auto nearby = document.query2D(firstCorner, secondCorner);
