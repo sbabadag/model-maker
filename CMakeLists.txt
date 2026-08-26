@@ -194,9 +194,11 @@ if(BUILD_TESTING)
     target_compile_options(model_maker_spatial_query_benchmark PRIVATE -O3 -Wall -Wextra -Wpedantic)
 endif()
 
-# Gömülü Avrupa profil kataloğu exe'nin yanına kopyalanır
-add_custom_command(TARGET model-maker POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-        ${CMAKE_CURRENT_SOURCE_DIR}/profiles
-        $<TARGET_FILE_DIR:model-maker>/profiles
-    COMMENT "Kopyalanıyor: profiles/ -> exe dizini")
+if(TARGET model-maker)
+    # Gömülü Avrupa profil kataloğu exe'nin yanına kopyalanır
+    add_custom_command(TARGET model-maker POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            ${CMAKE_CURRENT_SOURCE_DIR}/profiles
+            $<TARGET_FILE_DIR:model-maker>/profiles
+        COMMENT "Kopyalanıyor: profiles/ -> exe dizini")
+endif()
