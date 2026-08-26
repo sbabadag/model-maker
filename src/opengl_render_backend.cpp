@@ -1018,26 +1018,22 @@ void OpenGLRenderBackend::renderContourLines(
         std::map<std::pair<std::size_t, std::size_t>, int> backCount;
         for (const auto& face : faces) {
             if (face.size() < 3) continue;
+            // Yuz basina referans yon: OCC tesselasyonu ayni yuz icinde
+            // tutarli sargi garanti etmez. Ilk ucgenin 2B yonlenmesi o
+            // yuzun referansidir; diger ucgenler ona gore normalize edilir
+            // — ayri sarginin ic kosegen cizmesi imkansiz hale gelir.
+            double faceReference = 0.0;
             for (std::size_t i = 1; i + 1 < face.size(); ++i) {
                 const Vec3& v0 = vertices[face[0]];
                 const Vec3& v1 = vertices[face[i]];
                 const Vec3& v2 = vertices[face[i + 1]];
-                // Geometrik yuzey normali (winding degil — OCC tesselasyonu
-                // sarginin tutarliligini garanti etmez; ayri sarginin ayni
-                // yuz icinde "ic cizgi" olarak cizilmesi boyle onlenir).
-                const double e1x = v1.x - v0.x, e1y = v1.y - v0.y, e1z = v1.z - v0.z;
-                const double e2x = v2.x - v0.x, e2y = v2.y - v0.y, e2z = v2.z - v0.z;
-                const double nx = e1y * e2z - e1z * e2y;
-                const double ny = e1z * e2x - e1x * e2z;
-                const double nz = e1x * e2y - e1y * e2x;
-                const Vec3 center{(v0.x + v1.x + v2.x) / 3.0,
-                                  (v0.y + v1.y + v2.y) / 3.0,
-                                  (v0.z + v1.z + v2.z) / 3.0};
-                // Gorunum uzayinda normalin z bileseni: kameraya dogruysa one.
-                const double viewZCenter = camera.viewTransform(center).z;
-                const double viewZTip = camera.viewTransform(
-                    Vec3{center.x + nx, center.y + ny, center.z + nz}).z;
-                const bool front = (viewZTip - viewZCenter) < 0.0;
+                const Vec2 p0 = camera.project(v0, width, height);
+                const Vec2 p1 = camera.project(v1, width, height);
+                const Vec2 p2 = camera.project(v2, width, height);
+                const double area = (p1.x - p0.x) * (p2.y - p0.y) -
+                                    (p1.y - p0.y) * (p2.x - p0.x);
+                if (faceReference == 0.0) faceReference = area > 0.0 ? 1.0 : -1.0;
+                const bool front = area * faceReference > 0.0;
                 const std::array<std::size_t, 3> triangle = {face[0], face[i], face[i + 1]};
                 for (std::size_t edge = 0; edge < 3; ++edge) {
                     std::size_t va = triangle[edge];
