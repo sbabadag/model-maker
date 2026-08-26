@@ -3688,10 +3688,18 @@ void Application::setSelectedEntityProfileRotation(double degrees) {
     // verince ilkinin degismesinin/kesilmesinin nedeni buydu).
     const std::string selectedProfile = selected.properties().profileName;
     std::size_t lineIndex = selectedModels_.front();
-    if (!selectedProfile.empty() && selected.faces().empty()) {
-        lineIndex = selectedModels_.front();
-    } else if (!selectedProfile.empty()) {
-        lineIndex = document_.models().size();
+    // Once katinin kaynaginda saklanan cizgi indeksine bak (kesin eslesme),
+    // yoksa profil adiyla ara.
+    const std::int64_t sourceLine = selected.properties().profileSourceLine;
+    if (sourceLine >= 0 &&
+        static_cast<std::size_t>(sourceLine) < document_.models().size()) {
+        const auto& sourceProps = document_.models()[static_cast<std::size_t>(sourceLine)].properties();
+        if (!sourceProps.profileName.empty() &&
+            document_.models()[static_cast<std::size_t>(sourceLine)].faces().empty())
+            lineIndex = static_cast<std::size_t>(sourceLine);
+    }
+    if (lineIndex == selectedModels_.front() && !selectedProfile.empty() &&
+        !selected.faces().empty()) {
         for (std::size_t i = 0; i < document_.models().size(); ++i) {
             const auto& props = document_.models()[i].properties();
             if (props.profileName == selectedProfile &&
@@ -3700,7 +3708,10 @@ void Application::setSelectedEntityProfileRotation(double degrees) {
                 break;
             }
         }
-    } else {
+    }
+    if (!selectedProfile.empty() && selected.faces().empty()) {
+        lineIndex = selectedModels_.front();
+    } else if (selectedProfile.empty()) {
         for (std::size_t i = 0; i < document_.models().size(); ++i) {
             const auto& props = document_.models()[i].properties();
             if (!props.profileName.empty() && document_.models()[i].faces().empty()) {
@@ -4085,6 +4096,7 @@ void Application::assignProfileToSelection(const std::string& profileName) {
             auto solidProps = solidModel.properties();
             solidProps.profileName = profile->name;
             solidProps.profileRotation = model.properties().profileRotation;
+            solidProps.profileSourceLine = static_cast<std::int64_t>(index);
             solidModel.setProperties(std::move(solidProps));
             // Ayni profilli mevcut kati bulunursa YERINDE degistirilir;
             // bulunmazsa eklenir (yeniden atama kopyalama yapmaz).

@@ -55,6 +55,7 @@ struct EntityProperties {
     std::string layer{"0"};
     std::string profileName;
     double profileRotation{};
+    std::int64_t profileSourceLine{-1};
     std::string lineType{"BYLAYER"};
     std::string material;
     int colorIndex{256};
