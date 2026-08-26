@@ -1074,15 +1074,14 @@ void OpenGLRenderBackend::renderContourLines(
     if (segments.empty()) return;
 
     GpuLineBatch batch;
-    const std::uint32_t color = 0xFF22242A; // koyu kontur
     for (const auto& segment : segments) {
         const std::uint32_t base = static_cast<std::uint32_t>(batch.vertices.size());
-        for (const Vec3& point : {segment[0], segment[1]}) {
+        for (const Vec3& point : {segment.first[0], segment.first[1]}) {
             GpuLineBatch::GpuVertex vertex;
             vertex.x = static_cast<float>(point.x);
             vertex.y = static_cast<float>(point.y);
             vertex.z = static_cast<float>(point.z);
-            vertex.color = color;
+            vertex.color = segment.second;
             batch.vertices.push_back(vertex);
         }
         batch.indices.push_back(base);
