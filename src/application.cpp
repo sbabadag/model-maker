@@ -2143,8 +2143,8 @@ void Application::setCurrentColorChoice(int index) noexcept {
     // Secili nesne varsa renk dogrudan atanir (AutoCAD davranisi);
     // yoksa renk sonraki cizimlerin rengi olur.
     const auto choice = colorChoices[static_cast<std::size_t>(index)];
-    if (!choice.second || selectedModels_.empty()) return; // ByLayer = atama yok
-    document_.setModelColor(selectedModels_, *choice.second);
+    if (!choice.color || selectedModels_.empty()) return; // ByLayer = atama yok
+    document_.setModelColor(selectedModels_, *choice.color);
     updateControls();
     invalidateCanvas();
 }
@@ -3643,7 +3643,7 @@ int Application::selectedEntityColorIndex() const {
     const auto& props = document_.models()[selectedModels_.front()].properties();
     const auto color = props.trueColor.value_or(0xFFFFFFFFu);
     for (std::size_t i = 0; i < colorChoices.size(); ++i)
-        if (colorChoices[i].second && *colorChoices[i].second == color)
+        if (colorChoices[i].color && *colorChoices[i].color == color)
             return static_cast<int>(i);
     return -1;
 }

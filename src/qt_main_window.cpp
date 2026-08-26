@@ -1091,10 +1091,11 @@ void QtMainWindow::createDockPanels() {
         propsColor->clear();
         const auto& palette = Application::colorPalette();
         for (const auto& entry : palette) {
-            if (entry.second)
-                propsColor->addItem(QString::fromStdString(entry.first));
+            const QString label = QString::fromWCharArray(entry.label);
+            if (entry.color)
+                propsColor->addItem(label);
             else
-                propsColor->addItem(QString::fromStdString(entry.first) + " (ByLayer)");
+                propsColor->addItem(label + " (ByLayer)");
         }
         const int colorIndex = app_.selectedEntityColorIndex();
         if (colorIndex >= 0 && colorIndex < propsColor->count())
