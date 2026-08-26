@@ -306,6 +306,8 @@ private:
     // 3B kati trim alt-akisi: 1 = kesim cizgisi bekleniyor, 2 = kalacak taraf
     int trimSolidPhase_{};
     std::size_t trimSolidIndex_{};
+    std::size_t trimLineIndex_{};
+    void performSolidTrimByLine(std::size_t lineIndex);
     Vec3 trimPlanePoint_{};
     Vec3 trimPlaneNormal_{};
     void executeSolidTrim(bool keepPositive);

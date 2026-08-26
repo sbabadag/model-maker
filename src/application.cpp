@@ -1520,83 +1520,76 @@ void Application::onLeftButtonDown(int x, int y) {
                          !document_.models()[*hit].faces().empty()) ? 1 : 0);
                 fclose(phaseLog);
             }
-            // Kati degilse asagi akisa dus (normal cizgi trim'i).
-            if (!(hit && *hit < document_.models().size() &&
-                  !document_.models()[*hit].faces().empty()))
-                return;
-        }
-        if (trimSolidPhase_ == 1) {
-            // En yakin cizgi otomatik secilir — isabet testi gerektirmez.
-            RECT viewport{}; GetClientRect(canvas_, &viewport);
-            std::optional<Vec3> pickPoint;
-            if (mode_ == EditMode::Draw2D) pickPoint = screenTo2D(x, y);
-            else pickPoint = camera_.unprojectToPlane({static_cast<double>(x), static_cast<double>(y)},
-                std::max(1L, viewport.right), std::max(1L, viewport.bottom), workPlane_);
-            if (!pickPoint) return;
-            double bestDistance = 1e18;
-            std::optional<std::size_t> bestLine;
-            for (std::size_t i = 0; i < document_.models().size(); ++i) {
-                const auto& candidate = document_.models()[i];
-                if (!candidate.faces().empty() || candidate.vertices().size() != 2) continue;
-                const Vec3 a = candidate.vertices()[0];
-                const Vec3 b = candidate.vertices()[1];
-                // nokta-dogru parcasi uzakligi
-                const double abx = b.x - a.x, aby = b.y - a.y, abz = b.z - a.z;
-                const double lengthSq = abx * abx + aby * aby + abz * abz;
-                double t = 0.0;
-                if (lengthSq > 1e-12)
-                    t = std::clamp(((pickPoint->x - a.x) * abx + (pickPoint->y - a.y) * aby +
-                                    (pickPoint->z - a.z) * abz) / lengthSq, 0.0, 1.0);
-                const double dx = pickPoint->x - (a.x + t * abx);
-                const double dy = pickPoint->y - (a.y + t * aby);
-                const double dz = pickPoint->z - (a.z + t * abz);
-                const double distance = std::sqrt(dx * dx + dy * dy + dz * dz);
-                if (distance < bestDistance) { bestDistance = distance; bestLine = i; }
-            }
-            if (!bestLine) {
-                publishStatus(L"Yakin cizgi bulunamadi — once bir cizgi cizin");
+            if (hit && *hit < document_.models().size() &&
+                document_.models()[*hit].faces().empty() &&
+                document_.models()[*hit].vertices().size() == 2) {
+                trimLineIndex_ = *hit;
+                trimSolidPhase_ = 3;
+                selectedModels_.assign(1, *hit);
+                publishStatus(L"Kesilecek katiya tıklayın");
+                updateControls();
+                invalidateCanvas();
                 return;
             }
-            const auto& cutLine = document_.models()[*bestLine];
-            const Vec3 a = cutLine.vertices()[0];
-            const Vec3 b = cutLine.vertices()[1];
-            Vec3 direction{b.x - a.x, b.y - a.y, b.z - a.z};
-            const double length = std::sqrt(direction.x * direction.x +
-                                            direction.y * direction.y +
-                                            direction.z * direction.z);
-            if (length <= 1e-9) return;
-            direction = {direction.x / length, direction.y / length, direction.z / length};
-            const Vec3& n = workPlane_.normal;
-            Vec3 planeNormal{direction.y * n.z - direction.z * n.y,
-                             direction.z * n.x - direction.x * n.z,
-                             direction.x * n.y - direction.y * n.x};
-            const double normalLength = std::sqrt(planeNormal.x * planeNormal.x +
-                                                  planeNormal.y * planeNormal.y +
-                                                  planeNormal.z * planeNormal.z);
-            if (normalLength <= 1e-9) return;
-            planeNormal = {planeNormal.x / normalLength, planeNormal.y / normalLength,
-                           planeNormal.z / normalLength};
-            trimPlanePoint_ = a;
-            trimPlaneNormal_ = planeNormal;
-            // Kalacak taraf: katinin merkezi (kose ortalamasi) hangi taraftaysa.
-            const auto& solidModel = document_.models()[trimSolidIndex_];
-            Vec3 center{0.0, 0.0, 0.0};
-            for (const auto& vertex : solidModel.vertices()) {
-                center.x += vertex.x; center.y += vertex.y; center.z += vertex.z;
-            }
-            const double count = static_cast<double>(std::max<std::size_t>(1, solidModel.vertices().size()));
-            center = {center.x / count, center.y / count, center.z / count};
-            const double side = (center.x - a.x) * planeNormal.x +
-                                (center.y - a.y) * planeNormal.y +
-                                (center.z - a.z) * planeNormal.z;
-            selectedModels_.push_back(*bestLine);
-            updateControls();
-            invalidateCanvas();
-            executeSolidTrim(side >= 0.0);
-            trimSolidPhase_ = 0;
-            cancelTransformCommand();
             return;
         }
+        if (trimSolidPhase_ == 3) {
+            if (const auto solid = solidTrimTargetAt(x, y)) {
+                trimSolidIndex_ = *solid;
+                selectedModels_.push_back(*solid);
+                updateControls();
+                invalidateCanvas();
+                performSolidTrimByLine(trimLineIndex_);
+            }
+            return;
+        }
+        if (trimSolidPhase_ == 1) {
+            RECT viewport{}; GetClientRect(canvas_, &viewport);
+            std::optional<Vec3> pickPoint;
+            if (mode_ == EditMode::Draw2D) {
+                pickPoint = screenTo2D(x, y);
+            } else {
+                pickPoint = camera_.unprojectToPlane(
+                    {static_cast<double>(x), static_cast<double>(y)},
+                    std::max(1L, viewport.right), std::max(1L, viewport.bottom), workPlane_);
+            }
+            if (pickPoint) {
+                double bestDistance = 1e18;
+                std::optional<std::size_t> bestLine;
+                for (std::size_t i = 0; i < document_.models().size(); ++i) {
+                    const auto& candidate = document_.models()[i];
+                    if (!candidate.faces().empty() || candidate.vertices().size() != 2) continue;
+                    const Vec3 a = candidate.vertices()[0];
+                    const Vec3 b = candidate.vertices()[1];
+                    const double abx = b.x - a.x, aby = b.y - a.y, abz = b.z - a.z;
+                    const double lengthSq = abx * abx + aby * aby + abz * abz;
+                    double t = 0.0;
+                    if (lengthSq > 1e-12) {
+                        t = std::clamp(((pickPoint->x - a.x) * abx +
+                                        (pickPoint->y - a.y) * aby +
+                                        (pickPoint->z - a.z) * abz) / lengthSq, 0.0, 1.0);
+                    }
+                    const double dx = pickPoint->x - (a.x + t * abx);
+                    const double dy = pickPoint->y - (a.y + t * aby);
+                    const double dz = pickPoint->z - (a.z + t * abz);
+                    const double distance = std::sqrt(dx * dx + dy * dy + dz * dz);
+                    if (distance < bestDistance) {
+                        bestDistance = distance;
+                        bestLine = i;
+                    }
+                }
+                if (!bestLine) {
+                    publishStatus(L"Yakin cizgi bulunamadi — once bir cizgi cizin");
+                } else {
+                    selectedModels_.push_back(*bestLine);
+                    updateControls();
+                    invalidateCanvas();
+                    performSolidTrimByLine(*bestLine);
+                }
+            }
+            return;
+        }
+
     }
     if (transformCommand_ != TransformCommand::None) {
         if (transformCommand_ == TransformCommand::Trim ||
@@ -2392,6 +2385,52 @@ std::optional<std::size_t> Application::trimLineTargetAt(int x, int y) const {
                                     camera_, std::max(1L, viewport.right),
                                     std::max(1L, viewport.bottom), 10.0, lines);
 }
+
+#ifdef MM_HAS_OCC
+void Application::performSolidTrimByLine(std::size_t lineIndex) {
+    if (lineIndex >= document_.models().size()) return;
+    const auto& cutLine = document_.models()[lineIndex];
+    if (cutLine.vertices().size() != 2) return;
+    const Vec3 a = cutLine.vertices()[0];
+    const Vec3 b = cutLine.vertices()[1];
+    Vec3 direction{b.x - a.x, b.y - a.y, b.z - a.z};
+    const double length = std::sqrt(direction.x * direction.x +
+                                    direction.y * direction.y +
+                                    direction.z * direction.z);
+    if (length <= 1e-9) return;
+    direction = {direction.x / length, direction.y / length, direction.z / length};
+    const Vec3& n = workPlane_.normal;
+    Vec3 planeNormal{direction.y * n.z - direction.z * n.y,
+                     direction.z * n.x - direction.x * n.z,
+                     direction.x * n.y - direction.y * n.x};
+    const double normalLength = std::sqrt(planeNormal.x * planeNormal.x +
+                                          planeNormal.y * planeNormal.y +
+                                          planeNormal.z * planeNormal.z);
+    if (normalLength <= 1e-9) return;
+    planeNormal = {planeNormal.x / normalLength, planeNormal.y / normalLength,
+                   planeNormal.z / normalLength};
+    trimPlanePoint_ = a;
+    trimPlaneNormal_ = planeNormal;
+    const auto& solidModel = document_.models()[trimSolidIndex_];
+    Vec3 center{0.0, 0.0, 0.0};
+    for (const auto& vertex : solidModel.vertices()) {
+        center.x += vertex.x;
+        center.y += vertex.y;
+        center.z += vertex.z;
+    }
+    const double count =
+        static_cast<double>(std::max<std::size_t>(1, solidModel.vertices().size()));
+    center = {center.x / count, center.y / count, center.z / count};
+    const double side = (center.x - a.x) * planeNormal.x +
+                        (center.y - a.y) * planeNormal.y +
+                        (center.z - a.z) * planeNormal.z;
+    executeSolidTrim(side >= 0.0);
+    trimSolidPhase_ = 0;
+    trimSolidIndex_ = 0;
+    trimLineIndex_ = 0;
+    cancelTransformCommand();
+}
+#endif
 
 std::optional<std::size_t> Application::trimExtendTargetAt(int x, int y) const {
     if (mode_ == EditMode::Draw2D)
