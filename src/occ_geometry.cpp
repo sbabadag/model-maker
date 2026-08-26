@@ -163,16 +163,23 @@ TopoDS_Shape cutSolidByPlane(const TopoDS_Shape& shape, const Vec3& planePoint,
     const gp_Pnt reference = keepPositive
         ? origin.Translated(direction.XYZ() * 1.0)
         : origin.Translated(direction.XYZ() * -1.0);
-    // SINIRLI duzlem yuzu: sonsuz yuz boolean'da bozuk kesim yuzleri
-    // uretiyor. Katiyi tamamen kapatan buyuk bir kare kullan (bbox + pay).
+    // Sinirli prizma (slab) yaklasimi: sonsuz/half-space boolean'lari
+    // bozuk kesim yuzleri uretiyordu. Katiyi tamamen kapatan buyuk bir kare
+    // yuzu, kesilecek tarafa dogru extrude edilir ve cikarilir.
     Bnd_Box boundingBox;
     BRepBndLib::Add(shape, boundingBox);
     double xMin = 0.0, yMin = 0.0, zMin = 0.0, xMax = 0.0, yMax = 0.0, zMax = 0.0;
     boundingBox.Get(xMin, yMin, zMin, xMax, yMax, zMax);
-    const double margin = std::max({xMax - xMin, yMax - yMin, zMax - zMin}) * 0.75 + 1.0;
+    // 2x marj: duzlemin yerel eksenleri katinin kosegenini (kadar ~1.73x)
+    // kapsamali — 0.75x marj kenarlari acikta birakiyordu.
+    const double margin = std::max({xMax - xMin, yMax - yMin, zMax - zMin}) * 2.0 + 1.0;
+    // Kalacak taraf = keepPositive ise NEGATIF taraf cikarilir (ve tersi).
+    const gp_Vec removeVector = keepPositive
+        ? direction.XYZ() * (-margin * 2.0)
+        : direction.XYZ() * (margin * 2.0);
     BRepBuilderAPI_MakeFace planeFace(plane, -margin, margin, -margin, margin);
-    BRepPrimAPI_MakeHalfSpace halfSpace(planeFace.Face(), reference);
-    BRepAlgoAPI_Cut cut(shape, halfSpace.Solid());
+    auto slab = BRepPrimAPI_MakePrism(planeFace.Face(), removeVector);
+    BRepAlgoAPI_Cut cut(shape, slab.Shape());
     return cut.Shape();
 }
 
