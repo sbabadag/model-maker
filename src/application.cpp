@@ -4074,9 +4074,37 @@ void Application::assignProfileToSelection(const std::string& profileName) {
             solidProps.profileName = profile->name;
             solidProps.profileRotation = model.properties().profileRotation;
             solidModel.setProperties(std::move(solidProps));
-            addStyledModel(std::move(solidModel));
-            solidIndices.push_back(document_.models().size() - 1);
-            occShapes_.emplace(document_.models().size() - 1, solid);
+            // Ayni profilli mevcut kati bulunursa YERINDE degistirilir;
+            // bulunmazsa eklenir (yeniden atama kopyalama yapmaz).
+            std::optional<std::size_t> existingSolid;
+            for (std::size_t i = 0; i < document_.models().size(); ++i) {
+                const auto& checkProps = document_.models()[i].properties();
+                if (!checkProps.profileName.empty() &&
+                    !document_.models()[i].faces().empty() &&
+                    checkProps.profileName == profile->name) {
+                    existingSolid = i;
+                    break;
+                }
+            }
+            std::vector<std::size_t> duplicates;
+            for (std::size_t i = 0; i < document_.models().size(); ++i) {
+                const auto& checkProps = document_.models()[i].properties();
+                if (existingSolid && i == *existingSolid) continue;
+                if (!checkProps.profileName.empty() &&
+                    !document_.models()[i].faces().empty() &&
+                    checkProps.profileName == profile->name)
+                    duplicates.push_back(i);
+            }
+            if (existingSolid) {
+                document_.replaceModel(*existingSolid, {std::move(solidModel)});
+                occShapes_[*existingSolid] = solid;
+                solidIndices.push_back(*existingSolid);
+            } else {
+                addStyledModel(std::move(solidModel));
+                solidIndices.push_back(document_.models().size() - 1);
+                occShapes_.emplace(document_.models().size() - 1, solid);
+            }
+            if (!duplicates.empty()) document_.deleteModels(duplicates);
             {
                 const auto& addedModel = document_.models().back();
                 FILE* solidLog = fopen("model-maker-render.log", "a");
