@@ -1522,7 +1522,8 @@ void Application::onLeftButtonDown(int x, int y) {
             }
             if (hit && *hit < document_.models().size() &&
                 document_.models()[*hit].faces().empty() &&
-                document_.models()[*hit].vertices().size() == 2) {
+                document_.models()[*hit].vertices().size() == 2 &&
+                document_.models()[*hit].properties().profileName.empty()) {
                 trimLineIndex_ = *hit;
                 trimSolidPhase_ = 3;
                 selectedModels_.assign(1, *hit);
@@ -1559,6 +1560,9 @@ void Application::onLeftButtonDown(int x, int y) {
                 for (std::size_t i = 0; i < document_.models().size(); ++i) {
                     const auto& candidate = document_.models()[i];
                     if (!candidate.faces().empty() || candidate.vertices().size() != 2) continue;
+                    // Profil atanmis eksen cizgisi (kirisin olustugu cizgi)
+                    // kesim cizgisi OLAMAZ — onunla kesim boruyu boyuna yarar.
+                    if (!candidate.properties().profileName.empty()) continue;
                     const Vec3 a = candidate.vertices()[0];
                     const Vec3 b = candidate.vertices()[1];
                     const double abx = b.x - a.x, aby = b.y - a.y, abz = b.z - a.z;
@@ -2374,7 +2378,9 @@ std::optional<std::size_t> Application::trimLineTargetAt(int x, int y) const {
     // dolgulu yuzu cizginin uzerindeyse bile cizgiyi calamasin.
     std::vector<std::size_t> lines;
     for (std::size_t i = 0; i < document_.models().size(); ++i)
-        if (document_.models()[i].faces().empty()) lines.push_back(i);
+        if (document_.models()[i].faces().empty() &&
+            document_.models()[i].properties().profileName.empty())
+            lines.push_back(i);
     if (lines.empty()) return std::nullopt;
     if (mode_ == EditMode::Draw2D)
         return hitTestModelCandidates2D(screenTo2D(x, y), document_,
