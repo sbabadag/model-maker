@@ -3608,6 +3608,19 @@ void Application::executeSolidTrim(bool keepPositive) {
         return;
     }
     auto model = mm::shapeToWireframeWithFaces(result, 0.15);
+    {
+        // Kesim sonucunun yapisal teşhisi (bozuk gorunum avi)
+        int faceCount = 0, edgeCount = 0;
+        for (TopExp_Explorer faces(result, TopAbs_FACE); faces.More(); faces.Next()) ++faceCount;
+        for (TopExp_Explorer edges(result, TopAbs_EDGE); edges.More(); edges.Next()) ++edgeCount;
+        FILE* diag = fopen("model-maker-render.log", "a");
+        if (diag) {
+            fprintf(diag, "TRIM-RESULT faces=%d edges=%d tessTri=%zu keepPos=%d\n",
+                    faceCount, edgeCount, model.faces().size(),
+                    keepPositive ? 1 : 0);
+            fclose(diag);
+        }
+    }
     const auto oldProps = document_.models()[trimSolidIndex_].properties();
     auto props = model.properties();
     props.profileName = oldProps.profileName;
