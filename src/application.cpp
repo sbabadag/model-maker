@@ -3705,15 +3705,65 @@ void Application::setSelectedEntityProfileRotation(double degrees) {
     replacement.back().setProperties(std::move(props));
     pushUndoSnapshot();
     document_.replaceModel(lineIndex, std::move(replacement));
-    // Eksen cizgisine profil atanmissa katiyi yeniden uret.
+    // Eksen cizgisine profil atanmissa katiyi YENIDEN uret — mevcut katiyi
+    // DEGISTIR (yeni kati eklenmez, kopyalama olmaz).
     const std::string profileName = document_.models()[lineIndex].properties().profileName;
     if (!profileName.empty()) {
-        selectedModels_.assign(1, lineIndex);
-        assignProfileToSelection(profileName);
-    } else {
-        updateControls();
-        invalidateCanvas();
+        ensureProfileCatalog();
+        const auto* profile = mm::findProfile(profileCatalog_, profileName);
+        const auto& lineModel = document_.models()[lineIndex];
+        if (profile && lineModel.vertices().size() == 2 &&
+            lineModel.edges().size() == 1) {
+            const Vec3 from = lineModel.vertices()[0];
+            const Vec3 to = lineModel.vertices()[1];
+            const TopoDS_Shape solid = mm::extrudeProfileSolid(
+                *profile, from, to, degrees);
+            if (!solid.IsNull()) {
+                auto solidModel = mm::shapeToWireframeWithFaces(solid, 0.15);
+                // Mevcut katinin ozellikleri (malzeme/renk/katman) korunur.
+                std::optional<EntityProperties> oldProps;
+                for (std::size_t i = 0; i < document_.models().size(); ++i) {
+                    const auto& props = document_.models()[i].properties();
+                    if (!props.profileName.empty() &&
+                        !document_.models()[i].faces().empty() &&
+                        props.profileName == profileName) {
+                        oldProps = props;
+                        break;
+                    }
+                }
+                auto props = solidModel.properties();
+                props.profileName = profileName;
+                if (oldProps) {
+                    props.material = oldProps->material;
+                    props.trueColor = oldProps->trueColor;
+                    props.colorIndex = oldProps->colorIndex;
+                    props.lineType = oldProps->lineType;
+                    props.layer = oldProps->layer;
+                }
+                solidModel.setProperties(std::move(props));
+                std::optional<std::size_t> existingSolid;
+                for (std::size_t i = 0; i < document_.models().size(); ++i) {
+                    const auto& modelProps = document_.models()[i].properties();
+                    if (!modelProps.profileName.empty() &&
+                        !document_.models()[i].faces().empty() &&
+                        modelProps.profileName == profileName) {
+                        existingSolid = i;
+                        break;
+                    }
+                }
+                pushUndoSnapshot();
+                if (existingSolid) {
+                    document_.replaceModel(*existingSolid, {std::move(solidModel)});
+                    occShapes_[*existingSolid] = solid;
+                } else {
+                    addStyledModel(std::move(solidModel));
+                    occShapes_.emplace(document_.models().size() - 1, solid);
+                }
+            }
+        }
     }
+    updateControls();
+    invalidateCanvas();
 }
 
 std::string Application::selectedEntityMaterial() const {
