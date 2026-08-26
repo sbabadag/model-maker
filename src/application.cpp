@@ -3683,11 +3683,23 @@ void Application::setSelectedEntityProfileRotation(double degrees) {
         selectedModels_.front() >= document_.models().size())
         return;
     const auto& selected = document_.models()[selectedModels_.front()];
-    // Rotasyon eksen cizgisinde saklanir; kati seciliyse ayni profilli
-    // eksen cizgisi aranir ve o guncellenir.
+    // Rotasyon eksen cizgisinde saklanir; kati seciliyse AYNI PROFILE sahip
+    // eksen cizgisi aranir (ilk-herhangi degil — ikinci profile rotasyon
+    // verince ilkinin degismesinin/kesilmesinin nedeni buydu).
+    const std::string selectedProfile = selected.properties().profileName;
     std::size_t lineIndex = selectedModels_.front();
-    if (!selected.properties().profileName.empty() && selected.faces().empty()) {
+    if (!selectedProfile.empty() && selected.faces().empty()) {
         lineIndex = selectedModels_.front();
+    } else if (!selectedProfile.empty()) {
+        lineIndex = document_.models().size();
+        for (std::size_t i = 0; i < document_.models().size(); ++i) {
+            const auto& props = document_.models()[i].properties();
+            if (props.profileName == selectedProfile &&
+                document_.models()[i].faces().empty()) {
+                lineIndex = i;
+                break;
+            }
+        }
     } else {
         for (std::size_t i = 0; i < document_.models().size(); ++i) {
             const auto& props = document_.models()[i].properties();
