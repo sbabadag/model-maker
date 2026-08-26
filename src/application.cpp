@@ -3829,6 +3829,16 @@ void Application::assignProfileToSelection(const std::string& profileName) {
             addStyledModel(std::move(solidModel));
             solidIndices.push_back(document_.models().size() - 1);
             occShapes_.emplace(document_.models().size() - 1, solid);
+            {
+                FILE* solidLog = fopen("model-maker-render.log", "a");
+                if (solidLog) {
+                    fprintf(solidLog,
+                            "SOLID-MODEL verts=%zu edges=%zu faces=%zu\n",
+                            solidModel.vertices().size(), solidModel.edges().size(),
+                            solidModel.faces().size());
+                    fclose(solidLog);
+                }
+            }
         }
         if (!solidIndices.empty()) {
             FILE* diag = fopen("model-maker-render.log", "a");

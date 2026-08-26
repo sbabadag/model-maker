@@ -1009,6 +1009,7 @@ void OpenGLRenderBackend::renderContourLines(
     // kenarlar. Izduşum sonrası 2B yonlenme (winding) ile belirlenir —
     // kamera bagimli, ekran-uzayi testi (goz konumu gerekmez).
     std::vector<std::array<Vec3, 2>> segments;
+
     for (const auto& [modelIndex, model] : models) {
         (void)modelIndex;
         const auto& vertices = model.vertices();
@@ -1047,6 +1048,15 @@ void OpenGLRenderBackend::renderContourLines(
         for (const auto& [key, count] : frontCount) {
             if (count > 0 && backCount[key] > 0)
                 segments.push_back({vertices[key.first], vertices[key.second]});
+        }
+    }
+    static std::size_t lastLoggedCount = static_cast<std::size_t>(-1);
+    if (segments.size() != lastLoggedCount) {
+        lastLoggedCount = segments.size();
+        FILE* contourLog = fopen("model-maker-render.log", "a");
+        if (contourLog) {
+            fprintf(contourLog, "CONTOUR-SEGMENTS count=%zu\n", segments.size());
+            fclose(contourLog);
         }
     }
     if (segments.empty()) return;
