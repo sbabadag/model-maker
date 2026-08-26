@@ -1499,7 +1499,8 @@ void Application::onLeftButtonDown(int x, int y) {
         // 3B kati trim (2B/3B her iki modda): kati -> kesim cizgisi ->
         // kalacak taraf. Tiklanan nesne kati ise (yuzu varsa) 3B akis,
         // degilse mevcut cizgi trim'i calisir.
-        const auto hit = trimExtendTargetAt(x, y);
+        const auto hit = trimSolidPhase_ == 0 ? solidTrimTargetAt(x, y)
+                                                 : trimExtendTargetAt(x, y);
         if (trimSolidPhase_ == 0) {
             if (hit && *hit < document_.models().size() &&
                 !document_.models()[*hit].faces().empty()) {
@@ -2342,6 +2343,29 @@ void Application::completeWindowSelection(int x, int y) {
         if (std::find(selectedModels_.begin(), selectedModels_.end(), index) == selectedModels_.end())
             selectedModels_.push_back(index);
     }
+}
+
+std::optional<std::size_t> Application::solidTrimTargetAt(int x, int y) const {
+    // Yalniz kati modeller (yuzu olanlar) icin isabet testi: kesim cizgisi
+    // katinin ustunde duruyorsa bile kati oncelikli secilir.
+    std::vector<std::size_t> solids;
+    for (std::size_t i = 0; i < document_.models().size(); ++i)
+        if (!document_.models()[i].faces().empty()) solids.push_back(i);
+    if (solids.empty()) return std::nullopt;
+    if (mode_ == EditMode::Draw2D) {
+        const Vec3 world = screenTo2D(x, y);
+        return hitTestModel(Vec2{world.x, world.y}, document_,
+                            10.0 / (60.0 * camera_.zoom()),
+                            [](const Vec3& p) { return Vec2{p.x, p.y}; }, &solids);
+    }
+    RECT viewport{};
+    GetClientRect(canvas_, &viewport);
+    return hitTestModel({static_cast<double>(x), static_cast<double>(y)}, document_, 10.0,
+                        [&](const Vec3& p) {
+                            return camera_.project(p, std::max(1L, viewport.right),
+                                                   std::max(1L, viewport.bottom));
+                        },
+                        &solids);
 }
 
 std::optional<std::size_t> Application::trimExtendTargetAt(int x, int y) const {
