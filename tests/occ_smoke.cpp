@@ -162,6 +162,26 @@ int main() {
         }
         std::printf("OCC CUT-PLANE OK — iki yarim 500/500 mm³\n");
     }
+    // I-kesit (IPE200): h=200 b=100 tw=5.6 tf=8.5 — keskin kose alani
+    // 2*100*8.5 + (200-17)*5.6 = 2724.8 mm2; 100 mm boy -> 272480 mm3
+    {
+        mm::SteelProfile ipe200;
+        ipe200.name = "IPE200";
+        ipe200.height = 200.0;
+        ipe200.width = 100.0;
+        ipe200.plateThickness = 5.6;
+        ipe200.flangeThickness = 8.5;
+        const auto iSolid = mm::extrudeProfileSolid(ipe200, Vec3{0.0, 0.0, 0.0},
+                                                    Vec3{0.0, 0.0, 100.0});
+        GProp_GProps iProps;
+        BRepGProp::VolumeProperties(iSolid, iProps);
+        const double expected = 2.0 * 100.0 * 8.5 * 100.0 + (200.0 - 17.0) * 5.6 * 100.0;
+        if (std::abs(iProps.Mass() - expected) / expected > 0.01) {
+            std::printf("HATA: IPE200 hacmi %.1f beklenen %.1f\n", iProps.Mass(), expected);
+            return 1;
+        }
+        std::printf("OCC I-SECTION OK — IPE200 hacim %.0f mm3 (keskin kose)\n", iProps.Mass());
+    }
     // Diyagonal dogrultu: (0,0,0)->(0,100,0) — kiris Y ekseninde uzanmali,
     // kesit X/Z yonlerinde ±15 sinirlari icinde kalmali.
     {

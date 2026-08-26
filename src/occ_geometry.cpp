@@ -206,6 +206,16 @@ TopoDS_Shape extrudeProfileSolid(const SteelProfile& profile, const Vec3& from, 
                           alphaPrefix == "ROD" || alphaPrefix == "D" ||
                           alphaPrefix == "P" || alphaPrefix == "TUBE" ||
                           alphaPrefix == "O");
+    const bool isIShape = alphaPrefix.rfind("HE", 0) == 0 ||
+                          alphaPrefix.rfind("IPE", 0) == 0 ||
+                          alphaPrefix.rfind("IPN", 0) == 0 ||
+                          alphaPrefix.rfind("UB", 0) == 0 ||
+                          alphaPrefix.rfind("UC", 0) == 0 ||
+                          alphaPrefix.rfind("HL", 0) == 0 ||
+                          alphaPrefix.rfind("HD", 0) == 0 ||
+                          alphaPrefix.rfind("HP", 0) == 0 ||
+                          alphaPrefix.rfind("W", 0) == 0 ||
+                          alphaPrefix == "T";
 
     if (isRound) {
         const double outerR = std::max(w, h) / 2.0;
@@ -222,6 +232,25 @@ TopoDS_Shape extrudeProfileSolid(const SteelProfile& profile, const Vec3& from, 
         } else {
             section = circleFace(outerR);
         }
+    } else if (isIShape) {
+        // I-kesit (HEA/HEB/HEM/IPE/IPN/UB/UC/W/T): iki flans + govde.
+        const double tf = profile.flangeThickness > 0.0 ? profile.flangeThickness : t;
+        const double tw = t;
+        const double webHeight = h - 2.0 * tf;
+        const auto rectFaceAt = [&](double yCenter, double halfW, double halfH) {
+            BRepBuilderAPI_MakePolygon polygon(gp_Pnt(-halfW, yCenter - halfH, 0.0),
+                                               gp_Pnt(halfW, yCenter - halfH, 0.0),
+                                               gp_Pnt(halfW, yCenter + halfH, 0.0),
+                                               gp_Pnt(-halfW, yCenter + halfH, 0.0));
+            polygon.Close();
+            return BRepBuilderAPI_MakeFace(polygon.Wire()).Shape();
+        };
+        const TopoDS_Shape topFlange = rectFaceAt(hh - tf / 2.0, hw, tf / 2.0);
+        const TopoDS_Shape bottomFlange = rectFaceAt(-hh + tf / 2.0, hw, tf / 2.0);
+        const TopoDS_Shape web = rectFaceAt(0.0, tw / 2.0, std::max(1.0, webHeight) / 2.0);
+        BRepAlgoAPI_Fuse flanges(topFlange, bottomFlange);
+        BRepAlgoAPI_Fuse complete(flanges.Shape(), web);
+        section = complete.Shape();
     } else {
     const auto rectFace = [&](double halfW, double halfH) {
         BRepBuilderAPI_MakePolygon polygon(gp_Pnt(-halfW, -halfH, 0.0),

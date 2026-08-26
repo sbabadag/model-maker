@@ -16,6 +16,7 @@ struct SteelProfile {
     double height{};
     double width{};
     double plateThickness{};
+    double flangeThickness{};
     double roundingRadius{};
     double crossSectionArea{};
     double weightPerUnitLength{};

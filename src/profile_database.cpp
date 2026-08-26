@@ -81,6 +81,7 @@ std::vector<SteelProfile> parseTeklaProfileDatabase(const std::filesystem::path&
         if (key == "HEIGHT") current.height = value;
         else if (key == "WIDTH") current.width = value;
         else if (key == "PLATE_THICKNESS") current.plateThickness = value;
+        else if (key == "FLANGE_THICKNESS") current.flangeThickness = value;
         else if (key == "ROUNDING_RADIUS") current.roundingRadius = value;
         else if (key == "CROSS_SECTION_AREA") current.crossSectionArea = value;
         else if (key == "WEIGHT_PER_UNIT_LENGTH") current.weightPerUnitLength = value;
