@@ -18,6 +18,22 @@ namespace mm {
 
 enum class VisualStyle { Wireframe, Solid, Transparent, HiddenLine };
 
+// ADAPTIF GRID ADIMI (AutoCAD 1-2-5): ekran araligi ~50px olacak sekilde
+// kademeli adim; mm cinsinden taban 10mm. Snap ve cizim AYNI adimi
+// kullanir — grid nereye cizilirse snap oraya yapisir.
+constexpr double kMinGridStepMm = 10.0;
+inline double niceGridStep(double pixelsPerUnit) noexcept {
+    if (pixelsPerUnit <= 1e-9) return kMinGridStepMm;
+    const double raw = 50.0 / pixelsPerUnit; // hedef ~50 piksel
+    double scale = 1.0; // 10^n tabani (log10/floor yerine dongu)
+    if (raw >= 1.0) { while (raw / scale >= 10.0) scale *= 10.0; }
+    else { while (raw / scale < 1.0) scale /= 10.0; }
+    const double norm = raw / scale; // 1..10 araligina normalize
+    const double nice = norm <= 1.0 ? 1.0 : norm <= 2.0 ? 2.0 : norm <= 5.0 ? 5.0 : 10.0;
+    const double step = nice * scale;
+    return step < kMinGridStepMm ? kMinGridStepMm : step;
+}
+
 constexpr unsigned char visualStyleFaceAlpha(VisualStyle style) noexcept {
     switch (style) {
     case VisualStyle::Wireframe: return 0;

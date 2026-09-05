@@ -2830,7 +2830,10 @@ void Application::updateHover(int x, int y) {
     }
     if (mode_ == EditMode::Draw2D) {
         const auto reference = transformPhase_ == TransformPhase::Destination ? transformBase_ : anchor_;
-        hover_ = SnapEngine::snap(screenTo2D(x, y), document_, 10.0 / (60.0 * camera_.zoom()), 1.0,
+        // Grid snap araligi = cizilen grid'in araligi (adaptif 1-2-5): snap
+        // eskiden sabit 1.0mm'e yapisiyordu; artik gorunur grid noktalarina.
+        const double gridStep = niceGridStep(60.0 * camera_.zoom());
+        hover_ = SnapEngine::snap(screenTo2D(x, y), document_, 10.0 / (60.0 * camera_.zoom()), gridStep,
                                   snapEnabled_, gridSnapEnabled_, reference, &enabledSnapTypes_);
     } else {
         RECT client{}; GetClientRect(canvas_, &client);
@@ -2839,8 +2842,12 @@ void Application::updateHover(int x, int y) {
         const auto reference = transformPhase_ == TransformPhase::Destination ? transformBase_ : anchor_;
         WorkPlane activePlane = workPlane_;
         if (reference && !workPlanePicking_) activePlane.origin = *reference;
+        // 3B grid snap: is duzlemindeki adaptif adim (grid ile ayni).
+        const Vec2 gOrigin = camera_.project(activePlane.origin, width, height);
+        const Vec2 gUnit = camera_.project(activePlane.fromPlane({1.0, 0.0}), width, height);
+        const double gPx = std::hypot(gUnit.x - gOrigin.x, gUnit.y - gOrigin.y);
         hover_ = SnapEngine::snap3D({static_cast<double>(x), static_cast<double>(y)}, document_, camera_,
-                                    width, height, 10.0, 1.0, activePlane,
+                                    width, height, 10.0, niceGridStep(gPx), activePlane,
                                     snapEnabled_, gridSnapEnabled_, reference, &enabledSnapTypes_);
     }
     const SnapResult rawSnap = *hover_;
