@@ -3707,6 +3707,17 @@ void Application::setSelectedEntityProfileRotation(double degrees) {
         document_.replaceModel(index, std::move(replacement));
     };
 
+    {
+        FILE* stepLog = fopen("model-maker-render.log", "a");
+        if (stepLog) {
+            fprintf(stepLog,
+                    "ROT-ENTER deg=%.1f selected=%zu isSolid=%d srcIdx=%lld\n",
+                    degrees, selectedIndex,
+                    !document_.models()[selectedIndex].faces().empty() ? 1 : 0,
+                    static_cast<long long>(props.profileSourceLine));
+            fclose(stepLog);
+        }
+    }
     pushUndoSnapshot();
     updateRotationOn(selectedIndex); // A
 
@@ -3740,6 +3751,16 @@ void Application::setSelectedEntityProfileRotation(double degrees) {
         return;
     }
     const auto& lineModel = document_.models()[sourceLine];
+    {
+        FILE* stepLog = fopen("model-maker-render.log", "a");
+        if (stepLog) {
+            fprintf(stepLog,
+                    "ROT-LINE idx=%zu verts=%zu edges=%zu profile=%s\n",
+                    sourceLine, lineModel.vertices().size(), lineModel.edges().size(),
+                    props.profileName.c_str());
+            fclose(stepLog);
+        }
+    }
     if (lineModel.vertices().size() != 2 || lineModel.edges().size() != 1) {
         updateControls();
         invalidateCanvas();
