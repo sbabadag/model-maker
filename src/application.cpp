@@ -4288,6 +4288,39 @@ void Application::assignProfileToSelection(const std::string& profileName) {
                     fclose(lineLog);
                 }
             }
+            // Secim artik kaynagi silinen katilari gostersin: eksen
+            // eslenmesiyle secili katilarin YENI indekslerini bul.
+            if (!selectedModels_.empty()) {
+                std::vector<std::size_t> keptProps;
+                for (const auto selIdx : selectedModels_) {
+                    if (selIdx >= document_.models().size()) continue;
+                    const auto& m = document_.models()[selIdx];
+                    if (!m.properties().profileName.empty() && !m.faces().empty())
+                        keptProps.push_back(selIdx);
+                }
+                (void)keptProps; // indeks duzeltmesi asagida eksen bazli yapilir
+                std::vector<std::size_t> newSelection;
+                for (const auto& consumed : consumedAxes) (void)consumed;
+                for (std::size_t k = 0; k + 1 < consumedAxes.size(); k += 2) {
+                    const Vec3 cf = consumedAxes[k];
+                    const Vec3 ct = consumedAxes[k + 1];
+                    for (std::size_t i = 0; i < document_.models().size(); ++i) {
+                        const auto& m = document_.models()[i];
+                        if (m.faces().empty() || m.properties().profileName.empty()) continue;
+                        const Vec3 af(m.properties().axisFromX, m.properties().axisFromY,
+                                      m.properties().axisFromZ);
+                        const Vec3 at(m.properties().axisToX, m.properties().axisToY,
+                                      m.properties().axisToZ);
+                        const bool sameF = std::abs(af.x - cf.x) < 1e-6 &&
+                            std::abs(af.y - cf.y) < 1e-6 && std::abs(af.z - cf.z) < 1e-6;
+                        const bool sameT = std::abs(at.x - ct.x) < 1e-6 &&
+                            std::abs(at.y - ct.y) < 1e-6 && std::abs(at.z - ct.z) < 1e-6;
+                        if (sameF && sameT) { newSelection.push_back(i); break; }
+                    }
+                }
+                if (!newSelection.empty())
+                    selectedModels_ = std::move(newSelection);
+            }
         }
         if (!solidIndices.empty()) {
             FILE* diag = fopen("model-maker-render.log", "a");

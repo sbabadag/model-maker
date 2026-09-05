@@ -109,6 +109,20 @@ void Document::moveModels(const std::vector<std::size_t>& indices, const Vec3& d
     for (const auto index : indices) {
         if (index >= models_.size()) continue;
         models_[index].translate(displacement);
+        // Profilli katinin kendi eksen koordinatlari da tasinir — yoksa
+        // rotasyon/degistirme islemleri katiyi ESKI konumda yeniden uretir.
+        {
+            auto props = models_[index].properties();
+            if (!props.profileName.empty()) {
+                props.axisFromX += displacement.x;
+                props.axisFromY += displacement.y;
+                props.axisFromZ += displacement.z;
+                props.axisToX += displacement.x;
+                props.axisToY += displacement.y;
+                props.axisToZ += displacement.z;
+                models_[index].setProperties(std::move(props));
+            }
+        }
         if (modelBounds_.size() == models_.size())
             modelBounds_[index] = computeModelBounds(models_[index]);
         markPending(index);
@@ -125,6 +139,18 @@ void Document::copyModels(const std::vector<std::size_t>& indices, const Vec3& d
         if (index < models_.size()) {
             copies.push_back(models_[index]);
             copies.back().translate(displacement);
+            {
+                auto props = copies.back().properties();
+                if (!props.profileName.empty()) {
+                    props.axisFromX += displacement.x;
+                    props.axisFromY += displacement.y;
+                    props.axisFromZ += displacement.z;
+                    props.axisToX += displacement.x;
+                    props.axisToY += displacement.y;
+                    props.axisToZ += displacement.z;
+                    copies.back().setProperties(std::move(props));
+                }
+            }
             UndoOp op;
             op.kind = UndoOp::Kind::Add;
             op.index = models_.size() + copies.size() - 1;
@@ -453,10 +479,22 @@ void Document::applyUndoOp(const UndoOp& op, bool forward) {
     }
     case UndoOp::Kind::Move:
         for (const auto index : op.indices)
-            if (index < models_.size())
-                models_[index].translate(forward ? op.displacement
-                                                 : Vec3{-op.displacement.x, -op.displacement.y,
-                                                        -op.displacement.z});
+            if (index < models_.size()) {
+                const Vec3 d = forward ? op.displacement
+                                       : Vec3{-op.displacement.x, -op.displacement.y,
+                                              -op.displacement.z};
+                models_[index].translate(d);
+                auto props = models_[index].properties();
+                if (!props.profileName.empty()) {
+                    props.axisFromX += d.x;
+                    props.axisFromY += d.y;
+                    props.axisFromZ += d.z;
+                    props.axisToX += d.x;
+                    props.axisToY += d.y;
+                    props.axisToZ += d.z;
+                    models_[index].setProperties(std::move(props));
+                }
+            }
         break;
     }
 }
