@@ -202,21 +202,45 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         HPEN gridPen = CreatePen(PS_SOLID, 1,
                                  mode == EditMode::View3D ? RGB(66, 68, 72) : RGB(34, 40, 53));
         SelectObject(targetDc, gridPen);
+        // ADAPTIF GRID (AutoCAD 1-2-5): ekran araligi ~50px olacak sekilde
+        // kademeli adim secilir; mm cinsinden mühendislik çizimi icin
+        // minimum adim 10mm (eskiden 1mm ciziliyordu — yogun gurultu).
+        const auto niceGridStep = [](double pixelsPerUnit) {
+            constexpr double minStep = 10.0; // mm
+            if (pixelsPerUnit <= 1e-9) return minStep;
+            const double raw = 50.0 / pixelsPerUnit; // hedef ~50 piksel
+            const double magnitude = std::pow(10.0, std::floor(std::log10(std::max(raw, 1e-9))));
+            const double norm = raw / magnitude; // 1..10 araligina normalize
+            const double nice = norm <= 1.0 ? 1.0 : norm <= 2.0 ? 2.0 : norm <= 5.0 ? 5.0 : 10.0;
+            return std::max(minStep, nice * magnitude);
+        };
         if (mode == EditMode::Draw2D) {
             const POINT origin = projectPoint({0.0, 0.0, 0.0});
             const POINT unit = projectPoint({1.0, 0.0, 0.0});
-            const int gridSpacing = std::max(1, static_cast<int>(std::abs(unit.x - origin.x)));
-            for (int x = origin.x % gridSpacing; x < canvas.right; x += gridSpacing)
-                line(targetDc, x, canvas.top, x, canvas.bottom);
-            for (int y = origin.y % gridSpacing; y < canvas.bottom; y += gridSpacing)
-                line(targetDc, canvas.left, y, canvas.right, y);
+            const double pxPerUnit = std::abs(unit.x - origin.x);
+            const double step = niceGridStep(pxPerUnit);
+            const int gridSpacing = std::max(1, static_cast<int>(std::llround(step * pxPerUnit)));
+            if (gridSpacing >= 4) { // 4px'ten sik adimlarda grid cizme
+                for (int x = origin.x % gridSpacing; x < canvas.right; x += gridSpacing)
+                    line(targetDc, x, canvas.top, x, canvas.bottom);
+                for (int y = origin.y % gridSpacing; y < canvas.bottom; y += gridSpacing)
+                    line(targetDc, canvas.left, y, canvas.right, y);
+            }
         } else {
-            constexpr int gridExtent = 10;
-            for (int coordinate = -gridExtent; coordinate <= gridExtent; ++coordinate) {
-                const POINT verticalA = projectPoint(draft.workPlane.fromPlane({static_cast<double>(coordinate), -gridExtent}));
-                const POINT verticalB = projectPoint(draft.workPlane.fromPlane({static_cast<double>(coordinate), gridExtent}));
-                const POINT horizontalA = projectPoint(draft.workPlane.fromPlane({-gridExtent, static_cast<double>(coordinate)}));
-                const POINT horizontalB = projectPoint(draft.workPlane.fromPlane({gridExtent, static_cast<double>(coordinate)}));
+            const POINT origin3 = projectPoint(draft.workPlane.fromPlane({0.0, 0.0}));
+            const POINT unit3 = projectPoint(draft.workPlane.fromPlane({1.0, 0.0}));
+            const double pxPerUnit3 = std::hypot(unit3.x - origin3.x, unit3.y - origin3.y);
+            const double step3 = niceGridStep(pxPerUnit3);
+            // Kapsam: adimin ~25 kati (yaklasik viewport icin yeterli),
+            // makul sinirlar arasinda (100mm..100000mm).
+            const double extent = std::clamp(step3 * 25.0, 100.0, 100000.0);
+            const int divisions = static_cast<int>(std::llround(extent / step3));
+            for (int i = -divisions; i <= divisions; ++i) {
+                const double coordinate = static_cast<double>(i) * step3;
+                const POINT verticalA = projectPoint(draft.workPlane.fromPlane({coordinate, -extent}));
+                const POINT verticalB = projectPoint(draft.workPlane.fromPlane({coordinate, extent}));
+                const POINT horizontalA = projectPoint(draft.workPlane.fromPlane({-extent, coordinate}));
+                const POINT horizontalB = projectPoint(draft.workPlane.fromPlane({extent, coordinate}));
                 line(targetDc, verticalA.x, verticalA.y, verticalB.x, verticalB.y);
                 line(targetDc, horizontalA.x, horizontalA.y, horizontalB.x, horizontalB.y);
             }
