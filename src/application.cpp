@@ -1497,12 +1497,6 @@ void Application::onLeftButtonDown(int x, int y) {
         }
         updateControls(); invalidateCanvas(); return;
     }
-    if (pendingSelectionClear_) {
-        // Kopyalama komutundan cikildi: bir sonraki tiklama eski toplu
-        // secimi tasimaz — yeniden secim yapilir (tek/ctrl+coklu).
-        pendingSelectionClear_ = false;
-        selectedModels_.clear();
-    }
     if (GetKeyState(VK_CONTROL) < 0) {
         // Ctrl+tiklama: bos modda nesne secimi (profil atama icin).
         updateHover(x, y);
@@ -2759,26 +2753,14 @@ void Application::commitTransformPoint(const Vec3& point) {
         document_.moveModels(selectedModels_, displacement);
         cancelTransformCommand();
     } else if (transformCommand_ == TransformCommand::Copy) {
-        const std::size_t beforeCount = document_.models().size();
         pushUndoSnapshot();
-        const std::size_t srcCount = selectedModels_.size();
         document_.copyModels(selectedModels_, displacement);
-        // Secim artik YENI kopyalari gosterir (kaynak sirasiyla ayni sira):
-        // kopyalara rotasyon/profil uygulanmak istendiginde eskileri
-        // degil kopyalari hedefleyeceginden "tekinin acisi degisti" biter.
-        std::vector<std::size_t> copiedSelection;
-        copiedSelection.reserve(srcCount);
-        for (std::size_t k = 0; k < srcCount; ++k)
-            copiedSelection.push_back(beforeCount + k);
-        if (beforeCount < document_.models().size())
-            selectedModels_ = std::move(copiedSelection);
-        // AutoCAD tarzı: her hedef tıklaması yeni bir kopya üretir;
-        // komut sağ tık veya Escape ile bitirilinceye kadar Destination
-        // fazında kalır.
-        // Kopyalama komutu BASKA bir hedef tıklamayla devam etmiyorsa
-        // (tek kopya sonrasi baska yere tiklandi) secim temizlenir ki
-        // tek nesne rotasyonu isterken toplu secim kalintisi olmasin.
-        pendingSelectionClear_ = true;
+        // TEK HEDEK KOPYA + KOMUT BITER (Move ile ayni akis). Eskiden
+        // komut Destination fazinda kaliyordu: bir sonraki tiklama
+        // kopyalarin kopyasini uretip "golge ilerleyen nesneler"
+        // anomalisine neden oluyordu. Secim temizlenir; kullanici
+        // istedigi kopyayi yeniden secer (tek/ctrl+coklu).
+        cancelTransformCommand();
     }
 }
 
