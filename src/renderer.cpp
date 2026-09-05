@@ -199,8 +199,19 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
     };
     HGDIOBJ stockPen = GetCurrentObject(dc, OBJ_PEN);
     const auto drawGridAndAxes = [&](HDC targetDc) {
-        HPEN gridPen = CreatePen(PS_SOLID, 1,
-                                 mode == EditMode::View3D ? RGB(66, 68, 72) : RGB(34, 40, 53));
+        // Ozet UCS seciliyken grid biraz daha acik: secilen duzlemin grid'i
+        // dunya grid'inden ayirt edilebilir (kullanici nerede cizdigini gorur).
+        const bool customUcsPlane =
+            std::abs(draft.workPlane.u.x - 1.0) > 1e-9 || std::abs(draft.workPlane.u.y) > 1e-9 ||
+            std::abs(draft.workPlane.u.z) > 1e-9 || std::abs(draft.workPlane.v.y - 1.0) > 1e-9 ||
+            std::abs(draft.workPlane.v.x) > 1e-9 || std::abs(draft.workPlane.v.z) > 1e-9 ||
+            std::abs(draft.workPlane.origin.x) > 1e-9 || std::abs(draft.workPlane.origin.y) > 1e-9 ||
+            std::abs(draft.workPlane.origin.z) > 1e-9;
+        const COLORREF gridColor =
+            mode == EditMode::View3D
+                ? (customUcsPlane ? RGB(88, 96, 108) : RGB(66, 68, 72))
+                : RGB(34, 40, 53);
+        HPEN gridPen = CreatePen(PS_SOLID, 1, gridColor);
         SelectObject(targetDc, gridPen);
         // ADAPTIF GRID (AutoCAD 1-2-5): ekran araligi ~50px olacak sekilde
         // kademeli adim secilir; mm cinsinden mühendislik çizimi icin
@@ -248,7 +259,17 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         SelectObject(targetDc, stockPen);
         DeleteObject(gridPen);
 
-        const auto axisGlyph = workPlaneAxisGlyph(draft.workPlane, 2.0);
+        // UCS ok glifi: dunya duzleminde kisa (2m), ozel UCS seciliyken
+        // grid adiminin ~4 kati — secilen duzlem net gorunsun (X/Y oklari
+        // + Z). Grid zaten workPlane.fromPlane ile o duzlemde cizilir.
+        const POINT originForGlyph = projectPoint(draft.workPlane.origin);
+        const POINT glyphUnit = projectPoint(draft.workPlane.fromPlane({1.0, 0.0}));
+        const double glyphPx = std::hypot(glyphUnit.x - originForGlyph.x,
+                                          glyphUnit.y - originForGlyph.y);
+        const double glyphLen = glyphPx > 1e-9
+            ? std::clamp(120.0 / glyphPx, 60.0, 60000.0) // ~120 piksellik ok
+            : 2.0;
+        const auto axisGlyph = workPlaneAxisGlyph(draft.workPlane, glyphLen);
         const POINT axisOrigin = projectPoint(axisGlyph.origin);
         const auto drawAxisArrow = [&](const Vec3& worldEnd, COLORREF color, const wchar_t* label) {
             const POINT end = projectPoint(worldEnd);
