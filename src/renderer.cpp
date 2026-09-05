@@ -934,7 +934,10 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
             for (std::size_t index = 0; index < modelCount; ++index) {
                 const auto& model = document.models()[index];
                 if (model.edges().empty()) continue;
-                if (isSelected(index)) continue;
+                // Secili modeller artik GL batch'te YER ALIR: eskiden
+                // dislandiklarindan Solid stilde yuzleri hicbir katmanda
+                // cizilmiyor, secilen katı "kayboluyordu". Yesil secim
+                // vurgusu GDI tarafinda uste cizilmeye devam eder.
                 const auto properties = document.effectiveProperties(index);
                 if (!properties.visible) continue;
                 auto modelCopy = model;
