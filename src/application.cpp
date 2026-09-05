@@ -2764,7 +2764,10 @@ void Application::commitTransformPoint(const Vec3& point) {
         //     nereye giderse oraya).
         pushUndoSnapshot();
         document_.copyModels(selectedModels_, displacement);
-        transformBase_ = point; // sonraki kopya icin taban = bu hedef
+        // Taban SABIT kalir (AutoCAD): kopya = kaynak + (tiklanan - taban).
+        // Tabani tıklamaya güncellemek deltayı bozuyordu: ikinci kopya
+        // kaynağın üstüne biniyor, toplu rotasyonda nesneler "yer
+        // değiştirmiş" gibi görünüyordu.
     }
 }
 

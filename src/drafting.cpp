@@ -1177,7 +1177,18 @@ std::optional<WireframeModel> mirrorModel2D(const WireframeModel& source, const 
         for (const auto& vertex : source.vertices()) vertices.push_back(reflect(vertex));
         result = WireframeModel(std::move(vertices), source.edges(), source.faces());
     }
-    result.setProperties(source.properties());
+    auto props = source.properties();
+    if (!props.profileName.empty()) {
+        // Yansitilan katinin eksen koordinatlari da yansitilir: aksi halde
+        // rotasyon/degistirme islemi katiyi ESKI konumda yeniden uretir.
+        const Vec3 from{props.axisFromX, props.axisFromY, props.axisFromZ};
+        const Vec3 to{props.axisToX, props.axisToY, props.axisToZ};
+        const Vec3 rf = reflect(from);
+        const Vec3 rt = reflect(to);
+        props.axisFromX = rf.x; props.axisFromY = rf.y; props.axisFromZ = rf.z;
+        props.axisToX = rt.x; props.axisToY = rt.y; props.axisToZ = rt.z;
+    }
+    result.setProperties(std::move(props));
     return result;
 }
 
@@ -1189,7 +1200,18 @@ std::vector<WireframeModel> linearArray2D(const WireframeModel& source, std::siz
     copies.reserve(itemCount - 1);
     for (std::size_t index = 1; index < itemCount; ++index) {
         copies.push_back(source);
-        copies.back().translate(spacing * static_cast<double>(index));
+        const Vec3 shift = spacing * static_cast<double>(index);
+        copies.back().translate(shift);
+        auto props = copies.back().properties();
+        if (!props.profileName.empty()) {
+            // Kopyanin sakli ekseni de kaydirilir (rotasyon sonrasi
+            // kopya eski yerde yeniden uretilmesin).
+            props.axisFromX += shift.x; props.axisFromY += shift.y;
+            props.axisFromZ += shift.z;
+            props.axisToX += shift.x; props.axisToY += shift.y;
+            props.axisToZ += shift.z;
+            copies.back().setProperties(std::move(props));
+        }
     }
     return copies;
 }
@@ -1202,7 +1224,25 @@ std::vector<WireframeModel> polarArray2D(const WireframeModel& source, std::size
     const double step = 2.0 * std::numbers::pi / static_cast<double>(itemCount);
     for (std::size_t index = 1; index < itemCount; ++index) {
         copies.push_back(source);
-        copies.back().rotateAroundZ(center, step * static_cast<double>(index));
+        const double angle = step * static_cast<double>(index);
+        copies.back().rotateAroundZ(center, angle);
+        auto props = copies.back().properties();
+        if (!props.profileName.empty()) {
+            // Donen kopyanin sakli ekseni de ayni aciyla dondurulur.
+            const auto rotatePt = [&](Vec3 p) {
+                const double dx = p.x - center.x;
+                const double dy = p.y - center.y;
+                const double cosA = std::cos(angle);
+                const double sinA = std::sin(angle);
+                return Vec3{center.x + dx * cosA - dy * sinA,
+                            center.y + dx * sinA + dy * cosA, p.z};
+            };
+            const Vec3 rf = rotatePt(Vec3{props.axisFromX, props.axisFromY, props.axisFromZ});
+            const Vec3 rt = rotatePt(Vec3{props.axisToX, props.axisToY, props.axisToZ});
+            props.axisFromX = rf.x; props.axisFromY = rf.y; props.axisFromZ = rf.z;
+            props.axisToX = rt.x; props.axisToY = rt.y; props.axisToZ = rt.z;
+            copies.back().setProperties(std::move(props));
+        }
     }
     return copies;
 }
