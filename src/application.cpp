@@ -2753,14 +2753,18 @@ void Application::commitTransformPoint(const Vec3& point) {
         document_.moveModels(selectedModels_, displacement);
         cancelTransformCommand();
     } else if (transformCommand_ == TransformCommand::Copy) {
+        // AUTOCAD AKISI: komut Destination fazinda AKTIF kalir; her hedef
+        // tiklamasi bir kopya daha uretir. Kritik duzeltmeler:
+        //  1) KAYNAK hep orijinaller: secim degismez — eskiden secim
+        //     kopyalara gecince her tiklama kopyalarin kopyasini uretip
+        //     "golge nesneler ilerliyor" anomaliydi.
+        //  2) Taban noktasi her kopyada GUNCELLENIR: yeni kopya son
+        //     tiklanan noktadan degil, tabandan degiserek uretilir
+        //     (AutoCAD "Multiple" davranisi — ayni delta degil, imlec
+        //     nereye giderse oraya).
         pushUndoSnapshot();
         document_.copyModels(selectedModels_, displacement);
-        // TEK HEDEK KOPYA + KOMUT BITER (Move ile ayni akis). Eskiden
-        // komut Destination fazinda kaliyordu: bir sonraki tiklama
-        // kopyalarin kopyasini uretip "golge ilerleyen nesneler"
-        // anomalisine neden oluyordu. Secim temizlenir; kullanici
-        // istedigi kopyayi yeniden secer (tek/ctrl+coklu).
-        cancelTransformCommand();
+        transformBase_ = point; // sonraki kopya icin taban = bu hedef
     }
 }
 
