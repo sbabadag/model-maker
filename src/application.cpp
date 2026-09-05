@@ -2753,8 +2753,19 @@ void Application::commitTransformPoint(const Vec3& point) {
         document_.moveModels(selectedModels_, displacement);
         cancelTransformCommand();
     } else if (transformCommand_ == TransformCommand::Copy) {
+        const std::size_t beforeCount = document_.models().size();
         pushUndoSnapshot();
+        const std::size_t srcCount = selectedModels_.size();
         document_.copyModels(selectedModels_, displacement);
+        // Secim artik YENI kopyalari gosterir (kaynak sirasiyla ayni sira):
+        // kopyalara rotasyon/profil uygulanmak istendiginde eskileri
+        // degil kopyalari hedefleyeceginden "tekinin acisi degisti" biter.
+        std::vector<std::size_t> copiedSelection;
+        copiedSelection.reserve(srcCount);
+        for (std::size_t k = 0; k < srcCount; ++k)
+            copiedSelection.push_back(beforeCount + k);
+        if (beforeCount < document_.models().size())
+            selectedModels_ = std::move(copiedSelection);
         // AutoCAD tarzı: her hedef tıklaması yeni bir kopya üretir;
         // komut sağ tık veya Escape ile bitirilinceye kadar Destination
         // fazında kalır.
