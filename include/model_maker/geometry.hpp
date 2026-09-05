@@ -56,6 +56,10 @@ struct EntityProperties {
     std::string profileName;
     double profileRotation{};
     std::int64_t profileSourceLine{-1};
+    // Katinin kendi ekseni (atama anindan) — yeniden uretim asla cizgi
+    // aramaz; indeks kaymalarina bagli yanlis eksen sorunu kokten biter.
+    double axisFromX{}, axisFromY{}, axisFromZ{};
+    double axisToX{}, axisToY{}, axisToZ{};
     std::string lineType{"BYLAYER"};
     std::string material;
     int colorIndex{256};
