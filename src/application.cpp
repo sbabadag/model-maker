@@ -3794,16 +3794,24 @@ void Application::setSelectedEntityProfileRotation(double degrees) {
     solidProps.lineType = props.lineType;
     solidProps.layer = props.layer;
     solidModel.setProperties(std::move(solidProps));
-    if (selectedIsSolid) {
-        document_.replaceModel(selectedIndex, {std::move(solidModel)});
-        occShapes_[selectedIndex] = solid;
-    } else {
-        for (const auto linked : linkedSolids) {
-            document_.replaceModel(linked, {std::move(solidModel)});
-            occShapes_[linked] = solid;
-            break; // tek kati: ilk bagli katı yerinde degistir
+    const std::size_t replacedIndex = selectedIsSolid ? selectedIndex
+        : (!linkedSolids.empty() ? linkedSolids.front() : selectedIndex);
+    document_.replaceModel(replacedIndex, {std::move(solidModel)});
+    occShapes_[replacedIndex] = solid;
+    {
+        const auto& replaced = document_.models()[replacedIndex];
+        FILE* visLog = fopen("model-maker-render.log", "a");
+        if (visLog) {
+            fprintf(visLog,
+                    "ROT-REPLACE idx=%zu verts=%zu faces=%zu visible=%d layer=%s\n",
+                    replacedIndex, replaced.vertices().size(), replaced.faces().size(),
+                    replaced.properties().visible ? 1 : 0,
+                    replaced.properties().layer.c_str());
+            fclose(visLog);
         }
     }
+    // Secim yeni katiyi gostersin (eski indeks ayni ama tazelensin).
+    selectedModels_.assign(1, replacedIndex);
     FILE* rotationDiag = fopen("model-maker-render.log", "a");
     if (rotationDiag) {
         fprintf(rotationDiag,
