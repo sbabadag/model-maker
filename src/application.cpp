@@ -3712,21 +3712,25 @@ double Application::selectedEntityProfileRotation() const {
 }
 
 void Application::setSelectedEntityProfileRotation(double degrees) {
-    // Katinin eksen koordinatlari KENDI uzerinde tasir; yeniden uretim
-    // yalniz bu koordinatlarla yapilir. Eski dosyalarda uye hala eksen
-    // cizgisi olarak durabilir: cizgi secildiyse uc noktalariyla partner
-    // kati bulunulur ve ISLEM KATIYA uygulanir; islem sonrasi eksenle
-    // cakisan cizgiler silinir (yalniz kati kalir).
-    if (selectedModels_.empty() || selectedModels_.front() >= document_.models().size())
-        return;
-    std::size_t selectedIndex = selectedModels_.front();
+    // TOPLU ROTASYON: secimdeki TUM profilli uyelere ayni aci uygulanir
+    // (override). Her kati kendi ekseninde yeniden uretilir; eksen
+    // koordinatlari katinin uzerinde tasindigindan indeks kaymalari ve
+    // yanlis nesne eslesmesi soz konusu olamaz. Eski dosyalarda secilen
+    // eksen cizgisi, uc noktalariyla partner katiya yonlendirilir.
+    if (selectedModels_.empty()) return;
+    ensureProfileCatalog();
 
-    // Eski dosya: secilen eksen cizgisi mi? Partner katiya gec.
-    {
-        const auto& sel = document_.models()[selectedIndex];
+    // 1) Hedefleri topla: secimdeki her oge -> islenecek KATI indeksi.
+    //    Cizgi secildiyse partner kati bulunur; kati dogrudan hedeftir.
+    std::vector<std::size_t> targets;
+    for (const auto selIdx : selectedModels_) {
+        if (selIdx >= document_.models().size()) continue;
+        std::size_t target = selIdx;
+        const auto& sel = document_.models()[selIdx];
         if (sel.faces().empty() && sel.vertices().size() == 2 && sel.edges().size() == 1) {
             const Vec3 lf = sel.vertices()[0];
             const Vec3 lt = sel.vertices()[1];
+            bool found = false;
             for (std::size_t i = 0; i < document_.models().size(); ++i) {
                 const auto& m = document_.models()[i];
                 if (m.faces().empty() || m.properties().profileName.empty()) continue;
@@ -3740,67 +3744,99 @@ void Application::setSelectedEntityProfileRotation(double degrees) {
                 const bool rev = std::abs(af.x - lt.x) < 1e-6 && std::abs(af.y - lt.y) < 1e-6 &&
                     std::abs(af.z - lt.z) < 1e-6 && std::abs(at.x - lf.x) < 1e-6 &&
                     std::abs(at.y - lf.y) < 1e-6 && std::abs(at.z - lf.z) < 1e-6;
-                if (fwd || rev) { selectedIndex = i; break; }
+                if (fwd || rev) { target = i; found = true; break; }
             }
+            if (!found) continue; // profilsiz cizgi — rotasyon islemi yok
         }
+        const auto& m = document_.models()[target];
+        if (m.properties().profileName.empty()) continue;
+        bool dup = false;
+        for (const auto t : targets) if (t == target) { dup = true; break; }
+        if (!dup) targets.push_back(target);
+    }
+    if (targets.empty()) return;
+
+    // 2) Hedeflerin mevcut ozelliklerini kopyala (dongu ici degisimlere dayanikli)
+    struct TargetInfo {
+        std::string profileName;
+        std::string material, lineType, layer;
+        std::uint32_t trueColor; std::int32_t colorIndex;
+        std::int64_t profileSourceLine;
+        double axisFrom[3], axisTo[3];
+    };
+    std::vector<TargetInfo> infos;
+    infos.reserve(targets.size());
+    for (const auto t : targets) {
+        const auto& props = document_.models()[t].properties();
+        TargetInfo info;
+        info.profileName = props.profileName;
+        info.material = props.material;
+        info.lineType = props.lineType;
+        info.layer = props.layer;
+        info.trueColor = props.trueColor;
+        info.colorIndex = props.colorIndex;
+        info.profileSourceLine = props.profileSourceLine;
+        info.axisFrom[0] = props.axisFromX; info.axisFrom[1] = props.axisFromY;
+        info.axisFrom[2] = props.axisFromZ;
+        info.axisTo[0] = props.axisToX; info.axisTo[1] = props.axisToY;
+        info.axisTo[2] = props.axisToZ;
+        infos.push_back(std::move(info));
     }
 
-    auto props = document_.models()[selectedIndex].properties();
-    if (props.profileName.empty()) return;
-
-    const Vec3 from{props.axisFromX, props.axisFromY, props.axisFromZ};
-    const Vec3 to{props.axisToX, props.axisToY, props.axisToZ};
-    const bool hasAxis =
-        std::abs(to.x - from.x) + std::abs(to.y - from.y) + std::abs(to.z - from.z) > 1e-9;
-
-    ensureProfileCatalog();
-    const auto* profile = mm::findProfile(profileCatalog_, props.profileName);
-    if (!hasAxis || !profile) {
-        updateControls();
-        invalidateCanvas();
-        return;
-    }
-    const TopoDS_Shape solid = mm::extrudeProfileSolid(*profile, from, to, degrees);
-    if (solid.IsNull()) {
-        updateControls();
-        invalidateCanvas();
-        return;
-    }
-    auto solidModel = mm::shapeToWireframeWithFaces(solid, 0.15);
-    auto solidProps = solidModel.properties();
-    solidProps.profileName = props.profileName;
-    solidProps.profileRotation = degrees;
-    solidProps.profileSourceLine = props.profileSourceLine;
-    solidProps.axisFromX = props.axisFromX; solidProps.axisFromY = props.axisFromY;
-    solidProps.axisFromZ = props.axisFromZ;
-    solidProps.axisToX = props.axisToX; solidProps.axisToY = props.axisToY;
-    solidProps.axisToZ = props.axisToZ;
-    solidProps.material = props.material;
-    solidProps.trueColor = props.trueColor;
-    solidProps.colorIndex = props.colorIndex;
-    solidProps.lineType = props.lineType;
-    solidProps.layer = props.layer;
-    solidModel.setProperties(std::move(solidProps));
+    // 3) Her hedefi kendi ekseninde yeniden uret ve YERINE koy.
     pushUndoSnapshot();
-    document_.replaceModel(selectedIndex, {std::move(solidModel)});
-    occShapes_[selectedIndex] = solid;
+    std::size_t applied = 0;
+    for (std::size_t k = 0; k < targets.size(); ++k) {
+        const auto& info = infos[k];
+        const auto* profile = mm::findProfile(profileCatalog_, info.profileName);
+        if (!profile) continue;
+        const Vec3 from{info.axisFrom[0], info.axisFrom[1], info.axisFrom[2]};
+        const Vec3 to{info.axisTo[0], info.axisTo[1], info.axisTo[2]};
+        if (std::abs(to.x - from.x) + std::abs(to.y - from.y) +
+            std::abs(to.z - from.z) < 1e-9) continue;
+        const TopoDS_Shape solid = mm::extrudeProfileSolid(*profile, from, to, degrees);
+        if (solid.IsNull()) continue;
+        auto solidModel = mm::shapeToWireframeWithFaces(solid, 0.15);
+        auto solidProps = solidModel.properties();
+        solidProps.profileName = info.profileName;
+        solidProps.profileRotation = degrees;
+        solidProps.profileSourceLine = info.profileSourceLine;
+        solidProps.axisFromX = info.axisFrom[0]; solidProps.axisFromY = info.axisFrom[1];
+        solidProps.axisFromZ = info.axisFrom[2];
+        solidProps.axisToX = info.axisTo[0]; solidProps.axisToY = info.axisTo[1];
+        solidProps.axisToZ = info.axisTo[2];
+        solidProps.material = info.material;
+        solidProps.trueColor = info.trueColor;
+        solidProps.colorIndex = info.colorIndex;
+        solidProps.lineType = info.lineType;
+        solidProps.layer = info.layer;
+        solidModel.setProperties(std::move(solidProps));
+        document_.replaceModel(targets[k], {std::move(solidModel)});
+        occShapes_[targets[k]] = solid;
+        ++applied;
+    }
 
-    // Eski dosya temizligi: eksenle cakisan 2-ugencli cizgileri sil.
+    // 4) Eski dosya temizligi: hedef eksenlerle cakisan cizgileri sil.
     {
         std::vector<std::size_t> staleLines;
         for (std::size_t i = 0; i < document_.models().size(); ++i) {
-            if (i == selectedIndex) continue;
             const auto& m = document_.models()[i];
             if (m.vertices().size() != 2 || m.edges().size() != 1) continue;
-            const Vec3 lf = m.vertices()[0];
-            const Vec3 lt = m.vertices()[1];
-            const bool fwd = std::abs(lf.x - from.x) < 1e-6 && std::abs(lf.y - from.y) < 1e-6 &&
-                std::abs(lf.z - from.z) < 1e-6 && std::abs(lt.x - to.x) < 1e-6 &&
-                std::abs(lt.y - to.y) < 1e-6 && std::abs(lt.z - to.z) < 1e-6;
-            const bool rev = std::abs(lf.x - to.x) < 1e-6 && std::abs(lf.y - to.y) < 1e-6 &&
-                std::abs(lf.z - to.z) < 1e-6 && std::abs(lt.x - from.x) < 1e-6 &&
-                std::abs(lt.y - from.y) < 1e-6 && std::abs(lt.z - from.z) < 1e-6;
-            if (fwd || rev) staleLines.push_back(i);
+            bool isTarget = false;
+            for (const auto& info : infos) {
+                const Vec3 af(info.axisFrom[0], info.axisFrom[1], info.axisFrom[2]);
+                const Vec3 at(info.axisTo[0], info.axisTo[1], info.axisTo[2]);
+                const Vec3 lf = m.vertices()[0];
+                const Vec3 lt = m.vertices()[1];
+                const bool fwd = std::abs(lf.x - af.x) < 1e-6 && std::abs(lf.y - af.y) < 1e-6 &&
+                    std::abs(lf.z - af.z) < 1e-6 && std::abs(lt.x - at.x) < 1e-6 &&
+                    std::abs(lt.y - at.y) < 1e-6 && std::abs(lt.z - at.z) < 1e-6;
+                const bool rev = std::abs(lf.x - at.x) < 1e-6 && std::abs(lf.y - at.y) < 1e-6 &&
+                    std::abs(lf.z - at.z) < 1e-6 && std::abs(lt.x - af.x) < 1e-6 &&
+                    std::abs(lt.y - af.y) < 1e-6 && std::abs(lt.z - af.z) < 1e-6;
+                if (fwd || rev) { isTarget = true; break; }
+            }
+            if (isTarget) staleLines.push_back(i);
         }
         if (!staleLines.empty()) {
             struct OldAxisEntry { Vec3 from, to; TopoDS_Shape shape; };
@@ -3819,7 +3855,7 @@ void Application::setSelectedEntityProfileRotation(double degrees) {
             }
             document_.deleteModels(staleLines);
             std::map<std::size_t, TopoDS_Shape> rebuilt;
-            std::size_t newTarget = selectedIndex;
+            std::vector<std::size_t> keptTargets;
             for (std::size_t i = 0; i < document_.models().size(); ++i) {
                 const auto& m = document_.models()[i];
                 if (m.faces().empty() || m.properties().profileName.empty()) continue;
@@ -3827,11 +3863,17 @@ void Application::setSelectedEntityProfileRotation(double degrees) {
                               m.properties().axisFromZ);
                 const Vec3 at(m.properties().axisToX, m.properties().axisToY,
                               m.properties().axisToZ);
-                const bool isTarget = std::abs(af.x - from.x) < 1e-6 &&
-                    std::abs(af.y - from.y) < 1e-6 && std::abs(af.z - from.z) < 1e-6 &&
-                    std::abs(at.x - to.x) < 1e-6 && std::abs(at.y - to.y) < 1e-6 &&
-                    std::abs(at.z - to.z) < 1e-6;
-                if (isTarget) newTarget = i;
+                bool isInfo = false;
+                for (const auto& info : infos) {
+                    const bool sameF = std::abs(af.x - info.axisFrom[0]) < 1e-6 &&
+                        std::abs(af.y - info.axisFrom[1]) < 1e-6 &&
+                        std::abs(af.z - info.axisFrom[2]) < 1e-6;
+                    const bool sameT = std::abs(at.x - info.axisTo[0]) < 1e-6 &&
+                        std::abs(at.y - info.axisTo[1]) < 1e-6 &&
+                        std::abs(at.z - info.axisTo[2]) < 1e-6;
+                    if (sameF && sameT) { isInfo = true; break; }
+                }
+                if (isInfo) keptTargets.push_back(i);
                 for (auto& oldEntry : oldShapes) {
                     const bool sameF = std::abs(af.x - oldEntry.from.x) < 1e-6 &&
                         std::abs(af.y - oldEntry.from.y) < 1e-6 &&
@@ -3843,16 +3885,16 @@ void Application::setSelectedEntityProfileRotation(double degrees) {
                 }
             }
             occShapes_ = std::move(rebuilt);
-            selectedIndex = newTarget;
+            if (!keptTargets.empty()) targets = std::move(keptTargets);
         }
     }
-    selectedModels_.assign(1, selectedIndex);
+
+    selectedModels_ = std::move(targets);
     {
         FILE* rotationDiag = fopen("model-maker-render.log", "a");
         if (rotationDiag) {
-            fprintf(rotationDiag,
-                    "ROTATION-SELF deg=%.1f idx=%zu axis=(%.1f,%.1f,%.1f)->(%.1f,%.1f,%.1f)\n",
-                    degrees, selectedIndex, from.x, from.y, from.z, to.x, to.y, to.z);
+            fprintf(rotationDiag, "ROTATION-BULK deg=%.1f applied=%zu\n",
+                    degrees, applied);
             fclose(rotationDiag);
         }
     }
