@@ -438,6 +438,11 @@ private:
     // tekerlek tek dokunusta 3-4 adim zoom yapiyordu — gorunum kayiyordu).
     double wheelPendingFactor_{1.0};
     unsigned long long lastWheelApplyMs_{0};
+    // Sönümlemeli zoom animasyonu (Tekla benzeri akıcılık): hedef çarpana
+    // üstel yakınlama, ~15ms kareler; imleç çapası sabit kalır.
+    double zoomAnimTarget_{1.0};   // kalan toplam çarpan (1 = bitti)
+    Vec2 zoomAnimCursor_{};
+    bool zoomAnimActive_{false};
     Vec2 wheelPreviewOffset_{};
     bool snapPreviewActive_{};
     bool snapPreviewTimerArmed_{};

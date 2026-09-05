@@ -1116,6 +1116,33 @@ LRESULT Application::handleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
             runRenderBenchmark();
             return 0;
         }
+        if (wParam == 8) {
+            // Sönümlemeli zoom karesi: kalan hedefin ~%28'i uygulanır
+            // (üstel yakınlama; ~5 karede (~75ms) tamamlanır — ani değil,
+            // algılanabilir yumuşaklık). Çarpan 1'e yaklaştığında biter.
+            if (!zoomAnimActive_) { KillTimer(window_, 8); return 0; }
+            RECT wc{}; GetClientRect(canvas_, &wc);
+            const double step = 1.0 + (zoomAnimTarget_ - 1.0) * 0.28;
+            const bool done = std::abs(zoomAnimTarget_ - 1.0) < 0.004;
+            const double apply = done ? zoomAnimTarget_ : step;
+            if (mode_ == EditMode::Draw2D)
+                camera_.zoom2DAt(zoomAnimCursor_, apply,
+                                 std::max(1L, wc.right), std::max(1L, wc.bottom));
+            else
+                camera_.zoom3DAt(zoomAnimCursor_, apply,
+                                 std::max(1L, wc.right), std::max(1L, wc.bottom));
+            zoomAnimTarget_ /= apply;
+            if (done || std::abs(zoomAnimTarget_ - 1.0) < 0.004) {
+                zoomAnimTarget_ = 1.0;
+                zoomAnimActive_ = false;
+                KillTimer(window_, 8);
+                // Animasyon bitti: tekerlek ~120ms sessiz kalirsa navigasyon
+                // kapanir (timer 2 mevcut akis — hover/snap geri gelir).
+                SetTimer(window_, 2, 120, nullptr);
+            }
+            invalidateCanvas();
+            return 0;
+        }
         if (wParam == 2) {
             KillTimer(window_, 2);
             wheelNavigating_ = false;
@@ -1287,32 +1314,21 @@ LRESULT Application::handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lPa
         // atliyor, tiklamalar "yanlis yere" dusuyor ve redraw'lar flicker
         // uretiyor. Detentler BIRIKTIRILIR; 64ms'de en fazla BIR zoom
         // uygulanir, artan zamanlayiciya birakilir (case 2 flush).
-        wheelPendingFactor_ *= factor;
-        const auto wheelNowMs = GetTickCount64();
-        if (wheelNowMs - lastWheelApplyMs_ >= 64 || lastWheelApplyMs_ == 0) {
-            const double applied = wheelPendingFactor_;
-            wheelPendingFactor_ = 1.0;
-            lastWheelApplyMs_ = wheelNowMs;
-            if (mode_ == EditMode::Draw2D)
-                camera_.zoom2DAt({static_cast<double>(zoomCursor.x), static_cast<double>(zoomCursor.y)}, applied,
-                                 std::max(1L, zoomClient.right), std::max(1L, zoomClient.bottom));
-            else
-                camera_.zoom3DAt({static_cast<double>(zoomCursor.x), static_cast<double>(zoomCursor.y)}, applied,
-                                 std::max(1L, zoomClient.right), std::max(1L, zoomClient.bottom));
-            wheelPreviewOffset_.x = applied * wheelPreviewOffset_.x + (1.0 - applied) * zoomCursor.x;
-            wheelPreviewOffset_.y = applied * wheelPreviewOffset_.y + (1.0 - applied) * zoomCursor.y;
-            wheelPreviewFactor_ *= applied;
-        }
+        // SÖNÜMLEMELİ ZOOM: tekerlek hedefi biriktirir; uygulama animasyon
+        // karelerinde (timer 8, ~15ms) küçük adımlarla yapılır. İmleç
+        // çapası sabit — her adım zoomXAt ile imleç altındaki noktaya
+        // kilitli, böylece toplam etki eski anlık %12 sıçramasıyla aynı
+        // fakat akıcı (Tekla/OCC viewer hissi). Hız sınırlayıcı kalktı:
+        // artık kayıp yok, her detent hedefe eklenir.
+        (void)wheelPendingFactor_; (void)lastWheelApplyMs_;
+        zoomAnimTarget_ *= factor;
+        zoomAnimCursor_ = {static_cast<double>(zoomCursor.x), static_cast<double>(zoomCursor.y)};
+        if (!zoomAnimActive_) { zoomAnimActive_ = true; SetTimer(window_, 8, 15, nullptr); }
         wheelNavigating_ = true;
         if (mode_ == EditMode::Draw2D || drawingActive_ || workPlanePicking_ ||
             (transformCommand_ != TransformCommand::None && transformPhase_ != TransformPhase::Selecting))
             updateHover(cursorScreen_.x, cursorScreen_.y);
         else hover_.reset();
-        // Flush: teker durduktan ~120ms sonra kalan zoom artigi uygulanir
-        // (350ms'lik eski deger "gorevi ertelenmis/yavas zoom" hissi
-        // veriyordu; GL kompozit artig tek sunumlu oldugundan hiz siniri
-        // daraltilabilir).
-        SetTimer(window_, 2, 120, nullptr);
         invalidateCanvas();
         }
         return 0;
