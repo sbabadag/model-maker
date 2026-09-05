@@ -4039,7 +4039,12 @@ void Application::assignProfileToSelection(const std::string& profileName) {
     // 3B extruded gorsel: secili cizgiler icin profil kesitini cizgi ekseni
     // boyunca extrude edip kati olarak ekle (cizgi merkez eksen kalir).
     {
-        std::vector<std::size_t> solidIndices;
+        // Toplu atama: secili cizgilerin EKSEN KOORDINATLARI once kopyalanir
+        // (dongu icinde replace/add/delete indeksleri degistirir; eski
+        // indeksler yanlis nesneyi isaret eder — "diger objenin yerinin
+        // degismesi" hatasinin nedeni). Eslesme yalniz koordinatla yapilir.
+        struct AxisTarget { Vec3 from, to; double rotation; };
+        std::vector<AxisTarget> axes;
         for (const auto index : selectedModels_) {
             if (index >= document_.models().size()) continue;
             const auto& model = document_.models()[index];
@@ -4053,15 +4058,23 @@ void Application::assignProfileToSelection(const std::string& profileName) {
                 }
                 continue;
             }
-            const Vec3 from = model.vertices()[0];
-            const Vec3 to = model.vertices()[1];
+            AxisTarget target;
+            target.from = model.vertices()[0];
+            target.to = model.vertices()[1];
+            target.rotation = model.properties().profileRotation;
+            axes.push_back(target);
+        }
+        std::vector<std::size_t> solidIndices;
+        for (const auto& axis : axes) {
+            const Vec3 from = axis.from;
+            const Vec3 to = axis.to;
             const TopoDS_Shape solid = mm::extrudeProfileSolid(
-                *profile, from, to, model.properties().profileRotation);
+                *profile, from, to, axis.rotation);
             if (solid.IsNull()) continue;
             auto solidModel = mm::shapeToWireframeWithFaces(solid, 0.15);
             auto solidProps = solidModel.properties();
             solidProps.profileName = profile->name;
-            solidProps.profileRotation = model.properties().profileRotation;
+            solidProps.profileRotation = axis.rotation;
             solidProps.profileSourceLine = static_cast<std::int64_t>(index);
             solidProps.axisFromX = from.x; solidProps.axisFromY = from.y; solidProps.axisFromZ = from.z;
             solidProps.axisToX = to.x; solidProps.axisToY = to.y; solidProps.axisToZ = to.z;
