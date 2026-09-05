@@ -3687,134 +3687,99 @@ double Application::selectedEntityProfileRotation() const {
 }
 
 void Application::setSelectedEntityProfileRotation(double degrees) {
-    if (selectedModels_.empty() ||
-        selectedModels_.front() >= document_.models().size())
+    // YENI TASARIM: kimlik = secili nesne + profileSourceLine indeksi.
+    // Isim/heuristic eslestirme YOK. Uc adim:
+    //   A) secili nesnenin rotasyonu yazilir (kati ya da cizgi),
+    //   B) eslenik kaynak cizgi/kati ayni rotasyonu alir (indeksle),
+    //   C) katilar yeniden extrude edilir ve YERINE konur.
+    if (selectedModels_.empty() || selectedModels_.front() >= document_.models().size())
         return;
-    const auto& selected = document_.models()[selectedModels_.front()];
-    // Rotasyon eksen cizgisinde saklanir; kati seciliyse AYNI PROFILE sahip
-    // eksen cizgisi aranir (ilk-herhangi degil — ikinci profile rotasyon
-    // verince ilkinin degismesinin/kesilmesinin nedeni buydu).
-    const std::string selectedProfile = selected.properties().profileName;
-    std::size_t lineIndex = selectedModels_.front();
-    // Once katinin kaynaginda saklanan cizgi indeksine bak (kesin eslesme),
-    // yoksa profil adiyla ara.
-    const std::int64_t sourceLine = selected.properties().profileSourceLine;
-    if (sourceLine >= 0 &&
-        static_cast<std::size_t>(sourceLine) < document_.models().size()) {
-        const auto& sourceProps = document_.models()[static_cast<std::size_t>(sourceLine)].properties();
-        if (!sourceProps.profileName.empty() &&
-            document_.models()[static_cast<std::size_t>(sourceLine)].faces().empty())
-            lineIndex = static_cast<std::size_t>(sourceLine);
-    }
-    if (lineIndex == selectedModels_.front() && !selectedProfile.empty() &&
-        !selected.faces().empty()) {
-        for (std::size_t i = 0; i < document_.models().size(); ++i) {
-            const auto& props = document_.models()[i].properties();
-            if (props.profileName == selectedProfile &&
-                document_.models()[i].faces().empty()) {
-                lineIndex = i;
-                break;
-            }
-        }
-    }
-    if (!selectedProfile.empty() && selected.faces().empty()) {
-        lineIndex = selectedModels_.front();
-    } else if (selectedProfile.empty()) {
-        for (std::size_t i = 0; i < document_.models().size(); ++i) {
-            const auto& props = document_.models()[i].properties();
-            if (!props.profileName.empty() && document_.models()[i].faces().empty()) {
-                lineIndex = i;
-                break;
-            }
-        }
-    }
-    if (lineIndex >= document_.models().size()) return;
-    auto props = document_.models()[lineIndex].properties();
-    props.profileRotation = degrees;
-    std::vector<WireframeModel> replacement;
-    replacement.push_back(document_.models()[lineIndex]);
-    replacement.back().setProperties(std::move(props));
+    const std::size_t selectedIndex = selectedModels_.front();
+    auto props = document_.models()[selectedIndex].properties();
+    if (props.profileName.empty()) return; // rotasyon yalniz profilli nesnede
+
+    const auto updateRotationOn = [&](std::size_t index) {
+        auto target = document_.models()[index].properties();
+        target.profileRotation = degrees;
+        std::vector<WireframeModel> replacement;
+        replacement.push_back(document_.models()[index]);
+        replacement.back().setProperties(std::move(target));
+        document_.replaceModel(index, std::move(replacement));
+    };
+
     pushUndoSnapshot();
-    document_.replaceModel(lineIndex, std::move(replacement));
-    // Eksen cizgisine profil atanmissa katiyi YENIDEN uret — mevcut katiyi
-    // DEGISTIR (yeni kati eklenmez, kopyalama olmaz).
-    const std::string profileName = document_.models()[lineIndex].properties().profileName;
-    if (!profileName.empty()) {
-        ensureProfileCatalog();
-        const auto* profile = mm::findProfile(profileCatalog_, profileName);
-        const auto& lineModel = document_.models()[lineIndex];
-        if (profile && lineModel.vertices().size() == 2 &&
-            lineModel.edges().size() == 1) {
-            const Vec3 from = lineModel.vertices()[0];
-            const Vec3 to = lineModel.vertices()[1];
-            const TopoDS_Shape solid = mm::extrudeProfileSolid(
-                *profile, from, to, degrees);
-            if (!solid.IsNull()) {
-                auto solidModel = mm::shapeToWireframeWithFaces(solid, 0.15);
-                // Mevcut katinin ozellikleri (malzeme/renk/katman) korunur.
-                std::optional<EntityProperties> oldProps;
-                for (std::size_t i = 0; i < document_.models().size(); ++i) {
-                    const auto& props = document_.models()[i].properties();
-                    if (!props.profileName.empty() &&
-                        !document_.models()[i].faces().empty() &&
-                        props.profileName == profileName) {
-                        oldProps = props;
-                        break;
-                    }
-                }
-                auto props = solidModel.properties();
-                props.profileName = profileName;
-                props.profileRotation = degrees;
-                if (oldProps) {
-                    props.material = oldProps->material;
-                    props.trueColor = oldProps->trueColor;
-                    props.colorIndex = oldProps->colorIndex;
-                    props.lineType = oldProps->lineType;
-                    props.layer = oldProps->layer;
-                }
-                solidModel.setProperties(std::move(props));
-                std::optional<std::size_t> existingSolid;
-                for (std::size_t i = 0; i < document_.models().size(); ++i) {
-                    const auto& modelProps = document_.models()[i].properties();
-                    if (!modelProps.profileName.empty() &&
-                        !document_.models()[i].faces().empty() &&
-                        modelProps.profileName == profileName) {
-                        existingSolid = i;
-                        break;
-                    }
-                }
-                FILE* rotationDiag = fopen("model-maker-render.log", "a");
-                if (rotationDiag) {
-                    fprintf(rotationDiag,
-                            "ROTATION-APPLY line=%zu existingSolid=%d models=%zu\n",
-                            lineIndex, existingSolid ? static_cast<int>(*existingSolid) : -1,
-                            document_.models().size());
-                    fclose(rotationDiag);
-                }
-                // Ayni profilli diger katilar (onceki kopyalama artiklari)
-                // silinir — cift/multipl kati kalmasin.
-                std::vector<std::size_t> duplicates;
-                for (std::size_t i = 0; i < document_.models().size(); ++i) {
-                    const auto& modelProps = document_.models()[i].properties();
-                    if (existingSolid && i == *existingSolid) continue;
-                    if (!modelProps.profileName.empty() &&
-                        !document_.models()[i].faces().empty() &&
-                        modelProps.profileName == profileName)
-                        duplicates.push_back(i);
-                }
-                pushUndoSnapshot();
-                if (existingSolid) {
-                    document_.replaceModel(*existingSolid, {std::move(solidModel)});
-                    occShapes_[*existingSolid] = solid;
-                } else {
-                    addStyledModel(std::move(solidModel));
-                    occShapes_.emplace(document_.models().size() - 1, solid);
-                }
-                // replaceModel 1:1 degistirir (model sayisi ayni) — indeksler
-                // kaymaz, dogrudan silinir.
-                if (!duplicates.empty()) document_.deleteModels(duplicates);
-            }
+    updateRotationOn(selectedIndex); // A
+
+    // B: secili katıysa kaynak cizgiyi, secili cizgiyse bagli katilari
+    // bul (profil kaynagi indeksle — kesin eslesme).
+    const bool selectedIsSolid = !document_.models()[selectedIndex].faces().empty();
+    std::vector<std::size_t> linkedSolids;
+    std::size_t sourceLine = document_.models().size();
+    if (selectedIsSolid) {
+        if (props.profileSourceLine >= 0 &&
+            static_cast<std::size_t>(props.profileSourceLine) < document_.models().size())
+            sourceLine = static_cast<std::size_t>(props.profileSourceLine);
+    } else {
+        sourceLine = selectedIndex;
+        for (std::size_t i = 0; i < document_.models().size(); ++i) {
+            const auto& check = document_.models()[i].properties();
+            if (!document_.models()[i].faces().empty() &&
+                check.profileSourceLine == static_cast<std::int64_t>(selectedIndex))
+                linkedSolids.push_back(i);
         }
+    }
+    if (sourceLine < document_.models().size() && sourceLine != selectedIndex)
+        updateRotationOn(sourceLine);
+
+    // C: yeniden extrude — kati(lar) yerinde degisir.
+    ensureProfileCatalog();
+    const auto* profile = mm::findProfile(profileCatalog_, props.profileName);
+    if (!profile || sourceLine >= document_.models().size()) {
+        updateControls();
+        invalidateCanvas();
+        return;
+    }
+    const auto& lineModel = document_.models()[sourceLine];
+    if (lineModel.vertices().size() != 2 || lineModel.edges().size() != 1) {
+        updateControls();
+        invalidateCanvas();
+        return;
+    }
+    const Vec3 from = lineModel.vertices()[0];
+    const Vec3 to = lineModel.vertices()[1];
+    const TopoDS_Shape solid = mm::extrudeProfileSolid(*profile, from, to, degrees);
+    if (solid.IsNull()) {
+        updateControls();
+        invalidateCanvas();
+        return;
+    }
+    auto solidModel = mm::shapeToWireframeWithFaces(solid, 0.15);
+    auto solidProps = solidModel.properties();
+    solidProps.profileName = props.profileName;
+    solidProps.profileRotation = degrees;
+    solidProps.profileSourceLine = static_cast<std::int64_t>(sourceLine);
+    solidProps.material = props.material;
+    solidProps.trueColor = props.trueColor;
+    solidProps.colorIndex = props.colorIndex;
+    solidProps.lineType = props.lineType;
+    solidProps.layer = props.layer;
+    solidModel.setProperties(std::move(solidProps));
+    if (selectedIsSolid) {
+        document_.replaceModel(selectedIndex, {std::move(solidModel)});
+        occShapes_[selectedIndex] = solid;
+    } else {
+        for (const auto linked : linkedSolids) {
+            document_.replaceModel(linked, {std::move(solidModel)});
+            occShapes_[linked] = solid;
+            break; // tek kati: ilk bagli katı yerinde degistir
+        }
+    }
+    FILE* rotationDiag = fopen("model-maker-render.log", "a");
+    if (rotationDiag) {
+        fprintf(rotationDiag,
+                "ROTATION-APPLY deg=%.1f selected=%zu sourceLine=%zu linked=%zu\n",
+                degrees, selectedIndex, sourceLine, linkedSolids.size());
+        fclose(rotationDiag);
     }
     updateControls();
     invalidateCanvas();
