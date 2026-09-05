@@ -4066,26 +4066,41 @@ void Application::assignProfileToSelection(const std::string& profileName) {
             solidProps.axisFromX = from.x; solidProps.axisFromY = from.y; solidProps.axisFromZ = from.z;
             solidProps.axisToX = to.x; solidProps.axisToY = to.y; solidProps.axisToZ = to.z;
             solidModel.setProperties(std::move(solidProps));
-            // Ayni profilli mevcut kati bulunursa YERINDE degistirilir;
-            // bulunmazsa eklenir (yeniden atama kopyalama yapmaz).
+            // MEVCUT KATI ESLENMESI EKSENLE: ayni profil + ayni eksen
+            // baslangic noktasi = ayni eleman (yerinde degistirilir).
+            // Farkli eksen = baska eleman; ASLA degistirilmez/silinmez.
             std::optional<std::size_t> existingSolid;
             for (std::size_t i = 0; i < document_.models().size(); ++i) {
                 const auto& checkProps = document_.models()[i].properties();
-                if (!checkProps.profileName.empty() &&
-                    !document_.models()[i].faces().empty() &&
-                    checkProps.profileName == profile->name) {
-                    existingSolid = i;
-                    break;
-                }
+                if (document_.models()[i].faces().empty() || checkProps.profileName.empty())
+                    continue;
+                const bool sameStart =
+                    std::abs(checkProps.axisFromX - from.x) < 1e-6 &&
+                    std::abs(checkProps.axisFromY - from.y) < 1e-6 &&
+                    std::abs(checkProps.axisFromZ - from.z) < 1e-6;
+                const bool sameEnd =
+                    std::abs(checkProps.axisToX - to.x) < 1e-6 &&
+                    std::abs(checkProps.axisToY - to.y) < 1e-6 &&
+                    std::abs(checkProps.axisToZ - to.z) < 1e-6;
+                if (sameStart && sameEnd) { existingSolid = i; break; }
             }
+            // Eski, eslesen elemanlar (indeks kaymalarindan artiklalar):
+            // ayni eksen + farkli profil = bu cizginin eski katisi -> sil.
             std::vector<std::size_t> duplicates;
             for (std::size_t i = 0; i < document_.models().size(); ++i) {
-                const auto& checkProps = document_.models()[i].properties();
                 if (existingSolid && i == *existingSolid) continue;
-                if (!checkProps.profileName.empty() &&
-                    !document_.models()[i].faces().empty() &&
-                    checkProps.profileName == profile->name)
-                    duplicates.push_back(i);
+                const auto& checkProps = document_.models()[i].properties();
+                if (document_.models()[i].faces().empty() || checkProps.profileName.empty())
+                    continue;
+                const bool sameStart =
+                    std::abs(checkProps.axisFromX - from.x) < 1e-6 &&
+                    std::abs(checkProps.axisFromY - from.y) < 1e-6 &&
+                    std::abs(checkProps.axisFromZ - from.z) < 1e-6;
+                const bool sameEnd =
+                    std::abs(checkProps.axisToX - to.x) < 1e-6 &&
+                    std::abs(checkProps.axisToY - to.y) < 1e-6 &&
+                    std::abs(checkProps.axisToZ - to.z) < 1e-6;
+                if (sameStart && sameEnd) duplicates.push_back(i);
             }
             if (existingSolid) {
                 document_.replaceModel(*existingSolid, {std::move(solidModel)});
