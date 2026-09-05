@@ -1497,6 +1497,12 @@ void Application::onLeftButtonDown(int x, int y) {
         }
         updateControls(); invalidateCanvas(); return;
     }
+    if (pendingSelectionClear_) {
+        // Kopyalama komutundan cikildi: bir sonraki tiklama eski toplu
+        // secimi tasimaz — yeniden secim yapilir (tek/ctrl+coklu).
+        pendingSelectionClear_ = false;
+        selectedModels_.clear();
+    }
     if (GetKeyState(VK_CONTROL) < 0) {
         // Ctrl+tiklama: bos modda nesne secimi (profil atama icin).
         updateHover(x, y);
@@ -2769,6 +2775,10 @@ void Application::commitTransformPoint(const Vec3& point) {
         // AutoCAD tarzı: her hedef tıklaması yeni bir kopya üretir;
         // komut sağ tık veya Escape ile bitirilinceye kadar Destination
         // fazında kalır.
+        // Kopyalama komutu BASKA bir hedef tıklamayla devam etmiyorsa
+        // (tek kopya sonrasi baska yere tiklandi) secim temizlenir ki
+        // tek nesne rotasyonu isterken toplu secim kalintisi olmasin.
+        pendingSelectionClear_ = true;
     }
 }
 

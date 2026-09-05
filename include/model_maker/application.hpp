@@ -290,6 +290,7 @@ private:
     std::vector<HWND> ribbonCommandButtons_;
     RibbonTab activeRibbonTab_{RibbonTab::Drawing};
     VisualStyle visualStyle_{VisualStyle::Wireframe};
+    bool pendingSelectionClear_{false}; // kopyalama sonrasi: yeni tiklamada secim sifirla
     HCURSOR draftingCursor_{};
     HCURSOR modifyCursor_{};
     HCURSOR neutralCursor_{};
