@@ -1496,10 +1496,18 @@ void Application::onLeftButtonDown(int x, int y) {
         invalidateCanvas();
         return;
     }
-    if (transformCommand_ == TransformCommand::Trim) {
-        // 3B kati trim (2B/3B her iki modda): kati -> kesim cizgisi ->
-        // kalacak taraf. Tiklanan nesne kati ise (yuzu varsa) 3B akis,
-        // degilse mevcut cizgi trim'i calisir.
+    bool documentHasSolids = false;
+    for (std::size_t i = 0; i < document_.models().size(); ++i) {
+        if (!document_.models()[i].faces().empty() &&
+            !document_.models()[i].properties().profileName.empty()) {
+            documentHasSolids = true;
+            break;
+        }
+    }
+    if (transformCommand_ == TransformCommand::Trim && documentHasSolids) {
+        // 3B kati trim (yalniz dokumanda profil katisi varken devrede):
+        // kati -> kesim cizgisi -> kalacak taraf. Kati yokken normal 2B
+        // cizgi trim akisi (asagidaki genel dal) oldugu gibi calisir.
         const auto hit = trimSolidPhase_ == 0 ? solidTrimTargetAt(x, y)
                 : trimSolidPhase_ == 1 ? trimLineTargetAt(x, y)
                                        : trimExtendTargetAt(x, y);
