@@ -3218,7 +3218,16 @@ void Application::redo() {
 
 void Application::addStyledModel(WireframeModel model) {
     pushUndoSnapshot();
-    model.setProperties(currentEntityProperties());
+    // Stil alanlari (katman/renk/cizgi tipi) akimdan gelir; modelin kendi
+    // tasiydigi profil kimligi (profileName/Rotation/SourceLine) KORUNUR —
+    // Onceki kod butun ozellikleri eziyor, katinin kaynak cizgisi kayboluyordu.
+    auto styled = currentEntityProperties();
+    auto kept = model.properties();
+    styled.profileName = kept.profileName;
+    styled.profileRotation = kept.profileRotation;
+    styled.profileSourceLine = kept.profileSourceLine;
+    styled.material = kept.material;
+    model.setProperties(std::move(styled));
     document_.addModel(std::move(model));
 }
 
