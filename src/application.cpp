@@ -3781,7 +3781,7 @@ void Application::setSelectedEntityProfileRotation(double degrees) {
     struct TargetInfo {
         std::string profileName;
         std::string material, lineType, layer;
-        std::uint32_t trueColor; std::int32_t colorIndex;
+        std::optional<std::uint32_t> trueColor; int colorIndex;
         std::int64_t profileSourceLine;
         double axisFrom[3], axisTo[3];
     };
