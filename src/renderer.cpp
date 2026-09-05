@@ -973,6 +973,8 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         const auto& model = document.models()[index];
         const auto& properties = document.effectiveProperties(index);
         if (!properties.visible) continue;
+        // Solid'te GDI kenar cizgileri atlanir (yuzler GL'de dolu);
+        // HiddenLine'da cizgiler gorunur kalmali — skip yok.
         if (draft.visualStyle == VisualStyle::Solid && !draft.interactiveNavigation &&
             !model.faces().empty()) continue;
         // F7: GL modunda modeller yalniz GPU'da cizilir — GDI pass yalniz
@@ -1020,7 +1022,8 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
     if (useGpuLines) {
         glBackend->renderBatchToDc(
             gpuBatchPtr ? *gpuBatchPtr : emptyGpuBatch_, camera, width, height, dc,
-            mode == EditMode::Draw2D, document.revision(), faceAlpha);
+            mode == EditMode::Draw2D, document.revision(), faceAlpha,
+            draft.visualStyle == VisualStyle::HiddenLine);
         performance.drawCalls += glBackend->drawCallsPerFrame();
         // GL modunda grid + eksenler referans katmani olarak kompozitin
         // USTUNE cizilir — dolu yuzlerin altinda kaybolmaz (kullanicinin

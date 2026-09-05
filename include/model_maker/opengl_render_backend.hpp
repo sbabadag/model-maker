@@ -105,7 +105,7 @@ public:
         const std::vector<std::pair<std::size_t, WireframeModel>>& models,
         const Camera& camera, int width, int height, void* targetHdc,
         bool useProjection2D = false, std::uint64_t contentRevision = 0,
-        std::uint8_t faceAlpha = 0);
+        std::uint8_t faceAlpha = 0, bool hiddenLineStyle = false);
 
     // Dolu/yarisaydam yuz gecisleri (faceAlpha > 0 ise): modellerin
     // faces() ucgenleri GL_TRIANGLES olarak derinlik testiyle cizilir;
@@ -163,6 +163,7 @@ private:
     std::uint32_t pboFrame_{};
     GpuLineBatch faceBatch_;  // ayni vertex duzeni; indeksler GL_TRIANGLES
     std::uint8_t faceAlpha_{};
+    bool hiddenLineStyle_{false}; // HiddenLine stili: dolu yuz + cizgiler
     std::size_t renderedTriangles_{};
 
     // FBO for offscreen GL rendering → GDI compositing

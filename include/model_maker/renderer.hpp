@@ -16,13 +16,15 @@
 
 namespace mm {
 
-enum class VisualStyle { Wireframe, Solid, Transparent };
+enum class VisualStyle { Wireframe, Solid, Transparent, HiddenLine };
 
 constexpr unsigned char visualStyleFaceAlpha(VisualStyle style) noexcept {
     switch (style) {
     case VisualStyle::Wireframe: return 0;
     case VisualStyle::Solid: return 255;
     case VisualStyle::Transparent: return 96;
+    case VisualStyle::HiddenLine: return 255; // cizgiler gorunur, yuzler dolu ama
+                                              // cizgiler uzerine cizilir (GDI/GL ayni)
     }
     return 0;
 }

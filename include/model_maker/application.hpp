@@ -112,6 +112,7 @@ public:
     // Work plane (UCS) — Qt menü/ribbon erişimi için public
     // F1: GPU hatti — GL backend uretimi + F9 ile GDI/GL gecisi
     void toggleGpuLines();
+    void setVisualStyle(VisualStyle style) noexcept;
     // F5: GDI ve GL arkaplanlarini script'li orbit/zoom/pan ile otomatik
     // olculer; sonuclar BENCH-RESULT satirlariyla render.log'a yazilir.
     void runRenderBenchmark();

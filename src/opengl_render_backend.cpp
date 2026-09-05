@@ -689,7 +689,7 @@ bool OpenGLRenderBackend::renderBatchToDc(
     const std::vector<std::pair<std::size_t, WireframeModel>>& models,
     const Camera& camera, int width, int height, void* targetHdc,
     bool useProjection2D, std::uint64_t contentRevision,
-    std::uint8_t faceAlpha) {
+    std::uint8_t faceAlpha, bool hiddenLineStyle) {
     if (!initialized_ || models.empty()) return false;
     const auto glDiag = [this](const char* step) {
         if (glDiagCount_ >= 8) return;
@@ -717,6 +717,7 @@ bool OpenGLRenderBackend::renderBatchToDc(
     ensureBatch(models, contentRevision);
     glDiag("BATCH-OK");
     faceAlpha_ = faceAlpha;
+    hiddenLineStyle_ = hiddenLineStyle;
     renderedTriangles_ = 0;
     if (faceAlpha != 0) {
         // Yuzler once, derinlik testiyle: opak dolgu + dogru ortme;
@@ -731,9 +732,20 @@ bool OpenGLRenderBackend::renderBatchToDc(
     // dolu yuzler + dis siluet (kontur). Ic kiris kenarlari ve arkadaki
     // kenarlar boylece gizlenir — AutoCAD solid gorusu davranisi.
     // Wireframe (faceAlpha==0) ve saydam (0<faceAlpha<255) stillerinde
-    // cizgiler her zamanki gibi cizilir.
-    if (lineBatch_.indexCount != 0 && faceAlpha != 255) {
+    // cizgiler her zamanki gibi cizilir. HiddenLine (alpha 255 + stil
+    // bayragi) cizgileri de ister: yuz dolgusu USTUNE kenar cizgileri.
+    const bool hiddenLineMode = hiddenLineStyle_ && faceAlpha == 255;
+    if (lineBatch_.indexCount != 0 && (faceAlpha != 255 || hiddenLineMode)) {
+        if (hiddenLineMode) {
+            // derinlik testi acik ama hafif offset ile — yuz dolgusunun
+            // uzerine cizgiler dusturulmeden cizilir
+            glEnable(GLConst::GL_POLYGON_OFFSET_FILL);
+            glPolygonOffset(-1.0f, -1.0f);
+        }
         renderBatch(lineBatch_, camera, width, height, useProjection2D);
+        if (hiddenLineMode) {
+            glDisable(GLConst::GL_POLYGON_OFFSET_FILL);
+        }
         drawCalls_ = 1;
         renderedLines_ = lineBatch_.indexCount / 2;
     }

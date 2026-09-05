@@ -217,6 +217,15 @@ QtMainWindow::QtMainWindow(QWidget* parent)
     QObject::connect(redoShortcut, &QShortcut::activated, this, [this]() { app_.redo(); });
     auto* newShortcut = new QShortcut(QKeySequence::New, this);
     QObject::connect(newShortcut, &QShortcut::activated, this, [this]() { app_.newDocument(); });
+    // Alt+1..4: 3B gorsel stiller (wireframe / yarim-saydam / hidden / solid)
+    auto* wireframeShortcut = new QShortcut(QKeySequence(QStringLiteral("Alt+1")), this);
+    QObject::connect(wireframeShortcut, &QShortcut::activated, this, [this]() { app_.setVisualStyle(mm::VisualStyle::Wireframe); });
+    auto* transparentShortcut = new QShortcut(QKeySequence(QStringLiteral("Alt+2")), this);
+    QObject::connect(transparentShortcut, &QShortcut::activated, this, [this]() { app_.setVisualStyle(mm::VisualStyle::Transparent); });
+    auto* hiddenShortcut = new QShortcut(QKeySequence(QStringLiteral("Alt+3")), this);
+    QObject::connect(hiddenShortcut, &QShortcut::activated, this, [this]() { app_.setVisualStyle(mm::VisualStyle::HiddenLine); });
+    auto* solidShortcut = new QShortcut(QKeySequence(QStringLiteral("Alt+4")), this);
+    QObject::connect(solidShortcut, &QShortcut::activated, this, [this]() { app_.setVisualStyle(mm::VisualStyle::Solid); });
     auto* openShortcut = new QShortcut(QKeySequence::Open, this);
     QObject::connect(openShortcut, &QShortcut::activated, this, [this]() { app_.openDocument(); });
     auto* saveShortcut = new QShortcut(QKeySequence::Save, this);

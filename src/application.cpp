@@ -1317,6 +1317,17 @@ LRESULT Application::handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lPa
         }
         return 0;
     case WM_CHAR: onCharacter(static_cast<wchar_t>(wParam)); return 0;
+    case WM_SYSKEYDOWN: {
+        // Alt+1..4: 3B gorsel stiller (AutoCAD VPMONITOR tarzi)
+        const bool altDown = (GetKeyState(VK_MENU) & 0x8000) != 0;
+        if (altDown) {
+            if (wParam == '1') { setVisualStyle(VisualStyle::Wireframe); return 0; }
+            if (wParam == '2') { setVisualStyle(VisualStyle::Transparent); return 0; }
+            if (wParam == '3') { setVisualStyle(VisualStyle::HiddenLine); return 0; }
+            if (wParam == '4') { setVisualStyle(VisualStyle::Solid); return 0; }
+        }
+        break;
+    }
     case WM_KEYDOWN:
         if (wParam == VK_ESCAPE) {
             if (profilePopup_ && IsWindowVisible(profilePopup_)) {
@@ -1350,6 +1361,7 @@ LRESULT Application::handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lPa
             // Gorsel stil dongusu: Wireframe -> Solid -> Transparent
             visualStyle_ = visualStyle_ == VisualStyle::Wireframe ? VisualStyle::Solid
                          : visualStyle_ == VisualStyle::Solid ? VisualStyle::Transparent
+                         : visualStyle_ == VisualStyle::Transparent ? VisualStyle::HiddenLine
                          : VisualStyle::Wireframe;
             updateControls(); invalidateCanvas();
         }
@@ -4375,6 +4387,15 @@ void Application::runRenderBenchmark() {
     mode_ = originalMode;
     if (statusCallback_) statusCallback_(L"Benchmark tamamlandı — render.log'a bakın");
     updateStatus();
+    invalidateCanvas();
+}
+
+void Application::setVisualStyle(VisualStyle style) noexcept {
+    // Gorsel stil (Alt+1..4): Wireframe / Tar-Şeffaf / Hidden / Solid.
+    // Hidden = Wireframe'in derinlik duyarli varyanti: cizgiler gorunur ama
+    // arkadakiler soluk cizilir (renderer mevcut stillerle esler).
+    visualStyle_ = style;
+    updateControls();
     invalidateCanvas();
 }
 
