@@ -739,12 +739,12 @@ bool OpenGLRenderBackend::renderBatchToDc(
         if (hiddenLineMode) {
             // derinlik testi acik ama hafif offset ile — yuz dolgusunun
             // uzerine cizgiler dusturulmeden cizilir
-            glEnable(GLConst::GL_POLYGON_OFFSET_FILL);
+            glEnable(GLConst::POLYGON_OFFSET_FILL);
             glPolygonOffset(-1.0f, -1.0f);
         }
         renderBatch(lineBatch_, camera, width, height, useProjection2D);
         if (hiddenLineMode) {
-            glDisable(GLConst::GL_POLYGON_OFFSET_FILL);
+            glDisable(GLConst::POLYGON_OFFSET_FILL);
         }
         drawCalls_ = 1;
         renderedLines_ = lineBatch_.indexCount / 2;
