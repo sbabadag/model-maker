@@ -2885,13 +2885,25 @@ void Application::updateHover(int x, int y) {
                                       camera_, std::max(1L, client.right), std::max(1L, client.bottom),
                                       workPlane_, true, false);
             } else {
-                // Cizim: DUNYA X/Y/Z eksenleri — uc renkli ortho guide'in
-                // kilitlendigi eksenlerle birebir ayni kume. Eski kod is
-                // duzlemi normalini (gorus yonu) kullandigi icin Z yonunde
-                // izleme calismiyordu.
-                hover_ = applyOrtho3D(*orthoAnchor, {static_cast<double>(x), static_cast<double>(y)}, *hover_,
-                                      camera_, std::max(1L, client.right), std::max(1L, client.bottom),
-                                      false);
+                // Cizim: UCS secilmisse (is duzlemi dunya XY'den farkliysa)
+                // F8 o duzlemin U/V eksenlerinde kisitlar — AutoCAD UCS
+                // davranisi: kullanici duzlem secince objeler o duzlemde
+                // ilerler. Dunya duzlemindeyse ayni seydir (U=X, V=Y).
+                const bool customUcs =
+                    std::abs(workPlane_.u.x - 1.0) > 1e-9 || std::abs(workPlane_.u.y) > 1e-9 ||
+                    std::abs(workPlane_.u.z) > 1e-9 || std::abs(workPlane_.v.y - 1.0) > 1e-9 ||
+                    std::abs(workPlane_.v.x) > 1e-9 || std::abs(workPlane_.v.z) > 1e-9;
+                if (customUcs) {
+                    hover_ = applyOrtho3D(*orthoAnchor, {static_cast<double>(x), static_cast<double>(y)}, *hover_,
+                                          camera_, std::max(1L, client.right), std::max(1L, client.bottom),
+                                          workPlane_, true, false);
+                } else {
+                    // Dunya duzlemi: uc renkli ortho guide ile ayni eksen
+                    // kumesi (X/Y/Z) — Z yonunde izleme de calisir.
+                    hover_ = applyOrtho3D(*orthoAnchor, {static_cast<double>(x), static_cast<double>(y)}, *hover_,
+                                          camera_, std::max(1L, client.right), std::max(1L, client.bottom),
+                                          false);
+                }
             }
         } else {
             hover_ = applyOrtho(*orthoAnchor, *hover_, transformCommand_ == TransformCommand::None);
