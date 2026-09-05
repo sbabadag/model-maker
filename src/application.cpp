@@ -4065,6 +4065,7 @@ void Application::assignProfileToSelection(const std::string& profileName) {
             axes.push_back(target);
         }
         std::vector<std::size_t> solidIndices;
+        std::vector<Vec3> consumedAxes;
         for (const auto& axis : axes) {
             const Vec3 from = axis.from;
             const Vec3 to = axis.to;
@@ -4075,7 +4076,6 @@ void Application::assignProfileToSelection(const std::string& profileName) {
             auto solidProps = solidModel.properties();
             solidProps.profileName = profile->name;
             solidProps.profileRotation = axis.rotation;
-            solidProps.profileSourceLine = static_cast<std::int64_t>(index);
             solidProps.axisFromX = from.x; solidProps.axisFromY = from.y; solidProps.axisFromZ = from.z;
             solidProps.axisToX = to.x; solidProps.axisToY = to.y; solidProps.axisToZ = to.z;
             solidModel.setProperties(std::move(solidProps));
@@ -4124,6 +4124,8 @@ void Application::assignProfileToSelection(const std::string& profileName) {
                 solidIndices.push_back(document_.models().size() - 1);
                 occShapes_.emplace(document_.models().size() - 1, solid);
             }
+            consumedAxes.push_back(from);
+            consumedAxes.push_back(to);
             if (!duplicates.empty()) document_.deleteModels(duplicates);
             {
                 const auto& addedModel = document_.models().back();
@@ -4134,6 +4136,74 @@ void Application::assignProfileToSelection(const std::string& profileName) {
                             addedModel.vertices().size(), addedModel.edges().size(),
                             addedModel.faces().size());
                     fclose(solidLog);
+                }
+            }
+        }
+        // KATI OLUSUNCA KAYNAK CIZGIYI SIL — cizgi yalnizca giris aracidir;
+        // kati kendi eksenini tasir, tum islemler (rotasyon/trim/modify)
+        // artik kati uzerinden yurur. Eslesme koordinatla: ayni from+to.
+        if (!consumedAxes.empty()) {
+            std::vector<std::size_t> sourceLines;
+            for (std::size_t i = 0; i < document_.models().size(); ++i) {
+                const auto& m = document_.models()[i];
+                if (m.vertices().size() != 2 || m.edges().size() != 1) continue;
+                const Vec3 mf = m.vertices()[0];
+                const Vec3 mt = m.vertices()[1];
+                const bool hasProfile = !m.properties().profileName.empty();
+                if (!hasProfile) continue;
+                for (std::size_t k = 0; k < consumedAxes.size(); k += 2) {
+                    const Vec3 cf = consumedAxes[k];
+                    const Vec3 ct = consumedAxes[k + 1];
+                    const bool sameF = std::abs(mf.x - cf.x) < 1e-6 &&
+                        std::abs(mf.y - cf.y) < 1e-6 && std::abs(mf.z - cf.z) < 1e-6;
+                    const bool sameT = std::abs(mt.x - ct.x) < 1e-6 &&
+                        std::abs(mt.y - ct.y) < 1e-6 && std::abs(mt.z - ct.z) < 1e-6;
+                    if (sameF && sameT) { sourceLines.push_back(i); break; }
+                }
+            }
+            if (!sourceLines.empty()) {
+                // ONCE eski indeks -> eksen eslenigi (silme oncesi durum)
+                std::map<std::size_t, TopoDS_Shape> rebuilt;
+                struct OldAxisEntry { Vec3 from, to; TopoDS_Shape shape; };
+                std::vector<OldAxisEntry> oldShapes;
+                for (const auto& [oldIdx, shape] : occShapes_) {
+                    if (oldIdx >= document_.models().size()) continue;
+                    const auto& m = document_.models()[oldIdx];
+                    if (m.faces().empty() || m.properties().profileName.empty()) continue;
+                    OldAxisEntry entry;
+                    entry.from = Vec3(m.properties().axisFromX, m.properties().axisFromY,
+                                      m.properties().axisFromZ);
+                    entry.to = Vec3(m.properties().axisToX, m.properties().axisToY,
+                                    m.properties().axisToZ);
+                    entry.shape = shape;
+                    oldShapes.push_back(std::move(entry));
+                }
+                document_.deleteModels(sourceLines);
+                // SILME SONRASI: her katinin YENI indeksini bul, ayni eksenli
+                // eski shape'i tasi (koordinat kimligi — indeks kaymasi etkisiz)
+                for (std::size_t i = 0; i < document_.models().size(); ++i) {
+                    const auto& m = document_.models()[i];
+                    if (m.faces().empty() || m.properties().profileName.empty()) continue;
+                    const Vec3 mf(m.properties().axisFromX, m.properties().axisFromY,
+                                  m.properties().axisFromZ);
+                    const Vec3 mt(m.properties().axisToX, m.properties().axisToY,
+                                  m.properties().axisToZ);
+                    for (auto& oldEntry : oldShapes) {
+                        const bool sameF = std::abs(mf.x - oldEntry.from.x) < 1e-6 &&
+                            std::abs(mf.y - oldEntry.from.y) < 1e-6 &&
+                            std::abs(mf.z - oldEntry.from.z) < 1e-6;
+                        const bool sameT = std::abs(mt.x - oldEntry.to.x) < 1e-6 &&
+                            std::abs(mt.y - oldEntry.to.y) < 1e-6 &&
+                            std::abs(mt.z - oldEntry.to.z) < 1e-6;
+                        if (sameF && sameT) { rebuilt[i] = oldEntry.shape; break; }
+                    }
+                }
+                occShapes_ = std::move(rebuilt);
+                FILE* lineLog = fopen("model-maker-render.log", "a");
+                if (lineLog) {
+                    fprintf(lineLog, "SOURCE-LINES-REMOVED count=%zu shapes=%zu\n",
+                            sourceLines.size(), occShapes_.size());
+                    fclose(lineLog);
                 }
             }
         }
