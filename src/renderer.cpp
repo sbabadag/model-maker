@@ -983,10 +983,10 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         // portu — front/back yonlenme sayimiyla siluet kenarlari. GL'de
         // gorunen koyu kontur GDI'da yoktu ("ilki gdi... gdi da belirsiz").
         if (faceAlpha == 255 && gdiSolidFaceCount > 0) {
-            const auto darken = [](std::uint32_t rgb, int percent) {
-                return RGB(static_cast<int>(((rgb >> 16) & 0xFFu) * percent / 100),
-                           static_cast<int>(((rgb >> 8) & 0xFFu) * percent / 100),
-                           static_cast<int>((rgb & 0xFFu) * percent / 100));
+            // Sabit koyu kontur (GL ile ayni): varlik oranli koyulastirma
+            // golgeli yuzlerde yetersiz kaliyordu.
+            const auto darken = [](std::uint32_t, int) {
+                return RGB(40, 40, 40);
             };
             for (const auto index : visibleModels) {
                 if (index >= document.models().size()) continue;

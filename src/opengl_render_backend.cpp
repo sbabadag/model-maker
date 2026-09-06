@@ -1060,15 +1060,13 @@ void OpenGLRenderBackend::renderContourLines(
         const auto& vertices = model.vertices();
         const auto& faces = model.faces();
         if (vertices.empty() || faces.empty()) continue;
-        // Kontur rengi = varlik renginin KOYULASTIRILMIS hali: beyaz
-        // varlikta beyaz kontur acik zeminde gorunmezdi ("kenar yok,
-        // goruntu karisik"). ~%45 koyuluk Tekla'nin koyu kenar hissi.
-            const std::uint32_t ec = model.properties().effectiveColor;
-            const auto cr = static_cast<std::uint32_t>(((ec >> 16) & 0xFFu) * 35u / 100u);
-            const auto cg = static_cast<std::uint32_t>(((ec >> 8) & 0xFFu) * 35u / 100u);
-            const auto cb = static_cast<std::uint32_t>((ec & 0xFFu) * 35u / 100u);
-            const std::uint32_t contourColor =
-                toRGBA8((cr << 16) | (cg << 8) | cb);
+        // Kontur rengi SABIT koyu (Tekla kenarlari): varlik oranli
+        // koyulastirma golgeli yuzlerde kontrast vermiyordu — koyu
+        // varlikta en koyu yuz (0.62c) ile kontur (0.35c) arasi yalniz
+        // 0.27c idi ("golgelenedurumlarinda algi dusuyor"). Beyaz varlikta
+        // da tam renk kontur gorunmezdi. Sabit (40,40,40) her yuz tonunda
+        // net: en koyu yuz 158 parlakliginda bile kontrast ~118.
+        const std::uint32_t contourColor = toRGBA8((40u << 16) | (40u << 8) | 40u);
         std::map<std::pair<std::size_t, std::size_t>, int> frontCount;
         std::map<std::pair<std::size_t, std::size_t>, int> backCount;
         for (const auto& face : faces) {
