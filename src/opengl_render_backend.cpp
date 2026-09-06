@@ -732,8 +732,12 @@ bool OpenGLRenderBackend::renderBatchToDc(
         ensureFaceBatch(models, contentRevision);
         renderFaceBatch(faceBatch_, camera, width, height, useProjection2D, faceAlpha);
         renderedTriangles_ = faceBatch_.indexCount / 3;
+        // DERINLIK TEMIZLENMEZ: renderContourLines artik gercek kenarlari
+        // da ciziyor; arka kenarlarin yuzlerce oclude edilmesi icin yuz
+        // batch'inin yazdigi depth buffer KALMALI. (Eski siluet cizimi
+        // kendi batch'ini kurup depth'i temizliyordu — tum kenarlar
+        // cizilirken bu, gizli kenarlarin ortaya cikmasina neden oldu.)
         renderContourLines(models, camera, width, height, useProjection2D);
-        glClear(GLConst::DEPTH_BUFFER_BIT);
     }
     // Solid stilde (tam opak yuzler) tel kafes cizilmez: gorunum yalniz
     // dolu yuzler + dis siluet (kontur). Ic kiris kenarlari ve arkadaki
