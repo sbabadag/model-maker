@@ -984,11 +984,40 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         const std::size_t modelCount = document.models().size();
         if (!cachedGpuBatchValid_ || revision != cachedGpuRevision_ ||
             selectionSig != cachedGpuSelectionSig_ || modelCount != cachedGpuModelCount_) {
+            // PROFILLI KAYNAK CIZGILERI GIZLE: ayni eksende bir kati varsa
+            // cizgi artik cizilmez (kati kendi eksenini tasir; cizgi yalniz
+            // giris aracidir — eski dosyalardan kalan sarI "extra cizgiler").
+            std::vector<std::pair<Vec3, Vec3>> solidAxes;
+            for (std::size_t index = 0; index < modelCount; ++index) {
+                const auto& m = document.models()[index];
+                if (m.faces().empty() || m.properties().profileName.empty()) continue;
+                solidAxes.emplace_back(
+                    Vec3{m.properties().axisFromX, m.properties().axisFromY, m.properties().axisFromZ},
+                    Vec3{m.properties().axisToX, m.properties().axisToY, m.properties().axisToZ});
+            }
+            const auto isHiddenSourceLine = [&](const mm::WireframeModel& m) {
+                if (m.vertices().size() != 2 || m.edges().size() != 1 ||
+                    m.properties().profileName.empty() || solidAxes.empty())
+                    return false;
+                const Vec3 lf = m.vertices()[0];
+                const Vec3 lt = m.vertices()[1];
+                for (const auto& [af, at] : solidAxes) {
+                    const bool fwd = std::abs(lf.x - af.x) < 1e-6 && std::abs(lf.y - af.y) < 1e-6 &&
+                        std::abs(lf.z - af.z) < 1e-6 && std::abs(lt.x - at.x) < 1e-6 &&
+                        std::abs(lt.y - at.y) < 1e-6 && std::abs(lt.z - at.z) < 1e-6;
+                    const bool rev = std::abs(lf.x - at.x) < 1e-6 && std::abs(lf.y - at.y) < 1e-6 &&
+                        std::abs(lf.z - at.z) < 1e-6 && std::abs(lt.x - af.x) < 1e-6 &&
+                        std::abs(lt.y - af.y) < 1e-6 && std::abs(lt.z - af.z) < 1e-6;
+                    if (fwd || rev) return true;
+                }
+                return false;
+            };
             cachedGpuBatch_.clear();
             cachedGpuBatch_.reserve(modelCount);
             for (std::size_t index = 0; index < modelCount; ++index) {
                 const auto& model = document.models()[index];
                 if (model.edges().empty()) continue;
+                if (isHiddenSourceLine(model)) continue; // katinin eksen cizgisi
                 // Secili modeller artik GL batch'te YER ALIR: eskiden
                 // dislandiklarindan Solid stilde yuzleri hicbir katmanda
                 // cizilmiyor, secilen katı "kayboluyordu". Yesil secim
@@ -1098,10 +1127,40 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
 
     if (!draft.interactiveNavigation) {
         if (!draft.selectedModels.empty()) {
+            // Secili profilli kaynak cizgileri gizle: ayni eksende kati varsa
+            // yesil tel kafes "extra cizgi" olarak gorunmez.
+            std::vector<std::pair<Vec3, Vec3>> selSolidAxes;
+            for (const auto index : draft.selectedModels) {
+                if (index >= document.models().size()) continue;
+                const auto& m = document.models()[index];
+                if (m.faces().empty() || m.properties().profileName.empty()) continue;
+                selSolidAxes.emplace_back(
+                    Vec3{m.properties().axisFromX, m.properties().axisFromY, m.properties().axisFromZ},
+                    Vec3{m.properties().axisToX, m.properties().axisToY, m.properties().axisToZ});
+            }
+            const auto selHiddenSource = [&](std::size_t index) {
+                if (index >= document.models().size() || selSolidAxes.empty()) return false;
+                const auto& m = document.models()[index];
+                if (m.vertices().size() != 2 || m.edges().size() != 1 ||
+                    m.properties().profileName.empty())
+                    return false;
+                const Vec3 lf = m.vertices()[0];
+                const Vec3 lt = m.vertices()[1];
+                for (const auto& [af, at] : selSolidAxes) {
+                    const bool fwd = std::abs(lf.x - af.x) < 1e-6 && std::abs(lf.y - af.y) < 1e-6 &&
+                        std::abs(lf.z - af.z) < 1e-6 && std::abs(lt.x - at.x) < 1e-6 &&
+                        std::abs(lt.y - at.y) < 1e-6 && std::abs(lt.z - at.z) < 1e-6;
+                    const bool rev = std::abs(lf.x - at.x) < 1e-6 && std::abs(lf.y - at.y) < 1e-6 &&
+                        std::abs(lf.z - at.z) < 1e-6 && std::abs(lt.x - af.x) < 1e-6 &&
+                        std::abs(lt.y - af.y) < 1e-6 && std::abs(lt.z - af.z) < 1e-6;
+                    if (fwd || rev) return true;
+                }
+                return false;
+            };
             HPEN selectedPen = CreatePen(PS_SOLID, 3, RGB(90, 255, 145));
             SelectObject(dc, selectedPen);
             for (const auto index : draft.selectedModels) {
-                if (document.modelIsEditable(index)) {
+                if (document.modelIsEditable(index) && !selHiddenSource(index)) {
                     drawModel(document.models()[index]);
                     ++performance.renderedEntities;
                 }
@@ -1908,10 +1967,38 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
                                     (draft.drawingActive && draft.anchor && draft.cursor);
         if (feedbackActive) {
             if (!draft.selectedModels.empty()) {
+                // Kaynak eksen cizgileri (profilli + ayni eksende kati) gizle.
+                std::vector<std::pair<Vec3, Vec3>> fbAxes;
+                for (std::size_t i = 0; i < document.models().size(); ++i) {
+                    const auto& m = document.models()[i];
+                    if (m.faces().empty() || m.properties().profileName.empty()) continue;
+                    fbAxes.emplace_back(
+                        Vec3{m.properties().axisFromX, m.properties().axisFromY, m.properties().axisFromZ},
+                        Vec3{m.properties().axisToX, m.properties().axisToY, m.properties().axisToZ});
+                }
+                const auto fbHidden = [&](std::size_t index) {
+                    if (index >= document.models().size() || fbAxes.empty()) return false;
+                    const auto& m = document.models()[index];
+                    if (m.vertices().size() != 2 || m.edges().size() != 1 ||
+                        m.properties().profileName.empty()) return false;
+                    const Vec3 lf = m.vertices()[0];
+                    const Vec3 lt = m.vertices()[1];
+                    for (const auto& [af, at] : fbAxes) {
+                        const bool fwd = std::abs(lf.x - af.x) < 1e-6 && std::abs(lf.y - af.y) < 1e-6 &&
+                            std::abs(lf.z - af.z) < 1e-6 && std::abs(lt.x - at.x) < 1e-6 &&
+                            std::abs(lt.y - at.y) < 1e-6 && std::abs(lt.z - at.z) < 1e-6;
+                        const bool rev = std::abs(lf.x - at.x) < 1e-6 && std::abs(lf.y - at.y) < 1e-6 &&
+                            std::abs(lf.z - at.z) < 1e-6 && std::abs(lt.x - af.x) < 1e-6 &&
+                            std::abs(lt.y - af.y) < 1e-6 && std::abs(lt.z - af.z) < 1e-6;
+                        if (fwd || rev) return true;
+                    }
+                    return false;
+                };
                 HPEN selectedPen = CreatePen(PS_SOLID, 3, RGB(90, 255, 145));
                 SelectObject(dc, selectedPen);
                 for (const auto index : draft.selectedModels) {
-                    if (index < document.models().size() && document.modelIsEditable(index))
+                    if (index < document.models().size() && document.modelIsEditable(index) &&
+                        !fbHidden(index))
                         drawModel(document.models()[index]);
                 }
                 SelectObject(dc, stockPen);

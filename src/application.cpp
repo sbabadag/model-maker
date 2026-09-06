@@ -3292,6 +3292,38 @@ void Application::addStyledModel(WireframeModel model) {
     document_.addModel(std::move(model));
 }
 
+void Application::purgeStaleAxisLines() {
+    // Eski tasarim artiklari: profilli katinin ekseniyle cakisan 2-ugencli
+    // cizgiler (kaynak eksen cizgileri) silinir — kati kendi eksenini
+    // tasir, cizgi yalniz giris aracidir. Dosya acilisi ve atama sonrasi
+    // cagirilir; sarI "extra cizgiler" bu artiklardi.
+    std::vector<std::size_t> stale;
+    for (std::size_t i = 0; i < document_.models().size(); ++i) {
+        const auto& m = document_.models()[i];
+        if (m.vertices().size() != 2 || m.edges().size() != 1) continue;
+        if (m.properties().profileName.empty()) continue; // yalniz profilli kaynak cizgiler
+        const Vec3 lf = m.vertices()[0];
+        const Vec3 lt = m.vertices()[1];
+        for (std::size_t k = 0; k < document_.models().size(); ++k) {
+            if (k == i) continue;
+            const auto& solid = document_.models()[k];
+            if (solid.faces().empty() || solid.properties().profileName.empty()) continue;
+            const Vec3 af(solid.properties().axisFromX, solid.properties().axisFromY,
+                          solid.properties().axisFromZ);
+            const Vec3 at(solid.properties().axisToX, solid.properties().axisToY,
+                          solid.properties().axisToZ);
+            const bool fwd = std::abs(lf.x - af.x) < 1e-6 && std::abs(lf.y - af.y) < 1e-6 &&
+                std::abs(lf.z - af.z) < 1e-6 && std::abs(lt.x - at.x) < 1e-6 &&
+                std::abs(lt.y - at.y) < 1e-6 && std::abs(lt.z - at.z) < 1e-6;
+            const bool rev = std::abs(lf.x - at.x) < 1e-6 && std::abs(lf.y - at.y) < 1e-6 &&
+                std::abs(lf.z - at.z) < 1e-6 && std::abs(lt.x - af.x) < 1e-6 &&
+                std::abs(lt.y - af.y) < 1e-6 && std::abs(lt.z - af.z) < 1e-6;
+            if (fwd || rev) { stale.push_back(i); break; }
+        }
+    }
+    if (!stale.empty()) document_.deleteModels(stale);
+}
+
 void Application::updateStatus() {
     if (!status_) return;
     if (dxfImportInProgress_) {
@@ -4652,6 +4684,7 @@ void Application::openDocument() {
     const auto path = chooseFile(false); if (!path) return;
     try {
         document_.load(*path);
+        purgeStaleAxisLines();
         refreshLayerCombo();
         if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
         else cancelDrawing();
