@@ -4663,6 +4663,7 @@ std::optional<std::filesystem::path> Application::chooseFile(bool save, bool dxf
 
 void Application::newDocument() {
     document_.clear();
+    currentFilePath_.reset();
     refreshLayerCombo();
     if (workPlanePicking_) cancelWorkPlaneCommand();
     if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
@@ -4676,18 +4677,36 @@ void Application::newDocument() {
 }
 
 void Application::saveDocument() {
+    // Kayitli/açik dosya uzerine kaydet (AutoCAD davranisi); yeni belge
+    // veya Save As -> dosya diyalogu. currentFilePath_ save/open'ta hatirlanir.
+    std::optional<std::filesystem::path> path = currentFilePath_;
+    if (!path) path = chooseFile(true);
+    if (!path) return;
+    try {
+        document_.save(*path);
+        currentFilePath_ = *path;
+    } catch (const std::exception& error) { showError(L"Kaydetme başarısız", error); }
+}
+
+void Application::saveDocumentAs() {
     const auto path = chooseFile(true); if (!path) return;
-    try { document_.save(*path); } catch (const std::exception& error) { showError(L"Kaydetme başarısız", error); }
+    try {
+        document_.save(*path);
+        currentFilePath_ = *path;
+    } catch (const std::exception& error) { showError(L"Kaydetme başarısız", error); }
 }
 
 void Application::openDocument() {
     const auto path = chooseFile(false); if (!path) return;
     try {
         document_.load(*path);
+        currentFilePath_ = path;
         purgeStaleAxisLines();
         refreshLayerCombo();
         if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
         else cancelDrawing();
+        // Dosya acildiginda icerik ekrana sigsin (zoom extents).
+        zoomExtents2D();
     } catch (const std::exception& error) { showError(L"Dosya açılamadı", error); }
 }
 

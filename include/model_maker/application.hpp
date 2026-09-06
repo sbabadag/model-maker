@@ -103,7 +103,10 @@ public:
     // File operations (Qt menu / shortcuts)
     void newDocument();
     void saveDocument();
+    void saveDocumentAs();
     void openDocument();
+    // Kayitli/açik belge yolu: Ctrl+S uzerine kaydeder (Save As istisnasi).
+    std::optional<std::filesystem::path> currentFilePath_;
     void importDxf();
     void beginDxfImport(const std::filesystem::path& path);
     void finishDxfImport();
