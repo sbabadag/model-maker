@@ -1060,10 +1060,11 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         const auto& model = document.models()[index];
         const auto& properties = document.effectiveProperties(index);
         if (!properties.visible) continue;
-        // Solid'te GDI kenar cizgileri atlanir (yuzler GL'de dolu);
-        // HiddenLine'da cizgiler gorunur kalmali — skip yok.
+        // TEKLA GORUNUMU: Solid'te artik kenarlar GL'de cizilir (edgesOnTop);
+        // GDI'nin ayni kenarlari tekrar cizmesi parcift cizgi yapar — skip
+        // korunur. GL kapaliysa (F6 GDI modu) GDI kenarlari cizilmelidir.
         if (draft.visualStyle == VisualStyle::Solid && !draft.interactiveNavigation &&
-            !model.faces().empty()) continue;
+            !model.faces().empty() && useGpuLines) continue;
         // F7: GL modunda modeller yalniz GPU'da cizilir — GDI pass yalniz
         // arka plan/grid/eksen/feedback. Hizalama delta=0.0 ile kanitli,
         // siyah canvas gizli pencere ile cozuldu; skip guvenle geri doner.

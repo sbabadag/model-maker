@@ -734,9 +734,15 @@ bool OpenGLRenderBackend::renderBatchToDc(
     // Wireframe (faceAlpha==0) ve saydam (0<faceAlpha<255) stillerinde
     // cizgiler her zamanki gibi cizilir. HiddenLine (alpha 255 + stil
     // bayragi) cizgileri de ister: yuz dolgusu USTUNE kenar cizgileri.
+    // TEKLA GORUNUMU: Solid stilde de gorunur (on bakan) KENARLAR cizilir —
+    // yuz dolgusu + kisa kirpma filtreli gercek kenarlar ustte. Icis
+    // gorunmeyen (arka) kenarlar depth testiyle zaten gizlenir; boylece
+    // I-kirisin flans yonleri/derinligi okunur, model "kafa karistirmaz".
+    // (Onceki tasarim: solid = yalniz siluet — yon okunamiyordu.)
+    const bool edgesOnTop = faceAlpha == 255; // solid + hidden-line ortak yol
     const bool hiddenLineMode = hiddenLineStyle_ && faceAlpha == 255;
-    if (lineBatch_.indexCount != 0 && (faceAlpha != 255 || hiddenLineMode)) {
-        if (hiddenLineMode) {
+    if (lineBatch_.indexCount != 0 && (faceAlpha != 255 || edgesOnTop)) {
+        if (edgesOnTop) {
             // derinlik testi acik ama hafif offset ile — yuz dolgusunun
             // uzerine cizgiler dusturulmeden cizilir
             glEnable(GLConst::POLYGON_OFFSET_FILL);
