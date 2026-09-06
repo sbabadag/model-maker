@@ -516,7 +516,7 @@ bool OpenGLRenderBackend::initialize(void* windowHandle, int initialWidth, int i
     // Create FBO for offscreen rendering
     ensureFbo(width_, height_);
 
-    glClearColor(250.0f / 255.0f, 247.0f / 255.0f, 235.0f / 255.0f, 1.0f); // krem RGB(250,247,235)
+    glClearColor(198.0f / 255.0f, 224.0f / 255.0f, 246.0f / 255.0f, 1.0f); // gradient ustu acik mavi
     initialized_ = true;
     hasWindowsGL = true;
     return true;
@@ -714,7 +714,7 @@ bool OpenGLRenderBackend::renderBatchToDc(
     // oldugundan seffaf clear + alfa kompoziti siyah/gri kaliyordu —
     // "GL bolgesinde arka plan calismiyor" buydu). Grid/eksenler GDI
     // tarafinda kompozitin USTUNE cizildiginden zemin krem gorunur.
-    glClearColor(250.0f / 255.0f, 247.0f / 255.0f, 235.0f / 255.0f, 1.0f);
+    glClearColor(198.0f / 255.0f, 224.0f / 255.0f, 246.0f / 255.0f, 1.0f); // gradient ustu
     glClear(GLConst::COLOR_BUFFER_BIT);
 
     ensureBatch(models, contentRevision);
@@ -742,12 +742,16 @@ bool OpenGLRenderBackend::renderBatchToDc(
     // gorunmeyen (arka) kenarlar depth testiyle zaten gizlenir; boylece
     // I-kirisin flans yonleri/derinligi okunur, model "kafa karistirmaz".
     // (Onceki tasarim: solid = yalniz siluet — yon okunamiyordu.)
-    const bool edgesOnTop = faceAlpha == 255; // solid + hidden-line ortak yol
+    // Solid = yalniz dolu yuzler + siluet (ic kenar YOK — "ikincil alt
+    // cizgiler" sikayetinin kaynagi idi). HiddenLine = kenarli gorunum;
+    // RENKLE BOYANIR (Tekla boyali model gorunumu): yuz dolgusu + gercek
+    // kenarlar ustte. edgesOnTop artik yalniz HiddenLine'da.
     const bool hiddenLineMode = hiddenLineStyle_ && faceAlpha == 255;
-    if (lineBatch_.indexCount != 0 && (faceAlpha != 255 || edgesOnTop)) {
-        if (edgesOnTop) {
-            // derinlik testi acik ama hafif offset ile — yuz dolgusunun
-            // uzerine cizgiler dusturulmeden cizilir
+    if (lineBatch_.indexCount != 0 && (faceAlpha != 255 || hiddenLineMode)) {
+        if (hiddenLineMode) {
+            // derinlik testi acik + hafif offset: yuz dolgusu USTUNE
+            // gercek kenarlar dusturulmadan cizilir (Tekla boyali
+            // hidden-line gorunumu).
             glEnable(GLConst::POLYGON_OFFSET_FILL);
             glPolygonOffset(-1.0f, -1.0f);
         }

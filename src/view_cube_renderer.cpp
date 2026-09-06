@@ -164,7 +164,7 @@ void ViewCubeRenderer::draw(HDC target, const RECT& client, const POINT& cursor,
     if (!dc) return;
 
     RECT background{0, 0, width, height};
-    HBRUSH backgroundBrush = CreateSolidBrush(RGB(250, 247, 235) /* krem arka plan */);
+    HBRUSH backgroundBrush = CreateSolidBrush(RGB(198, 224, 246) /* gradient ustu acik mavi */);
     FillRect(dc, &background, backgroundBrush);
     DeleteObject(backgroundBrush);
     drawCube(dc, width, cursor, camera);

@@ -295,7 +295,7 @@ public:
         const int destW = std::max(1, static_cast<int>(std::lround(info.width * info.rasterZoomFactor)));
         const int destH = std::max(1, static_cast<int>(std::lround(info.height * info.rasterZoomFactor)));
 
-        HBRUSH bg = CreateSolidBrush(RGB(250, 247, 235) /* krem arka plan */);
+        HBRUSH bg = CreateSolidBrush(RGB(198, 224, 246) /* gradient ustu acik mavi */);
         // Fill areas outside the zoomed region (top, bottom, left, right strips)
         RECT top{0, 0, info.width, std::max(0, destY)};
         if (top.bottom > top.top) FillRect(targetDc_, &top, bg);

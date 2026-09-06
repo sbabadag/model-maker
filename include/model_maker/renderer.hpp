@@ -25,7 +25,7 @@ constexpr double kMinGridStepMm = 10.0;
 
 // KREM arka plan (kullanici talebi — Tekla model-view zemin tonu).
 // Tek kaynak: GDI dolgulari, GL clear, ViewCube, saf-GDI backend.
-constexpr unsigned long kCanvasBgRgb = 250u * 65536u + 247u * 256u + 235u; // RGB(250,247,235)
+constexpr unsigned long kCanvasBgRgb = 246u * 65536u + 224u * 256u + 198u; // ust acik mavi (198,224,246)
 inline COLORREF canvasBackgroundColor() noexcept { return static_cast<COLORREF>(kCanvasBgRgb); }
 inline double niceGridStep(double pixelsPerUnit) noexcept {
     if (pixelsPerUnit <= 1e-9) return kMinGridStepMm;

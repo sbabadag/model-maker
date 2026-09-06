@@ -181,12 +181,16 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
     if (!dc) return;
 
     {
-    // Arka plan HER karede boyanir (snapOnly motion kareleri dahil):
-    // eskiden snapOnly'de atlandigindan GL kompoziti altinda siyah
-    // gorunuyordu. GL kompoziti alfa ile bindiginden zemin GDI'dan gelir.
-    HBRUSH background = CreateSolidBrush(canvasBackgroundColor());
-    FillRect(dc, &client, background);
-    DeleteObject(background);
+    // Arka plan HER karede boyanir (snapOnly dahil). GRADIENT: ust acik
+    // mavi -> alt beyaza kacan (kullanici talebi). GL kompoziti opak
+    // oldugundan 3B'de GL clear rengi (ust ton) zemin olur; GDI
+    // kenarlarinda ve 2B'de gradient gorunur.
+    TRIVERTEX gradientVertices[2] = {
+        {client.left, client.top, 198 << 8, 224 << 8, 246 << 8, 255 << 8},
+        {client.right, client.bottom, 240 << 8, 248 << 8, 252 << 8, 255 << 8},
+    };
+    GRADIENT_RECT gradientRect{0, 1};
+    GradientFill(dc, gradientVertices, 2, &gradientRect, 1, GRADIENT_FILL_RECT_V);
     }
     HFONT font = CreateFontW(-15, 0, 0, 0, FW_SEMIBOLD, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
                              OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
@@ -1065,11 +1069,13 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         const auto& model = document.models()[index];
         const auto& properties = document.effectiveProperties(index);
         if (!properties.visible) continue;
-        // TEKLA GORUNUMU: Solid'te artik kenarlar GL'de cizilir (edgesOnTop);
-        // GDI'nin ayni kenarlari tekrar cizmesi parcift cizgi yapar — skip
-        // korunur. GL kapaliysa (F6 GDI modu) GDI kenarlari cizilmelidir.
-        if (draft.visualStyle == VisualStyle::Solid && !draft.interactiveNavigation &&
-            !model.faces().empty() && useGpuLines) continue;
+        // Solid'te GL kenar cizmez (yalniz yuz + siluet); GDI da cizmez —
+        // "ikincil alt cizgiler" tamamen biter. HiddenLine kenarlari GL'de
+        // cizilir; GDI cift kalmasin diye skip. Saf-GDI modunda (F6) GDI
+        // kenarlari HiddenLine icin cizilmelidir.
+        if ((draft.visualStyle == VisualStyle::Solid ||
+             draft.visualStyle == VisualStyle::HiddenLine) &&
+            !draft.interactiveNavigation && !model.faces().empty() && useGpuLines) continue;
         // F7: GL modunda modeller yalniz GPU'da cizilir — GDI pass yalniz
         // arka plan/grid/eksen/feedback. Hizalama delta=0.0 ile kanitli,
         // siyah canvas gizli pencere ile cozuldu; skip guvenle geri doner.
