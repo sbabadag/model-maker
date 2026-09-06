@@ -1060,9 +1060,9 @@ void OpenGLRenderBackend::renderContourLines(
         // varlikta beyaz kontur acik zeminde gorunmezdi ("kenar yok,
         // goruntu karisik"). ~%45 koyuluk Tekla'nin koyu kenar hissi.
             const std::uint32_t ec = model.properties().effectiveColor;
-            const auto cr = static_cast<std::uint32_t>(((ec >> 16) & 0xFFu) * 0.45u);
-            const auto cg = static_cast<std::uint32_t>(((ec >> 8) & 0xFFu) * 0.45u);
-            const auto cb = static_cast<std::uint32_t>((ec & 0xFFu) * 0.45u);
+            const auto cr = static_cast<std::uint32_t>(((ec >> 16) & 0xFFu) * 45u / 100u);
+            const auto cg = static_cast<std::uint32_t>(((ec >> 8) & 0xFFu) * 45u / 100u);
+            const auto cb = static_cast<std::uint32_t>((ec & 0xFFu) * 45u / 100u);
             const std::uint32_t contourColor =
                 toRGBA8((cr << 16) | (cg << 8) | cb);
         std::map<std::pair<std::size_t, std::size_t>, int> frontCount;
