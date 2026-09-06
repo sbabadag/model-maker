@@ -1072,12 +1072,15 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         const auto& model = document.models()[index];
         const auto& properties = document.effectiveProperties(index);
         if (!properties.visible) continue;
-        // Solid'te GL kenar cizmez (yalniz yuz + siluet); GDI da cizmez —
-        // "ikincil alt cizgiler" tamamen biter. HiddenLine kenarlari GL'de
-        // cizilir; GDI cift kalmasin diye skip. Saf-GDI modunda (F6) GDI
-        // kenarlari HiddenLine icin cizilmelidir.
-        if ((draft.visualStyle == VisualStyle::Solid ||
-             draft.visualStyle == VisualStyle::HiddenLine) &&
+        // SOLID: kenarlar HICBIR backend'de cizilmez (GL yuz+siluet, GDI
+        // yuz dolgusu). GDI'da drawModel butun tel kafesi (arka kenarlar
+        // dahil) cizdigi icin "gizli cizgiler" ortaya cikiyordu — piksel
+        // kaniti: 297k duz (51,103,206) GDI dolgusu + 15k tam renk cizgi.
+        // HiddenLine kenarlari GL'de cizilir; GDI'da da cizilir (ucuz
+        // fallback — derinlik ayiklamasi olmadan ama kenarli gorunum).
+        if (draft.visualStyle == VisualStyle::Solid &&
+            !draft.interactiveNavigation && !model.faces().empty()) continue;
+        if (draft.visualStyle == VisualStyle::HiddenLine &&
             !draft.interactiveNavigation && !model.faces().empty() && useGpuLines) continue;
         // F7: GL modunda modeller yalniz GPU'da cizilir — GDI pass yalniz
         // arka plan/grid/eksen/feedback. Hizalama delta=0.0 ile kanitli,
