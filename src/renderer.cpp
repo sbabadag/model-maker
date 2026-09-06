@@ -22,7 +22,10 @@ COLORREF nativeColor(std::uint32_t rgb) noexcept {
 }
 
 COLORREF shadedFaceColor(std::uint32_t rgb) noexcept {
-    constexpr double factor = 0.42;
+    // GDI yuzleri: GL ile ayni aydinlik ton (tek yonlu esdegeri ~0.81).
+    // Eski 0.42 beyaz yuzleri 107 gri yapiyordu — koyu bloklar "gizli
+    // cizgi" saniliyordu.
+    constexpr double factor = 0.81;
     return RGB(static_cast<int>(((rgb >> 16) & 0xFF) * factor),
                static_cast<int>(((rgb >> 8) & 0xFF) * factor),
                static_cast<int>((rgb & 0xFF) * factor));

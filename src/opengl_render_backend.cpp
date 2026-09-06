@@ -975,9 +975,13 @@ void OpenGLRenderBackend::ensureFaceBatch(
             } else {
                 nx = 0.0; ny = 0.0; nz = 1.0;
             }
+            // TEKLA aydinlik gorunumu: cift yonlu lambert (arka yuzler de
+            // aydinlanir — koyu "gizli" bloklar 107 gri idi, kenarlar
+            // cizgi saniliyordu) + yuksek ambient. Beyaz yuz 158-255
+            // araliginda kalir (eski: 89-255, isiga dik yuz neredeyse siyah).
             double lambert = nx * lightX + ny * lightY + nz * lightZ;
-            if (lambert < 0.0) lambert = 0.0;
-            const double factor = 0.35 + 0.65 * lambert;
+            if (lambert < 0.0) lambert = -lambert;
+            const double factor = 0.62 + 0.38 * lambert;
             const std::uint32_t color = toRGBA8(
                 ((static_cast<std::uint32_t>(baseR * factor) & 0xFFu) << 16) |
                 ((static_cast<std::uint32_t>(baseG * factor) & 0xFFu) << 8) |
