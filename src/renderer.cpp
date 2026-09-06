@@ -125,7 +125,7 @@ bool Renderer::presentRasterZoom(HDC target, int width, int height, Vec2 offset,
     const int destinationY = static_cast<int>(std::lround(offset.y));
     const int destinationWidth = std::max(1, static_cast<int>(std::lround(width * factor)));
     const int destinationHeight = std::max(1, static_cast<int>(std::lround(height * factor)));
-    HBRUSH background = CreateSolidBrush(RGB(15, 18, 26));
+    HBRUSH background = CreateSolidBrush(canvasBackgroundColor());
     if (destinationX > 0) {
         RECT border{0, 0, std::min(width, destinationX), height}; FillRect(target, &border, background);
     }
@@ -181,7 +181,7 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
     if (!dc) return;
 
     if (!draft.snapOnly) {
-    HBRUSH background = CreateSolidBrush(RGB(15, 18, 26));
+    HBRUSH background = CreateSolidBrush(canvasBackgroundColor());
     FillRect(dc, &client, background);
     DeleteObject(background);
     }
@@ -209,8 +209,8 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
             std::abs(draft.workPlane.origin.z) > 1e-9;
         const COLORREF gridColor =
             mode == EditMode::View3D
-                ? (customUcsPlane ? RGB(88, 96, 108) : RGB(66, 68, 72))
-                : RGB(34, 40, 53);
+                ? (customUcsPlane ? RGB(150, 148, 168) : RGB(172, 170, 190))
+                : RGB(120, 118, 140);
         HPEN gridPen = CreatePen(PS_SOLID, 1, gridColor);
         SelectObject(targetDc, gridPen);
         // ADAPTIF GRID (AutoCAD 1-2-5): ekran araligi ~50px olacak sekilde
@@ -237,7 +237,7 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
                     const int majorEvery = 5;
                     const int majorSpacing = gridSpacing * majorEvery;
                     HPEN majorPen = CreatePen(PS_SOLID, 1,
-                        customUcsPlane ? RGB(120, 130, 145) : RGB(52, 58, 70));
+                        customUcsPlane ? RGB(120, 116, 145) : RGB(140, 136, 165));
                     SelectObject(targetDc, majorPen);
                     for (int x = origin.x % majorSpacing; x < canvas.right; x += majorSpacing)
                         line(targetDc, x, canvas.top, x, canvas.bottom);

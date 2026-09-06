@@ -516,7 +516,7 @@ bool OpenGLRenderBackend::initialize(void* windowHandle, int initialWidth, int i
     // Create FBO for offscreen rendering
     ensureFbo(width_, height_);
 
-    glClearColor(0.0588f, 0.0706f, 0.102f, 1.0f); // RGB(15,18,26)
+    glClearColor(203.0f / 255.0f, 201.0f / 255.0f, 217.0f / 255.0f, 1.0f); // Tekla arka plan RGB(203,201,217)
     initialized_ = true;
     hasWindowsGL = true;
     return true;

@@ -22,6 +22,11 @@ enum class VisualStyle { Wireframe, Solid, Transparent, HiddenLine };
 // kademeli adim; mm cinsinden taban 10mm. Snap ve cizim AYNI adimi
 // kullanir — grid nereye cizilirse snap oraya yapisir.
 constexpr double kMinGridStepMm = 10.0;
+
+// TEKLA arka plan rengi (olculdu: acik leylak-gri). Tek kaynak — GDI
+// kenarlari, GL clear, ViewCube ve saf-GDI backend hep bunu kullanir.
+constexpr unsigned long kCanvasBgRgb = 203u * 65536u + 201u * 256u + 217u; // RGB(203,201,217)
+inline COLORREF canvasBackgroundColor() noexcept { return static_cast<COLORREF>(kCanvasBgRgb); }
 inline double niceGridStep(double pixelsPerUnit) noexcept {
     if (pixelsPerUnit <= 1e-9) return kMinGridStepMm;
     const double raw = 50.0 / pixelsPerUnit; // hedef ~50 piksel

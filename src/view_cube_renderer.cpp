@@ -164,7 +164,7 @@ void ViewCubeRenderer::draw(HDC target, const RECT& client, const POINT& cursor,
     if (!dc) return;
 
     RECT background{0, 0, width, height};
-    HBRUSH backgroundBrush = CreateSolidBrush(RGB(15, 18, 26));
+    HBRUSH backgroundBrush = CreateSolidBrush(canvasBackgroundColor());
     FillRect(dc, &background, backgroundBrush);
     DeleteObject(backgroundBrush);
     drawCube(dc, width, cursor, camera);
