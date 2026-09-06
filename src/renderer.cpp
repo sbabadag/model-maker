@@ -180,7 +180,10 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
     HDC dc = draft.snapOnly ? target : ensureBackBuffer(target, width, height);
     if (!dc) return;
 
-    if (!draft.snapOnly) {
+    {
+    // Arka plan HER karede boyanir (snapOnly motion kareleri dahil):
+    // eskiden snapOnly'de atlandigindan GL kompoziti altinda siyah
+    // gorunuyordu. GL kompoziti alfa ile bindiginden zemin GDI'dan gelir.
     HBRUSH background = CreateSolidBrush(canvasBackgroundColor());
     FillRect(dc, &client, background);
     DeleteObject(background);
