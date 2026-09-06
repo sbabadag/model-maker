@@ -516,7 +516,7 @@ bool OpenGLRenderBackend::initialize(void* windowHandle, int initialWidth, int i
     // Create FBO for offscreen rendering
     ensureFbo(width_, height_);
 
-    glClearColor(203.0f / 255.0f, 201.0f / 255.0f, 217.0f / 255.0f, 1.0f); // Tekla arka plan RGB(203,201,217)
+    glClearColor(250.0f / 255.0f, 247.0f / 255.0f, 235.0f / 255.0f, 1.0f); // krem RGB(250,247,235)
     initialized_ = true;
     hasWindowsGL = true;
     return true;
@@ -709,9 +709,12 @@ bool OpenGLRenderBackend::renderBatchToDc(
     glDiag("FBO-OK");
     glBindFramebuffer(GLConst::FRAMEBUFFER, fbo_);
     glViewport(0, 0, width, height);
-    // Seffaf zemin: GDI icerigi AlphaBlend ile alttan gorunur, yalniz
-    // cizgiler kompozite edilir.
-    glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+    // KREM opak zemin: FBO komple boyanir; AlphaBlend artik yalniz GL
+    // icerigini tasinmasinda kullanilir (BI_RGB DIB alfa bayti guvenilmez
+    // oldugundan seffaf clear + alfa kompoziti siyah/gri kaliyordu —
+    // "GL bolgesinde arka plan calismiyor" buydu). Grid/eksenler GDI
+    // tarafinda kompozitin USTUNE cizildiginden zemin krem gorunur.
+    glClearColor(250.0f / 255.0f, 247.0f / 255.0f, 235.0f / 255.0f, 1.0f);
     glClear(GLConst::COLOR_BUFFER_BIT);
 
     ensureBatch(models, contentRevision);

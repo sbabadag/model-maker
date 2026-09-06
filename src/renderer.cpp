@@ -201,7 +201,7 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
                      static_cast<LONG>(projected.y + canvas.top)};
     };
     HGDIOBJ stockPen = GetCurrentObject(dc, OBJ_PEN);
-    const auto drawGridAndAxes = [&](HDC targetDc) {
+    const auto drawGridAndAxes = [&](HDC targetDc, bool drawGridLines = true) {
         // Ozet UCS seciliyken grid biraz daha acik: secilen duzlemin grid'i
         // dunya grid'inden ayirt edilebilir (kullanici nerede cizdigini gorur).
         const bool customUcsPlane =
@@ -215,6 +215,7 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
                 ? (customUcsPlane ? RGB(150, 148, 168) : RGB(172, 170, 190))
                 : RGB(120, 118, 140);
         HPEN gridPen = CreatePen(PS_SOLID, 1, gridColor);
+        if (drawGridLines) {
         SelectObject(targetDc, gridPen);
         // ADAPTIF GRID (AutoCAD 1-2-5): ekran araligi ~50px olacak sekilde
         // kademeli adim secilir; mm cinsinden mühendislik çizimi icin
@@ -270,6 +271,7 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
             }
         }
         SelectObject(targetDc, stockPen);
+        } // drawGridLines
         DeleteObject(gridPen);
 
         // UCS ok glifi: dunya duzleminde kisa (2m), ozel UCS seciliyken
@@ -1117,9 +1119,10 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
             draft.visualStyle == VisualStyle::HiddenLine);
         performance.drawCalls += glBackend->drawCallsPerFrame();
         // GL modunda grid + eksenler referans katmani olarak kompozitin
-        // USTUNE cizilir — dolu yuzlerin altinda kaybolmaz (kullanicinin
-        // bekledigi CAD referans davranisi).
-        drawGridAndAxes(dc);
+        // USTUNE cizilir. SOLID istisnasi: Tekla model gorunumunde grid
+        // yoktur (alttan tagan cizgiler kafa karistirmasin); UCS eksen
+        // oklari yine cizilir.
+        drawGridAndAxes(dc, draft.visualStyle != VisualStyle::Solid);
         {
             static int gridTopDiag = 0;
             if (gridTopDiag++ < 3) {

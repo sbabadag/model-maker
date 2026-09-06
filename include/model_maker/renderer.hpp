@@ -23,9 +23,9 @@ enum class VisualStyle { Wireframe, Solid, Transparent, HiddenLine };
 // kullanir — grid nereye cizilirse snap oraya yapisir.
 constexpr double kMinGridStepMm = 10.0;
 
-// TEKLA arka plan rengi (olculdu: acik leylak-gri). Tek kaynak — GDI
-// kenarlari, GL clear, ViewCube ve saf-GDI backend hep bunu kullanir.
-constexpr unsigned long kCanvasBgRgb = 203u * 65536u + 201u * 256u + 217u; // RGB(203,201,217)
+// KREM arka plan (kullanici talebi — Tekla model-view zemin tonu).
+// Tek kaynak: GDI dolgulari, GL clear, ViewCube, saf-GDI backend.
+constexpr unsigned long kCanvasBgRgb = 250u * 65536u + 247u * 256u + 235u; // RGB(250,247,235)
 inline COLORREF canvasBackgroundColor() noexcept { return static_cast<COLORREF>(kCanvasBgRgb); }
 inline double niceGridStep(double pixelsPerUnit) noexcept {
     if (pixelsPerUnit <= 1e-9) return kMinGridStepMm;
