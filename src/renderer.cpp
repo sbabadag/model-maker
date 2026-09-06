@@ -901,7 +901,6 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
     // yalniz saf-GDI yolunda calisir — cift cizim ve DWM titremesi onlenir.
     if (!useGpuLines && !draft.snapOnly && faceAlpha != 0 && !draft.interactiveNavigation) {
         int gdiSolidFaceCount = 0;
-        std::uint32_t gdiSolidEntityColor = 0;
         std::vector<ProjectedFace> projectedFaces;
         for (const auto index : visibleModels) {
             if (index >= document.models().size()) continue;
@@ -941,7 +940,6 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
                 SelectObject(dc, oldBrush);
                 DeleteObject(brush);
                 gdiSolidFaceCount++;
-                gdiSolidEntityColor = properties.effectiveColor;
                 continue;
             }
 
