@@ -164,7 +164,7 @@ void ViewCubeRenderer::draw(HDC target, const RECT& client, const POINT& cursor,
     if (!dc) return;
 
     RECT background{0, 0, width, height};
-    HBRUSH backgroundBrush = CreateSolidBrush(canvasBackgroundColor());
+    HBRUSH backgroundBrush = CreateSolidBrush(RGB(203, 201, 217) /* Tekla arka plan */);
     FillRect(dc, &background, backgroundBrush);
     DeleteObject(backgroundBrush);
     drawCube(dc, width, cursor, camera);
