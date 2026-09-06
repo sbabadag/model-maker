@@ -1060,12 +1060,13 @@ void OpenGLRenderBackend::renderContourLines(
         const auto& vertices = model.vertices();
         const auto& faces = model.faces();
         if (vertices.empty() || faces.empty()) continue;
-        // Kontur rengi SABIT koyu (Tekla kenarlari): varlik oranli
-        // koyulastirma golgeli yuzlerde kontrast vermiyordu — koyu
-        // varlikta en koyu yuz (0.62c) ile kontur (0.35c) arasi yalniz
-        // 0.27c idi ("golgelenedurumlarinda algi dusuyor"). Beyaz varlikta
-        // da tam renk kontur gorunmezdi. Sabit (40,40,40) her yuz tonunda
-        // net: en koyu yuz 158 parlakliginda bile kontrast ~118.
+        // Kenar rengi SABIT koyu (40,40,40) — Tekla kenarlari. Siluet
+        // (front/back) yalniz dis hat veriyordu: IPE'de gorunur iki yuz
+        // arasindaki kirisma kenari (flanj->gobek) siluet degil, cizilmiyor,
+        // yuzler birbirine karisiyordu ("bir yuz belli olmuyor"). Cozum:
+        // gercek kenarlarin TAMAMI (kirisma filtreli model.edges(),
+        // IPE=36) derinlik testiyle cizilir — arka kenarlar yuzlerce
+        // otomatik oclude olur, gorunen her kirisma koyu cizgidir.
         const std::uint32_t contourColor = toRGBA8((40u << 16) | (40u << 8) | 40u);
         std::map<std::pair<std::size_t, std::size_t>, int> frontCount;
         std::map<std::pair<std::size_t, std::size_t>, int> backCount;
@@ -1102,6 +1103,16 @@ void OpenGLRenderBackend::renderContourLines(
                 segments.push_back(
                     {std::array<Vec3, 2>{vertices[key.first], vertices[key.second]},
                      contourColor});
+        }
+        // GERCEK KENARLAR: kirisma filtreli tel kafes — derinlik testi
+        // arka kenarlari yuz dolgusunun altinda gizler (renderContourLines
+        // DEPTH_TEST acik cizer). Siluetin gizledigi kirisma kenarlari da
+        // boylece gorunur olur.
+        for (const auto& edge : model.edges()) {
+            if (edge.from >= vertices.size() || edge.to >= vertices.size()) continue;
+            segments.push_back(
+                {std::array<Vec3, 2>{vertices[edge.from], vertices[edge.to]},
+                 contourColor});
         }
     }
     static std::size_t lastLoggedCount = static_cast<std::size_t>(-1);
