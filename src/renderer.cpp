@@ -900,6 +900,8 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
     // GL modunda yuzler GPU batch'inde cizilir (F8 mimarisi); GDI dolgusu
     // yalniz saf-GDI yolunda calisir — cift cizim ve DWM titremesi onlenir.
     if (!useGpuLines && !draft.snapOnly && faceAlpha != 0 && !draft.interactiveNavigation) {
+        int gdiSolidFaceCount = 0;
+        std::uint32_t gdiSolidEntityColor = 0;
         std::vector<ProjectedFace> projectedFaces;
         for (const auto index : visibleModels) {
             if (index >= document.models().size()) continue;
@@ -938,6 +940,8 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
                 performance.projectedVertices += face.points.size();
                 SelectObject(dc, oldBrush);
                 DeleteObject(brush);
+                gdiSolidFaceCount++;
+                gdiSolidEntityColor = properties.effectiveColor;
                 continue;
             }
 
@@ -977,6 +981,61 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
             DeleteDC(overlayDc);
         }
         SelectObject(dc, oldPen);
+        // GDI SOLID KONTUR: GL'deki renderContourLines'in birebir GDA
+        // portu — front/back yonlenme sayimiyla siluet kenarlari. GL'de
+        // gorunen koyu kontur GDI'da yoktu ("ilki gdi... gdi da belirsiz").
+        if (faceAlpha == 255 && gdiSolidFaceCount > 0) {
+            const auto darken = [](std::uint32_t rgb, int percent) {
+                return RGB(static_cast<int>(((rgb >> 16) & 0xFFu) * percent / 100),
+                           static_cast<int>(((rgb >> 8) & 0xFFu) * percent / 100),
+                           static_cast<int>((rgb & 0xFFu) * percent / 100));
+            };
+            for (const auto index : visibleModels) {
+                if (index >= document.models().size()) continue;
+                const auto& model = document.models()[index];
+                const auto& modelProps = document.effectiveProperties(index);
+                if (!modelProps.visible) continue;
+                const auto& vertices = model.vertices();
+                const auto& faces = model.faces();
+                if (vertices.empty() || faces.empty()) continue;
+                std::map<std::pair<std::size_t, std::size_t>, int> frontCount;
+                std::map<std::pair<std::size_t, std::size_t>, int> backCount;
+                for (const auto& face : faces) {
+                    if (face.size() < 3) continue;
+                    double faceReference = 0.0;
+                    for (std::size_t i = 1; i + 1 < face.size(); ++i) {
+                        const POINT p0 = projectPoint(vertices[face[0]]);
+                        const POINT p1 = projectPoint(vertices[face[i]]);
+                        const POINT p2 = projectPoint(vertices[face[i + 1]]);
+                        const double area = (p1.x - p0.x) * (p2.y - p0.y) -
+                                            (p1.y - p0.y) * (p2.x - p0.x);
+                        if (faceReference == 0.0) faceReference = area > 0.0 ? 1.0 : -1.0;
+                        const bool front = area * faceReference > 0.0;
+                        const std::array<std::size_t, 3> triangle = {face[0], face[i], face[i + 1]};
+                        for (std::size_t edge = 0; edge < 3; ++edge) {
+                            std::size_t va = triangle[edge];
+                            std::size_t vb = triangle[(edge + 1) % 3];
+                            if (va > vb) std::swap(va, vb);
+                            ++(front ? frontCount : backCount)[std::make_pair(va, vb)];
+                        }
+                    }
+                }
+                HPEN contourPen = CreatePen(PS_SOLID, 2,
+                    darken(modelProps.effectiveColor, 45));
+                HGDIOBJ oldContourPen = SelectObject(dc, contourPen);
+                for (const auto& [key, count] : frontCount) {
+                    if (count > 0 && backCount[key] > 0) {
+                        const POINT a0 = projectPoint(vertices[key.first]);
+                        const POINT b0 = projectPoint(vertices[key.second]);
+                        MoveToEx(dc, a0.x, a0.y, nullptr);
+                        LineTo(dc, b0.x, b0.y);
+                        ++performance.drawCalls;
+                    }
+                }
+                SelectObject(dc, oldContourPen);
+                DeleteObject(contourPen);
+            }
+        }
     }
 
     // Phase 1 GPU-retained line rendering:
