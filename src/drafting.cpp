@@ -170,20 +170,27 @@ std::vector<Candidate> objectCandidates(const Vec3& cursor, const Document& docu
             segments.push_back({a, b, circle.has_value()});
             if (circle) continue;
             addCandidate(candidates, (a + b) * 0.5, SnapType::Midpoint, tolerance, metric);
+            // 3B DOT: eski dot2D dikey (Z) kenarlarda lengthSquared=0 uretip
+            // kenari tamamen atliyordu — katilarin dik kenarlarinda near/perp
+            // snap olmuyordu. Perp ayagi artik gercek 3B dikme.
             const Vec3 direction = b - a;
-            const double lengthSquared = dot2D(direction, direction);
+            const double lengthSquared = direction.x * direction.x + direction.y * direction.y +
+                                         direction.z * direction.z;
             if (lengthSquared <= epsilon) continue;
-            const double rawT = dot2D(cursor - a, direction) / lengthSquared;
+            const auto dot3 = [](const Vec3& u, const Vec3& v) {
+                return u.x * v.x + u.y * v.y + u.z * v.z;
+            };
+            const double rawT = dot3(cursor - a, direction) / lengthSquared;
             const double clampedT = std::clamp(rawT, 0.0, 1.0);
             addCandidate(candidates, a + direction * clampedT, SnapType::Nearest, tolerance, metric);
             if (rawT < 0.0 || rawT > 1.0)
                 addCandidate(candidates, a + direction * rawT, SnapType::Extension, tolerance, metric);
             if (referencePoint) {
-                const double perpendicularT = dot2D(*referencePoint - a, direction) / lengthSquared;
+                const double perpendicularT = dot3(*referencePoint - a, direction) / lengthSquared;
                 if (perpendicularT >= 0.0 && perpendicularT <= 1.0)
                     addCandidate(candidates, a + direction * perpendicularT,
                                  SnapType::Perpendicular, tolerance, metric);
-                const double parallelT = dot2D(cursor - *referencePoint, direction) / lengthSquared;
+                const double parallelT = dot3(cursor - *referencePoint, direction) / lengthSquared;
                 addCandidate(candidates, *referencePoint + direction * parallelT,
                              SnapType::Parallel, tolerance, metric);
             }
@@ -397,8 +404,17 @@ SnapResult SnapEngine::snap3D(const Vec2& screenCursor, const Document& document
                 if (t < 0.0 || t > 1.0 || u < 0.0 || u > 1.0) continue;
                 const Vec3 worldA = a.a + (a.b - a.a) * t;
                 const Vec3 worldB = b.a + (b.b - b.a) * u;
-                if (std::hypot(std::hypot(worldA.x - worldB.x, worldA.y - worldB.y), worldA.z - worldB.z) <= 1e-7)
-                    continue;
+                const double worldGap = std::hypot(std::hypot(worldA.x - worldB.x, worldA.y - worldB.y),
+                                                   worldA.z - worldB.z);
+                if (worldGap <= 1e-7)
+                    continue; // tam ust uste: ayri apparent gerek yok
+                // KATI-KATI CAKISMASI: iki katinin kenarlari gercek uzayda
+                // cogunlukla skew'dur; eski kod yalniz apparent uretiyordu.
+                // Cakisma bolgesinde (kenarlar ekranda kesisiyor) INT de
+                // aday olsun: 3B orta nokta, olcu ekran-uzayi.
+                if (worldGap < objectTolerancePixels / std::max(1.0, cameraScreenScale(camera)))
+                    addCandidate(candidates, (worldA + worldB) * 0.5, SnapType::Intersection,
+                                 objectTolerancePixels, metric);
                 const Vec2 crossing{a.pa.x + t * adx, a.pa.y + t * ady};
                 if (const auto point = camera.unprojectToPlane(crossing, viewportWidth, viewportHeight, workPlane))
                     addCandidate(candidates, *point, SnapType::ApparentIntersection,
