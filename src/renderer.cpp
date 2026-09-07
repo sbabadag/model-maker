@@ -666,7 +666,10 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
      
         if (motionDrafting && draft.cursor && draft.snapType != SnapType::None) {
             const POINT p = projectPoint(*draft.cursor);
-            HPEN snapPen = CreatePen(PS_SOLID, 2, RGB(90, 255, 145));
+            // Snap turune ozel renk: tek yesil marker ayirt edilmiyordu.
+            const unsigned long rgb = snapMarkerColorRgb(draft.snapType);
+            HPEN snapPen = CreatePen(PS_SOLID, 2,
+                RGB((rgb) & 0xFF, (rgb >> 8) & 0xFF, (rgb >> 16) & 0xFF));
             SelectObject(dc, snapPen);
             HGDIOBJ oldBrush = SelectObject(dc, GetStockObject(NULL_BRUSH));
             switch (snapMarkerSymbol(draft.snapType)) {

@@ -1779,4 +1779,27 @@ SnapMarkerSymbol snapMarkerSymbol(SnapType type) noexcept {
     return SnapMarkerSymbol::None;
 }
 
+unsigned long snapMarkerColorRgb(SnapType type) noexcept {
+    // 0x00BBGGRR (COLORREF duzeni). AutoCAD paleti uyarlamasi:
+    switch (type) {
+    case SnapType::None: return 0x00000000;
+    case SnapType::Grid: return 0x00A8A8A8;          // gri
+    case SnapType::Endpoint: return 0x000000EE;      // kirmizi
+    case SnapType::Midpoint: return 0x0000C86B;      // acik yesil
+    case SnapType::Center: return 0x00CB8C15;        // turuncu
+    case SnapType::GeometricCenter: return 0x009C6A14; // koyu turuncu
+    case SnapType::Node: return 0x004B3BE6;          // koyu mavi
+    case SnapType::Quadrant: return 0x00B653BF;      // mor
+    case SnapType::Intersection: return 0x0000E9E9;  // sari... kirmizi ile karismasin:
+    case SnapType::ApparentIntersection: return 0x009B6BE1; // acik leylak
+    case SnapType::Extension: return 0x00A6A63E;     // haki
+    case SnapType::Insertion: return 0x00D98C3C;     // gok mavisi-lavanta
+    case SnapType::Perpendicular: return 0x00E1E12C; // camgobegi
+    case SnapType::Tangent: return 0x00B93E76;       // pembemsi mor
+    case SnapType::Nearest: return 0x0058B0B0;       // buz camgobegi
+    case SnapType::Parallel: return 0x0094D284;      // nane yesili
+    }
+    return 0x00000000;
+}
+
 } // namespace mm

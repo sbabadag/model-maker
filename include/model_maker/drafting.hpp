@@ -91,6 +91,9 @@ std::optional<Vec3> parseDynamicPoint(std::wstring_view text,
                                       std::optional<Vec3> directionPoint = std::nullopt) noexcept;
 const wchar_t* snapTypeLabel(SnapType type) noexcept;
 SnapMarkerSymbol snapMarkerSymbol(SnapType type) noexcept;
+// Snap turune gore marker rengi (COLORREF, RGB makrosuz — renderer'da
+// kur). Her snap ayri renk: tek yesil marker ayirt edilmiyordu.
+unsigned long snapMarkerColorRgb(SnapType type) noexcept;
 const wchar_t* toolLabel(DrawTool tool) noexcept;
 bool shouldEvaluateSnapping(bool selectingEntities, bool zoomPhase, bool cameraNavigating) noexcept;
 Vec3 constrainOrtho(const Vec3& anchor, const Vec3& cursor) noexcept;
