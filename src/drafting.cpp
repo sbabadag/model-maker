@@ -134,10 +134,21 @@ void addCandidateAtDistance(std::vector<Candidate>& candidates, const Vec3& poin
         candidates.push_back({point, type, distance});
 }
 
+// 3B modda NEAREST/EXTENSION 't' parametresi ekran-uzayinda cozulur:
+// cursor'un is-duzlemi unproject'i kenar uzerinden bambaşka bir yerden
+// gecer (ekran ustunde kenarin tam ustunde bile) — NEAREST hic dogmazdi.
+struct ScreenSpaceNearest {
+    const Camera* camera{};
+    int width{};
+    int height{};
+    Vec2 cursor{};
+};
+
 std::vector<Candidate> objectCandidates(const Vec3& cursor, const Document& document,
                                         double tolerance, const Metric& metric,
                                         std::optional<Vec3> referencePoint,
-                                        const std::vector<std::size_t>* candidateIndices = nullptr) {
+                                        const std::vector<std::size_t>* candidateIndices = nullptr,
+                                        const ScreenSpaceNearest* screenSpace = nullptr) {
     std::vector<Candidate> candidates;
     struct Segment { Vec3 a; Vec3 b; bool analyticCircle{}; };
     std::vector<Segment> segments;
@@ -188,7 +199,20 @@ std::vector<Candidate> objectCandidates(const Vec3& cursor, const Document& docu
             const auto dot3 = [](const Vec3& u, const Vec3& v) {
                 return u.x * v.x + u.y * v.y + u.z * v.z;
             };
-            const double rawT = dot3(cursor - a, direction) / lengthSquared;
+            // NEAREST t: 3B'de ekran-uzayi izdusumu (afin — kapali formul),
+            // 2B'de duzlem cursor'i zaten dogru.
+            double rawT;
+            if (screenSpace) {
+                const Vec2 pa = screenSpace->camera->project(a, screenSpace->width, screenSpace->height);
+                const Vec2 pb = screenSpace->camera->project(b, screenSpace->width, screenSpace->height);
+                const double sdx = pb.x - pa.x, sdy = pb.y - pa.y;
+                const double screenLen2 = sdx * sdx + sdy * sdy;
+                rawT = screenLen2 > epsilon
+                    ? ((screenSpace->cursor.x - pa.x) * sdx + (screenSpace->cursor.y - pa.y) * sdy) / screenLen2
+                    : 0.0;
+            } else {
+                rawT = dot3(cursor - a, direction) / lengthSquared;
+            }
             const double clampedT = std::clamp(rawT, 0.0, 1.0);
             addCandidate(candidates, a + direction * clampedT, SnapType::Nearest, tolerance, metric);
             if (rawT < 0.0 || rawT > 1.0)
@@ -380,8 +404,9 @@ SnapResult SnapEngine::snap3D(const Vec2& screenCursor, const Document& document
         };
         const auto nearby = projectedCandidates(screenCursor, document, camera, viewportWidth,
                                                 viewportHeight, objectTolerancePixels);
+        const ScreenSpaceNearest screenNearest{&camera, viewportWidth, viewportHeight, screenCursor};
         auto candidates = objectCandidates(*raw, document, objectTolerancePixels, metric,
-                                           referencePoint, &nearby);
+                                           referencePoint, &nearby, &screenNearest);
         struct ProjectedEdge { Vec3 a; Vec3 b; Vec2 pa; Vec2 pb; };
         std::vector<ProjectedEdge> edges;
         constexpr std::size_t apparentIntersectionEdgeLimit = 512;
