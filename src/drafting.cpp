@@ -421,7 +421,11 @@ SnapResult SnapEngine::snap3D(const Vec2& screenCursor, const Document& document
                 // Cakisma bolgesinde (kenarlar ekranda kesisiyor) INT de
                 // aday olsun: 3B orta nokta, olcu ekran-uzayi.
                 const double pxPerMm = cameraScreenScale(camera);
-                if (worldGap * pxPerMm < objectTolerancePixels)
+                // INT: gercek temas (gap~0) veya flans kalinligi kadar
+                // yakin cakisma — ikisi de kullanicinin "kesisim" dedigi
+                // yerdir. Eski tolerans yalniz px'ti; world-mm esigi
+                // saglikli kesisimleri de kabul eder.
+                if (worldGap * pxPerMm < objectTolerancePixels * 4.0)
                     addCandidate(candidates, (worldA + worldB) * 0.5, SnapType::Intersection,
                                  objectTolerancePixels, metric);
                 // APPARENT: nokta artik is-duzlemi unproject'iyle DEGIL
@@ -434,9 +438,15 @@ SnapResult SnapEngine::snap3D(const Vec2& screenCursor, const Document& document
                 // (gap~0) daima one gecer.
                 const Vec2 crossing{a.pa.x + t * adx, a.pa.y + t * ady};
                 (void)crossing;
+                // Tolerans cezayla GENISLER (aday asla dusturulmez); ceza
+                // yalnizca best-karsilastirmasinda skew ciftleri geriye
+                // iter. Eskiden cezali mesafe toleransi asinca aday tamamen
+                // duser ve marker kaybolurdu (asik-makas birlesiminde INT
+                // hic tutulmuyordu).
+                const double gapPenalty = worldGap * pxPerMm;
                 addCandidateAtDistance(candidates, (worldA + worldB) * 0.5, SnapType::ApparentIntersection,
-                                        objectTolerancePixels,
-                                        metric((worldA + worldB) * 0.5) + worldGap * pxPerMm);
+                                        objectTolerancePixels + gapPenalty,
+                                        metric((worldA + worldB) * 0.5) + gapPenalty);
             }
         }
         auto result = choose(std::move(candidates), *raw, enabledTypes);
