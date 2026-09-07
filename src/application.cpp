@@ -2852,9 +2852,13 @@ void Application::updateHover(int x, int y) {
         const Vec2 gOrigin = camera_.project(activePlane.origin, width, height);
         const Vec2 gUnit = camera_.project(activePlane.fromPlane({1.0, 0.0}), width, height);
         const double gPx = std::hypot(gUnit.x - gOrigin.x, gUnit.y - gOrigin.y);
+        // SOLID stil: snap yalniz gorunur (kameraya donuk) kenarlarda —
+        // arka yuzler dolguyla ortuludur, arkadaki kenarlara snap kafa
+        // karistirir. Wireframe/saydam/hidden'da tum kenarlar.
         hover_ = SnapEngine::snap3D({static_cast<double>(x), static_cast<double>(y)}, document_, camera_,
                                     width, height, 10.0, niceGridStep(gPx), activePlane,
-                                    snapEnabled_, gridSnapEnabled_, reference, &enabledSnapTypes_);
+                                    snapEnabled_, gridSnapEnabled_, reference, &enabledSnapTypes_,
+                                    visualStyle_ == VisualStyle::Solid);
     }
     const SnapResult rawSnap = *hover_;
     const bool acquirable = polarTrackingEnabled_ && rawSnap.type != SnapType::None &&

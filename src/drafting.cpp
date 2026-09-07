@@ -7,6 +7,8 @@
 #include <functional>
 #include <limits>
 #include <numbers>
+#include <map>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -142,6 +144,9 @@ struct ScreenSpaceNearest {
     int width{};
     int height{};
     Vec2 cursor{};
+    // SOLID gorunumu: snap yalniz gorunur (kameraya donuk) kenarlarda.
+    // Wireframe/saylam/hidden'da tum kenarlar cizilir — filtre yok.
+    bool visibleEdgesOnly{};
 };
 
 std::vector<Candidate> objectCandidates(const Vec3& cursor, const Document& document,
@@ -175,6 +180,49 @@ std::vector<Candidate> objectCandidates(const Vec3& cursor, const Document& docu
         const auto& model = document.models()[modelIndex];
         const auto circle = detectCircle(model);
         const auto& vertices = model.vertices();
+        // SOLID gorunur-kenar filtresi: kenar, yalnizca bitisik yuzlerden
+        // en az biri kameraya donukse aday olur. Yuz normali kameraya
+        // donuk = normal * ileri yonu > 0 (view-z buyur). Kenar-yuz
+        // eslesmesi ucgen index ciftleriyle (uzun kenarlar bolenleriyle).
+        std::set<std::pair<std::size_t, std::size_t>> visibleEdges;
+        if (screenSpace && screenSpace->visibleEdgesOnly && !model.faces().empty()) {
+            // kenar -> yuz esle (hizli hash: kenar index cifti -> ilk yuz)
+            std::map<std::pair<std::size_t, std::size_t>, std::vector<const std::vector<std::size_t>*>> edgeFaces;
+            for (const auto& face : model.faces()) {
+                for (std::size_t fi = 0; fi < face.size(); ++fi) {
+                    std::size_t va = face[fi], vb = face[(fi + 1) % face.size()];
+                    if (va > vb) std::swap(va, vb);
+                    edgeFaces[{va, vb}].push_back(&face);
+                }
+            }
+            for (const auto& edge : model.edges()) {
+                std::size_t va = edge.from, vb = edge.to;
+                if (va > vb) std::swap(va, vb);
+                const auto found = edgeFaces.find({va, vb});
+                if (found == edgeFaces.end()) continue;
+                for (const auto* face : found->second) {
+                    if (face->size() < 3) continue;
+                    const Vec3& f0 = vertices[(*face)[0]];
+                    const Vec3& f1 = vertices[(*face)[1]];
+                    const Vec3& f2 = vertices[(*face)[2]];
+                    const Vec3 e1v{f1.x - f0.x, f1.y - f0.y, f1.z - f0.z};
+                    const Vec3 e2v{f2.x - f0.x, f2.y - f0.y, f2.z - f0.z};
+                    double nx = e1v.y * e2v.z - e1v.z * e2v.y;
+                    double ny = e1v.z * e2v.x - e1v.x * e2v.z;
+                    double nz = e1v.x * e2v.y - e1v.y * e2v.x;
+                    const double nl = std::sqrt(nx * nx + ny * ny + nz * nz);
+                    if (nl < epsilon) continue;
+                    nx /= nl; ny /= nl; nz /= nl;
+                    const Vec3 fn = screenSpace->camera->viewTransform(
+                        {f0.x + nx, f0.y + ny, f0.z + nz});
+                    const Vec3 f0v = screenSpace->camera->viewTransform(f0);
+                    if (fn.z > f0v.z) {
+                        visibleEdges.insert({va, vb});
+                        break;
+                    }
+                }
+            }
+        }
         if (model.isPointEntity() && !vertices.empty())
             addCandidate(candidates, vertices.front(), SnapType::Node, tolerance, metric);
         if (!circle && !model.isPointEntity()) {
@@ -186,6 +234,12 @@ std::vector<Candidate> objectCandidates(const Vec3& cursor, const Document& docu
             const auto& edge = model.edges()[edgeIndex];
             const Vec3& a = vertices[edge.from];
             const Vec3& b = vertices[edge.to];
+            // SOLID: gorunur kenar degilse atla (endpoint/mid/near/perp yok).
+            if (!visibleEdges.empty() || (screenSpace && screenSpace->visibleEdgesOnly)) {
+                if (screenSpace && screenSpace->visibleEdgesOnly && visibleEdges.find(
+                        std::make_pair(std::min(edge.from, edge.to), std::max(edge.from, edge.to))) == visibleEdges.end())
+                    continue;
+            }
             segments.push_back({a, b, circle.has_value()});
             if (circle) continue;
             addCandidate(candidates, (a + b) * 0.5, SnapType::Midpoint, tolerance, metric);
@@ -386,7 +440,7 @@ SnapResult SnapEngine::snap3D(const Vec2& screenCursor, const Document& document
                   objectTolerancePixels, gridSpacing,
                   WorkPlane{{0.0, 0.0, workPlaneZ}, {1.0, 0.0, 0.0},
                             {0.0, 1.0, 0.0}, {0.0, 0.0, 1.0}},
-                  objectSnapEnabled, gridSnapEnabled, referencePoint, enabledTypes);
+                  objectSnapEnabled, gridSnapEnabled, referencePoint, enabledTypes, false);
 }
 
 SnapResult SnapEngine::snap3D(const Vec2& screenCursor, const Document& document,
@@ -394,7 +448,8 @@ SnapResult SnapEngine::snap3D(const Vec2& screenCursor, const Document& document
                               double objectTolerancePixels, double gridSpacing, const WorkPlane& workPlane,
                               bool objectSnapEnabled, bool gridSnapEnabled,
                               std::optional<Vec3> referencePoint,
-                              const SnapTypeMask* enabledTypes) {
+                              const SnapTypeMask* enabledTypes,
+                              bool visibleEdgesOnly) {
     const auto raw = camera.unprojectToPlane(screenCursor, viewportWidth, viewportHeight, workPlane);
     if (!raw) return {workPlane.origin, SnapType::None, 0.0};
     if (objectSnapEnabled) {
@@ -404,7 +459,8 @@ SnapResult SnapEngine::snap3D(const Vec2& screenCursor, const Document& document
         };
         const auto nearby = projectedCandidates(screenCursor, document, camera, viewportWidth,
                                                 viewportHeight, objectTolerancePixels);
-        const ScreenSpaceNearest screenNearest{&camera, viewportWidth, viewportHeight, screenCursor};
+        const ScreenSpaceNearest screenNearest{&camera, viewportWidth, viewportHeight, screenCursor,
+                                               visibleEdgesOnly};
         auto candidates = objectCandidates(*raw, document, objectTolerancePixels, metric,
                                            referencePoint, &nearby, &screenNearest);
         struct ProjectedEdge { Vec3 a; Vec3 b; Vec2 pa; Vec2 pb; };

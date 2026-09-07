@@ -83,7 +83,8 @@ public:
                              double objectTolerancePixels, double gridSpacing, const WorkPlane& workPlane,
                              bool objectSnapEnabled = true, bool gridSnapEnabled = true,
                              std::optional<Vec3> referencePoint = std::nullopt,
-                             const SnapTypeMask* enabledTypes = nullptr);
+                             const SnapTypeMask* enabledTypes = nullptr,
+                             bool visibleEdgesOnly = false);
 };
 
 std::optional<Vec3> parseDynamicPoint(std::wstring_view text,
