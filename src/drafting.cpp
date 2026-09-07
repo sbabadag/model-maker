@@ -126,6 +126,14 @@ void addCandidate(std::vector<Candidate>& candidates, const Vec3& point, SnapTyp
         candidates.push_back({point, type, distance});
 }
 
+// Onceden hesaplanmis (cezali) mesafe ile aday — derinlik cezasi tasiyan
+// apparent-int ciftleri icin: metric yeniden hesaplanmaz.
+void addCandidateAtDistance(std::vector<Candidate>& candidates, const Vec3& point, SnapType type,
+                            double tolerance, double distance) {
+    if (std::isfinite(distance) && distance <= tolerance + epsilon)
+        candidates.push_back({point, type, distance});
+}
+
 std::vector<Candidate> objectCandidates(const Vec3& cursor, const Document& document,
                                         double tolerance, const Metric& metric,
                                         std::optional<Vec3> referencePoint,
@@ -412,13 +420,23 @@ SnapResult SnapEngine::snap3D(const Vec2& screenCursor, const Document& document
                 // cogunlukla skew'dur; eski kod yalniz apparent uretiyordu.
                 // Cakisma bolgesinde (kenarlar ekranda kesisiyor) INT de
                 // aday olsun: 3B orta nokta, olcu ekran-uzayi.
-                if (worldGap < objectTolerancePixels / std::max(1.0, cameraScreenScale(camera)))
+                const double pxPerMm = cameraScreenScale(camera);
+                if (worldGap * pxPerMm < objectTolerancePixels)
                     addCandidate(candidates, (worldA + worldB) * 0.5, SnapType::Intersection,
                                  objectTolerancePixels, metric);
+                // APPARENT: nokta artik is-duzlemi unproject'iyle DEGIL
+                // kenarlarin 3B orta noktasinda (ayni ekran konumu, dogru
+                // derinlik). DERINLIK CEZASI: ekranda ayni yerde bircok
+                // kenar cifti kesisebilir (flans ust/alt siluetleri);
+                // yalniz imlec mesafesiyle secim yanlis cifti tutuyordu
+                // ("IPE400 ust flansin ALT tarafini tutuyor"). Skew ciftler
+                // worldGap kadar px ceza alir — gercek cakisan kenarlar
+                // (gap~0) daima one gecer.
                 const Vec2 crossing{a.pa.x + t * adx, a.pa.y + t * ady};
-                if (const auto point = camera.unprojectToPlane(crossing, viewportWidth, viewportHeight, workPlane))
-                    addCandidate(candidates, *point, SnapType::ApparentIntersection,
-                                 objectTolerancePixels, metric);
+                (void)crossing;
+                addCandidateAtDistance(candidates, (worldA + worldB) * 0.5, SnapType::ApparentIntersection,
+                                        objectTolerancePixels,
+                                        metric((worldA + worldB) * 0.5) + worldGap * pxPerMm);
             }
         }
         auto result = choose(std::move(candidates), *raw, enabledTypes);
