@@ -419,7 +419,10 @@ void computeMVPMatrix(const Camera& camera, int width, int height, float* out,
     // LEQUAL karsilastirmasi etkilenmez. Olcek 1e-6: ~1e6 mm'ye kadar NDC
     // icinde kalir, mm farklari float hassasiyetinin cok ustunde.
     // depthOf farklari: viewTransform dogrusal, sabit terim (center) farkta duser.
-    const double zFarScale = 1.0e-6;
+    // ISARET: view-z buyuk = izleyiciye YAKIN (iso z-satiri (1,1,1)/sqrt3,
+    // izleyici +oktantta). GL NDC kucuk-z = yakin oldugundan negatiflenir;
+    // boylece yakin yuz kucuk NDC-z alir, LEQUAL ile arka kenar oclude olur.
+    const double zFarScale = -1.0e-6;
     const double zX = camera.viewTransform({1.0, 0.0, 0.0}).z - camera.viewTransform({0.0, 0.0, 0.0}).z;
     const double zY = camera.viewTransform({0.0, 1.0, 0.0}).z - camera.viewTransform({0.0, 0.0, 0.0}).z;
     const double zZ = camera.viewTransform({0.0, 0.0, 1.0}).z - camera.viewTransform({0.0, 0.0, 0.0}).z;
