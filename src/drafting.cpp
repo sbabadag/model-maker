@@ -421,11 +421,10 @@ SnapResult SnapEngine::snap3D(const Vec2& screenCursor, const Document& document
                 // Cakisma bolgesinde (kenarlar ekranda kesisiyor) INT de
                 // aday olsun: 3B orta nokta, olcu ekran-uzayi.
                 const double pxPerMm = cameraScreenScale(camera);
-                // INT: gercek temas (gap~0) veya flans kalinligi kadar
-                // yakin cakisma — ikisi de kullanicinin "kesisim" dedigi
-                // yerdir. Eski tolerans yalniz px'ti; world-mm esigi
-                // saglikli kesisimleri de kabul eder.
-                if (worldGap * pxPerMm < objectTolerancePixels * 4.0)
+                // INT: YALNIZ gercek temas (gap < 1 px). 4x toleransli eski
+                // gevseklik cezasiz skew ciftleri INT adayi yapiyor, dogru
+                // cezali adayi eziyordu ("hala yanlis yer").
+                if (worldGap * pxPerMm < 1.0)
                     addCandidate(candidates, (worldA + worldB) * 0.5, SnapType::Intersection,
                                  objectTolerancePixels, metric);
                 // APPARENT: nokta artik is-duzlemi unproject'iyle DEGIL
@@ -440,13 +439,17 @@ SnapResult SnapEngine::snap3D(const Vec2& screenCursor, const Document& document
                 (void)crossing;
                 // Tolerans cezayla GENISLER (aday asla dusturulmez); ceza
                 // yalnizca best-karsilastirmasinda skew ciftleri geriye
-                // iter. Eskiden cezali mesafe toleransi asinca aday tamamen
-                // duser ve marker kaybolurdu (asik-makas birlesiminde INT
-                // hic tutulmuyordu).
+                // iter. NOKTA artik orta nokta DEGIL: kameraya YAKIN olan
+                // kenarin kesisim noktasi — orta nokta ekranda iki kenar
+                // arasinda kayik gorunuyordu ("yanlis yer"). view-z buyuk =
+                // izleyiciye yakin (kamera konvansiyonu).
+                const double depthA = camera.viewTransform(worldA).z;
+                const double depthB = camera.viewTransform(worldB).z;
+                const Vec3 crossingPoint = depthA >= depthB ? worldA : worldB;
                 const double gapPenalty = worldGap * pxPerMm;
-                addCandidateAtDistance(candidates, (worldA + worldB) * 0.5, SnapType::ApparentIntersection,
+                addCandidateAtDistance(candidates, crossingPoint, SnapType::ApparentIntersection,
                                         objectTolerancePixels + gapPenalty,
-                                        metric((worldA + worldB) * 0.5) + gapPenalty);
+                                        metric(crossingPoint) + gapPenalty);
             }
         }
         auto result = choose(std::move(candidates), *raw, enabledTypes);
