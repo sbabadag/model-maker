@@ -411,7 +411,22 @@ void computeMVPMatrix(const Camera& camera, int width, int height, float* out,
     out[5] = static_cast<float>(ey.y - o.y);
     out[9] = static_cast<float>(ez.y - o.y);
     out[13] = static_cast<float>(o.y);
-    out[2] = 0.0f; out[6] = 0.0f; out[10] = 0.0f; out[14] = 0.0f;
+    // Z SATIRI — GERCEK DERINLIK: affine orneklemeli kurulum x/y'yi ekrandan
+    // aliyr ama z'yi sifir birakiyordu; tum cizim z=0'da yapilir, DEPTH_TEST
+    // anlamsizdi ("gizli cizgiler gozukuyor" — arka kenarlar hicbir zaman
+    // oclude olmadi). viewTransform dogrusal rotasyon oldugundan clip.z =
+    // row_z * p + sabit; sabit terim butun vertexlerde ayni oldugundan
+    // LEQUAL karsilastirmasi etkilenmez. Olcek 1e-6: ~1e6 mm'ye kadar NDC
+    // icinde kalir, mm farklari float hassasiyetinin cok ustunde.
+    // depthOf farklari: viewTransform dogrusal, sabit terim (center) farkta duser.
+    const double zFarScale = 1.0e-6;
+    const double zX = camera.viewTransform({1.0, 0.0, 0.0}).z - camera.viewTransform({0.0, 0.0, 0.0}).z;
+    const double zY = camera.viewTransform({0.0, 1.0, 0.0}).z - camera.viewTransform({0.0, 0.0, 0.0}).z;
+    const double zZ = camera.viewTransform({0.0, 0.0, 1.0}).z - camera.viewTransform({0.0, 0.0, 0.0}).z;
+    out[2] = static_cast<float>(zX * zFarScale);
+    out[6] = static_cast<float>(zY * zFarScale);
+    out[10] = static_cast<float>(zZ * zFarScale);
+    out[14] = 0.0f;
     out[3] = 0.0f; out[7] = 0.0f; out[11] = 0.0f; out[15] = 1.0f;
 }
 std::uint32_t toRGBA8(std::uint32_t rgb24) {
