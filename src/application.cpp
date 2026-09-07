@@ -146,6 +146,12 @@ Application::~Application() {
 
 int Application::run(int showCommand, std::optional<std::filesystem::path> startupDxf) {
     createMainWindow(showCommand);
+    // VARSAYILAN BASLANGIC (kullanici talebi): GL + 3B + Solid stil.
+    // toggleGpuLines LAZIM: GL backend ilk acilista uretilir (backendInitTried_
+    // mekanizmasi); toggle3DView modu View3D'ye tasir; setVisualStyle Solid.
+    if (!gpuLinesEnabled_) toggleGpuLines();
+    if (mode_ != EditMode::View3D) toggle3DView();
+    setVisualStyle(VisualStyle::Solid);
     if (startupDxf && startupDxf->extension() == L".dxf") beginDxfImport(*startupDxf);
     MSG message{};
     while (GetMessageW(&message, nullptr, 0, 0) > 0) {
