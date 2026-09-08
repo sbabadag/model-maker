@@ -329,6 +329,9 @@ void QtMainWindow::resizeEmbeddedCanvas() {
         SetWindowPos(canvas, nullptr, 0, 0, rc.right, rc.bottom,
                      SWP_NOZORDER | SWP_NOACTIVATE);
     }
+    // GL istendiyse ve canvas artik gecerli boyut aldysa burada ac —
+    // showEvent QTimer'inda 0x0'di, GL init donuyordu. Buradan tetikle.
+    app_.tryEnableStartupGpu();
 }
 
 void QtMainWindow::createMenus() {

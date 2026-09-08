@@ -2161,24 +2161,29 @@ void Application::startTransformCommand(TransformCommand command) {
 }
 
 void Application::applyStartupDefaults() {
-    // Qt kabugu ilk showEvent'te cagirir. Donma 3165c04'te no-op ile
-    // giderildi; kaynak `camera_.reset()`+`setView(Top)` kombinasyonuydu.
-    // CAMERA KURULUMU KAPALI tutuluyor — 2D projeksiyon varsayilan
-    // Draw2D'de zaten XY'ye bakar (2B plan). Kullanicinin iki istegi:
-    //  (1) default olarak GL modunda acilsin -> toggleGpuLines()
-    //      (GL basarisizsa arka planda otomatik GDI'ye duser, guvenli)
-    //  (2) XY duzleminde default grid -> createModelGrid()
-    // toggleGpuLines canvas boyutuna güvenir; showEvent'te ondan ONCE
-    // resizeEmbeddedCanvas QTimer'i eklendigi icin canvas boyutlandirilmis
-    // olur (QTimer::singleShot(0) FIFO garantili).
-    if (mode_ == EditMode::View3D) toggle3DView(); // Draw2D ise dokunma
-    if (!gpuLinesEnabled_) toggleGpuLines();
+    // Donma KAYNAGI: GL init canvas henuz boyutlanmadiginda (0x0) calisti.
+    // Camera kurulumu da degil (3165c04 no-op'ta donma yoktu, 011b69c GL
+    // eklenince dondu). Cozum: GL'i SADECE canvas gecerli boyut aldiktan
+    // sonra ac; boyut 0 ise erteleyip ilk gecerli resize'da tetikle
+    // (resizeEmbeddedCanvas -> retryStartupGpu). Grid bos belgede tek kez
+    // olusur (kamera/GL'den bagimsiz, guvenli).
     if (document_.grids().empty() && document_.models().empty()) {
         createModelGrid({0.0, 0.0, 0.0}, {1.0, 0.0, 0.0}, {0.0, 1.0, 0.0},
                         3, 3, 5000.0, 5000.0, L"1", L"A");
     }
-    // NOTE: camera_.reset() / camera_.setView(Top) BILEREK kapali — donma
-    // kaynagi. 2B plan (Draw2D) varsayilan bakisi yeterli.
+    // GL acilisini burada deneme — canvas boyutu belirsiz. gizlice denemek
+    // icin: tryEnableStartupGpu().
+    tryEnableStartupGpu();
+}
+
+void Application::tryEnableStartupGpu() {
+    // GL'i yalniz canvas gecerli boyut alinca ac (0x0'da GL init donuyor).
+    if (gpuLinesEnabled_ || !startupGpuEnabled_) return; // zaten GL / istek yok
+    if (!canvas_) return; // embedded canvas henuz yok
+    RECT rc{}; GetClientRect(canvas_, &rc);
+    if (rc.right <= 0 || rc.bottom <= 0) return; // henuz boyutlanmadi
+    startupGpuEnabled_ = false; // tamamlandi isaretle (tek deneme)
+    toggleGpuLines();
 }
 
 void Application::createModelGrid(const Vec3& origin, const Vec3& xDir, const Vec3& yDir,
