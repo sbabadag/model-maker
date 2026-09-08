@@ -270,4 +270,42 @@ double Camera::pitch() const noexcept { return pitch_; }
 double Camera::zoom() const noexcept { return zoom_; }
 double Camera::pixelsPerUnit() const noexcept { return pixelsPerUnit_; }
 
+// --- 3Dconnexion Navlib koprusu ---------------------------------------------
+// World->camera rotasyonu R = R_roll * R_pitch * R_yaw (viewTransform ile ayni).
+// Navlib'in view.affine'i camera-to-world'dur: R^-1 = R^T (orthonormal) ve
+// translasyon = center3D_. Asagida m row-major (row*4+col) duzende.
+std::array<double, 16> Camera::cameraToWorldMatrix4() const noexcept {
+    ensureViewCache();
+    std::array<double, 16> m{};
+    // R satirlari
+    const double r00 = cr_ * cy_ - sr_ * sp_ * sy_;
+    const double r01 = -sr_ * cp_;
+    const double r02 = cr_ * sy_ + sr_ * sp_ * cy_;
+    const double r10 = sr_ * cy_ + cr_ * sp_ * sy_;
+    const double r11 = cr_ * cp_;
+    const double r12 = sr_ * sy_ - cr_ * sp_ * cy_;
+    const double r20 = -cp_ * sy_;
+    const double r21 = sp_;
+    const double r22 = cp_ * cy_;
+    // cameraToWorld = R^T (m[0..8]), translasyon = center3D_ (m[12..14])
+    m[0] = r00; m[1] = r10; m[2] = r20;  m[3] = 0.0;
+    m[4] = r01; m[5] = r11; m[6] = r21;  m[7] = 0.0;
+    m[8] = r02; m[9] = r12; m[10] = r22; m[11] = 0.0;
+    m[12] = center3D_.x; m[13] = center3D_.y; m[14] = center3D_.z; m[15] = 1.0;
+    return m;
+}
+
+void Camera::applyCameraToWorldMatrix4(const std::array<double, 16>& matrix) noexcept {
+    useIso_ = false;
+    // cameraToWorld = R^T (row-major m[row*4+col]); R = transpose.
+    // R[2][1] = sp  -> m[6];  R[2][0] = -cp*sy -> m[2];  R[2][2] = cp*cy -> m[10];
+    // R[0][1] = -sr*cp -> m[4];  R[1][1] = cr*cp -> m[5].
+    const double sp = std::clamp(matrix[6], -1.0, 1.0);
+    pitch_ = std::asin(sp);
+    yaw_ = std::atan2(-matrix[2], matrix[10]);
+    roll_ = std::atan2(-matrix[4], matrix[5]);
+    center3D_ = Vec3{matrix[12], matrix[13], matrix[14]};
+    invalidateViewCache();
+}
+
 } // namespace mm

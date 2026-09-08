@@ -10,6 +10,9 @@
 #include "model_maker/renderer.hpp"
 #include "model_maker/ribbon_layout.hpp"
 #include "model_maker/view_cube_renderer.hpp"
+#ifdef _WIN32
+#include "model_maker/spacemouse.hpp"
+#endif
 
 #include <windows.h>
 #include <commctrl.h>
@@ -333,6 +336,12 @@ private:
     Camera camera_;
     Renderer renderer_;
     ViewCubeRenderer viewCubeRenderer_;
+#ifdef _WIN32
+    // 3Dconnexion SpaceMouse (Navlib 4.x): 3B gorunumde kamerayi surer.
+    // 2B planda baslatilmaz (Navlib yalniz 3B'de anlamli). Yalniz WIN32.
+    std::unique_ptr<SpaceMouseNav> spaceMouse_;
+    bool spaceMouseStartupAttempted_{false};
+#endif
     // Son kati komutunun olcum mesaji (hacim) — updateStatus bunu status
     // cubuguna ekler; sadece yeni bir kati komutu degistirir.
 #ifdef MM_HAS_OCC

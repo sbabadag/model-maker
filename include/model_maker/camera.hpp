@@ -42,8 +42,21 @@ public:
 
     double yaw() const noexcept;
     double pitch() const noexcept;
+    double roll() const noexcept { return roll_; }
     double zoom() const noexcept;
     double pixelsPerUnit() const noexcept;
+
+    // 3Dconnexion Navlib koprusu: self-explanatory adlar.
+    // Navlib, cihazin koordinat sisteminde (Y-up) camera-to-world 4x4 matris
+    // tutar (view.affine). Bizim kameramiz yaw/pitch/roll + center3D_ tabanli
+    // (hesap: world->camera rotasyonu R ve center3D_). Navlib ile konusmak
+    // icin R'nin transpozu + center3D_ translasyonu cameraToWorld olarak
+    // uretilir; Navlib yeni matris verdiginde ters cevrilir (euler cozumu).
+    std::array<double, 16> cameraToWorldMatrix4() const noexcept;
+    void applyCameraToWorldMatrix4(const std::array<double, 16>& matrix) noexcept;
+
+    const Vec3& center3D() const noexcept { return center3D_; }
+    void setCenter3D(const Vec3& center) noexcept { center3D_ = center; }
 
 private:
     double yaw_{-0.55};

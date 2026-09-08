@@ -55,6 +55,27 @@ if(Qt6_FOUND AND MODELMAKER_QT_MISSING STREQUAL "")
     target_link_options(model-maker PRIVATE -static -static-libgcc -static-libstdc++ -Wl,--subsystem,windows)
     target_compile_definitions(model-maker PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX QT_NO_ENTRYPOINT)
     target_compile_options(model-maker PRIVATE -Wall -Wextra -Wpedantic)
+
+    # --- 3Dconnexion SpaceMouse (Navlib SDK 4.x) — Windows-only ---
+    # SDK basliklari + TDxNavLib.lib third_party/3dxware altindadir (kullanici
+    # 3DxWare_SDK_v4-0-6_r22071'den kopyaladi). Navlib fonksiyonlari (NlCreate
+    # vb.) weak-import'tur — surucu/navlib.dll yoksa sessizce devre disi kalir.
+    if(WIN32 AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/3dxware/inc/SpaceMouse/IAccessors.hpp")
+        set(MODELMAKER_SPACEMOUSE_READY TRUE)
+        target_include_directories(model-maker PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/third_party/3dxware/inc
+            ${CMAKE_CURRENT_SOURCE_DIR}/third_party/3dxware/inc/navlib)
+        # SpaceMouse kaynaklarini listeye ekle
+        target_sources(model-maker PRIVATE src/spacemouse.cpp)
+        # Statik thuvasya TDxNavLib.lib (navlib fonksiyon govdeleri)
+        if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/3dxware/lib/TDxNavLib.lib")
+            target_link_libraries(model-maker PRIVATE
+                "${CMAKE_CURRENT_SOURCE_DIR}/third_party/3dxware/lib/TDxNavLib.lib")
+        endif()
+        message(STATUS "3Dconnexion SpaceMouse SDK dogrudan baglaniyor (Navlib 4.x)")
+    else()
+        message(STATUS "3Dconnexion SpaceMouse SDK bulunamadi (third_party/3dxware) — SpaceMouse kapali")
+    endif()
 else()
     message(WARNING "Qt6 not found or Qt sources missing (${MODELMAKER_QT_MISSING}) - "
                     "skipping the model-maker executable; core library, tests and "
@@ -192,6 +213,14 @@ if(BUILD_TESTING)
     target_link_libraries(model_maker_spatial_query_benchmark PRIVATE model_maker_core)
     target_link_options(model_maker_spatial_query_benchmark PRIVATE -static -static-libgcc -static-libstdc++)
     target_compile_options(model_maker_spatial_query_benchmark PRIVATE -O3 -Wall -Wextra -Wpedantic)
+
+    # 3Dconnexion Navlib kamera-matris koprusu: cameraToWorldMatrix4 ->
+    # applyCameraToWorldMatrix4 round-trip (yaw/pitch/roll/center korunur).
+    add_executable(model_maker_camera_navlib_tests tests/camera_navlib_roundtrip.cpp)
+    target_link_libraries(model_maker_camera_navlib_tests PRIVATE model_maker_core)
+    target_link_options(model_maker_camera_navlib_tests PRIVATE -static -static-libgcc -static-libstdc++)
+    target_compile_options(model_maker_camera_navlib_tests PRIVATE -Wall -Wextra -Wpedantic)
+    add_test(NAME model_maker_camera_navlib_tests COMMAND model_maker_camera_navlib_tests)
 endif()
 
 if(TARGET model-maker)

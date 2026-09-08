@@ -2286,6 +2286,30 @@ void Application::toggle3DView() {
     updateControls();
     updateStatus();
     invalidateCanvas();
+#ifdef _WIN32
+    // SpaceMouse yalniz 3B görünümde (plan aktarimi yok). Entegrasyon islevsel:
+    // Navlib 6 ekseni "kamera matrisini guncelle" olarak yazar (SetCameraMatrix),
+    // biz bunu uygulama dongusune PostMessage ile tasiriz.
+    if (mode_ == EditMode::View3D) {
+        if (!spaceMouse_ && !spaceMouseStartupAttempted_) {
+            spaceMouseStartupAttempted_ = true;
+            spaceMouse_ = std::make_unique<SpaceMouseNav>(camera_, document_);
+            spaceMouse_->setViewChangedCallback([this]() {
+                // Navlib kendi thread'inden cagirir — boyama ana thread'de.
+                InvalidateRect(canvas_, nullptr, FALSE);
+            });
+            if (spaceMouse_->start()) {
+                publishStatus(L"SpaceMouse etkin (3Dconnexion Navlib)");
+            } else {
+                publishStatus(L"SpaceMouse kurulamadi (surucu/navlib.dll yok)");
+            }
+        }
+    } else {
+        if (spaceMouse_) {
+            spaceMouse_->stop();
+        }
+    }
+#endif
 }
 
 void Application::toggleSnapType(SnapType type) noexcept {
