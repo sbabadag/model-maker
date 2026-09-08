@@ -83,27 +83,38 @@ long SpaceMouseNav::SetCameraMatrix(const navlib::matrix_t& matrix) {
     // cozer. Dondurme + pan icin yeterli (kullanici dogruladi).
     std::array<double, 16> m{};
     for (int i = 0; i < 16; ++i) m[static_cast<std::size_t>(i)] = matrix[i];
-    camera_.applyCameraToWorldMatrix4(m);
 
-    // ZOOM: Navlib zoom'u view.fov ile DEGIL, view.affine translasyonu m32
-    // (ileri-geri itme) ile yapar (SM-SET-CAM logu kaniti). m32'nin her
-    // adimdaki delta'sini model genisligine normalize edip zoomBy ile uygula.
-    // Birikimli alirsak ani sicrama olur; delta + normalize tutarli kalir.
-    static double prevZ = 0.0;
+    // ZOOM: Navlib zoom'u view.affine translasyonu (m[12..14], ileri-geri itme)
+    // ile gonderir. AMA sağa-sola cekince de pozisyon delta'sinin Z bileseni
+    // olur ve yanlis zoom tetikler. Bu yuzden delta'yi KAMERA BAKIS YONUNE
+    // (forward) projekte ederiz: yalnizca ileri-geri hareket zoom yapar,
+    // sağa-sola/pan delta'si zoom uretmez.
+    static double prevX = 0.0, prevY = 0.0, prevZ = 0.0;
     static bool zinit = false;
-    const double z = matrix[14];
+    const double px = matrix[12], py = matrix[13], pz = matrix[14];
+    double fwd = 1.0;
     if (!zinit) {
-        prevZ = z;
+        prevX = px; prevY = py; prevZ = pz;
         zinit = true;
     } else {
-        const double dz = z - prevZ;
-        prevZ = z;
-        const double extentWidth = 10000.0; // GetViewExtents varsayilan genislik
-        if (std::fabs(dz) > 1e-6) {
-            double factor = 1.0 + dz / extentWidth;
+        const double dx = px - prevX;
+        const double dy = py - prevY;
+        const double dz = pz - prevZ;
+        prevX = px; prevY = py; prevZ = pz;
+        // forward = -m[8..10] (navlib view.affine'inda m[8..10] = backward).
+        const double fx = -matrix[8], fy = -matrix[9], fz = -matrix[10];
+        const double flen = std::sqrt(fx * fx + fy * fy + fz * fz);
+        if (flen > 1e-9) {
+            // Bakis yonu boyunca hareket (ileri-geri) -> zoom.
+            fwd = (dx * fx + dy * fy + dz * fz) / flen;
+        }
+        if (std::fabs(fwd) > 1e-6) {
+            double factor = 1.0 + fwd / 10000.0; // model genisligine normalize
             if (factor > 0.5 && factor < 2.0) camera_.zoomBy(factor);
         }
     }
+
+    camera_.applyCameraToWorldMatrix4(m);
     if (viewChangedCallback_) viewChangedCallback_();
     return 0;
 }
