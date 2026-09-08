@@ -80,9 +80,8 @@ long SpaceMouseNav::GetCameraMatrix(navlib::matrix_t& matrix) const {
 long SpaceMouseNav::SetCameraMatrix(const navlib::matrix_t& matrix) {
     // Navlib "ileri-geri" (push) itmeyi m32 (kamera pozisyon Z) translasyonu
     // olarak gonderir. Orthografik kamerada pozisyon kaymasi zoom DEGILDIR.
-    // onemli: dz'yi ilk degerden (birikimli) DEGIL her adimdaki delta olarak
-    // al — birikimli alirsak (z - baseZ) gittikce devasa olur ve exp() ani
-    // sıcrama ile modeli uzağa firlatir.
+    // dz'yi her adimda delta al (birikimsiz) ve COK KUCUK bir katsayıyla,
+    // dar bir sınırla uygula — aksi halde zoom kontrolsuz hizli gidip gelir.
     static double prevZ = 0.0;
     static bool zinit = false;
     const double z = matrix[14];
@@ -94,10 +93,9 @@ long SpaceMouseNav::SetCameraMatrix(const navlib::matrix_t& matrix) {
         dz = z - prevZ;
         prevZ = z;
         if (std::fabs(dz) > 1e-6) {
-            // Ölçeği normalize et: navlib m32 mm cinsinden olabilir. Her adimda
-            // kucuk bir zoom carpani uygula (orantisal, birikimsiz).
-            double factor = 1.0 + dz * 0.002;
-            if (factor > 0.2 && factor < 5.0) camera_.zoomBy(factor);
+            // Kucuk, kontrollu adim: +x mm -> ~%0.05 zoom. cok dar limitler.
+            double factor = 1.0 + dz * 0.0005;
+            if (factor > 0.92 && factor < 1.08) camera_.zoomBy(factor);
         }
     }
     {
@@ -112,15 +110,14 @@ long SpaceMouseNav::SetCameraMatrix(const navlib::matrix_t& matrix) {
         }
     }
 
-    // Rotasyon: navlib rotasyon m0..m8'de, center3D_ YALNIZ m12/m13'ten (x,y).
-    // m14 (z) zoom'a cevrildigi icin center3D z'sini degistirmiyoruz.
+    // Rotasyon + pozisyon: objeler YERINDE kalir. Rotasyon matrisin 3x3
+    // kismindan (m0..m8), center3D_ HIC DEGISMEZ (pivot sabit). m32/m33'u
+    // (translasyon) zoom'a cevirdigimiz icin kamerayi kaydirmiyoruz.
     std::array<double, 16> m = camera_.cameraToWorldMatrix4();
-    // Rows 0-2 (rotasyon) navlib'ten, row 3 pozisyonun x,y'si mevcut centerdan.
-    const auto& c = camera_.center3D();
     m[0] = matrix[0]; m[1] = matrix[1]; m[2] = matrix[2];
     m[4] = matrix[4]; m[5] = matrix[5]; m[6] = matrix[6];
     m[8] = matrix[8]; m[9] = matrix[9]; m[10] = matrix[10];
-    m[12] = c.x; m[13] = c.y; m[14] = c.z; // pozisyon z sabit (zoom'da)
+    // m[12..14] (translasyon) mevcut center3D_'de kalir — asagi kopyalama.
     camera_.applyCameraToWorldMatrix4(m);
     if (viewChangedCallback_) viewChangedCallback_();
     return 0;
