@@ -56,6 +56,20 @@ bool SpaceMouseNav::start() {
         // → klavye odagi (dolayli odak yolu). Tek ornekli uygulama icin de sart.
         navlib_->Write(std::string("active"), navlib::value(true));
         navlib_->Write(std::string("focus"), navlib::value(true));
+        // Cihazin Navlib'e gorunup gorunmedigini client tarafindan oku (teşhis):
+        // device.present dogruysa cihaz baglantida ama 6 eksen akmıyor demektir
+        // (3DxWare uygulama izni/eşleştirme sorunu); yanlışsa Navlib cihazi
+        // hic gormuyor demektir (surucu/uyumluluk sorunu).
+        {
+            navlib::value dv;
+            const long r = navlib_->Read(std::string("device.present"), dv);
+            FILE* diag = fopen("model-maker-render.log", "a");
+            if (diag) {
+                fprintf(diag, "SM-DEVICE present=%d readCode=%ld\n",
+                        static_cast<int>(static_cast<bool>(dv)), r);
+                fclose(diag);
+            }
+        }
     } catch (const std::exception&) {
         navlib_.reset();
         return false;
