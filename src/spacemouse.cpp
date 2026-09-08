@@ -78,6 +78,17 @@ long SpaceMouseNav::GetCameraMatrix(navlib::matrix_t& matrix) const {
 }
 
 long SpaceMouseNav::SetCameraMatrix(const navlib::matrix_t& matrix) {
+    {
+        static int n = 0;
+        if (n++ < 12) {
+            FILE* f = fopen("model-maker-render.log", "a");
+            if (f) {
+                fprintf(f, "SM-SET-CAM #%d m30=%.4f m31=%.4f m32=%.4f | m20=%.4f m21=%.4f m22=%.4f\n",
+                        n, matrix[12], matrix[13], matrix[14], matrix[8], matrix[9], matrix[10]);
+                fclose(f);
+            }
+        }
+    }
     std::array<double, 16> m{};
     for (int i = 0; i < 16; ++i) m[static_cast<std::size_t>(i)] = matrix[i];
     camera_.applyCameraToWorldMatrix4(m);
@@ -150,6 +161,16 @@ long SpaceMouseNav::GetViewFOV(double& fov) const {
 }
 
 long SpaceMouseNav::SetViewFOV(double fov) {
+    {
+        static int n = 0;
+        if (n++ < 12) {
+            FILE* f = fopen("model-maker-render.log", "a");
+            if (f) {
+                fprintf(f, "SM-SET-FOV #%d fov=%.4f\n", n, fov);
+                fclose(f);
+            }
+        }
+    }
     // Navlib perspektif gorunumde zoom'u fov uzerinden degistirir: fov kuculur
     // -> yakinla. fov'u (radyan) bizim zoom carpanina cevir. (fov/2) = atan(h/w)
     if (fov > 0.001) {
