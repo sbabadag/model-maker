@@ -867,6 +867,22 @@ void Document::save(const std::filesystem::path& path) const {
     // eksen/renk/cizgi tipi/malzeme...) — eskiden yalniz geometri
     // yaziliyordu; kayit sonrasi katilar stilini kaybediyordu.
     output << "MMW3\n" << models_.size() << '\n';
+    // Katman tanimlari: isim + (trueColor veya ACI) + linetype + visible.
+    // Model yalniz katman ADI tasir; katman rengi/sifati bu haritada —
+    // kaydedilmezse dosya acilinca BYLAYER nesneler rengini kaybeder.
+    output << 'L' << ' ' << layers_.size() << '\n';
+    for (const auto& [name, layer] : layers_) {
+        const auto putL = [&output](const std::string& text) {
+            output << text.size() << ':';
+            output.write(text.data(), static_cast<std::streamsize>(text.size()));
+        };
+        putL(name); output << ' ';
+        output << layer.colorIndex << ' ';
+        if (layer.trueColor) output << "1 " << *layer.trueColor << ' ';
+        else output << "0 0 ";
+        output << layer.visible << ' ' << layer.frozen << ' ' << layer.locked << '\n';
+    }
+
     for (const auto& model : models_) {
         output << model.vertices().size() << ' ' << model.edges().size() << ' '
                << model.faces().size() << ' ' << model.isPointEntity() << ' '
@@ -919,7 +935,7 @@ void Document::load(const std::filesystem::path& path) {
     }
     const bool version2 = signature == "MMW2" || signature == "MMW3";
     const bool version3 = signature == "MMW3";
-    // uzunluk-sonralikli string okuyucu
+    // uzunluk-sonralikli string okuyucu (katman blogundan once tanimli)
     const auto readS = [&input]() {
         std::size_t length{};
         char colon{};
@@ -929,6 +945,27 @@ void Document::load(const std::filesystem::path& path) {
         if (length) input.read(text.data(), static_cast<std::streamsize>(length));
         return text;
     };
+    if (version3) {
+        std::string layerTag;
+        std::size_t layerCount{};
+        if (!(input >> layerTag >> layerCount) || layerTag != "L" || layerCount > 1000)
+            throw std::runtime_error("Invalid layer block");
+        for (std::size_t li = 0; li < layerCount; ++li) {
+            std::string layerName = readS();
+            EntityProperties layer;
+            int hasLayerColor{};
+            std::uint32_t layerColorValue{};
+            if (!(input >> layer.colorIndex >> hasLayerColor >> layerColorValue
+                       >> layer.visible >> layer.frozen >> layer.locked))
+                throw std::runtime_error("Invalid layer data");
+            layer.trueColor = hasLayerColor ? std::optional<std::uint32_t>(layerColorValue)
+                                            : std::nullopt;
+            if (layer.trueColor) layer.effectiveColor = *layer.trueColor;
+            else layer.effectiveColor = layer.colorIndex; // ACI 0-255 tek kanal fallback
+            layers_[layerName] = std::move(layer);
+        }
+    }
+
 
     std::vector<WireframeModel> loaded;
     loaded.reserve(modelCount);
@@ -991,6 +1028,11 @@ void Document::load(const std::filesystem::path& path) {
                 throw std::runtime_error("Invalid property data");
             props.trueColor = hasTrueColor ? std::optional<std::uint32_t>(trueColorValue)
                                            : std::nullopt;
+            // effectiveColor turet: render onu kullanir; yukleme onu
+            // yeniden hesaplamazsa varsayilan mavi kalir ("renkler
+            // alinmamis"). trueColor varsa ondan; yoksa katman (BYLAYER)
+            // veya ACI paletinden resolve'e birakilir.
+            if (props.trueColor) props.effectiveColor = *props.trueColor;
             props.description = readS();
             built.setProperties(std::move(props));
         }
