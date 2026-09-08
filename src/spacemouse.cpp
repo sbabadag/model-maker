@@ -111,10 +111,32 @@ long SpaceMouseNav::SetCameraMatrix(const navlib::matrix_t& matrix) {
 long SpaceMouseNav::GetCameraTarget(navlib::point_t& target) const {
     const auto& c = camera_.center3D();
     target.x = c.x; target.y = c.y; target.z = c.z;
+    {
+        static int n = 0;
+        if (n++ < 10) {
+            FILE* f = fopen("model-maker-render.log", "a");
+            if (f) {
+                fprintf(f, "SM-GET-TARGET #%d (%.1f, %.1f, %.1f)\n", n, target.x, target.y,
+                        target.z);
+                fclose(f);
+            }
+        }
+    }
     return 0;
 }
 
 long SpaceMouseNav::SetCameraTarget(const navlib::point_t& target) {
+    {
+        static int n = 0;
+        if (n++ < 12) {
+            FILE* f = fopen("model-maker-render.log", "a");
+            if (f) {
+                fprintf(f, "SM-SET-TARGET #%d (%.1f, %.1f, %.1f)\n", n, target.x, target.y,
+                        target.z);
+                fclose(f);
+            }
+        }
+    }
     camera_.setCenter3D(Vec3{target.x, target.y, target.z});
     if (viewChangedCallback_) viewChangedCallback_();
     return 0;
