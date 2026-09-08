@@ -49,16 +49,15 @@ long SpaceMouseNav::SetActiveCommand(std::string commandId) {
 // not the X-Z plane" (Lock Horizon). Donusum: app(x,y,z) -> navlib(x,z,-y),
 // yani X etrafinda -90°. Bizim Z -> navlib Y, bizim Y -> navlib -Z.
 long SpaceMouseNav::GetCoordinateSystem(navlib::matrix_t& matrix) const {
-    // matrix_t: m[row*4+col] row-major (operator[] ile). Donusum:
-    //   row0: x' = x            -> m00=1
-    //   row1: y' = z            -> m11=0, m12=1
-    //   row2: z' = -y           -> m21=-1, m22=0
+    // Z-up -> navlib Y-up: -90° X donusumu (app(x,y,z) -> navlib(x,z,-y)).
+    // Bizim model Z-up (kolonlar Z'de yukari, zemin XY). Navlib Y-up varsayar;
+    // Lock Horizon icin non-identity matris GEREKLI. Kamera matrisleri (camera
+    // ToWorld / applyCameraToWorld) kendi Z-up cercevemizde tutarli; donusum
+    // sadece navlib'e "up ekseni Z" diye bildirir.
     for (int i = 0; i < 16; ++i) matrix[i] = 0.0;
-    matrix[0] = 1.0;   // m00
-    matrix[5] = 0.0;   // m11
-    matrix[6] = 1.0;   // m12 (y' <- z)
-    matrix[9] = -1.0;  // m21 (z' <- -y)
-    matrix[10] = 0.0;  // m22
+    matrix[0] = 1.0;   // m00  x' = x
+    matrix[6] = 1.0;   // m12  y' = z
+    matrix[9] = -1.0;  // m21  z' = -y
     matrix[15] = 1.0;  // m33
     return 0;
 }
@@ -129,15 +128,10 @@ long SpaceMouseNav::GetViewExtents(navlib::box_t& extents) const {
 }
 
 long SpaceMouseNav::SetViewExtents(const navlib::box_t& extents) {
-    // Orthografik zoom: Navlib extents genisligini degistirir. scale'i bizim
-    // zoom carpanina cevir (baslangic yaklasik 10m -> zoom 1.0).
-    double width = extents.max.x - extents.min.x;
-    if (width > 0) {
-        double targetZoom = 10000.0 / width;
-        double current = camera_.zoom();
-        if (current > 0) camera_.zoomBy(targetZoom / current);
-    }
-    if (viewChangedCallback_) viewChangedCallback_();
+    // Perspektif gorunumde Navlib zoom'u view.extents ile DEGIL view.fov ile
+    // yapar; bu yuzden no-op (zoom SetViewFOV'da). Ortho raporlarsak navlib
+    // donus kilidini bozuyordu.
+    (void)extents;
     return 0;
 }
 
@@ -147,12 +141,23 @@ long SpaceMouseNav::GetViewFocusDistance(double& distance) const {
 }
 
 long SpaceMouseNav::GetViewFOV(double& fov) const {
-    fov = 0.5; // radyan — navlib 0 istemez.
+    // Mevcut zoom'u fov (radyan) olarak yansit: zoom arttikca fov kuculur.
+    // Navlib bu degeri zoom baslangici olarak alir.
+    double z = camera_.zoom();
+    if (z <= 0) z = 1.0;
+    fov = 2.0 * std::atan(1.0 / z); // yakin ~0.9 rad (zoom 1.0)
     return 0;
 }
 
 long SpaceMouseNav::SetViewFOV(double fov) {
-    (void)fov;
+    // Navlib perspektif gorunumde zoom'u fov uzerinden degistirir: fov kuculur
+    // -> yakinla. fov'u (radyan) bizim zoom carpanina cevir. (fov/2) = atan(h/w)
+    if (fov > 0.001) {
+        double target = 1.0 / std::tan(fov * 0.5);
+        double current = camera_.zoom();
+        if (current > 0) camera_.zoomBy(target / current);
+    }
+    if (viewChangedCallback_) viewChangedCallback_();
     return 0;
 }
 
@@ -169,10 +174,10 @@ long SpaceMouseNav::SetViewFrustum(const navlib::frustum_t& frustum) {
 }
 
 long SpaceMouseNav::GetIsViewPerspective(navlib::bool_t& perspective) const {
-    // Orthografik kamera (AutoCAD tarzi). Navlib zoom'u view.extents uzerinden
-    // yapar (SetViewExtents); perspektif raporlarsak SetViewFOV beklentisiyle
-    // zoom calismaz.
-    perspective = 0;
+    // Perspektif raporla: Navlib zoom'u view.fov uzerinden yapar (SetViewFOV
+    // -> zoomBy), rotasyon view.affine uzerinden. Ortho raporlayinca navlib
+    // donus/yon kilidini yanlis eksene uyguluyor (rotasyon bozuluyordu).
+    perspective = 1;
     return 0;
 }
 
