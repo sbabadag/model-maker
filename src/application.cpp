@@ -2161,13 +2161,18 @@ void Application::startTransformCommand(TransformCommand command) {
 }
 
 void Application::applyStartupDefaults() {
-    // Qt kabugu ilk showEvent'te cagirir. Kilitlenme (0xC0000005 / tam sistem
-    // donmasi) 2afd25a ile geldi; 4dcb173 GL'yi, e69894f grid olusturmayi
-    // kaldirdi ama donma surdu. DEBUG: baslangic kurulumu TAMAMEN no-op —
-    // mode zaten Draw2D (2B plan) ve 2D projeksiyonda kamera kurulumu
-    // etkisiz. Uygulama once guvenli acilsin; 2B plan + grid'i asama asama
-    // geri ekleyecegiz.
-    // No-op: ilk render guvenli olsun.
+    // Qt kabugu ilk showEvent'te cagirir. Donma 3165c04'te TAMAMEN no-op
+    // ile giderildi; kaynak `camera_.reset()` + `setView(Top)` kombinasyonuydu
+    // (0xC0000005 / tam sistem donmasi). CAMERA KURULUMU KAPALI tutuluyor —
+    // 2D projeksiyon varsayilan Draw2D'de zaten XY'ye bakar (2B plan).
+    // Kullanicinin istedigi "XY duzleminde default grid": grid olusturmayi
+    // tek basina geri eklendi (camera islevlerine dokunulmaz).
+    if (document_.grids().empty() && document_.models().empty()) {
+        createModelGrid({0.0, 0.0, 0.0}, {1.0, 0.0, 0.0}, {0.0, 1.0, 0.0},
+                        3, 3, 5000.0, 5000.0, L"1", L"A");
+    }
+    // NOTE: camera_.reset() / camera_.setView(Top) BILEREK kapali — donma
+    // kaynagi. 2B plan (Draw2D) varsayilan bakisi yeterli.
 }
 
 void Application::createModelGrid(const Vec3& origin, const Vec3& xDir, const Vec3& yDir,
