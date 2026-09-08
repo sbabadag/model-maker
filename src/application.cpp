@@ -2160,10 +2160,23 @@ void Application::startTransformCommand(TransformCommand command) {
     trimExtendLog(L"APP BASLADI build=" __DATE__ " " __TIME__);
 }
 
-void Application::applyStartupDefaults3D() {
+void Application::applyStartupDefaults() {
     // Qt kabugu ilk showEvent'te cagirir (run() Win32 dongusunde kaliyordu).
-    if (mode_ != EditMode::View3D) toggle3DView();
-    setVisualStyle(VisualStyle::Solid);
+    // ILK GORUNUM: XY duzleminde 2B plan (Top) + varsayilan yapi gridi.
+    // mode zaten Draw2D ise dokunma (toggle3DView cagirirsa 3B'den doner);
+    // cameras plan bakisi (z eksenine dik) olsun.
+    if (mode_ == EditMode::View3D) toggle3DView();
+    // Reset icerigi sifirlar (center3D/2D) sonra Top plan bakisi: XY
+    // duzlemine dik bakis. Zoom extents gridi ekrana siginir.
+    camera_.reset();
+    camera_.setView(StandardView::Top);
+    zoomExtents2D();
+    // Varsayilan kullanici gridi: XY duzleminde, orijinden baslayan
+    // X:1-2-3 ve Y:A-B-C akslari (5000mm aralik). Bos belgede bir kez.
+    if (document_.grids().empty() && document_.models().empty()) {
+        createModelGrid({0.0, 0.0, 0.0}, {1.0, 0.0, 0.0}, {0.0, 1.0, 0.0},
+                        3, 3, 5000.0, 5000.0, L"1", L"A");
+    }
 }
 
 void Application::createModelGrid(const Vec3& origin, const Vec3& xDir, const Vec3& yDir,

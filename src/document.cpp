@@ -799,6 +799,18 @@ std::optional<Bounds3> Document::bounds() const {
             documentBounds_ = documentBounds_ ? mergeBounds(*documentBounds_, modelBounds_[i])
                                               : modelBounds_[i];
         }
+        // Yapi gridleri de bounds'a girer — bos belgede zoom extents gridi
+        // ekrana siginir (eskiden grid disarida kaliyordu).
+        for (const auto& grid : grids_) {
+            if (!grid.visible) continue;
+            for (const auto& axis : grid.axes) {
+                for (const Vec3& p : {axis.from, axis.to}) {
+                    const Bounds3 one{p, p};
+                    documentBounds_ = documentBounds_ ? mergeBounds(*documentBounds_, one)
+                                                      : one;
+                }
+            }
+        }
     }
     return documentBounds_;
 }

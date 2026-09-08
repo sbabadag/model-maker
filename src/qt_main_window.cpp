@@ -287,7 +287,7 @@ void QtMainWindow::showEvent(QShowEvent* event) {
         startupDefaultsApplied_ = true;
         QTimer::singleShot(0, this, [this]() {
             if (!app_.gpuLinesEnabled()) app_.toggleGpuLines();
-            app_.applyStartupDefaults3D();
+            app_.applyStartupDefaults();
         });
     }
     if (!profileUiLogged_ && profileSelector_) {
