@@ -1,5 +1,8 @@
 #include "model_maker/application.hpp"
 #include "model_maker/dxf.hpp"
+#ifdef _WIN32
+#include "model_maker/spacemouse.hpp"
+#endif
 #ifdef MM_HAS_OCC
 #include "model_maker/occ_geometry.hpp"
 #endif

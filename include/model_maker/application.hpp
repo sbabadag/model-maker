@@ -10,9 +10,6 @@
 #include "model_maker/renderer.hpp"
 #include "model_maker/ribbon_layout.hpp"
 #include "model_maker/view_cube_renderer.hpp"
-#ifdef _WIN32
-#include "model_maker/spacemouse.hpp"
-#endif
 
 #include <windows.h>
 #include <commctrl.h>
@@ -36,6 +33,13 @@
 class QComboBox;
 
 namespace mm {
+// Uygulama, SpaceMouse'u yalniz 3B gorunumde kullanir ve nesneyi unique_ptr
+// ile tutar. Baslik zincirine <SpaceMouse/*> yayilmamasi icin burada yalniz
+// forward-declare kullaniriz (navlib makrolari Qt/class duzenini bozuyordu);
+// tam tanim src/application.cpp'te include edilir.
+#ifdef _WIN32
+class SpaceMouseNav;
+#endif
 
 class Application {
 public:
