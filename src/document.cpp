@@ -863,7 +863,10 @@ void Document::save(const std::filesystem::path& path) const {
     if (!output) throw std::runtime_error("Could not open file for writing");
 
     output.precision(17);
-    output << "MMW2\n" << models_.size() << '\n';
+    // MMW3: geometri + TUM varlik ozellikleri (katman/profil/rotasyon/
+    // eksen/renk/cizgi tipi/malzeme...) — eskiden yalniz geometri
+    // yaziliyordu; kayit sonrasi katilar stilini kaybediyordu.
+    output << "MMW3\n" << models_.size() << '\n';
     for (const auto& model : models_) {
         output << model.vertices().size() << ' ' << model.edges().size() << ' '
                << model.faces().size() << ' ' << model.isPointEntity() << ' '
@@ -875,6 +878,30 @@ void Document::save(const std::filesystem::path& path) const {
             for (const auto index : face) output << ' ' << index;
             output << '\n';
         }
+        // Ozellikler: uzunluk-sonralikli string'ler (bosluk/bosa sorun yok).
+        const auto& props = model.properties();
+        const auto putS = [&output](const std::string& text) {
+            output << text.size() << ':';
+            output.write(text.data(), static_cast<std::streamsize>(text.size()));
+        };
+        output << "P ";
+        putS(props.layer); output << ' ';
+        putS(props.profileName); output << ' ';
+        output << props.profileRotation << ' '
+               << props.profileSourceLine << ' '
+               << props.axisFromX << ' ' << props.axisFromY << ' ' << props.axisFromZ << ' '
+               << props.axisToX << ' ' << props.axisToY << ' ' << props.axisToZ << ' ';
+        putS(props.lineType); output << ' ';
+        putS(props.material); output << ' ';
+        output << props.colorIndex << ' ';
+        if (props.trueColor) output << "1 " << *props.trueColor << ' ';
+        else output << "0 0 ";
+        output << props.lineWeight << ' ' << props.thickness << ' '
+               << props.lineTypeScale << ' ' << props.transparency << ' '
+               << props.visible << ' ' << props.frozen << ' ' << props.locked << ' '
+               << props.plottable << ' ';
+        putS(props.description);
+        output << '\n';
     }
     if (!output) throw std::runtime_error("Could not write document");
 }
@@ -886,10 +913,22 @@ void Document::load(const std::filesystem::path& path) {
     std::string signature;
     std::size_t modelCount{};
     if (!(input >> signature >> modelCount) ||
-        (signature != "MMW1" && signature != "MMW2") || modelCount > 100000) {
+        (signature != "MMW1" && signature != "MMW2" && signature != "MMW3") ||
+        modelCount > 100000) {
         throw std::runtime_error("Invalid Model Maker file");
     }
-    const bool version2 = signature == "MMW2";
+    const bool version2 = signature == "MMW2" || signature == "MMW3";
+    const bool version3 = signature == "MMW3";
+    // uzunluk-sonralikli string okuyucu
+    const auto readS = [&input]() {
+        std::size_t length{};
+        char colon{};
+        if (!(input >> length >> colon) || colon != ':') throw std::runtime_error("Invalid property string");
+        if (length > 100000) throw std::runtime_error("Invalid property string length");
+        std::string text(length, '\0');
+        if (length) input.read(text.data(), static_cast<std::streamsize>(length));
+        return text;
+    };
 
     std::vector<WireframeModel> loaded;
     loaded.reserve(modelCount);
@@ -920,14 +959,42 @@ void Document::load(const std::filesystem::path& path) {
                 if (!(input >> index) || index >= vertexCount) throw std::runtime_error("Invalid face data");
             faces.push_back(std::move(face));
         }
-        if (pointEntity && vertices.size() == 1) {
-            loaded.push_back(WireframeModel::point(vertices.front()));
-        } else if (face3D && vertices.size() == 4) {
-            loaded.push_back(WireframeModel::face3D(
-                {vertices[0], vertices[1], vertices[2], vertices[3]}));
-        } else {
-            loaded.emplace_back(std::move(vertices), std::move(edges), std::move(faces));
+        WireframeModel built = [&]() {
+            if (pointEntity && vertices.size() == 1)
+                return WireframeModel::point(vertices.front());
+            if (face3D && vertices.size() == 4)
+                return WireframeModel::face3D(
+                    {vertices[0], vertices[1], vertices[2], vertices[3]});
+            return WireframeModel(std::move(vertices), std::move(edges), std::move(faces));
+        }();
+        if (version3) {
+            // Ozellikler (kayit tarafindaki sirayla):
+            // P layer profil rot src fx fy fz tx ty tz linetyp material
+            //   color [trueColor] lw thick lts trans vis frozen lock plot desc
+            std::string tag;
+            if (!(input >> tag) || tag != "P") throw std::runtime_error("Invalid property block");
+            EntityProperties props = built.properties();
+            props.layer = readS();
+            props.profileName = readS();
+            if (!(input >> props.profileRotation >> props.profileSourceLine
+                       >> props.axisFromX >> props.axisFromY >> props.axisFromZ
+                       >> props.axisToX >> props.axisToY >> props.axisToZ))
+                throw std::runtime_error("Invalid property data");
+            props.lineType = readS();
+            props.material = readS();
+            int hasTrueColor{};
+            std::uint32_t trueColorValue{};
+            if (!(input >> props.colorIndex >> hasTrueColor >> trueColorValue
+                       >> props.lineWeight >> props.thickness >> props.lineTypeScale
+                       >> props.transparency >> props.visible >> props.frozen
+                       >> props.locked >> props.plottable))
+                throw std::runtime_error("Invalid property data");
+            props.trueColor = hasTrueColor ? std::optional<std::uint32_t>(trueColorValue)
+                                           : std::nullopt;
+            props.description = readS();
+            built.setProperties(std::move(props));
         }
+        loaded.push_back(std::move(built));
     }
     models_ = std::move(loaded);
     invalidateDerivedState();
