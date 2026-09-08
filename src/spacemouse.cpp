@@ -78,30 +78,36 @@ long SpaceMouseNav::GetCameraMatrix(navlib::matrix_t& matrix) const {
 }
 
 long SpaceMouseNav::SetCameraMatrix(const navlib::matrix_t& matrix) {
-    // Navlib'in gonderdigi TAM matrisi uygula (rotasyon + pozisyon).
-    // applyCameraToWorldMatrix4 m[0..8]'den euler, m[12..14]'ten center3D_
-    // cozer. Dondurme + pan icin yeterli (kullanici dogruladi).
+    // Navlib'in gonderdigi TAM matrisi uygula (rotasyon + pan). applyCamera
+    // ToWorldMatrix4 m[0..8]'den euler, m[12..14]'ten center3D_ cozer.
     std::array<double, 16> m{};
     for (int i = 0; i < 16; ++i) m[static_cast<std::size_t>(i)] = matrix[i];
     camera_.applyCameraToWorldMatrix4(m);
 
-    // ZOOM: Navlib zoom'u view.fov ile DEGIL, view.affine translasyonu m32
-    // (ileri-geri itme) ile yapar (SM-SET-CAM logu kaniti). m32'nin her
-    // adimdaki delta'sini model genisligine normalize edip zoomBy ile uygula.
-    // Birikimli alirsak ani sicrama olur; delta + normalize tutarli kalir.
-    static double prevZ = 0.0;
-    static bool zinit = false;
-    const double z = matrix[14];
-    if (!zinit) {
-        prevZ = z;
-        zinit = true;
+    // ZOOM: Navlib zoom'u view.affine translasyonu ile gonderir. AMA m[14]
+    // (pozisyon Z) sağ-sol itmede de degisiyor (kamera donuk oldugu icin) —
+    // bu yuzden m[14]'ten dogrudan zoom hesabi yanlis (sağ-sol itme de zoom
+    // uretir). Cozum: pozisyon delta'sini KAMERA BAKIS YONUNE (forward)
+    // projekte et — sağ-sol (forward'a dik) hareket zoom URETMEZ, sadece
+    // ileri-geri (forward'a paralel) zoom uretir.
+    static double prevX = 0.0, prevY = 0.0, prevZ = 0.0;
+    static bool init = false;
+    const double px = matrix[12], py = matrix[13], pz = matrix[14];
+    if (!init) {
+        prevX = px; prevY = py; prevZ = pz;
+        init = true;
     } else {
-        const double dz = z - prevZ;
-        prevZ = z;
-        const double extentWidth = 10000.0; // GetViewExtents varsayilan genislik
-        if (std::fabs(dz) > 1e-6) {
-            double factor = 1.0 + dz / extentWidth;
-            if (factor > 0.5 && factor < 2.0) camera_.zoomBy(factor);
+        const double dx = px - prevX, dy = py - prevY, dz = pz - prevZ;
+        prevX = px; prevY = py; prevZ = pz;
+        // forward = -m[8..10] (cameraToWorld'da m[8..10] = backward yonu)
+        const double fx = -matrix[8], fy = -matrix[9], fz = -matrix[10];
+        const double flen = std::sqrt(fx * fx + fy * fy + fz * fz);
+        if (flen > 1e-9) {
+            const double fwd = (dx * fx + dy * fy + dz * fz) / flen; // mm cinsinden
+            if (std::fabs(fwd) > 1e-3) {
+                double factor = 1.0 + fwd / 10000.0; // model genisligi ~10m
+                if (factor > 0.5 && factor < 2.0) camera_.zoomBy(factor);
+            }
         }
     }
     if (viewChangedCallback_) viewChangedCallback_();
