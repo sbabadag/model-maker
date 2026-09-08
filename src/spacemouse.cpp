@@ -42,10 +42,12 @@ bool SpaceMouseNav::start() {
     std::shared_ptr<TDx::SpaceMouse::Navigation3D::IAccessors> self(
         this, [](TDx::SpaceMouse::Navigation3D::IAccessors*) {});
     try {
-        // multiThreaded=false (tek-thread), rowMajor=true — kameranin
-        // urettigi 4x4 matris row-major (m[row*4+col]) duzendedir; Navlib'e
-        // bu bayrakla bildiririz ki m[]'yi dogru yorumlasin.
-        navlib_.reset(new nav3d::CNavlibInterface(std::move(self), false, true));
+        // multiThreaded=true: Navlib property callback'leri (GetCameraMatrix/
+        // SetCameraMatrix) Navlib'in kendi worker thread'inden gelir — bizim
+        // Win32/Qt mesaj dongusunu pump etmemize gerek kalmaz. Isaretli tek
+        // sey: cihaz degisiminde InvalidateRect thread-safe'dir. rowMajor=true
+        // kameranin urettigi 4x4 matris row-major (m[row*4+col]) duzendedir.
+        navlib_.reset(new nav3d::CNavlibInterface(std::move(self), true, true));
         navlib_->Open("model-maker");
     } catch (const std::exception&) {
         navlib_.reset();
@@ -198,18 +200,24 @@ long SpaceMouseNav::GetIsViewRotatable(navlib::bool_t& isRotatable) const {
 
 // --- IModel ----------------------------------------------------------------
 long SpaceMouseNav::GetModelExtents(navlib::box_t& extents) const {
+    // Navlib, 6 ekseni modelin kapsam alani bilgisiyle olcekler. Hata
+    // dondurursek navigasyonu baslatmayabilir; bu yuzden model yoksa bile
+    // her zaman gecerli bir kutu veririz (grid ya da 10m varsayilan).
     auto b = document_.bounds();
-    if (!b) {
-        return navlib::make_result_code(static_cast<unsigned long>(navlib::navlib_errc::no_data_available));
-    }
-    extents.min = navlib::point_t{b->minimum.x, b->minimum.y, b->minimum.z};
-    extents.max = navlib::point_t{b->maximum.x, b->maximum.y, b->maximum.z};
+    const double x0 = b ? b->minimum.x : -5000.0;
+    const double y0 = b ? b->minimum.y : -5000.0;
+    const double z0 = b ? b->minimum.z : 0.0;
+    const double x1 = b ? b->maximum.x : 5000.0;
+    const double y1 = b ? b->maximum.y : 5000.0;
+    const double z1 = b ? b->maximum.z : 10000.0;
+    extents.min = navlib::point_t{x0, y0, z0};
+    extents.max = navlib::point_t{x1, y1, z1};
     return 0;
 }
 
 long SpaceMouseNav::GetSelectionExtents(navlib::box_t& extents) const {
-    (void)extents;
-    return navlib::make_result_code(static_cast<unsigned long>(navlib::navlib_errc::no_data_available));
+    // Secim yok — Navlib'e bos kutu degil, model kapsami ver (yoksa varsayilan).
+    return GetModelExtents(extents);
 }
 
 long SpaceMouseNav::GetSelectionTransform(navlib::matrix_t& transform) const {
