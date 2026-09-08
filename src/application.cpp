@@ -2161,12 +2161,18 @@ void Application::startTransformCommand(TransformCommand command) {
 }
 
 void Application::applyStartupDefaults() {
-    // Qt kabugu ilk showEvent'te cagirir. Donma 3165c04'te TAMAMEN no-op
-    // ile giderildi; kaynak `camera_.reset()` + `setView(Top)` kombinasyonuydu
-    // (0xC0000005 / tam sistem donmasi). CAMERA KURULUMU KAPALI tutuluyor —
-    // 2D projeksiyon varsayilan Draw2D'de zaten XY'ye bakar (2B plan).
-    // Kullanicinin istedigi "XY duzleminde default grid": grid olusturmayi
-    // tek basina geri eklendi (camera islevlerine dokunulmaz).
+    // Qt kabugu ilk showEvent'te cagirir. Donma 3165c04'te no-op ile
+    // giderildi; kaynak `camera_.reset()`+`setView(Top)` kombinasyonuydu.
+    // CAMERA KURULUMU KAPALI tutuluyor — 2D projeksiyon varsayilan
+    // Draw2D'de zaten XY'ye bakar (2B plan). Kullanicinin iki istegi:
+    //  (1) default olarak GL modunda acilsin -> toggleGpuLines()
+    //      (GL basarisizsa arka planda otomatik GDI'ye duser, guvenli)
+    //  (2) XY duzleminde default grid -> createModelGrid()
+    // toggleGpuLines canvas boyutuna güvenir; showEvent'te ondan ONCE
+    // resizeEmbeddedCanvas QTimer'i eklendigi icin canvas boyutlandirilmis
+    // olur (QTimer::singleShot(0) FIFO garantili).
+    if (mode_ == EditMode::View3D) toggle3DView(); // Draw2D ise dokunma
+    if (!gpuLinesEnabled_) toggleGpuLines();
     if (document_.grids().empty() && document_.models().empty()) {
         createModelGrid({0.0, 0.0, 0.0}, {1.0, 0.0, 0.0}, {0.0, 1.0, 0.0},
                         3, 3, 5000.0, 5000.0, L"1", L"A");
