@@ -78,13 +78,32 @@ long SpaceMouseNav::GetCameraMatrix(navlib::matrix_t& matrix) const {
 }
 
 long SpaceMouseNav::SetCameraMatrix(const navlib::matrix_t& matrix) {
-    // Navlib'in gonderdigi TAM matrisi uygula (rotasyon + pozisyon). Matrisin
-    // m30/m31/m32 (translasyon) ileri-geri itme icin kullanilir; applyCamera
-    // ToWorldMatrix4 bunu euler + center3D_ olarak cozer. Bu yamalama yok:
-    // detay bkz. camera.cpp round-trip testi.
+    // Navlib'in gonderdigi TAM matrisi uygula (rotasyon + pozisyon).
+    // applyCameraToWorldMatrix4 m[0..8]'den euler, m[12..14]'ten center3D_
+    // cozer. Dondurme + pan icin yeterli (kullanici dogruladi).
     std::array<double, 16> m{};
     for (int i = 0; i < 16; ++i) m[static_cast<std::size_t>(i)] = matrix[i];
     camera_.applyCameraToWorldMatrix4(m);
+
+    // ZOOM: Navlib zoom'u view.fov ile DEGIL, view.affine translasyonu m32
+    // (ileri-geri itme) ile yapar (SM-SET-CAM logu kaniti). m32'nin her
+    // adimdaki delta'sini model genisligine normalize edip zoomBy ile uygula.
+    // Birikimli alirsak ani sicrama olur; delta + normalize tutarli kalir.
+    static double prevZ = 0.0;
+    static bool zinit = false;
+    const double z = matrix[14];
+    if (!zinit) {
+        prevZ = z;
+        zinit = true;
+    } else {
+        const double dz = z - prevZ;
+        prevZ = z;
+        const double extentWidth = 10000.0; // GetViewExtents varsayilan genislik
+        if (std::fabs(dz) > 1e-6) {
+            double factor = 1.0 + dz / extentWidth;
+            if (factor > 0.5 && factor < 2.0) camera_.zoomBy(factor);
+        }
+    }
     if (viewChangedCallback_) viewChangedCallback_();
     return 0;
 }
@@ -214,10 +233,10 @@ long SpaceMouseNav::SetViewFrustum(const navlib::frustum_t& frustum) {
 }
 
 long SpaceMouseNav::GetIsViewPerspective(navlib::bool_t& perspective) const {
-    // Orthografik kamera (AutoCAD tarzi). Navlib zoom'u view.extents uzerinden
-    // yapar (SetViewExtents). Pozisyon-matrisi (m30/m31/m32) ile zoom yapmasin
-    // diye perspective=1 vermeyiz — orthografikte pozisyon kaymasi zoom degil.
-    perspective = 0;
+    // Perspektif raporla: kullanici bu modda dondurme + pan'in dogru calistigini
+    // dogruladi. Ortho (0) raporlayinca navlib pan/zoom'u farkli (hizli) hesaplar
+    // ve kamera-hedef kaymasi olur. Zoomu SetViewFOV uzerinden hallederiz.
+    perspective = 1;
     return 0;
 }
 
