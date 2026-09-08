@@ -2018,7 +2018,16 @@ void Application::commitPoint(const Vec3& point) {
     const Vec3 start = *anchor_;
     switch (tool_) {
     case DrawTool::Line:
-        if (point != start) addStyledModel(WireframeModel::line(start, point));
+        if (point != start) {
+            if (!pendingProfileName_.empty()) {
+                // PROFIL CIZIM MODU: secli profil ile cizilen cizgi hemen
+                // kirişe (ekstrüde katiya) donusur — ayrica secime gerek
+                // yok, Tekla tarzi dogrudan cizim.
+                assignProfileToLine(start, point, pendingProfileName_);
+            } else {
+                addStyledModel(WireframeModel::line(start, point));
+            }
+        }
         anchor_.reset();
         break;
     case DrawTool::Polyline:
@@ -4218,6 +4227,24 @@ void Application::executeSolidTrim(bool keepPositive) {
     invalidateCanvas();
 }
 #endif
+
+void Application::assignProfileToLine(const Vec3& from, const Vec3& to,
+                                       const std::string& profileName) {
+    ensureProfileCatalog();
+    const auto* profile = mm::findProfile(profileCatalog_, profileName);
+    if (!profile) {
+        publishStatus(L"Profil bulunamadı: " + utf8ToWide(profileName));
+        return;
+    }
+    // Cizgiyi ekle, secili yap, mevcut atama akisina birak (ekstrude +
+    // kaynak cizgi silme + occShapes eslesmesi ayni kod — kopyalanmaz).
+    // Snapshot atama akisinin icindeki addStyledModel/delete zincirinde
+    // alinir — burada ek bir snapshot Ctrl+Z'de cift adim yapar.
+    document_.addModel(WireframeModel::line(from, to));
+    selectedModels_.assign(1, document_.models().size() - 1);
+    assignProfileToSelection(profile->name);
+    selectedModels_.clear();
+}
 
 void Application::assignProfileToSelection(const std::string& profileName) {
     ensureProfileCatalog();

@@ -88,6 +88,14 @@ public:
     void setSelectedEntityMaterial(const std::string& material);
     std::string selectedEntityLengthLabel() const;
     void assignProfileToSelection(const std::string& profileName);
+    // PROFIL CIZIM MODU: dogrudan cizilen cizgiyi secili profille kirişe
+    // donusturur (cizgi eklenir -> secilir -> atama akisi -> secim biter).
+    void assignProfileToLine(const Vec3& from, const Vec3& to,
+                             const std::string& profileName);
+    // Qt profil secici: bos = normal cizim; dolu = cizim profillidir.
+    void setPendingProfileName(std::string name) { pendingProfileName_ = std::move(name); }
+    const std::string& pendingProfileName() const noexcept { return pendingProfileName_; }
+    bool hasSelection() const noexcept { return !selectedModels_.empty(); }
     void setProfilePickerCallback(std::function<void()> callback) {
         profilePickerCallback_ = std::move(callback);
     }
@@ -353,6 +361,7 @@ private:
     std::function<void()> profilePickerCallback_;
     EditMode mode_{EditMode::Draw2D};
     DrawTool tool_{DrawTool::Line};
+    std::string pendingProfileName_; // profil-cizim modu aktif profili
     std::optional<Vec3> anchor_;
     std::vector<Vec3> facePoints_;
     std::optional<SnapResult> hover_;

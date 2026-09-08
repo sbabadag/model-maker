@@ -971,7 +971,9 @@ void QtMainWindow::createToolbar() {
     }
     profileBar->addWidget(profileSelector_);
 
-    QLabel* profileHint = new QLabel("Ctrl+tıkla seç  →  profili seç", profileBar);
+    QLabel* profileHint = new QLabel(
+        "Seçim yokken profil seç → ÇİZ: her çizgi otomatik o profille kiriş olur; seçim varken profili atar",
+        profileBar);
     profileHint->setObjectName("profileSelectorHint");
     profileHint->setStyleSheet("color: #C8CCD4; font-weight: 400;");
     profileBar->addWidget(profileHint);
@@ -986,7 +988,14 @@ void QtMainWindow::createToolbar() {
                 fprintf(diag, "PROFILE-QT-SELECT name=%s\n", utf8.constData());
                 fclose(diag);
             }
-            app_.assignProfileToSelection(utf8.toStdString());
+            // PROFIL CIZIM MODU: secici Secim-ile-ata yerine dogrudan cizime
+            // gecti — combo'da profil seciliyken cizilen her cizgi otomatik
+            // o profille kiriş olur. Secim varsa yine de atama yapilir.
+            if (app_.hasSelection()) {
+                app_.assignProfileToSelection(utf8.toStdString());
+            } else {
+                app_.setPendingProfileName(utf8.toStdString());
+            }
             if (HWND canvas = app_.canvasHandle()) SetFocus(canvas);
         });
     app_.setProfilePickerCallback([this]() {
