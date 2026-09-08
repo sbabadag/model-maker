@@ -2161,15 +2161,13 @@ void Application::startTransformCommand(TransformCommand command) {
 }
 
 void Application::applyStartupDefaults() {
-    // Qt kabugu ilk showEvent'te cagirir (run() Win32 dongusunde kaliyordu).
-    // ILK GORUNUM: XY duzleminde 2B plan (Top). Varsayilan grid OLUSTURMA
-    // komutleri GECICI olarak kaldirildi: showEvent QTimer zincirinde cokme
-    // (0xC0000005) / kilitlenme gozlemlendi. Acilisi once sadece kamera ile
-    // guvenli hale getirdik; grid'i ayrica geri ekleyecegiz.
-    if (mode_ == EditMode::View3D) toggle3DView();
-    camera_.reset();
-    camera_.setView(StandardView::Top);
-    // NOTE: createModelGrid cagrisi GECICI kapali (startup crash izolasyonu).
+    // Qt kabugu ilk showEvent'te cagirir. Kilitlenme (0xC0000005 / tam sistem
+    // donmasi) 2afd25a ile geldi; 4dcb173 GL'yi, e69894f grid olusturmayi
+    // kaldirdi ama donma surdu. DEBUG: baslangic kurulumu TAMAMEN no-op —
+    // mode zaten Draw2D (2B plan) ve 2D projeksiyonda kamera kurulumu
+    // etkisiz. Uygulama once guvenli acilsin; 2B plan + grid'i asama asama
+    // geri ekleyecegiz.
+    // No-op: ilk render guvenli olsun.
 }
 
 void Application::createModelGrid(const Vec3& origin, const Vec3& xDir, const Vec3& yDir,
