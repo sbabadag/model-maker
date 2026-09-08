@@ -2161,16 +2161,12 @@ void Application::startTransformCommand(TransformCommand command) {
 }
 
 void Application::applyStartupDefaults() {
-    // Donma KAYNAGI: GL init acilista tüm sistemi donduruyor (0x0 canvas'ta
-    // icin de degil — 0050b1c boyut kontrolu ekleyince de dondu). GL istemci
-    // makinede GPU surucusu/context duzeyinde dontu; ayri ayiklama gerekir.
-    // GUCLU KARAR: GL otomatik acilisi KAPALI (startupGpuEnabled_=false),
-    // varsayilan GDI. Kulanici F9 ile GL'i elle acar (loglarda elle acikken
-    // sorunsuz calisti). Grid bos belgede tek kez olusur (kamera/GL bagimsiz).
-    if (document_.grids().empty() && document_.models().empty()) {
-        createModelGrid({0.0, 0.0, 0.0}, {1.0, 0.0, 0.0}, {0.0, 1.0, 0.0},
-                        3, 3, 5000.0, 5000.0, L"1", L"A");
-    }
+    // TAM NO-OP — kilitlenme teşhisi.
+    // 3165c04 (no-op): donma yok (teyit). 962720b (grid otomatik olusunca):
+    // donma. O halde donmayi YAPAN grid'in acilista otomatik olusmasi —
+    // GL degil (0050b1c'de GL kapatilip grid birakilinca da dondu).
+    // Grid'i menuden elle ekleyince test et; acilista otomatik ekleme kapali.
+    // (Kullanici "Yapı Gridi Oluştur" ile zaten grid ekleyebilir — 32cf62d.)
 }
 
 void Application::createModelGrid(const Vec3& origin, const Vec3& xDir, const Vec3& yDir,
