@@ -2287,6 +2287,15 @@ void Application::toggle3DView() {
     updateStatus();
     invalidateCanvas();
 #ifdef _WIN32
+    {
+        FILE* diag = fopen("model-maker-render.log", "a");
+        if (diag) {
+            fprintf(diag, "TOGGLE3D mode=%d entering3D=%d gpu=%d spaceMouse=%d attempted=%d\n",
+                    (int)mode_, entering3D ? 1 : 0, gpuLinesEnabled_ ? 1 : 0,
+                    spaceMouse_ ? 1 : 0, spaceMouseStartupAttempted_ ? 1 : 0);
+            fclose(diag);
+        }
+    }
     // SpaceMouse yalniz 3B görünümde (plan aktarimi yok). Entegrasyon islevsel:
     // Navlib 6 ekseni "kamera matrisini guncelle" olarak yazar (SetCameraMatrix),
     // biz bunu uygulama dongusune PostMessage ile tasiriz.
@@ -2298,7 +2307,16 @@ void Application::toggle3DView() {
                 // Navlib kendi thread'inden cagirir — boyama ana thread'de.
                 InvalidateRect(canvas_, nullptr, FALSE);
             });
-            if (spaceMouse_->start()) {
+            const bool started = spaceMouse_->start();
+            {
+                FILE* diag = fopen("model-maker-render.log", "a");
+                if (diag) {
+                    fprintf(diag, "SPACEMOUSE start=%d running=%d\n", started ? 1 : 0,
+                            spaceMouse_->running() ? 1 : 0);
+                    fclose(diag);
+                }
+            }
+            if (started) {
                 publishStatus(L"SpaceMouse etkin (3Dconnexion Navlib)");
             } else {
                 publishStatus(L"SpaceMouse kurulamadi (surucu/navlib.dll yok)");
