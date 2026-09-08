@@ -120,9 +120,10 @@ long SpaceMouseNav::SetPointerPosition(const navlib::point_t& position) {
 }
 
 long SpaceMouseNav::GetViewConstructionPlane(navlib::plane_t& plane) const {
-    plane.n = navlib::vector_t{0.0, 0.0, 1.0};
-    plane.d = 0.0;
-    return 0;
+    // SDK ornegi (3DxTraceNL) boyle yapar: "We haven't got a construction plane
+    // that should be kept parallel to the viewport". Bir duzlem verirsek navlib
+    // orthografik gorunumde rotasyonu o duzleme kilitler ve dogru calismaz.
+    return navlib::make_result_code(navlib::navlib_errc::no_data_available);
 }
 
 long SpaceMouseNav::GetViewExtents(navlib::box_t& extents) const {
@@ -139,10 +140,16 @@ long SpaceMouseNav::GetViewExtents(navlib::box_t& extents) const {
 }
 
 long SpaceMouseNav::SetViewExtents(const navlib::box_t& extents) {
-    // Perspektif gorunumde Navlib zoom'u view.extents ile DEGIL view.fov ile
-    // yapar; bu yuzden no-op (zoom SetViewFOV'da). Ortho raporlarsak navlib
-    // donus kilidini bozuyordu.
-    (void)extents;
+    // Orthografik gorunumde Navlib zoom'u view.extents uzerinden yapar:
+    // extents genisler/yazar, biz zoom carpanina ceviririz (genislik artar
+    // -> uzaklasir / zoom azalir).
+    double width = extents.max.x - extents.min.x;
+    if (width > 0) {
+        double targetZoom = 10000.0 / width; // baslangic extents ~10m
+        double current = camera_.zoom();
+        if (current > 0) camera_.zoomBy(targetZoom / current);
+    }
+    if (viewChangedCallback_) viewChangedCallback_();
     return 0;
 }
 
@@ -195,10 +202,10 @@ long SpaceMouseNav::SetViewFrustum(const navlib::frustum_t& frustum) {
 }
 
 long SpaceMouseNav::GetIsViewPerspective(navlib::bool_t& perspective) const {
-    // Perspektif raporla: Navlib zoom'u view.fov uzerinden yapar (SetViewFOV
-    // -> zoomBy), rotasyon view.affine uzerinden. Ortho raporlayinca navlib
-    // donus/yon kilidini yanlis eksene uyguluyor (rotasyon bozuluyordu).
-    perspective = 1;
+    // Orthografik kamera (AutoCAD tarzi). Navlib zoom'u view.extents uzerinden
+    // yapar (SetViewExtents). Pozisyon-matrisi (m30/m31/m32) ile zoom yapmasin
+    // diye perspective=1 vermeyiz — orthografikte pozisyon kaymasi zoom degil.
+    perspective = 0;
     return 0;
 }
 
