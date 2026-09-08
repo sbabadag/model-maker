@@ -42,12 +42,14 @@ bool SpaceMouseNav::start() {
     std::shared_ptr<TDx::SpaceMouse::Navigation3D::IAccessors> self(
         this, [](TDx::SpaceMouse::Navigation3D::IAccessors*) {});
     try {
-        // multiThreaded=true: Navlib property callback'leri (GetCameraMatrix/
-        // SetCameraMatrix) Navlib'in kendi worker thread'inden gelir — bizim
-        // Win32/Qt mesaj dongusunu pump etmemize gerek kalmaz. Isaretli tek
-        // sey: cihaz degisiminde InvalidateRect thread-safe'dir. rowMajor=true
-        // kameranin urettigi 4x4 matris row-major (m[row*4+col]) duzendedir.
-        navlib_.reset(new nav3d::CNavlibInterface(std::move(self), true, true));
+        // multiThreaded=false: Navlib accessor callback'leri (GetCameraMatrix/
+        // SetCameraMatrix) Navlib'in kendi worker thread'inden degil, uygulama
+        // mesaj dongusuyle senkron gelir. Rhino gibi calisan Navlib 4.x
+        // entegrasyonlari genelde bu modu kullanir; bizim gibi QMainWindow
+        // kabugu + Win32 mesaj pump'i olan uygulamada multiThreaded=true cihaz
+        // girdisini hic aktarmadi (NlCreate basarili ama SM-* hic gelmedi).
+        // rowMajor=true: kameranin urettigi 4x4 matris row-major duzendedir.
+        navlib_.reset(new nav3d::CNavlibInterface(std::move(self), false, true));
         navlib_->Open("model-maker");
         // Navlib, 3D Mouse girdisinin HANGI baglantiya gidecegini "active" ve
         // "focus" ozellikleriyle bilir. Open() bunlari ayarlamaz; biz kurariz,
