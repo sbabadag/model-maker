@@ -866,7 +866,9 @@ void Document::save(const std::filesystem::path& path) const {
     // MMW3: geometri + TUM varlik ozellikleri (katman/profil/rotasyon/
     // eksen/renk/cizgi tipi/malzeme...) — eskiden yalniz geometri
     // yaziliyordu; kayit sonrasi katilar stilini kaybediyordu.
-    output << "MMW3\n" << models_.size() << '\n';
+    // MMW4: geometri + props + KATMAN TABLOSU. (MMW3 = props, katman yok;
+    // MMW1/2 = yalniz geometri.) Yeni dosyalar daima MMW4 yazar.
+    output << "MMW4\n" << models_.size() << '\n';
     // Katman tanimlari: isim + (trueColor veya ACI) + linetype + visible.
     // Model yalniz katman ADI tasir; katman rengi/sifati bu haritada —
     // kaydedilmezse dosya acilinca BYLAYER nesneler rengini kaybeder.
@@ -929,12 +931,16 @@ void Document::load(const std::filesystem::path& path) {
     std::string signature;
     std::size_t modelCount{};
     if (!(input >> signature >> modelCount) ||
-        (signature != "MMW1" && signature != "MMW2" && signature != "MMW3") ||
+        (signature != "MMW1" && signature != "MMW2" && signature != "MMW3" &&
+         signature != "MMW4") ||
         modelCount > 100000) {
         throw std::runtime_error("Invalid Model Maker file");
     }
-    const bool version2 = signature == "MMW2" || signature == "MMW3";
-    const bool version3 = signature == "MMW3";
+    const bool version2 = signature == "MMW2" || signature == "MMW3" || signature == "MMW4";
+    const bool version3 = signature == "MMW3" || signature == "MMW4";
+    // Katman tablosu yalniz MMW4'te — MMW3 (renkli props, katmansiz)
+    // geriye donuk acilir.
+    const bool version4 = signature == "MMW4";
     // uzunluk-sonralikli string okuyucu (katman blogundan once tanimli)
     const auto readS = [&input]() {
         std::size_t length{};
@@ -945,24 +951,30 @@ void Document::load(const std::filesystem::path& path) {
         if (length) input.read(text.data(), static_cast<std::streamsize>(length));
         return text;
     };
-    if (version3) {
-        std::string layerTag;
-        std::size_t layerCount{};
-        if (!(input >> layerTag >> layerCount) || layerTag != "L" || layerCount > 1000)
-            throw std::runtime_error("Invalid layer block");
-        for (std::size_t li = 0; li < layerCount; ++li) {
-            std::string layerName = readS();
-            EntityProperties layer;
-            int hasLayerColor{};
-            std::uint32_t layerColorValue{};
-            if (!(input >> layer.colorIndex >> hasLayerColor >> layerColorValue
-                       >> layer.visible >> layer.frozen >> layer.locked))
-                throw std::runtime_error("Invalid layer data");
-            layer.trueColor = hasLayerColor ? std::optional<std::uint32_t>(layerColorValue)
-                                            : std::nullopt;
-            if (layer.trueColor) layer.effectiveColor = *layer.trueColor;
-            else layer.effectiveColor = layer.colorIndex; // ACI 0-255 tek kanal fallback
-            layers_[layerName] = std::move(layer);
+    // Katman tablosu MMW4'te zorunlu; MMW3'te OPSIYONEL — ara build'ler
+    // (938af2e) MMW3'e blok yazdi, oncekiler yazmadi. 'L' ile basliyorsa
+    // oku (blok yoksa model verisi sayilarla baslar, peek bunu ayirir).
+    if (version3 || version4) {
+        input >> std::ws;
+        if (input.peek() == 'L') {
+            std::string layerTag;
+            std::size_t layerCount{};
+            if (!(input >> layerTag >> layerCount) || layerTag != "L" || layerCount > 1000)
+                throw std::runtime_error("Invalid layer block");
+            for (std::size_t li = 0; li < layerCount; ++li) {
+                std::string layerName = readS();
+                EntityProperties layer;
+                int hasLayerColor{};
+                std::uint32_t layerColorValue{};
+                if (!(input >> layer.colorIndex >> hasLayerColor >> layerColorValue
+                           >> layer.visible >> layer.frozen >> layer.locked))
+                    throw std::runtime_error("Invalid layer data");
+                layer.trueColor = hasLayerColor ? std::optional<std::uint32_t>(layerColorValue)
+                                                : std::nullopt;
+                if (layer.trueColor) layer.effectiveColor = *layer.trueColor;
+                else layer.effectiveColor = layer.colorIndex; // ACI 0-255 tek kanal fallback
+                layers_[layerName] = std::move(layer);
+            }
         }
     }
 
