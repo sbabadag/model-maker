@@ -79,20 +79,25 @@ long SpaceMouseNav::GetCameraMatrix(navlib::matrix_t& matrix) const {
 
 long SpaceMouseNav::SetCameraMatrix(const navlib::matrix_t& matrix) {
     // Navlib "ileri-geri" (push) itmeyi m32 (kamera pozisyon Z) translasyonu
-    // olarak gonderir. Orthografik kamerada pozisyon kaymasi zoom DEGILDIR,
-    // sadece merkezi kaydirir (kullanici bunu dondurme olarak gorur). Bu yuzden
-    // m32 degisimini ZOOM'a cevirip center3D_ kullanmayiz.
-    static double baseZ = 0.0;
+    // olarak gonderir. Orthografik kamerada pozisyon kaymasi zoom DEGILDIR.
+    // onemli: dz'yi ilk degerden (birikimli) DEGIL her adimdaki delta olarak
+    // al — birikimli alirsak (z - baseZ) gittikce devasa olur ve exp() ani
+    // sıcrama ile modeli uzağa firlatir.
+    static double prevZ = 0.0;
     static bool zinit = false;
     const double z = matrix[14];
-    const double dz = zinit ? (z - baseZ) : 0.0;
+    double dz = 0.0;
     if (!zinit) {
-        baseZ = z;
+        prevZ = z;
         zinit = true;
     } else {
+        dz = z - prevZ;
+        prevZ = z;
         if (std::fabs(dz) > 1e-6) {
-            double factor = std::exp(-dz * 0.002);
-            if (factor > 0.01 && factor < 100.0) camera_.zoomBy(factor);
+            // Ölçeği normalize et: navlib m32 mm cinsinden olabilir. Her adimda
+            // kucuk bir zoom carpani uygula (orantisal, birikimsiz).
+            double factor = 1.0 + dz * 0.002;
+            if (factor > 0.2 && factor < 5.0) camera_.zoomBy(factor);
         }
     }
     {
