@@ -279,8 +279,8 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
                 FILE* diag = fopen("model-maker-render.log", "a");
                 if (diag) {
                     fprintf(diag, "GRIDDRAW begin grids=%zu canvas=%dx%d useGpuLines=%d\n",
-                            document.grids().size(), canvas.right - canvas.left,
-                            canvas.bottom - canvas.top, useGpuLines ? 1 : 0);
+                            document.grids().size(), (int)(canvas.right - canvas.left),
+                            (int)(canvas.bottom - canvas.top), useGpuLines ? 1 : 0);
                     fclose(diag);
                 }
             }
