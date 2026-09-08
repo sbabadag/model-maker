@@ -56,6 +56,7 @@ public:
     void zoomExtents2D();
     void startZoomWindow2D();
     void toggle3DView();
+    void ensureSpaceMouseStarted();
     void applyStartupDefaults();
     // TEKLA-TARZI YAPI GRIDI olusturma (Qt dialogdan parametrelerle).
     // X/1-2-3 (dikey) ve Y/A-B-C (yatay) aks cizgilerini workPlane

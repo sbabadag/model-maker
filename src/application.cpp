@@ -154,6 +154,9 @@ int Application::run(int showCommand, std::optional<std::filesystem::path> start
     // mekanizmasi); toggle3DView modu View3D'ye tasir; setVisualStyle Solid.
     if (!gpuLinesEnabled_) toggleGpuLines();
     if (mode_ != EditMode::View3D) toggle3DView();
+    // SpaceMouse'u startup'ta da baslat: mode_ basindan View3D ise toggle3DView
+    // cagrilmaz (koşul false), bu yuzden burada acikca baslat.
+    ensureSpaceMouseStarted();
     setVisualStyle(VisualStyle::Solid);
     if (startupDxf && startupDxf->extension() == L".dxf") beginDxfImport(*startupDxf);
     MSG message{};
@@ -2299,37 +2302,42 @@ void Application::toggle3DView() {
             fclose(diag);
         }
     }
-    // SpaceMouse yalniz 3B görünümde. Navlib'i her 3B girişinde (yeniden)
-    // baslat: onceki duzen spaceMouseStartupAttempted_ bayragiyla ilk girişte
-    // navlib_ kurup, 2B'ye donunce stop() (Close) yapıyor ama ikinci girişte
-    // yeniden start() etmiyordu — Navlib tam haberlşme kurana kadar tekrar
-    // giris gerekiyordu (kullanici "2 kez girince calisiyor" dedi). Simdi her
-    // 3B girişinde spaceMouse_ yoksa olustur, varsa (kapanmıssa) start().
+    // SpaceMouse her 3B girisinde (yeniden) baslatilir. Startup'ta mode_
+    // basindan View3D oldugu icin toggle3DView cagrilmaz ve SpaceMouse hic
+    // baslamazdi — bu yuzden baslatmayi ayri ensureSpaceMouseStarted()'a alip
+    // hem burada hem run() baslangicinda cagiriyoruz.
     if (mode_ == EditMode::View3D) {
-        if (!spaceMouse_) {
-            spaceMouse_ = std::make_unique<SpaceMouseNav>(camera_, document_);
-            spaceMouse_->setViewChangedCallback([this]() {
-                // Navlib kendi thread'inden cagirir — boyama ana thread'de.
-                InvalidateRect(canvas_, nullptr, FALSE);
-            });
-        }
-        if (!spaceMouse_->running()) {
-            const bool started = spaceMouse_->start();
-            {
-                FILE* diag = fopen("model-maker-render.log", "a");
-                if (diag) {
-                    fprintf(diag, "SPACEMOUSE start=%d running=%d\n", started ? 1 : 0,
-                            spaceMouse_->running() ? 1 : 0);
-                    fclose(diag);
-                }
-            }
-            publishStatus(started ? L"SpaceMouse etkin (3Dconnexion Navlib)"
-                                  : L"SpaceMouse kurulamadi (surucu/navlib.dll yok)");
-        }
+        ensureSpaceMouseStarted();
     } else {
         if (spaceMouse_ && spaceMouse_->running()) {
             spaceMouse_->stop();
         }
+    }
+#endif
+}
+
+void Application::ensureSpaceMouseStarted() {
+#ifdef _WIN32
+    if (mode_ != EditMode::View3D) return;
+    if (!spaceMouse_) {
+        spaceMouse_ = std::make_unique<SpaceMouseNav>(camera_, document_);
+        spaceMouse_->setViewChangedCallback([this]() {
+            // Navlib kendi thread'inden cagirir — boyama ana thread'de.
+            InvalidateRect(canvas_, nullptr, FALSE);
+        });
+    }
+    if (!spaceMouse_->running()) {
+        const bool started = spaceMouse_->start();
+        {
+            FILE* diag = fopen("model-maker-render.log", "a");
+            if (diag) {
+                fprintf(diag, "SPACEMOUSE start=%d running=%d\n", started ? 1 : 0,
+                        spaceMouse_->running() ? 1 : 0);
+                fclose(diag);
+            }
+        }
+        publishStatus(started ? L"SpaceMouse etkin (3Dconnexion Navlib)"
+                              : L"SpaceMouse kurulamadi (surucu/navlib.dll yok)");
     }
 #endif
 }
