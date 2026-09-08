@@ -116,11 +116,15 @@ long SpaceMouseNav::GetViewConstructionPlane(navlib::plane_t& plane) const {
 }
 
 long SpaceMouseNav::GetViewExtents(navlib::box_t& extents) const {
-    // Orthografik gorunum alani: merkez center3D, ~10m yari cap.
+    // Orthografik gorunum alani: merkez center3D, genislik zoom'a bagli.
+    // Navlib bu degeri zoom (view.extents) icin kullanir. zoom arttikca
+    // gorunum alani kuculur (yakinlastirma).
     const auto& c = camera_.center3D();
-    const double w = 5000.0;
-    extents.min = navlib::point_t{c.x - w, c.y - w, c.z - w};
-    extents.max = navlib::point_t{c.x + w, c.y + w, c.z + w};
+    double z = camera_.zoom();
+    if (z <= 0) z = 1.0;
+    const double half = 5000.0 / z;
+    extents.min = navlib::point_t{c.x - half, c.y - half, c.z - half};
+    extents.max = navlib::point_t{c.x + half, c.y + half, c.z + half};
     return 0;
 }
 
@@ -165,8 +169,10 @@ long SpaceMouseNav::SetViewFrustum(const navlib::frustum_t& frustum) {
 }
 
 long SpaceMouseNav::GetIsViewPerspective(navlib::bool_t& perspective) const {
-    // Navlib rotasyonu view.affine uzerinden yapar; perspektif raporla.
-    perspective = 1;
+    // Orthografik kamera (AutoCAD tarzi). Navlib zoom'u view.extents uzerinden
+    // yapar (SetViewExtents); perspektif raporlarsak SetViewFOV beklentisiyle
+    // zoom calismaz.
+    perspective = 0;
     return 0;
 }
 
