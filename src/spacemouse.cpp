@@ -87,11 +87,18 @@ void SpaceMouseNav::stop() {
 
 // --- ISpace3D --------------------------------------------------------------
 long SpaceMouseNav::GetCoordinateSystem(navlib::matrix_t& matrix) const {
-    // Kimlik (identity). Navlib Y-up bekler; bizim XY plan dogal olarak
-    // Y-up koordinat sistemine yakindir. Bu matris Navlib'e "kendi koordinat
-    // sistemin uygulama koordinatiyla ayni" der. matrix_t bireysel m00..m33
-    // uyeleri + operator[] index erisimine sahiptir (.m dizi yok).
+    // Navlib Y-up varsayar (Y yukari, Z ekrandan disari). Bizim model Z-up:
+    // kolonlar Z'de yukari, zemin XY duzlemi. navlib.h geregi, zemin X-Z
+    // duzlemi degilse Y-up (Lock Horizon) algoritmasi icin NON-IDENTITY bir
+    // matris vermek zonunlu; identity verirsek navlib donme eksenlerini yanlis
+    // yorumlar ve rotasyonu hic hesaplayamaz (zoom calisir, rotate gelmez).
+    // Dönüşüm: bizim (x,y,z) -> navlib (x, z, -y)  [X etrafinda -90°].
     setIdentity(matrix);
+    matrix[0] = 1.0;   // x -> navlib x
+    matrix[5] = 0.0;   // row1 col0
+    matrix[6] = 1.0;   // row1 col1 = y' <- z  (our z -> navlib y)
+    matrix[9] = -1.0;  // row2 col1 = z' <- -y (our y -> navlib -z)
+    matrix[10] = 0.0;
     return 0;
 }
 
