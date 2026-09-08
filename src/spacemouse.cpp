@@ -123,12 +123,23 @@ long SpaceMouseNav::SetCameraMatrix(const navlib::matrix_t& matrix) {
 long SpaceMouseNav::GetCameraTarget(navlib::point_t& target) const {
     const auto& c = camera_.center3D();
     target.x = c.x; target.y = c.y; target.z = c.z;
+    {
+        static int n = 0; if (n++ < 4) {
+            FILE* diag = fopen("model-maker-render.log", "a");
+            if (diag) { fprintf(diag, "SM-GET-TARGET #%d\n", n); fclose(diag); }
+        }
+    }
     return 0;
 }
 
 long SpaceMouseNav::SetCameraTarget(const navlib::point_t& target) {
     camera_.setCenter3D(Vec3{target.x, target.y, target.z});
     if (viewChangedCallback_) viewChangedCallback_();
+    {
+        FILE* diag = fopen("model-maker-render.log", "a");
+        if (diag) { fprintf(diag, "SM-SET-TARGET (%.0f,%.0f,%.0f)\n",
+            target.x, target.y, target.z); fclose(diag); }
+    }
     return 0;
 }
 
@@ -159,11 +170,22 @@ long SpaceMouseNav::GetViewExtents(navlib::box_t& extents) const {
     const double cx = camera_.center3D().x, cy = camera_.center3D().y, cz = camera_.center3D().z;
     extents.min = navlib::point_t{cx - 5000.0, cy - 5000.0, cz - 5000.0};
     extents.max = navlib::point_t{cx + 5000.0, cy + 5000.0, cz + 5000.0};
+    {
+        static int n = 0; if (n++ < 4) {
+            FILE* diag = fopen("model-maker-render.log", "a");
+            if (diag) { fprintf(diag, "SM-GET-EXTENTS #%d\n", n); fclose(diag); }
+        }
+    }
     return 0;
 }
 
 long SpaceMouseNav::SetViewExtents(const navlib::box_t& extents) {
-    (void)extents;
+    {
+        FILE* diag = fopen("model-maker-render.log", "a");
+        if (diag) { fprintf(diag, "SM-SET-EXTENTS (%.0f,%.0f,%.0f)-(%.0f,%.0f,%.0f)\n",
+            extents.min.x, extents.min.y, extents.min.z,
+            extents.max.x, extents.max.y, extents.max.z); fclose(diag); }
+    }
     return 0;
 }
 
