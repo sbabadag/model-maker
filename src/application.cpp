@@ -2162,22 +2162,14 @@ void Application::startTransformCommand(TransformCommand command) {
 
 void Application::applyStartupDefaults() {
     // Qt kabugu ilk showEvent'te cagirir (run() Win32 dongusunde kaliyordu).
-    // ILK GORUNUM: XY duzleminde 2B plan (Top) + varsayilan yapi gridi.
-    // mode zaten Draw2D ise dokunma (toggle3DView cagirirsa 3B'den doner);
-    // cameras plan bakisi (z eksenine dik) olsun.
+    // ILK GORUNUM: XY duzleminde 2B plan (Top). Varsayilan grid OLUSTURMA
+    // komutleri GECICI olarak kaldirildi: showEvent QTimer zincirinde cokme
+    // (0xC0000005) / kilitlenme gozlemlendi. Acilisi once sadece kamera ile
+    // guvenli hale getirdik; grid'i ayrica geri ekleyecegiz.
     if (mode_ == EditMode::View3D) toggle3DView();
-    // Reset icerigi sifirlar (center3D/2D) sonra Top plan bakisi: XY
-    // duzlemine dik bakis. zoomExtents2D YOK: canvas henuz boyut almadigi
-    // icin 0-boyutla fit cagrilip kamera bozulabiliyordu; ilk gecerli
-    // renderda kullanici V/zoom ile sigdiracak.
     camera_.reset();
     camera_.setView(StandardView::Top);
-    // Varsayilan kullanici gridi: XY duzleminde, orijinden baslayan
-    // X:1-2-3 ve Y:A-B-C akslari (5000mm aralik). Bos belgede bir kez.
-    if (document_.grids().empty() && document_.models().empty()) {
-        createModelGrid({0.0, 0.0, 0.0}, {1.0, 0.0, 0.0}, {0.0, 1.0, 0.0},
-                        3, 3, 5000.0, 5000.0, L"1", L"A");
-    }
+    // NOTE: createModelGrid cagrisi GECICI kapali (startup crash izolasyonu).
 }
 
 void Application::createModelGrid(const Vec3& origin, const Vec3& xDir, const Vec3& yDir,
