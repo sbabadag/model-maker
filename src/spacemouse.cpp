@@ -78,16 +78,6 @@ long SpaceMouseNav::GetCameraMatrix(navlib::matrix_t& matrix) const {
 }
 
 long SpaceMouseNav::SetCameraMatrix(const navlib::matrix_t& matrix) {
-    {
-        static int n = 0;
-        if (n++ < 12) {
-            FILE* f = fopen("model-maker-render.log", "a");
-            if (f) {
-                fprintf(f, "SM-SET-CAM #%d m32=%.4f m20=%.4f\n", n, matrix[14], matrix[8]);
-                fclose(f);
-            }
-        }
-    }
     // Navlib "ileri-geri" (push) itmeyi m32 (kamera pozisyon Z) translasyonu
     // olarak gonderir. Orthografik kamerada pozisyon kaymasi zoom DEGILDIR,
     // sadece merkezi kaydirir (kullanici bunu dondurme olarak gorur). Bu yuzden
@@ -95,14 +85,25 @@ long SpaceMouseNav::SetCameraMatrix(const navlib::matrix_t& matrix) {
     static double baseZ = 0.0;
     static bool zinit = false;
     const double z = matrix[14];
+    const double dz = zinit ? (z - baseZ) : 0.0;
     if (!zinit) {
         baseZ = z;
         zinit = true;
     } else {
-        const double dz = z - baseZ;
         if (std::fabs(dz) > 1e-6) {
             double factor = std::exp(-dz * 0.002);
             if (factor > 0.01 && factor < 100.0) camera_.zoomBy(factor);
+        }
+    }
+    {
+        static int n = 0;
+        if (n++ < 15) {
+            FILE* f = fopen("model-maker-render.log", "a");
+            if (f) {
+                fprintf(f, "SM-SET-CAM #%d m32=%.4f dz=%.4f zoom=%.3f\n", n, z, dz,
+                        camera_.zoom());
+                fclose(f);
+            }
         }
     }
 
