@@ -274,6 +274,16 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         // kesikli cizgi + aks ucunda etiket (Tekla'nin grid cercevesi).
         // Yapi gridi her stilde cizilir (referans katman) — Wireframe dahil.
         if (true) {
+            static int gridDiag_ = 0;
+            if (gridDiag_++ < 2) {
+                FILE* diag = fopen("model-maker-render.log", "a");
+                if (diag) {
+                    fprintf(diag, "GRIDDRAW begin grids=%zu canvas=%dx%d useGpuLines=%d\n",
+                            document.grids().size(), canvas.right - canvas.left,
+                            canvas.bottom - canvas.top, useGpuLines ? 1 : 0);
+                    fclose(diag);
+                }
+            }
             for (const auto& grid : document.grids()) {
                 if (!grid.visible) continue;
                 for (const auto& axis : grid.axes) {

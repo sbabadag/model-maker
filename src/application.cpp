@@ -2187,6 +2187,17 @@ void Application::createModelGrid(const Vec3& origin, const Vec3& xDir, const Ve
                                   std::size_t xCount, std::size_t yCount,
                                   double xSpacing, double ySpacing,
                                   std::wstring xLabelStart, std::wstring yLabelStart) {
+    {
+        static int gridDiag_ = 0;
+        if (gridDiag_++ < 2) {
+            FILE* diag = fopen("model-maker-render.log", "a");
+            if (diag) {
+                fprintf(diag, "CREATE-GRID begin x=%zu y=%zu sx=%.1f sy=%.1f\n",
+                        xCount, yCount, xSpacing, ySpacing);
+                fclose(diag);
+            }
+        }
+    }
     GridDefinition grid;
     grid.name = "GRID";
     // Aks cizgileri birbirini KESIP GECECEK sekilde uzatilir: her X aksi
@@ -2237,6 +2248,16 @@ void Application::createModelGrid(const Vec3& origin, const Vec3& xDir, const Ve
     }
     pushUndoSnapshot();
     document_.addGrid(std::move(grid));
+    {
+        static int gridDiag_ = 0;
+        if (gridDiag_++ < 2) {
+            FILE* diag = fopen("model-maker-render.log", "a");
+            if (diag) {
+                fprintf(diag, "CREATE-GRID done grids=%zu\n", document_.grids().size());
+                fclose(diag);
+            }
+        }
+    }
     updateControls();
     invalidateCanvas();
 }
