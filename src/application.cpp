@@ -39,7 +39,7 @@ constexpr wchar_t canvasClassName[] = L"ModelMakerCanvas";
 
 enum CommandId {
     CmdNew = 100, CmdOpen, CmdSave, CmdImportDxf, CmdExportDxf,
-    CmdLine = 200, CmdPolyline, CmdRectangle, CmdCircle, CmdFace3D,
+    CmdLine = 200, CmdPolyline, CmdRectangle, CmdCircle, CmdFace3D, CmdColumn,
     CmdCube = 300, CmdPyramid, CmdCylinder, CmdResetView, CmdView3D, CmdWorkPlane, CmdZoomExtents, CmdZoomWindow,
     CmdVisualStyle, CmdStandardView, CmdWireframe = 310, CmdSolid, CmdTransparent,
     CmdViewFront = 320, CmdViewBack, CmdViewLeft, CmdViewRight, CmdViewIsometric,
@@ -251,6 +251,7 @@ void Application::createControlPanel() {
     rectangleButton_ = addCommand(L"□", CmdRectangle, BS_AUTOCHECKBOX | BS_PUSHLIKE);
     circleButton_ = addCommand(L"○", CmdCircle, BS_AUTOCHECKBOX | BS_PUSHLIKE);
     face3DButton_ = addCommand(L"▱", CmdFace3D, BS_AUTOCHECKBOX | BS_PUSHLIKE);
+    columnButton_ = addCommand(L"▮", CmdColumn, BS_AUTOCHECKBOX | BS_PUSHLIKE);
 
     addCommand(L"◇", CmdCube);
     addCommand(L"△", CmdPyramid);
@@ -1413,6 +1414,7 @@ LRESULT Application::handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lPa
         else if (wParam == 'A') selectTool(DrawTool::Rectangle);
         else if (wParam == 'C') selectTool(DrawTool::Circle);
         else if (wParam == 'F') selectTool(DrawTool::Face3D);
+        else if (wParam == 'G') selectTool(DrawTool::Column);
         else if (wParam == 'M') startTransformCommand(TransformCommand::Move);
         else if (wParam == 'K') startTransformCommand(TransformCommand::Copy);
         else if (wParam == 'O' && !(GetKeyState(VK_CONTROL) & 0x8000))
@@ -2013,6 +2015,12 @@ void Application::onCharacter(wchar_t character) {
 }
 
 void Application::commitPoint(const Vec3& point) {
+    // KOLON: tek tıkla tıklanan noktaya dik kolon (props profil+malzeme+top/bottom).
+    if (tool_ == DrawTool::Column) {
+        placeColumn(point);
+        anchor_.reset();
+        return;
+    }
     if (tool_ == DrawTool::Face3D) {
         if (!facePoints_.empty() && point == facePoints_.back()) {
             MessageBeep(MB_ICONWARNING);
@@ -3158,6 +3166,7 @@ void Application::executeCommand(int id) {
     case CmdRectangle: selectTool(DrawTool::Rectangle); break;
     case CmdCircle: selectTool(DrawTool::Circle); break;
     case CmdFace3D: selectTool(DrawTool::Face3D); break;
+    case CmdColumn: selectTool(DrawTool::Column); break;
     case CmdCube: addCube(); break;
     case CmdPyramid: addPyramid(); break;
     case CmdCylinder: addCylinder(); break;
@@ -3272,6 +3281,7 @@ void Application::updateControls() {
     check(rectangleButton_, drawingActive_ && tool_ == DrawTool::Rectangle);
     check(circleButton_, drawingActive_ && tool_ == DrawTool::Circle);
     check(face3DButton_, drawingActive_ && tool_ == DrawTool::Face3D);
+    check(columnButton_, drawingActive_ && tool_ == DrawTool::Column);
     check(snapButton_, snapEnabled_);
     check(gridSnapButton_, gridSnapEnabled_);
     check(dynamicInputButton_, dynamicInputEnabled_);
@@ -4341,6 +4351,38 @@ void Application::assignProfileToLine(const Vec3& from, const Vec3& to,
     selectedModels_.assign(1, document_.models().size() - 1);
     assignProfileToSelection(profile->name);
     selectedModels_.clear();
+}
+
+void Application::placeColumn(const Vec3& point) {
+    // Kolon: tıklanan nokta alt uctur; profil kesiti Z boyunca
+    // Bottom..Top kotlari arasina ekstrude edilir (dik kolon).
+    ensureProfileCatalog();
+    // Profil: pending secim (profil-cizim modu) varsa o, yoksa onceden
+    // atanmis profil yoksa uyari.
+    std::string profileName = pendingProfileName_;
+    if (profileName.empty()) {
+        // Secili nesnede profil varsa onu kullan.
+        if (!selectedModels_.empty() && selectedModels_.front() < document_.models().size()) {
+            const auto& p = document_.models()[selectedModels_.front()].properties();
+            if (!p.profileName.empty()) profileName = p.profileName;
+        }
+    }
+    if (profileName.empty()) {
+        publishStatus(L"Kolon icin profil seçin (profil listesinden).");
+        return;
+    }
+    const Vec3 from{point.x, point.y, columnBottomZ_};
+    const Vec3 to{point.x, point.y, columnTopZ_};
+    if (to.z <= from.z) {
+        publishStatus(L"Kolon üst kotu alt kottan büyük olmalı.");
+        return;
+    }
+    assignProfileToLine(from, to, profileName);
+    // Malzeme atanmis ise katiya isle.
+    if (!columnMaterial_.empty()) {
+        document_.setModelMaterial({document_.models().size() - 1}, columnMaterial_);
+        invalidateCanvas();
+    }
 }
 
 void Application::assignProfileToSelection(const std::string& profileName) {

@@ -1143,6 +1143,27 @@ void QtMainWindow::createDockPanels() {
     propsRotation->setSuffix("°");
     propsLayout->addWidget(propsRotation);
 
+    // Kolon ust/alt kot (mm) — kolon butonu icin.
+    QLabel* topCaption = new QLabel("Kolon Üst (mm)", propsWidget);
+    topCaption->setStyleSheet("color: #C8CCD4; font-size: 8pt;");
+    propsLayout->addWidget(topCaption);
+    QDoubleSpinBox* propsColumnTop = new QDoubleSpinBox(propsWidget);
+    propsColumnTop->setObjectName("propsColumnTop");
+    propsColumnTop->setRange(-100000.0, 100000.0);
+    propsColumnTop->setDecimals(0);
+    propsColumnTop->setValue(8500.0);
+    propsLayout->addWidget(propsColumnTop);
+
+    QLabel* bottomCaption = new QLabel("Kolon Alt (mm)", propsWidget);
+    bottomCaption->setStyleSheet("color: #C8CCD4; font-size: 8pt;");
+    propsLayout->addWidget(bottomCaption);
+    QDoubleSpinBox* propsColumnBottom = new QDoubleSpinBox(propsWidget);
+    propsColumnBottom->setObjectName("propsColumnBottom");
+    propsColumnBottom->setRange(-100000.0, 100000.0);
+    propsColumnBottom->setDecimals(0);
+    propsColumnBottom->setValue(0.0);
+    propsLayout->addWidget(propsColumnBottom);
+
     // Uzunluk (salt okunur)
     QLabel* lengthCaption = new QLabel("Uzunluk", propsWidget);
     lengthCaption->setStyleSheet("color: #C8CCD4; font-size: 8pt;");
@@ -1159,6 +1180,15 @@ void QtMainWindow::createDockPanels() {
         "padding: 6px; border-radius: 3px; }"
         "QPushButton:hover { background: #37805F; }");
     propsLayout->addWidget(propsApply);
+
+    QPushButton* propsColumnBtn = new QPushButton("KOLON YERLEŞTİR", propsWidget);
+    propsColumnBtn->setObjectName("propsColumnBtn");
+    propsColumnBtn->setStyleSheet(
+        "QPushButton { background: #3A5A8C; color: #F0F0F4; font-weight: 700; "
+        "padding: 6px; border-radius: 3px; }"
+        "QPushButton:hover { background: #486FAB; }");
+    propsLayout->addWidget(propsColumnBtn);
+
     propsLayout->addStretch(1);
     propsDock->setWidget(propsWidget);
     propsDock->setMinimumWidth(250);
@@ -1270,6 +1300,28 @@ void QtMainWindow::createDockPanels() {
     QObject::connect(propsApply, &QPushButton::clicked, this,
         [this, propsRotation]() {
             app_.setSelectedEntityProfileRotation(propsRotation->value());
+        });
+    // Kolon ust/alt kot: canli olarak Application'a yazilir (kolon yerlesim
+    // aninda okunur). Malzeme propsMaterial'dan okunur.
+    QObject::connect(propsColumnTop, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this,
+        [this, propsMaterial](double v) {
+            app_.setColumnProps(v, app_.columnBottomZ(),
+                                propsMaterial->currentText().toStdString());
+        });
+    QObject::connect(propsColumnBottom, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this,
+        [this, propsMaterial](double v) {
+            app_.setColumnProps(app_.columnTopZ(), v,
+                                propsMaterial->currentText().toStdString());
+        });
+    // Kolon yerlestir: profesyonel bir sekilde — buton kolon modunu etkinlestirir
+    // (tek tik ile kanvasa kolon koymak icin). Profil col-inbox'tan okunur.
+    QObject::connect(propsColumnBtn, &QPushButton::clicked, this,
+        [this, propsProfile, propsMaterial]() {
+            const std::string profile = propsProfile->currentText().toStdString();
+            if (!profile.empty()) app_.setPendingProfileName(profile);
+            app_.setColumnProps(app_.columnTopZ(), app_.columnBottomZ(),
+                                propsMaterial->currentText().toStdString());
+            app_.selectTool(DrawTool::Column);
         });
 }
 

@@ -103,6 +103,15 @@ public:
     void setPendingProfileName(std::string name) { pendingProfileName_ = std::move(name); }
     const std::string& pendingProfileName() const noexcept { return pendingProfileName_; }
     bool hasSelection() const noexcept { return !selectedModels_.empty(); }
+    // KOLON: tıklanan noktaya dik (Z boyunca) profil ekstrude kolon koyar.
+    // Profil + malzeme + Top/Bottom yukseklik props panelinden gelir.
+    void setColumnProps(double top, double bottom, std::string material) {
+        columnTopZ_ = top; columnBottomZ_ = bottom; columnMaterial_ = std::move(material);
+    }
+    void placeColumn(const Vec3& point);
+    double columnTopZ() const noexcept { return columnTopZ_; }
+    double columnBottomZ() const noexcept { return columnBottomZ_; }
+    std::string columnMaterial() const noexcept { return columnMaterial_; }
     void setProfilePickerCallback(std::function<void()> callback) {
         profilePickerCallback_ = std::move(callback);
     }
@@ -252,6 +261,7 @@ private:
     HWND rectangleButton_{};
     HWND circleButton_{};
     HWND face3DButton_{};
+    HWND columnButton_{};
     HWND layerManagerButton_{};
     HWND snapButton_{};
     HWND gridSnapButton_{};
@@ -372,6 +382,9 @@ private:
     EditMode mode_{EditMode::Draw2D};
     DrawTool tool_{DrawTool::Line};
     std::string pendingProfileName_; // profil-cizim modu aktif profili
+    double columnTopZ_{8500.0};      // kolon ust kotu (mm) — props paneli
+    double columnBottomZ_{0.0};      // kolon alt kotu (mm)
+    std::string columnMaterial_;     // kolon malzemesi (props paneli)
     std::optional<Vec3> anchor_;
     std::vector<Vec3> facePoints_;
     std::optional<SnapResult> hover_;
