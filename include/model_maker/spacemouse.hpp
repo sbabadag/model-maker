@@ -103,6 +103,10 @@ public:
     long SetTransaction(long transaction) override;
     long SetMotionFlag(bool motion) override;
 
+    // navlib::matrix_t standart yapida .m dizi uyesi yerine bireysel m00..m33
+    // + operator[] index erisimi sunar; bu yardimci 4x4 kimlik matrisi doldurur.
+    static void setIdentity(navlib::matrix_t& matrix) noexcept;
+
 private:
     // Uygulama, Navlib kamera degistirdiginde boyama cagrisi kurar.
     std::function<void()> viewChangedCallback_;

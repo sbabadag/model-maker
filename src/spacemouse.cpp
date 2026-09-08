@@ -12,6 +12,11 @@ namespace mm {
 
 namespace nav3d = TDx::SpaceMouse::Navigation3D;
 
+void SpaceMouseNav::setIdentity(navlib::matrix_t& matrix) noexcept {
+    for (int i = 0; i < 16; ++i) matrix[i] = 0.0;
+    matrix[0] = matrix[5] = matrix[10] = matrix[15] = 1.0;
+}
+
 SpaceMouseNav::SpaceMouseNav(Camera& camera, Document& document)
     : camera_(camera), document_(document) {}
 
@@ -60,32 +65,30 @@ void SpaceMouseNav::stop() {
 long SpaceMouseNav::GetCoordinateSystem(navlib::matrix_t& matrix) const {
     // Kimlik (identity). Navlib Y-up bekler; bizim XY plan dogal olarak
     // Y-up koordinat sistemine yakindir. Bu matris Navlib'e "kendi koordinat
-    // sistemin uygulama koordinatiyla ayni" der.
-    std::fill(std::begin(matrix.m), std::end(matrix.m), 0.0);
-    matrix.m00 = matrix.m11 = matrix.m22 = matrix.m33 = 1.0;
+    // sistemin uygulama koordinatiyla ayni" der. matrix_t bireysel m00..m33
+    // uyeleri + operator[] index erisimine sahiptir (.m dizi yok).
+    setIdentity(matrix);
     return 0;
 }
 
 long SpaceMouseNav::GetFrontView(navlib::matrix_t& matrix) const {
     // On gorunum: Z ekseni bakisi (izometrik kamera). Kimlik 4x4 yeterli.
-    std::fill(std::begin(matrix.m), std::end(matrix.m), 0.0);
-    matrix.m00 = matrix.m11 = matrix.m22 = matrix.m33 = 1.0;
+    setIdentity(matrix);
     return 0;
 }
 
 // --- IView: kamera matrisi koprusu (Navlib SpaceMouse'un kalbi) -------------
 long SpaceMouseNav::GetCameraMatrix(navlib::matrix_t& matrix) const {
     const auto m4 = camera_.cameraToWorldMatrix4();
-    // cameraToWorldMatrix4 row-major uretildi; navlib m[] alani m00..m33
-    // sirali (m[row*4+col]). Navlib rowMajor=false ister ama biz CNavlibInterface
-    // kurarken rowMajor=true verdik; navlib bu bayragla m[]'yi yorumlar.
-    std::memcpy(matrix.m, m4.data(), sizeof(double) * 16);
+    // cameraToWorldMatrix4 row-major uretildi (m[row*4+col]); navlib matrix_t
+    // operator[] index erisimi ayni siralamaya sahiptir (0..15 -> m00..m33).
+    for (int i = 0; i < 16; ++i) matrix[i] = m4[static_cast<std::size_t>(i)];
     return 0;
 }
 
 long SpaceMouseNav::SetCameraMatrix(const navlib::matrix_t& matrix) {
     std::array<double, 16> m{};
-    std::memcpy(m.data(), matrix.m, sizeof(double) * 16);
+    for (int i = 0; i < 16; ++i) m[static_cast<std::size_t>(i)] = matrix[i];
     fromNavlib_ = true;
     camera_.applyCameraToWorldMatrix4(m);
     fromNavlib_ = false;
@@ -195,8 +198,7 @@ long SpaceMouseNav::GetSelectionExtents(navlib::box_t& extents) const {
 }
 
 long SpaceMouseNav::GetSelectionTransform(navlib::matrix_t& transform) const {
-    std::fill(std::begin(transform.m), std::end(transform.m), 0.0);
-    transform.m00 = transform.m11 = transform.m22 = transform.m33 = 1.0;
+    setIdentity(transform);
     return 0;
 }
 
