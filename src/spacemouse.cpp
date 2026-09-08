@@ -49,6 +49,13 @@ bool SpaceMouseNav::start() {
         // kameranin urettigi 4x4 matris row-major (m[row*4+col]) duzendedir.
         navlib_.reset(new nav3d::CNavlibInterface(std::move(self), true, true));
         navlib_->Open("model-maker");
+        // Navlib, 3D Mouse girdisinin HANGI baglantiya gidecegini "active" ve
+        // "focus" ozellikleriyle bilir. Open() bunlari ayarlamaz; biz kurariz,
+        // yoksa cihaz 6 eksenini bu ornege yonlendirmez (NlCreate basarili ama
+        // SM-SET-CAM hic gelmez). active=true → bu ornek 3D hedef, focus=true
+        // → klavye odagi (dolayli odak yolu). Tek ornekli uygulama icin de sart.
+        navlib_->Write(std::string("active"), navlib::value(true));
+        navlib_->Write(std::string("focus"), navlib::value(true));
     } catch (const std::exception&) {
         navlib_.reset();
         return false;
