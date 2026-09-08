@@ -2166,6 +2166,53 @@ void Application::applyStartupDefaults3D() {
     setVisualStyle(VisualStyle::Solid);
 }
 
+void Application::createModelGrid(const Vec3& origin, const Vec3& xDir, const Vec3& yDir,
+                                  std::size_t xCount, std::size_t yCount,
+                                  double xSpacing, double ySpacing,
+                                  std::wstring xLabelStart, std::wstring yLabelStart) {
+    GridDefinition grid;
+    grid.name = "GRID";
+    if (xCount > 0 && xSpacing > 0.0) {
+        // X-yunu akslari (1-2-3): dikey cizgiler, Y araligi boyunca.
+        const Vec3 spanY = yDir * (ySpacing * std::max<std::size_t>(1, yCount));
+        for (std::size_t i = 0; i <= xCount; ++i) {
+            const Vec3 offset = xDir * (xSpacing * static_cast<double>(i));
+            GridAxisLine line;
+            line.from = origin + offset;
+            line.to = origin + offset + spanY;
+            line.horizontal = false;
+            // Etiket: xLabelStart baslangicli (or. "1")
+            std::wstring label = xLabelStart;
+            if (i > 0) label += std::to_wstring(i);
+            line.label = std::string(label.begin(), label.end());
+            grid.axes.push_back(std::move(line));
+        }
+    }
+    if (yCount > 0 && ySpacing > 0.0) {
+        // Y-yunu akslari (A-B-C): yatay cizgiler, X araligi boyunca.
+        const Vec3 spanX = xDir * (xSpacing * std::max<std::size_t>(1, xCount));
+        for (std::size_t i = 0; i <= yCount; ++i) {
+            const Vec3 offset = yDir * (ySpacing * static_cast<double>(i));
+            GridAxisLine line;
+            line.from = origin + offset;
+            line.to = origin + offset + spanX;
+            line.horizontal = true;
+            // Etiket: yLabelStart + (i>0 ise) harf indis (A,B,C...)
+            std::wstring label = yLabelStart;
+            if (i > 0) {
+                label += static_cast<wchar_t>(L'A' + static_cast<int>((i - 1) % 26));
+                if (i >= 27) label += std::to_wstring(i / 26);
+            }
+            line.label = std::string(label.begin(), label.end());
+            grid.axes.push_back(std::move(line));
+        }
+    }
+    pushUndoSnapshot();
+    document_.addGrid(std::move(grid));
+    updateControls();
+    invalidateCanvas();
+}
+
 void Application::toggle3DView() {
     cancelZoomWindow2D();
     if (workPlanePicking_) cancelWorkPlaneCommand();

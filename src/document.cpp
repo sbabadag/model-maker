@@ -366,6 +366,7 @@ void Document::clear() noexcept {
     spatialIndexDirty_ = true;
     effectiveCacheDirty_ = false;
     nodeConstraints_.clear();
+    grids_.clear();
     invalidateDerivedState();
     documentBounds_.reset();
 }
@@ -866,9 +867,9 @@ void Document::save(const std::filesystem::path& path) const {
     // MMW3: geometri + TUM varlik ozellikleri (katman/profil/rotasyon/
     // eksen/renk/cizgi tipi/malzeme...) — eskiden yalniz geometri
     // yaziliyordu; kayit sonrasi katilar stilini kaybediyordu.
-    // MMW4: geometri + props + KATMAN TABLOSU. (MMW3 = props, katman yok;
-    // MMW1/2 = yalniz geometri.) Yeni dosyalar daima MMW4 yazar.
-    output << "MMW4\n" << models_.size() << '\n';
+    // MMW5: geometri + props + katman + GRID. (MMW4 = katman; MMW3 = props;
+    // MMW1/2 = yalniz geometri.) Yeni dosyalar daima MMW5 yazar.
+    output << "MMW5\n" << models_.size() << '\n';
     // Katman tanimlari: isim + (trueColor veya ACI) + linetype + visible.
     // Model yalniz katman ADI tasir; katman rengi/sifati bu haritada —
     // kaydedilmezse dosya acilinca BYLAYER nesneler rengini kaybeder.
@@ -885,6 +886,11 @@ void Document::save(const std::filesystem::path& path) const {
         output << layer.visible << ' ' << layer.frozen << ' ' << layer.locked << '\n';
     }
 
+    // Uzunluk-sonralikli string yazici (P ve G bloklari ortak kullanir).
+    const auto putS = [&output](const std::string& text) {
+        output << text.size() << ':';
+        output.write(text.data(), static_cast<std::streamsize>(text.size()));
+    };
     for (const auto& model : models_) {
         output << model.vertices().size() << ' ' << model.edges().size() << ' '
                << model.faces().size() << ' ' << model.isPointEntity() << ' '
@@ -898,10 +904,6 @@ void Document::save(const std::filesystem::path& path) const {
         }
         // Ozellikler: uzunluk-sonralikli string'ler (bosluk/bosa sorun yok).
         const auto& props = model.properties();
-        const auto putS = [&output](const std::string& text) {
-            output << text.size() << ':';
-            output.write(text.data(), static_cast<std::streamsize>(text.size()));
-        };
         output << "P ";
         putS(props.layer); output << ' ';
         putS(props.profileName); output << ' ';
@@ -921,6 +923,17 @@ void Document::save(const std::filesystem::path& path) const {
         putS(props.description);
         output << '\n';
     }
+    // Yapi gridleri: 'G' <count> sonra her girdi icin props
+    output << 'G' << ' ' << grids_.size() << '\n';
+    for (const auto& grid : grids_) {
+        putS(grid.name); output << ' ' << grid.visible << ' ' << grid.axes.size() << '\n';
+        for (const auto& axis : grid.axes) {
+            output << axis.from.x << ' ' << axis.from.y << ' ' << axis.from.z << ' '
+                   << axis.to.x << ' ' << axis.to.y << ' ' << axis.to.z << ' '
+                   << axis.horizontal << ' ';
+            putS(axis.label); output << '\n';
+        }
+    }
     if (!output) throw std::runtime_error("Could not write document");
 }
 
@@ -932,15 +945,14 @@ void Document::load(const std::filesystem::path& path) {
     std::size_t modelCount{};
     if (!(input >> signature >> modelCount) ||
         (signature != "MMW1" && signature != "MMW2" && signature != "MMW3" &&
-         signature != "MMW4") ||
+         signature != "MMW4" && signature != "MMW5") ||
         modelCount > 100000) {
         throw std::runtime_error("Invalid Model Maker file");
     }
-    const bool version2 = signature == "MMW2" || signature == "MMW3" || signature == "MMW4";
-    const bool version3 = signature == "MMW3" || signature == "MMW4";
-    // Katman tablosu yalniz MMW4'te — MMW3 (renkli props, katmansiz)
-    // geriye donuk acilir.
-    const bool version4 = signature == "MMW4";
+    const bool version2 = signature == "MMW2" || signature == "MMW3" || signature == "MMW4" || signature == "MMW5";
+    const bool version3 = signature == "MMW3" || signature == "MMW4" || signature == "MMW5";
+    const bool version4 = signature == "MMW4" || signature == "MMW5";
+    const bool version5 = signature == "MMW5";
     // uzunluk-sonralikli string okuyucu (katman blogundan once tanimli)
     const auto readS = [&input]() {
         std::size_t length{};
@@ -1051,7 +1063,61 @@ void Document::load(const std::filesystem::path& path) {
         loaded.push_back(std::move(built));
     }
     models_ = std::move(loaded);
+    // Yapi gridleri (MMW5): modellerden sonra 'G' blogu.
+    grids_.clear();
+    if (version5) {
+        std::string gridTag;
+        std::size_t gridCount{};
+        if (!(input >> gridTag >> gridCount) || gridTag != "G" || gridCount > 1000)
+            throw std::runtime_error("Invalid grid block");
+        for (std::size_t gi = 0; gi < gridCount; ++gi) {
+            GridDefinition grid;
+            grid.name = readS();
+            std::size_t axisCount{};
+            if (!(input >> grid.visible >> axisCount) || axisCount > 10000)
+                throw std::runtime_error("Invalid grid data");
+            grid.axes.reserve(axisCount);
+            for (std::size_t ai = 0; ai < axisCount; ++ai) {
+                GridAxisLine axis;
+                int horizontal{};
+                if (!(input >> axis.from.x >> axis.from.y >> axis.from.z
+                           >> axis.to.x >> axis.to.y >> axis.to.z
+                           >> horizontal))
+                    throw std::runtime_error("Invalid grid axis");
+                axis.horizontal = horizontal != 0;
+                axis.label = readS();
+                grid.axes.push_back(std::move(axis));
+            }
+            grids_.push_back(std::move(grid));
+        }
+    }
     invalidateDerivedState();
+}
+
+// ── Yapi gridleri ────────────────────────────────────────────────
+std::size_t Document::addGrid(GridDefinition grid) {
+    grids_.push_back(std::move(grid));
+    ++revision_;
+    return grids_.size() - 1;
+}
+void Document::clearGrids() noexcept {
+    grids_.clear();
+    ++revision_;
+}
+GridDefinition* Document::mutableGrid(std::size_t index) noexcept {
+    if (index >= grids_.size()) return nullptr;
+    return &grids_[index];
+}
+bool Document::setGridVisible(std::size_t index, bool visible) {
+    if (index >= grids_.size()) return false;
+    grids_[index].visible = visible;
+    ++revision_;
+    return true;
+}
+void Document::removeGrid(std::size_t index) {
+    if (index >= grids_.size()) return;
+    grids_.erase(grids_.begin() + static_cast<std::ptrdiff_t>(index));
+    ++revision_;
 }
 
 } // namespace mm

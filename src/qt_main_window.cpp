@@ -28,6 +28,8 @@
 #include <QTimer>
 #include <QSignalBlocker>
 #include <QDoubleSpinBox>
+#include <QSpinBox>
+#include <QFormLayout>
 #include <QMessageBox>
 #include <QLineEdit>
 #include <QLabel>
@@ -373,11 +375,59 @@ void QtMainWindow::createMenus() {
     viewMenu->addAction("Çalışma &Düzlemi (3 Nokta)", this, [this]() { app_.startWorkPlaneCommand(); })->setIcon(makeToolIcon(ToolGlyph::Plane));
     viewMenu->addAction("Düzlemi &Sıfırla (Dünya)", this, [this]() { app_.resetWorkPlane(); })->setIcon(makeToolIcon(ToolGlyph::Reset));
     viewMenu->addSeparator();
+    viewMenu->addAction("&Yapı Gridi Oluştur...", this, [this]() { promptCreateGrid(); });
+    viewMenu->addSeparator();
     viewMenu->addAction("&Benchmark (GDI vs GL)", this, [this]() {
         FILE* diag = fopen("model-maker-render.log", "a");
         if (diag) { fprintf(diag, "MENU-BENCH-CLICKED\n"); fclose(diag); }
         app_.runRenderBenchmark();
     });
+}
+
+void QtMainWindow::promptCreateGrid() {
+    QDialog dialog(this);
+    dialog.setWindowTitle("Yapı Gridi Oluştur (Tekla tarzı)");
+    QFormLayout* form = new QFormLayout(&dialog);
+
+    QSpinBox* xCount = new QSpinBox(&dialog);
+    xCount->setRange(1, 50); xCount->setValue(3);
+    form->addRow("X aks sayısı (1-2-3):", xCount);
+
+    QSpinBox* yCount = new QSpinBox(&dialog);
+    yCount->setRange(1, 50); yCount->setValue(3);
+    form->addRow("Y aks sayısı (A-B-C):", yCount);
+
+    QDoubleSpinBox* xSpacing = new QDoubleSpinBox(&dialog);
+    xSpacing->setRange(100.0, 1e7); xSpacing->setDecimals(1);
+    xSpacing->setValue(5000.0); xSpacing->setSuffix(" mm");
+    form->addRow("X aralığı:", xSpacing);
+
+    QDoubleSpinBox* ySpacing = new QDoubleSpinBox(&dialog);
+    ySpacing->setRange(100.0, 1e7); ySpacing->setDecimals(1);
+    ySpacing->setValue(5000.0); ySpacing->setSuffix(" mm");
+    form->addRow("Y aralığı:", ySpacing);
+
+    QLineEdit* xLabel = new QLineEdit("1", &dialog);
+    form->addRow("X etiket başlangıcı:", xLabel);
+    QLineEdit* yLabel = new QLineEdit("A", &dialog);
+    form->addRow("Y etiket başlangıcı:", yLabel);
+
+    QDialogButtonBox* buttons = new QDialogButtonBox(
+        QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog);
+    form->addRow(buttons);
+    QObject::connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+    QObject::connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+
+    if (dialog.exec() != QDialog::Accepted) return;
+    // Grid orijini sifir noktasi, dunya eksenleri (plan modunda standart).
+    // Ileride WorkPlane'e baglanabilir; simdilik dunya duzlemi.
+    app_.createModelGrid({0.0, 0.0, 0.0},
+                         {1.0, 0.0, 0.0}, {0.0, 1.0, 0.0},
+                         static_cast<std::size_t>(xCount->value()),
+                         static_cast<std::size_t>(yCount->value()),
+                         xSpacing->value(), ySpacing->value(),
+                         xLabel->text().toStdWString(),
+                         yLabel->text().toStdWString());
 }
 
 void QtMainWindow::createToolbar() {

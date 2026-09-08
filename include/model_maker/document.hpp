@@ -32,6 +32,21 @@ struct UndoRecord {
     std::unordered_map<std::string, EntityProperties> layersAfter;
 };
 
+// TEKLA-TARZI YAPI GRIDI: kalici, etiketli aks cizgileri (1-2-3 / A-B-C).
+// Model/katidan ayri, zemin referans katmaninda cizilir, kaydedilir.
+struct GridAxisLine {
+    Vec3 from{};   // aks cizgisinin baslangici
+    Vec3 to{};     // bitisi
+    std::string label; // ornek: "1", "2", "A", "B"
+    bool horizontal{}; // Y-yonu (A-B-C) ise true; X-yonu (1-2-3) ise false
+};
+struct GridDefinition {
+    std::string name = "GRID";
+    std::vector<GridAxisLine> axes; // tum aks cizgileri (x ve y yonleri)
+    bool visible{true};
+    // Etiketlerin cizilecegi uzaklik (akstan olan px offset) — renderer kullanir.
+};
+
 class Document {
 public:
     Document();
@@ -88,6 +103,13 @@ public:
     std::optional<BeamLoad> getBeamLoad(std::size_t modelIndex) const;
     const std::unordered_map<std::size_t, BeamLoad>& beamLoads() const noexcept;
     void clearBeamLoads();
+    // Yapi gridleri (Tekla tarzi aks cizgileri)
+    std::size_t addGrid(GridDefinition grid);
+    void clearGrids() noexcept;
+    const std::vector<GridDefinition>& grids() const noexcept { return grids_; }
+    GridDefinition* mutableGrid(std::size_t index) noexcept;
+    bool setGridVisible(std::size_t index, bool visible);
+    void removeGrid(std::size_t index);
 
 private:
     static constexpr std::size_t kMaxUndoEntries = 100;
@@ -130,6 +152,7 @@ private:
     mutable std::optional<Bounds3> documentBounds_;
     std::unordered_map<std::string, NodeConstraint> nodeConstraints_;
     std::unordered_map<std::size_t, BeamLoad> beamLoads_;
+    std::vector<GridDefinition> grids_;
 };
 
 } // namespace mm

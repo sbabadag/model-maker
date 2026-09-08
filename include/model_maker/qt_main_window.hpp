@@ -28,6 +28,7 @@ protected:
 
 private:
     void createMenus();
+    void promptCreateGrid();
     void createToolbar();
     void createDockPanels();
     void resizeEmbeddedCanvas();

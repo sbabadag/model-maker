@@ -50,6 +50,13 @@ public:
     void startZoomWindow2D();
     void toggle3DView();
     void applyStartupDefaults3D();
+    // TEKLA-TARZI YAPI GRIDI olusturma (Qt dialogdan parametrelerle).
+    // X/1-2-3 (dikey) ve Y/A-B-C (yatay) aks cizgilerini workPlane
+    // duzleminde uretir; etiketler verilen harf/rakamdan baslar.
+    void createModelGrid(const Vec3& origin, const Vec3& xDir, const Vec3& yDir,
+                         std::size_t xCount, std::size_t yCount,
+                         double xSpacing, double ySpacing,
+                         std::wstring xLabelStart, std::wstring yLabelStart);
 
     // Style controls (for Qt toolbar integration)
     bool snapEnabled() const noexcept { return snapEnabled_; }

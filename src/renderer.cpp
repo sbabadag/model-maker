@@ -334,6 +334,41 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         SelectObject(targetDc, oldBaseBrush);
         SelectObject(targetDc, stockPen);
         DeleteObject(basePointPen);
+
+        // TEKLA-TARZI YAPI GRIDI: kalici, etiketli aks cizgileri (1-2-3 /
+        // A-B-C). Zemin referans katmani — modelden/katidan bagimsiz;
+        // kesikli cizgi + aks ucunda etiket (Tekla'nin grid cercevesi).
+        // Yapi gridi her stilde cizilir (referans katman) — Wireframe dahil.
+        if (true) {
+            for (const auto& grid : document.grids()) {
+                if (!grid.visible) continue;
+                for (const auto& axis : grid.axes) {
+                    const POINT from = projectPoint(axis.from);
+                    const POINT to = projectPoint(axis.to);
+                    // Kesikli kalem (Tekla mesafe cizgisi)
+                    LOGBRUSH gridBrush{BS_SOLID, RGB(110, 130, 170), 0};
+                    DWORD gridPattern[] = {10, 5};
+                    HPEN axisPen = ExtCreatePen(PS_GEOMETRIC | PS_USERSTYLE | PS_ENDCAP_FLAT,
+                                                2, &gridBrush, 2, gridPattern);
+                    if (!axisPen) axisPen = CreatePen(PS_SOLID, 2, RGB(110, 130, 170));
+                    HGDIOBJ oldAxisPen = SelectObject(targetDc, axisPen);
+                    MoveToEx(targetDc, from.x, from.y, nullptr);
+                    LineTo(targetDc, to.x, to.y);
+                    SelectObject(targetDc, oldAxisPen);
+                    DeleteObject(axisPen);
+                    // Etiket: aksin dis ucunda (bitisinden kisa uzanti)
+                    const double len = std::hypot(to.x - from.x, to.y - from.y);
+                    if (len > 1.0 && !axis.label.empty()) {
+                        const double ux = (to.x - from.x) / len, uy = (to.y - from.y) / len;
+                        const int labelX = static_cast<int>(std::lround(to.x + ux * 12.0));
+                        const int labelY = static_cast<int>(std::lround(to.y + uy * 12.0));
+                        drawText(targetDc, labelX, labelY,
+                                 std::wstring(axis.label.begin(), axis.label.end()).c_str(),
+                                 RGB(60, 68, 110));
+                    }
+                }
+            }
+        }
     }; // drawGridAndAxes (grid + eksenler: interaktif karelerde de çizilir)
     if (!useGpuLines) drawGridAndAxes(dc);
 
