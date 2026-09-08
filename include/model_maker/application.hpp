@@ -50,7 +50,6 @@ public:
     void startZoomWindow2D();
     void toggle3DView();
     void applyStartupDefaults();
-    void tryEnableStartupGpu(); // GL'i yalniz canvas gecerli boyut alinca ac
     // TEKLA-TARZI YAPI GRIDI olusturma (Qt dialogdan parametrelerle).
     // X/1-2-3 (dikey) ve Y/A-B-C (yatay) aks cizgilerini workPlane
     // duzleminde uretir; etiketler verilen harf/rakamdan baslar.
@@ -364,7 +363,9 @@ private:
     void ensureOccBridge();
 #endif
     bool gpuLinesEnabled_ = false; // GL yolu dogrulanana kadar varsayilan GDI (F9 = GL)
-    bool startupGpuEnabled_ = true; // baslangicta GL isteniyorsa (canvas boyutuna kadar ertele)
+    bool startupGpuEnabled_ = false; // GL otomatik acilis KAPALI — acilista otomatik
+    // GL init bu makinede tüm sistemi dondurdu (ayrı ayıklama gerekiyor).
+    // Kullanicinin bilgisayarini tekrar dondurmamak icin varsayilan GDI.
     bool backendInitTried_ = false;
     std::function<void(const std::wstring&)> statusCallback_;
     std::function<void()> profilePickerCallback_;

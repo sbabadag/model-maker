@@ -2161,29 +2161,16 @@ void Application::startTransformCommand(TransformCommand command) {
 }
 
 void Application::applyStartupDefaults() {
-    // Donma KAYNAGI: GL init canvas henuz boyutlanmadiginda (0x0) calisti.
-    // Camera kurulumu da degil (3165c04 no-op'ta donma yoktu, 011b69c GL
-    // eklenince dondu). Cozum: GL'i SADECE canvas gecerli boyut aldiktan
-    // sonra ac; boyut 0 ise erteleyip ilk gecerli resize'da tetikle
-    // (resizeEmbeddedCanvas -> retryStartupGpu). Grid bos belgede tek kez
-    // olusur (kamera/GL'den bagimsiz, guvenli).
+    // Donma KAYNAGI: GL init acilista tüm sistemi donduruyor (0x0 canvas'ta
+    // icin de degil — 0050b1c boyut kontrolu ekleyince de dondu). GL istemci
+    // makinede GPU surucusu/context duzeyinde dontu; ayri ayiklama gerekir.
+    // GUCLU KARAR: GL otomatik acilisi KAPALI (startupGpuEnabled_=false),
+    // varsayilan GDI. Kulanici F9 ile GL'i elle acar (loglarda elle acikken
+    // sorunsuz calisti). Grid bos belgede tek kez olusur (kamera/GL bagimsiz).
     if (document_.grids().empty() && document_.models().empty()) {
         createModelGrid({0.0, 0.0, 0.0}, {1.0, 0.0, 0.0}, {0.0, 1.0, 0.0},
                         3, 3, 5000.0, 5000.0, L"1", L"A");
     }
-    // GL acilisini burada deneme — canvas boyutu belirsiz. gizlice denemek
-    // icin: tryEnableStartupGpu().
-    tryEnableStartupGpu();
-}
-
-void Application::tryEnableStartupGpu() {
-    // GL'i yalniz canvas gecerli boyut alinca ac (0x0'da GL init donuyor).
-    if (gpuLinesEnabled_ || !startupGpuEnabled_) return; // zaten GL / istek yok
-    if (!canvas_) return; // embedded canvas henuz yok
-    RECT rc{}; GetClientRect(canvas_, &rc);
-    if (rc.right <= 0 || rc.bottom <= 0) return; // henuz boyutlanmadi
-    startupGpuEnabled_ = false; // tamamlandi isaretle (tek deneme)
-    toggleGpuLines();
 }
 
 void Application::createModelGrid(const Vec3& origin, const Vec3& xDir, const Vec3& yDir,
