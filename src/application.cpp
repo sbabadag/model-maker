@@ -2299,17 +2299,21 @@ void Application::toggle3DView() {
             fclose(diag);
         }
     }
-    // SpaceMouse yalniz 3B görünümde (plan aktarimi yok). Entegrasyon islevsel:
-    // Navlib 6 ekseni "kamera matrisini guncelle" olarak yazar (SetCameraMatrix),
-    // biz bunu uygulama dongusune PostMessage ile tasiriz.
+    // SpaceMouse yalniz 3B görünümde. Navlib'i her 3B girişinde (yeniden)
+    // baslat: onceki duzen spaceMouseStartupAttempted_ bayragiyla ilk girişte
+    // navlib_ kurup, 2B'ye donunce stop() (Close) yapıyor ama ikinci girişte
+    // yeniden start() etmiyordu — Navlib tam haberlşme kurana kadar tekrar
+    // giris gerekiyordu (kullanici "2 kez girince calisiyor" dedi). Simdi her
+    // 3B girişinde spaceMouse_ yoksa olustur, varsa (kapanmıssa) start().
     if (mode_ == EditMode::View3D) {
-        if (!spaceMouse_ && !spaceMouseStartupAttempted_) {
-            spaceMouseStartupAttempted_ = true;
+        if (!spaceMouse_) {
             spaceMouse_ = std::make_unique<SpaceMouseNav>(camera_, document_);
             spaceMouse_->setViewChangedCallback([this]() {
                 // Navlib kendi thread'inden cagirir — boyama ana thread'de.
                 InvalidateRect(canvas_, nullptr, FALSE);
             });
+        }
+        if (!spaceMouse_->running()) {
             const bool started = spaceMouse_->start();
             {
                 FILE* diag = fopen("model-maker-render.log", "a");
@@ -2319,14 +2323,11 @@ void Application::toggle3DView() {
                     fclose(diag);
                 }
             }
-            if (started) {
-                publishStatus(L"SpaceMouse etkin (3Dconnexion Navlib)");
-            } else {
-                publishStatus(L"SpaceMouse kurulamadi (surucu/navlib.dll yok)");
-            }
+            publishStatus(started ? L"SpaceMouse etkin (3Dconnexion Navlib)"
+                                  : L"SpaceMouse kurulamadi (surucu/navlib.dll yok)");
         }
     } else {
-        if (spaceMouse_) {
+        if (spaceMouse_ && spaceMouse_->running()) {
             spaceMouse_->stop();
         }
     }

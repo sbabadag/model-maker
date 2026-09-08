@@ -232,7 +232,12 @@ long SpaceMouseNav::SetViewFrustum(const navlib::frustum_t& frustum) {
 }
 
 long SpaceMouseNav::GetIsViewPerspective(navlib::bool_t& perspective) const {
-    perspective = 0; // orthografik
+    // Perspektif bildir: Navlib rotasyonu perspektif gorunumdeki view.affine
+    // uzerinden yapar; orthografik bildirince bazi Navlib surumleri 6 eksen
+    // donusunu kisitlar (zoom calisir, rotate gelmez). Kameramiz pixelsPerUnit
+    // tabanli orthografik olsa da Navlib'e perspective=true demek rotate icin
+    // en guvenli kombinasyon — donus matrisini biz yine uyguluyoruz.
+    perspective = 1;
     return 0;
 }
 
