@@ -279,12 +279,13 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
                 for (const auto& axis : grid.axes) {
                     const POINT from = projectPoint(axis.from);
                     const POINT to = projectPoint(axis.to);
-                    // Kesikli kalem (Tekla mesafe cizgisi)
+                    // Kesikli kalem (Tekla mesafe cizgisi) — kisa kesikler,
+                    // ince cizgi (1px). Desen {5,3}: ~5px cizgi, ~3px bosluk.
                     LOGBRUSH gridBrush{BS_SOLID, RGB(110, 130, 170), 0};
-                    DWORD gridPattern[] = {10, 5};
+                    DWORD gridPattern[] = {5, 3};
                     HPEN axisPen = ExtCreatePen(PS_GEOMETRIC | PS_USERSTYLE | PS_ENDCAP_FLAT,
-                                                2, &gridBrush, 2, gridPattern);
-                    if (!axisPen) axisPen = CreatePen(PS_SOLID, 2, RGB(110, 130, 170));
+                                                1, &gridBrush, 2, gridPattern);
+                    if (!axisPen) axisPen = CreatePen(PS_SOLID, 1, RGB(110, 130, 170));
                     HGDIOBJ oldAxisPen = SelectObject(targetDc, axisPen);
                     MoveToEx(targetDc, from.x, from.y, nullptr);
                     LineTo(targetDc, to.x, to.y);
