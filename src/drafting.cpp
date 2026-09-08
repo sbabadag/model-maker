@@ -422,28 +422,39 @@ SnapResult SnapEngine::snap(const Vec3& cursor, const Document& document,
         }
         if (result.type != SnapType::None) return result;
     }
-    // Grid snap ARTIK CUSTOM YAPI AKSARINA gider (milimetrik adaptif grid
-    // kaldirildi). document.grids() icindeki her aks segmentine/cizgisinin
-    // en yakin noktasina imlec yapisir.
+    // Grid snap ARTIK SADECE CUSTOM YAPI AKS KESISIM NOKTALARINA gider
+    // (near yok). X-akslari (horizontal=false) ve Y-akslari (horizontal=true)
+    // ayri toplanir; her X × her Y kesisim noktasi hesap edilir ve en
+    // yakin kesisime imlec yapisir. Milimetrik adaptif grid kaldirildi.
     if (gridSnapEnabled) {
-        Vec3 best{};
-        bool found = false;
-        double bestDist = 0.0;
+        // Kesisim: X-aksi baslangici (yDir yonunde cizilir) ile Y-aksi
+        // baslangici (xDir yonunde cizilir) — x bileseni X-akstan, y
+        // bileseni Y-akstan gelir. grid en az bir X ve bir Y aksina sahipse
+        // kesim noktalari vardir.
         for (const auto& grid : document.grids()) {
             if (!grid.visible) continue;
-            for (const auto& axis : grid.axes) {
-                const Vec3 seg = axis.to - axis.from;
-                const double segLen2 = seg.x * seg.x + seg.y * seg.y + seg.z * seg.z;
-                if (segLen2 < 1e-12) continue;
-                const Vec3 rel = cursor - axis.from;
-                const double t = std::clamp(
-                    (rel.x * seg.x + rel.y * seg.y + rel.z * seg.z) / segLen2, 0.0, 1.0);
-                const Vec3 closest = axis.from + seg * t;
-                const double d = distance2D(cursor, closest);
-                if (!found || d < bestDist) { best = closest; bestDist = d; found = true; }
+            std::vector<const GridAxisLine*> xAxes, yAxes;
+            for (const auto& axis : grid.axes)
+                (axis.horizontal ? yAxes : xAxes).push_back(&axis);
+            if (xAxes.empty() || yAxes.empty()) continue;
+            Vec3 best{};
+            bool found = false;
+            double bestDist = 0.0;
+            for (const auto* xa : xAxes) {
+                for (const auto* ya : yAxes) {
+                    // Yapi gridi her zaman eksen-hizalidir (xDir=(1,0,0),
+                    // yDir=(0,1,0)). Kesisim: x bileseni X-akstan, y
+                    // bileseni Y-akstan, z'yi X-akstan al — origin cift
+                    // sayilmaz (xa.from.x + ya.from.x YANLIS tutardi).
+                    const Vec3 intersection{xa->from.x,
+                                            ya->from.y,
+                                            xa->from.z};
+                    const double d = distance2D(cursor, intersection);
+                    if (!found || d < bestDist) { best = intersection; bestDist = d; found = true; }
+                }
             }
+            if (found) return {best, SnapType::Grid, bestDist};
         }
-        if (found) return {best, SnapType::Grid, bestDist};
     }
     return {cursor, SnapType::None, 0.0};
 }
@@ -554,30 +565,31 @@ SnapResult SnapEngine::snap3D(const Vec2& screenCursor, const Document& document
         auto result = choose(std::move(candidates), *raw, enabledTypes);
         if (result.type != SnapType::None) return result;
     }
-    // Grid snap ARTIK CUSTOM YAPI AKSARINA gider (milimetrik adaptif grid
-    // kaldirildi). workPlane uzerindeki aks segmentlerine en yakin nokta.
+    // Grid snap ARTIK SADECE CUSTOM YAPI AKS KESISIM NOKTALARINA gider
+    // (near yok). Ekran-uzayi projeksiyon mesafesiyle en yakin kesisim.
     if (gridSnapEnabled) {
-        Vec3 best{};
-        bool found = false;
-        double bestPx = 0.0;
         for (const auto& grid : document.grids()) {
             if (!grid.visible) continue;
-            for (const auto& axis : grid.axes) {
-                const Vec3 a = axis.from, b = axis.to;
-                const Vec3 seg = b - a;
-                const double segLen2 = seg.x * seg.x + seg.y * seg.y + seg.z * seg.z;
-                if (segLen2 < 1e-12) continue;
-                const Vec3 rel = *raw - a;
-                const double t = std::clamp(
-                    (rel.x * seg.x + rel.y * seg.y + rel.z * seg.z) / segLen2, 0.0, 1.0);
-                const Vec3 closest = a + seg * t;
-                const Vec2 projected = camera.project(closest, viewportWidth, viewportHeight);
-                const double d = std::hypot(screenCursor.x - projected.x,
-                                            screenCursor.y - projected.y);
-                if (!found || d < bestPx) { best = closest; bestPx = d; found = true; }
+            std::vector<const GridAxisLine*> xAxes, yAxes;
+            for (const auto& axis : grid.axes)
+                (axis.horizontal ? yAxes : xAxes).push_back(&axis);
+            if (xAxes.empty() || yAxes.empty()) continue;
+            Vec3 best{};
+            bool found = false;
+            double bestPx = 0.0;
+            for (const auto* xa : xAxes) {
+                for (const auto* ya : yAxes) {
+                    // Eksen-hizali yapi gridi: x bileseni X-akstan, y
+                    // bileseni Y-akstan.
+                    const Vec3 intersection{xa->from.x, ya->from.y, xa->from.z};
+                    const Vec2 projected = camera.project(intersection, viewportWidth, viewportHeight);
+                    const double d = std::hypot(screenCursor.x - projected.x,
+                                                screenCursor.y - projected.y);
+                    if (!found || d < bestPx) { best = intersection; bestPx = d; found = true; }
+                }
             }
+            if (found) return {best, SnapType::Grid, bestPx};
         }
-        if (found) return {best, SnapType::Grid, bestPx};
     }
     return {*raw, SnapType::None, 0.0};
 }

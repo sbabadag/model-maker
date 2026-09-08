@@ -2189,14 +2189,24 @@ void Application::createModelGrid(const Vec3& origin, const Vec3& xDir, const Ve
                                   std::wstring xLabelStart, std::wstring yLabelStart) {
     GridDefinition grid;
     grid.name = "GRID";
+    // Aks cizgileri birbirini KESIP GECECEK sekilde uzatilir: her X aksi
+    // Y boyunca Y-kesisiminin otesine, her Y aksi X boyunca X-kesisiminin
+    // otesine tasar (Tekla'da grid cizgileri duzlem alanin disina uzar).
+    // Uzanti = aks araliginin ~%20'si (min 100mm), kesisim noktalari
+    // kesin kalsin (snap kesisimlerde).
+    const double extendX = std::max(100.0, xSpacing * 0.20);
+    const double extendY = std::max(100.0, ySpacing * 0.20);
     if (xCount > 0 && xSpacing > 0.0) {
-        // X-yunu akslari (1-2-3): dikey cizgiler, Y araligi boyunca.
+        // X-yunu akslari (1-2-3): DİKEY cizgiler; Y yonunde BOTH istenen
+        // alani (0..yCount*spacing) + iki ucta uzanti.
         const Vec3 spanY = yDir * (ySpacing * std::max<std::size_t>(1, yCount));
+        // Dikey X aksi: alan disina tasmak icin baslangictan tek yonde uzattik.
+        // Cizim: from = ilk kesisimin -extendY, to = son kesisim +extendY.
         for (std::size_t i = 0; i <= xCount; ++i) {
             const Vec3 offset = xDir * (xSpacing * static_cast<double>(i));
             GridAxisLine line;
-            line.from = origin + offset;
-            line.to = origin + offset + spanY;
+            line.from = origin + offset - yDir * extendY;
+            line.to = origin + offset + spanY + yDir * extendY;
             line.horizontal = false;
             // Etiket: xLabelStart baslangicli (or. "1")
             std::wstring label = xLabelStart;
@@ -2206,13 +2216,14 @@ void Application::createModelGrid(const Vec3& origin, const Vec3& xDir, const Ve
         }
     }
     if (yCount > 0 && ySpacing > 0.0) {
-        // Y-yunu akslari (A-B-C): yatay cizgiler, X araligi boyunca.
+        // Y-yunu akslari (A-B-C): YATAY cizgiler; X yonunde istenen
+        // alani (0..xCount*spacing) + iki ucta uzanti.
         const Vec3 spanX = xDir * (xSpacing * std::max<std::size_t>(1, xCount));
         for (std::size_t i = 0; i <= yCount; ++i) {
             const Vec3 offset = yDir * (ySpacing * static_cast<double>(i));
             GridAxisLine line;
-            line.from = origin + offset;
-            line.to = origin + offset + spanX;
+            line.from = origin + offset - xDir * extendX;
+            line.to = origin + offset + spanX + xDir * extendX;
             line.horizontal = true;
             // Etiket: yLabelStart + (i>0 ise) harf indis (A,B,C...)
             std::wstring label = yLabelStart;
