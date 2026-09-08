@@ -278,6 +278,16 @@ void QtMainWindow::showEvent(QShowEvent* event) {
     // pass after the window is shown; without this the embedded GDI canvas
     // keeps the tiny pre-layout rect from the constructor (top-left corner).
     QTimer::singleShot(0, this, [this]() { resizeEmbeddedCanvas(); });
+    // VARSAYILAN BASLANGIC (kullanici talebi): GL + 3B + Solid — Application::
+    // run()'daki ayni kod Qt kabugunda hic calismiyordu (Win32 mesaj dongusu
+    // kullanilmiyor); tek kez, ilk gorunurlukte uygula.
+    if (!startupDefaultsApplied_) {
+        startupDefaultsApplied_ = true;
+        QTimer::singleShot(0, this, [this]() {
+            if (!app_.gpuLinesEnabled()) app_.toggleGpuLines();
+            app_.applyStartupDefaults3D();
+        });
+    }
     if (!profileUiLogged_ && profileSelector_) {
         profileUiLogged_ = true;
         // Log after Qt's first layout pass.  This describes the widget the

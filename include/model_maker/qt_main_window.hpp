@@ -36,6 +36,7 @@ private:
     QWidget* canvasContainer_{};
     QComboBox* profileSelector_{};
     bool profileUiLogged_{};
+    bool startupDefaultsApplied_{}; // GL + 3B + Solid bir kez, ilk show'da
 };
 
 } // namespace mm

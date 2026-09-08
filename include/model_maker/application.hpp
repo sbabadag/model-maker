@@ -49,6 +49,7 @@ public:
     void zoomExtents2D();
     void startZoomWindow2D();
     void toggle3DView();
+    void applyStartupDefaults3D();
 
     // Style controls (for Qt toolbar integration)
     bool snapEnabled() const noexcept { return snapEnabled_; }

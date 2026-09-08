@@ -2151,6 +2151,12 @@ void Application::startTransformCommand(TransformCommand command) {
     trimExtendLog(L"APP BASLADI build=" __DATE__ " " __TIME__);
 }
 
+void Application::applyStartupDefaults3D() {
+    // Qt kabugu ilk showEvent'te cagirir (run() Win32 dongusunde kaliyordu).
+    if (mode_ != EditMode::View3D) toggle3DView();
+    setVisualStyle(VisualStyle::Solid);
+}
+
 void Application::toggle3DView() {
     cancelZoomWindow2D();
     if (workPlanePicking_) cancelWorkPlaneCommand();
