@@ -118,6 +118,7 @@ public:
     void setViewChangedCallback(std::function<void()> cb) {
         viewChangedCallback_ = std::move(cb);
     }
+}; // class SpaceMouseNav
 #endif // _WIN32
 
 } // namespace mm
