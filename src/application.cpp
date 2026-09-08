@@ -2221,8 +2221,13 @@ void Application::toggle3DView() {
     if (workPlanePicking_) cancelWorkPlaneCommand();
     if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
     cancelDrawing();
+    const bool entering3D = mode_ != EditMode::View3D;
     mode_ = mode_ == EditMode::View3D ? EditMode::Draw2D : EditMode::View3D;
     drawingActive_ = mode_ == EditMode::Draw2D;
+    // 3D'ye gecince kamerayi izometrik konuma al: XY duzlemi yere paralel
+    // (yatay), Z dikey yukari — Tekla/AutoCAD model gorunumu. 2B'ye donuste
+    // kamera ayarina dokunma (plan bakisi Draw2D projeksiyonundan gelir).
+    if (entering3D) camera_.setView(StandardView::Isometric);
     updateHover(cursorScreen_.x, cursorScreen_.y);
     updateControls();
     updateStatus();
