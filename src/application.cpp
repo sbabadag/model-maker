@@ -2167,10 +2167,11 @@ void Application::applyStartupDefaults() {
     // cameras plan bakisi (z eksenine dik) olsun.
     if (mode_ == EditMode::View3D) toggle3DView();
     // Reset icerigi sifirlar (center3D/2D) sonra Top plan bakisi: XY
-    // duzlemine dik bakis. Zoom extents gridi ekrana siginir.
+    // duzlemine dik bakis. zoomExtents2D YOK: canvas henuz boyut almadigi
+    // icin 0-boyutla fit cagrilip kamera bozulabiliyordu; ilk gecerli
+    // renderda kullanici V/zoom ile sigdiracak.
     camera_.reset();
     camera_.setView(StandardView::Top);
-    zoomExtents2D();
     // Varsayilan kullanici gridi: XY duzleminde, orijinden baslayan
     // X:1-2-3 ve Y:A-B-C akslari (5000mm aralik). Bos belgede bir kez.
     if (document_.grids().empty() && document_.models().empty()) {

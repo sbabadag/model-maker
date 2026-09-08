@@ -286,7 +286,8 @@ void QtMainWindow::showEvent(QShowEvent* event) {
     if (!startupDefaultsApplied_) {
         startupDefaultsApplied_ = true;
         QTimer::singleShot(0, this, [this]() {
-            if (!app_.gpuLinesEnabled()) app_.toggleGpuLines();
+            // 2B plan acilisinda GL backend gerekmez (kod mode_==View3D icin
+            // GL cizer); bos canvas'ta context init kilitlenme yapmisti.
             app_.applyStartupDefaults();
         });
     }
