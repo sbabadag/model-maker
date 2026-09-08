@@ -2,10 +2,11 @@
 
 #ifdef _WIN32
 #include "model_maker/document.hpp"
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
-#include <algorithm>
 #include <iterator>
 
 namespace mm {
@@ -83,6 +84,12 @@ long SpaceMouseNav::GetCameraMatrix(navlib::matrix_t& matrix) const {
     // cameraToWorldMatrix4 row-major uretildi (m[row*4+col]); navlib matrix_t
     // operator[] index erisimi ayni siralamaya sahiptir (0..15 -> m00..m33).
     for (int i = 0; i < 16; ++i) matrix[i] = m4[static_cast<std::size_t>(i)];
+    {
+        static int n = 0; if (n++ < 4) {
+            FILE* diag = fopen("model-maker-render.log", "a");
+            if (diag) { fprintf(diag, "SM-GET-CAM #%d\n", n); fclose(diag); }
+        }
+    }
     return 0;
 }
 
@@ -93,6 +100,14 @@ long SpaceMouseNav::SetCameraMatrix(const navlib::matrix_t& matrix) {
     camera_.applyCameraToWorldMatrix4(m);
     fromNavlib_ = false;
     if (viewChangedCallback_) viewChangedCallback_();
+    {
+        static int n = 0; if (n++ < 4) {
+            FILE* diag = fopen("model-maker-render.log", "a");
+            if (diag) { fprintf(diag, "SM-SET-CAM #%d yaw=%.3f pitch=%.3f c=(%.0f,%.0f,%.0f)\n",
+                n, camera_.yaw(), camera_.pitch(), camera_.center3D().x,
+                camera_.center3D().y, camera_.center3D().z); fclose(diag); }
+        }
+    }
     return 0;
 }
 
@@ -300,12 +315,18 @@ long SpaceMouseNav::SetKeyRelease(long vkey) {
 
 // --- IState ----------------------------------------------------------------
 long SpaceMouseNav::SetTransaction(long transaction) {
-    (void)transaction;
+    {
+        FILE* diag = fopen("model-maker-render.log", "a");
+        if (diag) { fprintf(diag, "SM-TXN txn=%ld\n", transaction); fclose(diag); }
+    }
     return 0;
 }
 
 long SpaceMouseNav::SetMotionFlag(bool motion) {
-    (void)motion;
+    {
+        FILE* diag = fopen("model-maker-render.log", "a");
+        if (diag) { fprintf(diag, "SM-MOTION m=%d\n", motion ? 1 : 0); fclose(diag); }
+    }
     return 0;
 }
 
