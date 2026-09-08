@@ -140,6 +140,16 @@ long SpaceMouseNav::GetViewExtents(navlib::box_t& extents) const {
 }
 
 long SpaceMouseNav::SetViewExtents(const navlib::box_t& extents) {
+    {
+        static int n = 0;
+        if (n++ < 12) {
+            FILE* f = fopen("model-maker-render.log", "a");
+            if (f) {
+                fprintf(f, "SM-SET-EXTENTS #%d w=%.2f\n", n, extents.max.x - extents.min.x);
+                fclose(f);
+            }
+        }
+    }
     // Orthografik gorunumde Navlib zoom'u view.extents uzerinden yapar:
     // extents genisler/yazar, biz zoom carpanina ceviririz (genislik artar
     // -> uzaklasir / zoom azalir).
@@ -159,8 +169,17 @@ long SpaceMouseNav::GetViewFocusDistance(double& distance) const {
 }
 
 long SpaceMouseNav::GetViewFOV(double& fov) const {
+    {
+        static int n = 0;
+        if (n++ < 10) {
+            FILE* f = fopen("model-maker-render.log", "a");
+            if (f) {
+                fprintf(f, "SM-GET-FOV #%d\n", n);
+                fclose(f);
+            }
+        }
+    }
     // Mevcut zoom'u fov (radyan) olarak yansit: zoom arttikca fov kuculur.
-    // Navlib bu degeri zoom baslangici olarak alir.
     double z = camera_.zoom();
     if (z <= 0) z = 1.0;
     fov = 2.0 * std::atan(1.0 / z); // yakin ~0.9 rad (zoom 1.0)
