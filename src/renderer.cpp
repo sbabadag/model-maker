@@ -208,78 +208,12 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
                      static_cast<LONG>(projected.y + canvas.top)};
     };
     HGDIOBJ stockPen = GetCurrentObject(dc, OBJ_PEN);
-    const auto drawGridAndAxes = [&](HDC targetDc, bool drawGridLines = true) {
-        // Ozet UCS seciliyken grid biraz daha acik: secilen duzlemin grid'i
-        // dunya grid'inden ayirt edilebilir (kullanici nerede cizdigini gorur).
-        const bool customUcsPlane =
-            std::abs(draft.workPlane.u.x - 1.0) > 1e-9 || std::abs(draft.workPlane.u.y) > 1e-9 ||
-            std::abs(draft.workPlane.u.z) > 1e-9 || std::abs(draft.workPlane.v.y - 1.0) > 1e-9 ||
-            std::abs(draft.workPlane.v.x) > 1e-9 || std::abs(draft.workPlane.v.z) > 1e-9 ||
-            std::abs(draft.workPlane.origin.x) > 1e-9 || std::abs(draft.workPlane.origin.y) > 1e-9 ||
-            std::abs(draft.workPlane.origin.z) > 1e-9;
-        const COLORREF gridColor =
-            mode == EditMode::View3D
-                ? (customUcsPlane ? RGB(150, 148, 168) : RGB(172, 170, 190))
-                : RGB(120, 118, 140);
-        HPEN gridPen = CreatePen(PS_SOLID, 1, gridColor);
-        if (drawGridLines) {
-        SelectObject(targetDc, gridPen);
-        // ADAPTIF GRID (AutoCAD 1-2-5): ekran araligi ~50px olacak sekilde
-        // kademeli adim secilir; mm cinsinden mühendislik çizimi icin
-        // minimum adim 10mm (eskiden 1mm ciziliyordu — yogun gurultu).
-        // Ortak adaptif adim (renderer.hpp): snap ile AYNI — grid nereye
-        // cizilirse cursor snap'i oraya yapisir.
-        if (mode == EditMode::Draw2D) {
-            const POINT origin = projectPoint({0.0, 0.0, 0.0});
-            const POINT unit = projectPoint({1.0, 0.0, 0.0});
-            const double pxPerUnit = std::abs(unit.x - origin.x);
-            const double step = niceGridStep(pxPerUnit);
-            const int gridSpacing = std::max(1, static_cast<int>(std::llround(step * pxPerUnit)));
-            if (gridSpacing >= 2) {
-                // Ince cizgiler: tum grid adimlari (2px'e kadar).
-                for (int x = origin.x % gridSpacing; x < canvas.right; x += gridSpacing)
-                    line(targetDc, x, canvas.top, x, canvas.bottom);
-                for (int y = origin.y % gridSpacing; y < canvas.bottom; y += gridSpacing)
-                    line(targetDc, canvas.left, y, canvas.right, y);
-                // KALIN ana cizgiler: her 5. adim (100mm/500mm/1000mm gibi
-                // yuvarlak degerlerde) — zoom'da grid hic "kaybolmaz",
-                // olcek hissi verir (AutoCAD major/minor grid).
-                if (gridSpacing >= 3) {
-                    const int majorEvery = 5;
-                    const int majorSpacing = gridSpacing * majorEvery;
-                    HPEN majorPen = CreatePen(PS_SOLID, 1,
-                        customUcsPlane ? RGB(120, 116, 145) : RGB(140, 136, 165));
-                    SelectObject(targetDc, majorPen);
-                    for (int x = origin.x % majorSpacing; x < canvas.right; x += majorSpacing)
-                        line(targetDc, x, canvas.top, x, canvas.bottom);
-                    for (int y = origin.y % majorSpacing; y < canvas.bottom; y += majorSpacing)
-                        line(targetDc, canvas.left, y, canvas.right, y);
-                    SelectObject(targetDc, gridPen);
-                    DeleteObject(majorPen);
-                }
-            }
-        } else {
-            const POINT origin3 = projectPoint(draft.workPlane.fromPlane({0.0, 0.0}));
-            const POINT unit3 = projectPoint(draft.workPlane.fromPlane({1.0, 0.0}));
-            const double pxPerUnit3 = std::hypot(unit3.x - origin3.x, unit3.y - origin3.y);
-            const double step3 = niceGridStep(pxPerUnit3);
-            // Kapsam: adimin ~25 kati (yaklasik viewport icin yeterli),
-            // makul sinirlar arasinda (100mm..100000mm).
-            const double extent = std::clamp(step3 * 25.0, 100.0, 100000.0);
-            const int divisions = static_cast<int>(std::llround(extent / step3));
-            for (int i = -divisions; i <= divisions; ++i) {
-                const double coordinate = static_cast<double>(i) * step3;
-                const POINT verticalA = projectPoint(draft.workPlane.fromPlane({coordinate, -extent}));
-                const POINT verticalB = projectPoint(draft.workPlane.fromPlane({coordinate, extent}));
-                const POINT horizontalA = projectPoint(draft.workPlane.fromPlane({-extent, coordinate}));
-                const POINT horizontalB = projectPoint(draft.workPlane.fromPlane({extent, coordinate}));
-                line(targetDc, verticalA.x, verticalA.y, verticalB.x, verticalB.y);
-                line(targetDc, horizontalA.x, horizontalA.y, horizontalB.x, horizontalB.y);
-            }
-        }
-        SelectObject(targetDc, stockPen);
-        } // drawGridLines
-        DeleteObject(gridPen);
+    const auto drawGridAndAxes = [&](HDC targetDc) {
+        // MILIMETRIK ADAPTIF GRID KALDIRILDI (kullanici istegi): eski AutoCAD
+        // 1-2-5 adaptif grid cizilmez — sadece UCS ok glifi ve custom yapi
+        // akslari kalir. Grid snap artik custom akslara gider (drafting).
+        // (customUcsPlane/gridColor sadece milimetrik blokta kullanildigi
+        //  icin kaldirildi; UCS ok renkleri sabit.)
 
         // UCS ok glifi: dunya duzleminde kisa (2m), ozel UCS seciliyken
         // grid adiminin ~4 kati — secilen duzlem net gorunsun (X/Y oklari
@@ -356,12 +290,15 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
                     LineTo(targetDc, to.x, to.y);
                     SelectObject(targetDc, oldAxisPen);
                     DeleteObject(axisPen);
-                    // Etiket: aksin dis ucunda (bitisinden kisa uzanti)
+                    // Etiket: aksin ucundan belirli bir OFFSET ile — hat
+                    // kesilmeden once ayrilmis, aks yonu boyunca ortalı.
+                    // Ucun ~16px otesinde, cizgiden net ayirt edilebilir.
                     const double len = std::hypot(to.x - from.x, to.y - from.y);
                     if (len > 1.0 && !axis.label.empty()) {
                         const double ux = (to.x - from.x) / len, uy = (to.y - from.y) / len;
-                        const int labelX = static_cast<int>(std::lround(to.x + ux * 12.0));
-                        const int labelY = static_cast<int>(std::lround(to.y + uy * 12.0));
+                        // Aks ucundan uzanti offset'i (px)
+                        const int labelX = static_cast<int>(std::lround(to.x + ux * 16.0));
+                        const int labelY = static_cast<int>(std::lround(to.y + uy * 16.0));
                         drawText(targetDc, labelX, labelY,
                                  std::wstring(axis.label.begin(), axis.label.end()).c_str(),
                                  RGB(60, 68, 110));
@@ -1229,7 +1166,7 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         // USTUNE cizilir. SOLID istisnasi: Tekla model gorunumunde grid
         // yoktur (alttan tagan cizgiler kafa karistirmasin); UCS eksen
         // oklari yine cizilir.
-        drawGridAndAxes(dc, draft.visualStyle != VisualStyle::Solid);
+        drawGridAndAxes(dc);
         {
             static int gridTopDiag = 0;
             if (gridTopDiag++ < 3) {

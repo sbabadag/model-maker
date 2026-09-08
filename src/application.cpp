@@ -1263,6 +1263,20 @@ LRESULT Application::handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lPa
         // 2B: orta tus surukleme = pan.
         if (mode_ == EditMode::View3D && !(GetKeyState(VK_MENU) & 0x8000)) {
             rotating_ = true;
+            // Rotasyon merkezini mouse imlecinin altindaki aktif calisma
+            // duzlemi noktasina al (kamera center3D_ etrafinda doner). Boylece
+            // 3B rotate imlecinin oldugu bolgeyi merkez alir, ekranin ortasini
+            // degil.
+            if (canvas_) {
+                RECT rc{}; GetClientRect(canvas_, &rc);
+                const int w = std::max(1L, rc.right);
+                const int h = std::max(1L, rc.bottom);
+                const Vec2 mp{static_cast<double>(GET_X_LPARAM(lParam)),
+                              static_cast<double>(GET_Y_LPARAM(lParam))};
+                if (auto world = camera_.unprojectToPlane(mp, w, h, workPlane_)) {
+                    camera_.setOrbitCenter(*world);
+                }
+            }
         } else {
             panning2D_ = true;
         }
@@ -2906,10 +2920,9 @@ void Application::updateHover(int x, int y) {
     }
     if (mode_ == EditMode::Draw2D) {
         const auto reference = transformPhase_ == TransformPhase::Destination ? transformBase_ : anchor_;
-        // Grid snap araligi = cizilen grid'in araligi (adaptif 1-2-5): snap
-        // eskiden sabit 1.0mm'e yapisiyordu; artik gorunur grid noktalarina.
-        const double gridStep = niceGridStep(60.0 * camera_.zoom());
-        hover_ = SnapEngine::snap(screenTo2D(x, y), document_, 10.0 / (60.0 * camera_.zoom()), gridStep,
+        // Grid snap artik CUSTOM yapi akslarina gider (milimetrik adaptif
+        // grid kaldirildi) — SnapEngine document.grids() uzerinden yapar.
+        hover_ = SnapEngine::snap(screenTo2D(x, y), document_, 10.0 / (60.0 * camera_.zoom()),
                                   snapEnabled_, gridSnapEnabled_, reference, &enabledSnapTypes_);
     } else {
         RECT client{}; GetClientRect(canvas_, &client);
@@ -2918,15 +2931,12 @@ void Application::updateHover(int x, int y) {
         const auto reference = transformPhase_ == TransformPhase::Destination ? transformBase_ : anchor_;
         WorkPlane activePlane = workPlane_;
         if (reference && !workPlanePicking_) activePlane.origin = *reference;
-        // 3B grid snap: is duzlemindeki adaptif adim (grid ile ayni).
-        const Vec2 gOrigin = camera_.project(activePlane.origin, width, height);
-        const Vec2 gUnit = camera_.project(activePlane.fromPlane({1.0, 0.0}), width, height);
-        const double gPx = std::hypot(gUnit.x - gOrigin.x, gUnit.y - gOrigin.y);
+        // 3B grid snap: CUSTOM yapi akslarina (milimetrik adaptif yok).
         // SOLID stil: snap yalniz gorunur (kameraya donuk) kenarlarda —
         // arka yuzler dolguyla ortuludur, arkadaki kenarlara snap kafa
         // karistirir. Wireframe/saydam/hidden'da tum kenarlar.
         hover_ = SnapEngine::snap3D({static_cast<double>(x), static_cast<double>(y)}, document_, camera_,
-                                    width, height, 10.0, niceGridStep(gPx), activePlane,
+                                    width, height, 10.0, activePlane,
                                     snapEnabled_, gridSnapEnabled_, reference, &enabledSnapTypes_,
                                     visualStyle_ == VisualStyle::Solid);
     }

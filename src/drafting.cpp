@@ -402,7 +402,7 @@ std::optional<double> parseNumber(std::wstring_view text) noexcept {
 }
 
 SnapResult SnapEngine::snap(const Vec3& cursor, const Document& document,
-                            double objectTolerance, double gridSpacing,
+                            double objectTolerance,
                             bool objectSnapEnabled, bool gridSnapEnabled,
                             std::optional<Vec3> referencePoint,
                             const SnapTypeMask* enabledTypes) {
@@ -422,22 +422,40 @@ SnapResult SnapEngine::snap(const Vec3& cursor, const Document& document,
         }
         if (result.type != SnapType::None) return result;
     }
-    if (gridSnapEnabled && gridSpacing > 0.0) {
-        const Vec3 grid{std::round(cursor.x / gridSpacing) * gridSpacing,
-                        std::round(cursor.y / gridSpacing) * gridSpacing, cursor.z};
-        return {grid, SnapType::Grid, distance2D(cursor, grid)};
+    // Grid snap ARTIK CUSTOM YAPI AKSARINA gider (milimetrik adaptif grid
+    // kaldirildi). document.grids() icindeki her aks segmentine/cizgisinin
+    // en yakin noktasina imlec yapisir.
+    if (gridSnapEnabled) {
+        Vec3 best{};
+        bool found = false;
+        double bestDist = 0.0;
+        for (const auto& grid : document.grids()) {
+            if (!grid.visible) continue;
+            for (const auto& axis : grid.axes) {
+                const Vec3 seg = axis.to - axis.from;
+                const double segLen2 = seg.x * seg.x + seg.y * seg.y + seg.z * seg.z;
+                if (segLen2 < 1e-12) continue;
+                const Vec3 rel = cursor - axis.from;
+                const double t = std::clamp(
+                    (rel.x * seg.x + rel.y * seg.y + rel.z * seg.z) / segLen2, 0.0, 1.0);
+                const Vec3 closest = axis.from + seg * t;
+                const double d = distance2D(cursor, closest);
+                if (!found || d < bestDist) { best = closest; bestDist = d; found = true; }
+            }
+        }
+        if (found) return {best, SnapType::Grid, bestDist};
     }
     return {cursor, SnapType::None, 0.0};
 }
 
 SnapResult SnapEngine::snap3D(const Vec2& screenCursor, const Document& document,
                               const Camera& camera, int viewportWidth, int viewportHeight,
-                              double objectTolerancePixels, double gridSpacing, double workPlaneZ,
+                              double objectTolerancePixels, double workPlaneZ,
                               bool objectSnapEnabled, bool gridSnapEnabled,
                               std::optional<Vec3> referencePoint,
                               const SnapTypeMask* enabledTypes) {
     return snap3D(screenCursor, document, camera, viewportWidth, viewportHeight,
-                  objectTolerancePixels, gridSpacing,
+                  objectTolerancePixels,
                   WorkPlane{{0.0, 0.0, workPlaneZ}, {1.0, 0.0, 0.0},
                             {0.0, 1.0, 0.0}, {0.0, 0.0, 1.0}},
                   objectSnapEnabled, gridSnapEnabled, referencePoint, enabledTypes, false);
@@ -445,7 +463,7 @@ SnapResult SnapEngine::snap3D(const Vec2& screenCursor, const Document& document
 
 SnapResult SnapEngine::snap3D(const Vec2& screenCursor, const Document& document,
                               const Camera& camera, int viewportWidth, int viewportHeight,
-                              double objectTolerancePixels, double gridSpacing, const WorkPlane& workPlane,
+                              double objectTolerancePixels, const WorkPlane& workPlane,
                               bool objectSnapEnabled, bool gridSnapEnabled,
                               std::optional<Vec3> referencePoint,
                               const SnapTypeMask* enabledTypes,
@@ -536,13 +554,30 @@ SnapResult SnapEngine::snap3D(const Vec2& screenCursor, const Document& document
         auto result = choose(std::move(candidates), *raw, enabledTypes);
         if (result.type != SnapType::None) return result;
     }
-    if (gridSnapEnabled && gridSpacing > 0.0) {
-        const Vec2 local = workPlane.toPlane(*raw);
-        const Vec3 grid = workPlane.fromPlane({std::round(local.x / gridSpacing) * gridSpacing,
-                                                std::round(local.y / gridSpacing) * gridSpacing});
-        const Vec2 projected = camera.project(grid, viewportWidth, viewportHeight);
-        return {grid, SnapType::Grid,
-                std::hypot(screenCursor.x - projected.x, screenCursor.y - projected.y)};
+    // Grid snap ARTIK CUSTOM YAPI AKSARINA gider (milimetrik adaptif grid
+    // kaldirildi). workPlane uzerindeki aks segmentlerine en yakin nokta.
+    if (gridSnapEnabled) {
+        Vec3 best{};
+        bool found = false;
+        double bestPx = 0.0;
+        for (const auto& grid : document.grids()) {
+            if (!grid.visible) continue;
+            for (const auto& axis : grid.axes) {
+                const Vec3 a = axis.from, b = axis.to;
+                const Vec3 seg = b - a;
+                const double segLen2 = seg.x * seg.x + seg.y * seg.y + seg.z * seg.z;
+                if (segLen2 < 1e-12) continue;
+                const Vec3 rel = *raw - a;
+                const double t = std::clamp(
+                    (rel.x * seg.x + rel.y * seg.y + rel.z * seg.z) / segLen2, 0.0, 1.0);
+                const Vec3 closest = a + seg * t;
+                const Vec2 projected = camera.project(closest, viewportWidth, viewportHeight);
+                const double d = std::hypot(screenCursor.x - projected.x,
+                                            screenCursor.y - projected.y);
+                if (!found || d < bestPx) { best = closest; bestPx = d; found = true; }
+            }
+        }
+        if (found) return {best, SnapType::Grid, bestPx};
     }
     return {*raw, SnapType::None, 0.0};
 }

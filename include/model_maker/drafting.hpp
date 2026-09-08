@@ -68,19 +68,19 @@ EntityProperties resolveEntityStyle(
 class SnapEngine {
 public:
     static SnapResult snap(const Vec3& cursor, const Document& document,
-                           double objectTolerance, double gridSpacing,
+                           double objectTolerance,
                            bool objectSnapEnabled = true, bool gridSnapEnabled = true,
                            std::optional<Vec3> referencePoint = std::nullopt,
                            const SnapTypeMask* enabledTypes = nullptr);
     static SnapResult snap3D(const Vec2& screenCursor, const Document& document,
                              const Camera& camera, int viewportWidth, int viewportHeight,
-                             double objectTolerancePixels, double gridSpacing, double workPlaneZ,
+                             double objectTolerancePixels, double workPlaneZ,
                              bool objectSnapEnabled = true, bool gridSnapEnabled = true,
                              std::optional<Vec3> referencePoint = std::nullopt,
                              const SnapTypeMask* enabledTypes = nullptr);
     static SnapResult snap3D(const Vec2& screenCursor, const Document& document,
                              const Camera& camera, int viewportWidth, int viewportHeight,
-                             double objectTolerancePixels, double gridSpacing, const WorkPlane& workPlane,
+                             double objectTolerancePixels, const WorkPlane& workPlane,
                              bool objectSnapEnabled = true, bool gridSnapEnabled = true,
                              std::optional<Vec3> referencePoint = std::nullopt,
                              const SnapTypeMask* enabledTypes = nullptr,
