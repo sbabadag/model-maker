@@ -19,7 +19,6 @@ bool SpaceMouseNav::start() {
     try {
         // CNavigation3D::EnableNavigation(true) -> m_pImpl->Open(profileHint)
         // -> NlCreate. Profil adi navlib'te model-maker olarak gozukur.
-        // setProfileHint ile once profil metnini ver (Open bos metinle atar).
         PutProfileHint("model-maker");
         // Navlib'in bu baglantiyi 3D hedef olarak gormesi icin active/focus.
         // CNavigation3D bunlari kurmaz; biz Write ile bildiririz (navlib.h
@@ -38,7 +37,13 @@ void SpaceMouseNav::stop() {
     EnableNavigation(false);
 }
 
-// --- ISpace3D --------------------------------------------------------------
+// --- IEvents ---------------------------------------------------------------
+long SpaceMouseNav::SetActiveCommand(std::string commandId) {
+    (void)commandId;
+    return 0;
+}
+
+// --- ISpace3D ----------------------------------------------------------------
 // Navlib Y-up: Y yukari, Z ekrandan disari, X saga. Bizim model Z-up (Z
 // yukari). navlib.h: "non-identity matrix is REQUIRED when the ground plane is
 // not the X-Z plane" (Lock Horizon). Donusum: app(x,y,z) -> navlib(x,z,-y),
@@ -58,15 +63,13 @@ long SpaceMouseNav::GetCoordinateSystem(navlib::matrix_t& matrix) const {
     return 0;
 }
 
-// Navlib on gorunumunu bizim koordinat sistemine cevirir. Identity yeterli
-// (koordinat sistemi zaten -90° X ile cevrildi).
 long SpaceMouseNav::GetFrontView(navlib::matrix_t& matrix) const {
     for (int i = 0; i < 16; ++i) matrix[i] = 0.0;
     matrix[0] = matrix[5] = matrix[10] = matrix[15] = 1.0;
     return 0;
 }
 
-// --- IView ----------------------------------------------------------------
+// --- IView ------------------------------------------------------------------
 long SpaceMouseNav::GetCameraMatrix(navlib::matrix_t& matrix) const {
     const auto m4 = camera_.cameraToWorldMatrix4();
     // cameraToWorldMatrix4 (mm) row-major ve navlib camera-to-world beklentisi
@@ -89,33 +92,63 @@ long SpaceMouseNav::GetCameraTarget(navlib::point_t& target) const {
     return 0;
 }
 
-long SpaceMouseNav::GetViewFocusDistance(double& distance) const {
-    distance = 5000.0;
+long SpaceMouseNav::SetCameraTarget(const navlib::point_t& target) {
+    camera_.setCenter3D(Vec3{target.x, target.y, target.z});
+    if (viewChangedCallback_) viewChangedCallback_();
     return 0;
 }
 
-long SpaceMouseNav::GetIsViewPerspective(navlib::bool_t& perspective) const {
-    // Navlib rotasyonu perspektif gorunumde view.affine uzerinden yapar;
-    // orthografik bildirince bazi surumler 6 eksen donusu kisitlar.
-    perspective = 1;
+long SpaceMouseNav::GetPointerPosition(navlib::point_t& position) const {
+    // Ekran merkezindeki zemin noktasi (0,0,0) — navlib pivot/odak icin kullanir.
+    position = navlib::point_t{0.0, 0.0, 0.0};
     return 0;
 }
 
-long SpaceMouseNav::GetIsViewRotatable(navlib::bool_t& isRotatable) const {
-    // 3D'de doner; 2B plan aktifken navlib baslatilmaz.
-    isRotatable = 1;
+long SpaceMouseNav::SetPointerPosition(const navlib::point_t& position) {
+    (void)position;
     return 0;
 }
 
 long SpaceMouseNav::GetViewConstructionPlane(navlib::plane_t& plane) const {
-    // Zemin duzlemi (z=0): normal (0,0,1), d=0.
     plane.n = navlib::vector_t{0.0, 0.0, 1.0};
     plane.d = 0.0;
     return 0;
 }
 
+long SpaceMouseNav::GetViewExtents(navlib::box_t& extents) const {
+    // Orthografik gorunum alani: merkez center3D, ~10m yari cap.
+    const auto& c = camera_.center3D();
+    const double w = 5000.0;
+    extents.min = navlib::point_t{c.x - w, c.y - w, c.z - w};
+    extents.max = navlib::point_t{c.x + w, c.y + w, c.z + w};
+    return 0;
+}
+
+long SpaceMouseNav::SetViewExtents(const navlib::box_t& extents) {
+    // Orthografik zoom: Navlib extents genisligini degistirir. scale'i bizim
+    // zoom carpanina cevir (baslangic yaklasik 10m -> zoom 1.0).
+    double width = extents.max.x - extents.min.x;
+    if (width > 0) {
+        double targetZoom = 10000.0 / width;
+        double current = camera_.zoom();
+        if (current > 0) camera_.zoomBy(targetZoom / current);
+    }
+    if (viewChangedCallback_) viewChangedCallback_();
+    return 0;
+}
+
+long SpaceMouseNav::GetViewFocusDistance(double& distance) const {
+    distance = 5000.0;
+    return 0;
+}
+
 long SpaceMouseNav::GetViewFOV(double& fov) const {
-    fov = 0.5; // radyan — navlib 0 istemez (divide-by-zero korumasi).
+    fov = 0.5; // radyan — navlib 0 istemez.
+    return 0;
+}
+
+long SpaceMouseNav::SetViewFOV(double fov) {
+    (void)fov;
     return 0;
 }
 
@@ -126,15 +159,90 @@ long SpaceMouseNav::GetViewFrustum(navlib::frustum_t& frustum) const {
     return 0;
 }
 
-// --- IModel ----------------------------------------------------------------
+long SpaceMouseNav::SetViewFrustum(const navlib::frustum_t& frustum) {
+    (void)frustum;
+    return 0;
+}
+
+long SpaceMouseNav::GetIsViewPerspective(navlib::bool_t& perspective) const {
+    // Navlib rotasyonu view.affine uzerinden yapar; perspektif raporla.
+    perspective = 1;
+    return 0;
+}
+
+long SpaceMouseNav::GetIsViewRotatable(navlib::bool_t& isRotatable) const {
+    isRotatable = 1;
+    return 0;
+}
+
+// --- IPivot -----------------------------------------------------------------
+long SpaceMouseNav::GetPivotPosition(navlib::point_t& position) const {
+    const auto& c = camera_.center3D();
+    position = navlib::point_t{c.x, c.y, c.z};
+    return 0;
+}
+
+long SpaceMouseNav::IsUserPivot(navlib::bool_t& userPivot) const {
+    userPivot = 0;
+    return 0;
+}
+
+long SpaceMouseNav::SetPivotPosition(const navlib::point_t& position) {
+    camera_.setCenter3D(Vec3{position.x, position.y, position.z});
+    if (viewChangedCallback_) viewChangedCallback_();
+    return 0;
+}
+
+long SpaceMouseNav::GetPivotVisible(navlib::bool_t& visible) const {
+    visible = 0;
+    return 0;
+}
+
+long SpaceMouseNav::SetPivotVisible(bool visible) {
+    (void)visible;
+    return 0;
+}
+
+// --- IHit -------------------------------------------------------------------
+long SpaceMouseNav::GetHitLookAt(navlib::point_t& position) const {
+    const auto& c = camera_.center3D();
+    position = navlib::point_t{c.x, c.y, c.z};
+    return 0;
+}
+
+long SpaceMouseNav::SetHitAperture(double aperture) {
+    (void)aperture;
+    return 0;
+}
+
+long SpaceMouseNav::SetHitDirection(const navlib::vector_t& direction) {
+    (void)direction;
+    return 0;
+}
+
+long SpaceMouseNav::SetHitLookFrom(const navlib::point_t& eye) {
+    (void)eye;
+    return 0;
+}
+
+long SpaceMouseNav::SetHitSelectionOnly(bool onlySelection) {
+    (void)onlySelection;
+    return 0;
+}
+
+// --- IModel -----------------------------------------------------------------
 long SpaceMouseNav::GetUnitsToMeters(double& meters) const {
-    meters = 0.001; // 1 birim = 1 mm -> 0.001 m
+    meters = 0.001; // 1 birim = 1 mm
+    return 0;
+}
+
+long SpaceMouseNav::GetFloorPlane(navlib::plane_t& floor) const {
+    floor.n = navlib::vector_t{0.0, 0.0, 1.0};
+    floor.d = 0.0;
     return 0;
 }
 
 long SpaceMouseNav::GetModelExtents(navlib::box_t& extents) const {
-    // Navlib, 6 ekseni model kapsamina gore olcekler; hata donerse navigasyonu
-    // baslatmayabilir. Model yoksa bile gecerli kutu ver (10m varsayilan).
     auto b = document_.bounds();
     extents.min = navlib::point_t{b ? b->minimum.x : -5000.0,
                                   b ? b->minimum.y : -5000.0,
@@ -146,8 +254,21 @@ long SpaceMouseNav::GetModelExtents(navlib::box_t& extents) const {
 }
 
 long SpaceMouseNav::GetSelectionExtents(navlib::box_t& extents) const {
-    // Secim yok — model kapsamini ver (yoksa varsayilan).
     return GetModelExtents(extents);
+}
+
+long SpaceMouseNav::GetIsSelectionEmpty(navlib::bool_t& empty) const {
+    empty = 1;
+    return 0;
+}
+
+long SpaceMouseNav::GetSelectionTransform(navlib::matrix_t& transform) const {
+    return -1; // secim yok
+}
+
+long SpaceMouseNav::SetSelectionTransform(const navlib::matrix_t& matrix) {
+    (void)matrix;
+    return -1;
 }
 
 } // namespace mm
