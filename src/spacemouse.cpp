@@ -78,46 +78,12 @@ long SpaceMouseNav::GetCameraMatrix(navlib::matrix_t& matrix) const {
 }
 
 long SpaceMouseNav::SetCameraMatrix(const navlib::matrix_t& matrix) {
-    // Navlib "ileri-geri" (push) itmeyi m32 (kamera pozisyon Z) translasyonu
-    // olarak gonderir. Orthografik kamerada pozisyon kaymasi zoom DEGILDIR.
-    // dz'yi her adimda delta al (birikimsiz) ve COK KUCUK bir katsayıyla,
-    // dar bir sınırla uygula — aksi halde zoom kontrolsuz hizli gidip gelir.
-    static double prevZ = 0.0;
-    static bool zinit = false;
-    const double z = matrix[14];
-    double dz = 0.0;
-    if (!zinit) {
-        prevZ = z;
-        zinit = true;
-    } else {
-        dz = z - prevZ;
-        prevZ = z;
-        if (std::fabs(dz) > 1e-6) {
-            // Kucuk, kontrollu adim: +x mm -> ~%0.05 zoom. cok dar limitler.
-            double factor = 1.0 + dz * 0.0005;
-            if (factor > 0.92 && factor < 1.08) camera_.zoomBy(factor);
-        }
-    }
-    {
-        static int n = 0;
-        if (n++ < 15) {
-            FILE* f = fopen("model-maker-render.log", "a");
-            if (f) {
-                fprintf(f, "SM-SET-CAM #%d m32=%.4f dz=%.4f zoom=%.3f\n", n, z, dz,
-                        camera_.zoom());
-                fclose(f);
-            }
-        }
-    }
-
-    // Rotasyon + pozisyon: objeler YERINDE kalir. Rotasyon matrisin 3x3
-    // kismindan (m0..m8), center3D_ HIC DEGISMEZ (pivot sabit). m32/m33'u
-    // (translasyon) zoom'a cevirdigimiz icin kamerayi kaydirmiyoruz.
-    std::array<double, 16> m = camera_.cameraToWorldMatrix4();
-    m[0] = matrix[0]; m[1] = matrix[1]; m[2] = matrix[2];
-    m[4] = matrix[4]; m[5] = matrix[5]; m[6] = matrix[6];
-    m[8] = matrix[8]; m[9] = matrix[9]; m[10] = matrix[10];
-    // m[12..14] (translasyon) mevcut center3D_'de kalir — asagi kopyalama.
+    // Navlib'in gonderdigi TAM matrisi uygula (rotasyon + pozisyon). Matrisin
+    // m30/m31/m32 (translasyon) ileri-geri itme icin kullanilir; applyCamera
+    // ToWorldMatrix4 bunu euler + center3D_ olarak cozer. Bu yamalama yok:
+    // detay bkz. camera.cpp round-trip testi.
+    std::array<double, 16> m{};
+    for (int i = 0; i < 16; ++i) m[static_cast<std::size_t>(i)] = matrix[i];
     camera_.applyCameraToWorldMatrix4(m);
     if (viewChangedCallback_) viewChangedCallback_();
     return 0;
