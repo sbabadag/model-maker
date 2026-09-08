@@ -83,14 +83,38 @@ long SpaceMouseNav::SetCameraMatrix(const navlib::matrix_t& matrix) {
         if (n++ < 12) {
             FILE* f = fopen("model-maker-render.log", "a");
             if (f) {
-                fprintf(f, "SM-SET-CAM #%d m30=%.4f m31=%.4f m32=%.4f | m20=%.4f m21=%.4f m22=%.4f\n",
-                        n, matrix[12], matrix[13], matrix[14], matrix[8], matrix[9], matrix[10]);
+                fprintf(f, "SM-SET-CAM #%d m32=%.4f m20=%.4f\n", n, matrix[14], matrix[8]);
                 fclose(f);
             }
         }
     }
-    std::array<double, 16> m{};
-    for (int i = 0; i < 16; ++i) m[static_cast<std::size_t>(i)] = matrix[i];
+    // Navlib "ileri-geri" (push) itmeyi m32 (kamera pozisyon Z) translasyonu
+    // olarak gonderir. Orthografik kamerada pozisyon kaymasi zoom DEGILDIR,
+    // sadece merkezi kaydirir (kullanici bunu dondurme olarak gorur). Bu yuzden
+    // m32 degisimini ZOOM'a cevirip center3D_ kullanmayiz.
+    static double baseZ = 0.0;
+    static bool zinit = false;
+    const double z = matrix[14];
+    if (!zinit) {
+        baseZ = z;
+        zinit = true;
+    } else {
+        const double dz = z - baseZ;
+        if (std::fabs(dz) > 1e-6) {
+            double factor = std::exp(-dz * 0.002);
+            if (factor > 0.01 && factor < 100.0) camera_.zoomBy(factor);
+        }
+    }
+
+    // Rotasyon: navlib rotasyon m0..m8'de, center3D_ YALNIZ m12/m13'ten (x,y).
+    // m14 (z) zoom'a cevrildigi icin center3D z'sini degistirmiyoruz.
+    std::array<double, 16> m = camera_.cameraToWorldMatrix4();
+    // Rows 0-2 (rotasyon) navlib'ten, row 3 pozisyonun x,y'si mevcut centerdan.
+    const auto& c = camera_.center3D();
+    m[0] = matrix[0]; m[1] = matrix[1]; m[2] = matrix[2];
+    m[4] = matrix[4]; m[5] = matrix[5]; m[6] = matrix[6];
+    m[8] = matrix[8]; m[9] = matrix[9]; m[10] = matrix[10];
+    m[12] = c.x; m[13] = c.y; m[14] = c.z; // pozisyon z sabit (zoom'da)
     camera_.applyCameraToWorldMatrix4(m);
     if (viewChangedCallback_) viewChangedCallback_();
     return 0;
