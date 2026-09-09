@@ -78,18 +78,30 @@ long SpaceMouseNav::GetCameraMatrix(navlib::matrix_t& matrix) const {
 }
 
 long SpaceMouseNav::SetCameraMatrix(const navlib::matrix_t& matrix) {
-    // Navlib'in gonderdigi TAM matrisi uygula (rotasyon + pan). applyCamera
-    // ToWorldMatrix4 m[0..8]'den euler, m[12..14]'ten center3D_ cozer.
+    // Navlib'in gonderdigi matris: m[0..8] rotasyon, m[12..14] KAMERA POZISYONU.
+    // Bizim kamera hedef-tabanli (center3D_ + yaw/pitch/roll + zoom_), o yuzden
+    // pozisyonu dogrudan center3D_'ye yazamayiz (kavram farki). Dogal hareket:
+    //   m[12..14] delta'sini kameranin right/up/forward vektorlerine projekte et
+    //   -> right/up bileseni = PAN (center3D_ kaydir)
+    //   -> forward bileseni  = ZOOM (dolly, zoom_ scale)
+    // Boylece sag-sol itme pan, ileri-geri itme zoom olur (kamera-bagimsiz).
     std::array<double, 16> m{};
     for (int i = 0; i < 16; ++i) m[static_cast<std::size_t>(i)] = matrix[i];
-    camera_.applyCameraToWorldMatrix4(m);
 
-    // ZOOM: Navlib zoom'u view.affine translasyonu ile gonderir. AMA m[14]
-    // (pozisyon Z) sağ-sol itmede de degisiyor (kamera donuk oldugu icin) —
-    // bu yuzden m[14]'ten dogrudan zoom hesabi yanlis (sağ-sol itme de zoom
-    // uretir). Cozum: pozisyon delta'sini KAMERA BAKIS YONUNE (forward)
-    // projekte et — sağ-sol (forward'a dik) hareket zoom URETMEZ, sadece
-    // ileri-geri (forward'a paralel) zoom uretir.
+    const Vec3 oldCenter = camera_.center3D();
+    double oldZoom = camera_.zoom();
+
+    // Rotasyonu coz (center3D_'ye dokunmadan once eski degeri tut).
+    camera_.applyCameraToWorldMatrix4(m);
+    camera_.setCenter3D(oldCenter); // pan'i manuel yapacagiz
+
+    // Kameranin guncel right/up/forward vektorleri (rotasyonu uyguladiktan sonra).
+    const auto cm = camera_.cameraToWorldMatrix4();
+    const Vec3 right{cm[0], cm[1], cm[2]};
+    const Vec3 up{cm[4], cm[5], cm[6]};
+    const Vec3 fwd{-cm[8], -cm[9], -cm[10]}; // m[8..10] = backward
+
+    // m[12..14] pozisyon delta'si (birikimsiz, her adim).
     static double prevX = 0.0, prevY = 0.0, prevZ = 0.0;
     static bool init = false;
     const double px = matrix[12], py = matrix[13], pz = matrix[14];
@@ -99,16 +111,22 @@ long SpaceMouseNav::SetCameraMatrix(const navlib::matrix_t& matrix) {
     } else {
         const double dx = px - prevX, dy = py - prevY, dz = pz - prevZ;
         prevX = px; prevY = py; prevZ = pz;
-        // forward = -m[8..10] (cameraToWorld'da m[8..10] = backward yonu)
-        const double fx = -matrix[8], fy = -matrix[9], fz = -matrix[10];
-        const double flen = std::sqrt(fx * fx + fy * fy + fz * fz);
-        if (flen > 1e-9) {
-            const double fwd = (dx * fx + dy * fy + dz * fz) / flen; // mm cinsinden
-            if (std::fabs(fwd) > 1e-3) {
-                double factor = 1.0 + fwd / 10000.0; // model genisligi ~10m
-                if (factor > 0.5 && factor < 2.0) camera_.zoomBy(factor);
-            }
+        const Vec3 d{dx, dy, dz};
+        const double panR = d.x * right.x + d.y * right.y + d.z * right.z; // sag-sol
+        const double panU = d.x * up.x + d.y * up.y + d.z * up.z;          // yukari-asagi
+        const double dolly = d.x * fwd.x + d.y * fwd.y + d.z * fwd.z;      // ileri-geri
+        // PAN: center3D_'yi right/up boyunca kaydir.
+        const double panScale = 0.5; // hassaslik ayari
+        camera_.setCenter3D(oldCenter +
+                            Vec3{right.x * panR + up.x * panU,
+                                 right.y * panR + up.y * panU,
+                                 right.z * panR + up.z * panU} * panScale);
+        // ZOOM: dolly (ileri-geri) -> zoom_ scale.
+        if (std::fabs(dolly) > 1e-3) {
+            double factor = 1.0 + dolly / 10000.0; // model genisligi ~10m
+            if (factor > 0.5 && factor < 2.0) camera_.zoomBy(factor);
         }
+        (void)oldZoom;
     }
     if (viewChangedCallback_) viewChangedCallback_();
     return 0;
