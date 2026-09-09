@@ -115,12 +115,16 @@ long SpaceMouseNav::SetCameraMatrix(const navlib::matrix_t& matrix) {
         const double panR = d.x * right.x + d.y * right.y + d.z * right.z; // sag-sol
         const double panU = d.x * up.x + d.y * up.y + d.z * up.z;          // yukari-asagi
         const double dolly = d.x * fwd.x + d.y * fwd.y + d.z * fwd.z;      // ileri-geri
-        // PAN: center3D_'yi right/up boyunca kaydir.
+        // PAN: center3D_'yi right/up boyunca kaydir. Kullanici objeyi ittigi
+        // yone goturur (saga it -> model saga). -panR: saga itince right vektoru
+        // +yondur ama modelin saga gitmesi icin merkez sola kayar; kullanici
+        // testinde ters geldi, bu yuzden panR isareti cevrildi. panU (bas-c ek)
+        // dogru: basinca asagi, cekince yukari.
         const double panScale = 0.5; // hassaslik ayari
         camera_.setCenter3D(oldCenter +
-                            Vec3{right.x * panR + up.x * panU,
-                                 right.y * panR + up.y * panU,
-                                 right.z * panR + up.z * panU} * panScale);
+                            Vec3{-right.x * panR + up.x * panU,
+                                 -right.y * panR + up.y * panU,
+                                 -right.z * panR + up.z * panU} * panScale);
         // ZOOM: dolly (ileri-geri) -> zoom_ scale.
         if (std::fabs(dolly) > 1e-3) {
             double factor = 1.0 + dolly / 10000.0; // model genisligi ~10m
