@@ -286,9 +286,11 @@ void QtMainWindow::showEvent(QShowEvent* event) {
     if (!startupDefaultsApplied_) {
         startupDefaultsApplied_ = true;
         QTimer::singleShot(0, this, [this]() {
-            // 2B plan acilisinda GL backend gerekmez (kod mode_==View3D icin
-            // GL cizer); bos canvas'ta context init kilitlenme yapmisti.
-            app_.applyStartupDefaults();
+            // 3B'ye gec (mode_ View3D) + SpaceMouse baslat. toggle3DView icinde
+            // zaten ensureSpaceMouseStarted cagrilir (mode_ View3D olunca).
+            app_.applyStartupDefaults();          // no-op (kilitlenme teşhisi)
+            app_.toggle3DView();
+            app_.ensureSpaceMouseStarted();       // her durumda otomatik baslat
         });
     }
     if (!profileUiLogged_ && profileSelector_) {
