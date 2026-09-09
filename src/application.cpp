@@ -2318,7 +2318,19 @@ void Application::toggle3DView() {
 
 void Application::ensureSpaceMouseStarted() {
 #ifdef _WIN32
-    if (mode_ != EditMode::View3D) return;
+    {
+        FILE* diag = fopen("model-maker-render.log", "a");
+        if (diag) {
+            fprintf(diag, "SM-START called mode=%d spaceMouse=%d running=%d\n",
+                    (int)mode_, spaceMouse_ ? 1 : 0, (spaceMouse_ && spaceMouse_->running()) ? 1 : 0);
+            fclose(diag);
+        }
+    }
+    if (mode_ != EditMode::View3D) {
+        FILE* diag = fopen("model-maker-render.log", "a");
+        if (diag) { fprintf(diag, "SM-START skipped (mode != View3D)\n"); fclose(diag); }
+        return;
+    }
     if (!spaceMouse_) {
         spaceMouse_ = std::make_unique<SpaceMouseNav>(camera_, document_);
         spaceMouse_->setViewChangedCallback([this]() {
