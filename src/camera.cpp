@@ -278,19 +278,15 @@ std::array<double, 16> Camera::cameraToWorldMatrix4() const noexcept {
     ensureViewCache();
     std::array<double, 16> m{};
     if (useIso_) {
-        // Izometrik onizleme isoM_ matrisiyle cizilir; satir2 (derinlik) euler
-        // yoluyla isaret uyumunda degildir. Navlib'e VERIRKEN satir2'yi
-        // satir0 x satir1 ile proper rotasyona tamamlariz: ekran x/y birebir
-        // ayni kalir, boylece ilk SpaceMouse hareketi mevcut izometrik
-        // gorunumden devam eder (onden gorunuse atlamaz).
-        const double r00 = isoM00_, r01 = isoM01_, r02 = isoM02_;
-        const double r10 = isoM10_, r11 = isoM11_, r12 = isoM12_;
-        const double r20 = r01 * r12 - r02 * r11;
-        const double r21 = r02 * r10 - r00 * r12;
-        const double r22 = r00 * r11 - r01 * r10;
-        m[0] = r00; m[1] = r10; m[2] = r20;  m[3] = 0.0;
-        m[4] = r01; m[5] = r11; m[6] = r21;  m[7] = 0.0;
-        m[8] = r02; m[9] = r12; m[10] = r22; m[11] = 0.0;
+        // Izometrik onizleme isoM_ matrisiyle cizilir. Navlib'e VERIRKEN ayni
+        // matrisin satirlarini kullaniriz (row2 = isoM20..22, +Z bilesenli
+        // derinlik): boylece ilk SpaceMouse hareketi mevcut izometrik
+        // gorunumden devam eder ve bukme yonleri (ileri/geri) dogru calisir.
+        // (row0 x row1 ile tamamlamak derinligi ters cevirir — ileri/geri
+        // bukme fonksiyonlari yer degistirirdi.)
+        m[0] = isoM00_; m[1] = isoM10_; m[2] = isoM20_;  m[3] = 0.0;
+        m[4] = isoM01_; m[5] = isoM11_; m[6] = isoM21_;  m[7] = 0.0;
+        m[8] = isoM02_; m[9] = isoM12_; m[10] = isoM22_; m[11] = 0.0;
         m[12] = center3D_.x; m[13] = center3D_.y; m[14] = center3D_.z; m[15] = 1.0;
         return m;
     }
