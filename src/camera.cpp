@@ -250,9 +250,14 @@ void Camera::setView(StandardView view) noexcept {
     switch (view) {
     case StandardView::Isometric:
         useIso_ = true;
-        isoM00_ =  0.7071067811865476; isoM01_ = -0.7071067811865476; isoM02_ =  0.0;
-        isoM10_ = -0.4082482904638630; isoM11_ = -0.4082482904638630; isoM12_ =  0.8164965809277260;
-        isoM20_ =  0.5773502691896257; isoM21_ =  0.5773502691896257; isoM22_ =  0.5773502691896257;
+        // Sag-el (proper, det=+1) izometrik: kamera (+1,+1,+1) kosesinden
+        // origo'ya bakar. Eski row0=(+0.707,-0.707,0) aynalanmis (det=-1)
+        // bir onizlemeydi; Navlib det=-1 matrisle zıplatma yapiyordu. X/Y'nin
+        // ekran yonleri bu yuzden yer degistirdi (X sola-asagi, Y saga-asagi,
+        // Z yukari) — standart CAD izometrigi boyledir.
+        isoM00_ = -0.7071067811865476; isoM01_ =  0.7071067811865476; isoM02_ = 0.0;
+        isoM10_ = -0.4082482904638630; isoM11_ = -0.4082482904638630; isoM12_ = 0.8164965809277260;
+        isoM20_ =  0.5773502691896257; isoM21_ =  0.5773502691896257; isoM22_ = 0.5773502691896257;
         yaw_ = 0.0; pitch_ = 0.0; roll_ = 0.0;
         break;
     case StandardView::Top: yaw_ = 0.0; pitch_ = 0.0; roll_ = 0.0; useIso_ = false; break;
