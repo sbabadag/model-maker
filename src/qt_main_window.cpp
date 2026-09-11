@@ -400,9 +400,11 @@ void QtMainWindow::promptCreateGrid() {
 
     auto parseDoubles = [](const QString& text) -> std::vector<double> {
         std::vector<double> out;
-        for (const auto& tok : text.simplified().split(' ', Qt::SkipEmptyParts)) {
+        for (const auto& t : text.simplified().split(' ', Qt::SkipEmptyParts)) {
             bool ok = false;
-            const double v = tok.replace(',', '.').toDouble(&ok);
+            // tok const referans; replace non-const uye — kopyada calistir.
+            const double v = QString(t).replace(QLatin1Char(','), QLatin1Char('.'))
+                                .toDouble(&ok);
             if (ok) out.push_back(v);
         }
         return out;
