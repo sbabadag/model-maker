@@ -345,7 +345,6 @@ private:
     // 3Dconnexion SpaceMouse (Navlib 4.x): 3B gorunumde kamerayi surer.
     // 2B planda baslatilmaz (Navlib yalniz 3B'de anlamli). Yalniz WIN32.
     std::unique_ptr<SpaceMouseNav> spaceMouse_;
-    bool spaceMouseStartupAttempted_{false};
 #endif
     // Son kati komutunun olcum mesaji (hacim) — updateStatus bunu status
     // cubuguna ekler; sadece yeni bir kati komutu degistirir.

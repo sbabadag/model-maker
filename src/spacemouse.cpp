@@ -89,7 +89,6 @@ long SpaceMouseNav::SetCameraMatrix(const navlib::matrix_t& matrix) {
     for (int i = 0; i < 16; ++i) m[static_cast<std::size_t>(i)] = matrix[i];
 
     const Vec3 oldCenter = camera_.center3D();
-    double oldZoom = camera_.zoom();
 
     // Rotasyonu coz (center3D_'ye dokunmadan once eski degeri tut).
     camera_.applyCameraToWorldMatrix4(m);
@@ -130,7 +129,6 @@ long SpaceMouseNav::SetCameraMatrix(const navlib::matrix_t& matrix) {
             double factor = 1.0 + dolly / 10000.0; // model genisligi ~10m
             if (factor > 0.5 && factor < 2.0) camera_.zoomBy(factor);
         }
-        (void)oldZoom;
     }
     if (viewChangedCallback_) viewChangedCallback_();
     return 0;
@@ -139,32 +137,10 @@ long SpaceMouseNav::SetCameraMatrix(const navlib::matrix_t& matrix) {
 long SpaceMouseNav::GetCameraTarget(navlib::point_t& target) const {
     const auto& c = camera_.center3D();
     target.x = c.x; target.y = c.y; target.z = c.z;
-    {
-        static int n = 0;
-        if (n++ < 10) {
-            FILE* f = fopen("model-maker-render.log", "a");
-            if (f) {
-                fprintf(f, "SM-GET-TARGET #%d (%.1f, %.1f, %.1f)\n", n, target.x, target.y,
-                        target.z);
-                fclose(f);
-            }
-        }
-    }
     return 0;
 }
 
 long SpaceMouseNav::SetCameraTarget(const navlib::point_t& target) {
-    {
-        static int n = 0;
-        if (n++ < 12) {
-            FILE* f = fopen("model-maker-render.log", "a");
-            if (f) {
-                fprintf(f, "SM-SET-TARGET #%d (%.1f, %.1f, %.1f)\n", n, target.x, target.y,
-                        target.z);
-                fclose(f);
-            }
-        }
-    }
     camera_.setCenter3D(Vec3{target.x, target.y, target.z});
     if (viewChangedCallback_) viewChangedCallback_();
     return 0;
@@ -185,6 +161,7 @@ long SpaceMouseNav::GetViewConstructionPlane(navlib::plane_t& plane) const {
     // SDK ornegi (3DxTraceNL) boyle yapar: "We haven't got a construction plane
     // that should be kept parallel to the viewport". Bir duzlem verirsek navlib
     // orthografik gorunumde rotasyonu o duzleme kilitler ve dogru calismaz.
+    (void)plane;
     return navlib::make_result_code(navlib::navlib_errc::no_data_available);
 }
 
@@ -202,16 +179,6 @@ long SpaceMouseNav::GetViewExtents(navlib::box_t& extents) const {
 }
 
 long SpaceMouseNav::SetViewExtents(const navlib::box_t& extents) {
-    {
-        static int n = 0;
-        if (n++ < 12) {
-            FILE* f = fopen("model-maker-render.log", "a");
-            if (f) {
-                fprintf(f, "SM-SET-EXTENTS #%d w=%.2f\n", n, extents.max.x - extents.min.x);
-                fclose(f);
-            }
-        }
-    }
     // Orthografik gorunumde Navlib zoom'u view.extents uzerinden yapar:
     // extents genisler/yazar, biz zoom carpanina ceviririz (genislik artar
     // -> uzaklasir / zoom azalir).
@@ -231,16 +198,6 @@ long SpaceMouseNav::GetViewFocusDistance(double& distance) const {
 }
 
 long SpaceMouseNav::GetViewFOV(double& fov) const {
-    {
-        static int n = 0;
-        if (n++ < 10) {
-            FILE* f = fopen("model-maker-render.log", "a");
-            if (f) {
-                fprintf(f, "SM-GET-FOV #%d\n", n);
-                fclose(f);
-            }
-        }
-    }
     // Mevcut zoom'u fov (radyan) olarak yansit: zoom arttikca fov kuculur.
     double z = camera_.zoom();
     if (z <= 0) z = 1.0;
@@ -249,16 +206,6 @@ long SpaceMouseNav::GetViewFOV(double& fov) const {
 }
 
 long SpaceMouseNav::SetViewFOV(double fov) {
-    {
-        static int n = 0;
-        if (n++ < 12) {
-            FILE* f = fopen("model-maker-render.log", "a");
-            if (f) {
-                fprintf(f, "SM-SET-FOV #%d fov=%.4f\n", n, fov);
-                fclose(f);
-            }
-        }
-    }
     // Navlib perspektif gorunumde zoom'u fov uzerinden degistirir: fov kuculur
     // -> yakinla. fov'u (radyan) bizim zoom carpanina cevir. (fov/2) = atan(h/w)
     if (fov > 0.001) {
@@ -383,6 +330,7 @@ long SpaceMouseNav::GetIsSelectionEmpty(navlib::bool_t& empty) const {
 }
 
 long SpaceMouseNav::GetSelectionTransform(navlib::matrix_t& transform) const {
+    (void)transform;
     return -1; // secim yok
 }
 

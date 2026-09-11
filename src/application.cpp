@@ -2293,19 +2293,7 @@ void Application::toggle3DView() {
     updateStatus();
     invalidateCanvas();
 #ifdef _WIN32
-    {
-        FILE* diag = fopen("model-maker-render.log", "a");
-        if (diag) {
-            fprintf(diag, "TOGGLE3D mode=%d entering3D=%d gpu=%d spaceMouse=%d attempted=%d\n",
-                    (int)mode_, entering3D ? 1 : 0, gpuLinesEnabled_ ? 1 : 0,
-                    spaceMouse_ ? 1 : 0, spaceMouseStartupAttempted_ ? 1 : 0);
-            fclose(diag);
-        }
-    }
-    // SpaceMouse her 3B girisinde (yeniden) baslatilir. Startup'ta mode_
-    // basindan View3D oldugu icin toggle3DView cagrilmaz ve SpaceMouse hic
-    // baslamazdi — bu yuzden baslatmayi ayri ensureSpaceMouseStarted()'a alip
-    // hem burada hem run() baslangicinda cagiriyoruz.
+    // SpaceMouse her 3B girisinde (yeniden) baslatilir; 2B'ye donunce durur.
     if (mode_ == EditMode::View3D) {
         ensureSpaceMouseStarted();
     } else {
@@ -2318,19 +2306,7 @@ void Application::toggle3DView() {
 
 void Application::ensureSpaceMouseStarted() {
 #ifdef _WIN32
-    {
-        FILE* diag = fopen("model-maker-render.log", "a");
-        if (diag) {
-            fprintf(diag, "SM-START called mode=%d spaceMouse=%d running=%d\n",
-                    (int)mode_, spaceMouse_ ? 1 : 0, (spaceMouse_ && spaceMouse_->running()) ? 1 : 0);
-            fclose(diag);
-        }
-    }
-    if (mode_ != EditMode::View3D) {
-        FILE* diag = fopen("model-maker-render.log", "a");
-        if (diag) { fprintf(diag, "SM-START skipped (mode != View3D)\n"); fclose(diag); }
-        return;
-    }
+    if (mode_ != EditMode::View3D) return;
     if (!spaceMouse_) {
         spaceMouse_ = std::make_unique<SpaceMouseNav>(camera_, document_);
         spaceMouse_->setViewChangedCallback([this]() {
@@ -2340,14 +2316,6 @@ void Application::ensureSpaceMouseStarted() {
     }
     if (!spaceMouse_->running()) {
         const bool started = spaceMouse_->start();
-        {
-            FILE* diag = fopen("model-maker-render.log", "a");
-            if (diag) {
-                fprintf(diag, "SPACEMOUSE start=%d running=%d\n", started ? 1 : 0,
-                        spaceMouse_->running() ? 1 : 0);
-                fclose(diag);
-            }
-        }
         publishStatus(started ? L"SpaceMouse etkin (3Dconnexion Navlib)"
                               : L"SpaceMouse kurulamadi (surucu/navlib.dll yok)");
     }
