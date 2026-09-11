@@ -80,11 +80,11 @@ long SpaceMouseNav::GetCameraMatrix(navlib::matrix_t& matrix) const {
 long SpaceMouseNav::SetCameraMatrix(const navlib::matrix_t& matrix) {
     // Navlib'in gonderdigi matris: m[0..8] rotasyon, m[12..14] KAMERA POZISYONU.
     // Bizim kamera hedef-tabanli (center3D_ + yaw/pitch/roll + zoom_), o yuzden
-    // pozisyonu dogrudan center3D_'ye yazamayiz (kavram farki). Dogal hareket:
-    //   m[12..14] delta'sini kameranin right/up/forward vektorlerine projekte et
-    //   -> right/up bileseni = PAN (center3D_ kaydir)
-    //   -> forward bileseni  = ZOOM (dolly, zoom_ scale)
-    // Boylece sag-sol itme pan, ileri-geri itme zoom olur (kamera-bagimsiz).
+    // pozisyonu dogrudan center3D_'ye yazamayiz (kavram farki). Dogal hareket
+    // (kullanici tarifi):
+    //   dort yone IT   = PAN (sag-sol: kamera right; ileri-geri: zeminde ileri)
+    //   BAS (asagi)    = ZOOM OUT, CEK (yukari) = ZOOM IN
+    //   bukme/cevirme  = ROTASYON (m[0..8] -> applyCameraToWorldMatrix4)
     std::array<double, 16> m{};
     for (int i = 0; i < 16; ++i) m[static_cast<std::size_t>(i)] = matrix[i];
 
@@ -111,22 +111,27 @@ long SpaceMouseNav::SetCameraMatrix(const navlib::matrix_t& matrix) {
         const double dx = px - prevX, dy = py - prevY, dz = pz - prevZ;
         prevX = px; prevY = py; prevZ = pz;
         const Vec3 d{dx, dy, dz};
-        const double panR = d.x * right.x + d.y * right.y + d.z * right.z; // sag-sol
-        const double panU = d.x * up.x + d.y * up.y + d.z * up.z;          // yukari-asagi
-        const double dolly = d.x * fwd.x + d.y * fwd.y + d.z * fwd.z;      // ileri-geri
-        // PAN: center3D_'yi right/up boyunca kaydir. Kullanici objeyi ittigi
-        // yone goturur (saga it -> model saga). -panR: saga itince right vektoru
-        // +yondur ama modelin saga gitmesi icin merkez sola kayar; kullanici
-        // testinde ters geldi, bu yuzden panR isareti cevrildi. panU (bas-c ek)
-        // dogru: basinca asagi, cekince yukari.
+        const double panR = d.x * right.x + d.y * right.y + d.z * right.z; // sag-sol it
+        const double panU = d.x * up.x + d.y * up.y + d.z * up.z;          // basma/cekme
+        const double dolly = d.x * fwd.x + d.y * fwd.y + d.z * fwd.z;      // ileri-geri it
+        // PAN (dort yon): model itilen yone kayar -> merkez ters yone kayar.
+        // Sag-sol: kamera right ekseni boyunca.
         const double panScale = 0.5; // hassaslik ayari
-        camera_.setCenter3D(oldCenter +
-                            Vec3{-right.x * panR + up.x * panU,
-                                 -right.y * panR + up.y * panU,
-                                 -right.z * panR + up.z * panU} * panScale);
-        // ZOOM: dolly (ileri-geri) -> zoom_ scale.
-        if (std::fabs(dolly) > 1e-3) {
-            double factor = 1.0 + dolly / 10000.0; // model genisligi ~10m
+        Vec3 centerDelta{-right.x * panR, -right.y * panR, -right.z * panR};
+        centerDelta = centerDelta * panScale;
+        // Ileri-geri: forward'i zemine (XY duzlemine, Z-up) projekte et — bakis
+        // acisi ne olursa olsun pano zeminde kayar (Tekla gorunumu).
+        Vec3 groundFwd{fwd.x, fwd.y, 0.0};
+        const double glen = std::sqrt(groundFwd.x * groundFwd.x + groundFwd.y * groundFwd.y);
+        if (glen > 1e-6) {
+            groundFwd = Vec3{groundFwd.x / glen, groundFwd.y / glen, 0.0};
+            centerDelta = centerDelta +
+                          Vec3{-groundFwd.x * dolly, -groundFwd.y * dolly, 0.0} * panScale;
+        }
+        camera_.setCenter3D(oldCenter + centerDelta);
+        // ZOOM (dikey): CEK (yukari, panU>0) = zoom IN, BAS (asagi, panU<0) = zoom OUT.
+        if (std::fabs(panU) > 1e-3) {
+            double factor = 1.0 + panU / 10000.0; // model genisligi ~10m
             if (factor > 0.5 && factor < 2.0) camera_.zoomBy(factor);
         }
     }
