@@ -5,6 +5,74 @@
 
 namespace mm {
 
+namespace {
+
+inline double dot3row(const double* row, const Vec3& v) {
+    return row[0] * v.x + row[1] * v.y + row[2] * v.z;
+}
+
+std::array<double, 9> mat3mul(const std::array<double, 9>& a, const std::array<double, 9>& b) noexcept {
+    std::array<double, 9> c{};
+    for (int r = 0; r < 3; ++r)
+        for (int col = 0; col < 3; ++col)
+            c[static_cast<std::size_t>(r * 3 + col)] =
+                a[static_cast<std::size_t>(r * 3)] * b[static_cast<std::size_t>(col)] +
+                a[static_cast<std::size_t>(r * 3 + 1)] * b[static_cast<std::size_t>(3 + col)] +
+                a[static_cast<std::size_t>(r * 3 + 2)] * b[static_cast<std::size_t>(6 + col)];
+    return c;
+}
+
+double rowLen(const std::array<double, 9>& m, int row) noexcept {
+    return std::sqrt(m[static_cast<std::size_t>(row * 3)] * m[static_cast<std::size_t>(row * 3)] +
+                     m[static_cast<std::size_t>(row * 3 + 1)] * m[static_cast<std::size_t>(row * 3 + 1)] +
+                     m[static_cast<std::size_t>(row * 3 + 2)] * m[static_cast<std::size_t>(row * 3 + 2)]);
+}
+
+// Gram-Schmidt: satir0 normalize, satir1 ortogonalize+normalize, satir2 =
+// satir0 x satir1 (her zaman proper, det=+1; olcek/shear/mirror birikmez).
+void orthonormalize(std::array<double, 9>& m) noexcept {
+    const double n0 = rowLen(m, 0);
+    if (n0 < 1e-12) return;
+    for (int i = 0; i < 3; ++i) m[static_cast<std::size_t>(i)] /= n0;
+    const double d01 = m[0] * m[3] + m[1] * m[4] + m[2] * m[5];
+    for (int i = 0; i < 3; ++i) m[static_cast<std::size_t>(3 + i)] -= d01 * m[static_cast<std::size_t>(i)];
+    const double n1 = rowLen(m, 1);
+    if (n1 < 1e-12) return;
+    for (int i = 0; i < 3; ++i) m[static_cast<std::size_t>(3 + i)] /= n1;
+    m[6] = m[1] * m[5] - m[2] * m[4];
+    m[7] = m[2] * m[3] - m[0] * m[5];
+    m[8] = m[0] * m[4] - m[1] * m[3];
+}
+
+} // namespace
+
+// world->camera rotasyonu: R = R_roll * R_pitch * R_yaw (eski euler kamerasi
+// ile ayni carpim sirasi — piksel birebir uyum).
+std::array<double, 9> Camera::buildRotation(double yaw, double pitch, double roll) noexcept {
+    const double cy = std::cos(yaw), sy = std::sin(yaw);
+    const double cp = std::cos(pitch), sp = std::sin(pitch);
+    const double cr = std::cos(roll), sr = std::sin(roll);
+    return {
+        cr * cy - sr * sp * sy, -sr * cp, cr * sy + sr * sp * cy,
+        sr * cy + cr * sp * sy,  cr * cp, sr * sy - cr * sp * cy,
+        -cp * sy,                sp,      cp * cy
+    };
+}
+
+// R_ -> euler (yalnizca durum gosterimi/test; hareket yolunda KULLANILMAZ).
+// R_[7] = R[2][1] = sp; R_[6] = -cp*sy; R_[8] = cp*cy; R_[1] = -sr*cp; R_[4] = cr*cp.
+void Camera::decompose(double& yaw, double& pitch, double& roll) const noexcept {
+    pitch = std::asin(std::clamp(R_[7], -1.0, 1.0));
+    const double cp = std::cos(pitch);
+    if (cp > 1e-8) {
+        yaw = std::atan2(-R_[6], R_[8]);
+        roll = std::atan2(-R_[1], R_[4]);
+    } else {
+        yaw = std::atan2(R_[3], R_[0]);
+        roll = 0.0;
+    }
+}
+
 Vec2 Camera::project2D(Vec3 point, int viewportWidth, int viewportHeight) const noexcept {
     constexpr double pixelsPerUnit2D = 60.0;
     const double scale = pixelsPerUnit2D * zoom_;
@@ -20,9 +88,14 @@ Vec3 Camera::unproject2D(Vec2 screenPoint, int viewportWidth, int viewportHeight
             0.0};
 }
 
+Vec3 Camera::viewTransform(Vec3 point) const noexcept {
+    return {dot3row(&R_[0], point),
+            dot3row(&R_[3], point),
+            dot3row(&R_[6], point)};
+}
+
 Vec2 Camera::project(Vec3 point, int viewportWidth, int viewportHeight) const noexcept {
     const Vec3 rotated = viewTransform(point - center3D_);
-
     const double scale = pixelsPerUnit_ * zoom_;
     return {
         viewportWidth * 0.5 + rotated.x * scale,
@@ -30,60 +103,28 @@ Vec2 Camera::project(Vec3 point, int viewportWidth, int viewportHeight) const no
     };
 }
 
-void Camera::ensureViewCache() const noexcept {
-    if (!viewCacheDirty_) return;
-    cy_ = std::cos(yaw_); sy_ = std::sin(yaw_);
-    cp_ = std::cos(pitch_); sp_ = std::sin(pitch_);
-    cr_ = std::cos(roll_); sr_ = std::sin(roll_);
-    viewCacheDirty_ = false;
-}
-
-Vec3 Camera::viewTransform(Vec3 point) const noexcept {
-    if (useIso_) {
-        return {isoM00_ * point.x + isoM01_ * point.y + isoM02_ * point.z,
-                isoM10_ * point.x + isoM11_ * point.y + isoM12_ * point.z,
-                isoM20_ * point.x + isoM21_ * point.y + isoM22_ * point.z};
-    }
-    ensureViewCache();
-    const Vec3 yawed{point.x * cy_ + point.z * sy_, point.y, -point.x * sy_ + point.z * cy_};
-    const Vec3 pitched{yawed.x, yawed.y * cp_ - yawed.z * sp_, yawed.y * sp_ + yawed.z * cp_};
-    return {pitched.x * cr_ - pitched.y * sr_,
-            pitched.x * sr_ + pitched.y * cr_, pitched.z};
-}
-
 std::optional<Vec3> Camera::unprojectToPlane(Vec2 screenPoint, int viewportWidth, int viewportHeight,
-                                              double planeZ) const noexcept {
+                                             double planeZ) const noexcept {
     return unprojectToPlane(screenPoint, viewportWidth, viewportHeight,
                             WorkPlane{{0.0, 0.0, planeZ}, {1.0, 0.0, 0.0},
                                       {0.0, 1.0, 0.0}, {0.0, 0.0, 1.0}});
 }
 
 std::optional<Vec3> Camera::unprojectToPlane(Vec2 screenPoint, int viewportWidth, int viewportHeight,
-                                              const WorkPlane& plane) const noexcept {
+                                             const WorkPlane& plane) const noexcept {
     if (viewportWidth <= 0 || viewportHeight <= 0 || zoom_ <= 0.0) return std::nullopt;
 
     const double scale = pixelsPerUnit_ * zoom_;
     const double cameraX = (screenPoint.x - viewportWidth * 0.5) / scale;
     const double cameraY = (viewportHeight * 0.5 - screenPoint.y) / scale;
 
-    auto inverseRotate = [&](const Vec3& point) -> Vec3 {
-        if (useIso_) {
-            const double px = point.x, py = point.y, pz = point.z;
-            return {isoM00_ * px + isoM10_ * py + isoM20_ * pz,
-                    isoM01_ * px + isoM11_ * py + isoM21_ * pz,
-                    isoM02_ * px + isoM12_ * py + isoM22_ * pz};
-        }
-        ensureViewCache();
-        const Vec3 yawed{point.x, point.y * cp_ + point.z * sp_,
-                         -point.y * sp_ + point.z * cp_};
-        const Vec3 unrolled{yawed.x * cy_ - yawed.z * sy_, yawed.y,
-                            yawed.x * sy_ + yawed.z * cy_};
-        return Vec3{unrolled.x * cr_ - unrolled.y * sr_,
-                    unrolled.x * sr_ + unrolled.y * cr_, unrolled.z};
-    };
-
-    const Vec3 origin = center3D_ + inverseRotate({cameraX, cameraY, -1.0});
-    const Vec3 direction = inverseRotate({0.0, 0.0, 1.0});
+    // Kamera->dunya: R^T (R'nin satirlari = dunyada kamera eksenleri).
+    // Ileri bakis yonu = -satir2 (kamera -Z ileri); isin: origin + t*dir.
+    const Vec3 origin = center3D_ + Vec3{
+        R_[0] * cameraX + R_[3] * cameraY - R_[6],
+        R_[1] * cameraX + R_[4] * cameraY - R_[7],
+        R_[2] * cameraX + R_[5] * cameraY - R_[8]};
+    const Vec3 direction{-R_[6], -R_[7], -R_[8]};
     const auto dot = [](const Vec3& a, const Vec3& b) {
         return a.x * b.x + a.y * b.y + a.z * b.z;
     };
@@ -94,15 +135,18 @@ std::optional<Vec3> Camera::unprojectToPlane(Vec2 screenPoint, int viewportWidth
 }
 
 void Camera::rotate(double yawDelta, double pitchDelta) noexcept {
-    if (useIso_) {
-        useIso_ = false;
-        yaw_ = -0.55;
-        pitch_ = 0.45;
-        roll_ = 0.0;
-    }
-    yaw_ += yawDelta;
-    pitch_ = std::clamp(pitch_ + pitchDelta, -1.5, 1.5);
-    invalidateViewCache();
+    // Surekli artis: pitch kamera X ekseni etrafinda (soldan carpma), yaw
+    // dunya Y ekseni etrafinda (sagdan carpma). Roll=0 iken eski euler
+    // toplama davranisiyla birebir esdeger; kutup/devrilme yok.
+    const double cp = std::cos(pitchDelta), sp = std::sin(pitchDelta);
+    const double cy = std::cos(yawDelta), sy = std::sin(yawDelta);
+    const std::array<double, 9> rx{1.0, 0.0, 0.0,
+                                   0.0, cp, -sp,
+                                   0.0, sp, cp};
+    const std::array<double, 9> ry{cy, 0.0, sy,
+                                   0.0, 1.0, 0.0,
+                                   -sy, 0.0, cy};
+    R_ = mat3mul(rx, mat3mul(R_, ry));
 }
 
 void Camera::setOrbitCenter(const Vec3& worldPoint) noexcept {
@@ -131,23 +175,12 @@ void Camera::zoom3DAt(Vec2 screenPoint, double factor, int viewportWidth, int vi
     const double newScale = pixelsPerUnit_ * zoom_;
     const double newX = (screenPoint.x - viewportWidth * 0.5) / newScale;
     const double newY = (viewportHeight * 0.5 - screenPoint.y) / newScale;
-    const Vec3 cameraDelta{oldX - newX, oldY - newY, 0.0};
-    if (useIso_) {
-        const double dx = cameraDelta.x, dy = cameraDelta.y;
-        center3D_ = center3D_ + Vec3{isoM00_ * dx + isoM10_ * dy,
-                                     isoM01_ * dx + isoM11_ * dy,
-                                     isoM02_ * dx + isoM12_ * dy};
-        return;
-    }
-    const double cy = std::cos(yaw_), sy = std::sin(yaw_);
-    const double cp = std::cos(pitch_), sp = std::sin(pitch_);
-    const double cr = std::cos(roll_), sr = std::sin(roll_);
-    const Vec3 unrolled{cameraDelta.x * cr + cameraDelta.y * sr,
-                        -cameraDelta.x * sr + cameraDelta.y * cr, 0.0};
-    const Vec3 yawed{unrolled.x, unrolled.y * cp + unrolled.z * sp,
-                     -unrolled.y * sp + unrolled.z * cp};
-    center3D_ = center3D_ + Vec3{yawed.x * cy - yawed.z * sy, yawed.y,
-                                 yawed.x * sy + yawed.z * cy};
+    // Gorunum-uzayi delta -> dunya: R^T * delta (dz = 0).
+    const double dx = oldX - newX, dy = oldY - newY;
+    center3D_ = center3D_ + Vec3{
+        R_[0] * dx + R_[3] * dy,
+        R_[1] * dx + R_[4] * dy,
+        R_[2] * dx + R_[5] * dy};
 }
 
 void Camera::pan2DByPixels(double deltaX, double deltaY) noexcept {
@@ -161,24 +194,13 @@ void Camera::pan2DByPixels(double deltaX, double deltaY) noexcept {
 void Camera::pan3DByPixels(double deltaX, double deltaY) noexcept {
     const double scale = pixelsPerUnit_ * zoom_;
     if (scale <= 0.0) return;
-    // Ekran x saga, y ASAGI artar. Icerik fareyle ayni yone kayar -> merkez
-    // ters yone tasinir (isaretler pan2DByPixels ile ayni). Gorunum-uzayi
-    // eksenleri zoom3DAt ile ayni ters-dondurme kalibiyla dunyaya cevrilir.
-    const Vec3 cameraDelta{-deltaX / scale, deltaY / scale, 0.0};
-    if (useIso_) {
-        const double dx = cameraDelta.x, dy = cameraDelta.y;
-        center3D_ = center3D_ + Vec3{isoM00_ * dx + isoM10_ * dy,
-                                     isoM01_ * dx + isoM11_ * dy,
-                                     isoM02_ * dx + isoM12_ * dy};
-        return;
-    }
-    ensureViewCache();
-    const Vec3 unrolled{cameraDelta.x * cr_ + cameraDelta.y * sr_,
-                        -cameraDelta.x * sr_ + cameraDelta.y * cr_, 0.0};
-    const Vec3 yawed{unrolled.x, unrolled.y * cp_ + unrolled.z * sp_,
-                     -unrolled.y * sp_ + unrolled.z * cp_};
-    center3D_ = center3D_ + Vec3{yawed.x * cy_ - yawed.z * sy_, yawed.y,
-                                 yawed.x * sy_ + yawed.z * cy_};
+    // Ekran x saga, y asagi artar. Icerik fareyle ayni yone kayar -> merkez
+    // ters yone tasinir. Gorunum-uzayi delta -> dunya: R^T * delta.
+    const double dx = -deltaX / scale, dy = deltaY / scale;
+    center3D_ = center3D_ + Vec3{
+        R_[0] * dx + R_[3] * dy,
+        R_[1] * dx + R_[4] * dy,
+        R_[2] * dx + R_[5] * dy};
 }
 
 bool Camera::fit2D(Vec3 minimum, Vec3 maximum, int viewportWidth, int viewportHeight,
@@ -234,14 +256,10 @@ bool Camera::fit3D(Vec3 minimum, Vec3 maximum, int viewportWidth, int viewportHe
 }
 
 void Camera::reset() noexcept {
-    yaw_ = -0.55;
-    pitch_ = 0.45;
-    roll_ = 0.0;
-    useIso_ = false;
+    R_ = buildRotation(-0.55, 0.45, 0.0);
     zoom_ = 1.0;
     center2D_ = {};
     center3D_ = {};
-    invalidateViewCache();
 }
 
 void Camera::setView(StandardView view) noexcept {
@@ -249,71 +267,63 @@ void Camera::setView(StandardView view) noexcept {
     constexpr double pi = 3.14159265358979323846;
     switch (view) {
     case StandardView::Isometric:
-        // TEK TEMSIL: izometrik gorunum artik euler acilariyla kurulur
-        // (row0=(0.707,-0.707,0), row1=(-0.408,-0.408,0.816) — eskisiyle
-        // PIKSEL BIREBIR ayni ekran gorunumu; derinlik satiri -1 ile carpildi,
-        // det=+1 proper). Cift temsil (isoM_ vs euler) navlib round-trip
-        // atlamalarinin kaynagiydi. acilar: yaw=135, pitch=-asin(1/sqrt3),
-        // roll=120 — applyCameraToWorldMatrix4 tam bunlari geri verir.
-        useIso_ = false;
-        isoM00_ = 0.0; isoM01_ = 0.0; isoM02_ = 0.0;
-        isoM10_ = 0.0; isoM11_ = 0.0; isoM12_ = 0.0;
-        isoM20_ = 0.0; isoM21_ = 0.0; isoM22_ = 0.0;
-        yaw_ = 0.75 * pi;
-        pitch_ = -0.6154797086703868; // -asin(1/sqrt(3)) = -35.264 deg
-        roll_ = pi / 3.0 * 2.0;       // 120 deg
+        // TEK TEMSIL: izometrik artik rotasyon matrisiyle kurulur. Ekran
+        // satirlari eski isoM_ onizlemesiyle piksel birebir ayni:
+        // row0=(0.707,-0.707,0), row1=(-0.408,-0.408,0.816); derinlik satiri
+        // proper (det=+1). Euler ayrismasi YOK -> kutup devrilmesi/atlama yok.
+        R_ = buildRotation(0.75 * pi, -0.6154797086703868, pi / 3.0 * 2.0);
         break;
-    case StandardView::Top: yaw_ = 0.0; pitch_ = 0.0; roll_ = 0.0; useIso_ = false; break;
-    case StandardView::Bottom: yaw_ = pi; pitch_ = 0.0; roll_ = 0.0; useIso_ = false; break;
-    case StandardView::Front: yaw_ = 0.0; pitch_ = halfPi; roll_ = 0.0; useIso_ = false; break;
-    case StandardView::Back: yaw_ = 0.0; pitch_ = -halfPi; roll_ = 0.0; useIso_ = false; break;
-    case StandardView::Left: yaw_ = halfPi; pitch_ = 0.0; roll_ = 0.0; useIso_ = false; break;
-    case StandardView::Right: yaw_ = -halfPi; pitch_ = 0.0; roll_ = 0.0; useIso_ = false; break;
+    case StandardView::Top: R_ = buildRotation(0.0, 0.0, 0.0); break;
+    case StandardView::Bottom: R_ = buildRotation(pi, 0.0, 0.0); break;
+    case StandardView::Front: R_ = buildRotation(0.0, halfPi, 0.0); break;
+    case StandardView::Back: R_ = buildRotation(0.0, -halfPi, 0.0); break;
+    case StandardView::Left: R_ = buildRotation(halfPi, 0.0, 0.0); break;
+    case StandardView::Right: R_ = buildRotation(-halfPi, 0.0, 0.0); break;
     }
-    invalidateViewCache();
 }
 
-double Camera::yaw() const noexcept { return yaw_; }
-double Camera::pitch() const noexcept { return pitch_; }
+double Camera::yaw() const noexcept {
+    double y{}, p{}, r{};
+    decompose(y, p, r);
+    return y;
+}
+
+double Camera::pitch() const noexcept {
+    double y{}, p{}, r{};
+    decompose(y, p, r);
+    return p;
+}
+
+double Camera::roll() const noexcept {
+    double y{}, p{}, r{};
+    decompose(y, p, r);
+    return r;
+}
+
 double Camera::zoom() const noexcept { return zoom_; }
 double Camera::pixelsPerUnit() const noexcept { return pixelsPerUnit_; }
 
 // --- 3Dconnexion Navlib koprusu ---------------------------------------------
-// World->camera rotasyonu R = R_roll * R_pitch * R_yaw (viewTransform ile ayni).
-// Navlib'in view.affine'i camera-to-world'dur: R^-1 = R^T (orthonormal) ve
-// translasyon = center3D_. Asagida m row-major (row*4+col) duzende.
+// cameraToWorld = R^T (m[row*4+col]; m[0..2]=R satir0, m[4..6]=satir1,
+// m[8..10]=satir2), translasyon = center3D_ (navlib kamera pozisyonu).
 std::array<double, 16> Camera::cameraToWorldMatrix4() const noexcept {
-    ensureViewCache();
     std::array<double, 16> m{};
-    // R satirlari
-    const double r00 = cr_ * cy_ - sr_ * sp_ * sy_;
-    const double r01 = -sr_ * cp_;
-    const double r02 = cr_ * sy_ + sr_ * sp_ * cy_;
-    const double r10 = sr_ * cy_ + cr_ * sp_ * sy_;
-    const double r11 = cr_ * cp_;
-    const double r12 = sr_ * sy_ - cr_ * sp_ * cy_;
-    const double r20 = -cp_ * sy_;
-    const double r21 = sp_;
-    const double r22 = cp_ * cy_;
-    // cameraToWorld = R^T (m[0..8]), translasyon = center3D_ (m[12..14])
-    m[0] = r00; m[1] = r10; m[2] = r20;  m[3] = 0.0;
-    m[4] = r01; m[5] = r11; m[6] = r21;  m[7] = 0.0;
-    m[8] = r02; m[9] = r12; m[10] = r22; m[11] = 0.0;
+    m[0] = R_[0]; m[1] = R_[3]; m[2] = R_[6];  m[3] = 0.0;
+    m[4] = R_[1]; m[5] = R_[4]; m[6] = R_[7];  m[7] = 0.0;
+    m[8] = R_[2]; m[9] = R_[5]; m[10] = R_[8]; m[11] = 0.0;
     m[12] = center3D_.x; m[13] = center3D_.y; m[14] = center3D_.z; m[15] = 1.0;
     return m;
 }
 
 void Camera::applyCameraToWorldMatrix4(const std::array<double, 16>& matrix) noexcept {
-    useIso_ = false;
-    // cameraToWorld = R^T (row-major m[row*4+col]); R = transpose.
-    // R[2][1] = sp  -> m[6];  R[2][0] = -cp*sy -> m[2];  R[2][2] = cp*cy -> m[10];
-    // R[0][1] = -sr*cp -> m[4];  R[1][1] = cr*cp -> m[5].
-    const double sp = std::clamp(matrix[6], -1.0, 1.0);
-    pitch_ = std::asin(sp);
-    yaw_ = std::atan2(-matrix[2], matrix[10]);
-    roll_ = std::atan2(-matrix[4], matrix[5]);
+    // cameraToWorld'nun rotasyonu R^T -> R = transpoze (R[i*3+j] = m[j*4+i]).
+    std::array<double, 9> r{
+        matrix[0], matrix[4], matrix[8],
+        matrix[1], matrix[5], matrix[9],
+        matrix[2], matrix[6], matrix[10]};
+    orthonormalize(r);
+    R_ = r;
     center3D_ = Vec3{matrix[12], matrix[13], matrix[14]};
-    invalidateViewCache();
 }
 
 } // namespace mm

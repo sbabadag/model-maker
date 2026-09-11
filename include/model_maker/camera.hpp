@@ -2,6 +2,7 @@
 
 #include "model_maker/geometry.hpp"
 
+#include <array>
 #include <optional>
 
 namespace mm {
@@ -40,18 +41,20 @@ public:
     void reset() noexcept;
     void setView(StandardView view) noexcept;
 
+    // Euler acilari artik TURETILMIS degerlerdir (her cagride matristen
+    // ayristirilir) — yalnizca test/durum gosterimi icin.
     double yaw() const noexcept;
     double pitch() const noexcept;
-    double roll() const noexcept { return roll_; }
+    double roll() const noexcept;
     double zoom() const noexcept;
     double pixelsPerUnit() const noexcept;
 
-    // 3Dconnexion Navlib koprusu: self-explanatory adlar.
-    // Navlib, cihazin koordinat sisteminde (Y-up) camera-to-world 4x4 matris
-    // tutar (view.affine). Bizim kameramiz yaw/pitch/roll + center3D_ tabanli
-    // (hesap: world->camera rotasyonu R ve center3D_). Navlib ile konusmak
-    // icin R'nin transpozu + center3D_ translasyonu cameraToWorld olarak
-    // uretilir; Navlib yeni matris verdiginde ters cevrilir (euler cozumu).
+    // 3Dconnexion Navlib koprusu: navlib camera-to-world 4x4 matris ister
+    // (m[row*4+col], rotasyon = R^T, translasyon = pozisyon). Kamera yonu
+    // artik SUREKLI ROTASYON MATRISI R_ ile tutulur (row-major R_[3*i+j],
+    // world->camera): euler ayrismasinin kutup devrilmesi (gimbal) ve isaret
+    // dal degistirme ziplamalari kokten biter. apply her matrisi
+    // orthonormalize eder (drift/shear birikmez, det her zaman +1).
     std::array<double, 16> cameraToWorldMatrix4() const noexcept;
     void applyCameraToWorldMatrix4(const std::array<double, 16>& matrix) noexcept;
 
@@ -59,24 +62,17 @@ public:
     void setCenter3D(const Vec3& center) noexcept { center3D_ = center; }
 
 private:
-    double yaw_{-0.55};
-    double pitch_{0.45};
-    double roll_{0.0};
-    bool useIso_{false};
-    double isoM00_{}, isoM01_{}, isoM02_{};
-    double isoM10_{}, isoM11_{}, isoM12_{};
-    double isoM20_{}, isoM21_{}, isoM22_{};
+    // world->camera rotasyonu, row-major: v_cam = R_ * v_world.
+    std::array<double, 9> R_{1.0, 0.0, 0.0,
+                            0.0, 1.0, 0.0,
+                            0.0, 0.0, 1.0};
     double zoom_{1.0};
     double pixelsPerUnit_{65.0};
     Vec2 center2D_{};
     Vec3 center3D_{};
 
-    // Cached trig for the non-isometric view rotation. Recomputed lazily so the
-    // per-vertex hot path (project / viewTransform) avoids 6 sin/cos calls each.
-    mutable double cy_{1.0}, sy_{0.0}, cp_{1.0}, sp_{0.0}, cr_{1.0}, sr_{0.0};
-    mutable bool viewCacheDirty_{true};
-    void invalidateViewCache() noexcept { viewCacheDirty_ = true; }
-    void ensureViewCache() const noexcept;
+    static std::array<double, 9> buildRotation(double yaw, double pitch, double roll) noexcept;
+    void decompose(double& yaw, double& pitch, double& roll) const noexcept;
 };
 
 } // namespace mm
