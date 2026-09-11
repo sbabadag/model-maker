@@ -77,14 +77,19 @@ long SpaceMouseNav::GetCameraMatrix(navlib::matrix_t& matrix) const {
     for (int i = 0; i < 16; ++i) matrix[i] = m4[static_cast<std::size_t>(i)];
     // SANAL KAMERA POZISYONU: hedef (center3D_) ile ayni nokta VERME — mesafe
     // 0 olursa navlib'in mesafe tabanli motion olcegi bozulur (ziplama).
-    // Hedeften sabit 5000mm geriye, bakis yonunun tersine koy. Pan yapinca
-    // hedef ve pozisyon BIRLIKTE kayar; navlib okudugu pozisyon guncel kalir
-    // (echo'ya gerek yok, target-pozisyon senkronu bozulmaz).
-    const Vec3 fwd{-m4[8], -m4[9], -m4[10]};
-    const Vec3 pos = camera_.center3D() - fwd * 5000.0;
-    matrix[12] = pos.x; matrix[13] = pos.y; matrix[14] = pos.z;
-    lastNavlibX_ = pos.x; lastNavlibY_ = pos.y; lastNavlibZ_ = pos.z;
-    haveLastNavlibPos_ = true;
+    // Mesafe zoom'a bagli: DIST = 5000/zoom. Navlib "yaklas" deyince zoom
+    // artar -> DIST kuculur -> navlib bir sonraki okumada GUNCEL (kucuk)
+    // mesafeyi gorur ve tekrar yaklasmaz (zoom katlanmasi=firlama biter).
+    // Pan yapinca hedef ve pozisyon birlikte kayar; senkron bozulmaz.
+    {
+        double z = camera_.zoom();
+        if (z <= 0.0) z = 1.0;
+        const Vec3 fwd{-m4[8], -m4[9], -m4[10]};
+        const Vec3 pos = camera_.center3D() - fwd * (5000.0 / z);
+        matrix[12] = pos.x; matrix[13] = pos.y; matrix[14] = pos.z;
+        lastNavlibX_ = pos.x; lastNavlibY_ = pos.y; lastNavlibZ_ = pos.z;
+        haveLastNavlibPos_ = true;
+    }
     return 0;
 }
 
@@ -112,11 +117,13 @@ long SpaceMouseNav::SetCameraMatrix(const navlib::matrix_t& matrix) {
     const Vec3 fwd{-cm[8], -cm[9], -cm[10]}; // m[8..10] = backward
 
     // m[12..14] pozisyon delta'si: navlib'in yazdigi pozisyon eksi bizim
-    // SANAL pozisyonumuz (center3D_ - fwd*5000, GetCameraMatrix'teki ile ayni
-    // formül). Rotasyon degistigi anda sanal da doner — once onu guncelle ki
-    // rotasyon kaynakli pozisyon kaymasi pan olarak yorumlanmasin.
+    // SANAL pozisyonumuz (center3D_ - fwd*DIST, DIST=5000/zoom —
+    // GetCameraMatrix'teki ile ayni formül). Rotasyon degistigi anda sanal
+    // da doner; pan/zoom sonrasi guncellenir — dongu kapali kalir.
     const auto updateVirtualPos = [&]() {
-        const Vec3 vp = camera_.center3D() - fwd * 5000.0;
+        double z = camera_.zoom();
+        if (z <= 0.0) z = 1.0;
+        const Vec3 vp = camera_.center3D() - fwd * (5000.0 / z);
         lastNavlibX_ = vp.x; lastNavlibY_ = vp.y; lastNavlibZ_ = vp.z;
     };
     const double px = matrix[12], py = matrix[13], pz = matrix[14];
@@ -165,8 +172,9 @@ long SpaceMouseNav::GetCameraTarget(navlib::point_t& target) const {
 }
 
 long SpaceMouseNav::SetCameraTarget(const navlib::point_t& target) {
-    camera_.setCenter3D(Vec3{target.x, target.y, target.z});
-    if (viewChangedCallback_) viewChangedCallback_();
+    // NO-OP: pan'i SetCameraMatrix delta'sindan uyguluyoruz. Burada da
+    // setCenter3D yaparsak ayni pan IKI KEZ uygulanir (cifte pan kaymasi).
+    (void)target;
     return 0;
 }
 
