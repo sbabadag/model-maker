@@ -388,32 +388,51 @@ void QtMainWindow::createMenus() {
 }
 
 void QtMainWindow::promptCreateGrid() {
+    // TEKLA TARZI GRID DIYALOGU: aks mesafeleri tek satirda yan yana (space
+    // ile), Z icin KOTLAR (aks araligi degil!), etiketler ayri editlerde
+    // ayni duzende. Ornek: X "6000 6000 4500" + etiket "1 2 3 4";
+    // Z "0 3600 7200" (kotlar) + etiket "±0 +3.60 +7.20".
     QDialog dialog(this);
     dialog.setWindowTitle("Yapı Gridi Oluştur (Tekla tarzı)");
     QFormLayout* form = new QFormLayout(&dialog);
+    form->setHorizontalSpacing(12);
+    form->setVerticalSpacing(8);
 
-    QSpinBox* xCount = new QSpinBox(&dialog);
-    xCount->setRange(1, 50); xCount->setValue(3);
-    form->addRow("X aks sayısı (1-2-3):", xCount);
+    auto parseDoubles = [](const QString& text) -> std::vector<double> {
+        std::vector<double> out;
+        for (const auto& tok : text.simplified().split(' ', Qt::SkipEmptyParts)) {
+            bool ok = false;
+            const double v = tok.replace(',', '.').toDouble(&ok);
+            if (ok) out.push_back(v);
+        }
+        return out;
+    };
+    auto parseStrings = [](const QString& text) -> std::vector<std::wstring> {
+        std::vector<std::wstring> out;
+        for (const auto& tok : text.simplified().split(' ', Qt::SkipEmptyParts))
+            out.push_back(tok.toStdWString());
+        return out;
+    };
 
-    QSpinBox* yCount = new QSpinBox(&dialog);
-    yCount->setRange(1, 50); yCount->setValue(3);
-    form->addRow("Y aks sayısı (A-B-C):", yCount);
+    QLineEdit* xSpaces = new QLineEdit("6000 6000 6000", &dialog);
+    xSpaces->setMinimumWidth(320);
+    form->addRow("X aks mesafeleri (mm, aralarında boşluk):", xSpaces);
+    QLineEdit* xLabels = new QLineEdit("1 2 3 4", &dialog);
+    form->addRow("X etiketleri (aynı sırada):", xLabels);
 
-    QDoubleSpinBox* xSpacing = new QDoubleSpinBox(&dialog);
-    xSpacing->setRange(100.0, 1e7); xSpacing->setDecimals(1);
-    xSpacing->setValue(5000.0); xSpacing->setSuffix(" mm");
-    form->addRow("X aralığı:", xSpacing);
+    QLineEdit* ySpaces = new QLineEdit("5000 5000 5000", &dialog);
+    form->addRow("Y aks mesafeleri (mm):", ySpaces);
+    QLineEdit* yLabels = new QLineEdit("A B C D", &dialog);
+    form->addRow("Y etiketleri (aynı sırada):", yLabels);
 
-    QDoubleSpinBox* ySpacing = new QDoubleSpinBox(&dialog);
-    ySpacing->setRange(100.0, 1e7); ySpacing->setDecimals(1);
-    ySpacing->setValue(5000.0); ySpacing->setSuffix(" mm");
-    form->addRow("Y aralığı:", ySpacing);
+    QLineEdit* zLevels = new QLineEdit("0 3600 7200", &dialog);
+    form->addRow("Z kotları (mm, aks aralığı DEĞİL):", zLevels);
+    QLineEdit* zLabels = new QLineEdit("±0 +3.60 +7.20", &dialog);
+    form->addRow("Z etiketleri (aynı sırada):", zLabels);
 
-    QLineEdit* xLabel = new QLineEdit("1", &dialog);
-    form->addRow("X etiket başlangıcı:", xLabel);
-    QLineEdit* yLabel = new QLineEdit("A", &dialog);
-    form->addRow("Y etiket başlangıcı:", yLabel);
+    form->addRow(new QLabel(
+        "Boş bırakılan eksen atlanır. Etiket sayısı mesafe sayısından azsa\n"
+        "eksikler otomatik numaralandırılır (X: sayı, Y: harf, Z: kot).", &dialog));
 
     QDialogButtonBox* buttons = new QDialogButtonBox(
         QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog);
@@ -422,15 +441,14 @@ void QtMainWindow::promptCreateGrid() {
     QObject::connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
 
     if (dialog.exec() != QDialog::Accepted) return;
-    // Grid orijini sifir noktasi, dunya eksenleri (plan modunda standart).
-    // Ileride WorkPlane'e baglanabilir; simdilik dunya duzlemi.
     app_.createModelGrid({0.0, 0.0, 0.0},
                          {1.0, 0.0, 0.0}, {0.0, 1.0, 0.0},
-                         static_cast<std::size_t>(xCount->value()),
-                         static_cast<std::size_t>(yCount->value()),
-                         xSpacing->value(), ySpacing->value(),
-                         xLabel->text().toStdWString(),
-                         yLabel->text().toStdWString());
+                         parseDoubles(xSpaces->text()),
+                         parseDoubles(ySpaces->text()),
+                         parseDoubles(zLevels->text()),
+                         parseStrings(xLabels->text()),
+                         parseStrings(yLabels->text()),
+                         parseStrings(zLabels->text()));
 }
 
 void QtMainWindow::createToolbar() {

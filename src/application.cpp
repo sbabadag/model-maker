@@ -2198,80 +2198,83 @@ void Application::applyStartupDefaults() {
 }
 
 void Application::createModelGrid(const Vec3& origin, const Vec3& xDir, const Vec3& yDir,
-                                  std::size_t xCount, std::size_t yCount,
-                                  double xSpacing, double ySpacing,
-                                  std::wstring xLabelStart, std::wstring yLabelStart) {
-    {
-        static int gridDiag_ = 0;
-        if (gridDiag_++ < 2) {
-            FILE* diag = fopen("model-maker-render.log", "a");
-            if (diag) {
-                fprintf(diag, "CREATE-GRID begin x=%zu y=%zu sx=%.1f sy=%.1f\n",
-                        xCount, yCount, xSpacing, ySpacing);
-                fclose(diag);
-            }
-        }
-    }
+                                  std::vector<double> xSpacings, std::vector<double> ySpacings,
+                                  std::vector<double> zLevels,
+                                  std::vector<std::wstring> xLabels,
+                                  std::vector<std::wstring> yLabels,
+                                  std::vector<std::wstring> zLabels) {
+    // TEKLA TARZI GRID: aks mesafeleri LISTE halinde (her aralik farkli
+    // olabilir), Z icin KOT degerleri (aralik degil), etiketler ayri
+    // listelerde ayni duzende. N aralik -> N+1 aks (0. aks origin'de).
+    // Eksik etiket otomatik: X sayi (1,2,...), Y harf (A,B,...), Z kot.
     GridDefinition grid;
     grid.name = "GRID";
-    // Aks cizgileri birbirini KESIP GECECEK sekilde uzatilir: her X aksi
-    // Y boyunca Y-kesisiminin otesine, her Y aksi X boyunca X-kesisiminin
-    // otesine tasar (Tekla'da grid cizgileri duzlem alanin disina uzar).
-    // Uzanti = aks araliginin ~%20'si (min 100mm), kesisim noktalari
-    // kesin kalsin (snap kesisimlerde).
-    const double extendX = std::max(100.0, xSpacing * 0.20);
-    const double extendY = std::max(100.0, ySpacing * 0.20);
-    if (xCount > 0 && xSpacing > 0.0) {
-        // X-yunu akslari (1-2-3): DİKEY cizgiler; Y yonunde BOTH istenen
-        // alani (0..yCount*spacing) + iki ucta uzanti.
-        const Vec3 spanY = yDir * (ySpacing * std::max<std::size_t>(1, yCount));
-        // Dikey X aksi: alan disina tasmak icin baslangictan tek yonde uzattik.
-        // Cizim: from = ilk kesisimin -extendY, to = son kesisim +extendY.
-        for (std::size_t i = 0; i <= xCount; ++i) {
-            const Vec3 offset = xDir * (xSpacing * static_cast<double>(i));
-            GridAxisLine line;
-            line.from = origin + offset - yDir * extendY;
-            line.to = origin + offset + spanY + yDir * extendY;
-            line.horizontal = false;
-            // Etiket: xLabelStart baslangicli (or. "1")
-            std::wstring label = xLabelStart;
-            if (i > 0) label += std::to_wstring(i);
-            line.label = std::string(label.begin(), label.end());
-            grid.axes.push_back(std::move(line));
-        }
+    const auto span = [](const std::vector<double>& v) {
+        double s = 0.0;
+        for (double d : v) s += std::max(0.0, d);
+        return s;
+    };
+    const double spanX = span(xSpacings);
+    const double spanY = span(ySpacings);
+    // Uzanti: akslarin birbirini kesmesi icin alanin ~%20'si (min 100mm).
+    const double extendX = std::max(100.0, spanX * 0.20);
+    const double extendY = std::max(100.0, spanY * 0.20);
+
+    auto nextNumber = [](std::size_t i) { return std::to_wstring(i); };
+    auto nextLetter = [](std::size_t i) {
+        std::wstring s;
+        int n = static_cast<int>(i);
+        do { s.insert(s.begin(), static_cast<wchar_t>(L'A' + (n % 26))); n = n / 26 - 1; } while (n >= 0);
+        return s;
+    };
+
+    // X-yonu akslari (1-2-3): DIKEY cizgiler, Y boyunca alan + uzanti.
+    double xoff = 0.0;
+    for (std::size_t i = 0; i <= xSpacings.size(); ++i) {
+        GridAxisLine line;
+        line.from = origin + xDir * xoff - yDir * extendY;
+        line.to = origin + xDir * xoff + yDir * spanY + yDir * extendY;
+        line.horizontal = false;
+        std::wstring label = (i < xLabels.size()) ? xLabels[i] : nextNumber(i + 1);
+        line.label = std::string(label.begin(), label.end());
+        grid.axes.push_back(std::move(line));
+        if (i < xSpacings.size()) xoff += std::max(0.0, xSpacings[i]);
     }
-    if (yCount > 0 && ySpacing > 0.0) {
-        // Y-yunu akslari (A-B-C): YATAY cizgiler; X yonunde istenen
-        // alani (0..xCount*spacing) + iki ucta uzanti.
-        const Vec3 spanX = xDir * (xSpacing * std::max<std::size_t>(1, xCount));
-        for (std::size_t i = 0; i <= yCount; ++i) {
-            const Vec3 offset = yDir * (ySpacing * static_cast<double>(i));
-            GridAxisLine line;
-            line.from = origin + offset - xDir * extendX;
-            line.to = origin + offset + spanX + xDir * extendX;
-            line.horizontal = true;
-            // Etiket: yLabelStart + (i>0 ise) harf indis (A,B,C...)
-            std::wstring label = yLabelStart;
-            if (i > 0) {
-                label += static_cast<wchar_t>(L'A' + static_cast<int>((i - 1) % 26));
-                if (i >= 27) label += std::to_wstring(i / 26);
-            }
-            line.label = std::string(label.begin(), label.end());
-            grid.axes.push_back(std::move(line));
-        }
+    // Y-yonu akslari (A-B-C): YATAY cizgiler, X boyunca alan + uzanti.
+    double yoff = 0.0;
+    for (std::size_t i = 0; i <= ySpacings.size(); ++i) {
+        GridAxisLine line;
+        line.from = origin + yDir * yoff - xDir * extendX;
+        line.to = origin + yDir * yoff + xDir * spanX + xDir * extendX;
+        line.horizontal = true;
+        std::wstring label = (i < yLabels.size()) ? yLabels[i] : nextLetter(i);
+        line.label = std::string(label.begin(), label.end());
+        grid.axes.push_back(std::move(line));
+        if (i < ySpacings.size()) yoff += std::max(0.0, ySpacings[i]);
+    }
+    // Z KOTLARI: her kot bir kat duzlemi — duzlemin on (Y=0) ve arka
+    // (Y=spanY) kenar cizgisi cizilir; etiket on kenarin ucunda (Tekla'da
+    // kat kotu isareti gibi). 0 kotu da cizilir (zemin).
+    for (std::size_t i = 0; i < zLevels.size(); ++i) {
+        const double z = zLevels[i];
+        const Vec3 dz{0.0, 0.0, z};
+        std::wstring label = (i < zLabels.size()) ? zLabels[i]
+                                                   : std::to_wstring(static_cast<long>(z));
+        GridAxisLine front;
+        front.from = origin + dz;
+        front.to = origin + dz + xDir * spanX;
+        front.horizontal = true;
+        front.label = std::string(label.begin(), label.end());
+        grid.axes.push_back(std::move(front));
+        GridAxisLine back;
+        back.from = origin + dz + yDir * spanY;
+        back.to = origin + dz + yDir * spanY + xDir * spanX;
+        back.horizontal = true;
+        back.label.clear(); // arka kenar etiketsiz
+        grid.axes.push_back(std::move(back));
     }
     pushUndoSnapshot();
     document_.addGrid(std::move(grid));
-    {
-        static int gridDiag_ = 0;
-        if (gridDiag_++ < 2) {
-            FILE* diag = fopen("model-maker-render.log", "a");
-            if (diag) {
-                fprintf(diag, "CREATE-GRID done grids=%zu\n", document_.grids().size());
-                fclose(diag);
-            }
-        }
-    }
     updateControls();
     invalidateCanvas();
 }

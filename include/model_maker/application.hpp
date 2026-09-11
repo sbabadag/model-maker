@@ -62,9 +62,10 @@ public:
     // X/1-2-3 (dikey) ve Y/A-B-C (yatay) aks cizgilerini workPlane
     // duzleminde uretir; etiketler verilen harf/rakamdan baslar.
     void createModelGrid(const Vec3& origin, const Vec3& xDir, const Vec3& yDir,
-                         std::size_t xCount, std::size_t yCount,
-                         double xSpacing, double ySpacing,
-                         std::wstring xLabelStart, std::wstring yLabelStart);
+                         std::vector<double> xSpacings, std::vector<double> ySpacings,
+                         std::vector<double> zLevels,
+                         std::vector<std::wstring> xLabels, std::vector<std::wstring> yLabels,
+                         std::vector<std::wstring> zLabels);
 
     // Style controls (for Qt toolbar integration)
     bool snapEnabled() const noexcept { return snapEnabled_; }
