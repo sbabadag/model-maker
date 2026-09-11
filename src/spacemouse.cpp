@@ -16,7 +16,6 @@ SpaceMouseNav::SpaceMouseNav(Camera& camera, Document& document)
 
 bool SpaceMouseNav::start() {
     if (IsEnabled()) return true;
-    haveLastNavlibPos_ = false; // yeni oturum: delta tabani sifirla
     try {
         // CNavigation3D::EnableNavigation(true) -> m_pImpl->Open(profileHint)
         // -> NlCreate. Profil adi navlib'te model-maker olarak gozukur.
@@ -75,21 +74,6 @@ long SpaceMouseNav::GetCameraMatrix(navlib::matrix_t& matrix) const {
     // cameraToWorldMatrix4 (mm) row-major ve navlib camera-to-world beklentisi
     // ile ayni siradadir (m[row*4+col] = right/up/back/position).
     for (int i = 0; i < 16; ++i) matrix[i] = m4[static_cast<std::size_t>(i)];
-    // SANAL KAMERA POZISYONU: hedef (center3D_) ile ayni nokta VERME — mesafe
-    // 0 olursa navlib'in mesafe tabanli motion olcegi bozulur (ziplama).
-    // Mesafe zoom'a bagli: DIST = 5000/zoom. Navlib "yaklas" deyince zoom
-    // artar -> DIST kuculur -> navlib bir sonraki okumada GUNCEL (kucuk)
-    // mesafeyi gorur ve tekrar yaklasmaz (zoom katlanmasi=firlama biter).
-    // Pan yapinca hedef ve pozisyon birlikte kayar; senkron bozulmaz.
-    {
-        double z = camera_.zoom();
-        if (z <= 0.0) z = 1.0;
-        const Vec3 fwd{-m4[8], -m4[9], -m4[10]};
-        const Vec3 pos = camera_.center3D() - fwd * (5000.0 / z);
-        matrix[12] = pos.x; matrix[13] = pos.y; matrix[14] = pos.z;
-        lastNavlibX_ = pos.x; lastNavlibY_ = pos.y; lastNavlibZ_ = pos.z;
-        haveLastNavlibPos_ = true;
-    }
     return 0;
 }
 
@@ -116,23 +100,16 @@ long SpaceMouseNav::SetCameraMatrix(const navlib::matrix_t& matrix) {
     const Vec3 up{cm[4], cm[5], cm[6]};
     const Vec3 fwd{-cm[8], -cm[9], -cm[10]}; // m[8..10] = backward
 
-    // m[12..14] pozisyon delta'si: navlib'in yazdigi pozisyon eksi bizim
-    // SANAL pozisyonumuz (center3D_ - fwd*DIST, DIST=5000/zoom —
-    // GetCameraMatrix'teki ile ayni formül). Rotasyon degistigi anda sanal
-    // da doner; pan/zoom sonrasi guncellenir — dongu kapali kalir.
-    const auto updateVirtualPos = [&]() {
-        double z = camera_.zoom();
-        if (z <= 0.0) z = 1.0;
-        const Vec3 vp = camera_.center3D() - fwd * (5000.0 / z);
-        lastNavlibX_ = vp.x; lastNavlibY_ = vp.y; lastNavlibZ_ = vp.z;
-    };
+    // m[12..14] pozisyon delta'si (birikimsiz, her adim).
+    static double prevX = 0.0, prevY = 0.0, prevZ = 0.0;
+    static bool init = false;
     const double px = matrix[12], py = matrix[13], pz = matrix[14];
-    if (!haveLastNavlibPos_) {
-        updateVirtualPos();
-        haveLastNavlibPos_ = true;
-    }
-    {
-        const double dx = px - lastNavlibX_, dy = py - lastNavlibY_, dz = pz - lastNavlibZ_;
+    if (!init) {
+        prevX = px; prevY = py; prevZ = pz;
+        init = true;
+    } else {
+        const double dx = px - prevX, dy = py - prevY, dz = pz - prevZ;
+        prevX = px; prevY = py; prevZ = pz;
         const Vec3 d{dx, dy, dz};
         const double panR = d.x * right.x + d.y * right.y + d.z * right.z; // sag-sol it
         const double panU = d.x * up.x + d.y * up.y + d.z * up.z;          // basma/cekme
@@ -152,9 +129,6 @@ long SpaceMouseNav::SetCameraMatrix(const navlib::matrix_t& matrix) {
                           Vec3{-groundFwd.x * dolly, -groundFwd.y * dolly, 0.0} * panScale;
         }
         camera_.setCenter3D(oldCenter + centerDelta);
-        // PAN sonrasi sanal pozisyonu da guncelle: navlib sonraki Set'te
-        // "kamera tasindi" delta gormesin (pan bir sonraki frame'e sizmasin).
-        updateVirtualPos();
         // ZOOM (dikey): CEK (yukari, panU>0) = zoom IN, BAS (asagi, panU<0) = zoom OUT.
         if (std::fabs(panU) > 1e-3) {
             double factor = 1.0 + panU / 10000.0; // model genisligi ~10m
@@ -172,9 +146,8 @@ long SpaceMouseNav::GetCameraTarget(navlib::point_t& target) const {
 }
 
 long SpaceMouseNav::SetCameraTarget(const navlib::point_t& target) {
-    // NO-OP: pan'i SetCameraMatrix delta'sindan uyguluyoruz. Burada da
-    // setCenter3D yaparsak ayni pan IKI KEZ uygulanir (cifte pan kaymasi).
-    (void)target;
+    camera_.setCenter3D(Vec3{target.x, target.y, target.z});
+    if (viewChangedCallback_) viewChangedCallback_();
     return 0;
 }
 

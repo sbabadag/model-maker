@@ -249,16 +249,17 @@ void Camera::setView(StandardView view) noexcept {
     constexpr double pi = 3.14159265358979323846;
     switch (view) {
     case StandardView::Isometric:
-        useIso_ = true;
-        // Sag-el (proper, det=+1) izometrik: kamera (+1,+1,+1) kosesinden
-        // origo'ya bakar. Eski row0=(+0.707,-0.707,0) aynalanmis (det=-1)
-        // bir onizlemeydi; Navlib det=-1 matrisle zıplatma yapiyordu. X/Y'nin
-        // ekran yonleri bu yuzden yer degistirdi (X sola-asagi, Y saga-asagi,
-        // Z yukari) — standart CAD izometrigi boyledir.
-        isoM00_ = -0.7071067811865476; isoM01_ =  0.7071067811865476; isoM02_ = 0.0;
-        isoM10_ = -0.4082482904638630; isoM11_ = -0.4082482904638630; isoM12_ = 0.8164965809277260;
-        isoM20_ =  0.5773502691896257; isoM21_ =  0.5773502691896257; isoM22_ = 0.5773502691896257;
-        yaw_ = 0.0; pitch_ = 0.0; roll_ = 0.0;
+        // GERCEK EULER IZOMETRI: kamera (+1,+1,+1) kosesinden origo'ya, up=+Z,
+        // roll=0 — yaw=-45°, pitch=35.264° (atan(1/sqrt2)). Eski isoM_ ozel
+        // matrisi KALDIRILDI: cizim iso matrisle, navlib euler(0,0,0) ile
+        // ayni kamerayi iki farki sekilde gosteriyordu -> ilk SpaceMouse
+        // hareketi onden gorunuse atliyor, euler ayrismasindaki roll
+        // uyumsuzlugu ara ara ziplatiyordu. Tek temsil: cizim + navlib +
+        // ayrisma ayni euleri okur (roundtrip birebir).
+        useIso_ = false;
+        yaw_ = -0.7853981633974483;
+        pitch_ = 0.6154797086703869;
+        roll_ = 0.0;
         break;
     case StandardView::Top: yaw_ = 0.0; pitch_ = 0.0; roll_ = 0.0; useIso_ = false; break;
     case StandardView::Bottom: yaw_ = pi; pitch_ = 0.0; roll_ = 0.0; useIso_ = false; break;
@@ -282,19 +283,6 @@ double Camera::pixelsPerUnit() const noexcept { return pixelsPerUnit_; }
 std::array<double, 16> Camera::cameraToWorldMatrix4() const noexcept {
     ensureViewCache();
     std::array<double, 16> m{};
-    if (useIso_) {
-        // Izometrik onizleme isoM_ matrisiyle cizilir. Navlib'e VERIRKEN ayni
-        // matrisin satirlarini kullaniriz (row2 = isoM20..22, +Z bilesenli
-        // derinlik): boylece ilk SpaceMouse hareketi mevcut izometrik
-        // gorunumden devam eder ve bukme yonleri (ileri/geri) dogru calisir.
-        // (row0 x row1 ile tamamlamak derinligi ters cevirir — ileri/geri
-        // bukme fonksiyonlari yer degistirirdi.)
-        m[0] = isoM00_; m[1] = isoM10_; m[2] = isoM20_;  m[3] = 0.0;
-        m[4] = isoM01_; m[5] = isoM11_; m[6] = isoM21_;  m[7] = 0.0;
-        m[8] = isoM02_; m[9] = isoM12_; m[10] = isoM22_; m[11] = 0.0;
-        m[12] = center3D_.x; m[13] = center3D_.y; m[14] = center3D_.z; m[15] = 1.0;
-        return m;
-    }
     // R satirlari
     const double r00 = cr_ * cy_ - sr_ * sp_ * sy_;
     const double r01 = -sr_ * cp_;
