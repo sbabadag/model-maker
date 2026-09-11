@@ -98,6 +98,13 @@ public:
 private:
     Camera& camera_;
     Document& document_;
+    // Navlib GERI BESLEME DONGUSU KIRICI: GetCameraMatrix'e, navlib'in
+    // SetCameraMatrix ile son yazdigi POZISYONU oldugu gibi geri veririz.
+    // Boylece bizim pan/zoom degisikligimiz navlib'e "kamera tasindi"
+    // sinyali gondermez; pozisyon deltasi SADECE kullanici hareketinden
+    // gelir (katlanan pan/zıplama biter).
+    mutable double lastNavlibX_ = 0.0, lastNavlibY_ = 0.0, lastNavlibZ_ = 0.0;
+    mutable bool haveLastNavlibPos_ = false;
 
 public:
     // Uygulama boyama cagrisini Navlib'ten kamera degisimine baglar.

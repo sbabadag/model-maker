@@ -16,6 +16,7 @@ SpaceMouseNav::SpaceMouseNav(Camera& camera, Document& document)
 
 bool SpaceMouseNav::start() {
     if (IsEnabled()) return true;
+    haveLastNavlibPos_ = false; // yeni oturum: delta tabani sifirla
     try {
         // CNavigation3D::EnableNavigation(true) -> m_pImpl->Open(profileHint)
         // -> NlCreate. Profil adi navlib'te model-maker olarak gozukur.
@@ -74,6 +75,16 @@ long SpaceMouseNav::GetCameraMatrix(navlib::matrix_t& matrix) const {
     // cameraToWorldMatrix4 (mm) row-major ve navlib camera-to-world beklentisi
     // ile ayni siradadir (m[row*4+col] = right/up/back/position).
     for (int i = 0; i < 16; ++i) matrix[i] = m4[static_cast<std::size_t>(i)];
+    // GERI BESLEME KIRICI: pozisyonu navlib'in bize son yazdigi degerle degil
+    // ama KAMERA hedefine bagli tut: navlib pozisyonu ile bizim center3D_
+    // arasindaki kaymayi geri verirsek dongu katlanir. Bunun yerine son
+    // navlib pozisyonunu ECHO ederiz — navlib kendi yazdigi pozisyonu geri
+    // okur, bizim pan/zoom degisikligini "kamera tasindi" sanmaz.
+    if (haveLastNavlibPos_) {
+        matrix[12] = lastNavlibX_;
+        matrix[13] = lastNavlibY_;
+        matrix[14] = lastNavlibZ_;
+    }
     return 0;
 }
 
@@ -101,15 +112,15 @@ long SpaceMouseNav::SetCameraMatrix(const navlib::matrix_t& matrix) {
     const Vec3 fwd{-cm[8], -cm[9], -cm[10]}; // m[8..10] = backward
 
     // m[12..14] pozisyon delta'si (birikimsiz, her adim).
-    static double prevX = 0.0, prevY = 0.0, prevZ = 0.0;
-    static bool init = false;
     const double px = matrix[12], py = matrix[13], pz = matrix[14];
-    if (!init) {
-        prevX = px; prevY = py; prevZ = pz;
-        init = true;
+    if (!haveLastNavlibPos_) {
+        // Ilk cagrida onceki navlib pozisyonu yok: prev olarak bunu al,
+        // delta=0 (ilk harekette ziplama olmaz).
+        lastNavlibX_ = px; lastNavlibY_ = py; lastNavlibZ_ = pz;
+        haveLastNavlibPos_ = true;
     } else {
-        const double dx = px - prevX, dy = py - prevY, dz = pz - prevZ;
-        prevX = px; prevY = py; prevZ = pz;
+        const double dx = px - lastNavlibX_, dy = py - lastNavlibY_, dz = pz - lastNavlibZ_;
+        lastNavlibX_ = px; lastNavlibY_ = py; lastNavlibZ_ = pz;
         const Vec3 d{dx, dy, dz};
         const double panR = d.x * right.x + d.y * right.y + d.z * right.z; // sag-sol it
         const double panU = d.x * up.x + d.y * up.y + d.z * up.z;          // basma/cekme
