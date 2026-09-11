@@ -79,7 +79,7 @@ long SpaceMouseNav::GetCameraMatrix(navlib::matrix_t& matrix) const {
 
 long SpaceMouseNav::SetCameraMatrix(const navlib::matrix_t& matrix) {
     // Navlib'in gonderdigi matris: m[0..8] rotasyon, m[12..14] KAMERA POZISYONU.
-    // Bizim kamera hedef-tabanli (center3D_ + yaw/pitch/roll + zoom_), o yuzden
+    // Bizim kamera hedef-tabanli (center3D_ + matris R_ + zoom_), o yuzden
     // pozisyonu dogrudan center3D_'ye yazamayiz (kavram farki). Dogal hareket
     // (kullanici tarifi):
     //   dort yone IT   = PAN (sag-sol: kamera right; ileri-geri: zeminde ileri)
@@ -87,6 +87,21 @@ long SpaceMouseNav::SetCameraMatrix(const navlib::matrix_t& matrix) {
     //   bukme/cevirme  = ROTASYON (m[0..8] -> applyCameraToWorldMatrix4)
     std::array<double, 16> m{};
     for (int i = 0; i < 16; ++i) m[static_cast<std::size_t>(i)] = matrix[i];
+
+    // --- DIAG: navlib'in gercek gonderdigi veri (ilk 400 cagri) ---
+    {
+        static int nDiag = 0;
+        if (nDiag++ < 400) {
+            FILE* f = fopen("model-maker-render.log", "a");
+            if (f) {
+                fprintf(f, "SM-SET-CAM #%d pos=%+.1f %+.1f %+.1f rot=[%+.2f %+.2f %+.2f|"
+                           "%+.2f %+.2f %+.2f|%+.2f %+.2f %+.2f]\n",
+                        nDiag, m[12], m[13], m[14],
+                        m[0], m[1], m[2], m[4], m[5], m[6], m[8], m[9], m[10]);
+                fclose(f);
+            }
+        }
+    }
 
     const Vec3 oldCenter = camera_.center3D();
 
