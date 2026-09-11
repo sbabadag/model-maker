@@ -74,6 +74,15 @@ long SpaceMouseNav::GetCameraMatrix(navlib::matrix_t& matrix) const {
     // cameraToWorldMatrix4 (mm) row-major ve navlib camera-to-world beklentisi
     // ile ayni siradadir (m[row*4+col] = right/up/back/position).
     for (int i = 0; i < 16; ++i) matrix[i] = m4[static_cast<std::size_t>(i)];
+    // ECHO POZISYONU: navlib'in bize son yazdigi pozisyonu oldugu gibi geri
+    // ver. Bizim pan/zoom kameranin navlib pozisyonuna yazilmaz; navlib kendi
+    // kamerasini hep tutarli gorur -> geri besleme dongusu kapali. Rotasyon
+    // m4'ten guncel gelir (tek dogruluk kaynagi).
+    if (haveLastNavlibPos_) {
+        matrix[12] = lastNavlibX_;
+        matrix[13] = lastNavlibY_;
+        matrix[14] = lastNavlibZ_;
+    }
     return 0;
 }
 
@@ -101,9 +110,15 @@ long SpaceMouseNav::SetCameraMatrix(const navlib::matrix_t& matrix) {
     const Vec3 fwd{-cm[8], -cm[9], -cm[10]}; // m[8..10] = backward
 
     // m[12..14] pozisyon delta'si (birikimsiz, her adim).
+    // ECHO TABANI: prev, navlib'in son YAZDIGI pozisyon. Bizim pan'imiz
+    // ekran uzayinda uygulanir ve navlib pozisyonuna YAZMAZ; navlib bir
+    // sonraki okumada kendi son yazdigini gorur -> geri besleme dongusu
+    // kapali (katlanan pan/zoom = atlama olmaz).
+    const double px = matrix[12], py = matrix[13], pz = matrix[14];
+    lastNavlibX_ = px; lastNavlibY_ = py; lastNavlibZ_ = pz;
+    haveLastNavlibPos_ = true;
     static double prevX = 0.0, prevY = 0.0, prevZ = 0.0;
     static bool init = false;
-    const double px = matrix[12], py = matrix[13], pz = matrix[14];
     if (!init) {
         prevX = px; prevY = py; prevZ = pz;
         init = true;
@@ -140,14 +155,25 @@ long SpaceMouseNav::SetCameraMatrix(const navlib::matrix_t& matrix) {
 }
 
 long SpaceMouseNav::GetCameraTarget(navlib::point_t& target) const {
-    const auto& c = camera_.center3D();
-    target.x = c.x; target.y = c.y; target.z = c.z;
+    // Hedef = sanal kamera pozisyonu + bakis yonu * 5000mm. Pozisyonla ayni
+    // anda guncellendigi icin navlib mesafe/direction tutarliligi bozulmaz.
+    if (haveLastNavlibPos_) {
+        const auto m4 = camera_.cameraToWorldMatrix4();
+        const Vec3 fwd{-m4[8], -m4[9], -m4[10]};
+        target.x = lastNavlibX_ + fwd.x * 5000.0;
+        target.y = lastNavlibY_ + fwd.y * 5000.0;
+        target.z = lastNavlibZ_ + fwd.z * 5000.0;
+    } else {
+        const auto& c = camera_.center3D();
+        target.x = c.x; target.y = c.y; target.z = c.z;
+    }
     return 0;
 }
 
 long SpaceMouseNav::SetCameraTarget(const navlib::point_t& target) {
-    camera_.setCenter3D(Vec3{target.x, target.y, target.z});
-    if (viewChangedCallback_) viewChangedCallback_();
+    // NO-OP: pan'i SetCameraMatrix delta projeksiyonundan uyguluyoruz.
+    // Burada setCenter3D yapilirsa ayni pan iki kez uygulanir (cifte pan).
+    (void)target;
     return 0;
 }
 

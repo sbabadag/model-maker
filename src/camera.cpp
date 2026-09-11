@@ -249,17 +249,17 @@ void Camera::setView(StandardView view) noexcept {
     constexpr double pi = 3.14159265358979323846;
     switch (view) {
     case StandardView::Isometric:
-        // GERCEK EULER IZOMETRI: kamera (+1,+1,+1) kosesinden origo'ya, up=+Z,
-        // roll=0 — yaw=-45°, pitch=35.264° (atan(1/sqrt2)). Eski isoM_ ozel
-        // matrisi KALDIRILDI: cizim iso matrisle, navlib euler(0,0,0) ile
-        // ayni kamerayi iki farki sekilde gosteriyordu -> ilk SpaceMouse
-        // hareketi onden gorunuse atliyor, euler ayrismasindaki roll
-        // uyumsuzlugu ara ara ziplatiyordu. Tek temsil: cizim + navlib +
-        // ayrisma ayni euleri okur (roundtrip birebir).
+        // GERCEK PROPER IZOMETRI (tek temsil: euler). Kamera (+1,+1,+1)
+        // kosesinden origo'ya, Z EKRANDA YUKARI: yaw=-45°, pitch=+35.264°,
+        // roll=-120°. Eski isoM_ matrisi aynalanmis (det=-1) idi; navlib'e
+        // det=-1 matris ya da euler(0,0,0)=onden gorunus vermek ziplamalarin
+        // kaynagiydi. Bu euler cizim + navlib + ayrismanin HEPSINDE ayni
+        // kamerayi tanimlar (roundtrip birebir). X/Y'nin ekran yerleri eski
+        // aynali gorunume gore ters yuzdedir — Z artik dogru yukari.
         useIso_ = false;
         yaw_ = -0.7853981633974483;
         pitch_ = 0.6154797086703869;
-        roll_ = 0.0;
+        roll_ = -2.0943951023931957;
         break;
     case StandardView::Top: yaw_ = 0.0; pitch_ = 0.0; roll_ = 0.0; useIso_ = false; break;
     case StandardView::Bottom: yaw_ = pi; pitch_ = 0.0; roll_ = 0.0; useIso_ = false; break;
