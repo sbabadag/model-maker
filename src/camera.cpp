@@ -249,17 +249,19 @@ void Camera::setView(StandardView view) noexcept {
     constexpr double pi = 3.14159265358979323846;
     switch (view) {
     case StandardView::Isometric:
-        // GERCEK PROPER IZOMETRI (tek temsil: euler). Kamera (+1,+1,+1)
-        // kosesinden origo'ya, Z EKRANDA YUKARI: yaw=-45°, pitch=+35.264°,
-        // roll=-120°. Eski isoM_ matrisi aynalanmis (det=-1) idi; navlib'e
-        // det=-1 matris ya da euler(0,0,0)=onden gorunus vermek ziplamalarin
-        // kaynagiydi. Bu euler cizim + navlib + ayrismanin HEPSINDE ayni
-        // kamerayi tanimlar (roundtrip birebir). X/Y'nin ekran yerleri eski
-        // aynali gorunume gore ters yuzdedir — Z artik dogru yukari.
+        // TEK TEMSIL: izometrik gorunum artik euler acilariyla kurulur
+        // (row0=(0.707,-0.707,0), row1=(-0.408,-0.408,0.816) — eskisiyle
+        // PIKSEL BIREBIR ayni ekran gorunumu; derinlik satiri -1 ile carpildi,
+        // det=+1 proper). Cift temsil (isoM_ vs euler) navlib round-trip
+        // atlamalarinin kaynagiydi. acilar: yaw=135, pitch=-asin(1/sqrt3),
+        // roll=120 — applyCameraToWorldMatrix4 tam bunlari geri verir.
         useIso_ = false;
-        yaw_ = -0.7853981633974483;
-        pitch_ = 0.6154797086703869;
-        roll_ = -2.0943951023931957;
+        isoM00_ = 0.0; isoM01_ = 0.0; isoM02_ = 0.0;
+        isoM10_ = 0.0; isoM11_ = 0.0; isoM12_ = 0.0;
+        isoM20_ = 0.0; isoM21_ = 0.0; isoM22_ = 0.0;
+        yaw_ = 0.75 * pi;
+        pitch_ = -0.6154797086703868; // -asin(1/sqrt(3)) = -35.264 deg
+        roll_ = pi / 3.0 * 2.0;       // 120 deg
         break;
     case StandardView::Top: yaw_ = 0.0; pitch_ = 0.0; roll_ = 0.0; useIso_ = false; break;
     case StandardView::Bottom: yaw_ = pi; pitch_ = 0.0; roll_ = 0.0; useIso_ = false; break;
