@@ -98,6 +98,13 @@ public:
 private:
     Camera& camera_;
     Document& document_;
+    // ECHO: navlib bosta (birakma/yeni hareket siniri) kamerayi GetCameraMatrix'ten
+    // okuyup YENIDEN BAZLAR (logla kanitlandi: #139->#140 pos center3D_'ye isinlandi,
+    // static prev ile arasindaki -6453'luk sahte delta dev pan = ekrandan kacma).
+    // Cozum: pozisyonu navlib'in kendi son yazdigi deger olarak geri ver — rebase
+    // no-op olur, delta daima saf kullanici hareketi.
+    mutable double echoPos_[3] = {0.0, 0.0, 0.0};
+    mutable bool haveEchoPos_ = false;
 
 public:
     // Uygulama boyama cagrisini Navlib'ten kamera degisimine baglar.

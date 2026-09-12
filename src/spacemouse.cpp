@@ -86,6 +86,28 @@ long SpaceMouseNav::GetCameraMatrix(navlib::matrix_t& matrix) const {
     // cameraToWorldMatrix4 (mm) row-major ve navlib camera-to-world beklentisi
     // ile ayni siradadir (m[row*4+col] = right/up/back/position).
     for (int i = 0; i < 16; ++i) matrix[i] = m4[static_cast<std::size_t>(i)];
+    // POZISYON ECHOSU: navlib'in son SetCameraMatrix ile yazdigi degeri oldugu
+    // gibi geri ver. Bosta rebase kendisiyle yapilir -> isinlanma yok. Bizim
+    // pan/zoom center3D_'yi degistirir ama navlib pozisyonuna YAZMAZ (pozisyon
+    // yalnizca kullanici hareketiyle navlib tarafindan yazilir).
+    if (haveEchoPos_) {
+        matrix[12] = echoPos_[0];
+        matrix[13] = echoPos_[1];
+        matrix[14] = echoPos_[2];
+    }
+    // DIAG: navlib Get'i ne zaman poll ediyor (rebase anlari)?
+    {
+        static int nGet = 0;
+        if (nGet++ < 200) {
+            FILE* f = fopen("model-maker-render.log", "a");
+            if (f) {
+                fprintf(f, "SM-GET-CAM #%d echo=%d pos=%+.1f %+.1f %+.1f\n",
+                        nGet, haveEchoPos_ ? 1 : 0,
+                        matrix[12], matrix[13], matrix[14]);
+                fclose(f);
+            }
+        }
+    }
     return 0;
 }
 
@@ -103,7 +125,7 @@ long SpaceMouseNav::SetCameraMatrix(const navlib::matrix_t& matrix) {
     // --- DIAG: navlib'in gercek gonderdigi veri (ilk 400 cagri) ---
     {
         static int nDiag = 0;
-        if (nDiag++ < 400) {
+        if (nDiag++ < 800) {
             FILE* f = fopen("model-maker-render.log", "a");
             if (f) {
                 fprintf(f, "SM-SET-CAM #%d pos=%+.1f %+.1f %+.1f rot=[%+.2f %+.2f %+.2f|"
@@ -131,6 +153,9 @@ long SpaceMouseNav::SetCameraMatrix(const navlib::matrix_t& matrix) {
     static double prevX = 0.0, prevY = 0.0, prevZ = 0.0;
     static bool init = false;
     const double px = matrix[12], py = matrix[13], pz = matrix[14];
+    // ECHO kaydi: navlib'in yazdigi pozisyonu sakla (GetCameraMatrix geri verecek).
+    echoPos_[0] = px; echoPos_[1] = py; echoPos_[2] = pz;
+    haveEchoPos_ = true;
     if (!init) {
         prevX = px; prevY = py; prevZ = pz;
         init = true;
