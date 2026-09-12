@@ -1490,7 +1490,7 @@ void Application::onCanvasPaint() {
         if (!sessionLogged) {
             sessionLogged = true;
             FILE* diag = fopen("model-maker-render.log", "a");
-            if (diag) { fprintf(diag, "SESSION-START build=2026-08-18-bench\n"); fclose(diag); }
+            if (diag) { fprintf(diag, "SESSION-START built=" __DATE__ " " __TIME__ "\n"); fclose(diag); }
         }
     }
     {

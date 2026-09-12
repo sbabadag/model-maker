@@ -27,7 +27,19 @@ bool SpaceMouseNav::start() {
         Write(std::string("active"), navlib::value(true));
         Write(std::string("focus"), navlib::value(true));
     } catch (const std::exception&) {
+        FILE* f = fopen("model-maker-render.log", "a");
+        if (f) { fprintf(f, "SM-INIT result=EXCEPTION\n"); fclose(f); }
         return false;
+    }
+    // DIAG: baglanti sonucu + exe kimligi (derleme zamani) — hangi exe'nin
+    // log urettigi artik suphe olamaz.
+    {
+        FILE* f = fopen("model-maker-render.log", "a");
+        if (f) {
+            fprintf(f, "SM-INIT result=%s built=" __DATE__ " " __TIME__ "\n",
+                    IsEnabled() ? "OK" : "FAIL");
+            fclose(f);
+        }
     }
     return IsEnabled();
 }
