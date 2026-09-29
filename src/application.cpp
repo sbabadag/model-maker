@@ -1,6 +1,6 @@
 #include "model_maker/application.hpp"
 #include "model_maker/dxf.hpp"
-#ifdef _WIN32
+#ifdef MM_HAS_SPACEMOUSE
 #include "model_maker/spacemouse.hpp"
 #endif
 #ifdef MM_HAS_OCC
@@ -2295,7 +2295,7 @@ void Application::toggle3DView() {
     updateControls();
     updateStatus();
     invalidateCanvas();
-#ifdef _WIN32
+#ifdef MM_HAS_SPACEMOUSE
     // SpaceMouse her 3B girisinde (yeniden) baslatilir; 2B'ye donunce durur.
     if (mode_ == EditMode::View3D) {
         ensureSpaceMouseStarted();
@@ -2308,7 +2308,7 @@ void Application::toggle3DView() {
 }
 
 void Application::ensureSpaceMouseStarted() {
-#ifdef _WIN32
+#ifdef MM_HAS_SPACEMOUSE
     if (mode_ != EditMode::View3D) return;
     if (!spaceMouse_) {
         spaceMouse_ = std::make_unique<SpaceMouseNav>(camera_, document_);
@@ -3957,6 +3957,8 @@ double Application::selectedEntityProfileRotation() const {
     return document_.models()[selectedModels_.front()].properties().profileRotation;
 }
 
+#ifdef MM_HAS_OCC
+
 void Application::setSelectedEntityProfileRotation(double degrees) {
     // TOPLU ROTASYON: secimdeki TUM profilli uyelere ayni aci uygulanir
     // (override). Her kati kendi ekseninde yeniden uretilir; eksen
@@ -4147,6 +4149,22 @@ void Application::setSelectedEntityProfileRotation(double degrees) {
     updateControls();
     invalidateCanvas();
 }
+
+#else // !MM_HAS_OCC - kati (BRep) profil rotasyonu yok
+
+void Application::setSelectedEntityProfileRotation(double) {
+    // OCC kapali (vcpkg/OCCT yok): kati yeniden uretilemez, komut etkisiz.
+    publishStatus(L"Kati profil rotasyonu icin OpenCASCADE gerekli (OCC kapali)");
+}
+
+// onLeftButtonDown icindeki kati-trim akisi bu metodu korumasiz cagirir;
+// govde MM_HAS_OCC blogunda kaldigi icin OCC kapaliyken linker hatasi
+// (undefined reference) veriyordu. Stub ile akis sessizce no-op olur.
+void Application::performSolidTrimByLine(std::size_t) {
+    publishStatus(L"Kati kesme icin OpenCASCADE gerekli (OCC kapali)");
+}
+
+#endif // MM_HAS_OCC
 
 std::string Application::selectedEntityMaterial() const {
     if (selectedModels_.empty() ||

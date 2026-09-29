@@ -37,7 +37,7 @@ namespace mm {
 // ile tutar. Baslik zincirine <SpaceMouse/*> yayilmamasi icin burada yalniz
 // forward-declare kullaniriz (navlib makrolari Qt/class duzenini bozuyordu);
 // tam tanim src/application.cpp'te include edilir.
-#ifdef _WIN32
+#ifdef MM_HAS_SPACEMOUSE
 class SpaceMouseNav;
 #endif
 
@@ -342,9 +342,9 @@ private:
     Camera camera_;
     Renderer renderer_;
     ViewCubeRenderer viewCubeRenderer_;
-#ifdef _WIN32
+#ifdef MM_HAS_SPACEMOUSE
     // 3Dconnexion SpaceMouse (Navlib 4.x): 3B gorunumde kamerayi surer.
-    // 2B planda baslatilmaz (Navlib yalniz 3B'de anlamli). Yalniz WIN32.
+    // 2B planda baslatilmaz (Navlib yalniz 3B'de anlamli). SDK varken.
     std::unique_ptr<SpaceMouseNav> spaceMouse_;
 #endif
     // Son kati komutunun olcum mesaji (hacim) — updateStatus bunu status
@@ -361,7 +361,11 @@ private:
     std::vector<SteelProfile> profileCatalog_;
     // BRep sekil tablosu: model indeksi -> sekil (B/S/J/extrude/trim).
     // std::map = indekse gore sirali; boolean "son iki"yi sondan alir.
+    // OCC kapaliyken (MM_HAS_OCC yok) TopoDS_Shape tanimli degildir;
+    // uye de yoktur; tabloyu kullanan tum kod MM_HAS_OCC ile korunur.
+#ifdef MM_HAS_OCC
     std::map<std::size_t, TopoDS_Shape> occShapes_;
+#endif
     // 3B kati trim alt-akisi: 1 = kesim cizgisi bekleniyor, 2 = kalacak taraf
     int trimSolidPhase_{};
     std::size_t trimSolidIndex_{};

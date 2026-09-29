@@ -67,6 +67,10 @@ if(Qt6_FOUND AND MODELMAKER_QT_MISSING STREQUAL "")
             ${CMAKE_CURRENT_SOURCE_DIR}/third_party/3dxware/inc/navlib)
         # SpaceMouse kaynaklarini listeye ekle
         target_sources(model-maker PRIVATE src/spacemouse.cpp)
+        # SpaceMouse kodu YALNIZCA SDK varken derlenir: hem baslik guardlari
+        # hem uygulama ici guardlar bu makroya bakar (MM_HAS_OCC gibi).
+        # SDK yoksa _WIN32 olsa bile navlib basliklari include EDILMEZ.
+        target_compile_definitions(model-maker PRIVATE MM_HAS_SPACEMOUSE)
         # Statik thuvasya TDxNavLib.lib (navlib fonksiyon govdeleri)
         if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/3dxware/lib/TDxNavLib.lib")
             target_link_libraries(model-maker PRIVATE

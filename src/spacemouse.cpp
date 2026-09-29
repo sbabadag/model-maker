@@ -1,6 +1,6 @@
 #include "model_maker/spacemouse.hpp"
 
-#ifdef _WIN32
+#ifdef MM_HAS_SPACEMOUSE
 #include "model_maker/document.hpp"
 #include <algorithm>
 #include <cmath>
@@ -397,4 +397,4 @@ long SpaceMouseNav::SetSelectionTransform(const navlib::matrix_t& matrix) {
 }
 
 } // namespace mm
-#endif // _WIN32
+#endif // MM_HAS_SPACEMOUSE

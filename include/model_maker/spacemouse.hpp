@@ -9,13 +9,15 @@
 //   GetCameraMatrix -> mevcut kamerayi camera-to-world 4x4 olarak ver
 //   SetCameraMatrix -> Navlib yeni matrisi uretir, biz kameraya uygulariz
 // Uygulama, SpaceMouse'u yalniz 3B gorunumde baslatir (2B planda etkisiz).
-// YALNIZ _WIN32'de derlenir (SDK Windows-only). Navlib basliklarinin
-// uygulama.hpp'e yayilmamasi icin burada yalniz forward-declare kullanilir.
+// YALNIZ MM_HAS_SPACEMOUSE tanimliyken derlenir (CMake bunu ancak
+// third_party/3dxware SDK'si bulundugunda tanimlar). _WIN32 YETMEZ: SDK
+// basliklari makinede olmayabilir. Navlib basliklarinin uygulama.hpp'e
+// yayilmamasi icin burada yalniz forward-declare kullanilir.
 
 #include "model_maker/camera.hpp"
 #include "model_maker/document.hpp"
 
-#ifdef _WIN32
+#ifdef MM_HAS_SPACEMOUSE
 #include <SpaceMouse/CNavigation3D.hpp>
 #include <SpaceMouse/IAccessors.hpp>
 #include <navlib/navlib.h>
@@ -29,7 +31,7 @@
 
 namespace mm {
 
-#ifdef _WIN32
+#ifdef MM_HAS_SPACEMOUSE
 namespace nav3d = TDx::SpaceMouse::Navigation3D;
 // CNavigation3D, IAccessors'in tamamini ve INavlibProperty (Write/Read)
 // gerceklestirimini sunar; Navlib baglantisini CNavlibImpl ile kurar. Bizim
@@ -115,6 +117,6 @@ public:
 private:
     std::function<void()> viewChangedCallback_;
 };
-#endif // _WIN32
+#endif // MM_HAS_SPACEMOUSE
 
 } // namespace mm
