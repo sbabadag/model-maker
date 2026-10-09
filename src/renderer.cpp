@@ -874,6 +874,19 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
     performance.visibleEntities = glWireframeSkip
         ? document.models().size() : visibleModels.size();
 
+    // IKI NOKTALI GORUNUS: derinlik dilimi disindakileri at (GDI yolu;
+    // ikincil pencereler GL backend kullanmaz).
+    if (draft.viewSlab && !glWireframeSkip) {
+        const auto& allBounds = document.modelBounds();
+        std::vector<std::size_t> inSlab;
+        inSlab.reserve(visibleModels.size());
+        for (const auto index : visibleModels)
+            if (index < allBounds.size() && boundsInViewSlab(allBounds[index], *draft.viewSlab))
+                inSlab.push_back(index);
+        visibleModels = std::move(inSlab);
+        performance.visibleEntities = visibleModels.size();
+    }
+
     // Z-depth clipping: filter visible models to workplane range
     if (draft.depthClipEnabled && draft.resultsLoaded && draft.resultView > 0) {
         std::vector<std::size_t> clipped;
@@ -1234,6 +1247,10 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         for (std::size_t index = 0; index < document.models().size(); ++index) {
             const auto& model = document.models()[index];
             if (!model.isPointEntity() || model.vertices().empty()) continue;
+            if (draft.viewSlab) {
+                const Vec3 p = model.vertices().front();
+                if (!boundsInViewSlab(Bounds3{p, p}, *draft.viewSlab)) continue;
+            }
             const auto& properties = document.effectiveProperties(index);
             if (!properties.visible) continue;
             const POINT p = projectPoint(model.vertices().front());
@@ -1410,7 +1427,7 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         // PROFIL UC TUTAMAKLARI (grip edit): yalniz SECILI profilli katilarin
         // iki ucuna sari (from) ve mor (to) tutamak cizilir (kullanici istegi:
         // noktalar sadece seciliyken gorunur). View3D'de; tabana gomulur.
-        if (mode == EditMode::View3D && !draft.snapOnly) {
+        if (mode == EditMode::View3D && !draft.snapOnly && !draft.viewSlab) {
             for (const std::size_t gi : draft.selectedModels) {
                 if (gi >= document.models().size()) continue;
                 const auto& gm = document.models()[gi];

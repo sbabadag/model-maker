@@ -10,6 +10,8 @@
 #include "model_maker/application.hpp"
 
 class QComboBox;
+class QMdiArea;
+class QMdiSubWindow;
 
 namespace mm {
 
@@ -32,9 +34,14 @@ private:
     void createToolbar();
     void createDockPanels();
     void resizeEmbeddedCanvas();
+    void openTwoPointView(const ViewDefinition& view);
+    void closeAllTwoPointViews();
 
     Application app_;
     QWidget* canvasContainer_{};
+    QMdiArea* mdiArea_{};
+    QMdiSubWindow* modelSubWindow_{}; // ana model gorunusu (kapatilamaz)
+    int twoPointViewCounter_{};
     QComboBox* profileSelector_{};
     bool profileUiLogged_{};
     bool startupDefaultsApplied_{}; // GL + 3B + Solid bir kez, ilk show'da

@@ -282,6 +282,20 @@ void Camera::setView(StandardView view) noexcept {
     }
 }
 
+void Camera::setViewBasis(const Vec3& right, const Vec3& up, const Vec3& center) noexcept {
+    // R satirlari = dunyada kamera eksenleri: satir0 = ekran saga, satir1 =
+    // ekran yukari, satir2 = izleyiciye dogru (right x up). orthonormalize
+    // satir2'yi capraz carpimdan kurar -> her zaman proper (det=+1).
+    std::array<double, 9> r{right.x, right.y, right.z, up.x, up.y, up.z, 0.0, 0.0, 0.0};
+    const double rl = rowLen(r, 0);
+    if (!(rl > 1e-12)) return;
+    const double cosAngle = (r[0] * r[3] + r[1] * r[4] + r[2] * r[5]) / (rl * std::max(rowLen(r, 1), 1e-300));
+    if (!(rowLen(r, 1) > 1e-12) || std::abs(cosAngle) > 1.0 - 1e-9) return; // paralel / sifir
+    orthonormalize(r);
+    R_ = r;
+    center3D_ = center;
+}
+
 double Camera::yaw() const noexcept {
     double y{}, p{}, r{};
     decompose(y, p, r);

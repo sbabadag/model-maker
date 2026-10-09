@@ -5,6 +5,7 @@
 #include "model_maker/drafting.hpp"
 #include "model_maker/performance.hpp"
 #include "model_maker/render_backend.hpp"
+#include "model_maker/view_definition.hpp"
 
 #include <windows.h>
 #include <chrono>
@@ -267,6 +268,9 @@ struct DraftView {
     Vec3 gumballAxisX{1, 0, 0};
     Vec3 gumballAxisY{0, 1, 0};
     Vec3 gumballAxisZ{0, 0, 1};
+    // IKI NOKTALI GORUNUS penceresi: yalniz bu derinlik dilimindeki modeller
+    // cizilir (nullptr = filtre yok — ana gorunus).
+    const ViewDefinition* viewSlab{nullptr};
 };
 
 class Renderer {

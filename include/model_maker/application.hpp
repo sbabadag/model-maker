@@ -9,6 +9,7 @@
 #include "model_maker/render_backend.hpp"
 #include "model_maker/renderer.hpp"
 #include "model_maker/ribbon_layout.hpp"
+#include "model_maker/view_definition.hpp"
 #include "model_maker/view_cube_renderer.hpp"
 
 #include <windows.h>
@@ -170,6 +171,17 @@ public:
     IRenderBackend* activeRenderBackend() noexcept { return renderBackend_.get(); }
 
     void startWorkPlaneCommand();
+    // IKI NOKTALI GORUNUS (Tekla): iki nokta secilir (snap/track aktif);
+    // ikinci noktada ViewDefinition uretilip twoPointViewCallback_ cagrilir
+    // (Qt yeni MDI penceresi acar). Esc/sag tik iptal.
+    void startTwoPointViewCommand();
+    void setTwoPointViewCallback(std::function<void(const ViewDefinition&)> callback) {
+        twoPointViewCallback_ = std::move(callback);
+    }
+    // Ikincil gorunus pencereleri icin salt-okunur erisim.
+    const Document& document() const noexcept { return document_; }
+    const std::vector<std::size_t>& selectedModelIndices() const noexcept { return selectedModels_; }
+    VisualStyle visualStyle() const noexcept { return visualStyle_; }
     void cancelWorkPlaneCommand();
     void commitWorkPlanePoint(const Vec3& point);
     void resetWorkPlane();
@@ -568,6 +580,10 @@ private:
     WorkPlane workPlane_{};
     bool workPlanePicking_{};
     std::vector<Vec3> workPlanePoints_;
+    // workPlanePicking_ akisinin amaci: 3 nokta duzlem veya 2 nokta gorunus.
+    enum class PointPickPurpose { WorkPlane, TwoPointView };
+    PointPickPurpose pointPickPurpose_{PointPickPurpose::WorkPlane};
+    std::function<void(const ViewDefinition&)> twoPointViewCallback_;
     std::wstring input_;
     std::vector<std::wstring> commandHistory_;
     std::size_t commandHistoryIndex_{};

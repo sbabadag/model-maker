@@ -40,6 +40,10 @@ public:
                double marginPixels = 40.0) noexcept;
     void reset() noexcept;
     void setView(StandardView view) noexcept;
+    // Keyfi gorunus tabani: ekran saga = right, ekran yukari = up (dunya
+    // vektorleri; ortonormalize edilir), merkez = center. Iki noktali
+    // gorunus (Tekla) bunu kullanir. Gecersiz (paralel/sifir) girdide no-op.
+    void setViewBasis(const Vec3& right, const Vec3& up, const Vec3& center) noexcept;
 
     // Euler acilari artik TURETILMIS degerlerdir (her cagride matristen
     // ayristirilir) — yalnizca test/durum gosterimi icin.

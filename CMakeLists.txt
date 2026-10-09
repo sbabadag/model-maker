@@ -40,6 +40,8 @@ target_compile_options(model_maker_core PRIVATE -Wall -Wextra -Wpedantic)
 set(MODELMAKER_QT_SOURCES
     src/qt_main_window.cpp
     include/model_maker/qt_main_window.hpp
+    src/two_point_view.cpp
+    include/model_maker/two_point_view.hpp
     src/opengl_render_backend.cpp
     include/model_maker/opengl_render_backend.hpp)
 set(MODELMAKER_QT_MISSING "")
@@ -48,7 +50,7 @@ foreach(qt_file ${MODELMAKER_QT_SOURCES})
         list(APPEND MODELMAKER_QT_MISSING "${qt_file}")
     endif()
 endforeach()
-if(Qt6_FOUND AND MODELMAKER_QT_MISSING STREQUAL "")
+if(WIN32 AND Qt6_FOUND AND MODELMAKER_QT_MISSING STREQUAL "") # GUI Win32+GDI: yalniz Windows
     add_executable(model-maker
         src/main.cpp
         src/application.cpp
@@ -99,7 +101,7 @@ if(Qt6_FOUND AND MODELMAKER_QT_MISSING STREQUAL "")
         message(STATUS "3Dconnexion SpaceMouse SDK bulunamadi (third_party/3dxware) — SpaceMouse kapali")
     endif()
 else()
-    message(WARNING "Qt6 not found or Qt sources missing (${MODELMAKER_QT_MISSING}) - "
+    message(WARNING "Not Windows, Qt6 not found or Qt sources missing (${MODELMAKER_QT_MISSING}) - "
                     "skipping the model-maker executable; core library, tests and "
                     "benchmarks still build.")
 endif()
@@ -216,11 +218,18 @@ if(BUILD_TESTING)
             add_test(NAME model_maker_gumball_interaction
                 COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_gumball_interaction.py
                     ${CMAKE_CURRENT_BINARY_DIR})
+            add_test(NAME model_maker_two_point_view
+                COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_two_point_view.py
+                    ${CMAKE_CURRENT_BINARY_DIR})
             add_test(NAME model_maker_startup_gpu
                 COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_startup_gpu.py
                     ${CMAKE_CURRENT_BINARY_DIR})
         endif()
     endif()
+
+    add_executable(model_maker_view_definition_test tests/view_definition_test.cpp)
+    target_link_libraries(model_maker_view_definition_test PRIVATE model_maker_core)
+    add_test(NAME model_maker_view_definition_test COMMAND model_maker_view_definition_test)
 
     add_executable(model_maker_color_contrast_test tests/color_contrast_test.cpp)
     target_include_directories(model_maker_color_contrast_test PRIVATE include)

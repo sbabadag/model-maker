@@ -2751,8 +2751,15 @@ void Application::startWorkPlaneCommand() {
     invalidateCanvas();
 }
 
+void Application::startTwoPointViewCommand() {
+    startWorkPlaneCommand(); // ayni secim akisi: snap + track + kesik onizleme
+    pointPickPurpose_ = PointPickPurpose::TwoPointView;
+    updateStatus();
+}
+
 void Application::cancelWorkPlaneCommand() {
     workPlanePicking_ = false;
+    pointPickPurpose_ = PointPickPurpose::WorkPlane;
     workPlanePoints_.clear();
     hover_.reset();
     clearTemporaryTracking();
@@ -2806,6 +2813,25 @@ void Application::activateDivide() {
 }
 
 void Application::commitWorkPlanePoint(const Vec3& point) {
+    if (pointPickPurpose_ == PointPickPurpose::TwoPointView) {
+        if (!std::isfinite(point.x) || !std::isfinite(point.y) || !std::isfinite(point.z)) {
+            MessageBeep(MB_ICONWARNING);
+            return;
+        }
+        workPlanePoints_.push_back(point);
+        if (workPlanePoints_.size() < 2) return;
+        const auto view = viewFromTwoPoints(workPlanePoints_[0], workPlanePoints_[1]);
+        if (!view) {
+            // Ayni nokta / dusey cift: yon tanimsiz -> 2. noktayi yeniden iste.
+            workPlanePoints_.pop_back();
+            MessageBeep(MB_ICONWARNING);
+            publishStatus(L"Görünüş: iki nokta XY düzleminde farklı olmalı — 2. noktayı yeniden seçin");
+            return;
+        }
+        cancelWorkPlaneCommand();
+        if (twoPointViewCallback_) twoPointViewCallback_(*view);
+        return;
+    }
     workPlanePoints_.push_back(point);
     if (workPlanePoints_.size() < 3) return;
     if (const auto plane = WorkPlane::fromThreePoints(workPlanePoints_[0], workPlanePoints_[1],
@@ -3851,7 +3877,11 @@ void Application::updateStatus() {
             }
         }
     }
-    if (workPlanePicking_) {
+    if (workPlanePicking_ && pointPickPurpose_ == PointPickPurpose::TwoPointView) {
+        text += L"  |  2 NOKTALI GÖRÜNÜŞ — ";
+        text += workPlanePoints_.empty() ? L"1. noktayı belirtin (görünüş solu)"
+                                         : L"2. noktayı belirtin (görünüş sağı)";
+    } else if (workPlanePicking_) {
         text += L"  |  WORK PLANE — ";
         if (workPlanePoints_.empty()) text += L"1. noktayı belirtin";
         else if (workPlanePoints_.size() == 1) text += L"2. noktayı belirtin (U ekseni)";

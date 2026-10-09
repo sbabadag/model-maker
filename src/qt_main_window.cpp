@@ -1,7 +1,11 @@
 #include "model_maker/qt_main_window.hpp"
 #include "model_maker/drafting.hpp"
+#include "model_maker/two_point_view.hpp"
 
 #include <QApplication>
+#include <QMdiArea>
+#include <QMdiSubWindow>
+#include <QCloseEvent>
 #include <QMenu>
 #include <QToolButton>
 #include <QLabel>
@@ -249,10 +253,30 @@ QtMainWindow::QtMainWindow(QWidget* parent)
         out = text.toStdWString();
         return true;
     });
+    // Iki noktali gorunus: Application iki noktayi secince yeni MDI penceresi.
+    // Kuyruklanir: secim fare olayi isleyicisinin icinden donmeden pencere
+    // olusturulmasin (yeniden giris / odak sorunlari olmasin).
+    app_.setTwoPointViewCallback([this](const ViewDefinition& view) {
+        QTimer::singleShot(0, this, [this, view]() { openTwoPointView(view); });
+    });
 
-    // Create a plain widget for central area — fills all space between docks
-    canvasContainer_ = new QWidget(this);
-    setCentralWidget(canvasContainer_);
+    // MDI: merkez alan QMdiArea; ana model gorunusu kapatilamaz bir alt
+    // pencere, iki noktali gorunusler yanina yeni alt pencereler olarak acilir.
+    // SIRA KRITIK: canvasContainer_ alt pencereye winId()'den ONCE yerlesir —
+    // native bir widget sonradan yeniden ebeveynlenirse Qt HWND'sini yeniden
+    // olusturabilir ve icine SetParent ile gomulu Win32 canvas yok olur.
+    mdiArea_ = new QMdiArea(this);
+    mdiArea_->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    mdiArea_->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    mdiArea_->setBackground(QBrush(QColor(45, 45, 48)));
+    setCentralWidget(mdiArea_);
+    canvasContainer_ = new QWidget;
+    modelSubWindow_ = mdiArea_->addSubWindow(canvasContainer_,
+        Qt::SubWindow | Qt::WindowTitleHint | Qt::WindowMinMaxButtonsHint);
+    modelSubWindow_->setWindowTitle(QStringLiteral("Model (3B)"));
+    modelSubWindow_->setOption(QMdiSubWindow::RubberBandResize, true);
+    modelSubWindow_->installEventFilter(this); // kapatma engeli
+    modelSubWindow_->showMaximized();
     canvasContainer_->installEventFilter(this);
 
     // Create Application's window, then embed its canvas
@@ -284,7 +308,43 @@ QtMainWindow::QtMainWindow(QWidget* parent)
     });
 }
 
-QtMainWindow::~QtMainWindow() = default;
+QtMainWindow::~QtMainWindow() {
+    // app_ (uye) alt pencerelerden ONCE yok edilir (QWidget cocuklari taban
+    // sinif yikicisinda silinir). Gorunusleri belgeden simdi ayir.
+    if (mdiArea_) {
+        for (QMdiSubWindow* sub : mdiArea_->subWindowList())
+            if (auto* view = qobject_cast<QWidget*>(sub->widget()))
+                if (auto* tpv = dynamic_cast<TwoPointViewWidget*>(view)) tpv->detach();
+    }
+}
+
+void QtMainWindow::openTwoPointView(const ViewDefinition& definition) {
+    if (!mdiArea_) return;
+    ViewDefinition view = definition;
+    view.name = L"Görünüş " + std::to_wstring(++twoPointViewCounter_);
+    auto* widget = new TwoPointViewWidget(app_, view);
+    QMdiSubWindow* sub = mdiArea_->addSubWindow(widget);
+    sub->setAttribute(Qt::WA_DeleteOnClose);
+    sub->setWindowTitle(QString::fromStdWString(view.name) +
+                        QStringLiteral("  —  %1 mm, XY'ye dik").arg(std::lround(view.length)));
+    // Ana gorunus tam ekransa yan yana dose (Tekla gibi iki gorunus birlikte).
+    const bool modelMaximized = modelSubWindow_ && modelSubWindow_->isMaximized();
+    if (modelMaximized) modelSubWindow_->showNormal();
+    sub->resize(720, 480);
+    sub->show();
+    if (modelMaximized) mdiArea_->tileSubWindows();
+    mdiArea_->setActiveSubWindow(sub);
+    widget->setFocus();
+    QTimer::singleShot(0, widget, [widget]() { widget->fitView(); });
+    statusBar()->showMessage(QString::fromStdWString(view.name) + QStringLiteral(" açıldı"), 4000);
+}
+
+void QtMainWindow::closeAllTwoPointViews() {
+    if (!mdiArea_) return;
+    for (QMdiSubWindow* sub : mdiArea_->subWindowList())
+        if (sub != modelSubWindow_) sub->close();
+    if (modelSubWindow_) modelSubWindow_->showMaximized();
+}
 
 void QtMainWindow::resizeEvent(QResizeEvent* event) {
     QMainWindow::resizeEvent(event);
@@ -338,6 +398,11 @@ void QtMainWindow::showEvent(QShowEvent* event) {
 bool QtMainWindow::eventFilter(QObject* watched, QEvent* event) {
     if (watched == canvasContainer_ && event->type() == QEvent::Resize)
         resizeEmbeddedCanvas();
+    // Ana model alt penceresi kapatilamaz (Ctrl+F4 / sistem menusu dahil).
+    if (watched == modelSubWindow_ && event->type() == QEvent::Close) {
+        event->ignore();
+        return true;
+    }
     return QMainWindow::eventFilter(watched, event);
 }
 
@@ -417,6 +482,20 @@ void QtMainWindow::createMenus() {
     viewMenu->addSeparator();
     viewMenu->addAction("Çalışma &Düzlemi (3 Nokta)", this, [this]() { app_.startWorkPlaneCommand(); })->setIcon(makeToolIcon(ToolGlyph::Plane));
     viewMenu->addAction("Düzlemi &Sıfırla (Dünya)", this, [this]() { app_.resetWorkPlane(); })->setIcon(makeToolIcon(ToolGlyph::Reset));
+    viewMenu->addSeparator();
+    QAction* twoPointAction = viewMenu->addAction("&2 Noktalı Görünüş (XY'ye dik)", this,
+        [this]() { app_.startTwoPointViewCommand(); });
+    twoPointAction->setIcon(makeToolIcon(ToolGlyph::Plane));
+    twoPointAction->setShortcut(QKeySequence(QStringLiteral("Ctrl+Shift+V")));
+
+    QMenu* windowMenu = menuBar()->addMenu("&Pencere");
+    windowMenu->addAction("&Döşe", this, [this]() { if (mdiArea_) mdiArea_->tileSubWindows(); });
+    windowMenu->addAction("&Basamakla", this, [this]() { if (mdiArea_) mdiArea_->cascadeSubWindows(); });
+    windowMenu->addAction("&Model görünüşünü büyüt", this, [this]() {
+        if (modelSubWindow_) { modelSubWindow_->showMaximized(); mdiArea_->setActiveSubWindow(modelSubWindow_); }
+    });
+    windowMenu->addSeparator();
+    windowMenu->addAction("Tüm görünüşleri &kapat", this, [this]() { closeAllTwoPointViews(); });
     viewMenu->addSeparator();
     viewMenu->addAction("&Yapı Gridi Oluştur...", this, [this]() { promptCreateGrid(); });
     viewMenu->addSeparator();
@@ -582,6 +661,7 @@ void QtMainWindow::createToolbar() {
     addViewBtn(ToolGlyph::Extents,  "Extents", [this]() { app_.zoomExtents2D(); });
     addViewBtn(ToolGlyph::Plane,    "Düzlem",  [this]() { app_.startWorkPlaneCommand(); });
     addViewBtn(ToolGlyph::Reset,    "Sıfırla", [this]() { app_.resetWorkPlane(); });
+    addViewBtn(ToolGlyph::Plane,    "2N Görünüş", [this]() { app_.startTwoPointViewCommand(); });
     viewLayout->addStretch();
     tabs->addTab(viewTab, "Görünüm");
 
