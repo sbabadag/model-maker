@@ -1660,7 +1660,8 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         draft.drawingActive, draft.workPlanePicking, draft.transformCommand, draft.transformPhase,
         draft.arrayItemCount.has_value(), draft.offsetDistance.has_value());
 
-    if (drafting && draft.polarTrackingEnabled && !draft.temporaryTrackingPoints.empty()) {
+    if ((drafting || draft.gripMoveActive) && draft.polarTrackingEnabled &&
+        !draft.temporaryTrackingPoints.empty()) {
         const COLORREF trackingColor = RGB(80, 225, 255);
         HPEN trackingPen = CreatePen(PS_DOT, 1, trackingColor);
         SelectObject(dc, trackingPen);
@@ -1706,6 +1707,7 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
             ? draft.transformBase : draft.anchor;
         if (!polarAnchor && draft.workPlanePicking && !draft.workPlanePoints.empty())
             polarAnchor = draft.workPlanePoints.back();
+        if (draft.gripMoveActive) polarAnchor = draft.gripTrackFrom;
         if (polarAnchor) {
             const POINT from = projectPoint(*polarAnchor);
             const POINT through = projectPoint(*draft.cursor);
@@ -1728,10 +1730,12 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
 
     // 3B ORTHO: dunya X/Y/Z eksen guide'lari — aktif eksen dolu cizgi,
     // digerleri noktali. Renkler: X=kirmizi, Y=yesil, Z=mavi.
-    if (draft.orthoEnabled && mode == EditMode::View3D && draft.anchor && draft.cursor) {
-        const POINT origin = projectPoint(*draft.anchor);
+    if (draft.orthoEnabled && mode == EditMode::View3D &&
+        (draft.anchor || draft.gripMoveActive) && draft.cursor) {
+        const Vec3 guideOrigin = draft.gripMoveActive ? draft.gripTrackFrom : *draft.anchor;
+        const POINT origin = projectPoint(guideOrigin);
         const auto axisGuideDir = [&](const Vec3& axis) {
-            const POINT end = projectPoint(*draft.anchor + axis);
+            const POINT end = projectPoint(guideOrigin + axis);
             double dx = static_cast<double>(end.x - origin.x);
             double dy = static_cast<double>(end.y - origin.y);
             const double len = std::hypot(dx, dy);

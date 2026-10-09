@@ -1561,6 +1561,7 @@ void Application::onLeftButtonDown(int x, int y) {
             profileGrip_->fixedPoint = grip->second ? from : to;
             profileGrip_->trackFrom = grip->second ? to : from;
             profileGrip_->cursorPoint = profileGrip_->trackFrom;
+            clearTemporaryTracking();
             publishStatus(L"Move modu aktif — tasima baslangic noktasini secin (1. tik)");
         } else {
             profileGrip_.reset();
@@ -1867,10 +1868,9 @@ void Application::onMouseMove(int x, int y, WPARAM buttons) {
     bool redraw = false;
     bool snapRedraw = false;
     if (profileGrip_ && mode_ == EditMode::View3D) {
-        // Move modunda track line + snap: baz -> imlec canli takip.
-        const SnapResult snap = profileGripSnap(x, y);
-        hover_ = snap;
-        profileGrip_->cursorPoint = snap.point;
+        // Move modunda track line + snap + tracking guide'lar: updateHover
+        // tam snap/tracking/ortho/polar hattini calistirir (hover_ + cursorPoint).
+        updateHover(x, y);
         KillTimer(window_, 4);
         snapPreviewActive_ = true;
         invalidateCanvas();
@@ -3002,7 +3002,7 @@ void Application::updateHover(int x, int y) {
     cursorScreen_ = {x, y};
     polarTrackingLocked_ = false;
     temporaryTrackingLocked_ = false;
-    const bool snapCommandActive = workPlanePicking_ ||
+    const bool snapCommandActive = workPlanePicking_ || profileGrip_.has_value() ||
         commandAllowsSnapping(drawingActive_, transformCommand_, transformPhase_,
                               arrayItemCount_.has_value(), offsetDistance_.has_value());
     if (!snapCommandActive) {
@@ -3048,7 +3048,8 @@ void Application::updateHover(int x, int y) {
         RECT client{}; GetClientRect(canvas_, &client);
         const int width = std::max(1L, client.right);
         const int height = std::max(1L, client.bottom);
-        const auto reference = transformPhase_ == TransformPhase::Destination ? transformBase_ : anchor_;
+        const auto reference = profileGrip_ ? gripReferencePoint()
+            : (transformPhase_ == TransformPhase::Destination ? transformBase_ : anchor_);
         WorkPlane activePlane = workPlane_;
         if (reference && !workPlanePicking_) activePlane.origin = *reference;
         // 3B grid snap: CUSTOM yapi akslarina (milimetrik adaptif yok).
@@ -3089,7 +3090,8 @@ void Application::updateHover(int x, int y) {
         polarTrackingLocked_ = tracking.locked;
         temporaryTrackingLocked_ = tracking.locked;
     }
-    auto orthoAnchor = transformPhase_ == TransformPhase::Destination ? transformBase_ : anchor_;
+    auto orthoAnchor = profileGrip_ ? gripReferencePoint()
+        : (transformPhase_ == TransformPhase::Destination ? transformBase_ : anchor_);
     if (!orthoAnchor && workPlanePicking_ && !workPlanePoints_.empty())
         orthoAnchor = workPlanePoints_.back();
     if (orthoEnabled_ && orthoAnchor && hover_) {
@@ -3132,6 +3134,7 @@ void Application::updateHover(int x, int y) {
             : applyPolarTracking(*orthoAnchor, *hover_, 90.0, 12.0, true);
         polarTrackingLocked_ = hover_->point != original.point;
     }
+    if (profileGrip_ && hover_) profileGrip_->cursorPoint = hover_->point;
 }
 
 void Application::executeCommand(int id) {
@@ -4779,24 +4782,16 @@ std::optional<std::pair<std::size_t, bool>> Application::profileGripAt(int x, in
     return best;
 }
 
-SnapResult Application::profileGripSnap(int x, int y) const {
-    if (!profileGrip_ || profileGrip_->solidIndex >= document_.models().size()) return {};
+std::optional<Vec3> Application::gripReferencePoint() const {
+    if (!profileGrip_) return std::nullopt;
+    if (profileGrip_->basePicked) return profileGrip_->basePoint;
+    if (profileGrip_->solidIndex >= document_.models().size()) return std::nullopt;
     const auto& m = document_.models()[profileGrip_->solidIndex];
     const Vec3 from{m.properties().axisFromX, m.properties().axisFromY,
                     m.properties().axisFromZ};
     const Vec3 to{m.properties().axisToX, m.properties().axisToY,
                   m.properties().axisToZ};
-    const Vec3 movingEnd = profileGrip_->endIsTo ? to : from;
-    const Vec3 reference = profileGrip_->basePicked ? profileGrip_->basePoint : movingEnd;
-    RECT client{};
-    GetClientRect(canvas_, &client);
-    WorkPlane activePlane = workPlane_;
-    activePlane.origin = reference;
-    return SnapEngine::snap3D(
-        {static_cast<double>(x), static_cast<double>(y)}, document_, camera_,
-        std::max(1L, client.right), std::max(1L, client.bottom), 10.0, activePlane,
-        snapEnabled_, gridSnapEnabled_, reference, &enabledSnapTypes_,
-        visualStyle_ == VisualStyle::Solid);
+    return profileGrip_->endIsTo ? to : from;
 }
 
 void Application::profileGripClick(int x, int y) {
@@ -4804,17 +4799,22 @@ void Application::profileGripClick(int x, int y) {
     const ProfileGrip grip = *profileGrip_;
     if (grip.solidIndex >= document_.models().size()) {
         profileGrip_.reset();
+        hover_.reset();
+        clearTemporaryTracking();
         invalidateCanvas();
         return;
     }
-    const SnapResult snapped = profileGripSnap(x, y);
+    // Snap + tracking: updateHover grip referansiyla (basePicked'e gore)
+    // hesap eder; hover_ snap/tracking/ortho/polar sonucudur.
+    updateHover(x, y);
+    const Vec3 snappedPoint = hover_ ? hover_->point : Vec3{};
 
     if (!grip.basePicked) {
         // 1. tik: tasima baslangici (baz noktasi). Track line artik bazdan.
         profileGrip_->basePicked = true;
-        profileGrip_->basePoint = snapped.point;
-        profileGrip_->trackFrom = snapped.point;
-        profileGrip_->cursorPoint = snapped.point;
+        profileGrip_->basePoint = snappedPoint;
+        profileGrip_->trackFrom = snappedPoint;
+        profileGrip_->cursorPoint = snappedPoint;
         publishStatus(L"Hedef noktayi secin (2. tik) — profil o vektorle tasinacak");
         updateStatus();
         invalidateCanvas();
@@ -4827,10 +4827,11 @@ void Application::profileGripClick(int x, int y) {
     const Vec3 to{m.properties().axisToX, m.properties().axisToY,
                   m.properties().axisToZ};
     const Vec3 movingEnd = grip.endIsTo ? to : from;
-    const Vec3 displacement = snapped.point - grip.basePoint;
+    const Vec3 displacement = snappedPoint - grip.basePoint;
     const Vec3 newMovingEnd = movingEnd + displacement;
     profileGrip_.reset();
     hover_.reset();
+    clearTemporaryTracking();
 #ifdef MM_HAS_OCC
     reExtrudeProfileGrip(grip.solidIndex, grip.endIsTo, newMovingEnd);
 #else
@@ -4842,6 +4843,7 @@ void Application::profileGripClick(int x, int y) {
 void Application::cancelProfileGrip() {
     profileGrip_.reset();
     hover_.reset();
+    clearTemporaryTracking();
     invalidateCanvas();
 }
 
