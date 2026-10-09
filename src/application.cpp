@@ -1408,6 +1408,21 @@ LRESULT Application::handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lPa
         else if (wParam == 'N' && (GetKeyState(VK_CONTROL) & 0x8000)) newDocument();
         else if (wParam == 'O' && (GetKeyState(VK_CONTROL) & 0x8000)) openDocument();
         else if (wParam == 'S' && (GetKeyState(VK_CONTROL) & 0x8000)) saveDocument();
+        // STANDART GORUNUSLER: Ctrl+1..7 = On/Arka/Sol/Sag/Ust/Alt/ISO.
+        else if (wParam == '1' && (GetKeyState(VK_CONTROL) & 0x8000))
+            setStandardView(StandardView::Front);
+        else if (wParam == '2' && (GetKeyState(VK_CONTROL) & 0x8000))
+            setStandardView(StandardView::Back);
+        else if (wParam == '3' && (GetKeyState(VK_CONTROL) & 0x8000))
+            setStandardView(StandardView::Left);
+        else if (wParam == '4' && (GetKeyState(VK_CONTROL) & 0x8000))
+            setStandardView(StandardView::Right);
+        else if (wParam == '5' && (GetKeyState(VK_CONTROL) & 0x8000))
+            setStandardView(StandardView::Top);
+        else if (wParam == '6' && (GetKeyState(VK_CONTROL) & 0x8000))
+            setStandardView(StandardView::Bottom);
+        else if (wParam == '7' && (GetKeyState(VK_CONTROL) & 0x8000))
+            setStandardView(StandardView::Isometric);
         else if (wParam == 'L') selectTool(DrawTool::Line);
         else if (wParam == 'P') selectTool(DrawTool::Polyline);
         else if (wParam == 'A') selectTool(DrawTool::Rectangle);
@@ -1872,7 +1887,7 @@ void Application::onMouseMove(int x, int y, WPARAM buttons) {
         const int dx = x - lastMouse_.x;
         const int dy = y - lastMouse_.y;
         if (dx != 0 || dy != 0) {
-            camera_.rotate(dx * 0.008, dy * 0.008);
+            camera_.rotate(-dx * 0.008, dy * 0.008);
             viewCubeDragged_ = true;
             lastMouse_ = {x, y};
             if (drawingActive_) updateHover(x, y);
@@ -1887,7 +1902,9 @@ void Application::onMouseMove(int x, int y, WPARAM buttons) {
             // akici ve dengeli hissettirir.
             rotSmoothedDx_ += (static_cast<double>(dx) - rotSmoothedDx_) * 0.5;
             rotSmoothedDy_ += (static_cast<double>(dy) - rotSmoothedDy_) * 0.5;
-            camera_.rotate(rotSmoothedDx_ * 0.008, rotSmoothedDy_ * 0.008);
+            // Yatay (yaw) isareti: saga surukle = sag taraf gelir (Tekla
+            // yonu). Dikey (pitch) standart: yukari surukle = ustten bak.
+            camera_.rotate(-rotSmoothedDx_ * 0.008, rotSmoothedDy_ * 0.008);
             lastMouse_ = {x, y};
             if (drawingActive_) updateHover(x, y);
             redraw = true;
@@ -2460,9 +2477,16 @@ void Application::setStandardView(StandardView view) {
     if (workPlanePicking_) cancelWorkPlaneCommand();
     if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
     cancelDrawing();
+    profileGrip_.reset();
+    hover_.reset();
     camera_.setView(view);
     mode_ = EditMode::View3D;
     drawingActive_ = false;
+    ensureSpaceMouseStarted();
+    updateHover(cursorScreen_.x, cursorScreen_.y);
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
 }
 
 void Application::zoomExtents2D() {

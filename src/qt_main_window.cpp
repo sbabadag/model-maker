@@ -379,6 +379,25 @@ void QtMainWindow::createMenus() {
     viewMenu->addAction("Zoom &Window", this, [this]() { app_.startZoomWindow2D(); })->setIcon(makeToolIcon(ToolGlyph::Extents));
     viewMenu->addAction("2&B / 3B", this, [this]() { app_.toggle3DView(); })->setIcon(makeToolIcon(ToolGlyph::Toggle3D));
     viewMenu->addSeparator();
+    // STANDART GORUNUSLER: On/Arka/Sol/Sag/Ust/Alt/ISO (kisayollar Ctrl+1..7).
+    QMenu* viewDirMenu = viewMenu->addMenu("Görü&nüş");
+    viewDirMenu->addAction("Ön&den", this, [this]() { app_.setStandardView(StandardView::Front); })
+        ->setShortcut(QKeySequence(QStringLiteral("Ctrl+1")));
+    viewDirMenu->addAction("Ar&kadan", this, [this]() { app_.setStandardView(StandardView::Back); })
+        ->setShortcut(QKeySequence(QStringLiteral("Ctrl+2")));
+    viewDirMenu->addAction("&Sol", this, [this]() { app_.setStandardView(StandardView::Left); })
+        ->setShortcut(QKeySequence(QStringLiteral("Ctrl+3")));
+    viewDirMenu->addAction("&Sağ", this, [this]() { app_.setStandardView(StandardView::Right); })
+        ->setShortcut(QKeySequence(QStringLiteral("Ctrl+4")));
+    viewDirMenu->addSeparator();
+    viewDirMenu->addAction("Üs&t", this, [this]() { app_.setStandardView(StandardView::Top); })
+        ->setShortcut(QKeySequence(QStringLiteral("Ctrl+5")));
+    viewDirMenu->addAction("Al&t", this, [this]() { app_.setStandardView(StandardView::Bottom); })
+        ->setShortcut(QKeySequence(QStringLiteral("Ctrl+6")));
+    viewDirMenu->addSeparator();
+    viewDirMenu->addAction("&İzometrik", this, [this]() { app_.setStandardView(StandardView::Isometric); })
+        ->setShortcut(QKeySequence(QStringLiteral("Ctrl+7")));
+    viewMenu->addSeparator();
     viewMenu->addAction("Çalışma &Düzlemi (3 Nokta)", this, [this]() { app_.startWorkPlaneCommand(); })->setIcon(makeToolIcon(ToolGlyph::Plane));
     viewMenu->addAction("Düzlemi &Sıfırla (Dünya)", this, [this]() { app_.resetWorkPlane(); })->setIcon(makeToolIcon(ToolGlyph::Reset));
     viewMenu->addSeparator();
