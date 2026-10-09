@@ -2161,19 +2161,20 @@ void Application::commitPoint(const Vec3& point) {
     case DrawTool::Face3D:
         break;
     case DrawTool::Divide: {
-        // DIVIDE: iki nokta arasini esit parcalara bol, ic noktalari yerlestir.
+        // DIVIDE: iki nokta arasina, girilen ADET kadar point objesi atar
+        // (esit aralikli; uclar haric). N adet -> t = 1/(N+1) .. N/(N+1).
         if (point != start) {
             pushUndoSnapshot();
             std::size_t placed = 0;
-            for (std::size_t i = 1; i < divideCount_; ++i) {
-                const double t = static_cast<double>(i) / static_cast<double>(divideCount_);
+            for (std::size_t i = 1; i <= divideCount_; ++i) {
+                const double t = static_cast<double>(i) / static_cast<double>(divideCount_ + 1);
                 auto pt = WireframeModel::point(start + (point - start) * t);
                 pt.setProperties(currentEntityProperties());
                 document_.addModel(std::move(pt));
                 ++placed;
             }
             publishStatus(L"Bölme: " + std::to_wstring(placed) + L" nokta yerleştirildi (" +
-                          std::to_wstring(divideCount_) + L" eşit parça)");
+                          std::to_wstring(divideCount_) + L" adet)");
         }
         anchor_.reset();
         break;
@@ -2654,7 +2655,7 @@ std::optional<std::size_t> Application::requestCountParameter(const std::wstring
 }
 
 void Application::activateDivide() {
-    const auto count = requestCountParameter(L"Bölme sayısı (eşit parça, 2-1000)",
+    const auto count = requestCountParameter(L"Nokta sayısı (2-1000)",
                                              std::to_wstring(divideCount_));
     if (!count) return; // iptal
     divideCount_ = *count;
@@ -3768,7 +3769,7 @@ void Application::updateStatus() {
         if (tool_ == DrawTool::Face3D)
             text += L" — " + std::to_wstring(facePoints_.size() + 1) + L". köşeyi belirtin (4 köşe)";
         else if (tool_ == DrawTool::Divide)
-            text += L" — " + std::to_wstring(divideCount_) + L" eşit parça (rakam + Enter ile değiştir)";
+            text += L" — " + std::to_wstring(divideCount_) + L" nokta";
     }
     text += L"  |  Nesne: " + std::to_wstring(document_.models().size());
     const bool snapEffective = snapEnabled_ && (workPlanePicking_ ||
