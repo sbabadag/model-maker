@@ -4,6 +4,15 @@ set(QT_ROOT "C:/Qt/6.9.3/mingw_64" CACHE PATH "Qt6 root directory")
 
 project(ModelMaker VERSION 0.1.0 LANGUAGES CXX)
 
+# Elle -DOCC_ROOT yolunda (Windows) app NORMALDE OCC'ye baglanmaz; kopru
+# (mm_occ.dll, LoadLibrary) kullanilir. Ama OCC ve app AYNI toolchain ile
+# derleniyorsa (orn. hepsi MSYS2 ucrt64) dogrudan baglamak guvenli ve TAM
+# ozellik verir (profil ekstruzyonu dahil). Bu modda `-static` BIRAKILIR —
+# aksi halde ld, OCC'nin libTK*.dll.a import kutuphanelerini bulamaz
+# ("have you installed the static version of the TKernel library?").
+option(MM_OCC_LINK_DIRECT
+    "Link the manual -DOCC_ROOT OCC libs directly into the Qt app too (only when OCC and the app share one toolchain)" OFF)
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -52,7 +61,16 @@ if(Qt6_FOUND AND MODELMAKER_QT_MISSING STREQUAL "")
     target_include_directories(model-maker PRIVATE include)
     target_link_libraries(model-maker PRIVATE model_maker_core Qt6::Widgets Qt6::Core Qt6::Gui
         gdi32 comdlg32 comctl32 msimg32 opengl32 dwmapi)
-    target_link_options(model-maker PRIVATE -static -static-libgcc -static-libstdc++ -Wl,--subsystem,windows)
+    if(MM_OCC_LINK_DIRECT)
+        # OCC dogrudan baglanir: -static OLMAMALI — OCC'nin libTK*.dll.a
+        # import kutuphaneleri ancak dinamik modda cozulur. C++ runtime
+        # (libgcc/libstdc++) yine statik kalir; winpthread MSYS2 PATH'inden.
+        target_link_options(model-maker PRIVATE
+            -static-libgcc -static-libstdc++ -Wl,--subsystem,windows)
+    else()
+        target_link_options(model-maker PRIVATE
+            -static -static-libgcc -static-libstdc++ -Wl,--subsystem,windows)
+    endif()
     target_compile_definitions(model-maker PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX QT_NO_ENTRYPOINT)
     target_compile_options(model-maker PRIVATE -Wall -Wextra -Wpedantic)
 
@@ -128,13 +146,6 @@ endif()
 
 option(BUILD_OCC_BRIDGE_DLL
     "Build mm_occ.dll — the C-API bridge for the Qt app (use MSYS2 toolchain)" OFF)
-
-# Elle -DOCC_ROOT yolunda (Windows) app NORMALDE OCC'ye baglanmaz; kopru
-# (mm_occ.dll) kullanilir. Ama OCC ve app AYNI toolchain ile derleniyorsa
-# (orn. hepsi MSYS2 ucrt64) dogrudan baglamak guvenli ve tam ozellik verir.
-# Bu secenek yalnizca o durumda acilmalidir.
-option(MM_OCC_LINK_DIRECT
-    "Link the manual -DOCC_ROOT OCC libs directly into the Qt app too (only when OCC and the app share one toolchain)" OFF)
 
 if(MODELMAKER_OCC_READY)
     add_library(model_maker_occ src/occ_geometry.cpp)
