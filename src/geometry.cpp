@@ -254,6 +254,18 @@ void WireframeModel::translate(const Vec3& offset) noexcept {
     if (analyticCenter_) *analyticCenter_ = *analyticCenter_ + offset;
 }
 
+void WireframeModel::affineAbout(const Vec3& center, const std::array<double, 9>& m) noexcept {
+    const auto apply = [&](const Vec3& v) {
+        const Vec3 d = v - center;
+        return Vec3{center.x + m[0] * d.x + m[1] * d.y + m[2] * d.z,
+                    center.y + m[3] * d.x + m[4] * d.y + m[5] * d.z,
+                    center.z + m[6] * d.x + m[7] * d.y + m[8] * d.z};
+    };
+    for (auto& vertex : vertices_) vertex = apply(vertex);
+    if (insertionPoint_) *insertionPoint_ = apply(*insertionPoint_);
+    if (analyticCenter_) *analyticCenter_ = apply(*analyticCenter_);
+}
+
 void WireframeModel::rotateAroundZ(const Vec3& center, double radians) noexcept {
     const double cosine = std::cos(radians);
     const double sine = std::sin(radians);

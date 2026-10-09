@@ -2,6 +2,7 @@
 
 #include "model_maker/geometry.hpp"
 
+#include <array>
 #include <filesystem>
 #include <functional>
 #include <deque>
@@ -18,13 +19,18 @@ struct Bounds3 {
 };
 
 struct UndoOp {
-    enum class Kind { Add, Delete, Replace, Move };
+    enum class Kind { Add, Delete, Replace, Move, Transform };
     Kind kind{Kind::Add};
     std::size_t index{};
     std::vector<WireframeModel> beforeModels; // delete: silinenler; replace: eski model
     std::vector<WireframeModel> afterModels;  // add: eklenen; replace: yeni modeller
     std::vector<std::size_t> indices;         // delete (azalan) / move: etkilenen indeksler
     Vec3 displacement{};                      // move: uygulanan yer değiştirme
+    // Transform (rotate/scale gumball): v' = pivot + linear*(v - pivot).
+    // Undo/redo linearInverse ile uygulanir (tam tersinir).
+    Vec3 pivot{};
+    std::array<double, 9> linear{1, 0, 0, 0, 1, 0, 0, 0, 1};
+    std::array<double, 9> linearInverse{1, 0, 0, 0, 1, 0, 0, 0, 1};
 };
 struct UndoRecord {
     std::vector<UndoOp> ops;
@@ -55,6 +61,17 @@ public:
     void reserveModels(std::size_t count);
     void moveModels(const std::vector<std::size_t>& indices, const Vec3& displacement);
     void copyModels(const std::vector<std::size_t>& indices, const Vec3& displacement);
+    // Gumball rotate/scale: pivot etrafinda afin donusum (tek transform yolu).
+    // linear row-major 3x3; linearInverse tam tersi (undo icin).
+    void transformModels(const std::vector<std::size_t>& indices, const Vec3& pivot,
+                         const std::array<double, 9>& linear,
+                         const std::array<double, 9>& linearInverse);
+    // Kolaylik: pivot etrafinda axis (birim) ekseninde aci (radyan) kadar dondur.
+    void rotateModels(const std::vector<std::size_t>& indices, const Vec3& pivot,
+                      const Vec3& axis, double radians);
+    // Kolaylik: pivot etrafinda eksen-bazli olcekleme (factors.x/y/z).
+    void scaleModels(const std::vector<std::size_t>& indices, const Vec3& pivot,
+                     const Vec3& factors);
     std::size_t setModelLayer(const std::vector<std::size_t>& indices, const std::string& layer);
     std::size_t setModelColor(const std::vector<std::size_t>& indices,
                               std::optional<std::uint32_t> color);

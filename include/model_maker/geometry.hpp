@@ -110,6 +110,9 @@ public:
     void translate(const Vec3& offset) noexcept;
     void rotateAroundZ(const Vec3& center, double radians) noexcept;
     void rotateAroundAxis(const Vec3& center, const Vec3& axis, double radians) noexcept;
+    // Genel afin donusum: v -> center + M*(v - center); M row-major 3x3.
+    // Rotate/scale gumball'i bunu kullanir (tek transform yolu).
+    void affineAbout(const Vec3& center, const std::array<double, 9>& linear) noexcept;
 
 private:
     std::vector<Vec3> vertices_;

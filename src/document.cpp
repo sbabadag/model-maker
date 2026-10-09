@@ -2,6 +2,7 @@
 
 #include <fstream>
 #include <algorithm>
+#include <cmath>
 #include <iterator>
 #include <cctype>
 #include <numeric>
@@ -129,6 +130,74 @@ void Document::moveModels(const std::vector<std::size_t>& indices, const Vec3& d
     }
     spatialIndexDirty_ = true;
     documentBounds_.reset();
+}
+
+static Vec3 applyLinear3(const std::array<double, 9>& m, const Vec3& v) {
+    return Vec3{m[0] * v.x + m[1] * v.y + m[2] * v.z,
+                m[3] * v.x + m[4] * v.y + m[5] * v.z,
+                m[6] * v.x + m[7] * v.y + m[8] * v.z};
+}
+
+void Document::transformModels(const std::vector<std::size_t>& indices, const Vec3& pivot,
+                               const std::array<double, 9>& linear,
+                               const std::array<double, 9>& linearInverse) {
+    if (indices.empty()) return;
+    ++revision_;
+    UndoOp op;
+    op.kind = UndoOp::Kind::Transform;
+    op.indices = indices;
+    op.pivot = pivot;
+    op.linear = linear;
+    op.linearInverse = linearInverse;
+    recordUndoOp(std::move(op));
+    for (const auto index : indices) {
+        if (index >= models_.size()) continue;
+        models_[index].affineAbout(pivot, linear);
+        auto props = models_[index].properties();
+        if (!props.profileName.empty()) {
+            const Vec3 from = pivot + applyLinear3(
+                linear, Vec3{props.axisFromX, props.axisFromY, props.axisFromZ} - pivot);
+            const Vec3 to = pivot + applyLinear3(
+                linear, Vec3{props.axisToX, props.axisToY, props.axisToZ} - pivot);
+            props.axisFromX = from.x; props.axisFromY = from.y; props.axisFromZ = from.z;
+            props.axisToX = to.x; props.axisToY = to.y; props.axisToZ = to.z;
+            models_[index].setProperties(std::move(props));
+        }
+        if (modelBounds_.size() == models_.size())
+            modelBounds_[index] = computeModelBounds(models_[index]);
+        markPending(index);
+    }
+    spatialIndexDirty_ = true;
+    documentBounds_.reset();
+}
+
+void Document::rotateModels(const std::vector<std::size_t>& indices, const Vec3& pivot,
+                            const Vec3& axis, double radians) {
+    if (indices.empty() || radians == 0.0) return;
+    const double len = std::sqrt(axis.x * axis.x + axis.y * axis.y + axis.z * axis.z);
+    if (len < 1e-12) return;
+    const double ux = axis.x / len, uy = axis.y / len, uz = axis.z / len;
+    const double c = std::cos(radians), s = std::sin(radians), t = 1.0 - c;
+    // Rodrigues; inverse = transpoze (mi).
+    const std::array<double, 9> m{
+        t * ux * ux + c,    t * ux * uy - s * uz, t * ux * uz + s * uy,
+        t * ux * uy + s * uz, t * uy * uy + c,    t * uy * uz - s * ux,
+        t * ux * uz - s * uy, t * uy * uz + s * ux, t * uz * uz + c};
+    const std::array<double, 9> mi{
+        t * ux * ux + c,    t * ux * uy + s * uz, t * ux * uz - s * uy,
+        t * ux * uy - s * uz, t * uy * uy + c,    t * uy * uz + s * ux,
+        t * ux * uz + s * uy, t * uy * uz - s * ux, t * uz * uz + c};
+    transformModels(indices, pivot, m, mi);
+}
+
+void Document::scaleModels(const std::vector<std::size_t>& indices, const Vec3& pivot,
+                           const Vec3& factors) {
+    if (indices.empty()) return;
+    const auto safe = [](double f) { return std::abs(f) < 1e-9 ? (f < 0.0 ? -1e-9 : 1e-9) : f; };
+    const double fx = safe(factors.x), fy = safe(factors.y), fz = safe(factors.z);
+    const std::array<double, 9> m{fx, 0, 0, 0, fy, 0, 0, 0, fz};
+    const std::array<double, 9> mi{1.0 / fx, 0, 0, 0, 1.0 / fy, 0, 0, 0, 1.0 / fz};
+    transformModels(indices, pivot, m, mi);
 }
 
 void Document::copyModels(const std::vector<std::size_t>& indices, const Vec3& displacement) {
@@ -497,6 +566,24 @@ void Document::applyUndoOp(const UndoOp& op, bool forward) {
                 }
             }
         break;
+    case UndoOp::Kind::Transform: {
+        const auto& m = forward ? op.linear : op.linearInverse;
+        for (const auto index : op.indices)
+            if (index < models_.size()) {
+                models_[index].affineAbout(op.pivot, m);
+                auto props = models_[index].properties();
+                if (!props.profileName.empty()) {
+                    const Vec3 from = op.pivot + applyLinear3(
+                        m, Vec3{props.axisFromX, props.axisFromY, props.axisFromZ} - op.pivot);
+                    const Vec3 to = op.pivot + applyLinear3(
+                        m, Vec3{props.axisToX, props.axisToY, props.axisToZ} - op.pivot);
+                    props.axisFromX = from.x; props.axisFromY = from.y; props.axisFromZ = from.z;
+                    props.axisToX = to.x; props.axisToY = to.y; props.axisToZ = to.z;
+                    models_[index].setProperties(std::move(props));
+                }
+            }
+        break;
+    }
     }
 }
 
