@@ -2170,7 +2170,11 @@ void Application::commitPoint(const Vec3& point) {
                 const double t = static_cast<double>(i) / static_cast<double>(divideCount_ + 1);
                 auto pt = WireframeModel::point(start + (point - start) * t);
                 EntityProperties props = currentEntityProperties();
-                props.effectiveColor = 0xFF0000; // kirmizi
+                // trueColor SART: BYLAYER (colorIndex 256) + trueColor yoksa
+                // Document effectiveColor'i KATMAN renginden yeniden hesaplar
+                // (resolveEffectiveProperties) ve entity'nin kendi rengini ezer.
+                props.trueColor = 0xFF0000u;     // kirmizi
+                props.effectiveColor = 0xFF0000u;
                 pt.setProperties(props);
                 document_.addModel(std::move(pt));
                 ++placed;
