@@ -219,6 +219,10 @@ if(BUILD_TESTING)
         endif()
     endif()
 
+    add_executable(model_maker_color_contrast_test tests/color_contrast_test.cpp)
+    target_include_directories(model_maker_color_contrast_test PRIVATE include)
+    add_test(NAME model_maker_color_contrast_test COMMAND model_maker_color_contrast_test)
+
     add_executable(model_maker_profile_test tests/profile_database_test.cpp)
     target_link_libraries(model_maker_profile_test PRIVATE model_maker_core)
     add_test(NAME model_maker_profile_test COMMAND model_maker_profile_test)

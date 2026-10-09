@@ -1,4 +1,5 @@
 #include "model_maker/renderer.hpp"
+#include "model_maker/color_contrast.hpp"
 #include "model_maker/opengl_render_backend.hpp"
 #include <algorithm>
 #include <array>
@@ -12,6 +13,19 @@
 
 namespace mm {
 namespace {
+// Track/guide renkleri tuval fonuna gore ZIT (color_contrast.hpp).
+COLORREF rgbToColorRef(std::uint32_t rgb) noexcept {
+    return RGB((rgb >> 16) & 0xFFu, (rgb >> 8) & 0xFFu, rgb & 0xFFu);
+}
+COLORREF trackGuideColor() noexcept { return rgbToColorRef(trackGuideRgb()); }
+COLORREF guideAxisColor(OrthoAxis axis) noexcept {
+    switch (axis) {
+    case OrthoAxis::X: return rgbToColorRef(kGuideAxisXRgb);
+    case OrthoAxis::Y: return rgbToColorRef(kGuideAxisYRgb);
+    case OrthoAxis::Z: return rgbToColorRef(kGuideAxisZRgb);
+    default: return trackGuideColor();
+    }
+}
 void line(HDC dc, int x1, int y1, int x2, int y2) {
     MoveToEx(dc, x1, y1, nullptr);
     LineTo(dc, x2, y2);
@@ -212,8 +226,12 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
     // oldugundan 3B'de GL clear rengi (ust ton) zemin olur; GDI
     // kenarlarinda ve 2B'de gradient gorunur.
     TRIVERTEX gradientVertices[2] = {
-        {client.left, client.top, 198 << 8, 224 << 8, 246 << 8, 255 << 8},
-        {client.right, client.bottom, 240 << 8, 248 << 8, 252 << 8, 255 << 8},
+        {client.left, client.top, static_cast<COLOR16>(((kCanvasGradientTopRgb >> 16) & 0xFFu) << 8),
+         static_cast<COLOR16>(((kCanvasGradientTopRgb >> 8) & 0xFFu) << 8),
+         static_cast<COLOR16>((kCanvasGradientTopRgb & 0xFFu) << 8), 0xFF00},
+        {client.right, client.bottom, static_cast<COLOR16>(((kCanvasGradientBottomRgb >> 16) & 0xFFu) << 8),
+         static_cast<COLOR16>(((kCanvasGradientBottomRgb >> 8) & 0xFFu) << 8),
+         static_cast<COLOR16>((kCanvasGradientBottomRgb & 0xFFu) << 8), 0xFF00},
     };
     GRADIENT_RECT gradientRect{0, 1};
     GradientFill(dc, gradientVertices, 2, &gradientRect, 1, GRADIENT_FILL_RECT_V);
@@ -428,14 +446,7 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
                 draft.transformBase && draft.cursor) {
                 const POINT basePoint = projectPoint(*draft.transformBase);
                 const POINT destinationPoint = projectPoint(*draft.cursor);
-                const COLORREF trackerColor = [&]() -> COLORREF {
-                    switch (draft.orthoAxis) {
-                    case OrthoAxis::X: return RGB(190, 25, 45);   // koyu kirmizi
-                    case OrthoAxis::Y: return RGB(0, 120, 45);    // koyu yesil
-                    case OrthoAxis::Z: return RGB(20, 70, 190);   // koyu mavi
-                    default: return RGB(150, 0, 150);             // koyu magenta
-                    }
-                }();
+                const COLORREF trackerColor = guideAxisColor(draft.orthoAxis);
                 HPEN trackerPen = CreatePen(PS_DOT, 1, trackerColor);
                 SelectObject(dc, trackerPen);
                 line(dc, basePoint.x, basePoint.y, destinationPoint.x, destinationPoint.y);
@@ -548,14 +559,7 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
                 // daire, 3DFACE) — sadece sari duz cizgi degil.
                 const POINT a = projectPoint(*draft.anchor);
                 const POINT b = projectPoint(*draft.cursor);
-                const COLORREF previewColor = [&]() -> COLORREF {
-                    switch (draft.orthoAxis) {
-                    case OrthoAxis::X: return RGB(235, 82, 96);
-                    case OrthoAxis::Y: return RGB(72, 211, 121);
-                    case OrthoAxis::Z: return RGB(78, 148, 255);
-                    default: return RGB(255, 206, 84);
-                    }
-                }();
+                const COLORREF previewColor = guideAxisColor(draft.orthoAxis);
                 HPEN preview = CreatePen(PS_DASH, 1, previewColor);
                 SelectObject(dc, preview);
                 const auto drawPreviewEdges = [&](const WireframeModel& model) {
@@ -795,7 +799,7 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         if (draft.gripMoveActive) {
             const POINT from = projectPoint(draft.gripTrackFrom);
             const POINT to = projectPoint(draft.gripTrackTo);
-            HPEN trackPen = CreatePen(PS_DOT, 1, RGB(150, 0, 150));
+            HPEN trackPen = CreatePen(PS_DOT, 1, trackGuideColor());
             SelectObject(dc, trackPen);
             line(dc, from.x, from.y, to.x, to.y);
             SelectObject(dc, stockPen);
@@ -1527,7 +1531,7 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
     if (draft.gripMoveActive) {
         const POINT gripFrom = projectPoint(draft.gripTrackFrom);
         const POINT gripTo = projectPoint(draft.gripTrackTo);
-        HPEN gripTrackPen = CreatePen(PS_DOT, 1, RGB(150, 0, 150));
+        HPEN gripTrackPen = CreatePen(PS_DOT, 1, trackGuideColor());
         SelectObject(dc, gripTrackPen);
         line(dc, gripFrom.x, gripFrom.y, gripTo.x, gripTo.y);
         SelectObject(dc, stockPen);
@@ -1538,14 +1542,7 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         draft.transformPhase == TransformPhase::Destination && draft.transformBase && draft.cursor) {
         const POINT basePoint = projectPoint(*draft.transformBase);
         const POINT destinationPoint = projectPoint(*draft.cursor);
-        const COLORREF trackerColor = [&]() -> COLORREF {
-            switch (draft.orthoAxis) {
-            case OrthoAxis::X: return RGB(190, 25, 45);   // koyu kirmizi
-            case OrthoAxis::Y: return RGB(0, 120, 45);    // koyu yesil
-            case OrthoAxis::Z: return RGB(20, 70, 190);   // koyu mavi
-            default: return RGB(150, 0, 150);             // koyu magenta (ortogonal yok)
-            }
-        }();
+        const COLORREF trackerColor = guideAxisColor(draft.orthoAxis);
         HPEN trackerPen = CreatePen(PS_DOT, 1, trackerColor);
         SelectObject(dc, trackerPen);
         line(dc, basePoint.x, basePoint.y, destinationPoint.x, destinationPoint.y);
@@ -1799,7 +1796,7 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
 
     if ((drafting || draft.gripMoveActive) && draft.polarTrackingEnabled &&
         !draft.temporaryTrackingPoints.empty()) {
-        const COLORREF trackingColor = RGB(80, 225, 255);
+        const COLORREF trackingColor = trackGuideColor();
         HPEN trackingPen = CreatePen(PS_DOT, 1, trackingColor);
         SelectObject(dc, trackingPen);
         for (const auto& guide : draft.temporaryTrackingGuides) {
@@ -1855,12 +1852,12 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
                 const double extension = static_cast<double>(std::max(width, height));
                 const POINT to{through.x + static_cast<LONG>(dx * extension / length),
                                through.y + static_cast<LONG>(dy * extension / length)};
-                HPEN polarPen = CreatePen(PS_DOT, 1, RGB(80, 225, 255));
+                HPEN polarPen = CreatePen(PS_DOT, 1, trackGuideColor());
                 SelectObject(dc, polarPen);
                 line(dc, from.x, from.y, to.x, to.y);
                 SelectObject(dc, stockPen);
                 DeleteObject(polarPen);
-                drawText(dc, through.x + 12, through.y - 22, L"POLAR 90°", RGB(80, 225, 255));
+                drawText(dc, through.x + 12, through.y - 22, L"POLAR 90°", trackGuideColor());
             }
         }
     }
@@ -1889,9 +1886,9 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
             SelectObject(dc, stockPen);
             DeleteObject(guidePen);
         };
-        drawAxisGuide({1.0, 0.0, 0.0}, RGB(235, 82, 96), draft.orthoAxis == OrthoAxis::X);
-        drawAxisGuide({0.0, 1.0, 0.0}, RGB(72, 211, 121), draft.orthoAxis == OrthoAxis::Y);
-        drawAxisGuide({0.0, 0.0, 1.0}, RGB(78, 148, 255), draft.orthoAxis == OrthoAxis::Z);
+        drawAxisGuide({1.0, 0.0, 0.0}, guideAxisColor(OrthoAxis::X), draft.orthoAxis == OrthoAxis::X);
+        drawAxisGuide({0.0, 1.0, 0.0}, guideAxisColor(OrthoAxis::Y), draft.orthoAxis == OrthoAxis::Y);
+        drawAxisGuide({0.0, 0.0, 1.0}, guideAxisColor(OrthoAxis::Z), draft.orthoAxis == OrthoAxis::Z);
     }
 
     // Ortho acik ama henuz eksen kilitlenmemisken sari onizleme cizme —
@@ -1900,14 +1897,7 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
     if (drafting && draft.anchor && draft.cursor && !orthoGuideUnlocked) {
         const POINT a = projectPoint(*draft.anchor);
         const POINT b = projectPoint(*draft.cursor);
-        const COLORREF previewColor = [&]() -> COLORREF {
-            switch (draft.orthoAxis) {
-            case OrthoAxis::X: return RGB(235, 82, 96);
-            case OrthoAxis::Y: return RGB(72, 211, 121);
-            case OrthoAxis::Z: return RGB(78, 148, 255);
-            default: return RGB(255, 206, 84);
-            }
-        }();
+        const COLORREF previewColor = guideAxisColor(draft.orthoAxis);
         HPEN preview = CreatePen(PS_DASH, 1, previewColor);
         SelectObject(dc, preview);
         const auto drawPreviewModel = [&](const WireframeModel& model) {
@@ -2281,14 +2271,7 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
                 draft.transformBase && draft.cursor) {
                 const POINT basePoint = projectPoint(*draft.transformBase);
                 const POINT destinationPoint = projectPoint(*draft.cursor);
-                const COLORREF trackerColor = [&]() -> COLORREF {
-                    switch (draft.orthoAxis) {
-                    case OrthoAxis::X: return RGB(235, 82, 96);   // Red
-                    case OrthoAxis::Y: return RGB(72, 211, 121);  // Green
-                    case OrthoAxis::Z: return RGB(78, 148, 255);  // Blue
-                    default: return RGB(255, 206, 84);            // Yellow (no ortho)
-                    }
-                }();
+                const COLORREF trackerColor = guideAxisColor(draft.orthoAxis);
                 HPEN trackerPen = CreatePen(PS_DOT, 1, trackerColor);
                 SelectObject(dc, trackerPen);
                 line(dc, basePoint.x, basePoint.y, destinationPoint.x, destinationPoint.y);
