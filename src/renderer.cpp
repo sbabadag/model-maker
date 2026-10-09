@@ -1253,16 +1253,21 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         const int hover = draft.gumballHover;
         const bool threeD = draft.gumball3D;
         const Vec3 gaxis[3] = {draft.gumballAxisX, draft.gumballAxisY, draft.gumballAxisZ};
-        const COLORREF gcol[3] = {RGB(205, 45, 45), RGB(35, 150, 60), RGB(45, 90, 210)};
+        const COLORREF gcol[3] = {RGB(210, 40, 40), RGB(20, 140, 55), RGB(35, 90, 215)};
+        const COLORREF ghot[3] = {RGB(235, 70, 70), RGB(35, 170, 75), RGB(65, 120, 240)};
+        const COLORREF gfill[3] = {RGB(244, 157, 157), RGB(151, 218, 168), RGB(153, 190, 246)};
+        const COLORREF gfillHot[3] = {RGB(255, 185, 185), RGB(180, 240, 195), RGB(181, 210, 255)};
         const int planeA[3] = {0, 1, 2}, planeB[3] = {1, 2, 0}, planeH[3] = {3, 4, 5};
+        const int planeNormal[3] = {2, 0, 1}; // XY=Z blue, YZ=X red, ZX=Y green.
         const double gps = 0.32 * gl;
         for (int k = 0; k < (threeD ? 3 : 1); ++k) {
             const bool hot = (hover == planeH[k]);
             const POINT p1 = projectPoint(go + gaxis[planeA[k]] * gps);
             const POINT p2 = projectPoint(go + gaxis[planeA[k]] * gps + gaxis[planeB[k]] * gps);
             const POINT p3 = projectPoint(go + gaxis[planeB[k]] * gps);
-            HPEN border = CreatePen(PS_SOLID, 1, hot ? RGB(230, 160, 20) : RGB(110, 135, 110));
-            HBRUSH fill = CreateSolidBrush(hot ? RGB(255, 225, 110) : RGB(205, 215, 205));
+            const int normal = planeNormal[k];
+            HPEN border = CreatePen(PS_SOLID, hot ? 3 : 2, hot ? ghot[normal] : gcol[normal]);
+            HBRUSH fill = CreateSolidBrush(hot ? gfillHot[normal] : gfill[normal]);
             HGDIOBJ oldB = SelectObject(dc, fill);
             HGDIOBJ oldP = SelectObject(dc, border);
             POINT quad[4] = {gc, p1, p2, p3};
@@ -1279,21 +1284,22 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
             for (int i = 0; i < (threeD ? 3 : 2); ++i) {
                 const bool hot = (hover == 7 + i);
                 const Vec3 u = gaxis[(i + 1) % 3], v = gaxis[(i + 2) % 3];
-                HPEN pen = CreatePen(PS_SOLID, hot ? 3 : 1, hot ? RGB(255, 190, 30) : gcol[i]);
+                HPEN pen = CreatePen(PS_SOLID, hot ? 4 : 3, hot ? ghot[i] : gcol[i]);
                 HGDIOBJ oldP = SelectObject(dc, pen);
-                POINT pts[segs];
+                POINT pts[segs + 1];
                 for (int s = 0; s < segs; ++s) {
                     const double a = 6.283185307179586 * s / segs;
                     pts[s] = projectPoint(go + u * (rr * std::cos(a)) + v * (rr * std::sin(a)));
                 }
-                Polyline(dc, pts, segs);
+                pts[segs] = pts[0]; // Polyline does not close the last segment itself.
+                Polyline(dc, pts, segs + 1);
                 SelectObject(dc, oldP);
                 DeleteObject(pen);
             }
         }
         for (int i = 0; i < (threeD ? 3 : 2); ++i) {
             const bool hot = (hover == i);
-            HPEN pen = CreatePen(PS_SOLID, hot ? 4 : 2, hot ? RGB(255, 190, 30) : gcol[i]);
+            HPEN pen = CreatePen(PS_SOLID, hot ? 5 : 3, hot ? ghot[i] : gcol[i]);
             HGDIOBJ oldP = SelectObject(dc, pen);
             const POINT tip = projectPoint(go + gaxis[i] * gl);
             line(dc, gc.x, gc.y, tip.x, tip.y);
@@ -1302,7 +1308,7 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
             const double len = std::sqrt(dx * dx + dy * dy);
             if (len > 8.0) {
                 const double ux = dx / len, uy = dy / len;
-                const double ah = 15.0, aw = 7.5;
+                const double ah = 12.0, aw = 6.0;
                 const double bx = tip.x - ux * ah, by = tip.y - uy * ah;
                 line(dc, tip.x, tip.y, static_cast<int>(bx - uy * aw), static_cast<int>(by + ux * aw));
                 line(dc, tip.x, tip.y, static_cast<int>(bx + uy * aw), static_cast<int>(by - ux * aw));
@@ -1317,7 +1323,7 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
                 const bool hot = (hover == 10 + i);
                 const POINT p = projectPoint(go + gaxis[i] * sd);
                 HPEN pen = CreatePen(PS_SOLID, 1, RGB(255, 255, 255));
-                HBRUSH br = CreateSolidBrush(hot ? RGB(255, 200, 40) : gcol[i]);
+                HBRUSH br = CreateSolidBrush(hot ? ghot[i] : gcol[i]);
                 HGDIOBJ oldB = SelectObject(dc, br);
                 HGDIOBJ oldP = SelectObject(dc, pen);
                 Rectangle(dc, p.x - 4, p.y - 4, p.x + 5, p.y + 5);
@@ -1332,7 +1338,7 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         {
             const bool hotCenter = (hover == 6);
             const bool hotUniform = (hover == 13);
-            HPEN ringPen = CreatePen(PS_SOLID, 2,
+            HPEN ringPen = CreatePen(PS_SOLID, hotCenter ? 4 : 3,
                                      hotCenter ? RGB(255, 190, 30) : RGB(90, 90, 90));
             HGDIOBJ oldP = SelectObject(dc, ringPen);
             HGDIOBJ oldB = SelectObject(dc, GetStockObject(NULL_BRUSH));

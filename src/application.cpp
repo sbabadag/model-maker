@@ -29,6 +29,8 @@
 #include <exception>
 #include <fstream>
 #include <iterator>
+#include <locale>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <unordered_set>
@@ -1865,7 +1867,10 @@ void Application::onLeftButtonDown(int x, int y) {
 
 void Application::onLeftButtonUp(int x, int y) {
     if (gumballDrag_ != GumballHandle::None) {
-        gumballEndDrag();
+        if (gumballNumericActive_) return;
+        gumballDragMove(x, y); // include final pointer position before release
+        if (!gumballPointerMoved_) gumballRequestNumeric();
+        else gumballEndDrag();
         return;
     }
     if (viewCubeManipulating_) {
@@ -1985,6 +1990,7 @@ void Application::onCharacter(wchar_t character) {
                     const double value = std::stod(input_);
                     input_.clear();
                     applyGumballNumeric(value);
+                    gumballEndDrag();
                     return;
                 } catch (...) {
                     input_.clear();
@@ -5083,8 +5089,8 @@ Vec2 Application::gumballProject(const Vec3& point) const {
 }
 
 double Application::gumballWorldLength() const {
-    // Ekran-olcekli: ok uzunlugu ~110 px'e karsilik gelen dunya uzunlugu.
-    constexpr double kGumballPixels = 110.0;
+    // Ekran-olcekli: daha kompakt, kamera zoom'undan bagimsiz boyut.
+    constexpr double kGumballPixels = 82.0;
     if (!canvas_) return 1.0;
     const Vec2 a = gumballProject(gumballOrigin_);
     Vec2 b = gumballProject(gumballOrigin_ + Vec3{1, 0, 0});
@@ -5324,7 +5330,11 @@ Vec3 Application::gumballPlanePoint(int x, int y, GumballHandle handle) const {
 
 void Application::gumballBeginDrag(int x, int y, GumballHandle handle) {
     if (selectedModels_.empty() || !canvas_) return;
-    pushUndoSnapshot();
+    gumballPressPoint_ = {x, y};
+    gumballPointerMoved_ = false;
+    gumballUndoStarted_ = false;
+    gumballNumericActive_ = false;
+    input_.clear();
     gumballDrag_ = handle;
     gumballAppliedDelta_ = {};
     gumballAppliedAngle_ = 0.0;
@@ -5370,11 +5380,19 @@ void Application::gumballBeginDrag(int x, int y, GumballHandle handle) {
         gumballDragStartWorld_ = gumballPlanePoint(x, y, handle);
     }
     SetCapture(canvas_);
-    gumballDragMove(x, y);
+    invalidateCanvas();
 }
 
 void Application::gumballDragMove(int x, int y) {
-    if (gumballDrag_ == GumballHandle::None || selectedModels_.empty()) return;
+    if (gumballNumericActive_ || gumballDrag_ == GumballHandle::None || selectedModels_.empty()) return;
+    if (!gumballPointerMoved_) {
+        if (std::hypot(x - gumballPressPoint_.x, y - gumballPressPoint_.y) < 4.0) return;
+        gumballPointerMoved_ = true;
+    }
+    if (!gumballUndoStarted_) {
+        pushUndoSnapshot();
+        gumballUndoStarted_ = true;
+    }
     const Vec3 pivot = gumballDragStartOrigin_;
     if (gumballIsAxis(gumballDrag_)) {
         const double t = (x - gumballDragScreenOrigin_.x) * gumballDragAxisUnit_.x +
@@ -5454,8 +5472,12 @@ void Application::gumballDragMove(int x, int y) {
 
 void Application::gumballEndDrag() {
     if (gumballDrag_ == GumballHandle::None) return;
-    if (canvas_) ReleaseCapture();
     gumballDrag_ = GumballHandle::None;
+    gumballNumericActive_ = false;
+    gumballPointerMoved_ = false;
+    gumballUndoStarted_ = false;
+    input_.clear();
+    if (canvas_) ReleaseCapture();
     gumballAppliedDelta_ = {};
     gumballAppliedAngle_ = 0.0;
     gumballTotalAngle_ = 0.0;
@@ -5469,6 +5491,7 @@ void Application::gumballEndDrag() {
 // drag oncesi haline dondurur (undo kaydinda forward+inverse net sifir kalir).
 void Application::gumballCancelDrag() {
     if (gumballDrag_ == GumballHandle::None) return;
+    if (!gumballUndoStarted_) { gumballEndDrag(); return; }
     const Vec3 pivot = gumballDragStartOrigin_;
     const Vec3 negDelta{-gumballAppliedDelta_.x, -gumballAppliedDelta_.y,
                         -gumballAppliedDelta_.z};
@@ -5502,10 +5525,80 @@ void Application::gumballCancelDrag() {
     invalidateCanvas();
 }
 
+// A click (not a drag) opens the existing Qt parameter edit box.
+// Release native capture before entering its nested modal event loop.
+void Application::gumballRequestNumeric() {
+    if (gumballDrag_ == GumballHandle::None || gumballNumericActive_) return;
+    gumballNumericActive_ = true;
+    ReleaseCapture();
+    if (parameterRequest_) {
+        const int axis = gumballAxisIndex(gumballDrag_);
+        const bool plane = gumballIsPlane(gumballDrag_);
+        const bool center = gumballDrag_ == GumballHandle::Center;
+        const int firstAxis = plane ? static_cast<int>(gumballDrag_) - 3 : 0;
+        const int dimensions = plane ? 2 : center ? 3 : 1;
+        const std::wstring axisName = plane ? std::wstring({L"XYZ"[firstAxis], L"XYZ"[(firstAxis+1)%3]}) :
+            axis >= 0 ? std::wstring(1, L"XYZ"[axis]) : L"XYZ";
+        const bool scaling = gumballIsScaleAxis(gumballDrag_) || gumballDrag_ == GumballHandle::ScaleUniform;
+        const std::wstring prompt = L"Gumball — Yerel " + axisName +
+            (gumballIsRotate(gumballDrag_) ? L" dönüş açısı (derece, +/-)" :
+             scaling ? L" ölçek faktörü (0.02–100)" :
+             dimensions > 1 ? L" öteleme (mm, +/-; değerleri ; ile ayırın): " +
+                (plane ? std::wstring(1, axisName[0]) + L";" + axisName[1] : L"X;Y;Z") :
+             L" öteleme mesafesi (mm, +/-)");
+        std::wstring text = scaling ? L"1" : plane ? L"0;0" : center ? L"0;0;0" : L"0";
+        bool invalid = false;
+        while (parameterRequest_((invalid ? L"Geçersiz değer. " : L"") + prompt, text, text)) {
+            std::replace(text.begin(), text.end(), L',', L'.');
+            std::wistringstream parser(text);
+            parser.imbue(std::locale::classic());
+            double values[3]{};
+            bool valid = true;
+            for (int i = 0; i < dimensions; ++i) {
+                if (!(parser >> values[i]) || !std::isfinite(values[i])) { valid = false; break; }
+                if (i + 1 < dimensions) {
+                    wchar_t separator{};
+                    if (!(parser >> separator) || separator != L';') { valid = false; break; }
+                }
+            }
+            parser >> std::ws;
+            valid = valid && parser.eof() && (!scaling || (values[0] >= 0.02 && values[0] <= 100.0));
+            if (valid) {
+                if (dimensions == 1) {
+                    applyGumballNumeric(values[0]);
+                } else {
+                    Vec3 delta{};
+                    for (int i = 0; i < dimensions; ++i)
+                        delta = delta + gumballFrame_[(firstAxis+i)%3] * values[i];
+                    if (delta.x != 0.0 || delta.y != 0.0 || delta.z != 0.0) {
+                        pushUndoSnapshot();
+                        gumballUndoStarted_ = true;
+                        document_.moveModels(selectedModels_, delta);
+                        gumballAppliedDelta_ = delta;
+                        gumballOrigin_ = gumballDragStartOrigin_ + delta;
+                    }
+                }
+                break;
+            }
+            invalid = true;
+        }
+    }
+    gumballEndDrag();
+    if (canvas_) SetFocus(canvas_);
+}
+
 // Gumball drag surerken numerik tam deger uygula.
 // Eksen tasima -> mesafe (mm); rotasyon -> aci (derece); olcek -> faktor.
 void Application::applyGumballNumeric(double value) {
-    if (gumballDrag_ == GumballHandle::None || selectedModels_.empty()) return;
+    if (gumballDrag_ == GumballHandle::None || selectedModels_.empty() || !std::isfinite(value)) return;
+    const bool scaling = gumballIsScaleAxis(gumballDrag_) || gumballDrag_ == GumballHandle::ScaleUniform;
+    if (scaling && (value < 0.02 || value > 100.0)) return;
+    if (!gumballIsAxis(gumballDrag_) && !gumballIsRotate(gumballDrag_) && !scaling) return;
+    if (!gumballUndoStarted_) {
+        if (value == (scaling ? 1.0 : 0.0)) return; // accepted no-op keeps redo history
+        pushUndoSnapshot();
+        gumballUndoStarted_ = true;
+    }
     const Vec3 pivot = gumballDragStartOrigin_;
     if (gumballIsAxis(gumballDrag_)) {
         const Vec3 delta = gumballDragAxisWorld_ * value;

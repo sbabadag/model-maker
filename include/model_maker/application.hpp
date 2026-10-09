@@ -448,6 +448,11 @@ private:
     bool gumballVisible_{false};
     GumballHandle gumballHover_{GumballHandle::None};
     GumballHandle gumballDrag_{GumballHandle::None};
+    POINT gumballPressPoint_{};
+    bool gumballPointerMoved_{false};
+    bool gumballUndoStarted_{false};
+    bool gumballNumericActive_{false};
+    void gumballRequestNumeric();
     Vec3 gumballOrigin_{};
     Vec3 gumballDragStartOrigin_{};
     Vec3 gumballDragStartWorld_{};

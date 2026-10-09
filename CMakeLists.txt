@@ -208,6 +208,17 @@ endif()
 
 include(CTest)
 if(BUILD_TESTING)
+    # Portable harness compiles actual Win32 gumball method bodies with only
+    # the UI boundary substituted. Native Qt/Win32 visual smoke is separate.
+    if(UNIX AND NOT CMAKE_CROSSCOMPILING)
+        find_package(Python3 QUIET COMPONENTS Interpreter)
+        if(Python3_Interpreter_FOUND)
+            add_test(NAME model_maker_gumball_interaction
+                COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_gumball_interaction.py
+                    ${CMAKE_CURRENT_BINARY_DIR})
+        endif()
+    endif()
+
     add_executable(model_maker_profile_test tests/profile_database_test.cpp)
     target_link_libraries(model_maker_profile_test PRIVATE model_maker_core)
     add_test(NAME model_maker_profile_test COMMAND model_maker_profile_test)
