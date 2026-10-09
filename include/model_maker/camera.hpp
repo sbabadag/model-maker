@@ -60,6 +60,10 @@ public:
 
     const Vec3& center3D() const noexcept { return center3D_; }
     void setCenter3D(const Vec3& center) noexcept { center3D_ = center; }
+    // Ileri bakis yonu (dunya): kamera -Z ekseninin dunyadaki yonu.
+    // unprojectToPlane'deki isin yonuyla ayni (-satir2). Rotasyon pivot
+    // duzlemini (ekrana paralel, mevcut merkez derinliginde) kurmak icin.
+    Vec3 viewDirection() const noexcept { return {-R_[6], -R_[7], -R_[8]}; }
 
 private:
     // world->camera rotasyonu, row-major: v_cam = R_ * v_world.

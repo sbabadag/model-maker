@@ -509,6 +509,9 @@ private:
     bool rotating_{};
     bool panning2D_{};
     bool wheelNavigating_{};
+    // Rotasyon yumusatma (ustel hareketli ortalama) — ani sarsintiyi filtreler.
+    double rotSmoothedDx_{};
+    double rotSmoothedDy_{};
     double wheelPreviewFactor_{1.0};
     // Momentum tekerlek hiz sinirlayici: patlama halindeki detentler
     // biriktirilir, 120ms'de en fazla bir zoom uygulanir (free-spin

@@ -1270,17 +1270,23 @@ LRESULT Application::handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lPa
         // 2B: orta tus surukleme = pan.
         if (mode_ == EditMode::View3D && !(GetKeyState(VK_MENU) & 0x8000)) {
             rotating_ = true;
-            // Rotasyon merkezini mouse imlecinin altindaki aktif calisma
-            // duzlemi noktasina al (kamera center3D_ etrafinda doner). Boylece
-            // 3B rotate imlecinin oldugu bolgeyi merkez alir, ekranin ortasini
-            // degil.
+            rotSmoothedDx_ = 0.0;
+            rotSmoothedDy_ = 0.0;
+            // Rotasyon pivotu: imlecin altindaki nokta, MEVCUT merkezin
+            // derinliginde (ekrana paralel, merkezden gecen duzlem). Boylece
+            // donme imlecin uzerinde oldugu bolgeyi merkez alir, model
+            // "sallanmaz" — eski davranis calisma duzlemi kesimini kullanir,
+            // model Z'de uzakken pivot yanlis noktaya giderdi.
             if (canvas_) {
                 RECT rc{}; GetClientRect(canvas_, &rc);
                 const int w = std::max(1L, rc.right);
                 const int h = std::max(1L, rc.bottom);
                 const Vec2 mp{static_cast<double>(GET_X_LPARAM(lParam)),
                               static_cast<double>(GET_Y_LPARAM(lParam))};
-                if (auto world = camera_.unprojectToPlane(mp, w, h, workPlane_)) {
+                WorkPlane pivotPlane{};
+                pivotPlane.origin = camera_.center3D();
+                pivotPlane.normal = camera_.viewDirection();
+                if (auto world = camera_.unprojectToPlane(mp, w, h, pivotPlane)) {
                     camera_.setOrbitCenter(*world);
                 }
             }
@@ -1890,7 +1896,12 @@ void Application::onMouseMove(int x, int y, WPARAM buttons) {
         const int dx = x - lastMouse_.x;
         const int dy = y - lastMouse_.y;
         if (dx != 0 || dy != 0) {
-            camera_.rotate(dx * 0.008, dy * 0.008);
+            // Yumusatilmis rotasyon: delta uzerinde ustel hareketli ortalama
+            // (k=0.5) — touchpad/fare sarsintisini filtreler, donus daha
+            // akici ve dengeli hissettirir.
+            rotSmoothedDx_ += (static_cast<double>(dx) - rotSmoothedDx_) * 0.5;
+            rotSmoothedDy_ += (static_cast<double>(dy) - rotSmoothedDy_) * 0.5;
+            camera_.rotate(rotSmoothedDx_ * 0.008, rotSmoothedDy_ * 0.008);
             lastMouse_ = {x, y};
             if (drawingActive_) updateHover(x, y);
             redraw = true;
