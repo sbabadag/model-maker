@@ -1272,24 +1272,10 @@ LRESULT Application::handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lPa
             rotating_ = true;
             rotSmoothedDx_ = 0.0;
             rotSmoothedDy_ = 0.0;
-            // Rotasyon pivotu: imlecin altindaki nokta, MEVCUT merkezin
-            // derinliginde (ekrana paralel, merkezden gecen duzlem). Boylece
-            // donme imlecin uzerinde oldugu bolgeyi merkez alir, model
-            // "sallanmaz" — eski davranis calisma duzlemi kesimini kullanir,
-            // model Z'de uzakken pivot yanlis noktaya giderdi.
-            if (canvas_) {
-                RECT rc{}; GetClientRect(canvas_, &rc);
-                const int w = std::max(1L, rc.right);
-                const int h = std::max(1L, rc.bottom);
-                const Vec2 mp{static_cast<double>(GET_X_LPARAM(lParam)),
-                              static_cast<double>(GET_Y_LPARAM(lParam))};
-                WorkPlane pivotPlane{};
-                pivotPlane.origin = camera_.center3D();
-                pivotPlane.normal = camera_.viewDirection();
-                if (auto world = camera_.unprojectToPlane(mp, w, h, pivotPlane)) {
-                    camera_.setOrbitCenter(*world);
-                }
-            }
+            // Rotasyon mevcut center3D_ etrafinda YERINDE doner (pivot
+            // degistirilmez) — pivot'u imlecin altina tasimak goruntuyu
+            // "ziplatir" (tiklanan nokta ekran merkezine firlar). Merkez
+            // fit3D/pan ile zaten model uzerinde tutulur.
         } else {
             panning2D_ = true;
         }
