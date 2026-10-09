@@ -5097,6 +5097,101 @@ double Application::gumballWorldLength() const {
     return kGumballPixels / pixels;
 }
 
+// Yerel eksen boyunca olcek matrisi: M = R * diag(f) * R^T (R sutunlari=frame).
+// YEREL eksende olcekleme icin sart — world-eksenli diag yeterli degil.
+static std::array<double, 9> gumballLocalScale(const Vec3 frame[3], const Vec3& factors) {
+    const double r[9] = {frame[0].x, frame[1].x, frame[2].x,
+                         frame[0].y, frame[1].y, frame[2].y,
+                         frame[0].z, frame[1].z, frame[2].z};
+    const double s[9] = {factors.x, 0, 0, 0, factors.y, 0, 0, 0, factors.z};
+    const double rt[9] = {r[0], r[3], r[6], r[1], r[4], r[7], r[2], r[5], r[8]};
+    const auto mul = [](const double a[9], const double b[9]) {
+        std::array<double, 9> out{};
+        for (int i = 0; i < 3; ++i)
+            for (int j = 0; j < 3; ++j)
+                out[i * 3 + j] = a[i * 3 + 0] * b[j] + a[i * 3 + 1] * b[3 + j] +
+                                 a[i * 3 + 2] * b[6 + j];
+        return out;
+    };
+    const auto rs = mul(r, s);
+    return mul(rs.data(), rt);
+}
+
+// YEREL CERCEVE (object-local): secili nesnenin KENDI eksenleri — world degil.
+//  - Tek profil kirisi : uye ekseni (axisFrom->axisTo) + profileRotation
+//  - Tek nesne        : en uzun kenar (x) + ona dik en uzun kenar (y)
+//  - Coklu secim / uygun degil : world cercevesi
+void Application::gumballUpdateFrame() {
+    gumballFrame_[0] = Vec3{1, 0, 0};
+    gumballFrame_[1] = Vec3{0, 1, 0};
+    gumballFrame_[2] = Vec3{0, 0, 1};
+    if (selectedModels_.size() != 1) return;
+    const std::size_t idx = selectedModels_.front();
+    if (idx >= document_.models().size()) return;
+    const auto& model = document_.models()[idx];
+    const auto& props = model.properties();
+    const auto norm = [](const Vec3& v) {
+        const double l = std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
+        return l > 1e-12 ? Vec3{v.x / l, v.y / l, v.z / l} : Vec3{0, 0, 1};
+    };
+    const auto cross3 = [](const Vec3& a, const Vec3& b) {
+        return Vec3{a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x};
+    };
+    const auto& verts = model.vertices();
+    Vec3 ex{};
+    bool haveX = false;
+    if (!props.profileName.empty()) {
+        const Vec3 d = Vec3{props.axisToX, props.axisToY, props.axisToZ} -
+                       Vec3{props.axisFromX, props.axisFromY, props.axisFromZ};
+        if (d.x * d.x + d.y * d.y + d.z * d.z > 1e-12) {
+            ex = norm(d);
+            haveX = true;
+        }
+    }
+    if (!haveX) {
+        double best = 0.0;
+        for (const auto& e : model.edges()) {
+            if (e.from >= verts.size() || e.to >= verts.size()) continue;
+            const Vec3 d = verts[e.to] - verts[e.from];
+            const double l2 = d.x * d.x + d.y * d.y + d.z * d.z;
+            if (l2 > best) { best = l2; ex = d; }
+        }
+        if (best > 1e-12) { ex = norm(ex); haveX = true; }
+    }
+    if (!haveX) return;
+    Vec3 ey{};
+    bool haveY = false;
+    if (props.profileName.empty()) {
+        double best = 0.0;
+        for (const auto& e : model.edges()) {
+            if (e.from >= verts.size() || e.to >= verts.size()) continue;
+            Vec3 d = verts[e.to] - verts[e.from];
+            const double dot = d.x * ex.x + d.y * ex.y + d.z * ex.z;
+            d = Vec3{d.x - ex.x * dot, d.y - ex.y * dot, d.z - ex.z * dot};
+            const double l2 = d.x * d.x + d.y * d.y + d.z * d.z;
+            if (l2 > best) { best = l2; ey = d; }
+        }
+        if (best > 1e-12) { ey = norm(ey); haveY = true; }
+    }
+    if (!haveY) {
+        const Vec3 up = (std::abs(ex.z) > 0.9) ? Vec3{0, 1, 0} : Vec3{0, 0, 1};
+        ey = norm(cross3(up, ex));
+    }
+    Vec3 ez = norm(cross3(ex, ey));
+    ey = norm(cross3(ez, ex)); // tam ortogonalize
+    if (!props.profileName.empty() && std::abs(props.profileRotation) > 1e-9) {
+        const double a = props.profileRotation * 0.017453292519943295; // derece
+        const double ca = std::cos(a), sa = std::sin(a);
+        const Vec3 ny = ey * ca + ez * sa;
+        const Vec3 nz = ez * ca - ey * sa;
+        ey = ny;
+        ez = nz;
+    }
+    gumballFrame_[0] = ex;
+    gumballFrame_[1] = ey;
+    gumballFrame_[2] = ez;
+}
+
 void Application::updateGumball() {
     if (gumballDrag_ != GumballHandle::None) return; // surukleme surerken dokunma
     const bool show = !selectedModels_.empty() &&
@@ -5123,6 +5218,7 @@ void Application::updateGumball() {
         return;
     }
     gumballVisible_ = true;
+    gumballUpdateFrame();   // yerel (object-local) eksenler
     gumballOrigin_ = (lo + hi) * 0.5;
 }
 
@@ -5134,7 +5230,7 @@ GumballHandle Application::gumballHitTest(int x, int y) const {
     const double px = static_cast<double>(x), py = static_cast<double>(y);
     const Vec2 c = gumballProject(gumballOrigin_);
     const double distC = std::hypot(px - c.x, py - c.y);
-    const Vec3 axes[3] = {{1, 0, 0}, {0, 1, 0}, {0, 0, 1}};
+    const Vec3* axes = gumballFrame_;   // YEREL eksenler
     // Oncelik: tek-bicim olcek (ic kare) -> serbest tasima (halka) -> eksen olcek.
     if (distC <= 5.0) return GumballHandle::ScaleUniform;
     if (distC <= 13.0) return GumballHandle::Center;
@@ -5203,10 +5299,10 @@ Vec3 Application::gumballPlanePoint(int x, int y, GumballHandle handle) const {
     const int h = static_cast<int>(std::max(1L, vp.bottom));
     const Vec2 s{static_cast<double>(x), static_cast<double>(y)};
     if (mode_ == EditMode::Draw2D) return camera_.unproject2D(s, w, h);
-    Vec3 n{0, 0, 1};
-    if (handle == GumballHandle::PlaneXY) n = {0, 0, 1};
-    else if (handle == GumballHandle::PlaneYZ) n = {1, 0, 0};
-    else if (handle == GumballHandle::PlaneZX) n = {0, 1, 0};
+    Vec3 n = gumballFrame_[2];
+    if (handle == GumballHandle::PlaneXY) n = gumballFrame_[2];
+    else if (handle == GumballHandle::PlaneYZ) n = gumballFrame_[0];
+    else if (handle == GumballHandle::PlaneZX) n = gumballFrame_[1];
     else n = camera_.viewTransform(Vec3{0, 0, 1}); // merkez: kameraya bakan duzlem
     const auto norm3 = [](const Vec3& a) {
         const double l = std::sqrt(a.x * a.x + a.y * a.y + a.z * a.z);
@@ -5238,7 +5334,7 @@ void Application::gumballBeginDrag(int x, int y, GumballHandle handle) {
     gumballDragScreenOrigin_ = gumballProject(gumballOrigin_);
     gumballDragPrevAngle_ = std::atan2(y - gumballDragScreenOrigin_.y,
                                        x - gumballDragScreenOrigin_.x);
-    const Vec3 axes[3] = {{1, 0, 0}, {0, 1, 0}, {0, 0, 1}};
+    const Vec3* axes = gumballFrame_;   // YEREL eksenler
     const int ai = gumballAxisIndex(handle);
     if (gumballIsAxis(handle)) {
         const double L = gumballWorldLength();
@@ -5314,7 +5410,10 @@ void Application::gumballDragMove(int x, int y) {
                 Vec3 fac{1, 1, 1};
                 const int ai = gumballAxisIndex(gumballDrag_);
                 (ai == 0 ? fac.x : ai == 1 ? fac.y : fac.z) = step;
-                document_.scaleModels(selectedModels_, pivot, fac);
+                const Vec3 inv{1.0 / fac.x, 1.0 / fac.y, 1.0 / fac.z};
+                document_.transformModels(selectedModels_, pivot,
+                                          gumballLocalScale(gumballFrame_, fac),
+                                          gumballLocalScale(gumballFrame_, inv));
                 gumballAppliedFactor_ = f;
             }
         }
@@ -5382,7 +5481,10 @@ void Application::gumballCancelDrag() {
         Vec3 fac{1, 1, 1};
         const int ai = gumballAxisIndex(gumballDrag_);
         (ai == 0 ? fac.x : ai == 1 ? fac.y : fac.z) = 1.0 / gumballAppliedFactor_;
-        document_.scaleModels(selectedModels_, pivot, fac);
+        const Vec3 inv{1.0 / fac.x, 1.0 / fac.y, 1.0 / fac.z};
+        document_.transformModels(selectedModels_, pivot,
+                                  gumballLocalScale(gumballFrame_, fac),
+                                  gumballLocalScale(gumballFrame_, inv));
     } else if (gumballDrag_ == GumballHandle::ScaleUniform) {
         const double inv = 1.0 / gumballAppliedFactor_;
         document_.scaleModels(selectedModels_, pivot, Vec3{inv, inv, inv});
@@ -5429,7 +5531,10 @@ void Application::applyGumballNumeric(double value) {
         Vec3 fac{1, 1, 1};
         const int ai = gumballAxisIndex(gumballDrag_);
         (ai == 0 ? fac.x : ai == 1 ? fac.y : fac.z) = step;
-        document_.scaleModels(selectedModels_, pivot, fac);
+        const Vec3 inv{1.0 / fac.x, 1.0 / fac.y, 1.0 / fac.z};
+        document_.transformModels(selectedModels_, pivot,
+                                  gumballLocalScale(gumballFrame_, fac),
+                                  gumballLocalScale(gumballFrame_, inv));
         gumballAppliedFactor_ = f;
         wchar_t buf[96]{};
         std::swprintf(buf, std::size(buf), L"Gumball olcek: %.4f x", f);
@@ -5511,6 +5616,9 @@ DraftView Application::draftView() const {
     view.gumballWorldSize = gumballVisible_ ? gumballWorldLength() : 1.0;
     view.gumballHover = static_cast<int>(gumballHover_);
     view.gumballDragging = (gumballDrag_ != GumballHandle::None);
+    view.gumballAxisX = gumballFrame_[0];
+    view.gumballAxisY = gumballFrame_[1];
+    view.gumballAxisZ = gumballFrame_[2];
     return view;
 }
 

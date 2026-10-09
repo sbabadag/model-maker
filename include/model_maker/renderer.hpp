@@ -263,6 +263,10 @@ struct DraftView {
     double gumballWorldSize{1.0};  // ok uzunlugu (dunya birimi)
     int gumballHover{-1};          // vurgulu tutamac (GumballHandle int degeri)
     bool gumballDragging{false};
+    // YEREL eksenler (object-local): oklar/kareler/yaylar bu uclu uzerinde.
+    Vec3 gumballAxisX{1, 0, 0};
+    Vec3 gumballAxisY{0, 1, 0};
+    Vec3 gumballAxisZ{0, 0, 1};
 };
 
 class Renderer {

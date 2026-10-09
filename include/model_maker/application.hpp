@@ -464,6 +464,9 @@ private:
     double gumballAppliedAngle_{0.0};
     double gumballDragStartDist_{0.0}; // uniform scale ekran mesafe referansi
     double gumballAppliedFactor_{1.0};
+    // YEREL CERCEVE (object-local): world degil, nesnenin kendi eksenleri.
+    Vec3 gumballFrame_[3]{{1, 0, 0}, {0, 1, 0}, {0, 0, 1}};
+    void gumballUpdateFrame();
     void updateGumball();
     GumballHandle gumballHitTest(int x, int y) const;
     double gumballWorldLength() const;

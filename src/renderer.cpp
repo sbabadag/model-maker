@@ -1252,7 +1252,7 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         const POINT gc = projectPoint(go);
         const int hover = draft.gumballHover;
         const bool threeD = draft.gumball3D;
-        const Vec3 gaxis[3] = {{1, 0, 0}, {0, 1, 0}, {0, 0, 1}};
+        const Vec3 gaxis[3] = {draft.gumballAxisX, draft.gumballAxisY, draft.gumballAxisZ};
         const COLORREF gcol[3] = {RGB(205, 45, 45), RGB(35, 150, 60), RGB(45, 90, 210)};
         const int planeA[3] = {0, 1, 2}, planeB[3] = {1, 2, 0}, planeH[3] = {3, 4, 5};
         const double gps = 0.32 * gl;
