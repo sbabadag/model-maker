@@ -2169,7 +2169,9 @@ void Application::commitPoint(const Vec3& point) {
             for (std::size_t i = 1; i <= divideCount_; ++i) {
                 const double t = static_cast<double>(i) / static_cast<double>(divideCount_ + 1);
                 auto pt = WireframeModel::point(start + (point - start) * t);
-                pt.setProperties(currentEntityProperties());
+                EntityProperties props = currentEntityProperties();
+                props.effectiveColor = 0xFF0000; // kirmizi
+                pt.setProperties(props);
                 document_.addModel(std::move(pt));
                 ++placed;
             }
