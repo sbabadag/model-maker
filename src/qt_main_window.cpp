@@ -356,6 +356,7 @@ void QtMainWindow::createMenus() {
     drawMenu->addAction("&Polyline", this, [this]() { app_.selectTool(DrawTool::Polyline); })->setIcon(makeToolIcon(ToolGlyph::Polyline));
     drawMenu->addAction("Dikdört&gen", this, [this]() { app_.selectTool(DrawTool::Rectangle); })->setIcon(makeToolIcon(ToolGlyph::Rect));
     drawMenu->addAction("Dai&re", this, [this]() { app_.selectTool(DrawTool::Circle); })->setIcon(makeToolIcon(ToolGlyph::Circle));
+    drawMenu->addAction("Böl (&Divide)", this, [this]() { app_.selectTool(DrawTool::Divide); });
     drawMenu->addAction("&3DFACE", this, [this]() { app_.selectTool(DrawTool::Face3D); })->setIcon(makeToolIcon(ToolGlyph::Face3D));
 
     QMenu* modifyMenu = menuBar()->addMenu("Dü&zenle");

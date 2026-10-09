@@ -1427,6 +1427,7 @@ LRESULT Application::handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lPa
         else if (wParam == 'P') selectTool(DrawTool::Polyline);
         else if (wParam == 'A') selectTool(DrawTool::Rectangle);
         else if (wParam == 'C') selectTool(DrawTool::Circle);
+        else if (wParam == 'D') selectTool(DrawTool::Divide);
         else if (wParam == 'F') selectTool(DrawTool::Face3D);
         else if (wParam == 'G') selectTool(DrawTool::Column);
         else if (wParam == 'M') startTransformCommand(TransformCommand::Move);
@@ -1972,6 +1973,38 @@ void Application::onCharacter(wchar_t character) {
         SetWindowTextW(status_, prompt.c_str());
         return;
     }
+    if (tool_ == DrawTool::Divide && drawingActive_) {
+        // DIVIDE: rakam + Enter = bolme sayisi; bos Enter normal akisa duser.
+        if (character == L'\r') {
+            if (!input_.empty()) {
+                try {
+                    std::size_t used{};
+                    const long n = std::stol(input_, &used);
+                    if (used != input_.size() || n < 2 || n > 1000)
+                        throw std::invalid_argument("divide count");
+                    divideCount_ = static_cast<std::size_t>(n);
+                    input_.clear();
+                    publishStatus(L"Bölme sayısı: " + std::to_wstring(divideCount_) +
+                                  L" — iki noktayı seçin (araya " +
+                                  std::to_wstring(divideCount_ - 1) + L" nokta)");
+                    updateStatus(); invalidateCanvas();
+                } catch (...) {
+                    MessageBeep(MB_ICONWARNING);
+                }
+                return;
+            }
+        } else if (character == L'\b') {
+            if (!input_.empty()) input_.pop_back();
+            updateStatus(); invalidateCanvas();
+            return;
+        } else if (character >= L'0' && character <= L'9') {
+            input_.push_back(character);
+            updateStatus(); invalidateCanvas();
+            return;
+        } else {
+            return;
+        }
+    }
     if (character == L'\r' && transformCommand_ == TransformCommand::None &&
         lastTransformCommand_ != TransformCommand::None &&
         shouldRepeatLastModifierOnEnter(drawingActive_, !input_.empty(),
@@ -2157,6 +2190,24 @@ void Application::commitPoint(const Vec3& point) {
     }
     case DrawTool::Face3D:
         break;
+    case DrawTool::Divide: {
+        // DIVIDE: iki nokta arasini esit parcalara bol, ic noktalari yerlestir.
+        if (point != start) {
+            pushUndoSnapshot();
+            std::size_t placed = 0;
+            for (std::size_t i = 1; i < divideCount_; ++i) {
+                const double t = static_cast<double>(i) / static_cast<double>(divideCount_);
+                auto pt = WireframeModel::point(start + (point - start) * t);
+                pt.setProperties(currentEntityProperties());
+                document_.addModel(std::move(pt));
+                ++placed;
+            }
+            publishStatus(L"Bölme: " + std::to_wstring(placed) + L" nokta yerleştirildi (" +
+                          std::to_wstring(divideCount_) + L" eşit parça)");
+        }
+        anchor_.reset();
+        break;
+    }
     }
 }
 
@@ -3690,6 +3741,8 @@ void Application::updateStatus() {
         text += L"  |  Araç: "; text += toolLabel(tool_);
         if (tool_ == DrawTool::Face3D)
             text += L" — " + std::to_wstring(facePoints_.size() + 1) + L". köşeyi belirtin (4 köşe)";
+        else if (tool_ == DrawTool::Divide)
+            text += L" — " + std::to_wstring(divideCount_) + L" eşit parça (rakam + Enter ile değiştir)";
     }
     text += L"  |  Nesne: " + std::to_wstring(document_.models().size());
     const bool snapEffective = snapEnabled_ && (workPlanePicking_ ||

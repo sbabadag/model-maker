@@ -426,6 +426,7 @@ private:
     double columnTopZ_{8500.0};      // kolon ust kotu (mm) — props paneli
     double columnBottomZ_{0.0};      // kolon alt kotu (mm)
     std::string columnMaterial_;     // kolon malzemesi (props paneli)
+    std::size_t divideCount_{2};     // Divide: esit parca sayisi (varsayilan 2 = orta nokta)
     std::optional<Vec3> anchor_;
     std::vector<Vec3> facePoints_;
     std::optional<SnapResult> hover_;

@@ -12,7 +12,7 @@
 
 namespace mm {
 
-enum class DrawTool { Line, Polyline, Rectangle, Circle, Face3D, Column };
+enum class DrawTool { Line, Polyline, Rectangle, Circle, Face3D, Column, Divide };
 enum class SnapType {
     None, Grid, Endpoint, Midpoint, Center, GeometricCenter, Node, Quadrant,
     Intersection, ApparentIntersection, Extension, Insertion, Perpendicular,
