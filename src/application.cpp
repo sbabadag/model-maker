@@ -1559,6 +1559,8 @@ void Application::onLeftButtonDown(int x, int y) {
             const Vec3 to{m.properties().axisToX, m.properties().axisToY,
                           m.properties().axisToZ};
             profileGrip_->fixedPoint = grip->second ? from : to;
+            profileGrip_->trackFrom = grip->second ? to : from;
+            profileGrip_->cursorPoint = profileGrip_->trackFrom;
             publishStatus(L"Move modu aktif — tasima baslangic noktasini secin (1. tik)");
         } else {
             profileGrip_.reset();
@@ -1864,6 +1866,14 @@ void Application::onMouseMove(int x, int y, WPARAM buttons) {
     trimExtendPreviewSuppressed_ = false;
     bool redraw = false;
     bool snapRedraw = false;
+    if (profileGrip_ && mode_ == EditMode::View3D) {
+        // Move modunda track line: baz -> imlec canli takip.
+        profileGrip_->cursorPoint = profileGripSnapPoint(x, y);
+        KillTimer(window_, 4);
+        snapPreviewActive_ = true;
+        invalidateCanvas();
+        return;
+    }
     if (viewCubeManipulating_ && (buttons & MK_LBUTTON) && mode_ == EditMode::View3D) {
         const int dx = x - lastMouse_.x;
         const int dy = y - lastMouse_.y;
@@ -4767,6 +4777,26 @@ std::optional<std::pair<std::size_t, bool>> Application::profileGripAt(int x, in
     return best;
 }
 
+Vec3 Application::profileGripSnapPoint(int x, int y) const {
+    if (!profileGrip_ || profileGrip_->solidIndex >= document_.models().size()) return {};
+    const auto& m = document_.models()[profileGrip_->solidIndex];
+    const Vec3 from{m.properties().axisFromX, m.properties().axisFromY,
+                    m.properties().axisFromZ};
+    const Vec3 to{m.properties().axisToX, m.properties().axisToY,
+                  m.properties().axisToZ};
+    const Vec3 movingEnd = profileGrip_->endIsTo ? to : from;
+    const Vec3 reference = profileGrip_->basePicked ? profileGrip_->basePoint : movingEnd;
+    RECT client{};
+    GetClientRect(canvas_, &client);
+    WorkPlane activePlane = workPlane_;
+    activePlane.origin = reference;
+    return SnapEngine::snap3D(
+        {static_cast<double>(x), static_cast<double>(y)}, document_, camera_,
+        std::max(1L, client.right), std::max(1L, client.bottom), 10.0, activePlane,
+        snapEnabled_, gridSnapEnabled_, reference, &enabledSnapTypes_,
+        visualStyle_ == VisualStyle::Solid).point;
+}
+
 void Application::profileGripClick(int x, int y) {
     if (!profileGrip_) return;
     const ProfileGrip grip = *profileGrip_;
@@ -4775,36 +4805,27 @@ void Application::profileGripClick(int x, int y) {
         invalidateCanvas();
         return;
     }
-    const auto& m = document_.models()[grip.solidIndex];
-    const Vec3 from{m.properties().axisFromX, m.properties().axisFromY,
-                    m.properties().axisFromZ};
-    const Vec3 to{m.properties().axisToX, m.properties().axisToY,
-                  m.properties().axisToZ};
-    const Vec3 movingEnd = grip.endIsTo ? to : from;
-    // Snap nokta (normal Move gibi work-plane uzerinde).
-    RECT client{};
-    GetClientRect(canvas_, &client);
-    const int w = std::max(1L, client.right);
-    const int h = std::max(1L, client.bottom);
-    const Vec3 reference = grip.basePicked ? grip.basePoint : movingEnd;
-    WorkPlane activePlane = workPlane_;
-    activePlane.origin = reference;
-    const SnapResult snapped = SnapEngine::snap3D(
-        {static_cast<double>(x), static_cast<double>(y)}, document_, camera_, w, h,
-        10.0, activePlane, snapEnabled_, gridSnapEnabled_, reference,
-        &enabledSnapTypes_, visualStyle_ == VisualStyle::Solid);
+    const Vec3 snappedPoint = profileGripSnapPoint(x, y);
 
     if (!grip.basePicked) {
-        // 1. tik: tasima baslangici (baz noktasi).
+        // 1. tik: tasima baslangici (baz noktasi). Track line artik bazdan.
         profileGrip_->basePicked = true;
-        profileGrip_->basePoint = snapped.point;
+        profileGrip_->basePoint = snappedPoint;
+        profileGrip_->trackFrom = snappedPoint;
+        profileGrip_->cursorPoint = snappedPoint;
         publishStatus(L"Hedef noktayi secin (2. tik) — profil o vektorle tasinacak");
         updateStatus();
         invalidateCanvas();
         return;
     }
     // 2. tik: destinasyon. displacement = hedef - baz.
-    const Vec3 displacement = snapped.point - grip.basePoint;
+    const auto& m = document_.models()[grip.solidIndex];
+    const Vec3 from{m.properties().axisFromX, m.properties().axisFromY,
+                    m.properties().axisFromZ};
+    const Vec3 to{m.properties().axisToX, m.properties().axisToY,
+                  m.properties().axisToZ};
+    const Vec3 movingEnd = grip.endIsTo ? to : from;
+    const Vec3 displacement = snappedPoint - grip.basePoint;
     const Vec3 newMovingEnd = movingEnd + displacement;
     profileGrip_.reset();
 #ifdef MM_HAS_OCC
@@ -4918,10 +4939,13 @@ DraftView Application::draftView() const {
                              std::abs(wheelPreviewFactor_ - 1.0) > 1e-12;
     view.rasterZoomFactor = wheelPreviewFactor_;
     view.rasterZoomOffset = wheelPreviewOffset_;
-    // Profil uc tutamagi (grip edit) vurgusu.
+    // Profil uc tutamagi (grip edit) vurgusu + move track line.
     if (profileGrip_) {
         view.activeGripSolid = profileGrip_->solidIndex;
         view.activeGripEndIsTo = profileGrip_->endIsTo;
+        view.gripMoveActive = true;
+        view.gripTrackFrom = profileGrip_->trackFrom;
+        view.gripTrackTo = profileGrip_->cursorPoint;
     }
     return view;
 }

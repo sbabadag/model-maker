@@ -789,6 +789,17 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
             drawText(dc, boxX + 7, boxY + 4, info,
                      draft.input.empty() ? RGB(221, 228, 241) : RGB(255, 216, 104));
         }
+
+        // PROFIL TUTAMAGI MOVE track line: baz -> imlec (baslangic-bitis).
+        if (draft.gripMoveActive) {
+            const POINT from = projectPoint(draft.gripTrackFrom);
+            const POINT to = projectPoint(draft.gripTrackTo);
+            HPEN trackPen = CreatePen(PS_DOT, 1, RGB(255, 206, 84));
+            SelectObject(dc, trackPen);
+            line(dc, from.x, from.y, to.x, to.y);
+            SelectObject(dc, stockPen);
+            DeleteObject(trackPen);
+        }
     };
 
     // Hızlı yol: geçerli motion tabanı VARSA ve kamera taban çekildiğinden beri
@@ -1372,6 +1383,17 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         SelectObject(dc, oldSelectionPen); SelectObject(dc, oldSelectionBrush); DeleteObject(border);
         drawText(dc, selection.left + 3, std::max(3L, selection.top - 19),
                  L"ZOOM WINDOW", RGB(54, 142, 224));
+    }
+
+    // PROFIL TUTAMAGI MOVE track line (tam kare): baz -> imlec (baslangic-bitis).
+    if (draft.gripMoveActive) {
+        const POINT gripFrom = projectPoint(draft.gripTrackFrom);
+        const POINT gripTo = projectPoint(draft.gripTrackTo);
+        HPEN gripTrackPen = CreatePen(PS_DOT, 1, RGB(255, 206, 84));
+        SelectObject(dc, gripTrackPen);
+        line(dc, gripFrom.x, gripFrom.y, gripTo.x, gripTo.y);
+        SelectObject(dc, stockPen);
+        DeleteObject(gripTrackPen);
     }
 
     if (draft.transformCommand != TransformCommand::None &&

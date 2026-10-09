@@ -377,6 +377,8 @@ private:
         Vec3 fixedPoint{};        // diger (sabit) uc
         bool basePicked{};        // false = baz noktasi bekleniyor, true = hedef bekleniyor
         Vec3 basePoint{};         // birinci tik (tasima baslangici)
+        Vec3 trackFrom{};         // track line baslangici (moving end -> baz secilince)
+        Vec3 cursorPoint{};       // canli imlec noktasi (track line bitisi)
     };
     std::optional<ProfileGrip> profileGrip_;
     void performSolidTrimByLine(std::size_t lineIndex);
@@ -392,6 +394,7 @@ private:
     std::optional<std::pair<std::size_t, bool>> profileGripAt(int x, int y) const;
     void profileGripClick(int x, int y);
     void cancelProfileGrip();
+    Vec3 profileGripSnapPoint(int x, int y) const;
 #ifdef MM_HAS_OCC
     void reExtrudeProfileGrip(std::size_t solidIndex, bool endIsTo, const Vec3& newPoint);
 #endif

@@ -181,6 +181,10 @@ struct DraftView {
     // tutamagin vurgusunu tasir.
     std::optional<std::size_t> activeGripSolid; // aktif (secili) tutamagin katisi
     bool activeGripEndIsTo{false};              // false=from(sari), true=to(mor)
+    // Move modunda baz -> imlec track line (baslangic-bitis).
+    bool gripMoveActive{false};
+    Vec3 gripTrackFrom{};
+    Vec3 gripTrackTo{};
     std::optional<Vec3> transformBase;
     std::optional<Vec3> rotateAxis;
     std::optional<double> offsetDistance;
