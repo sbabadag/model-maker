@@ -375,6 +375,8 @@ private:
         std::size_t solidIndex{}; // profilli kati indeksi
         bool endIsTo{};           // false = from (sari), true = to (mor)
         Vec3 fixedPoint{};        // diger (sabit) uc
+        bool basePicked{};        // false = baz noktasi bekleniyor, true = hedef bekleniyor
+        Vec3 basePoint{};         // birinci tik (tasima baslangici)
     };
     std::optional<ProfileGrip> profileGrip_;
     void performSolidTrimByLine(std::size_t lineIndex);
@@ -384,11 +386,11 @@ private:
     std::optional<std::size_t> solidTrimTargetAt(int x, int y) const;
     std::optional<std::size_t> trimLineTargetAt(int x, int y) const;
     // PROFIL UC TUTAMAKLARI (grip edit): 3B'de secili profilli katinin iki
-    // ucuna (sari=from, mor=to) tutamak konur. Alt+tik tutamagi secer
-    // (from noktasi); ardindan normal sol-tik hedef noktasidir — normal Move
-    // komutu gibi bir noktadan diger noktaya, profil o noktaya uzar.
+    // ucuna (sari=from, mor=to) tutamak konur. Alt+tik tutamaga basinca move
+    // modu aktif olur; birinci tik tasima baslangici (baz), ikinci tik
+    // destinasyondur — normal Move komutu gibi, profil o vektorle tasinir.
     std::optional<std::pair<std::size_t, bool>> profileGripAt(int x, int y) const;
-    void extendProfileGripTo(int x, int y);
+    void profileGripClick(int x, int y);
     void cancelProfileGrip();
 #ifdef MM_HAS_OCC
     void reExtrudeProfileGrip(std::size_t solidIndex, bool endIsTo, const Vec3& newPoint);

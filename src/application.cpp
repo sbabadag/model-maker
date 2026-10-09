@@ -1542,16 +1542,16 @@ void Application::onLeftButtonDown(int x, int y) {
         }
         updateControls(); invalidateCanvas(); return;
     }
-    // PROFIL UC TUTAMAKLARI (grip edit): Alt+tik 3B'de profilli katinin uc
-    // tutamagini secer (sari=from, mor=to) = from noktasi. Ardindan normal
-    // sol-tik hedef noktasidir; normal Move komutu gibi bir noktadan diger
-    // noktaya, profil o noktaya uzatilir.
+    // PROFIL UC TUTAMAKLARI (grip edit): Alt+tik tutamaga basinca move modu
+    // aktif olur; 1. tik tasima baslangici (baz), 2. tik destinasyondur —
+    // normal Move komutu gibi.
     const bool altDown = (GetKeyState(VK_MENU) & 0x8000) != 0;
     if (altDown && mode_ == EditMode::View3D) {
         if (const auto grip = profileGripAt(x, y)) {
             profileGrip_ = ProfileGrip{};
             profileGrip_->solidIndex = grip->first;
             profileGrip_->endIsTo = grip->second;
+            profileGrip_->basePicked = false;
             selectedModels_.assign(1, grip->first);
             const auto& m = document_.models()[grip->first];
             const Vec3 from{m.properties().axisFromX, m.properties().axisFromY,
@@ -1559,9 +1559,7 @@ void Application::onLeftButtonDown(int x, int y) {
             const Vec3 to{m.properties().axisToX, m.properties().axisToY,
                           m.properties().axisToZ};
             profileGrip_->fixedPoint = grip->second ? from : to;
-            publishStatus(grip->second
-                ? L"Profil ust ucu secildi — hedef noktayi secin (mor uc uzar)"
-                : L"Profil alt ucu secildi — hedef noktayi secin (sari uc uzar)");
+            publishStatus(L"Move modu aktif — tasima baslangic noktasini secin (1. tik)");
         } else {
             profileGrip_.reset();
         }
@@ -1569,8 +1567,8 @@ void Application::onLeftButtonDown(int x, int y) {
         return;
     }
     if (profileGrip_ && mode_ == EditMode::View3D) {
-        // Hedef nokta: profil secilen uctan bu noktaya uzatilir (Move gibi).
-        extendProfileGripTo(x, y);
+        // Move akisi: 1. tik baz, 2. tik destinasyon.
+        profileGripClick(x, y);
         return;
     }
     if (GetKeyState(VK_CONTROL) < 0) {
@@ -4738,8 +4736,9 @@ void Application::assignProfileToSelection(const std::string& profileName) {
 
 // --- PROFIL UC TUTAMAKLARI (grip edit) -------------------------------------
 // 3B gorunumde secili profilli katilarin iki ucuna (sari=from, mor=to) tutamak
-// konur. Alt+tik tutamagi secer (from noktasi); normal sol-tik hedef noktasidir
-// — normal Move komutu gibi bir noktadan diger noktaya, profil o noktaya uzar.
+// konur. Alt+tik tutamaga basinca move modu aktif olur; 1. tik tasima
+// baslangici (baz), 2. tik destinasyondur — normal Move komutu gibi, profil o
+// vektorle tasinir (sabit uc yerinde, secilen uc oynar).
 
 std::optional<std::pair<std::size_t, bool>> Application::profileGripAt(int x, int y) const {
     RECT client{};
@@ -4768,33 +4767,50 @@ std::optional<std::pair<std::size_t, bool>> Application::profileGripAt(int x, in
     return best;
 }
 
-void Application::extendProfileGripTo(int x, int y) {
+void Application::profileGripClick(int x, int y) {
     if (!profileGrip_) return;
     const ProfileGrip grip = *profileGrip_;
-    profileGrip_.reset();
-    if (grip.solidIndex >= document_.models().size()) { invalidateCanvas(); return; }
-#ifdef MM_HAS_OCC
-    // Hedef nokta: normal Move gibi work-plane uzerinde snap (bir noktadan
-    // diger noktaya). Sabit uc yerinde kalir, secilen uc hedefe tasinir.
-    RECT client{};
-    GetClientRect(canvas_, &client);
-    const int w = std::max(1L, client.right);
-    const int h = std::max(1L, client.bottom);
+    if (grip.solidIndex >= document_.models().size()) {
+        profileGrip_.reset();
+        invalidateCanvas();
+        return;
+    }
     const auto& m = document_.models()[grip.solidIndex];
     const Vec3 from{m.properties().axisFromX, m.properties().axisFromY,
                     m.properties().axisFromZ};
     const Vec3 to{m.properties().axisToX, m.properties().axisToY,
                   m.properties().axisToZ};
     const Vec3 movingEnd = grip.endIsTo ? to : from;
+    // Snap nokta (normal Move gibi work-plane uzerinde).
+    RECT client{};
+    GetClientRect(canvas_, &client);
+    const int w = std::max(1L, client.right);
+    const int h = std::max(1L, client.bottom);
+    const Vec3 reference = grip.basePicked ? grip.basePoint : movingEnd;
     WorkPlane activePlane = workPlane_;
-    activePlane.origin = movingEnd;
+    activePlane.origin = reference;
     const SnapResult snapped = SnapEngine::snap3D(
         {static_cast<double>(x), static_cast<double>(y)}, document_, camera_, w, h,
-        10.0, activePlane, snapEnabled_, gridSnapEnabled_, movingEnd,
+        10.0, activePlane, snapEnabled_, gridSnapEnabled_, reference,
         &enabledSnapTypes_, visualStyle_ == VisualStyle::Solid);
-    reExtrudeProfileGrip(grip.solidIndex, grip.endIsTo, snapped.point);
+
+    if (!grip.basePicked) {
+        // 1. tik: tasima baslangici (baz noktasi).
+        profileGrip_->basePicked = true;
+        profileGrip_->basePoint = snapped.point;
+        publishStatus(L"Hedef noktayi secin (2. tik) — profil o vektorle tasinacak");
+        updateStatus();
+        invalidateCanvas();
+        return;
+    }
+    // 2. tik: destinasyon. displacement = hedef - baz.
+    const Vec3 displacement = snapped.point - grip.basePoint;
+    const Vec3 newMovingEnd = movingEnd + displacement;
+    profileGrip_.reset();
+#ifdef MM_HAS_OCC
+    reExtrudeProfileGrip(grip.solidIndex, grip.endIsTo, newMovingEnd);
 #else
-    publishStatus(L"Profil ucunu uzatmak icin OpenCASCADE gerekli (OCC kapali).");
+    publishStatus(L"Profil ucunu tasimak icin OpenCASCADE gerekli (OCC kapali).");
     invalidateCanvas();
 #endif
 }
