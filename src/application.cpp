@@ -1301,6 +1301,9 @@ LRESULT Application::handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lPa
     case WM_CAPTURECHANGED:
         rotating_ = false;
         panning2D_ = false;
+        // Tutamak suruklemesi yakalama kaybederse (Alt+Tab vb.) suruklemeyi
+        // iptal et (kaybolan yakalamayla commit olmaz).
+        if (profileGrip_ && profileGrip_->dragging) profileGrip_.reset();
         if (reinterpret_cast<HWND>(lParam) != canvas_) {
             viewCubeManipulating_ = false;
             viewCubePressedView_.reset();
@@ -1379,7 +1382,8 @@ LRESULT Application::handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lPa
                 return 0;
             }
             input_.clear();
-            if (zoomWindowActive_) cancelZoomWindow2D();
+            if (profileGrip_) cancelProfileGripDrag();
+            else if (zoomWindowActive_) cancelZoomWindow2D();
             else if (workPlanePicking_) cancelWorkPlaneCommand();
             else if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
             else cancelDrawing();
@@ -1540,6 +1544,46 @@ void Application::onLeftButtonDown(int x, int y) {
             commitWorkPlanePoint(point);
         }
         updateControls(); invalidateCanvas(); return;
+    }
+    // PROFIL UC TUTAMAKLARI (grip edit): Alt+tik 3B'de profilli katinin uc
+    // tutamagini secer (sari=from, mor=to). Secimden sonra ayni tutamak
+    // normal sol-suruklemeyle tasinir; profil o noktaya uzar.
+    const bool altDown = (GetKeyState(VK_MENU) & 0x8000) != 0;
+    if (altDown && mode_ == EditMode::View3D) {
+        if (const auto grip = profileGripAt(x, y)) {
+            profileGrip_ = ProfileGrip{};
+            profileGrip_->solidIndex = grip->first;
+            profileGrip_->endIsTo = grip->second;
+            selectedModels_.assign(1, grip->first);
+            const auto& m = document_.models()[grip->first];
+            const Vec3 from{m.properties().axisFromX, m.properties().axisFromY,
+                            m.properties().axisFromZ};
+            const Vec3 to{m.properties().axisToX, m.properties().axisToY,
+                          m.properties().axisToZ};
+            profileGrip_->fixedPoint = grip->second ? from : to;
+            profileGrip_->dragAnchor = grip->second ? to : from;
+            profileGrip_->dragPoint = profileGrip_->dragAnchor;
+            publishStatus(grip->second
+                ? L"Profil uc tutamaci (mor) secildi — surukleyerek uzatin"
+                : L"Profil uc tutamaci (sari) secildi — surukleyerek uzatin");
+        } else {
+            profileGrip_.reset();
+        }
+        updateControls(); updateStatus(); invalidateCanvas();
+        return;
+    }
+    if (profileGrip_ && !profileGrip_->dragging) {
+        // Aktif tutamak seciliyken normal sol tik: ayni tutamak uzerindeyse
+        // suruklemeyi baslat; aksi halde aktif tutamagi birak.
+        if (const auto grip = profileGripAt(x, y)) {
+            if (grip->first == profileGrip_->solidIndex &&
+                grip->second == profileGrip_->endIsTo) {
+                startProfileGripDrag(x, y);
+                return;
+            }
+        }
+        profileGrip_.reset();
+        updateControls(); invalidateCanvas();
     }
     if (GetKeyState(VK_CONTROL) < 0) {
         // Ctrl+tiklama: bos modda nesne secimi (profil atama icin).
@@ -1822,6 +1866,10 @@ void Application::onLeftButtonUp(int x, int y) {
         invalidateCanvas();
         return;
     }
+    if (profileGrip_ && profileGrip_->dragging) {
+        commitProfileGripDrag();
+        return;
+    }
     const bool wasRotating = rotating_;
     rotating_ = false;
     ReleaseCapture();
@@ -1834,6 +1882,13 @@ void Application::onMouseMove(int x, int y, WPARAM buttons) {
     trimExtendPreviewSuppressed_ = false;
     bool redraw = false;
     bool snapRedraw = false;
+    if (profileGrip_ && profileGrip_->dragging && (buttons & MK_LBUTTON)) {
+        updateProfileGripDrag(x, y);
+        KillTimer(window_, 4);
+        snapPreviewActive_ = true;
+        invalidateCanvas();
+        return;
+    }
     if (viewCubeManipulating_ && (buttons & MK_LBUTTON) && mode_ == EditMode::View3D) {
         const int dx = x - lastMouse_.x;
         const int dy = y - lastMouse_.y;
@@ -2283,6 +2338,7 @@ void Application::toggle3DView() {
     cancelZoomWindow2D();
     if (workPlanePicking_) cancelWorkPlaneCommand();
     if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
+    profileGrip_.reset();
     cancelDrawing();
     const bool entering3D = mode_ != EditMode::View3D;
     mode_ = mode_ == EditMode::View3D ? EditMode::Draw2D : EditMode::View3D;
@@ -3290,6 +3346,7 @@ void Application::selectTool(DrawTool tool) {
     cancelZoomWindow2D();
     if (workPlanePicking_) cancelWorkPlaneCommand();
     if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
+    profileGrip_.reset();
     tool_ = tool; cancelDrawing(); drawingActive_ = true;
     updateHover(cursorScreen_.x, cursorScreen_.y); updateControls(); invalidateCanvas();
 }
@@ -3298,6 +3355,7 @@ void Application::deactivateAllCommands() {
     cancelZoomWindow2D();
     if (workPlanePicking_) cancelWorkPlaneCommand();
     if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
+    profileGrip_.reset();
     cancelDrawing();
     drawingActive_ = false;
     lastTransformCommand_ = TransformCommand::None;
@@ -3420,6 +3478,7 @@ void Application::undo() {
     if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
     if (!document_.undo()) return;
     polylineModelIndex_.reset();
+    profileGrip_.reset();
     selectedModels_.clear();
     selectionFirstCorner_.reset();
     refreshLayerCombo();
@@ -3433,6 +3492,7 @@ void Application::redo() {
     if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
     if (!document_.redo()) return;
     polylineModelIndex_.reset();
+    profileGrip_.reset();
     selectedModels_.clear();
     selectionFirstCorner_.reset();
     refreshLayerCombo();
@@ -4699,6 +4759,133 @@ void Application::assignProfileToSelection(const std::string& profileName) {
 #endif
 }
 
+// --- PROFIL UC TUTAMAKLARI (grip edit) -------------------------------------
+// 3B gorunumde profilli katilarin iki ucuna (sari=from, mor=to) tutamak konur.
+// Alt+tik tutamagi secer; surukleme profili o noktaya uzatir (yeniden extrude).
+
+std::optional<std::pair<std::size_t, bool>> Application::profileGripAt(int x, int y) const {
+    RECT client{};
+    GetClientRect(canvas_, &client);
+    const int w = std::max(1L, client.right);
+    const int h = std::max(1L, client.bottom);
+    const double tolerance = 9.0; // piksel
+    std::optional<std::pair<std::size_t, bool>> best;
+    double bestDistance = tolerance;
+    for (std::size_t i = 0; i < document_.models().size(); ++i) {
+        const auto& m = document_.models()[i];
+        if (m.faces().empty() || m.properties().profileName.empty()) continue;
+        const Vec3 from{m.properties().axisFromX, m.properties().axisFromY,
+                        m.properties().axisFromZ};
+        const Vec3 to{m.properties().axisToX, m.properties().axisToY,
+                      m.properties().axisToZ};
+        const Vec2 sf = camera_.project(from, w, h);
+        const Vec2 st = camera_.project(to, w, h);
+        const double df = std::hypot(sf.x - static_cast<double>(x),
+                                     sf.y - static_cast<double>(y));
+        const double dt = std::hypot(st.x - static_cast<double>(x),
+                                     st.y - static_cast<double>(y));
+        if (df < bestDistance) { best = {i, false}; bestDistance = df; }
+        if (dt < bestDistance) { best = {i, true}; bestDistance = dt; }
+    }
+    return best;
+}
+
+void Application::startProfileGripDrag(int x, int y) {
+    if (!profileGrip_ || profileGrip_->dragging) return;
+    profileGrip_->dragging = true;
+    profileGrip_->dragPoint = profileGrip_->dragAnchor;
+    cursorScreen_ = {x, y};
+    RECT client{};
+    GetClientRect(canvas_, &client);
+    // Surukleme duzlemi: suruklenen ucun ORIGINAL konumundan gecen, ekrana
+    // paralel duzlem — tutamak imleci ekranda birebir takip eder; tiklama
+    // aninda (hareketsiz) orijinal nokta korunur (sifir kayma).
+    WorkPlane dragPlane{};
+    dragPlane.origin = profileGrip_->dragAnchor;
+    dragPlane.normal = camera_.viewDirection();
+    if (const auto pt = camera_.unprojectToPlane(
+            {static_cast<double>(x), static_cast<double>(y)},
+            std::max(1L, client.right), std::max(1L, client.bottom), dragPlane))
+        profileGrip_->dragPoint = *pt;
+    SetCapture(canvas_);
+    updateStatus();
+    invalidateCanvas();
+}
+
+void Application::updateProfileGripDrag(int x, int y) {
+    if (!profileGrip_ || !profileGrip_->dragging) return;
+    cursorScreen_ = {x, y};
+    RECT client{};
+    GetClientRect(canvas_, &client);
+    WorkPlane dragPlane{};
+    dragPlane.origin = profileGrip_->dragAnchor;
+    dragPlane.normal = camera_.viewDirection();
+    if (const auto pt = camera_.unprojectToPlane(
+            {static_cast<double>(x), static_cast<double>(y)},
+            std::max(1L, client.right), std::max(1L, client.bottom), dragPlane))
+        profileGrip_->dragPoint = *pt;
+}
+
+void Application::commitProfileGripDrag() {
+    if (!profileGrip_ || !profileGrip_->dragging) return;
+    const ProfileGrip grip = *profileGrip_;
+    profileGrip_.reset();
+    ReleaseCapture();
+#ifdef MM_HAS_OCC
+    reExtrudeProfileGrip(grip.solidIndex, grip.endIsTo, grip.dragPoint);
+#else
+    publishStatus(L"Profil ucunu uzatmak icin OpenCASCADE gerekli (OCC kapali).");
+    invalidateCanvas();
+#endif
+}
+
+void Application::cancelProfileGripDrag() {
+    if (!profileGrip_) return;
+    const bool wasDragging = profileGrip_->dragging;
+    profileGrip_.reset();
+    if (wasDragging) ReleaseCapture();
+    invalidateCanvas();
+}
+
+#ifdef MM_HAS_OCC
+void Application::reExtrudeProfileGrip(std::size_t solidIndex, bool endIsTo,
+                                       const Vec3& newPoint) {
+    if (solidIndex >= document_.models().size()) return;
+    const auto& solid = document_.models()[solidIndex];
+    const auto& props = solid.properties();
+    if (props.profileName.empty() || solid.faces().empty()) return;
+    ensureProfileCatalog();
+    const auto* profile = mm::findProfile(profileCatalog_, props.profileName);
+    if (!profile) {
+        publishStatus(L"Profil bulunamadi: " + utf8ToWide(props.profileName));
+        return;
+    }
+    Vec3 from{props.axisFromX, props.axisFromY, props.axisFromZ};
+    Vec3 to{props.axisToX, props.axisToY, props.axisToZ};
+    if (endIsTo) to = newPoint; else from = newPoint;
+    if (from == to) {
+        publishStatus(L"Profil uzunlugu sifir olamaz.");
+        return;
+    }
+    const TopoDS_Shape shape =
+        mm::extrudeProfileSolid(*profile, from, to, props.profileRotation);
+    if (shape.IsNull()) return;
+    auto solidModel = mm::shapeToWireframeWithFaces(shape, 0.15);
+    // Mevcut stil/kimlik ozelliklerini koru; yalniz eksen degisti.
+    auto newProps = props;
+    newProps.axisFromX = from.x; newProps.axisFromY = from.y; newProps.axisFromZ = from.z;
+    newProps.axisToX = to.x; newProps.axisToY = to.y; newProps.axisToZ = to.z;
+    solidModel.setProperties(std::move(newProps));
+    pushUndoSnapshot();
+    document_.replaceModel(solidIndex, {std::move(solidModel)});
+    occShapes_[solidIndex] = shape;
+    publishStatus(endIsTo ? L"Profil ust ucu uzatildi" : L"Profil alt ucu uzatildi");
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
+}
+#endif
+
 Vec3 Application::screenTo2D(int x, int y) const noexcept {
     RECT client{}; GetClientRect(canvas_, &client);
     return camera_.unproject2D({static_cast<double>(x), static_cast<double>(y)},
@@ -4758,6 +4945,17 @@ DraftView Application::draftView() const {
                              std::abs(wheelPreviewFactor_ - 1.0) > 1e-12;
     view.rasterZoomFactor = wheelPreviewFactor_;
     view.rasterZoomOffset = wheelPreviewOffset_;
+    // Profil uc tutamagi (grip edit) vurgu + surukleme onizlemesi.
+    if (profileGrip_) {
+        view.activeGripSolid = profileGrip_->solidIndex;
+        view.activeGripEndIsTo = profileGrip_->endIsTo;
+        if (profileGrip_->dragging) {
+            view.gripDragging = true;
+            view.gripDragFrom = profileGrip_->fixedPoint;
+            view.gripDragTo = profileGrip_->dragPoint;
+            view.gripDragEndIsTo = profileGrip_->endIsTo;
+        }
+    }
     return view;
 }
 
@@ -4900,6 +5098,7 @@ std::optional<std::filesystem::path> Application::chooseFile(bool save, bool dxf
 
 void Application::newDocument() {
     document_.clear();
+    profileGrip_.reset();
     currentFilePath_.reset();
     refreshLayerCombo();
     if (workPlanePicking_) cancelWorkPlaneCommand();

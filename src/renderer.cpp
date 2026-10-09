@@ -17,6 +17,29 @@ void line(HDC dc, int x1, int y1, int x2, int y2) {
     LineTo(dc, x2, y2);
 }
 
+// Profil uc tutamagi isareti: ic dolu daire; aktifse dis beyaz halka (vurgu).
+void drawGripMarker(HDC dc, int x, int y, COLORREF color, bool active) {
+    const int r = active ? 6 : 4;
+    HBRUSH brush = CreateSolidBrush(color);
+    HPEN pen = CreatePen(PS_SOLID, 1, active ? RGB(255, 255, 255) : color);
+    const HGDIOBJ oldBrush = SelectObject(dc, brush);
+    const HGDIOBJ oldPen = SelectObject(dc, pen);
+    Ellipse(dc, x - r, y - r, x + r + 1, y + r + 1);
+    SelectObject(dc, oldPen);
+    SelectObject(dc, oldBrush);
+    DeleteObject(pen);
+    DeleteObject(brush);
+    if (active) {
+        HPEN ring = CreatePen(PS_SOLID, 2, RGB(255, 255, 255));
+        const HGDIOBJ oldRing = SelectObject(dc, ring);
+        const HGDIOBJ oldRB = SelectObject(dc, GetStockObject(NULL_BRUSH));
+        Ellipse(dc, x - r - 3, y - r - 3, x + r + 4, y + r + 4);
+        SelectObject(dc, oldRB);
+        SelectObject(dc, oldRing);
+        DeleteObject(ring);
+    }
+}
+
 COLORREF nativeColor(std::uint32_t rgb) noexcept {
     return RGB((rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF);
 }
@@ -766,6 +789,21 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
             drawText(dc, boxX + 7, boxY + 4, info,
                      draft.input.empty() ? RGB(221, 228, 241) : RGB(255, 216, 104));
         }
+
+        // PROFIL TUTAMAGI SURUKLEME onizlemesi: sabit uctan suruklenen uca
+        // lastik cizgi + suruklenen tutamagin canli isareti (imlec renginde).
+        if (draft.gripDragging) {
+            const POINT ga = projectPoint(draft.gripDragFrom);
+            const POINT gb = projectPoint(draft.gripDragTo);
+            const COLORREF gripColor = draft.gripDragEndIsTo ? RGB(170, 90, 220)
+                                                             : RGB(255, 206, 84);
+            HPEN rubber = CreatePen(PS_DOT, 1, gripColor);
+            SelectObject(dc, rubber);
+            line(dc, ga.x, ga.y, gb.x, gb.y);
+            SelectObject(dc, stockPen);
+            DeleteObject(rubber);
+            drawGripMarker(dc, gb.x, gb.y, gripColor, true);
+        }
     };
 
     // Hızlı yol: geçerli motion tabanı VARSA ve kamera taban çekildiğinden beri
@@ -1229,6 +1267,28 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
             }
             SelectObject(dc, stockPen);
             DeleteObject(selectedPen);
+        }
+
+        // PROFIL UC TUTAMAKLARI (grip edit): her profilli katinin iki ucuna
+        // sari (from) ve mor (to) tutamak. Katilar 3B gorunumde anlamli —
+        // yalniz View3D'de cizilir; tabana gomulur (motion overlay'e dokunmaz).
+        if (mode == EditMode::View3D && !draft.snapOnly) {
+            for (std::size_t gi = 0; gi < document.models().size(); ++gi) {
+                const auto& gm = document.models()[gi];
+                if (gm.faces().empty() || gm.properties().profileName.empty()) continue;
+                const Vec3 gfrom{gm.properties().axisFromX, gm.properties().axisFromY,
+                                  gm.properties().axisFromZ};
+                const Vec3 gto{gm.properties().axisToX, gm.properties().axisToY,
+                               gm.properties().axisToZ};
+                const POINT pf = projectPoint(gfrom);
+                const POINT pt = projectPoint(gto);
+                const bool isActive =
+                    draft.activeGripSolid && *draft.activeGripSolid == gi;
+                drawGripMarker(dc, pf.x, pf.y, RGB(255, 206, 84),
+                               isActive && !draft.activeGripEndIsTo);
+                drawGripMarker(dc, pt.x, pt.y, RGB(170, 90, 220),
+                               isActive && draft.activeGripEndIsTo);
+            }
         }
 
         // Snapshot vurgudan SONRA: statik secim yesil haliyle tabana gomulur —

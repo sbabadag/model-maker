@@ -176,6 +176,15 @@ struct DraftView {
     TransformPhase transformPhase{TransformPhase::Selecting};
     std::vector<std::size_t> selectedModels;
     std::optional<POINT> selectionFirstCorner;
+    // PROFIL UC TUTAMAKLARI (grip edit): her profilli katida sari (from) ve
+    // mor (to) uc tutamagi renderer tarafindan otomatik cizilir. Bu alanlar
+    // yalniz aktif tutamak vurgusu + surukleme onizlemesi tasir.
+    std::optional<std::size_t> activeGripSolid; // aktif (secili) tutamagin katisi
+    bool activeGripEndIsTo{false};              // false=from(sari), true=to(mor)
+    bool gripDragging{false};                   // surukleme devam ediyor
+    Vec3 gripDragFrom{};                        // sabit uc (diger uc)
+    Vec3 gripDragTo{};                          // suruklenen ucun canli konumu
+    bool gripDragEndIsTo{false};                // suruklenen uc: false=from, true=to
     std::optional<Vec3> transformBase;
     std::optional<Vec3> rotateAxis;
     std::optional<double> offsetDistance;
