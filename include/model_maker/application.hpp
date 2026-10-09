@@ -150,6 +150,8 @@ public:
     // F1: GPU hatti — GL backend uretimi + F9 ile GDI/GL gecisi
     void toggleGpuLines();
     void setVisualStyle(VisualStyle style) noexcept;
+    // Standart gorunus (On/Arka/Sol/Sag/Ust/Alt/ISO) — Qt menu + Ctrl+1..7.
+    void setStandardView(StandardView view);
     void purgeStaleAxisLines(); // eski eksen cizgisi artiklarini temizle
     // F5: GDI ve GL arkaplanlarini script'li orbit/zoom/pan ile otomatik
     // olculer; sonuclar BENCH-RESULT satirlariyla render.log'a yazilir.
@@ -194,7 +196,6 @@ private:
     void onCharacter(wchar_t character);
     void executeCommand(int id);
     void cancelTransformCommand();
-    void setStandardView(StandardView view);
     void cancelZoomWindow2D();
     void completeZoomWindow2D(int x, int y);
     void commitTransformPoint(const Vec3& point);
