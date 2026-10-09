@@ -198,15 +198,19 @@ static QIcon makeToolIcon(ToolGlyph glyph) {
 
 #include <windows.h>
 
+#include "model_maker/build_info.hpp"
+
 namespace mm {
 
 QtMainWindow::QtMainWindow(QWidget* parent)
     : QMainWindow(parent)
     , app_(GetModuleHandleW(nullptr))
 {
-    setWindowTitle(QString("Model Maker — Professional Wireframe CAD  [%1 %2]")
-                       .arg(__DATE__)
-                       .arg(__TIME__));
+    // Baslik damgasi: hangi derlemenin acik oldugu + OCC'nin derlenip
+    // derlenmedigi tek bakista gorunur (mm::occStatus build_info.hpp'den).
+    setWindowTitle(QString("Model Maker — Professional Wireframe CAD  [%1]  [%2]")
+                       .arg(mm::buildStamp())
+                       .arg(mm::occStatus()));
     resize(1400, 900);
 
     createMenus();

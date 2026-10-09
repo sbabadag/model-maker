@@ -156,6 +156,11 @@ endif()
 if(OpenCASCADE_FOUND AND TARGET model-maker)
     target_link_libraries(model-maker PRIVATE model_maker_occ)
     target_compile_definitions(model-maker PRIVATE MM_HAS_OCC)
+    # Sürüm metni pencere başlığındaki OCC göstergesine gider (build_info.hpp).
+    # OpenCASCADE_VERSION her config'de tanımlı olmayabilir — o zaman "?" kalır.
+    if(DEFINED OpenCASCADE_VERSION AND NOT OpenCASCADE_VERSION STREQUAL "")
+        target_compile_definitions(model-maker PRIVATE MM_OCC_VERSION="${OpenCASCADE_VERSION}")
+    endif()
     message(STATUS "Uygulama OCC'yi dogrudan bagliyor (ayni toolchain)")
 endif()
 
