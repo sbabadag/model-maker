@@ -2883,6 +2883,49 @@ bool Application::toggleModelSelection(int x, int y) {
     return true;
 }
 
+bool Application::applyViewSelection(ViewSelectOp op, const std::vector<std::size_t>& indices) {
+    // Komut nokta/hedef fazinda (Move hedefi, Trim hedefi...) secim degismez.
+    if (transformCommand_ != TransformCommand::None &&
+        transformPhase_ != TransformPhase::Selecting) {
+        MessageBeep(MB_ICONWARNING);
+        return false;
+    }
+    if (workPlanePicking_ || zoomWindowActive_ || profileGrip_ ||
+        gumballDrag_ != GumballHandle::None) {
+        MessageBeep(MB_ICONWARNING);
+        return false;
+    }
+    // Cizim araci aciksa (ana pencerede nokta bekliyor): notr secime gec —
+    // yarim cizim iptal edilir (Esc ile ayni). cancelDrawing secimi de bosaltir.
+    if (drawingActive_ && transformCommand_ == TransformCommand::None) cancelDrawing();
+    selectionFirstCorner_.reset(); // ana penceredeki yarim pencere secimi
+    const std::size_t count = document_.models().size();
+    if (op == ViewSelectOp::Clear) {
+        selectedModels_.clear();
+    } else if (transformCommand_ == TransformCommand::Offset) {
+        // Offset tek nesne ister (ana pencereyle ayni kural).
+        for (auto it = indices.rbegin(); it != indices.rend(); ++it)
+            if (*it < count) { selectedModels_.assign(1, *it); break; }
+    } else if (op == ViewSelectOp::Toggle) {
+        for (const auto index : indices) {
+            if (index >= count) continue;
+            const auto existing = std::find(selectedModels_.begin(), selectedModels_.end(), index);
+            if (existing == selectedModels_.end()) selectedModels_.push_back(index);
+            else selectedModels_.erase(existing);
+        }
+    } else {
+        for (const auto index : indices) {
+            if (index >= count) continue;
+            if (std::find(selectedModels_.begin(), selectedModels_.end(), index) == selectedModels_.end())
+                selectedModels_.push_back(index);
+        }
+    }
+    updateHover(cursorScreen_.x, cursorScreen_.y); // gumball konumu
+    updateControls();                               // durum + ozellikler
+    invalidateCanvas();
+    return true;
+}
+
 void Application::completeWindowSelection(int x, int y) {
     if (!selectionFirstCorner_) return;
     const POINT first = *selectionFirstCorner_;

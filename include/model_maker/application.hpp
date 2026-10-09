@@ -182,6 +182,14 @@ public:
     const Document& document() const noexcept { return document_; }
     const std::vector<std::size_t>& selectedModelIndices() const noexcept { return selectedModels_; }
     VisualStyle visualStyle() const noexcept { return visualStyle_; }
+    // Ikincil gorunus penceresinden secim (ortak secim kumesi, Tekla gibi).
+    //  Toggle: tek nesneyi ekle/cikar (tik).  Add: listeyi ekle (pencere).
+    //  Clear: secimi bosalt (Esc).  Gecersiz indeksler atlanir.
+    // Komut hedef/nokta fazindaysa (or. Move destination) reddedilir -> false.
+    enum class ViewSelectOp { Toggle, Add, Clear };
+    bool applyViewSelection(ViewSelectOp op, const std::vector<std::size_t>& indices);
+    // Ikincil pencerede Enter: secim fazindaki komutu ilerletir (Enter = secim bitti).
+    void confirmFromView() { onCharacter(L'\r'); }
     void cancelWorkPlaneCommand();
     void commitWorkPlanePoint(const Vec3& point);
     void resetWorkPlane();

@@ -12,6 +12,8 @@
 
 #include <QWidget>
 
+#include <windows.h>
+
 #include <cstdint>
 #include <memory>
 
@@ -40,11 +42,16 @@ protected:
     void mouseReleaseEvent(QMouseEvent* event) override;
     void mouseDoubleClickEvent(QMouseEvent* event) override;
     void keyPressEvent(QKeyEvent* event) override;
+    void focusOutEvent(QFocusEvent* event) override;
     void contextMenuEvent(QContextMenuEvent* event) override;
 
 private:
     void pollDocument();
     bool clientSize(int& width, int& height) const;
+    POINT devicePoint(const QPointF& logical) const;
+    void selectAt(POINT p);
+    void finishWindowSelection(POINT second);
+    void drawSelectionRect(HDC dc, POINT first, POINT second) const;
 
     Application* app_;
     ViewDefinition view_;
@@ -54,6 +61,12 @@ private:
     bool needsFit_{true};
     bool panning_{false};
     QPointF lastPan_{};
+    // Secim: sol tus basili + surukleme = pencere (soldan saga tam icerme,
+    // sagdan sola crossing); surukleme yoksa tik = tek nesne ekle/cikar.
+    bool selecting_{false};
+    bool selectDragged_{false};
+    POINT selectStart_{};
+    POINT selectCurrent_{};
     std::uint64_t seenRevision_{~0ull};
     std::size_t seenModelCount_{~std::size_t{0}};
     std::size_t seenSelection_{~std::size_t{0}};

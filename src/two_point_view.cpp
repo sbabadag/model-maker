@@ -10,6 +10,8 @@
 #include <QTimer>
 #include <QWheelEvent>
 
+#include "model_maker/drafting.hpp"
+
 #include <windows.h>
 
 #include <algorithm>
@@ -115,6 +117,7 @@ void TwoPointViewWidget::paintEvent(QPaintEvent*) {
     try {
         // backend=nullptr -> saf GDI yolu (GL baglami yok).
         renderer_->draw(dc, client, app_->document(), camera_, EditMode::View3D, draft, nullptr);
+        if (selecting_ && selectDragged_) drawSelectionRect(dc, selectStart_, selectCurrent_);
     } catch (...) {
         // Cizim hatasi ikincil pencereyi/uygulamayi dusurmesin.
     }
@@ -138,6 +141,54 @@ void TwoPointViewWidget::wheelEvent(QWheelEvent* event) {
     event->accept();
 }
 
+POINT TwoPointViewWidget::devicePoint(const QPointF& logical) const {
+    const QPointF p = logical * devicePixelRatioF();
+    return POINT{static_cast<LONG>(std::lround(p.x())), static_cast<LONG>(std::lround(p.y()))};
+}
+
+void TwoPointViewWidget::selectAt(POINT p) {
+    if (!app_) return;
+    int width = 0, height = 0;
+    if (!clientSize(width, height)) return;
+    const Document& document = app_->document();
+    const auto candidates = viewSlabCandidates(document, view_);
+    const auto hit = hitTestModelCandidates3D({static_cast<double>(p.x), static_cast<double>(p.y)},
+                                              document, camera_, width, height, 10.0, candidates);
+    // Bos alana tik: Tekla gibi secimi temizle; nesneye tik: ekle/cikar.
+    if (hit) app_->applyViewSelection(Application::ViewSelectOp::Toggle, {*hit});
+    else app_->applyViewSelection(Application::ViewSelectOp::Clear, {});
+}
+
+void TwoPointViewWidget::finishWindowSelection(POINT second) {
+    if (!app_) return;
+    int width = 0, height = 0;
+    if (!clientSize(width, height)) return;
+    if (selectStart_.x == second.x || selectStart_.y == second.y) return; // cizgi kalinliginda kutu
+    const bool crossing = second.x < selectStart_.x; // sagdan sola = crossing (AutoCAD/Tekla)
+    const Document& document = app_->document();
+    const auto hits = selectModelsInRect3D(
+        {static_cast<double>(selectStart_.x), static_cast<double>(selectStart_.y)},
+        {static_cast<double>(second.x), static_cast<double>(second.y)},
+        document, camera_, width, height, crossing);
+    app_->applyViewSelection(Application::ViewSelectOp::Add, filterToViewSlab(hits, document, view_));
+}
+
+void TwoPointViewWidget::drawSelectionRect(HDC dc, POINT first, POINT second) const {
+    // Ana penceredeki secim kutusuyla ayni gorunum: mavi dolu cizgi = window,
+    // yesil kesikli = crossing.
+    const bool crossing = second.x < first.x;
+    const RECT r{std::min(first.x, second.x), std::min(first.y, second.y),
+                 std::max(first.x, second.x), std::max(first.y, second.y)};
+    HPEN pen = CreatePen(crossing ? PS_DASH : PS_SOLID, 1,
+                         crossing ? RGB(34, 139, 74) : RGB(36, 104, 181));
+    HGDIOBJ oldPen = SelectObject(dc, pen);
+    HGDIOBJ oldBrush = SelectObject(dc, GetStockObject(NULL_BRUSH));
+    Rectangle(dc, r.left, r.top, r.right + 1, r.bottom + 1);
+    SelectObject(dc, oldBrush);
+    SelectObject(dc, oldPen);
+    DeleteObject(pen);
+}
+
 void TwoPointViewWidget::mousePressEvent(QMouseEvent* event) {
     setFocus();
     // Orta tus (veya Alt + sol) = kaydir. Gorunus SABIT yonludur (Tekla
@@ -149,10 +200,26 @@ void TwoPointViewWidget::mousePressEvent(QMouseEvent* event) {
         event->accept();
         return;
     }
+    if (event->button() == Qt::LeftButton && app_) {
+        selecting_ = true;
+        selectDragged_ = false;
+        selectStart_ = selectCurrent_ = devicePoint(event->position());
+        event->accept();
+        return;
+    }
     QWidget::mousePressEvent(event);
 }
 
 void TwoPointViewWidget::mouseMoveEvent(QMouseEvent* event) {
+    if (selecting_) {
+        selectCurrent_ = devicePoint(event->position());
+        // 4 px esik: titreyen tik pencere secimine donmesin.
+        if (std::abs(selectCurrent_.x - selectStart_.x) > 4 ||
+            std::abs(selectCurrent_.y - selectStart_.y) > 4)
+            selectDragged_ = true;
+        if (selectDragged_) update();
+        return;
+    }
     if (!panning_) { QWidget::mouseMoveEvent(event); return; }
     const QPointF p = event->position() * devicePixelRatioF();
     camera_.pan3DByPixels(p.x() - lastPan_.x(), p.y() - lastPan_.y());
@@ -165,6 +232,15 @@ void TwoPointViewWidget::mouseReleaseEvent(QMouseEvent* event) {
         panning_ = false;
         return;
     }
+    if (selecting_ && event->button() == Qt::LeftButton) {
+        selecting_ = false;
+        const POINT end = devicePoint(event->position());
+        if (selectDragged_) finishWindowSelection(end);
+        else selectAt(selectStart_);
+        selectDragged_ = false;
+        update();
+        return;
+    }
     QWidget::mouseReleaseEvent(event);
 }
 
@@ -175,7 +251,31 @@ void TwoPointViewWidget::mouseDoubleClickEvent(QMouseEvent* event) {
 
 void TwoPointViewWidget::keyPressEvent(QKeyEvent* event) {
     if (event->key() == Qt::Key_F || event->key() == Qt::Key_Home) { fitView(); return; }
+    if (event->key() == Qt::Key_Delete && app_) {
+        // Ana pencereyle ayni: secim varsa hemen siler (tek undo adimi).
+        // Secim yoksa ana pencerede bekleyen bir Delete komutu ACMA.
+        if (app_->hasSelection()) app_->startTransformCommand(TransformCommand::Delete);
+        update();
+        return;
+    }
+    if ((event->key() == Qt::Key_Return || event->key() == Qt::Key_Enter) && app_) {
+        app_->confirmFromView();
+        update();
+        return;
+    }
+    if (event->key() == Qt::Key_Escape) {
+        if (selecting_) { selecting_ = false; selectDragged_ = false; update(); return; }
+        if (app_) app_->applyViewSelection(Application::ViewSelectOp::Clear, {});
+        update();
+        return;
+    }
     QWidget::keyPressEvent(event);
+}
+
+void TwoPointViewWidget::focusOutEvent(QFocusEvent* event) {
+    // Pencere disina tiklanip odak kayarsa yarim kalan secim kutusu kalmasin.
+    if (selecting_) { selecting_ = false; selectDragged_ = false; update(); }
+    QWidget::focusOutEvent(event);
 }
 
 void TwoPointViewWidget::contextMenuEvent(QContextMenuEvent* event) {

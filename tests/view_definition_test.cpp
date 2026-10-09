@@ -1,7 +1,9 @@
 // Iki noktali gorunus (Tekla "Create view by two points") cekirdek testi.
 #include "model_maker/camera.hpp"
+#include "model_maker/drafting.hpp"
 #include "model_maker/view_definition.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 
@@ -89,6 +91,47 @@ int main() {
     check(fc.fit3D(fit.minimum, fit.maximum, W, H, 40.0), "camera can fit the view box");
     const Vec2 f1 = fc.project({0, 0, 0}, W, H), f2 = fc.project({6000, 0, 400}, W, H);
     check(f1.x >= 39.0 && f2.x <= W - 39.0 && f2.y >= 0.0 && f1.y <= H, "fitted beam on screen");
+
+    // 9) SECIM (gercek Document + drafting isabet/pencere testleri, gorunus kamerasi).
+    {
+        Document doc;
+        doc.addModel(WireframeModel::line({0, 0, 0}, {6000, 0, 0}));        // 0: hat uzerinde, z=0
+        doc.addModel(WireframeModel::line({0, 0, 3000}, {6000, 0, 3000}));  // 1: hat uzerinde, z=3000
+        doc.addModel(WireframeModel::line({0, 5000, 0}, {6000, 5000, 0}));  // 2: 5 m arkada (dilim disi), ekranda 0 ile CAKISIK
+        doc.addModel(WireframeModel::line({3000, -300, 0}, {3000, -300, 3000})); // 3: kolon, dilimde
+        const auto view = viewFromTwoPoints({0, 0, 0}, {6000, 0, 0});
+        Camera vc; vc.setViewBasis(view->right, view->up, view->origin);
+        const Bounds3 box = viewFitBounds(doc.modelBounds(), *view);
+        vc.fit3D(box.minimum, box.maximum, W, H, 40.0);
+        const auto cands = viewSlabCandidates(doc, *view);
+        check(cands == std::vector<std::size_t>({0, 1, 3}), "slab candidates exclude beam behind");
+        // Tik: alt kirisin ortasina (ekranda 2 ile ust uste) -> 0 secilmeli, ASLA 2 degil.
+        const Vec2 mid = vc.project({1500, 0, 0}, W, H);
+        const auto hit = hitTestModelCandidates3D(mid, doc, vc, W, H, 10.0, cands);
+        check(hit && *hit == 0, "click picks visible beam, never the hidden overlapping one");
+        // Filtresiz isabet gizli kirisi (2) secebilir -> filtre gercekten gerekli.
+        const auto raw = hitTestModel3D(mid, doc, vc, W, H, 10.0);
+        check(raw && *raw == 2, "unfiltered hit would pick the hidden beam (filter is needed)");
+        // Bos alana tik -> isabet yok.
+        const Vec2 empty = vc.project({1500, 0, 1500}, W, H);
+        check(!hitTestModelCandidates3D(empty, doc, vc, W, H, 10.0, cands), "empty area click: no hit");
+        // Pencere (soldan saga, tam icerme): ust kirisin tamami -> yalniz 1.
+        const Vec2 a = vc.project({-100, 0, 3200}, W, H), b = vc.project({6100, 0, 2800}, W, H);
+        auto win = filterToViewSlab(selectModelsInRect3D(a, b, doc, vc, W, H, false), doc, *view);
+        check(win == std::vector<std::size_t>({1}), "window selection: fully enclosed top beam only");
+        // Crossing (sagdan sola): alt bolgeyi kesen kutu -> 0 ve 3 (kolon), 2 (gizli) HARIC.
+        const Vec2 c1 = vc.project({4000, 0, 500}, W, H), c2 = vc.project({2000, 0, -200}, W, H);
+        auto cross = filterToViewSlab(selectModelsInRect3D(c1, c2, doc, vc, W, H, true), doc, *view);
+        check(cross == std::vector<std::size_t>({0, 3}), "crossing selection: visible crossed only");
+        auto crossRaw = selectModelsInRect3D(c1, c2, doc, vc, W, H, true);
+        check(std::find(crossRaw.begin(), crossRaw.end(), 2) != crossRaw.end(),
+              "unfiltered crossing would include hidden beam (filter is needed)");
+        // Derinlik buyutulunce gizli kiris secilebilir hale gelir.
+        auto deepView = *view; deepView.depthBack = 6000.0;
+        const auto deepCands = viewSlabCandidates(doc, deepView);
+        check(std::find(deepCands.begin(), deepCands.end(), 2) != deepCands.end(),
+              "larger depth makes the far beam selectable");
+    }
 
     std::printf("%d checks, %d failures\n", checks, failures);
     return failures == 0 ? 0 : 1;
