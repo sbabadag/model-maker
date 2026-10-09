@@ -394,7 +394,7 @@ private:
     std::optional<std::pair<std::size_t, bool>> profileGripAt(int x, int y) const;
     void profileGripClick(int x, int y);
     void cancelProfileGrip();
-    Vec3 profileGripSnapPoint(int x, int y) const;
+    SnapResult profileGripSnap(int x, int y) const;
 #ifdef MM_HAS_OCC
     void reExtrudeProfileGrip(std::size_t solidIndex, bool endIsTo, const Vec3& newPoint);
 #endif

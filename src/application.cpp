@@ -1867,8 +1867,10 @@ void Application::onMouseMove(int x, int y, WPARAM buttons) {
     bool redraw = false;
     bool snapRedraw = false;
     if (profileGrip_ && mode_ == EditMode::View3D) {
-        // Move modunda track line: baz -> imlec canli takip.
-        profileGrip_->cursorPoint = profileGripSnapPoint(x, y);
+        // Move modunda track line + snap: baz -> imlec canli takip.
+        const SnapResult snap = profileGripSnap(x, y);
+        hover_ = snap;
+        profileGrip_->cursorPoint = snap.point;
         KillTimer(window_, 4);
         snapPreviewActive_ = true;
         invalidateCanvas();
@@ -4777,7 +4779,7 @@ std::optional<std::pair<std::size_t, bool>> Application::profileGripAt(int x, in
     return best;
 }
 
-Vec3 Application::profileGripSnapPoint(int x, int y) const {
+SnapResult Application::profileGripSnap(int x, int y) const {
     if (!profileGrip_ || profileGrip_->solidIndex >= document_.models().size()) return {};
     const auto& m = document_.models()[profileGrip_->solidIndex];
     const Vec3 from{m.properties().axisFromX, m.properties().axisFromY,
@@ -4794,7 +4796,7 @@ Vec3 Application::profileGripSnapPoint(int x, int y) const {
         {static_cast<double>(x), static_cast<double>(y)}, document_, camera_,
         std::max(1L, client.right), std::max(1L, client.bottom), 10.0, activePlane,
         snapEnabled_, gridSnapEnabled_, reference, &enabledSnapTypes_,
-        visualStyle_ == VisualStyle::Solid).point;
+        visualStyle_ == VisualStyle::Solid);
 }
 
 void Application::profileGripClick(int x, int y) {
@@ -4805,14 +4807,14 @@ void Application::profileGripClick(int x, int y) {
         invalidateCanvas();
         return;
     }
-    const Vec3 snappedPoint = profileGripSnapPoint(x, y);
+    const SnapResult snapped = profileGripSnap(x, y);
 
     if (!grip.basePicked) {
         // 1. tik: tasima baslangici (baz noktasi). Track line artik bazdan.
         profileGrip_->basePicked = true;
-        profileGrip_->basePoint = snappedPoint;
-        profileGrip_->trackFrom = snappedPoint;
-        profileGrip_->cursorPoint = snappedPoint;
+        profileGrip_->basePoint = snapped.point;
+        profileGrip_->trackFrom = snapped.point;
+        profileGrip_->cursorPoint = snapped.point;
         publishStatus(L"Hedef noktayi secin (2. tik) — profil o vektorle tasinacak");
         updateStatus();
         invalidateCanvas();
@@ -4825,9 +4827,10 @@ void Application::profileGripClick(int x, int y) {
     const Vec3 to{m.properties().axisToX, m.properties().axisToY,
                   m.properties().axisToZ};
     const Vec3 movingEnd = grip.endIsTo ? to : from;
-    const Vec3 displacement = snappedPoint - grip.basePoint;
+    const Vec3 displacement = snapped.point - grip.basePoint;
     const Vec3 newMovingEnd = movingEnd + displacement;
     profileGrip_.reset();
+    hover_.reset();
 #ifdef MM_HAS_OCC
     reExtrudeProfileGrip(grip.solidIndex, grip.endIsTo, newMovingEnd);
 #else
@@ -4838,6 +4841,7 @@ void Application::profileGripClick(int x, int y) {
 
 void Application::cancelProfileGrip() {
     profileGrip_.reset();
+    hover_.reset();
     invalidateCanvas();
 }
 

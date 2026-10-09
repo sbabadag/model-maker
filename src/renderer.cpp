@@ -670,7 +670,8 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
                 drawText(dc, selection.left + 3, std::max(3L, selection.top - 19), L"ZOOM", RGB(54, 142, 224));
             }
      
-        if (motionDrafting && draft.cursor && draft.snapType != SnapType::None) {
+        if ((motionDrafting || draft.gripMoveActive) && draft.cursor &&
+            draft.snapType != SnapType::None) {
             const POINT p = projectPoint(*draft.cursor);
             // Snap turune ozel renk: tek yesil marker ayirt edilmiyordu.
             const unsigned long rgb = snapMarkerColorRgb(draft.snapType);
