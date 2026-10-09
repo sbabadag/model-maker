@@ -443,6 +443,28 @@ private:
                                                  const std::wstring& initial);
     std::optional<std::size_t> requestCountParameter(const std::wstring& prompt,
                                                      const std::wstring& initial);
+
+    // --- RHINO TARZI GUMBALL (tasima tutamaclari) ---
+    bool gumballVisible_{false};
+    GumballHandle gumballHover_{GumballHandle::None};
+    GumballHandle gumballDrag_{GumballHandle::None};
+    Vec3 gumballOrigin_{};
+    Vec3 gumballDragStartOrigin_{};
+    Vec3 gumballDragStartWorld_{};
+    Vec3 gumballDragAxisWorld_{};
+    Vec2 gumballDragAxisUnit_{};
+    Vec2 gumballDragScreenOrigin_{};
+    double gumballDragT0_{0.0};
+    double gumballDragPixelsPerWorld_{1.0};
+    Vec3 gumballAppliedDelta_{};
+    void updateGumball();
+    GumballHandle gumballHitTest(int x, int y) const;
+    double gumballWorldLength() const;
+    Vec2 gumballProject(const Vec3& point) const;
+    Vec3 gumballPlanePoint(int x, int y, GumballHandle handle) const;
+    void gumballBeginDrag(int x, int y, GumballHandle handle);
+    void gumballDragMove(int x, int y);
+    void gumballEndDrag();
     std::optional<Vec3> anchor_;
     std::vector<Vec3> facePoints_;
     std::optional<SnapResult> hover_;

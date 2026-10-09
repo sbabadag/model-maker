@@ -1244,6 +1244,68 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         }
     }
 
+    // RHINO TARZI GUMBALL: tasima tutamaclari — GL kompozitinin ustune,
+    // ekran-olcekli. Oklar eksen boyunca, kareler duzlem icinde tasir.
+    if (draft.gumballVisible && !draft.interactiveNavigation && draft.gumballWorldSize > 1e-9) {
+        const Vec3 go = draft.gumballOrigin;
+        const double gl = draft.gumballWorldSize;
+        const POINT gc = projectPoint(go);
+        const int hover = draft.gumballHover;
+        const bool threeD = draft.gumball3D;
+        const Vec3 gaxis[3] = {{1, 0, 0}, {0, 1, 0}, {0, 0, 1}};
+        const COLORREF gcol[3] = {RGB(205, 45, 45), RGB(35, 150, 60), RGB(45, 90, 210)};
+        const int planeA[3] = {0, 1, 2}, planeB[3] = {1, 2, 0}, planeH[3] = {3, 4, 5};
+        const double gps = 0.32 * gl;
+        for (int k = 0; k < (threeD ? 3 : 1); ++k) {
+            const bool hot = (hover == planeH[k]);
+            const POINT p1 = projectPoint(go + gaxis[planeA[k]] * gps);
+            const POINT p2 = projectPoint(go + gaxis[planeA[k]] * gps + gaxis[planeB[k]] * gps);
+            const POINT p3 = projectPoint(go + gaxis[planeB[k]] * gps);
+            HPEN border = CreatePen(PS_SOLID, 1, hot ? RGB(230, 160, 20) : RGB(110, 135, 110));
+            HBRUSH fill = CreateSolidBrush(hot ? RGB(255, 225, 110) : RGB(205, 215, 205));
+            HGDIOBJ oldB = SelectObject(dc, fill);
+            HGDIOBJ oldP = SelectObject(dc, border);
+            POINT quad[4] = {gc, p1, p2, p3};
+            Polygon(dc, quad, 4);
+            SelectObject(dc, oldP);
+            SelectObject(dc, oldB);
+            DeleteObject(border);
+            DeleteObject(fill);
+        }
+        for (int i = 0; i < (threeD ? 3 : 2); ++i) {
+            const bool hot = (hover == i);
+            HPEN pen = CreatePen(PS_SOLID, hot ? 4 : 2, hot ? RGB(255, 190, 30) : gcol[i]);
+            HGDIOBJ oldP = SelectObject(dc, pen);
+            const POINT tip = projectPoint(go + gaxis[i] * gl);
+            line(dc, gc.x, gc.y, tip.x, tip.y);
+            const double dx = static_cast<double>(tip.x - gc.x);
+            const double dy = static_cast<double>(tip.y - gc.y);
+            const double len = std::sqrt(dx * dx + dy * dy);
+            if (len > 8.0) {
+                const double ux = dx / len, uy = dy / len;
+                const double ah = 15.0, aw = 7.5;
+                const double bx = tip.x - ux * ah, by = tip.y - uy * ah;
+                line(dc, tip.x, tip.y, static_cast<int>(bx - uy * aw), static_cast<int>(by + ux * aw));
+                line(dc, tip.x, tip.y, static_cast<int>(bx + uy * aw), static_cast<int>(by - ux * aw));
+            }
+            SelectObject(dc, oldP);
+            DeleteObject(pen);
+        }
+        {
+            const bool hot = (hover == 6);
+            HPEN pen = CreatePen(PS_SOLID, 1, RGB(70, 70, 70));
+            HBRUSH br = CreateSolidBrush(hot ? RGB(255, 215, 70) : RGB(250, 250, 250));
+            HGDIOBJ oldB = SelectObject(dc, br);
+            HGDIOBJ oldP = SelectObject(dc, pen);
+            Ellipse(dc, gc.x - 5, gc.y - 5, gc.x + 6, gc.y + 6);
+            SelectObject(dc, oldP);
+            SelectObject(dc, oldB);
+            DeleteObject(pen);
+            DeleteObject(br);
+        }
+        ++performance.drawCalls;
+    }
+
     if (!draft.interactiveNavigation) {
         if (!draft.selectedModels.empty()) {
             // Secili profilli kaynak cizgileri gizle: ayni eksende kati varsa

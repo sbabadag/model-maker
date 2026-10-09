@@ -147,6 +147,15 @@ inline WorkPlaneAxisGlyph workPlaneAxisGlyph(const WorkPlane& plane, double leng
             plane.origin + plane.v * length, plane.origin + plane.normal * length};
 }
 
+// RHINO TARZI GUMBALL: tutamac kimlikleri (DraftView + Application ortak).
+enum class GumballHandle : int {
+    None = -1, AxisX = 0, AxisY = 1, AxisZ = 2,
+    PlaneXY = 3, PlaneYZ = 4, PlaneZX = 5, Center = 6
+};
+constexpr bool gumballIsAxis(GumballHandle h) noexcept {
+    return h == GumballHandle::AxisX || h == GumballHandle::AxisY || h == GumballHandle::AxisZ;
+}
+
 struct DraftView {
     DrawTool tool{DrawTool::Line};
     VisualStyle visualStyle{VisualStyle::Wireframe};
@@ -229,6 +238,13 @@ struct DraftView {
     bool depthClipEnabled{true};
     double depthClipZMin{-1e100};
     double depthClipZMax{1e100};
+    // --- RHINO TARZI GUMBALL (tasima tutamaclari) ---
+    bool gumballVisible{false};
+    bool gumball3D{true};          // false -> 2B (yalniz X/Y oklari + XY duzlemi)
+    Vec3 gumballOrigin{};
+    double gumballWorldSize{1.0};  // ok uzunlugu (dunya birimi)
+    int gumballHover{-1};          // vurgulu tutamac (GumballHandle int degeri)
+    bool gumballDragging{false};
 };
 
 class Renderer {

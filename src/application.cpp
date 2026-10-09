@@ -1541,6 +1541,16 @@ void Application::onLeftButtonDown(int x, int y) {
             return;
         }
     }
+    // RHINO TARZI GUMBALL: tutamaca basildiysa tasima suruklemesini baslat
+    // (normal secim/transform'a dusmez).
+    if (gumballVisible_) {
+        updateGumball();
+        const auto gumballHit = gumballHitTest(x, y);
+        if (gumballHit != GumballHandle::None) {
+            gumballBeginDrag(x, y, gumballHit);
+            return;
+        }
+    }
     if (workPlanePicking_) {
         updateHover(x, y);
         if (hover_) {
@@ -1849,6 +1859,10 @@ void Application::onLeftButtonDown(int x, int y) {
 }
 
 void Application::onLeftButtonUp(int x, int y) {
+    if (gumballDrag_ != GumballHandle::None) {
+        gumballEndDrag();
+        return;
+    }
     if (viewCubeManipulating_) {
         RECT client{};
         GetClientRect(canvas_, &client);
@@ -1873,6 +1887,10 @@ void Application::onLeftButtonUp(int x, int y) {
 void Application::onMouseMove(int x, int y, WPARAM buttons) {
     cursorScreen_ = {x, y};
     trimExtendPreviewSuppressed_ = false;
+    if (gumballDrag_ != GumballHandle::None) {
+        gumballDragMove(x, y);
+        return;
+    }
     bool redraw = false;
     bool snapRedraw = false;
     if (profileGrip_ && mode_ == EditMode::View3D) {
@@ -3105,6 +3123,9 @@ void Application::commitTransformPoint(const Vec3& point) {
 void Application::updateHover(int x, int y) {
     if (!canvas_) return;
     cursorScreen_ = {x, y};
+    // RHINO TARZI GUMBALL: gorunurluk + vurgulu tutamac.
+    updateGumball();
+    gumballHover_ = gumballVisible_ ? gumballHitTest(x, y) : GumballHandle::None;
     polarTrackingLocked_ = false;
     temporaryTrackingLocked_ = false;
     const bool snapCommandActive = workPlanePicking_ || profileGrip_.has_value() ||
@@ -5012,6 +5033,193 @@ HCURSOR Application::currentCanvasCursor() const noexcept {
         ? draftingCursor_ : modifyCursor_;
 }
 
+// --- RHINO TARZI GUMBALL (tasima tutamaclari) ------------------------------
+
+Vec2 Application::gumballProject(const Vec3& point) const {
+    RECT vp{};
+    GetClientRect(canvas_, &vp);
+    const int w = static_cast<int>(std::max(1L, vp.right));
+    const int h = static_cast<int>(std::max(1L, vp.bottom));
+    return (mode_ == EditMode::View3D) ? camera_.project(point, w, h)
+                                       : camera_.project2D(point, w, h);
+}
+
+double Application::gumballWorldLength() const {
+    // Ekran-olcekli: ok uzunlugu ~110 px'e karsilik gelen dunya uzunlugu.
+    constexpr double kGumballPixels = 110.0;
+    if (!canvas_) return 1.0;
+    const Vec2 a = gumballProject(gumballOrigin_);
+    Vec2 b = gumballProject(gumballOrigin_ + Vec3{1, 0, 0});
+    double pixels = std::hypot(b.x - a.x, b.y - a.y);
+    if (pixels < 1e-6) {
+        b = gumballProject(gumballOrigin_ + Vec3{0, 1, 0});
+        pixels = std::hypot(b.x - a.x, b.y - a.y);
+    }
+    if (pixels < 1e-6) return 1.0;
+    return kGumballPixels / pixels;
+}
+
+void Application::updateGumball() {
+    if (gumballDrag_ != GumballHandle::None) return; // surukleme surerken dokunma
+    const bool show = !selectedModels_.empty() &&
+                      transformCommand_ == TransformCommand::None &&
+                      !profileGrip_ && !workPlanePicking_ && !zoomWindowActive_ &&
+                      !viewCubeManipulating_;
+    Vec3 lo{1e100, 1e100, 1e100}, hi{-1e100, -1e100, -1e100};
+    bool any = false;
+    for (const auto index : selectedModels_) {
+        if (index >= document_.models().size()) continue;
+        if (index >= document_.modelBounds().size()) continue;
+        const auto& b = document_.modelBounds()[index];
+        lo.x = std::min(lo.x, b.minimum.x);
+        lo.y = std::min(lo.y, b.minimum.y);
+        lo.z = std::min(lo.z, b.minimum.z);
+        hi.x = std::max(hi.x, b.maximum.x);
+        hi.y = std::max(hi.y, b.maximum.y);
+        hi.z = std::max(hi.z, b.maximum.z);
+        any = true;
+    }
+    if (!show || !any) {
+        gumballVisible_ = false;
+        gumballHover_ = GumballHandle::None;
+        return;
+    }
+    gumballVisible_ = true;
+    gumballOrigin_ = (lo + hi) * 0.5;
+}
+
+GumballHandle Application::gumballHitTest(int x, int y) const {
+    if (!gumballVisible_ && gumballDrag_ == GumballHandle::None) return GumballHandle::None;
+    if (gumballDrag_ != GumballHandle::None) return gumballDrag_;
+    const bool threeD = (mode_ == EditMode::View3D);
+    const double L = gumballWorldLength();
+    const double px = static_cast<double>(x), py = static_cast<double>(y);
+    const Vec2 c = gumballProject(gumballOrigin_);
+    if (std::hypot(px - c.x, py - c.y) <= 9.0) return GumballHandle::Center;
+    const Vec3 axes[3] = {{1, 0, 0}, {0, 1, 0}, {0, 0, 1}};
+    const int planeA[3] = {0, 1, 2}, planeB[3] = {1, 2, 0}, planeH[3] = {3, 4, 5};
+    const double ps = 0.32 * L;
+    const auto cross2 = [](const Vec2& a, const Vec2& b) { return a.x * b.y - a.y * b.x; };
+    for (int k = (threeD ? 2 : 0); k >= 0; --k) {
+        const Vec2 p1 = gumballProject(gumballOrigin_ + axes[planeA[k]] * ps);
+        const Vec2 p2 = gumballProject(gumballOrigin_ + axes[planeA[k]] * ps + axes[planeB[k]] * ps);
+        const Vec2 p3 = gumballProject(gumballOrigin_ + axes[planeB[k]] * ps);
+        const Vec2 quad[4] = {c, p1, p2, p3};
+        double sign = 0.0;
+        bool inside = true;
+        for (int i = 0; i < 4; ++i) {
+            const Vec2 e{quad[(i + 1) % 4].x - quad[i].x, quad[(i + 1) % 4].y - quad[i].y};
+            const Vec2 vr{px - quad[i].x, py - quad[i].y};
+            const double s = cross2(e, vr);
+            if (std::abs(s) < 1e-9) continue;
+            if (sign == 0.0) sign = s;
+            else if ((s > 0) != (sign > 0)) { inside = false; break; }
+        }
+        if (inside && sign != 0.0) return static_cast<GumballHandle>(planeH[k]);
+    }
+    for (int i = 0; i < (threeD ? 3 : 2); ++i) {
+        const Vec2 tip = gumballProject(gumballOrigin_ + axes[i] * L);
+        const double ex = tip.x - c.x, ey = tip.y - c.y;
+        const double len2 = ex * ex + ey * ey;
+        if (len2 < 1.0) continue;
+        double t = ((px - c.x) * ex + (py - c.y) * ey) / len2;
+        t = std::max(0.0, std::min(1.0, t));
+        const double d = std::hypot(px - (c.x + ex * t), py - (c.y + ey * t));
+        if (t > 0.35 && d <= 9.0) return static_cast<GumballHandle>(i);
+    }
+    return GumballHandle::None;
+}
+
+Vec3 Application::gumballPlanePoint(int x, int y, GumballHandle handle) const {
+    if (!canvas_) return gumballDragStartOrigin_;
+    RECT vp{};
+    GetClientRect(canvas_, &vp);
+    const int w = static_cast<int>(std::max(1L, vp.right));
+    const int h = static_cast<int>(std::max(1L, vp.bottom));
+    const Vec2 s{static_cast<double>(x), static_cast<double>(y)};
+    if (mode_ == EditMode::Draw2D) return camera_.unproject2D(s, w, h);
+    Vec3 n{0, 0, 1};
+    if (handle == GumballHandle::PlaneXY) n = {0, 0, 1};
+    else if (handle == GumballHandle::PlaneYZ) n = {1, 0, 0};
+    else if (handle == GumballHandle::PlaneZX) n = {0, 1, 0};
+    else n = camera_.viewTransform(Vec3{0, 0, 1}); // merkez: kameraya bakan duzlem
+    const auto norm3 = [](const Vec3& a) {
+        const double l = std::sqrt(a.x * a.x + a.y * a.y + a.z * a.z);
+        return l > 1e-9 ? Vec3{a.x / l, a.y / l, a.z / l} : Vec3{0, 0, 1};
+    };
+    const auto cross3 = [](const Vec3& a, const Vec3& b) {
+        return Vec3{a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x};
+    };
+    const Vec3 nn = norm3(n);
+    const Vec3 helper = (std::abs(nn.z) < 0.9) ? Vec3{0, 0, 1} : Vec3{1, 0, 0};
+    WorkPlane plane;
+    plane.origin = gumballDragStartOrigin_;
+    plane.u = norm3(cross3(helper, nn));
+    plane.v = cross3(nn, plane.u);
+    plane.normal = nn;
+    const auto wp = camera_.unprojectToPlane(s, w, h, plane);
+    return wp.value_or(gumballDragStartWorld_);
+}
+
+void Application::gumballBeginDrag(int x, int y, GumballHandle handle) {
+    if (selectedModels_.empty() || !canvas_) return;
+    pushUndoSnapshot();
+    gumballDrag_ = handle;
+    gumballAppliedDelta_ = {};
+    gumballDragStartOrigin_ = gumballOrigin_;
+    gumballDragScreenOrigin_ = gumballProject(gumballOrigin_);
+    const Vec3 axes[3] = {{1, 0, 0}, {0, 1, 0}, {0, 0, 1}};
+    if (gumballIsAxis(handle)) {
+        const int ai = static_cast<int>(handle);
+        const double L = gumballWorldLength();
+        gumballDragAxisWorld_ = axes[ai];
+        const Vec2 tip = gumballProject(gumballOrigin_ + axes[ai] * L);
+        const double ex = tip.x - gumballDragScreenOrigin_.x;
+        const double ey = tip.y - gumballDragScreenOrigin_.y;
+        const double len = std::hypot(ex, ey);
+        gumballDragAxisUnit_ = (len > 1e-6) ? Vec2{ex / len, ey / len} : Vec2{1.0, 0.0};
+        gumballDragPixelsPerWorld_ = (len > 1e-6 && L > 1e-9) ? len / L : 1.0;
+        gumballDragT0_ = (x - gumballDragScreenOrigin_.x) * gumballDragAxisUnit_.x +
+                         (y - gumballDragScreenOrigin_.y) * gumballDragAxisUnit_.y;
+    } else {
+        gumballDragStartWorld_ = gumballPlanePoint(x, y, handle);
+    }
+    SetCapture(canvas_);
+    gumballDragMove(x, y);
+}
+
+void Application::gumballDragMove(int x, int y) {
+    if (gumballDrag_ == GumballHandle::None || selectedModels_.empty()) return;
+    Vec3 delta{};
+    if (gumballIsAxis(gumballDrag_)) {
+        const double t = (x - gumballDragScreenOrigin_.x) * gumballDragAxisUnit_.x +
+                         (y - gumballDragScreenOrigin_.y) * gumballDragAxisUnit_.y;
+        const double dist = (t - gumballDragT0_) / std::max(1e-6, gumballDragPixelsPerWorld_);
+        delta = gumballDragAxisWorld_ * dist;
+    } else {
+        const Vec3 wp = gumballPlanePoint(x, y, gumballDrag_);
+        delta = wp - gumballDragStartWorld_;
+    }
+    const Vec3 step = delta - gumballAppliedDelta_;
+    if (std::abs(step.x) + std::abs(step.y) + std::abs(step.z) > 1e-12) {
+        document_.moveModels(selectedModels_, step);
+        gumballAppliedDelta_ = delta;
+        gumballOrigin_ = gumballDragStartOrigin_ + delta; // gumball nesneyle gelir
+    }
+    updateStatus();
+    invalidateCanvas();
+}
+
+void Application::gumballEndDrag() {
+    if (gumballDrag_ == GumballHandle::None) return;
+    if (canvas_) ReleaseCapture();
+    gumballDrag_ = GumballHandle::None;
+    gumballAppliedDelta_ = {};
+    updateGumball();
+    updateStatus();
+    invalidateCanvas();
+}
+
 DraftView Application::draftView() const {
     DraftView view;
     view.tool = tool_; view.visualStyle = visualStyle_; view.anchor = anchor_; view.facePoints = facePoints_;
@@ -5065,6 +5273,13 @@ DraftView Application::draftView() const {
         view.gripTrackFrom = profileGrip_->trackFrom;
         view.gripTrackTo = profileGrip_->cursorPoint;
     }
+    // RHINO TARZI GUMBALL
+    view.gumballVisible = gumballVisible_;
+    view.gumball3D = (mode_ == EditMode::View3D);
+    view.gumballOrigin = gumballOrigin_;
+    view.gumballWorldSize = gumballVisible_ ? gumballWorldLength() : 1.0;
+    view.gumballHover = static_cast<int>(gumballHover_);
+    view.gumballDragging = (gumballDrag_ != GumballHandle::None);
     return view;
 }
 
