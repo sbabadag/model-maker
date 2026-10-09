@@ -4371,7 +4371,12 @@ std::vector<std::string> Application::profileNames() {
     std::vector<std::string> names;
     names.reserve(profileCatalog_.size());
     for (const auto& profile : profileCatalog_) names.push_back(profile.name);
-    std::sort(names.begin(), names.end());
+    // Dogal (sayisal) sira: HEA100 < HEA120 < HEA1000, IPE80 < IPE100.
+    // Duz std::sort sozluk sirasi verir (HEA1000 < HEA120) — yanlis gorunum.
+    std::sort(names.begin(), names.end(),
+              [](const std::string& a, const std::string& b) {
+                  return mm::profileNameLess(a, b);
+              });
     return names;
 }
 

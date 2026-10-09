@@ -1033,7 +1033,8 @@ void QtMainWindow::createToolbar() {
         if (u.rfind("HE", 0) == 0 || u.rfind("HL", 0) == 0 || u.rfind("HD", 0) == 0 ||
             u.rfind("HP", 0) == 0 || u.rfind("UB", 0) == 0 || u.rfind("UC", 0) == 0)
             return "I Kirişleri (HEA/HEB/HEM/HL/UB...)";
-        if (u.rfind("IPE", 0) == 0 || u.rfind("INP", 0) == 0) return "IPE Profiller";
+        if (u.rfind("IPE", 0) == 0 || u.rfind("IPN", 0) == 0 || u.rfind("INP", 0) == 0)
+            return "IPE / IPN Profiller";
         if (u.rfind("KKR", 0) == 0 || u.rfind("SHS", 0) == 0 || u.rfind("RHS", 0) == 0)
             return "Kutu Profiller (KKR/SHS/RHS)";
         if (u.rfind("CFCHS", 0) == 0 || u.rfind("CHS", 0) == 0 || u.rfind("ROD", 0) == 0 ||

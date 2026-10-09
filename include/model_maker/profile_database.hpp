@@ -44,4 +44,9 @@ std::vector<SteelProfile> loadProfileCatalog(const std::filesystem::path& direct
 const SteelProfile* findProfile(const std::vector<SteelProfile>& profiles,
                                 const std::string& name);
 
+// Profil adlarini dogal (sayisal farkindalikli) sirada karsilastirir:
+// HEA100 < HEA120 < HEA1000 (duz std::string sirasinda HEA1000 < HEA120
+// olurdu) ve IPE80 < IPE100. Harf karsilastirmasi buyuk/kucuk harf duyarsiz.
+bool profileNameLess(const std::string& a, const std::string& b);
+
 } // namespace mm

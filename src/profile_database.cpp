@@ -123,6 +123,12 @@ std::vector<SteelProfile> loadProfileCatalog(const std::filesystem::path& direct
                 catalog.push_back(std::move(profile));
         }
     }
+    // directory_iterator sirasi TANIMSIZ (dosya sistemine gore degisir) — katalog
+    // dogal (sayisal) sirada sabitlenir; boylece liste makineden makineye ayni.
+    std::sort(catalog.begin(), catalog.end(),
+              [](const SteelProfile& a, const SteelProfile& b) {
+                  return profileNameLess(a.name, b.name);
+              });
     return catalog;
 }
 
@@ -134,6 +140,37 @@ const SteelProfile* findProfile(const std::vector<SteelProfile>& profiles,
                                         return lowercased(profile.name) == key;
                                     });
     return found == profiles.end() ? nullptr : &*found;
+}
+
+bool profileNameLess(const std::string& a, const std::string& b) {
+    std::size_t i = 0, j = 0;
+    while (i < a.size() && j < b.size()) {
+        const unsigned char ca = static_cast<unsigned char>(a[i]);
+        const unsigned char cb = static_cast<unsigned char>(b[j]);
+        if (std::isdigit(ca) && std::isdigit(cb)) {
+            // Iki sayisal run'i sayi olarak karsilastir (bastaki sifirlar yok
+            // sayilir): "80" < "100" < "1000".
+            std::size_t ia = i, jb = j;
+            while (ia < a.size() && std::isdigit(static_cast<unsigned char>(a[ia]))) ++ia;
+            while (jb < b.size() && std::isdigit(static_cast<unsigned char>(b[jb]))) ++jb;
+            const auto strip = [](const std::string& s, std::size_t from, std::size_t to) {
+                std::size_t k = from;
+                while (k + 1 < to && s[k] == '0') ++k;
+                return s.substr(k, to - k);
+            };
+            const std::string ra = strip(a, i, ia);
+            const std::string rb = strip(b, j, jb);
+            if (ra.size() != rb.size()) return ra.size() < rb.size();
+            if (ra != rb) return ra < rb;
+            i = ia; j = jb;
+            continue;
+        }
+        const unsigned char la = static_cast<unsigned char>(std::toupper(ca));
+        const unsigned char lb = static_cast<unsigned char>(std::toupper(cb));
+        if (la != lb) return la < lb;
+        ++i; ++j;
+    }
+    return a.size() < b.size();
 }
 
 } // namespace mm
