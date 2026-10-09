@@ -430,10 +430,10 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
                 const POINT destinationPoint = projectPoint(*draft.cursor);
                 const COLORREF trackerColor = [&]() -> COLORREF {
                     switch (draft.orthoAxis) {
-                    case OrthoAxis::X: return RGB(235, 82, 96);
-                    case OrthoAxis::Y: return RGB(72, 211, 121);
-                    case OrthoAxis::Z: return RGB(78, 148, 255);
-                    default: return RGB(255, 206, 84);
+                    case OrthoAxis::X: return RGB(190, 25, 45);   // koyu kirmizi
+                    case OrthoAxis::Y: return RGB(0, 120, 45);    // koyu yesil
+                    case OrthoAxis::Z: return RGB(20, 70, 190);   // koyu mavi
+                    default: return RGB(150, 0, 150);             // koyu magenta
                     }
                 }();
                 HPEN trackerPen = CreatePen(PS_DOT, 1, trackerColor);
@@ -795,7 +795,7 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         if (draft.gripMoveActive) {
             const POINT from = projectPoint(draft.gripTrackFrom);
             const POINT to = projectPoint(draft.gripTrackTo);
-            HPEN trackPen = CreatePen(PS_DOT, 1, RGB(255, 206, 84));
+            HPEN trackPen = CreatePen(PS_DOT, 1, RGB(150, 0, 150));
             SelectObject(dc, trackPen);
             line(dc, from.x, from.y, to.x, to.y);
             SelectObject(dc, stockPen);
@@ -1412,7 +1412,7 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
     if (draft.gripMoveActive) {
         const POINT gripFrom = projectPoint(draft.gripTrackFrom);
         const POINT gripTo = projectPoint(draft.gripTrackTo);
-        HPEN gripTrackPen = CreatePen(PS_DOT, 1, RGB(255, 206, 84));
+        HPEN gripTrackPen = CreatePen(PS_DOT, 1, RGB(150, 0, 150));
         SelectObject(dc, gripTrackPen);
         line(dc, gripFrom.x, gripFrom.y, gripTo.x, gripTo.y);
         SelectObject(dc, stockPen);
@@ -1425,10 +1425,10 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         const POINT destinationPoint = projectPoint(*draft.cursor);
         const COLORREF trackerColor = [&]() -> COLORREF {
             switch (draft.orthoAxis) {
-            case OrthoAxis::X: return RGB(235, 82, 96);   // Red
-            case OrthoAxis::Y: return RGB(72, 211, 121);  // Green
-            case OrthoAxis::Z: return RGB(78, 148, 255);  // Blue
-            default: return RGB(255, 206, 84);            // Yellow (no ortho)
+            case OrthoAxis::X: return RGB(190, 25, 45);   // koyu kirmizi
+            case OrthoAxis::Y: return RGB(0, 120, 45);    // koyu yesil
+            case OrthoAxis::Z: return RGB(20, 70, 190);   // koyu mavi
+            default: return RGB(150, 0, 150);             // koyu magenta (ortogonal yok)
             }
         }();
         HPEN trackerPen = CreatePen(PS_DOT, 1, trackerColor);
