@@ -237,6 +237,19 @@ QtMainWindow::QtMainWindow(QWidget* parent)
     auto* saveShortcut = new QShortcut(QKeySequence::Save, this);
     QObject::connect(saveShortcut, &QShortcut::activated, this, [this]() { app_.saveDocument(); });
 
+    // Parametre istegi: Qt edit box (QInputDialog) — parametreli komutlar
+    // (Offset/Fillet/Dizi/Divide) sayisal degeri buradan alir.
+    app_.setParameterRequest([this](const std::wstring& prompt, const std::wstring& initial,
+                                    std::wstring& out) {
+        bool ok = false;
+        const QString text = QInputDialog::getText(this, QStringLiteral("Parametre"),
+            QString::fromStdWString(prompt), QLineEdit::Normal,
+            QString::fromStdWString(initial), &ok);
+        if (!ok) return false;
+        out = text.toStdWString();
+        return true;
+    });
+
     // Create a plain widget for central area — fills all space between docks
     canvasContainer_ = new QWidget(this);
     setCentralWidget(canvasContainer_);
@@ -356,7 +369,7 @@ void QtMainWindow::createMenus() {
     drawMenu->addAction("&Polyline", this, [this]() { app_.selectTool(DrawTool::Polyline); })->setIcon(makeToolIcon(ToolGlyph::Polyline));
     drawMenu->addAction("Dikdört&gen", this, [this]() { app_.selectTool(DrawTool::Rectangle); })->setIcon(makeToolIcon(ToolGlyph::Rect));
     drawMenu->addAction("Dai&re", this, [this]() { app_.selectTool(DrawTool::Circle); })->setIcon(makeToolIcon(ToolGlyph::Circle));
-    drawMenu->addAction("Böl (&Divide)", this, [this]() { app_.selectTool(DrawTool::Divide); });
+    drawMenu->addAction("Böl (&Divide)", this, [this]() { app_.activateDivide(); });
     drawMenu->addAction("&3DFACE", this, [this]() { app_.selectTool(DrawTool::Face3D); })->setIcon(makeToolIcon(ToolGlyph::Face3D));
 
     QMenu* modifyMenu = menuBar()->addMenu("Dü&zenle");

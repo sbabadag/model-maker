@@ -169,6 +169,17 @@ public:
     void commitWorkPlanePoint(const Vec3& point);
     void resetWorkPlane();
 
+    // Parametre istegi: Qt bir edit box (QInputDialog) gosterir ve degeri
+    // dondurur (false = iptal). Parametreli komutlar (Offset mesafesi, Fillet
+    // yaricapi, Dizi sayisi, Divide sayisi) bunu kullanir.
+    void setParameterRequest(std::function<bool(const std::wstring& prompt,
+                                                const std::wstring& initial,
+                                                std::wstring& out)> callback) {
+        parameterRequest_ = std::move(callback);
+    }
+    // Divide komutunu baslatir (edit box ile bolme sayisini sorar).
+    void activateDivide();
+
 private:
     static LRESULT CALLBACK windowProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
     static LRESULT CALLBACK canvasProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
@@ -427,6 +438,11 @@ private:
     double columnBottomZ_{0.0};      // kolon alt kotu (mm)
     std::string columnMaterial_;     // kolon malzemesi (props paneli)
     std::size_t divideCount_{2};     // Divide: esit parca sayisi (varsayilan 2 = orta nokta)
+    std::function<bool(const std::wstring&, const std::wstring&, std::wstring&)> parameterRequest_;
+    std::optional<double> requestDoubleParameter(const std::wstring& prompt,
+                                                 const std::wstring& initial);
+    std::optional<std::size_t> requestCountParameter(const std::wstring& prompt,
+                                                     const std::wstring& initial);
     std::optional<Vec3> anchor_;
     std::vector<Vec3> facePoints_;
     std::optional<SnapResult> hover_;

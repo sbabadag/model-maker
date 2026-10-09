@@ -1427,7 +1427,7 @@ LRESULT Application::handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lPa
         else if (wParam == 'P') selectTool(DrawTool::Polyline);
         else if (wParam == 'A') selectTool(DrawTool::Rectangle);
         else if (wParam == 'C') selectTool(DrawTool::Circle);
-        else if (wParam == 'D') selectTool(DrawTool::Divide);
+        else if (wParam == 'D') activateDivide();
         else if (wParam == 'F') selectTool(DrawTool::Face3D);
         else if (wParam == 'G') selectTool(DrawTool::Column);
         else if (wParam == 'M') startTransformCommand(TransformCommand::Move);
@@ -1973,38 +1973,6 @@ void Application::onCharacter(wchar_t character) {
         SetWindowTextW(status_, prompt.c_str());
         return;
     }
-    if (tool_ == DrawTool::Divide && drawingActive_) {
-        // DIVIDE: rakam + Enter = bolme sayisi; bos Enter normal akisa duser.
-        if (character == L'\r') {
-            if (!input_.empty()) {
-                try {
-                    std::size_t used{};
-                    const long n = std::stol(input_, &used);
-                    if (used != input_.size() || n < 2 || n > 1000)
-                        throw std::invalid_argument("divide count");
-                    divideCount_ = static_cast<std::size_t>(n);
-                    input_.clear();
-                    publishStatus(L"Bölme sayısı: " + std::to_wstring(divideCount_) +
-                                  L" — iki noktayı seçin (araya " +
-                                  std::to_wstring(divideCount_ - 1) + L" nokta)");
-                    updateStatus(); invalidateCanvas();
-                } catch (...) {
-                    MessageBeep(MB_ICONWARNING);
-                }
-                return;
-            }
-        } else if (character == L'\b') {
-            if (!input_.empty()) input_.pop_back();
-            updateStatus(); invalidateCanvas();
-            return;
-        } else if (character >= L'0' && character <= L'9') {
-            input_.push_back(character);
-            updateStatus(); invalidateCanvas();
-            return;
-        } else {
-            return;
-        }
-    }
     if (character == L'\r' && transformCommand_ == TransformCommand::None &&
         lastTransformCommand_ != TransformCommand::None &&
         shouldRepeatLastModifierOnEnter(drawingActive_, !input_.empty(),
@@ -2050,6 +2018,8 @@ void Application::onCharacter(wchar_t character) {
                         if (index < document_.models().size())
                             modifierBoundaries_.push_back(document_.models()[index]);
                     selectedModels_.clear();
+                    transformPhase_ = TransformPhase::Destination;
+                } else if (transformCommand_ == TransformCommand::Offset && offsetDistance_) {
                     transformPhase_ = TransformPhase::Destination;
                 } else transformPhase_ = TransformPhase::BasePoint;
             }
@@ -2255,6 +2225,26 @@ void Application::startTransformCommand(TransformCommand command) {
         return;
     }
 
+    // PARAMETRELI KOMUTLAR: edit box (Qt QInputDialog) ile parametreyi iste.
+    transformBase_.reset();
+    filletFirstPick_.reset();
+    offsetDistance_.reset();
+    arrayItemCount_.reset();
+    if (command == TransformCommand::Offset) {
+        const auto distance = requestDoubleParameter(L"Ofset mesafesi", L"");
+        if (!distance) { updateStatus(); return; }
+        offsetDistance_ = *distance;
+    } else if (command == TransformCommand::Fillet) {
+        const auto radius = requestDoubleParameter(L"Fillet yarıçapı", L"1.0");
+        if (!radius) { updateStatus(); return; }
+        filletRadius_ = *radius;
+    } else if (command == TransformCommand::LinearArray ||
+               command == TransformCommand::PolarArray) {
+        const auto count = requestCountParameter(L"Dizi öğe sayısı (2-1000)", L"2");
+        if (!count) { updateStatus(); return; }
+        arrayItemCount_ = *count;
+    }
+
     lastTransformCommand_ = command;
     transformCommand_ = command;
     if (command == TransformCommand::Trim || command == TransformCommand::Extend) {
@@ -2274,16 +2264,15 @@ void Application::startTransformCommand(TransformCommand command) {
     } else if (command == TransformCommand::Offset && selectedModels_.size() != 1) {
         selectedModels_.clear();
         transformPhase_ = TransformPhase::Selecting;
+    } else if (command == TransformCommand::Offset && offsetDistance_) {
+        // Mesafe onceden girildi (edit box): dogrudan yan taraf secimine gec.
+        transformPhase_ = TransformPhase::Destination;
     } else if (!selectedModels_.empty()) {
         transformPhase_ = TransformPhase::BasePoint;
     } else {
         transformPhase_ = TransformPhase::Selecting;
     }
     selectionFirstCorner_.reset();
-    transformBase_.reset();
-    offsetDistance_.reset();
-    filletFirstPick_.reset();
-    arrayItemCount_.reset();
     lastTrimExtendStatus_.clear();
     drawingActive_ = false;
     hover_.reset();
@@ -2633,6 +2622,43 @@ void Application::resetWorkPlane() {
     updateControls();
     updateStatus();
     invalidateCanvas();
+}
+
+// --- PARAMETRE GIRISI (edit box) -------------------------------------------
+// Parametreli komutlar sayisal degeri Qt QInputDialog (edit box) ile ister.
+
+std::optional<double> Application::requestDoubleParameter(const std::wstring& prompt,
+                                                         const std::wstring& initial) {
+    if (!parameterRequest_) return std::nullopt;
+    std::wstring out = initial;
+    if (!parameterRequest_(prompt, initial, out)) return std::nullopt; // iptal
+    try {
+        std::size_t used{};
+        const double value = std::stod(out, &used);
+        if (used != out.size() || !std::isfinite(value) || value <= 0.0) return std::nullopt;
+        return value;
+    } catch (...) { return std::nullopt; }
+}
+
+std::optional<std::size_t> Application::requestCountParameter(const std::wstring& prompt,
+                                                              const std::wstring& initial) {
+    if (!parameterRequest_) return std::nullopt;
+    std::wstring out = initial;
+    if (!parameterRequest_(prompt, initial, out)) return std::nullopt; // iptal
+    try {
+        std::size_t used{};
+        const long value = std::stol(out, &used);
+        if (used != out.size() || value < 2 || value > 1000) return std::nullopt;
+        return static_cast<std::size_t>(value);
+    } catch (...) { return std::nullopt; }
+}
+
+void Application::activateDivide() {
+    const auto count = requestCountParameter(L"Bölme sayısı (eşit parça, 2-1000)",
+                                             std::to_wstring(divideCount_));
+    if (!count) return; // iptal
+    divideCount_ = *count;
+    selectTool(DrawTool::Divide);
 }
 
 void Application::commitWorkPlanePoint(const Vec3& point) {
