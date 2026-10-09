@@ -374,10 +374,7 @@ private:
     struct ProfileGrip {
         std::size_t solidIndex{}; // profilli kati indeksi
         bool endIsTo{};           // false = from (sari), true = to (mor)
-        bool dragging{};          // surukleme devam ediyor
         Vec3 fixedPoint{};        // diger (sabit) uc
-        Vec3 dragAnchor{};        // suruklenen ucun ORIGINAL konumu (duzlem ici)
-        Vec3 dragPoint{};         // suruklenen ucun canli konumu
     };
     std::optional<ProfileGrip> profileGrip_;
     void performSolidTrimByLine(std::size_t lineIndex);
@@ -386,14 +383,13 @@ private:
     void executeSolidTrim(bool keepPositive);
     std::optional<std::size_t> solidTrimTargetAt(int x, int y) const;
     std::optional<std::size_t> trimLineTargetAt(int x, int y) const;
-    // PROFIL UC TUTAMAKLARI (grip edit): 3B'de profilli katinin iki ucuna
-    // (sari=from, mor=to) tutamak konur. Alt+tik tutamagi secer; surukleme
-    // profili o noktaya uzatir (yeniden extrude).
+    // PROFIL UC TUTAMAKLARI (grip edit): 3B'de secili profilli katinin iki
+    // ucuna (sari=from, mor=to) tutamak konur. Alt+tik tutamagi secer
+    // (from noktasi); ardindan normal sol-tik hedef noktasidir — normal Move
+    // komutu gibi bir noktadan diger noktaya, profil o noktaya uzar.
     std::optional<std::pair<std::size_t, bool>> profileGripAt(int x, int y) const;
-    void startProfileGripDrag(int x, int y);
-    void updateProfileGripDrag(int x, int y);
-    void commitProfileGripDrag();
-    void cancelProfileGripDrag();
+    void extendProfileGripTo(int x, int y);
+    void cancelProfileGrip();
 #ifdef MM_HAS_OCC
     void reExtrudeProfileGrip(std::size_t solidIndex, bool endIsTo, const Vec3& newPoint);
 #endif

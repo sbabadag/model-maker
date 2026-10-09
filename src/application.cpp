@@ -1301,9 +1301,6 @@ LRESULT Application::handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lPa
     case WM_CAPTURECHANGED:
         rotating_ = false;
         panning2D_ = false;
-        // Tutamak suruklemesi yakalama kaybederse (Alt+Tab vb.) suruklemeyi
-        // iptal et (kaybolan yakalamayla commit olmaz).
-        if (profileGrip_ && profileGrip_->dragging) profileGrip_.reset();
         if (reinterpret_cast<HWND>(lParam) != canvas_) {
             viewCubeManipulating_ = false;
             viewCubePressedView_.reset();
@@ -1382,7 +1379,7 @@ LRESULT Application::handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lPa
                 return 0;
             }
             input_.clear();
-            if (profileGrip_) cancelProfileGripDrag();
+            if (profileGrip_) cancelProfileGrip();
             else if (zoomWindowActive_) cancelZoomWindow2D();
             else if (workPlanePicking_) cancelWorkPlaneCommand();
             else if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
@@ -1546,8 +1543,9 @@ void Application::onLeftButtonDown(int x, int y) {
         updateControls(); invalidateCanvas(); return;
     }
     // PROFIL UC TUTAMAKLARI (grip edit): Alt+tik 3B'de profilli katinin uc
-    // tutamagini secer (sari=from, mor=to). Secimden sonra ayni tutamak
-    // normal sol-suruklemeyle tasinir; profil o noktaya uzar.
+    // tutamagini secer (sari=from, mor=to) = from noktasi. Ardindan normal
+    // sol-tik hedef noktasidir; normal Move komutu gibi bir noktadan diger
+    // noktaya, profil o noktaya uzatilir.
     const bool altDown = (GetKeyState(VK_MENU) & 0x8000) != 0;
     if (altDown && mode_ == EditMode::View3D) {
         if (const auto grip = profileGripAt(x, y)) {
@@ -1561,29 +1559,19 @@ void Application::onLeftButtonDown(int x, int y) {
             const Vec3 to{m.properties().axisToX, m.properties().axisToY,
                           m.properties().axisToZ};
             profileGrip_->fixedPoint = grip->second ? from : to;
-            profileGrip_->dragAnchor = grip->second ? to : from;
-            profileGrip_->dragPoint = profileGrip_->dragAnchor;
             publishStatus(grip->second
-                ? L"Profil uc tutamaci (mor) secildi — surukleyerek uzatin"
-                : L"Profil uc tutamaci (sari) secildi — surukleyerek uzatin");
+                ? L"Profil ust ucu secildi — hedef noktayi secin (mor uc uzar)"
+                : L"Profil alt ucu secildi — hedef noktayi secin (sari uc uzar)");
         } else {
             profileGrip_.reset();
         }
         updateControls(); updateStatus(); invalidateCanvas();
         return;
     }
-    if (profileGrip_ && !profileGrip_->dragging) {
-        // Aktif tutamak seciliyken normal sol tik: ayni tutamak uzerindeyse
-        // suruklemeyi baslat; aksi halde aktif tutamagi birak.
-        if (const auto grip = profileGripAt(x, y)) {
-            if (grip->first == profileGrip_->solidIndex &&
-                grip->second == profileGrip_->endIsTo) {
-                startProfileGripDrag(x, y);
-                return;
-            }
-        }
-        profileGrip_.reset();
-        updateControls(); invalidateCanvas();
+    if (profileGrip_ && mode_ == EditMode::View3D) {
+        // Hedef nokta: profil secilen uctan bu noktaya uzatilir (Move gibi).
+        extendProfileGripTo(x, y);
+        return;
     }
     if (GetKeyState(VK_CONTROL) < 0) {
         // Ctrl+tiklama: bos modda nesne secimi (profil atama icin).
@@ -1866,10 +1854,6 @@ void Application::onLeftButtonUp(int x, int y) {
         invalidateCanvas();
         return;
     }
-    if (profileGrip_ && profileGrip_->dragging) {
-        commitProfileGripDrag();
-        return;
-    }
     const bool wasRotating = rotating_;
     rotating_ = false;
     ReleaseCapture();
@@ -1882,13 +1866,6 @@ void Application::onMouseMove(int x, int y, WPARAM buttons) {
     trimExtendPreviewSuppressed_ = false;
     bool redraw = false;
     bool snapRedraw = false;
-    if (profileGrip_ && profileGrip_->dragging && (buttons & MK_LBUTTON)) {
-        updateProfileGripDrag(x, y);
-        KillTimer(window_, 4);
-        snapPreviewActive_ = true;
-        invalidateCanvas();
-        return;
-    }
     if (viewCubeManipulating_ && (buttons & MK_LBUTTON) && mode_ == EditMode::View3D) {
         const int dx = x - lastMouse_.x;
         const int dy = y - lastMouse_.y;
@@ -4760,8 +4737,9 @@ void Application::assignProfileToSelection(const std::string& profileName) {
 }
 
 // --- PROFIL UC TUTAMAKLARI (grip edit) -------------------------------------
-// 3B gorunumde profilli katilarin iki ucuna (sari=from, mor=to) tutamak konur.
-// Alt+tik tutamagi secer; surukleme profili o noktaya uzatir (yeniden extrude).
+// 3B gorunumde secili profilli katilarin iki ucuna (sari=from, mor=to) tutamak
+// konur. Alt+tik tutamagi secer (from noktasi); normal sol-tik hedef noktasidir
+// — normal Move komutu gibi bir noktadan diger noktaya, profil o noktaya uzar.
 
 std::optional<std::pair<std::size_t, bool>> Application::profileGripAt(int x, int y) const {
     RECT client{};
@@ -4790,60 +4768,39 @@ std::optional<std::pair<std::size_t, bool>> Application::profileGripAt(int x, in
     return best;
 }
 
-void Application::startProfileGripDrag(int x, int y) {
-    if (!profileGrip_ || profileGrip_->dragging) return;
-    profileGrip_->dragging = true;
-    profileGrip_->dragPoint = profileGrip_->dragAnchor;
-    cursorScreen_ = {x, y};
-    RECT client{};
-    GetClientRect(canvas_, &client);
-    // Surukleme duzlemi: suruklenen ucun ORIGINAL konumundan gecen, ekrana
-    // paralel duzlem — tutamak imleci ekranda birebir takip eder; tiklama
-    // aninda (hareketsiz) orijinal nokta korunur (sifir kayma).
-    WorkPlane dragPlane{};
-    dragPlane.origin = profileGrip_->dragAnchor;
-    dragPlane.normal = camera_.viewDirection();
-    if (const auto pt = camera_.unprojectToPlane(
-            {static_cast<double>(x), static_cast<double>(y)},
-            std::max(1L, client.right), std::max(1L, client.bottom), dragPlane))
-        profileGrip_->dragPoint = *pt;
-    SetCapture(canvas_);
-    updateStatus();
-    invalidateCanvas();
-}
-
-void Application::updateProfileGripDrag(int x, int y) {
-    if (!profileGrip_ || !profileGrip_->dragging) return;
-    cursorScreen_ = {x, y};
-    RECT client{};
-    GetClientRect(canvas_, &client);
-    WorkPlane dragPlane{};
-    dragPlane.origin = profileGrip_->dragAnchor;
-    dragPlane.normal = camera_.viewDirection();
-    if (const auto pt = camera_.unprojectToPlane(
-            {static_cast<double>(x), static_cast<double>(y)},
-            std::max(1L, client.right), std::max(1L, client.bottom), dragPlane))
-        profileGrip_->dragPoint = *pt;
-}
-
-void Application::commitProfileGripDrag() {
-    if (!profileGrip_ || !profileGrip_->dragging) return;
+void Application::extendProfileGripTo(int x, int y) {
+    if (!profileGrip_) return;
     const ProfileGrip grip = *profileGrip_;
     profileGrip_.reset();
-    ReleaseCapture();
+    if (grip.solidIndex >= document_.models().size()) { invalidateCanvas(); return; }
 #ifdef MM_HAS_OCC
-    reExtrudeProfileGrip(grip.solidIndex, grip.endIsTo, grip.dragPoint);
+    // Hedef nokta: normal Move gibi work-plane uzerinde snap (bir noktadan
+    // diger noktaya). Sabit uc yerinde kalir, secilen uc hedefe tasinir.
+    RECT client{};
+    GetClientRect(canvas_, &client);
+    const int w = std::max(1L, client.right);
+    const int h = std::max(1L, client.bottom);
+    const auto& m = document_.models()[grip.solidIndex];
+    const Vec3 from{m.properties().axisFromX, m.properties().axisFromY,
+                    m.properties().axisFromZ};
+    const Vec3 to{m.properties().axisToX, m.properties().axisToY,
+                  m.properties().axisToZ};
+    const Vec3 movingEnd = grip.endIsTo ? to : from;
+    WorkPlane activePlane = workPlane_;
+    activePlane.origin = movingEnd;
+    const SnapResult snapped = SnapEngine::snap3D(
+        {static_cast<double>(x), static_cast<double>(y)}, document_, camera_, w, h,
+        10.0, activePlane, snapEnabled_, gridSnapEnabled_, movingEnd,
+        &enabledSnapTypes_, visualStyle_ == VisualStyle::Solid);
+    reExtrudeProfileGrip(grip.solidIndex, grip.endIsTo, snapped.point);
 #else
     publishStatus(L"Profil ucunu uzatmak icin OpenCASCADE gerekli (OCC kapali).");
     invalidateCanvas();
 #endif
 }
 
-void Application::cancelProfileGripDrag() {
-    if (!profileGrip_) return;
-    const bool wasDragging = profileGrip_->dragging;
+void Application::cancelProfileGrip() {
     profileGrip_.reset();
-    if (wasDragging) ReleaseCapture();
     invalidateCanvas();
 }
 
@@ -4945,16 +4902,10 @@ DraftView Application::draftView() const {
                              std::abs(wheelPreviewFactor_ - 1.0) > 1e-12;
     view.rasterZoomFactor = wheelPreviewFactor_;
     view.rasterZoomOffset = wheelPreviewOffset_;
-    // Profil uc tutamagi (grip edit) vurgu + surukleme onizlemesi.
+    // Profil uc tutamagi (grip edit) vurgusu.
     if (profileGrip_) {
         view.activeGripSolid = profileGrip_->solidIndex;
         view.activeGripEndIsTo = profileGrip_->endIsTo;
-        if (profileGrip_->dragging) {
-            view.gripDragging = true;
-            view.gripDragFrom = profileGrip_->fixedPoint;
-            view.gripDragTo = profileGrip_->dragPoint;
-            view.gripDragEndIsTo = profileGrip_->endIsTo;
-        }
     }
     return view;
 }

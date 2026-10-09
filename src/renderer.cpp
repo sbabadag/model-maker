@@ -789,21 +789,6 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
             drawText(dc, boxX + 7, boxY + 4, info,
                      draft.input.empty() ? RGB(221, 228, 241) : RGB(255, 216, 104));
         }
-
-        // PROFIL TUTAMAGI SURUKLEME onizlemesi: sabit uctan suruklenen uca
-        // lastik cizgi + suruklenen tutamagin canli isareti (imlec renginde).
-        if (draft.gripDragging) {
-            const POINT ga = projectPoint(draft.gripDragFrom);
-            const POINT gb = projectPoint(draft.gripDragTo);
-            const COLORREF gripColor = draft.gripDragEndIsTo ? RGB(170, 90, 220)
-                                                             : RGB(255, 206, 84);
-            HPEN rubber = CreatePen(PS_DOT, 1, gripColor);
-            SelectObject(dc, rubber);
-            line(dc, ga.x, ga.y, gb.x, gb.y);
-            SelectObject(dc, stockPen);
-            DeleteObject(rubber);
-            drawGripMarker(dc, gb.x, gb.y, gripColor, true);
-        }
     };
 
     // Hızlı yol: geçerli motion tabanı VARSA ve kamera taban çekildiğinden beri
@@ -1269,11 +1254,12 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
             DeleteObject(selectedPen);
         }
 
-        // PROFIL UC TUTAMAKLARI (grip edit): her profilli katinin iki ucuna
-        // sari (from) ve mor (to) tutamak. Katilar 3B gorunumde anlamli —
-        // yalniz View3D'de cizilir; tabana gomulur (motion overlay'e dokunmaz).
+        // PROFIL UC TUTAMAKLARI (grip edit): yalniz SECILI profilli katilarin
+        // iki ucuna sari (from) ve mor (to) tutamak cizilir (kullanici istegi:
+        // noktalar sadece seciliyken gorunur). View3D'de; tabana gomulur.
         if (mode == EditMode::View3D && !draft.snapOnly) {
-            for (std::size_t gi = 0; gi < document.models().size(); ++gi) {
+            for (const std::size_t gi : draft.selectedModels) {
+                if (gi >= document.models().size()) continue;
                 const auto& gm = document.models()[gi];
                 if (gm.faces().empty() || gm.properties().profileName.empty()) continue;
                 const Vec3 gfrom{gm.properties().axisFromX, gm.properties().axisFromY,
