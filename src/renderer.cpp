@@ -1222,6 +1222,28 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         }
     }
 
+    // NOKTALAR: point objeleri (tek tepe, kenar yok) — GDI model loop'u GL
+    // modunda atlar (F7), GL line batch'i de kenarsiz modelleri cizmez. Bu
+    // pass her iki modda da GL kompozitinin USTUNE ekran-uzayi X isareti
+    // cizer; boylece Divide/DXF point objeleri gorunur ve snap'lenebilir.
+    if (!draft.snapOnly && !draft.interactiveNavigation) {
+        for (std::size_t index = 0; index < document.models().size(); ++index) {
+            const auto& model = document.models()[index];
+            if (!model.isPointEntity() || model.vertices().empty()) continue;
+            const auto& properties = document.effectiveProperties(index);
+            if (!properties.visible) continue;
+            const POINT p = projectPoint(model.vertices().front());
+            HPEN pen = createEntityPen(properties);
+            HGDIOBJ oldPen = SelectObject(dc, pen);
+            constexpr int r = 4;
+            line(dc, p.x - r, p.y - r, p.x + r, p.y + r);
+            line(dc, p.x - r, p.y + r, p.x + r, p.y - r);
+            SelectObject(dc, oldPen);
+            DeleteObject(pen);
+            ++performance.renderedEntities;
+        }
+    }
+
     if (!draft.interactiveNavigation) {
         if (!draft.selectedModels.empty()) {
             // Secili profilli kaynak cizgileri gizle: ayni eksende kati varsa
