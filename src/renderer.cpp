@@ -1272,6 +1272,25 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
             DeleteObject(border);
             DeleteObject(fill);
         }
+        // DONUSME YAYLARI (rotasyon): eksene dik duzlemde ~0.80L yaricap.
+        {
+            const double rr = 0.80 * gl;
+            constexpr int segs = 64;
+            for (int i = 0; i < (threeD ? 3 : 2); ++i) {
+                const bool hot = (hover == 7 + i);
+                const Vec3 u = gaxis[(i + 1) % 3], v = gaxis[(i + 2) % 3];
+                HPEN pen = CreatePen(PS_SOLID, hot ? 3 : 1, hot ? RGB(255, 190, 30) : gcol[i]);
+                HGDIOBJ oldP = SelectObject(dc, pen);
+                POINT pts[segs];
+                for (int s = 0; s < segs; ++s) {
+                    const double a = 6.283185307179586 * s / segs;
+                    pts[s] = projectPoint(go + u * (rr * std::cos(a)) + v * (rr * std::sin(a)));
+                }
+                Polyline(dc, pts, segs);
+                SelectObject(dc, oldP);
+                DeleteObject(pen);
+            }
+        }
         for (int i = 0; i < (threeD ? 3 : 2); ++i) {
             const bool hot = (hover == i);
             HPEN pen = CreatePen(PS_SOLID, hot ? 4 : 2, hot ? RGB(255, 190, 30) : gcol[i]);
@@ -1291,13 +1310,41 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
             SelectObject(dc, oldP);
             DeleteObject(pen);
         }
+        // OLCEK tutamaclari: eksende 0.55L'de kucuk dolu kare (axis scale).
         {
-            const bool hot = (hover == 6);
-            HPEN pen = CreatePen(PS_SOLID, 1, RGB(70, 70, 70));
-            HBRUSH br = CreateSolidBrush(hot ? RGB(255, 215, 70) : RGB(250, 250, 250));
-            HGDIOBJ oldB = SelectObject(dc, br);
-            HGDIOBJ oldP = SelectObject(dc, pen);
-            Ellipse(dc, gc.x - 5, gc.y - 5, gc.x + 6, gc.y + 6);
+            const double sd = 0.55 * gl;
+            for (int i = 0; i < (threeD ? 3 : 2); ++i) {
+                const bool hot = (hover == 10 + i);
+                const POINT p = projectPoint(go + gaxis[i] * sd);
+                HPEN pen = CreatePen(PS_SOLID, 1, RGB(255, 255, 255));
+                HBRUSH br = CreateSolidBrush(hot ? RGB(255, 200, 40) : gcol[i]);
+                HGDIOBJ oldB = SelectObject(dc, br);
+                HGDIOBJ oldP = SelectObject(dc, pen);
+                Rectangle(dc, p.x - 4, p.y - 4, p.x + 5, p.y + 5);
+                SelectObject(dc, oldP);
+                SelectObject(dc, oldB);
+                DeleteObject(pen);
+                DeleteObject(br);
+            }
+        }
+        // MERKEZ: dis halka = serbest tasima (camera duzlemi), ic kare = tek
+        // bicim olcekleme. Ikisi ayri tutamac (hit-test onceligi:Uniform sonra Center).
+        {
+            const bool hotCenter = (hover == 6);
+            const bool hotUniform = (hover == 13);
+            HPEN ringPen = CreatePen(PS_SOLID, 2,
+                                     hotCenter ? RGB(255, 190, 30) : RGB(90, 90, 90));
+            HGDIOBJ oldP = SelectObject(dc, ringPen);
+            HGDIOBJ oldB = SelectObject(dc, GetStockObject(NULL_BRUSH));
+            Ellipse(dc, gc.x - 11, gc.y - 11, gc.x + 12, gc.y + 12);
+            SelectObject(dc, oldB);
+            SelectObject(dc, oldP);
+            DeleteObject(ringPen);
+            HPEN pen = CreatePen(PS_SOLID, 1, RGB(255, 255, 255));
+            HBRUSH br = CreateSolidBrush(hotUniform ? RGB(255, 190, 30) : RGB(60, 60, 60));
+            oldB = SelectObject(dc, br);
+            oldP = SelectObject(dc, pen);
+            Rectangle(dc, gc.x - 4, gc.y - 4, gc.x + 5, gc.y + 5);
             SelectObject(dc, oldP);
             SelectObject(dc, oldB);
             DeleteObject(pen);

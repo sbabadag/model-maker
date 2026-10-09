@@ -1370,6 +1370,11 @@ LRESULT Application::handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lPa
                 SetFocus(canvas_);
                 return 0;
             }
+            // Gumball drag aktifse: iptal (geometri drag oncesi haline doner).
+            if (gumballDrag_ != GumballHandle::None) {
+                gumballCancelDrag();
+                return 0;
+            }
             input_.clear();
             if (profileGrip_) cancelProfileGrip();
             else if (zoomWindowActive_) cancelZoomWindow2D();
@@ -5095,8 +5100,19 @@ GumballHandle Application::gumballHitTest(int x, int y) const {
     const double L = gumballWorldLength();
     const double px = static_cast<double>(x), py = static_cast<double>(y);
     const Vec2 c = gumballProject(gumballOrigin_);
-    if (std::hypot(px - c.x, py - c.y) <= 9.0) return GumballHandle::Center;
+    const double distC = std::hypot(px - c.x, py - c.y);
     const Vec3 axes[3] = {{1, 0, 0}, {0, 1, 0}, {0, 0, 1}};
+    // Oncelik: tek-bicim olcek (ic kare) -> serbest tasima (halka) -> eksen olcek.
+    if (distC <= 5.0) return GumballHandle::ScaleUniform;
+    if (distC <= 13.0) return GumballHandle::Center;
+    {
+        const double sd = 0.55 * L;
+        for (int i = 0; i < (threeD ? 3 : 2); ++i) {
+            const Vec2 p = gumballProject(gumballOrigin_ + axes[i] * sd);
+            if (std::hypot(px - p.x, py - p.y) <= 7.0)
+                return static_cast<GumballHandle>(10 + i);
+        }
+    }
     const int planeA[3] = {0, 1, 2}, planeB[3] = {1, 2, 0}, planeH[3] = {3, 4, 5};
     const double ps = 0.32 * L;
     const auto cross2 = [](const Vec2& a, const Vec2& b) { return a.x * b.y - a.y * b.x; };
@@ -5126,6 +5142,22 @@ GumballHandle Application::gumballHitTest(int x, int y) const {
         t = std::max(0.0, std::min(1.0, t));
         const double d = std::hypot(px - (c.x + ex * t), py - (c.y + ey * t));
         if (t > 0.35 && d <= 9.0) return static_cast<GumballHandle>(i);
+    }
+    // DONUSME YAYLARI: izdusumu ornekleyerek en yakin mesafe (egik/kenardan
+    // bakista da dogru; tam kenardan bakista yay merkeze duser — kabul).
+    {
+        const double rr = 0.80 * L;
+        for (int i = 0; i < (threeD ? 3 : 2); ++i) {
+            const Vec3 u = axes[(i + 1) % 3], v = axes[(i + 2) % 3];
+            double best = 1e100;
+            for (int s = 0; s < 64; ++s) {
+                const double a = 6.283185307179586 * s / 64.0;
+                const Vec2 p = gumballProject(gumballOrigin_ + u * (rr * std::cos(a)) +
+                                              v * (rr * std::sin(a)));
+                best = std::min(best, std::hypot(px - p.x, py - p.y));
+            }
+            if (best <= 8.0) return static_cast<GumballHandle>(7 + i);
+        }
     }
     return GumballHandle::None;
 }
@@ -5166,11 +5198,16 @@ void Application::gumballBeginDrag(int x, int y, GumballHandle handle) {
     pushUndoSnapshot();
     gumballDrag_ = handle;
     gumballAppliedDelta_ = {};
+    gumballAppliedAngle_ = 0.0;
+    gumballTotalAngle_ = 0.0;
+    gumballAppliedFactor_ = 1.0;
     gumballDragStartOrigin_ = gumballOrigin_;
     gumballDragScreenOrigin_ = gumballProject(gumballOrigin_);
+    gumballDragPrevAngle_ = std::atan2(y - gumballDragScreenOrigin_.y,
+                                       x - gumballDragScreenOrigin_.x);
     const Vec3 axes[3] = {{1, 0, 0}, {0, 1, 0}, {0, 0, 1}};
+    const int ai = gumballAxisIndex(handle);
     if (gumballIsAxis(handle)) {
-        const int ai = static_cast<int>(handle);
         const double L = gumballWorldLength();
         gumballDragAxisWorld_ = axes[ai];
         const Vec2 tip = gumballProject(gumballOrigin_ + axes[ai] * L);
@@ -5181,6 +5218,25 @@ void Application::gumballBeginDrag(int x, int y, GumballHandle handle) {
         gumballDragPixelsPerWorld_ = (len > 1e-6 && L > 1e-9) ? len / L : 1.0;
         gumballDragT0_ = (x - gumballDragScreenOrigin_.x) * gumballDragAxisUnit_.x +
                          (y - gumballDragScreenOrigin_.y) * gumballDragAxisUnit_.y;
+    } else if (gumballIsRotate(handle)) {
+        gumballDragAxisWorld_ = axes[ai];
+        // Isaret: eksenin kameraya bakan bilesenine gore (CCW ekran = +aci).
+        const Vec3 cam = camera_.viewTransform(axes[ai]);
+        gumballDragSign_ = (cam.z >= 0.0) ? 1.0 : -1.0;
+    } else if (gumballIsScaleAxis(handle)) {
+        const double L = gumballWorldLength();
+        gumballDragAxisWorld_ = axes[ai];
+        const Vec2 tip = gumballProject(gumballOrigin_ + axes[ai] * L);
+        const double ex = tip.x - gumballDragScreenOrigin_.x;
+        const double ey = tip.y - gumballDragScreenOrigin_.y;
+        const double len = std::hypot(ex, ey);
+        gumballDragAxisUnit_ = (len > 1e-6) ? Vec2{ex / len, ey / len} : Vec2{1.0, 0.0};
+        gumballDragT0_ = (x - gumballDragScreenOrigin_.x) * gumballDragAxisUnit_.x +
+                         (y - gumballDragScreenOrigin_.y) * gumballDragAxisUnit_.y;
+    } else if (handle == GumballHandle::ScaleUniform) {
+        gumballDragStartDist_ = std::hypot(x - gumballDragScreenOrigin_.x,
+                                           y - gumballDragScreenOrigin_.y);
+        if (gumballDragStartDist_ < 8.0) gumballDragStartDist_ = 8.0;
     } else {
         gumballDragStartWorld_ = gumballPlanePoint(x, y, handle);
     }
@@ -5190,23 +5246,77 @@ void Application::gumballBeginDrag(int x, int y, GumballHandle handle) {
 
 void Application::gumballDragMove(int x, int y) {
     if (gumballDrag_ == GumballHandle::None || selectedModels_.empty()) return;
-    Vec3 delta{};
+    const Vec3 pivot = gumballDragStartOrigin_;
     if (gumballIsAxis(gumballDrag_)) {
         const double t = (x - gumballDragScreenOrigin_.x) * gumballDragAxisUnit_.x +
                          (y - gumballDragScreenOrigin_.y) * gumballDragAxisUnit_.y;
         const double dist = (t - gumballDragT0_) / std::max(1e-6, gumballDragPixelsPerWorld_);
-        delta = gumballDragAxisWorld_ * dist;
+        const Vec3 delta = gumballDragAxisWorld_ * dist;
+        const Vec3 step = delta - gumballAppliedDelta_;
+        if (std::abs(step.x) + std::abs(step.y) + std::abs(step.z) > 1e-12) {
+            document_.moveModels(selectedModels_, step);
+            gumballAppliedDelta_ = delta;
+            gumballOrigin_ = gumballDragStartOrigin_ + delta;
+        }
+    } else if (gumballIsRotate(gumballDrag_)) {
+        const double ang = std::atan2(y - gumballDragScreenOrigin_.y,
+                                      x - gumballDragScreenOrigin_.x);
+        double d = ang - gumballDragPrevAngle_;
+        if (d > 3.141592653589793) d -= 6.283185307179586;
+        else if (d < -3.141592653589793) d += 6.283185307179586;
+        gumballDragPrevAngle_ = ang;
+        gumballTotalAngle_ += d * gumballDragSign_;
+        const double step = gumballTotalAngle_ - gumballAppliedAngle_;
+        if (std::abs(step) > 1e-9) {
+            document_.rotateModels(selectedModels_, pivot, gumballDragAxisWorld_, step);
+            gumballAppliedAngle_ = gumballTotalAngle_;
+        }
+    } else if (gumballIsScaleAxis(gumballDrag_)) {
+        const double t = (x - gumballDragScreenOrigin_.x) * gumballDragAxisUnit_.x +
+                         (y - gumballDragScreenOrigin_.y) * gumballDragAxisUnit_.y;
+        if (std::abs(gumballDragT0_) > 6.0) {
+            const double f = std::min(100.0, std::max(0.02, t / std::abs(gumballDragT0_)));
+            const double step = f / gumballAppliedFactor_;
+            if (std::abs(step - 1.0) > 1e-9) {
+                Vec3 fac{1, 1, 1};
+                const int ai = gumballAxisIndex(gumballDrag_);
+                (ai == 0 ? fac.x : ai == 1 ? fac.y : fac.z) = step;
+                document_.scaleModels(selectedModels_, pivot, fac);
+                gumballAppliedFactor_ = f;
+            }
+        }
+    } else if (gumballDrag_ == GumballHandle::ScaleUniform) {
+        const double d = std::hypot(x - gumballDragScreenOrigin_.x,
+                                    y - gumballDragScreenOrigin_.y);
+        const double f = std::min(100.0, std::max(0.02, d / std::max(1.0, gumballDragStartDist_)));
+        const double step = f / gumballAppliedFactor_;
+        if (std::abs(step - 1.0) > 1e-9) {
+            document_.scaleModels(selectedModels_, pivot, Vec3{step, step, step});
+            gumballAppliedFactor_ = f;
+        }
     } else {
         const Vec3 wp = gumballPlanePoint(x, y, gumballDrag_);
-        delta = wp - gumballDragStartWorld_;
+        const Vec3 delta = wp - gumballDragStartWorld_;
+        const Vec3 step = delta - gumballAppliedDelta_;
+        if (std::abs(step.x) + std::abs(step.y) + std::abs(step.z) > 1e-12) {
+            document_.moveModels(selectedModels_, step);
+            gumballAppliedDelta_ = delta;
+            gumballOrigin_ = gumballDragStartOrigin_ + delta;
+        }
     }
-    const Vec3 step = delta - gumballAppliedDelta_;
-    if (std::abs(step.x) + std::abs(step.y) + std::abs(step.z) > 1e-12) {
-        document_.moveModels(selectedModels_, step);
-        gumballAppliedDelta_ = delta;
-        gumballOrigin_ = gumballDragStartOrigin_ + delta; // gumball nesneyle gelir
+    // Durum geri bildirimi: rotasyon acisi / olcek faktoru.
+    if (gumballIsRotate(gumballDrag_)) {
+        wchar_t buf[96]{};
+        std::swprintf(buf, std::size(buf), L"Gumball donusme: %.2f°",
+                      gumballTotalAngle_ * 57.29577951308232);
+        publishStatus(buf);
+    } else if (gumballIsScaleAxis(gumballDrag_) || gumballDrag_ == GumballHandle::ScaleUniform) {
+        wchar_t buf[96]{};
+        std::swprintf(buf, std::size(buf), L"Gumball olcek: %.4f x", gumballAppliedFactor_);
+        publishStatus(buf);
+    } else {
+        updateStatus();
     }
-    updateStatus();
     invalidateCanvas();
 }
 
@@ -5215,6 +5325,43 @@ void Application::gumballEndDrag() {
     if (canvas_) ReleaseCapture();
     gumballDrag_ = GumballHandle::None;
     gumballAppliedDelta_ = {};
+    gumballAppliedAngle_ = 0.0;
+    gumballTotalAngle_ = 0.0;
+    gumballAppliedFactor_ = 1.0;
+    updateGumball();
+    updateStatus();
+    invalidateCanvas();
+}
+
+// Escape ile iptal: uygulanan toplam donusumun TERSINI uygulayip geometriyi
+// drag oncesi haline dondurur (undo kaydinda forward+inverse net sifir kalir).
+void Application::gumballCancelDrag() {
+    if (gumballDrag_ == GumballHandle::None) return;
+    const Vec3 pivot = gumballDragStartOrigin_;
+    const Vec3 negDelta{-gumballAppliedDelta_.x, -gumballAppliedDelta_.y,
+                        -gumballAppliedDelta_.z};
+    if (gumballIsAxis(gumballDrag_)) {
+        document_.moveModels(selectedModels_, negDelta);
+    } else if (gumballIsRotate(gumballDrag_)) {
+        document_.rotateModels(selectedModels_, pivot, gumballDragAxisWorld_,
+                               -gumballTotalAngle_);
+    } else if (gumballIsScaleAxis(gumballDrag_)) {
+        Vec3 fac{1, 1, 1};
+        const int ai = gumballAxisIndex(gumballDrag_);
+        (ai == 0 ? fac.x : ai == 1 ? fac.y : fac.z) = 1.0 / gumballAppliedFactor_;
+        document_.scaleModels(selectedModels_, pivot, fac);
+    } else if (gumballDrag_ == GumballHandle::ScaleUniform) {
+        const double inv = 1.0 / gumballAppliedFactor_;
+        document_.scaleModels(selectedModels_, pivot, Vec3{inv, inv, inv});
+    } else {
+        document_.moveModels(selectedModels_, negDelta);
+    }
+    if (canvas_) ReleaseCapture();
+    gumballDrag_ = GumballHandle::None;
+    gumballAppliedDelta_ = {};
+    gumballAppliedAngle_ = 0.0;
+    gumballTotalAngle_ = 0.0;
+    gumballAppliedFactor_ = 1.0;
     updateGumball();
     updateStatus();
     invalidateCanvas();

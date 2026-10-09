@@ -457,6 +457,13 @@ private:
     double gumballDragT0_{0.0};
     double gumballDragPixelsPerWorld_{1.0};
     Vec3 gumballAppliedDelta_{};
+    // Rotate/scale ek drag durumu
+    double gumballDragSign_{1.0};      // rotasyon isaret (eksen izleyiciye bakiyor mu)
+    double gumballDragPrevAngle_{0.0}; // ekran aci unwrap referansi
+    double gumballTotalAngle_{0.0};    // toplam uygulanan aci (radyan)
+    double gumballAppliedAngle_{0.0};
+    double gumballDragStartDist_{0.0}; // uniform scale ekran mesafe referansi
+    double gumballAppliedFactor_{1.0};
     void updateGumball();
     GumballHandle gumballHitTest(int x, int y) const;
     double gumballWorldLength() const;
@@ -465,6 +472,7 @@ private:
     void gumballBeginDrag(int x, int y, GumballHandle handle);
     void gumballDragMove(int x, int y);
     void gumballEndDrag();
+    void gumballCancelDrag();
     std::optional<Vec3> anchor_;
     std::vector<Vec3> facePoints_;
     std::optional<SnapResult> hover_;

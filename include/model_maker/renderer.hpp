@@ -150,10 +150,28 @@ inline WorkPlaneAxisGlyph workPlaneAxisGlyph(const WorkPlane& plane, double leng
 // RHINO TARZI GUMBALL: tutamac kimlikleri (DraftView + Application ortak).
 enum class GumballHandle : int {
     None = -1, AxisX = 0, AxisY = 1, AxisZ = 2,
-    PlaneXY = 3, PlaneYZ = 4, PlaneZX = 5, Center = 6
+    PlaneXY = 3, PlaneYZ = 4, PlaneZX = 5, Center = 6,
+    RotX = 7, RotY = 8, RotZ = 9,
+    ScaleX = 10, ScaleY = 11, ScaleZ = 12, ScaleUniform = 13
 };
 constexpr bool gumballIsAxis(GumballHandle h) noexcept {
     return h == GumballHandle::AxisX || h == GumballHandle::AxisY || h == GumballHandle::AxisZ;
+}
+constexpr bool gumballIsPlane(GumballHandle h) noexcept {
+    return h == GumballHandle::PlaneXY || h == GumballHandle::PlaneYZ || h == GumballHandle::PlaneZX;
+}
+constexpr bool gumballIsRotate(GumballHandle h) noexcept {
+    return h == GumballHandle::RotX || h == GumballHandle::RotY || h == GumballHandle::RotZ;
+}
+constexpr bool gumballIsScaleAxis(GumballHandle h) noexcept {
+    return h == GumballHandle::ScaleX || h == GumballHandle::ScaleY || h == GumballHandle::ScaleZ;
+}
+// Eksen yonu (0=X,1=Y,2=Z) ya da -1 (eksen-disi tutamac).
+constexpr int gumballAxisIndex(GumballHandle h) noexcept {
+    return (h == GumballHandle::AxisX || h == GumballHandle::ScaleX || h == GumballHandle::RotX) ? 0
+         : (h == GumballHandle::AxisY || h == GumballHandle::ScaleY || h == GumballHandle::RotY) ? 1
+         : (h == GumballHandle::AxisZ || h == GumballHandle::ScaleZ || h == GumballHandle::RotZ) ? 2
+         : -1;
 }
 
 struct DraftView {
