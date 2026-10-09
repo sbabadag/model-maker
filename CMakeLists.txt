@@ -109,8 +109,8 @@ if(WIN32 AND OCC_ROOT)
         # OCCT 7.9 (MSYS2): STEP toolkit'leri tek TKDESTEP altinda
         # (eski TKSTEPBase/Attr/209/STEP kaldirildi).
         set(OCC_MANUAL_LIBS TKernel TKMath TKG2d TKG3d TKGeomBase TKBRep
-            TKGeomAlgo TKTopAlgo TKPrim TKBO TKBool TKShHealing TKXSBase
-            TKDESTEP)
+            TKGeomAlgo TKTopAlgo TKPrim TKBO TKBool TKShHealing TKMesh
+            TKXSBase TKDESTEP)
         set(MODELMAKER_OCC_READY TRUE)
         message(STATUS "OpenCASCADE bulundu (el ile baglanti): ${OCC_INCLUDE_DIR}")
     else()
@@ -128,6 +128,13 @@ endif()
 
 option(BUILD_OCC_BRIDGE_DLL
     "Build mm_occ.dll — the C-API bridge for the Qt app (use MSYS2 toolchain)" OFF)
+
+# Elle -DOCC_ROOT yolunda (Windows) app NORMALDE OCC'ye baglanmaz; kopru
+# (mm_occ.dll) kullanilir. Ama OCC ve app AYNI toolchain ile derleniyorsa
+# (orn. hepsi MSYS2 ucrt64) dogrudan baglamak guvenli ve tam ozellik verir.
+# Bu secenek yalnizca o durumda acilmalidir.
+option(MM_OCC_LINK_DIRECT
+    "Link the manual -DOCC_ROOT OCC libs directly into the Qt app too (only when OCC and the app share one toolchain)" OFF)
 
 if(MODELMAKER_OCC_READY)
     add_library(model_maker_occ src/occ_geometry.cpp)
@@ -150,10 +157,10 @@ if(MODELMAKER_OCC_READY)
     target_compile_options(model_maker_occ PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
-# Uygulama OCC'yi YALNIZ CONFIG yolunda (vcpkg/Linux) dogrudan kullanir —
-# ayni derleyici ailesi garantilidir. MSYS2 (el ile) yolunda uygulama
-# OCC'siz derlenir; kopru LoadLibrary ile yuklenir.
-if(OpenCASCADE_FOUND AND TARGET model-maker)
+# Uygulama OCC'yi CONFIG yolunda (vcpkg/Linux) VEYA MM_OCC_LINK_DIRECT ile
+# elle (-DOCC_ROOT, tek toolchain) yolunda dogrudan kullanir. Aksi halde
+# MSYS2 koprusu (mm_occ.dll) LoadLibrary ile yuklenir.
+if((OpenCASCADE_FOUND OR (MODELMAKER_OCC_READY AND MM_OCC_LINK_DIRECT)) AND TARGET model-maker)
     target_link_libraries(model-maker PRIVATE model_maker_occ)
     target_compile_definitions(model-maker PRIVATE MM_HAS_OCC)
     # Sürüm metni pencere başlığındaki OCC göstergesine gider (build_info.hpp).
@@ -161,7 +168,11 @@ if(OpenCASCADE_FOUND AND TARGET model-maker)
     if(DEFINED OpenCASCADE_VERSION AND NOT OpenCASCADE_VERSION STREQUAL "")
         target_compile_definitions(model-maker PRIVATE MM_OCC_VERSION="${OpenCASCADE_VERSION}")
     endif()
-    message(STATUS "Uygulama OCC'yi dogrudan bagliyor (ayni toolchain)")
+    if(OpenCASCADE_FOUND)
+        message(STATUS "Uygulama OCC'yi dogrudan bagliyor (config/ayni toolchain)")
+    else()
+        message(STATUS "Uygulama OCC'yi dogrudan bagliyor (elle -DOCC_ROOT + MM_OCC_LINK_DIRECT)")
+    endif()
 endif()
 
 # mm_occ.dll: Qt uygulamasinin LoadLibrary ile yukledigi C-API koprusu.
