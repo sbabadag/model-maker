@@ -58,6 +58,11 @@ public:
     void toggle3DView();
     void ensureSpaceMouseStarted();
     void applyStartupDefaults();
+    // VARSAYILAN BASLANGIC: 3B + Solid + GL (guvenli). GL, canvas gecerli
+    // boyut alinca acilir; acilis basarisizsa GDI'ye duser; onceki acilista
+    // GL cokmesi/donmasi olduysa (guard dosyasi) bu sefer GDI ile baslar.
+    void applyStartupDefaults3D();
+    void tryEnableStartupGpu();
     // TEKLA-TARZI YAPI GRIDI olusturma (Qt dialogdan parametrelerle).
     // X/1-2-3 (dikey) ve Y/A-B-C (yatay) aks cizgilerini workPlane
     // duzleminde uretir; etiketler verilen harf/rakamdan baslar.
@@ -425,9 +430,12 @@ private:
     void ensureOccBridge();
 #endif
     bool gpuLinesEnabled_ = false; // GL yolu dogrulanana kadar varsayilan GDI (F9 = GL)
-    bool startupGpuEnabled_ = false; // GL otomatik acilis KAPALI — acilista otomatik
-    // GL init bu makinede tüm sistemi dondurdu (ayrı ayıklama gerekiyor).
-    // Kullanicinin bilgisayarini tekrar dondurmamak icin varsayilan GDI.
+    // Acilista GL istegi (kullanici talebi: varsayilan GL). tryEnableStartupGpu
+    // canvas boyutu gecerli olunca TEK KEZ dener (0x0 canvas'ta GL init yok).
+    bool startupGpuEnabled_ = true;
+    bool startupGpuGuardArmed_ = false; // guard dosyasi yazildi, ilk GL karesi bekleniyor
+    std::wstring startupNotice_;        // GDI'ye dusus nedeni (durum cubugunda)
+    void clearStartupGpuGuard();
     bool backendInitTried_ = false;
     std::function<void(const std::wstring&)> statusCallback_;
     std::function<void()> profilePickerCallback_;

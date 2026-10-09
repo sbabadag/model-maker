@@ -529,41 +529,42 @@ bool OpenGLRenderBackend::initialize(void* windowHandle, int initialWidth, int i
         return false;
     }
 
+    // FBO + clear rengi context CURRENT iken kurulmali: current context yokken
+    // wglGetProcAddress ile alinmis surucu fonksiyonlarini cagirmak tanimsiz
+    // davranis (bazi suruculerde erisim ihlali = acilis cokmesi). 0x0 canvas'ta
+    // FBO kurulmaz; renderLines ilk gecerli boyutta ensureFbo ile kurar.
+    if (width_ > 0 && height_ > 0) ensureFbo(width_, height_);
+    glClearColor(198.0f / 255.0f, 224.0f / 255.0f, 246.0f / 255.0f, 1.0f); // gradient ustu acik mavi
+
     // Context'i current birakma: ayni pencerede GL context'i current iken GDI
     // cizimi (BeginPaint) bazi suruculerde bozuluyor — GDI varsayilan modda
     // cizgiler tamamen kayboluyordu. beginFrame() cizim icin tekrar alir,
     // endFrame()'den sonra yine birakir.
     wglMakeCurrent(hdc, nullptr);
-
-    // Create FBO for offscreen rendering
-    ensureFbo(width_, height_);
-
-    glClearColor(198.0f / 255.0f, 224.0f / 255.0f, 246.0f / 255.0f, 1.0f); // gradient ustu acik mavi
     initialized_ = true;
     hasWindowsGL = true;
     return true;
 }
 
 void OpenGLRenderBackend::shutdown() {
-    if (deviceContext_ && wglWindow_) {
-        wglMakeCurrent(static_cast<HDC>(deviceContext_), nullptr);
-        ReleaseDC(static_cast<HWND>(wglWindow_), static_cast<HDC>(deviceContext_));
-        deviceContext_ = nullptr;
-    }
-    if (wglWindow_) { DestroyWindow(static_cast<HWND>(wglWindow_)); wglWindow_ = nullptr; }
-    if (!initialized_) return;
+    // SIRA ONEMLI: GL nesneleri context CURRENT iken silinir; ancak sonra
+    // context silinir, DC birakilir, gizli pencere yok edilir. (Eski sira
+    // once DC/pencereyi birakip context'siz glDelete* cagiriyordu — kapanista
+    // ve GDI'ye dususte surucu erisim ihlali riski.)
     HDC hdc = static_cast<HDC>(deviceContext_);
-    if (hdc) wglMakeCurrent(hdc, nullptr);
-    cleanupGL();
-    if (glContext_) { wglDeleteContext(static_cast<HGLRC>(glContext_)); glContext_ = nullptr; }
-    if (deviceContext_ && windowHandle_) {
-        ReleaseDC(static_cast<HWND>(windowHandle_), static_cast<HDC>(deviceContext_));
-        deviceContext_ = nullptr;
+    if (glContext_) {
+        if (initialized_ && hdc && wglMakeCurrent(hdc, static_cast<HGLRC>(glContext_)))
+            cleanupGL();
+        wglMakeCurrent(nullptr, nullptr);
+        wglDeleteContext(static_cast<HGLRC>(glContext_));
+        glContext_ = nullptr;
     }
-    if (openglModule) { FreeLibrary(openglModule); openglModule = nullptr; }
+    if (hdc && wglWindow_) ReleaseDC(static_cast<HWND>(wglWindow_), hdc);
+    deviceContext_ = nullptr;
+    if (wglWindow_) { DestroyWindow(static_cast<HWND>(wglWindow_)); wglWindow_ = nullptr; }
+    if (initialized_ && openglModule) { FreeLibrary(openglModule); openglModule = nullptr; }
     initialized_ = false;
     hasWindowsGL = false;
-    if (wglWindow_) { DestroyWindow(static_cast<HWND>(wglWindow_)); wglWindow_ = nullptr; }
 }
 
 void OpenGLRenderBackend::resize(int width, int height) {
@@ -713,6 +714,7 @@ bool OpenGLRenderBackend::renderBatchToDc(
     bool useProjection2D, std::uint64_t contentRevision,
     std::uint8_t faceAlpha, bool hiddenLineStyle) {
     if (!initialized_ || models.empty()) return false;
+    if (width <= 0 || height <= 0) return false; // simge durumu / 0x0 canvas: GDI yolu
     const auto glDiag = [this](const char* step) {
         if (glDiagCount_ >= 8) return;
         FILE* diag = fopen("model-maker-render.log", "a");

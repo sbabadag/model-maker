@@ -305,8 +305,9 @@ void QtMainWindow::showEvent(QShowEvent* event) {
         QTimer::singleShot(0, this, [this]() {
             // 3B'ye gec (mode_ View3D) + SpaceMouse baslat. toggle3DView icinde
             // zaten ensureSpaceMouseStarted cagrilir (mode_ View3D olunca).
-            app_.applyStartupDefaults();          // no-op (kilitlenme teşhisi)
-            app_.toggle3DView();
+            // 3B + Solid + GL (canvas boyutu gecerliyse simdi, degilse ilk
+            // gecerli resize'da; basarisiz/onceki acilis donduysa GDI).
+            app_.applyStartupDefaults3D();
             app_.ensureSpaceMouseStarted();       // her durumda otomatik baslat
         });
     }
@@ -348,6 +349,8 @@ void QtMainWindow::resizeEmbeddedCanvas() {
         SetWindowPos(canvas, nullptr, 0, 0, rc.right, rc.bottom,
                      SWP_NOZORDER | SWP_NOACTIVATE);
     }
+    // Baslangic GL'i canvas 0x0 iken ertelendiyse simdi dene (tek seferlik).
+    app_.tryEnableStartupGpu();
 }
 
 void QtMainWindow::createMenus() {

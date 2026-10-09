@@ -131,11 +131,32 @@ HCURSOR createSquarePickboxCursor(HINSTANCE instance) {
 }
 }
 
+namespace {
+// GL ACILIS KORUMASI: acilista GL init/ilk kare surucu duzeyinde donarsa veya
+// cokerse kullanici bir daha hic acamaz hale gelmesin diye exe yanina bir
+// "guard" dosyasi yazilir; ilk GL karesi basariyla cizilince silinir. Dosya
+// bir sonraki acilista hala duruyorsa onceki GL denemesi yarida kalmistir ->
+// bu acilis GDI ile yapilir (F6 ile elle GL denenebilir).
+std::filesystem::path startupGpuGuardPath() {
+    wchar_t buffer[MAX_PATH]{};
+    const DWORD length = GetModuleFileNameW(nullptr, buffer, MAX_PATH);
+    if (length == 0 || length >= MAX_PATH) return L"model-maker-gl-startup.guard";
+    return std::filesystem::path(buffer).parent_path() / L"model-maker-gl-startup.guard";
+}
+
+bool forceGdiRequested() {
+    wchar_t value[8]{};
+    const DWORD length = GetEnvironmentVariableW(L"MM_FORCE_GDI", value, 8);
+    return length > 0 && length < 8 && value[0] != L'0';
+}
+} // namespace
+
 Application::Application(HINSTANCE instance, HWND /*parentCanvas*/) : instance_(instance) {
     enabledSnapTypes_.fill(true);
 }
 
 Application::~Application() {
+    clearStartupGpuGuard(); // temiz kapanis: GL acilisi sorunsuz sayilir
     if (dxfImportThread_.joinable()) {
         dxfImportThread_.request_stop();
         dxfImportThread_.join();
@@ -151,15 +172,9 @@ Application::~Application() {
 
 int Application::run(int showCommand, std::optional<std::filesystem::path> startupDxf) {
     createMainWindow(showCommand);
-    // VARSAYILAN BASLANGIC (kullanici talebi): GL + 3B + Solid stil.
-    // toggleGpuLines LAZIM: GL backend ilk acilista uretilir (backendInitTried_
-    // mekanizmasi); toggle3DView modu View3D'ye tasir; setVisualStyle Solid.
-    if (!gpuLinesEnabled_) toggleGpuLines();
-    if (mode_ != EditMode::View3D) toggle3DView();
-    // SpaceMouse'u startup'ta da baslat: mode_ basindan View3D ise toggle3DView
-    // cagrilmaz (koşul false), bu yuzden burada acikca baslat.
+    // VARSAYILAN BASLANGIC (kullanici talebi): 3B + Solid + GL (guvenli yol).
+    applyStartupDefaults3D();
     ensureSpaceMouseStarted();
-    setVisualStyle(VisualStyle::Solid);
     if (startupDxf && startupDxf->extension() == L".dxf") beginDxfImport(*startupDxf);
     MSG message{};
     while (GetMessageW(&message, nullptr, 0, 0) > 0) {
@@ -1516,6 +1531,10 @@ void Application::onCanvasPaint() {
     }
     const auto paintStart = std::chrono::steady_clock::now();
     renderer_.draw(dc, client, document_, camera_, mode_, draftView(), activeBackend);
+    // Ilk GERCEK GL karesi (model varken) donmadan/cokmeden bitti -> acilis
+    // korumasini kaldir. Bos belgede GL cizmez; o durumda temiz kapanis siler.
+    if (startupGpuGuardArmed_ && activeBackend && !document_.models().empty())
+        clearStartupGpuGuard();
     if (paintSequence_ <= 10 && paintSequence_ > 0)
         trimExtendLog(L"PAINT-EXIT " + std::to_wstring(paintSequence_ - 1));
     const double paintMs = std::chrono::duration<double, std::milli>(
@@ -2360,6 +2379,62 @@ void Application::applyStartupDefaults() {
     // GL degil (0050b1c'de GL kapatilip grid birakilinca da dondu).
     // Grid'i menuden elle ekleyince test et; acilista otomatik ekleme kapali.
     // (Kullanici "Yapı Gridi Oluştur" ile zaten grid ekleyebilir — 32cf62d.)
+}
+
+void Application::applyStartupDefaults3D() {
+    // VARSAYILAN BASLANGIC (kullanici talebi): 3B + Solid + GL.
+    // Grid otomatik OLUSTURULMAZ (2562b57: acilista grid donmaya yol acti).
+    // Kamera/zoom extents cagrilmaz (0x0 canvas'ta fit kamerayi bozabilir).
+    if (mode_ != EditMode::View3D) toggle3DView();
+    setVisualStyle(VisualStyle::Solid);
+    tryEnableStartupGpu(); // canvas henuz 0x0 ise ilk gecerli resize'da tekrar denenir
+}
+
+void Application::tryEnableStartupGpu() {
+    if (gpuLinesEnabled_ || !startupGpuEnabled_) return; // zaten GL / istek yok / denendi
+    if (!canvas_ || !IsWindow(canvas_)) return;           // canvas henuz yok
+    RECT rc{};
+    if (!GetClientRect(canvas_, &rc) || rc.right <= 0 || rc.bottom <= 0) return; // 0x0: ertele
+    startupGpuEnabled_ = false; // TEK deneme
+
+    std::error_code ec;
+    const auto guard = startupGpuGuardPath();
+    if (forceGdiRequested()) {
+        startupNotice_ = L"GDI (MM_FORCE_GDI)";
+        updateStatus();
+        return;
+    }
+    if (std::filesystem::exists(guard, ec)) {
+        // Onceki acilista GL yarida kaldi (donma/cokme) -> bu sefer GDI.
+        std::filesystem::remove(guard, ec);
+        startupNotice_ = L"Önceki açılışta GL yanıt vermedi — GDI ile başlatıldı (F6 = GL)";
+        FILE* diag = fopen("model-maker-render.log", "a");
+        if (diag) { fprintf(diag, "STARTUP-GL skipped (stale guard)\n"); fclose(diag); }
+        updateStatus();
+        return;
+    }
+    {
+        std::ofstream marker(guard, std::ios::trunc);
+        marker << "GL startup in progress\n";
+        startupGpuGuardArmed_ = static_cast<bool>(marker);
+    }
+    toggleGpuLines();
+    const bool glActive = gpuLinesEnabled_ && renderBackend_ && renderBackend_->isHardwareAccelerated();
+    if (!glActive) {
+        // GL baglami kurulamadi (eski surucu / RDP / GL 3.3 yok): GDI'de kal.
+        if (gpuLinesEnabled_) gpuLinesEnabled_ = false;
+        clearStartupGpuGuard();
+        startupNotice_ = L"GL başlatılamadı — GDI kullanılıyor";
+        updateStatus();
+        invalidateCanvas();
+    }
+}
+
+void Application::clearStartupGpuGuard() {
+    if (!startupGpuGuardArmed_) return;
+    startupGpuGuardArmed_ = false;
+    std::error_code ec;
+    std::filesystem::remove(startupGpuGuardPath(), ec);
 }
 
 void Application::createModelGrid(const Vec3& origin, const Vec3& xDir, const Vec3& yDir,
@@ -3739,6 +3814,7 @@ void Application::updateStatus() {
         const bool glActive = gpuLinesEnabled_ && renderBackend_ &&
                               renderBackend_->isHardwareAccelerated();
         text += glActive ? L"  |  GPU: GL" : L"  |  GPU: GDI";
+        if (!glActive && !startupNotice_.empty()) text += L" (" + startupNotice_ + L")";
     }
     // Keep selection and section data near the start of the Qt status bar so
     // A/Ix/Wx/G remain visible even when the remaining CAD state is lengthy.
@@ -5813,17 +5889,29 @@ void Application::setVisualStyle(VisualStyle style) noexcept {
 }
 
 void Application::toggleGpuLines() {
+    startupNotice_.clear(); // elle F6 / yeni deneme: eski dusus notu gecersiz
     gpuLinesEnabled_ = !gpuLinesEnabled_;
     if (gpuLinesEnabled_ && !backendInitTried_) {
         // Ilk GL acilisinda backend uretilir (GL basarisizsa GDI'ye dus).
         backendInitTried_ = true;
         RECT canvasRect{}; GetClientRect(canvas_, &canvasRect);
-        renderBackend_ = createOpenGLRenderBackend();
-        if (!renderBackend_ ||
-            !renderBackend_->initialize(canvas_, canvasRect.right, canvasRect.bottom)) {
-            renderBackend_ = createGdiRenderBackend();
-            if (renderBackend_)
-                renderBackend_->initialize(canvas_, canvasRect.right, canvasRect.bottom);
+        bool glReady = false;
+        try {
+            renderBackend_ = createOpenGLRenderBackend();
+            glReady = renderBackend_ &&
+                      renderBackend_->initialize(canvas_, canvasRect.right, canvasRect.bottom);
+        } catch (...) {
+            glReady = false; // bad_alloc vb. — GDI'ye dus, uygulama cokmesin
+        }
+        if (!glReady) {
+            if (renderBackend_) { renderBackend_->shutdown(); renderBackend_.reset(); }
+            try {
+                renderBackend_ = createGdiRenderBackend();
+                if (renderBackend_)
+                    renderBackend_->initialize(canvas_, canvasRect.right, canvasRect.bottom);
+            } catch (...) {
+                renderBackend_.reset(); // backend yok -> renderer saf GDI yolu
+            }
         }
     }
     FILE* diag = fopen("model-maker-render.log", "a");

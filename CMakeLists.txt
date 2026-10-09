@@ -216,6 +216,9 @@ if(BUILD_TESTING)
             add_test(NAME model_maker_gumball_interaction
                 COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_gumball_interaction.py
                     ${CMAKE_CURRENT_BINARY_DIR})
+            add_test(NAME model_maker_startup_gpu
+                COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_startup_gpu.py
+                    ${CMAKE_CURRENT_BINARY_DIR})
         endif()
     endif()
 
