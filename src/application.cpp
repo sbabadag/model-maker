@@ -1976,6 +1976,39 @@ void Application::onMouseMove(int x, int y, WPARAM buttons) {
 }
 
 void Application::onCharacter(wchar_t character) {
+    // GUMBALL drag surerken NUMERIK GIRIS: rakam/nokta/isaret -> input_;
+    // Enter -> tam deger (mesafe mm / aci derece / olcek faktor) uygulanir.
+    if (gumballDrag_ != GumballHandle::None) {
+        if (character == L'\r') {
+            if (!input_.empty()) {
+                try {
+                    const double value = std::stod(input_);
+                    input_.clear();
+                    applyGumballNumeric(value);
+                    return;
+                } catch (...) {
+                    input_.clear();
+                    MessageBeep(MB_ICONWARNING);
+                }
+            }
+            updateStatus();
+            invalidateCanvas();
+            return;
+        }
+        if (character == L'\b') {
+            if (!input_.empty()) input_.pop_back();
+            updateStatus();
+            invalidateCanvas();
+            return;
+        }
+        if ((character >= L'0' && character <= L'9') || character == L'.' ||
+            character == L',' || character == L'-') {
+            input_.push_back(character == L',' ? L'.' : character);
+            updateStatus();
+            invalidateCanvas();
+        }
+        return;
+    }
     if (profileAssignmentActive_) {
         if (character == L'\r') { commitProfileAssignment(); return; }
         if (character == 27) { // Esc
@@ -5364,6 +5397,57 @@ void Application::gumballCancelDrag() {
     gumballAppliedFactor_ = 1.0;
     updateGumball();
     updateStatus();
+    invalidateCanvas();
+}
+
+// Gumball drag surerken numerik tam deger uygula.
+// Eksen tasima -> mesafe (mm); rotasyon -> aci (derece); olcek -> faktor.
+void Application::applyGumballNumeric(double value) {
+    if (gumballDrag_ == GumballHandle::None || selectedModels_.empty()) return;
+    const Vec3 pivot = gumballDragStartOrigin_;
+    if (gumballIsAxis(gumballDrag_)) {
+        const Vec3 delta = gumballDragAxisWorld_ * value;
+        const Vec3 step = delta - gumballAppliedDelta_;
+        document_.moveModels(selectedModels_, step);
+        gumballAppliedDelta_ = delta;
+        gumballOrigin_ = gumballDragStartOrigin_ + delta;
+        wchar_t buf[96]{};
+        std::swprintf(buf, std::size(buf), L"Gumball tasima: %.3f mm", value);
+        publishStatus(buf);
+    } else if (gumballIsRotate(gumballDrag_)) {
+        const double total = value * 0.017453292519943295; // derece -> radyan
+        const double step = total - gumballAppliedAngle_;
+        document_.rotateModels(selectedModels_, pivot, gumballDragAxisWorld_, step);
+        gumballAppliedAngle_ = total;
+        gumballTotalAngle_ = total;
+        wchar_t buf[96]{};
+        std::swprintf(buf, std::size(buf), L"Gumball donusme: %.3f°", value);
+        publishStatus(buf);
+    } else if (gumballIsScaleAxis(gumballDrag_)) {
+        const double f = std::min(100.0, std::max(0.02, value));
+        const double step = f / gumballAppliedFactor_;
+        Vec3 fac{1, 1, 1};
+        const int ai = gumballAxisIndex(gumballDrag_);
+        (ai == 0 ? fac.x : ai == 1 ? fac.y : fac.z) = step;
+        document_.scaleModels(selectedModels_, pivot, fac);
+        gumballAppliedFactor_ = f;
+        wchar_t buf[96]{};
+        std::swprintf(buf, std::size(buf), L"Gumball olcek: %.4f x", f);
+        publishStatus(buf);
+    } else if (gumballDrag_ == GumballHandle::ScaleUniform) {
+        const double f = std::min(100.0, std::max(0.02, value));
+        const double step = f / gumballAppliedFactor_;
+        document_.scaleModels(selectedModels_, pivot, Vec3{step, step, step});
+        gumballAppliedFactor_ = f;
+        wchar_t buf[96]{};
+        std::swprintf(buf, std::size(buf), L"Gumball olcek: %.4f x", f);
+        publishStatus(buf);
+    } else {
+        // Duzlem/merkez tasimada tek sayi yon belirlemez — yoksay.
+        MessageBeep(MB_ICONWARNING);
+        return;
+    }
+    updateGumball();
     invalidateCanvas();
 }
 

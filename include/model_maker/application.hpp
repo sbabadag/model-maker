@@ -473,6 +473,7 @@ private:
     void gumballDragMove(int x, int y);
     void gumballEndDrag();
     void gumballCancelDrag();
+    void applyGumballNumeric(double value);
     std::optional<Vec3> anchor_;
     std::vector<Vec3> facePoints_;
     std::optional<SnapResult> hover_;
