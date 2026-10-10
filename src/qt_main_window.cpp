@@ -355,13 +355,22 @@ void QtMainWindow::openTwoPointView(const ViewDefinition& definition) {
     }
     sub->setWindowTitle(QString::fromStdWString(view.name) +
                         QStringLiteral("  —  %1 mm, XY'ye dik").arg(std::lround(view.length)));
-    // Ana gorunus tam ekransa yan yana dose (Tekla gibi iki gorunus birlikte).
-    const bool modelMaximized = modelSubWindow_ && modelSubWindow_->isMaximized();
-    if (modelMaximized) modelSubWindow_->showNormal();
-    sub->resize(720, 480);
-    sub->show();
-    if (modelMaximized) mdiArea_->tileSubWindows();
+    // Gorunus penceresi tum MDI alanini kaplasin (Tekla gibi tek gorunus).
+    // MDI'da ayni anda tek pencere buyutulmus olabilir; bu, varsa buyutulmus
+    // ana gorunusu otomatik normale dondurur.
+    sub->showMaximized();
     mdiArea_->setActiveSubWindow(sub);
+    // Kapatilinca (X / Ctrl+F4) kalan tek pencere = ana gorunus -> yeniden
+    // buyutulur, aksi halde ana pencere normal boyutta asili kalir.
+    QObject::connect(sub, &QObject::destroyed, this, [this]() {
+        QTimer::singleShot(0, this, [this]() {
+            bool anyView = false;
+            for (QMdiSubWindow* s : mdiArea_->subWindowList())
+                if (s != modelSubWindow_) { anyView = true; break; }
+            if (!anyView && modelSubWindow_ && !modelSubWindow_->isMaximized())
+                modelSubWindow_->showMaximized();
+        });
+    });
     widget->setFocus();
     QTimer::singleShot(0, widget, [widget]() { widget->fitView(); });
     if (HWND canvas = widget->canvasHandle()) SetFocus(canvas);
