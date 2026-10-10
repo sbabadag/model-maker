@@ -3686,6 +3686,14 @@ void Application::updateHover(int x, int y) {
                                     snapEnabled_, gridSnapEnabled_, reference, &enabledSnapTypes_,
                                     visualStyle_ == VisualStyle::Solid);
     }
+    // IKI NOKTALI GORUNUS (viewDef_): secilen nokta IS DUZLEMINE iz dusurulur.
+    // Gorunus duzleminin normali = bakis yonu oldugu icin iz dusum EKRANDA
+    // noktayi OYNATMAZ; ama duzlem disi geometriye (baska derinlikteki uye
+    // ucuna) snap olsa bile tasima/kopyalama is duzlemi ICINDE kalir. Aksi
+    // halde ornegin baz bir derinlikteki ucdan, hedef baska derinlikteki
+    // noktadan secilince nesne derinlige kayip gorunusten (derinlik dilimi)
+    // CIKABILIYOR. Tek kaynak: WorkPlane::projectPoint.
+    if (viewDef_ && hover_) hover_->point = workPlane_.projectPoint(hover_->point);
     const SnapResult rawSnap = *hover_;
     // TP adayi: TAB ile kaydedilecek HAM snap noktasi. Eskiden burada 450 ms
     // BEKLEME (dwell) zamanlayicisi kurulup nokta OTOMATIK kaydediliyordu;

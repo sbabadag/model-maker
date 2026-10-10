@@ -128,6 +128,18 @@ WorkPlane WorkPlane::rotatedZ(double angleDeg) const noexcept {
         normal};
 }
 
+// Noktayi is duzlemine IZ DUSUR: normal yonundeki bilesen atilir.
+// Iki noktali gorunuste secilen noktalar icin kullanilir (bkz. application.cpp):
+// gorunus duzleminin normali = bakis yonu oldugundan izdusum EKRANDA noktayi
+// oynatmaz, ama duzlem disi geometriye snap olsa bile tasima/kopyalama duzlem
+// ICINDE kalir.
+Vec3 WorkPlane::projectPoint(Vec3 point) const noexcept {
+    const auto n = normalized(normal);
+    if (!n) return point; // bozuk normal: dokunma
+    const double offset = dot3(point - origin, *n);
+    return point - (*n) * offset;
+}
+
 WireframeModel::WireframeModel(std::vector<Vec3> vertices, std::vector<Edge> edges,
                                std::vector<Face> faces)
     : vertices_(std::move(vertices)), edges_(std::move(edges)), faces_(std::move(faces)) {

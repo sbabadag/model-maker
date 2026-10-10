@@ -249,6 +249,11 @@ if(BUILD_TESTING)
             add_test(NAME model_maker_tp_tab
                 COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_tp_tab.py
                     ${CMAKE_CURRENT_BINARY_DIR})
+            # Iki noktali gorunus: tasima/kopyalama noktalari is duzlemine iz
+            # dusurulur (projected). Sekil + gercek SnapEngine/Camera davranisi.
+            add_test(NAME model_maker_view_workplane_move
+                COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_view_workplane_move.py
+                    ${CMAKE_CURRENT_BINARY_DIR})
         endif()
     endif()
 
@@ -283,6 +288,14 @@ if(BUILD_TESTING)
     add_executable(model_maker_ortho_snap_core_test tests/ortho_snap_core_test.cpp)
     target_link_libraries(model_maker_ortho_snap_core_test PRIVATE model_maker_core)
     add_test(NAME model_maker_ortho_snap_core_test COMMAND model_maker_ortho_snap_core_test)
+
+    # Iki noktali gorunuste tasima/kopyalama: secilen nokta IS DUZLEMINE iz
+    # dusurulur (normal bileseni atilir). Gorunus duzleminin normali = bakis
+    # yonu oldugu icin ekranda bir sey oynamaz; ama duzlem disi geometriye
+    # snap'te nesne derinlige kaymaz. OCC'siz de kosar.
+    add_executable(model_maker_view_workplane_move_test tests/view_workplane_move_test.cpp)
+    target_link_libraries(model_maker_view_workplane_move_test PRIVATE model_maker_core)
+    add_test(NAME model_maker_view_workplane_move_test COMMAND model_maker_view_workplane_move_test)
 
     # test_core.cpp Windows-only: renderer.hpp kosulsuz <windows.h> icerir.
     if(WIN32)

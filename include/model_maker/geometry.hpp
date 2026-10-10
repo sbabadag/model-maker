@@ -64,6 +64,9 @@ struct WorkPlane {
     WorkPlane rotatedZ(double angleDeg) const noexcept;
     Vec3 fromPlane(Vec2 point) const noexcept;
     Vec2 toPlane(Vec3 point) const noexcept;
+    // Noktayi duzleme iz dusur (normal bileseni atilir). Iki noktali gorunuste
+    // secilen noktalari is duzlemine oturtmak icin (bkz. application.cpp).
+    Vec3 projectPoint(Vec3 point) const noexcept;
 };
 
 struct Edge {
