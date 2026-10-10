@@ -161,6 +161,52 @@ int main() {
               "izleme noktasi yok: turetilmis nokta yok");
     }
 
+    // 13) DIK BIRLESIM KOSESI (ayni kot): iki TP'nin izleme cizgileri planDA
+    //     (P1.u,P2.v) ve (P2.u,P1.v) noktalarinda kesisir; imlec kosedeyse
+    //     Intersection snap'i + iki kose isareti (derivedPoints).
+    {
+        const Vec3 p1{0.0, 0.0, 0.0};
+        const Vec3 p2{1000.0, 500.0, 0.0};
+        SnapResult cursor{Vec3{1000.0, 0.0, 0.0}, SnapType::None, 0.0};
+        const auto t = resolveTemporaryPointTracking(cursor, {p1, p2}, kWorld, 200.0);
+        check(t.locked && t.result.type == SnapType::Intersection,
+              "ayni kot: dik birlesim kosesi Intersection snap'i");
+        check(nearV(t.result.point, {1000.0, 0.0, 0.0}, 1e-9), "ayni kot: kose (1000,0,0)");
+        check(t.derivedPoints.size() == 2, "ayni kot: iki kose isareti gorunur");
+    }
+
+    // 14) DIK BIRLESIM KOSESI (FARKLI kot): 3B cercevede uyeler farkli
+    //     yukseklikte olabilir; plan kosesi yine gecerli ve isaretlenmeli.
+    {
+        const Vec3 p1{0.0, 0.0, 0.0};
+        const Vec3 p2{1000.0, 500.0, 800.0};  // ikinci TP 800 mm yukarida
+        SnapResult cursor{Vec3{1000.0, 0.0, 0.0}, SnapType::None, 0.0};
+        const auto t = resolveTemporaryPointTracking(cursor, {p1, p2}, kWorld, 200.0);
+        check(t.locked && t.result.type == SnapType::Intersection,
+              "farkli kot: dik birlesim kosesi yine Intersection");
+        check(near(t.result.point.x, 1000.0, 1e-9) && near(t.result.point.y, 0.0, 1e-9),
+              "farkli kot: plan kosesi (1000,0)");
+        check(t.derivedPoints.size() == 2, "farkli kot: iki kose isareti gorunur");
+    }
+
+    // 15) Kose imlec duzleminde (cursorNormal) konur: farkli kotta da snap
+    //     mesafesi plan uzakligidir; kose isaretleri hem (P1.u,P2.v) hem
+    //     (P2.u,P1.v) icerir.
+    {
+        const Vec3 p1{0.0, 0.0, 0.0};
+        const Vec3 p2{1000.0, 500.0, 800.0};
+        SnapResult cursor{Vec3{0.0, 500.0, 0.0}, SnapType::None, 0.0};
+        const auto t = resolveTemporaryPointTracking(cursor, {p1, p2}, kWorld, 200.0);
+        check(t.locked && t.result.type == SnapType::Intersection,
+              "diger kose de snap noktasi (0,500)");
+        bool hasA = false, hasB = false;
+        for (const auto& d : t.derivedPoints) {
+            if (nearV(d, {0.0, 500.0, 0.0}, 1e-9)) hasA = true;
+            if (nearV(d, {1000.0, 0.0, 0.0}, 1e-9)) hasB = true;
+        }
+        check(hasA && hasB, "her iki kose isareti de listede");
+    }
+
     std::printf("%d checks, %d failures\n", checks, failures);
     return failures == 0 ? 0 : 1;
 }

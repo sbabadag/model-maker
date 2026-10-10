@@ -929,13 +929,15 @@ TemporaryTrackingResult resolveTemporaryPointTracking(
                     perpendicularFoot = foot;
                 }
             }
-            const double firstNormal = normalDistance(acquiredPoints[first]);
-            const double secondNormal = normalDistance(acquiredPoints[second]);
-            if (std::abs(firstNormal - secondNormal) > std::max(tolerance, epsilon)) continue;
-            const double normal = (firstNormal + secondNormal) * 0.5;
+            // DIK BIRLESIM KOSESI: iki TP'nin izleme cizgilerinin (yatay x dusey)
+            // planDA kesisimi — (P1.u, P2.v) ve (P2.u, P1.v). Noktalar FARKLI
+            // KOTTA da olsa (3B cercevede uyeler farkli yukseklikte) plan kosesi
+            // gecerli oldugu icin kot kapisi YOKTUR; kose, dikme ayagi gibi
+            // IMLECIN duzlemine (cursorNormal) konur ki plan snap'i calissin ve
+            // isaret imlecin altinda kalsin.
             const std::array<Vec3, 2> corners{
-                plane.fromPlane({firstLocal.x, secondLocal.y}) + plane.normal * normal,
-                plane.fromPlane({secondLocal.x, firstLocal.y}) + plane.normal * normal};
+                plane.fromPlane({firstLocal.x, secondLocal.y}) + plane.normal * cursorNormal,
+                plane.fromPlane({secondLocal.x, firstLocal.y}) + plane.normal * cursorNormal};
             for (const auto& corner : corners) {
                 if (std::find(acquiredPoints.begin(), acquiredPoints.end(), corner) != acquiredPoints.end())
                     continue;
@@ -944,9 +946,8 @@ TemporaryTrackingResult resolveTemporaryPointTracking(
                     tracking.derivedPoints.push_back(corner);
                 if (explicitObjectSnap) continue;
                 const Vec2 cornerLocal = plane.toPlane(corner);
-                const double distance = std::hypot(
-                    std::hypot(cursorLocal.x - cornerLocal.x, cursorLocal.y - cornerLocal.y),
-                    cursorNormal - normal);
+                const double distance = std::hypot(cursorLocal.x - cornerLocal.x,
+                                                   cursorLocal.y - cornerLocal.y);
                 if (distance <= bestDistance) {
                     bestDistance = distance;
                     tracking.result = {corner, SnapType::Intersection, distance};
