@@ -747,6 +747,14 @@ bool Document::modelIsEditable(std::size_t index) const {
     return properties.visible && !properties.locked;
 }
 
+bool Document::modelIsPickable(std::size_t index) const {
+    if (!modelIsEditable(index)) return false;
+    if (!pickFilter_) return true;
+    ensureSpatialIndex();
+    if (index >= modelBounds_.size()) return false;
+    return pickFilter_(modelBounds_[index]);
+}
+
 void Document::rebuildDerivedState() {
     modelBounds_.resize(models_.size());
     for (std::size_t i = 0; i < models_.size(); ++i)

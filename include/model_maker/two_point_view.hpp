@@ -1,75 +1,43 @@
 #pragma once
 
 // IKI NOKTALI GORUNUS penceresi (Tekla "view by two points") — MDI alt penceresi.
-// Ana belgeyi SALT OKUR; kendi Camera + Renderer'ini tasir (Renderer'in
-// arka tampon/onbellek durumu pencere basinadir). GDI ile kendi native
-// HWND'sine cizer (GL backend yok -> GL baglami/surucu riski yok).
+// Ince bir kap: icinde Application::createViewport ile uretilen GERCEK Win32
+// tuvali vardir (ana gorunusle ayni pencere sinifi + ayni olay isleyicisi).
+// Boylece tum komutlar, kisayollar, snap, gumball, secim, Esc/Enter/Delete
+// ana pencereyle BIREBIR ayni calisir — hicbiri burada yeniden yazilmaz.
 
 #include "model_maker/application.hpp"
-#include "model_maker/camera.hpp"
-#include "model_maker/renderer.hpp"
 #include "model_maker/view_definition.hpp"
 
 #include <QWidget>
 
 #include <windows.h>
 
-#include <cstdint>
-#include <memory>
-
-class QTimer;
-
 namespace mm {
 
 class TwoPointViewWidget : public QWidget {
 public:
-    TwoPointViewWidget(Application& app, ViewDefinition view, QWidget* parent = nullptr);
+    TwoPointViewWidget(Application& app, const ViewDefinition& view, QWidget* parent = nullptr);
     ~TwoPointViewWidget() override;
 
-    const ViewDefinition& definition() const noexcept { return view_; }
+    bool isValid() const noexcept { return canvas_ != nullptr; }
+    HWND canvasHandle() const noexcept { return canvas_; }
     void fitView();
-    // Ana pencere kapanirken: belgeye bir daha dokunma.
-    void detach() noexcept { app_ = nullptr; }
-
-    QPaintEngine* paintEngine() const override { return nullptr; } // GDI kendi cizer
+    void editDepth();
+    // Ana pencere kapanirken: Application yok edilmeden once tuvali birak.
+    void detach() noexcept;
 
 protected:
-    void paintEvent(QPaintEvent* event) override;
     void resizeEvent(QResizeEvent* event) override;
-    void wheelEvent(QWheelEvent* event) override;
-    void mousePressEvent(QMouseEvent* event) override;
-    void mouseMoveEvent(QMouseEvent* event) override;
-    void mouseReleaseEvent(QMouseEvent* event) override;
-    void mouseDoubleClickEvent(QMouseEvent* event) override;
-    void keyPressEvent(QKeyEvent* event) override;
-    void focusOutEvent(QFocusEvent* event) override;
+    void showEvent(QShowEvent* event) override;
+    void focusInEvent(QFocusEvent* event) override;
     void contextMenuEvent(QContextMenuEvent* event) override;
 
 private:
-    void pollDocument();
-    bool clientSize(int& width, int& height) const;
-    POINT devicePoint(const QPointF& logical) const;
-    void selectAt(POINT p);
-    void finishWindowSelection(POINT second);
-    void drawSelectionRect(HDC dc, POINT first, POINT second) const;
+    void layoutCanvas();
 
     Application* app_;
-    ViewDefinition view_;
-    Camera camera_;
-    std::unique_ptr<Renderer> renderer_;
-    QTimer* pollTimer_{};
-    bool needsFit_{true};
-    bool panning_{false};
-    QPointF lastPan_{};
-    // Secim: sol tus basili + surukleme = pencere (soldan saga tam icerme,
-    // sagdan sola crossing); surukleme yoksa tik = tek nesne ekle/cikar.
-    bool selecting_{false};
-    bool selectDragged_{false};
-    POINT selectStart_{};
-    POINT selectCurrent_{};
-    std::uint64_t seenRevision_{~0ull};
-    std::size_t seenModelCount_{~std::size_t{0}};
-    std::size_t seenSelection_{~std::size_t{0}};
+    HWND canvas_{};
 };
 
 } // namespace mm

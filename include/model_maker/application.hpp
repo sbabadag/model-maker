@@ -48,7 +48,10 @@ public:
     ~Application();
     int run(int showCommand, std::optional<std::filesystem::path> startupDxf = std::nullopt);
 
-    HWND canvasHandle() const { return canvas_; }
+    // ANA tuval (aktif viewport degil) — Qt kabugu boyutlandirma/odak icin.
+    HWND canvasHandle() const { return mainCanvas(); }
+    // Su an komut alan (aktif) tuval — odagi geri vermek icin.
+    HWND activeCanvasHandle() const { return canvas_; }
     HWND windowHandle() const { return window_; }
     void createMainWindow(int showCommand = SW_SHOW);
     void selectTool(DrawTool tool);
@@ -178,18 +181,23 @@ public:
     void setTwoPointViewCallback(std::function<void(const ViewDefinition&)> callback) {
         twoPointViewCallback_ = std::move(callback);
     }
+    // COKLU VIEWPORT (Tekla gorunusleri): ikincil gorunus, ana tuvalle AYNI
+    // pencere sinifi ve AYNI olay isleyicisiyle calisan bir Win32 tuvalidir;
+    // tum komutlar/kisayollar/snap/gumball aynen calisir. parent = Qt kap
+    // widget'inin HWND'si. Donus: tuval HWND (hata -> nullptr).
+    HWND createViewport(HWND parent, const ViewDefinition& view);
+    void destroyViewport(HWND canvas);   // DestroyWindow; WM_DESTROY kaydi siler
+    void fitViewport(HWND canvas);       // gorunus dilimine sigdir
+    std::optional<ViewDefinition> viewportDefinition(HWND canvas) const;
+    void setViewportDepth(HWND canvas, double front, double back);
+    std::size_t viewportCount() const noexcept { return views_.size(); }
+    // Qt kisayollari (Ctrl+Z vb.) tuval mesaji disindan degisiklik yapar;
+    // Qt kabugu bunu kisa araliklarla cagirip diger pencereleri tazeler.
+    void syncPassiveViewports();
     // Ikincil gorunus pencereleri icin salt-okunur erisim.
     const Document& document() const noexcept { return document_; }
     const std::vector<std::size_t>& selectedModelIndices() const noexcept { return selectedModels_; }
     VisualStyle visualStyle() const noexcept { return visualStyle_; }
-    // Ikincil gorunus penceresinden secim (ortak secim kumesi, Tekla gibi).
-    //  Toggle: tek nesneyi ekle/cikar (tik).  Add: listeyi ekle (pencere).
-    //  Clear: secimi bosalt (Esc).  Gecersiz indeksler atlanir.
-    // Komut hedef/nokta fazindaysa (or. Move destination) reddedilir -> false.
-    enum class ViewSelectOp { Toggle, Add, Clear };
-    bool applyViewSelection(ViewSelectOp op, const std::vector<std::size_t>& indices);
-    // Ikincil pencerede Enter: secim fazindaki komutu ilerletir (Enter = secim bitti).
-    void confirmFromView() { onCharacter(L'\r'); }
     void cancelWorkPlaneCommand();
     void commitWorkPlanePoint(const Vec3& point);
     void resetWorkPlane();
@@ -377,7 +385,7 @@ private:
     HBRUSH statusBrush_{};
     Document document_;
     Camera camera_;
-    Renderer renderer_;
+    std::unique_ptr<Renderer> renderer_{std::make_unique<Renderer>()};
     ViewCubeRenderer viewCubeRenderer_;
 #ifdef MM_HAS_SPACEMOUSE
     // 3Dconnexion SpaceMouse (Navlib 4.x): 3B gorunumde kamerayi surer.
@@ -589,6 +597,40 @@ private:
     bool workPlanePicking_{};
     std::vector<Vec3> workPlanePoints_;
     // workPlanePicking_ akisinin amaci: 3 nokta duzlem veya 2 nokta gorunus.
+    // --- COKLU VIEWPORT -------------------------------------------------
+    // Gorunuse ozgu alanlar (canvas_, camera_, mode_, renderer_, workPlane_,
+    // viewDef_) AKTIF viewport'a aittir. Gecis = takas: views_[active] her
+    // zaman bir yer tutucu tasir (gercek alanlar uyelerdedir).
+    struct ViewportState {
+        HWND canvas{};
+        Camera camera;
+        EditMode mode{EditMode::View3D};
+        std::unique_ptr<Renderer> renderer;
+        WorkPlane workPlane{};
+        std::optional<ViewDefinition> viewDef;
+    };
+    std::vector<std::unique_ptr<ViewportState>> views_; // [0] = ana gorunus
+    std::size_t activeView_{0};
+    std::optional<ViewDefinition> viewDef_;  // aktif viewport'un dilimi (ana: yok)
+    bool creatingViewportCanvas_{false};     // WM_NCCREATE canvas_'i ezmesin
+    std::uint64_t passiveSignature_{~0ull};  // diger viewport'lari tazeleme imzasi
+    void ensureViewRegistry();
+    std::optional<std::size_t> viewIndexOf(HWND canvas) const;
+    void swapViewFields(ViewportState& slot);
+    void activateViewport(std::size_t index);
+    // Gorunus penceresinde yon IKI NOKTAYLA tanimlidir: dondurme yok (dilim
+    // normali sabit kalsin). Orta tus = kaydirma, Ctrl+1..7 / R = yeniden
+    // sigdirma. Ana gorunuste davranis degismez.
+    bool viewRotationLocked() const noexcept { return viewDef_.has_value(); }
+
+    void paintPassiveViewport(std::size_t index);
+    LRESULT routeCanvasMessage(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
+    void invalidateOtherViewports();
+    void removeViewport(std::size_t index);
+    void applyPickFilter();
+    HWND mainCanvas() const noexcept {
+        return (views_.empty() || activeView_ == 0) ? canvas_ : views_[0]->canvas;
+    }
     enum class PointPickPurpose { WorkPlane, TwoPointView };
     PointPickPurpose pointPickPurpose_{PointPickPurpose::WorkPlane};
     std::function<void(const ViewDefinition&)> twoPointViewCallback_;

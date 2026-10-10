@@ -408,6 +408,12 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
     };
     if (selectedIndexSet_.assign(document.models().size(), draft.selectedModels))
         ++performance.frameBufferGrowths;
+    // Ikincil gorunus: secim vurgusu yalniz dilimdeki nesneler icin.
+    const auto inViewSlab = [&](std::size_t index) {
+        if (!draft.viewSlab) return true;
+        const auto& allBounds = document.modelBounds();
+        return index < allBounds.size() && boundsInViewSlab(allBounds[index], *draft.viewSlab);
+    };
     const auto isSelected = [&](std::size_t index) {
         return selectedIndexSet_.contains(index);
     };
@@ -435,7 +441,8 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
                 HPEN selectedPen = CreatePen(PS_SOLID, 3, RGB(90, 255, 145));
                 SelectObject(dc, selectedPen);
                 for (const auto index : draft.selectedModels) {
-                    if (index < document.models().size() && document.modelIsEditable(index))
+                    if (index < document.models().size() && document.modelIsEditable(index) &&
+                        inViewSlab(index))
                         drawModel(document.models()[index]);
                 }
                 SelectObject(dc, stockPen);
@@ -1415,7 +1422,7 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
             HPEN selectedPen = CreatePen(PS_SOLID, 3, RGB(90, 255, 145));
             SelectObject(dc, selectedPen);
             for (const auto index : draft.selectedModels) {
-                if (document.modelIsEditable(index) && !selHiddenSource(index)) {
+                if (document.modelIsEditable(index) && !selHiddenSource(index) && inViewSlab(index)) {
                     drawModel(document.models()[index]);
                     ++performance.renderedEntities;
                 }
@@ -2277,7 +2284,7 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
                 SelectObject(dc, selectedPen);
                 for (const auto index : draft.selectedModels) {
                     if (index < document.models().size() && document.modelIsEditable(index) &&
-                        !fbHidden(index))
+                        !fbHidden(index) && inViewSlab(index))
                         drawModel(document.models()[index]);
                 }
                 SelectObject(dc, stockPen);

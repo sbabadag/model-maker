@@ -259,6 +259,12 @@ QtMainWindow::QtMainWindow(QWidget* parent)
     app_.setTwoPointViewCallback([this](const ViewDefinition& view) {
         QTimer::singleShot(0, this, [this, view]() { openTwoPointView(view); });
     });
+    // Qt kisayollari/menuleri (Ctrl+Z, ribbon komutlari...) tuval mesaji
+    // disindan belgeyi degistirir; diger gorunusleri tazele (ucuz imza).
+    auto* viewSyncTimer = new QTimer(this);
+    viewSyncTimer->setInterval(120);
+    QObject::connect(viewSyncTimer, &QTimer::timeout, this, [this]() { app_.syncPassiveViewports(); });
+    viewSyncTimer->start();
 
     // MDI: merkez alan QMdiArea; ana model gorunusu kapatilamaz bir alt
     // pencere, iki noktali gorunusler yanina yeni alt pencereler olarak acilir.
@@ -313,8 +319,9 @@ QtMainWindow::~QtMainWindow() {
     // sinif yikicisinda silinir). Gorunusleri belgeden simdi ayir.
     if (mdiArea_) {
         for (QMdiSubWindow* sub : mdiArea_->subWindowList())
-            if (auto* view = qobject_cast<QWidget*>(sub->widget()))
-                if (auto* tpv = dynamic_cast<TwoPointViewWidget*>(view)) tpv->detach();
+            if (QWidget* holder = sub->widget())
+                for (QWidget* child : holder->findChildren<QWidget*>())
+                    if (auto* tpv = dynamic_cast<TwoPointViewWidget*>(child)) tpv->detach();
     }
 }
 
@@ -322,9 +329,30 @@ void QtMainWindow::openTwoPointView(const ViewDefinition& definition) {
     if (!mdiArea_) return;
     ViewDefinition view = definition;
     view.name = L"Görünüş " + std::to_wstring(++twoPointViewCounter_);
-    auto* widget = new TwoPointViewWidget(app_, view);
-    QMdiSubWindow* sub = mdiArea_->addSubWindow(widget);
+    // SIRA KRITIK: widget alt pencereye winId()/tuval olusturulmadan ONCE
+    // yerlesmeli (sonradan yeniden ebeveynlenen native widget HWND'sini
+    // yeniden uretir ve icindeki Win32 tuvali kaybolur). Bu yuzden once
+    // bos kap eklenir, tuval kap native iken icinde uretilir.
+    auto* holder = new QWidget;
+    QMdiSubWindow* sub = mdiArea_->addSubWindow(holder);
     sub->setAttribute(Qt::WA_DeleteOnClose);
+    auto* layout = new QVBoxLayout(holder);
+    layout->setContentsMargins(0, 0, 0, 0);
+    auto* widget = new TwoPointViewWidget(app_, view, holder);
+    layout->addWidget(widget);
+    if (!widget->isValid()) {
+        sub->close();
+        QMessageBox::warning(this, QStringLiteral("Görünüş"),
+                             QStringLiteral("Görünüş penceresi oluşturulamadı."));
+        return;
+    }
+    // Pencere sistem menusu: sigdir + derinlik (tuval sag tiki komutlara ait).
+    if (QMenu* systemMenu = sub->systemMenu()) {
+        systemMenu->addSeparator();
+        systemMenu->addAction(QStringLiteral("Sığdır"), widget, [widget]() { widget->fitView(); });
+        systemMenu->addAction(QStringLiteral("Görünüş derinliği..."), widget,
+                              [widget]() { widget->editDepth(); });
+    }
     sub->setWindowTitle(QString::fromStdWString(view.name) +
                         QStringLiteral("  —  %1 mm, XY'ye dik").arg(std::lround(view.length)));
     // Ana gorunus tam ekransa yan yana dose (Tekla gibi iki gorunus birlikte).
@@ -336,6 +364,7 @@ void QtMainWindow::openTwoPointView(const ViewDefinition& definition) {
     mdiArea_->setActiveSubWindow(sub);
     widget->setFocus();
     QTimer::singleShot(0, widget, [widget]() { widget->fitView(); });
+    if (HWND canvas = widget->canvasHandle()) SetFocus(canvas);
     statusBar()->showMessage(QString::fromStdWString(view.name) + QStringLiteral(" açıldı"), 4000);
 }
 
@@ -1190,7 +1219,7 @@ void QtMainWindow::createToolbar() {
             } else {
                 app_.setPendingProfileName(utf8.toStdString());
             }
-            if (HWND canvas = app_.canvasHandle()) SetFocus(canvas);
+            if (HWND canvas = app_.activeCanvasHandle()) SetFocus(canvas);
         });
     app_.setProfilePickerCallback([this]() {
         if (!profileSelector_ || !profileSelector_->isEnabled()) return;

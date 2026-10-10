@@ -92,27 +92,10 @@ inline Bounds3 viewFitBounds(const std::vector<Bounds3>& modelBounds, const View
     return box;
 }
 
-// Gorunus penceresinde secim: yalniz DERINLIK DILIMINDEKI (gorunen) ve
-// duzenlenebilir nesneler secilir — ekranda olmayan bir kirisin arkadan
-// secilmesi engellenir. Isabet / pencere testi mevcut drafting fonksiyonlari.
-inline std::vector<std::size_t> viewSlabCandidates(const Document& document, const ViewDefinition& v) {
-    std::vector<std::size_t> out;
-    const auto& bounds = document.modelBounds();
-    const std::size_t n = std::min(bounds.size(), document.models().size());
-    for (std::size_t i = 0; i < n; ++i)
-        if (boundsInViewSlab(bounds[i], v) && document.effectiveProperties(i).visible &&
-            document.modelIsEditable(i))
-            out.push_back(i);
-    return out;
-}
-
-inline std::vector<std::size_t> filterToViewSlab(const std::vector<std::size_t>& indices,
-                                                 const Document& document, const ViewDefinition& v) {
-    const auto allowed = viewSlabCandidates(document, v); // artan sirali
-    std::vector<std::size_t> out;
-    for (const auto index : indices)
-        if (std::binary_search(allowed.begin(), allowed.end(), index)) out.push_back(index);
-    return out;
+// Gorunus duzlemi (ikincil viewport'un calisma duzlemi): cizim/snap bu
+// dusey duzlemde yapilir (cephe cizimi).
+inline WorkPlane viewWorkPlane(const ViewDefinition& v) noexcept {
+    return WorkPlane{v.origin, v.right, v.up, v.normal};
 }
 
 } // namespace mm

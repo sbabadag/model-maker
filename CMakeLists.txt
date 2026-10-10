@@ -221,8 +221,8 @@ if(BUILD_TESTING)
             add_test(NAME model_maker_two_point_view
                 COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_two_point_view.py
                     ${CMAKE_CURRENT_BINARY_DIR})
-            add_test(NAME model_maker_view_selection
-                COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_view_selection.py
+            add_test(NAME model_maker_multi_viewport
+                COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_multi_viewport.py
                     ${CMAKE_CURRENT_BINARY_DIR})
             add_test(NAME model_maker_startup_gpu
                 COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_startup_gpu.py

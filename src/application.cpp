@@ -156,6 +156,14 @@ Application::Application(HINSTANCE instance, HWND /*parentCanvas*/) : instance_(
 }
 
 Application::~Application() {
+    // Qt kabugu tuvalleri Application'dan SONRA yok eder; gec gelen
+    // WM_DESTROY vb. olu nesneye ulasmasin.
+    const auto detachWindow = [](HWND h) {
+        if (h && IsWindow(h)) SetWindowLongPtrW(h, GWLP_USERDATA, 0);
+    };
+    detachWindow(canvas_);
+    for (const auto& view : views_) if (view) detachWindow(view->canvas);
+    detachWindow(window_);
     clearStartupGpuGuard(); // temiz kapanis: GL acilisi sorunsuz sayilir
     if (dxfImportThread_.joinable()) {
         dxfImportThread_.request_stop();
@@ -544,9 +552,10 @@ HWND Application::createButton(const wchar_t* text, int id, int x, int y, int wi
 }
 
 void Application::layoutChildren(int width, int height) {
-    if (!canvas_ || !status_) return;
+    const HWND mainCanvasWindow = mainCanvas();
+    if (!mainCanvasWindow || !status_) return;
     const int contentHeight = std::max(ribbonHeight + 1, height - statusHeight);
-    MoveWindow(canvas_, 0, ribbonHeight, std::max(1, width),
+    MoveWindow(mainCanvasWindow, 0, ribbonHeight, std::max(1, width),
                std::max(1, contentHeight - ribbonHeight), TRUE);
     const bool showProgress = dxfImportInProgress_ && dxfProgressBar_;
     const int progressWidth = std::min(300, std::max(180, width / 4));
@@ -974,12 +983,268 @@ LRESULT CALLBACK Application::canvasProc(HWND window, UINT message, WPARAM wPara
     if (message == WM_NCCREATE) {
         auto* create = reinterpret_cast<CREATESTRUCTW*>(lParam);
         app = static_cast<Application*>(create->lpCreateParams);
-        app->canvas_ = window;
+        // Ikincil viewport olusturulurken aktif canvas_ EZILMEZ.
+        if (!app->creatingViewportCanvas_) app->canvas_ = window;
         SetWindowLongPtrW(window, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(app));
     } else {
         app = reinterpret_cast<Application*>(GetWindowLongPtrW(window, GWLP_USERDATA));
     }
-    return app ? app->handleCanvasMessage(message, wParam, lParam) : DefWindowProcW(window, message, wParam, lParam);
+    if (!app) return DefWindowProcW(window, message, wParam, lParam);
+    return app->routeCanvasMessage(window, message, wParam, lParam);
+}
+
+// ---------------------------------------------------------------------------
+// COKLU VIEWPORT. Tum tuvaller ayni Application'i paylasir; gorunuse ozgu
+// alanlar (canvas_, camera_, mode_, renderer_, workPlane_, viewDef_) AKTIF
+// viewport'tadir. Bir tuvale girdi gelince o viewport aktif edilir ve mesaj
+// ana isleyiciye (handleCanvasMessage) aynen gider -> tum komutlar/kisayollar/
+// snap/gumball/secim her pencerede BIREBIR ayni calisir. Pasif tuvallerin
+// WM_PAINT'i alanlari gecici takasla kendi kamerasiyla cizilir.
+// ---------------------------------------------------------------------------
+void Application::ensureViewRegistry() {
+    if (!views_.empty()) return;
+    views_.push_back(std::make_unique<ViewportState>()); // [0] ana; alanlar uyelerde
+    activeView_ = 0;
+}
+
+std::optional<std::size_t> Application::viewIndexOf(HWND canvas) const {
+    if (!canvas) return std::nullopt;
+    if (views_.empty()) return canvas == canvas_ ? std::optional<std::size_t>{0} : std::nullopt;
+    for (std::size_t i = 0; i < views_.size(); ++i) {
+        const HWND h = (i == activeView_) ? canvas_ : views_[i]->canvas;
+        if (h == canvas) return i;
+    }
+    return std::nullopt;
+}
+
+void Application::swapViewFields(ViewportState& slot) {
+    std::swap(canvas_, slot.canvas);
+    std::swap(camera_, slot.camera);
+    std::swap(mode_, slot.mode);
+    std::swap(renderer_, slot.renderer);
+    std::swap(workPlane_, slot.workPlane);
+    std::swap(viewDef_, slot.viewDef);
+}
+
+void Application::applyPickFilter() {
+    if (viewDef_) {
+        const ViewDefinition slab = *viewDef_;
+        document_.setPickFilter([slab](const Bounds3& b) { return boundsInViewSlab(b, slab); });
+    } else {
+        document_.setPickFilter({});
+    }
+}
+
+void Application::activateViewport(std::size_t index) {
+    ensureViewRegistry();
+    if (index >= views_.size() || index == activeView_) return;
+    // Yarim kalan gorunuse-ozgu etkilesimler (ekran koordinatli) eski
+    // pencerede kalir: kamera surukleme / pencere secimi / zoom penceresi.
+    if (rotating_ || panning2D_ || viewCubeManipulating_) ReleaseCapture();
+    rotating_ = panning2D_ = viewCubeManipulating_ = false;
+    viewCubePressedView_.reset();
+    selectionFirstCorner_.reset();
+    zoomWindowFirstCorner_.reset();
+    zoomAnimActive_ = false; zoomAnimTarget_ = 1.0;
+    wheelNavigating_ = false; wheelPreviewFactor_ = 1.0; wheelPreviewOffset_ = {};
+    snapPreviewActive_ = false;
+    hover_.reset();
+    if (gumballDrag_ != GumballHandle::None) gumballCancelDrag();
+    const HWND oldCanvas = canvas_;
+    swapViewFields(*views_[activeView_]); // eski aktifin alanlarini yuvasina koy
+    activeView_ = index;
+    swapViewFields(*views_[activeView_]); // yeni aktifin alanlarini uyelere al
+    applyPickFilter();
+    if (oldCanvas) InvalidateRect(oldCanvas, nullptr, FALSE); // eski hover/izleri sil
+    updateControls();
+}
+
+LRESULT Application::routeCanvasMessage(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
+    const auto index = viewIndexOf(window);
+    if (!index) return DefWindowProcW(window, message, wParam, lParam);
+    if (*index != activeView_) {
+        switch (message) {
+        case WM_PAINT: paintPassiveViewport(*index); return 0;
+        case WM_ERASEBKGND: return 1;
+        case WM_SIZE:
+            if (*index == 0 && renderBackend_) renderBackend_->resize(LOWORD(lParam), HIWORD(lParam));
+            InvalidateRect(window, nullptr, FALSE);
+            return 0;
+        case WM_SETCURSOR:
+        case WM_NCHITTEST:
+        case WM_NCDESTROY:
+        case WM_CAPTURECHANGED:
+            return DefWindowProcW(window, message, wParam, lParam);
+        case WM_DESTROY:
+            removeViewport(*index);
+            return 0;
+        default:
+            // Kullanici girdisi / odak: bu viewport aktif olur, mesaj ana
+            // isleyiciye aynen gider.
+            if ((message >= WM_MOUSEFIRST && message <= WM_MOUSELAST) ||
+                (message >= WM_KEYFIRST && message <= WM_KEYLAST) ||
+                message == WM_SETFOCUS || message == WM_MOUSEWHEEL) {
+                // Fare yakalamasi baska tuvaldeyse (surukleme) gecis yapma.
+                const HWND capture = GetCapture();
+                if (message == WM_MOUSEMOVE && capture && capture != window) return 0;
+                activateViewport(*index);
+                // Odak bizim tuvallerimizden birindeyse imlecin altindakine
+                // tasi (klavye komutlari/koordinat girisi o pencerede devam).
+                if (message == WM_MOUSEMOVE && viewIndexOf(GetFocus())) SetFocus(window);
+                break;
+            }
+            return DefWindowProcW(window, message, wParam, lParam);
+        }
+    }
+    if (message == WM_DESTROY && *index != 0) {
+        removeViewport(*index);
+        return 0;
+    }
+    const LRESULT result = handleCanvasMessage(message, wParam, lParam);
+    if (message != WM_PAINT) syncPassiveViewports();
+    return result;
+}
+
+void Application::syncPassiveViewports() {
+    // Belge / secim / stil degistiyse diger pencereleri tazele (ucuz imza;
+    // her fare hareketinde tum pencereleri yeniden cizmez).
+    if (views_.size() < 2) return;
+    std::uint64_t signature = document_.revision() * 1000003ull;
+    signature ^= static_cast<std::uint64_t>(selectedModels_.size()) * 0x9E3779B97F4A7C15ull;
+    for (const auto index : selectedModels_) signature = signature * 31u + index + 1u;
+    signature ^= static_cast<std::uint64_t>(visualStyle_) << 56;
+    if (signature == passiveSignature_) return;
+    passiveSignature_ = signature;
+    invalidateOtherViewports();
+}
+
+void Application::invalidateOtherViewports() {
+    for (std::size_t i = 0; i < views_.size(); ++i) {
+        if (i == activeView_) continue;
+        if (views_[i]->canvas) InvalidateRect(views_[i]->canvas, nullptr, FALSE);
+    }
+}
+
+void Application::paintPassiveViewport(std::size_t index) {
+    // Gecici takas: pasif pencere kendi kamera/renderer'iyla, ortak belge ve
+    // ortak secimle cizilir; komut onizlemeleri (imlec konumu aktif
+    // pencereye ait) gizlenir. GL kullanilmaz (saf GDI).
+    ViewportState& slot = *views_[index];
+    PAINTSTRUCT paint{};
+    HDC dc = BeginPaint(slot.canvas, &paint);
+    if (!dc) return;
+    RECT client{};
+    GetClientRect(slot.canvas, &client);
+    if (client.right > 0 && client.bottom > 0 && slot.renderer) {
+        DraftView view = draftView(); // ortak durum (secim, stil, komut)
+        view.cursor.reset();
+        view.snapType = SnapType::None;
+        view.anchor.reset();
+        view.facePoints.clear();
+        view.selectionFirstCorner.reset();
+        view.zoomWindowFirstCorner.reset();
+        view.temporaryTrackingGuides.clear();
+        view.temporaryDerivedPoints.clear();
+        view.transformCommand = TransformCommand::None; // hayalet onizleme yok
+        view.drawingActive = false;
+        view.workPlanePicking = false;
+        view.gumballVisible = false;
+        view.gripMoveActive = false;
+        view.interactiveNavigation = false;
+        view.motionOverlay = false;
+        view.snapPreviewActive = false;
+        view.rasterZoomPreview = false;
+        view.snapOnly = false;
+        view.viewSlab = slot.viewDef ? &*slot.viewDef : nullptr;
+        view.workPlane = slot.workPlane;
+        // Ana gorunus pasifken de GL ile cizilir (gorunum stili degismesin);
+        // GL baglami gizli pencerede, tuvalden bagimsiz.
+        IRenderBackend* backend = (index == 0 && renderBackend_ && gpuLinesEnabled_ &&
+                                   slot.mode == EditMode::View3D) ? renderBackend_.get() : nullptr;
+        try {
+            slot.renderer->draw(dc, client, document_, slot.camera, slot.mode, view, backend);
+        } catch (...) {
+            // Pasif pencerede cizim hatasi uygulamayi dusurmesin.
+        }
+    }
+    EndPaint(slot.canvas, &paint);
+}
+
+HWND Application::createViewport(HWND parent, const ViewDefinition& definition) {
+    if (!parent || !IsWindow(parent)) return nullptr;
+    ensureViewRegistry();
+    auto slot = std::make_unique<ViewportState>();
+    slot->renderer = std::make_unique<Renderer>();
+    slot->mode = EditMode::View3D;
+    slot->viewDef = definition;
+    slot->workPlane = viewWorkPlane(definition); // cizim/snap gorunus duzleminde
+    slot->camera.setViewBasis(definition.right, definition.up, definition.origin);
+    RECT rc{}; GetClientRect(parent, &rc);
+    creatingViewportCanvas_ = true;
+    const HWND canvas = CreateWindowExW(0, canvasClassName, nullptr,
+                                        WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_CLIPSIBLINGS,
+                                        0, 0, std::max(1L, rc.right), std::max(1L, rc.bottom),
+                                        parent, nullptr, instance_, this);
+    creatingViewportCanvas_ = false;
+    if (!canvas) return nullptr;
+    slot->canvas = canvas;
+    {
+        RECT cr{}; GetClientRect(canvas, &cr);
+        const Bounds3 box = viewFitBounds(document_.modelBounds(), definition);
+        slot->camera.fit3D(box.minimum, box.maximum, std::max(1L, cr.right),
+                           std::max(1L, cr.bottom), 40.0);
+    }
+    views_.push_back(std::move(slot));
+    return canvas;
+}
+
+void Application::removeViewport(std::size_t index) {
+    if (index == 0 || index >= views_.size()) return; // ana gorunus kaldirilmaz
+    if (index == activeView_) activateViewport(0);    // alanlari geri al
+    views_.erase(views_.begin() + static_cast<std::ptrdiff_t>(index));
+    if (activeView_ > index) --activeView_;
+    invalidateCanvas();
+}
+
+void Application::destroyViewport(HWND canvas) {
+    const auto index = viewIndexOf(canvas);
+    if (!index || *index == 0) return;
+    // Once kayittan cikar (alanlar ana gorunuse doner), sonra pencereyi yok et.
+    removeViewport(*index);
+    if (IsWindow(canvas)) {
+        SetWindowLongPtrW(canvas, GWLP_USERDATA, 0); // gec gelen mesajlar uygulamaya ulasmasin
+        DestroyWindow(canvas);
+    }
+}
+
+std::optional<ViewDefinition> Application::viewportDefinition(HWND canvas) const {
+    const auto index = viewIndexOf(canvas);
+    if (!index) return std::nullopt;
+    return *index == activeView_ ? viewDef_ : views_[*index]->viewDef;
+}
+
+void Application::setViewportDepth(HWND canvas, double front, double back) {
+    const auto index = viewIndexOf(canvas);
+    if (!index || *index == 0) return;
+    auto& def = (*index == activeView_) ? viewDef_ : views_[*index]->viewDef;
+    if (!def) return;
+    if (std::isfinite(front) && front >= 0.0) def->depthFront = front;
+    if (std::isfinite(back) && back >= 0.0) def->depthBack = back;
+    if (*index == activeView_) applyPickFilter();
+    InvalidateRect(canvas, nullptr, FALSE);
+}
+
+void Application::fitViewport(HWND canvas) {
+    const auto index = viewIndexOf(canvas);
+    if (!index) return;
+    if (*index != activeView_) activateViewport(*index);
+    if (!viewDef_) { zoomExtents2D(); return; }
+    RECT rc{}; GetClientRect(canvas_, &rc);
+    const Bounds3 box = viewFitBounds(document_.modelBounds(), *viewDef_);
+    camera_.setViewBasis(viewDef_->right, viewDef_->up, viewDef_->origin);
+    camera_.fit3D(box.minimum, box.maximum, std::max(1L, rc.right), std::max(1L, rc.bottom), 40.0);
+    updateHover(cursorScreen_.x, cursorScreen_.y);
+    invalidateCanvas();
 }
 
 LRESULT CALLBACK Application::propsWndProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
@@ -1285,7 +1550,8 @@ LRESULT Application::handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lPa
         SetFocus(canvas_);
         // 3B: orta tus surukleme = rotate; Alt + orta tus = pan.
         // 2B: orta tus surukleme = pan.
-        if (mode_ == EditMode::View3D && !(GetKeyState(VK_MENU) & 0x8000)) {
+        // Gorunus penceresi: yon sabit -> orta tus = PAN (Tekla).
+        if (mode_ == EditMode::View3D && !viewRotationLocked() && !(GetKeyState(VK_MENU) & 0x8000)) {
             rotating_ = true;
             rotSmoothedDx_ = 0.0;
             rotSmoothedDy_ = 0.0;
@@ -1478,14 +1744,19 @@ LRESULT Application::handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lPa
             else addBooleanFuse();
         }
 #endif
-        else if (wParam == 'R' && mode_ == EditMode::View3D) camera_.reset();
+        else if (wParam == 'R' && mode_ == EditMode::View3D) {
+            // Gorunus penceresi: yon sabit -> "yeniden sigdir" (redraw view).
+            if (viewRotationLocked()) fitViewport(canvas_); else camera_.reset();
+        }
         else if (wParam == VK_DELETE) startTransformCommand(TransformCommand::Delete);
         else if (wParam == 'S' && (GetKeyState(VK_CONTROL) & 0x8000)) saveDocument();
         else if (wParam == 'O' && (GetKeyState(VK_CONTROL) & 0x8000)) openDocument();
         updateHover(cursorScreen_.x, cursorScreen_.y); updateControls(); invalidateCanvas();
         return 0;
     case WM_SIZE:
-        if (renderBackend_) renderBackend_->resize(LOWORD(lParam), HIWORD(lParam));
+        // GL baglamasi ana gorunuse aittir; ikincil pencereler saf GDI cizer
+        // (FBO'yu baska bir tuvalin olcusune gore boyutlamayalim).
+        if (renderBackend_ && !viewDef_) renderBackend_->resize(LOWORD(lParam), HIWORD(lParam));
         invalidateCanvas(); return 0;
     default: return DefWindowProcW(canvas_, message, wParam, lParam);
     }
@@ -1511,8 +1782,10 @@ void Application::onCanvasPaint() {
     // 2B'de GL overlay kapali: FBO+AlphaBlend kompoziti DWM tarafinda arka
     // planda "gradient" flicker uretiyordu (drawing/koordinatlar saglikliydi).
     // 3B modunda GL acik kalir; F5 (kalici VBO + GPU kompozit) 2B'ye geri doner.
+    // Ikincil gorunusler (viewDef_) GL kullanmaz: tek GL baglami ana
+    // gorunusun FBO boyutuna bagli; saf GDI ile surucu riski de yok.
     IRenderBackend* activeBackend =
-        (renderBackend_ && gpuLinesEnabled_ && mode_ == EditMode::View3D)
+        (renderBackend_ && gpuLinesEnabled_ && mode_ == EditMode::View3D && !viewDef_)
             ? renderBackend_.get() : nullptr;
     {
         // Kosulsuz oturum isareti: log yolunun calistigini ve bu build'in
@@ -1530,7 +1803,7 @@ void Application::onCanvasPaint() {
         // Gorunum > Benchmark menu ogesiyle calisir.
     }
     const auto paintStart = std::chrono::steady_clock::now();
-    renderer_.draw(dc, client, document_, camera_, mode_, draftView(), activeBackend);
+    renderer_->draw(dc, client, document_, camera_, mode_, draftView(), activeBackend);
     // Ilk GERCEK GL karesi (model varken) donmadan/cokmeden bitti -> acilis
     // korumasini kaldir. Bos belgede GL cizmez; o durumda temiz kapanis siler.
     if (startupGpuGuardArmed_ && activeBackend && !document_.models().empty())
@@ -1556,7 +1829,7 @@ void Application::onLeftButtonDown(int x, int y) {
         else zoomWindowFirstCorner_ = POINT{x, y};
         updateControls(); invalidateCanvas(); return;
     }
-    if (mode_ == EditMode::View3D) {
+    if (mode_ == EditMode::View3D && !viewDef_) { // gorunus pencerelerinde kup yok (sabit yon)
         if (ViewCube::containsWidget(x, y, client.right)) {
             viewCubeManipulating_ = true;
             viewCubeDragged_ = false;
@@ -1833,7 +2106,7 @@ void Application::onLeftButtonDown(int x, int y) {
             if (HDC dc = GetDC(canvas_)) {
                 RECT client{};
                 GetClientRect(canvas_, &client);
-                renderer_.draw(dc, client, document_, camera_, mode_, draftView());
+                renderer_->draw(dc, client, document_, camera_, mode_, draftView());
                 ReleaseDC(canvas_, dc);
                 trimExtendLog(L"SYNC DRAW tamam client=" +
                               std::to_wstring(client.right) + L"x" +
@@ -2520,6 +2793,13 @@ void Application::createModelGrid(const Vec3& origin, const Vec3& xDir, const Ve
 }
 
 void Application::toggle3DView() {
+    if (viewDef_) {
+        // Gorunus penceresi her zaman 3B (sabit duzlem); 2B plan yok.
+        // V = gorunusu ilk yonune dondur ve sigdir (Tekla "redraw view").
+        fitViewport(canvas_);
+        publishStatus(L"Görünüş penceresi 2B plana geçmez — görünüş yeniden sığdırıldı");
+        return;
+    }
     cancelZoomWindow2D();
     if (workPlanePicking_) cancelWorkPlaneCommand();
     if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
@@ -2657,6 +2937,13 @@ Application::colorPalette() {
 }
 
 void Application::setStandardView(StandardView view) {
+    // Gorunus penceresi: yon iki noktayla tanimli — standart gorunus yonu
+    // DEGISTIRMEZ; dilim normali sabit kalsin diye yalnizca yeniden sigdirir.
+    if (viewRotationLocked()) {
+        fitViewport(canvas_);
+        publishStatus(L"Görünüş yönü iki noktayla tanımlı — sığdırıldı");
+        return;
+    }
     cancelZoomWindow2D();
     if (workPlanePicking_) cancelWorkPlaneCommand();
     if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
@@ -2675,6 +2962,7 @@ void Application::setStandardView(StandardView view) {
 
 void Application::zoomExtents2D() {
     cancelZoomWindow2D();
+    if (viewDef_ && canvas_) { fitViewport(canvas_); return; } // gorunus: dilime sigdir
     RECT client{}; GetClientRect(canvas_, &client);
     const auto bounds = document_.bounds();
     if (!bounds) camera_.reset();
@@ -2880,49 +3168,6 @@ bool Application::toggleModelSelection(int x, int y) {
     const auto existing = std::find(selectedModels_.begin(), selectedModels_.end(), *hit);
     if (existing == selectedModels_.end()) selectedModels_.push_back(*hit);
     else selectedModels_.erase(existing);
-    return true;
-}
-
-bool Application::applyViewSelection(ViewSelectOp op, const std::vector<std::size_t>& indices) {
-    // Komut nokta/hedef fazinda (Move hedefi, Trim hedefi...) secim degismez.
-    if (transformCommand_ != TransformCommand::None &&
-        transformPhase_ != TransformPhase::Selecting) {
-        MessageBeep(MB_ICONWARNING);
-        return false;
-    }
-    if (workPlanePicking_ || zoomWindowActive_ || profileGrip_ ||
-        gumballDrag_ != GumballHandle::None) {
-        MessageBeep(MB_ICONWARNING);
-        return false;
-    }
-    // Cizim araci aciksa (ana pencerede nokta bekliyor): notr secime gec —
-    // yarim cizim iptal edilir (Esc ile ayni). cancelDrawing secimi de bosaltir.
-    if (drawingActive_ && transformCommand_ == TransformCommand::None) cancelDrawing();
-    selectionFirstCorner_.reset(); // ana penceredeki yarim pencere secimi
-    const std::size_t count = document_.models().size();
-    if (op == ViewSelectOp::Clear) {
-        selectedModels_.clear();
-    } else if (transformCommand_ == TransformCommand::Offset) {
-        // Offset tek nesne ister (ana pencereyle ayni kural).
-        for (auto it = indices.rbegin(); it != indices.rend(); ++it)
-            if (*it < count) { selectedModels_.assign(1, *it); break; }
-    } else if (op == ViewSelectOp::Toggle) {
-        for (const auto index : indices) {
-            if (index >= count) continue;
-            const auto existing = std::find(selectedModels_.begin(), selectedModels_.end(), index);
-            if (existing == selectedModels_.end()) selectedModels_.push_back(index);
-            else selectedModels_.erase(existing);
-        }
-    } else {
-        for (const auto index : indices) {
-            if (index >= count) continue;
-            if (std::find(selectedModels_.begin(), selectedModels_.end(), index) == selectedModels_.end())
-                selectedModels_.push_back(index);
-        }
-    }
-    updateHover(cursorScreen_.x, cursorScreen_.y); // gumball konumu
-    updateControls();                               // durum + ozellikler
-    invalidateCanvas();
     return true;
 }
 
@@ -3551,7 +3796,7 @@ void Application::executeCommand(int id) {
         if (workPlanePicking_) cancelWorkPlaneCommand();
         if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
         else cancelDrawing();
-        camera_.reset();
+        if (viewRotationLocked()) fitViewport(canvas_); else camera_.reset();
         drawingActive_ = mode_ == EditMode::Draw2D;
         break;
     case CmdOpen: openDocument(); break;
@@ -3567,7 +3812,10 @@ void Application::executeCommand(int id) {
     case CmdCube: addCube(); break;
     case CmdPyramid: addPyramid(); break;
     case CmdCylinder: addCylinder(); break;
-    case CmdResetView: camera_.reset(); break;
+    case CmdResetView:
+        // Gorunus penceresi: yon iki noktayla tanimli -> sifirlama yerine sigdir.
+        if (viewRotationLocked()) fitViewport(canvas_); else camera_.reset();
+        break;
     case CmdView3D: toggle3DView(); break;
     case CmdWorkPlane: startWorkPlaneCommand(); break;
     case CmdZoomExtents: zoomExtents2D(); break;
@@ -3877,7 +4125,8 @@ void Application::updateStatus() {
         return;
     }
     std::wstring text = L"   ";
-    text += mode_ == EditMode::View3D ? L"3B Paralel" : L"2B Plan XY";
+    if (viewDef_) text += viewDef_->name.empty() ? L"Görünüş" : viewDef_->name; // aktif pencere
+    else text += mode_ == EditMode::View3D ? L"3B Paralel" : L"2B Plan XY";
     {
         // GPU modu gostergesi: her durum guncellemesinde aktif modu gosterir.
         const bool glActive = gpuLinesEnabled_ && renderBackend_ &&
@@ -5861,6 +6110,7 @@ DraftView Application::draftView() const {
     view.gumballAxisX = gumballFrame_[0];
     view.gumballAxisY = gumballFrame_[1];
     view.gumballAxisZ = gumballFrame_[2];
+    view.viewSlab = viewDef_ ? &*viewDef_ : nullptr; // ikincil gorunus: derinlik dilimi
     return view;
 }
 
@@ -5888,9 +6138,9 @@ void Application::runRenderBenchmark() {
             while (PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE)) {
                 TranslateMessage(&msg);
                 DispatchMessageW(&msg);
-                if (renderer_.performanceFrameNumber() >= target) return true;
+                if (renderer_->performanceFrameNumber() >= target) return true;
             }
-            if (renderer_.performanceFrameNumber() >= target) return true;
+            if (renderer_->performanceFrameNumber() >= target) return true;
             Sleep(5);
         }
         return false;
@@ -5901,9 +6151,9 @@ void Application::runRenderBenchmark() {
         const auto step = [&](auto&& apply) {
             apply();
             invalidateCanvas();
-            const std::uint64_t target = renderer_.performanceFrameNumber() + 1;
+            const std::uint64_t target = renderer_->performanceFrameNumber() + 1;
             if (!pumpUntilFrame(target)) return;
-            const auto sample = renderer_.latestPerformanceSample();
+            const auto sample = renderer_->latestPerformanceSample();
             total += sample.cpuFrameMilliseconds; ++n;
             mn = std::min(mn, sample.cpuFrameMilliseconds);
             mx = std::max(mx, sample.cpuFrameMilliseconds);
@@ -6130,6 +6380,7 @@ void Application::finishDxfImport() {
         cancelDrawing();
         hover_.reset();
         document_ = std::move(*loaded);
+        applyPickFilter(); // yeni belge: aktif gorunusun dilim filtresi
         refreshLayerCombo();
         const auto bounds = document_.bounds();
         drawingActive_ = mode_ == EditMode::Draw2D;

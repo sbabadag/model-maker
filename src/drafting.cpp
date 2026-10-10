@@ -165,7 +165,7 @@ std::vector<Candidate> objectCandidates(const Vec3& cursor, const Document& docu
     }
     std::size_t totalVertices{}, totalEdges{};
     for (const auto modelIndex : *candidateIndices) {
-        if (!document.modelIsEditable(modelIndex)) continue;
+        if (!document.modelIsPickable(modelIndex)) continue;
         totalVertices += document.models()[modelIndex].vertices().size();
         totalEdges += document.models()[modelIndex].edges().size();
     }
@@ -176,7 +176,7 @@ std::vector<Candidate> objectCandidates(const Vec3& cursor, const Document& docu
                                                              candidateBudget);
 
     for (const auto modelIndex : *candidateIndices) {
-        if (!document.modelIsEditable(modelIndex)) continue;
+        if (!document.modelIsPickable(modelIndex)) continue;
         const auto& model = document.models()[modelIndex];
         const auto circle = detectCircle(model);
         const auto& vertices = model.vertices();
@@ -498,6 +498,7 @@ SnapResult SnapEngine::snap3D(const Vec2& screenCursor, const Document& document
         // Only iterate nearby models (spatial-index filtered), not the entire document
         for (const auto index : nearby) {
             if (index >= document.models().size()) continue;
+            if (!document.modelIsPickable(index)) continue; // gizli/kilitli/dilim disi
             const auto& model = document.models()[index];
             for (const auto& edge : model.edges()) {
                 if (edges.size() >= apparentIntersectionEdgeLimit) break;
@@ -969,7 +970,7 @@ std::optional<std::size_t> hitTestModel(const Vec2& cursor, const Document& docu
         candidates = &allIndices;
     }
     for (const auto index : *candidates) {
-        if (!document.modelIsEditable(index)) continue;
+        if (!document.modelIsPickable(index)) continue;
         const auto& model = document.models()[index];
         // Yuz isabeti: 3B katilarin dolgulu yuzlerine tiklanabilir (kenar
         // testi tek basina yuz ortasini kaciriyordu — modify secilemiyordu).
@@ -1075,7 +1076,7 @@ std::vector<std::size_t> selectModelsInRect(const Vec2& firstCorner, const Vec2&
         candidates = &allIndices;
     }
     for (const auto index : *candidates) {
-        if (!document.modelIsEditable(index)) continue;
+        if (!document.modelIsPickable(index)) continue;
         const auto& model = document.models()[index];
         const bool allInside = !model.vertices().empty() &&
             std::all_of(model.vertices().begin(), model.vertices().end(), [&](const Vec3& vertex) {

@@ -103,6 +103,13 @@ public:
     EntityProperties effectiveProperties(const WireframeModel& model) const;
     const EntityProperties& effectiveProperties(std::size_t index) const;
     bool modelIsEditable(std::size_t index) const;
+    // ETKILESIM FILTRESI (ikincil gorunus pencereleri): ayarliyken isabet,
+    // pencere secimi ve snap yalniz filtreyi gecen (or. gorunus derinlik
+    // dilimindeki) modelleri gorur. Duzenlenebilirligi DEGISTIRMEZ (secili
+    // nesne move/delete edilebilir). Bos fonksiyon = filtre yok (ana gorunus).
+    void setPickFilter(std::function<bool(const Bounds3&)> filter) { pickFilter_ = std::move(filter); }
+    bool hasPickFilter() const noexcept { return static_cast<bool>(pickFilter_); }
+    bool modelIsPickable(std::size_t index) const;
     std::optional<Bounds3> bounds() const;
     const std::vector<Bounds3>& modelBounds() const;
     std::vector<std::size_t> queryBounds(const std::function<bool(const Bounds3&)>& intersects) const;
@@ -162,6 +169,7 @@ private:
     mutable bool effectiveCacheDirty_{true};
     mutable std::vector<EntityProperties> effectiveCache_;
     mutable std::vector<Bounds3> modelBounds_;
+    std::function<bool(const Bounds3&)> pickFilter_;
     mutable std::vector<std::size_t> spatialOrder_;
     mutable std::vector<std::size_t> pendingIndexRebuild_;
     mutable std::vector<unsigned char> pendingMask_; // pending uyelik maskesi (O(1))
