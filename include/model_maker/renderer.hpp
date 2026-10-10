@@ -199,6 +199,10 @@ struct DraftView {
     WorkPlane workPlane{};
     bool workPlanePicking{};
     std::vector<Vec3> workPlanePoints;
+    // CALISMA DUZLEMI HAYALETI: aktif is duzlemi HER pencerede yari saydam
+    // duzlem yamasi olarak gosterilir. Yalnizca cizimdir — secilemez,
+    // snap'lenemez, hicbir belge nesnesi/olayi uretmez.
+    bool workPlaneGhostVisible{true};
     std::wstring input;
     POINT cursorScreen{};
     TransformCommand transformCommand{TransformCommand::None};

@@ -232,6 +232,11 @@ if(BUILD_TESTING)
             add_test(NAME model_maker_polar_f10
                 COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_polar_f10.py
                     ${CMAKE_CURRENT_BINARY_DIR})
+            # Calisma duzlemi hayaleti: her pencerede cizilir, secilemez ve
+            # snap'lenemez. Sekil kontrolu + gercek cizim blogunun davranisi.
+            add_test(NAME model_maker_workplane_ghost
+                COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_workplane_ghost.py
+                    ${CMAKE_CURRENT_BINARY_DIR})
         endif()
     endif()
 

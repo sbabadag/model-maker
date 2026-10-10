@@ -1489,6 +1489,7 @@ LRESULT Application::handleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
         // Canvas odagi yokken F10 dis pencereye duser — toggle'i burada da
         // yakala (canvas odakliyken canvasProc halledince buraya gelmez).
         if (wParam == VK_F6) { toggleGpuLines(); return 0; }
+        if (wParam == VK_F7) { toggleWorkPlaneGhost(); return 0; }
         if (wParam == VK_F5) { runRenderBenchmark(); return 0; }
         return 0;
     case WM_SYSKEYDOWN:
@@ -1699,6 +1700,7 @@ LRESULT Application::handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lPa
             }
         }
         else if (wParam == VK_F6) toggleGpuLines();
+        else if (wParam == VK_F7) toggleWorkPlaneGhost();
         else if (wParam == VK_F9) gridSnapEnabled_ = !gridSnapEnabled_;
         // VK_F10 buraya NORMALDE HIC DUSMEZ (yukaridaki WM_SYSKEYDOWN'a gelir).
         // Bazi tus esleyiciler/sanat sanal ortamlar yine de KEYDOWN uretebiliyor:
@@ -6142,6 +6144,7 @@ DraftView Application::draftView() const {
     view.temporaryPerpendicularPoints = temporaryPerpendicularPoints_;
     view.workPlaneZ = workPlane_.origin.z; view.workPlane = workPlane_;
     view.workPlanePicking = workPlanePicking_; view.workPlanePoints = workPlanePoints_;
+    view.workPlaneGhostVisible = workPlaneGhostVisible_;
     view.input = input_; view.cursorScreen = cursorScreen_;
     view.transformCommand = transformCommand_; view.transformPhase = transformPhase_;
     view.selectedModels = selectedModels_; view.selectionFirstCorner = selectionFirstCorner_;
@@ -6296,6 +6299,15 @@ void Application::togglePolarTracking() {
         clearTemporaryTracking(); // kalinti TP/guide cizgileri ekranda kalmasin
     }
     updateHover(cursorScreen_.x, cursorScreen_.y);
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
+}
+
+void Application::toggleWorkPlaneGhost() {
+    // Tek kaynak: menu/kurdele, F7 (canvas proc) ve dis pencere proc'u.
+    // Yalnizca cizim katmani — secim ve snap'i ETKILEMEZ.
+    workPlaneGhostVisible_ = !workPlaneGhostVisible_;
     updateControls();
     updateStatus();
     invalidateCanvas();

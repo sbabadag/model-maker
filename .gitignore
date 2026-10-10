@@ -19,4 +19,5 @@ test_imgui_inc.cpp
 
 build-linux/
 build-occ/
+build-hermes/
 dist/ 

@@ -520,6 +520,10 @@ void QtMainWindow::createMenus() {
     viewMenu->addSeparator();
     viewMenu->addAction("Çalışma &Düzlemi (3 Nokta)", this, [this]() { app_.startWorkPlaneCommand(); })->setIcon(makeToolIcon(ToolGlyph::Plane));
     viewMenu->addAction("Düzlemi &Sıfırla (Dünya)", this, [this]() { app_.resetWorkPlane(); })->setIcon(makeToolIcon(ToolGlyph::Reset));
+    QAction* ghostPlaneAction = viewMenu->addAction("Çalışma Düzlemi &Hayaleti (F7)", this,
+        [this]() { app_.toggleWorkPlaneGhost(); });
+    ghostPlaneAction->setCheckable(true);
+    ghostPlaneAction->setChecked(app_.workPlaneGhostVisible());
     viewMenu->addSeparator();
     QAction* twoPointAction = viewMenu->addAction("&2 Noktalı Görünüş (XY'ye dik)", this,
         [this]() { app_.startTwoPointViewCommand(); });

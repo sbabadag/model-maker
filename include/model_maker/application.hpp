@@ -161,6 +161,10 @@ public:
     // Polar tracking (F10) tek kaynaktan acilip kapanir: tuş yolu, kurdele
     // dugmesi ve dis pencere proc'u ayni yerden gecsin diye ayri metot.
     void togglePolarTracking();
+    // Calisma duzlemi hayaleti (F7) tek kaynaktan acilip kapanir: tus yolu,
+    // kurdele/menu ve dis pencere proc'u ayni yerden gecsin diye ayri metot.
+    void toggleWorkPlaneGhost();
+    bool workPlaneGhostVisible() const noexcept { return workPlaneGhostVisible_; }
     void setVisualStyle(VisualStyle style) noexcept;
     // Standart gorunus (On/Arka/Sol/Sag/Ust/Alt/ISO) — Qt menu + Ctrl+1..7.
     void setStandardView(StandardView view);
@@ -563,6 +567,9 @@ private:
     bool orthoEnabled_{false};
     bool polarTrackingEnabled_{false};
     bool polarTrackingLocked_{false};
+    // Aktif is duzlemi her pencerede hayalet (yari saydam) duzlem olarak
+    // gosterilsin mi. Yalnizca cizim — secim/snap'i etkilemez.
+    bool workPlaneGhostVisible_{true};
     bool temporaryTrackingLocked_{false};
     std::vector<Vec3> temporaryTrackingPoints_;
     std::vector<TrackingGuide> temporaryTrackingGuides_;

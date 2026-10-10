@@ -358,6 +358,62 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
                 }
             }
         }
+        // CALISMA DUZLEMI HAYALETI (ghost work plane): aktif is duzlemi HER
+        // pencerede yari saydam bir duzlem yamasi olarak gosterilir. Yalnizca
+        // cizimdir — secilemez ve snap'lenemez; hicbir belge nesnesi uretmez,
+        // hicbir secim/snap yoluna dokunmaz. Ekran-olcekli: kamera zoom'unda da
+        // her pencerede kullanilabilir kalir, model boyutlarini degistirmez.
+        if (draft.workPlaneGhostVisible) {
+            const POINT ghostOrigin = projectPoint(draft.workPlane.origin);
+            const POINT ghostUnit = projectPoint(draft.workPlane.fromPlane({1.0, 0.0}));
+            const double ghostPixelPerUnit =
+                std::hypot(ghostUnit.x - ghostOrigin.x, ghostUnit.y - ghostOrigin.y);
+            const double canvasSpan =
+                static_cast<double>(std::min(canvas.right - canvas.left,
+                                             canvas.bottom - canvas.top));
+            const double ghostHalf = ghostPixelPerUnit > 1e-9
+                ? std::clamp(0.30 * canvasSpan / ghostPixelPerUnit, 1e-3, 1e7)
+                : 1.0;
+            const auto ghostCorner = [&](double su, double sv) {
+                return projectPoint(draft.workPlane.fromPlane({su * ghostHalf, sv * ghostHalf}));
+            };
+            const POINT ghostQuad[4] = {ghostCorner(-1.0, -1.0), ghostCorner(1.0, -1.0),
+                                        ghostCorner(1.0, 1.0), ghostCorner(-1.0, 1.0)};
+            // Yari saydam dolgu: ekran-kapi (hatch) deseni — ustune cizildigi
+            // nesneyi kapatmaz, "hayalet" gorunur (GDI alpha yerine desen).
+            HBRUSH ghostFill = CreateHatchBrush(HS_FDIAGONAL, RGB(126, 156, 186));
+            HGDIOBJ ghostOldBrush = SelectObject(targetDc, ghostFill);
+            HGDIOBJ ghostOldPen = SelectObject(targetDc, GetStockObject(NULL_PEN));
+            const int ghostOldBkMode = SetBkMode(targetDc, TRANSPARENT);
+            Polygon(targetDc, ghostQuad, 4);
+            SetBkMode(targetDc, ghostOldBkMode);
+            SelectObject(targetDc, ghostOldPen);
+            SelectObject(targetDc, ghostOldBrush);
+            DeleteObject(ghostFill);
+            // Ic mesh: seyrek ve soluk — duzlem hissi verir, dikkat cekmez.
+            constexpr int ghostDivisions = 6;
+            HPEN ghostMeshPen = CreatePen(PS_SOLID, 1, RGB(146, 176, 204));
+            SelectObject(targetDc, ghostMeshPen);
+            for (int i = 1; i < ghostDivisions; ++i) {
+                const double t = -1.0 + 2.0 * i / ghostDivisions;
+                const POINT alongU0 = ghostCorner(t, -1.0), alongU1 = ghostCorner(t, 1.0);
+                line(targetDc, alongU0.x, alongU0.y, alongU1.x, alongU1.y);
+                const POINT alongV0 = ghostCorner(-1.0, t), alongV1 = ghostCorner(1.0, t);
+                line(targetDc, alongV0.x, alongV0.y, alongV1.x, alongV1.y);
+            }
+            SelectObject(targetDc, stockPen);
+            DeleteObject(ghostMeshPen);
+            // Cerceve: duzlem sinirini net gosteren ince kenar (kapali dortgen).
+            HPEN ghostBorderPen = CreatePen(PS_SOLID, 2, RGB(74, 110, 152));
+            SelectObject(targetDc, ghostBorderPen);
+            for (int i = 0; i < 4; ++i) {
+                const POINT& a = ghostQuad[i];
+                const POINT& b = ghostQuad[(i + 1) % 4];
+                line(targetDc, a.x, a.y, b.x, b.y);
+            }
+            SelectObject(targetDc, stockPen);
+            DeleteObject(ghostBorderPen);
+        }
     }; // drawGridAndAxes (grid + eksenler: interaktif karelerde de çizilir)
     if (!useGpuLines) drawGridAndAxes(dc);
 
