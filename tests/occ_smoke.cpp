@@ -183,7 +183,9 @@ int main() {
         std::printf("OCC I-SECTION OK — IPE200 hacim %.0f mm3 (keskin kose)\n", iProps.Mass());
     }
     // Diyagonal dogrultu: (0,0,0)->(0,100,0) — kiris Y ekseninde uzanmali,
-    // kesit X/Z yonlerinde ±15 sinirlari icinde kalmali.
+    // genislik X'te ±15 kalmali. DUSEY konum artik ORTALANMIS DEGIL (kullanici:
+    // "secili noktaya UST FLANSIN ORTASINDAN atilmali"): ust plakanin ORTASI
+    // eksende → Z = -(h - t/2) .. +t/2 = -28.5 .. +1.5 (h=30, t=3).
     {
         mm::SteelProfile kkr;
         kkr.width = 30.0;
@@ -194,11 +196,12 @@ int main() {
         BRepBndLib::Add(solid, boundingBox);
         double xMin = 0, yMin = 0, zMin = 0, xMax = 0, yMax = 0, zMax = 0;
         boundingBox.Get(xMin, yMin, zMin, xMax, yMax, zMax);
-        if (xMin < -16.0 || xMax > 16.0 || zMin < -16.0 || zMax > 16.0 ||
-            yMin < -1.0 || yMax < 99.0 || yMax > 101.0) {
-            std::printf("HATA: diyagonal yonelim bozuk bbox=(%.1f,%.1f,%.1f)-(%.1f,%.1f,%.1f)\n",
+        if (xMin < -16.0 || xMax > 16.0 || yMin < -1.0 || yMax < 99.0 || yMax > 101.0 ||
+            std::abs(zMax - 1.5) > 0.6 || std::abs(zMin + 28.5) > 0.6) {
+            std::printf("HATA: diyagonal yonelim/yerlesim bozuk bbox=(%.1f,%.1f,%.1f)-(%.1f,%.1f,%.1f) "
+                        "(beklenen x ±15, y 0..100, z -28.5..+1.5)\n",
                         xMin, yMin, zMin, xMax, yMax, zMax);
-            // probe yine de calissin
+            return 1;
         }
         std::printf("OCC EXTRUDE-DIAG OK — bbox=(%.1f,%.1f,%.1f)-(%.1f,%.1f,%.1f)\n",
                     xMin, yMin, zMin, xMax, yMax, zMax);
@@ -268,6 +271,55 @@ int main() {
             }
             std::printf("OCC REFERENCE-NORMAL OK — egik duzlemde baslik o duzleme "
                         "paralel (dy=%.1f dz=%.1f)\n", dy, dz);
+        }
+
+        // KESIT YERLESIMI (kullanici: "yine merkezden atiyor profili; secili
+        // noktaya UST FLANSIN ORTASINDAN atilmali"): kesit ORTALANMAZ — ust
+        // plakanin orta-kalinlik duzlemi uye eksenine (yerel y = 0) oturur,
+        // govde is duzleminin ALTINA sarkar (Tekla "position: top"). Baslik
+        // paralelligi DEGISMEZ; degisen yalnizca DUSEY KONUMdur.
+        {
+            const auto bbox6 = [](const TopoDS_Shape& s, double& xMin, double& yMin,
+                                  double& zMin, double& xMax, double& yMax, double& zMax) {
+                Bnd_Box box;
+                BRepBndLib::Add(s, box);
+                box.Get(xMin, yMin, zMin, xMax, yMax, zMax);
+            };
+            // IPE200 (h=200, b=100, tf=8.5), +X kirisi (0,0,0)->(100,0,0):
+            //   genislik Y'de +-50 (ortalanmis, degismedi)
+            //   ust flans ORTASI Z=0 → ust yuzu +tf/2 = +4.25, alt yuz -(h-tf/2) = -195.75
+            const auto iSolid = mm::extrudeProfileSolid(ipe, Vec3{0, 0, 0}, Vec3{100, 0, 0});
+            double x1 = 0, y1 = 0, z1 = 0, x2 = 0, y2 = 0, z2 = 0;
+            bbox6(iSolid, x1, y1, z1, x2, y2, z2);
+            const bool iOk = std::abs(x1 - 0.0) < 0.6 && std::abs(x2 - 100.0) < 0.6 &&
+                             std::abs(y1 + 50.0) < 0.6 && std::abs(y2 - 50.0) < 0.6 &&
+                             std::abs(z2 - 4.25) < 0.6 &&                // ust flansin UST yuzu
+                             std::abs(z2 - 8.5 / 2.0) < 0.05 &&          // UST FLANSIN ORTASI = eksen
+                             std::abs(z1 + 195.75) < 0.6;                // govde asagi sarkar
+            if (!iOk) {
+                std::printf("HATA: kesit yerlesimi IPE200 — bbox=(%.2f,%.2f,%.2f)-(%.2f,%.2f,%.2f) "
+                            "(beklenen x 0..100, y -50..50, z -195.75..+4.25)\n",
+                            x1, y1, z1, x2, y2, z2);
+                return 1;
+            }
+            // ici bos kutu KKR30*3 (h=b=30, t=3): ust plakanin ORTASI = 15-1.5 = 13.5
+            // → ust yuz +1.5, alt yuz -(15-1.5)-15 = -28.5
+            mm::SteelProfile kkr;
+            kkr.name = "KKR30*3";
+            kkr.height = 30.0;
+            kkr.width = 30.0;
+            kkr.plateThickness = 3.0;
+            const auto bSolid = mm::extrudeProfileSolid(kkr, Vec3{0, 0, 0}, Vec3{100, 0, 0});
+            bbox6(bSolid, x1, y1, z1, x2, y2, z2);
+            const bool bOk = std::abs(z2 - 1.5) < 0.6 && std::abs(z1 + 28.5) < 0.6 &&
+                             std::abs(z2 - 3.0 / 2.0) < 0.05;            // ust plaka ORTASI = eksen
+            if (!bOk) {
+                std::printf("HATA: kesit yerlesimi KKR30*3 — z=(%.2f..%.2f) "
+                            "(beklenen -28.50..+1.50)\n", z1, z2);
+                return 1;
+            }
+            std::printf("OCC SECTION-PLACEMENT OK — ust flans/plaka ortasi uye ekseninde "
+                        "(IPE200 z=%.2f..%.2f, KKR30*3 z=%.2f..%.2f)\n", -195.75, 4.25, -28.5, 1.5);
         }
     }
     // Trsf yon duyarliligi: kutu (z-ekseni) -> Y eksenine.

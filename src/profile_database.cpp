@@ -173,4 +173,64 @@ bool profileNameLess(const std::string& a, const std::string& b) {
     return a.size() < b.size();
 }
 
+namespace {
+
+// Profil adinin rakamdan ONCEKI harf kumesi (or. "IPE200" → "IPE").
+std::string profileAlphaPrefix(const std::string& name) {
+    std::string prefix;
+    for (const char c : name) {
+        if (c >= '0' && c <= '9') break;
+        if (c >= 'A' && c <= 'Z') prefix += c;
+    }
+    return prefix;
+}
+
+} // namespace
+
+ProfileSectionKind classifyProfileSection(const SteelProfile& profile) noexcept {
+    const std::string alphaPrefix = profileAlphaPrefix(profile.name);
+    // Not: harf kumeleri kati ureticisindeki (eskiden occ_geometry.cpp icinde
+    // yerel olan) listelerle BIREBIR ayni tutulmalidir.
+    const bool isRound = (alphaPrefix == "CHS" || alphaPrefix == "CFCHS" ||
+                          alphaPrefix == "ROD" || alphaPrefix == "D" ||
+                          alphaPrefix == "P" || alphaPrefix == "TUBE" ||
+                          alphaPrefix == "O");
+    if (isRound) return ProfileSectionKind::Round;
+    const bool isIShape = alphaPrefix.rfind("HE", 0) == 0 ||
+                          alphaPrefix.rfind("IPE", 0) == 0 ||
+                          alphaPrefix.rfind("IPN", 0) == 0 ||
+                          alphaPrefix.rfind("UB", 0) == 0 ||
+                          alphaPrefix.rfind("UC", 0) == 0 ||
+                          alphaPrefix.rfind("HL", 0) == 0 ||
+                          alphaPrefix.rfind("HD", 0) == 0 ||
+                          alphaPrefix.rfind("HP", 0) == 0 ||
+                          alphaPrefix.rfind("W", 0) == 0 ||
+                          alphaPrefix == "T";
+    return isIShape ? ProfileSectionKind::ISection : ProfileSectionKind::Box;
+}
+
+double profileSectionTopPlateCenterY(const SteelProfile& profile) noexcept {
+    // Olcu varsayilanlari kati ureticisiyle AYNI (bkz. extrudeProfileSolid).
+    const double w = profile.width > 0.0 ? profile.width : 50.0;
+    const double h = profile.height > 0.0 ? profile.height : 50.0;
+    const double t = profile.plateThickness > 0.0 ? profile.plateThickness : 0.0;
+    switch (classifyProfileSection(profile)) {
+    case ProfileSectionKind::Round: {
+        const double outerR = std::max(w, h) / 2.0;
+        // "Ici bos mu" = kati ureticisindeki kesme karari (innerR > 1.0).
+        return (outerR - t) > 1.0 ? outerR - t / 2.0 : outerR;
+    }
+    case ProfileSectionKind::Box: {
+        // "Ici bos mu" = kati ureticisindeki kesme karari.
+        const bool hollow = (w - 2.0 * t) > 1.0 && (h - 2.0 * t) > 1.0;
+        return hollow ? h / 2.0 - t / 2.0 : h / 2.0;
+    }
+    case ProfileSectionKind::ISection:
+    default: {
+        const double tf = profile.flangeThickness > 0.0 ? profile.flangeThickness : t;
+        return h / 2.0 - tf / 2.0;
+    }
+    }
+}
+
 } // namespace mm

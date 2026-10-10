@@ -49,4 +49,28 @@ const SteelProfile* findProfile(const std::vector<SteelProfile>& profiles,
 // olurdu) ve IPE80 < IPE100. Harf karsilastirmasi buyuk/kucuk harf duyarsiz.
 bool profileNameLess(const std::string& a, const std::string& b);
 
+// Kesit turu. Kati ureticisi (extrudeProfileSolid) ile kesit yerlesim
+// kurallari AYNI siniflandirmayi kullansin diye tek kaynak (eskiden bu
+// harf kumesi kontrolu occ_geometry.cpp icinde yereldi).
+enum class ProfileSectionKind { ISection, Round, Box };
+
+// Profil ADININ rakamdan onceki harf kumesinden tur:
+// CHS/CFCHS/ROD/D/P/TUBE/O → Round; HE*/IPE*/IPN*/UB*/UC*/HL*/HD*/HP*/W*/T →
+// ISection; digerleri → Box (KKR/RHS/SHS ve bilinmeyenler).
+ProfileSectionKind classifyProfileSection(const SteelProfile& profile) noexcept;
+
+// KULLANICI SARTI (v3): "yine merkezden atiyor profili; secili noktaya UST
+// FLANSIN ORTASINDAN atilmali" → kesit ORTALANMAZ: UST PLAKANIN orta-kalinlik
+// duzlemi uye eksenine (yerel y = 0) oturur ve govde is duzleminin ALTINA
+// sarkar (Tekla "position: top" mantigi). Baslik plakasi yine is duzlemine
+// paraleldir; degisen yalnizca DUSEY KONUMdur.
+//
+// Donen deger: kesit ORTALANMIS uretildiginde ust plakanin orta-kalinlik
+// duzleminin yerel Y'si; kati bu kadar ASAGI (-Y) kaydirilir.
+//   I-kesit : h/2 - tf/2   (ust flansin ortasi; tf yoksa t)
+//   ici bos kutu / boru : h/2 - t/2  (ust plakanin ortasi)
+//   dolu kesit  : h/2      (ust yuz)
+// "Ici bos mu" kosulu kati ureticisindeki kesme karariyla AYNI olmalidir.
+double profileSectionTopPlateCenterY(const SteelProfile& profile) noexcept;
+
 } // namespace mm

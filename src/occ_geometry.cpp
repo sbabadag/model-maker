@@ -222,28 +222,12 @@ TopoDS_Shape extrudeProfileSolid(const SteelProfile& profile, const Vec3& from,
 
     TopoDS_Shape section;
 
-    // Yuvarlak profil mi? (CHS/CFCHS/ROD/D/P/TUBE/O/Ø — rakamdan onceki harf kumesi)
-    std::string alphaPrefix;
-    for (const char c : profile.name) {
-        if (c >= '0' && c <= '9') break;
-        if (c >= 'A' && c <= 'Z') alphaPrefix += c;
-    }
-    const bool isRound = (alphaPrefix == "CHS" || alphaPrefix == "CFCHS" ||
-                          alphaPrefix == "ROD" || alphaPrefix == "D" ||
-                          alphaPrefix == "P" || alphaPrefix == "TUBE" ||
-                          alphaPrefix == "O");
-    const bool isIShape = alphaPrefix.rfind("HE", 0) == 0 ||
-                          alphaPrefix.rfind("IPE", 0) == 0 ||
-                          alphaPrefix.rfind("IPN", 0) == 0 ||
-                          alphaPrefix.rfind("UB", 0) == 0 ||
-                          alphaPrefix.rfind("UC", 0) == 0 ||
-                          alphaPrefix.rfind("HL", 0) == 0 ||
-                          alphaPrefix.rfind("HD", 0) == 0 ||
-                          alphaPrefix.rfind("HP", 0) == 0 ||
-                          alphaPrefix.rfind("W", 0) == 0 ||
-                          alphaPrefix == "T";
+    // Kesit turu — TEK KAYNAK: mm::classifyProfileSection (profile_database).
+    // Kesit yerlesimi de (profileSectionTopPlateCenterY) ayni siniflandirmayi
+    // kullanir; harf kumesi listesini burada TEKRAR YAZMA.
+    const ProfileSectionKind kind = classifyProfileSection(profile);
 
-    if (isRound) {
+    if (kind == ProfileSectionKind::Round) {
         const double outerR = std::max(w, h) / 2.0;
         const double innerR = outerR - t;
         const auto circleFace = [&](double radius) {
@@ -258,7 +242,7 @@ TopoDS_Shape extrudeProfileSolid(const SteelProfile& profile, const Vec3& from,
         } else {
             section = circleFace(outerR);
         }
-    } else if (isIShape) {
+    } else if (kind == ProfileSectionKind::ISection) {
         // I-kesit (HEA/HEB/HEM/IPE/IPN/UB/UC/W/T): iki flans + govde.
         const double tf = profile.flangeThickness > 0.0 ? profile.flangeThickness : t;
         const double tw = t;
@@ -297,6 +281,19 @@ TopoDS_Shape extrudeProfileSolid(const SteelProfile& profile, const Vec3& from,
     } else {
         section = rectFace(hw, hh);
     }
+    }
+
+    // KESIT YERLESIMI (KULLANICI SARTI v3): "yine merkezden atiyor profili;
+    // secili noktaya UST FLANSIN ORTASINDAN atilmali" → kesit ORTALANMAZ.
+    // Ust plakanin orta-kalinlik duzlemi uye eksenine (yerel y = 0) oturur,
+    // govde is duzleminin ALTINA sarkar; baslik yine is duzlemine PARALEL kalir
+    // (Tekla "position: top"). Kaydirma dondurmeden ONCE uygulanir, boylece
+    // profil donmus olsa da uye ekseni hep "ust" plakanin ortasindan gecer.
+    const double topPlateY = profileSectionTopPlateCenterY(profile);
+    if (std::abs(topPlateY) > 1e-9) {
+        gp_Trsf offsetTrsf;
+        offsetTrsf.SetTranslation(gp_Vec(0.0, -topPlateY, 0.0));
+        section = BRepBuilderAPI_Transform(section, offsetTrsf).Shape();
     }
 
     // Kesit, profil ekseni (Z) etrafinda dondurulur — Tekla Rotation.
