@@ -49,6 +49,45 @@ check("void toggleWorkPlaneGhost();" in app_header, "toggle declared in the Appl
 check("void Application::toggleWorkPlaneGhost()" in app_source, "toggle implemented once for key and menu")
 check(app_source.count("VK_F7") == 2, "F7 handled in both the canvas and the outer window proc")
 
+# --- Referans katmani flicker korumasi (zoom/pan'da sabit ogeler) -------------
+# (1) Ekran-olcekli turetmeler tamsayiya oturtulmus projeksiyondan BESLENMEMELI:
+#     yuvarlanmis degerleri bolerek olcek turetmek boyutu kare kare oynatir.
+check("projectPointPrecise" in source, "unrounded projection exists for screen-scale derivations")
+ghost_scale = re.search(r"const double ghostPixelPerUnit\s*=\s*(.*?);", block, re.S)
+check(bool(ghost_scale), "ghost pixel-per-unit is computed in the ghost block")
+if ghost_scale:
+    check("Precise" in ghost_scale.group(1),
+          "ghost scale derives from the UNROUNDED projection (no per-frame size wobble)")
+    check("projectPoint(" not in ghost_scale.group(1),
+          "ghost scale must not be derived from the integer-projected points")
+glyph_scale = re.search(r"const double glyphPx\s*=\s*(.*?);", source, re.S)
+check(bool(glyph_scale) and "Precise" in glyph_scale.group(1),
+      "UCS glyph scale derives from the unrounded projection too")
+# (2) projectPoint must ROUND, not truncate: truncation biases the whole fixed
+#     layer towards the top-left, so it slides against the sub-pixel GL model.
+project_lambda = re.search(r"const auto projectPoint = \[&\]\(const Vec3& point\) \{(.*?)\n    \};",
+                           source, re.S)
+check(bool(project_lambda), "projectPoint lambda found")
+if project_lambda:
+    check("std::lround" in project_lambda.group(1), "projectPoint uses symmetric rounding")
+    check("static_cast<LONG>(projected" not in project_lambda.group(1),
+          "projectPoint no longer truncates the projected coordinate")
+# (3) Hatch pattern anchored to the plane (device-anchored pattern crawls on pan).
+check(block.count("SetBrushOrgEx") == 2,
+      "ghost fill pins AND restores the DC brush origin (pattern travels with the plane)")
+# (4) Motion fast path must not run while the camera navigates: the integer probe
+#     fingerprint can match during slow/settling motion and blit a STALE base.
+fast_path = re.search(r"if \(draft\.snapPreviewActive && !draft\.snapOnly && !useGpuLines &&(.*?)\n\s*motionBaseValid_",
+                      source, re.S)
+check(bool(fast_path), "motion-overlay fast path found")
+if fast_path:
+    guard = fast_path.group(1)
+    for flag in ("!draft.panning", "!draft.rotating", "!draft.wheelNavigating", "!draft.viewCubeActive"):
+        check(flag in guard, f"fast path excluded during navigation: '{flag}'")
+for flag in ("view.panning = false;", "view.rotating = false;",
+             "view.wheelNavigating = false;", "view.viewCubeActive = false;"):
+    check(flag in app_source, f"passive viewport clears stale navigation flag: '{flag}'")
+
 line_match = re.search(r"^void line\(.*?^}", source, re.M | re.S)
 assert line_match, "Renderer line() helper not found"
 template = (root / "tests/workplane_ghost_cases.cpp").read_text()

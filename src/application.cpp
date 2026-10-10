@@ -1160,6 +1160,10 @@ void Application::paintPassiveViewport(std::size_t index) {
         view.gumballVisible = false;
         view.gripMoveActive = false;
         view.interactiveNavigation = false;
+        view.wheelNavigating = false;
+        view.rotating = false;
+        view.panning = false;
+        view.viewCubeActive = false;
         view.motionOverlay = false;
         view.snapPreviewActive = false;
         view.rasterZoomPreview = false;

@@ -245,10 +245,31 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         const auto projected = mode == EditMode::Draw2D
             ? camera.project2D(point, canvas.right - canvas.left, canvas.bottom - canvas.top)
             : camera.project(point, canvas.right - canvas.left, canvas.bottom - canvas.top);
-        return POINT{static_cast<LONG>(projected.x + canvas.left),
-                     static_cast<LONG>(projected.y + canvas.top)};
+        // SIMETRIK YUVARLAMA (once static_cast<LONG> = KESME idi). Kesme hatayi
+        // hep ayni yone (sol-yukari) yigar: sabit referans katmani alt-piksel
+        // hareket eden GL modeline karsi kayar/titrer. lround hatayi [-0.5,+0.5]
+        // araligina indirir ve yanliligi kaldirir -> pan'da katmanlar modelle
+        // ayni hizada kalir.
+        return POINT{static_cast<LONG>(std::lround(projected.x + canvas.left)),
+                     static_cast<LONG>(std::lround(projected.y + canvas.top))};
     };
     HGDIOBJ stockPen = GetCurrentObject(dc, OBJ_PEN);
+    // YUVARLANMAMIS (double) projeksiyon. projectPoint POINT'e (tamsayi) oturtur;
+    // tamsayiya oturmus degerleri bolerek EKRAN-OLCEKLI bir nicelik turetmek
+    // (120/glyphPx, 0.30*span/ghostPx) zoom'da boyutu kare kare oynatir = flicker.
+    // Olculdu (saf zoom, 240 kare): hayalet duzlem yarim-kenari tamsayi girdiyle
+    // 180.00..182.49 px arasinda gidip geliyor ve 240 karenin 182'sinde YON
+    // DEGISTIRIYOR; yuvarlanmamis projeksiyonla sapma 0.000 px. (Kesme -> lround
+    // degisikligi bunu GIDERMEZ: lround ile de 183 yon degisimi olur.) Sabit
+    // katmanin olcek turetmesi BUNDAN beslenmeli; POINT'e oturtulmus surum
+    // yalnizca cizim icin.
+    const auto projectPointPrecise = [&](const Vec3& point) {
+        const auto projected = mode == EditMode::Draw2D
+            ? camera.project2D(point, canvas.right - canvas.left, canvas.bottom - canvas.top)
+            : camera.project(point, canvas.right - canvas.left, canvas.bottom - canvas.top);
+        return Vec2{projected.x + static_cast<double>(canvas.left),
+                    projected.y + static_cast<double>(canvas.top)};
+    };
     const auto drawGridAndAxes = [&](HDC targetDc) {
         // MILIMETRIK ADAPTIF GRID KALDIRILDI (kullanici istegi): eski AutoCAD
         // 1-2-5 adaptif grid cizilmez — sadece UCS ok glifi ve custom yapi
@@ -259,10 +280,10 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         // UCS ok glifi: dunya duzleminde kisa (2m), ozel UCS seciliyken
         // grid adiminin ~4 kati — secilen duzlem net gorunsun (X/Y oklari
         // + Z). Grid zaten workPlane.fromPlane ile o duzlemde cizilir.
-        const POINT originForGlyph = projectPoint(draft.workPlane.origin);
-        const POINT glyphUnit = projectPoint(draft.workPlane.fromPlane({1.0, 0.0}));
-        const double glyphPx = std::hypot(glyphUnit.x - originForGlyph.x,
-                                          glyphUnit.y - originForGlyph.y);
+        const Vec2 glyphOriginPrecise = projectPointPrecise(draft.workPlane.origin);
+        const Vec2 glyphUnitPrecise = projectPointPrecise(draft.workPlane.fromPlane({1.0, 0.0}));
+        const double glyphPx = std::hypot(glyphUnitPrecise.x - glyphOriginPrecise.x,
+                                          glyphUnitPrecise.y - glyphOriginPrecise.y);
         const double glyphLen = glyphPx > 1e-9
             ? std::clamp(120.0 / glyphPx, 60.0, 60000.0) // ~120 piksellik ok
             : 2.0;
@@ -364,10 +385,11 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         // hicbir secim/snap yoluna dokunmaz. Ekran-olcekli: kamera zoom'unda da
         // her pencerede kullanilabilir kalir, model boyutlarini degistirmez.
         if (draft.workPlaneGhostVisible) {
-            const POINT ghostOrigin = projectPoint(draft.workPlane.origin);
-            const POINT ghostUnit = projectPoint(draft.workPlane.fromPlane({1.0, 0.0}));
+            const Vec2 ghostOriginPrecise = projectPointPrecise(draft.workPlane.origin);
+            const Vec2 ghostUnitPrecise = projectPointPrecise(draft.workPlane.fromPlane({1.0, 0.0}));
             const double ghostPixelPerUnit =
-                std::hypot(ghostUnit.x - ghostOrigin.x, ghostUnit.y - ghostOrigin.y);
+                std::hypot(ghostUnitPrecise.x - ghostOriginPrecise.x,
+                           ghostUnitPrecise.y - ghostOriginPrecise.y);
             const double canvasSpan =
                 static_cast<double>(std::min(canvas.right - canvas.left,
                                              canvas.bottom - canvas.top));
@@ -383,9 +405,25 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
             // nesneyi kapatmaz, "hayalet" gorunur (GDI alpha yerine desen).
             HBRUSH ghostFill = CreateHatchBrush(HS_FDIAGONAL, RGB(126, 156, 186));
             HGDIOBJ ghostOldBrush = SelectObject(targetDc, ghostFill);
+            // Desen fircasi (hatch) DC'nin FIRCA KAYNAGINA cakilir; varsayilan
+            // cihaz kaynagi (0,0) iken duzlem pan/zoom'da kaydiginda doku
+            // duzlemin ALTINDAN akar (crawling = flicker). Kaynagi duzlemin
+            // ekran orijinine sabitle: doku duzlemle birlikte hareket eder,
+            // yuzeye yapismis gibi sabit okunur. 8x8 desen periyoduna gore
+            // normalize edilir (negatif modulo GDI'da tasma yapmasin).
+            const auto brushPhase = [](double value) {
+                const int v = static_cast<int>(std::lround(value)) % 8;
+                return v < 0 ? v + 8 : v;
+            };
+            POINT ghostPrevBrushOrg{};
+            SetBrushOrgEx(targetDc, brushPhase(ghostOriginPrecise.x),
+                          brushPhase(ghostOriginPrecise.y), &ghostPrevBrushOrg);
             HGDIOBJ ghostOldPen = SelectObject(targetDc, GetStockObject(NULL_PEN));
             const int ghostOldBkMode = SetBkMode(targetDc, TRANSPARENT);
             Polygon(targetDc, ghostQuad, 4);
+            // Firca kaynagini geri al (DC durumu paylasimli; digger cizimleri
+            // etkilemesin).
+            SetBrushOrgEx(targetDc, ghostPrevBrushOrg.x, ghostPrevBrushOrg.y, nullptr);
             SetBkMode(targetDc, ghostOldBkMode);
             SelectObject(targetDc, ghostOldPen);
             SelectObject(targetDc, ghostOldBrush);
@@ -875,6 +913,11 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
     // bayrağına güvenilmez: spurious navigasyon bayrakları (touchpad mikro
     // delta'lari vb.) hover karelerini fallback'e düşürüp FAST/FALLBACK karışımından
     // seçim vurgusunda flicker üretiyordu — karar artık gerçek kamera durumuna bağlı.
+    // EK KAPI (flicker): pan/zoom/rotate SURERKEN hizli yola GIRILMEZ. Parmak izi
+    // 4 noktayi TAMSAYI karsilastirir; yavas/yaklasan harekette kamera degistigi
+    // halde iz ayni kalabilir ve BAYAT taban basılır -> sabit referans katmani
+    // (grid/UCS/hayalet duzlem) bir kare eski konumda gorunup sonra ziplar.
+    // Navigasyon kareleri artik TEK TIP (tam kare) olur.
     const POINT probe0 = projectPoint(Vec3{0.0, 0.0, 0.0});
     const POINT probe1 = projectPoint(Vec3{1.0, 0.0, 0.0});
     const POINT probe2 = projectPoint(Vec3{0.0, 1.0, 0.0});
@@ -885,6 +928,7 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         motionBaseProbe_[2].x == probe2.x && motionBaseProbe_[2].y == probe2.y &&
         motionBaseProbe_[3].x == probe3.x && motionBaseProbe_[3].y == probe3.y;
     if (draft.snapPreviewActive && !draft.snapOnly && !useGpuLines &&
+        !draft.panning && !draft.rotating && !draft.wheelNavigating && !draft.viewCubeActive &&
         motionBaseValid_ && cameraUnchanged &&
         motionBaseWidth_ == width && motionBaseHeight_ == height) {
         if (lastMotionPath_ != 0) {

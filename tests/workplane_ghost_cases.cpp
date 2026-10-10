@@ -10,6 +10,7 @@
 #include <vector>
 
 using mm::Vec3;
+using mm::Vec2;
 using COLORREF = std::uint32_t;
 constexpr COLORREF RGB(int r, int g, int b) { return r | (g << 8) | (b << 16); }
 constexpr int PS_SOLID = 0, NULL_PEN = 8, NULL_BRUSH = 5, HS_FDIAGONAL = 2, TRANSPARENT = 1;
@@ -31,9 +32,23 @@ Object stockPenObject{false, 1, 0, true, false}, stockBrushObject{true, 0, 0, tr
 // Mirrors the renderer: stockPen/stockBrush are HGDIOBJ values, not objects.
 Object* const stockPen = &stockPenObject;
 Object* const stockBrush = &stockBrushObject;
-struct DC { Object* pen{stockPen}; Object* brush{stockBrush}; POINT cursor; std::vector<Call> calls; };
+struct DC {
+    Object* pen{stockPen};
+    Object* brush{stockBrush};
+    POINT cursor;
+    POINT brushOrg;                  // DC brush pattern origin (SetBrushOrgEx)
+    std::vector<Call> calls;
+    std::vector<POINT> brushOrgSets; // every SetBrushOrgEx call, in order
+};
 using HDC = DC*;
 int liveObjects = 0;
+// Sub-pixel camera state, as the real camera actually varies it during pan/zoom:
+//  g_pixelOffset = whole/fractional screen translation (pan)
+//  g_zoom        = continuously varying projection scale (zoom). THIS is what
+//                  makes a rounded-projection scale derivation wobble: the true
+//                  scale moves smoothly while the rounded pixel gap steps.
+double g_pixelOffset = 0.0;
+double g_zoom = 1.0;
 void require(bool ok, const std::string& message) { if (!ok) throw std::runtime_error(message); }
 HPEN CreatePen(int, int width, COLORREF color) { ++liveObjects; return new Object{false, width, color}; }
 HBRUSH CreateSolidBrush(COLORREF color) { ++liveObjects; return new Object{true, 0, color}; }
@@ -43,6 +58,12 @@ HGDIOBJ GetStockObject(int id) {
     return id == NULL_PEN ? &nullPenObject : &nullBrushObject;
 }
 int SetBkMode(HDC, int) { return 0; }
+int SetBrushOrgEx(HDC dc, int x, int y, POINT* previous) {
+    if (previous) *previous = dc->brushOrg;
+    dc->brushOrg = {x, y};
+    dc->brushOrgSets.push_back({x, y});
+    return 1;
+}
 HGDIOBJ SelectObject(HDC dc, HGDIOBJ object) {
     auto& slot = object->brush ? dc->brush : dc->pen;
     auto old = slot;
@@ -62,9 +83,18 @@ struct Draft {
     mm::WorkPlane workPlane{};
 };
 // Deliberately non-axis-aligned screen projection, independent of renderer logic.
+// The precise variant is the same affine map without the integer landing, so the
+// pair models exactly what renderer.cpp does (POINT for drawing, Vec2 for scale).
 POINT projectPoint(Vec3 p) {
-    return {std::lround(400 + 65 * p.x - 24 * p.y), std::lround(300 + 65 * p.z - 24 * p.y)};
+    return {std::lround(400 + g_pixelOffset + g_zoom * (65 * p.x - 24 * p.y)),
+            std::lround(300 + g_pixelOffset + g_zoom * (65 * p.z - 24 * p.y))};
 }
+Vec2 projectPointPrecise(Vec3 p) {
+    return {400 + g_pixelOffset + g_zoom * (65 * p.x - 24 * p.y),
+            300 + g_pixelOffset + g_zoom * (65 * p.z - 24 * p.y)};
+}
+// Brush-origin calls made by the last render() (SetBrushOrgEx order preserved).
+std::vector<POINT> g_brushOrgSets;
 std::vector<Call> render(const Draft& draft, int span) {
     DC context;
     HDC targetDc = &context;
@@ -72,7 +102,10 @@ std::vector<Call> render(const Draft& draft, int span) {
     (void)canvas;
 // @GHOST_BLOCK@
     require(context.pen == stockPen && context.brush == stockBrush, "GDI selections not restored");
+    require(context.brushOrg.x == 0 && context.brushOrg.y == 0,
+            "brush origin not restored after the plane fill");
     require(liveObjects == 0, "GDI object leak");
+    g_brushOrgSets = context.brushOrgSets;
     return context.calls;
 }
 // Rotated orthonormal frame about Z: detects a regression to grid/world-axis planes.
@@ -228,6 +261,67 @@ void survivesAnEdgeOnPlane() {
     require(select(calls, "line").size() == 14, "edge-on plane still draws its frame and mesh");
 }
 
+// FLICKER KORUMASI: duzlemin EKRAN boyutu kameranin piksel ARASINA dustugu yere
+// bagli olmamali. Olcek tamsayiya oturtulmus projeksiyondan turetilirse zoom'da
+// boyut kare kare ~%1.5 oynar (buyuk canvas'ta yuzlerce px) ve duzlem titrer.
+// Duzeltmede sapma yalnizca kose yuvarlamasindan gelir (<= ~2 px).
+void planeScreenSizeIgnoresSubPixelOffset() {
+    constexpr int span = 20000; // buyuk span: niceleme gurultusunu bastirir
+    const auto quadSpan = [&](double zoom) {
+        g_zoom = zoom;
+        const auto quad = select(render(fixture(rotatedPlane()), span), "polygon")[0].points;
+        long left = quad[0].x, right = quad[0].x, top = quad[0].y, bottom = quad[0].y;
+        for (const auto& p : quad) {
+            left = std::min(left, p.x); right = std::max(right, p.x);
+            top = std::min(top, p.y); bottom = std::max(bottom, p.y);
+        }
+        return std::pair<long, long>{right - left, bottom - top};
+    };
+    const auto [w0, h0] = quadSpan(1.0);
+    require(w0 > 1000 && h0 > 1000, "fixture must render a large plane");
+    // Gercek zoom gibi SUREKLI olcek taramasi (tam sayi sinirlarindan gecer).
+    for (const double zoom : {1.003, 1.007, 1.011, 1.015, 1.019, 1.023, 1.027}) {
+        const auto [w, h] = quadSpan(zoom);
+        require(std::abs(w - w0) <= 3 && std::abs(h - h0) <= 3,
+                "plane screen size must not wobble as the camera zooms: " +
+                std::to_string(w) + "x" + std::to_string(h) + " vs " +
+                std::to_string(w0) + "x" + std::to_string(h0) + " at zoom " +
+                std::to_string(zoom));
+    }
+    g_zoom = 1.0;
+}
+
+// Desen fircasi (hatch) cihaz kaynagina cakilirsa duzlem pan/zoom'da kayarken
+// doku duzlemin altindan akar (crawling = flicker). Kaynak duzlem orijinine
+// faz-kilitli olmali: 8 px'lik tam periyot fazi degistirmez, kismi adim degistirir
+// — yani doku duzlemle BIRLIKTE hareket eder.
+void brushOriginAnchorsThePatternToThePlane() {
+    const auto plane = rotatedPlane();
+    const auto phase = [](double value) {
+        const long v = std::lround(value) % 8;
+        return v < 0 ? v + 8 : v;
+    };
+    const auto expectedPhase = [&]() {
+        const Vec2 origin = projectPointPrecise(plane.origin);
+        return POINT{phase(origin.x), phase(origin.y)};
+    };
+    g_pixelOffset = 0.0;
+    (void)render(fixture(plane), 800);
+    require(g_brushOrgSets.size() == 2, "plane fill must set and restore the brush origin");
+    require(g_brushOrgSets[1].x == 0 && g_brushOrgSets[1].y == 0, "brush origin must be restored");
+    const POINT base = expectedPhase();
+    require(g_brushOrgSets[0] == base, "brush origin must be phase-locked to the plane origin");
+    g_pixelOffset = 8.0; // tam desen periyodu: faz AYNI kalmali
+    (void)render(fixture(plane), 800);
+    require(g_brushOrgSets[0] == expectedPhase(), "a full 8px camera step must not shift the pattern phase");
+    g_pixelOffset = 3.0; // kismi adim: doku duzlemle kaymali
+    (void)render(fixture(plane), 800);
+    const POINT shifted = expectedPhase();
+    require(g_brushOrgSets[0] == shifted, "the pattern must follow the plane, not the device origin");
+    require(!(shifted == base), "fixture must actually shift the phase (else the check is vacuous)");
+    g_pixelOffset = 0.0;
+}
+
 int main() {
     int passed = 0, failed = 0;
     const std::vector<std::pair<std::string, std::function<void()>>> tests = {
@@ -237,6 +331,8 @@ int main() {
         {"screen-space sizing survives canvas changes", remainsScreenSpaceSized},
         {"ghost palette is visible yet faint", ghostPaletteIsVisibleButFaint},
         {"edge-on plane degrades without crashing", survivesAnEdgeOnPlane},
+        {"plane screen size is immune to sub-pixel camera offset", planeScreenSizeIgnoresSubPixelOffset},
+        {"hatch pattern is anchored to the plane (no crawl)", brushOriginAnchorsThePatternToThePlane},
     };
     for (const auto& [name, test] : tests) {
         try { test(); ++passed; std::cout << "PASS " << name << '\n'; }
