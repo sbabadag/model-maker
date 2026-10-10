@@ -5744,12 +5744,40 @@ Vec3 Application::gumballPlanePoint(int x, int y, GumballHandle handle) const {
     return wp.value_or(gumballDragStartWorld_);
 }
 
+// SHIFT + tutamak = KOPYALA. Secim yerinde kalir, ayni konumda kopya uretilir ve
+// secim KOPYALARA gecer; boylece surukleme yalniz kopyalari tasir. Cagiran
+// pushUndoSnapshot() yaptiktan sonra cagirmalidir: Add (kopya) + Transform/Move
+// ayni geri-alma adimina yazilir → Ctrl+Z tek adimda hem kopyayi siler hem
+// hareketi geri alir.
+void Application::gumballCopyIfNeeded() {
+    if (!gumballCopyMode_ || gumballCopyMade_ || selectedModels_.empty()) return;
+    const std::size_t modelCount = document_.models().size();
+    std::vector<std::size_t> originals;
+    originals.reserve(selectedModels_.size());
+    for (const auto index : selectedModels_)
+        if (index < modelCount) originals.push_back(index);
+    if (originals.empty()) return;
+    const std::size_t firstCopy = modelCount;
+    document_.copyModels(originals, Vec3{});   // sifir ofset: kopyalar ust uste
+    std::vector<std::size_t> copies;
+    copies.reserve(originals.size());
+    for (std::size_t k = 0; k < originals.size(); ++k) copies.push_back(firstCopy + k);
+    gumballCopyOriginals_ = std::move(originals);
+    selectedModels_ = std::move(copies);
+    gumballCopyMade_ = true;
+    publishStatus(L"Gumball kopya (Shift) — kopyalar taşınıyor");
+}
+
 void Application::gumballBeginDrag(int x, int y, GumballHandle handle) {
     if (selectedModels_.empty() || !canvas_) return;
     gumballPressPoint_ = {x, y};
     gumballPointerMoved_ = false;
     gumballUndoStarted_ = false;
     gumballNumericActive_ = false;
+    // Shift basili tutamak = KOPYALA (orijinaller yerinde kalir).
+    gumballCopyMode_ = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
+    gumballCopyMade_ = false;
+    gumballCopyOriginals_.clear();
     input_.clear();
     gumballDrag_ = handle;
     gumballAppliedDelta_ = {};
@@ -5808,6 +5836,7 @@ void Application::gumballDragMove(int x, int y) {
     if (!gumballUndoStarted_) {
         pushUndoSnapshot();
         gumballUndoStarted_ = true;
+        gumballCopyIfNeeded(); // Shift basiliysa secim kopyalanir, kopyalar suruklenir
     }
     const Vec3 pivot = gumballDragStartOrigin_;
     if (gumballIsAxis(gumballDrag_)) {
@@ -5892,6 +5921,9 @@ void Application::gumballEndDrag() {
     gumballNumericActive_ = false;
     gumballPointerMoved_ = false;
     gumballUndoStarted_ = false;
+    gumballCopyMode_ = false;
+    gumballCopyMade_ = false;
+    gumballCopyOriginals_.clear();
     input_.clear();
     if (canvas_) ReleaseCapture();
     gumballAppliedDelta_ = {};
@@ -5911,7 +5943,13 @@ void Application::gumballCancelDrag() {
     const Vec3 pivot = gumballDragStartOrigin_;
     const Vec3 negDelta{-gumballAppliedDelta_.x, -gumballAppliedDelta_.y,
                         -gumballAppliedDelta_.z};
-    if (gumballIsAxis(gumballDrag_)) {
+    if (gumballCopyMade_) {
+        // Shift-kopya iptali: kopyalar silinir, secim orijinallere doner.
+        // Kayit acik kaldigi icin Delete op'i ayni geri-alma adimina yazilir:
+        // Add + Transform + Delete net sifir — geometri drag oncesi haldedir.
+        document_.deleteModels(selectedModels_);
+        selectedModels_ = gumballCopyOriginals_;
+    } else if (gumballIsAxis(gumballDrag_)) {
         document_.moveModels(selectedModels_, negDelta);
     } else if (gumballIsRotate(gumballDrag_)) {
         document_.rotateModels(selectedModels_, pivot, gumballDragAxisWorld_,
@@ -5936,6 +5974,9 @@ void Application::gumballCancelDrag() {
     gumballAppliedAngle_ = 0.0;
     gumballTotalAngle_ = 0.0;
     gumballAppliedFactor_ = 1.0;
+    gumballCopyMode_ = false;
+    gumballCopyMade_ = false;
+    gumballCopyOriginals_.clear();
     updateGumball();
     updateStatus();
     invalidateCanvas();
@@ -5989,6 +6030,7 @@ void Application::gumballRequestNumeric() {
                     if (delta.x != 0.0 || delta.y != 0.0 || delta.z != 0.0) {
                         pushUndoSnapshot();
                         gumballUndoStarted_ = true;
+                        gumballCopyIfNeeded(); // Shift basiliysa kopyala
                         document_.moveModels(selectedModels_, delta);
                         gumballAppliedDelta_ = delta;
                         gumballOrigin_ = gumballDragStartOrigin_ + delta;
@@ -6014,6 +6056,7 @@ void Application::applyGumballNumeric(double value) {
         if (value == (scaling ? 1.0 : 0.0)) return; // accepted no-op keeps redo history
         pushUndoSnapshot();
         gumballUndoStarted_ = true;
+        gumballCopyIfNeeded(); // Shift basiliysa kopyala (orijinaller yerinde kalir)
     }
     const Vec3 pivot = gumballDragStartOrigin_;
     if (gumballIsAxis(gumballDrag_)) {

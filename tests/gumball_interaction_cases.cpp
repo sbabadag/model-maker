@@ -153,6 +153,83 @@ int main() {
         a.gumballBeginDrag(600,400,GumballHandle::AxisX); a.onLeftButtonUp(600,400);
         check(a.document_.canRedo(), "accepted zero preserves previous redo history");
     }
+    // ---- SHIFT + GUMBALL = KOPYALA (yerel eksende) ----
+    {
+        Application a; seed(a); g_shiftDown = 0x8000;
+        a.gumballBeginDrag(600,400,GumballHandle::AxisX);
+        a.gumballDragMove(630,400);          // ilk hareket: kopya burada olusur
+        a.gumballDragMove(640,400);          // ara adim kopya URETMEZ
+        a.gumballDragMove(650,400);
+        a.onLeftButtonUp(650,400);
+        g_shiftDown = 0;
+        check(a.document_.models().size() == 2, "shift+drag creates exactly one copy");
+        check(close(a.document_.models()[0].vertices()[0], {0,0,0}), "shift+drag leaves the original in place");
+        check(close(a.document_.models()[1].vertices()[0], {0,0,0}) == false, "shift+drag moves the copy");
+        check(a.selectedModels_.size() == 1 && a.selectedModels_[0] == 1, "selection follows the copy");
+        check(a.document_.undo(), "copy drag is one undo step");
+        check(a.document_.models().size() == 1, "undo removes the copy");
+        check(close(a.document_.models()[0].vertices()[0], {0,0,0}), "undo leaves the original untouched");
+        check(!a.document_.canUndo(), "copy drag created exactly one undo entry");
+        check(a.document_.redo() && a.document_.models().size() == 2, "redo restores the copy");
+    }
+    {
+        Application a; seed(a);              // Shift YOK -> kopya olmamali
+        a.gumballBeginDrag(600,400,GumballHandle::AxisX);
+        a.gumballDragMove(630,400); a.onLeftButtonUp(630,400);
+        check(a.document_.models().size() == 1, "drag without shift never copies");
+        check(!close(a.document_.models()[0].vertices()[0], {0,0,0}), "drag without shift still moves");
+        check(a.document_.undo(), "plain drag keeps one undo");
+    }
+    {
+        Application a; seed(a); g_shiftDown = 0x8000;   // Escape: kopya iptal
+        a.gumballBeginDrag(600,400,GumballHandle::AxisX);
+        a.gumballDragMove(640,400);
+        a.gumballCancelDrag();
+        g_shiftDown = 0;
+        check(a.document_.models().size() == 1, "escape cancels the shift copy");
+        check(a.selectedModels_.size() == 1 && a.selectedModels_[0] == 0, "escape restores the original selection");
+        check(close(a.document_.models()[0].vertices()[0], {0,0,0}), "escape leaves geometry untouched");
+        check(a.document_.undo(), "cancelled copy keeps the net-zero undo entry");
+        check(a.document_.models().size() == 1 && close(a.document_.models()[0].vertices()[0], {0,0,0}),
+              "undo of a cancelled copy is a harmless no-op");
+    }
+    {
+        Application a; seed(a); g_shiftDown = 0x8000;   // shift + sayisal kutu
+        a.parameterRequest_ = [](const auto&, const auto&, auto& out) { out = L"5"; return true; };
+        a.gumballBeginDrag(600,400,GumballHandle::AxisX);
+        a.onLeftButtonUp(600,400);
+        g_shiftDown = 0;
+        check(a.document_.models().size() == 2, "shift + numeric entry copies");
+        check(close(a.document_.models()[0].vertices()[0], {0,0,0}), "numeric copy keeps the original");
+        check(close(a.document_.models()[1].vertices()[0], a.gumballFrame_[0]*5), "numeric copy takes the typed offset");
+        check(a.document_.undo() && a.document_.models().size() == 1, "numeric copy undo removes only the copy");
+    }
+    {
+        Application a; seed(a); g_shiftDown = 0x8000;   // shift + dondurme
+        // Yerel X = kirisin kendi boyu; uc o eksenin UZERINDE oldugu icin
+        // donmez. Yerel Z ekseni etrafinda donduruyoruz.
+        const Vec3 pivot = a.gumballOrigin_;
+        const Vec3 before = a.document_.models()[0].vertices()[1];
+        const double radius = std::hypot(before.x - pivot.x, before.y - pivot.y);
+        a.gumballBeginDrag(600,400,GumballHandle::RotZ);
+        a.gumballDragMove(900,700); a.onLeftButtonUp(900,700);
+        g_shiftDown = 0;
+        const Vec3 after = a.document_.models()[1].vertices()[1];
+        check(a.document_.models().size() == 2, "shift + rotation copies");
+        check(close(a.document_.models()[0].vertices()[1], before), "rotation copy leaves the original");
+        check(!close(after, before), "rotation copy actually turns");
+        check(std::abs(std::hypot(after.x - pivot.x, after.y - pivot.y) - radius) < 1e-9,
+              "rotation copy stays rigid around the pivot");
+    }
+    {
+        Application a; seed(a); g_shiftDown = 0x8000;   // shift + olcek
+        a.gumballBeginDrag(600,400,GumballHandle::ScaleUniform);
+        a.gumballDragMove(700,600); a.onLeftButtonUp(700,600);
+        g_shiftDown = 0;
+        check(a.document_.models().size() == 2, "shift + scale copies");
+        check(close(a.document_.models()[0].vertices()[1], {3,4,0}), "scale copy leaves the original");
+        check(!close(a.document_.models()[1].vertices()[1], {3,4,0}), "scale copy is scaled");
+    }
     std::cout << checks << " checks, " << failures << " failures\n";
     return failures ? 1 : 0;
 }

@@ -488,6 +488,12 @@ private:
     bool gumballPointerMoved_{false};
     bool gumballUndoStarted_{false};
     bool gumballNumericActive_{false};
+    // SHIFT + tutamac = KOPYALA: secim kopyalanir, kopyalar suruklenir,
+    // orijinaller yerinde kalir (Rhino gumball kopya davranisi).
+    bool gumballCopyMode_{false};   // basma aninda Shift basili miydi
+    bool gumballCopyMade_{false};   // bu suruklemede kopya olusturuldu mu
+    std::vector<std::size_t> gumballCopyOriginals_; // kopya oncesi secim
+    void gumballCopyIfNeeded();
     void gumballRequestNumeric();
     Vec3 gumballOrigin_{};
     Vec3 gumballDragStartOrigin_{};

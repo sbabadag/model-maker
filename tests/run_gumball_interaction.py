@@ -49,6 +49,10 @@ void ReleaseCapture() { captured = false; }
 constexpr int MB_ICONWARNING = 0;
 void MessageBeep(int) {}
 void SetFocus(HWND) {}
+// Shift-kopya testi icin tek sanal tus: g_shiftDown = 0x8000 -> Shift basili.
+constexpr int VK_SHIFT = 0x10;
+int g_shiftDown = 0;
+int GetKeyState(int key) { return key == VK_SHIFT ? g_shiftDown : 0; }
 namespace mm {
 enum class EditMode { Draw2D, View3D };
 enum class TransformCommand { None };
