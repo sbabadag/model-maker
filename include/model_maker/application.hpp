@@ -259,6 +259,9 @@ private:
     void cancelDrawing();
     void clearTemporaryTracking();
     void updateHover(int x, int y);
+    // F8 Ortho kisiti: obje snap'lari ortho'yu EZER (serbest imlec eksene
+    // kilitlenir). Tek kaynak — hem 2B hem 3B yollari burada.
+    SnapResult applyOrthoConstraint(const Vec3& anchor, SnapResult candidate, int x, int y) const;
     void updateControls();
     void updateSnapPanelVisibility();
     void updatePropertiesPanel();

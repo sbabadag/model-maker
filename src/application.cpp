@@ -3683,38 +3683,8 @@ void Application::updateHover(int x, int y) {
     if (!orthoAnchor && workPlanePicking_ && !workPlanePoints_.empty())
         orthoAnchor = workPlanePoints_.back();
     if (orthoEnabled_ && orthoAnchor && hover_) {
-        if (mode_ == EditMode::View3D) {
-            RECT client{}; GetClientRect(canvas_, &client);
-            const bool modifying = transformCommand_ != TransformCommand::None;
-            if (modifying) {
-                // Transform: is duzleminin U/V eksenleri (README davranisi).
-                hover_ = applyOrtho3D(*orthoAnchor, {static_cast<double>(x), static_cast<double>(y)}, *hover_,
-                                      camera_, std::max(1L, client.right), std::max(1L, client.bottom),
-                                      workPlane_, true, false);
-            } else {
-                // Cizim: UCS secilmisse (is duzlemi dunya XY'den farkliysa)
-                // F8 o duzlemin U/V eksenlerinde kisitlar — AutoCAD UCS
-                // davranisi: kullanici duzlem secince objeler o duzlemde
-                // ilerler. Dunya duzlemindeyse ayni seydir (U=X, V=Y).
-                const bool customUcs =
-                    std::abs(workPlane_.u.x - 1.0) > 1e-9 || std::abs(workPlane_.u.y) > 1e-9 ||
-                    std::abs(workPlane_.u.z) > 1e-9 || std::abs(workPlane_.v.y - 1.0) > 1e-9 ||
-                    std::abs(workPlane_.v.x) > 1e-9 || std::abs(workPlane_.v.z) > 1e-9;
-                if (customUcs) {
-                    hover_ = applyOrtho3D(*orthoAnchor, {static_cast<double>(x), static_cast<double>(y)}, *hover_,
-                                          camera_, std::max(1L, client.right), std::max(1L, client.bottom),
-                                          workPlane_, true, false);
-                } else {
-                    // Dunya duzlemi: uc renkli ortho guide ile ayni eksen
-                    // kumesi (X/Y/Z) — Z yonunde izleme de calisir.
-                    hover_ = applyOrtho3D(*orthoAnchor, {static_cast<double>(x), static_cast<double>(y)}, *hover_,
-                                          camera_, std::max(1L, client.right), std::max(1L, client.bottom),
-                                          false);
-                }
-            }
-        } else {
-            hover_ = applyOrtho(*orthoAnchor, *hover_, transformCommand_ == TransformCommand::None);
-        }
+        // Tek yol: obje snap'lari ortho'yu ezer (asagidaki metoda bak).
+        hover_ = applyOrthoConstraint(*orthoAnchor, *hover_, x, y);
     } else if (polarTrackingEnabled_ && !polarTrackingLocked_ && orthoAnchor && hover_) {
         const SnapResult original = *hover_;
         hover_ = mode_ == EditMode::View3D
@@ -3723,6 +3693,34 @@ void Application::updateHover(int x, int y) {
         polarTrackingLocked_ = hover_->point != original.point;
     }
     if (profileGrip_ && hover_) profileGrip_->cursorPoint = hover_->point;
+}
+
+// F8 Ortho kisiti. OBJE SNAP'LARI ORTHO'YU EZER — AutoCAD'de de osnap ortho'dan
+// ustundur: uc/orta/kesisim gibi bir snap bulunduysa nokta oraya oturur, F8
+// yalnizca SERBEST imleci (ve grid snap'ini) en yakin eksene kilitler. Eskiden
+// burada preserveObjectSnaps=false geciliyordu ve obje snap'i eziliyordu
+// (kullanici: "ortho mode acikken snap tutmuyor").
+SnapResult Application::applyOrthoConstraint(const Vec3& anchor, SnapResult candidate,
+                                            int x, int y) const {
+    const Vec2 cursor{static_cast<double>(x), static_cast<double>(y)};
+    if (mode_ == EditMode::View3D) {
+        RECT client{}; GetClientRect(canvas_, &client);
+        const int viewportWidth = static_cast<int>(std::max(1L, client.right));
+        const int viewportHeight = static_cast<int>(std::max(1L, client.bottom));
+        // Transform ya da ozel UCS: is duzleminin U/V eksenleri (README
+        // davranisi; AutoCAD UCS: kullanici duzlem secince objeler o duzlemde
+        // ilerler). Dunya duzlemi: uc renkli X/Y/Z eksen kumesi (Z dahil).
+        const bool customUcs =
+            std::abs(workPlane_.u.x - 1.0) > 1e-9 || std::abs(workPlane_.u.y) > 1e-9 ||
+            std::abs(workPlane_.u.z) > 1e-9 || std::abs(workPlane_.v.y - 1.0) > 1e-9 ||
+            std::abs(workPlane_.v.x) > 1e-9 || std::abs(workPlane_.v.z) > 1e-9;
+        if (transformCommand_ != TransformCommand::None || customUcs)
+            return applyOrtho3D(anchor, cursor, candidate, camera_, viewportWidth, viewportHeight,
+                                workPlane_, true, /*preserveObjectSnaps=*/true);
+        return applyOrtho3D(anchor, cursor, candidate, camera_, viewportWidth, viewportHeight,
+                            /*preserveObjectSnaps=*/true);
+    }
+    return applyOrtho(anchor, candidate, /*preserveObjectSnaps=*/true);
 }
 
 void Application::executeCommand(int id) {

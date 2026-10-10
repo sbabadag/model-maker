@@ -237,6 +237,12 @@ if(BUILD_TESTING)
             add_test(NAME model_maker_workplane_ghost
                 COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_workplane_ghost.py
                     ${CMAKE_CURRENT_BINARY_DIR})
+            # Ortho + OSNAP: F8 acikken obje snap'i ortho'yu EZER (AutoCAD
+            # osnap > ortho). Sekil kontrolu + gercek applyOrthoConstraint
+            # govdesinin cagri sozlesmesi (tum dallarda preserve=true).
+            add_test(NAME model_maker_ortho_snap
+                COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_ortho_snap.py
+                    ${CMAKE_CURRENT_BINARY_DIR})
         endif()
     endif()
 
@@ -263,6 +269,14 @@ if(BUILD_TESTING)
     add_executable(model_maker_perpendicular_tracking_test tests/perpendicular_tracking_test.cpp)
     target_link_libraries(model_maker_perpendicular_tracking_test PRIVATE model_maker_core)
     add_test(NAME model_maker_perpendicular_tracking_test COMMAND model_maker_perpendicular_tracking_test)
+
+    # Ortho + OSNAP kurali: F8 acikken obje snap'i ortho'yu EZER (AutoCAD
+    # osnap > ortho), serbest imlec ve grid snap'i yine eksene kilitlenir —
+    # 2B ve 3B (dunya + is duzlemi eksenleri). OCC'siz de kosar; gercek
+    # applyOrtho()/applyOrtho3D() fonksiyonlarini cagirir.
+    add_executable(model_maker_ortho_snap_core_test tests/ortho_snap_core_test.cpp)
+    target_link_libraries(model_maker_ortho_snap_core_test PRIVATE model_maker_core)
+    add_test(NAME model_maker_ortho_snap_core_test COMMAND model_maker_ortho_snap_core_test)
 
     # test_core.cpp Windows-only: renderer.hpp kosulsuz <windows.h> icerir.
     if(WIN32)
