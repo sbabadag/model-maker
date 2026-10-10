@@ -227,6 +227,11 @@ if(BUILD_TESTING)
             add_test(NAME model_maker_startup_gpu
                 COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_startup_gpu.py
                     ${CMAKE_CURRENT_BINARY_DIR})
+            # F10 bir SISTEM TUSUDUR: WM_SYSKEYDOWN'da islenmeli. Sekil
+            # kontrolu + gercek togglePolarTracking govdesinin davranisi.
+            add_test(NAME model_maker_polar_f10
+                COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_polar_f10.py
+                    ${CMAKE_CURRENT_BINARY_DIR})
         endif()
     endif()
 

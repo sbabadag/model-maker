@@ -1490,6 +1490,14 @@ LRESULT Application::handleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
         if (wParam == VK_F6) { toggleGpuLines(); return 0; }
         if (wParam == VK_F5) { runRenderBenchmark(); return 0; }
         return 0;
+    case WM_SYSKEYDOWN:
+        // F10 SISTEM TUSU: odak dis pencerede olsa da WM_SYSKEYDOWN gelir.
+        // Polar tracking'in kayitli tusu F10 — menuye kaptirmadan yakala.
+        if (wParam == VK_F10 && (GetKeyState(VK_MENU) & 0x8000) == 0) {
+            togglePolarTracking();
+            return 0;
+        }
+        return DefWindowProcW(window_, message, wParam, lParam);
     case WM_DESTROY:
         if (renderBackend_) { renderBackend_->shutdown(); renderBackend_.reset(); }
         if (dxfImportThread_.joinable()) dxfImportThread_.request_stop();
@@ -1653,6 +1661,13 @@ LRESULT Application::handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lPa
             if (wParam == '3') { setVisualStyle(VisualStyle::HiddenLine); return 0; }
             if (wParam == '4') { setVisualStyle(VisualStyle::Solid); return 0; }
         }
+        // F10 ve Alt+<tus> SISTEM TUSLARIDIR (MSDN: "the function keys other
+        // than F10" tek istisna) — Windows bunlari WM_KEYDOWN ile GONDERMEZ.
+        // Polar tracking F10'u WM_KEYDOWN'da bekliyordu; o dal hic
+        // calismiyordu, F10 kayitlarin arasinda sessizce kayboluyordu.
+        // Bilerek DefWindowProc'a BIRAKILMAZ: F10 menuyu acmasin, polar
+        // takip acilsin (AutoCAD davranisi).
+        if (wParam == VK_F10) { togglePolarTracking(); return 0; }
         break;
     }
     case WM_KEYDOWN:
@@ -1682,13 +1697,12 @@ LRESULT Application::handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lPa
                 clearTemporaryTracking();
             }
         }
-        else if (wParam == VK_F6) toggleGpuLines(); // F10 menulerce SYSKEY olarak yutuluyor + Polar Tracking'in tusuydu
+        else if (wParam == VK_F6) toggleGpuLines();
         else if (wParam == VK_F9) gridSnapEnabled_ = !gridSnapEnabled_;
-        else if (wParam == VK_F10) {
-            polarTrackingEnabled_ = !polarTrackingEnabled_;
-            if (polarTrackingEnabled_) orthoEnabled_ = false;
-            else clearTemporaryTracking();
-        }
+        // VK_F10 buraya NORMALDE HIC DUSMEZ (yukaridaki WM_SYSKEYDOWN'a gelir).
+        // Bazi tus esleyiciler/sanat sanal ortamlar yine de KEYDOWN uretebiliyor:
+        // yedek dal, polar yine de acilir.
+        else if (wParam == VK_F10) togglePolarTracking();
         else if (wParam == VK_F12) dynamicInputEnabled_ = !dynamicInputEnabled_;
         else if (wParam == VK_F2) {
             // Gorsel stil dongusu: Wireframe -> Solid -> Transparent
@@ -3877,11 +3891,7 @@ void Application::executeCommand(int id) {
     case CmdOsnap: snapEnabled_ = !snapEnabled_; break;
     case CmdGridSnap: gridSnapEnabled_ = !gridSnapEnabled_; break;
     case CmdDynamicInput: dynamicInputEnabled_ = !dynamicInputEnabled_; break;
-    case CmdPolarTracking:
-        polarTrackingEnabled_ = !polarTrackingEnabled_;
-        if (polarTrackingEnabled_) orthoEnabled_ = false;
-        else clearTemporaryTracking();
-        break;
+    case CmdPolarTracking: togglePolarTracking(); break;
     case CmdSnapSettings:
         snapPanelOpen_ = !snapPanelOpen_;
         updateSnapPanelVisibility();
@@ -6269,6 +6279,20 @@ void Application::setVisualStyle(VisualStyle style) noexcept {
     // arkadakiler soluk cizilir (renderer mevcut stillerle esler).
     visualStyle_ = style;
     updateControls();
+    invalidateCanvas();
+}
+
+void Application::togglePolarTracking() {
+    // Tek kaynak: kurdele dugmesi, F10 (WM_SYSKEYDOWN) ve dis pencere proc'u.
+    polarTrackingEnabled_ = !polarTrackingEnabled_;
+    if (polarTrackingEnabled_) {
+        orthoEnabled_ = false; // ikisi ayni anda acik olmaz (AutoCAD davranisi)
+    } else {
+        clearTemporaryTracking(); // kalinti TP/guide cizgileri ekranda kalmasin
+    }
+    updateHover(cursorScreen_.x, cursorScreen_.y);
+    updateControls();
+    updateStatus();
     invalidateCanvas();
 }
 

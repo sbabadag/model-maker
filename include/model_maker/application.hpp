@@ -158,6 +158,9 @@ public:
     // Work plane (UCS) — Qt menü/ribbon erişimi için public
     // F1: GPU hatti — GL backend uretimi + F9 ile GDI/GL gecisi
     void toggleGpuLines();
+    // Polar tracking (F10) tek kaynaktan acilip kapanir: tuş yolu, kurdele
+    // dugmesi ve dis pencere proc'u ayni yerden gecsin diye ayri metot.
+    void togglePolarTracking();
     void setVisualStyle(VisualStyle style) noexcept;
     // Standart gorunus (On/Arka/Sol/Sag/Ust/Alt/ISO) — Qt menu + Ctrl+1..7.
     void setStandardView(StandardView view);
