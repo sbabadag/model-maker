@@ -297,6 +297,21 @@ if(BUILD_TESTING)
     target_link_libraries(model_maker_view_workplane_move_test PRIVATE model_maker_core)
     add_test(NAME model_maker_view_workplane_move_test COMMAND model_maker_view_workplane_move_test)
 
+    # Kontur (siluet + gercek kenar) ureticisi: GL Solid yolunun her karede
+    # kosturdugu pass'in tek kaynagi. Eski std::map uygulamasiyla esdegerlik,
+    # determinizm, workspace yeniden kullanimi ve oryantasyon duyarliligi
+    # kilitlenir. OCC'siz/platformdan bagimsiz.
+    add_executable(model_maker_contour_builder_test tests/contour_builder_test.cpp)
+    target_link_libraries(model_maker_contour_builder_test PRIVATE model_maker_core)
+    add_test(NAME model_maker_contour_builder_test COMMAND model_maker_contour_builder_test)
+
+    # Kontur pass'inin kare maliyeti + onbellek anahtarinin gecerliligi
+    # (oryantasyon tabani zoom'da sabit, rotate'te degisken). Zamanlama
+    # yalniz RAPORLANIR; test esdegerlik ve degismezlik uzerinden gecer.
+    add_executable(model_maker_zoom_cost_probe tests/zoom_cost_probe.cpp)
+    target_link_libraries(model_maker_zoom_cost_probe PRIVATE model_maker_core)
+    add_test(NAME model_maker_zoom_cost_probe COMMAND model_maker_zoom_cost_probe 2000)
+
     # test_core.cpp Windows-only: renderer.hpp kosulsuz <windows.h> icerir.
     if(WIN32)
         add_executable(model_maker_tests tests/test_core.cpp)

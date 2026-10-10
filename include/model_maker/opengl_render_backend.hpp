@@ -1,6 +1,7 @@
 #pragma once
 
 #include "model_maker/camera.hpp"
+#include "model_maker/contour_builder.hpp"
 #include "model_maker/geometry.hpp"
 #include "model_maker/render_backend.hpp"
 
@@ -124,7 +125,8 @@ private:
                      std::uint64_t contentRevision = 0);
     void uploadBatch(GpuLineBatch& batch);
     void renderContourLines(const std::vector<std::pair<std::size_t, WireframeModel>>& models,
-                            const Camera& camera, int width, int height, bool useProjection2D);
+                            const Camera& camera, int width, int height, bool useProjection2D,
+                            std::uint64_t contentRevision);
     void renderBatch(const GpuLineBatch& batch, const Camera& camera,
                      int width, int height, bool useProjection2D = false);
     void ensureFaceBatch(const std::vector<std::pair<std::size_t, WireframeModel>>& models,
@@ -162,6 +164,22 @@ private:
     std::uint32_t pboPair_[2]{};
     std::uint32_t pboFrame_{};
     GpuLineBatch faceBatch_;  // ayni vertex duzeni; indeksler GL_TRIANGLES
+    // Kontur (siluet + gercek kenar) batch'i — ONBELLEKLI. Eski kod bu pass'i
+    // her karede kurup GPU buffer'larini yikiyordu (18k modelde 337 ms/kare;
+    // olcum: tests/zoom_cost_probe.cpp). Anahtar icerik surumu + tuval olcusu +
+    // 2B/3B + kameranin DONME tabani; zoom/pan bu tabani DEGISTIRMEDIGI icin
+    // tekerlek zoom'u ve pan'da pass hic calismaz.
+    GpuLineBatch contourBatch_;
+    ContourWorkspace contourWorkspace_;
+    std::size_t contourTag_{};
+    std::size_t contourModelCount_{};
+    int contourWidth_{};
+    int contourHeight_{};
+    bool contourProjection2D_{false};
+    double contourBasis_[9]{};
+    bool contourCacheValid_{false};
+    std::size_t contourSilhouetteSegments_{};
+    std::size_t contourLoggedSegments_{static_cast<std::size_t>(-1)};
     std::uint8_t faceAlpha_{};
     bool hiddenLineStyle_{false}; // HiddenLine stili: dolu yuz + cizgiler
     std::size_t renderedTriangles_{};

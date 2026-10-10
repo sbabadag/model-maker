@@ -757,7 +757,7 @@ bool OpenGLRenderBackend::renderBatchToDc(
         // batch'inin yazdigi depth buffer KALMALI. (Eski siluet cizimi
         // kendi batch'ini kurup depth'i temizliyordu — tum kenarlar
         // cizilirken bu, gizli kenarlarin ortaya cikmasina neden oldu.)
-        renderContourLines(models, camera, width, height, useProjection2D);
+        renderContourLines(models, camera, width, height, useProjection2D, contentRevision);
     }
     // Solid stilde (tam opak yuzler) tel kafes cizilmez: gorunum yalniz
     // dolu yuzler + dis siluet (kontur). Ic kiris kenarlari ve arkadaki
@@ -1073,99 +1073,81 @@ void OpenGLRenderBackend::renderFaceBatch(const GpuLineBatch& batch, const Camer
 
 void OpenGLRenderBackend::renderContourLines(
     const std::vector<std::pair<std::size_t, WireframeModel>>& models,
-    const Camera& camera, int width, int height, bool useProjection2D) {
-    // Siluet (dis kontur) cizgileri: bir ucgen yuzu one, digeri arkaya bakan
-    // kenarlar. Izduşum sonrası 2B yonlenme (winding) ile belirlenir —
-    // kamera bagimli, ekran-uzayi testi (goz konumu gerekmez).
-    std::vector<std::pair<std::array<Vec3, 2>, std::uint32_t>> segments;
+    const Camera& camera, int width, int height, bool useProjection2D,
+    std::uint64_t contentRevision) {
+    // KONTUR (siluet + gercek kenarlar) — ONBELLEKLI.
+    //
+    // Eski govde bu pass'i HER KAREDE bastan kuruyordu: model basina iki
+    // std::map, ~1M segmentlik ara vektor ve kare basina GPU buffer
+    // yarat/yik. Olculdu (tests/zoom_cost_probe.cpp, 18k profil kati /
+    // 648k kenar / 252k yuz): 337 ms/kare — tekerlek zoom'u bu yuzden
+    // ~2 FPS'e dusuyordu.
+    //
+    // Siniflandirma (front/back) YALNIZ kameranin donme tabanina baglidir;
+    // izdusum alaninin isareti duzgun zoom + oteleme altinda korunur. Bu
+    // yuzden onbellek anahtari DONME tabanini icerir, zoom/pan'i icermez:
+    // tekerlek zoom'unda ve pan'da pass hic calismaz.
+    if (models.empty()) return;
 
-    for (const auto& [modelIndex, model] : models) {
-        (void)modelIndex;
-        const auto& vertices = model.vertices();
-        const auto& faces = model.faces();
-        if (vertices.empty() || faces.empty()) continue;
-        // Kenar rengi SABIT koyu (40,40,40) — Tekla kenarlari. Siluet
-        // (front/back) yalniz dis hat veriyordu: IPE'de gorunur iki yuz
-        // arasindaki kirisma kenari (flanj->gobek) siluet degil, cizilmiyor,
-        // yuzler birbirine karisiyordu ("bir yuz belli olmuyor"). Cozum:
-        // gercek kenarlarin TAMAMI (kirisma filtreli model.edges(),
-        // IPE=36) derinlik testiyle cizilir — arka kenarlar yuzlerce
-        // otomatik oclude olur, gorunen her kirisma koyu cizgidir.
-        const std::uint32_t contourColor = toRGBA8((40u << 16) | (40u << 8) | 40u);
-        std::map<std::pair<std::size_t, std::size_t>, int> frontCount;
-        std::map<std::pair<std::size_t, std::size_t>, int> backCount;
-        for (const auto& face : faces) {
-            if (face.size() < 3) continue;
-            // Yuz basina referans yon: OCC tesselasyonu ayni yuz icinde
-            // tutarli sargi garanti etmez. Ilk ucgenin 2B yonlenmesi o
-            // yuzun referansidir; diger ucgenler ona gore normalize edilir
-            // — ayri sarginin ic kosegen cizmesi imkansiz hale gelir.
-            double faceReference = 0.0;
-            for (std::size_t i = 1; i + 1 < face.size(); ++i) {
-                const Vec3& v0 = vertices[face[0]];
-                const Vec3& v1 = vertices[face[i]];
-                const Vec3& v2 = vertices[face[i + 1]];
-                const Vec2 p0 = camera.project(v0, width, height);
-                const Vec2 p1 = camera.project(v1, width, height);
-                const Vec2 p2 = camera.project(v2, width, height);
-                const double area = (p1.x - p0.x) * (p2.y - p0.y) -
-                                    (p1.y - p0.y) * (p2.x - p0.x);
-                if (faceReference == 0.0) faceReference = area > 0.0 ? 1.0 : -1.0;
-                const bool front = area * faceReference > 0.0;
-                const std::array<std::size_t, 3> triangle = {face[0], face[i], face[i + 1]};
-                for (std::size_t edge = 0; edge < 3; ++edge) {
-                    std::size_t va = triangle[edge];
-                    std::size_t vb = triangle[(edge + 1) % 3];
-                    if (va > vb) std::swap(va, vb);
-                    const auto key = std::make_pair(va, vb);
-                    ++(front ? frontCount[key] : backCount[key]);
-                }
+    std::size_t totalEdges = 0;
+    for (const auto& [index, model] : models) {
+        (void)index;
+        totalEdges += model.edges().size();
+    }
+    const std::size_t contentTag = contentRevision
+        ? static_cast<std::size_t>(contentRevision)
+        : (models.size() ^ (totalEdges << 16));
+
+    const Vec3 basisX = camera.viewTransform({1.0, 0.0, 0.0});
+    const Vec3 basisY = camera.viewTransform({0.0, 1.0, 0.0});
+    const Vec3 basisZ = camera.viewTransform({0.0, 0.0, 1.0});
+    const double basis[9] = {basisX.x, basisX.y, basisX.z,
+                             basisY.x, basisY.y, basisY.z,
+                             basisZ.x, basisZ.y, basisZ.z};
+
+    bool cacheHit = contourCacheValid_ &&
+        contourTag_ == contentTag &&
+        contourModelCount_ == models.size() &&
+        contourWidth_ == width && contourHeight_ == height &&
+        contourProjection2D_ == useProjection2D;
+    if (cacheHit) {
+        for (int i = 0; i < 9; ++i) {
+            if (contourBasis_[i] != basis[i]) { cacheHit = false; break; }
+        }
+    }
+
+    if (!cacheHit) {
+        contourSilhouetteSegments_ = 0;
+        contourBatch_.indexCount = mm::buildContourBatch(
+            models, camera, width, height, toRGBA8((40u << 16) | (40u << 8) | 40u),
+            contourBatch_.vertices, contourBatch_.indices, contourWorkspace_,
+            &contourSilhouetteSegments_);
+        if (contourBatch_.indexCount == 0) {
+            contourCacheValid_ = false;
+            return;
+        }
+        contourBatch_.dirty = true;
+        contourBatch_.versionTag = contentTag;
+        contourBatch_.modelCount = models.size();
+        uploadBatch(contourBatch_);
+        contourTag_ = contentTag;
+        contourModelCount_ = models.size();
+        contourWidth_ = width;
+        contourHeight_ = height;
+        contourProjection2D_ = useProjection2D;
+        for (int i = 0; i < 9; ++i) contourBasis_[i] = basis[i];
+        contourCacheValid_ = true;
+        if (contourBatch_.indexCount != contourLoggedSegments_) {
+            contourLoggedSegments_ = contourBatch_.indexCount;
+            FILE* contourLog = fopen("model-maker-render.log", "a");
+            if (contourLog) {
+                fprintf(contourLog, "CONTOUR-SEGMENTS count=%zu silhouette=%zu rebuilding=1\n",
+                        contourBatch_.indexCount / 2, contourSilhouetteSegments_);
+                fclose(contourLog);
             }
         }
-        for (const auto& [key, count] : frontCount) {
-            if (count > 0 && backCount[key] > 0)
-                segments.push_back(
-                    {std::array<Vec3, 2>{vertices[key.first], vertices[key.second]},
-                     contourColor});
-        }
-        // GERCEK KENARLAR: kirisma filtreli tel kafes — derinlik testi
-        // arka kenarlari yuz dolgusunun altinda gizler (renderContourLines
-        // DEPTH_TEST acik cizer). Siluetin gizledigi kirisma kenarlari da
-        // boylece gorunur olur.
-        for (const auto& edge : model.edges()) {
-            if (edge.from >= vertices.size() || edge.to >= vertices.size()) continue;
-            segments.push_back(
-                {std::array<Vec3, 2>{vertices[edge.from], vertices[edge.to]},
-                 contourColor});
-        }
     }
-    static std::size_t lastLoggedCount = static_cast<std::size_t>(-1);
-    if (segments.size() != lastLoggedCount) {
-        lastLoggedCount = segments.size();
-        FILE* contourLog = fopen("model-maker-render.log", "a");
-        if (contourLog) {
-            fprintf(contourLog, "CONTOUR-SEGMENTS count=%zu\n", segments.size());
-            fclose(contourLog);
-        }
-    }
-    if (segments.empty()) return;
-
-    GpuLineBatch batch;
-    for (const auto& segment : segments) {
-        const std::uint32_t base = static_cast<std::uint32_t>(batch.vertices.size());
-        for (const Vec3& point : {segment.first[0], segment.first[1]}) {
-            GpuLineBatch::GpuVertex vertex;
-            vertex.x = static_cast<float>(point.x);
-            vertex.y = static_cast<float>(point.y);
-            vertex.z = static_cast<float>(point.z);
-            vertex.color = segment.second;
-            batch.vertices.push_back(vertex);
-        }
-        batch.indices.push_back(base);
-        batch.indices.push_back(base + 1);
-    }
-    batch.indexCount = batch.indices.size();
-    uploadBatch(batch);
+    if (contourBatch_.indexCount == 0 || contourBatch_.vao == 0) return;
 
     glUseProgram(shaderProgram_);
     float mvp[16];
@@ -1182,8 +1164,8 @@ void OpenGLRenderBackend::renderContourLines(
     glEnable(GLConst::POLYGON_OFFSET_LINE);
     glPolygonOffset(-1.0f, -1.0f);
     glLineWidth(2.0f); // kontur daha belirgin (GL odak modu)
-    glBindVertexArray(batch.vao);
-    glDrawElements(GLConst::LINES, static_cast<GLsizei>(batch.indexCount),
+    glBindVertexArray(contourBatch_.vao);
+    glDrawElements(GLConst::LINES, static_cast<GLsizei>(contourBatch_.indexCount),
                    GLConst::UNSIGNED_INT_TYPE, nullptr);
     glBindVertexArray(0);
     glLineWidth(1.0f);
@@ -1191,9 +1173,9 @@ void OpenGLRenderBackend::renderContourLines(
     glDisable(GLConst::BLEND_MODE);
     glDepthMask(GLConst::GL_TRUE);
     glDisable(GLConst::DEPTH_TEST);
-    glDeleteVertexArrays(1, &batch.vao);
-    glDeleteBuffers(1, &batch.vbo);
-    glDeleteBuffers(1, &batch.ebo);
+    // NOT: GPU buffer'lari BURADA SILINMEZ — onbellekli batch bir sonraki
+    // karede yeniden kullanilir. Silme cleanupGL()'de ve baglam
+    // kaybinda yapilir.
 }
 
 void OpenGLRenderBackend::uploadBatch(GpuLineBatch& batch) {
@@ -1293,6 +1275,14 @@ void OpenGLRenderBackend::cleanupGL() {
     if (lineBatch_.vao) { glDeleteVertexArrays(1, &lineBatch_.vao); lineBatch_.vao = 0; }
     if (lineBatch_.vbo) { glDeleteBuffers(1, &lineBatch_.vbo); lineBatch_.vbo = 0; }
     if (lineBatch_.ebo) { glDeleteBuffers(1, &lineBatch_.ebo); lineBatch_.ebo = 0; }
+    // Kontur batch'i de onbellekli kalici bir GPU kaynagidir — baglam
+    // yikilirken burada serbest birakilir; onbellek anahtari GECERSIZ kilinir
+    // ki bir sonraki kare bayat buffer'a cizmesin.
+    if (contourBatch_.vao) { glDeleteVertexArrays(1, &contourBatch_.vao); contourBatch_.vao = 0; }
+    if (contourBatch_.vbo) { glDeleteBuffers(1, &contourBatch_.vbo); contourBatch_.vbo = 0; }
+    if (contourBatch_.ebo) { glDeleteBuffers(1, &contourBatch_.ebo); contourBatch_.ebo = 0; }
+    contourBatch_.indexCount = 0;
+    contourCacheValid_ = false;
     if (shaderProgram_) { glDeleteProgram(shaderProgram_); shaderProgram_ = 0; }
     if (cameraUbo_) { glDeleteBuffers(1, &cameraUbo_); cameraUbo_ = 0; }
     if (fbo_) { glDeleteFramebuffers(1, &fbo_); fbo_ = 0; }
