@@ -1024,6 +1024,7 @@ void Application::swapViewFields(ViewportState& slot) {
     std::swap(renderer_, slot.renderer);
     std::swap(workPlane_, slot.workPlane);
     std::swap(viewDef_, slot.viewDef);
+    std::swap(visualStyle_, slot.visualStyle); // stil de pencereye ozgu
 }
 
 void Application::applyPickFilter() {
@@ -1112,7 +1113,13 @@ void Application::syncPassiveViewports() {
     std::uint64_t signature = document_.revision() * 1000003ull;
     signature ^= static_cast<std::uint64_t>(selectedModels_.size()) * 0x9E3779B97F4A7C15ull;
     for (const auto index : selectedModels_) signature = signature * 31u + index + 1u;
-    signature ^= static_cast<std::uint64_t>(visualStyle_) << 56;
+    // Gorsel stil ARTIK VIEWPORT BASINA (Alt+1..4 yalniz aktif pencereyi
+    // degistirir): imzaya yalniz PASIF pencerelerin kendi stilleri girer —
+    // aktif pencerenin stilini degistirmek digerlerini tazelemez.
+    for (std::size_t i = 0; i < views_.size(); ++i) {
+        if (i == activeView_) continue; // aktif yuvada yer tutucu durur
+        signature = signature * 1000003ull + static_cast<std::uint64_t>(views_[i]->visualStyle) + 11u;
+    }
     if (signature == passiveSignature_) return;
     passiveSignature_ = signature;
     invalidateOtherViewports();
@@ -1136,7 +1143,8 @@ void Application::paintPassiveViewport(std::size_t index) {
     RECT client{};
     GetClientRect(slot.canvas, &client);
     if (client.right > 0 && client.bottom > 0 && slot.renderer) {
-        DraftView view = draftView(); // ortak durum (secim, stil, komut)
+        DraftView view = draftView(); // ortak durum (secim, komut)
+        view.visualStyle = slot.visualStyle; // stil bu pencereye ait, aktifin degil
         view.cursor.reset();
         view.snapType = SnapType::None;
         view.anchor.reset();
@@ -1177,6 +1185,7 @@ HWND Application::createViewport(HWND parent, const ViewDefinition& definition) 
     slot->renderer = std::make_unique<Renderer>();
     slot->mode = EditMode::View3D;
     slot->viewDef = definition;
+    slot->visualStyle = visualStyle_; // yeni pencere acildigi andaki stille baslar
     slot->workPlane = viewWorkPlane(definition); // cizim/snap gorunus duzleminde
     slot->camera.setViewBasis(definition.right, definition.up, definition.origin);
     RECT rc{}; GetClientRect(parent, &rc);

@@ -107,7 +107,7 @@ HWND CreateWindowExW(int, const wchar_t*, const wchar_t*, int, int, int, long, l
     return h; }
 namespace mm {
 enum class EditMode { Draw2D, View3D };
-enum class VisualStyle { Wireframe, Solid };
+enum class VisualStyle { Wireframe, Solid, Transparent, HiddenLine };
 enum class GumballHandle { None = -1, AxisX = 0 };
 enum class TransformCommand { None, Move, Copy, Offset, Mirror, Delete };
 struct Renderer { int id{}; };
@@ -122,6 +122,7 @@ public:
         std::unique_ptr<Renderer> renderer;
         WorkPlane workPlane{};
         std::optional<ViewDefinition> viewDef;
+        VisualStyle visualStyle{VisualStyle::Wireframe};
     };
     // gorunuse ozgu (aktif) alanlar
     HWND canvas_{};
@@ -348,6 +349,42 @@ int main() {
     a.setStandardView(StandardView::Front);
     check(a.camera_.cameraToWorldMatrix4() != mainBefore, "main view: standard view still changes the view");
     check(a.zoomExtentsCalls == 0, "main view did not fall into the refit path");
+
+    // 14) GORSEL STIL VIEWPORT BASINA ("Alt+1,2,3,4 goruntu modlari sadece
+    //     SECILI pencerede uygulansin"): aktif pencerede stil degisikligi diger
+    //     pencereyi ne tazeler ne degistirir; pencere degistirince her pencere
+    //     kendi stilini geri alir.
+    a.routeCanvasMessage(mainCanvas, WM_LBUTTONDOWN, 0, 0);   // ana pencere aktif
+    check(a.activeView_ == 0, "style test starts on the main view");
+    const HWND vcLive = a.views_[1]->canvas;                   // ayakta kalan gorunus penceresi
+    a.visualStyle_ = VisualStyle::Solid;                       // ana pencere: Solid
+    a.views_[1]->visualStyle = VisualStyle::Wireframe;         // gorunus penceresi: Wireframe
+    a.passiveSignature_ = ~0ull;
+    a.routeCanvasMessage(mainCanvas, WM_MOUSEMOVE, 0, 0);      // imzayi oturt
+    g_invalidated.clear();
+    a.visualStyle_ = VisualStyle::Transparent;                 // Alt+2 esdegeri (AKTIF pencere)
+    a.syncPassiveViewports();
+    check(g_invalidated[vcLive] == 0, "active view's style change does not repaint the other window");
+    check(a.views_[1]->visualStyle == VisualStyle::Wireframe, "passive window keeps its own style");
+
+    a.routeCanvasMessage(vcLive, WM_LBUTTONDOWN, 0, 0);        // gorunus penceresi aktif
+    check(a.activeView_ == 1 && a.visualStyle_ == VisualStyle::Wireframe,
+          "switching restores the other window's own style");
+    a.visualStyle_ = VisualStyle::HiddenLine;                  // Alt+3 esdegeri (gorunus penceresi)
+    a.routeCanvasMessage(mainCanvas, WM_LBUTTONDOWN, 0, 0);    // ana pencere geri
+    check(a.visualStyle_ == VisualStyle::Transparent, "main view keeps ITS style (round trip)");
+    a.routeCanvasMessage(vcLive, WM_LBUTTONDOWN, 0, 0);
+    check(a.visualStyle_ == VisualStyle::HiddenLine, "view window keeps ITS style (round trip)");
+
+    // 15) Yeni pencere, ACILDIGI ANDAKI aktif stille baslar; sonra bagimsiz devam eder.
+    a.visualStyle_ = VisualStyle::Solid;                       // gorunus penceresi aktif
+    const std::size_t beforeNew = a.views_.size();
+    const HWND vcNew = a.createViewport(host, def);
+    check(vcNew != nullptr && a.views_.size() == beforeNew + 1, "new viewport registered");
+    check(a.views_.back()->visualStyle == VisualStyle::Solid, "new viewport inherits the active style");
+    check(a.visualStyle_ == VisualStyle::Solid && a.activeView_ == 1, "creating keeps the current window active");
+    a.destroyViewport(vcNew);
+    check(a.views_.size() == beforeNew, "new viewport removed again");
 
     std::cout << checks << " checks, " << failures << " failures\n";
     return failures == 0 ? 0 : 1;

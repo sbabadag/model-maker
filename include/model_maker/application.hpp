@@ -599,8 +599,8 @@ private:
     // workPlanePicking_ akisinin amaci: 3 nokta duzlem veya 2 nokta gorunus.
     // --- COKLU VIEWPORT -------------------------------------------------
     // Gorunuse ozgu alanlar (canvas_, camera_, mode_, renderer_, workPlane_,
-    // viewDef_) AKTIF viewport'a aittir. Gecis = takas: views_[active] her
-    // zaman bir yer tutucu tasir (gercek alanlar uyelerdedir).
+    // viewDef_, visualStyle_) AKTIF viewport'a aittir. Gecis = takas:
+    // views_[active] her zaman bir yer tutucu tasir (gercek alanlar uyelerdedir).
     struct ViewportState {
         HWND canvas{};
         Camera camera;
@@ -608,6 +608,9 @@ private:
         std::unique_ptr<Renderer> renderer;
         WorkPlane workPlane{};
         std::optional<ViewDefinition> viewDef;
+        // Gorsel stil VIEWPORT BASINA: Alt+1..4 / F2 / menü yalniz AKTIF
+        // pencereyi degistirir, diger pencereler kendi stilini korur.
+        VisualStyle visualStyle{VisualStyle::Wireframe};
     };
     std::vector<std::unique_ptr<ViewportState>> views_; // [0] = ana gorunus
     std::size_t activeView_{0};
