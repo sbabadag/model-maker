@@ -5574,6 +5574,15 @@ void Application::gumballUpdateFrame() {
     if (!haveX) return;
     Vec3 ey{};
     bool haveY = false;
+    if (!props.profileName.empty()) {
+        // Kati ile AYNI kural (tek kaynak: profileSectionFrame): kesit genisligi
+        // yatay → baslik plakalari XY'ye paralel, govde dusey. Boylece gumball
+        // eksenleri cizilen profille birebir ortusur (eskiden tutamaclar
+        // OCC'nin keyfi cercevesine gore 90° kayik kaliyordu).
+        const ProfileSectionFrame frame = profileSectionFrame(ex);
+        ey = frame.width;
+        haveY = true;
+    }
     if (props.profileName.empty()) {
         double best = 0.0;
         for (const auto& e : model.edges()) {

@@ -25,6 +25,29 @@ struct Vec3 {
     bool operator==(const Vec3& other) const noexcept = default;
 };
 
+// Profil kesit cercevesi — TEK KAYNAK: hem kati uretimi (extrudeProfileSolid)
+// hem gumball yerel cercevesi bu kurali kullanir, boylece cizilen kati ile
+// tutamaclar asla celismez.
+//
+// KURAL (kullanici): "Profil cizimlerinde her zaman ALT BASLIK XY duzlemine
+// PARALEL olacak." Yani kesitin genislik ekseni YATAY secilir; baslik
+// plakalari yatay (XY'ye paralel), govde dusey kalir:
+//   width  = normalize(Z x axis)   (dusey uyede +X)
+//   height = axis x width          (yatay uyede tam olarak +Z)
+//   axis   = normalize(axisDirection)
+// Not: OCC'nin iki argumanli gp_Ax3(P, N) kurucusu X eksenini N'in en kucuk
+// koordinatina gore KEYFI secer; eksenel kirisleri 90° yatirir (genislik Z'ye,
+// yukseklik Y'ye gider) ve plan caprazi uyelerde dogru sonuc verdigi icin
+// tutarsiz gorunur. Bu yuzden cerceve elle kurulur.
+struct ProfileSectionFrame {
+    Vec3 width{1.0, 0.0, 0.0};   // kesit genisligi yonu (yerel X)
+    Vec3 height{0.0, 1.0, 0.0};  // kesit yuksekligi yonu (yerel Y)
+    Vec3 axis{0.0, 0.0, 1.0};    // uye ekseni (yerel Z)
+};
+
+// Sifir uzunlukta dunya cercevesi doner (axis = +Z, width = +X).
+ProfileSectionFrame profileSectionFrame(const Vec3& axisDirection) noexcept;
+
 struct WorkPlane {
     Vec3 origin{};
     Vec3 u{1.0, 0.0, 0.0};

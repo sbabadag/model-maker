@@ -30,6 +30,20 @@ Vec3 Vec3::operator+(const Vec3& other) const noexcept { return {x + other.x, y 
 Vec3 Vec3::operator-(const Vec3& other) const noexcept { return {x - other.x, y - other.y, z - other.z}; }
 Vec3 Vec3::operator*(double scalar) const noexcept { return {x * scalar, y * scalar, z * scalar}; }
 
+ProfileSectionFrame profileSectionFrame(const Vec3& axisDirection) noexcept {
+    ProfileSectionFrame frame;
+    const auto axis = normalized(axisDirection);
+    if (!axis) return frame; // sifir uzunluk: dunya cercevesi
+    frame.axis = *axis;
+    // Genislik ekseni = Z x axis → YATAY. Bu yuzden baslik plakalari (normal =
+    // height) XY duzlemine paralel kalir. Dusey uyede (axis ~ +-Z) capraz
+    // carpim sifirlanir; orada kesit dunya X/Y duzleminde sabit tutulur.
+    const auto width = normalized(Vec3{-frame.axis.y, frame.axis.x, 0.0});
+    frame.width = width ? *width : Vec3{1.0, 0.0, 0.0};
+    frame.height = cross3(frame.axis, frame.width); // sag elli: Z ^ X = Y
+    return frame;
+}
+
 std::optional<WorkPlane> WorkPlane::fromThreePoints(Vec3 first, Vec3 second, Vec3 third) noexcept {
     const auto uAxis = normalized(second - first);
     if (!uAxis) return std::nullopt;

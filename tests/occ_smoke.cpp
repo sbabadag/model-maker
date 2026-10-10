@@ -203,6 +203,53 @@ int main() {
         std::printf("OCC EXTRUDE-DIAG OK — bbox=(%.1f,%.1f,%.1f)-(%.1f,%.1f,%.1f)\n",
                     xMin, yMin, zMin, xMax, yMax, zMax);
     }
+    // Kesit cercevesi: "profil cizimlerinde ALT BASLIK her zaman XY duzlemine
+    // PARALEL" kurali. Eksenel kirislerde genislik ekseni YATAY olmali, yani
+    // yukseklik Z boyunca: dz = h ve plan dik yonu = b. (Eskiden iki argumanli
+    // gp_Ax3(P, dir) kurucusu X'i keyfi sectigi icin dz = b, dy = h geliyordu:
+    // basliklar dusey, govde yatay.)
+    {
+        mm::SteelProfile ipe;
+        ipe.name = "IPE200";
+        ipe.height = 200.0;
+        ipe.width = 100.0;
+        ipe.plateThickness = 5.6;
+        ipe.flangeThickness = 8.5;
+        const auto extents = [](const TopoDS_Shape& s, double& dx, double& dy, double& dz) {
+            Bnd_Box box;
+            BRepBndLib::Add(s, box);
+            double xMin = 0, yMin = 0, zMin = 0, xMax = 0, yMax = 0, zMax = 0;
+            box.Get(xMin, yMin, zMin, xMax, yMax, zMax);
+            dx = xMax - xMin;
+            dy = yMax - yMin;
+            dz = zMax - zMin;
+        };
+        bool frameOk = true;
+        struct FrameCase { const char* label; Vec3 to; double dx; double dy; double dz; };
+        const FrameCase frameCases[] = {
+            {"+X", {100, 0, 0}, -1.0, 100.0, 200.0},        // plan dik yonu = b
+            {"+Y", {0, 100, 0}, 100.0, -1.0, 200.0},        // plan dik yonu = b
+            {"plan-45", {70.71, 70.71, 0}, -1.0, -1.0, 200.0},
+            {"egik-45", {70.71, 0, 70.71}, -1.0, 100.0, -1.0},  // web DUSEY: dy = b
+            {"kolon+Z", {0, 0, 100}, 100.0, 200.0, -1.0},       // onceki davranis
+        };
+        for (const auto& c : frameCases) {
+            const auto solid = mm::extrudeProfileSolid(ipe, Vec3{0, 0, 0}, c.to);
+            double dx = 0, dy = 0, dz = 0;
+            extents(solid, dx, dy, dz);
+            const bool ok = (c.dx < 0.0 || std::abs(dx - c.dx) < 0.6) &&
+                            (c.dy < 0.0 || std::abs(dy - c.dy) < 0.6) &&
+                            (c.dz < 0.0 || std::abs(dz - c.dz) < 0.6);
+            if (!ok) {
+                frameOk = false;
+                std::printf("HATA: kesit cercevesi %s — dx=%.1f dy=%.1f dz=%.1f "
+                            "(beklenen dx=%.1f dy=%.1f dz=%.1f)\n",
+                            c.label, dx, dy, dz, c.dx, c.dy, c.dz);
+            }
+        }
+        if (!frameOk) return 1;
+        std::printf("OCC SECTION-FRAME OK — alt baslik XY'ye paralel (5 yon)\n");
+    }
     // Trsf yon duyarliligi: kutu (z-ekseni) -> Y eksenine.
     {
         auto box = BRepPrimAPI_MakeBox(gp_Pnt(-15.0, -15.0, 0.0), 30.0, 30.0, 100.0).Shape();

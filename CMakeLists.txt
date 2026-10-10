@@ -242,6 +242,12 @@ if(BUILD_TESTING)
     target_link_libraries(model_maker_profile_test PRIVATE model_maker_core)
     add_test(NAME model_maker_profile_test COMMAND model_maker_profile_test)
 
+    # Profil kesit cercevesi kurali (alt baslik XY'ye paralel) — OCC'siz de
+    # kosar; kati uretimi ve gumball ayni fonksiyonu kullanir.
+    add_executable(model_maker_section_frame_test tests/section_frame_test.cpp)
+    target_link_libraries(model_maker_section_frame_test PRIVATE model_maker_core)
+    add_test(NAME model_maker_section_frame_test COMMAND model_maker_section_frame_test)
+
     # test_core.cpp Windows-only: renderer.hpp kosulsuz <windows.h> icerir.
     if(WIN32)
         add_executable(model_maker_tests tests/test_core.cpp)

@@ -313,11 +313,23 @@ TopoDS_Shape extrudeProfileSolid(const SteelProfile& profile, const Vec3& from,
     if (length < 1e-12) return {};
     // Prism yuksekligi = cizgi uzunlugu (birim vektor degil!)
     auto prism = BRepPrimAPI_MakePrism(section, gp_Vec(0.0, 0.0, length));
+    // HEDEF cerceve: kesitin YEREL eksenleri — tek kaynak profileSectionFrame.
+    // Genislik ekseni yatay secildigi icin baslik plakalari XY duzlemine
+    // PARALEL, govde dusey olur ("alt baslik her zaman XY'ye paralel").
+    // Eskiden iki argumanli gp_Ax3(P, dir) kullaniliyordu: o kurucu X eksenini
+    // dir'in en kucuk koordinatina gore keyfi sectigi icin eksenel kirisler
+    // 90° yatik geliyordu (probe: IPE200 +X boyunca dy=200 dz=100 veriyordu;
+    // dogrusu dy=100 dz=200).
+    const ProfileSectionFrame frame =
+        profileSectionFrame(Vec3{direction.X(), direction.Y(), direction.Z()});
     gp_Trsf trsf;
     // OCC 7.9'da ilk sistem HEDEF, ikinci KAYNAK (probe ile dogrulandi:
     // SetTransformation(hedef, kaynak) — tersi durumda kiriş X ekseninde kalir).
-    trsf.SetTransformation(gp_Ax3(gp_Pnt(from.x, from.y, from.z), gp_Dir(direction)),
-                           gp_Ax3(gp_Pnt(0.0, 0.0, 0.0), gp_Dir(0.0, 0.0, 1.0)));
+    trsf.SetTransformation(
+        gp_Ax3(gp_Pnt(from.x, from.y, from.z),
+               gp_Dir(frame.axis.x, frame.axis.y, frame.axis.z),
+               gp_Dir(frame.width.x, frame.width.y, frame.width.z)),
+        gp_Ax3(gp_Pnt(0.0, 0.0, 0.0), gp_Dir(0.0, 0.0, 1.0)));
     return BRepBuilderAPI_Transform(prism.Shape(), trsf).Shape();
 }
 
