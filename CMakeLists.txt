@@ -254,6 +254,11 @@ if(BUILD_TESTING)
             add_test(NAME model_maker_view_workplane_move
                 COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_view_workplane_move.py
                     ${CMAKE_CURRENT_BINARY_DIR})
+            # Profil kesiti referans normali: "profil ust basligi workplane ile
+            # paralel". Uygulama baglantisi (referans uretimden gecirilir +
+            # katiyla saklanir + gumball saklanani kullanir) sekil kontrolu.
+            add_test(NAME model_maker_profile_section_reference
+                COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_profile_section_reference.py)
         endif()
     endif()
 
@@ -274,6 +279,13 @@ if(BUILD_TESTING)
     add_executable(model_maker_section_frame_test tests/section_frame_test.cpp)
     target_link_libraries(model_maker_section_frame_test PRIVATE model_maker_core)
     add_test(NAME model_maker_section_frame_test COMMAND model_maker_section_frame_test)
+
+    # Kesit referans normali: "profil ust basligi workplane ile paralel".
+    # Secim (UCS vs otomatik gorunus duzlemi) + MMW6 kalicilik + eski dosya
+    # uyumlulugu + donusumlerde normalin donmesi. OCC'siz, Linux'ta kosar.
+    add_executable(model_maker_section_normal_test tests/section_normal_test.cpp)
+    target_link_libraries(model_maker_section_normal_test PRIVATE model_maker_core)
+    add_test(NAME model_maker_section_normal_test COMMAND model_maker_section_normal_test)
 
     # Dikme (perpendicular) izleme kurali: iki izleme noktasina dik ayak
     # gorunur + snap noktasi olur — OCC'siz de kosar.

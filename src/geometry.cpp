@@ -30,17 +30,24 @@ Vec3 Vec3::operator+(const Vec3& other) const noexcept { return {x + other.x, y 
 Vec3 Vec3::operator-(const Vec3& other) const noexcept { return {x - other.x, y - other.y, z - other.z}; }
 Vec3 Vec3::operator*(double scalar) const noexcept { return {x * scalar, y * scalar, z * scalar}; }
 
-ProfileSectionFrame profileSectionFrame(const Vec3& axisDirection) noexcept {
+ProfileSectionFrame profileSectionFrame(const Vec3& axisDirection,
+                                        const Vec3& referenceNormal) noexcept {
     ProfileSectionFrame frame;
     const auto axis = normalized(axisDirection);
     if (!axis) return frame; // sifir uzunluk: dunya cercevesi
     frame.axis = *axis;
-    // Genislik ekseni = Z x axis → YATAY. Bu yuzden baslik plakalari (normal =
-    // height) XY duzlemine paralel kalir. Dusey uyede (axis ~ +-Z) capraz
-    // carpim sifirlanir; orada kesit dunya X/Y duzleminde sabit tutulur.
-    const auto width = normalized(Vec3{-frame.axis.y, frame.axis.x, 0.0});
+    // Genislik ekseni = n x axis → baslik plakalari (normal = height) n
+    // duzleminin PARALELI olur. n = dunya Z iken sonuc eskisiyle BIREBIR ayni
+    // ({-ay, ax, 0}).
+    const Vec3 worldUp{0.0, 0.0, 1.0};
+    const Vec3 reference = normalized(referenceNormal).value_or(worldUp);
+    // Kademeli dusme: (1) istenen duzlem, (2) n ∥ axis ise dunya Z kurali,
+    // (3) o da dejenere ise (dusey uye) dunya X — eski davranis.
+    auto width = normalized(cross3(reference, *axis));
+    if (!width) width = normalized(cross3(worldUp, *axis));
     frame.width = width ? *width : Vec3{1.0, 0.0, 0.0};
-    frame.height = cross3(frame.axis, frame.width); // sag elli: Z ^ X = Y
+    const auto height = normalized(cross3(frame.axis, frame.width));
+    frame.height = height ? *height : Vec3{0.0, 1.0, 0.0}; // sag elli: Z ^ X = Y
     return frame;
 }
 

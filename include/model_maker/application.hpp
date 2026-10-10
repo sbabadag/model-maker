@@ -528,6 +528,10 @@ private:
     // YEREL CERCEVE (object-local): world degil, nesnenin kendi eksenleri.
     Vec3 gumballFrame_[3]{{1, 0, 0}, {0, 1, 0}, {0, 0, 1}};
     void gumballUpdateFrame();
+    // Profil kesiti REFERANS NORMALI: baslik plakalari aktif IS DUZLEMINE
+    // paralel uretilir. Iki noktali gorunuste (otomatik gorunus duzlemi)
+    // dunya Z doner — bkz. view_definition.hpp profileSectionReferenceNormal.
+    Vec3 profileSectionReference() const;
     void updateGumball();
     GumballHandle gumballHitTest(int x, int y) const;
     double gumballWorldLength() const;

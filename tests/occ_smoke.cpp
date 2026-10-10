@@ -249,6 +249,26 @@ int main() {
         }
         if (!frameOk) return 1;
         std::printf("OCC SECTION-FRAME OK — alt baslik XY'ye paralel (5 yon)\n");
+
+        // REFERANS NORMAL (kullanici: "profil ust basligi workplane ile
+        // paralel"): egik is duzlemi XZ (normal +Y) → +X uyesinde baslik
+        // normali +Y olur; kesit XZ duzleminde "yatar": genislik b Z'de,
+        // yukseklik h Y'de. Dunya kuralinda bu TERSIDI (dy=b, dz=h).
+        {
+            const auto solid =
+                mm::extrudeProfileSolid(ipe, Vec3{0, 0, 0}, Vec3{100, 0, 0}, 0.0,
+                                        Vec3{0.0, 1.0, 0.0});
+            double dx = 0, dy = 0, dz = 0;
+            extents(solid, dx, dy, dz);
+            const bool ok = std::abs(dy - 200.0) < 0.6 && std::abs(dz - 100.0) < 0.6;
+            if (!ok) {
+                std::printf("HATA: egik is duzlemi — dy=%.1f dz=%.1f "
+                            "(beklenen dy=200 (h) dz=100 (b))\n", dy, dz);
+                return 1;
+            }
+            std::printf("OCC REFERENCE-NORMAL OK — egik duzlemde baslik o duzleme "
+                        "paralel (dy=%.1f dz=%.1f)\n", dy, dz);
+        }
     }
     // Trsf yon duyarliligi: kutu (z-ekseni) -> Y eksenine.
     {

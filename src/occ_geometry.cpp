@@ -212,7 +212,8 @@ TopoDS_Shape cutSolidByPlane(const TopoDS_Shape& shape, const Vec3& planePoint,
 }
 
 TopoDS_Shape extrudeProfileSolid(const SteelProfile& profile, const Vec3& from,
-                                     const Vec3& to, double rotationDegrees) {
+                                     const Vec3& to, double rotationDegrees,
+                                     const Vec3& referenceNormal) {
     const double w = profile.width > 0.0 ? profile.width : 50.0;
     const double h = profile.height > 0.0 ? profile.height : 50.0;
     const double t = profile.plateThickness > 0.0 ? profile.plateThickness : 0.0;
@@ -314,14 +315,15 @@ TopoDS_Shape extrudeProfileSolid(const SteelProfile& profile, const Vec3& from,
     // Prism yuksekligi = cizgi uzunlugu (birim vektor degil!)
     auto prism = BRepPrimAPI_MakePrism(section, gp_Vec(0.0, 0.0, length));
     // HEDEF cerceve: kesitin YEREL eksenleri — tek kaynak profileSectionFrame.
-    // Genislik ekseni yatay secildigi icin baslik plakalari XY duzlemine
-    // PARALEL, govde dusey olur ("alt baslik her zaman XY'ye paralel").
+    // Genislik ekseni, baslik plakalari REFERANS DUZLEMINE (aktif is duzlemi;
+    // varsayilan dunya XY) PARALEL olacak sekilde secilir → govde o duzleme
+    // diktir ("profil cizilirken ust baslik workplane ile paralel").
     // Eskiden iki argumanli gp_Ax3(P, dir) kullaniliyordu: o kurucu X eksenini
     // dir'in en kucuk koordinatina gore keyfi sectigi icin eksenel kirisler
     // 90° yatik geliyordu (probe: IPE200 +X boyunca dy=200 dz=100 veriyordu;
     // dogrusu dy=100 dz=200).
     const ProfileSectionFrame frame =
-        profileSectionFrame(Vec3{direction.X(), direction.Y(), direction.Z()});
+        profileSectionFrame(Vec3{direction.X(), direction.Y(), direction.Z()}, referenceNormal);
     gp_Trsf trsf;
     // OCC 7.9'da ilk sistem HEDEF, ikinci KAYNAK (probe ile dogrulandi:
     // SetTransformation(hedef, kaynak) — tersi durumda kiriş X ekseninde kalir).

@@ -98,4 +98,35 @@ inline WorkPlane viewWorkPlane(const ViewDefinition& v) noexcept {
     return WorkPlane{v.origin, v.right, v.up, v.normal};
 }
 
+// Profil kesiti REFERANS NORMALI: baslik plakalari bu duzleme PARALEL uretilir.
+// KULLANICI SARTI: "profil cizilirken profil ust basligi workplane ile paralel
+// olacak."
+//  - Aktif IS DUZLEMININ normali kullanilir: kullanici egik bir UCS kurduysa
+//    (or. egik cati duzlemi) kirislerin basliklari o duzleme oturur.
+//  - ANCAK iki noktali gorunuste is duzlemi OTOMATIK olarak GORUNUS duzlemidir
+//    (viewWorkPlane). Orada dunya Z kullanilir; aksi halde elevasyonda cizilen
+//    her kirisin basligi BAKISA paralel olur ve kiris levha gibi "yatak"
+//    gorunurdu. Kullanici gorunus icinde FARKLI bir UCS kurduysa (normali
+//    gorunus duzleminden farkli) o kullanilir.
+inline Vec3 profileSectionReferenceNormal(const WorkPlane& plane,
+                                          const ViewDefinition* view) noexcept {
+    const Vec3 worldUp{0.0, 0.0, 1.0};
+    const auto unit = [](const Vec3& v) -> std::optional<Vec3> {
+        const double len = std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
+        if (!(len > 1e-12)) return std::nullopt;
+        return Vec3{v.x / len, v.y / len, v.z / len};
+    };
+    const auto planeNormal = unit(plane.normal);
+    if (!planeNormal) return worldUp;
+    if (view) {
+        const auto viewNormal = unit(view->normal);
+        if (viewNormal) {
+            const double d = planeNormal->x * viewNormal->x + planeNormal->y * viewNormal->y +
+                             planeNormal->z * viewNormal->z;
+            if (d > 1.0 - 1e-9) return worldUp; // duzlem = otomatik gorunus duzlemi
+        }
+    }
+    return *planeNormal;
+}
+
 } // namespace mm

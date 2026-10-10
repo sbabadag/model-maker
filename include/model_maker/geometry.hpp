@@ -32,9 +32,14 @@ struct Vec3 {
 // KURAL (kullanici): "Profil cizimlerinde her zaman ALT BASLIK XY duzlemine
 // PARALEL olacak." Yani kesitin genislik ekseni YATAY secilir; baslik
 // plakalari yatay (XY'ye paralel), govde dusey kalir:
-//   width  = normalize(Z x axis)   (dusey uyede +X)
-//   height = axis x width          (yatay uyede tam olarak +Z)
+//   width  = normalize(n x axis)   (n = referenceNormal, dunya Z iken {+-y, ax, 0})
+//   height = axis x width          (n = dunya Z, yatay uyede tam olarak +Z)
 //   axis   = normalize(axisDirection)
+// GUNCELLEME (kullanici): "profil cizilirken ust baslik WORKPLANE ile paralel
+// olacak." → cagiran, baslik plakalarinin paralel olmasini istedigi duzlemin
+// NORMALINI verir (aktif is duzleminin normali; bkz. view_definition.hpp
+// profileSectionReferenceNormal). referenceNormal = dunya Z iken sonuc eski
+// davranisla BIREBIR aynidir.
 // Not: OCC'nin iki argumanli gp_Ax3(P, N) kurucusu X eksenini N'in en kucuk
 // koordinatina gore KEYFI secer; eksenel kirisleri 90° yatirir (genislik Z'ye,
 // yukseklik Y'ye gider) ve plan caprazi uyelerde dogru sonuc verdigi icin
@@ -46,7 +51,11 @@ struct ProfileSectionFrame {
 };
 
 // Sifir uzunlukta dunya cercevesi doner (axis = +Z, width = +X).
-ProfileSectionFrame profileSectionFrame(const Vec3& axisDirection) noexcept;
+// referenceNormal: baslik plakalarinin PARALEL olacagi duzlemin normali
+// (varsayilan dunya Z = XY duzlemi → eski davranis). n ∥ axis ise (baslik o
+// duzleme paralel olamaz) dunya kuralina, o da dejenere ise +X'e dusulur.
+ProfileSectionFrame profileSectionFrame(const Vec3& axisDirection,
+                                       const Vec3& referenceNormal = Vec3{0.0, 0.0, 1.0}) noexcept;
 
 struct WorkPlane {
     Vec3 origin{};
@@ -86,6 +95,11 @@ struct EntityProperties {
     // aramaz; indeks kaymalarina bagli yanlis eksen sorunu kokten biter.
     double axisFromX{}, axisFromY{}, axisFromZ{};
     double axisToX{}, axisToY{}, axisToZ{};
+    // Kesit REFERANS NORMALI: baslik plakalarinin PARALEL oldugu duzlemin
+    // normali. Kati uretilirken saklanir; gumball yerel cercevesi ve yeniden
+    // uretim AYNI degeri kullanir (yoksa tutamaclar katidan kayar).
+    // Varsayilan (0,0,1) = dunya XY → eski davranis birebir korunur.
+    double sectionNormalX{}, sectionNormalY{}, sectionNormalZ{1.0};
     std::string lineType{"BYLAYER"};
     std::string material;
     int colorIndex{256};

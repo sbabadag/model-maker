@@ -4693,6 +4693,7 @@ void Application::setSelectedEntityProfileRotation(double degrees) {
         std::optional<std::uint32_t> trueColor; int colorIndex;
         std::int64_t profileSourceLine;
         double axisFrom[3], axisTo[3];
+        double sectionNormal[3]; // kesit referans normali (yeniden uretimde korunur)
     };
     std::vector<TargetInfo> infos;
     infos.reserve(targets.size());
@@ -4710,6 +4711,10 @@ void Application::setSelectedEntityProfileRotation(double degrees) {
         info.axisFrom[2] = props.axisFromZ;
         info.axisTo[0] = props.axisToX; info.axisTo[1] = props.axisToY;
         info.axisTo[2] = props.axisToZ;
+        // Referans normal KATIYLA SAKLANIR; yeniden uretim ayni degeri kullanir.
+        info.sectionNormal[0] = props.sectionNormalX;
+        info.sectionNormal[1] = props.sectionNormalY;
+        info.sectionNormal[2] = props.sectionNormalZ;
         infos.push_back(std::move(info));
     }
 
@@ -4724,7 +4729,9 @@ void Application::setSelectedEntityProfileRotation(double degrees) {
         const Vec3 to{info.axisTo[0], info.axisTo[1], info.axisTo[2]};
         if (std::abs(to.x - from.x) + std::abs(to.y - from.y) +
             std::abs(to.z - from.z) < 1e-9) continue;
-        const TopoDS_Shape solid = mm::extrudeProfileSolid(*profile, from, to, degrees);
+        const TopoDS_Shape solid = mm::extrudeProfileSolid(
+            *profile, from, to, degrees,
+            Vec3{info.sectionNormal[0], info.sectionNormal[1], info.sectionNormal[2]});
         if (solid.IsNull()) continue;
         auto solidModel = mm::shapeToWireframeWithFaces(solid, 0.15);
         auto solidProps = solidModel.properties();
@@ -4735,6 +4742,9 @@ void Application::setSelectedEntityProfileRotation(double degrees) {
         solidProps.axisFromZ = info.axisFrom[2];
         solidProps.axisToX = info.axisTo[0]; solidProps.axisToY = info.axisTo[1];
         solidProps.axisToZ = info.axisTo[2];
+        solidProps.sectionNormalX = info.sectionNormal[0];
+        solidProps.sectionNormalY = info.sectionNormal[1];
+        solidProps.sectionNormalZ = info.sectionNormal[2];
         solidProps.material = info.material;
         solidProps.trueColor = info.trueColor;
         solidProps.colorIndex = info.colorIndex;
@@ -5191,16 +5201,22 @@ void Application::assignProfileToSelection(const std::string& profileName) {
         }
         std::vector<std::size_t> solidIndices;
         std::vector<Vec3> consumedAxes;
+        // Baslik plakalari AKTIF IS DUZLEMINE paralel uretilir ve referans
+        // normal katiyla saklanir (gumball/yeniden uretim ayni degeri kullanir).
+        const Vec3 sectionReference = profileSectionReference();
         for (const auto& axis : axes) {
             const Vec3 from = axis.from;
             const Vec3 to = axis.to;
             const TopoDS_Shape solid = mm::extrudeProfileSolid(
-                *profile, from, to, axis.rotation);
+                *profile, from, to, axis.rotation, sectionReference);
             if (solid.IsNull()) continue;
             auto solidModel = mm::shapeToWireframeWithFaces(solid, 0.15);
             auto solidProps = solidModel.properties();
             solidProps.profileName = profile->name;
             solidProps.profileRotation = axis.rotation;
+            solidProps.sectionNormalX = sectionReference.x;
+            solidProps.sectionNormalY = sectionReference.y;
+            solidProps.sectionNormalZ = sectionReference.z;
             solidProps.axisFromX = from.x; solidProps.axisFromY = from.y; solidProps.axisFromZ = from.z;
             solidProps.axisToX = to.x; solidProps.axisToY = to.y; solidProps.axisToZ = to.z;
             solidModel.setProperties(std::move(solidProps));
@@ -5505,7 +5521,9 @@ void Application::reExtrudeProfileGrip(std::size_t solidIndex, bool endIsTo,
         return;
     }
     const TopoDS_Shape shape =
-        mm::extrudeProfileSolid(*profile, from, to, props.profileRotation);
+        mm::extrudeProfileSolid(*profile, from, to, props.profileRotation,
+                                Vec3{props.sectionNormalX, props.sectionNormalY,
+                                     props.sectionNormalZ});
     if (shape.IsNull()) return;
     auto solidModel = mm::shapeToWireframeWithFaces(shape, 0.15);
     // Mevcut stil/kimlik ozelliklerini koru; yalniz eksen degisti.
@@ -5538,6 +5556,16 @@ HCURSOR Application::currentCanvasCursor() const noexcept {
 }
 
 // --- RHINO TARZI GUMBALL (tasima tutamaclari) ------------------------------
+
+Vec3 Application::profileSectionReference() const {
+    // Baslik plakalari aktif IS DUZLEMINE paralel uretilir; iki noktali
+    // gorunuste is duzlemi otomatik GORUNUS duzlemidir → orada dunya Z
+    // (bkz. view_definition.hpp profileSectionReferenceNormal).
+    // NOT: gumball metotlarindan AYRI durur — run_gumball_interaction.py
+    // gumballProject..draftView arasini cekip sahte sinirda derler; bu metot
+    // workPlane_/viewDef_ kullanir ve o sahte Application'da BULUNMAZ.
+    return mm::profileSectionReferenceNormal(workPlane_, viewDef_ ? &*viewDef_ : nullptr);
+}
 
 Vec2 Application::gumballProject(const Vec3& point) const {
     RECT vp{};
@@ -5628,11 +5656,13 @@ void Application::gumballUpdateFrame() {
     Vec3 ey{};
     bool haveY = false;
     if (!props.profileName.empty()) {
-        // Kati ile AYNI kural (tek kaynak: profileSectionFrame): kesit genisligi
-        // yatay → baslik plakalari XY'ye paralel, govde dusey. Boylece gumball
-        // eksenleri cizilen profille birebir ortusur (eskiden tutamaclar
-        // OCC'nin keyfi cercevesine gore 90° kayik kaliyordu).
-        const ProfileSectionFrame frame = profileSectionFrame(ex);
+        // Kati ile AYNI kural (tek kaynak: profileSectionFrame): baslik
+        // plakalari katinin URETILDIGI referans duzleme paralel. Referans
+        // katiyla birlikte SAKLANIR (props.sectionNormal) — aktif is duzlemi
+        // degisse bile tutamaclar cizilen profille birebir ortusur (eskiden
+        // tutamaclar dunya cercevesine gore 90° kayik kaliyordu).
+        const ProfileSectionFrame frame = profileSectionFrame(
+            ex, Vec3{props.sectionNormalX, props.sectionNormalY, props.sectionNormalZ});
         ey = frame.width;
         haveY = true;
     }

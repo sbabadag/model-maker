@@ -1410,6 +1410,13 @@ std::optional<WireframeModel> mirrorModel2D(const WireframeModel& source, const 
         const Vec3 rt = reflect(to);
         props.axisFromX = rf.x; props.axisFromY = rf.y; props.axisFromZ = rf.z;
         props.axisToX = rt.x; props.axisToY = rt.y; props.axisToZ = rt.z;
+        // Referans normal de yansitilir (yansima dogrusal kismi; z korunur) —
+        // gumball cercevesi aynali katiyla ortussun.
+        const Vec3 n{props.sectionNormalX, props.sectionNormalY, props.sectionNormalZ};
+        const double np = (n.x * axisX + n.y * axisY) / lengthSquared;
+        props.sectionNormalX = 2.0 * np * axisX - n.x;
+        props.sectionNormalY = 2.0 * np * axisY - n.y;
+        props.sectionNormalZ = n.z;
     }
     result.setProperties(std::move(props));
     return result;
@@ -1464,6 +1471,12 @@ std::vector<WireframeModel> polarArray2D(const WireframeModel& source, std::size
             const Vec3 rt = rotatePt(Vec3{props.axisToX, props.axisToY, props.axisToZ});
             props.axisFromX = rf.x; props.axisFromY = rf.y; props.axisFromZ = rf.z;
             props.axisToX = rt.x; props.axisToY = rt.y; props.axisToZ = rt.z;
+            // Referans normal de ayni aciyla Z etrafinda doner (z sabit).
+            const Vec3 n{props.sectionNormalX, props.sectionNormalY, props.sectionNormalZ};
+            const double c = std::cos(angle), s = std::sin(angle);
+            props.sectionNormalX = n.x * c - n.y * s;
+            props.sectionNormalY = n.x * s + n.y * c;
+            props.sectionNormalZ = n.z;
             copies.back().setProperties(std::move(props));
         }
     }

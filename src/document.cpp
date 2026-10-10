@@ -138,6 +138,19 @@ static Vec3 applyLinear3(const std::array<double, 9>& m, const Vec3& v) {
                 m[6] * v.x + m[7] * v.y + m[8] * v.z};
 }
 
+// DUZLEM normali donusumu: n' = normalize(transpose(M^-1) * n). Dogru kural;
+// rotasyonda transpose(inv) = M ile ayni sonucu verir, non-uniform olcekte de
+// (gumball yerel olcek) baslik duzleminin gercek normalini verir. Kati donusup
+// referans normal sabit kalsaydi gumball cercevesi katidan kayardi.
+static Vec3 transformSectionNormal3(const std::array<double, 9>& linearInverse, const Vec3& n) {
+    const Vec3 r{linearInverse[0] * n.x + linearInverse[3] * n.y + linearInverse[6] * n.z,
+                 linearInverse[1] * n.x + linearInverse[4] * n.y + linearInverse[7] * n.z,
+                 linearInverse[2] * n.x + linearInverse[5] * n.y + linearInverse[8] * n.z};
+    const double len = std::sqrt(r.x * r.x + r.y * r.y + r.z * r.z);
+    if (!(len > 1e-12)) return Vec3{0.0, 0.0, 1.0};
+    return Vec3{r.x / len, r.y / len, r.z / len};
+}
+
 void Document::transformModels(const std::vector<std::size_t>& indices, const Vec3& pivot,
                                const std::array<double, 9>& linear,
                                const std::array<double, 9>& linearInverse) {
@@ -161,6 +174,10 @@ void Document::transformModels(const std::vector<std::size_t>& indices, const Ve
                 linear, Vec3{props.axisToX, props.axisToY, props.axisToZ} - pivot);
             props.axisFromX = from.x; props.axisFromY = from.y; props.axisFromZ = from.z;
             props.axisToX = to.x; props.axisToY = to.y; props.axisToZ = to.z;
+            const Vec3 n = transformSectionNormal3(
+                linearInverse, Vec3{props.sectionNormalX, props.sectionNormalY,
+                                    props.sectionNormalZ});
+            props.sectionNormalX = n.x; props.sectionNormalY = n.y; props.sectionNormalZ = n.z;
             models_[index].setProperties(std::move(props));
         }
         if (modelBounds_.size() == models_.size())
@@ -568,6 +585,9 @@ void Document::applyUndoOp(const UndoOp& op, bool forward) {
         break;
     case UndoOp::Kind::Transform: {
         const auto& m = forward ? op.linear : op.linearInverse;
+        // Referans normal ters matrisle doner (forward: linearInverse, geri:
+        // linear) — gumball cercevesi katidan kaymasin.
+        const auto& mInverse = forward ? op.linearInverse : op.linear;
         for (const auto index : op.indices)
             if (index < models_.size()) {
                 models_[index].affineAbout(op.pivot, m);
@@ -579,6 +599,12 @@ void Document::applyUndoOp(const UndoOp& op, bool forward) {
                         m, Vec3{props.axisToX, props.axisToY, props.axisToZ} - op.pivot);
                     props.axisFromX = from.x; props.axisFromY = from.y; props.axisFromZ = from.z;
                     props.axisToX = to.x; props.axisToY = to.y; props.axisToZ = to.z;
+                    const Vec3 n = transformSectionNormal3(
+                        mInverse, Vec3{props.sectionNormalX, props.sectionNormalY,
+                                       props.sectionNormalZ});
+                    props.sectionNormalX = n.x;
+                    props.sectionNormalY = n.y;
+                    props.sectionNormalZ = n.z;
                     models_[index].setProperties(std::move(props));
                 }
             }
@@ -975,8 +1001,11 @@ void Document::save(const std::filesystem::path& path) const {
     // eksen/renk/cizgi tipi/malzeme...) — eskiden yalniz geometri
     // yaziliyordu; kayit sonrasi katilar stilini kaybediyordu.
     // MMW5: geometri + props + katman + GRID. (MMW4 = katman; MMW3 = props;
-    // MMW1/2 = yalniz geometri.) Yeni dosyalar daima MMW5 yazar.
-    output << "MMW5\n" << models_.size() << '\n';
+    // MMW1/2 = yalniz geometri.)
+    // MMW6: + kesit REFERANS NORMALI (sectionNormal) — "profil ust basligi
+    // workplane ile paralel" icin katiyla saklanir; MMW5 dosyalari okunur ve
+    // varsayilan (0,0,1) ile AYNI davranisi verir.
+    output << "MMW6\n" << models_.size() << '\n';
     // Katman tanimlari: isim + (trueColor veya ACI) + linetype + visible.
     // Model yalniz katman ADI tasir; katman rengi/sifati bu haritada —
     // kaydedilmezse dosya acilinca BYLAYER nesneler rengini kaybeder.
@@ -1017,7 +1046,9 @@ void Document::save(const std::filesystem::path& path) const {
         output << props.profileRotation << ' '
                << props.profileSourceLine << ' '
                << props.axisFromX << ' ' << props.axisFromY << ' ' << props.axisFromZ << ' '
-               << props.axisToX << ' ' << props.axisToY << ' ' << props.axisToZ << ' ';
+               << props.axisToX << ' ' << props.axisToY << ' ' << props.axisToZ << ' '
+               << props.sectionNormalX << ' ' << props.sectionNormalY << ' '
+               << props.sectionNormalZ << ' ';
         putS(props.lineType); output << ' ';
         putS(props.material); output << ' ';
         output << props.colorIndex << ' ';
@@ -1052,14 +1083,19 @@ void Document::load(const std::filesystem::path& path) {
     std::size_t modelCount{};
     if (!(input >> signature >> modelCount) ||
         (signature != "MMW1" && signature != "MMW2" && signature != "MMW3" &&
-         signature != "MMW4" && signature != "MMW5") ||
+         signature != "MMW4" && signature != "MMW5" && signature != "MMW6") ||
         modelCount > 100000) {
         throw std::runtime_error("Invalid Model Maker file");
     }
-    const bool version2 = signature == "MMW2" || signature == "MMW3" || signature == "MMW4" || signature == "MMW5";
-    const bool version3 = signature == "MMW3" || signature == "MMW4" || signature == "MMW5";
-    const bool version4 = signature == "MMW4" || signature == "MMW5";
-    const bool version5 = signature == "MMW5";
+    const bool version2 = signature == "MMW2" || signature == "MMW3" || signature == "MMW4" ||
+                          signature == "MMW5" || signature == "MMW6";
+    const bool version3 = signature == "MMW3" || signature == "MMW4" || signature == "MMW5" ||
+                          signature == "MMW6";
+    const bool version4 = signature == "MMW4" || signature == "MMW5" || signature == "MMW6";
+    const bool version5 = signature == "MMW5" || signature == "MMW6";
+    // MMW6: kesit referans normali (sectionNormal) P blogunda; MMW5 ve oncesi
+    // okunurken varsayilan (0,0,1) kalir → eski dosyalar AYNI davranis.
+    const bool version6 = signature == "MMW6";
     // uzunluk-sonralikli string okuyucu (katman blogundan once tanimli)
     const auto readS = [&input]() {
         std::size_t length{};
@@ -1147,6 +1183,10 @@ void Document::load(const std::filesystem::path& path) {
             if (!(input >> props.profileRotation >> props.profileSourceLine
                        >> props.axisFromX >> props.axisFromY >> props.axisFromZ
                        >> props.axisToX >> props.axisToY >> props.axisToZ))
+                throw std::runtime_error("Invalid property data");
+            if (version6 &&
+                !(input >> props.sectionNormalX >> props.sectionNormalY >>
+                  props.sectionNormalZ))
                 throw std::runtime_error("Invalid property data");
             props.lineType = readS();
             props.material = readS();
