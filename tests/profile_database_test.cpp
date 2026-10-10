@@ -68,10 +68,10 @@ int main() {
                 "KKR40*4 (A=%.0f mm²)\n",
                 profiles.size(), kkr30->crossSectionArea, kkr30->inertiaX,
                 kkr30->weightPerUnitLength, kkr40->crossSectionArea);
-    // Kesit turu + UST PLAKA REFERANSI (KULLANICI SARTI v3: "yine merkezden
-    // atiyor profili; secili noktaya UST FLANSIN ORTASINDAN atilmali").
-    // Formul portatiftir (OCC'siz de kosar); gercek geometri tests/occ_smoke.cpp
-    // icinde gercek OCCT ile olculur.
+    // Kesit turu + UST YUZEY REFERANSI (KULLANICI SARTI v4: "ust flansin
+    // USTUNDEN cizmiyor, ust flansin MERKEZINDEN ciziyor"). Formul portatiftir
+    // (OCC'siz de kosar); gercek geometri tests/occ_smoke.cpp icinde gercek
+    // OCCT ile olculur.
     {
         mm::SteelProfile ipe;
         ipe.name = "IPE200";
@@ -82,35 +82,37 @@ int main() {
         const bool kindOk =
             mm::classifyProfileSection(ipe) == mm::ProfileSectionKind::ISection &&
             mm::classifyProfileSection(*kkr30) == mm::ProfileSectionKind::Box;
-        // I-kesit: ust flansin ORTASI = h/2 - tf/2 = 100 - 4.25 = 95.75
-        const bool ipeOk = std::abs(mm::profileSectionTopPlateCenterY(ipe) - 95.75) < 1e-9;
-        // ici bos kutu (KKR30*3: h=30, t=3): ust plakanin ortasi = 15 - 1.5 = 13.5
-        const bool kkrOk = std::abs(mm::profileSectionTopPlateCenterY(*kkr30) - 13.5) < 1e-9;
+        // I-kesit: ust flansin UST yuzu = h/2 = 100 (v3'te 95.75 idi)
+        const bool ipeOk = std::abs(mm::profileSectionTopY(ipe) - 100.0) < 1e-9;
+        // ici bos kutu (KKR30*3: h=30, t=3): ust plakanin UST yuzu = 15
+        // (dolu/bos ayrimi YOKTUR; v3'te 13.5 idi)
+        const bool kkrOk = std::abs(mm::profileSectionTopY(*kkr30) - 15.0) < 1e-9;
         mm::SteelProfile chs;
         chs.name = "CFCHS127x2.5";
         chs.height = 127.0;
         chs.width = 127.0;
         chs.plateThickness = 2.5;
+        // boru: ust nokta DIS yaricap = 63.5 (duvar ortasi 62.25 DEGIL)
         const bool chsOk = mm::classifyProfileSection(chs) == mm::ProfileSectionKind::Round &&
-                           std::abs(mm::profileSectionTopPlateCenterY(chs) - (63.5 - 1.25)) < 1e-9;
-        // Dolu kesit (duvar yok): ust YUZ = h/2
+                           std::abs(mm::profileSectionTopY(chs) - 63.5) < 1e-9;
+        // Dolu yuvarlak: ust yuz = yaricap = 10
         mm::SteelProfile rod;
         rod.name = "ROD20";
         rod.height = 20.0;
         rod.width = 20.0;
         const bool rodOk = mm::classifyProfileSection(rod) == mm::ProfileSectionKind::Round &&
-                           std::abs(mm::profileSectionTopPlateCenterY(rod) - 10.0) < 1e-9;
+                           std::abs(mm::profileSectionTopY(rod) - 10.0) < 1e-9;
         if (!(kindOk && ipeOk && kkrOk && chsOk && rodOk)) {
-            std::printf("HATA: kesit turu/ust plaka referansi yanlis "
+            std::printf("HATA: kesit turu/ust yuz referansi yanlis "
                         "(IPE200=%.3f KKR30*3=%.3f CFCHS127x2.5=%.3f ROD20=%.3f)\n",
-                        mm::profileSectionTopPlateCenterY(ipe),
-                        mm::profileSectionTopPlateCenterY(*kkr30),
-                        mm::profileSectionTopPlateCenterY(chs),
-                        mm::profileSectionTopPlateCenterY(rod));
+                        mm::profileSectionTopY(ipe),
+                        mm::profileSectionTopY(*kkr30),
+                        mm::profileSectionTopY(chs),
+                        mm::profileSectionTopY(rod));
             return 1;
         }
-        std::printf("SECTION-PLACEMENT OK — ust plaka ortasi (ortalanmis kesitten): "
-                    "IPE200 95.75, KKR30*3 13.5, CFCHS127x2.5 62.25, ROD20 10.0\n");
+        std::printf("SECTION-PLACEMENT OK — ust YUZ uye ekseninde (ortalanmis kesitten): "
+                    "IPE200 100.0, KKR30*3 15.0, CFCHS127x2.5 63.5, ROD20 10.0\n");
     }
     return 0;
 }

@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
-"""Kesit YERLESIMI testlerinin (ust flans/plaka ortasi uye ekseninde) GERCEKTEN
+"""Kesit YERLESIMI testlerinin (UST YUZEY uye ekseninde) GERCEKTEN
 yakaladigini mutasyonla kanitla.
 
-Kullanici sarti (v3): "yine merkezden atiyor profili; secili noktaya UST
-FLANSIN ORTASINDAN atilmali" → kesit ORTALANMAZ, ust plakanin orta-kalinlik
-duzlemi uye eksenine oturur (Tekla "position: top").
+Kullanici sarti (v4): "ust Flansin USTUNDEN cizmiyor ust flansin MERKEZINDEN
+ciziyor" → kesit ORTALANMAZ, UST YUZEY uye eksenine oturur ve tum kesit
+cizginin ALTINA sarkar (Tekla "position: top of section"). v3'te ust
+flansin/plakanin ORTA-KALINLIK duzlemi oturuyordu.
 
-Her mutasyon: `src/occ_geometry.cpp` icinde TEK degisiklik → `tests/occ_smoke.cpp`
-icindeki "OCC SECTION-PLACEMENT / EXTRUDE-DIAG" kontrolleri DUSMELI → kaynak AYNEN
-geri yazilir (skill uyarisi: `replace("", orig)` YAZMA; orijinali bellekte tut).
+Her mutasyon: TEK degisiklik → `tests/occ_smoke.cpp` icindeki
+"OCC SECTION-PLACEMENT" kontrolleri DUSMELI → kaynak AYNEN geri yazilir
+(skill uyarisi: `replace("", orig)` YAZMA; orijinali bellekte tut).
 
 Bu betik GERCEK OpenCASCADE gerektirir (occ_smoke yalnizca OCC varsa derlenir).
 Linux host: `python3 tests/mutate_section_placement.py`
@@ -21,19 +22,38 @@ import sys
 root = Path(__file__).resolve().parents[1]
 occ_include = sys.argv[1] if len(sys.argv) > 1 else "/usr/include/opencascade"
 
-src = root / "src/occ_geometry.cpp"
-ORIG = src.read_text(encoding="utf-8")
+FILES = {
+    "src/occ_geometry.cpp": root / "src/occ_geometry.cpp",
+    "src/profile_database.cpp": root / "src/profile_database.cpp",
+}
+ORIG = {name: path.read_text(encoding="utf-8") for name, path in FILES.items()}
 
+# (etiket, dosya, eski, yeni)
 MUTATIONS = [
-    ("M1 ortalanmis kesit (eski davranis)",
-     "offsetTrsf.SetTranslation(gp_Vec(0.0, -topPlateY, 0.0));",
+    ("M1 ortalanmis kesit (eski davranis)", "src/occ_geometry.cpp",
+     "offsetTrsf.SetTranslation(gp_Vec(0.0, -sectionTopY, 0.0));",
      "offsetTrsf.SetTranslation(gp_Vec(0.0, 0.0, 0.0));"),
-    ("M2 kaydirma ters yonde (govde yukari)",
-     "offsetTrsf.SetTranslation(gp_Vec(0.0, -topPlateY, 0.0));",
-     "offsetTrsf.SetTranslation(gp_Vec(0.0, topPlateY, 0.0));"),
-    ("M3 kaydirma yarim (ust yuz yarim kalinlik)",
-     "const double topPlateY = profileSectionTopPlateCenterY(profile);",
-     "const double topPlateY = profileSectionTopPlateCenterY(profile) / 2.0;"),
+    ("M2 kaydirma ters yonde (govde yukari)", "src/occ_geometry.cpp",
+     "offsetTrsf.SetTranslation(gp_Vec(0.0, -sectionTopY, 0.0));",
+     "offsetTrsf.SetTranslation(gp_Vec(0.0, sectionTopY, 0.0));"),
+    ("M3 kaydirma yarim (yarim kalinlik)", "src/occ_geometry.cpp",
+     "const double sectionTopY = profileSectionTopY(profile);",
+     "const double sectionTopY = profileSectionTopY(profile) / 2.0;"),
+    # Ust yuz yerine ust flansin ORTASI (v3 davranisi) — kullanicinin sikayet
+    # ettigi tam olarak bu; test bunu yakalamali.
+    ("M4 v3: ust flans ORTASI (h/2 - tf/2)", "src/profile_database.cpp",
+     "    case ProfileSectionKind::Box:\n"
+     "    case ProfileSectionKind::ISection:\n"
+     "    default:\n"
+     "        // KULLANICI SARTI (v4): kesit uye eksenine UST YUZEYINDEN oturur →\n"
+     "        // eksen cizgisi kesitin en ustunden gecer, tum kesit ALTINA sarkar.\n"
+     "        // (v3: ust flansin/plakanin ORTASI = h/2 - tf/2 oturuyordu.)\n"
+     "        return h / 2.0;",
+     "    case ProfileSectionKind::Box:\n"
+     "    case ProfileSectionKind::ISection:\n"
+     "    default:\n"
+     "        return h / 2.0 - (profile.flangeThickness > 0.0 ? profile.flangeThickness\n"
+     "                                                       : profile.plateThickness) / 2.0;"),
 ]
 
 CMD = ("g++ -std=c++20 -O1 -DMM_HAS_OCC -I include -I {inc} "
@@ -52,6 +72,11 @@ def build_and_run():
     return run.returncode, run.stdout
 
 
+def restore():
+    for name, path in FILES.items():
+        path.write_text(ORIG[name], encoding="utf-8")
+
+
 failures = []
 try:
     rc, out = build_and_run()
@@ -61,24 +86,24 @@ try:
     print(f"REFERANS (mutasyonsuz): exit={rc} placement_ok={'SECTION-PLACEMENT OK' in out}")
     if rc != 0 or "SECTION-PLACEMENT OK" not in out:
         failures.append("referans")
-    for label, old, new in MUTATIONS:
-        assert ORIG.count(old) == 1, f"hedef metin bulunamadi: {old!r}"
-        text = ORIG.replace(old, new)
-        assert text != ORIG, "mutasyon metni degistirmedi"
-        src.write_text(text, encoding="utf-8")
+    for label, rel, old, new in MUTATIONS:
+        assert ORIG[rel].count(old) == 1, f"hedef metin bulunamadi ({rel}): {old!r}"
+        text = ORIG[rel].replace(old, new)
+        assert text != ORIG[rel], "mutasyon metni degistirmedi"
+        FILES[rel].write_text(text, encoding="utf-8")
         try:
             rc, out = build_and_run()
         finally:
-            src.write_text(ORIG, encoding="utf-8")
+            restore()
         caught = rc is None or rc != 0 or "SECTION-PLACEMENT OK" not in out
         print(f"{label}: exit={rc} YAKALANDI={caught}")
         if not caught:
             failures.append(label)
 finally:
-    src.write_text(ORIG, encoding="utf-8")
+    restore()
 
-same = src.read_bytes() == ORIG.encode("utf-8")
-print(f"kaynak dosya bayt-birebir geri yazildi: {same}")
+same = all(FILES[name].read_bytes() == ORIG[name].encode("utf-8") for name in FILES)
+print(f"kaynak dosyalar bayt-birebir geri yazildi: {same}")
 if not same or failures:
     print("MUTASYON TESTI BASARISIZ:", failures)
     sys.exit(1)

@@ -59,18 +59,18 @@ enum class ProfileSectionKind { ISection, Round, Box };
 // ISection; digerleri → Box (KKR/RHS/SHS ve bilinmeyenler).
 ProfileSectionKind classifyProfileSection(const SteelProfile& profile) noexcept;
 
-// KULLANICI SARTI (v3): "yine merkezden atiyor profili; secili noktaya UST
-// FLANSIN ORTASINDAN atilmali" → kesit ORTALANMAZ: UST PLAKANIN orta-kalinlik
-// duzlemi uye eksenine (yerel y = 0) oturur ve govde is duzleminin ALTINA
-// sarkar (Tekla "position: top" mantigi). Baslik plakasi yine is duzlemine
-// paraleldir; degisen yalnizca DUSEY KONUMdur.
+// KULLANICI SARTI (v4): "ust flansin USTUNDEN cizmiyor, ust flansin
+// MERKEZINDEN ciziyor" → kesit uye eksenine UST YUZEYINDEN oturur: eksen
+// cizgisi kesitin en ustunden gecer ve TUM kesit cizginin ALTINA sarkar
+// (Tekla "position: top of section"). v3'te ust flansin/plakanin ORTASI
+// oturuyordu; baslik paralelligi (v1/v2) DEGISMEZ, degisen yalnizca DUSEY
+// KONUMdur.
 //
-// Donen deger: kesit ORTALANMIS uretildiginde ust plakanin orta-kalinlik
-// duzleminin yerel Y'si; kati bu kadar ASAGI (-Y) kaydirilir.
-//   I-kesit : h/2 - tf/2   (ust flansin ortasi; tf yoksa t)
-//   ici bos kutu / boru : h/2 - t/2  (ust plakanin ortasi)
-//   dolu kesit  : h/2      (ust yuz)
-// "Ici bos mu" kosulu kati ureticisindeki kesme karariyla AYNI olmalidir.
-double profileSectionTopPlateCenterY(const SteelProfile& profile) noexcept;
+// Donen deger: kesit ORTALANMIS uretildiginde UST YUZEYIN yerel Y'si; kati
+// bu kadar ASAGI (-Y) kaydirilir.
+//   I-kesit  : h/2   (ust flansin UST yuzu)
+//   kutu/boru: h/2   (ust plakanin UST yuzu — dolu/bos ayrimi yok)
+//   yuvarlak : max(w,h)/2  (dis yaricap; dolu/bos ayrimi yok)
+double profileSectionTopY(const SteelProfile& profile) noexcept;
 
 } // namespace mm

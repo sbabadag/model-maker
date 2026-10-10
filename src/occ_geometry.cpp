@@ -223,7 +223,7 @@ TopoDS_Shape extrudeProfileSolid(const SteelProfile& profile, const Vec3& from,
     TopoDS_Shape section;
 
     // Kesit turu — TEK KAYNAK: mm::classifyProfileSection (profile_database).
-    // Kesit yerlesimi de (profileSectionTopPlateCenterY) ayni siniflandirmayi
+    // Kesit yerlesimi de (profileSectionTopY) ayni siniflandirmayi
     // kullanir; harf kumesi listesini burada TEKRAR YAZMA.
     const ProfileSectionKind kind = classifyProfileSection(profile);
 
@@ -283,16 +283,17 @@ TopoDS_Shape extrudeProfileSolid(const SteelProfile& profile, const Vec3& from,
     }
     }
 
-    // KESIT YERLESIMI (KULLANICI SARTI v3): "yine merkezden atiyor profili;
-    // secili noktaya UST FLANSIN ORTASINDAN atilmali" → kesit ORTALANMAZ.
-    // Ust plakanin orta-kalinlik duzlemi uye eksenine (yerel y = 0) oturur,
-    // govde is duzleminin ALTINA sarkar; baslik yine is duzlemine PARALEL kalir
-    // (Tekla "position: top"). Kaydirma dondurmeden ONCE uygulanir, boylece
-    // profil donmus olsa da uye ekseni hep "ust" plakanin ortasindan gecer.
-    const double topPlateY = profileSectionTopPlateCenterY(profile);
-    if (std::abs(topPlateY) > 1e-9) {
+    // KESIT YERLESIMI (KULLANICI SARTI v4): "ust flansin USTUNDEN cizmiyor,
+    // ust flansin MERKEZINDEN ciziyor" → kesit uye eksenine UST YUZEYINDEN
+    // oturur: eksen cizgisi kesitin en ustunden gecer ve TUM kesit cizginin
+    // ALTINA sarkar (Tekla "position: top of section"). v3'te ust plakanin
+    // ORTA-KALINLIK duzlemi oturuyordu. Baslik paralelligi (v1/v2) DEGISMEZ;
+    // degisen yalnizca DUSEY KONUMdur. Kaydirma dondurmeden ONCE uygulanir,
+    // boylece profil donmus olsa da uye ekseni hep kesitin USTUNDEN gecer.
+    const double sectionTopY = profileSectionTopY(profile);
+    if (std::abs(sectionTopY) > 1e-9) {
         gp_Trsf offsetTrsf;
-        offsetTrsf.SetTranslation(gp_Vec(0.0, -topPlateY, 0.0));
+        offsetTrsf.SetTranslation(gp_Vec(0.0, -sectionTopY, 0.0));
         section = BRepBuilderAPI_Transform(section, offsetTrsf).Shape();
     }
 

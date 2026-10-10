@@ -209,27 +209,21 @@ ProfileSectionKind classifyProfileSection(const SteelProfile& profile) noexcept 
     return isIShape ? ProfileSectionKind::ISection : ProfileSectionKind::Box;
 }
 
-double profileSectionTopPlateCenterY(const SteelProfile& profile) noexcept {
+double profileSectionTopY(const SteelProfile& profile) noexcept {
     // Olcu varsayilanlari kati ureticisiyle AYNI (bkz. extrudeProfileSolid).
     const double w = profile.width > 0.0 ? profile.width : 50.0;
     const double h = profile.height > 0.0 ? profile.height : 50.0;
-    const double t = profile.plateThickness > 0.0 ? profile.plateThickness : 0.0;
     switch (classifyProfileSection(profile)) {
-    case ProfileSectionKind::Round: {
-        const double outerR = std::max(w, h) / 2.0;
-        // "Ici bos mu" = kati ureticisindeki kesme karari (innerR > 1.0).
-        return (outerR - t) > 1.0 ? outerR - t / 2.0 : outerR;
-    }
-    case ProfileSectionKind::Box: {
-        // "Ici bos mu" = kati ureticisindeki kesme karari.
-        const bool hollow = (w - 2.0 * t) > 1.0 && (h - 2.0 * t) > 1.0;
-        return hollow ? h / 2.0 - t / 2.0 : h / 2.0;
-    }
+    case ProfileSectionKind::Round:
+        // Ust nokta DIS yaricaptir; ic bosluk (boru) en ust noktayi degistirmez.
+        return std::max(w, h) / 2.0;
+    case ProfileSectionKind::Box:
     case ProfileSectionKind::ISection:
-    default: {
-        const double tf = profile.flangeThickness > 0.0 ? profile.flangeThickness : t;
-        return h / 2.0 - tf / 2.0;
-    }
+    default:
+        // KULLANICI SARTI (v4): kesit uye eksenine UST YUZEYINDEN oturur →
+        // eksen cizgisi kesitin en ustunden gecer, tum kesit ALTINA sarkar.
+        // (v3: ust flansin/plakanin ORTASI = h/2 - tf/2 oturuyordu.)
+        return h / 2.0;
     }
 }
 
