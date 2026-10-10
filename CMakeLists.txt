@@ -243,6 +243,12 @@ if(BUILD_TESTING)
             add_test(NAME model_maker_ortho_snap
                 COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_ortho_snap.py
                     ${CMAKE_CURRENT_BINARY_DIR})
+            # TP (gecici izleme noktasi): TAB ile koy, Esc ile sifirla.
+            # Dwell (450 ms otomatik kayit) KALDIRILDI. Sekil + gercek
+            # acquireTemporaryTrackingPoint/clearTemporaryTracking davranisi.
+            add_test(NAME model_maker_tp_tab
+                COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_tp_tab.py
+                    ${CMAKE_CURRENT_BINARY_DIR})
         endif()
     endif()
 

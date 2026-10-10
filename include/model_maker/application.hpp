@@ -258,6 +258,10 @@ private:
     void commitPoint(const Vec3& point);
     void cancelDrawing();
     void clearTemporaryTracking();
+    // Gecici izleme noktasi (TP) kaydi: TAB tusu. Imlecin altindaki HAM snap
+    // noktasini alir (polar/ortho kisitiyla oynamis hover_ DEGIL), 8 taneye
+    // kadar birikir; Esc hepsini sifirlar.
+    void acquireTemporaryTrackingPoint();
     void updateHover(int x, int y);
     // F8 Ortho kisiti: obje snap'lari ortho'yu EZER (serbest imlec eksene
     // kilitlenir). Tek kaynak — hem 2B hem 3B yollari burada.
@@ -578,7 +582,11 @@ private:
     std::vector<TrackingGuide> temporaryTrackingGuides_;
     std::vector<Vec3> temporaryDerivedPoints_;
     std::vector<Vec3> temporaryPerpendicularPoints_;
-    std::optional<SnapResult> temporaryPointDwellCandidate_;
+    // TAB ile TP kaydetmek icin son hesaplanan HAM snap adayi (polar/ortho
+    // kisitindan ONCE). Eskiden 450 ms BEKLEME (dwell) zamanlayicisi vardi;
+    // kullanici sarti: "TP noktalarini tab tusu ile koyalim, esc tp leri
+    // sifirlar" -> otomatik dwell kaldirildi, TP yalnizca TAB ile konur.
+    std::optional<SnapResult> temporaryAcquireCandidate_;
     bool dynamicInputEnabled_{true};
     bool performanceOverlayEnabled_{false}; // F11 performans overlayi
     bool nodeConstraintVisible_{};

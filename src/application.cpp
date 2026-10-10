@@ -1386,25 +1386,8 @@ LRESULT Application::handleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
             invalidateCanvas();
             return 0;
         }
-        if (wParam == 5) {
-            KillTimer(window_, 5);
-            if (temporaryPointDwellCandidate_ && hover_ && polarTrackingEnabled_ &&
-                temporaryPointDwellCandidate_->point == hover_->point &&
-                temporaryPointDwellCandidate_->type == hover_->type) {
-                const Vec3 point = temporaryPointDwellCandidate_->point;
-                if (std::find(temporaryTrackingPoints_.begin(), temporaryTrackingPoints_.end(), point) ==
-                    temporaryTrackingPoints_.end()) {
-                    if (temporaryTrackingPoints_.size() == 8)
-                        temporaryTrackingPoints_.erase(temporaryTrackingPoints_.begin());
-                    temporaryTrackingPoints_.push_back(point);
-                }
-            }
-            temporaryPointDwellCandidate_.reset();
-            updateHover(cursorScreen_.x, cursorScreen_.y);
-            updateStatus();
-            invalidateCanvas();
-            return 0;
-        }
+        // Timer 5 (eski 450 ms TP dwell) KALDIRILDI: TP artik TAB tusuyla
+        // kaydedilir (kullanici sarti). Bkz. acquireTemporaryTrackingPoint().
         if (wParam == 4) {
             KillTimer(window_, 4);
             if (!snapPreviewActive_) invalidateCanvas();
@@ -1491,6 +1474,9 @@ LRESULT Application::handleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
         if (wParam == VK_F6) { toggleGpuLines(); return 0; }
         if (wParam == VK_F7) { toggleWorkPlaneGhost(); return 0; }
         if (wParam == VK_F5) { runRenderBenchmark(); return 0; }
+        // TAB = TP kaydi; odak canvas'ta degilse (or. kurdele dugmesi aktif)
+        // tus buraya duser, kayit yine calissin.
+        if (wParam == VK_TAB) { acquireTemporaryTrackingPoint(); return 0; }
         return 0;
     case WM_SYSKEYDOWN:
         // F10 SISTEM TUSU: odak dis pencerede olsa da WM_SYSKEYDOWN gelir.
@@ -1654,6 +1640,9 @@ LRESULT Application::handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lPa
         }
         return 0;
     case WM_CHAR: onCharacter(static_cast<wchar_t>(wParam)); return 0;
+    case WM_GETDLGCODE:
+        // TAB'i biz isleriz (TP kaydi) — odak degistirme zincirine birakma.
+        return DLGC_WANTTAB;
     case WM_SYSKEYDOWN: {
         // Alt+1..4: 3B gorsel stiller (AutoCAD VPMONITOR tarzi)
         const bool altDown = (GetKeyState(VK_MENU) & 0x8000) != 0;
@@ -1684,6 +1673,9 @@ LRESULT Application::handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lPa
                 gumballCancelDrag();
                 return 0;
             }
+            // Esc TP'leri SIFIRLAR (kullanici sarti) — komut iptalinden bagimsiz
+            // olarak her Esc'te gecici izleme noktalari/kilavuzlari temizlenir.
+            clearTemporaryTracking();
             input_.clear();
             if (profileGrip_) cancelProfileGrip();
             else if (zoomWindowActive_) cancelZoomWindow2D();
@@ -1691,6 +1683,10 @@ LRESULT Application::handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lPa
             else if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
             else cancelDrawing();
             if (mode_ == EditMode::View3D) drawingActive_ = false;
+        } else if (wParam == VK_TAB) {
+            // TAB = gecici izleme noktasi (TP) kaydet (polar tracking).
+            acquireTemporaryTrackingPoint();
+            return 0;  // Tab odak degistirmesin; WM_CHAR'\t' de yok sayilir.
         } else if (wParam == VK_F3) snapEnabled_ = !snapEnabled_;
         else if (wParam == VK_F8) {
             orthoEnabled_ = !orthoEnabled_;
@@ -2299,6 +2295,9 @@ void Application::onMouseMove(int x, int y, WPARAM buttons) {
 }
 
 void Application::onCharacter(wchar_t character) {
+    // TAB: TP kaydi WM_KEYDOWN'da yapilir (acquireTemporaryTrackingPoint);
+    // TranslateMessage bunun WM_CHAR kopyasini da kuyruga koyar — yok say.
+    if (character == L'\t') return;
     // GUMBALL drag surerken NUMERIK GIRIS: rakam/nokta/isaret -> input_;
     // Enter -> tam deger (mesafe mm / aci derece / olcek faktor) uygulanir.
     if (gumballDrag_ != GumballHandle::None) {
@@ -2569,14 +2568,50 @@ void Application::commitPoint(const Vec3& point) {
 }
 
 void Application::clearTemporaryTracking() {
+    // Timer 5 (eski 450 ms dwell) artik kurulmuyor; yine de kalinti olmasin.
     if (window_) KillTimer(window_, 5);
-    temporaryPointDwellCandidate_.reset();
+    temporaryAcquireCandidate_.reset();
     temporaryTrackingPoints_.clear();
     temporaryTrackingGuides_.clear();
     temporaryDerivedPoints_.clear();
     temporaryPerpendicularPoints_.clear();
     polarTrackingLocked_ = false;
     temporaryTrackingLocked_ = false;
+}
+
+// TP (gecici izleme noktasi) KAYDI — TAB tusu. Eskiden nokta 450 ms BEKLEME
+// (dwell) ile OTOMATIK kaydediliyordu; kullanici sarti: "TP noktalarini tab
+// tusu ile koyalim, esc tp leri sifirlar". Boylece nokta kullanicinin istedigi
+// anda ve istedigi snap noktasina konur (bekleme sirasinda kacirma yok).
+//
+// HAM snap adayi kullanilir (temporaryAcquireCandidate_), hover_->point DEGIL:
+// hover_ polar/ortho kisitiyla DEGISMIS olabilir, TP gercek snap noktasina
+// oturmali. Aday updateHover'da tazelenir (polar acik + obje snap'i varken).
+void Application::acquireTemporaryTrackingPoint() {
+    if (!polarTrackingEnabled_) {
+        publishStatus(L"TP: polar tracking kapali (F10 ile ac)");
+        MessageBeep(MB_ICONWARNING);
+        return;
+    }
+    if (!temporaryAcquireCandidate_) {
+        publishStatus(L"TP: imlecte snap noktasi yok");
+        MessageBeep(MB_ICONWARNING);
+        return;
+    }
+    const Vec3 point = temporaryAcquireCandidate_->point;
+    if (std::find(temporaryTrackingPoints_.begin(), temporaryTrackingPoints_.end(), point) !=
+        temporaryTrackingPoints_.end()) {
+        publishStatus(L"TP: bu nokta zaten kayitli");
+        return;
+    }
+    if (temporaryTrackingPoints_.size() >= 8) temporaryTrackingPoints_.erase(temporaryTrackingPoints_.begin());
+    temporaryTrackingPoints_.push_back(point);
+    publishStatus(L"TP" + std::to_wstring(temporaryTrackingPoints_.size()) +
+                  L" kaydedildi (TAB) — Esc hepsini temizler");
+    // Yeni TP ile turetilmis noktalar (orta/dikme/kose) hemen hesaplansin.
+    updateHover(cursorScreen_.x, cursorScreen_.y);
+    updateStatus();
+    invalidateCanvas();
 }
 
 void Application::cancelDrawing() {
@@ -3600,8 +3635,7 @@ void Application::updateHover(int x, int y) {
                                    transformPhase_ == TransformPhase::Selecting;
     const bool cameraNavigating = wheelNavigating_ || panning2D_ || rotating_ || viewCubeManipulating_;
     if (!shouldEvaluateSnapping(selectingEntities, zoomWindowActive_, cameraNavigating)) {
-        KillTimer(window_, 5);
-        temporaryPointDwellCandidate_.reset();
+        temporaryAcquireCandidate_.reset();
         temporaryTrackingGuides_.clear();
         temporaryDerivedPoints_.clear();
         temporaryPerpendicularPoints_.clear();
@@ -3649,21 +3683,14 @@ void Application::updateHover(int x, int y) {
                                     visualStyle_ == VisualStyle::Solid);
     }
     const SnapResult rawSnap = *hover_;
-    const bool acquirable = polarTrackingEnabled_ && rawSnap.type != SnapType::None &&
-                            rawSnap.type != SnapType::Grid;
-    const bool alreadyAcquired = std::find(temporaryTrackingPoints_.begin(),
-        temporaryTrackingPoints_.end(), rawSnap.point) != temporaryTrackingPoints_.end();
-    if (acquirable && !alreadyAcquired) {
-        if (!temporaryPointDwellCandidate_ || temporaryPointDwellCandidate_->point != rawSnap.point ||
-            temporaryPointDwellCandidate_->type != rawSnap.type) {
-            KillTimer(window_, 5);
-            temporaryPointDwellCandidate_ = rawSnap;
-            SetTimer(window_, 5, 450, nullptr);
-        }
-    } else {
-        KillTimer(window_, 5);
-        temporaryPointDwellCandidate_.reset();
-    }
+    // TP adayi: TAB ile kaydedilecek HAM snap noktasi. Eskiden burada 450 ms
+    // BEKLEME (dwell) zamanlayicisi kurulup nokta OTOMATIK kaydediliyordu;
+    // kullanici sarti: "TP noktalarini tab tusu ile koyalim, esc tp leri
+    // sifirlar" -> otomatik kayit kaldirildi, aday yalnizca saklanir.
+    if (polarTrackingEnabled_ && rawSnap.type != SnapType::None && rawSnap.type != SnapType::Grid)
+        temporaryAcquireCandidate_ = rawSnap;
+    else
+        temporaryAcquireCandidate_.reset();
 
     temporaryTrackingGuides_.clear();
     temporaryDerivedPoints_.clear();
