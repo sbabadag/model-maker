@@ -253,6 +253,12 @@ if(BUILD_TESTING)
     target_link_libraries(model_maker_section_frame_test PRIVATE model_maker_core)
     add_test(NAME model_maker_section_frame_test COMMAND model_maker_section_frame_test)
 
+    # Dikme (perpendicular) izleme kurali: iki izleme noktasina dik ayak
+    # gorunur + snap noktasi olur — OCC'siz de kosar.
+    add_executable(model_maker_perpendicular_tracking_test tests/perpendicular_tracking_test.cpp)
+    target_link_libraries(model_maker_perpendicular_tracking_test PRIVATE model_maker_core)
+    add_test(NAME model_maker_perpendicular_tracking_test COMMAND model_maker_perpendicular_tracking_test)
+
     # test_core.cpp Windows-only: renderer.hpp kosulsuz <windows.h> icerir.
     if(WIN32)
         add_executable(model_maker_tests tests/test_core.cpp)

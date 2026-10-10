@@ -1857,6 +1857,27 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         }
         SelectObject(dc, stockPen);
         DeleteObject(derivedPen);
+
+        // DIKME ayagi: iki izleme noktasinin tanimladigi dogruya imlecin dikme
+        // ayagi. Snap isaretiyle ayni renk (camgobegi) + sag aci glifi, boylece
+        // "dik nokta" oldugu bir bakista anlasilir.
+        if (!draft.temporaryPerpendicularPoints.empty()) {
+            const COLORREF perpendicularColor = RGB(44, 225, 225);
+            HPEN perpendicularPen = CreatePen(PS_SOLID, 2, perpendicularColor);
+            SelectObject(dc, perpendicularPen);
+            HGDIOBJ oldPerpendicularBrush = SelectObject(dc, GetStockObject(NULL_BRUSH));
+            for (const auto& foot : draft.temporaryPerpendicularPoints) {
+                const POINT point = projectPoint(foot);
+                line(dc, point.x - 8, point.y + 8, point.x - 8, point.y);
+                line(dc, point.x - 8, point.y, point.x + 8, point.y);
+                line(dc, point.x - 8, point.y + 8, point.x + 8, point.y + 8);
+                line(dc, point.x + 8, point.y + 8, point.x + 8, point.y);
+                drawText(dc, point.x + 11, point.y + 2, L"PERP", perpendicularColor);
+            }
+            SelectObject(dc, oldPerpendicularBrush);
+            SelectObject(dc, stockPen);
+            DeleteObject(perpendicularPen);
+        }
     }
 
     if (draft.polarTrackingEnabled && draft.polarTrackingLocked &&

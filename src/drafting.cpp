@@ -874,6 +874,13 @@ TemporaryTrackingResult resolveTemporaryPointTracking(
     };
     const Vec2 cursorLocal = plane.toPlane(candidate.point);
     const double cursorNormal = normalDistance(candidate.point);
+    // DIKME TAKIBI: iki izleme noktasi bir dogru tanimlar. Imlecin o dogruya
+    // dikme ayagi ekranda gorunur ve snap noktasi olur ("iki nokta secildi ->
+    // ona dik nokta"). Gorunurluk yaricapi snap yaricapindan genis tutulur ki
+    // kullanici yaklasirken noktayi gorsun, ama uzakta ekran kirlenmesin.
+    const Vec3 pointerPoint = candidate.point;
+    double bestPerpendicularDistance = std::max(0.0, tolerance) * 4.0;
+    std::optional<Vec3> perpendicularFoot;
     for (std::size_t first = 0; first < acquiredPoints.size(); ++first) {
         for (std::size_t second = first + 1; second < acquiredPoints.size(); ++second) {
             tracking.guides.push_back({acquiredPoints[first], acquiredPoints[second]});
@@ -891,6 +898,37 @@ TemporaryTrackingResult resolveTemporaryPointTracking(
 
             const Vec2 firstLocal = plane.toPlane(acquiredPoints[first]);
             const Vec2 secondLocal = plane.toPlane(acquiredPoints[second]);
+            // DIKME: imlecin bu ikilinin tanimladigi dogruya dikme ayagi.
+            // Noktalar farkli kotlarda olsalar da PLANDA bir dogru tanimlarlar,
+            // bu yuzden koplanarlik kontrolunden ONCE hesaplanir. Sonsuz dogru
+            // kullanilir; snap zaten ~10 px aperature ile sinirlidir.
+            const Vec2 pairDelta{secondLocal.x - firstLocal.x, secondLocal.y - firstLocal.y};
+            const double pairLengthSquared =
+                pairDelta.x * pairDelta.x + pairDelta.y * pairDelta.y;
+            if (pairLengthSquared > epsilon) {
+                const double footT = ((cursorLocal.x - firstLocal.x) * pairDelta.x +
+                                      (cursorLocal.y - firstLocal.y) * pairDelta.y) /
+                                     pairLengthSquared;
+                const Vec2 footLocal{firstLocal.x + pairDelta.x * footT,
+                                     firstLocal.y + pairDelta.y * footT};
+                const double footDistance = std::hypot(cursorLocal.x - footLocal.x,
+                                                       cursorLocal.y - footLocal.y);
+                const Vec3 foot = plane.fromPlane(footLocal) + plane.normal * cursorNormal;
+                if (footDistance < bestPerpendicularDistance) {
+                    bestPerpendicularDistance = footDistance;
+                    perpendicularFoot = foot;
+                }
+                // ACIK nesne snap'i varsa o kazanir (mevcut davranis); yoksa
+                // dikme ayagi diger turetilmis noktalarla mesafeye gore yarisir.
+                if (!explicitObjectSnap && footDistance < bestDistance) {
+                    bestDistance = footDistance;
+                    tracking.result = {foot, SnapType::Perpendicular, footDistance};
+                    tracking.locked = true;
+                    // Kilitlenen ayak GOSTERILEN ayak olur: snap noktasi ile
+                    // ekrandaki PERP isareti her zaman ayni nokta olsun.
+                    perpendicularFoot = foot;
+                }
+            }
             const double firstNormal = normalDistance(acquiredPoints[first]);
             const double secondNormal = normalDistance(acquiredPoints[second]);
             if (std::abs(firstNormal - secondNormal) > std::max(tolerance, epsilon)) continue;
@@ -916,6 +954,12 @@ TemporaryTrackingResult resolveTemporaryPointTracking(
                 }
             }
         }
+    }
+    // Dikme ayagi bulunduysa: turetilmis nokta olarak goster ve imlece dik
+    // kilavuz cizgisini ciz (dik aciyi gozle dogrulanabilir yapar).
+    if (perpendicularFoot) {
+        tracking.perpendicularPoints.push_back(*perpendicularFoot);
+        tracking.guides.push_back({*perpendicularFoot, pointerPoint});
     }
     if (!explicitObjectSnap && !tracking.locked) {
         std::optional<TrackingGuide> activeAxisGuide;

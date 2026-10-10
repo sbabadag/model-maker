@@ -193,6 +193,7 @@ struct DraftView {
     std::vector<Vec3> temporaryTrackingPoints;
     std::vector<TrackingGuide> temporaryTrackingGuides;
     std::vector<Vec3> temporaryDerivedPoints;
+    std::vector<Vec3> temporaryPerpendicularPoints;
     bool dynamicInputEnabled{true};
     double workPlaneZ{};
     WorkPlane workPlane{};

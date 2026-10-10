@@ -42,6 +42,10 @@ struct TemporaryTrackingResult {
     SnapResult result{};
     std::vector<TrackingGuide> guides;
     std::vector<Vec3> derivedPoints;
+    // DIKME (perpendicular) ayaklari: iki izleme noktasinin tanimladigi dogruya
+    // imlecin dikme ayagi. Ayri tutulur cunku cizimde farkli isaretlenir
+    // (sag aci / PERP) ve snapping'te SnapType::Perpendicular uretir.
+    std::vector<Vec3> perpendicularPoints;
     bool locked{};
 };
 

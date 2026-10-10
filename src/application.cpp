@@ -1153,6 +1153,7 @@ void Application::paintPassiveViewport(std::size_t index) {
         view.zoomWindowFirstCorner.reset();
         view.temporaryTrackingGuides.clear();
         view.temporaryDerivedPoints.clear();
+        view.temporaryPerpendicularPoints.clear();
         view.transformCommand = TransformCommand::None; // hayalet onizleme yok
         view.drawingActive = false;
         view.workPlanePicking = false;
@@ -2571,6 +2572,7 @@ void Application::clearTemporaryTracking() {
     temporaryTrackingPoints_.clear();
     temporaryTrackingGuides_.clear();
     temporaryDerivedPoints_.clear();
+    temporaryPerpendicularPoints_.clear();
     polarTrackingLocked_ = false;
     temporaryTrackingLocked_ = false;
 }
@@ -3600,6 +3602,7 @@ void Application::updateHover(int x, int y) {
         temporaryPointDwellCandidate_.reset();
         temporaryTrackingGuides_.clear();
         temporaryDerivedPoints_.clear();
+        temporaryPerpendicularPoints_.clear();
         hover_.reset();
         return;
     }
@@ -3669,6 +3672,7 @@ void Application::updateHover(int x, int y) {
         hover_ = tracking.result;
         temporaryTrackingGuides_ = std::move(tracking.guides);
         temporaryDerivedPoints_ = std::move(tracking.derivedPoints);
+        temporaryPerpendicularPoints_ = std::move(tracking.perpendicularPoints);
         polarTrackingLocked_ = tracking.locked;
         temporaryTrackingLocked_ = tracking.locked;
     }
@@ -6135,6 +6139,7 @@ DraftView Application::draftView() const {
     view.temporaryTrackingPoints = temporaryTrackingPoints_;
     view.temporaryTrackingGuides = temporaryTrackingGuides_;
     view.temporaryDerivedPoints = temporaryDerivedPoints_;
+    view.temporaryPerpendicularPoints = temporaryPerpendicularPoints_;
     view.workPlaneZ = workPlane_.origin.z; view.workPlane = workPlane_;
     view.workPlanePicking = workPlanePicking_; view.workPlanePoints = workPlanePoints_;
     view.input = input_; view.cursorScreen = cursorScreen_;
