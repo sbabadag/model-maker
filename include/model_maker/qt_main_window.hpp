@@ -30,7 +30,15 @@ protected:
 
 private:
     void createMenus();
+    // Tekla "Create rectangular grid" + property pane esdegeri: grid
+    // SPESIFIKASYONU (koordinat dili, etiketler, uzanti, orijin, gorunum)
+    // ile yeni grid olusturur.
     void promptCreateGrid();
+    // Tekla "Grids" yoneticisi: mevcut gridleri listeler; duzenle/sil/
+    // gorunurluk. Double-click grid property pane'in karsiligidir.
+    void promptGridManager();
+    // Tekla grid property pane karsiligi: grid spesifikasyonunu duzenler.
+    bool editGridProperties(GridDefinition& grid, const QString& title);
     void createToolbar();
     void createDockPanels();
     void resizeEmbeddedCanvas();

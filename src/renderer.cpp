@@ -419,50 +419,52 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         // TEKLA-TARZI YAPI GRIDI: kalici, etiketli aks cizgileri (1-2-3 /
         // A-B-C). Zemin referans katmani — modelden/katidan bagimsiz;
         // kesikli cizgi + aks ucunda etiket (Tekla'nin grid cercevesi).
-        // Yapi gridi her stilde cizilir (referans katman) — Wireframe dahil.
-        if (true) {
-            static int gridDiag_ = 0;
-            if (gridDiag_++ < 2) {
-                FILE* diag = fopen("model-maker-render.log", "a");
-                if (diag) {
-                    fprintf(diag, "GRIDDRAW begin grids=%zu canvas=%dx%d useGpuLines=%d\n",
-                            document.grids().size(), (int)(canvas.right - canvas.left),
-                            (int)(canvas.bottom - canvas.top), useGpuLines ? 1 : 0);
-                    fclose(diag);
+        // Her stilde cizilir (referans katman) — Wireframe dahil.
+        // Renk/yazi boyu GRID SPESIFIKASYONUNDAN gelir (Tekla grid property:
+        // Grid color / Label font size and color).
+        for (const auto& grid : document.grids()) {
+            if (!grid.visible) continue;
+            const auto rgbOf = [](unsigned int c) {
+                return RGB((c >> 16) & 0xFFu, (c >> 8) & 0xFFu, c & 0xFFu);
+            };
+            const COLORREF axisColor = rgbOf(grid.color);
+            const COLORREF labelColor = rgbOf(grid.labelColor);
+            // Etiket yazi boyu (Tekla: "Label font size"). Negatif height =
+            // karakter yuksekligi; 1..120 px araligina kelepcele.
+            const int fontPx = std::clamp(grid.labelFontSize, 6, 120);
+            HFONT labelFont = CreateFontW(-fontPx, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+                                          DEFAULT_CHARSET, OUT_TT_PRECIS, CLIP_DEFAULT_PRECIS,
+                                          CLEARTYPE_QUALITY, DEFAULT_PITCH, L"Segoe UI");
+            HGDIOBJ oldFont = labelFont ? SelectObject(targetDc, labelFont) : nullptr;
+            const int oldBkMode = SetBkMode(targetDc, TRANSPARENT);
+            for (const auto& axis : grid.axes) {
+                const POINT from = projectPoint(axis.from);
+                const POINT to = projectPoint(axis.to);
+                // Kesikli kalem (Tekla: dash-and-dot). {5,3}: ~5px cizgi, ~3px bosluk.
+                LOGBRUSH gridBrush{BS_SOLID, axisColor, 0};
+                DWORD gridPattern[] = {5, 3};
+                HPEN axisPen = ExtCreatePen(PS_GEOMETRIC | PS_USERSTYLE | PS_ENDCAP_FLAT,
+                                            1, &gridBrush, 2, gridPattern);
+                if (!axisPen) axisPen = CreatePen(PS_SOLID, 1, axisColor);
+                HGDIOBJ oldAxisPen = SelectObject(targetDc, axisPen);
+                MoveToEx(targetDc, from.x, from.y, nullptr);
+                LineTo(targetDc, to.x, to.y);
+                SelectObject(targetDc, oldAxisPen);
+                DeleteObject(axisPen);
+                // Etiket: aks ucundan olcekli ofsetle, hat kesilmeden ayrilmis.
+                const double len = std::hypot(to.x - from.x, to.y - from.y);
+                if (len > 1.0 && !axis.label.empty()) {
+                    const double ux = (to.x - from.x) / len, uy = (to.y - from.y) / len;
+                    const int labelX = static_cast<int>(std::lround(to.x + ux * 16.0));
+                    const int labelY = static_cast<int>(std::lround(to.y + uy * 16.0));
+                    drawText(targetDc, labelX, labelY,
+                             std::wstring(axis.label.begin(), axis.label.end()).c_str(),
+                             labelColor);
                 }
             }
-            for (const auto& grid : document.grids()) {
-                if (!grid.visible) continue;
-                for (const auto& axis : grid.axes) {
-                    const POINT from = projectPoint(axis.from);
-                    const POINT to = projectPoint(axis.to);
-                    // Kesikli kalem (Tekla mesafe cizgisi) — kisa kesikler,
-                    // ince cizgi (1px). Desen {5,3}: ~5px cizgi, ~3px bosluk.
-                    LOGBRUSH gridBrush{BS_SOLID, RGB(110, 130, 170), 0};
-                    DWORD gridPattern[] = {5, 3};
-                    HPEN axisPen = ExtCreatePen(PS_GEOMETRIC | PS_USERSTYLE | PS_ENDCAP_FLAT,
-                                                1, &gridBrush, 2, gridPattern);
-                    if (!axisPen) axisPen = CreatePen(PS_SOLID, 1, RGB(110, 130, 170));
-                    HGDIOBJ oldAxisPen = SelectObject(targetDc, axisPen);
-                    MoveToEx(targetDc, from.x, from.y, nullptr);
-                    LineTo(targetDc, to.x, to.y);
-                    SelectObject(targetDc, oldAxisPen);
-                    DeleteObject(axisPen);
-                    // Etiket: aksin ucundan belirli bir OFFSET ile — hat
-                    // kesilmeden once ayrilmis, aks yonu boyunca ortalı.
-                    // Ucun ~16px otesinde, cizgiden net ayirt edilebilir.
-                    const double len = std::hypot(to.x - from.x, to.y - from.y);
-                    if (len > 1.0 && !axis.label.empty()) {
-                        const double ux = (to.x - from.x) / len, uy = (to.y - from.y) / len;
-                        // Aks ucundan uzanti offset'i (px)
-                        const int labelX = static_cast<int>(std::lround(to.x + ux * 16.0));
-                        const int labelY = static_cast<int>(std::lround(to.y + uy * 16.0));
-                        drawText(targetDc, labelX, labelY,
-                                 std::wstring(axis.label.begin(), axis.label.end()).c_str(),
-                                 RGB(60, 68, 110));
-                    }
-                }
-            }
+            SetBkMode(targetDc, oldBkMode);
+            if (oldFont) SelectObject(targetDc, oldFont);
+            if (labelFont) DeleteObject(labelFont);
         }
         // CALISMA DUZLEMI HAYALETI (ghost work plane): aktif is duzlemi HER
         // pencerede yari saydam bir duzlem yamasi olarak gosterilir. Yalnizca

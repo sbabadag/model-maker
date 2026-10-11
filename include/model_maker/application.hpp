@@ -67,14 +67,13 @@ public:
     // GL cokmesi/donmasi olduysa (guard dosyasi) bu sefer GDI ile baslar.
     void applyStartupDefaults3D();
     void tryEnableStartupGpu();
-    // TEKLA-TARZI YAPI GRIDI olusturma (Qt dialogdan parametrelerle).
-    // X/1-2-3 (dikey) ve Y/A-B-C (yatay) aks cizgilerini workPlane
-    // duzleminde uretir; etiketler verilen harf/rakamdan baslar.
-    void createModelGrid(const Vec3& origin, const Vec3& xDir, const Vec3& yDir,
-                         std::vector<double> xSpacings, std::vector<double> ySpacings,
-                         std::vector<double> zLevels,
-                         std::vector<std::wstring> xLabels, std::vector<std::wstring> yLabels,
-                         std::vector<std::wstring> zLabels);
+    // TEKLA-TARZI YAPI GRIDI: grid SPESIFIKASYONU ile ekle/degistir/sil.
+    // Koordinat dili ve turetim `model_maker/grid.hpp`'de (parseGridCoordinateLine,
+    // rebuildGridAxes). `axes` her zaman spesifikasyondan TUREtilir.
+    std::size_t createModelGrid(GridDefinition grid);
+    bool updateModelGrid(std::size_t index, GridDefinition grid);
+    bool removeModelGrid(std::size_t index);
+    bool setModelGridVisible(std::size_t index, bool visible);
 
     // Style controls (for Qt toolbar integration)
     bool snapEnabled() const noexcept { return snapEnabled_; }

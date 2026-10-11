@@ -26,6 +26,7 @@ find_package(Qt6 QUIET COMPONENTS Widgets Core Gui)
 
 add_library(model_maker_core
     src/geometry.cpp
+    src/grid.cpp
     src/camera.cpp
     src/view_cube.cpp
     src/ribbon_layout.cpp
@@ -335,6 +336,14 @@ if(BUILD_TESTING)
     add_executable(model_maker_view_workplane_move_test tests/view_workplane_move_test.cpp)
     target_link_libraries(model_maker_view_workplane_move_test PRIVATE model_maker_core)
     add_test(NAME model_maker_view_workplane_move_test COMMAND model_maker_view_workplane_move_test)
+
+    # TEKLA-TARZI YAPI GRIDI: koordinat dili ("N*deger" tekrari, X/Y artimsal,
+    # Z mutlak), X/Y/Z etiketleri, Left/Below - Right/Above uzantilari, origin
+    # offset, spesifikasyondan turetim, MMW7 kalicilik + MMW5/6 geriye donuk
+    # uyumluluk ve grid ekle/degistir/sil undo'su. OCC'siz/platformdan bagimsiz.
+    add_executable(model_maker_grid_test tests/grid_test.cpp)
+    target_link_libraries(model_maker_grid_test PRIVATE model_maker_core)
+    add_test(NAME model_maker_grid_test COMMAND model_maker_grid_test)
 
     # Kontur (siluet + gercek kenar) ureticisi: GL Solid yolunun her karede
     # kosturdugu pass'in tek kaynagi. Eski std::map uygulamasiyla esdegerlik,

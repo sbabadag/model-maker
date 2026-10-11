@@ -1,6 +1,7 @@
 #pragma once
 
 #include "model_maker/geometry.hpp"
+#include "model_maker/grid.hpp"
 
 #include <array>
 #include <filesystem>
@@ -19,7 +20,7 @@ struct Bounds3 {
 };
 
 struct UndoOp {
-    enum class Kind { Add, Delete, Replace, Move, Transform };
+    enum class Kind { Add, Delete, Replace, Move, Transform, GridAdd, GridRemove, GridReplace };
     Kind kind{Kind::Add};
     std::size_t index{};
     std::vector<WireframeModel> beforeModels; // delete: silinenler; replace: eski model
@@ -31,6 +32,12 @@ struct UndoOp {
     Vec3 pivot{};
     std::array<double, 9> linear{1, 0, 0, 0, 1, 0, 0, 0, 1};
     std::array<double, 9> linearInverse{1, 0, 0, 0, 1, 0, 0, 0, 1};
+    // Grid (GridAdd/GridRemove/GridReplace): yapi gridi ekle/sil/degistir.
+    // GridAdd: gridAfter eklendi (gridIndex'e). GridRemove: gridBefore silindi.
+    // GridReplace: gridBefore -> gridAfter (ayni indeks).
+    std::size_t gridIndex{};
+    GridDefinition gridBefore;
+    GridDefinition gridAfter;
 };
 struct UndoRecord {
     std::vector<UndoOp> ops;
@@ -38,20 +45,9 @@ struct UndoRecord {
     std::unordered_map<std::string, EntityProperties> layersAfter;
 };
 
-// TEKLA-TARZI YAPI GRIDI: kalici, etiketli aks cizgileri (1-2-3 / A-B-C).
-// Model/katidan ayri, zemin referans katmaninda cizilir, kaydedilir.
-struct GridAxisLine {
-    Vec3 from{};   // aks cizgisinin baslangici
-    Vec3 to{};     // bitisi
-    std::string label; // ornek: "1", "2", "A", "B"
-    bool horizontal{}; // Y-yonu (A-B-C) ise true; X-yonu (1-2-3) ise false
-};
-struct GridDefinition {
-    std::string name = "GRID";
-    std::vector<GridAxisLine> axes; // tum aks cizgileri (x ve y yonleri)
-    bool visible{true};
-    // Etiketlerin cizilecegi uzaklik (akstan olan px offset) — renderer kullanir.
-};
+// GridDefinition / GridAxisLine ve Tekla koordinat dili `model_maker/grid.hpp`
+// icinde tanimlidir (portatif cekirdek). Aks cizgisi geometrisi `axes` alaninda
+// TUREtilmis olarak durur; kaynak olan spesifikasyondur (xCoords/yCoords/...).
 
 class Document {
 public:
@@ -133,6 +129,8 @@ public:
     const std::vector<GridDefinition>& grids() const noexcept { return grids_; }
     GridDefinition* mutableGrid(std::size_t index) noexcept;
     bool setGridVisible(std::size_t index, bool visible);
+    // Tekla tarzi: grid SPESIFIKASYONUNU degistirir ve `axes`'i yeniden uretir.
+    bool setGrid(std::size_t index, GridDefinition grid);
     void removeGrid(std::size_t index);
 
 private:

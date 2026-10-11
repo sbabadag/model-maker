@@ -8,7 +8,7 @@
 //      ANCAK iki noktali gorunusun OTOMATIK gorunus duzlemi ise dunya Z doner;
 //      yoksa elevasyonda cizilen her kirisin basligi bakisa paralel olur ve
 //      kiris levha gibi "yatak" gorunurdu.
-//   2) Referans normal KATIYLA SAKLANIR → MMW6 dosya round-trip.
+//   2) Referans normal KATIYLA SAKLANIR → MMW6/MMW7 dosya round-trip.
 //   3) ESKI dosyalar (MMW3/MMW5) varsayilan (0,0,1) ile AYNI davranisi verir
 //      (geriye donuk uyumluluk; alan yoksa kati eskisi gibi yatay baslikli).
 //   4) Donusumler referans normali de DONER: rotate/transform (undo ile geri),
@@ -91,7 +91,7 @@ int main() {
               "bozuk is duzlemi normali → dunya Z (cokme yok)");
     }
 
-    // --- 2) MMW6 round-trip: referans normal saklanir -----------------------
+    // --- 2) MMW6/MMW7 round-trip: referans normal saklanir -----------------
     const std::filesystem::path file{"mm_section_normal_roundtrip.mmw"};
     {
         Document doc;
@@ -102,17 +102,19 @@ int main() {
         std::ifstream peek(file);
         std::string signature;
         peek >> signature;
-        check(signature == "MMW6", "kayit MMW6 imzasi yazar");
+        // MMW7 = MMW6 + grid TEKLA spesifikasyonu; kesit referans normali
+        // MMW6'dan beri ayni P blogunda durur.
+        check(signature == "MMW7", "kayit MMW7 imzasi yazar");
 
         Document other;
         other.load(file);
-        check(other.models().size() == 2, "MMW6: iki model yuklendi");
+        check(other.models().size() == 2, "MMW6/7: iki model yuklendi");
         check(other.models().size() == 2 &&
                   nearV(normalOf(other, 0), Vec3{0, 1, 0}, 1e-12) &&
                   nearV(normalOf(other, 1), Vec3{0, 0, 1}, 1e-12),
-              "MMW6: kesit referans normali round-trip korunur");
+              "MMW6/7: kesit referans normali round-trip korunur");
         check(other.models().size() == 2 && other.models()[0].properties().profileName == "IPE200",
-              "MMW6: profil adi da korunur");
+              "MMW6/7: profil adi da korunur");
     }
 
     // --- 3) Geriye donuk uyumluluk: MMW3 (alan YOK) ------------------------

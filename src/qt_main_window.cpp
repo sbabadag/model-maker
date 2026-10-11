@@ -21,6 +21,9 @@
 #include <QCompleter>
 #include <QVariant>
 #include <QColorDialog>
+#include <QCheckBox>
+#include <QStringList>
+#include <optional>
 #include <QShortcut>
 #include <QKeySequence>
 #include <QDialog>
@@ -563,6 +566,7 @@ void QtMainWindow::createMenus() {
     windowMenu->addAction("Tüm görünüşleri &kapat", this, [this]() { closeAllTwoPointViews(); });
     viewMenu->addSeparator();
     viewMenu->addAction("&Yapı Gridi Oluştur...", this, [this]() { promptCreateGrid(); });
+    viewMenu->addAction("&Yapı Gridleri...", this, [this]() { promptGridManager(); });
     viewMenu->addSeparator();
     viewMenu->addAction("&Benchmark (GDI vs GL)", this, [this]() {
         FILE* diag = fopen("model-maker-render.log", "a");
@@ -572,69 +576,261 @@ void QtMainWindow::createMenus() {
 }
 
 void QtMainWindow::promptCreateGrid() {
-    // TEKLA TARZI GRID DIYALOGU: aks mesafeleri tek satirda yan yana (space
-    // ile), Z icin KOTLAR (aks araligi degil!), etiketler ayri editlerde
-    // ayni duzende. Ornek: X "6000 6000 4500" + etiket "1 2 3 4";
-    // Z "0 3600 7200" (kotlar) + etiket "±0 +3.60 +7.20".
+    // TEKLA "Create rectangular grid": grid SPESIFIKASYONU ile olusturulur.
+    // Tekla varsayilani gibi 4x4 aks + 3 kot ile baslar; property pane'de
+    // degistirilip onaylanir.
+    GridDefinition grid;
+    grid.name = "GRID";
+    grid.xCoords = parseGridCoordinateLine("0 3*6000", true);
+    grid.yCoords = parseGridCoordinateLine("0 3*5000", true);
+    grid.zCoords = parseGridCoordinateLine("0 3600 7200", false);
+    grid.xLabels = parseGridLabelLine("1 2 3 4");
+    grid.yLabels = parseGridLabelLine("A B C D");
+    grid.zLabels = parseGridLabelLine("0 3600 7200");
+    if (!editGridProperties(grid, QStringLiteral("Yapı Gridi Oluştur (Tekla tarzı)"))) return;
+    app_.createModelGrid(std::move(grid));
+}
+
+void QtMainWindow::promptGridManager() {
     QDialog dialog(this);
-    dialog.setWindowTitle("Yapı Gridi Oluştur (Tekla tarzı)");
+    dialog.setWindowTitle(QStringLiteral("Yapı Gridleri"));
+    dialog.resize(560, 360);
+    QVBoxLayout* layout = new QVBoxLayout(&dialog);
+    layout->addWidget(new QLabel(
+        QStringLiteral("Modeldeki yapı gridleri. Bir satıra çift tıklayın ya da\n"
+                       "Düzenle'ye basın — Tekla'da grid çizgisine çift tıklamanın karşılığı."),
+        &dialog));
+    QListWidget* list = new QListWidget(&dialog);
+    layout->addWidget(list, 1);
+
+    const auto refresh = [this, list]() {
+        QSignalBlocker block(list);
+        list->clear();
+        const auto& grids = app_.document().grids();
+        for (std::size_t i = 0; i < grids.size(); ++i) {
+            const GridDefinition& g = grids[i];
+            QString summary = QStringLiteral("%1  —  X:%2  Y:%3  Z:%4")
+                                  .arg(QString::fromStdString(g.name))
+                                  .arg(g.xCoords.size())
+                                  .arg(g.yCoords.size())
+                                  .arg(g.zCoords.size());
+            if (!g.visible) summary += QStringLiteral("  (gizli)");
+            QListWidgetItem* item = new QListWidgetItem(summary, list);
+            item->setData(Qt::UserRole, static_cast<int>(i));
+        }
+    };
+    refresh();
+
+    QHBoxLayout* buttons = new QHBoxLayout();
+    QPushButton* newBtn = new QPushButton(QStringLiteral("Yeni..."), &dialog);
+    QPushButton* editBtn = new QPushButton(QStringLiteral("Düzenle..."), &dialog);
+    QPushButton* delBtn = new QPushButton(QStringLiteral("Sil"), &dialog);
+    QPushButton* visBtn = new QPushButton(QStringLiteral("Görünürlük"), &dialog);
+    buttons->addWidget(newBtn);
+    buttons->addWidget(editBtn);
+    buttons->addWidget(delBtn);
+    buttons->addWidget(visBtn);
+    buttons->addStretch(1);
+    QDialogButtonBox* closeBox = new QDialogButtonBox(QDialogButtonBox::Close, &dialog);
+    buttons->addWidget(closeBox);
+    layout->addLayout(buttons);
+
+    const auto selectedIndex = [list]() -> std::optional<std::size_t> {
+        QListWidgetItem* item = list->currentItem();
+        if (!item) return std::nullopt;
+        return static_cast<std::size_t>(item->data(Qt::UserRole).toInt());
+    };
+
+    QObject::connect(newBtn, &QPushButton::clicked, &dialog, [this, &refresh]() {
+        promptCreateGrid();
+        refresh();
+    });
+    const auto editSelected = [this, &selectedIndex, &refresh]() {
+        const std::optional<std::size_t> index = selectedIndex();
+        if (!index || *index >= app_.document().grids().size()) return;
+        GridDefinition grid = app_.document().grids()[*index];
+        if (grid.axes.empty() && grid.xCoords.empty() && grid.yCoords.empty()) return;
+        if (!editGridProperties(grid, QStringLiteral("Yapı Gridini Düzenle"))) return;
+        app_.updateModelGrid(*index, std::move(grid));
+        refresh();
+    };
+    QObject::connect(editBtn, &QPushButton::clicked, &dialog, editSelected);
+    QObject::connect(list, &QListWidget::itemDoubleClicked, &dialog,
+                     [&editSelected](QListWidgetItem*) { editSelected(); });
+    QObject::connect(delBtn, &QPushButton::clicked, &dialog, [this, &selectedIndex, &refresh]() {
+        const std::optional<std::size_t> index = selectedIndex();
+        if (!index) return;
+        app_.removeModelGrid(*index);
+        refresh();
+    });
+    QObject::connect(visBtn, &QPushButton::clicked, &dialog, [this, &selectedIndex, &refresh]() {
+        const std::optional<std::size_t> index = selectedIndex();
+        if (!index || *index >= app_.document().grids().size()) return;
+        const bool visible = app_.document().grids()[*index].visible;
+        app_.setModelGridVisible(*index, !visible);
+        refresh();
+    });
+    QObject::connect(closeBox, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+
+    dialog.exec();
+}
+
+bool QtMainWindow::editGridProperties(GridDefinition& grid, const QString& title) {
+    // TEKLA GRID PROPERTY PANE karsiligi. Alan adlari Tekla dokumaniyla
+    // birebir: Coordinates (X/Y/Z), Labels (X/Y/Z), Line extensions
+    // (Left/Below - Right/Above), Origin (X/Y/Z), Magnetic grid plane,
+    // Grid color, Label font size and color, Name.
+    QDialog dialog(this);
+    dialog.setWindowTitle(title);
     QFormLayout* form = new QFormLayout(&dialog);
     form->setHorizontalSpacing(12);
-    form->setVerticalSpacing(8);
+    form->setVerticalSpacing(6);
 
-    auto parseDoubles = [](const QString& text) -> std::vector<double> {
-        std::vector<double> out;
-        for (const auto& t : text.simplified().split(' ', Qt::SkipEmptyParts)) {
-            bool ok = false;
-            // tok const referans; replace non-const uye — kopyada calistir.
-            const double v = QString(t).replace(QLatin1Char(','), QLatin1Char('.'))
-                                .toDouble(&ok);
-            if (ok) out.push_back(v);
+    const auto section = [&dialog, form](const QString& text) {
+        QLabel* label = new QLabel(QStringLiteral("<b>%1</b>").arg(text), &dialog);
+        form->addRow(label);
+    };
+    const auto coordText = [](const std::vector<double>& v, bool cumulative) {
+        QStringList parts;
+        double prev = 0.0;
+        for (std::size_t i = 0; i < v.size(); ++i) {
+            const double d = (cumulative && i > 0) ? v[i] - prev : v[i];
+            prev = v[i];
+            parts << QString::number(d);
         }
-        return out;
+        return parts.join(QLatin1Char(' '));
     };
-    auto parseStrings = [](const QString& text) -> std::vector<std::wstring> {
-        std::vector<std::wstring> out;
-        for (const auto& tok : text.simplified().split(' ', Qt::SkipEmptyParts))
-            out.push_back(tok.toStdWString());
-        return out;
+    const auto labelText = [](const std::vector<std::string>& v) {
+        QStringList parts;
+        for (const auto& s : v) parts << QString::fromStdString(s);
+        return parts.join(QLatin1Char(' '));
     };
 
-    QLineEdit* xSpaces = new QLineEdit("6000 6000 6000", &dialog);
-    xSpaces->setMinimumWidth(320);
-    form->addRow("X aks mesafeleri (mm, aralarında boşluk):", xSpaces);
-    QLineEdit* xLabels = new QLineEdit("1 2 3 4", &dialog);
-    form->addRow("X etiketleri (aynı sırada):", xLabels);
+    section(QStringLiteral("Name"));
+    QLineEdit* nameEdit = new QLineEdit(QString::fromStdString(grid.name), &dialog);
+    form->addRow(QStringLiteral("Name:"), nameEdit);
 
-    QLineEdit* ySpaces = new QLineEdit("5000 5000 5000", &dialog);
-    form->addRow("Y aks mesafeleri (mm):", ySpaces);
-    QLineEdit* yLabels = new QLineEdit("A B C D", &dialog);
-    form->addRow("Y etiketleri (aynı sırada):", yLabels);
+    section(QStringLiteral("Coordinates  (X/Y artımsal, Z mutlak)"));
+    QLineEdit* xEdit = new QLineEdit(coordText(grid.xCoords, true), &dialog);
+    xEdit->setMinimumWidth(320);
+    form->addRow(QStringLiteral("X (mm):"), xEdit);
+    QLineEdit* yEdit = new QLineEdit(coordText(grid.yCoords, true), &dialog);
+    form->addRow(QStringLiteral("Y (mm):"), yEdit);
+    QLineEdit* zEdit = new QLineEdit(coordText(grid.zCoords, false), &dialog);
+    form->addRow(QStringLiteral("Z (mm):"), zEdit);
+    form->addRow(new QLabel(QStringLiteral(
+        "Tekla yazımı: boşlukla ayrılmış değerler; \"2*4000\" iki tekrar demektir.\n"
+        "Örnek: \"0 3*6000\" → 0, 6000, 12000, 18000."), &dialog));
 
-    QLineEdit* zLevels = new QLineEdit("0 3600 7200", &dialog);
-    form->addRow("Z kotları (mm, aks aralığı DEĞİL):", zLevels);
-    QLineEdit* zLabels = new QLineEdit("±0 +3.60 +7.20", &dialog);
-    form->addRow("Z etiketleri (aynı sırada):", zLabels);
+    section(QStringLiteral("Labels  (boş bırakılabilir)"));
+    QLineEdit* xLabEdit = new QLineEdit(labelText(grid.xLabels), &dialog);
+    form->addRow(QStringLiteral("X etiketleri:"), xLabEdit);
+    QLineEdit* yLabEdit = new QLineEdit(labelText(grid.yLabels), &dialog);
+    form->addRow(QStringLiteral("Y etiketleri:"), yLabEdit);
+    QLineEdit* zLabEdit = new QLineEdit(labelText(grid.zLabels), &dialog);
+    form->addRow(QStringLiteral("Z (kot) etiketleri:"), zLabEdit);
 
-    form->addRow(new QLabel(
-        "Boş bırakılan eksen atlanır. Etiket sayısı mesafe sayısından azsa\n"
-        "eksikler otomatik numaralandırılır (X: sayı, Y: harf, Z: kot).", &dialog));
+    section(QStringLiteral("Line extensions (mm)"));
+    QDoubleSpinBox* extLB = new QDoubleSpinBox(&dialog);
+    extLB->setRange(-1000000.0, 1000000.0);
+    extLB->setDecimals(1);
+    extLB->setValue(grid.extendLeft);
+    form->addRow(QStringLiteral("Left / Below:"), extLB);
+    QDoubleSpinBox* extRA = new QDoubleSpinBox(&dialog);
+    extRA->setRange(-1000000.0, 1000000.0);
+    extRA->setDecimals(1);
+    extRA->setValue(grid.extendRight);
+    form->addRow(QStringLiteral("Right / Above:"), extRA);
 
-    QDialogButtonBox* buttons = new QDialogButtonBox(
+    section(QStringLiteral("Origin (mm)"));
+    QDoubleSpinBox* ox = new QDoubleSpinBox(&dialog);
+    ox->setRange(-1000000.0, 1000000.0);
+    ox->setDecimals(1);
+    ox->setValue(grid.origin.x);
+    form->addRow(QStringLiteral("X:"), ox);
+    QDoubleSpinBox* oy = new QDoubleSpinBox(&dialog);
+    oy->setRange(-1000000.0, 1000000.0);
+    oy->setDecimals(1);
+    oy->setValue(grid.origin.y);
+    form->addRow(QStringLiteral("Y:"), oy);
+    QDoubleSpinBox* oz = new QDoubleSpinBox(&dialog);
+    oz->setRange(-1000000.0, 1000000.0);
+    oz->setDecimals(1);
+    oz->setValue(grid.origin.z);
+    form->addRow(QStringLiteral("Z:"), oz);
+
+    section(QStringLiteral("Appearance"));
+    QCheckBox* magneticCheck = new QCheckBox(QStringLiteral("Magnetic grid plane"), &dialog);
+    magneticCheck->setChecked(grid.magnetic);
+    form->addRow(magneticCheck);
+    QCheckBox* visibleCheck = new QCheckBox(QStringLiteral("Görünür"), &dialog);
+    visibleCheck->setChecked(grid.visible);
+    form->addRow(visibleCheck);
+
+    unsigned int axisColor = grid.color;
+    unsigned int labelColor = grid.labelColor;
+    QPushButton* colorBtn = new QPushButton(&dialog);
+    colorBtn->setStyleSheet(QStringLiteral("background-color:#%1;")
+                                .arg(axisColor & 0xFFFFFFu, 6, 16, QLatin1Char('0')));
+    form->addRow(QStringLiteral("Grid color:"), colorBtn);
+    QObject::connect(colorBtn, &QPushButton::clicked, &dialog, [&dialog, &axisColor, colorBtn]() {
+        const QColor c = QColorDialog::getColor(
+            QColor(static_cast<int>((axisColor >> 16) & 0xFFu),
+                   static_cast<int>((axisColor >> 8) & 0xFFu),
+                   static_cast<int>(axisColor & 0xFFu)),
+            &dialog, QStringLiteral("Grid color"));
+        if (!c.isValid()) return;
+        axisColor = static_cast<unsigned int>((c.red() << 16) | (c.green() << 8) | c.blue());
+        colorBtn->setStyleSheet(QStringLiteral("background-color:#%1;")
+                                    .arg(axisColor & 0xFFFFFFu, 6, 16, QLatin1Char('0')));
+    });
+    QSpinBox* fontSpin = new QSpinBox(&dialog);
+    fontSpin->setRange(6, 72);
+    fontSpin->setValue(grid.labelFontSize);
+    form->addRow(QStringLiteral("Label font size (px):"), fontSpin);
+    QPushButton* labelColorBtn = new QPushButton(&dialog);
+    labelColorBtn->setStyleSheet(QStringLiteral("background-color:#%1;")
+                                     .arg(labelColor & 0xFFFFFFu, 6, 16, QLatin1Char('0')));
+    form->addRow(QStringLiteral("Label color:"), labelColorBtn);
+    QObject::connect(labelColorBtn, &QPushButton::clicked, &dialog,
+                     [&dialog, &labelColor, labelColorBtn]() {
+        const QColor c = QColorDialog::getColor(
+            QColor(static_cast<int>((labelColor >> 16) & 0xFFu),
+                   static_cast<int>((labelColor >> 8) & 0xFFu),
+                   static_cast<int>(labelColor & 0xFFu)),
+            &dialog, QStringLiteral("Label color"));
+        if (!c.isValid()) return;
+        labelColor = static_cast<unsigned int>((c.red() << 16) | (c.green() << 8) | c.blue());
+        labelColorBtn->setStyleSheet(QStringLiteral("background-color:#%1;")
+                                         .arg(labelColor & 0xFFFFFFu, 6, 16, QLatin1Char('0')));
+    });
+
+    QDialogButtonBox* box = new QDialogButtonBox(
         QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog);
-    form->addRow(buttons);
-    QObject::connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
-    QObject::connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    form->addRow(box);
+    QObject::connect(box, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+    QObject::connect(box, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
 
-    if (dialog.exec() != QDialog::Accepted) return;
-    app_.createModelGrid({0.0, 0.0, 0.0},
-                         {1.0, 0.0, 0.0}, {0.0, 1.0, 0.0},
-                         parseDoubles(xSpaces->text()),
-                         parseDoubles(ySpaces->text()),
-                         parseDoubles(zLevels->text()),
-                         parseStrings(xLabels->text()),
-                         parseStrings(yLabels->text()),
-                         parseStrings(zLabels->text()));
+    if (dialog.exec() != QDialog::Accepted) return false;
+
+    grid.name = nameEdit->text().trimmed().toStdString();
+    grid.xCoords = parseGridCoordinateLine(xEdit->text().toStdString(), true);
+    grid.yCoords = parseGridCoordinateLine(yEdit->text().toStdString(), true);
+    grid.zCoords = parseGridCoordinateLine(zEdit->text().toStdString(), false);
+    grid.xLabels = parseGridLabelLine(xLabEdit->text().toStdString());
+    grid.yLabels = parseGridLabelLine(yLabEdit->text().toStdString());
+    grid.zLabels = parseGridLabelLine(zLabEdit->text().toStdString());
+    grid.extendLeft = extLB->value();
+    grid.extendRight = extRA->value();
+    grid.extendBelow = extLB->value();
+    grid.extendAbove = extRA->value();
+    grid.origin = Vec3{ox->value(), oy->value(), oz->value()};
+    grid.magnetic = magneticCheck->isChecked();
+    grid.visible = visibleCheck->isChecked();
+    grid.color = axisColor;
+    grid.labelColor = labelColor;
+    grid.labelFontSize = fontSpin->value();
+    return true;
 }
 
 void QtMainWindow::createToolbar() {

@@ -610,6 +610,28 @@ void Document::applyUndoOp(const UndoOp& op, bool forward) {
             }
         break;
     }
+    case UndoOp::Kind::GridAdd:
+        if (forward) {
+            if (op.gridIndex <= grids_.size())
+                grids_.insert(grids_.begin() + static_cast<std::ptrdiff_t>(op.gridIndex),
+                              op.gridAfter);
+        } else if (op.gridIndex < grids_.size()) {
+            grids_.erase(grids_.begin() + static_cast<std::ptrdiff_t>(op.gridIndex));
+        }
+        break;
+    case UndoOp::Kind::GridRemove:
+        if (forward) {
+            if (op.gridIndex < grids_.size())
+                grids_.erase(grids_.begin() + static_cast<std::ptrdiff_t>(op.gridIndex));
+        } else if (op.gridIndex <= grids_.size()) {
+            grids_.insert(grids_.begin() + static_cast<std::ptrdiff_t>(op.gridIndex),
+                          op.gridBefore);
+        }
+        break;
+    case UndoOp::Kind::GridReplace:
+        if (op.gridIndex < grids_.size())
+            grids_[op.gridIndex] = forward ? op.gridAfter : op.gridBefore;
+        break;
     }
 }
 
@@ -1004,8 +1026,9 @@ void Document::save(const std::filesystem::path& path) const {
     // MMW1/2 = yalniz geometri.)
     // MMW6: + kesit REFERANS NORMALI (sectionNormal) — "profil ust basligi
     // workplane ile paralel" icin katiyla saklanir; MMW5 dosyalari okunur ve
+    // MMW7: + grid TEKLA SPESIFIKASYONU (koordinat dili/etiket/uzanti/orijin).
     // varsayilan (0,0,1) ile AYNI davranisi verir.
-    output << "MMW6\n" << models_.size() << '\n';
+    output << "MMW7\n" << models_.size() << '\n';
     // Katman tanimlari: isim + (trueColor veya ACI) + linetype + visible.
     // Model yalniz katman ADI tasir; katman rengi/sifati bu haritada —
     // kaydedilmezse dosya acilinca BYLAYER nesneler rengini kaybeder.
@@ -1061,16 +1084,35 @@ void Document::save(const std::filesystem::path& path) const {
         putS(props.description);
         output << '\n';
     }
-    // Yapi gridleri: 'G' <count> sonra her girdi icin props
+    // Yapi gridleri (MMW7): 'G' <count> sonra her grid icin TEKLA
+    // SPESIFIKASYONU (koordinat listeleri + etiketler + uzanti + orijin +
+    // gorunum). Kaynak spesifikasyondur; `axes` yuklemede TUREtilir.
     output << 'G' << ' ' << grids_.size() << '\n';
     for (const auto& grid : grids_) {
-        putS(grid.name); output << ' ' << grid.visible << ' ' << grid.axes.size() << '\n';
-        for (const auto& axis : grid.axes) {
-            output << axis.from.x << ' ' << axis.from.y << ' ' << axis.from.z << ' '
-                   << axis.to.x << ' ' << axis.to.y << ' ' << axis.to.z << ' '
-                   << axis.horizontal << ' ';
-            putS(axis.label); output << '\n';
-        }
+        putS(grid.name);
+        output << ' ' << (grid.visible ? 1 : 0) << ' ' << (grid.magnetic ? 1 : 0)
+               << ' ' << static_cast<int>(grid.kind)
+               << ' ' << grid.origin.x << ' ' << grid.origin.y << ' ' << grid.origin.z
+               << ' ' << grid.extendLeft << ' ' << grid.extendRight
+               << ' ' << grid.extendBelow << ' ' << grid.extendAbove
+               << ' ' << grid.color << ' ' << grid.labelColor
+               << ' ' << grid.labelFontSize << '\n';
+        const auto numRow = [&output](const std::vector<double>& v) {
+            output << v.size();
+            for (const double d : v) output << ' ' << d;
+            output << '\n';
+        };
+        const auto labelRow = [&output, &putS](const std::vector<std::string>& v) {
+            output << v.size();
+            for (const auto& s : v) { output << ' '; putS(s); }
+            output << '\n';
+        };
+        numRow(grid.xCoords);
+        numRow(grid.yCoords);
+        numRow(grid.zCoords);
+        labelRow(grid.xLabels);
+        labelRow(grid.yLabels);
+        labelRow(grid.zLabels);
     }
     if (!output) throw std::runtime_error("Could not write document");
 }
@@ -1083,19 +1125,23 @@ void Document::load(const std::filesystem::path& path) {
     std::size_t modelCount{};
     if (!(input >> signature >> modelCount) ||
         (signature != "MMW1" && signature != "MMW2" && signature != "MMW3" &&
-         signature != "MMW4" && signature != "MMW5" && signature != "MMW6") ||
+         signature != "MMW4" && signature != "MMW5" && signature != "MMW6" &&
+         signature != "MMW7") ||
         modelCount > 100000) {
         throw std::runtime_error("Invalid Model Maker file");
     }
     const bool version2 = signature == "MMW2" || signature == "MMW3" || signature == "MMW4" ||
-                          signature == "MMW5" || signature == "MMW6";
+                          signature == "MMW5" || signature == "MMW6" || signature == "MMW7";
     const bool version3 = signature == "MMW3" || signature == "MMW4" || signature == "MMW5" ||
-                          signature == "MMW6";
-    const bool version4 = signature == "MMW4" || signature == "MMW5" || signature == "MMW6";
-    const bool version5 = signature == "MMW5" || signature == "MMW6";
+                          signature == "MMW6" || signature == "MMW7";
+    const bool version4 = signature == "MMW4" || signature == "MMW5" || signature == "MMW6" ||
+                          signature == "MMW7";
+    const bool version5 = signature == "MMW5" || signature == "MMW6" || signature == "MMW7";
     // MMW6: kesit referans normali (sectionNormal) P blogunda; MMW5 ve oncesi
     // okunurken varsayilan (0,0,1) kalir → eski dosyalar AYNI davranis.
-    const bool version6 = signature == "MMW6";
+    const bool version6 = signature == "MMW6" || signature == "MMW7";
+    // MMW7: grid blogu TEKLA spesifikasyonu tasir (MMW5/6: yalniz-axes).
+    const bool version7 = signature == "MMW7";
     // uzunluk-sonralikli string okuyucu (katman blogundan once tanimli)
     const auto readS = [&input]() {
         std::size_t length{};
@@ -1210,7 +1256,7 @@ void Document::load(const std::filesystem::path& path) {
         loaded.push_back(std::move(built));
     }
     models_ = std::move(loaded);
-    // Yapi gridleri (MMW5): modellerden sonra 'G' blogu.
+    // Yapi gridleri (MMW5+): modellerden sonra 'G' blogu.
     grids_.clear();
     if (version5) {
         std::string gridTag;
@@ -1219,21 +1265,61 @@ void Document::load(const std::filesystem::path& path) {
             throw std::runtime_error("Invalid grid block");
         for (std::size_t gi = 0; gi < gridCount; ++gi) {
             GridDefinition grid;
-            grid.name = readS();
-            std::size_t axisCount{};
-            if (!(input >> grid.visible >> axisCount) || axisCount > 10000)
-                throw std::runtime_error("Invalid grid data");
-            grid.axes.reserve(axisCount);
-            for (std::size_t ai = 0; ai < axisCount; ++ai) {
-                GridAxisLine axis;
-                int horizontal{};
-                if (!(input >> axis.from.x >> axis.from.y >> axis.from.z
-                           >> axis.to.x >> axis.to.y >> axis.to.z
-                           >> horizontal))
-                    throw std::runtime_error("Invalid grid axis");
-                axis.horizontal = horizontal != 0;
-                axis.label = readS();
-                grid.axes.push_back(std::move(axis));
+            if (version7) {
+                // MMW7: TEKLA SPESIFIKASYONU. Cizim geometrisi TUREtilir.
+                grid.name = readS();
+                int visible = 1, magnetic = 0, kind = 0;
+                if (!(input >> visible >> magnetic >> kind
+                           >> grid.origin.x >> grid.origin.y >> grid.origin.z
+                           >> grid.extendLeft >> grid.extendRight
+                           >> grid.extendBelow >> grid.extendAbove
+                           >> grid.color >> grid.labelColor >> grid.labelFontSize))
+                    throw std::runtime_error("Invalid grid spec");
+                grid.visible = visible != 0;
+                grid.magnetic = magnetic != 0;
+                grid.kind = static_cast<GridKind>(kind);
+                const auto readNumRow = [&input]() {
+                    std::vector<double> out;
+                    std::size_t n{};
+                    if (!(input >> n) || n > 4096) throw std::runtime_error("Invalid grid row");
+                    out.resize(n);
+                    for (std::size_t k = 0; k < n; ++k)
+                        if (!(input >> out[k])) throw std::runtime_error("Invalid grid coordinate");
+                    return out;
+                };
+                const auto readLabelRow = [&input](const std::function<std::string()>& readStr) {
+                    std::vector<std::string> out;
+                    std::size_t n{};
+                    if (!(input >> n) || n > 4096) throw std::runtime_error("Invalid grid label row");
+                    out.reserve(n);
+                    for (std::size_t k = 0; k < n; ++k) out.push_back(readStr());
+                    return out;
+                };
+                grid.xCoords = readNumRow();
+                grid.yCoords = readNumRow();
+                grid.zCoords = readNumRow();
+                grid.xLabels = readLabelRow(readS);
+                grid.yLabels = readLabelRow(readS);
+                grid.zLabels = readLabelRow(readS);
+                rebuildGridAxes(grid);
+            } else {
+                // MMW5/6: yalniz turetilmis cizim geometrisi (spec yok).
+                grid.name = readS();
+                std::size_t axisCount{};
+                if (!(input >> grid.visible >> axisCount) || axisCount > 10000)
+                    throw std::runtime_error("Invalid grid data");
+                grid.axes.reserve(axisCount);
+                for (std::size_t ai = 0; ai < axisCount; ++ai) {
+                    GridAxisLine axis;
+                    int horizontal{};
+                    if (!(input >> axis.from.x >> axis.from.y >> axis.from.z
+                               >> axis.to.x >> axis.to.y >> axis.to.z
+                               >> horizontal))
+                        throw std::runtime_error("Invalid grid axis");
+                    axis.horizontal = horizontal != 0;
+                    axis.label = readS();
+                    grid.axes.push_back(std::move(axis));
+                }
             }
             grids_.push_back(std::move(grid));
         }
@@ -1242,9 +1328,17 @@ void Document::load(const std::filesystem::path& path) {
 }
 
 // ── Yapi gridleri ────────────────────────────────────────────────
+// NOT: model mutasyonlari gibi grid mutasyonlari da KENDI undo op'unu
+// kaydeder; cagiran yalnizca pushSnapshot() ile kayit acmalidir. Aksi halde
+// grid ekleme/silme geri alinamaz (eski davranis buydu).
 std::size_t Document::addGrid(GridDefinition grid) {
-    grids_.push_back(std::move(grid));
     ++revision_;
+    UndoOp op;
+    op.kind = UndoOp::Kind::GridAdd;
+    op.gridIndex = grids_.size();
+    op.gridAfter = grid;
+    recordUndoOp(std::move(op));
+    grids_.push_back(std::move(grid));
     return grids_.size() - 1;
 }
 void Document::clearGrids() noexcept {
@@ -1261,10 +1355,29 @@ bool Document::setGridVisible(std::size_t index, bool visible) {
     ++revision_;
     return true;
 }
+bool Document::setGrid(std::size_t index, GridDefinition grid) {
+    if (index >= grids_.size()) return false;
+    // Cizim geometrisi her zaman spesifikasyondan TUREtilir.
+    rebuildGridAxes(grid);
+    ++revision_;
+    UndoOp op;
+    op.kind = UndoOp::Kind::GridReplace;
+    op.gridIndex = index;
+    op.gridBefore = grids_[index];
+    op.gridAfter = grid;
+    recordUndoOp(std::move(op));
+    grids_[index] = std::move(grid);
+    return true;
+}
 void Document::removeGrid(std::size_t index) {
     if (index >= grids_.size()) return;
-    grids_.erase(grids_.begin() + static_cast<std::ptrdiff_t>(index));
     ++revision_;
+    UndoOp op;
+    op.kind = UndoOp::Kind::GridRemove;
+    op.gridIndex = index;
+    op.gridBefore = grids_[index];
+    recordUndoOp(std::move(op));
+    grids_.erase(grids_.begin() + static_cast<std::ptrdiff_t>(index));
 }
 
 } // namespace mm
