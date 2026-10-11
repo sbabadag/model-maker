@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
 """Mutasyon kosucusu: model_maker_grid_snap_types_test GERCEKTEN yakaliyor mu?
 
-KULLANICI SARTI: "ayrica grid e tum snaplar yapismali". Eskiden grid snap
-yalnizca iki aile aksinin kesisimine (SnapType::Grid) gidiyordu; aks
-cizgileri uzerinde uc/orta/en yakin/dikme adaylari YOKTU.
+KULLANICI SARTI: "ayrica grid e tum snaplar yapismali" + (sonradan) "XZ YZ gibi
+2 noktayla alinan goruntulerde grid sadece xy deki alt grid noktalarina snap
+oluyor; her grid snap ozelligine kilitlenmeli".
+
+Kok neden (olculdu): snap `grid.axes` (PLAN tabani; tum plan cizgileri
+z=origin.z'de) kullaniyordu, cizim ise `gridAxesForView`. Artik snap de cizimle
+AYNI gorunus duzlemini kullanir ve kesisim GERCEK cozulur (lineCrossing).
 
 Her mutasyon src/drafting.cpp'yi bozar, testi yeniden derler, testin
 DUSMESINI bekler, sonra dosyayi BAYT-BIREBIR geri yazar.
@@ -33,12 +37,12 @@ CALL_2D = (
 CALL_2D_MASK = "        auto gridResult = choose(std::move(gridCandidates), cursor, enabledTypes);\n"
 CALL_2D_NOMASK = "        auto gridResult = choose(std::move(gridCandidates), cursor, nullptr);\n"
 
-# --- 3B aday uretimi (tek kopya) ---
+# --- 3B aday uretimi (tek kopya; gridPlane parametresi ile) ---
 CALL_3D = (
     "        const ScreenSpaceNearest gridNearest{&camera, viewportWidth, viewportHeight, screenCursor, false};\n"
     "        std::vector<Candidate> gridCandidates;\n"
     "        addGridLineCandidates(gridCandidates, document, *raw, objectTolerancePixels, gridMetric,\n"
-    "                              referencePoint, &gridNearest);\n"
+    "                              referencePoint, &gridNearest, gridPlane);\n"
     "        auto gridResult = choose(std::move(gridCandidates), *raw, enabledTypes, &camera);\n"
     "        if (gridResult.type != SnapType::None) return gridResult;\n")
 
@@ -62,20 +66,44 @@ PERP = (
     "                                 SnapType::Perpendicular, tolerance, metric);\n"
     "            }\n")
 
+# --- gorunmez grid kapisi (aday uretimindeki kopya; takip satiri ayirt eder) ---
 VISIBLE_GUARD = ("        if (!grid.visible) continue;\n"
-                 "        for (const auto& axis : grid.axes) {\n")
-VISIBLE_GUARD_OFF = "        for (const auto& axis : grid.axes) {\n"
+                 "        // GORUNUS DUZLEMI: cizimle")
+VISIBLE_GUARD_OFF = "        // GORUNUS DUZLEMI: cizimle"
 
+# --- kesisim (capraz) aday uretimi (gorunus duzlemi + GERCEK kesisim) ---
 GRID_CROSSING = (
-    "        std::vector<const GridAxisLine*> xAxes, yAxes;\n"
-    "        for (const auto& axis : grid.axes)\n"
-    "            (axis.horizontal ? yAxes : xAxes).push_back(&axis);\n"
-    "        for (const auto* xa : xAxes) {\n"
-    "            for (const auto* ya : yAxes) {\n"
-    "                const Vec3 intersection{xa->from.x, ya->from.y, xa->from.z};\n"
+    "        std::vector<const GridAxisLine*> verticalAxes, levelAxes;\n"
+    "        for (const auto& axis : viewAxes)\n"
+    "            (axis.horizontal ? levelAxes : verticalAxes).push_back(&axis);\n"
+    "        for (const auto* va : verticalAxes) {\n"
+    "            for (const auto* la : levelAxes) {\n"
+    "                Vec3 intersection{};\n"
+    "                if (!lineCrossing(*va, *la, intersection)) continue;\n"
     "                addCandidate(candidates, intersection, SnapType::Grid, tolerance, metric);\n"
     "            }\n"
     "        }\n")
+
+# --- KULLANICI HATASI regresyonu: snap taban PLAN turevine geri doner ---
+VIEW_AXES_VIEW = "        const std::vector<GridAxisLine> viewAxes = gridAxesForView(grid, plane);\n"
+VIEW_AXES_BASE = "        const std::vector<GridAxisLine> viewAxes = grid.axes;\n"
+
+# --- 3B gorunus duzlemi daima XY'ye zorlanir ---
+GRID_PLANE_STMT = "    const GridViewPlane gridPlane = gridViewPlaneForDirection(camera.gridViewDirection());\n"
+GRID_PLANE_XY = "    const GridViewPlane gridPlane = GridViewPlane::XY;\n"
+
+# --- kesisim eski PLAN formulune doner (elevasyonda z'yi tabana ceker) ---
+# NOT: ondeki `Vec3 intersection{};` satiri deseni TEKILLESTIRIR — 3B
+# tolerans-disi blok ayni `if (!lineCrossing...)` satirini 4 bosluk daha
+# girintili tasir ve tek basina bu satir iki yerde eslesirdi.
+CROSSING_CALL = ("                Vec3 intersection{};\n"
+                "                if (!lineCrossing(*va, *la, intersection)) continue;\n")
+CROSSING_OLD = ("                Vec3 intersection{};\n"
+               "                intersection = Vec3{va->from.x, la->from.y, va->from.z};\n")
+
+# --- 3B tolerans-disi kesisim blogu taban turevine doner ---
+FALLBACK_VIEW_AXES = "            const std::vector<GridAxisLine> viewAxes = gridAxesForView(grid, gridPlane);\n"
+FALLBACK_BASE_AXES = "            const std::vector<GridAxisLine> viewAxes = grid.axes;\n"
 
 MUTATIONS = [
     ("M1 2B: grid aks adaylari hic uretilmez", CALL_2D, ""),
@@ -89,6 +117,13 @@ MUTATIONS = [
     ("M7 DIKME ayagi aday degil", PERP, ""),
     ("M8 gorunmez grid yok sayilir", VISIBLE_GUARD, VISIBLE_GUARD_OFF),
     ("M9 kesisim (capraz) adayi uretilmez", GRID_CROSSING, ""),
+    ("M10 KULLANICI HATASI: snap taban PLAN turevine doner (elevasyonda z=0)",
+     VIEW_AXES_VIEW, VIEW_AXES_BASE),
+    ("M11 3B gorunus duzlemi daima XY'ye zorlanir", GRID_PLANE_STMT, GRID_PLANE_XY),
+    ("M12 kesisim eski PLAN formulune doner (z'yi taban kotuna ceker)",
+     CROSSING_CALL, CROSSING_OLD),
+    ("M13 3B tolerans-disi kesisim blogu taban turevine doner",
+     FALLBACK_VIEW_AXES, FALLBACK_BASE_AXES),
 ]
 
 orig = (root / REL).read_bytes()

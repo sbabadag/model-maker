@@ -40,6 +40,18 @@ static GridDefinition makeGrid() {
     return g;
 }
 
+// ELEVASYON testleri icin KATLI grid: X/Y plan + Z katlari. Iki noktali
+// XZ/YZ gorunusunde duzlem-ici aileler = dikey akslar + KAT cizgileri.
+static GridDefinition makeLevelGrid() {
+    GridDefinition g;
+    g.name = "LEVELS";
+    g.xCoords = {0.0, 6000.0, 12000.0};
+    g.yCoords = {0.0, 5000.0};
+    g.zCoords = {0.0, 3600.0, 7200.0};
+    rebuildGridAxes(g);
+    return g;
+}
+
 static SnapTypeMask maskExcept(std::initializer_list<SnapType> off) {
     SnapTypeMask m{};
     m.fill(true);
@@ -165,6 +177,106 @@ int main() {
         const SnapResult r = SnapEngine::snap3D(s, doc, topCam, W, H, 30.0, WorkPlane::world(),
                                                 true, true, std::nullopt, &noNearest, false);
         check(r.type == SnapType::Grid, "11a 3B Nearest kapali: o tur uretilmez");
+    }
+
+    // ================= 2 NOKTALI ELEVASYON (XZ/YZ) GRID SNAP =================
+    // KULLANICI SARTI: "XZ YZ gibi 2 noktayla alinan goruntulerde grid sadece
+    // xy deki alt grid noktalarina snap oluyor; her grid snap ozelligine
+    // kilitlenmeli". Kok neden: snap `grid.axes` (PLAN tabani; tum plan
+    // cizgileri z=origin.z'de) kullaniyordu, cizim ise `gridAxesForView`.
+    // Artik snap de cizimle AYNI gorunus duzlemini kullanir.
+    const int W = 1200, H = 800;
+    auto xzCamera = [] {
+        Camera c;
+        // ekran saga +X, ekran yukari +Z (bakış Y) -> gridViewDirection (0,-1,0)
+        c.setViewBasis(Vec3{1, 0, 0}, Vec3{0, 0, 1}, Vec3{6000, 0, 3600});
+        return c;
+    };
+    auto yzCamera = [] {
+        Camera c;
+        // ekran saga +Y, ekran yukari +Z (bakış X) -> gridViewDirection (1,0,0)
+        c.setViewBasis(Vec3{0, 1, 0}, Vec3{0, 0, 1}, Vec3{0, 2500, 3600});
+        return c;
+    };
+
+    // --- 12) XZ: DIKEY aks uzerinde, kot 2000 (tabana cekilmemeli) ---
+    {
+        Camera cam = xzCamera();
+        Document doc; doc.addGrid(makeLevelGrid());
+        const Vec2 s = cam.project({0.0, 0.0, 2000.0}, W, H);
+        const WorkPlane wp = WorkPlane::fromViewDirection(Vec3{0, 0, 0}, cam.gridViewDirection());
+        const SnapResult r = SnapEngine::snap3D(s, doc, cam, W, H, 30.0, wp, true, true,
+                                                std::nullopt, &allOn, false);
+        check(r.type == SnapType::Nearest, "12a XZ: dikey aks uzerinde Nearest");
+        check(near(r.point.x, 0.0) && near(r.point.y, 0.0) && near(r.point.z, 2000.0),
+              "12b XZ: nokta (0,0,2000) — tabana (z=0) CEKILMEZ");
+    }
+
+    // --- 13) XZ: KAT cizgisi (z=3600) uzerinde ---
+    {
+        Camera cam = xzCamera();
+        Document doc; doc.addGrid(makeLevelGrid());
+        const Vec2 s = cam.project({4000.0, 0.0, 3600.0}, W, H);
+        const WorkPlane wp = WorkPlane::fromViewDirection(Vec3{0, 0, 0}, cam.gridViewDirection());
+        const SnapResult r = SnapEngine::snap3D(s, doc, cam, W, H, 30.0, wp, true, true,
+                                                std::nullopt, &allOn, false);
+        check(r.type == SnapType::Nearest, "13a XZ: kat cizgisi uzerinde Nearest");
+        check(near(r.point.x, 4000.0) && near(r.point.z, 3600.0),
+              "13b XZ: nokta (4000,0,3600) — kat cizgisi");
+    }
+
+    // --- 14) YZ: dikey aks uzerinde, kot 5000 ---
+    {
+        Camera cam = yzCamera();
+        Document doc; doc.addGrid(makeLevelGrid());
+        const Vec2 s = cam.project({0.0, 0.0, 5000.0}, W, H);
+        const WorkPlane wp = WorkPlane::fromViewDirection(Vec3{0, 0, 0}, cam.gridViewDirection());
+        const SnapResult r = SnapEngine::snap3D(s, doc, cam, W, H, 30.0, wp, true, true,
+                                                std::nullopt, &allOn, false);
+        check(r.type == SnapType::Nearest, "14a YZ: dikey aks uzerinde Nearest");
+        check(near(r.point.y, 0.0) && near(r.point.z, 5000.0),
+              "14b YZ: nokta (0,0,5000) — tabana cekilmez");
+    }
+
+    // --- 15) XZ: KAVSAK (capraz) dogru KOTTA olusur ---
+    // (12000,0,7200) hicbir orta noktayla cakismaz -> saf SnapType::Grid.
+    {
+        Camera cam = xzCamera();
+        Document doc; doc.addGrid(makeLevelGrid());
+        const Vec2 s = cam.project({12000.0, 0.0, 7200.0}, W, H);
+        const WorkPlane wp = WorkPlane::fromViewDirection(Vec3{0, 0, 0}, cam.gridViewDirection());
+        const SnapResult r = SnapEngine::snap3D(s, doc, cam, W, H, 30.0, wp, true, true,
+                                                std::nullopt, &allOn, false);
+        check(r.type == SnapType::Grid, "15a XZ: kavsakta SnapType::Grid");
+        check(near(r.point.x, 12000.0) && near(r.point.z, 7200.0),
+              "15b XZ: kavsak (12000,0,7200) — eski plan-formulu z'yi tabana cekerdi");
+    }
+
+    // --- 16) XZ MASKE KAPISI: Nearest kapali -> kavsak kalir (görunus duzleminde) ---
+    {
+        Camera cam = xzCamera();
+        Document doc; doc.addGrid(makeLevelGrid());
+        const SnapTypeMask noNearest = maskExcept({SnapType::Nearest});
+        const Vec2 s = cam.project({60.0, 0.0, 5000.0}, W, H);
+        const WorkPlane wp = WorkPlane::fromViewDirection(Vec3{0, 0, 0}, cam.gridViewDirection());
+        const SnapResult r = SnapEngine::snap3D(s, doc, cam, W, H, 5.0, wp, true, true,
+                                                std::nullopt, &noNearest, false);
+        check(r.type == SnapType::Grid,
+              "16a XZ tolerans disi + Nearest kapali: gorunus duzlemindeki kavsaga gider");
+        check(near(r.point.z, 3600.0),
+              "16b XZ: en yakin kavsak z=3600 (eski kod z=0 tabanina cekerdi)");
+    }
+
+    // --- 17) TABAN hala erisilebilir: kot 0 dogru cozulur ---
+    {
+        Camera cam = xzCamera();
+        Document doc; doc.addGrid(makeLevelGrid());
+        const Vec2 s = cam.project({6000.0, 0.0, 0.0}, W, H);
+        const WorkPlane wp = WorkPlane::fromViewDirection(Vec3{0, 0, 0}, cam.gridViewDirection());
+        const SnapResult r = SnapEngine::snap3D(s, doc, cam, W, H, 30.0, wp, true, true,
+                                                std::nullopt, &allOn, false);
+        check(near(r.point.z, 0.0), "17a XZ: taban kavsagi (z=0) hala cozulur");
+        check(near(r.point.x, 6000.0), "17b XZ: dogru dikey aks (x=6000)");
     }
 
     std::printf("\n%d kontrol, %d hata\n", checks, failures);

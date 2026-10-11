@@ -409,6 +409,13 @@ if(BUILD_TESTING)
     target_link_libraries(model_maker_grid_snap_types_test PRIVATE model_maker_core)
     add_test(NAME model_maker_grid_snap_types_test COMMAND model_maker_grid_snap_types_test)
 
+    # OLcum probe'u: iki noktali XZ/YZ gorunusunde grid snap'i HANGI kotlere
+    # gidiyor? ("sadece xy deki alt grid noktalarina snap oluyor" sikayetinin
+    # kaniti). Gercek SnapEngine + Camera + grid; iddia yok — cikti raporlanir.
+    add_executable(model_maker_grid_snap_view_plane_probe tests/grid_snap_view_plane_probe.cpp)
+    target_link_libraries(model_maker_grid_snap_view_plane_probe PRIVATE model_maker_core)
+    add_test(NAME model_maker_grid_snap_view_plane_probe COMMAND model_maker_grid_snap_view_plane_probe)
+
     # REFERANS KATMANI EKRAN-UZAYI: "zoom derinlestikce cok yavasliyor" sikayeti.
     # Sabit referans katmani (grid akslari + UCS glifi) DUNYA biriminde tanimli
     # oldugu icin kirpma/olcek kurali olmadan zoom arttikca cizilen ekran

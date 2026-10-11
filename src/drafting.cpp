@@ -22,6 +22,38 @@ double distance2D(const Vec3& a, const Vec3& b) noexcept {
 
 double dot2D(const Vec3& a, const Vec3& b) noexcept { return a.x * b.x + a.y * b.y; }
 
+Vec3 cross3(const Vec3& u, const Vec3& v) noexcept {
+    return Vec3{u.y * v.z - u.z * v.y, u.z * v.x - u.x * v.z, u.x * v.y - u.y * v.x};
+}
+
+// Iki aile aksinin GERCEK kesisimi (yapi gridi caprazi). Gorunus duzlemi
+// icinde iki aile birbirine DIK dogru parcalaridir; kesim noktasi cozulur ve
+// her iki parcada da ARALIGINDA olmasi sart kosulur.
+//
+// NEDEN: eski formul {xa->from.x, ya->from.y, xa->from.z} idi — x bileseni
+// X-ailesinden, y bileseni Y-ailesinden, z bileseni X-ailesinin BASINDAN.
+// Bu YALNIZ plan (XY) duzleminde dogruydu; elevasyonda (XZ/YZ) z bileseni
+// taban kotuna cekiliyordu ve kesisimler yanlis yerde olusuyordu (olculdu:
+// XZ elevasyonda z=3600 kesisimi z=zBottom'a dusuyordu).
+bool lineCrossing(const GridAxisLine& a, const GridAxisLine& b, Vec3& out) noexcept {
+    const Vec3 dA = a.to - a.from;
+    const Vec3 dB = b.to - b.from;
+    const Vec3 n = cross3(dA, dB);
+    const double n2 = n.x * n.x + n.y * n.y + n.z * n.z;
+    if (n2 <= epsilon) return false;   // paralel/dejenere
+    const Vec3 w = b.from - a.from;
+    const Vec3 wxd = cross3(w, dB);
+    // A.from + t*dA = kesisim  ->  t = dot((B.from-A.from) x dB, dA x dB)/|n|^2
+    const double t = (wxd.x * n.x + wxd.y * n.y + wxd.z * n.z) / n2;
+    if (t < 0.0 || t > 1.0) return false;
+    out = a.from + dA * t;
+    const double dB2 = dB.x * dB.x + dB.y * dB.y + dB.z * dB.z;
+    if (dB2 <= epsilon) return false;
+    const double s = ((out.x - b.from.x) * dB.x + (out.y - b.from.y) * dB.y +
+                      (out.z - b.from.z) * dB.z) / dB2;
+    return s >= -1e-9 && s <= 1.0 + 1e-9;
+}
+
 int priority(SnapType type) noexcept {
     switch (type) {
     case SnapType::Endpoint: return 0;
@@ -391,13 +423,21 @@ std::vector<Candidate> objectCandidates(const Vec3& cursor, const Document& docu
 void addGridLineCandidates(std::vector<Candidate>& candidates, const Document& document,
                            const Vec3& cursor, double tolerance, const Metric& metric,
                            const std::optional<Vec3>& referencePoint,
-                           const ScreenSpaceNearest* screenSpace = nullptr) {
+                           const ScreenSpaceNearest* screenSpace = nullptr,
+                           GridViewPlane plane = GridViewPlane::XY) {
     const auto dot3 = [](const Vec3& u, const Vec3& v) {
         return u.x * v.x + u.y * v.y + u.z * v.z;
     };
     for (const auto& grid : document.grids()) {
         if (!grid.visible) continue;
-        for (const auto& axis : grid.axes) {
+        // GORUNUS DUZLEMI: cizimle AYNI geometri kaynagi (`gridAxesForView`).
+        // Eskiden `grid.axes` (PLAN tabani) kullaniliyordu; o taban tum plan
+        // cizgilerini z=origin.z'de tutar, kat cizgileri ise yalniz on/arka
+        // kenardadir. Bu yuzden XZ/YZ elevasyonda snap YALNIZCA taban kotundeki
+        // XY noktalarina kilitleniyordu (kullanici sarti: "her grid snap
+        // ozelligine kilitlenmeli").
+        const std::vector<GridAxisLine> viewAxes = gridAxesForView(grid, plane);
+        for (const auto& axis : viewAxes) {
             const Vec3& a = axis.from;
             const Vec3& b = axis.to;
             const Vec3 direction = b - a;
@@ -427,15 +467,17 @@ void addGridLineCandidates(std::vector<Candidate>& candidates, const Document& d
                                  SnapType::Perpendicular, tolerance, metric);
             }
         }
-        // Iki aile aksinin kesisimi: x bileseni X-akstan (horizontal=false),
-        // y bileseni Y-akstan (horizontal=true) gelir. Eksen-hizali yapi
-        // gridi varsayimi (xDir=(1,0,0), yDir=(0,1,0)) korunur.
-        std::vector<const GridAxisLine*> xAxes, yAxes;
-        for (const auto& axis : grid.axes)
-            (axis.horizontal ? yAxes : xAxes).push_back(&axis);
-        for (const auto* xa : xAxes) {
-            for (const auto* ya : yAxes) {
-                const Vec3 intersection{xa->from.x, ya->from.y, xa->from.z};
+        // Iki ailenin GERCEK kesisimi: yapi gridi caprazi (SnapType::Grid).
+        // Eski formul YALNIZ plan icin dogruydu ve elevasyonda z'yi taban
+        // kotuna cekiyordu; artik iki dogru parcasinin gercek kesismesi
+        // cozulur (lineCrossing).
+        std::vector<const GridAxisLine*> verticalAxes, levelAxes;
+        for (const auto& axis : viewAxes)
+            (axis.horizontal ? levelAxes : verticalAxes).push_back(&axis);
+        for (const auto* va : verticalAxes) {
+            for (const auto* la : levelAxes) {
+                Vec3 intersection{};
+                if (!lineCrossing(*va, *la, intersection)) continue;
                 addCandidate(candidates, intersection, SnapType::Grid, tolerance, metric);
             }
         }
@@ -601,6 +643,11 @@ SnapResult SnapEngine::snap3D(const Vec2& screenCursor, const Document& document
                               bool visibleEdgesOnly) {
     const auto raw = camera.unprojectToPlane(screenCursor, viewportWidth, viewportHeight, workPlane);
     if (!raw) return {workPlane.origin, SnapType::None, 0.0};
+    // GRID SNAP GORUNUS DUZLEMI: cizim `gridAxesForView(grid, plane)` kullanir;
+    // snap de AYNI duzlemden turetilmeli, yoksa XZ/YZ 2 noktali gorunuste snap
+    // yalnizca taban (XY) noktalarina kilitlenir. Duzlem kameranin KILITLI
+    // gorunus yonunden gelir (rotasyon kilidi degistirmez; cizimle tutarli).
+    const GridViewPlane gridPlane = gridViewPlaneForDirection(camera.gridViewDirection());
     if (objectSnapEnabled) {
         const auto metric = [&](const Vec3& point) {
             const Vec2 projected = camera.project(point, viewportWidth, viewportHeight);
@@ -701,7 +748,7 @@ SnapResult SnapEngine::snap3D(const Vec2& screenCursor, const Document& document
         const ScreenSpaceNearest gridNearest{&camera, viewportWidth, viewportHeight, screenCursor, false};
         std::vector<Candidate> gridCandidates;
         addGridLineCandidates(gridCandidates, document, *raw, objectTolerancePixels, gridMetric,
-                              referencePoint, &gridNearest);
+                              referencePoint, &gridNearest, gridPlane);
         auto gridResult = choose(std::move(gridCandidates), *raw, enabledTypes, &camera);
         if (gridResult.type != SnapType::None) return gridResult;
     }
@@ -712,18 +759,20 @@ SnapResult SnapEngine::snap3D(const Vec2& screenCursor, const Document& document
     if (gridSnapEnabled) {
         for (const auto& grid : document.grids()) {
             if (!grid.visible) continue;
-            std::vector<const GridAxisLine*> xAxes, yAxes;
-            for (const auto& axis : grid.axes)
-                (axis.horizontal ? yAxes : xAxes).push_back(&axis);
-            if (xAxes.empty() || yAxes.empty()) continue;
+            const std::vector<GridAxisLine> viewAxes = gridAxesForView(grid, gridPlane);
+            std::vector<const GridAxisLine*> verticalAxes, levelAxes;
+            for (const auto& axis : viewAxes)
+                (axis.horizontal ? levelAxes : verticalAxes).push_back(&axis);
+            if (verticalAxes.empty() || levelAxes.empty()) continue;
             Vec3 best{};
             bool found = false;
             double bestPx = 0.0;
-            for (const auto* xa : xAxes) {
-                for (const auto* ya : yAxes) {
-                    // Eksen-hizali yapi gridi: x bileseni X-akstan, y
-                    // bileseni Y-akstan.
-                    const Vec3 intersection{xa->from.x, ya->from.y, xa->from.z};
+            for (const auto* va : verticalAxes) {
+                for (const auto* la : levelAxes) {
+                    // Gorunus duzlemindeki GERCEK kesisim (plan-ozel eski formul
+                    // elevasyonda z'yi taban kotuna cekiyordu).
+                    Vec3 intersection{};
+                    if (!lineCrossing(*va, *la, intersection)) continue;
                     const Vec2 projected = camera.project(intersection, viewportWidth, viewportHeight);
                     const double d = std::hypot(screenCursor.x - projected.x,
                                                 screenCursor.y - projected.y);
