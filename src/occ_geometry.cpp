@@ -411,12 +411,14 @@ WireframeModel solidBoxSolid(double dx, double dy, double dz, double faceDeflect
 
 WireframeModel solidCylinderSolid(double radius, double height, double faceDeflection,
                                   int circleSegments) {
-    return shapeToWireframeWithFaces(BRepPrimAPI_MakeCylinder(radius, radius, height).Shape(),
+    // 2-arg (R, H): tam silindir. 3-arg overload'in ucuncu parametresi ACI'dir
+    // ve dilim uretir (bkz. application.cpp addCylinder notu).
+    return shapeToWireframeWithFaces(BRepPrimAPI_MakeCylinder(radius, height).Shape(),
                                      faceDeflection, circleSegments);
 }
 
 double solidCylinderVolume(double radius, double height) {
-    const TopoDS_Shape cylinder = BRepPrimAPI_MakeCylinder(radius, radius, height).Shape();
+    const TopoDS_Shape cylinder = BRepPrimAPI_MakeCylinder(radius, height).Shape();
     GProp_GProps props;
     BRepGProp::VolumeProperties(cylinder, props);
     return props.Mass();

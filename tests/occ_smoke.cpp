@@ -80,6 +80,29 @@ int main() {
         std::printf("HATA: silindir kati %zu yuz (beklenen >50)\n", cylSolid.faces().size());
         return 1;
     }
+    // 5b) ORTAK YARDIMCI REGRESYONU: solidCylinderSolid/Volume artik TAM silindir
+    // uretmeli (r=1.5, h=5.0). Onceki hata MakeCylinder(radius, radius, height)
+    // cagiriyordu -> (R=1.5, H=1.5, Angle=5.0 rad) hatali dilim. Beklenen hacim
+    // pi*1.5^2*5.0 = 35.3429; hatali surum 8.4375 verirdi.
+    const double cylHelperExpect = 3.14159265358979323846 * 1.5 * 1.5 * 5.0;
+    const double cylHelperVol = mm::solidCylinderVolume(1.5, 5.0);
+    if (std::abs(cylHelperVol - cylHelperExpect) / cylHelperExpect > 1e-3) {
+        std::printf("HATA: solidCylinderVolume(1.5,5.0)=%.4f (beklenen %.4f tam silindir)\n",
+                    cylHelperVol, cylHelperExpect);
+        return 1;
+    }
+    {   // solidCylinderSolid de ayni tam-silindir sekli uretmeli: bbox yuksekligi 5.0
+        double zmin = 0.0, zmax = 0.0;
+        for (const auto& v : cylSolid.vertices()) {
+            if (v.z < zmin) zmin = v.z;
+            if (v.z > zmax) zmax = v.z;
+        }
+        if (std::abs((zmax - zmin) - 5.0) > 0.05) {
+            std::printf("HATA: solidCylinderSolid bbox yuksekligi %.3f (beklenen 5.0)\n",
+                        zmax - zmin);
+            return 1;
+        }
+    }
 
     std::printf("OCC SMOKE OK — kutu 10x10x10 hacim=%.6f, STEP yazildi/okundu hacim=%.6f, "
                 "tesselasyon: kutu 8/12, silindir %zu kenar, kopru C-API 8/12, surum %s\n",

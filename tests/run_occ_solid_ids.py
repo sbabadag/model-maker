@@ -208,6 +208,8 @@ CPP_PREAMBLE = r"""
 #include <BRepCheck_Analyzer.hxx>
 #include <BRepGProp.hxx>
 #include <GProp_GProps.hxx>
+#include <Bnd_Box.hxx>
+#include <BRepBndLib.hxx>
 #include <Standard_Version.hxx>
 
 #include <map>
@@ -262,16 +264,29 @@ static bool storeValid(const std::map<EntityId, TopoDS_Shape>& m, EntityId id) {
     const auto it = m.find(id);
     return it != m.end() && validShape(it->second);
 }
+// Seklin eksen hizali sinir kutusu (tam silindir / tum yukseklik kontrolu icin).
+struct Box3 { double xmin, ymin, zmin, xmax, ymax, zmax; };
+static bool storeBounds(const std::map<EntityId, TopoDS_Shape>& m, EntityId id,
+                        Box3& out) {
+    const auto it = m.find(id);
+    if (it == m.end() || it->second.IsNull()) return false;
+    Bnd_Box box;
+    BRepBndLib::Add(it->second, box);
+    if (box.IsVoid()) return false;
+    box.Get(out.xmin, out.ymin, out.zmin, out.xmax, out.ymax, out.zmax);
+    return true;
+}
 
 // URETIM GEOMETRISI (olculmus — kod bu sekilleri uretir):
 //   addCube     : BRepPrimAPI_MakeBox(2.6, 2.6, 2.6)          -> vol 17.576
-//   addCylinder : BRepPrimAPI_MakeCylinder(1.3, 1.3, 3.0)
-//                 OCCT 3-arg overload = (R, H, Angle): r=1.3, h=1.3,
-//                 3.0 radyanlik DILIM -> vol 3.2955. (Koddaki yorum "h=3.0"
-//                 diyor ama cagri bunu uretmiyor; harness GERCEK geometriyi
-//                 kilitler, uretim kodu degistirilmedi.)
+//   addCylinder : BRepPrimAPI_MakeCylinder(1.3, 3.0)
+//                 OCCT 2-arg overload = (R, H): r=1.3, h=3.0 -> TAM SILINDIR,
+//                 vol = pi*r^2*h = 15.9279. (Onceki kod 3-arg (R,H,Angle) cagirip
+//                 3.0 radyanlik DILIM uretiyordu -> vol 3.2955; duzeltildi.)
 constexpr double kCubeVol = 17.576;
-constexpr double kCylVol = 3.2955;
+constexpr double kCylVol = 15.9279;
+constexpr double kCylRadius = 1.3;
+constexpr double kCylHeight = 3.0;
 constexpr double kVolTol = 0.01;
 
 // Harness App: gercek Document + gercek `occShapes_` + uretim govdeleri.
@@ -329,6 +344,10 @@ def build_cpp(bodies):
 
 MAIN_CPP = r"""
 int main() {
+    // SATIR TAMPONLAMASI: harness bir mutasyon altinda cokse bile (or. eksik
+    // operandla lastLiveSolids), o ana kadarki PASS/FAIL satirlari gorunsun.
+    // Aksi halde cikti tamponu kaybolur ve negatif kontrol "sessiz" gorunur.
+    std::setvbuf(stdout, nullptr, _IOLBF, 0);
     std::printf("OCCT version: %s\n", OCC_VERSION_COMPLETE);
 
     // --- Test 1: kutu/silindir DOGRU EntityId ile gercek sekle baglanir ---
@@ -350,7 +369,17 @@ int main() {
         check(app.occShapes_.count(id1) == 1, "store has cylinder id");
         check(storeValid(app.occShapes_, id1), "cylinder shape valid (BRepCheck)");
         check(std::abs(storeVolume(app.occShapes_, id1) - kCylVol) < kVolTol,
-              "cylinder shape is the real production solid (vol 3.2955)");
+              "cylinder = full cylinder pi*r^2*h (vol 15.9279, not a 172-deg slice)");
+        // TAM TUR KILIDI: bbox her iki yonde tam capi kapsamali (dilim kapsamaz)
+        // ve Z 0..3.0 olmali (yukseklik 3.0; eski hata h=1.3 veriyordu).
+        Box3 cb{};
+        check(storeBounds(app.occShapes_, id1, cb), "cylinder bbox available");
+        check(std::abs((cb.xmax - cb.xmin) - 2.0 * kCylRadius) < 0.02,
+              "cylinder bbox X spans full diameter (2*1.3)");
+        check(std::abs((cb.ymax - cb.ymin) - 2.0 * kCylRadius) < 0.02,
+              "cylinder bbox Y spans full diameter (full turn, not a slice)");
+        check(std::abs(cb.zmin - 0.0) < 0.02 && std::abs(cb.zmax - kCylHeight) < 0.02,
+              "cylinder Z range is 0..3.0 (height 3.0, not 1.3)");
         // OFF-BY-ONE KILIDI: kutu kimligi hala KUTUYU tutmali (silindiri degil).
         check(std::abs(storeVolume(app.occShapes_, id0) - kCubeVol) < kVolTol,
               "cube id still holds the box (no off-by-one overwrite)");
@@ -366,10 +395,18 @@ int main() {
         const EntityId b = app.document_.modelId(1);
         const auto operands = app.lastLiveSolids(2);
         check(operands.size() == 2, "lastLiveSolids returns 2");
-        check(std::abs(volumeOf(operands[0]) - kCylVol) < kVolTol,
-              "operands[0] = newest = cylinder");
-        check(std::abs(volumeOf(operands[1]) - kCubeVol) < kVolTol,
-              "operands[1] = second newest = cube");
+        // ON KOSUL KORUMASI: store bozuksa (or. off-by-one mutasyonu) operands
+        // 2'den az olabilir; operands[1]'e korumasiz erismek UB/segfault verir
+        // ve testin GERCEK nedenini gizler. Once sayi dogrulanir, sonra icerik.
+        if (operands.size() < 2) {
+            check(false, "operands[0] = newest = cylinder (SKIPPED: <2 live solids)");
+            check(false, "operands[1] = second newest = cube (SKIPPED: <2 live solids)");
+        } else {
+            check(std::abs(volumeOf(operands[0]) - kCylVol) < kVolTol,
+                  "operands[0] = newest = cylinder");
+            check(std::abs(volumeOf(operands[1]) - kCubeVol) < kVolTol,
+                  "operands[1] = second newest = cube");
+        }
 
         app.addBooleanFuse();
         check(app.document_.models().size() == 3, "fuse appends result model");
@@ -498,6 +535,26 @@ int main() {
             check(app.occShapes_.count(b) == 1,
                   (std::string(c.name) + ": operand cylinder STILL in store").c_str());
         }
+    }
+
+    // --- Test 7: ortak yardimcilar (solidCylinderSolid/Volume) TAM silindir ---
+    // Onceki hata: MakeCylinder(radius, radius, height) -> (R, H, Angle) dilim.
+    {
+        std::printf("Test 7: solidCylinderSolid/Volume produce full cylinders\n");
+        const double expect = 3.14159265358979323846 * 1.5 * 1.5 * 5.0; // 35.3429
+        const double vol = mm::solidCylinderVolume(1.5, 5.0);
+        check(std::abs(vol - expect) / expect < 1e-3,
+              "solidCylinderVolume(1.5,5.0) = pi*r^2*h (35.3429, full cylinder)");
+        const auto solid = mm::solidCylinderSolid(1.5, 5.0, 0.2, 32);
+        double zmin = 0.0, zmax = 0.0;
+        bool first = true;
+        for (const auto& v : solid.vertices()) {
+            if (first) { zmin = zmax = v.z; first = false; }
+            if (v.z < zmin) zmin = v.z;
+            if (v.z > zmax) zmax = v.z;
+        }
+        check(!first && std::abs((zmax - zmin) - 5.0) < 0.05,
+              "solidCylinderSolid bbox height = 5.0 (full cylinder, not a slice)");
     }
 
     std::printf("\nchecks=%d failures=%d\n", g_checks, g_failures);

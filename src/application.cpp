@@ -4708,8 +4708,13 @@ void Application::addCylinder() {
     if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
 #ifdef MM_HAS_OCC
     {
-        // OCC BRep silindir: r=1.3, h=3.0 (kutu/piramit ile ayni sabit-olusum akisi)
-        TopoDS_Shape shape = BRepPrimAPI_MakeCylinder(1.3, 1.3, 3.0).Shape();
+        // OCC BRep silindir: r=1.3, h=3.0 (kutu/piramit ile ayni sabit-olusum akisi).
+        // DIKKAT: BRepPrimAPI_MakeCylinder'in 3-arg overload'i (R, H, Angle)'dir;
+        // ucuncu argüman radyan cinsinden ACI'dir ve TAM TUR OLMAYAN bir dilim uretir.
+        // Tam silindir icin 2-arg (R, H) kullanilmalidir; aksi halde "silindir"
+        // komutu ~172 derecelik pasta dilimi olusturuyordu (hacim pi*r^2*h'nin
+        // yarisi bile degil).
+        TopoDS_Shape shape = BRepPrimAPI_MakeCylinder(1.3, 3.0).Shape();
         const double offset = static_cast<double>(document_.models().size() % 4) * 0.45;
         if (offset != 0.0) {
             gp_Trsf trsf; trsf.SetTranslation(gp_Vec(offset, 0.0, 0.0));
