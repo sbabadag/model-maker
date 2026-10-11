@@ -186,6 +186,17 @@ std::vector<Candidate> objectCandidates(const Vec3& cursor, const Document& docu
         // eslesmesi ucgen index ciftleriyle (uzun kenarlar bolenleriyle).
         std::set<std::pair<std::size_t, std::size_t>> visibleEdges;
         if (screenSpace && screenSpace->visibleEdgesOnly && !model.faces().empty()) {
+            // Model merkezi: yuz normalinin ISARETINI duzeltmek icin. OCC
+            // tesselasyonunun normal yonu GARANTI DEGIL — olcum (IPE200, plan):
+            // UST yuz -Z normalli geliyordu, yani gorunur yuz "gizli" sayilip
+            // kenarlari Solid stilde eleniyordu. Normal, yuz merkezinden model
+            // merkezine giden vektore gore DISA yonlendirilir (kapali kati).
+            Vec3 modelCenter{};
+            if (!vertices.empty()) {
+                Vec3 sum{};
+                for (const auto& v : vertices) sum = sum + v;
+                modelCenter = sum * (1.0 / static_cast<double>(vertices.size()));
+            }
             // kenar -> yuz esle (hizli hash: kenar index cifti -> ilk yuz)
             std::map<std::pair<std::size_t, std::size_t>, std::vector<const std::vector<std::size_t>*>> edgeFaces;
             for (const auto& face : model.faces()) {
@@ -213,6 +224,16 @@ std::vector<Candidate> objectCandidates(const Vec3& cursor, const Document& docu
                     const double nl = std::sqrt(nx * nx + ny * ny + nz * nz);
                     if (nl < epsilon) continue;
                     nx /= nl; ny /= nl; nz /= nl;
+                    // Yuz merkezi: normal bu merkezden MODEL merkezine gore
+                    // DISA yonlendirilir (OCC normalleri ic/dis olabilir).
+                    Vec3 faceCenter{};
+                    for (const auto index : *face) faceCenter = faceCenter + vertices[index];
+                    faceCenter = faceCenter * (1.0 / static_cast<double>(face->size()));
+                    if (nx * (faceCenter.x - modelCenter.x) +
+                        ny * (faceCenter.y - modelCenter.y) +
+                        nz * (faceCenter.z - modelCenter.z) < 0.0) {
+                        nx = -nx; ny = -ny; nz = -nz;
+                    }
                     const Vec3 fn = screenSpace->camera->viewTransform(
                         {f0.x + nx, f0.y + ny, f0.z + nz});
                     const Vec3 f0v = screenSpace->camera->viewTransform(f0);
@@ -235,9 +256,15 @@ std::vector<Candidate> objectCandidates(const Vec3& cursor, const Document& docu
             const Vec3& a = vertices[edge.from];
             const Vec3& b = vertices[edge.to];
             // SOLID: gorunur kenar degilse atla (endpoint/mid/near/perp yok).
-            if (!visibleEdges.empty() || (screenSpace && screenSpace->visibleEdgesOnly)) {
-                if (screenSpace && screenSpace->visibleEdgesOnly && visibleEdges.find(
-                        std::make_pair(std::min(edge.from, edge.to), std::max(edge.from, edge.to))) == visibleEdges.end())
+            // Filtre YALNIZCA gorunurluk GERCEKTEN siniflandirilmissa uygulanir.
+            // Yuz verisi olmayan model (duz cizgi, polyline, tel kafes) icin
+            // visibleEdges BOS kalir; eski kosul bu durumda TUM kenarlari
+            // eliyordu → varsayilan Solid stilde cizgi/ORTA-NOKTA snap'i
+            // tamamen kaybolurdu. Yuz yoksa siniflandirma yapilamaz: filtreyi
+            // atla (tum kenarlar aday) — Wireframe davranisi.
+            if (!visibleEdges.empty()) {
+                if (visibleEdges.find(std::make_pair(std::min(edge.from, edge.to),
+                                                     std::max(edge.from, edge.to))) == visibleEdges.end())
                     continue;
             }
             segments.push_back({a, b, circle.has_value()});
@@ -351,7 +378,8 @@ std::vector<Candidate> objectCandidates(const Vec3& cursor, const Document& docu
 }
 
 SnapResult choose(std::vector<Candidate> candidates, const Vec3& raw,
-                  const SnapTypeMask* enabledTypes = nullptr) {
+                  const SnapTypeMask* enabledTypes = nullptr,
+                  const Camera* depthCamera = nullptr) {
     if (enabledTypes) {
         std::erase_if(candidates, [&](const Candidate& candidate) {
             const auto index = static_cast<std::size_t>(candidate.type);
@@ -369,9 +397,22 @@ SnapResult choose(std::vector<Candidate> candidates, const Vec3& raw,
         });
     }
     if (candidates.empty()) return {raw, SnapType::None, 0.0};
-    const auto best = std::min_element(candidates.begin(), candidates.end(), [](const Candidate& a, const Candidate& b) {
+    // EKRAN MESAFESI -> ONCELIK -> DERINLIK. Derinlik son kriter cunku plan/ust
+    // gorunuste iki kenar (gorunur olan ve ALTINDAKI gizli) AYNI ekran noktasina
+    // iz dusurulur ve ekran mesafesi birebir esit cikar. Eskiden esitlik ilk
+    // gelen adaya gidiyordu; kenar listesi siralamasina bagli olarak GIZLI kenar
+    // kazanip kullaniciyi yanlis kotuna (or. kirisin altina) snap'liyordu
+    // ("plan gorunusunde midpoint bazen calismiyor"). Once oncelik (endpoint >
+    // midpoint) korunur, ayni oncelikte IZLEYICIYE YAKIN olan (view-z BUYUK)
+    // kazanir — satir ~558'deki kati-kati cakisma kuraliyla ayni konvansiyon.
+    const auto viewDepth = [&](const Vec3& point) {
+        return depthCamera ? depthCamera->viewTransform(point).z
+                           : 0.0;
+    };
+    const auto best = std::min_element(candidates.begin(), candidates.end(), [&](const Candidate& a, const Candidate& b) {
         if (std::abs(a.distance - b.distance) > 1e-7) return a.distance < b.distance;
-        return priority(a.type) < priority(b.type);
+        if (priority(a.type) != priority(b.type)) return priority(a.type) < priority(b.type);
+        return viewDepth(a.point) > viewDepth(b.point);
     });
     return {best->point, best->type, best->distance};
 }
@@ -563,7 +604,9 @@ SnapResult SnapEngine::snap3D(const Vec2& screenCursor, const Document& document
                                         metric(crossingPoint) + gapPenalty);
             }
         }
-        auto result = choose(std::move(candidates), *raw, enabledTypes);
+        // Derinlik tercihi icin kamera verilir: esit ekran mesafesinde
+        // izleyiciye YAKIN aday kazanir (gizli kenara snap'i onler).
+        auto result = choose(std::move(candidates), *raw, enabledTypes, &camera);
         if (result.type != SnapType::None) return result;
     }
     // Grid snap ARTIK SADECE CUSTOM YAPI AKS KESISIM NOKTALARINA gider

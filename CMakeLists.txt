@@ -243,6 +243,12 @@ if(BUILD_TESTING)
             add_test(NAME model_maker_grid_view_plane
                 COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_grid_view_plane.py
                     ${CMAKE_CURRENT_BINARY_DIR})
+            # Plan / iki noktali (gorunus duzlemi) pencerelerinde PROFIL UC
+            # TUTAMAKLARI gorunur: eski `!draft.viewSlab` kosulu onlari
+            # tamamen gizliyordu. Dilim disindaki katilar yine atlanir.
+            add_test(NAME model_maker_grip_slab_views
+                COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_grip_slab_views.py
+                    ${CMAKE_CURRENT_BINARY_DIR})
             # Snap isaretcileri: kullanici "buyuklugunu iki katina buyutelim" dedi.
             # Tek kaynak cizim fonksiyonu + her sembol icin olcegin TAM 2x oldugu
             # (gercek govde, kayit tutan GDI siniri).
@@ -370,6 +376,15 @@ if(BUILD_TESTING)
     add_executable(model_maker_zoom_cost_probe tests/zoom_cost_probe.cpp)
     target_link_libraries(model_maker_zoom_cost_probe PRIVATE model_maker_core)
     add_test(NAME model_maker_zoom_cost_probe COMMAND model_maker_zoom_cost_probe 2000)
+
+    # SNAP DERINLIK TERCIHI + SOLID GORUNURLUK FILTRESI (plan gorunusu):
+    #  esit ekran mesafesinde IZLEYICIYE YAKIN aday kazanir (gorunur ust kenar,
+    #  altindaki gizli kenari yener); yuzu olmayan modelde (cizgi/polyline) ya
+    #  da normal yonu ic/dis olan OCC katisinda kenarlar ELENMEZ. OCC'siz kosar;
+    #  gercek SnapEngine::snap3D()'yi cagirir.
+    add_executable(model_maker_snap_depth_pick_test tests/snap_depth_pick_test.cpp)
+    target_link_libraries(model_maker_snap_depth_pick_test PRIVATE model_maker_core)
+    add_test(NAME model_maker_snap_depth_pick_test COMMAND model_maker_snap_depth_pick_test)
 
     # test_core.cpp Windows-only: renderer.hpp kosulsuz <windows.h> icerir.
     if(WIN32)

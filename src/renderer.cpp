@@ -1584,11 +1584,20 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         // PROFIL UC TUTAMAKLARI (grip edit): yalniz SECILI profilli katilarin
         // iki ucuna sari (from) ve mor (to) tutamak cizilir (kullanici istegi:
         // noktalar sadece seciliyken gorunur). View3D'de; tabana gomulur.
-        if (mode == EditMode::View3D && !draft.snapOnly && !draft.viewSlab) {
+        // GORUNUS DILIMI (plan / iki noktali gorunus) pencerelerinde de cizilir:
+        // eskiden `!draft.viewSlab` kosulu bu pencerelerde tutamaklari TAMAMEN
+        // gizliyordu ("plan gorunusunde tasima noktalari gozukmuyor"). Dilim
+        // DISINDAKI secili katilar o pencerede gorunmedigi icin tutamaklari da
+        // cizilmez (aksi halde bos alanda asili tutamaklar olusurdu).
+        if (mode == EditMode::View3D && !draft.snapOnly) {
+            const auto& gripBounds = document.modelBounds();
             for (const std::size_t gi : draft.selectedModels) {
                 if (gi >= document.models().size()) continue;
                 const auto& gm = document.models()[gi];
                 if (gm.faces().empty() || gm.properties().profileName.empty()) continue;
+                if (draft.viewSlab && (gi >= gripBounds.size() ||
+                                       !boundsInViewSlab(gripBounds[gi], *draft.viewSlab)))
+                    continue;
                 const Vec3 gfrom{gm.properties().axisFromX, gm.properties().axisFromY,
                                   gm.properties().axisFromZ};
                 const Vec3 gto{gm.properties().axisToX, gm.properties().axisToY,
