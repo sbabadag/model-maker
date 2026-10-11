@@ -3139,6 +3139,22 @@ void Application::startTwoPointViewCommand() {
     updateStatus();
 }
 
+void Application::startPlanViewCommand() {
+    // PLAN GORUNUSU: nokta secmeye gerek YOK — tek parametre Z kotudur.
+    // Kot edit box ile alinir (0/negatif olabilir); iptal = komut baslamaz.
+    if (!twoPointViewCallback_) { MessageBeep(MB_ICONWARNING); return; }
+    // Yarim kalmis nokta secimi varsa temizle (aksi halde arka planda kalir).
+    if (workPlanePicking_) cancelWorkPlaneCommand();
+    const auto level = requestLevelParameter(L"Plan görünüşü Z kotu (mm)", L"0");
+    if (!level) { // iptal veya gecersiz
+        publishStatus(L"Plan görünüşü: geçerli bir Z kotu girilmedi");
+        return;
+    }
+    const auto view = viewFromPlanLevel(*level);
+    if (!view) { MessageBeep(MB_ICONWARNING); return; }
+    twoPointViewCallback_(*view);
+}
+
 void Application::startRotateCenterCommand() {
     // Gorunus penceresinde yon sabit (kilitli) — donus merkezi anlamsiz.
     if (viewRotationLocked()) {
@@ -3220,6 +3236,20 @@ std::optional<std::size_t> Application::requestCountParameter(const std::wstring
         const long value = std::stol(out, &used);
         if (used != out.size() || value < 2 || value > 1000) return std::nullopt;
         return static_cast<std::size_t>(value);
+    } catch (...) { return std::nullopt; }
+}
+
+std::optional<double> Application::requestLevelParameter(const std::wstring& prompt,
+                                                        const std::wstring& initial) {
+    if (!parameterRequest_) return std::nullopt;
+    std::wstring out = initial;
+    if (!parameterRequest_(prompt, initial, out)) return std::nullopt; // iptal
+    try {
+        std::size_t used{};
+        const double value = std::stod(out, &used);
+        // Kot 0 ya da NEGATIF olabilir; yalniz sonlu olmasi sart.
+        if (used != out.size() || !std::isfinite(value)) return std::nullopt;
+        return value;
     } catch (...) { return std::nullopt; }
 }
 

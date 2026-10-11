@@ -184,6 +184,10 @@ public:
     // ikinci noktada ViewDefinition uretilip twoPointViewCallback_ cagrilir
     // (Qt yeni MDI penceresi acar). Esc/sag tik iptal.
     void startTwoPointViewCommand();
+    // PLAN GORUNUSU (Z kotu): kullanicidan kot alinir (edit box), XY'ye
+    // PARALEL yatay gorunus uretilir (Tekla seviye plani). Ayni
+    // twoPointViewCallback_ akisi -> yeni MDI penceresi.
+    void startPlanViewCommand();
     // EKRAN DONUS MERKEZI (R tusu, Tekla benzeri): tek nokta snap ile
     // secilir ve o nokta ekranin donus merkezi olur; kullanici yeni bir
     // merkez secene kadar Ctrl+sol tus surukleme ekranı bu merkez
@@ -503,6 +507,10 @@ private:
                                                  const std::wstring& initial);
     std::optional<std::size_t> requestCountParameter(const std::wstring& prompt,
                                                      const std::wstring& initial);
+    // ISARETLI sayisal parametre: kot gibi 0 veya NEGATIF olabilen degerler.
+    // requestDoubleParameter yalniz > 0 kabul eder, o yuzden ayri yol.
+    std::optional<double> requestLevelParameter(const std::wstring& prompt,
+                                               const std::wstring& initial);
 
     // --- RHINO TARZI GUMBALL (tasima tutamaclari) ---
     bool gumballVisible_{false};

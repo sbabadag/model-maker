@@ -16,6 +16,7 @@
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QTabWidget>
+#include <QFrame>
 #include <QPushButton>
 #include <QComboBox>
 #include <QCompleter>
@@ -348,7 +349,8 @@ QtMainWindow::~QtMainWindow() {
 void QtMainWindow::openTwoPointView(const ViewDefinition& definition) {
     if (!mdiArea_) return;
     ViewDefinition view = definition;
-    view.name = L"Görünüş " + std::to_wstring(++twoPointViewCounter_);
+    const bool plan = isPlanView(view);
+    view.name = (plan ? L"Plan Görünüşü " : L"Görünüş ") + std::to_wstring(++twoPointViewCounter_);
     // SIRA KRITIK: widget alt pencereye winId()/tuval olusturulmadan ONCE
     // yerlesmeli (sonradan yeniden ebeveynlenen native widget HWND'sini
     // yeniden uretir ve icindeki Win32 tuvali kaybolur). Bu yuzden once
@@ -373,8 +375,11 @@ void QtMainWindow::openTwoPointView(const ViewDefinition& definition) {
         systemMenu->addAction(QStringLiteral("Görünüş derinliği..."), widget,
                               [widget]() { widget->editDepth(); });
     }
+    // Baslik: plan gorunusunde UZUNLUK yok (P1-P2 hatti yok) — bunun yerine
+    // gorunusun Z kotu yazilir; elevasyonda eski baslik korunur.
     sub->setWindowTitle(QString::fromStdWString(view.name) +
-                        QStringLiteral("  —  %1 mm, XY'ye dik").arg(std::lround(view.length)));
+                        (plan ? QStringLiteral("  —  plan, Z = %1 mm").arg(std::lround(view.origin.z))
+                              : QStringLiteral("  —  %1 mm, XY'ye dik").arg(std::lround(view.length))));
     // Gorunus penceresi tum MDI alanini kaplasin (Tekla gibi tek gorunus).
     // MDI'da ayni anda tek pencere buyutulmus olabilir; bu, varsa buyutulmus
     // ana gorunusu otomatik normale dondurur.
@@ -514,6 +519,10 @@ void QtMainWindow::createMenus() {
     modifyMenu->addAction("E&xtend", this, [this]() { app_.startTransformCommand(TransformCommand::Extend); })->setIcon(makeToolIcon(ToolGlyph::Extend));
     modifyMenu->addAction("&Fillet", this, [this]() { app_.startTransformCommand(TransformCommand::Fillet); })->setIcon(makeToolIcon(ToolGlyph::Fillet));
 
+    // TEK GORUNUM MENUSU: goruntuye ait TUM komutlar burada toplanir
+    // (kullanici sarti: "tum goruntu ile ilgili komutlar bir menu ve
+    // ribbonda toplansin"). Gruplar: yakinlastirma/mod, yon, sifirlama/
+    // donus, calisma duzlemi, gorunus pencereleri, grid, teshis.
     QMenu* viewMenu = menuBar()->addMenu("G&örünüm");
     viewMenu->addAction("&Zoom Extents", this, [this]() { app_.zoomExtents2D(); })->setIcon(makeToolIcon(ToolGlyph::Extents));
     viewMenu->addAction("Zoom &Window", this, [this]() { app_.startZoomWindow2D(); })->setIcon(makeToolIcon(ToolGlyph::Extents));
@@ -538,32 +547,27 @@ void QtMainWindow::createMenus() {
     viewDirMenu->addAction("&İzometrik", this, [this]() { app_.setStandardView(StandardView::Isometric); })
         ->setShortcut(QKeySequence(QStringLiteral("Ctrl+7")));
     viewMenu->addSeparator();
-    viewMenu->addAction("Çalışma &Düzlemi (3 Nokta)", this, [this]() { app_.startWorkPlaneCommand(); })->setIcon(makeToolIcon(ToolGlyph::Plane));
-    viewMenu->addAction("Düzlemi &Sıfırla (Dünya)", this, [this]() { app_.resetWorkPlane(); })->setIcon(makeToolIcon(ToolGlyph::Reset));
-    viewMenu->addSeparator();
-    viewMenu->addAction("&Döndürme Merkezi (R)", this, [this]() { app_.startRotateCenterCommand(); });
-    viewMenu->addAction("Döndürme Merkezini &Temizle", this, [this]() { app_.clearRotateCenter(); });
     viewMenu->addAction("Görünümü Sıfırla (Ctrl+R)", this,
         [this]() { app_.resetView(); })->setShortcut(QKeySequence(QStringLiteral("Ctrl+R")));
+    viewMenu->addAction("&Döndürme Merkezi (R)", this, [this]() { app_.startRotateCenterCommand(); });
+    viewMenu->addAction("Döndürme Merkezini &Temizle", this, [this]() { app_.clearRotateCenter(); });
     viewMenu->addSeparator();
+    viewMenu->addAction("Çalışma &Düzlemi (3 Nokta)", this, [this]() { app_.startWorkPlaneCommand(); })->setIcon(makeToolIcon(ToolGlyph::Plane));
+    viewMenu->addAction("Düzlemi &Sıfırla (Dünya)", this, [this]() { app_.resetWorkPlane(); })->setIcon(makeToolIcon(ToolGlyph::Reset));
     QAction* ghostPlaneAction = viewMenu->addAction("Çalışma Düzlemi &Hayaleti (F7)", this,
         [this]() { app_.toggleWorkPlaneGhost(); });
     ghostPlaneAction->setCheckable(true);
     ghostPlaneAction->setChecked(app_.workPlaneGhostVisible());
     viewMenu->addSeparator();
+    // YENI GORUNUS PENCERELERI (MDI): iki noktali (XY'ye dik) + plan (Z kotu).
     QAction* twoPointAction = viewMenu->addAction("&2 Noktalı Görünüş (XY'ye dik)", this,
         [this]() { app_.startTwoPointViewCommand(); });
     twoPointAction->setIcon(makeToolIcon(ToolGlyph::Plane));
     twoPointAction->setShortcut(QKeySequence(QStringLiteral("Ctrl+Shift+V")));
-
-    QMenu* windowMenu = menuBar()->addMenu("&Pencere");
-    windowMenu->addAction("&Döşe", this, [this]() { if (mdiArea_) mdiArea_->tileSubWindows(); });
-    windowMenu->addAction("&Basamakla", this, [this]() { if (mdiArea_) mdiArea_->cascadeSubWindows(); });
-    windowMenu->addAction("&Model görünüşünü büyüt", this, [this]() {
-        if (modelSubWindow_) { modelSubWindow_->showMaximized(); mdiArea_->setActiveSubWindow(modelSubWindow_); }
-    });
-    windowMenu->addSeparator();
-    windowMenu->addAction("Tüm görünüşleri &kapat", this, [this]() { closeAllTwoPointViews(); });
+    QAction* planViewAction = viewMenu->addAction("&Plan Görünüşü (Z kotu...)", this,
+        [this]() { app_.startPlanViewCommand(); });
+    planViewAction->setIcon(makeToolIcon(ToolGlyph::Extents));
+    planViewAction->setShortcut(QKeySequence(QStringLiteral("Ctrl+Shift+P")));
     viewMenu->addSeparator();
     viewMenu->addAction("&Yapı Gridi Oluştur...", this, [this]() { promptCreateGrid(); });
     viewMenu->addAction("&Yapı Gridleri...", this, [this]() { promptGridManager(); });
@@ -573,6 +577,15 @@ void QtMainWindow::createMenus() {
         if (diag) { fprintf(diag, "MENU-BENCH-CLICKED\n"); fclose(diag); }
         app_.runRenderBenchmark();
     });
+
+    QMenu* windowMenu = menuBar()->addMenu("&Pencere");
+    windowMenu->addAction("&Döşe", this, [this]() { if (mdiArea_) mdiArea_->tileSubWindows(); });
+    windowMenu->addAction("&Basamakla", this, [this]() { if (mdiArea_) mdiArea_->cascadeSubWindows(); });
+    windowMenu->addAction("&Model görünüşünü büyüt", this, [this]() {
+        if (modelSubWindow_) { modelSubWindow_->showMaximized(); mdiArea_->setActiveSubWindow(modelSubWindow_); }
+    });
+    windowMenu->addSeparator();
+    windowMenu->addAction("Tüm görünüşleri &kapat", this, [this]() { closeAllTwoPointViews(); });
 }
 
 void QtMainWindow::promptCreateGrid() {
@@ -906,27 +919,85 @@ void QtMainWindow::createToolbar() {
     modLayout->addStretch();
     tabs->addTab(modTab, "Düzenle");
 
-    // ---- Görünüm tab (UCS / çalışma düzlemi) ----
+    // ---- Görünüm tab: goruntuye ait TUM komutlar (menu ile AYNI kume) ----
+    // Kullanici sarti: "tum goruntu ile ilgili komutlar bir menu ve ribbonda
+    // toplansin". Menu ile ayni komutlar; yon ve grid acilir menu olarak
+    // gruplanir (7 standart yon / 2 grid komutu tek dugmede).
     QWidget* viewTab = new QWidget();
     QHBoxLayout* viewLayout = new QHBoxLayout(viewTab);
     viewLayout->setContentsMargins(4, 2, 4, 2);
     viewLayout->setSpacing(2);
-    auto addViewBtn = [&](const ToolGlyph glyph, const QString& text, auto action) {
+    const QString viewBtnStyle = QStringLiteral(
+        "QToolButton { font-size: 7.5pt; color: #E8E8E8; border: none; border-radius: 3px; background: transparent; }"
+        "QToolButton:hover { background: #3C3C44; }"
+        "QToolButton:pressed { background: #23232B; }"
+        "QToolButton::menu-indicator { image: none; }");
+    auto addViewBtn = [&](const ToolGlyph glyph, const QString& text, const QString& tip, auto action) {
         QToolButton* btn = new QToolButton(viewTab);
         btn->setIcon(makeToolIcon(glyph));
         btn->setIconSize(QSize(22, 22));
         btn->setText(text);
         btn->setToolButtonStyle(Qt::ToolButtonTextUnderIcon);
         btn->setFixedSize(58, 48);
-        btn->setStyleSheet("QToolButton { font-size: 7.5pt; color: #E8E8E8; border: none; border-radius: 3px; background: transparent; }" "QToolButton:hover { background: #3C3C44; }" "QToolButton:pressed { background: #23232B; }");
+        btn->setToolTip(tip);
+        btn->setStyleSheet(viewBtnStyle);
         QObject::connect(btn, &QToolButton::clicked, this, action);
         viewLayout->addWidget(btn);
     };
-    addViewBtn(ToolGlyph::Toggle3D, "2B/3B",   [this]() { app_.toggle3DView(); });
-    addViewBtn(ToolGlyph::Extents,  "Extents", [this]() { app_.zoomExtents2D(); });
-    addViewBtn(ToolGlyph::Plane,    "Düzlem",  [this]() { app_.startWorkPlaneCommand(); });
-    addViewBtn(ToolGlyph::Reset,    "Sıfırla", [this]() { app_.resetWorkPlane(); });
-    addViewBtn(ToolGlyph::Plane,    "2N Görünüş", [this]() { app_.startTwoPointViewCommand(); });
+    // Ince ayirici: komut gruplarini gorsel olarak ayirir.
+    auto addViewSep = [&]() {
+        QFrame* line = new QFrame(viewTab);
+        line->setFrameShape(QFrame::VLine);
+        line->setFrameShadow(QFrame::Plain);
+        line->setStyleSheet(QStringLiteral("color: #3C3C44;"));
+        viewLayout->addWidget(line);
+    };
+    // Acilir menu dugmesi: ayni komutlar tek dugmede gruplanir.
+    auto addViewDrop = [&](const ToolGlyph glyph, const QString& text, const QString& tip, auto fill) {
+        QToolButton* btn = new QToolButton(viewTab);
+        btn->setIcon(makeToolIcon(glyph));
+        btn->setIconSize(QSize(22, 22));
+        btn->setText(text);
+        btn->setToolButtonStyle(Qt::ToolButtonTextUnderIcon);
+        btn->setFixedSize(58, 48);
+        btn->setToolTip(tip);
+        btn->setStyleSheet(viewBtnStyle);
+        btn->setPopupMode(QToolButton::InstantPopup);
+        QMenu* menu = new QMenu(btn);
+        fill(menu);
+        btn->setMenu(menu);
+        viewLayout->addWidget(btn);
+    };
+
+    addViewBtn(ToolGlyph::Toggle3D, "2B/3B", "2B / 3B gorunum", [this]() { app_.toggle3DView(); });
+    addViewBtn(ToolGlyph::Extents,  "Extents", "Zoom Extents", [this]() { app_.zoomExtents2D(); });
+    addViewBtn(ToolGlyph::Extents,  "Zoom Penc.", "Zoom Window", [this]() { app_.startZoomWindow2D(); });
+    addViewBtn(ToolGlyph::Reset,    "Sifirla", "Gorunumu sifirla (Ctrl+R)", [this]() { app_.resetView(); });
+    addViewSep();
+    addViewDrop(ToolGlyph::Extents, "Görünüş", "Standart görünüş yönleri (Ctrl+1..7)", [this](QMenu* m) {
+        m->addAction(QStringLiteral("Önden (Ctrl+1)"),  this, [this]() { app_.setStandardView(StandardView::Front); });
+        m->addAction(QStringLiteral("Arkadan (Ctrl+2)"), this, [this]() { app_.setStandardView(StandardView::Back); });
+        m->addAction(QStringLiteral("Soldan (Ctrl+3)"),  this, [this]() { app_.setStandardView(StandardView::Left); });
+        m->addAction(QStringLiteral("Sağdan (Ctrl+4)"),  this, [this]() { app_.setStandardView(StandardView::Right); });
+        m->addSeparator();
+        m->addAction(QStringLiteral("Üstten (Ctrl+5)"),  this, [this]() { app_.setStandardView(StandardView::Top); });
+        m->addAction(QStringLiteral("Alttan (Ctrl+6)"),  this, [this]() { app_.setStandardView(StandardView::Bottom); });
+        m->addSeparator();
+        m->addAction(QStringLiteral("İzometrik (Ctrl+7)"), this, [this]() { app_.setStandardView(StandardView::Isometric); });
+    });
+    addViewSep();
+    addViewBtn(ToolGlyph::Plane,    "Düzlem",     "Çalışma düzlemi (3 nokta)", [this]() { app_.startWorkPlaneCommand(); });
+    addViewBtn(ToolGlyph::Reset,    "Düz. Sıfır", "Düzlemi sıfırla (dünya)", [this]() { app_.resetWorkPlane(); });
+    addViewBtn(ToolGlyph::Toggle3D, "Hayalet",    "Çalışma düzlemi hayaleti (F7)", [this]() { app_.toggleWorkPlaneGhost(); });
+    addViewBtn(ToolGlyph::Toggle3D, "Dön. Mrk.",  "Döndürme merkezi seç (R)", [this]() { app_.startRotateCenterCommand(); });
+    addViewSep();
+    addViewBtn(ToolGlyph::Plane,   "2N Gör.",   "2 noktalı görünüş — XY'ye dik (Ctrl+Shift+V)", [this]() { app_.startTwoPointViewCommand(); });
+    addViewBtn(ToolGlyph::Extents, "Plan Gör.", "Plan görünüşü — Z kotu ile (Ctrl+Shift+P)", [this]() { app_.startPlanViewCommand(); });
+    addViewSep();
+    addViewDrop(ToolGlyph::Extents, "Grid", "Yapı gridi (Tekla tarzı)", [this](QMenu* m) {
+        m->addAction(QStringLiteral("Yapı Gridi Oluştur..."), this, [this]() { promptCreateGrid(); });
+        m->addAction(QStringLiteral("Yapı Gridleri..."),       this, [this]() { promptGridManager(); });
+    });
     viewLayout->addStretch();
     tabs->addTab(viewTab, "Görünüm");
 

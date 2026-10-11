@@ -140,6 +140,52 @@ int main() {
         check(doc.modelIsPickable(2), "clearing the filter restores everything (main view)");
     }
 
+    // --- PLAN GORUNUSU (Z kotu) ---------------------------------------------
+    // KULLANICI SARTI: "view eklemeye PLAN XY de belirtilen Z koordinatinda
+    // ekle". Gorunus duzlemi XY'ye PARALEL; Z kotu NE GORUNUR'u belirler.
+    const auto plan = viewFromPlanLevel(3600.0);
+    check(plan.has_value(), "plan view from a level");
+    check(nearV(plan->origin, {0, 0, 3600}), "plan origin sits on the given level");
+    check(nearV(plan->right, {1, 0, 0}) && nearV(plan->up, {0, 1, 0}),
+          "plan: screen right = +X, screen up = +Y");
+    check(near(plan->normal.z, 1.0) && near(plan->normal.x, 0.0) && near(plan->normal.y, 0.0),
+          "plan normal = +Z (view plane PARALLEL to XY)");
+    check(near(plan->length, 0.0), "plan view has no P1-P2 line");
+    check(isPlanView(*plan) && !isPlanView(*v), "isPlanView separates plan from elevation");
+    check(!viewFromPlanLevel(std::nan("")).has_value(), "NaN level rejected");
+
+    // Kamera: yukaridan bakis; +X saga, +Y yukari (plan eksenleri).
+    Camera pcam;
+    pcam.setViewBasis(plan->right, plan->up, plan->origin);
+    const Vec2 pO = pcam.project({0, 0, 3600}, W, H);
+    const Vec2 pX = pcam.project({1000, 0, 3600}, W, H);
+    const Vec2 pY = pcam.project({0, 1000, 3600}, W, H);
+    check(pX.x > pO.x && near(pO.y, pX.y), "plan: +X is screen right");
+    check(pY.y < pO.y && near(pO.x, pY.x), "plan: +Y is screen up");
+
+    // Kotun USTU/ALTINDA ne gorunur: dilim DUSEY (elevasyonda yataydi).
+    const Bounds3 atLevel{{0, 0, 3590}, {100, 100, 3610}};
+    const Bounds3 above{{0, 0, 6100}, {100, 100, 6200}};
+    const Bounds3 below{{0, 0, 1000}, {100, 100, 1100}};
+    check(boundsInViewSlab(atLevel, *plan), "plan: geometry AT the level is visible");
+    check(boundsInViewSlab(above, *plan), "plan: geometry ABOVE the level is visible");
+    check(!boundsInViewSlab(below, *plan), "plan: geometry far BELOW the level is hidden");
+    auto deepBelow = *plan;
+    deepBelow.depthBack = 5000.0;
+    check(boundsInViewSlab(below, deepBelow), "plan: larger kot-alti depth reveals lower geometry");
+
+    // Bos dilimde fit kutusu TEK NOKTAYA cokmemeli (plan: iki yonde pay).
+    const Bounds3 pfit = viewFitBounds({}, *plan);
+    check(pfit.maximum.x > pfit.minimum.x && pfit.maximum.y > pfit.minimum.y,
+          "plan fit box is not degenerate when the slab is empty");
+    const Bounds3 pfit2 = viewFitBounds({atLevel}, *plan);
+    check(pfit2.maximum.x >= 100.0 && pfit2.minimum.z <= 3590.0 && pfit2.maximum.z >= 3610.0,
+          "plan fit box covers the model inside the slab");
+    // Elevasyon davranisi DEGISMEDI (length > 0 -> yalniz Z payi).
+    const Bounds3 efit = viewFitBounds({}, *v);
+    check(near(efit.minimum.x, 0.0) && near(efit.maximum.x, 6000.0),
+          "elevation fit box unchanged (no in-plane padding)");
+
     std::printf("%d checks, %d failures\n", checks, failures);
     return failures == 0 ? 0 : 1;
 }

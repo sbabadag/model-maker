@@ -71,12 +71,18 @@ void TwoPointViewWidget::editDepth() {
     if (!app_ || !canvas_) return;
     const auto def = app_->viewportDefinition(canvas_);
     if (!def) return;
+    // Plan gorunusunde derinlik dilimi DUSEYdir: front = kotun USTU,
+    // back = kotun ALTINDA. Elevasyonda eski etiketler ("on/arka") kalir.
+    const bool plan = isPlanView(*def);
     bool ok = false;
     const double front = QInputDialog::getDouble(this, QStringLiteral("Görünüş derinliği"),
-        QStringLiteral("Ön derinlik (mm, izleyici tarafı):"), def->depthFront, 0.0, 1e7, 0, &ok);
+        plan ? QStringLiteral("Kotun ÜSTÜ (mm):")
+             : QStringLiteral("Ön derinlik (mm, izleyici tarafı):"),
+        def->depthFront, 0.0, 1e7, 0, &ok);
     if (!ok) return;
     const double back = QInputDialog::getDouble(this, QStringLiteral("Görünüş derinliği"),
-        QStringLiteral("Arka derinlik (mm):"), def->depthBack, 0.0, 1e7, 0, &ok);
+        plan ? QStringLiteral("Kotun ALTI (mm):") : QStringLiteral("Arka derinlik (mm):"),
+        def->depthBack, 0.0, 1e7, 0, &ok);
     if (!ok || !app_ || !canvas_) return;
     app_->setViewportDepth(canvas_, front, back);
 }

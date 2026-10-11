@@ -53,6 +53,41 @@ inline std::optional<ViewDefinition> viewFromTwoPoints(const Vec3& p1, const Vec
     return v;
 }
 
+// PLAN (seviye) gorunusu: gorunus duzlemi XY'ye PARALEL, verilen Z kotunda.
+// KULLANICI SARTI: "view eklemeye PLAN XY de belirtilen Z koordinatinda ekle".
+// Izleyici YUKARIDAN bakar (bakis = -Z), ekran sag +X, ekran yukari +Y.
+// Derinlik dilimi burada DUSEYdir:
+//   depthFront = kotun USTU  (izleyici tarafi, +Z)
+//   depthBack  = kotun ALTINDA (-Z)
+// Yani Z kotu "ne gorunur"u belirler (plan kesiti), iki noktali gorunuste
+// oldugu gibi ekran yonunu degil.
+inline constexpr double kDefaultPlanDepthAbove = 3000.0; // mm, kotun ustu
+inline constexpr double kDefaultPlanDepthBelow = 1000.0; // mm, kotun alti
+
+inline std::optional<ViewDefinition> viewFromPlanLevel(
+    double level, double depthAbove = kDefaultPlanDepthAbove,
+    double depthBelow = kDefaultPlanDepthBelow) {
+    if (!std::isfinite(level)) return std::nullopt;
+    const auto sane = [](double d) {
+        return std::isfinite(d) && d >= 0.0 ? d : kDefaultViewDepth;
+    };
+    ViewDefinition v;
+    v.origin = {0.0, 0.0, level};
+    v.right = {1.0, 0.0, 0.0};  // ekran saga = +X
+    v.up = {0.0, 1.0, 0.0};     // ekran yukari = +Y (plan)
+    v.normal = {0.0, 0.0, 1.0}; // right x up = izleyici tarafi (yukari)
+    v.length = 0.0;             // plan gorunusunde P1-P2 hatti yok
+    v.depthFront = sane(depthAbove);
+    v.depthBack = sane(depthBelow);
+    return v;
+}
+
+// Plan gorunus mu? (gorunus duzlemi XY'ye PARALEL -> normal ±Z.)
+// Baslik/etiket metinlerini secmek icin kullanilir; kalici bir alan DEGIL.
+inline bool isPlanView(const ViewDefinition& v) noexcept {
+    return std::abs(v.normal.z) > 0.9;
+}
+
 // Sinir kutusu derinlik diliminde mi? (kutunun normal yonundeki izdusum
 // araligi [-back, +front] ile kesisiyorsa gorunur.)
 inline bool boundsInViewSlab(const Bounds3& b, const ViewDefinition& v) noexcept {
@@ -86,6 +121,15 @@ inline Bounds3 viewFitBounds(const std::vector<Bounds3>& modelBounds, const View
     }
     if (!any) { // bos dilim: hattin dortte biri kadar dusey pay
         const double pad = std::max(v.length * 0.25, 500.0);
+        // Plan gorunusunde P1-P2 hatti YOK (length == 0); o zaman gorunus
+        // duzlemindeki iki yonde de pay ver, yoksa projeksiyon kutusu TEK
+        // NOKTAYA coker ve fit3D anlamsiz bir olcek uretir. Elevasyonda
+        // (length > 0) davranis DEGISMEZ: yalniz Z payi eklenirdi.
+        const double padInPlane = v.length > 0.0 ? 0.0 : pad;
+        box.minimum.x -= padInPlane;
+        box.maximum.x += padInPlane;
+        box.minimum.y -= padInPlane;
+        box.maximum.y += padInPlane;
         box.minimum.z -= pad;
         box.maximum.z += pad;
     }

@@ -284,6 +284,12 @@ if(BUILD_TESTING)
             add_test(NAME model_maker_props_profile_panel
                 COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_props_profile_panel.py
                     ${CMAKE_CURRENT_BINARY_DIR})
+            # Gorunum komutlari TEK menude + TEK ribbon sekmesinde toplanir ve
+            # gorunus ekleme akisi PLAN gorunusu (XY'ye PARALEL, verilen Z
+            # kotunda) uretir; kot 0/negatif olabilir (requestLevelParameter).
+            add_test(NAME model_maker_view_menu
+                COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_view_menu.py
+                    ${CMAKE_CURRENT_BINARY_DIR})
         endif()
     endif()
 
