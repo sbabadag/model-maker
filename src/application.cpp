@@ -1904,6 +1904,11 @@ void Application::onLeftButtonDown(int x, int y) {
             const Vec3 point = hover_->point;
             clearTemporaryTracking();
             commitWorkPlanePoint(point);
+        } else if (pointPickPurpose_ == PointPickPurpose::RotateCenter) {
+            // Sessiz no-op kullaniciyi sasirtir: merkez secimi bir noktaya
+            // (tercihen snap noktasina) tiklamayi gerektirir.
+            MessageBeep(MB_ICONWARNING);
+            publishStatus(L"Dönüş merkezi: imleçte geçerli nokta yok — bir noktaya tıklayın");
         }
         updateControls(); invalidateCanvas(); return;
     }
