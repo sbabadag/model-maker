@@ -377,6 +377,71 @@ std::vector<Candidate> objectCandidates(const Vec3& cursor, const Document& docu
     return candidates;
 }
 
+// YAPI GRIDI: aks cizgileri TUM snap turleri icin cizilebilir geometridir
+// (kullanici sarti: "grid'e tum snaplar yapismali"). Ayni sekil model kenarlari
+// icin uretilen adaylarin karsiligi uretilir: uc, orta nokta, aks uzerinde en
+// yakin nokta ve referans noktasindan aksa dikme ayagi. Kesisimler (yapi gridi
+// caprazi) SnapType::Grid olarak kalir — mevcut davranis ve isaret korunur.
+//
+// Geometri KAYNAGI `grid.axes`'tir (rebuildGridAxes turetir) — ikinci bir
+// geometri hesabi YAZMA. 3B'de `screenSpace` verilir: en yakin nokta ekran
+// uzayinda cozulur (model kenarlarindaki NEAREST ile ayni kalip), 2B'de duzlem
+// imleci zaten dogrudur. Her turun kapisi `choose(enabledTypes)` maskesidir;
+// bu yuzden kullanici bir snap turunu kapattiysa grid de o turu uretmez.
+void addGridLineCandidates(std::vector<Candidate>& candidates, const Document& document,
+                           const Vec3& cursor, double tolerance, const Metric& metric,
+                           const std::optional<Vec3>& referencePoint,
+                           const ScreenSpaceNearest* screenSpace = nullptr) {
+    const auto dot3 = [](const Vec3& u, const Vec3& v) {
+        return u.x * v.x + u.y * v.y + u.z * v.z;
+    };
+    for (const auto& grid : document.grids()) {
+        if (!grid.visible) continue;
+        for (const auto& axis : grid.axes) {
+            const Vec3& a = axis.from;
+            const Vec3& b = axis.to;
+            const Vec3 direction = b - a;
+            const double lengthSquared = dot3(direction, direction);
+            if (lengthSquared <= epsilon) continue;
+            addCandidate(candidates, a, SnapType::Endpoint, tolerance, metric);
+            addCandidate(candidates, b, SnapType::Endpoint, tolerance, metric);
+            addCandidate(candidates, (a + b) * 0.5, SnapType::Midpoint, tolerance, metric);
+            double rawT;
+            if (screenSpace) {
+                const Vec2 pa = screenSpace->camera->project(a, screenSpace->width, screenSpace->height);
+                const Vec2 pb = screenSpace->camera->project(b, screenSpace->width, screenSpace->height);
+                const double sdx = pb.x - pa.x, sdy = pb.y - pa.y;
+                const double screenLen2 = sdx * sdx + sdy * sdy;
+                rawT = screenLen2 > epsilon
+                    ? ((screenSpace->cursor.x - pa.x) * sdx + (screenSpace->cursor.y - pa.y) * sdy) / screenLen2
+                    : 0.0;
+            } else {
+                rawT = dot3(cursor - a, direction) / lengthSquared;
+            }
+            const double clampedT = std::clamp(rawT, 0.0, 1.0);
+            addCandidate(candidates, a + direction * clampedT, SnapType::Nearest, tolerance, metric);
+            if (referencePoint) {
+                const double perpendicularT = dot3(*referencePoint - a, direction) / lengthSquared;
+                if (perpendicularT >= 0.0 && perpendicularT <= 1.0)
+                    addCandidate(candidates, a + direction * perpendicularT,
+                                 SnapType::Perpendicular, tolerance, metric);
+            }
+        }
+        // Iki aile aksinin kesisimi: x bileseni X-akstan (horizontal=false),
+        // y bileseni Y-akstan (horizontal=true) gelir. Eksen-hizali yapi
+        // gridi varsayimi (xDir=(1,0,0), yDir=(0,1,0)) korunur.
+        std::vector<const GridAxisLine*> xAxes, yAxes;
+        for (const auto& axis : grid.axes)
+            (axis.horizontal ? yAxes : xAxes).push_back(&axis);
+        for (const auto* xa : xAxes) {
+            for (const auto* ya : yAxes) {
+                const Vec3 intersection{xa->from.x, ya->from.y, xa->from.z};
+                addCandidate(candidates, intersection, SnapType::Grid, tolerance, metric);
+            }
+        }
+    }
+}
+
 SnapResult choose(std::vector<Candidate> candidates, const Vec3& raw,
                   const SnapTypeMask* enabledTypes = nullptr,
                   const Camera* depthCamera = nullptr) {
@@ -463,10 +528,24 @@ SnapResult SnapEngine::snap(const Vec3& cursor, const Document& document,
         }
         if (result.type != SnapType::None) return result;
     }
+    // YAPI GRIDI (2B): aks cizgileri de TUM snap turleri icin cizilebilir
+    // geometridir (kullanici sarti: "grid'e tum snaplar yapismali"). Obje
+    // snap'i kazanamadiysa grid akslarindan aday uretilir; her turun kapisi
+    // enabledSnapTypes_ maskesidir (uc/orta/en yakin/dikme + kesisim).
+    if (gridSnapEnabled) {
+        std::vector<Candidate> gridCandidates;
+        addGridLineCandidates(gridCandidates, document, cursor, objectTolerance,
+                              [&](const Vec3& point) { return distance2D(cursor, point); },
+                              referencePoint, nullptr);
+        auto gridResult = choose(std::move(gridCandidates), cursor, enabledTypes);
+        if (gridResult.type != SnapType::None) return gridResult;
+    }
     // Grid snap ARTIK SADECE CUSTOM YAPI AKS KESISIM NOKTALARINA gider
     // (near yok). X-akslari (horizontal=false) ve Y-akslari (horizontal=true)
     // ayri toplanir; her X × her Y kesisim noktasi hesap edilir ve en
     // yakin kesisime imlec yapisir. Milimetrik adaptif grid kaldirildi.
+    // (Bu blok eski davranistir: tolerans kapisi YOK, her zaman en yakin
+    // kesisime yapistirir — korunuyor.)
     if (gridSnapEnabled) {
         // Kesisim: X-aksi baslangici (yDir yonunde cizilir) ile Y-aksi
         // baslangici (xDir yonunde cizilir) — x bileseni X-akstan, y
@@ -609,8 +688,27 @@ SnapResult SnapEngine::snap3D(const Vec2& screenCursor, const Document& document
         auto result = choose(std::move(candidates), *raw, enabledTypes, &camera);
         if (result.type != SnapType::None) return result;
     }
+    // YAPI GRIDI (3B): aks cizgileri de TUM snap turleri icin cizilebilir
+    // geometridir (kullanici sarti: "grid'e tum snaplar yapismali"). Obje
+    // snap'i kazanamadiysa grid akslarindan aday uretilir; en yakin nokta
+    // EKRAN uzayinda cozulur (model kenarlarindaki NEAREST ile ayni kalip).
+    // Her turun kapisi enabledSnapTypes_ maskesidir.
+    if (gridSnapEnabled) {
+        const auto gridMetric = [&](const Vec3& point) {
+            const Vec2 projected = camera.project(point, viewportWidth, viewportHeight);
+            return std::hypot(screenCursor.x - projected.x, screenCursor.y - projected.y);
+        };
+        const ScreenSpaceNearest gridNearest{&camera, viewportWidth, viewportHeight, screenCursor, false};
+        std::vector<Candidate> gridCandidates;
+        addGridLineCandidates(gridCandidates, document, *raw, objectTolerancePixels, gridMetric,
+                              referencePoint, &gridNearest);
+        auto gridResult = choose(std::move(gridCandidates), *raw, enabledTypes, &camera);
+        if (gridResult.type != SnapType::None) return gridResult;
+    }
     // Grid snap ARTIK SADECE CUSTOM YAPI AKS KESISIM NOKTALARINA gider
     // (near yok). Ekran-uzayi projeksiyon mesafesiyle en yakin kesisim.
+    // (Bu blok eski davranistir: tolerans kapisi YOK, her zaman en yakin
+    // kesisime yapistirir — korunuyor.)
     if (gridSnapEnabled) {
         for (const auto& grid : document.grids()) {
             if (!grid.visible) continue;

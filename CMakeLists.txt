@@ -386,6 +386,14 @@ if(BUILD_TESTING)
     target_link_libraries(model_maker_snap_depth_pick_test PRIVATE model_maker_core)
     add_test(NAME model_maker_snap_depth_pick_test COMMAND model_maker_snap_depth_pick_test)
 
+    # YAPI GRIDI TUM SNAP TURLERINE YAPISMALI (kullanici sarti): aks cizgileri
+    # uc/orta/en yakin/dikme adaylari uretir; her turun kapisi snap maskesi;
+    # kesisimler SnapType::Grid kalir; obje snap'i grid'i ezer; eski toleranssiz
+    # kesisim davranisi korunur. OCC'siz kosar; GERCEK snap/snap3D cagirir.
+    add_executable(model_maker_grid_snap_types_test tests/grid_snap_types_test.cpp)
+    target_link_libraries(model_maker_grid_snap_types_test PRIVATE model_maker_core)
+    add_test(NAME model_maker_grid_snap_types_test COMMAND model_maker_grid_snap_types_test)
+
     # test_core.cpp Windows-only: renderer.hpp kosulsuz <windows.h> icerir.
     if(WIN32)
         add_executable(model_maker_tests tests/test_core.cpp)
