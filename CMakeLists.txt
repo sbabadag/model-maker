@@ -259,6 +259,12 @@ if(BUILD_TESTING)
             # katiyla saklanir + gumball saklanani kullanir) sekil kontrolu.
             add_test(NAME model_maker_profile_section_reference
                 COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_profile_section_reference.py)
+            # Props paneli = TEK profil kaynagi (ribbon profil cubugu kaldirildi):
+            # secim yokken aktif profil cizimi belirler, secim varken secime atar;
+            # satirda ENTER (returnPressed/editingFinished) dogrudan uygular.
+            add_test(NAME model_maker_props_profile_panel
+                COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_props_profile_panel.py
+                    ${CMAKE_CURRENT_BINARY_DIR})
         endif()
     endif()
 

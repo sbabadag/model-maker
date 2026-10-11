@@ -19,6 +19,7 @@
 #include <QPushButton>
 #include <QComboBox>
 #include <QCompleter>
+#include <QVariant>
 #include <QColorDialog>
 #include <QShortcut>
 #include <QKeySequence>
@@ -205,6 +206,22 @@ static QIcon makeToolIcon(ToolGlyph glyph) {
 #include "model_maker/build_info.hpp"
 
 namespace mm {
+
+namespace {
+
+// Props panelindeki profil combo'sunun "profilsiz" yer tutucusu.
+QString profileNoneLabel() { return QString::fromUtf8("— Profilsiz (düz çizgi) —"); }
+
+// Combo'dan secili profil adini okur. Yer tutucu (UserRole bos) ise ve kullanici
+// elle bir ad yazmadiysa bos string doner -> profilsiz cizim.
+std::string comboProfileName(const QComboBox* combo) {
+    if (!combo) return {};
+    const QVariant data = combo->currentData();
+    if (data.isValid()) return data.toString().trimmed().toStdString();
+    return combo->currentText().trimmed().toStdString(); // elle yazilan ad
+}
+
+} // namespace
 
 QtMainWindow::QtMainWindow(QWidget* parent)
     : QMainWindow(parent)
@@ -1110,148 +1127,6 @@ void QtMainWindow::createToolbar() {
         });
     });
     ribbon->addWidget(layerBtn);
-
-    // The Win32 window created by Application is intentionally hidden and
-    // only its canvas is reparented into this QMainWindow.  Consequently any
-    // controls parented to that Win32 host can never be part of the visible
-    // UI.  Keep profile selection in a dedicated Qt toolbar row so it remains
-    // visible on every ribbon tab and cannot overflow behind the tab widget.
-    addToolBarBreak(Qt::TopToolBarArea);
-    QToolBar* profileBar = new QToolBar("Çelik Profil", this);
-    profileBar->setObjectName("profileToolbar");
-    profileBar->setMovable(false);
-    profileBar->setFloatable(false);
-    profileBar->setAllowedAreas(Qt::TopToolBarArea);
-    profileBar->setStyleSheet(
-        "QToolBar { background: #34343B; border-top: 1px solid #4B4B55; "
-        "border-bottom: 1px solid #1C1C22; spacing: 8px; padding: 3px 8px; }"
-        "QLabel { color: #F0F0F4; font-weight: 600; }");
-    addToolBar(Qt::TopToolBarArea, profileBar);
-
-    QLabel* profileLabel = new QLabel("Çelik profil:", profileBar);
-    profileLabel->setObjectName("profileSelectorLabel");
-    profileBar->addWidget(profileLabel);
-
-    profileSelector_ = new QComboBox(profileBar);
-    profileSelector_->setObjectName("profileSelector");
-    profileSelector_->setAccessibleName("Çelik profil seçici");
-    profileSelector_->setEditable(true);
-    profileSelector_->setInsertPolicy(QComboBox::NoInsert);
-    profileSelector_->setMinimumWidth(280);
-    profileSelector_->setMaximumWidth(420);
-    profileSelector_->setMinimumContentsLength(24);
-    profileSelector_->setMaxVisibleItems(22);
-    profileSelector_->setToolTip(
-        "Ctrl+tıklama ile çizgileri seçin; ardından atanacak Tekla profilini seçin (X ile açılır).");
-
-    const auto profileNames = app_.profileNames();
-    profileLabel->setText(QString("Çelik profil (%1):").arg(
-        static_cast<int>(profileNames.size())));
-    const auto upperName = [](std::string text) {
-        for (auto& character : text)
-            character = static_cast<char>(
-                ::toupper(static_cast<unsigned char>(character)));
-        return text;
-    };
-    const auto categoryOf = [&upperName](const std::string& name) -> const char* {
-        const std::string u = upperName(name);
-        if (u.rfind("HE", 0) == 0 || u.rfind("HL", 0) == 0 || u.rfind("HD", 0) == 0 ||
-            u.rfind("HP", 0) == 0 || u.rfind("UB", 0) == 0 || u.rfind("UC", 0) == 0)
-            return "I Kirişleri (HEA/HEB/HEM/HL/UB...)";
-        if (u.rfind("IPE", 0) == 0 || u.rfind("IPN", 0) == 0 || u.rfind("INP", 0) == 0)
-            return "IPE / IPN Profiller";
-        if (u.rfind("KKR", 0) == 0 || u.rfind("SHS", 0) == 0 || u.rfind("RHS", 0) == 0)
-            return "Kutu Profiller (KKR/SHS/RHS)";
-        if (u.rfind("CFCHS", 0) == 0 || u.rfind("CHS", 0) == 0 || u.rfind("ROD", 0) == 0 ||
-            u.rfind("PHI", 0) == 0 || u.rfind("PIPE", 0) == 0)
-            return "Boru Profiller (CHS/CFCHS/PHI)";
-        if (u.rfind("UNP", 0) == 0 || u.rfind("UPN", 0) == 0) return "U Kanallar (UNP/UPN)";
-        if (u.rfind("PL", 0) == 0 || u.rfind("FL", 0) == 0) return "Lamalar (PL/FL)";
-        if (u.rfind("L", 0) == 0) return "Köşebentler (L)";
-        if (u.rfind("T", 0) == 0) return "T Profiller";
-        return "Diğer";
-    };
-    std::map<std::string, std::vector<std::string>> groups;
-    for (const auto& name : profileNames)
-        groups[categoryOf(name)].push_back(name);
-    for (const auto& entry : groups) {
-        profileSelector_->insertSeparator(profileSelector_->count());
-        profileSelector_->addItem(QString::fromStdString(entry.first));
-        if (auto* standardModel =
-                qobject_cast<QStandardItemModel*>(profileSelector_->model())) {
-            QStandardItem* header =
-                standardModel->item(profileSelector_->count() - 1);
-            header->setEnabled(false);
-            header->setBackground(QBrush(QColor(58, 69, 85)));
-            header->setForeground(QBrush(QColor(240, 240, 244)));
-        }
-        for (const auto& name : entry.second)
-            profileSelector_->addItem(QString::fromStdString(name));
-    }
-    if (profileNames.empty()) {
-        profileSelector_->addItem("Profil kataloğu bulunamadı");
-        profileSelector_->setEnabled(false);
-    } else {
-        for (int index = 0; index < profileSelector_->count(); ++index) {
-            const QModelIndex modelIndex = profileSelector_->model()->index(index, 0);
-            if (profileSelector_->model()->flags(modelIndex) & Qt::ItemIsEnabled) {
-                profileSelector_->setCurrentIndex(index);
-                break;
-            }
-        }
-        if (QCompleter* completer = profileSelector_->completer()) {
-            completer->setCaseSensitivity(Qt::CaseInsensitive);
-            completer->setFilterMode(Qt::MatchContains);
-            completer->setCompletionMode(QCompleter::PopupCompletion);
-        }
-    }
-    profileBar->addWidget(profileSelector_);
-
-    QLabel* profileHint = new QLabel(
-        "Seçim yokken profil seç → ÇİZ: her çizgi otomatik o profille kiriş olur; seçim varken profili atar",
-        profileBar);
-    profileHint->setObjectName("profileSelectorHint");
-    profileHint->setStyleSheet("color: #C8CCD4; font-weight: 400;");
-    profileBar->addWidget(profileHint);
-
-    QObject::connect(profileSelector_, &QComboBox::textActivated, this,
-        [this](const QString& text) {
-            const QString name = text.trimmed();
-            if (name.isEmpty()) return;
-            const QByteArray utf8 = name.toUtf8();
-            FILE* diag = fopen("model-maker-render.log", "a");
-            if (diag) {
-                fprintf(diag, "PROFILE-QT-SELECT name=%s\n", utf8.constData());
-                fclose(diag);
-            }
-            // PROFIL CIZIM MODU: secici Secim-ile-ata yerine dogrudan cizime
-            // gecti — combo'da profil seciliyken cizilen her cizgi otomatik
-            // o profille kiriş olur. Secim varsa yine de atama yapilir.
-            if (app_.hasSelection()) {
-                app_.assignProfileToSelection(utf8.toStdString());
-            } else {
-                app_.setPendingProfileName(utf8.toStdString());
-            }
-            if (HWND canvas = app_.activeCanvasHandle()) SetFocus(canvas);
-        });
-    app_.setProfilePickerCallback([this]() {
-        if (!profileSelector_ || !profileSelector_->isEnabled()) return;
-        // Queue out of the native canvas WndProc before entering a Qt popup.
-        QTimer::singleShot(0, profileSelector_, [this]() {
-            if (!profileSelector_) return;
-            profileSelector_->setFocus(Qt::ShortcutFocusReason);
-            profileSelector_->showPopup();
-        });
-    });
-
-    {
-        FILE* diag = fopen("model-maker-render.log", "a");
-        if (diag) {
-            fprintf(diag, "PROFILE-QT-CREATED items=%d object=profileSelector\n",
-                    profileSelector_->count());
-            fclose(diag);
-        }
-    }
 }
 
 void QtMainWindow::createDockPanels() {
@@ -1267,8 +1142,10 @@ void QtMainWindow::createDockPanels() {
     typeLabel->setStyleSheet("color: #9FA6B2; font-size: 9pt;");
     propsLayout->addWidget(typeLabel);
 
-    // Profil
-    QLabel* profileCaption = new QLabel("Profil", propsWidget);
+    // Profil (AKTIF): secili nesnenin profilini gosterir/yazar; secim yokken
+    // buradaki deger CIZILECEK kirisin profilidir. (Ust ribbon'daki ayri
+    // profil cubugu kaldirildi — tek yer burasidir.)
+    QLabel* profileCaption = new QLabel("Profil (aktif)", propsWidget);
     profileCaption->setStyleSheet("color: #C8CCD4; font-size: 8pt;");
     propsLayout->addWidget(profileCaption);
     QComboBox* propsProfile = new QComboBox(propsWidget);
@@ -1276,11 +1153,31 @@ void QtMainWindow::createDockPanels() {
     propsProfile->setEditable(true);
     propsProfile->setInsertPolicy(QComboBox::NoInsert);
     propsProfile->setMinimumContentsLength(18);
+    propsProfile->setMaxVisibleItems(22);
+    propsProfile->setToolTip(
+        "Secim YOKKEN: buradaki profil cizilecek kirisi belirler (profilsiz = "
+        "duz cizgi).\nSecim VARKEN: profili secime atar.\nX tusu bu alana odaklanir.");
+    // Oge verisi (Qt::UserRole) = profil adi; yer tutucuda bos string.
+    // Elle yazilan ad icin veri yoktur, metin okunur.
+    propsProfile->addItem(profileNoneLabel(), QString());
+    for (const auto& name : app_.profileNames())
+        propsProfile->addItem(QString::fromStdString(name),
+                              QString::fromStdString(name));
     if (QCompleter* completer = propsProfile->completer()) {
         completer->setCaseSensitivity(Qt::CaseInsensitive);
         completer->setFilterMode(Qt::MatchContains);
     }
     propsLayout->addWidget(propsProfile);
+    // X tusu / CmdProfileButton: eski ribbon combo'su yerine bu alana odaklan.
+    profileSelector_ = propsProfile;
+    app_.setProfilePickerCallback([this]() {
+        if (!profileSelector_ || !profileSelector_->isEnabled()) return;
+        QTimer::singleShot(0, profileSelector_, [this]() {
+            if (!profileSelector_) return;
+            profileSelector_->setFocus(Qt::ShortcutFocusReason);
+            profileSelector_->showPopup();
+        });
+    });
 
     // Katman
     QLabel* layerCaption = new QLabel("Katman", propsWidget);
@@ -1402,13 +1299,17 @@ void QtMainWindow::createDockPanels() {
             ? QString::fromStdString(app_.selectedEntityLengthLabel())
             : "-");
 
-        // Profil: katalog + mevcut deger
+        // Profil: liste BIR KEZ kuruldu (yer tutucu + katalog). Burada yalniz
+        // gosterilecek deger secilir — secim varsa nesnenin profili, yoksa
+        // AKTIF (bekleyen) profil; boylece kullanicinin sectigi deger kaybolmaz.
         QSignalBlocker profileBlocker(propsProfile);
-        propsProfile->clear();
-        const auto names = app_.profileNames();
-        for (const auto& name : names)
-            propsProfile->addItem(QString::fromStdString(name));
-        if (!profile.isEmpty()) propsProfile->setCurrentText(profile);
+        if (!profile.isEmpty()) {
+            propsProfile->setCurrentText(profile);
+        } else {
+            const QString pending = QString::fromStdString(app_.pendingProfileName());
+            if (pending.isEmpty()) propsProfile->setCurrentIndex(0); // profilsiz
+            else propsProfile->setCurrentText(pending);
+        }
         profileBlocker.unblock();
 
         // Katmanlar
@@ -1463,12 +1364,24 @@ void QtMainWindow::createDockPanels() {
     });
     refreshTimer->start();
 
-    // Profil degisince atama (secilene uygulanir)
-    QObject::connect(propsProfile, &QComboBox::textActivated, this,
-        [this](const QString& text) {
-            if (!text.trimmed().isEmpty())
-                app_.assignProfileToSelection(text.trimmed().toStdString());
+    // Profil alani: secim YOKKEN cizilecek kirisin profilini belirler, secim
+    // VARKEN profili secime atar. Liste secimi (textActivated) ve elle yazip
+    // ENTER (returnPressed) AYNI yolu kullanir → satirda Enter = dogrudan uygula.
+    const auto applyProfileField = [this, propsProfile]() {
+        const std::string name = comboProfileName(propsProfile);
+        app_.setPendingProfileName(name);            // cizilecek kirisin profili
+        if (app_.hasSelection()) app_.assignProfileToSelection(name);
+        // Odagi tuvale geri ver (eski ribbon combo'su da yapardi): yoksa
+        // cizim kisayollari (L/M/D...) panele gider ve calismaz. Kuyruklanir ki
+        // popup kapanisi ile cakismasin.
+        QTimer::singleShot(0, this, [this]() {
+            if (HWND canvas = app_.activeCanvasHandle()) SetFocus(canvas);
         });
+    };
+    QObject::connect(propsProfile, &QComboBox::textActivated, this,
+        [applyProfileField](const QString&) { applyProfileField(); });
+    if (QLineEdit* profileEdit = propsProfile->lineEdit())
+        QObject::connect(profileEdit, &QLineEdit::returnPressed, this, applyProfileField);
     QObject::connect(propsLayer, &QComboBox::textActivated, this,
         [this](const QString& text) { app_.setCurrentLayer(text.toStdString()); });
     QObject::connect(propsColor, QOverload<int>::of(&QComboBox::activated), this,
@@ -1480,12 +1393,23 @@ void QtMainWindow::createDockPanels() {
             if (!text.trimmed().isEmpty())
                 app_.setSelectedEntityMaterial(text.trimmed().toStdString());
         });
-    // Rotasyon canli uygulanmaz — UYGULA ile uygulanir (Tekla tarzi);
-    // panelden cikinca eski duruma donme sorununu da ortadan kaldirir.
-    QObject::connect(propsApply, &QPushButton::clicked, this,
-        [this, propsRotation]() {
+    // Malzeme: elle yazip ENTER -> ayni sekilde dogrudan uygulanir.
+    if (QLineEdit* materialEdit = propsMaterial->lineEdit())
+        QObject::connect(materialEdit, &QLineEdit::returnPressed, this,
+            [this, propsMaterial]() {
+                const QString text = propsMaterial->currentText().trimmed();
+                if (!text.isEmpty())
+                    app_.setSelectedEntityMaterial(text.toStdString());
+            });
+    // Rotasyon: satirda ENTER (veya odak cikisi) UYGULA gibi dogrudan uygular;
+    // UYGULA butonu da korunur (ayni yolu kullanir).
+    const auto applyRotationField = [this, propsRotation]() {
+        if (app_.hasSelection())
             app_.setSelectedEntityProfileRotation(propsRotation->value());
-        });
+    };
+    QObject::connect(propsRotation, &QDoubleSpinBox::editingFinished, this,
+                     applyRotationField);
+    QObject::connect(propsApply, &QPushButton::clicked, this, applyRotationField);
     // Kolon ust/alt kot: canli olarak Application'a yazilir (kolon yerlesim
     // aninda okunur). Malzeme propsMaterial'dan okunur.
     QObject::connect(propsColumnTop, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this,
@@ -1502,8 +1426,8 @@ void QtMainWindow::createDockPanels() {
     // (tek tik ile kanvasa kolon koymak icin). Profil col-inbox'tan okunur.
     QObject::connect(propsColumnBtn, &QPushButton::clicked, this,
         [this, propsProfile, propsMaterial]() {
-            const std::string profile = propsProfile->currentText().toStdString();
-            if (!profile.empty()) app_.setPendingProfileName(profile);
+            const std::string profile = comboProfileName(propsProfile);
+            app_.setPendingProfileName(profile); // bos = profilsiz kolon
             app_.setColumnProps(app_.columnTopZ(), app_.columnBottomZ(),
                                 propsMaterial->currentText().toStdString());
             app_.selectTool(DrawTool::Column);
