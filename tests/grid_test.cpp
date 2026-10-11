@@ -133,16 +133,26 @@ int main() {
         check(near(g.axes.front().from.z, 3000.0), "origin.z aksa yansir");
     }
     // 7) Etiket tamamlama: liste DOLU ama kisa ise tamamlanir; X ailesi HARF
-    //    (sagdan sola: en buyuk X = A), Y ailesi SAYI (asagidan yukari).
-    //    Liste BOS ise dokunulmaz (Tekla: etiket kutusu bos birakilabilir).
+    //    DUZ SIRADA (en kucuk/sol X = A, saga dogru artar), Y ailesi SAYI
+    //    (asagidan yukari). Liste BOS ise dokunulmaz (Tekla: etiket kutusu
+    //    bos birakilabilir).
     {
         GridDefinition g;
         g.xCoords = {0.0, 1000.0, 2000.0};
-        g.xLabels = {"C"};  // en soldaki aks = son harf
+        g.xLabels = {"A"};  // en soldaki/orijin aksi = ilk harf
         ensureGridLabels(g);
-        check(g.xLabels.size() == 3 && g.xLabels[0] == "C" && g.xLabels[1] == "B" &&
-                  g.xLabels[2] == "A",
-              "X etiketleri sagdan sola tamamlanir (en buyuk X = A)");
+        check(g.xLabels.size() == 3 && g.xLabels[0] == "A" && g.xLabels[1] == "B" &&
+                  g.xLabels[2] == "C",
+              "X etiketleri duz sirada tamamlanir (en kucuk X = A)");
+        // Kullanici sarti: A/1 kesisimi orijinde kalsin (pozitif X/Y).
+        GridDefinition d;
+        d.xCoords = {0.0, 6000.0, 12000.0, 18000.0};
+        d.yCoords = {0.0, 5000.0, 10000.0, 15000.0};
+        d.xLabels = {"A"};
+        d.yLabels = {"1"};
+        ensureGridLabels(d);
+        check(d.xLabels[0] == "A" && d.yLabels[0] == "1",
+              "A/1 kesisimi orijindeki (en kucuk X/Y) akslardadir");
         GridDefinition y;
         y.yCoords = {0.0, 1000.0};
         y.yLabels = {"1"};

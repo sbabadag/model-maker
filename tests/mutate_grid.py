@@ -62,12 +62,12 @@ MUTATIONS = [
      "    if (!grid.xLabels.empty()) {\n"
      "        const std::size_t n = grid.xCoords.size();\n"
      "        for (std::size_t i = grid.xLabels.size(); i < n; ++i)\n"
-     "            grid.xLabels.push_back(gridAutoLetterLabel(n - 1 - i));\n"
+     "            grid.xLabels.push_back(gridAutoLetterLabel(i));\n"
      "    }",
      "    {\n"
      "        const std::size_t n = grid.xCoords.size();\n"
      "        for (std::size_t i = grid.xLabels.size(); i < n; ++i)\n"
-     "            grid.xLabels.push_back(gridAutoLetterLabel(n - 1 - i));\n"
+     "            grid.xLabels.push_back(gridAutoLetterLabel(i));\n"
      "    }"),
 
     ("M7 grid ekleme UNDO op'u kaydedilmiyor (eski sessiz kusur)",

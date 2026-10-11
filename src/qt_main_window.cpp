@@ -584,11 +584,11 @@ void QtMainWindow::promptCreateGrid() {
     grid.xCoords = parseGridCoordinateLine("0 3*6000", true);
     grid.yCoords = parseGridCoordinateLine("0 3*5000", true);
     grid.zCoords = parseGridCoordinateLine("0 3600 7200", false);
-    // X ailesi HARF (sagdan sola: en sagdaki aks = A), Y ailesi SAYI
-    // (asagidan yukari). Kullanici sarti — Tekla varsayilanindan farkli.
+    // X ailesi HARF DUZ SIRA (en soldaki/orijin aksi = A, saga dogru artar),
+    // Y ailesi SAYI (asagidan yukari). Kullanici sarti.
     grid.xLabels.clear();
     for (std::size_t i = 0; i < grid.xCoords.size(); ++i)
-        grid.xLabels.push_back(gridAutoLetterLabel(grid.xCoords.size() - 1 - i));
+        grid.xLabels.push_back(gridAutoLetterLabel(i));
     grid.yLabels = parseGridLabelLine("1 2 3 4");
     grid.zLabels = parseGridLabelLine("0 3600 7200");
     if (!editGridProperties(grid, QStringLiteral("Yapı Gridi Oluştur (Tekla tarzı)"))) return;

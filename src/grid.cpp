@@ -88,15 +88,16 @@ std::string gridAutoLetterLabel(std::size_t index) {
 }
 
 void ensureGridLabels(GridDefinition& grid) {
-    // X ailesi (Y'ye paralel DIKEY cizgiler) HARF alir, "sagdan sola":
-    // en buyuk X (en sagdaki aks) = A, sola dogru artar. Y ailesi (X'e
-    // paralel YATAY cizgiler) SAYI alir, "asagidan yukari": en kucuk Y = 1.
-    // (Kullanici sarti + Turk yapi cizimi konvansiyonu; Tekla varsayilanindan
-    // farklidir — Tekla X'e sayi, Y'ye harf koyar.)
+    // X ailesi (Y'ye paralel DIKEY cizgiler) HARF alir, DUZ SIRA:
+    // en kucuk X (en soldaki / orijin aksi) = A, saga dogru artar
+    // (A, B, C, ...). Y ailesi (X'e paralel YATAY cizgiler) SAYI alir,
+    // "asagidan yukari": en kucuk Y = 1. (Kullanici sarti; A/1 kesisimi
+    // pozitif X/Y ile orijinde kalir. Tekla varsayilani X'e sayi / Y'ye
+    // harf koyar, bu tersidir.)
     if (!grid.xLabels.empty()) {
         const std::size_t n = grid.xCoords.size();
         for (std::size_t i = grid.xLabels.size(); i < n; ++i)
-            grid.xLabels.push_back(gridAutoLetterLabel(n - 1 - i));
+            grid.xLabels.push_back(gridAutoLetterLabel(i));
     }
     if (!grid.yLabels.empty())
         for (std::size_t i = grid.yLabels.size(); i < grid.yCoords.size(); ++i)
