@@ -4783,7 +4783,19 @@ void Application::applyColumnLevels(double top, double bottom) {
     // TEK YOL: deger her durumda sonraki kolon yerlesimi icin saklanir;
     // secim varsa secili kolona da uygulanir (ENTER ve UYGULA ayni yol).
     setColumnProps(top, bottom, columnMaterial_);
-    if (hasSelection()) setSelectedEntityColumnLevels(top, bottom);
+    if (!hasSelection()) return;
+    // NO-OP KORUMASI: secili kolonun kotu zaten budur (ornek: kullanici spin
+    // kutusuna tiklayip baska yere tiklar → editingFinished ayni degerle
+    // gelir). O durumda yeniden uretime ve BOS geri-alma kaydina gerek yok;
+    // yoksa Ctrl+Z hicbir sey yapmiyor gibi gorunur.
+    double currentTop = 0.0;
+    double currentBottom = 0.0;
+    if (selectedEntityColumnLevels(currentTop, currentBottom)) {
+        const double eps = 1e-6;
+        if (std::abs(currentTop - top) <= eps && std::abs(currentBottom - bottom) <= eps)
+            return;
+    }
+    setSelectedEntityColumnLevels(top, bottom);
 }
 
 #ifdef MM_HAS_OCC

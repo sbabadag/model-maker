@@ -68,9 +68,17 @@ MUTATIONS = [
      "    if (std::abs(dz) < std::sqrt(dx * dx + dy * dy) * 0.0) return false;  // MUTASYON"),
     # M7: applyColumnLevels secime uygulamaz (yalniz bekleyen deger)
     ("M7 applyColumnLevels secime uygulamaz", "application.cpp",
-     "    setColumnProps(top, bottom, columnMaterial_);\n"
-     "    if (hasSelection()) setSelectedEntityColumnLevels(top, bottom);",
-     "    setColumnProps(top, bottom, columnMaterial_);  // MUTASYON"),
+     "    setSelectedEntityColumnLevels(top, bottom);\n"
+     "}\n\n"
+     "#ifdef MM_HAS_OCC",
+     "    // MUTASYON: secime uygulama yok\n"
+     "}\n\n"
+     "#ifdef MM_HAS_OCC"),
+    # M10: no-op korumasi etkisiz (kot ayni olsa da bos geri-alma kaydi acilir)
+    ("M10 no-op korumasi etkisiz", "application.cpp",
+     "        if (std::abs(currentTop - top) <= eps && std::abs(currentBottom - bottom) <= eps)",
+     "        if (false && std::abs(currentTop - top) <= eps && "
+     "std::abs(currentBottom - bottom) <= eps)  // MUTASYON"),
     # M8: kolon ust satirinda ENTER baglantisi yok
     ("M8 Kolon Ust satirinda ENTER yok", "qt_main_window.cpp",
      "    QObject::connect(propsColumnTop, &QDoubleSpinBox::editingFinished, this, applyColumnFields);",

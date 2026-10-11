@@ -296,6 +296,16 @@ int main() {
         CHECK(a.lastAppliedTop == 4200.0 && a.lastAppliedBottom == 0.0,
               "uygulanan kot dogru olmali (kolon boyu degisir)");
     }
+    // (6b) NO-OP: secili kolonun kotu zaten ayni ise yeniden uretme ve BOS
+    // geri-alma kaydi OLMAZ (spin kutusuna tiklayip baska yere tiklamak).
+    {
+        Application a;
+        a.document_.m = {column("IPE300", 0.0, 8500.0)};
+        a.selectedModels_ = {0};
+        a.applyColumnLevels(8500.0, 0.0);
+        CHECK(a.pendingStored == 1, "no-op'ta bile bekleyen deger saklanir");
+        CHECK(a.appliedCount == 0, "kot degismediyse secime UYGULANMAMALI (bos undo yok)");
+    }
 
     // (7) Renk: trueColor YOK = ByLayer -> palette[0] gosterilir (eskiden -1).
     {
