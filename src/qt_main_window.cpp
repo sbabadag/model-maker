@@ -537,6 +537,12 @@ void QtMainWindow::createMenus() {
     viewMenu->addSeparator();
     viewMenu->addAction("Çalışma &Düzlemi (3 Nokta)", this, [this]() { app_.startWorkPlaneCommand(); })->setIcon(makeToolIcon(ToolGlyph::Plane));
     viewMenu->addAction("Düzlemi &Sıfırla (Dünya)", this, [this]() { app_.resetWorkPlane(); })->setIcon(makeToolIcon(ToolGlyph::Reset));
+    viewMenu->addSeparator();
+    viewMenu->addAction("&Döndürme Merkezi (R)", this, [this]() { app_.startRotateCenterCommand(); });
+    viewMenu->addAction("Döndürme Merkezini &Temizle", this, [this]() { app_.clearRotateCenter(); });
+    viewMenu->addAction("Görünümü Sıfırla (Ctrl+R)", this,
+        [this]() { app_.resetView(); })->setShortcut(QKeySequence(QStringLiteral("Ctrl+R")));
+    viewMenu->addSeparator();
     QAction* ghostPlaneAction = viewMenu->addAction("Çalışma Düzlemi &Hayaleti (F7)", this,
         [this]() { app_.toggleWorkPlaneGhost(); });
     ghostPlaneAction->setCheckable(true);

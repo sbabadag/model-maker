@@ -243,6 +243,13 @@ if(BUILD_TESTING)
             add_test(NAME model_maker_snap_marker_scale
                 COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_snap_marker_scale.py
                     ${CMAKE_CURRENT_BINARY_DIR})
+            # Ekran donus merkezi (R tusu + Ctrl+sol tus): R merkez secer,
+            # Ctrl+sol surukleme o merkez etrafinda dondurur, Ctrl+TIK
+            # secimi bozulmaz. Sekil + gercek clearRotateCenter/resetView
+            # govdelerinin davranisi.
+            add_test(NAME model_maker_rotate_center
+                COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_rotate_center.py
+                    ${CMAKE_CURRENT_BINARY_DIR})
             # Ortho + OSNAP: F8 acikken obje snap'i ortho'yu EZER (AutoCAD
             # osnap > ortho). Sekil kontrolu + gercek applyOrthoConstraint
             # govdesinin cagri sozlesmesi (tum dallarda preserve=true).
@@ -304,6 +311,14 @@ if(BUILD_TESTING)
     add_executable(model_maker_perpendicular_tracking_test tests/perpendicular_tracking_test.cpp)
     target_link_libraries(model_maker_perpendicular_tracking_test PRIVATE model_maker_core)
     add_test(NAME model_maker_perpendicular_tracking_test COMMAND model_maker_perpendicular_tracking_test)
+
+    # Ekran donus merkezi (R tusu): secilen pivot etrafinda yorunge donusu.
+    # Pivot EKRANDA sabit kalir, aci semantigi degismez; pivot temizleyen/
+    # koruyan yollar (reset/setView/setViewBasis vs pan/zoom) kilitlenir.
+    # OCC'siz, Linux'ta kosar; gercek Camera::rotateAbout()'i cagirir.
+    add_executable(model_maker_orbit_pivot_test tests/orbit_pivot_test.cpp)
+    target_link_libraries(model_maker_orbit_pivot_test PRIVATE model_maker_core)
+    add_test(NAME model_maker_orbit_pivot_test COMMAND model_maker_orbit_pivot_test)
 
     # Ortho + OSNAP kurali: F8 acikken obje snap'i ortho'yu EZER (AutoCAD
     # osnap > ortho), serbest imlec ve grid snap'i yine eksene kilitlenir —

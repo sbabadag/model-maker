@@ -212,6 +212,11 @@ struct DraftView {
     // snap'lenemez, hicbir belge nesnesi/olayi uretmez.
     // Varsayilan kWorkPlaneGhostDefaultVisible (su an: KAPALI).
     bool workPlaneGhostVisible{kWorkPlaneGhostDefaultVisible};
+    // DONDURME MERKEZI (R tusu) isareti: pivot dunya noktasi. Renderer
+    // gecerli kamerasiyla projekte eder (pasif pencerede KENDI kamerasi),
+    // ekran-olcekli capraz + halka cizer; secilemez/snap'lenemez.
+    bool orbitPivotVisible{false};
+    Vec3 orbitPivot{};
     std::wstring input;
     POINT cursorScreen{};
     TransformCommand transformCommand{TransformCommand::None};

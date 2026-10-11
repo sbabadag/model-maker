@@ -140,7 +140,7 @@ public:
     std::size_t activeView_{0};
     bool creatingViewportCanvas_{false};
     std::uint64_t passiveSignature_{~0ull};
-    bool rotating_{}, panning2D_{}, viewCubeManipulating_{}, zoomAnimActive_{}, wheelNavigating_{}, snapPreviewActive_{};
+    bool rotating_{}, panning2D_{}, viewCubeManipulating_{}, zoomAnimActive_{}, wheelNavigating_{}, snapPreviewActive_{}, ctrlRotatePending_{};
     double zoomAnimTarget_{1.0}, wheelPreviewFactor_{1.0};
     Vec2 wheelPreviewOffset_{};
     std::optional<StandardView> viewCubePressedView_;

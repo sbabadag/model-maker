@@ -28,6 +28,17 @@ public:
     std::optional<Vec3> unprojectToPlane(Vec2 screenPoint, int viewportWidth, int viewportHeight,
                                          const WorkPlane& plane) const noexcept;
     void rotate(double yawDelta, double pitchDelta) noexcept;
+    // DONDURME MERKEZI (R tusu): kayitli pivot etrafinda yorunge donusu.
+    // Pivot dunya noktasi EKRANDA SABIT kalir: merkez3D pivot etrafinda
+    // ayni W kadar doner ve R_ = R_*W yapilir; W = R^T*rx*R*ry oldugu icin
+    // R_eski*(pivot-merkez3D_eski) = R_yeni*(pivot-merkez3D_yeni) — yani
+    // pivot altindaki nokta piksel piksel yerinde kalir. Pivot yokken
+    // rotate() birebir eski davranistir (pivot = merkez3D).
+    void rotateAbout(const Vec3& pivot, double yawDelta, double pitchDelta) noexcept;
+    void setOrbitPivot(const Vec3& worldPoint) noexcept { orbitPivot_ = worldPoint; }
+    void clearOrbitPivot() noexcept { orbitPivot_.reset(); }
+    bool hasOrbitPivot() const noexcept { return orbitPivot_.has_value(); }
+    const std::optional<Vec3>& orbitPivot() const noexcept { return orbitPivot_; }
     void setOrbitCenter(const Vec3& worldPoint) noexcept;
     void zoomBy(double factor) noexcept;
     void zoom2DAt(Vec2 screenPoint, double factor, int viewportWidth, int viewportHeight) noexcept;
@@ -74,6 +85,10 @@ private:
     double pixelsPerUnit_{65.0};
     Vec2 center2D_{};
     Vec3 center3D_{};
+    // R ile secilen donus merkezi. Kamera basina saklanir (viewport takasinda
+    // kendiliginden tasinir); reset/setView/setViewBasis temizler, pan/zoom
+    // korur (pivot bir DUNYA noktasidir, kameradan bagimsizdir).
+    std::optional<Vec3> orbitPivot_{};
 
     static std::array<double, 9> buildRotation(double yaw, double pitch, double roll) noexcept;
     void decompose(double& yaw, double& pitch, double& roll) const noexcept;

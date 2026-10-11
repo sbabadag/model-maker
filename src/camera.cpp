@@ -135,6 +135,9 @@ std::optional<Vec3> Camera::unprojectToPlane(Vec2 screenPoint, int viewportWidth
 }
 
 void Camera::rotate(double yawDelta, double pitchDelta) noexcept {
+    // Dondurme merkezi secildiyse (R) pivot etrafinda doner; yoksa pivot =
+    // merkez3D olur ve davranis eskisiyle birebir aynidir.
+    if (orbitPivot_) { rotateAbout(*orbitPivot_, yawDelta, pitchDelta); return; }
     // Surekli artis: pitch kamera X ekseni etrafinda (soldan carpma), yaw
     // dunya Y ekseni etrafinda (sagdan carpma). Roll=0 iken eski euler
     // toplama davranisiyla birebir esdeger; kutup/devrilme yok.
@@ -147,6 +150,44 @@ void Camera::rotate(double yawDelta, double pitchDelta) noexcept {
                                    0.0, 1.0, 0.0,
                                    -sy, 0.0, cy};
     R_ = mat3mul(rx, mat3mul(R_, ry));
+}
+
+void Camera::rotateAbout(const Vec3& pivot, double yawDelta, double pitchDelta) noexcept {
+    // rotate() ile AYNI aci semantigi (pitch kamera X'i, yaw dunya Y'si):
+    //   R_yeni = rx * R_eski * ry   ve   R_yeni = R_eski * W
+    // Pivot EKRANDA sabit kalsin diye (projeksiyon ortografik: ekran ~
+    // R*(nokta - merkez)):
+    //   R_yeni*(pivot - merkez_yeni) = R_eski*(pivot - merkez_eski)
+    //   => merkez_yeni = pivot + W^T*(merkez_eski - pivot)
+    // W = R_eski^T * R_yeni oldugu icin W^T = R_yeni^T * R_eski.
+    //
+    // ONEMLI (olculmus tuzak): W'yi dogrudan w = R_eski^T*rx*R_eski*ry olarak
+    // KURMAK sayisal olarak kararsizdir — R^T*R carpimi her adimda
+    // ortonormallik hatasini ~3 KATINA buyutur (adim 2: 5.5e-17, adim 7:
+    // 9.9e-15, adim 15: 1.1e-10). 60 adimda R_ tamamen bozulur ve pivot
+    // 2.8e4 px savrulur. Bu yuzden yon guncellemesi rotate() ile AYNI
+    // (kararli) formul, merkez guncellemesi ise iki TEMIZ matrisin
+    // (R_yeni^T * R_eski) uygulanmasi ile yapilir.
+    const double cp = std::cos(pitchDelta), sp = std::sin(pitchDelta);
+    const double cy = std::cos(yawDelta), sy = std::sin(yawDelta);
+    const std::array<double, 9> rx{1.0, 0.0, 0.0,
+                                   0.0, cp, -sp,
+                                   0.0, sp, cp};
+    const std::array<double, 9> ry{cy, 0.0, sy,
+                                   0.0, 1.0, 0.0,
+                                   -sy, 0.0, cy};
+    const std::array<double, 9> previous = R_;
+    R_ = mat3mul(rx, mat3mul(R_, ry));
+    const Vec3 offset{center3D_.x - pivot.x, center3D_.y - pivot.y, center3D_.z - pivot.z};
+    // R_eski * offset, ardindan R_yeni^T * (...): iki temiz rotasyon.
+    const Vec3 inPrevious{previous[0] * offset.x + previous[1] * offset.y + previous[2] * offset.z,
+                          previous[3] * offset.x + previous[4] * offset.y + previous[5] * offset.z,
+                          previous[6] * offset.x + previous[7] * offset.y + previous[8] * offset.z};
+    const Vec3 worldOffset{R_[0] * inPrevious.x + R_[3] * inPrevious.y + R_[6] * inPrevious.z,
+                           R_[1] * inPrevious.x + R_[4] * inPrevious.y + R_[7] * inPrevious.z,
+                           R_[2] * inPrevious.x + R_[5] * inPrevious.y + R_[8] * inPrevious.z};
+    center3D_ = Vec3{pivot.x + worldOffset.x, pivot.y + worldOffset.y,
+                     pivot.z + worldOffset.z};
 }
 
 void Camera::setOrbitCenter(const Vec3& worldPoint) noexcept {
@@ -260,6 +301,9 @@ void Camera::reset() noexcept {
     zoom_ = 1.0;
     center2D_ = {};
     center3D_ = {};
+    // Yeni gorunus yonu: eski donus merkezi anlamsiz kalir (bayat pivot
+    // goruntuyu savurur) — temizle.
+    orbitPivot_.reset();
 }
 
 void Camera::setView(StandardView view) noexcept {
@@ -280,6 +324,8 @@ void Camera::setView(StandardView view) noexcept {
     case StandardView::Left: R_ = buildRotation(halfPi, 0.0, 0.0); break;
     case StandardView::Right: R_ = buildRotation(-halfPi, 0.0, 0.0); break;
     }
+    // Standart gorunus = yeni bakis yonu; onceki donus merkezi birakilir.
+    orbitPivot_.reset();
 }
 
 void Camera::setViewBasis(const Vec3& right, const Vec3& up, const Vec3& center) noexcept {
@@ -294,6 +340,8 @@ void Camera::setViewBasis(const Vec3& right, const Vec3& up, const Vec3& center)
     orthonormalize(r);
     R_ = r;
     center3D_ = center;
+    // Yeni taban (iki noktali gorunus): yon sabit -> pivot anlamsiz, temizle.
+    orbitPivot_.reset();
 }
 
 double Camera::yaw() const noexcept {

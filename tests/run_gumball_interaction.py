@@ -67,7 +67,7 @@ public:
     EditMode mode_{EditMode::View3D};
     TransformCommand transformCommand_{TransformCommand::None};
     bool profileGrip_{}, workPlanePicking_{}, zoomWindowActive_{};
-    bool viewCubeManipulating_{}, viewCubeDragged_{}, rotating_{};
+    bool viewCubeManipulating_{}, viewCubeDragged_{}, rotating_{}, ctrlRotatePending_{};
     std::optional<StandardView> viewCubePressedView_;
     std::vector<std::size_t> selectedModels_{0};
     std::wstring input_;
@@ -78,6 +78,8 @@ public:
     void publishStatus(const std::wstring&) {}
     void invalidateCanvas() {}
     void updateHover(int, int) {}
+    // Ctrl+sol tus jesti birakmada secime duser (sahte: secim degistirmez).
+    bool toggleModelSelection(int, int) { return false; }
     void onLeftButtonUp(int x, int y);
 '''
 shell += fields + "};\n" + methods + release + "\n}\n"

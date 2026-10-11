@@ -33,7 +33,13 @@ def check(ok, label):
 
 marker = "        // CALISMA DUZLEMI HAYALETI (ghost work plane)"
 start = source.index(marker)
-end = source.index("\n    }; // drawGridAndAxes", start)
+# Hayalet blogunun SINIRI: sonradan eklenen donus-merkezi (pivot) isaret blogu
+# ayni lambda icinde ama AYRI bir ozellik; onu kapsama almamali (kendi testi
+# tests/run_rotate_center.py). Ayrica pivot isareti hayalet duzlemden SONRA
+# cizilir (uzerinde kalsin) — bu yuzden ayri blok.
+pivot_marker = "        // DONDURME MERKEZI (R tusu) isareti"
+end = (source.index(pivot_marker, start) if pivot_marker in source[start:]
+       else source.index("\n    }; // drawGridAndAxes", start))
 block = source[start:end]
 check(source.index("const auto drawGridAndAxes = [&](HDC targetDc) {") < start,
       "ghost plane block lives inside drawGridAndAxes")

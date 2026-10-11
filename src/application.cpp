@@ -1041,8 +1041,9 @@ void Application::activateViewport(std::size_t index) {
     if (index >= views_.size() || index == activeView_) return;
     // Yarim kalan gorunuse-ozgu etkilesimler (ekran koordinatli) eski
     // pencerede kalir: kamera surukleme / pencere secimi / zoom penceresi.
-    if (rotating_ || panning2D_ || viewCubeManipulating_) ReleaseCapture();
+    if (rotating_ || panning2D_ || viewCubeManipulating_ || ctrlRotatePending_) ReleaseCapture();
     rotating_ = panning2D_ = viewCubeManipulating_ = false;
+    ctrlRotatePending_ = false;
     viewCubePressedView_.reset();
     selectionFirstCorner_.reset();
     zoomWindowFirstCorner_.reset();
@@ -1145,6 +1146,10 @@ void Application::paintPassiveViewport(std::size_t index) {
     if (client.right > 0 && client.bottom > 0 && slot.renderer) {
         DraftView view = draftView(); // ortak durum (secim, komut)
         view.visualStyle = slot.visualStyle; // stil bu pencereye ait, aktifin degil
+        // Donus merkezi de bu pencerenin KENDI kamerasindan gelir (aktifin
+        // degil): pivot kamerayla birlikte viewport takasinda tasinir.
+        view.orbitPivotVisible = slot.camera.hasOrbitPivot();
+        if (const auto& pivot = slot.camera.orbitPivot()) view.orbitPivot = *pivot;
         view.cursor.reset();
         view.snapType = SnapType::None;
         view.anchor.reset();
@@ -1585,6 +1590,7 @@ LRESULT Application::handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lPa
     case WM_CAPTURECHANGED:
         rotating_ = false;
         panning2D_ = false;
+        ctrlRotatePending_ = false;
         if (reinterpret_cast<HWND>(lParam) != canvas_) {
             viewCubeManipulating_ = false;
             viewCubePressedView_.reset();
@@ -1681,6 +1687,12 @@ LRESULT Application::handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lPa
             // olarak her Esc'te gecici izleme noktalari/kilavuzlari temizlenir.
             clearTemporaryTracking();
             input_.clear();
+            if (ctrlRotatePending_) {
+                // Yarim kalan Ctrl+sol tus jesti (henuz rotasyona terfi
+                // etmedi): iptal, secim degismez.
+                ctrlRotatePending_ = false;
+                ReleaseCapture();
+            }
             if (profileGrip_) cancelProfileGrip();
             else if (zoomWindowActive_) cancelZoomWindow2D();
             else if (workPlanePicking_) cancelWorkPlaneCommand();
@@ -1771,8 +1783,18 @@ LRESULT Application::handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lPa
         }
 #endif
         else if (wParam == 'R' && mode_ == EditMode::View3D) {
-            // Gorunus penceresi: yon sabit -> "yeniden sigdir" (redraw view).
-            if (viewRotationLocked()) fitViewport(canvas_); else camera_.reset();
+            if (GetKeyState(VK_CONTROL) & 0x8000) {
+                // Ctrl+R: gorunumu sifirla (eski R davranisi).
+                resetView();
+            } else if (viewRotationLocked()) {
+                // Gorunus penceresi: yon sabit -> "yeniden sigdir" (redraw view).
+                resetView();
+            } else {
+                // R: EKRAN DONUS MERKEZI sec (Tekla benzeri). Secilen nokta
+                // kullanici yeni merkez secene kadar Ctrl+sol tus suruklemenin
+                // pivotu olur.
+                startRotateCenterCommand();
+            }
         }
         else if (wParam == VK_DELETE) startTransformCommand(TransformCommand::Delete);
         else if (wParam == 'S' && (GetKeyState(VK_CONTROL) & 0x8000)) saveDocument();
@@ -1918,6 +1940,21 @@ void Application::onLeftButtonDown(int x, int y) {
         return;
     }
     if (GetKeyState(VK_CONTROL) < 0) {
+        // Ctrl+sol tus (kullanici sarti): SURUKLEME = ekrani kayitli donus
+        // merkezi etrafinda dondur. TIK (esik asilmadi) = eski Ctrl+tik
+        // secimi. Karar BIRAKMADA verilir; boylece Ctrl+tik ile coklu
+        // secim davranisi bozulmaz.
+        if (mode_ == EditMode::View3D && !viewRotationLocked() && !drawingActive_ &&
+            transformCommand_ == TransformCommand::None && !workPlanePicking_ &&
+            !zoomWindowActive_ && !profileGrip_) {
+            ctrlRotatePending_ = true;
+            ctrlRotateStart_ = POINT{x, y};
+            rotSmoothedDx_ = 0.0;
+            rotSmoothedDy_ = 0.0;
+            lastMouse_ = {x, y};
+            SetCapture(canvas_);
+            return;
+        }
         // Ctrl+tiklama: bos modda nesne secimi (profil atama icin).
         updateHover(x, y);
         if (!toggleModelSelection(x, y)) selectedModels_.clear();
@@ -2205,6 +2242,18 @@ void Application::onLeftButtonUp(int x, int y) {
         invalidateCanvas();
         return;
     }
+    if (ctrlRotatePending_) {
+        // Esik asilmadi: bu bir Ctrl+TIK'tir -> eski secim davranisi
+        // (bos alanda secim temizlenir). Ctrl+tik coklu secim KORUNUR.
+        ctrlRotatePending_ = false;
+        ReleaseCapture();
+        updateHover(x, y);
+        if (!toggleModelSelection(x, y)) selectedModels_.clear();
+        updateStatus();
+        updateControls();
+        invalidateCanvas();
+        return;
+    }
     const bool wasRotating = rotating_;
     rotating_ = false;
     ReleaseCapture();
@@ -2218,6 +2267,16 @@ void Application::onMouseMove(int x, int y, WPARAM buttons) {
     if (gumballDrag_ != GumballHandle::None) {
         gumballDragMove(x, y);
         return;
+    }
+    if (ctrlRotatePending_) {
+        // Ctrl+sol tus: esik asilinca rotasyona terfi et (ayni karede
+        // asagidaki rotating_ dali devralir; lastMouse_ basma noktasinda
+        // oldugu icin sicrama olmaz).
+        if (std::abs(x - ctrlRotateStart_.x) + std::abs(y - ctrlRotateStart_.y) >
+            kCtrlRotateDragThresholdPx) {
+            ctrlRotatePending_ = false;
+            rotating_ = true;
+        }
     }
     bool redraw = false;
     bool snapRedraw = false;
@@ -3111,6 +3170,43 @@ void Application::startTwoPointViewCommand() {
     updateStatus();
 }
 
+void Application::startRotateCenterCommand() {
+    // Gorunus penceresinde yon sabit (kilitli) — donus merkezi anlamsiz.
+    if (viewRotationLocked()) {
+        MessageBeep(MB_ICONWARNING);
+        publishStatus(L"Bu pencerede görünüş yönü sabit — döndürme merkezi kullanılamaz");
+        return;
+    }
+    // Nokta secme akisini paylas (snap + track + Esc/sag tik iptal aynen
+    // calisir); tek nokta yeter, bu yuzden lastik onizleme gorunmez
+    // (workPlanePoints_ bos kalir).
+    startWorkPlaneCommand();
+    pointPickPurpose_ = PointPickPurpose::RotateCenter;
+    updateStatus();
+}
+
+void Application::clearRotateCenter() {
+    camera_.clearOrbitPivot();
+    updateHover(cursorScreen_.x, cursorScreen_.y);
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
+}
+
+void Application::resetView() {
+    // TEK KAYNAK: eskiden R tusunun yaptigi is. Gorunus penceresinde yon
+    // kilitli oldugu icin yalnizca yeniden sigdirilir.
+    if (viewRotationLocked()) {
+        fitViewport(canvas_);
+    } else if (mode_ == EditMode::View3D) {
+        camera_.reset();
+    }
+    updateHover(cursorScreen_.x, cursorScreen_.y);
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
+}
+
 void Application::cancelWorkPlaneCommand() {
     workPlanePicking_ = false;
     pointPickPurpose_ = PointPickPurpose::WorkPlane;
@@ -3167,6 +3263,20 @@ void Application::activateDivide() {
 }
 
 void Application::commitWorkPlanePoint(const Vec3& point) {
+    if (pointPickPurpose_ == PointPickPurpose::RotateCenter) {
+        if (!std::isfinite(point.x) || !std::isfinite(point.y) || !std::isfinite(point.z)) {
+            MessageBeep(MB_ICONWARNING);
+            return;
+        }
+        // Ekran donus merkezi: pivot DUNYA noktasi olarak saklanir, goruntu
+        // ZIPLAMAZ (kamera pivot etrafinda doner, pivot pikselde sabit kalir).
+        camera_.setOrbitPivot(point);
+        cancelWorkPlaneCommand();
+        updateControls();
+        updateStatus();   // durum cubugu "DÖNÜŞ MERKEZİ — Ctrl+sol tuş" yazar
+        invalidateCanvas();
+        return;
+    }
     if (pointPickPurpose_ == PointPickPurpose::TwoPointView) {
         if (!std::isfinite(point.x) || !std::isfinite(point.y) || !std::isfinite(point.z)) {
             MessageBeep(MB_ICONWARNING);
@@ -4235,6 +4345,8 @@ void Application::updateStatus() {
         text += L"  |  2 NOKTALI GÖRÜNÜŞ — ";
         text += workPlanePoints_.empty() ? L"1. noktayı belirtin (görünüş solu)"
                                          : L"2. noktayı belirtin (görünüş sağı)";
+    } else if (workPlanePicking_ && pointPickPurpose_ == PointPickPurpose::RotateCenter) {
+        text += L"  |  DÖNÜŞ MERKEZİ — ekranın döneceği noktayı seçin (Esc iptal)";
     } else if (workPlanePicking_) {
         text += L"  |  WORK PLANE — ";
         if (workPlanePoints_.empty()) text += L"1. noktayı belirtin";
@@ -4293,6 +4405,8 @@ void Application::updateStatus() {
             text += L"  |  ";
             text += lastTrimExtendStatus_;
         }
+    } else if (camera_.hasOrbitPivot()) {
+        text += L"  |  DÖNÜŞ MERKEZİ — Ctrl+sol tuş ile sürükleyip döndürün (R: merkezi değiştir)";
     } else if (!drawingActive_) {
         text += L"  |  PASİF — Komut yok; Snap pasif";
     } else {
@@ -6212,6 +6326,10 @@ DraftView Application::draftView() const {
     view.workPlaneZ = workPlane_.origin.z; view.workPlane = workPlane_;
     view.workPlanePicking = workPlanePicking_; view.workPlanePoints = workPlanePoints_;
     view.workPlaneGhostVisible = workPlaneGhostVisible_;
+    // Donus merkezi (R) isareti: aktif pencerenin kamerasi. Renderer dunya
+    // noktasini kendi kamerasiyla projekte eder (pasif pencerede slot.camera).
+    view.orbitPivotVisible = camera_.hasOrbitPivot();
+    if (const auto& pivot = camera_.orbitPivot()) view.orbitPivot = *pivot;
     view.input = input_; view.cursorScreen = cursorScreen_;
     view.transformCommand = transformCommand_; view.transformPhase = transformPhase_;
     view.selectedModels = selectedModels_; view.selectionFirstCorner = selectionFirstCorner_;

@@ -185,6 +185,17 @@ public:
     // ikinci noktada ViewDefinition uretilip twoPointViewCallback_ cagrilir
     // (Qt yeni MDI penceresi acar). Esc/sag tik iptal.
     void startTwoPointViewCommand();
+    // EKRAN DONUS MERKEZI (R tusu, Tekla benzeri): tek nokta snap ile
+    // secilir ve o nokta ekranin donus merkezi olur; kullanici yeni bir
+    // merkez secene kadar Ctrl+sol tus surukleme ekranı bu merkez
+    // etrafinda dondurur. Esc/sag tik iptal. Merkez yalnizca aktif
+    // pencerenin kamerasinda tutulur (bkz. Camera::setOrbitPivot).
+    void startRotateCenterCommand();
+    void clearRotateCenter();
+    bool hasRotateCenter() const noexcept { return camera_.hasOrbitPivot(); }
+    // Gorunumu sifirla (eski R davranisi). Kilitli (gorunus) pencerede
+    // anlamli tek sey yeniden sigdirmaktir.
+    void resetView();
     void setTwoPointViewCallback(std::function<void(const ViewDefinition&)> callback) {
         twoPointViewCallback_ = std::move(callback);
     }
@@ -667,14 +678,28 @@ private:
     HWND mainCanvas() const noexcept {
         return (views_.empty() || activeView_ == 0) ? canvas_ : views_[0]->canvas;
     }
-    enum class PointPickPurpose { WorkPlane, TwoPointView };
+    // Nokta secme amaci: ayni akis (snap + track + Esc/sag tik iptal) uc
+    // farkli is icin kullanilir.
+    //   WorkPlane    : 3 nokta -> calisma duzlemi (UCS)
+    //   TwoPointView : 2 nokta -> yeni gorunus penceresi
+    //   RotateCenter : 1 nokta -> ekran donus merkezi (R tusu; Ctrl+sol tus
+    //                  ile ekran bu merkez etrafinda doner)
+    enum class PointPickPurpose { WorkPlane, TwoPointView, RotateCenter };
     PointPickPurpose pointPickPurpose_{PointPickPurpose::WorkPlane};
+    // Ctrl+sol tus: bu esikten fazla hareket rotasyona terfi eder; esik
+    // asilmazsa Ctrl+tik secimi yapilir (tek karar noktasi).
+    static constexpr int kCtrlRotateDragThresholdPx = 4;
     std::function<void(const ViewDefinition&)> twoPointViewCallback_;
     std::wstring input_;
     std::vector<std::wstring> commandHistory_;
     std::size_t commandHistoryIndex_{};
     bool rotating_{};
     bool panning2D_{};
+    // Ctrl+sol tus: basildi (henuz surukleme esigi gecmedi). Esik asilirsa
+    // rotating_'e terfi eder; birakmada hareket yoksa normal Ctrl+tik
+    // secimi yapilir (Ctrl+tik secimi KORUNUR).
+    bool ctrlRotatePending_{};
+    POINT ctrlRotateStart_{};
     bool wheelNavigating_{};
     // Rotasyon yumusatma (ustel hareketli ortalama) — ani sarsintiyi filtreler.
     double rotSmoothedDx_{};

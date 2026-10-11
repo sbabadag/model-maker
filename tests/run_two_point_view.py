@@ -37,10 +37,18 @@ void MessageBeep(int) { ++g_beeps; }
 namespace mm {
 enum class EditMode { Draw2D, View3D };
 enum class TransformCommand { None, Move };
+// Sahte kamera: yalnizca donus merkezi (R) dalinin cagrisini karsilar —
+// kamera davranisi bu dosyada test EDILMEZ (bkz. tests/orbit_pivot_test.cpp).
+struct Camera {
+    void setOrbitPivot(const Vec3&) {}
+};
 class Application {
 public:
-    enum class PointPickPurpose { WorkPlane, TwoPointView };
+    enum class PointPickPurpose { WorkPlane, TwoPointView, RotateCenter };
     PointPickPurpose pointPickPurpose_{PointPickPurpose::WorkPlane};
+    // Donus merkezi (R) yolu bu dosyada test EDILMEZ: commitWorkPlanePoint'in
+    // RotateCenter dali camera_.setOrbitPivot cagirir. Sahte kamera yeter.
+    Camera camera_;
     std::function<void(const ViewDefinition&)> twoPointViewCallback_;
     bool workPlanePicking_{false};
     std::vector<Vec3> workPlanePoints_;

@@ -537,6 +537,29 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
             SelectObject(targetDc, stockPen);
             DeleteObject(ghostBorderPen);
         }
+        // DONDURME MERKEZI (R tusu) isareti: ekran-olcekli capraz + halka.
+        // Pivot donuslerde bu noktada SABIT kalir (Camera::rotateAbout), yani
+        // isaret donme sirasinda kaymaz. Secilemez/snap'lenemez: hicbir belge
+        // nesnesi uretmez, yalnizca referans katmanina cizilir.
+        if (draft.orbitPivotVisible) {
+            const Vec2 pivotPrecise = projectPointPrecise(draft.orbitPivot);
+            const POINT pivotCenter{static_cast<LONG>(std::lround(pivotPrecise.x)),
+                                    static_cast<LONG>(std::lround(pivotPrecise.y))};
+            constexpr int pivotArm = 9;
+            constexpr int pivotRing = 6;
+            HPEN pivotPen = CreatePen(PS_SOLID, 2, RGB(176, 62, 196));
+            SelectObject(targetDc, pivotPen);
+            HGDIOBJ oldPivotBrush = SelectObject(targetDc, GetStockObject(NULL_BRUSH));
+            line(targetDc, pivotCenter.x - pivotArm, pivotCenter.y,
+                 pivotCenter.x + pivotArm, pivotCenter.y);
+            line(targetDc, pivotCenter.x, pivotCenter.y - pivotArm,
+                 pivotCenter.x, pivotCenter.y + pivotArm);
+            Ellipse(targetDc, pivotCenter.x - pivotRing, pivotCenter.y - pivotRing,
+                    pivotCenter.x + pivotRing + 1, pivotCenter.y + pivotRing + 1);
+            SelectObject(targetDc, oldPivotBrush);
+            SelectObject(targetDc, stockPen);
+            DeleteObject(pivotPen);
+        }
     }; // drawGridAndAxes (grid + eksenler: interaktif karelerde de çizilir)
     if (!useGpuLines) drawGridAndAxes(dc);
 
