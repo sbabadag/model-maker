@@ -307,6 +307,15 @@ bool Camera::fit3D(Vec3 minimum, Vec3 maximum, int viewportWidth, int viewportHe
     return true;
 }
 
+// GRID GORUNUS DUZLEMI KILIDI: R_'nin 3. SATIRI dunya bakis yonudur
+// (R_ row-major: satir2 = [6],[7],[8]; v_cam.z = satir2 . v_world). Yani
+// viewTransform(e_x).z = R_[6], viewTransform(e_y).z = R_[7],
+// viewTransform(e_z).z = R_[8]. (SATIR ile SUTUN karistirilirsa ISO/on
+// gorunuste kilid sifir veya yanlis vektor olur — test bunu yakalar.)
+void Camera::lockGridViewDirection() noexcept {
+    gridViewDirection_ = Vec3{R_[6], R_[7], R_[8]};
+}
+
 void Camera::reset() noexcept {
     // VARSAYILAN 3B GORUNUM = ISO (Z yukari, XY yere paralel) — kullanici
     // sarti "xy yere dik gelmesin, yatay gelsin; 3D view da ayni olsun".
@@ -317,6 +326,8 @@ void Camera::reset() noexcept {
     // Yeni gorunus yonu: eski donus merkezi anlamsiz kalir (bayat pivot
     // goruntuyu savurur) — temizle.
     orbitPivot_.reset();
+    // Grid gorunus duzlemi kilidi: ISO bakis yonu (Z baskin) -> plan gridi.
+    lockGridViewDirection();
 }
 
 void Camera::setView(StandardView view) noexcept {
@@ -340,6 +351,9 @@ void Camera::setView(StandardView view) noexcept {
     }
     // Standart gorunus = yeni bakis yonu; onceki donus merkezi birakilir.
     orbitPivot_.reset();
+    // Grid gorunus duzlemi kilidi: standart gorunus DISKRET bir gorunus
+    // degisimidir -> kilidi yeniler (Ust -> XY, On -> XZ, Sag -> YZ).
+    lockGridViewDirection();
 }
 
 void Camera::setViewBasis(const Vec3& right, const Vec3& up, const Vec3& center) noexcept {
@@ -356,6 +370,9 @@ void Camera::setViewBasis(const Vec3& right, const Vec3& up, const Vec3& center)
     center3D_ = center;
     // Yeni taban (iki noktali gorunus): yon sabit -> pivot anlamsiz, temizle.
     orbitPivot_.reset();
+    // Grid gorunus duzlemi kilidi: iki noktali gorunusun tabani yonu
+    // tanimlar -> kilit burada kurulur ve bir daha degismez.
+    lockGridViewDirection();
 }
 
 double Camera::yaw() const noexcept {

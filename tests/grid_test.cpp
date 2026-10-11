@@ -12,6 +12,7 @@
 //   * cizim geometrisi SPESIFIKASYONDAN turetilir (axes turevdir)
 //   * MMW7 kalicilik + MMW5/6 (yalniz-axes) geriye donuk uyumluluk
 //   * grid ekle/degistir/sil GERI ALINABILIR (GridAdd/GridRemove/GridReplace)
+#include "model_maker/camera.hpp"
 #include "model_maker/document.hpp"
 #include "model_maker/grid.hpp"
 
@@ -305,6 +306,12 @@ int main() {
               "bakış -X -> YZ gridi");
         check(gridViewPlaneForDirection(Vec3{1, 1, 1}) == GridViewPlane::XY,
               "izometrik (esitlikte Z) -> plan gridi (Tekla 3B gorunusu)");
+        // Kayan nokta beraberligi: gercek kameranin ISO yonu matematiksel
+        // olarak (1,1,1) ama bilesenler SON BITE kadar farklidir; toleranssiz
+        // karsilastirma ISO'da sessizce YZ veriyordu (olculen kusur).
+        check(gridViewPlaneForDirection(Vec3{0.5773502691896258, 0.5773502691896257,
+                                             0.5773502691896257}) == GridViewPlane::XY,
+              "ISO bilesenleri son-bit farkli olsa da plan gridi");
         check(gridViewPlaneForDirection(Vec3{5, 0.2, 0.1}) == GridViewPlane::YZ,
               "baskin eksen: egik bakista X -> YZ gridi");
 
@@ -421,6 +428,73 @@ int main() {
         check(planOnlyXZ.size() == 2, "kat yoksa XZ gorunusunde yalniz X dikey aileleri");
         check(!planOnlyXZ.empty() && near(planOnlyXZ[0].to.z - planOnlyXZ[0].from.z, 2000.0),
               "kat yokken dikey uzanti Below/Above'dan gelir (2*1000 mm)");
+    }
+
+    // ---------------------------------------------------------------------
+    // GORUNUS DUZLEMI KILIDI: grid cizimi icin secilen duzlem gorunus tabani
+    // KURULURKEN bir kez belirlenir (Camera::gridViewDirection); sonradan
+    // yapilan yorunge donusu onu DEGISTIRMEZ. Kullanici sarti: "grid ... bir
+    // kez tek duzlemde cizilir, goruntunun 3d degismesi grid in cizilimini
+    // degistirmez".
+    // ---------------------------------------------------------------------
+    {
+        const auto planeOf = [](const Camera& camera) {
+            return gridViewPlaneForDirection(camera.gridViewDirection());
+        };
+
+        const Camera fresh;
+        check(planeOf(fresh) == GridViewPlane::XY,
+              "yeni kamera (kimlik taban, ustten bakis) -> plan (XY) duzlemi");
+
+        Camera camera;
+        camera.reset();
+        check(planeOf(camera) == GridViewPlane::XY,
+              "reset() (varsayilan 3B gorunum = ISO) -> plan (XY) duzlemi");
+
+        const auto dirOf = [](const Camera& c) {
+            const Vec3 d = c.gridViewDirection();
+            return Vec3{d.x, d.y, d.z};
+        };
+        camera.setView(StandardView::Front);
+        const Vec3 frontDir = dirOf(camera);
+        check(planeOf(camera) == GridViewPlane::XZ && near(frontDir.y, 1.0, 1e-9),
+              "setView(Front) -> kilit +Y bakis -> XZ duzlemi");
+        camera.setView(StandardView::Right);
+        const Vec3 rightDir = dirOf(camera);
+        check(planeOf(camera) == GridViewPlane::YZ &&
+                  near(std::abs(rightDir.x), 1.0, 1e-9) && near(rightDir.y, 0.0, 1e-9),
+              "setView(Right) -> kilit +-X bakis -> YZ duzlemi");
+        camera.setView(StandardView::Top);
+        check(planeOf(camera) == GridViewPlane::XY,
+              "setView(Top) -> plan (XY) duzlemi");
+
+        // KILIT: yorunge donusu (rotate) kilidi DEGISTIRMEZ.
+        const Vec3 lockedBefore = dirOf(camera);
+        camera.rotate(0.9, 0.4);
+        camera.rotate(-0.31, 0.22);
+        const Vec3 lockedAfter = dirOf(camera);
+        check(near(lockedAfter.x, lockedBefore.x, 1e-12) &&
+                  near(lockedAfter.y, lockedBefore.y, 1e-12) &&
+                  near(lockedAfter.z, lockedBefore.z, 1e-12),
+              "rotate() kilitli gorunus yonunu DEGISTIRMEZ");
+        check(planeOf(camera) == GridViewPlane::XY,
+              "3B donusten sonra grid duzlemi hala plan (donus cizimi degistirmez)");
+        // Donus gercekten oldu mu? (kilit testi bosa cikmasin)
+        check(!near(camera.yaw(), 0.0, 1e-6) || !near(camera.pitch(), 0.0, 1e-6),
+              "rotate() gercekten uygulandi (kamera yonu degisti)");
+
+        // Iki noktali gorunus tabani da kilidi kurar: right=+X, up=+Z ->
+        // bakis -Y -> XZ (on/arka) duzlemi.
+        Camera view;
+        view.setViewBasis(Vec3{1.0, 0.0, 0.0}, Vec3{0.0, 0.0, 1.0}, Vec3{0.0, 0.0, 0.0});
+        check(planeOf(view) == GridViewPlane::XZ,
+              "setViewBasis (iki noktali gorunus, bakis -Y) -> XZ duzlemi");
+
+        // Egik taban (iki noktali gorunus 45 derece): en baskin eksen kazanir.
+        Camera skew;
+        skew.setViewBasis(Vec3{1.0, 1.0, 0.0}, Vec3{0.0, 0.0, 1.0}, Vec3{0.0, 0.0, 0.0});
+        check(planeOf(skew) == GridViewPlane::XZ,
+              "eğik tabanda en baskin bilesen (Y) kazanir -> XZ duzlemi");
     }
 
     std::printf("%d checks, %d failures\n", checks, failures);

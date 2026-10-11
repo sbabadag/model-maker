@@ -39,6 +39,15 @@ public:
     void clearOrbitPivot() noexcept { orbitPivot_.reset(); }
     bool hasOrbitPivot() const noexcept { return orbitPivot_.has_value(); }
     const std::optional<Vec3>& orbitPivot() const noexcept { return orbitPivot_; }
+    // GRID GORUNUS DUZLEMI KILIDI. Kullanici sarti: "grid ... bir kez tek
+    // duzlemde cizilir, goruntunun 3d degismesi grid in cizilimini
+    // degistirmez". Gorunus yonu DUNYADA, gorunus tabani kurulurken BIR KEZ
+    // saklanir (varsayilan yapici / reset / setView / setViewBasis); renderer
+    // bu yonden gridViewPlaneForDirection ile XY/XZ/YZ secer. Sonradan yapilan
+    // yorunge donusu (rotate/rotateAbout), pan ve zoom bunu DEGISTIRMEZ —
+    // canli R_ KULLANILMAZ, yoksa 3B goruntuyu dondurmek grid cizimini
+    // degistirirdi (45 derece esiklerinde aile sicramasi).
+    const Vec3& gridViewDirection() const noexcept { return gridViewDirection_; }
     void setOrbitCenter(const Vec3& worldPoint) noexcept;
     void zoomBy(double factor) noexcept;
     void zoom2DAt(Vec2 screenPoint, double factor, int viewportWidth, int viewportHeight) noexcept;
@@ -89,9 +98,16 @@ private:
     // kendiliginden tasinir); reset/setView/setViewBasis temizler, pan/zoom
     // korur (pivot bir DUNYA noktasidir, kameradan bagimsizdir).
     std::optional<Vec3> orbitPivot_{};
+    // Kilitli gorunus yonu (dunya). Varsayilan = kimlik R'nin 3. satiri
+    // (0,0,1) = ustten bakis -> plan (XY) gridi; reset()/setView()/
+    // setViewBasis() hemen gercek tabana kilitler.
+    Vec3 gridViewDirection_{0.0, 0.0, 1.0};
 
     static std::array<double, 9> buildRotation(double yaw, double pitch, double roll) noexcept;
     void decompose(double& yaw, double& pitch, double& roll) const noexcept;
+    // R_'nin 3. satirini (= dunya bakis yonu) kilide yazar. YALNIZ gorunus
+    // tabani kurulurken cagrilir; rotate/pan/zoom'da CAGRILMAZ.
+    void lockGridViewDirection() noexcept;
 };
 
 } // namespace mm

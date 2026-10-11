@@ -423,13 +423,14 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         // grids' planes intersect with the view plane"). Gorunus duzlemine
         // PARALEL aile cizilmez → pencerenin duzlemine gore yalniz XY / XZ /
         // YZ gridi gorunur; "3B grid" OLUSMAZ.
-        // Gorunus duzlemi kameranin BAKIS yonunden gelir: R ortonormal oldugu
-        // icin n = ((R e_x).z, (R e_y).z, (R e_z).z) = R'nin 3. satiri =
-        // dunya bakis yonu. Kamera API'sine dokunmadan boyle turetiliyor.
-        const Vec3 viewDirection{camera.viewTransform(Vec3{1.0, 0.0, 0.0}).z,
-                                 camera.viewTransform(Vec3{0.0, 1.0, 0.0}).z,
-                                 camera.viewTransform(Vec3{0.0, 0.0, 1.0}).z};
-        const GridViewPlane gridPlane = gridViewPlaneForDirection(viewDirection);
+        // Gorunus duzlemi KAMERADA KILITLI bakis yonunden gelir: yon gorunus
+        // tabani kurulurken BIR KEZ saklanir (Camera::gridViewDirection —
+        // reset/setView/setViewBasis). Yorunge donusu (rotate), pan ve zoom
+        // bunu DEGISTIRMEZ -> "3B goruntuyu dondurmek grid cizimini
+        // degistirmez" ve 45 derece esiklerinde aile SICRAMASI olmaz
+        // (kullanici sarti: "bir kez tek duzlemde cizilir"). Canli R_
+        // KULLANILMAZ.
+        const GridViewPlane gridPlane = gridViewPlaneForDirection(camera.gridViewDirection());
         // Renk/yazi boyu GRID SPESIFIKASYONUNDAN gelir (Tekla grid property:
         // Grid color / Label font size and color). Her stilde cizilir
         // (referans katman) — Wireframe dahil.

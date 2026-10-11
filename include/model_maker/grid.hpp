@@ -108,8 +108,10 @@ enum class GridViewPlane {
 };
 
 // Kamera gorunus yonunden gorunus duzlemi sinifi: yonun EN BASKIN ekseni.
-// Gorunus duzlemi bu eksene DIKTIR. Esitlikte Z kazanir → izometrik 3B
-// gorunuste plan (XY) gridi gorunur (Tekla 3B gorunusu).
+// Gorunus duzlemi bu eksene DIKTIR. Beraberlikte (izometrik) Z kazanir →
+// izometrik 3B gorunuste plan (XY) gridi gorunur (Tekla 3B gorunusu).
+// Karsilastirma TOLERANSLIDIR: uc bilesen ayri ifadelerden geldigi icin
+// matematiksel esitlik kayan noktada tutmayabilir (ISO'da YZ'ye kayardi).
 GridViewPlane gridViewPlaneForDirection(const Vec3& viewDirection) noexcept;
 
 // Verilen gorunus duzlemi icin CIZIM geometrisi. `grid.axes`'e DOKUNMAZ

@@ -11,12 +11,14 @@ PARALEL olan aile cizilmez.
 
 Iki katman:
   1. Kaynak sekli: cizim `gridAxesForView` uzerinden ve gorunus duzlemi
-     kameradan geliyor; `grid.axes` cizimde KULLANILMIYOR (o snap/zoom
+     kamerada KILITLI yonden geliyor (`Camera::gridViewDirection`; canli
+     rotasyondan DEGIL); `grid.axes` cizimde KULLANILMIYOR (o snap/zoom
      tabani); `rebuildGridAxes` ile `gridAxesForView(XY)` tek kaynak.
   2. Davranis: uretim grid cizim blogu renderer.cpp'den VERBATIM cikarilip
      GERCEK `gridAxesForView`/`gridViewPlaneForDirection` (src/grid.cpp) ile
      sahte kaydedici GDI sinirinda derlenir; pencerenin duzlemine gore hangi
-     ailelerin/etiketlerin cizildigi olculur.
+     ailelerin/etiketlerin cizildigi olculur. Iki test kilidi acikca sinar:
+     kilitli duzlem canli rotasyonu EZER ve 3B donus cizimi DEGISTIRMEZ.
 
 Bu native Windows GUI / GDI rasterizasyon testi DEGILDIR.
 Kullanim: python3 tests/run_grid_view_plane.py [build-directory]
@@ -57,12 +59,14 @@ check("gridViewPlaneForDirection(" in block,
       "drawing asks gridViewPlaneForDirection for the view plane")
 check("for (const auto& axis : grid.axes)" not in block,
       "drawing must NOT iterate grid.axes (that is the snap/zoom base geometry)")
-check("gridViewPlaneForDirection(viewDirection)" in block,
-      "the plane class comes from the camera view direction")
-# Gorunus yonu KAMERADAN turetilir (kamera API'sine yeni metot eklemeden,
-# R ortonormal -> 3. satir = dunya bakis yonu).
-check(block.count("camera.viewTransform(") == 3,
-      "view direction derived from camera.viewTransform on the three world axes")
+check("gridViewPlaneForDirection(camera.gridViewDirection())" in block,
+      "the plane class comes from the camera's LOCKED view direction")
+# KILIT (kullanici sarti): cizim CANLI rotasyondan turetemez; yon gorunus
+# tabani kurulurken bir kez saklanir (Camera::gridViewDirection).
+check("camera.viewTransform(" not in block,
+      "drawing must NOT derive the plane from the live rotation (locked only)")
+check(block.count("camera.gridViewDirection()") == 1,
+      "the locked view direction is read exactly once (single source)")
 check(re.search(r"const GridViewPlane gridPlane\s*=", block) is not None,
       "view plane is computed once per frame (not per grid)")
 # Render-only: cizim blogu hicbir durum degistirmemeli (secilemez/snap'lenemez).
@@ -86,6 +90,23 @@ check(grid_source.count("grid.axes = std::move(axes);") == 1,
 check("if (plane == GridViewPlane::XY)" in grid_source and
       "if (plane == GridViewPlane::XZ)" in grid_source,
       "gridAxesForView has one branch per view plane (parallel family skipped)")
+
+# --- KILIT (kamera tarafi): duzlem BIR KEZ secilir ---------------------------
+camera_header = (root / "include/model_maker/camera.hpp").read_text(encoding="utf-8")
+camera_source = (root / "src/camera.cpp").read_text(encoding="utf-8")
+check("const Vec3& gridViewDirection() const noexcept" in camera_header,
+      "Camera::gridViewDirection is declared in camera.hpp")
+check("Vec3 gridViewDirection_{" in camera_header,
+      "Camera stores the locked view direction as state (not recomputed per frame)")
+check(camera_source.count("lockGridViewDirection();") == 3,
+      "the lock is set by exactly reset/setView/setViewBasis (three discrete view changes)")
+check("gridViewDirection_ = Vec3{R_[6], R_[7], R_[8]};" in camera_source,
+      "the lock is R_'s third ROW = the world view direction")
+# rotate/pan/zoom kilidi DEGISTIRMEMELI: yorunge donusu govdesinde lock YOK.
+rotate_body = camera_source[camera_source.index("void Camera::rotate(double yawDelta"):
+                            camera_source.index("void Camera::rotateAbout(")]
+check("lockGridViewDirection" not in rotate_body,
+      "rotate() must NOT re-lock (3B donus grid cizimini degistirmez)")
 
 # --- 2) Davranis: uretim blogu, gercek cekirdek, sahte GDI --------------------
 line_match = re.search(r"^void line\(.*?^}", source, re.M | re.S)

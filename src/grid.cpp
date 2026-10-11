@@ -248,9 +248,15 @@ GridViewPlane gridViewPlaneForDirection(const Vec3& viewDirection) noexcept {
     const double ax = std::abs(viewDirection.x);
     const double ay = std::abs(viewDirection.y);
     const double az = std::abs(viewDirection.z);
-    // Gorunus duzlemi baskin eksene DIKTIR. Esitlikte Z -> plan gridi.
-    if (az >= ax && az >= ay) return GridViewPlane::XY;
-    if (ay >= ax) return GridViewPlane::XZ;
+    // Gorunus duzlemi baskin eksene DIKTIR. Esitlikte (izometrik) Z kazanir ->
+    // plan (XY) gridi. Karsilastirma TOLERANSLI olmali: uc bilesen ayri
+    // ifadelerden geldigi icin (kamera matrisinin 3. satiri) matematiksel
+    // esitlik kayan noktada tutmaz ve ISO'da sessizce YZ cikiyordu (olculdu:
+    // reset()/Isometric -> (-0.57735,-0.57735,-0.57735), tam esitlik testiyle
+    // YZ). Tolerans yalnizca gercek beraberlikler icin.
+    constexpr double kTieEpsilon = 1e-9;
+    if (az >= ax - kTieEpsilon && az >= ay - kTieEpsilon) return GridViewPlane::XY;
+    if (ay >= ax - kTieEpsilon) return GridViewPlane::XZ;
     return GridViewPlane::YZ;
 }
 

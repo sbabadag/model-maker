@@ -127,15 +127,18 @@ void drawText(HDC dc, int x, int y, const wchar_t* text, COLORREF color) {
 }
 // @LINE_FUNCTION@
 
-// Sahte kamera: R ortonormal (v_cam = R * v_world). Renderer gorunus yonunu
-// YALNIZCA bu API'den turetir; 3. satir dunya bakis yonudur.
+// Sahte kamera. Renderer gorunus duzlemini KILITLI bakis yonunden
+// (gridViewDirection) alir — CANLI rotasyondan (R) DEGIL. `lockedPlaneWins*`
+// testi ikisini bilerek AYIRIR: R baska bir yone donuktur, kilit plan kalir.
 struct Camera {
     double R[3][3]{{1, 0, 0}, {0, 1, 0}, {0, 0, 1}};
+    Vec3 dir{0.0, 0.0, 1.0}; // Camera::gridViewDirection() kilitli dunya bakis yonu
     Vec3 viewTransform(Vec3 v) const {
         return Vec3{R[0][0] * v.x + R[0][1] * v.y + R[0][2] * v.z,
                     R[1][0] * v.x + R[1][1] * v.y + R[1][2] * v.z,
                     R[2][0] * v.x + R[2][1] * v.y + R[2][2] * v.z};
     }
+    const Vec3& gridViewDirection() const { return dir; }
 };
 struct Document {
     std::vector<mm::GridDefinition> gridList;
@@ -247,6 +250,7 @@ Camera frontCamera() {
     camera.R[0][0] = 1; camera.R[0][1] = 0; camera.R[0][2] = 0;
     camera.R[1][0] = 0; camera.R[1][1] = 0; camera.R[1][2] = -1;
     camera.R[2][0] = 0; camera.R[2][1] = 1; camera.R[2][2] = 0;
+    camera.dir = Vec3{0.0, 1.0, 0.0};
     return camera;
 }
 // Bakis yonu = +e_x -> gorunus duzlemi YZ (yan gorunus).
@@ -255,6 +259,7 @@ Camera sideCamera() {
     camera.R[0][0] = 0; camera.R[0][1] = 0; camera.R[0][2] = 1;
     camera.R[1][0] = 0; camera.R[1][1] = 1; camera.R[1][2] = 0;
     camera.R[2][0] = -1; camera.R[2][1] = 0; camera.R[2][2] = 0;
+    camera.dir = Vec3{1.0, 0.0, 0.0};
     return camera;
 }
 // Izometrik: bakis yonu (1,1,1)/sqrt(3) — uc bilesen ESIT (esitlikte Z kazanir).
@@ -264,6 +269,7 @@ Camera isoCamera() {
     camera.R[0][0] = 1 / s2; camera.R[0][1] = -1 / s2; camera.R[0][2] = 0;
     camera.R[1][0] = 1 / s6; camera.R[1][1] = 1 / s6; camera.R[1][2] = -2 / s6;
     camera.R[2][0] = 1 / s3; camera.R[2][1] = 1 / s3; camera.R[2][2] = 1 / s3;
+    camera.dir = Vec3{1.0 / s3, 1.0 / s3, 1.0 / s3};
     return camera;
 }
 
@@ -360,6 +366,45 @@ void planOnlyGridKeepsVerticalExtent() {
             "kat yoksa on gorunusunde yalniz X dikey cizgileri, alinan: " + describe(counts));
 }
 
+// KILIT (kullanici sarti): gorunus duzlemi CANLI rotasyondan degil, kamerada
+// saklanan KILITLI yonden gelir. R front gorunuse donuktur ama kilit plan
+// kalir -> plan gridi cizilmeli (donus cizimi degistirmez).
+void lockedPlaneWinsOverTheLiveRotation() {
+    Document document;
+    document.gridList.push_back(makeGrid());
+    Camera camera = frontCamera();
+    camera.dir = Vec3{0.0, 0.0, 1.0}; // kilit plan (XY); canli R on gorunuste
+    const auto counts = classify(render(camera, document, 800));
+    require(counts.alongY == 2 && counts.alongX == 2 && counts.alongZ == 0,
+            "kilitli plan duzlemi canli rotasyonu ezmeli, alinan: " + describe(counts));
+    const auto text = labels(render(camera, document, 800));
+    require(has(text, "1") && has(text, "A"), "kilitli plan: X ve Y etiketleri cizilmeli");
+    require(!has(text, "+0"), "kilitli plan: kat etiketleri cizilmemeli (paralel aile)");
+}
+
+// 3B goruntuyu dondurmek (canli R degisir, KILIT sabit) grid cizimini
+// DEGISTIRMEMELI — "goruntunun 3d degismesi grid in cizilimini degistirmez".
+void rotatingTheViewKeepsTheSameGridDrawing() {
+    Document document;
+    document.gridList.push_back(makeGrid());
+    Camera camera = isoCamera(); // kilit: (1,1,1) -> plan
+    const Counts before = classify(render(camera, document, 800));
+    require(before.alongY == 2 && before.alongX == 2 && before.alongZ == 0,
+            "izometrik kilit plan vermeli, alinan: " + describe(before));
+    // Yorunge donusu: YALNIZ canli R degisir (kamera.rotate ile ayni etki).
+    camera.R[0][0] = 0; camera.R[0][1] = 0; camera.R[0][2] = 1;
+    camera.R[1][0] = 0; camera.R[1][1] = 1; camera.R[1][2] = 0;
+    camera.R[2][0] = -1; camera.R[2][1] = 0; camera.R[2][2] = 0;
+    const auto calls = render(camera, document, 800);
+    const Counts after = classify(calls);
+    require(before.alongX == after.alongX && before.alongY == after.alongY &&
+                before.alongZ == after.alongZ && after.alongZ == 0,
+            "3B donus grid AILESINI degistirmemeli, alinan: " + describe(after));
+    const auto text = labels(calls);
+    require(has(text, "1") && has(text, "A") && !has(text, "+0"),
+            "donusten sonra da plan etiketleri (kat etiketi YOK)");
+}
+
 int main() {
     int passed = 0, failed = 0;
     const std::vector<std::pair<std::string, std::function<void()>>> tests = {
@@ -370,6 +415,8 @@ int main() {
         {"the same view always draws the same grid", theSameViewAlwaysDrawsTheSameGrid},
         {"a hidden grid draws nothing", hiddenGridDrawsNothing},
         {"a level-less grid keeps its vertical extent", planOnlyGridKeepsVerticalExtent},
+        {"the locked plane wins over the live rotation", lockedPlaneWinsOverTheLiveRotation},
+        {"rotating the view keeps the same grid drawing", rotatingTheViewKeepsTheSameGridDrawing},
     };
     for (const auto& [name, test] : tests) {
         try {
