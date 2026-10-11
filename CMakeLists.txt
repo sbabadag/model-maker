@@ -290,6 +290,14 @@ if(BUILD_TESTING)
             add_test(NAME model_maker_props_profile_panel
                 COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_props_profile_panel.py
                     ${CMAKE_CURRENT_BINARY_DIR})
+            # Props paneli ozellikleri SECILI elemana uygulanir; ozellikle KOLON
+            # BOYU (Kolon Us/Alt) artik secili kolona uygulanir (eskiden yalniz
+            # sonraki yerlesim icin saklaniyordu, secimden hic okunmuyordu) ve
+            # Renk satirinda ByLayer secmek override'i temizler. Sekil + gercek
+            # applyColumnLevels/selectedEntityColumnLevels govdelerinin davranisi.
+            add_test(NAME model_maker_props_column_levels
+                COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_props_column_levels.py
+                    ${CMAKE_CURRENT_BINARY_DIR})
             # Gorunum komutlari TEK menude + TEK ribbon sekmesinde toplanir ve
             # gorunus ekleme akisi PLAN gorunusu (XY'ye PARALEL, verilen Z
             # kotunda) uretir; kot 0/negatif olabilir (requestLevelParameter).

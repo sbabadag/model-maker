@@ -110,6 +110,14 @@ public:
     void setSelectedEntityProfileRotation(double degrees);
     void setSelectedEntityLineType(const std::string& lineType);
     void setSelectedEntityMaterial(const std::string& material);
+    // KOLON KOTLARI (props paneli): secili profilli DUSEY elemanin ust/alt
+    // kotunu okur. Duseysel profilli eleman yoksa false (spin kutulari
+    // guncellenmez). Uygulama yolu tek: applyColumnLevels().
+    bool selectedEntityColumnLevels(double& top, double& bottom) const;
+    void setSelectedEntityColumnLevels(double top, double bottom);
+    // Props satiri: secim VARKEN secime uygular, her durumda sonraki kolon
+    // yerlesimi icin de saklar (tek kaynak; ENTER ve UYGULA ayni yolu kullanir).
+    void applyColumnLevels(double top, double bottom);
     std::string selectedEntityLengthLabel() const;
     void assignProfileToSelection(const std::string& profileName);
     // PROFIL CIZIM MODU: dogrudan cizilen cizgiyi secili profille kirişe

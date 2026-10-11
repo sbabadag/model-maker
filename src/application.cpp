@@ -2960,9 +2960,14 @@ void Application::setCurrentColorChoice(int index) noexcept {
     currentColorChoice_ = index;
     // Secili nesne varsa renk dogrudan atanir (AutoCAD davranisi);
     // yoksa renk sonraki cizimlerin rengi olur.
+    if (selectedModels_.empty()) return;
     const auto choice = colorChoices[static_cast<std::size_t>(index)];
-    if (!choice.color || selectedModels_.empty()) return; // ByLayer = atama yok
-    document_.setModelColor(selectedModels_, *choice.color);
+    // KULLANICI: "props taki ozellikler secili elemana saglikli uygulanmiyor".
+    // Eskiden ByLayer secildiginde erken return ediliyordu: yani listeden
+    // "ByLayer" secmek secili elemanin rengini DEGISTIRMIYORDU (onceki
+    // override rengi kaliyordu). Artik ByLayer override'i TEMIZLER
+    // (trueColor = nullopt, colorIndex = 256) — katman rengine doner.
+    document_.setModelColor(selectedModels_, choice.color);
     updateControls();
     invalidateCanvas();
 }
@@ -4731,9 +4736,12 @@ int Application::selectedEntityColorIndex() const {
         selectedModels_.front() >= document_.models().size())
         return -1;
     const auto& props = document_.models()[selectedModels_.front()].properties();
-    const auto color = props.trueColor.value_or(0xFFFFFFFFu);
+    // trueColor YOK = BYLAYER: palette[0] ("ByLayer") gosterilir. Eskiden
+    // sentinel (0xFFFFFFFF) hicbir ogeyle eslesmiyordu ve -1 donuyordu, yani
+    // props panelindeki Renk satiri secili elemanin rengini YANSITMIYORDU.
+    if (!props.trueColor) return 0;
     for (std::size_t i = 0; i < colorChoices.size(); ++i)
-        if (colorChoices[i].color && *colorChoices[i].color == color)
+        if (colorChoices[i].color && *colorChoices[i].color == *props.trueColor)
             return static_cast<int>(i);
     return -1;
 }
@@ -4750,6 +4758,32 @@ double Application::selectedEntityProfileRotation() const {
         selectedModels_.front() >= document_.models().size())
         return 0.0;
     return document_.models()[selectedModels_.front()].properties().profileRotation;
+}
+
+bool Application::selectedEntityColumnLevels(double& top, double& bottom) const {
+    // Secili eleman profilli ve DUSEY ise ust/alt kotu dondurur (props
+    // panelindeki Kolon Us/Alt satirlarinin secimi yansitmasi icin).
+    if (selectedModels_.empty() ||
+        selectedModels_.front() >= document_.models().size())
+        return false;
+    const auto& model = document_.models()[selectedModels_.front()];
+    if (model.faces().empty()) return false;
+    const auto& props = model.properties();
+    if (props.profileName.empty()) return false;
+    const double dx = props.axisToX - props.axisFromX;
+    const double dy = props.axisToY - props.axisFromY;
+    const double dz = props.axisToZ - props.axisFromZ;
+    if (std::abs(dz) < std::sqrt(dx * dx + dy * dy)) return false;
+    bottom = props.axisFromZ < props.axisToZ ? props.axisFromZ : props.axisToZ;
+    top = props.axisFromZ < props.axisToZ ? props.axisToZ : props.axisFromZ;
+    return true;
+}
+
+void Application::applyColumnLevels(double top, double bottom) {
+    // TEK YOL: deger her durumda sonraki kolon yerlesimi icin saklanir;
+    // secim varsa secili kolona da uygulanir (ENTER ve UYGULA ayni yol).
+    setColumnProps(top, bottom, columnMaterial_);
+    if (hasSelection()) setSelectedEntityColumnLevels(top, bottom);
 }
 
 #ifdef MM_HAS_OCC
@@ -4955,11 +4989,119 @@ void Application::setSelectedEntityProfileRotation(double degrees) {
     invalidateCanvas();
 }
 
+void Application::setSelectedEntityColumnLevels(double top, double bottom) {
+    // KULLANICI: "props taki ozellikler secili elemana saglikli uygulanmiyor,
+    // ozellikle KOLON BOYUNU degistirmiyor". Props panelindeki Kolon Us
+    // Alt kutulari eskiden YALNIZCA sonraki kolon yerlesimi icin saklaniyordu
+    // (setColumnProps) — secili kolona hic dokunmuyordu. Bu metot secili
+    // DUSEY profilli elemanin iki ucunun Z kotunu bottom/top yapip katiyi
+    // yeniden uretir; profil, rotasyon, kesit referans normali ve stil
+    // (malzeme/renk/katman/cizgi tipi) KORUNUR. TEK undo adimi.
+    if (selectedModels_.empty()) return;
+    if (!(top > bottom)) {
+        publishStatus(L"Kolon ust kotu alt kottan buyuk olmali.");
+        return;
+    }
+    ensureProfileCatalog();
+
+    // Hedefleri once KOPYALA (replaceModel dongu icinde modeli degistirir;
+    // referans tutmak sarkma yaratir). Eslesme indeksle yapilir — delta=0.
+    struct Target {
+        std::size_t index{};
+        double x{}, y{};
+        double rotation{};
+        double sectionNormal[3]{};
+    };
+    std::vector<Target> targets;
+    for (const auto selIdx : selectedModels_) {
+        if (selIdx >= document_.models().size()) continue;
+        const auto& model = document_.models()[selIdx];
+        const auto& props = model.properties();
+        if (model.faces().empty() || props.profileName.empty()) continue;
+        const double dx = props.axisToX - props.axisFromX;
+        const double dy = props.axisToY - props.axisFromY;
+        const double dz = props.axisToZ - props.axisFromZ;
+        // Kolon kotlari yalniz DUSEY (veya baskin dikey) elemanlarda anlamli:
+        // yatay kiriste uclarin Z'sini degistirmek elemani egip bozardi.
+        if (std::abs(dz) < std::sqrt(dx * dx + dy * dy)) continue;
+        Target target;
+        target.index = selIdx;
+        target.x = props.axisFromX;
+        target.y = props.axisFromY;
+        target.rotation = props.profileRotation;
+        target.sectionNormal[0] = props.sectionNormalX;
+        target.sectionNormal[1] = props.sectionNormalY;
+        target.sectionNormal[2] = props.sectionNormalZ;
+        targets.push_back(target);
+    }
+    if (targets.empty()) {
+        publishStatus(L"Kolon kotlari icin dusey profilli bir eleman secin "
+                      L"(yatay kirise uygulanmaz).");
+        return;
+    }
+
+    pushUndoSnapshot();
+    std::size_t applied = 0;
+    for (const auto& target : targets) {
+        // Stil alanlari replaceModel'DEN ONCE kopyalanir.
+        const auto& props = document_.models()[target.index].properties();
+        const std::string profileName = props.profileName;
+        const std::string material = props.material;
+        const std::string lineType = props.lineType;
+        const std::string layer = props.layer;
+        const std::optional<std::uint32_t> trueColor = props.trueColor;
+        const int colorIndex = props.colorIndex;
+        const std::int64_t profileSourceLine = props.profileSourceLine;
+        const double rotation = props.profileRotation;
+
+        const auto* profile = mm::findProfile(profileCatalog_, profileName);
+        if (!profile) continue;
+        const Vec3 from{target.x, target.y, bottom};
+        const Vec3 to{target.x, target.y, top};
+        const TopoDS_Shape solid = mm::extrudeProfileSolid(
+            *profile, from, to, rotation,
+            Vec3{target.sectionNormal[0], target.sectionNormal[1],
+                 target.sectionNormal[2]});
+        if (solid.IsNull()) continue;
+        auto solidModel = mm::shapeToWireframeWithFaces(solid, 0.15);
+        auto solidProps = solidModel.properties();
+        solidProps.profileName = profileName;
+        solidProps.profileRotation = rotation;
+        solidProps.profileSourceLine = profileSourceLine;
+        solidProps.axisFromX = from.x; solidProps.axisFromY = from.y;
+        solidProps.axisFromZ = from.z;
+        solidProps.axisToX = to.x; solidProps.axisToY = to.y; solidProps.axisToZ = to.z;
+        solidProps.sectionNormalX = target.sectionNormal[0];
+        solidProps.sectionNormalY = target.sectionNormal[1];
+        solidProps.sectionNormalZ = target.sectionNormal[2];
+        solidProps.material = material;
+        solidProps.trueColor = trueColor;
+        solidProps.colorIndex = colorIndex;
+        solidProps.lineType = lineType;
+        solidProps.layer = layer;
+        solidModel.setProperties(std::move(solidProps));
+        document_.replaceModel(target.index, {std::move(solidModel)});
+        occShapes_[target.index] = solid;
+        ++applied;
+    }
+    if (applied == 0) {
+        publishStatus(L"Kolon kotlari uygulanmadi (profil/BRep bulunamadi).");
+    } else {
+        publishStatus(L"Kolon kotlari guncellendi");
+    }
+    updateControls();
+    invalidateCanvas();
+}
+
 #else // !MM_HAS_OCC - kati (BRep) profil rotasyonu yok
 
 void Application::setSelectedEntityProfileRotation(double) {
     // OCC kapali (vcpkg/OCCT yok): kati yeniden uretilemez, komut etkisiz.
     publishStatus(L"Kati profil rotasyonu icin OpenCASCADE gerekli (OCC kapali)");
+}
+
+void Application::setSelectedEntityColumnLevels(double, double) {
+    publishStatus(L"Kolon kotu degisikligi icin OpenCASCADE gerekli (OCC kapali)");
 }
 
 // onLeftButtonDown icindeki kati-trim akisi bu metodu korumasiz cagirir;

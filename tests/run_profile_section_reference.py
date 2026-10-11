@@ -89,8 +89,11 @@ check("profileSectionFrame(ex);" not in app and "profileSectionFrame(ex)" not in
       "application.cpp'de referanssiz profileSectionFrame cagrisi KALMADI")
 
 # --- 5) extruude cagrilarinin HEPSI referans gecirir ------------------------
+# Not: sayim ARTIK >= 3 (kolon kotu guncelleme de bir extrude yoludur). Asil
+# kural sayim degil, HER cagrinin referans normal gecirmesidir; yeni bir
+# referanssiz cagri eklenirse asagidaki dongu onu yakalar.
 calls = re.findall(r"extrudeProfileSolid\([^;]*?\)", app, re.S)
-check(len(calls) == 3, f"application.cpp'de 3 extrude cagrisi (bulunan: {len(calls)})")
+check(len(calls) >= 3, f"application.cpp'de en az 3 extrude cagrisi (bulunan: {len(calls)})")
 for i, call in enumerate(calls):
     args = call[call.index("(") + 1:call.rindex(")")]
     n = args.count(",")

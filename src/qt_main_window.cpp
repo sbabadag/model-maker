@@ -1559,7 +1559,9 @@ void QtMainWindow::createDockPanels() {
     refreshTimer->setInterval(500);
     QObject::connect(refreshTimer, &QTimer::timeout, this, [this, propsProfile, propsLayer,
                                                            propsColor, propsLineType, propsMaterial,
-                                                           propsRotation, typeLabel, lengthValue]() {
+                                                           propsRotation, propsColumnTop,
+                                                           propsColumnBottom,
+                                                           typeLabel, lengthValue]() {
         static int lastIndex = -2;
         static QString lastProfile;
         const int index = app_.selectedModelIndex();
@@ -1638,6 +1640,19 @@ void QtMainWindow::createDockPanels() {
         QSignalBlocker rotationBlocker(propsRotation);
         propsRotation->setValue(app_.selectedEntityProfileRotation());
         rotationBlocker.unblock();
+
+        // Kolon kotlari: secili DUSEY profilli elemanin GERCEK ust/alt kotunu
+        // goster. Eskiden bu iki satir secimden hic okunmuyordu (hep 8500/0
+        // kaliyordu) — "kolon boyunu degistirmiyor" sikayetinin bir parcasi.
+        // Secili eleman kolon degilse (kiris vb.) mevcut deger korunur: bu
+        // kutular ayni zamanda SONRAKI kolon yerlesiminin varsayilanidir.
+        double selectionTop = 0.0, selectionBottom = 0.0;
+        if (app_.selectedEntityColumnLevels(selectionTop, selectionBottom)) {
+            QSignalBlocker columnTopBlocker(propsColumnTop);
+            QSignalBlocker columnBottomBlocker(propsColumnBottom);
+            propsColumnTop->setValue(selectionTop);
+            propsColumnBottom->setValue(selectionBottom);
+        }
     });
     refreshTimer->start();
 
@@ -1686,9 +1701,9 @@ void QtMainWindow::createDockPanels() {
     };
     QObject::connect(propsRotation, &QDoubleSpinBox::editingFinished, this,
                      applyRotationField);
-    QObject::connect(propsApply, &QPushButton::clicked, this, applyRotationField);
-    // Kolon ust/alt kot: canli olarak Application'a yazilir (kolon yerlesim
-    // aninda okunur). Malzeme propsMaterial'dan okunur.
+    // Kolon ust/alt kot: satirda ENTER (editingFinished) degeri SONRAKI kolon
+    // yerlesimi icin saklar VE secili kolona dogrudan uygular — tek yol
+    // app_.applyColumnLevels(). valueChanged yalniz "bekleyen" degeri tutar.
     QObject::connect(propsColumnTop, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this,
         [this, propsMaterial](double v) {
             app_.setColumnProps(v, app_.columnBottomZ(),
@@ -1698,6 +1713,19 @@ void QtMainWindow::createDockPanels() {
         [this, propsMaterial](double v) {
             app_.setColumnProps(app_.columnTopZ(), v,
                                 propsMaterial->currentText().toStdString());
+        });
+    const auto applyColumnFields = [this, propsColumnTop, propsColumnBottom]() {
+        app_.applyColumnLevels(propsColumnTop->value(), propsColumnBottom->value());
+    };
+    QObject::connect(propsColumnTop, &QDoubleSpinBox::editingFinished, this, applyColumnFields);
+    QObject::connect(propsColumnBottom, &QDoubleSpinBox::editingFinished, this, applyColumnFields);
+    // UYGULA: panelde dogrudan uygulanabilir satirlarin TAMAMI (rotasyon +
+    // kolon kotlari). Profil/katman/renk/cizgi tipi/malzeme secimde aninda
+    // uygulanir; kolon kotlari ve rotasyon UYGULA/ENTER ile uygulanir.
+    QObject::connect(propsApply, &QPushButton::clicked, this,
+        [applyRotationField, applyColumnFields]() {
+            applyRotationField();
+            applyColumnFields();
         });
     // Kolon yerlestir: profesyonel bir sekilde — buton kolon modunu etkinlestirir
     // (tek tik ile kanvasa kolon koymak icin). Profil col-inbox'tan okunur.
