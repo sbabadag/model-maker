@@ -9,6 +9,7 @@
 // Bu native Windows GUI / GDI rasterizasyon testi DEGILDIR.
 #include "model_maker/geometry.hpp"
 #include "model_maker/grid.hpp"
+#include "model_maker/reference_layer.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -25,6 +26,10 @@ using mm::GridAxisLine;
 using mm::GridViewPlane;
 using mm::gridAxesForView;
 using mm::gridViewPlaneForDirection;
+// Uretim kodu `namespace mm` ICINDE oldugu icin niteliksiz cagirir; harness
+// global scope'ta oldugundan ayni isimleri buraya getir.
+using mm::clipSegmentToRect;
+using mm::referenceGlyphWorldLength;
 using DWORD = unsigned long;
 using COLORREF = std::uint32_t;
 constexpr COLORREF RGB(int r, int g, int b) {
@@ -148,10 +153,19 @@ struct Document {
 // Duzgun (afin) projeksiyon: dunya X -> ekran (65,0), Y -> (-24,-24),
 // Z -> (0,65). Uc yon AYRIK oldugu icin cizilen segmentlerin ailesi
 // projeksiyondan bagimsiz olarak siniflandirilabilir.
+//
+// OLCEK: tuval 800 px ve grid (6000x5000 mm + 500 uzanti) SIGMALI. Kirpma
+// devrede oldugu icin (bkz. reference_layer.hpp) ekran disina TASAN akslar
+// artik cizilmez; 65 px/mm ile gridin tamami ekranin yuz binlerce piksel
+// disina duser ve aile sayimi bozulurdu. 0.06 px/mm ile tum grid [0,800]
+// icine oturur. Yon deseni (65,-24,0) AYNEN korunur; kScreen* yalnizca YON
+// tasir (axisOf normalize eder), bu yuzden olcekten bagimsizdir.
 double g_zoom = 1.0;
+constexpr double kGridPxPerUnit = 0.06;
 POINT projectPoint(Vec3 p) {
-    return {std::lround(400.0 + g_zoom * (65.0 * p.x - 24.0 * p.y)),
-            std::lround(300.0 + g_zoom * (65.0 * p.z - 24.0 * p.y))};
+    const double yShear = 24.0 / 65.0;
+    return {std::lround(400.0 + g_zoom * kGridPxPerUnit * (p.x - yShear * p.y)),
+            std::lround(300.0 + g_zoom * kGridPxPerUnit * (p.z - yShear * p.y))};
 }
 const POINT kScreenX{65, 0};
 const POINT kScreenY{-24, -24};

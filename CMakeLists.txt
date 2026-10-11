@@ -296,6 +296,13 @@ if(BUILD_TESTING)
             add_test(NAME model_maker_view_menu
                 COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_view_menu.py
                     ${CMAKE_CURRENT_BINARY_DIR})
+            # Derin zoom'da referans katmani maliyeti: grid akslari ekran
+            # uzayinda kirpilir + UCS glifi EKRAN-OLCEKLI olur. Sekil kontrolu
+            # + uretim grid blogunun GERCEK Camera ile sahte kaydedici GDI
+            # sinirinda davranisi (cizilen toplam uzunluk zoom'dan bagimsiz).
+            add_test(NAME model_maker_zoom_reference_clip
+                COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_zoom_reference_clip.py
+                    ${CMAKE_CURRENT_BINARY_DIR})
         endif()
     endif()
 
@@ -393,6 +400,25 @@ if(BUILD_TESTING)
     add_executable(model_maker_grid_snap_types_test tests/grid_snap_types_test.cpp)
     target_link_libraries(model_maker_grid_snap_types_test PRIVATE model_maker_core)
     add_test(NAME model_maker_grid_snap_types_test COMMAND model_maker_grid_snap_types_test)
+
+    # REFERANS KATMANI EKRAN-UZAYI: "zoom derinlestikce cok yavasliyor" sikayeti.
+    # Sabit referans katmani (grid akslari + UCS glifi) DUNYA biriminde tanimli
+    # oldugu icin kirpma/olcek kurali olmadan zoom arttikca cizilen ekran
+    # uzunlugu patliyordu (olcum: 8.091 -> 1.864.015 px, 231x zoom). Test hem
+    # kirpma/glif yardimcilarini dogrudan sinar hem GERCEK Camera + grid ile
+    # derin zoom taramasinda cizilen toplamin SINIRLI kaldigini olcer.
+    # OCC'siz/platformdan bagimsiz.
+    add_executable(model_maker_reference_layer_test tests/reference_layer_test.cpp)
+    target_link_libraries(model_maker_reference_layer_test PRIVATE model_maker_core)
+    add_test(NAME model_maker_reference_layer_test COMMAND model_maker_reference_layer_test)
+
+    # Derin zoom'da referans katmaninin cizilen EKRAN uzunlugu (olcum probe'u).
+    # Zamanlama/iddia yok — olcumu tekrarlanabilir kilar ve dosyanin rotlamasini
+    # onler. `zoom_deep_cost_probe` cikitisi referans_layer.hpp basligindaki
+    # sayilarin kaynagidir.
+    add_executable(model_maker_zoom_deep_cost_probe tests/zoom_deep_cost_probe.cpp)
+    target_link_libraries(model_maker_zoom_deep_cost_probe PRIVATE model_maker_core)
+    add_test(NAME model_maker_zoom_deep_cost_probe COMMAND model_maker_zoom_deep_cost_probe)
 
     # test_core.cpp Windows-only: renderer.hpp kosulsuz <windows.h> icerir.
     if(WIN32)

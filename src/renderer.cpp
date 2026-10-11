@@ -1,6 +1,7 @@
 #include "model_maker/renderer.hpp"
 #include "model_maker/color_contrast.hpp"
 #include "model_maker/opengl_render_backend.hpp"
+#include "model_maker/reference_layer.hpp"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -369,9 +370,12 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         const Vec2 glyphUnitPrecise = projectPointPrecise(draft.workPlane.fromPlane({1.0, 0.0}));
         const double glyphPx = std::hypot(glyphUnitPrecise.x - glyphOriginPrecise.x,
                                           glyphUnitPrecise.y - glyphOriginPrecise.y);
-        const double glyphLen = glyphPx > 1e-9
-            ? std::clamp(120.0 / glyphPx, 60.0, 60000.0) // ~120 piksellik ok
-            : 2.0;
+        // EKRAN-OLCEKLI olmak ZORUNDA (bkz. reference_layer.hpp). ONCEKI kod
+        // dunya biriminde bir ALT SINIR (60) tasiyordu: zoom arttikca glyphPx
+        // buyur, 120/glyphPx 60'in altina duser, kelepce 60'a oturur ve cizilen
+        // EKRAN uzunlugu 60*glyphPx olur — yani zoom ile DOGRUSAL buyur. Olcum
+        // (48 detent = 231x, 1600x900 ISO): ok ekranda 120 px -> 758 px.
+        const double glyphLen = referenceGlyphWorldLength(glyphPx, 120.0);
         const auto axisGlyph = workPlaneAxisGlyph(draft.workPlane, glyphLen);
         const POINT axisOrigin = projectPoint(axisGlyph.origin);
         const auto drawAxisArrow = [&](const Vec3& worldEnd, COLORREF color, const wchar_t* label) {
@@ -450,31 +454,59 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
             HGDIOBJ oldFont = labelFont ? SelectObject(targetDc, labelFont) : nullptr;
             const int oldBkMode = SetBkMode(targetDc, TRANSPARENT);
             const std::vector<GridAxisLine> viewAxes = gridAxesForView(grid, gridPlane);
+            // Kesikli kalem (Tekla: dash-and-dot). {5,3}: ~5px cizgi, ~3px bosluk.
+            // KALEM DONGU DISINDA BIR KEZ: eskiden her aks icin ExtCreatePen +
+            // DeleteObject yapiliyordu (her karede 8 GDI nesnesi yarat/yik).
+            LOGBRUSH gridBrush{BS_SOLID, axisColor, 0};
+            DWORD gridPattern[] = {5, 3};
+            HPEN axisPen = ExtCreatePen(PS_GEOMETRIC | PS_USERSTYLE | PS_ENDCAP_FLAT,
+                                        1, &gridBrush, 2, gridPattern);
+            if (!axisPen) axisPen = CreatePen(PS_SOLID, 1, axisColor);
+            HGDIOBJ oldAxisPen = SelectObject(targetDc, axisPen);
+            // EKRAN-UZAYI KIRPMA SINIRI (bkz. reference_layer.hpp). Tuval + 64 px
+            // pay: etiket/ofset kenarda kesilmesin, ama dev cizgiler yine kirpilsin.
+            const double clipMargin = 64.0;
+            const double clipL = canvas.left - clipMargin;
+            const double clipT = canvas.top - clipMargin;
+            const double clipR = canvas.right + clipMargin;
+            const double clipB = canvas.bottom + clipMargin;
             for (const auto& axis : viewAxes) {
                 const POINT from = projectPoint(axis.from);
                 const POINT to = projectPoint(axis.to);
-                // Kesikli kalem (Tekla: dash-and-dot). {5,3}: ~5px cizgi, ~3px bosluk.
-                LOGBRUSH gridBrush{BS_SOLID, axisColor, 0};
-                DWORD gridPattern[] = {5, 3};
-                HPEN axisPen = ExtCreatePen(PS_GEOMETRIC | PS_USERSTYLE | PS_ENDCAP_FLAT,
-                                            1, &gridBrush, 2, gridPattern);
-                if (!axisPen) axisPen = CreatePen(PS_SOLID, 1, axisColor);
-                HGDIOBJ oldAxisPen = SelectObject(targetDc, axisPen);
-                MoveToEx(targetDc, from.x, from.y, nullptr);
-                LineTo(targetDc, to.x, to.y);
-                SelectObject(targetDc, oldAxisPen);
-                DeleteObject(axisPen);
+                // Referans katmani DUNYA geometrisidir ve dogrudan projeksiyonlanir;
+                // KIRPMA OLMADAN derin zoom'da ayni cizgi ekranda dogrusal buyur.
+                // Olcum (1600x900, ISO plan gridi, 48 detent = 231x): toplam cizilen
+                // ekran uzunlugu 8.091 px -> 1.864.015 px, tek aks 1.093 -> 251.894 px.
+                // Akslar PS_GEOMETRIC|PS_USERSTYLE kesikli kalemle cizilir; GDI
+                // geometric pen desen fazini TUM hat boyunca hesaplar, yani maliyet
+                // cizgi uzunluguyla buyur -> "zoom derinlestikce cok yavasliyor".
+                // Kirpinca cizgi <= tuval kosegeni olur ve maliyet zoom'dan bagimsiz kalir.
+                double x0 = from.x, y0 = from.y, x1 = to.x, y1 = to.y;
+                if (clipSegmentToRect(x0, y0, x1, y1, clipL, clipT, clipR, clipB) &&
+                    std::hypot(x1 - x0, y1 - y0) >= 0.5) {
+                    MoveToEx(targetDc, static_cast<int>(std::lround(x0)),
+                             static_cast<int>(std::lround(y0)), nullptr);
+                    LineTo(targetDc, static_cast<int>(std::lround(x1)),
+                           static_cast<int>(std::lround(y1)));
+                }
                 // Etiket: aks ucundan olcekli ofsetle, hat kesilmeden ayrilmis.
-                const double len = std::hypot(to.x - from.x, to.y - from.y);
+                // KIRPILMAMIS uctan hesaplanir — etiket yeri zoom'dan bagimsiz sabit.
+                const double len = std::hypot(static_cast<double>(to.x - from.x),
+                                              static_cast<double>(to.y - from.y));
                 if (len > 1.0 && !axis.label.empty()) {
                     const double ux = (to.x - from.x) / len, uy = (to.y - from.y) / len;
-                    const int labelX = static_cast<int>(std::lround(to.x + ux * 16.0));
-                    const int labelY = static_cast<int>(std::lround(to.y + uy * 16.0));
-                    drawText(targetDc, labelX, labelY,
-                             std::wstring(axis.label.begin(), axis.label.end()).c_str(),
-                             labelColor);
+                    const double labelXd = to.x + ux * 16.0;
+                    const double labelYd = to.y + uy * 16.0;
+                    if (labelXd >= clipL && labelXd <= clipR &&
+                        labelYd >= clipT && labelYd <= clipB)
+                        drawText(targetDc, static_cast<int>(std::lround(labelXd)),
+                                 static_cast<int>(std::lround(labelYd)),
+                                 std::wstring(axis.label.begin(), axis.label.end()).c_str(),
+                                 labelColor);
                 }
             }
+            SelectObject(targetDc, oldAxisPen);
+            DeleteObject(axisPen);
             SetBkMode(targetDc, oldBkMode);
             if (oldFont) SelectObject(targetDc, oldFont);
             if (labelFont) DeleteObject(labelFont);
