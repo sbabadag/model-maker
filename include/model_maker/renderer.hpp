@@ -262,7 +262,9 @@ struct DraftView {
     const std::unordered_set<std::string>* selectedNodeKeys{};
     bool nodeConstraintsVisible{};
     std::optional<POINT> nodeSelectionFirstCorner;
-    const std::unordered_map<std::size_t, BeamLoad>* beamLoads{};
+    // Kiris yukleri: KARARLI KIMLIK (EntityId) anahtarli (bkz. document.hpp).
+    // Cizim, kimligi guncel indekse document.indexOfEntity ile cozer.
+    const std::unordered_map<EntityId, BeamLoad>* beamLoads{};
     Vec2 rasterZoomOffset{};
     // Lightweight repaint: only snap markers, skip model rendering
     bool snapOnly{};

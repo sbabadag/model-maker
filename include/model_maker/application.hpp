@@ -450,13 +450,27 @@ private:
     void toggleProfilePopup();
     void applyProfilePopupSelection();
     std::vector<SteelProfile> profileCatalog_;
-    // BRep sekil tablosu: model indeksi -> sekil (B/S/J/extrude/trim).
-    // std::map = indekse gore sirali; boolean "son iki"yi sondan alir.
+    // BRep sekil tablosu: KARARLI KIMLIK (EntityId) -> sekil (B/S/J/extrude/trim).
+    //    ONCEDEN indeks anahtarliydi ve silme/undo/siralama sonrasi baska bir
+    //    varliga BAGLANIYORDU (indeksler kayar). Kimlik anahtariyla bu
+    //    YANLIS ESLEME imkansizdir: kimlik tektir ve yeni varliklara asla
+    //    yeniden kullanilmaz.
+    // YASAM DONGUSU POLITIKASI: silinen varligin kaydi KORUNUR (geri alma
+    //    ayni kimligi geri getirir -> sekil yeniden baglanir). Temizleme ve
+    //    dosya yukleme tabloyu SIFIRLAR (clearOccSolidStore).
+    // std::map = kimlige gore sirali; kimlik olusturma sirasiyla monoton
+    //    arttigindan "en son N canli kati" sondan alinabilir (lastLiveSolids).
     // OCC kapaliyken (MM_HAS_OCC yok) TopoDS_Shape tanimli degildir;
     // uye de yoktur; tabloyu kullanan tum kod MM_HAS_OCC ile korunur.
 #ifdef MM_HAS_OCC
-    std::map<std::size_t, TopoDS_Shape> occShapes_;
+    std::map<EntityId, TopoDS_Shape> occShapes_;
+    // Kimlik sirasina gore en son `count` CANLI katiyi dondurur (silinmis
+    // varliklarin kayitlari atlanir — indexOfEntity nullopt).
+    std::vector<TopoDS_Shape> lastLiveSolids(std::size_t count) const;
 #endif
+    // Belge temizleme/yukleme icin BRep tablosunu sifirlar (OCC kapaliyken
+    // no-op). Cagri yerleri guard gerektirmez.
+    void clearOccSolidStore() noexcept;
     // 3B kati trim alt-akisi: 1 = kesim cizgisi bekleniyor, 2 = kalacak taraf
     int trimSolidPhase_{};
     std::size_t trimSolidIndex_{};

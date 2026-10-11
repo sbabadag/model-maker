@@ -390,6 +390,22 @@ if(BUILD_TESTING)
     target_link_libraries(model_maker_grid_test PRIVATE model_maker_core)
     add_test(NAME model_maker_grid_test COMMAND model_maker_grid_test)
 
+    # KARARLI VARLIK KIMLIGI (EntityId): vektor indeksi kalici kimlik DEGIL;
+    # kimlik ekleme/silme/degistirme/undo/redo boyunca DOGRU varlikla eslesir,
+    # tekil ve monoton artar. 1:1 replace kimligi korur, kopya yeni kimlik alir,
+    # MMW1-7 yukleme deterministik/catismasiz kimlik uretir. OCC'siz kosar.
+    add_executable(model_maker_entity_id_test tests/entity_id_test.cpp)
+    target_link_libraries(model_maker_entity_id_test PRIVATE model_maker_core)
+    add_test(NAME model_maker_entity_id_test COMMAND model_maker_entity_id_test)
+
+    # KIRIS YUKU (BeamLoad) KIMLIK (EntityId) ANAHTARI + yasam dongusu:
+    # indeks-tabanli anahtarin sessiz hatasi (silme/siralama sonrasi kaydin
+    # BASKA varliga baglanmasi) kilitlenir; clear()/load() temizligi ve yeni
+    # varligin devralmamasi dogrulanir. OCC'siz/platformdan bagimsiz.
+    add_executable(model_maker_beam_load_id_test tests/beam_load_id_test.cpp)
+    target_link_libraries(model_maker_beam_load_id_test PRIVATE model_maker_core)
+    add_test(NAME model_maker_beam_load_id_test COMMAND model_maker_beam_load_id_test)
+
     # Kontur (siluet + gercek kenar) ureticisi: GL Solid yolunun her karede
     # kosturdugu pass'in tek kaynagi. Eski std::map uygulamasiyla esdegerlik,
     # determinizm, workspace yeniden kullanimi ve oryantasyon duyarliligi
@@ -488,6 +504,39 @@ if(BUILD_TESTING)
             # DLL'ler exe yaninda/ PATH'te olur — bu blok yalniz Linux).
             set_tests_properties(model_maker_occ_smoke PROPERTIES
                 ENVIRONMENT "LD_LIBRARY_PATH=${OCC_ROOT}/lib:$ENV{LD_LIBRARY_PATH}")
+        endif()
+    endif()
+
+    # OCC SAHIPLIK REGRESYON HARNESS'I (kaynak-govde cikarimi + GERCEK OCCT).
+    # src/application.cpp'deki URETIM govdelerini (addCube / addCylinder /
+    # addBoolean{Fuse,Common,Cut} / lastLiveSolids / clearOccSolidStore /
+    # addStyledModel) CANLI KAYNAKTAN marker ile cikarir, GERCEK OCCT ile
+    # derler ve EntityId <-> TopoDS_Shape yasam dongusunu calistirir.
+    # Elle yazilmis bir Application stub'i kullanir → TAM GUI entegrasyon
+    # testi DEGILDIR; hedefli kaynak-govde regresyon testidir.
+    find_package(Python3 QUIET COMPONENTS Interpreter)
+    if(Python3_Interpreter_FOUND)
+        if(MODELMAKER_OCC_READY AND OCC_INCLUDE_DIR)
+            # Windows/MSYS2: build-occ yapilandirmasi zaten OCC_ROOT ile geldi.
+            add_test(NAME model_maker_occ_solid_ids
+                COMMAND ${Python3_EXECUTABLE}
+                    ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_occ_solid_ids.py
+                    ${CMAKE_CURRENT_BINARY_DIR}
+                    --cxx ${CMAKE_CXX_COMPILER}
+                    --occt-include ${OCC_INCLUDE_DIR}
+                    --occt-libdir ${OCC_ROOT}/lib)
+        elseif(UNIX AND NOT CMAKE_CROSSCOMPILING)
+            # Linux: sistem OCCT'si (find_package VTK yuzunden kirik olsa da
+            # baslik/kutuphaneler dogrudan baglanabilir).
+            find_path(MM_SYSTEM_OCC_INCLUDE NAMES BRepPrimAPI_MakeBox.hxx
+                      PATH_SUFFIXES opencascade)
+            if(MM_SYSTEM_OCC_INCLUDE)
+                add_test(NAME model_maker_occ_solid_ids
+                    COMMAND ${Python3_EXECUTABLE}
+                        ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_occ_solid_ids.py
+                        ${CMAKE_CURRENT_BINARY_DIR}
+                        --occt-include ${MM_SYSTEM_OCC_INCLUDE})
+            endif()
         endif()
     endif()
 

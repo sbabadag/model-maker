@@ -1837,10 +1837,12 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
 
     // Draw beam load arrows
     if (draft.beamLoads && !draft.beamLoads->empty()) {
-        for (const auto& [modelIdx, load] : *draft.beamLoads) {
+        for (const auto& [entityId, load] : *draft.beamLoads) {
             if (load.wY == 0.0 && load.wZ == 0.0) continue;
-            if (modelIdx >= document.models().size()) continue;
-            const auto& m = document.models()[modelIdx];
+            // Kimlik -> guncel indeks (indeks KALICI degildir).
+            const auto loadIndex = document.indexOfEntity(entityId);
+            if (!loadIndex || *loadIndex >= document.models().size()) continue;
+            const auto& m = document.models()[*loadIndex];
             if (m.vertices().size() != 2) continue;
             const POINT p1 = projectPoint(m.vertices()[0]);
             const POINT p2 = projectPoint(m.vertices()[1]);

@@ -77,12 +77,15 @@ Document::Document() {
 
 void Document::addModel(WireframeModel model) {
     ++revision_;
+    const EntityId id = allocateEntityId();
     UndoOp op;
     op.kind = UndoOp::Kind::Add;
     op.index = models_.size();
     op.afterModels.push_back(model);
+    op.afterIds.push_back(id);
     recordUndoOp(std::move(op));
     models_.push_back(std::move(model));
+    modelIds_.push_back(id);
     const std::size_t index = models_.size() - 1;
     if (modelBounds_.size() == index) {
         modelBounds_.push_back(computeModelBounds(models_.back()));
@@ -98,7 +101,7 @@ void Document::addModel(WireframeModel model) {
     documentBounds_.reset();
 }
 void Document::addLine(const Vec3& from, const Vec3& to) { addModel(WireframeModel::line(from, to)); }
-void Document::reserveModels(std::size_t count) { models_.reserve(count); }
+void Document::reserveModels(std::size_t count) { models_.reserve(count); modelIds_.reserve(count); }
 
 void Document::moveModels(const std::vector<std::size_t>& indices, const Vec3& displacement) {
     ++revision_;
@@ -221,6 +224,8 @@ void Document::copyModels(const std::vector<std::size_t>& indices, const Vec3& d
     ++revision_;
     std::vector<WireframeModel> copies;
     copies.reserve(indices.size());
+    std::vector<EntityId> copyIds; // kopyalara atanan YENI kimlikler (models_ ile hizali)
+    copyIds.reserve(indices.size());
     for (const auto index : indices) {
         if (index < models_.size()) {
             copies.push_back(models_[index]);
@@ -237,15 +242,22 @@ void Document::copyModels(const std::vector<std::size_t>& indices, const Vec3& d
                     copies.back().setProperties(std::move(props));
                 }
             }
+            // Kopya YENI bir varliktir: YENI kimlik alir (orijinalin kimligini
+            // tasimaz). Kimlik, op.index ile ayni konuma denk gelecek sirada
+            // uretilir; boylece redo ayni sirada ayni kimligi geri koyar.
+            const EntityId id = allocateEntityId();
             UndoOp op;
             op.kind = UndoOp::Kind::Add;
             op.index = models_.size() + copies.size() - 1;
             op.afterModels.push_back(copies.back());
+            op.afterIds.push_back(id);
             recordUndoOp(std::move(op));
+            copyIds.push_back(id);
         }
     }
     const std::size_t firstCopy = models_.size();
     models_.insert(models_.end(), copies.begin(), copies.end());
+    modelIds_.insert(modelIds_.end(), copyIds.begin(), copyIds.end());
     if (modelBounds_.size() == firstCopy && effectiveCache_.size() == firstCopy &&
         !effectiveCacheDirty_) {
         for (std::size_t k = 0; k < copies.size(); ++k) {
@@ -372,10 +384,14 @@ void Document::deleteModels(const std::vector<std::size_t>& indices) {
     UndoOp op;
     op.kind = UndoOp::Kind::Delete;
     op.indices = valid;
-    for (const auto index : valid) op.beforeModels.push_back(models_[index]);
+    for (const auto index : valid) {
+        op.beforeModels.push_back(models_[index]);
+        op.beforeIds.push_back(modelIds_[index]); // silinen indekslerin KIMLIKLERI (ayni azalan sirada)
+    }
     recordUndoOp(std::move(op));
     for (const auto index : valid) {
         models_.erase(models_.begin() + static_cast<std::ptrdiff_t>(index));
+        modelIds_.erase(modelIds_.begin() + static_cast<std::ptrdiff_t>(index));
         if (modelBounds_.size() == models_.size() + 1)
             modelBounds_.erase(modelBounds_.begin() + static_cast<std::ptrdiff_t>(index));
         if (effectiveCache_.size() == models_.size() + 1 && !effectiveCacheDirty_)
@@ -397,15 +413,32 @@ void Document::deleteModels(const std::vector<std::size_t>& indices) {
 void Document::replaceModel(std::size_t index, std::vector<WireframeModel> replacements) {
     ++revision_;
     if (index >= models_.size()) return;
+    const EntityId oldId = modelIds_[index];
+    // 1:1 degistirme (or. kati yeniden uretim) AYNI varliktir → kimlik KORUNUR.
+    // 1:N (bolme/patlatma) YENI varliklar uretir → her birine YENI kimlik.
+    // Kimlikler YEREL vektorde tutulur: op kayittan SONRA tasindigi icin
+    // op.afterIds'e guvenmek yanlis olur (tasima sonrasi bosalir).
+    std::vector<EntityId> newIds;
+    if (replacements.size() == 1) {
+        newIds.push_back(oldId);
+    } else {
+        for (std::size_t k = 0; k < replacements.size(); ++k)
+            newIds.push_back(allocateEntityId());
+    }
     UndoOp op;
     op.kind = UndoOp::Kind::Replace;
     op.index = index;
     op.beforeModels.push_back(models_[index]);
+    op.beforeIds.push_back(oldId);
     for (const auto& replacement : replacements) op.afterModels.push_back(replacement);
+    op.afterIds = newIds;
     recordUndoOp(std::move(op));
     const auto position = models_.erase(models_.begin() + static_cast<std::ptrdiff_t>(index));
     models_.insert(position, std::make_move_iterator(replacements.begin()),
                    std::make_move_iterator(replacements.end()));
+    modelIds_.erase(modelIds_.begin() + static_cast<std::ptrdiff_t>(index));
+    modelIds_.insert(modelIds_.begin() + static_cast<std::ptrdiff_t>(index),
+                     newIds.begin(), newIds.end());
     const std::ptrdiff_t delta = static_cast<std::ptrdiff_t>(replacements.size()) - 1;
     if (modelBounds_.size() == models_.size() - delta) {
         modelBounds_.erase(modelBounds_.begin() + static_cast<std::ptrdiff_t>(index));
@@ -439,6 +472,11 @@ void Document::replaceModel(std::size_t index, std::vector<WireframeModel> repla
 void Document::clear() noexcept {
     ++revision_;
     models_.clear();
+    modelIds_.clear();
+    // Yeni belge: kimlik sayaci da sifirlanir. undo/redo yiginlari temizlendigi
+    // icin (asagida) eski kimliklerle catisma riski YOKTUR; boylece her yeni
+    // belgede kimlikler deterministik olarak 1'den baslar.
+    nextEntityId_ = 1;
     layers_.clear();
     undoStack_.clear();
     redoStack_.clear();
@@ -452,6 +490,7 @@ void Document::clear() noexcept {
     spatialIndexDirty_ = true;
     effectiveCacheDirty_ = false;
     nodeConstraints_.clear();
+    beamLoads_.clear(); // yeni belge: kiris yukleri de sifirlanir
     grids_.clear();
     invalidateDerivedState();
     documentBounds_.reset();
@@ -480,17 +519,19 @@ void Document::clearNodeConstraints() {
     nodeConstraints_.clear();
 }
 
-void Document::setBeamLoad(std::size_t modelIndex, BeamLoad load) {
-    beamLoads_[modelIndex] = load;
+void Document::setBeamLoad(EntityId entityId, BeamLoad load) {
+    // Gecersiz kimlik (0) kaydedilmez — sentinel degere yuk baglanmaz.
+    if (entityId == kInvalidEntityId) return;
+    beamLoads_[entityId] = load;
 }
 
-std::optional<BeamLoad> Document::getBeamLoad(std::size_t modelIndex) const {
-    auto it = beamLoads_.find(modelIndex);
+std::optional<BeamLoad> Document::getBeamLoad(EntityId entityId) const {
+    auto it = beamLoads_.find(entityId);
     if (it != beamLoads_.end()) return it->second;
     return std::nullopt;
 }
 
-const std::unordered_map<std::size_t, BeamLoad>& Document::beamLoads() const noexcept {
+const std::unordered_map<EntityId, BeamLoad>& Document::beamLoads() const noexcept {
     return beamLoads_;
 }
 
@@ -522,26 +563,43 @@ void Document::applyUndoOp(const UndoOp& op, bool forward) {
     switch (op.kind) {
     case UndoOp::Kind::Add:
         if (forward) {
-            if (!op.afterModels.empty())
+            if (!op.afterModels.empty()) {
                 models_.insert(models_.begin() + static_cast<std::ptrdiff_t>(op.index),
                                op.afterModels.front());
+                // AyNI varlik geri konur → AYNI kimlik (afterIds[0]). afterIds
+                // her zaman dolu; guvenlik icin bos ise yeni kimlik uretilir
+                // (modelIds_ ile models_ hizasi her durumda korunur).
+                const EntityId id = !op.afterIds.empty() ? op.afterIds.front()
+                                                         : allocateEntityId();
+                modelIds_.insert(modelIds_.begin() + static_cast<std::ptrdiff_t>(op.index), id);
+            }
         } else if (op.index < models_.size()) {
             models_.erase(models_.begin() + static_cast<std::ptrdiff_t>(op.index));
+            if (op.index < modelIds_.size())
+                modelIds_.erase(modelIds_.begin() + static_cast<std::ptrdiff_t>(op.index));
         }
         break;
     case UndoOp::Kind::Delete:
         if (forward) {
             // indices azalan sırada saklı — bu sırayla silme güvenli
             for (const auto index : op.indices)
-                if (index < models_.size())
+                if (index < models_.size()) {
                     models_.erase(models_.begin() + static_cast<std::ptrdiff_t>(index));
+                    if (index < modelIds_.size())
+                        modelIds_.erase(modelIds_.begin() + static_cast<std::ptrdiff_t>(index));
+                }
         } else {
             // indices azalan sırada; sondan başa (artan) geri ekle
             for (std::size_t k = op.indices.size(); k-- > 0;) {
                 const std::size_t index = op.indices[k];
-                if (k < op.beforeModels.size() && index <= models_.size())
+                if (k < op.beforeModels.size() && index <= models_.size()) {
                     models_.insert(models_.begin() + static_cast<std::ptrdiff_t>(index),
                                    op.beforeModels[k]);
+                    // Silinen varlik AYNI kimligiyle geri gelir.
+                    const EntityId id = k < op.beforeIds.size() ? op.beforeIds[k]
+                                                                : allocateEntityId();
+                    modelIds_.insert(modelIds_.begin() + static_cast<std::ptrdiff_t>(index), id);
+                }
             }
         }
         break;
@@ -549,18 +607,32 @@ void Document::applyUndoOp(const UndoOp& op, bool forward) {
         if (forward) {
             if (op.index < models_.size())
                 models_.erase(models_.begin() + static_cast<std::ptrdiff_t>(op.index));
-            for (std::size_t k = 0; k < op.afterModels.size(); ++k)
+            if (op.index < modelIds_.size())
+                modelIds_.erase(modelIds_.begin() + static_cast<std::ptrdiff_t>(op.index));
+            for (std::size_t k = 0; k < op.afterModels.size(); ++k) {
                 models_.insert(models_.begin() + static_cast<std::ptrdiff_t>(op.index + k),
                                op.afterModels[k]);
+                const EntityId id = k < op.afterIds.size() ? op.afterIds[k]
+                                                           : allocateEntityId();
+                modelIds_.insert(modelIds_.begin() + static_cast<std::ptrdiff_t>(op.index + k), id);
+            }
         } else {
             const std::size_t available = op.index < models_.size()
                 ? models_.size() - op.index : 0;
             const std::size_t count = std::min(op.afterModels.size(), available);
-            for (std::size_t k = count; k-- > 0;)
+            for (std::size_t k = count; k-- > 0;) {
                 models_.erase(models_.begin() + static_cast<std::ptrdiff_t>(op.index + k));
-            if (!op.beforeModels.empty())
+                if (op.index + k < modelIds_.size())
+                    modelIds_.erase(modelIds_.begin() + static_cast<std::ptrdiff_t>(op.index + k));
+            }
+            if (!op.beforeModels.empty()) {
                 models_.insert(models_.begin() + static_cast<std::ptrdiff_t>(op.index),
                                op.beforeModels.front());
+                // Eski varlik AYNI kimligiyle geri gelir.
+                const EntityId id = !op.beforeIds.empty() ? op.beforeIds.front()
+                                                          : allocateEntityId();
+                modelIds_.insert(modelIds_.begin() + static_cast<std::ptrdiff_t>(op.index), id);
+            }
         }
         break;
     }
@@ -682,6 +754,23 @@ void Document::clearHistory() noexcept {
 }
 std::vector<WireframeModel>& Document::mutableModels() noexcept { return models_; }
 const std::vector<WireframeModel>& Document::models() const noexcept { return models_; }
+
+EntityId Document::allocateEntityId() noexcept {
+    const EntityId id = nextEntityId_;
+    nextEntityId_ = advanceEntityIdCounter(nextEntityId_);
+    return id;
+}
+
+EntityId Document::modelId(std::size_t index) const noexcept {
+    return index < modelIds_.size() ? modelIds_[index] : kInvalidEntityId;
+}
+
+std::optional<std::size_t> Document::indexOfEntity(EntityId id) const noexcept {
+    if (id == kInvalidEntityId) return std::nullopt;
+    for (std::size_t i = 0; i < modelIds_.size(); ++i)
+        if (modelIds_[i] == id) return i;
+    return std::nullopt;
+}
 void Document::setLayerProperties(EntityProperties properties) {
     if (properties.layer.empty()) return;
     layers_[properties.layer] = std::move(properties);
@@ -1256,6 +1345,20 @@ void Document::load(const std::filesystem::path& path) {
         loaded.push_back(std::move(built));
     }
     models_ = std::move(loaded);
+    // KARARLI KIMLIK: MMW1-7 dosyalari kimlik TASIMAZ (format degistirilmedi).
+    // Yuklenen her modele sirayla kimlik atanir. Sayac SIFIRLANMAZ (monoton
+    // kalir): boylece dosya acildiktan sonra hala yiginda duran eski undo
+    // op'lariyla (load gecmisi temizlemez — onceden var olan davranis) kimlik
+    // catismasi OLUSMAZ. Taze bir belgede (sayac=1) yukleme deterministik
+    // olarak 1..N verir.
+    modelIds_.clear();
+    modelIds_.reserve(models_.size());
+    for (std::size_t i = 0; i < models_.size(); ++i)
+        modelIds_.push_back(allocateEntityId());
+    // Yukleme belge icerigini TAMAMEN degistirir: onceki belgenin kiris
+    // yukleri (kimlik anahtarli) artik gecerli bir varliga karsilik gelmez —
+    // sizmamalari icin SIFIRLANIR.
+    beamLoads_.clear();
     // Yapi gridleri (MMW5+): modellerden sonra 'G' blogu.
     grids_.clear();
     if (version5) {

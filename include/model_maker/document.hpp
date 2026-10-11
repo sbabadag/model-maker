@@ -1,5 +1,6 @@
 #pragma once
 
+#include "model_maker/entity_id.hpp"
 #include "model_maker/geometry.hpp"
 #include "model_maker/grid.hpp"
 
@@ -25,6 +26,11 @@ struct UndoOp {
     std::size_t index{};
     std::vector<WireframeModel> beforeModels; // delete: silinenler; replace: eski model
     std::vector<WireframeModel> afterModels;  // add: eklenen; replace: yeni modeller
+    // KARARLI KIMLIK: before/after modelleriyle BIREBIR hizali kimlikler.
+    // Geri al/yinele sirasinda DOGRU varlik kimligi geri getirilir (yeni
+    // varlik yaratildiginda yeni kimlik atanirken ureten taraf kaydeder).
+    std::vector<EntityId> beforeIds;          // delete/replace: silinen/eski varliklarin kimligi
+    std::vector<EntityId> afterIds;           // add/replace: eklenen/yeni varliklarin kimligi
     std::vector<std::size_t> indices;         // delete (azalan) / move: etkilenen indeksler
     Vec3 displacement{};                      // move: uygulanan yer değiştirme
     // Transform (rotate/scale gumball): v' = pivot + linear*(v - pivot).
@@ -90,6 +96,12 @@ public:
 
     std::vector<WireframeModel>& mutableModels() noexcept;
     const std::vector<WireframeModel>& models() const noexcept;
+    // KARARLI KIMLIK: index -> EntityId (gecersiz index icin kInvalidEntityId).
+    // Indeks KALICI degildir; kimlik varlik yasam dongusu boyunca sabit kalir.
+    EntityId modelId(std::size_t index) const noexcept;
+    // EntityId -> guncel indeks (kimlik tektir). Yoksa nullopt.
+    std::optional<std::size_t> indexOfEntity(EntityId id) const noexcept;
+    const std::vector<EntityId>& modelIds() const noexcept { return modelIds_; }
     void setLayerProperties(EntityProperties properties);
     const std::unordered_map<std::string, EntityProperties>& layers() const noexcept;
     bool createLayer(std::string name);
@@ -119,9 +131,16 @@ public:
     const std::unordered_map<std::string, NodeConstraint>& nodeConstraints() const noexcept;
     void clearNodeConstraints();
 
-    void setBeamLoad(std::size_t modelIndex, BeamLoad load);
-    std::optional<BeamLoad> getBeamLoad(std::size_t modelIndex) const;
-    const std::unordered_map<std::size_t, BeamLoad>& beamLoads() const noexcept;
+    // KIRIS YUKLERI: KARARLI KIMLIK (EntityId) anahtarli.
+    // Indeks KALICI degildir; yuk, varlik silinip geri alinsa bile DOGRU
+    // varliga bagli kalir (bkz. entity_id.hpp). YASAM DONGUSU POLITIKASI:
+    // (a) silinen varligin kaydi KORUNUR — geri alma AYNI kimligi geri
+    //     getirir ve yuk yeniden baglanir; kimlikler YENI varliklara asla
+    //     yeniden kullanilmadigi icin baska bir varliga baglanamaz;
+    // (b) belge temizleme (clear) ve dosya yukleme (load) kayitlari SIFIRLAR.
+    void setBeamLoad(EntityId entityId, BeamLoad load);
+    std::optional<BeamLoad> getBeamLoad(EntityId entityId) const;
+    const std::unordered_map<EntityId, BeamLoad>& beamLoads() const noexcept;
     void clearBeamLoads();
     // Yapi gridleri (Tekla tarzi aks cizgileri)
     std::size_t addGrid(GridDefinition grid);
@@ -157,8 +176,14 @@ private:
     void recordLayerState();
     void markPending(std::size_t index);
     void applyUndoOp(const UndoOp& op, bool forward);
+    // Yeni, tekil, monoton bir varlik kimligi uretir (0 uretmez).
+    EntityId allocateEntityId() noexcept;
 
     std::vector<WireframeModel> models_;
+    // models_ ile BIREBIR hizali kimlik vektoru (modelIds_.size() == models_.size()
+    // belirtsizdir). Silme kaydirmasi/undo-redo burada da ayni sekilde uygulanir.
+    std::vector<EntityId> modelIds_;
+    EntityId nextEntityId_{1};
     std::unordered_map<std::string, EntityProperties> layers_;
     std::deque<UndoRecord> undoStack_;
     std::deque<UndoRecord> redoStack_;
@@ -174,7 +199,7 @@ private:
     mutable std::vector<SpatialNode> spatialNodes_;
     mutable std::optional<Bounds3> documentBounds_;
     std::unordered_map<std::string, NodeConstraint> nodeConstraints_;
-    std::unordered_map<std::size_t, BeamLoad> beamLoads_;
+    std::unordered_map<EntityId, BeamLoad> beamLoads_;
     std::vector<GridDefinition> grids_;
 };
 
