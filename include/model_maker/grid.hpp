@@ -85,6 +85,36 @@ void ensureGridLabels(GridDefinition& grid);
 
 // Spesifikasyondan `axes`'i yeniden uretir (origin + uzanti + etiket dahil).
 // xCoords/yCoords/zCoords bos ise o yon cizilmez.
+//
+// NOT: bu TUREV, snap (drafting) ve zoom-extents (Document::bounds) tarafindan
+// kullanilan TABAN geometridir; gorunuse gore DEGISMEZ. Pencerede cizilecek
+// geometri icin `gridAxesForView` kullan.
 void rebuildGridAxes(GridDefinition& grid);
+
+// ---------------------------------------------------------------------------
+// GORUNUS DUZLEMI (Tekla): grid bir 3B duzlemler kompleksidir ve bir pencerede
+// YALNIZCA gorunus duzlemini KESEN grid duzlemlerinin kesisim cizgileri cizilir
+// ("The grid is shown on the view plane using dash-and-dot lines"; "The grid is
+// only shown in the view if any of the grids' planes intersect with the view
+// plane"). Gorunus duzlemine PARALEL olan duzlem ailesi cizilmez; boylece
+// pencerenin duzlemine gore YALNIZ XY / XZ / YZ gridi gorunur, "3B grid" olusmaz.
+// ---------------------------------------------------------------------------
+enum class GridViewPlane {
+    XY = 0, // plan gorunusu  (bakış Z): X ve Y aileleri
+    XZ = 1, // on/arka gorunus (bakış Y): X ve Z aileleri
+    YZ = 2  // yan gorunus     (bakış X): Y ve Z aileleri
+};
+
+// Kamera gorunus yonunden gorunus duzlemi sinifi: yonun EN BASKIN ekseni.
+// Gorunus duzlemi bu eksene DIKTIR. Esitlikte Z kazanir → izometrik 3B
+// gorunuste plan (XY) gridi gorunur (Tekla 3B gorunusu).
+GridViewPlane gridViewPlaneForDirection(const Vec3& viewDirection) noexcept;
+
+// Verilen gorunus duzlemi icin CIZIM geometrisi. `grid.axes`'e DOKUNMAZ
+// (snap tabani XY olarak sabit kalir). Veri modeli: X konumlari Y'ye paralel
+// dikey duzlemleri, Y konumlari X'e paralel dikey duzlemleri, Z kotlari yatay
+// (isa) duzlemleri tanimlar; her gorunuste bunlarin gorunus duzlemiyle
+// kesisimi uretilir.
+std::vector<GridAxisLine> gridAxesForView(const GridDefinition& grid, GridViewPlane plane);
 
 } // namespace mm

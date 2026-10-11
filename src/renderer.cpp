@@ -416,12 +416,23 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         SelectObject(targetDc, stockPen);
         DeleteObject(basePointPen);
 
-        // TEKLA-TARZI YAPI GRIDI: kalici, etiketli aks cizgileri (1-2-3 /
-        // A-B-C). Zemin referans katmani — modelden/katidan bagimsiz;
-        // kesikli cizgi + aks ucunda etiket (Tekla'nin grid cercevesi).
-        // Her stilde cizilir (referans katman) — Wireframe dahil.
+        // TEKLA-TARZI YAPI GRIDI: grid bir 3B DUZLEMLER KOMPLEKSIDIR; bir
+        // pencerede YALNIZCA gorunus duzlemini KESEN duzlemlerin kesisim
+        // cizgileri cizilir (dokuman: "The grid is shown on the view plane
+        // using dash-and-dot lines" / "...only shown in the view if any of the
+        // grids' planes intersect with the view plane"). Gorunus duzlemine
+        // PARALEL aile cizilmez → pencerenin duzlemine gore yalniz XY / XZ /
+        // YZ gridi gorunur; "3B grid" OLUSMAZ.
+        // Gorunus duzlemi kameranin BAKIS yonunden gelir: R ortonormal oldugu
+        // icin n = ((R e_x).z, (R e_y).z, (R e_z).z) = R'nin 3. satiri =
+        // dunya bakis yonu. Kamera API'sine dokunmadan boyle turetiliyor.
+        const Vec3 viewDirection{camera.viewTransform(Vec3{1.0, 0.0, 0.0}).z,
+                                 camera.viewTransform(Vec3{0.0, 1.0, 0.0}).z,
+                                 camera.viewTransform(Vec3{0.0, 0.0, 1.0}).z};
+        const GridViewPlane gridPlane = gridViewPlaneForDirection(viewDirection);
         // Renk/yazi boyu GRID SPESIFIKASYONUNDAN gelir (Tekla grid property:
-        // Grid color / Label font size and color).
+        // Grid color / Label font size and color). Her stilde cizilir
+        // (referans katman) — Wireframe dahil.
         for (const auto& grid : document.grids()) {
             if (!grid.visible) continue;
             const auto rgbOf = [](unsigned int c) {
@@ -437,7 +448,8 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
                                           CLEARTYPE_QUALITY, DEFAULT_PITCH, L"Segoe UI");
             HGDIOBJ oldFont = labelFont ? SelectObject(targetDc, labelFont) : nullptr;
             const int oldBkMode = SetBkMode(targetDc, TRANSPARENT);
-            for (const auto& axis : grid.axes) {
+            const std::vector<GridAxisLine> viewAxes = gridAxesForView(grid, gridPlane);
+            for (const auto& axis : viewAxes) {
                 const POINT from = projectPoint(axis.from);
                 const POINT to = projectPoint(axis.to);
                 // Kesikli kalem (Tekla: dash-and-dot). {5,3}: ~5px cizgi, ~3px bosluk.

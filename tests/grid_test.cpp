@@ -267,6 +267,144 @@ int main() {
         std::filesystem::remove(legacy);
     }
 
+    // ---------------------------------------------------------------------
+    // GORUNUS DUZLEMI (Tekla): grid bir 3B duzlemler kompleksidir ve bir
+    // pencerede YALNIZCA gorunus duzlemini KESEN ailelerin kesisim cizgileri
+    // cizilir. Gorunus duzlemine PARALEL aile cizilmez -> "3B grid" OLUSMAZ.
+    // ---------------------------------------------------------------------
+    {
+        check(gridViewPlaneForDirection(Vec3{0, 0, 1}) == GridViewPlane::XY,
+              "bakış +Z (ust) -> XY gridi");
+        check(gridViewPlaneForDirection(Vec3{0, 0, -1}) == GridViewPlane::XY,
+              "bakış -Z (alt) -> XY gridi");
+        check(gridViewPlaneForDirection(Vec3{0, 1, 0}) == GridViewPlane::XZ,
+              "bakış +Y (on/arka) -> XZ gridi");
+        check(gridViewPlaneForDirection(Vec3{0, -1, 0}) == GridViewPlane::XZ,
+              "bakış -Y -> XZ gridi");
+        check(gridViewPlaneForDirection(Vec3{1, 0, 0}) == GridViewPlane::YZ,
+              "bakış +X (yan) -> YZ gridi");
+        check(gridViewPlaneForDirection(Vec3{-1, 0, 0}) == GridViewPlane::YZ,
+              "bakış -X -> YZ gridi");
+        check(gridViewPlaneForDirection(Vec3{1, 1, 1}) == GridViewPlane::XY,
+              "izometrik (esitlikte Z) -> plan gridi (Tekla 3B gorunusu)");
+        check(gridViewPlaneForDirection(Vec3{5, 0.2, 0.1}) == GridViewPlane::YZ,
+              "baskin eksen: egik bakista X -> YZ gridi");
+
+        GridDefinition g;
+        g.xCoords = {0.0, 6000.0};
+        g.yCoords = {0.0, 5000.0};
+        g.zCoords = {0.0, 3600.0};
+        g.xLabels = {"1", "2"};
+        g.yLabels = {"A", "B"};
+        g.zLabels = {"+0", "+3600"};
+        g.extendLeft = 500.0;
+        g.extendRight = 500.0;
+        g.extendBelow = 500.0;
+        g.extendAbove = 500.0;
+        rebuildGridAxes(g);
+        const std::size_t baseAxes = g.axes.size();
+
+        // Aile siniflandirma: bir aks cizgisinin degisen tek koordinati yonu verir.
+        const auto alongY = [](const GridAxisLine& a) { return near(a.from.x, a.to.x) && near(a.from.z, a.to.z); };
+        const auto alongX = [](const GridAxisLine& a) { return near(a.from.y, a.to.y) && near(a.from.z, a.to.z); };
+        const auto alongZ = [](const GridAxisLine& a) { return near(a.from.x, a.to.x) && near(a.from.y, a.to.y); };
+
+        // --- PLAN (XY): X ve Y aileleri; KAT (Z) duzlemleri paralel -> YOK ---
+        const auto xy = gridAxesForView(g, GridViewPlane::XY);
+        int xyAlongY = 0, xyAlongX = 0, xyAlongZ = 0;
+        for (const auto& a : xy) {
+            if (alongY(a)) ++xyAlongY;
+            else if (alongX(a)) ++xyAlongX;
+            else if (alongZ(a)) ++xyAlongZ;
+        }
+        check(xy.size() == 4 && xyAlongY == 2 && xyAlongX == 2 && xyAlongZ == 0,
+              "XY gorunusu: yalniz X+Y aileleri, kat cizgisi YOK");
+        // Uzanti + etiket: X ailesi (Y boyunca) below/above ile uzar, X etiketi tasir.
+        const auto* xyX0 = [&]() -> const GridAxisLine* {
+            for (const auto& a : xy)
+                if (alongY(a) && near(a.from.x, 0.0)) return &a;
+            return nullptr;
+        }();
+        check(xyX0 != nullptr && near(xyX0->from.y, -500.0) && near(xyX0->to.y, 5500.0) &&
+                  xyX0->label == "1" && !xyX0->horizontal,
+              "XY: X aks cizgisi below/above ile uzar ve X etiketini tasir");
+
+        // --- ON/ARKA (XZ): gorunus duzlemi Y = origin.y ---
+        const auto xz = gridAxesForView(g, GridViewPlane::XZ);
+        int xzVertical = 0, xzHorizontal = 0, xzOther = 0;
+        for (const auto& a : xz) {
+            if (alongZ(a)) ++xzVertical;
+            else if (alongX(a)) ++xzHorizontal;
+            else ++xzOther;
+        }
+        check(xz.size() == 4 && xzVertical == 2 && xzHorizontal == 2 && xzOther == 0,
+              "XZ gorunusu: 2 dikey (Z boyunca) + 2 yatay (X boyunca); Y ailesi YOK");
+        const auto* xzVert0 = [&]() -> const GridAxisLine* {
+            for (const auto& a : xz)
+                if (alongZ(a) && near(a.from.x, 0.0)) return &a;
+            return nullptr;
+        }();
+        check(xzVert0 != nullptr && near(xzVert0->from.z, -500.0) && near(xzVert0->to.z, 4100.0),
+              "XZ: dikey cizgi z araligini (Below/Above uzantisiyla) kapsar");
+        const auto* xzLevel = [&]() -> const GridAxisLine* {
+            for (const auto& a : xz)
+                if (alongX(a) && near(a.from.z, 0.0)) return &a;
+            return nullptr;
+        }();
+        check(xzLevel != nullptr && near(xzLevel->from.x, -500.0) && near(xzLevel->to.x, 6500.0) &&
+                  xzLevel->label == "+0",
+              "XZ: kat cizgisi X boyunca uzanir ve Z etiketini tasir");
+        bool xzInPlane = true;
+        for (const auto& a : xz) xzInPlane = xzInPlane && near(a.from.y, 0.0) && near(a.to.y, 0.0);
+        check(xzInPlane, "XZ: tum cizgiler gorunus duzleminde (y = origin.y)");
+
+        // --- YAN (YZ): gorunus duzlemi X = origin.x ---
+        const auto yz = gridAxesForView(g, GridViewPlane::YZ);
+        int yzVertical = 0, yzHorizontal = 0, yzOther = 0;
+        for (const auto& a : yz) {
+            if (alongZ(a)) ++yzVertical;
+            else if (alongY(a)) ++yzHorizontal;
+            else ++yzOther;
+        }
+        check(yz.size() == 4 && yzVertical == 2 && yzHorizontal == 2 && yzOther == 0,
+              "YZ gorunusu: 2 dikey (Z boyunca) + 2 yatay (Y boyunca); X ailesi YOK");
+        const auto* yzVertA = [&]() -> const GridAxisLine* {
+            for (const auto& a : yz)
+                if (alongZ(a) && near(a.from.y, 0.0)) return &a;
+            return nullptr;
+        }();
+        check(yzVertA != nullptr && yzVertA->label == "A" && near(yzVertA->from.y, 0.0),
+              "YZ: Y aks cizgisi dikey cizilir ve Y etiketini tasir");
+        bool yzInPlane = true;
+        for (const auto& a : yz) yzInPlane = yzInPlane && near(a.from.x, 0.0) && near(a.to.x, 0.0);
+        check(yzInPlane, "YZ: tum cizgiler gorunus duzleminde (x = origin.x)");
+
+        // --- TEK KAYNAK: cizim geometrisi taban turevden SADECE aile secer ---
+        check(g.axes.size() == baseAxes && baseAxes == 8,
+              "gridAxesForView grid.axes'e DOKUNMAZ (snap/zoom tabani sabit: 4 plan + 4 kat)");
+        bool planMatchesBase = true;
+        for (const auto& a : xy) {
+            bool found = false;
+            for (const auto& b : g.axes)
+                if (near(a.from.x, b.from.x) && near(a.from.y, b.from.y) && near(a.from.z, b.from.z) &&
+                    near(a.to.x, b.to.x) && near(a.to.y, b.to.y) && near(a.to.z, b.to.z) &&
+                    a.label == b.label && a.horizontal == b.horizontal)
+                    found = true;
+            planMatchesBase = planMatchesBase && found;
+        }
+        check(planMatchesBase, "XY cizim aileleri grid.axes'in X/Y aileleriyle BIREBIR ayni");
+
+        // Kat yoksa: ayni kot farkli aile (dusey) cizgilerde uzanti devreye girer.
+        GridDefinition planOnly;
+        planOnly.xCoords = {0.0, 4000.0};
+        planOnly.yCoords = {0.0, 3000.0};
+        rebuildGridAxes(planOnly);
+        const auto planOnlyXZ = gridAxesForView(planOnly, GridViewPlane::XZ);
+        check(planOnlyXZ.size() == 2, "kat yoksa XZ gorunusunde yalniz X dikey aileleri");
+        check(!planOnlyXZ.empty() && near(planOnlyXZ[0].to.z - planOnlyXZ[0].from.z, 2000.0),
+              "kat yokken dikey uzanti Below/Above'dan gelir (2*1000 mm)");
+    }
+
     std::printf("%d checks, %d failures\n", checks, failures);
     return failures == 0 ? 0 : 1;
 }

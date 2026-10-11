@@ -238,6 +238,11 @@ if(BUILD_TESTING)
             add_test(NAME model_maker_workplane_ghost
                 COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_workplane_ghost.py
                     ${CMAKE_CURRENT_BINARY_DIR})
+            # Tekla gridi gorunus duzlemine gore cizilir: pencerede yalniz
+            # XY / XZ / YZ gridi gorunur, "3B grid" OLUSMAZ (dokuman kurali).
+            add_test(NAME model_maker_grid_view_plane
+                COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_grid_view_plane.py
+                    ${CMAKE_CURRENT_BINARY_DIR})
             # Snap isaretcileri: kullanici "buyuklugunu iki katina buyutelim" dedi.
             # Tek kaynak cizim fonksiyonu + her sembol icin olcegin TAM 2x oldugu
             # (gercek govde, kayit tutan GDI siniri).
