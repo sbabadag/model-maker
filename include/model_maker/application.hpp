@@ -580,7 +580,8 @@ private:
     bool polarTrackingLocked_{false};
     // Aktif is duzlemi her pencerede hayalet (yari saydam) duzlem olarak
     // gosterilsin mi. Yalnizca cizim — secim/snap'i etkilemez.
-    bool workPlaneGhostVisible_{true};
+    // Varsayilan kWorkPlaneGhostDefaultVisible (su an: KAPALI) — tek kaynak.
+    bool workPlaneGhostVisible_{kWorkPlaneGhostDefaultVisible};
     bool temporaryTrackingLocked_{false};
     std::vector<Vec3> temporaryTrackingPoints_;
     std::vector<TrackingGuide> temporaryTrackingGuides_;

@@ -51,6 +51,14 @@ constexpr unsigned char visualStyleFaceAlpha(VisualStyle style) noexcept {
     return 0;
 }
 
+// CALISMA DUZLEMI HAYALETI kill-switch (TEK KAYNAK).
+// Kullanici istegi: hayalet duzlem goruntusu GECICI OLARAK devre disi.
+// Varsayilan KAPALI. application.hpp bayragi ve DraftView alani AYNI
+// sabitten turer; ikinci bir varsayilan literal YAZILMAZ (yoksa ikisi
+// zamanla ayrisir ve hayalet kendiliginden geri gelir).
+// F7 / Gorunum menusu hala acip kapatabilir (geri donusu kolay olsun diye).
+inline constexpr bool kWorkPlaneGhostDefaultVisible = false;
+
 enum class EditMode { Draw2D, View3D };
 enum class TransformCommand {
     None, Move, Copy, Offset, Mirror, Delete, LinearArray, PolarArray, Trim, Extend, Fillet, Rotate, Rotate3D
@@ -202,7 +210,8 @@ struct DraftView {
     // CALISMA DUZLEMI HAYALETI: aktif is duzlemi HER pencerede yari saydam
     // duzlem yamasi olarak gosterilir. Yalnizca cizimdir — secilemez,
     // snap'lenemez, hicbir belge nesnesi/olayi uretmez.
-    bool workPlaneGhostVisible{true};
+    // Varsayilan kWorkPlaneGhostDefaultVisible (su an: KAPALI).
+    bool workPlaneGhostVisible{kWorkPlaneGhostDefaultVisible};
     std::wstring input;
     POINT cursorScreen{};
     TransformCommand transformCommand{TransformCommand::None};

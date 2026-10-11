@@ -42,9 +42,20 @@ check(source.count("drawGridAndAxes(dc);") >= 2,
 for token in ("document", "selectedModels", "gumball", "snapType", "updateHover", "hover_", "modelBounds"):
     check(token not in block, f"render-only: '{token}' absent from ghost block (non-selectable/non-snappable)")
 check(re.search(r"draft\.[A-Za-z_]+\s*=", block) is None, "ghost block never mutates view state")
-check("bool workPlaneGhostVisible{true};" in header, "DraftView carries the ghost flag")
+check("kWorkPlaneGhostDefaultVisible" in header,
+      "ghost visibility default lives in a single named constant")
+check(re.search(r"kWorkPlaneGhostDefaultVisible\s*=\s*false", header) is not None,
+      "ghost plane is DISABLED by default (kill switch = false)")
+check("bool workPlaneGhostVisible{kWorkPlaneGhostDefaultVisible};" in header,
+      "DraftView ghost flag derives from the single kill-switch constant")
 check("view.workPlaneGhostVisible = workPlaneGhostVisible_;" in app_source,
       "draftView() propagates the flag to every canvas")
+check("bool workPlaneGhostVisible_{kWorkPlaneGhostDefaultVisible};" in app_header,
+      "Application ghost flag shares the SAME constant (no second literal)")
+# Iki varsayilan ayrisirsa hayalet kendiliginden geri gelir: literal yasak.
+check("workPlaneGhostVisible{true}" not in header and
+      "workPlaneGhostVisible_{true}" not in app_header,
+      "no stale '{true}' default remains for the ghost flag")
 check("void toggleWorkPlaneGhost();" in app_header, "toggle declared in the Application API")
 check("void Application::toggleWorkPlaneGhost()" in app_source, "toggle implemented once for key and menu")
 check(app_source.count("VK_F7") == 2, "F7 handled in both the canvas and the outer window proc")
