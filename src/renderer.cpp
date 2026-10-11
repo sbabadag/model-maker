@@ -31,6 +31,91 @@ void line(HDC dc, int x1, int y1, int x2, int y2) {
     LineTo(dc, x2, y2);
 }
 
+// Snap isaretcisi cizimi: TEK kaynak. Motion overlay ve normal drafting yolu ayni
+// fonksiyonu cagirir; boyut kSnapMarkerScale ile olceklenir (taban yaricap 7 px).
+constexpr int kSnapMarkerScale = 2;
+constexpr int sm(int v) noexcept { return v * kSnapMarkerScale; }
+
+void drawSnapMarkerShape(HDC dc, const POINT& p, SnapMarkerSymbol symbol) {
+    switch (symbol) {
+    case SnapMarkerSymbol::Triangle: {
+        POINT triangle[4]{{p.x, p.y - sm(7)}, {p.x - sm(7), p.y + sm(6)},
+                          {p.x + sm(7), p.y + sm(6)}, {p.x, p.y - sm(7)}};
+        Polyline(dc, triangle, 4);
+        break;
+    }
+    case SnapMarkerSymbol::Circle:
+        Ellipse(dc, p.x - sm(7), p.y - sm(7), p.x + sm(8), p.y + sm(8));
+        break;
+    case SnapMarkerSymbol::CircleCross:
+        Ellipse(dc, p.x - sm(7), p.y - sm(7), p.x + sm(8), p.y + sm(8));
+        line(dc, p.x - sm(4), p.y, p.x + sm(5), p.y);
+        line(dc, p.x, p.y - sm(4), p.x, p.y + sm(5));
+        break;
+    case SnapMarkerSymbol::CrossedCircle:
+        Ellipse(dc, p.x - sm(7), p.y - sm(7), p.x + sm(8), p.y + sm(8));
+        line(dc, p.x - sm(6), p.y - sm(6), p.x + sm(7), p.y + sm(7));
+        line(dc, p.x - sm(6), p.y + sm(6), p.x + sm(7), p.y - sm(7));
+        break;
+    case SnapMarkerSymbol::Diamond: {
+        POINT diamond[5]{{p.x, p.y - sm(7)}, {p.x + sm(7), p.y}, {p.x, p.y + sm(7)},
+                         {p.x - sm(7), p.y}, {p.x, p.y - sm(7)}};
+        Polyline(dc, diamond, 5);
+        break;
+    }
+    case SnapMarkerSymbol::Cross:
+        line(dc, p.x - sm(6), p.y - sm(6), p.x + sm(7), p.y + sm(7));
+        line(dc, p.x - sm(6), p.y + sm(6), p.x + sm(7), p.y - sm(7));
+        break;
+    case SnapMarkerSymbol::BoxedCross:
+        Rectangle(dc, p.x - sm(7), p.y - sm(7), p.x + sm(8), p.y + sm(8));
+        line(dc, p.x - sm(5), p.y - sm(5), p.x + sm(6), p.y + sm(6));
+        line(dc, p.x - sm(5), p.y + sm(5), p.x + sm(6), p.y - sm(6));
+        break;
+    case SnapMarkerSymbol::ExtensionLine:
+        line(dc, p.x - sm(9), p.y, p.x - sm(5), p.y);
+        line(dc, p.x - sm(2), p.y, p.x + sm(3), p.y);
+        line(dc, p.x + sm(6), p.y, p.x + sm(10), p.y);
+        break;
+    case SnapMarkerSymbol::LinkedSquares:
+        Rectangle(dc, p.x - sm(7), p.y - sm(7), p.x + sm(2), p.y + sm(2));
+        Rectangle(dc, p.x - sm(1), p.y - sm(1), p.x + sm(8), p.y + sm(8));
+        break;
+    case SnapMarkerSymbol::RightAngle:
+        line(dc, p.x - sm(7), p.y + sm(7), p.x - sm(7), p.y - sm(5));
+        line(dc, p.x - sm(7), p.y - sm(5), p.x + sm(6), p.y - sm(5));
+        line(dc, p.x - sm(2), p.y - sm(5), p.x - sm(2), p.y + sm(1));
+        line(dc, p.x - sm(2), p.y + sm(1), p.x + sm(4), p.y + sm(1));
+        break;
+    case SnapMarkerSymbol::TangentCircle:
+        Ellipse(dc, p.x - sm(6), p.y - sm(6), p.x + sm(7), p.y + sm(7));
+        line(dc, p.x - sm(8), p.y - sm(7), p.x + sm(9), p.y - sm(7));
+        break;
+    case SnapMarkerSymbol::Hourglass: {
+        POINT hourglass[5]{{p.x - sm(7), p.y - sm(6)}, {p.x + sm(7), p.y - sm(6)},
+                           {p.x - sm(7), p.y + sm(6)}, {p.x + sm(7), p.y + sm(6)},
+                           {p.x - sm(7), p.y - sm(6)}};
+        Polyline(dc, hourglass, 5);
+        break;
+    }
+    case SnapMarkerSymbol::ParallelLines:
+        line(dc, p.x - sm(8), p.y + sm(5), p.x, p.y - sm(5));
+        line(dc, p.x, p.y + sm(5), p.x + sm(8), p.y - sm(5));
+        break;
+    case SnapMarkerSymbol::GridCross:
+        line(dc, p.x - sm(7), p.y, p.x + sm(8), p.y);
+        line(dc, p.x, p.y - sm(7), p.x, p.y + sm(8));
+        Rectangle(dc, p.x - sm(3), p.y - sm(3), p.x + sm(4), p.y + sm(4));
+        break;
+    case SnapMarkerSymbol::Square:
+        Rectangle(dc, p.x - sm(6), p.y - sm(6), p.x + sm(7), p.y + sm(7));
+        break;
+    case SnapMarkerSymbol::None:
+        break;
+    }
+}
+
+
 // Profil uc tutamagi isareti: ic dolu daire; aktifse dis beyaz halka (vurgu).
 void drawGripMarker(HDC dc, int x, int y, COLORREF color, bool active) {
     const int r = active ? 6 : 4;
@@ -784,84 +869,11 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
                 RGB((rgb) & 0xFF, (rgb >> 8) & 0xFF, (rgb >> 16) & 0xFF));
             SelectObject(dc, snapPen);
             HGDIOBJ oldBrush = SelectObject(dc, GetStockObject(NULL_BRUSH));
-            switch (snapMarkerSymbol(draft.snapType)) {
-            case SnapMarkerSymbol::Triangle: {
-                POINT triangle[4]{{p.x, p.y - 7}, {p.x - 7, p.y + 6}, {p.x + 7, p.y + 6}, {p.x, p.y - 7}};
-                Polyline(dc, triangle, 4);
-                break;
-            }
-            case SnapMarkerSymbol::Circle:
-                Ellipse(dc, p.x - 7, p.y - 7, p.x + 8, p.y + 8);
-                break;
-            case SnapMarkerSymbol::CircleCross:
-                Ellipse(dc, p.x - 7, p.y - 7, p.x + 8, p.y + 8);
-                line(dc, p.x - 4, p.y, p.x + 5, p.y); line(dc, p.x, p.y - 4, p.x, p.y + 5);
-                break;
-            case SnapMarkerSymbol::CrossedCircle:
-                Ellipse(dc, p.x - 7, p.y - 7, p.x + 8, p.y + 8);
-                line(dc, p.x - 6, p.y - 6, p.x + 7, p.y + 7);
-                line(dc, p.x - 6, p.y + 6, p.x + 7, p.y - 7);
-                break;
-            case SnapMarkerSymbol::Diamond: {
-                POINT diamond[5]{{p.x, p.y - 7}, {p.x + 7, p.y}, {p.x, p.y + 7},
-                                 {p.x - 7, p.y}, {p.x, p.y - 7}};
-                Polyline(dc, diamond, 5);
-                break;
-            }
-            case SnapMarkerSymbol::Cross:
-                line(dc, p.x - 6, p.y - 6, p.x + 7, p.y + 7);
-                line(dc, p.x - 6, p.y + 6, p.x + 7, p.y - 7);
-                break;
-            case SnapMarkerSymbol::BoxedCross:
-                Rectangle(dc, p.x - 7, p.y - 7, p.x + 8, p.y + 8);
-                line(dc, p.x - 5, p.y - 5, p.x + 6, p.y + 6);
-                line(dc, p.x - 5, p.y + 5, p.x + 6, p.y - 6);
-                break;
-            case SnapMarkerSymbol::ExtensionLine:
-                line(dc, p.x - 9, p.y, p.x - 5, p.y);
-                line(dc, p.x - 2, p.y, p.x + 3, p.y);
-                line(dc, p.x + 6, p.y, p.x + 10, p.y);
-                break;
-            case SnapMarkerSymbol::LinkedSquares:
-                Rectangle(dc, p.x - 7, p.y - 7, p.x + 2, p.y + 2);
-                Rectangle(dc, p.x - 1, p.y - 1, p.x + 8, p.y + 8);
-                break;
-            case SnapMarkerSymbol::RightAngle:
-                line(dc, p.x - 7, p.y + 7, p.x - 7, p.y - 5);
-                line(dc, p.x - 7, p.y - 5, p.x + 6, p.y - 5);
-                line(dc, p.x - 2, p.y - 5, p.x - 2, p.y + 1);
-                line(dc, p.x - 2, p.y + 1, p.x + 4, p.y + 1);
-                break;
-            case SnapMarkerSymbol::TangentCircle:
-                Ellipse(dc, p.x - 6, p.y - 6, p.x + 7, p.y + 7);
-                line(dc, p.x - 8, p.y - 7, p.x + 9, p.y - 7);
-                break;
-            case SnapMarkerSymbol::Hourglass: {
-                POINT hourglass[5]{{p.x - 7, p.y - 6}, {p.x + 7, p.y - 6},
-                                   {p.x - 7, p.y + 6}, {p.x + 7, p.y + 6},
-                                   {p.x - 7, p.y - 6}};
-                Polyline(dc, hourglass, 5);
-                break;
-            }
-            case SnapMarkerSymbol::ParallelLines:
-                line(dc, p.x - 8, p.y + 5, p.x, p.y - 5);
-                line(dc, p.x, p.y + 5, p.x + 8, p.y - 5);
-                break;
-            case SnapMarkerSymbol::GridCross:
-                line(dc, p.x - 7, p.y, p.x + 8, p.y);
-                line(dc, p.x, p.y - 7, p.x, p.y + 8);
-                Rectangle(dc, p.x - 3, p.y - 3, p.x + 4, p.y + 4);
-                break;
-            case SnapMarkerSymbol::Square:
-                Rectangle(dc, p.x - 6, p.y - 6, p.x + 7, p.y + 7);
-                break;
-            case SnapMarkerSymbol::None:
-                break;
-            }
+            drawSnapMarkerShape(dc, p, snapMarkerSymbol(draft.snapType));
             SelectObject(dc, oldBrush);
             SelectObject(dc, stockPen);
             DeleteObject(snapPen);
-            drawText(dc, p.x + 10, p.y + 8, snapTypeLabel(draft.snapType), RGB(90, 255, 145));
+            drawText(dc, p.x + sm(10), p.y + sm(8), snapTypeLabel(draft.snapType), RGB(90, 255, 145));
         }
         if (motionDrafting && draft.dynamicInputEnabled && draft.cursor &&
             !(draft.transformCommand != TransformCommand::None &&
@@ -2095,84 +2107,11 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         HPEN snapPen = CreatePen(PS_SOLID, 2, RGB(90, 255, 145));
         SelectObject(dc, snapPen);
         HGDIOBJ oldBrush = SelectObject(dc, GetStockObject(NULL_BRUSH));
-        switch (snapMarkerSymbol(draft.snapType)) {
-        case SnapMarkerSymbol::Triangle: {
-            POINT triangle[4]{{p.x, p.y - 7}, {p.x - 7, p.y + 6}, {p.x + 7, p.y + 6}, {p.x, p.y - 7}};
-            Polyline(dc, triangle, 4);
-            break;
-        }
-        case SnapMarkerSymbol::Circle:
-            Ellipse(dc, p.x - 7, p.y - 7, p.x + 8, p.y + 8);
-            break;
-        case SnapMarkerSymbol::CircleCross:
-            Ellipse(dc, p.x - 7, p.y - 7, p.x + 8, p.y + 8);
-            line(dc, p.x - 4, p.y, p.x + 5, p.y); line(dc, p.x, p.y - 4, p.x, p.y + 5);
-            break;
-        case SnapMarkerSymbol::CrossedCircle:
-            Ellipse(dc, p.x - 7, p.y - 7, p.x + 8, p.y + 8);
-            line(dc, p.x - 6, p.y - 6, p.x + 7, p.y + 7);
-            line(dc, p.x - 6, p.y + 6, p.x + 7, p.y - 7);
-            break;
-        case SnapMarkerSymbol::Diamond: {
-            POINT diamond[5]{{p.x, p.y - 7}, {p.x + 7, p.y}, {p.x, p.y + 7},
-                             {p.x - 7, p.y}, {p.x, p.y - 7}};
-            Polyline(dc, diamond, 5);
-            break;
-        }
-        case SnapMarkerSymbol::Cross:
-            line(dc, p.x - 6, p.y - 6, p.x + 7, p.y + 7);
-            line(dc, p.x - 6, p.y + 6, p.x + 7, p.y - 7);
-            break;
-        case SnapMarkerSymbol::BoxedCross:
-            Rectangle(dc, p.x - 7, p.y - 7, p.x + 8, p.y + 8);
-            line(dc, p.x - 5, p.y - 5, p.x + 6, p.y + 6);
-            line(dc, p.x - 5, p.y + 5, p.x + 6, p.y - 6);
-            break;
-        case SnapMarkerSymbol::ExtensionLine:
-            line(dc, p.x - 9, p.y, p.x - 5, p.y);
-            line(dc, p.x - 2, p.y, p.x + 3, p.y);
-            line(dc, p.x + 6, p.y, p.x + 10, p.y);
-            break;
-        case SnapMarkerSymbol::LinkedSquares:
-            Rectangle(dc, p.x - 7, p.y - 7, p.x + 2, p.y + 2);
-            Rectangle(dc, p.x - 1, p.y - 1, p.x + 8, p.y + 8);
-            break;
-        case SnapMarkerSymbol::RightAngle:
-            line(dc, p.x - 7, p.y + 7, p.x - 7, p.y - 5);
-            line(dc, p.x - 7, p.y - 5, p.x + 6, p.y - 5);
-            line(dc, p.x - 2, p.y - 5, p.x - 2, p.y + 1);
-            line(dc, p.x - 2, p.y + 1, p.x + 4, p.y + 1);
-            break;
-        case SnapMarkerSymbol::TangentCircle:
-            Ellipse(dc, p.x - 6, p.y - 6, p.x + 7, p.y + 7);
-            line(dc, p.x - 8, p.y - 7, p.x + 9, p.y - 7);
-            break;
-        case SnapMarkerSymbol::Hourglass: {
-            POINT hourglass[5]{{p.x - 7, p.y - 6}, {p.x + 7, p.y - 6},
-                               {p.x - 7, p.y + 6}, {p.x + 7, p.y + 6},
-                               {p.x - 7, p.y - 6}};
-            Polyline(dc, hourglass, 5);
-            break;
-        }
-        case SnapMarkerSymbol::ParallelLines:
-            line(dc, p.x - 8, p.y + 5, p.x, p.y - 5);
-            line(dc, p.x, p.y + 5, p.x + 8, p.y - 5);
-            break;
-        case SnapMarkerSymbol::GridCross:
-            line(dc, p.x - 7, p.y, p.x + 8, p.y);
-            line(dc, p.x, p.y - 7, p.x, p.y + 8);
-            Rectangle(dc, p.x - 3, p.y - 3, p.x + 4, p.y + 4);
-            break;
-        case SnapMarkerSymbol::Square:
-            Rectangle(dc, p.x - 6, p.y - 6, p.x + 7, p.y + 7);
-            break;
-        case SnapMarkerSymbol::None:
-            break;
-        }
+        drawSnapMarkerShape(dc, p, snapMarkerSymbol(draft.snapType));
         SelectObject(dc, oldBrush);
         SelectObject(dc, stockPen);
         DeleteObject(snapPen);
-        drawText(dc, p.x + 10, p.y + 8, snapTypeLabel(draft.snapType), RGB(90, 255, 145));
+        drawText(dc, p.x + sm(10), p.y + sm(8), snapTypeLabel(draft.snapType), RGB(90, 255, 145));
     }
 
     if (!draft.snapOnly) {

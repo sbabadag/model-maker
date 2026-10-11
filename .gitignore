@@ -18,6 +18,9 @@ test_imgui_inc.cpp
 .hermes/
 
 build-linux/
+model-maker-render.log
+model-maker-startup.log
+model-maker-trim.log
 build-occ/
 build-hermes/
 dist/ 

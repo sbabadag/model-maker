@@ -237,6 +237,12 @@ if(BUILD_TESTING)
             add_test(NAME model_maker_workplane_ghost
                 COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_workplane_ghost.py
                     ${CMAKE_CURRENT_BINARY_DIR})
+            # Snap isaretcileri: kullanici "buyuklugunu iki katina buyutelim" dedi.
+            # Tek kaynak cizim fonksiyonu + her sembol icin olcegin TAM 2x oldugu
+            # (gercek govde, kayit tutan GDI siniri).
+            add_test(NAME model_maker_snap_marker_scale
+                COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_snap_marker_scale.py
+                    ${CMAKE_CURRENT_BINARY_DIR})
             # Ortho + OSNAP: F8 acikken obje snap'i ortho'yu EZER (AutoCAD
             # osnap > ortho). Sekil kontrolu + gercek applyOrthoConstraint
             # govdesinin cagri sozlesmesi (tum dallarda preserve=true).
