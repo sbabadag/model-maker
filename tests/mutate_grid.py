@@ -36,19 +36,21 @@ MUTATIONS = [
 
     ("M3 uzanti IKI YONDE ayni (Left/Below - Right/Above ayriligi bozuldu)",
      "src/grid.cpp",
-     "        line.to = Vec3{x, o.y + spanY + above, o.z};",
-     "        line.to = Vec3{x, o.y + spanY + below, o.z};"),
+     "        line.to = Vec3{x, o.y + e.spanY + e.above, o.z};",
+     "        line.to = Vec3{x, o.y + e.spanY + e.below, o.z};"),
 
     ("M4 X etiketleri yanlis eksene baglandi (X kutusu -> Y cizgileri)",
      "src/grid.cpp",
-     "        line.label = (i < grid.xLabels.size()) ? grid.xLabels[i] : std::string{};\n"
-     "        grid.axes.push_back(std::move(line));\n"
+     "        line.horizontal = false;\n"
+     "        line.label = labelAt(grid.xLabels, i);\n"
+     "        out.push_back(std::move(line));\n"
      "    }\n"
-     "    // Y konumlari",
-     "        line.label = (i < grid.yLabels.size()) ? grid.yLabels[i] : std::string{};\n"
-     "        grid.axes.push_back(std::move(line));\n"
+     "    for (std::size_t i = 0; i < grid.yCoords.size(); ++i) {",
+     "        line.horizontal = false;\n"
+     "        line.label = labelAt(grid.yLabels, i);\n"
+     "        out.push_back(std::move(line));\n"
      "    }\n"
-     "    // Y konumlari"),
+     "    for (std::size_t i = 0; i < grid.yCoords.size(); ++i) {"),
 
     ("M5 origin offset yok sayildi",
      "src/grid.cpp",
@@ -57,11 +59,16 @@ MUTATIONS = [
 
     ("M6 etiket tamamlama BOS kutuyu da doldurur (Tekla: bos kalabilir)",
      "src/grid.cpp",
-     "    if (!grid.xLabels.empty())\n"
-     "        for (std::size_t i = grid.xLabels.size(); i < grid.xCoords.size(); ++i)\n"
-     "            grid.xLabels.push_back(gridAutoNumberLabel(i));",
-     "    for (std::size_t i = grid.xLabels.size(); i < grid.xCoords.size(); ++i)\n"
-     "        grid.xLabels.push_back(gridAutoNumberLabel(i));"),
+     "    if (!grid.xLabels.empty()) {\n"
+     "        const std::size_t n = grid.xCoords.size();\n"
+     "        for (std::size_t i = grid.xLabels.size(); i < n; ++i)\n"
+     "            grid.xLabels.push_back(gridAutoLetterLabel(n - 1 - i));\n"
+     "    }",
+     "    {\n"
+     "        const std::size_t n = grid.xCoords.size();\n"
+     "        for (std::size_t i = grid.xLabels.size(); i < n; ++i)\n"
+     "            grid.xLabels.push_back(gridAutoLetterLabel(n - 1 - i));\n"
+     "    }"),
 
     ("M7 grid ekleme UNDO op'u kaydedilmiyor (eski sessiz kusur)",
      "src/document.cpp",

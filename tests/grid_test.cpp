@@ -74,9 +74,9 @@ int main() {
     {
         const auto labels = parseGridLabelLine("1 2 3 4");
         check(labels.size() == 4 && labels[0] == "1" && labels[3] == "4", "etiket satiri ayristirilir");
-        check(gridAutoNumberLabel(0) == "1" && gridAutoNumberLabel(9) == "10", "X otomatik: sayi");
+        check(gridAutoNumberLabel(0) == "1" && gridAutoNumberLabel(9) == "10", "sayi etiketi: 1,2,..");
         check(gridAutoLetterLabel(0) == "A" && gridAutoLetterLabel(25) == "Z" &&
-                  gridAutoLetterLabel(26) == "AA", "Y otomatik: harf (A..Z, AA)");
+                  gridAutoLetterLabel(26) == "AA", "harf etiketi: A..Z, AA");
     }
     // 5) TURETME: X konumlari DUKEY, Y konumlari YATAY aks; Z kotlari kat
     //    duzlemi kenarlari. Uzanti Left/Below - Right/Above AYRI.
@@ -132,15 +132,23 @@ int main() {
         check(v != nullptr && v2 != nullptr, "origin offset akslari kaydirir");
         check(near(g.axes.front().from.z, 3000.0), "origin.z aksa yansir");
     }
-    // 7) Etiket tamamlama: liste DOLU ama kisa ise tamamlanir; liste BOS ise
-    //    dokunulmaz (Tekla: etiket kutusu bos birakilabilir).
+    // 7) Etiket tamamlama: liste DOLU ama kisa ise tamamlanir; X ailesi HARF
+    //    (sagdan sola: en buyuk X = A), Y ailesi SAYI (asagidan yukari).
+    //    Liste BOS ise dokunulmaz (Tekla: etiket kutusu bos birakilabilir).
     {
         GridDefinition g;
         g.xCoords = {0.0, 1000.0, 2000.0};
-        g.xLabels = {"1"};
+        g.xLabels = {"C"};  // en soldaki aks = son harf
         ensureGridLabels(g);
-        check(g.xLabels.size() == 3 && g.xLabels[1] == "2" && g.xLabels[2] == "3",
-              "eksik etiketler otomatik tamamlanir");
+        check(g.xLabels.size() == 3 && g.xLabels[0] == "C" && g.xLabels[1] == "B" &&
+                  g.xLabels[2] == "A",
+              "X etiketleri sagdan sola tamamlanir (en buyuk X = A)");
+        GridDefinition y;
+        y.yCoords = {0.0, 1000.0};
+        y.yLabels = {"1"};
+        ensureGridLabels(y);
+        check(y.yLabels.size() == 2 && y.yLabels[0] == "1" && y.yLabels[1] == "2",
+              "Y etiketleri sayi (asagidan yukari) tamamlanir");
         GridDefinition e;
         e.xCoords = {0.0, 1000.0};
         ensureGridLabels(e);

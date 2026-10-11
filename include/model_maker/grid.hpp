@@ -74,7 +74,9 @@ std::vector<double> parseGridCoordinateLine(std::string_view text, bool cumulati
 // Etiket satiri: boslukla ayrilmis adlar. Bos metin -> bos vektor.
 std::vector<std::string> parseGridLabelLine(std::string_view text);
 
-// Otomatik etiketler: X icin sayi (1,2,3...), Y icin harf (A,B,C...).
+// Otomatik etiket yardimcilari: sayi (1,2,3..) ve harf (A..Z, AA..).
+// Hangi ailenin hangi turu alacagi ensureGridLabels'da belirlenir:
+// X ailesi HARF (sagdan sola), Y ailesi SAYI (asagidan yukari).
 std::string gridAutoNumberLabel(std::size_t index);
 std::string gridAutoLetterLabel(std::size_t index);
 
