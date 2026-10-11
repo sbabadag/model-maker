@@ -68,7 +68,9 @@ public:
     TransformCommand transformCommand_{TransformCommand::None};
     bool profileGrip_{}, workPlanePicking_{}, zoomWindowActive_{};
     bool viewCubeManipulating_{}, viewCubeDragged_{}, rotating_{}, ctrlRotatePending_{};
-    std::optional<StandardView> viewCubePressedView_;
+    // MODERN VIEWCUBE: hedef artik yuz/kenar/kose/ISO ayrimli bir tip.
+    std::optional<ViewCubeTarget> viewCubePressedView_;
+    void applyViewCubeTarget(const ViewCubeTarget&) {}
     std::vector<std::size_t> selectedModels_{0};
     std::wstring input_;
     std::function<bool(const std::wstring&, const std::wstring&, std::wstring&)> parameterRequest_;

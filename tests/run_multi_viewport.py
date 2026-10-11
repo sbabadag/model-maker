@@ -52,6 +52,7 @@ shell = r'''
 #include "model_maker/document.hpp"
 #include "model_maker/drafting.hpp"
 #include "model_maker/view_definition.hpp"
+#include "model_maker/view_cube.hpp"
 #include <algorithm>
 #include <cmath>
 #include <iostream>
@@ -92,6 +93,9 @@ HWND SetFocus(HWND h) { HWND o = g_focus; g_focus = h; return o; }
 long long SetWindowLongPtrW(HWND h, int, long long v);
 bool DestroyWindow(HWND h) { g_alive.erase(h); return true; }
 long long SetWindowLongPtrW(HWND h, int, long long v) { g_userData[h] = v; return 0; }
+// ViewCube gecis animasyonu zamanlayicisi (gercek kanal yalniz sayilir).
+inline unsigned long long SetTimer(HWND, unsigned long long, unsigned, void*) { return 0; }
+inline bool KillTimer(HWND, unsigned long long) { return true; }
 #define CALLBACK
 constexpr UINT WM_NCCREATE = 0x0081;
 struct CREATESTRUCTW { void* lpCreateParams; };
@@ -143,7 +147,14 @@ public:
     bool rotating_{}, panning2D_{}, viewCubeManipulating_{}, zoomAnimActive_{}, wheelNavigating_{}, snapPreviewActive_{}, ctrlRotatePending_{};
     double zoomAnimTarget_{1.0}, wheelPreviewFactor_{1.0};
     Vec2 wheelPreviewOffset_{};
-    std::optional<StandardView> viewCubePressedView_;
+    // MODERN VIEWCUBE: hedef yuz/kenar/kose/ISO ayrimli; gecis animasyonu
+    // durumu da setStandardView tarafindan sifirlanir.
+    std::optional<ViewCubeTarget> viewCubePressedView_;
+    bool viewCubeAnimActive_{};
+    std::optional<ViewCubeTarget> viewCubeAnimTarget_;
+    bool viewCubeHoverValid_{};
+    HWND window_{};
+    void applyViewCubeTarget(const ViewCubeTarget&) {}
     std::optional<POINT> selectionFirstCorner_, zoomWindowFirstCorner_;
     std::optional<int> hover_;
     GumballHandle gumballDrag_{GumballHandle::None};

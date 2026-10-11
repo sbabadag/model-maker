@@ -243,6 +243,12 @@ if(BUILD_TESTING)
             add_test(NAME model_maker_grid_view_plane
                 COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_grid_view_plane.py
                     ${CMAKE_CURRENT_BINARY_DIR})
+            # MODERN VIEWCUBE kablolamasi: kup gercekten ciziliyor mu (yalniz
+            # kendi paneli), birakmada animasyonlu hedef uygulanıyor mu, yuz
+            # kose kumeleri normalleriyle uyusuyor mu (Top/Front karisikligi
+            # regresyonu), olu bildirimler kaldirildi mi.
+            add_test(NAME model_maker_view_cube
+                COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_view_cube.py)
             # Plan / iki noktali (gorunus duzlemi) pencerelerinde PROFIL UC
             # TUTAMAKLARI gorunur: eski `!draft.viewSlab` kosulu onlari
             # tamamen gizliyordu. Dilim disindaki katilar yine atlanir.
@@ -424,6 +430,17 @@ if(BUILD_TESTING)
     add_executable(model_maker_profile_center_snap_test tests/profile_center_snap_test.cpp)
     target_link_libraries(model_maker_profile_center_snap_test PRIVATE model_maker_core)
     add_test(NAME model_maker_profile_center_snap_test COMMAND model_maker_profile_center_snap_test)
+
+    # MODERN VIEWCUBE: 26 yon (6 yuz + 12 kenar + 8 kose) + gecis animasyonu.
+    # Kullanici sarti "kendi view cube umuzu modernlestirelim". Yuz hedefleri
+    # Ctrl+1..7 ile AYNI matrise gider (tek kaynak), kenar/kose hedefleri ayni
+    # turntable ailesinden turetilir; EN GUCLU INVARYANT: her hedefin rotasyon
+    # matrisinin 3. satiri hedef yonudur. Slerp ara kareleri ortonormal ve tek
+    # yonlu; hitTest yuz/kenar/kose/ISO'yu AYIRT eder ve GIZLI ozelligi secmez.
+    # OCC'siz/platformdan bagimsiz; gercek ViewCube + gercek Camera.
+    add_executable(model_maker_view_cube_targets_test tests/view_cube_targets_test.cpp)
+    target_link_libraries(model_maker_view_cube_targets_test PRIVATE model_maker_core)
+    add_test(NAME model_maker_view_cube_targets_test COMMAND model_maker_view_cube_targets_test)
 
     # OLcum probe'u: iki noktali XZ/YZ gorunusunde grid snap'i HANGI kotlere
     # gidiyor? ("sadece xy deki alt grid noktalarina snap oluyor" sikayetinin

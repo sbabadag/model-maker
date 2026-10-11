@@ -331,29 +331,48 @@ void Camera::reset() noexcept {
 }
 
 void Camera::setView(StandardView view) noexcept {
-    constexpr double halfPi = 1.57079632679489661923;
-    constexpr double pi = 3.14159265358979323846;
-    switch (view) {
-    case StandardView::Isometric:
-        // TEK TEMSIL: izometrik artik rotasyon matrisiyle kurulur. Ekran
-        // satirlari eski isoM_ onizlemesiyle piksel birebir ayni:
-        // row0=(0.707,-0.707,0), row1=(-0.408,-0.408,0.816); derinlik satiri
-        // proper (det=+1). Euler ayrismasi YOK -> kutup devrilmesi/atlama yok.
-        // Aci TEK KAYNAK (kIsoYaw/kIsoPitch/kIsoRoll) — reset() ile ayni.
-        R_ = buildRotation(kIsoYaw, kIsoPitch, kIsoRoll);
-        break;
-    case StandardView::Top: R_ = buildRotation(0.0, 0.0, 0.0); break;
-    case StandardView::Bottom: R_ = buildRotation(pi, 0.0, 0.0); break;
-    case StandardView::Front: R_ = buildRotation(0.0, halfPi, 0.0); break;
-    case StandardView::Back: R_ = buildRotation(0.0, -halfPi, 0.0); break;
-    case StandardView::Left: R_ = buildRotation(halfPi, 0.0, 0.0); break;
-    case StandardView::Right: R_ = buildRotation(-halfPi, 0.0, 0.0); break;
-    }
+    // Matris TEK KAYNAKTAN gelir (standardViewRotation) — ViewCube de ayni
+    // fonksiyonu cagirir, boylece kup ile Ctrl+1..7 birebir ayni yone gider.
+    R_ = standardViewRotation(view);
     // Standart gorunus = yeni bakis yonu; onceki donus merkezi birakilir.
     orbitPivot_.reset();
     // Grid gorunus duzlemi kilidi: standart gorunus DISKRET bir gorunus
     // degisimidir -> kilidi yeniler (Ust -> XY, On -> XZ, Sag -> YZ).
     lockGridViewDirection();
+}
+
+std::array<double, 9> Camera::standardViewRotation(StandardView view) noexcept {
+    constexpr double halfPi = 1.57079632679489661923;
+    constexpr double pi = 3.14159265358979323846;
+    switch (view) {
+    case StandardView::Isometric:
+        // TEK TEMSIL: izometrik rotasyon matrisiyle kurulur. Ekran satirlari
+        // eski isoM_ onizlemesiyle piksel birebir ayni: row0=(0.707,-0.707,0),
+        // row1=(-0.408,-0.408,0.816); derinlik satiri proper (det=+1). Euler
+        // ayrismasi YOK; aci TEK KAYNAK (kIsoYaw/kIsoPitch/kIsoRoll) — reset()
+        // ile ayni.
+        return buildRotation(kIsoYaw, kIsoPitch, kIsoRoll);
+    case StandardView::Top: return buildRotation(0.0, 0.0, 0.0);
+    case StandardView::Bottom: return buildRotation(pi, 0.0, 0.0);
+    case StandardView::Front: return buildRotation(0.0, halfPi, 0.0);
+    case StandardView::Back: return buildRotation(0.0, -halfPi, 0.0);
+    case StandardView::Left: return buildRotation(halfPi, 0.0, 0.0);
+    case StandardView::Right: return buildRotation(-halfPi, 0.0, 0.0);
+    }
+    return buildRotation(0.0, 0.0, 0.0);
+}
+
+std::array<double, 9> Camera::turntableRotation(double yaw, double pitch) noexcept {
+    // roll = 0: 6 standart gorunusun tamami ve ViewCube'un kenar/kose yonleri
+    // bu ailede. (Front/Back'te cp=0 olur; matris yine gecerli ve tamdir.)
+    return buildRotation(yaw, pitch, 0.0);
+}
+
+void Camera::setRotationMatrix(const std::array<double, 9>& rotation) noexcept {
+    // Yalniz animasyon ara kareleri icin: pivot ve grid kilidi dokunulmaz.
+    std::array<double, 9> r = rotation;
+    orthonormalize(r);
+    R_ = r;
 }
 
 void Camera::setViewBasis(const Vec3& right, const Vec3& up, const Vec3& center) noexcept {

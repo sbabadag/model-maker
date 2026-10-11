@@ -229,12 +229,14 @@ void test_view_cube_hit_testing() {
         for (const auto& point : face.points) { x += point.x; y += point.y; }
         x /= static_cast<int>(face.points.size());
         y /= static_cast<int>(face.points.size());
-        require(mm::ViewCube::hitTest(x, y, viewportWidth, camera) == face.view,
+        const auto hit = mm::ViewCube::hitTest(x, y, viewportWidth, camera);
+        require(hit && hit->kind == mm::ViewCubeTargetKind::Face && hit->face == face.view,
                 "Each visible global ViewCube face must select its matching standard view");
     }
     const int homeX = (layout.homeControl.left + layout.homeControl.right) / 2;
     const int homeY = (layout.homeControl.top + layout.homeControl.bottom) / 2;
-    require(mm::ViewCube::hitTest(homeX, homeY, viewportWidth, camera) == mm::StandardView::Isometric,
+    const auto homeHit = mm::ViewCube::hitTest(homeX, homeY, viewportWidth, camera);
+    require(homeHit && homeHit->kind == mm::ViewCubeTargetKind::Home,
             "View cube home control must select isometric view");
     require(!mm::ViewCube::hitTest(800, 400, viewportWidth, camera).has_value(),
             "Canvas outside the view cube must not select a view");

@@ -1053,6 +1053,11 @@ void Application::activateViewport(std::size_t index) {
     selectionFirstCorner_.reset();
     zoomWindowFirstCorner_.reset();
     zoomAnimActive_ = false; zoomAnimTarget_ = 1.0;
+    // ViewCube gecis animasyonu da pencereye ozgu: takasda iptal.
+    viewCubeAnimActive_ = false;
+    viewCubeAnimTarget_.reset();
+    viewCubeHoverValid_ = false;
+    KillTimer(window_, 9);
     wheelNavigating_ = false; wheelPreviewFactor_ = 1.0; wheelPreviewOffset_ = {};
     snapPreviewActive_ = false;
     hover_.reset();
@@ -1416,6 +1421,25 @@ LRESULT Application::handleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
         if (wParam == 7) {
             KillTimer(window_, 7);
             runRenderBenchmark();
+            return 0;
+        }
+        if (wParam == 9) {
+            // VIEWCUBE gecis animasyonu karesi (16 ms). Yumusak baslangic/bitis
+            // icin smoothstep; hedefe varinca kesin apply + kilit.
+            if (!viewCubeAnimActive_) {
+                KillTimer(window_, 9);
+                return 0;
+            }
+            viewCubeAnimT_ += 0.09;
+            const double t = std::clamp(viewCubeAnimT_, 0.0, 1.0);
+            const double eased = t * t * (3.0 - 2.0 * t);
+            camera_.setRotationMatrix(
+                viewCubeSlerpRotation(viewCubeAnimFrom_, viewCubeAnimTo_, eased));
+            if (t >= 1.0) {
+                finishViewCubeAnimation();
+            } else {
+                invalidateCanvas();
+            }
             return 0;
         }
         if (wParam == 8) {
@@ -1857,6 +1881,12 @@ void Application::onCanvasPaint() {
     }
     const auto paintStart = std::chrono::steady_clock::now();
     renderer_->draw(dc, client, document_, camera_, mode_, draftView(), activeBackend);
+    // MODERN VIEWCUBE: kameraya kilitli kup + 26 tiklanabilir yon. GL
+    // kompozitinden SONRA ayni DC'ye cizilir (kup her zaman en ustte) ve
+    // yalnizca KENDI panel dikdortgenine dokunur. Iki noktali gorunus
+    // pencerelerinde yon tanimli oldugu icin kup cizilmez.
+    if (mode_ == EditMode::View3D && !viewDef_)
+        viewCubeRenderer_.draw(dc, client, cursorScreen_, camera_);
     // Ilk GERCEK GL karesi (model varken) donmadan/cokmeden bitti -> acilis
     // korumasini kaldir. Bos belgede GL cizmez; o durumda temiz kapanis siler.
     if (startupGpuGuardArmed_ && activeBackend && !document_.models().empty())
@@ -1884,6 +1914,13 @@ void Application::onLeftButtonDown(int x, int y) {
     }
     if (mode_ == EditMode::View3D && !viewDef_) { // gorunus pencerelerinde kup yok (sabit yon)
         if (ViewCube::containsWidget(x, y, client.right)) {
+            // Kup tutamacina basildi: kosan gecis animasyonu iptal (yoksa
+            // surukleme ile animasyon birbirini ezer).
+            if (viewCubeAnimActive_) {
+                viewCubeAnimActive_ = false;
+                viewCubeAnimTarget_.reset();
+                KillTimer(window_, 9);
+            }
             viewCubeManipulating_ = true;
             viewCubeDragged_ = false;
             viewCubePressedView_ = ViewCube::hitTest(x, y, client.right, camera_);
@@ -2243,7 +2280,8 @@ void Application::onLeftButtonUp(int x, int y) {
         GetClientRect(canvas_, &client);
         if (!viewCubeDragged_ && viewCubePressedView_) {
             const auto releasedView = ViewCube::hitTest(x, y, client.right, camera_);
-            if (releasedView == viewCubePressedView_) camera_.setView(*viewCubePressedView_);
+            // Basma ve birakma AYNI hedefte: animasyonlu gecisi baslat.
+            if (releasedView == viewCubePressedView_) applyViewCubeTarget(*viewCubePressedView_);
         }
         viewCubeManipulating_ = false;
         viewCubePressedView_.reset();
@@ -2290,6 +2328,23 @@ void Application::onMouseMove(int x, int y, WPARAM buttons) {
     }
     bool redraw = false;
     bool snapRedraw = false;
+    // VIEWCUBE HOVER: kup uzerindeki hedef (yuz/kenar/kose/ISO) degistiginde
+    // kareyi tazele — vurgu ancak cizimle gorunur. Kup uzerindeyken normal
+    // snap/hover hatti calismaz (kup tuvalin en ustunde).
+    if (mode_ == EditMode::View3D && !viewDef_ && !viewCubeManipulating_) {
+        RECT cubeClient{};
+        GetClientRect(canvas_, &cubeClient);
+        if (ViewCube::containsWidget(x, y, cubeClient.right)) {
+            const auto hovered = ViewCube::hitTest(x, y, cubeClient.right, camera_);
+            if (!viewCubeHoverValid_ || !(hovered == viewCubeHover_)) {
+                viewCubeHover_ = hovered;
+                viewCubeHoverValid_ = true;
+                invalidateCanvas();
+            }
+            return;
+        }
+        viewCubeHoverValid_ = false;
+    }
     if (profileGrip_ && mode_ == EditMode::View3D) {
         // Move modunda track line + snap + tracking guide'lar: updateHover
         // tam snap/tracking/ortho/polar hattini calistirir (hover_ + cursorPoint).
@@ -3049,6 +3104,13 @@ void Application::setStandardView(StandardView view) {
         return;
     }
     cancelZoomWindow2D();
+    // Kosan bir ViewCube animasyonu varsa iptal et: kullanici baska bir
+    // gorunus istedi, iki animasyon ustuste binmesin.
+    if (viewCubeAnimActive_) {
+        viewCubeAnimActive_ = false;
+        viewCubeAnimTarget_.reset();
+        KillTimer(window_, 9);
+    }
     if (workPlanePicking_) cancelWorkPlaneCommand();
     if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
     cancelDrawing();
@@ -3058,6 +3120,64 @@ void Application::setStandardView(StandardView view) {
     mode_ = EditMode::View3D;
     drawingActive_ = false;
     ensureSpaceMouseStarted();
+    updateHover(cursorScreen_.x, cursorScreen_.y);
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
+}
+
+// --- MODERN VIEWCUBE (26 yon) ------------------------------------------------
+// Gecis animasyonu: mevcut rotasyon ile hedef rotasyon arasinda quaternion
+// slerp. Ara kareler setRotationMatrix ile yazilir — donus merkezi ve GRID
+// KILIDI dokunulmaz (yoksa animasyon sirasinda grid ailesi sicrar). Son
+// karede hedefe KESIN oturulur ve kilit/pivot normal apply ile kurulur.
+void Application::applyViewCubeTarget(const ViewCubeTarget& target) {
+    // Iki noktali gorunus penceresi: yon tanimli — yalniz yeniden sigdir.
+    if (viewRotationLocked()) {
+        fitViewport(canvas_);
+        publishStatus(L"Görünüş yönü iki noktayla tanımlı — sığdırıldı");
+        return;
+    }
+    cancelZoomWindow2D();
+    if (workPlanePicking_) cancelWorkPlaneCommand();
+    if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
+    cancelDrawing();
+    profileGrip_.reset();
+    hover_.reset();
+
+    viewCubeAnimTarget_ = target;
+    viewCubeAnimFrom_ = camera_.rotationMatrix();
+    viewCubeAnimTo_ = viewCubeTargetRotation(target);
+    viewCubeAnimT_ = 0.0;
+    viewCubeAnimActive_ = true;
+    mode_ = EditMode::View3D;
+    drawingActive_ = false;
+    ensureSpaceMouseStarted();
+    // 16 ms kare: ~0.09 adim -> ~11 kare ~180 ms yumusak gecis.
+    SetTimer(window_, 9, 16, nullptr);
+    invalidateCanvas();
+}
+
+void Application::finishViewCubeAnimation() {
+    KillTimer(window_, 9);
+    viewCubeAnimActive_ = false;
+    viewCubeAnimT_ = 1.0;
+    if (viewCubeAnimTarget_) {
+        const ViewCubeTarget target = *viewCubeAnimTarget_;
+        viewCubeAnimTarget_.reset();
+        if (target.kind == ViewCubeTargetKind::Home) {
+            // ISO'nun roll'u turntable ailesinde YOK — standart gorunusten al.
+            camera_.setView(StandardView::Isometric);
+        } else if (target.kind == ViewCubeTargetKind::Face) {
+            camera_.setView(target.face); // Ctrl+1..7 ile AYNI yol (tek kaynak)
+        } else {
+            // Kenar/kose: hedef rotasyonun ekran-saga/ekran-yukari satirlari.
+            const auto rotation = viewCubeTargetRotation(target);
+            camera_.setViewBasis({rotation[0], rotation[1], rotation[2]},
+                                 {rotation[3], rotation[4], rotation[5]},
+                                 camera_.center3D());
+        }
+    }
     updateHover(cursorScreen_.x, cursorScreen_.y);
     updateControls();
     updateStatus();
@@ -6505,7 +6625,7 @@ DraftView Application::draftView() const {
                          !viewCubeManipulating_ && !wheelNavigating_;
     view.snapPreviewActive = snapPreviewActive_;
     view.wheelNavigating = wheelNavigating_; view.rotating = rotating_;
-    view.panning = panning2D_; view.viewCubeActive = viewCubeManipulating_;
+    view.panning = panning2D_; view.viewCubeActive = viewCubeManipulating_ || viewCubeAnimActive_;
     // Esik 8'000'e indirildi: 18k'lik cizimde tekerlek zoom'u stride-4 seyrek
     // fallback kareler uretiyordu (modellerin ~%75'i kaybolup geri geliyordu
     // = zoom sirasinda nabiz/flicker). Raster preview son tam kareyi esnetir —

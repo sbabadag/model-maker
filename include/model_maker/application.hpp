@@ -10,6 +10,7 @@
 #include "model_maker/renderer.hpp"
 #include "model_maker/ribbon_layout.hpp"
 #include "model_maker/view_definition.hpp"
+#include "model_maker/view_cube.hpp"
 #include "model_maker/view_cube_renderer.hpp"
 
 #include <windows.h>
@@ -175,6 +176,12 @@ public:
     void setVisualStyle(VisualStyle style) noexcept;
     // Standart gorunus (On/Arka/Sol/Sag/Ust/Alt/ISO) — Qt menu + Ctrl+1..7.
     void setStandardView(StandardView view);
+    // VIEWCUBE hedefi (yuz/kenar/kose/ISO): animasyonlu gecis baslatir.
+    // Yuz ve ISO hedefleri setView ile AYNI matrise gider (tek kaynak);
+    // kenar/kose hedefleri turntable ailesinden turetilir.
+    void applyViewCubeTarget(const ViewCubeTarget& target);
+    // Animasyonun son karesi: hedefe kesin oturur, grid kilidini/pivotu kurar.
+    void finishViewCubeAnimation();
     void purgeStaleAxisLines(); // eski eksen cizgisi artiklarini temizle
     // F5: GDI ve GL arkaplanlarini script'li orbit/zoom/pan ile otomatik
     // olculer; sonuclar BENCH-RESULT satirlariyla render.log'a yazilir.
@@ -250,14 +257,12 @@ public:
 private:
     static LRESULT CALLBACK windowProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
     static LRESULT CALLBACK canvasProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
-    static LRESULT CALLBACK viewCubeProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
     static LRESULT CALLBACK propsWndProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
     static LRESULT CALLBACK layerCellEditSubclass(HWND window, UINT message, WPARAM wParam,
                                                    LPARAM lParam, UINT_PTR subclassId,
                                                    DWORD_PTR referenceData);
     LRESULT handleMessage(UINT message, WPARAM wParam, LPARAM lParam);
     LRESULT handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lParam);
-    LRESULT handleViewCubeMessage(UINT message, WPARAM wParam, LPARAM lParam);
 
     void createControlPanel();
     HWND createButton(const wchar_t* text, int id, int x, int y, int width, int height,
@@ -267,7 +272,6 @@ private:
     void drawOwnerButton(const DRAWITEMSTRUCT& item);
     void activateRibbonTab(RibbonTab tab);
     void onCanvasPaint();
-    void onViewCubePaint();
     void onLeftButtonDown(int x, int y);
     void onLeftButtonUp(int x, int y);
     void onMouseMove(int x, int y, WPARAM buttons);
@@ -313,7 +317,6 @@ private:
     void updateStatus();
     void publishStatus(const std::wstring& text);
     void invalidateCanvas();
-    void invalidateViewCube();
     void activate3DNavigation();
     void addCube();
     void addPyramid();
@@ -344,7 +347,6 @@ private:
     HINSTANCE instance_{};
     HWND window_{};
     HWND canvas_{};
-    HWND viewCube_{};
     HWND status_{};
     HWND openseesLog_{};
     HWND openseesLogClose_{};
@@ -747,9 +749,23 @@ private:
     std::optional<POINT> zoomWindowFirstCorner_;
     bool viewCubeManipulating_{};
     bool viewCubeDragged_{};
-    std::optional<StandardView> viewCubePressedView_;
+    // MODERN VIEWCUBE (26 yon): basilan hedef — yuz / kenar / kose / ISO.
+    std::optional<ViewCubeTarget> viewCubePressedView_;
+    // Fare altindaki hedef: yalniz DEGISTIGINDE kare tazelenir (bosuna cizim yok).
+    std::optional<ViewCubeTarget> viewCubeHover_;
+    bool viewCubeHoverValid_{};
     bool viewCubeMouseTracking_{};
     POINT viewCubeCursor_{-1, -1};
+    // GECIS ANIMASYONU: hedefe ~180 ms'de quaternion slerp (yumusak, kutup
+    // devrilmesi/isaret atlamasi yok). Ara kareler setRotationMatrix ile
+    // yazilir — pivot TEMIZLENMEZ, grid kilidi YENILENMEZ (yoksa animasyon
+    // sirasinda grid ailesi sicrardı). Son karede normal apply kilit/pivotu
+    // kurar.
+    bool viewCubeAnimActive_{};
+    double viewCubeAnimT_{0.0};
+    std::array<double, 9> viewCubeAnimFrom_{};
+    std::array<double, 9> viewCubeAnimTo_{};
+    std::optional<ViewCubeTarget> viewCubeAnimTarget_;
     POINT lastMouse_{};
     POINT cursorScreen_{};
     std::jthread dxfImportThread_;

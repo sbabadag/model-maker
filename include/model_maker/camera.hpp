@@ -60,6 +60,22 @@ public:
                double marginPixels = 40.0) noexcept;
     void reset() noexcept;
     void setView(StandardView view) noexcept;
+
+    // --- VIEWCUBE + gecis animasyonu ----------------------------------------
+    // Rotasyon matrisine dogrudan erisim. setRotationMatrix orthonormalize
+    // eder; donus merkezini TEMIZLEMEZ ve grid kilidini YENILEMEZ — gecis
+    // animasyonunun ARA kareleri bununla yazilir. Son kare normal apply
+    // (setView/setViewBasis) ile biter; kilit/pivot orada kurulur.
+    std::array<double, 9> rotationMatrix() const noexcept { return R_; }
+    void setRotationMatrix(const std::array<double, 9>& rotation) noexcept;
+    // Standart gorunusun world->camera matrisi — setView ile AYNI (tek kaynak).
+    static std::array<double, 9> standardViewRotation(StandardView view) noexcept;
+    // roll=0 "turntable": ekran saga = (cos yaw, 0, sin yaw); ekran yukari =
+    // (sin pitch*sin yaw, cos pitch, -sin pitch*cos yaw). 6 standart gorunusun
+    // TAMAMI bu aileye aittir; ViewCube'un 12 kenar + 8 kose yonu de ayni
+    // aileden turetilir — boylece kenar/kose gorunusleri komsu yuzlerle
+    // TUTARLI olur (ayri bir kural yok).
+    static std::array<double, 9> turntableRotation(double yaw, double pitch) noexcept;
     // Keyfi gorunus tabani: ekran saga = right, ekran yukari = up (dunya
     // vektorleri; ortonormalize edilir), merkez = center. Iki noktali
     // gorunus (Tekla) bunu kullanir. Gecersiz (paralel/sifir) girdide no-op.
