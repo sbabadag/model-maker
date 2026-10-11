@@ -1045,6 +1045,7 @@ void QtMainWindow::createToolbar() {
         addSnapItem("∠ Tangent",         SnapType::Tangent);
         addSnapItem("● Node",            SnapType::Node);
         addSnapItem("∥ Parallel",        SnapType::Parallel);
+        addSnapItem("⊙ Profile Center",  SnapType::ProfileCenter);
         menu.exec(snapBtn->mapToGlobal(pos));
     });
     ribbon->addWidget(snapBtn);

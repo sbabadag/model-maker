@@ -63,6 +63,7 @@ int priority(SnapType type) noexcept {
     case SnapType::Midpoint: return 4;
     case SnapType::Center: return 5;
     case SnapType::GeometricCenter: return 6;
+    case SnapType::ProfileCenter: return 6;   // merkez ailesi (GeometricCenter ile ayni oncelik)
     case SnapType::Quadrant: return 7;
     case SnapType::Node: return 8;
     case SnapType::Insertion: return 9;
@@ -206,6 +207,11 @@ std::vector<Candidate> objectCandidates(const Vec3& cursor, const Document& docu
                                                                candidateBudget);
     const std::size_t edgeStride = std::max<std::size_t>(1, (totalEdges + candidateBudget - 1) /
                                                              candidateBudget);
+
+    // SANAL PROFIL MERKEZI icin sinir kutulari: `Document::modelBounds()`
+    // ONBELLEKLI AABB'dir (spatial index ile ayni kaynak) — ikinci bir sinir
+    // kutusu hesabi YAZILMAZ. Dizin model indeksiyle paraleldir.
+    const auto& modelBounds = document.modelBounds();
 
     for (const auto modelIndex : *candidateIndices) {
         if (!document.modelIsPickable(modelIndex)) continue;
@@ -387,6 +393,22 @@ std::vector<Candidate> objectCandidates(const Vec3& cursor, const Document& docu
 
         if (const auto insertion = model.insertionPoint())
             addCandidate(candidates, *insertion, SnapType::Insertion, tolerance, metric);
+
+        // SANAL PROFIL MERKEZI (kullanici sarti: "profilin tam merkezinde bir
+        // sanal snap noktasi olustur"). Yalnizca PROFIL elemanlari icin
+        // uretilir (profileName dolu) — duz cizgi/kutu/silindir etkilenmez.
+        //
+        // Merkez = elemanin sinir kutusunun merkezi: simetrik kesitte kesitin
+        // agirlik merkezinden ve boyuna orta noktadan gecer (profil ust
+        // yuzunden oturdugu icin govde asagi sarkar; AABB merkezi tam olarak
+        // kesitin ortasidir). GERCEK bir kose/kenar DEGIL: bu yuzden kenar
+        // gorunurluk filtresinden ve vertex/edge listelerinden BAGIMSIZDIR —
+        // Wireframe/Solid ayni, 2B ve 3B ayni sekilde uretir.
+        if (!model.properties().profileName.empty() && modelIndex < modelBounds.size()) {
+            const Bounds3& bounds = modelBounds[modelIndex];
+            addCandidate(candidates, (bounds.minimum + bounds.maximum) * 0.5,
+                         SnapType::ProfileCenter, tolerance, metric);
+        }
     }
 
     constexpr std::size_t intersectionSegmentBudget = 256;
@@ -836,6 +858,7 @@ const wchar_t* snapTypeLabel(SnapType type) noexcept {
     case SnapType::Midpoint: return L"MIDPOINT";
     case SnapType::Center: return L"CENTER";
     case SnapType::GeometricCenter: return L"GEOM CENTER";
+    case SnapType::ProfileCenter: return L"PROF CENTER";
     case SnapType::Node: return L"NODE";
     case SnapType::Quadrant: return L"QUADRANT";
     case SnapType::Intersection: return L"INTERSECTION";
@@ -2175,6 +2198,7 @@ SnapMarkerSymbol snapMarkerSymbol(SnapType type) noexcept {
     case SnapType::Midpoint: return SnapMarkerSymbol::Triangle;
     case SnapType::Center: return SnapMarkerSymbol::Circle;
     case SnapType::GeometricCenter: return SnapMarkerSymbol::CircleCross;
+    case SnapType::ProfileCenter: return SnapMarkerSymbol::CircleCross;
     case SnapType::Node: return SnapMarkerSymbol::CrossedCircle;
     case SnapType::Quadrant: return SnapMarkerSymbol::Diamond;
     case SnapType::Intersection: return SnapMarkerSymbol::Cross;
@@ -2198,6 +2222,7 @@ unsigned long snapMarkerColorRgb(SnapType type) noexcept {
     case SnapType::Midpoint: return 0x0000C86B;      // acik yesil
     case SnapType::Center: return 0x00CB8C15;        // turuncu
     case SnapType::GeometricCenter: return 0x009C6A14; // koyu turuncu
+    case SnapType::ProfileCenter: return 0x00FF40FF;   // parlak magenta (merkez ailesi)
     case SnapType::Node: return 0x004B3BE6;          // koyu mavi
     case SnapType::Quadrant: return 0x00B653BF;      // mor
     case SnapType::Intersection: return 0x0000E9E9;  // sari... kirmizi ile karismasin:

@@ -242,6 +242,11 @@ public:
     // Divide komutunu baslatir (edit box ile bolme sayisini sorar).
     void activateDivide();
 
+    // Aktif nesne yakalamalari (OSNAP) tur sayisi. PUBLIC olmali: application.cpp
+    // icindeki `snapChoices` listesi bu sabitle DERLEME ZAMANINDA karsilastirilir
+    // (static_assert) — bir tarafa tur eklenip digeri unutulursa derleme durur.
+    static constexpr std::size_t kSnapChoiceCount = 15;
+
 private:
     static LRESULT CALLBACK windowProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
     static LRESULT CALLBACK canvasProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
@@ -361,7 +366,10 @@ private:
     HWND snapSettingsButton_{};
     HWND polarTrackingButton_{};
     HWND snapPanel_{};
-    std::array<HWND, 14> snapTypeCheckboxes_{};
+    // Aktif nesne yakalamalari (OSNAP) onay kutulari. Boyut PUBLIC sabitten
+    // gelir (kSnapChoiceCount) ve application.cpp'deki static_assert ile tur
+    // listesine kilitlidir — ciplak sayi YOK.
+    std::array<HWND, kSnapChoiceCount> snapTypeCheckboxes_{};
     std::array<HWND, 4> styleLabels_{};
     HWND layerCombo_{}, colorCombo_{}, lineTypeCombo_{}, profileCombo_{};
     QComboBox* layerComboWidget_{};

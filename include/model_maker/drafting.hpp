@@ -16,13 +16,21 @@ enum class DrawTool { Line, Polyline, Rectangle, Circle, Face3D, Column, Divide 
 enum class SnapType {
     None, Grid, Endpoint, Midpoint, Center, GeometricCenter, Node, Quadrant,
     Intersection, ApparentIntersection, Extension, Insertion, Perpendicular,
-    Tangent, Nearest, Parallel
+    Tangent, Nearest, Parallel,
+    // SANAL PROFIL MERKEZI: profil elemaninin (katisinin) sinir kutusu merkezi.
+    // Gercek bir kose/kenar DEGILDIR — hicbir vertex/edge orada olmasa da snap
+    // oraya oturur (kullanici sarti: "profilin tam merkezinde bir sanal snap
+    // noktasi olustur"). EN SONA eklendi: mevcut turlerin indeksleri ve
+    // kayitli/sabit maskeler kaymaz.
+    ProfileCenter
 };
 enum class SnapMarkerSymbol {
     None, GridCross, Square, Triangle, Circle, CircleCross, CrossedCircle, Diamond, Cross,
     ExtensionLine, LinkedSquares, RightAngle, TangentCircle, Hourglass, BoxedCross, ParallelLines
 };
-using SnapTypeMask = std::array<bool, static_cast<std::size_t>(SnapType::Parallel) + 1>;
+// Maske boyutu EN SON turden turetilir (tek kaynak): yeni bir tur eklenince
+// liste uzar, ayri bir sayi guncellemek gerekmez.
+using SnapTypeMask = std::array<bool, static_cast<std::size_t>(SnapType::ProfileCenter) + 1>;
 
 enum class OrthoAxis { None, X, Y, Z };
 

@@ -311,6 +311,13 @@ if(BUILD_TESTING)
             add_test(NAME model_maker_zoom_reference_clip
                 COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_zoom_reference_clip.py
                     ${CMAKE_CURRENT_BINARY_DIR})
+            # SANAL PROFIL MERKEZI'nin UI baglantisi: tur tablolari (etiket/
+            # marker/renk), TEK KAYNAK maske boyutu, Win32 OSNAP listesi +
+            # onay kutusu dizisi kilidi (static_assert) ve Qt kurdele menusu.
+            # Davranis katmani model_maker_profile_center_snap_test'te.
+            add_test(NAME model_maker_profile_center_snap
+                COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_profile_center_snap.py
+                    ${CMAKE_CURRENT_BINARY_DIR})
         endif()
     endif()
 
@@ -408,6 +415,15 @@ if(BUILD_TESTING)
     add_executable(model_maker_grid_snap_types_test tests/grid_snap_types_test.cpp)
     target_link_libraries(model_maker_grid_snap_types_test PRIVATE model_maker_core)
     add_test(NAME model_maker_grid_snap_types_test COMMAND model_maker_grid_snap_types_test)
+
+    # SANAL PROFIL MERKEZI (kullanici sarti: "profilin tam merkezinde bir sanal
+    # snap noktasi olustur"): profil elemaninin sinir kutusu merkezi gercek bir
+    # kose/kenar olmasa da snap noktasi olur. Yalniz profil elemanlari icin
+    # uretilir; maske kapisi, uc onceligi, tolerans, coklu profil, 2B/3B ve
+    # Wireframe/Solid esdegerligi kilitlenir. OCC'siz; gercek snap/snap3D.
+    add_executable(model_maker_profile_center_snap_test tests/profile_center_snap_test.cpp)
+    target_link_libraries(model_maker_profile_center_snap_test PRIVATE model_maker_core)
+    add_test(NAME model_maker_profile_center_snap_test COMMAND model_maker_profile_center_snap_test)
 
     # OLcum probe'u: iki noktali XZ/YZ gorunusunde grid snap'i HANGI kotlere
     # gidiyor? ("sadece xy deki alt grid noktalarina snap oluyor" sikayetinin

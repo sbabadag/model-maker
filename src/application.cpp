@@ -61,7 +61,7 @@ enum CommandId {
 };
 
 struct SnapChoice { SnapType type; const wchar_t* label; };
-constexpr std::array<SnapChoice, 14> snapChoices{{
+constexpr std::array<SnapChoice, 15> snapChoices{{
     {SnapType::Endpoint, L"Endpoint"}, {SnapType::Midpoint, L"Midpoint"},
     {SnapType::Center, L"Center"}, {SnapType::GeometricCenter, L"Geometric Center"},
     {SnapType::Node, L"Node"}, {SnapType::Quadrant, L"Quadrant"},
@@ -69,8 +69,13 @@ constexpr std::array<SnapChoice, 14> snapChoices{{
     {SnapType::ApparentIntersection, L"Apparent Intersection"},
     {SnapType::Extension, L"Extension"}, {SnapType::Insertion, L"Insertion"},
     {SnapType::Perpendicular, L"Perpendicular"}, {SnapType::Tangent, L"Tangent"},
-    {SnapType::Nearest, L"Nearest"}, {SnapType::Parallel, L"Parallel"}
+    {SnapType::Nearest, L"Nearest"}, {SnapType::Parallel, L"Parallel"},
+    {SnapType::ProfileCenter, L"Profile Center"}
 }};
+// TEK KAYNAK KILIDI: onay kutusu dizisi ile tur listesi ayni sayida olmali.
+// Bir tarafa tur eklenip digeri unutulursa DERLEME HATA verir (sessiz tasma yok).
+static_assert(snapChoices.size() == Application::kSnapChoiceCount,
+              "snapChoices ile snapTypeCheckboxes_ sayisi ayni olmali");
 
 struct ColorChoice { const wchar_t* label; std::optional<std::uint32_t> color; };
 constexpr std::array<ColorChoice, 8> colorChoices{{
