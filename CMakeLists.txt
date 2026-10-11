@@ -405,6 +405,14 @@ if(BUILD_TESTING)
     target_link_options(model_maker_camera_navlib_tests PRIVATE -static -static-libgcc -static-libstdc++)
     target_compile_options(model_maker_camera_navlib_tests PRIVATE -Wall -Wextra -Wpedantic)
     add_test(NAME model_maker_camera_navlib_tests COMMAND model_maker_camera_navlib_tests)
+
+    # VARSAYILAN 3B GORUNUM: reset() ve Isometric ayni +Z-yukari yonelimi
+    # vermeli (XY yere paralel) — kullanici "xy yere dik gelmesin".
+    add_executable(model_maker_camera_default_orientation_tests tests/camera_default_orientation_test.cpp)
+    target_link_libraries(model_maker_camera_default_orientation_tests PRIVATE model_maker_core)
+    target_link_options(model_maker_camera_default_orientation_tests PRIVATE -static -static-libgcc -static-libstdc++)
+    target_compile_options(model_maker_camera_default_orientation_tests PRIVATE -Wall -Wextra -Wpedantic)
+    add_test(NAME model_maker_camera_default_orientation_tests COMMAND model_maker_camera_default_orientation_tests)
 endif()
 
 if(TARGET model-maker)

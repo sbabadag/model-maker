@@ -44,6 +44,17 @@ void orthonormalize(std::array<double, 9>& m) noexcept {
     m[8] = m[0] * m[4] - m[1] * m[3];
 }
 
+// ISO (izometrik) gorunum acisi — TEK KAYNAK. Ekran-yukari vektoru +Z
+// agirlikli oldugu icin XY duzlemi yere PARALEL (yatay) gelir ve izleyici
+// on-sag-ust koseden bakar; standart Tekla/AutoCAD 3B model gorunumu.
+// Camera::reset() (varsayilan 3B gorunum) ve setView(Isometric) (3B gecis /
+// "3D view") AYNI acidan beslenir. Eski reset() degeri buildRotation(-0.55,
+// 0.45, 0) ekran-yukarisini +Y yapiyordu -> XY duzlemi yere DIK (dusey)
+// gorunuyordu (kullanici: "xy yere dik").
+constexpr double kIsoYaw = 0.75 * 3.14159265358979323846;
+constexpr double kIsoPitch = -0.6154797086703868;
+constexpr double kIsoRoll = 3.14159265358979323846 / 3.0 * 2.0;
+
 } // namespace
 
 // world->camera rotasyonu: R = R_roll * R_pitch * R_yaw (eski euler kamerasi
@@ -297,7 +308,9 @@ bool Camera::fit3D(Vec3 minimum, Vec3 maximum, int viewportWidth, int viewportHe
 }
 
 void Camera::reset() noexcept {
-    R_ = buildRotation(-0.55, 0.45, 0.0);
+    // VARSAYILAN 3B GORUNUM = ISO (Z yukari, XY yere paralel) — kullanici
+    // sarti "xy yere dik gelmesin, yatay gelsin; 3D view da ayni olsun".
+    R_ = buildRotation(kIsoYaw, kIsoPitch, kIsoRoll);
     zoom_ = 1.0;
     center2D_ = {};
     center3D_ = {};
@@ -315,7 +328,8 @@ void Camera::setView(StandardView view) noexcept {
         // satirlari eski isoM_ onizlemesiyle piksel birebir ayni:
         // row0=(0.707,-0.707,0), row1=(-0.408,-0.408,0.816); derinlik satiri
         // proper (det=+1). Euler ayrismasi YOK -> kutup devrilmesi/atlama yok.
-        R_ = buildRotation(0.75 * pi, -0.6154797086703868, pi / 3.0 * 2.0);
+        // Aci TEK KAYNAK (kIsoYaw/kIsoPitch/kIsoRoll) — reset() ile ayni.
+        R_ = buildRotation(kIsoYaw, kIsoPitch, kIsoRoll);
         break;
     case StandardView::Top: R_ = buildRotation(0.0, 0.0, 0.0); break;
     case StandardView::Bottom: R_ = buildRotation(pi, 0.0, 0.0); break;
