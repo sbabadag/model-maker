@@ -34,7 +34,8 @@ add_library(model_maker_core
     src/dxf.cpp
     src/document.cpp
     src/drafting.cpp
-    src/profile_database.cpp)
+    src/profile_database.cpp
+    src/occ_store_null.cpp)
 target_include_directories(model_maker_core PUBLIC include)
 target_compile_options(model_maker_core PRIVATE -Wall -Wextra -Wpedantic)
 
@@ -151,7 +152,7 @@ option(BUILD_OCC_BRIDGE_DLL
     "Build mm_occ.dll — the C-API bridge for the Qt app (use MSYS2 toolchain)" OFF)
 
 if(MODELMAKER_OCC_READY)
-    add_library(model_maker_occ src/occ_geometry.cpp)
+    add_library(model_maker_occ src/occ_geometry.cpp src/occ_solid_store.cpp)
     target_link_libraries(model_maker_occ PUBLIC model_maker_core)
     target_include_directories(model_maker_occ PUBLIC include)
     if(OCC_INCLUDE_DIR)
@@ -405,6 +406,14 @@ if(BUILD_TESTING)
     add_executable(model_maker_beam_load_id_test tests/beam_load_id_test.cpp)
     target_link_libraries(model_maker_beam_load_id_test PRIVATE model_maker_core)
     add_test(NAME model_maker_beam_load_id_test COMMAND model_maker_beam_load_id_test)
+
+    # BELGE-SAHIPLI B-Rep MAGAZASI (opak OccStore): Document yasam dongusu
+    # (kur/yik/tasi), clear()/load()'un magazayi SIFIRLAMASI ve no-op store
+    # davranisi. OCC'siz/platformdan bagimsiz kosar; GERCEK OCC magazasi
+    # (OccSolidStore) OCC'li harness'te sinanir.
+    add_executable(model_maker_occ_store_test tests/occ_store_test.cpp)
+    target_link_libraries(model_maker_occ_store_test PRIVATE model_maker_core)
+    add_test(NAME model_maker_occ_store_test COMMAND model_maker_occ_store_test)
 
     # Kontur (siluet + gercek kenar) ureticisi: GL Solid yolunun her karede
     # kosturdugu pass'in tek kaynagi. Eski std::map uygulamasiyla esdegerlik,

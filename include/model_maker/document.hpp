@@ -8,12 +8,17 @@
 #include <filesystem>
 #include <functional>
 #include <deque>
+#include <memory>
 #include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
 
 namespace mm {
+
+// OPAK B-Rep magazasi: TANIMI bu baslikta degil (occ_store.hpp). Document
+// yalnizca soyut arayuz uzerinden sahiplenir; OCCT tipi bu basliga SIZMAZ.
+class OccStore;
 
 struct Bounds3 {
     Vec3 minimum{};
@@ -58,6 +63,24 @@ struct UndoRecord {
 class Document {
 public:
     Document();
+    // OPAK B-Rep magazasi (PIMPL): OCCT tipi bu baslikta GORUNMEZ. Yikici ve
+    // tasima islemleri OUT-OF-LINE tanimlidir — std::unique_ptr<OccStore>
+    // yok edilirken tam tip gerekir (document.cpp occ_store.hpp'yi include eder).
+    // Document TASINABILIR (DxfFile::read + optional<Document>), KOPYALANAMAZ
+    // (magaza tek sahipli).
+    ~Document();
+    Document(Document&&) noexcept;
+    Document& operator=(Document&&) noexcept;
+    Document(const Document&) = delete;
+    Document& operator=(const Document&) = delete;
+
+    // Belge-sahipli B-Rep magazasi. Varsayilan: no-op store (OCC-kapali guvenli).
+    // OCC-acik Application baslangicta gercek OCCT store'unu ENJEKTE eder
+    // (makeOccSolidStore) — saglayici secimi LINK SIRASINA bagli degildir.
+    OccStore& occStore() noexcept { return *occStore_; }
+    const OccStore& occStore() const noexcept { return *occStore_; }
+    void setOccStore(std::unique_ptr<OccStore> store) noexcept;
+
     void addModel(WireframeModel model);
     void addLine(const Vec3& from, const Vec3& to);
     void reserveModels(std::size_t count);
@@ -184,6 +207,9 @@ private:
     // belirtsizdir). Silme kaydirmasi/undo-redo burada da ayni sekilde uygulanir.
     std::vector<EntityId> modelIds_;
     EntityId nextEntityId_{1};
+    // Document-SAHIPLI B-Rep magazasi (tek dogruluk kaynagi). Application'da
+    // AYRI bir harita YOKTUR; tum kati yollari buradan gecer.
+    std::unique_ptr<OccStore> occStore_;
     std::unordered_map<std::string, EntityProperties> layers_;
     std::deque<UndoRecord> undoStack_;
     std::deque<UndoRecord> redoStack_;

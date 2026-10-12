@@ -124,8 +124,9 @@ if "pushUndoSnapshot()" not in column_fn:
     failures.append("setSelectedEntityColumnLevels undo kaydi acmiyor (Ctrl+Z calismaz)")
 if column_fn.count("document_.replaceModel(") < 1:
     failures.append("setSelectedEntityColumnLevels katiyi replaceModel ile degistirmiyor")
-if "occShapes_[" not in column_fn:
-    failures.append("setSelectedEntityColumnLevels occShapes_ eslemesini guncellemiyor")
+if "putOccSolid(" not in column_fn:
+    failures.append("setSelectedEntityColumnLevels B-Rep magazasini guncellemiyor "
+                    "(putOccSolid — belge-sahipli store)")
 # Stil alanlari replaceModel'DEN ONCE kopyalanmali (referans sarkmasi).
 copy_pos = column_fn.find("const std::string material = props.material;")
 replace_pos = column_fn.find("document_.replaceModel(")

@@ -43,6 +43,11 @@ namespace mm {
 class SpaceMouseNav;
 #endif
 
+// OPAK B-Rep magazasi (TANIM: occ_solid_store.hpp, YALNIZ OCC TU'lari include
+// eder). Application yalnizca isaretci kullanir; TopoDS_Shape bu basliga
+// SIZMAZ (guard'li TopoDS_Shape.hxx disinda).
+class OccSolidStore;
+
 class Application {
 public:
     explicit Application(HINSTANCE instance, HWND parentCanvas = nullptr);
@@ -450,27 +455,27 @@ private:
     void toggleProfilePopup();
     void applyProfilePopupSelection();
     std::vector<SteelProfile> profileCatalog_;
-    // BRep sekil tablosu: KARARLI KIMLIK (EntityId) -> sekil (B/S/J/extrude/trim).
-    //    ONCEDEN indeks anahtarliydi ve silme/undo/siralama sonrasi baska bir
-    //    varliga BAGLANIYORDU (indeksler kayar). Kimlik anahtariyla bu
-    //    YANLIS ESLEME imkansizdir: kimlik tektir ve yeni varliklara asla
-    //    yeniden kullanilmaz.
-    // YASAM DONGUSU POLITIKASI: silinen varligin kaydi KORUNUR (geri alma
-    //    ayni kimligi geri getirir -> sekil yeniden baglanir). Temizleme ve
-    //    dosya yukleme tabloyu SIFIRLAR (clearOccSolidStore).
-    // std::map = kimlige gore sirali; kimlik olusturma sirasiyla monoton
-    //    arttigindan "en son N canli kati" sondan alinabilir (lastLiveSolids).
-    // OCC kapaliyken (MM_HAS_OCC yok) TopoDS_Shape tanimli degildir;
-    // uye de yoktur; tabloyu kullanan tum kod MM_HAS_OCC ile korunur.
+    // B-Rep SEKLERI ARTIK BELGE-SAHIPLI: Document::occStore(). Application'da
+    // AYRI bir harita YOKTUR → tek dogruluk kaynagi Document'tir; iki harita
+    // ayrismasi / cift yazma yapisal olarak imkansizdir. Asagidaki yardimcilar
+    // yalnizca Document magazasinin SOMUT (OCCT) arayuzune ince koprudur.
+    // OCC kapaliyken (MM_HAS_OCC yok) derlenmezler; cagri yerleri de guard
+    // icindedir.
+    //   putOccSolid     : varlik indeksine karsilik gelen KIMLIK altina yaz.
+    //                     (Indeks KALICI degil; kimlik sabittir — bkz. Document.)
+    //   findOccSolid    : varlik indeksinin B-Rep sekli (yoksa nullptr).
+    //   occSolidCount   : magazadaki kayit sayisi (teshis/log).
+    //   lastLiveSolids  : kimlik (olusturma) sirasina gore en son N CANLI kati.
 #ifdef MM_HAS_OCC
-    std::map<EntityId, TopoDS_Shape> occShapes_;
-    // Kimlik sirasina gore en son `count` CANLI katiyi dondurur (silinmis
-    // varliklarin kayitlari atlanir — indexOfEntity nullopt).
+    // const OLMAYAN asiri yukleme YAZMA icin (putOccSolid), const olan OKUMA
+    // icin (lastLiveSolids/findOccSolid/occSolidCount) kullanilir.
+    OccSolidStore* occSolidStore() noexcept;
+    const OccSolidStore* occSolidStore() const noexcept;
+    void putOccSolid(std::size_t index, const TopoDS_Shape& shape);
+    std::size_t occSolidCount() const noexcept;
+    const TopoDS_Shape* findOccSolid(std::size_t index) const;
     std::vector<TopoDS_Shape> lastLiveSolids(std::size_t count) const;
 #endif
-    // Belge temizleme/yukleme icin BRep tablosunu sifirlar (OCC kapaliyken
-    // no-op). Cagri yerleri guard gerektirmez.
-    void clearOccSolidStore() noexcept;
     // 3B kati trim alt-akisi: 1 = kesim cizgisi bekleniyor, 2 = kalacak taraf
     int trimSolidPhase_{};
     std::size_t trimSolidIndex_{};

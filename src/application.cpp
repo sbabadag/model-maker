@@ -5,6 +5,7 @@
 #endif
 #ifdef MM_HAS_OCC
 #include "model_maker/occ_geometry.hpp"
+#include "model_maker/occ_solid_store.hpp"
 #endif
 #ifdef MM_HAS_OCC
 #include <BRepBuilderAPI_Transform.hxx>
@@ -158,6 +159,12 @@ bool forceGdiRequested() {
 
 Application::Application(HINSTANCE instance, HWND /*parentCanvas*/) : instance_(instance) {
     enabledSnapTypes_.fill(true);
+#ifdef MM_HAS_OCC
+    // BELGE-SAHIPLI B-Rep magazasi: OCC-acik derlemede GERCEK OCCT store'unu
+    // Document'a ENJEKTE eder (constructor injection). Saglayici secimi LINK
+    // SIRASINA bagli DEGILDIR — OCC'sizken Document no-op store'la kurulur.
+    document_.setOccStore(mm::makeOccSolidStore());
+#endif
 }
 
 Application::~Application() {
@@ -4096,8 +4103,7 @@ void Application::executeCommand(int id) {
         break;
     }
     case CmdNew:
-        document_.clear();
-        clearOccSolidStore(); // yeni belge: BRep sekil tablosu sifirlanir
+        document_.clear(); // B-Rep magazasi (Document-sahipli) da sifirlanir
         refreshLayerCombo();
         if (workPlanePicking_) cancelWorkPlaneCommand();
         if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
@@ -4654,7 +4660,7 @@ void Application::addCube() {
         // KARARLI KIMLIK: sekil, YENI eklenen varligin kimligiyle anahtarlanir.
         // (Eskiden addStyledModel'DEN ONCE models().size()-1 kullaniliyordu →
         //  bir ONCEKI varliga baglaniyordu; ilk eklemede anahtar size_t(-1).)
-        occShapes_[document_.modelId(document_.models().size() - 1)] = shape;
+        putOccSolid(document_.models().size() - 1, shape);
         cancelDrawing(); drawingActive_ = false;
         wchar_t message[96]{};
         std::swprintf(message, std::size(message), L"Kutu (BRep) hacmi: %.2f birim³",
@@ -4723,7 +4729,7 @@ void Application::addCylinder() {
         auto cylinder = mm::shapeToWireframeWithFaces(shape, 0.15);
         cylinder.translate({offset, 0.0, 0.0});
         addStyledModel(std::move(cylinder)); mode_ = EditMode::View3D;
-        occShapes_[document_.modelId(document_.models().size() - 1)] = shape;
+        putOccSolid(document_.models().size() - 1, shape);
         cancelDrawing(); drawingActive_ = false;
         wchar_t message[96]{};
         std::swprintf(message, std::size(message), L"Silindir (BRep) hacmi: %.2f birim³",
@@ -4758,7 +4764,7 @@ void Application::addBooleanFuse() {
     const TopoDS_Shape result = mm::booleanFuseShape(operands[1], operands[0]);
     auto model = mm::shapeToWireframeWithFaces(result, 0.15);
     addStyledModel(std::move(model)); mode_ = EditMode::View3D;
-    occShapes_[document_.modelId(document_.models().size() - 1)] = result;
+    putOccSolid(document_.models().size() - 1, result);
     cancelDrawing(); drawingActive_ = false;
     wchar_t message[96]{};
     std::swprintf(message, std::size(message), L"Birlesim (Fuse) hacmi: %.2f birim³",
@@ -4777,7 +4783,7 @@ void Application::addBooleanCommon() {
     const TopoDS_Shape result = mm::booleanCommonShape(operands[1], operands[0]);
     auto model = mm::shapeToWireframeWithFaces(result, 0.15);
     addStyledModel(std::move(model)); mode_ = EditMode::View3D;
-    occShapes_[document_.modelId(document_.models().size() - 1)] = result;
+    putOccSolid(document_.models().size() - 1, result);
     cancelDrawing(); drawingActive_ = false;
     wchar_t message[96]{};
     std::swprintf(message, std::size(message), L"Kesisim (Common) hacmi: %.2f birim³",
@@ -4797,7 +4803,7 @@ void Application::addBooleanCut() {
     const TopoDS_Shape result = mm::booleanCutShape(operands[1], operands[0]);
     auto model = mm::shapeToWireframeWithFaces(result, 0.15);
     addStyledModel(std::move(model)); mode_ = EditMode::View3D;
-    occShapes_[document_.modelId(document_.models().size() - 1)] = result;
+    putOccSolid(document_.models().size() - 1, result);
     cancelDrawing(); drawingActive_ = false;
     wchar_t message[96]{};
     std::swprintf(message, std::size(message), L"Cikarma (Cut) hacmi: %.2f birim³",
@@ -4808,25 +4814,44 @@ void Application::addBooleanCut() {
 #endif
 
 #ifdef MM_HAS_OCC
+// ---- Belge-sahipli B-Rep magazasi koprusu ---------------------------------
+OccSolidStore* Application::occSolidStore() noexcept {
+    // TEK donusum noktasi: Document magazasinin SOMUT (OCCT) arayuzu (YAZMA).
+    return mm::asSolidStore(&document_.occStore());
+}
+
+const OccSolidStore* Application::occSolidStore() const noexcept {
+    // Const baglam (lastLiveSolids/findOccSolid/occSolidCount) icin OKUMA.
+    return mm::asSolidStore(&document_.occStore());
+}
+
+void Application::putOccSolid(std::size_t index, const TopoDS_Shape& shape) {
+    // KARARLI KIMLIK: varlik INDEKSININ kimligi altina yazilir (indeks KALICI
+    // degildir). Silme/undo/siralama kimligi kaydirmadigindan YANLIS ESLEME
+    // imkansizdir (eski indeks-anahtarli haritanin sessiz hatasi).
+    if (auto* store = occSolidStore()) store->set(document_.modelId(index), shape);
+}
+
+std::size_t Application::occSolidCount() const noexcept {
+    const auto* store = occSolidStore();
+    return store ? store->size() : 0u;
+}
+
+const TopoDS_Shape* Application::findOccSolid(std::size_t index) const {
+    const auto* store = occSolidStore();
+    return store ? store->find(document_.modelId(index)) : nullptr;
+}
+
 std::vector<TopoDS_Shape> Application::lastLiveSolids(std::size_t count) const {
     // Kimlik sirasi = olusturma sirasi (kimlikler monoton artar). Sondan
     // geriye: silinmis varliklarin kayitlari atlanir → yalniz CANLI katilar.
-    std::vector<TopoDS_Shape> out;
-    out.reserve(count);
-    for (auto it = occShapes_.rbegin(); it != occShapes_.rend() && out.size() < count; ++it) {
-        if (!document_.indexOfEntity(it->first).has_value()) continue;
-        out.push_back(it->second);
-    }
-    return out;
+    const auto* store = occSolidStore();
+    if (!store) return {};
+    return store->lastLive(count, [this](EntityId id) {
+        return document_.indexOfEntity(id).has_value();
+    });
 }
 #endif
-
-void Application::clearOccSolidStore() noexcept {
-    // Belge temizleme/yukleme: onceki belgenin BRep sekilleri gecersizdir.
-#ifdef MM_HAS_OCC
-    occShapes_.clear();
-#endif
-}
 
 void Application::ensureProfileCatalog() {
     if (profileCatalogTried_) return;
@@ -5075,7 +5100,7 @@ void Application::setSelectedEntityProfileRotation(double degrees) {
         solidProps.layer = info.layer;
         solidModel.setProperties(std::move(solidProps));
         document_.replaceModel(targets[k], {std::move(solidModel)});
-        occShapes_[document_.modelId(targets[k])] = solid;
+        putOccSolid(targets[k], solid);
         ++applied;
     }
 
@@ -5225,7 +5250,7 @@ void Application::setSelectedEntityColumnLevels(double top, double bottom) {
         solidProps.layer = layer;
         solidModel.setProperties(std::move(solidProps));
         document_.replaceModel(target.index, {std::move(solidModel)});
-        occShapes_[document_.modelId(target.index)] = solid;
+        putOccSolid(target.index, solid);
         ++applied;
     }
     if (applied == 0) {
@@ -5440,7 +5465,7 @@ void Application::executeSolidTrim(bool keepPositive) {
     FILE* trace = fopen("model-maker-render.log", "a");
     if (trace) {
         fprintf(trace, "TRIM-TRACE index=%zu models=%zu shapes=%zu keepPos=%d\n",
-                trimSolidIndex_, document_.models().size(), occShapes_.size(),
+                trimSolidIndex_, document_.models().size(), occSolidCount(),
                 keepPositive ? 1 : 0);
         fclose(trace);
     }
@@ -5448,13 +5473,13 @@ void Application::executeSolidTrim(bool keepPositive) {
         publishStatus(L"Trim: kati bulunamadi");
         return;
     }
-    const auto found = occShapes_.find(document_.modelId(trimSolidIndex_));
-    if (found == occShapes_.end() || found->second.IsNull()) {
+    const auto* found = findOccSolid(trimSolidIndex_);
+    if (found == nullptr || found->IsNull()) {
         publishStatus(L"Trim: bu kati icin BRep sekli yok (Boolean/extrude ile olusturun)");
         return;
     }
     const TopoDS_Shape result =
-        mm::cutSolidByPlane(found->second, trimPlanePoint_, trimPlaneNormal_, keepPositive);
+        mm::cutSolidByPlane(*found, trimPlanePoint_, trimPlaneNormal_, keepPositive);
     if (result.IsNull()) {
         MessageBeep(MB_ICONWARNING);
         return;
@@ -5479,7 +5504,9 @@ void Application::executeSolidTrim(bool keepPositive) {
     model.setProperties(std::move(props));
     pushUndoSnapshot();
     document_.replaceModel(trimSolidIndex_, {std::move(model)});
-    found->second = result;
+    // Yerinde guncelleme: kesilmis sekil AYNI varlik KIMLIGI altina yazilir
+    // (belge-sahipli magaza; eski map'teki `found->second = result` karsiligi).
+    putOccSolid(trimSolidIndex_, result);
     publishStatus(L"Kati duzlemle kesildi");
     updateControls();
     invalidateCanvas();
@@ -5658,13 +5685,13 @@ void Application::assignProfileToSelection(const std::string& profileName) {
             if (existingSolid) {
                 // 1:1 degistirme: kimlik KORUNUR → ayni anahtarla guncelle.
                 document_.replaceModel(*existingSolid, {std::move(solidModel)});
-                occShapes_[document_.modelId(*existingSolid)] = solid;
+                putOccSolid(*existingSolid, solid);
                 solidIndices.push_back(*existingSolid);
             } else {
                 addStyledModel(std::move(solidModel));
                 solidIndices.push_back(document_.models().size() - 1);
                 // YENI varlik: KIMLIGIYLE anahtarla (eskiden indeks anahtari).
-                occShapes_[document_.modelId(document_.models().size() - 1)] = solid;
+                putOccSolid(document_.models().size() - 1, solid);
             }
             consumedAxes.push_back(from);
             consumedAxes.push_back(to);
@@ -5712,7 +5739,7 @@ void Application::assignProfileToSelection(const std::string& profileName) {
                 FILE* lineLog = fopen("model-maker-render.log", "a");
                 if (lineLog) {
                     fprintf(lineLog, "SOURCE-LINES-REMOVED count=%zu shapes=%zu\n",
-                            sourceLines.size(), occShapes_.size());
+                            sourceLines.size(), occSolidCount());
                     fclose(lineLog);
                 }
             }
@@ -5902,7 +5929,7 @@ void Application::reExtrudeProfileGrip(std::size_t solidIndex, bool endIsTo,
     solidModel.setProperties(std::move(newProps));
     pushUndoSnapshot();
     document_.replaceModel(solidIndex, {std::move(solidModel)});
-    occShapes_[document_.modelId(solidIndex)] = shape;
+    putOccSolid(solidIndex, shape);
     publishStatus(endIsTo ? L"Profil ust ucu uzatildi" : L"Profil alt ucu uzatildi");
     updateControls();
     updateStatus();
@@ -6806,8 +6833,7 @@ std::optional<std::filesystem::path> Application::chooseFile(bool save, bool dxf
 }
 
 void Application::newDocument() {
-    document_.clear();
-    clearOccSolidStore(); // yeni belge: BRep sekil tablosu sifirlanir
+    document_.clear(); // B-Rep magazasi (Document-sahipli) da sifirlanir
     profileGrip_.reset();
     currentFilePath_.reset();
     refreshLayerCombo();
@@ -6846,10 +6872,10 @@ void Application::openDocument() {
     const auto path = chooseFile(false); if (!path) return;
     try {
         document_.load(*path);
-        // Yukleme: onceki belgenin BRep sekilleri gecersizdir; tabloyu
-        // temizle (yuklenen dosyada B-Rep YOKTUR — MMW1..7 turetilmis
-        // tel kafes saklar; katilar yeniden uretilene kadar tablo bos).
-        clearOccSolidStore();
+        // Yukleme belge icerigini TAMAMEN degistirir; Document-sahipli B-Rep
+        // magazasini da Document::load() KENDISI sifirlar (MMW1..7 B-Rep
+        // saklamaz → katilar yeniden uretilene kadar magaza bostur). Ayri bir
+        // Application temizleme cagrisi GEREKMEZ.
         currentFilePath_ = path;
         purgeStaleAxisLines();
         refreshLayerCombo();

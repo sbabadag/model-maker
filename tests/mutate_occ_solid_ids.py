@@ -48,13 +48,14 @@ def apply_in_span(text, fn_sig, name, old, new):
     return text[:i] + new_span + text[k:]
 
 
-CUBE_KEY_OLD = "occShapes_[document_.modelId(document_.models().size() - 1)] = shape;"
-CUBE_KEY_NEW = "occShapes_[document_.modelId(document_.models().size() - 2)] = shape;"
+CUBE_KEY_OLD = "putOccSolid(document_.models().size() - 1, shape);"
+CUBE_KEY_NEW = "putOccSolid(document_.models().size() - 2, shape);"
 
-FUSE_KEY_OLD = "occShapes_[document_.modelId(document_.models().size() - 1)] = result;"
-FUSE_KEY_NEW = ("occShapes_.erase(document_.modelId(0)); "
-                "occShapes_.erase(document_.modelId(1)); "
-                "occShapes_[document_.modelId(document_.models().size() - 1)] = result;")
+FUSE_KEY_OLD = "putOccSolid(document_.models().size() - 1, result);"
+# Operandlari erken "tuketir": belge-sahipli magazayi sonucu yazmadan ONCE
+# temizler (magaza uzerinden budama — eski map erase'in karsiligi).
+FUSE_KEY_NEW = ("if (auto* __s = occSolidStore()) __s->clear(); "
+                "putOccSolid(document_.models().size() - 1, result);")
 
 CYL_CALL_OLD = "BRepPrimAPI_MakeCylinder(1.3, 3.0).Shape()"
 CYL_CALL_NEW = "BRepPrimAPI_MakeCylinder(1.3, 1.3, 3.0).Shape()"

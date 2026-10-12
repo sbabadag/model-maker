@@ -1,5 +1,7 @@
 #include "model_maker/document.hpp"
 
+#include "model_maker/occ_store.hpp"
+
 #include <fstream>
 #include <algorithm>
 #include <cmath>
@@ -70,9 +72,22 @@ std::vector<std::size_t> uniqueIndices(const std::vector<std::size_t>& indices) 
 }
 }
 
-Document::Document() {
+Document::Document() : occStore_(makeNullOccStore()) {
     auto layer = defaultLayerProperties();
     layers_.emplace(layer.layer, std::move(layer));
+}
+
+// PIMPL: yikici ve tasima islemleri OUT-OF-LINE. std::unique_ptr<OccStore>
+// yok edilirken TAM TIP gerekir; tam tip bu TU'da (occ_store.hpp) mevcuttur.
+// Boylece document.hpp OCCT'siz kalir ve Document baska TU'larda da kullanilir.
+Document::~Document() = default;
+Document::Document(Document&&) noexcept = default;
+Document& Document::operator=(Document&&) noexcept = default;
+
+void Document::setOccStore(std::unique_ptr<OccStore> store) noexcept {
+    // OCC-acik Application gercek magazayi enjekte eder. nullptr verilirse
+    // no-op magazaya dusulur (guvenli varsayilan).
+    occStore_ = store ? std::move(store) : makeNullOccStore();
 }
 
 void Document::addModel(WireframeModel model) {
@@ -473,6 +488,10 @@ void Document::clear() noexcept {
     ++revision_;
     models_.clear();
     modelIds_.clear();
+    // Yeni belge: Document-SAHIPLI B-Rep magazasi da SIFIRLANIR. Boylece
+    // Application'da AYRI bir temizleme cagrisi GEREKMEZ (iki yerde elle
+    // esleme riski yapisal olarak ORTADAN KALKAR).
+    occStore_->clear();
     // Yeni belge: kimlik sayaci da sifirlanir. undo/redo yiginlari temizlendigi
     // icin (asagida) eski kimliklerle catisma riski YOKTUR; boylece her yeni
     // belgede kimlikler deterministik olarak 1'den baslar.
@@ -1345,6 +1364,11 @@ void Document::load(const std::filesystem::path& path) {
         loaded.push_back(std::move(built));
     }
     models_ = std::move(loaded);
+    // Yukleme belge icerigini TAMAMEN degistirir: Document-SAHIPLI B-Rep
+    // magazasi da SIFIRLANIR (eski belgenin sekilleri gecersizdir ve yeni
+    // varlik kimlikleriyle YANLIS ESLESMEMELI). MMW1-7 B-Rep tasimaz →
+    // yuklenen katilar yalnizca tel kafes olarak gelir (mevcut davranis).
+    occStore_->clear();
     // KARARLI KIMLIK: MMW1-7 dosyalari kimlik TASIMAZ (format degistirilmedi).
     // Yuklenen her modele sirayla kimlik atanir. Sayac SIFIRLANMAZ (monoton
     // kalir): boylece dosya acildiktan sonra hala yiginda duran eski undo

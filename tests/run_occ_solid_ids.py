@@ -56,6 +56,8 @@ CORE_SOURCES = [
     "src/ribbon_layout.cpp", "src/performance.cpp", "src/dxf.cpp",
     "src/document.cpp", "src/drafting.cpp", "src/profile_database.cpp",
     "src/occ_geometry.cpp",
+    # Document-sahipli opak magaza: no-op saglayici (core) + GERCEK OCCT store.
+    "src/occ_store_null.cpp", "src/occ_solid_store.cpp",
 ]
 
 OCC_LIBS = ["TKernel", "TKMath", "TKG2d", "TKG3d", "TKGeomBase", "TKBRep",
@@ -73,7 +75,14 @@ TARGETS = [
     ("addBooleanCut", "void Application::addBooleanCut()"),
     ("lastLiveSolids",
      "std::vector<TopoDS_Shape> Application::lastLiveSolids(std::size_t count) const"),
-    ("clearOccSolidStore", "void Application::clearOccSolidStore() noexcept"),
+    # BELGE-SAHIPLI MAGAZA KOPRUSU (opak OccStore): gercek govdeler cikarilir;
+    # ID atamasi/siralama/operand secimi BURADA TAKLIT EDILMEZ — hepsi gercek
+    # Document + gercek store uzerinde kosar.
+    ("occSolidStore", "OccSolidStore* Application::occSolidStore() noexcept"),
+    ("occSolidStoreConst", "const OccSolidStore* Application::occSolidStore() const noexcept"),
+    ("putOccSolid", "void Application::putOccSolid(std::size_t index, const TopoDS_Shape& shape)"),
+    ("occSolidCount", "std::size_t Application::occSolidCount() const noexcept"),
+    ("findOccSolid", "const TopoDS_Shape* Application::findOccSolid(std::size_t index) const"),
 ]
 
 
@@ -150,43 +159,48 @@ def assert_source_shape(bodies, text):
         if needle in bodies[name]:
             errs.append(f"{name}: YASAKLI (eski hatali) ifade var -> {needle!r}")
 
-    fixed_key = "occShapes_[document_.modelId(document_.models().size() - 1)]"
-    # Kutu/silindir/boolean sonucu YENI varligin kimligiyle anahtarlanmali.
+    # KARARLI KIMLIK: sekil, varlik INDEKSININ KIMLIGI altina yazilir (opak
+    # store koprusu). Indeks-tabanli ham harita YASAK.
     for name in ("addCube", "addCylinder"):
-        need(name, fixed_key + " = shape;")
+        need(name, "putOccSolid(document_.models().size() - 1, shape);")
     for name in ("addBooleanFuse", "addBooleanCommon", "addBooleanCut"):
-        need(name, fixed_key + " = result;")
+        need(name, "putOccSolid(document_.models().size() - 1, result);")
     # Eski off-by-one: ekleme ONCESI `emplace(models().size()-1, ...)` YASAK.
     for name in ("addCube", "addCylinder", "addBooleanFuse",
                  "addBooleanCommon", "addBooleanCut"):
         forbid(name, "emplace(")
-    # Ekleme SIRASI: addStyledModel cagrisi anahtarlamadan ONCE olmali.
+    # Ekleme SIRASI: addStyledModel cagrisi store yazimindan ONCE olmali.
     for name in ("addCube", "addCylinder"):
         a = bodies[name].find("addStyledModel(")
-        b = bodies[name].find(fixed_key)
+        b = bodies[name].find("putOccSolid(")
         if a < 0 or b < 0 or a > b:
-            errs.append(f"{name}: addStyledModel anahtarlamadan SONRA (off-by-one riski)")
-    # lastLiveSolids yalniz CANLI varliklari dondurmeli.
-    need("lastLiveSolids", "document_.indexOfEntity(it->first).has_value()")
+            errs.append(f"{name}: addStyledModel store yazimindan SONRA (off-by-one riski)")
+    # MAGAZA KOPRUSU: Application'in AYRI haritasi YOK; tek kaynak Document.
+    need("occSolidStore", "mm::asSolidStore(&document_.occStore());")
+    need("putOccSolid", "store->set(document_.modelId(index), shape)")
+    need("occSolidCount", "store->size()")
+    need("findOccSolid", "store->find(document_.modelId(index))")
+    # lastLiveSolids yalniz CANLI varliklari dondurmeli (filtre Document'tan).
+    need("lastLiveSolids", "document_.indexOfEntity(id).has_value()")
+    need("lastLiveSolids", "store->lastLive(")
     # addStyledModel gercek model ekleme yolunu kullanmali.
     need("addStyledModel", "document_.addModel(std::move(model));")
-    # Temizleme gercekten magazayi bosaltmali.
-    need("clearOccSolidStore", "occShapes_.clear();")
-    # BELGE YASAM DONGUSU (item 5'in baglantisi): yeni belge / dosya acma
-    # yollari BRep tablosunu SIFIRLAMALI. GUI (dosya diyalogu) burada
-    # calistirilamadigi icin KAYNAK-SEKIL olarak kilitlenir.
-    calls = text.count("clearOccSolidStore();")
-    if calls < 3:
-        errs.append(f"clearOccSolidStore(): {calls} cagri yeri (beklenen >= 3)")
-    for fn_sig, name in (("void Application::newDocument()", "newDocument"),
-                         ("void Application::openDocument()", "openDocument")):
+    # BELGE YASAM DONGUSU: B-Rep temizligi ARTIK DOCUMENT'TA. Application'da
+    # AYRI temizleyici KALMAMALI (iki yerde elle esleme riski).
+    if "clearOccSolidStore" in text:
+        errs.append("application.cpp hala clearOccSolidStore iceriyor "
+                    "(magaza artik Document-sahipli)")
+    for fn_sig, name, needle in (
+            ("void Application::newDocument()", "newDocument", "document_.clear()"),
+            ("void Application::openDocument()", "openDocument", "document_.load(")):
         try:
             i, k = find_span(text, fn_sig, name)
         except HarnessError as exc:
             errs.append(str(exc))
             continue
-        if "clearOccSolidStore();" not in text[i:k]:
-            errs.append(f"{name}: belge temizleme yolunda clearOccSolidStore() YOK")
+        if needle not in text[i:k]:
+            errs.append(f"{name}: belge yasam dongusu cagrisi YOK ({needle!r}) "
+                        "(magaza temizligi Document'a devredildi)")
     if errs:
         raise HarnessError("kaynak-sekil kontrolu BASARISIZ:\n  - " + "\n  - ".join(errs))
 
@@ -198,6 +212,8 @@ CPP_PREAMBLE = r"""
 #include "model_maker/geometry.hpp"
 #include "model_maker/occ_geometry.hpp"
 #include "model_maker/entity_id.hpp"
+#include "model_maker/occ_store.hpp"
+#include "model_maker/occ_solid_store.hpp"
 
 #include <TopoDS_Shape.hxx>
 #include <BRepPrimAPI_MakeBox.hxx>
@@ -250,28 +266,26 @@ static bool validShape(const TopoDS_Shape& s) {
     BRepCheck_Analyzer analyzer(s, true);
     return analyzer.IsValid();
 }
-// GUVENLI MAGAZA ERISIMI: std::map::operator[] VAR OLMAYAN anahtar icin null
-// sekil EKLER (magazayi kirletir ve null sekil uzerinde hacim hesabi coker).
-// Bu erisimciler `find` kullanir ve eksik kaydi 0/false olarak raporlar.
-static bool storeHas(const std::map<EntityId, TopoDS_Shape>& m, EntityId id) {
-    return m.find(id) != m.end();
+// GUVENLI MAGAZA ERISIMI: GERCEK URETIM MAGAZASI (OccSolidStore) uzerinden.
+// `find` kullanilir; eksik kayit 0/false olarak raporlanir (null sekil yok).
+static bool storeHas(const OccSolidStore& s, EntityId id) {
+    return s.find(id) != nullptr;
 }
-static double storeVolume(const std::map<EntityId, TopoDS_Shape>& m, EntityId id) {
-    const auto it = m.find(id);
-    return it == m.end() ? 0.0 : volumeOf(it->second);
+static double storeVolume(const OccSolidStore& s, EntityId id) {
+    const TopoDS_Shape* p = s.find(id);
+    return p ? volumeOf(*p) : 0.0;
 }
-static bool storeValid(const std::map<EntityId, TopoDS_Shape>& m, EntityId id) {
-    const auto it = m.find(id);
-    return it != m.end() && validShape(it->second);
+static bool storeValid(const OccSolidStore& s, EntityId id) {
+    const TopoDS_Shape* p = s.find(id);
+    return p != nullptr && validShape(*p);
 }
 // Seklin eksen hizali sinir kutusu (tam silindir / tum yukseklik kontrolu icin).
 struct Box3 { double xmin, ymin, zmin, xmax, ymax, zmax; };
-static bool storeBounds(const std::map<EntityId, TopoDS_Shape>& m, EntityId id,
-                        Box3& out) {
-    const auto it = m.find(id);
-    if (it == m.end() || it->second.IsNull()) return false;
+static bool storeBounds(const OccSolidStore& s, EntityId id, Box3& out) {
+    const TopoDS_Shape* p = s.find(id);
+    if (p == nullptr || p->IsNull()) return false;
     Bnd_Box box;
-    BRepBndLib::Add(it->second, box);
+    BRepBndLib::Add(*p, box);
     if (box.IsVoid()) return false;
     box.Get(out.xmin, out.ymin, out.zmin, out.xmax, out.ymax, out.zmax);
     return true;
@@ -289,10 +303,14 @@ constexpr double kCylRadius = 1.3;
 constexpr double kCylHeight = 3.0;
 constexpr double kVolTol = 0.01;
 
-// Harness App: gercek Document + gercek `occShapes_` + uretim govdeleri.
+// Harness App: GERCEK Document (B-Rep magazasi Document-SAHIPLI) + uretim
+// govdeleri. AYRI bir occShapes_ haritasi YOKTUR — tek dogruluk kaynagi
+// Document::occStore()'dur; testler bu GERCEK magazayi okur.
 struct HarnessApp {
     Document document_;
-    std::map<EntityId, TopoDS_Shape> occShapes_;
+    // OCC-acik Application'in yaptigi gibi GERCEK OCCT magazasini enjekte et
+    // (constructor injection; uretim fabrikasi makeOccSolidStore kullanilir).
+    HarnessApp() { document_.setOccStore(makeOccSolidStore()); }
     EditMode mode_{EditMode::View3D};
     TransformCommand transformCommand_{TransformCommand::None};
     bool drawingActive_{false};
@@ -328,7 +346,11 @@ struct HarnessApp {
     void addBooleanCommon();
     void addBooleanCut();
     std::vector<TopoDS_Shape> lastLiveSolids(std::size_t count) const;
-    void clearOccSolidStore() noexcept;
+    OccSolidStore* occSolidStore() noexcept;
+    const OccSolidStore* occSolidStore() const noexcept;
+    void putOccSolid(std::size_t index, const TopoDS_Shape& shape);
+    std::size_t occSolidCount() const noexcept;
+    const TopoDS_Shape* findOccSolid(std::size_t index) const;
 };
 """
 
@@ -358,22 +380,22 @@ int main() {
         check(app.document_.models().size() == 1, "cube appended (1 model)");
         const EntityId id0 = app.document_.modelId(0);
         check(id0 != kInvalidEntityId, "cube id valid");
-        check(app.occShapes_.count(id0) == 1, "store has cube id");
-        check(storeValid(app.occShapes_, id0), "cube shape valid (BRepCheck)");
-        check(std::abs(storeVolume(app.occShapes_, id0) - kCubeVol) < kVolTol,
+        check(storeHas((*app.occSolidStore()), id0), "store has cube id");
+        check(storeValid((*app.occSolidStore()), id0), "cube shape valid (BRepCheck)");
+        check(std::abs(storeVolume((*app.occSolidStore()), id0) - kCubeVol) < kVolTol,
               "cube shape is a 2.6 box (vol 17.576)");
 
         app.addCylinder();
         check(app.document_.models().size() == 2, "cylinder appended (2 models)");
         const EntityId id1 = app.document_.modelId(1);
-        check(app.occShapes_.count(id1) == 1, "store has cylinder id");
-        check(storeValid(app.occShapes_, id1), "cylinder shape valid (BRepCheck)");
-        check(std::abs(storeVolume(app.occShapes_, id1) - kCylVol) < kVolTol,
+        check(storeHas((*app.occSolidStore()), id1), "store has cylinder id");
+        check(storeValid((*app.occSolidStore()), id1), "cylinder shape valid (BRepCheck)");
+        check(std::abs(storeVolume((*app.occSolidStore()), id1) - kCylVol) < kVolTol,
               "cylinder = full cylinder pi*r^2*h (vol 15.9279, not a 172-deg slice)");
         // TAM TUR KILIDI: bbox her iki yonde tam capi kapsamali (dilim kapsamaz)
         // ve Z 0..3.0 olmali (yukseklik 3.0; eski hata h=1.3 veriyordu).
         Box3 cb{};
-        check(storeBounds(app.occShapes_, id1, cb), "cylinder bbox available");
+        check(storeBounds((*app.occSolidStore()), id1, cb), "cylinder bbox available");
         check(std::abs((cb.xmax - cb.xmin) - 2.0 * kCylRadius) < 0.02,
               "cylinder bbox X spans full diameter (2*1.3)");
         check(std::abs((cb.ymax - cb.ymin) - 2.0 * kCylRadius) < 0.02,
@@ -381,7 +403,7 @@ int main() {
         check(std::abs(cb.zmin - 0.0) < 0.02 && std::abs(cb.zmax - kCylHeight) < 0.02,
               "cylinder Z range is 0..3.0 (height 3.0, not 1.3)");
         // OFF-BY-ONE KILIDI: kutu kimligi hala KUTUYU tutmali (silindiri degil).
-        check(std::abs(storeVolume(app.occShapes_, id0) - kCubeVol) < kVolTol,
+        check(std::abs(storeVolume((*app.occSolidStore()), id0) - kCubeVol) < kVolTol,
               "cube id still holds the box (no off-by-one overwrite)");
     }
 
@@ -412,13 +434,13 @@ int main() {
         check(app.document_.models().size() == 3, "fuse appends result model");
         const EntityId r = app.document_.modelId(2);
         check(r != a && r != b, "result id is NEW (not an operand id)");
-        check(app.occShapes_.count(r) == 1, "store has result id");
-        check(storeValid(app.occShapes_, r), "fuse result valid (BRepCheck)");
-        const double vr = storeVolume(app.occShapes_, r);
+        check(storeHas((*app.occSolidStore()), r), "store has result id");
+        check(storeValid((*app.occSolidStore()), r), "fuse result valid (BRepCheck)");
+        const double vr = storeVolume((*app.occSolidStore()), r);
         check(vr >= kCubeVol - kVolTol && vr <= kCubeVol + kCylVol + kVolTol,
               "fuse volume within [max, sum]");
         // Test 6 ile ortusen ama burada da acik: operandlar KORUNUR.
-        check(app.occShapes_.count(a) == 1 && app.occShapes_.count(b) == 1,
+        check(storeHas((*app.occSolidStore()), a) && storeHas((*app.occSolidStore()), b),
               "fuse operands preserved in store");
     }
 
@@ -433,17 +455,17 @@ int main() {
         const EntityId b = app.document_.modelId(1);
         const EntityId c = app.document_.modelId(2);
         check(a != b && b != c && a != c, "ids distinct");
-        const double volA = storeVolume(app.occShapes_, a);
-        const double volC = storeVolume(app.occShapes_, c);
+        const double volA = storeVolume((*app.occSolidStore()), a);
+        const double volC = storeVolume((*app.occSolidStore()), c);
 
         app.pushUndoSnapshot();          // silme komutunun gercek sozlesmesi
         app.document_.deleteModels({1}); // ortadaki (silindir) silinir
         check(app.document_.models().size() == 2, "one model removed");
         check(app.document_.modelId(0) == a, "id a now at index 0");
         check(app.document_.modelId(1) == c, "id c now at index 1");
-        check(std::abs(storeVolume(app.occShapes_, a) - volA) < 1e-9,
+        check(std::abs(storeVolume((*app.occSolidStore()), a) - volA) < 1e-9,
               "shape a UNCHANGED after unrelated delete");
-        check(std::abs(storeVolume(app.occShapes_, c) - volC) < 1e-9,
+        check(std::abs(storeVolume((*app.occSolidStore()), c) - volC) < 1e-9,
               "shape c UNCHANGED after unrelated delete");
         check(!app.document_.indexOfEntity(b).has_value(),
               "deleted id no longer resolves");
@@ -456,13 +478,13 @@ int main() {
         app.addCube();
         app.addCylinder();
         const EntityId a = app.document_.modelId(0);
-        const double volBefore = storeVolume(app.occShapes_, a);
+        const double volBefore = storeVolume((*app.occSolidStore()), a);
 
         app.pushUndoSnapshot();
         app.document_.deleteModels({0});
         check(app.document_.models().size() == 1, "cube deleted");
         check(!app.document_.indexOfEntity(a).has_value(), "deleted id not resolvable");
-        check(app.occShapes_.count(a) == 1,
+        check(storeHas((*app.occSolidStore()), a),
               "store KEEPS deleted shape entry (documented policy: not pruned)");
 
         app.document_.undo();
@@ -471,27 +493,29 @@ int main() {
               "SAME id resolves again after undo");
         check(app.document_.modelId(app.document_.indexOfEntity(a).value()) == a,
               "id preserved through undo");
-        check(std::abs(storeVolume(app.occShapes_, a) - volBefore) < 1e-9,
+        check(std::abs(storeVolume((*app.occSolidStore()), a) - volBefore) < 1e-9,
               "shape UNCHANGED by undo (store holds it; undo does NOT rebuild B-Rep)");
 
         app.document_.redo();
         check(!app.document_.indexOfEntity(a).has_value(), "redo deletes again");
-        check(app.occShapes_.count(a) == 1,
+        check(storeHas((*app.occSolidStore()), a),
               "shape still in store after redo (undo/redo never touch store)");
     }
 
     // --- Test 5: clearOccSolidStore + document clear ---
     {
-        std::printf("Test 5: clearOccSolidStore empties store; document clear drops ids\n");
+        // BELGE-SAHIPLI MAGAZA: temizligi ARTIK Document yapar. Application'da
+        // AYRI bir clearOccSolidStore() YOKTUR (iki yerde elle esleme riski
+        // yapisal olarak ortadan kalkti).
+        std::printf("Test 5: Document::clear() empties the document-owned store\n");
         HarnessApp app;
         app.addCube();
         app.addCylinder();
         const EntityId a = app.document_.modelId(0);
-        check(!app.occShapes_.empty(), "store non-empty before clear");
-        app.clearOccSolidStore();
-        check(app.occShapes_.empty(), "store EMPTY after clearOccSolidStore");
-        check(app.occShapes_.count(a) == 0, "old shape no longer reachable");
+        check(!(*app.occSolidStore()).empty(), "store non-empty before clear");
         app.document_.clear();
+        check((*app.occSolidStore()).empty(), "store EMPTY after Document::clear()");
+        check(!storeHas((*app.occSolidStore()), a), "old shape no longer reachable");
         check(app.document_.models().empty(), "document empty after clear");
         check(!app.document_.indexOfEntity(a).has_value(),
               "old id not resolvable after document clear");
@@ -519,9 +543,9 @@ int main() {
             const EntityId r = app.document_.modelId(2);
             check(r != a && r != b,
                   (std::string(c.name) + ": result id is new").c_str());
-            check(storeHas(app.occShapes_, r) && storeValid(app.occShapes_, r),
+            check(storeHas((*app.occSolidStore()), r) && storeValid((*app.occSolidStore()), r),
                   (std::string(c.name) + ": result present + valid").c_str());
-            const double vr = storeVolume(app.occShapes_, r);
+            const double vr = storeVolume((*app.occSolidStore()), r);
             check(vr >= c.lo - kVolTol && vr <= c.hi + kVolTol,
                   (std::string(c.name) + ": result volume in range").c_str());
             std::printf("     (%s volume = %.4f)\n", c.name, vr);
@@ -530,9 +554,9 @@ int main() {
                 check(vr > 1e-6, "common: result NON-EMPTY (operands really intersected)");
             if (std::string(c.name) == "cut")
                 check(vr < kCubeVol - 1e-6, "cut: result SMALLER than cube (material removed)");
-            check(app.occShapes_.count(a) == 1,
+            check(storeHas((*app.occSolidStore()), a),
                   (std::string(c.name) + ": operand cube STILL in store").c_str());
-            check(app.occShapes_.count(b) == 1,
+            check(storeHas((*app.occSolidStore()), b),
                   (std::string(c.name) + ": operand cylinder STILL in store").c_str());
         }
     }
