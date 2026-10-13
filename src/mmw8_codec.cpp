@@ -150,7 +150,8 @@ void writeMmw8(std::ostream& out, const Mmw8Document& doc) {
     for (std::size_t i = 0; i < doc.models.size(); ++i) {
         const auto& model = doc.models[i];
         const EntityId eid = doc.entityIds[i];
-        if (eid == kInvalidEntityId) fail("entityId 0 cannot be serialized");
+        if (eid == kInvalidEntityId || eid == kExhaustedEntityId)
+            fail("entityId must be a valid identity (0 and UINT64_MAX are reserved)");
         out << model.vertices().size() << ' ' << model.edges().size() << ' '
             << model.faces().size() << ' ' << (model.isPointEntity() ? 1 : 0) << ' '
             << (model.isFace3D() ? 1 : 0) << ' ' << eid << '\n';
@@ -220,7 +221,8 @@ void writeMmw8(std::ostream& out, const Mmw8Document& doc) {
         std::ostringstream body;
         body << doc.blobs.size() << '\n';
         for (const auto& blob : doc.blobs) {
-            if (blob.entityId == kInvalidEntityId) fail("blob entityId 0");
+            if (blob.entityId == kInvalidEntityId || blob.entityId == kExhaustedEntityId)
+                fail("blob entityId must be a valid identity");
             body << blob.entityId << ' ' << blob.bytes.size() << ' '
                  << sha256Hex(blob.bytes) << '\n';
             body.write(blob.bytes.data(), static_cast<std::streamsize>(blob.bytes.size()));
@@ -289,7 +291,8 @@ void readMmw8(std::istream& in, Mmw8Document& doc) {
         const std::uint64_t eid = readUint64(in, "entityId");
         if (vCount > kMmw8MaxVertices || eCount > kMmw8MaxEdges || fCount > kMmw8MaxFaces)
             fail("model geometry exceeds limits");
-        if (eid == 0) fail("entityId 0 in model record");
+        if (eid == 0 || eid == kExhaustedEntityId)
+            fail("entityId must be a valid identity in model record");
         if (seenIds.count(static_cast<EntityId>(eid))) fail("duplicate entityId");
         seenIds[static_cast<EntityId>(eid)] = true;
 
@@ -442,7 +445,8 @@ void readMmw8(std::istream& in, Mmw8Document& doc) {
                 const std::uint64_t blobLen = readUint64(bs, "blob length");
                 const std::string sha = readToken(bs);
                 consumeNewline(bs);
-                if (eid == 0) fail("blob entityId 0");
+                if (eid == 0 || eid == kExhaustedEntityId)
+                    fail("blob entityId must be a valid identity");
                 if (blobLen > kMmw8MaxBlobSize) fail("blob exceeds size limit");
                 if (sha.size() != 64) fail("invalid SHA-256 hex length");
                 totalBlobBytes += static_cast<std::size_t>(blobLen);

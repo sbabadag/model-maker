@@ -93,7 +93,9 @@ void Document::setOccStore(std::unique_ptr<OccStore> store) noexcept {
 
 void Document::addModel(WireframeModel model) {
     ++revision_;
-    const EntityId id = allocateEntityId();
+    // Tükenme durumunda firlatir (KONTROLLU basarisizlik) — kayit/ekleme
+    // ONCESI, yani kismi model veya bozuk undo kaydi BIRAKILMAZ.
+    const EntityId id = allocateEntityIdRequired();
     UndoOp op;
     op.kind = UndoOp::Kind::Add;
     op.index = models_.size();
@@ -439,7 +441,7 @@ void Document::replaceModel(std::size_t index, std::vector<WireframeModel> repla
         newIds.push_back(oldId);
     } else {
         for (std::size_t k = 0; k < replacements.size(); ++k)
-            newIds.push_back(allocateEntityId());
+            newIds.push_back(allocateEntityIdRequired());
     }
     UndoOp op;
     op.kind = UndoOp::Kind::Replace;
@@ -629,7 +631,7 @@ void Document::applyUndoOp(const UndoOp& op, bool forward) {
                 // her zaman dolu; guvenlik icin bos ise yeni kimlik uretilir
                 // (modelIds_ ile models_ hizasi her durumda korunur).
                 const EntityId id = !op.afterIds.empty() ? op.afterIds.front()
-                                                         : allocateEntityId();
+                                                         : allocateEntityIdRequired();
                 modelIds_.insert(modelIds_.begin() + static_cast<std::ptrdiff_t>(op.index), id);
             }
         } else if (op.index < models_.size()) {
@@ -656,7 +658,7 @@ void Document::applyUndoOp(const UndoOp& op, bool forward) {
                                    op.beforeModels[k]);
                     // Silinen varlik AYNI kimligiyle geri gelir.
                     const EntityId id = k < op.beforeIds.size() ? op.beforeIds[k]
-                                                                : allocateEntityId();
+                                                                : allocateEntityIdRequired();
                     modelIds_.insert(modelIds_.begin() + static_cast<std::ptrdiff_t>(index), id);
                 }
             }
@@ -672,7 +674,7 @@ void Document::applyUndoOp(const UndoOp& op, bool forward) {
                 models_.insert(models_.begin() + static_cast<std::ptrdiff_t>(op.index + k),
                                op.afterModels[k]);
                 const EntityId id = k < op.afterIds.size() ? op.afterIds[k]
-                                                           : allocateEntityId();
+                                                           : allocateEntityIdRequired();
                 modelIds_.insert(modelIds_.begin() + static_cast<std::ptrdiff_t>(op.index + k), id);
             }
         } else {
@@ -689,7 +691,7 @@ void Document::applyUndoOp(const UndoOp& op, bool forward) {
                                op.beforeModels.front());
                 // Eski varlik AYNI kimligiyle geri gelir.
                 const EntityId id = !op.beforeIds.empty() ? op.beforeIds.front()
-                                                          : allocateEntityId();
+                                                          : allocateEntityIdRequired();
                 modelIds_.insert(modelIds_.begin() + static_cast<std::ptrdiff_t>(op.index), id);
             }
         }
@@ -877,8 +879,19 @@ std::vector<WireframeModel>& Document::mutableModels() noexcept { return models_
 const std::vector<WireframeModel>& Document::models() const noexcept { return models_; }
 
 EntityId Document::allocateEntityId() noexcept {
+    // TUKENME (bkz. entity_id.hpp): id uzayi dolduysa GUVENLI REDDET — ayni
+    // id ASLA ikinci kez uretilmez (eski kelepceleme YINELENEN kimlik
+    // olusturuyordu). Sayac DEGISMEZ; cagiran kInvalidEntityId gorur.
+    if (nextEntityId_ == kExhaustedEntityId) return kInvalidEntityId;
     const EntityId id = nextEntityId_;
     nextEntityId_ = advanceEntityIdCounter(nextEntityId_);
+    return id;
+}
+
+EntityId Document::allocateEntityIdRequired() {
+    const EntityId id = allocateEntityId();
+    if (id == kInvalidEntityId)
+        throw std::runtime_error("entity ID space exhausted");
     return id;
 }
 

@@ -219,8 +219,14 @@ private:
     void pruneDeadVersions();
     void markPending(std::size_t index);
     void applyUndoOp(const UndoOp& op, bool forward);
-    // Yeni, tekil, monoton bir varlik kimligi uretir (0 uretmez).
+    // Yeni, tekil, monoton bir varlik kimligi uretir (0 uretmez). Id uzayi
+    // TUKENDIYSE (nextEntityId_ == kExhaustedEntityId) kInvalidEntityId doner
+    // ve sayac DEGISMEZ — ayni id ASLA ikinci kez uretilmez.
     EntityId allocateEntityId() noexcept;
+    // allocateEntityId'in FIRLATAN sarmalayicisi: tukenme durumunda
+    // std::runtime_error firlatir. Yeni varlik ekleyen tum yollar bunu kullanir —
+    // KONTROLLU basarisizlik, kismi ekleme veya kimlik-0 model birakilmaz.
+    EntityId allocateEntityIdRequired();
 
     std::vector<WireframeModel> models_;
     // models_ ile BIREBIR hizali kimlik vektoru (modelIds_.size() == models_.size()

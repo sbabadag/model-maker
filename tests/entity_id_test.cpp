@@ -223,15 +223,25 @@ int main() {
         check(invariantsHold(doc), "clear sonrasi invaryant");
     }
 
-    // 9) Sayaç tasmasi: 0'a SARMAS yok (gecersiz sentinel uretilmez).
+    // 9) Sayaç TUKENME semantigi: gecerli kimlikler 1..(UINT64_MAX-1); UINT64_MAX
+    //    tükenme isaretidir. Sayac ayni id'yi ASLA ikinci kez URETMEZ (eski
+    //    kelepceleme YINELENEN kimlik olusturuyordu — Phase 3.4B duzeltmesi).
     {
-        constexpr EntityId kMax = std::numeric_limits<EntityId>::max();
+        constexpr EntityId kExhausted = std::numeric_limits<EntityId>::max();
+        check(kInvalidEntityId == 0, "kInvalidEntityId = 0 (gecersiz sentinel)");
+        check(kExhaustedEntityId == kExhausted, "kExhaustedEntityId = UINT64_MAX");
         check(advanceEntityIdCounter(0) == 1, "advance(0) -> 1");
         check(advanceEntityIdCounter(1) == 2, "advance(1) -> 2");
-        check(advanceEntityIdCounter(kMax - 1) == kMax, "advance(max-1) -> max");
-        check(advanceEntityIdCounter(kMax) == kMax, "advance(max) sarmaz, max'ta kalir");
-        check(advanceEntityIdCounter(kMax) != kInvalidEntityId,
-              "tasmada gecersiz sentinel (0) URETILMEZ");
+        check(advanceEntityIdCounter(kExhausted - 2) == kExhausted - 1,
+              "advance(max-2) -> max-1 (SON gecerli id)");
+        check(advanceEntityIdCounter(kExhausted - 1) == kExhausted,
+              "advance(max-1) -> max (TUKENDI isareti)");
+        check(advanceEntityIdCounter(kExhausted) == kExhausted,
+              "advance(max) tukendi, kalir (ayni id TEKRAR uretilmez)");
+        check(advanceEntityIdCounter(kExhausted) != kInvalidEntityId,
+              "tukenme 0'a SARMAZ (gecersiz sentinel uretilmez)");
+        check(kExhaustedEntityId != 1 && kExhaustedEntityId != kInvalidEntityId,
+              "UINT64_MAX gecerli bir varlik kimligi DEGILDIR");
     }
 
     // 10) SURUM kimligi sayaci: TUKENME semantigi — ayni id ASLA TEKRAR

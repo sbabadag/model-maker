@@ -22,13 +22,22 @@ using EntityId = std::uint64_t;
 // Gecersiz/atanmamis kimlik. Hicbir gercek varlik bu degeri almaz.
 inline constexpr EntityId kInvalidEntityId = 0;
 
-// Sayaci bir adim ilerletir. Tasma (overflow) durumunda 0'a SARMAS yerine
-// ust sinira KELEPCELENIR — boylece gecersiz sentinel (0) asla uretilmez.
-// uint64 siniri pratikte erisilemez (1e9 id/sn'de ~584 yil); kelepce yalnizca
-// sarmayi ve gecersiz id uretimini onleyen bir guvenlik agidir.
+// TUKENME ISARETI (exhaustion): UINT64_MAX. Gecerli kimlikler 1..(UINT64_MAX-1);
+// sayac bu degere ulasinca id uzayi TUKENMISTIR. (VersionId'de tükenme
+// kInvalidVersionId=0 ile temsil edilir; EntityId'de 0 zaten "gecersiz"
+// sentinel oldugu icin tükenme UINT64_MAX ile ayrilir — iki sentinel CARPISMAZ.)
+// allocateEntityId bu isareti gorup REDDEDER: ayni id ASLA ikinci kez uretilmez.
+inline constexpr EntityId kExhaustedEntityId = std::numeric_limits<EntityId>::max();
+
+// Sayaci bir adim ilerletir. TUKENME semantigi (VersionId ile TUTARLI):
+//   * current == kExhaustedEntityId -> TUKENDI, kalir (UINT64_MAX).
+//   * aksi halde                    -> current + 1.
+// Boylece 1..(UINT64_MAX-1) id'leri TAM BIR KEZ uretilir; UINT64_MAX yalnizca
+// "tukendi" isaretidir ve GECERLI id olarak donmez. (Eski kelepceleme — sayac
+// kMax'ta KALIP ayni id'yi tekrar uretme — KALDIRILDI: allocateEntityId ayni
+// id'yi ikinci kez uretip YINELENEN kimlik olusturuyordu.)
 inline EntityId advanceEntityIdCounter(EntityId current) noexcept {
-    constexpr EntityId kMax = std::numeric_limits<EntityId>::max();
-    if (current >= kMax) return kMax;
+    if (current >= kExhaustedEntityId) return kExhaustedEntityId;
     return current + 1;
 }
 
