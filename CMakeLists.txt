@@ -35,7 +35,9 @@ add_library(model_maker_core
     src/document.cpp
     src/drafting.cpp
     src/profile_database.cpp
-    src/occ_store_null.cpp)
+    src/occ_store_null.cpp
+    src/sha256.cpp
+    src/mmw8_codec.cpp)
 target_include_directories(model_maker_core PUBLIC include)
 target_compile_options(model_maker_core PRIVATE -Wall -Wextra -Wpedantic)
 
@@ -414,6 +416,12 @@ if(BUILD_TESTING)
     add_executable(model_maker_occ_store_test tests/occ_store_test.cpp)
     target_link_libraries(model_maker_occ_store_test PRIVATE model_maker_core)
     add_test(NAME model_maker_occ_store_test COMMAND model_maker_occ_store_test)
+
+    # MMW8 dosya codec'i (OCCT'siz): binary B-Rep blob'lari + SHA-256 butunluk
+    # + EntityId/nextEntityId + ileriye-uyumlu bloklar. Phase 3.4B.
+    add_executable(model_maker_mmw8_codec_test tests/mmw8_codec_test.cpp)
+    target_link_libraries(model_maker_mmw8_codec_test PRIVATE model_maker_core)
+    add_test(NAME model_maker_mmw8_codec_test COMMAND model_maker_mmw8_codec_test)
 
     # Kontur (siluet + gercek kenar) ureticisi: GL Solid yolunun her karede
     # kosturdugu pass'in tek kaynagi. Eski std::map uygulamasiyla esdegerlik,
