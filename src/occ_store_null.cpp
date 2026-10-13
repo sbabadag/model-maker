@@ -21,6 +21,9 @@ public:
     bool restoreActive(EntityId, VersionId version) override {
         return version == kInvalidVersionId;  // no-op; gercek surum yok
     }
+    std::size_t prune(const std::function<bool(EntityId, VersionId)>&) override {
+        return 0;  // hicbir surum tutulmaz
+    }
 };
 
 }  // namespace

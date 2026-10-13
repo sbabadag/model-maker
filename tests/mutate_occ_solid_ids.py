@@ -220,6 +220,47 @@ MUTATIONS = [
         "new": "            rec.geometryAfter[i].version = after;  // mutasyon: dedup kaldirildi",
         "expect": ["FAIL SINGLE undo returns to ORIGINAL (17.576), not intermediate (1.0)"],
     },
+    # --- Phase 3.2C: SURUM BUDAMA ---
+    {
+        # Canli varliklarin ETKIN surumu korunmazsa, clearHistory sonrasi canli
+        # geometri de budanir. Test 25 yakalamali.
+        "id": "NC14",
+        "desc": "budama canli varligin etkin surumunu ERKEN budar",
+        "file": DOC_CPP,
+        "fn": ("pruneDeadVersions", "void Document::pruneDeadVersions()"),
+        "old": "    for (const EntityId e : modelIds_) protectActive(e);",
+        "new": "    // mutasyon: canli etkin surum korunmaz",
+        "expect": ["FAIL only active version remains after clearHistory",
+                   "FAIL active geometry still reachable"],
+    },
+    {
+        # Acik geometryBefore/geometryAfter ref'leri korunmazsa, undo'nun geri
+        # yukleyecegi ESKI surumler budanir. Test 26 yakalamali.
+        "id": "NC15",
+        "desc": "budama undo'nun kullandigi (geometryBefore/After) surumu erken budar",
+        "file": DOC_CPP,
+        "fn": ("pruneDeadVersions", "void Document::pruneDeadVersions()"),
+        "old": "        for (const GeometrySlotRef& ref : rec.geometryBefore)\n"
+               "            if (ref.version != kInvalidVersionId) keep.emplace(ref.entity, ref.version);\n"
+               "        for (const GeometrySlotRef& ref : rec.geometryAfter)\n"
+               "            if (ref.version != kInvalidVersionId) keep.emplace(ref.entity, ref.version);",
+        "new": "        // mutasyon: acik geometri ref'leri korunmaz",
+        "expect": ["FAIL rollback version v1 preserved",
+                   "FAIL rollback version v2 preserved"],
+    },
+    {
+        # pushSnapshot redoStack'i TEMIZLEMEZSE terk edilen redo surumleri hala
+        # "referansli" gorunur ve budanmaz; ayrica canRedo yanlis true kalir.
+        # Test 20 yakalamali.
+        "id": "NC16",
+        "desc": "yeni islem redo gecmisini TEMIZLEMEZ (terk edilen surum budanmaz)",
+        "file": DOC_CPP,
+        "fn": ("pushSnapshot", "void Document::pushSnapshot()"),
+        "old": "    redoStack_.clear();",
+        "new": "    // mutasyon: redo gecmisi temizlenmez",
+        "expect": ["FAIL new op cleared redo history",
+                   "FAIL abandoned redo version (v2) pruned after new op"],
+    },
 ]
 
 

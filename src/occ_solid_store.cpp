@@ -1,5 +1,7 @@
 #include "model_maker/occ_solid_store.hpp"
 
+#include <algorithm>
+
 namespace mm {
 
 VersionId OccSolidStore::set(EntityId id, const TopoDS_Shape& shape) {
@@ -78,6 +80,36 @@ bool OccSolidStore::restoreActive(EntityId id, VersionId version) {
 std::size_t OccSolidStore::versionCount(EntityId id) const noexcept {
     const auto it = slots_.find(id);
     return it == slots_.end() ? 0 : it->second.versions.size();
+}
+
+std::size_t OccSolidStore::totalVersionCount() const noexcept {
+    std::size_t total = 0;
+    for (const auto& entry : slots_) total += entry.second.versions.size();
+    return total;
+}
+
+std::size_t OccSolidStore::prune(const std::function<bool(EntityId, VersionId)>& keep) {
+    std::size_t pruned = 0;
+    for (auto it = slots_.begin(); it != slots_.end();) {
+        Slot& slot = it->second;
+        std::vector<Version>& versions = slot.versions;
+        const std::size_t before = versions.size();
+        // `keep` false donen her surumu sil. (VersionId'ler SABIT kalir;
+        // kalanlar yeniden numaralandirilmaz.)
+        versions.erase(std::remove_if(versions.begin(), versions.end(),
+                                      [&](const Version& v) { return !keep(it->first, v.id); }),
+                       versions.end());
+        pruned += before - versions.size();
+        // Budanan surumu isaret eden etkin-alani "geometri yok"a dusur.
+        if (slot.active != kInvalidVersionId && shapeOfVersion(slot, slot.active) == nullptr)
+            slot.active = kInvalidVersionId;
+        if (versions.empty()) {
+            it = slots_.erase(it);  // tamamen bosalan slot kaldirilir
+        } else {
+            ++it;
+        }
+    }
+    return pruned;
 }
 
 std::vector<VersionId> OccSolidStore::versionIds(EntityId id) const {

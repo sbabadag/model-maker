@@ -19,6 +19,7 @@
 #include "model_maker/entity_id.hpp"
 
 #include <cstddef>
+#include <functional>
 #include <memory>
 
 namespace mm {
@@ -55,6 +56,17 @@ public:
     //  activate kInvalidVersionId'yi reddeder — oysa restoreActive onu kabul
     //  eder: olusturma-undo'da geometri "yok" haline donmelidir.)
     virtual bool restoreActive(EntityId id, VersionId version) = 0;
+
+    // --- SURUM BUDAMA (Phase 3.2C) -----------------------------------------
+    // `keep(entity, version)` false donen her saklanan surumu SILER; bosalan
+    // slot'lari kaldirir ve budanan surumu isaret eden etkin-alani "geometri
+    // yok"a dusurur. Budanan surum sayisini doner. Imza OCCT'sizdir (yalnizca
+    // EntityId/VersionId + std::function), boylece OCC-kapali derleme de
+    // bozulmaz. KORUMA SORUMLULUGU cagirandadir: Document canli referans
+    // kumesini (etkin surumler + undo/redo kayitlarindaki geometryBefore/
+    // geometryAfter + kimlikle referanslanan varliklar) hesaplayip buraya
+    // `keep` olarak iletir.
+    virtual std::size_t prune(const std::function<bool(EntityId, VersionId)>& keep) = 0;
 };
 
 // OCC-kapali no-op saglayici (model_maker_core).

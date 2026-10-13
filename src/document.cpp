@@ -8,6 +8,7 @@
 #include <iterator>
 #include <cctype>
 #include <numeric>
+#include <set>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -566,7 +567,19 @@ void Document::recordGeometryDelta(EntityId entity, VersionId before, VersionId 
     if (entity == kInvalidEntityId) return; // geçersiz varlığa delta bağlanmaz
     // Açık kayıt YOKSA kendi kaydını aç — geometri değişikliği SESSİZCE undo
     // dışında kalmaz (recordUndoOp'un sessiz-düşme davranışından bilinçli fark).
-    if (undoStack_.empty()) pushSnapshot();
+    // DIKKAT (Phase 3.2C): burada pushSnapshot() KULLANILMAZ — pushSnapshot
+    // budama tetikler ve `before` surumu (set() sonrasi artik etkin DEGIL,
+    // HENUZ kaydedilmedi) budanip KAYBOLURDU. Bu yuzden kayit dogrudan acilir;
+    // budama yalniz komut sinirinda (pushSnapshot) ve gecmis temizliginde
+    // (clearHistory/redo) kosar — delta kaydedildikten SONRA `before` zaten
+    // korunur.
+    if (undoStack_.empty()) {
+        UndoRecord record;
+        record.layersBefore = layers_;
+        record.layersAfter = layers_;
+        undoStack_.push_back(std::move(record));
+        redoStack_.clear(); // yeni islem: terk edilen redo gecersiz
+    }
     UndoRecord& rec = undoStack_.back();
     for (std::size_t i = 0; i < rec.geometryBefore.size(); ++i) {
         if (rec.geometryBefore[i].entity == entity) {
@@ -600,6 +613,9 @@ void Document::pushSnapshot() {
     if (undoStack_.size() > kMaxUndoEntries)
         undoStack_.pop_front();
     redoStack_.clear();
+    // Onceki komutlarda terk edilen (redo temizlenen / 100 kayit siniri asan /
+    // ara surum) geometriyi buda — bellek birikimi kontrol altinda.
+    pruneDeadVersions();
 }
 
 void Document::applyUndoOp(const UndoOp& op, bool forward) {
@@ -792,6 +808,9 @@ bool Document::redo() {
     if (undoStack_.size() > kMaxUndoEntries)
         undoStack_.pop_front();
     rebuildDerivedState();
+    // Redo sonrasi kayit undo yigini ile korunur; 100 kayit siniri asildiysa
+    // en eski kaydin referanslari birakilmistir — buda (Phase 3.2C).
+    pruneDeadVersions();
     return true;
 }
 
@@ -810,6 +829,49 @@ bool Document::canRedo() const noexcept {
 void Document::clearHistory() noexcept {
     undoStack_.clear();
     redoStack_.clear();
+    // Gecmis bosaldiginda yalnizca canli varliklarin etkin surumleri korunur;
+    // silinen/terk edilen varliklarin geometrisi budanir (Phase 3.2C).
+    pruneDeadVersions();
+}
+
+// SURUM BUDAMA (Phase 3.2C): yalnizca HICBIR canli referans tarafindan
+// kullanilmayan (varlik, surum) ciftlerini siler. Canli referans kumesi uc
+// kaynaktan gelir:
+//   (1) CANLI varliklarin (modelIds_) ETKIN surumu — guncel geometri;
+//   (2) undo/redo op'larinda KIMLIKLE referanslanan varliklarin (beforeIds/
+//       afterIds) ETKIN surumu — sil/ekle/deyistir geri alinirken geri
+//       yuklenecek geometri (silme store'a dokunmadigindan silinen varligin
+//       etkin surumu burada korunur);
+//   (3) undo/redo kayitlarindaki ACIK geometryBefore/geometryAfter ref'leri.
+// Tamamlanmamis bir transaction'in geri donus geometrisi (1) veya (3) ile
+// korunur; budama HICBIR ZAMAN acik kaydin ihtiyacini silmez.
+void Document::pruneDeadVersions() {
+    std::set<std::pair<EntityId, VersionId>> keep;
+
+    const auto protectActive = [&](EntityId e) {
+        if (e == kInvalidEntityId) return;
+        const VersionId v = occStore_->activeVersion(e);
+        if (v != kInvalidVersionId) keep.emplace(e, v);
+    };
+
+    // (1) canli varliklar
+    for (const EntityId e : modelIds_) protectActive(e);
+
+    // (2) + (3): undo/redo kayitlari
+    const auto scan = [&](const UndoRecord& rec) {
+        for (const UndoOp& op : rec.ops) {
+            for (const EntityId e : op.beforeIds) protectActive(e);
+            for (const EntityId e : op.afterIds) protectActive(e);
+        }
+        for (const GeometrySlotRef& ref : rec.geometryBefore)
+            if (ref.version != kInvalidVersionId) keep.emplace(ref.entity, ref.version);
+        for (const GeometrySlotRef& ref : rec.geometryAfter)
+            if (ref.version != kInvalidVersionId) keep.emplace(ref.entity, ref.version);
+    };
+    for (const UndoRecord& rec : undoStack_) scan(rec);
+    for (const UndoRecord& rec : redoStack_) scan(rec);
+
+    occStore_->prune([&](EntityId e, VersionId v) { return keep.count({e, v}) != 0; });
 }
 std::vector<WireframeModel>& Document::mutableModels() noexcept { return models_; }
 const std::vector<WireframeModel>& Document::models() const noexcept { return models_; }

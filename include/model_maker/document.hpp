@@ -213,6 +213,10 @@ private:
                           std::vector<std::size_t>& result) const;
     void recordUndoOp(UndoOp op);
     void recordLayerState();
+    // SURUM BUDAMA (Phase 3.2C): canli referans kumesini (etkin surumler +
+    // undo/redo kayitlarindaki geometryBefore/geometryAfter + kimlikle
+    // referanslanan varliklar) hesaplar ve magazadan geri kalanini budar.
+    void pruneDeadVersions();
     void markPending(std::size_t index);
     void applyUndoOp(const UndoOp& op, bool forward);
     // Yeni, tekil, monoton bir varlik kimligi uretir (0 uretmez).

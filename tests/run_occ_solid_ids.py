@@ -232,7 +232,7 @@ def assert_document_shape(doc_text):
             errs.append(f"document.cpp: {what} YOK -> {needle!r}")
 
     # delta kaydi acik kayit yoksa KENDI kaydini acar (sessiz dusme YOK)
-    need("if (undoStack_.empty()) pushSnapshot();",
+    need("if (undoStack_.empty()) {",
          "recordGeometryDelta kayit acmiyor (sessiz dusme riski)")
     need("void Document::recordGeometryDelta(EntityId entity, VersionId before, VersionId after)",
          "recordGeometryDelta tanimi yok")
@@ -244,6 +244,16 @@ def assert_document_shape(doc_text):
     need("occStore_->restoreActive(ref.entity, ref.version)", "geometri geri yukleme yok")
     # 'recordHasEffect' geometri deltasini da sayar (akis gorunurlugu)
     need("!rec.geometryBefore.empty()", "geometri deltasi undo gorunurlugune dahil degil")
+    # Phase 3.2C: SURUM BUDAMA — canli referans kumesi hesaplanir ve magazaya
+    # `keep` yuklemi olarak iletilir; tetik noktalari (pushSnapshot / redo /
+    # clearHistory) budamayi cagirmali.
+    need("void Document::pruneDeadVersions()", "pruneDeadVersions tanimi yok")
+    need("occStore_->prune(", "magaza budama cagrisi yok (occStore_->prune)")
+    need("for (const EntityId e : modelIds_)", "canli varliklarin etkin surumu korunmuyor")
+    need("op.beforeIds", "kimlikle referanslanan varliklarin korunmasi yok (silme undo'su)")
+    need("rec.geometryBefore", "undo/redo geometryBefore korunmuyor")
+    if doc_text.count("pruneDeadVersions();") < 2:
+        errs.append("document.cpp: budama tetik noktalari eksik (pushSnapshot/redo/clearHistory)")
     if errs:
         raise HarnessError("document.cpp sekil kontrolu BASARISIZ:\n  - " + "\n  - ".join(errs))
 
@@ -992,24 +1002,189 @@ int main() {
               "geometry restored via auto-opened record");
     }
 
-    // --- Test 20: undo sonrasi YENI islem redo gecmisini temizler ---
+    // --- Test 20: undo sonrasi YENI islem redo gecmisini temizler + budar ---
+    // Phase 3.2C: yeni islem redo gecmisini TEMIZLER ve terk edilen redo
+    // surumleri BUDANIR (eski 3.2B'de korunuyordu; artik budama aktif).
     {
-        std::printf("Test 20: new op after undo clears redo history (no pruning yet)\n");
+        std::printf("Test 20: new op after undo clears redo history + prunes abandoned versions\n");
+        HarnessApp app;
+        app.addCube();
+        const EntityId id = app.document_.modelId(0);
+        OccSolidStore& st = *app.occSolidStore();
+        const VersionId v1 = st.activeVersion(id);
+
+        app.pushUndoSnapshot();
+        app.putOccSolid(0, BRepPrimAPI_MakeBox(1.0, 1.0, 1.0).Shape());
+        const VersionId v2 = st.activeVersion(id);
+        check(v2 != v1, "v2 written (distinct version)");
+        check(app.document_.undo(), "undo returns true");
+        check(app.document_.canRedo(), "canRedo true after undo");
+        check(st.activeVersion(id) == v1, "v1 active after undo");
+
+        app.pushUndoSnapshot();  // redo temizlenir; terk edilen v2 BUDANIR
+        app.putOccSolid(0, BRepPrimAPI_MakeBox(2.0, 2.0, 2.0).Shape());
+        check(!app.document_.canRedo(), "new op cleared redo history");
+        check(std::abs(storeVolume(st, id) - 8.0) < 1e-6, "new geometry active");
+        check(st.findVersion(id, v2) == nullptr,
+              "abandoned redo version (v2) pruned after new op");
+        check(st.findVersion(id, v1) != nullptr,
+              "v1 preserved (undo still reaches original geometry)");
+    }
+
+    // =====================================================================
+    // Phase 3.2C — SURUM BUDAMA (gercek Document + gercek OccSolidStore)
+    // =====================================================================
+
+    // --- Test 21: sil -> undo -> redo, budama AKTIFKEN geometri korunur ---
+    // Silme store'a dokunmaz; silinen varligin etkin surumu, Delete op'unun
+    // kimlik referansi (beforeIds) ile budamadan KORUNUR.
+    {
+        std::printf("Test 21: delete -> undo -> redo survives pruning (identity-ref)\n");
+        HarnessApp app;
+        app.addCube();
+        const EntityId id0 = app.document_.modelId(0);
+        OccSolidStore& st = *app.occSolidStore();
+        const double v = storeVolume(st, id0);
+
+        app.pushUndoSnapshot();
+        app.document_.deleteModels({0});
+        check(app.document_.models().empty(), "entity deleted");
+        // Budama tetikle: bir sonraki komutun snapshot'i (100 sinirine gerek
+        // yok — her pushSnapshot budar).
+        app.pushUndoSnapshot();
+        check(storeHas(st, id0),
+              "deleted entity geometry survives prune (Delete op identity-ref)");
+        check(std::abs(storeVolume(st, id0) - v) < kVolTol,
+              "deleted geometry volume intact after prune");
+
+        check(app.document_.undo(), "undo restores deleted entity after prune");
+        check(app.document_.indexOfEntity(id0).has_value(), "entity back after undo");
+        check(std::abs(storeVolume(st, id0) - v) < kVolTol, "geometry intact after undo");
+
+        check(app.document_.redo(), "redo deletes again");
+        check(app.document_.models().empty(), "redo removed entity");
+        check(storeHas(st, id0), "geometry still preserved (Delete op still undoable)");
+    }
+
+    // --- Test 22: 150+ ardisik degisiklik -> surum sayisi SINIRLI kalir ---
+    // Budama olmasaydi 150 surum birikir; budama ile ~100 kayit sinirina
+    // bagli SINIRLI bir sayida kalir.
+    {
+        std::printf("Test 22: 150+ consecutive changes -> version count bounded\n");
         HarnessApp app;
         app.addCube();
         const EntityId id = app.document_.modelId(0);
         OccSolidStore& st = *app.occSolidStore();
 
-        app.pushUndoSnapshot();
-        app.putOccSolid(0, BRepPrimAPI_MakeBox(1.0, 1.0, 1.0).Shape());
-        check(app.document_.undo(), "undo returns true");
-        check(app.document_.canRedo(), "canRedo true after undo");
+        for (int i = 0; i < 150; ++i) {
+            app.pushUndoSnapshot();
+            app.putOccSolid(0, BRepPrimAPI_MakeBox(1.0 + 0.01 * i, 1.0, 1.0).Shape());
+        }
+        // 1 ilk surum + 150 yeni surum yazildi (151); ama undo 100 kayitla
+        // sinirli ve her pushSnapshot budar -> saklanan surum sayisi cok daha az.
+        const std::size_t total = st.totalVersionCount();
+        std::printf("     (total versions after 150 changes = %zu)\n", total);
+        check(total < 120, "version count bounded (<120) after 150 changes");
+        check(total > 1, "at least the active version remains");
+        check(app.document_.canUndo(), "undo still available after 150 changes");
+    }
+
+    // --- Test 23: coklu EntityId transaction -> GEREKLI tum surumler korunur ---
+    {
+        std::printf("Test 23: multi-entity transaction keeps all needed versions\n");
+        HarnessApp app;
+        app.addCube();
+        app.addCylinder();
+        const EntityId a = app.document_.modelId(0);
+        const EntityId b = app.document_.modelId(1);
+        OccSolidStore& st = *app.occSolidStore();
+        const VersionId va0 = st.activeVersion(a);
+        const VersionId vb0 = st.activeVersion(b);
 
         app.pushUndoSnapshot();
-        app.putOccSolid(0, BRepPrimAPI_MakeBox(2.0, 2.0, 2.0).Shape());
-        check(!app.document_.canRedo(), "new op cleared redo history");
-        check(std::abs(storeVolume(st, id) - 8.0) < 1e-6, "new geometry active");
-        check(st.versionCount(id) >= 3, "old versions retained (pruning is 3.2C, not 3.2B)");
+        app.putOccSolid(0, BRepPrimAPI_MakeBox(1.0, 1.0, 1.0).Shape());
+        app.putOccSolid(1, BRepPrimAPI_MakeBox(2.0, 2.0, 2.0).Shape());
+        // Budama tetikle (kayit artik "tamamlandi").
+        app.pushUndoSnapshot();
+
+        check(st.findVersion(a, va0) != nullptr, "a's before version preserved after prune");
+        check(st.findVersion(b, vb0) != nullptr, "b's before version preserved after prune");
+
+        check(app.document_.undo(), "multi-entity undo works after prune");
+        check(st.activeVersion(a) == va0 && st.activeVersion(b) == vb0,
+              "BOTH entities restored atomically after prune");
+    }
+
+    // --- Test 24: budanan surum guvenli reddedilir; gecerli surum calisir ---
+    {
+        std::printf("Test 24: pruned version safely rejected; valid version still works\n");
+        HarnessApp app;
+        app.addCube();
+        const EntityId e = app.document_.modelId(0);
+        OccSolidStore& st = *app.occSolidStore();
+        const VersionId v1 = st.activeVersion(e);
+
+        app.pushUndoSnapshot();
+        app.putOccSolid(0, BRepPrimAPI_MakeBox(1.0, 1.0, 1.0).Shape());
+        const VersionId v2 = st.activeVersion(e);
+        check(v2 != v1, "v2 written");
+
+        check(app.document_.undo(), "undo to v1");
+        app.pushUndoSnapshot();  // redo temizlenir -> v2 budanir
+
+        check(st.findVersion(e, v2) == nullptr, "pruned version rejected (findVersion)");
+        check(!st.findVersionExists(e, v2), "pruned version rejected (findVersionExists)");
+        check(!st.activate(e, v2), "pruned version rejected (activate)");
+        check(!st.restoreActive(e, v2), "pruned version rejected (restoreActive)");
+        check(st.activeVersion(e) == v1, "active UNCHANGED after rejected operations");
+        check(st.findVersion(e, v1) != nullptr, "valid active version still works");
+    }
+
+    // --- Test 25: clearHistory sonrasi eski geometriye ERISILEMEZ ---
+    {
+        std::printf("Test 25: after clearHistory, superseded geometry unreachable\n");
+        HarnessApp app;
+        app.addCube();
+        const EntityId e = app.document_.modelId(0);
+        OccSolidStore& st = *app.occSolidStore();
+        const VersionId v1 = st.activeVersion(e);
+
+        app.pushUndoSnapshot();
+        app.putOccSolid(0, BRepPrimAPI_MakeBox(1.0, 1.0, 1.0).Shape());
+        check(st.versionCount(e) == 2, "two versions before clearHistory");
+
+        app.document_.clearHistory();  // budama: yalniz etkin surum kalir
+        check(st.findVersion(e, v1) == nullptr,
+              "superseded geometry unreachable after clearHistory");
+        check(st.versionCount(e) == 1, "only active version remains after clearHistory");
+        check(storeHas(st, e), "active geometry still reachable");
+    }
+
+    // --- Test 26: rollback icin gereken surumler kaybolmaz ---
+    // Uc ardisik degisiklik; budama sonrasi uc surum de (undo zinciri icin)
+    // korunur ve geri alinabilir.
+    {
+        std::printf("Test 26: rollback chain survives pruning\n");
+        HarnessApp app;
+        app.addCube();
+        const EntityId e = app.document_.modelId(0);
+        OccSolidStore& st = *app.occSolidStore();
+        const VersionId v1 = st.activeVersion(e);
+
+        app.pushUndoSnapshot();
+        app.putOccSolid(0, BRepPrimAPI_MakeBox(1.0, 1.0, 1.0).Shape());
+        const VersionId v2 = st.activeVersion(e);
+        app.pushUndoSnapshot();
+        app.putOccSolid(0, BRepPrimAPI_MakeBox(2.0, 1.0, 1.0).Shape());
+        const VersionId v3 = st.activeVersion(e);
+
+        app.pushUndoSnapshot();  // budama tetikle
+        check(st.findVersion(e, v1) != nullptr, "rollback version v1 preserved");
+        check(st.findVersion(e, v2) != nullptr, "rollback version v2 preserved");
+        check(st.findVersion(e, v3) != nullptr, "rollback version v3 preserved");
+
+        check(app.document_.undo() && st.activeVersion(e) == v2, "rollback to v2 works");
+        check(app.document_.undo() && st.activeVersion(e) == v1, "rollback to v1 works");
     }
 
     std::printf("\nchecks=%d failures=%d\n", g_checks, g_failures);

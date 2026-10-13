@@ -78,6 +78,17 @@ public:
     // yoksa false doner, hicbir sey degismez.
     bool restoreActive(EntityId id, VersionId version) override;
 
+    // --- SURUM BUDAMA (Phase 3.2C) -----------------------------------------
+    // `keep(entity, version)` false donen tum saklanan surumleri SILER;
+    // surumleri tamamen bosalan slot'lar KALDIRILIR; budanan surumu isaret
+    // eden etkin-alan kInvalidVersionId'ye dusurulur (sabit VersionId'ler,
+    // yeniden numaralandirma YOK). Budanan surum sayisini doner.
+    std::size_t prune(const std::function<bool(EntityId, VersionId)>& keep) override;
+
+    // Tum varliklarin saklanan surum sayilarinin TOPLAMI (olcme/teshis — bellek
+    // birikimini gozlemlemek icin). `size()` (varlik sayisi) ile KARISTIRMA.
+    std::size_t totalVersionCount() const noexcept;
+
     // Bir varligin SAKLANAN surum sayisi (korunan eski surumler dahil).
     std::size_t versionCount(EntityId id) const noexcept;
 

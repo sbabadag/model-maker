@@ -18,6 +18,8 @@
 
 #include <cstdio>
 #include <filesystem>
+#include <functional>
+#include <map>
 #include <memory>
 #include <optional>
 #include <set>
@@ -54,7 +56,12 @@ public:
     bool restoreActive(EntityId, VersionId version) override {
         return version == kInvalidVersionId;
     }
+    std::size_t prune(const std::function<bool(EntityId, VersionId)>&) override {
+        ++pruneCalls;
+        return 0;
+    }
     std::size_t clearCalls{0};
+    std::size_t pruneCalls{0};
     std::size_t live{0};
 };
 
@@ -184,10 +191,15 @@ public:
         lastRestored = v;
         return true;
     }
+    std::size_t prune(const std::function<bool(EntityId, VersionId)>&) override {
+        ++pruneCalls;
+        return 0;
+    }
     std::size_t live{0};
     VersionId active{kInvalidVersionId};
     std::set<VersionId> existing;
     int restoreCalls{0};
+    int pruneCalls{0};
     VersionId lastRestored{kInvalidVersionId};
 };
 
@@ -243,6 +255,104 @@ void testDeltaInvalidVersionIsValid() {
     check(raw->lastRestored == kInvalidVersionId, "'geometri yok' haline donuldu");
 }
 
+// SURUM BUDAMA (Phase 3.2C) — Document'in BUDAMA SOZLESMESI.
+// (varlik, surum) ciftlerini GERCEKTEN modelleyen gozetleyici: Document'in
+// hesapladigi keep yuklemi DOGRU mu ve budama DOGRU tetikleniyor mu?
+class PruningSpyStore final : public OccStore {
+public:
+    void clear() noexcept override { existing.clear(); active.clear(); }
+    std::size_t size() const noexcept override { return existing.size(); }
+    VersionId activeVersion(EntityId e) const noexcept override {
+        auto it = active.find(e);
+        return it == active.end() ? kInvalidVersionId : it->second;
+    }
+    bool findVersionExists(EntityId e, VersionId v) const override {
+        if (v == kInvalidVersionId) return true;
+        auto it = existing.find(e);
+        return it != existing.end() && it->second.count(v) != 0;
+    }
+    bool restoreActive(EntityId e, VersionId v) override {
+        if (v != kInvalidVersionId && !findVersionExists(e, v)) return false;
+        active[e] = v;
+        return true;
+    }
+    // Document'in gonderdigi keep yuklemine gore GERCEKTEN budar; her cagrida
+    // keep'in hangi (varlik, surum) ciftleri icin TRUE dondugunu kaydeder.
+    std::size_t prune(const std::function<bool(EntityId, VersionId)>& keep) override {
+        ++pruneCalls;
+        std::size_t pruned = 0;
+        for (auto& [e, versions] : existing) {
+            for (auto it = versions.begin(); it != versions.end();) {
+                if (!keep(e, *it)) { it = versions.erase(it); ++pruned; }
+                else { kept.emplace(e, *it); ++it; }
+            }
+            auto a = active.find(e);
+            if (a != active.end() && a->second != kInvalidVersionId &&
+                versions.count(a->second) == 0)
+                a->second = kInvalidVersionId;
+        }
+        return pruned;
+    }
+    // Varligin etkin surumunu DOGRUDAN ayarla (test kurulumu).
+    void setActive(EntityId e, VersionId v) {
+        if (v != kInvalidVersionId) existing[e].insert(v);
+        active[e] = v;
+    }
+    std::map<EntityId, std::set<VersionId>> existing;
+    std::map<EntityId, VersionId> active;
+    std::set<std::pair<EntityId, VersionId>> kept;
+    std::size_t pruneCalls{0};
+};
+
+void testPruneOnClearHistory() {
+    std::printf("Test 9: clearHistory budama TETIKLER; canli etkin surum KORUNUR\n");
+    Document doc;
+    auto store = std::make_unique<PruningSpyStore>();
+    PruningSpyStore* raw = store.get();
+    doc.setOccStore(std::move(store));
+
+    // Canli varlik (kimlik 1) + etkin surum v5.
+    doc.addModel(WireframeModel::line({0, 0, 0}, {1, 0, 0}));
+    const EntityId e = doc.modelId(0);
+    raw->setActive(e, 5);
+
+    doc.clearHistory();
+    check(raw->pruneCalls == 1, "clearHistory() budama tetikledi (bir kez)");
+    check(raw->kept.count({e, 5}) != 0,
+          "canli varligin etkin surumu keep kumesinde KORUNDU");
+    check(raw->existing.count(e) != 0 && raw->existing[e].count(5) != 0,
+          "canli etkin surum gercekten sakli kaldi");
+}
+
+void testPruneDropsDeadVersions() {
+    std::printf("Test 10: referanssiz (olu) surumler budanir; referansli KORUNUR\n");
+    Document doc;
+    auto store = std::make_unique<PruningSpyStore>();
+    PruningSpyStore* raw = store.get();
+    doc.setOccStore(std::move(store));
+
+    doc.addModel(WireframeModel::line({0, 0, 0}, {1, 0, 0}));
+    const EntityId e = doc.modelId(0);
+    // v1 = olu (eski), v5 = etkin (canli).
+    raw->existing[e].insert(1);
+    raw->setActive(e, 5);
+
+    doc.clearHistory();
+    check(raw->existing[e].count(5) != 0, "etkin surum (v5) korundu");
+    check(raw->existing[e].count(1) == 0, "referanssiz eski surum (v1) budandi");
+}
+
+void testPruneOnUndoLimit() {
+    std::printf("Test 11: 100 kayit siniri asilinca budama TETIKLENIR\n");
+    Document doc;
+    auto store = std::make_unique<SpyStore>();
+    SpyStore* raw = store.get();
+    doc.setOccStore(std::move(store));
+    // 105 snapshot: 100'u astiginda pop_front + budama calisir.
+    for (int i = 0; i < 105; ++i) doc.pushSnapshot();
+    check(raw->pruneCalls > 0, "100 kayit siniri asilinca budama cagrildi");
+}
+
 }  // namespace
 
 int main() {
@@ -256,6 +366,9 @@ int main() {
     testGeometryDeltaAutoOpensRecord();
     testUndoRejectedOnMissingVersion();
     testDeltaInvalidVersionIsValid();
+    testPruneOnClearHistory();
+    testPruneDropsDeadVersions();
+    testPruneOnUndoLimit();
     std::printf("checks=%d failures=%d\n", g_checks, g_failures);
     if (g_failures == 0) std::printf("OCC STORE (Document): OK\n");
     return g_failures == 0 ? 0 : 1;
