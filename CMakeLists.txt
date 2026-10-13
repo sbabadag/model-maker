@@ -152,7 +152,7 @@ option(BUILD_OCC_BRIDGE_DLL
     "Build mm_occ.dll — the C-API bridge for the Qt app (use MSYS2 toolchain)" OFF)
 
 if(MODELMAKER_OCC_READY)
-    add_library(model_maker_occ src/occ_geometry.cpp src/occ_solid_store.cpp)
+    add_library(model_maker_occ src/occ_geometry.cpp src/occ_solid_store.cpp src/occ_brep_serialize.cpp)
     target_link_libraries(model_maker_occ PUBLIC model_maker_core)
     target_include_directories(model_maker_occ PUBLIC include)
     if(OCC_INCLUDE_DIR)
@@ -514,6 +514,17 @@ if(BUILD_TESTING)
             set_tests_properties(model_maker_occ_smoke PROPERTIES
                 ENVIRONMENT "LD_LIBRARY_PATH=${OCC_ROOT}/lib:$ENV{LD_LIBRARY_PATH}")
         endif()
+
+        # NATIVE BINARY B-Rep SERIALIZER round-trip (Phase 3.4A). Gercek OCCT
+        # ile Create->Serialize->Deserialize->Validate->Boolean akisini sinar.
+        add_executable(model_maker_occ_brep_serialize_test tests/occ_brep_serialize_test.cpp)
+        target_link_libraries(model_maker_occ_brep_serialize_test PRIVATE model_maker_occ)
+        add_test(NAME model_maker_occ_brep_serialize_test
+                 COMMAND model_maker_occ_brep_serialize_test)
+        if(UNIX)
+            set_tests_properties(model_maker_occ_brep_serialize_test PROPERTIES
+                ENVIRONMENT "LD_LIBRARY_PATH=${OCC_ROOT}/lib:$ENV{LD_LIBRARY_PATH}")
+        endif()
     endif()
 
     # OCC SAHIPLIK REGRESYON HARNESS'I (kaynak-govde cikarimi + GERCEK OCCT).
@@ -543,6 +554,12 @@ if(BUILD_TESTING)
                 add_test(NAME model_maker_occ_solid_ids
                     COMMAND ${Python3_EXECUTABLE}
                         ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_occ_solid_ids.py
+                        ${CMAKE_CURRENT_BINARY_DIR}
+                        --occt-include ${MM_SYSTEM_OCC_INCLUDE})
+                # NATIVE BINARY B-Rep SERIALIZER round-trip (Phase 3.4A).
+                add_test(NAME model_maker_occ_brep_serialize
+                    COMMAND ${Python3_EXECUTABLE}
+                        ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_occ_brep_serialize.py
                         ${CMAKE_CURRENT_BINARY_DIR}
                         --occt-include ${MM_SYSTEM_OCC_INCLUDE})
             endif()

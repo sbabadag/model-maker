@@ -1,0 +1,261 @@
+// NATIVE BINARY B-Rep SERIALIZER — round-trip testleri (Phase 3.4A).
+//
+// Gercek OCCT ile: Create -> Serialize -> Deserialize -> Validate -> Boolean.
+// Sinanir: tam silindir, kutu, boolean fuse/cut/common, duzlemle kesilmis
+// (trim) kati, extrude edilmis katı, coklu kati (compound), null/bos,
+// bozuk/kesilmis blob.
+//
+// Dogrulama HACIM esitligine INDIRGENMEZ: sekil tipi, BRepCheck gecerliligi,
+// hacim, eksen-hizali sinir kutusu VE topolojik eleman sayilari karsilastirilir.
+// Ayrica round-trip sonrasi seklin boolean isleminde KULLANILABILIR oldugu
+// kanitlanir (kucuk bir kutuyla fuse).
+//
+// Bu test BAGIMSIZDIR: yalnizca serializer (occ_brep_serialize.cpp) + OCCT
+// ilkelleri kullanir; uygulama geometri modulu (occ_geometry) gerektirmez.
+
+#include "model_maker/occ_brep_serialize.hpp"
+
+#include <Bnd_Box.hxx>
+#include <BRepAlgoAPI_Common.hxx>
+#include <BRepAlgoAPI_Cut.hxx>
+#include <BRepAlgoAPI_Fuse.hxx>
+#include <BRepBndLib.hxx>
+#include <BRepBuilderAPI_MakeFace.hxx>
+#include <BRepBuilderAPI_MakePolygon.hxx>
+#include <BRepGProp.hxx>
+#include <BRepPrimAPI_MakeBox.hxx>
+#include <BRepPrimAPI_MakeCylinder.hxx>
+#include <BRepPrimAPI_MakePrism.hxx>
+#include <BRep_Builder.hxx>
+#include <GProp_GProps.hxx>
+#include <TopAbs_ShapeEnum.hxx>
+#include <TopExp_Explorer.hxx>
+#include <TopoDS_Compound.hxx>
+#include <TopoDS_Shape.hxx>
+#include <gp_Ax2.hxx>
+#include <gp_Dir.hxx>
+#include <gp_Pnt.hxx>
+#include <gp_Vec.hxx>
+
+#include <cmath>
+#include <cstdio>
+#include <string>
+
+using namespace mm;
+
+namespace {
+
+int g_checks = 0;
+int g_failures = 0;
+
+void check(bool ok, const char* what) {
+    ++g_checks;
+    std::printf("  %s %s\n", ok ? "PASS" : "FAIL", what);
+    if (!ok) ++g_failures;
+}
+
+double volumeOf(const TopoDS_Shape& s) {
+    if (s.IsNull()) return 0.0;
+    GProp_GProps props;
+    BRepGProp::VolumeProperties(s, props);
+    return props.Mass();
+}
+
+struct Box3 { double xmin, ymin, zmin, xmax, ymax, zmax; };
+
+bool boundsOf(const TopoDS_Shape& s, Box3& out) {
+    if (s.IsNull()) return false;
+    Bnd_Box box;
+    BRepBndLib::Add(s, box);
+    if (box.IsVoid()) return false;
+    box.Get(out.xmin, out.ymin, out.zmin, out.xmax, out.ymax, out.zmax);
+    return true;
+}
+
+struct TopoCounts { int verts{0}, edges{0}, faces{0}, solids{0}; };
+
+TopoCounts countTopology(const TopoDS_Shape& s) {
+    TopoCounts c;
+    for (TopExp_Explorer ex(s, TopAbs_VERTEX); ex.More(); ex.Next()) ++c.verts;
+    for (TopExp_Explorer ex(s, TopAbs_EDGE); ex.More(); ex.Next()) ++c.edges;
+    for (TopExp_Explorer ex(s, TopAbs_FACE); ex.More(); ex.Next()) ++c.faces;
+    for (TopExp_Explorer ex(s, TopAbs_SOLID); ex.More(); ex.Next()) ++c.solids;
+    return c;
+}
+
+bool nearEq(double a, double b, double tol = 1e-6) { return std::abs(a - b) <= tol; }
+
+// Ortak round-trip akisi; TUM dogrulama eksenlerini karsilar.
+bool roundTripEquivalent(const TopoDS_Shape& original, const char* label) {
+    std::string blob, err;
+    if (!serializeBRep(original, blob, &err)) {
+        std::printf("    [%s] serialize FAILED: %s\n", label, err.c_str());
+        return false;
+    }
+    std::printf("    [%s] blob = %zu bytes (format v%d, OCCT %s)\n",
+                label, blob.size(), bRepFormatVersion(), occVersionString());
+
+    TopoDS_Shape restored;
+    if (!deserializeBRep(blob, restored, &err)) {
+        std::printf("    [%s] deserialize FAILED: %s\n", label, err.c_str());
+        return false;
+    }
+    if (restored.IsNull()) { std::printf("    [%s] restored NULL\n", label); return false; }
+    if (!validateBRep(restored)) { std::printf("    [%s] BRepCheck INVALID\n", label); return false; }
+
+    const bool typeOk = restored.ShapeType() == original.ShapeType();
+    const double va = volumeOf(original);
+    const double vb = volumeOf(restored);
+    const bool volOk = va > 0.0 ? nearEq(va, vb, 1e-6 * va) : nearEq(va, vb, 1e-9);
+    Box3 ba{}, bb{};
+    const bool bboxOk = boundsOf(original, ba) && boundsOf(restored, bb) &&
+                        nearEq(ba.xmin, bb.xmin, 1e-6) && nearEq(ba.xmax, bb.xmax, 1e-6) &&
+                        nearEq(ba.ymin, bb.ymin, 1e-6) && nearEq(ba.ymax, bb.ymax, 1e-6) &&
+                        nearEq(ba.zmin, bb.zmin, 1e-6) && nearEq(ba.zmax, bb.zmax, 1e-6);
+    const TopoCounts ca = countTopology(original);
+    const TopoCounts cb = countTopology(restored);
+    const bool topoOk = ca.verts == cb.verts && ca.edges == cb.edges &&
+                        ca.faces == cb.faces && ca.solids == cb.solids;
+    const bool ok = typeOk && volOk && bboxOk && topoOk;
+    std::printf("    [%s] type=%d/%d vol=%.6f/%.6f bbox=%s topo(V/E/F/S)=%d%d%d%d/%d%d%d%d\n",
+                label, static_cast<int>(restored.ShapeType()),
+                static_cast<int>(original.ShapeType()), vb, va,
+                bboxOk ? "OK" : "FAIL",
+                cb.verts, cb.edges, cb.faces, cb.solids,
+                ca.verts, ca.edges, ca.faces, ca.solids);
+    return ok;
+}
+
+// Round-trip sonrasi boolean kullanilabilirligi.
+bool booleanUsableAfterRoundTrip(const TopoDS_Shape& original) {
+    std::string blob;
+    if (!serializeBRep(original, blob)) return false;
+    TopoDS_Shape restored;
+    if (!deserializeBRep(blob, restored)) return false;
+    const TopoDS_Shape probe = BRepPrimAPI_MakeBox(0.5, 0.5, 0.5).Shape();
+    TopoDS_Shape fused;
+    try {
+        BRepAlgoAPI_Fuse fuse(restored, probe);
+        if (!fuse.IsDone()) return false;
+        fused = fuse.Shape();
+    } catch (const std::exception&) {
+        return false;
+    }
+    if (fused.IsNull() || !validateBRep(fused)) return false;
+    return volumeOf(fused) >= volumeOf(original) - 1e-6;
+}
+
+TopoDS_Shape makeCompound(const TopoDS_Shape& a, const TopoDS_Shape& b) {
+    TopoDS_Compound compound;
+    BRep_Builder builder;
+    builder.MakeCompound(compound);
+    builder.Add(compound, a);
+    builder.Add(compound, b);
+    return compound;
+}
+
+// AYRIK (cakismayan) iki katidan compound: boolean kullanilabilirlik testi
+// icin kendi kendine kesismeyen temiz bir girdi gerekir.
+TopoDS_Shape makeDisjointCompound() {
+    const TopoDS_Shape box = BRepPrimAPI_MakeBox(2.0, 2.0, 2.0).Shape();
+    // Silindir kutu'dan uzaga (x=6) yerlesir -> compound icinde cakisma YOK.
+    const gp_Ax2 axis(gp_Pnt(6.0, 0.0, 0.0), gp_Dir(0, 0, 1));
+    const TopoDS_Shape cyl = BRepPrimAPI_MakeCylinder(axis, 0.8, 4.0).Shape();
+    return makeCompound(box, cyl);
+}
+
+// Ucgen yuzun ekstruzyonu (BRepPrimAPI_MakePrism) — "extrude edilmis" katı.
+TopoDS_Shape makeExtrudedPrism() {
+    BRepBuilderAPI_MakePolygon poly(gp_Pnt(0, 0, 0), gp_Pnt(2, 0, 0),
+                                    gp_Pnt(0, 3, 0), gp_Pnt(0, 0, 0));
+    BRepBuilderAPI_MakeFace face(poly.Wire());
+    return BRepPrimAPI_MakePrism(face.Face(), gp_Vec(0, 0, 4)).Shape();
+}
+
+// Iki kutu cakismasiyla "trim edilmis" (kose kesilmis) katı.
+TopoDS_Shape makeTrimmedSolid() {
+    const TopoDS_Shape big = BRepPrimAPI_MakeBox(4.0, 4.0, 4.0).Shape();
+    const TopoDS_Shape corner = BRepPrimAPI_MakeBox(2.0, 2.0, 2.0).Shape();
+    BRepAlgoAPI_Cut cut(big, corner);
+    return cut.Shape();
+}
+
+} // namespace
+
+int main() {
+    std::setvbuf(stdout, nullptr, _IOLBF, 0);
+    std::printf("== B-Rep SERIALIZER round-trip (gercek OCCT %s, BinTools format v%d) ==\n",
+                occVersionString(), bRepFormatVersion());
+
+    int passed = 0, failed = 0;
+    const auto run = [&](const char* name, const TopoDS_Shape& s) {
+        std::printf("Test: %s\n", name);
+        bool ok = roundTripEquivalent(s, name);
+        if (ok) {
+            const bool usable = booleanUsableAfterRoundTrip(s);
+            check(usable, "round-trip shape usable in boolean (fuse with probe)");
+            ok = usable;
+        }
+        if (ok) ++passed; else ++failed;
+    };
+
+    run("full cylinder r=1.3 h=3.0", BRepPrimAPI_MakeCylinder(1.3, 3.0).Shape());
+    run("box 2.6^3", BRepPrimAPI_MakeBox(2.6, 2.6, 2.6).Shape());
+    {
+        const TopoDS_Shape cube = BRepPrimAPI_MakeBox(2.6, 2.6, 2.6).Shape();
+        const TopoDS_Shape cyl = BRepPrimAPI_MakeCylinder(1.3, 3.0).Shape();
+        run("boolean FUSE", BRepAlgoAPI_Fuse(cube, cyl).Shape());
+        run("boolean CUT", BRepAlgoAPI_Cut(cube, cyl).Shape());
+        run("boolean COMMON", BRepAlgoAPI_Common(cube, cyl).Shape());
+    }
+    run("trimmed solid (corner cut)", makeTrimmedSolid());
+    run("extruded prism (triangle)", makeExtrudedPrism());
+    run("multi-solid compound (disjoint)", makeDisjointCompound());
+
+    // 9) Null / bos geometri.
+    {
+        std::printf("Test: null shape\n");
+        TopoDS_Shape nullShape;
+        std::string blob, err;
+        check(!serializeBRep(nullShape, blob, &err), "null shape serialize rejected");
+        check(blob.empty(), "null shape produces no blob");
+        check(!deserializeBRep("", nullShape, &err), "empty blob deserialize rejected");
+        if (!serializeBRep(nullShape, blob, &err)) ++passed; else ++failed;
+    }
+
+    // 10) Bozulmus / kesilmis blob.
+    {
+        std::printf("Test: corrupt/truncated blob\n");
+        const TopoDS_Shape box = BRepPrimAPI_MakeBox(2.0, 2.0, 2.0).Shape();
+        std::string blob;
+        if (!serializeBRep(box, blob)) {
+            check(false, "setup: box serialize failed");
+            ++failed;
+        } else {
+            const std::size_t originalSize = blob.size();
+            const std::string truncated = blob.substr(0, originalSize / 2);
+            TopoDS_Shape t; std::string err;
+            const bool readOk = deserializeBRep(truncated, t, &err);
+            check(!readOk || !validateBRep(t), "truncated blob never yields a VALID shape");
+
+            std::string corrupted = blob;
+            corrupted.erase(corrupted.begin() + static_cast<std::ptrdiff_t>(originalSize / 2));
+            TopoDS_Shape c;
+            const bool readOk2 = deserializeBRep(corrupted, c, &err);
+            check(!readOk2 || !validateBRep(c), "corrupted blob never yields a VALID shape");
+
+            if ((!readOk || !validateBRep(t)) && (!readOk2 || !validateBRep(c)))
+                ++passed; else ++failed;
+        }
+    }
+
+    // Metadata sozlesmesi.
+    check(bRepFormatVersion() > 0, "format version is positive");
+    check(occVersionString() != nullptr && occVersionString()[0] != '\0',
+          "OCCT version string is non-empty");
+    check(maxBRepBlobSize() > 0, "max blob size is positive");
+
+    std::printf("\nchecks=%d failures=%d\n", g_checks, g_failures);
+    std::printf("B-Rep SERIALIZER round-trip: %d passed, %d failed\n", passed, failed);
+    return (g_failures == 0 && failed == 0) ? 0 : 1;
+}
