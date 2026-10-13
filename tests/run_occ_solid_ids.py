@@ -48,6 +48,7 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 APP_CPP = os.path.join(ROOT, "src", "application.cpp")
+DOC_CPP = os.path.join(ROOT, "src", "document.cpp")
 
 # Cekirdek kaynaklar (CMakeLists `model_maker_core` + OCC modulu). Liste
 # degisirse LINK HATASI verir — sessiz gecmez.
@@ -177,7 +178,13 @@ def assert_source_shape(bodies, text):
             errs.append(f"{name}: addStyledModel store yazimindan SONRA (off-by-one riski)")
     # MAGAZA KOPRUSU: Application'in AYRI haritasi YOK; tek kaynak Document.
     need("occSolidStore", "mm::asSolidStore(&document_.occStore());")
-    need("putOccSolid", "store->set(document_.modelId(index), shape)")
+    # Phase 3.2B: putOccSolid ON-GORUNTU alir ve geometri deltasini KAYDEDER
+    # (surum degisikligi sessizce undo disinda kalmaz).
+    need("putOccSolid", "const EntityId id = document_.modelId(index);")
+    need("putOccSolid", "const VersionId before = store->activeVersion(id);")
+    need("putOccSolid", "const VersionId after = store->set(id, shape);")
+    need("putOccSolid", "document_.recordGeometryDelta(id, before, after);")
+    forbid("putOccSolid", "store->set(document_.modelId(index), shape)")
     need("occSolidCount", "store->size()")
     need("findOccSolid", "store->find(document_.modelId(index))")
     # lastLiveSolids yalniz CANLI varliklari dondurmeli (filtre Document'tan).
@@ -201,8 +208,44 @@ def assert_source_shape(bodies, text):
         if needle not in text[i:k]:
             errs.append(f"{name}: belge yasam dongusu cagrisi YOK ({needle!r}) "
                         "(magaza temizligi Document'a devredildi)")
+    # Phase 3.2B: profil atamanin 1:1 (existingSolid) dali artik undo kaydi ACAR
+    # (yoksa B-Rep + tel kafes degisikligi undo disinda kalirdi).
+    idx = text.find("if (existingSolid) {")
+    if idx < 0:
+        errs.append("assignProfileToSelection: existingSolid dali bulunamadi")
+    else:
+        seg = text[idx:idx + 700]
+        if "pushUndoSnapshot();" not in seg:
+            errs.append("assignProfileToSelection: existingSolid dali undo kaydi "
+                        "ACMIYOR (pushUndoSnapshot yok)")
     if errs:
         raise HarnessError("kaynak-sekil kontrolu BASARISIZ:\n  - " + "\n  - ".join(errs))
+
+
+def assert_document_shape(doc_text):
+    """document.cpp (Phase 3.2B) sozlesmesini kilitler: geometri deltasi kaydi
+    (sessiz dusme YOK) + undo/redo icin IKI FAZLI atomik dogrulama."""
+    errs = []
+
+    def need(needle, what):
+        if needle not in doc_text:
+            errs.append(f"document.cpp: {what} YOK -> {needle!r}")
+
+    # delta kaydi acik kayit yoksa KENDI kaydini acar (sessiz dusme YOK)
+    need("if (undoStack_.empty()) pushSnapshot();",
+         "recordGeometryDelta kayit acmiyor (sessiz dusme riski)")
+    need("void Document::recordGeometryDelta(EntityId entity, VersionId before, VersionId after)",
+         "recordGeometryDelta tanimi yok")
+    # ayNI varlik: ILK before, SON after
+    need("rec.geometryAfter[i].version = after;",
+         "ayni varlikta ILK-before/SON-after kurali yok")
+    # iki fazli atomik dogrulama
+    need("findVersionExists(ref.entity, ref.version)", "undo/redo on-dogrulamasi yok")
+    need("occStore_->restoreActive(ref.entity, ref.version)", "geometri geri yukleme yok")
+    # 'recordHasEffect' geometri deltasini da sayar (akis gorunurlugu)
+    need("!rec.geometryBefore.empty()", "geometri deltasi undo gorunurlugune dahil degil")
+    if errs:
+        raise HarnessError("document.cpp sekil kontrolu BASARISIZ:\n  - " + "\n  - ".join(errs))
 
 
 CPP_PREAMBLE = r"""
@@ -742,6 +785,233 @@ int main() {
               "counter exhausted stays 0");
     }
 
+    // =====================================================================
+    // Phase 3.2B — TRANSACTIONAL GEOMETRY UNDO/REDO (gercek Document+store)
+    // =====================================================================
+
+    // --- Test 11: geometri degisikligi (replace) -> undo -> redo ---
+    // Ayni EntityId altinda YENI B-Rep; undo ESKI SURUMU (hacim/bbox) geri
+    // getirmeli. Yalnizca kimligi geri yuklemek YETMEZ.
+    {
+        std::printf("Test 11: replace -> undo -> redo restores B-Rep version\n");
+        HarnessApp app;
+        app.addCube();
+        const EntityId id0 = app.document_.modelId(0);
+        OccSolidStore& st = *app.occSolidStore();
+        const double volOld = storeVolume(st, id0);
+        Box3 bOld{};
+        check(storeBounds(st, id0, bOld), "old bbox available");
+
+        const TopoDS_Shape small = BRepPrimAPI_MakeBox(1.0, 1.0, 1.0).Shape();
+        app.pushUndoSnapshot();
+        app.document_.replaceModel(0, {mm::shapeToWireframeWithFaces(small, 0.15)});
+        app.putOccSolid(0, small);
+        check(std::abs(storeVolume(st, id0) - 1.0) < 1e-6, "after op: new geometry (vol 1.0)");
+
+        check(app.document_.undo(), "undo returns true");
+        check(std::abs(storeVolume(st, id0) - volOld) < kVolTol,
+              "undo restores OLD B-Rep geometry (vol 17.576)");
+        Box3 bBack{};
+        check(storeBounds(st, id0, bBack) &&
+              std::abs((bBack.xmax - bBack.xmin) - (bOld.xmax - bOld.xmin)) < 1e-6,
+              "undo restores OLD bbox (not just volume)");
+
+        check(app.document_.redo(), "redo returns true");
+        check(std::abs(storeVolume(st, id0) - 1.0) < 1e-6,
+              "redo restores NEW B-Rep geometry (vol 1.0)");
+    }
+
+    // --- Test 12: ayni komutta AYNI EntityId'ye binden fazla yazma ---
+    // Ilk ONCESI + son SONRASI saklanir; TEK undo ARA surumu ATLAMALI.
+    {
+        std::printf("Test 12: two writes to same EntityId -> single undo skips intermediate\n");
+        HarnessApp app;
+        app.addCube();
+        const EntityId id = app.document_.modelId(0);
+        OccSolidStore& st = *app.occSolidStore();
+        const TopoDS_Shape s1 = BRepPrimAPI_MakeBox(1.0, 1.0, 1.0).Shape();
+        const TopoDS_Shape s2 = BRepPrimAPI_MakeBox(2.0, 1.0, 1.0).Shape();
+        app.pushUndoSnapshot();
+        app.putOccSolid(0, s1);
+        app.putOccSolid(0, s2);
+        check(std::abs(storeVolume(st, id) - 2.0) < 1e-6, "after two writes: last geometry (vol 2.0)");
+        check(app.document_.undo(), "undo returns true");
+        check(std::abs(storeVolume(st, id) - kCubeVol) < kVolTol,
+              "SINGLE undo returns to ORIGINAL (17.576), not intermediate (1.0)");
+    }
+
+    // --- Test 13: TEK komutta BIRDEN FAZLA EntityId -> atomik geri alma ---
+    {
+        std::printf("Test 13: multiple EntityIds in one command -> atomic undo\n");
+        HarnessApp app;
+        app.addCube();
+        app.addCylinder();
+        const EntityId a = app.document_.modelId(0);
+        const EntityId b = app.document_.modelId(1);
+        OccSolidStore& st = *app.occSolidStore();
+        const double va = storeVolume(st, a), vb = storeVolume(st, b);
+
+        const TopoDS_Shape na = BRepPrimAPI_MakeBox(1.0, 1.0, 1.0).Shape();
+        const TopoDS_Shape nb = BRepPrimAPI_MakeBox(2.0, 2.0, 2.0).Shape();
+        app.pushUndoSnapshot();
+        app.putOccSolid(0, na);
+        app.putOccSolid(1, nb);
+        check(std::abs(storeVolume(st, a) - 1.0) < 1e-6 && std::abs(storeVolume(st, b) - 8.0) < 1e-6,
+              "both entities changed in one command");
+
+        check(app.document_.undo(), "undo returns true");
+        check(std::abs(storeVolume(st, a) - va) < kVolTol && std::abs(storeVolume(st, b) - vb) < kVolTol,
+              "BOTH restored atomically (no partial undo)");
+    }
+
+    // --- Test 14: yeni kati olustur -> undo -> redo ---
+    {
+        std::printf("Test 14: create solid -> undo -> redo\n");
+        HarnessApp app;
+        app.addCube();
+        const EntityId id0 = app.document_.modelId(0);
+        OccSolidStore& st = *app.occSolidStore();
+        check(storeHas(st, id0), "created: geometry present");
+
+        check(app.document_.undo(), "undo returns true");
+        check(!app.document_.indexOfEntity(id0).has_value(), "entity removed by undo");
+        check(st.find(id0) == nullptr, "no ACTIVE geometry after create-undo (version 'none')");
+        check(st.activeVersion(id0) == kInvalidVersionId, "active version = none");
+
+        check(app.document_.redo(), "redo returns true");
+        check(app.document_.indexOfEntity(id0).has_value(), "entity re-added");
+        check(storeHas(st, id0) && std::abs(storeVolume(st, id0) - kCubeVol) < kVolTol,
+              "redo restores geometry (vol 17.576)");
+    }
+
+    // --- Test 15: boolean -> undo -> redo; operandlar korunur ---
+    {
+        std::printf("Test 15: boolean -> undo -> redo; operands preserved\n");
+        HarnessApp app;
+        app.addCube();
+        app.addCylinder();
+        const EntityId a = app.document_.modelId(0);
+        const EntityId b = app.document_.modelId(1);
+        app.addBooleanFuse();
+        const EntityId r = app.document_.modelId(2);
+        OccSolidStore& st = *app.occSolidStore();
+        const double vr = storeVolume(st, r);
+
+        check(app.document_.undo(), "undo returns true");
+        check(!app.document_.indexOfEntity(r).has_value(), "fuse result removed by undo");
+        check(storeHas(st, a) && storeHas(st, b), "operands preserved through undo");
+        check(st.find(r) == nullptr, "result geometry 'none' after undo");
+
+        check(app.document_.redo(), "redo returns true");
+        check(app.document_.indexOfEntity(r).has_value(), "result re-added by redo");
+        check(std::abs(storeVolume(st, r) - vr) < kVolTol, "redo restores fuse geometry");
+    }
+
+    // --- Test 16: sil -> undo -> redo (geometri undo icin KORUNUR) ---
+    {
+        std::printf("Test 16: delete -> undo -> redo; geometry preserved\n");
+        HarnessApp app;
+        app.addCube();
+        const EntityId id0 = app.document_.modelId(0);
+        OccSolidStore& st = *app.occSolidStore();
+        const double v = storeVolume(st, id0);
+
+        app.pushUndoSnapshot();
+        app.document_.deleteModels({0});
+        check(app.document_.models().empty(), "entity deleted");
+        check(storeHas(st, id0), "deleted entity's geometry PRESERVED in store (undo policy)");
+
+        check(app.document_.undo(), "undo returns true");
+        check(app.document_.indexOfEntity(id0).has_value() &&
+              app.document_.modelId(0) == id0, "SAME EntityId restored");
+        check(std::abs(storeVolume(st, id0) - v) < kVolTol, "geometry intact after undo");
+
+        check(app.document_.redo(), "redo returns true");
+        check(app.document_.models().empty(), "redo deletes again");
+        check(storeHas(st, id0), "geometry still preserved after redo (no pruning in 3.2B)");
+    }
+
+    // --- Test 17: EKSIK surum -> islem REDDEDILIR, tum durum degismez ---
+    {
+        std::printf("Test 17: missing version -> undo rejected, state unchanged\n");
+        HarnessApp app;
+        app.addCube();
+        const EntityId id0 = app.document_.modelId(0);
+        OccSolidStore& st = *app.occSolidStore();
+        const std::size_t nModels = app.document_.models().size();
+        const double vBefore = storeVolume(st, id0);
+        const std::size_t rBefore = app.document_.models().size();  // redo sayimi icin
+
+        app.pushUndoSnapshot();
+        // BOZUK delta: ONCESI var olmayan bir surume isaret ediyor.
+        app.document_.recordGeometryDelta(id0, 999999u, kInvalidVersionId);
+        check(app.document_.canUndo(), "record is on the stack");
+
+        check(!app.document_.undo(), "undo REJECTED (missing version)");
+        check(app.document_.models().size() == nModels, "document UNCHANGED after rejected undo");
+        check(std::abs(storeVolume(st, id0) - vBefore) < 1e-9, "store UNCHANGED after rejected undo");
+        check(app.document_.canUndo(), "rejected record NOT consumed from stack");
+        (void)rBefore;
+    }
+
+    // --- Test 18: YALNIZ geometri deltasi olan kayit undo edilebilir ---
+    {
+        std::printf("Test 18: geometry-delta-only record is undoable\n");
+        HarnessApp app;
+        app.addCube();
+        const EntityId id = app.document_.modelId(0);
+        OccSolidStore& st = *app.occSolidStore();
+        const double v0 = storeVolume(st, id);
+
+        app.pushUndoSnapshot();
+        const VersionId prev = st.activeVersion(id);
+        const VersionId nv = st.set(id, BRepPrimAPI_MakeBox(1.0, 1.0, 1.0).Shape());
+        app.document_.recordGeometryDelta(id, prev, nv);
+        // ops BOS, layers ayni — yalniz geometri deltasi var.
+        check(app.document_.canUndo(), "canUndo() sees geometry-only record");
+        check(app.document_.undo(), "undo returns true");
+        check(std::abs(storeVolume(st, id) - v0) < kVolTol, "geometry restored from delta-only record");
+    }
+
+    // --- Test 19: SNAPSHOT'SIZ geometri yazimi SESSIZCE DUSMEZ ---
+    {
+        std::printf("Test 19: geometry write with no open snapshot auto-opens a record\n");
+        HarnessApp app;
+        app.addCube();
+        app.document_.clearHistory();
+        check(!app.document_.hasOpenUndoRecord(), "no open record after clearHistory()");
+        const EntityId id = app.document_.modelId(0);
+        OccSolidStore& st = *app.occSolidStore();
+        const VersionId prev = st.activeVersion(id);
+        const VersionId nv = st.set(id, BRepPrimAPI_MakeBox(1.0, 1.0, 1.0).Shape());
+        app.document_.recordGeometryDelta(id, prev, nv);  // kayit YOK -> KENDI acar
+        check(app.document_.hasOpenUndoRecord(), "recordGeometryDelta OPENED its own record");
+        check(app.document_.canUndo(), "delta is undoable (not silently dropped)");
+        check(app.document_.undo(), "undo returns true");
+        check(std::abs(storeVolume(st, id) - kCubeVol) < kVolTol,
+              "geometry restored via auto-opened record");
+    }
+
+    // --- Test 20: undo sonrasi YENI islem redo gecmisini temizler ---
+    {
+        std::printf("Test 20: new op after undo clears redo history (no pruning yet)\n");
+        HarnessApp app;
+        app.addCube();
+        const EntityId id = app.document_.modelId(0);
+        OccSolidStore& st = *app.occSolidStore();
+
+        app.pushUndoSnapshot();
+        app.putOccSolid(0, BRepPrimAPI_MakeBox(1.0, 1.0, 1.0).Shape());
+        check(app.document_.undo(), "undo returns true");
+        check(app.document_.canRedo(), "canRedo true after undo");
+
+        app.pushUndoSnapshot();
+        app.putOccSolid(0, BRepPrimAPI_MakeBox(2.0, 2.0, 2.0).Shape());
+        check(!app.document_.canRedo(), "new op cleared redo history");
+        check(std::abs(storeVolume(st, id) - 8.0) < 1e-6, "new geometry active");
+        check(st.versionCount(id) >= 3, "old versions retained (pruning is 3.2C, not 3.2B)");
+    }
+
     std::printf("\nchecks=%d failures=%d\n", g_checks, g_failures);
     if (g_failures == 0) std::printf("OCC SOLID-ID HARNESS: OK\n");
     else std::printf("OCC SOLID-ID HARNESS: FAILED\n");
@@ -807,8 +1077,11 @@ def main(argv):
             text = fh.read()
 
         bodies = extract_bodies(text)
+        with open(DOC_CPP, "r", encoding="utf-8") as fh:
+            doc_text = fh.read()
         if opts["shape_check"]:
             assert_source_shape(bodies, text)
+            assert_document_shape(doc_text)
             print("kaynak-govde cikarimi OK (%d govde; sekil kontrolleri gecti)" % len(bodies))
         else:
             print("kaynak-govde cikarimi OK (%d govde; sekil kapisi KAPALI)" % len(bodies))

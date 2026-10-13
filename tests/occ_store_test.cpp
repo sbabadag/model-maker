@@ -20,6 +20,7 @@
 #include <filesystem>
 #include <memory>
 #include <optional>
+#include <set>
 #include <string>
 #include <type_traits>
 
@@ -45,6 +46,14 @@ public:
         live = 0;
     }
     std::size_t size() const noexcept override { return live; }
+    // Surum sorgulari: OCC'siz gozetleyici hicbir gercek surum tutmaz.
+    VersionId activeVersion(EntityId) const noexcept override { return kInvalidVersionId; }
+    bool findVersionExists(EntityId, VersionId version) const override {
+        return version == kInvalidVersionId;
+    }
+    bool restoreActive(EntityId, VersionId version) override {
+        return version == kInvalidVersionId;
+    }
     std::size_t clearCalls{0};
     std::size_t live{0};
 };
@@ -157,6 +166,83 @@ void testSetOccStoreNullSafe() {
     check(doc.occStore().size() == 0, "clear() safe with fallback store");
 }
 
+// SURUM-FARKINDA gozetleyici: undo/redo'nun magaza uzerinde HANGI surumu
+// etkinlestirdigini kaydeder. Gercek OCCT magazasinin yerine GECMEZ; amac
+// Document'in undo/redo SOZLESMESINI olcmektir (Phase 3.2B).
+class VersionedSpyStore final : public OccStore {
+public:
+    void clear() noexcept override { live = 0; }
+    std::size_t size() const noexcept override { return live; }
+    VersionId activeVersion(EntityId) const noexcept override { return active; }
+    bool findVersionExists(EntityId, VersionId v) const override {
+        return v == kInvalidVersionId || existing.count(v) != 0;
+    }
+    bool restoreActive(EntityId, VersionId v) override {
+        if (v != kInvalidVersionId && existing.count(v) == 0) return false;
+        active = v;
+        ++restoreCalls;
+        lastRestored = v;
+        return true;
+    }
+    std::size_t live{0};
+    VersionId active{kInvalidVersionId};
+    std::set<VersionId> existing;
+    int restoreCalls{0};
+    VersionId lastRestored{kInvalidVersionId};
+};
+
+void testGeometryDeltaAutoOpensRecord() {
+    std::printf("Test 6: geometri deltasi kayit yokken KENDI kaydini acar; undo uygular\n");
+    Document doc;
+    auto store = std::make_unique<VersionedSpyStore>();
+    VersionedSpyStore* raw = store.get();
+    doc.setOccStore(std::move(store));
+    raw->existing.insert(7);
+    raw->existing.insert(9);
+    raw->active = 7;
+
+    check(!doc.hasOpenUndoRecord(), "baslangicta acik kayit yok");
+    // Kayit ACMADAN delta kaydet → Document KENDI kaydini acmali.
+    doc.recordGeometryDelta(42, 7, 9);
+    check(doc.hasOpenUndoRecord(), "recordGeometryDelta kendi kaydini acti");
+    check(doc.canUndo(), "geometri deltasi undo edilebilir (sessiz dusme YOK)");
+    check(raw->restoreCalls == 0, "henuz restore cagrisi yok");
+
+    check(doc.undo(), "undo true doner");
+    check(raw->restoreCalls == 1 && raw->lastRestored == 7,
+          "undo ONCESI surumu (7) restoreActive ile geri yukledi");
+    check(!doc.canUndo(), "kayit tukendi");
+
+    check(doc.redo(), "redo true doner");
+    check(raw->lastRestored == 9, "redo SONRAKI surumu (9) geri yukledi");
+}
+
+void testUndoRejectedOnMissingVersion() {
+    std::printf("Test 7: EKSIK surum -> undo REDDEDILIR, hicbir sey degismez\n");
+    Document doc;
+    auto store = std::make_unique<VersionedSpyStore>();
+    VersionedSpyStore* raw = store.get();
+    doc.setOccStore(std::move(store));
+    // ONCESI var olmayan bir surume isaret ediyor.
+    doc.recordGeometryDelta(5, 999u, kInvalidVersionId);
+    check(doc.canUndo(), "kayit yiginda");
+    check(!doc.undo(), "undo REDDEDILDI (eksik surum)");
+    check(raw->restoreCalls == 0, "reddedilen undo magazaya DOKUNMADI");
+    check(doc.canUndo(), "reddedilen kayit yigindan TUKETILMEDI");
+}
+
+void testDeltaInvalidVersionIsValid() {
+    std::printf("Test 8: kInvalidVersionId 'geometri yok' GECERLI (olusturma-undo)\n");
+    Document doc;
+    auto store = std::make_unique<VersionedSpyStore>();
+    VersionedSpyStore* raw = store.get();
+    doc.setOccStore(std::move(store));
+    raw->existing.insert(3);
+    doc.recordGeometryDelta(11, kInvalidVersionId, 3);
+    check(doc.undo(), "kInvalid 'before' ile undo KABUL edilir (olusturma-undo)");
+    check(raw->lastRestored == kInvalidVersionId, "'geometri yok' haline donuldu");
+}
+
 }  // namespace
 
 int main() {
@@ -167,6 +253,9 @@ int main() {
     testClearResetsStore();
     testLoadResetsStore();
     testSetOccStoreNullSafe();
+    testGeometryDeltaAutoOpensRecord();
+    testUndoRejectedOnMissingVersion();
+    testDeltaInvalidVersionIsValid();
     std::printf("checks=%d failures=%d\n", g_checks, g_failures);
     if (g_failures == 0) std::printf("OCC STORE (Document): OK\n");
     return g_failures == 0 ? 0 : 1;

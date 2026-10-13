@@ -36,10 +36,11 @@ import run_occ_solid_ids as h  # ayni cikarim mantigi (tek kaynak)
 APP_CPP = h.APP_CPP
 OCC_CPP = os.path.join(h.ROOT, "src", "occ_geometry.cpp")
 STORE_CPP = os.path.join(h.ROOT, "src", "occ_solid_store.cpp")
+DOC_CPP = h.DOC_CPP
 ENTITY_ID_HPP = os.path.join(h.ROOT, "include", "model_maker", "entity_id.hpp")
 
 # Mutasyonlarin dokunabilecegi uretim dosyalari (yedek/geri yazma kapsami).
-ALL_FILES = (APP_CPP, OCC_CPP, STORE_CPP, ENTITY_ID_HPP)
+ALL_FILES = (APP_CPP, OCC_CPP, STORE_CPP, DOC_CPP, ENTITY_ID_HPP)
 
 
 def sha(path):
@@ -171,6 +172,53 @@ MUTATIONS = [
         "new": "    if (current >= kMax) return kMax;  // mutasyon: kelepcele",
         "expect": ["FAIL counter advance(max) -> 0 (EXHAUSTED, does not reuse max)",
                    "FAIL counter advance(max) does NOT stay at max"],
+    },
+    # --- Phase 3.2B: TRANSACTIONAL GEOMETRY UNDO/REDO ---
+    {
+        # Geometri deltasi KAYDEDILMEZ -> undo ESKI B-Rep surumunu geri getiremez
+        # (yalniz kimlik geri gelir). Test 11 bunu yakalamali.
+        "id": "NC10",
+        "desc": "putOccSolid geometri deltasini KAYDETMEZ (undo eski geometriyi getirmez)",
+        "file": APP_CPP,
+        "fn": ("putOccSolid", "void Application::putOccSolid(std::size_t index, const TopoDS_Shape& shape)"),
+        "old": "        if (after != kInvalidVersionId)\n"
+               "            document_.recordGeometryDelta(id, before, after);",
+        "new": "        (void)after;  // mutasyon: delta kaydi YOK",
+        "expect": ["FAIL undo restores OLD B-Rep geometry (vol 17.576)"],
+    },
+    {
+        # YANLIS surum geri yuklenir (before/after yer degistirir) -> undo YENI
+        # surumu geri getirir. Test 11 yakalamali.
+        "id": "NC11",
+        "desc": "putOccSolid before/after'i TERSTEN kaydeder (yanlis surum geri yuklenir)",
+        "file": APP_CPP,
+        "fn": ("putOccSolid", "void Application::putOccSolid(std::size_t index, const TopoDS_Shape& shape)"),
+        "old": "document_.recordGeometryDelta(id, before, after);",
+        "new": "document_.recordGeometryDelta(id, after, before);",
+        "expect": ["FAIL undo restores OLD B-Rep geometry (vol 17.576)"],
+    },
+    {
+        # undo ON-DOGRULAMASI kaldirilir -> EKSIK surumle islem REDDEDILMEZ,
+        # yigin tuketilir. Test 17 yakalamali.
+        "id": "NC12",
+        "desc": "undo on-dogrulamasi KALDIRILIR (eksik surumle islem reddedilmez)",
+        "file": DOC_CPP,
+        "fn": ("undo", "bool Document::undo()"),
+        "old": "        if (!occStore_->findVersionExists(ref.entity, ref.version)) return false;",
+        "new": "        // mutasyon: on-dogrulama KALDIRILDI",
+        "expect": ["FAIL undo REJECTED (missing version)"],
+    },
+    {
+        # 'ILK before / SON after' kurali kaldirilir (her yazma icin yeni girdi)
+        # -> TEK undo ARA surume doner. Test 12 yakalamali.
+        "id": "NC13",
+        "desc": "recordGeometryDelta dedup'i kaldirilir (tek undo ara surume doner)",
+        "file": DOC_CPP,
+        "fn": ("recordGeometryDelta",
+               "void Document::recordGeometryDelta(EntityId entity, VersionId before, VersionId after)"),
+        "old": "            rec.geometryAfter[i].version = after;\n            return;",
+        "new": "            rec.geometryAfter[i].version = after;  // mutasyon: dedup kaldirildi",
+        "expect": ["FAIL SINGLE undo returns to ORIGINAL (17.576), not intermediate (1.0)"],
     },
 ]
 

@@ -34,6 +34,27 @@ public:
     virtual std::size_t size() const noexcept = 0;
 
     bool empty() const noexcept { return size() == 0; }
+
+    // --- SURUM SORGULARI (undo/redo icin; TAM SAYI tabanli, OCCT'siz) -------
+    // Bu uc metot, Document'in undo/redo kayitlarindaki GeometrySlotRef
+    // referanslarini DOGRULAMAK ve UYGULAMAK icin vardir. Imzalarinda OCCT
+    // tipi YOKTUR; bu yuzden abstract arayuz OCCT'siz kalir ve OCC-kapali
+    // derlemede de tanimlidir.
+
+    // O varligin ETKIN surum kimligi; yoksa/geometri yoksa kInvalidVersionId.
+    virtual VersionId activeVersion(EntityId id) const noexcept = 0;
+
+    // Verilen surum o varlik icin MEVCUT MU (undo ONCESI dogrulama).
+    // kInvalidVersionId "geometri yok" demektir ve GECERLI sayilir (true).
+    virtual bool findVersionExists(EntityId id, VersionId version) const = 0;
+
+    // Verilen surumu ETKIN yapar (undo/redo UYGULAMASI).
+    // kInvalidVersionId = "bu varlik icin etkin geometri YOK" (GECERLI).
+    // Surum gercekten yoksa false doner ve hicbir sey degismez.
+    // (Mevcut `activate()` sozlesmesi BOZULMAZ; bu ayri bir yoldur cunku
+    //  activate kInvalidVersionId'yi reddeder — oysa restoreActive onu kabul
+    //  eder: olusturma-undo'da geometri "yok" haline donmelidir.)
+    virtual bool restoreActive(EntityId id, VersionId version) = 0;
 };
 
 // OCC-kapali no-op saglayici (model_maker_core).

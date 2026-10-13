@@ -10,6 +10,17 @@ class NullOccStore final : public OccStore {
 public:
     void clear() noexcept override {}
     std::size_t size() const noexcept override { return 0; }
+
+    // OCC kapali: hicbir geometri tutulmaz. Tum varliklar icin etkin surum
+    // "yok"tur; bu GECERLI bir durumdur (undo dogrulamasi gecmeli ki
+    // OCC-kapali derlemede de undo/redo calissin).
+    VersionId activeVersion(EntityId) const noexcept override { return kInvalidVersionId; }
+    bool findVersionExists(EntityId, VersionId version) const override {
+        return version == kInvalidVersionId;  // yalnizca "geometri yok" gecerli
+    }
+    bool restoreActive(EntityId, VersionId version) override {
+        return version == kInvalidVersionId;  // no-op; gercek surum yok
+    }
 };
 
 }  // namespace

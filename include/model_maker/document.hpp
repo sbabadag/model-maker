@@ -54,6 +54,13 @@ struct UndoRecord {
     std::vector<UndoOp> ops;
     std::unordered_map<std::string, EntityProperties> layersBefore;
     std::unordered_map<std::string, EntityProperties> layersAfter;
+    // GEOMETRI SURUM REFERANSLARI (OCCT tipi YOK — yalniz EntityId+VersionId).
+    // Bir komutta DEGISEN tum EntityId'leri kapsar. Ayni EntityId birden fazla
+    // yazilirsa: ILK oncesi (geometryBefore) ve SON sonrasi (geometryAfter)
+    // saklanir — ARA surumler bagimsiz undo adimlarina donusmez. `version ==
+    // kInvalidVersionId` "o varlik icin etkin geometri YOK" demektir (gecerli).
+    std::vector<GeometrySlotRef> geometryBefore;  // islem ONCESI etkin surumler
+    std::vector<GeometrySlotRef> geometryAfter;   // islem SONRASI etkin surumler
 };
 
 // GridDefinition / GridAxisLine ve Tekla koordinat dili `model_maker/grid.hpp`
@@ -108,6 +115,15 @@ public:
     void replaceModel(std::size_t index, std::vector<WireframeModel> replacements);
     void clear() noexcept;
     void pushSnapshot();
+    // ACIK (kapanmamis) bir undo kaydi var mi? (pushSnapshot() sonrasi true.)
+    bool hasOpenUndoRecord() const noexcept { return !undoStack_.empty(); }
+    // GEOMETRI SURUM DELTASI. Bir varligin etkin B-Rep surumu `before`dan
+    // `after`a degistiginde cagrilir. Acik kayit YOKSA GUVENLI bicimde kendi
+    // kaydini ACAR — boylece geometri degisikligi SESSIZCE undo disinda
+    // KALMAZ (mevcut `recordUndoOp` davranisindan bilincli FARKI budur).
+    // Ayni EntityId icin ILK `before` ve SON `after` korunur (ara surumler
+    // bagimsiz undo adimina donusmez).
+    void recordGeometryDelta(EntityId entity, VersionId before, VersionId after);
     bool undo();
     bool redo();
     bool canUndo() const noexcept;

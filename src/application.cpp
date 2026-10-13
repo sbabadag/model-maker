@@ -4829,7 +4829,16 @@ void Application::putOccSolid(std::size_t index, const TopoDS_Shape& shape) {
     // KARARLI KIMLIK: varlik INDEKSININ kimligi altina yazilir (indeks KALICI
     // degildir). Silme/undo/siralama kimligi kaydirmadigindan YANLIS ESLEME
     // imkansizdir (eski indeks-anahtarli haritanin sessiz hatasi).
-    if (auto* store = occSolidStore()) store->set(document_.modelId(index), shape);
+    if (auto* store = occSolidStore()) {
+        const EntityId id = document_.modelId(index);
+        // ON-GORUNTU: yazmadan ONCEKI etkin surum (undo bunu geri yukler).
+        const VersionId before = store->activeVersion(id);
+        const VersionId after = store->set(id, shape);
+        // Geometri deltasini ACIK undo kaydina ilistir (kayit yoksa Document
+        // kendi kaydini acar — sessiz dusme YOK).
+        if (after != kInvalidVersionId)
+            document_.recordGeometryDelta(id, before, after);
+    }
 }
 
 std::size_t Application::occSolidCount() const noexcept {
@@ -5684,6 +5693,11 @@ void Application::assignProfileToSelection(const std::string& profileName) {
             }
             if (existingSolid) {
                 // 1:1 degistirme: kimlik KORUNUR → ayni anahtarla guncelle.
+                // ONEMLI (Phase 3.2B): bu dal addStyledModel CAGRMAZ, dolayisiyla
+                // hicbir yerde undo kaydi ACILMIYORDU → B-Rep VE tel kafes
+                // degisikligi undo disinda kaliyordu. Burada kayit ACILIR ki
+                // replaceModel op'u ve geometri deltasi KAYDEDILSIN.
+                pushUndoSnapshot();
                 document_.replaceModel(*existingSolid, {std::move(solidModel)});
                 putOccSolid(*existingSolid, solid);
                 solidIndices.push_back(*existingSolid);

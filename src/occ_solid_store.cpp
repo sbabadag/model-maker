@@ -52,6 +52,29 @@ VersionId OccSolidStore::activeVersion(EntityId id) const noexcept {
     return it == slots_.end() ? kInvalidVersionId : it->second.active;
 }
 
+bool OccSolidStore::findVersionExists(EntityId id, VersionId version) const {
+    // "Geometri yok" her zaman temsil edilebilir bir durumdur → gecerli.
+    if (version == kInvalidVersionId) return true;
+    const auto it = slots_.find(id);
+    if (it == slots_.end()) return false;
+    return shapeOfVersion(it->second, version) != nullptr;
+}
+
+bool OccSolidStore::restoreActive(EntityId id, VersionId version) {
+    if (version == kInvalidVersionId) {
+        // Etkin geometri YOK. Var olan slot varsa etkinligi dusur; slot
+        // yoksa hicbir sey yapma (zaten "geometri yok" durumu).
+        const auto it = slots_.find(id);
+        if (it != slots_.end()) it->second.active = kInvalidVersionId;
+        return true;
+    }
+    const auto it = slots_.find(id);
+    if (it == slots_.end()) return false;
+    if (shapeOfVersion(it->second, version) == nullptr) return false;
+    it->second.active = version;
+    return true;
+}
+
 std::size_t OccSolidStore::versionCount(EntityId id) const noexcept {
     const auto it = slots_.find(id);
     return it == slots_.end() ? 0 : it->second.versions.size();

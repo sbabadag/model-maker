@@ -67,7 +67,16 @@ public:
     const TopoDS_Shape* findVersion(EntityId id, VersionId version) const;
 
     // Etkin surum kimligi; varlik/surum yoksa kInvalidVersionId.
-    VersionId activeVersion(EntityId id) const noexcept;
+    VersionId activeVersion(EntityId id) const noexcept override;
+
+    // Undo/redo dogrulama: verilen surum bu varlik icin MEVCUT MU?
+    // kInvalidVersionId ("geometri yok") GECERLI sayilir.
+    bool findVersionExists(EntityId id, VersionId version) const override;
+
+    // Undo/redo uygulama: verilen surumu ETKIN yapar. kInvalidVersionId =
+    // "etkin geometri YOK" (GECERLI; `activate`den FARKLI). Gercek surum
+    // yoksa false doner, hicbir sey degismez.
+    bool restoreActive(EntityId id, VersionId version) override;
 
     // Bir varligin SAKLANAN surum sayisi (korunan eski surumler dahil).
     std::size_t versionCount(EntityId id) const noexcept;

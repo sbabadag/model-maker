@@ -74,4 +74,18 @@ inline VersionId advanceVersionIdCounter(VersionId current) noexcept {
     return current + 1;
 }
 
+// ---------------------------------------------------------------------------
+// GEOMETRI SURUM REFERANSI (undo/redo icin).
+//
+// Bir undo/redo kaydinin "su varligin geometrisi su SURUMDEYDI" bilgisini
+// tasir. HICBIR OCCT tipi icermez (yalnizca iki tamsayi) — bu yuzden UndoOp/
+// UndoRecord (document.hpp, core, OCC-kapali derlemede de gecerli) tarafindan
+// tasinabilir. `version == kInvalidVersionId` O VARKLIK ICIN ETKIN B-Rep
+// BULUNMADIGINI temsil eder (or. yeni olusturulan varligin undo oncesi hali):
+// bu GECERLI bir durumdur, hata degildir.
+struct GeometrySlotRef {
+    EntityId entity{kInvalidEntityId};
+    VersionId version{kInvalidVersionId};
+};
+
 } // namespace mm

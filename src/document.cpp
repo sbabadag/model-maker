@@ -562,6 +562,30 @@ void Document::recordUndoOp(UndoOp op) {
     undoStack_.back().ops.push_back(std::move(op));
 }
 
+void Document::recordGeometryDelta(EntityId entity, VersionId before, VersionId after) {
+    if (entity == kInvalidEntityId) return; // geçersiz varlığa delta bağlanmaz
+    // Açık kayıt YOKSA kendi kaydını aç — geometri değişikliği SESSİZCE undo
+    // dışında kalmaz (recordUndoOp'un sessiz-düşme davranışından bilinçli fark).
+    if (undoStack_.empty()) pushSnapshot();
+    UndoRecord& rec = undoStack_.back();
+    for (std::size_t i = 0; i < rec.geometryBefore.size(); ++i) {
+        if (rec.geometryBefore[i].entity == entity) {
+            // AYNI varlık: İLK öncesi korunur, SON sonrası güncellenir.
+            rec.geometryAfter[i].version = after;
+            return;
+        }
+    }
+    rec.geometryBefore.push_back(GeometrySlotRef{entity, before});
+    rec.geometryAfter.push_back(GeometrySlotRef{entity, after});
+}
+
+// Bir undo kaydı GÖRÜNÜR bir etki taşıyor mu? (undo/redo bunu atlamaz.)
+// Geometri deltası olan kayıt — op/layer değişmese bile — ETKİLİDİR.
+static bool recordHasEffect(const UndoRecord& rec) {
+    return !rec.ops.empty() || rec.layersBefore != rec.layersAfter ||
+           !rec.geometryBefore.empty();
+}
+
 void Document::recordLayerState() {
     if (undoStack_.empty()) return;
     undoStack_.back().layersAfter = layers_;
@@ -727,15 +751,21 @@ void Document::applyUndoOp(const UndoOp& op, bool forward) {
 }
 
 bool Document::undo() {
-    ++revision_;
-    while (!undoStack_.empty() && undoStack_.back().ops.empty() &&
-           undoStack_.back().layersBefore == undoStack_.back().layersAfter)
+    while (!undoStack_.empty() && !recordHasEffect(undoStack_.back()))
         undoStack_.pop_back();
     if (undoStack_.empty()) return false;
+    // FAZ 1 — DOGRULA (hicbir sey degistirme). Geometri surumlerinin hepsi
+    // mevcut degilse islem BASLAMAZ: Document, store ve yiginlar sabit kalir.
+    for (const auto& ref : undoStack_.back().geometryBefore)
+        if (!occStore_->findVersionExists(ref.entity, ref.version)) return false;
+    // FAZ 2 — UYGULA (dogrulama gectiginden restoreActive basarisiz olmaz).
+    ++revision_;
     UndoRecord record = std::move(undoStack_.back());
     undoStack_.pop_back();
     for (auto it = record.ops.rbegin(); it != record.ops.rend(); ++it)
         applyUndoOp(*it, false);
+    for (const auto& ref : record.geometryBefore)
+        occStore_->restoreActive(ref.entity, ref.version);
     layers_ = record.layersBefore;
     redoStack_.push_back(std::move(record));
     rebuildDerivedState();
@@ -743,12 +773,20 @@ bool Document::undo() {
 }
 
 bool Document::redo() {
-    ++revision_;
+    while (!redoStack_.empty() && !recordHasEffect(redoStack_.back()))
+        redoStack_.pop_back();
     if (redoStack_.empty()) return false;
+    // FAZ 1 — DOGRULA.
+    for (const auto& ref : redoStack_.back().geometryAfter)
+        if (!occStore_->findVersionExists(ref.entity, ref.version)) return false;
+    // FAZ 2 — UYGULA.
+    ++revision_;
     UndoRecord record = std::move(redoStack_.back());
     redoStack_.pop_back();
     for (const auto& op : record.ops)
         applyUndoOp(op, true);
+    for (const auto& ref : record.geometryAfter)
+        occStore_->restoreActive(ref.entity, ref.version);
     layers_ = record.layersAfter;
     undoStack_.push_back(std::move(record));
     if (undoStack_.size() > kMaxUndoEntries)
@@ -759,12 +797,14 @@ bool Document::redo() {
 
 bool Document::canUndo() const noexcept {
     for (auto it = undoStack_.rbegin(); it != undoStack_.rend(); ++it)
-        if (!it->ops.empty() || it->layersBefore != it->layersAfter) return true;
+        if (recordHasEffect(*it)) return true;
     return false;
 }
 
 bool Document::canRedo() const noexcept {
-    return !redoStack_.empty();
+    for (auto it = redoStack_.rbegin(); it != redoStack_.rend(); ++it)
+        if (recordHasEffect(*it)) return true;
+    return false;
 }
 
 void Document::clearHistory() noexcept {
