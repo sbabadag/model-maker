@@ -40,8 +40,9 @@ inline constexpr std::size_t kMmw8MaxStringBytes = 100'000;
 inline constexpr std::size_t kMmw8MaxBlobSize = 64ull * 1024ull * 1024ull;
 // Tum blob'larin TOPLAM byte siniri (tekilden ayri).
 inline constexpr std::size_t kMmw8MaxTotalBlobBytes = 1ull << 30;  // 1 GiB
-// Desteklenen BinTools format surumu araligi (blob kodlamasi icin).
-inline constexpr int kMmw8SupportedBinToolsVersionMin = 1;
+// Desteklenen BinTools format surumu araligi (blob kodlamasi icin). 0 = "OCC
+// yok / wireframe-only" (OCC-kapali derlemenin yazdigi H blogu).
+inline constexpr int kMmw8SupportedBinToolsVersionMin = 0;
 inline constexpr int kMmw8SupportedBinToolsVersionMax = 4;  // VERSION_CURRENT
 
 // MMW8 metadata (H blogu).

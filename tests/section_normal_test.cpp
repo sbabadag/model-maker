@@ -102,9 +102,9 @@ int main() {
         std::ifstream peek(file);
         std::string signature;
         peek >> signature;
-        // MMW7 = MMW6 + grid TEKLA spesifikasyonu; kesit referans normali
-        // MMW6'dan beri ayni P blogunda durur.
-        check(signature == "MMW7", "kayit MMW7 imzasi yazar");
+        // MMW8 = yeni ikili format (EntityId + B-Rep + metadata); kesit referans
+        // normali ayni P blogunda (artik codec uzerinden) durur.
+        check(signature == "MMW8", "kayit MMW8 imzasi yazar");
 
         Document other;
         other.load(file);

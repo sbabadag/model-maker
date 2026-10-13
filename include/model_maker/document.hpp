@@ -3,6 +3,7 @@
 #include "model_maker/entity_id.hpp"
 #include "model_maker/geometry.hpp"
 #include "model_maker/grid.hpp"
+#include "model_maker/mmw8_codec.hpp"
 
 #include <array>
 #include <filesystem>
@@ -133,6 +134,10 @@ public:
     // (boyut degismeyen pozisyon degisikliklerini de yakalar).
     std::uint64_t revision() const noexcept { return revision_; }
 
+    // Bir sonraki tahsis edilecek EntityId (MMW8 kaliciligi/teshis icin).
+    // kExhaustedEntityId = kimlik uzayi tukendi.
+    EntityId nextEntityId() const noexcept { return nextEntityId_; }
+
     std::vector<WireframeModel>& mutableModels() noexcept;
     const std::vector<WireframeModel>& models() const noexcept;
     // KARARLI KIMLIK: index -> EntityId (gecersiz index icin kInvalidEntityId).
@@ -217,6 +222,10 @@ private:
     // undo/redo kayitlarindaki geometryBefore/geometryAfter + kimlikle
     // referanslanan varliklar) hesaplar ve magazadan geri kalanini budar.
     void pruneDeadVersions();
+    // MMW8 (Phase 3.4C): guncel durumdan Mmw8Document kurar (save icin) ve
+    // ayristirilmis Mmw8Document'i Document durumuna isler (load icin).
+    void buildMmw8(Mmw8Document& out) const;
+    void commitFromMmw8(Mmw8Document&& mdoc);
     void markPending(std::size_t index);
     void applyUndoOp(const UndoOp& op, bool forward);
     // Yeni, tekil, monoton bir varlik kimligi uretir (0 uretmez). Id uzayi
@@ -236,6 +245,12 @@ private:
     // Document-SAHIPLI B-Rep magazasi (tek dogruluk kaynagi). Application'da
     // AYRI bir harita YOKTUR; tum kati yollari buradan gecer.
     std::unique_ptr<OccStore> occStore_;
+    // MMW8 (Phase 3.4C): OCC-kapali derlemede B-Rep'i OPAK korur. OCC-acik
+    // derlemede B-Rep gercek store'dadir ve opaqueBreps_ BOS kalir.
+    std::unordered_map<EntityId, std::string> opaqueBreps_;
+    bool opaqueBrepsStale_{false};
+    Mmw8Metadata mmw8Metadata_;
+    std::vector<Mmw8UnknownBlock> mmw8UnknownBlocks_;
     std::unordered_map<std::string, EntityProperties> layers_;
     std::deque<UndoRecord> undoStack_;
     std::deque<UndoRecord> redoStack_;

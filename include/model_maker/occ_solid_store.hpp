@@ -89,6 +89,18 @@ public:
     // birikimini gozlemlemek icin). `size()` (varlik sayisi) ile KARISTIRMA.
     std::size_t totalVersionCount() const noexcept;
 
+    // --- MMW8 B-Rep SERILESTIRME (Phase 3.4C) -------------------------------
+    // Etkin B-Rep'i binary blob doner (occ_brep_serialize); geometri yoksa bos.
+    std::string serializeActive(EntityId id) const override;
+    // Binary blob'dan aktif B-Rep kurar. Basarisizlikta false + `error`; magaza
+    // degismez.
+    bool restoreActiveSolid(EntityId id, const std::string& blob, std::string* error) override;
+    // OCCT surumu (or. "7.9.2") ve BinTools format surumu (CURRENT).
+    std::string occVersionString() const noexcept override;
+    int bRepFormatVersion() const noexcept override;
+    // Ayni turde bos store (atomik yukleme icin).
+    std::unique_ptr<OccStore> cloneEmpty() const override;
+
     // Bir varligin SAKLANAN surum sayisi (korunan eski surumler dahil).
     std::size_t versionCount(EntityId id) const noexcept;
 

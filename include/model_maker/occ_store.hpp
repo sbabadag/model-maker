@@ -67,6 +67,34 @@ public:
     // geometryAfter + kimlikle referanslanan varliklar) hesaplayip buraya
     // `keep` olarak iletir.
     virtual std::size_t prune(const std::function<bool(EntityId, VersionId)>& keep) = 0;
+
+    // --- MMW8 B-Rep SERILESTIRME (OCCT'siz imzalar; Phase 3.4C) --------------
+    // Document, B-Rep'i kalicilastirirken soyut store'dan su metotlari kullanir.
+    // Imzalarda OCCT tipi YOKTUR (yalniz EntityId + std::string) — boylece
+    // OCC-kapali derleme bozulmaz. Somut OCCT uygulamasi (OccSolidStore) bu
+    // islemleri occ_brep_serialize uzerinden gerceklestirir; no-op store bos
+    // doner.
+
+    // Etkin B-Rep'i binary blob olarak doner; geometri yoksa bos string.
+    virtual std::string serializeActive(EntityId id) const = 0;
+
+    // Binary blob'dan o varlik icin aktif B-Rep kurar (deserialize + set).
+    // Basarisizlikta false doner ve `error` (null degilse) nedeni alir; magaza
+    // DEGISMEZ. Bu, yuklemenin "geometri geri yuklenemedi" durumunu acikca
+    // bildirmesi icindir (sessiz wireframe-only gecis YOK).
+    virtual bool restoreActiveSolid(EntityId id, const std::string& blob,
+                                    std::string* error) = 0;
+
+    // Bu store'un kullandigi OCCT surumu (or. "7.9.2"); OCC yoksa bos string.
+    virtual std::string occVersionString() const noexcept = 0;
+
+    // B-Rep blob kodlamasinin BinTools format surumu; OCC yoksa 0.
+    virtual int bRepFormatVersion() const noexcept = 0;
+
+    // AYNI TURDE BOS bir store uretir (atomik MMW8 yukleme icin: gecici belgeye
+    // taze store enjekte edilir, basari olursa tasinir; basarisizlikta asil
+    // store DEGISMEMIS kalir). OCC-acik -> yeni OccSolidStore; OCC-kapali -> no-op.
+    virtual std::unique_ptr<OccStore> cloneEmpty() const = 0;
 };
 
 // OCC-kapali no-op saglayici (model_maker_core).

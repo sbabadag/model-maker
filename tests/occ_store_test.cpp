@@ -60,6 +60,11 @@ public:
         ++pruneCalls;
         return 0;
     }
+    std::string serializeActive(EntityId) const override { return {}; }
+    bool restoreActiveSolid(EntityId, const std::string&, std::string*) override { return false; }
+    std::string occVersionString() const noexcept override { return {}; }
+    int bRepFormatVersion() const noexcept override { return 0; }
+    std::unique_ptr<OccStore> cloneEmpty() const override { return std::make_unique<SpyStore>(); }
     std::size_t clearCalls{0};
     std::size_t pruneCalls{0};
     std::size_t live{0};
@@ -153,7 +158,9 @@ void testLoadResetsStore() {
     check(doc.occStore().size() == 3, "store non-empty before load");
 
     doc.load(path);
-    check(raw->clearCalls == 1, "Document::load() called store->clear() once");
+    // MMW8 yukleme store'u ATOMIK olarak DEGISTIRIR: cloneEmpty ile TAZE store
+    // uretilir, basari olursa devralinir; eski store (ve `raw`) YOK EDILIR.
+    // Bu yuzden raw'a dokunma (dangling) — yeni store'un durumunu dogrula.
     check(doc.occStore().size() == 0, "store EMPTY after load (no stale shapes)");
     check(doc.models().size() == 2, "loaded 2 models (MMW tel kafes)");
     check(doc.modelId(0) != kInvalidEntityId && doc.modelId(1) != kInvalidEntityId,
@@ -195,6 +202,11 @@ public:
         ++pruneCalls;
         return 0;
     }
+    std::string serializeActive(EntityId) const override { return {}; }
+    bool restoreActiveSolid(EntityId, const std::string&, std::string*) override { return false; }
+    std::string occVersionString() const noexcept override { return {}; }
+    int bRepFormatVersion() const noexcept override { return 0; }
+    std::unique_ptr<OccStore> cloneEmpty() const override { return std::make_unique<VersionedSpyStore>(); }
     std::size_t live{0};
     VersionId active{kInvalidVersionId};
     std::set<VersionId> existing;
@@ -298,6 +310,11 @@ public:
         if (v != kInvalidVersionId) existing[e].insert(v);
         active[e] = v;
     }
+    std::string serializeActive(EntityId) const override { return {}; }
+    bool restoreActiveSolid(EntityId, const std::string&, std::string*) override { return false; }
+    std::string occVersionString() const noexcept override { return {}; }
+    int bRepFormatVersion() const noexcept override { return 0; }
+    std::unique_ptr<OccStore> cloneEmpty() const override { return std::make_unique<PruningSpyStore>(); }
     std::map<EntityId, std::set<VersionId>> existing;
     std::map<EntityId, VersionId> active;
     std::set<std::pair<EntityId, VersionId>> kept;

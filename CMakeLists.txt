@@ -423,6 +423,13 @@ if(BUILD_TESTING)
     target_link_libraries(model_maker_mmw8_codec_test PRIVATE model_maker_core)
     add_test(NAME model_maker_mmw8_codec_test COMMAND model_maker_mmw8_codec_test)
 
+    # MMW8 Document entegrasyonu (Phase 3.4C) — OCC-KAPALI senaryolar: EntityId/
+    # nextEntityId/ozellik/grid round-trip, undo temizligi, atomik yukleme,
+    # MMW1->MMW8 yukari donusum. Gercek B-Rep round-trip OCC'li harness'te.
+    add_executable(model_maker_mmw8_document_test tests/mmw8_document_test.cpp)
+    target_link_libraries(model_maker_mmw8_document_test PRIVATE model_maker_core)
+    add_test(NAME model_maker_mmw8_document_test COMMAND model_maker_mmw8_document_test)
+
     # Kontur (siluet + gercek kenar) ureticisi: GL Solid yolunun her karede
     # kosturdugu pass'in tek kaynagi. Eski std::map uygulamasiyla esdegerlik,
     # determinizm, workspace yeniden kullanimi ve oryantasyon duyarliligi

@@ -1,5 +1,7 @@
 #include "model_maker/occ_solid_store.hpp"
 
+#include "model_maker/occ_brep_serialize.hpp"
+
 #include <algorithm>
 
 namespace mm {
@@ -86,6 +88,39 @@ std::size_t OccSolidStore::totalVersionCount() const noexcept {
     std::size_t total = 0;
     for (const auto& entry : slots_) total += entry.second.versions.size();
     return total;
+}
+
+std::string OccSolidStore::serializeActive(EntityId id) const {
+    const auto it = slots_.find(id);
+    if (it == slots_.end()) return {};
+    const TopoDS_Shape* shape = shapeOfVersion(it->second, it->second.active);
+    if (shape == nullptr) return {};
+    std::string blob;
+    if (!serializeBRep(*shape, blob, nullptr)) return {};
+    return blob;
+}
+
+bool OccSolidStore::restoreActiveSolid(EntityId id, const std::string& blob, std::string* error) {
+    TopoDS_Shape shape;
+    if (!deserializeBRep(blob, shape, error)) return false;
+    if (!validateBRep(shape)) {
+        if (error) *error = "deserialized shape failed BRepCheck";
+        return false;
+    }
+    const VersionId v = set(id, shape);
+    return v != kInvalidVersionId;
+}
+
+std::string OccSolidStore::occVersionString() const noexcept {
+    return mm::occVersionString();
+}
+
+int OccSolidStore::bRepFormatVersion() const noexcept {
+    return mm::bRepFormatVersion();
+}
+
+std::unique_ptr<OccStore> OccSolidStore::cloneEmpty() const {
+    return makeOccSolidStore();
 }
 
 std::size_t OccSolidStore::prune(const std::function<bool(EntityId, VersionId)>& keep) {

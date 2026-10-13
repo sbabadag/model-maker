@@ -12,6 +12,17 @@
 #include <stdexcept>
 #include <string>
 #include <utility>
+#include <system_error>
+
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX  // windows.h min/max makrolarinin std::min/std::max'i bozmamasi icin
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>  // ReplaceFileW / MoveFileExW / GetLastError (atomik kayit)
+#endif
 
 namespace mm {
 namespace {
@@ -93,6 +104,7 @@ void Document::setOccStore(std::unique_ptr<OccStore> store) noexcept {
 
 void Document::addModel(WireframeModel model) {
     ++revision_;
+    opaqueBrepsStale_ = true;  // geometri degisti: opak B-Rep (OCC-kapali) bayat
     // Tükenme durumunda firlatir (KONTROLLU basarisizlik) — kayit/ekleme
     // ONCESI, yani kismi model veya bozuk undo kaydi BIRAKILMAZ.
     const EntityId id = allocateEntityIdRequired();
@@ -123,6 +135,7 @@ void Document::reserveModels(std::size_t count) { models_.reserve(count); modelI
 
 void Document::moveModels(const std::vector<std::size_t>& indices, const Vec3& displacement) {
     ++revision_;
+    opaqueBrepsStale_ = true;
     UndoOp op;
     op.kind = UndoOp::Kind::Move;
     op.indices = indices;
@@ -177,6 +190,7 @@ void Document::transformModels(const std::vector<std::size_t>& indices, const Ve
                                const std::array<double, 9>& linearInverse) {
     if (indices.empty()) return;
     ++revision_;
+    opaqueBrepsStale_ = true;
     UndoOp op;
     op.kind = UndoOp::Kind::Transform;
     op.indices = indices;
@@ -240,6 +254,7 @@ void Document::scaleModels(const std::vector<std::size_t>& indices, const Vec3& 
 
 void Document::copyModels(const std::vector<std::size_t>& indices, const Vec3& displacement) {
     ++revision_;
+    opaqueBrepsStale_ = true;
     std::vector<WireframeModel> copies;
     copies.reserve(indices.size());
     std::vector<EntityId> copyIds; // kopyalara atanan YENI kimlikler (models_ ile hizali)
@@ -393,6 +408,7 @@ std::size_t Document::setModelLineType(const std::vector<std::size_t>& indices,
 
 void Document::deleteModels(const std::vector<std::size_t>& indices) {
     ++revision_;
+    opaqueBrepsStale_ = true;
     std::vector<std::size_t> valid;
     valid.reserve(indices.size());
     for (const auto index : indices)
@@ -430,6 +446,7 @@ void Document::deleteModels(const std::vector<std::size_t>& indices) {
 
 void Document::replaceModel(std::size_t index, std::vector<WireframeModel> replacements) {
     ++revision_;
+    opaqueBrepsStale_ = true;
     if (index >= models_.size()) return;
     const EntityId oldId = modelIds_[index];
     // 1:1 degistirme (or. kati yeniden uretim) AYNI varliktir → kimlik KORUNUR.
@@ -500,6 +517,11 @@ void Document::clear() noexcept {
     // belgede kimlikler deterministik olarak 1'den baslar.
     nextEntityId_ = 1;
     layers_.clear();
+    // MMW8 opak B-Rep / metadata / bilinmeyen bloklar da sifirlanir.
+    opaqueBreps_.clear();
+    opaqueBrepsStale_ = false;
+    mmw8Metadata_ = Mmw8Metadata{};
+    mmw8UnknownBlocks_.clear();
     undoStack_.clear();
     redoStack_.clear();
     modelBounds_.clear();
@@ -621,6 +643,7 @@ void Document::pushSnapshot() {
 }
 
 void Document::applyUndoOp(const UndoOp& op, bool forward) {
+    opaqueBrepsStale_ = true;  // undo/redo geometriyi degistirir
     switch (op.kind) {
     case UndoOp::Kind::Add:
         if (forward) {
@@ -1237,114 +1260,146 @@ std::vector<std::size_t> Document::query2D(Vec3 minimum, Vec3 maximum) const {
     return result;
 }
 
-void Document::save(const std::filesystem::path& path) const {
-    std::ofstream output(path);
-    if (!output) throw std::runtime_error("Could not open file for writing");
-
-    output.precision(17);
-    // MMW3: geometri + TUM varlik ozellikleri (katman/profil/rotasyon/
-    // eksen/renk/cizgi tipi/malzeme...) — eskiden yalniz geometri
-    // yaziliyordu; kayit sonrasi katilar stilini kaybediyordu.
-    // MMW5: geometri + props + katman + GRID. (MMW4 = katman; MMW3 = props;
-    // MMW1/2 = yalniz geometri.)
-    // MMW6: + kesit REFERANS NORMALI (sectionNormal) — "profil ust basligi
-    // workplane ile paralel" icin katiyla saklanir; MMW5 dosyalari okunur ve
-    // MMW7: + grid TEKLA SPESIFIKASYONU (koordinat dili/etiket/uzanti/orijin).
-    // varsayilan (0,0,1) ile AYNI davranisi verir.
-    output << "MMW7\n" << models_.size() << '\n';
-    // Katman tanimlari: isim + (trueColor veya ACI) + linetype + visible.
-    // Model yalniz katman ADI tasir; katman rengi/sifati bu haritada —
-    // kaydedilmezse dosya acilinca BYLAYER nesneler rengini kaybeder.
-    output << 'L' << ' ' << layers_.size() << '\n';
-    for (const auto& [name, layer] : layers_) {
-        const auto putL = [&output](const std::string& text) {
-            output << text.size() << ':';
-            output.write(text.data(), static_cast<std::streamsize>(text.size()));
-        };
-        putL(name); output << ' ';
-        output << layer.colorIndex << ' ';
-        if (layer.trueColor) output << "1 " << *layer.trueColor << ' ';
-        else output << "0 0 ";
-        output << layer.visible << ' ' << layer.frozen << ' ' << layer.locked << '\n';
-    }
-
-    // Uzunluk-sonralikli string yazici (P ve G bloklari ortak kullanir).
-    const auto putS = [&output](const std::string& text) {
-        output << text.size() << ':';
-        output.write(text.data(), static_cast<std::streamsize>(text.size()));
-    };
-    for (const auto& model : models_) {
-        output << model.vertices().size() << ' ' << model.edges().size() << ' '
-               << model.faces().size() << ' ' << model.isPointEntity() << ' '
-               << model.isFace3D() << '\n';
-        for (const auto& vertex : model.vertices()) output << vertex.x << ' ' << vertex.y << ' ' << vertex.z << '\n';
-        for (const auto& edge : model.edges()) output << edge.from << ' ' << edge.to << '\n';
-        for (const auto& face : model.faces()) {
-            output << face.size();
-            for (const auto index : face) output << ' ' << index;
-            output << '\n';
+void Document::buildMmw8(Mmw8Document& out) const {
+    out.nextEntityId = nextEntityId_;
+    out.metadata.binToolsFormatVersion = occStore_->bRepFormatVersion();
+    out.metadata.occtVersion = occStore_->occVersionString();
+    out.models = models_;
+    out.entityIds = modelIds_;
+    out.layers = layers_;
+    out.grids = grids_;
+    // B-Rep bloblari: YALNIZ canli modellerin ETKIN B-Rep'i kalicilastirilir.
+    // OCC-acik: store'dan serializeActive; OCC-kapali: opak koruma (opaqueBreps_).
+    out.blobs.clear();
+    for (const EntityId e : modelIds_) {
+        std::string blob = occStore_->serializeActive(e);
+        if (blob.empty()) {
+            const auto it = opaqueBreps_.find(e);
+            if (it != opaqueBreps_.end()) blob = it->second;
         }
-        // Ozellikler: uzunluk-sonralikli string'ler (bosluk/bosa sorun yok).
-        const auto& props = model.properties();
-        output << "P ";
-        putS(props.layer); output << ' ';
-        putS(props.profileName); output << ' ';
-        output << props.profileRotation << ' '
-               << props.profileSourceLine << ' '
-               << props.axisFromX << ' ' << props.axisFromY << ' ' << props.axisFromZ << ' '
-               << props.axisToX << ' ' << props.axisToY << ' ' << props.axisToZ << ' '
-               << props.sectionNormalX << ' ' << props.sectionNormalY << ' '
-               << props.sectionNormalZ << ' ';
-        putS(props.lineType); output << ' ';
-        putS(props.material); output << ' ';
-        output << props.colorIndex << ' ';
-        if (props.trueColor) output << "1 " << *props.trueColor << ' ';
-        else output << "0 0 ";
-        output << props.lineWeight << ' ' << props.thickness << ' '
-               << props.lineTypeScale << ' ' << props.transparency << ' '
-               << props.visible << ' ' << props.frozen << ' ' << props.locked << ' '
-               << props.plottable << ' ';
-        putS(props.description);
-        output << '\n';
+        if (!blob.empty()) out.blobs.push_back(Mmw8Blob{e, std::move(blob), ""});
     }
-    // Yapi gridleri (MMW7): 'G' <count> sonra her grid icin TEKLA
-    // SPESIFIKASYONU (koordinat listeleri + etiketler + uzanti + orijin +
-    // gorunum). Kaynak spesifikasyondur; `axes` yuklemede TUREtilir.
-    output << 'G' << ' ' << grids_.size() << '\n';
-    for (const auto& grid : grids_) {
-        putS(grid.name);
-        output << ' ' << (grid.visible ? 1 : 0) << ' ' << (grid.magnetic ? 1 : 0)
-               << ' ' << static_cast<int>(grid.kind)
-               << ' ' << grid.origin.x << ' ' << grid.origin.y << ' ' << grid.origin.z
-               << ' ' << grid.extendLeft << ' ' << grid.extendRight
-               << ' ' << grid.extendBelow << ' ' << grid.extendAbove
-               << ' ' << grid.color << ' ' << grid.labelColor
-               << ' ' << grid.labelFontSize << '\n';
-        const auto numRow = [&output](const std::vector<double>& v) {
-            output << v.size();
-            for (const double d : v) output << ' ' << d;
-            output << '\n';
-        };
-        const auto labelRow = [&output, &putS](const std::vector<std::string>& v) {
-            output << v.size();
-            for (const auto& s : v) { output << ' '; putS(s); }
-            output << '\n';
-        };
-        numRow(grid.xCoords);
-        numRow(grid.yCoords);
-        numRow(grid.zCoords);
-        labelRow(grid.xLabels);
-        labelRow(grid.yLabels);
-        labelRow(grid.zLabels);
+    out.unknownBlocks = mmw8UnknownBlocks_;
+}
+
+void Document::save(const std::filesystem::path& path) const {
+    // OCC-kapali guvenlik: opak B-Rep varken geometri DEGISMISSE (eski B-Rep
+    // yeni Wireframe ile uyumsuz) kaydetmeyi REDDET — sessiz tutarsiz dosya
+    // asla yazilmaz.
+    if (!opaqueBreps_.empty() && opaqueBrepsStale_)
+        throw std::runtime_error(
+            "B-Rep data is stale (geometry modified in OCC-disabled build); "
+            "refusing to save");
+
+    Mmw8Document mdoc;
+    buildMmw8(mdoc);
+
+    // ATOMIK kayit: once gecici dosyaya yaz; basarili yazimdan sonra hedefi
+    // atomik olarak degistir. Hedef yalniz tam basarili yazimda DEGISIR.
+    const auto tmp = std::filesystem::path(path.string() + ".tmp");
+    {
+        std::ofstream out(tmp, std::ios::binary);
+        if (!out) throw std::runtime_error("Could not open file for writing");
+        writeMmw8(out, mdoc);
+        out.flush();
+        if (!out) throw std::runtime_error("Could not write document");
     }
-    if (!output) throw std::runtime_error("Could not write document");
+#ifdef _WIN32
+    // Windows: ReplaceFileW atomik degistirir (mevcut hedef var oldugunda;
+    // basarisizlikta hedef KORUNUR — veri kaybi yok). Hedef henuz yoksa
+    // MoveFileExW ile tasinir. Hata kodlari GetLastError ile raporlanir.
+    const std::wstring srcW = tmp.wstring();
+    const std::wstring dstW = path.wstring();
+    const bool targetExists =
+        ::GetFileAttributesW(dstW.c_str()) != INVALID_FILE_ATTRIBUTES;
+    const BOOL ok = targetExists
+                        ? ::ReplaceFileW(dstW.c_str(), srcW.c_str(), nullptr,
+                                         REPLACEFILE_WRITE_THROUGH, nullptr, nullptr)
+                        : ::MoveFileExW(srcW.c_str(), dstW.c_str(),
+                                        MOVEFILE_WRITE_THROUGH);
+    if (!ok) {
+        const DWORD werr = ::GetLastError();
+        std::error_code ec2;
+        std::filesystem::remove(tmp, ec2);  // gecici dosya guvenli temizlik
+        const std::error_code wec(static_cast<int>(werr), std::system_category());
+        throw std::runtime_error("atomic replace failed (Win32 error " +
+                                 std::to_string(werr) + ": " + wec.message() + ")");
+    }
+#else
+    // POSIX: std::filesystem::rename ayni dosya sistemi icinde ATOMIK degistirir.
+    std::error_code ec;
+    std::filesystem::rename(tmp, path, ec);
+    if (ec) {
+        std::error_code ec2;
+        std::filesystem::remove(tmp, ec2);
+        throw std::runtime_error("Could not replace document: " + ec.message());
+    }
+#endif
+}
+
+void Document::commitFromMmw8(Mmw8Document&& mdoc) {
+    // B-Rep bloblari TAZE bir store'a (ayni tur, cloneEmpty) geri yukle.
+    // Basarili olursa store devralinir; basarisizlikta (or. uyumsuz OCCT
+    // surumu) fresh atilir ve *this DEGISMEMIS kalir — ATOMIK yukleme.
+    auto fresh = occStore_->cloneEmpty();
+    std::unordered_map<EntityId, std::string> opaque;
+    for (const auto& blob : mdoc.blobs) {
+        std::string err;
+        if (!fresh->restoreActiveSolid(blob.entityId, blob.bytes, &err)) {
+            // OCC-kapali (fresh restore edemiyor): blob'u OPAK koru.
+            opaque[blob.entityId] = blob.bytes;
+        }
+    }
+
+    // Basari: tum durumu devral.
+    occStore_ = std::move(fresh);
+    models_ = std::move(mdoc.models);
+    modelIds_ = std::move(mdoc.entityIds);
+    nextEntityId_ = mdoc.nextEntityId;
+    layers_ = std::move(mdoc.layers);
+    grids_ = std::move(mdoc.grids);
+    // Grid `axes` TUREV bir alandir (spec'ten cizim geometrisi); codec yalniz
+    // spec'i tasir. Yuklemede yeniden TURET.
+    for (auto& grid : grids_) rebuildGridAxes(grid);
+    opaqueBreps_ = std::move(opaque);
+    opaqueBrepsStale_ = false;
+    mmw8Metadata_ = mdoc.metadata;
+    mmw8UnknownBlocks_ = std::move(mdoc.unknownBlocks);
+
+    // Undo/redo gecmisi dosyaya YAZILMADI; basarili yukleme eski gecmisi
+    // TEMIZLER (kullanici karari). Kiris yukleri/dugum sinirlari kimlik
+    // anahtarli oldugu icin yeni belgede gecersizdir — sifirlanir.
+    undoStack_.clear();
+    redoStack_.clear();
+    pruneDeadVersions();
+    beamLoads_.clear();
+    nodeConstraints_.clear();
+    invalidateDerivedState();
+    ++revision_;
 }
 
 void Document::load(const std::filesystem::path& path) {
-    std::ifstream input(path);
+    std::ifstream input(path, std::ios::binary);
     if (!input) throw std::runtime_error("Could not open file for reading");
 
     std::string signature;
+    if (!(input >> signature)) throw std::runtime_error("Invalid Model Maker file");
+
+    // MMW8 (Phase 3.4C): ikili B-Rep + EntityId + metadata tasiyan yeni format.
+    // readMmw8 her dogrulama hatasinda (checksum, kisaltma, yinelenen kimlik...)
+    // FIRLATIR ve commitFromMmw8 ATOMIK isler — basarisizlikta *this degismez.
+    if (signature == "MMW8") {
+        input.clear();
+        input.seekg(0, std::ios::beg);
+        Mmw8Document mdoc;
+        readMmw8(input, mdoc);
+        commitFromMmw8(std::move(mdoc));
+        return;
+    }
+
+    // Legacy MMW1-7: mevcut metin formati (geriye donuk uyumluluk korunur).
+    input.clear();
+    input.seekg(0, std::ios::beg);
     std::size_t modelCount{};
     if (!(input >> signature >> modelCount) ||
         (signature != "MMW1" && signature != "MMW2" && signature != "MMW3" &&

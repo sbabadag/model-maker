@@ -200,13 +200,18 @@ int main() {
               "yukleme sonrasi eklenen varlik catismasiz yeni kimlik alir");
         check(invariantsHold(loaded), "yukleme + ekleme sonrasi invaryant");
 
-        // Mevcut belgeye yukleme: sayac MONOTON kalir (eski kimliklerle catisma yok).
+        // Mevcut belgeye yukleme (MMW8): kimlikler DOSYADAN BIREBIR korunur
+        // (yeniden atama YOK) — B-Rep ile ayni EntityId eslesmesi icin. Belge
+        // icerigi TAMAMEN dosyayla degistirilir; eski kimlikler ezilir.
         Document warm;
-        warm.addLine({0.0, 0.0, 0.0}, {1.0, 0.0, 0.0});   // id 1
-        warm.addLine({0.0, 1.0, 0.0}, {1.0, 1.0, 0.0});   // id 2, sayac 3
+        warm.addLine({0.0, 0.0, 0.0}, {1.0, 0.0, 0.0});   // id 1 (ezilecek)
+        warm.addLine({0.0, 1.0, 0.0}, {1.0, 1.0, 0.0});   // id 2 (ezilecek)
         warm.load(path);
-        check(warm.models().size() == 3 && warm.modelId(0) == 3,
-              "mevcut belgeye yuklemede sayac monotondur (3..)");
+        check(warm.models().size() == 3 && warm.modelId(0) == 1 &&
+                  warm.modelId(2) == 3,
+              "MMW8 yukleme kimlikleri DOSYADAN korur (1,2,3)");
+        check(warm.nextEntityId() == 4,
+              "MMW8 yukleme sayaci dosyadan geri yukler (4)");
         check(invariantsHold(warm), "mevcut belgeye yukleme sonrasi invaryant");
     }
 

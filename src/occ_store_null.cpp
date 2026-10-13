@@ -24,6 +24,15 @@ public:
     std::size_t prune(const std::function<bool(EntityId, VersionId)>&) override {
         return 0;  // hicbir surum tutulmaz
     }
+    // MMW8 B-Rep serilestirme: OCC kapali, hicbir B-Rep yok.
+    std::string serializeActive(EntityId) const override { return {}; }
+    bool restoreActiveSolid(EntityId, const std::string&, std::string* error) override {
+        if (error) *error = "no OCC store available (OCC-disabled build)";
+        return false;
+    }
+    std::string occVersionString() const noexcept override { return {}; }
+    int bRepFormatVersion() const noexcept override { return 0; }
+    std::unique_ptr<OccStore> cloneEmpty() const override { return makeNullOccStore(); }
 };
 
 }  // namespace

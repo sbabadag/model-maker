@@ -432,7 +432,8 @@ void readMmw8(std::istream& in, Mmw8Document& doc) {
             if (!(hs >> otok) || otok != "O") fail("invalid H block (missing O)");
             parsed.metadata.binToolsFormatVersion = static_cast<int>(fv);
             parsed.metadata.occtVersion = readString(hs);
-            if (parsed.metadata.occtVersion.empty()) fail("empty OCCT version");
+            // OCC surumu BOS olabilir (OCC-kapali derleme / wireframe-only);
+            // bu GECERLI bir durumdur.
         } else if (tag == 'B') {
             if (sawB) fail("repeated B block");
             if (!sawH) fail("B block before H block (wrong order)");
