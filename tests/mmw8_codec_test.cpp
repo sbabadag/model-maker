@@ -32,6 +32,23 @@ void check(bool ok, const char* what) {
     if (!ok) ++g_failures;
 }
 
+// Kalici EntityProperties alanlarini tek tek karsilastir (turetilmis effective*
+// alanlari DISINDA — bunlar kaydedilmez, yuklemede yeniden turetilir).
+bool propsEqual(const EntityProperties& a, const EntityProperties& b) {
+    return a.layer == b.layer && a.profileName == b.profileName &&
+           a.profileRotation == b.profileRotation && a.profileSourceLine == b.profileSourceLine &&
+           a.axisFromX == b.axisFromX && a.axisFromY == b.axisFromY && a.axisFromZ == b.axisFromZ &&
+           a.axisToX == b.axisToX && a.axisToY == b.axisToY && a.axisToZ == b.axisToZ &&
+           a.sectionNormalX == b.sectionNormalX && a.sectionNormalY == b.sectionNormalY &&
+           a.sectionNormalZ == b.sectionNormalZ &&
+           a.lineType == b.lineType && a.material == b.material &&
+           a.colorIndex == b.colorIndex && a.trueColor == b.trueColor &&
+           a.lineWeight == b.lineWeight && a.thickness == b.thickness &&
+           a.lineTypeScale == b.lineTypeScale && a.transparency == b.transparency &&
+           a.visible == b.visible && a.frozen == b.frozen && a.locked == b.locked &&
+           a.plottable == b.plottable && a.description == b.description;
+}
+
 bool modelsEqual(const WireframeModel& a, const WireframeModel& b) {
     if (a.vertices().size() != b.vertices().size()) return false;
     if (a.edges().size() != b.edges().size()) return false;
@@ -48,7 +65,7 @@ bool modelsEqual(const WireframeModel& a, const WireframeModel& b) {
     for (std::size_t i = 0; i < a.faces().size(); ++i) {
         if (a.faces()[i] != b.faces()[i]) return false;
     }
-    return a.properties() == b.properties();
+    return propsEqual(a.properties(), b.properties());
 }
 
 // Standart, taninabilir bir test belgesi uret.
@@ -65,7 +82,31 @@ Mmw8Document makeDoc() {
     layer.lineType = layer.effectiveLineType = "CONTINUOUS";
     doc.layers["0"] = layer;
 
-    doc.models.push_back(WireframeModel::line({0, 0, 0}, {1, 0, 0}));
+    WireframeModel lineModel = WireframeModel::line({0, 0, 0}, {1, 0, 0});
+    {
+        // Varsayilan DISI kalici ozellikler: tum P blogu alanlarinin round-trip
+        // esitligini kanitlamak icin (turetilmis effective* HARIC).
+        EntityProperties rp;
+        rp.layer = "STRUCT";
+        rp.profileName = "IPE300";
+        rp.profileRotation = 45.0;
+        rp.profileSourceLine = 12;
+        rp.axisFromX = 1.0; rp.axisFromY = 2.0; rp.axisFromZ = 3.0;
+        rp.axisToX = 4.0; rp.axisToY = 5.0; rp.axisToZ = 6.0;
+        rp.sectionNormalX = 0.0; rp.sectionNormalY = 0.0; rp.sectionNormalZ = 1.0;
+        rp.lineType = "DASHED";
+        rp.material = "S355";
+        rp.colorIndex = 3;
+        rp.trueColor = 0x123456u;
+        rp.lineWeight = 5;
+        rp.thickness = 2.5;
+        rp.lineTypeScale = 1.5;
+        rp.transparency = 30;
+        rp.visible = true; rp.frozen = false; rp.locked = true; rp.plottable = false;
+        rp.description = "zengin ozellik testi";
+        lineModel.setProperties(std::move(rp));
+    }
+    doc.models.push_back(std::move(lineModel));
     doc.entityIds.push_back(1);
     const std::array<Vec3, 4> quad = {Vec3{0, 0, 0}, Vec3{1, 0, 0}, Vec3{1, 1, 0}, Vec3{0, 1, 0}};
     doc.models.push_back(WireframeModel::face3D(quad));
@@ -178,8 +219,12 @@ void testRejections() {
         }
     }
 
-    // 2) Kesilmis dosya.
-    for (std::size_t cut : {std::size_t(1), valid.size() / 2, valid.size() - 1}) {
+    // 2) Kesilmis dosya. Kayit-ORTASI kesilmeler (kesin bozuk) reddedilir.
+    // NOT: temiz bir BLOK SINIRINDA kesilme (or. H'den sonra, B'den once)
+    // ayirt edilemez derecede gecerli bir "wireframe-only" dosya uretir — bu
+    // per-blob SHA-256'nin kapsam disindadir; 3.4C'de atomik kaydetme (gecici
+    // dosya + rename) kismi dosya olusmasini onler.
+    for (std::size_t cut : {std::size_t(1), valid.size() - 1, valid.size() - 50}) {
         check(readThrows(valid.substr(0, cut)), "truncated file rejected");
     }
 
