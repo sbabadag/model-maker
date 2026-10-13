@@ -32,4 +32,46 @@ inline EntityId advanceEntityIdCounter(EntityId current) noexcept {
     return current + 1;
 }
 
+// ---------------------------------------------------------------------------
+// GEOMETRI SURUM KIMLIGI (geometry version id).
+//
+// Bir varligin (EntityId) B-Rep geometrisi zamanla DEGISEBILIR (trim, kolon
+// kotu, profil atama). O geometrinin her ayri hali IMMUTABLE bir SURUMDUR ve
+// kendi VersionId'siyle adreslenir. Boylece "undo anindaki geometri" geri
+// yuklenebilir: kimligi geri yuklemek YETMEZ (ayni kimlik altinda yeni
+// geometri uretilebilir), surum de gerekir.
+//
+// Sozlesme (EntityId'den ONEMLI FARKI asagida "TUKENME"):
+//   * 0 GECERSIZ (kInvalidVersionId); surumler 1'den baslar.
+//   * Monoton artar ve ASLA TEKRAR KULLANILMAZ — budama/etkinlestirme diger
+//     surumlerin kimligini DEGISTIRMEZ.
+//   * TUKENME (exhaustion): sayac kMax'i urettikten sonra kInvalidVersionId'ye
+//     gecer. Boylece AYNI id ikinci kez URETILMEZ.
+//     (EntityId sayaci ust sinira KELEPCELENIR ve kimlik yalnizca 2^64 sonrasi
+//     tekrar kullanilabilir — erisilemez bir durum. VersionId icin ayni id'nin
+//     tekrar uretilmesi magazada YANLIS geometri dondururdu: ayni slot'ta
+//     eslesen ILK surum kazanir. Bu yuzden burada tekrar uretim somut olarak
+//     engellenir.)
+//
+// SAHIPLIK: surum kimligi URETIMI somut B-Rep magazasindadir (OccSolidStore).
+// Bu tip yalnizca KIMLIKTIR — hicbir OCCT tipi icermez; bu yuzden UndoOp
+// (core, OCC'siz) tarafindan da tasinabilir.
+using VersionId = std::uint64_t;
+
+// Gecersiz/atanmamis surum kimligi. Ayni zamanda "surum kimligi TUKENDI" isareti.
+inline constexpr VersionId kInvalidVersionId = 0;
+
+// Surum sayacini ilerletir; URETILECEK sonraki id'yi verir.
+//   * current == kInvalidVersionId -> TUKENDI, kalir (0).
+//   * current == kMax              -> kMax son gecerli id; sonrasi 0 (tukendi).
+//   * aksi halde                   -> current + 1.
+// Boylece 1..kMax id'leri TAM BIR KEZ uretilir; 0 yalnizca "tukendi"
+// isaretidir ve GECERLI id olarak donmez.
+inline VersionId advanceVersionIdCounter(VersionId current) noexcept {
+    constexpr VersionId kMax = std::numeric_limits<VersionId>::max();
+    if (current == kInvalidVersionId) return kInvalidVersionId;  // tukendi, kalir
+    if (current >= kMax) return kInvalidVersionId;               // kMax son gecerli id
+    return current + 1;
+}
+
 } // namespace mm

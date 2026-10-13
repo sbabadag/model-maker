@@ -229,6 +229,8 @@ CPP_PREAMBLE = r"""
 #include <Standard_Version.hxx>
 
 #include <map>
+#include <set>
+#include <limits>
 #include <vector>
 #include <string>
 #include <cstdio>
@@ -289,6 +291,20 @@ static bool storeBounds(const OccSolidStore& s, EntityId id, Box3& out) {
     if (box.IsVoid()) return false;
     box.Get(out.xmin, out.ymin, out.zmin, out.xmax, out.ymax, out.zmax);
     return true;
+}
+// Belirli bir SEKIL nesnesinin sinir kutusu (surum karsilastirmasi icin).
+static bool shapeBoundsOf(const TopoDS_Shape& s, Box3& out) {
+    if (s.IsNull()) return false;
+    Bnd_Box box;
+    BRepBndLib::Add(s, box);
+    if (box.IsVoid()) return false;
+    box.Get(out.xmin, out.ymin, out.zmin, out.xmax, out.ymax, out.zmax);
+    return true;
+}
+// BELIRLI SURUMUN hacmi (findVersion ile — etkin surumden BAGIMSIZ).
+static double versionVolume(const OccSolidStore& s, EntityId id, VersionId v) {
+    const TopoDS_Shape* p = s.findVersion(id, v);
+    return p ? volumeOf(*p) : 0.0;
 }
 
 // URETIM GEOMETRISI (olculmus — kod bu sekilleri uretir):
@@ -579,6 +595,151 @@ int main() {
         }
         check(!first && std::abs((zmax - zmin) - 5.0) < 0.05,
               "solidCylinderSolid bbox height = 5.0 (full cylinder, not a slice)");
+    }
+
+    // --- Test 8: SURUMLU GEOMETRI (Phase 3.2A) ---
+    // Ayni EntityId altinda geometri degisince ESKI SURUM KORUNUR ve belirli bir
+    // surum etkinlestirilebilir. Kimligi geri yuklemek YETMEZ — ayni kimlik
+    // altinda yeni geometri uretilebilir; bu yuzden SURUM gerekir.
+    // GERCEK URETIM MAGAZASI (OccSolidStore) kullanilir; sahte store YOK.
+    {
+        std::printf("Test 8: versioned geometry per EntityId (immutable snapshots)\n");
+        HarnessApp app;
+        app.addCube();  // 2.6 kutu -> v1
+        const EntityId id = app.document_.modelId(0);
+        OccSolidStore& store = *app.occSolidStore();
+
+        const VersionId v1 = store.activeVersion(id);
+        check(v1 != kInvalidVersionId, "v1 active after addCube");
+        check(store.versionCount(id) == 1, "one version after first write");
+        Box3 b1{};
+        const TopoDS_Shape* p1a = store.find(id);
+        check(p1a != nullptr && shapeBoundsOf(*p1a, b1), "v1 bbox available");
+        const double v1span = b1.xmax - b1.xmin;
+
+        // AYNI kimlige YENI, FARKLI geometri yaz -> yeni surum olusmali.
+        const TopoDS_Shape box2 = BRepPrimAPI_MakeBox(1.0, 1.0, 1.0).Shape();
+        Box3 b2{};
+        check(shapeBoundsOf(box2, b2) && std::abs((b2.xmax - b2.xmin) - 1.0) < 1e-6,
+              "v2 source geometry genuinely different (1.0 box)");
+        const VersionId v2 = store.set(id, box2);
+        check(v2 != kInvalidVersionId && v2 != v1, "v2 is new + distinct from v1");
+        check(store.versionCount(id) == 2, "TWO versions preserved after 2nd write");
+        check(store.activeVersion(id) == v2, "v2 becomes active");
+        check(std::abs(storeVolume(store, id) - 1.0) < 1e-6,
+              "find() = active = small box (vol 1.0), not the old cube");
+
+        // ESKI SURUM DEGISMEDI (hacim + bbox) — Phase 3.2A'nin ANA iddiasi.
+        check(versionVolume(store, id, v1) > 0.0, "v1 still retrievable by VersionId");
+        check(std::abs(versionVolume(store, id, v1) - kCubeVol) < kVolTol,
+              "v1 volume UNCHANGED after new version (17.576)");
+        const TopoDS_Shape* p1b = store.findVersion(id, v1);
+        Box3 b1b{};
+        check(p1b != nullptr && shapeBoundsOf(*p1b, b1b), "v1 bbox still available");
+        check(std::abs((b1b.xmax - b1b.xmin) - v1span) < 1e-9,
+              "v1 bbox UNCHANGED after new version (exact)");
+        check(std::abs((b1b.xmax - b1b.xmin) - 2.6) < 0.02,
+              "v1 bbox is still the 2.6 cube");
+
+        // SURUM ETKINLESTIRME: eski surumu geri getir (undo'nun ileride
+        // dayanacagi mekanizma).
+        check(store.activate(id, v1), "activate(v1) succeeds");
+        check(store.activeVersion(id) == v1, "v1 active again");
+        check(std::abs(storeVolume(store, id) - kCubeVol) < kVolTol,
+              "find() back to v1 cube after activate");
+        check(store.activate(id, v2), "activate(v2) succeeds (round trip)");
+
+        // GECERSIZ SURUM GUVENLI REDDEDILIR (durum degismez).
+        const VersionId now = store.activeVersion(id);
+        check(!store.activate(id, kInvalidVersionId), "activate(0) rejected");
+        check(!store.activate(id, 999999), "activate(unknown version) rejected");
+        check(store.activeVersion(id) == now, "active UNCHANGED after rejected activate");
+        check(store.findVersion(id, 999999) == nullptr, "findVersion(unknown) = nullptr");
+        check(store.findVersion(id, kInvalidVersionId) == nullptr, "findVersion(0) = nullptr");
+
+        // SURUM KIMLIKLERI: benzersiz + sabit (olusturma sirasi korunur).
+        const std::vector<VersionId> vids = store.versionIds(id);
+        check(vids.size() == 2 && vids[0] == v1 && vids[1] == v2,
+              "versionIds stable + creation-ordered (v1,v2)");
+
+        // CAPRAZ IZOLASYON: bir varligin surumleri digerine KARISMAZ.
+        app.addCylinder();
+        const EntityId id2 = app.document_.modelId(app.document_.models().size() - 1);
+        check(id2 != id, "second entity id distinct");
+        check(store.findVersion(id2, v1) == nullptr, "v1 does NOT belong to other entity");
+        check(store.findVersion(id2, v2) == nullptr, "v2 does NOT belong to other entity");
+        bool crossed = false;
+        for (VersionId x : store.versionIds(id2))
+            if (x == v1 || x == v2) crossed = true;
+        check(!crossed, "no version-id crossing between entities");
+        check(store.activeVersion(id2) != v1 && store.activeVersion(id2) != v2,
+              "other entity has its own active version");
+        // Surum etkinlestirme DIGER varligi ETKILEMEZ.
+        check(store.activate(id, v1) && store.activeVersion(id) == v1 &&
+              store.activeVersion(id2) != v1, "activate isolated per entity");
+    }
+
+    // --- Test 9: SURUM KIMLIGI URETIMI — TEKRAR YOK (Phase 3.2A) ---
+    // Her `set` BENZERSIZ ve KESIN ARTAN bir VersionId uretir; hicbir id iki
+    // kez uretilmez. Eski surumler, yeni surumler eklendikce KORUNUR. Bu,
+    // "asla tekrar kullanilmaz" sozlesmesinin gozlemlenebilir regresyonudur.
+    {
+        std::printf("Test 9: version-id allocation is unique + strictly increasing\n");
+        HarnessApp app;
+        app.addCube();
+        const EntityId id = app.document_.modelId(0);
+        OccSolidStore& store = *app.occSolidStore();
+
+        constexpr int kSets = 12;
+        const std::size_t versionsBefore = store.versionCount(id);
+        std::vector<VersionId> seen;
+        bool strictlyIncreasing = true, allValid = true;
+        for (int i = 0; i < kSets; ++i) {
+            const TopoDS_Shape s = BRepPrimAPI_MakeBox(1.0 + 0.1 * i, 1.0, 1.0).Shape();
+            const VersionId v = store.set(id, s);
+            if (v == kInvalidVersionId) allValid = false;
+            if (!seen.empty() && !(v > seen.back())) strictlyIncreasing = false;
+            seen.push_back(v);
+        }
+        check(allValid, "every set returned a valid (non-zero) VersionId");
+        check(strictlyIncreasing, "VersionIds strictly increasing (no reuse)");
+        std::set<VersionId> uniq(seen.begin(), seen.end());
+        check(uniq.size() == static_cast<std::size_t>(kSets),
+              "all VersionIds distinct (no duplicate allocation)");
+        check(store.versionCount(id) == versionsBefore + static_cast<std::size_t>(kSets),
+              "all versions preserved (old ones not overwritten)");
+
+        // ESKI surumler HALA erisilebilir ve icerikleri dogru (ilk yazilan 1.0).
+        check(std::abs(versionVolume(store, id, seen.front()) - 1.0) < 1e-6,
+              "oldest version still retrievable + correct volume (1.0)");
+        check(std::abs(versionVolume(store, id, seen.back()) - (1.0 + 0.1 * (kSets - 1))) < 1e-6,
+              "newest version is the last written box (vol 2.1)");
+
+        // CAKISMA YOK: baska varligin kimlikleri bu varligin kumesiyle kesisMES.
+        app.addCylinder();
+        const EntityId id2 = app.document_.modelId(app.document_.models().size() - 1);
+        bool overlap = false;
+        for (VersionId x : store.versionIds(id2))
+            if (uniq.count(x) != 0) overlap = true;
+        check(!overlap, "second entity shares NO version ids (no reuse across entities)");
+    }
+
+    // --- Test 10: SURUM SAYACI TUKENME SINIRI (pure, OCCT'siz) ---
+    // advanceVersionIdCounter kMax'tan sonra 0'a (TUKENDI) gecer; AYNI id'yi
+    // TEKRAR uretmez. (Kelepceleme yanlis geometri dondururdu: ayni slot'ta
+    // eslesen ILK surum kazanir.)
+    {
+        std::printf("Test 10: version-id counter exhaustion boundary\n");
+        constexpr VersionId kMax = std::numeric_limits<VersionId>::max();
+        check(kInvalidVersionId == 0, "kInvalidVersionId = 0");
+        check(advanceVersionIdCounter(1) == 2, "counter advance(1) -> 2");
+        check(advanceVersionIdCounter(kMax - 1) == kMax, "counter advance(max-1) -> max");
+        check(advanceVersionIdCounter(kMax) == kInvalidVersionId,
+              "counter advance(max) -> 0 (EXHAUSTED, does not reuse max)");
+        check(advanceVersionIdCounter(kMax) != kMax,
+              "counter advance(max) does NOT stay at max");
+        check(advanceVersionIdCounter(kInvalidVersionId) == kInvalidVersionId,
+              "counter exhausted stays 0");
     }
 
     std::printf("\nchecks=%d failures=%d\n", g_checks, g_failures);

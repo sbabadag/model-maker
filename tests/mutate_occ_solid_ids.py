@@ -17,6 +17,10 @@ Mutasyonlar:
                           Test 7 bbox yuksekligi DUSER.
   NC5 (yardimci hacim)  : solidCylinderVolume MakeCylinder(radius,radius,height) ->
                           Test 7 analitik hacim DUSER.
+  NC6 (yanlis surum)    : store.find() aktif surum yerine EN ESKI surumu doner ->
+                          Test 8 (find = aktif surum) DUSER.
+  NC7 (surum kaybi)     : store.set() eski surumlerin UZERINE yazar ->
+                          Test 8 (onceki surum korunur) DUSER.
 
 Kullanim: mutate_occ_solid_ids.py <build_dir> [--cxx ...] [--occt-include ...]
 """
@@ -31,6 +35,11 @@ import run_occ_solid_ids as h  # ayni cikarim mantigi (tek kaynak)
 
 APP_CPP = h.APP_CPP
 OCC_CPP = os.path.join(h.ROOT, "src", "occ_geometry.cpp")
+STORE_CPP = os.path.join(h.ROOT, "src", "occ_solid_store.cpp")
+ENTITY_ID_HPP = os.path.join(h.ROOT, "include", "model_maker", "entity_id.hpp")
+
+# Mutasyonlarin dokunabilecegi uretim dosyalari (yedek/geri yazma kapsami).
+ALL_FILES = (APP_CPP, OCC_CPP, STORE_CPP, ENTITY_ID_HPP)
 
 
 def sha(path):
@@ -113,6 +122,56 @@ MUTATIONS = [
         "old": HELPER_SOLID_OLD, "new": HELPER_SOLID_NEW,
         "expect": ["FAIL solidCylinderVolume(1.5,5.0)"],
     },
+    # --- Phase 3.2A: SURUM davranisi ---
+    {
+        # Aktif surum yerine EN ESKI surumu dondurur: ayni kimlik altinda yeni
+        # geometri yazildiktan sonra find() yanlis (eski) geometriyi verir.
+        "id": "NC6",
+        "desc": "find() aktif surum yerine EN ESKI surumu doner",
+        "file": STORE_CPP,
+        "fn": ("find", "const TopoDS_Shape* OccSolidStore::find(EntityId id) const"),
+        "old": "return shapeOfVersion(it->second, it->second.active);",
+        "new": "return it->second.versions.empty() ? nullptr : "
+               "&it->second.versions.front().shape;",
+        "expect": ["FAIL find() = active = small box (vol 1.0), not the old cube"],
+    },
+    {
+        # Eski surumlerin UZERINE yazar (versiyonlama kaybolur): "onceki surum
+        # korunur" sozu cignenir.
+        "id": "NC7",
+        "desc": "set() eski surumlerin uzerine yazar (versiyonlama kaybi)",
+        "file": STORE_CPP,
+        "fn": ("set", "VersionId OccSolidStore::set(EntityId id, const TopoDS_Shape& shape)"),
+        "old": "Slot& slot = slots_[id];",
+        "new": "Slot& slot = slots_[id]; slot.versions.clear();",
+        "expect": ["FAIL TWO versions preserved after 2nd write",
+                   "FAIL v1 still retrievable by VersionId"],
+    },
+    {
+        # Sayac ILERLETILMEZ -> her set AYNI id'yi uretir: "asla tekrar
+        # kullanilmaz" sozu cignenir (gozlemlenebilir regresyon).
+        "id": "NC8",
+        "desc": "set() surum sayacini ILERLETMEZ (ayni id tekrar uretilir)",
+        "file": STORE_CPP,
+        "fn": ("set", "VersionId OccSolidStore::set(EntityId id, const TopoDS_Shape& shape)"),
+        "old": "    nextVersionId_ = advanceVersionIdCounter(nextVersionId_);",
+        "new": "    // mutasyon: sayac ilerletilmez",
+        "expect": ["FAIL VersionIds strictly increasing (no reuse)",
+                   "FAIL all VersionIds distinct (no duplicate allocation)"],
+    },
+    {
+        # Sayac kMax'ta KELEPCELENIR (eski hatali davranis) -> tukenme YOK,
+        # ayni id tekrar uretilir. Saf sinir testi (Test 10) bunu yakalar.
+        "id": "NC9",
+        "desc": "surum sayaci kMax'ta kelepcelenir (tukenme YOK, tekrar uretim)",
+        "file": ENTITY_ID_HPP,
+        "fn": ("advanceVersionIdCounter",
+               "inline VersionId advanceVersionIdCounter(VersionId current) noexcept"),
+        "old": "    if (current >= kMax) return kInvalidVersionId;               // kMax son gecerli id",
+        "new": "    if (current >= kMax) return kMax;  // mutasyon: kelepcele",
+        "expect": ["FAIL counter advance(max) -> 0 (EXHAUSTED, does not reuse max)",
+                   "FAIL counter advance(max) does NOT stay at max"],
+    },
 ]
 
 
@@ -134,7 +193,7 @@ def main(argv):
     # Iki kaynak dosyayi da yedekle (mutasyonlar farkli dosyalari hedefler).
     originals = {}
     hashes = {}
-    for path in (APP_CPP, OCC_CPP):
+    for path in ALL_FILES:
         with open(path, "r", encoding="utf-8") as fh:
             originals[path] = fh.read()
         hashes[path] = sha(path)
@@ -173,11 +232,11 @@ def main(argv):
             with open(path, "w", encoding="utf-8") as fh:
                 fh.write(originals[path])
     finally:
-        for path in (APP_CPP, OCC_CPP):
+        for path in ALL_FILES:
             with open(path, "w", encoding="utf-8") as fh:
                 fh.write(originals[path])
 
-    for path in (APP_CPP, OCC_CPP):
+    for path in ALL_FILES:
         if sha(path) != hashes[path]:
             print(f"KRITIK: {path} bayt-birebir geri yazilamadi!")
             return 1

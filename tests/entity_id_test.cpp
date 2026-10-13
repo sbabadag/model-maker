@@ -234,6 +234,27 @@ int main() {
               "tasmada gecersiz sentinel (0) URETILMEZ");
     }
 
+    // 10) SURUM kimligi sayaci: TUKENME semantigi — ayni id ASLA TEKRAR
+    //     URETILMEZ. (VersionId'de kelepceleme YANLIS geometri dondururdu:
+    //     ayni slot'ta eslesen ILK surum kazanir. Bu yuzden sayac kMax'tan
+    //     sonra kInvalidVersionId'ye gecer ve magaza reddeder.)
+    {
+        constexpr VersionId kMax = std::numeric_limits<VersionId>::max();
+        check(kInvalidVersionId == 0, "kInvalidVersionId = 0 (sentinel)");
+        check(advanceVersionIdCounter(0) == 0, "advance(0) tukendi, kalir (0)");
+        check(advanceVersionIdCounter(1) == 2, "advance(1) -> 2");
+        check(advanceVersionIdCounter(kMax - 1) == kMax, "advance(max-1) -> max");
+        check(advanceVersionIdCounter(kMax) != kMax,
+              "advance(max) max'ta KALMAZ (ayni id tekrar uretilmez)");
+        check(advanceVersionIdCounter(kMax) == kInvalidVersionId,
+              "advance(max) -> 0 (TUKENDI isareti)");
+        check(advanceVersionIdCounter(advanceVersionIdCounter(kMax)) == kInvalidVersionId,
+              "tukendikten sonra kalici olarak 0");
+        // Uretilen id hicbir zaman gecersiz sentinel DEGILDIR.
+        check(kInvalidVersionId != 1 && kInvalidVersionId != kMax,
+              "0 gecerli bir id degildir");
+    }
+
     std::printf("%d checks, %d failures\n", checks, failures);
     return failures == 0 ? 0 : 1;
 }
