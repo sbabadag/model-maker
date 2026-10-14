@@ -4,6 +4,7 @@
 #include "model_maker/geometry.hpp"
 #include "model_maker/grid.hpp"
 #include "model_maker/mmw8_codec.hpp"
+#include "model_maker/cut_modifier.hpp"
 
 #include <array>
 #include <filesystem>
@@ -27,7 +28,8 @@ struct Bounds3 {
 };
 
 struct UndoOp {
-    enum class Kind { Add, Delete, Replace, Move, Transform, GridAdd, GridRemove, GridReplace };
+    enum class Kind { Add, Delete, Replace, Move, Transform, GridAdd, GridRemove, GridReplace,
+                      CutAdd, CutRemove, CutReplace };
     Kind kind{Kind::Add};
     std::size_t index{};
     std::vector<WireframeModel> beforeModels; // delete: silinenler; replace: eski model
@@ -50,6 +52,10 @@ struct UndoOp {
     std::size_t gridIndex{};
     GridDefinition gridBefore;
     GridDefinition gridAfter;
+    // Cut (CutAdd/CutRemove/CutReplace): kesme modifier ekle/sil/degistir.
+    std::size_t cutIndex{};
+    CutModifier cutBefore;
+    CutModifier cutAfter;
 };
 struct UndoRecord {
     std::vector<UndoOp> ops;
@@ -207,6 +213,13 @@ public:
     // Tekla tarzi: grid SPESIFIKASYONUNU degistirir ve `axes`'i yeniden uretir.
     bool setGrid(std::size_t index, GridDefinition grid);
     void removeGrid(std::size_t index);
+    // Kesme modifier'leri (P3): kalici + duzenlenebilir. Indeks-bazli (grid
+    // gibi); hedef/arac parcalar EntityId ile referanslanir (parca kimligi
+    // korunur). add/remove/set undo/redo'ya girer.
+    std::size_t addCutModifier(CutModifier modifier);
+    void removeCutModifier(std::size_t index);
+    bool setCutModifier(std::size_t index, CutModifier modifier);
+    const std::vector<CutModifier>& cutModifiers() const noexcept { return cutModifiers_; }
 
 private:
     static constexpr std::size_t kMaxUndoEntries = 100;
@@ -280,6 +293,7 @@ private:
     std::unordered_map<std::string, NodeConstraint> nodeConstraints_;
     std::unordered_map<EntityId, BeamLoad> beamLoads_;
     std::vector<GridDefinition> grids_;
+    std::vector<CutModifier> cutModifiers_;
 };
 
 } // namespace mm

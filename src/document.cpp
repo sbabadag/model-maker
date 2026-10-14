@@ -597,6 +597,7 @@ void Document::clear() noexcept {
     nodeConstraints_.clear();
     beamLoads_.clear(); // yeni belge: kiris yukleri de sifirlanir
     grids_.clear();
+    cutModifiers_.clear();
     invalidateDerivedState();
     documentBounds_.reset();
 }
@@ -848,6 +849,28 @@ void Document::applyUndoOp(const UndoOp& op, bool forward) {
     case UndoOp::Kind::GridReplace:
         if (op.gridIndex < grids_.size())
             grids_[op.gridIndex] = forward ? op.gridAfter : op.gridBefore;
+        break;
+    case UndoOp::Kind::CutAdd:
+        if (forward) {
+            if (op.cutIndex <= cutModifiers_.size())
+                cutModifiers_.insert(cutModifiers_.begin() + static_cast<std::ptrdiff_t>(op.cutIndex),
+                                     op.cutAfter);
+        } else if (op.cutIndex < cutModifiers_.size()) {
+            cutModifiers_.erase(cutModifiers_.begin() + static_cast<std::ptrdiff_t>(op.cutIndex));
+        }
+        break;
+    case UndoOp::Kind::CutRemove:
+        if (forward) {
+            if (op.cutIndex < cutModifiers_.size())
+                cutModifiers_.erase(cutModifiers_.begin() + static_cast<std::ptrdiff_t>(op.cutIndex));
+        } else if (op.cutIndex <= cutModifiers_.size()) {
+            cutModifiers_.insert(cutModifiers_.begin() + static_cast<std::ptrdiff_t>(op.cutIndex),
+                                 op.cutBefore);
+        }
+        break;
+    case UndoOp::Kind::CutReplace:
+        if (op.cutIndex < cutModifiers_.size())
+            cutModifiers_[op.cutIndex] = forward ? op.cutAfter : op.cutBefore;
         break;
     }
 }
@@ -1616,6 +1639,7 @@ void Document::load(const std::filesystem::path& path) {
     beamLoads_.clear();
     // Yapi gridleri (MMW5+): modellerden sonra 'G' blogu.
     grids_.clear();
+    cutModifiers_.clear(); // kesme modifier'leri henuz MMW8'de kalici degil
     if (version5) {
         std::string gridTag;
         std::size_t gridCount{};
@@ -1736,6 +1760,41 @@ void Document::removeGrid(std::size_t index) {
     op.gridBefore = grids_[index];
     recordUndoOp(std::move(op));
     grids_.erase(grids_.begin() + static_cast<std::ptrdiff_t>(index));
+}
+
+std::size_t Document::addCutModifier(CutModifier modifier) {
+    ++revision_;
+    UndoOp op;
+    op.kind = UndoOp::Kind::CutAdd;
+    op.cutIndex = cutModifiers_.size();
+    op.cutAfter = modifier;
+    recordUndoOp(std::move(op));
+    cutModifiers_.push_back(std::move(modifier));
+    return cutModifiers_.size() - 1;
+}
+
+void Document::removeCutModifier(std::size_t index) {
+    if (index >= cutModifiers_.size()) return;
+    ++revision_;
+    UndoOp op;
+    op.kind = UndoOp::Kind::CutRemove;
+    op.cutIndex = index;
+    op.cutBefore = cutModifiers_[index];
+    recordUndoOp(std::move(op));
+    cutModifiers_.erase(cutModifiers_.begin() + static_cast<std::ptrdiff_t>(index));
+}
+
+bool Document::setCutModifier(std::size_t index, CutModifier modifier) {
+    if (index >= cutModifiers_.size()) return false;
+    ++revision_;
+    UndoOp op;
+    op.kind = UndoOp::Kind::CutReplace;
+    op.cutIndex = index;
+    op.cutBefore = cutModifiers_[index];
+    op.cutAfter = modifier;
+    recordUndoOp(std::move(op));
+    cutModifiers_[index] = std::move(modifier);
+    return true;
 }
 
 } // namespace mm
