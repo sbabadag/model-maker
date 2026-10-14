@@ -3,6 +3,7 @@
 #include "model_maker/force_diagram.hpp"
 
 #include <QApplication>
+#include <QGuiApplication>
 #include <windows.h>
 
 #include <cstdio>
@@ -27,6 +28,19 @@ int main(int argc, char* argv[]) {
     SetUnhandledExceptionFilter(crashFilter);
     milestone("main-start");
     try {
+        // HYBRID DPI DUZELTMESI: Qt6 kabugu + gomulu Win32 GDI canvas ayni
+        // pencerede yasar. Qt6 varsayilan yuksek-DPI olceklemesi MANTIKSAL
+        // (logical) piksel bildirirken native Win32 canvas FIZIKSEL piksel
+        // kullanir. 125% ekranda oran 1.25 olur: resizeEmbeddedCanvas tuvali
+        // GetClientRect ile FIZIKSEL boyuta ayarlar, ama Qt mantiksal boyut
+        // uzerinden yerlesir -> model yanlis olcekte / "yarim pencere".
+        // QT_SCALE_FACTOR=1 Qt'yi 1:1 fiziksel piksele ceker; surec zaten
+        // Per-Monitor-V2 farkinda oldugu icin Windows bitmap-uzatma YAPMAZ,
+        // goruntu keskin kalir ve iki koordinat uzayi birebir eslesir.
+        qputenv("QT_SCALE_FACTOR", "1");
+        QGuiApplication::setHighDpiScaleFactorRoundingPolicy(
+            Qt::HighDpiScaleFactorRoundingPolicy::PassThrough);
+
         HINSTANCE instance = GetModuleHandleW(nullptr);
         mm::registerForceDiagramClass(instance);
 
