@@ -249,6 +249,104 @@ int main() {
         }
     }
 
+    // 11) Zarf (envelope) butunluk + geriye-donuk uyum (Phase 3.4D cokme onlemi).
+    {
+        std::printf("Test: envelope integrity & legacy compatibility\n");
+        const TopoDS_Shape box = BRepPrimAPI_MakeBox(2.0, 2.0, 2.0).Shape();
+        std::string envelope;
+        check(serializeBRep(box, envelope), "setup: box serialize (enveloped)");
+        check(envelope.size() > kBRepEnvelopeHeaderSize, "envelope larger than header");
+        check(envelope.compare(0, kBRepEnvelopeMagicSize, kBRepEnvelopeMagic) == 0,
+              "envelope magic present");
+
+        bool ok = true;
+
+        // C.4 — kesilmis zarf reddedilir (BinTools'a ulasmadan).
+        {
+            const std::string truncated = envelope.substr(0, envelope.size() / 2);
+            TopoDS_Shape t; std::string err;
+            const bool r = deserializeBRep(truncated, t, &err);
+            check(!r, "truncated envelope rejected");
+            check(t.IsNull(), "truncated envelope leaves shape null");
+            ok = ok && !r && t.IsNull();
+        }
+
+        // C.5 — yanlis payload uzunlugu reddedilir.
+        {
+            std::string bad = envelope;
+            for (int i = 12; i < 20; ++i) bad[static_cast<std::size_t>(i)] = '\0';
+            TopoDS_Shape t; std::string err;
+            const bool r = deserializeBRep(bad, t, &err);
+            check(!r, "wrong payload length rejected");
+            check(t.IsNull(), "wrong length leaves shape null");
+            ok = ok && !r && t.IsNull();
+        }
+
+        // C.6 — desteklenmeyen zarf surumu reddedilir.
+        {
+            std::string bad = envelope;
+            bad[8] = static_cast<char>(99); bad[9] = 0; bad[10] = 0; bad[11] = 0;
+            TopoDS_Shape t; std::string err;
+            const bool r = deserializeBRep(bad, t, &err);
+            check(!r, "unsupported envelope version rejected");
+            check(t.IsNull(), "unsupported version leaves shape null");
+            ok = ok && !r && t.IsNull();
+        }
+
+        // C.3 — yanlis SHA-256 BinTools::Read'e ulasmadan reddedilir.
+        {
+            std::string bad = envelope;
+            bad[20] = static_cast<char>(bad[20] ^ 0x01);
+            TopoDS_Shape t; std::string err;
+            const bool r = deserializeBRep(bad, t, &err);
+            check(!r, "wrong SHA-256 rejected");
+            check(t.IsNull(), "wrong SHA leaves shape null");
+            ok = ok && !r && t.IsNull();
+        }
+
+        // C.2 — bozuk payload (zarfli) kontrolu FAIL, cokme YOK.
+        {
+            std::string bad = envelope;
+            const std::size_t mid =
+                kBRepEnvelopeHeaderSize + (envelope.size() - kBRepEnvelopeHeaderSize) / 2;
+            bad[mid] = static_cast<char>(bad[mid] ^ 0x5A);
+            TopoDS_Shape t; std::string err;
+            const bool r = deserializeBRep(bad, t, &err);
+            check(!r, "corrupt enveloped payload rejected");
+            check(t.IsNull(), "corrupt payload leaves shape null");
+            ok = ok && !r && t.IsNull();
+        }
+
+        // C.7 — eski (zarfsiz) raw blob hala yuklenir (geriye donuk uyum).
+        {
+            const std::string rawPayload = envelope.substr(kBRepEnvelopeHeaderSize);
+            TopoDS_Shape t; std::string err;
+            const bool r = deserializeBRep(rawPayload, t, &err);
+            check(r, "legacy unwrapped blob loads");
+            check(!t.IsNull() && validateBRep(t), "legacy blob yields valid shape");
+            check(!t.IsNull() && nearEq(volumeOf(t), volumeOf(box), 1e-6),
+                  "legacy blob volume preserved");
+            ok = ok && r && !t.IsNull() && validateBRep(t) &&
+                 nearEq(volumeOf(t), volumeOf(box), 1e-6);
+        }
+
+        // C.9 — basarisiz deserialize cikti Shape'i degistirmez.
+        {
+            const TopoDS_Shape probe = BRepPrimAPI_MakeBox(3.0, 3.0, 3.0).Shape();
+            TopoDS_Shape t = probe;
+            std::string bad = envelope;
+            bad[20] = static_cast<char>(bad[20] ^ 0x01);  // gecersiz SHA
+            std::string err;
+            const bool r = deserializeBRep(bad, t, &err);
+            check(!r, "failed deserialize returns false");
+            check(!t.IsNull() && nearEq(volumeOf(t), volumeOf(probe), 1e-9),
+                  "failed deserialize leaves output shape unchanged");
+            ok = ok && !r && !t.IsNull() && nearEq(volumeOf(t), volumeOf(probe), 1e-9);
+        }
+
+        if (ok) ++passed; else ++failed;
+    }
+
     // Metadata sozlesmesi.
     check(bRepFormatVersion() > 0, "format version is positive");
     check(occVersionString() != nullptr && occVersionString()[0] != '\0',

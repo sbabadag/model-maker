@@ -81,6 +81,7 @@ def main(argv):
            "-I" + os.path.join(ROOT, "include"), "-I" + inc,
            os.path.join(ROOT, "tests", "occ_brep_serialize_test.cpp"),
            os.path.join(ROOT, "src", "occ_brep_serialize.cpp"),
+           os.path.join(ROOT, "src", "sha256.cpp"),
            "-o", exe, "-L" + libdir]
     cmd += ["-l" + lib for lib in OCC_LIBS]
     print("derliyor: %s" % cxx)
