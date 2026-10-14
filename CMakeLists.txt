@@ -37,7 +37,8 @@ add_library(model_maker_core
     src/profile_database.cpp
     src/occ_store_null.cpp
     src/sha256.cpp
-    src/mmw8_codec.cpp)
+    src/mmw8_codec.cpp
+    src/ucs.cpp)
 target_include_directories(model_maker_core PUBLIC include)
 target_compile_options(model_maker_core PRIVATE -Wall -Wextra -Wpedantic)
 
@@ -616,6 +617,16 @@ if(BUILD_TESTING)
     target_link_options(model_maker_projection_viewport_contract_test PRIVATE -static -static-libgcc -static-libstdc++)
     target_compile_options(model_maker_projection_viewport_contract_test PRIVATE -Wall -Wextra -Wpedantic)
     add_test(NAME model_maker_projection_viewport_contract_test COMMAND model_maker_projection_viewport_contract_test)
+
+    # TEKLA-TARZI UCS + VIEW SISTEMI (P1): global XY/XZ/YZ calisma duzlemi,
+    # 1/2/3 noktadan UCS, B-Rep yuzeyinden UCS, parca koordinat sisteminden UCS,
+    # UCS uzerinde view, 2/3 noktadan view, yuzeye dik view, named views + list.
+    # OCC'siz, Linux'ta kosar.
+    add_executable(model_maker_ucs_test tests/ucs_test.cpp)
+    target_link_libraries(model_maker_ucs_test PRIVATE model_maker_core)
+    target_link_options(model_maker_ucs_test PRIVATE -static -static-libgcc -static-libstdc++)
+    target_compile_options(model_maker_ucs_test PRIVATE -Wall -Wextra -Wpedantic)
+    add_test(NAME model_maker_ucs_test COMMAND model_maker_ucs_test)
 endif()
 
 if(TARGET model-maker)
