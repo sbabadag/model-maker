@@ -1285,7 +1285,10 @@ def main(argv):
                "-I" + os.path.join(ROOT, "include"), "-I" + inc, gen]
         cmd += [os.path.join(ROOT, s) for s in CORE_SOURCES]
         cmd += ["-o", exe, "-L" + libdir]
-        cmd += ["-l" + lib for lib in OCC_LIBS]
+        cmd += ["-Wl,--start-group"] + ["-l" + lib for lib in OCC_LIBS] + ["-Wl,--end-group"]
+        if os.name == "nt":
+            cmd += ["-lkernel32", "-luser32", "-lgdi32", "-ladvapi32",
+                    "-lshell32", "-lole32", "-loleaut32", "-luuid", "-lws2_32"]
         print("derliyor: %s" % cxx)
         proc = subprocess.run(cmd, capture_output=True, text=True)
         if proc.returncode != 0:

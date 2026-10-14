@@ -512,7 +512,7 @@ void test_hidden_and_locked_layers_are_not_selectable_or_snappable() {
 
     require(!mm::hitTestModel2D({5.0, 0.0, 0.0}, document, 0.1).has_value(),
             "Locked layer geometry must not be selectable");
-    const auto lockedSnap = mm::SnapEngine::snap({0.01, 0.01, 0.0}, document, 0.1, 1.0,
+    const auto lockedSnap = mm::SnapEngine::snap({0.01, 0.01, 0.0}, document, 0.1,
                                                  true, false);
     require(lockedSnap.type == mm::SnapType::None,
             "Locked layer geometry must not provide object snaps");
@@ -522,7 +522,7 @@ void test_hidden_and_locked_layers_are_not_selectable_or_snappable() {
     document.setLayerProperties(layer);
     require(!mm::hitTestModel2D({5.0, 0.0, 0.0}, document, 0.1).has_value(),
             "Hidden layer geometry must not be selectable");
-    const auto hiddenSnap = mm::SnapEngine::snap({0.01, 0.01, 0.0}, document, 0.1, 1.0,
+    const auto hiddenSnap = mm::SnapEngine::snap({0.01, 0.01, 0.0}, document, 0.1,
                                                  true, false);
     require(hiddenSnap.type == mm::SnapType::None,
             "Hidden layer geometry must not provide object snaps");
@@ -1282,7 +1282,7 @@ void test_projected_3d_window_and_crossing_selection() {
 void test_snap_prefers_nearby_endpoint() {
     mm::Document document;
     document.addLine({1.0, 2.0, 0.0}, {4.0, 2.0, 0.0});
-    const auto result = mm::SnapEngine::snap({1.08, 2.04, 0.0}, document, 0.15, 1.0);
+    const auto result = mm::SnapEngine::snap({1.08, 2.04, 0.0}, document, 0.15);
     require(result.type == mm::SnapType::Endpoint, "Nearby vertex must endpoint-snap");
     require(result.point == mm::Vec3{1.0, 2.0, 0.0}, "Endpoint snap coordinate mismatch");
 }
@@ -1318,7 +1318,7 @@ void test_snap_marker_symbols_match_cad_reference_conventions() {
 void test_snap_finds_edge_midpoint() {
     mm::Document document;
     document.addLine({0.0, 0.0, 0.0}, {4.0, 0.0, 0.0});
-    const auto result = mm::SnapEngine::snap({2.04, 0.03, 0.0}, document, 0.15, 1.0);
+    const auto result = mm::SnapEngine::snap({2.04, 0.03, 0.0}, document, 0.15);
     require(result.type == mm::SnapType::Midpoint, "Edge center must midpoint-snap");
     require(result.point == mm::Vec3{2.0, 0.0, 0.0}, "Midpoint snap coordinate mismatch");
 }
@@ -1328,12 +1328,12 @@ void test_snap_respects_individual_type_enablement() {
     document.addLine({0.0, 0.0, 0.0}, {4.0, 0.0, 0.0});
     mm::SnapTypeMask enabled{};
     enabled[static_cast<std::size_t>(mm::SnapType::Midpoint)] = true;
-    const auto midpoint = mm::SnapEngine::snap({2.04, 0.03, 0.0}, document, 0.15, 1.0,
+    const auto midpoint = mm::SnapEngine::snap({2.04, 0.03, 0.0}, document, 0.15,
                                                 true, false, std::nullopt, &enabled);
     require(midpoint.type == mm::SnapType::Midpoint,
             "An individually enabled midpoint snap must remain available");
     enabled[static_cast<std::size_t>(mm::SnapType::Midpoint)] = false;
-    const auto disabled = mm::SnapEngine::snap({2.04, 0.03, 0.0}, document, 0.15, 1.0,
+    const auto disabled = mm::SnapEngine::snap({2.04, 0.03, 0.0}, document, 0.15,
                                                 true, false, std::nullopt, &enabled);
     require(disabled.type == mm::SnapType::None,
             "An individually disabled snap type must not be selected");
@@ -1343,7 +1343,7 @@ void test_snap_finds_line_intersection() {
     mm::Document document;
     document.addLine({-2.0, 0.0, 0.0}, {2.0, 0.0, 0.0});
     document.addLine({0.0, -2.0, 0.0}, {0.0, 2.0, 0.0});
-    const auto result = mm::SnapEngine::snap({0.04, 0.03, 0.0}, document, 0.15, 1.0);
+    const auto result = mm::SnapEngine::snap({0.04, 0.03, 0.0}, document, 0.15);
     require(result.type == mm::SnapType::Intersection, "Crossing edges must intersection-snap");
     require(result.point == mm::Vec3{0.0, 0.0, 0.0}, "Intersection coordinate mismatch");
 }
@@ -1351,9 +1351,9 @@ void test_snap_finds_line_intersection() {
 void test_snap_finds_circle_center_and_quadrant() {
     mm::Document document;
     document.addModel(mm::WireframeModel::circle({3.0, 4.0, 0.0}, 2.0, 32));
-    const auto center = mm::SnapEngine::snap({3.03, 4.02, 0.0}, document, 0.15, 1.0);
+    const auto center = mm::SnapEngine::snap({3.03, 4.02, 0.0}, document, 0.15);
     require(center.type == mm::SnapType::Center, "Circle center must center-snap");
-    const auto quadrant = mm::SnapEngine::snap({5.04, 4.01, 0.0}, document, 0.15, 1.0);
+    const auto quadrant = mm::SnapEngine::snap({5.04, 4.01, 0.0}, document, 0.15);
     require(quadrant.type == mm::SnapType::Quadrant, "Circle cardinal point must quadrant-snap");
     require(std::abs(quadrant.point.x - 5.0) < 1e-9 && std::abs(quadrant.point.y - 4.0) < 1e-9,
             "Quadrant coordinate mismatch");
@@ -1362,7 +1362,7 @@ void test_snap_finds_circle_center_and_quadrant() {
 void test_snap_finds_polygon_geometric_center() {
     mm::Document document;
     document.addModel(mm::WireframeModel::rectangle({0.0, 0.0, 0.0}, {4.0, 2.0, 0.0}));
-    const auto result = mm::SnapEngine::snap({2.03, 1.02, 0.0}, document, 0.15, 1.0);
+    const auto result = mm::SnapEngine::snap({2.03, 1.02, 0.0}, document, 0.15);
     require(result.type == mm::SnapType::GeometricCenter, "Closed polygon must geometric-center snap");
     require(result.point == mm::Vec3{2.0, 1.0, 0.0}, "Geometric center coordinate mismatch");
 }
@@ -1370,7 +1370,7 @@ void test_snap_finds_polygon_geometric_center() {
 void test_snap_finds_perpendicular_and_tangent_with_reference_point() {
     mm::Document lineDocument;
     lineDocument.addLine({0.0, 0.0, 0.0}, {4.0, 0.0, 0.0});
-    const auto perpendicular = mm::SnapEngine::snap({2.04, 0.03, 0.0}, lineDocument, 0.15, 1.0,
+    const auto perpendicular = mm::SnapEngine::snap({2.04, 0.03, 0.0}, lineDocument, 0.15,
                                                      true, false, mm::Vec3{2.0, 3.0, 0.0});
     require(perpendicular.type == mm::SnapType::Perpendicular, "Reference point must enable perpendicular snap");
 
@@ -1378,28 +1378,28 @@ void test_snap_finds_perpendicular_and_tangent_with_reference_point() {
     circleDocument.addModel(mm::WireframeModel::circle({0.0, 0.0, 0.0}, 1.0, 64));
     const mm::Vec3 expected{0.5, std::sqrt(0.75), 0.0};
     const auto tangent = mm::SnapEngine::snap({expected.x + 0.02, expected.y + 0.01, 0.0}, circleDocument,
-                                              0.15, 1.0, true, false, mm::Vec3{2.0, 0.0, 0.0});
+                                              0.15, true, false, mm::Vec3{2.0, 0.0, 0.0});
     require(tangent.type == mm::SnapType::Tangent, "Reference point must enable circle tangent snap");
 }
 
 void test_snap_finds_nearest_and_extension() {
     mm::Document document;
     document.addLine({0.0, 0.0, 0.0}, {4.0, 0.0, 0.0});
-    const auto nearest = mm::SnapEngine::snap({1.37, 0.04, 0.0}, document, 0.15, 1.0, true, false);
+    const auto nearest = mm::SnapEngine::snap({1.37, 0.04, 0.0}, document, 0.15, true, false);
     require(nearest.type == mm::SnapType::Nearest, "Edge must nearest-snap between key points");
-    const auto extension = mm::SnapEngine::snap({5.03, 0.02, 0.0}, document, 0.15, 1.0, true, false);
+    const auto extension = mm::SnapEngine::snap({5.03, 0.02, 0.0}, document, 0.15, true, false);
     require(extension.type == mm::SnapType::Extension, "Cursor beyond edge must extension-snap");
 }
 
 void test_snap_finds_node_insertion_and_apparent_intersection() {
     mm::Document pointDocument;
     pointDocument.addModel(mm::WireframeModel::point({2.0, 3.0, 0.0}));
-    const auto node = mm::SnapEngine::snap({2.03, 3.02, 0.0}, pointDocument, 0.15, 1.0, true, false);
+    const auto node = mm::SnapEngine::snap({2.03, 3.02, 0.0}, pointDocument, 0.15, true, false);
     require(node.type == mm::SnapType::Node, "Point entity must node-snap");
 
     mm::Document blockDocument;
     blockDocument.addModel(mm::WireframeModel::cube(2.0));
-    const auto insertion = mm::SnapEngine::snap({0.03, 0.02, 0.0}, blockDocument, 0.15, 1.0, true, false);
+    const auto insertion = mm::SnapEngine::snap({0.03, 0.02, 0.0}, blockDocument, 0.15, true, false);
     require(insertion.type == mm::SnapType::Insertion, "Primitive origin must insertion-snap");
 
     mm::Camera camera;
@@ -1408,27 +1408,20 @@ void test_snap_finds_node_insertion_and_apparent_intersection() {
     apparentDocument.addLine({-1.0, 0.0, 1.0}, {3.0, 0.0, 1.0});
     apparentDocument.addLine({0.0, -2.0, -1.0}, {0.0, 1.0, -1.0});
     const auto apparent = mm::SnapEngine::snap3D({400.0, 300.0}, apparentDocument, camera,
-                                                800, 600, 10.0, 1.0, 0.0, true, false);
+                                                800, 600, 10.0, 0.0, true, false);
     require(apparent.type == mm::SnapType::ApparentIntersection,
             "Projected crossing at different depths must apparent-intersection snap");
-}
-
-void test_snap_falls_back_to_grid() {
-    mm::Document document;
-    const auto result = mm::SnapEngine::snap({1.21, -2.76, 0.0}, document, 0.15, 0.5);
-    require(result.type == mm::SnapType::Grid, "Empty drawing must grid-snap");
-    require(result.point == mm::Vec3{1.0, -3.0, 0.0}, "Grid snap coordinate mismatch");
 }
 
 void test_grid_snap_can_be_disabled_without_disabling_object_snap() {
     mm::Document document;
     document.addLine({1.0, 2.0, 0.0}, {4.0, 2.0, 0.0});
 
-    const auto endpoint = mm::SnapEngine::snap({1.08, 2.04, 0.0}, document, 0.15, 1.0, true, false);
+    const auto endpoint = mm::SnapEngine::snap({1.08, 2.04, 0.0}, document, 0.15, true, false);
     require(endpoint.type == mm::SnapType::Endpoint,
             "Endpoint snap must remain active when grid snap is disabled");
 
-    const auto freePoint = mm::SnapEngine::snap({2.31, 3.67, 0.0}, document, 0.15, 1.0, true, false);
+    const auto freePoint = mm::SnapEngine::snap({2.31, 3.67, 0.0}, document, 0.15, true, false);
     require(freePoint.type == mm::SnapType::None, "Disabled grid snap must not quantize free points");
     require(freePoint.point == mm::Vec3{2.31, 3.67, 0.0}, "Disabled grid snap must preserve cursor coordinates");
 }
@@ -1773,23 +1766,6 @@ void test_camera_unprojects_to_arbitrary_three_point_work_plane() {
             "Arbitrary work-plane unprojection must round-trip projected points");
 }
 
-void test_3d_grid_snap_uses_active_work_plane_basis() {
-    mm::Camera camera;
-    mm::Document document;
-    const auto plane = mm::WorkPlane::fromThreePoints({0.0, 2.0, 0.0},
-                                                       {1.0, 2.0, 0.0},
-                                                       {0.0, 2.0, 1.0});
-    require(plane.has_value(), "Grid test plane must be valid");
-    const auto cursor = camera.project({1.2, 2.0, 2.7}, 900, 700);
-    const auto snapped = mm::SnapEngine::snap3D(cursor, document, camera, 900, 700,
-                                                8.0, 1.0, *plane, false, true);
-    require(snapped.type == mm::SnapType::Grid, "Active work plane must retain grid snapping");
-    require(std::abs(snapped.point.x - 1.0) < 1e-9 &&
-            std::abs(snapped.point.y - 2.0) < 1e-9 &&
-            std::abs(snapped.point.z - 3.0) < 1e-9,
-            "3D grid snap must quantize the active plane's U/V coordinates");
-}
-
 void test_parallel_camera_unprojects_planes_on_either_side_of_view_plane() {
     mm::Camera camera;
     camera.setView(mm::StandardView::Top);
@@ -1809,7 +1785,7 @@ void test_projected_snap_finds_3d_endpoint() {
     document.addLine(endpoint, {-2.0, 0.0, 1.0});
     const auto screen = camera.project(endpoint, 900, 700);
     const auto result = mm::SnapEngine::snap3D({screen.x + 3.0, screen.y - 2.0}, document, camera,
-                                                900, 700, 8.0, 1.0, 0.0);
+                                                900, 700, 8.0, 0.0);
     require(result.type == mm::SnapType::Endpoint, "Projected cursor must snap to a 3D endpoint");
     require(result.point == endpoint, "Projected 3D endpoint snap coordinate mismatch");
 
@@ -1818,7 +1794,7 @@ void test_projected_snap_finds_3d_endpoint() {
     const auto cubeEndpoint = cubeDocument.models().front().vertices().front();
     const auto cubeScreen = camera.project(cubeEndpoint, 1532, 754);
     const auto cubeResult = mm::SnapEngine::snap3D(cubeScreen, cubeDocument, camera,
-                                                   1532, 754, 10.0, 1.0, 0.0);
+                                                   1532, 754, 10.0, 0.0);
     require(cubeResult.type == mm::SnapType::Endpoint,
             "Projected cursor must snap to a 3D cube endpoint before grid fallback");
     require(cubeResult.point == cubeEndpoint, "Projected 3D cube endpoint coordinate mismatch");
@@ -1991,7 +1967,6 @@ int main() {
         test_snap_finds_perpendicular_and_tangent_with_reference_point();
         test_snap_finds_nearest_and_extension();
         test_snap_finds_node_insertion_and_apparent_intersection();
-        test_snap_falls_back_to_grid();
         test_grid_snap_can_be_disabled_without_disabling_object_snap();
         test_snap_policy_disables_selection_and_zoom_phases();
         test_ortho_constrains_cursor_to_dominant_axis();
@@ -2013,7 +1988,6 @@ int main() {
         test_camera_unprojects_screen_point_to_work_plane();
         test_work_plane_is_defined_by_three_non_collinear_points();
         test_camera_unprojects_to_arbitrary_three_point_work_plane();
-        test_3d_grid_snap_uses_active_work_plane_basis();
         test_parallel_camera_unprojects_planes_on_either_side_of_view_plane();
         test_projected_snap_finds_3d_endpoint();
         test_rectangle_and_circle_geometry();
