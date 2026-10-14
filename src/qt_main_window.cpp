@@ -411,7 +411,10 @@ void QtMainWindow::closeAllTwoPointViews() {
 
 void QtMainWindow::resizeEvent(QResizeEvent* event) {
     QMainWindow::resizeEvent(event);
-    resizeEmbeddedCanvas();
+    // QResizeEvent native HWND boyutu guncellenmeden ONCE gelebilir; o anda
+    // GetClientRect bayat (eski kucuk) deger doner ve gomulu tuval yarim
+    // boyutta kalir. Olcumu bir sonraki olay dongusu turuna ertele.
+    QTimer::singleShot(0, this, [this]() { resizeEmbeddedCanvas(); });
 }
 
 void QtMainWindow::showEvent(QShowEvent* event) {
@@ -459,8 +462,13 @@ void QtMainWindow::showEvent(QShowEvent* event) {
 }
 
 bool QtMainWindow::eventFilter(QObject* watched, QEvent* event) {
-    if (watched == canvasContainer_ && event->type() == QEvent::Resize)
-        resizeEmbeddedCanvas();
+    if (watched == canvasContainer_ && event->type() == QEvent::Resize) {
+        // QResizeEvent native HWND boyutu guncellenmeden ONCE gelebilir; o anda
+        // GetClientRect bayat deger doner ve gomulu tuval yarim boyutta kalir.
+        // Olcumu bir sonraki olay dongusu turuna ertele (WM_SIZE islenip native
+        // boyut kesinlestikten sonra GetClientRect dogru olcuyu verir).
+        QTimer::singleShot(0, this, [this]() { resizeEmbeddedCanvas(); });
+    }
     // Ana model alt penceresi kapatilamaz (Ctrl+F4 / sistem menusu dahil).
     if (watched == modelSubWindow_ && event->type() == QEvent::Close) {
         event->ignore();
@@ -476,6 +484,20 @@ void QtMainWindow::resizeEmbeddedCanvas() {
         GetClientRect(reinterpret_cast<HWND>(canvasContainer_->winId()), &rc);
         SetWindowPos(canvas, nullptr, 0, 0, rc.right, rc.bottom,
                      SWP_NOZORDER | SWP_NOACTIVATE);
+        // Diagnostik (ilk 20 cagri): Qt mantiksal boyut ile native istemci
+        // alanini karsilastir. Ikisi de yarim kaliyorsa MDI yerlesimi sucludur;
+        // qt buyuk/client kucuk kalıyorsa bayat GetClientRect (erteleme cozer).
+        static int diagCount = 0;
+        if (diagCount < 20) {
+            ++diagCount;
+            FILE* f = fopen("model-maker-resize.log", "a");
+            if (f) {
+                fprintf(f, "resize#%d qt=(%d,%d) client=(%ld,%ld)\n",
+                        diagCount, canvasContainer_->width(), canvasContainer_->height(),
+                        rc.right, rc.bottom);
+                fclose(f);
+            }
+        }
     }
     // Baslangic GL'i canvas 0x0 iken ertelendiyse simdi dene (tek seferlik).
     app_.tryEnableStartupGpu();
