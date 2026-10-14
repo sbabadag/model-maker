@@ -230,6 +230,7 @@ std::string comboProfileName(const QComboBox* combo) {
 QtMainWindow::QtMainWindow(QWidget* parent)
     : QMainWindow(parent)
     , app_(GetModuleHandleW(nullptr))
+    , canvasResizeFilter_(this)
 {
     // Baslik damgasi: hangi derlemenin acik oldugu + OCC'nin derlenip
     // derlenmedigi tek bakista gorunur (mm::occStatus build_info.hpp'den).
@@ -305,6 +306,9 @@ QtMainWindow::QtMainWindow(QWidget* parent)
     modelSubWindow_->installEventFilter(this); // kapatma engeli
     modelSubWindow_->showMaximized();
     canvasContainer_->installEventFilter(this);
+    // Native resize takibi: MDI buyut/kucult sirasinda QResizeEvent'ten bagimsiz
+    // olarak WM_SIZE/WM_WINDOWPOSCHANGED'de de olc (bayat GetClientRect'i duzeltir).
+    qApp->installNativeEventFilter(&canvasResizeFilter_);
 
     // Create Application's window, then embed its canvas
     app_.createMainWindow(SW_HIDE);
@@ -336,6 +340,8 @@ QtMainWindow::QtMainWindow(QWidget* parent)
 }
 
 QtMainWindow::~QtMainWindow() {
+    // Uye filtre, uye yikicisindan ONCE qApp'ten cikarilmalidir (dangling).
+    if (qApp) qApp->removeNativeEventFilter(&canvasResizeFilter_);
     // app_ (uye) alt pencerelerden ONCE yok edilir (QWidget cocuklari taban
     // sinif yikicisinda silinir). Gorunusleri belgeden simdi ayir.
     if (mdiArea_) {
@@ -479,6 +485,17 @@ void QtMainWindow::resizeEmbeddedCanvas() {
     }
     // Baslangic GL'i canvas 0x0 iken ertelendiyse simdi dene (tek seferlik).
     app_.tryEnableStartupGpu();
+}
+
+bool QtMainWindow::CanvasResizeFilter::nativeEventFilter(const QByteArray&, void* message, qintptr*) {
+    const auto* msg = static_cast<const MSG*>(message);
+    if (!msg || (msg->message != WM_SIZE && msg->message != WM_WINDOWPOSCHANGED)) return false;
+    if (!owner_ || !owner_->canvasContainer_) return false;
+    // Yalniz ana tuvalin kapsayicisiyla ilgilen; diger pencerelerin boyut
+    // mesajlarini (ribbon/dock/iki noktali gorunum) buradan tetikleme.
+    if (msg->hwnd != reinterpret_cast<HWND>(owner_->canvasContainer_->winId())) return false;
+    owner_->resizeEmbeddedCanvas();
+    return false; // mesaji tuketme; Qt normal akisina devam etsin
 }
 
 void QtMainWindow::createMenus() {
