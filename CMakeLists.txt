@@ -40,7 +40,8 @@ add_library(model_maker_core
     src/mmw8_codec.cpp
     src/ucs.cpp
     src/cut_modifier.cpp
-    src/component.cpp)
+    src/component.cpp
+    src/assembly.cpp)
 target_include_directories(model_maker_core PUBLIC include)
 target_compile_options(model_maker_core PRIVATE -Wall -Wextra -Wpedantic)
 
@@ -655,6 +656,14 @@ if(BUILD_TESTING)
     target_link_options(model_maker_component_test PRIVATE -static -static-libgcc -static-libstdc++)
     target_compile_options(model_maker_component_test PRIVATE -Wall -Wextra -Wpedantic)
     add_test(NAME model_maker_component_test COMMAND model_maker_component_test)
+
+    # ASSEMBLY & PAPER SPACE (P5): Part/Assembly iliskileri, orto projeksiyon
+    # (Camera standardViewRotation ile tek kaynak), Paper Space gorunus listesi.
+    add_executable(model_maker_assembly_test tests/assembly_test.cpp)
+    target_link_libraries(model_maker_assembly_test PRIVATE model_maker_core)
+    target_link_options(model_maker_assembly_test PRIVATE -static -static-libgcc -static-libstdc++)
+    target_compile_options(model_maker_assembly_test PRIVATE -Wall -Wextra -Wpedantic)
+    add_test(NAME model_maker_assembly_test COMMAND model_maker_assembly_test)
 endif()
 
 if(TARGET model-maker)
