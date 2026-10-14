@@ -131,6 +131,67 @@ void Document::addModel(WireframeModel model) {
     documentBounds_.reset();
 }
 void Document::addLine(const Vec3& from, const Vec3& to) { addModel(WireframeModel::line(from, to)); }
+
+std::size_t Document::addConstructionPoint(const Vec3& position) {
+    const std::size_t index = models_.size();
+    WireframeModel model = WireframeModel::point(position);
+    model.setConstructionKind(ConstructionKind::Point);
+    addModel(std::move(model));
+    return index;
+}
+
+std::size_t Document::addConstructionLine(const Vec3& from, const Vec3& to) {
+    const std::size_t index = models_.size();
+    WireframeModel model = WireframeModel::line(from, to);
+    model.setConstructionKind(ConstructionKind::Line);
+    addModel(std::move(model));
+    return index;
+}
+
+std::size_t Document::addConstructionPlane(const WorkPlane& plane, double size) {
+    const std::size_t index = models_.size();
+    const double h = std::max(1e-6, size * 0.5);
+    // Dikdortgen + yuz (is duzleminde): kenarlari/koseleri snap'lenir, yuzu
+    // "duzlem" olarak secilebilir. Sonsuz-duzlem semantigi ayri faz (gorsel
+    // isaret sonlu dikdortgenle temsil edilir).
+    WireframeModel model{
+        {plane.fromPlane({-h, -h}), plane.fromPlane({h, -h}),
+         plane.fromPlane({h, h}), plane.fromPlane({-h, h})},
+        {{0, 1}, {1, 2}, {2, 3}, {3, 0}},
+        {{0, 1, 2, 3}}};
+    model.setConstructionKind(ConstructionKind::Plane);
+    addModel(std::move(model));
+    return index;
+}
+
+std::vector<std::size_t> Document::constructionObjects() const {
+    std::vector<std::size_t> result;
+    result.reserve(models_.size() / 16 + 1);
+    for (std::size_t i = 0; i < models_.size(); ++i)
+        if (models_[i].constructionKind() != ConstructionKind::None) result.push_back(i);
+    return result;
+}
+
+bool Document::isConstruction(std::size_t index) const {
+    return index < models_.size() && models_[index].constructionKind() != ConstructionKind::None;
+}
+
+bool Document::setConstructionVisible(bool visible) {
+    ++revision_;
+    bool changed = false;
+    for (std::size_t i = 0; i < models_.size(); ++i) {
+        if (models_[i].constructionKind() == ConstructionKind::None) continue;
+        EntityProperties p = models_[i].properties();
+        if (p.visible != visible) {
+            p.visible = visible;
+            models_[i].setProperties(std::move(p));
+            changed = true;
+        }
+    }
+    if (changed) invalidateDerivedState();
+    return changed;
+}
+
 void Document::reserveModels(std::size_t count) { models_.reserve(count); modelIds_.reserve(count); }
 
 void Document::moveModels(const std::vector<std::size_t>& indices, const Vec3& displacement) {

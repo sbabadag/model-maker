@@ -84,6 +84,11 @@ struct Edge {
     bool operator==(const Edge& other) const noexcept = default;
 };
 
+// KONSTRUKSIYON (yardimci) nesne turu (P2). WireframeModel uzerinde isaret
+// olarak tasinir (kopya/tasima/undo ile kendiliginden gezer); geometri ise
+// standart WireframeModel'dir (snap/secim/gumball zaten calisir).
+enum class ConstructionKind { None, Point, Line, Plane };
+
 using Face = std::vector<std::size_t>;
 
 struct EntityProperties {
@@ -147,6 +152,9 @@ public:
     std::optional<double> analyticRadius() const noexcept;
     const EntityProperties& properties() const noexcept;
     void setProperties(EntityProperties properties);
+    // KONSTRUKSIYON turu (P2): varsayilan None; Point/Line/Plane isareti.
+    ConstructionKind constructionKind() const noexcept { return constructionKind_; }
+    void setConstructionKind(ConstructionKind kind) noexcept { constructionKind_ = kind; }
     void translate(const Vec3& offset) noexcept;
     void rotateAroundZ(const Vec3& center, double radians) noexcept;
     void rotateAroundAxis(const Vec3& center, const Vec3& axis, double radians) noexcept;
@@ -164,6 +172,7 @@ private:
     std::optional<Vec3> analyticCenter_;
     std::optional<double> analyticRadius_;
     EntityProperties properties_;
+    ConstructionKind constructionKind_{ConstructionKind::None};
 };
 struct ProfileDefinition {
     const wchar_t* label;

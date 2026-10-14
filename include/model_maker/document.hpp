@@ -91,6 +91,18 @@ public:
 
     void addModel(WireframeModel model);
     void addLine(const Vec3& from, const Vec3& to);
+    // KONSTRUKSIYON NESNELERI (P2): Point/Line/Plane. Standart WireframeModel
+    // olarak saklanir — snap/secim/gumball/EntityId/undo zaten model yollarinda
+    // calisir; ConstructionKind etiketiyle ayristirilir. Eklenen modelin
+    // indeksini dondurur.
+    std::size_t addConstructionPoint(const Vec3& position);
+    std::size_t addConstructionLine(const Vec3& from, const Vec3& to);
+    std::size_t addConstructionPlane(const WorkPlane& plane, double size);
+    // ConstructionKind != None olan model indeksleri (belge sirasinda).
+    std::vector<std::size_t> constructionObjects() const;
+    bool isConstruction(std::size_t index) const;
+    // Tum konstruksiyon nesnelerinin gorunurlugunu tek bayrakla degistirir.
+    bool setConstructionVisible(bool visible);
     void reserveModels(std::size_t count);
     void moveModels(const std::vector<std::size_t>& indices, const Vec3& displacement);
     void copyModels(const std::vector<std::size_t>& indices, const Vec3& displacement);

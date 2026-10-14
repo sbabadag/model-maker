@@ -627,6 +627,15 @@ if(BUILD_TESTING)
     target_link_options(model_maker_ucs_test PRIVATE -static -static-libgcc -static-libstdc++)
     target_compile_options(model_maker_ucs_test PRIVATE -Wall -Wextra -Wpedantic)
     add_test(NAME model_maker_ucs_test COMMAND model_maker_ucs_test)
+
+    # KONSTRUKSIYON NESNELERI (P2): Construction Point/Line/Plane — ConstructionKind
+    # etiketi + standart model yolu (snap/secim/gumball/EntityId/undo otomatik).
+    # OCC'siz, Linux'ta kosar.
+    add_executable(model_maker_construction_objects_test tests/construction_objects_test.cpp)
+    target_link_libraries(model_maker_construction_objects_test PRIVATE model_maker_core)
+    target_link_options(model_maker_construction_objects_test PRIVATE -static -static-libgcc -static-libstdc++)
+    target_compile_options(model_maker_construction_objects_test PRIVATE -Wall -Wextra -Wpedantic)
+    add_test(NAME model_maker_construction_objects_test COMMAND model_maker_construction_objects_test)
 endif()
 
 if(TARGET model-maker)
