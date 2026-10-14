@@ -606,6 +606,16 @@ if(BUILD_TESTING)
     target_link_options(model_maker_camera_default_orientation_tests PRIVATE -static -static-libgcc -static-libstdc++)
     target_compile_options(model_maker_camera_default_orientation_tests PRIVATE -Wall -Wextra -Wpedantic)
     add_test(NAME model_maker_camera_default_orientation_tests COMMAND model_maker_camera_default_orientation_tests)
+
+    # PROJEKSIYON-VIEWPORT SOZLESMESI (BUG-UI-001): sahne merkezi HER viewport
+    # boyutunda TAM ekran merkezine gider; viewport boyutu dogrudan haritalamayi
+    # belirler (gomulu tuvalin GetClientRect'i mantiksal kalirsa cizim koseye
+    # kayar — "yarim pencere"). OCC'siz, Linux'ta kosar.
+    add_executable(model_maker_projection_viewport_contract_test tests/projection_viewport_contract_test.cpp)
+    target_link_libraries(model_maker_projection_viewport_contract_test PRIVATE model_maker_core)
+    target_link_options(model_maker_projection_viewport_contract_test PRIVATE -static -static-libgcc -static-libstdc++)
+    target_compile_options(model_maker_projection_viewport_contract_test PRIVATE -Wall -Wextra -Wpedantic)
+    add_test(NAME model_maker_projection_viewport_contract_test COMMAND model_maker_projection_viewport_contract_test)
 endif()
 
 if(TARGET model-maker)

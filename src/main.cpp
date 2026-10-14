@@ -3,7 +3,6 @@
 #include "model_maker/force_diagram.hpp"
 
 #include <QApplication>
-#include <QGuiApplication>
 #include <windows.h>
 
 #include <cstdio>
@@ -28,18 +27,25 @@ int main(int argc, char* argv[]) {
     SetUnhandledExceptionFilter(crashFilter);
     milestone("main-start");
     try {
-        // HYBRID DPI DUZELTMESI: Qt6 kabugu + gomulu Win32 GDI canvas ayni
-        // pencerede yasar. Qt6 varsayilan yuksek-DPI olceklemesi MANTIKSAL
-        // (logical) piksel bildirirken native Win32 canvas FIZIKSEL piksel
-        // kullanir. 125% ekranda oran 1.25 olur: resizeEmbeddedCanvas tuvali
-        // GetClientRect ile FIZIKSEL boyuta ayarlar, ama Qt mantiksal boyut
-        // uzerinden yerlesir -> model yanlis olcekte / "yarim pencere".
-        // QT_SCALE_FACTOR=1 Qt'yi 1:1 fiziksel piksele ceker; surec zaten
-        // Per-Monitor-V2 farkinda oldugu icin Windows bitmap-uzatma YAPMAZ,
-        // goruntu keskin kalir ve iki koordinat uzayi birebir eslesir.
-        qputenv("QT_SCALE_FACTOR", "1");
-        QGuiApplication::setHighDpiScaleFactorRoundingPolicy(
-            Qt::HighDpiScaleFactorRoundingPolicy::PassThrough);
+        // HYBRID DPI DUZELTMESI (kok neden): Qt6 kabugu + gomulu Win32 GDI
+        // canvas ayni surecte yasar. Qt host pencereleri Per-Monitor-V2
+        // farkindadir ve GetClientRect FIZIKSEL piksel doner; ama application
+        // .cpp'nin CreateWindowExW ile yarattigi Win32 canvas HWND'si ayni
+        // farkindaligi miras almazsa GetClientRect MANTIKSAL (virtualized)
+        // piksel doner. resizeEmbeddedCanvas tuvali FIZIKSEL boyuta ayarlar,
+        // projeksiyon ise tuvalin MANTIKSAL olcusunu okur -> cizim tuvalin
+        // kose/bolgesinde kalir ("yarim pencere"). Cozum: sureci EN BASTA
+        // (herhangi bir pencere yaratilmadan once) Per-Monitor-V2 farkinda
+        // yap — Qt ve Win32 canvas ayni (fiziksel) koordinat uzayini kullanir.
+        // QT_SCALE_FACTOR=1 denemesi kaldirildi: yalniz Qt'yi 1:1'e ceker,
+        // Win32 canvas'in GetClientRect'ini DEGISTIRMEZ ve 125% ekranda
+        // arayuzu kucultup kotu gosterir.
+        if (!SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2)) {
+            // Zaten ayarlanmis surec (Qt daha once PMv2 kurmus olabilir) ya da
+            // cok eski Windows: PMv2 kurulamadiysa bile uygulama calisir; yalniz
+            // DPI uyusmazligi riski kalir. (SetProcessDpiAwareness yedegi
+            // SHCore bagimliligi gerektirdigi icin kasitli olarak yok.)
+        }
 
         HINSTANCE instance = GetModuleHandleW(nullptr);
         mm::registerForceDiagramClass(instance);

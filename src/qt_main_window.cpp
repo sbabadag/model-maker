@@ -495,14 +495,20 @@ void QtMainWindow::resizeEmbeddedCanvas() {
         // Diagnostik (ilk 20 cagri): Qt mantiksal boyut ile native istemci
         // alanini karsilastir. Ikisi de yarim kaliyorsa MDI yerlesimi sucludur;
         // qt buyuk/client kucuk kalıyorsa bayat GetClientRect (erteleme cozer).
+        // "canvas" alani gomulu Win32 tuvalin KENDI GetClientRect'idir:
+        //   canvas == client -> koordinat uzaylari birlesik (sorun yok)
+        //   canvas <  client -> tuval DPI-farkindasiz (kok neden; PMv2 fix'i
+        //                        main.cpp'de sureci fiziksel piksele ceker)
         static int diagCount = 0;
         if (diagCount < 20) {
             ++diagCount;
+            RECT canvasRc{};
+            GetClientRect(canvas, &canvasRc);
             FILE* f = fopen("model-maker-resize.log", "a");
             if (f) {
-                fprintf(f, "resize#%d qt=(%d,%d) client=(%ld,%ld) sub=(%d,%d) max=%d\n",
+                fprintf(f, "resize#%d qt=(%d,%d) client=(%ld,%ld) canvas=(%ld,%ld) sub=(%d,%d) max=%d\n",
                         diagCount, canvasContainer_->width(), canvasContainer_->height(),
-                        rc.right, rc.bottom,
+                        rc.right, rc.bottom, canvasRc.right, canvasRc.bottom,
                         modelSubWindow_ ? modelSubWindow_->width() : -1,
                         modelSubWindow_ ? modelSubWindow_->height() : -1,
                         (modelSubWindow_ && modelSubWindow_->isMaximized()) ? 1 : 0);
