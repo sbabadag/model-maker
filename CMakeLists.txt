@@ -39,7 +39,8 @@ add_library(model_maker_core
     src/sha256.cpp
     src/mmw8_codec.cpp
     src/ucs.cpp
-    src/cut_modifier.cpp)
+    src/cut_modifier.cpp
+    src/component.cpp)
 target_include_directories(model_maker_core PUBLIC include)
 target_compile_options(model_maker_core PRIVATE -Wall -Wextra -Wpedantic)
 
@@ -646,6 +647,14 @@ if(BUILD_TESTING)
     target_link_options(model_maker_cut_modifier_test PRIVATE -static -static-libgcc -static-libstdc++)
     target_compile_options(model_maker_cut_modifier_test PRIVATE -Wall -Wextra -Wpedantic)
     add_test(NAME model_maker_cut_modifier_test COMMAND model_maker_cut_modifier_test)
+
+    # COMPONENT FOUNDATION (P4): Main/Secondary Part, parametrik Component
+    # tanimi, instance + parametreler, bagimlilik + yeniden hesaplama. OCC'siz.
+    add_executable(model_maker_component_test tests/component_test.cpp)
+    target_link_libraries(model_maker_component_test PRIVATE model_maker_core)
+    target_link_options(model_maker_component_test PRIVATE -static -static-libgcc -static-libstdc++)
+    target_compile_options(model_maker_component_test PRIVATE -Wall -Wextra -Wpedantic)
+    add_test(NAME model_maker_component_test COMMAND model_maker_component_test)
 endif()
 
 if(TARGET model-maker)
