@@ -214,8 +214,11 @@ void test_camera_standard_view_presets() {
     require(std::abs(camera.pitch()) < 0.001, "Right view pitch mismatch");
 
     camera.setView(mm::StandardView::Isometric);
-    require(std::abs(camera.yaw()) < 0.001, "Isometric yaw mismatch");
-    require(std::abs(camera.pitch()) < 0.001, "Isometric pitch mismatch");
+    // Gercek 3B izometrik: yaw=135° (0.75*pi), pitch=-35.264° (-atan(1/sqrt2)),
+    // roll=120° (2*pi/3) — camera.cpp'deki kIsoYaw/kIsoPitch/kIsoRoll ile ayni.
+    require(std::abs(camera.yaw() - 2.356194490192345) < 0.001, "Isometric yaw mismatch");
+    require(std::abs(camera.pitch() + 0.6154797086703868) < 0.001, "Isometric pitch mismatch");
+    require(std::abs(camera.roll() - 2.0943951023931953) < 0.001, "Isometric roll mismatch");
 }
 
 void test_view_cube_hit_testing() {
