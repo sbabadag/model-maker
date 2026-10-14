@@ -422,7 +422,15 @@ void QtMainWindow::showEvent(QShowEvent* event) {
     // The central widget only reaches its final size during the first layout
     // pass after the window is shown; without this the embedded GDI canvas
     // keeps the tiny pre-layout rect from the constructor (top-left corner).
-    QTimer::singleShot(0, this, [this]() { resizeEmbeddedCanvas(); });
+    // AYRICA: constructor'daki showMaximized() MDI alani henuz boyutlanmadan
+    // calistigi icin kaybolabiliyor — model alt penceresi varsayilan (kucuk)
+    // boyutta kalir ve tuval "yarim pencere" gorunur. Gosterimden sonra
+    // maximize'i yeniden uygula, olcumu bir tur daha ertele.
+    QTimer::singleShot(0, this, [this]() {
+        if (modelSubWindow_ && !modelSubWindow_->isMaximized())
+            modelSubWindow_->showMaximized();
+        QTimer::singleShot(0, this, [this]() { resizeEmbeddedCanvas(); });
+    });
     // VARSAYILAN BASLANGIC (kullanici talebi): GL + 3B + Solid — Application::
     // run()'daki ayni kod Qt kabugunda hic calismiyordu (Win32 mesaj dongusu
     // kullanilmiyor); tek kez, ilk gorunurlukte uygula.
@@ -492,9 +500,12 @@ void QtMainWindow::resizeEmbeddedCanvas() {
             ++diagCount;
             FILE* f = fopen("model-maker-resize.log", "a");
             if (f) {
-                fprintf(f, "resize#%d qt=(%d,%d) client=(%ld,%ld)\n",
+                fprintf(f, "resize#%d qt=(%d,%d) client=(%ld,%ld) sub=(%d,%d) max=%d\n",
                         diagCount, canvasContainer_->width(), canvasContainer_->height(),
-                        rc.right, rc.bottom);
+                        rc.right, rc.bottom,
+                        modelSubWindow_ ? modelSubWindow_->width() : -1,
+                        modelSubWindow_ ? modelSubWindow_->height() : -1,
+                        (modelSubWindow_ && modelSubWindow_->isMaximized()) ? 1 : 0);
                 fclose(f);
             }
         }
