@@ -52,16 +52,6 @@ void TwoPointViewWidget::resizeEvent(QResizeEvent* event) {
     layoutCanvas();
 }
 
-bool TwoPointViewWidget::nativeEvent(const QByteArray&, void* message, qintptr*) {
-    const auto* msg = static_cast<const MSG*>(message);
-    if (!msg || (msg->message != WM_SIZE && msg->message != WM_WINDOWPOSCHANGED)) return false;
-    if (msg->hwnd != reinterpret_cast<HWND>(winId())) return false;
-    // Native boyut artik kesin: bu noktada GetClientRect guncel degeri verir
-    // (QResizeEvent aninda bayat kalabilir; bkz. layoutCanvas).
-    layoutCanvas();
-    return false; // mesaji tuketme
-}
-
 void TwoPointViewWidget::showEvent(QShowEvent* event) {
     QWidget::showEvent(event);
     layoutCanvas();

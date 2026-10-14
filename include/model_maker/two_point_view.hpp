@@ -32,9 +32,6 @@ protected:
     void showEvent(QShowEvent* event) override;
     void focusInEvent(QFocusEvent* event) override;
     void contextMenuEvent(QContextMenuEvent* event) override;
-    // MDI buyut/kucult sirasinda QResizeEvent native boyut guncellenmeden
-    // once gelebilir; WM_SIZE/WM_WINDOWPOSCHANGED'de de yeniden olc.
-    bool nativeEvent(const QByteArray& eventType, void* message, qintptr* result) override;
 
 private:
     void layoutCanvas();

@@ -6,7 +6,6 @@
 #include <QDockWidget>
 #include <QAction>
 #include <QWidget>
-#include <QAbstractNativeEventFilter>
 
 #include "model_maker/application.hpp"
 
@@ -54,21 +53,6 @@ private:
     QComboBox* profileSelector_{};
     bool profileUiLogged_{};
     bool startupDefaultsApplied_{}; // GL + 3B + Solid bir kez, ilk show'da
-
-    // MDI alt penceresi buyutulup/kucultuldugunde Qt'nin QResizeEvent'i,
-    // kapsayici widget'in native boyutu guncellenmeden ONCE gelebilir;
-    // o anda GetClientRect bayat (eski kucuk) olcuyu doner ve gomulu Win32
-    // tuvali o boyutta kalir. WM_SIZE / WM_WINDOWPOSCHANGED geldigi anda native
-    // boyut kesindir — o noktada yeniden olcmek dogru olcuyu garanti eder.
-    class CanvasResizeFilter final : public QAbstractNativeEventFilter {
-    public:
-        explicit CanvasResizeFilter(QtMainWindow* owner) noexcept : owner_(owner) {}
-        bool nativeEventFilter(const QByteArray& eventType, void* message,
-                               qintptr* result) override;
-    private:
-        QtMainWindow* owner_;
-    };
-    CanvasResizeFilter canvasResizeFilter_;
 };
 
 } // namespace mm
