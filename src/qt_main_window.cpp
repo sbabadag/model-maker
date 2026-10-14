@@ -315,7 +315,13 @@ QtMainWindow::QtMainWindow(QWidget* parent)
     // Reparent canvas to our widget
     canvasContainer_->winId(); // force native handle
     HWND qtHwnd = reinterpret_cast<HWND>(canvasContainer_->winId());
-    SetParent(canvas, qtHwnd);
+    if (!SetParent(canvas, qtHwnd)) {
+        // Farkli DPI-awareness'li HWND'lerde SetParent basarisiz olabilir.
+        // PMv2 surec farkindaligi (main.cpp) canvas'i da PMv2 yaptigi icin
+        // normalde buraya dusulmez; duserse teshis icin logla.
+        FILE* diag = fopen("model-maker-resize.log", "a");
+        if (diag) { fprintf(diag, "SetParent-FAILED err=%lu\n", GetLastError()); fclose(diag); }
+    }
     // Qt kendi arka deposunu boyarken child canvas alanını ezecektir;
     // WS_CLIPCHILDREN konteynerin canvas bölgesine hiç dokunmamasını sağlar.
     SetWindowLongPtrW(qtHwnd, GWL_STYLE,
@@ -495,20 +501,24 @@ void QtMainWindow::resizeEmbeddedCanvas() {
         // Diagnostik (ilk 20 cagri): Qt mantiksal boyut ile native istemci
         // alanini karsilastir. Ikisi de yarim kaliyorsa MDI yerlesimi sucludur;
         // qt buyuk/client kucuk kalıyorsa bayat GetClientRect (erteleme cozer).
-        // "canvas" alani gomulu Win32 tuvalin KENDI GetClientRect'idir:
-        //   canvas == client -> koordinat uzaylari birlesik (sorun yok)
-        //   canvas <  client -> tuval DPI-farkindasiz (kok neden; PMv2 fix'i
-        //                        main.cpp'de sureci fiziksel piksele ceker)
+        // cvOuter/cvClient: gomulu Win32 tuvalin DIS (GetWindowRect) ve IC
+        // (GetClientRect) boyutlari. DPI uyusmazligi: cvClient, cvOuter'dan
+        // ~%20 kucuk kalir (virtualization). WS_EX_CLIENTEDGE kenarligi yalniz
+        // bir kac px'dir; buyuk fark = DPI, kucuk fark = kenarlik.
         static int diagCount = 0;
         if (diagCount < 20) {
             ++diagCount;
-            RECT canvasRc{};
-            GetClientRect(canvas, &canvasRc);
+            RECT cvClient{};
+            GetClientRect(canvas, &cvClient);
+            RECT cvOuter{};
+            GetWindowRect(canvas, &cvOuter);
+            const LONG cvOuterW = cvOuter.right - cvOuter.left;
+            const LONG cvOuterH = cvOuter.bottom - cvOuter.top;
             FILE* f = fopen("model-maker-resize.log", "a");
             if (f) {
-                fprintf(f, "resize#%d qt=(%d,%d) client=(%ld,%ld) canvas=(%ld,%ld) sub=(%d,%d) max=%d\n",
+                fprintf(f, "resize#%d qt=(%d,%d) host=(%ld,%ld) cvOuter=(%ld,%ld) cvClient=(%ld,%ld) sub=(%d,%d) max=%d\n",
                         diagCount, canvasContainer_->width(), canvasContainer_->height(),
-                        rc.right, rc.bottom, canvasRc.right, canvasRc.bottom,
+                        rc.right, rc.bottom, cvOuterW, cvOuterH, cvClient.right, cvClient.bottom,
                         modelSubWindow_ ? modelSubWindow_->width() : -1,
                         modelSubWindow_ ? modelSubWindow_->height() : -1,
                         (modelSubWindow_ && modelSubWindow_->isMaximized()) ? 1 : 0);

@@ -41,11 +41,15 @@ int main(int argc, char* argv[]) {
         // Win32 canvas'in GetClientRect'ini DEGISTIRMEZ ve 125% ekranda
         // arayuzu kucultup kotu gosterir.
         if (!SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2)) {
-            // Zaten ayarlanmis surec (Qt daha once PMv2 kurmus olabilir) ya da
-            // cok eski Windows: PMv2 kurulamadiysa bile uygulama calisir; yalniz
-            // DPI uyusmazligi riski kalir. (SetProcessDpiAwareness yedegi
-            // SHCore bagimliligi gerektirdigi icin kasitli olarak yok.)
+            // Zaten ayarlanmis surec (Qt daha once kurmus olabilir) ya da cok eski
+            // Windows. Farkli BIR context onceden kurulduysa koordinat uzaylari
+            // yine ayrisir — bu yuzden etkin farkindaligi asagida logla.
         }
+        // Teshis: etkin farkindalik PMv2 mi? (startup log'una yaz; Windows'ta
+        // "dpi-pmv2-ok" gorunmuyorsa koordinat uzayi hala ayrik olabilir.)
+        milestone(GetThreadDpiAwarenessContext() == DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2
+                      ? "dpi-pmv2-ok"
+                      : "dpi-pmv2-FAILED");
 
         HINSTANCE instance = GetModuleHandleW(nullptr);
         mm::registerForceDiagramClass(instance);

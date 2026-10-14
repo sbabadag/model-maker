@@ -1843,11 +1843,13 @@ LRESULT Application::handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lPa
         if (renderBackend_ && !viewDef_) renderBackend_->resize(LOWORD(lParam), HIWORD(lParam));
         invalidateCanvas(); return 0;
     case WM_DPICHANGED:
+    case WM_DPICHANGED_AFTERPARENT:
         // Per-Monitor-V2: tuval Qt kabuguna reparent edilip farkli DPI'li
         // monitore tasininca DPI degisir. Fiziksel boyut SetWindowPos ile Qt
-        // tarafindan zaten dogru ayarlanir; burada yalniz yeniden cizerek
-        // font/hit-test DPI'sinin guncel kalmasini sagla (suggested rect'i
-        // uygulama — boyutun TEK sahibi Qt host'tur).
+        // tarafindan zaten dogru ayarlanir; burada yalniz yeniden cizerek DPI
+        // degisimini yansit (suggested rect uygulanmaz — boyutun TEK sahibi
+        // Qt host'tur). (invalidateCanvas yalniz repaint tetikler; font/olcek
+        // guncellemesi yapmaz — DPI'ya duyarli olcekler kullanan kod yok.)
         invalidateCanvas(); return 0;
     default: return DefWindowProcW(canvas_, message, wParam, lParam);
     }
