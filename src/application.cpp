@@ -3402,17 +3402,22 @@ void Application::applyBoundaryCutFromSelection(CutKind kind) {
     // aktif is duzlemi normali). PolygonCut: face3D modeli (polygon = koseler).
     std::optional<std::size_t> targetIdx;
     std::optional<std::size_t> boundaryIdx;
+    // Iki ayri gecis (sira BAGIMSIZ): once profil hedefi, sonra sinir objesi.
     for (const auto index : selectedModels_) {
         if (index >= document_.models().size()) continue;
         const auto& model = document_.models()[index];
-        const bool isProfile = model.constructionKind() == ConstructionKind::None &&
-                               !model.properties().profileName.empty();
-        if (isProfile && !targetIdx) { targetIdx = index; continue; }
-        if (!targetIdx || boundaryIdx) continue;
+        if (!targetIdx && model.constructionKind() == ConstructionKind::None &&
+            !model.properties().profileName.empty())
+            targetIdx = index;
+    }
+    for (const auto index : selectedModels_) {
+        if (index >= document_.models().size()) continue;
+        if (targetIdx && index == *targetIdx) continue;
+        const auto& model = document_.models()[index];
         if (kind == CutKind::PolygonCut) {
-            if (model.isFace3D() && model.vertices().size() >= 3) boundaryIdx = index;
+            if (model.isFace3D() && model.vertices().size() >= 3) { boundaryIdx = index; break; }
         } else {
-            if (model.vertices().size() == 2 && !model.isFace3D()) boundaryIdx = index;
+            if (model.vertices().size() == 2 && !model.isFace3D()) { boundaryIdx = index; break; }
         }
     }
     if (!targetIdx || !boundaryIdx) {
@@ -3440,15 +3445,12 @@ void Application::applyBoundaryCutFromSelection(CutKind kind) {
         modifier.keepPositive = true;              // taraf secimi sonraki faz
         modifier.name = "Line Cut";
     }
-    // Tekla semantigi: ayni hedefte ayni turden mevcut modifier EZILIR.
+    // Tekla semantigi: Line/Polygon cut COKLUDUR (bir parcada birden fazla
+    // kesme olabilir) -> her zaman YENI modifier eklenir; Fitting/PlaneCut'in
+    // "bir uce bir kesme" ezme kuralindan FARKLI. Kesme objesi ayri silinebilir
+    // bir kayittir (kesme objesi silme = modifier kaydini sil).
     pushUndoSnapshot();
-    std::optional<std::size_t> existing;
-    for (std::size_t ci = 0; ci < document_.cutModifiers().size(); ++ci) {
-        const auto& m = document_.cutModifiers()[ci];
-        if (m.kind == kind && m.target == modifier.target) { existing = ci; break; }
-    }
-    if (existing) document_.setCutModifier(*existing, modifier);
-    else document_.addCutModifier(modifier);
+    document_.addCutModifier(modifier);
 #ifdef MM_HAS_OCC
     recomputeCutTarget(modifier.target);
 #endif

@@ -75,6 +75,16 @@ int main() {
         check(std::abs(ratio - 0.88) < 0.01, "kenar kare polygon cut: ~0.88 kati kalir");
     }
 
+    // --- 2b) Cokgen duzlemi parcadan UZAK (z=-500) -> through cut yine calisir. ---
+    {
+        CutModifier poly;
+        poly.kind = CutKind::PolygonCut;
+        poly.polygon = {{20, 20, -500}, {40, 20, -500}, {40, 40, -500}, {20, 40, -500}};
+        const TopoDS_Shape cut = applyCutModifier(box, poly, axisFrom, axisTo);
+        const double ratio = shapeVolume(cut) / boxVol;
+        check(std::abs(ratio - 0.96) < 0.01, "uzak polygon duzlemi: ~0.96 kati kalir");
+    }
+
     // --- 3) Line cut keepPositive=true: cizgi (50,0,0)-(50,100,0), ref normal +Z. ---
     {
         CutModifier line;

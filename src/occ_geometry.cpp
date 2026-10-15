@@ -230,16 +230,33 @@ static TopoDS_Shape cutSolidByPolygon(const TopoDS_Shape& base,
     BRepBndLib::Add(base, bb);
     double xMin = 0.0, yMin = 0.0, zMin = 0.0, xMax = 0.0, yMax = 0.0, zMax = 0.0;
     bb.Get(xMin, yMin, zMin, xMax, yMax, zMax);
-    const double margin = std::max({xMax - xMin, yMax - yMin, zMax - zMin}) * 2.0 + 1.0;
-    // Yuzu cokgen duzleminde ortala: once -margin kaydir, sonra +2*margin
-    // extrude → prizma normal boyunca [-margin, +margin] araligini kaplar.
     const gp_Vec normal(n->x, n->y, n->z);
+    // Parca bbox'inin 8 kosesini normal eksenine izdusur -> [tmin, tmax].
+    // Prizma bu araligi (kucuk marjla) kapsar -> cokgen duzlemi parcadan UZAK
+    // olsa bile through-cut uretir (Tekla: derinlik otomatik, yuzeyin ~3mm
+    // disina uzatilir). Izdusum ACIK bilesen hesabiyla yapilir (gp_Vec(P1,P2)
+    // = P2-P1 yon belirsizliginden kacinmak icin).
+    const double ox = polygon[0].x, oy = polygon[0].y, oz = polygon[0].z;
+    double tmin = 1e100, tmax = -1e100;
+    const double cx[2] = {xMin, xMax}, cy[2] = {yMin, yMax}, cz[2] = {zMin, zMax};
+    for (int i = 0; i < 2; ++i)
+        for (int j = 0; j < 2; ++j)
+            for (int k = 0; k < 2; ++k) {
+                const double t = (cx[i] - ox) * n->x + (cy[j] - oy) * n->y +
+                                 (cz[k] - oz) * n->z;
+                tmin = std::min(tmin, t);
+                tmax = std::max(tmax, t);
+            }
+    const double pad = 1.0;
+    const double from = tmin - pad;
+    const double length = (tmax - tmin) + 2.0 * pad;
     gp_Trsf shift;
-    shift.SetTranslation(normal * (-margin));
+    shift.SetTranslation(normal * from);
     BRepBuilderAPI_Transform moved(face, shift);
     const TopoDS_Shape prism =
-        BRepPrimAPI_MakePrism(moved.Shape(), normal * (2.0 * margin)).Shape();
+        BRepPrimAPI_MakePrism(moved.Shape(), normal * length).Shape();
     BRepAlgoAPI_Cut cut(base, prism);
+    if (!cut.IsDone()) return base;  // guvenli basarisizlik: base'e dokunma
     ShapeUpgrade_UnifySameDomain unifier(cut.Shape(), true, true, true);
     unifier.Build();
     return unifier.Shape();
