@@ -32,6 +32,11 @@ public:
         if (error) *error = "no OCC store available (OCC-disabled build)";
         return false;
     }
+    std::string serializeBase(EntityId) const override { return {}; }
+    bool restoreBaseSolid(EntityId, const std::string&, std::string* error) override {
+        if (error) *error = "no OCC store available (OCC-disabled build)";
+        return false;
+    }
     std::string occVersionString() const noexcept override { return {}; }
     int bRepFormatVersion() const noexcept override { return 0; }
     std::unique_ptr<OccStore> cloneEmpty() const override { return makeNullOccStore(); }

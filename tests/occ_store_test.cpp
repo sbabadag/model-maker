@@ -64,6 +64,8 @@ public:
     }
     std::string serializeActive(EntityId) const override { return {}; }
     bool restoreActiveSolid(EntityId, const std::string&, std::string*) override { return false; }
+    std::string serializeBase(EntityId) const override { return {}; }
+    bool restoreBaseSolid(EntityId, const std::string&, std::string*) override { return false; }
     std::string occVersionString() const noexcept override { return {}; }
     int bRepFormatVersion() const noexcept override { return 0; }
     std::unique_ptr<OccStore> cloneEmpty() const override { return std::make_unique<SpyStore>(); }
@@ -208,6 +210,8 @@ public:
     }
     std::string serializeActive(EntityId) const override { return {}; }
     bool restoreActiveSolid(EntityId, const std::string&, std::string*) override { return false; }
+    std::string serializeBase(EntityId) const override { return {}; }
+    bool restoreBaseSolid(EntityId, const std::string&, std::string*) override { return false; }
     std::string occVersionString() const noexcept override { return {}; }
     int bRepFormatVersion() const noexcept override { return 0; }
     std::unique_ptr<OccStore> cloneEmpty() const override { return std::make_unique<VersionedSpyStore>(); }
@@ -336,6 +340,8 @@ public:
     }
     std::string serializeActive(EntityId) const override { return {}; }
     bool restoreActiveSolid(EntityId, const std::string&, std::string*) override { return false; }
+    std::string serializeBase(EntityId) const override { return {}; }
+    bool restoreBaseSolid(EntityId, const std::string&, std::string*) override { return false; }
     std::string occVersionString() const noexcept override { return {}; }
     int bRepFormatVersion() const noexcept override { return 0; }
     std::unique_ptr<OccStore> cloneEmpty() const override { return std::make_unique<PruningSpyStore>(); }

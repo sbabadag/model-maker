@@ -131,6 +131,29 @@ bool OccSolidStore::restoreActiveSolid(EntityId id, const std::string& blob, std
     return v != kInvalidVersionId;
 }
 
+std::string OccSolidStore::serializeBase(EntityId id) const {
+    const auto it = slots_.find(id);
+    if (it == slots_.end()) return {};
+    const TopoDS_Shape* shape = shapeOfVersion(it->second, it->second.base);
+    if (shape == nullptr) return {};
+    std::string blob;
+    if (!serializeBRep(*shape, blob, nullptr)) return {};
+    return blob;
+}
+
+bool OccSolidStore::restoreBaseSolid(EntityId id, const std::string& blob, std::string* error) {
+    TopoDS_Shape shape;
+    if (!deserializeBRep(blob, shape, error)) return false;
+    if (!validateBRep(shape)) {
+        if (error) *error = "deserialized base shape failed BRepCheck";
+        return false;
+    }
+    const VersionId v = set(id, shape);
+    if (v == kInvalidVersionId) return false;
+    setBaseVersion(id, v);
+    return true;
+}
+
 std::string OccSolidStore::occVersionString() const noexcept {
     return mm::occVersionString();
 }

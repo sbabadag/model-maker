@@ -220,6 +220,10 @@ public:
     void removeCutModifier(std::size_t index);
     bool setCutModifier(std::size_t index, CutModifier modifier);
     const std::vector<CutModifier>& cutModifiers() const noexcept { return cutModifiers_; }
+    // O varligi hedefleyen kesme modifier'larinin INDEKSLERI (belge sirasinda).
+    // Recompute zinciri bu sirayla uygulanir (deterministik). Devre disi olanlar
+    // da dondurulur; uygulama zinciri onlari atlar.
+    std::vector<std::size_t> cutModifiersForTarget(EntityId target) const;
 
 private:
     static constexpr std::size_t kMaxUndoEntries = 100;

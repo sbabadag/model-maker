@@ -34,7 +34,7 @@ struct CutModifier {
     std::vector<Vec3> polygon;           // PolygonCut: duzlemde cokgen (>=3 nokta)
     EntityId tool{kInvalidEntityId};     // BooleanCut: diger parca
     bool enabled{true};
-    std::wstring name;
+    std::string name;   // UTF-8 (kalicilikta taşınabilir; Qt QString::fromUtf8 ile)
     bool operator==(const CutModifier&) const = default;
 };
 

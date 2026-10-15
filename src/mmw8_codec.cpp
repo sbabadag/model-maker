@@ -125,6 +125,41 @@ WireframeModel buildModel(std::vector<Vec3> vertices, std::vector<Edge> edges,
     return WireframeModel(std::move(vertices), std::move(edges), std::move(faces));
 }
 
+// Bir blob blogunun (B veya V) govdesini ayrir ve `out`a ekler. SHA-256 dogrulur,
+// entityId'nin model listesinde olmasini ve yinelenmemesini sart kosar.
+void readBlobEntries(std::istream& bs, std::vector<Mmw8Blob>& out,
+                     const std::unordered_map<EntityId, bool>& seenIds,
+                     std::size_t& totalBlobBytes) {
+    const std::uint64_t blobCount = readUint64(bs, "blobCount");
+    if (blobCount > kMmw8MaxModels) fail("blobCount exceeds limit");
+    for (std::uint64_t bi = 0; bi < blobCount; ++bi) {
+        const std::uint64_t eid = readUint64(bs, "blob entityId");
+        const std::uint64_t blobLen = readUint64(bs, "blob length");
+        const std::string sha = readToken(bs);
+        consumeNewline(bs);
+        if (eid == 0 || eid == kExhaustedEntityId)
+            fail("blob entityId must be a valid identity");
+        if (blobLen > kMmw8MaxBlobSize) fail("blob exceeds size limit");
+        if (sha.size() != 64) fail("invalid SHA-256 hex length");
+        totalBlobBytes += static_cast<std::size_t>(blobLen);
+        if (totalBlobBytes > kMmw8MaxTotalBlobBytes) fail("total blob bytes exceed limit");
+        Mmw8Blob blob;
+        blob.entityId = static_cast<EntityId>(eid);
+        blob.bytes.resize(static_cast<std::size_t>(blobLen));
+        if (blobLen) {
+            bs.read(blob.bytes.data(), static_cast<std::streamsize>(blobLen));
+            if (bs.gcount() != static_cast<std::streamsize>(blobLen))
+                fail("truncated blob");
+        }
+        blob.sha256 = sha;
+        if (sha256Hex(blob.bytes) != sha) fail("SHA-256 mismatch");
+        if (!seenIds.count(blob.entityId)) fail("blob entityId not in model list");
+        for (const auto& existing : out)
+            if (existing.entityId == blob.entityId) fail("duplicate blob entityId");
+        out.push_back(std::move(blob));
+    }
+}
+
 } // namespace
 
 void writeMmw8(std::ostream& out, const Mmw8Document& doc) {
@@ -229,6 +264,53 @@ void writeMmw8(std::ostream& out, const Mmw8Document& doc) {
         }
         const std::string b = body.str();
         out << "B " << b.size() << '\n';
+        out.write(b.data(), static_cast<std::streamsize>(b.size()));
+    }
+
+    // Kuyruk: C blogu (kesme modifier'lari, Phase 4.2).
+    if (!doc.cutModifiers.empty()) {
+        std::ostringstream body;
+        body << doc.cutModifiers.size() << '\n';
+        for (const auto& mod : doc.cutModifiers) {
+            body << static_cast<int>(mod.kind) << ' ' << mod.target << ' '
+                 << mod.planeOrigin.x << ' ' << mod.planeOrigin.y << ' ' << mod.planeOrigin.z << ' '
+                 << mod.planeNormal.x << ' ' << mod.planeNormal.y << ' ' << mod.planeNormal.z << ' '
+                 << (mod.keepPositive ? 1 : 0) << ' ' << mod.tool << ' '
+                 << (mod.enabled ? 1 : 0) << ' ';
+            putString(body, mod.name);
+            body << ' ' << mod.polygon.size();
+            for (const auto& p : mod.polygon) body << ' ' << p.x << ' ' << p.y << ' ' << p.z;
+            body << '\n';
+        }
+        const std::string b = body.str();
+        out << "C " << b.size() << '\n';
+        out.write(b.data(), static_cast<std::streamsize>(b.size()));
+    }
+
+    // Kuyruk: K blogu (konstruksiyon turleri, Phase 4.1).
+    if (!doc.constructionKinds.empty()) {
+        std::ostringstream body;
+        body << doc.constructionKinds.size() << '\n';
+        for (const auto& ck : doc.constructionKinds)
+            body << ck.entityId << ' ' << static_cast<int>(ck.kind) << '\n';
+        const std::string b = body.str();
+        out << "K " << b.size() << '\n';
+        out.write(b.data(), static_cast<std::streamsize>(b.size()));
+    }
+
+    // Kuyruk: V blogu (taban B-Rep blob'lari, Phase 4.2).
+    if (!doc.baseBlobs.empty()) {
+        std::ostringstream body;
+        body << doc.baseBlobs.size() << '\n';
+        for (const auto& blob : doc.baseBlobs) {
+            if (blob.entityId == kInvalidEntityId || blob.entityId == kExhaustedEntityId)
+                fail("base blob entityId must be a valid identity");
+            body << blob.entityId << ' ' << blob.bytes.size() << ' '
+                 << sha256Hex(blob.bytes) << '\n';
+            body.write(blob.bytes.data(), static_cast<std::streamsize>(blob.bytes.size()));
+        }
+        const std::string b = body.str();
+        out << "V " << b.size() << '\n';
         out.write(b.data(), static_cast<std::streamsize>(b.size()));
     }
 
@@ -403,7 +485,7 @@ void readMmw8(std::istream& in, Mmw8Document& doc) {
     }
 
     // --- Kuyruk: etiket-gudumlu bloklar ---
-    bool sawH = false, sawB = false;
+    bool sawH = false, sawB = false, sawV = false;
     std::size_t totalBlobBytes = 0;
     for (;;) {
         in >> std::ws;
@@ -439,34 +521,60 @@ void readMmw8(std::istream& in, Mmw8Document& doc) {
             if (!sawH) fail("B block before H block (wrong order)");
             sawB = true;
             std::istringstream bs(body);
-            const std::uint64_t blobCount = readUint64(bs, "blobCount");
-            if (blobCount > kMmw8MaxModels) fail("blobCount exceeds limit");
-            for (std::uint64_t bi = 0; bi < blobCount; ++bi) {
-                const std::uint64_t eid = readUint64(bs, "blob entityId");
-                const std::uint64_t blobLen = readUint64(bs, "blob length");
-                const std::string sha = readToken(bs);
-                consumeNewline(bs);
-                if (eid == 0 || eid == kExhaustedEntityId)
-                    fail("blob entityId must be a valid identity");
-                if (blobLen > kMmw8MaxBlobSize) fail("blob exceeds size limit");
-                if (sha.size() != 64) fail("invalid SHA-256 hex length");
-                totalBlobBytes += static_cast<std::size_t>(blobLen);
-                if (totalBlobBytes > kMmw8MaxTotalBlobBytes) fail("total blob bytes exceed limit");
-                Mmw8Blob blob;
-                blob.entityId = static_cast<EntityId>(eid);
-                blob.bytes.resize(static_cast<std::size_t>(blobLen));
-                if (blobLen) {
-                    bs.read(blob.bytes.data(), static_cast<std::streamsize>(blobLen));
-                    if (bs.gcount() != static_cast<std::streamsize>(blobLen))
-                        fail("truncated blob");
+            readBlobEntries(bs, parsed.blobs, seenIds, totalBlobBytes);
+        } else if (tag == 'V') {
+            if (sawV) fail("repeated V block");
+            if (!sawH) fail("V block before H block (wrong order)");
+            sawV = true;
+            std::istringstream vs(body);
+            readBlobEntries(vs, parsed.baseBlobs, seenIds, totalBlobBytes);
+        } else if (tag == 'C') {
+            std::istringstream cs(body);
+            const std::uint64_t count = readUint64(cs, "cutModifier count");
+            if (count > kMmw8MaxCutModifiers) fail("cutModifier count exceeds limit");
+            for (std::uint64_t ci = 0; ci < count; ++ci) {
+                CutModifier mod;
+                const std::int64_t kind = readInt64(cs, "cut kind");
+                if (kind < 0 || kind > 3) fail("invalid cut kind");
+                mod.kind = static_cast<CutKind>(kind);
+                mod.target = static_cast<EntityId>(readUint64(cs, "cut target"));
+                mod.planeOrigin.x = readDouble(cs, "cut origin x");
+                mod.planeOrigin.y = readDouble(cs, "cut origin y");
+                mod.planeOrigin.z = readDouble(cs, "cut origin z");
+                mod.planeNormal.x = readDouble(cs, "cut normal x");
+                mod.planeNormal.y = readDouble(cs, "cut normal y");
+                mod.planeNormal.z = readDouble(cs, "cut normal z");
+                mod.keepPositive = readBool(cs, "cut keepPositive");
+                mod.tool = static_cast<EntityId>(readUint64(cs, "cut tool"));
+                mod.enabled = readBool(cs, "cut enabled");
+                mod.name = readString(cs);
+                const std::uint64_t polyCount = readUint64(cs, "cut polygon count");
+                if (polyCount > kMmw8MaxVertices) fail("cut polygon too long");
+                mod.polygon.reserve(static_cast<std::size_t>(polyCount));
+                for (std::uint64_t pi = 0; pi < polyCount; ++pi) {
+                    Vec3 p;
+                    p.x = readDouble(cs, "polygon x");
+                    p.y = readDouble(cs, "polygon y");
+                    p.z = readDouble(cs, "polygon z");
+                    mod.polygon.push_back(p);
                 }
-                blob.sha256 = sha;
-                if (sha256Hex(blob.bytes) != sha) fail("SHA-256 mismatch");
-                // entityId, model listesinde var mi + tekrar yok mu?
-                if (!seenIds.count(blob.entityId)) fail("blob entityId not in model list");
-                for (const auto& existing : parsed.blobs)
-                    if (existing.entityId == blob.entityId) fail("duplicate blob entityId");
-                parsed.blobs.push_back(std::move(blob));
+                parsed.cutModifiers.push_back(std::move(mod));
+            }
+        } else if (tag == 'K') {
+            std::istringstream ks(body);
+            const std::uint64_t count = readUint64(ks, "constructionKind count");
+            if (count > kMmw8MaxModels) fail("constructionKind count exceeds limit");
+            std::unordered_map<EntityId, bool> seenCk;
+            for (std::uint64_t ki = 0; ki < count; ++ki) {
+                Mmw8ConstructionKind ck;
+                ck.entityId = static_cast<EntityId>(readUint64(ks, "construction entityId"));
+                const std::int64_t kind = readInt64(ks, "construction kind");
+                if (kind < 0 || kind > 3) fail("invalid construction kind");
+                ck.kind = static_cast<ConstructionKind>(kind);
+                if (!seenIds.count(ck.entityId)) fail("construction entityId not in model list");
+                if (seenCk.count(ck.entityId)) fail("duplicate construction entityId");
+                seenCk[ck.entityId] = true;
+                parsed.constructionKinds.push_back(ck);
             }
         } else {
             // Bilinmeyen blok: kayipsiz korunur.

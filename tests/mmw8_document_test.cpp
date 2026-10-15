@@ -236,12 +236,66 @@ static void testSaveSafety() {
     std::filesystem::remove(path, ec);
 }
 
+// 6) Construction + kesme modifier round-trip (Phase 4.1/4.2): K + C blogu.
+static void testCutAndConstructionRoundTrip() {
+    std::printf("Test 6: construction + kesme modifier MMW8 round-trip\n");
+    const auto path = tempPath("mmw8_doc_cut.mmw");
+    Document doc;
+    // Hedef parca (profil uyesi).
+    doc.addModel(WireframeModel::line({0, 0, 0}, {1000, 0, 0}));
+    const EntityId partId = doc.modelId(0);
+    // Konstruksiyon nesneleri: duzlem + nokta.
+    doc.addConstructionPlane(WorkPlane::world(), 500.0);
+    doc.addConstructionPoint({100, 0, 0});
+    // Kesme modifier'i (Fitting, hedef = parca; disabled durumu da kalici olmali).
+    CutModifier fit;
+    fit.kind = CutKind::Fitting;
+    fit.target = partId;
+    fit.planeOrigin = {200, 0, 0};
+    fit.planeNormal = {1, 0, 0};
+    fit.name = "Uc kesim";
+    fit.enabled = false;
+    doc.addCutModifier(fit);
+
+    doc.save(path);
+    Document loaded;
+    loaded.load(path);
+
+    // Konstruksiyon turleri korunur (K blogu).
+    const auto cons = loaded.constructionObjects();
+    check(cons.size() == 2, "2 konstruksiyon nesnesi korunur");
+    bool hasPlane = false, hasPoint = false;
+    for (const std::size_t i : cons) {
+        const ConstructionKind k = loaded.models()[i].constructionKind();
+        if (k == ConstructionKind::Plane) hasPlane = true;
+        if (k == ConstructionKind::Point) hasPoint = true;
+    }
+    check(hasPlane, "construction plane turu korunur");
+    check(hasPoint, "construction point turu korunur");
+
+    // Kesme modifier'lari korunur (C blogu): parametre + sira + hedef + disabled.
+    check(loaded.cutModifiers().size() == 1, "1 kesme modifier korunur");
+    if (!loaded.cutModifiers().empty()) {
+        const auto& m = loaded.cutModifiers()[0];
+        check(m.kind == CutKind::Fitting, "kind korunur");
+        check(m.target == partId, "hedef EntityId korunur");
+        check(m.planeOrigin.x == 200.0 && m.planeNormal.x == 1.0,
+              "duzlem parametreleri korunur");
+        check(m.name == "Uc kesim", "isim korunur");
+        check(m.enabled == false, "disabled durumu korunur");
+    }
+
+    std::error_code ec;
+    std::filesystem::remove(path, ec);
+}
+
 int main() {
     testRoundTrip();
     testUndoClearedOnLoad();
     testFailedLoadLeavesUnchanged();
     testLegacyUpgrade();
     testSaveSafety();
+    testCutAndConstructionRoundTrip();
     std::printf("MMW8 Document: checks=%d failures=%d\n", g_checks, g_failures);
     return g_failures == 0 ? 0 : 1;
 }

@@ -99,6 +99,10 @@ public:
     // Binary blob'dan aktif B-Rep kurar. Basarisizlikta false + `error`; magaza
     // degismez.
     bool restoreActiveSolid(EntityId id, const std::string& blob, std::string* error) override;
+
+    // --- KESME TABAN B-Rep SERILESTIRME (Phase 4.2) -------------------------
+    std::string serializeBase(EntityId id) const override;
+    bool restoreBaseSolid(EntityId id, const std::string& blob, std::string* error) override;
     // OCCT surumu (or. "7.9.2") ve BinTools format surumu (CURRENT).
     std::string occVersionString() const noexcept override;
     int bRepFormatVersion() const noexcept override;

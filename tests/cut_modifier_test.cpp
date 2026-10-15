@@ -134,7 +134,7 @@ int main() {
         planeCut.target = partA;
         planeCut.planeOrigin = {5, 0, 0};
         planeCut.planeNormal = {1, 0, 0};
-        planeCut.name = L"Kesim 1";
+        planeCut.name = "Kesim 1";
 
         doc.pushSnapshot();
         const std::size_t ci = doc.addCutModifier(planeCut);
@@ -156,7 +156,7 @@ int main() {
         doc.removeCutModifier(ci);
         check(doc.cutModifiers().empty(), "removeCutModifier siler");
         check(doc.undo(), "undo silme");
-        check(doc.cutModifiers().size() == 1 && doc.cutModifiers()[0].name == L"Kesim 1",
+        check(doc.cutModifiers().size() == 1 && doc.cutModifiers()[0].name == "Kesim 1",
               "undo modifier geri getirdi");
 
         // Redo.

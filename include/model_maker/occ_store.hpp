@@ -102,6 +102,18 @@ public:
     virtual bool restoreActiveSolid(EntityId id, const std::string& blob,
                                     std::string* error) = 0;
 
+    // --- KESME TABAN B-Rep SERILESTIRME (Phase 4.2) -------------------------
+    // Taban (pre-cut) B-Rep'i binary blob doner; taban surumu yoksa bos string.
+    // (Etkin B-Rep icin serializeActive; taban icin bunu kullan — boylece
+    // "orijinal B-Rep kaybolmaz" kayit/ac sonrasinda da korunur.)
+    virtual std::string serializeBase(EntityId id) const = 0;
+
+    // Binary blob'dan taban B-Rep kurar: deserialize -> set (YENI surum uretir)
+    // -> setBaseVersion(yeni surum). Basarisizlikta false + `error`; magaza
+    // DEGISMEZ (atomik).
+    virtual bool restoreBaseSolid(EntityId id, const std::string& blob,
+                                  std::string* error) = 0;
+
     // Bu store'un kullandigi OCCT surumu (or. "7.9.2"); OCC yoksa bos string.
     virtual std::string occVersionString() const noexcept = 0;
 

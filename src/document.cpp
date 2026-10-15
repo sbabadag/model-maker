@@ -1373,6 +1373,23 @@ void Document::buildMmw8(Mmw8Document& out) const {
         if (!blob.empty()) out.blobs.push_back(Mmw8Blob{e, std::move(blob), ""});
     }
     out.unknownBlocks = mmw8UnknownBlocks_;
+    out.cutModifiers = cutModifiers_;
+    // Konstruksiyon turleri (K blogu): kind != None olan modellerin
+    // EntityId -> kind eslesmesi (model kaydi ConstructionKind tasimaz).
+    out.constructionKinds.clear();
+    for (std::size_t i = 0; i < models_.size(); ++i) {
+        const ConstructionKind kind = models_[i].constructionKind();
+        if (kind != ConstructionKind::None)
+            out.constructionKinds.push_back(Mmw8ConstructionKind{modelIds_[i], kind});
+    }
+    // Taban B-Rep blob'lari (V blogu): kesme tabani (pre-cut) surumu olan
+    // varliklar. Boylece "orijinal B-Rep kaybolmaz" kayit/ac sonrasinda da
+    // korunur ve kesim sonradan duzenlenebilir.
+    out.baseBlobs.clear();
+    for (const EntityId e : modelIds_) {
+        std::string blob = occStore_->serializeBase(e);
+        if (!blob.empty()) out.baseBlobs.push_back(Mmw8Blob{e, std::move(blob), ""});
+    }
 }
 
 void Document::save(const std::filesystem::path& path) const {
@@ -1443,6 +1460,14 @@ void Document::commitFromMmw8(Mmw8Document&& mdoc) {
             opaque[blob.entityId] = blob.bytes;
         }
     }
+    // Taban B-Rep blob'lari (V blogu): kesme tabani (pre-cut) geri yukle.
+    // OCC-kapali derlemede restore edilemez -> taban geometrisi kaybolur
+    // (wireframe-only; kesme recompute'u zaten OCC gerektirir). Kesme
+    // modifier'lari ayri korunur; yalniz taban geometrisi eksik kalir.
+    for (const auto& blob : mdoc.baseBlobs) {
+        std::string err;
+        fresh->restoreBaseSolid(blob.entityId, blob.bytes, &err);
+    }
 
     // Basari: tum durumu devral.
     occStore_ = std::move(fresh);
@@ -1451,9 +1476,16 @@ void Document::commitFromMmw8(Mmw8Document&& mdoc) {
     nextEntityId_ = mdoc.nextEntityId;
     layers_ = std::move(mdoc.layers);
     grids_ = std::move(mdoc.grids);
+    cutModifiers_ = std::move(mdoc.cutModifiers);
     // Grid `axes` TUREV bir alandir (spec'ten cizim geometrisi); codec yalniz
     // spec'i tasir. Yuklemede yeniden TURET.
     for (auto& grid : grids_) rebuildGridAxes(grid);
+    // Konstruksiyon turleri (K blogu): EntityId -> kind eslemesini modellere
+    // geri yukle (model kaydi ConstructionKind tasimaz).
+    for (const auto& ck : mdoc.constructionKinds) {
+        if (auto idx = indexOfEntity(ck.entityId); idx.has_value())
+            models_[*idx].setConstructionKind(ck.kind);
+    }
     opaqueBreps_ = std::move(opaque);
     opaqueBrepsStale_ = false;
     mmw8Metadata_ = mdoc.metadata;
@@ -1804,6 +1836,13 @@ bool Document::setCutModifier(std::size_t index, CutModifier modifier) {
     recordUndoOp(std::move(op));
     cutModifiers_[index] = std::move(modifier);
     return true;
+}
+
+std::vector<std::size_t> Document::cutModifiersForTarget(EntityId target) const {
+    std::vector<std::size_t> result;
+    for (std::size_t i = 0; i < cutModifiers_.size(); ++i)
+        if (cutModifiers_[i].target == target) result.push_back(i);
+    return result;
 }
 
 } // namespace mm
