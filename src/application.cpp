@@ -5465,6 +5465,15 @@ void Application::recomputeCutTarget(EntityId target) {
     putOccSolid(index, result);
 }
 
+void Application::recomputeTargetsUsingTool(EntityId tool) {
+    // Canli Part Cut: kesici parca (tool) tasininca bu parçayi ARAÇ olarak
+    // kullanan tum BooleanCut modifier'larinin HEDEFLERI yeniden hesaplanir.
+    for (const std::size_t ci : document_.cutModifiersUsingTool(tool)) {
+        const EntityId target = document_.cutModifiers()[ci].target;
+        recomputeCutTarget(target);
+    }
+}
+
 std::size_t Application::occSolidCount() const noexcept {
     const auto* store = occSolidStore();
     return store ? store->size() : 0u;
@@ -6568,6 +6577,9 @@ void Application::reExtrudeProfileGrip(std::size_t solidIndex, bool endIsTo,
     pushUndoSnapshot();
     document_.replaceModel(solidIndex, {std::move(solidModel)});
     putOccSolid(solidIndex, shape);
+    // Kesici parca olarak kullaniliyorsa bagli hedefleri yeniden hesapla
+    // (canli Part Cut: profil ucu tasinininca kesilen hedef guncellenir).
+    recomputeTargetsUsingTool(document_.modelId(solidIndex));
     publishStatus(endIsTo ? L"Profil ust ucu uzatildi" : L"Profil alt ucu uzatildi");
     updateControls();
     updateStatus();

@@ -442,6 +442,9 @@ private:
     // Kesme modifier'larini hedef parcaya yeniden uygular (Phase 4.2 recompute):
     // taban (pre-cut) B-Rep'ten tum etkin modifier'lari sirasiyla uygular.
     void recomputeCutTarget(EntityId target);
+    // Kesici parca tasininca (canli Part Cut): bu parçayi ARAÇ olarak kullanan
+    // tum BooleanCut modifier'larinin hedeflerini yeniden hesaplar.
+    void recomputeTargetsUsingTool(EntityId tool);
 #endif
     void saveOptions();
     void loadOptions();

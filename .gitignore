@@ -23,4 +23,5 @@ model-maker-startup.log
 model-maker-trim.log
 build-occ/
 build-hermes/
+build-debug/
 dist/ 

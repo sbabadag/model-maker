@@ -192,6 +192,11 @@ int main() {
         doc.addCutModifier(booleanCut);
         check(doc.cutModifiers().size() == 1 && doc.cutModifiers()[0].tool == partB,
               "BooleanCut arac EntityId referansi");
+
+        // Ters sorgu (canli Part Cut): arac olarak kullanilan parca.
+        const auto usingTool = doc.cutModifiersUsingTool(partB);
+        check(usingTool.size() == 1 && usingTool[0] == 0, "cutModifiersUsingTool ters sorgu");
+        check(doc.cutModifiersUsingTool(partA).empty(), "arac olmayan parca -> bos");
         doc.clearHistory();
     }
 

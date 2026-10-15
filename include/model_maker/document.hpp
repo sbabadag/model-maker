@@ -224,6 +224,9 @@ public:
     // Recompute zinciri bu sirayla uygulanir (deterministik). Devre disi olanlar
     // da dondurulur; uygulama zinciri onlari atlar.
     std::vector<std::size_t> cutModifiersForTarget(EntityId target) const;
+    // O varligi ARAÇ (kesici) olarak kullanan BooleanCut modifier'larinin
+    // INDEKSLERI (canli Part Cut: kesici tasininca hedefler yeniden hesaplanir).
+    std::vector<std::size_t> cutModifiersUsingTool(EntityId tool) const;
 
 private:
     static constexpr std::size_t kMaxUndoEntries = 100;

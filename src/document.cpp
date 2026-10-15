@@ -1845,4 +1845,15 @@ std::vector<std::size_t> Document::cutModifiersForTarget(EntityId target) const 
     return result;
 }
 
+std::vector<std::size_t> Document::cutModifiersUsingTool(EntityId tool) const {
+    // Ters sorgu (canli Part Cut): kesici parca tasininca bu parçayi ARAÇ olarak
+    // kullanan BooleanCut modifier'larinin hedefleri yeniden hesaplanir.
+    std::vector<std::size_t> result;
+    if (tool == kInvalidEntityId) return result;
+    for (std::size_t i = 0; i < cutModifiers_.size(); ++i)
+        if (cutModifiers_[i].kind == CutKind::BooleanCut && cutModifiers_[i].tool == tool)
+            result.push_back(i);
+    return result;
+}
+
 } // namespace mm
