@@ -247,6 +247,11 @@ public:
     // KONSTRUKSIYON NESNELERI GIZLE/GOSTER: tum ConstructionKind nesnelerinin
     // gorunurlugunu tek bayrakla degistirir (Document::setConstructionVisible).
     void toggleConstructionVisibility();
+    // TEKLA FITTING / PLANE CUT (P1, noun-verb): secili (1 profil hedefi +
+    // 1 konstrüksiyon duzlemi) uzerinden CutModifier olusturur; Fitting tarafi
+    // otomatik, PlaneCut keepPositive=true. OCC varsa hedefi yeniden hesaplar.
+    void startFittingCommand();
+    void startPlaneCutCommand();
     // IKI NOKTALI GORUNUS (Tekla): iki nokta secilir (snap/track aktif);
     // ikinci noktada ViewDefinition uretilip twoPointViewCallback_ cagrilir
     // (Qt yeni MDI penceresi acar). Esc/sag tik iptal.
@@ -352,6 +357,9 @@ private:
                                                    DWORD_PTR referenceData);
     LRESULT handleMessage(UINT message, WPARAM wParam, LPARAM lParam);
     LRESULT handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lParam);
+    // Fitting/PlaneCut ortak yolu: secili (profil hedefi + konstrüksiyon
+    // duzlemi) -> CutModifier -> addCutModifier -> (OCC) recomputeCutTarget.
+    void applyCutFromSelection(CutKind kind);
     // Secili TEK parcanin (profil uyesi) eksen cercevesi + eksen orijini.
     std::optional<Ucs> selectedPartFrame(Vec3& axisOrigin) const;
 

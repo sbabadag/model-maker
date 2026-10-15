@@ -556,6 +556,17 @@ if(BUILD_TESTING)
             set_tests_properties(model_maker_occ_cut_probe PROPERTIES
                 ENVIRONMENT "LD_LIBRARY_PATH=${OCC_ROOT}/lib:$ENV{LD_LIBRARY_PATH}")
         endif()
+
+        # P1 KABUL SENARYOSU (Fitting + egimli duzlem + tasima->recompute):
+        # HEB300 I-kesit -> egimli plane -> Fitting -> duzlem tasinir -> taraf
+        # tersine doner. Gercek OCCT; Linux'ta OCC-disabled build'de kurulmaz.
+        add_executable(model_maker_occ_fitting_acceptance tests/occ_fitting_acceptance.cpp)
+        target_link_libraries(model_maker_occ_fitting_acceptance PRIVATE model_maker_occ)
+        add_test(NAME model_maker_occ_fitting_acceptance COMMAND model_maker_occ_fitting_acceptance)
+        if(UNIX)
+            set_tests_properties(model_maker_occ_fitting_acceptance PROPERTIES
+                ENVIRONMENT "LD_LIBRARY_PATH=${OCC_ROOT}/lib:$ENV{LD_LIBRARY_PATH}")
+        endif()
     endif()
 
     # OCC SAHIPLIK REGRESYON HARNESS'I (kaynak-govde cikarimi + GERCEK OCCT).

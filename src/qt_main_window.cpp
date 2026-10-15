@@ -615,6 +615,14 @@ void QtMainWindow::createMenus() {
         [this]() { app_.startConstructionPlaneCommand(); })->setIcon(makeToolIcon(ToolGlyph::Plane));
     constructionMenu->addAction("Konstrüksiyon &Nesnelerini Göster/Gizle", this,
         [this]() { app_.toggleConstructionVisibility(); });
+    // --- KESME (P1): secili (profil hedefi + konstrüksiyon duzlemi) -> kesme.
+    // Fitting tarafi otomatik; Plane Cut keepPositive=true. Kesme objesi ayri
+    // katmanda yari saydam cizilir (renderer drawCutPlanes).
+    constructionMenu->addSeparator();
+    constructionMenu->addAction("&Fitting (Uç Kesme)", this,
+        [this]() { app_.startFittingCommand(); });
+    constructionMenu->addAction("&Plane Cut", this,
+        [this]() { app_.startPlaneCutCommand(); });
     viewMenu->addSeparator();
     // --- P1 UCS/VIEW: UCS'ye dik gorus + global duzlemler + adlandirilmis
     // gorusler (Tekla "view to UCS / plan of UCS"). Mevcut calisma duzlemi

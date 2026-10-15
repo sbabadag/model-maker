@@ -3336,6 +3336,66 @@ void Application::toggleConstructionVisibility() {
     invalidateCanvas();
 }
 
+void Application::applyCutFromSelection(CutKind kind) {
+    // Noun-verb (P1): secili kume icinde BIR profil hedefi + BIR konstrüksiyon
+    // duzlemi aranir. Target = profileName dolu normal model; plane cercevesi
+    // constructionPlaneFrame()'ten alinir (MMW8'de ayri alan tasimaz, koselerden
+    // geri kurulur). Fitting tarafi otomatik; PlaneCut keepPositive=true.
+    std::optional<std::size_t> targetIdx;
+    std::optional<std::size_t> planeIdx;
+    for (const auto index : selectedModels_) {
+        if (index >= document_.models().size()) continue;
+        const auto& model = document_.models()[index];
+        if (model.constructionKind() == ConstructionKind::Plane && !planeIdx) planeIdx = index;
+        else if (model.constructionKind() == ConstructionKind::None &&
+                 !model.properties().profileName.empty() && !targetIdx)
+            targetIdx = index;
+    }
+    if (!targetIdx || !planeIdx) {
+        MessageBeep(MB_ICONWARNING);
+        publishStatus(L"Fitting/Plane Cut: bir profil hedefi VE bir konstrüksiyon düzlemi seçin");
+        return;
+    }
+    const auto frame = constructionPlaneFrame(document_.models()[*planeIdx]);
+    if (!frame) {
+        MessageBeep(MB_ICONWARNING);
+        publishStatus(L"Fitting/Plane Cut: konstrüksiyon düzlemi bozuk — yeniden oluşturun");
+        return;
+    }
+    CutModifier modifier;
+    modifier.kind = kind;
+    modifier.target = document_.modelId(*targetIdx);
+    modifier.planeOrigin = frame->origin;
+    modifier.planeNormal = frame->normal;
+    modifier.keepPositive = true;  // Fitting: otomatik taraf (bu alan yok sayilir)
+    modifier.enabled = true;
+    modifier.name = kind == CutKind::Fitting ? "Fitting" : "Plane Cut";
+    // Tekla semantigi: ayni hedefte ayni turden mevcut modifier EZILIR (bir uce
+    // bir fitting). Boylece "duzlemi tasi -> yeniden Fitting" mevcut kesmeyi
+    // GUNCELLER (yeniden hesaplanir), ikinci bir kesme eklemez.
+    pushUndoSnapshot();
+    std::optional<std::size_t> existing;
+    for (std::size_t ci = 0; ci < document_.cutModifiers().size(); ++ci) {
+        const auto& m = document_.cutModifiers()[ci];
+        if (m.kind == kind && m.target == modifier.target) { existing = ci; break; }
+    }
+    if (existing) document_.setCutModifier(*existing, modifier);
+    else document_.addCutModifier(modifier);
+#ifdef MM_HAS_OCC
+    recomputeCutTarget(modifier.target);
+#endif
+    selectedModels_.clear();
+    selectionFirstCorner_.reset();
+    updateHover(cursorScreen_.x, cursorScreen_.y);
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
+}
+
+void Application::startFittingCommand() { applyCutFromSelection(CutKind::Fitting); }
+
+void Application::startPlaneCutCommand() { applyCutFromSelection(CutKind::PlaneCut); }
+
 void Application::startTwoPointViewCommand() {
     startWorkPlaneCommand(); // ayni secim akisi: snap + track + kesik onizleme
     pointPickPurpose_ = PointPickPurpose::TwoPointView;

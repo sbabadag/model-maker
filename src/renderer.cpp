@@ -779,6 +779,63 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         }
     };
 
+    // KESME NESNELERI (P1): CutModifier duzlemleri (PlaneCut/Fitting) ayri
+    // katmanda yari saydam cizilir — kesme objesi GORUNUR kalir. Hedef parca
+    // boyutundan turetilen sonlu dikdortgen + normal yonu oku. BILINEN
+    // SINIRLAMA: GL modunda derinlik-dogru degil (referans overlay).
+    const auto drawCutPlanes = [&]() {
+        const COLORREF kCutRgb = RGB(255, 140, 40);
+        for (std::size_t ci = 0; ci < document.cutModifiers().size(); ++ci) {
+            const auto& mod = document.cutModifiers()[ci];
+            if (!mod.enabled) continue;
+            if (mod.kind != CutKind::PlaneCut && mod.kind != CutKind::Fitting) continue;
+            const double nl = std::hypot(mod.planeNormal.x, mod.planeNormal.y, mod.planeNormal.z);
+            if (!(nl > 1e-9)) continue;
+            const WorkPlane plane =
+                WorkPlane::fromAxisAndPoint(mod.planeOrigin, mod.planeOrigin + mod.planeNormal);
+            double half = 500.0;
+            if (const auto t = document.indexOfEntity(mod.target)) {
+                if (*t < document.modelBounds().size()) {
+                    const Bounds3& b = document.modelBounds()[*t];
+                    half = std::max({std::abs(b.maximum.x - b.minimum.x),
+                                     std::abs(b.maximum.y - b.minimum.y),
+                                     std::abs(b.maximum.z - b.minimum.z)}) * 0.75;
+                }
+            }
+            if (!(half > 1.0)) half = 500.0;
+            const POINT quad[4] = {projectPoint(plane.fromPlane({-half, -half})),
+                                   projectPoint(plane.fromPlane({half, -half})),
+                                   projectPoint(plane.fromPlane({half, half})),
+                                   projectPoint(plane.fromPlane({-half, half}))};
+            HBRUSH fill = CreateHatchBrush(HS_FDIAGONAL, kCutRgb);
+            HGDIOBJ oldBrush = SelectObject(dc, fill);
+            HGDIOBJ oldPen = SelectObject(dc, GetStockObject(NULL_PEN));
+            const int oldBk = SetBkMode(dc, TRANSPARENT);
+            Polygon(dc, quad, 4);
+            SetBkMode(dc, oldBk);
+            SelectObject(dc, oldPen);
+            SelectObject(dc, oldBrush);
+            DeleteObject(fill);
+            HPEN border = CreatePen(PS_SOLID, 1, kCutRgb);
+            SelectObject(dc, border);
+            line(dc, quad[0].x, quad[0].y, quad[1].x, quad[1].y);
+            line(dc, quad[1].x, quad[1].y, quad[2].x, quad[2].y);
+            line(dc, quad[2].x, quad[2].y, quad[3].x, quad[3].y);
+            line(dc, quad[3].x, quad[3].y, quad[0].x, quad[0].y);
+            SelectObject(dc, stockPen);
+            DeleteObject(border);
+            // Normal yonu (kesme/keep yonu) oku.
+            const POINT o = projectPoint(mod.planeOrigin);
+            const POINT n = projectPoint(mod.planeOrigin + mod.planeNormal * half);
+            HPEN arr = CreatePen(PS_SOLID, 1, kCutRgb);
+            SelectObject(dc, arr);
+            line(dc, o.x, o.y, n.x, n.y);
+            SelectObject(dc, stockPen);
+            DeleteObject(arr);
+            ++performance.renderedEntities;
+        }
+    };
+
     // Hareket kareleri geri bildirim katmanı: seçim vurgusu, transform
     // izleyicisi/hayaletleri, trim/extend önizlemesi, çizim lastik bandı,
     // snap işareti ve dinamik giriş. Temel geometri motion tabanından gelir.
@@ -786,6 +843,7 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         // Konstrüksiyon katmani interaktif/hizli karelerde de gorunsun
         // (taban dongusunden dislandigi icin burada cizilir).
         drawConstruction();
+        drawCutPlanes();
         const bool motionDrafting = commandShowsSnapFeedback(
             draft.drawingActive, draft.workPlanePicking, draft.transformCommand,
             draft.transformPhase, draft.arrayItemCount.has_value(),
@@ -1590,6 +1648,7 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
     // interaktif/hizli karelerde drawMotionFeedback icinden cizilir.
     if (!draft.snapOnly && !draft.interactiveNavigation) {
         drawConstruction();
+        drawCutPlanes();
     }
 
     // RHINO TARZI GUMBALL: tasima tutamaclari — GL kompozitinin ustune,
