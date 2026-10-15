@@ -267,6 +267,9 @@ public:
     HWND createViewport(HWND parent, const ViewDefinition& view);
     void destroyViewport(HWND canvas);   // DestroyWindow; WM_DESTROY kaydi siler
     void fitViewport(HWND canvas);       // gorunus dilimine sigdir
+    // AKTIF DURUMU DEGISTIRMEDEN sigdir (resize yolu icin; fitViewport
+    // aktiflestirir). Iki noktali gorunum resize'da bunu kullanir.
+    void fitViewportPassive(HWND canvas);
     std::optional<ViewDefinition> viewportDefinition(HWND canvas) const;
     void setViewportDepth(HWND canvas, double front, double back);
     std::size_t viewportCount() const noexcept { return views_.size(); }

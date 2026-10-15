@@ -6,6 +6,7 @@
 #include <QMenu>
 #include <QResizeEvent>
 #include <QShowEvent>
+#include <QTimer>
 
 #include <windows.h>
 
@@ -49,12 +50,21 @@ void TwoPointViewWidget::layoutCanvas() {
 
 void TwoPointViewWidget::resizeEvent(QResizeEvent* event) {
     QWidget::resizeEvent(event);
-    layoutCanvas();
+    // Ayni ana pencere tuzagi: QResizeEvent, native HWND boyutu guncellenmeden
+    // ONCE gelebilir — o anda GetClientRect bayat (yarim) deger doner ve tuval
+    // yarim boyutta kalir. Olcumu bir sonraki olay dongusu turuna ertele
+    // (main pencere resizeEmbeddedCanvas ile AYNI cozum). Ertelenen olcmede
+    // tuval gercek boyuta gelince kamerayi da yeniden sigdir (yoksa cizim
+    // eski kucuk canvas'a gore fit edilmis kalir ve "yarim pencere" gorunur).
+    QTimer::singleShot(0, this, [this]() {
+        layoutCanvas();
+        if (app_ && canvas_ && IsWindow(canvas_)) app_->fitViewportPassive(canvas_);
+    });
 }
 
 void TwoPointViewWidget::showEvent(QShowEvent* event) {
     QWidget::showEvent(event);
-    layoutCanvas();
+    QTimer::singleShot(0, this, [this]() { layoutCanvas(); });
 }
 
 void TwoPointViewWidget::focusInEvent(QFocusEvent* event) {

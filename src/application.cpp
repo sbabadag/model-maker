@@ -1283,6 +1283,36 @@ void Application::fitViewport(HWND canvas) {
     invalidateCanvas();
 }
 
+// Bir gorunum penceresini AKTIF DURUMUNU DEGISTIRMEDEN kendi kamerasiyla
+// sigdirir. resize sirasinda kullanilir: boyut degisince pasif pencerenin
+// kamerasi eski (kucuk) canvas'a gore fit edilmis kalmasin diye yeniden
+// sigdirilir; aktif view degistirilmez (fitViewport aktiflestirir — resize'da
+// yanlis). Aktif gorunum icin de ayni isi, aktifligi koruyarak yapar.
+void Application::fitViewportPassive(HWND canvas) {
+    const auto index = viewIndexOf(canvas);
+    if (!index) return;
+    if (*index == activeView_) {
+        if (!viewDef_) { zoomExtents2D(); return; }
+        RECT rc{}; GetClientRect(canvas_, &rc);
+        if (rc.right <= 0 || rc.bottom <= 0) return;
+        const Bounds3 box = viewFitBounds(document_.modelBounds(), *viewDef_);
+        camera_.setViewBasis(viewDef_->right, viewDef_->up, viewDef_->origin);
+        camera_.fit3D(box.minimum, box.maximum, std::max(1L, rc.right),
+                      std::max(1L, rc.bottom), 40.0);
+        invalidateCanvas();
+        return;
+    }
+    auto& slot = *views_[*index];
+    if (!slot.viewDef) return;
+    RECT rc{}; GetClientRect(slot.canvas, &rc);
+    if (rc.right <= 0 || rc.bottom <= 0) return;
+    const Bounds3 box = viewFitBounds(document_.modelBounds(), *slot.viewDef);
+    slot.camera.setViewBasis(slot.viewDef->right, slot.viewDef->up, slot.viewDef->origin);
+    slot.camera.fit3D(box.minimum, box.maximum, std::max(1L, rc.right),
+                      std::max(1L, rc.bottom), 40.0);
+    InvalidateRect(slot.canvas, nullptr, FALSE);
+}
+
 LRESULT CALLBACK Application::propsWndProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
     auto* app = reinterpret_cast<Application*>(GetWindowLongPtrW(window, GWLP_USERDATA));
     if (message == WM_CLOSE) {
