@@ -3563,8 +3563,40 @@ void Application::commitWorkPlanePoint(const Vec3& point) {
             publishStatus(L"Görünüş: iki nokta XY düzleminde farklı olmalı — 2. noktayı yeniden seçin");
             return;
         }
+        // TEKLA AKISI: iki nokta tamam, simdi BAKIS YONU secilir. P1-P2
+        // cizgisi ekran-saga dogru sabitlenir (right); izleyici ya +normal ya
+        // -normal tarafinda olur. Imlec cizginin hangi tarafindaysa normal o
+        // tarafa cevrilir (ok onizlemesi); tik yonu onaylar.
+        pointPickPurpose_ = PointPickPurpose::TwoPointViewDirection;
+        twoPointViewNormal_ = view->normal;
+        updateStatus();
+        invalidateCanvas();
+        return;
+    }
+    if (pointPickPurpose_ == PointPickPurpose::TwoPointViewDirection) {
+        if (!std::isfinite(point.x) || !std::isfinite(point.y) || !std::isfinite(point.z)) {
+            MessageBeep(MB_ICONWARNING);
+            return;
+        }
+        // Tik noktasi hangi taraftaysa normal oraya cevrilir; sonra view
+        // uretilir ve iki noktali gorunum penceresi acilir. Normal, bakis
+        // yonudur; diger taraf secildiyse gorunum AYNALANIR (Tekla davranisi:
+        // duzlemin arkasindan bakinca sag/sol yer degistirir). Tutarlilik icin
+        // normal = right x up korunur -> right da terslenir.
+        const auto base = viewFromTwoPoints(workPlanePoints_[0], workPlanePoints_[1]);
+        if (!base) {
+            cancelWorkPlaneCommand();
+            return;
+        }
+        ViewDefinition view = *base;
+        view.normal = twoPointViewNormal_;
+        const bool flipped = view.normal.x * base->normal.x + view.normal.y * base->normal.y +
+                                 view.normal.z * base->normal.z < 0.0;
+        if (flipped) {
+            view.right = {-view.right.x, -view.right.y, -view.right.z};
+        }
         cancelWorkPlaneCommand();
-        if (twoPointViewCallback_) twoPointViewCallback_(*view);
+        if (twoPointViewCallback_) twoPointViewCallback_(view);
         return;
     }
     workPlanePoints_.push_back(point);
@@ -4113,6 +4145,27 @@ void Application::updateHover(int x, int y) {
         polarTrackingLocked_ = hover_->point != original.point;
     }
     if (profileGrip_ && hover_) profileGrip_->cursorPoint = hover_->point;
+
+    // IKI NOKTALI GORUNUM YON SECIMI: imlec P1-P2 cizgisinin hangi tarafindaysa
+    // bakis yonu (normal) o tarafa cevrilir. Ok onizlemesi renderer'da bu
+    // vektoru kullanir. Snap noktasi yeterli: yalnizca YON (isaret) onemlidir.
+    if (pointPickPurpose_ == PointPickPurpose::TwoPointViewDirection &&
+        workPlanePoints_.size() >= 2 && hover_) {
+        const Vec3& p1 = workPlanePoints_[0];
+        const Vec3& p2 = workPlanePoints_[1];
+        const double dx = p2.x - p1.x, dy = p2.y - p1.y;
+        const double horizontal = std::sqrt(dx * dx + dy * dy);
+        if (horizontal > 1e-6) {
+            // Ekran-saga (right) ve normal tabani (right x up, up=Z).
+            const Vec3 right{dx / horizontal, dy / horizontal, 0.0};
+            const Vec3 baseNormal{right.y, -right.x, 0.0}; // right x (0,0,1)
+            const Vec3 rel{hover_->point.x - p1.x, hover_->point.y - p1.y,
+                           hover_->point.z - p1.z};
+            const double side = rel.x * baseNormal.x + rel.y * baseNormal.y;
+            twoPointViewNormal_ = side >= 0.0 ? baseNormal
+                                              : Vec3{-baseNormal.x, -baseNormal.y, 0.0};
+        }
+    }
 }
 
 // F8 Ortho kisiti. OBJE SNAP'LARI ORTHO'YU EZER — AutoCAD'de de osnap ortho'dan
@@ -4616,6 +4669,9 @@ void Application::updateStatus() {
         text += L"  |  2 NOKTALI GÖRÜNÜŞ — ";
         text += workPlanePoints_.empty() ? L"1. noktayı belirtin (görünüş solu)"
                                          : L"2. noktayı belirtin (görünüş sağı)";
+    } else if (workPlanePicking_ &&
+               pointPickPurpose_ == PointPickPurpose::TwoPointViewDirection) {
+        text += L"  |  2 NOKTALI GÖRÜNÜŞ — bakış yönünü seçin (ok, tıklayın)";
     } else if (workPlanePicking_ && pointPickPurpose_ == PointPickPurpose::RotateCenter) {
         text += L"  |  DÖNÜŞ MERKEZİ — ekranın döneceği noktayı seçin (Esc iptal)";
     } else if (workPlanePicking_) {
@@ -6756,6 +6812,9 @@ DraftView Application::draftView() const {
     view.temporaryPerpendicularPoints = temporaryPerpendicularPoints_;
     view.workPlaneZ = workPlane_.origin.z; view.workPlane = workPlane_;
     view.workPlanePicking = workPlanePicking_; view.workPlanePoints = workPlanePoints_;
+    view.twoPointViewDirectionActive =
+        workPlanePicking_ && pointPickPurpose_ == PointPickPurpose::TwoPointViewDirection;
+    view.twoPointViewDirection = twoPointViewNormal_;
     view.workPlaneGhostVisible = workPlaneGhostVisible_;
     // Donus merkezi (R) isareti: aktif pencerenin kamerasi. Renderer dunya
     // noktasini kendi kamerasiyla projekte eder (pasif pencerede slot.camera).

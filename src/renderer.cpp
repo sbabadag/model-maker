@@ -356,6 +356,33 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         return Vec2{projected.x + static_cast<double>(canvas.left),
                     projected.y + static_cast<double>(canvas.top)};
     };
+    // IKI NOKTALI GORUNUM YON SECIMI oku: verilen dunya noktasindan, verilen
+    // birim yonde (normal) sabit EKRAN uzunluklu ok cizer (UCS glifi ile ayni
+    // teknik — zoom'dan bagimsiz).
+    const auto drawViewDirectionArrow = [&](const Vec3& at, const Vec3& normal, COLORREF color) {
+        const Vec2 base = projectPointPrecise(at);
+        const Vec2 tipW = projectPointPrecise({at.x + normal.x, at.y + normal.y, at.z + normal.z});
+        const double dx = tipW.x - base.x, dy = tipW.y - base.y;
+        const double len = std::hypot(dx, dy);
+        if (len < 1e-9) return;
+        const double scale = 46.0 / len; // sabit 46 px ok
+        const POINT a{static_cast<LONG>(std::lround(base.x)),
+                      static_cast<LONG>(std::lround(base.y))};
+        const POINT b{static_cast<LONG>(std::lround(base.x + dx * scale)),
+                      static_cast<LONG>(std::lround(base.y + dy * scale))};
+        HPEN pen = CreatePen(PS_SOLID, 2, color);
+        SelectObject(dc, pen);
+        line(dc, a.x, a.y, b.x, b.y);
+        const double ux = dx / len, uy = dy / len;
+        const POINT h1{b.x - static_cast<LONG>(std::lround(ux * 8.0 - uy * 4.0)),
+                       b.y - static_cast<LONG>(std::lround(uy * 8.0 + ux * 4.0))};
+        const POINT h2{b.x - static_cast<LONG>(std::lround(ux * 8.0 + uy * 4.0)),
+                       b.y - static_cast<LONG>(std::lround(uy * 8.0 - ux * 4.0))};
+        line(dc, b.x, b.y, h1.x, h1.y);
+        line(dc, b.x, b.y, h2.x, h2.y);
+        SelectObject(dc, stockPen);
+        DeleteObject(pen);
+    };
     const auto drawGridAndAxes = [&](HDC targetDc) {
         // MILIMETRIK ADAPTIF GRID KALDIRILDI (kullanici istegi): eski AutoCAD
         // 1-2-5 adaptif grid cizilmez — sadece UCS ok glifi ve custom yapi
@@ -764,6 +791,13 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
                 }
                 SelectObject(dc, stockPen);
                 DeleteObject(pickPen);
+                // IKI NOKTALI GORUNUM YON SECIMI: iki noktanin ucunda, secilen
+                // bakis yonunu gosteren ok (imlecin tarafina gore cevrilir).
+                if (draft.twoPointViewDirectionActive && draft.workPlanePoints.size() >= 2) {
+                    for (std::size_t i = 0; i < 2; ++i)
+                        drawViewDirectionArrow(draft.workPlanePoints[i],
+                                               draft.twoPointViewDirection, RGB(80, 200, 255));
+                }
             }
             if ((draft.transformCommand == TransformCommand::Trim ||
                  draft.transformCommand == TransformCommand::Extend) &&
@@ -1995,6 +2029,11 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         }
         SelectObject(dc, stockPen);
         DeleteObject(pickPen);
+        if (draft.twoPointViewDirectionActive && draft.workPlanePoints.size() >= 2) {
+            for (std::size_t i = 0; i < 2; ++i)
+                drawViewDirectionArrow(draft.workPlanePoints[i],
+                                       draft.twoPointViewDirection, RGB(80, 200, 255));
+        }
         for (std::size_t index = 0; index < draft.workPlanePoints.size(); ++index) {
             const POINT point = projectPoint(draft.workPlanePoints[index]);
             HBRUSH marker = CreateSolidBrush(RGB(255, 206, 84));

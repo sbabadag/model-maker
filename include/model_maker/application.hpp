@@ -739,6 +739,10 @@ private:
     WorkPlane workPlane_{};
     bool workPlanePicking_{};
     std::vector<Vec3> workPlanePoints_;
+    // Iki noktali gorunum YON secim asamasinda: secilen bakis yonu (birim,
+    // izleyiciye dogru). Imlecin P1-P2 cizgisinin hangi tarafinda olduguna
+    // gore guncellenir; ok onizlemesi bu vektoru gosterir.
+    Vec3 twoPointViewNormal_{0.0, -1.0, 0.0};
     NamedViewList namedViews_; // P1: adlandirilmis gorusler (UI listesi)
     // workPlanePicking_ akisinin amaci: 3 nokta duzlem veya 2 nokta gorunus.
     // --- COKLU VIEWPORT -------------------------------------------------
@@ -780,11 +784,13 @@ private:
     }
     // Nokta secme amaci: ayni akis (snap + track + Esc/sag tik iptal) uc
     // farkli is icin kullanilir.
-    //   WorkPlane    : 3 nokta -> calisma duzlemi (UCS)
-    //   TwoPointView : 2 nokta -> yeni gorunus penceresi
-    //   RotateCenter : 1 nokta -> ekran donus merkezi (R tusu; Ctrl+sol tus
-    //                  ile ekran bu merkez etrafinda doner)
-    enum class PointPickPurpose { WorkPlane, TwoPointView, RotateCenter };
+    //   WorkPlane            : 3 nokta -> calisma duzlemi (UCS)
+    //   TwoPointView         : 2 nokta -> yeni gorunus penceresi
+    //   TwoPointViewDirection: 2 nokta secildikten SONRA bakis yonu secilir
+    //                          (ok onizlemesi; tik -> o yonde view)
+    //   RotateCenter         : 1 nokta -> ekran donus merkezi (R tusu; Ctrl+sol
+    //                          tus ile ekran bu merkez etrafinda doner)
+    enum class PointPickPurpose { WorkPlane, TwoPointView, TwoPointViewDirection, RotateCenter };
     PointPickPurpose pointPickPurpose_{PointPickPurpose::WorkPlane};
     // Ctrl+sol tus: bu esikten fazla hareket rotasyona terfi eder; esik
     // asilmazsa Ctrl+tik secimi yapilir (tek karar noktasi).

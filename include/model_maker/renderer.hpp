@@ -207,6 +207,11 @@ struct DraftView {
     WorkPlane workPlane{};
     bool workPlanePicking{};
     std::vector<Vec3> workPlanePoints;
+    // IKI NOKTALI GORUNUM YON SECIMI: iki nokta secildikten sonra bakis yonu
+    // oku (P1 ve P2 ucunda). twoPointViewDirection = birim normal (izleyiciye
+    // dogru); imlecin tarafina gore guncellenir.
+    bool twoPointViewDirectionActive{};
+    Vec3 twoPointViewDirection{0.0, -1.0, 0.0};
     // CALISMA DUZLEMI HAYALETI: aktif is duzlemi HER pencerede yari saydam
     // duzlem yamasi olarak gosterilir. Yalnizca cizimdir — secilemez,
     // snap'lenemez, hicbir belge nesnesi/olayi uretmez.

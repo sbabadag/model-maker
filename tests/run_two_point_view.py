@@ -44,7 +44,7 @@ struct Camera {
 };
 class Application {
 public:
-    enum class PointPickPurpose { WorkPlane, TwoPointView, RotateCenter };
+    enum class PointPickPurpose { WorkPlane, TwoPointView, TwoPointViewDirection, RotateCenter };
     PointPickPurpose pointPickPurpose_{PointPickPurpose::WorkPlane};
     // Donus merkezi (R) yolu bu dosyada test EDILMEZ: commitWorkPlanePoint'in
     // RotateCenter dali camera_.setOrbitPivot cagirir. Sahte kamera yeter.
@@ -52,6 +52,10 @@ public:
     std::function<void(const ViewDefinition&)> twoPointViewCallback_;
     bool workPlanePicking_{false};
     std::vector<Vec3> workPlanePoints_;
+    // Yon secim asamasinda secilen bakis yonu (birim). updateHover burada no-op
+    // oldugu icin varsayilan -Y kalir; yon dali testte dogrudan yazilarak
+    // egzersiz edilir.
+    Vec3 twoPointViewNormal_{0.0, -1.0, 0.0};
     WorkPlane workPlane_{WorkPlane::world()};
     EditMode mode_{EditMode::Draw2D};
     bool drawingActive_{true};
@@ -82,7 +86,7 @@ static int checks = 0, failures = 0;
 static void check(bool ok, const char* what) { ++checks; if (!ok) { ++failures; std::cerr << "FAIL: " << what << "\n"; } }
 int main() {
     using namespace mm;
-    { // 1) Normal: iki nokta -> callback tek kez, dogru tanim, komut biter
+    { // 1) Normal: iki nokta -> YON secimi -> ucuncu tik -> callback tek kez
         Application a; int calls = 0; ViewDefinition got;
         a.twoPointViewCallback_ = [&](const ViewDefinition& v) { ++calls; got = v; };
         a.startTwoPointViewCommand();
@@ -90,8 +94,14 @@ int main() {
         a.commitWorkPlanePoint({0, 0, 0});
         check(calls == 0 && a.workPlanePoints_.size() == 1, "first point stored, no view yet");
         a.commitWorkPlanePoint({6000, 0, 0});
-        check(calls == 1, "second point opens exactly one view");
+        check(calls == 0 && a.workPlanePicking_, "second point enters direction phase, no view yet");
+        check(a.pointPickPurpose_ == Application::PointPickPurpose::TwoPointViewDirection,
+              "purpose = direction selection");
+        // Varsayilan normal -Y (P1->P2 = +X icin sagdan bakis); yon tiklamasi onaylar.
+        a.commitWorkPlanePoint({0, -1, 0});
+        check(calls == 1, "direction click opens exactly one view");
         check(std::abs(got.right.x - 1.0) < 1e-12 && std::abs(got.up.z - 1.0) < 1e-12, "view basis P1->P2 / Z up");
+        check(std::abs(got.normal.y + 1.0) < 1e-12, "normal = -Y (default side)");
         check(!a.workPlanePicking_ && a.workPlanePoints_.empty(), "command finished");
         check(a.pointPickPurpose_ == Application::PointPickPurpose::WorkPlane, "purpose reset");
         check(a.workPlane_.normal.z == 1.0, "work plane untouched by two-point view");
@@ -107,7 +117,22 @@ int main() {
         check(a.workPlanePicking_ && a.workPlanePoints_.size() == 1, "still waiting for 2nd point");
         check(!a.lastStatus.empty(), "user told why");
         a.commitWorkPlanePoint({100, 5200, 0});
-        check(calls == 1, "valid 2nd point after rejection opens view");
+        check(calls == 0 && a.workPlanePicking_, "valid 2nd point enters direction phase");
+        a.commitWorkPlanePoint({100, 5201, 0});
+        check(calls == 1, "direction click after rejection opens view");
+    }
+    { // 2b) YON secimi: normal diger taraf secilirse gorunum aynalanir
+        Application a; int calls = 0; ViewDefinition got;
+        a.twoPointViewCallback_ = [&](const ViewDefinition& v) { ++calls; got = v; };
+        a.startTwoPointViewCommand();
+        a.commitWorkPlanePoint({0, 0, 0});
+        a.commitWorkPlanePoint({6000, 0, 0});
+        // Imlec cizginin +Y tarafinda -> normal +Y olmali; right terslenmeli (ayna).
+        a.twoPointViewNormal_ = {0.0, 1.0, 0.0};
+        a.commitWorkPlanePoint({0, 1, 0});
+        check(calls == 1, "flipped direction opens view");
+        check(std::abs(got.normal.y - 1.0) < 1e-12, "normal = +Y (flipped)");
+        check(got.right.x < -0.99, "right mirrored (normal = right x up preserved)");
     }
     { // 3) NaN nokta reddedilir (cokme yok)
         Application a; int calls = 0;
@@ -135,6 +160,9 @@ int main() {
         a.startTwoPointViewCommand();
         a.commitWorkPlanePoint({0, 0, 0});
         a.commitWorkPlanePoint({1, 1, 0});
+        check(a.workPlanePicking_ && a.pointPickPurpose_ == Application::PointPickPurpose::TwoPointViewDirection,
+              "no callback -> still in direction phase (safe)");
+        a.commitWorkPlanePoint({0, -1, 0});
         check(!a.workPlanePicking_, "no callback -> command ends safely");
     }
     std::cout << checks << " checks, " << failures << " failures\n";
