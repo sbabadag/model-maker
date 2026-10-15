@@ -238,6 +238,15 @@ public:
     IRenderBackend* activeRenderBackend() noexcept { return renderBackend_.get(); }
 
     void startWorkPlaneCommand();
+    // KONSTRUKSIYON DUZLEMI (Tekla construction plane, P0): uc nokta
+    // (snap/track aktif) -> WorkPlane::fromThreePoints -> Document'e
+    // ConstructionPlane modeli eklenir. Calisma duzleminden (work plane)
+    // AYRI bir kavramdir — work plane kamera/is-duzlemi, construction plane
+    // ise secilebilir/kalici bir model nesnesidir. Esc/sag tik iptal.
+    void startConstructionPlaneCommand();
+    // KONSTRUKSIYON NESNELERI GIZLE/GOSTER: tum ConstructionKind nesnelerinin
+    // gorunurlugunu tek bayrakla degistirir (Document::setConstructionVisible).
+    void toggleConstructionVisibility();
     // IKI NOKTALI GORUNUS (Tekla): iki nokta secilir (snap/track aktif);
     // ikinci noktada ViewDefinition uretilip twoPointViewCallback_ cagrilir
     // (Qt yeni MDI penceresi acar). Esc/sag tik iptal.
@@ -716,6 +725,8 @@ private:
     // gosterilsin mi. Yalnizca cizim — secim/snap'i etkilemez.
     // Varsayilan kWorkPlaneGhostDefaultVisible (su an: KAPALI) — tek kaynak.
     bool workPlaneGhostVisible_{kWorkPlaneGhostDefaultVisible};
+    // Konstruksiyon nesnelerinin gorunurluk durumu (gizle/goster tek bayrak).
+    bool constructionVisible_{true};
     bool temporaryTrackingLocked_{false};
     std::vector<Vec3> temporaryTrackingPoints_;
     std::vector<TrackingGuide> temporaryTrackingGuides_;
@@ -815,7 +826,7 @@ private:
     //   ThreePointView       : 3 nokta -> yeni gorunus penceresi (origin+X+Y)
     //   RotateCenter         : 1 nokta -> ekran donus merkezi (R tusu; Ctrl+sol
     //                          tus ile ekran bu merkez etrafinda doner)
-    enum class PointPickPurpose { WorkPlane, TwoPointView, TwoPointViewDirection, ThreePointView, RotateCenter };
+    enum class PointPickPurpose { WorkPlane, TwoPointView, TwoPointViewDirection, ThreePointView, RotateCenter, ConstructionPlane };
     PointPickPurpose pointPickPurpose_{PointPickPurpose::WorkPlane};
     // Ctrl+sol tus: bu esikten fazla hareket rotasyona terfi eder; esik
     // asilmazsa Ctrl+tik secimi yapilir (tek karar noktasi).

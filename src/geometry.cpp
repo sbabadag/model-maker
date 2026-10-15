@@ -61,6 +61,22 @@ std::optional<WorkPlane> WorkPlane::fromThreePoints(Vec3 first, Vec3 second, Vec
     return WorkPlane{first, *uAxis, *vAxis, *normalAxis};
 }
 
+std::optional<WorkPlane> constructionPlaneFrame(const WireframeModel& model) noexcept {
+    const auto& vertices = model.vertices();
+    if (model.constructionKind() != ConstructionKind::Plane || vertices.size() != 4)
+        return std::nullopt;
+    for (const auto& v : vertices)
+        if (!std::isfinite(v.x) || !std::isfinite(v.y) || !std::isfinite(v.z)) return std::nullopt;
+    const auto uAxis = normalized(vertices[1] - vertices[0]);
+    if (!uAxis) return std::nullopt;
+    const auto vAxis = normalized(vertices[3] - vertices[0]);
+    if (!vAxis) return std::nullopt;
+    const auto normalAxis = normalized(cross3(*uAxis, *vAxis));
+    if (!normalAxis) return std::nullopt;
+    const Vec3 origin = (vertices[0] + vertices[1] + vertices[2] + vertices[3]) * 0.25;
+    return WorkPlane{origin, *uAxis, *vAxis, *normalAxis};
+}
+
 Vec3 WorkPlane::fromPlane(Vec2 point) const noexcept {
     return origin + u * point.x + v * point.y;
 }

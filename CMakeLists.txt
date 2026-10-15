@@ -652,6 +652,15 @@ if(BUILD_TESTING)
     target_compile_options(model_maker_construction_objects_test PRIVATE -Wall -Wextra -Wpedantic)
     add_test(NAME model_maker_construction_objects_test COMMAND model_maker_construction_objects_test)
 
+    # KONSTRUKSIYON DUZLEM CERCEVESI (P0): constructionPlaneFrame() 4 koseden
+    # origin/u/v/normal kurar (duzlem eksenleri + P1 kesme duzlemi kaynagi).
+    # OCC'siz, Linux'ta kosar.
+    add_executable(model_maker_construction_plane_frame_test tests/construction_plane_frame_test.cpp)
+    target_link_libraries(model_maker_construction_plane_frame_test PRIVATE model_maker_core)
+    target_link_options(model_maker_construction_plane_frame_test PRIVATE -static -static-libgcc -static-libstdc++)
+    target_compile_options(model_maker_construction_plane_frame_test PRIVATE -Wall -Wextra -Wpedantic)
+    add_test(NAME model_maker_construction_plane_frame_test COMMAND model_maker_construction_plane_frame_test)
+
     # KESME NESNELERI (P3): CutModifier (PlaneCut/Fitting/PolygonCut/BooleanCut)
     # kalici modifier modeli + duzlem/cokgen/kesisim matematigi + Document
     # CRUD/undo. OCC'siz, Linux'ta kosar.

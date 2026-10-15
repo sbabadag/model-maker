@@ -42,6 +42,11 @@ constexpr int ribbonHeight = RibbonLayout::height;
 constexpr int statusHeight = 27;
 constexpr wchar_t className[] = L"ModelMakerWindow";
 constexpr wchar_t canvasClassName[] = L"ModelMakerCanvas";
+// KONSTRUKSIYON DUZLEMI varsayilan boyutu (mm, kose kenari). Tekla duzlemleri
+// sonsuzdur; biz sonlu dikdortgenle temsil ederiz. Modelden bagimsiz sabit bir
+// varsayilan kullanilir (model sinirlari bos/devasa/değişken olabilir) —
+// ileride ozellik panelinden duzenlenebilir hale getirilecek.
+constexpr double kDefaultConstructionPlaneSize = 500.0;
 
 enum CommandId {
     CmdNew = 100, CmdOpen, CmdSave, CmdImportDxf, CmdExportDxf,
@@ -3309,6 +3314,28 @@ void Application::startWorkPlaneCommand() {
     invalidateCanvas();
 }
 
+void Application::startConstructionPlaneCommand() {
+    // KONSTRUKSIYON DUZLEMI (P0, Tekla construction plane): ayni 3-nokta
+    // secim akisini (snap + track + kesik onizleme + Esc/sag tik iptal)
+    // paylasir; ucuncu noktada Document'e ConstructionPlane modeli eklenir.
+    // Calisma duzlemi (workPlane_) DEGISMEZ — ikisi ayri kavram.
+    startWorkPlaneCommand();
+    pointPickPurpose_ = PointPickPurpose::ConstructionPlane;
+    updateStatus();
+}
+
+void Application::toggleConstructionVisibility() {
+    // Tek kaynak: menu. Tum ConstructionKind nesnelerinin gorunurlugunu
+    // tek bayrakla degistirir. Undo KAPSAMINDA DEGIL (setModelColor/setModelLayer
+    // gibi mevcut ozellik degistiricilerle ayni davranis; F7 hayalet duzlemi
+    // gibi bir gorunum toggledir, belge geometrisini degistirmez).
+    constructionVisible_ = !constructionVisible_;
+    document_.setConstructionVisible(constructionVisible_);
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
+}
+
 void Application::startTwoPointViewCommand() {
     startWorkPlaneCommand(); // ayni secim akisi: snap + track + kesik onizleme
     pointPickPurpose_ = PointPickPurpose::TwoPointView;
@@ -3753,6 +3780,31 @@ void Application::commitWorkPlanePoint(const Vec3& point) {
         view.depthBack = kDefaultViewDepth;
         cancelWorkPlaneCommand();
         if (twoPointViewCallback_) twoPointViewCallback_(view);
+        return;
+    }
+    if (pointPickPurpose_ == PointPickPurpose::ConstructionPlane) {
+        if (!std::isfinite(point.x) || !std::isfinite(point.y) || !std::isfinite(point.z)) {
+            MessageBeep(MB_ICONWARNING);
+            return;
+        }
+        workPlanePoints_.push_back(point);
+        if (workPlanePoints_.size() < 3) return;
+        const auto plane = WorkPlane::fromThreePoints(workPlanePoints_[0], workPlanePoints_[1],
+                                                      workPlanePoints_[2]);
+        if (!plane) {
+            workPlanePoints_.pop_back();
+            MessageBeep(MB_ICONWARNING);
+            publishStatus(L"Konstrüksiyon düzlemi: noktalar doğrusal/çakışık — 3. noktayı yeniden seçin");
+            return;
+        }
+        // Tek undo adimi: duzlem eklenir; is-duzlemi (workPlane_) DEGISMEZ.
+        pushUndoSnapshot();
+        document_.addConstructionPlane(*plane, kDefaultConstructionPlaneSize);
+        cancelWorkPlaneCommand();
+        updateHover(cursorScreen_.x, cursorScreen_.y);
+        updateControls();
+        updateStatus();
+        invalidateCanvas();
         return;
     }
     workPlanePoints_.push_back(point);
@@ -4835,6 +4887,11 @@ void Application::updateStatus() {
         else text += L"Y (düzlem) noktasını belirtin";
     } else if (workPlanePicking_ && pointPickPurpose_ == PointPickPurpose::RotateCenter) {
         text += L"  |  DÖNÜŞ MERKEZİ — ekranın döneceği noktayı seçin (Esc iptal)";
+    } else if (workPlanePicking_ && pointPickPurpose_ == PointPickPurpose::ConstructionPlane) {
+        text += L"  |  KONSTRÜKSİYON DÜZLEMİ — ";
+        if (workPlanePoints_.empty()) text += L"1. noktayı belirtin";
+        else if (workPlanePoints_.size() == 1) text += L"2. noktayı belirtin (U ekseni)";
+        else text += L"3. noktayı belirtin (düzlem yönü)";
     } else if (workPlanePicking_) {
         text += L"  |  WORK PLANE — ";
         if (workPlanePoints_.empty()) text += L"1. noktayı belirtin";

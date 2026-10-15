@@ -607,6 +607,14 @@ void QtMainWindow::createMenus() {
         [this]() { app_.toggleWorkPlaneGhost(); });
     ghostPlaneAction->setCheckable(true);
     ghostPlaneAction->setChecked(app_.workPlaneGhostVisible());
+    // --- KONSTRUKSIYON NESNELERI (P0): calisma duzleminden AYRI, secilebilir +
+    // kalici model nesneleri (Tekla construction plane). Uc nokta -> duzlem;
+    // gizle/goster tek bayrak.
+    QMenu* constructionMenu = viewMenu->addMenu("&Konstrüksiyon");
+    constructionMenu->addAction("Konstrüksiyon &Düzlemi (3 Nokta)", this,
+        [this]() { app_.startConstructionPlaneCommand(); })->setIcon(makeToolIcon(ToolGlyph::Plane));
+    constructionMenu->addAction("Konstrüksiyon &Nesnelerini Göster/Gizle", this,
+        [this]() { app_.toggleConstructionVisibility(); });
     viewMenu->addSeparator();
     // --- P1 UCS/VIEW: UCS'ye dik gorus + global duzlemler + adlandirilmis
     // gorusler (Tekla "view to UCS / plan of UCS"). Mevcut calisma duzlemi

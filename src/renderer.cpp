@@ -694,10 +694,98 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         return selectedIndexSet_.contains(index);
     };
 
+    // KONSTRUKSIYON NESNELERI (P0): Point/Line/Plane ayri katmanda cizilir.
+    // GDI taban dongusu, yuz dolgusu, kontur ve GL batch'inden DISLANIRLAR;
+    // boylece yari saydam duzlem + sinir + yerel eksen TEK yerden cizilir.
+    // BILINEN SINIRLAMA (P0): GL modunda derinlik-dogru degildir — duzlem 3B
+    // modelin USTUNE cizilir (referans overlay), dogru z-sirasi yoktur.
+    const auto drawConstruction = [&]() {
+        const COLORREF kConstructionRgb = RGB(0, 190, 220);
+        for (std::size_t index = 0; index < document.models().size(); ++index) {
+            const auto& model = document.models()[index];
+            const auto kind = model.constructionKind();
+            if (kind == ConstructionKind::None) continue;
+            const auto& properties = document.effectiveProperties(index);
+            if (!properties.visible) continue;
+            const auto& vertices = model.vertices();
+            if (vertices.empty()) continue;
+            if (draft.viewSlab && index < document.modelBounds().size() &&
+                !boundsInViewSlab(document.modelBounds()[index], *draft.viewSlab))
+                continue;
+            if (kind == ConstructionKind::Plane) {
+                const auto frame = constructionPlaneFrame(model);
+                if (!frame || vertices.size() != 4) continue;
+                const POINT quad[4] = {projectPoint(vertices[0]), projectPoint(vertices[1]),
+                                       projectPoint(vertices[2]), projectPoint(vertices[3])};
+                // Yari saydam dolgu: hatch deseni (hayalet duzlemle ayni teknik).
+                HBRUSH fill = CreateHatchBrush(HS_FDIAGONAL, kConstructionRgb);
+                HGDIOBJ oldBrush = SelectObject(dc, fill);
+                HGDIOBJ oldPen = SelectObject(dc, GetStockObject(NULL_PEN));
+                const int oldBkMode = SetBkMode(dc, TRANSPARENT);
+                Polygon(dc, quad, 4);
+                SetBkMode(dc, oldBkMode);
+                SelectObject(dc, oldPen);
+                SelectObject(dc, oldBrush);
+                DeleteObject(fill);
+                // Sinir (4 kenar) — duzlem sinirlari.
+                HPEN border = CreatePen(PS_SOLID, 1, kConstructionRgb);
+                SelectObject(dc, border);
+                line(dc, quad[0].x, quad[0].y, quad[1].x, quad[1].y);
+                line(dc, quad[1].x, quad[1].y, quad[2].x, quad[2].y);
+                line(dc, quad[2].x, quad[2].y, quad[3].x, quad[3].y);
+                line(dc, quad[3].x, quad[3].y, quad[0].x, quad[0].y);
+                SelectObject(dc, stockPen);
+                DeleteObject(border);
+                // Yerel eksenler: U (yesil, kesikli) ve V (mavi, kesikli).
+                const double half = std::hypot(vertices[1].x - vertices[0].x,
+                                               vertices[1].y - vertices[0].y,
+                                               vertices[1].z - vertices[0].z) * 0.5;
+                const POINT o = projectPoint(frame->origin);
+                const POINT ue = projectPoint(frame->origin + frame->u * half);
+                const POINT ve = projectPoint(frame->origin + frame->v * half);
+                HPEN axisU = CreatePen(PS_DASH, 1, RGB(0, 200, 80));
+                SelectObject(dc, axisU);
+                line(dc, o.x, o.y, ue.x, ue.y);
+                SelectObject(dc, stockPen);
+                DeleteObject(axisU);
+                HPEN axisV = CreatePen(PS_DASH, 1, RGB(80, 120, 255));
+                SelectObject(dc, axisV);
+                line(dc, o.x, o.y, ve.x, ve.y);
+                SelectObject(dc, stockPen);
+                DeleteObject(axisV);
+                ++performance.renderedEntities;
+            } else if (kind == ConstructionKind::Line) {
+                HPEN pen = CreatePen(PS_DASH, 1, kConstructionRgb);
+                SelectObject(dc, pen);
+                for (const auto& edge : model.edges()) {
+                    const POINT a = projectPoint(vertices[edge.from]);
+                    const POINT b = projectPoint(vertices[edge.to]);
+                    line(dc, a.x, a.y, b.x, b.y);
+                }
+                SelectObject(dc, stockPen);
+                DeleteObject(pen);
+                ++performance.renderedEntities;
+            } else { // ConstructionKind::Point
+                const POINT p = projectPoint(vertices.front());
+                HPEN pen = CreatePen(PS_SOLID, 1, kConstructionRgb);
+                SelectObject(dc, pen);
+                constexpr int r = 4;
+                line(dc, p.x - r, p.y - r, p.x + r, p.y + r);
+                line(dc, p.x - r, p.y + r, p.x + r, p.y - r);
+                SelectObject(dc, stockPen);
+                DeleteObject(pen);
+                ++performance.renderedEntities;
+            }
+        }
+    };
+
     // Hareket kareleri geri bildirim katmanı: seçim vurgusu, transform
     // izleyicisi/hayaletleri, trim/extend önizlemesi, çizim lastik bandı,
     // snap işareti ve dinamik giriş. Temel geometri motion tabanından gelir.
     const auto drawMotionFeedback = [&]() {
+        // Konstrüksiyon katmani interaktif/hizli karelerde de gorunsun
+        // (taban dongusunden dislandigi icin burada cizilir).
+        drawConstruction();
         const bool motionDrafting = commandShowsSnapFeedback(
             draft.drawingActive, draft.workPlanePicking, draft.transformCommand,
             draft.transformPhase, draft.arrayItemCount.has_value(),
@@ -1166,6 +1254,7 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         for (const auto index : visibleModels) {
             if (index >= document.models().size()) continue;
             const auto& model = document.models()[index];
+            if (model.constructionKind() != ConstructionKind::None) continue;
             const auto& properties = document.effectiveProperties(index);
             if (!properties.visible) continue;
             for (const auto& face : model.faces()) {
@@ -1252,6 +1341,7 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
             for (const auto index : visibleModels) {
                 if (index >= document.models().size()) continue;
                 const auto& model = document.models()[index];
+                if (model.constructionKind() != ConstructionKind::None) continue;
                 const auto& modelProps = document.effectiveProperties(index);
                 if (!modelProps.visible) continue;
                 const auto& vertices = model.vertices();
@@ -1348,6 +1438,9 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
                 const auto& model = document.models()[index];
                 if (model.edges().empty()) continue;
                 if (isHiddenSourceLine(model)) continue; // katinin eksen cizgisi
+                // KONSTRUKSIYON NESNELERI GL batch'ine GIRMEZ — ayri GDI
+                // overlay pass'inde cizilir (derinlik-dogru degil, P0 sinirlama).
+                if (model.constructionKind() != ConstructionKind::None) continue;
                 // Secili modeller artik GL batch'te YER ALIR: eskiden
                 // dislandiklarindan Solid stilde yuzleri hicbir katmanda
                 // cizilmiyor, secilen katı "kayboluyordu". Yesil secim
@@ -1388,6 +1481,9 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
             (isSelected(index) && draft.transformCommand != TransformCommand::None))
             continue;
         const auto& model = document.models()[index];
+        // KONSTRUKSIYON NESNELERI ayri pass'te cizilir (yari saydam duzlem,
+        // eksenler); taban dongusunde cift cizim olmasin.
+        if (model.constructionKind() != ConstructionKind::None) continue;
         const auto& properties = document.effectiveProperties(index);
         if (!properties.visible) continue;
         // SOLID: kenarlar HICBIR backend'de cizilmez (GL yuz+siluet, GDI
@@ -1470,6 +1566,8 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         for (std::size_t index = 0; index < document.models().size(); ++index) {
             const auto& model = document.models()[index];
             if (!model.isPointEntity() || model.vertices().empty()) continue;
+            // KONSTRUKSIYON NOKTASI ayri pass'te cizilir (farkli renk).
+            if (model.constructionKind() != ConstructionKind::None) continue;
             if (draft.viewSlab) {
                 const Vec3 p = model.vertices().front();
                 if (!boundsInViewSlab(Bounds3{p, p}, *draft.viewSlab)) continue;
@@ -1486,6 +1584,12 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
             DeleteObject(pen);
             ++performance.renderedEntities;
         }
+    }
+
+    // KONSTRUKSIYON KATMANI: normal (interaktif olmayan) tam karede burada;
+    // interaktif/hizli karelerde drawMotionFeedback icinden cizilir.
+    if (!draft.snapOnly && !draft.interactiveNavigation) {
+        drawConstruction();
     }
 
     // RHINO TARZI GUMBALL: tasima tutamaclari — GL kompozitinin ustune,

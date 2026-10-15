@@ -37,14 +37,25 @@ void MessageBeep(int) { ++g_beeps; }
 namespace mm {
 enum class EditMode { Draw2D, View3D };
 enum class TransformCommand { None, Move };
+// Konstrüksiyon düzlemi (P0) varsayılan boyutu — commitWorkPlanePoint'in
+// ConstructionPlane dalı bu sabiti kullanır (uygulama ile aynı değer).
+constexpr double kDefaultConstructionPlaneSize = 500.0;
 // Sahte kamera: yalnizca donus merkezi (R) dalinin cagrisini karsilar —
 // kamera davranisi bu dosyada test EDILMEZ (bkz. tests/orbit_pivot_test.cpp).
 struct Camera {
     void setOrbitPivot(const Vec3&) {}
 };
+// Sahte belge: ConstructionPlane dalinin document_.pushSnapshot /
+// addConstructionPlane cagrisini karsilar (gercek Document davranisi
+// tests/construction_objects_test.cpp'de ayri dogrulanir).
+struct FakeDocument {
+    int constructionPlanes = 0;
+    void pushSnapshot() {}
+    std::size_t addConstructionPlane(const WorkPlane&, double) { ++constructionPlanes; return 0; }
+};
 class Application {
 public:
-    enum class PointPickPurpose { WorkPlane, TwoPointView, TwoPointViewDirection, ThreePointView, RotateCenter };
+    enum class PointPickPurpose { WorkPlane, TwoPointView, TwoPointViewDirection, ThreePointView, RotateCenter, ConstructionPlane };
     PointPickPurpose pointPickPurpose_{PointPickPurpose::WorkPlane};
     // Donus merkezi (R) yolu bu dosyada test EDILMEZ: commitWorkPlanePoint'in
     // RotateCenter dali camera_.setOrbitPivot cagirir. Sahte kamera yeter.
@@ -60,6 +71,7 @@ public:
     EditMode mode_{EditMode::Draw2D};
     bool drawingActive_{true};
     TransformCommand transformCommand_{TransformCommand::None};
+    FakeDocument document_;
     std::optional<int> hover_;
     POINT_PLACEHOLDER
     std::wstring lastStatus;
@@ -72,6 +84,7 @@ public:
     void invalidateCanvas() {}
     void clearTemporaryTracking() {}
     void publishStatus(const std::wstring& s) { lastStatus = s; }
+    void pushUndoSnapshot() { document_.pushSnapshot(); }
     void startWorkPlaneCommand();
     void startTwoPointViewCommand();
     void startThreePointViewCommand();
@@ -187,6 +200,28 @@ int main() {
         b.commitWorkPlanePoint({1000, 0, 0});
         b.commitWorkPlanePoint({2000, 0, 0});
         check(calls2 == 0 && b.workPlanePicking_, "3-pt: dogrusal noktalar reddedilir");
+    }
+    { // 7) KONSTRUKSIYON DUZLEMI (P0): 3 nokta -> document'e duzlem eklenir,
+      // is-duzlemi DEGISMEZ, komut biter. Dogrusal noktalar reddedilir.
+        Application a;
+        a.pointPickPurpose_ = Application::PointPickPurpose::ConstructionPlane;
+        a.workPlanePicking_ = true;
+        a.commitWorkPlanePoint({0, 0, 0});
+        a.commitWorkPlanePoint({1000, 0, 0});
+        check(a.document_.constructionPlanes == 0 && a.workPlanePicking_, "CP: 2 nokta, henuz duzlem yok");
+        a.commitWorkPlanePoint({0, 0, 1000});
+        check(a.document_.constructionPlanes == 1, "CP: 3. nokta duzlem ekler");
+        check(!a.workPlanePicking_, "CP: komut bitti");
+        check(a.workPlane_.normal.z == 1.0, "CP: is-duzlemi (work plane) DEGISMEZ");
+        check(a.pointPickPurpose_ == Application::PointPickPurpose::WorkPlane, "CP: amac sifirlanir");
+        // Dogrusal noktalar reddedilir (duzlem kurulamaz, belge degismez).
+        Application b;
+        b.pointPickPurpose_ = Application::PointPickPurpose::ConstructionPlane;
+        b.workPlanePicking_ = true;
+        b.commitWorkPlanePoint({0, 0, 0});
+        b.commitWorkPlanePoint({1000, 0, 0});
+        b.commitWorkPlanePoint({2000, 0, 0});
+        check(b.document_.constructionPlanes == 0 && b.workPlanePicking_, "CP: dogrusal noktalar reddedilir");
     }
     std::cout << checks << " checks, " << failures << " failures\n";
     return failures == 0 ? 0 : 1;

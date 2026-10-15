@@ -174,6 +174,18 @@ private:
     EntityProperties properties_;
     ConstructionKind constructionKind_{ConstructionKind::None};
 };
+
+// KONSTRUKSIYON DUZLEM CERCEVESI: ConstructionPlane modelinin yerel
+// koordinat sistemini 4 koseden yeniden kurar. Koseler duzlem uzayinda
+// (-h,-h),(h,-h),(h,h),(-h,h) sirasindadir (Document::addConstructionPlane);
+// bu yuzden u = normalize(v1-v0), v = normalize(v3-v0), normal = u x v,
+// origin = kose centroid'i. WorkPlane ayri bir kalicilik alani tasimaz —
+// koseler zaten MMW8'de sakli oldugu icin cerceve kayit/ac sonrasi da
+// aynen geri kurulur (ayrica P1 Fitting kesme duzleminin cercevesini de
+// buradan alir). Degenerese (4 kose yok, kenar ~0, cakisik/collinear)
+// ise nullopt doner.
+std::optional<WorkPlane> constructionPlaneFrame(const WireframeModel& model) noexcept;
+
 struct ProfileDefinition {
     const wchar_t* label;
     const char* name;
