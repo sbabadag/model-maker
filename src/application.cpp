@@ -3356,6 +3356,102 @@ void Application::resetWorkPlane() {
     invalidateCanvas();
 }
 
+// --- P1 UCS/VIEW (UI baglantisi) -------------------------------------------
+
+void Application::setViewToWorkPlane() {
+    // Gorunus penceresi: yon iki noktayla tanimli — yalniz yeniden sigdir.
+    if (viewRotationLocked()) {
+        fitViewport(canvas_);
+        publishStatus(L"Görünüş yönü iki noktayla tanımlı — sığdırıldı");
+        return;
+    }
+    cancelZoomWindow2D();
+    if (workPlanePicking_) cancelWorkPlaneCommand();
+    if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
+    cancelDrawing();
+    profileGrip_.reset();
+    hover_.reset();
+    const Ucs ucs = Ucs::fromWorkPlane(workPlane_);
+    const UcsView view = viewFromUcs(ucs);
+    camera_.setViewBasis(view.right, view.up, camera_.center3D());
+    mode_ = EditMode::View3D;
+    drawingActive_ = false;
+    ensureSpaceMouseStarted();
+    updateHover(cursorScreen_.x, cursorScreen_.y);
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
+}
+
+void Application::setGlobalWorkPlane(int which) {
+    cancelZoomWindow2D();
+    if (workPlanePicking_) cancelWorkPlaneCommand();
+    if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
+    cancelDrawing();
+    profileGrip_.reset();
+    hover_.reset();
+    const Vec3 origin = workPlane_.origin;
+    switch (which) {
+    case 1: workPlane_ = Ucs::planeXZ(origin).toWorkPlane(); break;
+    case 2: workPlane_ = Ucs::planeYZ(origin).toWorkPlane(); break;
+    default: workPlane_ = Ucs::planeXY(origin).toWorkPlane(); break;
+    }
+    updateHover(cursorScreen_.x, cursorScreen_.y);
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
+}
+
+bool Application::saveNamedView(const std::wstring& name) {
+    if (name.empty()) return false;
+    const auto R = camera_.rotationMatrix(); // row-major world->camera
+    Ucs ucs;
+    ucs.origin = camera_.center3D();
+    ucs.xAxis = {R[0], R[1], R[2]}; // ekran saga (dunya)
+    ucs.yAxis = {R[3], R[4], R[5]}; // ekran yukari (dunya)
+    ucs.zAxis = {R[6], R[7], R[8]}; // izleyiciye dogru (dunya)
+    NamedView view;
+    view.name = name;
+    view.ucs = ucs;
+    view.origin = ucs.origin;
+    return namedViews_.add(std::move(view));
+}
+
+bool Application::applyNamedView(const std::wstring& name) {
+    const NamedView* view = namedViews_.find(name);
+    if (!view) return false;
+    // Gorunus penceresi: yon iki noktayla tanimli — yalniz yeniden sigdir.
+    if (viewRotationLocked()) {
+        fitViewport(canvas_);
+        publishStatus(L"Görünüş yönü iki noktayla tanımlı — sığdırıldı");
+        return true;
+    }
+    cancelZoomWindow2D();
+    if (workPlanePicking_) cancelWorkPlaneCommand();
+    if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
+    cancelDrawing();
+    profileGrip_.reset();
+    hover_.reset();
+    const UcsView basis = viewFromUcs(view->ucs);
+    camera_.setViewBasis(basis.right, basis.up, view->origin);
+    mode_ = EditMode::View3D;
+    drawingActive_ = false;
+    ensureSpaceMouseStarted();
+    updateHover(cursorScreen_.x, cursorScreen_.y);
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
+    return true;
+}
+
+std::vector<std::wstring> Application::namedViewNames() const {
+    return namedViews_.names();
+}
+
+bool Application::removeNamedView(const std::wstring& name) {
+    return namedViews_.remove(name);
+}
+
 // --- PARAMETRE GIRISI (edit box) -------------------------------------------
 // Parametreli komutlar sayisal degeri Qt QInputDialog (edit box) ile ister.
 

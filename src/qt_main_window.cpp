@@ -608,6 +608,60 @@ void QtMainWindow::createMenus() {
     ghostPlaneAction->setCheckable(true);
     ghostPlaneAction->setChecked(app_.workPlaneGhostVisible());
     viewMenu->addSeparator();
+    // --- P1 UCS/VIEW: UCS'ye dik gorus + global duzlemler + adlandirilmis
+    // gorusler (Tekla "view to UCS / plan of UCS"). Mevcut calisma duzlemi
+    // (work plane) UCS olarak kullanilir; kamera o duzleme dik bakar.
+    QMenu* ucsMenu = viewMenu->addMenu("&UCS");
+    ucsMenu->addAction("UCS'ye &Dik Görünüş", this, [this]() { app_.setViewToWorkPlane(); })
+        ->setIcon(makeToolIcon(ToolGlyph::Plane));
+    QMenu* globalPlaneMenu = ucsMenu->addMenu("Çalışma Düzlemi (&Global)");
+    globalPlaneMenu->addAction("&XY (Üstten)", this, [this]() { app_.setGlobalWorkPlane(0); });
+    globalPlaneMenu->addAction("&XZ (Önden)", this, [this]() { app_.setGlobalWorkPlane(1); });
+    globalPlaneMenu->addAction("&YZ (Sağdan)", this, [this]() { app_.setGlobalWorkPlane(2); });
+    ucsMenu->addSeparator();
+    ucsMenu->addAction("Görünümü &Adlandır...", this, [this]() {
+        bool ok = false;
+        const QString name = QInputDialog::getText(this, QStringLiteral("Görünümü Adlandır"),
+            QStringLiteral("Görünüm adı:"), QLineEdit::Normal, QString(), &ok);
+        if (!ok) return;
+        const std::wstring wname = name.trimmed().toStdWString();
+        if (wname.empty()) return;
+        if (!app_.saveNamedView(wname)) {
+            QMessageBox::warning(this, QStringLiteral("Hata"),
+                QStringLiteral("Görünüm kaydedilemedi."));
+            return;
+        }
+        app_.publishStatus(L"Görünüm kaydedildi: " + wname);
+    });
+    ucsMenu->addAction("Adlandırılmış &Görünüme Git...", this, [this]() {
+        const auto names = app_.namedViewNames();
+        if (names.empty()) {
+            QMessageBox::information(this, QStringLiteral("Adlandırılmış Görünümler"),
+                QStringLiteral("Kayıtlı görünüm yok."));
+            return;
+        }
+        QStringList items;
+        for (const auto& n : names) items << QString::fromStdWString(n);
+        bool ok = false;
+        const QString pick = QInputDialog::getItem(this, QStringLiteral("Görünüme Git"),
+            QStringLiteral("Görünüm:"), items, 0, false, &ok);
+        if (ok && !pick.isEmpty()) app_.applyNamedView(pick.toStdWString());
+    });
+    ucsMenu->addAction("Adlandırılmış Görünümü &Sil...", this, [this]() {
+        const auto names = app_.namedViewNames();
+        if (names.empty()) {
+            QMessageBox::information(this, QStringLiteral("Adlandırılmış Görünümler"),
+                QStringLiteral("Kayıtlı görünüm yok."));
+            return;
+        }
+        QStringList items;
+        for (const auto& n : names) items << QString::fromStdWString(n);
+        bool ok = false;
+        const QString pick = QInputDialog::getItem(this, QStringLiteral("Görünümü Sil"),
+            QStringLiteral("Görünüm:"), items, 0, false, &ok);
+        if (ok && !pick.isEmpty()) app_.removeNamedView(pick.toStdWString());
+    });
+    viewMenu->addSeparator();
     // YENI GORUNUS PENCERELERI (MDI): iki noktali (XY'ye dik) + plan (Z kotu).
     QAction* twoPointAction = viewMenu->addAction("&2 Noktalı Görünüş (XY'ye dik)", this,
         [this]() { app_.startTwoPointViewCommand(); });

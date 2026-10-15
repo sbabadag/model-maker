@@ -26,6 +26,7 @@
 #include "model_maker/render_backend.hpp"
 #include "model_maker/renderer.hpp"
 #include "model_maker/ribbon_layout.hpp"
+#include "model_maker/ucs.hpp"
 #include "model_maker/view_definition.hpp"
 #include "model_maker/view_cube.hpp"
 #include "model_maker/view_cube_renderer.hpp"
@@ -231,6 +232,9 @@ public:
     void setStatusCallback(std::function<void(const std::wstring&)> callback) {
         statusCallback_ = std::move(callback);
     }
+    // Durum cubuguna tek seferlik metin yayinla (Qt menü komutlarindan da
+    // cagrilir — P1 named views kayit onayi gibi).
+    void publishStatus(const std::wstring& text);
     IRenderBackend* activeRenderBackend() noexcept { return renderBackend_.get(); }
 
     void startWorkPlaneCommand();
@@ -276,6 +280,21 @@ public:
     void cancelWorkPlaneCommand();
     void commitWorkPlanePoint(const Vec3& point);
     void resetWorkPlane();
+    // --- P1 UCS/VIEW (UI baglantisi) ---------------------------------------
+    // Mevcut calisma duzlemine DIK gorus (Tekla "view to UCS / plan of UCS"):
+    // Ucs::fromWorkPlane(workPlane_) -> viewFromUcs -> camera.setViewBasis.
+    // Kamera merkezi korunur, yalniz yon degisir (setStandardView gibi).
+    void setViewToWorkPlane();
+    // Global calisma duzlemleri (Tekla work plane): 0=XY, 1=XZ (cepheden,
+    // Z yukari), 2=YZ (sagdan, Z yukari). Orjin korunur (workPlane_.origin).
+    void setGlobalWorkPlane(int which);
+    // NAMED VIEWS (P1): adlandirilmis gorus listesi. Kaydet = mevcut kameranin
+    // right/up/normal'i Ucs olarak saklanir; uygula = viewFromUcs ->
+    // setViewBasis. Ayni isim uzerine yazar (Tekla davranisi).
+    bool saveNamedView(const std::wstring& name);
+    bool applyNamedView(const std::wstring& name);
+    std::vector<std::wstring> namedViewNames() const;
+    bool removeNamedView(const std::wstring& name);
 
     // Parametre istegi: Qt bir edit box (QInputDialog) gosterir ve degeri
     // dondurur (false = iptal). Parametreli komutlar (Offset mesafesi, Fillet
@@ -354,7 +373,6 @@ private:
     EntityProperties currentEntityProperties() const;
     void addStyledModel(WireframeModel model);
     void updateStatus();
-    void publishStatus(const std::wstring& text);
     void invalidateCanvas();
     void activate3DNavigation();
     void addCube();
@@ -718,6 +736,7 @@ private:
     WorkPlane workPlane_{};
     bool workPlanePicking_{};
     std::vector<Vec3> workPlanePoints_;
+    NamedViewList namedViews_; // P1: adlandirilmis gorusler (UI listesi)
     // workPlanePicking_ akisinin amaci: 3 nokta duzlem veya 2 nokta gorunus.
     // --- COKLU VIEWPORT -------------------------------------------------
     // Gorunuse ozgu alanlar (canvas_, camera_, mode_, renderer_, workPlane_,
