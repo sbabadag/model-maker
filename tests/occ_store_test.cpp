@@ -56,6 +56,8 @@ public:
     bool restoreActive(EntityId, VersionId version) override {
         return version == kInvalidVersionId;
     }
+    VersionId baseVersion(EntityId) const noexcept override { return kInvalidVersionId; }
+    bool setBaseVersion(EntityId, VersionId) override { return false; }
     std::size_t prune(const std::function<bool(EntityId, VersionId)>&) override {
         ++pruneCalls;
         return 0;
@@ -198,6 +200,8 @@ public:
         lastRestored = v;
         return true;
     }
+    VersionId baseVersion(EntityId) const noexcept override { return kInvalidVersionId; }
+    bool setBaseVersion(EntityId, VersionId) override { return false; }
     std::size_t prune(const std::function<bool(EntityId, VersionId)>&) override {
         ++pruneCalls;
         return 0;
@@ -272,7 +276,7 @@ void testDeltaInvalidVersionIsValid() {
 // hesapladigi keep yuklemi DOGRU mu ve budama DOGRU tetikleniyor mu?
 class PruningSpyStore final : public OccStore {
 public:
-    void clear() noexcept override { existing.clear(); active.clear(); }
+    void clear() noexcept override { existing.clear(); active.clear(); base.clear(); }
     std::size_t size() const noexcept override { return existing.size(); }
     VersionId activeVersion(EntityId e) const noexcept override {
         auto it = active.find(e);
@@ -286,6 +290,16 @@ public:
     bool restoreActive(EntityId e, VersionId v) override {
         if (v != kInvalidVersionId && !findVersionExists(e, v)) return false;
         active[e] = v;
+        return true;
+    }
+    VersionId baseVersion(EntityId e) const noexcept override {
+        auto it = base.find(e);
+        return it == base.end() ? kInvalidVersionId : it->second;
+    }
+    bool setBaseVersion(EntityId e, VersionId v) override {
+        if (v == kInvalidVersionId) { base[e] = kInvalidVersionId; return true; }
+        if (!findVersionExists(e, v)) return false;
+        base[e] = v;
         return true;
     }
     // Document'in gonderdigi keep yuklemine gore GERCEKTEN budar; her cagrida
@@ -302,6 +316,11 @@ public:
             if (a != active.end() && a->second != kInvalidVersionId &&
                 versions.count(a->second) == 0)
                 a->second = kInvalidVersionId;
+            // Taban surumu da budanmissa asili kalmasin (Document korur, savunma).
+            auto b = base.find(e);
+            if (b != base.end() && b->second != kInvalidVersionId &&
+                versions.count(b->second) == 0)
+                b->second = kInvalidVersionId;
         }
         return pruned;
     }
@@ -310,6 +329,11 @@ public:
         if (v != kInvalidVersionId) existing[e].insert(v);
         active[e] = v;
     }
+    // Varligin TABAN surumunu DOGRUDAN ayarla (test kurulumu).
+    void setBase(EntityId e, VersionId v) {
+        if (v != kInvalidVersionId) existing[e].insert(v);
+        base[e] = v;
+    }
     std::string serializeActive(EntityId) const override { return {}; }
     bool restoreActiveSolid(EntityId, const std::string&, std::string*) override { return false; }
     std::string occVersionString() const noexcept override { return {}; }
@@ -317,6 +341,7 @@ public:
     std::unique_ptr<OccStore> cloneEmpty() const override { return std::make_unique<PruningSpyStore>(); }
     std::map<EntityId, std::set<VersionId>> existing;
     std::map<EntityId, VersionId> active;
+    std::map<EntityId, VersionId> base;
     std::set<std::pair<EntityId, VersionId>> kept;
     std::size_t pruneCalls{0};
 };
@@ -359,6 +384,28 @@ void testPruneDropsDeadVersions() {
     check(raw->existing[e].count(1) == 0, "referanssiz eski surum (v1) budandi");
 }
 
+void testBaseVersionSurvivesPrune() {
+    std::printf("Test 12: kesme taban surumu budamadan KORUNUR (pre-cut B-Rep)\n");
+    Document doc;
+    auto store = std::make_unique<PruningSpyStore>();
+    PruningSpyStore* raw = store.get();
+    doc.setOccStore(std::move(store));
+
+    doc.addModel(WireframeModel::line({0, 0, 0}, {1, 0, 0}));
+    const EntityId e = doc.modelId(0);
+    // v1 = taban (pre-cut), v2 = referanssiz (olu), v5 = etkin (kesilmis).
+    raw->setActive(e, 5);       // aktif v5'i ekler
+    raw->setBase(e, 1);         // taban v1'i ekler
+    raw->existing[e].insert(2); // olu surum
+
+    doc.clearHistory();  // budama tetikler
+    check(raw->existing[e].count(1) != 0, "taban surum (v1) budamadan korundu");
+    check(raw->kept.count({e, 1}) != 0, "taban surum keep kumesinde");
+    check(raw->baseVersion(e) == 1, "baseVersion hala v1");
+    check(raw->existing[e].count(5) != 0, "etkin surum (v5) korundu");
+    check(raw->existing[e].count(2) == 0, "referanssiz surum (v2) budandi");
+}
+
 void testPruneOnUndoLimit() {
     std::printf("Test 11: 100 kayit siniri asilinca budama TETIKLENIR\n");
     Document doc;
@@ -385,6 +432,7 @@ int main() {
     testDeltaInvalidVersionIsValid();
     testPruneOnClearHistory();
     testPruneDropsDeadVersions();
+    testBaseVersionSurvivesPrune();
     testPruneOnUndoLimit();
     std::printf("checks=%d failures=%d\n", g_checks, g_failures);
     if (g_failures == 0) std::printf("OCC STORE (Document): OK\n");

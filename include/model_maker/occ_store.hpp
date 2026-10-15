@@ -57,6 +57,23 @@ public:
     //  eder: olusturma-undo'da geometri "yok" haline donmelidir.)
     virtual bool restoreActive(EntityId id, VersionId version) = 0;
 
+    // --- KESME TABAN SURUMU (Phase 4.2) -------------------------------------
+    // Bir varligin KESILMEMIS (pre-cut) B-Rep surumu. Kesme modifier'lari bu
+    // surumden baslanarak sirasiyla yeniden uygulanir (recompute). Boylece
+    // "orijinal B-Rep kaybolmaz": kesme islemleri etkin surumu ilerletir ama
+    // taban surumu SABIT kalir; silme/tasima/duzenleme tabandan yeniden turetilir.
+    // ACIK ve GUVENILIR referanstir (versionIds()[0] varsayimi YOKTUR) ve
+    // budamadan (prune) KORUNUR — Document keep kumesine taban surumleri ekler.
+    // Atanmamissa / geometri yoksa kInvalidVersionId doner.
+
+    // O varligin taban (pre-cut) surum kimligi; yoksa/geometri yoksa kInvalid.
+    virtual VersionId baseVersion(EntityId id) const noexcept = 0;
+
+    // Taban surumunu ISARETLER. `version == kInvalidVersionId` tabani SILER
+    // (her zaman true). Gercek surum icin: varlik yoksa VEYA surum yoksa false
+    // doner ve hicbir sey degismez (taban var olan bir surume isaret etmelidir).
+    virtual bool setBaseVersion(EntityId id, VersionId version) = 0;
+
     // --- SURUM BUDAMA (Phase 3.2C) -----------------------------------------
     // `keep(entity, version)` false donen her saklanan surumu SILER; bosalan
     // slot'lari kaldirir ve budanan surumu isaret eden etkin-alani "geometri

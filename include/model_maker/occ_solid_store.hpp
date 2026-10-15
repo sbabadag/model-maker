@@ -78,6 +78,10 @@ public:
     // yoksa false doner, hicbir sey degismez.
     bool restoreActive(EntityId id, VersionId version) override;
 
+    // --- KESME TABAN SURUMU (Phase 4.2) -------------------------------------
+    VersionId baseVersion(EntityId id) const noexcept override;
+    bool setBaseVersion(EntityId id, VersionId version) override;
+
     // --- SURUM BUDAMA (Phase 3.2C) -----------------------------------------
     // `keep(entity, version)` false donen tum saklanan surumleri SILER;
     // surumleri tamamen bosalan slot'lar KALDIRILIR; budanan surumu isaret
@@ -126,6 +130,7 @@ private:
     struct Slot {
         std::vector<Version> versions;  // olusturma sirasi
         VersionId active{kInvalidVersionId};
+        VersionId base{kInvalidVersionId};  // kesme taban (pre-cut) surumu
     };
 
     // Slot icinde verilen surumu arar (yoksa nullptr).

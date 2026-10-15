@@ -79,6 +79,26 @@ bool OccSolidStore::restoreActive(EntityId id, VersionId version) {
     return true;
 }
 
+VersionId OccSolidStore::baseVersion(EntityId id) const noexcept {
+    const auto it = slots_.find(id);
+    return it == slots_.end() ? kInvalidVersionId : it->second.base;
+}
+
+bool OccSolidStore::setBaseVersion(EntityId id, VersionId version) {
+    if (version == kInvalidVersionId) {
+        // Taban SILME: idempotent, her zaman basarili (varlik yoksa da zaten
+        // taban yok demektir).
+        const auto it = slots_.find(id);
+        if (it != slots_.end()) it->second.base = kInvalidVersionId;
+        return true;
+    }
+    const auto it = slots_.find(id);
+    if (it == slots_.end()) return false;                       // varlik yok
+    if (shapeOfVersion(it->second, version) == nullptr) return false;  // surum yok
+    it->second.base = version;
+    return true;
+}
+
 std::size_t OccSolidStore::versionCount(EntityId id) const noexcept {
     const auto it = slots_.find(id);
     return it == slots_.end() ? 0 : it->second.versions.size();
@@ -138,6 +158,10 @@ std::size_t OccSolidStore::prune(const std::function<bool(EntityId, VersionId)>&
         // Budanan surumu isaret eden etkin-alani "geometri yok"a dusur.
         if (slot.active != kInvalidVersionId && shapeOfVersion(slot, slot.active) == nullptr)
             slot.active = kInvalidVersionId;
+        // Ayni koruma taban surumu icin: (Document keep kumesine tabani ekler,
+        // ama savunma olarak) budanmis bir taban referansi asla asili kalmaz.
+        if (slot.base != kInvalidVersionId && shapeOfVersion(slot, slot.base) == nullptr)
+            slot.base = kInvalidVersionId;
         if (versions.empty()) {
             it = slots_.erase(it);  // tamamen bosalan slot kaldirilir
         } else {

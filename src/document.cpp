@@ -963,14 +963,23 @@ void Document::pruneDeadVersions() {
         if (v != kInvalidVersionId) keep.emplace(e, v);
     };
 
+    // (1b) KESME TABAN SURUMU (Phase 4.2): bir varligin taban (pre-cut) surumu
+    // kesme modifier'larinin yeniden uygulanacagi kaynaktir; budamada ASLA
+    // silinmemelidir (yoksa "orijinal B-Rep kaybolmaz" sozlesmesi kirilir).
+    const auto protectBase = [&](EntityId e) {
+        if (e == kInvalidEntityId) return;
+        const VersionId v = occStore_->baseVersion(e);
+        if (v != kInvalidVersionId) keep.emplace(e, v);
+    };
+
     // (1) canli varliklar
-    for (const EntityId e : modelIds_) protectActive(e);
+    for (const EntityId e : modelIds_) { protectActive(e); protectBase(e); }
 
     // (2) + (3): undo/redo kayitlari
     const auto scan = [&](const UndoRecord& rec) {
         for (const UndoOp& op : rec.ops) {
-            for (const EntityId e : op.beforeIds) protectActive(e);
-            for (const EntityId e : op.afterIds) protectActive(e);
+            for (const EntityId e : op.beforeIds) { protectActive(e); protectBase(e); }
+            for (const EntityId e : op.afterIds) { protectActive(e); protectBase(e); }
         }
         for (const GeometrySlotRef& ref : rec.geometryBefore)
             if (ref.version != kInvalidVersionId) keep.emplace(ref.entity, ref.version);
