@@ -1,5 +1,22 @@
 #pragma once
 
+// --- Per-Monitor-V2 DPI symbols (Windows 10 1703+, NTDDI_WIN10_RS2) --------
+// application.cpp and main.cpp use SetProcessDpiAwarenessContext,
+// GetThreadDpiAwarenessContext, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 and
+// WM_DPICHANGED_AFTERPARENT. MinGW-w64 declares the first three only when
+// NTDDI_VERSION >= NTDDI_WIN10_RS2; the version macros must therefore be set
+// BEFORE any <windows.h> include. This header is the first include of every
+// app TU, so set them here (idempotent: honour any value already defined).
+#ifndef _WIN32_WINNT
+#define _WIN32_WINNT 0x0A00
+#endif
+#ifndef WINVER
+#define WINVER _WIN32_WINNT
+#endif
+#ifndef NTDDI_VERSION
+#define NTDDI_VERSION 0x0A000003 /* NTDDI_WIN10_RS2 */
+#endif
+
 #include "model_maker/camera.hpp"
 #include "model_maker/document.hpp"
 #include "model_maker/drafting.hpp"
@@ -14,6 +31,23 @@
 #include "model_maker/view_cube_renderer.hpp"
 
 #include <windows.h>
+
+// Fallback for toolchains that still omit the PMv2 symbols even with the
+// version macros above. Identical to the SDK declarations, so harmless when the
+// headers already provide them; guarded off when they do.
+#ifndef DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2
+typedef HANDLE DPI_AWARENESS_CONTEXT;
+#define DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 ((DPI_AWARENESS_CONTEXT)-4)
+extern "C" {
+WINUSERAPI BOOL WINAPI SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT value);
+WINUSERAPI DPI_AWARENESS_CONTEXT WINAPI GetThreadDpiAwarenessContext(VOID);
+}
+#endif
+
+#ifndef WM_DPICHANGED_AFTERPARENT
+#define WM_DPICHANGED_AFTERPARENT 0x02E3
+#endif
+
 #include <commctrl.h>
 #include <array>
 #include <atomic>
