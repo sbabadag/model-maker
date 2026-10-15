@@ -186,6 +186,57 @@ int main() {
     check(near(efit.minimum.x, 0.0) && near(efit.maximum.x, 6000.0),
           "elevation fit box unchanged (no in-plane padding)");
 
+    // Parca duzlemi view'i (viewFromPartPlane): UcsView -> ViewDefinition
+    // dogru tasinir, length sifir, derinlik varsayilan.
+    {
+        const Ucs frame = Ucs::fromPartFrame({100, 200, 300}, {1, 0, 0}, {0, 0, 1});
+        const ViewDefinition pv = viewFromPartPlane(frame, PartPlane::Front, {100, 200, 300});
+        check(nearV(pv.origin, {100, 200, 300}), "part view origin");
+        check(nearV(pv.normal, {0, -1, 0}), "part front view normal = -Y (yatay kiris)");
+        check(near(pv.length, 0.0), "part view length = 0");
+        // Sag-el: normal = right x up.
+        const Vec3 n{pv.right.y * pv.up.z - pv.right.z * pv.up.y,
+                     pv.right.z * pv.up.x - pv.right.x * pv.up.z,
+                     pv.right.x * pv.up.y - pv.right.y * pv.up.x};
+        check(nearV(n, pv.normal), "part view right x up = normal");
+    }
+
+    // Grid cizgileri boyunca gorunusler (viewsAlongGridLines).
+    {
+        GridDefinition grid;
+        grid.xCoords = {0.0, 6000.0};
+        grid.yCoords = {0.0, 5000.0};
+        grid.zCoords = {0.0, 3600.0};
+        grid.xLabels = {"A", "B"};
+        grid.yLabels = {"1", "2"};
+        grid.zLabels = {"+0.00", "+3.60"};
+        const auto views = viewsAlongGridLines(grid);
+        check(views.size() == 6, "6 grid cizgisi -> 6 gorunus (2X+2Y+2Z)");
+        // X cizgisi: origin x, normal +X.
+        check(nearV(views[0].origin, {0, 0, 0}) && nearV(views[0].normal, {1, 0, 0}),
+              "grid X hatti origin/normal");
+        check(views[0].name == L"Grid A", "grid X hatti adi = A");
+        check(nearV(views[1].origin, {6000, 0, 0}), "grid X hatti 2 origin");
+        // Y cizgisi: normal +Y, origin y (ilk Y cizgisi y=0 -> origin 0).
+        check(nearV(views[2].normal, {0, 1, 0}), "grid Y hatti normal +Y");
+        check(nearV(views[2].origin, {0, 0, 0}), "grid Y hatti origin");
+        check(views[2].name == L"Grid 1", "grid Y hatti adi = 1");
+        check(nearV(views[3].origin, {0, 5000, 0}), "grid Y hatti 2 origin");
+        // Z kati: plan (normal +Z), ikinci kat z=3600.
+        check(nearV(views[5].normal, {0, 0, 1}), "grid Z kati normal +Z");
+        check(nearV(views[5].origin, {0, 0, 3600}), "grid Z kati origin");
+        check(views[5].name == L"Kat +3.60", "grid Z kati adi = +3.60");
+        // Her gorunum sag-el: normal = right x up.
+        bool allRightHanded = true;
+        for (const auto& gv : views) {
+            const Vec3 n{gv.right.y * gv.up.z - gv.right.z * gv.up.y,
+                         gv.right.z * gv.up.x - gv.right.x * gv.up.z,
+                         gv.right.x * gv.up.y - gv.right.y * gv.up.x};
+            if (!nearV(n, gv.normal)) allRightHanded = false;
+        }
+        check(allRightHanded, "tum grid gorunusleri sag-el");
+    }
+
     std::printf("%d checks, %d failures\n", checks, failures);
     return failures == 0 ? 0 : 1;
 }

@@ -8,6 +8,7 @@
 
 #include "model_maker/document.hpp"
 #include "model_maker/geometry.hpp"
+#include "model_maker/ucs.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -86,6 +87,83 @@ inline std::optional<ViewDefinition> viewFromPlanLevel(
 // Baslik/etiket metinlerini secmek icin kullanilir; kalici bir alan DEGIL.
 inline bool isPlanView(const ViewDefinition& v) noexcept {
     return std::abs(v.normal.z) > 0.9;
+}
+
+// PARCA DUZLEMI GORUNUSU (Tekla "on part front/top/back/bottom plane" +
+// "default views of part"): verilen parca cercevesi (Ucs::fromPartFrame
+// ciktisi: xAxis=width, yAxis=height, zAxis=axis) uzerinde secilen duzlemin
+// ViewDefinition'ini uretir. Origin = parca eksen orijini; sag-el ortonormal
+// taban (normal = right x up) viewOnPartPlane ile kurulur.
+inline ViewDefinition viewFromPartPlane(const Ucs& partFrame, PartPlane plane,
+                                        const Vec3& origin) noexcept {
+    const UcsView basis = viewOnPartPlane(partFrame, plane);
+    ViewDefinition v;
+    v.origin = origin;
+    v.right = basis.right;
+    v.up = basis.up;
+    v.normal = basis.normal;
+    v.length = 0.0; // parca gorunusunde P1-P2 hatti yok
+    v.depthFront = kDefaultViewDepth;
+    v.depthBack = kDefaultViewDepth;
+    return v;
+}
+
+// GRID CIZGILERI BOYUNCA GORUNUSLER (Tekla "along grid lines" / axis views):
+// her aks cizgisi icin o cizginin duzlemine DIK bir gorunus uretilir.
+//   X cizgileri (Y'ye paralel dikey duzlemler) -> normal +X, bakis -X
+//   Y cizgileri (X'e paralel dikey duzlemler) -> normal +Y, bakis -Y
+//   Z katlari (XY'ye paralel yatay duzlemler)   -> normal +Z (plan)
+// Origin her cizginin grid origin'ine gore konumudur. Etiket ad olarak
+// yazilir (bos etiket -> "Aks N"). Sag-el: normal = right x up.
+inline std::vector<ViewDefinition> viewsAlongGridLines(const GridDefinition& grid) {
+    std::vector<ViewDefinition> out;
+    const Vec3 o = grid.origin;
+    const auto nameFor = [](const std::string& label, std::size_t index) {
+        std::wstring w;
+        if (!label.empty()) {
+            for (const char c : label) w.push_back(static_cast<wchar_t>(c));
+        } else {
+            const std::string n = std::to_string(index + 1);
+            for (const char c : n) w.push_back(static_cast<wchar_t>(c));
+        }
+        return w;
+    };
+    // X akslari: duzlem YZ'ye paralel, x = o.x + xCoord.
+    for (std::size_t i = 0; i < grid.xCoords.size(); ++i) {
+        ViewDefinition v;
+        v.origin = {o.x + grid.xCoords[i], o.y, o.z};
+        v.right = {0.0, 1.0, 0.0};
+        v.up = {0.0, 0.0, 1.0};
+        v.normal = {1.0, 0.0, 0.0}; // right x up = +X
+        v.length = 0.0;
+        v.name = L"Grid " + nameFor(i < grid.xLabels.size() ? grid.xLabels[i] : std::string{}, i);
+        out.push_back(v);
+    }
+    // Y akslari: duzlem XZ'ye paralel, y = o.y + yCoord. Bakisin +Y
+    // tarafindan gelmesi icin normal = +Y; sag-el tutarliligi (normal =
+    // right x up) icin right = -X, up = +Z kullanilir.
+    for (std::size_t i = 0; i < grid.yCoords.size(); ++i) {
+        ViewDefinition v;
+        v.origin = {o.x, o.y + grid.yCoords[i], o.z};
+        v.right = {-1.0, 0.0, 0.0};
+        v.up = {0.0, 0.0, 1.0};
+        v.normal = {0.0, 1.0, 0.0};
+        v.length = 0.0;
+        v.name = L"Grid " + nameFor(i < grid.yLabels.size() ? grid.yLabels[i] : std::string{}, i);
+        out.push_back(v);
+    }
+    // Z katlari: duzlem XY'ye paralel (plan), z = o.z + zCoord.
+    for (std::size_t i = 0; i < grid.zCoords.size(); ++i) {
+        ViewDefinition v;
+        v.origin = {o.x, o.y, o.z + grid.zCoords[i]};
+        v.right = {1.0, 0.0, 0.0};
+        v.up = {0.0, 1.0, 0.0};
+        v.normal = {0.0, 0.0, 1.0}; // right x up = +Z (yukaridan plan)
+        v.length = 0.0;
+        v.name = L"Kat " + nameFor(i < grid.zLabels.size() ? grid.zLabels[i] : std::string{}, i);
+        out.push_back(v);
+    }
+    return out;
 }
 
 // Sinir kutusu derinlik diliminde mi? (kutunun normal yonundeki izdusum

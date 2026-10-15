@@ -204,6 +204,49 @@ int main() {
         check(list.empty(), "clear bosaltir");
     }
 
+    // 14) Parca duzlemi view'lari (viewOnPartPlane): sag-el ortonormal + dogru
+    // normal yonleri. Parca cercevesi: yatay kiris, axis = +X, refNormal = +Z.
+    // profileSectionFrame(+X, +Z): width = Z x X = +Y, height = X x Y = +Z.
+    {
+        const Ucs frame = Ucs::fromPartFrame({0, 0, 0}, {1, 0, 0}, {0, 0, 1});
+        // Front: right=+axis(+X), up=+height(+Z), normal=-width(-Y).
+        {
+            const UcsView v = viewOnPartPlane(frame, PartPlane::Front);
+            check(near3(v.right, {1, 0, 0}), "front right = +axis");
+            check(near3(v.up, {0, 0, 1}), "front up = +height");
+            check(near3(v.normal, {0, -1, 0}), "front normal = -width");
+            check(near3(cross(v.right, v.up), v.normal), "front sag-el");
+        }
+        // Top: right=+axis, up=+width(+Y), normal=+height(+Z).
+        {
+            const UcsView v = viewOnPartPlane(frame, PartPlane::Top);
+            check(near3(v.right, {1, 0, 0}), "top right = +axis");
+            check(near3(v.up, {0, 1, 0}), "top up = +width");
+            check(near3(v.normal, {0, 0, 1}), "top normal = +height");
+            check(near3(cross(v.right, v.up), v.normal), "top sag-el");
+        }
+        // End: right=+width(+Y), up=+height(+Z), normal=+axis(+X).
+        {
+            const UcsView v = viewOnPartPlane(frame, PartPlane::End);
+            check(near3(v.right, {0, 1, 0}), "end right = +width");
+            check(near3(v.up, {0, 0, 1}), "end up = +height");
+            check(near3(v.normal, {1, 0, 0}), "end normal = +axis");
+            check(near3(cross(v.right, v.up), v.normal), "end sag-el");
+        }
+        // Back: right=-axis, up=+height, normal=+width.
+        {
+            const UcsView v = viewOnPartPlane(frame, PartPlane::Back);
+            check(near3(v.normal, {0, 1, 0}), "back normal = +width");
+            check(near3(cross(v.right, v.up), v.normal), "back sag-el");
+        }
+        // Bottom: right=+axis, up=-width, normal=-height.
+        {
+            const UcsView v = viewOnPartPlane(frame, PartPlane::Bottom);
+            check(near3(v.normal, {0, 0, -1}), "bottom normal = -height");
+            check(near3(cross(v.right, v.up), v.normal), "bottom sag-el");
+        }
+    }
+
     std::printf("%s\n", failures == 0 ? "ALL PASS" : "SOME FAILED");
     return failures == 0 ? 0 : 1;
 }

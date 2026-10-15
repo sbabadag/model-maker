@@ -44,7 +44,7 @@ struct Camera {
 };
 class Application {
 public:
-    enum class PointPickPurpose { WorkPlane, TwoPointView, TwoPointViewDirection, RotateCenter };
+    enum class PointPickPurpose { WorkPlane, TwoPointView, TwoPointViewDirection, ThreePointView, RotateCenter };
     PointPickPurpose pointPickPurpose_{PointPickPurpose::WorkPlane};
     // Donus merkezi (R) yolu bu dosyada test EDILMEZ: commitWorkPlanePoint'in
     // RotateCenter dali camera_.setOrbitPivot cagirir. Sahte kamera yeter.
@@ -74,12 +74,13 @@ public:
     void publishStatus(const std::wstring& s) { lastStatus = s; }
     void startWorkPlaneCommand();
     void startTwoPointViewCommand();
+    void startThreePointViewCommand();
     void cancelWorkPlaneCommand();
     void commitWorkPlanePoint(const Vec3& point);
 };
 '''.replace("POINT_PLACEHOLDER", "struct { int x{}, y{}; } cursorScreen_;")
-for name in ["startWorkPlaneCommand", "startTwoPointViewCommand", "cancelWorkPlaneCommand",
-             "commitWorkPlanePoint"]:
+for name in ["startWorkPlaneCommand", "startTwoPointViewCommand", "startThreePointViewCommand",
+             "cancelWorkPlaneCommand", "commitWorkPlanePoint"]:
     shell += method(name) + "\n"
 shell += "}\n" + r'''
 static int checks = 0, failures = 0;
@@ -164,6 +165,28 @@ int main() {
               "no callback -> still in direction phase (safe)");
         a.commitWorkPlanePoint({0, -1, 0});
         check(!a.workPlanePicking_, "no callback -> command ends safely");
+    }
+    { // 6) 3 NOKTALI GORUNUS: origin + X + Y -> tek view, dogru taban
+        Application a; int calls = 0; ViewDefinition got;
+        a.twoPointViewCallback_ = [&](const ViewDefinition& v) { ++calls; got = v; };
+        a.startThreePointViewCommand();
+        check(a.workPlanePicking_ && a.pointPickPurpose_ == Application::PointPickPurpose::ThreePointView,
+              "3-pt command enters picking");
+        a.commitWorkPlanePoint({0, 0, 0});
+        a.commitWorkPlanePoint({1000, 0, 0});
+        check(calls == 0 && a.workPlanePicking_, "3-pt: 2 nokta, henuz view yok");
+        a.commitWorkPlanePoint({0, 1000, 0});
+        check(calls == 1, "3-pt: ucuncu nokta view acar");
+        check(std::abs(got.normal.z - 1.0) < 1e-9, "3-pt: XY duzlemi -> normal +Z (plan)");
+        check(!a.workPlanePicking_, "3-pt: komut bitti");
+        // Dogrusal noktalar reddedilir (X=Y=0 ayni dogru).
+        Application b; int calls2 = 0;
+        b.twoPointViewCallback_ = [&](const ViewDefinition&) { ++calls2; };
+        b.startThreePointViewCommand();
+        b.commitWorkPlanePoint({0, 0, 0});
+        b.commitWorkPlanePoint({1000, 0, 0});
+        b.commitWorkPlanePoint({2000, 0, 0});
+        check(calls2 == 0 && b.workPlanePicking_, "3-pt: dogrusal noktalar reddedilir");
     }
     std::cout << checks << " checks, " << failures << " failures\n";
     return failures == 0 ? 0 : 1;

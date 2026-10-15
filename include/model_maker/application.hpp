@@ -246,6 +246,25 @@ public:
     // PARALEL yatay gorunus uretilir (Tekla seviye plani). Ayni
     // twoPointViewCallback_ akisi -> yeni MDI penceresi.
     void startPlanViewCommand();
+    // 3 NOKTALI GORUNUS (Tekla "using three points"): origin + X noktasi +
+    // Y noktasi secilir (snap/track aktif); ucuncu noktada
+    // Ucs::fromThreePoints -> viewFromUcs -> ViewDefinition -> yeni MDI
+    // penceresi. Esc/sag tik iptal.
+    void startThreePointViewCommand();
+    // CALISMA DUZLEMINDE GORUNUS (Tekla "on work plane"): secim YOK;
+    // mevcut calisma duzlemi (work plane) dogrudan yeni bir MDI penceresi
+    // acar. UCS'ye Dik Gorus'un (kamerayi cevirir) AKSINE yeni pencere.
+    void startViewOnWorkPlaneCommand();
+    // PARCA DUZLEM GORUNUSLERI (Tekla "on part front/top/back/bottom plane"
+    // + "default views of part" + "3D view of part"): secili TEK parcanin
+    // (profil uyesi) eksen cercevesinden gorunus uretir. Secim yoksa uyarir.
+    void startPartPlaneViewCommand(PartPlane plane);   // tek duzlem
+    void startPartDefaultViewsCommand();               // front/top/end (3 pencere)
+    void startPart3DViewCommand();                     // 3B'de parcaya sigdir
+    // GRID CIZGILERI BOYUNCA GORUNUSLER (Tekla "along grid lines"): belgedeki
+    // her grid'in aks cizgileri icin dik gorunusler acar (X/Y akslari +
+    // Z katlari). Grid yoksa uyarir.
+    void startGridViewsCommand();
     // EKRAN DONUS MERKEZI (R tusu, Tekla benzeri): tek nokta snap ile
     // secilir ve o nokta ekranin donus merkezi olur; kullanici yeni bir
     // merkez secene kadar Ctrl+sol tus surukleme ekranı bu merkez
@@ -324,6 +343,8 @@ private:
                                                    DWORD_PTR referenceData);
     LRESULT handleMessage(UINT message, WPARAM wParam, LPARAM lParam);
     LRESULT handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lParam);
+    // Secili TEK parcanin (profil uyesi) eksen cercevesi + eksen orijini.
+    std::optional<Ucs> selectedPartFrame(Vec3& axisOrigin) const;
 
     void createControlPanel();
     HWND createButton(const wchar_t* text, int id, int x, int y, int width, int height,
@@ -788,9 +809,10 @@ private:
     //   TwoPointView         : 2 nokta -> yeni gorunus penceresi
     //   TwoPointViewDirection: 2 nokta secildikten SONRA bakis yonu secilir
     //                          (ok onizlemesi; tik -> o yonde view)
+    //   ThreePointView       : 3 nokta -> yeni gorunus penceresi (origin+X+Y)
     //   RotateCenter         : 1 nokta -> ekran donus merkezi (R tusu; Ctrl+sol
     //                          tus ile ekran bu merkez etrafinda doner)
-    enum class PointPickPurpose { WorkPlane, TwoPointView, TwoPointViewDirection, RotateCenter };
+    enum class PointPickPurpose { WorkPlane, TwoPointView, TwoPointViewDirection, ThreePointView, RotateCenter };
     PointPickPurpose pointPickPurpose_{PointPickPurpose::WorkPlane};
     // Ctrl+sol tus: bu esikten fazla hareket rotasyona terfi eder; esik
     // asilmazsa Ctrl+tik secimi yapilir (tek karar noktasi).

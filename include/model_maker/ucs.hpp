@@ -89,6 +89,18 @@ struct UcsView {
 // Mevcut UCS uzerinde view (Tekla "set view to UCS / plan of UCS").
 UcsView viewFromUcs(const Ucs& ucs) noexcept;
 
+// PARCA DUZLEMLERI (Tekla "on part front/top/back/bottom plane" +
+// "default views of part"). Parca cercevesi = Ucs::fromPartFrame ciktisi:
+//   xAxis = genislik (width), yAxis = yukseklik (height), zAxis = eksen (axis).
+// Her duzlem icin sag-el ortonormal taban uretilir (normal = right x up):
+//   Front  : web'e bakis (normal = -width), right = +axis, up = +height
+//   Top    : ustten bakis (normal = +height), right = +axis, up = +width
+//   End    : kesit bakisi (normal = +axis), right = +width, up = +height
+//   Back   : onun tersi (normal = +width)
+//   Bottom : ustun tersi (normal = -height)
+enum class PartPlane { Front = 0, Top, End, Back, Bottom };
+UcsView viewOnPartPlane(const Ucs& partFrame, PartPlane plane) noexcept;
+
 // Secilen yuzeye DIK view (Tekla "view perpendicular to face"): normal =
 // yuzey normali, up = dunya Z (normal Z'ye paralelse dunya Y), right = up x
 // normal (right x up = normal saglanir).

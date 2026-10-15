@@ -671,6 +671,31 @@ void QtMainWindow::createMenus() {
         [this]() { app_.startPlanViewCommand(); });
     planViewAction->setIcon(makeToolIcon(ToolGlyph::Extents));
     planViewAction->setShortcut(QKeySequence(QStringLiteral("Ctrl+Shift+P")));
+    // --- TEKLA "New view" komutlarinin tamami ---
+    QMenu* newViewMenu = viewMenu->addMenu("&Yeni Görünüş");
+    newViewMenu->addAction("&3 Noktalı Görünüş", this,
+        [this]() { app_.startThreePointViewCommand(); });
+    newViewMenu->addAction("&Çalışma Düzleminde Görünüş", this,
+        [this]() { app_.startViewOnWorkPlaneCommand(); });
+    newViewMenu->addSeparator();
+    newViewMenu->addAction("Parça &Ön Düzlemi", this,
+        [this]() { app_.startPartPlaneViewCommand(PartPlane::Front); });
+    newViewMenu->addAction("Parça &Üst Düzlemi", this,
+        [this]() { app_.startPartPlaneViewCommand(PartPlane::Top); });
+    newViewMenu->addAction("Parça &Uç Düzlemi", this,
+        [this]() { app_.startPartPlaneViewCommand(PartPlane::End); });
+    newViewMenu->addAction("Parça &Arka Düzlemi", this,
+        [this]() { app_.startPartPlaneViewCommand(PartPlane::Back); });
+    newViewMenu->addAction("Parça &Alt Düzlemi", this,
+        [this]() { app_.startPartPlaneViewCommand(PartPlane::Bottom); });
+    newViewMenu->addSeparator();
+    newViewMenu->addAction("Parçanın &Varsayılan Görünüşleri (Ön/Üst/Uç)", this,
+        [this]() { app_.startPartDefaultViewsCommand(); });
+    newViewMenu->addAction("Parçanın &3B Görünüşü", this,
+        [this]() { app_.startPart3DViewCommand(); });
+    newViewMenu->addSeparator();
+    newViewMenu->addAction("Grid &Çizgileri Boyunca Görünüşler", this,
+        [this]() { app_.startGridViewsCommand(); });
     viewMenu->addSeparator();
     viewMenu->addAction("&Yapı Gridi Oluştur...", this, [this]() { promptCreateGrid(); });
     viewMenu->addAction("&Yapı Gridleri...", this, [this]() { promptGridManager(); });

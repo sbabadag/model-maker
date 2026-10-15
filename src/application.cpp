@@ -3331,6 +3331,133 @@ void Application::startPlanViewCommand() {
     twoPointViewCallback_(*view);
 }
 
+void Application::startThreePointViewCommand() {
+    // 3 NOKTALI GORUNUS: origin + X + Y (snap/track aktif). Ayni secim akisi;
+    // ucuncu noktada ViewDefinition uretilir, yeni MDI penceresi acilir.
+    if (!twoPointViewCallback_) { MessageBeep(MB_ICONWARNING); return; }
+    startWorkPlaneCommand(); // ayni secim akisi: snap + track + kesik onizleme
+    pointPickPurpose_ = PointPickPurpose::ThreePointView;
+    updateStatus();
+}
+
+void Application::startViewOnWorkPlaneCommand() {
+    // CALISMA DUZLEMINDE GORUNUS (yeni pencere): secim yok, mevcut work plane
+    // dogrudan gorunus duzlemidir.
+    if (!twoPointViewCallback_) { MessageBeep(MB_ICONWARNING); return; }
+    if (workPlanePicking_) cancelWorkPlaneCommand();
+    const Ucs ucs = Ucs::fromWorkPlane(workPlane_);
+    const UcsView basis = viewFromUcs(ucs);
+    ViewDefinition view;
+    view.origin = workPlane_.origin;
+    view.right = basis.right;
+    view.up = basis.up;
+    view.normal = basis.normal;
+    view.length = 0.0;
+    view.depthFront = kDefaultViewDepth;
+    view.depthBack = kDefaultViewDepth;
+    twoPointViewCallback_(view);
+}
+
+// Secili TEK parcanin (profil uyesi) eksen cercevesini ve eksen orijinini
+// dondurur. Secim tam olarak bir profil uyesi degilse nullopt.
+std::optional<Ucs> Application::selectedPartFrame(Vec3& axisOrigin) const {
+    if (selectedModels_.size() != 1) return std::nullopt;
+    const std::size_t index = selectedModels_.front();
+    if (index >= document_.models().size()) return std::nullopt;
+    const auto& model = document_.models()[index];
+    const EntityProperties& props = model.properties();
+    if (props.profileName.empty()) return std::nullopt; // parca degil (cizgi vb.)
+    const Vec3 from{props.axisFromX, props.axisFromY, props.axisFromZ};
+    const Vec3 to{props.axisToX, props.axisToY, props.axisToZ};
+    const Vec3 axis{to.x - from.x, to.y - from.y, to.z - from.z};
+    if (!(std::sqrt(axis.x * axis.x + axis.y * axis.y + axis.z * axis.z) > 1e-9))
+        return std::nullopt; // ekseni tanimsiz
+    axisOrigin = from;
+    const Vec3 refNormal{props.sectionNormalX, props.sectionNormalY, props.sectionNormalZ};
+    return Ucs::fromPartFrame(from, axis, refNormal);
+}
+
+void Application::startPartPlaneViewCommand(PartPlane plane) {
+    if (!twoPointViewCallback_) { MessageBeep(MB_ICONWARNING); return; }
+    if (workPlanePicking_) cancelWorkPlaneCommand();
+    Vec3 origin{};
+    const auto frame = selectedPartFrame(origin);
+    if (!frame) {
+        MessageBeep(MB_ICONWARNING);
+        publishStatus(L"Parça görünüşü: tam olarak bir profil üyesi seçin");
+        return;
+    }
+    twoPointViewCallback_(viewFromPartPlane(*frame, plane, origin));
+}
+
+void Application::startPartDefaultViewsCommand() {
+    if (!twoPointViewCallback_) { MessageBeep(MB_ICONWARNING); return; }
+    if (workPlanePicking_) cancelWorkPlaneCommand();
+    Vec3 origin{};
+    const auto frame = selectedPartFrame(origin);
+    if (!frame) {
+        MessageBeep(MB_ICONWARNING);
+        publishStatus(L"Parça görünüşleri: tam olarak bir profil üyesi seçin");
+        return;
+    }
+    // Tekla "default views of part": front, top, end (3B ana pencerede zaten
+    // parcaya sigdirilir).
+    twoPointViewCallback_(viewFromPartPlane(*frame, PartPlane::Front, origin));
+    twoPointViewCallback_(viewFromPartPlane(*frame, PartPlane::Top, origin));
+    twoPointViewCallback_(viewFromPartPlane(*frame, PartPlane::End, origin));
+}
+
+void Application::startPart3DViewCommand() {
+    // 3B GORUNUMDE PARCAYA SIGDIR: secili parcanin sinir kutusuna 3B kamerayi
+    // sigdirir (yeni pencere DEGIL — Tekla'daki "3D view of part" davranisinin
+    // karsiligi; parca ana 3B gorunumde ortalanir).
+    if (selectedModels_.size() != 1) {
+        MessageBeep(MB_ICONWARNING);
+        publishStatus(L"Parça 3B: tam olarak bir parça seçin");
+        return;
+    }
+    const std::size_t index = selectedModels_.front();
+    const auto bounds = document_.modelBounds();
+    if (index >= bounds.size()) return;
+    cancelZoomWindow2D();
+    if (workPlanePicking_) cancelWorkPlaneCommand();
+    if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
+    cancelDrawing();
+    RECT client{}; GetClientRect(canvas_, &client);
+    if (viewRotationLocked()) { // gorunus penceresi: aktiflestirmeden sigdir
+        fitViewport(canvas_);
+        return;
+    }
+    camera_.setView(StandardView::Isometric);
+    camera_.fit3D(bounds[index].minimum, bounds[index].maximum,
+                  std::max(1L, client.right), std::max(1L, client.bottom), 50.0);
+    mode_ = EditMode::View3D;
+    drawingActive_ = false;
+    updateHover(cursorScreen_.x, cursorScreen_.y);
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
+}
+
+void Application::startGridViewsCommand() {
+    if (!twoPointViewCallback_) { MessageBeep(MB_ICONWARNING); return; }
+    if (workPlanePicking_) cancelWorkPlaneCommand();
+    const auto& grids = document_.grids();
+    if (grids.empty()) {
+        MessageBeep(MB_ICONWARNING);
+        publishStatus(L"Grid görünüşleri: modelde yapı gridi yok");
+        return;
+    }
+    std::size_t count = 0;
+    for (const auto& grid : grids) {
+        for (const ViewDefinition& view : viewsAlongGridLines(grid)) {
+            twoPointViewCallback_(view);
+            ++count;
+        }
+    }
+    publishStatus(L"Grid görünüşleri: " + std::to_wstring(count) + L" pencere açıldı");
+}
+
 void Application::startRotateCenterCommand() {
     // Gorunus penceresinde yon sabit (kilitli) — donus merkezi anlamsiz.
     if (viewRotationLocked()) {
@@ -3595,6 +3722,35 @@ void Application::commitWorkPlanePoint(const Vec3& point) {
         if (flipped) {
             view.right = {-view.right.x, -view.right.y, -view.right.z};
         }
+        cancelWorkPlaneCommand();
+        if (twoPointViewCallback_) twoPointViewCallback_(view);
+        return;
+    }
+    if (pointPickPurpose_ == PointPickPurpose::ThreePointView) {
+        if (!std::isfinite(point.x) || !std::isfinite(point.y) || !std::isfinite(point.z)) {
+            MessageBeep(MB_ICONWARNING);
+            return;
+        }
+        workPlanePoints_.push_back(point);
+        if (workPlanePoints_.size() < 3) return;
+        // Origin + X + Y -> Ucs -> ViewDefinition -> yeni MDI penceresi.
+        const auto ucs = Ucs::fromThreePoints(workPlanePoints_[0], workPlanePoints_[1],
+                                              workPlanePoints_[2]);
+        if (!ucs) {
+            workPlanePoints_.pop_back();
+            MessageBeep(MB_ICONWARNING);
+            publishStatus(L"3 noktalı görünüş: noktalar doğrusal/çakışık — 3. noktayı yeniden seçin");
+            return;
+        }
+        const UcsView basis = viewFromUcs(*ucs);
+        ViewDefinition view;
+        view.origin = workPlanePoints_[0];
+        view.right = basis.right;
+        view.up = basis.up;
+        view.normal = basis.normal;
+        view.length = 0.0;
+        view.depthFront = kDefaultViewDepth;
+        view.depthBack = kDefaultViewDepth;
         cancelWorkPlaneCommand();
         if (twoPointViewCallback_) twoPointViewCallback_(view);
         return;
@@ -4672,6 +4828,11 @@ void Application::updateStatus() {
     } else if (workPlanePicking_ &&
                pointPickPurpose_ == PointPickPurpose::TwoPointViewDirection) {
         text += L"  |  2 NOKTALI GÖRÜNÜŞ — bakış yönünü seçin (ok, tıklayın)";
+    } else if (workPlanePicking_ && pointPickPurpose_ == PointPickPurpose::ThreePointView) {
+        text += L"  |  3 NOKTALI GÖRÜNÜŞ — ";
+        if (workPlanePoints_.empty()) text += L"orijini belirtin";
+        else if (workPlanePoints_.size() == 1) text += L"X yönünü belirtin";
+        else text += L"Y (düzlem) noktasını belirtin";
     } else if (workPlanePicking_ && pointPickPurpose_ == PointPickPurpose::RotateCenter) {
         text += L"  |  DÖNÜŞ MERKEZİ — ekranın döneceği noktayı seçin (Esc iptal)";
     } else if (workPlanePicking_) {

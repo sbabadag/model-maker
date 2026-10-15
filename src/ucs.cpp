@@ -149,6 +149,27 @@ UcsView viewFromUcs(const Ucs& ucs) noexcept {
     return UcsView{ucs.xAxis, ucs.yAxis, ucs.zAxis};
 }
 
+UcsView viewOnPartPlane(const Ucs& partFrame, PartPlane plane) noexcept {
+    // Parca cercevesi: xAxis = width (genislik), yAxis = height (yukseklik),
+    // zAxis = axis (uye ekseni). Sag-el ortonormal kabul (fromPartFrame).
+    const Vec3 W = partFrame.xAxis;
+    const Vec3 H = partFrame.yAxis;
+    const Vec3 A = partFrame.zAxis;
+    switch (plane) {
+    case PartPlane::Front:  // web'e bakis: right=+axis, up=+height, normal=-width
+        return UcsView{A, H, cross3(A, H)};
+    case PartPlane::Top:    // ustten bakis: right=+axis, up=+width, normal=+height
+        return UcsView{A, W, cross3(A, W)};
+    case PartPlane::End:    // kesit bakisi: right=+width, up=+height, normal=+axis
+        return UcsView{W, H, cross3(W, H)};
+    case PartPlane::Back:   // onun tersi: right=-axis, up=+height, normal=+width
+        return UcsView{{-A.x, -A.y, -A.z}, H, cross3({-A.x, -A.y, -A.z}, H)};
+    case PartPlane::Bottom: // ustun tersi: right=+axis, up=-width, normal=-height
+        return UcsView{A, {-W.x, -W.y, -W.z}, cross3(A, {-W.x, -W.y, -W.z})};
+    }
+    return UcsView{A, H, cross3(A, H)}; // derleyici icin; ulasilamaz
+}
+
 UcsView viewPerpendicularToFace(Vec3 origin, Vec3 faceNormal) noexcept {
     const auto n = normalized(faceNormal);
     if (!n) return UcsView{};
