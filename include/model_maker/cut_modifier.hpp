@@ -22,16 +22,19 @@
 
 namespace mm {
 
-enum class CutKind { PlaneCut, Fitting, PolygonCut, BooleanCut };
+enum class CutKind { PlaneCut, Fitting, PolygonCut, BooleanCut, LineCut };
 
 // Kalici kesme modifier'i.
 struct CutModifier {
     CutKind kind{CutKind::PlaneCut};
     EntityId target{kInvalidEntityId};   // kesilen parca (kimlik KORUNUR)
     Vec3 planeOrigin{};                  // PlaneCut/Fitting: duzlem origin
-    Vec3 planeNormal{0.0, 0.0, 1.0};     // PlaneCut/Fitting: duzlem normali
-    bool keepPositive{true};             // PlaneCut: normalin + tarafi korunur
-    std::vector<Vec3> polygon;           // PolygonCut: duzlemde cokgen (>=3 nokta)
+    Vec3 planeNormal{0.0, 0.0, 1.0};     // PlaneCut/Fitting: duzlem normali;
+                                         // LineCut: cizginin cizildigi duzlemin
+                                         // normali (gorunum/is duzlemi).
+    bool keepPositive{true};             // PlaneCut/LineCut: normalin + tarafi korunur
+    std::vector<Vec3> polygon;           // PolygonCut: duzlemde cokgen (>=3 nokta);
+                                         // LineCut: {cizgiBas, cizgiSon} (2 nokta)
     EntityId tool{kInvalidEntityId};     // BooleanCut: diger parca
     bool enabled{true};
     std::string name;   // UTF-8 (kalicilikta taşınabilir; Qt QString::fromUtf8 ile)
@@ -71,6 +74,13 @@ std::optional<double> fittingTrimDistance(const Vec3& from, const Vec3& to,
 // nullopt doner — prototip kapsami yalniz kesen duzlemdir.
 std::optional<bool> fittingKeepPositive(const Vec3& axisFrom, const Vec3& axisTo,
                                         const Vec3& origin, const Vec3& normal) noexcept;
+// Line Cut (Tekla "cut with a line"): kesme duzlemi cizgiyi ICERIR ve cizginin
+// cizildigi (gorunum/is) duzlemine DIKTIR. Donus = kesme duzlemi normali (birim)
+// = normalize(cizgiYonu x referenceNormal). referenceNormal = cizginin cizildigi
+// duzlemin normali (aktif is duzlemi normali). Dejenere (cizgi ~0 veya cizgiYonu
+// ∥ referenceNormal) ise nullopt.
+std::optional<Vec3> lineCutPlaneNormal(const Vec3& from, const Vec3& to,
+                                       const Vec3& referenceNormal) noexcept;
 // Kose kumesinin duzleme gore taraf siniflandirmasi (PlaneCut on karari).
 std::vector<int> classifyVerticesAgainstPlane(const std::vector<Vec3>& vertices,
                                               const Vec3& origin, const Vec3& normal,

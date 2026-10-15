@@ -126,6 +126,18 @@ std::optional<bool> fittingKeepPositive(const Vec3& axisFrom, const Vec3& axisTo
     return sFrom > 0.0;
 }
 
+std::optional<Vec3> lineCutPlaneNormal(const Vec3& from, const Vec3& to,
+                                       const Vec3& referenceNormal) noexcept {
+    const auto dir = normalized(Vec3{to.x - from.x, to.y - from.y, to.z - from.z});
+    if (!dir) return std::nullopt;
+    const auto ref = normalized(referenceNormal);
+    if (!ref) return std::nullopt;
+    // Kesme duzlemi cizgiyi ICERIR ve cizginin cizildigi duzleme DIKTIR:
+    // normal = cizgiYonu x referenceNormal (ikisi de cizgi duzleminde oldugu
+    // icin carpim hem cizgiye hem referans normale dik = istenen duzlem).
+    return normalized(cross3(*dir, *ref));
+}
+
 std::vector<int> classifyVerticesAgainstPlane(const std::vector<Vec3>& vertices,
                                               const Vec3& origin, const Vec3& normal,
                                               double tol) noexcept {

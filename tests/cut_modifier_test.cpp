@@ -114,6 +114,26 @@ int main() {
         check(k7.has_value() && *k7 == true, "fitting: uc duzlemde uzun taraf korunur");
     }
 
+    // 6c) Line cut duzlem normali (Tekla "cut with a line").
+    {
+        // Y yonunde cizgi, XY duzleminde (ref +Z): kesme duzlemi normali = Y x Z = +X.
+        const auto n1 = lineCutPlaneNormal({0, 0, 0}, {0, 1, 0}, {0, 0, 1});
+        check(n1.has_value(), "line cut normali var");
+        if (n1) check(near3(*n1, {1, 0, 0}), "Y-cizgi +Z ref: normal +X");
+
+        // X yonunde cizgi, ref +Z: normal = X x Z = -Y.
+        const auto n2 = lineCutPlaneNormal({0, 0, 0}, {1, 0, 0}, {0, 0, 1});
+        if (n2) check(near3(*n2, {0, -1, 0}), "X-cizgi +Z ref: normal -Y");
+
+        // Dejenere cizgi (0 uzunluk) -> nullopt.
+        check(!lineCutPlaneNormal({2, 2, 2}, {2, 2, 2}, {0, 0, 1}).has_value(),
+              "dejenere cizgi nullopt");
+
+        // Cizgi yonu ∥ ref normal (Z cizgi + Z ref) -> nullopt.
+        check(!lineCutPlaneNormal({0, 0, 0}, {0, 0, 5}, {0, 0, 1}).has_value(),
+              "paralel (cizgi ∥ ref) nullopt");
+    }
+
     // 7) Kose siniflandirmasi (PlaneCut on karari).
     {
         const auto sides = classifyVerticesAgainstPlane(

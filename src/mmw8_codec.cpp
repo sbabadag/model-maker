@@ -535,7 +535,7 @@ void readMmw8(std::istream& in, Mmw8Document& doc) {
             for (std::uint64_t ci = 0; ci < count; ++ci) {
                 CutModifier mod;
                 const std::int64_t kind = readInt64(cs, "cut kind");
-                if (kind < 0 || kind > 3) fail("invalid cut kind");
+                if (kind < 0 || kind > 4) fail("invalid cut kind");
                 mod.kind = static_cast<CutKind>(kind);
                 mod.target = static_cast<EntityId>(readUint64(cs, "cut target"));
                 mod.planeOrigin.x = readDouble(cs, "cut origin x");

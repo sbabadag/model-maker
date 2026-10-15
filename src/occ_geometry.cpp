@@ -211,6 +211,40 @@ TopoDS_Shape cutSolidByPlane(const TopoDS_Shape& shape, const Vec3& planePoint,
     return unifier.Shape();
 }
 
+// PolygonCut (Tekla "cut with polygon"): kapali cokgen duzleminden bir prizma
+// olusturup (cokgen normali boyunca iki yonde, hedefi tamamen kaplayan kalinlik)
+// hedeften cikarir — through cut. Cokgen <3 nokta, dejenere (alan ~0) veya yuz
+// kurulamazsa base'i DOKUNMADAN dondurur (guvenli basarisizlik).
+static TopoDS_Shape cutSolidByPolygon(const TopoDS_Shape& base,
+                                      const std::vector<Vec3>& polygon) {
+    if (polygon.size() < 3) return base;
+    const auto n = polygonNormal(polygon);
+    if (!n) return base;
+    BRepBuilderAPI_MakePolygon builder;
+    for (const auto& p : polygon) builder.Add(gp_Pnt(p.x, p.y, p.z));
+    builder.Close();
+    if (!builder.IsDone()) return base;
+    const TopoDS_Face face = BRepBuilderAPI_MakeFace(builder.Wire()).Face();
+    if (face.IsNull()) return base;
+    Bnd_Box bb;
+    BRepBndLib::Add(base, bb);
+    double xMin = 0.0, yMin = 0.0, zMin = 0.0, xMax = 0.0, yMax = 0.0, zMax = 0.0;
+    bb.Get(xMin, yMin, zMin, xMax, yMax, zMax);
+    const double margin = std::max({xMax - xMin, yMax - yMin, zMax - zMin}) * 2.0 + 1.0;
+    // Yuzu cokgen duzleminde ortala: once -margin kaydir, sonra +2*margin
+    // extrude → prizma normal boyunca [-margin, +margin] araligini kaplar.
+    const gp_Vec normal(n->x, n->y, n->z);
+    gp_Trsf shift;
+    shift.SetTranslation(normal * (-margin));
+    BRepBuilderAPI_Transform moved(face, shift);
+    const TopoDS_Shape prism =
+        BRepPrimAPI_MakePrism(moved.Shape(), normal * (2.0 * margin)).Shape();
+    BRepAlgoAPI_Cut cut(base, prism);
+    ShapeUpgrade_UnifySameDomain unifier(cut.Shape(), true, true, true);
+    unifier.Build();
+    return unifier.Shape();
+}
+
 TopoDS_Shape applyCutModifier(const TopoDS_Shape& base, const CutModifier& mod,
                               const Vec3& axisFrom, const Vec3& axisTo) {
     (void)axisFrom;
@@ -227,10 +261,20 @@ TopoDS_Shape applyCutModifier(const TopoDS_Shape& base, const CutModifier& mod,
             if (!keep) return base;
             return cutSolidByPlane(base, mod.planeOrigin, mod.planeNormal, *keep);
         }
+        case CutKind::LineCut: {
+            // Tekla "cut with a line": cizgiyi iceren, cizgi duzlemine dik
+            // kesme duzlemi. polygon = {cizgiBas, cizgiSon}; planeNormal =
+            // cizginin cizildigi duzlemin normali. Taraf secimi keepPositive.
+            if (mod.polygon.size() < 2) return base;
+            const auto n = lineCutPlaneNormal(mod.polygon[0], mod.polygon[1],
+                                              mod.planeNormal);
+            if (!n) return base;
+            return cutSolidByPlane(base, mod.polygon[0], *n, mod.keepPositive);
+        }
         case CutKind::PolygonCut:
+            return cutSolidByPolygon(base, mod.polygon);
         case CutKind::BooleanCut:
-            // Sonraki fazlar (Line Cut / Polygon Cut / Part Cut). Semantik fark
-            // korunur: burada yalnizca desteklenen iki tur uygulanir.
+            // P3 Part Cut: arac katiyla fark (ayri resolver gerektirir).
             return base;
     }
     return base;
