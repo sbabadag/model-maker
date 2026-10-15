@@ -1,6 +1,7 @@
 #include "model_maker/component.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <utility>
 
 namespace mm {
@@ -107,6 +108,26 @@ std::optional<std::size_t> ComponentModel::mainPartIndex(std::size_t instanceInd
     return std::nullopt;
 }
 
+std::vector<EntityId> ComponentModel::partsOfInstance(std::size_t instanceIndex) const noexcept {
+    std::vector<EntityId> result;
+    if (instanceIndex >= instances_.size()) return result;
+    for (const auto& member : instances_[instanceIndex].members) {
+        if (member.partId == kInvalidEntityId) continue;
+        if (std::find(result.begin(), result.end(), member.partId) == result.end())
+            result.push_back(member.partId);
+    }
+    return result;
+}
+
+std::vector<std::size_t> ComponentModel::instancesUsingPart(EntityId partId) const noexcept {
+    std::vector<std::size_t> result;
+    if (partId == kInvalidEntityId) return result;
+    for (std::size_t i = 0; i < instances_.size(); ++i)
+        for (const auto& member : instances_[i].members)
+            if (member.partId == partId) { result.push_back(i); break; }
+    return result;
+}
+
 std::vector<std::size_t> ComponentModel::dirtyInstances() const noexcept {
     std::vector<std::size_t> result;
     for (std::size_t i = 0; i < instances_.size(); ++i)
@@ -122,6 +143,40 @@ std::size_t ComponentModel::recomputeDirty() noexcept {
         ++count;
     }
     return count;
+}
+
+ComponentDefinition makeEndPlateDefinition() noexcept {
+    ComponentDefinition def;
+    def.name = L"End Plate";
+    def.parameters = {L"plateThickness", L"plateWidth", L"plateHeight"};
+    return def;
+}
+
+const ComponentMember* endPlateMainPart(const ComponentInstance& instance) noexcept {
+    for (const auto& member : instance.members)
+        if (member.role == PartRole::Main && member.partId != kInvalidEntityId)
+            return &member;
+    return nullptr;
+}
+
+CutModifier endPlateFittingCutModifier(const ComponentInstance& instance,
+                                       const Vec3& axisFrom, const Vec3& axisTo) noexcept {
+    CutModifier mod;
+    mod.kind = CutKind::Fitting;
+    mod.name = "End Plate Fitting";
+    mod.enabled = true;
+    const auto* main = endPlateMainPart(instance);
+    if (main) mod.target = main->partId;
+    const double dx = axisTo.x - axisFrom.x;
+    const double dy = axisTo.y - axisFrom.y;
+    const double dz = axisTo.z - axisFrom.z;
+    const double len = std::sqrt(dx * dx + dy * dy + dz * dz);
+    Vec3 dir{1.0, 0.0, 0.0};
+    if (len > 1e-9) dir = {dx / len, dy / len, dz / len};
+    mod.planeNormal = dir;
+    mod.planeOrigin = axisTo;  // ana part ucu; plaka disa dogru uzanir
+    mod.keepPositive = true;   // Fitting tarafi otomatik; bu alan yok sayilir
+    return mod;
 }
 
 } // namespace mm

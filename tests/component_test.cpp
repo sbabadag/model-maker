@@ -101,6 +101,55 @@ int main() {
         check(m2.dirtyInstances().empty(), "hepsi temiz");
     }
 
+    // 9) Parca bagimlilik grafi.
+    {
+        ComponentModel m3;
+        ComponentDefinition d;
+        d.name = L"B"; d.parameters = {L"p"};
+        m3.addDefinition(d);
+        ComponentMember m; m.role = PartRole::Main; m.partId = EntityId{200};
+        ComponentMember s; s.role = PartRole::Secondary; s.partId = EntityId{201};
+        const std::size_t i = m3.addInstance(L"B", {{L"p", 1.0}}, {0, 0, 0}, {m, s});
+        const auto parts = m3.partsOfInstance(i);
+        check(parts.size() == 2 && parts[0] == 200 && parts[1] == 201,
+              "partsOfInstance: main+secondary");
+        const auto users = m3.instancesUsingPart(EntityId{201});
+        check(users.size() == 1 && users[0] == i, "instancesUsingPart: 1 instance");
+        check(m3.instancesUsingPart(EntityId{999}).empty(), "kullanilmayan parca -> bos");
+    }
+
+    // 10) End Plate komponenti: tanim + CutModifier uretimi.
+    {
+        const ComponentDefinition def = makeEndPlateDefinition();
+        check(def.name == L"End Plate", "End Plate tanim adi");
+        check(def.parameters.size() == 3 && def.parameters[0] == L"plateThickness" &&
+                  def.parameters[1] == L"plateWidth" && def.parameters[2] == L"plateHeight",
+              "End Plate 3 parametre");
+
+        ComponentInstance inst;
+        inst.definition = L"End Plate";
+        inst.values = {{L"plateThickness", 20.0}, {L"plateWidth", 300.0}, {L"plateHeight", 350.0}};
+        ComponentMember main;
+        main.role = PartRole::Main;
+        main.partId = EntityId{200};
+        inst.members = {main};
+
+        const auto* mp = endPlateMainPart(inst);
+        check(mp != nullptr && mp->partId == 200, "endPlateMainPart bulur");
+
+        const Vec3 from{0, 0, 0};
+        const Vec3 to{1000, 0, 0};
+        const CutModifier fit = endPlateFittingCutModifier(inst, from, to);
+        check(fit.kind == CutKind::Fitting, "End Plate fitting turu");
+        check(fit.target == 200, "End Plate fitting hedefi = ana part");
+        check(near3(fit.planeNormal, {1, 0, 0}), "eksen normali +X");
+        check(near3(fit.planeOrigin, {1000, 0, 0}), "duzlem ana part ucunda (axisTo)");
+
+        // Dejenere eksen (from==to): normal +X varsayilir.
+        const CutModifier deg = endPlateFittingCutModifier(inst, {5, 5, 5}, {5, 5, 5});
+        check(near3(deg.planeNormal, {1, 0, 0}), "dejenere eksen -> normal +X");
+    }
+
     std::printf("%s\n", failures == 0 ? "ALL PASS" : "SOME FAILED");
     return failures == 0 ? 0 : 1;
 }

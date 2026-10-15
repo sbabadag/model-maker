@@ -14,6 +14,7 @@
 // Saf veri modeli + bagimlilik (windows.h yok) — Linux'ta derlenir/test edilir.
 // Gercek geometri yeniden uretimi (parametre -> B-Rep) OCC katmaninda cagrilir.
 
+#include "model_maker/cut_modifier.hpp"
 #include "model_maker/entity_id.hpp"
 #include "model_maker/geometry.hpp"
 
@@ -81,6 +82,13 @@ public:
     // Main part: Main rolundeki uye indeksi; yoksa nullopt.
     std::optional<std::size_t> mainPartIndex(std::size_t instanceIndex) const noexcept;
 
+    // --- PARCA BAGIMLILIK GRAFI (P4) --------------------------------------
+    // Instance'in referans verdigi parcalar (main + secondary partId'leri,
+    // eklenme sirasinda; kInvalidEntityId atlanir, tekrar yok).
+    std::vector<EntityId> partsOfInstance(std::size_t instanceIndex) const noexcept;
+    // Bir parcayi referanslayan instance INDEKSLERI (belge sirasinda).
+    std::vector<std::size_t> instancesUsingPart(EntityId partId) const noexcept;
+
     // --- Bagimlilik + yeniden hesaplama ---
     // Kirlenmis instance'larin indeksleri.
     std::vector<std::size_t> dirtyInstances() const noexcept;
@@ -94,5 +102,27 @@ private:
     // Instance'i tanima gore yeniden hizalar; dirty=false, orphan guncellenir.
     void realignInstance(ComponentInstance& instance) noexcept;
 };
+
+// --- END PLATE COMPONENT (P4 ornegi) ---------------------------------------
+// Ana part (kiriş/kolon) ucuna dik uygulanan parametrik uç plaka komponenti.
+// Bu islevler SAF VERI uretir (B-Rep YOK); gercek plaka geometrisi ve kesme
+// OCC/app katmaninda bu kayitlardan uretilir. Amac: "component icinden
+// CutModifier olusturma" yolunu ve parametre tablosunu orneklemek.
+
+// Standart tanim: plateThickness, plateWidth, plateHeight (sira onemli).
+ComponentDefinition makeEndPlateDefinition() noexcept;
+
+// Instance'in ana part uyesi (Main rolunde, gecerli partId); yoksa nullptr.
+const ComponentMember* endPlateMainPart(const ComponentInstance& instance) noexcept;
+
+// End plate komponentinin ana part UCU icin urettigi Fitting CutModifier:
+// duzlem = axisTo (ana part ucu), normal = eksen yonu (normalize(axisTo-axisFrom)).
+// Bu, ana part ucunu eksenine DIK hale getirir (Tekla fitting); kare ucta no-op,
+// egik ucta cikintiyi keser. plateThickness parametresi plakanin KENDI geometrisi
+// icindir (OCC katmani uretir), fitting duzlemini etkilemez. Hedef = ana part
+// partId (kimlik korunur). Dejenere eksen (from==to) icin normal +X varsayilir,
+// hedef yine ana part. Fitting tarafi otomatiktir (keepPositive yok sayilir).
+CutModifier endPlateFittingCutModifier(const ComponentInstance& instance,
+                                       const Vec3& axisFrom, const Vec3& axisTo) noexcept;
 
 } // namespace mm
