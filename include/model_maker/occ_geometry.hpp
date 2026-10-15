@@ -7,6 +7,7 @@
 #include <TopoDS_Shape.hxx>
 
 #include <filesystem>
+#include <functional>
 
 namespace mm {
 
@@ -36,20 +37,26 @@ TopoDS_Shape cutSolidByPlane(const TopoDS_Shape& shape, const Vec3& planePoint,
                              const Vec3& planeNormal, bool keepPositive);
 
 // --- Tekla tarzi KESME MODIFIER uygulamasi (Phase 4.2) ----------------------
+// BooleanCut (Part Cut) icin arac sekli cozumleyici: EntityId -> aracin B-Rep
+// sekli (yoksa nullptr). Uygulama katmani bunu OccSolidStore'a baglar.
+using ToolShapeResolver = std::function<const TopoDS_Shape*(EntityId)>;
 // Bir CutModifier kaydini B-Rep katiya uygular. SONUC YENI sekildir; girdi
 // (base) DEGISMEZ (immutabilite kurali). axisFrom/axisTo = hedef parcanin
 // profil ekseni — Fitting'in "kisa tarafi otomatik at" karari icin gerekli.
 // Desteklenen turler: PlaneCut (keepPositive) + Fitting (otomatik taraf) +
 // LineCut (cizgi duzlemi, keepPositive) + PolygonCut (cokgen prizmasi, through
-// cut). BooleanCut sonraki faz (arac kati ayri resolver gerektirir); base'i
-// DOKUNMADAN dondurur.
+// cut) + BooleanCut (Part Cut: hedeften arac kati cikarilir). BooleanCut icin
+// `toolShape` resolver'i gerekir (aracin B-Rep sekli); verilmezse base DONER.
+// axisFrom/axisTo = hedef parcanin profil ekseni (Fitting karari icin).
 TopoDS_Shape applyCutModifier(const TopoDS_Shape& base, const CutModifier& mod,
-                              const Vec3& axisFrom, const Vec3& axisTo);
+                              const Vec3& axisFrom, const Vec3& axisTo,
+                              const ToolShapeResolver& toolShape = nullptr);
 // Ayni varligin tum ETKIN modifier'larini SIRA ILE uygular (zincir; birden fazla
 // kesme sirali uygulanabilir). mods bos/etkin-degil ise base aynen doner.
 TopoDS_Shape applyCutModifierChain(const TopoDS_Shape& base,
                                    const std::vector<CutModifier>& mods,
-                                   const Vec3& axisFrom, const Vec3& axisTo);
+                                   const Vec3& axisFrom, const Vec3& axisTo,
+                                   const ToolShapeResolver& toolShape = nullptr);
 
 // Profil kesitini (SteelProfile) from->to ekseni boyunca extrude eder.
 // KKR/box profiller icin ici bos kutu; digerleri icin dolu dikdortgen.

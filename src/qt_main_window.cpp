@@ -629,6 +629,9 @@ void QtMainWindow::createMenus() {
         [this]() { app_.startLineCutCommand(); });
     constructionMenu->addAction("&Polygon Cut (3DFACE)", this,
         [this]() { app_.startPolygonCutCommand(); });
+    // --- KESME (P3): Part Cut (parca ile kesme). Noun-verb: hedef + kesici parca.
+    constructionMenu->addAction("&Part Cut (Parça)", this,
+        [this]() { app_.startPartCutCommand(); });
     viewMenu->addSeparator();
     // --- P1 UCS/VIEW: UCS'ye dik gorus + global duzlemler + adlandirilmis
     // gorusler (Tekla "view to UCS / plan of UCS"). Mevcut calisma duzlemi

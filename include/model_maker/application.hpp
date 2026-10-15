@@ -258,6 +258,10 @@ public:
     // = true). PolygonCut: face3D (4 kose -> cokgen). OCC varsa yeniden hesaplar.
     void startLineCutCommand();
     void startPolygonCutCommand();
+    // TEKLA PART CUT (P3, noun-verb): secili TAM 2 model (hedef + kesici parca)
+    // uzerinden BooleanCut CutModifier olusturur; hedef kimligi korunur, kesici
+    // parca tasindiginda hedef yeniden hesaplanir (recomputeCutTarget).
+    void startPartCutCommand();
     // IKI NOKTALI GORUNUS (Tekla): iki nokta secilir (snap/track aktif);
     // ikinci noktada ViewDefinition uretilip twoPointViewCallback_ cagrilir
     // (Qt yeni MDI penceresi acar). Esc/sag tik iptal.
@@ -369,6 +373,9 @@ private:
     // Line Cut / Polygon Cut ortak yolu: secili (profil hedefi + sinir objesi)
     // -> CutModifier -> addCutModifier/setCutModifier -> recomputeCutTarget.
     void applyBoundaryCutFromSelection(CutKind kind);
+    // Part Cut ortak yolu: secili (hedef + kesici parca) -> BooleanCut
+    // CutModifier -> addCutModifier -> recomputeCutTarget.
+    void applyPartCutFromSelection();
     // Secili TEK parcanin (profil uyesi) eksen cercevesi + eksen orijini.
     std::optional<Ucs> selectedPartFrame(Vec3& axisOrigin) const;
 

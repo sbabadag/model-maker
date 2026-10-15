@@ -3466,6 +3466,51 @@ void Application::startLineCutCommand() { applyBoundaryCutFromSelection(CutKind:
 
 void Application::startPolygonCutCommand() { applyBoundaryCutFromSelection(CutKind::PolygonCut); }
 
+void Application::applyPartCutFromSelection() {
+    // Noun-verb (P3): secili kume icinde TAM 2 model — hedef (ilk secilen) +
+    // kesici parca (ikinci secilen). Tekla: once hedef, sonra kesici secilir.
+    // Ikisi de normal (konstrüksiyon olmayan) model olmali.
+    if (selectedModels_.size() != 2) {
+        MessageBeep(MB_ICONWARNING);
+        publishStatus(L"Part Cut: hedef parcayi VE kesici parcayi secin (tam 2 secim)");
+        return;
+    }
+    const std::size_t targetIdx = selectedModels_[0];
+    const std::size_t toolIdx = selectedModels_[1];
+    if (targetIdx >= document_.models().size() || toolIdx >= document_.models().size()) {
+        MessageBeep(MB_ICONWARNING);
+        return;
+    }
+    const auto& targetModel = document_.models()[targetIdx];
+    const auto& toolModel = document_.models()[toolIdx];
+    if (targetModel.constructionKind() != ConstructionKind::None ||
+        toolModel.constructionKind() != ConstructionKind::None) {
+        MessageBeep(MB_ICONWARNING);
+        publishStatus(L"Part Cut: hedef ve kesici parca normal model olmali (konstrüksiyon degil)");
+        return;
+    }
+    CutModifier modifier;
+    modifier.kind = CutKind::BooleanCut;
+    modifier.target = document_.modelId(targetIdx);
+    modifier.tool = document_.modelId(toolIdx);
+    modifier.enabled = true;
+    modifier.name = "Part Cut";
+    // Part Cut da COKLUDUR (bir parcada birden fazla kesici olabilir) -> ekle.
+    pushUndoSnapshot();
+    document_.addCutModifier(modifier);
+#ifdef MM_HAS_OCC
+    recomputeCutTarget(modifier.target);
+#endif
+    selectedModels_.clear();
+    selectionFirstCorner_.reset();
+    updateHover(cursorScreen_.x, cursorScreen_.y);
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
+}
+
+void Application::startPartCutCommand() { applyPartCutFromSelection(); }
+
 void Application::startTwoPointViewCommand() {
     startWorkPlaneCommand(); // ayni secim akisi: snap + track + kesik onizleme
     pointPickPurpose_ = PointPickPurpose::TwoPointView;
@@ -5410,7 +5455,13 @@ void Application::recomputeCutTarget(EntityId target) {
     for (const std::size_t ci : document_.cutModifiersForTarget(target))
         mods.push_back(document_.cutModifiers()[ci]);
 
-    const TopoDS_Shape result = mm::applyCutModifierChain(*baseShape, mods, axisFrom, axisTo);
+    // Arac (kesici parca) cozumleyici: BooleanCut icin aracin ETKIN sekli.
+    // Store uzerinden kimlige gore bakilir; yoksa applyCutModifier base doner.
+    const mm::ToolShapeResolver resolveTool = [&](EntityId id) -> const TopoDS_Shape* {
+        return store->find(id);
+    };
+    const TopoDS_Shape result =
+        mm::applyCutModifierChain(*baseShape, mods, axisFrom, axisTo, resolveTool);
     putOccSolid(index, result);
 }
 

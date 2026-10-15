@@ -263,7 +263,8 @@ static TopoDS_Shape cutSolidByPolygon(const TopoDS_Shape& base,
 }
 
 TopoDS_Shape applyCutModifier(const TopoDS_Shape& base, const CutModifier& mod,
-                              const Vec3& axisFrom, const Vec3& axisTo) {
+                              const Vec3& axisFrom, const Vec3& axisTo,
+                              const ToolShapeResolver& toolShape) {
     (void)axisFrom;
     (void)axisTo;
     switch (mod.kind) {
@@ -290,20 +291,27 @@ TopoDS_Shape applyCutModifier(const TopoDS_Shape& base, const CutModifier& mod,
         }
         case CutKind::PolygonCut:
             return cutSolidByPolygon(base, mod.polygon);
-        case CutKind::BooleanCut:
-            // P3 Part Cut: arac katiyla fark (ayri resolver gerektirir).
-            return base;
+        case CutKind::BooleanCut: {
+            // P3 Part Cut (Tekla "cut with a part"): hedeften arac kati cikarilir
+            // (Boolean difference). Arac sekli resolver'dan cozumlenir; yoksa
+            // (veya gecersizse) base'e DOKUNULMAZ.
+            if (!toolShape) return base;
+            const TopoDS_Shape* tool = toolShape(mod.tool);
+            if (!tool || tool->IsNull()) return base;
+            return booleanCutShape(base, *tool);
+        }
     }
     return base;
 }
 
 TopoDS_Shape applyCutModifierChain(const TopoDS_Shape& base,
                                    const std::vector<CutModifier>& mods,
-                                   const Vec3& axisFrom, const Vec3& axisTo) {
+                                   const Vec3& axisFrom, const Vec3& axisTo,
+                                   const ToolShapeResolver& toolShape) {
     TopoDS_Shape result = base;
     for (const auto& mod : mods) {
         if (!mod.enabled) continue;
-        result = applyCutModifier(result, mod, axisFrom, axisTo);
+        result = applyCutModifier(result, mod, axisFrom, axisTo, toolShape);
     }
     return result;
 }
