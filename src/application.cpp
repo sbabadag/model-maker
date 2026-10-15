@@ -5193,6 +5193,40 @@ void Application::putOccSolid(std::size_t index, const TopoDS_Shape& shape) {
     }
 }
 
+// Kesme modifier'larini hedef parcaya yeniden uygular (Phase 4.2 recompute).
+// Taban (pre-cut) B-Rep'ten baslar, tum ETKIN modifier'lari SIRA ILE uygular
+// ve sonucu YENI bir surum olarak yazar (putOccSolid -> geometry delta + undo).
+// Taban yoksa GUVENLI kurulur (lazy: etkin surum taban olur — ilk kesim onceki
+// hali). Basarisizlikta (magaza yok / taban geometri yok / varlik yok) mevcut
+// GECERLI geometri DEGISMEZ.
+void Application::recomputeCutTarget(EntityId target) {
+    OccSolidStore* store = occSolidStore();
+    if (!store) return;
+    const auto idxOpt = document_.indexOfEntity(target);
+    if (!idxOpt) return;
+    const std::size_t index = *idxOpt;
+
+    VersionId base = store->baseVersion(target);
+    if (base == kInvalidVersionId) {
+        base = store->activeVersion(target);
+        if (base == kInvalidVersionId) return;  // geometri yok
+        store->setBaseVersion(target, base);
+    }
+    const TopoDS_Shape* baseShape = store->findVersion(target, base);
+    if (!baseShape) return;
+
+    const EntityProperties& props = document_.models()[index].properties();
+    const Vec3 axisFrom{props.axisFromX, props.axisFromY, props.axisFromZ};
+    const Vec3 axisTo{props.axisToX, props.axisToY, props.axisToZ};
+
+    std::vector<CutModifier> mods;
+    for (const std::size_t ci : document_.cutModifiersForTarget(target))
+        mods.push_back(document_.cutModifiers()[ci]);
+
+    const TopoDS_Shape result = mm::applyCutModifierChain(*baseShape, mods, axisFrom, axisTo);
+    putOccSolid(index, result);
+}
+
 std::size_t Application::occSolidCount() const noexcept {
     const auto* store = occSolidStore();
     return store ? store->size() : 0u;

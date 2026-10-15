@@ -406,6 +406,9 @@ private:
     void addBooleanFuse();
     void addBooleanCommon();
     void addBooleanCut();
+    // Kesme modifier'larini hedef parcaya yeniden uygular (Phase 4.2 recompute):
+    // taban (pre-cut) B-Rep'ten tum etkin modifier'lari sirasiyla uygular.
+    void recomputeCutTarget(EntityId target);
 #endif
     void saveOptions();
     void loadOptions();
