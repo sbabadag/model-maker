@@ -252,6 +252,12 @@ public:
     // otomatik, PlaneCut keepPositive=true. OCC varsa hedefi yeniden hesaplar.
     void startFittingCommand();
     void startPlaneCutCommand();
+    // TEKLA LINE CUT / POLYGON CUT (P2, noun-verb): secili (1 profil hedefi +
+    // 1 sinir objesi) uzerinden CutModifier olusturur. LineCut: 2 koseli cizgi
+    // (polygon = {bas,son}, planeNormal = aktif is duzlemi normali, keepPositive
+    // = true). PolygonCut: face3D (4 kose -> cokgen). OCC varsa yeniden hesaplar.
+    void startLineCutCommand();
+    void startPolygonCutCommand();
     // IKI NOKTALI GORUNUS (Tekla): iki nokta secilir (snap/track aktif);
     // ikinci noktada ViewDefinition uretilip twoPointViewCallback_ cagrilir
     // (Qt yeni MDI penceresi acar). Esc/sag tik iptal.
@@ -360,6 +366,9 @@ private:
     // Fitting/PlaneCut ortak yolu: secili (profil hedefi + konstrüksiyon
     // duzlemi) -> CutModifier -> addCutModifier -> (OCC) recomputeCutTarget.
     void applyCutFromSelection(CutKind kind);
+    // Line Cut / Polygon Cut ortak yolu: secili (profil hedefi + sinir objesi)
+    // -> CutModifier -> addCutModifier/setCutModifier -> recomputeCutTarget.
+    void applyBoundaryCutFromSelection(CutKind kind);
     // Secili TEK parcanin (profil uyesi) eksen cercevesi + eksen orijini.
     std::optional<Ucs> selectedPartFrame(Vec3& axisOrigin) const;
 

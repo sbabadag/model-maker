@@ -788,6 +788,42 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         for (std::size_t ci = 0; ci < document.cutModifiers().size(); ++ci) {
             const auto& mod = document.cutModifiers()[ci];
             if (!mod.enabled) continue;
+            // PolygonCut: cokgen siniri kesikli cizgiyle (kesme rengi).
+            if (mod.kind == CutKind::PolygonCut) {
+                const auto& poly = mod.polygon;
+                if (poly.size() < 3) continue;
+                HPEN polyPen = CreatePen(PS_DOT, 1, kCutRgb);
+                SelectObject(dc, polyPen);
+                for (std::size_t i = 0; i < poly.size(); ++i) {
+                    const POINT a = projectPoint(poly[i]);
+                    const POINT b = projectPoint(poly[(i + 1) % poly.size()]);
+                    line(dc, a.x, a.y, b.x, b.y);
+                }
+                SelectObject(dc, stockPen);
+                DeleteObject(polyPen);
+                ++performance.renderedEntities;
+                continue;
+            }
+            // LineCut: cizgi + kesme duzlemi normali oku.
+            if (mod.kind == CutKind::LineCut) {
+                const auto& poly = mod.polygon;
+                if (poly.size() < 2) continue;
+                HPEN linePen = CreatePen(PS_DOT, 1, kCutRgb);
+                SelectObject(dc, linePen);
+                const POINT a = projectPoint(poly[0]);
+                const POINT b = projectPoint(poly[1]);
+                line(dc, a.x, a.y, b.x, b.y);
+                const auto ln = lineCutPlaneNormal(poly[0], poly[1], mod.planeNormal);
+                if (ln) {
+                    const POINT c = projectPoint(poly[0]);
+                    const POINT d = projectPoint(poly[0] + *ln * 500.0);
+                    line(dc, c.x, c.y, d.x, d.y);
+                }
+                SelectObject(dc, stockPen);
+                DeleteObject(linePen);
+                ++performance.renderedEntities;
+                continue;
+            }
             if (mod.kind != CutKind::PlaneCut && mod.kind != CutKind::Fitting) continue;
             const double nl = std::hypot(mod.planeNormal.x, mod.planeNormal.y, mod.planeNormal.z);
             if (!(nl > 1e-9)) continue;

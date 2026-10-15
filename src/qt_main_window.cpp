@@ -623,6 +623,12 @@ void QtMainWindow::createMenus() {
         [this]() { app_.startFittingCommand(); });
     constructionMenu->addAction("&Plane Cut", this,
         [this]() { app_.startPlaneCutCommand(); });
+    // --- KESME (P2): Line Cut (cizgi) + Polygon Cut (3DFACE). Noun-verb: secili
+    // profil hedefi + sinir objesi (cizgi / 3DFACE) -> CutModifier.
+    constructionMenu->addAction("&Line Cut (Çizgi)", this,
+        [this]() { app_.startLineCutCommand(); });
+    constructionMenu->addAction("&Polygon Cut (3DFACE)", this,
+        [this]() { app_.startPolygonCutCommand(); });
     viewMenu->addSeparator();
     // --- P1 UCS/VIEW: UCS'ye dik gorus + global duzlemler + adlandirilmis
     // gorusler (Tekla "view to UCS / plan of UCS"). Mevcut calisma duzlemi

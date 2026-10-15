@@ -3396,6 +3396,74 @@ void Application::startFittingCommand() { applyCutFromSelection(CutKind::Fitting
 
 void Application::startPlaneCutCommand() { applyCutFromSelection(CutKind::PlaneCut); }
 
+void Application::applyBoundaryCutFromSelection(CutKind kind) {
+    // Noun-verb (P2): secili kume icinde BIR profil hedefi + BIR sinir objesi
+    // aranir. LineCut: 2 koseli cizgi modeli (polygon = {bas,son}, planeNormal =
+    // aktif is duzlemi normali). PolygonCut: face3D modeli (polygon = koseler).
+    std::optional<std::size_t> targetIdx;
+    std::optional<std::size_t> boundaryIdx;
+    for (const auto index : selectedModels_) {
+        if (index >= document_.models().size()) continue;
+        const auto& model = document_.models()[index];
+        const bool isProfile = model.constructionKind() == ConstructionKind::None &&
+                               !model.properties().profileName.empty();
+        if (isProfile && !targetIdx) { targetIdx = index; continue; }
+        if (!targetIdx || boundaryIdx) continue;
+        if (kind == CutKind::PolygonCut) {
+            if (model.isFace3D() && model.vertices().size() >= 3) boundaryIdx = index;
+        } else {
+            if (model.vertices().size() == 2 && !model.isFace3D()) boundaryIdx = index;
+        }
+    }
+    if (!targetIdx || !boundaryIdx) {
+        MessageBeep(MB_ICONWARNING);
+        publishStatus(kind == CutKind::PolygonCut
+                          ? L"Polygon Cut: bir profil hedefi VE bir 3DFACE (4 köşe) seçin"
+                          : L"Line Cut: bir profil hedefi VE bir çizgi (2 nokta) seçin");
+        return;
+    }
+    const auto& boundary = document_.models()[*boundaryIdx];
+    CutModifier modifier;
+    modifier.kind = kind;
+    modifier.target = document_.modelId(*targetIdx);
+    modifier.enabled = true;
+    if (kind == CutKind::PolygonCut) {
+        modifier.polygon = boundary.vertices();
+        if (modifier.polygon.size() < 3) { MessageBeep(MB_ICONWARNING); return; }
+        modifier.name = "Polygon Cut";
+    } else {
+        const auto& v = boundary.vertices();
+        if (v.size() < 2) { MessageBeep(MB_ICONWARNING); return; }
+        modifier.polygon = {v[0], v[1]};
+        modifier.planeOrigin = v[0];
+        modifier.planeNormal = workPlane_.normal;  // cizginin cizildigi duzlem
+        modifier.keepPositive = true;              // taraf secimi sonraki faz
+        modifier.name = "Line Cut";
+    }
+    // Tekla semantigi: ayni hedefte ayni turden mevcut modifier EZILIR.
+    pushUndoSnapshot();
+    std::optional<std::size_t> existing;
+    for (std::size_t ci = 0; ci < document_.cutModifiers().size(); ++ci) {
+        const auto& m = document_.cutModifiers()[ci];
+        if (m.kind == kind && m.target == modifier.target) { existing = ci; break; }
+    }
+    if (existing) document_.setCutModifier(*existing, modifier);
+    else document_.addCutModifier(modifier);
+#ifdef MM_HAS_OCC
+    recomputeCutTarget(modifier.target);
+#endif
+    selectedModels_.clear();
+    selectionFirstCorner_.reset();
+    updateHover(cursorScreen_.x, cursorScreen_.y);
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
+}
+
+void Application::startLineCutCommand() { applyBoundaryCutFromSelection(CutKind::LineCut); }
+
+void Application::startPolygonCutCommand() { applyBoundaryCutFromSelection(CutKind::PolygonCut); }
+
 void Application::startTwoPointViewCommand() {
     startWorkPlaneCommand(); // ayni secim akisi: snap + track + kesik onizleme
     pointPickPurpose_ = PointPickPurpose::TwoPointView;
