@@ -1,5 +1,6 @@
 #pragma once
 #ifdef MM_HAS_OCC
+#include "model_maker/cut_modifier.hpp"
 #include "model_maker/geometry.hpp"
 #include "model_maker/profile_database.hpp"
 
@@ -33,6 +34,20 @@ WireframeModel shapeToWireframe(const TopoDS_Shape& shape, int circleSegments = 
 // tanimlanan duzlemin keepPositive tarafindaki tarafi birakir.
 TopoDS_Shape cutSolidByPlane(const TopoDS_Shape& shape, const Vec3& planePoint,
                              const Vec3& planeNormal, bool keepPositive);
+
+// --- Tekla tarzi KESME MODIFIER uygulamasi (Phase 4.2) ----------------------
+// Bir CutModifier kaydini B-Rep katiya uygular. SONUC YENI sekildir; girdi
+// (base) DEGISMEZ (immutabilite kurali). axisFrom/axisTo = hedef parcanin
+// profil ekseni — Fitting'in "kisa tarafi otomatik at" karari icin gerekli.
+// Desteklenen turler: PlaneCut (keepPositive) + Fitting (otomatik taraf).
+// PolygonCut / BooleanCut sonraki fazlarda; simdilik base'i DOKUNMADAN dondurur.
+TopoDS_Shape applyCutModifier(const TopoDS_Shape& base, const CutModifier& mod,
+                              const Vec3& axisFrom, const Vec3& axisTo);
+// Ayni varligin tum ETKIN modifier'larini SIRA ILE uygular (zincir; birden fazla
+// kesme sirali uygulanabilir). mods bos/etkin-degil ise base aynen doner.
+TopoDS_Shape applyCutModifierChain(const TopoDS_Shape& base,
+                                   const std::vector<CutModifier>& mods,
+                                   const Vec3& axisFrom, const Vec3& axisTo);
 
 // Profil kesitini (SteelProfile) from->to ekseni boyunca extrude eder.
 // KKR/box profiller icin ici bos kutu; digerleri icin dolu dikdortgen.

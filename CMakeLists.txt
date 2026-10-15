@@ -544,6 +544,18 @@ if(BUILD_TESTING)
             set_tests_properties(model_maker_occ_brep_serialize_test PROPERTIES
                 ENVIRONMENT "LD_LIBRARY_PATH=${OCC_ROOT}/lib:$ENV{LD_LIBRARY_PATH}")
         endif()
+
+        # KESME MODIFIER uygulamasi (Phase 4.2): Fitting "kisa taraf otomatik
+        # atilir" + PlaneCut keepPositive + coklu modifier zinciri + base
+        # immutabilitesi (gercek OCCT). Linux'ta OCC-disabled build'de kurulmaz;
+        # orada tests/occ_cut_probe.cpp basligindaki g++ komutuyla ayri kosulur.
+        add_executable(model_maker_occ_cut_probe tests/occ_cut_probe.cpp)
+        target_link_libraries(model_maker_occ_cut_probe PRIVATE model_maker_occ)
+        add_test(NAME model_maker_occ_cut_probe COMMAND model_maker_occ_cut_probe)
+        if(UNIX)
+            set_tests_properties(model_maker_occ_cut_probe PROPERTIES
+                ENVIRONMENT "LD_LIBRARY_PATH=${OCC_ROOT}/lib:$ENV{LD_LIBRARY_PATH}")
+        endif()
     endif()
 
     # OCC SAHIPLIK REGRESYON HARNESS'I (kaynak-govde cikarimi + GERCEK OCCT).

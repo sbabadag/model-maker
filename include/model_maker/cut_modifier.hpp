@@ -62,6 +62,15 @@ std::optional<Vec3> segmentPlaneIntersection(const Vec3& a, const Vec3& b,
 // from'dan kesisime olan mesafe (0..1 orani degil, mm cinsinden uzunluk).
 std::optional<double> fittingTrimDistance(const Vec3& from, const Vec3& to,
                                           const Vec3& origin, const Vec3& normal) noexcept;
+// Fitting (uc kesme) — Tekla "Fit part end" OTOMATIK taraf secimi.
+// Parca ekseni [axisFrom, axisTo] duzlemi KESIYORSA kisa taraf kesilir:
+// eksenin iki ucunun duzleme isaretli uzakligindan UZUN olan taraf korunur,
+// kisa olan kaldirilir. Donus, cutSolidByPlane'a verilecek keepPositive
+// degeridir (korunan taraf normalin hangi yonunde). Duzlem ekseni KESMIYORSA
+// (iki uc ayni tarafta = uzatma durumu; veya eksen duzleme yatik/uzerinde)
+// nullopt doner — prototip kapsami yalniz kesen duzlemdir.
+std::optional<bool> fittingKeepPositive(const Vec3& axisFrom, const Vec3& axisTo,
+                                        const Vec3& origin, const Vec3& normal) noexcept;
 // Kose kumesinin duzleme gore taraf siniflandirmasi (PlaneCut on karari).
 std::vector<int> classifyVerticesAgainstPlane(const std::vector<Vec3>& vertices,
                                               const Vec3& origin, const Vec3& normal,

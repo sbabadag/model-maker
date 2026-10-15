@@ -211,6 +211,42 @@ TopoDS_Shape cutSolidByPlane(const TopoDS_Shape& shape, const Vec3& planePoint,
     return unifier.Shape();
 }
 
+TopoDS_Shape applyCutModifier(const TopoDS_Shape& base, const CutModifier& mod,
+                              const Vec3& axisFrom, const Vec3& axisTo) {
+    (void)axisFrom;
+    (void)axisTo;
+    switch (mod.kind) {
+        case CutKind::PlaneCut:
+            return cutSolidByPlane(base, mod.planeOrigin, mod.planeNormal, mod.keepPositive);
+        case CutKind::Fitting: {
+            // Tekla "Fit part end": kisa taraf otomatik atilir (uzun taraf
+            // korunur). Uzatma/kisaltma durumu (duzlem ekseni kesmiyorsa)
+            // prototip kapsami disi — base'e dokunma.
+            const auto keep = fittingKeepPositive(axisFrom, axisTo, mod.planeOrigin,
+                                                  mod.planeNormal);
+            if (!keep) return base;
+            return cutSolidByPlane(base, mod.planeOrigin, mod.planeNormal, *keep);
+        }
+        case CutKind::PolygonCut:
+        case CutKind::BooleanCut:
+            // Sonraki fazlar (Line Cut / Polygon Cut / Part Cut). Semantik fark
+            // korunur: burada yalnizca desteklenen iki tur uygulanir.
+            return base;
+    }
+    return base;
+}
+
+TopoDS_Shape applyCutModifierChain(const TopoDS_Shape& base,
+                                   const std::vector<CutModifier>& mods,
+                                   const Vec3& axisFrom, const Vec3& axisTo) {
+    TopoDS_Shape result = base;
+    for (const auto& mod : mods) {
+        if (!mod.enabled) continue;
+        result = applyCutModifier(result, mod, axisFrom, axisTo);
+    }
+    return result;
+}
+
 TopoDS_Shape extrudeProfileSolid(const SteelProfile& profile, const Vec3& from,
                                      const Vec3& to, double rotationDegrees,
                                      const Vec3& referenceNormal) {

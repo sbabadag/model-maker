@@ -109,6 +109,23 @@ std::optional<double> fittingTrimDistance(const Vec3& from, const Vec3& to,
     return length3(Vec3{hit->x - from.x, hit->y - from.y, hit->z - from.z});
 }
 
+std::optional<bool> fittingKeepPositive(const Vec3& axisFrom, const Vec3& axisTo,
+                                        const Vec3& origin, const Vec3& normal) noexcept {
+    const double sFrom = signedDistanceToPlane(origin, normal, axisFrom);
+    const double sTo = signedDistanceToPlane(origin, normal, axisTo);
+    constexpr double tol = 1e-9;
+    // Iki uc da duzleme yatik (eksen duzlemin icinde) -> kesim anlamsiz.
+    if (std::abs(sFrom) < tol && std::abs(sTo) < tol) return std::nullopt;
+    // Iki uc ayni tarafta -> duzlem ekseni KESMIYOR (uzatma/kisaltma durumu);
+    // prototip yalniz kesen duzlemi destekler.
+    if (sFrom * sTo > 0.0) return std::nullopt;
+    // Kesişen duzlem: kisa tarafi at, uzun tarafi koru. Uzun taraf = isaretli
+    // uzakligi (mutlak) BUYUK olan ucun bulundugu yon. keepPositive = o yon
+    // +normal tarafindaysa true. Esitlikte (tam orta) to-tarafi korunur.
+    if (std::abs(sTo) >= std::abs(sFrom)) return sTo > 0.0;
+    return sFrom > 0.0;
+}
+
 std::vector<int> classifyVerticesAgainstPlane(const std::vector<Vec3>& vertices,
                                               const Vec3& origin, const Vec3& normal,
                                               double tol) noexcept {

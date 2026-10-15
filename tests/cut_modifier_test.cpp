@@ -77,6 +77,43 @@ int main() {
         if (d) check(std::abs(*d - 5.0) < 1e-9, "trim = 5 mm");
     }
 
+    // 6b) Fitting OTOMATIK taraf secimi (Tekla "kisa taraf kesilir").
+    {
+        const Vec3 from{0, 0, 0};
+        const Vec3 to{100, 0, 0};
+        const Vec3 nx{1, 0, 0};
+
+        // Duzlem x=20'de (from'a yakin): kisa taraf (0..20) atilir, uzun
+        // (20..100, +X) korunur -> keepPositive = true.
+        const auto k1 = fittingKeepPositive(from, to, {20, 0, 0}, nx);
+        check(k1.has_value() && *k1 == true, "fitting: kisa from-tarafi atildi (koru +X)");
+
+        // Duzlem x=80'de (to'ya yakin): uzun (0..80, -X) korunur -> false.
+        const auto k2 = fittingKeepPositive(from, to, {80, 0, 0}, nx);
+        check(k2.has_value() && *k2 == false, "fitting: kisa to-tarafi atildi (koru -X)");
+
+        // Tam orta (x=50): esitlikte to-tarafi korunur -> true.
+        const auto k3 = fittingKeepPositive(from, to, {50, 0, 0}, nx);
+        check(k3.has_value() && *k3 == true, "fitting: orta nokta esitligi to-tarafini korur");
+
+        // Normal TERS (-X), duzlem x=20: s_from=+20, s_to=-80 -> uzun to-tarafi
+        // (-X) korunur -> keepPositive = false.
+        const auto k4 = fittingKeepPositive(from, to, {20, 0, 0}, {-1, 0, 0});
+        check(k4.has_value() && *k4 == false, "fitting: ters normal ile taraf secimi");
+
+        // Duzlem ekseni KESMIYOR (x=150, iki uc da -X): uzatma -> nullopt.
+        const auto k5 = fittingKeepPositive(from, to, {150, 0, 0}, nx);
+        check(!k5.has_value(), "fitting: uzatma (kesmeyen duzlem) nullopt");
+
+        // Eksen duzlem UZERINDE (XY duzlemi, normal +Z, eksen z=0): nullopt.
+        const auto k6 = fittingKeepPositive(from, to, {0, 0, 0}, {0, 0, 1});
+        check(!k6.has_value(), "fitting: eksen duzlem icinde nullopt");
+
+        // Uc duzlemde (s_from=0, s_to=+80): to-tarafi korunur -> true.
+        const auto k7 = fittingKeepPositive({20, 0, 0}, to, {20, 0, 0}, nx);
+        check(k7.has_value() && *k7 == true, "fitting: uc duzlemde uzun taraf korunur");
+    }
+
     // 7) Kose siniflandirmasi (PlaneCut on karari).
     {
         const auto sides = classifyVerticesAgainstPlane(
