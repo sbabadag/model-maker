@@ -7341,6 +7341,9 @@ void Application::gumballEndDrag() {
     // anlamsizdir ve olceklenmis katiyi bozardi.
     const bool rigidTransform = !(gumballIsScaleAxis(gumballDrag_) ||
                                   gumballDrag_ == GumballHandle::ScaleUniform);
+    // P10: gumballTransformSet_ asagida temizleniyor; recompute icin SIMDI
+    // kopyala (yoksa bos kume gider ve tasinan kaynak/hedef kesme guncellemez).
+    const std::vector<std::size_t> movedSet = gumballTransformSet_;
 #endif
     gumballDrag_ = GumballHandle::None;
     gumballNumericActive_ = false;
@@ -7364,7 +7367,7 @@ void Application::gumballEndDrag() {
     // HEDEFI ise bagli hedefleri yeniden hesapla (rijit donusumde hedef tabani
     // da yeniden uretilir). gumballTransformSet_ = secim + bagli kaynaklar.
     if (didTransform && rigidTransform)
-        recomputeTargetsForMovedModels(gumballTransformSet_);
+        recomputeTargetsForMovedModels(movedSet);
 #endif
 }
 
