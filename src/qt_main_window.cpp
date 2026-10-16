@@ -57,6 +57,8 @@
 #include <QPen>
 #include <QBrush>
 #include <cmath>
+
+namespace {
 // AutoCAD tarzi renkli ribbon ikonlari: QPainter ile runtime'da cizilir
 // (harici asset yok). 24x24, antialiased, koyu tema uzerinde okunur renkler.
 enum class ToolGlyph {
