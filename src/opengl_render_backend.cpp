@@ -973,6 +973,13 @@ void OpenGLRenderBackend::ensureFaceBatch(
     std::size_t vertexBase = 0;
     // Sabit lamba yonu (normalize ~1.0) — ust-sol-on; OCC viewer benzeri.
     constexpr double lightX = 0.45, lightY = -0.5, lightZ = 0.74;
+    // YUMUSAK GOLGELENDIRME (Gouraud): kose basina normal = komsu yuz
+    // normallerinin ortalamasi. Duz yuzlerde ayni rengi korur; egri
+    // yuzeylerde (fason radius) surekli gecis verir, faceted "ucgen"
+    // goruntusu kaybolur. Kivrim acisi 40°'den buyukse SERT kenar sayilip
+    // normal ayrilir (flanş-gövde 90° kavsagi keskin kalir, radius tegetligi
+    // yumusar). Renk ucu basina interpolasyonla tasinir — shader degismez.
+    const double creaseCos = std::cos(40.0 * 3.14159265358979323846 / 180.0);
     for (const auto& [modelIdx, model] : models) {
         const auto& vertices = model.vertices();
         const auto& faces = model.faces();
@@ -982,13 +989,32 @@ void OpenGLRenderBackend::ensureFaceBatch(
         const double baseR = static_cast<double>((baseColor >> 16) & 0xFFu);
         const double baseG = static_cast<double>((baseColor >> 8) & 0xFFu);
         const double baseB = static_cast<double>(baseColor & 0xFFu);
-        for (const auto& face : faces) {
+        // Pass 1: yuz normalleri + kose bazinda yumusatma gruplari.
+        struct NormalGroup { double nx{}, ny{}, nz{}, w{}; };
+        std::vector<std::vector<NormalGroup>> vertexGroups(vertices.size());
+        std::vector<std::vector<std::size_t>> faceGroups(faces.size());
+        const auto assignGroup = [&](std::size_t vi, double fNx, double fNy,
+                                     double fNz) -> std::size_t {
+            auto& groups = vertexGroups[vi];
+            for (std::size_t gi = 0; gi < groups.size(); ++gi) {
+                const double mag = std::sqrt(groups[gi].nx * groups[gi].nx +
+                                             groups[gi].ny * groups[gi].ny +
+                                             groups[gi].nz * groups[gi].nz);
+                if (mag < 1e-12) continue;
+                const double dot = (groups[gi].nx * fNx + groups[gi].ny * fNy +
+                                    groups[gi].nz * fNz) / mag;
+                if (dot > creaseCos) {
+                    groups[gi].nx += fNx; groups[gi].ny += fNy;
+                    groups[gi].nz += fNz; groups[gi].w += 1.0;
+                    return gi;
+                }
+            }
+            groups.push_back({fNx, fNy, fNz, 1.0});
+            return groups.size() - 1;
+        };
+        for (std::size_t fi = 0; fi < faces.size(); ++fi) {
+            const auto& face = faces[fi];
             if (face.size() < 3) continue;
-            // Yuz basina TEK normal ve TEK renk (arastirma bulgusu):
-            // ucgen basina capraz carpim normalleri es-duzlemsel komsularda
-            // float farkindan 1-bit renk süreksizligi uretir ve bunlar
-            // gozle gorulur "ucgen cizgisi" gibi algilanir. Normal ilk
-            // uc ucgenden hesaplanir, tum yuz ayni rengi tasir.
             const Vec3& n0 = vertices[face[0]];
             const Vec3& n1 = vertices[face[1]];
             const Vec3& n2 = vertices[face[2]];
@@ -1003,27 +1029,49 @@ void OpenGLRenderBackend::ensureFaceBatch(
             } else {
                 nx = 0.0; ny = 0.0; nz = 1.0;
             }
-            // TEKLA aydinlik gorunumu: cift yonlu lambert (arka yuzler de
-            // aydinlanir — koyu "gizli" bloklar 107 gri idi, kenarlar
-            // cizgi saniliyordu) + yuksek ambient. Beyaz yuz 158-255
-            // araliginda kalir (eski: 89-255, isiga dik yuz neredeyse siyah).
-            double lambert = nx * lightX + ny * lightY + nz * lightZ;
+            auto& fg = faceGroups[fi];
+            fg.resize(face.size());
+            for (std::size_t vi = 0; vi < face.size(); ++vi)
+                fg[vi] = assignGroup(face[vi], nx, ny, nz);
+        }
+        // Pass 2: kose rengi = grup normaline gore cift yonlu lambert.
+        const auto groupNormal = [&](std::size_t vi, std::size_t gi, double& gx,
+                                     double& gy, double& gz) -> bool {
+            const auto& groups = vertexGroups[vi];
+            if (gi >= groups.size()) return false;
+            const auto& g = groups[gi];
+            const double mag = std::sqrt(g.nx * g.nx + g.ny * g.ny + g.nz * g.nz);
+            if (mag < 1e-12) return false;
+            gx = g.nx / mag; gy = g.ny / mag; gz = g.nz / mag;
+            return true;
+        };
+        const auto shade = [&](double gx, double gy, double gz) -> std::uint32_t {
+            double lambert = gx * lightX + gy * lightY + gz * lightZ;
             if (lambert < 0.0) lambert = -lambert;
             const double factor = 0.62 + 0.38 * lambert;
-            const std::uint32_t color = toRGBA8(
+            return toRGBA8(
                 ((static_cast<std::uint32_t>(baseR * factor) & 0xFFu) << 16) |
                 ((static_cast<std::uint32_t>(baseG * factor) & 0xFFu) << 8) |
                 (static_cast<std::uint32_t>(baseB * factor) & 0xFFu));
+        };
+        for (std::size_t fi = 0; fi < faces.size(); ++fi) {
+            const auto& face = faces[fi];
+            if (face.size() < 3) continue;
+            const auto& fg = faceGroups[fi];
             for (std::size_t i = 1; i + 1 < face.size(); ++i) {
-                const auto& v0 = vertices[face[0]];
-                const auto& v1 = vertices[face[i]];
-                const auto& v2 = vertices[face[i + 1]];
-                for (const auto* v : {&v0, &v1, &v2}) {
+                const std::size_t tri[3] = {face[0], face[i], face[i + 1]};
+                const std::size_t grp[3] = {fg[0], fg[i], fg[i + 1]};
+                for (std::size_t c = 0; c < 3; ++c) {
+                    const auto& v = vertices[tri[c]];
+                    double gx = 0.0, gy = 0.0, gz = 1.0;
+                    if (!groupNormal(tri[c], grp[c], gx, gy, gz)) {
+                        gx = 0.0; gy = 0.0; gz = 1.0;
+                    }
                     GpuLineBatch::GpuVertex gv;
-                    gv.x = static_cast<float>(v->x);
-                    gv.y = static_cast<float>(v->y);
-                    gv.z = static_cast<float>(v->z);
-                    gv.color = color;
+                    gv.x = static_cast<float>(v.x);
+                    gv.y = static_cast<float>(v.y);
+                    gv.z = static_cast<float>(v.z);
+                    gv.color = shade(gx, gy, gz);
                     faceBatch_.vertices.push_back(gv);
                 }
                 faceBatch_.indices.push_back(static_cast<std::uint32_t>(vertexBase));
