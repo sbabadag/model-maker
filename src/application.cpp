@@ -4059,22 +4059,40 @@ bool Application::pickPendingBoltAt(int x, int y) {
     if (pendingBoltParts_.size() >= 2) {
         const auto faceHit = pendingBoltFaceHit(x, y);
         if (!faceHit) {
-            // DIAGNOSTIK: kullanicinin gordugu "yuz bulunamadi"nin GERCEK
-            // nedenini ayirt et — (a) parcalarda hic yuzey (faces) verisi yok,
-            // (b) yuzey var ama isin isabet etmedi. Iki durum farkli cozum
-            // gerektirir; mesaj bunu soyler.
+            // Tanı: (a) yüz verisi (faces) sayısını gösteren, gözden kaçmayan
+            // MessageBox; (b) otomatik fallback eksen (en ince bbox boyutu) ile
+            // kullanıcı bloklanmaz — sağ tık yine de bulon oluşturur.
             std::size_t totalFaces = 0;
             for (const std::size_t p : pendingBoltParts_)
                 if (p < document_.models().size())
                     totalFaces += document_.models()[p].faces().size();
-            MessageBeep(MB_ICONWARNING);
-            if (totalFaces == 0)
-                publishStatus(L"Bolt: secili parcalarda yuzey (faces) verisi YOK — "
-                              L"parcalar kati/solid olmali");
-            else
-                publishStatus(L"Bolt: isin yuzeye isabet etmedi — parcanin gorunur "
-                              L"yuzeyine tiklayin (faces=" +
-                              std::to_wstring(static_cast<unsigned long long>(totalFaces)) + L")");
+            Vec3 lo{1e100, 1e100, 1e100}, hi{-1e100, -1e100, -1e100};
+            for (const std::size_t p : pendingBoltParts_) {
+                if (p >= document_.modelBounds().size()) continue;
+                const auto& b = document_.modelBounds()[p];
+                lo.x = std::min(lo.x, b.minimum.x); lo.y = std::min(lo.y, b.minimum.y);
+                lo.z = std::min(lo.z, b.minimum.z);
+                hi.x = std::max(hi.x, b.maximum.x); hi.y = std::max(hi.y, b.maximum.y);
+                hi.z = std::max(hi.z, b.maximum.z);
+            }
+            const double dx = hi.x - lo.x, dy = hi.y - lo.y, dz = hi.z - lo.z;
+            Vec3 axis;
+            if (dx <= dy && dx <= dz) axis = {1.0, 0.0, 0.0};
+            else if (dy <= dx && dy <= dz) axis = {0.0, 1.0, 0.0};
+            else axis = {0.0, 0.0, 1.0};
+            const double dot = workPlane_.normal.x * axis.x + workPlane_.normal.y * axis.y +
+                               workPlane_.normal.z * axis.z;
+            if (dot < 0.0) axis = {-axis.x, -axis.y, -axis.z};
+            pendingBoltAxis_ = axis;
+            wchar_t msg[320]{};
+            std::swprintf(msg, std::size(msg),
+                          L"Yuz algilanamadi.\n\nSecili parcalarda toplam yuzey (faces): %llu\n"
+                          L"(0 ise parcalar SOLID degil; 0'dan buyukse isin isabet etmedi.)\n\n"
+                          L"Eksen en ince boyuttan otomatik turetildi — sag tik ile uygulayabilirsiniz.\n"
+                          L"NOT: build guncel degilse (bayat exe) bu sorun devam eder.",
+                          static_cast<unsigned long long>(totalFaces));
+            MessageBoxW(canvas_, msg, L"Bolt — yuz secimi", MB_OK | MB_ICONINFORMATION);
+            publishStatus(L"Yuz bulunamadi — eksen en ince boyuttan turetildi (sag tik uygula)");
             return true;
         }
         pendingBoltAxis_ = faceHit->hit.normal;
