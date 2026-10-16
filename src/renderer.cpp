@@ -966,9 +966,13 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
             draft.drawingActive, draft.workPlanePicking, draft.transformCommand,
             draft.transformPhase, draft.arrayItemCount.has_value(),
             draft.offsetDistance.has_value());
+        // Hover modeli (verb-noun kesmede profil/duzlem) hareket karesinde
+        // de vurgulansin — feedbackActive false kalirsa hover yalniz tam
+        // karede (hareket durunca) cizilir ve gecikmeli gorunur.
         const bool feedbackActive = draft.transformCommand != TransformCommand::None ||
                                     !draft.selectedModels.empty() ||
-                                    (draft.drawingActive && draft.anchor && draft.cursor);
+                                    (draft.drawingActive && draft.anchor && draft.cursor) ||
+                                    draft.hoverModel.has_value();
         if (feedbackActive) {
             // Statik secim hover'inda secili objeler tabana gomuludur — yeniden
             // cizme. Yalnizca: transform (hayalet), secim penceresi suruklemesi
