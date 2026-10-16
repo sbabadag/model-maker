@@ -228,6 +228,14 @@ struct DraftView {
     TransformPhase transformPhase{TransformPhase::Selecting};
     std::vector<std::size_t> selectedModels;
     std::optional<POINT> selectionFirstCorner;
+    // KESME NESNELERI SECIMI (P5): secili kesme modifier'larinin indeksleri
+    // (document.cutModifiers()). Modellerden AYRI bir secim kumesidir; Delete
+    // bunlari kaldirir + hedefi yeniden hesaplar.
+    std::vector<std::size_t> selectedCutModifiers;
+    // Secim hintleri: imlecin altindaki secilebilir nesne. Kesme modifier'i
+    // ONCELIKLIDIR (modellerin ustunde cizilir); yoksa model indeksi.
+    std::optional<std::size_t> hoverModel;
+    std::optional<std::size_t> hoverCutModifier;
     // PROFIL UC TUTAMAKLARI (grip edit): secili profilli katilarin iki ucuna
     // sari (from) ve mor (to) tutamak cizilir. Bu alan yalniz secilen (aktif)
     // tutamagin vurgusunu tasir.

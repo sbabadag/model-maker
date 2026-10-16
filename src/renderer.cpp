@@ -712,6 +712,14 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
             if (draft.viewSlab && index < document.modelBounds().size() &&
                 !boundsInViewSlab(document.modelBounds()[index], *draft.viewSlab))
                 continue;
+            // Secim hintleri (P5): secili konstrüksiyon nesnesi parlak sari,
+            // hover edileni beyaz vurgulanir (varsayilan camgobegi).
+            const bool cSel = std::find(draft.selectedModels.begin(), draft.selectedModels.end(),
+                                        index) != draft.selectedModels.end();
+            const bool cHov = draft.hoverModel && *draft.hoverModel == index;
+            const COLORREF cRgb = cSel ? RGB(255, 220, 60)
+                                       : (cHov ? RGB(255, 255, 255) : kConstructionRgb);
+            const int cWidth = cSel ? 3 : 1;
             if (kind == ConstructionKind::Plane) {
                 const auto frame = constructionPlaneFrame(model);
                 if (!frame || vertices.size() != 4) continue;
@@ -728,7 +736,7 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
                 SelectObject(dc, oldBrush);
                 DeleteObject(fill);
                 // Sinir (4 kenar) — duzlem sinirlari.
-                HPEN border = CreatePen(PS_SOLID, 1, kConstructionRgb);
+                HPEN border = CreatePen(PS_SOLID, cWidth, cRgb);
                 SelectObject(dc, border);
                 line(dc, quad[0].x, quad[0].y, quad[1].x, quad[1].y);
                 line(dc, quad[1].x, quad[1].y, quad[2].x, quad[2].y);
@@ -755,7 +763,7 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
                 DeleteObject(axisV);
                 ++performance.renderedEntities;
             } else if (kind == ConstructionKind::Line) {
-                HPEN pen = CreatePen(PS_DASH, 1, kConstructionRgb);
+                HPEN pen = CreatePen(cSel ? PS_SOLID : PS_DASH, cWidth, cRgb);
                 SelectObject(dc, pen);
                 for (const auto& edge : model.edges()) {
                     const POINT a = projectPoint(vertices[edge.from]);
@@ -767,7 +775,7 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
                 ++performance.renderedEntities;
             } else { // ConstructionKind::Point
                 const POINT p = projectPoint(vertices.front());
-                HPEN pen = CreatePen(PS_SOLID, 1, kConstructionRgb);
+                HPEN pen = CreatePen(PS_SOLID, cWidth, cRgb);
                 SelectObject(dc, pen);
                 constexpr int r = 4;
                 line(dc, p.x - r, p.y - r, p.x + r, p.y + r);
@@ -872,6 +880,47 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         }
     };
 
+    // KESME NESNELERI SECIM HINTLERI (P5): secili kesme modifier'i parlak
+    // sari, hover edileni beyaz kesikli konturla vurgulanir. Geometri
+    // cutModifierPickGeometry'den gelir (drawCutPlanes ile AYNI kaynak).
+    const auto drawCutSelectionHints = [&]() {
+        const COLORREF kSelRgb = RGB(255, 220, 60);
+        const COLORREF kHovRgb = RGB(255, 255, 255);
+        for (std::size_t ci = 0; ci < document.cutModifiers().size(); ++ci) {
+            const auto& mod = document.cutModifiers()[ci];
+            if (!mod.enabled) continue;
+            const bool sel = std::find(draft.selectedCutModifiers.begin(),
+                                       draft.selectedCutModifiers.end(), ci) !=
+                             draft.selectedCutModifiers.end();
+            const bool hov = draft.hoverCutModifier && *draft.hoverCutModifier == ci;
+            if (!sel && !hov) continue;
+            Bounds3 tb{};
+            if (const auto t = document.indexOfEntity(mod.target)) {
+                if (*t < document.modelBounds().size()) tb = document.modelBounds()[*t];
+            }
+            const auto geo = cutModifierPickGeometry(mod, tb);
+            if (geo.polygon.empty()) continue;
+            const COLORREF rgb = sel ? kSelRgb : kHovRgb;
+            HPEN pen = CreatePen(sel ? PS_SOLID : PS_DOT, sel ? 3 : 2, rgb);
+            SelectObject(dc, pen);
+            if (geo.isSegment) {
+                if (geo.polygon.size() == 2) {
+                    const POINT a = projectPoint(geo.polygon[0]);
+                    const POINT b = projectPoint(geo.polygon[1]);
+                    line(dc, a.x, a.y, b.x, b.y);
+                }
+            } else {
+                for (std::size_t k = 0; k < geo.polygon.size(); ++k) {
+                    const POINT a = projectPoint(geo.polygon[k]);
+                    const POINT b = projectPoint(geo.polygon[(k + 1) % geo.polygon.size()]);
+                    line(dc, a.x, a.y, b.x, b.y);
+                }
+            }
+            SelectObject(dc, stockPen);
+            DeleteObject(pen);
+        }
+    };
+
     // Hareket kareleri geri bildirim katmanı: seçim vurgusu, transform
     // izleyicisi/hayaletleri, trim/extend önizlemesi, çizim lastik bandı,
     // snap işareti ve dinamik giriş. Temel geometri motion tabanından gelir.
@@ -880,6 +929,7 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         // (taban dongusunden dislandigi icin burada cizilir).
         drawConstruction();
         drawCutPlanes();
+        drawCutSelectionHints();
         const bool motionDrafting = commandShowsSnapFeedback(
             draft.drawingActive, draft.workPlanePicking, draft.transformCommand,
             draft.transformPhase, draft.arrayItemCount.has_value(),
@@ -900,7 +950,8 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
                 SelectObject(dc, selectedPen);
                 for (const auto index : draft.selectedModels) {
                     if (index < document.models().size() && document.modelIsEditable(index) &&
-                        inViewSlab(index))
+                        inViewSlab(index) &&
+                        document.models()[index].constructionKind() == ConstructionKind::None)
                         drawModel(document.models()[index]);
                 }
                 SelectObject(dc, stockPen);

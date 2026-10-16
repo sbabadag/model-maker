@@ -1427,6 +1427,119 @@ std::optional<std::size_t> hitTestModelCandidates3D(const Vec2& cursor, const Do
                         &candidates);
 }
 
+CutPickGeometry cutModifierPickGeometry(const CutModifier& mod,
+                                        const Bounds3& targetBounds) noexcept {
+    CutPickGeometry out;
+    switch (mod.kind) {
+    case CutKind::PolygonCut:
+        out.polygon = mod.polygon;
+        out.isSegment = false;
+        break;
+    case CutKind::LineCut:
+        if (mod.polygon.size() >= 2)
+            out.polygon.assign(mod.polygon.begin(), mod.polygon.begin() + 2);
+        out.isSegment = true;
+        break;
+    case CutKind::PlaneCut:
+    case CutKind::Fitting: {
+        const double nl = std::hypot(mod.planeNormal.x, mod.planeNormal.y, mod.planeNormal.z);
+        if (!(nl > 1e-9)) break;
+        // Hedef kutusundan turetilen sonlu dikdortgen (renderer drawCutPlanes
+        // ile AYNI yari-boyut kurali: max extent * 0.75, alt sinir 500 mm).
+        double half = 500.0;
+        const double extent =
+            std::max({std::abs(targetBounds.maximum.x - targetBounds.minimum.x),
+                      std::abs(targetBounds.maximum.y - targetBounds.minimum.y),
+                      std::abs(targetBounds.maximum.z - targetBounds.minimum.z)});
+        if (extent > 0.0) half = extent * 0.75;
+        const WorkPlane plane =
+            WorkPlane::fromAxisAndPoint(mod.planeOrigin, mod.planeOrigin + mod.planeNormal);
+        out.polygon = {plane.fromPlane({-half, -half}), plane.fromPlane({half, -half}),
+                       plane.fromPlane({half, half}), plane.fromPlane({-half, half})};
+        out.isSegment = false;
+        break;
+    }
+    case CutKind::BooleanCut:
+    default:
+        break; // BooleanCut: ayri MODEL olarak secilir (burada sekil yok)
+    }
+    return out;
+}
+
+std::optional<std::size_t> hitTestCutModifier2D(const Vec3& cursor, const Document& document,
+                                                double tolerance) {
+    const auto& mods = document.cutModifiers();
+    std::optional<std::size_t> best;
+    double bestDistance = tolerance;
+    const Vec2 c{cursor.x, cursor.y};
+    for (std::size_t i = 0; i < mods.size(); ++i) {
+        const auto& mod = mods[i];
+        if (!mod.enabled) continue;
+        Bounds3 targetBounds{};
+        if (const auto t = document.indexOfEntity(mod.target)) {
+            if (*t < document.modelBounds().size()) targetBounds = document.modelBounds()[*t];
+        }
+        const auto geo = cutModifierPickGeometry(mod, targetBounds);
+        if (geo.polygon.empty()) continue;
+        const auto project = [](const Vec3& p) { return Vec2{p.x, p.y}; };
+        if (geo.isSegment) {
+            if (geo.polygon.size() != 2) continue;
+            const double d = pointSegmentDistance(c, project(geo.polygon[0]), project(geo.polygon[1]));
+            if (d <= bestDistance) { bestDistance = d; best = i; }
+            continue;
+        }
+        if (geo.polygon.size() < 3) continue;
+        std::vector<Vec2> projected;
+        projected.reserve(geo.polygon.size());
+        for (const auto& p : geo.polygon) projected.push_back(project(p));
+        if (pointInPolygon(c, projected)) return i; // ic isabet: kesin
+        for (std::size_t k = 0; k < projected.size(); ++k) {
+            const double d = pointSegmentDistance(c, projected[k], projected[(k + 1) % projected.size()]);
+            if (d <= bestDistance) { bestDistance = d; best = i; }
+        }
+    }
+    return best;
+}
+
+std::optional<std::size_t> hitTestCutModifier3D(const Vec2& cursor, const Document& document,
+                                                const Camera& camera, int viewportWidth,
+                                                int viewportHeight, double tolerancePixels) {
+    const auto& mods = document.cutModifiers();
+    std::optional<std::size_t> best;
+    double bestDistance = tolerancePixels;
+    for (std::size_t i = 0; i < mods.size(); ++i) {
+        const auto& mod = mods[i];
+        if (!mod.enabled) continue;
+        Bounds3 targetBounds{};
+        if (const auto t = document.indexOfEntity(mod.target)) {
+            if (*t < document.modelBounds().size()) targetBounds = document.modelBounds()[*t];
+        }
+        const auto geo = cutModifierPickGeometry(mod, targetBounds);
+        if (geo.polygon.empty()) continue;
+        const auto project = [&](const Vec3& p) {
+            return camera.project(p, viewportWidth, viewportHeight);
+        };
+        if (geo.isSegment) {
+            if (geo.polygon.size() != 2) continue;
+            const double d = pointSegmentDistance(cursor, project(geo.polygon[0]),
+                                                 project(geo.polygon[1]));
+            if (d <= bestDistance) { bestDistance = d; best = i; }
+            continue;
+        }
+        if (geo.polygon.size() < 3) continue;
+        std::vector<Vec2> projected;
+        projected.reserve(geo.polygon.size());
+        for (const auto& p : geo.polygon) projected.push_back(project(p));
+        if (pointInPolygon(cursor, projected)) return i; // ic isabet: kesin
+        for (std::size_t k = 0; k < projected.size(); ++k) {
+            const double d = pointSegmentDistance(cursor, projected[k],
+                                                  projected[(k + 1) % projected.size()]);
+            if (d <= bestDistance) { bestDistance = d; best = i; }
+        }
+    }
+    return best;
+}
+
 std::vector<std::size_t> selectModelsInRect2D(const Vec3& firstCorner, const Vec3& secondCorner,
                                               const Document& document, bool crossing) {
     const auto nearby = document.query2D(firstCorner, secondCorner);

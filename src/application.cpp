@@ -1173,6 +1173,8 @@ void Application::paintPassiveViewport(std::size_t index) {
         view.orbitPivotVisible = slot.camera.hasOrbitPivot();
         if (const auto& pivot = slot.camera.orbitPivot()) view.orbitPivot = *pivot;
         view.cursor.reset();
+        view.hoverModel.reset();
+        view.hoverCutModifier.reset();
         view.snapType = SnapType::None;
         view.anchor.reset();
         view.facePoints.clear();
@@ -2055,7 +2057,7 @@ void Application::onLeftButtonDown(int x, int y) {
         }
         // Ctrl+tiklama: bos modda nesne secimi (profil atama icin).
         updateHover(x, y);
-        if (!toggleModelSelection(x, y)) selectedModels_.clear();
+        if (!toggleModelSelection(x, y)) { selectedModels_.clear(); selectedCutModifiers_.clear(); }
         // updateStatus publishes to both the hidden Win32 fallback status and
         // the visible Qt status bar; direct SetWindowTextW only reached the
         // hidden host.
@@ -2347,7 +2349,7 @@ void Application::onLeftButtonUp(int x, int y) {
         ctrlRotatePending_ = false;
         ReleaseCapture();
         updateHover(x, y);
-        if (!toggleModelSelection(x, y)) selectedModels_.clear();
+        if (!toggleModelSelection(x, y)) { selectedModels_.clear(); selectedCutModifiers_.clear(); }
         updateStatus();
         updateControls();
         invalidateCanvas();
@@ -2802,6 +2804,10 @@ void Application::cancelDrawing() {
     drawingActive_ = false;
     selectedModels_.clear();
     selectionFirstCorner_.reset();
+    // KESME NESNELERI SECIMI (P5): kesme secimi + hover hinti de sifirlanir.
+    selectedCutModifiers_.clear();
+    hoverModel_.reset();
+    hoverCutModifier_.reset();
 }
 
 void Application::startTransformCommand(TransformCommand command) {
@@ -2811,15 +2817,21 @@ void Application::startTransformCommand(TransformCommand command) {
     trimExtendLog(L"STARTCMD cmd=" + std::to_wstring(static_cast<int>(command)) +
                   L" sel-giris=" + std::to_wstring(selectedModels_.size()));
     auto preservedSelection = std::move(selectedModels_);
+    auto preservedCuts = std::move(selectedCutModifiers_);
     cancelDrawing();
     selectedModels_ = std::move(preservedSelection);
+    selectedCutModifiers_ = std::move(preservedCuts);
     trimExtendLog(L"STARTCMD cancel-sonrasi sel=" + std::to_wstring(selectedModels_.size()));
 
-    // Noun-verb: boş ekranda seçilmiş modeller komutun verisidir.
-    if (command == TransformCommand::Delete && !selectedModels_.empty()) {
-        pushUndoSnapshot();
-        document_.deleteModels(selectedModels_);
-        selectedModels_.clear();
+    // Noun-verb: boş ekranda seçilmiş modeller/kesmeler komutun verisidir.
+    if (command == TransformCommand::Delete &&
+        (!selectedModels_.empty() || !selectedCutModifiers_.empty())) {
+        if (!selectedModels_.empty()) {
+            pushUndoSnapshot();
+            document_.deleteModels(selectedModels_);
+            selectedModels_.clear();
+        }
+        deleteSelectedCutModifiers();
         cancelTransformCommand();
         updateControls();
         updateStatus();
@@ -4013,6 +4025,25 @@ void Application::cancelTransformCommand() {
 }
 
 bool Application::toggleModelSelection(int x, int y) {
+    // KESME NESNELERI SECIMI (P5): kesme modifier'i modelin USTUNDE cizilir,
+    // once o denenir. Isabet varsa (bos modda) model secimi temizlenir ve
+    // modifier toggle'lanir; model isabetinde kesme secimi temizlenir.
+    std::optional<std::size_t> cutHit;
+    if (mode_ == EditMode::Draw2D) {
+        cutHit = hitTestCutModifier2D(screenTo2D(x, y), document_, 10.0 / (60.0 * camera_.zoom()));
+    } else {
+        RECT client{}; GetClientRect(canvas_, &client);
+        cutHit = hitTestCutModifier3D({static_cast<double>(x), static_cast<double>(y)}, document_, camera_,
+                                      std::max(1L, client.right), std::max(1L, client.bottom), 10.0);
+    }
+    if (cutHit && transformCommand_ == TransformCommand::None) {
+        selectedModels_.clear();
+        selectionFirstCorner_.reset();
+        const auto existing = std::find(selectedCutModifiers_.begin(), selectedCutModifiers_.end(), *cutHit);
+        if (existing == selectedCutModifiers_.end()) selectedCutModifiers_.push_back(*cutHit);
+        else selectedCutModifiers_.erase(existing);
+        return true;
+    }
     std::optional<std::size_t> hit;
     if (mode_ == EditMode::Draw2D) {
         hit = hitTestModel2D(screenTo2D(x, y), document_, 10.0 / (60.0 * camera_.zoom()));
@@ -4022,6 +4053,8 @@ bool Application::toggleModelSelection(int x, int y) {
                              std::max(1L, client.right), std::max(1L, client.bottom), 10.0);
     }
     if (!hit) return false;
+    // Model secildi: kesme modifier secimi temizlenir (iki secim ayri).
+    selectedCutModifiers_.clear();
     if (transformCommand_ == TransformCommand::Offset) {
         selectedModels_.assign(1, *hit);
         selectionFirstCorner_.reset();
@@ -4031,6 +4064,50 @@ bool Application::toggleModelSelection(int x, int y) {
     if (existing == selectedModels_.end()) selectedModels_.push_back(*hit);
     else selectedModels_.erase(existing);
     return true;
+}
+
+void Application::refreshHoverCandidate(int x, int y) {
+    // Secim hinti: imlecin altindaki secilebilir kesme modifier'i ONCELIKLI;
+    // yoksa model. Yalnizca bos (komutsuz, navigasyonsuz) modda cagrilir.
+    hoverModel_.reset();
+    hoverCutModifier_.reset();
+    if (mode_ == EditMode::Draw2D) {
+        hoverCutModifier_ = hitTestCutModifier2D(screenTo2D(x, y), document_,
+                                                 10.0 / (60.0 * camera_.zoom()));
+        if (!hoverCutModifier_)
+            hoverModel_ = hitTestModel2D(screenTo2D(x, y), document_, 10.0 / (60.0 * camera_.zoom()));
+    } else {
+        RECT client{}; GetClientRect(canvas_, &client);
+        const int w = std::max(1L, client.right);
+        const int h = std::max(1L, client.bottom);
+        hoverCutModifier_ = hitTestCutModifier3D({static_cast<double>(x), static_cast<double>(y)},
+                                                 document_, camera_, w, h, 10.0);
+        if (!hoverCutModifier_)
+            hoverModel_ = hitTestModel3D({static_cast<double>(x), static_cast<double>(y)},
+                                         document_, camera_, w, h, 10.0);
+    }
+}
+
+void Application::deleteSelectedCutModifiers() {
+    if (selectedCutModifiers_.empty()) return;
+    pushUndoSnapshot();
+    // Indeksler AZALAN sirada silinir (onceki silme sonraki indeksleri kaydirmasin).
+    std::sort(selectedCutModifiers_.begin(), selectedCutModifiers_.end(), std::greater<std::size_t>());
+    std::vector<EntityId> targets;
+    for (const std::size_t ci : selectedCutModifiers_) {
+        if (ci < document_.cutModifiers().size()) {
+            targets.push_back(document_.cutModifiers()[ci].target);
+            document_.removeCutModifier(ci);
+        }
+    }
+    selectedCutModifiers_.clear();
+#ifdef MM_HAS_OCC
+    // Hedefleri KALAN modifier'larla yeniden hesapla (silinen kesme geri alinir).
+    for (const EntityId target : targets) recomputeCutTarget(target);
+#endif
+    updateHover(cursorScreen_.x, cursorScreen_.y);
+    updateStatus();
+    invalidateCanvas();
 }
 
 void Application::completeWindowSelection(int x, int y) {
@@ -4418,6 +4495,9 @@ void Application::commitTransformPoint(const Vec3& point) {
 void Application::updateHover(int x, int y) {
     if (!canvas_) return;
     cursorScreen_ = {x, y};
+    // Secim hinti: her karede sifirlanir, yalniz bos modda tazelenir.
+    hoverModel_.reset();
+    hoverCutModifier_.reset();
     // RHINO TARZI GUMBALL: gorunurluk + vurgulu tutamac.
     updateGumball();
     gumballHover_ = gumballVisible_ ? gumballHitTest(x, y) : GumballHandle::None;
@@ -4429,6 +4509,10 @@ void Application::updateHover(int x, int y) {
     if (!snapCommandActive) {
         clearTemporaryTracking();
         hover_.reset();
+        // Bos modda imlecin altindaki secilebilir nesneyi vurgula (navigasyon
+        // sirasinda gereksiz yuk olmasin).
+        if (!rotating_ && !panning2D_ && !wheelNavigating_ && !viewCubeManipulating_)
+            refreshHoverCandidate(x, y);
         return;
     }
     const bool selectingEntities = transformCommand_ != TransformCommand::None &&
@@ -7277,6 +7361,8 @@ DraftView Application::draftView() const {
     view.input = input_; view.cursorScreen = cursorScreen_;
     view.transformCommand = transformCommand_; view.transformPhase = transformPhase_;
     view.selectedModels = selectedModels_; view.selectionFirstCorner = selectionFirstCorner_;
+    view.selectedCutModifiers = selectedCutModifiers_;
+    view.hoverModel = hoverModel_; view.hoverCutModifier = hoverCutModifier_;
     view.transformBase = transformBase_;
     view.offsetDistance = offsetDistance_;
     view.filletRadius = filletRadius_;

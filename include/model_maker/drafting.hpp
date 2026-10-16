@@ -153,6 +153,24 @@ std::optional<std::size_t> hitTestModelCandidates3D(const Vec2& cursor, const Do
                                                     const Camera& camera, int viewportWidth,
                                                     int viewportHeight, double tolerancePixels,
                                                     const std::vector<std::size_t>& candidates);
+// --- KESME NESNELERI SECIMI (P5) -------------------------------------------
+// Kesme modifier'inin SECILEBILIR geometrisi. Renderer (cizim) ve hit-test
+// AYNI kaynaktan beslenir: PlaneCut/Fitting -> hedef kutusundan turetilen
+// sonlu duzlem dikdortgeni (4 kose); PolygonCut -> mod.polygon (>=3 kose);
+// LineCut -> {bas, son} segment. BooleanCut'in kendi sekli yoktur (kesici
+// parca zaten ayri bir MODEL olarak secilir). targetBounds hedef parcanin
+// AABB'si; kutu gecersizse (yeni/hedefsiz) varsayilan 500 mm yari-boyut.
+struct CutPickGeometry {
+    std::vector<Vec3> polygon; // >=3 kose (kapali) VEYA 2 kose (segment)
+    bool isSegment{false};
+};
+CutPickGeometry cutModifierPickGeometry(const CutModifier& mod,
+                                        const Bounds3& targetBounds) noexcept;
+std::optional<std::size_t> hitTestCutModifier2D(const Vec3& cursor, const Document& document,
+                                                double tolerance);
+std::optional<std::size_t> hitTestCutModifier3D(const Vec2& cursor, const Document& document,
+                                                const Camera& camera, int viewportWidth,
+                                                int viewportHeight, double tolerancePixels);
 std::vector<std::size_t> selectModelsInRect2D(const Vec3& firstCorner, const Vec3& secondCorner,
                                               const Document& document, bool crossing);
 std::vector<std::size_t> selectModelsInRect3D(const Vec2& firstCorner, const Vec2& secondCorner,

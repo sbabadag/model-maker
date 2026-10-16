@@ -681,6 +681,14 @@ if(BUILD_TESTING)
     target_compile_options(model_maker_cut_modifier_test PRIVATE -Wall -Wextra -Wpedantic)
     add_test(NAME model_maker_cut_modifier_test COMMAND model_maker_cut_modifier_test)
 
+    # KESME NESNELERI SECIMI (P5): cutModifierPickGeometry + hitTestCutModifier2D/3D
+    # (renderer drawCutSelectionHints ile AYNI geometri kaynagi). OCC'siz, Linux'ta kosar.
+    add_executable(model_maker_cut_modifier_pick_test tests/cut_modifier_pick_test.cpp)
+    target_link_libraries(model_maker_cut_modifier_pick_test PRIVATE model_maker_core)
+    target_link_options(model_maker_cut_modifier_pick_test PRIVATE -static -static-libgcc -static-libstdc++)
+    target_compile_options(model_maker_cut_modifier_pick_test PRIVATE -Wall -Wextra -Wpedantic)
+    add_test(NAME model_maker_cut_modifier_pick_test COMMAND model_maker_cut_modifier_pick_test)
+
     # COMPONENT FOUNDATION (P4): Main/Secondary Part, parametrik Component
     # tanimi, instance + parametreler, bagimlilik + yeniden hesaplama. OCC'siz.
     add_executable(model_maker_component_test tests/component_test.cpp)

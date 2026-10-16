@@ -401,6 +401,12 @@ private:
     void completeTrimExtendTargetSelection(int x, int y);
     bool toggleModelSelection(int x, int y);
     void completeWindowSelection(int x, int y);
+    // KESME NESNELERI SECIMI (P5): imlecin altindaki secilebilir kesme
+    // modifier'ini/modeli hint olarak tazele (updateHover bos modda cagirir).
+    void refreshHoverCandidate(int x, int y);
+    // Secili kesme modifier'larini siler + hedeflerini yeniden hesaplar
+    // (tek geri-alma adimi). Secim bos ise hicbir sey yapmaz.
+    void deleteSelectedCutModifiers();
     void commitPoint(const Vec3& point);
     void cancelDrawing();
     void clearTemporaryTracking();
@@ -791,6 +797,11 @@ private:
     TransformPhase transformPhase_{TransformPhase::Selecting};
     std::vector<std::size_t> selectedModels_;
     std::optional<POINT> selectionFirstCorner_;
+    // KESME NESNELERI SECIMI (P5): kesme modifier secimi (model seciminden
+    // ayri) + imlecin altindaki secilebilir nesne (secim hinti).
+    std::vector<std::size_t> selectedCutModifiers_;
+    std::optional<std::size_t> hoverModel_;
+    std::optional<std::size_t> hoverCutModifier_;
     std::optional<Vec3> transformBase_;
     std::optional<Vec3> rotateAxis_;
     std::optional<double> offsetDistance_;

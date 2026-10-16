@@ -72,6 +72,8 @@ public:
     std::optional<ViewCubeTarget> viewCubePressedView_;
     void applyViewCubeTarget(const ViewCubeTarget&) {}
     std::vector<std::size_t> selectedModels_{0};
+    // KESME NESNELERI SECIMI (P5): onLeftButtonUp secim-temizleme dalinda kullanilir.
+    std::vector<std::size_t> selectedCutModifiers_;
     std::wstring input_;
     std::function<bool(const std::wstring&, const std::wstring&, std::wstring&)> parameterRequest_;
     void pushUndoSnapshot() { document_.pushSnapshot(); }
