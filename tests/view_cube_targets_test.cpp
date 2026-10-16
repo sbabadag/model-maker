@@ -324,9 +324,9 @@ int main() {
         for (int i = 0; i < 9; ++i)
             if (!near(r[static_cast<std::size_t>(i)], expected[static_cast<std::size_t>(i)])) same = false;
         check(same, "ISO hedefi standardViewRotation(Isometric) — roll korunur");
-        // Ve geometrik olarak on-sag-ust koseden bakar.
+        // Ve geometrik olarak ust-sol-on koseden bakar.
         const Vec3 d = row2(r);
-        check(d.x < 0.0 && d.y < 0.0 && d.z < 0.0, "ISO bakis yonu on-sag-ust kose (-,-,-)");
+        check(d.x < 0.0 && d.y > 0.0 && d.z > 0.0, "ISO bakis yonu ust-sol-on kose (-,+,+)");
     }
 
     // --- 8) Panel/tiklanan bolge ayni dikdortgen ---------------------------

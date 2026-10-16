@@ -79,8 +79,8 @@ Vec3 cubeSpaceDirection(const ViewCubeTarget& target) noexcept {
         }
         break;
     case ViewCubeTargetKind::Home:
-        // ISO izleyici yonu: on-sag-ust kose.
-        return normalizedOr({-1.0, -1.0, -1.0}, {0.0, 0.0, 1.0});
+        // ISO izleyici yonu: ust-sol-on kose (top+left+front gorunur).
+        return normalizedOr({-1.0, 1.0, 1.0}, {0.0, 0.0, 1.0});
     default:
         break;
     }

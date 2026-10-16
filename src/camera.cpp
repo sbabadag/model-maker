@@ -45,14 +45,16 @@ void orthonormalize(std::array<double, 9>& m) noexcept {
 }
 
 // ISO (izometrik) gorunum acisi — TEK KAYNAK. Ekran-yukari vektoru +Z
-// agirlikli oldugu icin XY duzlemi yere PARALEL (yatay) gelir ve izleyici
-// on-sag-ust koseden bakar; standart Tekla/AutoCAD 3B model gorunumu.
+// agirlikli oldugu icin XY duzlemi yere PARALEL (yatay) gelir; izleyici
+// UST-SOL-ON koseden bakar (ust + sol + on yuzler gorunur, Z yukari) —
+// standart Tekla/AutoCAD 3B model gorunumu. Kullanici sarti: "üst sola 45
+// dereceyle bakmali" (yaw=45°, pitch=+35.26°).
 // Camera::reset() (varsayilan 3B gorunum) ve setView(Isometric) (3B gecis /
-// "3D view") AYNI acidan beslenir. Eski reset() degeri buildRotation(-0.55,
-// 0.45, 0) ekran-yukarisini +Y yapiyordu -> XY duzlemi yere DIK (dusey)
-// gorunuyordu (kullanici: "xy yere dik").
-constexpr double kIsoYaw = 0.75 * 3.14159265358979323846;
-constexpr double kIsoPitch = -0.6154797086703868;
+// "3D view") AYNI acidan beslenir. Eski deger (yaw=135°, pitch=-35.26°)
+// izleyiciyi ALT-SOL-ARKA koseye koyuyordu -> modelin ALT yuzleri
+// gorunuyordu (kullanici: "default view yanlis, ust sola 45 derece").
+constexpr double kIsoYaw = 0.25 * 3.14159265358979323846;
+constexpr double kIsoPitch = 0.6154797086703868;
 constexpr double kIsoRoll = 3.14159265358979323846 / 3.0 * 2.0;
 
 } // namespace
@@ -318,7 +320,7 @@ void Camera::lockGridViewDirection() noexcept {
 
 void Camera::reset() noexcept {
     // VARSAYILAN 3B GORUNUM = ISO (Z yukari, XY yere paralel) — kullanici
-    // sarti "xy yere dik gelmesin, yatay gelsin; 3D view da ayni olsun".
+    // sarti "ust sola 45 dereceyle bakmali; 3D view da ayni olsun".
     R_ = buildRotation(kIsoYaw, kIsoPitch, kIsoRoll);
     zoom_ = 1.0;
     center2D_ = {};
@@ -346,11 +348,10 @@ std::array<double, 9> Camera::standardViewRotation(StandardView view) noexcept {
     constexpr double pi = 3.14159265358979323846;
     switch (view) {
     case StandardView::Isometric:
-        // TEK TEMSIL: izometrik rotasyon matrisiyle kurulur. Ekran satirlari
-        // eski isoM_ onizlemesiyle piksel birebir ayni: row0=(0.707,-0.707,0),
-        // row1=(-0.408,-0.408,0.816); derinlik satiri proper (det=+1). Euler
-        // ayrismasi YOK; aci TEK KAYNAK (kIsoYaw/kIsoPitch/kIsoRoll) — reset()
-        // ile ayni.
+        // TEK TEMSIL: izometrik rotasyon matrisiyle kurulur. UST-SOL-ON kose
+        // (row2 = -0.577, +0.577, +0.577): ust + sol + on yuzler gorunur, Z
+        // yukari. Euler ayrismasi YOK; aci TEK KAYNAK
+        // (kIsoYaw/kIsoPitch/kIsoRoll) — reset() ile ayni.
         return buildRotation(kIsoYaw, kIsoPitch, kIsoRoll);
     case StandardView::Top: return buildRotation(0.0, 0.0, 0.0);
     case StandardView::Bottom: return buildRotation(pi, 0.0, 0.0);

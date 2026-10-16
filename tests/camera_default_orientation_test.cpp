@@ -46,8 +46,9 @@ int main() {
     check(std::abs(up.z) > std::abs(up.x) && std::abs(up.z) > std::abs(up.y),
           "reset(): ekran-yukari +Z baskin (XY yere paralel, dusey degil)");
     check(up.z > 0.0, "reset(): +Z yukari (bas asagi degil)");
-    // Izleyici yukaridan bakar (bakis yonunun Z bileseni negatif).
-    check(view.z < 0.0, "reset(): izleyici yukaridan bakar");
+    // Izleyici UST-SOL koseden bakar: row2 (izleyiciye dogru) +Z bileseni
+    // POZITIF olur (kamera asagiya, -Z'ye bakar) — ust + sol + on yuzler.
+    check(view.z > 0.0, "reset(): izleyici yukaridan bakar (ust-sol-on kose)");
 
     // Tek kaynak: reset() ve "3D view" (Isometric) AYNI aci.
     Camera iso;
