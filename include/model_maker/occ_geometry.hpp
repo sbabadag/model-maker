@@ -82,6 +82,17 @@ TopoDS_Shape booleanCutShape(const TopoDS_Shape& a, const TopoDS_Shape& b);
 // Herhangi bir seklin hacmi (br^3).
 double shapeVolume(const TopoDS_Shape& shape);
 
+// Isin (ray) ile bir B-Rep seklin GERCEK yuzlerinin tam geometrik kesisimi.
+// Ucgen mesh yaklasimi yerine OCCT'nin asil yuzeylerine isabet eder; isabet
+// eden yuzun normalini (izleyiciye/isinin cikis noktasina dogru yonlenmis,
+// birim) ve isin parametresini (mesafe) dondurur. Bu, bulon ekseni = "tiklanan
+// yuzun normali" icin dogru kaynaktir: mesh bayat/eksik olsa bile B-Rep her
+// zaman mevcuttur. Isabet yoksa false doner (hitPoint/hitNormal/distance
+// DEGISMEZ).
+bool raycastBrepFace(const TopoDS_Shape& shape, const Vec3& rayOrigin,
+                     const Vec3& rayDirection, Vec3& hitPoint, Vec3& hitNormal,
+                     double& distance);
+
 WireframeModel solidBoxWireframe(double dx, double dy, double dz);
 
 WireframeModel solidCylinderWireframe(double radius, double height, int circleSegments = 48);

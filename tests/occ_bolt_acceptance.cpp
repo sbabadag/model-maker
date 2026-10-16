@@ -115,6 +115,26 @@ int main() {
                2.0 * (plateVol - 2.0 * holeVol10), 10.0),
           "pattern: iki levhada toplam 4 delik hacim");
 
+    // 8) B-Rep yuz isini (raycastBrepFace): gercek yuzey kesisimi (ucgen mesh
+    //    degil). Bulon ekseni = tiklanan yuzun normali. Ust yuz z=10 normali
+    //    izleyiciye dogru (+Z) donmeli; iskalan isin false donmeli; delikli
+    //    (boolean) kati bile isabet etmeli.
+    Vec3 hitPoint, hitNormal;
+    double dist = -1.0;
+    const TopoDS_Shape plateRaw = BRepPrimAPI_MakeBox(200.0, 200.0, 10.0).Shape();
+    bool hit = raycastBrepFace(plateRaw, {100.0, 100.0, 50.0}, {0.0, 0.0, -1.0},
+                               hitPoint, hitNormal, dist);
+    check(hit && near(hitPoint.z, 10.0, 1e-6) && near(dist, 40.0, 1e-6) &&
+              near(hitNormal.z, 1.0, 1e-5),
+          "raycast: ust yuz isabet + normal +Z");
+    hit = raycastBrepFace(plateRaw, {100.0, 100.0, 50.0}, {0.0, 0.0, 1.0},
+                          hitPoint, hitNormal, dist);
+    check(!hit, "raycast: uzaklasan isin isabet etmiyor");
+    hit = raycastBrepFace(pA, {30.0, 50.0, 50.0}, {0.0, 0.0, -1.0},
+                          hitPoint, hitNormal, dist);
+    check(hit && near(hitPoint.z, 10.0, 1e-6),
+          "raycast: delikli (boolean) katida isabet");
+
     if (failures) {
         std::printf("%d FAIL\n", failures);
         return 1;

@@ -26,6 +26,10 @@
 #include <BRepPrimAPI_MakeHalfSpace.hxx>
 #include <BRepBuilderAPI_MakeEdge.hxx>
 #include <BRepBuilderAPI_MakeWire.hxx>
+#include <BRepClass_FaceClassifier.hxx>
+#include <GeomAPI_IntCS.hxx>
+#include <Geom_Line.hxx>
+#include <Geom_Surface.hxx>
 #include <gp_Circ.hxx>
 #include <gp_Ax2.hxx>
 #include <GeomAbs_CurveType.hxx>
@@ -654,6 +658,75 @@ double shapeVolume(const TopoDS_Shape& shape) {
     GProp_GProps props;
     BRepGProp::VolumeProperties(shape, props);
     return props.Mass();
+}
+
+bool raycastBrepFace(const TopoDS_Shape& shape, const Vec3& rayOrigin,
+                     const Vec3& rayDirection, Vec3& hitPoint, Vec3& hitNormal,
+                     double& distance) {
+    if (shape.IsNull()) return false;
+    const double dirLen = std::sqrt(rayDirection.x * rayDirection.x +
+                                    rayDirection.y * rayDirection.y +
+                                    rayDirection.z * rayDirection.z);
+    if (dirLen < 1e-12) return false;
+    const gp_Pnt o(rayOrigin.x, rayOrigin.y, rayOrigin.z);
+    const gp_Dir d(rayDirection.x / dirLen, rayDirection.y / dirLen,
+                   rayDirection.z / dirLen);
+    const gp_Lin line(o, d);
+
+    // BRepClass_FaceClassifier'in yuz ici testi ucgenlemeyi kullanir; boolean
+    // (kesme/delik) sonrasi uretilen sekillerde tesselasyon olmayabilir. Bu
+    // yuzden once hafif bir IncrementalMesh — zaten varsa ve daha inceyse
+    // dokunmaz (yalnizca eksikse doldurur).
+    BRepMesh_IncrementalMesh mesher(shape, 0.1);
+
+    const Handle(Geom_Line) gline = new Geom_Line(line);
+
+    bool found = false;
+    double bestW = 1e100;
+    Vec3 bestPoint{}, bestNormal{};
+    for (TopExp_Explorer ex(shape, TopAbs_FACE); ex.More(); ex.Next()) {
+        const TopoDS_Face face = TopoDS::Face(ex.Current());
+        if (face.IsNull()) continue;
+        const Handle(Geom_Surface) surf = BRep_Tool::Surface(face);
+        if (surf.IsNull()) continue;
+
+        GeomAPI_IntCS inter(gline, surf);
+        if (!inter.IsDone()) continue;
+        for (Standard_Integer i = 1; i <= inter.NbPoints(); ++i) {
+            Standard_Real u = 0.0, v = 0.0, w = 0.0;
+            inter.Parameters(i, u, v, w);
+            if (w < 1e-9) continue;  // gerideki isabetleri ele (isin onunde kal)
+            // Yuzun KESILMIS sinirlari icinde mi? (sonsuz yuzeydeki kesisim
+            // yuz disinda kalabilir — orn. ici bos kutu profilin govdesi.)
+            BRepClass_FaceClassifier classifier;
+            classifier.Perform(face, gp_Pnt2d(u, v), 1e-7);
+            const TopAbs_State state = classifier.State();
+            if (state != TopAbs_IN && state != TopAbs_ON) continue;
+
+            if (w >= bestW) continue;
+            const gp_Pnt pt = inter.Point(i);
+            // Yuzey normali D1(u,v) ile tam hesaplanir.
+            gp_Pnt sp;
+            gp_Vec d1u, d1v;
+            surf->D1(u, v, sp, d1u, d1v);
+            gp_Vec n = d1u.Crossed(d1v);
+            if (n.SquareMagnitude() < 1e-18) continue;
+            n.Normalize();
+            // Normal izleyiciye (isinin cikis noktasina) dogru yonlensin.
+            const gp_Vec toOrigin(o.X() - pt.X(), o.Y() - pt.Y(), o.Z() - pt.Z());
+            if (n.Dot(toOrigin) < 0.0) n.Reverse();
+
+            bestW = w;
+            bestPoint = {pt.X(), pt.Y(), pt.Z()};
+            bestNormal = {n.X(), n.Y(), n.Z()};
+            found = true;
+        }
+    }
+    if (!found) return false;
+    hitPoint = bestPoint;
+    hitNormal = bestNormal;
+    distance = bestW;
+    return true;
 }
 
 WireframeModel solidBoxSolid(double dx, double dy, double dz, double faceDeflection) {

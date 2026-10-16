@@ -4045,9 +4045,29 @@ std::optional<Application::PendingFaceHit> Application::pendingBoltFaceHit(int x
     std::optional<PendingFaceHit> best;
     for (const std::size_t p : pendingBoltParts_) {
         if (p >= document_.models().size()) continue;
+        // 1) Goruntu mesh'i (faceIndex ile vurgu da calisir).
         const auto h = raycastMesh(document_.models()[p], origin, direction);
-        if (h && (!best || h->distance < best->hit.distance))
-            best = PendingFaceHit{p, *h};
+        if (h) {
+            if (!best || h->distance < best->hit.distance)
+                best = PendingFaceHit{p, *h};
+            continue;
+        }
+#ifdef MM_HAS_OCC
+        // 2) GERCEK B-Rep yuzey isabeti (fallback): mesh yuzleri bos/bayat olsa
+        // bile OCCT'nin asil B-Rep'i her zaman mevcuttur. Bu, kullanicinin
+        // onerdigi "OCCT face selection" yaklasimidir — ucgen yaklasimi degil,
+        // tam yuzey kesisimi. faceIndex yok (mesh yok) → yuz vurgusu cizilmez
+        // ama eksen normali dogru alinir.
+        if (const TopoDS_Shape* solid = findOccSolid(p)) {
+            Vec3 hitPoint, hitNormal;
+            double dist = 0.0;
+            if (raycastBrepFace(*solid, origin, direction, hitPoint, hitNormal, dist)) {
+                const MeshRayHit brepHit{hitPoint, hitNormal, dist, std::size_t(-1)};
+                if (!best || dist < best->hit.distance)
+                    best = PendingFaceHit{p, brepHit};
+            }
+        }
+#endif
     }
     return best;
 }
