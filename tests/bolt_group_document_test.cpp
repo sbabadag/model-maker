@@ -178,6 +178,70 @@ int main() {
         check(doc2.indexOfEntity(pa).has_value(), "kaskad undo: parca geri geldi");
     }
 
+    // deleteModels kaskadi (DISPLAY): bolton GORSELI (display model) silinince
+    // bulon grubu + delikler kaldirilir, parcalar (deliksiz) korunur — "bolton
+    // silinince profil etkilenmez".
+    {
+        Document doc3;
+        doc3.pushSnapshot();
+        doc3.addModel(WireframeModel::rectangle({0, 0, 0}, {100, 100, 0}));
+        const EntityId pa = doc3.modelIds().back();
+        doc3.addModel(WireframeModel::rectangle({0, 0, 10}, {100, 100, 10}));
+        const EntityId pb = doc3.modelIds().back();
+        BoltGroup bg3;
+        bg3.parts = {pa, pb};
+        bg3.origin = {50, 50, 10};
+        bg3.axis = {0, 0, 1};
+        bg3.params.nominalDiameter = 20.0;
+        bg3.params.holeDiameter = 22.0;
+        doc3.pushSnapshot();
+        doc3.addBoltGroup(bg3, WireframeModel::cube(10.0));
+        const EntityId displayId = doc3.boltGroups()[0].displayEntityId;
+        check(doc3.boltGroups().size() == 1, "display-kaskad: bulon eklendi");
+        doc3.pushSnapshot();
+        const auto affected = doc3.deleteModels({*doc3.indexOfEntity(displayId)});
+        check(doc3.boltGroups().empty(), "display-kaskad: display silinince bulon kaldirildi");
+        check(doc3.cutModifiers().empty(), "display-kaskad: delik kalmadi");
+        check(doc3.indexOfEntity(pa).has_value() && doc3.indexOfEntity(pb).has_value(),
+              "display-kaskad: parcalar korundu");
+        bool affectedHasA = false, affectedHasB = false;
+        for (const EntityId id : affected) {
+            if (id == pa) affectedHasA = true;
+            if (id == pb) affectedHasB = true;
+        }
+        check(affectedHasA && affectedHasB,
+              "display-kaskad: parcalar yeniden hesap icin donuldu");
+    }
+
+    // KOPYA (boltsuz): parca kopyalaninca kopya DELIKSIZ kalir — delik
+    // modifier'lari kopyalanmaz (yalniz model kopyalanir), yeni kimlik hicbir
+    // deligin hedefi degildir.
+    {
+        Document doc4;
+        doc4.pushSnapshot();
+        doc4.addModel(WireframeModel::rectangle({0, 0, 0}, {100, 100, 0}));
+        const EntityId pa = doc4.modelIds().back();
+        doc4.addModel(WireframeModel::rectangle({0, 0, 10}, {100, 100, 10}));
+        const EntityId pb = doc4.modelIds().back();
+        BoltGroup bg4;
+        bg4.parts = {pa, pb};
+        bg4.origin = {50, 50, 10};
+        bg4.axis = {0, 0, 1};
+        bg4.params.holeDiameter = 22.0;
+        doc4.pushSnapshot();
+        doc4.addBoltGroup(bg4, WireframeModel::cube(10.0));
+        check(doc4.cutModifiers().size() == 2, "kopya: 2 delik var");
+        const std::size_t paIndex = *doc4.indexOfEntity(pa);
+        doc4.pushSnapshot();
+        doc4.copyModels({paIndex}, Vec3{200, 0, 0});
+        check(doc4.cutModifiers().size() == 2, "kopya: delik sayisi degismedi");
+        const EntityId copyId = doc4.modelIds().back();
+        bool copyIsHoleTarget = false;
+        for (const auto& m : doc4.cutModifiers())
+            if (m.target == copyId) copyIsHoleTarget = true;
+        check(!copyIsHoleTarget, "kopya: kopya delik hedefi degil (deliksiz)");
+    }
+
     if (g_failures) {
         std::printf("%d/%d FAIL\n", g_failures, g_checks);
         return 1;

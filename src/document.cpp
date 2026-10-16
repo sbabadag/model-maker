@@ -522,14 +522,20 @@ std::vector<EntityId> Document::deleteModels(const std::vector<std::size_t>& ind
     spatialIndexDirty_ = true;
     documentBounds_.reset();
     if (!valid.empty()) invalidateDerivedState();
-    // BULON KASKADI (Phase B1): bagli parcalarindan HERHANGI biri silinen bulon
-    // grubu da kaldirilir (kayit + kalan delikler + display modeli). Yuksekten
-    // dusuge — removeBoltGroup kaydi sildigi icin indeks kaymasi guvenli.
+    // BULON KASKADI (Phase B1): (a) bagli parcalarindan HERHANGI biri silinen
+    // bulon grubu kaldirilir; (b) DISPLAY modeli silinen bulon grubu da
+    // kaldirilir (bolton silinince profil ETKILENMEZ — delikler kalkar). Her
+    // iki durumda deliklerin HEDEFLERI (bagli parcalar) yeniden hesaplanmasi
+    // icin affectedTargets'a eklenir. Yuksekten dusuge — removeBoltGroup kaydi
+    // sildigi icin indeks kaymasi guvenli.
     for (std::size_t bi = boltGroups_.size(); bi-- > 0;) {
         bool touches = false;
         for (const EntityId part : boltGroups_[bi].parts)
             if (deletedIds.count(part)) { touches = true; break; }
-        if (touches) removeBoltGroup(bi);
+        if (!touches && deletedIds.count(boltGroups_[bi].displayEntityId)) touches = true;
+        if (!touches) continue;
+        for (const EntityId part : boltGroups_[bi].parts) affectedTargets.push_back(part);
+        removeBoltGroup(bi);
     }
     return affectedTargets;
 }
