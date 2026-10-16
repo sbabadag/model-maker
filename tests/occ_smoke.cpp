@@ -19,6 +19,7 @@ using mm::Vec3;
 #include <filesystem>
 
 int main() {
+    mm::g_drawFilletRadii = true;  // test radiuslu gercek kesiti dogrular (default false'tan bagimsiz)
     // 1) Kati kutu + hacim
     const double volume = mm::boxVolume(10.0, 10.0, 10.0);
     if (std::abs(volume - 1000.0) > 1e-6) {

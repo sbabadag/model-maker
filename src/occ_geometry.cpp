@@ -54,7 +54,7 @@
 
 namespace mm {
 
-bool g_drawFilletRadii = true;  // varsayilan: gercek radiuslu kesit
+bool g_drawFilletRadii = false;  // varsayilan: Tekla tarzi radiussuz (hizli); Options formu ile acilabilir
 
 double boxVolume(double x, double y, double z) {
     const TopoDS_Shape box = BRepPrimAPI_MakeBox(x, y, z).Shape();

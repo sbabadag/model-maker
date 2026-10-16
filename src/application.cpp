@@ -3556,12 +3556,16 @@ void Application::toggleConstructionVisibility() {
     invalidateCanvas();
 }
 
-void Application::toggleDrawFilletRadii() {
-    // Tekla tarzi radius gizle/goster: bayrak cevrilir, TUM profiller yeniden
+bool Application::drawFilletRadii() const {
+    return mm::g_drawFilletRadii;
+}
+
+void Application::setDrawFilletRadii(bool enabled) {
+    // Tekla tarzi radius gizle/goster: bayrak set edilir, TUM profiller yeniden
     // uretilir (guncel bayraga gore radiuslu/radiussuz). Gorsel bir toggle
     // oldugu icin undo kapsaminda degil; belge parametreleri (profileName,
     // eksen, rotasyon) degismez — yalniz turetilen B-Rep/mesh guncellenir.
-    mm::g_drawFilletRadii = !mm::g_drawFilletRadii;
+    mm::g_drawFilletRadii = enabled;
 #ifdef MM_HAS_OCC
     ensureProfileCatalog();
     for (std::size_t i = 0; i < document_.models().size(); ++i) {
@@ -3575,6 +3579,10 @@ void Application::toggleDrawFilletRadii() {
     updateControls();
     updateStatus();
     invalidateCanvas();
+}
+
+void Application::toggleDrawFilletRadii() {
+    setDrawFilletRadii(!mm::g_drawFilletRadii);
 }
 
 void Application::applyCutFromSelection(CutKind kind) {

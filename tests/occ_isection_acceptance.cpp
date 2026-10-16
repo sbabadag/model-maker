@@ -38,6 +38,7 @@ static void checkProfileArea(const SteelProfile& p, double expectedA, double len
 }
 
 int main() {
+    g_drawFilletRadii = true;  // test radiuslu gercek kesiti dogrular (default false'tan bagimsiz)
     // IPE200: h=200 b=100 tw=5.6 tf=8.5 r=12  A=28.48 cm2 = 2848 mm2
     SteelProfile ipe200;
     ipe200.name = "IPE200";

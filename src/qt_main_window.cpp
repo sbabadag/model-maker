@@ -57,8 +57,15 @@
 #include <QPen>
 #include <QBrush>
 #include <cmath>
+#include <QSettings>
 
 namespace {
+// Kalici global ayarlar (Options formu) — INI dosyasina yazilir (%APPDATA%).
+static QSettings appSettings() {
+    return QSettings(QSettings::IniFormat, QSettings::UserScope,
+                     QStringLiteral("ModelMaker"), QStringLiteral("ModelMaker"));
+}
+
 // AutoCAD tarzi renkli ribbon ikonlari: QPainter ile runtime'da cizilir
 // (harici asset yok). 24x24, antialiased, koyu tema uzerinde okunur renkler.
 enum class ToolGlyph {
@@ -257,6 +264,7 @@ QtMainWindow::QtMainWindow(QWidget* parent)
     createMenus();
     createToolbar();
     createDockPanels();
+    loadSettings();
 
     auto* undoShortcut = new QShortcut(QKeySequence::Undo, this);
     QObject::connect(undoShortcut, &QShortcut::activated, this, [this]() { app_.undo(); });
@@ -567,6 +575,7 @@ void QtMainWindow::createMenus() {
     fileMenu->addAction("DXF &İçe Aktar...", this, [this]() { app_.importDxf(); })->setIcon(makeToolIcon(ToolGlyph::Import));
     fileMenu->addAction("DXF &Dışa Aktar...", this, [this]() { app_.exportDxf(); })->setIcon(makeToolIcon(ToolGlyph::Export));
     fileMenu->addSeparator();
+    fileMenu->addAction("Se&çenekler...", this, [this]() { promptOptions(); });
     fileMenu->addAction("Çı&kış", qApp, &QApplication::quit);
 
     QMenu* drawMenu = appMenu_->addMenu("Çi&zim");
@@ -717,6 +726,33 @@ void QtMainWindow::createMenus() {
     });
     windowMenu->addSeparator();
     windowMenu->addAction("Tüm görünüşleri &kapat", this, [this]() { closeAllTwoPointViews(); });
+}
+
+void QtMainWindow::loadSettings() {
+    QSettings s = appSettings();
+    const bool drawFillet = s.value(QStringLiteral("drawFilletRadii"), false).toBool();
+    app_.setDrawFilletRadii(drawFillet);
+}
+
+void QtMainWindow::promptOptions() {
+    QSettings s = appSettings();
+    QDialog dlg(this);
+    dlg.setWindowTitle(QStringLiteral("Seçenekler"));
+    auto* form = new QFormLayout(&dlg);
+
+    auto* filletChk = new QCheckBox(QStringLiteral("Profil fason radiuslarını göster"), &dlg);
+    filletChk->setChecked(s.value(QStringLiteral("drawFilletRadii"), false).toBool());
+    form->addRow(QStringLiteral("Görünüm:"), filletChk);
+
+    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
+    form->addRow(buttons);
+    QObject::connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+    QObject::connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+
+    if (dlg.exec() != QDialog::Accepted) return;
+
+    s.setValue(QStringLiteral("drawFilletRadii"), filletChk->isChecked());
+    app_.setDrawFilletRadii(filletChk->isChecked());
 }
 
 void QtMainWindow::openBoltPropertiesDialog(const mm::BoltGroup& bolt) {
@@ -1271,7 +1307,7 @@ void QtMainWindow::createToolbar() {
         addBtn(lay, ToolGlyph::Extents,  "Extents",  "Zoom Extents", [this]() { app_.zoomExtents2D(); });
         addBtn(lay, ToolGlyph::Extents,  "Zoom Penc.","Zoom Window", [this]() { app_.startZoomWindow2D(); });
         addBtn(lay, ToolGlyph::Reset,    "Sıfırla",  "Görünümü sıfırla (Ctrl+R)", [this]() { app_.resetView(); });
-        addBtn(lay, ToolGlyph::Toggle3D, "Radius",   "Profil radiuslarını göster/gizle (Tekla tarzı hızlı)", [this]() { app_.toggleDrawFilletRadii(); });
+        addBtn(lay, ToolGlyph::Toggle3D, "Radius",   "Profil radiuslarını göster/gizle (Tekla tarzı hızlı)", [this]() { app_.toggleDrawFilletRadii(); appSettings().setValue(QStringLiteral("drawFilletRadii"), app_.drawFilletRadii()); });
         addSep(lay);
         addDrop(lay, ToolGlyph::Extents, "Görünüş", "Standart görünüş yönleri (Ctrl+1..7)", [this](QMenu* m) {
             m->addAction(QStringLiteral("Önden (Ctrl+1)"),  this, [this]() { app_.setStandardView(StandardView::Front); });

@@ -259,6 +259,11 @@ public:
     // bayragini cevirir ve tum profilleri yeniden uretir. Acik = gercek
     // radiuslu kesit; kapali = keskin kose (~4x daha hizli cizim + boolean).
     void toggleDrawFilletRadii();
+    // Global ayar (Options formu / kalici kayit): radius cizimini dogrudan
+    // ACIK/KAPALI yapar (toggle cagirmadan). Baslangicta kayitli degeri
+    // uygulamak ve Options formundan set etmek icin kullanilir.
+    void setDrawFilletRadii(bool enabled);
+    bool drawFilletRadii() const;
     // TEKLA FITTING / PLANE CUT (P11, verb-noun): komut girilince once profil,
     // sonra konstrüksiyon duzlemi secilir (sol tik), SAG TIK komutu isletir,
     // Esc iptal. Fitting tarafi otomatik, PlaneCut keepPositive=true. OCC varsa
