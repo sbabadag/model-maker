@@ -130,7 +130,11 @@ public:
                                 const std::string& profileName);
     std::size_t setModelLineType(const std::vector<std::size_t>& indices, const std::string& lineType);
     std::size_t setModelMaterial(const std::vector<std::size_t>& indices, const std::string& material);
-    void deleteModels(const std::vector<std::size_t>& indices);
+    // Modelleri siler. KESME KASKADI (P6): silinen varligi source/target/tool
+    // olarak kullanan kesme modifier'lari da kaldirilir (CutRemove undo kaydi
+    // dahil). Donus: kaldirilan modifier'larin HEDEFLERI (silinmemis kalan
+    // hedefler) — cagiran bu hedefleri yeniden hesaplamali (recomputeCutTarget).
+    std::vector<EntityId> deleteModels(const std::vector<std::size_t>& indices);
     void replaceModel(std::size_t index, std::vector<WireframeModel> replacements);
     void clear() noexcept;
     void pushSnapshot();
@@ -227,6 +231,8 @@ public:
     // O varligi ARAÇ (kesici) olarak kullanan BooleanCut modifier'larinin
     // INDEKSLERI (canli Part Cut: kesici tasininca hedefler yeniden hesaplanir).
     std::vector<std::size_t> cutModifiersUsingTool(EntityId tool) const;
+    // O varligi KAYNAK (source) olarak kullanan modifier'larin indeksleri (P6).
+    std::vector<std::size_t> cutModifiersForSource(EntityId source) const;
 
 private:
     static constexpr std::size_t kMaxUndoEntries = 100;
@@ -302,5 +308,11 @@ private:
     std::vector<GridDefinition> grids_;
     std::vector<CutModifier> cutModifiers_;
 };
+
+// KESME KAYNAK COZUMU (P6): mod.source gecerliyse kaynak varligin GUNCEL
+// geometrisini mod'a yansitir (duzlem cercevesi / cizgi / 3DFACE koseleri).
+// Kaynak yoksa (silinmis — kaskad onu zaten kaldirmis olmali) veya source
+// kInvalidEntityId ise mod AYNEN dondurulur (sabit/kopya geometri kullanilir).
+CutModifier resolveCutModifierSource(const CutModifier& mod, const Document& document);
 
 } // namespace mm

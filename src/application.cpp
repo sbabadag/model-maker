@@ -2568,7 +2568,12 @@ void Application::onCharacter(wchar_t character) {
                      (transformCommand_ != TransformCommand::Offset || selectedModels_.size() == 1)) {
                 if (transformCommand_ == TransformCommand::Delete) {
                     pushUndoSnapshot();
-                    document_.deleteModels(selectedModels_);
+                    const auto affected [[maybe_unused]] = document_.deleteModels(selectedModels_);
+#ifdef MM_HAS_OCC
+                    // P6: silinen varlik kesme KAYNAGI/ARACI ise kaskad kaldirilan
+                    // modifier'larin hedeflerini yeniden hesapla (kesme geri alinir).
+                    for (const EntityId target : affected) recomputeCutTarget(target);
+#endif
                     cancelTransformCommand();
                 } else if (transformCommand_ == TransformCommand::Trim ||
                            transformCommand_ == TransformCommand::Extend) {
@@ -2828,8 +2833,13 @@ void Application::startTransformCommand(TransformCommand command) {
         (!selectedModels_.empty() || !selectedCutModifiers_.empty())) {
         if (!selectedModels_.empty()) {
             pushUndoSnapshot();
-            document_.deleteModels(selectedModels_);
+            const auto affected [[maybe_unused]] = document_.deleteModels(selectedModels_);
             selectedModels_.clear();
+#ifdef MM_HAS_OCC
+            // P6: silinen varlik kesme KAYNAGI/ARACI ise kaskad kaldirilan
+            // modifier'larin hedeflerini yeniden hesapla (kesme geri alinir).
+            for (const EntityId target : affected) recomputeCutTarget(target);
+#endif
         }
         deleteSelectedCutModifiers();
         cancelTransformCommand();
@@ -3377,6 +3387,10 @@ void Application::applyCutFromSelection(CutKind kind) {
     CutModifier modifier;
     modifier.kind = kind;
     modifier.target = document_.modelId(*targetIdx);
+    // P6: duzlemi KOPYALAMA — kaynak konstrüksiyon duzlemini referans al.
+    // Kesme, duzlemin GUNCEL geometrisinden cozumlenir; duzlem tasininca izler,
+    // silinince kaskad kaldirilir, ayri kopya kesme objesi cizilmez.
+    modifier.source = document_.modelId(*planeIdx);
     modifier.planeOrigin = frame->origin;
     modifier.planeNormal = frame->normal;
     modifier.keepPositive = true;  // Fitting: otomatik taraf (bu alan yok sayilir)
@@ -3443,6 +3457,9 @@ void Application::applyBoundaryCutFromSelection(CutKind kind) {
     CutModifier modifier;
     modifier.kind = kind;
     modifier.target = document_.modelId(*targetIdx);
+    // P6: sinir objesini (cizgi/3DFACE) referans al — tasininca izler, silinince
+    // kaskad kaldirilir.
+    modifier.source = document_.modelId(*boundaryIdx);
     modifier.enabled = true;
     if (kind == CutKind::PolygonCut) {
         modifier.polygon = boundary.vertices();
@@ -4472,6 +4489,11 @@ void Application::commitTransformPoint(const Vec3& point) {
     if (transformCommand_ == TransformCommand::Move) {
         pushUndoSnapshot();
         document_.moveModels(selectedModels_, displacement);
+#ifdef MM_HAS_OCC
+        // P6: tasinan varlik bir kesme KAYNAGI/ARACI ise bagli hedefleri yeniden
+        // hesapla (duzlem/cizgi/3DFACE tasininca kesme onu izler).
+        recomputeTargetsForMovedModels(selectedModels_);
+#endif
         cancelTransformCommand();
     } else if (transformCommand_ == TransformCommand::Copy) {
         // AUTOCAD AKISI: komut Destination fazinda AKTIF kalir; her hedef
@@ -5537,7 +5559,9 @@ void Application::recomputeCutTarget(EntityId target) {
 
     std::vector<CutModifier> mods;
     for (const std::size_t ci : document_.cutModifiersForTarget(target))
-        mods.push_back(document_.cutModifiers()[ci]);
+        // P6: kaynak varlik varsa GUNCEL geometrisinden cozumle (duzlem/cizgi/
+        // 3DFACE tasindiginda kesme onu izler).
+        mods.push_back(resolveCutModifierSource(document_.cutModifiers()[ci], document_));
 
     // Arac (kesici parca) cozumleyici: BooleanCut icin aracin ETKIN sekli.
     // Store uzerinden kimlige gore bakilir; yoksa applyCutModifier base doner.
@@ -5565,6 +5589,22 @@ void Application::recomputeTargetsUsingTool(EntityId tool) {
         const EntityId target = document_.cutModifiers()[ci].target;
         recomputeCutTarget(target);
     }
+}
+
+void Application::recomputeTargetsForMovedModels(const std::vector<std::size_t>& indices) {
+    // P6: tasinan varliklari KAYNAK (source) veya ARAÇ (tool) olarak kullanan
+    // kesme modifier'larinin hedeflerini yeniden hesapla. Duzlem/cizgi/3DFACE
+    // tasindiginda kesme onu izler; kesici parca tasindiginda Part Cut izler.
+    std::unordered_set<EntityId> movedIds;
+    for (const std::size_t index : indices)
+        if (index < document_.models().size()) movedIds.insert(document_.modelId(index));
+    std::unordered_set<EntityId> targets;
+    for (const auto& mod : document_.cutModifiers()) {
+        const bool isSource = movedIds.count(mod.source) != 0;
+        const bool isTool = mod.kind == CutKind::BooleanCut && movedIds.count(mod.tool) != 0;
+        if ((isSource || isTool) && mod.target != kInvalidEntityId) targets.insert(mod.target);
+    }
+    for (const EntityId target : targets) recomputeCutTarget(target);
 }
 
 std::size_t Application::occSolidCount() const noexcept {

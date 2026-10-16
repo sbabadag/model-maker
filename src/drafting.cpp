@@ -1473,8 +1473,14 @@ std::optional<std::size_t> hitTestCutModifier2D(const Vec3& cursor, const Docume
     double bestDistance = tolerance;
     const Vec2 c{cursor.x, cursor.y};
     for (std::size_t i = 0; i < mods.size(); ++i) {
-        const auto& mod = mods[i];
-        if (!mod.enabled) continue;
+        const auto& raw = mods[i];
+        if (!raw.enabled) continue;
+        // P6: kaynaga BAGLI (source var + kaynak varlik mevcut) modifier bagimsiz
+        // secilemez — kaynak nesne (duzlem/cizgi/3DFACE) kesme nesnesinin
+        // KENDISIDIR. Secim/tasima/silme kaynak nesne uzerinden yapilir.
+        if (raw.source != kInvalidEntityId && document.indexOfEntity(raw.source)) continue;
+        // P6: kaynaktan GUNCEL geometriyi cozumle (tasinan duzlem/cizgi isabet eder).
+        const CutModifier mod = resolveCutModifierSource(raw, document);
         Bounds3 targetBounds{};
         if (const auto t = document.indexOfEntity(mod.target)) {
             if (*t < document.modelBounds().size()) targetBounds = document.modelBounds()[*t];
@@ -1508,8 +1514,14 @@ std::optional<std::size_t> hitTestCutModifier3D(const Vec2& cursor, const Docume
     std::optional<std::size_t> best;
     double bestDistance = tolerancePixels;
     for (std::size_t i = 0; i < mods.size(); ++i) {
-        const auto& mod = mods[i];
-        if (!mod.enabled) continue;
+        const auto& raw = mods[i];
+        if (!raw.enabled) continue;
+        // P6: kaynaga BAGLI (source var + kaynak varlik mevcut) modifier bagimsiz
+        // secilemez — kaynak nesne (duzlem/cizgi/3DFACE) kesme nesnesinin
+        // KENDISIDIR. Secim/tasima/silme kaynak nesne uzerinden yapilir.
+        if (raw.source != kInvalidEntityId && document.indexOfEntity(raw.source)) continue;
+        // P6: kaynaktan GUNCEL geometriyi cozumle (tasinan duzlem/cizgi isabet eder).
+        const CutModifier mod = resolveCutModifierSource(raw, document);
         Bounds3 targetBounds{};
         if (const auto t = document.indexOfEntity(mod.target)) {
             if (*t < document.modelBounds().size()) targetBounds = document.modelBounds()[*t];

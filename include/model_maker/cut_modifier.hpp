@@ -36,6 +36,14 @@ struct CutModifier {
     std::vector<Vec3> polygon;           // PolygonCut: duzlemde cokgen (>=3 nokta);
                                          // LineCut: {cizgiBas, cizgiSon} (2 nokta)
     EntityId tool{kInvalidEntityId};     // BooleanCut: diger parca
+    // KAYNAK VARLIK (P6): PlaneCut/Fitting icin konstrüksiyon duzleminin,
+    // LineCut icin cizginin, PolygonCut icin 3DFACE'in EntityId'si. Kaynak
+    // gecerliyken modifier GEOMETRISI KOPYALANMAZ — kaynak varligin GUNCEL
+    // geometrisinden cozumlenir (resolveCutModifierSource). Boylece kaynak
+    // tasininca kesme onu izler, kaynak silinince kesme kaskad kaldirilir ve
+    // ayri bir "kopya kesme objesi" cizilmez. kInvalidEntityId = eski/kopiya
+    // davranis (geometri mod.planeOrigin/planeNormal/polygon'da sabittir).
+    EntityId source{kInvalidEntityId};
     bool enabled{true};
     std::string name;   // UTF-8 (kalicilikta taşınabilir; Qt QString::fromUtf8 ile)
     bool operator==(const CutModifier&) const = default;

@@ -794,8 +794,10 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
     const auto drawCutPlanes = [&]() {
         const COLORREF kCutRgb = RGB(255, 140, 40);
         for (std::size_t ci = 0; ci < document.cutModifiers().size(); ++ci) {
-            const auto& mod = document.cutModifiers()[ci];
-            if (!mod.enabled) continue;
+            const auto& raw = document.cutModifiers()[ci];
+            if (!raw.enabled) continue;
+            // P6: kaynagi varsa GUNCEL geometriden cozumle (cizim/secim ayni kaynak).
+            const CutModifier mod = resolveCutModifierSource(raw, document);
             // PolygonCut: cokgen siniri kesikli cizgiyle (kesme rengi).
             if (mod.kind == CutKind::PolygonCut) {
                 const auto& poly = mod.polygon;
@@ -833,6 +835,10 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
                 continue;
             }
             if (mod.kind != CutKind::PlaneCut && mod.kind != CutKind::Fitting) continue;
+            // P6: kaynak konstrüksiyon duzlemi VARSA kopya (sari) duzlem CIZME —
+            // mavi kaynak duzlem kesme duzleminin KENDISIDIR (tek duzlem; ekranda
+            // ikinci bir sari duzlem olusmaz). Secim hinti yine de calisir.
+            if (raw.source != kInvalidEntityId && document.indexOfEntity(raw.source)) continue;
             const double nl = std::hypot(mod.planeNormal.x, mod.planeNormal.y, mod.planeNormal.z);
             if (!(nl > 1e-9)) continue;
             const WorkPlane plane =
@@ -887,13 +893,15 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         const COLORREF kSelRgb = RGB(255, 220, 60);
         const COLORREF kHovRgb = RGB(255, 255, 255);
         for (std::size_t ci = 0; ci < document.cutModifiers().size(); ++ci) {
-            const auto& mod = document.cutModifiers()[ci];
-            if (!mod.enabled) continue;
+            const auto& rawMod = document.cutModifiers()[ci];
+            if (!rawMod.enabled) continue;
             const bool sel = std::find(draft.selectedCutModifiers.begin(),
                                        draft.selectedCutModifiers.end(), ci) !=
                              draft.selectedCutModifiers.end();
             const bool hov = draft.hoverCutModifier && *draft.hoverCutModifier == ci;
             if (!sel && !hov) continue;
+            // P6: kaynaktan GUNCEL geometriyi cozumle (tasinan duzlem/cizgi izlenir).
+            const CutModifier mod = resolveCutModifierSource(rawMod, document);
             Bounds3 tb{};
             if (const auto t = document.indexOfEntity(mod.target)) {
                 if (*t < document.modelBounds().size()) tb = document.modelBounds()[*t];

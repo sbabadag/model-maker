@@ -280,7 +280,7 @@ void writeMmw8(std::ostream& out, const Mmw8Document& doc) {
             putString(body, mod.name);
             body << ' ' << mod.polygon.size();
             for (const auto& p : mod.polygon) body << ' ' << p.x << ' ' << p.y << ' ' << p.z;
-            body << '\n';
+            body << ' ' << mod.source << '\n';  // P6: kaynak varlik (0 = yok)
         }
         const std::string b = body.str();
         out << "C " << b.size() << '\n';
@@ -532,32 +532,39 @@ void readMmw8(std::istream& in, Mmw8Document& doc) {
             std::istringstream cs(body);
             const std::uint64_t count = readUint64(cs, "cutModifier count");
             if (count > kMmw8MaxCutModifiers) fail("cutModifier count exceeds limit");
+            std::string line;
+            std::getline(cs, line);  // count satırının kalanı (boş)
             for (std::uint64_t ci = 0; ci < count; ++ci) {
+                if (!std::getline(cs, line)) fail("missing cutModifier record");
+                std::istringstream ls(line);
                 CutModifier mod;
-                const std::int64_t kind = readInt64(cs, "cut kind");
+                const std::int64_t kind = readInt64(ls, "cut kind");
                 if (kind < 0 || kind > 4) fail("invalid cut kind");
                 mod.kind = static_cast<CutKind>(kind);
-                mod.target = static_cast<EntityId>(readUint64(cs, "cut target"));
-                mod.planeOrigin.x = readDouble(cs, "cut origin x");
-                mod.planeOrigin.y = readDouble(cs, "cut origin y");
-                mod.planeOrigin.z = readDouble(cs, "cut origin z");
-                mod.planeNormal.x = readDouble(cs, "cut normal x");
-                mod.planeNormal.y = readDouble(cs, "cut normal y");
-                mod.planeNormal.z = readDouble(cs, "cut normal z");
-                mod.keepPositive = readBool(cs, "cut keepPositive");
-                mod.tool = static_cast<EntityId>(readUint64(cs, "cut tool"));
-                mod.enabled = readBool(cs, "cut enabled");
-                mod.name = readString(cs);
-                const std::uint64_t polyCount = readUint64(cs, "cut polygon count");
+                mod.target = static_cast<EntityId>(readUint64(ls, "cut target"));
+                mod.planeOrigin.x = readDouble(ls, "cut origin x");
+                mod.planeOrigin.y = readDouble(ls, "cut origin y");
+                mod.planeOrigin.z = readDouble(ls, "cut origin z");
+                mod.planeNormal.x = readDouble(ls, "cut normal x");
+                mod.planeNormal.y = readDouble(ls, "cut normal y");
+                mod.planeNormal.z = readDouble(ls, "cut normal z");
+                mod.keepPositive = readBool(ls, "cut keepPositive");
+                mod.tool = static_cast<EntityId>(readUint64(ls, "cut tool"));
+                mod.enabled = readBool(ls, "cut enabled");
+                mod.name = readString(ls);
+                const std::uint64_t polyCount = readUint64(ls, "cut polygon count");
                 if (polyCount > kMmw8MaxVertices) fail("cut polygon too long");
                 mod.polygon.reserve(static_cast<std::size_t>(polyCount));
                 for (std::uint64_t pi = 0; pi < polyCount; ++pi) {
                     Vec3 p;
-                    p.x = readDouble(cs, "polygon x");
-                    p.y = readDouble(cs, "polygon y");
-                    p.z = readDouble(cs, "polygon z");
+                    p.x = readDouble(ls, "polygon x");
+                    p.y = readDouble(ls, "polygon y");
+                    p.z = readDouble(ls, "polygon z");
                     mod.polygon.push_back(p);
                 }
+                // P6: kaynak varlik (opsiyonel — eski dosyalarda satir sonu bos).
+                std::uint64_t source = 0;
+                if (ls >> source) mod.source = static_cast<EntityId>(source);
                 parsed.cutModifiers.push_back(std::move(mod));
             }
         } else if (tag == 'K') {

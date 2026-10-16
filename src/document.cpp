@@ -11,6 +11,7 @@
 #include <set>
 #include <stdexcept>
 #include <string>
+#include <unordered_set>
 #include <utility>
 #include <system_error>
 
@@ -467,7 +468,7 @@ std::size_t Document::setModelLineType(const std::vector<std::size_t>& indices,
     return changed;
 }
 
-void Document::deleteModels(const std::vector<std::size_t>& indices) {
+std::vector<EntityId> Document::deleteModels(const std::vector<std::size_t>& indices) {
     ++revision_;
     opaqueBrepsStale_ = true;
     std::vector<std::size_t> valid;
@@ -476,6 +477,10 @@ void Document::deleteModels(const std::vector<std::size_t>& indices) {
         if (index < models_.size()) valid.push_back(index);
     std::sort(valid.begin(), valid.end(), std::greater<>{});
     valid.erase(std::unique(valid.begin(), valid.end()), valid.end());
+    // Silinen kimlikler (modeller ERASE edilmeden ONCE toplanmali).
+    std::unordered_set<EntityId> deletedIds;
+    deletedIds.reserve(valid.size() * 2);
+    for (const auto index : valid) deletedIds.insert(modelIds_[index]);
     UndoOp op;
     op.kind = UndoOp::Kind::Delete;
     op.indices = valid;
@@ -484,6 +489,20 @@ void Document::deleteModels(const std::vector<std::size_t>& indices) {
         op.beforeIds.push_back(modelIds_[index]); // silinen indekslerin KIMLIKLERI (ayni azalan sirada)
     }
     recordUndoOp(std::move(op));
+    // KESME KASKADI (P6): silinen varligi kaynak (source), hedef (target) veya
+    // arac (BooleanCut tool) olarak kullanan modifier'lar da kaldirilir. En
+    // yuksek indeksten asagi silinir (kayma guvenli). Kalan (silinmemis)
+    // hedefler donulur — cagiran bunlari yeniden hesaplar.
+    std::vector<EntityId> affectedTargets;
+    for (std::size_t ci = cutModifiers_.size(); ci-- > 0;) {
+        const auto& mod = cutModifiers_[ci];
+        const bool touches = deletedIds.count(mod.source) || deletedIds.count(mod.target) ||
+                             (mod.kind == CutKind::BooleanCut && deletedIds.count(mod.tool));
+        if (!touches) continue;
+        if (mod.target != kInvalidEntityId && !deletedIds.count(mod.target))
+            affectedTargets.push_back(mod.target);
+        removeCutModifier(ci);
+    }
     for (const auto index : valid) {
         models_.erase(models_.begin() + static_cast<std::ptrdiff_t>(index));
         modelIds_.erase(modelIds_.begin() + static_cast<std::ptrdiff_t>(index));
@@ -503,6 +522,7 @@ void Document::deleteModels(const std::vector<std::size_t>& indices) {
     spatialIndexDirty_ = true;
     documentBounds_.reset();
     if (!valid.empty()) invalidateDerivedState();
+    return affectedTargets;
 }
 
 void Document::replaceModel(std::size_t index, std::vector<WireframeModel> replacements) {
@@ -1854,6 +1874,43 @@ std::vector<std::size_t> Document::cutModifiersUsingTool(EntityId tool) const {
         if (cutModifiers_[i].kind == CutKind::BooleanCut && cutModifiers_[i].tool == tool)
             result.push_back(i);
     return result;
+}
+
+std::vector<std::size_t> Document::cutModifiersForSource(EntityId source) const {
+    // Ters sorgu (P6): kaynak (konstrüksiyon duzlemi/cizgi/3DFACE) tasininca
+    // onu kullanan modifier'larin hedefleri yeniden hesaplanir.
+    std::vector<std::size_t> result;
+    if (source == kInvalidEntityId) return result;
+    for (std::size_t i = 0; i < cutModifiers_.size(); ++i)
+        if (cutModifiers_[i].source == source) result.push_back(i);
+    return result;
+}
+
+CutModifier resolveCutModifierSource(const CutModifier& mod, const Document& document) {
+    if (mod.source == kInvalidEntityId) return mod;
+    const auto idxOpt = document.indexOfEntity(mod.source);
+    if (!idxOpt) return mod;  // kaynak yok (kaskad kaldirmis olmali) — sabit geometri
+    const auto& src = document.models()[*idxOpt];
+    CutModifier out = mod;
+    switch (mod.kind) {
+    case CutKind::PlaneCut:
+    case CutKind::Fitting:
+        if (const auto frame = constructionPlaneFrame(src)) {
+            out.planeOrigin = frame->origin;
+            out.planeNormal = frame->normal;
+        }
+        break;
+    case CutKind::LineCut:
+        if (src.vertices().size() >= 2)
+            out.polygon = {src.vertices()[0], src.vertices()[1]};
+        break;
+    case CutKind::PolygonCut:
+        out.polygon = src.vertices();
+        break;
+    case CutKind::BooleanCut:
+        break;  // BooleanCut: tool referansiyla cozumlenir, source kullanilmaz
+    }
+    return out;
 }
 
 } // namespace mm

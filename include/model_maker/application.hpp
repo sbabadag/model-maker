@@ -451,6 +451,11 @@ private:
     // Kesici parca tasininca (canli Part Cut): bu parçayi ARAÇ olarak kullanan
     // tum BooleanCut modifier'larinin hedeflerini yeniden hesaplar.
     void recomputeTargetsUsingTool(EntityId tool);
+    // P6: verilen model indeksleri tasindiginda, bu varliklari KAYNAK (source)
+    // veya ARAÇ (BooleanCut tool) olarak kullanan kesme modifier'larinin
+    // hedeflerini yeniden hesaplar (duzlem/cizgi/3DFACE/kesici parca tasininca
+    // kesme onu izler).
+    void recomputeTargetsForMovedModels(const std::vector<std::size_t>& indices);
 #endif
     void saveOptions();
     void loadOptions();
