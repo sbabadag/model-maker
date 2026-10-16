@@ -284,6 +284,11 @@ public:
     void cancelPendingBoltCommand();
     void executePendingBoltCommand();
     bool pickPendingBoltAt(int x, int y);
+    // Bolt yuz seciminde imlec isininin pending parcalar uzerindeki en yakin
+    // yuz isabeti (model indeksi + MeshRayHit). Hover vurgusu ve tik-secimi
+    // ayni fonksiyonu kullanir -> vurgulanan yuz = tiklaninca secilen yuz.
+    struct PendingFaceHit { std::size_t model{}; MeshRayHit hit; };
+    std::optional<PendingFaceHit> pendingBoltFaceHit(int x, int y) const;
     // Secili model bir BOLT display'i ise bulon parametrelerini okur (props
     // paneli). Donus false = secim bir bulon degil.
     bool selectedBoltProperties(double& nominalDiameter, double& holeDiameter,
@@ -947,6 +952,10 @@ private:
     std::vector<std::size_t> selectedCutModifiers_;
     std::optional<std::size_t> hoverModel_;
     std::optional<std::size_t> hoverCutModifier_;
+    // Bolt yuz secim adiminda imlecin altindaki yuz (hover vurgusu). Hover ile
+    // tik-seciminin AYNI yuzu gostermesi icin pendingBoltFaceHit ortak kaynak.
+    std::optional<std::size_t> hoverFaceModel_;
+    std::optional<std::size_t> hoverFaceIndex_;
     std::optional<Vec3> transformBase_;
     std::optional<Vec3> rotateAxis_;
     std::optional<double> offsetDistance_;

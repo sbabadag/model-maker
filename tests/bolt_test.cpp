@@ -191,6 +191,7 @@ int main() {
             check(near(h1->normal.z, 1.0), "ray: normal +Z");
             check(near(h1->point.z, 0.0), "ray: isabet z=0");
             check(near(h1->distance, 10.0), "ray: mesafe 10");
+            check(h1->faceIndex == 0, "ray: tek ucgende faceIndex=0");
         }
         // Ters yon (asagi) -> isabet yok.
         check(!raycastMesh(tri, {5, 5, 10}, {0, 0, 1}).has_value(), "ray: ters yon isabetsiz");
@@ -204,7 +205,10 @@ int main() {
             {}, {Face{0, 1, 2}, Face{3, 4, 5}});
         const auto h2 = raycastMesh(two, {5, 5, 10}, {0, 0, -1});
         check(h2.has_value() && near(h2->distance, 5.0), "ray: en yakin ucgen (z=5)");
-        if (h2) check(near(h2->point.z, 5.0), "ray: en yakin nokta z=5");
+        if (h2) {
+            check(near(h2->point.z, 5.0), "ray: en yakin nokta z=5");
+            check(h2->faceIndex == 1, "ray: en yakin ucgen faceIndex=1");
+        }
     }
 
     if (failures) {

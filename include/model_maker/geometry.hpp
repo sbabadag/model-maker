@@ -215,6 +215,7 @@ struct MeshRayHit {
     Vec3 point{};      // dunya koordinatinda isabet noktasi
     Vec3 normal{};     // yuz normali (birim uzunluk)
     double distance{}; // isin parametresi t >= 0 (rayOrigin + t*rayDirection)
+    std::size_t faceIndex{}; // isabet edilen poligonun model.faces() indeksi
 };
 
 // Bir WireframeModel'in ucgen yuzlerine karsi en yakin isin kesisimi (Moller-

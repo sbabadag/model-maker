@@ -953,6 +953,67 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         }
     };
 
+    // BOLT YUZ SECIM HOVER VURGUSU: imlecin altindaki poligon yuz yari saydam
+    // amber dolgu + beyaz kontur ile vurgulanir (kullanici hangi yuzu
+    // sececegini gorur). Yalnizca bolt yuz secim adiminda set edilir.
+    const auto drawHoverFaceFill = [&]() {
+        if (!draft.hoverFaceModel || !draft.hoverFaceIndex) return;
+        const std::size_t mi = *draft.hoverFaceModel;
+        const std::size_t fi = *draft.hoverFaceIndex;
+        if (mi >= document.models().size()) return;
+        const auto& model = document.models()[mi];
+        if (fi >= model.faces().size()) return;
+        const auto& face = model.faces()[fi];
+        if (face.size() < 3) return;
+        const auto& verts = model.vertices();
+        std::vector<POINT> pts;
+        pts.reserve(face.size());
+        for (const std::size_t vi : face) {
+            if (vi >= verts.size()) return;
+            pts.push_back(projectPoint(verts[vi]));
+        }
+        LONG left = pts[0].x, right = pts[0].x, top = pts[0].y, bottom = pts[0].y;
+        for (const POINT& p : pts) {
+            left = std::min(left, p.x); right = std::max(right, p.x);
+            top = std::min(top, p.y); bottom = std::max(bottom, p.y);
+        }
+        left = std::clamp<LONG>(left, 0, width);
+        right = std::clamp<LONG>(right, 0, width);
+        top = std::clamp<LONG>(top, 0, height);
+        bottom = std::clamp<LONG>(bottom, 0, height);
+        const int w = right - left, h = bottom - top;
+        if (w > 0 && h > 0) {
+            HDC fillDc = CreateCompatibleDC(dc);
+            HBITMAP fillBmp = CreateCompatibleBitmap(dc, w, h);
+            HGDIOBJ oldBmp = SelectObject(fillDc, fillBmp);
+            BitBlt(fillDc, 0, 0, w, h, dc, left, top, SRCCOPY);
+            std::vector<POINT> local = pts;
+            for (auto& p : local) { p.x -= left; p.y -= top; }
+            HBRUSH brush = CreateSolidBrush(RGB(255, 180, 0));
+            HGDIOBJ oldBrush = SelectObject(fillDc, brush);
+            HGDIOBJ oldPen = SelectObject(fillDc, GetStockObject(NULL_PEN));
+            Polygon(fillDc, local.data(), static_cast<int>(local.size()));
+            SelectObject(fillDc, oldPen);
+            SelectObject(fillDc, oldBrush);
+            BLENDFUNCTION blend{AC_SRC_OVER, 0, 96, 0};
+            AlphaBlend(dc, left, top, w, h, fillDc, 0, 0, w, h, blend);
+            SelectObject(fillDc, oldBmp);
+            DeleteObject(brush);
+            DeleteObject(fillBmp);
+            DeleteDC(fillDc);
+        }
+        HPEN outline = CreatePen(PS_SOLID, 2, RGB(255, 255, 255));
+        SelectObject(dc, outline);
+        for (std::size_t k = 0; k < pts.size(); ++k) {
+            const POINT a = pts[k];
+            const POINT b = pts[(k + 1) % pts.size()];
+            line(dc, a.x, a.y, b.x, b.y);
+        }
+        SelectObject(dc, stockPen);
+        DeleteObject(outline);
+        ++performance.renderedEntities;
+    };
+
     // Hareket kareleri geri bildirim katmanı: seçim vurgusu, transform
     // izleyicisi/hayaletleri, trim/extend önizlemesi, çizim lastik bandı,
     // snap işareti ve dinamik giriş. Temel geometri motion tabanından gelir.
@@ -972,7 +1033,8 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         const bool feedbackActive = draft.transformCommand != TransformCommand::None ||
                                     !draft.selectedModels.empty() ||
                                     (draft.drawingActive && draft.anchor && draft.cursor) ||
-                                    draft.hoverModel.has_value();
+                                    draft.hoverModel.has_value() ||
+                                    draft.hoverFaceModel.has_value();
         if (feedbackActive) {
             // Statik secim hover'inda secili objeler tabana gomuludur — yeniden
             // cizme. Yalnizca: transform (hayalet), secim penceresi suruklemesi
@@ -1010,6 +1072,7 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
                     DeleteObject(hoverPen);
                 }
             }
+            drawHoverFaceFill();
             if (draft.transformCommand != TransformCommand::None &&
                 draft.transformPhase == TransformPhase::Destination &&
                 draft.transformBase && draft.cursor) {
@@ -1968,6 +2031,7 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
                 ++performance.renderedEntities;
             }
         }
+        drawHoverFaceFill();
 
         // PROFIL UC TUTAMAKLARI (grip edit): yalniz SECILI profilli katilarin
         // iki ucuna sari (from) ve mor (to) tutamak cizilir (kullanici istegi:

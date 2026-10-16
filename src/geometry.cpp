@@ -363,7 +363,8 @@ std::optional<MeshRayHit> raycastMesh(const WireframeModel& model, Vec3 rayOrigi
 
     const double eps = 1e-9;
     std::optional<MeshRayHit> best;
-    for (const Face& face : faces) {
+    for (std::size_t faceIdx = 0; faceIdx < faces.size(); ++faceIdx) {
+        const Face& face = faces[faceIdx];
         if (face.size() < 3) continue;
         // Fan ucleme: {v0, vi, vi+1} — poligon ve ucgen girdileri birlikte isler.
         const Vec3& v0 = verts[face[0]];
@@ -397,6 +398,7 @@ std::optional<MeshRayHit> raycastMesh(const WireframeModel& model, Vec3 rayOrigi
                              rayOrigin.z + dir.z * t};
             hit.normal = n;
             hit.distance = t;
+            hit.faceIndex = faceIdx;
             best = hit;
         }
     }

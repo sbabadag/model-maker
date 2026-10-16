@@ -1176,6 +1176,8 @@ void Application::paintPassiveViewport(std::size_t index) {
         view.cursor.reset();
         view.hoverModel.reset();
         view.hoverCutModifier.reset();
+        view.hoverFaceModel.reset();
+        view.hoverFaceIndex.reset();
         view.snapType = SnapType::None;
         view.anchor.reset();
         view.facePoints.clear();
@@ -3965,6 +3967,8 @@ void Application::startBoltCommand() {
     selectedModels_.clear();
     selectionFirstCorner_.reset();
     hoverModel_.reset();
+    hoverFaceModel_.reset();
+    hoverFaceIndex_.reset();
     publishStatus(L"Bolt: baglanacak IKI parcayi secin (sol tık, toggle), sağ tık uygular");
     updateControls();
     updateStatus();
@@ -3977,6 +3981,8 @@ void Application::cancelPendingBoltCommand() {
     pendingBoltParts_.clear();
     pendingBoltAxis_.reset();
     hoverModel_.reset();
+    hoverFaceModel_.reset();
+    hoverFaceIndex_.reset();
     selectedModels_.clear();
     selectionFirstCorner_.reset();
     updateControls();
@@ -4003,7 +4009,33 @@ void Application::executePendingBoltCommand() {
     pendingBoltParts_.clear();
     pendingBoltAxis_.reset();
     hoverModel_.reset();
+    hoverFaceModel_.reset();
+    hoverFaceIndex_.reset();
     applyBoltFromParts(parts, axis);
+}
+
+std::optional<Application::PendingFaceHit> Application::pendingBoltFaceHit(int x, int y) const {
+    if (pendingBoltParts_.empty()) return std::nullopt;
+    RECT client{};
+    GetClientRect(canvas_, &client);
+    if (client.right <= 0 || client.bottom <= 0 || camera_.zoom() <= 0.0) return std::nullopt;
+    const double scale = camera_.pixelsPerUnit() * camera_.zoom();
+    const double camX = (x - client.right * 0.5) / scale;
+    const double camY = (client.bottom * 0.5 - y) / scale;
+    const std::array<double, 9> R = camera_.rotationMatrix();
+    const Vec3 c = camera_.center3D();
+    const Vec3 origin{c.x + R[0] * camX + R[3] * camY - R[6],
+                      c.y + R[1] * camX + R[4] * camY - R[7],
+                      c.z + R[2] * camX + R[5] * camY - R[8]};
+    const Vec3 direction{-R[6], -R[7], -R[8]};
+    std::optional<PendingFaceHit> best;
+    for (const std::size_t p : pendingBoltParts_) {
+        if (p >= document_.models().size()) continue;
+        const auto h = raycastMesh(document_.models()[p], origin, direction);
+        if (h && (!best || h->hit.distance < best->hit.distance))
+            best = PendingFaceHit{p, *h};
+    }
+    return best;
 }
 
 bool Application::pickPendingBoltAt(int x, int y) {
@@ -4011,33 +4043,15 @@ bool Application::pickPendingBoltAt(int x, int y) {
     // 2 parca zaten seciliyse: bu tik bir YUZ secimidir (bulon ekseni = yuz
     // normali). Isin imlec altindaki en yakin yuzun normalini yakalar.
     if (pendingBoltParts_.size() >= 2) {
-        RECT client{};
-        GetClientRect(canvas_, &client);
-        if (client.right <= 0 || client.bottom <= 0 || camera_.zoom() <= 0.0) {
-            MessageBeep(MB_ICONWARNING);
-            return true;
-        }
-        const double scale = camera_.pixelsPerUnit() * camera_.zoom();
-        const double camX = (x - client.right * 0.5) / scale;
-        const double camY = (client.bottom * 0.5 - y) / scale;
-        const std::array<double, 9> R = camera_.rotationMatrix();
-        const Vec3 c = camera_.center3D();
-        const Vec3 origin{c.x + R[0] * camX + R[3] * camY - R[6],
-                          c.y + R[1] * camX + R[4] * camY - R[7],
-                          c.z + R[2] * camX + R[5] * camY - R[8]};
-        const Vec3 direction{-R[6], -R[7], -R[8]};
-        std::optional<MeshRayHit> best;
-        for (const std::size_t p : pendingBoltParts_) {
-            if (p >= document_.models().size()) continue;
-            const auto h = raycastMesh(document_.models()[p], origin, direction);
-            if (h && (!best || h->distance < best->distance)) best = h;
-        }
-        if (!best) {
+        const auto faceHit = pendingBoltFaceHit(x, y);
+        if (!faceHit) {
             MessageBeep(MB_ICONWARNING);
             publishStatus(L"Bolt: yuz bulunamadi — parcana ait bir yuzeye tiklayin");
             return true;
         }
-        pendingBoltAxis_ = best->normal;
+        pendingBoltAxis_ = faceHit->hit.normal;
+        hoverFaceModel_.reset();
+        hoverFaceIndex_.reset();
         publishStatus(L"Yuz secildi — sağ tık ile uygula (eksen = yuz normali, Esc iptal)");
         updateControls();
         updateStatus();
@@ -4817,11 +4831,21 @@ void Application::refreshHoverCandidate(int x, int y) {
     // modda vurgu yok (kullanici istegi).
     hoverModel_.reset();
     hoverCutModifier_.reset();
+    hoverFaceModel_.reset();
+    hoverFaceIndex_.reset();
     if (!pendingCutKind_ && !pendingBolt_) return;
     // VERB-NOUN BOLT beklemede: yalnizca normal parcalar (konstrüksiyon
-    // olmayan) vurgulanir. Tam 2 parca seciliyse vurgu yok (hazir).
+    // olmayan) vurgulanir. Tam 2 parca seciliyse YUZ secim adimidir: imlecin
+    // altindaki yuz raycast ile bulunup vurgulanir (tiklaninca secilen yuz).
     if (pendingBolt_) {
-        if (pendingBoltParts_.size() >= 2) return;
+        if (pendingBoltParts_.size() >= 2) {
+            const auto faceHit = pendingBoltFaceHit(x, y);
+            if (faceHit) {
+                hoverFaceModel_ = faceHit->model;
+                hoverFaceIndex_ = faceHit->hit.faceIndex;
+            }
+            return;
+        }
         const auto matchesRequired = [&](std::size_t index) {
             if (index >= document_.models().size()) return false;
             return document_.models()[index].constructionKind() == ConstructionKind::None;
@@ -8401,6 +8425,7 @@ DraftView Application::draftView() const {
     view.selectedModels = selectedModels_; view.selectionFirstCorner = selectionFirstCorner_;
     view.selectedCutModifiers = selectedCutModifiers_;
     view.hoverModel = hoverModel_; view.hoverCutModifier = hoverCutModifier_;
+    view.hoverFaceModel = hoverFaceModel_; view.hoverFaceIndex = hoverFaceIndex_;
     view.transformBase = transformBase_;
     view.offsetDistance = offsetDistance_;
     view.filletRadius = filletRadius_;
