@@ -3977,6 +3977,13 @@ void Application::applyBoltFromParts(const std::vector<std::size_t>& parts,
 #else
     WireframeModel displayModel = WireframeModel::cube(20.0);  // OCC'siz fallback
 #endif
+    // Civata (bolon) montaji kahverengi: RGB(139, 89, 42) = 0x8B592A.
+    {
+        auto boltProps = displayModel.properties();
+        boltProps.trueColor = 0x8B592A;
+        boltProps.effectiveColor = 0x8B592A;
+        displayModel.setProperties(std::move(boltProps));
+    }
     const std::size_t bi = document_.addBoltGroup(bolt, std::move(displayModel));
     const BoltGroup& created = document_.boltGroups()[bi];
 #ifdef MM_HAS_OCC
