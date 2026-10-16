@@ -4038,9 +4038,35 @@ std::optional<Application::PendingFaceHit> Application::pendingBoltFaceHit(int x
     const double camY = (client.bottom * 0.5 - y) / scale;
     const std::array<double, 9> R = camera_.rotationMatrix();
     const Vec3 c = camera_.center3D();
-    const Vec3 origin{c.x + R[0] * camX + R[3] * camY - R[6],
-                      c.y + R[1] * camX + R[4] * camY - R[7],
-                      c.z + R[2] * camX + R[5] * camY - R[8]};
+    // ORTOGRAFIK projeksiyonda derinlik kirpma YOKTUR: parcalar merkez duzleminin
+    // "arkasinda" (kameraZ > 0) bile ekranda gorunur. Eski isin kokeni kameraZ=-1
+    // (merkezin 1 birim onu) + t>=0 yalniz merkezin ONUNU supuruyordu → parcalar
+    // izleyici tarafinda kalinca isin hepsini iskaliyordu (tam isabet: parcalar
+    // kameraZ=+4471'de, koken kameraZ=-1'de). Cozum: kokeni izleyici tarafina
+    // (kameraZ=+D, D=secili parcalarin merkeze en uzak kose mesafesi) koy, ekran
+    // icine at → isin TUM gorunur geometriyi supurur, "en yakin" = izleyiciye
+    // en yakin yuz.
+    Vec3 lo{1e100, 1e100, 1e100}, hi{-1e100, -1e100, -1e100};
+    for (const std::size_t p : pendingBoltParts_) {
+        if (p >= document_.modelBounds().size()) continue;
+        const auto& b = document_.modelBounds()[p];
+        lo.x = std::min(lo.x, b.minimum.x); lo.y = std::min(lo.y, b.minimum.y);
+        lo.z = std::min(lo.z, b.minimum.z);
+        hi.x = std::max(hi.x, b.maximum.x); hi.y = std::max(hi.y, b.maximum.y);
+        hi.z = std::max(hi.z, b.maximum.z);
+    }
+    double D = 1.0;
+    for (int k = 0; k < 8; ++k) {
+        const double px = (k & 1) ? hi.x : lo.x;
+        const double py = (k & 2) ? hi.y : lo.y;
+        const double pz = (k & 4) ? hi.z : lo.z;
+        const double dx = px - c.x, dy = py - c.y, dz = pz - c.z;
+        D = std::max(D, std::sqrt(dx * dx + dy * dy + dz * dz));
+    }
+    const double big = D + 1.0;
+    const Vec3 origin{c.x + R[0] * camX + R[3] * camY + R[6] * big,
+                      c.y + R[1] * camX + R[4] * camY + R[7] * big,
+                      c.z + R[2] * camX + R[5] * camY + R[8] * big};
     const Vec3 direction{-R[6], -R[7], -R[8]};
     std::optional<PendingFaceHit> best;
     for (const std::size_t p : pendingBoltParts_) {
@@ -4115,9 +4141,20 @@ bool Application::pickPendingBoltAt(int x, int y) {
             const double camY = (client.bottom * 0.5 - y) / scale;
             const std::array<double, 9> R = camera_.rotationMatrix();
             const Vec3 c = camera_.center3D();
-            const Vec3 origin{c.x + R[0] * camX + R[3] * camY - R[6],
-                              c.y + R[1] * camX + R[4] * camY - R[7],
-                              c.z + R[2] * camX + R[5] * camY - R[8]};
+            // TANI isini da DUZELTILMIS kokenle kur (parcalar kameraZ>0'da olsa
+            // bile isabet eder): izleyici tarafina +big.
+            double tD = 1.0;
+            for (int tk = 0; tk < 8; ++tk) {
+                const double px = (tk & 1) ? hi.x : lo.x;
+                const double py = (tk & 2) ? hi.y : lo.y;
+                const double pz = (tk & 4) ? hi.z : lo.z;
+                const double tdx = px - c.x, tdy = py - c.y, tdz = pz - c.z;
+                tD = std::max(tD, std::sqrt(tdx * tdx + tdy * tdy + tdz * tdz));
+            }
+            const double tBig = tD + 1.0;
+            const Vec3 origin{c.x + R[0] * camX + R[3] * camY + R[6] * tBig,
+                              c.y + R[1] * camX + R[4] * camY + R[7] * tBig,
+                              c.z + R[2] * camX + R[5] * camY + R[8] * tBig};
             const Vec3 dir{-R[6], -R[7], -R[8]};
             bool boxHit = true;
             double tmin = 0.0, tmax = 1e18;
