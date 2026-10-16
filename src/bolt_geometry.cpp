@@ -141,5 +141,25 @@ TopoDS_Shape buildBoltAssemblyShape(const BoltGroup& bolt, double gripLength) {
     return result;
 }
 
+TopoDS_Shape buildBoltGroupAssemblyShape(const BoltGroup& bolt, double gripLength) {
+    const std::vector<Vec3> origins = boltGroupBoltOrigins(bolt);
+    TopoDS_Shape result;
+    bool have = false;
+    for (const Vec3& o : origins) {
+        BoltGroup one = bolt;
+        one.origin = o;
+        TopoDS_Shape s = buildBoltAssemblyShape(one, gripLength);
+        if (s.IsNull()) continue;
+        if (!have) {
+            result = s;
+            have = true;
+        } else {
+            BRepAlgoAPI_Fuse f(result, s);
+            if (f.IsDone()) result = f.Shape();
+        }
+    }
+    return result;
+}
+
 } // namespace mm
 #endif // MM_HAS_OCC

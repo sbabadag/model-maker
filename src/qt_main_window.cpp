@@ -290,6 +290,10 @@ QtMainWindow::QtMainWindow(QWidget* parent)
         out = text.toStdWString();
         return true;
     });
+    // Bolt tool penceresi (Phase B1): bolt display'ine cift tik -> diyalog.
+    app_.setBoltEditRequest([this](const mm::BoltGroup& bolt) {
+        QTimer::singleShot(0, this, [this, bolt]() { openBoltPropertiesDialog(bolt); });
+    });
     // Iki noktali gorunus: Application iki noktayi secince yeni MDI penceresi.
     // Kuyruklanir: secim fare olayi isleyicisinin icinden donmeden pencere
     // olusturulmasin (yeniden giris / odak sorunlari olmasin).
@@ -713,6 +717,92 @@ void QtMainWindow::createMenus() {
     });
     windowMenu->addSeparator();
     windowMenu->addAction("Tüm görünüşleri &kapat", this, [this]() { closeAllTwoPointViews(); });
+}
+
+void QtMainWindow::openBoltPropertiesDialog(const mm::BoltGroup& bolt) {
+    QDialog dlg(this);
+    dlg.setWindowTitle(QStringLiteral("Bolt Özellikleri"));
+    auto* form = new QFormLayout(&dlg);
+
+    auto* diaCombo = new QComboBox(&dlg);
+    for (double d : mm::standardBoltDiameters())
+        diaCombo->addItem(QStringLiteral("M%1").arg(d, 0, 'f', 0), d);
+    int diaIdx = diaCombo->findData(bolt.params.nominalDiameter);
+    if (diaIdx < 0) {
+        diaCombo->addItem(QStringLiteral("M%1").arg(bolt.params.nominalDiameter, 0, 'f', 1),
+                          bolt.params.nominalDiameter);
+        diaIdx = diaCombo->count() - 1;
+    }
+    diaCombo->setCurrentIndex(diaIdx);
+    form->addRow(QStringLiteral("Çap:"), diaCombo);
+
+    auto* gradeCombo = new QComboBox(&dlg);
+    gradeCombo->addItem(QStringLiteral("8.8"));
+    gradeCombo->addItem(QStringLiteral("10.9"));
+    const int gi = gradeCombo->findText(QString::fromStdString(bolt.params.grade));
+    if (gi >= 0) gradeCombo->setCurrentIndex(gi);
+    form->addRow(QStringLiteral("Kalite:"), gradeCombo);
+
+    auto* holeSpin = new QDoubleSpinBox(&dlg);
+    holeSpin->setRange(1.0, 200.0);
+    holeSpin->setDecimals(1);
+    holeSpin->setValue(bolt.params.holeDiameter);
+    form->addRow(QStringLiteral("Delik çapı (mm):"), holeSpin);
+
+    auto* headChk = new QCheckBox(QStringLiteral("Baş"), &dlg);
+    headChk->setChecked(bolt.params.hasHead);
+    auto* nutChk = new QCheckBox(QStringLiteral("Somun"), &dlg);
+    nutChk->setChecked(bolt.params.hasNut);
+    auto* washChk = new QCheckBox(QStringLiteral("Pul"), &dlg);
+    washChk->setChecked(bolt.params.hasWasher);
+    auto* accRow = new QHBoxLayout;
+    accRow->addWidget(headChk);
+    accRow->addWidget(nutChk);
+    accRow->addWidget(washChk);
+    accRow->addStretch(1);
+    form->addRow(QStringLiteral("Elemanlar:"), accRow);
+
+    auto* countXSpin = new QSpinBox(&dlg);
+    countXSpin->setRange(1, 200);
+    countXSpin->setValue(bolt.countX > 0 ? bolt.countX : 1);
+    form->addRow(QStringLiteral("Adet X:"), countXSpin);
+
+    auto* countYSpin = new QSpinBox(&dlg);
+    countYSpin->setRange(1, 200);
+    countYSpin->setValue(bolt.countY > 0 ? bolt.countY : 1);
+    form->addRow(QStringLiteral("Adet Y:"), countYSpin);
+
+    auto* spacingXSpin = new QDoubleSpinBox(&dlg);
+    spacingXSpin->setRange(-100000.0, 100000.0);
+    spacingXSpin->setDecimals(1);
+    spacingXSpin->setValue(bolt.spacingX);
+    form->addRow(QStringLiteral("Mesafe X (mm):"), spacingXSpin);
+
+    auto* spacingYSpin = new QDoubleSpinBox(&dlg);
+    spacingYSpin->setRange(-100000.0, 100000.0);
+    spacingYSpin->setDecimals(1);
+    spacingYSpin->setValue(bolt.spacingY);
+    form->addRow(QStringLiteral("Mesafe Y (mm):"), spacingYSpin);
+
+    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
+    form->addRow(buttons);
+    QObject::connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+    QObject::connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+
+    if (dlg.exec() != QDialog::Accepted) return;
+
+    mm::BoltGroup updated = bolt;
+    updated.params.nominalDiameter = diaCombo->currentData().toDouble();
+    updated.params.holeDiameter = holeSpin->value();
+    updated.params.grade = gradeCombo->currentText().toStdString();
+    updated.params.hasHead = headChk->isChecked();
+    updated.params.hasNut = nutChk->isChecked();
+    updated.params.hasWasher = washChk->isChecked();
+    updated.countX = countXSpin->value();
+    updated.countY = countYSpin->value();
+    updated.spacingX = spacingXSpin->value();
+    updated.spacingY = spacingYSpin->value();
+    app_.setSelectedBoltGroup(updated);
 }
 
 void QtMainWindow::promptSaveNamedView() {

@@ -2043,6 +2043,36 @@ void Application::onLeftButtonDown(int x, int y) {
         pickPendingBoltAt(x, y);
         return;
     }
+    // BOLT TOOL PENCERESI (Phase B1): bolt display modeline cift tik -> duzenleme
+    // diyalogu acilir (callback). Tek tik normal secim akisina duser.
+    {
+        const bool altD = (GetKeyState(VK_MENU) & 0x8000) != 0;
+        if (!altD && transformCommand_ == TransformCommand::None && !drawingActive_ &&
+            !workPlanePicking_ && !zoomWindowActive_ && !profileGrip_) {
+            const DWORD now = GetMessageTime();
+            const bool dbl =
+                (now - lastLeftClickTime_ <= static_cast<DWORD>(GetDoubleClickTime())) &&
+                std::abs(x - lastLeftClickPos_.x) <= 4 &&
+                std::abs(y - lastLeftClickPos_.y) <= 4;
+            lastLeftClickTime_ = now;
+            lastLeftClickPos_ = {x, y};
+            if (dbl) {
+                if (const auto hit = modelIndexAt(x, y)) {
+                    if (*hit < document_.models().size()) {
+                        const EntityId id = document_.modelId(*hit);
+                        for (const auto& bg : document_.boltGroups())
+                            if (bg.displayEntityId == id) {
+                                selectedModels_.clear();
+                                selectedModels_.push_back(*hit);
+                                updateControls(); updateStatus(); invalidateCanvas();
+                                if (boltEditRequest_) boltEditRequest_(bg);
+                                return;
+                            }
+                    }
+                }
+            }
+        }
+    }
     // PROFIL UC TUTAMAKLARI (grip edit): Alt+tik tutamaga basinca move modu
     // aktif olur; 1. tik tasima baslangici (baz), 2. tik destinasyondur —
     // normal Move komutu gibi.
@@ -3862,7 +3892,7 @@ void Application::applyBoltFromParts(const std::vector<std::size_t>& parts) {
     pushUndoSnapshot();
 #ifdef MM_HAS_OCC
     const double grip = document_.boltGripLength(bolt);
-    const TopoDS_Shape assembly = mm::buildBoltAssemblyShape(bolt, grip);
+    const TopoDS_Shape assembly = mm::buildBoltGroupAssemblyShape(bolt, grip);
     WireframeModel displayModel =
         assembly.IsNull() ? WireframeModel::cube(20.0)
                           : mm::shapeToWireframeWithFaces(assembly, 0.15);
@@ -3979,7 +4009,7 @@ void Application::rebuildBoltDisplay(const BoltGroup& bolt) {
     const auto di = document_.indexOfEntity(bolt.displayEntityId);
     if (!di) return;
     const double grip = document_.boltGripLength(bolt);
-    const TopoDS_Shape assembly = mm::buildBoltAssemblyShape(bolt, grip);
+    const TopoDS_Shape assembly = mm::buildBoltGroupAssemblyShape(bolt, grip);
     if (assembly.IsNull()) return;
     putOccSolid(*di, assembly);
     auto wire = mm::shapeToWireframeWithFaces(assembly, 0.15);
@@ -4045,6 +4075,39 @@ void Application::setSelectedBoltProperties(double nominalDiameter, double holeD
     const BoltGroup& updated = document_.boltGroups()[*bi];
     rebuildBoltDisplay(updated);
     for (const EntityId part : updated.parts) recomputeCutTarget(part);
+#endif
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
+}
+
+bool Application::selectedBoltGroup(BoltGroup& out) const {
+    if (selectedModels_.empty() || selectedModels_.front() >= document_.models().size())
+        return false;
+    const EntityId id = document_.modelId(selectedModels_.front());
+    for (const auto& bg : document_.boltGroups())
+        if (bg.displayEntityId == id) { out = bg; return true; }
+    return false;
+}
+
+void Application::setSelectedBoltGroup(const BoltGroup& bolt) {
+    if (selectedModels_.empty() || selectedModels_.front() >= document_.models().size())
+        return;
+    const EntityId id = document_.modelId(selectedModels_.front());
+    std::optional<std::size_t> bi;
+    for (std::size_t k = 0; k < document_.boltGroups().size(); ++k)
+        if (document_.boltGroups()[k].displayEntityId == id) { bi = k; break; }
+    if (!bi) return;
+    if (bolt.params.nominalDiameter <= 0.0 || bolt.params.holeDiameter <= 0.0) return;
+    pushUndoSnapshot();
+    BoltGroup updated = bolt;
+    updated.id = document_.boltGroups()[*bi].id;             // kimlik korunur
+    updated.displayEntityId = document_.boltGroups()[*bi].displayEntityId;
+    document_.setBoltGroup(*bi, std::move(updated));
+#ifdef MM_HAS_OCC
+    const BoltGroup& ng = document_.boltGroups()[*bi];
+    rebuildBoltDisplay(ng);
+    for (const EntityId part : ng.parts) recomputeCutTarget(part);
 #endif
     updateControls();
     updateStatus();

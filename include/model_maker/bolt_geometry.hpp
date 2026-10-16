@@ -42,5 +42,10 @@ TopoDS_Shape boltShank(const Vec3& origin, const Vec3& axis,
 //   ilgili bileseni atlar. Gecersiz eksen/cap ise NULL sekil dondurur.
 TopoDS_Shape buildBoltAssemblyShape(const BoltGroup& bolt, double gripLength);
 
+// TUM bulon grubunun montaji: her pattern pozisyonu icin buildBoltAssemblyShape
+// uretilir ve tek kati halinde fuse edilir. Grip ortak (ayni parca yigini).
+// Pattern countX*countY > 1 iken birden fazla bulon dondurur.
+TopoDS_Shape buildBoltGroupAssemblyShape(const BoltGroup& bolt, double gripLength);
+
 } // namespace mm
 #endif // MM_HAS_OCC

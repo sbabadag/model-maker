@@ -34,13 +34,62 @@ CutModifier makeHoleCutModifier(EntityId part, const Vec3& origin,
     return mod;
 }
 
+std::vector<Vec3> boltGroupBoltOrigins(const BoltGroup& bolt) noexcept {
+    std::vector<Vec3> out;
+    int nx = bolt.countX > 0 ? bolt.countX : 1;
+    int ny = bolt.countY > 0 ? bolt.countY : 1;
+    // Tekla/grup x yonu = xDir (normalize); grup y yonu = axis x xDir.
+    const double axl = std::sqrt(bolt.axis.x * bolt.axis.x + bolt.axis.y * bolt.axis.y +
+                                 bolt.axis.z * bolt.axis.z);
+    Vec3 ax = axl > 1e-12 ? Vec3{bolt.axis.x / axl, bolt.axis.y / axl, bolt.axis.z / axl}
+                          : Vec3{0.0, 0.0, 1.0};
+    const double xl = std::sqrt(bolt.xDir.x * bolt.xDir.x + bolt.xDir.y * bolt.xDir.y +
+                                bolt.xDir.z * bolt.xDir.z);
+    Vec3 ux = xl > 1e-12 ? Vec3{bolt.xDir.x / xl, bolt.xDir.y / xl, bolt.xDir.z / xl}
+                         : Vec3{1.0, 0.0, 0.0};
+    // xDir eksene dik olmali; dik degilse (dosya/el giris) Gram-Schmidt ile duzelt.
+    const double dot = ux.x * ax.x + ux.y * ax.y + ux.z * ax.z;
+    Vec3 u = ux - Vec3{ax.x * dot, ax.y * dot, ax.z * dot};
+    const double ul = std::sqrt(u.x * u.x + u.y * u.y + u.z * u.z);
+    if (ul < 1e-12) {
+        // xDir eksene paralel; keyfi dik bir taban kur.
+        Vec3 ref = (std::abs(ax.z) > 0.9) ? Vec3{1.0, 0.0, 0.0} : Vec3{0.0, 0.0, 1.0};
+        u = Vec3{ref.y * ax.z - ref.z * ax.y, ref.z * ax.x - ref.x * ax.z,
+                 ref.x * ax.y - ref.y * ax.x};
+        const double ul2 = std::sqrt(u.x * u.x + u.y * u.y + u.z * u.z);
+        if (ul2 < 1e-12) return {bolt.origin};  // tamamen dejenere
+        u = Vec3{u.x / ul2, u.y / ul2, u.z / ul2};
+    } else {
+        u = Vec3{u.x / ul, u.y / ul, u.z / ul};
+    }
+    // y = axis x u (sag-el).
+    const Vec3 v = Vec3{ax.y * u.z - ax.z * u.y, ax.z * u.x - ax.x * u.z,
+                        ax.x * u.y - ax.y * u.x};
+
+    out.reserve(static_cast<std::size_t>(nx) * static_cast<std::size_t>(ny));
+    for (int j = 0; j < ny; ++j)
+        for (int i = 0; i < nx; ++i) {
+            const double ox = bolt.origin.x + i * bolt.spacingX * u.x +
+                              j * bolt.spacingY * v.x;
+            const double oy = bolt.origin.y + i * bolt.spacingX * u.y +
+                              j * bolt.spacingY * v.y;
+            const double oz = bolt.origin.z + i * bolt.spacingX * u.z +
+                              j * bolt.spacingY * v.z;
+            out.push_back(Vec3{ox, oy, oz});
+        }
+    return out;
+}
+
 std::vector<CutModifier> boltGroupHoleModifiers(const BoltGroup& bolt) noexcept {
     std::vector<CutModifier> out;
-    out.reserve(bolt.parts.size());
-    for (EntityId part : bolt.parts) {
-        if (part == kInvalidEntityId) continue;
-        out.push_back(makeHoleCutModifier(part, bolt.origin, bolt.axis,
-                                          bolt.params.holeDiameter));
+    const std::vector<Vec3> origins = boltGroupBoltOrigins(bolt);
+    out.reserve(origins.size() * bolt.parts.size());
+    for (const Vec3& o : origins) {
+        for (EntityId part : bolt.parts) {
+            if (part == kInvalidEntityId) continue;
+            out.push_back(makeHoleCutModifier(part, o, bolt.axis,
+                                              bolt.params.holeDiameter));
+        }
     }
     return out;
 }

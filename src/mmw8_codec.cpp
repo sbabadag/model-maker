@@ -304,7 +304,9 @@ void writeMmw8(std::ostream& out, const Mmw8Document& doc) {
             body << ' ' << (g.params.hasHead ? 1 : 0)
                  << ' ' << (g.params.hasNut ? 1 : 0)
                  << ' ' << (g.params.hasWasher ? 1 : 0)
-                 << ' ' << g.displayEntityId << ' ' << (g.enabled ? 1 : 0) << '\n';
+                 << ' ' << g.displayEntityId << ' ' << (g.enabled ? 1 : 0)
+                 << ' ' << g.countX << ' ' << g.countY
+                 << ' ' << g.spacingX << ' ' << g.spacingY << '\n';
         }
         const std::string b = body.str();
         out << "G " << b.size() << '\n';
@@ -640,6 +642,14 @@ void readMmw8(std::istream& in, Mmw8Document& doc) {
                 g.params.hasWasher = readBool(ls, "bolt hasWasher");
                 g.displayEntityId = static_cast<EntityId>(readUint64(ls, "bolt display"));
                 g.enabled = readBool(ls, "bolt enabled");
+                // Pattern (opsiyonel, geriye uyumlu): eski dosyalarda satir
+                // `enabled` ile biter; pattern alanlari default kalir.
+                if (!(ls >> g.countX >> g.countY >> g.spacingX >> g.spacingY)) {
+                    g.countX = 1;
+                    g.countY = 1;
+                    g.spacingX = 0.0;
+                    g.spacingY = 0.0;
+                }
                 parsed.boltGroups.push_back(std::move(g));
             }
         } else if (tag == 'K') {

@@ -120,6 +120,23 @@ int main() {
     check(near(mn, -37.0, 0.5) && near(mx, 39.0, 0.5),
           "grip 40mm -> eksen uclari -37..+39");
 
+    // Bulon grubu montaji (pattern): 2x1 bolt -> iki montaj fuse edilir.
+    {
+        BoltGroup pg = bg;
+        pg.xDir = {1.0, 0.0, 0.0};
+        pg.countX = 2; pg.countY = 1; pg.spacingX = 100.0; pg.spacingY = 0.0;
+        const TopoDS_Shape grp = buildBoltGroupAssemblyShape(pg, 20.0);
+        check(!grp.IsNull(), "grup montaj null degil (2x1)");
+        // Hacim yaklasik 2x (montajlar cakismiyor: spacing 100 > genislik 40).
+        check(near(shapeVolume(grp), 2.0 * expTotal, 400.0), "grup hacmi ~2x montaj");
+        // Bbox x: [-20, +120] (iki montaj x=0 ve x=100 merkezli).
+        Bnd_Box gbb;
+        BRepBndLib::Add(grp, gbb);
+        double gx0 = 0, gy0 = 0, gz0 = 0, gx1 = 0, gy1 = 0, gz1 = 0;
+        gbb.Get(gx0, gy0, gz0, gx1, gy1, gz1);
+        check(near(gx0, -20.0, 0.5) && near(gx1, 120.0, 0.5), "grup bbox x -20..120");
+    }
+
     // Standart boyut katalogu.
     const auto& sizes = standardBoltDiameters();
     check(sizes.size() == 6 && near(sizes[0], 12.0, 1e-9) &&

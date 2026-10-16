@@ -288,6 +288,14 @@ public:
     // paneli). Donus false = secim bir bulon degil.
     bool selectedBoltProperties(double& nominalDiameter, double& holeDiameter,
                                 std::string& grade) const;
+    // Secili model bir BOLT display'i ise TUM BoltGroup'u dondurur (params +
+    // pattern). Donus false = secim bir bulon degil. Bolt tool penceresi bunu
+    // okur; setSelectedBoltGroup ile geri yazar.
+    bool selectedBoltGroup(BoltGroup& out) const;
+    // Secili bulon grubunu TUM alanlariyla gunceller (cap/kalite/delik/
+    // bas/somun/pul + countX/countY/spacingX/spacingY). Delikler + display
+    // yeniden uretilir. Secim bir bulon degilse no-op.
+    void setSelectedBoltGroup(const BoltGroup& bolt);
     // Secili bulon display'inin parametrelerini gunceller (delikler + display
     // yeniden uretilir). Secim bir bulon degilse no-op.
     void setSelectedBoltProperties(double nominalDiameter, double holeDiameter,
@@ -383,6 +391,12 @@ public:
                                                 const std::wstring& initial,
                                                 std::wstring& out)> callback) {
         parameterRequest_ = std::move(callback);
+    }
+    // Bolt tool penceresi istegi (Phase B1): bir BOLT display modeline cift
+    // tiklaninca cagrilir. Qt tarafi BoltPropertiesDialog acar; OK olursa
+    // setSelectedBoltGroup ile geri yazar.
+    void setBoltEditRequest(std::function<void(const BoltGroup&)> callback) {
+        boltEditRequest_ = std::move(callback);
     }
     // Divide komutunu baslatir (edit box ile bolme sayisini sorar).
     void activateDivide();
@@ -907,6 +921,11 @@ private:
     // 2 parca tutar.
     bool pendingBolt_{};
     std::vector<std::size_t> pendingBoltParts_;
+    // BOLT TOOL PENCERESI (Phase B1): bolt display'ine cift tik -> duzenleme
+    // istegi callback'i. Cift tik tespiti icin son sol tik zamani + konumu.
+    std::function<void(const BoltGroup&)> boltEditRequest_;
+    DWORD lastLeftClickTime_{0};
+    POINT lastLeftClickPos_{-1, -1};
     // KESME NESNELERI SECIMI (P5): kesme modifier secimi (model seciminden
     // ayri) + imlecin altindaki secilebilir nesne (secim hinti).
     std::vector<std::size_t> selectedCutModifiers_;

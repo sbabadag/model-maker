@@ -62,6 +62,57 @@ int main() {
     check(holes[0].target == 1 && holes[1].target == 2 && holes[2].target == 4,
           "hedef parcalar sirasi korunur");
 
+    // 3b) boltGroupBoltOrigins: rectangular pattern.
+    {
+        BoltGroup p;
+        p.origin = {0, 0, 0};
+        p.axis = {0, 0, 1};
+        p.xDir = {1, 0, 0};
+        p.countX = 2; p.countY = 1; p.spacingX = 50.0; p.spacingY = 0.0;
+        const auto o1 = boltGroupBoltOrigins(p);
+        check(o1.size() == 2, "2x1 pattern -> 2 merkez");
+        if (o1.size() == 2) {
+            check(o1[0] == Vec3{0, 0, 0}, "ilk merkez = origin");
+            check(o1[1] == Vec3{50, 0, 0}, "ikinci merkez +x spacingX");
+        }
+        p.countX = 2; p.countY = 2; p.spacingX = 50.0; p.spacingY = 100.0;
+        const auto o2 = boltGroupBoltOrigins(p);
+        check(o2.size() == 4, "2x2 pattern -> 4 merkez");
+        if (o2.size() == 4) {
+            check(o2[0] == Vec3{0, 0, 0}, "grid (0,0)");
+            check(o2[1] == Vec3{50, 0, 0}, "grid (1,0)");
+            check(o2[2] == Vec3{0, 100, 0}, "grid (0,1)");
+            check(o2[3] == Vec3{50, 100, 0}, "grid (1,1)");
+        }
+        // y yonu = axis x xDir = (0,0,1)x(1,0,0) = (0,1,0) -> +y dogru.
+        // Gecersiz adet -> 1.
+        p.countX = 0; p.countY = -3; p.spacingX = 10; p.spacingY = 20;
+        const auto o3 = boltGroupBoltOrigins(p);
+        check(o3.size() == 1 && o3[0] == p.origin, "gecersiz adet -> tek merkez");
+    }
+
+    // 3c) boltGroupHoleModifiers pattern: 2x1 bolt x 3 parca -> 6 delik.
+    {
+        BoltGroup p;
+        p.parts = {1, 2, kInvalidEntityId, 4};
+        p.origin = {5, 6, 7};
+        p.axis = {0, 0, 1};
+        p.xDir = {1, 0, 0};
+        p.countX = 2; p.countY = 1; p.spacingX = 50.0; p.spacingY = 0.0;
+        p.params.holeDiameter = 22.0;
+        const auto hs = boltGroupHoleModifiers(p);
+        check(hs.size() == 6, "2 bolt x 3 parca -> 6 delik");
+        if (hs.size() == 6) {
+            // Siralama origin-major: her merkez icin tum parcalar.
+            check(hs[0].target == 1 && hs[0].planeOrigin == Vec3{5, 6, 7}, "o0 parca1");
+            check(hs[1].target == 2 && hs[1].planeOrigin == Vec3{5, 6, 7}, "o0 parca2");
+            check(hs[2].target == 4 && hs[2].planeOrigin == Vec3{5, 6, 7}, "o0 parca4");
+            check(hs[3].target == 1 && hs[3].planeOrigin == Vec3{55, 6, 7}, "o1 parca1");
+            check(hs[4].target == 2 && hs[4].planeOrigin == Vec3{55, 6, 7}, "o1 parca2");
+            check(hs[5].target == 4 && hs[5].planeOrigin == Vec3{55, 6, 7}, "o1 parca4");
+        }
+    }
+
     // 4) MMW8 round-trip: Hole capi korunur (eski dosya uyumlu opsiyonel alan).
     {
         Mmw8Document doc;

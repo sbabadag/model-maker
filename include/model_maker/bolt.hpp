@@ -56,6 +56,14 @@ struct BoltGroup {
     Vec3 xDir{1.0, 0.0, 0.0};                   // grup x ekseni (eksene dik)
     BoltParams params;
     EntityId displayEntityId{kInvalidEntityId}; // gorsel montaj varligi
+    // BOLT GROUP PATTERN (rectangular array): Tekla bolt group karsiligi.
+    // countX*countY adet bulon; xDir boyunca spacingX, yDir (=axis x xDir)
+    // boyunca spacingY aralikla dizilir. Single Bolt = countX=countY=1,
+    // spacing=0. Gecersiz (<=0) adetler hesaplamada 1'e cekilir.
+    int countX{1};
+    int countY{1};
+    double spacingX{0.0};
+    double spacingY{0.0};
     bool enabled{true};
     bool operator==(const BoltGroup&) const = default;
 };
@@ -68,10 +76,16 @@ struct BoltGroup {
 CutModifier makeHoleCutModifier(EntityId part, const Vec3& origin,
                                 const Vec3& axis, double holeDiameter) noexcept;
 
-// Bulon grubunun TUM bagli parcalari icin delik modifier listesi (her parca
-// icin bir delik). Bulon tasininca bu liste yeniden uretilir (yeniden hesap).
-// kInvalidEntityId parcalar atlanir.
+// Bulon grubunun TUM bagli parcalari icin delik modifier listesi (her bulon
+// pozisyonu x her parca icin bir delik). Pattern (countX/countY) dikkate
+// alinir; bulon tasininca/parametre degisince bu liste yeniden uretilir
+// (yeniden hesap). kInvalidEntityId parcalar atlanir.
 std::vector<CutModifier> boltGroupHoleModifiers(const BoltGroup& bolt) noexcept;
+
+// Bulon grubundaki TUM bulon merkezlerini uretir (rectangular pattern):
+// origin + i*spacingX*xDir + j*spacingY*yDir, i in [0,countX), j in [0,countY).
+// yDir = normalize(axis) x xDir (eksene dik). countX/countY <= 0 ise 1 alinir.
+std::vector<Vec3> boltGroupBoltOrigins(const BoltGroup& bolt) noexcept;
 
 // Bulon ekseni gecerli mi (birimlestirilebilir, sifir degil).
 bool isBoltAxisValid(const Vec3& axis) noexcept;

@@ -60,13 +60,15 @@ int main() {
     bg.parts = {a, b};
     bg.origin = {50.0, 50.0, 10.0};
     bg.axis = {0.0, 0.0, 1.0};
+    bg.xDir = {1.0, 0.0, 0.0};
+    bg.countX = 2; bg.countY = 1; bg.spacingX = 30.0; bg.spacingY = 0.0;
     bg.params.nominalDiameter = 20.0;
     bg.params.holeDiameter = 22.0;
     bg.params.grade = "8.8";
     const double grip = 20.0;  // iki 10mm levha
 
-    const TopoDS_Shape assembly = buildBoltAssemblyShape(bg, grip);
-    check(!assembly.IsNull(), "montaj sekli uretildi");
+    const TopoDS_Shape assembly = buildBoltGroupAssemblyShape(bg, grip);
+    check(!assembly.IsNull(), "montaj sekli uretildi (2x1 pattern)");
     doc.pushSnapshot();
     const std::size_t bi = doc.addBoltGroup(bg, shapeToWireframeWithFaces(assembly, 0.15));
     const EntityId boltId = doc.boltGroups()[bi].id;
@@ -74,7 +76,7 @@ int main() {
     store->set(displayId, assembly);  // display B-Rep
 
     check(doc.boltGroups().size() == 1, "1 bulon kaydi");
-    check(doc.boltGroupHoles(boltId).size() == 2, "2 delik (owner)");
+    check(doc.boltGroupHoles(boltId).size() == 4, "4 delik (owner) — 2x1 pattern x 2 parca");
 
     // Delikleri gercek B-Rep'e uygula: hacim farki.
     {
@@ -85,8 +87,8 @@ int main() {
             const TopoDS_Shape cut = applyCutModifier(target, m, {}, {});
             totalCut += (shapeVolume(target) - shapeVolume(cut));
         }
-        check(near(totalCut, 2.0 * holeVol10, 20.0),
-              "iki levhada esmerkezli delikler (hacim farki 2*pi*11^2*10)");
+        check(near(totalCut, 4.0 * holeVol10, 20.0),
+              "iki levhada 4 esmerkezli delik (hacim farki 4*pi*11^2*10)");
     }
 
     // --- Kaydet -> ac ---
@@ -101,10 +103,14 @@ int main() {
     const EntityId lboltId = loaded.boltGroups()[0].id;
     check(lboltId == boltId, "load: bulon id korundu");
     check(loaded.boltGroups()[0].displayEntityId == displayId, "load: display id korundu");
-    check(loaded.boltGroupHoles(lboltId).size() == 2, "load: 2 delik (owner) korundu");
+    check(loaded.boltGroupHoles(lboltId).size() == 4, "load: 4 delik (owner) korundu");
     check(loaded.boltGroups()[0].params.grade == "8.8" &&
               loaded.boltGroups()[0].params.holeDiameter == 22.0,
           "load: parametreler korundu");
+    check(loaded.boltGroups()[0].countX == 2 && loaded.boltGroups()[0].countY == 1 &&
+              near(loaded.boltGroups()[0].spacingX, 30.0, 1e-9) &&
+              near(loaded.boltGroups()[0].spacingY, 0.0, 1e-9),
+          "load: pattern (countX/countY/spacing) korundu");
     // Display modeli belgede VE B-Rep'i store'da.
     check(loaded.indexOfEntity(displayId).has_value(), "load: display modeli belgede");
     check(lst->find(displayId) != nullptr, "load: display B-Rep store'da");

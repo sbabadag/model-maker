@@ -45,6 +45,10 @@ private:
     void promptSaveNamedView();
     void promptGotoNamedView();
     void promptDeleteNamedView();
+    // Bolt tool penceresi (Phase B1): bir bulon display'ine cift tiklaninca
+    // acilir. Cap/kalite/delik/bas/somun/pul + adet (countX/countY) + mesafe
+    // (spacingX/spacingY) duzenlenir; OK -> app_.setSelectedBoltGroup.
+    void openBoltPropertiesDialog(const mm::BoltGroup& bolt);
     void createDockPanels();
     void resizeEmbeddedCanvas();
     void openTwoPointView(const ViewDefinition& view);

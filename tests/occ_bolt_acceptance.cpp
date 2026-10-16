@@ -94,6 +94,27 @@ int main() {
                2.0 * (plateVol - holeVol10), 10.0),
           "iki levha toplam delinen hacim dogru");
 
+    // 7) Pattern: 2x1 bulon x 2 parca -> 4 delik (x=50 ve x=80).
+    BoltGroup pg;
+    pg.parts = {1, 2};
+    pg.origin = {50.0, 50.0, 10.0};
+    pg.axis = {0.0, 0.0, 1.0};
+    pg.xDir = {1.0, 0.0, 0.0};
+    pg.countX = 2; pg.countY = 1; pg.spacingX = 30.0; pg.spacingY = 0.0;
+    pg.params.holeDiameter = 22.0;
+    const auto pholes = boltGroupHoleModifiers(pg);
+    check(pholes.size() == 4, "2x1 pattern -> 4 delik");
+    TopoDS_Shape pA = plateA, pB = plateB;
+    int aHoles = 0, bHoles = 0;
+    for (const auto& h : pholes) {
+        if (h.target == 1) { pA = applyCutModifier(pA, h, {}, {}); ++aHoles; }
+        else if (h.target == 2) { pB = applyCutModifier(pB, h, {}, {}); ++bHoles; }
+    }
+    check(aHoles == 2 && bHoles == 2, "her parca 2 delik aldi");
+    check(near(shapeVolume(pA) + shapeVolume(pB),
+               2.0 * (plateVol - 2.0 * holeVol10), 10.0),
+          "pattern: iki levhada toplam 4 delik hacim");
+
     if (failures) {
         std::printf("%d FAIL\n", failures);
         return 1;
