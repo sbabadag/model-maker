@@ -5,6 +5,7 @@
 #include "model_maker/grid.hpp"
 #include "model_maker/mmw8_codec.hpp"
 #include "model_maker/cut_modifier.hpp"
+#include "model_maker/bolt.hpp"
 
 #include <array>
 #include <filesystem>
@@ -29,7 +30,7 @@ struct Bounds3 {
 
 struct UndoOp {
     enum class Kind { Add, Delete, Replace, Move, Transform, GridAdd, GridRemove, GridReplace,
-                      CutAdd, CutRemove, CutReplace };
+                      CutAdd, CutRemove, CutReplace, BoltAdd, BoltRemove, BoltReplace };
     Kind kind{Kind::Add};
     std::size_t index{};
     std::vector<WireframeModel> beforeModels; // delete: silinenler; replace: eski model
@@ -56,6 +57,10 @@ struct UndoOp {
     std::size_t cutIndex{};
     CutModifier cutBefore;
     CutModifier cutAfter;
+    // Bolt (BoltAdd/BoltRemove/BoltReplace): bulon grubu ekle/sil/degistir.
+    std::size_t boltIndex{};
+    BoltGroup boltBefore;
+    BoltGroup boltAfter;
 };
 struct UndoRecord {
     std::vector<UndoOp> ops;
@@ -234,6 +239,29 @@ public:
     // O varligi KAYNAK (source) olarak kullanan modifier'larin indeksleri (P6).
     std::vector<std::size_t> cutModifiersForSource(EntityId source) const;
 
+    // --- BULON GRUPLARI (Phase B1) ------------------------------------------
+    // Bulon grubu KALICI bir kayittir (kendi EntityId'si); bagli parcalara
+    // EntityId ile referans verir. Delikleri CutKind::Hole modifier'lari olarak
+    // uretir (owner = bulon id). GORSEL montaj `displayModel` bir NORMAL model
+    // olarak eklenir ve kimligi bolt.displayEntityId'ye yazilir.
+    // addBoltGroup: id atar (gecersizse), delikleri ekler, display modeli ekler.
+    //   Donus: bulon grubu indeksi.
+    std::size_t addBoltGroup(BoltGroup bolt, WireframeModel displayModel);
+    // removeBoltGroup: kaydi + sahip oldugu delikleri + display modelini siler.
+    void removeBoltGroup(std::size_t index);
+    // setBoltGroup: kaydi degistirir ve delikleri yeniden uretir (eski sahipli
+    // delikler kaldirilir, yenileri eklenir). Display modele DOKUNMAZ (cagiran
+    // tasir/yeniden uretir). id korunur (girdideki id yok sayilir).
+    bool setBoltGroup(std::size_t index, BoltGroup bolt);
+    const std::vector<BoltGroup>& boltGroups() const noexcept { return boltGroups_; }
+    // EntityId -> bulon grubu indeksi; yoksa nullopt.
+    std::optional<std::size_t> indexOfBoltGroup(EntityId id) const;
+    // Bulon grubunun sahip oldugu delik modifier indeksleri (owner == id).
+    std::vector<std::size_t> boltGroupHoles(EntityId boltId) const;
+    // Bagli parcalarin sinir kutularinin bulon ekseni boyunca uzunlugu (grip).
+    // Parca bulunamazsa / gecersiz eksende 0 doner.
+    double boltGripLength(const BoltGroup& bolt) const;
+
 private:
     static constexpr std::size_t kMaxUndoEntries = 100;
     std::uint64_t revision_{0};
@@ -266,6 +294,11 @@ private:
     void commitFromMmw8(Mmw8Document&& mdoc);
     void markPending(std::size_t index);
     void applyUndoOp(const UndoOp& op, bool forward);
+    // Tek bir modeli (yaprak — kesme kaskadi olmadan) siler ve Delete op kaydeder.
+    // removeBoltGroup'ta bulon display modelini kaldirmak icin; deleteModels'i
+    // cagirmaz (o bulon kaskadini yeniden tetikler -> recursion). Kitap
+    // isleri (modelBounds_/effectiveCache_/spatial) deleteModels ile aynidir.
+    void eraseModelLeaf(std::size_t index);
     // Yeni, tekil, monoton bir varlik kimligi uretir (0 uretmez). Id uzayi
     // TUKENDIYSE (nextEntityId_ == kExhaustedEntityId) kInvalidEntityId doner
     // ve sayac DEGISMEZ — ayni id ASLA ikinci kez uretilmez.
@@ -307,6 +340,7 @@ private:
     std::unordered_map<EntityId, BeamLoad> beamLoads_;
     std::vector<GridDefinition> grids_;
     std::vector<CutModifier> cutModifiers_;
+    std::vector<BoltGroup> boltGroups_;
 };
 
 // KESME KAYNAK COZUMU (P6): mod.source gecerliyse kaynak varligin GUNCEL

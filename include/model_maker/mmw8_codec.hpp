@@ -19,6 +19,7 @@
 #include "model_maker/geometry.hpp"
 #include "model_maker/grid.hpp"
 #include "model_maker/cut_modifier.hpp"
+#include "model_maker/bolt.hpp"
 
 #include <cstddef>
 #include <cstdint>
@@ -34,6 +35,7 @@ inline constexpr std::size_t kMmw8MaxModels = 100'000;
 inline constexpr std::size_t kMmw8MaxLayers = 1'000;
 inline constexpr std::size_t kMmw8MaxGrids = 1'000;
 inline constexpr std::size_t kMmw8MaxCutModifiers = 100'000;
+inline constexpr std::size_t kMmw8MaxBolts = 100'000;
 inline constexpr std::size_t kMmw8MaxVertices = 1'000'000;
 inline constexpr std::size_t kMmw8MaxEdges = 2'000'000;
 inline constexpr std::size_t kMmw8MaxFaces = 1'000'000;
@@ -84,6 +86,7 @@ struct Mmw8Document {
     std::unordered_map<std::string, EntityProperties> layers;
     std::vector<GridDefinition> grids;
     std::vector<CutModifier> cutModifiers;                       // 'C' blogu (Phase 4.2)
+    std::vector<BoltGroup> boltGroups;                           // 'G' blogu (Phase B1)
     std::vector<Mmw8ConstructionKind> constructionKinds;         // 'K' blogu (Phase 4.1)
     std::vector<Mmw8Blob> blobs;                                 // 'B' blogu (ETKIN B-Rep)
     std::vector<Mmw8Blob> baseBlobs;                             // 'V' blogu (TABAN B-Rep)

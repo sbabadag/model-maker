@@ -56,7 +56,7 @@ CORE_SOURCES = [
     "src/geometry.cpp", "src/grid.cpp", "src/camera.cpp", "src/view_cube.cpp",
     "src/ribbon_layout.cpp", "src/performance.cpp", "src/dxf.cpp",
     "src/document.cpp", "src/drafting.cpp", "src/profile_database.cpp",
-    "src/occ_geometry.cpp", "src/cut_modifier.cpp",
+    "src/occ_geometry.cpp", "src/cut_modifier.cpp", "src/bolt.cpp",
     # Document-sahipli opak magaza: no-op saglayici (core) + GERCEK OCCT store.
     "src/occ_store_null.cpp", "src/occ_solid_store.cpp",
     # MMW8 (Phase 3.4B/3.4C): OCCT'siz codec + SHA-256 + native B-Rep serializer.

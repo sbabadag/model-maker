@@ -585,8 +585,13 @@ if(BUILD_TESTING)
         add_executable(model_maker_occ_document_roundtrip tests/occ_document_roundtrip_test.cpp)
         target_link_libraries(model_maker_occ_document_roundtrip PRIVATE model_maker_occ)
         add_test(NAME model_maker_occ_document_roundtrip COMMAND model_maker_occ_document_roundtrip)
+        # BULON GRUBU MMW8 round-trip (Phase B1): kayit + delik (owner) + display
+        # montaj B-Rep'i kayit/ac sonrasi duzenlenebilir kalir.
+        add_executable(model_maker_occ_bolt_group_roundtrip tests/occ_bolt_group_roundtrip_test.cpp)
+        target_link_libraries(model_maker_occ_bolt_group_roundtrip PRIVATE model_maker_occ)
+        add_test(NAME model_maker_occ_bolt_group_roundtrip COMMAND model_maker_occ_bolt_group_roundtrip)
         if(UNIX)
-            set_tests_properties(model_maker_occ_store_roundtrip model_maker_occ_document_roundtrip PROPERTIES
+            set_tests_properties(model_maker_occ_store_roundtrip model_maker_occ_document_roundtrip model_maker_occ_bolt_group_roundtrip PROPERTIES
                 ENVIRONMENT "LD_LIBRARY_PATH=${OCC_ROOT}/lib:$ENV{LD_LIBRARY_PATH}")
         endif()
     endif()
@@ -727,6 +732,14 @@ if(BUILD_TESTING)
     target_link_options(model_maker_bolt_test PRIVATE -static -static-libgcc -static-libstdc++)
     target_compile_options(model_maker_bolt_test PRIVATE -Wall -Wextra -Wpedantic)
     add_test(NAME model_maker_bolt_test COMMAND model_maker_bolt_test)
+
+    # BULON GRUBU DOKUMAN (Phase B1, Slice 3a): BoltGroup belge kaydi + delik
+    # (owner) + display + undo/redo + MMW8 round-trip + deleteModels kaskadi.
+    add_executable(model_maker_bolt_group_document_test tests/bolt_group_document_test.cpp)
+    target_link_libraries(model_maker_bolt_group_document_test PRIVATE model_maker_core)
+    target_link_options(model_maker_bolt_group_document_test PRIVATE -static -static-libgcc -static-libstdc++)
+    target_compile_options(model_maker_bolt_group_document_test PRIVATE -Wall -Wextra -Wpedantic)
+    add_test(NAME model_maker_bolt_group_document_test COMMAND model_maker_bolt_group_document_test)
 
     # COMPONENT FOUNDATION (P4): Main/Secondary Part, parametrik Component
     # tanimi, instance + parametreler, bagimlilik + yeniden hesaplama. OCC'siz.

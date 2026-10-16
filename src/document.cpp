@@ -522,6 +522,15 @@ std::vector<EntityId> Document::deleteModels(const std::vector<std::size_t>& ind
     spatialIndexDirty_ = true;
     documentBounds_.reset();
     if (!valid.empty()) invalidateDerivedState();
+    // BULON KASKADI (Phase B1): bagli parcalarindan HERHANGI biri silinen bulon
+    // grubu da kaldirilir (kayit + kalan delikler + display modeli). Yuksekten
+    // dusuge — removeBoltGroup kaydi sildigi icin indeks kaymasi guvenli.
+    for (std::size_t bi = boltGroups_.size(); bi-- > 0;) {
+        bool touches = false;
+        for (const EntityId part : boltGroups_[bi].parts)
+            if (deletedIds.count(part)) { touches = true; break; }
+        if (touches) removeBoltGroup(bi);
+    }
     return affectedTargets;
 }
 
@@ -618,6 +627,7 @@ void Document::clear() noexcept {
     beamLoads_.clear(); // yeni belge: kiris yukleri de sifirlanir
     grids_.clear();
     cutModifiers_.clear();
+    boltGroups_.clear();
     invalidateDerivedState();
     documentBounds_.reset();
 }
@@ -891,6 +901,28 @@ void Document::applyUndoOp(const UndoOp& op, bool forward) {
     case UndoOp::Kind::CutReplace:
         if (op.cutIndex < cutModifiers_.size())
             cutModifiers_[op.cutIndex] = forward ? op.cutAfter : op.cutBefore;
+        break;
+    case UndoOp::Kind::BoltAdd:
+        if (forward) {
+            if (op.boltIndex <= boltGroups_.size())
+                boltGroups_.insert(boltGroups_.begin() + static_cast<std::ptrdiff_t>(op.boltIndex),
+                                   op.boltAfter);
+        } else if (op.boltIndex < boltGroups_.size()) {
+            boltGroups_.erase(boltGroups_.begin() + static_cast<std::ptrdiff_t>(op.boltIndex));
+        }
+        break;
+    case UndoOp::Kind::BoltRemove:
+        if (forward) {
+            if (op.boltIndex < boltGroups_.size())
+                boltGroups_.erase(boltGroups_.begin() + static_cast<std::ptrdiff_t>(op.boltIndex));
+        } else if (op.boltIndex <= boltGroups_.size()) {
+            boltGroups_.insert(boltGroups_.begin() + static_cast<std::ptrdiff_t>(op.boltIndex),
+                               op.boltBefore);
+        }
+        break;
+    case UndoOp::Kind::BoltReplace:
+        if (op.boltIndex < boltGroups_.size())
+            boltGroups_[op.boltIndex] = forward ? op.boltAfter : op.boltBefore;
         break;
     }
 }
@@ -1394,6 +1426,7 @@ void Document::buildMmw8(Mmw8Document& out) const {
     }
     out.unknownBlocks = mmw8UnknownBlocks_;
     out.cutModifiers = cutModifiers_;
+    out.boltGroups = boltGroups_;
     // Konstruksiyon turleri (K blogu): kind != None olan modellerin
     // EntityId -> kind eslesmesi (model kaydi ConstructionKind tasimaz).
     out.constructionKinds.clear();
@@ -1497,6 +1530,7 @@ void Document::commitFromMmw8(Mmw8Document&& mdoc) {
     layers_ = std::move(mdoc.layers);
     grids_ = std::move(mdoc.grids);
     cutModifiers_ = std::move(mdoc.cutModifiers);
+    boltGroups_ = std::move(mdoc.boltGroups);
     // Grid `axes` TUREV bir alandir (spec'ten cizim geometrisi); codec yalniz
     // spec'i tasir. Yuklemede yeniden TURET.
     for (auto& grid : grids_) rebuildGridAxes(grid);
@@ -1884,6 +1918,148 @@ std::vector<std::size_t> Document::cutModifiersForSource(EntityId source) const 
     for (std::size_t i = 0; i < cutModifiers_.size(); ++i)
         if (cutModifiers_[i].source == source) result.push_back(i);
     return result;
+}
+
+// --- BULON GRUPLARI (Phase B1) ----------------------------------------------
+
+// Tek bir modeli (yaprak — kesme kaskadi olmadan) siler ve Delete op kaydeder.
+// Kitap isleri deleteModels'in tek-indeks yolunun aynisidir.
+void Document::eraseModelLeaf(std::size_t index) {
+    if (index >= models_.size()) return;
+    UndoOp op;
+    op.kind = UndoOp::Kind::Delete;
+    op.indices = {index};
+    op.beforeModels.push_back(models_[index]);
+    op.beforeIds.push_back(modelIds_[index]);
+    recordUndoOp(std::move(op));
+    models_.erase(models_.begin() + static_cast<std::ptrdiff_t>(index));
+    modelIds_.erase(modelIds_.begin() + static_cast<std::ptrdiff_t>(index));
+    if (modelBounds_.size() == models_.size() + 1)
+        modelBounds_.erase(modelBounds_.begin() + static_cast<std::ptrdiff_t>(index));
+    if (effectiveCache_.size() == models_.size() + 1 && !effectiveCacheDirty_)
+        effectiveCache_.erase(effectiveCache_.begin() + static_cast<std::ptrdiff_t>(index));
+    if (modelBounds_.size() != models_.size()) modelBounds_.resize(models_.size());
+    if (effectiveCache_.size() != models_.size()) effectiveCacheDirty_ = true;
+    spatialOrder_.clear();
+    spatialNodes_.clear();
+    pendingIndexRebuild_.clear();
+    pendingMask_.clear();
+    spatialIndexDirty_ = true;
+    documentBounds_.reset();
+    invalidateDerivedState();
+}
+
+std::size_t Document::addBoltGroup(BoltGroup bolt, WireframeModel displayModel) {
+    ++revision_;
+    opaqueBrepsStale_ = true;
+    if (bolt.id == kInvalidEntityId) bolt.id = allocateEntityIdRequired();
+    // 1) Display modelini ekle (Add op) — kimligi yakala.
+    addModel(std::move(displayModel));
+    const std::size_t di = models_.size() - 1;
+    bolt.displayEntityId = modelId(di);
+    // 2) Delikleri ekle (CutAdd op) — owner = bolt.id.
+    for (auto mod : boltGroupHoleModifiers(bolt)) {
+        mod.owner = bolt.id;
+        addCutModifier(std::move(mod));
+    }
+    // 3) Bulon kaydini ekle (BoltAdd op).
+    UndoOp op;
+    op.kind = UndoOp::Kind::BoltAdd;
+    op.boltIndex = boltGroups_.size();
+    op.boltAfter = bolt;
+    recordUndoOp(std::move(op));
+    boltGroups_.push_back(std::move(bolt));
+    return boltGroups_.size() - 1;
+}
+
+void Document::removeBoltGroup(std::size_t index) {
+    if (index >= boltGroups_.size()) return;
+    ++revision_;
+    opaqueBrepsStale_ = true;
+    const BoltGroup bolt = boltGroups_[index];
+    // 1) Bulon kaydini SIL (BoltRemove op) — kaskad yeniden tetiklenmesin.
+    UndoOp op;
+    op.kind = UndoOp::Kind::BoltRemove;
+    op.boltIndex = index;
+    op.boltBefore = bolt;
+    recordUndoOp(std::move(op));
+    boltGroups_.erase(boltGroups_.begin() + static_cast<std::ptrdiff_t>(index));
+    // 2) Delikleri sil (owner == bolt.id) — yuksekten dusuge (kayma guvenli).
+    for (std::size_t ci = cutModifiers_.size(); ci-- > 0;) {
+        if (cutModifiers_[ci].owner == bolt.id) removeCutModifier(ci);
+    }
+    // 3) Display modelini sil (yaprak — kesme/bulon kaskadi yok).
+    if (bolt.displayEntityId != kInvalidEntityId) {
+        if (auto di = indexOfEntity(bolt.displayEntityId))
+            eraseModelLeaf(*di);
+    }
+}
+
+bool Document::setBoltGroup(std::size_t index, BoltGroup bolt) {
+    if (index >= boltGroups_.size()) return false;
+    ++revision_;
+    opaqueBrepsStale_ = true;
+    const EntityId id = boltGroups_[index].id;
+    bolt.id = id;  // kimlik korunur (girdideki id yok sayilir)
+    bolt.displayEntityId = boltGroups_[index].displayEntityId;  // display kimligi sabit
+    // 1) Bulon kaydini degistir (BoltReplace op).
+    UndoOp op;
+    op.kind = UndoOp::Kind::BoltReplace;
+    op.boltIndex = index;
+    op.boltBefore = boltGroups_[index];
+    op.boltAfter = bolt;
+    recordUndoOp(std::move(op));
+    boltGroups_[index] = bolt;
+    // 2) Eski delikleri sil (owner == id), yenilerini ekle.
+    for (std::size_t ci = cutModifiers_.size(); ci-- > 0;) {
+        if (cutModifiers_[ci].owner == id) removeCutModifier(ci);
+    }
+    for (auto mod : boltGroupHoleModifiers(bolt)) {
+        mod.owner = id;
+        addCutModifier(std::move(mod));
+    }
+    return true;
+}
+
+std::optional<std::size_t> Document::indexOfBoltGroup(EntityId id) const {
+    if (id == kInvalidEntityId) return std::nullopt;
+    for (std::size_t i = 0; i < boltGroups_.size(); ++i)
+        if (boltGroups_[i].id == id) return i;
+    return std::nullopt;
+}
+
+std::vector<std::size_t> Document::boltGroupHoles(EntityId boltId) const {
+    std::vector<std::size_t> result;
+    if (boltId == kInvalidEntityId) return result;
+    for (std::size_t i = 0; i < cutModifiers_.size(); ++i)
+        if (cutModifiers_[i].owner == boltId) result.push_back(i);
+    return result;
+}
+
+double Document::boltGripLength(const BoltGroup& bolt) const {
+    const double len =
+        std::sqrt(bolt.axis.x * bolt.axis.x + bolt.axis.y * bolt.axis.y +
+                  bolt.axis.z * bolt.axis.z);
+    if (len < 1e-12) return 0.0;
+    const double ax = bolt.axis.x / len, ay = bolt.axis.y / len, az = bolt.axis.z / len;
+    double mn = +1e30, mx = -1e30;
+    bool any = false;
+    for (const EntityId part : bolt.parts) {
+        const auto idx = indexOfEntity(part);
+        if (!idx) continue;
+        const Bounds3& b = modelBounds()[*idx];
+        for (int i = 0; i < 8; ++i) {
+            const double px = (i & 1) ? b.maximum.x : b.minimum.x;
+            const double py = (i & 2) ? b.maximum.y : b.minimum.y;
+            const double pz = (i & 4) ? b.maximum.z : b.minimum.z;
+            const double t = px * ax + py * ay + pz * az;
+            if (t < mn) mn = t;
+            if (t > mx) mx = t;
+            any = true;
+        }
+    }
+    if (!any) return 0.0;
+    return mx - mn;
 }
 
 CutModifier resolveCutModifierSource(const CutModifier& mod, const Document& document) {

@@ -55,6 +55,11 @@ struct CutModifier {
     // planeNormal (birim), merkez = planeOrigin; silindir katiyi boydan boya
     // keser (through-cut). Diger turlerde 0 (kullanilmaz).
     double diameter{0.0};
+    // BULON SAHIPLIGI (Phase B1): bu modifier'i ureten BoltGroup'un EntityId'si.
+    // Hole modifier'lari bir bulon grubuna aittir; bulon silinince/taşıninca
+    // yalnizca bu sahipligi tasiyan modifier'lar kaldirilir/yeniden uretilir.
+    // Diger kesme turlerinde kInvalidEntityId.
+    EntityId owner{kInvalidEntityId};
     bool operator==(const CutModifier&) const = default;
 };
 

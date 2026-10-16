@@ -281,10 +281,33 @@ void writeMmw8(std::ostream& out, const Mmw8Document& doc) {
             body << ' ' << mod.polygon.size();
             for (const auto& p : mod.polygon) body << ' ' << p.x << ' ' << p.y << ' ' << p.z;
             body << ' ' << mod.source << ' ' << (mod.invertSide ? 1 : 0)
-                 << ' ' << mod.diameter << '\n';  // P6 kaynak; P8 yon tersi; B1 cap
+                 << ' ' << mod.diameter << ' ' << mod.owner
+                 << '\n';  // P6 kaynak; P8 yon tersi; B1 cap + sahiplik
         }
         const std::string b = body.str();
         out << "C " << b.size() << '\n';
+        out.write(b.data(), static_cast<std::streamsize>(b.size()));
+    }
+
+    // Kuyruk: G blogu (bulon gruplari, Phase B1).
+    if (!doc.boltGroups.empty()) {
+        std::ostringstream body;
+        body << doc.boltGroups.size() << '\n';
+        for (const auto& g : doc.boltGroups) {
+            body << g.id << ' ' << g.parts.size();
+            for (const EntityId p : g.parts) body << ' ' << p;
+            body << ' ' << g.origin.x << ' ' << g.origin.y << ' ' << g.origin.z
+                 << ' ' << g.axis.x << ' ' << g.axis.y << ' ' << g.axis.z
+                 << ' ' << g.xDir.x << ' ' << g.xDir.y << ' ' << g.xDir.z
+                 << ' ' << g.params.nominalDiameter << ' ' << g.params.holeDiameter << ' ';
+            putString(body, g.params.grade);
+            body << ' ' << (g.params.hasHead ? 1 : 0)
+                 << ' ' << (g.params.hasNut ? 1 : 0)
+                 << ' ' << (g.params.hasWasher ? 1 : 0)
+                 << ' ' << g.displayEntityId << ' ' << (g.enabled ? 1 : 0) << '\n';
+        }
+        const std::string b = body.str();
+        out << "G " << b.size() << '\n';
         out.write(b.data(), static_cast<std::streamsize>(b.size()));
     }
 
@@ -486,7 +509,7 @@ void readMmw8(std::istream& in, Mmw8Document& doc) {
     }
 
     // --- Kuyruk: etiket-gudumlu bloklar ---
-    bool sawH = false, sawB = false, sawV = false;
+    bool sawH = false, sawB = false, sawV = false, sawG = false;
     std::size_t totalBlobBytes = 0;
     for (;;) {
         in >> std::ws;
@@ -572,7 +595,52 @@ void readMmw8(std::istream& in, Mmw8Document& doc) {
                 // B1: delik capi (opsiyonel — eski dosyalarda yok).
                 double diameter = 0.0;
                 if (ls >> diameter) mod.diameter = diameter;
+                // B1: bulon sahipligi (opsiyonel — eski dosyalarda yok).
+                std::uint64_t owner = 0;
+                if (ls >> owner) mod.owner = static_cast<EntityId>(owner);
                 parsed.cutModifiers.push_back(std::move(mod));
+            }
+        } else if (tag == 'G') {
+            if (sawG) fail("repeated G block");
+            sawG = true;
+            std::istringstream gs(body);
+            const std::uint64_t count = readUint64(gs, "boltGroup count");
+            if (count > kMmw8MaxBolts) fail("boltGroup count exceeds limit");
+            std::string line;
+            std::getline(gs, line);  // count satırının kalanı (boş)
+            std::unordered_map<EntityId, bool> seenBolt;
+            for (std::uint64_t gi = 0; gi < count; ++gi) {
+                if (!std::getline(gs, line)) fail("missing boltGroup record");
+                std::istringstream ls(line);
+                BoltGroup g;
+                g.id = static_cast<EntityId>(readUint64(ls, "bolt id"));
+                if (g.id == kInvalidEntityId || g.id == kExhaustedEntityId)
+                    fail("bolt id must be a valid identity");
+                if (seenBolt.count(g.id)) fail("duplicate bolt id");
+                seenBolt[g.id] = true;
+                const std::uint64_t nParts = readUint64(ls, "bolt part count");
+                if (nParts > kMmw8MaxModels) fail("bolt part count exceeds limit");
+                g.parts.reserve(static_cast<std::size_t>(nParts));
+                for (std::uint64_t pi = 0; pi < nParts; ++pi)
+                    g.parts.push_back(static_cast<EntityId>(readUint64(ls, "bolt part")));
+                g.origin.x = readDouble(ls, "bolt origin x");
+                g.origin.y = readDouble(ls, "bolt origin y");
+                g.origin.z = readDouble(ls, "bolt origin z");
+                g.axis.x = readDouble(ls, "bolt axis x");
+                g.axis.y = readDouble(ls, "bolt axis y");
+                g.axis.z = readDouble(ls, "bolt axis z");
+                g.xDir.x = readDouble(ls, "bolt xDir x");
+                g.xDir.y = readDouble(ls, "bolt xDir y");
+                g.xDir.z = readDouble(ls, "bolt xDir z");
+                g.params.nominalDiameter = readDouble(ls, "bolt nominal diameter");
+                g.params.holeDiameter = readDouble(ls, "bolt hole diameter");
+                g.params.grade = readString(ls);
+                g.params.hasHead = readBool(ls, "bolt hasHead");
+                g.params.hasNut = readBool(ls, "bolt hasNut");
+                g.params.hasWasher = readBool(ls, "bolt hasWasher");
+                g.displayEntityId = static_cast<EntityId>(readUint64(ls, "bolt display"));
+                g.enabled = readBool(ls, "bolt enabled");
+                parsed.boltGroups.push_back(std::move(g));
             }
         } else if (tag == 'K') {
             std::istringstream ks(body);
