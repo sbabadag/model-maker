@@ -271,6 +271,22 @@ public:
     // uzerinden BooleanCut CutModifier olusturur; hedef kimligi korunur, kesici
     // parca tasindiginda hedef yeniden hesaplanir (recomputeCutTarget).
     void startPartCutCommand();
+    // TEKLA BOLT (Phase B1, noun-verb): secili TAM 2 modeli (baglanacak iki
+    // celik parca) bulonla birlestirir. Bulon M20/22 varsayilanla iki parcanin
+    // birlesik sinir kutusunun ortasina, AKTIF IS DUZLEMI normali ekseninde
+    // yerlesir. Display montaj (bas+govde+somun+pul) OCC ile uretilir; delikler
+    // gercek B-Rep kesimiyle (CutKind::Hole) acilir. Bulon display'i normal bir
+    // modeldir -> secilebilir, tasinabilir, silinebilir (silme kaskadi bulonu da
+    // kaldirir). Secim TAM 2 model degilse uyarir.
+    void startBoltCommand();
+    // Secili model bir BOLT display'i ise bulon parametrelerini okur (props
+    // paneli). Donus false = secim bir bulon degil.
+    bool selectedBoltProperties(double& nominalDiameter, double& holeDiameter,
+                                std::string& grade) const;
+    // Secili bulon display'inin parametrelerini gunceller (delikler + display
+    // yeniden uretilir). Secim bir bulon degilse no-op.
+    void setSelectedBoltProperties(double nominalDiameter, double holeDiameter,
+                                   const std::string& grade);
     // IKI NOKTALI GORUNUS (Tekla): iki nokta secilir (snap/track aktif);
     // ikinci noktada ViewDefinition uretilip twoPointViewCallback_ cagrilir
     // (Qt yeni MDI penceresi acar). Esc/sag tik iptal.
@@ -405,6 +421,18 @@ private:
     // Part Cut ortak yolu: secili (hedef + kesici parca) -> BooleanCut
     // CutModifier -> addCutModifier -> recomputeCutTarget.
     void applyPartCutFromSelection();
+    // Bolt ortak yolu (Phase B1): secili 2 parca -> BoltGroup + display +
+    // delikler. Noun-verb; M20/22 varsayilan, is duzlemi normali eksen.
+    void applyBoltFromSelection();
+#ifdef MM_HAS_OCC
+    // Bulon display modelini (montaj B-Rep + mesh) guncel BoltGroup'tan yeniden
+    // uretir: grip -> buildBoltAssemblyShape -> putOccSolid + replaceModel.
+    void rebuildBoltDisplay(const BoltGroup& bolt);
+    // Tasinan bir BOLT DISPLAY'i varsa bulon origin'ini displacement kadar
+    // otele, delikleri + display'i yeniden hesapla (Move/gumball yollari cagirir).
+    void syncBoltGroupsForMoved(const std::vector<std::size_t>& indices,
+                                const Vec3& displacement);
+#endif
     // Secili TEK parcanin (profil uyesi) eksen cercevesi + eksen orijini.
     std::optional<Ucs> selectedPartFrame(Vec3& axisOrigin) const;
 

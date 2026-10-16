@@ -65,7 +65,7 @@ enum class ToolGlyph {
     Line, Polyline, Rect, Circle, Face3D,
     Undo, Redo, Pan, Move, Copy, Offset, Mirror, Delete,
     LinearArray, PolarArray, Trim, Extend, Fillet,
-    Toggle3D, Extents, Plane, Reset, New, Open, Save, Import, Export
+    Toggle3D, Extents, Plane, Reset, New, Open, Save, Import, Export, Bolt
 };
 
 static QIcon makeToolIcon(ToolGlyph glyph) {
@@ -175,6 +175,18 @@ static QIcon makeToolIcon(ToolGlyph glyph) {
         pen.setColor(cyan); p.setPen(pen);
         p.drawPolygon(QPolygonF() << QPointF(12, 3) << QPointF(21, 12) << QPointF(12, 21) << QPointF(3, 12));
         p.drawLine(12, 3, 12, 21); p.drawLine(3, 12, 21, 12); break;
+    case ToolGlyph::Bolt: {
+        pen.setColor(yellow); p.setPen(pen);
+        QPolygonF hex;
+        for (int i = 0; i < 6; ++i) {
+            const double a = 3.14159265358979323846 / 3.0 * i;
+            hex << QPointF(12 + 6 * std::cos(a), 7 + 5 * std::sin(a));
+        }
+        p.drawPolygon(hex);
+        p.drawLine(12, 12, 12, 21);
+        p.drawLine(9, 18, 15, 18);
+        break;
+    }
     case ToolGlyph::Reset:
         pen.setColor(orange); p.setPen(pen);
         p.drawArc(QRectF(5, 5, 14, 14), 40 * 16, 280 * 16);
@@ -594,6 +606,9 @@ void QtMainWindow::createMenus() {
         [this]() { app_.startPolygonCutCommand(); });
     constructionMenu->addAction("&Part Cut (Parça)", this,
         [this]() { app_.startPartCutCommand(); });
+    constructionMenu->addSeparator();
+    constructionMenu->addAction("&Bolt (Bulon)", this,
+        [this]() { app_.startBoltCommand(); })->setIcon(makeToolIcon(ToolGlyph::Bolt));
 
     // ---- GÖRÜNÜM: kamera/navigasyon + standart yönler ----
     QMenu* viewMenu = appMenu_->addMenu("G&örünüm");
@@ -1154,6 +1169,8 @@ void QtMainWindow::createToolbar() {
         addBtn(lay, ToolGlyph::Line,     "Line Cut",      "Çizgiyle kesme", [this]() { app_.startLineCutCommand(); });
         addBtn(lay, ToolGlyph::Face3D,   "Polygon Cut",   "3DFACE ile kesme", [this]() { app_.startPolygonCutCommand(); });
         addBtn(lay, ToolGlyph::Delete,   "Part Cut",      "Parça ile kesme", [this]() { app_.startPartCutCommand(); });
+        addSep(lay);
+        addBtn(lay, ToolGlyph::Bolt,     "Bolt",          "İki parçayı bulonla birleştir", [this]() { app_.startBoltCommand(); });
         lay->addStretch();
     }
 

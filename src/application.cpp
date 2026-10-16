@@ -6,6 +6,7 @@
 #ifdef MM_HAS_OCC
 #include "model_maker/occ_geometry.hpp"
 #include "model_maker/occ_solid_store.hpp"
+#include "model_maker/bolt_geometry.hpp"
 #endif
 #ifdef MM_HAS_OCC
 #include <BRepBuilderAPI_Transform.hxx>
@@ -3803,6 +3804,157 @@ void Application::applyPartCutFromSelection() {
 
 void Application::startPartCutCommand() { applyPartCutFromSelection(); }
 
+void Application::applyBoltFromSelection() {
+    // Noun-verb (Phase B1): secili TAM 2 model = baglanacak iki celik parca.
+    if (selectedModels_.size() != 2) {
+        MessageBeep(MB_ICONWARNING);
+        publishStatus(L"Bolt: baglanacak IKI parcayi secin (tam 2 secim)");
+        return;
+    }
+    const std::size_t aIdx = selectedModels_[0];
+    const std::size_t bIdx = selectedModels_[1];
+    if (aIdx >= document_.models().size() || bIdx >= document_.models().size()) {
+        MessageBeep(MB_ICONWARNING);
+        return;
+    }
+    if (document_.models()[aIdx].constructionKind() != ConstructionKind::None ||
+        document_.models()[bIdx].constructionKind() != ConstructionKind::None) {
+        MessageBeep(MB_ICONWARNING);
+        publishStatus(L"Bolt: baglanacak parcalar normal model olmali (konstrüksiyon degil)");
+        return;
+    }
+    // Bulon origin = iki parcanin birlesik sinir kutusunun ortasi.
+    Vec3 lo{1e100, 1e100, 1e100}, hi{-1e100, -1e100, -1e100};
+    for (const std::size_t idx : {aIdx, bIdx}) {
+        if (idx >= document_.modelBounds().size()) { MessageBeep(MB_ICONWARNING); return; }
+        const auto& b = document_.modelBounds()[idx];
+        lo.x = std::min(lo.x, b.minimum.x); lo.y = std::min(lo.y, b.minimum.y);
+        lo.z = std::min(lo.z, b.minimum.z);
+        hi.x = std::max(hi.x, b.maximum.x); hi.y = std::max(hi.y, b.maximum.y);
+        hi.z = std::max(hi.z, b.maximum.z);
+    }
+    const Vec3 origin = (lo + hi) * 0.5;
+    // Eksen = aktif is duzlemi normali (dejenere ise dunya Z).
+    Vec3 axis = workPlane_.normal;
+    const double axLen = std::sqrt(axis.x * axis.x + axis.y * axis.y + axis.z * axis.z);
+    if (axLen < 1e-12) axis = {0.0, 0.0, 1.0};
+
+    BoltGroup bolt;
+    bolt.parts = {document_.modelId(aIdx), document_.modelId(bIdx)};
+    bolt.origin = origin;
+    bolt.axis = axis;
+    bolt.params.nominalDiameter = 20.0;
+    bolt.params.holeDiameter = 22.0;
+    bolt.params.grade = "8.8";
+
+    pushUndoSnapshot();
+#ifdef MM_HAS_OCC
+    const double grip = document_.boltGripLength(bolt);
+    const TopoDS_Shape assembly = mm::buildBoltAssemblyShape(bolt, grip);
+    WireframeModel displayModel =
+        assembly.IsNull() ? WireframeModel::cube(20.0)
+                          : mm::shapeToWireframeWithFaces(assembly, 0.15);
+#else
+    WireframeModel displayModel = WireframeModel::cube(20.0);  // OCC'siz fallback
+#endif
+    const std::size_t bi = document_.addBoltGroup(bolt, std::move(displayModel));
+    const BoltGroup& created = document_.boltGroups()[bi];
+#ifdef MM_HAS_OCC
+    if (!assembly.IsNull()) {
+        if (const auto di = document_.indexOfEntity(created.displayEntityId))
+            putOccSolid(*di, assembly);
+        for (const EntityId part : created.parts) recomputeCutTarget(part);
+    }
+#endif
+    selectedModels_.clear();
+    selectionFirstCorner_.reset();
+    updateHover(cursorScreen_.x, cursorScreen_.y);
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
+}
+
+void Application::startBoltCommand() { applyBoltFromSelection(); }
+
+#ifdef MM_HAS_OCC
+void Application::rebuildBoltDisplay(const BoltGroup& bolt) {
+    OccSolidStore* store = occSolidStore();
+    if (!store) return;
+    const auto di = document_.indexOfEntity(bolt.displayEntityId);
+    if (!di) return;
+    const double grip = document_.boltGripLength(bolt);
+    const TopoDS_Shape assembly = mm::buildBoltAssemblyShape(bolt, grip);
+    if (assembly.IsNull()) return;
+    putOccSolid(*di, assembly);
+    auto wire = mm::shapeToWireframeWithFaces(assembly, 0.15);
+    auto props = document_.models()[*di].properties();
+    wire.setProperties(std::move(props));
+    document_.replaceModel(*di, {std::move(wire)});
+}
+
+void Application::syncBoltGroupsForMoved(const std::vector<std::size_t>& indices,
+                                         const Vec3& displacement) {
+    if (std::abs(displacement.x) + std::abs(displacement.y) +
+            std::abs(displacement.z) < 1e-12)
+        return;
+    for (const std::size_t index : indices) {
+        if (index >= document_.models().size()) continue;
+        const EntityId id = document_.modelId(index);
+        std::optional<std::size_t> bi;
+        for (std::size_t k = 0; k < document_.boltGroups().size(); ++k)
+            if (document_.boltGroups()[k].displayEntityId == id) { bi = k; break; }
+        if (!bi) continue;
+        BoltGroup bolt = document_.boltGroups()[*bi];
+        bolt.origin = bolt.origin + displacement;
+        document_.setBoltGroup(*bi, std::move(bolt));
+        const BoltGroup& updated = document_.boltGroups()[*bi];
+        rebuildBoltDisplay(updated);
+        for (const EntityId part : updated.parts) recomputeCutTarget(part);
+    }
+}
+#endif
+
+bool Application::selectedBoltProperties(double& nominalDiameter, double& holeDiameter,
+                                         std::string& grade) const {
+    if (selectedModels_.empty() || selectedModels_.front() >= document_.models().size())
+        return false;
+    const EntityId id = document_.modelId(selectedModels_.front());
+    for (const auto& bg : document_.boltGroups())
+        if (bg.displayEntityId == id) {
+            nominalDiameter = bg.params.nominalDiameter;
+            holeDiameter = bg.params.holeDiameter;
+            grade = bg.params.grade;
+            return true;
+        }
+    return false;
+}
+
+void Application::setSelectedBoltProperties(double nominalDiameter, double holeDiameter,
+                                            const std::string& grade) {
+    if (selectedModels_.empty() || selectedModels_.front() >= document_.models().size())
+        return;
+    const EntityId id = document_.modelId(selectedModels_.front());
+    std::optional<std::size_t> bi;
+    for (std::size_t k = 0; k < document_.boltGroups().size(); ++k)
+        if (document_.boltGroups()[k].displayEntityId == id) { bi = k; break; }
+    if (!bi) return;
+    if (nominalDiameter <= 0.0 || holeDiameter <= 0.0) return;
+    pushUndoSnapshot();
+    BoltGroup bolt = document_.boltGroups()[*bi];
+    bolt.params.nominalDiameter = nominalDiameter;
+    bolt.params.holeDiameter = holeDiameter;
+    bolt.params.grade = grade;
+    document_.setBoltGroup(*bi, std::move(bolt));
+#ifdef MM_HAS_OCC
+    const BoltGroup& updated = document_.boltGroups()[*bi];
+    rebuildBoltDisplay(updated);
+    for (const EntityId part : updated.parts) recomputeCutTarget(part);
+#endif
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
+}
+
 void Application::startTwoPointViewCommand() {
     startWorkPlaneCommand(); // ayni secim akisi: snap + track + kesik onizleme
     pointPickPurpose_ = PointPickPurpose::TwoPointView;
@@ -4808,6 +4960,9 @@ void Application::commitTransformPoint(const Vec3& point) {
         // P6+P9: tasinan varlik bir kesme KAYNAGI/ARACI veya HEDEFI ise bagli
         // hedefleri yeniden hesapla (hedef tasindiginda taban da yeniden uretilir).
         recomputeTargetsForMovedModels(moving);
+        // B1: tasinan bir BOLT DISPLAY'i varsa bulon origin'ini otele + delik +
+        // display yeniden hesapla.
+        syncBoltGroupsForMoved(moving, displacement);
 #endif
         cancelTransformCommand();
     } else if (transformCommand_ == TransformCommand::Copy) {
@@ -7659,6 +7814,8 @@ void Application::gumballEndDrag() {
     // P10: gumballTransformSet_ asagida temizleniyor; recompute icin SIMDI
     // kopyala (yoksa bos kume gider ve tasinan kaynak/hedef kesme guncellemez).
     const std::vector<std::size_t> movedSet = gumballTransformSet_;
+    // B1: bulon display tasinirsa gerekli olan net oteleme (reset'ten ONCE).
+    const Vec3 appliedDelta = gumballAppliedDelta_;
 #endif
     gumballDrag_ = GumballHandle::None;
     gumballNumericActive_ = false;
@@ -7683,6 +7840,9 @@ void Application::gumballEndDrag() {
     // da yeniden uretilir). gumballTransformSet_ = secim + bagli kaynaklar.
     if (didTransform && rigidTransform)
         recomputeTargetsForMovedModels(movedSet);
+    // B1: gumball ile tasinan bulon display'ini senkronla (origin + delik + display).
+    if (didTransform && rigidTransform)
+        syncBoltGroupsForMoved(movedSet, appliedDelta);
 #endif
 }
 
