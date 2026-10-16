@@ -727,6 +727,44 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
                                        projectPoint(vertices[2]), projectPoint(vertices[3])};
                 // P9: duzlem SADE (seffaf, taramasiz) cizilir — yalniz sinir ve
                 // yerel eksenler. Dolgu yok (kullanici: "seffaf taramasiz").
+                // P10: SECILI duzlem — solid yari saydam dolgu (secim vurgusu).
+                // GDI AlphaBlend ile secim rengi dusuk opaklikta doldurulur
+                // (face vurgusu ile ayni desen); model arkada gorunur kalir.
+                if (cSel) {
+                    LONG fillLeft = quad[0].x, fillRight = quad[0].x;
+                    LONG fillTop = quad[0].y, fillBottom = quad[0].y;
+                    for (const POINT& p : quad) {
+                        fillLeft = std::min(fillLeft, p.x); fillRight = std::max(fillRight, p.x);
+                        fillTop = std::min(fillTop, p.y); fillBottom = std::max(fillBottom, p.y);
+                    }
+                    fillLeft = std::clamp<LONG>(fillLeft, 0, width);
+                    fillRight = std::clamp<LONG>(fillRight, 0, width);
+                    fillTop = std::clamp<LONG>(fillTop, 0, height);
+                    fillBottom = std::clamp<LONG>(fillBottom, 0, height);
+                    const int fillWidth = fillRight - fillLeft;
+                    const int fillHeight = fillBottom - fillTop;
+                    if (fillWidth > 0 && fillHeight > 0) {
+                        HDC fillDc = CreateCompatibleDC(dc);
+                        HBITMAP fillBmp = CreateCompatibleBitmap(dc, fillWidth, fillHeight);
+                        HGDIOBJ oldFillBmp = SelectObject(fillDc, fillBmp);
+                        BitBlt(fillDc, 0, 0, fillWidth, fillHeight, dc, fillLeft, fillTop, SRCCOPY);
+                        std::vector<POINT> local = {quad[0], quad[1], quad[2], quad[3]};
+                        for (auto& p : local) { p.x -= fillLeft; p.y -= fillTop; }
+                        HBRUSH fillBrush = CreateSolidBrush(cRgb);
+                        HGDIOBJ oldFillBrush = SelectObject(fillDc, fillBrush);
+                        HGDIOBJ oldFillPen = SelectObject(fillDc, GetStockObject(NULL_PEN));
+                        Polygon(fillDc, local.data(), static_cast<int>(local.size()));
+                        SelectObject(fillDc, oldFillPen);
+                        SelectObject(fillDc, oldFillBrush);
+                        BLENDFUNCTION fillBlend{AC_SRC_OVER, 0, 72, 0};
+                        AlphaBlend(dc, fillLeft, fillTop, fillWidth, fillHeight,
+                                   fillDc, 0, 0, fillWidth, fillHeight, fillBlend);
+                        SelectObject(fillDc, oldFillBmp);
+                        DeleteObject(fillBrush);
+                        DeleteObject(fillBmp);
+                        DeleteDC(fillDc);
+                    }
+                }
                 // Sinir (4 kenar) — duzlem sinirlari.
                 HPEN border = CreatePen(PS_SOLID, cWidth, cRgb);
                 SelectObject(dc, border);
