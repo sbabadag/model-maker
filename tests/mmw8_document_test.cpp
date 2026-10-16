@@ -255,6 +255,7 @@ static void testCutAndConstructionRoundTrip() {
     fit.planeNormal = {1, 0, 0};
     fit.name = "Uc kesim";
     fit.enabled = false;
+    fit.invertSide = true;  // P8: yon tersi de kalici olmali
     doc.addCutModifier(fit);
 
     doc.save(path);
@@ -283,6 +284,7 @@ static void testCutAndConstructionRoundTrip() {
               "duzlem parametreleri korunur");
         check(m.name == "Uc kesim", "isim korunur");
         check(m.enabled == false, "disabled durumu korunur");
+        check(m.invertSide == true, "invertSide (yon tersi) korunur");
     }
 
     std::error_code ec;

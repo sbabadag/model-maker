@@ -2011,6 +2011,16 @@ void Application::onLeftButtonDown(int x, int y) {
     // aktif olur; 1. tik tasima baslangici (baz), 2. tik destinasyondur —
     // normal Move komutu gibi.
     const bool altDown = (GetKeyState(VK_MENU) & 0x8000) != 0;
+    if (altDown && transformCommand_ == TransformCommand::None && !drawingActive_ &&
+        !workPlanePicking_ && !zoomWindowActive_ && !profileGrip_) {
+        // P8: Alt+sol tik kesme nesnesi uzerinde -> kesme yonunu tersine
+        // cevirir (invertSide). Isabet yoksa asagidaki profil-uc-grip
+        // Alt davranisina dusulur.
+        if (const auto cutHit = hitTestCutModifierAt(x, y)) {
+            flipCutDirection(*cutHit);
+            return;
+        }
+    }
     if (altDown && mode_ == EditMode::View3D) {
         if (const auto grip = profileGripAt(x, y)) {
             profileGrip_ = ProfileGrip{};
@@ -4123,6 +4133,45 @@ void Application::deleteSelectedCutModifiers() {
     for (const EntityId target : targets) recomputeCutTarget(target);
 #endif
     updateHover(cursorScreen_.x, cursorScreen_.y);
+    updateStatus();
+    invalidateCanvas();
+}
+
+std::optional<std::size_t> Application::hitTestCutModifierAt(int x, int y) const {
+    // Kesme modifier'i isabet testi icin 2B/3B ortak yol (P8 Alt+sol tik +
+    // P5 secim/hint ile ayni esikler).
+    if (mode_ == EditMode::Draw2D)
+        return hitTestCutModifier2D(screenTo2D(x, y), document_,
+                                    10.0 / (60.0 * camera_.zoom()));
+    RECT client{};
+    GetClientRect(canvas_, &client);
+    return hitTestCutModifier3D({static_cast<double>(x), static_cast<double>(y)}, document_, camera_,
+                                std::max(1L, client.right), std::max(1L, client.bottom), 10.0);
+}
+
+void Application::flipCutDirection(std::size_t index) {
+    // P8: kesme nesnesi uzerinde Alt+sol tik -> yonu tersine cevir.
+    if (index >= document_.cutModifiers().size()) return;
+    CutModifier mod = document_.cutModifiers()[index];
+    switch (mod.kind) {
+    case CutKind::PlaneCut:
+    case CutKind::Fitting:
+    case CutKind::LineCut:
+        mod.invertSide = !mod.invertSide;
+        break;
+    default:  // PolygonCut / BooleanCut: yonsuz through-cut / boolean.
+        MessageBeep(MB_ICONINFORMATION);
+        publishStatus(L"Bu kesme türünün yönü yok (through-cut / boolean)");
+        return;
+    }
+    pushUndoSnapshot();
+    document_.setCutModifier(index, mod);
+#ifdef MM_HAS_OCC
+    recomputeCutTarget(mod.target);
+#endif
+    publishStatus(L"Kesme yönü tersine çevrildi");
+    updateHover(cursorScreen_.x, cursorScreen_.y);
+    updateControls();
     updateStatus();
     invalidateCanvas();
 }

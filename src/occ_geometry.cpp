@@ -269,25 +269,30 @@ TopoDS_Shape applyCutModifier(const TopoDS_Shape& base, const CutModifier& mod,
     (void)axisTo;
     switch (mod.kind) {
         case CutKind::PlaneCut:
-            return cutSolidByPlane(base, mod.planeOrigin, mod.planeNormal, mod.keepPositive);
+            return cutSolidByPlane(base, mod.planeOrigin, mod.planeNormal,
+                                   mod.keepPositive != mod.invertSide);
         case CutKind::Fitting: {
             // Tekla "Fit part end": kisa taraf otomatik atilir (uzun taraf
             // korunur). Uzatma/kisaltma durumu (duzlem ekseni kesmiyorsa)
-            // prototip kapsami disi — base'e dokunma.
+            // prototip kapsami disi — base'e dokunma. invertSide (P8) otomatik
+            // tarafi tersine cevirir (Alt+sol tik).
             const auto keep = fittingKeepPositive(axisFrom, axisTo, mod.planeOrigin,
                                                   mod.planeNormal);
             if (!keep) return base;
-            return cutSolidByPlane(base, mod.planeOrigin, mod.planeNormal, *keep);
+            return cutSolidByPlane(base, mod.planeOrigin, mod.planeNormal,
+                                   *keep != mod.invertSide);
         }
         case CutKind::LineCut: {
             // Tekla "cut with a line": cizgiyi iceren, cizgi duzlemine dik
             // kesme duzlemi. polygon = {cizgiBas, cizgiSon}; planeNormal =
-            // cizginin cizildigi duzlemin normali. Taraf secimi keepPositive.
+            // cizginin cizildigi duzlemin normali. Taraf secimi keepPositive
+            // (invertSide ile terslenir).
             if (mod.polygon.size() < 2) return base;
             const auto n = lineCutPlaneNormal(mod.polygon[0], mod.polygon[1],
                                               mod.planeNormal);
             if (!n) return base;
-            return cutSolidByPlane(base, mod.polygon[0], *n, mod.keepPositive);
+            return cutSolidByPlane(base, mod.polygon[0], *n,
+                                   mod.keepPositive != mod.invertSide);
         }
         case CutKind::PolygonCut:
             return cutSolidByPolygon(base, mod.polygon);

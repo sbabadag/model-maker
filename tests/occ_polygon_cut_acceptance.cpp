@@ -109,6 +109,19 @@ int main() {
         check(std::abs(ratio - 0.50) < 0.01, "line cut keepNegative: ~0.50 kati kalir (x<50)");
     }
 
+    // --- 4b) Line cut invertSide (P8) -> keepPositive terslenir. ---
+    {
+        CutModifier line;
+        line.kind = CutKind::LineCut;
+        line.polygon = {{50, 0, 0}, {50, 100, 0}};
+        line.planeNormal = {0, 0, 1};
+        line.keepPositive = true;   // normal +X (x>50) korunur
+        line.invertSide = true;     // P8: ters -> x<50 korunur
+        const TopoDS_Shape cut = applyCutModifier(box, line, axisFrom, axisTo);
+        const double ratio = shapeVolume(cut) / boxVol;
+        check(std::abs(ratio - 0.50) < 0.01, "line cut invertSide: ~0.50 kati kalir (x<50)");
+    }
+
     // --- 5) Dejenere polygon (<3 nokta) -> base dokunulmaz. ---
     {
         CutModifier poly;

@@ -280,7 +280,7 @@ void writeMmw8(std::ostream& out, const Mmw8Document& doc) {
             putString(body, mod.name);
             body << ' ' << mod.polygon.size();
             for (const auto& p : mod.polygon) body << ' ' << p.x << ' ' << p.y << ' ' << p.z;
-            body << ' ' << mod.source << '\n';  // P6: kaynak varlik (0 = yok)
+            body << ' ' << mod.source << ' ' << (mod.invertSide ? 1 : 0) << '\n';  // P6 kaynak; P8 yon tersi
         }
         const std::string b = body.str();
         out << "C " << b.size() << '\n';
@@ -565,6 +565,9 @@ void readMmw8(std::istream& in, Mmw8Document& doc) {
                 // P6: kaynak varlik (opsiyonel — eski dosyalarda satir sonu bos).
                 std::uint64_t source = 0;
                 if (ls >> source) mod.source = static_cast<EntityId>(source);
+                // P8: kesme yonu tersi (opsiyonel — eski dosyalarda yok).
+                std::uint64_t invertSide = 0;
+                if (ls >> invertSide) mod.invertSide = invertSide != 0;
                 parsed.cutModifiers.push_back(std::move(mod));
             }
         } else if (tag == 'K') {

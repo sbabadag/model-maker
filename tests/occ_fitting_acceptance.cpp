@@ -120,6 +120,28 @@ int main() {
         const double ratio = shapeVolume(applyCutModifier(base, pc, axisFrom, axisTo)) / baseVol;
         check(std::abs(ratio - 4000.0 / 6000.0) < 0.01, "dik planeCut x=2000 keep+: ~2/3 kati kalir");
     }
+    // --- P8) Yon tersi (invertSide): Alt+sol tik davranisinin OCC katmani. ---
+    {
+        CutModifier pc;
+        pc.kind = CutKind::PlaneCut;
+        pc.planeOrigin = {2000.0, 0.0, 0.0};
+        pc.planeNormal = nx;
+        pc.keepPositive = true;   // normal +X (x>2000) korunur
+        pc.invertSide = true;     // P8: ters -> x<2000 korunur
+        const double ratio = shapeVolume(applyCutModifier(base, pc, axisFrom, axisTo)) / baseVol;
+        check(std::abs(ratio - 2000.0 / 6000.0) < 0.01, "P8 planeCut invertSide: ~1/3 kati kalir (x<2000)");
+    }
+    {
+        CutModifier fit;
+        fit.kind = CutKind::Fitting;
+        fit.planeOrigin = {2000.0, 0.0, 0.0};
+        fit.planeNormal = nx;
+        fit.invertSide = true;    // otomatik kisa-from tarafi ters -> uzun taraf atilir
+        // Normal fitting x=2000: kisa from (x<2000) atilir -> 4000 kalir (2/3).
+        // invertSide: ters -> x>2000 atilir -> 2000 kalir (1/3).
+        const double ratio = shapeVolume(applyCutModifier(base, fit, axisFrom, axisTo)) / baseVol;
+        check(std::abs(ratio - 2000.0 / 6000.0) < 0.01, "P8 fitting invertSide: ~1/3 kati kalir");
+    }
     // --- 3) Zincir: fit(x=2000, koru +X) + planeCut(x=4000, koru -X) -> x in [2000,4000].
     {
         CutModifier fit;

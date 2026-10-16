@@ -45,7 +45,12 @@ struct CutModifier {
     // davranis (geometri mod.planeOrigin/planeNormal/polygon'da sabittir).
     EntityId source{kInvalidEntityId};
     bool enabled{true};
-    std::string name;   // UTF-8 (kalicilikta taşınabilir; Qt QString::fromUtf8 ile)
+    std::string name;   // UTF-8 (kalıcılıkta taşınabilir; Qt QString::fromUtf8 ile)
+    // YÖN (P8): kesme yönü ters. Alt+sol tık (kesme nesnesi üzerinde) ile
+    // değiştirilir. PlaneCut/LineCut: keepPositive terslenir. Fitting: OTOMATIK
+    // taraf terslenir (uzun/kisa taraf secimi yer degistirir). PolygonCut /
+    // BooleanCut: yönsüz (through-cut / boolean) — etkisizdir.
+    bool invertSide{false};
     bool operator==(const CutModifier&) const = default;
 };
 

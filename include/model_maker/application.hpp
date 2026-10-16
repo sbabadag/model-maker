@@ -407,6 +407,12 @@ private:
     // Secili kesme modifier'larini siler + hedeflerini yeniden hesaplar
     // (tek geri-alma adimi). Secim bos ise hicbir sey yapmaz.
     void deleteSelectedCutModifiers();
+    // Imlecin altindaki kesme modifier'ini isabet-testi (2B/3B ortak yol).
+    std::optional<std::size_t> hitTestCutModifierAt(int x, int y) const;
+    // P8: kesme nesnesi uzerinde Alt+sol tik -> kesme yonunu tersine cevirir
+    // (invertSide). PlaneCut/LineCut keepPositive'i, Fitting otomatik tarafi
+    // tersler; PolygonCut/BooleanCut yonsuz oldugu icin no-op (uyari).
+    void flipCutDirection(std::size_t index);
     void commitPoint(const Vec3& point);
     void cancelDrawing();
     void clearTemporaryTracking();
