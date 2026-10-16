@@ -28,7 +28,6 @@ static void check(bool ok, const char* label) {
 }
 
 int main() {
-    g_drawFilletRadii = true;  // test radiuslu gercek kesiti dogrular (default false'tan bagimsiz)
     const auto path = std::filesystem::temp_directory_path() / "occ_doc_roundtrip.mmw";
 
     // --- Build: document with real OCC store, a profile solid, a construction

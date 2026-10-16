@@ -11,13 +11,6 @@
 
 namespace mm {
 
-// Fason (gövde-flans) radiuslarinin cizilip cizilmeyecegi (Tekla tarzi).
-// true = gercek radiuslu kesit (varsayilan); false = keskin kose, radius
-// yok sayilir -> ~4x daha az tessellasyon (daha hizli cizim + boolean).
-// Uygulama bunu acip kapatir; tum profil uretimini (extrudeProfileSolid)
-// etkiler. Kuresel — thread-guvensiz (yalniz ana is parcacigindan degisir).
-extern bool g_drawFilletRadii;
-
 // OCC ilk yuzeyi: kati kutu uretimi + hacim + STEP yazma/okuma.
 // Daha genis modelleme API'si bu modulde buyuyecek (BRep, boolean,
 // fillet, STEP/IGES alisverisi, dogrudan goruntuleme).

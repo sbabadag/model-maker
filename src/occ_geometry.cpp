@@ -54,8 +54,6 @@
 
 namespace mm {
 
-bool g_drawFilletRadii = false;  // varsayilan: Tekla tarzi radiussuz (hizli); Options formu ile acilabilir
-
 double boxVolume(double x, double y, double z) {
     const TopoDS_Shape box = BRepPrimAPI_MakeBox(x, y, z).Shape();
     GProp_GProps props;
@@ -469,108 +467,34 @@ TopoDS_Shape applyCutModifierChain(const TopoDS_Shape& base,
     return result;
 }
 
-// IPE/IPN profilinde flans ic yuzeyi %14 egimlidir (DIN 1025-5); diger
-// I-kesitler (HE*/UB*/UC*/W/T) paralel flanslidir. Buyuk/kucuk harf duyarsiz.
-static double iSectionFlangeSlope(const std::string& name) {
-    auto ieq = [](char a, char b) {
-        const auto up = [](char c) {
-            return static_cast<char>(c >= 'a' && c <= 'z' ? c - 'a' + 'A' : c);
-        };
-        return up(a) == up(b);
-    };
-    const auto starts = [&](const char* p) {
-        std::size_t i = 0;
-        while (p[i]) {
-            if (i >= name.size() || !ieq(name[i], p[i])) return false;
-            ++i;
-        }
-        return true;
-    };
-    return (starts("IPE") || starts("IPN")) ? 0.14 : 0.0;
-}
-
-// Tek KAPALI kontur olarak I-kesit yuzu uretir (eski "2 flans + govde"
-// fuse'u yerine). Boylece gövde-flans birlesimindeki ic kose/ucgen face
-// kalmaz; gövde-flans radiusu (r) ve IPE/IPN ic yuz egimi gercek sekliyle
-// islenir. Noktalar saat yonunde, sag-ust dis koseden baslar. Yerel koordinat:
-// Y = kesit yuksekligi (orta=0), X = flans genisligi (orta=0), Z=0.
+// Tek KAPALI keskin-kose I-kesit konturu. Flanslar DIK (perpendicular),
+// radius ve IPE ic yuz egimi YOK — her zaman keskin kose (Tekla tarzi,
+// hizli cizim + boolean). Noktalar saat yonunde, sag-ust dis koseden baslar.
+// Yerel koordinat: Y = kesit yuksekligi (orta=0), X = flans genisligi
+// (orta=0), Z=0.
 static std::vector<gp_Pnt> buildISectionContour(const SteelProfile& profile) {
     const double w = profile.width;
     const double h = profile.height;
     const double tw = profile.plateThickness;    // govde kalinligi
-    const double tf = profile.flangeThickness;   // flans kalinligi (govdede nominal)
-    // Fason radiusu: g_drawFilletRadii kapaliysa radius yok sayilir (Tekla
-    // tarzi keskin kose — ~4x daha az tessellasyon, daha hizli cizim/boolean).
-    const double r = (g_drawFilletRadii && profile.roundingRadius > 0.0)
-                         ? profile.roundingRadius : 0.0;
-    const double slope = iSectionFlangeSlope(profile.name);
+    const double tf = profile.flangeThickness;   // flans kalinligi
     const double hw = w / 2.0;
     const double hh = h / 2.0;
     const double xw = tw / 2.0;
-    // Egimli yuzeyin yatay uzanimi: flans dis ucundan radius baslangicina.
-    const double flangeInn = hw - (xw + r);
-    // IPE/IPN'de flans ic yuzeyi %14 egimlidir (DIN 1025-5); nominal tf
-    // merkezden b/4'te (xNom) olculur: govde birlesiminde kalin, dis ucta
-    // ince. tf(x) = tf + egim * (xNom - x). (ISO yaklasik.)
-    const double xNom = hw * 0.5;  // b/4 (merkezden olcum noktasi)
-    const double tfIn = tf + slope * (xNom - (xw + r));  // govde birlesimi
-    const double tfOut = tf + slope * (xNom - hw);       // dis uc
-
-    const int ARC = 8; // fillet ceyrek daire segment sayisi
-
-    // Merkez c, baslangic p0, bitis p1 olan kucuk (ceyrek) yayi saat yonunde
-    // ARC segmentle interpolasyonlayarak pts'e ekler. r < 0.5 ise duz kose
-    // (tek nokta) — dejenere fillet korumasi.
-    auto arc = [&](std::vector<gp_Pnt>& pts, const gp_Pnt& c,
-                   const gp_Pnt& p0, const gp_Pnt& p1) {
-        if (r < 0.5) { pts.push_back(p1); return; }
-        double a0 = std::atan2(p0.Y() - c.Y(), p0.X() - c.X());
-        double a1 = std::atan2(p1.Y() - c.Y(), p1.X() - c.X());
-        double diff = a1 - a0;
-        while (diff > M_PI) diff -= 2.0 * M_PI;
-        while (diff < -M_PI) diff += 2.0 * M_PI;
-        for (int i = 1; i <= ARC; ++i) {
-            const double t = static_cast<double>(i) / static_cast<double>(ARC);
-            const double a = a0 + diff * t;
-            pts.emplace_back(c.X() + r * std::cos(a), c.Y() + r * std::sin(a), 0.0);
-        }
-    };
+    const double yFlIn = hh - tf;                // flans alt (ic) yuzu
 
     std::vector<gp_Pnt> pts;
-    const double yTop = hh;
-    const double yBot = -hh;
-    const double yFlIn = hh - tfIn;    // ust flans alt yuzu (govdede, kalin)
-    const double yFlOut = hh - tfOut;  // ust flans alt yuzu (dis ucta, ince)
-
-    // --- sag ust ceyrek ---
-    pts.emplace_back(hw, yTop, 0.0);                  // sag ust dis kose
-    pts.emplace_back(hw, yFlOut, 0.0);                // sag dis alt (ince ucu)
-    pts.emplace_back(xw + r, yFlIn, 0.0);             // egim sonu (fillet basi)
-    // Ic kose filleti: merkez kosenin BOS (sag-alt) tarafinda.
-    arc(pts, gp_Pnt(xw + r, yFlIn - r, 0.0),
-        gp_Pnt(xw + r, yFlIn, 0.0), gp_Pnt(xw, yFlIn - r, 0.0));
-    pts.emplace_back(xw, -yFlIn + r, 0.0);            // govde alt fillet basi
-
-    // --- sag alt ceyrek ---
-    arc(pts, gp_Pnt(xw + r, -yFlIn + r, 0.0),
-        gp_Pnt(xw, -yFlIn + r, 0.0), gp_Pnt(xw + r, -yFlIn, 0.0));
-    pts.emplace_back(hw, -yFlOut, 0.0);               // alt flans egimli dis
-    pts.emplace_back(hw, yBot, 0.0);                  // sag alt dis kose
-
-    // --- sol alt ceyrek (simetri, x negatif) ---
-    pts.emplace_back(-hw, yBot, 0.0);
-    pts.emplace_back(-hw, -yFlOut, 0.0);
-    pts.emplace_back(-(xw + r), -yFlIn, 0.0);
-    arc(pts, gp_Pnt(-(xw + r), -yFlIn + r, 0.0),
-        gp_Pnt(-(xw + r), -yFlIn, 0.0), gp_Pnt(-xw, -yFlIn + r, 0.0));
-    pts.emplace_back(-xw, yFlIn - r, 0.0);
-
-    // --- sol ust ceyrek ---
-    arc(pts, gp_Pnt(-(xw + r), yFlIn - r, 0.0),
-        gp_Pnt(-xw, yFlIn - r, 0.0), gp_Pnt(-(xw + r), yFlIn, 0.0));
-    pts.emplace_back(-hw, yFlOut, 0.0);
-    pts.emplace_back(-hw, yTop, 0.0);
-
+    pts.emplace_back(hw, hh, 0.0);      // 1 sag ust dis kose
+    pts.emplace_back(hw, yFlIn, 0.0);   // 2 ust flans sag ic
+    pts.emplace_back(xw, yFlIn, 0.0);   // 3 govde sag ust
+    pts.emplace_back(xw, -yFlIn, 0.0);  // 4 govde sag alt
+    pts.emplace_back(hw, -yFlIn, 0.0);  // 5 alt flans sag ic
+    pts.emplace_back(hw, -hh, 0.0);     // 6 sag alt dis kose
+    pts.emplace_back(-hw, -hh, 0.0);    // 7 sol alt dis kose
+    pts.emplace_back(-hw, -yFlIn, 0.0); // 8 alt flans sol ic
+    pts.emplace_back(-xw, -yFlIn, 0.0); // 9 govde sol alt
+    pts.emplace_back(-xw, yFlIn, 0.0);  // 10 govde sol ust
+    pts.emplace_back(-hw, yFlIn, 0.0);  // 11 ust flans sol ic
+    pts.emplace_back(-hw, hh, 0.0);     // 12 sol ust dis kose
     return pts;
 }
 
@@ -606,9 +530,8 @@ TopoDS_Shape extrudeProfileSolid(const SteelProfile& profile, const Vec3& from,
             section = circleFace(outerR);
         }
     } else if (kind == ProfileSectionKind::ISection) {
-        // I-kesit (HEA/HEB/HEM/IPE/IPN/UB/UC/W/T): tek KAPALI kontur yuzu.
-        // Eski "2 flans + govde" fuse'u gövde-flans birlesiminde ic kose
-        // (ucgen face) birakiyordu; artik gercek kontur (radius + IPE egimi).
+        // I-kesit (HEA/HEB/HEM/IPE/IPN/UB/UC/W/T): tek KAPALI keskin-kose
+        // kontur yuzu (DIK flans; radius/egim yok — Tekla tarzi hizli).
         const auto contour = buildISectionContour(profile);
         BRepBuilderAPI_MakePolygon polygon;
         for (const auto& p : contour) polygon.Add(p);

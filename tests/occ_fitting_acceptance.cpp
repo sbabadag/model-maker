@@ -44,7 +44,6 @@ static void bbox(const TopoDS_Shape& s, double& xMin, double& yMin, double& zMin
 }
 
 int main() {
-    g_drawFilletRadii = true;  // test radiuslu gercek kesiti dogrular (default false'tan bagimsiz)
     // HEB300 benzeri I-kesit (ad "HEB300" -> classifyProfileSection = ISection).
     SteelProfile heb300;
     heb300.name = "HEB300";

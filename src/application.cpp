@@ -3556,35 +3556,6 @@ void Application::toggleConstructionVisibility() {
     invalidateCanvas();
 }
 
-bool Application::drawFilletRadii() const {
-    return mm::g_drawFilletRadii;
-}
-
-void Application::setDrawFilletRadii(bool enabled) {
-    // Tekla tarzi radius gizle/goster: bayrak set edilir, TUM profiller yeniden
-    // uretilir (guncel bayraga gore radiuslu/radiussuz). Gorsel bir toggle
-    // oldugu icin undo kapsaminda degil; belge parametreleri (profileName,
-    // eksen, rotasyon) degismez — yalniz turetilen B-Rep/mesh guncellenir.
-    mm::g_drawFilletRadii = enabled;
-#ifdef MM_HAS_OCC
-    ensureProfileCatalog();
-    for (std::size_t i = 0; i < document_.models().size(); ++i) {
-        if (document_.models()[i].properties().profileName.empty()) continue;
-        recomputeCutTarget(document_.modelId(i));
-    }
-#endif
-    publishStatus(mm::g_drawFilletRadii
-                      ? L"Profil radiuslari: ACIK (gercek kesit)"
-                      : L"Profil radiuslari: KAPALI (Tekla tarzi, hizli)");
-    updateControls();
-    updateStatus();
-    invalidateCanvas();
-}
-
-void Application::toggleDrawFilletRadii() {
-    setDrawFilletRadii(!mm::g_drawFilletRadii);
-}
-
 void Application::applyCutFromSelection(CutKind kind) {
     // Noun-verb (P1): secili kume icinde profiller + BIR konstrüksiyon
     // duzlemi aranir. P12: TEK duzlem birden cok profili keser — tum secili

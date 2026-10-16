@@ -49,9 +49,6 @@ private:
     // acilir. Cap/kalite/delik/bas/somun/pul + adet (countX/countY) + mesafe
     // (spacingX/spacingY) duzenlenir; OK -> app_.setSelectedBoltGroup.
     void openBoltPropertiesDialog(const mm::BoltGroup& bolt);
-    // Global ayarlar (Options formu): QSettings INI ile kalici saklama.
-    void promptOptions();
-    void loadSettings();
     void createDockPanels();
     void resizeEmbeddedCanvas();
     void openTwoPointView(const ViewDefinition& view);

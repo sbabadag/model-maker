@@ -46,7 +46,6 @@ static void check(bool ok, const char* label) {
 }
 
 int main() {
-    g_drawFilletRadii = true;  // test radiuslu gercek kesiti dogrular (default false'tan bagimsiz)
     const TopoDS_Shape box = BRepPrimAPI_MakeBox(100.0, 100.0, 100.0).Shape();
     const double boxVol = shapeVolume(box);
     check(std::abs(boxVol - 1.0e6) < 1.0, "100x100x100 kutu hacmi ~1e6 mm^3");

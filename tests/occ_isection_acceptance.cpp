@@ -1,10 +1,9 @@
-// Gercek I-kesit konturu kabul testi (DIN olculerine karsi alan dogrulama).
+// I-kesit konturu kabul testi — DIK (perpendicular) flans, radius/egim YOK.
 //
-// extrudeProfileSolid I-kesitleri artik tek KAPALI kontur yuzu olarak uretir:
-// govde-flans radiusu (r) ve IPE/IPN ic yuz egimi (%14) gercek sekliyle
-// islenir; eski "2 flans + govde" fuse'u gövde-flans birlesiminde ucgen
-// face birakiyordu. Bu test, kesit alaninin (hacim / uzunluk) katalog A
-// degerine %3 icinde yaklastigini ve bbox olculerinin dogru oldugunu kilitler.
+// extrudeProfileSolid I-kesitleri tek KAPALI keskin-kose kontur olarak uretir
+// (Tekla tarzi). Bu test, kesit alaninin (hacim / uzunluk) KESKIN-KOSE
+// formulune 2*b*tf + tw*(h-2*tf) uydugunu ve katalog A degerinin ALTINDA
+// (fason/radius eklenmedigi) kaldigini kilitler; bbox olculeri de dogrulanir.
 #include "model_maker/occ_geometry.hpp"
 #include "model_maker/profile_database.hpp"
 #include "model_maker/geometry.hpp"
@@ -27,18 +26,23 @@ static double solidVolume(const TopoDS_Shape& s) {
     return g.Mass();
 }
 
-// Kesit alanini (hacim / uzunluk) katalog A (mm2) ile karsilastirir.
-static void checkProfileArea(const SteelProfile& p, double expectedA, double length) {
+// Kesit alanini (hacim / uzunluk) KESKIN-KOSE formulu (2*b*tf + tw*(h-2tf))
+// ile karsilastirir. catalogA = katalog degeri (fason/radius eklenince daha
+// buyuk olur — area < catalogA saglanir).
+static void checkProfileArea(const SteelProfile& p, double catalogA, double length) {
     TopoDS_Shape s = extrudeProfileSolid(p, Vec3{0,0,0}, Vec3{0,0,length}, 0.0, Vec3{0,1,0});
     double area = solidVolume(s) / length;
-    std::printf("  %s area = %.1f (katalog A=%.1f, fark %+.2f%%)\n",
-                p.name.c_str(), area, expectedA, (area - expectedA) / expectedA * 100.0);
-    CHECK(std::fabs(area - expectedA) / expectedA < 0.03,
-          (p.name + " kesit alani katalog A ile uyumlu").c_str());
+    const double sharp = 2.0 * p.width * p.flangeThickness +
+                         p.plateThickness * (p.height - 2.0 * p.flangeThickness);
+    std::printf("  %s area = %.1f (keskin=%.1f, katalog A=%.1f)\n",
+                p.name.c_str(), area, sharp, catalogA);
+    CHECK(std::fabs(area - sharp) / sharp < 0.005,
+          (p.name + " kesit alani keskin-kose formuluyle uyumlu").c_str());
+    CHECK(area < catalogA,
+          (p.name + " fason/radius eklenmemis (area < katalog A)").c_str());
 }
 
 int main() {
-    g_drawFilletRadii = true;  // test radiuslu gercek kesiti dogrular (default false'tan bagimsiz)
     // IPE200: h=200 b=100 tw=5.6 tf=8.5 r=12  A=28.48 cm2 = 2848 mm2
     SteelProfile ipe200;
     ipe200.name = "IPE200";
@@ -55,7 +59,7 @@ int main() {
     ipe300.roundingRadius = 15.0;
     checkProfileArea(ipe300, 5381.0, 1000.0);
 
-    // HEB300: h=300 b=300 tw=11 tf=19 r=27  A=149.1 cm2 = 14910 mm2 (paralel flans)
+    // HEB300: h=300 b=300 tw=11 tf=19 r=27  A=149.1 cm2 = 14910 mm2
     SteelProfile heb300;
     heb300.name = "HEB300";
     heb300.height = 300.0; heb300.width = 300.0;
@@ -63,7 +67,7 @@ int main() {
     heb300.roundingRadius = 27.0;
     checkProfileArea(heb300, 14910.0, 1000.0);
 
-    // HEA200: h=190 b=200 tw=6.5 tf=10 r=18  A=53.83 cm2 = 5383 mm2 (paralel flans)
+    // HEA200: h=190 b=200 tw=6.5 tf=10 r=18  A=53.83 cm2 = 5383 mm2
     SteelProfile hea200;
     hea200.name = "HEA200";
     hea200.height = 190.0; hea200.width = 200.0;
