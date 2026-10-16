@@ -1909,6 +1909,8 @@ CutModifier resolveCutModifierSource(const CutModifier& mod, const Document& doc
         break;
     case CutKind::BooleanCut:
         break;  // BooleanCut: tool referansiyla cozumlenir, source kullanilmaz
+    case CutKind::Hole:
+        break;  // Hole: bulon origin/ekseninden uretilir, source kullanilmaz
     }
     return out;
 }

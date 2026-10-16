@@ -41,6 +41,7 @@ add_library(model_maker_core
     src/ucs.cpp
     src/cut_modifier.cpp
     src/component.cpp
+    src/bolt.cpp
     src/assembly.cpp)
 target_include_directories(model_maker_core PUBLIC include)
 target_compile_options(model_maker_core PRIVATE -Wall -Wextra -Wpedantic)
@@ -718,6 +719,14 @@ if(BUILD_TESTING)
     target_link_options(model_maker_cut_modifier_source_test PRIVATE -static -static-libgcc -static-libstdc++)
     target_compile_options(model_maker_cut_modifier_source_test PRIVATE -Wall -Wextra -Wpedantic)
     add_test(NAME model_maker_cut_modifier_source_test COMMAND model_maker_cut_modifier_source_test)
+
+    # PARAMETRIK BULON (Phase B1): BoltGroup veri modeli + delik CutModifier
+    # uretimi + MMW8 cap round-trip. OCC'siz, Linux'ta kosar.
+    add_executable(model_maker_bolt_test tests/bolt_test.cpp)
+    target_link_libraries(model_maker_bolt_test PRIVATE model_maker_core)
+    target_link_options(model_maker_bolt_test PRIVATE -static -static-libgcc -static-libstdc++)
+    target_compile_options(model_maker_bolt_test PRIVATE -Wall -Wextra -Wpedantic)
+    add_test(NAME model_maker_bolt_test COMMAND model_maker_bolt_test)
 
     # COMPONENT FOUNDATION (P4): Main/Secondary Part, parametrik Component
     # tanimi, instance + parametreler, bagimlilik + yeniden hesaplama. OCC'siz.

@@ -280,7 +280,8 @@ void writeMmw8(std::ostream& out, const Mmw8Document& doc) {
             putString(body, mod.name);
             body << ' ' << mod.polygon.size();
             for (const auto& p : mod.polygon) body << ' ' << p.x << ' ' << p.y << ' ' << p.z;
-            body << ' ' << mod.source << ' ' << (mod.invertSide ? 1 : 0) << '\n';  // P6 kaynak; P8 yon tersi
+            body << ' ' << mod.source << ' ' << (mod.invertSide ? 1 : 0)
+                 << ' ' << mod.diameter << '\n';  // P6 kaynak; P8 yon tersi; B1 cap
         }
         const std::string b = body.str();
         out << "C " << b.size() << '\n';
@@ -539,7 +540,7 @@ void readMmw8(std::istream& in, Mmw8Document& doc) {
                 std::istringstream ls(line);
                 CutModifier mod;
                 const std::int64_t kind = readInt64(ls, "cut kind");
-                if (kind < 0 || kind > 4) fail("invalid cut kind");
+                if (kind < 0 || kind > 5) fail("invalid cut kind");
                 mod.kind = static_cast<CutKind>(kind);
                 mod.target = static_cast<EntityId>(readUint64(ls, "cut target"));
                 mod.planeOrigin.x = readDouble(ls, "cut origin x");
@@ -568,6 +569,9 @@ void readMmw8(std::istream& in, Mmw8Document& doc) {
                 // P8: kesme yonu tersi (opsiyonel — eski dosyalarda yok).
                 std::uint64_t invertSide = 0;
                 if (ls >> invertSide) mod.invertSide = invertSide != 0;
+                // B1: delik capi (opsiyonel — eski dosyalarda yok).
+                double diameter = 0.0;
+                if (ls >> diameter) mod.diameter = diameter;
                 parsed.cutModifiers.push_back(std::move(mod));
             }
         } else if (tag == 'K') {

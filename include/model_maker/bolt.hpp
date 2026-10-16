@@ -1,0 +1,79 @@
+#pragma once
+
+// PARAMETRIK BULON (Phase B1) — saf veri modeli + yardimcilar.
+//
+// Tekla "bolt group" karsiligi; Single Bolt ilk dilimde bir grup = tek bulon.
+// Bulon GRUBU kalici bir kayit olarak tutulur (kendi EntityId'si) ve bagli
+// parcalara EntityId ile referans verir. Delikler, mevcut CutModifier zinciri
+// yeniden kullanilarak CutKind::Hole turuyle uretilir — ayri bir "gorsel siyah
+// daire" YOK, gercek B-Rep silindir kesimi vardir. Bulonun GORSEL geometrisi
+// (bas + govde + somun + pul) ayri bir display varligidir (displayEntityId);
+// baglanti verisi (hangi parcalar, eksen, cap) burada tasinir.
+//
+// windows.h yok; Linux'ta derlenir/test edilir. Gercek B-Rep deligi OCC
+// katmaninda acilir (occ_geometry.cpp, CutKind::Hole).
+
+#include "model_maker/cut_modifier.hpp"
+#include "model_maker/entity_id.hpp"
+#include "model_maker/geometry.hpp"
+
+#include <string>
+#include <vector>
+
+namespace mm {
+
+// Bulon parametreleri (Tekla Bolt properties karsiligi; sadeleltirilmis).
+struct BoltParams {
+    double nominalDiameter{20.0};   // M20 -> 20 mm (govde/oks capi)
+    double holeDiameter{22.0};      // delik capi (M20 -> 22 mm normal bosluk)
+    std::string grade{"8.8"};       // bulon sinifi (etiket/display)
+    bool hasHead{true};             // bas
+    bool hasNut{true};              // somun
+    bool hasWasher{true};           // pul
+    bool operator==(const BoltParams&) const = default;
+};
+
+// Bulon elemanlarinin standart boyutlari (nominal captan turetilir).
+// ISO 4014/4017 (altigen bas), ISO 4032 (altigen somun), ISO 7089 (pul)
+// yaklasik degerleri. YALNIZ goruntuleme geometrisi icindir; gercek delik
+// yalnizca holeDiameter ile acilir (hesaplamada kullanilmaz).
+struct BoltDimensions {
+    double headAcrossFlats{};       // bas kosegen (s = 1.5*d)
+    double headHeight{};            // bas yuksekligi (k = 0.7*d)
+    double nutAcrossFlats{};        // somun kosegen (s = 1.5*d)
+    double nutHeight{};             // somun yuksekligi (m = 0.8*d)
+    double washerOuterDiameter{};   // pul dis cap (D = 2*d)
+    double washerThickness{};       // pul kalinligi (t = 0.15*d)
+};
+BoltDimensions boltDimensions(double nominalDiameter) noexcept;
+
+// Kalici bulon grubu (Single Bolt: bir bulon).
+struct BoltGroup {
+    EntityId id{kInvalidEntityId};              // bulon grubunun kendi kimligi
+    std::vector<EntityId> parts;                // bagli parcalar (ilk = main)
+    Vec3 origin{};                              // bulon merkezi (mm)
+    Vec3 axis{0.0, 0.0, 1.0};                   // bulon ekseni (birim)
+    Vec3 xDir{1.0, 0.0, 0.0};                   // grup x ekseni (eksene dik)
+    BoltParams params;
+    EntityId displayEntityId{kInvalidEntityId}; // gorsel montaj varligi
+    bool enabled{true};
+    bool operator==(const BoltGroup&) const = default;
+};
+
+// Bir parca icin Hole CutModifier uretir: eksen = normalize(axis), merkez =
+// origin, cap = holeDiameter. Hedef parcanin EntityId'si KORUNUR (kimlik
+// degismez; yalniz geometri surumu ilerler). Gecersiz cap/eksen yine bir
+// modifier dondurur ama OCC katmani base'e dokunmaz (guvenli no-op): cap <= 0
+// veya eksen ~0 ise islem atlanir.
+CutModifier makeHoleCutModifier(EntityId part, const Vec3& origin,
+                                const Vec3& axis, double holeDiameter) noexcept;
+
+// Bulon grubunun TUM bagli parcalari icin delik modifier listesi (her parca
+// icin bir delik). Bulon tasininca bu liste yeniden uretilir (yeniden hesap).
+// kInvalidEntityId parcalar atlanir.
+std::vector<CutModifier> boltGroupHoleModifiers(const BoltGroup& bolt) noexcept;
+
+// Bulon ekseni gecerli mi (birimlestirilebilir, sifir degil).
+bool isBoltAxisValid(const Vec3& axis) noexcept;
+
+} // namespace mm

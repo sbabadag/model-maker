@@ -22,7 +22,7 @@
 
 namespace mm {
 
-enum class CutKind { PlaneCut, Fitting, PolygonCut, BooleanCut, LineCut };
+enum class CutKind { PlaneCut, Fitting, PolygonCut, BooleanCut, LineCut, Hole };
 
 // Kalici kesme modifier'i.
 struct CutModifier {
@@ -51,6 +51,10 @@ struct CutModifier {
     // taraf terslenir (uzun/kisa taraf secimi yer degistirir). PolygonCut /
     // BooleanCut: yönsüz (through-cut / boolean) — etkisizdir.
     bool invertSide{false};
+    // DELIK (Phase B1, CutKind::Hole): delik capi (mm). Hole icin eksen =
+    // planeNormal (birim), merkez = planeOrigin; silindir katiyi boydan boya
+    // keser (through-cut). Diger turlerde 0 (kullanilmaz).
+    double diameter{0.0};
     bool operator==(const CutModifier&) const = default;
 };
 
