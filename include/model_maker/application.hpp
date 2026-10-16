@@ -300,6 +300,14 @@ public:
     // yeniden uretilir). Secim bir bulon degilse no-op.
     void setSelectedBoltProperties(double nominalDiameter, double holeDiameter,
                                    const std::string& grade);
+    // BOLT SAG-TIK MENUSU: imlec altinda bir BOLT display'i varsa Win32 popup
+    // menu acar (Ortala X / Ortala Y). Donus true = menu gosterildi (olay
+    // tuketildi). Bulon degilse false (normal sag-tik akisina duser).
+    bool showBoltContextMenu(int x, int y);
+    // Secili bulon grubunu, bagli parcalarinin birlesik sinir kutusu merkezine
+    // yerel x ve/veya y ekseninde ortalar (centerX/centerY). Delikler + display
+    // + undo yeniden hesaplanir. Secim bir bulon degilse no-op.
+    void centerSelectedBolt(bool centerX, bool centerY);
     // IKI NOKTALI GORUNUS (Tekla): iki nokta secilir (snap/track aktif);
     // ikinci noktada ViewDefinition uretilip twoPointViewCallback_ cagrilir
     // (Qt yeni MDI penceresi acar). Esc/sag tik iptal.

@@ -82,6 +82,16 @@ CutModifier makeHoleCutModifier(EntityId part, const Vec3& origin,
 // (yeniden hesap). kInvalidEntityId parcalar atlanir.
 std::vector<CutModifier> boltGroupHoleModifiers(const BoltGroup& bolt) noexcept;
 
+// Bulon grubunu, bagli parcalarin birlesik sinir kutusu merkezine YEREL x
+// ve/veya y ekseninde ortalayan yeni origin'i dondurur. centerX/centerY hangi
+// yonde ortalama yapilacagini secer (ikisi de true = tam ortalama). Grup
+// merkezi = origin + 0.5*(countX-1)*spacingX*u + 0.5*(countY-1)*spacingY*v
+// (u = yerel x, v = yerel y). boundsCenter dunya koordinatinda parca kutusu
+// merkezi (levha icin = yuzey ayak izi merkezi). Eksen/xDir dejenereyse
+// guvenli varsayilan cerceve kullanilir.
+Vec3 boltGroupCenteredOrigin(const BoltGroup& bolt, const Vec3& boundsCenter,
+                             bool centerX, bool centerY) noexcept;
+
 // Bulon grubundaki TUM bulon merkezlerini uretir (rectangular pattern):
 // origin + i*spacingX*xDir + j*spacingY*yDir, i in [0,countX), j in [0,countY).
 // yDir = normalize(axis) x xDir (eksene dik). countX/countY <= 0 ise 1 alinir.

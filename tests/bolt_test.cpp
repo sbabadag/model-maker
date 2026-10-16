@@ -141,6 +141,45 @@ int main() {
               !isBoltGradeValid("5.6") && isBoltGradeValid(""),
           "kalite dogrulama");
 
+    // 7) boltGroupCenteredOrigin: bulon grubunu yuzey kutusuna ortala (x/y).
+    {
+        // Tek bulon (1x1): grup merkezi = origin.
+        BoltGroup s;
+        s.origin = {10, 20, 5};
+        s.axis = {0, 0, 1};
+        s.xDir = {1, 0, 0};
+        s.countX = 1; s.countY = 1; s.spacingX = 0; s.spacingY = 0;
+        const Vec3 center{50, 60, 5};
+        const Vec3 ox = boltGroupCenteredOrigin(s, center, true, false);
+        check(ox == Vec3{50, 20, 5}, "ortala X: x=50, y/z degismez");
+        const Vec3 oy = boltGroupCenteredOrigin(s, center, false, true);
+        check(oy == Vec3{10, 60, 5}, "ortala Y: y=60, x/z degismez");
+        const Vec3 oxy = boltGroupCenteredOrigin(s, center, true, true);
+        check(oxy == Vec3{50, 60, 5}, "ortala X+Y: (50,60,5)");
+
+        // Grup 2x2: grup merkezi = origin + (cx,cy) = origin + (20,15).
+        BoltGroup g;
+        g.origin = {10, 20, 5};
+        g.axis = {0, 0, 1};
+        g.xDir = {1, 0, 0};
+        g.countX = 2; g.countY = 2; g.spacingX = 40.0; g.spacingY = 30.0;
+        const Vec3 gx = boltGroupCenteredOrigin(g, center, true, false);
+        check(gx == Vec3{30, 20, 5}, "2x2 ortala X: origin.x=30 (grup merkezi 50)");
+        const Vec3 gy = boltGroupCenteredOrigin(g, center, false, true);
+        check(gy == Vec3{10, 45, 5}, "2x2 ortala Y: origin.y=45 (grup merkezi 60)");
+        const Vec3 gxy = boltGroupCenteredOrigin(g, center, true, true);
+        check(gxy == Vec3{30, 45, 5}, "2x2 ortala X+Y: (30,45,5)");
+        // Grup merkezini dogrulayalim: 2x2 origin (30,45) -> merkezler (30,45),
+        // (70,45), (30,75), (70,75); ortalama (50,60) = hedef.
+        const auto cents = boltGroupBoltOrigins([&] {
+            BoltGroup c = g; c.origin = gxy; return c;
+        }());
+        if (cents.size() == 4) {
+            const Vec3 avg = (cents[0] + cents[1] + cents[2] + cents[3]) * 0.25;
+            check(avg == center, "2x2 grup merkezi hedef kutu merkezine esit");
+        }
+    }
+
     if (failures) {
         std::printf("%d FAIL\n", failures);
         return 1;

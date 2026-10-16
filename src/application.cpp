@@ -1632,6 +1632,14 @@ LRESULT Application::handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lPa
             executePendingBoltCommand();
             updateControls(); invalidateCanvas(); return 0;
         }
+        // BOLT SAG-TIK MENUSU: bos modda bir BOLT display'i uzerinde sag tik
+        // -> Ortala X / Ortala Y popup menusu. Bulon degilse false doner ve
+        // asagidaki normal sag-tik akisina dusulur.
+        if (mode_ == EditMode::View3D && transformCommand_ == TransformCommand::None &&
+            !drawingActive_ && !zoomWindowActive_ && !workPlanePicking_ && !profileGrip_) {
+            if (showBoltContextMenu(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)))
+                return 0;
+        }
         if (zoomWindowActive_) cancelZoomWindow2D();
         else if (workPlanePicking_) cancelWorkPlaneCommand();
         else if (transformCommand_ == TransformCommand::Copy) {
@@ -4132,6 +4140,83 @@ void Application::setSelectedBoltGroup(const BoltGroup& bolt) {
     rebuildBoltDisplay(ng);
     for (const EntityId part : ng.parts) recomputeCutTarget(part);
 #endif
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
+}
+
+bool Application::showBoltContextMenu(int x, int y) {
+    constexpr int kCtxBoltCenterX = 1;
+    constexpr int kCtxBoltCenterY = 2;
+    const auto hit = modelIndexAt(x, y);
+    if (!hit || *hit >= document_.models().size()) return false;
+    const EntityId id = document_.modelId(*hit);
+    std::optional<std::size_t> bi;
+    for (std::size_t k = 0; k < document_.boltGroups().size(); ++k)
+        if (document_.boltGroups()[k].displayEntityId == id) { bi = k; break; }
+    if (!bi) return false;
+    // Secimi bu bulona getir (menu hedefi + gorsel tutarlilik).
+    selectedModels_.clear();
+    selectedModels_.push_back(*hit);
+    selectedCutModifiers_.clear();
+    updateControls(); updateStatus(); invalidateCanvas();
+
+    HMENU menu = CreatePopupMenu();
+    if (!menu) return true;
+    AppendMenuW(menu, MF_STRING, kCtxBoltCenterX, L"Ortala X");
+    AppendMenuW(menu, MF_STRING, kCtxBoltCenterY, L"Ortala Y");
+    POINT pt{x, y};
+    ClientToScreen(canvas_, &pt);
+    const int cmd = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_NONOTIFY,
+                                   pt.x, pt.y, 0, canvas_, nullptr);
+    DestroyMenu(menu);
+    if (cmd == kCtxBoltCenterX) centerSelectedBolt(true, false);
+    else if (cmd == kCtxBoltCenterY) centerSelectedBolt(false, true);
+    return true;
+}
+
+void Application::centerSelectedBolt(bool centerX, bool centerY) {
+    if (!(centerX || centerY)) return;
+    if (selectedModels_.empty() || selectedModels_.front() >= document_.models().size())
+        return;
+    const EntityId id = document_.modelId(selectedModels_.front());
+    std::optional<std::size_t> bi;
+    for (std::size_t k = 0; k < document_.boltGroups().size(); ++k)
+        if (document_.boltGroups()[k].displayEntityId == id) { bi = k; break; }
+    if (!bi) return;
+    const BoltGroup& bg = document_.boltGroups()[*bi];
+    // Bagli parcalarin birlesik sinir kutusu merkezi = "yuzey" ayak izi merkezi
+    // (levha icin birebir yuzey kutusu; profil icin parca kutusu yaklasimi).
+    Vec3 lo{1e100, 1e100, 1e100}, hi{-1e100, -1e100, -1e100};
+    bool any = false;
+    for (const EntityId part : bg.parts) {
+        const auto idx = document_.indexOfEntity(part);
+        if (!idx || *idx >= document_.modelBounds().size()) continue;
+        const auto& b = document_.modelBounds()[*idx];
+        lo.x = std::min(lo.x, b.minimum.x); lo.y = std::min(lo.y, b.minimum.y);
+        lo.z = std::min(lo.z, b.minimum.z);
+        hi.x = std::max(hi.x, b.maximum.x); hi.y = std::max(hi.y, b.maximum.y);
+        hi.z = std::max(hi.z, b.maximum.z);
+        any = true;
+    }
+    if (!any) {
+        MessageBeep(MB_ICONWARNING);
+        publishStatus(L"Ortala: bulonun bagli parcasi yok / kutu hesaplanamadi");
+        return;
+    }
+    const Vec3 center = (lo + hi) * 0.5;
+    pushUndoSnapshot();
+    BoltGroup bolt = bg;
+    bolt.origin = mm::boltGroupCenteredOrigin(bolt, center, centerX, centerY);
+    document_.setBoltGroup(*bi, std::move(bolt));
+#ifdef MM_HAS_OCC
+    const BoltGroup& updated = document_.boltGroups()[*bi];
+    rebuildBoltDisplay(updated);
+    for (const EntityId part : updated.parts) recomputeCutTarget(part);
+#endif
+    publishStatus(centerX && centerY ? L"Bulon ortalandı (X ve Y)"
+                  : centerX        ? L"Bulon ortalandı (X)"
+                                   : L"Bulon ortalandı (Y)");
     updateControls();
     updateStatus();
     invalidateCanvas();
