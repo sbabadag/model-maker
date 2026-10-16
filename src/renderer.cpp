@@ -725,12 +725,13 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
                 if (!frame || vertices.size() != 4) continue;
                 const POINT quad[4] = {projectPoint(vertices[0]), projectPoint(vertices[1]),
                                        projectPoint(vertices[2]), projectPoint(vertices[3])};
-                // P9: duzlem SADE (seffaf, taramasiz) cizilir — yalniz sinir ve
-                // yerel eksenler. Dolgu yok (kullanici: "seffaf taramasiz").
-                // P10: SECILI duzlem — solid yari saydam dolgu (secim vurgusu).
-                // GDI AlphaBlend ile secim rengi dusuk opaklikta doldurulur
-                // (face vurgusu ile ayni desen); model arkada gorunur kalir.
-                if (cSel) {
+                // P9: duzlem SADE cizilir — sinir + yerel eksenler; ic dolgu
+                // yari saydam (taramasiz) doldurulur.
+                // P10: SECILI duzlem sari, IDLE/HOVER duzlem mavi dolgu.
+                // GDI AlphaBlend ile dusuk opaklikta doldurulur (face vurgusu
+                // ile ayni desen); model arkada gorunur kalir.
+                {
+                    const COLORREF fillRgb = cSel ? RGB(255, 220, 60) : kConstructionRgb;
                     LONG fillLeft = quad[0].x, fillRight = quad[0].x;
                     LONG fillTop = quad[0].y, fillBottom = quad[0].y;
                     for (const POINT& p : quad) {
@@ -750,7 +751,7 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
                         BitBlt(fillDc, 0, 0, fillWidth, fillHeight, dc, fillLeft, fillTop, SRCCOPY);
                         std::vector<POINT> local = {quad[0], quad[1], quad[2], quad[3]};
                         for (auto& p : local) { p.x -= fillLeft; p.y -= fillTop; }
-                        HBRUSH fillBrush = CreateSolidBrush(cRgb);
+                        HBRUSH fillBrush = CreateSolidBrush(fillRgb);
                         HGDIOBJ oldFillBrush = SelectObject(fillDc, fillBrush);
                         HGDIOBJ oldFillPen = SelectObject(fillDc, GetStockObject(NULL_PEN));
                         Polygon(fillDc, local.data(), static_cast<int>(local.size()));
