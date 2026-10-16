@@ -522,6 +522,22 @@ std::vector<EntityId> Document::deleteModels(const std::vector<std::size_t>& ind
     spatialIndexDirty_ = true;
     documentBounds_.reset();
     if (!valid.empty()) invalidateDerivedState();
+    // ALIN LEVHASI KASKADI (Phase C1): kullanici parcalarindan (main/secondary)
+    // HERHANGI biri silinen baglanti kaldirilir; alt nesnelerinden (levha veya
+    // bulon montaji) biri silinen baglanti de kaldirilir. removeEndPlateConnection
+    // levhayi + bulon grubunu da sildigi icin bu kaskad BULON KASKADINDAN ONCE
+    // calisir (cift silmeyi onler). Yuksekten dusuge.
+    for (std::size_t ei = endPlateConnections_.size(); ei-- > 0;) {
+        const auto& conn = endPlateConnections_[ei];
+        bool touches = false;
+        if (deletedIds.count(conn.mainPart) || deletedIds.count(conn.secondaryPart)) touches = true;
+        if (!touches && deletedIds.count(conn.plateEntityId)) touches = true;
+        if (!touches && deletedIds.count(conn.bolts.displayEntityId)) touches = true;
+        if (!touches) continue;
+        if (conn.mainPart != kInvalidEntityId) affectedTargets.push_back(conn.mainPart);
+        if (conn.secondaryPart != kInvalidEntityId) affectedTargets.push_back(conn.secondaryPart);
+        removeEndPlateConnection(ei);
+    }
     // BULON KASKADI (Phase B1): (a) bagli parcalarindan HERHANGI biri silinen
     // bulon grubu kaldirilir; (b) DISPLAY modeli silinen bulon grubu da
     // kaldirilir (bolton silinince profil ETKILENMEZ — delikler kalkar). Her
@@ -634,6 +650,7 @@ void Document::clear() noexcept {
     grids_.clear();
     cutModifiers_.clear();
     boltGroups_.clear();
+    endPlateConnections_.clear();
     invalidateDerivedState();
     documentBounds_.reset();
 }
@@ -929,6 +946,32 @@ void Document::applyUndoOp(const UndoOp& op, bool forward) {
     case UndoOp::Kind::BoltReplace:
         if (op.boltIndex < boltGroups_.size())
             boltGroups_[op.boltIndex] = forward ? op.boltAfter : op.boltBefore;
+        break;
+    case UndoOp::Kind::EndPlateAdd:
+        if (forward) {
+            if (op.endPlateIndex <= endPlateConnections_.size())
+                endPlateConnections_.insert(
+                    endPlateConnections_.begin() + static_cast<std::ptrdiff_t>(op.endPlateIndex),
+                    op.endPlateAfter);
+        } else if (op.endPlateIndex < endPlateConnections_.size()) {
+            endPlateConnections_.erase(
+                endPlateConnections_.begin() + static_cast<std::ptrdiff_t>(op.endPlateIndex));
+        }
+        break;
+    case UndoOp::Kind::EndPlateRemove:
+        if (forward) {
+            if (op.endPlateIndex < endPlateConnections_.size())
+                endPlateConnections_.erase(
+                    endPlateConnections_.begin() + static_cast<std::ptrdiff_t>(op.endPlateIndex));
+        } else if (op.endPlateIndex <= endPlateConnections_.size()) {
+            endPlateConnections_.insert(
+                endPlateConnections_.begin() + static_cast<std::ptrdiff_t>(op.endPlateIndex),
+                op.endPlateBefore);
+        }
+        break;
+    case UndoOp::Kind::EndPlateReplace:
+        if (op.endPlateIndex < endPlateConnections_.size())
+            endPlateConnections_[op.endPlateIndex] = forward ? op.endPlateAfter : op.endPlateBefore;
         break;
     }
 }
@@ -1433,6 +1476,7 @@ void Document::buildMmw8(Mmw8Document& out) const {
     out.unknownBlocks = mmw8UnknownBlocks_;
     out.cutModifiers = cutModifiers_;
     out.boltGroups = boltGroups_;
+    out.endPlateConnections = endPlateConnections_;
     // Konstruksiyon turleri (K blogu): kind != None olan modellerin
     // EntityId -> kind eslesmesi (model kaydi ConstructionKind tasimaz).
     out.constructionKinds.clear();
@@ -1537,6 +1581,7 @@ void Document::commitFromMmw8(Mmw8Document&& mdoc) {
     grids_ = std::move(mdoc.grids);
     cutModifiers_ = std::move(mdoc.cutModifiers);
     boltGroups_ = std::move(mdoc.boltGroups);
+    endPlateConnections_ = std::move(mdoc.endPlateConnections);
     // Grid `axes` TUREV bir alandir (spec'ten cizim geometrisi); codec yalniz
     // spec'i tasir. Yuklemede yeniden TURET.
     for (auto& grid : grids_) rebuildGridAxes(grid);
@@ -2066,6 +2111,111 @@ double Document::boltGripLength(const BoltGroup& bolt) const {
     }
     if (!any) return 0.0;
     return mx - mn;
+}
+
+std::size_t Document::addEndPlateConnection(EndPlateConnection conn, WireframeModel plateModel,
+                                            WireframeModel boltDisplayModel) {
+    ++revision_;
+    opaqueBrepsStale_ = true;
+    if (conn.id == kInvalidEntityId) conn.id = allocateEntityIdRequired();
+    if (conn.bolts.id == kInvalidEntityId) conn.bolts.id = allocateEntityIdRequired();
+    // 1) Levha modelini ekle (Add op) — kimligi yakala.
+    addModel(std::move(plateModel));
+    conn.plateEntityId = modelId(models_.size() - 1);
+    // 2) Bulon grubunu kur: parcalar = {levha, mainPart(kolon)}. Kiriş (secondary)
+    //    delinmez — levha kirişe kaynaklı, bulonlar levha->kolon bağlantısı kurar.
+    BoltGroup bolt = conn.bolts;
+    bolt.parts.clear();
+    if (conn.plateEntityId != kInvalidEntityId) bolt.parts.push_back(conn.plateEntityId);
+    if (conn.mainPart != kInvalidEntityId) bolt.parts.push_back(conn.mainPart);
+    // 2a) Montaj display modelini ekle (Add op) — kimligi yakala.
+    addModel(std::move(boltDisplayModel));
+    bolt.displayEntityId = modelId(models_.size() - 1);
+    // 2b) Delikleri ekle (CutAdd op) — owner = bolt.id.
+    for (auto mod : boltGroupHoleModifiers(bolt)) {
+        mod.owner = bolt.id;
+        addCutModifier(std::move(mod));
+    }
+    // 2c) Bulon kaydini ekle (BoltAdd op).
+    UndoOp bop;
+    bop.kind = UndoOp::Kind::BoltAdd;
+    bop.boltIndex = boltGroups_.size();
+    bop.boltAfter = bolt;
+    recordUndoOp(std::move(bop));
+    boltGroups_.push_back(std::move(bolt));
+    conn.bolts = boltGroups_.back();
+    // 3) Baglanti kaydini ekle (EndPlateAdd op).
+    UndoOp op;
+    op.kind = UndoOp::Kind::EndPlateAdd;
+    op.endPlateIndex = endPlateConnections_.size();
+    op.endPlateAfter = conn;
+    recordUndoOp(std::move(op));
+    endPlateConnections_.push_back(std::move(conn));
+    return endPlateConnections_.size() - 1;
+}
+
+void Document::removeEndPlateConnection(std::size_t index) {
+    if (index >= endPlateConnections_.size()) return;
+    ++revision_;
+    opaqueBrepsStale_ = true;
+    const EndPlateConnection conn = endPlateConnections_[index];
+    // 1) Baglanti kaydini sil (EndPlateRemove op) — kaskad yeniden tetiklenmesin.
+    UndoOp op;
+    op.kind = UndoOp::Kind::EndPlateRemove;
+    op.endPlateIndex = index;
+    op.endPlateBefore = conn;
+    recordUndoOp(std::move(op));
+    endPlateConnections_.erase(endPlateConnections_.begin() + static_cast<std::ptrdiff_t>(index));
+    // 2) Bulon grubunu sil (delikler + montaj).
+    if (auto bi = indexOfBoltGroup(conn.bolts.id)) removeBoltGroup(*bi);
+    // 3) Levha modelini sil (yaprak — kesme/bulon kaskadi yok).
+    if (conn.plateEntityId != kInvalidEntityId) {
+        if (auto pi = indexOfEntity(conn.plateEntityId)) eraseModelLeaf(*pi);
+    }
+}
+
+bool Document::setEndPlateConnection(std::size_t index, EndPlateConnection conn,
+                                     WireframeModel plateModel, WireframeModel boltDisplayModel) {
+    if (index >= endPlateConnections_.size()) return false;
+    ++revision_;
+    opaqueBrepsStale_ = true;
+    const EndPlateConnection old = endPlateConnections_[index];
+    conn.id = old.id;                                    // kimlik korunur
+    conn.bolts.id = old.bolts.id;                        // bulon kimligi korunur
+    conn.plateEntityId = old.plateEntityId;              // levha kimligi sabit
+    conn.bolts.displayEntityId = old.bolts.displayEntityId; // montaj kimligi sabit
+    // 1) Baglanti kaydini degistir (EndPlateReplace op).
+    UndoOp op;
+    op.kind = UndoOp::Kind::EndPlateReplace;
+    op.endPlateIndex = index;
+    op.endPlateBefore = old;
+    op.endPlateAfter = conn;
+    recordUndoOp(std::move(op));
+    endPlateConnections_[index] = conn;
+    // 2) Levha modelini yeniden uret (replaceModel — kimlik korunur).
+    if (conn.plateEntityId != kInvalidEntityId) {
+        if (auto pi = indexOfEntity(conn.plateEntityId))
+            replaceModel(*pi, std::vector<WireframeModel>{std::move(plateModel)});
+    }
+    // 3) Bulon grubunu guncelle: parcalar yeniden kurulur, delikler yeniden uretilir.
+    BoltGroup bolt = conn.bolts;
+    bolt.parts.clear();
+    if (conn.plateEntityId != kInvalidEntityId) bolt.parts.push_back(conn.plateEntityId);
+    if (conn.mainPart != kInvalidEntityId) bolt.parts.push_back(conn.mainPart);
+    if (auto bi = indexOfBoltGroup(bolt.id)) setBoltGroup(*bi, bolt);
+    // 4) Montaj display modelini yeniden uret.
+    if (bolt.displayEntityId != kInvalidEntityId) {
+        if (auto di = indexOfEntity(bolt.displayEntityId))
+            replaceModel(*di, std::vector<WireframeModel>{std::move(boltDisplayModel)});
+    }
+    return true;
+}
+
+std::optional<std::size_t> Document::indexOfEndPlateConnection(EntityId id) const {
+    if (id == kInvalidEntityId) return std::nullopt;
+    for (std::size_t i = 0; i < endPlateConnections_.size(); ++i)
+        if (endPlateConnections_[i].id == id) return i;
+    return std::nullopt;
 }
 
 CutModifier resolveCutModifierSource(const CutModifier& mod, const Document& document) {

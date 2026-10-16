@@ -42,6 +42,7 @@ add_library(model_maker_core
     src/cut_modifier.cpp
     src/component.cpp
     src/bolt.cpp
+    src/end_plate.cpp
     src/assembly.cpp)
 target_include_directories(model_maker_core PUBLIC include)
 target_compile_options(model_maker_core PRIVATE -Wall -Wextra -Wpedantic)
@@ -159,7 +160,7 @@ option(BUILD_OCC_BRIDGE_DLL
     "Build mm_occ.dll — the C-API bridge for the Qt app (use MSYS2 toolchain)" OFF)
 
 if(MODELMAKER_OCC_READY)
-    add_library(model_maker_occ src/occ_geometry.cpp src/occ_solid_store.cpp src/occ_brep_serialize.cpp src/bolt_geometry.cpp)
+    add_library(model_maker_occ src/occ_geometry.cpp src/occ_solid_store.cpp src/occ_brep_serialize.cpp src/bolt_geometry.cpp src/end_plate_geometry.cpp)
     target_link_libraries(model_maker_occ PUBLIC model_maker_core)
     target_include_directories(model_maker_occ PUBLIC include)
     if(OCC_INCLUDE_DIR)
@@ -200,7 +201,7 @@ endif()
 # mm_occ.dll: Qt uygulamasinin LoadLibrary ile yukledigi C-API koprusu.
 # YALNIZ MSYS2 toolchain'iyle derlenir (build-occ'de -DBUILD_OCC_BRIDGE_DLL=ON).
 if(MODELMAKER_OCC_READY AND WIN32 AND BUILD_OCC_BRIDGE_DLL)
-    add_library(model_maker_occ_bridge SHARED src/occ_bridge.cpp src/occ_geometry.cpp src/bolt_geometry.cpp)
+    add_library(model_maker_occ_bridge SHARED src/occ_bridge.cpp src/occ_geometry.cpp src/bolt_geometry.cpp src/end_plate_geometry.cpp)
     # Kopru YALNIZ modelleme cekirdegini baglar — TKDESTEP/TKXSBase'i
     # DISARIDA birak. STEP kuyrugu TKService->TKDraw->tcl/tk86 ve VTK'ye
     # uzandigi icin (MSYS2'nin OCCT paketi) izole occ\ dizininde yukleme
@@ -751,6 +752,14 @@ if(BUILD_TESTING)
     target_link_options(model_maker_bolt_group_document_test PRIVATE -static -static-libgcc -static-libstdc++)
     target_compile_options(model_maker_bolt_group_document_test PRIVATE -Wall -Wextra -Wpedantic)
     add_test(NAME model_maker_bolt_group_document_test COMMAND model_maker_bolt_group_document_test)
+
+    # ALIN LEVHASI BAGLANTISI (Phase C1): EndPlateConnection yerlesim + belge
+    # kaydi + alt nesne sahipligi + undo/redo + MMW8 round-trip + kaskad. OCC'siz.
+    add_executable(model_maker_end_plate_test tests/end_plate_test.cpp)
+    target_link_libraries(model_maker_end_plate_test PRIVATE model_maker_core)
+    target_link_options(model_maker_end_plate_test PRIVATE -static -static-libgcc -static-libstdc++)
+    target_compile_options(model_maker_end_plate_test PRIVATE -Wall -Wextra -Wpedantic)
+    add_test(NAME model_maker_end_plate_test COMMAND model_maker_end_plate_test)
 
     # COMPONENT FOUNDATION (P4): Main/Secondary Part, parametrik Component
     # tanimi, instance + parametreler, bagimlilik + yeniden hesaplama. OCC'siz.

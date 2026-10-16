@@ -313,6 +313,39 @@ void writeMmw8(std::ostream& out, const Mmw8Document& doc) {
         out.write(b.data(), static_cast<std::streamsize>(b.size()));
     }
 
+    // Kuyruk: E blogu (alin levhasi baglantilari, Phase C1).
+    if (!doc.endPlateConnections.empty()) {
+        std::ostringstream body;
+        body << doc.endPlateConnections.size() << '\n';
+        for (const auto& c : doc.endPlateConnections) {
+            body << c.id << ' ' << c.mainPart << ' ' << c.secondaryPart << ' '
+                 << c.plateEntityId << ' ' << c.params.plateThickness << ' '
+                 << c.params.plateExtra << ' ' << c.params.boltDiameter << ' '
+                 << c.params.holeDiameter << ' ';
+            putString(body, c.params.boltGrade);
+            body << ' ' << c.params.boltCountX << ' ' << c.params.boltCountY << ' '
+                 << c.params.boltEdge << ' ' << (c.params.hasHead ? 1 : 0) << ' '
+                 << (c.params.hasNut ? 1 : 0) << ' ' << (c.params.hasWasher ? 1 : 0)
+                 << ' ' << (c.enabled ? 1 : 0);
+            // Sahip olunan bulon grubu (G blogu formatinda, tek satir).
+            const BoltGroup& g = c.bolts;
+            body << ' ' << g.id << ' ' << g.parts.size();
+            for (const EntityId p : g.parts) body << ' ' << p;
+            body << ' ' << g.origin.x << ' ' << g.origin.y << ' ' << g.origin.z
+                 << ' ' << g.axis.x << ' ' << g.axis.y << ' ' << g.axis.z
+                 << ' ' << g.xDir.x << ' ' << g.xDir.y << ' ' << g.xDir.z
+                 << ' ' << g.params.nominalDiameter << ' ' << g.params.holeDiameter << ' ';
+            putString(body, g.params.grade);
+            body << ' ' << (g.params.hasHead ? 1 : 0) << ' ' << (g.params.hasNut ? 1 : 0)
+                 << ' ' << (g.params.hasWasher ? 1 : 0) << ' ' << g.displayEntityId << ' '
+                 << (g.enabled ? 1 : 0) << ' ' << g.countX << ' ' << g.countY << ' '
+                 << g.spacingX << ' ' << g.spacingY << '\n';
+        }
+        const std::string b = body.str();
+        out << "E " << b.size() << '\n';
+        out.write(b.data(), static_cast<std::streamsize>(b.size()));
+    }
+
     // Kuyruk: K blogu (konstruksiyon turleri, Phase 4.1).
     if (!doc.constructionKinds.empty()) {
         std::ostringstream body;
@@ -511,7 +544,7 @@ void readMmw8(std::istream& in, Mmw8Document& doc) {
     }
 
     // --- Kuyruk: etiket-gudumlu bloklar ---
-    bool sawH = false, sawB = false, sawV = false, sawG = false;
+    bool sawH = false, sawB = false, sawV = false, sawG = false, sawE = false;
     std::size_t totalBlobBytes = 0;
     for (;;) {
         in >> std::ws;
@@ -651,6 +684,74 @@ void readMmw8(std::istream& in, Mmw8Document& doc) {
                     g.spacingY = 0.0;
                 }
                 parsed.boltGroups.push_back(std::move(g));
+            }
+        } else if (tag == 'E') {
+            if (sawE) fail("repeated E block");
+            sawE = true;
+            std::istringstream es(body);
+            const std::uint64_t count = readUint64(es, "endPlate count");
+            if (count > kMmw8MaxEndPlates) fail("endPlate count exceeds limit");
+            std::string line;
+            std::getline(es, line);  // count satırının kalanı (boş)
+            std::unordered_map<EntityId, bool> seenEp;
+            for (std::uint64_t ei = 0; ei < count; ++ei) {
+                if (!std::getline(es, line)) fail("missing endPlate record");
+                std::istringstream ls(line);
+                EndPlateConnection c;
+                c.id = static_cast<EntityId>(readUint64(ls, "endPlate id"));
+                if (c.id == kInvalidEntityId || c.id == kExhaustedEntityId)
+                    fail("endPlate id must be a valid identity");
+                if (seenEp.count(c.id)) fail("duplicate endPlate id");
+                seenEp[c.id] = true;
+                c.mainPart = static_cast<EntityId>(readUint64(ls, "endPlate mainPart"));
+                c.secondaryPart = static_cast<EntityId>(readUint64(ls, "endPlate secondaryPart"));
+                c.plateEntityId = static_cast<EntityId>(readUint64(ls, "endPlate plate"));
+                c.params.plateThickness = readDouble(ls, "endPlate plateThickness");
+                c.params.plateExtra = readDouble(ls, "endPlate plateExtra");
+                c.params.boltDiameter = readDouble(ls, "endPlate boltDiameter");
+                c.params.holeDiameter = readDouble(ls, "endPlate holeDiameter");
+                c.params.boltGrade = readString(ls);
+                c.params.boltCountX = static_cast<int>(readInt64(ls, "endPlate boltCountX"));
+                c.params.boltCountY = static_cast<int>(readInt64(ls, "endPlate boltCountY"));
+                c.params.boltEdge = readDouble(ls, "endPlate boltEdge");
+                c.params.hasHead = readBool(ls, "endPlate hasHead");
+                c.params.hasNut = readBool(ls, "endPlate hasNut");
+                c.params.hasWasher = readBool(ls, "endPlate hasWasher");
+                c.enabled = readBool(ls, "endPlate enabled");
+                // Sahip olunan bulon grubu (G blogu formatinda).
+                BoltGroup& g = c.bolts;
+                g.id = static_cast<EntityId>(readUint64(ls, "endPlate bolt id"));
+                if (g.id == kInvalidEntityId || g.id == kExhaustedEntityId)
+                    fail("endPlate bolt id must be a valid identity");
+                const std::uint64_t nParts = readUint64(ls, "endPlate bolt part count");
+                if (nParts > kMmw8MaxModels) fail("endPlate bolt part count exceeds limit");
+                g.parts.reserve(static_cast<std::size_t>(nParts));
+                for (std::uint64_t pi = 0; pi < nParts; ++pi)
+                    g.parts.push_back(static_cast<EntityId>(readUint64(ls, "endPlate bolt part")));
+                g.origin.x = readDouble(ls, "endPlate bolt origin x");
+                g.origin.y = readDouble(ls, "endPlate bolt origin y");
+                g.origin.z = readDouble(ls, "endPlate bolt origin z");
+                g.axis.x = readDouble(ls, "endPlate bolt axis x");
+                g.axis.y = readDouble(ls, "endPlate bolt axis y");
+                g.axis.z = readDouble(ls, "endPlate bolt axis z");
+                g.xDir.x = readDouble(ls, "endPlate bolt xDir x");
+                g.xDir.y = readDouble(ls, "endPlate bolt xDir y");
+                g.xDir.z = readDouble(ls, "endPlate bolt xDir z");
+                g.params.nominalDiameter = readDouble(ls, "endPlate bolt nominal diameter");
+                g.params.holeDiameter = readDouble(ls, "endPlate bolt hole diameter");
+                g.params.grade = readString(ls);
+                g.params.hasHead = readBool(ls, "endPlate bolt hasHead");
+                g.params.hasNut = readBool(ls, "endPlate bolt hasNut");
+                g.params.hasWasher = readBool(ls, "endPlate bolt hasWasher");
+                g.displayEntityId = static_cast<EntityId>(readUint64(ls, "endPlate bolt display"));
+                g.enabled = readBool(ls, "endPlate bolt enabled");
+                if (!(ls >> g.countX >> g.countY >> g.spacingX >> g.spacingY)) {
+                    g.countX = 1;
+                    g.countY = 1;
+                    g.spacingX = 0.0;
+                    g.spacingY = 0.0;
+                }
+                parsed.endPlateConnections.push_back(std::move(c));
             }
         } else if (tag == 'K') {
             std::istringstream ks(body);

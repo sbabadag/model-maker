@@ -6,6 +6,7 @@
 #include "model_maker/mmw8_codec.hpp"
 #include "model_maker/cut_modifier.hpp"
 #include "model_maker/bolt.hpp"
+#include "model_maker/end_plate.hpp"
 
 #include <array>
 #include <filesystem>
@@ -30,7 +31,8 @@ struct Bounds3 {
 
 struct UndoOp {
     enum class Kind { Add, Delete, Replace, Move, Transform, GridAdd, GridRemove, GridReplace,
-                      CutAdd, CutRemove, CutReplace, BoltAdd, BoltRemove, BoltReplace };
+                      CutAdd, CutRemove, CutReplace, BoltAdd, BoltRemove, BoltReplace,
+                      EndPlateAdd, EndPlateRemove, EndPlateReplace };
     Kind kind{Kind::Add};
     std::size_t index{};
     std::vector<WireframeModel> beforeModels; // delete: silinenler; replace: eski model
@@ -61,6 +63,11 @@ struct UndoOp {
     std::size_t boltIndex{};
     BoltGroup boltBefore;
     BoltGroup boltAfter;
+    // End plate (EndPlateAdd/EndPlateRemove/EndPlateReplace): alin levhasi
+    // baglantisi ekle/sil/degistir.
+    std::size_t endPlateIndex{};
+    EndPlateConnection endPlateBefore;
+    EndPlateConnection endPlateAfter;
 };
 struct UndoRecord {
     std::vector<UndoOp> ops;
@@ -262,6 +269,28 @@ public:
     // Parca bulunamazsa / gecersiz eksende 0 doner.
     double boltGripLength(const BoltGroup& bolt) const;
 
+    // --- ALIN LEVHASI BAGLANTILARI (Phase C1) -------------------------------
+    // Alin levhasi baglantisi KALICI bir kayittir (kendi EntityId'si); kullanici
+    // parcalarina (mainPart=kolon, secondaryPart=kiris) EntityId ile referans verir.
+    // Sahip oldugu alt nesneler: (1) alin levhasi (plateModel, normal model),
+    // (2) bulon grubu (conn.bolts; delikler owner=bolts.id, montaj boltDisplayModel).
+    // addEndPlateConnection: id atar (gecersizse), levha modelini ekler, bulon
+    // grubunu ekler (delikler + montaj), kaydi ekler. Donus: baglanti indeksi.
+    std::size_t addEndPlateConnection(EndPlateConnection conn, WireframeModel plateModel,
+                                      WireframeModel boltDisplayModel);
+    // removeEndPlateConnection: kaydi + levhayi + bulon grubunu (delikler + montaj)
+    // siler. Kullanici parcalari (main/secondary) KORUNUR.
+    void removeEndPlateConnection(std::size_t index);
+    // setEndPlateConnection: kaydi degistirir; levha modeli yeniden uretilir
+    // (replaceModel), bulon grubu guncellenir (delikler yeniden uretilir). id korunur.
+    bool setEndPlateConnection(std::size_t index, EndPlateConnection conn,
+                               WireframeModel plateModel, WireframeModel boltDisplayModel);
+    const std::vector<EndPlateConnection>& endPlateConnections() const noexcept {
+        return endPlateConnections_;
+    }
+    // EntityId -> baglanti indeksi; yoksa nullopt.
+    std::optional<std::size_t> indexOfEndPlateConnection(EntityId id) const;
+
 private:
     static constexpr std::size_t kMaxUndoEntries = 100;
     std::uint64_t revision_{0};
@@ -341,6 +370,7 @@ private:
     std::vector<GridDefinition> grids_;
     std::vector<CutModifier> cutModifiers_;
     std::vector<BoltGroup> boltGroups_;
+    std::vector<EndPlateConnection> endPlateConnections_;
 };
 
 // KESME KAYNAK COZUMU (P6): mod.source gecerliyse kaynak varligin GUNCEL
