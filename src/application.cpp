@@ -2457,7 +2457,7 @@ void Application::onMouseMove(int x, int y, WPARAM buttons) {
             // yaw (dunya Z), dikey = pitch (kamera X), ±89° sinirli (Camera
             // icinde). Jest pivotu varsa onun etrafinda, yoksa R-tusu pivottu/
             // merkez etrafinda doner.
-            const double yawDelta = -dx * Camera::kOrbitRadiansPerPixel;
+            const double yawDelta = dx * Camera::kOrbitRadiansPerPixel;
             const double pitchDelta = dy * Camera::kOrbitRadiansPerPixel;
             if (orbitGesturePivot_) camera_.rotateAbout(*orbitGesturePivot_, yawDelta, pitchDelta);
             else camera_.rotate(yawDelta, pitchDelta);
