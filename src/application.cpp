@@ -5462,6 +5462,15 @@ void Application::recomputeCutTarget(EntityId target) {
     };
     const TopoDS_Shape result =
         mm::applyCutModifierChain(*baseShape, mods, axisFrom, axisTo, resolveTool);
+    if (result.IsNull()) return;  // Boolean tam yutma vb. basarisizlikta dokunma
+    // GORSEL GUNCELLEME: kesme yalniz OCC magazasina yaziliyordu; renderer ise
+    // belge mesh'ini (model.faces()) cizer. Sonucu yeniden tesselatla ve belge
+    // modelini YERINE koy — yoksa kesme objesi gorunur ama kati ekranda
+    // kesilmemis kalirdi (kullanici raporu: "kesim objeleri var, kesim yok").
+    auto cutModel = mm::shapeToWireframeWithFaces(result, 0.15);
+    EntityProperties cutProps = document_.models()[index].properties();
+    cutModel.setProperties(std::move(cutProps));
+    document_.replaceModel(index, {std::move(cutModel)});
     putOccSolid(index, result);
 }
 
