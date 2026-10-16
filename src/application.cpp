@@ -2464,6 +2464,12 @@ void Application::onMouseMove(int x, int y, WPARAM buttons) {
         lastMouse_ = {x, y};
         updateHover(x, y);
         redraw = true;
+    } else if (pendingCutKind_) {
+        // Verb-noun kesme bekleme modunda imlecin altindaki secilebilir
+        // profil/duzlemi vurgula (hover highlight). Idle moddaki
+        // refreshHoverCandidate bu modda cagrilmadigi icin burada tazelenir.
+        refreshHoverCandidate(x, y);
+        redraw = true;
     } else if (zoomWindowActive_ ||
                (transformCommand_ != TransformCommand::None && transformPhase_ == TransformPhase::Selecting) ||
                workPlanePicking_ || mode_ == EditMode::Draw2D || drawingActive_ ||
@@ -3484,6 +3490,8 @@ void Application::cancelPendingCutCommand() {
     pendingCutKind_.reset();
     pendingCutTarget_.reset();
     pendingCutPlane_.reset();
+    hoverModel_.reset();
+    hoverCutModifier_.reset();
     selectedModels_.clear();
     selectionFirstCorner_.reset();
     updateControls();
@@ -3505,6 +3513,8 @@ void Application::executePendingCutCommand() {
     pendingCutKind_.reset();
     pendingCutTarget_.reset();
     pendingCutPlane_.reset();
+    hoverModel_.reset();
+    hoverCutModifier_.reset();
     applyCutFromPair(kind, target, plane);
 }
 
