@@ -3910,9 +3910,23 @@ void Application::applyBoltFromParts(const std::vector<std::size_t>& parts,
         hi.z = std::max(hi.z, b.maximum.z);
     }
     const Vec3 origin = (lo + hi) * 0.5;
-    // Eksen: secili yuz normali verildiyse o; yoksa is duzlemi normali
-    // (dejenereyse dunya Z).
-    Vec3 axis = axisOpt.value_or(workPlane_.normal);
+    // Eksen: secili yuz normali verildiyse o (hassas); yoksa birlestik
+    // kutunun EN INCE boyutu (iki levha icin = levha kalinligi yonu = bulon
+    // ekseni — yuz secimi basarisiz olsa bile dogru yonde deler). Ince yon
+    // bulunamazsa is duzlemi normali, o da dejenereyse dunya Z.
+    Vec3 axis;
+    if (axisOpt) {
+        axis = *axisOpt;
+    } else {
+        const double dx = hi.x - lo.x, dy = hi.y - lo.y, dz = hi.z - lo.z;
+        if (dx <= dy && dx <= dz) axis = {1.0, 0.0, 0.0};
+        else if (dy <= dx && dy <= dz) axis = {0.0, 1.0, 0.0};
+        else axis = {0.0, 0.0, 1.0};
+        // Yon: bulon basi is duzlemi normaliyle ayni tarafa baksin.
+        const double dot = workPlane_.normal.x * axis.x + workPlane_.normal.y * axis.y +
+                           workPlane_.normal.z * axis.z;
+        if (dot < 0.0) axis = {-axis.x, -axis.y, -axis.z};
+    }
     const double axLen = std::sqrt(axis.x * axis.x + axis.y * axis.y + axis.z * axis.z);
     if (axLen < 1e-12) axis = {0.0, 0.0, 1.0};
 
@@ -3999,12 +4013,12 @@ void Application::executePendingBoltCommand() {
         return;
     }
     if (!pendingBoltAxis_) {
-        MessageBeep(MB_ICONWARNING);
-        publishStatus(L"Bolt: bir yuz secin (bulon ekseni o yuzun normali olacak)");
-        return;
+        // Yuz secimi OPSIYONEL: yuz bulunamadiysa bile bulon, parcalarin
+        // en ince boyutu (levha kalinligi yonu) ekseninde olusturulur.
+        publishStatus(L"Yuz secilmedi — eksen parcalarin en ince boyutundan turetilir");
     }
     const std::vector<std::size_t> parts = pendingBoltParts_;
-    const Vec3 axis = *pendingBoltAxis_;
+    const std::optional<Vec3> axis = pendingBoltAxis_;
     pendingBolt_ = false;
     pendingBoltParts_.clear();
     pendingBoltAxis_.reset();
