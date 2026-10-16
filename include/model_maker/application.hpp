@@ -271,14 +271,19 @@ public:
     // uzerinden BooleanCut CutModifier olusturur; hedef kimligi korunur, kesici
     // parca tasindiginda hedef yeniden hesaplanir (recomputeCutTarget).
     void startPartCutCommand();
-    // TEKLA BOLT (Phase B1, noun-verb): secili TAM 2 modeli (baglanacak iki
-    // celik parca) bulonla birlestirir. Bulon M20/22 varsayilanla iki parcanin
-    // birlesik sinir kutusunun ortasina, AKTIF IS DUZLEMI normali ekseninde
-    // yerlesir. Display montaj (bas+govde+somun+pul) OCC ile uretilir; delikler
-    // gercek B-Rep kesimiyle (CutKind::Hole) acilir. Bulon display'i normal bir
-    // modeldir -> secilebilir, tasinabilir, silinebilir (silme kaskadi bulonu da
-    // kaldirir). Secim TAM 2 model degilse uyarir.
+    // TEKLA BOLT (Phase B1, verb-noun): komut girilince baglanacak IKI parca
+    // SONRADAN secilir (sol tik, toggle), sag tik uygular, Esc iptal. Bulon
+    // M20/22 varsayilanla iki parcanin birlesik sinir kutusunun ortasina, AKTIF
+    // IS DUZLEMI normali ekseninde yerlesir. Display montaj (bas+govde+somun+
+    // pul) OCC ile uretilir; delikler gercek B-Rep kesimiyle (CutKind::Hole)
+    // acilir. Bulon display'i normal bir modeldir -> secilebilir, tasinabilir,
+    // silinebilir (silme kaskadi bulonu da kaldirir).
     void startBoltCommand();
+    // Verb-noun bulon bekleme durumu: sol tik parca ekler/cikarir (toggle),
+    // sag tik uygular, Esc iptal eder. Tam 2 parca gerekli.
+    void cancelPendingBoltCommand();
+    void executePendingBoltCommand();
+    bool pickPendingBoltAt(int x, int y);
     // Secili model bir BOLT display'i ise bulon parametrelerini okur (props
     // paneli). Donus false = secim bir bulon degil.
     bool selectedBoltProperties(double& nominalDiameter, double& holeDiameter,
@@ -421,8 +426,10 @@ private:
     // Part Cut ortak yolu: secili (hedef + kesici parca) -> BooleanCut
     // CutModifier -> addCutModifier -> recomputeCutTarget.
     void applyPartCutFromSelection();
-    // Bolt ortak yolu (Phase B1): secili 2 parca -> BoltGroup + display +
-    // delikler. Noun-verb; M20/22 varsayilan, is duzlemi normali eksen.
+    // Bolt ortak yolu (Phase B1): verilen 2 parca -> BoltGroup + display +
+    // delikler. M20/22 varsayilan, is duzlemi normali eksen.
+    void applyBoltFromParts(const std::vector<std::size_t>& parts);
+    // Noun-verb kullanim (eski yol): secili 2 parca -> applyBoltFromParts.
     void applyBoltFromSelection();
 #ifdef MM_HAS_OCC
     // Bulon display modelini (montaj B-Rep + mesh) guncel BoltGroup'tan yeniden
@@ -895,6 +902,11 @@ private:
     std::optional<CutKind> pendingCutKind_;
     std::vector<std::size_t> pendingCutTargets_;
     std::optional<std::size_t> pendingCutPlane_;
+    // VERB-NOUN BOLT (Phase B1): komut girilince baglanacak iki parca sonradan
+    // secilir (toggle); sag tik uygular, Esc iptal. pendingBoltParts_ en fazla
+    // 2 parca tutar.
+    bool pendingBolt_{};
+    std::vector<std::size_t> pendingBoltParts_;
     // KESME NESNELERI SECIMI (P5): kesme modifier secimi (model seciminden
     // ayri) + imlecin altindaki secilebilir nesne (secim hinti).
     std::vector<std::size_t> selectedCutModifiers_;

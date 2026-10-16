@@ -1627,6 +1627,11 @@ LRESULT Application::handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lPa
             executePendingCutCommand();
             updateControls(); invalidateCanvas(); return 0;
         }
+        if (pendingBolt_) {
+            // Verb-noun bolt: sag tik komutu isletir (2 parca seciliyse).
+            executePendingBoltCommand();
+            updateControls(); invalidateCanvas(); return 0;
+        }
         if (zoomWindowActive_) cancelZoomWindow2D();
         else if (workPlanePicking_) cancelWorkPlaneCommand();
         else if (transformCommand_ == TransformCommand::Copy) {
@@ -1787,6 +1792,7 @@ LRESULT Application::handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lPa
             else if (zoomWindowActive_) cancelZoomWindow2D();
             else if (workPlanePicking_) cancelWorkPlaneCommand();
             else if (pendingCutKind_) cancelPendingCutCommand();
+            else if (pendingBolt_) cancelPendingBoltCommand();
             else if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
             else cancelDrawing();
             if (mode_ == EditMode::View3D) drawingActive_ = false;
@@ -2030,6 +2036,11 @@ void Application::onLeftButtonDown(int x, int y) {
     // profil/duzlem secimi yapar (once profil, sonra duzlem; sag tik uygular).
     if (pendingCutKind_) {
         pickPendingCutAt(x, y);
+        return;
+    }
+    // VERB-NOUN BOLT (Phase B1): sol tik baglanacak parcayi ekler/cikarir.
+    if (pendingBolt_) {
+        pickPendingBoltAt(x, y);
         return;
     }
     // PROFIL UC TUTAMAKLARI (grip edit): Alt+tik tutamaga basinca move modu
@@ -2475,9 +2486,9 @@ void Application::onMouseMove(int x, int y, WPARAM buttons) {
         lastMouse_ = {x, y};
         updateHover(x, y);
         redraw = true;
-    } else if (pendingCutKind_) {
-        // Verb-noun kesme bekleme modunda imlecin altindaki secilebilir
-        // profil/duzlemi vurgula (hover highlight). Idle moddaki
+    } else if (pendingCutKind_ || pendingBolt_) {
+        // Verb-noun kesme/bolt bekleme modunda imlecin altindaki secilebilir
+        // profil/duzlem/parcayi vurgula (hover highlight). Idle moddaki
         // refreshHoverCandidate bu modda cagrilmadigi icin burada tazelenir.
         refreshHoverCandidate(x, y);
         redraw = true;
@@ -3583,6 +3594,7 @@ void Application::enterPendingCutCommand(CutKind kind) {
     if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
     profileGrip_.reset();
     cancelDrawing();
+    cancelPendingBoltCommand();
     pendingCutKind_ = kind;
     pendingCutTargets_.clear();
     pendingCutPlane_.reset();
@@ -3804,15 +3816,15 @@ void Application::applyPartCutFromSelection() {
 
 void Application::startPartCutCommand() { applyPartCutFromSelection(); }
 
-void Application::applyBoltFromSelection() {
-    // Noun-verb (Phase B1): secili TAM 2 model = baglanacak iki celik parca.
-    if (selectedModels_.size() != 2) {
+void Application::applyBoltFromParts(const std::vector<std::size_t>& parts) {
+    // Ortak yol (Phase B1): verilen TAM 2 model = baglanacak iki celik parca.
+    if (parts.size() != 2) {
         MessageBeep(MB_ICONWARNING);
         publishStatus(L"Bolt: baglanacak IKI parcayi secin (tam 2 secim)");
         return;
     }
-    const std::size_t aIdx = selectedModels_[0];
-    const std::size_t bIdx = selectedModels_[1];
+    const std::size_t aIdx = parts[0];
+    const std::size_t bIdx = parts[1];
     if (aIdx >= document_.models().size() || bIdx >= document_.models().size()) {
         MessageBeep(MB_ICONWARNING);
         return;
@@ -3874,7 +3886,91 @@ void Application::applyBoltFromSelection() {
     invalidateCanvas();
 }
 
-void Application::startBoltCommand() { applyBoltFromSelection(); }
+void Application::applyBoltFromSelection() { applyBoltFromParts(selectedModels_); }
+
+void Application::startBoltCommand() {
+    // Verb-noun (Phase B1): komut girilince iki parca SONRADAN secilir.
+    cancelZoomWindow2D();
+    if (workPlanePicking_) cancelWorkPlaneCommand();
+    if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
+    profileGrip_.reset();
+    cancelDrawing();
+    cancelPendingCutCommand();
+    pendingBolt_ = true;
+    pendingBoltParts_.clear();
+    selectedModels_.clear();
+    selectionFirstCorner_.reset();
+    hoverModel_.reset();
+    publishStatus(L"Bolt: baglanacak IKI parcayi secin (sol tık, toggle), sağ tık uygular");
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
+}
+
+void Application::cancelPendingBoltCommand() {
+    if (!pendingBolt_) return;
+    pendingBolt_ = false;
+    pendingBoltParts_.clear();
+    hoverModel_.reset();
+    selectedModels_.clear();
+    selectionFirstCorner_.reset();
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
+}
+
+void Application::executePendingBoltCommand() {
+    if (!pendingBolt_) return;
+    if (pendingBoltParts_.size() != 2) {
+        MessageBeep(MB_ICONWARNING);
+        publishStatus(L"Bolt: baglanacak TAM IKI parca secin (su an " +
+                      std::to_wstring(pendingBoltParts_.size()) + L" secili)");
+        return;
+    }
+    const std::vector<std::size_t> parts = pendingBoltParts_;
+    pendingBolt_ = false;
+    pendingBoltParts_.clear();
+    hoverModel_.reset();
+    applyBoltFromParts(parts);
+}
+
+bool Application::pickPendingBoltAt(int x, int y) {
+    if (!pendingBolt_) return false;
+    const auto hit = modelIndexAt(x, y);
+    if (!hit || *hit >= document_.models().size()) {
+        MessageBeep(MB_ICONWARNING);
+        publishStatus(L"Bolt: baglanacak bir parcaya tiklayin (normal model)");
+        return true;
+    }
+    const auto& model = document_.models()[*hit];
+    if (model.constructionKind() != ConstructionKind::None) {
+        MessageBeep(MB_ICONWARNING);
+        publishStatus(L"Bolt: baglanacak parcalar normal model olmali (konstrüksiyon degil)");
+        return true;
+    }
+    const auto it = std::find(pendingBoltParts_.begin(), pendingBoltParts_.end(), *hit);
+    if (it == pendingBoltParts_.end()) {
+        if (pendingBoltParts_.size() >= 2) {
+            MessageBeep(MB_ICONWARNING);
+            publishStatus(L"Bolt: zaten 2 parca secili (Esc iptal, sağ tık uygula)");
+            return true;
+        }
+        pendingBoltParts_.push_back(*hit);
+    } else {
+        pendingBoltParts_.erase(it);
+    }
+    selectedModels_.clear();
+    for (const std::size_t p : pendingBoltParts_) selectedModels_.push_back(p);
+    if (pendingBoltParts_.size() == 2)
+        publishStatus(L"Hazır — sağ tık ile uygula (2 parca, Esc iptal)");
+    else
+        publishStatus(std::to_wstring(pendingBoltParts_.size()) +
+                      L" parca secildi — ikinci parcayi secin (sağ tık uygular, Esc iptal)");
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
+    return true;
+}
 
 #ifdef MM_HAS_OCC
 void Application::rebuildBoltDisplay(const BoltGroup& bolt) {
@@ -4503,7 +4599,27 @@ void Application::refreshHoverCandidate(int x, int y) {
     // modda vurgu yok (kullanici istegi).
     hoverModel_.reset();
     hoverCutModifier_.reset();
-    if (!pendingCutKind_) return;
+    if (!pendingCutKind_ && !pendingBolt_) return;
+    // VERB-NOUN BOLT beklemede: yalnizca normal parcalar (konstrüksiyon
+    // olmayan) vurgulanir. Tam 2 parca seciliyse vurgu yok (hazir).
+    if (pendingBolt_) {
+        if (pendingBoltParts_.size() >= 2) return;
+        const auto matchesRequired = [&](std::size_t index) {
+            if (index >= document_.models().size()) return false;
+            return document_.models()[index].constructionKind() == ConstructionKind::None;
+        };
+        std::optional<std::size_t> hit;
+        if (mode_ == EditMode::Draw2D)
+            hit = hitTestModel2D(screenTo2D(x, y), document_, 10.0 / (60.0 * camera_.zoom()));
+        else {
+            RECT client{}; GetClientRect(canvas_, &client);
+            hit = hitTestModel3D({static_cast<double>(x), static_cast<double>(y)}, document_,
+                                 camera_, std::max(1L, client.right), std::max(1L, client.bottom),
+                                 10.0);
+        }
+        if (hit && matchesRequired(*hit)) hoverModel_ = hit;
+        return;
+    }
     // VERB-NOUN KESME beklemede: yalnizca gerekli tur vurgulanir. P12 (coklu
     // hedef): once profiller (en az biri gerekli), sonra duzlem; ikisi de
     // tamamlaninca vurgu yok (hazir). Kesme modifier'lari bu modda vurgulanmaz.
@@ -7345,7 +7461,7 @@ Vec3 Application::screenTo2D(int x, int y) const noexcept {
 HCURSOR Application::currentCanvasCursor() const noexcept {
     // Verb-noun kesme beklemedeyken imlec "obje secim" kutusuna (kare pickbox)
     // doner — profil/duzlem tiklama modunda oldugunu gorsel olarak belirtir.
-    if (pendingCutKind_)
+    if (pendingCutKind_ || pendingBolt_)
         return modifyCursor_;
     if (transformCommand_ == TransformCommand::None)
         return (drawingActive_ || workPlanePicking_ || zoomWindowActive_) ? draftingCursor_ : neutralCursor_;
