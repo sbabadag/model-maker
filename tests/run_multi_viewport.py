@@ -339,7 +339,10 @@ int main() {
     a.routeCanvasMessage(vc3, WM_LBUTTONDOWN, 0, 0); // vc3 aktif (gorunus)
     check(a.viewRotationLocked(), "view window locks rotation");
     a.camera_.rotate(0.9, 0.4); // gorunusu elle bozalim
-    const Vec3 bogusDir = a.camera_.viewTransform({0, 0, 1});
+    // Turntable orbit yaw-Z + pitch-X oldugundan "sag eksen" (viewTransform
+    // e_x) hem yaw hem pitch ile degisir; eski yaw-Y testi bu bilegeni
+    // sabit birakan bir ekseni (e_z) sondaliyordu -> no-op yanlis alarmi.
+    const Vec3 bogusDir = a.camera_.viewTransform({1, 0, 0});
     a.setStandardView(StandardView::Front);
     const Vec3 ex = a.camera_.viewTransform(a.viewDef_->right);
     const Vec3 ez = a.camera_.viewTransform(a.viewDef_->up);
@@ -350,7 +353,7 @@ int main() {
     check(a.viewRotationLocked() && a.mode_ == EditMode::View3D && a.viewDef_.has_value(),
           "view window stays a view window (still 3D, same slab)");
     check(a.zoomExtentsCalls == 0, "view window refits its own slab, not the 2D extents path");
-    check(std::abs(bogusDir.x - a.camera_.viewTransform({0, 0, 1}).x) > 1e-6,
+    check(std::abs(bogusDir.x - a.camera_.viewTransform({1, 0, 0}).x) > 1e-6,
           "the bogus orientation really was replaced (test would catch a no-op)");
 
     // 13) ANA GORUNUS: standart gorunus eskisi gibi yonu DEGISTIRIR (davranis korunur).

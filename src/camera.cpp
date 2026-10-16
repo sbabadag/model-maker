@@ -151,46 +151,50 @@ void Camera::rotate(double yawDelta, double pitchDelta) noexcept {
     // Dondurme merkezi secildiyse (R) pivot etrafinda doner; yoksa pivot =
     // merkez3D olur ve davranis eskisiyle birebir aynidir.
     if (orbitPivot_) { rotateAbout(*orbitPivot_, yawDelta, pitchDelta); return; }
-    // Surekli artis: pitch kamera X ekseni etrafinda (soldan carpma), yaw
-    // dunya Y ekseni etrafinda (sagdan carpma). Roll=0 iken eski euler
-    // toplama davranisiyla birebir esdeger; kutup/devrilme yok.
+    // TURNTABLE ORBIT: yaw dunya Z (dusey) ekseni etrafinda (sagdan carpma),
+    // pitch kamera X (yatay) ekseni etrafinda (soldan carpma). Dunya-yukari
+    // Z korunur, roll birikmez (kamera X ekseni daima yatay kalir).
+    // Pitch (yukselis) ±89° ile sinirli — devrilme/flip yok.
+    pitchDelta = clampPitchDelta(pitchDelta);
     const double cp = std::cos(pitchDelta), sp = std::sin(pitchDelta);
     const double cy = std::cos(yawDelta), sy = std::sin(yawDelta);
     const std::array<double, 9> rx{1.0, 0.0, 0.0,
                                    0.0, cp, -sp,
                                    0.0, sp, cp};
-    const std::array<double, 9> ry{cy, 0.0, sy,
-                                   0.0, 1.0, 0.0,
-                                   -sy, 0.0, cy};
-    R_ = mat3mul(rx, mat3mul(R_, ry));
+    const std::array<double, 9> rz{cy, -sy, 0.0,
+                                   sy,  cy, 0.0,
+                                   0.0, 0.0, 1.0};
+    R_ = mat3mul(rx, mat3mul(R_, rz));
 }
 
 void Camera::rotateAbout(const Vec3& pivot, double yawDelta, double pitchDelta) noexcept {
-    // rotate() ile AYNI aci semantigi (pitch kamera X'i, yaw dunya Y'si):
-    //   R_yeni = rx * R_eski * ry   ve   R_yeni = R_eski * W
+    // rotate() ile AYNI aci semantigi (pitch kamera X'i, yaw dunya Z'si —
+    // turntable orbit):
+    //   R_yeni = rx * R_eski * rz   ve   R_yeni = R_eski * W
     // Pivot EKRANDA sabit kalsin diye (projeksiyon ortografik: ekran ~
     // R*(nokta - merkez)):
     //   R_yeni*(pivot - merkez_yeni) = R_eski*(pivot - merkez_eski)
     //   => merkez_yeni = pivot + W^T*(merkez_eski - pivot)
     // W = R_eski^T * R_yeni oldugu icin W^T = R_yeni^T * R_eski.
     //
-    // ONEMLI (olculmus tuzak): W'yi dogrudan w = R_eski^T*rx*R_eski*ry olarak
+    // ONEMLI (olculmus tuzak): W'yi dogrudan w = R_eski^T*rx*R_eski*rz olarak
     // KURMAK sayisal olarak kararsizdir — R^T*R carpimi her adimda
     // ortonormallik hatasini ~3 KATINA buyutur (adim 2: 5.5e-17, adim 7:
     // 9.9e-15, adim 15: 1.1e-10). 60 adimda R_ tamamen bozulur ve pivot
     // 2.8e4 px savrulur. Bu yuzden yon guncellemesi rotate() ile AYNI
     // (kararli) formul, merkez guncellemesi ise iki TEMIZ matrisin
     // (R_yeni^T * R_eski) uygulanmasi ile yapilir.
+    pitchDelta = clampPitchDelta(pitchDelta);
     const double cp = std::cos(pitchDelta), sp = std::sin(pitchDelta);
     const double cy = std::cos(yawDelta), sy = std::sin(yawDelta);
     const std::array<double, 9> rx{1.0, 0.0, 0.0,
                                    0.0, cp, -sp,
                                    0.0, sp, cp};
-    const std::array<double, 9> ry{cy, 0.0, sy,
-                                   0.0, 1.0, 0.0,
-                                   -sy, 0.0, cy};
+    const std::array<double, 9> rz{cy, -sy, 0.0,
+                                   sy,  cy, 0.0,
+                                   0.0, 0.0, 1.0};
     const std::array<double, 9> previous = R_;
-    R_ = mat3mul(rx, mat3mul(R_, ry));
+    R_ = mat3mul(rx, mat3mul(R_, rz));
     const Vec3 offset{center3D_.x - pivot.x, center3D_.y - pivot.y, center3D_.z - pivot.z};
     // R_eski * offset, ardindan R_yeni^T * (...): iki temiz rotasyon.
     const Vec3 inPrevious{previous[0] * offset.x + previous[1] * offset.y + previous[2] * offset.z,
@@ -201,6 +205,17 @@ void Camera::rotateAbout(const Vec3& pivot, double yawDelta, double pitchDelta) 
                            R_[2] * inPrevious.x + R_[5] * inPrevious.y + R_[8] * inPrevious.z};
     center3D_ = Vec3{pivot.x + worldOffset.x, pivot.y + worldOffset.y,
                      pivot.z + worldOffset.z};
+}
+
+double Camera::clampPitchDelta(double pitchDelta) const noexcept {
+    // Yukselis = bakis yonunun XY duzlemine acisi = asin(R_[8]). Turntable'da
+    // yaw-Z bu bileseni korur; pitch-X ise up vektorunun yukari bakmasi
+    // sayesinde (row1.z = cos(yukselis) >= 0) yukselisi TAM pitchDelta kadar
+    // degistirir: sin(e + d) = cos(d)sin(e) + sin(d)cos(e). Bu yuzden artis
+    // dogrudan kisitlanabilir; sinir ±89° devrilmeyi onler.
+    const double elevation = std::asin(std::clamp(R_[8], -1.0, 1.0));
+    return std::clamp(pitchDelta, -kMaxOrbitPitch - elevation,
+                      kMaxOrbitPitch - elevation);
 }
 
 void Camera::setOrbitCenter(const Vec3& worldPoint) noexcept {

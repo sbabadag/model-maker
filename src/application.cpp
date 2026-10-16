@@ -1640,17 +1640,17 @@ LRESULT Application::handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lPa
         updateControls(); invalidateCanvas(); return 0;
     case WM_MBUTTONDOWN:
         SetFocus(canvas_);
-        // 3B: orta tus surukleme = rotate; Alt + orta tus = pan.
+        // 3B: orta tus surukleme = turntable orbit; SHIFT + orta tus = pan.
         // 2B: orta tus surukleme = pan.
         // Gorunus penceresi: yon sabit -> orta tus = PAN (Tekla).
-        if (mode_ == EditMode::View3D && !viewRotationLocked() && !(GetKeyState(VK_MENU) & 0x8000)) {
+        if (mode_ == EditMode::View3D && !viewRotationLocked() && !(GetKeyState(VK_SHIFT) & 0x8000)) {
             rotating_ = true;
-            rotSmoothedDx_ = 0.0;
-            rotSmoothedDy_ = 0.0;
-            // Rotasyon mevcut center3D_ etrafinda YERINDE doner (pivot
-            // degistirilmez) — pivot'u imlecin altina tasimak goruntuyu
-            // "ziplatir" (tiklanan nokta ekran merkezine firlar). Merkez
-            // fit3D/pan ile zaten model uzerinde tutulur.
+            // AKILLI YORUNGE PIVOTU: jest basinda BIR KEZ cozulur ve jest
+            // boyunca sabit kalir. Oncelik: imlec alti 3B isabet -> secim
+            // merkezi -> kayitli pivot -> model kutusu merkezi. R-tusu kalici
+            // pivotu AYRI yoldur (Ctrl+sol tus); MMB ona dokunmaz, kendi
+            // jest pivotunu kullanir.
+            orbitGesturePivot_ = resolveOrbitPivot(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
         } else {
             panning2D_ = true;
         }
@@ -1661,6 +1661,7 @@ LRESULT Application::handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lPa
     case WM_MBUTTONUP:
         rotating_ = false;
         panning2D_ = false;
+        orbitGesturePivot_.reset();
         ReleaseCapture();
         updateHover(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
         invalidateCanvas();
@@ -1668,6 +1669,7 @@ LRESULT Application::handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lPa
     case WM_CAPTURECHANGED:
         rotating_ = false;
         panning2D_ = false;
+        orbitGesturePivot_.reset();
         ctrlRotatePending_ = false;
         if (reinterpret_cast<HWND>(lParam) != canvas_) {
             viewCubeManipulating_ = false;
@@ -1765,6 +1767,15 @@ LRESULT Application::handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lPa
             // olarak her Esc'te gecici izleme noktalari/kilavuzlari temizlenir.
             clearTemporaryTracking();
             input_.clear();
+            // Esc aktif navigasyonu da iptal eder (MMB orbit / Shift+MMB pan
+            // suruklemesi): bayraklari temizle, yakalamayi birak.
+            if (rotating_ || panning2D_) {
+                rotating_ = panning2D_ = false;
+                orbitGesturePivot_.reset();
+                ReleaseCapture();
+                invalidateCanvas();
+                return 0;
+            }
             if (ctrlRotatePending_) {
                 // Yarim kalan Ctrl+sol tus jesti (henuz rotasyona terfi
                 // etmedi): iptal, secim degismez.
@@ -1833,7 +1844,8 @@ LRESULT Application::handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lPa
         else if (wParam == 'A') selectTool(DrawTool::Rectangle);
         else if (wParam == 'C') selectTool(DrawTool::Circle);
         else if (wParam == 'D') activateDivide();
-        else if (wParam == 'F') selectTool(DrawTool::Face3D);
+        else if (wParam == 'F') focusOnSelection();
+        else if (wParam == 'H') selectTool(DrawTool::Face3D);
         else if (wParam == 'G') selectTool(DrawTool::Column);
         else if (wParam == 'M') startTransformCommand(TransformCommand::Move);
         else if (wParam == 'K') startTransformCommand(TransformCommand::Copy);
@@ -2071,8 +2083,6 @@ void Application::onLeftButtonDown(int x, int y) {
             !zoomWindowActive_ && !profileGrip_) {
             ctrlRotatePending_ = true;
             ctrlRotateStart_ = POINT{x, y};
-            rotSmoothedDx_ = 0.0;
-            rotSmoothedDy_ = 0.0;
             lastMouse_ = {x, y};
             SetCapture(canvas_);
             return;
@@ -2443,14 +2453,14 @@ void Application::onMouseMove(int x, int y, WPARAM buttons) {
         const int dx = x - lastMouse_.x;
         const int dy = y - lastMouse_.y;
         if (dx != 0 || dy != 0) {
-            // Yumusatilmis rotasyon: delta uzerinde ustel hareketli ortalama
-            // (k=0.5) — touchpad/fare sarsintisini filtreler, donus daha
-            // akici ve dengeli hissettirir.
-            rotSmoothedDx_ += (static_cast<double>(dx) - rotSmoothedDx_) * 0.5;
-            rotSmoothedDy_ += (static_cast<double>(dy) - rotSmoothedDy_) * 0.5;
-            // Yatay (yaw) isareti: saga surukle = sag taraf gelir (Tekla
-            // yonu). Dikey (pitch) standart: yukari surukle = ustten bak.
-            camera_.rotate(-rotSmoothedDx_ * 0.008, rotSmoothedDy_ * 0.008);
+            // TURNTABLE ORBIT, DOGRUDAN tepki (yumusatma/inertia YOK). Yatay =
+            // yaw (dunya Z), dikey = pitch (kamera X), ±89° sinirli (Camera
+            // icinde). Jest pivotu varsa onun etrafinda, yoksa R-tusu pivottu/
+            // merkez etrafinda doner.
+            const double yawDelta = -dx * Camera::kOrbitRadiansPerPixel;
+            const double pitchDelta = dy * Camera::kOrbitRadiansPerPixel;
+            if (orbitGesturePivot_) camera_.rotateAbout(*orbitGesturePivot_, yawDelta, pitchDelta);
+            else camera_.rotate(yawDelta, pitchDelta);
             lastMouse_ = {x, y};
             if (drawingActive_) updateHover(x, y);
             redraw = true;
@@ -3302,6 +3312,90 @@ void Application::zoomExtents2D() {
     updateControls();
     updateStatus();
     invalidateCanvas();
+}
+
+void Application::focusOnSelection() {
+    // F: secime odaklan (3B navigasyon). Secili geometrinin kutusunu
+    // cercevele, bakis yonu KORUNUR (fit3D yonu degistirmez), orbit pivotu
+    // odak merkezine guncellenir. Secim yoksa tum gorunur model cercevelenir.
+    // Bos model -> kamera sifirla.
+    RECT client{}; GetClientRect(canvas_, &client);
+    const int vw = std::max(1L, client.right), vh = std::max(1L, client.bottom);
+    std::optional<Bounds3> target;
+    const auto& mb = document_.modelBounds();
+    if (!selectedModels_.empty()) {
+        for (const std::size_t i : selectedModels_) {
+            if (i >= mb.size()) continue;
+            if (!target) {
+                target = mb[i];
+                continue;
+            }
+            target->minimum.x = std::min(target->minimum.x, mb[i].minimum.x);
+            target->minimum.y = std::min(target->minimum.y, mb[i].minimum.y);
+            target->minimum.z = std::min(target->minimum.z, mb[i].minimum.z);
+            target->maximum.x = std::max(target->maximum.x, mb[i].maximum.x);
+            target->maximum.y = std::max(target->maximum.y, mb[i].maximum.y);
+            target->maximum.z = std::max(target->maximum.z, mb[i].maximum.z);
+        }
+    }
+    if (!target) target = document_.bounds();
+    if (!target) { camera_.reset(); invalidateCanvas(); return; }
+    if (mode_ == EditMode::View3D) {
+        camera_.fit3D(target->minimum, target->maximum, vw, vh, 50.0);
+        camera_.setOrbitPivot(Vec3{(target->minimum.x + target->maximum.x) * 0.5,
+                                   (target->minimum.y + target->maximum.y) * 0.5,
+                                   (target->minimum.z + target->maximum.z) * 0.5});
+    } else {
+        camera_.fit2D(target->minimum, target->maximum, vw, vh, 50.0);
+    }
+    updateHover(cursorScreen_.x, cursorScreen_.y);
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
+}
+
+std::optional<Vec3> Application::resolveOrbitPivot(int x, int y) const {
+    // Akilli orbit pivotu onceligi (MMB jesti basinda BIR KEZ cozulur):
+    //   1) imlec altindaki modelin kutu merkezi (3B isabet)
+    //   2) secili geometrinin kutu merkezi
+    //   3) kayitli orbit pivotu (R-tusu / focus)
+    //   4) tum modelin kutu merkezi
+    // Hicbiri yoksa nullopt -> kamera mevcut center3D etrafinda doner.
+    const auto& mb = document_.modelBounds();
+    if (mode_ == EditMode::View3D) {
+        const auto hit = modelIndexAt(x, y);
+        if (hit && *hit < mb.size()) {
+            const auto& b = mb[*hit];
+            return Vec3{(b.minimum.x + b.maximum.x) * 0.5,
+                        (b.minimum.y + b.maximum.y) * 0.5,
+                        (b.minimum.z + b.maximum.z) * 0.5};
+        }
+    }
+    if (!selectedModels_.empty()) {
+        std::optional<Bounds3> u;
+        for (const std::size_t i : selectedModels_) {
+            if (i >= mb.size()) continue;
+            if (!u) {
+                u = mb[i];
+                continue;
+            }
+            u->minimum.x = std::min(u->minimum.x, mb[i].minimum.x);
+            u->minimum.y = std::min(u->minimum.y, mb[i].minimum.y);
+            u->minimum.z = std::min(u->minimum.z, mb[i].minimum.z);
+            u->maximum.x = std::max(u->maximum.x, mb[i].maximum.x);
+            u->maximum.y = std::max(u->maximum.y, mb[i].maximum.y);
+            u->maximum.z = std::max(u->maximum.z, mb[i].maximum.z);
+        }
+        if (u) return Vec3{(u->minimum.x + u->maximum.x) * 0.5,
+                           (u->minimum.y + u->maximum.y) * 0.5,
+                           (u->minimum.z + u->maximum.z) * 0.5};
+    }
+    if (camera_.hasOrbitPivot()) return *camera_.orbitPivot();
+    if (const auto b = document_.bounds())
+        return Vec3{(b->minimum.x + b->maximum.x) * 0.5,
+                    (b->minimum.y + b->maximum.y) * 0.5,
+                    (b->minimum.z + b->maximum.z) * 0.5};
+    return std::nullopt;
 }
 
 void Application::startZoomWindow2D() {

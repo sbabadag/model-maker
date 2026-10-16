@@ -373,6 +373,12 @@ if(BUILD_TESTING)
     target_link_libraries(model_maker_orbit_pivot_test PRIVATE model_maker_core)
     add_test(NAME model_maker_orbit_pivot_test COMMAND model_maker_orbit_pivot_test)
 
+    # TURNTABLE ORBIT (profesyonel 3B navigasyon): yaw dunya Z, pitch kamera X,
+    # dunya-yukari Z korunur, roll birikmez, pitch ±89° sinirli. OCC'siz.
+    add_executable(model_maker_turntable_orbit_test tests/turntable_orbit_test.cpp)
+    target_link_libraries(model_maker_turntable_orbit_test PRIVATE model_maker_core)
+    add_test(NAME model_maker_turntable_orbit_test COMMAND model_maker_turntable_orbit_test)
+
     # Ortho + OSNAP kurali: F8 acikken obje snap'i ortho'yu EZER (AutoCAD
     # osnap > ortho), serbest imlec ve grid snap'i yine eksene kilitlenir —
     # 2B ve 3B (dunya + is duzlemi eksenleri). OCC'siz de kosar; gercek

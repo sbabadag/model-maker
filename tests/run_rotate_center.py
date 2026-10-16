@@ -56,9 +56,9 @@ rotate_body = top_level(camera_cpp, "void Camera::rotate")
 if "rotateAbout(*orbitPivot_" not in rotate_body:
     failures.append("Camera::rotate pivotu KULLANMIYOR (merkez etrafinda doner)")
 rotate_about = top_level(camera_cpp, "void Camera::rotateAbout")
-if "mat3mul(rx, mat3mul(R_, ry))" not in rotate_about:
+if "mat3mul(rx, mat3mul(R_, rz))" not in rotate_about:
     failures.append("rotateAbout yon guncellemesi rotate() ile ayni kararli formulde degil")
-# Kararsiz kurulum geri gelmemeli: w = R^T*rx*R*ry (R^T*R carpimi hatayi buyutur).
+# Kararsiz kurulum geri gelmemeli: w = R^T*rx*R*rz (R^T*R carpimi hatayi buyutur).
 if re.search(r"mat3mul\(\s*rt\s*,", rotate_about):
     failures.append("rotateAbout'ta kararsiz w = R^T*rx*R*ry kurulumu var "
                     "(ortonormallik hatasini ~3x buyutur)")

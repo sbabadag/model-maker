@@ -301,6 +301,10 @@ public:
     // Gorunumu sifirla (eski R davranisi). Kilitli (gorunus) pencerede
     // anlamli tek sey yeniden sigdirmaktir.
     void resetView();
+    // F: secime odaklan (3B navigasyon). Secili geometriyi cercevele, bakis
+    // yonu korunur, orbit pivotu odak merkezine guncellenir; secim yoksa tum
+    // model cercevelenir.
+    void focusOnSelection();
     void setTwoPointViewCallback(std::function<void(const ViewDefinition&)> callback) {
         twoPointViewCallback_ = std::move(callback);
     }
@@ -384,6 +388,9 @@ private:
     void executePendingCutCommand();
     bool pickPendingCutAt(int x, int y);
     std::optional<std::size_t> modelIndexAt(int x, int y) const;
+    // MMB orbit jesti basinda akilli pivotu cozer (imlec alti isabet ->
+    // secim merkezi -> kayitli pivot -> model kutusu). Jest boyunca sabittir.
+    std::optional<Vec3> resolveOrbitPivot(int x, int y) const;
     // Line Cut / Polygon Cut ortak yolu: secili (profil hedefi + sinir objesi)
     // -> CutModifier -> addCutModifier/setCutModifier -> recomputeCutTarget.
     void applyBoundaryCutFromSelection(CutKind kind);
@@ -930,15 +937,16 @@ private:
     std::size_t commandHistoryIndex_{};
     bool rotating_{};
     bool panning2D_{};
+    // MMB orbit jestinin AKILLI pivotu (jeste ozgu, kalici degil). R-tusu
+    // kalici pivotundan (Camera::orbitPivot_) AYRI tutulur; yalnizca MMB
+    // orbiti kullanir, renderer'da kalici pivot isareti olarak cizilmez.
+    std::optional<Vec3> orbitGesturePivot_{};
     // Ctrl+sol tus: basildi (henuz surukleme esigi gecmedi). Esik asilirsa
     // rotating_'e terfi eder; birakmada hareket yoksa normal Ctrl+tik
     // secimi yapilir (Ctrl+tik secimi KORUNUR).
     bool ctrlRotatePending_{};
     POINT ctrlRotateStart_{};
     bool wheelNavigating_{};
-    // Rotasyon yumusatma (ustel hareketli ortalama) — ani sarsintiyi filtreler.
-    double rotSmoothedDx_{};
-    double rotSmoothedDy_{};
     double wheelPreviewFactor_{1.0};
     // Momentum tekerlek hiz sinirlayici: patlama halindeki detentler
     // biriktirilir, 120ms'de en fazla bir zoom uygulanir (free-spin

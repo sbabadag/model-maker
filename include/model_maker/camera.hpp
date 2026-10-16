@@ -19,6 +19,12 @@ enum class StandardView {
 
 class Camera {
 public:
+    // TURNTABLE ORBIT SABITLERI (TEK KAYNAK). Uygulamanin MMB orbit yolu bu
+    // degerleri kullanir; baska yerlerde ciplak sihirli sayi yoktur.
+    //   kOrbitRadiansPerPixel: ~0.3 deg/px (Rhino/Tekla hissi).
+    //   kMaxOrbitPitch         : ±89° — devrilme (flip) siniri.
+    static constexpr double kOrbitRadiansPerPixel = 0.005235987755982988; // 0.3°
+    static constexpr double kMaxOrbitPitch = 1.5533430342749532;          // 89°
     Vec2 project(Vec3 point, int viewportWidth, int viewportHeight) const noexcept;
     Vec3 viewTransform(Vec3 vector) const noexcept;
     Vec2 project2D(Vec3 point, int viewportWidth, int viewportHeight) const noexcept;
@@ -121,6 +127,11 @@ private:
 
     static std::array<double, 9> buildRotation(double yaw, double pitch, double roll) noexcept;
     void decompose(double& yaw, double& pitch, double& roll) const noexcept;
+    // Pitch (yukselis) artisini ±kMaxOrbitPitch sinirina kisar. Yukselis =
+    // bakis yonunun (row2) XY duzlemine acisi = asin(R_[8]); turntable'da
+    // yaw-Z bu bileseni degistirmez, pitch-X ise birebir degistirir (up vektoru
+    // yukari baktigi surece) — bu yuzden pitchDelta dogrudan kisitlanabilir.
+    double clampPitchDelta(double pitchDelta) const noexcept;
     // R_'nin 3. satirini (= dunya bakis yonu) kilide yazar. YALNIZ gorunus
     // tabani kurulurken cagrilir; rotate/pan/zoom'da CAGRILMAZ.
     void lockGridViewDirection() noexcept;
