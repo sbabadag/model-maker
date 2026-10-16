@@ -247,9 +247,10 @@ public:
     // KONSTRUKSIYON NESNELERI GIZLE/GOSTER: tum ConstructionKind nesnelerinin
     // gorunurlugunu tek bayrakla degistirir (Document::setConstructionVisible).
     void toggleConstructionVisibility();
-    // TEKLA FITTING / PLANE CUT (P1, noun-verb): secili (1 profil hedefi +
-    // 1 konstrüksiyon duzlemi) uzerinden CutModifier olusturur; Fitting tarafi
-    // otomatik, PlaneCut keepPositive=true. OCC varsa hedefi yeniden hesaplar.
+    // TEKLA FITTING / PLANE CUT (P11, verb-noun): komut girilince once profil,
+    // sonra konstrüksiyon duzlemi secilir (sol tik), SAG TIK komutu isletir,
+    // Esc iptal. Fitting tarafi otomatik, PlaneCut keepPositive=true. OCC varsa
+    // hedefi yeniden hesaplar. (Noun-verb yolu: applyCutFromSelection korunur.)
     void startFittingCommand();
     void startPlaneCutCommand();
     // TEKLA LINE CUT / POLYGON CUT (P2, noun-verb): secili (1 profil hedefi +
@@ -370,6 +371,15 @@ private:
     // Fitting/PlaneCut ortak yolu: secili (profil hedefi + konstrüksiyon
     // duzlemi) -> CutModifier -> addCutModifier -> (OCC) recomputeCutTarget.
     void applyCutFromSelection(CutKind kind);
+    // VERB-NOUN KESME (Fitting/Plane Cut): komut girilince once profil, sonra
+    // duzlem secilir; sag tik uygular, Esc iptal. applyCutFromPair cozumlenmis
+    // (hedef + duzlem) uzerinden kesmeyi kurar; noun-verb ve verb-noun ortak.
+    void applyCutFromPair(CutKind kind, std::size_t targetIdx, std::size_t planeIdx);
+    void enterPendingCutCommand(CutKind kind);
+    void cancelPendingCutCommand();
+    void executePendingCutCommand();
+    bool pickPendingCutAt(int x, int y);
+    std::optional<std::size_t> modelIndexAt(int x, int y) const;
     // Line Cut / Polygon Cut ortak yolu: secili (profil hedefi + sinir objesi)
     // -> CutModifier -> addCutModifier/setCutModifier -> recomputeCutTarget.
     void applyBoundaryCutFromSelection(CutKind kind);
@@ -831,6 +841,11 @@ private:
     TransformPhase transformPhase_{TransformPhase::Selecting};
     std::vector<std::size_t> selectedModels_;
     std::optional<POINT> selectionFirstCorner_;
+    // VERB-NOUN KESME (Fitting/Plane Cut): komut girilince once profil, sonra
+    // duzlem secilir; sag tik uygular, Esc iptal.
+    std::optional<CutKind> pendingCutKind_;
+    std::optional<std::size_t> pendingCutTarget_;
+    std::optional<std::size_t> pendingCutPlane_;
     // KESME NESNELERI SECIMI (P5): kesme modifier secimi (model seciminden
     // ayri) + imlecin altindaki secilebilir nesne (secim hinti).
     std::vector<std::size_t> selectedCutModifiers_;

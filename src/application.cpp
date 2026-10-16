@@ -1621,6 +1621,11 @@ LRESULT Application::handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lPa
     case WM_LBUTTONDOWN: SetFocus(canvas_); onLeftButtonDown(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)); return 0;
     case WM_RBUTTONDOWN:
         SetFocus(canvas_);
+        if (pendingCutKind_) {
+            // Verb-noun kesme: sag tik komutu isletir (profil + duzlem seciliyse).
+            executePendingCutCommand();
+            updateControls(); invalidateCanvas(); return 0;
+        }
         if (zoomWindowActive_) cancelZoomWindow2D();
         else if (workPlanePicking_) cancelWorkPlaneCommand();
         else if (transformCommand_ == TransformCommand::Copy) {
@@ -1769,6 +1774,7 @@ LRESULT Application::handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lPa
             if (profileGrip_) cancelProfileGrip();
             else if (zoomWindowActive_) cancelZoomWindow2D();
             else if (workPlanePicking_) cancelWorkPlaneCommand();
+            else if (pendingCutKind_) cancelPendingCutCommand();
             else if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
             else cancelDrawing();
             if (mode_ == EditMode::View3D) drawingActive_ = false;
@@ -2006,6 +2012,12 @@ void Application::onLeftButtonDown(int x, int y) {
             publishStatus(L"Dönüş merkezi: imleçte geçerli nokta yok — bir noktaya tıklayın");
         }
         updateControls(); invalidateCanvas(); return;
+    }
+    // VERB-NOUN KESME (P11): Fitting/Plane Cut komutu bekliyorsa sol tik
+    // profil/duzlem secimi yapar (once profil, sonra duzlem; sag tik uygular).
+    if (pendingCutKind_) {
+        pickPendingCutAt(x, y);
+        return;
     }
     // PROFIL UC TUTAMAKLARI (grip edit): Alt+tik tutamaga basinca move modu
     // aktif olur; 1. tik tasima baslangici (baz), 2. tik destinasyondur —
@@ -2826,6 +2838,7 @@ void Application::cancelDrawing() {
 }
 
 void Application::startTransformCommand(TransformCommand command) {
+    cancelPendingCutCommand();
     cancelZoomWindow2D();
     if (workPlanePicking_) cancelWorkPlaneCommand();
     // cancelDrawing seçimi de temizler; noun-verb akışı için koru.
@@ -3388,7 +3401,19 @@ void Application::applyCutFromSelection(CutKind kind) {
         publishStatus(L"Fitting/Plane Cut: bir profil hedefi VE bir konstrüksiyon düzlemi seçin");
         return;
     }
-    const auto frame = constructionPlaneFrame(document_.models()[*planeIdx]);
+    applyCutFromPair(kind, *targetIdx, *planeIdx);
+}
+
+void Application::applyCutFromPair(CutKind kind, std::size_t targetIdx, std::size_t planeIdx) {
+    // Cozumlenmis (hedef + duzlem) uzerinden kesmeyi kurar. Hem noun-verb
+    // (applyCutFromSelection) hem verb-noun (executePendingCutCommand) yolu
+    // buraya dusar. Duzlem KOPYALANMAZ; kaynak olarak referans alinir (P6).
+    if (targetIdx >= document_.models().size() || planeIdx >= document_.models().size()) {
+        MessageBeep(MB_ICONWARNING);
+        publishStatus(L"Fitting/Plane Cut: gecersiz secim — yeniden secin");
+        return;
+    }
+    const auto frame = constructionPlaneFrame(document_.models()[planeIdx]);
     if (!frame) {
         MessageBeep(MB_ICONWARNING);
         publishStatus(L"Fitting/Plane Cut: konstrüksiyon düzlemi bozuk — yeniden oluşturun");
@@ -3396,11 +3421,11 @@ void Application::applyCutFromSelection(CutKind kind) {
     }
     CutModifier modifier;
     modifier.kind = kind;
-    modifier.target = document_.modelId(*targetIdx);
+    modifier.target = document_.modelId(targetIdx);
     // P6: duzlemi KOPYALAMA — kaynak konstrüksiyon duzlemini referans al.
     // Kesme, duzlemin GUNCEL geometrisinden cozumlenir; duzlem tasininca izler,
     // silinince kaskad kaldirilir, ayri kopya kesme objesi cizilmez.
-    modifier.source = document_.modelId(*planeIdx);
+    modifier.source = document_.modelId(planeIdx);
     modifier.planeOrigin = frame->origin;
     modifier.planeNormal = frame->normal;
     modifier.keepPositive = true;  // Fitting: otomatik taraf (bu alan yok sayilir)
@@ -3428,9 +3453,109 @@ void Application::applyCutFromSelection(CutKind kind) {
     invalidateCanvas();
 }
 
-void Application::startFittingCommand() { applyCutFromSelection(CutKind::Fitting); }
+void Application::startFittingCommand() { enterPendingCutCommand(CutKind::Fitting); }
 
-void Application::startPlaneCutCommand() { applyCutFromSelection(CutKind::PlaneCut); }
+void Application::startPlaneCutCommand() { enterPendingCutCommand(CutKind::PlaneCut); }
+
+void Application::enterPendingCutCommand(CutKind kind) {
+    // Verb-noun: komut girilince aktif cizim/transform/secim kapatilir, kesme
+    // komutu BEKLEMEDE kalir; profil ve duzlem sirasiyla secilir, sag tik
+    // uygular, Esc iptal.
+    cancelZoomWindow2D();
+    if (workPlanePicking_) cancelWorkPlaneCommand();
+    if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
+    profileGrip_.reset();
+    cancelDrawing();
+    pendingCutKind_ = kind;
+    pendingCutTarget_.reset();
+    pendingCutPlane_.reset();
+    const wchar_t* name = kind == CutKind::Fitting ? L"Fitting" : L"Plane Cut";
+    publishStatus(std::wstring(name) + L": profili seçin (sol tık), sonra düzlemi seçin");
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
+}
+
+void Application::cancelPendingCutCommand() {
+    // Beklemede kesme yoksa HICBIR SEY yapmaz (secime dokunmaz) — boylece
+    // startTransformCommand/selectTool/deactivateAllCommands basinda noun-verb
+    // secimini silmeden güvenle cagrilabilir.
+    if (!pendingCutKind_) return;
+    pendingCutKind_.reset();
+    pendingCutTarget_.reset();
+    pendingCutPlane_.reset();
+    selectedModels_.clear();
+    selectionFirstCorner_.reset();
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
+}
+
+void Application::executePendingCutCommand() {
+    if (!pendingCutKind_) return;
+    if (!pendingCutTarget_ || !pendingCutPlane_) {
+        MessageBeep(MB_ICONWARNING);
+        publishStatus(L"Önce profili ve düzlemi seçin (sağ tık uygular)");
+        return;
+    }
+    const CutKind kind = *pendingCutKind_;
+    const std::size_t target = *pendingCutTarget_;
+    const std::size_t plane = *pendingCutPlane_;
+    // Bekleme durumu once temizlenir; applyCutFromPair secimi de temizler.
+    pendingCutKind_.reset();
+    pendingCutTarget_.reset();
+    pendingCutPlane_.reset();
+    applyCutFromPair(kind, target, plane);
+}
+
+bool Application::pickPendingCutAt(int x, int y) {
+    if (!pendingCutKind_) return false;
+    const auto hit = modelIndexAt(x, y);
+    if (!hit || *hit >= document_.models().size()) {
+        MessageBeep(MB_ICONWARNING);
+        publishStatus(pendingCutTarget_ ? L"Bir konstrüksiyon düzlemi seçin"
+                                        : L"Bir profil hedefi seçin");
+        return true;
+    }
+    const auto& model = document_.models()[*hit];
+    if (model.constructionKind() == ConstructionKind::None &&
+        !model.properties().profileName.empty()) {
+        pendingCutTarget_ = *hit;
+    } else if (model.constructionKind() == ConstructionKind::Plane) {
+        pendingCutPlane_ = *hit;
+    } else {
+        MessageBeep(MB_ICONWARNING);
+        publishStatus(pendingCutTarget_ ? L"Bir konstrüksiyon düzlemi seçin"
+                                        : L"Bir profil hedefi seçin");
+        updateControls(); updateStatus(); invalidateCanvas();
+        return true;
+    }
+    // Secim, secilen profil + duzlem ciftini gosterecek sekilde yeniden kurulur.
+    selectedModels_.clear();
+    if (pendingCutTarget_) selectedModels_.push_back(*pendingCutTarget_);
+    if (pendingCutPlane_) selectedModels_.push_back(*pendingCutPlane_);
+    if (pendingCutTarget_ && pendingCutPlane_)
+        publishStatus(L"Hazır — sağ tık ile uygula (Esc iptal)");
+    else if (pendingCutTarget_)
+        publishStatus(L"Profil seçildi — düzlemi seçin");
+    else
+        publishStatus(L"Düzlem seçildi — profili seçin");
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
+    return true;
+}
+
+std::optional<std::size_t> Application::modelIndexAt(int x, int y) const {
+    // Imlecin altindaki modeli isabet-testi (2B/3B ortak esik; secim yoluyla
+    // ayni). Profil/düzlem seciminde kullanilir.
+    if (mode_ == EditMode::Draw2D)
+        return hitTestModel2D(screenTo2D(x, y), document_, 10.0 / (60.0 * camera_.zoom()));
+    RECT client{};
+    GetClientRect(canvas_, &client);
+    return hitTestModel3D({static_cast<double>(x), static_cast<double>(y)}, document_, camera_,
+                          std::max(1L, client.right), std::max(1L, client.bottom), 10.0);
+}
 
 void Application::applyBoundaryCutFromSelection(CutKind kind) {
     // Noun-verb (P2): secili kume icinde BIR profil hedefi + BIR sinir objesi
@@ -4932,6 +5057,7 @@ void Application::executeCommand(int id) {
 }
 
 void Application::selectTool(DrawTool tool) {
+    cancelPendingCutCommand();
     cancelZoomWindow2D();
     if (workPlanePicking_) cancelWorkPlaneCommand();
     if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
@@ -4941,6 +5067,7 @@ void Application::selectTool(DrawTool tool) {
 }
 
 void Application::deactivateAllCommands() {
+    cancelPendingCutCommand();
     cancelZoomWindow2D();
     if (workPlanePicking_) cancelWorkPlaneCommand();
     if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
