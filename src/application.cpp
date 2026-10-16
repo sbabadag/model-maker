@@ -4104,14 +4104,65 @@ bool Application::pickPendingBoltAt(int x, int y) {
                                workPlane_.normal.z * axis.z;
             if (dot < 0.0) axis = {-axis.x, -axis.y, -axis.z};
             pendingBoltAxis_ = axis;
-            wchar_t msg[320]{};
+
+            // KAPSAMLI TANI: isin ve kamera durumunu, isinin parcalarin kutusunu
+            // kesip kesmedigini ve B-Rep kati mevcudiyetini goster. Boylece
+            // "isin yanlis" mi "raycast yanlis" mi tek ekranda ayrilir.
+            RECT client{};
+            GetClientRect(canvas_, &client);
+            const double scale = camera_.pixelsPerUnit() * camera_.zoom();
+            const double camX = (x - client.right * 0.5) / scale;
+            const double camY = (client.bottom * 0.5 - y) / scale;
+            const std::array<double, 9> R = camera_.rotationMatrix();
+            const Vec3 c = camera_.center3D();
+            const Vec3 origin{c.x + R[0] * camX + R[3] * camY - R[6],
+                              c.y + R[1] * camX + R[4] * camY - R[7],
+                              c.z + R[2] * camX + R[5] * camY - R[8]};
+            const Vec3 dir{-R[6], -R[7], -R[8]};
+            bool boxHit = true;
+            double tmin = 0.0, tmax = 1e18;
+            {
+                const double oa[3]{origin.x, origin.y, origin.z};
+                const double da[3]{dir.x, dir.y, dir.z};
+                const double la[3]{lo.x, lo.y, lo.z};
+                const double ha[3]{hi.x, hi.y, hi.z};
+                for (int i = 0; i < 3; ++i) {
+                    if (std::abs(da[i]) < 1e-12) {
+                        if (oa[i] < la[i] || oa[i] > ha[i]) { boxHit = false; break; }
+                    } else {
+                        double t1 = (la[i] - oa[i]) / da[i];
+                        double t2 = (ha[i] - oa[i]) / da[i];
+                        if (t1 > t2) std::swap(t1, t2);
+                        tmin = std::max(tmin, t1);
+                        tmax = std::min(tmax, t2);
+                        if (tmin > tmax) { boxHit = false; break; }
+                    }
+                }
+            }
+            int brepFound = 0;
+#ifdef MM_HAS_OCC
+            for (const std::size_t p : pendingBoltParts_)
+                if (findOccSolid(p)) ++brepFound;
+#endif
+            wchar_t msg[1024]{};
             std::swprintf(msg, std::size(msg),
-                          L"Yuz algilanamadi.\n\nSecili parcalarda toplam yuzey (faces): %llu\n"
-                          L"(0 ise parcalar SOLID degil; 0'dan buyukse isin isabet etmedi.)\n\n"
-                          L"Eksen en ince boyuttan otomatik turetildi — sag tik ile uygulayabilirsiniz.\n"
-                          L"NOT: build guncel degilse (bayat exe) bu sorun devam eder.",
-                          static_cast<unsigned long long>(totalFaces));
-            MessageBoxW(canvas_, msg, L"Bolt — yuz secimi", MB_OK | MB_ICONINFORMATION);
+                L"Yuz algilanamadi.\n\n"
+                L"faces: %llu  |  isin bbox kesiyor: %ls  |  B-Rep kati: %d/2\n\n"
+                L"Kamera: merkez=(%.1f, %.1f, %.1f)  zoom=%.4f\n"
+                L"Tiklama: (%d,%d)  tuval=(%ld,%ld)  scale=%.4f\n\n"
+                L"isin kok=(%.1f, %.1f, %.1f)\n"
+                L"isin yon=(%.4f, %.4f, %.4f)\n\n"
+                L"BBox: (%0.1f..%.1f, %.1f..%.1f, %.1f..%.1f)\n\n"
+                L"Eksen en ince boyuttan turetildi — sag tik uygular.\n"
+                L"NOT: hash GUNCEL degilse (bayat exe) sorun surer.",
+                static_cast<unsigned long long>(totalFaces),
+                boxHit ? L"EVET" : L"HAYIR", brepFound,
+                c.x, c.y, c.z, camera_.zoom(),
+                x, y, client.right, client.bottom, scale,
+                origin.x, origin.y, origin.z,
+                dir.x, dir.y, dir.z,
+                lo.x, hi.x, lo.y, hi.y, lo.z, hi.z);
+            MessageBoxW(canvas_, msg, L"Bolt — yuz secimi (TANI)", MB_OK | MB_ICONINFORMATION);
             publishStatus(L"Yuz bulunamadi — eksen en ince boyuttan turetildi (sag tik uygula)");
             return true;
         }
