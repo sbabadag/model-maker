@@ -989,6 +989,23 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
                 SelectObject(dc, stockPen);
                 DeleteObject(selectedPen);
             }
+            // HOVER (kati/profil): imlecin altindaki normal model beyaz
+            // konturla vurgulanir — verb-noun kesmede profil adiminda
+            // secilebilir hedefi gosterir.
+            if (draft.hoverModel && *draft.hoverModel < document.models().size()) {
+                const auto& hm = document.models()[*draft.hoverModel];
+                if (hm.constructionKind() == ConstructionKind::None &&
+                    !isSelected(*draft.hoverModel) && document.modelIsEditable(*draft.hoverModel) &&
+                    inViewSlab(*draft.hoverModel) &&
+                    document.effectiveProperties(*draft.hoverModel).visible &&
+                    !hm.faces().empty()) {
+                    HPEN hoverPen = CreatePen(PS_SOLID, 2, RGB(255, 255, 255));
+                    SelectObject(dc, hoverPen);
+                    drawModel(hm);
+                    SelectObject(dc, stockPen);
+                    DeleteObject(hoverPen);
+                }
+            }
             if (draft.transformCommand != TransformCommand::None &&
                 draft.transformPhase == TransformPhase::Destination &&
                 draft.transformBase && draft.cursor) {
@@ -1927,6 +1944,25 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
             }
             SelectObject(dc, stockPen);
             DeleteObject(selectedPen);
+        }
+
+        // HOVER (kati/profil): imlecin altindaki normal model beyaz konturla
+        // vurgulanir — verb-noun kesmede profil adiminda secilebilir hedefi
+        // gosterir. Konstrüksiyon hover'i drawConstruction icinde ele alinir.
+        if (draft.hoverModel && *draft.hoverModel < document.models().size()) {
+            const auto& hm = document.models()[*draft.hoverModel];
+            if (hm.constructionKind() == ConstructionKind::None &&
+                !isSelected(*draft.hoverModel) && document.modelIsEditable(*draft.hoverModel) &&
+                inViewSlab(*draft.hoverModel) &&
+                document.effectiveProperties(*draft.hoverModel).visible &&
+                !hm.faces().empty()) {
+                HPEN hoverPen = CreatePen(PS_SOLID, 2, RGB(255, 255, 255));
+                SelectObject(dc, hoverPen);
+                drawModel(hm);
+                SelectObject(dc, stockPen);
+                DeleteObject(hoverPen);
+                ++performance.renderedEntities;
+            }
         }
 
         // PROFIL UC TUTAMAKLARI (grip edit): yalniz SECILI profilli katilarin

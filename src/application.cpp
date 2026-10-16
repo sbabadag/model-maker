@@ -4233,6 +4233,30 @@ void Application::refreshHoverCandidate(int x, int y) {
     // yoksa model. Yalnizca bos (komutsuz, navigasyonsuz) modda cagrilir.
     hoverModel_.reset();
     hoverCutModifier_.reset();
+    // VERB-NOUN KESME beklemede: yalnizca gerekli tur vurgulanir — profil
+    // adiminda sadece profiller, duzlem adiminda sadece konstrüksiyon
+    // duzlemleri. Kesme modifier'lari bu modda vurgulanmaz.
+    if (pendingCutKind_) {
+        const bool needPlane = pendingCutTarget_.has_value();
+        const auto matchesRequired = [&](std::size_t index) {
+            if (index >= document_.models().size()) return false;
+            const auto& m = document_.models()[index];
+            if (needPlane) return m.constructionKind() == ConstructionKind::Plane;
+            return m.constructionKind() == ConstructionKind::None &&
+                   !m.properties().profileName.empty();
+        };
+        std::optional<std::size_t> hit;
+        if (mode_ == EditMode::Draw2D)
+            hit = hitTestModel2D(screenTo2D(x, y), document_, 10.0 / (60.0 * camera_.zoom()));
+        else {
+            RECT client{}; GetClientRect(canvas_, &client);
+            hit = hitTestModel3D({static_cast<double>(x), static_cast<double>(y)}, document_,
+                                 camera_, std::max(1L, client.right), std::max(1L, client.bottom),
+                                 10.0);
+        }
+        if (hit && matchesRequired(*hit)) hoverModel_ = hit;
+        return;
+    }
     if (mode_ == EditMode::Draw2D) {
         hoverCutModifier_ = hitTestCutModifier2D(screenTo2D(x, y), document_,
                                                  10.0 / (60.0 * camera_.zoom()));
