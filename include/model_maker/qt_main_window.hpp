@@ -40,6 +40,10 @@ private:
     // Tekla grid property pane karsiligi: grid spesifikasyonunu duzenler.
     bool editGridProperties(GridDefinition& grid, const QString& title);
     void createToolbar();
+    // Adlandırılmış görünüm dialogları (menü + ribbon ortak kullanır).
+    void promptSaveNamedView();
+    void promptGotoNamedView();
+    void promptDeleteNamedView();
     void createDockPanels();
     void resizeEmbeddedCanvas();
     void openTwoPointView(const ViewDefinition& view);

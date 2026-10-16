@@ -82,76 +82,118 @@ if "value <= 0.0" in level_body or "value < 0.0" in level_body:
     failures.append("requestLevelParameter kotu 0/negatif diye REDDEDIYOR "
                     "(kot 0 veya negatif olabilir)")
 
-# --- 1b) Gorunum menusu TEK ve kapali ---
-menu_start = qt.find('QMenu* viewMenu = menuBar()->addMenu(')
-if menu_start < 0:
-    failures.append("Gorunum menusu bulunamadi")
-    menu_block = ""
-else:
-    menu_end = qt.find("QMenu* windowMenu = menuBar()->addMenu(", menu_start)
-    if menu_end < 0:
-        failures.append("Pencere menusu Gorunum menusunden SONRA olmali")
-        menu_block = qt[menu_start:]
-    else:
-        menu_block = qt[menu_start:menu_end]
+# --- 1b) Komutlar SINIFLARA ayrilmis: her kategori kendi menusunde ---
+menu_decls = [
+    ("constructionMenu", 'QMenu* constructionMenu = menuBar()->addMenu('),
+    ("viewMenu", 'QMenu* viewMenu = menuBar()->addMenu('),
+    ("workPlaneMenu", 'QMenu* workPlaneMenu = menuBar()->addMenu('),
+    ("viewsMenu", 'QMenu* viewsMenu = menuBar()->addMenu('),
+    ("gridMenu", 'QMenu* gridMenu = menuBar()->addMenu('),
+    ("windowMenu", 'QMenu* windowMenu = menuBar()->addMenu('),
+]
+positions = {}
+for name, decl in menu_decls:
+    p = qt.find(decl)
+    positions[name] = p
+    if p < 0:
+        failures.append(f"{name} menusu bulunamadi")
 
-for needle, why in [
-    ("zoomExtents2D", "Zoom Extents Gorunum menusunde degil"),
-    ("startZoomWindow2D", "Zoom Window Gorunum menusunde degil"),
-    ("toggle3DView", "2B/3B Gorunum menusunde degil"),
-    ("setStandardView(StandardView::Front)", "standart gorunus (On) Gorunum menusunde degil"),
-    ("setStandardView(StandardView::Isometric)", "standart gorunus (ISO) Gorunum menusunde degil"),
-    ("resetView", "Gorunumu Sifirla Gorunum menusunde degil"),
-    ("startRotateCenterCommand", "Donus merkezi Gorunum menusunde degil"),
-    ("clearRotateCenter", "Donus merkezini temizle Gorunum menusunde degil"),
-    ("startWorkPlaneCommand", "Calisma duzlemi Gorunum menusunde degil"),
-    ("resetWorkPlane", "Duzlem sifirla Gorunum menusunde degil"),
-    ("toggleWorkPlaneGhost", "Hayalet duzlem Gorunum menusunde degil"),
-    ("startTwoPointViewCommand", "2 noktali gorunus Gorunum menusunde degil"),
-    ("startPlanViewCommand", "Plan gorunusu Gorunum menusunde degil"),
-    ("promptCreateGrid", "Grid olustur Gorunum menusunde degil"),
-    ("promptGridManager", "Grid yoneticisi Gorunum menusunde degil"),
+names = [n for n, _ in menu_decls]
+blocks = {}
+for i, name in enumerate(names):
+    p = positions[name]
+    if p < 0:
+        blocks[name] = ""
+        continue
+    nxt = next((positions[names[j]] for j in range(i + 1, len(names))
+                if positions[names[j]] >= 0), None)
+    blocks[name] = qt[p:nxt] if nxt is not None else qt[p:]
+
+for needle, block, why in [
+    ("startConstructionPlaneCommand", "constructionMenu", "konstrüksiyon düzlemi kendi menüsünde değil"),
+    ("toggleConstructionVisibility", "constructionMenu", "konstrüksiyon göster/gizle kendi menüsünde değil"),
+    ("startFittingCommand", "constructionMenu", "Fitting kendi menüsünde değil"),
+    ("startPlaneCutCommand", "constructionMenu", "Plane Cut kendi menüsünde değil"),
+    ("startLineCutCommand", "constructionMenu", "Line Cut kendi menüsünde değil"),
+    ("startPolygonCutCommand", "constructionMenu", "Polygon Cut kendi menüsünde değil"),
+    ("startPartCutCommand", "constructionMenu", "Part Cut kendi menüsünde değil"),
+    ("zoomExtents2D", "viewMenu", "Zoom Extents Görünüm menüsünde değil"),
+    ("startZoomWindow2D", "viewMenu", "Zoom Window Görünüm menüsünde değil"),
+    ("toggle3DView", "viewMenu", "2B/3B Görünüm menüsünde değil"),
+    ("setStandardView(StandardView::Front)", "viewMenu", "standart görünüş (Ön) Görünüm menüsünde değil"),
+    ("setStandardView(StandardView::Isometric)", "viewMenu", "standart görünüş (ISO) Görünüm menüsünde değil"),
+    ("resetView", "viewMenu", "Görünümü Sıfırla Görünüm menüsünde değil"),
+    ("startRotateCenterCommand", "viewMenu", "dönüş merkezi Görünüm menüsünde değil"),
+    ("clearRotateCenter", "viewMenu", "dönüş merkezini temizle Görünüm menüsünde değil"),
+    ("startWorkPlaneCommand", "workPlaneMenu", "çalışma düzlemi kendi menüsünde değil"),
+    ("resetWorkPlane", "workPlaneMenu", "düzlemi sıfırla kendi menüsünde değil"),
+    ("toggleWorkPlaneGhost", "workPlaneMenu", "hayalet düzlem kendi menüsünde değil"),
+    ("setViewToWorkPlane", "workPlaneMenu", "UCS'ye dik görünüş kendi menüsünde değil"),
+    ("setGlobalWorkPlane", "workPlaneMenu", "global düzlemler kendi menüsünde değil"),
+    ("promptSaveNamedView", "workPlaneMenu", "görünümü adlandır kendi menüsünde değil"),
+    ("startTwoPointViewCommand", "viewsMenu", "2 noktalı görünüş kendi menüsünde değil"),
+    ("startPlanViewCommand", "viewsMenu", "plan görünüşü kendi menüsünde değil"),
+    ("startThreePointViewCommand", "viewsMenu", "3 noktalı görünüş kendi menüsünde değil"),
+    ("startPartPlaneViewCommand", "viewsMenu", "parça düzlemi görünüşleri kendi menüsünde değil"),
+    ("promptCreateGrid", "gridMenu", "grid oluştur kendi menüsünde değil"),
+    ("promptGridManager", "gridMenu", "grid yöneticisi kendi menüsünde değil"),
 ]:
-    if needle not in menu_block:
+    if needle not in blocks[block]:
         failures.append(why)
 
-# Komut baska yere dagilmamali: windowMenu'dan SONRA `viewMenu->` OLMAMALI.
-menus_body = top_level(qt, "void QtMainWindow::createMenus")
-w_idx = menus_body.find("windowMenu")
-if w_idx < 0:
-    failures.append("Pencere menusu yok")
-else:
-    if "viewMenu->" in menus_body[w_idx:]:
-        failures.append("windowMenu'dan SONRA viewMenu'ye ekleme var "
-                        "— gorunum komutlari tek menude TOPLANMAMIS")
-
-# --- 1c) Gorunum ribbon sekmesi menüyle AYNI kumeyi icerir ---
-tab_start = qt.find("QWidget* viewTab = new QWidget();")
-tab_end = qt.find('tabs->addTab(viewTab, "Görünüm");', tab_start)
-if tab_start < 0 or tab_end < 0:
-    failures.append("Gorunum ribbon sekmesi bulunamadi")
-    tab_block = ""
-else:
-    tab_block = qt[tab_start:tab_end]
-
+# Sinif disina tasma olmamali: calisma duzlemi / gorunus / grid / konstrüksiyon
+# komutlari Görünüm menusune karismamali.
 for needle, why in [
-    ("app_.toggle3DView()", "ribbon: 2B/3B yok"),
-    ("app_.zoomExtents2D()", "ribbon: Extents yok"),
-    ("app_.startZoomWindow2D()", "ribbon: Zoom Window yok"),
-    ("app_.resetView()", "ribbon: Gorunumu sifirla yok"),
-    ("StandardView::Front", "ribbon: yon menusu yok"),
-    ("StandardView::Bottom", "ribbon: yon menusu eksik"),
-    ("StandardView::Isometric", "ribbon: yon menusu eksik"),
-    ("app_.startWorkPlaneCommand()", "ribbon: calisma duzlemi yok"),
-    ("app_.resetWorkPlane()", "ribbon: duzlem sifirla yok"),
-    ("app_.toggleWorkPlaneGhost()", "ribbon: hayalet duzlem yok"),
-    ("app_.startRotateCenterCommand()", "ribbon: donus merkezi yok"),
-    ("app_.startTwoPointViewCommand()", "ribbon: 2 noktali gorunus yok"),
-    ("app_.startPlanViewCommand()", "ribbon: plan gorunusu yok"),
-    ("promptCreateGrid()", "ribbon: grid olustur yok"),
-    ("promptGridManager()", "ribbon: grid yoneticisi yok"),
+    ("startWorkPlaneCommand", "çalışma düzlemi Görünüm menüsünde (kendi menüsüne ayrılmalı)"),
+    ("startTwoPointViewCommand", "görünüş penceresi Görünüm menüsünde (kendi menüsüne ayrılmalı)"),
+    ("promptCreateGrid", "grid Görünüm menüsünde (kendi menüsüne ayrılmalı)"),
+    ("startConstructionPlaneCommand", "konstrüksiyon Görünüm menüsünde (kendi menüsüne ayrılmalı)"),
 ]:
-    if needle not in tab_block:
+    if needle in blocks["viewMenu"]:
+        failures.append(why)
+
+# --- 1c) Ribbon: her kategori kendi sekmesinde (menüyle paralel) ---
+tab_names = ["Konstrüksiyon", "Görünüm", "Çalışma Düzlemi", "Görünüşler", "Grid"]
+tab_positions = [qt.find(f'beginTab("{n}")') for n in tab_names]
+tab_blocks = {}
+for i, n in enumerate(tab_names):
+    p = tab_positions[i]
+    if p < 0:
+        failures.append(f"ribbon sekmesi bulunamadi: {n}")
+        tab_blocks[n] = ""
+        continue
+    nxt = next((tab_positions[j] for j in range(i + 1, len(tab_names))
+                if tab_positions[j] >= 0), None)
+    tab_blocks[n] = qt[p:nxt] if nxt is not None else qt[p:]
+
+for needle, tab, why in [
+    ("app_.startConstructionPlaneCommand()", "Konstrüksiyon", "ribbon: konstrüksiyon düzlemi yok"),
+    ("app_.startFittingCommand()", "Konstrüksiyon", "ribbon: Fitting yok"),
+    ("app_.startPlaneCutCommand()", "Konstrüksiyon", "ribbon: Plane Cut yok"),
+    ("app_.startLineCutCommand()", "Konstrüksiyon", "ribbon: Line Cut yok"),
+    ("app_.startPolygonCutCommand()", "Konstrüksiyon", "ribbon: Polygon Cut yok"),
+    ("app_.startPartCutCommand()", "Konstrüksiyon", "ribbon: Part Cut yok"),
+    ("app_.toggle3DView()", "Görünüm", "ribbon: 2B/3B yok"),
+    ("app_.zoomExtents2D()", "Görünüm", "ribbon: Extents yok"),
+    ("app_.startZoomWindow2D()", "Görünüm", "ribbon: Zoom Window yok"),
+    ("app_.resetView()", "Görünüm", "ribbon: sıfırla yok"),
+    ("StandardView::Front", "Görünüm", "ribbon: yön menüsü yok"),
+    ("StandardView::Isometric", "Görünüm", "ribbon: yön menüsü eksik"),
+    ("app_.startRotateCenterCommand()", "Görünüm", "ribbon: dönüş merkezi yok"),
+    ("app_.clearRotateCenter()", "Görünüm", "ribbon: merkez temizle yok"),
+    ("app_.startWorkPlaneCommand()", "Çalışma Düzlemi", "ribbon: çalışma düzlemi yok"),
+    ("app_.resetWorkPlane()", "Çalışma Düzlemi", "ribbon: düzlem sıfırla yok"),
+    ("app_.toggleWorkPlaneGhost()", "Çalışma Düzlemi", "ribbon: hayalet yok"),
+    ("app_.setViewToWorkPlane()", "Çalışma Düzlemi", "ribbon: UCS dik yok"),
+    ("app_.setGlobalWorkPlane(0)", "Çalışma Düzlemi", "ribbon: global düzlem yok"),
+    ("promptSaveNamedView()", "Çalışma Düzlemi", "ribbon: görünüm adlandır yok"),
+    ("app_.startTwoPointViewCommand()", "Görünüşler", "ribbon: 2 noktalı görünüş yok"),
+    ("app_.startPlanViewCommand()", "Görünüşler", "ribbon: plan görünüşü yok"),
+    ("app_.startThreePointViewCommand()", "Görünüşler", "ribbon: 3 noktalı görünüş yok"),
+    ("promptCreateGrid()", "Grid", "ribbon: grid oluştur yok"),
+    ("promptGridManager()", "Grid", "ribbon: grid yöneticisi yok"),
+]:
+    if needle not in tab_blocks[tab]:
         failures.append(why)
 
 # --- 1d) Plan gorunusu baslik/etiket ayrimi ---

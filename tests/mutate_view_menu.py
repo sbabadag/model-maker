@@ -20,15 +20,15 @@ FILES = {
 }
 ORIG = {k: p.read_text(encoding="utf-8") for k, p in FILES.items()}
 
-GRID_CREATE = '    viewMenu->addAction("&Yapı Gridi Oluştur...", this, [this]() { promptCreateGrid(); });\n'
-GRID_MANAGER = '    viewMenu->addAction("&Yapı Gridleri...", this, [this]() { promptGridManager(); });\n'
+GRID_CREATE = '    gridMenu->addAction("&Yapı Gridi Oluştur...", this, [this]() { promptCreateGrid(); });\n'
+GRID_MANAGER = '    gridMenu->addAction("&Yapı Gridleri...", this, [this]() { promptGridManager(); });\n'
 WMENU_LAST = '    windowMenu->addAction("Tüm görünüşleri &kapat", this, [this]() { closeAllTwoPointViews(); });'
 
 MUTATIONS = [
     ("qt: plan gorunusu menusu yanlis komuta baglanir", "qt",
      [("app_.startPlanViewCommand(); });", "app_.startTwoPointViewCommand(); });")], "py"),
     ("qt: ribbon'dan plan gorunusu dugmesi kaldirilir", "qt",
-     [('    addViewBtn(ToolGlyph::Extents, "Plan Gör.", "Plan görünüşü — Z kotu ile (Ctrl+Shift+P)", [this]() { app_.startPlanViewCommand(); });\n',
+     [('        addBtn(lay, ToolGlyph::Extents, "Plan Gör.", "Plan görünüşü — Z kotu ile (Ctrl+Shift+P)", [this]() { app_.startPlanViewCommand(); });\n',
        "")], "py"),
     ("qt: grid komutlari windowMenu'dan SONRA eklenir (eski dagilmis hal)", "qt",
      [(GRID_CREATE, ""), (GRID_MANAGER, ""),
