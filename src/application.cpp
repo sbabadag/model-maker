@@ -5531,6 +5531,41 @@ void Application::putOccSolid(std::size_t index, const TopoDS_Shape& shape) {
     }
 }
 
+// P7 (ACILAN DOSYA KATILARI): MMW1..7 B-Rep SAKLAMAZ; Document::load() belge
+// icerigini degistirip magazayi bosaltir (bkz. openDocument). O yuzden
+// "Open" ile acilan bir profil kirisi ekranda (tesselasyon mesh'i) gorunur
+// AMA magazada B-Rep'i yoktur → ilk kesme hesaplanacak sekil bulamaz.
+// Bu yardimci, kesme YAPILMADAN hemen once hedefin kalici ozelliklerinden
+// (profil adi + eksen + kesit referans normali + rotasyon — hepsi mmw8'de
+// saklanir) katiyi YENIDEN uretip putOccSolid ile aktif surumu yazar. Bu
+// yalniz profilli kirisler icin mumkun; ilkel katilar (kutu/piramit/silindir)
+// kalici uretim parametresi tasimadigi icin yeniden uretilemez ve kesme
+// onlarda eski davranisiyla calismaz (sessiz no-op, gecersiz geometri korunur).
+bool Application::ensureCutSolid(EntityId target) {
+    OccSolidStore* store = occSolidStore();
+    if (!store) return false;
+    if (store->activeVersion(target) != kInvalidVersionId) return true;
+    const auto idxOpt = document_.indexOfEntity(target);
+    if (!idxOpt) return false;
+    const std::size_t index = *idxOpt;
+    const EntityProperties& props = document_.models()[index].properties();
+    if (props.profileName.empty()) return false;
+    ensureProfileCatalog();
+    const auto* profile = mm::findProfile(profileCatalog_, props.profileName);
+    if (!profile) return false;
+    const Vec3 from{props.axisFromX, props.axisFromY, props.axisFromZ};
+    const Vec3 to{props.axisToX, props.axisToY, props.axisToZ};
+    if (std::abs(to.x - from.x) + std::abs(to.y - from.y) +
+        std::abs(to.z - from.z) < 1e-9) return false;
+    const Vec3 sectionReference{props.sectionNormalX, props.sectionNormalY,
+                                props.sectionNormalZ};
+    const TopoDS_Shape solid = mm::extrudeProfileSolid(
+        *profile, from, to, props.profileRotation, sectionReference);
+    if (solid.IsNull()) return false;
+    putOccSolid(index, solid);
+    return true;
+}
+
 // Kesme modifier'larini hedef parcaya yeniden uygular (Phase 4.2 recompute).
 // Taban (pre-cut) B-Rep'ten baslar, tum ETKIN modifier'lari SIRA ILE uygular
 // ve sonucu YENI bir surum olarak yazar (putOccSolid -> geometry delta + undo).
@@ -5543,6 +5578,11 @@ void Application::recomputeCutTarget(EntityId target) {
     const auto idxOpt = document_.indexOfEntity(target);
     if (!idxOpt) return;
     const std::size_t index = *idxOpt;
+
+    // P7: Open ile acilan katilarda B-Rep yoksa, kalici ozelliklerden yeniden
+    // uret (profil kirisi). Uretilemezse (ilkel kati / profil yok) asagidaki
+    // "geometri yok" yolu eski davranisi korur (sessiz no-op).
+    ensureCutSolid(target);
 
     VersionId base = store->baseVersion(target);
     if (base == kInvalidVersionId) {

@@ -445,6 +445,11 @@ private:
     void addBooleanFuse();
     void addBooleanCommon();
     void addBooleanCut();
+    // P7 (ACILAN DOSYA KATILARI): hedefin magazada B-Rep'i yoksa, varligin
+    // kalici ozelliklerinden (profil + eksen + referans normal + rotasyon)
+    // yeniden uretip putOccSolid ile yazar. Store'da sekil zaten varsa veya
+    // uretilemiyorsa (profil yok / eksen dejenere / OCC kapali) false doner.
+    bool ensureCutSolid(EntityId target);
     // Kesme modifier'larini hedef parcaya yeniden uygular (Phase 4.2 recompute):
     // taban (pre-cut) B-Rep'ten tum etkin modifier'lari sirasiyla uygular.
     void recomputeCutTarget(EntityId target);
