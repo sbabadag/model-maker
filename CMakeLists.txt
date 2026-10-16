@@ -567,6 +567,21 @@ if(BUILD_TESTING)
             set_tests_properties(model_maker_occ_fitting_acceptance PROPERTIES
                 ENVIRONMENT "LD_LIBRARY_PATH=${OCC_ROOT}/lib:$ENV{LD_LIBRARY_PATH}")
         endif()
+
+        # OCC MAGAZA + BELGE MMW8 round-trip regresyonu (P12): kayit/ac sonrasi
+        # restoreBaseSolid ETKIN surumu ezmemeli (kesilmis kati, kesilmemis
+        # tabanla degistirilmemeli). Gercek OCCT; Linux'ta OCC-disabled build'de
+        # kurulmaz (basliklardaki g++ tek-satir komutuyla ayri kosulur).
+        add_executable(model_maker_occ_store_roundtrip tests/occ_store_roundtrip_test.cpp)
+        target_link_libraries(model_maker_occ_store_roundtrip PRIVATE model_maker_occ)
+        add_test(NAME model_maker_occ_store_roundtrip COMMAND model_maker_occ_store_roundtrip)
+        add_executable(model_maker_occ_document_roundtrip tests/occ_document_roundtrip_test.cpp)
+        target_link_libraries(model_maker_occ_document_roundtrip PRIVATE model_maker_occ)
+        add_test(NAME model_maker_occ_document_roundtrip COMMAND model_maker_occ_document_roundtrip)
+        if(UNIX)
+            set_tests_properties(model_maker_occ_store_roundtrip model_maker_occ_document_roundtrip PROPERTIES
+                ENVIRONMENT "LD_LIBRARY_PATH=${OCC_ROOT}/lib:$ENV{LD_LIBRARY_PATH}")
+        endif()
     endif()
 
     # OCC SAHIPLIK REGRESYON HARNESS'I (kaynak-govde cikarimi + GERCEK OCCT).

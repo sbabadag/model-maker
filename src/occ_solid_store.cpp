@@ -148,9 +148,17 @@ bool OccSolidStore::restoreBaseSolid(EntityId id, const std::string& blob, std::
         if (error) *error = "deserialized base shape failed BRepCheck";
         return false;
     }
+    // TABAN (pre-cut) geri yuklenirken ETKIN surum DEGISMEMELI: `set` yeni
+    // surumu AKTIF yapar; bu yuzden kayit/ac sirasinda once restoreActiveSolid
+    // (kesilmis kati) sonra restoreBaseSolid (kesilmemis taban) calistiginda
+    // taban, aktif kesilmis katiyi EZER ve her kesim yuklemede sessizce
+    // "kesilmemis"e donerdi. Onceki aktif surum hatirlanip geri getirilir;
+    // onceki aktif yoksa (savunma) taban ASLA kendiliginden aktif olmaz.
+    const VersionId prevActive = activeVersion(id);
     const VersionId v = set(id, shape);
     if (v == kInvalidVersionId) return false;
     setBaseVersion(id, v);
+    restoreActive(id, prevActive);
     return true;
 }
 
