@@ -7014,6 +7014,10 @@ Vec3 Application::screenTo2D(int x, int y) const noexcept {
 }
 
 HCURSOR Application::currentCanvasCursor() const noexcept {
+    // Verb-noun kesme beklemedeyken imlec "obje secim" kutusuna (kare pickbox)
+    // doner — profil/duzlem tiklama modunda oldugunu gorsel olarak belirtir.
+    if (pendingCutKind_)
+        return modifyCursor_;
     if (transformCommand_ == TransformCommand::None)
         return (drawingActive_ || workPlanePicking_ || zoomWindowActive_) ? draftingCursor_ : neutralCursor_;
     return modifierUsesPointCursor(transformCommand_, transformPhase_, arrayItemCount_.has_value(),
