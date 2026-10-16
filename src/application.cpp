@@ -7179,6 +7179,11 @@ void Application::gumballDragMove(int x, int y) {
 
 void Application::gumballEndDrag() {
     if (gumballDrag_ == GumballHandle::None) return;
+#ifdef MM_HAS_OCC
+    // P7: gercek bir tasima/cevirme/olcek oldu mu (yalniz tik degil). Kesme
+    // recompute'u icin bu bilgi reset'ten ONCE yakalanmali.
+    const bool didTransform = gumballUndoStarted_;
+#endif
     gumballDrag_ = GumballHandle::None;
     gumballNumericActive_ = false;
     gumballPointerMoved_ = false;
@@ -7195,6 +7200,12 @@ void Application::gumballEndDrag() {
     updateGumball();
     updateStatus();
     invalidateCanvas();
+#ifdef MM_HAS_OCC
+    // P7: gumball ile tasinan/cevrilen/olceklenen varlik bir kesme KAYNAGI/ARACI
+    // ise bagli hedefleri yeniden hesapla. Eksikti: yalniz ↔ Move komutu
+    // recompute ediyordu; gumball (ok surukleme) ve sayisal giris es geciyordu.
+    if (didTransform) recomputeTargetsForMovedModels(selectedModels_);
+#endif
 }
 
 // Escape ile iptal: uygulanan toplam donusumun TERSINI uygulayip geometriyi
