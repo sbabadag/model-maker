@@ -8843,6 +8843,19 @@ void Application::openDocument() {
         // saklamaz → katilar yeniden uretilene kadar magaza bostur). Ayri bir
         // Application temizleme cagrisi GEREKMEZ.
         currentFilePath_ = path;
+#ifdef MM_HAS_OCC
+        // AÇILIS SONRASI PROFIL YENIDEN URETIMI: MMW8 yalniz MESH'i saklar;
+        // profilin B-Rep'i (ve GUNCEL radiuslu kesiti) parametrelerden yeniden
+        // uretilir. Eski surumde radiussuz kaydedilmis profiller acilinca
+        // radiuslu gelir; bolt/kesme delikleri de yeniden B-Rep'te acilir.
+        // recomputeCutTarget: ensureCutSolid + rebuildCutBaseSolid + kesme
+        // zinciri + mesh tazeleme — profilin TAMAMINI guncel koddan kurar.
+        ensureProfileCatalog();
+        for (std::size_t i = 0; i < document_.models().size(); ++i) {
+            if (document_.models()[i].properties().profileName.empty()) continue;
+            recomputeCutTarget(document_.modelId(i));
+        }
+#endif
         purgeStaleAxisLines();
         refreshLayerCombo();
         if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
