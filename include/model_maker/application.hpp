@@ -815,6 +815,9 @@ private:
     double gumballAppliedFactor_{1.0};
     // YEREL CERCEVE (object-local): world degil, nesnenin kendi eksenleri.
     Vec3 gumballFrame_[3]{{1, 0, 0}, {0, 1, 0}, {0, 0, 1}};
+    // Cift tik ile gumball eksenlerini UCS'ye (calisma duzlemi) hizala; tekrar
+    // cift tik yerel (object-local) eksenlere dondurur. false = yerel (varsayilan).
+    bool gumballAlignedToUcs_{false};
     void gumballUpdateFrame();
     // Profil kesiti REFERANS NORMALI: baslik plakalari aktif IS DUZLEMINE
     // paralel uretilir. Iki noktali gorunuste (otomatik gorunus duzlemi)

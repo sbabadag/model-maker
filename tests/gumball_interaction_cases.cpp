@@ -57,15 +57,25 @@ int main() {
     }
     {
         Application a; seed(a);
-        const Vec3 expected = a.gumballFrame_[0]*2 + a.gumballFrame_[1]*-3 + a.gumballFrame_[2]*4;
         int calls = 0;
-        a.parameterRequest_ = [&](const auto&, const auto&, auto& out) {
-            if (++calls > 1) return false;
-            out = L"2;-3;4"; return true;
-        };
+        a.parameterRequest_ = [&](const auto&, const auto&, auto&) { ++calls; return false; };
         a.gumballBeginDrag(600,400,GumballHandle::Center);
         a.onLeftButtonUp(600,400);
-        check(close(a.document_.models()[0].vertices()[0], expected), "center edit translates in local XYZ");
+        check(calls == 0, "center single click no longer opens numeric (reserved for double-click align)");
+        check(close(a.document_.models()[0].vertices()[0], {0,0,0}), "center single click leaves geometry untouched");
+    }
+    {
+        Application a; seed(a);
+        // UCS hizalama: gumball eksenleri calisma duzlemi (workPlane) eksenlerine oturur.
+        a.workPlane_ = WorkPlane{{0,0,0}, {0,1,0}, {-1,0,0}, {0,0,1}};
+        a.gumballAlignedToUcs_ = true;
+        a.gumballUpdateFrame();
+        check(close(a.gumballFrame_[0], {0,1,0}), "UCS-aligned gumball X = work plane u");
+        check(close(a.gumballFrame_[1], {-1,0,0}), "UCS-aligned gumball Y = work plane v");
+        check(close(a.gumballFrame_[2], {0,0,1}), "UCS-aligned gumball Z = work plane normal");
+        a.gumballAlignedToUcs_ = false;
+        a.gumballUpdateFrame();
+        check(close(a.gumballFrame_[0], {0.6,0.8,0}), "local frame restored after un-alignment");
     }
     for (auto mode : {EditMode::Draw2D, EditMode::View3D}) {
         Application a; seed(a); a.mode_ = mode;

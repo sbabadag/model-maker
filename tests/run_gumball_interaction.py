@@ -75,6 +75,7 @@ public:
     EditMode mode_{EditMode::View3D};
     TransformCommand transformCommand_{TransformCommand::None};
     bool profileGrip_{}, workPlanePicking_{}, zoomWindowActive_{};
+    WorkPlane workPlane_{};  // gumballUpdateFrame UCS hizalamasi icin
     bool viewCubeManipulating_{}, viewCubeDragged_{}, rotating_{}, ctrlRotatePending_{};
     // MODERN VIEWCUBE: hedef artik yuz/kenar/kose/ISO ayrimli bir tip.
     std::optional<ViewCubeTarget> viewCubePressedView_;

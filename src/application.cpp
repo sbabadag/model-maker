@@ -2014,6 +2014,23 @@ void Application::onLeftButtonDown(int x, int y) {
         updateGumball();
         const auto gumballHit = gumballHitTest(x, y);
         if (gumballHit != GumballHandle::None) {
+            // GUMBALL CIFT TIK: UCS'ye hizala <-> yerel eksenlere hizala (toggle).
+            const DWORD now = GetMessageTime();
+            const bool dbl =
+                (now - lastLeftClickTime_ <= static_cast<DWORD>(GetDoubleClickTime())) &&
+                std::abs(x - lastLeftClickPos_.x) <= 4 &&
+                std::abs(y - lastLeftClickPos_.y) <= 4;
+            lastLeftClickTime_ = now;
+            lastLeftClickPos_ = {x, y};
+            if (dbl) {
+                gumballAlignedToUcs_ = !gumballAlignedToUcs_;
+                gumballUpdateFrame();
+                publishStatus(gumballAlignedToUcs_
+                                  ? L"Gumball: UCS'ye hizalandı (tekrar çift tık = yerel)"
+                                  : L"Gumball: yerel eksenlere hizalandı (tekrar çift tık = UCS)");
+                invalidateCanvas();
+                return;
+            }
             gumballBeginDrag(x, y, gumballHit);
             return;
         }
@@ -2398,7 +2415,13 @@ void Application::onLeftButtonUp(int x, int y) {
     if (gumballDrag_ != GumballHandle::None) {
         if (gumballNumericActive_) return;
         gumballDragMove(x, y); // include final pointer position before release
-        if (!gumballPointerMoved_) gumballRequestNumeric();
+        if (!gumballPointerMoved_) {
+            // Merkez tutamaci: tek tik sayisal kutu ACMAZ — cift tik UCS/yerel
+            // hizalama icin ayrilmistir. Eksen/duzlem/olcek tutamaclari eskisi
+            // gibi sayisal giris kutusu acar (yazilarak hassas deger girilir).
+            if (gumballDrag_ == GumballHandle::Center) gumballEndDrag();
+            else gumballRequestNumeric();
+        }
         else gumballEndDrag();
         return;
     }
@@ -7594,6 +7617,18 @@ static std::array<double, 9> gumballLocalScale(const Vec3 frame[3], const Vec3& 
 //  - Tek nesne        : en uzun kenar (x) + ona dik en uzun kenar (y)
 //  - Coklu secim / uygun degil : world cercevesi
 void Application::gumballUpdateFrame() {
+    // CIFT TIK HIZALAMA: UCS (calisma duzlemi) eksenleri isteniyorsa yerel cerceve
+    // hesabina hic girme; gumball dogrudan calisma duzleminin X/Y/Z eksenlerine oturur.
+    if (gumballAlignedToUcs_) {
+        const auto norm = [](const Vec3& v) {
+            const double l = std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
+            return l > 1e-12 ? Vec3{v.x / l, v.y / l, v.z / l} : Vec3{0, 0, 1};
+        };
+        gumballFrame_[0] = norm(workPlane_.u);
+        gumballFrame_[1] = norm(workPlane_.v);
+        gumballFrame_[2] = norm(workPlane_.normal);
+        return;
+    }
     gumballFrame_[0] = Vec3{1, 0, 0};
     gumballFrame_[1] = Vec3{0, 1, 0};
     gumballFrame_[2] = Vec3{0, 0, 1};
