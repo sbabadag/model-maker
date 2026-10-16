@@ -4045,8 +4045,22 @@ bool Application::pickPendingBoltAt(int x, int y) {
     if (pendingBoltParts_.size() >= 2) {
         const auto faceHit = pendingBoltFaceHit(x, y);
         if (!faceHit) {
+            // DIAGNOSTIK: kullanicinin gordugu "yuz bulunamadi"nin GERCEK
+            // nedenini ayirt et — (a) parcalarda hic yuzey (faces) verisi yok,
+            // (b) yuzey var ama isin isabet etmedi. Iki durum farkli cozum
+            // gerektirir; mesaj bunu soyler.
+            std::size_t totalFaces = 0;
+            for (const std::size_t p : pendingBoltParts_)
+                if (p < document_.models().size())
+                    totalFaces += document_.models()[p].faces().size();
             MessageBeep(MB_ICONWARNING);
-            publishStatus(L"Bolt: yuz bulunamadi — parcana ait bir yuzeye tiklayin");
+            if (totalFaces == 0)
+                publishStatus(L"Bolt: secili parcalarda yuzey (faces) verisi YOK — "
+                              L"parcalar kati/solid olmali");
+            else
+                publishStatus(L"Bolt: isin yuzeye isabet etmedi — parcanin gorunur "
+                              L"yuzeyine tiklayin (faces=" +
+                              std::to_wstring(static_cast<unsigned long long>(totalFaces)) + L")");
             return true;
         }
         pendingBoltAxis_ = faceHit->hit.normal;
