@@ -31,6 +31,10 @@
 #include <QDialogButtonBox>
 #include <QMenu>
 #include <QListWidget>
+#include <QTreeWidget>
+#include <QTreeWidgetItem>
+#include <QFont>
+#include <functional>
 #include <QTableWidget>
 #include <QHeaderView>
 #include <QInputDialog>
@@ -531,7 +535,14 @@ void QtMainWindow::resizeEmbeddedCanvas() {
 }
 
 void QtMainWindow::createMenus() {
-    QMenu* fileMenu = menuBar()->addMenu("&Dosya");
+    // Tekla tarzi: ust menubar yerine sol ust kosedeki TEK "Menu" dugmesi.
+    // Tum menuler bu tek kok menuye (appMenu_) baglanir; dugme createToolbar'da
+    // ribbon'un en soluna InstantPopup olarak eklenir. Menubar gizlenir.
+    menuBar()->setVisible(false);
+    appMenu_ = new QMenu(this);
+    appMenu_->setTitle(QStringLiteral("Menü"));
+
+    QMenu* fileMenu = appMenu_->addMenu("&Dosya");
     fileMenu->addAction("&Yeni", this, [this]() { app_.newDocument(); })->setIcon(makeToolIcon(ToolGlyph::New));
     fileMenu->addAction("&Aç...", this, [this]() { app_.openDocument(); })->setIcon(makeToolIcon(ToolGlyph::Open));
     fileMenu->addAction("&Kaydet", this, [this]() { app_.saveDocument(); })->setIcon(makeToolIcon(ToolGlyph::Save));
@@ -542,7 +553,7 @@ void QtMainWindow::createMenus() {
     fileMenu->addSeparator();
     fileMenu->addAction("Çı&kış", qApp, &QApplication::quit);
 
-    QMenu* drawMenu = menuBar()->addMenu("Çi&zim");
+    QMenu* drawMenu = appMenu_->addMenu("Çi&zim");
     drawMenu->addAction("Çiz&gi", this, [this]() { app_.selectTool(DrawTool::Line); })->setIcon(makeToolIcon(ToolGlyph::Line));
     drawMenu->addAction("&Polyline", this, [this]() { app_.selectTool(DrawTool::Polyline); })->setIcon(makeToolIcon(ToolGlyph::Polyline));
     drawMenu->addAction("Dikdört&gen", this, [this]() { app_.selectTool(DrawTool::Rectangle); })->setIcon(makeToolIcon(ToolGlyph::Rect));
@@ -550,7 +561,7 @@ void QtMainWindow::createMenus() {
     drawMenu->addAction("Böl (&Divide)", this, [this]() { app_.activateDivide(); });
     drawMenu->addAction("&3DFACE", this, [this]() { app_.selectTool(DrawTool::Face3D); })->setIcon(makeToolIcon(ToolGlyph::Face3D));
 
-    QMenu* modifyMenu = menuBar()->addMenu("Dü&zenle");
+    QMenu* modifyMenu = appMenu_->addMenu("Dü&zenle");
     modifyMenu->addAction("&Pasif", this, [this]() { app_.deactivateAllCommands(); })->setIcon(makeToolIcon(ToolGlyph::Pan));
     modifyMenu->addSeparator();
     modifyMenu->addAction("&Taşı", this, [this]() { app_.startTransformCommand(TransformCommand::Move); })->setIcon(makeToolIcon(ToolGlyph::Move));
@@ -567,7 +578,7 @@ void QtMainWindow::createMenus() {
     modifyMenu->addAction("&Fillet", this, [this]() { app_.startTransformCommand(TransformCommand::Fillet); })->setIcon(makeToolIcon(ToolGlyph::Fillet));
 
     // ---- KONSTRÜKSİYON & KESME: konstrüksiyon nesneleri + kesme komutları ----
-    QMenu* constructionMenu = menuBar()->addMenu("K&onstrüksiyon");
+    QMenu* constructionMenu = appMenu_->addMenu("K&onstrüksiyon");
     constructionMenu->addAction("Konstrüksiyon &Düzlemi (3 Nokta)", this,
         [this]() { app_.startConstructionPlaneCommand(); })->setIcon(makeToolIcon(ToolGlyph::Plane));
     constructionMenu->addAction("Konstrüksiyon &Nesnelerini Göster/Gizle", this,
@@ -585,7 +596,7 @@ void QtMainWindow::createMenus() {
         [this]() { app_.startPartCutCommand(); });
 
     // ---- GÖRÜNÜM: kamera/navigasyon + standart yönler ----
-    QMenu* viewMenu = menuBar()->addMenu("G&örünüm");
+    QMenu* viewMenu = appMenu_->addMenu("G&örünüm");
     viewMenu->addAction("&Zoom Extents", this, [this]() { app_.zoomExtents2D(); })->setIcon(makeToolIcon(ToolGlyph::Extents));
     viewMenu->addAction("Zoom &Window", this, [this]() { app_.startZoomWindow2D(); })->setIcon(makeToolIcon(ToolGlyph::Extents));
     viewMenu->addAction("2&B / 3B", this, [this]() { app_.toggle3DView(); })->setIcon(makeToolIcon(ToolGlyph::Toggle3D));
@@ -620,7 +631,7 @@ void QtMainWindow::createMenus() {
     });
 
     // ---- ÇALIŞMA DÜZLEMİ & UCS: work plane + UCS + adlandırılmış görünümler ----
-    QMenu* workPlaneMenu = menuBar()->addMenu("Çalışma &Düzlemi");
+    QMenu* workPlaneMenu = appMenu_->addMenu("Çalışma &Düzlemi");
     workPlaneMenu->addAction("Çalışma &Düzlemi (3 Nokta)", this, [this]() { app_.startWorkPlaneCommand(); })->setIcon(makeToolIcon(ToolGlyph::Plane));
     workPlaneMenu->addAction("Düzlemi &Sıfırla (Dünya)", this, [this]() { app_.resetWorkPlane(); })->setIcon(makeToolIcon(ToolGlyph::Reset));
     QAction* ghostPlaneAction = workPlaneMenu->addAction("Çalışma Düzlemi &Hayaleti (F7)", this,
@@ -640,7 +651,7 @@ void QtMainWindow::createMenus() {
     workPlaneMenu->addAction("Adlandırılmış Görünümü &Sil...", this, [this]() { promptDeleteNamedView(); });
 
     // ---- GÖRÜNÜŞLER: yeni görünüş pencereleri (MDI) ----
-    QMenu* viewsMenu = menuBar()->addMenu("Görünüş&ler");
+    QMenu* viewsMenu = appMenu_->addMenu("Görünüş&ler");
     QAction* twoPointAction = viewsMenu->addAction("&2 Noktalı Görünüş (XY'ye dik)", this,
         [this]() { app_.startTwoPointViewCommand(); });
     twoPointAction->setIcon(makeToolIcon(ToolGlyph::Plane));
@@ -675,11 +686,11 @@ void QtMainWindow::createMenus() {
         [this]() { app_.startGridViewsCommand(); });
 
     // ---- GRID ----
-    QMenu* gridMenu = menuBar()->addMenu("&Grid");
+    QMenu* gridMenu = appMenu_->addMenu("&Grid");
     gridMenu->addAction("&Yapı Gridi Oluştur...", this, [this]() { promptCreateGrid(); });
     gridMenu->addAction("&Yapı Gridleri...", this, [this]() { promptGridManager(); });
 
-    QMenu* windowMenu = menuBar()->addMenu("&Pencere");
+    QMenu* windowMenu = appMenu_->addMenu("&Pencere");
     windowMenu->addAction("&Döşe", this, [this]() { if (mdiArea_) mdiArea_->tileSubWindows(); });
     windowMenu->addAction("&Basamakla", this, [this]() { if (mdiArea_) mdiArea_->cascadeSubWindows(); });
     windowMenu->addAction("&Model görünüşünü büyüt", this, [this]() {
@@ -1005,6 +1016,22 @@ void QtMainWindow::createToolbar() {
         "QTabBar::tab { background: #1E1E24; color: #B8B8C0; padding: 4px 12px; }"
         "QTabBar::tab:selected { background: #2B2B30; color: #FFFFFF; }");
 
+    // Tekla tarzi sol ust kose MENU dugmesi: tum uygulama menuleri buradan
+    // acilir (menubar gizli). appMenu_ createMenus'ta kuruldu.
+    if (appMenu_) {
+        QToolButton* menuBtn = new QToolButton(ribbon);
+        menuBtn->setText(QStringLiteral("☰"));
+        menuBtn->setToolTip(QStringLiteral("Menü"));
+        menuBtn->setPopupMode(QToolButton::InstantPopup);
+        menuBtn->setMenu(appMenu_);
+        menuBtn->setStyleSheet(
+            "QToolButton { font-size: 12pt; color: #E8E8E8; border: none; "
+            "border-radius: 3px; padding: 2px 10px; background: transparent; }"
+            "QToolButton:hover { background: #3C3C44; }"
+            "QToolButton::menu-indicator { image: none; }");
+        ribbon->addWidget(menuBtn);
+    }
+
     QTabWidget* tabs = new QTabWidget(ribbon);
     tabs->setDocumentMode(true);
     tabs->setTabPosition(QTabWidget::North);
@@ -1214,6 +1241,51 @@ void QtMainWindow::createToolbar() {
     QWidget* spacer = new QWidget(ribbon);
     spacer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
     ribbon->addWidget(spacer);
+
+    // Quick Launch (Tekla tarzi): komut adi yaz -> Enter calistir.
+    QLineEdit* quick = new QLineEdit(ribbon);
+    quick->setPlaceholderText(QStringLiteral("Komut ara..."));
+    quick->setFixedWidth(160);
+    quick->setClearButtonEnabled(true);
+    quick->setStyleSheet(
+        "QLineEdit { background: #1E1E24; color: #E8E8E8; border: 1px solid #3C3C44; "
+        "border-radius: 3px; padding: 3px 6px; }");
+    struct QuickCmd { QString label; std::function<void()> run; };
+    std::vector<QuickCmd> cmds = {
+        {QStringLiteral("Çizgi"),          [this]() { app_.selectTool(DrawTool::Line); }},
+        {QStringLiteral("Kiriş"),          [this]() { app_.selectTool(DrawTool::Line); }},
+        {QStringLiteral("Dikdörtgen"),     [this]() { app_.selectTool(DrawTool::Rectangle); }},
+        {QStringLiteral("Daire"),          [this]() { app_.selectTool(DrawTool::Circle); }},
+        {QStringLiteral("3DFACE"),         [this]() { app_.selectTool(DrawTool::Face3D); }},
+        {QStringLiteral("Taşı"),           [this]() { app_.startTransformCommand(TransformCommand::Move); }},
+        {QStringLiteral("Kopyala"),        [this]() { app_.startTransformCommand(TransformCommand::Copy); }},
+        {QStringLiteral("Ayna"),           [this]() { app_.startTransformCommand(TransformCommand::Mirror); }},
+        {QStringLiteral("Sil"),            [this]() { app_.startTransformCommand(TransformCommand::Delete); }},
+        {QStringLiteral("Fitting"),        [this]() { app_.startFittingCommand(); }},
+        {QStringLiteral("Plane Cut"),      [this]() { app_.startPlaneCutCommand(); }},
+        {QStringLiteral("Line Cut"),       [this]() { app_.startLineCutCommand(); }},
+        {QStringLiteral("Polygon Cut"),    [this]() { app_.startPolygonCutCommand(); }},
+        {QStringLiteral("Part Cut"),       [this]() { app_.startPartCutCommand(); }},
+        {QStringLiteral("Yapı Gridi"),     [this]() { promptCreateGrid(); }},
+        {QStringLiteral("2 Noktalı Görünüş"), [this]() { app_.startTwoPointViewCommand(); }},
+        {QStringLiteral("İzometrik"),      [this]() { app_.setStandardView(StandardView::Isometric); }},
+        {QStringLiteral("Ön Görünüş"),     [this]() { app_.setStandardView(StandardView::Front); }},
+        {QStringLiteral("Odaklan"),        [this]() { app_.focusOnSelection(); }},
+    };
+    QStringList cmdNames;
+    for (const auto& c : cmds) cmdNames << c.label;
+    QCompleter* quickCompleter = new QCompleter(cmdNames, quick);
+    quickCompleter->setCaseSensitivity(Qt::CaseInsensitive);
+    quickCompleter->setFilterMode(Qt::MatchContains);
+    quick->setCompleter(quickCompleter);
+    QObject::connect(quick, &QLineEdit::returnPressed, this, [this, quick, cmds]() {
+        const QString t = quick->text().trimmed();
+        for (const auto& c : cmds)
+            if (c.label.compare(t, Qt::CaseInsensitive) == 0) { c.run(); break; }
+        quick->clear();
+        if (HWND canvas = app_.activeCanvasHandle()) SetFocus(canvas);
+    });
+    ribbon->addWidget(quick);
 
     // Snap toggle with right-click context menu for snap modes
     QPushButton* snapBtn = new QPushButton("\xF0\x9F\x94\xB2 Snap", ribbon);
@@ -1611,6 +1683,34 @@ void QtMainWindow::createToolbar() {
         });
     });
     ribbon->addWidget(layerBtn);
+
+    // SAG DIKEY SERIT (Tekla tarzi): Yardim / Ayarlar / Modelleme kisa erisim.
+    QToolBar* sideBar = new QToolBar(QStringLiteral("Hızlı Erişim"), this);
+    sideBar->setOrientation(Qt::Vertical);
+    sideBar->setMovable(false);
+    sideBar->setIconSize(QSize(20, 20));
+    auto addSideBtn = [&](const QString& text, const QString& tip, auto action) {
+        QToolButton* b = new QToolButton(sideBar);
+        b->setText(text);
+        b->setToolTip(tip);
+        b->setToolButtonStyle(Qt::ToolButtonTextUnderIcon);
+        b->setFixedSize(46, 46);
+        b->setStyleSheet(tabBtnStyle);
+        QObject::connect(b, &QToolButton::clicked, this, action);
+        sideBar->addWidget(b);
+    };
+    addSideBtn(QStringLiteral("?"), QStringLiteral("Yardım"), [this]() {
+        QMessageBox::information(this, QStringLiteral("Model Maker"),
+            QStringLiteral("Model Maker — Tekla tarzı çelik yapı CAD'i."));
+    });
+    addSideBtn(QStringLiteral("⚙"), QStringLiteral("Ayarlar"), [this]() {
+        QMessageBox::information(this, QStringLiteral("Ayarlar"),
+            QStringLiteral("Ayarlar paneli henüz eklenmedi."));
+    });
+    addSideBtn(QStringLiteral("M"), QStringLiteral("Modelleme"), [this]() {
+        if (HWND canvas = app_.activeCanvasHandle()) SetFocus(canvas);
+    });
+    addToolBar(Qt::RightToolBarArea, sideBar);
 }
 
 void QtMainWindow::createDockPanels() {
@@ -1759,6 +1859,97 @@ void QtMainWindow::createDockPanels() {
     propsDock->setWidget(propsWidget);
     propsDock->setMinimumWidth(250);
     addDockWidget(Qt::RightDockWidgetArea, propsDock);
+
+    // ---- MODEL AGACI (Tekla model organizer esdegeri) ----
+    QDockWidget* treeDock = new QDockWidget(QStringLiteral("Model Ağacı"), this);
+    treeDock->setObjectName("modelTreeDock");
+    QWidget* treeWidget = new QWidget(treeDock);
+    QVBoxLayout* treeLayout = new QVBoxLayout(treeWidget);
+    treeLayout->setContentsMargins(4, 4, 4, 4);
+    treeLayout->setSpacing(4);
+    QLineEdit* treeSearch = new QLineEdit(treeWidget);
+    treeSearch->setPlaceholderText(QStringLiteral("Ara..."));
+    treeLayout->addWidget(treeSearch);
+    QTreeWidget* tree = new QTreeWidget(treeWidget);
+    tree->setHeaderHidden(true);
+    tree->setSelectionMode(QAbstractItemView::SingleSelection);
+    treeLayout->addWidget(tree);
+    treeDock->setWidget(treeWidget);
+    treeDock->setMinimumWidth(220);
+    addDockWidget(Qt::RightDockWidgetArea, treeDock);
+
+    // Agac icerigi 500ms'de bir tazelenir (Application QObject degil, sinyal
+    // yok). Yalniz sayi/filtre degisince yeniden kurulur; secim kalinligi her
+    // turda guncellenir (kullanicinin yaptigi secim de yansir).
+    QTimer* treeTimer = new QTimer(this);
+    treeTimer->setInterval(500);
+    QObject::connect(treeTimer, &QTimer::timeout, this,
+        [this, tree, treeSearch]() {
+            static int lastCount = -1;
+            static QString lastFilter;
+            const int count = app_.modelCount();
+            const QString filter = treeSearch->text().trimmed();
+            if (count != lastCount || filter != lastFilter) {
+                lastCount = count;
+                lastFilter = filter;
+                tree->clear();
+                auto* topProf = new QTreeWidgetItem(tree);
+                topProf->setText(0, QStringLiteral("Profiller"));
+                auto* topFace = new QTreeWidgetItem(tree);
+                topFace->setText(0, QStringLiteral("3DFACE"));
+                auto* topNode = new QTreeWidgetItem(tree);
+                topNode->setText(0, QStringLiteral("Noktalar"));
+                auto* topLine = new QTreeWidgetItem(tree);
+                topLine->setText(0, QStringLiteral("Çizgiler"));
+                for (int i = 0; i < count; ++i) {
+                    const QString cat = QString::fromStdString(app_.modelCategory(static_cast<std::size_t>(i)));
+                    const QString name = QString::fromStdString(app_.modelDisplayName(static_cast<std::size_t>(i)));
+                    if (!filter.isEmpty() && !name.contains(filter, Qt::CaseInsensitive)) continue;
+                    QTreeWidgetItem* top =
+                        (cat == QLatin1String("3DFACE")) ? topFace :
+                        (cat == QLatin1String("NOKTA"))  ? topNode :
+                        (cat == QLatin1String("PROFIL")) ? topProf : topLine;
+                    auto* child = new QTreeWidgetItem(top);
+                    child->setText(0, name);
+                    child->setData(0, Qt::UserRole, i);
+                }
+                topProf->setHidden(topProf->childCount() == 0);
+                topFace->setHidden(topFace->childCount() == 0);
+                topNode->setHidden(topNode->childCount() == 0);
+                topLine->setHidden(topLine->childCount() == 0);
+                tree->expandAll();
+            }
+            // Secili ogeleri kalin goster (her turda).
+            const auto& sel = app_.selectedModelIndices();
+            for (int t = 0; t < tree->topLevelItemCount(); ++t) {
+                QTreeWidgetItem* top = tree->topLevelItem(t);
+                for (int c = 0; c < top->childCount(); ++c) {
+                    QTreeWidgetItem* child = top->child(c);
+                    const int idx = child->data(0, Qt::UserRole).toInt();
+                    const bool isSel = std::find(sel.begin(), sel.end(),
+                        static_cast<std::size_t>(idx)) != sel.end();
+                    QFont f = child->font(0);
+                    f.setBold(isSel);
+                    child->setFont(0, f);
+                }
+            }
+        });
+    treeTimer->start();
+
+    QObject::connect(tree, &QTreeWidget::itemClicked, this,
+        [this](QTreeWidgetItem* item, int) {
+            if (!item) return;
+            const QVariant d = item->data(0, Qt::UserRole);
+            if (!d.isValid()) return;
+            app_.selectModel(static_cast<std::size_t>(d.toInt()));
+        });
+    QObject::connect(tree, &QTreeWidget::itemDoubleClicked, this,
+        [this](QTreeWidgetItem* item, int) {
+            if (!item) return;
+            const QVariant d = item->data(0, Qt::UserRole);
+            if (!d.isValid()) return;
+            app_.focusModel(static_cast<std::size_t>(d.toInt()));
+        });
 
     // Secim degisince ozellikleri tazele (500ms yoklama — Application
     // QObject degil, sinyal altyapisi yok).
@@ -1944,6 +2135,27 @@ void QtMainWindow::createDockPanels() {
                                 propsMaterial->currentText().toStdString());
             app_.selectTool(DrawTool::Column);
         });
+
+    // ---- ALT SECIM CUBUGU (Tekla tarzi): secili nesne sayisi + snap/ortho ----
+    QLabel* selCount = new QLabel(QStringLiteral("0 nesne seçildi"), this);
+    selCount->setStyleSheet("color: #C8CCD4; padding: 0 8px;");
+    QLabel* selState = new QLabel(QStringLiteral("Snap: —"), this);
+    selState->setStyleSheet("color: #C8CCD4; padding: 0 8px;");
+    statusBar()->addPermanentWidget(selCount);
+    statusBar()->addPermanentWidget(selState);
+    QTimer* selBarTimer = new QTimer(this);
+    selBarTimer->setInterval(500);
+    QObject::connect(selBarTimer, &QTimer::timeout, this, [this, selCount, selState]() {
+        const std::size_t n = app_.selectedModelIndices().size();
+        selCount->setText(n == 0 ? QStringLiteral("0 nesne seçildi")
+                                 : (n == 1 ? QStringLiteral("1 nesne seçildi")
+                                           : QStringLiteral("%1 nesne seçildi")
+                                                 .arg(static_cast<qulonglong>(n))));
+        selState->setText(QStringLiteral("Snap: %1 · Ortho: %2")
+            .arg(app_.snapEnabled() ? QStringLiteral("Açık") : QStringLiteral("Kapalı"))
+            .arg(app_.orthoEnabled() ? QStringLiteral("Açık") : QStringLiteral("Kapalı")));
+    });
+    selBarTimer->start();
 }
 
 } // namespace mm

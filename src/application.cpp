@@ -6529,6 +6529,42 @@ std::string Application::selectedEntityLengthLabel() const {
     return buffer;
 }
 
+int Application::modelCount() const {
+    return static_cast<int>(document_.models().size());
+}
+
+std::string Application::modelCategory(std::size_t index) const {
+    if (index >= document_.models().size()) return {};
+    const auto& model = document_.models()[index];
+    if (!model.properties().profileName.empty()) return "PROFIL";
+    if (model.isFace3D()) return "3DFACE";
+    if (model.isPointEntity()) return "NOKTA";
+    return "CIZGI";
+}
+
+std::string Application::modelDisplayName(std::size_t index) const {
+    if (index >= document_.models().size()) return {};
+    const auto& model = document_.models()[index];
+    const std::string& profile = model.properties().profileName;
+    if (!profile.empty()) return profile;
+    if (model.isFace3D()) return "3DFACE " + std::to_string(index);
+    if (model.isPointEntity()) return "Nokta " + std::to_string(index);
+    return "Çizgi " + std::to_string(index);
+}
+
+void Application::selectModel(std::size_t index) {
+    if (index >= document_.models().size()) return;
+    selectedModels_.assign(1, index);
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
+}
+
+void Application::focusModel(std::size_t index) {
+    selectModel(index);
+    focusOnSelection();
+}
+
 std::vector<std::string> Application::profileNames() {
     ensureProfileCatalog();
     std::vector<std::string> names;

@@ -169,6 +169,14 @@ public:
     void setPendingProfileName(std::string name) { pendingProfileName_ = std::move(name); }
     const std::string& pendingProfileName() const noexcept { return pendingProfileName_; }
     bool hasSelection() const noexcept { return !selectedModels_.empty(); }
+    // MODEL AGACI (Tekla model organizer esdegeri): belgedeki tum modellerin
+    // sayisi + tip kategorisi + goruntuleme adi. Agactan tik = sec, cift tik =
+    // odaklan (focusOnSelection). Kategori: PROFIL / 3DFACE / NOKTA / CIZGI.
+    int modelCount() const;
+    std::string modelCategory(std::size_t index) const;
+    std::string modelDisplayName(std::size_t index) const;
+    void selectModel(std::size_t index);
+    void focusModel(std::size_t index);
     // KOLON: tıklanan noktaya dik (Z boyunca) profil ekstrude kolon koyar.
     // Profil + malzeme + Top/Bottom yukseklik props panelinden gelir.
     void setColumnProps(double top, double bottom, std::string material) {

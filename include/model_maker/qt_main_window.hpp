@@ -12,6 +12,7 @@
 class QComboBox;
 class QMdiArea;
 class QMdiSubWindow;
+class QMenu;
 
 namespace mm {
 
@@ -57,6 +58,7 @@ private:
     QComboBox* profileSelector_{};
     bool profileUiLogged_{};
     bool startupDefaultsApplied_{}; // GL + 3B + Solid bir kez, ilk show'da
+    QMenu* appMenu_{}; // Tekla tarzi: tek kok menu (menubar yerine sol ust dugme)
 };
 
 } // namespace mm

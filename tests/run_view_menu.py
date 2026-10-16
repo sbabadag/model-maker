@@ -84,12 +84,12 @@ if "value <= 0.0" in level_body or "value < 0.0" in level_body:
 
 # --- 1b) Komutlar SINIFLARA ayrilmis: her kategori kendi menusunde ---
 menu_decls = [
-    ("constructionMenu", 'QMenu* constructionMenu = menuBar()->addMenu('),
-    ("viewMenu", 'QMenu* viewMenu = menuBar()->addMenu('),
-    ("workPlaneMenu", 'QMenu* workPlaneMenu = menuBar()->addMenu('),
-    ("viewsMenu", 'QMenu* viewsMenu = menuBar()->addMenu('),
-    ("gridMenu", 'QMenu* gridMenu = menuBar()->addMenu('),
-    ("windowMenu", 'QMenu* windowMenu = menuBar()->addMenu('),
+    ("constructionMenu", 'QMenu* constructionMenu = appMenu_->addMenu('),
+    ("viewMenu", 'QMenu* viewMenu = appMenu_->addMenu('),
+    ("workPlaneMenu", 'QMenu* workPlaneMenu = appMenu_->addMenu('),
+    ("viewsMenu", 'QMenu* viewsMenu = appMenu_->addMenu('),
+    ("gridMenu", 'QMenu* gridMenu = appMenu_->addMenu('),
+    ("windowMenu", 'QMenu* windowMenu = appMenu_->addMenu('),
 ]
 positions = {}
 for name, decl in menu_decls:
