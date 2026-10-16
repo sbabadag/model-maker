@@ -4537,11 +4537,14 @@ void Application::commitTransformPoint(const Vec3& point) {
     }
     if (transformCommand_ == TransformCommand::Move) {
         pushUndoSnapshot();
-        document_.moveModels(selectedModels_, displacement);
+        // P9: kesme hedefi tasinirsa kaynak duzlem/cizgi/3DFACE onunla birlikte
+        // tasinir; bagli kaynaklar secime eklenip tek hamlede donusturulur.
+        const std::vector<std::size_t> moving = transformIndicesWithAttachedCutSources(selectedModels_);
+        document_.moveModels(moving, displacement);
 #ifdef MM_HAS_OCC
-        // P6: tasinan varlik bir kesme KAYNAGI/ARACI ise bagli hedefleri yeniden
-        // hesapla (duzlem/cizgi/3DFACE tasininca kesme onu izler).
-        recomputeTargetsForMovedModels(selectedModels_);
+        // P6+P9: tasinan varlik bir kesme KAYNAGI/ARACI veya HEDEFI ise bagli
+        // hedefleri yeniden hesapla (hedef tasindiginda taban da yeniden uretilir).
+        recomputeTargetsForMovedModels(moving);
 #endif
         cancelTransformCommand();
     } else if (transformCommand_ == TransformCommand::Copy) {
@@ -5615,7 +5618,34 @@ bool Application::ensureCutSolid(EntityId target) {
     return true;
 }
 
-// Kesme modifier'larini hedef parcaya yeniden uygular (Phase 4.2 recompute).
+// P9: profilli hedef tasindiginda/donduruldugunde taban (pre-cut) B-Rep eski
+// konumda kalir; bu yardimci kalici ozelliklerden (yeni eksen + referans
+// normal + rotasyon) YENIDEN uretip yeni taban surumu olarak yazar. Profilsiz
+// (ilkel kati) hedefte uretilemez -> no-op (mevcut taban korunur).
+void Application::rebuildCutBaseSolid(EntityId target) {
+    OccSolidStore* store = occSolidStore();
+    if (!store) return;
+    const auto idxOpt = document_.indexOfEntity(target);
+    if (!idxOpt) return;
+    const EntityProperties& props = document_.models()[*idxOpt].properties();
+    if (props.profileName.empty()) return;
+    ensureProfileCatalog();
+    const auto* profile = mm::findProfile(profileCatalog_, props.profileName);
+    if (!profile) return;
+    const Vec3 from{props.axisFromX, props.axisFromY, props.axisFromZ};
+    const Vec3 to{props.axisToX, props.axisToY, props.axisToZ};
+    if (std::abs(to.x - from.x) + std::abs(to.y - from.y) +
+        std::abs(to.z - from.z) < 1e-9) return;
+    const Vec3 sectionReference{props.sectionNormalX, props.sectionNormalY,
+                                props.sectionNormalZ};
+    const TopoDS_Shape solid = mm::extrudeProfileSolid(
+        *profile, from, to, props.profileRotation, sectionReference);
+    if (solid.IsNull()) return;
+    putOccSolid(*idxOpt, solid);
+    store->setBaseVersion(target, store->activeVersion(target));
+}
+
+// Kesme modifier'larini hedef parcaya yeniden uygular (Phase 4.2 recompute):
 // Taban (pre-cut) B-Rep'ten baslar, tum ETKIN modifier'lari SIRA ILE uygular
 // ve sonucu YENI bir surum olarak yazar (putOccSolid -> geometry delta + undo).
 // Taban yoksa GUVENLI kurulur (lazy: etkin surum taban olur — ilk kesim onceki
@@ -5681,9 +5711,11 @@ void Application::recomputeTargetsUsingTool(EntityId tool) {
 }
 
 void Application::recomputeTargetsForMovedModels(const std::vector<std::size_t>& indices) {
-    // P6: tasinan varliklari KAYNAK (source) veya ARAÇ (tool) olarak kullanan
-    // kesme modifier'larinin hedeflerini yeniden hesapla. Duzlem/cizgi/3DFACE
-    // tasindiginda kesme onu izler; kesici parca tasindiginda Part Cut izler.
+    // P6+P9: tasinan varliklari KAYNAK (source), ARAÇ (BooleanCut tool) veya
+    // HEDEF (target) olarak kullanan kesme modifier'larinin hedeflerini
+    // yeniden hesapla. Hedefin kendisi tasindiysa taban B-Rep eski konumda
+    // kalir; once rebuildCutBaseSolid ile yeniden uretilir (yoksa kesme eski
+    // konuma geri ziplar), sonra kesme zinciri uygulanir.
     std::unordered_set<EntityId> movedIds;
     for (const std::size_t index : indices)
         if (index < document_.models().size()) movedIds.insert(document_.modelId(index));
@@ -5691,9 +5723,14 @@ void Application::recomputeTargetsForMovedModels(const std::vector<std::size_t>&
     for (const auto& mod : document_.cutModifiers()) {
         const bool isSource = movedIds.count(mod.source) != 0;
         const bool isTool = mod.kind == CutKind::BooleanCut && movedIds.count(mod.tool) != 0;
-        if ((isSource || isTool) && mod.target != kInvalidEntityId) targets.insert(mod.target);
+        const bool isTarget = movedIds.count(mod.target) != 0;
+        if ((isSource || isTool || isTarget) && mod.target != kInvalidEntityId)
+            targets.insert(mod.target);
     }
-    for (const EntityId target : targets) recomputeCutTarget(target);
+    for (const EntityId target : targets) {
+        if (movedIds.count(target) != 0) rebuildCutBaseSolid(target);
+        recomputeCutTarget(target);
+    }
 }
 
 std::size_t Application::occSolidCount() const noexcept {
@@ -5716,6 +5753,30 @@ std::vector<TopoDS_Shape> Application::lastLiveSolids(std::size_t count) const {
     });
 }
 #endif
+
+// P9: kesme HEDEFI tasinir/dondurulurse, onu kesen kaynak (duzlem/cizgi/
+// 3DFACE) varliklar da ayni rijit donusumu alir. Verilen kumeye bu bagli
+// kaynak indekslerini ekleyip DONUSTURULECEK tam kumeyi doner. OCC-gard'siz:
+// kesme kayitlari belgede her zaman vardir; OCC kapaliyken kesme yapilamayip
+// cutModifiers bos kaldigi icin dogal no-op olur.
+std::vector<std::size_t> Application::transformIndicesWithAttachedCutSources(
+    const std::vector<std::size_t>& indices) const {
+    std::vector<std::size_t> combined = indices;
+    std::unordered_set<EntityId> targetIds;
+    for (const std::size_t i : indices)
+        if (i < document_.models().size()) targetIds.insert(document_.modelId(i));
+    for (const auto& mod : document_.cutModifiers()) {
+        if (!mod.enabled || mod.target == kInvalidEntityId ||
+            mod.source == kInvalidEntityId)
+            continue;
+        if (targetIds.count(mod.target) == 0) continue;
+        const auto src = document_.indexOfEntity(mod.source);
+        if (!src) continue;
+        if (std::find(combined.begin(), combined.end(), *src) == combined.end())
+            combined.push_back(*src);
+    }
+    return combined;
+}
 
 void Application::ensureProfileCatalog() {
     if (profileCatalogTried_) return;
@@ -7188,6 +7249,9 @@ void Application::gumballDragMove(int x, int y) {
         pushUndoSnapshot();
         gumballUndoStarted_ = true;
         gumballCopyIfNeeded(); // Shift basiliysa secim kopyalanir, kopyalar suruklenir
+        // P9: kesme hedefi tasinir/dondurulurse kaynak duzlem/cizgi/3DFACE onunla
+        // rijit donusur. Donusturulecek tam kume bu surukleme icin bir kez kurulur.
+        gumballTransformSet_ = transformIndicesWithAttachedCutSources(selectedModels_);
     }
     const Vec3 pivot = gumballDragStartOrigin_;
     if (gumballIsAxis(gumballDrag_)) {
@@ -7197,7 +7261,7 @@ void Application::gumballDragMove(int x, int y) {
         const Vec3 delta = gumballDragAxisWorld_ * dist;
         const Vec3 step = delta - gumballAppliedDelta_;
         if (std::abs(step.x) + std::abs(step.y) + std::abs(step.z) > 1e-12) {
-            document_.moveModels(selectedModels_, step);
+            document_.moveModels(gumballTransformSet_, step);
             gumballAppliedDelta_ = delta;
             gumballOrigin_ = gumballDragStartOrigin_ + delta;
         }
@@ -7211,7 +7275,7 @@ void Application::gumballDragMove(int x, int y) {
         gumballTotalAngle_ += d * gumballDragSign_;
         const double step = gumballTotalAngle_ - gumballAppliedAngle_;
         if (std::abs(step) > 1e-9) {
-            document_.rotateModels(selectedModels_, pivot, gumballDragAxisWorld_, step);
+            document_.rotateModels(gumballTransformSet_, pivot, gumballDragAxisWorld_, step);
             gumballAppliedAngle_ = gumballTotalAngle_;
         }
     } else if (gumballIsScaleAxis(gumballDrag_)) {
@@ -7245,7 +7309,7 @@ void Application::gumballDragMove(int x, int y) {
         const Vec3 delta = wp - gumballDragStartWorld_;
         const Vec3 step = delta - gumballAppliedDelta_;
         if (std::abs(step.x) + std::abs(step.y) + std::abs(step.z) > 1e-12) {
-            document_.moveModels(selectedModels_, step);
+            document_.moveModels(gumballTransformSet_, step);
             gumballAppliedDelta_ = delta;
             gumballOrigin_ = gumballDragStartOrigin_ + delta;
         }
@@ -7272,6 +7336,11 @@ void Application::gumballEndDrag() {
     // P7: gercek bir tasima/cevirme/olcek oldu mu (yalniz tik degil). Kesme
     // recompute'u icin bu bilgi reset'ten ONCE yakalanmali.
     const bool didTransform = gumballUndoStarted_;
+    // P9: yalniz RIJIT donusumler (tasima/dondurme) kesme hedefinin tabanini
+    // yeniden uretir; olcek + kesme desteklenmedigi icin olcekte recompute
+    // anlamsizdir ve olceklenmis katiyi bozardi.
+    const bool rigidTransform = !(gumballIsScaleAxis(gumballDrag_) ||
+                                  gumballDrag_ == GumballHandle::ScaleUniform);
 #endif
     gumballDrag_ = GumballHandle::None;
     gumballNumericActive_ = false;
@@ -7280,6 +7349,7 @@ void Application::gumballEndDrag() {
     gumballCopyMode_ = false;
     gumballCopyMade_ = false;
     gumballCopyOriginals_.clear();
+    gumballTransformSet_.clear();
     input_.clear();
     if (canvas_) ReleaseCapture();
     gumballAppliedDelta_ = {};
@@ -7290,10 +7360,11 @@ void Application::gumballEndDrag() {
     updateStatus();
     invalidateCanvas();
 #ifdef MM_HAS_OCC
-    // P7: gumball ile tasinan/cevrilen/olceklenen varlik bir kesme KAYNAGI/ARACI
-    // ise bagli hedefleri yeniden hesapla. Eksikti: yalniz ↔ Move komutu
-    // recompute ediyordu; gumball (ok surukleme) ve sayisal giris es geciyordu.
-    if (didTransform) recomputeTargetsForMovedModels(selectedModels_);
+    // P7+P9: gumball ile tasinan/cevrilen varlik bir kesme KAYNAGI/ARACI veya
+    // HEDEFI ise bagli hedefleri yeniden hesapla (rijit donusumde hedef tabani
+    // da yeniden uretilir). gumballTransformSet_ = secim + bagli kaynaklar.
+    if (didTransform && rigidTransform)
+        recomputeTargetsForMovedModels(gumballTransformSet_);
 #endif
 }
 
@@ -7312,9 +7383,9 @@ void Application::gumballCancelDrag() {
         document_.deleteModels(selectedModels_);
         selectedModels_ = gumballCopyOriginals_;
     } else if (gumballIsAxis(gumballDrag_)) {
-        document_.moveModels(selectedModels_, negDelta);
+        document_.moveModels(gumballTransformSet_, negDelta);
     } else if (gumballIsRotate(gumballDrag_)) {
-        document_.rotateModels(selectedModels_, pivot, gumballDragAxisWorld_,
+        document_.rotateModels(gumballTransformSet_, pivot, gumballDragAxisWorld_,
                                -gumballTotalAngle_);
     } else if (gumballIsScaleAxis(gumballDrag_)) {
         Vec3 fac{1, 1, 1};
@@ -7328,7 +7399,7 @@ void Application::gumballCancelDrag() {
         const double inv = 1.0 / gumballAppliedFactor_;
         document_.scaleModels(selectedModels_, pivot, Vec3{inv, inv, inv});
     } else {
-        document_.moveModels(selectedModels_, negDelta);
+        document_.moveModels(gumballTransformSet_, negDelta);
     }
     if (canvas_) ReleaseCapture();
     gumballDrag_ = GumballHandle::None;
@@ -7339,6 +7410,7 @@ void Application::gumballCancelDrag() {
     gumballCopyMode_ = false;
     gumballCopyMade_ = false;
     gumballCopyOriginals_.clear();
+    gumballTransformSet_.clear();
     updateGumball();
     updateStatus();
     invalidateCanvas();
@@ -7419,12 +7491,14 @@ void Application::applyGumballNumeric(double value) {
         pushUndoSnapshot();
         gumballUndoStarted_ = true;
         gumballCopyIfNeeded(); // Shift basiliysa kopyala (orijinaller yerinde kalir)
+        // P9: kesme hedefi tasinir/dondurulurse kaynak onunla rijit donusur.
+        gumballTransformSet_ = transformIndicesWithAttachedCutSources(selectedModels_);
     }
     const Vec3 pivot = gumballDragStartOrigin_;
     if (gumballIsAxis(gumballDrag_)) {
         const Vec3 delta = gumballDragAxisWorld_ * value;
         const Vec3 step = delta - gumballAppliedDelta_;
-        document_.moveModels(selectedModels_, step);
+        document_.moveModels(gumballTransformSet_, step);
         gumballAppliedDelta_ = delta;
         gumballOrigin_ = gumballDragStartOrigin_ + delta;
         wchar_t buf[96]{};
@@ -7433,7 +7507,7 @@ void Application::applyGumballNumeric(double value) {
     } else if (gumballIsRotate(gumballDrag_)) {
         const double total = value * 0.017453292519943295; // derece -> radyan
         const double step = total - gumballAppliedAngle_;
-        document_.rotateModels(selectedModels_, pivot, gumballDragAxisWorld_, step);
+        document_.rotateModels(gumballTransformSet_, pivot, gumballDragAxisWorld_, step);
         gumballAppliedAngle_ = total;
         gumballTotalAngle_ = total;
         wchar_t buf[96]{};

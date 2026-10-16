@@ -23,6 +23,13 @@ methods = app[app.index("Vec2 Application::gumballProject"):app.index("DraftView
 release_match = re.search(r"^void Application::onLeftButtonUp\(.*?^}", app, re.M | re.S)
 assert release_match, "onLeftButtonUp extraction marker not found"
 release = release_match.group()
+# P9: gumball move/rotate artik kesme kaynaklarini da hedefle tasidigi icin bu
+# yardimciyi da gercek kaynaktan (verbatim) cikar — gumball govdeleri ona cagirir.
+attached_match = re.search(
+    r"^std::vector<std::size_t> Application::transformIndicesWithAttachedCutSources\(.*?^}",
+    app, re.M | re.S)
+assert attached_match, "transformIndicesWithAttachedCutSources extraction marker not found"
+attached = attached_match.group()
 shell = r'''
 #include "model_maker/document.hpp"
 #include "model_maker/camera.hpp"
@@ -38,6 +45,7 @@ shell = r'''
 #include <optional>
 #include <sstream>
 #include <string>
+#include <unordered_set>
 #include <vector>
 struct RECT { long left{}, top{}, right{1000}, bottom{800}; };
 struct POINT { long x{}, y{}; };
@@ -85,8 +93,11 @@ public:
     // Ctrl+sol tus jesti birakmada secime duser (sahte: secim degistirmez).
     bool toggleModelSelection(int, int) { return false; }
     void onLeftButtonUp(int x, int y);
+    // P9: kesme hedefi tasinirsa kaynak duzlem/cizgi/3DFACE onunla donusur.
+    std::vector<std::size_t> transformIndicesWithAttachedCutSources(
+        const std::vector<std::size_t>&) const;
 '''
-shell += fields + "};\n" + methods + release + "\n}\n"
+shell += fields + "};\n" + methods + attached + release + "\n}\n"
 shell += (root / "tests/gumball_interaction_cases.cpp").read_text(encoding="utf-8")
 build.mkdir(parents=True, exist_ok=True)
 generated = build / "gumball_interaction_generated.cpp"

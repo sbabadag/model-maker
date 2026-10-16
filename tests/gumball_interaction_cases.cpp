@@ -230,6 +230,35 @@ int main() {
         check(close(a.document_.models()[0].vertices()[1], {3,4,0}), "scale copy leaves the original");
         check(!close(a.document_.models()[1].vertices()[1], {3,4,0}), "scale copy is scaled");
     }
+    // ---- P9: kesme hedefi tasinirsa kaynak duzlem/cizgi/3DFACE de donusur ----
+    {
+        Application a;
+        // Kaynak: konstrüksiyon cizgisi (kesme kaynagi).
+        const std::size_t srcIdx = a.document_.addConstructionLine({10,0,0}, {10,0,5});
+        // Hedef: normal bir cizgi modeli.
+        a.document_.addModel(WireframeModel::line({0,0,0}, {3,4,0}));
+        const std::size_t tgtIdx = a.document_.models().size() - 1;
+        CutModifier mod;
+        mod.kind = CutKind::LineCut;
+        mod.target = a.document_.modelId(tgtIdx);
+        mod.source = a.document_.modelId(srcIdx);
+        mod.enabled = true;
+        a.document_.addCutModifier(mod);
+        // Hedef tasinirsa kaynak da donusturulecek kumede olmali.
+        const auto set = a.transformIndicesWithAttachedCutSources({tgtIdx});
+        check(set.size() == 2, "moving a cut target also moves its source");
+        check(std::find(set.begin(), set.end(), srcIdx) != set.end(),
+              "attached set contains the source index");
+        check(std::find(set.begin(), set.end(), tgtIdx) != set.end(),
+              "attached set still contains the target index");
+        // Kaynak tek basina tasinirsa fazladan varlik EKLENMEZ.
+        const auto set2 = a.transformIndicesWithAttachedCutSources({srcIdx});
+        check(set2.size() == 1, "moving the source alone attaches nothing extra");
+        // Devre disi kesme baglamaz.
+        a.document_.setCutModifier(0, [&]{ auto m = mod; m.enabled = false; return m; }());
+        const auto set3 = a.transformIndicesWithAttachedCutSources({tgtIdx});
+        check(set3.size() == 1, "disabled cut does not attach its source");
+    }
     std::cout << checks << " checks, " << failures << " failures\n";
     return failures ? 1 : 0;
 }

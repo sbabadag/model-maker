@@ -725,16 +725,8 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
                 if (!frame || vertices.size() != 4) continue;
                 const POINT quad[4] = {projectPoint(vertices[0]), projectPoint(vertices[1]),
                                        projectPoint(vertices[2]), projectPoint(vertices[3])};
-                // Yari saydam dolgu: hatch deseni (hayalet duzlemle ayni teknik).
-                HBRUSH fill = CreateHatchBrush(HS_FDIAGONAL, kConstructionRgb);
-                HGDIOBJ oldBrush = SelectObject(dc, fill);
-                HGDIOBJ oldPen = SelectObject(dc, GetStockObject(NULL_PEN));
-                const int oldBkMode = SetBkMode(dc, TRANSPARENT);
-                Polygon(dc, quad, 4);
-                SetBkMode(dc, oldBkMode);
-                SelectObject(dc, oldPen);
-                SelectObject(dc, oldBrush);
-                DeleteObject(fill);
+                // P9: duzlem SADE (seffaf, taramasiz) cizilir — yalniz sinir ve
+                // yerel eksenler. Dolgu yok (kullanici: "seffaf taramasiz").
                 // Sinir (4 kenar) — duzlem sinirlari.
                 HPEN border = CreatePen(PS_SOLID, cWidth, cRgb);
                 SelectObject(dc, border);
@@ -857,15 +849,8 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
                                    projectPoint(plane.fromPlane({half, -half})),
                                    projectPoint(plane.fromPlane({half, half})),
                                    projectPoint(plane.fromPlane({-half, half}))};
-            HBRUSH fill = CreateHatchBrush(HS_FDIAGONAL, kCutRgb);
-            HGDIOBJ oldBrush = SelectObject(dc, fill);
-            HGDIOBJ oldPen = SelectObject(dc, GetStockObject(NULL_PEN));
-            const int oldBk = SetBkMode(dc, TRANSPARENT);
-            Polygon(dc, quad, 4);
-            SetBkMode(dc, oldBk);
-            SelectObject(dc, oldPen);
-            SelectObject(dc, oldBrush);
-            DeleteObject(fill);
+            // P9: kesme duzlemi de SADE cizilir (seffaf, taramasiz) — yalniz
+            // sinir + normal oku. Dolgu yok (kullanici: "seffaf taramasiz").
             HPEN border = CreatePen(PS_SOLID, 1, kCutRgb);
             SelectObject(dc, border);
             line(dc, quad[0].x, quad[0].y, quad[1].x, quad[1].y);

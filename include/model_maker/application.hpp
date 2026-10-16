@@ -447,6 +447,13 @@ private:
     void addCube();
     void addPyramid();
     void addCylinder();
+    // P9: kesme HEDEFI tasinir/dondurulurse, onu kesen kaynak (duzlem/cizgi/
+    // 3DFACE) varliklar da ayni rijit donusumu alir (Tekla: kesme parçaya
+    // baglidir). Verilen model indeks kumesine bu bagli kaynak indekslerini
+    // ekleyerek DONUSTURULECEK tam kumeyi doner (tekilleme yapar; kopya
+    // modunda kopyalar yeni kimlik aldigindan bagli kaynak yoktur -> no-op).
+    std::vector<std::size_t> transformIndicesWithAttachedCutSources(
+        const std::vector<std::size_t>& indices) const;
 #ifdef MM_HAS_OCC
     void addBooleanFuse();
     void addBooleanCommon();
@@ -456,16 +463,22 @@ private:
     // yeniden uretip putOccSolid ile yazar. Store'da sekil zaten varsa veya
     // uretilemiyorsa (profil yok / eksen dejenere / OCC kapali) false doner.
     bool ensureCutSolid(EntityId target);
+    // P9: profilli hedefin TABAN (pre-cut) B-Rep'ini kalici ozelliklerden
+    // (yeni eksen/rotasyon) YENIDEN uretir ve yeni taban surumu olarak yazar.
+    // Hedef tasindiginda/donduruldugunde taban eski konumda kaldigi icin bu
+    // gerekir; profilsiz (ilkel kati) hedefte uretilemez -> no-op (eski taban).
+    void rebuildCutBaseSolid(EntityId target);
     // Kesme modifier'larini hedef parcaya yeniden uygular (Phase 4.2 recompute):
     // taban (pre-cut) B-Rep'ten tum etkin modifier'lari sirasiyla uygular.
     void recomputeCutTarget(EntityId target);
     // Kesici parca tasininca (canli Part Cut): bu parçayi ARAÇ olarak kullanan
     // tum BooleanCut modifier'larinin hedeflerini yeniden hesaplar.
     void recomputeTargetsUsingTool(EntityId tool);
-    // P6: verilen model indeksleri tasindiginda, bu varliklari KAYNAK (source)
-    // veya ARAÇ (BooleanCut tool) olarak kullanan kesme modifier'larinin
-    // hedeflerini yeniden hesaplar (duzlem/cizgi/3DFACE/kesici parca tasininca
-    // kesme onu izler).
+    // P6+P9: verilen model indeksleri tasindiginda, bu varliklari KAYNAK
+    // (source), ARAÇ (BooleanCut tool) veya HEDEF (target) olarak kullanan
+    // kesme modifier'larinin hedeflerini yeniden hesaplar. Hedefin kendisi
+    // tasindiysa taban B-Rep eski konumda kaldigi icin once rebuildCutBaseSolid
+    // ile yeniden uretilir, sonra kesme zinciri uygulanir.
     void recomputeTargetsForMovedModels(const std::vector<std::size_t>& indices);
 #endif
     void saveOptions();
@@ -699,6 +712,11 @@ private:
     bool gumballCopyMode_{false};   // basma aninda Shift basili miydi
     bool gumballCopyMade_{false};   // bu suruklemede kopya olusturuldu mu
     std::vector<std::size_t> gumballCopyOriginals_; // kopya oncesi secim
+    // P9: bu suruklemede donusturulen tam kume (secim + kesme KAYNAKLARI).
+    // Kesme hedefi tasinir/dondurulurse kaynak duzlem/cizgi/3DFACE onunla
+    // rijit donusur; kume surukleme basinda bir kez kurulur ve move/rotate/
+    // cancel/end ayni kumeyi kullanir (tutarlilik).
+    std::vector<std::size_t> gumballTransformSet_;
     void gumballCopyIfNeeded();
     void gumballRequestNumeric();
     Vec3 gumballOrigin_{};
