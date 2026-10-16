@@ -575,6 +575,17 @@ if(BUILD_TESTING)
                 ENVIRONMENT "LD_LIBRARY_PATH=${OCC_ROOT}/lib:$ENV{LD_LIBRARY_PATH}")
         endif()
 
+        # GERCEK I-KESIT KONTURU kabulu: I-kesit tek KAPALI kontur yuzu olarak
+        # uretilir (radius r + IPE/IPN %14 ic yuz egimi); kesit alani katalog
+        # A degerine %3 icinde yaklasmali, bbox olculeri dogru olmali.
+        add_executable(model_maker_occ_isection_acceptance tests/occ_isection_acceptance.cpp)
+        target_link_libraries(model_maker_occ_isection_acceptance PRIVATE model_maker_occ)
+        add_test(NAME model_maker_occ_isection_acceptance COMMAND model_maker_occ_isection_acceptance)
+        if(UNIX)
+            set_tests_properties(model_maker_occ_isection_acceptance PROPERTIES
+                ENVIRONMENT "LD_LIBRARY_PATH=${OCC_ROOT}/lib:$ENV{LD_LIBRARY_PATH}")
+        endif()
+
         # OCC MAGAZA + BELGE MMW8 round-trip regresyonu (P12): kayit/ac sonrasi
         # restoreBaseSolid ETKIN surumu ezmemeli (kesilmis kati, kesilmemis
         # tabanla degistirilmemeli). Gercek OCCT; Linux'ta OCC-disabled build'de
