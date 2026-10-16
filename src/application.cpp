@@ -3388,36 +3388,51 @@ void Application::toggleConstructionVisibility() {
 }
 
 void Application::applyCutFromSelection(CutKind kind) {
-    // Noun-verb (P1): secili kume icinde BIR profil hedefi + BIR konstrüksiyon
-    // duzlemi aranir. Target = profileName dolu normal model; plane cercevesi
-    // constructionPlaneFrame()'ten alinir (MMW8'de ayri alan tasimaz, koselerden
-    // geri kurulur). Fitting tarafi otomatik; PlaneCut keepPositive=true.
-    std::optional<std::size_t> targetIdx;
+    // Noun-verb (P1): secili kume icinde profiller + BIR konstrüksiyon
+    // duzlemi aranir. P12: TEK duzlem birden cok profili keser — tum secili
+    // profiller hedef olur. Target = profileName dolu normal model; plane
+    // cercevesi constructionPlaneFrame()'ten alinir.
+    std::vector<std::size_t> targets;
     std::optional<std::size_t> planeIdx;
     for (const auto index : selectedModels_) {
         if (index >= document_.models().size()) continue;
         const auto& model = document_.models()[index];
         if (model.constructionKind() == ConstructionKind::Plane && !planeIdx) planeIdx = index;
         else if (model.constructionKind() == ConstructionKind::None &&
-                 !model.properties().profileName.empty() && !targetIdx)
-            targetIdx = index;
+                 !model.properties().profileName.empty())
+            targets.push_back(index);
     }
-    if (!targetIdx || !planeIdx) {
+    if (targets.empty() || !planeIdx) {
         MessageBeep(MB_ICONWARNING);
-        publishStatus(L"Fitting/Plane Cut: bir profil hedefi VE bir konstrüksiyon düzlemi seçin");
+        publishStatus(L"Fitting/Plane Cut: en az bir profil hedefi VE bir konstrüksiyon düzlemi seçin");
         return;
     }
-    applyCutFromPair(kind, *targetIdx, *planeIdx);
+    applyCutFromTargets(kind, targets, *planeIdx);
 }
 
 void Application::applyCutFromPair(CutKind kind, std::size_t targetIdx, std::size_t planeIdx) {
-    // Cozumlenmis (hedef + duzlem) uzerinden kesmeyi kurar. Hem noun-verb
-    // (applyCutFromSelection) hem verb-noun (executePendingCutCommand) yolu
-    // buraya dusar. Duzlem KOPYALANMAZ; kaynak olarak referans alinir (P6).
-    if (targetIdx >= document_.models().size() || planeIdx >= document_.models().size()) {
+    // Tek hedef + tek duzlem: coklu-hedef yolunun tek elemanli ozel hali.
+    applyCutFromTargets(kind, {targetIdx}, planeIdx);
+}
+
+void Application::applyCutFromTargets(CutKind kind, const std::vector<std::size_t>& targets,
+                                      std::size_t planeIdx) {
+    // P12: TEK duzlem birden cok profili keser. Her hedefe ayni kaynak duzlemle
+    // AYRI CutModifier kurulur (Tekla semantigi: ayni hedefte ayni turden
+    // mevcut modifier EZILIR — bir uca bir fitting). Hepsini TEK undo aninda
+    // yapar. Hem noun-verb (applyCutFromSelection) hem verb-noun
+    // (executePendingCutCommand) yolu buraya duser.
+    if (targets.empty() || planeIdx >= document_.models().size()) {
         MessageBeep(MB_ICONWARNING);
         publishStatus(L"Fitting/Plane Cut: gecersiz secim — yeniden secin");
         return;
+    }
+    for (const std::size_t targetIdx : targets) {
+        if (targetIdx >= document_.models().size()) {
+            MessageBeep(MB_ICONWARNING);
+            publishStatus(L"Fitting/Plane Cut: gecersiz secim — yeniden secin");
+            return;
+        }
     }
     const auto frame = constructionPlaneFrame(document_.models()[planeIdx]);
     if (!frame) {
@@ -3425,32 +3440,33 @@ void Application::applyCutFromPair(CutKind kind, std::size_t targetIdx, std::siz
         publishStatus(L"Fitting/Plane Cut: konstrüksiyon düzlemi bozuk — yeniden oluşturun");
         return;
     }
-    CutModifier modifier;
-    modifier.kind = kind;
-    modifier.target = document_.modelId(targetIdx);
     // P6: duzlemi KOPYALAMA — kaynak konstrüksiyon duzlemini referans al.
     // Kesme, duzlemin GUNCEL geometrisinden cozumlenir; duzlem tasininca izler,
     // silinince kaskad kaldirilir, ayri kopya kesme objesi cizilmez.
-    modifier.source = document_.modelId(planeIdx);
-    modifier.planeOrigin = frame->origin;
-    modifier.planeNormal = frame->normal;
-    modifier.keepPositive = true;  // Fitting: otomatik taraf (bu alan yok sayilir)
-    modifier.enabled = true;
-    modifier.name = kind == CutKind::Fitting ? "Fitting" : "Plane Cut";
-    // Tekla semantigi: ayni hedefte ayni turden mevcut modifier EZILIR (bir uce
-    // bir fitting). Boylece "duzlemi tasi -> yeniden Fitting" mevcut kesmeyi
-    // GUNCELLER (yeniden hesaplanir), ikinci bir kesme eklemez.
+    const EntityId planeId = document_.modelId(planeIdx);
     pushUndoSnapshot();
-    std::optional<std::size_t> existing;
-    for (std::size_t ci = 0; ci < document_.cutModifiers().size(); ++ci) {
-        const auto& m = document_.cutModifiers()[ci];
-        if (m.kind == kind && m.target == modifier.target) { existing = ci; break; }
-    }
-    if (existing) document_.setCutModifier(*existing, modifier);
-    else document_.addCutModifier(modifier);
+    for (const std::size_t targetIdx : targets) {
+        CutModifier modifier;
+        modifier.kind = kind;
+        modifier.target = document_.modelId(targetIdx);
+        modifier.source = planeId;
+        modifier.planeOrigin = frame->origin;
+        modifier.planeNormal = frame->normal;
+        modifier.keepPositive = true;  // Fitting: otomatik taraf (bu alan yok sayilir)
+        modifier.enabled = true;
+        modifier.name = kind == CutKind::Fitting ? "Fitting" : "Plane Cut";
+        // Tekla semantigi: ayni hedefte ayni turden mevcut modifier EZILIR.
+        std::optional<std::size_t> existing;
+        for (std::size_t ci = 0; ci < document_.cutModifiers().size(); ++ci) {
+            const auto& m = document_.cutModifiers()[ci];
+            if (m.kind == kind && m.target == modifier.target) { existing = ci; break; }
+        }
+        if (existing) document_.setCutModifier(*existing, modifier);
+        else document_.addCutModifier(modifier);
 #ifdef MM_HAS_OCC
-    recomputeCutTarget(modifier.target);
+        recomputeCutTarget(modifier.target);
 #endif
+    }
     selectedModels_.clear();
     selectionFirstCorner_.reset();
     updateHover(cursorScreen_.x, cursorScreen_.y);
@@ -3473,10 +3489,10 @@ void Application::enterPendingCutCommand(CutKind kind) {
     profileGrip_.reset();
     cancelDrawing();
     pendingCutKind_ = kind;
-    pendingCutTarget_.reset();
+    pendingCutTargets_.clear();
     pendingCutPlane_.reset();
     const wchar_t* name = kind == CutKind::Fitting ? L"Fitting" : L"Plane Cut";
-    publishStatus(std::wstring(name) + L": profili seçin (sol tık), sonra düzlemi seçin");
+    publishStatus(std::wstring(name) + L": profili seçin (sol tık, birden çok), sonra düzlemi seçin");
     updateControls();
     updateStatus();
     invalidateCanvas();
@@ -3488,7 +3504,7 @@ void Application::cancelPendingCutCommand() {
     // secimini silmeden güvenle cagrilabilir.
     if (!pendingCutKind_) return;
     pendingCutKind_.reset();
-    pendingCutTarget_.reset();
+    pendingCutTargets_.clear();
     pendingCutPlane_.reset();
     hoverModel_.reset();
     hoverCutModifier_.reset();
@@ -3501,21 +3517,21 @@ void Application::cancelPendingCutCommand() {
 
 void Application::executePendingCutCommand() {
     if (!pendingCutKind_) return;
-    if (!pendingCutTarget_ || !pendingCutPlane_) {
+    if (pendingCutTargets_.empty() || !pendingCutPlane_) {
         MessageBeep(MB_ICONWARNING);
-        publishStatus(L"Önce profili ve düzlemi seçin (sağ tık uygular)");
+        publishStatus(L"Önce en az bir profili ve düzlemi seçin (sağ tık uygular)");
         return;
     }
     const CutKind kind = *pendingCutKind_;
-    const std::size_t target = *pendingCutTarget_;
+    const std::vector<std::size_t> targets = pendingCutTargets_;
     const std::size_t plane = *pendingCutPlane_;
-    // Bekleme durumu once temizlenir; applyCutFromPair secimi de temizler.
+    // Bekleme durumu once temizlenir; applyCutFromTargets secimi de temizler.
     pendingCutKind_.reset();
-    pendingCutTarget_.reset();
+    pendingCutTargets_.clear();
     pendingCutPlane_.reset();
     hoverModel_.reset();
     hoverCutModifier_.reset();
-    applyCutFromPair(kind, target, plane);
+    applyCutFromTargets(kind, targets, plane);
 }
 
 bool Application::pickPendingCutAt(int x, int y) {
@@ -3523,33 +3539,41 @@ bool Application::pickPendingCutAt(int x, int y) {
     const auto hit = modelIndexAt(x, y);
     if (!hit || *hit >= document_.models().size()) {
         MessageBeep(MB_ICONWARNING);
-        publishStatus(pendingCutTarget_ ? L"Bir konstrüksiyon düzlemi seçin"
-                                        : L"Bir profil hedefi seçin");
+        publishStatus(pendingCutTargets_.empty() ? L"Bir profil hedefi seçin"
+                                                 : L"Bir konstrüksiyon düzlemi seçin");
         return true;
     }
     const auto& model = document_.models()[*hit];
     if (model.constructionKind() == ConstructionKind::None &&
         !model.properties().profileName.empty()) {
-        pendingCutTarget_ = *hit;
+        // P12: profil tiklamasi hedef listesine EKLE/CIKAR (toggle) — tek duzlem
+        // birden cok profili kesebilir.
+        const auto it = std::find(pendingCutTargets_.begin(), pendingCutTargets_.end(), *hit);
+        if (it == pendingCutTargets_.end()) pendingCutTargets_.push_back(*hit);
+        else pendingCutTargets_.erase(it);
     } else if (model.constructionKind() == ConstructionKind::Plane) {
         pendingCutPlane_ = *hit;
     } else {
         MessageBeep(MB_ICONWARNING);
-        publishStatus(pendingCutTarget_ ? L"Bir konstrüksiyon düzlemi seçin"
-                                        : L"Bir profil hedefi seçin");
+        publishStatus(pendingCutTargets_.empty() ? L"Bir profil hedefi seçin"
+                                                 : L"Bir konstrüksiyon düzlemi seçin");
         updateControls(); updateStatus(); invalidateCanvas();
         return true;
     }
-    // Secim, secilen profil + duzlem ciftini gosterecek sekilde yeniden kurulur.
+    // Secim, secilen profil(ler) + duzlem grubunu gosterecek sekilde kurulur.
     selectedModels_.clear();
-    if (pendingCutTarget_) selectedModels_.push_back(*pendingCutTarget_);
+    for (const std::size_t t : pendingCutTargets_) selectedModels_.push_back(t);
     if (pendingCutPlane_) selectedModels_.push_back(*pendingCutPlane_);
-    if (pendingCutTarget_ && pendingCutPlane_)
-        publishStatus(L"Hazır — sağ tık ile uygula (Esc iptal)");
-    else if (pendingCutTarget_)
-        publishStatus(L"Profil seçildi — düzlemi seçin");
-    else
+    if (!pendingCutTargets_.empty() && pendingCutPlane_)
+        publishStatus(L"Hazır — sağ tık ile uygula (" +
+                      std::to_wstring(pendingCutTargets_.size()) + L" profil, Esc iptal)");
+    else if (!pendingCutTargets_.empty())
+        publishStatus(std::to_wstring(pendingCutTargets_.size()) +
+                      L" profil seçildi — düzlemi seçin");
+    else if (pendingCutPlane_)
         publishStatus(L"Düzlem seçildi — profili seçin");
+    else
+        publishStatus(L"Profili seçin (sol tık, birden çok)");
     updateControls();
     updateStatus();
     invalidateCanvas();
@@ -4234,16 +4258,19 @@ void Application::refreshHoverCandidate(int x, int y) {
     hoverModel_.reset();
     hoverCutModifier_.reset();
     if (!pendingCutKind_) return;
-    // VERB-NOUN KESME beklemede: yalnizca gerekli tur vurgulanir — profil
-    // adiminda sadece profiller, duzlem adiminda sadece konstrüksiyon
-    // duzlemleri. Kesme modifier'lari bu modda vurgulanmaz.
-    const bool needPlane = pendingCutTarget_.has_value();
+    // VERB-NOUN KESME beklemede: yalnizca gerekli tur vurgulanir. P12 (coklu
+    // hedef): once profiller (en az biri gerekli), sonra duzlem; ikisi de
+    // tamamlaninca vurgu yok (hazir). Kesme modifier'lari bu modda vurgulanmaz.
+    const bool needProfiles = pendingCutTargets_.empty();
+    const bool needPlane = !pendingCutPlane_.has_value();
+    if (!needProfiles && !needPlane) return;
     const auto matchesRequired = [&](std::size_t index) {
         if (index >= document_.models().size()) return false;
         const auto& m = document_.models()[index];
-        if (needPlane) return m.constructionKind() == ConstructionKind::Plane;
-        return m.constructionKind() == ConstructionKind::None &&
-               !m.properties().profileName.empty();
+        if (needProfiles)
+            return m.constructionKind() == ConstructionKind::None &&
+                   !m.properties().profileName.empty();
+        return m.constructionKind() == ConstructionKind::Plane;
     };
     std::optional<std::size_t> hit;
     if (mode_ == EditMode::Draw2D)

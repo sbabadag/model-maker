@@ -375,6 +375,10 @@ private:
     // duzlem secilir; sag tik uygular, Esc iptal. applyCutFromPair cozumlenmis
     // (hedef + duzlem) uzerinden kesmeyi kurar; noun-verb ve verb-noun ortak.
     void applyCutFromPair(CutKind kind, std::size_t targetIdx, std::size_t planeIdx);
+    // P12: tek duzlem, birden cok hedef (profil) — her hedefe ayni kaynak
+    // duzlemle AYRI CutModifier kurulur; tek undo anlik islemi.
+    void applyCutFromTargets(CutKind kind, const std::vector<std::size_t>& targets,
+                             std::size_t planeIdx);
     void enterPendingCutCommand(CutKind kind);
     void cancelPendingCutCommand();
     void executePendingCutCommand();
@@ -841,10 +845,12 @@ private:
     TransformPhase transformPhase_{TransformPhase::Selecting};
     std::vector<std::size_t> selectedModels_;
     std::optional<POINT> selectionFirstCorner_;
-    // VERB-NOUN KESME (Fitting/Plane Cut): komut girilince once profil, sonra
-    // duzlem secilir; sag tik uygular, Esc iptal.
+    // VERB-NOUN KESME (Fitting/Plane Cut): komut girilince once profil(ler),
+    // sonra duzlem secilir; sag tik uygular, Esc iptal. P12: TEK duzlem
+    // birden cok profili kesebilir — pendingCutTargets_ coklu hedef tutar,
+    // her hedefe AYRI CutModifier yazilir (kaynak duzlem ortak).
     std::optional<CutKind> pendingCutKind_;
-    std::optional<std::size_t> pendingCutTarget_;
+    std::vector<std::size_t> pendingCutTargets_;
     std::optional<std::size_t> pendingCutPlane_;
     // KESME NESNELERI SECIMI (P5): kesme modifier secimi (model seciminden
     // ayri) + imlecin altindaki secilebilir nesne (secim hinti).

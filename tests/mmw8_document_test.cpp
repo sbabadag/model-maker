@@ -291,6 +291,50 @@ static void testCutAndConstructionRoundTrip() {
     std::filesystem::remove(path, ec);
 }
 
+// 7) P12: tek duzlem birden cok hedefi keser — her hedef AYRI modifier, hepsi
+// ORTAK kaynak duzlemi referanslar; MMW8 round-trip bunu korumali.
+static void testMultiTargetCutRoundTrip() {
+    std::printf("Test 7: coklu hedef + ortak kaynak duzlem MMW8 round-trip\n");
+    const auto path = tempPath("mmw8_doc_multi_cut.mmw");
+    Document doc;
+    doc.addModel(WireframeModel::line({0, 0, 0}, {1000, 0, 0}));
+    doc.addModel(WireframeModel::line({0, 500, 0}, {1000, 500, 0}));
+    const EntityId aId = doc.modelId(0);
+    const EntityId bId = doc.modelId(1);
+    const std::size_t planeIdx = doc.addConstructionPlane(WorkPlane::world(), 500.0);
+    const EntityId planeId = doc.modelId(planeIdx);
+    // Tek duzlem, iki hedef: iki ayri modifier, ORTAK source.
+    for (const EntityId target : {aId, bId}) {
+        CutModifier m;
+        m.kind = CutKind::Fitting;
+        m.target = target;
+        m.source = planeId;
+        m.planeOrigin = {500, 0, 0};
+        m.planeNormal = {1, 0, 0};
+        m.name = "Fitting";
+        doc.addCutModifier(m);
+    }
+    check(doc.cutModifiers().size() == 2, "2 modifier kurulur (coklu hedef)");
+
+    doc.save(path);
+    Document loaded;
+    loaded.load(path);
+
+    check(loaded.cutModifiers().size() == 2, "2 kesme modifier korunur");
+    if (loaded.cutModifiers().size() == 2) {
+        const auto& m0 = loaded.cutModifiers()[0];
+        const auto& m1 = loaded.cutModifiers()[1];
+        check(m0.source == planeId && m1.source == planeId,
+              "ortak kaynak duzlem her iki modifier'da korunur");
+        check((m0.target == aId && m1.target == bId) ||
+              (m0.target == bId && m1.target == aId),
+              "iki farkli hedef korunur");
+    }
+
+    std::error_code ec;
+    std::filesystem::remove(path, ec);
+}
+
 int main() {
     testRoundTrip();
     testUndoClearedOnLoad();
@@ -298,6 +342,7 @@ int main() {
     testLegacyUpgrade();
     testSaveSafety();
     testCutAndConstructionRoundTrip();
+    testMultiTargetCutRoundTrip();
     std::printf("MMW8 Document: checks=%d failures=%d\n", g_checks, g_failures);
     return g_failures == 0 ? 0 : 1;
 }
