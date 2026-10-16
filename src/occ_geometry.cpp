@@ -54,6 +54,8 @@
 
 namespace mm {
 
+bool g_drawFilletRadii = true;  // varsayilan: gercek radiuslu kesit
+
 double boxVolume(double x, double y, double z) {
     const TopoDS_Shape box = BRepPrimAPI_MakeBox(x, y, z).Shape();
     GProp_GProps props;
@@ -497,7 +499,10 @@ static std::vector<gp_Pnt> buildISectionContour(const SteelProfile& profile) {
     const double h = profile.height;
     const double tw = profile.plateThickness;    // govde kalinligi
     const double tf = profile.flangeThickness;   // flans kalinligi (govdede nominal)
-    const double r = profile.roundingRadius > 0.0 ? profile.roundingRadius : 0.0;
+    // Fason radiusu: g_drawFilletRadii kapaliysa radius yok sayilir (Tekla
+    // tarzi keskin kose — ~4x daha az tessellasyon, daha hizli cizim/boolean).
+    const double r = (g_drawFilletRadii && profile.roundingRadius > 0.0)
+                         ? profile.roundingRadius : 0.0;
     const double slope = iSectionFlangeSlope(profile.name);
     const double hw = w / 2.0;
     const double hh = h / 2.0;

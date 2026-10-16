@@ -1271,6 +1271,7 @@ void QtMainWindow::createToolbar() {
         addBtn(lay, ToolGlyph::Extents,  "Extents",  "Zoom Extents", [this]() { app_.zoomExtents2D(); });
         addBtn(lay, ToolGlyph::Extents,  "Zoom Penc.","Zoom Window", [this]() { app_.startZoomWindow2D(); });
         addBtn(lay, ToolGlyph::Reset,    "Sıfırla",  "Görünümü sıfırla (Ctrl+R)", [this]() { app_.resetView(); });
+        addBtn(lay, ToolGlyph::Toggle3D, "Radius",   "Profil radiuslarını göster/gizle (Tekla tarzı hızlı)", [this]() { app_.toggleDrawFilletRadii(); });
         addSep(lay);
         addDrop(lay, ToolGlyph::Extents, "Görünüş", "Standart görünüş yönleri (Ctrl+1..7)", [this](QMenu* m) {
             m->addAction(QStringLiteral("Önden (Ctrl+1)"),  this, [this]() { app_.setStandardView(StandardView::Front); });

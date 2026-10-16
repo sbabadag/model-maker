@@ -255,6 +255,10 @@ public:
     // KONSTRUKSIYON NESNELERI GIZLE/GOSTER: tum ConstructionKind nesnelerinin
     // gorunurlugunu tek bayrakla degistirir (Document::setConstructionVisible).
     void toggleConstructionVisibility();
+    // PROFIL FASON RADIUS GIZLE/GOSTER (Tekla tarzi): mm::g_drawFilletRadii
+    // bayragini cevirir ve tum profilleri yeniden uretir. Acik = gercek
+    // radiuslu kesit; kapali = keskin kose (~4x daha hizli cizim + boolean).
+    void toggleDrawFilletRadii();
     // TEKLA FITTING / PLANE CUT (P11, verb-noun): komut girilince once profil,
     // sonra konstrüksiyon duzlemi secilir (sol tik), SAG TIK komutu isletir,
     // Esc iptal. Fitting tarafi otomatik, PlaneCut keepPositive=true. OCC varsa
