@@ -49,4 +49,26 @@ bool isBoltAxisValid(const Vec3& axis) noexcept {
     return std::sqrt(axis.x * axis.x + axis.y * axis.y + axis.z * axis.z) > 1e-12;
 }
 
+const std::vector<double>& standardBoltDiameters() noexcept {
+    static const std::vector<double> kDiameters{12.0, 16.0, 20.0, 24.0, 27.0, 30.0};
+    return kDiameters;
+}
+
+double standardBoltHoleDiameter(double nominalDiameter) noexcept {
+    const double d = nominalDiameter;
+    // Katalog eslesmesi (toleranssiz; nominal cap tam verilir).
+    if (std::abs(d - 12.0) < 1e-9) return 14.0;
+    if (std::abs(d - 16.0) < 1e-9) return 18.0;
+    if (std::abs(d - 20.0) < 1e-9) return 22.0;
+    if (std::abs(d - 24.0) < 1e-9) return 26.0;
+    if (std::abs(d - 27.0) < 1e-9) return 30.0;
+    if (std::abs(d - 30.0) < 1e-9) return 33.0;
+    return d + 2.0;  // katalog disi: nominal + 2 mm
+}
+
+bool isBoltGradeValid(const std::string& grade) noexcept {
+    if (grade.empty()) return true;
+    return grade == "8.8" || grade == "10.9";
+}
+
 } // namespace mm

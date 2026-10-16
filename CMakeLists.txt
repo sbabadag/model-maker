@@ -159,7 +159,7 @@ option(BUILD_OCC_BRIDGE_DLL
     "Build mm_occ.dll — the C-API bridge for the Qt app (use MSYS2 toolchain)" OFF)
 
 if(MODELMAKER_OCC_READY)
-    add_library(model_maker_occ src/occ_geometry.cpp src/occ_solid_store.cpp src/occ_brep_serialize.cpp)
+    add_library(model_maker_occ src/occ_geometry.cpp src/occ_solid_store.cpp src/occ_brep_serialize.cpp src/bolt_geometry.cpp)
     target_link_libraries(model_maker_occ PUBLIC model_maker_core)
     target_include_directories(model_maker_occ PUBLIC include)
     if(OCC_INCLUDE_DIR)
@@ -200,7 +200,7 @@ endif()
 # mm_occ.dll: Qt uygulamasinin LoadLibrary ile yukledigi C-API koprusu.
 # YALNIZ MSYS2 toolchain'iyle derlenir (build-occ'de -DBUILD_OCC_BRIDGE_DLL=ON).
 if(MODELMAKER_OCC_READY AND WIN32 AND BUILD_OCC_BRIDGE_DLL)
-    add_library(model_maker_occ_bridge SHARED src/occ_bridge.cpp src/occ_geometry.cpp)
+    add_library(model_maker_occ_bridge SHARED src/occ_bridge.cpp src/occ_geometry.cpp src/bolt_geometry.cpp)
     # Kopru YALNIZ modelleme cekirdegini baglar — TKDESTEP/TKXSBase'i
     # DISARIDA birak. STEP kuyrugu TKService->TKDraw->tcl/tk86 ve VTK'ye
     # uzandigi icin (MSYS2'nin OCCT paketi) izole occ\ dizininde yukleme

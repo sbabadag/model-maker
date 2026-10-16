@@ -81,6 +81,15 @@ int main() {
     check(isBoltAxisValid({0, 0, 1}), "eksen gecerli");
     check(!isBoltAxisValid({0, 0, 0}), "sifir eksen gecersiz");
 
+    // 6) Standart boyut katalogu + kalite.
+    check(standardBoltDiameters().size() == 6, "6 standart cap");
+    check(near(standardBoltHoleDiameter(20.0), 22.0), "M20 -> 22 delik");
+    check(near(standardBoltHoleDiameter(30.0), 33.0), "M30 -> 33 delik");
+    check(near(standardBoltHoleDiameter(9.0), 11.0), "katalog disi -> +2");
+    check(isBoltGradeValid("8.8") && isBoltGradeValid("10.9") &&
+              !isBoltGradeValid("5.6") && isBoltGradeValid(""),
+          "kalite dogrulama");
+
     if (failures) {
         std::printf("%d FAIL\n", failures);
         return 1;

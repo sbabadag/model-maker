@@ -76,4 +76,17 @@ std::vector<CutModifier> boltGroupHoleModifiers(const BoltGroup& bolt) noexcept;
 // Bulon ekseni gecerli mi (birimlestirilebilir, sifir degil).
 bool isBoltAxisValid(const Vec3& axis) noexcept;
 
+// --- STANDART BOYUT KATALOGU ------------------------------------------------
+// Desteklenen nominal caplar (M12..M30). Degerler mm.
+const std::vector<double>& standardBoltDiameters() noexcept;
+
+// ISO normal bosluklu delik capi (mm) — nominal captan turetilir.
+// M12->14, M16->18, M20->22, M24->26, M27->30, M30->33.
+// Katalogda olmayan cap icin nominal + 2 mm (guvenli varsayilan).
+double standardBoltHoleDiameter(double nominalDiameter) noexcept;
+
+// Kalite bilgisi gecerli mi (8.8 / 10.9). Bos etiket de gecerli sayilir
+// (sinif belirtilmemis). Duyarliliksiz degil; tam eslesme aranir.
+bool isBoltGradeValid(const std::string& grade) noexcept;
+
 } // namespace mm
