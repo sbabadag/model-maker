@@ -5663,6 +5663,16 @@ void Application::recomputeCutTarget(EntityId target) {
     // "geometri yok" yolu eski davranisi korur (sessiz no-op).
     ensureCutSolid(target);
 
+    // P11: profilli hedefin taban (pre-cut) B-Rep'i KALICI ozelliklerden her
+    // recompute'ta yeniden uretilir. Move/gumball/undo/redo bir profili
+    // tasiyinca OCC magazasi ESKI konumda kalir (moveModels/applyUndoOp
+    // magazaya dokunmaz; kesmesi yoksa recomputeTargetsForMovedModels da onu
+    // atlar). Kesme ilk kez uygulanirken bu eski katiyi kullanip profili eski
+    // noktaya geri ziplatirdi. Taban her zaman guncel eksen/rotasyondan
+    // turetildigi icin bu drift kendiliginden onarilir. Profilsiz ilkel
+    // katilar yeniden uretilemez -> no-op, eski davranis korunur.
+    rebuildCutBaseSolid(target);
+
     VersionId base = store->baseVersion(target);
     if (base == kInvalidVersionId) {
         base = store->activeVersion(target);
