@@ -262,6 +262,84 @@ static TopoDS_Shape cutSolidByPolygon(const TopoDS_Shape& base,
     return unifier.Shape();
 }
 
+// --- Fitting UZATMA (P9) ---------------------------------------------------
+// Tekla "Fit part end": duzlem ekseni KESMIYORSA (kati tamamen tek tarafta,
+// yani kiris duzleme kisa kaliyorsa) yakin uc duzleme kadar UZATILIR. Eski
+// davranis bu durumda base'e dokunmuyordu (yalniz kesen duzlemi destekliyordu).
+// Yontem: yakin ucun kapak yuzunu eksen boyunca duzlemi gecene kadar extrude et
+// -> fuse -> duzlemle kes (uzak taraf korunur). Sonuc: uc yuzeyi TAM duzlemde
+// (egimli duzlemlerde dahi duzgun egimli uy yuzeyi uretilir).
+
+// Eksene ~dik, eksen yonunde en uc duzlemdeki TUM kapak yuzlerini toplar.
+// Profil kesiti TEK yuz degildir; profil uretici onu flans/govde gibi alt
+// yuzlere boler (ayni duzlemde birden fazla duzlemsel yuz). Uzatma prizmasi
+// kesitin TAMAMINI surmelidir, tek yuz degil.
+static void collectCapFaces(const TopoDS_Shape& shape, const gp_Dir& axisDir,
+                            bool atToEnd, std::vector<TopoDS_Face>& out) {
+    double best = atToEnd ? -1e100 : 1e100;
+    std::vector<TopoDS_Face> candidates;
+    for (TopExp_Explorer ex(shape, TopAbs_FACE); ex.More(); ex.Next()) {
+        const TopoDS_Face face = TopoDS::Face(ex.Current());
+        if (face.IsNull()) continue;
+        BRepAdaptor_Surface surface(face, true);
+        if (surface.GetType() != GeomAbs_Plane) continue;
+        const gp_Pln pln = surface.Plane();
+        if (std::abs(pln.Axis().Direction().Dot(axisDir)) < 0.999) continue;  // kapak eksene ~dik
+        const double proj = pln.Location().XYZ().Dot(axisDir.XYZ());
+        if (atToEnd ? (proj > best + 1e-6) : (proj < best - 1e-6)) {
+            best = proj;
+            candidates.clear();
+            candidates.push_back(face);
+        } else if (std::abs(proj - best) <= 1e-6) {
+            candidates.push_back(face);
+        }
+    }
+    out = std::move(candidates);
+}
+
+static TopoDS_Shape extendSolidToPlane(const TopoDS_Shape& base,
+                                       const Vec3& axisFrom, const Vec3& axisTo,
+                                       const Vec3& planeOrigin,
+                                       const Vec3& planeNormal) {
+    const double sFrom = signedDistanceToPlane(planeOrigin, planeNormal, axisFrom);
+    const double sTo = signedDistanceToPlane(planeOrigin, planeNormal, axisTo);
+    const bool fromIsNear = std::abs(sFrom) <= std::abs(sTo);
+    const double sNear = fromIsNear ? sFrom : sTo;
+    const double sFar = fromIsNear ? sTo : sFrom;
+
+    const gp_Vec axis(axisTo.x - axisFrom.x, axisTo.y - axisFrom.y,
+                      axisTo.z - axisFrom.z);
+    if (axis.SquareMagnitude() < 1e-18) return base;
+    const gp_Dir u(axis);
+    const gp_Dir n(planeNormal.x, planeNormal.y, planeNormal.z);
+
+    // Yakin uctan duzleme eksen boyunca uzaklik:
+    //   (P_near + t*u) duzlemde -> n.(P_near - origin) + t*(u.n) = 0 -> t = -sNear/(u.n)
+    const double uDotN = u.Dot(n);
+    if (std::abs(uDotN) < 1e-9) return base;  // eksen duzleme ~paralel -> uzatilamaz
+
+    std::vector<TopoDS_Face> caps;
+    collectCapFaces(base, u, /*atToEnd=*/ !fromIsNear, caps);
+    if (caps.empty()) return base;  // kapak bulunamadi -> guvenli basarisizlik
+
+    const double t = -sNear / uDotN;
+    // Kucuk tasma: duzlemi kesin gecsin ki cut temiz egimli yuzey uretsin.
+    const double overshoot = std::abs(t) * 0.01 + 0.5;
+    const gp_Vec extVec(u.XYZ() * (t + std::copysign(overshoot, t)));
+
+    // Kesitin TUM alt yuzlerini ayni vektorle surup base ile birlestir.
+    TopoDS_Shape extended = base;
+    for (const auto& cap : caps) {
+        BRepPrimAPI_MakePrism prism(cap, extVec);
+        if (!prism.IsDone()) continue;
+        extended = BRepAlgoAPI_Fuse(extended, prism.Shape()).Shape();
+    }
+    ShapeUpgrade_UnifySameDomain unifier(extended, true, true, true);
+    unifier.Build();
+    // Uzak ucun tarafini koru: butun kiris + uzatma, duzlemden kesilir.
+    return cutSolidByPlane(unifier.Shape(), planeOrigin, planeNormal, sFar > 0.0);
+}
+
 TopoDS_Shape applyCutModifier(const TopoDS_Shape& base, const CutModifier& mod,
                               const Vec3& axisFrom, const Vec3& axisTo,
                               const ToolShapeResolver& toolShape) {
@@ -273,9 +351,22 @@ TopoDS_Shape applyCutModifier(const TopoDS_Shape& base, const CutModifier& mod,
                                    mod.keepPositive != mod.invertSide);
         case CutKind::Fitting: {
             // Tekla "Fit part end": kisa taraf otomatik atilir (uzun taraf
-            // korunur). Uzatma/kisaltma durumu (duzlem ekseni kesmiyorsa)
-            // prototip kapsami disi — base'e dokunma. invertSide (P8) otomatik
-            // tarafi tersine cevirir (Alt+sol tik).
+            // korunur). Duzlem ekseni KESMIYORSA (kati tamamen tek tarafta)
+            // yakin ucu duzleme kadar UZAT (P9). invertSide (P8) kesen duzlemde
+            // otomatik tarafi tersine cevirir (Alt+sol tik); uzatma durumunda
+            // anlamsizdir (butun kiris korunur).
+            const double sFrom = signedDistanceToPlane(mod.planeOrigin,
+                                                       mod.planeNormal, axisFrom);
+            const double sTo = signedDistanceToPlane(mod.planeOrigin,
+                                                     mod.planeNormal, axisTo);
+            constexpr double tol = 1e-9;
+            // Eksen duzleme yatik/uzerinde: kesim anlamsiz.
+            if (std::abs(sFrom) < tol && std::abs(sTo) < tol) return base;
+            if (sFrom * sTo > 0.0) {
+                // Uzatma/kisaltma: duzlem ekseni kesmiyor.
+                return extendSolidToPlane(base, axisFrom, axisTo, mod.planeOrigin,
+                                          mod.planeNormal);
+            }
             const auto keep = fittingKeepPositive(axisFrom, axisTo, mod.planeOrigin,
                                                   mod.planeNormal);
             if (!keep) return base;

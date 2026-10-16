@@ -162,6 +162,41 @@ int main() {
         check(xMin > 1500.0 && xMax < 4500.0, "zincir: x in [2000,4000]");
     }
 
+    // --- P9) UZATMA: duzlem ekseni kesmiyorsa yakin ucu duzleme kadar uzatir.
+    {
+        // Duzlem from ucunun GERISINDE (x=-500): kiris from ucundan x=-500'e uzar.
+        CutModifier fit;
+        fit.kind = CutKind::Fitting;
+        fit.planeOrigin = {-500.0, 0.0, 0.0};
+        fit.planeNormal = nx;
+        double xMin, yMin, zMin, xMax, yMax, zMax;
+        bbox(applyCutModifier(base, fit, axisFrom, axisTo), xMin, yMin, zMin, xMax, yMax, zMax);
+        const double ratio = shapeVolume(applyCutModifier(base, fit, axisFrom, axisTo)) / baseVol;
+        check(std::abs(ratio - 6500.0 / 6000.0) < 0.01, "P9 fitting x=-500: kiris uzar (~6500/6000 hacim)");
+        check(xMin < -450.0 && xMax > 5900.0, "P9 fitting x=-500: bbox -500..6000");
+    }
+    {
+        // Duzlem to ucunun OTESINDE (x=6500): kiris to ucundan x=6500'e uzar.
+        CutModifier fit;
+        fit.kind = CutKind::Fitting;
+        fit.planeOrigin = {6500.0, 0.0, 0.0};
+        fit.planeNormal = nx;
+        double xMin, yMin, zMin, xMax, yMax, zMax;
+        bbox(applyCutModifier(base, fit, axisFrom, axisTo), xMin, yMin, zMin, xMax, yMax, zMax);
+        const double ratio = shapeVolume(applyCutModifier(base, fit, axisFrom, axisTo)) / baseVol;
+        check(std::abs(ratio - 6500.0 / 6000.0) < 0.01, "P9 fitting x=6500: kiris uzar (~6500/6000 hacim)");
+        check(xMin > -50.0 && xMax > 6400.0, "P9 fitting x=6500: bbox 0..6500");
+    }
+    {
+        // EGIMLI duzlem from ucunun gerisinde: kama uzatma (hacim > taban).
+        CutModifier fit;
+        fit.kind = CutKind::Fitting;
+        fit.planeOrigin = {-500.0, 0.0, 0.0};
+        fit.planeNormal = nInclined;
+        const double vol = shapeVolume(applyCutModifier(base, fit, axisFrom, axisTo));
+        check(vol > baseVol, "P9 egimli fitting x=-500: kiris uzadi (hacim > taban)");
+    }
+
     // --- 4) Taban immutabilite: tum islemlerden sonra base DEGISMEDI.
     check(std::abs(shapeVolume(base) - baseVol) < 1e-3, "taban B-Rep degismedi");
 
