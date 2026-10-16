@@ -1177,7 +1177,7 @@ void Application::paintPassiveViewport(std::size_t index) {
         view.hoverModel.reset();
         view.hoverCutModifier.reset();
         view.hoverFaceModel.reset();
-        view.hoverFaceIndex.reset();
+        view.hoverFaceIndices.clear();
         view.snapType = SnapType::None;
         view.anchor.reset();
         view.facePoints.clear();
@@ -3982,7 +3982,7 @@ void Application::startBoltCommand() {
     selectionFirstCorner_.reset();
     hoverModel_.reset();
     hoverFaceModel_.reset();
-    hoverFaceIndex_.reset();
+    hoverFaceIndices_.clear();
     publishStatus(L"Bolt: baglanacak IKI parcayi secin (sol tık, toggle), sağ tık uygular");
     updateControls();
     updateStatus();
@@ -3996,7 +3996,7 @@ void Application::cancelPendingBoltCommand() {
     pendingBoltAxis_.reset();
     hoverModel_.reset();
     hoverFaceModel_.reset();
-    hoverFaceIndex_.reset();
+    hoverFaceIndices_.clear();
     selectedModels_.clear();
     selectionFirstCorner_.reset();
     updateControls();
@@ -4024,7 +4024,7 @@ void Application::executePendingBoltCommand() {
     pendingBoltAxis_.reset();
     hoverModel_.reset();
     hoverFaceModel_.reset();
-    hoverFaceIndex_.reset();
+    hoverFaceIndices_.clear();
     applyBoltFromParts(parts, axis);
 }
 
@@ -4205,7 +4205,7 @@ bool Application::pickPendingBoltAt(int x, int y) {
         }
         pendingBoltAxis_ = faceHit->hit.normal;
         hoverFaceModel_.reset();
-        hoverFaceIndex_.reset();
+        hoverFaceIndices_.clear();
         publishStatus(L"Yuz secildi — sağ tık ile uygula (eksen = yuz normali, Esc iptal)");
         updateControls();
         updateStatus();
@@ -4986,7 +4986,7 @@ void Application::refreshHoverCandidate(int x, int y) {
     hoverModel_.reset();
     hoverCutModifier_.reset();
     hoverFaceModel_.reset();
-    hoverFaceIndex_.reset();
+    hoverFaceIndices_.clear();
     if (!pendingCutKind_ && !pendingBolt_) return;
     // VERB-NOUN BOLT beklemede: yalnizca normal parcalar (konstrüksiyon
     // olmayan) vurgulanir. Tam 2 parca seciliyse YUZ secim adimidir: imlecin
@@ -4996,7 +4996,8 @@ void Application::refreshHoverCandidate(int x, int y) {
             const auto faceHit = pendingBoltFaceHit(x, y);
             if (faceHit) {
                 hoverFaceModel_ = faceHit->model;
-                hoverFaceIndex_ = faceHit->hit.faceIndex;
+                hoverFaceIndices_ = planarFaceTriangleGroup(
+                    document_.models()[faceHit->model], faceHit->hit.faceIndex);
             }
             return;
         }
@@ -8579,7 +8580,7 @@ DraftView Application::draftView() const {
     view.selectedModels = selectedModels_; view.selectionFirstCorner = selectionFirstCorner_;
     view.selectedCutModifiers = selectedCutModifiers_;
     view.hoverModel = hoverModel_; view.hoverCutModifier = hoverCutModifier_;
-    view.hoverFaceModel = hoverFaceModel_; view.hoverFaceIndex = hoverFaceIndex_;
+    view.hoverFaceModel = hoverFaceModel_; view.hoverFaceIndices = hoverFaceIndices_;
     view.transformBase = transformBase_;
     view.offsetDistance = offsetDistance_;
     view.filletRadius = filletRadius_;

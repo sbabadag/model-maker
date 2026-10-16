@@ -236,11 +236,12 @@ struct DraftView {
     // ONCELIKLIDIR (modellerin ustunde cizilir); yoksa model indeksi.
     std::optional<std::size_t> hoverModel;
     std::optional<std::size_t> hoverCutModifier;
-    // Bolt yuz secim adiminda hover edilen YUZ (model + yuz indeksi). Modelin
-    // tamami degil, yalnizca isaretli poligon yari saydam dolgu + kontur ile
-    // vurgulanir (kullanici hangi yuzu sececegini gorur).
+    // Bolt yuz secim adiminda hover edilen YUZ (model + AYNI duzlemsel yuzun
+    // TUM ucgen indeksleri). Tek tessellasyon ucgeni degil, yuzun tamami yari
+    // saydam dolgu + kontur ile vurgulanir (kullanici hangi yuzu sececegini
+    // gorur; "ucgen yuz" goruntusu kalkar).
     std::optional<std::size_t> hoverFaceModel;
-    std::optional<std::size_t> hoverFaceIndex;
+    std::vector<std::size_t> hoverFaceIndices;
     // PROFIL UC TUTAMAKLARI (grip edit): secili profilli katilarin iki ucuna
     // sari (from) ve mor (to) tutamak cizilir. Bu alan yalniz secilen (aktif)
     // tutamagin vurgusunu tasir.

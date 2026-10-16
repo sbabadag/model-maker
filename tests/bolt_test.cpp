@@ -211,6 +211,18 @@ int main() {
         }
     }
 
+    // 9) planarFaceTriangleGroup: ayni duzlemsel baglantili ucgenleri birlestirir.
+    {
+        const WireframeModel quad(
+            {Vec3{0, 0, 0}, Vec3{10, 0, 0}, Vec3{10, 10, 0}, Vec3{0, 10, 0},
+             Vec3{0, 0, 5}, Vec3{10, 0, 5}, Vec3{0, 10, 5}},
+            {}, {Face{0, 1, 2}, Face{0, 2, 3}, Face{4, 5, 6}});
+        const auto g0 = planarFaceTriangleGroup(quad, 0);
+        check(g0.size() == 2, "facegroup: iki es-duzlemsel ucgen birlesti");
+        const auto g2 = planarFaceTriangleGroup(quad, 2);
+        check(g2.size() == 1, "facegroup: paralel ama baglantisiz ucgen ayri");
+    }
+
     if (failures) {
         std::printf("%d FAIL\n", failures);
         return 1;

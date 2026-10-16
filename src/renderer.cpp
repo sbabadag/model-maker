@@ -953,46 +953,65 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         }
     };
 
-    // BOLT YUZ SECIM HOVER VURGUSU: imlecin altindaki poligon yuz yari saydam
-    // amber dolgu + beyaz kontur ile vurgulanir (kullanici hangi yuzu
-    // sececegini gorur). Yalnizca bolt yuz secim adiminda set edilir.
+    // BOLT YUZ SECIM HOVER VURGUSU: imlecin altindaki yuzun TAMAMI (ayni
+    // baglantili duzlemsel yuzun tum ucgenleri) yari saydam amber dolgu +
+    // DIS SINIR konturu ile vurgulanir. Tek tessellasyon ucgeni degil — bu
+    // "ucgen yuz" goruntusunu giderir.
     const auto drawHoverFaceFill = [&]() {
-        if (!draft.hoverFaceModel || !draft.hoverFaceIndex) return;
+        if (!draft.hoverFaceModel) return;
         const std::size_t mi = *draft.hoverFaceModel;
-        const std::size_t fi = *draft.hoverFaceIndex;
         if (mi >= document.models().size()) return;
         const auto& model = document.models()[mi];
-        if (fi >= model.faces().size()) return;
-        const auto& face = model.faces()[fi];
-        if (face.size() < 3) return;
         const auto& verts = model.vertices();
-        std::vector<POINT> pts;
-        pts.reserve(face.size());
-        for (const std::size_t vi : face) {
-            if (vi >= verts.size()) return;
-            pts.push_back(projectPoint(verts[vi]));
+        if (draft.hoverFaceIndices.empty()) return;
+        // Grup dis siniri = grupta yalniz BIR kez paylasilan kenar.
+        std::map<std::pair<std::size_t, std::size_t>, int> edgeCount;
+        std::vector<std::vector<POINT>> triPts;
+        triPts.reserve(draft.hoverFaceIndices.size());
+        LONG left = 1000000000L, right = -1000000000L;
+        LONG top = 1000000000L, bottom = -1000000000L;
+        for (const std::size_t fi : draft.hoverFaceIndices) {
+            if (fi >= model.faces().size()) continue;
+            const auto& face = model.faces()[fi];
+            if (face.size() < 3) continue;
+            std::vector<POINT> pts;
+            pts.reserve(face.size());
+            bool ok = true;
+            for (const std::size_t vi : face) {
+                if (vi >= verts.size()) { ok = false; break; }
+                const POINT p = projectPoint(verts[vi]);
+                pts.push_back(p);
+                left = std::min(left, p.x); right = std::max(right, p.x);
+                top = std::min(top, p.y); bottom = std::max(bottom, p.y);
+            }
+            if (!ok || pts.size() < 3) continue;
+            for (std::size_t k = 0; k < face.size(); ++k) {
+                std::size_t a = face[k], b = face[(k + 1) % face.size()];
+                if (a > b) std::swap(a, b);
+                ++edgeCount[{a, b}];
+            }
+            triPts.push_back(std::move(pts));
         }
-        LONG left = pts[0].x, right = pts[0].x, top = pts[0].y, bottom = pts[0].y;
-        for (const POINT& p : pts) {
-            left = std::min(left, p.x); right = std::max(right, p.x);
-            top = std::min(top, p.y); bottom = std::max(bottom, p.y);
-        }
+        if (triPts.empty()) return;
         left = std::clamp<LONG>(left, 0, width);
         right = std::clamp<LONG>(right, 0, width);
         top = std::clamp<LONG>(top, 0, height);
         bottom = std::clamp<LONG>(bottom, 0, height);
         const int w = right - left, h = bottom - top;
         if (w > 0 && h > 0) {
+            // TUM ucgenleri TEK bitmap'e ciz -> tek AlphaBlend (ucgen basina
+            // cakisan alfa dolgusundan dogan dikiş cizgileri olusmaz).
             HDC fillDc = CreateCompatibleDC(dc);
             HBITMAP fillBmp = CreateCompatibleBitmap(dc, w, h);
             HGDIOBJ oldBmp = SelectObject(fillDc, fillBmp);
             BitBlt(fillDc, 0, 0, w, h, dc, left, top, SRCCOPY);
-            std::vector<POINT> local = pts;
-            for (auto& p : local) { p.x -= left; p.y -= top; }
             HBRUSH brush = CreateSolidBrush(RGB(255, 180, 0));
             HGDIOBJ oldBrush = SelectObject(fillDc, brush);
             HGDIOBJ oldPen = SelectObject(fillDc, GetStockObject(NULL_PEN));
-            Polygon(fillDc, local.data(), static_cast<int>(local.size()));
+            for (auto& pts : triPts) {
+                for (auto& p : pts) { p.x -= left; p.y -= top; }
+                Polygon(fillDc, pts.data(), static_cast<int>(pts.size()));
+            }
             SelectObject(fillDc, oldPen);
             SelectObject(fillDc, oldBrush);
             BLENDFUNCTION blend{AC_SRC_OVER, 0, 96, 0};
@@ -1002,14 +1021,18 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
             DeleteObject(fillBmp);
             DeleteDC(fillDc);
         }
+        // Dis sinir konturu (yalniz bir kez paylasilan kenarlar — ic ucgen
+        // kosegenleri cizilmez).
         HPEN outline = CreatePen(PS_SOLID, 2, RGB(255, 255, 255));
-        SelectObject(dc, outline);
-        for (std::size_t k = 0; k < pts.size(); ++k) {
-            const POINT a = pts[k];
-            const POINT b = pts[(k + 1) % pts.size()];
+        HGDIOBJ oldOutline = SelectObject(dc, outline);
+        for (const auto& [edge, count] : edgeCount) {
+            if (count != 1) continue;
+            if (edge.first >= verts.size() || edge.second >= verts.size()) continue;
+            const POINT a = projectPoint(verts[edge.first]);
+            const POINT b = projectPoint(verts[edge.second]);
             line(dc, a.x, a.y, b.x, b.y);
         }
-        SelectObject(dc, stockPen);
+        SelectObject(dc, oldOutline);
         DeleteObject(outline);
         ++performance.renderedEntities;
     };

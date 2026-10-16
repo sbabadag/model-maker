@@ -955,7 +955,10 @@ private:
     // Bolt yuz secim adiminda imlecin altindaki yuz (hover vurgusu). Hover ile
     // tik-seciminin AYNI yuzu gostermesi icin pendingBoltFaceHit ortak kaynak.
     std::optional<std::size_t> hoverFaceModel_;
-    std::optional<std::size_t> hoverFaceIndex_;
+    // Bolt yuz secim adiminda hover edilen YUZUN TUM ucgenleri (ayni baglantili
+    // duzlemsel yuz — tek tessellasyon ucgeni degil). Vurgu bu kumenin tamamina
+    // uygulanir; boylece "ucgen yuz" goruntusu kalkar.
+    std::vector<std::size_t> hoverFaceIndices_;
     std::optional<Vec3> transformBase_;
     std::optional<Vec3> rotateAxis_;
     std::optional<double> offsetDistance_;

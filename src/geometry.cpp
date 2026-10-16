@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <map>
 #include <numbers>
 #include <stdexcept>
 #include <utility>
@@ -403,6 +404,78 @@ std::optional<MeshRayHit> raycastMesh(const WireframeModel& model, Vec3 rayOrigi
         }
     }
     return best;
+}
+
+std::vector<std::size_t> planarFaceTriangleGroup(const WireframeModel& model,
+                                                 std::size_t startTriangle) noexcept {
+    const auto& faces = model.faces();
+    const auto& verts = model.vertices();
+    std::vector<std::size_t> result;
+    if (startTriangle >= faces.size()) return result;
+    if (faces[startTriangle].size() < 3) {
+        result.push_back(startTriangle);
+        return result;
+    }
+    // Ucgen normali (capraz carpim), birimlenmis.
+    const auto triNormal = [&](std::size_t fi, double& nx, double& ny, double& nz) {
+        const auto& f = faces[fi];
+        if (f.size() < 3) return false;
+        const Vec3& a = verts[f[0]];
+        const Vec3& b = verts[f[1]];
+        const Vec3& c = verts[f[2]];
+        const double e1x = b.x - a.x, e1y = b.y - a.y, e1z = b.z - a.z;
+        const double e2x = c.x - a.x, e2y = c.y - a.y, e2z = c.z - a.z;
+        nx = e1y * e2z - e1z * e2y;
+        ny = e1z * e2x - e1x * e2z;
+        nz = e1x * e2y - e1y * e2x;
+        const double l = std::sqrt(nx * nx + ny * ny + nz * nz);
+        if (l <= 1e-12) return false;
+        nx /= l; ny /= l; nz /= l;
+        return true;
+    };
+    double rnx = 0.0, rny = 0.0, rnz = 0.0;
+    if (!triNormal(startTriangle, rnx, rny, rnz)) {
+        result.push_back(startTriangle);
+        return result;
+    }
+    // Kenar (siralanmis iki kose) -> ucgen listesi komsuluk haritasi.
+    std::map<std::pair<std::size_t, std::size_t>, std::vector<std::size_t>> edgeMap;
+    for (std::size_t fi = 0; fi < faces.size(); ++fi) {
+        const auto& f = faces[fi];
+        if (f.size() < 3) continue;
+        for (std::size_t k = 0; k < f.size(); ++k) {
+            std::size_t a = f[k], b = f[(k + 1) % f.size()];
+            if (a > b) std::swap(a, b);
+            edgeMap[{a, b}].push_back(fi);
+        }
+    }
+    // Es-duzlemsel baglantili yayilim.
+    std::vector<bool> visited(faces.size(), false);
+    std::vector<std::size_t> stack{startTriangle};
+    visited[startTriangle] = true;
+    while (!stack.empty()) {
+        const std::size_t fi = stack.back();
+        stack.pop_back();
+        result.push_back(fi);
+        const auto& f = faces[fi];
+        for (std::size_t k = 0; k < f.size(); ++k) {
+            std::size_t a = f[k], b = f[(k + 1) % f.size()];
+            if (a > b) std::swap(a, b);
+            const auto it = edgeMap.find({a, b});
+            if (it == edgeMap.end()) continue;
+            for (const std::size_t nb : it->second) {
+                if (nb == fi || visited[nb]) continue;
+                double nnx = 0.0, nny = 0.0, nnz = 0.0;
+                if (!triNormal(nb, nnx, nny, nnz)) continue;
+                const double dot = nnx * rnx + nny * rny + nnz * rnz;
+                if (std::abs(dot) > 0.999) {
+                    visited[nb] = true;
+                    stack.push_back(nb);
+                }
+            }
+        }
+    }
+    return result;
 }
 
 } // namespace mm

@@ -224,4 +224,12 @@ struct MeshRayHit {
 std::optional<MeshRayHit> raycastMesh(const WireframeModel& model, Vec3 rayOrigin,
                                       Vec3 rayDirection) noexcept;
 
+// Ayni BAGLANTILI DUZLEMSEL yuzdeki (ayni ana B-Rep yuzunden gelen) TUM ucgen
+// indekslerini dondurur. startTriangle'dan baslar, paylasilan kenar uzerinden
+// es-duzlemsel (normal paralel, |dot|>0.999) komsulara tasarak yayilir. Bolt
+// yuz secim vurgusunun TEK ucgen degil, tum duz yuzeyi vurgulamasi icin.
+// Gecersiz startTriangle icin {startTriangle} doner.
+std::vector<std::size_t> planarFaceTriangleGroup(const WireframeModel& model,
+                                                 std::size_t startTriangle) noexcept;
+
 } // namespace mm
