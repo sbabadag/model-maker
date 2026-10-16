@@ -4142,11 +4142,11 @@ std::optional<std::size_t> Application::hitTestCutModifierAt(int x, int y) const
     // P5 secim/hint ile ayni esikler).
     if (mode_ == EditMode::Draw2D)
         return hitTestCutModifier2D(screenTo2D(x, y), document_,
-                                    10.0 / (60.0 * camera_.zoom()));
+                                    10.0 / (60.0 * camera_.zoom()), true);
     RECT client{};
     GetClientRect(canvas_, &client);
     return hitTestCutModifier3D({static_cast<double>(x), static_cast<double>(y)}, document_, camera_,
-                                std::max(1L, client.right), std::max(1L, client.bottom), 10.0);
+                                std::max(1L, client.right), std::max(1L, client.bottom), 10.0, true);
 }
 
 void Application::flipCutDirection(std::size_t index) {

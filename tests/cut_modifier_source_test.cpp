@@ -11,6 +11,7 @@
 // OCC'siz, Linux'ta kosar.
 
 #include "model_maker/document.hpp"
+#include "model_maker/drafting.hpp"
 
 #include <cmath>
 #include <cstdio>
@@ -105,6 +106,27 @@ int main() {
         const auto idxs = doc.cutModifiersForSource(planeId);
         check(idxs.size() == 1 && idxs[0] == 0, "cutModifiersForSource ters sorgu");
         check(doc.cutModifiersForSource(kInvalidEntityId).empty(), "source=0 sorgusu bos");
+    }
+
+    // --- 5. P8: kaynak-bagli modifier isabet testi (includeSourceBound) ---
+    // Alt+sol tik (yon tersi) kaynak-bagli modifier'i BULMALI; normal secim/hover
+    // yolu (false) ise kaynak nesnenin secilmesi icin onu ATLAMALI.
+    {
+        Document doc;
+        doc.addModel(WireframeModel::line({-100, -100, 0}, {100, 100, 0}));
+        const EntityId targetId = doc.modelId(0);
+        const std::size_t planeIdx = doc.addConstructionPlane(WorkPlane::world(), 1000.0);
+        const EntityId planeId = doc.modelId(planeIdx);
+        CutModifier m;
+        m.kind = CutKind::PlaneCut;
+        m.target = targetId;
+        m.source = planeId;
+        doc.addCutModifier(m);
+
+        const auto skipped = hitTestCutModifier2D({0, 0, 0}, doc, 10.0);
+        check(!skipped, "kaynak-bagli modifier secim/hover yolunda atlanir");
+        const auto found = hitTestCutModifier2D({0, 0, 0}, doc, 10.0, true);
+        check(found && *found == 0, "kaynak-bagli modifier Alt+tik (true) yolunda bulunur");
     }
 
     if (failures) {

@@ -1467,7 +1467,7 @@ CutPickGeometry cutModifierPickGeometry(const CutModifier& mod,
 }
 
 std::optional<std::size_t> hitTestCutModifier2D(const Vec3& cursor, const Document& document,
-                                                double tolerance) {
+                                                double tolerance, bool includeSourceBound) {
     const auto& mods = document.cutModifiers();
     std::optional<std::size_t> best;
     double bestDistance = tolerance;
@@ -1478,7 +1478,10 @@ std::optional<std::size_t> hitTestCutModifier2D(const Vec3& cursor, const Docume
         // P6: kaynaga BAGLI (source var + kaynak varlik mevcut) modifier bagimsiz
         // secilemez — kaynak nesne (duzlem/cizgi/3DFACE) kesme nesnesinin
         // KENDISIDIR. Secim/tasima/silme kaynak nesne uzerinden yapilir.
-        if (raw.source != kInvalidEntityId && document.indexOfEntity(raw.source)) continue;
+        // P8 (Alt+sol tik yon tersi) kaynak-bagli modifier'i DA bulmali; o yuzden
+        // includeSourceBound=true iken bu atlama devre disi birakilir.
+        if (!includeSourceBound && raw.source != kInvalidEntityId &&
+            document.indexOfEntity(raw.source)) continue;
         // P6: kaynaktan GUNCEL geometriyi cozumle (tasinan duzlem/cizgi isabet eder).
         const CutModifier mod = resolveCutModifierSource(raw, document);
         Bounds3 targetBounds{};
@@ -1509,7 +1512,8 @@ std::optional<std::size_t> hitTestCutModifier2D(const Vec3& cursor, const Docume
 
 std::optional<std::size_t> hitTestCutModifier3D(const Vec2& cursor, const Document& document,
                                                 const Camera& camera, int viewportWidth,
-                                                int viewportHeight, double tolerancePixels) {
+                                                int viewportHeight, double tolerancePixels,
+                                                bool includeSourceBound) {
     const auto& mods = document.cutModifiers();
     std::optional<std::size_t> best;
     double bestDistance = tolerancePixels;
@@ -1519,7 +1523,10 @@ std::optional<std::size_t> hitTestCutModifier3D(const Vec2& cursor, const Docume
         // P6: kaynaga BAGLI (source var + kaynak varlik mevcut) modifier bagimsiz
         // secilemez — kaynak nesne (duzlem/cizgi/3DFACE) kesme nesnesinin
         // KENDISIDIR. Secim/tasima/silme kaynak nesne uzerinden yapilir.
-        if (raw.source != kInvalidEntityId && document.indexOfEntity(raw.source)) continue;
+        // P8 (Alt+sol tik yon tersi) kaynak-bagli modifier'i DA bulmali; o yuzden
+        // includeSourceBound=true iken bu atlama devre disi birakilir.
+        if (!includeSourceBound && raw.source != kInvalidEntityId &&
+            document.indexOfEntity(raw.source)) continue;
         // P6: kaynaktan GUNCEL geometriyi cozumle (tasinan duzlem/cizgi isabet eder).
         const CutModifier mod = resolveCutModifierSource(raw, document);
         Bounds3 targetBounds{};

@@ -167,10 +167,11 @@ struct CutPickGeometry {
 CutPickGeometry cutModifierPickGeometry(const CutModifier& mod,
                                         const Bounds3& targetBounds) noexcept;
 std::optional<std::size_t> hitTestCutModifier2D(const Vec3& cursor, const Document& document,
-                                                double tolerance);
+                                                double tolerance, bool includeSourceBound = false);
 std::optional<std::size_t> hitTestCutModifier3D(const Vec2& cursor, const Document& document,
                                                 const Camera& camera, int viewportWidth,
-                                                int viewportHeight, double tolerancePixels);
+                                                int viewportHeight, double tolerancePixels,
+                                                bool includeSourceBound = false);
 std::vector<std::size_t> selectModelsInRect2D(const Vec3& firstCorner, const Vec3& secondCorner,
                                               const Document& document, bool crossing);
 std::vector<std::size_t> selectModelsInRect3D(const Vec2& firstCorner, const Vec2& secondCorner,
