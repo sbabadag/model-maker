@@ -197,6 +197,25 @@ int main() {
         check(vol > baseVol, "P9 egimli fitting x=-500: kiris uzadi (hacim > taban)");
     }
 
+    // --- P10) EGIMLI kismi kesisim: bir kose uzun (kesilir), digeri kisa
+    //          (uzatilir) -> uc yuzeyi tam duzlemde, bosluk kalmaz.
+    {
+        // XY'de 45 deg egimli duzlem, to ucuna yakin (ekseni x=5900'de keser).
+        // Duzlem denklemi x = 5900 - y: y=+150'de x=5750 (uzun kose, kesilir),
+        // y=-150'de x=6050 (kisa kose, uzatilmalidir).
+        const Vec3 nXY{invSqrt2, invSqrt2, 0.0};
+        CutModifier fit;
+        fit.kind = CutKind::Fitting;
+        fit.planeOrigin = {5900.0, 0.0, 0.0};
+        fit.planeNormal = nXY;
+        const TopoDS_Shape cut = applyCutModifier(base, fit, axisFrom, axisTo);
+        double xMin, yMin, zMin, xMax, yMax, zMax;
+        bbox(cut, xMin, yMin, zMin, xMax, yMax, zMax);
+        // Kisa kose uzatildi -> xMax ~6050 (eski davranis 6000'de birakirdi).
+        check(xMax > 6040.0, "P10 egimli kismi kesisim: kisa kose uzatildi (xMax>6040)");
+        check(xMin > -50.0, "P10 egimli kismi kesisim: from ucu yerinde (xMin~0)");
+    }
+
     // --- 4) Taban immutabilite: tum islemlerden sonra base DEGISMEDI.
     check(std::abs(shapeVolume(base) - baseVol) < 1e-3, "taban B-Rep degismedi");
 

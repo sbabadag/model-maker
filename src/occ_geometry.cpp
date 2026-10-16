@@ -297,35 +297,47 @@ static void collectCapFaces(const TopoDS_Shape& shape, const gp_Dir& axisDir,
     out = std::move(candidates);
 }
 
-static TopoDS_Shape extendSolidToPlane(const TopoDS_Shape& base,
-                                       const Vec3& axisFrom, const Vec3& axisTo,
-                                       const Vec3& planeOrigin,
-                                       const Vec3& planeNormal) {
-    const double sFrom = signedDistanceToPlane(planeOrigin, planeNormal, axisFrom);
-    const double sTo = signedDistanceToPlane(planeOrigin, planeNormal, axisTo);
-    const bool fromIsNear = std::abs(sFrom) <= std::abs(sTo);
-    const double sNear = fromIsNear ? sFrom : sTo;
-    const double sFar = fromIsNear ? sTo : sFrom;
-
+// "Fit part end" (Tekla ucu uydur): belirtilen ucu DISARI dogru, duzlemi kesin
+// gecene kadar uzatir, sonra korunacak tarafi birakarak duzlemle keser. Bu
+// yaklasim UZATMA (kisa kiris), KESME (uzun kiris) ve EGIMLI kismi kesisim
+// (bir kose kisa, digeri uzun) durumlarini tek yolda cozer: kisa kose doldurulur,
+// uzun kose kesilir -> uc yuzeyi tam duzlemde olur.
+//
+// fitFromEnd  : true -> from ucunu uydur (extrude -u yonunde), false -> to ucu.
+// keepPositive: kesmede korunacak yarim-uzay (duzlem normaline gore).
+static TopoDS_Shape fitEndToPlane(const TopoDS_Shape& base,
+                                  const Vec3& axisFrom, const Vec3& axisTo,
+                                  const Vec3& planeOrigin, const Vec3& planeNormal,
+                                  bool fitFromEnd, bool keepPositive) {
     const gp_Vec axis(axisTo.x - axisFrom.x, axisTo.y - axisFrom.y,
                       axisTo.z - axisFrom.z);
     if (axis.SquareMagnitude() < 1e-18) return base;
     const gp_Dir u(axis);
     const gp_Dir n(planeNormal.x, planeNormal.y, planeNormal.z);
-
-    // Yakin uctan duzleme eksen boyunca uzaklik:
-    //   (P_near + t*u) duzlemde -> n.(P_near - origin) + t*(u.n) = 0 -> t = -sNear/(u.n)
     const double uDotN = u.Dot(n);
     if (std::abs(uDotN) < 1e-9) return base;  // eksen duzleme ~paralel -> uzatilamaz
 
-    std::vector<TopoDS_Face> caps;
-    collectCapFaces(base, u, /*atToEnd=*/ !fromIsNear, caps);
-    if (caps.empty()) return base;  // kapak bulunamadi -> guvenli basarisizlik
+    // Uydurulan ucun eksen noktasindan duzleme eksen boyunca uzaklik (mutlak).
+    const double sFit = signedDistanceToPlane(planeOrigin, planeNormal,
+                                              fitFromEnd ? axisFrom : axisTo);
+    const double gap = std::abs(sFit) / std::abs(uDotN);
 
-    const double t = -sNear / uDotN;
-    // Kucuk tasma: duzlemi kesin gecsin ki cut temiz egimli yuzey uretsin.
-    const double overshoot = std::abs(t) * 0.01 + 0.5;
-    const gp_Vec extVec(u.XYZ() * (t + std::copysign(overshoot, t)));
+    // Kesitin eksen disina tasan kismi icin guvenli ust sinir: kiris bbox
+    // kosegeni. Bu sayede EGIMLI duzlemde kisa kose bile duzlemi kesin gecer.
+    Bnd_Box bb;
+    BRepBndLib::Add(base, bb);
+    double x1, y1, z1, x2, y2, z2;
+    bb.Get(x1, y1, z1, x2, y2, z2);
+    const double dx = x2 - x1, dy = y2 - y1, dz = z2 - z1;
+    const double diagonal = std::sqrt(dx * dx + dy * dy + dz * dz);
+
+    const double extendLen = gap + diagonal + 1.0;
+    const gp_Dir outward = fitFromEnd ? u.Reversed() : u;
+    const gp_Vec extVec(outward.XYZ() * extendLen);
+
+    std::vector<TopoDS_Face> caps;
+    collectCapFaces(base, u, /*atToEnd=*/ !fitFromEnd, caps);
+    if (caps.empty()) return base;  // kapak bulunamadi -> guvenli basarisizlik
 
     // Kesitin TUM alt yuzlerini ayni vektorle surup base ile birlestir.
     TopoDS_Shape extended = base;
@@ -336,8 +348,7 @@ static TopoDS_Shape extendSolidToPlane(const TopoDS_Shape& base,
     }
     ShapeUpgrade_UnifySameDomain unifier(extended, true, true, true);
     unifier.Build();
-    // Uzak ucun tarafini koru: butun kiris + uzatma, duzlemden kesilir.
-    return cutSolidByPlane(unifier.Shape(), planeOrigin, planeNormal, sFar > 0.0);
+    return cutSolidByPlane(unifier.Shape(), planeOrigin, planeNormal, keepPositive);
 }
 
 TopoDS_Shape applyCutModifier(const TopoDS_Shape& base, const CutModifier& mod,
@@ -350,11 +361,10 @@ TopoDS_Shape applyCutModifier(const TopoDS_Shape& base, const CutModifier& mod,
             return cutSolidByPlane(base, mod.planeOrigin, mod.planeNormal,
                                    mod.keepPositive != mod.invertSide);
         case CutKind::Fitting: {
-            // Tekla "Fit part end": kisa taraf otomatik atilir (uzun taraf
-            // korunur). Duzlem ekseni KESMIYORSA (kati tamamen tek tarafta)
-            // yakin ucu duzleme kadar UZAT (P9). invertSide (P8) kesen duzlemde
-            // otomatik tarafi tersine cevirir (Alt+sol tik); uzatma durumunda
-            // anlamsizdir (butun kiris korunur).
+            // Tekla "Fit part end": kisa taraf otomatik uydurulur, uzun taraf
+            // korunur. Tek yolda hem UZATMA (kisa kiris) hem KESME (uzun kiris)
+            // hem de EGIMLI kismi kesisim (kisa kose uzat + uzun kose kes).
+            // invertSide (P8, Alt+sol tik) uyduracagi ucu tersine cevirir.
             const double sFrom = signedDistanceToPlane(mod.planeOrigin,
                                                        mod.planeNormal, axisFrom);
             const double sTo = signedDistanceToPlane(mod.planeOrigin,
@@ -362,16 +372,25 @@ TopoDS_Shape applyCutModifier(const TopoDS_Shape& base, const CutModifier& mod,
             constexpr double tol = 1e-9;
             // Eksen duzleme yatik/uzerinde: kesim anlamsiz.
             if (std::abs(sFrom) < tol && std::abs(sTo) < tol) return base;
+
+            const bool fromIsNear = std::abs(sFrom) <= std::abs(sTo);
             if (sFrom * sTo > 0.0) {
-                // Uzatma/kisaltma: duzlem ekseni kesmiyor.
-                return extendSolidToPlane(base, axisFrom, axisTo, mod.planeOrigin,
-                                          mod.planeNormal);
+                // Kisa kiris: yakin ucu duzleme kadar uzat. invertSide anlamsiz
+                // (butun kiris korunur) — daima yakin ucu uydur, uzak tarafi koru.
+                const double sFar = fromIsNear ? sTo : sFrom;
+                return fitEndToPlane(base, axisFrom, axisTo, mod.planeOrigin,
+                                     mod.planeNormal, /*fitFromEnd=*/ fromIsNear,
+                                     /*keepPositive=*/ sFar > 0.0);
             }
+            // Kesen duzlem: uzun tarafi koru. fitFromEnd uyduracagi ucu isaretler
+            // (kisa taraf; invertSide ile terslenir). keepPositive korunan taraf.
             const auto keep = fittingKeepPositive(axisFrom, axisTo, mod.planeOrigin,
                                                   mod.planeNormal);
             if (!keep) return base;
-            return cutSolidByPlane(base, mod.planeOrigin, mod.planeNormal,
-                                   *keep != mod.invertSide);
+            const bool fitFromEnd = mod.invertSide ? !fromIsNear : fromIsNear;
+            const bool keepPositive = mod.invertSide ? !*keep : *keep;
+            return fitEndToPlane(base, axisFrom, axisTo, mod.planeOrigin,
+                                 mod.planeNormal, fitFromEnd, keepPositive);
         }
         case CutKind::LineCut: {
             // Tekla "cut with a line": cizgiyi iceren, cizgi duzlemine dik
