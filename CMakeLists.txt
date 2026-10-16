@@ -41,6 +41,7 @@ add_library(model_maker_core
     src/ucs.cpp
     src/cut_modifier.cpp
     src/component.cpp
+    src/component_engine.cpp
     src/bolt.cpp
     src/end_plate.cpp
     src/assembly.cpp)
@@ -768,6 +769,15 @@ if(BUILD_TESTING)
     target_link_options(model_maker_component_test PRIVATE -static -static-libgcc -static-libstdc++)
     target_compile_options(model_maker_component_test PRIVATE -Wall -Wextra -Wpedantic)
     add_test(NAME model_maker_component_test COMMAND model_maker_component_test)
+
+    # COMPONENT ENGINE (Phase C2): tipli parametre semasi + registry/factory +
+    # uretim plani; End Plate + Fin Plate ayni altyapiyi yeniden kullanir.
+    # OCC'siz, Linux'ta kosar.
+    add_executable(model_maker_component_engine_test tests/component_engine_test.cpp)
+    target_link_libraries(model_maker_component_engine_test PRIVATE model_maker_core)
+    target_link_options(model_maker_component_engine_test PRIVATE -static -static-libgcc -static-libstdc++)
+    target_compile_options(model_maker_component_engine_test PRIVATE -Wall -Wextra -Wpedantic)
+    add_test(NAME model_maker_component_engine_test COMMAND model_maker_component_engine_test)
 
     # ASSEMBLY & PAPER SPACE (P5): Part/Assembly iliskileri, orto projeksiyon
     # (Camera standardViewRotation ile tek kaynak), Paper Space gorunus listesi.

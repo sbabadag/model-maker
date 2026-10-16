@@ -1,0 +1,269 @@
+#pragma once
+
+// COMPONENT ENGINE (Phase C1/C2) — genisletilebilir parametrik birlesim motoru.
+//
+// Amac: yeni bir celik birlesim gelistiren programci, ortak elemanlari (levha,
+// bulon grubu, kesme modifier, kaynak) ve parametre altyapisini YENIDEN YAZMADAN
+// yeni component tipini sisteme ekleyebilsin. Bunun icin uc ayri katman:
+//
+//   1) TIPLI PARAMETRE SEMASI (CompParamSpec / CompParamValue):
+//      Length, Angle, Integer, Boolean, Enum, String, Profile, Material,
+//      EntityRef turleri. Her parametre varsayilan deger + izin verilen aralik
+//      + birim + aciklama + enum secenekleri tasir. Dogrulama/migrasyon ortak
+//      (validateParamValue / alignParamsToSpecs): eksik -> varsayilan, eski/
+//      tip uyumsuz -> zorlanir, BILINMEYEN parametreler SESSIZCE KAYBEDILMEZ
+//      (listeye eklenir ve korunur).
+//
+//   2) REGISTRY / FACTORY (ComponentRegistry):
+//      Her component tipi kalici TypeId (string) + SchemaVersion tasir. Bir
+//      tip, parametre semasi + bir GEOMETRI URETECI (ComponentGenerator)
+//      ile kaydedilir. Yeni component = registerComponent(...) + kendi
+//      generator fonksiyonu; Document/renderer/serializer icine switch/case
+//      EKLEMEK GEREKMEZ (kayit bilgisi registry'den okunur).
+//
+//   3) URETIM PLANI (GenerationPlan):
+//      Generator girdi olarak Main/Secondary parca geometrisi + yerel koordinat
+//      sistemi + parametreler + referanslar alir; CIKTI olarak ortak eleman
+//      TURLERINI kullanan bir URETIM PLANI uretir: PlateSpec (levha), BoltGroup
+//      (bulon grubu), CutModifier (kesme), WeldSpec (kaynak). GERCEK OCCT
+//      B-Rep islemleri bu katmanda YAPILMAZ — plan, Document/OCC katmaninda
+//      maddelestirilir (EntityId atanir, B-Rep uretilir, undo/MMW8 yapilir).
+//      Boylece "parametre uretimi" ile "gercek geometri" ayrilir.
+//
+// Sahiplik kurali (generator ciktisindaki BoltGroup.parts): generator yalnizca
+// KULLANICI parcalarini bilir (kolon/ana parca id'si). Bağlantının SAHIP OLDUGU
+// levha, materializasyon aninda Document tarafindan atanir ve bulon grubunun
+// parts listesinin BASINA eklenir ({levha, kolon}) — bolonlar levha + ana
+// parca deler. Kullanici parcalari (main/secondary) component tarafindan
+// SAHIPLENILMEZ, yalnizca referanslanir.
+//
+// windows.h yok; Linux'ta derlenir/test edilir. Saf veri modeli + uretim plani.
+
+#include "model_maker/bolt.hpp"
+#include "model_maker/cut_modifier.hpp"
+#include "model_maker/entity_id.hpp"
+#include "model_maker/geometry.hpp"
+
+#include <string>
+#include <variant>
+#include <vector>
+
+namespace mm {
+
+// --- TIPLI PARAMETRE SEMASI --------------------------------------------------
+
+enum class CompParamType {
+    Length,     // mm (double, aralikli)
+    Angle,      // derece (double, aralikli)
+    Integer,    // int (aralikli)
+    Boolean,    // bool
+    Enum,       // seceneklerden biri (wstring)
+    String,     // serbest metin (wstring)
+    Profile,    // profil adi (wstring; katalogdan)
+    Material,   // malzeme sinifi (wstring)
+    EntityRef,  // baska bir varliga referans (EntityId)
+};
+
+// Bir parametrenin sema tanimi: ad + tur + birim + aciklama + varsayilan +
+// izin verilen aralik + enum secenekleri. hasMin/hasMax ilgili turde aralik
+// kontrolu acar (Length/Angle/Integer).
+struct CompParamSpec {
+    std::wstring name;
+    CompParamType type{CompParamType::Length};
+    std::wstring unit;       // "mm", "deg", "" ...
+    std::wstring description;
+
+    double defDouble{0.0};
+    double minDouble{0.0};
+    double maxDouble{0.0};
+    bool hasMinDouble{false};
+    bool hasMaxDouble{false};
+
+    int defInt{0};
+    int minInt{0};
+    int maxInt{0};
+    bool hasMinInt{false};
+    bool hasMaxInt{false};
+
+    bool defBool{false};
+    std::wstring defString;
+    std::vector<std::wstring> choices;  // Enum
+};
+
+// Tipik deger kumesi. Turler (double/int/bool/wstring/EntityId) birbirinden
+// ayri oldugu icin variant net calisir. EntityId = uint64_t.
+using CompParamValue = std::variant<double, int, bool, std::wstring, EntityId>;
+
+// Bir instance'in parametre DEGERI (ad + tipli deger).
+struct CompParam {
+    std::wstring name;
+    CompParamValue value;
+};
+
+// Varsayilan degeri ture dikkate alarak uretir.
+CompParamValue paramDefaultValue(const CompParamSpec& spec) noexcept;
+
+// Bir degeri semaya gore dogrular/zorlar (migrate): tip uyumsuzsa zorlanir,
+// aralik disiysa kelepcelenir, Enum gecersizse varsayilana duser. Hicbir durumda
+// firlatmaz — her zaman gecerli bir deger doner (guvenli migration).
+CompParamValue validateParamValue(const CompParamSpec& spec,
+                                  const CompParamValue& value) noexcept;
+
+// Değerleri semaya hizalar: (1) semada olan ama degerde eksik -> varsayilan,
+// (2) semada olan ve degerde olan -> validateParamValue, (3) semada OLMAYAN
+// ama degerde olan -> KORUNUR (bilinmeyen parametre sessizce KAYBEDILMEZ;
+// ileri uyumluluk icin listenin sonuna eklenir).
+std::vector<CompParam> alignParamsToSpecs(const std::vector<CompParamSpec>& specs,
+                                          const std::vector<CompParam>& values) noexcept;
+
+const CompParamSpec* findParamSpec(const std::vector<CompParamSpec>& specs,
+                                   const std::wstring& name) noexcept;
+const CompParam* findParam(const std::vector<CompParam>& params,
+                           const std::wstring& name) noexcept;
+
+// Tipli deger okuyucular (fallback: bulunamazsa/tip uyusmazsa).
+double paramAsDouble(const std::vector<CompParam>& params, const std::wstring& name,
+                     double fallback) noexcept;
+int paramAsInt(const std::vector<CompParam>& params, const std::wstring& name,
+               int fallback) noexcept;
+bool paramAsBool(const std::vector<CompParam>& params, const std::wstring& name,
+                 bool fallback) noexcept;
+std::wstring paramAsString(const std::vector<CompParam>& params,
+                           const std::wstring& name, std::wstring fallback) noexcept;
+EntityId paramAsEntity(const std::vector<CompParam>& params, const std::wstring& name,
+                       EntityId fallback) noexcept;
+
+// --- REGISTRY / FACTORY ------------------------------------------------------
+
+// Bir uyenin (kiris/kolon) generator icin gereken GEOMETRI baglami. Document/
+// App katmani bu bilgiyi profilin/katinin kalici ozelliklerinden doldurur.
+struct MemberGeometry {
+    EntityId id{kInvalidEntityId};
+    Vec3 axisFrom{};                 // eksen basi
+    Vec3 axisTo{};                   // eksen ucu (baglanti noktasi = kiris ucu)
+    Vec3 refNormal{0.0, 0.0, 1.0};   // kesit referans normali
+    double secWidth{0.0};            // kesit bbox genisligi (mm)
+    double secHeight{0.0};           // kesit bbox yuksekligi (mm)
+};
+
+// Generator girdisi: main (kolon) + secondary (kiris listesi) + parametreler.
+struct ComponentInput {
+    MemberGeometry main;
+    std::vector<MemberGeometry> secondary;
+    std::vector<CompParam> params;
+};
+
+// Levha spec'i (plan asamasinda; EntityId yok — materializasyonda atanir).
+struct PlateSpec {
+    Vec3 center{};
+    Vec3 u{1.0, 0.0, 0.0};    // genislik yonu
+    Vec3 v{0.0, 1.0, 0.0};    // yukseklik yonu
+    Vec3 axis{0.0, 0.0, 1.0}; // kalinlik (normal) yonu
+    double width{0.0};
+    double height{0.0};
+    double thickness{0.0};
+    std::wstring name;
+};
+
+// Kaynak spec'i (plan asamasinda; ileriki fazlarda Weld modeli).
+struct WeldSpec {
+    EntityId partA{kInvalidEntityId};
+    EntityId partB{kInvalidEntityId};
+    double throat{0.0};
+    std::wstring name;
+};
+
+// Uretim plani: generatorun CIKTISI. Sahip olunacak alt nesnelerin specleri +
+// kullanici parcalarina uygulanacak kesmeler. ok=false ise error dolu ve plan
+// kullanilmamali (belge KISMEN degistirilmez).
+struct GenerationPlan {
+    std::vector<PlateSpec> plates;
+    std::vector<BoltGroup> boltGroups;   // parts = {ana parca}; levha materializasyonda basata
+    std::vector<CutModifier> cuts;
+    std::vector<WeldSpec> welds;
+    bool ok{true};
+    std::wstring error;
+};
+
+// Bir component tipinin kayit tanimi.
+struct ComponentType {
+    std::wstring typeId;     // kalici tekil id (string) — yeni tip icin switch yok
+    int schemaVersion{1};    // sema surumu (migration icin)
+    std::wstring displayName;
+    std::vector<CompParamSpec> params;
+};
+
+// Generator fonksiyon imzasi: girdi -> uretim plani.
+using ComponentGenerator = GenerationPlan (*)(const ComponentInput&);
+
+// Statik registry/factory. Varsayilan kurulabilir (testler yerel registry
+// kullanir); instance() uygulama-genel tek ornegi verir. Yeni component
+// registerComponent() ile kaydedilir; Document/renderer/serializer tipi
+// registry'den okur (switch/case GEREKMEZ).
+class ComponentRegistry {
+public:
+    ComponentRegistry() = default;
+
+    static ComponentRegistry& instance() noexcept;
+
+    // Ayni typeId varsa REDDEDER (false); yoksa kaydeder (true). Generator
+    // null olamaz.
+    bool registerType(ComponentType type, ComponentGenerator generator) noexcept;
+    const ComponentType* findType(const std::wstring& typeId) const noexcept;
+    const ComponentGenerator* generator(const std::wstring& typeId) const noexcept;
+    std::vector<std::wstring> typeIds() const noexcept;
+    std::size_t typeCount() const noexcept { return entries_.size(); }
+
+    // Tipi bulur, parametreleri semaya hizalar, generatoru cagirir. Bilinmeyen
+    // tip -> ok=false plan (belge degismez). Generator yoksa -> ok=false.
+    GenerationPlan generate(const std::wstring& typeId,
+                            const ComponentInput& input) const noexcept;
+
+    void clear() noexcept { entries_.clear(); }
+
+private:
+    struct Entry {
+        ComponentType type;
+        ComponentGenerator gen;
+    };
+    std::vector<Entry> entries_;
+};
+
+// --- KALICI INSTANCE KAYDI (Document/MMW8 katmani sonra baglanir) ------------
+
+// Bir component INSTANCE'inin kalici kaydi. Kendi EntityId'si, TypeId +
+// SchemaVersion, main/secondary referanslari, tipli parametreler, yerlesim
+// (LCS), sahip olunan alt nesneler ve kirli/oksz durumu. Bu kayit Document
+// icinde saklanir; MMW8 bu yapiyi (TypeId + SchemaVersion + parametreler +
+// yerlesim + referanslar + sahip olunan alt nesneler) serilestirir.
+struct ComponentInstanceRecord {
+    EntityId id{kInvalidEntityId};
+    std::wstring typeId;
+    int schemaVersion{1};
+    EntityId mainPart{kInvalidEntityId};
+    std::vector<EntityId> secondaryParts;
+    std::vector<CompParam> params;
+    Vec3 origin{};
+    Vec3 u{1.0, 0.0, 0.0};
+    Vec3 v{0.0, 1.0, 0.0};
+    Vec3 axis{0.0, 0.0, 1.0};
+    std::vector<EntityId> ownedPlateIds;      // sahip olunan levhalar
+    std::vector<EntityId> ownedBoltGroupIds;  // sahip olunan bulon gruplari
+    bool dirty{true};                         // yeniden hesaplama gerekli
+    bool orphan{false};                       // typeId registry'de yok
+    bool enabled{true};
+};
+
+// --- YERLESIK BILESEN KATALOGU ----------------------------------------------
+
+ComponentType endPlateComponentType() noexcept;
+GenerationPlan generateEndPlate(const ComponentInput& input) noexcept;
+
+ComponentType finPlateComponentType() noexcept;
+GenerationPlan generateFinPlate(const ComponentInput& input) noexcept;
+
+// Yerlesik katalogu bir registry'ye kaydeder (idempotent — ayni typeId zaten
+// varsa atlanir).
+void registerBuiltInComponents(ComponentRegistry& registry) noexcept;
+
+} // namespace mm
