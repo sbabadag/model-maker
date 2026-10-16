@@ -4032,7 +4032,7 @@ std::optional<Application::PendingFaceHit> Application::pendingBoltFaceHit(int x
     for (const std::size_t p : pendingBoltParts_) {
         if (p >= document_.models().size()) continue;
         const auto h = raycastMesh(document_.models()[p], origin, direction);
-        if (h && (!best || h->hit.distance < best->hit.distance))
+        if (h && (!best || h->distance < best->hit.distance))
             best = PendingFaceHit{p, *h};
     }
     return best;
