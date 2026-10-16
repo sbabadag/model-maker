@@ -350,4 +350,57 @@ void WireframeModel::rotateAroundAxis(const Vec3& center, const Vec3& axis, doub
     if (analyticCenter_) *analyticCenter_ = rotatePoint(*analyticCenter_);
 }
 
+std::optional<MeshRayHit> raycastMesh(const WireframeModel& model, Vec3 rayOrigin,
+                                      Vec3 rayDirection) noexcept {
+    const std::vector<Vec3>& verts = model.vertices();
+    const std::vector<Face>& faces = model.faces();
+    if (verts.empty() || faces.empty()) return std::nullopt;
+    // Isin yonunu birimle (giris birim olmayabilir).
+    double rl = std::sqrt(rayDirection.x * rayDirection.x + rayDirection.y * rayDirection.y +
+                          rayDirection.z * rayDirection.z);
+    if (rl <= 1e-12) return std::nullopt;
+    const Vec3 dir{rayDirection.x / rl, rayDirection.y / rl, rayDirection.z / rl};
+
+    const double eps = 1e-9;
+    std::optional<MeshRayHit> best;
+    for (const Face& face : faces) {
+        if (face.size() < 3) continue;
+        // Fan ucleme: {v0, vi, vi+1} — poligon ve ucgen girdileri birlikte isler.
+        const Vec3& v0 = verts[face[0]];
+        for (std::size_t i = 1; i + 1 < face.size(); ++i) {
+            const Vec3& v1 = verts[face[i]];
+            const Vec3& v2 = verts[face[i + 1]];
+            const Vec3 e1{v1.x - v0.x, v1.y - v0.y, v1.z - v0.z};
+            const Vec3 e2{v2.x - v0.x, v2.y - v0.y, v2.z - v0.z};
+            const Vec3 pvec{dir.y * e2.z - dir.z * e2.y, dir.z * e2.x - dir.x * e2.z,
+                            dir.x * e2.y - dir.y * e2.x};
+            const double det = e1.x * pvec.x + e1.y * pvec.y + e1.z * pvec.z;
+            if (std::abs(det) < eps) continue;
+            const double inv = 1.0 / det;
+            const Vec3 tvec{rayOrigin.x - v0.x, rayOrigin.y - v0.y, rayOrigin.z - v0.z};
+            const double u = (tvec.x * pvec.x + tvec.y * pvec.y + tvec.z * pvec.z) * inv;
+            if (u < 0.0 || u > 1.0) continue;
+            const Vec3 qvec{tvec.y * e1.z - tvec.z * e1.y, tvec.z * e1.x - tvec.x * e1.z,
+                            tvec.x * e1.y - tvec.y * e1.x};
+            const double v = (dir.x * qvec.x + dir.y * qvec.y + dir.z * qvec.z) * inv;
+            if (v < 0.0 || u + v > 1.0) continue;
+            const double t = (e2.x * qvec.x + e2.y * qvec.y + e2.z * qvec.z) * inv;
+            if (t < 0.0) continue;
+            if (best && t >= best->distance) continue;
+            Vec3 n{e1.y * e2.z - e1.z * e2.y, e1.z * e2.x - e1.x * e2.z,
+                   e1.x * e2.y - e1.y * e2.x};
+            const double nl = std::sqrt(n.x * n.x + n.y * n.y + n.z * n.z);
+            if (nl <= 1e-12) continue;
+            n = Vec3{n.x / nl, n.y / nl, n.z / nl};
+            MeshRayHit hit;
+            hit.point = Vec3{rayOrigin.x + dir.x * t, rayOrigin.y + dir.y * t,
+                             rayOrigin.z + dir.z * t};
+            hit.normal = n;
+            hit.distance = t;
+            best = hit;
+        }
+    }
+    return best;
+}
+
 } // namespace mm

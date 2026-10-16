@@ -180,6 +180,33 @@ int main() {
         }
     }
 
+    // 8) raycastMesh: yuz isabeti + normal (bulon yuz secimi icin).
+    {
+        const WireframeModel tri({Vec3{0, 0, 0}, Vec3{10, 0, 0}, Vec3{0, 10, 0}}, {},
+                                 {Face{0, 1, 2}});
+        // Ustten gelen isin (sarim +Z) -> normal +Z.
+        const auto h1 = raycastMesh(tri, {5, 5, 10}, {0, 0, -1});
+        check(h1.has_value(), "ray: ustten isabet var");
+        if (h1) {
+            check(near(h1->normal.z, 1.0), "ray: normal +Z");
+            check(near(h1->point.z, 0.0), "ray: isabet z=0");
+            check(near(h1->distance, 10.0), "ray: mesafe 10");
+        }
+        // Ters yon (asagi) -> isabet yok.
+        check(!raycastMesh(tri, {5, 5, 10}, {0, 0, 1}).has_value(), "ray: ters yon isabetsiz");
+        // Paralel isin -> isabet yok.
+        check(!raycastMesh(tri, {5, 5, 10}, {1, 0, 0}).has_value(), "ray: paralel isabetsiz");
+
+        // Iki ucgen farkli derinlikte -> en yakin olan secilir.
+        const WireframeModel two(
+            {Vec3{0, 0, 0}, Vec3{10, 0, 0}, Vec3{0, 10, 0}, Vec3{0, 0, 5},
+             Vec3{10, 0, 5}, Vec3{0, 10, 5}},
+            {}, {Face{0, 1, 2}, Face{3, 4, 5}});
+        const auto h2 = raycastMesh(two, {5, 5, 10}, {0, 0, -1});
+        check(h2.has_value() && near(h2->distance, 5.0), "ray: en yakin ucgen (z=5)");
+        if (h2) check(near(h2->point.z, 5.0), "ray: en yakin nokta z=5");
+    }
+
     if (failures) {
         std::printf("%d FAIL\n", failures);
         return 1;

@@ -449,8 +449,10 @@ private:
     // CutModifier -> addCutModifier -> recomputeCutTarget.
     void applyPartCutFromSelection();
     // Bolt ortak yolu (Phase B1): verilen 2 parca -> BoltGroup + display +
-    // delikler. M20/22 varsayilan, is duzlemi normali eksen.
-    void applyBoltFromParts(const std::vector<std::size_t>& parts);
+    // delikler. M20/22 varsayilan. Eksen: axis verilirse o (secili yuz normali),
+    // yoksa is duzlemi normali (dejenereyse dunya Z).
+    void applyBoltFromParts(const std::vector<std::size_t>& parts,
+                            std::optional<Vec3> axis = std::nullopt);
     // Noun-verb kullanim (eski yol): secili 2 parca -> applyBoltFromParts.
     void applyBoltFromSelection();
 #ifdef MM_HAS_OCC
@@ -932,6 +934,9 @@ private:
     // 2 parca tutar.
     bool pendingBolt_{};
     std::vector<std::size_t> pendingBoltParts_;
+    // Secili yuzun normali (bulon ekseni). 2 parca secildikten sonra yuz
+    // secimiyle doldurulur; bosken uygulama yuz secimini bekler.
+    std::optional<Vec3> pendingBoltAxis_;
     // BOLT TOOL PENCERESI (Phase B1): bolt display'ine cift tik -> duzenleme
     // istegi callback'i. Cift tik tespiti icin son sol tik zamani + konumu.
     std::function<void(const BoltGroup&)> boltEditRequest_;

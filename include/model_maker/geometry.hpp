@@ -209,4 +209,18 @@ struct BeamLoad {
     double wY{}; // vertical distributed load (kN/m, positive = -Y direction)
     double wZ{}; // lateral distributed load (kN/m)
 };
+
+// MESH RAY-CAST SONUCU (3B yuz secimi icin; orn. bulon ekseni = yuz normali).
+struct MeshRayHit {
+    Vec3 point{};      // dunya koordinatinda isabet noktasi
+    Vec3 normal{};     // yuz normali (birim uzunluk)
+    double distance{}; // isin parametresi t >= 0 (rayOrigin + t*rayDirection)
+};
+
+// Bir WireframeModel'in ucgen yuzlerine karsi en yakin isin kesisimi (Moller-
+// Trumbore). faces() poligonlari fan ucleme ile ucgenlere ayrilir ({v0,vi,
+// vi+1}). Isabet yoksa nullopt. rayDirection birim olmali (normalize edilir).
+std::optional<MeshRayHit> raycastMesh(const WireframeModel& model, Vec3 rayOrigin,
+                                      Vec3 rayDirection) noexcept;
+
 } // namespace mm

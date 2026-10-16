@@ -3877,7 +3877,8 @@ void Application::applyPartCutFromSelection() {
 
 void Application::startPartCutCommand() { applyPartCutFromSelection(); }
 
-void Application::applyBoltFromParts(const std::vector<std::size_t>& parts) {
+void Application::applyBoltFromParts(const std::vector<std::size_t>& parts,
+                                     std::optional<Vec3> axisOpt) {
     // Ortak yol (Phase B1): verilen TAM 2 model = baglanacak iki celik parca.
     if (parts.size() != 2) {
         MessageBeep(MB_ICONWARNING);
@@ -3907,8 +3908,9 @@ void Application::applyBoltFromParts(const std::vector<std::size_t>& parts) {
         hi.z = std::max(hi.z, b.maximum.z);
     }
     const Vec3 origin = (lo + hi) * 0.5;
-    // Eksen = aktif is duzlemi normali (dejenere ise dunya Z).
-    Vec3 axis = workPlane_.normal;
+    // Eksen: secili yuz normali verildiyse o; yoksa is duzlemi normali
+    // (dejenereyse dunya Z).
+    Vec3 axis = axisOpt.value_or(workPlane_.normal);
     const double axLen = std::sqrt(axis.x * axis.x + axis.y * axis.y + axis.z * axis.z);
     if (axLen < 1e-12) axis = {0.0, 0.0, 1.0};
 
@@ -3959,6 +3961,7 @@ void Application::startBoltCommand() {
     cancelPendingCutCommand();
     pendingBolt_ = true;
     pendingBoltParts_.clear();
+    pendingBoltAxis_.reset();
     selectedModels_.clear();
     selectionFirstCorner_.reset();
     hoverModel_.reset();
@@ -3972,6 +3975,7 @@ void Application::cancelPendingBoltCommand() {
     if (!pendingBolt_) return;
     pendingBolt_ = false;
     pendingBoltParts_.clear();
+    pendingBoltAxis_.reset();
     hoverModel_.reset();
     selectedModels_.clear();
     selectionFirstCorner_.reset();
@@ -3988,15 +3992,58 @@ void Application::executePendingBoltCommand() {
                       std::to_wstring(pendingBoltParts_.size()) + L" secili)");
         return;
     }
+    if (!pendingBoltAxis_) {
+        MessageBeep(MB_ICONWARNING);
+        publishStatus(L"Bolt: bir yuz secin (bulon ekseni o yuzun normali olacak)");
+        return;
+    }
     const std::vector<std::size_t> parts = pendingBoltParts_;
+    const Vec3 axis = *pendingBoltAxis_;
     pendingBolt_ = false;
     pendingBoltParts_.clear();
+    pendingBoltAxis_.reset();
     hoverModel_.reset();
-    applyBoltFromParts(parts);
+    applyBoltFromParts(parts, axis);
 }
 
 bool Application::pickPendingBoltAt(int x, int y) {
     if (!pendingBolt_) return false;
+    // 2 parca zaten seciliyse: bu tik bir YUZ secimidir (bulon ekseni = yuz
+    // normali). Isin imlec altindaki en yakin yuzun normalini yakalar.
+    if (pendingBoltParts_.size() >= 2) {
+        RECT client{};
+        GetClientRect(canvas_, &client);
+        if (client.right <= 0 || client.bottom <= 0 || camera_.zoom() <= 0.0) {
+            MessageBeep(MB_ICONWARNING);
+            return true;
+        }
+        const double scale = camera_.pixelsPerUnit() * camera_.zoom();
+        const double camX = (x - client.right * 0.5) / scale;
+        const double camY = (client.bottom * 0.5 - y) / scale;
+        const std::array<double, 9> R = camera_.rotationMatrix();
+        const Vec3 c = camera_.center3D();
+        const Vec3 origin{c.x + R[0] * camX + R[3] * camY - R[6],
+                          c.y + R[1] * camX + R[4] * camY - R[7],
+                          c.z + R[2] * camX + R[5] * camY - R[8]};
+        const Vec3 direction{-R[6], -R[7], -R[8]};
+        std::optional<MeshRayHit> best;
+        for (const std::size_t p : pendingBoltParts_) {
+            if (p >= document_.models().size()) continue;
+            const auto h = raycastMesh(document_.models()[p], origin, direction);
+            if (h && (!best || h->distance < best->distance)) best = h;
+        }
+        if (!best) {
+            MessageBeep(MB_ICONWARNING);
+            publishStatus(L"Bolt: yuz bulunamadi — parcana ait bir yuzeye tiklayin");
+            return true;
+        }
+        pendingBoltAxis_ = best->normal;
+        publishStatus(L"Yuz secildi — sağ tık ile uygula (eksen = yuz normali, Esc iptal)");
+        updateControls();
+        updateStatus();
+        invalidateCanvas();
+        return true;
+    }
     const auto hit = modelIndexAt(x, y);
     if (!hit || *hit >= document_.models().size()) {
         MessageBeep(MB_ICONWARNING);
@@ -4023,7 +4070,7 @@ bool Application::pickPendingBoltAt(int x, int y) {
     selectedModels_.clear();
     for (const std::size_t p : pendingBoltParts_) selectedModels_.push_back(p);
     if (pendingBoltParts_.size() == 2)
-        publishStatus(L"Hazır — sağ tık ile uygula (2 parca, Esc iptal)");
+        publishStatus(L"2 parca secildi — simdi bir YUZ secin (bulon ekseni = yuz normali)");
     else
         publishStatus(std::to_wstring(pendingBoltParts_.size()) +
                       L" parca secildi — ikinci parcayi secin (sağ tık uygular, Esc iptal)");
