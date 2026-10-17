@@ -6367,6 +6367,32 @@ void Application::updateStatus() {
         if (workPlanePoints_.empty()) text += L"1. noktayı belirtin";
         else if (workPlanePoints_.size() == 1) text += L"2. noktayı belirtin (U ekseni)";
         else text += L"3. noktayı belirtin (düzlem yönü)";
+    } else if (pendingEndPlate_) {
+        // Verb-noun End Plate: durum mesajı updateStatus'un genel metnini
+        // EZMEDEN kalıcı gösterilir (publishStatus'un üzerine yazılırdı).
+        text += L"  |  END PLATE — ";
+        if (pendingEndPlateParts_.empty())
+            text += L"önce KOLONU (main), sonra KİRİŞİ (secondary) seçin — sağ tık uygular";
+        else if (pendingEndPlateParts_.size() == 1)
+            text += L"kolon seçildi — şimdi KİRİŞİ (secondary) seçin";
+        else
+            text += L"kolon + kiriş seçildi — sağ tık uygular (Esc iptal)";
+    } else if (pendingBolt_) {
+        text += L"  |  BOLT — ";
+        if (pendingBoltParts_.empty())
+            text += L"bağlanacak İKİ parçayı seçin (sol tık, toggle), sağ tık uygular";
+        else if (pendingBoltParts_.size() == 1)
+            text += L"1 parça seçildi — ikinci parçayı seçin";
+        else
+            text += L"2 parça seçildi — şimdi bir YÜZ seçin (bulon ekseni = yüz normali)";
+    } else if (pendingCutKind_) {
+        text += L"  |  KESME — ";
+        if (pendingCutTargets_.empty())
+            text += L"profili seçin (sol tık, birden çok), sonra düzlemi seçin";
+        else if (!pendingCutPlane_)
+            text += L"şimdi düzlemi seçin";
+        else
+            text += L"sağ tık uygular (Esc iptal)";
     } else if (zoomWindowActive_) {
         text += zoomWindowFirstCorner_ ? L"  |  ZOOM WINDOW — diğer köşeyi belirtin"
                                        : L"  |  ZOOM WINDOW — ilk köşeyi belirtin";
