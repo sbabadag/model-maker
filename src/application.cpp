@@ -6371,7 +6371,11 @@ void Application::updateStatus() {
         // Verb-noun End Plate: durum mesajı updateStatus'un genel metnini
         // EZMEDEN kalıcı gösterilir (publishStatus'un üzerine yazılırdı).
         text += L"  |  END PLATE — ";
-        if (pendingEndPlateParts_.empty())
+        if (mode_ != EditMode::View3D) {
+            // 2B'de dikey kolon bir NOKTAYA izdüşer ve tıklanamaz; End Plate
+            // 3B bir bağlantıdır. Kullanıcıyı 3B'ye yönlendir.
+            text += L"3B bağlantıdır — 2B/3B ile 3B görünüme geçin (dikey kolon 2B'de seçilemez)";
+        } else if (pendingEndPlateParts_.empty())
             text += L"önce KOLONU (main), sonra KİRİŞİ (secondary) seçin — sağ tık uygular";
         else if (pendingEndPlateParts_.size() == 1)
             text += L"kolon seçildi — şimdi KİRİŞİ (secondary) seçin";
