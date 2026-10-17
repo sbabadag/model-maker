@@ -8,6 +8,7 @@
 #include "model_maker/occ_solid_store.hpp"
 #include "model_maker/bolt_geometry.hpp"
 #include "model_maker/end_plate_geometry.hpp"
+#include "model_maker/occ_contact_resolver.hpp"
 #endif
 #ifdef MM_HAS_OCC
 #include <BRepBuilderAPI_Transform.hxx>
@@ -4458,9 +4459,22 @@ void Application::applyEndPlateFromParts(const std::vector<std::size_t>& parts) 
         }
         const Vec3 beamDir{beamAxis.x / beamAxisLen, beamAxis.y / beamAxisLen,
                            beamAxis.z / beamAxisLen};
-        const ContactPlacement contact =
-            resolveContactPlacement(colFrame, colDims, colLen, beamTo, beamDir,
-                                   SemanticFaceRole::FlangeOuterPositive);
+        // Once GERCEK B-Rep yuz cozumu (OCCT adapter); kati yoksa veya cozum
+        // UNRESOLVED ise lokal kesit geometrisine dus. ContactPoint + outwardNormal
+        // dogrulanmis B-Rep temas sonucundan gelir.
+        ContactPlacement contact;
+        bool haveContact = false;
+#ifdef MM_HAS_OCC
+        if (const TopoDS_Shape* solid = findOccSolid(mainIdx)) {
+            contact = resolveOcctContact(*solid, colFrame, colDims, colLen, beamTo, beamDir,
+                                         SemanticFaceRole::FlangeOuterPositive);
+            haveContact = true;
+        }
+#endif
+        if (!haveContact || contact.status == ResolutionStatus::Unresolved) {
+            contact = resolveContactPlacement(colFrame, colDims, colLen, beamTo, beamDir,
+                                              SemanticFaceRole::FlangeOuterPositive);
+        }
         if (contact.status == ResolutionStatus::Resolved) {
             face.origin = contact.contactPoint;
             face.normal = contact.outwardNormal;

@@ -164,7 +164,7 @@ option(BUILD_OCC_BRIDGE_DLL
     "Build mm_occ.dll — the C-API bridge for the Qt app (use MSYS2 toolchain)" OFF)
 
 if(MODELMAKER_OCC_READY)
-    add_library(model_maker_occ src/occ_geometry.cpp src/occ_solid_store.cpp src/occ_brep_serialize.cpp src/bolt_geometry.cpp src/end_plate_geometry.cpp)
+    add_library(model_maker_occ src/occ_geometry.cpp src/occ_solid_store.cpp src/occ_brep_serialize.cpp src/bolt_geometry.cpp src/end_plate_geometry.cpp src/occ_contact_resolver.cpp)
     target_link_libraries(model_maker_occ PUBLIC model_maker_core)
     target_include_directories(model_maker_occ PUBLIC include)
     if(OCC_INCLUDE_DIR)
@@ -588,6 +588,16 @@ if(BUILD_TESTING)
         add_test(NAME model_maker_occ_isection_acceptance COMMAND model_maker_occ_isection_acceptance)
         if(UNIX)
             set_tests_properties(model_maker_occ_isection_acceptance PROPERTIES
+                ENVIRONMENT "LD_LIBRARY_PATH=${OCC_ROOT}/lib:$ENV{LD_LIBRARY_PATH}")
+        endif()
+
+        # REAL OCCT B-REP CONTACT RESOLVER (Phase R2c): gercek TopoDS_Shape
+        # yuz esleme + kesim dogrulama (flans/govde/delik/dondurme/paralel).
+        add_executable(model_maker_occ_contact_resolver_test tests/occ_contact_resolver_test.cpp)
+        target_link_libraries(model_maker_occ_contact_resolver_test PRIVATE model_maker_occ)
+        add_test(NAME model_maker_occ_contact_resolver_test COMMAND model_maker_occ_contact_resolver_test)
+        if(UNIX)
+            set_tests_properties(model_maker_occ_contact_resolver_test PROPERTIES
                 ENVIRONMENT "LD_LIBRARY_PATH=${OCC_ROOT}/lib:$ENV{LD_LIBRARY_PATH}")
         endif()
 
