@@ -46,6 +46,7 @@ add_library(model_maker_core
     src/end_plate.cpp
     src/reference_geometry.cpp
     src/constraint_system.cpp
+    src/contact_resolver.cpp
     src/assembly.cpp)
 target_include_directories(model_maker_core PUBLIC include)
 target_compile_options(model_maker_core PRIVATE -Wall -Wextra -Wpedantic)
@@ -806,6 +807,14 @@ if(BUILD_TESTING)
     target_link_options(model_maker_constraint_solver_test PRIVATE -static -static-libgcc -static-libstdc++)
     target_compile_options(model_maker_constraint_solver_test PRIVATE -Wall -Wextra -Wpedantic)
     add_test(NAME model_maker_constraint_solver_test COMMAND model_maker_constraint_solver_test)
+
+    # CONTACT RESOLVER (Phase R2b): MemberLocalFrame + SemanticFaceResolver +
+    # ContactPointResolver. Dondurulmus kolon, temas kotu, sonlu yuz. OCC'siz.
+    add_executable(model_maker_contact_resolver_test tests/contact_resolver_test.cpp)
+    target_link_libraries(model_maker_contact_resolver_test PRIVATE model_maker_core)
+    target_link_options(model_maker_contact_resolver_test PRIVATE -static -static-libgcc -static-libstdc++)
+    target_compile_options(model_maker_contact_resolver_test PRIVATE -Wall -Wextra -Wpedantic)
+    add_test(NAME model_maker_contact_resolver_test COMMAND model_maker_contact_resolver_test)
 
     # ASSEMBLY & PAPER SPACE (P5): Part/Assembly iliskileri, orto projeksiyon
     # (Camera standardViewRotation ile tek kaynak), Paper Space gorunus listesi.

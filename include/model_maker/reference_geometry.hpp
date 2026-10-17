@@ -46,17 +46,22 @@ enum class ComponentInputRole {
 };
 
 // Uye uzerindeki SEMANTIK yuz rolleri. Flans DIS yuzu, flans KENARI ve govde
-// yuzu BIRBIRINDEN FARKLIDIR. ONEMLI: geometrik referans DUZLEMI (sonsuz) ile
-// gercek SINIRLI B-Rep temas yuzu FARKLI kavramlardir. Ileride genisler.
+// yuzu BIRBIRINDEN FARKLIDIR (geometrik referans DUZLEMI ile sinirli B-Rep
+// temas yuzu de farklidir). I-kesit ofsetleri:
+//   FlangeOuter +/- : ±h/2 boyunca v (ust/alt flans dis yuzu)
+//   Web        +/- : ±tw/2 boyunca u (govde dis yuzu)
+//   FlangeEdge +/- : ±b/2 boyunca u (flans ucu)
+//   MemberStart/End: normal ∓/+w (uye uclari)
 enum class SemanticFaceRole {
     None,
-    FlangeOuterFace,  // flans DIS yuzu (sonsuz duzlem; genislik yonu normali)
-    FlangeEdge,       // flans KENARI (dar yuz; kalinlik yonu normali)
-    WebFace,          // govde yuzu (I-kesit govde dis yuzu)
-    MemberStartFace,  // uye baslangic kesit duzlemi (w'ye dik)
-    MemberEndFace,    // uye bitis kesit duzlemi (w'ye dik)
-    TopFace,          // uye UST yuzu (+v tarafi)
-    BottomFace,       // uye ALT yuzu (-v tarafi)
+    FlangeOuterPositive,  // +h/2 boyunca v
+    FlangeOuterNegative,  // -h/2 boyunca v
+    WebPositive,          // +tw/2 boyunca u
+    WebNegative,          // -tw/2 boyunca u
+    FlangeEdgePositive,   // +b/2 boyunca u
+    FlangeEdgeNegative,   // -b/2 boyunca u
+    MemberStart,          // uye baslangici, normal -w
+    MemberEnd,            // uye sonu, normal +w
 };
 
 // KALICI yuz referansi. Cozum ADAPTER tarafindan yapilir (OCCT'den bagimsiz):
