@@ -289,6 +289,16 @@ public:
     // ayni fonksiyonu kullanir -> vurgulanan yuz = tiklaninca secilen yuz.
     struct PendingFaceHit { std::size_t model{}; MeshRayHit hit; };
     std::optional<PendingFaceHit> pendingBoltFaceHit(int x, int y) const;
+
+    // --- ALIN LEVHASI BAGLANTISI (Phase C1 GUI) -------------------------------
+    // Verb-noun End Plate: once MAIN (kolon), sonra SECONDARY (kiris) secilir;
+    // sag tik uygular, Esc iptal. Levha + bulon grubu uretilir (OCC veya
+    // fallback), kalici EndPlateConnection kaydi + MMW8 'E' blogu.
+    void startEndPlateCommand();
+    void cancelPendingEndPlateCommand();
+    void executePendingEndPlateCommand();
+    bool pickPendingEndPlateAt(int x, int y);
+    void applyEndPlateFromParts(const std::vector<std::size_t>& parts);
     // Secili model bir BOLT display'i ise bulon parametrelerini okur (props
     // paneli). Donus false = secim bir bulon degil.
     bool selectedBoltProperties(double& nominalDiameter, double& holeDiameter,
@@ -942,6 +952,9 @@ private:
     // Secili yuzun normali (bulon ekseni). 2 parca secildikten sonra yuz
     // secimiyle doldurulur; bosken uygulama yuz secimini bekler.
     std::optional<Vec3> pendingBoltAxis_;
+    // VERB-NOUN END PLATE (Phase C1 GUI): [0]=main (kolon), [1]=secondary (kiris).
+    bool pendingEndPlate_{};
+    std::vector<std::size_t> pendingEndPlateParts_;
     // BOLT TOOL PENCERESI (Phase B1): bolt display'ine cift tik -> duzenleme
     // istegi callback'i. Cift tik tespiti icin son sol tik zamani + konumu.
     std::function<void(const BoltGroup&)> boltEditRequest_;

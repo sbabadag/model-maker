@@ -7,6 +7,7 @@
 #include "model_maker/occ_geometry.hpp"
 #include "model_maker/occ_solid_store.hpp"
 #include "model_maker/bolt_geometry.hpp"
+#include "model_maker/end_plate_geometry.hpp"
 #endif
 #ifdef MM_HAS_OCC
 #include <BRepBuilderAPI_Transform.hxx>
@@ -1634,6 +1635,11 @@ LRESULT Application::handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lPa
             executePendingBoltCommand();
             updateControls(); invalidateCanvas(); return 0;
         }
+        if (pendingEndPlate_) {
+            // Verb-noun end plate: sag tik komutu isletir (kolon + kiris seciliyse).
+            executePendingEndPlateCommand();
+            updateControls(); invalidateCanvas(); return 0;
+        }
         // BOLT SAG-TIK MENUSU: bos modda bir BOLT display'i uzerinde sag tik
         // -> Ortala X / Ortala Y popup menusu. Bulon degilse false doner ve
         // asagidaki normal sag-tik akisina dusulur.
@@ -1803,6 +1809,7 @@ LRESULT Application::handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lPa
             else if (workPlanePicking_) cancelWorkPlaneCommand();
             else if (pendingCutKind_) cancelPendingCutCommand();
             else if (pendingBolt_) cancelPendingBoltCommand();
+            else if (pendingEndPlate_) cancelPendingEndPlateCommand();
             else if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
             else cancelDrawing();
             if (mode_ == EditMode::View3D) drawingActive_ = false;
@@ -2068,6 +2075,11 @@ void Application::onLeftButtonDown(int x, int y) {
     // VERB-NOUN BOLT (Phase B1): sol tik baglanacak parcayi ekler/cikarir.
     if (pendingBolt_) {
         pickPendingBoltAt(x, y);
+        return;
+    }
+    // VERB-NOUN END PLATE (Phase C1 GUI): sol tik kolon/kiris secer.
+    if (pendingEndPlate_) {
+        pickPendingEndPlateAt(x, y);
         return;
     }
     // BOLT TOOL PENCERESI (Phase B1): bolt display modeline cift tik -> duzenleme
@@ -3658,6 +3670,7 @@ void Application::enterPendingCutCommand(CutKind kind) {
     profileGrip_.reset();
     cancelDrawing();
     cancelPendingBoltCommand();
+    cancelPendingEndPlateCommand();
     pendingCutKind_ = kind;
     pendingCutTargets_.clear();
     pendingCutPlane_.reset();
@@ -3982,6 +3995,7 @@ void Application::startBoltCommand() {
     profileGrip_.reset();
     cancelDrawing();
     cancelPendingCutCommand();
+    cancelPendingEndPlateCommand();
     pendingBolt_ = true;
     pendingBoltParts_.clear();
     pendingBoltAxis_.reset();
@@ -4253,6 +4267,189 @@ bool Application::pickPendingBoltAt(int x, int y) {
     updateStatus();
     invalidateCanvas();
     return true;
+}
+
+// --- ALIN LEVHASI BAGLANTISI (Phase C1 GUI) ---------------------------------
+
+void Application::startEndPlateCommand() {
+    // Verb-noun: once MAIN (kolon), sonra SECONDARY (kiris) SONRADAN secilir.
+    cancelZoomWindow2D();
+    if (workPlanePicking_) cancelWorkPlaneCommand();
+    if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
+    profileGrip_.reset();
+    cancelDrawing();
+    cancelPendingCutCommand();
+    cancelPendingBoltCommand();
+    pendingEndPlate_ = true;
+    pendingEndPlateParts_.clear();
+    selectedModels_.clear();
+    selectionFirstCorner_.reset();
+    hoverModel_.reset();
+    hoverFaceModel_.reset();
+    hoverFaceIndices_.clear();
+    publishStatus(L"End Plate: once KOLONU (main), sonra KIRISI (secondary) secin — sag tik uygular");
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
+}
+
+void Application::cancelPendingEndPlateCommand() {
+    if (!pendingEndPlate_) return;
+    pendingEndPlate_ = false;
+    pendingEndPlateParts_.clear();
+    hoverModel_.reset();
+    hoverFaceModel_.reset();
+    hoverFaceIndices_.clear();
+    selectedModels_.clear();
+    selectionFirstCorner_.reset();
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
+}
+
+void Application::executePendingEndPlateCommand() {
+    if (!pendingEndPlate_) return;
+    if (pendingEndPlateParts_.size() != 2) {
+        MessageBeep(MB_ICONWARNING);
+        publishStatus(L"End Plate: KOLON ve KIRISI secin (su an " +
+                      std::to_wstring(pendingEndPlateParts_.size()) + L" secili)");
+        return;
+    }
+    const std::vector<std::size_t> parts = pendingEndPlateParts_;
+    pendingEndPlate_ = false;
+    pendingEndPlateParts_.clear();
+    hoverModel_.reset();
+    hoverFaceModel_.reset();
+    hoverFaceIndices_.clear();
+    applyEndPlateFromParts(parts);
+}
+
+bool Application::pickPendingEndPlateAt(int x, int y) {
+    if (!pendingEndPlate_) return false;
+    const auto hit = modelIndexAt(x, y);
+    if (!hit || *hit >= document_.models().size()) {
+        MessageBeep(MB_ICONWARNING);
+        publishStatus(L"End Plate: bir parcaya tiklayin (normal model)");
+        return true;
+    }
+    const auto& model = document_.models()[*hit];
+    if (model.constructionKind() != ConstructionKind::None) {
+        MessageBeep(MB_ICONWARNING);
+        publishStatus(L"End Plate: parcalar normal model olmali (konstruksiyon degil)");
+        return true;
+    }
+    const auto it = std::find(pendingEndPlateParts_.begin(), pendingEndPlateParts_.end(), *hit);
+    if (it == pendingEndPlateParts_.end()) {
+        if (pendingEndPlateParts_.size() >= 2) {
+            MessageBeep(MB_ICONWARNING);
+            publishStatus(L"End Plate: zaten 2 parca secili (Esc iptal, sag tik uygula)");
+            return true;
+        }
+        pendingEndPlateParts_.push_back(*hit);
+    } else {
+        pendingEndPlateParts_.erase(it);
+    }
+    selectedModels_.clear();
+    for (const std::size_t p : pendingEndPlateParts_) selectedModels_.push_back(p);
+    if (pendingEndPlateParts_.size() == 1)
+        publishStatus(L"Kolon secildi — simdi KIRISI (secondary) secin");
+    else if (pendingEndPlateParts_.size() == 2)
+        publishStatus(L"Kolon + kiris secildi — sag tik uygular (Esc iptal)");
+    else
+        publishStatus(L"End Plate: kolon secin");
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
+    return true;
+}
+
+void Application::applyEndPlateFromParts(const std::vector<std::size_t>& parts) {
+    // Ortak yol (Phase C1 GUI): [0]=main (kolon), [1]=secondary (kiris).
+    if (parts.size() != 2) {
+        MessageBeep(MB_ICONWARNING);
+        publishStatus(L"End Plate: kolon ve kiris secin (tam 2 secim)");
+        return;
+    }
+    const std::size_t mainIdx = parts[0];
+    const std::size_t secIdx = parts[1];
+    if (mainIdx >= document_.models().size() || secIdx >= document_.models().size()) {
+        MessageBeep(MB_ICONWARNING);
+        return;
+    }
+    if (document_.models()[mainIdx].constructionKind() != ConstructionKind::None ||
+        document_.models()[secIdx].constructionKind() != ConstructionKind::None) {
+        MessageBeep(MB_ICONWARNING);
+        publishStatus(L"End Plate: parcalar normal model olmali (konstruksiyon degil)");
+        return;
+    }
+    // Kiris ekseni + ucu (baglanti noktasi = kiris ucunun kolona degdigi nokta).
+    const auto& sp = document_.models()[secIdx].properties();
+    const Vec3 beamFrom{sp.axisFromX, sp.axisFromY, sp.axisFromZ};
+    const Vec3 beamTo{sp.axisToX, sp.axisToY, sp.axisToZ};
+    const Vec3 beamAxis{beamTo.x - beamFrom.x, beamTo.y - beamFrom.y, beamTo.z - beamFrom.z};
+    // Kesit bbox: profil katalogundan (yoksa 200x300 mm varsayilan).
+    double secWidth = 200.0, secHeight = 300.0;
+    if (const SteelProfile* prof = findProfile(profileCatalog_, sp.profileName)) {
+        secWidth = prof->width;
+        secHeight = prof->height;
+    }
+    EndPlateParams params;  // M20/22, 12 mm levha, 2x4 bulon (varsayilan)
+    const EndPlatePlacement placement =
+        computeEndPlatePlacement(beamTo, beamAxis, secWidth, secHeight, params);
+
+    EndPlateConnection conn;
+    conn.mainPart = document_.modelId(mainIdx);
+    conn.secondaryPart = document_.modelId(secIdx);
+    conn.params = params;
+    conn.bolts = placement.bolts;
+    conn.enabled = true;
+
+    pushUndoSnapshot();
+    WireframeModel plateModel;
+    WireframeModel boltDisplay;
+#ifdef MM_HAS_OCC
+    const TopoDS_Shape plateSolid = buildEndPlateFromPlacement(placement);
+    plateModel = plateSolid.IsNull()
+                     ? WireframeModel::rectangle({-100.0, -100.0, 0.0}, {100.0, 100.0, 0.0})
+                     : shapeToWireframeWithFaces(plateSolid, 0.15);
+    // Bulon kavrama uzunlugu: levha kalinligi + kolon flansi tahmini (15 mm).
+    const double grip = placement.plateThickness + 15.0;
+    const TopoDS_Shape assembly = buildEndPlateAssemblyShape(placement, grip);
+    boltDisplay = assembly.IsNull() ? WireframeModel::cube(10.0)
+                                    : shapeToWireframeWithFaces(assembly, 0.15);
+    {
+        auto bp = boltDisplay.properties();
+        bp.trueColor = 0x8B592A;
+        bp.effectiveColor = 0x8B592A;
+        boltDisplay.setProperties(std::move(bp));
+    }
+#else
+    plateModel = WireframeModel::rectangle({-100.0, -100.0, 0.0}, {100.0, 100.0, 0.0});
+    boltDisplay = WireframeModel::cube(10.0);
+#endif
+    const std::size_t ci = document_.addEndPlateConnection(std::move(conn),
+                                                            std::move(plateModel),
+                                                            std::move(boltDisplay));
+    const EndPlateConnection& created = document_.endPlateConnections()[ci];
+#ifdef MM_HAS_OCC
+    if (!plateSolid.IsNull()) {
+        if (const auto pi = document_.indexOfEntity(created.plateEntityId))
+            putOccSolid(*pi, plateSolid);
+    }
+    if (!assembly.IsNull()) {
+        if (const auto di = document_.indexOfEntity(created.bolts.displayEntityId))
+            putOccSolid(*di, assembly);
+    }
+    // Delikler (CutKind::Hole) kolon + levhayi deler -> yeniden hesapla.
+    if (created.mainPart != kInvalidEntityId) recomputeCutTarget(created.mainPart);
+    if (created.plateEntityId != kInvalidEntityId) recomputeCutTarget(created.plateEntityId);
+#endif
+    selectedModels_.clear();
+    selectionFirstCorner_.reset();
+    updateHover(cursorScreen_.x, cursorScreen_.y);
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
 }
 
 #ifdef MM_HAS_OCC

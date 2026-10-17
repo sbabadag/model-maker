@@ -65,7 +65,7 @@ enum class ToolGlyph {
     Line, Polyline, Rect, Circle, Face3D,
     Undo, Redo, Pan, Move, Copy, Offset, Mirror, Delete,
     LinearArray, PolarArray, Trim, Extend, Fillet,
-    Toggle3D, Extents, Plane, Reset, New, Open, Save, Import, Export, Bolt
+    Toggle3D, Extents, Plane, Reset, New, Open, Save, Import, Export, Bolt, Plate
 };
 
 static QIcon makeToolIcon(ToolGlyph glyph) {
@@ -186,6 +186,15 @@ static QIcon makeToolIcon(ToolGlyph glyph) {
         p.drawLine(12, 12, 12, 21);
         p.drawLine(9, 18, 15, 18);
         break;
+    }
+    case ToolGlyph::Plate: {
+        // Alin levhasi: dik levha + yatay kiris + bulon noktalari.
+        pen.setColor(green); p.setPen(pen);
+        p.drawRect(4, 5, 6, 14);         // levha (kolon flansi tarafi)
+        pen.setColor(cyan); p.setPen(pen);
+        p.drawLine(10, 12, 21, 12);      // kiris
+        pen.setColor(yellow); p.setPen(pen);
+        p.drawEllipse(QPointF(12, 9), 1, 1); p.drawEllipse(QPointF(12, 15), 1, 1); break;
     }
     case ToolGlyph::Reset:
         pen.setColor(orange); p.setPen(pen);
@@ -613,6 +622,8 @@ void QtMainWindow::createMenus() {
     constructionMenu->addSeparator();
     constructionMenu->addAction("&Bolt (Bulon)", this,
         [this]() { app_.startBoltCommand(); })->setIcon(makeToolIcon(ToolGlyph::Bolt));
+    constructionMenu->addAction("&End Plate (Alın Levhası)", this,
+        [this]() { app_.startEndPlateCommand(); })->setIcon(makeToolIcon(ToolGlyph::Plate));
 
     // ---- GÖRÜNÜM: kamera/navigasyon + standart yönler ----
     QMenu* viewMenu = appMenu_->addMenu("G&örünüm");
@@ -1261,6 +1272,7 @@ void QtMainWindow::createToolbar() {
         addBtn(lay, ToolGlyph::Delete,   "Part Cut",      "Parça ile kesme", [this]() { app_.startPartCutCommand(); });
         addSep(lay);
         addBtn(lay, ToolGlyph::Bolt,     "Bolt",          "İki parçayı bulonla birleştir", [this]() { app_.startBoltCommand(); });
+        addBtn(lay, ToolGlyph::Plate,    "End Plate",     "Alın levhası bağlantısı (kolon+kiriş)", [this]() { app_.startEndPlateCommand(); });
         lay->addStretch();
     }
 
