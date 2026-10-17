@@ -160,6 +160,184 @@ void readBlobEntries(std::istream& bs, std::vector<Mmw8Blob>& out,
     }
 }
 
+// --- UTF-8 <-> wchar_t (kod noktasi) donusumu ---------------------------------
+// Linux'ta wchar_t 32 bit (UTF-32), Windows'ta 16 bit (UTF-16). Component
+// motoru verisi (typeId / parametre adi / deger) BMP/ASCII'dir; her wchar_t
+// tek kod noktasi kabul edilir ve UTF-8 ile kayipsiz kodlanir.
+std::string toUtf8(const std::wstring& ws) {
+    std::string out;
+    out.reserve(ws.size());
+    for (const wchar_t wc : ws) {
+        const std::uint32_t cp = static_cast<std::uint32_t>(wc);
+        if (cp < 0x80u) {
+            out.push_back(static_cast<char>(cp));
+        } else if (cp < 0x800u) {
+            out.push_back(static_cast<char>(0xC0u | (cp >> 6)));
+            out.push_back(static_cast<char>(0x80u | (cp & 0x3Fu)));
+        } else if (cp < 0x10000u) {
+            out.push_back(static_cast<char>(0xE0u | (cp >> 12)));
+            out.push_back(static_cast<char>(0x80u | ((cp >> 6) & 0x3Fu)));
+            out.push_back(static_cast<char>(0x80u | (cp & 0x3Fu)));
+        } else {
+            out.push_back(static_cast<char>(0xF0u | (cp >> 18)));
+            out.push_back(static_cast<char>(0x80u | ((cp >> 12) & 0x3Fu)));
+            out.push_back(static_cast<char>(0x80u | ((cp >> 6) & 0x3Fu)));
+            out.push_back(static_cast<char>(0x80u | (cp & 0x3Fu)));
+        }
+    }
+    return out;
+}
+
+std::wstring fromUtf8(const std::string& s) {
+    std::wstring out;
+    out.reserve(s.size());
+    std::size_t i = 0;
+    while (i < s.size()) {
+        const unsigned char c = static_cast<unsigned char>(s[i]);
+        std::uint32_t cp = 0;
+        std::size_t extra = 0;
+        if (c < 0x80u) {
+            cp = c;
+        } else if ((c & 0xE0u) == 0xC0u) {
+            cp = c & 0x1Fu;
+            extra = 1;
+        } else if ((c & 0xF0u) == 0xE0u) {
+            cp = c & 0x0Fu;
+            extra = 2;
+        } else if ((c & 0xF8u) == 0xF0u) {
+            cp = c & 0x07u;
+            extra = 3;
+        } else {
+            fail("invalid UTF-8 leading byte");
+        }
+        if (i + extra >= s.size()) fail("truncated UTF-8 sequence");
+        ++i;
+        for (std::size_t k = 0; k < extra; ++k) {
+            const unsigned char cc = static_cast<unsigned char>(s[i]);
+            if ((cc & 0xC0u) != 0x80u) fail("invalid UTF-8 continuation byte");
+            cp = (cp << 6) | (cc & 0x3Fu);
+            ++i;
+        }
+        out.push_back(static_cast<wchar_t>(cp));
+    }
+    return out;
+}
+
+// --- Component kaydi (Phase C2) serilestirme ---------------------------------
+// CompParam deger turu etiketi: 0=double, 1=int, 2=bool, 3=wstring(utf8),
+// 4=EntityId. Kayit `dirty`/`orphan` TASIMAZ (calisma ani bayraklar; yuklemede
+// yeniden turetilir).
+void putCompParam(std::ostream& out, const CompParam& p) {
+    putString(out, toUtf8(p.name));
+    out << ' ';
+    if (const auto* d = std::get_if<double>(&p.value)) {
+        out << "0 " << *d;
+    } else if (const auto* i = std::get_if<int>(&p.value)) {
+        out << "1 " << *i;
+    } else if (const auto* b = std::get_if<bool>(&p.value)) {
+        out << "2 " << (*b ? 1 : 0);
+    } else if (const auto* s = std::get_if<std::wstring>(&p.value)) {
+        out << "3 ";
+        putString(out, toUtf8(*s));
+    } else {
+        const auto* e = std::get_if<EntityId>(&p.value);
+        out << "4 " << (e ? *e : static_cast<EntityId>(kInvalidEntityId));
+    }
+}
+
+void writeComponentBody(std::ostream& body, const std::vector<ComponentInstanceRecord>& recs) {
+    body << recs.size() << '\n';
+    for (const auto& r : recs) {
+        body << r.id << ' ' << r.schemaVersion << ' ' << r.mainPart << ' '
+             << r.secondaryParts.size();
+        for (const EntityId s : r.secondaryParts) body << ' ' << s;
+        body << ' ' << r.params.size();
+        for (const auto& p : r.params) { body << ' '; putCompParam(body, p); }
+        body << ' ' << r.origin.x << ' ' << r.origin.y << ' ' << r.origin.z
+             << ' ' << r.u.x << ' ' << r.u.y << ' ' << r.u.z
+             << ' ' << r.v.x << ' ' << r.v.y << ' ' << r.v.z
+             << ' ' << r.axis.x << ' ' << r.axis.y << ' ' << r.axis.z
+             << ' ' << r.ownedPlateIds.size();
+        for (const EntityId p : r.ownedPlateIds) body << ' ' << p;
+        body << ' ' << r.ownedBoltGroupIds.size();
+        for (const EntityId b : r.ownedBoltGroupIds) body << ' ' << b;
+        body << ' ' << (r.enabled ? 1 : 0) << ' ';
+        putString(body, toUtf8(r.typeId));
+        body << '\n';
+    }
+}
+
+void readComponentBody(std::istream& bs, std::vector<ComponentInstanceRecord>& out) {
+    const std::uint64_t count = readUint64(bs, "component count");
+    if (count > kMmw8MaxComponents) fail("component count exceeds limit");
+    std::string line;
+    std::getline(bs, line);  // count satırının kalanı (boş)
+    std::unordered_map<EntityId, bool> seenComp;
+    for (std::uint64_t ci = 0; ci < count; ++ci) {
+        if (!std::getline(bs, line)) fail("missing component record");
+        std::istringstream ls(line);
+        ComponentInstanceRecord r;
+        r.id = static_cast<EntityId>(readUint64(ls, "component id"));
+        if (r.id == kInvalidEntityId || r.id == kExhaustedEntityId)
+            fail("component id must be a valid identity");
+        if (seenComp.count(r.id)) fail("duplicate component id");
+        seenComp[r.id] = true;
+        const std::int64_t schema = readInt64(ls, "component schemaVersion");
+        if (schema < 1) fail("component schemaVersion must be >= 1");
+        r.schemaVersion = static_cast<int>(schema);
+        r.mainPart = static_cast<EntityId>(readUint64(ls, "component mainPart"));
+        const std::uint64_t nSec = readUint64(ls, "component secondary count");
+        if (nSec > kMmw8MaxModels) fail("component secondary count exceeds limit");
+        r.secondaryParts.reserve(static_cast<std::size_t>(nSec));
+        for (std::uint64_t si = 0; si < nSec; ++si)
+            r.secondaryParts.push_back(static_cast<EntityId>(readUint64(ls, "component secondary")));
+        const std::uint64_t nParams = readUint64(ls, "component param count");
+        if (nParams > kMmw8MaxModels) fail("component param count exceeds limit");
+        r.params.reserve(static_cast<std::size_t>(nParams));
+        for (std::uint64_t pi = 0; pi < nParams; ++pi) {
+            CompParam p;
+            p.name = fromUtf8(readString(ls));
+            const std::uint64_t tag = readUint64(ls, "component param type tag");
+            switch (tag) {
+                case 0: p.value = CompParamValue{readDouble(ls, "param double")}; break;
+                case 1: p.value = CompParamValue{static_cast<int>(readInt64(ls, "param int"))}; break;
+                case 2: p.value = CompParamValue{readBool(ls, "param bool")}; break;
+                case 3: p.value = CompParamValue{fromUtf8(readString(ls))}; break;
+                case 4: p.value = CompParamValue{static_cast<EntityId>(readUint64(ls, "param entity"))}; break;
+                default: fail("invalid component param type tag");
+            }
+            r.params.push_back(std::move(p));
+        }
+        r.origin.x = readDouble(ls, "component origin x");
+        r.origin.y = readDouble(ls, "component origin y");
+        r.origin.z = readDouble(ls, "component origin z");
+        r.u.x = readDouble(ls, "component u x");
+        r.u.y = readDouble(ls, "component u y");
+        r.u.z = readDouble(ls, "component u z");
+        r.v.x = readDouble(ls, "component v x");
+        r.v.y = readDouble(ls, "component v y");
+        r.v.z = readDouble(ls, "component v z");
+        r.axis.x = readDouble(ls, "component axis x");
+        r.axis.y = readDouble(ls, "component axis y");
+        r.axis.z = readDouble(ls, "component axis z");
+        const std::uint64_t nPlates = readUint64(ls, "component ownedPlate count");
+        if (nPlates > kMmw8MaxModels) fail("component ownedPlate count exceeds limit");
+        r.ownedPlateIds.reserve(static_cast<std::size_t>(nPlates));
+        for (std::uint64_t pi = 0; pi < nPlates; ++pi)
+            r.ownedPlateIds.push_back(static_cast<EntityId>(readUint64(ls, "component plate id")));
+        const std::uint64_t nBolts = readUint64(ls, "component ownedBolt count");
+        if (nBolts > kMmw8MaxModels) fail("component ownedBolt count exceeds limit");
+        r.ownedBoltGroupIds.reserve(static_cast<std::size_t>(nBolts));
+        for (std::uint64_t bi = 0; bi < nBolts; ++bi)
+            r.ownedBoltGroupIds.push_back(static_cast<EntityId>(readUint64(ls, "component bolt id")));
+        r.enabled = readBool(ls, "component enabled");
+        r.typeId = fromUtf8(readString(ls));
+        r.dirty = true;    // yuklenen kayit yeniden hesaplama bekler
+        r.orphan = false;  // Document yuklemede registry'ye gore yeniden kurar
+        out.push_back(std::move(r));
+    }
+}
+
 } // namespace
 
 void writeMmw8(std::ostream& out, const Mmw8Document& doc) {
@@ -343,6 +521,15 @@ void writeMmw8(std::ostream& out, const Mmw8Document& doc) {
         }
         const std::string b = body.str();
         out << "E " << b.size() << '\n';
+        out.write(b.data(), static_cast<std::streamsize>(b.size()));
+    }
+
+    // Kuyruk: I blogu (component instance'lari, Phase C2).
+    if (!doc.componentInstances.empty()) {
+        std::ostringstream body;
+        writeComponentBody(body, doc.componentInstances);
+        const std::string b = body.str();
+        out << "I " << b.size() << '\n';
         out.write(b.data(), static_cast<std::streamsize>(b.size()));
     }
 
@@ -544,7 +731,7 @@ void readMmw8(std::istream& in, Mmw8Document& doc) {
     }
 
     // --- Kuyruk: etiket-gudumlu bloklar ---
-    bool sawH = false, sawB = false, sawV = false, sawG = false, sawE = false;
+    bool sawH = false, sawB = false, sawV = false, sawG = false, sawE = false, sawI = false;
     std::size_t totalBlobBytes = 0;
     for (;;) {
         in >> std::ws;
@@ -753,6 +940,11 @@ void readMmw8(std::istream& in, Mmw8Document& doc) {
                 }
                 parsed.endPlateConnections.push_back(std::move(c));
             }
+        } else if (tag == 'I') {
+            if (sawI) fail("repeated I block");
+            sawI = true;
+            std::istringstream is(body);
+            readComponentBody(is, parsed.componentInstances);
         } else if (tag == 'K') {
             std::istringstream ks(body);
             const std::uint64_t count = readUint64(ks, "constructionKind count");

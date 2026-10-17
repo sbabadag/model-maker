@@ -779,6 +779,15 @@ if(BUILD_TESTING)
     target_compile_options(model_maker_component_engine_test PRIVATE -Wall -Wextra -Wpedantic)
     add_test(NAME model_maker_component_engine_test COMMAND model_maker_component_engine_test)
 
+    # COMPONENT SERIALIZE (Phase C2b): ComponentInstanceRecord'un MMW8 'I' blogu
+    # + Document save/load entegrasyonu; orphan tespiti + param migration +
+    # undo/redo. OCC'siz, Linux'ta kosar.
+    add_executable(model_maker_component_serialize_test tests/component_serialize_test.cpp)
+    target_link_libraries(model_maker_component_serialize_test PRIVATE model_maker_core)
+    target_link_options(model_maker_component_serialize_test PRIVATE -static -static-libgcc -static-libstdc++)
+    target_compile_options(model_maker_component_serialize_test PRIVATE -Wall -Wextra -Wpedantic)
+    add_test(NAME model_maker_component_serialize_test COMMAND model_maker_component_serialize_test)
+
     # ASSEMBLY & PAPER SPACE (P5): Part/Assembly iliskileri, orto projeksiyon
     # (Camera standardViewRotation ile tek kaynak), Paper Space gorunus listesi.
     add_executable(model_maker_assembly_test tests/assembly_test.cpp)

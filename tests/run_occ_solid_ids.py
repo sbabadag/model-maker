@@ -61,6 +61,10 @@ CORE_SOURCES = [
     "src/occ_store_null.cpp", "src/occ_solid_store.cpp",
     # MMW8 (Phase 3.4B/3.4C): OCCT'siz codec + SHA-256 + native B-Rep serializer.
     "src/mmw8_codec.cpp", "src/sha256.cpp", "src/occ_brep_serialize.cpp",
+    # COMPONENT ENGINE (Phase C2): document.cpp commitFromMmw8 orphan tespiti +
+    # parametre migration icin registry/semaya bagimli; end_plate.cpp ayni motora
+    # ait (computeEndPlatePlacement/endPlateFrame).
+    "src/component_engine.cpp", "src/end_plate.cpp",
 ]
 
 OCC_LIBS = ["TKernel", "TKMath", "TKG2d", "TKG3d", "TKGeomBase", "TKBRep",

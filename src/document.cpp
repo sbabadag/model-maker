@@ -973,6 +973,32 @@ void Document::applyUndoOp(const UndoOp& op, bool forward) {
         if (op.endPlateIndex < endPlateConnections_.size())
             endPlateConnections_[op.endPlateIndex] = forward ? op.endPlateAfter : op.endPlateBefore;
         break;
+    case UndoOp::Kind::ComponentAdd:
+        if (forward) {
+            if (op.componentIndex <= componentInstances_.size())
+                componentInstances_.insert(
+                    componentInstances_.begin() + static_cast<std::ptrdiff_t>(op.componentIndex),
+                    op.componentAfter);
+        } else if (op.componentIndex < componentInstances_.size()) {
+            componentInstances_.erase(
+                componentInstances_.begin() + static_cast<std::ptrdiff_t>(op.componentIndex));
+        }
+        break;
+    case UndoOp::Kind::ComponentRemove:
+        if (forward) {
+            if (op.componentIndex < componentInstances_.size())
+                componentInstances_.erase(
+                    componentInstances_.begin() + static_cast<std::ptrdiff_t>(op.componentIndex));
+        } else if (op.componentIndex <= componentInstances_.size()) {
+            componentInstances_.insert(
+                componentInstances_.begin() + static_cast<std::ptrdiff_t>(op.componentIndex),
+                op.componentBefore);
+        }
+        break;
+    case UndoOp::Kind::ComponentReplace:
+        if (op.componentIndex < componentInstances_.size())
+            componentInstances_[op.componentIndex] = forward ? op.componentAfter : op.componentBefore;
+        break;
     }
 }
 
@@ -1477,6 +1503,7 @@ void Document::buildMmw8(Mmw8Document& out) const {
     out.cutModifiers = cutModifiers_;
     out.boltGroups = boltGroups_;
     out.endPlateConnections = endPlateConnections_;
+    out.componentInstances = componentInstances_;
     // Konstruksiyon turleri (K blogu): kind != None olan modellerin
     // EntityId -> kind eslesmesi (model kaydi ConstructionKind tasimaz).
     out.constructionKinds.clear();
@@ -1582,6 +1609,21 @@ void Document::commitFromMmw8(Mmw8Document&& mdoc) {
     cutModifiers_ = std::move(mdoc.cutModifiers);
     boltGroups_ = std::move(mdoc.boltGroups);
     endPlateConnections_ = std::move(mdoc.endPlateConnections);
+    componentInstances_ = std::move(mdoc.componentInstances);
+    // Component instance'lari registry'ye gore yeniden kur: bilinmeyen typeId
+    // -> orphan (COKME YOK, kayit korunur); bilinen tip -> parametreleri semaya
+    // hizala (surumlu migration) + dirty (recompute bekliyor).
+    for (auto& rec : componentInstances_) {
+        const ComponentType* type = ComponentRegistry::instance().findType(rec.typeId);
+        rec.dirty = true;
+        if (!type) {
+            rec.orphan = true;
+            continue;
+        }
+        rec.orphan = false;
+        rec.params = alignParamsToSpecs(type->params, rec.params);
+        rec.schemaVersion = type->schemaVersion;
+    }
     // Grid `axes` TUREV bir alandir (spec'ten cizim geometrisi); codec yalniz
     // spec'i tasir. Yuklemede yeniden TURET.
     for (auto& grid : grids_) rebuildGridAxes(grid);
@@ -2215,6 +2257,54 @@ std::optional<std::size_t> Document::indexOfEndPlateConnection(EntityId id) cons
     if (id == kInvalidEntityId) return std::nullopt;
     for (std::size_t i = 0; i < endPlateConnections_.size(); ++i)
         if (endPlateConnections_[i].id == id) return i;
+    return std::nullopt;
+}
+
+std::size_t Document::addComponentInstance(ComponentInstanceRecord record) {
+    ++revision_;
+    opaqueBrepsStale_ = true;
+    if (record.id == kInvalidEntityId) record.id = allocateEntityIdRequired();
+    UndoOp op;
+    op.kind = UndoOp::Kind::ComponentAdd;
+    op.componentIndex = componentInstances_.size();
+    op.componentAfter = record;
+    recordUndoOp(std::move(op));
+    componentInstances_.push_back(std::move(record));
+    return componentInstances_.size() - 1;
+}
+
+void Document::removeComponentInstance(std::size_t index) {
+    if (index >= componentInstances_.size()) return;
+    ++revision_;
+    opaqueBrepsStale_ = true;
+    UndoOp op;
+    op.kind = UndoOp::Kind::ComponentRemove;
+    op.componentIndex = index;
+    op.componentBefore = componentInstances_[index];
+    recordUndoOp(std::move(op));
+    componentInstances_.erase(componentInstances_.begin() + static_cast<std::ptrdiff_t>(index));
+}
+
+bool Document::setComponentInstance(std::size_t index, ComponentInstanceRecord record) {
+    if (index >= componentInstances_.size()) return false;
+    ++revision_;
+    opaqueBrepsStale_ = true;
+    const ComponentInstanceRecord old = componentInstances_[index];
+    record.id = old.id;  // kimlik korunur
+    UndoOp op;
+    op.kind = UndoOp::Kind::ComponentReplace;
+    op.componentIndex = index;
+    op.componentBefore = old;
+    op.componentAfter = record;
+    recordUndoOp(std::move(op));
+    componentInstances_[index] = record;
+    return true;
+}
+
+std::optional<std::size_t> Document::indexOfComponentInstance(EntityId id) const {
+    if (id == kInvalidEntityId) return std::nullopt;
+    for (std::size_t i = 0; i < componentInstances_.size(); ++i)
+        if (componentInstances_[i].id == id) return i;
     return std::nullopt;
 }
 

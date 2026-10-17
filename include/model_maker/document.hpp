@@ -7,6 +7,7 @@
 #include "model_maker/cut_modifier.hpp"
 #include "model_maker/bolt.hpp"
 #include "model_maker/end_plate.hpp"
+#include "model_maker/component_engine.hpp"
 
 #include <array>
 #include <filesystem>
@@ -32,7 +33,8 @@ struct Bounds3 {
 struct UndoOp {
     enum class Kind { Add, Delete, Replace, Move, Transform, GridAdd, GridRemove, GridReplace,
                       CutAdd, CutRemove, CutReplace, BoltAdd, BoltRemove, BoltReplace,
-                      EndPlateAdd, EndPlateRemove, EndPlateReplace };
+                      EndPlateAdd, EndPlateRemove, EndPlateReplace,
+                      ComponentAdd, ComponentRemove, ComponentReplace };
     Kind kind{Kind::Add};
     std::size_t index{};
     std::vector<WireframeModel> beforeModels; // delete: silinenler; replace: eski model
@@ -68,6 +70,11 @@ struct UndoOp {
     std::size_t endPlateIndex{};
     EndPlateConnection endPlateBefore;
     EndPlateConnection endPlateAfter;
+    // Component (ComponentAdd/ComponentRemove/ComponentReplace): parametrik
+    // component instance kaydi ekle/sil/degistir.
+    std::size_t componentIndex{};
+    ComponentInstanceRecord componentBefore;
+    ComponentInstanceRecord componentAfter;
 };
 struct UndoRecord {
     std::vector<UndoOp> ops;
@@ -291,6 +298,22 @@ public:
     // EntityId -> baglanti indeksi; yoksa nullopt.
     std::optional<std::size_t> indexOfEndPlateConnection(EntityId id) const;
 
+    // --- PARAMETRIK COMPONENT INSTANCE'LARI (Phase C2) -----------------------
+    // ComponentInstanceRecord'un KALICI kaydi (kendi EntityId'si; TypeId +
+    // SchemaVersion + tipli parametreler + yerlesim + referanslar + sahip olunan
+    // alt nesneler). Bu dilim yalniz SERILESTIRME + kayit yasam dongusu saglar:
+    // gercek materyalizasyon (GenerationPlan -> levha/bulon/kesme uretimi) ve
+    // recompute SONRAKI dilimdedir — addComponentInstance sahip olunan alt
+    // nesne kimliklerini OLDUGU GIBI saklar (cagiran saglar).
+    std::size_t addComponentInstance(ComponentInstanceRecord record);
+    void removeComponentInstance(std::size_t index);
+    bool setComponentInstance(std::size_t index, ComponentInstanceRecord record);
+    const std::vector<ComponentInstanceRecord>& componentInstances() const noexcept {
+        return componentInstances_;
+    }
+    // EntityId -> component instance indeksi; yoksa nullopt.
+    std::optional<std::size_t> indexOfComponentInstance(EntityId id) const;
+
 private:
     static constexpr std::size_t kMaxUndoEntries = 100;
     std::uint64_t revision_{0};
@@ -371,6 +394,7 @@ private:
     std::vector<CutModifier> cutModifiers_;
     std::vector<BoltGroup> boltGroups_;
     std::vector<EndPlateConnection> endPlateConnections_;
+    std::vector<ComponentInstanceRecord> componentInstances_;
 };
 
 // KESME KAYNAK COZUMU (P6): mod.source gecerliyse kaynak varligin GUNCEL
