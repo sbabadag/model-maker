@@ -30,7 +30,7 @@ static void check(bool ok, const char* label) {
     if (!ok) ++g_failures;
 }
 
-static bool near(double a, double b, double tol = 1e-9) { return std::abs(a - b) < tol; }
+static bool nearEq(double a, double b, double tol = 1e-9) { return std::abs(a - b) < tol; }
 
 static std::filesystem::path tempPath(const char* name) {
     return std::filesystem::temp_directory_path() / name;
@@ -50,7 +50,7 @@ static bool sameComponent(const ComponentInstanceRecord& a, const ComponentInsta
         if (a.params[i].value != b.params[i].value) return false;
     }
     const auto v3 = [](const Vec3& x, const Vec3& y) {
-        return near(x.x, y.x) && near(x.y, y.y) && near(x.z, y.z);
+        return nearEq(x.x, y.x) && nearEq(x.y, y.y) && nearEq(x.z, y.z);
     };
     return v3(a.origin, b.origin) && v3(a.u, b.u) && v3(a.v, b.v) && v3(a.axis, b.axis);
 }
