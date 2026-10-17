@@ -4450,9 +4450,12 @@ void Application::applyEndPlateFromParts(const std::vector<std::size_t>& parts) 
                      : shapeToWireframeWithFaces(plateSolid, 0.15);
     // Bulon kavrama uzunlugu: levha kalinligi + kolon flansi tahmini (15 mm).
     const double grip = placement.plateThickness + 15.0;
-    const TopoDS_Shape assembly = buildEndPlateAssemblyShape(placement, grip);
-    boltDisplay = assembly.IsNull() ? WireframeModel::cube(10.0)
-                                    : shapeToWireframeWithFaces(assembly, 0.15);
+    // YALNIZ bulon montaji (bas/somun/saft) — levha AYRI model olarak zaten
+    // ekleniyor; levhayi ikinci kez cizmek icin buildEndPlateAssemblyShape
+    // KULLANMA (cift levha = daginik goruntu).
+    const TopoDS_Shape boltSolid = buildBoltGroupAssemblyShape(placement.bolts, grip);
+    boltDisplay = boltSolid.IsNull() ? WireframeModel::cube(10.0)
+                                     : shapeToWireframeWithFaces(boltSolid, 0.15);
     {
         auto bp = boltDisplay.properties();
         bp.trueColor = 0x8B592A;
@@ -4472,9 +4475,9 @@ void Application::applyEndPlateFromParts(const std::vector<std::size_t>& parts) 
         if (const auto pi = document_.indexOfEntity(created.plateEntityId))
             putOccSolid(*pi, plateSolid);
     }
-    if (!assembly.IsNull()) {
+    if (!boltSolid.IsNull()) {
         if (const auto di = document_.indexOfEntity(created.bolts.displayEntityId))
-            putOccSolid(*di, assembly);
+            putOccSolid(*di, boltSolid);
     }
     // Delikler (CutKind::Hole) kolon + levhayi deler -> yeniden hesapla.
     if (created.mainPart != kInvalidEntityId) recomputeCutTarget(created.mainPart);
