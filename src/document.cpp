@@ -419,9 +419,20 @@ std::size_t Document::setModelProfile(const std::vector<std::size_t>& indices,
     for (const auto index : uniqueIndices(indices)) {
         if (!modelIsEditable(index)) continue;
         auto properties = models_[index].properties();
+        const std::string before = properties.profileName;
+        if (before == profileName) continue;
         properties.profileName = profileName;
         models_[index].setProperties(properties);
         ++changed;
+        // SLICE 2d-2b: profil degisimi undo edilebilir (HEB300 -> HEB400 atomik
+        // transaction icin). recordUndoOp acik kayit yoksa SESSIZCE duser —
+        // cagiran profil atamasindan ONCE pushSnapshot() acmalidir.
+        UndoOp op;
+        op.kind = UndoOp::Kind::ProfileReplace;
+        op.index = index;
+        op.profileBefore = std::move(before);
+        op.profileAfter = profileName;
+        recordUndoOp(std::move(op));
     }
     if (effectiveCache_.size() != models_.size()) effectiveCacheDirty_ = true;
     else {
@@ -998,6 +1009,14 @@ void Document::applyUndoOp(const UndoOp& op, bool forward) {
     case UndoOp::Kind::ComponentReplace:
         if (op.componentIndex < componentInstances_.size())
             componentInstances_[op.componentIndex] = forward ? op.componentAfter : op.componentBefore;
+        break;
+    case UndoOp::Kind::ProfileReplace:
+        if (op.index < models_.size()) {
+            auto props = models_[op.index].properties();
+            props.profileName = forward ? op.profileAfter : op.profileBefore;
+            models_[op.index].setProperties(std::move(props));
+            effectiveCacheDirty_ = true;  // profil degisti -> efektif ozellikler bayat
+        }
         break;
     }
 }

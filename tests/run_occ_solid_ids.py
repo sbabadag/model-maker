@@ -214,16 +214,22 @@ def assert_source_shape(bodies, text):
         if needle not in text[i:k]:
             errs.append(f"{name}: belge yasam dongusu cagrisi YOK ({needle!r}) "
                         "(magaza temizligi Document'a devredildi)")
-    # Phase 3.2B: profil atamanin 1:1 (existingSolid) dali artik undo kaydi ACAR
-    # (yoksa B-Rep + tel kafes degisikligi undo disinda kalirdi).
-    idx = text.find("if (existingSolid) {")
-    if idx < 0:
-        errs.append("assignProfileToSelection: existingSolid dali bulunamadi")
+    # Phase 2d-2b: profil atamasi ATOMIK undo kaydi ACAR (profil ProfileReplace +
+    # kati yeniden uretimi + bagli End Plate recompute TEK adimda geri alinir).
+    # Snapshot, existingSolid dali icinde DEGIL, setModelProfile'ten ONCE acilir
+    # (yoksa ProfileReplace op'u kayitsiz duser, profil/geometri eslesmesi bozulur).
+    try:
+        ai, ak = find_span(text, "void Application::assignProfileToSelection(",
+                           "assignProfileToSelection")
+    except HarnessError as exc:
+        errs.append(str(exc))
     else:
-        seg = text[idx:idx + 700]
-        if "pushUndoSnapshot();" not in seg:
-            errs.append("assignProfileToSelection: existingSolid dali undo kaydi "
-                        "ACMIYOR (pushUndoSnapshot yok)")
+        seg = text[ai:ak]
+        snap = seg.find("pushUndoSnapshot();")
+        prof = seg.find("setModelProfile(")
+        if snap < 0 or prof < 0 or snap > prof:
+            errs.append("assignProfileToSelection: setModelProfile'ten ONCE undo "
+                        "kaydi ACILMIYOR (pushUndoSnapshot once gelmeli)")
     if errs:
         raise HarnessError("kaynak-sekil kontrolu BASARISIZ:\n  - " + "\n  - ".join(errs))
 

@@ -299,6 +299,24 @@ public:
     void executePendingEndPlateCommand();
     bool pickPendingEndPlateAt(int x, int y);
     void applyEndPlateFromParts(const std::vector<std::size_t>& parts);
+    // SLICE 2d-2b: mevcut End Plate baglantisinin yerlesimini parcalarin GUNCEL
+    // geometrisinden (kolon cercevesi/kesiti + kiris ekseni/ucu) yeniden cozer.
+    // Gercek B-Rep temas (OCCT) oncelikli, lokal kesit geometrisi fallback.
+    // Basarida placement doldurulur + true; ACIK hata (paralel eksen / yuz disi /
+    // belirsiz / eksik parca) err + false — cagiran belgeyi DEGISTIRMEZ.
+    bool resolveEndPlatePlacement(std::size_t mainIdx, std::size_t secIdx,
+                                  const EndPlateParams& params,
+                                  EndPlatePlacement& placement, std::wstring& err);
+    // Bir End Plate baglantisini YERINDE yeniden uretir (kararli kimlikler).
+    // Yeni temas + yerlesim cozulur, levha + bulon solid/wire yeniden uretilir,
+    // setEndPlateConnection (kimlik korumali) + putOccSolid + kesme yeniden
+    // uygulanir. Cozum/geometri basarisizsa false — ESKI gecerli geometri
+    // KORUNUR. Degisiklikler ACIK undo kaydina yazilir (atomik transaction).
+    bool rebuildEndPlateConnection(std::size_t index);
+    // changedParts'e main/secondary olarak bagli TUM End Plate baglantilarini
+    // yeniden hesaplar (deterministik kayit sirasi). Kolon/kiris tasininca,
+    // dondurulunce veya profili degisince cagrilir.
+    void recomputeEndPlateConnectionsFor(const std::vector<EntityId>& changedParts);
     // Secili model bir BOLT display'i ise bulon parametrelerini okur (props
     // paneli). Donus false = secim bir bulon degil.
     bool selectedBoltProperties(double& nominalDiameter, double& holeDiameter,

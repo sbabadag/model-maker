@@ -4384,123 +4384,14 @@ void Application::applyEndPlateFromParts(const std::vector<std::size_t>& parts) 
         publishStatus(L"End Plate: parcalar normal model olmali (konstruksiyon degil)");
         return;
     }
-    // Kiris ekseni + ucu. Once kalici eksen (profil-cizim yolu yazar); eksen
-    // tanimsizsa (setModelProfile yalnizca profileName yazar — "cizgi ciz +
-    // profil ata" yolu) cizginin 2 kosesinden turet. Kirisin kolona YAKIN ucu
-    // baglanti noktasi yapilir.
-    const auto& sp = document_.models()[secIdx].properties();
-    Vec3 beamFrom{sp.axisFromX, sp.axisFromY, sp.axisFromZ};
-    Vec3 beamTo{sp.axisToX, sp.axisToY, sp.axisToZ};
-    Vec3 beamAxis{beamTo.x - beamFrom.x, beamTo.y - beamFrom.y, beamTo.z - beamFrom.z};
-    if (beamAxis.x * beamAxis.x + beamAxis.y * beamAxis.y + beamAxis.z * beamAxis.z < 1e-12) {
-        const auto& vs = document_.models()[secIdx].vertices();
-        if (vs.size() >= 2) {
-            beamFrom = vs[0];
-            beamTo = vs.back();
-        }
-        beamAxis = Vec3{beamTo.x - beamFrom.x, beamTo.y - beamFrom.y, beamTo.z - beamFrom.z};
-    }
-    // Kolonun sinir kutusu merkezi; kirisin bu merkeze en yakin ucu baglanti ucu.
-    Vec3 colCenter{};
-    if (mainIdx < document_.modelBounds().size()) {
-        const auto& b = document_.modelBounds()[mainIdx];
-        colCenter = Vec3{0.5 * (b.minimum.x + b.maximum.x), 0.5 * (b.minimum.y + b.maximum.y),
-                         0.5 * (b.minimum.z + b.maximum.z)};
-    }
-    const auto dist2 = [&](const Vec3& p) {
-        const double dx = p.x - colCenter.x, dy = p.y - colCenter.y, dz = p.z - colCenter.z;
-        return dx * dx + dy * dy + dz * dz;
-    };
-    if (dist2(beamFrom) < dist2(beamTo)) {
-        std::swap(beamFrom, beamTo);
-        beamAxis = Vec3{-beamAxis.x, -beamAxis.y, -beamAxis.z};
-    }
-    const double beamAxisLen =
-        std::sqrt(beamAxis.x * beamAxis.x + beamAxis.y * beamAxis.y + beamAxis.z * beamAxis.z);
-    if (beamAxisLen < 1e-6) {
-        MessageBoxW(canvas_,
-                    L"Kirişin ekseni belirlenemedi (sıfır uzunluk).\n\n"
-                    L"Kiriş bir NOKTA veya bozuk geometri olabilir.\n"
-                    L"End Plate için kiriş bir çizgi (2 nokta) veya profil üyeli olmalı.",
-                    L"End Plate — eksen yok", MB_OK | MB_ICONWARNING);
+    EndPlateParams params;  // M20/22, 12 mm levha, 2x4 bulon, gap=0 (varsayilan)
+    EndPlatePlacement placement;
+    std::wstring err;
+    if (!resolveEndPlatePlacement(mainIdx, secIdx, params, placement, err)) {
+        MessageBoxW(canvas_, err.empty() ? L"End Plate yerlesimi cozulemedi." : err.c_str(),
+                    L"End Plate — temas cozulemedi", MB_OK | MB_ICONWARNING);
         return;
     }
-    // Kesit bbox: profil katalogundan (yoksa 200x300 mm varsayilan).
-    double secWidth = 200.0, secHeight = 300.0;
-    if (const SteelProfile* prof = findProfile(profileCatalog_, sp.profileName)) {
-        secWidth = prof->width;
-        secHeight = prof->height;
-    }
-    EndPlateParams params;  // M20/22, 12 mm levha, 2x4 bulon, gap=0 (varsayilan)
-    // Kolonun GERCEK temas yuzunu + temas NOKTASINI coz (MemberLocalFrame +
-    // kesit boyutlari; kiris ekseninin duzlemle KESIMI). Temas noktasi yuz
-    // MERKEZINDEN degil kirisin baglanti KOTUNDAN gelir — kirisin gercek koti
-    // korunur. Dondurulmus kolonda lokal cerceve uyeyle doner (world-axis bbox
-    // yanlis olur). Bbox yolu yalnizca ACIK fallback olarak kalir.
-    ReferencePlane face;
-    bool faceResolved = false;
-    const auto& mprop = document_.models()[mainIdx].properties();
-    const Vec3 colFrom{mprop.axisFromX, mprop.axisFromY, mprop.axisFromZ};
-    const Vec3 colTo{mprop.axisToX, mprop.axisToY, mprop.axisToZ};
-    const Vec3 colAxis{colTo.x - colFrom.x, colTo.y - colFrom.y, colTo.z - colFrom.z};
-    const double colLen = std::sqrt(colAxis.x * colAxis.x + colAxis.y * colAxis.y +
-                                    colAxis.z * colAxis.z);
-    if (colLen > 1e-6) {
-        const Vec3 colDir{colAxis.x / colLen, colAxis.y / colLen, colAxis.z / colLen};
-        const Vec3 secNormal{mprop.sectionNormalX, mprop.sectionNormalY, mprop.sectionNormalZ};
-        const ProfileSectionFrame colSection = profileSectionFrame(colDir, secNormal);
-        const MemberLocalFrame colFrame = makeMemberLocalFrame(colSection, colFrom);
-        SectionDims colDims{300.0, 300.0, 11.0, 19.0};
-        if (const SteelProfile* cprof = findProfile(profileCatalog_, mprop.profileName)) {
-            colDims.h = cprof->height;
-            colDims.b = cprof->width;
-            colDims.tw = cprof->plateThickness;
-            colDims.tf = cprof->flangeThickness;
-        }
-        const Vec3 beamDir{beamAxis.x / beamAxisLen, beamAxis.y / beamAxisLen,
-                           beamAxis.z / beamAxisLen};
-        // Once GERCEK B-Rep yuz cozumu (OCCT adapter); kati yoksa veya cozum
-        // UNRESOLVED ise lokal kesit geometrisine dus. ContactPoint + outwardNormal
-        // dogrulanmis B-Rep temas sonucundan gelir.
-        ContactPlacement contact;
-        bool haveContact = false;
-#ifdef MM_HAS_OCC
-        if (const TopoDS_Shape* solid = findOccSolid(mainIdx)) {
-            contact = resolveOcctContact(*solid, colFrame, colDims, colLen, beamTo, beamDir,
-                                         SemanticFaceRole::FlangeOuterPositive);
-            haveContact = true;
-        }
-#endif
-        if (!haveContact || contact.status == ResolutionStatus::Unresolved) {
-            contact = resolveContactPlacement(colFrame, colDims, colLen, beamTo, beamDir,
-                                              SemanticFaceRole::FlangeOuterPositive);
-        }
-        if (contact.status == ResolutionStatus::Resolved) {
-            face.origin = contact.contactPoint;
-            face.normal = contact.outwardNormal;
-            faceResolved = true;
-        } else if (contact.status != ResolutionStatus::Unresolved) {
-            // Acik hata: paralel eksen / yuz disi / belirsiz — RASTGELE yerlestirme YOK.
-            const wchar_t* msg =
-                contact.status == ResolutionStatus::ParallelAxis
-                    ? L"Kiris ekseni kolon yuzeyine paralel; temas cozulemedi."
-                : contact.status == ResolutionStatus::OutsideFace
-                    ? L"Temas noktasi kolonun sonlu yuzeyinin disinda."
-                    : L"Temas yuzeyi belirsiz/gecersiz; component yerlestirilmedi.";
-            MessageBoxW(canvas_, msg, L"End Plate — temas cozulemedi", MB_OK | MB_ICONWARNING);
-            return;
-        }
-    }
-    if (!faceResolved) {
-        // ACIK fallback: bbox sinir duzlemi (kolon ekseni/profili cozulemediginde).
-        if (mainIdx < document_.modelBounds().size()) {
-            const auto& cb = document_.modelBounds()[mainIdx];
-            const Vec3 outward{-beamAxis.x, -beamAxis.y, -beamAxis.z};
-            face = resolveBoundaryPlaneFacing(cb.minimum, cb.maximum, outward);
-        }
-    }
-    const EndPlatePlacement placement =
-        computeEndPlatePlacementOnFace(face, params.gap, secWidth, secHeight, params);
 
     EndPlateConnection conn;
     conn.mainPart = document_.modelId(mainIdx);
@@ -4563,7 +4454,181 @@ void Application::applyEndPlateFromParts(const std::vector<std::size_t>& parts) 
     invalidateCanvas();
 }
 
+bool Application::resolveEndPlatePlacement(std::size_t mainIdx, std::size_t secIdx,
+                                           const EndPlateParams& params,
+                                           EndPlatePlacement& placement, std::wstring& err) {
+    if (mainIdx >= document_.models().size() || secIdx >= document_.models().size()) {
+        err = L"End Plate: kolon veya kiris bulunamadi.";
+        return false;
+    }
+    // Kiris ekseni + ucu. Once kalici eksen; yoksa cizginin 2 kosesinden turet.
+    const auto& sp = document_.models()[secIdx].properties();
+    Vec3 beamFrom{sp.axisFromX, sp.axisFromY, sp.axisFromZ};
+    Vec3 beamTo{sp.axisToX, sp.axisToY, sp.axisToZ};
+    Vec3 beamAxis{beamTo.x - beamFrom.x, beamTo.y - beamFrom.y, beamTo.z - beamFrom.z};
+    if (beamAxis.x * beamAxis.x + beamAxis.y * beamAxis.y + beamAxis.z * beamAxis.z < 1e-12) {
+        const auto& vs = document_.models()[secIdx].vertices();
+        if (vs.size() >= 2) {
+            beamFrom = vs[0];
+            beamTo = vs.back();
+        }
+        beamAxis = Vec3{beamTo.x - beamFrom.x, beamTo.y - beamFrom.y, beamTo.z - beamFrom.z};
+    }
+    // Kolon sinir kutusu merkezi; kirisin bu merkeze en yakin ucu baglanti ucu.
+    Vec3 colCenter{};
+    if (mainIdx < document_.modelBounds().size()) {
+        const auto& b = document_.modelBounds()[mainIdx];
+        colCenter = Vec3{0.5 * (b.minimum.x + b.maximum.x), 0.5 * (b.minimum.y + b.maximum.y),
+                         0.5 * (b.minimum.z + b.maximum.z)};
+    }
+    const auto dist2 = [&](const Vec3& p) {
+        const double dx = p.x - colCenter.x, dy = p.y - colCenter.y, dz = p.z - colCenter.z;
+        return dx * dx + dy * dy + dz * dz;
+    };
+    if (dist2(beamFrom) < dist2(beamTo)) {
+        std::swap(beamFrom, beamTo);
+        beamAxis = Vec3{-beamAxis.x, -beamAxis.y, -beamAxis.z};
+    }
+    const double beamAxisLen =
+        std::sqrt(beamAxis.x * beamAxis.x + beamAxis.y * beamAxis.y + beamAxis.z * beamAxis.z);
+    if (beamAxisLen < 1e-6) {
+        err = L"Kirişin ekseni belirlenemedi (sıfır uzunluk).";
+        return false;
+    }
+    // Kesit bbox: profil katalogundan (yoksa 200x300 mm varsayilan).
+    double secWidth = 200.0, secHeight = 300.0;
+    if (const SteelProfile* prof = findProfile(profileCatalog_, sp.profileName)) {
+        secWidth = prof->width;
+        secHeight = prof->height;
+    }
+    // Kolonun GERCEK temas yuzunu + temas NOKTASINI coz (MemberLocalFrame +
+    // kesit boyutlari). Bbox yolu yalnizca ACIK fallback olarak kalir.
+    ReferencePlane face;
+    bool faceResolved = false;
+    const auto& mprop = document_.models()[mainIdx].properties();
+    const Vec3 colFrom{mprop.axisFromX, mprop.axisFromY, mprop.axisFromZ};
+    const Vec3 colTo{mprop.axisToX, mprop.axisToY, mprop.axisToZ};
+    const Vec3 colAxis{colTo.x - colFrom.x, colTo.y - colFrom.y, colTo.z - colFrom.z};
+    const double colLen = std::sqrt(colAxis.x * colAxis.x + colAxis.y * colAxis.y +
+                                    colAxis.z * colAxis.z);
+    if (colLen > 1e-6) {
+        const Vec3 colDir{colAxis.x / colLen, colAxis.y / colLen, colAxis.z / colLen};
+        const Vec3 secNormal{mprop.sectionNormalX, mprop.sectionNormalY, mprop.sectionNormalZ};
+        const ProfileSectionFrame colSection = profileSectionFrame(colDir, secNormal);
+        const MemberLocalFrame colFrame = makeMemberLocalFrame(colSection, colFrom);
+        SectionDims colDims{300.0, 300.0, 11.0, 19.0};
+        if (const SteelProfile* cprof = findProfile(profileCatalog_, mprop.profileName)) {
+            colDims.h = cprof->height;
+            colDims.b = cprof->width;
+            colDims.tw = cprof->plateThickness;
+            colDims.tf = cprof->flangeThickness;
+        }
+        const Vec3 beamDir{beamAxis.x / beamAxisLen, beamAxis.y / beamAxisLen,
+                           beamAxis.z / beamAxisLen};
+        ContactPlacement contact;
+        bool haveContact = false;
 #ifdef MM_HAS_OCC
+        if (const TopoDS_Shape* solid = findOccSolid(mainIdx)) {
+            contact = resolveOcctContact(*solid, colFrame, colDims, colLen, beamTo, beamDir,
+                                         SemanticFaceRole::FlangeOuterPositive);
+            haveContact = true;
+        }
+#endif
+        if (!haveContact || contact.status == ResolutionStatus::Unresolved) {
+            contact = resolveContactPlacement(colFrame, colDims, colLen, beamTo, beamDir,
+                                              SemanticFaceRole::FlangeOuterPositive);
+        }
+        if (contact.status == ResolutionStatus::Resolved) {
+            face.origin = contact.contactPoint;
+            face.normal = contact.outwardNormal;
+            faceResolved = true;
+        } else if (contact.status != ResolutionStatus::Unresolved) {
+            // Acik hata: paralel eksen / yuz disi / belirsiz — RASTGELE yerlestirme YOK.
+            err = contact.status == ResolutionStatus::ParallelAxis
+                      ? L"Kiris ekseni kolon yuzeyine paralel; temas cozulemedi."
+                  : contact.status == ResolutionStatus::OutsideFace
+                      ? L"Temas noktasi kolonun sonlu yuzeyinin disinda."
+                      : L"Temas yuzeyi belirsiz/gecersiz; component yerlestirilmedi.";
+            return false;
+        }
+    }
+    if (!faceResolved) {
+        // ACIK fallback: bbox sinir duzlemi (kolon ekseni/profili cozulemediginde).
+        if (mainIdx < document_.modelBounds().size()) {
+            const auto& cb = document_.modelBounds()[mainIdx];
+            const Vec3 outward{-beamAxis.x, -beamAxis.y, -beamAxis.z};
+            face = resolveBoundaryPlaneFacing(cb.minimum, cb.maximum, outward);
+        }
+    }
+    placement = computeEndPlatePlacementOnFace(face, params.gap, secWidth, secHeight, params);
+    return true;
+}
+
+#ifdef MM_HAS_OCC
+// SLICE 2d-2b: mevcut End Plate baglantisini YERINDE yeniden uret (kararli
+// kimlikler: levha/bulon/display EntityId'leri DEGISMEZ). Cozum veya geometri
+// uretimi basarisizsa false — eski gecerli geometri KORUNUR (degisiklik yok).
+bool Application::rebuildEndPlateConnection(std::size_t index) {
+    if (index >= document_.endPlateConnections().size()) return false;
+    const EndPlateConnection conn = document_.endPlateConnections()[index];
+    const auto mainIdxOpt = document_.indexOfEntity(conn.mainPart);
+    const auto secIdxOpt = document_.indexOfEntity(conn.secondaryPart);
+    if (!mainIdxOpt || !secIdxOpt) return false;  // parca kayboldu -> eski korunur
+
+    // Kolonun B-Rep tabanini GUNCEL ozelliklerden yeniden uret (tasima/donme/
+    // profil degisimi sonrasi findOccSolid bayat kalmasin). Kiris icin B-Rep
+    // temas cozumunde KULLANILMAZ (eksen/uc kalici ozelliklerden gelir).
+    rebuildCutBaseSolid(conn.mainPart);
+
+    EndPlatePlacement placement;
+    std::wstring err;
+    if (!resolveEndPlatePlacement(*mainIdxOpt, *secIdxOpt, conn.params, placement, err))
+        return false;  // cozulemedi -> eski gecerli geometri korunur
+
+    // Yeni geometriyi GECICI uret ve dogrula (sonra commit).
+    const TopoDS_Shape plateSolid = buildEndPlateFromPlacement(placement);
+    const double grip = placement.plateThickness + 15.0;
+    const TopoDS_Shape boltSolid = buildBoltGroupAssemblyShape(placement.bolts, grip);
+    if (plateSolid.IsNull() || boltSolid.IsNull()) return false;  // geometri hatasi
+
+    WireframeModel plateModel = shapeToWireframeWithFaces(plateSolid, 0.15);
+    WireframeModel boltDisplay = shapeToWireframeWithFaces(boltSolid, 0.15);
+    {
+        auto bp = boltDisplay.properties();
+        bp.trueColor = 0x8B592A;
+        bp.effectiveColor = 0x8B592A;
+        boltDisplay.setProperties(std::move(bp));
+    }
+
+    // ATOMIK UYGULA: baglanti kaydi + levha + bulon grubu + delikler TEK undo
+    // kaydina yazilir (setEndPlateConnection EndPlateReplace + BoltReplace +
+    // CutReplace + model Replace op'larini ACIK kayda ekler). Kimlikler sabit.
+    EndPlateConnection updated = conn;
+    updated.bolts = placement.bolts;  // yeni origin/pattern; kimlikler korunur
+    if (!document_.setEndPlateConnection(index, std::move(updated),
+                                         std::move(plateModel), std::move(boltDisplay)))
+        return false;
+
+    const EndPlateConnection& after = document_.endPlateConnections()[index];
+    if (const auto pi = document_.indexOfEntity(after.plateEntityId)) putOccSolid(*pi, plateSolid);
+    if (const auto di = document_.indexOfEntity(after.bolts.displayEntityId))
+        putOccSolid(*di, boltSolid);
+    // Delikler (CutKind::Hole) kolon + levhayi deler -> yeniden hesapla.
+    if (after.mainPart != kInvalidEntityId) recomputeCutTarget(after.mainPart);
+    if (after.plateEntityId != kInvalidEntityId) recomputeCutTarget(after.plateEntityId);
+    return true;
+}
+
+void Application::recomputeEndPlateConnectionsFor(const std::vector<EntityId>& changedParts) {
+    const std::unordered_set<EntityId> changed(changedParts.begin(), changedParts.end());
+    if (changed.empty()) return;
+    for (std::size_t i = 0; i < document_.endPlateConnections().size(); ++i) {
+        const EndPlateConnection conn = document_.endPlateConnections()[i];  // kopya (kararli)
+        if (changed.count(conn.mainPart) || changed.count(conn.secondaryPart))
+            rebuildEndPlateConnection(i);
+    }
+}
+
 void Application::rebuildBoltDisplay(const BoltGroup& bolt) {
     OccSolidStore* store = occSolidStore();
     if (!store) return;
@@ -5791,6 +5856,13 @@ void Application::commitTransformPoint(const Vec3& point) {
         // B1: tasinan bir BOLT DISPLAY'i varsa bulon origin'ini otele + delik +
         // display yeniden hesapla.
         syncBoltGroupsForMoved(moving, displacement);
+        // 2d-2b: tasinan kolon/kirise bagli End Plate baglantilarini yeniden hesapla.
+        {
+            std::vector<EntityId> movedIds;
+            movedIds.reserve(moving.size());
+            for (const std::size_t idx : moving) movedIds.push_back(document_.modelId(idx));
+            recomputeEndPlateConnectionsFor(movedIds);
+        }
 #endif
         cancelTransformCommand();
     } else if (transformCommand_ == TransformCommand::Copy) {
@@ -7823,6 +7895,10 @@ void Application::assignProfileToSelection(const std::string& profileName) {
         publishStatus(L"Önce çizgiyi Ctrl+tıklama ile seçin, sonra profili seçin.");
         return;
     }
+    // SLICE 2d-2b: profil atamasi (setModelProfile ProfileReplace op) + kati
+    // yeniden uretimi + bagli End Plate recompute TEK atomik undo kaydinda
+    // olsun (HEB300->HEB400 + levha/bulon/delik tek Ctrl+Z adiminda geri alinir).
+    pushUndoSnapshot();
     const std::size_t assigned = document_.setModelProfile(selectedModels_, profile->name);
     if (assigned == 0) {
         publishStatus(L"Profil atanamadı — seçili nesne kilitli olabilir.");
@@ -7933,11 +8009,9 @@ void Application::assignProfileToSelection(const std::string& profileName) {
             }
             if (existingSolid) {
                 // 1:1 degistirme: kimlik KORUNUR → ayni anahtarla guncelle.
-                // ONEMLI (Phase 3.2B): bu dal addStyledModel CAGRMAZ, dolayisiyla
-                // hicbir yerde undo kaydi ACILMIYORDU → B-Rep VE tel kafes
-                // degisikligi undo disinda kaliyordu. Burada kayit ACILIR ki
-                // replaceModel op'u ve geometri deltasi KAYDEDILSIN.
-                pushUndoSnapshot();
+                // Snapshot fonksiyon basinda (profil atamasi) AÇILDI; burada
+                // ek snapshot Ctrl+Z'de cift adim yapar (2d-2b: tek atomik
+                // islem). replaceModel op'u ve geometri deltasi acik kayda yazilir.
                 document_.replaceModel(*existingSolid, {std::move(solidModel)});
                 putOccSolid(*existingSolid, solid);
                 solidIndices.push_back(*existingSolid);
@@ -8048,6 +8122,39 @@ void Application::assignProfileToSelection(const std::string& profileName) {
                 fclose(diag);
             }
         }
+    }
+    // SLICE 2d-2b: SECILI KATININ profil degisimi (HEB300 -> HEB400) icin
+    // B-Rep + tel kafesi yeni kesitle yeniden uret (1:1, kimlik korunur) ve
+    // bagli End Plate baglantilarini yeni temas yuzune gore yeniden hesapla.
+    // Cizgi->kati yolu yukarida islendi; bu dal ZATEN kati olan secimleri kapsar.
+    {
+        std::vector<EntityId> reprofiled;
+        for (const auto selIdx : selectedModels_) {
+            if (selIdx >= document_.models().size()) continue;
+            const auto& m = document_.models()[selIdx];
+            if (m.faces().empty() || m.properties().profileName.empty()) continue;
+            const Vec3 from{m.properties().axisFromX, m.properties().axisFromY,
+                            m.properties().axisFromZ};
+            const Vec3 to{m.properties().axisToX, m.properties().axisToY,
+                           m.properties().axisToZ};
+            if ((to.x - from.x) * (to.x - from.x) + (to.y - from.y) * (to.y - from.y) +
+                    (to.z - from.z) * (to.z - from.z) < 1e-9)
+                continue;
+            const Vec3 ref{m.properties().sectionNormalX, m.properties().sectionNormalY,
+                           m.properties().sectionNormalZ};
+            const double rot = m.properties().profileRotation;
+            const TopoDS_Shape solid = mm::extrudeProfileSolid(*profile, from, to, rot, ref);
+            if (solid.IsNull()) continue;
+            auto solidModel = mm::shapeToWireframeWithFaces(solid, 0.15);
+            auto props = m.properties();  // kalici alanlar (malzeme/renk/eksen) korunur
+            props.profileName = profile->name;
+            solidModel.setProperties(std::move(props));
+            document_.replaceModel(selIdx, {std::move(solidModel)});
+            putOccSolid(selIdx, solid);
+            reprofiled.push_back(document_.modelId(selIdx));
+        }
+        if (!reprofiled.empty())
+            recomputeEndPlateConnectionsFor(reprofiled);
     }
 #endif
 }
@@ -8713,6 +8820,13 @@ void Application::gumballEndDrag() {
     // B1: gumball ile tasinan bulon display'ini senkronla (origin + delik + display).
     if (didTransform && rigidTransform)
         syncBoltGroupsForMoved(movedSet, appliedDelta);
+    // 2d-2b: gumball ile tasinan/dondurulen kolon/kirise bagli End Plate'leri yeniden hesapla.
+    if (didTransform && rigidTransform) {
+        std::vector<EntityId> movedIds;
+        movedIds.reserve(movedSet.size());
+        for (const std::size_t idx : movedSet) movedIds.push_back(document_.modelId(idx));
+        recomputeEndPlateConnectionsFor(movedIds);
+    }
 #endif
 }
 

@@ -34,7 +34,8 @@ struct UndoOp {
     enum class Kind { Add, Delete, Replace, Move, Transform, GridAdd, GridRemove, GridReplace,
                       CutAdd, CutRemove, CutReplace, BoltAdd, BoltRemove, BoltReplace,
                       EndPlateAdd, EndPlateRemove, EndPlateReplace,
-                      ComponentAdd, ComponentRemove, ComponentReplace };
+                      ComponentAdd, ComponentRemove, ComponentReplace,
+                      ProfileReplace };
     Kind kind{Kind::Add};
     std::size_t index{};
     std::vector<WireframeModel> beforeModels; // delete: silinenler; replace: eski model
@@ -75,6 +76,10 @@ struct UndoOp {
     std::size_t componentIndex{};
     ComponentInstanceRecord componentBefore;
     ComponentInstanceRecord componentAfter;
+    // Profile (ProfileReplace): bir modelin profil adi degistirildi (HEB300 ->
+    // HEB400). index = model indeksi; profileBefore/After = eski/yeni profil adi.
+    std::string profileBefore;
+    std::string profileAfter;
 };
 struct UndoRecord {
     std::vector<UndoOp> ops;
