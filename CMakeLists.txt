@@ -49,6 +49,7 @@ add_library(model_maker_core
     src/contact_resolver.cpp
     src/geometry_reference_resolver.cpp
     src/magnetic_frame.cpp
+    src/component_recompute.cpp
     src/assembly.cpp)
 target_include_directories(model_maker_core PUBLIC include)
 target_compile_options(model_maker_core PRIVATE -Wall -Wextra -Wpedantic)
@@ -836,6 +837,14 @@ if(BUILD_TESTING)
     target_link_options(model_maker_geometry_reference_resolver_test PRIVATE -static -static-libgcc -static-libstdc++)
     target_compile_options(model_maker_geometry_reference_resolver_test PRIVATE -Wall -Wextra -Wpedantic)
     add_test(NAME model_maker_geometry_reference_resolver_test COMMAND model_maker_geometry_reference_resolver_test)
+
+    # COMPONENT DEPENDENCY + RECOMPUTE (Phase R2d-2): parca -> component ters
+    # indeks + deterministik recompute planlayici (atomik, mutasyon yok). OCC'siz.
+    add_executable(model_maker_component_recompute_test tests/component_recompute_test.cpp)
+    target_link_libraries(model_maker_component_recompute_test PRIVATE model_maker_core)
+    target_link_options(model_maker_component_recompute_test PRIVATE -static -static-libgcc -static-libstdc++)
+    target_compile_options(model_maker_component_recompute_test PRIVATE -Wall -Wextra -Wpedantic)
+    add_test(NAME model_maker_component_recompute_test COMMAND model_maker_component_recompute_test)
 
     # ASSEMBLY & PAPER SPACE (P5): Part/Assembly iliskileri, orto projeksiyon
     # (Camera standardViewRotation ile tek kaynak), Paper Space gorunus listesi.
