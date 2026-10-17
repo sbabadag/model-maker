@@ -19,6 +19,7 @@
 #include <TopAbs.hxx>
 #endif
 #include "model_maker/view_cube.hpp"
+#include "model_maker/contact_resolver.hpp"
 
 #include <QComboBox>
 
@@ -4430,14 +4431,59 @@ void Application::applyEndPlateFromParts(const std::vector<std::size_t>& parts) 
         secHeight = prof->height;
     }
     EndPlateParams params;  // M20/22, 12 mm levha, 2x4 bulon, gap=0 (varsayilan)
-    // Kolonun kirise bakan SINIR DUZLEMINI coz (bbox yuzu — Tekla "Boundary
-    // plane"). outward = kolondan kirise dogru yon = -beamAxis. Levha bu yuzeye
-    // gap ile oturur (kolonun icine girmez, yuzeyden rastgele uzaklasmaz).
+    // Kolonun GERCEK temas yuzunu + temas NOKTASINI coz (MemberLocalFrame +
+    // kesit boyutlari; kiris ekseninin duzlemle KESIMI). Temas noktasi yuz
+    // MERKEZINDEN degil kirisin baglanti KOTUNDAN gelir — kirisin gercek koti
+    // korunur. Dondurulmus kolonda lokal cerceve uyeyle doner (world-axis bbox
+    // yanlis olur). Bbox yolu yalnizca ACIK fallback olarak kalir.
     ReferencePlane face;
-    if (mainIdx < document_.modelBounds().size()) {
-        const auto& cb = document_.modelBounds()[mainIdx];
-        const Vec3 outward{-beamAxis.x, -beamAxis.y, -beamAxis.z};
-        face = resolveBoundaryPlaneFacing(cb.minimum, cb.maximum, outward);
+    bool faceResolved = false;
+    const auto& mprop = document_.models()[mainIdx].properties();
+    const Vec3 colFrom{mprop.axisFromX, mprop.axisFromY, mprop.axisFromZ};
+    const Vec3 colTo{mprop.axisToX, mprop.axisToY, mprop.axisToZ};
+    const Vec3 colAxis{colTo.x - colFrom.x, colTo.y - colFrom.y, colTo.z - colFrom.z};
+    const double colLen = std::sqrt(colAxis.x * colAxis.x + colAxis.y * colAxis.y +
+                                    colAxis.z * colAxis.z);
+    if (colLen > 1e-6) {
+        const Vec3 colDir{colAxis.x / colLen, colAxis.y / colLen, colAxis.z / colLen};
+        const Vec3 secNormal{mprop.sectionNormalX, mprop.sectionNormalY, mprop.sectionNormalZ};
+        const ProfileSectionFrame colSection = profileSectionFrame(colDir, secNormal);
+        const MemberLocalFrame colFrame = makeMemberLocalFrame(colSection, colFrom);
+        SectionDims colDims{300.0, 300.0, 11.0, 19.0};
+        if (const SteelProfile* cprof = findProfile(profileCatalog_, mprop.profileName)) {
+            colDims.h = cprof->height;
+            colDims.b = cprof->width;
+            colDims.tw = cprof->plateThickness;
+            colDims.tf = cprof->flangeThickness;
+        }
+        const Vec3 beamDir{beamAxis.x / beamAxisLen, beamAxis.y / beamAxisLen,
+                           beamAxis.z / beamAxisLen};
+        const ContactPlacement contact =
+            resolveContactPlacement(colFrame, colDims, colLen, beamTo, beamDir,
+                                   SemanticFaceRole::FlangeOuterPositive);
+        if (contact.status == ResolutionStatus::Resolved) {
+            face.origin = contact.contactPoint;
+            face.normal = contact.outwardNormal;
+            faceResolved = true;
+        } else if (contact.status != ResolutionStatus::Unresolved) {
+            // Acik hata: paralel eksen / yuz disi / belirsiz — RASTGELE yerlestirme YOK.
+            const wchar_t* msg =
+                contact.status == ResolutionStatus::ParallelAxis
+                    ? L"Kiris ekseni kolon yuzeyine paralel; temas cozulemedi."
+                : contact.status == ResolutionStatus::OutsideFace
+                    ? L"Temas noktasi kolonun sonlu yuzeyinin disinda."
+                    : L"Temas yuzeyi belirsiz/gecersiz; component yerlestirilmedi.";
+            MessageBoxW(canvas_, msg, L"End Plate — temas cozulemedi", MB_OK | MB_ICONWARNING);
+            return;
+        }
+    }
+    if (!faceResolved) {
+        // ACIK fallback: bbox sinir duzlemi (kolon ekseni/profili cozulemediginde).
+        if (mainIdx < document_.modelBounds().size()) {
+            const auto& cb = document_.modelBounds()[mainIdx];
+            const Vec3 outward{-beamAxis.x, -beamAxis.y, -beamAxis.z};
+            face = resolveBoundaryPlaneFacing(cb.minimum, cb.maximum, outward);
+        }
     }
     const EndPlatePlacement placement =
         computeEndPlatePlacementOnFace(face, params.gap, secWidth, secHeight, params);
