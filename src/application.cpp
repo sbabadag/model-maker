@@ -4382,11 +4382,47 @@ void Application::applyEndPlateFromParts(const std::vector<std::size_t>& parts) 
         publishStatus(L"End Plate: parcalar normal model olmali (konstruksiyon degil)");
         return;
     }
-    // Kiris ekseni + ucu (baglanti noktasi = kiris ucunun kolona degdigi nokta).
+    // Kiris ekseni + ucu. Once kalici eksen (profil-cizim yolu yazar); eksen
+    // tanimsizsa (setModelProfile yalnizca profileName yazar — "cizgi ciz +
+    // profil ata" yolu) cizginin 2 kosesinden turet. Kirisin kolona YAKIN ucu
+    // baglanti noktasi yapilir.
     const auto& sp = document_.models()[secIdx].properties();
-    const Vec3 beamFrom{sp.axisFromX, sp.axisFromY, sp.axisFromZ};
-    const Vec3 beamTo{sp.axisToX, sp.axisToY, sp.axisToZ};
-    const Vec3 beamAxis{beamTo.x - beamFrom.x, beamTo.y - beamFrom.y, beamTo.z - beamFrom.z};
+    Vec3 beamFrom{sp.axisFromX, sp.axisFromY, sp.axisFromZ};
+    Vec3 beamTo{sp.axisToX, sp.axisToY, sp.axisToZ};
+    Vec3 beamAxis{beamTo.x - beamFrom.x, beamTo.y - beamFrom.y, beamTo.z - beamFrom.z};
+    if (beamAxis.x * beamAxis.x + beamAxis.y * beamAxis.y + beamAxis.z * beamAxis.z < 1e-12) {
+        const auto& vs = document_.models()[secIdx].vertices();
+        if (vs.size() >= 2) {
+            beamFrom = vs[0];
+            beamTo = vs.back();
+        }
+        beamAxis = Vec3{beamTo.x - beamFrom.x, beamTo.y - beamFrom.y, beamTo.z - beamFrom.z};
+    }
+    // Kolonun sinir kutusu merkezi; kirisin bu merkeze en yakin ucu baglanti ucu.
+    Vec3 colCenter{};
+    if (mainIdx < document_.modelBounds().size()) {
+        const auto& b = document_.modelBounds()[mainIdx];
+        colCenter = Vec3{0.5 * (b.minimum.x + b.maximum.x), 0.5 * (b.minimum.y + b.maximum.y),
+                         0.5 * (b.minimum.z + b.maximum.z)};
+    }
+    const auto dist2 = [&](const Vec3& p) {
+        const double dx = p.x - colCenter.x, dy = p.y - colCenter.y, dz = p.z - colCenter.z;
+        return dx * dx + dy * dy + dz * dz;
+    };
+    if (dist2(beamFrom) < dist2(beamTo)) {
+        std::swap(beamFrom, beamTo);
+        beamAxis = Vec3{-beamAxis.x, -beamAxis.y, -beamAxis.z};
+    }
+    const double beamAxisLen =
+        std::sqrt(beamAxis.x * beamAxis.x + beamAxis.y * beamAxis.y + beamAxis.z * beamAxis.z);
+    if (beamAxisLen < 1e-6) {
+        MessageBoxW(canvas_,
+                    L"Kirişin ekseni belirlenemedi (sıfır uzunluk).\n\n"
+                    L"Kiriş bir NOKTA veya bozuk geometri olabilir.\n"
+                    L"End Plate için kiriş bir çizgi (2 nokta) veya profil üyeli olmalı.",
+                    L"End Plate — eksen yok", MB_OK | MB_ICONWARNING);
+        return;
+    }
     // Kesit bbox: profil katalogundan (yoksa 200x300 mm varsayilan).
     double secWidth = 200.0, secHeight = 300.0;
     if (const SteelProfile* prof = findProfile(profileCatalog_, sp.profileName)) {
@@ -4444,6 +4480,9 @@ void Application::applyEndPlateFromParts(const std::vector<std::size_t>& parts) 
     if (created.mainPart != kInvalidEntityId) recomputeCutTarget(created.mainPart);
     if (created.plateEntityId != kInvalidEntityId) recomputeCutTarget(created.plateEntityId);
 #endif
+    // Kalici onay: updateStatus bu mesaji ezer (pendingEndPlate_ kapandi),
+    // solidStatusMessage_ ise durum cubugunda kalir.
+    solidStatusMessage_ = L"End Plate bağlantısı oluşturuldu (levha + bulonlar)";
     selectedModels_.clear();
     selectionFirstCorner_.reset();
     updateHover(cursorScreen_.x, cursorScreen_.y);
