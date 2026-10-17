@@ -4429,9 +4429,18 @@ void Application::applyEndPlateFromParts(const std::vector<std::size_t>& parts) 
         secWidth = prof->width;
         secHeight = prof->height;
     }
-    EndPlateParams params;  // M20/22, 12 mm levha, 2x4 bulon (varsayilan)
+    EndPlateParams params;  // M20/22, 12 mm levha, 2x4 bulon, gap=0 (varsayilan)
+    // Kolonun kirise bakan SINIR DUZLEMINI coz (bbox yuzu — Tekla "Boundary
+    // plane"). outward = kolondan kirise dogru yon = -beamAxis. Levha bu yuzeye
+    // gap ile oturur (kolonun icine girmez, yuzeyden rastgele uzaklasmaz).
+    ReferencePlane face;
+    if (mainIdx < document_.modelBounds().size()) {
+        const auto& cb = document_.modelBounds()[mainIdx];
+        const Vec3 outward{-beamAxis.x, -beamAxis.y, -beamAxis.z};
+        face = resolveBoundaryPlaneFacing(cb.minimum, cb.maximum, outward);
+    }
     const EndPlatePlacement placement =
-        computeEndPlatePlacement(beamTo, beamAxis, secWidth, secHeight, params);
+        computeEndPlatePlacementOnFace(face, params.gap, secWidth, secHeight, params);
 
     EndPlateConnection conn;
     conn.mainPart = document_.modelId(mainIdx);

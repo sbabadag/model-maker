@@ -24,6 +24,7 @@
 #include "model_maker/bolt.hpp"
 #include "model_maker/entity_id.hpp"
 #include "model_maker/geometry.hpp"
+#include "model_maker/reference_geometry.hpp"
 
 #include <string>
 #include <vector>
@@ -36,6 +37,7 @@ namespace mm {
 struct EndPlateParams {
     double plateThickness{12.0};   // levha kalinligi (mm)
     double plateExtra{20.0};       // kiris kesit bbox'ina eklenen pay (her yan, mm)
+    double gap{0.0};               // kolon yuzeyi ile levha arasi bosluk (mm, Tekla 101: 2 mm)
     double boltDiameter{20.0};     // bulon capi (M20)
     double holeDiameter{22.0};     // delik capi (M20 -> 22)
     std::string boltGrade{"8.8"};  // bulon sinifi (etiket)
@@ -96,5 +98,15 @@ EndPlateFrame endPlateFrame(const Vec3& beamAxis, const Vec3& referenceNormal) n
 EndPlatePlacement computeEndPlatePlacement(const Vec3& beamEnd, const Vec3& beamAxis,
                                            double secWidth, double secHeight,
                                            const EndPlateParams& params) noexcept;
+
+// ALIN LEVHASI YERLESIMI — kolonun GERCEK temas yuzeyine gore (Phase R1).
+// `face`: kolonun kirise bakan sinir duzlemi (normal, kolondan DISARI/kirise
+// dogru bakar). Levhanin kolon tarafindaki yuzu `face.origin + gap * face.normal`
+// uzerine oturur; levha kalinligi `face.normal` yonunde (kirise dogru) acilir.
+// Boylece gap=0 iken levha yuzu kolon yuzuyle CAKISIR, kolonun icine girmez.
+// (Egik kiris adaptasyonu sonraki dilimde.)
+EndPlatePlacement computeEndPlatePlacementOnFace(const ReferencePlane& face, double gap,
+                                                 double secWidth, double secHeight,
+                                                 const EndPlateParams& params) noexcept;
 
 } // namespace mm

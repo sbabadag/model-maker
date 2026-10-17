@@ -44,6 +44,7 @@ add_library(model_maker_core
     src/component_engine.cpp
     src/bolt.cpp
     src/end_plate.cpp
+    src/reference_geometry.cpp
     src/assembly.cpp)
 target_include_directories(model_maker_core PUBLIC include)
 target_compile_options(model_maker_core PRIVATE -Wall -Wextra -Wpedantic)
@@ -787,6 +788,15 @@ if(BUILD_TESTING)
     target_link_options(model_maker_component_serialize_test PRIVATE -static -static-libgcc -static-libstdc++)
     target_compile_options(model_maker_component_serialize_test PRIVATE -Wall -Wextra -Wpedantic)
     add_test(NAME model_maker_component_serialize_test COMMAND model_maker_component_serialize_test)
+
+    # END PLATE TEMAS YUZEYI (Phase R1): resolveBoundaryPlaneFacing +
+    # computeEndPlatePlacementOnFace (gap). Levha kolon yuzeyine oturur.
+    # OCC'siz, Linux'ta kosar.
+    add_executable(model_maker_end_plate_contact_test tests/end_plate_contact_test.cpp)
+    target_link_libraries(model_maker_end_plate_contact_test PRIVATE model_maker_core)
+    target_link_options(model_maker_end_plate_contact_test PRIVATE -static -static-libgcc -static-libstdc++)
+    target_compile_options(model_maker_end_plate_contact_test PRIVATE -Wall -Wextra -Wpedantic)
+    add_test(NAME model_maker_end_plate_contact_test COMMAND model_maker_end_plate_contact_test)
 
     # ASSEMBLY & PAPER SPACE (P5): Part/Assembly iliskileri, orto projeksiyon
     # (Camera standardViewRotation ile tek kaynak), Paper Space gorunus listesi.
