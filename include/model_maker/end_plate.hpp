@@ -63,6 +63,14 @@ struct EndPlateParams {
     bool hasHead{true};
     bool hasNut{true};
     bool hasWasher{true};
+    // --- Tekla "Bolt basic properties" + "Bolting direction" (bulon sekmesi) ---
+    std::string boltStandard{};     // bulon standardi (katalog)
+    bool threadInMat{false};        // disin bulonlu parcada olup olmadigi
+    int siteWorkshop{0};            // 0=Site, 1=Workshop
+    int boltCutLengthMode{0};       // 0=tek flans, 1=cift flans (grip derinligi)
+    double boltLengthIncrease{0.0}; // bulon boyu artisi (mm)
+    int boltDirection{1};           // 1=bas kolona (-eksen), 2=bas kirise (+eksen)
+    std::string boltComment{};      // aciklama
     bool operator==(const EndPlateParams&) const = default;
 };
 

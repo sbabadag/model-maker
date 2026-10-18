@@ -4843,8 +4843,16 @@ bool Application::resolveEndPlatePlacement(std::size_t mainIdx, std::size_t secI
     // yigin merkezine gore -(gap+tf)/2 kayik). Delik through-cut oldugundan
     // origin'in eksen yonundeki bu kaymasi delik geometrisini DEGISTIRMEZ.
     placement.colFlangeThickness = colFlangeThickness;
-    placement.boltGripLength = placement.plateThickness + params.gap + colFlangeThickness;
-    const double gripShift = 0.5 * (params.gap + colFlangeThickness);
+    // CUT LENGTH (Tekla): 0 = tek flans (kolonun kirise bakan flansi), 1 = cift
+    // flans (bulon kolon boyunca gecer). Grip buna gore derinlesir.
+    const double flangeDepth = (params.boltCutLengthMode == 1)
+                                   ? 2.0 * colFlangeThickness
+                                   : colFlangeThickness;
+    // BOLT LENGTH INCREASE: boy artisi yalniz somun tarafina (kiris tarafina)
+    // eklenir; bas tarafi kolon flansinin uzak (ic) yuzunde sabit kalir.
+    placement.boltGripLength = placement.plateThickness + params.gap + flangeDepth +
+                               params.boltLengthIncrease;
+    const double gripShift = 0.5 * (params.gap + flangeDepth - params.boltLengthIncrease);
     placement.bolts.origin.x -= placement.axis.x * gripShift;
     placement.bolts.origin.y -= placement.axis.y * gripShift;
     placement.bolts.origin.z -= placement.axis.z * gripShift;

@@ -30,6 +30,14 @@ struct BoltParams {
     bool hasHead{true};             // bas
     bool hasNut{true};              // somun
     bool hasWasher{true};           // pul
+    // --- Tekla "Bolt basic properties" + "Bolting direction" ---------------
+    std::string standard{};         // bulon standardi (katalog, orn. "ISO 4014")
+    bool threadInMat{false};        // disin bulonlu parcada olup olmadigi (Tekla default Yes)
+    int siteWorkshop{0};            // 0=Site, 1=Workshop
+    int cutLengthMode{0};           // 0=tek flans, 1=cift flans (grip derinligi)
+    double lengthIncrease{0.0};     // bulon boyu artisi (mm)
+    int direction{1};               // 1=bas kolon tarafi (-eksen), 2=bas kiris tarafi (+eksen)
+    std::string comment{};          // aciklama
     bool operator==(const BoltParams&) const = default;
 };
 

@@ -750,6 +750,14 @@ void writeMmw8(std::ostream& out, const Mmw8Document& doc) {
                  << c.params.boltSpacingX << ' ' << c.params.boltSpacingY << ' '
                  << c.params.deletedBolts.size();
             for (const int db : c.params.deletedBolts) body << ' ' << db;
+            // Bolt basic properties + bolting direction (faz sonrasi, trailing,
+            // geriye uyumlu): once numerik alanlar, sonra iki string.
+            body << ' ' << (c.params.threadInMat ? 1 : 0) << ' ' << c.params.siteWorkshop
+                 << ' ' << c.params.boltCutLengthMode << ' ' << c.params.boltLengthIncrease
+                 << ' ' << c.params.boltDirection << ' ';
+            putString(body, c.params.boltStandard);
+            body << ' ';
+            putString(body, c.params.boltComment);
             body << '\n';
         }
         const std::string b = body.str();
@@ -1232,6 +1240,27 @@ void readMmw8(std::istream& in, Mmw8Document& doc) {
                         int dn = 0;
                         if (ls >> dn) c.params.deletedBolts.push_back(dn);
                     }
+                }
+                // Bolt basic properties + bolting direction (faz sonrasi, trailing,
+                // geriye uyumlu): numerik alanlar fail-soft, iki string try/catch.
+                int threadInMat = 0, siteW = 0, cutMode = 0, bdir = 1;
+                double lenInc = 0.0;
+                if (!(ls >> threadInMat)) threadInMat = 0;
+                if (!(ls >> siteW)) siteW = 0;
+                if (!(ls >> cutMode)) cutMode = 0;
+                if (!(ls >> lenInc)) lenInc = 0.0;
+                if (!(ls >> bdir)) bdir = 1;
+                c.params.threadInMat = (threadInMat != 0);
+                c.params.siteWorkshop = siteW;
+                c.params.boltCutLengthMode = cutMode;
+                c.params.boltLengthIncrease = lenInc;
+                c.params.boltDirection = bdir;
+                try {
+                    c.params.boltStandard = readString(ls);
+                    c.params.boltComment = readString(ls);
+                } catch (const std::runtime_error&) {
+                    c.params.boltStandard.clear();
+                    c.params.boltComment.clear();
                 }
                 parsed.endPlateConnections.push_back(std::move(c));
             }

@@ -108,32 +108,35 @@ TopoDS_Shape buildBoltAssemblyShape(const BoltGroup& bolt, double gripLength) {
 
     const double halfGrip = grip * 0.5;
     const double washerT = bolt.params.hasWasher ? d.washerThickness : 0.0;
+    // BOLT DIRECTION (Tekla bolting direction): 1 = bas -eksen (kolona), 2 = bas
+    // +eksen (kirise). dir ile bas/somun taraflari yer degistirir.
+    const double dir = (bolt.params.direction == 2) ? -1.0 : 1.0;
 
-    // Bas tarafi (eksi eksen yonu): bas + bas pulu.
+    // Bas tarafi (direction 1: -eksen yonu): bas + bas pulu.
     if (bolt.params.hasHead) {
         const gp_Pnt headCenter =
-            shift(c, z, -(halfGrip + washerT + d.headHeight * 0.5));
+            shift(c, z, -dir * (halfGrip + washerT + d.headHeight * 0.5));
         fuse(boltHexPrism({headCenter.X(), headCenter.Y(), headCenter.Z()},
                           bolt.axis, d.headAcrossFlats, d.headHeight));
     }
     if (bolt.params.hasWasher) {
         const gp_Pnt headWasher =
-            shift(c, z, -(halfGrip + d.washerThickness * 0.5));
+            shift(c, z, -dir * (halfGrip + d.washerThickness * 0.5));
         fuse(boltWasherDisc({headWasher.X(), headWasher.Y(), headWasher.Z()},
                             bolt.axis, d.washerOuterDiameter, d.washerThickness));
     }
     // Govde (grip boyunca).
     fuse(boltShank(bolt.origin, bolt.axis, bolt.params.nominalDiameter, grip));
-    // Somun tarafi (arti eksen yonu): somun pulu + somun.
+    // Somun tarafi (direction 1: +eksen yonu): somun pulu + somun.
     if (bolt.params.hasWasher) {
         const gp_Pnt nutWasher =
-            shift(c, z, halfGrip + d.washerThickness * 0.5);
+            shift(c, z, dir * (halfGrip + d.washerThickness * 0.5));
         fuse(boltWasherDisc({nutWasher.X(), nutWasher.Y(), nutWasher.Z()},
                             bolt.axis, d.washerOuterDiameter, d.washerThickness));
     }
     if (bolt.params.hasNut) {
         const gp_Pnt nutCenter =
-            shift(c, z, halfGrip + washerT + d.nutHeight * 0.5);
+            shift(c, z, dir * (halfGrip + washerT + d.nutHeight * 0.5));
         fuse(boltHexPrism({nutCenter.X(), nutCenter.Y(), nutCenter.Z()},
                           bolt.axis, d.nutAcrossFlats, d.nutHeight));
     }

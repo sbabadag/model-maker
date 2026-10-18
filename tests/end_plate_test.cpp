@@ -237,6 +237,13 @@ int main() {
         c3.params.boltSpacingX = 110.0;
         c3.params.boltSpacingY = 130.0;
         c3.params.deletedBolts = {2, 4};
+        c3.params.boltStandard = "ISO 4014";
+        c3.params.threadInMat = true;
+        c3.params.siteWorkshop = 1;
+        c3.params.boltCutLengthMode = 1;
+        c3.params.boltLengthIncrease = 15.0;
+        c3.params.boltDirection = 2;
+        c3.params.boltComment = "test yorum";
         c3.bolts = pl.bolts;
         d3.pushSnapshot();
         d3.addEndPlateConnection(c3, WireframeModel::rectangle({0, 0, 0}, {240, 340, 0}),
@@ -276,6 +283,20 @@ int main() {
                   d4.endPlateConnections()[0].params.deletedBolts[0] == 2 &&
                   d4.endPlateConnections()[0].params.deletedBolts[1] == 4,
               "round-trip: deletedBolts {2,4}");
+        check(d4.endPlateConnections()[0].params.boltStandard == "ISO 4014",
+              "round-trip: boltStandard");
+        check(d4.endPlateConnections()[0].params.threadInMat,
+              "round-trip: threadInMat");
+        check(d4.endPlateConnections()[0].params.siteWorkshop == 1,
+              "round-trip: siteWorkshop");
+        check(d4.endPlateConnections()[0].params.boltCutLengthMode == 1,
+              "round-trip: cutLengthMode");
+        check(approx(d4.endPlateConnections()[0].params.boltLengthIncrease, 15.0),
+              "round-trip: lengthIncrease");
+        check(d4.endPlateConnections()[0].params.boltDirection == 2,
+              "round-trip: boltDirection");
+        check(d4.endPlateConnections()[0].params.boltComment == "test yorum",
+              "round-trip: boltComment");
     }
 
     std::printf("end_plate_test: %d check, %d failure\n", g_checks, g_failures);

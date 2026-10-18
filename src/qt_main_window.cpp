@@ -1021,6 +1021,60 @@ bool QtMainWindow::openEndPlateParamsDialog(const mm::EndPlateParams& current,
     accRow->addStretch(1);
     bltForm->addRow(QStringLiteral("Bulon elemanları:"), accRow);
 
+    // ── Bulon temel özellikleri (Tekla Bolt basic properties) ─────────────
+    auto* stdCombo = new QComboBox(bltPage);
+    stdCombo->setEditable(true);
+    stdCombo->addItem(QStringLiteral("ISO 4014 (altıgen baş, kısmi diş)"));
+    stdCombo->addItem(QStringLiteral("ISO 4017 (altıgen baş, tam diş)"));
+    stdCombo->setCurrentText(QString::fromStdString(current.boltStandard));
+    bltForm->addRow(QStringLiteral("Bulon standardı:"), stdCombo);
+
+    // Tolerans = delik çapı − bulon çapı (Tekla Tolerance). Delik çapına yazar.
+    auto* tolSpin = new QDoubleSpinBox(bltPage);
+    tolSpin->setRange(0.0, 20.0);
+    tolSpin->setDecimals(1);
+    tolSpin->setValue(current.holeDiameter - current.boltDiameter);
+    tolSpin->setSuffix(QStringLiteral(" mm"));
+    bltForm->addRow(QStringLiteral("Tolerans (delik − bulon):"), tolSpin);
+    QObject::connect(tolSpin, &QDoubleSpinBox::textChanged,
+                     [diaCombo, holeSpin, tolSpin](const QString&) {
+                         holeSpin->setValue(diaCombo->currentData().toDouble() +
+                                            tolSpin->value());
+                     });
+
+    auto* threadChk = new QCheckBox(QStringLiteral("Diş bulonlu parçada"), bltPage);
+    threadChk->setChecked(current.threadInMat);
+    bltForm->addRow(QStringLiteral("Thread in mat:"), threadChk);
+
+    auto* siteCombo = new QComboBox(bltPage);
+    siteCombo->addItem(QStringLiteral("Site"), 0);
+    siteCombo->addItem(QStringLiteral("Workshop"), 1);
+    siteCombo->setCurrentIndex(current.siteWorkshop == 1 ? 1 : 0);
+    bltForm->addRow(QStringLiteral("Site / Workshop:"), siteCombo);
+
+    auto* cutCombo = new QComboBox(bltPage);
+    cutCombo->addItem(QStringLiteral("Tek flanş"), 0);
+    cutCombo->addItem(QStringLiteral("Çift flanş (kolon boyunca)"), 1);
+    cutCombo->setCurrentIndex(current.boltCutLengthMode == 1 ? 1 : 0);
+    bltForm->addRow(QStringLiteral("Kesim derinliği (cut length):"), cutCombo);
+
+    auto* lenIncSpin = new QDoubleSpinBox(bltPage);
+    lenIncSpin->setRange(0.0, 200.0);
+    lenIncSpin->setDecimals(1);
+    lenIncSpin->setValue(current.boltLengthIncrease);
+    lenIncSpin->setSuffix(QStringLiteral(" mm"));
+    bltForm->addRow(QStringLiteral("Bulon boy artışı:"), lenIncSpin);
+
+    auto* dirCombo = new QComboBox(bltPage);
+    dirCombo->addItem(QStringLiteral("1 — baş kolonda"), 1);
+    dirCombo->addItem(QStringLiteral("2 — baş kirişte"), 2);
+    dirCombo->setCurrentIndex(current.boltDirection == 2 ? 1 : 0);
+    bltForm->addRow(QStringLiteral("Bulon yönü (bolting direction):"), dirCombo);
+
+    auto* commentEdit = new QLineEdit(bltPage);
+    commentEdit->setText(QString::fromStdString(current.boltComment));
+    bltForm->addRow(QStringLiteral("Yorum:"), commentEdit);
+
     tabs->addTab(picPage, QStringLiteral("Resim"));
     tabs->addTab(pltPage, QStringLiteral("Levha"));
     tabs->addTab(bltPage, QStringLiteral("Bulonlar"));
@@ -1060,6 +1114,13 @@ bool QtMainWindow::openEndPlateParamsDialog(const mm::EndPlateParams& current,
     out.hasHead = headChk->isChecked();
     out.hasNut = nutChk->isChecked();
     out.hasWasher = washChk->isChecked();
+    out.boltStandard = stdCombo->currentText().toStdString();
+    out.threadInMat = threadChk->isChecked();
+    out.siteWorkshop = siteCombo->currentData().toInt();
+    out.boltCutLengthMode = cutCombo->currentData().toInt();
+    out.boltLengthIncrease = lenIncSpin->value();
+    out.boltDirection = dirCombo->currentData().toInt();
+    out.boltComment = commentEdit->text().toStdString();
     return true;
 }
 

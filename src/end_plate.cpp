@@ -121,6 +121,13 @@ static BoltGroup makeEndPlateBolts(const EndPlatePlacement& out,
     b.params.hasHead = params.hasHead;
     b.params.hasNut = params.hasNut;
     b.params.hasWasher = params.hasWasher;
+    b.params.standard = params.boltStandard;
+    b.params.threadInMat = params.threadInMat;
+    b.params.siteWorkshop = params.siteWorkshop;
+    b.params.cutLengthMode = params.boltCutLengthMode;
+    b.params.lengthIncrease = params.boltLengthIncrease;
+    b.params.direction = params.boltDirection;
+    b.params.comment = params.boltComment;
     return b;
 }
 
