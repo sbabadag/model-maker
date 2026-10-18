@@ -4479,8 +4479,11 @@ void Application::applyEndPlateFromParts(const std::vector<std::size_t>& parts) 
     plateModel = plateSolid.IsNull()
                      ? WireframeModel::rectangle({-100.0, -100.0, 0.0}, {100.0, 100.0, 0.0})
                      : shapeToWireframeWithFaces(plateSolid, 0.15);
-    // Bulon kavrama uzunlugu: levha kalinligi + kolon flansi tahmini (15 mm).
-    const double grip = placement.plateThickness + 15.0;
+    // Bulon kavrama uzunlugu: levha + gap + kolon flansi (resolveEndPlatePlacement
+    // icinde hesaplanir; 0 ise eski tahmini davranisa dus).
+    const double grip = placement.boltGripLength > 0.0
+                            ? placement.boltGripLength
+                            : placement.plateThickness + 15.0;
     // YALNIZ bulon montaji (bas/somun/saft) — levha AYRI model olarak zaten
     // ekleniyor; levhayi ikinci kez cizmek icin buildEndPlateAssemblyShape
     // KULLANMA (cift levha = daginik goruntu).
@@ -4662,6 +4665,7 @@ bool Application::resolveEndPlatePlacement(std::size_t mainIdx, std::size_t secI
     // Kolon flans genisligi (bulon deligi kapsama kontrolu icin; profil yoksa
     // varsayilan 300 mm). Delik silindiri bu genisligin icinde kalmali.
     double colFlangeWidth = 300.0;
+    double colFlangeThickness = 15.0; // bulon kavrama (levha+gap+flans) icin
     if (colLen > 1e-6) {
         const Vec3 colDir{colAxis.x / colLen, colAxis.y / colLen, colAxis.z / colLen};
         const Vec3 secNormal{mprop.sectionNormalX, mprop.sectionNormalY, mprop.sectionNormalZ};
@@ -4675,6 +4679,7 @@ bool Application::resolveEndPlatePlacement(std::size_t mainIdx, std::size_t secI
             colDims.tf = cprof->flangeThickness;
         }
         colFlangeWidth = colDims.b;
+        colFlangeThickness = colDims.tf;
         const Vec3 beamDir{beamAxis.x / beamAxisLen, beamAxis.y / beamAxisLen,
                            beamAxis.z / beamAxisLen};
         ContactPlacement contact;
@@ -4801,6 +4806,19 @@ bool Application::resolveEndPlatePlacement(std::size_t mainIdx, std::size_t secI
         placement.bolts.origin.z += placement.bolts.xDir.z * shift;
     }
 
+    // BULON KAVRAMA + YUZ YERI: bolon levha + gap + kolon flansini KENETLER.
+    // Bas kolon flansinin uzak (ic) yuzunde, somun levhanin kiris tarafinda
+    // oturur. Saft yiginin [flans uzak yuz .. levha kiris yuzu] araligini
+    // doldurur; saft simetri merkezi yigin merkezine cekilir (plateCenter,
+    // yigin merkezine gore -(gap+tf)/2 kayik). Delik through-cut oldugundan
+    // origin'in eksen yonundeki bu kaymasi delik geometrisini DEGISTIRMEZ.
+    placement.colFlangeThickness = colFlangeThickness;
+    placement.boltGripLength = placement.plateThickness + params.gap + colFlangeThickness;
+    const double gripShift = 0.5 * (params.gap + colFlangeThickness);
+    placement.bolts.origin.x -= placement.axis.x * gripShift;
+    placement.bolts.origin.y -= placement.axis.y * gripShift;
+    placement.bolts.origin.z -= placement.axis.z * gripShift;
+
     // TESHIS (kisa yontem): Windows'ta `set MM_ENDPLATE_DIAG=1` sonra uygulamayi
     // calistirip End Plate olusturunca exe yanindaki
     // model-maker-endplate-diag.log'a tum ara degerler yazilir; bu dosyayi paylas.
@@ -4882,7 +4900,9 @@ Application::prepareEndPlateConnection(std::size_t index, const EndPlateParams* 
     p.updated.params = effParams;          // yeni parametreler kayda yazılır
     p.updated.bolts = placement.bolts;  // yeni origin/pattern; kimlikler commit'te korunur
     p.plateSolid = buildEndPlateFromPlacement(placement);
-    const double grip = placement.plateThickness + 15.0;
+    const double grip = placement.boltGripLength > 0.0
+                            ? placement.boltGripLength
+                            : placement.plateThickness + 15.0;
     p.boltSolid = buildBoltGroupAssemblyShape(placement.bolts, grip);
     if (p.plateSolid.IsNull() || p.boltSolid.IsNull()) return std::nullopt;  // geometri hatasi
     p.plateModel = shapeToWireframeWithFaces(p.plateSolid, 0.15);

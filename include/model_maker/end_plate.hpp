@@ -60,6 +60,8 @@ struct EndPlatePlacement {
     double plateWidth{0.0};
     double plateHeight{0.0};
     double plateThickness{0.0};
+    double colFlangeThickness{0.0}; // kolon flans kalinligi (bulon kavrama hesabi)
+    double boltGripLength{0.0};     // bolon saft kavrama uzunlugu (levha+gap+flans)
     BoltGroup bolts;          // origin/axis/xDir/count/spacing/params kurulu
 };
 
