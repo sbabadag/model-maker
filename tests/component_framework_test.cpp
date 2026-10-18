@@ -27,7 +27,9 @@ int main() {
 
     // --- iliski aileleri -----------------------------------------------------
     check(isGeometricRelationship(RelationshipKind::FaceContact), "FaceContact geometric");
-    check(isGeometricRelationship(RelationshipKind::SizeFromMember), "SizeFromMember geometric");
+    check(!isGeometricRelationship(RelationshipKind::SizeFromMember), "SizeFromMember geometric DEGIL");
+    check(isParametricRelationship(RelationshipKind::SizeFromMember), "SizeFromMember parametric");
+    check(isParametricRelationship(RelationshipKind::SizeFromParameter), "SizeFromParameter parametric");
     check(isDependencyRelationship(RelationshipKind::AttachedTo), "AttachedTo dependency");
     check(isDependencyRelationship(RelationshipKind::DependsOn), "DependsOn dependency");
     check(!isDependencyRelationship(RelationshipKind::Align), "Align dependency degil");
@@ -110,31 +112,36 @@ int main() {
         check(r.ok, "SizeFromParameter parametre hedefi -> ok");
     }
 
-    // --- Grafik: conflict (Parallel + Perpendicular) -------------------------
+    // --- Grafik: parallel+perpendicular model katmaninda celiski DEGILDIR ------
+    // (Geometric iliskiler MODEL olarak kaydedilir; oryantasyon celiskisi cozucu
+    // katmaninda — OrientationConstraint dilimi — uretilir. ConstraintSystem
+    // su an yalniz mesafe kisitlarini cozer.)
     {
         ComponentBuilder b;
         PlateSpec p;
         b.plate("a", p).plate("b", p).parallel("a", "b").perpendicular("a", "b");
         const auto r = b.build();
-        check(!r.ok, "parallel+perpendicular -> ok=false");
-        check(r.relationships.validate(r.objects).status == RelationshipStatus::Conflict,
-              "status Conflict");
+        check(r.ok, "parallel+perpendicular model katmani -> ok (kaydedilir)");
+        check(r.relationships.count() == 2, "2 geometric iliski kaydedildi");
     }
 
-    // --- Grafik: cycle tespiti (attachedTo dongusu) --------------------------
+    // --- Grafik: cycle tespiti MEVCUT ConstraintSystem'e delege -----------------
     {
         ComponentBuilder b;
         PlateSpec p;
         b.plate("a", p).plate("b", p).attachedTo("a", "b").attachedTo("b", "a");
         const auto r = b.build();
-        check(!r.ok, "attachedTo dongusu -> ok=false");
-        check(r.relationships.validate(r.objects).status == RelationshipStatus::Cyclic,
-              "status Cyclic");
-        const auto cyc = r.relationships.findCycles();
-        check(cyc.size() >= 3, "findCycles dongu dondurur");
+        // Model katmani dongu COZMEZ (referans butunlugu gecerlidir).
+        check(r.ok, "attachedTo dongusu model katmaninda ok (referans gecerli)");
+
+        // Dongu tespiti ConstraintSystem adapter'i ile (mevcut cozucu):
+        ConstraintSystem sys = r.relationships.toConstraintSystem(r.objects);
+        check(!sys.solve(), "ConstraintSystem.solve() dongu -> false (Cyclic)");
+        check(sys.position(HandleKey{"a"}).state == ConstraintState::Cyclic,
+              "a handle Cyclic durumunda");
     }
 
-    // --- Grafik: zincir dependency dongusuz -> ok -----------------------------------
+    // --- Grafik: zincir dependency dongusuz -> ConstraintSystem cozer -----------
     {
         ComponentBuilder b;
         PlateSpec p;
@@ -142,6 +149,30 @@ int main() {
             .attachedTo("b", "a").attachedTo("c", "b");  // c -> b -> a (dongu yok)
         const auto r = b.build();
         check(r.ok, "zincir dependency dongusuz -> ok");
+        ConstraintSystem sys = r.relationships.toConstraintSystem(r.objects);
+        check(sys.solve(), "ConstraintSystem.solve() dongusuz -> true");
+    }
+
+    // --- Grafik: generationPlanFromObjects koprusu ----------------------------
+    {
+        ComponentBuilder b;
+        PlateSpec p;
+        p.width = 100.0;
+        p.height = 200.0;
+        p.thickness = 8.0;
+        BoltGroup bg;
+        bg.countY = 2;
+        WeldSpec w;
+        w.throat = 5.0;
+        b.plate("fin_plate", p).boltGroup("bolts", bg).weld("w", w);
+        const auto r = b.build();
+        check(r.ok, "plan koprusu builder ok");
+        const GenerationPlan plan = generationPlanFromObjects(r.objects);
+        check(plan.plates.size() == 1, "plan 1 plate");
+        check(plan.boltGroups.size() == 1, "plan 1 boltGroup");
+        check(plan.welds.size() == 1, "plan 1 weld");
+        check(plan.cuts.empty(), "plan 0 cut");
+        check(plan.plates[0].width == 100.0, "plan plate width tasindi");
     }
 
     // --- Grafik: OwnedBy hedefi kullanici parcasi olamaz ----------------------

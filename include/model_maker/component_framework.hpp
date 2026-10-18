@@ -101,13 +101,24 @@ bool isValidRoleKey(const std::string& roleKey) noexcept;
 
 // --- RELATIONSHIP GRAPH ------------------------------------------------------
 
-// Iliski turleri uc AYRI aileye bolunur:
+// Iliski turleri DORT AYRI aileye bolunur:
 //   * Geometric  : Coincident, Offset, Parallel, Perpendicular, FaceContact,
-//                  Align, FollowFrame, SizeFromMember, SizeFromParameter
+//                  Align, FollowFrame
+//   * Parametric : SizeFromMember, SizeFromParameter
 //   * Dependency : AttachedTo, DependsOn
 //   * Ownership  : OwnedBy, Cuts, Welds
-// Grafik bu aileleri ayri tutar; cycle yalnizca DEPENDENCY (AttachedTo/DependsOn)
-// ve OWNERSHIP yonlu kenarlarinda kontrol edilir (geometric iliskiler ciftsizdir).
+//
+// BU SINIF BIR MODELDİR, COZUCU DEGILDIR. Cycle/conflict tespiti YAPILMAZ —
+// cozum MEVCUT motorlara delege edilir:
+//   * Dependency/Ownership dongusu  -> ConstraintSystem::addDependency + solve()
+//                                      (ConstraintState::Cyclic). Adapter:
+//                                      ComponentRelationshipGraph::toConstraintSystem().
+//   * Geometric distance conflict   -> ConstraintSystem (DistanceConstraint +
+//                                      ConstraintState::Conflict). FaceReference
+//                                      cozumu OCCT adapter katmaninda yapilir.
+//   * Ambiguous contact             -> geometry resolver (OCCT katmani).
+//   * Unresolved reference          -> model katmani (roleKey bulunamadi).
+// Grafik bu aileleri ayri tutar; ortak iliski MODELI tek dogruluk kaynagidir.
 enum class RelationshipKind {
     Coincident,
     Offset,
@@ -135,6 +146,7 @@ enum class RelationshipStatus {
 };
 
 bool isGeometricRelationship(RelationshipKind k) noexcept;
+bool isParametricRelationship(RelationshipKind k) noexcept;
 bool isDependencyRelationship(RelationshipKind k) noexcept;
 bool isOwnershipRelationship(RelationshipKind k) noexcept;
 
@@ -149,12 +161,11 @@ struct Relationship {
     bool enabled{true};
 };
 
-// Iliski grafigi: geometric + dependency + ownership ayri. validate() su
-// durumlari uretir:
-//   - Unresolved: bir iliskinin from/to roleKey'i nesne listesinde (veya rezerve
-//     main/secondary roleKey'lerinde) yok.
-//   - Conflict: ayni ikili uzerinde celiskili geometric iliskiler.
-//   - Cyclic: AttachedTo/DependsOn/OwnedBy yonlu kenarlarinda dongu.
+// Iliski grafigi: geometric + parametric + dependency + ownership ayri tutar.
+// MODEL katmanidir; cozum yapmaz. validate() YALNIZCA referans butunlugunu
+// (unresolved roleKey) ve sahiplik yapisal kuralini (OwnedBy hedefi kullanici
+// parcasi olamaz) denetler. Dongu ve geometrik celiski MEVCUT cozuculere
+// delege edilir (toConstraintSystem() adapter'i araciligiyla).
 class ComponentRelationshipGraph {
 public:
     void add(const Relationship& r);
@@ -167,18 +178,36 @@ public:
     };
 
     // objects: component'in tanimladigi nesneler (roleKey kaynaklari). Rezerve
-    // "main"/"secondary_N" roleKey'leri ayrica gecerli sayilir.
+    // "main"/"secondary_N" roleKey'leri ayrica gecerli sayilir. Yalnizca
+    // unresolved + sahiplik kurali denetlenir (dongu/geometrik celiski YOK).
     Validation validate(const std::vector<ComponentObjectSpec>& objects) const;
 
-    // Grafik uzerinde DFS ile yonlu dongu tespiti (dependency + ownership).
-    // Dongudeki roleKey'leri dondurur (bos = dongu yok).
-    std::vector<std::string> findCycles() const;
+    // DEPENDENCY + OWNERSHIP yonlu kenarlarini (from -> to) dondurur. Dongu
+    // tespiti bu listeden MEVCUT ConstraintSystem (addDependency + solve) ile
+    // yapilir — bu sinif kendi DFS'ini barindirmaz.
+    std::vector<std::pair<std::string, std::string>> directedEdges() const;
+
+    // Model -> mevcut ConstraintSystem adapter'i. Her roleKey (nesne + rezerve
+    // main/secondary_N) bir HandleKey(Point) olarak eklenir; AttachedTo /
+    // DependsOn / OwnedBy kenarlari addDependency() olarak aktarilir. Dongu
+    // tespiti ve cozum cagiranin solve() cagrisiyla ConstraintSystem'de yapilir.
+    // (Geometric distance kisitlari FaceReference cozumune bagli oldugu icin
+    // bu adaptörde uretilmez — o cozum OCCT katmaninda, FaceReference.resolved
+    // doldurularak DistanceConstraint olarak eklenir.)
+    ConstraintSystem toConstraintSystem(const std::vector<ComponentObjectSpec>& objects) const;
 
     std::size_t count() const noexcept { return relationships_.size(); }
 
 private:
     std::vector<Relationship> relationships_;
 };
+
+// ComponentObjectSpec listesini mevcut GenerationPlan'a cevirir (tek uretim
+// kaynagi). plates/boltGroups/cuts/welds spec'lerden toplanir; roleKey -> plan
+// elemani eslesmesi korunmaz (plan elemanlari materializer'da roleKey'li olarak
+// islenir). Insaat nesneleri (point/line/plane) plana dahil edilmez (onlar
+// yalnizca cozum asamasinda kullanilir).
+GenerationPlan generationPlanFromObjects(const std::vector<ComponentObjectSpec>& objects) noexcept;
 
 // --- COMPONENT BUILDER (fluent, tip guvenli) ---------------------------------
 

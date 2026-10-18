@@ -30,12 +30,14 @@ bool isGeometricRelationship(RelationshipKind k) noexcept {
         case RelationshipKind::FaceContact:
         case RelationshipKind::Align:
         case RelationshipKind::FollowFrame:
-        case RelationshipKind::SizeFromMember:
-        case RelationshipKind::SizeFromParameter:
             return true;
         default:
             return false;
     }
+}
+
+bool isParametricRelationship(RelationshipKind k) noexcept {
+    return k == RelationshipKind::SizeFromMember || k == RelationshipKind::SizeFromParameter;
 }
 
 bool isDependencyRelationship(RelationshipKind k) noexcept {
@@ -95,7 +97,8 @@ ComponentRelationshipGraph::Validation ComponentRelationshipGraph::validate(
 
     // (1) Unresolved: from/to bilinen bir roleKey degil. SizeFromParameter'da
     //     'to' bir PARAMETRE adidir (nesne degil) -> muaf. 'from' her zaman
-    //     nesne/roleKey olmalidir.
+    //     nesne/roleKey olmalidir. (Dongu/geometrik celiski burada YOK — cozucu
+    //     katmaninda, toConstraintSystem() + ConstraintSystem::solve() ile.)
     for (const auto& r : relationships_) {
         if (!r.enabled) continue;
         const bool toIsParam = (r.kind == RelationshipKind::SizeFromParameter);
@@ -105,41 +108,10 @@ ComponentRelationshipGraph::Validation ComponentRelationshipGraph::validate(
             unresolved.push_back("to: " + r.to);
     }
 
-    // (2) Conflict: ayni ikili uzerinde hem Parallel hem Perpendicular.
-    std::set<std::pair<std::string, std::string>> seenPairs;
-    for (const auto& r : relationships_) {
-        if (!r.enabled) continue;
-        if (r.kind != RelationshipKind::Parallel &&
-            r.kind != RelationshipKind::Perpendicular)
-            continue;
-        const std::string a = std::min(r.from, r.to);
-        const std::string b = std::max(r.from, r.to);
-        seenPairs.insert({a, b});
-    }
-    // Parallel + Perpendicular ayni ikili icin tekrar tarama ile celiski bul.
-    std::unordered_map<std::string, std::set<RelationshipKind>> pairKinds;
-    for (const auto& r : relationships_) {
-        if (!r.enabled) continue;
-        if (r.kind != RelationshipKind::Parallel &&
-            r.kind != RelationshipKind::Perpendicular)
-            continue;
-        const std::string a = std::min(r.from, r.to);
-        const std::string b = std::max(r.from, r.to);
-        pairKinds[a + "|" + b].insert(r.kind);
-    }
-    for (const auto& [key, kinds] : pairKinds) {
-        if (kinds.size() > 1) {
-            const auto sep = key.find('|');
-            conflicts.push_back(key.substr(0, sep) + " <-> " + key.substr(sep + 1));
-        }
-    }
-
-    // (3) Cyclic: yonlu dependency/ownership kenarlarinda DFS.
-    const std::vector<std::string> cycle = findCycles();
-
-    // (4) OwnedBy hedefi kullanici parcasi (main/secondary_N) OLAMAZ: component
+    // (2) OwnedBy hedefi kullanici parcasi (main/secondary_N) OLAMAZ: component
     //     kullanici parcalarini sahiplenmez, yalniz referanslar (sahiplik hedefi
-    //     "component" veya baska bir component-owned nesne olmalidir).
+    //     "component" veya baska bir component-owned nesne olmalidir). Bu bir
+    //     YAPISAL sahiplik kuralidir, cozucu degil.
     for (const auto& r : relationships_) {
         if (!r.enabled) continue;
         if (r.kind == RelationshipKind::OwnedBy && isUserPartRole(r.to))
@@ -155,95 +127,71 @@ ComponentRelationshipGraph::Validation ComponentRelationshipGraph::validate(
         for (const auto& c : conflicts)
             out.problems.push_back("conflict: " + c);
     }
-    if (!cycle.empty()) {
-        out.status = RelationshipStatus::Cyclic;
-        out.problems.push_back("cycle: " +
-                               [&] {
-                                   std::string s;
-                                   for (std::size_t i = 0; i < cycle.size(); ++i) {
-                                       if (i) s += " -> ";
-                                       s += cycle[i];
-                                   }
-                                   return s;
-                               }());
-    }
 
-    out.ok = unresolved.empty() && conflicts.empty() && cycle.empty();
+    out.ok = unresolved.empty() && conflicts.empty();
     return out;
 }
 
-std::vector<std::string> ComponentRelationshipGraph::findCycles() const {
-    // Yonlu kenarlar: AttachedTo (from -> to), DependsOn (from -> to),
-    // OwnedBy (from -> to), Cuts (cutter -> target), Welds (weld -> part).
-    std::unordered_map<std::string, std::vector<std::string>> adj;
+std::vector<std::pair<std::string, std::string>> ComponentRelationshipGraph::directedEdges() const {
+    std::vector<std::pair<std::string, std::string>> edges;
     for (const auto& r : relationships_) {
         if (!r.enabled) continue;
-        if (isDependencyRelationship(r.kind) || isOwnershipRelationship(r.kind)) {
-            // Yon: 'from' -> 'to' (OwnedBy: child -> owner, yani bagimlilik yonu
-            // child -> owner; dongu tespiti icin bu yeterli).
-            adj[r.from].push_back(r.to);
-        }
+        if (isDependencyRelationship(r.kind) || isOwnershipRelationship(r.kind))
+            edges.emplace_back(r.from, r.to);
     }
+    return edges;
+}
 
-    // Beyaz/gri/siyah DFS ile dongu tespiti.
-    enum Color { White, Gray, Black };
-    std::unordered_map<std::string, Color> color;
-    std::vector<std::string> allKeys;
-    for (const auto& [k, _] : adj) {
-        (void)_;
-        color[k] = White;
-        allKeys.push_back(k);
-    }
-    for (const auto& [k, v] : adj) {
-        (void)v;
-        // to'lar da anahtar listesine girsin (yaprak dongusuz dahi).
-        if (color.find(k) == color.end()) {
-            color[k] = White;
-            allKeys.push_back(k);
+ConstraintSystem ComponentRelationshipGraph::toConstraintSystem(
+    const std::vector<ComponentObjectSpec>& objects) const {
+    ConstraintSystem sys;
+
+    // Her nesne roleKey'i bir Point handle'i olur. Rezerve main/secondary_N de
+    // handle olarak eklenir (referans butunlugu icin; kullanici parcasi olan
+    // main/secondary sahiplenilmez ama cozumde referans noktasi olarak durur).
+    auto addHandleForKey = [&](const std::string& key) {
+        Vec3 pos{};
+        for (const auto& o : objects) {
+            if (o.roleKey != key) continue;
+            if (o.point) pos = o.point->position;
+            else if (o.line) pos = o.line->origin;
+            else if (o.plane) pos = o.plane->origin;
+            else if (o.plate) pos = o.plate->center;
+            break;
         }
-    }
-    for (const auto& [k, v] : adj)
-        for (const auto& t : v)
-            if (color.find(t) == color.end()) {
-                color[t] = White;
-                allKeys.push_back(t);
-            }
-
-    std::sort(allKeys.begin(), allKeys.end());
-
-    std::vector<std::string> cycleStack;
-    std::vector<std::string> cycleFound;
-
-    std::function<bool(const std::string&)> dfs = [&](const std::string& node) {
-        color[node] = Gray;
-        cycleStack.push_back(node);
-        auto it = adj.find(node);
-        if (it != adj.end()) {
-            for (const auto& next : it->second) {
-                if (color[next] == Gray) {
-                    // Dongu bulundu: cycleStack'te next'ten itibaren.
-                    auto pos = std::find(cycleStack.begin(), cycleStack.end(), next);
-                    if (pos != cycleStack.end()) {
-                        cycleFound.assign(pos, cycleStack.end());
-                        cycleFound.push_back(next);
-                        return true;
-                    }
-                } else if (color[next] == White) {
-                    if (dfs(next)) return true;
-                }
-            }
-        }
-        cycleStack.pop_back();
-        color[node] = Black;
-        return false;
+        sys.addHandle(HandleKey{key}, HandleKind::Point, pos);
     };
 
-    for (const auto& node : allKeys) {
-        if (color[node] == White) {
-            if (dfs(node)) break;
-        }
+    std::set<std::string> keys;
+    for (const auto& o : objects) keys.insert(o.roleKey);
+    for (const auto& r : relationships_) {
+        if (!r.enabled) continue;
+        keys.insert(r.from);
+        keys.insert(r.to);
     }
-    return cycleFound;
+    for (const auto& k : keys) addHandleForKey(k);
+
+    // Dependency/ownership yonlu kenarlari ConstraintSystem bagimliligina aktar
+    // (dongu tespiti ConstraintSystem::solve() ile Cyclic uretir).
+    for (const auto& [from, to] : directedEdges())
+        sys.addDependency(HandleKey{from}, HandleKey{to});
+
+    return sys;
+}
+
+// --- GenerationPlan koprusu --------------------------------------------------
+
+GenerationPlan generationPlanFromObjects(const std::vector<ComponentObjectSpec>& objects) noexcept {
+    GenerationPlan plan;
+    for (const auto& o : objects) {
+        if (o.plate) plan.plates.push_back(*o.plate);
+        else if (o.boltGroup) plan.boltGroups.push_back(*o.boltGroup);
+        else if (o.cut) plan.cuts.push_back(*o.cut);
+        else if (o.weld) plan.welds.push_back(*o.weld);
+        // Construction (point/line/plane) plana dahil edilmez; yalnizca cozumde.
+    }
+    plan.ok = true;
+    return plan;
 }
 
 // --- ComponentBuilder --------------------------------------------------------
