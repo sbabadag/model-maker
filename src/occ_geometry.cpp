@@ -5,6 +5,8 @@
 #include <BRepAdaptor_Surface.hxx>
 #include <BRepAlgoAPI_Common.hxx>
 #include <BRepAlgoAPI_Cut.hxx>
+#include <TopTools_ListOfShape.hxx>
+#include <Standard_Failure.hxx>
 #include <BRepBndLib.hxx>
 #include <Bnd_Box.hxx>
 #include <BRepAlgoAPI_Fuse.hxx>
@@ -696,7 +698,27 @@ TopoDS_Shape booleanCommonShape(const TopoDS_Shape& a, const TopoDS_Shape& b) {
 }
 
 TopoDS_Shape booleanCutShape(const TopoDS_Shape& a, const TopoDS_Shape& b) {
-    return BRepAlgoAPI_Cut(a, b).Shape();
+    if (a.IsNull() || b.IsNull()) return a;
+    TopTools_ListOfShape args, tools;
+    args.Append(a);
+    tools.Append(b);
+    BRepAlgoAPI_Cut cut;
+    try {
+        // Kucuk fuzzy degeri: boolean sirasinda neredeyse cakisan nokta/kenarlari
+        // birlestirerek dejenere (sliver) yuz/kenar olusmasini onler — Windows'ta
+        // Extrema_ExtCC segfault'u ile sonuclanan klasik kaynak.
+        cut.SetFuzzyValue(1e-5);
+        cut.SetArguments(args);
+        cut.SetTools(tools);
+        cut.Build();
+    } catch (const Standard_Failure&) {
+        return a;  // guvenli fallback: tabani dokunmadan birak
+    } catch (...) {
+        return a;
+    }
+    if (!cut.IsDone()) return a;  // boolean basarisiz: taban korunur
+    const TopoDS_Shape result = cut.Shape();
+    return result.IsNull() ? a : result;
 }
 
 double shapeVolume(const TopoDS_Shape& shape) {

@@ -4588,6 +4588,9 @@ bool Application::resolveEndPlatePlacement(std::size_t mainIdx, std::size_t secI
     const Vec3 colAxis{colTo.x - colFrom.x, colTo.y - colFrom.y, colTo.z - colFrom.z};
     const double colLen = std::sqrt(colAxis.x * colAxis.x + colAxis.y * colAxis.y +
                                     colAxis.z * colAxis.z);
+    // Kolon flans genisligi (bulon deligi kapsama kontrolu icin; profil yoksa
+    // varsayilan 300 mm). Delik silindiri bu genisligin icinde kalmali.
+    double colFlangeWidth = 300.0;
     if (colLen > 1e-6) {
         const Vec3 colDir{colAxis.x / colLen, colAxis.y / colLen, colAxis.z / colLen};
         const Vec3 secNormal{mprop.sectionNormalX, mprop.sectionNormalY, mprop.sectionNormalZ};
@@ -4600,6 +4603,7 @@ bool Application::resolveEndPlatePlacement(std::size_t mainIdx, std::size_t secI
             colDims.tw = cprof->plateThickness;
             colDims.tf = cprof->flangeThickness;
         }
+        colFlangeWidth = colDims.b;
         const Vec3 beamDir{beamAxis.x / beamAxisLen, beamAxis.y / beamAxisLen,
                            beamAxis.z / beamAxisLen};
         ContactPlacement contact;
@@ -4644,6 +4648,28 @@ bool Application::resolveEndPlatePlacement(std::size_t mainIdx, std::size_t secI
     }
     placement = computeEndPlatePlacementOnFace(face, params.gap, secWidth, secHeight, params,
                                                sectionHeightDir, anchorOffset);
+
+    // BULON DELIGI FLANS KENARINA TAKILMASIN: levha kiris kesitine gore
+    // (plateExtra ile) buyutuldugu icin, dar kolonlarda (ornegin HEB260 kolon +
+    // HEB260 kiris) en dis bulon deligi kolon flansinin kenarini 1 mm kadar deler.
+    // Bu yari-teget kesim OCC boolean'ini dejenere edip Windows'ta
+    // Extrema_ExtCC segfault'u uretiyordu. Flans genisligi yonundeki bulon
+    // acikligini, delik + kenar payi (3 mm) flans genisligi ICINDE kalacak
+    // sekilde kucult (desen levha merkezinde ortali kalir).
+    const int boltNX = placement.bolts.countX > 1 ? placement.bolts.countX : 1;
+    const double boltHalfU = (boltNX - 1) * 0.5 * placement.bolts.spacingX;
+    const double holeRadius = params.holeDiameter * 0.5;
+    const double flangeHalfW = colFlangeWidth * 0.5;
+    constexpr double kFlangeClearance = 3.0;
+    const double maxHalfU = flangeHalfW - holeRadius - kFlangeClearance;
+    if (boltHalfU > maxHalfU && maxHalfU > 0.0 && boltNX > 1) {
+        const double shift = boltHalfU - maxHalfU;
+        placement.bolts.spacingX = 2.0 * maxHalfU / static_cast<double>(boltNX - 1);
+        // Origin'i +xDir (levha genislik yonu) boyunca kaydir ki desen ortali kalsin.
+        placement.bolts.origin.x += placement.bolts.xDir.x * shift;
+        placement.bolts.origin.y += placement.bolts.xDir.y * shift;
+        placement.bolts.origin.z += placement.bolts.xDir.z * shift;
+    }
 
     // TESHIS (kisa yontem): Windows'ta `set MM_ENDPLATE_DIAG=1` sonra uygulamayi
     // calistirip End Plate olusturunca exe yanindaki
