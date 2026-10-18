@@ -40,9 +40,11 @@
 // windows.h yok; Linux'ta derlenir/test edilir. Saf veri modeli + uretim plani.
 
 #include "model_maker/bolt.hpp"
+#include "model_maker/constraint_system.hpp"
 #include "model_maker/cut_modifier.hpp"
 #include "model_maker/entity_id.hpp"
 #include "model_maker/geometry.hpp"
+#include "model_maker/magnetic_frame.hpp"
 
 #include <string>
 #include <variant>
@@ -252,6 +254,18 @@ struct ComponentInstanceRecord {
     bool dirty{true};                         // yeniden hesaplama gerekli
     bool orphan{false};                       // typeId registry'de yok
     bool enabled{true};
+
+    // --- (Slice 2d-3) PARAMETRIK REFERANS/KISIT/CERCEVE DURUMU ------------
+    // Bunlar component'in TAM parametrik durumunu olusturur; MMW8'de 'I' blogu
+    // DEGIL, ileriye-uyumlu AYRI bloklar ('M' cerceve, 'J' yuz referanslari,
+    // 'D' kisit+handle+bagimlilik) ile kalicilastirilir. Eski dosyalarda bu
+    // bloklar yoksa frame origin/u/v/axis'tan turetilir, refs/kisitlar BOS
+    // kalir (legacy — recompute yine calisir).
+    ComponentLocalFrame frame;                  // magnetic frame + alt nesne yerlesimleri
+    std::vector<FaceReference> faceRefs;        // semantik yuz referanslari
+    std::vector<DistanceConstraint> constraints; // mesafe kisitlari
+    std::vector<ConstraintHandleDef> handles;   // handle tanimlari
+    std::vector<ConstraintDependency> dependencies;  // bagimlilik tanimlari
 };
 
 // --- YERLESIK BILESEN KATALOGU ----------------------------------------------

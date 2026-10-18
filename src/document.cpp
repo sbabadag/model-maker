@@ -1590,12 +1590,21 @@ void Document::buildMmw8(Mmw8Document& out) const {
     out.endPlateConnections = endPlateConnections_;
     out.componentInstances = componentInstances_;
     // Konstruksiyon turleri (K blogu): kind != None olan modellerin
-    // EntityId -> kind eslesmesi (model kaydi ConstructionKind tasimaz).
+    // EntityId -> kind eslemesi (model kaydi ConstructionKind tasimaz).
     out.constructionKinds.clear();
     for (std::size_t i = 0; i < models_.size(); ++i) {
         const ConstructionKind kind = models_[i].constructionKind();
         if (kind != ConstructionKind::None)
             out.constructionKinds.push_back(Mmw8ConstructionKind{modelIds_[i], kind});
+    }
+    // Kesit yerlesim anchor'i (A blogu, Slice 2d-3): Top DISI anchor'larin
+    // EntityId -> anchor eslemesi (model kaydi SectionAnchor tasimaz; Top =
+    // varsayilan = eski davranis, yazilmaz).
+    out.sectionAnchors.clear();
+    for (std::size_t i = 0; i < models_.size(); ++i) {
+        const SectionAnchor anchor = models_[i].properties().sectionAnchor;
+        if (anchor != SectionAnchor::Top)
+            out.sectionAnchors.push_back(Mmw8SectionAnchor{modelIds_[i], anchor});
     }
     // Taban B-Rep blob'lari (V blogu): kesme tabani (pre-cut) surumu olan
     // varliklar. Boylece "orijinal B-Rep kaybolmaz" kayit/ac sonrasinda da
@@ -1717,6 +1726,15 @@ void Document::commitFromMmw8(Mmw8Document&& mdoc) {
     for (const auto& ck : mdoc.constructionKinds) {
         if (auto idx = indexOfEntity(ck.entityId); idx.has_value())
             models_[*idx].setConstructionKind(ck.kind);
+    }
+    // Kesit yerlesim anchor'i (A blogu): EntityId -> anchor eslemesini modellere
+    // geri yukle. Blok yoksa (eski dosya) anchor Top kalir (varsayilan).
+    for (const auto& sa : mdoc.sectionAnchors) {
+        if (auto idx = indexOfEntity(sa.entityId); idx.has_value()) {
+            EntityProperties p = models_[*idx].properties();
+            p.sectionAnchor = sa.anchor;
+            models_[*idx].setProperties(std::move(p));
+        }
     }
     opaqueBreps_ = std::move(opaque);
     opaqueBrepsStale_ = false;

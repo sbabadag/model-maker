@@ -89,6 +89,17 @@ struct Edge {
 // standart WireframeModel'dir (snap/secim/gumball zaten calisir).
 enum class ConstructionKind { None, Point, Line, Plane };
 
+// KESIT YERLESIM ANCHOR'I (Slice 2d-2c P3 / 2d-3). Uye ekseni kesitin neresinden
+// gecer? DEFAULT Top ("top of section"): eksen kesitin EN USTUNDEN gecer, kesit
+// altina sarkar (Tekla "position: top of section"). Bu, mevcut modellerin KALICI
+// dogruluk kaynagi olan davranistir; var olan belgeler SESSIZCE baska bir
+// anchor'a DONUSTURULMEZ. Center/Bottom kullanici secenekleridir.
+enum class SectionAnchor {
+    Top,     // kesit ust yuzeyi eksende (mevcut davranis)
+    Center,  // kesit merkezi/orijini eksende
+    Bottom,  // kesit alt yuzeyi eksende
+};
+
 using Face = std::vector<std::size_t>;
 
 struct EntityProperties {
@@ -105,6 +116,11 @@ struct EntityProperties {
     // uretim AYNI degeri kullanir (yoksa tutamaclar katidan kayar).
     // Varsayilan (0,0,1) = dunya XY → eski davranis birebir korunur.
     double sectionNormalX{}, sectionNormalY{}, sectionNormalZ{1.0};
+    // Kesit yerlesim ANCHOR'I (SectionAnchor): uye ekseninin kesitin neresinden
+    // gectigi. DEFAULT Top ("top of section") — eski dosyalar sessizce baska
+    // bir anchor'a donusturulmez. MMW8'de 'A' blogu ile (EntityId -> anchor)
+    // kalicilastirilir; MMW1-7 yuklemede Top varsayilir.
+    SectionAnchor sectionAnchor{SectionAnchor::Top};
     std::string lineType{"BYLAYER"};
     std::string material;
     int colorIndex{256};

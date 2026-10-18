@@ -40,6 +40,13 @@ inline constexpr std::size_t kMmw8MaxCutModifiers = 100'000;
 inline constexpr std::size_t kMmw8MaxBolts = 100'000;
 inline constexpr std::size_t kMmw8MaxEndPlates = 100'000;
 inline constexpr std::size_t kMmw8MaxComponents = 100'000;
+// Slice 2d-3: component basina param ref/kisit/handle/alt nesne sayi sinirlari
+// (ayirma oncesi dogrulanir; asiri girdi reddedilir).
+inline constexpr std::size_t kMmw8MaxFaceRefs = 100'000;
+inline constexpr std::size_t kMmw8MaxConstraints = 100'000;
+inline constexpr std::size_t kMmw8MaxHandles = 100'000;
+inline constexpr std::size_t kMmw8MaxDependencies = 100'000;
+inline constexpr std::size_t kMmw8MaxFrameChildren = 100'000;
 inline constexpr std::size_t kMmw8MaxVertices = 1'000'000;
 inline constexpr std::size_t kMmw8MaxEdges = 2'000'000;
 inline constexpr std::size_t kMmw8MaxFaces = 1'000'000;
@@ -80,6 +87,15 @@ struct Mmw8ConstructionKind {
     ConstructionKind kind{ConstructionKind::None};
 };
 
+// Kesit yerlesim anchor'i (Slice 2d-3): model kaydi SectionAnchor tasimaz; bu
+// ayri blogun EntityId -> anchor eslemesidir. Anchor Top olanlar yazilmaz
+// (varsayilan — eski davranis). 'A' blogu (ileriye-uyumlu; eski okuyucu
+// bilinmeyen blogu kayipsiz korur).
+struct Mmw8SectionAnchor {
+    EntityId entityId{kInvalidEntityId};
+    SectionAnchor anchor{SectionAnchor::Top};
+};
+
 // MMW8 belge icerigi (OCCT'siz veri modeli).
 struct Mmw8Document {
     EntityId nextEntityId{1};
@@ -94,6 +110,7 @@ struct Mmw8Document {
     std::vector<EndPlateConnection> endPlateConnections;         // 'E' blogu (Phase C1)
     std::vector<ComponentInstanceRecord> componentInstances;     // 'I' blogu (Phase C2)
     std::vector<Mmw8ConstructionKind> constructionKinds;         // 'K' blogu (Phase 4.1)
+    std::vector<Mmw8SectionAnchor> sectionAnchors;               // 'A' blogu (Slice 2d-3)
     std::vector<Mmw8Blob> blobs;                                 // 'B' blogu (ETKIN B-Rep)
     std::vector<Mmw8Blob> baseBlobs;                             // 'V' blogu (TABAN B-Rep)
     std::vector<Mmw8UnknownBlock> unknownBlocks;

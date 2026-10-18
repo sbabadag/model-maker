@@ -31,6 +31,23 @@ static void check(bool ok, const char* label) {
 }
 
 static bool nearEq(double a, double b, double tol = 1e-9) { return std::abs(a - b) < tol; }
+static bool v3eq(const Vec3& a, const Vec3& b) {
+    return nearEq(a.x, b.x) && nearEq(a.y, b.y) && nearEq(a.z, b.z);
+}
+static bool frameEq(const MemberLocalFrame& a, const MemberLocalFrame& b) {
+    return v3eq(a.origin, b.origin) && v3eq(a.u, b.u) && v3eq(a.v, b.v) && v3eq(a.w, b.w);
+}
+static bool placementEq(const LocalPlacement& a, const LocalPlacement& b) {
+    return v3eq(a.origin, b.origin) && v3eq(a.u, b.u) && v3eq(a.v, b.v) && v3eq(a.w, b.w);
+}
+static bool faceRefEq(const FaceReference& a, const FaceReference& b) {
+    if (a.source != b.source || a.role != b.role || a.faceRole != b.faceRole ||
+        a.selector != b.selector)
+        return false;
+    if (a.localFrame.has_value() != b.localFrame.has_value()) return false;
+    if (a.localFrame && !frameEq(*a.localFrame, *b.localFrame)) return false;
+    return true;
+}
 
 static std::filesystem::path tempPath(const char* name) {
     return std::filesystem::temp_directory_path() / name;
@@ -52,7 +69,37 @@ static bool sameComponent(const ComponentInstanceRecord& a, const ComponentInsta
     const auto v3 = [](const Vec3& x, const Vec3& y) {
         return nearEq(x.x, y.x) && nearEq(x.y, y.y) && nearEq(x.z, y.z);
     };
-    return v3(a.origin, b.origin) && v3(a.u, b.u) && v3(a.v, b.v) && v3(a.axis, b.axis);
+    if (!v3(a.origin, b.origin) || !v3(a.u, b.u) || !v3(a.v, b.v) || !v3(a.axis, b.axis))
+        return false;
+    // --- Slice 2d-3: parametrik ref/kisit/cerceve durumu ---
+    if (!frameEq(a.frame.frame, b.frame.frame)) return false;
+    if (a.frame.children.size() != b.frame.children.size()) return false;
+    for (std::size_t i = 0; i < a.frame.children.size(); ++i)
+        if (a.frame.children[i].id != b.frame.children[i].id ||
+            !placementEq(a.frame.children[i].local, b.frame.children[i].local))
+            return false;
+    if (a.faceRefs.size() != b.faceRefs.size()) return false;
+    for (std::size_t i = 0; i < a.faceRefs.size(); ++i)
+        if (!faceRefEq(a.faceRefs[i], b.faceRefs[i])) return false;
+    if (a.constraints.size() != b.constraints.size()) return false;
+    for (std::size_t i = 0; i < a.constraints.size(); ++i) {
+        if (a.constraints[i].handle.key != b.constraints[i].handle.key) return false;
+        if (!faceRefEq(a.constraints[i].target, b.constraints[i].target)) return false;
+        if (!nearEq(a.constraints[i].signedOffset, b.constraints[i].signedOffset)) return false;
+        if (a.constraints[i].enabled != b.constraints[i].enabled) return false;
+    }
+    if (a.handles.size() != b.handles.size()) return false;
+    for (std::size_t i = 0; i < a.handles.size(); ++i) {
+        if (a.handles[i].key.key != b.handles[i].key.key) return false;
+        if (a.handles[i].kind != b.handles[i].kind) return false;
+        if (!v3eq(a.handles[i].initialPosition, b.handles[i].initialPosition)) return false;
+    }
+    if (a.dependencies.size() != b.dependencies.size()) return false;
+    for (std::size_t i = 0; i < a.dependencies.size(); ++i) {
+        if (a.dependencies[i].dependent.key != b.dependencies[i].dependent.key) return false;
+        if (a.dependencies[i].dependsOn.key != b.dependencies[i].dependsOn.key) return false;
+    }
+    return true;
 }
 
 // Zengin bir kayit kurar: tum param turleri (double/int/bool/wstring/EntityRef),
@@ -79,6 +126,35 @@ static ComponentInstanceRecord buildRichRecord(EntityId id) {
     r.ownedBoltGroupIds = {EntityId{51}, EntityId{52}};
     r.enabled = true;
     r.dirty = true;
+    // --- Slice 2d-3: parametrik ref/kisit/cerceve durumu ---
+    MemberLocalFrame mf;
+    mf.origin = {1.0, 2.0, 3.0};
+    mf.u = {1.0, 0.0, 0.0};
+    mf.v = {0.0, 1.0, 0.0};
+    mf.w = {0.0, 0.0, 1.0};
+    r.frame.frame = mf;
+    MagneticChild child;
+    child.id = "plate";
+    child.local = LocalPlacement{{4.0, 5.0, 6.0}, {1, 0, 0}, {0, 1, 0}, {0, 0, 1}};
+    r.frame.children = {child};
+
+    FaceReference fr;
+    fr.source = EntityId{10};
+    fr.role = ComponentInputRole::Main;
+    fr.faceRole = SemanticFaceRole::FlangeOuterPositive;
+    fr.localFrame = MemberLocalFrame{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}, {0, 0, 1}};
+    fr.selector = "top_flange";
+    r.faceRefs = {fr};
+
+    DistanceConstraint dc;
+    dc.handle = HandleKey{"plate_face"};
+    dc.target = fr;
+    dc.signedOffset = 6.0;
+    dc.enabled = true;
+    r.constraints = {dc};
+
+    r.handles = {ConstraintHandleDef{HandleKey{"plate_face"}, HandleKind::Plane, Vec3{0, 0, 0}}};
+    r.dependencies = {ConstraintDependency{HandleKey{"plate_face"}, HandleKey{"member_end"}}};
     return r;
 }
 
@@ -195,6 +271,145 @@ static void testUndoRedo() {
           "redo ayni kimligi geri getirir");
 }
 
+static std::string serializeDoc(const Mmw8Document& d) {
+    std::ostringstream os;
+    writeMmw8(os, d);
+    return os.str();
+}
+static bool readThrows(const std::string& bytes) {
+    try {
+        std::istringstream is(bytes);
+        Mmw8Document d;
+        readMmw8(is, d);
+        return false;
+    } catch (const std::exception&) {
+        return true;
+    }
+}
+
+// 5) SectionAnchor kaliciligi ('A' blogu): non-Top anchor korunur, Top default
+//    (blok yazilmaz), tekrar kayit kimlikleri degistirmez.
+static void testSectionAnchorRoundTrip() {
+    std::printf("Test 5: SectionAnchor kaliciligi (A blogu)\n");
+    const auto path = tempPath("mmw8_section_anchor.mmw");
+    Document doc;
+    {
+        WireframeModel m = WireframeModel::line({0, 0, 0}, {100, 0, 0});
+        EntityProperties p = m.properties();
+        p.sectionAnchor = SectionAnchor::Center;
+        m.setProperties(std::move(p));
+        doc.addModel(std::move(m));
+    }
+    doc.addModel(WireframeModel::line({0, 0, 0}, {100, 0, 0}));  // Top default
+    const EntityId centerId = doc.modelId(0);
+    const EntityId topId = doc.modelId(1);
+    doc.save(path);
+
+    Document loaded;
+    loaded.load(path);
+    check(loaded.models().size() == 2, "2 model yuklendi");
+    check(loaded.models()[0].properties().sectionAnchor == SectionAnchor::Center,
+          "Center anchor korunur");
+    check(loaded.models()[1].properties().sectionAnchor == SectionAnchor::Top,
+          "Top anchor (varsayilan) korunur");
+
+    // Ayni belge tekrar kaydedilince kimlikler DEGISMEMELI.
+    const auto path2 = tempPath("mmw8_section_anchor2.mmw");
+    loaded.save(path2);
+    Document loaded2;
+    loaded2.load(path2);
+    check(loaded2.modelId(0) == centerId && loaded2.modelId(1) == topId,
+          "tekrar kayit kimlikleri degistirmez");
+    check(loaded2.models()[0].properties().sectionAnchor == SectionAnchor::Center,
+          "ikinci kayit sonrasi Center korunur");
+    std::error_code ec;
+    std::filesystem::remove(path, ec);
+    std::filesystem::remove(path2, ec);
+}
+
+// 6) Eski dosya (J/D/M/A yok): yeni alanlar BOS/varsayilan, bloklar YAZILMAZ.
+static void testLegacyComponentDefaults() {
+    std::printf("Test 6: eski dosya (J/D/M/A yok) -> varsayilanlar\n");
+    ComponentInstanceRecord legacy;
+    legacy.id = EntityId{42};
+    legacy.typeId = L"beam_to_column_end_plate";
+    legacy.schemaVersion = 1;
+    legacy.mainPart = EntityId{10};
+    legacy.params = {{L"plateThickness", CompParamValue{15.0}}};
+    legacy.enabled = true;
+    // frame/faceRefs/constraints/handles/dependencies default (bos).
+
+    Mmw8Document doc;
+    doc.nextEntityId = 100;
+    doc.metadata.binToolsFormatVersion = 0;
+    doc.componentInstances.push_back(legacy);
+
+    const std::string bytes = serializeDoc(doc);
+    check(bytes.find("\nJ ") == std::string::npos, "J blogu yazilmadi (bos refs)");
+    check(bytes.find("\nD ") == std::string::npos, "D blogu yazilmadi (bos kisit)");
+    check(bytes.find("\nM ") == std::string::npos, "M blogu yazilmadi (bos cerceve)");
+    check(bytes.find("\nA ") == std::string::npos, "A blogu yazilmadi (Top anchor)");
+
+    Mmw8Document parsed;
+    std::istringstream in(bytes);
+    readMmw8(in, parsed);
+    check(parsed.componentInstances.size() == 1, "1 legacy component");
+    if (parsed.componentInstances.size() == 1) {
+        const auto& r = parsed.componentInstances[0];
+        check(r.faceRefs.empty() && r.constraints.empty() && r.handles.empty() &&
+                  r.dependencies.empty() && r.frame.children.empty(),
+              "legacy parametrik alanlar BOS");
+    }
+}
+
+// 7) Parametrik blok redleri: gecersiz enum, yinelenen blok, yinelenen handle.
+static void testParamRejections() {
+    std::printf("Test 7: parametrik blok redleri\n");
+    Mmw8Document doc;
+    doc.nextEntityId = 100;
+    doc.metadata.binToolsFormatVersion = 0;
+    WireframeModel m = WireframeModel::line({0, 0, 0}, {1, 0, 0});
+    doc.models.push_back(m);
+    doc.entityIds.push_back(60);
+    doc.componentInstances.push_back(buildRichRecord(EntityId{60}));
+    doc.sectionAnchors.push_back(Mmw8SectionAnchor{EntityId{60}, SectionAnchor::Center});
+
+    const std::string valid = serializeDoc(doc);
+    check(!readThrows(valid), "gecerli parametrik doc okunur");
+
+    // Gecersiz anchor degeri.
+    {
+        Mmw8Document bad = doc;
+        bad.sectionAnchors[0].anchor = static_cast<SectionAnchor>(9);
+        check(readThrows(serializeDoc(bad)), "gecersiz anchor degeri reddedilir");
+    }
+    // Gecersiz faceRef role.
+    {
+        Mmw8Document bad = doc;
+        bad.componentInstances[0].faceRefs[0].role = static_cast<ComponentInputRole>(9);
+        check(readThrows(serializeDoc(bad)), "gecersiz faceRef role reddedilir");
+    }
+    // Gecersiz faceRef faceRole.
+    {
+        Mmw8Document bad = doc;
+        bad.componentInstances[0].faceRefs[0].faceRole = static_cast<SemanticFaceRole>(9);
+        check(readThrows(serializeDoc(bad)), "gecersiz faceRef faceRole reddedilir");
+    }
+    // Yinelenen handle anahtari.
+    {
+        Mmw8Document bad = doc;
+        bad.componentInstances[0].handles.push_back(
+            ConstraintHandleDef{HandleKey{"plate_face"}, HandleKind::Point, Vec3{1, 2, 3}});
+        check(readThrows(serializeDoc(bad)), "yinelenen handle anahtari reddedilir");
+    }
+    // Tekrarlanan J blogu.
+    {
+        std::string s = valid;
+        s += "J 1\n0\n";
+        check(readThrows(s), "tekrarlanan J blogu reddedilir");
+    }
+}
+
 int main() {
     // Document::load orphan tespiti icin yerlesik katalog gerekli.
     registerBuiltInComponents(ComponentRegistry::instance());
@@ -202,6 +417,9 @@ int main() {
     testDocumentRoundTrip();
     testUnknownTypeOrphan();
     testUndoRedo();
+    testSectionAnchorRoundTrip();
+    testLegacyComponentDefaults();
+    testParamRejections();
     std::printf("FAILURES: %d\n", g_failures);
     return g_failures == 0 ? 0 : 1;
 }

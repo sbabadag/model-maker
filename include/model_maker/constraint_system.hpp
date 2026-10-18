@@ -48,6 +48,24 @@ enum class HandleKind { Point, Axis, Plane };
 
 enum class ConstraintState { Free, UnderConstrained, Solved, Conflict, Unresolved, Cyclic };
 
+// KALICI handle tanimi (Slice 2d-3): ConstraintSystem icindeki HandleRecord'un
+// serilestirilebilir karsiligi. solve() sonucu (PositionSolveResult) PERSISTENT
+// DEGIL — her acilista yeniden turetilir; bu tanim yalnizca cozucu GIRDILERINI
+// (key + tur + son gecerli konum) tasir.
+struct ConstraintHandleDef {
+    HandleKey key;
+    HandleKind kind{HandleKind::Point};
+    Vec3 initialPosition{};
+};
+
+// KALICI bagimlilik tanimi (Slice 2d-3): `dependent` handle'in referans cozumu
+// `dependsOn` handle'ina baglidir. Cozucu bunlardan bagimlilik grafigini yeniden
+// kurar; dongu yuklemede/cozumde Cyclic olarak isaretlenir.
+struct ConstraintDependency {
+    HandleKey dependent;
+    HandleKey dependsOn;
+};
+
 // KONUM kisiti (PositionConstraint): handle'i bir hedef duzleme signedOffset ile
 // baglar. Duzlem n·x = d; handle n·x = d + signedOffset uzerinde tutulur.
 // ORIENTATION kisiti AYRIDIR (levha yuzunun kolon yuzune paralelligi); sonraki

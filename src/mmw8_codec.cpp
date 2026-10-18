@@ -338,6 +338,204 @@ void readComponentBody(std::istream& bs, std::vector<ComponentInstanceRecord>& o
     }
 }
 
+// --- Slice 2d-3: parametrik ref/kisit/cerceve serilestirme ------------------
+void putVec3(std::ostream& out, const Vec3& v) {
+    out << v.x << ' ' << v.y << ' ' << v.z;
+}
+Vec3 readVec3(std::istream& in, const char* what) {
+    Vec3 v;
+    v.x = readDouble(in, what);
+    v.y = readDouble(in, what);
+    v.z = readDouble(in, what);
+    return v;
+}
+
+// MemberLocalFrame: origin + u/v/w (12 double).
+void putMemberLocalFrame(std::ostream& out, const MemberLocalFrame& f) {
+    putVec3(out, f.origin); out << ' ';
+    putVec3(out, f.u); out << ' ';
+    putVec3(out, f.v); out << ' ';
+    putVec3(out, f.w);
+}
+MemberLocalFrame readMemberLocalFrame(std::istream& in, const char* what) {
+    MemberLocalFrame f;
+    f.origin = readVec3(in, what);
+    f.u = readVec3(in, what);
+    f.v = readVec3(in, what);
+    f.w = readVec3(in, what);
+    return f;
+}
+
+// LocalPlacement: origin + u/v/w (12 double).
+void putLocalPlacement(std::ostream& out, const LocalPlacement& p) {
+    putVec3(out, p.origin); out << ' ';
+    putVec3(out, p.u); out << ' ';
+    putVec3(out, p.v); out << ' ';
+    putVec3(out, p.w);
+}
+LocalPlacement readLocalPlacement(std::istream& in, const char* what) {
+    LocalPlacement p;
+    p.origin = readVec3(in, what);
+    p.u = readVec3(in, what);
+    p.v = readVec3(in, what);
+    p.w = readVec3(in, what);
+    return p;
+}
+
+// FaceReference (selector dahil) — BIR satirda. resolved/plane calisma ani
+// alanlaridir, YAZILMAZ (yuklemede adapter yeniden cozer).
+void putFaceReference(std::ostream& out, const FaceReference& f) {
+    out << f.source << ' ' << static_cast<int>(f.role) << ' '
+        << static_cast<int>(f.faceRole) << ' ' << (f.localFrame ? 1 : 0);
+    if (f.localFrame) { out << ' '; putMemberLocalFrame(out, *f.localFrame); }
+    out << ' ';
+    putString(out, f.selector);
+}
+FaceReference readFaceReference(std::istream& in) {
+    FaceReference f;
+    f.source = static_cast<EntityId>(readUint64(in, "faceRef source"));
+    const std::int64_t role = readInt64(in, "faceRef role");
+    if (role < 0 || role > 2) fail("invalid faceRef role");
+    f.role = static_cast<ComponentInputRole>(role);
+    const std::int64_t faceRole = readInt64(in, "faceRef faceRole");
+    if (faceRole < 0 || faceRole > 8) fail("invalid faceRef faceRole");
+    f.faceRole = static_cast<SemanticFaceRole>(faceRole);
+    const bool hasFrame = readBool(in, "faceRef hasFrame");
+    if (hasFrame) f.localFrame = readMemberLocalFrame(in, "faceRef localFrame");
+    f.selector = readString(in);
+    f.resolved = false;  // adapter cozer
+    return f;
+}
+
+// DistanceConstraint (handle + hedef FaceReference + offset + enabled) — BIR satir.
+void putDistanceConstraint(std::ostream& out, const DistanceConstraint& c) {
+    putString(out, c.handle.key);
+    out << ' ';
+    putFaceReference(out, c.target);
+    out << ' ' << c.signedOffset << ' ' << (c.enabled ? 1 : 0);
+}
+DistanceConstraint readDistanceConstraint(std::istream& in) {
+    DistanceConstraint c;
+    c.handle.key = readString(in);
+    c.target = readFaceReference(in);
+    c.signedOffset = readDouble(in, "constraint signedOffset");
+    c.enabled = readBool(in, "constraint enabled");
+    return c;
+}
+
+// ConstraintHandleDef (key + tur + baslangic konumu) — BIR satir.
+void putHandleDef(std::ostream& out, const ConstraintHandleDef& h) {
+    putString(out, h.key.key);
+    out << ' ' << static_cast<int>(h.kind) << ' ';
+    putVec3(out, h.initialPosition);
+}
+ConstraintHandleDef readHandleDef(std::istream& in) {
+    ConstraintHandleDef h;
+    h.key.key = readString(in);
+    const std::int64_t kind = readInt64(in, "handle kind");
+    if (kind < 0 || kind > 2) fail("invalid handle kind");
+    h.kind = static_cast<HandleKind>(kind);
+    h.initialPosition = readVec3(in, "handle initialPosition");
+    return h;
+}
+
+// ConstraintDependency (dependent -> dependsOn) — BIR satir.
+void putDependency(std::ostream& out, const ConstraintDependency& d) {
+    putString(out, d.dependent.key);
+    out << ' ';
+    putString(out, d.dependsOn.key);
+}
+ConstraintDependency readDependency(std::istream& in) {
+    ConstraintDependency d;
+    d.dependent.key = readString(in);
+    d.dependsOn.key = readString(in);
+    return d;
+}
+
+// ComponentInstanceRecord listesinde EntityId -> indeks (J/D/M bloklari icin).
+std::int64_t componentIndexById(const std::vector<ComponentInstanceRecord>& recs, EntityId id) {
+    for (std::size_t i = 0; i < recs.size(); ++i)
+        if (recs[i].id == id) return static_cast<std::int64_t>(i);
+    return -1;
+}
+
+// 'J' blogu: FaceReference listeleri (component id ile iliskili).
+void writeFaceRefBlock(std::ostream& out, const std::vector<ComponentInstanceRecord>& recs) {
+    std::size_t total = 0;
+    for (const auto& r : recs) total += r.faceRefs.size();
+    if (total == 0) return;
+    std::ostringstream body;
+    body << total << '\n';
+    for (const auto& r : recs)
+        for (const auto& f : r.faceRefs) {
+            body << r.id << ' ';
+            putFaceReference(body, f);
+            body << '\n';
+        }
+    const std::string b = body.str();
+    out << "J " << b.size() << '\n';
+    out.write(b.data(), static_cast<std::streamsize>(b.size()));
+}
+
+// 'D' blogu: DistanceConstraint + Handle + Dependency tanimlari.
+void writeConstraintBlock(std::ostream& out, const std::vector<ComponentInstanceRecord>& recs) {
+    std::size_t nC = 0, nH = 0, nD = 0;
+    for (const auto& r : recs) {
+        nC += r.constraints.size();
+        nH += r.handles.size();
+        nD += r.dependencies.size();
+    }
+    if (nC == 0 && nH == 0 && nD == 0) return;
+    std::ostringstream body;
+    body << nC << ' ' << nH << ' ' << nD << '\n';
+    for (const auto& r : recs)
+        for (const auto& c : r.constraints) {
+            body << r.id << ' ';
+            putDistanceConstraint(body, c);
+            body << '\n';
+        }
+    for (const auto& r : recs)
+        for (const auto& h : r.handles) {
+            body << r.id << ' ';
+            putHandleDef(body, h);
+            body << '\n';
+        }
+    for (const auto& r : recs)
+        for (const auto& d : r.dependencies) {
+            body << r.id << ' ';
+            putDependency(body, d);
+            body << '\n';
+        }
+    const std::string b = body.str();
+    out << "D " << b.size() << '\n';
+    out.write(b.data(), static_cast<std::streamsize>(b.size()));
+}
+
+// 'M' blogu: MagneticFrame / ComponentLocalFrame (frame + alt nesne yerlesimleri).
+void writeFrameBlock(std::ostream& out, const std::vector<ComponentInstanceRecord>& recs) {
+    std::size_t nFrames = 0;
+    for (const auto& r : recs)
+        if (!r.frame.children.empty()) ++nFrames;
+    if (nFrames == 0) return;
+    std::ostringstream body;
+    body << nFrames << '\n';
+    for (const auto& r : recs) {
+        if (r.frame.children.empty()) continue;
+        body << r.id << ' ';
+        putMemberLocalFrame(body, r.frame.frame);
+        body << ' ' << r.frame.children.size() << '\n';
+        for (const auto& c : r.frame.children) {
+            putString(body, c.id);
+            body << ' ';
+            putLocalPlacement(body, c.local);
+            body << '\n';
+        }
+    }
+    const std::string b = body.str();
+    out << "M " << b.size() << '\n';
+    out.write(b.data(), static_cast<std::streamsize>(b.size()));
+}
+
 } // namespace
 
 void writeMmw8(std::ostream& out, const Mmw8Document& doc) {
@@ -533,6 +731,13 @@ void writeMmw8(std::ostream& out, const Mmw8Document& doc) {
         out.write(b.data(), static_cast<std::streamsize>(b.size()));
     }
 
+    // Kuyruk: J/D/M bloklari (Slice 2d-3) — component'in parametrik ref/kisit/
+    // cerceve durumu. Ileriye-uyumlu AYRI bloklar; eski okuyucu bilinmeyen blogu
+    // kayipsiz korur. Bos veri varsa blok YAZILMAZ (dosya bayt-kararli kalir).
+    writeFaceRefBlock(out, doc.componentInstances);      // 'J'
+    writeConstraintBlock(out, doc.componentInstances);   // 'D'
+    writeFrameBlock(out, doc.componentInstances);        // 'M'
+
     // Kuyruk: K blogu (konstruksiyon turleri, Phase 4.1).
     if (!doc.constructionKinds.empty()) {
         std::ostringstream body;
@@ -541,6 +746,18 @@ void writeMmw8(std::ostream& out, const Mmw8Document& doc) {
             body << ck.entityId << ' ' << static_cast<int>(ck.kind) << '\n';
         const std::string b = body.str();
         out << "K " << b.size() << '\n';
+        out.write(b.data(), static_cast<std::streamsize>(b.size()));
+    }
+
+    // Kuyruk: A blogu (kesit yerlesim anchor'i, Slice 2d-3). Yalniz Top DISI
+    // anchor'lar yazilir (Top = varsayilan = eski davranis).
+    if (!doc.sectionAnchors.empty()) {
+        std::ostringstream body;
+        body << doc.sectionAnchors.size() << '\n';
+        for (const auto& sa : doc.sectionAnchors)
+            body << sa.entityId << ' ' << static_cast<int>(sa.anchor) << '\n';
+        const std::string b = body.str();
+        out << "A " << b.size() << '\n';
         out.write(b.data(), static_cast<std::streamsize>(b.size()));
     }
 
@@ -732,6 +949,7 @@ void readMmw8(std::istream& in, Mmw8Document& doc) {
 
     // --- Kuyruk: etiket-gudumlu bloklar ---
     bool sawH = false, sawB = false, sawV = false, sawG = false, sawE = false, sawI = false;
+    bool sawJ = false, sawD = false, sawM = false, sawA = false;
     std::size_t totalBlobBytes = 0;
     for (;;) {
         in >> std::ws;
@@ -945,6 +1163,106 @@ void readMmw8(std::istream& in, Mmw8Document& doc) {
             sawI = true;
             std::istringstream is(body);
             readComponentBody(is, parsed.componentInstances);
+        } else if (tag == 'J') {
+            if (sawJ) fail("repeated J block");
+            if (!sawI) fail("J block before I block (wrong order)");
+            sawJ = true;
+            std::istringstream js(body);
+            const std::uint64_t count = readUint64(js, "faceRef count");
+            if (count > kMmw8MaxFaceRefs) fail("faceRef count exceeds limit");
+            std::string line;
+            std::getline(js, line);  // count satırının kalanı (boş)
+            for (std::uint64_t fi = 0; fi < count; ++fi) {
+                if (!std::getline(js, line)) fail("missing faceRef record");
+                std::istringstream ls(line);
+                const EntityId compId = static_cast<EntityId>(readUint64(ls, "faceRef component id"));
+                const std::int64_t idx = componentIndexById(parsed.componentInstances, compId);
+                if (idx < 0) fail("faceRef component id not in component list");
+                parsed.componentInstances[static_cast<std::size_t>(idx)]
+                    .faceRefs.push_back(readFaceReference(ls));
+            }
+        } else if (tag == 'D') {
+            if (sawD) fail("repeated D block");
+            if (!sawI) fail("D block before I block (wrong order)");
+            sawD = true;
+            std::istringstream ds(body);
+            const std::uint64_t nC = readUint64(ds, "constraint count");
+            const std::uint64_t nH = readUint64(ds, "handle count");
+            const std::uint64_t nD = readUint64(ds, "dependency count");
+            if (nC > kMmw8MaxConstraints) fail("constraint count exceeds limit");
+            if (nH > kMmw8MaxHandles) fail("handle count exceeds limit");
+            if (nD > kMmw8MaxDependencies) fail("dependency count exceeds limit");
+            std::string line;
+            std::getline(ds, line);  // nD satırının kalanı (boş)
+            const auto compIdx = [&](EntityId compId) -> std::size_t {
+                const std::int64_t i = componentIndexById(parsed.componentInstances, compId);
+                if (i < 0) fail("constraint component id not in component list");
+                return static_cast<std::size_t>(i);
+            };
+            for (std::uint64_t ci = 0; ci < nC; ++ci) {
+                if (!std::getline(ds, line)) fail("missing constraint record");
+                std::istringstream ls(line);
+                const EntityId compId = static_cast<EntityId>(readUint64(ls, "constraint component id"));
+                parsed.componentInstances[compIdx(compId)]
+                    .constraints.push_back(readDistanceConstraint(ls));
+            }
+            for (std::uint64_t hi = 0; hi < nH; ++hi) {
+                if (!std::getline(ds, line)) fail("missing handle record");
+                std::istringstream ls(line);
+                const EntityId compId = static_cast<EntityId>(readUint64(ls, "handle component id"));
+                parsed.componentInstances[compIdx(compId)]
+                    .handles.push_back(readHandleDef(ls));
+            }
+            for (std::uint64_t di = 0; di < nD; ++di) {
+                if (!std::getline(ds, line)) fail("missing dependency record");
+                std::istringstream ls(line);
+                const EntityId compId = static_cast<EntityId>(readUint64(ls, "dependency component id"));
+                parsed.componentInstances[compIdx(compId)]
+                    .dependencies.push_back(readDependency(ls));
+            }
+            // Ayni component icinde yinelenen handle anahtari -> bozuk dosya.
+            for (const auto& r : parsed.componentInstances) {
+                std::unordered_map<std::string, bool> seenHandle;
+                for (const auto& h : r.handles) {
+                    if (seenHandle.count(h.key.key)) fail("duplicate handle key in component");
+                    seenHandle[h.key.key] = true;
+                }
+            }
+        } else if (tag == 'M') {
+            if (sawM) fail("repeated M block");
+            if (!sawI) fail("M block before I block (wrong order)");
+            sawM = true;
+            std::istringstream ms(body);
+            const std::uint64_t count = readUint64(ms, "frame count");
+            if (count > kMmw8MaxComponents) fail("frame count exceeds limit");
+            std::string line;
+            std::getline(ms, line);  // count satırının kalanı (boş)
+            std::unordered_map<EntityId, bool> seenFrame;
+            for (std::uint64_t fi = 0; fi < count; ++fi) {
+                if (!std::getline(ms, line)) fail("missing frame record");
+                std::istringstream ls(line);
+                const EntityId compId = static_cast<EntityId>(readUint64(ls, "frame component id"));
+                const std::int64_t idx = componentIndexById(parsed.componentInstances, compId);
+                if (idx < 0) fail("frame component id not in component list");
+                if (seenFrame.count(compId)) fail("duplicate frame component id");
+                seenFrame[compId] = true;
+                ComponentLocalFrame clf;
+                clf.frame = readMemberLocalFrame(ls, "frame member local frame");
+                const std::uint64_t nChildren = readUint64(ls, "frame child count");
+                if (nChildren > kMmw8MaxFrameChildren) fail("frame child count exceeds limit");
+                std::unordered_map<std::string, bool> seenChild;
+                for (std::uint64_t ci = 0; ci < nChildren; ++ci) {
+                    if (!std::getline(ms, line)) fail("missing frame child record");
+                    std::istringstream cs(line);
+                    MagneticChild child;
+                    child.id = readString(cs);
+                    child.local = readLocalPlacement(cs, "child local placement");
+                    if (seenChild.count(child.id)) fail("duplicate frame child id");
+                    seenChild[child.id] = true;
+                    clf.children.push_back(std::move(child));
+                }
+                parsed.componentInstances[static_cast<std::size_t>(idx)].frame = std::move(clf);
+            }
         } else if (tag == 'K') {
             std::istringstream ks(body);
             const std::uint64_t count = readUint64(ks, "constructionKind count");
@@ -960,6 +1278,24 @@ void readMmw8(std::istream& in, Mmw8Document& doc) {
                 if (seenCk.count(ck.entityId)) fail("duplicate construction entityId");
                 seenCk[ck.entityId] = true;
                 parsed.constructionKinds.push_back(ck);
+            }
+        } else if (tag == 'A') {
+            if (sawA) fail("repeated A block");
+            sawA = true;
+            std::istringstream as(body);
+            const std::uint64_t count = readUint64(as, "sectionAnchor count");
+            if (count > kMmw8MaxModels) fail("sectionAnchor count exceeds limit");
+            std::unordered_map<EntityId, bool> seenSa;
+            for (std::uint64_t ai = 0; ai < count; ++ai) {
+                Mmw8SectionAnchor sa;
+                sa.entityId = static_cast<EntityId>(readUint64(as, "anchor entityId"));
+                const std::int64_t anchor = readInt64(as, "anchor kind");
+                if (anchor < 0 || anchor > 2) fail("invalid section anchor");
+                sa.anchor = static_cast<SectionAnchor>(anchor);
+                if (!seenIds.count(sa.entityId)) fail("anchor entityId not in model list");
+                if (seenSa.count(sa.entityId)) fail("duplicate anchor entityId");
+                seenSa[sa.entityId] = true;
+                parsed.sectionAnchors.push_back(sa);
             }
         } else {
             // Bilinmeyen blok: kayipsiz korunur.
