@@ -311,7 +311,7 @@ QtMainWindow::QtMainWindow(QWidget* parent)
             mm::EndPlateParams p = conn.params;
             if (!openEndPlateParamsDialog(p, p)) return;
 #ifdef MM_HAS_OCC
-            app_.setSelectedEndPlateConnection(p);
+            app_.setSelectedEndPlateConnection(conn.id, p);
 #endif
         });
     });

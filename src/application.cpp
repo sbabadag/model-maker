@@ -5064,10 +5064,25 @@ bool Application::selectedEndPlateConnection(EndPlateConnection& out) const {
 }
 
 #ifdef MM_HAS_OCC
-bool Application::setSelectedEndPlateConnection(const EndPlateParams& newParams) {
-    const auto idxOpt = selectedEndPlateConnectionIndex();
-    if (!idxOpt) return false;
+bool Application::setSelectedEndPlateConnection(EntityId connId, const EndPlateParams& newParams) {
+    const auto idxOpt = document_.indexOfEndPlateConnection(connId);
+    if (!idxOpt) {
+        if (std::getenv("MM_ENDPLATE_DIAG") != nullptr) {
+            FILE* d = fopen("model-maker-endplate-diag.log", "a");
+            if (d) { fprintf(d, "EDIT conn=%llu -> INDEX BULUNAMADI\n", (unsigned long long)connId); fclose(d); }
+        }
+        return false;
+    }
     const std::size_t index = *idxOpt;
+    if (std::getenv("MM_ENDPLATE_DIAG") != nullptr) {
+        FILE* d = fopen("model-maker-endplate-diag.log", "a");
+        if (d) {
+            fprintf(d, "EDIT conn=%llu idx=%zu newThickness=%.3f oldThickness=%.3f\n",
+                    (unsigned long long)connId, index, newParams.plateThickness,
+                    document_.endPlateConnections()[index].params.plateThickness);
+            fclose(d);
+        }
+    }
     // PURE hazirlik: yeni parametrelerle yeniden coz + uret (belge DEGISMEZ).
     const auto prepared = prepareEndPlateConnection(index, &newParams);
     if (!prepared) {

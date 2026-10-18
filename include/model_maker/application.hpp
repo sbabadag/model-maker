@@ -479,9 +479,10 @@ public:
     bool selectedEndPlateConnection(EndPlateConnection& out) const;
 #ifdef MM_HAS_OCC
     // Secili End Plate baglantisinin parametrelerini günceller: yeniden çözer,
-    // levha/bulon/delikleri yeniden üretir (undo'lu). Secim bir bağlantı değilse
-    // veya çözülemezse false.
-    bool setSelectedEndPlateConnection(const EndPlateParams& newParams);
+    // levha/bulon/delikleri yeniden üretir (undo'lu). Baglanti kimligi (EntityId)
+    // dogrudan verilir — async diyalog sirasinda selectedModels_ degisebildigi
+    // icin secime guvenilmez. Cozulemezse false.
+    bool setSelectedEndPlateConnection(EntityId connId, const EndPlateParams& newParams);
 #endif
     // End Plate alt nesnesine (levha/bulon display) cift tik -> düzenleme
     // diyaloğu isteği. Qt tarafi openEndPlateParamsDialog açar.
