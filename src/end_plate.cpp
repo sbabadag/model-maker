@@ -168,14 +168,46 @@ EndPlatePlacement computeEndPlatePlacementOnFace(const ReferencePlane& face, dou
                                                  double secWidth, double secHeight,
                                                  const EndPlateParams& params,
                                                  const Vec3& sectionHeightDir,
-                                                 double anchorOffset) noexcept {
+                                                 double anchorOffset,
+                                                 const Vec3& sectionWidthDir) noexcept {
     EndPlatePlacement out;
-    // Kalinlik yonu = yuzey normali (kolondan DISARI, kirise dogru). face.normal
-    // birim oldugu varsayilir ama endPlateFrame yeniden normalize eder.
-    const EndPlateFrame f = endPlateFrame(face.normal, Vec3{0.0, 0.0, 1.0});
-    out.u = f.u;
-    out.v = f.v;
-    out.axis = f.axis;
+    // Levha normali = kolon yuzey normali (kolondan DISARI, kirise dogru).
+    const Vec3 axis = unitOr(face.normal, Vec3{0.0, 0.0, 1.0});
+    // Levha duzlemindeki eksenler (Tekla 3.4): DIKEY = kiris kesit YUKSEKLIK
+    // ekseninin levha duzlemindeki gecerli izdusumu; YATAY = dikey x normal
+    // (sag-el). Dunya Z'si YALNIZCA acik/dejenere fallback'tir. Boylece donmus
+    // kiriste (profileRotation) levha cercevesi gercek kesit yonune oturur,
+    // yanlis 90° donme olmaz. Kesit ofseti ile normal yonlu gap matematiksel
+    // ayri tutulur (skew kirisde gap bozulmaz).
+    const double dotN = axis.x * sectionHeightDir.x + axis.y * sectionHeightDir.y +
+                        axis.z * sectionHeightDir.z;
+    Vec3 vv{sectionHeightDir.x - axis.x * dotN, sectionHeightDir.y - axis.y * dotN,
+            sectionHeightDir.z - axis.z * dotN};
+    const double vvLen = std::sqrt(vv.x * vv.x + vv.y * vv.y + vv.z * vv.z);
+    Vec3 uu;
+    if (vvLen > 1e-9) {
+        vv = Vec3{vv.x / vvLen, vv.y / vvLen, vv.z / vvLen};
+        uu = cross(vv, axis);  // sag-el: u x v = axis
+    } else {
+        // Yukseklik ekseni normalle cakisik (dejenere) -> GENISLIK eksenini dene.
+        const double dotW = axis.x * sectionWidthDir.x + axis.y * sectionWidthDir.y +
+                            axis.z * sectionWidthDir.z;
+        Vec3 ww{sectionWidthDir.x - axis.x * dotW, sectionWidthDir.y - axis.y * dotW,
+                sectionWidthDir.z - axis.z * dotW};
+        const double wwLen = std::sqrt(ww.x * ww.x + ww.y * ww.y + ww.z * ww.z);
+        if (wwLen > 1e-9) {
+            uu = Vec3{ww.x / wwLen, ww.y / wwLen, ww.z / wwLen};
+            vv = cross(axis, uu);
+        } else {
+            // Acik, tanimli fallback: dunya Z kurali (eski davranis).
+            const EndPlateFrame f = endPlateFrame(face.normal, Vec3{0.0, 0.0, 1.0});
+            uu = f.u;
+            vv = f.v;
+        }
+    }
+    out.u = uu;
+    out.v = vv;
+    out.axis = axis;
     double topE, botE;
     effectiveVerticalEdges(params, topE, botE);
     out.plateWidth = secWidth + 2.0 * params.plateExtra;
@@ -184,29 +216,14 @@ EndPlatePlacement computeEndPlatePlacementOnFace(const ReferencePlane& face, dou
     if (out.plateWidth < 1.0) out.plateWidth = 1.0;
     if (out.plateHeight < 1.0) out.plateHeight = 1.0;
 
-    // Levhanin kolon tarafindaki yuzu = face.origin + gap * normal; merkez,
-    // bundan kalinlik/2 kadar normal yonunde (kirise dogru) oturur.
+    // Levha merkezi: temas noktasindan normal yonunde gap + t/2; duzlem-ici
+    // kesit ofseti (anchor + asimetrik pay) YALNIZ levha dikey ekseni vv
+    // boyunca uygulanir -> gap normalde bozulmaz, kolona girip cikmaz.
     const double halfT = params.plateThickness * 0.5;
-    out.plateCenter = Vec3{face.origin.x + face.normal.x * (gap + halfT),
-                           face.origin.y + face.normal.y * (gap + halfT),
-                           face.origin.z + face.normal.z * (gap + halfT)};
-
-    // SectionAnchor duzeltmesi: levha, kiris EKSENINE degil kesit MERKEZINE
-    // oturmali. Top anchor'da kesit eksenin ALTINA sarkar, yani merkez
-    // sectionHeightDir yonunde -h/2 kayar (profileSectionAnchorOffset).
-    // sectionHeightDir ile levhanin v yonu dik baglantida CAKISIR; offseti
-    // bilincli olarak sectionHeightDir yonunde uygula (levha v'suyla degil).
-    if (std::abs(anchorOffset) > 1e-12) {
-        out.plateCenter.x += sectionHeightDir.x * anchorOffset;
-        out.plateCenter.y += sectionHeightDir.y * anchorOffset;
-        out.plateCenter.z += sectionHeightDir.z * anchorOffset;
-    }
-    // Ayrı ust/alt pay: levha merkezini kesit yukseklik yonunde (top-bottom)/2 kaydir.
-    if (std::abs(topE - botE) > 1e-12) {
-        out.plateCenter.x += sectionHeightDir.x * 0.5 * (topE - botE);
-        out.plateCenter.y += sectionHeightDir.y * 0.5 * (topE - botE);
-        out.plateCenter.z += sectionHeightDir.z * 0.5 * (topE - botE);
-    }
+    const double inPlaneShift = anchorOffset + 0.5 * (topE - botE);
+    out.plateCenter = Vec3{face.origin.x + axis.x * (gap + halfT) + vv.x * inPlaneShift,
+                           face.origin.y + axis.y * (gap + halfT) + vv.y * inPlaneShift,
+                           face.origin.z + axis.z * (gap + halfT) + vv.z * inPlaneShift};
 
     out.bolts = makeEndPlateBolts(out, params);
     return out;

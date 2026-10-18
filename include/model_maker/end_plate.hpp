@@ -143,6 +143,6 @@ EndPlatePlacement computeEndPlatePlacement(const Vec3& beamEnd, const Vec3& beam
 EndPlatePlacement computeEndPlatePlacementOnFace(
     const ReferencePlane& face, double gap, double secWidth, double secHeight,
     const EndPlateParams& params, const Vec3& sectionHeightDir = Vec3{0.0, 0.0, 1.0},
-    double anchorOffset = 0.0) noexcept;
+    double anchorOffset = 0.0, const Vec3& sectionWidthDir = Vec3{0.0, 0.0, 0.0}) noexcept;
 
 } // namespace mm

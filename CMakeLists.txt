@@ -631,8 +631,13 @@ if(BUILD_TESTING)
         add_executable(model_maker_occ_end_plate_placement tests/occ_end_plate_placement_acceptance.cpp)
         target_link_libraries(model_maker_occ_end_plate_placement PRIVATE model_maker_occ)
         add_test(NAME model_maker_occ_end_plate_placement COMMAND model_maker_occ_end_plate_placement)
+        # TEKLA 144 M1 GEOMETRY: web tarafi temas (None rol) + negatif flans +
+        # profile rotation levha cercevesi — GERCEK OCCT ile sayisal dogrulanir.
+        add_executable(model_maker_occ_end_plate_144_geometry tests/occ_end_plate_144_geometry_test.cpp)
+        target_link_libraries(model_maker_occ_end_plate_144_geometry PRIVATE model_maker_occ)
+        add_test(NAME model_maker_occ_end_plate_144_geometry COMMAND model_maker_occ_end_plate_144_geometry)
         if(UNIX)
-            set_tests_properties(model_maker_occ_store_roundtrip model_maker_occ_document_roundtrip model_maker_occ_bolt_group_roundtrip model_maker_occ_end_plate_roundtrip model_maker_occ_end_plate_placement PROPERTIES
+            set_tests_properties(model_maker_occ_store_roundtrip model_maker_occ_document_roundtrip model_maker_occ_bolt_group_roundtrip model_maker_occ_end_plate_roundtrip model_maker_occ_end_plate_placement model_maker_occ_end_plate_144_geometry PROPERTIES
                 ENVIRONMENT "LD_LIBRARY_PATH=${OCC_ROOT}/lib:$ENV{LD_LIBRARY_PATH}")
         endif()
     endif()

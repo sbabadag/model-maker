@@ -4675,7 +4675,19 @@ bool Application::resolveEndPlatePlacement(std::size_t mainIdx, std::size_t secI
     const ProfileSectionFrame beamSection = profileSectionFrame(
         Vec3{memberDir.x / memberDirLen, memberDir.y / memberDirLen, memberDir.z / memberDirLen},
         beamSecNormal);
-    const Vec3 sectionHeightDir = beamSection.height;
+    // PROFILE ROTATION (Tekla Test D): kesit genislik/yukseklik eksenleri uye
+    // ekseni etrafinda profileRotation kadar doner (extrudeProfileSolid ile
+    // AYNI kural). Donmus kiriste levha cercevesi + anchor ofseti gercek kesit
+    // yonune oturmali. Donme: w' = w*ca + h*sa, h' = h*ca - w*sa.
+    Vec3 sectionWidthDir = beamSection.width;
+    Vec3 sectionHeightDir = beamSection.height;
+    if (std::abs(sp.profileRotation) > 1e-9) {
+        const double a = sp.profileRotation * 0.017453292519943295;
+        const double ca = std::cos(a), sa = std::sin(a);
+        const Vec3 w = beamSection.width, h = beamSection.height;
+        sectionWidthDir = Vec3{w.x * ca + h.x * sa, w.y * ca + h.y * sa, w.z * ca + h.z * sa};
+        sectionHeightDir = Vec3{h.x * ca - w.x * sa, h.y * ca - w.y * sa, h.z * ca - w.z * sa};
+    }
     // Kolonun GERCEK temas yuzunu + temas NOKTASINI coz (MemberLocalFrame +
     // kesit boyutlari). Bbox yolu yalnizca ACIK fallback olarak kalir.
     ReferencePlane face;
@@ -4717,13 +4729,13 @@ bool Application::resolveEndPlatePlacement(std::size_t mainIdx, std::size_t secI
 #ifdef MM_HAS_OCC
         if (const TopoDS_Shape* solid = findOccSolid(mainIdx)) {
             contact = resolveOcctContact(*solid, colFrame, colDims, colLen, beamTo, beamDir,
-                                         SemanticFaceRole::FlangeOuterPositive);
+                                         SemanticFaceRole::None);
             haveContact = true;
         }
 #endif
         if (!haveContact || contact.status == ResolutionStatus::Unresolved) {
             contact = resolveContactPlacement(colFrame, colDims, colLen, beamTo, beamDir,
-                                              SemanticFaceRole::FlangeOuterPositive);
+                                              SemanticFaceRole::None);
         }
         contactStatus = contact.status;
         contactRole = contact.semanticFaceRole;
@@ -4812,7 +4824,7 @@ bool Application::resolveEndPlatePlacement(std::size_t mainIdx, std::size_t secI
         }
     }
     placement = computeEndPlatePlacementOnFace(face, params.gap, secWidth, secHeight, params,
-                                               sectionHeightDir, anchorOffset);
+                                               sectionHeightDir, anchorOffset, sectionWidthDir);
 
     // BULON DELIGI FLANS KENARINA TAKILMASIN: levha kiris kesitine gore
     // (plateExtra ile) buyutuldugu icin, dar kolonlarda (ornegin HEB260 kolon +
