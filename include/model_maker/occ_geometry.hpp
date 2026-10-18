@@ -62,9 +62,12 @@ TopoDS_Shape applyCutModifierChain(const TopoDS_Shape& base,
 // KKR/box profiller icin ici bos kutu; digerleri icin dolu dikdortgen.
 // referenceNormal: baslik plakalarinin PARALEL olacagi duzlemin normali
 // (varsayilan dunya Z = XY; aktif is duzlemi icin bkz. view_definition.hpp).
+// anchor: kesitin uye eksenine gore dusey yerlesimi (Top/Center/Bottom).
+// DEFAULT Top ("top of section") — mevcut modellerin davranisi DEGISMEZ.
 TopoDS_Shape extrudeProfileSolid(const SteelProfile& profile, const Vec3& from,
                                      const Vec3& to, double rotationDegrees = 0.0,
-                                     const Vec3& referenceNormal = Vec3{0.0, 0.0, 1.0});
+                                     const Vec3& referenceNormal = Vec3{0.0, 0.0, 1.0},
+                                     SectionAnchor anchor = SectionAnchor::Top);
 
 WireframeModel shapeToWireframeWithFaces(const TopoDS_Shape& shape, double faceDeflection,
                                          int circleSegments = 48);

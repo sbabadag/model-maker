@@ -2,8 +2,8 @@
 //
 // Ana iddia: kolon/kiris DEGISTIGINDE mevcut End Plate baglantisinin levhasi,
 // bulonlari ve delikleri GERCEK B-Rep uzerinden yeniden hesaplanir (kirli bayrak
-// veya koordinat hesabi DEGIL). Bu test, Application::rebuildEndPlateConnection
-// icindeki URETIM hattini (resolveOcctContact -> computeEndPlatePlacementOnFace
+// veya koordinat hesabi DEGIL). Bu test, Application::prepareEndPlateConnection
+// (Slice 2d-2c'de rebuildEndPlateConnection'dan ayrilan) icindeki URETIM hattini (resolveOcctContact -> computeEndPlatePlacementOnFace
 // -> buildEndPlateFromPlacement -> boltGroupHoleModifiers) ayni bilesenlerle
 // calistirir ve degisiklik sonrasi geometrinin TEPKI verdigini dogrular.
 //
@@ -16,6 +16,9 @@
 #include "model_maker/end_plate_geometry.hpp"
 #include "model_maker/bolt.hpp"
 #include "model_maker/profile_database.hpp"
+
+#include <Bnd_Box.hxx>
+#include <BRepBndLib.hxx>
 
 #include <cmath>
 #include <cstdio>
@@ -74,6 +77,15 @@ static std::size_t holeCount(const EndPlatePlacement& placement) {
     BoltGroup b = placement.bolts;
     b.parts = {1, 2};  // levha + kolon (sahte kimlikler)
     return boltGroupHoleModifiers(b).size();
+}
+
+// Katinin dunya Y sinir kutusu (min, max) — SectionAnchor'in FIZIKSEL yuzu
+// gercekten kaydirip kaydirmadigini dogrulamak icin (pure B-Rep, resolver yok).
+static void solidYBounds(const TopoDS_Shape& s, double& ymin, double& ymax) {
+    Bnd_Box box;
+    BRepBndLib::Add(s, box);
+    double xmin, zmin, xmax, zmax;
+    box.Get(xmin, ymin, zmin, xmax, ymax, zmax);
 }
 
 int main() {
@@ -198,6 +210,39 @@ int main() {
                 stable = false;
         }
         CHECK(stable, "L: 5x recompute ayni konum + 8 delik (birikme yok)");
+    }
+
+    // --- N: SectionAnchor (Slice 2d-2c P3) — FIZIKSEL yuz kayar mi? ----------
+    // Top (default): ust flans dis yuzu Y=0 (eksen), kesit Y=[-h,0].
+    // Center: Y=[-h/2,+h/2]. Bottom: Y=[0,+h]. DEFAULT Top DEGISMEDI.
+    {
+        double ymin, ymax;
+        solidYBounds(col300, ymin, ymax);
+        CHECK(near(ymax, 0.0, 1e-6) && near(ymin, -300.0, 1e-6),
+              "N: Top anchor -> Y=[-300,0] (ust yuzey eksende, mevcut davranis)");
+
+        const TopoDS_Shape colCenter =
+            extrudeProfileSolid(heb300, {0, 0, 0}, {0, 0, 3000}, 0.0, {0, 1, 0},
+                                SectionAnchor::Center);
+        solidYBounds(colCenter, ymin, ymax);
+        CHECK(near(ymax, 150.0, 1e-6) && near(ymin, -150.0, 1e-6),
+              "N: Center anchor -> Y=[-150,+150] (merkez eksende)");
+
+        const TopoDS_Shape colBottom =
+            extrudeProfileSolid(heb300, {0, 0, 0}, {0, 0, 3000}, 0.0, {0, 1, 0},
+                                SectionAnchor::Bottom);
+        solidYBounds(colBottom, ymin, ymax);
+        CHECK(near(ymax, 300.0, 1e-6) && near(ymin, 0.0, 1e-6),
+              "N: Bottom anchor -> Y=[0,+300] (alt yuzey eksende)");
+
+        // Top anchor HEB300->HEB400: ust yuz Y=0 SABIT (temas korunur), kesit
+        // yalnizca asagi derinlesir (Y=-400). Levha DUSEY hareket ETMEZ.
+        const TopoDS_Shape col400Top =
+            extrudeProfileSolid(heb400, {0, 0, 0}, {0, 0, 3000}, 0.0, {0, 1, 0},
+                                SectionAnchor::Top);
+        solidYBounds(col400Top, ymin, ymax);
+        CHECK(near(ymax, 0.0, 1e-6) && near(ymin, -400.0, 1e-6),
+              "N: Top anchor HEB400 -> ust yuz Y=0 SABIT, kesit -400'e derinlesti");
     }
 
     std::printf("\n%s (%d failures)\n", failures ? "FAILED" : "ALL PASS", failures);

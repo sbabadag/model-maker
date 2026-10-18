@@ -209,6 +209,16 @@ ProfileSectionKind classifyProfileSection(const SteelProfile& profile) noexcept 
     return isIShape ? ProfileSectionKind::ISection : ProfileSectionKind::Box;
 }
 
+double profileSectionAnchorOffset(const SteelProfile& profile, SectionAnchor anchor) noexcept {
+    const double topY = profileSectionTopY(profile);
+    switch (anchor) {
+    case SectionAnchor::Top: return -topY;    // ust yuzey eksende
+    case SectionAnchor::Center: return 0.0;   // merkez/orijin eksende
+    case SectionAnchor::Bottom: return topY;  // alt yuzey eksende (kesit simetrik)
+    }
+    return 0.0;
+}
+
 double profileSectionTopY(const SteelProfile& profile) noexcept {
     // Olcu varsayilanlari kati ureticisiyle AYNI (bkz. extrudeProfileSolid).
     const double w = profile.width > 0.0 ? profile.width : 50.0;

@@ -2,15 +2,42 @@
 
 namespace mm {
 
-void ComponentDependencyGraph::build(const std::vector<ComponentInstanceRecord>& components) {
+ComponentRefs componentRefs(const ComponentInstanceRecord& record) noexcept {
+    ComponentRefs refs;
+    refs.id = record.id;
+    if (record.mainPart != kInvalidEntityId) refs.parts.push_back(record.mainPart);
+    for (EntityId s : record.secondaryParts)
+        if (s != kInvalidEntityId) refs.parts.push_back(s);
+    return refs;
+}
+
+ComponentRefs componentRefs(const EndPlateConnection& conn) noexcept {
+    ComponentRefs refs;
+    refs.id = conn.id;
+    if (conn.mainPart != kInvalidEntityId) refs.parts.push_back(conn.mainPart);
+    if (conn.secondaryPart != kInvalidEntityId) refs.parts.push_back(conn.secondaryPart);
+    return refs;
+}
+
+void ComponentDependencyGraph::buildFromRefs(const std::vector<ComponentRefs>& refs) {
     partToComponents_.clear();
-    componentCount_ = components.size();
-    for (const ComponentInstanceRecord& rec : components) {
-        if (rec.id == kInvalidEntityId) continue;
-        if (rec.mainPart != kInvalidEntityId) partToComponents_[rec.mainPart].insert(rec.id);
-        for (EntityId s : rec.secondaryParts)
-            if (s != kInvalidEntityId) partToComponents_[s].insert(rec.id);
+    componentCount_ = refs.size();
+    for (const ComponentRefs& r : refs) {
+        if (r.id == kInvalidEntityId) continue;
+        for (EntityId p : r.parts)
+            if (p != kInvalidEntityId) partToComponents_[p].insert(r.id);
     }
+}
+
+void ComponentDependencyGraph::build(const std::vector<ComponentInstanceRecord>& components) {
+    std::vector<ComponentRefs> refs;
+    refs.reserve(components.size());
+    for (const ComponentInstanceRecord& rec : components) refs.push_back(componentRefs(rec));
+    buildFromRefs(refs);
+}
+
+void ComponentDependencyGraph::build(const std::vector<ComponentRefs>& components) {
+    buildFromRefs(components);
 }
 
 std::vector<EntityId> ComponentDependencyGraph::dependents(EntityId partId) const {
@@ -40,32 +67,40 @@ bool ComponentDependencyGraph::dependsOn(const ComponentInstanceRecord& record,
     return false;
 }
 
+bool ComponentDependencyGraph::dependsOn(const ComponentRefs& refs, EntityId partId) noexcept {
+    for (EntityId p : refs.parts)
+        if (p == partId) return true;
+    return false;
+}
+
 RecomputePlanner::Plan RecomputePlanner::plan(
     const std::vector<ComponentInstanceRecord>& components,
     const std::vector<EntityId>& changedParts, const Resolver& resolver) const {
+    std::vector<ComponentRefs> refs;
+    refs.reserve(components.size());
+    for (const ComponentInstanceRecord& rec : components) refs.push_back(componentRefs(rec));
+    return planRefs(refs, changedParts,
+                    [&](EntityId cid) -> RecomputeItem {
+                        for (const ComponentInstanceRecord& c : components)
+                            if (c.id == cid) return resolver(c);
+                        RecomputeItem item;
+                        item.componentId = cid;
+                        item.status = RecomputeStatus::Unresolved;
+                        item.error = L"component kaydi bulunamadi";
+                        return item;
+                    });
+}
+
+RecomputePlanner::Plan RecomputePlanner::planRefs(
+    const std::vector<ComponentRefs>& components,
+    const std::vector<EntityId>& changedParts, const ResolverById& resolver) const {
     ComponentDependencyGraph graph;
     graph.build(components);
     const std::vector<EntityId> affected = graph.dependentsOf(changedParts);
 
     Plan plan;
     plan.items.reserve(affected.size());
-    for (EntityId cid : affected) {
-        const ComponentInstanceRecord* rec = nullptr;
-        for (const ComponentInstanceRecord& c : components)
-            if (c.id == cid) {
-                rec = &c;
-                break;
-            }
-        if (!rec) {
-            RecomputeItem item;
-            item.componentId = cid;
-            item.status = RecomputeStatus::Unresolved;
-            item.error = L"component kaydi bulunamadi";
-            plan.items.push_back(std::move(item));
-            continue;
-        }
-        plan.items.push_back(resolver(*rec));
-    }
+    for (EntityId cid : affected) plan.items.push_back(resolver(cid));
 
     plan.allSucceeded = true;
     for (const RecomputeItem& it : plan.items)

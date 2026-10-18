@@ -307,12 +307,26 @@ public:
     bool resolveEndPlatePlacement(std::size_t mainIdx, std::size_t secIdx,
                                   const EndPlateParams& params,
                                   EndPlatePlacement& placement, std::wstring& err);
-    // Bir End Plate baglantisini YERINDE yeniden uretir (kararli kimlikler).
-    // Yeni temas + yerlesim cozulur, levha + bulon solid/wire yeniden uretilir,
-    // setEndPlateConnection (kimlik korumali) + putOccSolid + kesme yeniden
-    // uygulanir. Cozum/geometri basarisizsa false — ESKI gecerli geometri
-    // KORUNUR. Degisiklikler ACIK undo kaydina yazilir (atomik transaction).
-    bool rebuildEndPlateConnection(std::size_t index);
+    // SLICE 2d-2c P0: bir End Plate baglantisinin GECICI yeniden uretim sonucu.
+    // OCCT tipleri burada kalir; prepare ciktisi, commit girdisi. prepare AŞAMASINDA
+    // belge DEGISMEZ (pure); commit yalnizca infallible document yazimlari yapar.
+#ifdef MM_HAS_OCC
+    struct PreparedEndPlate {
+        std::size_t index{0};
+        EndPlateConnection updated;   // yeni bulon grubu (kimlikler korunur)
+        TopoDS_Shape plateSolid;
+        TopoDS_Shape boltSolid;
+        WireframeModel plateModel;
+        WireframeModel boltDisplay;
+    };
+    // PREPARE (pure, mutasyon yok): index'li baglantinin yeni yerlesimini coz +
+    // levha/bulon/tel kafesi GECICI uret. Basarisizlikta nullopt — belge DEGISMEZ.
+    std::optional<PreparedEndPlate> prepareEndPlateConnection(std::size_t index);
+    // COMMIT (infallible): hazirlanani ACIK undo kaydina uygular (kararli kimlik).
+    // Donus: baglanti basariyla uygulandiysa true; setEndPlateConnection
+    // reddederse false (cagiran transaction'i rollback etmeli).
+    bool commitEndPlateConnection(std::size_t index, const PreparedEndPlate& p);
+#endif
     // changedParts'e main/secondary olarak bagli TUM End Plate baglantilarini
     // yeniden hesaplar (deterministik kayit sirasi). Kolon/kiris tasininca,
     // dondurulunce veya profili degisince cagrilir.

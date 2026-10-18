@@ -6,6 +6,7 @@
 #ifdef MM_HAS_OCC
 #include "model_maker/occ_geometry.hpp"
 #include "model_maker/occ_solid_store.hpp"
+#include "model_maker/component_recompute.hpp"
 #include "model_maker/bolt_geometry.hpp"
 #include "model_maker/end_plate_geometry.hpp"
 #include "model_maker/occ_contact_resolver.hpp"
@@ -4565,67 +4566,125 @@ bool Application::resolveEndPlatePlacement(std::size_t mainIdx, std::size_t secI
 }
 
 #ifdef MM_HAS_OCC
-// SLICE 2d-2b: mevcut End Plate baglantisini YERINDE yeniden uret (kararli
-// kimlikler: levha/bulon/display EntityId'leri DEGISMEZ). Cozum veya geometri
-// uretimi basarisizsa false — eski gecerli geometri KORUNUR (degisiklik yok).
-bool Application::rebuildEndPlateConnection(std::size_t index) {
-    if (index >= document_.endPlateConnections().size()) return false;
+// SLICE 2d-2c P0: PREPARE (pure) — bir End Plate baglantisinin yeni yerlesimini
+// coz + levha/bulon/tel kafesi GECICI uret. Hicbir belge mutasyonu YOKTUR;
+// basarisizlikta nullopt ve belge DEGISMEZ. (Eski rebuildEndPlateConnection'in
+// "coz + uret" yarisi; "uygula" yarisi commitEndPlateConnection'a tasindi.)
+std::optional<Application::PreparedEndPlate>
+Application::prepareEndPlateConnection(std::size_t index) {
+    if (index >= document_.endPlateConnections().size()) return std::nullopt;
     const EndPlateConnection conn = document_.endPlateConnections()[index];
     const auto mainIdxOpt = document_.indexOfEntity(conn.mainPart);
     const auto secIdxOpt = document_.indexOfEntity(conn.secondaryPart);
-    if (!mainIdxOpt || !secIdxOpt) return false;  // parca kayboldu -> eski korunur
-
-    // Kolonun B-Rep tabanini GUNCEL ozelliklerden yeniden uret (tasima/donme/
-    // profil degisimi sonrasi findOccSolid bayat kalmasin). Kiris icin B-Rep
-    // temas cozumunde KULLANILMAZ (eksen/uc kalici ozelliklerden gelir).
-    rebuildCutBaseSolid(conn.mainPart);
+    if (!mainIdxOpt || !secIdxOpt) return std::nullopt;  // parca kayboldu
 
     EndPlatePlacement placement;
     std::wstring err;
     if (!resolveEndPlatePlacement(*mainIdxOpt, *secIdxOpt, conn.params, placement, err))
-        return false;  // cozulemedi -> eski gecerli geometri korunur
+        return std::nullopt;  // cozulemedi
 
-    // Yeni geometriyi GECICI uret ve dogrula (sonra commit).
-    const TopoDS_Shape plateSolid = buildEndPlateFromPlacement(placement);
+    PreparedEndPlate p;
+    p.index = index;
+    p.updated = conn;
+    p.updated.bolts = placement.bolts;  // yeni origin/pattern; kimlikler commit'te korunur
+    p.plateSolid = buildEndPlateFromPlacement(placement);
     const double grip = placement.plateThickness + 15.0;
-    const TopoDS_Shape boltSolid = buildBoltGroupAssemblyShape(placement.bolts, grip);
-    if (plateSolid.IsNull() || boltSolid.IsNull()) return false;  // geometri hatasi
-
-    WireframeModel plateModel = shapeToWireframeWithFaces(plateSolid, 0.15);
-    WireframeModel boltDisplay = shapeToWireframeWithFaces(boltSolid, 0.15);
+    p.boltSolid = buildBoltGroupAssemblyShape(placement.bolts, grip);
+    if (p.plateSolid.IsNull() || p.boltSolid.IsNull()) return std::nullopt;  // geometri hatasi
+    p.plateModel = shapeToWireframeWithFaces(p.plateSolid, 0.15);
+    p.boltDisplay = shapeToWireframeWithFaces(p.boltSolid, 0.15);
     {
-        auto bp = boltDisplay.properties();
+        auto bp = p.boltDisplay.properties();
         bp.trueColor = 0x8B592A;
         bp.effectiveColor = 0x8B592A;
-        boltDisplay.setProperties(std::move(bp));
+        p.boltDisplay.setProperties(std::move(bp));
     }
+    return p;
+}
 
-    // ATOMIK UYGULA: baglanti kaydi + levha + bulon grubu + delikler TEK undo
-    // kaydina yazilir (setEndPlateConnection EndPlateReplace + BoltReplace +
-    // CutReplace + model Replace op'larini ACIK kayda ekler). Kimlikler sabit.
-    EndPlateConnection updated = conn;
-    updated.bolts = placement.bolts;  // yeni origin/pattern; kimlikler korunur
-    if (!document_.setEndPlateConnection(index, std::move(updated),
-                                         std::move(plateModel), std::move(boltDisplay)))
+// SLICE 2d-2c P0: COMMIT (infallible) — hazirlanan baglantiyi ACIK undo kaydina
+// uygular (kararli kimlikler: setEndPlateConnection + putOccSolid + kesme).
+// Tum fallible isler prepare'da bitti; burada yalnizca document yazimi var.
+bool Application::commitEndPlateConnection(std::size_t index, const PreparedEndPlate& p) {
+    // setEndPlateConnection EndPlateReplace + BoltReplace + CutReplace + model
+    // Replace op'larini ACIK kayda ekler; kimlikler (levha/bulon/display) sabit.
+    if (!document_.setEndPlateConnection(index, p.updated,
+                                         WireframeModel{p.plateModel},
+                                         WireframeModel{p.boltDisplay}))
         return false;
 
     const EndPlateConnection& after = document_.endPlateConnections()[index];
-    if (const auto pi = document_.indexOfEntity(after.plateEntityId)) putOccSolid(*pi, plateSolid);
+    if (const auto pi = document_.indexOfEntity(after.plateEntityId)) putOccSolid(*pi, p.plateSolid);
     if (const auto di = document_.indexOfEntity(after.bolts.displayEntityId))
-        putOccSolid(*di, boltSolid);
+        putOccSolid(*di, p.boltSolid);
     // Delikler (CutKind::Hole) kolon + levhayi deler -> yeniden hesapla.
     if (after.mainPart != kInvalidEntityId) recomputeCutTarget(after.mainPart);
     if (after.plateEntityId != kInvalidEntityId) recomputeCutTarget(after.plateEntityId);
     return true;
 }
 
+// SLICE 2d-2c P0/P1: GERCEK ATOMIK + GENERIC recompute.
+//
+// P1 (generic): gercek EndPlateConnection kayitlari ORTAK ComponentRefs
+// adapter'i uzerinden ComponentDependencyGraph'a baglanir — Document icinde
+// component tipine OZEL recompute yolu YOKTUR; gelecekte Base Plate/Fin Plate/
+// Gusset/Splice ayni grafigi ve ayni atomicRecompute hattini kullanir.
+//
+// P0 (atomik): etkilenen baglantilar ONCE tamamen hazirlanir (prepare — yeni
+// geometri + modifier sonuclari gecici uretilir, belge DEGISMEZ); yalnizca
+// HEPSI basariliysa TEK transaction'da uygulanir (commit). Bir prepare bile
+// basarisizsa HICBIR commit calismaz (atomicRecompute) ve ACIK transaction
+// ROLLBACK edilir (document_.rollbackOpenRecord) — kolon profili/konumu +
+// levhalar + bulonlar + delikler + geometry version + undo/redo gecmisi ESKI
+// duruma doner; kismi belge degisikligi KALMAZ.
 void Application::recomputeEndPlateConnectionsFor(const std::vector<EntityId>& changedParts) {
-    const std::unordered_set<EntityId> changed(changedParts.begin(), changedParts.end());
-    if (changed.empty()) return;
-    for (std::size_t i = 0; i < document_.endPlateConnections().size(); ++i) {
-        const EndPlateConnection conn = document_.endPlateConnections()[i];  // kopya (kararli)
-        if (changed.count(conn.mainPart) || changed.count(conn.secondaryPart))
-            rebuildEndPlateConnection(i);
+    if (changedParts.empty()) return;
+
+    std::vector<ComponentRefs> refs;
+    refs.reserve(document_.endPlateConnections().size());
+    for (const EndPlateConnection& c : document_.endPlateConnections())
+        refs.push_back(componentRefs(c));
+    ComponentDependencyGraph graph;
+    graph.build(refs);
+    const std::vector<EntityId> affected = graph.dependentsOf(changedParts);
+    if (affected.empty()) return;
+
+    // Etkilenen ana parcalarin B-Rep tabanini BIR KEZ tazele (tasima/donme/profil
+    // degisimi sonrasi findOccSolid bayat kalmasin). Transaction mutasyonudur;
+    // asagida basarisizlikta rollback ile geri alinir.
+    for (EntityId part : changedParts) rebuildCutBaseSolid(part);
+
+    // Component EntityId -> kayit indeksi (deterministik).
+    const auto indexOf = [&](EntityId cid) -> std::optional<std::size_t> {
+        for (std::size_t i = 0; i < document_.endPlateConnections().size(); ++i)
+            if (document_.endPlateConnections()[i].id == cid) return i;
+        return std::nullopt;
+    };
+
+    const auto prepare = [&](EntityId cid) -> std::optional<PreparedEndPlate> {
+        const auto idx = indexOf(cid);
+        if (!idx) return std::nullopt;
+        return prepareEndPlateConnection(*idx);
+    };
+    const auto commit = [&](EntityId cid, const PreparedEndPlate& p) -> bool {
+        const auto idx = indexOf(cid);
+        if (!idx) return false;
+        return commitEndPlateConnection(*idx, p);
+    };
+
+    const auto res = atomicRecompute<PreparedEndPlate>(affected, prepare, commit);
+    if (!res.allPrepared || res.commitFailed) {
+        // GERCEK ROLLBACK (P0): basarisiz islem belgeyi tutarsiz birakamaz.
+        // Tabani/aktif surumleri/op'lari/redo gecmisini geri getirir.
+        const bool rolled = document_.rollbackOpenRecord();
+        std::wstring msg = L"Component recompute basarisiz";
+        if (!res.error.empty()) {
+            msg += L": ";
+            msg += res.error;
+        }
+        msg += rolled ? L" — islem geri alindi."
+                      : L" — rollback BASARISIZ (belge tutarsiz olabilir)";
+        publishStatus(msg);
     }
 }
 
@@ -6991,8 +7050,17 @@ void Application::rebuildCutBaseSolid(EntityId target) {
     const TopoDS_Shape solid = mm::extrudeProfileSolid(
         *profile, from, to, props.profileRotation, sectionReference);
     if (solid.IsNull()) return;
+    // Taban surum degisimini undo/redo'ya DAHIL ET (Slice 2d-2c): putOccSolid
+    // etkin surum deltasini kaydeder; taban deltasi da AYRI kaydedilir — yoksa
+    // rollback/undo tabani bayat birakir (kesme yanlis tabandan turer).
+    const VersionId oldBase = store->baseVersion(target);
     putOccSolid(*idxOpt, solid);
-    store->setBaseVersion(target, store->activeVersion(target));
+    const VersionId newBase = store->activeVersion(target);
+    if (newBase != kInvalidVersionId) {
+        store->setBaseVersion(target, newBase);
+        if (oldBase != newBase)
+            document_.recordBaseVersionDelta(target, oldBase, newBase);
+    }
 }
 
 // Kesme modifier'larini hedef parcaya yeniden uygular (Phase 4.2 recompute):
@@ -7028,6 +7096,7 @@ void Application::recomputeCutTarget(EntityId target) {
         base = store->activeVersion(target);
         if (base == kInvalidVersionId) return;  // geometri yok
         store->setBaseVersion(target, base);
+        document_.recordBaseVersionDelta(target, kInvalidVersionId, base);
     }
     const TopoDS_Shape* baseShape = store->findVersion(target, base);
     if (!baseShape) return;

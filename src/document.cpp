@@ -742,11 +742,34 @@ void Document::recordGeometryDelta(EntityId entity, VersionId before, VersionId 
     rec.geometryAfter.push_back(GeometrySlotRef{entity, after});
 }
 
+void Document::recordBaseVersionDelta(EntityId entity, VersionId before, VersionId after) {
+    if (entity == kInvalidEntityId) return;
+    // recordGeometryDelta ile AYNI: acik kayit yoksa kendi kaydini acar (ve redo
+    // yedegini alir) — taban degisikligi sessizce undo disinda kalmaz.
+    if (undoStack_.empty()) {
+        UndoRecord record;
+        record.layersBefore = layers_;
+        record.layersAfter = layers_;
+        undoStack_.push_back(std::move(record));
+        redoStack_.clear();
+    }
+    UndoRecord& rec = undoStack_.back();
+    for (std::size_t i = 0; i < rec.baseBefore.size(); ++i) {
+        if (rec.baseBefore[i].entity == entity) {
+            // AYNI varlik: ILK oncesi korunur, SON sonrasi guncellenir.
+            rec.baseAfter[i].version = after;
+            return;
+        }
+    }
+    rec.baseBefore.push_back(GeometrySlotRef{entity, before});
+    rec.baseAfter.push_back(GeometrySlotRef{entity, after});
+}
+
 // Bir undo kaydı GÖRÜNÜR bir etki taşıyor mu? (undo/redo bunu atlamaz.)
 // Geometri deltası olan kayıt — op/layer değişmese bile — ETKİLİDİR.
 static bool recordHasEffect(const UndoRecord& rec) {
     return !rec.ops.empty() || rec.layersBefore != rec.layersAfter ||
-           !rec.geometryBefore.empty();
+           !rec.geometryBefore.empty() || !rec.baseBefore.empty();
 }
 
 void Document::recordLayerState() {
@@ -1025,9 +1048,11 @@ bool Document::undo() {
     while (!undoStack_.empty() && !recordHasEffect(undoStack_.back()))
         undoStack_.pop_back();
     if (undoStack_.empty()) return false;
-    // FAZ 1 — DOGRULA (hicbir sey degistirme). Geometri surumlerinin hepsi
+    // FAZ 1 — DOGRULA (hicbir sey degistirme). Etkin ve taban surumlerin hepsi
     // mevcut degilse islem BASLAMAZ: Document, store ve yiginlar sabit kalir.
     for (const auto& ref : undoStack_.back().geometryBefore)
+        if (!occStore_->findVersionExists(ref.entity, ref.version)) return false;
+    for (const auto& ref : undoStack_.back().baseBefore)
         if (!occStore_->findVersionExists(ref.entity, ref.version)) return false;
     // FAZ 2 — UYGULA (dogrulama gectiginden restoreActive basarisiz olmaz).
     ++revision_;
@@ -1037,6 +1062,8 @@ bool Document::undo() {
         applyUndoOp(*it, false);
     for (const auto& ref : record.geometryBefore)
         occStore_->restoreActive(ref.entity, ref.version);
+    for (const auto& ref : record.baseBefore)
+        occStore_->setBaseVersion(ref.entity, ref.version);
     layers_ = record.layersBefore;
     redoStack_.push_back(std::move(record));
     rebuildDerivedState();
@@ -1050,6 +1077,8 @@ bool Document::redo() {
     // FAZ 1 — DOGRULA.
     for (const auto& ref : redoStack_.back().geometryAfter)
         if (!occStore_->findVersionExists(ref.entity, ref.version)) return false;
+    for (const auto& ref : redoStack_.back().baseAfter)
+        if (!occStore_->findVersionExists(ref.entity, ref.version)) return false;
     // FAZ 2 — UYGULA.
     ++revision_;
     UndoRecord record = std::move(redoStack_.back());
@@ -1058,6 +1087,8 @@ bool Document::redo() {
         applyUndoOp(op, true);
     for (const auto& ref : record.geometryAfter)
         occStore_->restoreActive(ref.entity, ref.version);
+    for (const auto& ref : record.baseAfter)
+        occStore_->setBaseVersion(ref.entity, ref.version);
     layers_ = record.layersAfter;
     undoStack_.push_back(std::move(record));
     if (undoStack_.size() > kMaxUndoEntries)
@@ -1066,6 +1097,37 @@ bool Document::redo() {
     // Redo sonrasi kayit undo yigini ile korunur; 100 kayit siniri asildiysa
     // en eski kaydin referanslari birakilmistir — buda (Phase 3.2C).
     pruneDeadVersions();
+    return true;
+}
+
+bool Document::rollbackOpenRecord() {
+    // Etkisiz (bos) kayitlari at — ayni undo().
+    while (!undoStack_.empty() && !recordHasEffect(undoStack_.back()))
+        undoStack_.pop_back();
+    if (undoStack_.empty()) return false;
+    // FAZ 1 — DOGRULA (hicbir sey degistirme). Etkin ve taban surumlerin hepsi
+    // mevcut degilse islem BASLAMAZ: Document, store ve yiginlar sabit kalir.
+    for (const auto& ref : undoStack_.back().geometryBefore)
+        if (!occStore_->findVersionExists(ref.entity, ref.version)) return false;
+    for (const auto& ref : undoStack_.back().baseBefore)
+        if (!occStore_->findVersionExists(ref.entity, ref.version)) return false;
+    // FAZ 2 — GERI UYGULA + KAYDI AT. undo()'nun AKSINE kayit redoStack_'e
+    // itilmez (basarisiz islem redo ile yeniden uygulanamaz — gercek rollback).
+    // REDO GECMISI GERI YUKLENMEZ: pushSnapshot (komut basi) redoStack_'i
+    // standart undo semantigi geregi temizlemistir; rollback bunu geri getirmez
+    // (geri getirmek "terk edilen redo surumleri budanir" degismezini bozardi).
+    // Yalnizca basarisiz kayit redo'ya EKLENMEZ — yigin tutarli kalir.
+    ++revision_;
+    UndoRecord record = std::move(undoStack_.back());
+    undoStack_.pop_back();
+    for (auto it = record.ops.rbegin(); it != record.ops.rend(); ++it)
+        applyUndoOp(*it, false);
+    for (const auto& ref : record.geometryBefore)
+        occStore_->restoreActive(ref.entity, ref.version);
+    for (const auto& ref : record.baseBefore)
+        occStore_->setBaseVersion(ref.entity, ref.version);
+    layers_ = record.layersBefore;
+    rebuildDerivedState();
     return true;
 }
 
@@ -1130,6 +1192,10 @@ void Document::pruneDeadVersions() {
         for (const GeometrySlotRef& ref : rec.geometryBefore)
             if (ref.version != kInvalidVersionId) keep.emplace(ref.entity, ref.version);
         for (const GeometrySlotRef& ref : rec.geometryAfter)
+            if (ref.version != kInvalidVersionId) keep.emplace(ref.entity, ref.version);
+        for (const GeometrySlotRef& ref : rec.baseBefore)
+            if (ref.version != kInvalidVersionId) keep.emplace(ref.entity, ref.version);
+        for (const GeometrySlotRef& ref : rec.baseAfter)
             if (ref.version != kInvalidVersionId) keep.emplace(ref.entity, ref.version);
     };
     for (const UndoRecord& rec : undoStack_) scan(rec);

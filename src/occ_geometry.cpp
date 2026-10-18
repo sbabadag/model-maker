@@ -500,7 +500,8 @@ static std::vector<gp_Pnt> buildISectionContour(const SteelProfile& profile) {
 
 TopoDS_Shape extrudeProfileSolid(const SteelProfile& profile, const Vec3& from,
                                      const Vec3& to, double rotationDegrees,
-                                     const Vec3& referenceNormal) {
+                                     const Vec3& referenceNormal,
+                                     SectionAnchor anchor) {
     const double w = profile.width > 0.0 ? profile.width : 50.0;
     const double h = profile.height > 0.0 ? profile.height : 50.0;
     const double t = profile.plateThickness > 0.0 ? profile.plateThickness : 0.0;
@@ -584,14 +585,16 @@ TopoDS_Shape extrudeProfileSolid(const SteelProfile& profile, const Vec3& from,
     // KESIT YERLESIMI (KULLANICI SARTI v4): "ust flansin USTUNDEN cizmiyor,
     // ust flansin MERKEZINDEN ciziyor" → kesit uye eksenine UST YUZEYINDEN
     // oturur: eksen cizgisi kesitin en ustunden gecer ve TUM kesit cizginin
-    // ALTINA sarkar (Tekla "position: top of section"). v3'te ust plakanin
-    // ORTA-KALINLIK duzlemi oturuyordu. Baslik paralelligi (v1/v2) DEGISMEZ;
+    // ALTINA sarkar (Tekla "position: top of section"). Bu DEFAULT (Top)
+    // davranistir; Slice 2d-2c P3 ile SectionAnchor (Top/Center/Bottom) ile
+    // parametrik hale getirildi. DEFAULT Top KORUNUR — mevcut modeller sessizce
+    // baska bir anchor'a donusturulmez. Baslik paralelligi (v1/v2) DEGISMEZ;
     // degisen yalnizca DUSEY KONUMdur. Kaydirma dondurmeden ONCE uygulanir,
-    // boylece profil donmus olsa da uye ekseni hep kesitin USTUNDEN gecer.
-    const double sectionTopY = profileSectionTopY(profile);
-    if (std::abs(sectionTopY) > 1e-9) {
+    // boylece profil donmus olsa da uye ekseni hep secilen anchor'dan gecer.
+    const double anchorOffset = profileSectionAnchorOffset(profile, anchor);
+    if (std::abs(anchorOffset) > 1e-9) {
         gp_Trsf offsetTrsf;
-        offsetTrsf.SetTranslation(gp_Vec(0.0, -sectionTopY, 0.0));
+        offsetTrsf.SetTranslation(gp_Vec(0.0, anchorOffset, 0.0));
         section = BRepBuilderAPI_Transform(section, offsetTrsf).Shape();
     }
 

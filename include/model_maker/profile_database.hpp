@@ -73,4 +73,23 @@ ProfileSectionKind classifyProfileSection(const SteelProfile& profile) noexcept;
 //   yuvarlak : max(w,h)/2  (dis yaricap; dolu/bos ayrimi yok)
 double profileSectionTopY(const SteelProfile& profile) noexcept;
 
+// KESIT YERLESIM ANCHOR'I (Slice 2d-2c P3). Uye ekseni kesitin neresinden
+// gecer? Mevcut davranis Top ("top of section"): eksen kesitin EN USTUNDEN
+// gecer, kesit altina sarkar (Tekla "position: top of section"). Bu, mevcut
+// modellerin KALICI dogruluk kaynagi olan davranistir; DEFAULT Top kalir ve
+// var olan belgeler SESSIZCE baska bir anchor'a DONUSTURULMEZ. Center/Bottom
+// ileride kullanici secenekleri olarak eklenebilir.
+enum class SectionAnchor {
+    Top,     // kesit ust yuzeyi eksende (mevcut davranis)
+    Center,  // kesit merkezi/orijini eksende
+    Bottom,  // kesit alt yuzeyi eksende
+};
+
+// Bir anchor icin kesitin UYE EKSENINE gore DUSEY ofsetini dondurur (katiya
+// uygulanacak Y otelemesi). Top -> -profileSectionTopY (ust yuzey eksene),
+// Center -> 0, Bottom -> +profileSectionTopY (alt yuzey eksene; kesit orijine
+// gore simetrik uretildiginden alt yuzey = -topY). Round/Box/ISection icin
+// ayni kural gecerlidir.
+double profileSectionAnchorOffset(const SteelProfile& profile, SectionAnchor anchor) noexcept;
+
 } // namespace mm

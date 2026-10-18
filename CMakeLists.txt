@@ -846,6 +846,27 @@ if(BUILD_TESTING)
     target_compile_options(model_maker_component_recompute_test PRIVATE -Wall -Wextra -Wpedantic)
     add_test(NAME model_maker_component_recompute_test COMMAND model_maker_component_recompute_test)
 
+    # SLICE 2d-2c: atomik recompute (prepare-then-commit) + generic adapter.
+    add_executable(model_maker_component_recompute_atomic_test tests/component_recompute_atomic_test.cpp)
+    target_link_libraries(model_maker_component_recompute_atomic_test PRIVATE model_maker_core)
+    target_link_options(model_maker_component_recompute_atomic_test PRIVATE -static -static-libgcc -static-libstdc++)
+    target_compile_options(model_maker_component_recompute_atomic_test PRIVATE -Wall -Wextra -Wpedantic)
+    add_test(NAME model_maker_component_recompute_atomic_test COMMAND model_maker_component_recompute_atomic_test)
+
+    # SLICE 2d-2c: gercek transaction rollback (Document::rollbackOpenRecord).
+    add_executable(model_maker_document_transaction_test tests/document_transaction_test.cpp)
+    target_link_libraries(model_maker_document_transaction_test PRIVATE model_maker_core)
+    target_link_options(model_maker_document_transaction_test PRIVATE -static -static-libgcc -static-libstdc++)
+    target_compile_options(model_maker_document_transaction_test PRIVATE -Wall -Wextra -Wpedantic)
+    add_test(NAME model_maker_document_transaction_test COMMAND model_maker_document_transaction_test)
+
+    # SLICE 2d-2c: SectionAnchor ofsetleri (Top/Center/Bottom, default Top).
+    add_executable(model_maker_section_anchor_test tests/section_anchor_test.cpp)
+    target_link_libraries(model_maker_section_anchor_test PRIVATE model_maker_core)
+    target_link_options(model_maker_section_anchor_test PRIVATE -static -static-libgcc -static-libstdc++)
+    target_compile_options(model_maker_section_anchor_test PRIVATE -Wall -Wextra -Wpedantic)
+    add_test(NAME model_maker_section_anchor_test COMMAND model_maker_section_anchor_test)
+
     # ASSEMBLY & PAPER SPACE (P5): Part/Assembly iliskileri, orto projeksiyon
     # (Camera standardViewRotation ile tek kaynak), Paper Space gorunus listesi.
     add_executable(model_maker_assembly_test tests/assembly_test.cpp)

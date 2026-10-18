@@ -92,6 +92,11 @@ struct UndoRecord {
     // kInvalidVersionId` "o varlik icin etkin geometri YOK" demektir (gecerli).
     std::vector<GeometrySlotRef> geometryBefore;  // islem ONCESI etkin surumler
     std::vector<GeometrySlotRef> geometryAfter;   // islem SONRASI etkin surumler
+    // KESME TABAN SURUM DELTASI (Slice 2d-2c): taban (pre-cut) surum degisimleri
+    // de geri alinabilir — undo/redo/rollback tabani tutarli geri getirir.
+    // Ayni EntityId icin ILK before / SON after korunur (geometry delta ile ayni).
+    std::vector<GeometrySlotRef> baseBefore;  // islem ONCESI taban surumler
+    std::vector<GeometrySlotRef> baseAfter;   // islem SONRASI taban surumler
 };
 
 // GridDefinition / GridAxisLine ve Tekla koordinat dili `model_maker/grid.hpp`
@@ -164,6 +169,13 @@ public:
     void pushSnapshot();
     // ACIK (kapanmamis) bir undo kaydi var mi? (pushSnapshot() sonrasi true.)
     bool hasOpenUndoRecord() const noexcept { return !undoStack_.empty(); }
+    // GERCEK TRANSACTION ROLLBACK (Slice 2d-2c P0): acik undo kaydini GERI
+    // uygular ve kaydi TAMAMEN ATAR (redo gecmisine basarisiz islem EKLENMEZ).
+    // undo()'nun aksine redoStack_'e dokunmaz — basarisiz bir islem belgeyi,
+    // geometry version'larini ve undo/redo yigini tutarsiz birakmaz. Acik/
+    // etkili kayit yoksa false (hicbir sey degismez). Dogrulama (FAZ 1) basari-
+    // sizsa da false doner ve belge DEGISMEZ.
+    bool rollbackOpenRecord();
     // GEOMETRI SURUM DELTASI. Bir varligin etkin B-Rep surumu `before`dan
     // `after`a degistiginde cagrilir. Acik kayit YOKSA GUVENLI bicimde kendi
     // kaydini ACAR — boylece geometri degisikligi SESSIZCE undo disinda
@@ -171,6 +183,13 @@ public:
     // Ayni EntityId icin ILK `before` ve SON `after` korunur (ara surumler
     // bagimsiz undo adimina donusmez).
     void recordGeometryDelta(EntityId entity, VersionId before, VersionId after);
+    // KESME TABAN SURUM DELTASI (Slice 2d-2c). Bir varligin taban (pre-cut)
+    // surumu `before`dan `after`a degistiginde cagrilir (or. kesme tabani
+    // yeniden uretildiginde). recordGeometryDelta ile AYNI ilk-before/son-after
+    // kurali; acik kayit yoksa kendi kaydini acar. undo/redo/rollback tabani
+    // geri getirir — boylece basarisiz bir recompute sonrasi taban surumu bayat
+    // kalmaz.
+    void recordBaseVersionDelta(EntityId entity, VersionId before, VersionId after);
     bool undo();
     bool redo();
     bool canUndo() const noexcept;
