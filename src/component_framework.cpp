@@ -171,10 +171,15 @@ ConstraintSystem ComponentRelationshipGraph::toConstraintSystem(
     }
     for (const auto& k : keys) addHandleForKey(k);
 
-    // Dependency/ownership yonlu kenarlari ConstraintSystem bagimliligina aktar
-    // (dongu tespiti ConstraintSystem::solve() ile Cyclic uretir).
-    for (const auto& [from, to] : directedEdges())
-        sys.addDependency(HandleKey{from}, HandleKey{to});
+    // Dependency yonlu kenarlarini ConstraintSystem bagimliligina aktar.
+    // YALNIZCA gercek cozum bagimliligi (AttachedTo/DependsOn) aktarilir;
+    // sahiplik kenarlari (OwnedBy/Cuts/Welds) cozum bagimliligi DEGILDIR ve
+    // addDependency'e girmez (aksi halde yapay Cyclic uretilebilir).
+    for (const auto& r : relationships_) {
+        if (!r.enabled) continue;
+        if (isDependencyRelationship(r.kind))
+            sys.addDependency(HandleKey{r.from}, HandleKey{r.to});
+    }
 
     return sys;
 }

@@ -175,6 +175,19 @@ int main() {
         check(plan.plates[0].width == 100.0, "plan plate width tasindi");
     }
 
+    // --- Grafik: sahiplik kenarlari cozum bagimliligi DEGIL (yapay Cyclic yok) --
+    {
+        ComponentBuilder b;
+        PlateSpec p;
+        b.plate("a", p).plate("b", p).cuts("a", "b").ownedBy("a", "component");
+        const auto r = b.build();
+        check(r.ok, "cuts+ownedBy model katmani ok");
+        check(r.relationships.directedEdges().size() == 2,
+              "directedEdges sahiplik kenarlarini raporlar (2)");
+        ConstraintSystem sys = r.relationships.toConstraintSystem(r.objects);
+        check(sys.solve(), "sahiplik kenarlari solve() bagimliligi uretmez (true)");
+    }
+
     // --- Grafik: OwnedBy hedefi kullanici parcasi olamaz ----------------------
     {
         ComponentBuilder b;
