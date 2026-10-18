@@ -15,6 +15,13 @@ static Vec3 cross(const Vec3& a, const Vec3& b) noexcept {
                 a.x * b.y - a.y * b.x};
 }
 
+// Etkin dusey kenar paylari: alan <0 ise plateExtra'ya geri don (geriye uyumlu).
+static void effectiveVerticalEdges(const EndPlateParams& p, double& topE,
+                                   double& botE) noexcept {
+    topE = (p.topExtra >= 0.0) ? p.topExtra : p.plateExtra;
+    botE = (p.bottomExtra >= 0.0) ? p.bottomExtra : p.plateExtra;
+}
+
 EndPlateFrame endPlateFrame(const Vec3& beamAxis, const Vec3& referenceNormal) noexcept {
     EndPlateFrame f;
     f.axis = unitOr(beamAxis, Vec3{0.0, 0.0, 1.0});
@@ -76,8 +83,10 @@ EndPlatePlacement computeEndPlatePlacement(const Vec3& beamEnd, const Vec3& beam
     out.u = f.u;
     out.v = f.v;
     out.axis = f.axis;
+    double topE, botE;
+    effectiveVerticalEdges(params, topE, botE);
     out.plateWidth = secWidth + 2.0 * params.plateExtra;
-    out.plateHeight = secHeight + 2.0 * params.plateExtra;
+    out.plateHeight = secHeight + topE + botE;
     out.plateThickness = params.plateThickness;
     if (out.plateWidth < 1.0) out.plateWidth = 1.0;
     if (out.plateHeight < 1.0) out.plateHeight = 1.0;
@@ -87,6 +96,13 @@ EndPlatePlacement computeEndPlatePlacement(const Vec3& beamEnd, const Vec3& beam
     const double halfT = params.plateThickness * 0.5;
     out.plateCenter = Vec3{beamEnd.x + f.axis.x * halfT, beamEnd.y + f.axis.y * halfT,
                            beamEnd.z + f.axis.z * halfT};
+
+    // Ayrı ust/alt pay: levha merkezini v yonunde (top-bottom)/2 kaydir.
+    if (std::abs(topE - botE) > 1e-12) {
+        out.plateCenter.x += f.v.x * 0.5 * (topE - botE);
+        out.plateCenter.y += f.v.y * 0.5 * (topE - botE);
+        out.plateCenter.z += f.v.z * 0.5 * (topE - botE);
+    }
 
     out.bolts = makeEndPlateBolts(out, params);
     return out;
@@ -104,8 +120,10 @@ EndPlatePlacement computeEndPlatePlacementOnFace(const ReferencePlane& face, dou
     out.u = f.u;
     out.v = f.v;
     out.axis = f.axis;
+    double topE, botE;
+    effectiveVerticalEdges(params, topE, botE);
     out.plateWidth = secWidth + 2.0 * params.plateExtra;
-    out.plateHeight = secHeight + 2.0 * params.plateExtra;
+    out.plateHeight = secHeight + topE + botE;
     out.plateThickness = params.plateThickness;
     if (out.plateWidth < 1.0) out.plateWidth = 1.0;
     if (out.plateHeight < 1.0) out.plateHeight = 1.0;
@@ -126,6 +144,12 @@ EndPlatePlacement computeEndPlatePlacementOnFace(const ReferencePlane& face, dou
         out.plateCenter.x += sectionHeightDir.x * anchorOffset;
         out.plateCenter.y += sectionHeightDir.y * anchorOffset;
         out.plateCenter.z += sectionHeightDir.z * anchorOffset;
+    }
+    // Ayrı ust/alt pay: levha merkezini kesit yukseklik yonunde (top-bottom)/2 kaydir.
+    if (std::abs(topE - botE) > 1e-12) {
+        out.plateCenter.x += sectionHeightDir.x * 0.5 * (topE - botE);
+        out.plateCenter.y += sectionHeightDir.y * 0.5 * (topE - botE);
+        out.plateCenter.z += sectionHeightDir.z * 0.5 * (topE - botE);
     }
 
     out.bolts = makeEndPlateBolts(out, params);

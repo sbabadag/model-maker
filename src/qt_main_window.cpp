@@ -16,6 +16,7 @@
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QTabWidget>
+#include <QGroupBox>
 #include <QFrame>
 #include <QPushButton>
 #include <QComboBox>
@@ -835,28 +836,79 @@ void QtMainWindow::openBoltPropertiesDialog(const mm::BoltGroup& bolt) {
 bool QtMainWindow::openEndPlateParamsDialog(const mm::EndPlateParams& current,
                                             mm::EndPlateParams& out) {
     QDialog dlg(this);
-    dlg.setWindowTitle(QStringLiteral("End Plate Özellikleri"));
-    auto* form = new QFormLayout(&dlg);
+    dlg.setWindowTitle(QStringLiteral("End Plate (Alın Levhası) Özellikleri"));
+    dlg.setMinimumWidth(360);
 
-    auto* thickSpin = new QDoubleSpinBox(&dlg);
-    thickSpin->setRange(1.0, 200.0);
-    thickSpin->setDecimals(1);
-    thickSpin->setValue(current.plateThickness);
-    form->addRow(QStringLiteral("Levha kalınlığı (mm):"), thickSpin);
+    auto* root = new QVBoxLayout(&dlg);
+    auto* tabs = new QTabWidget(&dlg);
 
-    auto* extraSpin = new QDoubleSpinBox(&dlg);
+    // ── Resim (Picture) sekmesi: konum + boşluk ────────────────────────────
+    auto* picPage = new QWidget(&dlg);
+    auto* picForm = new QFormLayout(picPage);
+
+    auto* extraSpin = new QDoubleSpinBox(picPage);
     extraSpin->setRange(0.0, 300.0);
     extraSpin->setDecimals(1);
     extraSpin->setValue(current.plateExtra);
-    form->addRow(QStringLiteral("Kesit payı (mm):"), extraSpin);
+    extraSpin->setSuffix(QStringLiteral(" mm"));
+    picForm->addRow(QStringLiteral("Yatay pay (levha genişliği = kesit + 2×pay):"), extraSpin);
 
-    auto* gapSpin = new QDoubleSpinBox(&dlg);
+    const double effTop = (current.topExtra >= 0.0) ? current.topExtra : current.plateExtra;
+    const double effBot = (current.bottomExtra >= 0.0) ? current.bottomExtra : current.plateExtra;
+
+    auto* topExtraSpin = new QDoubleSpinBox(picPage);
+    topExtraSpin->setRange(0.0, 300.0);
+    topExtraSpin->setDecimals(1);
+    topExtraSpin->setValue(effTop);
+    topExtraSpin->setSuffix(QStringLiteral(" mm"));
+    picForm->addRow(QStringLiteral("Üst kenar payı (kesit üstü → levha üstü):"), topExtraSpin);
+
+    auto* botExtraSpin = new QDoubleSpinBox(picPage);
+    botExtraSpin->setRange(0.0, 300.0);
+    botExtraSpin->setDecimals(1);
+    botExtraSpin->setValue(effBot);
+    botExtraSpin->setSuffix(QStringLiteral(" mm"));
+    picForm->addRow(QStringLiteral("Alt kenar payı (kesit altı → levha altı):"), botExtraSpin);
+
+    auto* gapSpin = new QDoubleSpinBox(picPage);
     gapSpin->setRange(0.0, 100.0);
     gapSpin->setDecimals(1);
     gapSpin->setValue(current.gap);
-    form->addRow(QStringLiteral("Kolon boşluğu (mm):"), gapSpin);
+    gapSpin->setSuffix(QStringLiteral(" mm"));
+    picForm->addRow(QStringLiteral("Kolon boşluğu (levha ↔ ana parça):"), gapSpin);
 
-    auto* diaCombo = new QComboBox(&dlg);
+    auto* picNote = new QLabel(picPage);
+    picNote->setWordWrap(true);
+    picNote->setStyleSheet(QStringLiteral("color: gray;"));
+    picNote->setText(QStringLiteral(
+        "Levha kirişin gerçek kesitine ortalanır. Üst/alt pay ayrı ayrı ayarlanır; "
+        "üst pay > alt pay ise levha yukarı kayar (Tekla 144 Resim sekmesi karşılığı)."));
+    picForm->addRow(picNote);
+
+    // ── Levha (Plates) sekmesi: kalınlık ───────────────────────────────────
+    auto* pltPage = new QWidget(&dlg);
+    auto* pltForm = new QFormLayout(pltPage);
+
+    auto* thickSpin = new QDoubleSpinBox(pltPage);
+    thickSpin->setRange(1.0, 200.0);
+    thickSpin->setDecimals(1);
+    thickSpin->setValue(current.plateThickness);
+    thickSpin->setSuffix(QStringLiteral(" mm"));
+    pltForm->addRow(QStringLiteral("Levha kalınlığı:"), thickSpin);
+
+    auto* pltNote = new QLabel(pltPage);
+    pltNote->setWordWrap(true);
+    pltNote->setStyleSheet(QStringLiteral("color: gray;"));
+    pltNote->setText(QStringLiteral(
+        "Levha genişliği ve yüksekliği, bulon grubu kenar payları ve kesit "
+        "boyutundan otomatik türetilir (Tekla 144 Plates sekmesi karşılığı)."));
+    pltForm->addRow(pltNote);
+
+    // ── Bulonlar (Bolts) sekmesi ──────────────────────────────────────────
+    auto* bltPage = new QWidget(&dlg);
+    auto* bltForm = new QFormLayout(bltPage);
+
+    auto* diaCombo = new QComboBox(bltPage);
     for (double d : mm::standardBoltDiameters())
         diaCombo->addItem(QStringLiteral("M%1").arg(d, 0, 'f', 0), d);
     int diaIdx = diaCombo->findData(current.boltDiameter);
@@ -866,61 +918,70 @@ bool QtMainWindow::openEndPlateParamsDialog(const mm::EndPlateParams& current,
         diaIdx = diaCombo->count() - 1;
     }
     diaCombo->setCurrentIndex(diaIdx);
-    form->addRow(QStringLiteral("Bulon çapı:"), diaCombo);
+    bltForm->addRow(QStringLiteral("Bulon çapı:"), diaCombo);
 
-    auto* gradeCombo = new QComboBox(&dlg);
+    auto* gradeCombo = new QComboBox(bltPage);
     gradeCombo->addItem(QStringLiteral("8.8"));
     gradeCombo->addItem(QStringLiteral("10.9"));
     const int gi = gradeCombo->findText(QString::fromStdString(current.boltGrade));
     if (gi >= 0) gradeCombo->setCurrentIndex(gi);
-    form->addRow(QStringLiteral("Kalite:"), gradeCombo);
+    bltForm->addRow(QStringLiteral("Bulon kalitesi:"), gradeCombo);
 
-    auto* holeSpin = new QDoubleSpinBox(&dlg);
+    auto* holeSpin = new QDoubleSpinBox(bltPage);
     holeSpin->setRange(1.0, 200.0);
     holeSpin->setDecimals(1);
     holeSpin->setValue(current.holeDiameter);
-    form->addRow(QStringLiteral("Delik çapı (mm):"), holeSpin);
+    holeSpin->setSuffix(QStringLiteral(" mm"));
+    bltForm->addRow(QStringLiteral("Delik çapı:"), holeSpin);
 
-    auto* countXSpin = new QSpinBox(&dlg);
+    auto* countXSpin = new QSpinBox(bltPage);
     countXSpin->setRange(1, 50);
     countXSpin->setValue(current.boltCountX > 0 ? current.boltCountX : 1);
-    form->addRow(QStringLiteral("Adet X:"), countXSpin);
+    bltForm->addRow(QStringLiteral("Bulon adedi (yatay, X):"), countXSpin);
 
-    auto* countYSpin = new QSpinBox(&dlg);
+    auto* countYSpin = new QSpinBox(bltPage);
     countYSpin->setRange(1, 50);
     countYSpin->setValue(current.boltCountY > 0 ? current.boltCountY : 1);
-    form->addRow(QStringLiteral("Adet Y:"), countYSpin);
+    bltForm->addRow(QStringLiteral("Bulon adedi (dikey, Y):"), countYSpin);
 
-    auto* edgeSpin = new QDoubleSpinBox(&dlg);
+    auto* edgeSpin = new QDoubleSpinBox(bltPage);
     edgeSpin->setRange(1.0, 500.0);
     edgeSpin->setDecimals(1);
     edgeSpin->setValue(current.boltEdge);
-    form->addRow(QStringLiteral("Kenar payı (mm):"), edgeSpin);
+    edgeSpin->setSuffix(QStringLiteral(" mm"));
+    bltForm->addRow(QStringLiteral("Kenar payı (bulon merkezi → levha kenarı):"), edgeSpin);
 
-    auto* headChk = new QCheckBox(QStringLiteral("Baş"), &dlg);
+    auto* headChk = new QCheckBox(QStringLiteral("Baş"), bltPage);
     headChk->setChecked(current.hasHead);
-    auto* nutChk = new QCheckBox(QStringLiteral("Somun"), &dlg);
+    auto* nutChk = new QCheckBox(QStringLiteral("Somun"), bltPage);
     nutChk->setChecked(current.hasNut);
-    auto* washChk = new QCheckBox(QStringLiteral("Pul"), &dlg);
+    auto* washChk = new QCheckBox(QStringLiteral("Pul"), bltPage);
     washChk->setChecked(current.hasWasher);
     auto* accRow = new QHBoxLayout;
     accRow->addWidget(headChk);
     accRow->addWidget(nutChk);
     accRow->addWidget(washChk);
     accRow->addStretch(1);
-    form->addRow(QStringLiteral("Elemanlar:"), accRow);
+    bltForm->addRow(QStringLiteral("Bulon elemanları:"), accRow);
+
+    tabs->addTab(picPage, QStringLiteral("Resim"));
+    tabs->addTab(pltPage, QStringLiteral("Levha"));
+    tabs->addTab(bltPage, QStringLiteral("Bulonlar"));
+    root->addWidget(tabs);
 
     auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
-    form->addRow(buttons);
+    root->addWidget(buttons);
     QObject::connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
     QObject::connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
 
     if (dlg.exec() != QDialog::Accepted) return false;
 
     out = current;
-    out.plateThickness = thickSpin->value();
     out.plateExtra = extraSpin->value();
+    out.topExtra = topExtraSpin->value();
+    out.bottomExtra = botExtraSpin->value();
     out.gap = gapSpin->value();
+    out.plateThickness = thickSpin->value();
     out.boltDiameter = diaCombo->currentData().toDouble();
     out.boltGrade = gradeCombo->currentText().toStdString();
     out.holeDiameter = holeSpin->value();

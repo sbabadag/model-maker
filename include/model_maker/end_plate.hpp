@@ -36,7 +36,13 @@ namespace mm {
 // fazlara birakildi.
 struct EndPlateParams {
     double plateThickness{12.0};   // levha kalinligi (mm)
-    double plateExtra{20.0};       // kiris kesit bbox'ina eklenen pay (her yan, mm)
+    double plateExtra{20.0};       // YATAY (genislik) kenar payi (her yan, mm)
+    // DUSEY kenar paylari (Tekla 144 Picture tab: upper/lower edge distance).
+    // <0 = plateExtra kullan (geriye uyumlu, eski dosyalarda alan yok). Ayrı
+    // ust/alt pay levha yuksekligini secHeight+top+bottom yapar ve levha
+    // merkezini kesit merkezinden (top-bottom)/2 kadar kaydirir.
+    double topExtra{-1.0};         // UST kenar payi (mm)
+    double bottomExtra{-1.0};      // ALT kenar payi (mm)
     double gap{0.0};               // kolon yuzeyi ile levha arasi bosluk (mm, Tekla 101: 2 mm)
     double boltDiameter{20.0};     // bulon capi (M20)
     double holeDiameter{22.0};     // delik capi (M20 -> 22)

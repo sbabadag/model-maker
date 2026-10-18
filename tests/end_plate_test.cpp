@@ -62,6 +62,30 @@ int main() {
         check(approx(pl.bolts.params.holeDiameter, 22.0), "delik 22");
     }
 
+    // --- 1b) Ayrı ust/alt kenar payi (Tekla 144 Picture tab) ----------------
+    {
+        EndPlateParams p;
+        p.plateThickness = 12.0;
+        p.plateExtra = 20.0;   // yatay
+        p.topExtra = 40.0;     // ust
+        p.bottomExtra = 10.0;  // alt
+        const EndPlatePlacement pl =
+            computeEndPlatePlacement({0, 0, 0}, {1, 0, 0}, 200.0, 300.0, p);
+        check(approx(pl.plateHeight, 350.0), "asimetrik yukseklik 300+40+10=350");
+        check(approx(pl.plateWidth, 240.0), "genislik yatay paydan 240");
+        // v = +Z (yukseklik yonu); merkez (top-bottom)/2 = 15 yukari kayar.
+        check(approx(pl.plateCenter.z, 15.0), "merkez ust paya dogru 15 kayar");
+
+        // Geriye uyum: top/bottom -1 -> plateExtra kullanilir (simetrik, kaymaz).
+        EndPlateParams q;
+        q.plateThickness = 12.0;
+        q.plateExtra = 20.0;
+        const EndPlatePlacement pl2 =
+            computeEndPlatePlacement({0, 0, 0}, {1, 0, 0}, 200.0, 300.0, q);
+        check(approx(pl2.plateHeight, 340.0), "varsayilan simetrik 340");
+        check(approx(pl2.plateCenter.z, 0.0), "varsayilan merkez kaymaz");
+    }
+
     // --- 2) Document kaydi + sahiplik ---------------------------------------
     Document doc;
     doc.pushSnapshot();
