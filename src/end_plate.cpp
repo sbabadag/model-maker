@@ -280,4 +280,36 @@ EndPlatePlacement computeEndPlatePlacementOnFace(const ReferencePlane& face, dou
     return out;
 }
 
+std::vector<StiffenerPlacement> computeStiffenerPlacements(
+    const EndPlateParams& params, const Vec3& faceOrigin, const Vec3& faceNormal,
+    const Vec3& colAxis, const Vec3& colU, const Vec3& colV,
+    double colB, double colTw, double colTf, double colH,
+    double secWidth, double secHeight, const Vec3& sectionHeightDir) noexcept {
+    std::vector<StiffenerPlacement> out;
+    const double halfInner = 0.5 * (colB - colTw);  // web'den flansa (u yonunde)
+    if (halfInner <= 0.0) return out;
+    // v merkezi: kolon v merkezi (kiris ekseni hizasi; on flans ic yuzunden
+    // kesit yuksekliginin ortasina).
+    const Vec3 vCenter =
+        faceOrigin + faceNormal * (colTf + 0.5 * (colH - 2.0 * colTf));
+    auto emit = [&](const StiffenerSpec& s, bool top, bool nearSide) {
+        if (s.mode == 0) return;
+        const double w = (s.width > 0.0) ? s.width : halfInner;   // u: web->flans
+        const double hh = (s.height > 0.0) ? s.height : secWidth; // v: kiris flansi
+        Vec3 center = vCenter;
+        // u merkezi: web'den near/far yonunde (tw/2 + w/2).
+        const double uOff = 0.5 * colTw + 0.5 * w;
+        center = center + colU * (nearSide ? uOff : -uOff);
+        // dikey merkez: kiris ust/alt flansi hizasi.
+        center = center + sectionHeightDir * ((top ? 1.0 : -1.0) * 0.5 * secHeight);
+        out.push_back(StiffenerPlacement{true, center, colU, colV, colAxis, w, hh,
+                                         s.thickness});
+    };
+    emit(params.topNS, true, true);
+    emit(params.topFS, true, false);
+    emit(params.bottomNS, false, true);
+    emit(params.bottomFS, false, false);
+    return out;
+}
+
 } // namespace mm

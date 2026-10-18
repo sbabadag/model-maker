@@ -404,6 +404,40 @@ int main() {
             check(approx(rp.boltSpacingYs[0], 130.0), "round-trip: boltSpacingYs[0] 130");
     }
 
+    // --- Column stiffener konumlandirma (Tekla 144 Stiffeners, saf hesap) ---
+    {
+        EndPlateParams sp;
+        sp.topNS.mode = 1;
+        sp.topNS.thickness = 12.0;
+        sp.topFS.mode = 1;
+        sp.bottomNS.mode = 1;
+        sp.bottomFS.mode = 0;  // far alt pasif
+        const Vec3 faceOrigin{0.0, 0.0, 0.0};
+        const Vec3 faceNormal{0.0, 1.0, 0.0};  // kiris y yonunden geliyor
+        const Vec3 colAxis{0.0, 0.0, 1.0};     // kolon dikey
+        const Vec3 colU{1.0, 0.0, 0.0};        // flans genisligi x
+        const Vec3 colV{0.0, 1.0, 0.0};        // kesit yuksekligi y (= kiris yonu)
+        const auto st = computeStiffenerPlacements(
+            sp, faceOrigin, faceNormal, colAxis, colU, colV,
+            /*colB*/300.0, /*colTw*/11.0, /*colTf*/19.0, /*colH*/300.0,
+            /*secWidth*/260.0, /*secHeight*/260.0, /*sectionHeightDir*/Vec3{0.0, 0.0, 1.0});
+        check(st.size() == 3u, "stiffener: 3 aktif plaka (bottomFS pasif)");
+        if (st.size() == 3u) {
+            // halfInner = (300-11)/2 = 144.5; uOff = 5.5 + 72.25 = 77.75
+            // vCenter = (0,150,0); top = +130, bottom = -130
+            check(approx(st[0].center.x, 77.75), "stiffener topNS center.x");
+            check(approx(st[0].center.y, 150.0), "stiffener topNS center.y");
+            check(approx(st[0].center.z, 130.0), "stiffener topNS center.z");
+            check(approx(st[0].width, 144.5), "stiffener topNS width (oto)");
+            check(approx(st[0].height, 260.0), "stiffener topNS height (oto)");
+            check(approx(st[0].thickness, 12.0), "stiffener topNS thickness");
+            check(approx(st[1].center.x, -77.75), "stiffener topFS center.x (far)");
+            check(approx(st[1].center.z, 130.0), "stiffener topFS center.z");
+            check(approx(st[2].center.x, 77.75), "stiffener bottomNS center.x");
+            check(approx(st[2].center.z, -130.0), "stiffener bottomNS center.z");
+        }
+    }
+
     std::printf("end_plate_test: %d check, %d failure\n", g_checks, g_failures);
     return g_failures == 0 ? 0 : 1;
 }

@@ -31,6 +31,33 @@
 
 namespace mm {
 
+// Column stiffener (Tekla 144 Stiffeners tab) — sadeleltirilmis ilk dilim.
+// Stiffener = kolonun ICINDE, kiris flansi hizasinda, kolon web'ine DIK kare
+// plaka (chamfer yok). mode: 0=Yok, 1=Olustur. width/height<=0 = otomatik
+// (width = web'den flansa ic derinlik, height = kiris kesit genisligi).
+struct StiffenerSpec {
+    int mode{0};           // 0=Yok (None), 1=Olustur (Create)
+    double thickness{10.0}; // plaka kalinligi (mm, kolon ekseni yonunde)
+    double width{0.0};      // otomatik: kolon ici derinlik (flans->flans)
+    double height{0.0};     // otomatik: kiris kesit genisligi
+    int shape{1};           // 0=Line chamfer (pahli kose), 1=Square (duz kose)
+    bool operator==(const StiffenerSpec&) const = default;
+};
+
+// Bir stiffener'in HESAPLANMIS dunya yerlesimi (saf veri; OCC katisi prepare'de
+// buildEndPlateSolid ile uretilir). u/v = plaka duzlemi eksenleri (u = kiris
+// ekseni, v = kolon flans yonu), axis = plaka normali (kolon ekseni).
+struct StiffenerPlacement {
+    bool active{false};
+    Vec3 center{};
+    Vec3 u{1.0, 0.0, 0.0};   // plaka uzunluk yonu (web->flans)
+    Vec3 v{0.0, 1.0, 0.0};   // plaka genislik yonu (kiris flans genisligi)
+    Vec3 axis{0.0, 0.0, 1.0}; // plaka normali (kolon ekseni)
+    double width{0.0};       // u yonunde boyut (web->flans)
+    double height{0.0};      // v yonunde boyut (kiris flans genisligi)
+    double thickness{0.0};   // axis yonunde boyut
+};
+
 // Alin levhasi baglanti parametreleri (Tekla End plate properties karsiligi,
 // sadeleltirilmis). Kaynak/rijitlestirici/haunch/norm kontrolleri SONRAKI
 // fazlara birakildi.
@@ -90,6 +117,11 @@ struct EndPlateParams {
     double boltLengthIncrease{0.0}; // bulon boyu artisi (mm)
     int boltDirection{1};           // 1=bas kolona (-eksen), 2=bas kirise (+eksen)
     std::string boltComment{};      // aciklama
+    // --- Column stiffeners (Tekla 144 Stiffeners tab) ---
+    StiffenerSpec topNS;      // ust, near side (kirisin geldigi flans ici)
+    StiffenerSpec topFS;      // ust, far side (karsi flans ici)
+    StiffenerSpec bottomNS;   // alt, near side
+    StiffenerSpec bottomFS;   // alt, far side
     bool operator==(const EndPlateParams&) const = default;
 };
 
@@ -107,7 +139,19 @@ struct EndPlatePlacement {
     double colFlangeThickness{0.0}; // kolon flans kalinligi (bulon kavrama hesabi)
     double boltGripLength{0.0};     // bolon saft kavrama uzunlugu (levha+gap+flans)
     BoltGroup bolts;          // origin/axis/xDir/count/spacing/params kurulu
+    std::vector<StiffenerPlacement> stiffeners; // aktif column stiffener yerlesimleri
 };
+
+// Column stiffener yerlesimlerini hesaplar (Tekla 144 Stiffeners). Stiffener =
+// kolonun ICINDE, kirisin ust/alt flansi hizasinda, web'den flansa uzanan yatay
+// sureklilik plakasi. near = kirisin baglandigi flans tarafi, far = karsi taraf.
+// colU/colV = kolon kesit eksenleri (u=flans genisligi b, v=kesit yuksekligi h);
+// colAxis = kolon ekseni. faceOrigin/faceNormal = temas yuzu (normal kirise dogru).
+std::vector<StiffenerPlacement> computeStiffenerPlacements(
+    const EndPlateParams& params, const Vec3& faceOrigin, const Vec3& faceNormal,
+    const Vec3& colAxis, const Vec3& colU, const Vec3& colV,
+    double colB, double colTw, double colTf, double colH,
+    double secWidth, double secHeight, const Vec3& sectionHeightDir) noexcept;
 
 // Kalici alin levhasi baglanti kaydi. Alt nesne sahipligi:
 //   plateEntityId = baglantinin urettigi levha modeli (normal model).
