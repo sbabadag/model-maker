@@ -17,7 +17,8 @@ BoltDimensions boltDimensions(double nominalDiameter) noexcept {
 }
 
 CutModifier makeHoleCutModifier(EntityId part, const Vec3& origin,
-                                const Vec3& axis, double holeDiameter) noexcept {
+                                const Vec3& axis, double holeDiameter,
+                                double depth) noexcept {
     CutModifier mod;
     mod.kind = CutKind::Hole;
     mod.target = part;
@@ -30,6 +31,7 @@ CutModifier makeHoleCutModifier(EntityId part, const Vec3& origin,
     }
     mod.keepPositive = true;  // Hole icin anlamsiz (through-cut)
     mod.diameter = holeDiameter;
+    mod.depth = depth;
     mod.name = "Delik";
     return mod;
 }
@@ -137,7 +139,8 @@ std::vector<CutModifier> boltGroupHoleModifiers(const BoltGroup& bolt) noexcept 
         for (EntityId part : bolt.parts) {
             if (part == kInvalidEntityId) continue;
             out.push_back(makeHoleCutModifier(part, o, bolt.axis,
-                                              bolt.params.holeDiameter));
+                                              bolt.params.holeDiameter,
+                                              bolt.holeDepth));
         }
     }
     return out;

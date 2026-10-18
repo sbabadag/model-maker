@@ -76,6 +76,11 @@ struct BoltGroup {
     // Numaralama boltGroupBoltOrigins ile ayni: j*satir + i (j=0 en alt satir,
     // i soldan saga). Silinen bulonlar delik/display uretiminde atlanir.
     std::vector<int> deletedBolts;
+    // DELIK DERINLIGI: bulon deliginin eksen boyunca toplam boyu (mm). 0 =
+    // through-cut (geriye uyumlu). End Plate tek-flans modunda resolveEndPlate
+    // -Placement bunu "levha + gap + kolon on flansi" olarak hesaplar; boylece
+    // delik kolonun ARKA flansina ulasmaz. Cift-flans modunda 0 kalir.
+    double holeDepth{0.0};
     bool enabled{true};
     bool operator==(const BoltGroup&) const = default;
 };
@@ -86,7 +91,8 @@ struct BoltGroup {
 // modifier dondurur ama OCC katmani base'e dokunmaz (guvenli no-op): cap <= 0
 // veya eksen ~0 ise islem atlanir.
 CutModifier makeHoleCutModifier(EntityId part, const Vec3& origin,
-                                const Vec3& axis, double holeDiameter) noexcept;
+                                const Vec3& axis, double holeDiameter,
+                                double depth = 0.0) noexcept;
 
 // Bulon grubunun TUM bagli parcalari icin delik modifier listesi (her bulon
 // pozisyonu x her parca icin bir delik). Pattern (countX/countY) dikkate

@@ -47,6 +47,13 @@ int main() {
     const CutModifier m0 = makeHoleCutModifier(7, {0, 0, 0}, {0, 0, 0}, 22.0);
     check(approx(m0.planeNormal.z, 1.0), "sifir eksen -> +Z");
 
+    // 2b) DELIK DERINLIGI (End Plate arka flans korumasi): depth parametresi
+    // makeHoleCutModifier'a tasinir; varsayilan 0 = through-cut (geriye uyumlu).
+    const CutModifier md = makeHoleCutModifier(7, {0, 0, 0}, {0, 0, 1}, 22.0, 29.5);
+    check(approx(md.depth, 29.5), "makeHoleCutModifier depth 29.5 tasinir");
+    check(approx(makeHoleCutModifier(7, {0, 0, 0}, {0, 0, 1}, 22.0).depth, 0.0),
+          "makeHoleCutModifier varsayilan depth 0 (through-cut)");
+
     // 3) boltGroupHoleModifiers: gecersiz id atlanir.
     BoltGroup bg;
     bg.parts = {1, 2, kInvalidEntityId, 4};
@@ -61,6 +68,21 @@ int main() {
     }
     check(holes[0].target == 1 && holes[1].target == 2 && holes[2].target == 4,
           "hedef parcalar sirasi korunur");
+
+    // 3a) boltGroupHoleModifiers: holeDepth her delige yayilir (End Plate'te
+    // kolonun yalniz on flansi delinir, arka flans korunur).
+    {
+        BoltGroup bd;
+        bd.parts = {1, 2};
+        bd.origin = {0, 0, 0};
+        bd.axis = {0, 0, 1};
+        bd.params.holeDiameter = 22.0;
+        bd.holeDepth = 29.5;
+        const auto hd = boltGroupHoleModifiers(bd);
+        check(hd.size() == 2, "holeDepth: 2 parca -> 2 delik");
+        for (const auto& h : hd)
+            check(approx(h.depth, 29.5), "holeDepth 29.5 delige yayilir");
+    }
 
     // 3b) boltGroupBoltOrigins: rectangular pattern.
     {

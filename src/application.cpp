@@ -4857,6 +4857,16 @@ bool Application::resolveEndPlatePlacement(std::size_t mainIdx, std::size_t secI
     placement.bolts.origin.y -= placement.axis.y * gripShift;
     placement.bolts.origin.z -= placement.axis.z * gripShift;
 
+    // DELIK DERINLIGI: tek flans modunda delik yalniz levha + gap + kolon ON
+    // flansini deler (arka flansa ulasmaz). Cift flans modunda 0 (through-cut):
+    // bulon kolon boyunca gecer, delik de oyle. Sinirli delik origin'de
+    // (kavrama merkezi) ortalanir; boylece [flans ic yuz .. levha kiris yuzu]
+    // araligini birebir kaplar.
+    placement.bolts.holeDepth =
+        (params.boltCutLengthMode == 1)
+            ? 0.0
+            : (params.plateThickness + params.gap + colFlangeThickness);
+
     // TESHIS (kisa yontem): Windows'ta `set MM_ENDPLATE_DIAG=1` sonra uygulamayi
     // calistirip End Plate olusturunca exe yanindaki
     // model-maker-endplate-diag.log'a tum ara degerler yazilir; bu dosyayi paylas.

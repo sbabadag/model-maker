@@ -424,11 +424,14 @@ TopoDS_Shape applyCutModifier(const TopoDS_Shape& base, const CutModifier& mod,
             return booleanCutShape(base, *tool);
         }
         case CutKind::Hole: {
-            // Phase B1 "bolt hole": delik = cikarilan silindir (through-cut).
+            // Phase B1 "bolt hole": delik = cikarilan silindir.
             // Eksen = planeNormal (birimlestirilir), merkez = planeOrigin,
-            // cap = diameter. Silindir katiyi boydan boya kesecek kadar uzun
-            // tutulur (bbox kosegeni + cap yedegi). cap<=0 veya eksen ~0 ise
-            // base'e dokunulmaz (guvenli no-op).
+            // cap = diameter. depth>0 ise SINIRLI silindir (yalniz eksen boyunca
+            // `depth` keser, uç kapaklari icin 2 mm pay — boylece End Plate
+            // bulonu kolonun YALNIZ on flansini deler, arka flansa ulasmaz).
+            // depth<=0 ise through-cut (eski davranis): silindir katiyi boydan
+            // boya kesecek kadar uzun tutulur (bbox kosegeni + cap yedegi).
+            // cap<=0 veya eksen ~0 ise base'e dokunulmaz (guvenli no-op).
             if (mod.diameter <= 0.0) return base;
             const double axlen = std::sqrt(mod.planeNormal.x * mod.planeNormal.x +
                                            mod.planeNormal.y * mod.planeNormal.y +
@@ -437,21 +440,33 @@ TopoDS_Shape applyCutModifier(const TopoDS_Shape& base, const CutModifier& mod,
             const gp_Dir axisDir(mod.planeNormal.x / axlen,
                                  mod.planeNormal.y / axlen,
                                  mod.planeNormal.z / axlen);
-            Bnd_Box bb;
-            BRepBndLib::Add(base, bb);
-            double xMin = 0.0, yMin = 0.0, zMin = 0.0;
-            double xMax = 0.0, yMax = 0.0, zMax = 0.0;
-            bb.Get(xMin, yMin, zMin, xMax, yMax, zMax);
-            const double diag = std::sqrt((xMax - xMin) * (xMax - xMin) +
-                                          (yMax - yMin) * (yMax - yMin) +
-                                          (zMax - zMin) * (zMax - zMin));
-            const double half = diag + mod.diameter;
-            const gp_Pnt center(mod.planeOrigin.x - axisDir.X() * half,
-                                mod.planeOrigin.y - axisDir.Y() * half,
-                                mod.planeOrigin.z - axisDir.Z() * half);
-            const TopoDS_Shape cylinder =
-                BRepPrimAPI_MakeCylinder(gp_Ax2(center, axisDir),
-                                         mod.diameter * 0.5, 2.0 * half).Shape();
+            const double radius = mod.diameter * 0.5;
+            TopoDS_Shape cylinder;
+            if (mod.depth > 0.0) {
+                // Sinirli delik: origin'de ortalanmis, boyu depth + 2 mm (her uca
+                // 1 mm pay — uç kapak flans ic/levha dis yuzeyine teget kalip
+                // dejenere boolean uretmesin).
+                const double h = mod.depth + 2.0;
+                const gp_Pnt center(mod.planeOrigin.x - axisDir.X() * (h * 0.5),
+                                    mod.planeOrigin.y - axisDir.Y() * (h * 0.5),
+                                    mod.planeOrigin.z - axisDir.Z() * (h * 0.5));
+                cylinder = BRepPrimAPI_MakeCylinder(gp_Ax2(center, axisDir), radius, h).Shape();
+            } else {
+                Bnd_Box bb;
+                BRepBndLib::Add(base, bb);
+                double xMin = 0.0, yMin = 0.0, zMin = 0.0;
+                double xMax = 0.0, yMax = 0.0, zMax = 0.0;
+                bb.Get(xMin, yMin, zMin, xMax, yMax, zMax);
+                const double diag = std::sqrt((xMax - xMin) * (xMax - xMin) +
+                                              (yMax - yMin) * (yMax - yMin) +
+                                              (zMax - zMin) * (zMax - zMin));
+                const double half = diag + mod.diameter;
+                const gp_Pnt center(mod.planeOrigin.x - axisDir.X() * half,
+                                    mod.planeOrigin.y - axisDir.Y() * half,
+                                    mod.planeOrigin.z - axisDir.Z() * half);
+                cylinder = BRepPrimAPI_MakeCylinder(gp_Ax2(center, axisDir), radius,
+                                                    2.0 * half).Shape();
+            }
             return booleanCutShape(base, cylinder);
         }
     }

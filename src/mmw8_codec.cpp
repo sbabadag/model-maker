@@ -685,8 +685,8 @@ void writeMmw8(std::ostream& out, const Mmw8Document& doc) {
             for (const auto& p : mod.polygon) body << ' ' << p.x << ' ' << p.y << ' ' << p.z;
             body << ' ' << mod.source << ' ' << (mod.invertSide ? 1 : 0)
                  << ' ' << mod.diameter << ' ' << mod.owner
-                 << ' ' << (mod.hidden ? 1 : 0)
-                 << '\n';  // P6 kaynak; P8 yon tersi; B1 cap + sahiplik; gizli
+                 << ' ' << (mod.hidden ? 1 : 0) << ' ' << mod.depth
+                 << '\n';  // P6 kaynak; P8 yon tersi; B1 cap + sahiplik + derinlik; gizli
         }
         const std::string b = body.str();
         out << "C " << b.size() << '\n';
@@ -710,7 +710,8 @@ void writeMmw8(std::ostream& out, const Mmw8Document& doc) {
                  << ' ' << (g.params.hasWasher ? 1 : 0)
                  << ' ' << g.displayEntityId << ' ' << (g.enabled ? 1 : 0)
                  << ' ' << g.countX << ' ' << g.countY
-                 << ' ' << g.spacingX << ' ' << g.spacingY << '\n';
+                 << ' ' << g.spacingX << ' ' << g.spacingY
+                 << ' ' << g.holeDepth << '\n';
         }
         const std::string b = body.str();
         out << "G " << b.size() << '\n';
@@ -743,7 +744,8 @@ void writeMmw8(std::ostream& out, const Mmw8Document& doc) {
             body << ' ' << (g.params.hasHead ? 1 : 0) << ' ' << (g.params.hasNut ? 1 : 0)
                  << ' ' << (g.params.hasWasher ? 1 : 0) << ' ' << g.displayEntityId << ' '
                  << (g.enabled ? 1 : 0) << ' ' << g.countX << ' ' << g.countY << ' '
-                 << g.spacingX << ' ' << g.spacingY << ' ' << c.params.gap << ' '
+                 << g.spacingX << ' ' << g.spacingY << ' ' << g.holeDepth << ' '
+                 << c.params.gap << ' '
                  << c.params.topExtra << ' ' << c.params.bottomExtra << ' '
                  << c.params.boltAlignH << ' ' << c.params.boltAlignV << ' '
                  << c.params.boltOffsetH << ' ' << c.params.boltOffsetV << ' '
@@ -1087,6 +1089,9 @@ void readMmw8(std::istream& in, Mmw8Document& doc) {
                 // Gizli (motor eleman) (opsiyonel — eski dosyalarda yok).
                 std::uint64_t hidden = 0;
                 if (ls >> hidden) mod.hidden = hidden != 0;
+                // Delik derinligi (opsiyonel — eski dosyalarda yok -> 0 through-cut).
+                double depth = 0.0;
+                if (ls >> depth) mod.depth = depth;
                 parsed.cutModifiers.push_back(std::move(mod));
             }
         } else if (tag == 'G') {
@@ -1137,6 +1142,10 @@ void readMmw8(std::istream& in, Mmw8Document& doc) {
                     g.spacingX = 0.0;
                     g.spacingY = 0.0;
                 }
+                // Delik derinligi (opsiyonel — eski dosyalarda yok -> 0 through-cut).
+                double holeDepthVal = 0.0;
+                if (!(ls >> holeDepthVal)) holeDepthVal = 0.0;
+                g.holeDepth = holeDepthVal;
                 parsed.boltGroups.push_back(std::move(g));
             }
         } else if (tag == 'E') {
@@ -1205,6 +1214,10 @@ void readMmw8(std::istream& in, Mmw8Document& doc) {
                     g.spacingX = 0.0;
                     g.spacingY = 0.0;
                 }
+                // Delik derinligi (opsiyonel — eski dosyalarda yok -> 0 through-cut).
+                double holeDepthVal = 0.0;
+                if (!(ls >> holeDepthVal)) holeDepthVal = 0.0;
+                g.holeDepth = holeDepthVal;
                 // gap (faz D1): kayit SONUNDA opsiyonel alan. Eski dosyalarda
                 // yoktur -> varsayilan 0.0 (geriye + ileriye uyumlu).
                 double gapVal = 0.0;

@@ -55,6 +55,11 @@ struct CutModifier {
     // planeNormal (birim), merkez = planeOrigin; silindir katiyi boydan boya
     // keser (through-cut). Diger turlerde 0 (kullanilmaz).
     double diameter{0.0};
+    // DELIK DERINLIGI (CutKind::Hole): sinirli delik boyu (mm, eksen boyunca).
+    // 0 = through-cut (eski davranis, geriye uyumlu). >0 ise silindir yalniz
+    // bu uzunlukta keser — ornegin End Plate bulonu kolonun YALNIZ on flansini
+    // deler, arka flansa ulasmaz. Diger turlerde 0.
+    double depth{0.0};
     // BULON SAHIPLIGI (Phase B1): bu modifier'i ureten BoltGroup'un EntityId'si.
     // Hole modifier'lari bir bulon grubuna aittir; bulon silinince/taşıninca
     // yalnizca bu sahipligi tasiyan modifier'lar kaldirilir/yeniden uretilir.
