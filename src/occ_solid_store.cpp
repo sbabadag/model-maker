@@ -2,6 +2,8 @@
 
 #include "model_maker/occ_brep_serialize.hpp"
 
+#include <BOPAlgo_Options.hxx>
+
 #include <algorithm>
 
 namespace mm {
@@ -241,6 +243,12 @@ const OccSolidStore* asSolidStore(const OccStore* store) noexcept {
 }
 
 std::unique_ptr<OccStore> makeOccSolidStore() {
+    // OCCT'nin PARALEL boolean motoru (BOPTools_Parallel) is parcacigi yarisinda
+    // nondeterministik segfault uretir (Extrema_ExtCC / yuz siniflandirma); tek
+    // cekirdek GUI + dosya senkronu altinda paralellik yalniz kararsizlik getirir.
+    // Global modu bir kez KAPAT: BOPAlgo algoritmalari bu modu KURULUMDA okur,
+    // dolayisiyla sonraki tum delik/kesme/fuse islemleri seri calisir. Idempotent.
+    BOPAlgo_Options::SetParallelMode(Standard_False);
     return std::make_unique<OccSolidStore>();
 }
 
