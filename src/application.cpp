@@ -4389,11 +4389,56 @@ void Application::applyEndPlateFromParts(const std::vector<std::size_t>& parts) 
     EndPlateParams params;  // M20/22, 12 mm levha, 2x4 bulon, gap=0 (varsayilan)
     EndPlatePlacement placement;
     std::wstring err;
-    if (!resolveEndPlatePlacement(mainIdx, secIdx, params, placement, err)) {
+    EndPlateTrimInfo trim;
+    if (!resolveEndPlatePlacement(mainIdx, secIdx, params, placement, err, &trim)) {
         MessageBoxW(canvas_, err.empty() ? L"End Plate yerlesimi cozulemedi." : err.c_str(),
                     L"End Plate — temas cozulemedi", MB_OK | MB_ICONWARNING);
         return;
     }
+
+    // TEKLA "fit part end": kiriş kolonu GECTIYSE, once kiriş ucunu kolon giris
+    // yuzune fitting'le kes + eksen ucunu kesim noktasina guncelle, sonra levhayi
+    // yeni (kesilmis) uca oturt. Bu mutasyon levhayla AYNI undo kaydinda olur
+    // (asagidaki tek pushUndoSnapshot) — tek Ctrl+Z hem kesmeyi hem levhayi alir.
+    pushUndoSnapshot();
+#ifdef MM_HAS_OCC
+    if (trim.needed) {
+        ensureProfileCatalog();
+        const auto& sp = document_.models()[secIdx].properties();
+        if (const SteelProfile* prof = findProfile(profileCatalog_, sp.profileName)) {
+            // (1) Ekseni giris noktasina kisalt + katı yeniden uret (kullanıcı
+            // şartı: "kiris eksen ucunu kesim noktasina guncelle").
+            const TopoDS_Shape shortSolid = extrudeProfileSolid(
+                *prof, Vec3{sp.axisFromX, sp.axisFromY, sp.axisFromZ},
+                trim.entryPoint, sp.profileRotation,
+                Vec3{sp.sectionNormalX, sp.sectionNormalY, sp.sectionNormalZ},
+                sp.sectionAnchor);
+            if (!shortSolid.IsNull()) {
+                auto shortModel = shapeToWireframeWithFaces(shortSolid, 0.15);
+                auto shortProps = sp;
+                shortProps.axisToX = trim.entryPoint.x;
+                shortProps.axisToY = trim.entryPoint.y;
+                shortProps.axisToZ = trim.entryPoint.z;
+                shortModel.setProperties(std::move(shortProps));
+                document_.replaceModel(secIdx, {std::move(shortModel)});
+                putOccSolid(secIdx, shortSolid);
+            }
+        }
+        // (2) Fitting: ucu giris duzlemine KOPLANAR oturt — egik kolon/diyagonal
+        // kiriş icin eksene dik kapağı giris duzlemiyle ayni hizaya keser.
+        CutModifier fit;
+        fit.kind = CutKind::Fitting;
+        fit.target = document_.modelId(secIdx);
+        fit.planeOrigin = trim.entryPoint;
+        fit.planeNormal = trim.entryNormal;
+        fit.keepPositive = true;
+        fit.enabled = true;
+        fit.name = "Fitting";
+        document_.addCutModifier(fit);
+        // (3) Zinciri yeniden uygula (fitting egik takozu keser, mesh yenilenir).
+        recomputeCutTarget(document_.modelId(secIdx));
+    }
+#endif
 
     EndPlateConnection conn;
     conn.mainPart = document_.modelId(mainIdx);
@@ -4402,7 +4447,6 @@ void Application::applyEndPlateFromParts(const std::vector<std::size_t>& parts) 
     conn.bolts = placement.bolts;
     conn.enabled = true;
 
-    pushUndoSnapshot();
     WireframeModel plateModel;
     WireframeModel boltDisplay;
 #ifdef MM_HAS_OCC
@@ -4501,7 +4545,9 @@ std::string epVec(const Vec3& v) {
 
 bool Application::resolveEndPlatePlacement(std::size_t mainIdx, std::size_t secIdx,
                                            const EndPlateParams& params,
-                                           EndPlatePlacement& placement, std::wstring& err) {
+                                           EndPlatePlacement& placement, std::wstring& err,
+                                           EndPlateTrimInfo* trim) {
+    if (trim) *trim = EndPlateTrimInfo{};
     if (mainIdx >= document_.models().size() || secIdx >= document_.models().size()) {
         err = L"End Plate: kolon veya kiris bulunamadi.";
         return false;
@@ -4628,13 +4674,45 @@ bool Application::resolveEndPlatePlacement(std::size_t mainIdx, std::size_t secI
             diagContactNormal = contact.outwardNormal;
             faceResolved = true;
         } else if (contact.status != ResolutionStatus::Unresolved) {
-            // Acik hata: paralel eksen / yuz disi / belirsiz — RASTGELE yerlestirme YOK.
-            err = contact.status == ResolutionStatus::ParallelAxis
-                      ? L"Kiris ekseni kolon yuzeyine paralel; temas cozulemedi."
-                  : contact.status == ResolutionStatus::OutsideFace
-                      ? L"Temas noktasi kolonun sonlu yuzeyinin disinda."
-                      : L"Temas yuzeyi belirsiz/gecersiz; component yerlestirilmedi.";
-            return false;
+            // Kiris kolonu GECTIYSE (kiris ucu kolonun icinde), temas yuzu kirisin
+            // ARKASINDA kalir ve resolver NoContact/OutsideFace/Ambiguous doner.
+            // Giris yuzunu kirisin UZAK ucundan (beamFrom) kolona dogru isin atarak
+            // coz: isabet noktasi kiris ucundan ONCE ise (dist < eksen uzunlugu)
+            // kiris kolonu geciyor demektir. Bu durumda fitting uygulanmali; levha
+            // giris yuzune oturur. (Ray-cast normali isin cikisina/beamFrom'a
+            // bakacak sekilde yonlenir = giris yuzunun dis normali.)
+            Vec3 entryPoint{}, entryNormal{0.0, 0.0, 1.0};
+            bool passThrough = false;
+#ifdef MM_HAS_OCC
+            if (const TopoDS_Shape* solid = findOccSolid(mainIdx)) {
+                double entryDist = 0.0;
+                if (raycastBrepFace(*solid, beamFrom, beamDir, entryPoint, entryNormal,
+                                    entryDist) &&
+                    entryDist < beamAxisLen - 1e-6) {
+                    passThrough = true;
+                }
+            }
+#endif
+            if (passThrough) {
+                face.origin = entryPoint;
+                face.normal = entryNormal;
+                diagContactPoint = entryPoint;
+                diagContactNormal = entryNormal;
+                faceResolved = true;
+                if (trim) {
+                    trim->needed = true;
+                    trim->entryPoint = entryPoint;
+                    trim->entryNormal = entryNormal;
+                }
+            } else {
+                // Acik hata: paralel eksen / yuz disi / belirsiz — RASTGELE yerlestirme YOK.
+                err = contact.status == ResolutionStatus::ParallelAxis
+                          ? L"Kiris ekseni kolon yuzeyine paralel; temas cozulemedi."
+                      : contact.status == ResolutionStatus::OutsideFace
+                          ? L"Temas noktasi kolonun sonlu yuzeyinin disinda."
+                          : L"Temas yuzeyi belirsiz/gecersiz; component yerlestirilmedi.";
+                return false;
+            }
         }
     }
     if (!faceResolved) {

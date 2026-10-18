@@ -302,11 +302,21 @@ public:
     // SLICE 2d-2b: mevcut End Plate baglantisinin yerlesimini parcalarin GUNCEL
     // geometrisinden (kolon cercevesi/kesiti + kiris ekseni/ucu) yeniden cozer.
     // Gercek B-Rep temas (OCCT) oncelikli, lokal kesit geometrisi fallback.
+    // Kiris kolonu GECTIGINDE (kiris ucu kolonun icinde) otomatik fitting bilgisi.
+    // resolver yalniz TESPIT eder (belgeyi DEGISTIRMEZ); mutasyon
+    // applyEndPlateFromParts'ta ayni undo kaydinda yapilir.
+    struct EndPlateTrimInfo {
+        bool needed{false};
+        Vec3 entryPoint{};           // kiris ekseninin kolon giris yuzunu kestigi nokta
+        Vec3 entryNormal{0.0, 0.0, 1.0}; // giris yuzunun dis normali (kirise dogru)
+    };
     // Basarida placement doldurulur + true; ACIK hata (paralel eksen / yuz disi /
     // belirsiz / eksik parca) err + false — cagiran belgeyi DEGISTIRMEZ.
+    // `trim` verildiyse ve kiriş kolonu geciyorsa doldurulur (needed=true).
     bool resolveEndPlatePlacement(std::size_t mainIdx, std::size_t secIdx,
                                   const EndPlateParams& params,
-                                  EndPlatePlacement& placement, std::wstring& err);
+                                  EndPlatePlacement& placement, std::wstring& err,
+                                  EndPlateTrimInfo* trim = nullptr);
     // SLICE 2d-2c P0: bir End Plate baglantisinin GECICI yeniden uretim sonucu.
     // OCCT tipleri burada kalir; prepare ciktisi, commit girdisi. prepare AŞAMASINDA
     // belge DEGISMEZ (pure); commit yalnizca infallible document yazimlari yapar.
