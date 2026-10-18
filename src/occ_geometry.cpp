@@ -443,13 +443,18 @@ TopoDS_Shape applyCutModifier(const TopoDS_Shape& base, const CutModifier& mod,
             const double radius = mod.diameter * 0.5;
             TopoDS_Shape cylinder;
             if (mod.depth > 0.0) {
-                // Sinirli delik: origin'de ortalanmis, boyu depth + 2 mm (her uca
-                // 1 mm pay — uç kapak flans ic/levha dis yuzeyine teget kalip
-                // dejenere boolean uretmesin).
+                // Sinirli delik: SILINDIR KAVRAMA MERKEZINE (planeOrigin) ORTALANIR.
+                // Boyu depth + 2 mm (her uca 1 mm pay — uç kapak flans ic/levha
+                // dis yuzeyine teget kalip dejenere boolean uretmesin). planeOrigin
+                // = bulon kavrama merkezi (resolveEndPlatePlacement gripShift ile
+                // oraya cekildi); silindir [origin ± (depth+2)/2] kaplar = levha +
+                // gap + kolon flansini birebir doldurur. (Onceden origin - axis*(h/2)
+                // kaydirilip [origin-h, origin] araligina dusuyordu -> delik levhadan
+                // AYRIK kalip disjoint boolean uretiyordu; Windows Extrema_ExtCC
+                // segfault'unun kaynagi.)
                 const double h = mod.depth + 2.0;
-                const gp_Pnt center(mod.planeOrigin.x - axisDir.X() * (h * 0.5),
-                                    mod.planeOrigin.y - axisDir.Y() * (h * 0.5),
-                                    mod.planeOrigin.z - axisDir.Z() * (h * 0.5));
+                const gp_Pnt center(mod.planeOrigin.x, mod.planeOrigin.y,
+                                    mod.planeOrigin.z);
                 cylinder = BRepPrimAPI_MakeCylinder(gp_Ax2(center, axisDir), radius, h).Shape();
             } else {
                 Bnd_Box bb;
@@ -715,6 +720,26 @@ TopoDS_Shape booleanCommonShape(const TopoDS_Shape& a, const TopoDS_Shape& b) {
 
 TopoDS_Shape booleanCutShape(const TopoDS_Shape& a, const TopoDS_Shape& b) {
     if (a.IsNull() || b.IsNull()) return a;
+    // DISJOINT GUARD: alet (b) tamamen tabanin (a) disinda kaldiginda kesim
+    // no-op'tur. Ayrik (disjoint) bir BOPAlgo boolean, Windows'ta yuz
+    // siniflandirmasinda Extrema_ExtCC segfault'unun bilinen kaynagidir — o
+    // yuzden boolean'a HIC girme. (Orn. sonlu delik silindiri levhanin disina
+    // tasarsa; ya da kolon deligi kolonun arkasindaki bir parcaya denk gelirse.)
+    Bnd_Box ba, bb;
+    BRepBndLib::Add(a, ba);
+    BRepBndLib::Add(b, bb);
+    if (!ba.IsVoid() && !bb.IsVoid()) {
+        double ax0 = 0, ay0 = 0, az0 = 0, ax1 = 0, ay1 = 0, az1 = 0;
+        double bx0 = 0, by0 = 0, bz0 = 0, bx1 = 0, by1 = 0, bz1 = 0;
+        ba.Get(ax0, ay0, az0, ax1, ay1, az1);
+        bb.Get(bx0, by0, bz0, bx1, by1, bz1);
+        constexpr double eps = 1e-3;
+        const bool disjoint =
+            (ax1 < bx0 - eps || bx1 < ax0 - eps ||
+             ay1 < by0 - eps || by1 < ay0 - eps ||
+             az1 < bz0 - eps || bz1 < az0 - eps);
+        if (disjoint) return a;  // alet tabanin disinda -> kesilecek bir sey yok
+    }
     TopTools_ListOfShape args, tools;
     args.Append(a);
     tools.Append(b);
