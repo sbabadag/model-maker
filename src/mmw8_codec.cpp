@@ -9,6 +9,7 @@
 #include <limits>
 #include <sstream>
 #include <stdexcept>
+#include <unordered_set>
 
 namespace mm {
 
@@ -339,6 +340,10 @@ void readComponentBody(std::istream& bs, std::vector<ComponentInstanceRecord>& o
 }
 
 // --- Slice 2d-3: parametrik ref/kisit/cerceve serilestirme ------------------
+// NOT: handle anahtari / selector / child id gibi TANIMLAYICI string'ler
+// satir-icinde putString ile yazilir; bu yuzden yeni satir ('\n') ICERMEMELIDIR
+// (mevcut MMW8 'I'/'E'/'G' bloklarindaki typeId/name/grade ile AYNI kisit).
+// Bunlar kullanici serbest metni degil, program uretimli kimliklerdir.
 void putVec3(std::ostream& out, const Vec3& v) {
     out << v.x << ' ' << v.y << ' ' << v.z;
 }
@@ -459,6 +464,25 @@ std::int64_t componentIndexById(const std::vector<ComponentInstanceRecord>& recs
     return -1;
 }
 
+// LCS (origin/u/v/axis) -> MemberLocalFrame. LEGACY MIGRATION: eski dosyalarda
+// magnetic frame component'in origin/u/v/axis'inden TURETILIR (ayri bir 'M'
+// blogu yoksa). ComponentLocalFrame.frame'in w ekseni = component axis'dir.
+MemberLocalFrame frameFromLcs(const ComponentInstanceRecord& r) {
+    MemberLocalFrame f;
+    f.origin = r.origin;
+    f.u = r.u;
+    f.v = r.v;
+    f.w = r.axis;
+    return f;
+}
+bool frameEqual(const MemberLocalFrame& a, const MemberLocalFrame& b, double tol = 1e-12) {
+    const auto ve = [&](const Vec3& x, const Vec3& y) {
+        return std::abs(x.x - y.x) <= tol && std::abs(x.y - y.y) <= tol &&
+               std::abs(x.z - y.z) <= tol;
+    };
+    return ve(a.origin, b.origin) && ve(a.u, b.u) && ve(a.v, b.v) && ve(a.w, b.w);
+}
+
 // 'J' blogu: FaceReference listeleri (component id ile iliskili).
 void writeFaceRefBlock(std::ostream& out, const std::vector<ComponentInstanceRecord>& recs) {
     std::size_t total = 0;
@@ -512,15 +536,18 @@ void writeConstraintBlock(std::ostream& out, const std::vector<ComponentInstance
 }
 
 // 'M' blogu: MagneticFrame / ComponentLocalFrame (frame + alt nesne yerlesimleri).
+// Yalnizca "default olmayan" cerceveler yazilir: alt nesne VARSA veya frame
+// origin/u/v/axis'ten turetilen legacy cerceveden FARKLIYSA. Boylece (a) eski
+// dosyalar bayt-kararli kalir, (b) cocuksuz ama anlamli cerceve KAYBOLMAZ.
 void writeFrameBlock(std::ostream& out, const std::vector<ComponentInstanceRecord>& recs) {
     std::size_t nFrames = 0;
     for (const auto& r : recs)
-        if (!r.frame.children.empty()) ++nFrames;
+        if (!r.frame.children.empty() || !frameEqual(r.frame.frame, frameFromLcs(r))) ++nFrames;
     if (nFrames == 0) return;
     std::ostringstream body;
     body << nFrames << '\n';
     for (const auto& r : recs) {
-        if (r.frame.children.empty()) continue;
+        if (r.frame.children.empty() && frameEqual(r.frame.frame, frameFromLcs(r))) continue;
         body << r.id << ' ';
         putMemberLocalFrame(body, r.frame.frame);
         body << ' ' << r.frame.children.size() << '\n';
@@ -950,6 +977,9 @@ void readMmw8(std::istream& in, Mmw8Document& doc) {
     // --- Kuyruk: etiket-gudumlu bloklar ---
     bool sawH = false, sawB = false, sawV = false, sawG = false, sawE = false, sawI = false;
     bool sawJ = false, sawD = false, sawM = false, sawA = false;
+    // 'M' bloguyla cerceve ATAYAN component id'leri — legacy turetme (origin/u/v/axis)
+    // yalnizca 'M' kaydi OLMAYAN component'lere uygulanir.
+    std::unordered_set<EntityId> framedComponents;
     std::size_t totalBlobBytes = 0;
     for (;;) {
         in >> std::ws;
@@ -1262,6 +1292,7 @@ void readMmw8(std::istream& in, Mmw8Document& doc) {
                     clf.children.push_back(std::move(child));
                 }
                 parsed.componentInstances[static_cast<std::size_t>(idx)].frame = std::move(clf);
+                framedComponents.insert(compId);
             }
         } else if (tag == 'K') {
             std::istringstream ks(body);
@@ -1303,6 +1334,12 @@ void readMmw8(std::istream& in, Mmw8Document& doc) {
         }
     }
     if (!sawH) fail("missing mandatory H block");
+
+    // LEGACY MIGRATION (Slice 2d-3): 'M' kaydi OLMAYAN component'lerde magnetic
+    // frame origin/u/v/axis'ten turetilir. 'M' kaydi OLANLAR (framedComponents)
+    // AYNEN korunur (cocuksuz ama anlamli cerceve dahil).
+    for (auto& r : parsed.componentInstances)
+        if (!framedComponents.count(r.id)) r.frame.frame = frameFromLcs(r);
 
     // nextEntityId, en buyuk entityId'den buyuk olmali.
     EntityId maxId = 0;

@@ -337,7 +337,17 @@ static void testLegacyComponentDefaults() {
     legacy.mainPart = EntityId{10};
     legacy.params = {{L"plateThickness", CompParamValue{15.0}}};
     legacy.enabled = true;
-    // frame/faceRefs/constraints/handles/dependencies default (bos).
+    // Default-olmayan LCS + frame == frameFromLcs (tutarlı legacy durum):
+    // 'M' blogu YAZILMAZ (frame turetilene esit) ve okumada frame LCS'ten turetir.
+    legacy.origin = {10.0, 20.0, 30.0};
+    legacy.u = {1.0, 0.0, 0.0};
+    legacy.v = {0.0, 1.0, 0.0};
+    legacy.axis = {0.0, 0.0, 1.0};
+    legacy.frame.frame.origin = {10.0, 20.0, 30.0};
+    legacy.frame.frame.u = {1.0, 0.0, 0.0};
+    legacy.frame.frame.v = {0.0, 1.0, 0.0};
+    legacy.frame.frame.w = {0.0, 0.0, 1.0};
+    // faceRefs/constraints/handles/dependencies default (bos).
 
     Mmw8Document doc;
     doc.nextEntityId = 100;
@@ -359,12 +369,54 @@ static void testLegacyComponentDefaults() {
         check(r.faceRefs.empty() && r.constraints.empty() && r.handles.empty() &&
                   r.dependencies.empty() && r.frame.children.empty(),
               "legacy parametrik alanlar BOS");
+        // Legacy migration: frame origin/u/v/axis'tan TURETILIR.
+        check(v3eq(r.frame.frame.origin, legacy.origin), "legacy frame.origin LCS'ten turetildi");
+        check(v3eq(r.frame.frame.w, legacy.axis), "legacy frame.w = component axis");
     }
 }
 
-// 7) Parametrik blok redleri: gecersiz enum, yinelenen blok, yinelenen handle.
+// 7) Cocuksuz ama anlamli cerceve KAYBOLMAZ (reviewer fix): frame LCS'ten
+//    farkliyken 'M' blogu yazilir ve round-trip cerceveyi korur.
+static void testFrameWithoutChildren() {
+    std::printf("Test 7: cocuksuz cerceve korunur\n");
+    ComponentInstanceRecord r;
+    r.id = EntityId{70};
+    r.typeId = L"beam_to_column_end_plate";
+    r.schemaVersion = 1;
+    r.mainPart = EntityId{10};
+    r.origin = {0, 0, 0};
+    r.u = {1, 0, 0};
+    r.v = {0, 1, 0};
+    r.axis = {0, 0, 1};
+    r.frame.frame.origin = {5.0, 6.0, 7.0};  // LCS'ten FARKLI (anlamli cerceve)
+    r.frame.frame.u = {1, 0, 0};
+    r.frame.frame.v = {0, 1, 0};
+    r.frame.frame.w = {0, 0, 1};
+    // children BOS.
+
+    Mmw8Document doc;
+    doc.nextEntityId = 100;
+    doc.metadata.binToolsFormatVersion = 0;
+    doc.componentInstances.push_back(r);
+
+    const std::string bytes = serializeDoc(doc);
+    check(bytes.find("\nM ") != std::string::npos, "M blogu yazildi (cocuksuz ama anlamli cerceve)");
+
+    Mmw8Document parsed;
+    std::istringstream in(bytes);
+    readMmw8(in, parsed);
+    check(parsed.componentInstances.size() == 1, "1 component");
+    if (parsed.componentInstances.size() == 1) {
+        const auto& got = parsed.componentInstances[0];
+        check(got.frame.children.empty(), "cocuk yok");
+        check(v3eq(got.frame.frame.origin, {5.0, 6.0, 7.0}),
+              "cocuksuz anlamli cerceve korundu");
+    }
+}
+
+// 8) Parametrik blok redleri: gecersiz enum, yinelenen blok, yinelenen handle.
 static void testParamRejections() {
-    std::printf("Test 7: parametrik blok redleri\n");
+    std::printf("Test 8: parametrik blok redleri\n");
     Mmw8Document doc;
     doc.nextEntityId = 100;
     doc.metadata.binToolsFormatVersion = 0;
@@ -419,6 +471,7 @@ int main() {
     testUndoRedo();
     testSectionAnchorRoundTrip();
     testLegacyComponentDefaults();
+    testFrameWithoutChildren();
     testParamRejections();
     std::printf("FAILURES: %d\n", g_failures);
     return g_failures == 0 ? 0 : 1;
