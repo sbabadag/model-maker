@@ -64,6 +64,10 @@ struct BoltGroup {
     int countY{1};
     double spacingX{0.0};
     double spacingY{0.0};
+    // Silinen bulonlarin 1-based numaralari (Tekla "bolts to delete" listesi).
+    // Numaralama boltGroupBoltOrigins ile ayni: j*satir + i (j=0 en alt satir,
+    // i soldan saga). Silinen bulonlar delik/display uretiminde atlanir.
+    std::vector<int> deletedBolts;
     bool enabled{true};
     bool operator==(const BoltGroup&) const = default;
 };

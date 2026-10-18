@@ -50,6 +50,16 @@ struct EndPlateParams {
     int boltCountX{2};             // levha genislik yonunde bulon adedi (genelde 2)
     int boltCountY{2};             // levha yukseklik yonunde bulon adedi (2 veya 4)
     double boltEdge{30.0};         // levha kenarindan bulon merkezine (mm)
+    // --- Tekla "Bolt group dimensions" (Bulonlar sekmesi) -------------------
+    // Default'lar mevcut davranisi korur: yatay ortalanmis (Orta, offset 0,
+    // aralik otomatik flans/2), dikey alt kenardan boltEdge (Alt, offset<0).
+    int boltAlignH{1};             // yatay olcum: 0=Sol, 1=Orta, 2=Sag
+    int boltAlignV{2};             // dikey olcum: 0=Ust, 1=Orta, 2=Alt
+    double boltOffsetH{0.0};       // yatay konum olcusu (mm; Sol/Sag'da <0 = boltEdge)
+    double boltOffsetV{-1.0};      // dikey konum olcusu (mm; Ust/Alt'ta <0 = boltEdge)
+    double boltSpacingX{0.0};      // yatay aralik (0 = otomatik flans/2)
+    double boltSpacingY{0.0};      // dikey aralik (0 = otomatik levha-2*boltEdge)
+    std::vector<int> deletedBolts; // silinen bulon numaralari (1-based)
     bool hasHead{true};
     bool hasNut{true};
     bool hasWasher{true};

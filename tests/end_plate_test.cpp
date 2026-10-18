@@ -86,6 +86,47 @@ int main() {
         check(approx(pl2.plateCenter.z, 0.0), "varsayilan merkez kaymaz");
     }
 
+    // --- 1c) Bolt group dimensions (Tekla): hizalama + aralik + silme -------
+    {
+        EndPlateParams p;
+        p.plateThickness = 12.0;
+        p.plateExtra = 20.0;
+        p.boltSpacingX = 100.0;  // elle aralik
+        p.boltSpacingY = 120.0;
+        const EndPlatePlacement pl =
+            computeEndPlatePlacement({0, 0, 0}, {1, 0, 0}, 200.0, 300.0, p);
+        check(approx(pl.bolts.spacingX, 100.0), "elle yatay aralik 100");
+        check(approx(pl.bolts.spacingY, 120.0), "elle dikey aralik 120");
+
+        // Sol+Alt hizalama (offset<0 -> boltEdge=30): en sol-alt bulon levha
+        // sol-alt kosesinden 30'ar mm iceride. u=+Y, v=+Z; levha 240x340,
+        // merkez (6,0,0). origin = center - u*(120-30) - v*(170-30) = (6,-90,-140).
+        EndPlateParams a;
+        a.plateThickness = 12.0;
+        a.plateExtra = 20.0;
+        a.boltAlignH = 0;   // Sol
+        a.boltAlignV = 2;   // Alt
+        a.boltOffsetH = -1.0;  // -> boltEdge
+        a.boltOffsetV = -1.0;  // -> boltEdge
+        const EndPlatePlacement plA =
+            computeEndPlatePlacement({0, 0, 0}, {1, 0, 0}, 200.0, 300.0, a);
+        check(approx(plA.bolts.origin.y, -90.0), "sol hizalama origin.y -90");
+        check(approx(plA.bolts.origin.z, -140.0), "alt hizalama origin.z -140");
+
+        // Silinen bulonlar: 2 bulondan 2 numara silinince 1 bulon kalir.
+        BoltGroup g;
+        g.countX = 2;
+        g.countY = 1;
+        g.spacingX = 100.0;
+        g.origin = {0.0, 0.0, 0.0};
+        g.axis = {0.0, 0.0, 1.0};
+        g.xDir = {1.0, 0.0, 0.0};
+        g.deletedBolts = {2};
+        const std::vector<Vec3> origins = boltGroupBoltOrigins(g);
+        check(origins.size() == 1u, "silinen bulon atlandi (2 -> 1)");
+        if (origins.size() == 1u) check(approx(origins[0].x, 0.0), "kalan 1. bulon");
+    }
+
     // --- 2) Document kaydi + sahiplik ---------------------------------------
     Document doc;
     doc.pushSnapshot();
@@ -189,6 +230,13 @@ int main() {
         c3.secondaryPart = bm;
         c3.params = p;
         c3.params.gap = 5.0;  // gap serilestirmesi dogrulaniyor
+        c3.params.boltAlignH = 2;   // Sag
+        c3.params.boltAlignV = 0;   // Ust
+        c3.params.boltOffsetH = 40.0;
+        c3.params.boltOffsetV = 35.0;
+        c3.params.boltSpacingX = 110.0;
+        c3.params.boltSpacingY = 130.0;
+        c3.params.deletedBolts = {2, 4};
         c3.bolts = pl.bolts;
         d3.pushSnapshot();
         d3.addEndPlateConnection(c3, WireframeModel::rectangle({0, 0, 0}, {240, 340, 0}),
@@ -214,6 +262,20 @@ int main() {
               "round-trip: kalinlik 12");
         check(approx(d4.endPlateConnections()[0].params.gap, 5.0),
               "round-trip: gap 5.0 serilestirildi");
+        check(d4.endPlateConnections()[0].params.boltAlignH == 2, "round-trip: alignH Sag");
+        check(d4.endPlateConnections()[0].params.boltAlignV == 0, "round-trip: alignV Ust");
+        check(approx(d4.endPlateConnections()[0].params.boltOffsetH, 40.0),
+              "round-trip: offH 40");
+        check(approx(d4.endPlateConnections()[0].params.boltOffsetV, 35.0),
+              "round-trip: offV 35");
+        check(approx(d4.endPlateConnections()[0].params.boltSpacingX, 110.0),
+              "round-trip: spacingX 110");
+        check(approx(d4.endPlateConnections()[0].params.boltSpacingY, 130.0),
+              "round-trip: spacingY 130");
+        check(d4.endPlateConnections()[0].params.deletedBolts.size() == 2 &&
+                  d4.endPlateConnections()[0].params.deletedBolts[0] == 2 &&
+                  d4.endPlateConnections()[0].params.deletedBolts[1] == 4,
+              "round-trip: deletedBolts {2,4}");
     }
 
     std::printf("end_plate_test: %d check, %d failure\n", g_checks, g_failures);

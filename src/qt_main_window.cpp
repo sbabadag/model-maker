@@ -951,6 +951,63 @@ bool QtMainWindow::openEndPlateParamsDialog(const mm::EndPlateParams& current,
     edgeSpin->setSuffix(QStringLiteral(" mm"));
     bltForm->addRow(QStringLiteral("Kenar payı (bulon merkezi → levha kenarı):"), edgeSpin);
 
+    // ── Bulon grubu konumu (Tekla Bolt group dimensions) ──────────────────
+    auto* alignHCombo = new QComboBox(bltPage);
+    alignHCombo->addItem(QStringLiteral("Sol"), 0);
+    alignHCombo->addItem(QStringLiteral("Orta"), 1);
+    alignHCombo->addItem(QStringLiteral("Sağ"), 2);
+    int ah = (current.boltAlignH >= 0 && current.boltAlignH <= 2) ? current.boltAlignH : 1;
+    alignHCombo->setCurrentIndex(ah);
+    bltForm->addRow(QStringLiteral("Yatay ölçüm (bulon grubu):"), alignHCombo);
+
+    auto* offHSpin = new QDoubleSpinBox(bltPage);
+    offHSpin->setRange(-500.0, 500.0);
+    offHSpin->setDecimals(1);
+    offHSpin->setValue(current.boltOffsetH);
+    offHSpin->setSuffix(QStringLiteral(" mm"));
+    bltForm->addRow(QStringLiteral("Yatay konum ölçüsü:"), offHSpin);
+
+    auto* alignVCombo = new QComboBox(bltPage);
+    alignVCombo->addItem(QStringLiteral("Üst"), 0);
+    alignVCombo->addItem(QStringLiteral("Orta"), 1);
+    alignVCombo->addItem(QStringLiteral("Alt"), 2);
+    int av = (current.boltAlignV >= 0 && current.boltAlignV <= 2) ? current.boltAlignV : 2;
+    alignVCombo->setCurrentIndex(av);
+    bltForm->addRow(QStringLiteral("Dikey ölçüm (bulon grubu):"), alignVCombo);
+
+    auto* offVSpin = new QDoubleSpinBox(bltPage);
+    offVSpin->setRange(-500.0, 500.0);
+    offVSpin->setDecimals(1);
+    offVSpin->setValue(current.boltOffsetV);
+    offVSpin->setSuffix(QStringLiteral(" mm"));
+    bltForm->addRow(QStringLiteral("Dikey konum ölçüsü:"), offVSpin);
+
+    auto* spacingXSpin = new QDoubleSpinBox(bltPage);
+    spacingXSpin->setRange(0.0, 2000.0);
+    spacingXSpin->setDecimals(1);
+    spacingXSpin->setValue(current.boltSpacingX);
+    spacingXSpin->setSuffix(QStringLiteral(" mm"));
+    spacingXSpin->setSpecialValueText(QStringLiteral("Otomatik"));
+    bltForm->addRow(QStringLiteral("Yatay aralık (0 = otomatik):"), spacingXSpin);
+
+    auto* spacingYSpin = new QDoubleSpinBox(bltPage);
+    spacingYSpin->setRange(0.0, 2000.0);
+    spacingYSpin->setDecimals(1);
+    spacingYSpin->setValue(current.boltSpacingY);
+    spacingYSpin->setSuffix(QStringLiteral(" mm"));
+    spacingYSpin->setSpecialValueText(QStringLiteral("Otomatik"));
+    bltForm->addRow(QStringLiteral("Dikey aralık (0 = otomatik):"), spacingYSpin);
+
+    QString delText;
+    for (std::size_t k = 0; k < current.deletedBolts.size(); ++k) {
+        if (k) delText += QLatin1Char(',');
+        delText += QString::number(current.deletedBolts[k]);
+    }
+    auto* delEdit = new QLineEdit(bltPage);
+    delEdit->setText(delText);
+    delEdit->setPlaceholderText(QStringLiteral("örn. 2,4 (numaralar 1'den başlar)"));
+    bltForm->addRow(QStringLiteral("Silinecek bulonlar:"), delEdit);
+
     auto* headChk = new QCheckBox(QStringLiteral("Baş"), bltPage);
     headChk->setChecked(current.hasHead);
     auto* nutChk = new QCheckBox(QStringLiteral("Somun"), bltPage);
@@ -988,6 +1045,18 @@ bool QtMainWindow::openEndPlateParamsDialog(const mm::EndPlateParams& current,
     out.boltCountX = countXSpin->value();
     out.boltCountY = countYSpin->value();
     out.boltEdge = edgeSpin->value();
+    out.boltAlignH = alignHCombo->currentData().toInt();
+    out.boltAlignV = alignVCombo->currentData().toInt();
+    out.boltOffsetH = offHSpin->value();
+    out.boltOffsetV = offVSpin->value();
+    out.boltSpacingX = spacingXSpin->value();
+    out.boltSpacingY = spacingYSpin->value();
+    out.deletedBolts.clear();
+    for (const auto& t : delEdit->text().split(QLatin1Char(','))) {
+        bool ok = false;
+        const int n = t.trimmed().toInt(&ok);
+        if (ok && n >= 1) out.deletedBolts.push_back(n);
+    }
     out.hasHead = headChk->isChecked();
     out.hasNut = nutChk->isChecked();
     out.hasWasher = washChk->isChecked();

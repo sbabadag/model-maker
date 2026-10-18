@@ -110,6 +110,14 @@ std::vector<Vec3> boltGroupBoltOrigins(const BoltGroup& bolt) noexcept {
     out.reserve(static_cast<std::size_t>(nx) * static_cast<std::size_t>(ny));
     for (int j = 0; j < ny; ++j)
         for (int i = 0; i < nx; ++i) {
+            const int boltNo = j * nx + i + 1;  // 1-based (j=0 en alt, i soldan)
+            bool deleted = false;
+            for (const int d : bolt.deletedBolts)
+                if (d == boltNo) {
+                    deleted = true;
+                    break;
+                }
+            if (deleted) continue;
             const double ox = bolt.origin.x + i * bolt.spacingX * f.u.x +
                               j * bolt.spacingY * f.v.x;
             const double oy = bolt.origin.y + i * bolt.spacingX * f.u.y +

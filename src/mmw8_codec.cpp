@@ -744,7 +744,13 @@ void writeMmw8(std::ostream& out, const Mmw8Document& doc) {
                  << ' ' << (g.params.hasWasher ? 1 : 0) << ' ' << g.displayEntityId << ' '
                  << (g.enabled ? 1 : 0) << ' ' << g.countX << ' ' << g.countY << ' '
                  << g.spacingX << ' ' << g.spacingY << ' ' << c.params.gap << ' '
-                 << c.params.topExtra << ' ' << c.params.bottomExtra << '\n';
+                 << c.params.topExtra << ' ' << c.params.bottomExtra << ' '
+                 << c.params.boltAlignH << ' ' << c.params.boltAlignV << ' '
+                 << c.params.boltOffsetH << ' ' << c.params.boltOffsetV << ' '
+                 << c.params.boltSpacingX << ' ' << c.params.boltSpacingY << ' '
+                 << c.params.deletedBolts.size();
+            for (const int db : c.params.deletedBolts) body << ' ' << db;
+            body << '\n';
         }
         const std::string b = body.str();
         out << "E " << b.size() << '\n';
@@ -1203,6 +1209,30 @@ void readMmw8(std::istream& in, Mmw8Document& doc) {
                 if (!(ls >> bottomExtraVal)) bottomExtraVal = -1.0;
                 c.params.topExtra = topExtraVal;
                 c.params.bottomExtra = bottomExtraVal;
+                // Bolt group dimensions (faz sonrasi): kayit SONUNDA opsiyonel.
+                int alignH = 1, alignV = 2;
+                double offH = 0.0, offV = -1.0, spX = 0.0, spY = 0.0;
+                if (!(ls >> alignH)) alignH = 1;
+                if (!(ls >> alignV)) alignV = 2;
+                if (!(ls >> offH)) offH = 0.0;
+                if (!(ls >> offV)) offV = -1.0;
+                if (!(ls >> spX)) spX = 0.0;
+                if (!(ls >> spY)) spY = 0.0;
+                c.params.boltAlignH = alignH;
+                c.params.boltAlignV = alignV;
+                c.params.boltOffsetH = offH;
+                c.params.boltOffsetV = offV;
+                c.params.boltSpacingX = spX;
+                c.params.boltSpacingY = spY;
+                // Silinen bulon listesi: "adet" + adet tane 1-based numara.
+                int ndel = 0;
+                if ((ls >> ndel) && ndel > 0) {
+                    c.params.deletedBolts.clear();
+                    for (int k = 0; k < ndel; ++k) {
+                        int dn = 0;
+                        if (ls >> dn) c.params.deletedBolts.push_back(dn);
+                    }
+                }
                 parsed.endPlateConnections.push_back(std::move(c));
             }
         } else if (tag == 'I') {
