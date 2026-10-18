@@ -49,9 +49,10 @@ bool isOwnershipRelationship(RelationshipKind k) noexcept {
 
 namespace {
 
-// Rezerve roleKey'ler (kullanici parcalari). "secondary_N" N>=0.
+// Rezerve roleKey'ler. "component" = component instance'inin kendisi (ownership
+// hedefi); "main"/"secondary_N" = kullanici parcalari (sahiplenilmez, referans).
 bool isReservedRole(const std::string& key) noexcept {
-    if (key == "main") return true;
+    if (key == "main" || key == "component") return true;
     if (key.rfind("secondary_", 0) == 0) {
         const std::string suffix = key.substr(std::string("secondary_").size());
         if (suffix.empty()) return false;
@@ -60,6 +61,12 @@ bool isReservedRole(const std::string& key) noexcept {
         return true;
     }
     return false;
+}
+
+// Kullanici parcasi (main veya secondary_N). Component bunlari SAHIPLENMEZ.
+bool isUserPartRole(const std::string& key) noexcept {
+    if (key == "main") return true;
+    return key.rfind("secondary_", 0) == 0;
 }
 
 // Gecerli roleKey: nesne roleKey'i, rezerve main/secondary, veya parametre adi
@@ -129,6 +136,15 @@ ComponentRelationshipGraph::Validation ComponentRelationshipGraph::validate(
 
     // (3) Cyclic: yonlu dependency/ownership kenarlarinda DFS.
     const std::vector<std::string> cycle = findCycles();
+
+    // (4) OwnedBy hedefi kullanici parcasi (main/secondary_N) OLAMAZ: component
+    //     kullanici parcalarini sahiplenmez, yalniz referanslar (sahiplik hedefi
+    //     "component" veya baska bir component-owned nesne olmalidir).
+    for (const auto& r : relationships_) {
+        if (!r.enabled) continue;
+        if (r.kind == RelationshipKind::OwnedBy && isUserPartRole(r.to))
+            conflicts.push_back("ownedBy hedefi kullanici parcasi olamaz: " + r.to);
+    }
 
     if (!unresolved.empty()) {
         out.status = RelationshipStatus::Unresolved;

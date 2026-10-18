@@ -58,7 +58,7 @@ int main() {
             .faceContact("fin_plate", "main")
             .sizeFromMember("fin_plate", "secondary_0")
             .attachedTo("beam_bolts", "fin_plate")
-            .ownedBy("fin_plate", "main");
+            .ownedBy("fin_plate", "component");
 
         const auto r = b.build();
         check(r.ok, "builder mutlu yol ok");
@@ -134,7 +134,7 @@ int main() {
         check(cyc.size() >= 3, "findCycles dongu dondurur");
     }
 
-    // --- Grafik: dongusuz dependency -> ok -----------------------------------
+    // --- Grafik: zincir dependency dongusuz -> ok -----------------------------------
     {
         ComponentBuilder b;
         PlateSpec p;
@@ -142,6 +142,32 @@ int main() {
             .attachedTo("b", "a").attachedTo("c", "b");  // c -> b -> a (dongu yok)
         const auto r = b.build();
         check(r.ok, "zincir dependency dongusuz -> ok");
+    }
+
+    // --- Grafik: OwnedBy hedefi kullanici parcasi olamaz ----------------------
+    {
+        ComponentBuilder b;
+        PlateSpec p;
+        b.plate("a", p).ownedBy("a", "main");
+        const auto r = b.build();
+        check(!r.ok, "ownedBy(main) -> ok=false");
+        check(r.relationships.validate(r.objects).status == RelationshipStatus::Conflict,
+              "ownedBy(main) status Conflict");
+    }
+    {
+        ComponentBuilder b;
+        PlateSpec p;
+        b.plate("a", p).ownedBy("a", "secondary_0");
+        const auto r = b.build();
+        check(!r.ok, "ownedBy(secondary_0) -> ok=false");
+    }
+    // ownedBy -> component (component instance'inin kendisi) gecerli.
+    {
+        ComponentBuilder b;
+        PlateSpec p;
+        b.plate("a", p).ownedBy("a", "component");
+        const auto r = b.build();
+        check(r.ok, "ownedBy(component) -> ok");
     }
 
     std::printf("\n%d failure(s)\n", failures);
