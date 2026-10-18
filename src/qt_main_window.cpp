@@ -917,6 +917,11 @@ bool QtMainWindow::openEndPlateParamsDialog(const mm::EndPlateParams& current,
     thickSpin->setSuffix(QStringLiteral(" mm"));
     pltForm->addRow(QStringLiteral("Levha kalınlığı:"), thickSpin);
 
+    auto* matEdit = new QLineEdit(pltPage);
+    matEdit->setText(QString::fromStdString(current.plateMaterial));
+    matEdit->setPlaceholderText(QStringLiteral("örn. S235JR"));
+    pltForm->addRow(QStringLiteral("Levha malzemesi:"), matEdit);
+
     auto* pltNote = new QLabel(pltPage);
     pltNote->setWordWrap(true);
     pltNote->setStyleSheet(QStringLiteral("color: gray;"));
@@ -1138,6 +1143,7 @@ bool QtMainWindow::openEndPlateParamsDialog(const mm::EndPlateParams& current,
     out.plateHeightOverride = hOvrSpin->value();
     out.gap = gapSpin->value();
     out.plateThickness = thickSpin->value();
+    out.plateMaterial = matEdit->text().trimmed().toStdString();
     out.boltDiameter = diaCombo->currentData().toDouble();
     out.boltGrade = gradeCombo->currentText().toStdString();
     out.holeDiameter = holeSpin->value();

@@ -4970,6 +4970,13 @@ Application::prepareEndPlateConnection(std::size_t index, const EndPlateParams* 
     p.plateModel = shapeToWireframeWithFaces(p.plateSolid, 0.15);
     p.boltDisplay = shapeToWireframeWithFaces(p.boltSolid, 0.15);
     {
+        // Levha malzemesi (Tekla Plates: Material). Bos degilse levha modelinin
+        // material alanina yaz (kalici; MMW8'e de serilestirildi).
+        auto pp = p.plateModel.properties();
+        pp.material = effParams.plateMaterial;
+        p.plateModel.setProperties(std::move(pp));
+    }
+    {
         auto bp = p.boltDisplay.properties();
         bp.trueColor = 0x8B592A;
         bp.effectiveColor = 0x8B592A;

@@ -778,6 +778,8 @@ void writeMmw8(std::ostream& out, const Mmw8Document& doc) {
             for (const double v : c.params.boltSpacingXs) body << ' ' << v;
             body << ' ' << c.params.boltSpacingYs.size();
             for (const double v : c.params.boltSpacingYs) body << ' ' << v;
+            body << ' ';
+            putString(body, c.params.plateMaterial);   // Milestone 2: levha malzemesi (trailing)
             body << '\n';
         }
         const std::string b = body.str();
@@ -1351,6 +1353,11 @@ void readMmw8(std::istream& in, Mmw8Document& doc) {
                         double v = 0.0;
                         if (ls >> v) c.params.boltSpacingYs.push_back(v);
                     }
+                }
+                try {
+                    c.params.plateMaterial = readString(ls);   // levha malzemesi (trailing)
+                } catch (const std::runtime_error&) {
+                    c.params.plateMaterial.clear();
                 }
                 parsed.endPlateConnections.push_back(std::move(c));
             }

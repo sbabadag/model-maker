@@ -325,6 +325,7 @@ int main() {
         c3.params.lowerEdgeDistance = -5.0;
         c3.params.plateWidthOverride = 450.0;
         c3.params.plateHeightOverride = 320.0;
+        c3.params.plateMaterial = "S235JR";
         c3.bolts = pl.bolts;
         d3.pushSnapshot();
         d3.addEndPlateConnection(c3, WireframeModel::rectangle({0, 0, 0}, {240, 340, 0}),
@@ -386,6 +387,8 @@ int main() {
               "round-trip: plateWidthOverride 450");
         check(approx(d4.endPlateConnections()[0].params.plateHeightOverride, 320.0),
               "round-trip: plateHeightOverride 320");
+        check(d4.endPlateConnections()[0].params.plateMaterial == "S235JR",
+              "round-trip: plateMaterial S235JR");
         const auto& rp = d4.endPlateConnections()[0].params;
         check(rp.boltSpacingXs.size() == 1u, "round-trip: boltSpacingXs boyut 1");
         if (rp.boltSpacingXs.size() == 1u)
