@@ -23,9 +23,9 @@ static void check(bool ok, const char* what) {
     std::printf("%s %s\n", ok ? "PASS" : "FAIL", what);
     if (!ok) ++failures;
 }
-static bool near(double a, double b, double eps = 1e-9) { return std::abs(a - b) < eps; }
+static bool approx(double a, double b, double eps = 1e-9) { return std::abs(a - b) < eps; }
 static bool nearV(const Vec3& a, const Vec3& b, double eps = 1e-9) {
-    return near(a.x, b.x, eps) && near(a.y, b.y, eps) && near(a.z, b.z, eps);
+    return approx(a.x, b.x, eps) && approx(a.y, b.y, eps) && approx(a.z, b.z, eps);
 }
 
 int main() {
@@ -96,7 +96,7 @@ int main() {
               "3D is duzlemi: serbest imlec yine eksene kilitlenir");
         const Vec3 delta = constrained.point - anchorOnPlane;
         const double acrossV = delta.x * tilted.v.x + delta.y * tilted.v.y + delta.z * tilted.v.z;
-        check(near(acrossV, 0.0, 1e-6), "3D is duzlemi: kilit V bilesenini sifirlar (U ekseni)");
+        check(approx(acrossV, 0.0, 1e-6), "3D is duzlemi: kilit V bilesenini sifirlar (U ekseni)");
     }
 
     // 7) 3B preserve=false: obje snap'i ezilir (regresyon davranisinin kaniti).

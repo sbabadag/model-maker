@@ -23,7 +23,7 @@ static void check(bool ok, const char* what) {
     }
 }
 
-static bool near(double a, double b, double tol = 1e-9) { return std::abs(a - b) < tol; }
+static bool approx(double a, double b, double tol = 1e-9) { return std::abs(a - b) < tol; }
 
 int main() {
     // HEB300 benzeri I-kesit: h=300 -> topY=150.
@@ -34,12 +34,12 @@ int main() {
     heb.plateThickness = 11.0;
     heb.flangeThickness = 19.0;
 
-    check(near(profileSectionTopY(heb), 150.0), "HEB300 topY = 150 (h/2)");
-    check(near(profileSectionAnchorOffset(heb, SectionAnchor::Top), -150.0),
+    check(approx(profileSectionTopY(heb), 150.0), "HEB300 topY = 150 (h/2)");
+    check(approx(profileSectionAnchorOffset(heb, SectionAnchor::Top), -150.0),
           "Top anchor ofseti -150 (ust yuzey eksende — mevcut davranis)");
-    check(near(profileSectionAnchorOffset(heb, SectionAnchor::Center), 0.0),
+    check(approx(profileSectionAnchorOffset(heb, SectionAnchor::Center), 0.0),
           "Center anchor ofseti 0 (merkez eksende)");
-    check(near(profileSectionAnchorOffset(heb, SectionAnchor::Bottom), 150.0),
+    check(approx(profileSectionAnchorOffset(heb, SectionAnchor::Bottom), 150.0),
           "Bottom anchor ofseti +150 (alt yuzey eksende)");
 
     // Yuvarlak (CHS): h=w=200 -> topY=100.
@@ -48,18 +48,18 @@ int main() {
     chs.height = 200.0;
     chs.width = 200.0;
     chs.plateThickness = 10.0;
-    check(near(profileSectionTopY(chs), 100.0), "CHS200 topY = 100 (dis yaricap)");
-    check(near(profileSectionAnchorOffset(chs, SectionAnchor::Top), -100.0),
+    check(approx(profileSectionTopY(chs), 100.0), "CHS200 topY = 100 (dis yaricap)");
+    check(approx(profileSectionAnchorOffset(chs, SectionAnchor::Top), -100.0),
           "CHS Top -100");
-    check(near(profileSectionAnchorOffset(chs, SectionAnchor::Center), 0.0),
+    check(approx(profileSectionAnchorOffset(chs, SectionAnchor::Center), 0.0),
           "CHS Center 0");
-    check(near(profileSectionAnchorOffset(chs, SectionAnchor::Bottom), 100.0),
+    check(approx(profileSectionAnchorOffset(chs, SectionAnchor::Bottom), 100.0),
           "CHS Bottom +100");
 
     // DEFAULT Top: ofset, eski hard-coded -sectionTopY ile BIREBIR ayni.
     // Bu, "mevcut modeller sessizce degistirilmez" garantisinin matematiksel
     // temelidir (eski kod -profileSectionTopY uyguluyordu).
-    check(near(profileSectionAnchorOffset(heb, SectionAnchor::Top),
+    check(approx(profileSectionAnchorOffset(heb, SectionAnchor::Top),
                -profileSectionTopY(heb)),
           "default Top == eski -sectionTopY (davranis DEGISMEDI)");
 

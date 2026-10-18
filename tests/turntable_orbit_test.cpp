@@ -18,7 +18,7 @@ static void check(bool ok, const char* what) {
     std::printf("%s %s\n", ok ? "PASS" : "FAIL", what);
     if (!ok) ++failures;
 }
-static bool near(double a, double b, double eps = 1e-9) { return std::abs(a - b) < eps; }
+static bool approx(double a, double b, double eps = 1e-9) { return std::abs(a - b) < eps; }
 
 // R_ row-major: satir0 = kamera sag, satir1 = kamera yukari, satir2 = bakis
 // yonu (izleyiciye dogru). viewTransform(e_basis)[i] = R_[3*i + basis], yani
@@ -46,7 +46,7 @@ int main() {
         const double e0 = elevation(c);
         c.rotate(0.37, 0.0);
         c.rotate(-0.11, 0.0);
-        check(near(elevation(c), e0, 1e-12),
+        check(approx(elevation(c), e0, 1e-12),
               "yaw (yatay): yukselis (elevation) degismez (Z ekseni etrafinda)");
     }
 
@@ -103,7 +103,7 @@ int main() {
         const double e0 = elevation(c);
         // Yalniz yaw: yukselis sabit; sonra pitch: birebir artar.
         c.rotate(0.5, 0.2);
-        check(near(elevation(c), e0 + 0.2, 1e-9),
+        check(approx(elevation(c), e0 + 0.2, 1e-9),
               "capraz hareket: yaw yukselisi bozmaz, pitch birebir eklenir");
     }
 

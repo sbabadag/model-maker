@@ -28,7 +28,7 @@ static void check(bool ok, const char* what) {
     }
 }
 
-static bool near(double a, double b, double tol = 1e-6) {
+static bool approx(double a, double b, double tol = 1e-6) {
     return std::fabs(a - b) <= tol;
 }
 
@@ -44,20 +44,20 @@ int main() {
         // Kiris +X yonunde, kesit bbox 200x300 (genislik x yukseklik).
         const EndPlatePlacement pl =
             computeEndPlatePlacement({0, 0, 0}, {1, 0, 0}, 200.0, 300.0, p);
-        check(near(pl.plateWidth, 240.0), "levha genisligi 240");
-        check(near(pl.plateHeight, 340.0), "levha yuksekligi 340");
-        check(near(pl.axis.x, 1.0) && near(pl.axis.y, 0.0) && near(pl.axis.z, 0.0),
+        check(approx(pl.plateWidth, 240.0), "levha genisligi 240");
+        check(approx(pl.plateHeight, 340.0), "levha yuksekligi 340");
+        check(approx(pl.axis.x, 1.0) && approx(pl.axis.y, 0.0) && approx(pl.axis.z, 0.0),
               "eksen kiris yonu +X");
         // u = Z x X = +Y (genislik), v = X x Y = +Z (yukseklik).
-        check(near(pl.u.y, 1.0) || near(pl.u.y, -1.0), "u genislik yonu Y ekseninde");
-        check(near(pl.v.z, 1.0) || near(pl.v.z, -1.0), "v yukseklik yonu Z ekseninde");
+        check(approx(pl.u.y, 1.0) || approx(pl.u.y, -1.0), "u genislik yonu Y ekseninde");
+        check(approx(pl.v.z, 1.0) || approx(pl.v.z, -1.0), "v yukseklik yonu Z ekseninde");
         check(pl.bolts.countX == 2 && pl.bolts.countY == 2, "2x2 bulon");
-        check(near(pl.bolts.spacingX, 180.0), "spacingX 180");
-        check(near(pl.bolts.spacingY, 280.0), "spacingY 280");
+        check(approx(pl.bolts.spacingX, 180.0), "spacingX 180");
+        check(approx(pl.bolts.spacingY, 280.0), "spacingY 280");
         const std::vector<Vec3> origins = boltGroupBoltOrigins(pl.bolts);
         check(origins.size() == 4, "4 bulon merkezi");
-        check(near(pl.bolts.params.nominalDiameter, 20.0), "M20");
-        check(near(pl.bolts.params.holeDiameter, 22.0), "delik 22");
+        check(approx(pl.bolts.params.nominalDiameter, 20.0), "M20");
+        check(approx(pl.bolts.params.holeDiameter, 22.0), "delik 22");
     }
 
     // --- 2) Document kaydi + sahiplik ---------------------------------------
@@ -183,7 +183,7 @@ int main() {
         check(d4.endPlateConnections()[0].bolts.id == boltId, "round-trip: bulon id korundu");
         check(d4.endPlateConnections()[0].plateEntityId == plateId, "round-trip: levha id korundu");
         check(d4.endPlateConnections()[0].bolts.countX == 2, "round-trip: countX 2");
-        check(near(d4.endPlateConnections()[0].params.plateThickness, 12.0),
+        check(approx(d4.endPlateConnections()[0].params.plateThickness, 12.0),
               "round-trip: kalinlik 12");
     }
 

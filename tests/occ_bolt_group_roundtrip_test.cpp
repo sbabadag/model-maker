@@ -33,7 +33,7 @@ static void check(bool ok, const char* label) {
     std::printf("%s %s\n", ok ? "PASS" : "FAIL", label);
     if (!ok) ++failures;
 }
-static bool near(double a, double b, double tol) { return std::abs(a - b) < tol; }
+static bool approx(double a, double b, double tol) { return std::abs(a - b) < tol; }
 
 int main() {
     const auto path = std::filesystem::temp_directory_path() / "occ_bolt_roundtrip.mmw8";
@@ -87,7 +87,7 @@ int main() {
             const TopoDS_Shape cut = applyCutModifier(target, m, {}, {});
             totalCut += (shapeVolume(target) - shapeVolume(cut));
         }
-        check(near(totalCut, 4.0 * holeVol10, 20.0),
+        check(approx(totalCut, 4.0 * holeVol10, 20.0),
               "iki levhada 4 esmerkezli delik (hacim farki 4*pi*11^2*10)");
     }
 
@@ -108,8 +108,8 @@ int main() {
               loaded.boltGroups()[0].params.holeDiameter == 22.0,
           "load: parametreler korundu");
     check(loaded.boltGroups()[0].countX == 2 && loaded.boltGroups()[0].countY == 1 &&
-              near(loaded.boltGroups()[0].spacingX, 30.0, 1e-9) &&
-              near(loaded.boltGroups()[0].spacingY, 0.0, 1e-9),
+              approx(loaded.boltGroups()[0].spacingX, 30.0, 1e-9) &&
+              approx(loaded.boltGroups()[0].spacingY, 0.0, 1e-9),
           "load: pattern (countX/countY/spacing) korundu");
     // Display modeli belgede VE B-Rep'i store'da.
     check(loaded.indexOfEntity(displayId).has_value(), "load: display modeli belgede");

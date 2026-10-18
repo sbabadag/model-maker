@@ -34,7 +34,7 @@ static void check(bool ok, const char* what) {
     std::printf("%s %s\n", ok ? "PASS" : "FAIL", what);
     if (!ok) ++failures;
 }
-static bool near(double a, double b, double eps = 1e-6) { return std::abs(a - b) < eps; }
+static bool approx(double a, double b, double eps = 1e-6) { return std::abs(a - b) < eps; }
 
 // Uzun kutu: X boyunca L, Y genislik w (ortalanmis), ust yuz z=0, govde asagi h.
 // KENAR SIRASI ONEMLI: gizli (alt) kenarlar ONCE listelenir ki derinlik
@@ -86,8 +86,8 @@ int main() {
         const SnapResult r = SnapEngine::snap3D(s, doc, topCam, W, H, 10.0, WorkPlane::world(),
                                                 true, false, std::nullopt, nullptr, false);
         check(r.type == SnapType::Midpoint, "1a yuzsuz/Wireframe: orta nokta bulunur");
-        check(near(r.point.z, 0.0), "1b yuzsuz/Wireframe: GORUNUR ust kenar secilir (z=0)");
-        check(near(r.point.y, -w / 2), "1c yuzsuz/Wireframe: y dogru");
+        check(approx(r.point.z, 0.0), "1b yuzsuz/Wireframe: GORUNUR ust kenar secilir (z=0)");
+        check(approx(r.point.y, -w / 2), "1c yuzsuz/Wireframe: y dogru");
     }
 
     // 2) FILTRE KORUMASI: yuzsuz kiriş, SOLID (visibleEdgesOnly=true).
@@ -97,7 +97,7 @@ int main() {
         const SnapResult r = SnapEngine::snap3D(s, doc, topCam, W, H, 10.0, WorkPlane::world(),
                                                 true, false, std::nullopt, nullptr, true);
         check(r.type == SnapType::Midpoint, "2a yuzsuz/Solid: orta nokta YOK OLMUYOR (varsayilan Solid)");
-        check(near(r.point.z, 0.0), "2b yuzsuz/Solid: yine gorunur ust kenar (z=0)");
+        check(approx(r.point.z, 0.0), "2b yuzsuz/Solid: yine gorunur ust kenar (z=0)");
     }
 
     // 3) Duz CIZGI (en yaygin durum), Solid: orta nokta snap'i calisir.
@@ -108,7 +108,7 @@ int main() {
         const SnapResult r = SnapEngine::snap3D(ls, doc, topCam, W, H, 10.0, WorkPlane::world(),
                                                 true, false, std::nullopt, nullptr, true);
         check(r.type == SnapType::Midpoint, "3a cizgi/Solid: MIDPOINT snap'i calisir");
-        check(near(r.point.x, 2000.0), "3b cizgi/Solid: orta nokta x=2000");
+        check(approx(r.point.x, 2000.0), "3b cizgi/Solid: orta nokta x=2000");
     }
 
     // 4) TERS NORMAL (OCC tesselasyonu): yuzu olan kutu, normaller ICE donuk.
@@ -118,7 +118,7 @@ int main() {
         const SnapResult r = SnapEngine::snap3D(s, doc, topCam, W, H, 10.0, WorkPlane::world(),
                                                 true, false, std::nullopt, nullptr, true);
         check(r.type == SnapType::Midpoint, "4a ters-normal/Solid: orta nokta bulunur");
-        check(near(r.point.z, 0.0), "4b ters-normal/Solid: normal disa yonlendirilir, ust kenar secilir");
+        check(approx(r.point.z, 0.0), "4b ters-normal/Solid: normal disa yonlendirilir, ust kenar secilir");
     }
 
     // 5) DOGRU NORMAL (disa): ayni sonuc — isaret duzeltmesi bozmuyor.
@@ -126,7 +126,7 @@ int main() {
         Document doc; doc.addModel(boxWithFaces(L, w, h, +1));
         const SnapResult r = SnapEngine::snap3D(s, doc, topCam, W, H, 10.0, WorkPlane::world(),
                                                 true, false, std::nullopt, nullptr, true);
-        check(near(r.point.z, 0.0), "5a dogru-normal/Solid: ust kenar (z=0)");
+        check(approx(r.point.z, 0.0), "5a dogru-normal/Solid: ust kenar (z=0)");
     }
 
     // 6) ONCELIK KORUNUR: tam bir UCTE snap Endpoint doner (midpoint'e kaymaz).
@@ -151,8 +151,8 @@ int main() {
         const SnapResult r = SnapEngine::snap3D(bs, doc, sideCam, W, H, 10.0, viewPlane,
                                                 true, false, std::nullopt, nullptr, true);
         check(r.type == SnapType::Midpoint, "7a yan gorunus: alt siluet ortasi bulunur");
-        check(near(r.point.z, -h), "7b yan gorunus: z=-h (alt siluet)");
-        check(near(r.point.y, -w / 2), "7c yan gorunus: izleyiciye YAKIN siluet kenari (y=-w/2)");
+        check(approx(r.point.z, -h), "7b yan gorunus: z=-h (alt siluet)");
+        check(approx(r.point.y, -w / 2), "7c yan gorunus: izleyiciye YAKIN siluet kenari (y=-w/2)");
     }
 
     std::printf("\n%d kontrol, %d hata\n", checks, failures);

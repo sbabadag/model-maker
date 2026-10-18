@@ -20,9 +20,9 @@ static void check(bool ok, const char* what) {
     std::printf("%s %s\n", ok ? "PASS" : "FAIL", what);
     if (!ok) ++failures;
 }
-static bool near(double a, double b, double eps = 1e-9) { return std::abs(a - b) < eps; }
+static bool approx(double a, double b, double eps = 1e-9) { return std::abs(a - b) < eps; }
 static bool nearV(const Vec3& a, const Vec3& b, double eps = 1e-9) {
-    return near(a.x, b.x, eps) && near(a.y, b.y, eps) && near(a.z, b.z, eps);
+    return approx(a.x, b.x, eps) && approx(a.y, b.y, eps) && approx(a.z, b.z, eps);
 }
 static double dotOf(const Vec3& a, const Vec3& b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
 static Vec3 sub(const Vec3& a, const Vec3& b) { return {a.x - b.x, a.y - b.y, a.z - b.z}; }
@@ -52,11 +52,11 @@ int main() {
         const auto t = resolveTemporaryPointTracking(cursor, {a, b}, kWorld, 200.0);
         const Vec3 axis{1.0, 0.0, 0.0};
         const Vec3 onLine = sub(t.result.point, a);   // ayak A'dan itibaren
-        check(near(onLine.y, 0.0, 1e-9) && near(onLine.z, 0.0, 1e-9),
+        check(approx(onLine.y, 0.0, 1e-9) && approx(onLine.z, 0.0, 1e-9),
               "ayak dogru uzerinde (dogrultmana dik sapma yok)");
-        check(near(dotOf(sub(cursor.point, t.result.point), onLine), 0.0, 1e-9),
+        check(approx(dotOf(sub(cursor.point, t.result.point), onLine), 0.0, 1e-9),
               "DIK ACI: (imlec - ayak) . (ayak - A) = 0");
-        check(near(dotOf(onLine, axis), 400.0, 1e-9), "ayak dogru boyunca 400 mm");
+        check(approx(dotOf(onLine, axis), 400.0, 1e-9), "ayak dogru boyunca 400 mm");
     }
 
     // 3) TEK izleme noktasi: dikme yok (iki nokta gerekir).
@@ -91,7 +91,7 @@ int main() {
         const auto t = resolveTemporaryPointTracking(cursor, {a, b}, kWorld, 200.0);
         check(t.locked && t.result.type == SnapType::Perpendicular,
               "parca disindaki ayak da snap noktasi");
-        check(near(t.result.point.x, 1400.0, 1e-9) && near(t.result.point.y, 0.0, 1e-9),
+        check(approx(t.result.point.x, 1400.0, 1e-9) && approx(t.result.point.y, 0.0, 1e-9),
               "parca disi ayak (1400,0,0)");
     }
 
@@ -113,8 +113,8 @@ int main() {
         const Vec3 yuksek{1000.0, 0.0, 500.0};
         SnapResult cursor{Vec3{400.0, 80.0, 0.0}, SnapType::None, 0.0};
         const auto t = resolveTemporaryPointTracking(cursor, {a, yuksek}, kWorld, 200.0);
-        check(t.locked && near(t.result.point.x, 400.0, 1e-9) &&
-                  near(t.result.point.y, 0.0, 1e-9),
+        check(t.locked && approx(t.result.point.x, 400.0, 1e-9) &&
+                  approx(t.result.point.y, 0.0, 1e-9),
               "farkli kotlu noktalar: plan dikmesi (400,0)");
     }
 
@@ -184,7 +184,7 @@ int main() {
         const auto t = resolveTemporaryPointTracking(cursor, {p1, p2}, kWorld, 200.0);
         check(t.locked && t.result.type == SnapType::Intersection,
               "farkli kot: dik birlesim kosesi yine Intersection");
-        check(near(t.result.point.x, 1000.0, 1e-9) && near(t.result.point.y, 0.0, 1e-9),
+        check(approx(t.result.point.x, 1000.0, 1e-9) && approx(t.result.point.y, 0.0, 1e-9),
               "farkli kot: plan kosesi (1000,0)");
         check(t.derivedPoints.size() == 2, "farkli kot: iki kose isareti gorunur");
     }

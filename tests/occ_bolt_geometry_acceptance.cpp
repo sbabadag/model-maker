@@ -30,7 +30,7 @@ static void check(bool ok, const char* label) {
     std::printf("%s %s\n", ok ? "PASS" : "FAIL", label);
     if (!ok) ++failures;
 }
-static bool near(double a, double b, double tol) { return std::abs(a - b) < tol; }
+static bool approx(double a, double b, double tol) { return std::abs(a - b) < tol; }
 
 // Eksen boyunca (birim `axis`) seklin izdusumunu [min,max] olarak dondurur.
 static void axialExtent(const TopoDS_Shape& s, const Vec3& axis, double& mn,
@@ -83,12 +83,12 @@ int main() {
     const double expShank = M_PI * 100.0 * 20.0;
     const double expWasher = M_PI * (washerD * 0.5) * (washerD * 0.5) * washerT;
     const double expTotal = expHead + expNut + expShank + 2.0 * expWasher;
-    check(near(shapeVolume(asmShape), expTotal, 200.0), "montaj hacmi bilesenler toplami");
+    check(approx(shapeVolume(asmShape), expTotal, 200.0), "montaj hacmi bilesenler toplami");
 
     // Eksen boyunca uzunluk: [-10-3-14, +10+3+16] = [-27, +29] -> uzunluk 56.
     double mn = 0, mx = 0;
     axialExtent(asmShape, bg.axis, mn, mx);
-    check(near(mn, -27.0, 0.5) && near(mx, 29.0, 0.5),
+    check(approx(mn, -27.0, 0.5) && approx(mx, 29.0, 0.5),
           "eksen boyunca uclari dogru (bas -27, somun +29)");
 
     // Eksene dik yari-cap: washer dis cap 40 (en genis) -> yari 20.
@@ -96,8 +96,8 @@ int main() {
     BRepBndLib::Add(asmShape, bb);
     double x0 = 0, y0 = 0, z0 = 0, x1 = 0, y1 = 0, z1 = 0;
     bb.Get(x0, y0, z0, x1, y1, z1);
-    check(near(x0, -20.0, 0.5) && near(x1, 20.0, 0.5) && near(y0, -20.0, 0.5) &&
-              near(y1, 20.0, 0.5),
+    check(approx(x0, -20.0, 0.5) && approx(x1, 20.0, 0.5) && approx(y0, -20.0, 0.5) &&
+              approx(y1, 20.0, 0.5),
           "eksene dik yari-cap ~20 (washer)");
 
     // Bilesen bayraklari: bas/somun/pul yoksa hacim azalir.
@@ -107,7 +107,7 @@ int main() {
     noHead.params.hasWasher = false;
     const TopoDS_Shape shankOnly = buildBoltAssemblyShape(noHead, 20.0);
     check(!shankOnly.IsNull(), "sadece govde null degil");
-    check(near(shapeVolume(shankOnly), expShank, 50.0), "sadece govde hacmi");
+    check(approx(shapeVolume(shankOnly), expShank, 50.0), "sadece govde hacmi");
 
     // Dejenere eksen -> null.
     BoltGroup badAxis = bg;
@@ -117,7 +117,7 @@ int main() {
     // Degisen grip uzunlugu eksen uclarini kaydirir.
     const TopoDS_Shape grip40 = buildBoltAssemblyShape(bg, 40.0);
     axialExtent(grip40, bg.axis, mn, mx);
-    check(near(mn, -37.0, 0.5) && near(mx, 39.0, 0.5),
+    check(approx(mn, -37.0, 0.5) && approx(mx, 39.0, 0.5),
           "grip 40mm -> eksen uclari -37..+39");
 
     // Bulon grubu montaji (pattern): 2x1 bolt -> iki montaj fuse edilir.
@@ -128,24 +128,24 @@ int main() {
         const TopoDS_Shape grp = buildBoltGroupAssemblyShape(pg, 20.0);
         check(!grp.IsNull(), "grup montaj null degil (2x1)");
         // Hacim yaklasik 2x (montajlar cakismiyor: spacing 100 > genislik 40).
-        check(near(shapeVolume(grp), 2.0 * expTotal, 400.0), "grup hacmi ~2x montaj");
+        check(approx(shapeVolume(grp), 2.0 * expTotal, 400.0), "grup hacmi ~2x montaj");
         // Bbox x: [-20, +120] (iki montaj x=0 ve x=100 merkezli).
         Bnd_Box gbb;
         BRepBndLib::Add(grp, gbb);
         double gx0 = 0, gy0 = 0, gz0 = 0, gx1 = 0, gy1 = 0, gz1 = 0;
         gbb.Get(gx0, gy0, gz0, gx1, gy1, gz1);
-        check(near(gx0, -20.0, 0.5) && near(gx1, 120.0, 0.5), "grup bbox x -20..120");
+        check(approx(gx0, -20.0, 0.5) && approx(gx1, 120.0, 0.5), "grup bbox x -20..120");
     }
 
     // Standart boyut katalogu.
     const auto& sizes = standardBoltDiameters();
-    check(sizes.size() == 6 && near(sizes[0], 12.0, 1e-9) &&
-              near(sizes[5], 30.0, 1e-9),
+    check(sizes.size() == 6 && approx(sizes[0], 12.0, 1e-9) &&
+              approx(sizes[5], 30.0, 1e-9),
           "standart caplar M12..M30 (6 adet)");
-    check(near(standardBoltHoleDiameter(12.0), 14.0, 1e-9) &&
-              near(standardBoltHoleDiameter(20.0), 22.0, 1e-9) &&
-              near(standardBoltHoleDiameter(30.0), 33.0, 1e-9) &&
-              near(standardBoltHoleDiameter(10.0), 12.0, 1e-9),
+    check(approx(standardBoltHoleDiameter(12.0), 14.0, 1e-9) &&
+              approx(standardBoltHoleDiameter(20.0), 22.0, 1e-9) &&
+              approx(standardBoltHoleDiameter(30.0), 33.0, 1e-9) &&
+              approx(standardBoltHoleDiameter(10.0), 12.0, 1e-9),
           "standart bosluklu delik caplari");
     check(isBoltGradeValid("8.8") && isBoltGradeValid("10.9") &&
               !isBoltGradeValid("4.6") && isBoltGradeValid(""),

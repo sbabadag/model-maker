@@ -27,9 +27,9 @@ static void check(bool ok, const char* what) {
     std::printf("%s %s\n", ok ? "PASS" : "FAIL", what);
     if (!ok) ++failures;
 }
-static bool near(double a, double b, double eps = 1e-9) { return std::abs(a - b) < eps; }
+static bool approx(double a, double b, double eps = 1e-9) { return std::abs(a - b) < eps; }
 static bool nearV(const Vec3& a, const Vec3& b, double eps = 1e-9) {
-    return near(a.x, b.x, eps) && near(a.y, b.y, eps) && near(a.z, b.z, eps);
+    return approx(a.x, b.x, eps) && approx(a.y, b.y, eps) && approx(a.z, b.z, eps);
 }
 static double dotOf(const Vec3& a, const Vec3& b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
 static double planeOffset(const WorkPlane& p, const Vec3& v) { return dotOf(v - p.origin, p.normal); }
@@ -48,7 +48,7 @@ int main() {
     check(std::abs(planeOffset(plane, deep)) > 1000.0, "baslangicta nokta duzlem DISINDA (derinlik 1200)");
     const Vec3 projected = plane.projectPoint(deep);
     check(nearV(projected, Vec3{500, 0, 3000}, 1e-9), "projectPoint normal bilesenini atar -> (500,0,3000)");
-    check(near(planeOffset(plane, projected), 0.0, 1e-9), "iz dusurulmus nokta duzlem UZERINDE");
+    check(approx(planeOffset(plane, projected), 0.0, 1e-9), "iz dusurulmus nokta duzlem UZERINDE");
 
     // --- 2) duzlemdeki nokta degismez (idempotent) ---
     const Vec3 inPlane{2000, 0, 1500};
@@ -62,7 +62,7 @@ int main() {
     const Vec2 after = cam.project(projected, W, H);
     std::printf("  ekran: ham (%.4f, %.4f)  izdusurulmus (%.4f, %.4f)\n", before.x, before.y, after.x,
                 after.y);
-    check(near(before.x, after.x, 1e-6) && near(before.y, after.y, 1e-6),
+    check(approx(before.x, after.x, 1e-6) && approx(before.y, after.y, 1e-6),
           "iz dusum EKRANDA noktayi oynatmaz (imlec altindaki nokta korunur)");
 
     // --- 4) YER DEGISTIRME duzlem ICINDE kalir ---
@@ -71,12 +71,12 @@ int main() {
     const Vec3 destRaw = {5500, 0, 1000};         // serbest: duzlemde
     const Vec3 rawDelta = destRaw - baseRaw;
     std::printf("  ham yer degistirme normal bileseni = %.3f\n", dotOf(rawDelta, plane.normal));
-    check(!near(dotOf(rawDelta, plane.normal), 0.0, 1e-6),
+    check(!approx(dotOf(rawDelta, plane.normal), 0.0, 1e-6),
           "iz dusum OLMADAN yer degistirme duzlemden CIKAR (derinlige kayar)");
     const Vec3 fixedDelta = plane.projectPoint(destRaw) - plane.projectPoint(baseRaw);
     std::printf("  izdusurulmus yer degistirme normal bileseni = %.3f\n",
                 dotOf(fixedDelta, plane.normal));
-    check(near(dotOf(fixedDelta, plane.normal), 0.0, 1e-9),
+    check(approx(dotOf(fixedDelta, plane.normal), 0.0, 1e-9),
           "iz dusum ILE yer degistirme duzlem ICINDE (normal bileseni 0)");
     check(nearV(fixedDelta, Vec3{5000, 0, -2000}, 1e-9), "beklenen duzlem ici yer degistirme");
 
@@ -88,10 +88,10 @@ int main() {
         dc.setViewBasis(diag.right, diag.up, diag.origin);
         const Vec3 off{1000, 1000, 2500}; // duzlem disi (normal yonunde bilesenli)
         const Vec3 on = dp.projectPoint(off);
-        check(near(planeOffset(dp, on), 0.0, 1e-9), "capraz gorunus: iz dusurulmus nokta duzlemde");
+        check(approx(planeOffset(dp, on), 0.0, 1e-9), "capraz gorunus: iz dusurulmus nokta duzlemde");
         const Vec2 s1 = dc.project(off, W, H);
         const Vec2 s2 = dc.project(on, W, H);
-        check(near(s1.x, s2.x, 1e-6) && near(s1.y, s2.y, 1e-6),
+        check(approx(s1.x, s2.x, 1e-6) && approx(s1.y, s2.y, 1e-6),
               "capraz gorunus: iz dusum ekranda oynatmaz");
     }
 

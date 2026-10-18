@@ -31,7 +31,7 @@ static void check(bool ok, const char* label) {
     if (!ok) ++failures;
 }
 
-static bool near(double a, double b, double tol) {
+static bool approx(double a, double b, double tol) {
     return std::abs(a - b) < tol;
 }
 
@@ -46,34 +46,34 @@ int main() {
         BRepPrimAPI_MakeBox(gp_Pnt(0.0, 0.0, 10.0), 100.0, 100.0, 10.0).Shape();
 
     check(!plateA.IsNull() && !plateB.IsNull(), "iki levha olustu");
-    check(near(shapeVolume(plateA), plateVol, 1.0), "plateA hacmi 100000");
-    check(near(shapeVolume(plateB), plateVol, 1.0), "plateB hacmi 100000");
+    check(approx(shapeVolume(plateA), plateVol, 1.0), "plateA hacmi 100000");
+    check(approx(shapeVolume(plateB), plateVol, 1.0), "plateB hacmi 100000");
 
     // 1) Merkez deligi (50,50,10) +Z ekseni, cap 22 -> her iki levhayi deler.
     const CutModifier holeA =
         makeHoleCutModifier(1, {50.0, 50.0, 10.0}, {0.0, 0.0, 1.0}, 22.0);
     const TopoDS_Shape cutA = applyCutModifier(plateA, holeA, {}, {});
     check(!cutA.IsNull(), "delik sonucu null degil");
-    check(near(shapeVolume(cutA), plateVol - holeVol10, 5.0),
+    check(approx(shapeVolume(cutA), plateVol - holeVol10, 5.0),
           "plateA delik hacmi pi*11^2*10 cikarildi");
 
     // 2) Ayni delik plateB'de (eksen her iki levhayi gecer).
     const CutModifier holeB =
         makeHoleCutModifier(2, {50.0, 50.0, 10.0}, {0.0, 0.0, 1.0}, 22.0);
     const TopoDS_Shape cutB = applyCutModifier(plateB, holeB, {}, {});
-    check(near(shapeVolume(cutB), plateVol - holeVol10, 5.0),
+    check(approx(shapeVolume(cutB), plateVol - holeVol10, 5.0),
           "plateB delik hacmi pi*11^2*10 cikarildi");
 
     // 3) Taban B-Rep DEGISMEDI (immutabilite: girdi aynen kaldi).
-    check(near(shapeVolume(plateA), plateVol, 1.0), "taban plateA korundu");
-    check(near(shapeVolume(plateB), plateVol, 1.0), "taban plateB korundu");
+    check(approx(shapeVolume(plateA), plateVol, 1.0), "taban plateA korundu");
+    check(approx(shapeVolume(plateB), plateVol, 1.0), "taban plateB korundu");
 
     // 4) Levha DISINA delik -> hicbir sey kesmez (konum = origin, dunya orijini
     //    degil). Origin (200,200) 100x100 levhanin tamamen disinda.
     const CutModifier outside =
         makeHoleCutModifier(1, {200.0, 200.0, 10.0}, {0.0, 0.0, 1.0}, 22.0);
     const TopoDS_Shape noCut = applyCutModifier(plateA, outside, {}, {});
-    check(near(shapeVolume(noCut), plateVol, 1.0),
+    check(approx(shapeVolume(noCut), plateVol, 1.0),
           "levha disindaki delik kesmez (silindir origin'e yerlesti)");
 
     // 5) B-Rep gecerliligi: kesilmis sekil gecerli hacim > 0.
@@ -90,7 +90,7 @@ int main() {
     check(holes.size() == 2, "bolt grubu 2 delik uretti");
     const TopoDS_Shape cutA2 = applyCutModifier(plateA, holes[0], {}, {});
     const TopoDS_Shape cutB2 = applyCutModifier(plateB, holes[1], {}, {});
-    check(near(shapeVolume(cutA2) + shapeVolume(cutB2),
+    check(approx(shapeVolume(cutA2) + shapeVolume(cutB2),
                2.0 * (plateVol - holeVol10), 10.0),
           "iki levha toplam delinen hacim dogru");
 
@@ -111,7 +111,7 @@ int main() {
         else if (h.target == 2) { pB = applyCutModifier(pB, h, {}, {}); ++bHoles; }
     }
     check(aHoles == 2 && bHoles == 2, "her parca 2 delik aldi");
-    check(near(shapeVolume(pA) + shapeVolume(pB),
+    check(approx(shapeVolume(pA) + shapeVolume(pB),
                2.0 * (plateVol - 2.0 * holeVol10), 10.0),
           "pattern: iki levhada toplam 4 delik hacim");
 
@@ -124,15 +124,15 @@ int main() {
     const TopoDS_Shape plateRaw = BRepPrimAPI_MakeBox(200.0, 200.0, 10.0).Shape();
     bool hit = raycastBrepFace(plateRaw, {100.0, 100.0, 50.0}, {0.0, 0.0, -1.0},
                                hitPoint, hitNormal, dist);
-    check(hit && near(hitPoint.z, 10.0, 1e-6) && near(dist, 40.0, 1e-6) &&
-              near(hitNormal.z, 1.0, 1e-5),
+    check(hit && approx(hitPoint.z, 10.0, 1e-6) && approx(dist, 40.0, 1e-6) &&
+              approx(hitNormal.z, 1.0, 1e-5),
           "raycast: ust yuz isabet + normal +Z");
     hit = raycastBrepFace(plateRaw, {100.0, 100.0, 50.0}, {0.0, 0.0, 1.0},
                           hitPoint, hitNormal, dist);
     check(!hit, "raycast: uzaklasan isin isabet etmiyor");
     hit = raycastBrepFace(pA, {30.0, 50.0, 50.0}, {0.0, 0.0, -1.0},
                           hitPoint, hitNormal, dist);
-    check(hit && near(hitPoint.z, 10.0, 1e-6),
+    check(hit && approx(hitPoint.z, 10.0, 1e-6),
           "raycast: delikli (boolean) katida isabet");
 
     if (failures) {

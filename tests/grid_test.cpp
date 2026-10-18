@@ -29,23 +29,23 @@ static void check(bool ok, const char* what) {
     std::printf("%s %s\n", ok ? "PASS" : "FAIL", what);
     if (!ok) ++failures;
 }
-static bool near(double a, double b, double eps = 1e-9) { return std::abs(a - b) < eps; }
+static bool approx(double a, double b, double eps = 1e-9) { return std::abs(a - b) < eps; }
 static bool eqVec(const std::vector<double>& a, const std::vector<double>& b) {
     if (a.size() != b.size()) return false;
     for (std::size_t i = 0; i < a.size(); ++i)
-        if (!near(a[i], b[i])) return false;
+        if (!approx(a[i], b[i])) return false;
     return true;
 }
 
 // Bir aks cizgisini (X konumu, Y konumu) ile bulur.
 static const GridAxisLine* verticalAt(const GridDefinition& g, double x) {
     for (const auto& a : g.axes)
-        if (!a.horizontal && near(a.from.x, x)) return &a;
+        if (!a.horizontal && approx(a.from.x, x)) return &a;
     return nullptr;
 }
 static const GridAxisLine* horizontalAt(const GridDefinition& g, double y) {
     for (const auto& a : g.axes)
-        if (a.horizontal && near(a.from.y, y)) return &a;
+        if (a.horizontal && approx(a.from.y, y)) return &a;
     return nullptr;
 }
 
@@ -100,15 +100,15 @@ int main() {
         const GridAxisLine* v1 = verticalAt(g, 6000.0);
         check(v1 != nullptr, "X konumu dikey aks uretir");
         if (v1) {
-            check(near(v1->from.y, -800.0) && near(v1->to.y, 5000.0 + 2000.0),
+            check(approx(v1->from.y, -800.0) && approx(v1->to.y, 5000.0 + 2000.0),
                   "dikey aks Y boyunca Below..spanY+Above uzar (uzanti AYRI)");
             check(v1->label == "2", "X kutusu Y'ye paralel cizgiyi adlandirir");
-            check(near(v1->from.z, 0.0) && near(v1->to.z, 0.0), "aks grid duzleminde (z=origin.z)");
+            check(approx(v1->from.z, 0.0) && approx(v1->to.z, 0.0), "aks grid duzleminde (z=origin.z)");
         }
         const GridAxisLine* h1 = horizontalAt(g, 0.0);
         check(h1 != nullptr, "Y konumu yatay aks uretir");
         if (h1) {
-            check(near(h1->from.x, -500.0) && near(h1->to.x, 12000.0 + 1500.0),
+            check(approx(h1->from.x, -500.0) && approx(h1->to.x, 12000.0 + 1500.0),
                   "yatay aks X boyunca Left..spanX+Right uzar");
             check(h1->label == "A", "Y kutusu X'e paralel cizgiyi adlandirir");
         }
@@ -116,8 +116,8 @@ int main() {
         int front = 0, back = 0;
         for (const auto& a : g.axes)
             if (a.horizontal) {
-                if (near(a.from.y, -800.0) && near(a.from.z, 0.0)) ++front;
-                if (near(a.from.y, 5000.0 + 2000.0) && near(a.from.z, 0.0)) ++back;
+                if (approx(a.from.y, -800.0) && approx(a.from.z, 0.0)) ++front;
+                if (approx(a.from.y, 5000.0 + 2000.0) && approx(a.from.z, 0.0)) ++back;
             }
         check(front == 1 && back == 1, "kot duzlemi on/arka kenar cizgileri");
     }
@@ -131,7 +131,7 @@ int main() {
         const GridAxisLine* v = verticalAt(g, 1000.0);
         const GridAxisLine* v2 = verticalAt(g, 7000.0);
         check(v != nullptr && v2 != nullptr, "origin offset akslari kaydirir");
-        check(near(g.axes.front().from.z, 3000.0), "origin.z aksa yansir");
+        check(approx(g.axes.front().from.z, 3000.0), "origin.z aksa yansir");
     }
     // 7) Etiket tamamlama: liste DOLU ama kisa ise tamamlanir; X ailesi HARF
     //    DUZ SIRADA (en kucuk/sol X = A, saga dogru artar), Y ailesi SAYI
@@ -244,9 +244,9 @@ int main() {
                   "MMW7: koordinat spesifikasyonu korunur");
             check(r.xLabels == g.xLabels && r.yLabels == g.yLabels && r.zLabels == g.zLabels,
                   "MMW7: etiketler korunur");
-            check(near(r.extendLeft, 750.0) && near(r.extendAbove, 1500.0),
+            check(approx(r.extendLeft, 750.0) && approx(r.extendAbove, 1500.0),
                   "MMW7: uzantilar (Left/Below - Right/Above) korunur");
-            check(near(r.origin.x, 100.0) && near(r.origin.y, 200.0), "MMW7: origin korunur");
+            check(approx(r.origin.x, 100.0) && approx(r.origin.y, 200.0), "MMW7: origin korunur");
             check(r.magnetic && r.color == 0x112233u && r.labelColor == 0x445566u &&
                       r.labelFontSize == 18,
                   "MMW7: magnetic/renk/yazi boyu korunur");
@@ -330,9 +330,9 @@ int main() {
         const std::size_t baseAxes = g.axes.size();
 
         // Aile siniflandirma: bir aks cizgisinin degisen tek koordinati yonu verir.
-        const auto alongY = [](const GridAxisLine& a) { return near(a.from.x, a.to.x) && near(a.from.z, a.to.z); };
-        const auto alongX = [](const GridAxisLine& a) { return near(a.from.y, a.to.y) && near(a.from.z, a.to.z); };
-        const auto alongZ = [](const GridAxisLine& a) { return near(a.from.x, a.to.x) && near(a.from.y, a.to.y); };
+        const auto alongY = [](const GridAxisLine& a) { return approx(a.from.x, a.to.x) && approx(a.from.z, a.to.z); };
+        const auto alongX = [](const GridAxisLine& a) { return approx(a.from.y, a.to.y) && approx(a.from.z, a.to.z); };
+        const auto alongZ = [](const GridAxisLine& a) { return approx(a.from.x, a.to.x) && approx(a.from.y, a.to.y); };
 
         // --- PLAN (XY): X ve Y aileleri; KAT (Z) duzlemleri paralel -> YOK ---
         const auto xy = gridAxesForView(g, GridViewPlane::XY);
@@ -347,10 +347,10 @@ int main() {
         // Uzanti + etiket: X ailesi (Y boyunca) below/above ile uzar, X etiketi tasir.
         const auto* xyX0 = [&]() -> const GridAxisLine* {
             for (const auto& a : xy)
-                if (alongY(a) && near(a.from.x, 0.0)) return &a;
+                if (alongY(a) && approx(a.from.x, 0.0)) return &a;
             return nullptr;
         }();
-        check(xyX0 != nullptr && near(xyX0->from.y, -500.0) && near(xyX0->to.y, 5500.0) &&
+        check(xyX0 != nullptr && approx(xyX0->from.y, -500.0) && approx(xyX0->to.y, 5500.0) &&
                   xyX0->label == "1" && !xyX0->horizontal,
               "XY: X aks cizgisi below/above ile uzar ve X etiketini tasir");
 
@@ -366,21 +366,21 @@ int main() {
               "XZ gorunusu: 2 dikey (Z boyunca) + 2 yatay (X boyunca); Y ailesi YOK");
         const auto* xzVert0 = [&]() -> const GridAxisLine* {
             for (const auto& a : xz)
-                if (alongZ(a) && near(a.from.x, 0.0)) return &a;
+                if (alongZ(a) && approx(a.from.x, 0.0)) return &a;
             return nullptr;
         }();
-        check(xzVert0 != nullptr && near(xzVert0->from.z, -500.0) && near(xzVert0->to.z, 4100.0),
+        check(xzVert0 != nullptr && approx(xzVert0->from.z, -500.0) && approx(xzVert0->to.z, 4100.0),
               "XZ: dikey cizgi z araligini (Below/Above uzantisiyla) kapsar");
         const auto* xzLevel = [&]() -> const GridAxisLine* {
             for (const auto& a : xz)
-                if (alongX(a) && near(a.from.z, 0.0)) return &a;
+                if (alongX(a) && approx(a.from.z, 0.0)) return &a;
             return nullptr;
         }();
-        check(xzLevel != nullptr && near(xzLevel->from.x, -500.0) && near(xzLevel->to.x, 6500.0) &&
+        check(xzLevel != nullptr && approx(xzLevel->from.x, -500.0) && approx(xzLevel->to.x, 6500.0) &&
                   xzLevel->label == "+0",
               "XZ: kat cizgisi X boyunca uzanir ve Z etiketini tasir");
         bool xzInPlane = true;
-        for (const auto& a : xz) xzInPlane = xzInPlane && near(a.from.y, 0.0) && near(a.to.y, 0.0);
+        for (const auto& a : xz) xzInPlane = xzInPlane && approx(a.from.y, 0.0) && approx(a.to.y, 0.0);
         check(xzInPlane, "XZ: tum cizgiler gorunus duzleminde (y = origin.y)");
 
         // --- YAN (YZ): gorunus duzlemi X = origin.x ---
@@ -395,13 +395,13 @@ int main() {
               "YZ gorunusu: 2 dikey (Z boyunca) + 2 yatay (Y boyunca); X ailesi YOK");
         const auto* yzVertA = [&]() -> const GridAxisLine* {
             for (const auto& a : yz)
-                if (alongZ(a) && near(a.from.y, 0.0)) return &a;
+                if (alongZ(a) && approx(a.from.y, 0.0)) return &a;
             return nullptr;
         }();
-        check(yzVertA != nullptr && yzVertA->label == "A" && near(yzVertA->from.y, 0.0),
+        check(yzVertA != nullptr && yzVertA->label == "A" && approx(yzVertA->from.y, 0.0),
               "YZ: Y aks cizgisi dikey cizilir ve Y etiketini tasir");
         bool yzInPlane = true;
-        for (const auto& a : yz) yzInPlane = yzInPlane && near(a.from.x, 0.0) && near(a.to.x, 0.0);
+        for (const auto& a : yz) yzInPlane = yzInPlane && approx(a.from.x, 0.0) && approx(a.to.x, 0.0);
         check(yzInPlane, "YZ: tum cizgiler gorunus duzleminde (x = origin.x)");
 
         // --- TEK KAYNAK: cizim geometrisi taban turevden SADECE aile secer ---
@@ -411,8 +411,8 @@ int main() {
         for (const auto& a : xy) {
             bool found = false;
             for (const auto& b : g.axes)
-                if (near(a.from.x, b.from.x) && near(a.from.y, b.from.y) && near(a.from.z, b.from.z) &&
-                    near(a.to.x, b.to.x) && near(a.to.y, b.to.y) && near(a.to.z, b.to.z) &&
+                if (approx(a.from.x, b.from.x) && approx(a.from.y, b.from.y) && approx(a.from.z, b.from.z) &&
+                    approx(a.to.x, b.to.x) && approx(a.to.y, b.to.y) && approx(a.to.z, b.to.z) &&
                     a.label == b.label && a.horizontal == b.horizontal)
                     found = true;
             planMatchesBase = planMatchesBase && found;
@@ -426,7 +426,7 @@ int main() {
         rebuildGridAxes(planOnly);
         const auto planOnlyXZ = gridAxesForView(planOnly, GridViewPlane::XZ);
         check(planOnlyXZ.size() == 2, "kat yoksa XZ gorunusunde yalniz X dikey aileleri");
-        check(!planOnlyXZ.empty() && near(planOnlyXZ[0].to.z - planOnlyXZ[0].from.z, 2000.0),
+        check(!planOnlyXZ.empty() && approx(planOnlyXZ[0].to.z - planOnlyXZ[0].from.z, 2000.0),
               "kat yokken dikey uzanti Below/Above'dan gelir (2*1000 mm)");
     }
 
@@ -457,12 +457,12 @@ int main() {
         };
         camera.setView(StandardView::Front);
         const Vec3 frontDir = dirOf(camera);
-        check(planeOf(camera) == GridViewPlane::XZ && near(frontDir.y, 1.0, 1e-9),
+        check(planeOf(camera) == GridViewPlane::XZ && approx(frontDir.y, 1.0, 1e-9),
               "setView(Front) -> kilit +Y bakis -> XZ duzlemi");
         camera.setView(StandardView::Right);
         const Vec3 rightDir = dirOf(camera);
         check(planeOf(camera) == GridViewPlane::YZ &&
-                  near(std::abs(rightDir.x), 1.0, 1e-9) && near(rightDir.y, 0.0, 1e-9),
+                  approx(std::abs(rightDir.x), 1.0, 1e-9) && approx(rightDir.y, 0.0, 1e-9),
               "setView(Right) -> kilit +-X bakis -> YZ duzlemi");
         camera.setView(StandardView::Top);
         check(planeOf(camera) == GridViewPlane::XY,
@@ -473,14 +473,14 @@ int main() {
         camera.rotate(0.9, 0.4);
         camera.rotate(-0.31, 0.22);
         const Vec3 lockedAfter = dirOf(camera);
-        check(near(lockedAfter.x, lockedBefore.x, 1e-12) &&
-                  near(lockedAfter.y, lockedBefore.y, 1e-12) &&
-                  near(lockedAfter.z, lockedBefore.z, 1e-12),
+        check(approx(lockedAfter.x, lockedBefore.x, 1e-12) &&
+                  approx(lockedAfter.y, lockedBefore.y, 1e-12) &&
+                  approx(lockedAfter.z, lockedBefore.z, 1e-12),
               "rotate() kilitli gorunus yonunu DEGISTIRMEZ");
         check(planeOf(camera) == GridViewPlane::XY,
               "3B donusten sonra grid duzlemi hala plan (donus cizimi degistirmez)");
         // Donus gercekten oldu mu? (kilit testi bosa cikmasin)
-        check(!near(camera.yaw(), 0.0, 1e-6) || !near(camera.pitch(), 0.0, 1e-6),
+        check(!approx(camera.yaw(), 0.0, 1e-6) || !approx(camera.pitch(), 0.0, 1e-6),
               "rotate() gercekten uygulandi (kamera yonu degisti)");
 
         // Iki noktali gorunus tabani da kilidi kurar: right=+X, up=+Z ->

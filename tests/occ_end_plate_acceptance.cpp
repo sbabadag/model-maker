@@ -26,7 +26,7 @@ static void check(bool ok, const char* what) {
         std::printf("  FAIL %s\n", what);
     }
 }
-static bool near(double a, double b, double tol = 1e-6) { return std::fabs(a - b) <= tol; }
+static bool approx(double a, double b, double tol = 1e-6) { return std::fabs(a - b) <= tol; }
 
 static double volume(const TopoDS_Shape& s) {
     if (s.IsNull()) return -1.0;
@@ -58,13 +58,13 @@ int main() {
     const TopoDS_Shape plate = buildEndPlateFromPlacement(pl);
     check(!plate.IsNull(), "levha uretildi");
     const double pv = volume(plate);
-    check(near(pv, 240.0 * 340.0 * 12.0, 1e-3), "levha hacmi 240*340*12");
+    check(approx(pv, 240.0 * 340.0 * 12.0, 1e-3), "levha hacmi 240*340*12");
     double bx0, by0, bz0, bx1, by1, bz1;
     check(bbox(plate, bx0, by0, bz0, bx1, by1, bz1), "levha bbox var");
     // Levha merkezi (6,0,0); X: 0..12, Y: -120..120, Z: -170..170.
-    check(near(bx0, 0.0, 1e-3) && near(bx1, 12.0, 1e-3), "levha X 0..12");
-    check(near(by0, -120.0, 1e-3) && near(by1, 120.0, 1e-3), "levha Y -120..120");
-    check(near(bz0, -170.0, 1e-3) && near(bz1, 170.0, 1e-3), "levha Z -170..170");
+    check(approx(bx0, 0.0, 1e-3) && approx(bx1, 12.0, 1e-3), "levha X 0..12");
+    check(approx(by0, -120.0, 1e-3) && approx(by1, 120.0, 1e-3), "levha Y -120..120");
+    check(approx(bz0, -170.0, 1e-3) && approx(bz1, 170.0, 1e-3), "levha Z -170..170");
 
     // --- 2) Bulon grubu montaji (4 bulon, grip 30mm) ------------------------
     const TopoDS_Shape bolts = buildBoltGroupAssemblyShape(pl.bolts, 30.0);

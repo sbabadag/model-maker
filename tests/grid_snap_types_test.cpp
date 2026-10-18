@@ -26,7 +26,7 @@ static void check(bool ok, const char* what) {
     std::printf("%s %s\n", ok ? "PASS" : "FAIL", what);
     if (!ok) ++failures;
 }
-static bool near(double a, double b, double eps = 1e-6) { return std::abs(a - b) < eps; }
+static bool approx(double a, double b, double eps = 1e-6) { return std::abs(a - b) < eps; }
 
 // X: {0,6000,12000} dikey akslar, Y: {0,5000} yatay akslar, Z kat yok.
 // Uzantilar varsayilan 1000 -> dikey aks x=0: (0,-1000)->(0,6000);
@@ -69,7 +69,7 @@ int main() {
         const SnapResult r = SnapEngine::snap({30.0, 1000.0, 0.0}, doc, tol, true, true,
                                               std::nullopt, &allOn);
         check(r.type == SnapType::Nearest, "1a grid aksinda Nearest: en yakin nokta snap'i");
-        check(near(r.point.x, 0.0) && near(r.point.y, 1000.0),
+        check(approx(r.point.x, 0.0) && approx(r.point.y, 1000.0),
               "1b grid aksinda Nearest: nokta aks uzerinde (0,1000)");
     }
 
@@ -80,7 +80,7 @@ int main() {
         const SnapResult r = SnapEngine::snap({30.0, 1000.0, 0.0}, doc, tol, true, true,
                                               std::nullopt, &noNearest);
         check(r.type == SnapType::Grid, "2a Nearest kapali: o tur uretilmez, eski kesisim kalir");
-        check(near(r.point.x, 0.0) && near(r.point.y, 0.0), "2b Nearest kapali: en yakin kesisim (0,0)");
+        check(approx(r.point.x, 0.0) && approx(r.point.y, 0.0), "2b Nearest kapali: en yakin kesisim (0,0)");
     }
 
     // --- 3) KESISIM: yapi gridi caprazi SnapType::Grid olarak kalir ---
@@ -89,7 +89,7 @@ int main() {
         const SnapResult r = SnapEngine::snap({60.0, 70.0, 0.0}, doc, tol, true, true,
                                               std::nullopt, &allOn);
         check(r.type == SnapType::Grid, "3a kesisimde: SnapType::Grid (capraz isareti korunur)");
-        check(near(r.point.x, 0.0) && near(r.point.y, 0.0), "3b kesisimde: nokta (0,0)");
+        check(approx(r.point.x, 0.0) && approx(r.point.y, 0.0), "3b kesisimde: nokta (0,0)");
     }
 
     // --- 4) UC: aks cizgisinin ucu da snap noktasidir ---
@@ -98,7 +98,7 @@ int main() {
         const SnapResult r = SnapEngine::snap({40.0, -960.0, 0.0}, doc, tol, true, true,
                                               std::nullopt, &allOn);
         check(r.type == SnapType::Endpoint, "4a aks ucunda: Endpoint snap'i");
-        check(near(r.point.x, 0.0) && near(r.point.y, -1000.0), "4b aks ucunda: nokta (0,-1000)");
+        check(approx(r.point.x, 0.0) && approx(r.point.y, -1000.0), "4b aks ucunda: nokta (0,-1000)");
     }
 
     // --- 5) ORTA NOKTACI: aks cizgisinin ortasi da snap noktasidir ---
@@ -107,7 +107,7 @@ int main() {
         const SnapResult r = SnapEngine::snap({40.0, 2520.0, 0.0}, doc, tol, true, true,
                                               std::nullopt, &allOn);
         check(r.type == SnapType::Midpoint, "5a aks ortasinda: Midpoint snap'i");
-        check(near(r.point.x, 0.0) && near(r.point.y, 2500.0), "5b aks ortasinda: nokta (0,2500)");
+        check(approx(r.point.x, 0.0) && approx(r.point.y, 2500.0), "5b aks ortasinda: nokta (0,2500)");
     }
 
     // --- 6) DIKME: referans noktasindan aksa dikme ayagi ---
@@ -116,7 +116,7 @@ int main() {
         const SnapResult r = SnapEngine::snap({30.0, 1010.0, 0.0}, doc, tol, true, true,
                                               std::optional<Vec3>{Vec3{2000.0, 1000.0, 0.0}}, &allOn);
         check(r.type == SnapType::Perpendicular, "6a referansla: Perpendicular snap'i");
-        check(near(r.point.x, 0.0) && near(r.point.y, 1000.0), "6b dikme ayagi: (0,1000)");
+        check(approx(r.point.x, 0.0) && approx(r.point.y, 1000.0), "6b dikme ayagi: (0,1000)");
     }
 
     // --- 7) GORUNMEZ grid: hicbir tur uretilmez ---
@@ -136,7 +136,7 @@ int main() {
         const SnapResult r = SnapEngine::snap({700.0, 700.0, 0.0}, doc, tol, true, true,
                                               std::nullopt, &allOn);
         check(r.type == SnapType::Grid, "8a tolerans disi: eski kesisim davranisi korunur");
-        check(near(r.point.x, 0.0) && near(r.point.y, 0.0), "8b tolerans disi: en yakin kesisim (0,0)");
+        check(approx(r.point.x, 0.0) && approx(r.point.y, 0.0), "8b tolerans disi: en yakin kesisim (0,0)");
     }
 
     // --- 9) OBJE SNAP'I GRID'I EZER (obje yolu once calisir) ---
@@ -147,7 +147,7 @@ int main() {
         const SnapResult r = SnapEngine::snap({280.0, 1005.0, 0.0}, doc, tol, true, true,
                                               std::nullopt, &allOn);
         check(r.type == SnapType::Midpoint, "9a obje snap'i kazanir (grid'e kaymaz)");
-        check(near(r.point.x, 300.0) && near(r.point.y, 1000.0), "9b obje orta noktasi (300,1000)");
+        check(approx(r.point.x, 300.0) && approx(r.point.y, 1000.0), "9b obje orta noktasi (300,1000)");
     }
 
     // --- 10) 3B PLAN GORUNUS: aks uzerinde ekran-uzayi Nearest ---
@@ -208,7 +208,7 @@ int main() {
         const SnapResult r = SnapEngine::snap3D(s, doc, cam, W, H, 30.0, wp, true, true,
                                                 std::nullopt, &allOn, false);
         check(r.type == SnapType::Nearest, "12a XZ: dikey aks uzerinde Nearest");
-        check(near(r.point.x, 0.0) && near(r.point.y, 0.0) && near(r.point.z, 2000.0),
+        check(approx(r.point.x, 0.0) && approx(r.point.y, 0.0) && approx(r.point.z, 2000.0),
               "12b XZ: nokta (0,0,2000) — tabana (z=0) CEKILMEZ");
     }
 
@@ -221,7 +221,7 @@ int main() {
         const SnapResult r = SnapEngine::snap3D(s, doc, cam, W, H, 30.0, wp, true, true,
                                                 std::nullopt, &allOn, false);
         check(r.type == SnapType::Nearest, "13a XZ: kat cizgisi uzerinde Nearest");
-        check(near(r.point.x, 4000.0) && near(r.point.z, 3600.0),
+        check(approx(r.point.x, 4000.0) && approx(r.point.z, 3600.0),
               "13b XZ: nokta (4000,0,3600) — kat cizgisi");
     }
 
@@ -234,7 +234,7 @@ int main() {
         const SnapResult r = SnapEngine::snap3D(s, doc, cam, W, H, 30.0, wp, true, true,
                                                 std::nullopt, &allOn, false);
         check(r.type == SnapType::Nearest, "14a YZ: dikey aks uzerinde Nearest");
-        check(near(r.point.y, 0.0) && near(r.point.z, 5000.0),
+        check(approx(r.point.y, 0.0) && approx(r.point.z, 5000.0),
               "14b YZ: nokta (0,0,5000) — tabana cekilmez");
     }
 
@@ -248,7 +248,7 @@ int main() {
         const SnapResult r = SnapEngine::snap3D(s, doc, cam, W, H, 30.0, wp, true, true,
                                                 std::nullopt, &allOn, false);
         check(r.type == SnapType::Grid, "15a XZ: kavsakta SnapType::Grid");
-        check(near(r.point.x, 12000.0) && near(r.point.z, 7200.0),
+        check(approx(r.point.x, 12000.0) && approx(r.point.z, 7200.0),
               "15b XZ: kavsak (12000,0,7200) — eski plan-formulu z'yi tabana cekerdi");
     }
 
@@ -263,7 +263,7 @@ int main() {
                                                 std::nullopt, &noNearest, false);
         check(r.type == SnapType::Grid,
               "16a XZ tolerans disi + Nearest kapali: gorunus duzlemindeki kavsaga gider");
-        check(near(r.point.z, 3600.0),
+        check(approx(r.point.z, 3600.0),
               "16b XZ: en yakin kavsak z=3600 (eski kod z=0 tabanina cekerdi)");
     }
 
@@ -275,8 +275,8 @@ int main() {
         const WorkPlane wp = WorkPlane::fromViewDirection(Vec3{0, 0, 0}, cam.gridViewDirection());
         const SnapResult r = SnapEngine::snap3D(s, doc, cam, W, H, 30.0, wp, true, true,
                                                 std::nullopt, &allOn, false);
-        check(near(r.point.z, 0.0), "17a XZ: taban kavsagi (z=0) hala cozulur");
-        check(near(r.point.x, 6000.0), "17b XZ: dogru dikey aks (x=6000)");
+        check(approx(r.point.z, 0.0), "17a XZ: taban kavsagi (z=0) hala cozulur");
+        check(approx(r.point.x, 6000.0), "17b XZ: dogru dikey aks (x=6000)");
     }
 
     std::printf("\n%d kontrol, %d hata\n", checks, failures);

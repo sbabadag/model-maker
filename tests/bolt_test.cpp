@@ -18,34 +18,34 @@ static void check(bool ok, const char* label) {
     if (!ok) ++failures;
 }
 
-static bool near(double a, double b, double tol = 1e-9) {
+static bool approx(double a, double b, double tol = 1e-9) {
     return std::abs(a - b) < tol;
 }
 
 int main() {
     // 1) Standard bulon boyutlari.
     const BoltDimensions d = boltDimensions(20.0);
-    check(near(d.headAcrossFlats, 30.0), "bas kosegen s=1.5*d");
-    check(near(d.headHeight, 14.0), "bas yuksekligi k=0.7*d");
-    check(near(d.nutAcrossFlats, 30.0), "somun kosegen s=1.5*d");
-    check(near(d.nutHeight, 16.0), "somun yuksekligi m=0.8*d");
-    check(near(d.washerOuterDiameter, 40.0), "pul dis cap D=2*d");
-    check(near(d.washerThickness, 3.0), "pul kalinligi t=0.15*d");
+    check(approx(d.headAcrossFlats, 30.0), "bas kosegen s=1.5*d");
+    check(approx(d.headHeight, 14.0), "bas yuksekligi k=0.7*d");
+    check(approx(d.nutAcrossFlats, 30.0), "somun kosegen s=1.5*d");
+    check(approx(d.nutHeight, 16.0), "somun yuksekligi m=0.8*d");
+    check(approx(d.washerOuterDiameter, 40.0), "pul dis cap D=2*d");
+    check(approx(d.washerThickness, 3.0), "pul kalinligi t=0.15*d");
     // Sifir/negatif cap -> 1mm taban (degenereden kac).
-    check(near(boltDimensions(0.0).headAcrossFlats, 1.5), "0 cap -> 1mm taban");
+    check(approx(boltDimensions(0.0).headAcrossFlats, 1.5), "0 cap -> 1mm taban");
 
     // 2) makeHoleCutModifier.
     const CutModifier m = makeHoleCutModifier(7, {10, 20, 30}, {0, 0, 2}, 22.0);
     check(m.kind == CutKind::Hole, "kind = Hole");
     check(m.target == 7, "hedef EntityId korunur");
-    check(near(m.diameter, 22.0), "delik capi 22");
-    check(near(m.planeNormal.x, 0.0) && near(m.planeNormal.y, 0.0) &&
-              near(m.planeNormal.z, 1.0),
+    check(approx(m.diameter, 22.0), "delik capi 22");
+    check(approx(m.planeNormal.x, 0.0) && approx(m.planeNormal.y, 0.0) &&
+              approx(m.planeNormal.z, 1.0),
           "eksen normalize edilir");
     check(m.planeOrigin == Vec3{10, 20, 30}, "merkez korunur");
     // Dejenere eksen -> +Z.
     const CutModifier m0 = makeHoleCutModifier(7, {0, 0, 0}, {0, 0, 0}, 22.0);
-    check(near(m0.planeNormal.z, 1.0), "sifir eksen -> +Z");
+    check(approx(m0.planeNormal.z, 1.0), "sifir eksen -> +Z");
 
     // 3) boltGroupHoleModifiers: gecersiz id atlanir.
     BoltGroup bg;
@@ -56,7 +56,7 @@ int main() {
     const auto holes = boltGroupHoleModifiers(bg);
     check(holes.size() == 3, "3 gecerli parca -> 3 delik (invalid atlanir)");
     for (const auto& h : holes) {
-        check(h.kind == CutKind::Hole && near(h.diameter, 22.0), "delik capi 22");
+        check(h.kind == CutKind::Hole && approx(h.diameter, 22.0), "delik capi 22");
         check(h.planeOrigin == bg.origin, "delik merkezi = bulon merkezi");
     }
     check(holes[0].target == 1 && holes[1].target == 2 && holes[2].target == 4,
@@ -124,7 +124,7 @@ int main() {
         check(back.cutModifiers.size() == 1, "MMW8: 1 modifier geri geldi");
         check(back.cutModifiers.size() == 1 &&
                   back.cutModifiers[0].kind == CutKind::Hole &&
-                  near(back.cutModifiers[0].diameter, 22.0),
+                  approx(back.cutModifiers[0].diameter, 22.0),
               "MMW8: Hole capi round-trip");
     }
 
@@ -134,9 +134,9 @@ int main() {
 
     // 6) Standart boyut katalogu + kalite.
     check(standardBoltDiameters().size() == 6, "6 standart cap");
-    check(near(standardBoltHoleDiameter(20.0), 22.0), "M20 -> 22 delik");
-    check(near(standardBoltHoleDiameter(30.0), 33.0), "M30 -> 33 delik");
-    check(near(standardBoltHoleDiameter(9.0), 11.0), "katalog disi -> +2");
+    check(approx(standardBoltHoleDiameter(20.0), 22.0), "M20 -> 22 delik");
+    check(approx(standardBoltHoleDiameter(30.0), 33.0), "M30 -> 33 delik");
+    check(approx(standardBoltHoleDiameter(9.0), 11.0), "katalog disi -> +2");
     check(isBoltGradeValid("8.8") && isBoltGradeValid("10.9") &&
               !isBoltGradeValid("5.6") && isBoltGradeValid(""),
           "kalite dogrulama");
@@ -188,9 +188,9 @@ int main() {
         const auto h1 = raycastMesh(tri, {5, 5, 10}, {0, 0, -1});
         check(h1.has_value(), "ray: ustten isabet var");
         if (h1) {
-            check(near(h1->normal.z, 1.0), "ray: normal +Z");
-            check(near(h1->point.z, 0.0), "ray: isabet z=0");
-            check(near(h1->distance, 10.0), "ray: mesafe 10");
+            check(approx(h1->normal.z, 1.0), "ray: normal +Z");
+            check(approx(h1->point.z, 0.0), "ray: isabet z=0");
+            check(approx(h1->distance, 10.0), "ray: mesafe 10");
             check(h1->faceIndex == 0, "ray: tek ucgende faceIndex=0");
         }
         // Ters yon (asagi) -> isabet yok.
@@ -204,9 +204,9 @@ int main() {
              Vec3{10, 0, 5}, Vec3{0, 10, 5}},
             {}, {Face{0, 1, 2}, Face{3, 4, 5}});
         const auto h2 = raycastMesh(two, {5, 5, 10}, {0, 0, -1});
-        check(h2.has_value() && near(h2->distance, 5.0), "ray: en yakin ucgen (z=5)");
+        check(h2.has_value() && approx(h2->distance, 5.0), "ray: en yakin ucgen (z=5)");
         if (h2) {
-            check(near(h2->point.z, 5.0), "ray: en yakin nokta z=5");
+            check(approx(h2->point.z, 5.0), "ray: en yakin nokta z=5");
             check(h2->faceIndex == 1, "ray: en yakin ucgen faceIndex=1");
         }
     }

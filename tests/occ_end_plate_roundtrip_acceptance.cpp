@@ -51,7 +51,7 @@ static void check(bool ok, const char* label) {
     std::printf("%s %s\n", ok ? "PASS" : "FAIL", label);
     if (!ok) ++failures;
 }
-static bool near(double a, double b, double tol = 1e-3) { return std::abs(a - b) < tol; }
+static bool approx(double a, double b, double tol = 1e-3) { return std::abs(a - b) < tol; }
 
 static SteelProfile makeProfile(const char* name, double h, double b, double tw, double tf) {
     SteelProfile p;
@@ -98,7 +98,7 @@ int main() {
         computeEndPlatePlacementOnFace(face, params.gap, /*secWidth*/ 100.0,
                                        /*secHeight*/ 200.0, params);
     check(boltGroupBoltOrigins(placement.bolts).size() == 8, "2x4 = 8 bulon");
-    check(near(placement.plateCenter.y, 6.0), "levha merkezi Y=+6 (gap=0, t=12)");
+    check(approx(placement.plateCenter.y, 6.0), "levha merkezi Y=+6 (gap=0, t=12)");
 
     // --- Belge kur ---
     Document doc;
@@ -199,7 +199,7 @@ int main() {
                   "main/secondary referanslari korunur");
             check(le.params.boltCountX == 2 && le.params.boltCountY == 4,
                   "2x4 bulon duzeni korunur");
-            check(near(le.params.boltDiameter, 20.0) && near(le.params.holeDiameter, 22.0),
+            check(approx(le.params.boltDiameter, 20.0) && approx(le.params.holeDiameter, 22.0),
                   "M20/22 parametreleri korunur");
             check(le.enabled, "enabled korunur");
         }
@@ -234,7 +234,7 @@ int main() {
         f2.normal = c2.outwardNormal;
         EndPlatePlacement p2 = computeEndPlatePlacementOnFace(f2, params.gap, 100.0, 200.0,
                                                               params);
-        check(near(p2.plateCenter.y, 6.0), "HEB400: levha Y=+6 (ust yuzey sabit)");
+        check(approx(p2.plateCenter.y, 6.0), "HEB400: levha Y=+6 (ust yuzey sabit)");
         check(boltGroupBoltOrigins(p2.bolts).size() == 8, "HEB400: hala 8 bulon");
         BoltGroup b2 = p2.bolts;
         b2.parts = {plateId, colId};

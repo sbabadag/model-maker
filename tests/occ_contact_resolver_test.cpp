@@ -26,7 +26,7 @@ static int failures = 0;
             std::printf("PASS %s\n", msg);                                   \
         }                                                                    \
     } while (0)
-static bool near(double a, double b, double tol = 1e-3) { return std::abs(a - b) < tol; }
+static bool approx(double a, double b, double tol = 1e-3) { return std::abs(a - b) < tol; }
 
 int main() {
     const double cos30 = 0.86602540378443864676;
@@ -53,9 +53,9 @@ int main() {
         CHECK(c.status == ResolutionStatus::Resolved, "A: +Y kiris Resolved");
         CHECK(c.semanticFaceRole == SemanticFaceRole::FlangeOuterPositive,
               "A: FlangeOuterPositive (ust flans dis yuzu)");
-        CHECK(near(c.outwardNormal.y, 1.0), "A: outward normal +Y");
-        CHECK(near(c.contactPoint.y, 0.0), "A: temas Y=0 (ust flans dis yuzu)");
-        CHECK(near(c.contactPoint.z, 1500.0), "A: temas KOTU 1500 korunur");
+        CHECK(approx(c.outwardNormal.y, 1.0), "A: outward normal +Y");
+        CHECK(approx(c.contactPoint.y, 0.0), "A: temas Y=0 (ust flans dis yuzu)");
+        CHECK(approx(c.contactPoint.z, 1500.0), "A: temas KOTU 1500 korunur");
     }
 
     // --- I: arka yuz (alt flans) yanlislikla secilmiyor ------------------------
@@ -71,7 +71,7 @@ int main() {
                                            SemanticFaceRole::FlangeOuterPositive);
         const auto hi = resolveOcctContact(col, f, dims, 3000, {0, 500, 2600}, {0, -1, 0},
                                            SemanticFaceRole::FlangeOuterPositive);
-        CHECK(near(lo.contactPoint.z, 400.0) && near(hi.contactPoint.z, 2600.0),
+        CHECK(approx(lo.contactPoint.z, 400.0) && approx(hi.contactPoint.z, 2600.0),
               "D: alt/ust kotta temas koti korunur");
     }
 
@@ -83,7 +83,7 @@ int main() {
         CHECK(c.status == ResolutionStatus::Resolved &&
                   c.semanticFaceRole == SemanticFaceRole::WebPositive,
               "E: WebPositive (govde yuzu)");
-        CHECK(near(c.contactPoint.x, 5.5), "E: temas X=tw/2=5.5 (b/2 DEGIL)");
+        CHECK(approx(c.contactPoint.x, 5.5), "E: temas X=tw/2=5.5 (b/2 DEGIL)");
     }
 
     // --- F: kiris ekseni flans genisliginin DISINDA -> reddedilir --------------
@@ -130,9 +130,9 @@ int main() {
         CHECK(c.status == ResolutionStatus::Resolved, "B: 30° kolon Resolved");
         CHECK(c.semanticFaceRole == SemanticFaceRole::FlangeOuterPositive,
               "B: FlangeOuterPositive");
-        CHECK(near(c.outwardNormal.x, -sin30) && near(c.outwardNormal.y, cos30),
+        CHECK(approx(c.outwardNormal.x, -sin30) && approx(c.outwardNormal.y, cos30),
               "B: outward normal dondurulmus (+v = -sin30, cos30)");
-        CHECK(near(c.contactPoint.z, 1500.0), "B: kot korunur");
+        CHECK(approx(c.contactPoint.z, 1500.0), "B: kot korunur");
     }
 
     // --- C: 45° dondurulmus kolon — dunya bbox yuzuyle karistirilmiyor ----------
@@ -164,8 +164,8 @@ int main() {
         CHECK(c.status == ResolutionStatus::Resolved, "R1: IC yuz Resolved");
         CHECK(c.semanticFaceRole == SemanticFaceRole::FlangeOuterNegative,
               "R1: FlangeOuterNegative (ust flans IC yuzu)");
-        CHECK(near(c.outwardNormal.y, -1.0), "R1: IC yuz dis normali -Y");
-        CHECK(near(c.contactPoint.y, -19.0), "R1: temas Y=-19 (ust flans IC yuzu)");
+        CHECK(approx(c.outwardNormal.y, -1.0), "R1: IC yuz dis normali -Y");
+        CHECK(approx(c.contactPoint.y, -19.0), "R1: temas Y=-19 (ust flans IC yuzu)");
     }
 
     // --- R2 (reviewer 2): gerideki kesim secilmiyor -----------------------------
@@ -188,7 +188,7 @@ int main() {
         CHECK(c.status == ResolutionStatus::Resolved, "R3: ilk temas Resolved");
         CHECK(c.semanticFaceRole == SemanticFaceRole::FlangeOuterPositive,
               "R3: yakin flans secildi (uzak govde belirsizlik degil)");
-        CHECK(near(c.outwardNormal.y, 1.0), "R3: outward normal +Y");
+        CHECK(approx(c.outwardNormal.y, 1.0), "R3: outward normal +Y");
     }
 
     // --- R4 (reviewer onerisi): non-finite giris reddi ---------------------------

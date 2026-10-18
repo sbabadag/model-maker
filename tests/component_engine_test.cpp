@@ -18,7 +18,7 @@ static void check(bool ok, const char* label) {
     if (!ok) ++failures;
 }
 
-static bool near(double a, double b, double tol = 1e-9) {
+static bool approx(double a, double b, double tol = 1e-9) {
     return std::abs(a - b) < tol;
 }
 
@@ -190,17 +190,17 @@ int main() {
 
         if (plan.plates.size() == 1) {
             const PlateSpec& p = plan.plates[0];
-            check(near(p.width, 200.0 + 40.0), "levha genislik = kesit + 2*pay");
-            check(near(p.height, 300.0 + 40.0), "levha yukseklik = kesit + 2*pay");
-            check(near(p.thickness, 12.0), "levha kalinlik default");
+            check(approx(p.width, 200.0 + 40.0), "levha genislik = kesit + 2*pay");
+            check(approx(p.height, 300.0 + 40.0), "levha yukseklik = kesit + 2*pay");
+            check(approx(p.thickness, 12.0), "levha kalinlik default");
         }
         if (plan.boltGroups.size() == 1) {
             const BoltGroup& b = plan.boltGroups[0];
             check(b.countX == 2 && b.countY == 4, "end plate 2x4 bulon (default)");
             check(b.parts.size() == 1 && b.parts[0] == EntityId{10},
                   "bolonlar ana parca (kolon) referansli");
-            check(near(b.params.nominalDiameter, 20.0), "M20");
-            check(near(b.params.holeDiameter, 22.0), "delik 22");
+            check(approx(b.params.nominalDiameter, 20.0), "M20");
+            check(approx(b.params.holeDiameter, 22.0), "delik 22");
         }
     }
 
@@ -230,7 +230,7 @@ int main() {
         check(plan.plates.size() == 1, "fin plate 1 levha");
         check(plan.boltGroups.size() == 1, "fin plate 1 bulon grubu");
         if (plan.plates.size() == 1) {
-            check(near(plan.plates[0].thickness, 15.0), "fin plate kalinlik parametreden");
+            check(approx(plan.plates[0].thickness, 15.0), "fin plate kalinlik parametreden");
         }
         if (plan.boltGroups.size() == 1) {
             const BoltGroup& b = plan.boltGroups[0];

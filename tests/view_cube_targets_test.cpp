@@ -31,7 +31,7 @@ static void check(bool ok, const char* what) {
     std::printf("%s %s\n", ok ? "PASS" : "FAIL", what);
     if (!ok) ++failures;
 }
-static bool near(double a, double b, double eps = 1e-9) { return std::abs(a - b) < eps; }
+static bool approx(double a, double b, double eps = 1e-9) { return std::abs(a - b) < eps; }
 
 static Vec3 row2(const std::array<double, 9>& r) { return {r[6], r[7], r[8]}; }
 static Vec3 row0(const std::array<double, 9>& r) { return {r[0], r[1], r[2]}; }
@@ -43,10 +43,10 @@ static double det3(const std::array<double, 9>& r) {
            r[2] * (r[3] * r[7] - r[4] * r[6]);
 }
 static bool orthonormal(const std::array<double, 9>& r, double eps = 1e-9) {
-    return near(length(row0(r)), 1.0, eps) && near(length(row1(r)), 1.0, eps) &&
-           near(length(row2(r)), 1.0, eps) && near(dot(row0(r), row1(r)), 0.0, eps) &&
-           near(dot(row0(r), row2(r)), 0.0, eps) && near(dot(row1(r), row2(r)), 0.0, eps) &&
-           near(det3(r), 1.0, eps);
+    return approx(length(row0(r)), 1.0, eps) && approx(length(row1(r)), 1.0, eps) &&
+           approx(length(row2(r)), 1.0, eps) && approx(dot(row0(r), row1(r)), 0.0, eps) &&
+           approx(dot(row0(r), row2(r)), 0.0, eps) && approx(dot(row1(r), row2(r)), 0.0, eps) &&
+           approx(det3(r), 1.0, eps);
 }
 
 // --- 26 hedefin tamami (yuz + kenar + kose) ---------------------------------
@@ -119,7 +119,7 @@ int main() {
             const auto r = viewCubeTargetRotation(t);
             const Vec3 expected = viewCubeTargetDirection(t);
             const Vec3 got = row2(r);
-            if (near(got.x, expected.x) && near(got.y, expected.y) && near(got.z, expected.z))
+            if (approx(got.x, expected.x) && approx(got.y, expected.y) && approx(got.z, expected.z))
                 ++invariant;
             if (!orthonormal(r))
                 check(false, "hedef rotasyonu ortonormal ve det=+1 DEGIL");
@@ -135,7 +135,7 @@ int main() {
             const auto fromCube = viewCubeTargetRotation(t);
             const auto fromCamera = Camera::standardViewRotation(t.face);
             for (int i = 0; i < 9; ++i)
-                if (!near(fromCube[static_cast<std::size_t>(i)], fromCamera[static_cast<std::size_t>(i)]))
+                if (!approx(fromCube[static_cast<std::size_t>(i)], fromCamera[static_cast<std::size_t>(i)]))
                     facesMatch = false;
         }
         check(facesMatch, "yuz hedefi == Camera::standardViewRotation (Ctrl+1..7 ile AYNI)");
@@ -149,7 +149,7 @@ int main() {
             const auto fromTurntable = Camera::turntableRotation(yaw, pitch);
             const auto fromCube = viewCubeTargetRotation(t);
             for (int i = 0; i < 9; ++i)
-                if (!near(fromCube[static_cast<std::size_t>(i)], fromTurntable[static_cast<std::size_t>(i)]))
+                if (!approx(fromCube[static_cast<std::size_t>(i)], fromTurntable[static_cast<std::size_t>(i)]))
                     edgesMatch = false;
         }
         check(edgesMatch, "kenar/kose hedefi == turntable(yaw,pitch) — 6 yuzle ayni aile");
@@ -177,14 +177,14 @@ int main() {
                                         StandardView::Top, StandardView::Back, StandardView::Front}) {
                     const Vec3 n = faceNormal(face);
                     const double c = std::abs(dot(d, n));
-                    if (c > 1e-9 && !near(c, expected, 1e-9)) anglesOk = false;
+                    if (c > 1e-9 && !approx(c, expected, 1e-9)) anglesOk = false;
                 }
             } else if (t.kind == ViewCubeTargetKind::Corner) {
                 const double expected = 1.0 / std::sqrt(3.0);
                 for (const auto face : {StandardView::Left, StandardView::Right, StandardView::Bottom,
                                         StandardView::Top, StandardView::Back, StandardView::Front}) {
                     const double c = std::abs(dot(d, faceNormal(face)));
-                    if (c > 1e-9 && !near(c, expected, 1e-9)) anglesOk = false;
+                    if (c > 1e-9 && !approx(c, expected, 1e-9)) anglesOk = false;
                 }
             }
         }
@@ -199,8 +199,8 @@ int main() {
         const auto at1 = viewCubeSlerpRotation(identity, front, 1.0);
         bool exactStart = true, exactEnd = true;
         for (int i = 0; i < 9; ++i) {
-            if (!near(at0[static_cast<std::size_t>(i)], identity[static_cast<std::size_t>(i)])) exactStart = false;
-            if (!near(at1[static_cast<std::size_t>(i)], front[static_cast<std::size_t>(i)])) exactEnd = false;
+            if (!approx(at0[static_cast<std::size_t>(i)], identity[static_cast<std::size_t>(i)])) exactStart = false;
+            if (!approx(at1[static_cast<std::size_t>(i)], front[static_cast<std::size_t>(i)])) exactEnd = false;
         }
         check(exactStart, "slerp(t=0) = baslangic rotasyonu");
         check(exactEnd, "slerp(t=1) = hedef rotasyon");
@@ -222,7 +222,7 @@ int main() {
         const auto same = viewCubeSlerpRotation(front, front, 0.5);
         bool identical = true;
         for (int i = 0; i < 9; ++i)
-            if (!near(same[static_cast<std::size_t>(i)], front[static_cast<std::size_t>(i)], 1e-9))
+            if (!approx(same[static_cast<std::size_t>(i)], front[static_cast<std::size_t>(i)], 1e-9))
                 identical = false;
         check(identical, "slerp(R,R,0.5) = R (quaternion <-> matris gidis-donusu tutarli)");
 
@@ -233,7 +233,7 @@ int main() {
         const auto sameIso = viewCubeSlerpRotation(iso, iso, 0.5);
         bool isoIdentical = true;
         for (int i = 0; i < 9; ++i)
-            if (!near(sameIso[static_cast<std::size_t>(i)], iso[static_cast<std::size_t>(i)], 1e-9))
+            if (!approx(sameIso[static_cast<std::size_t>(i)], iso[static_cast<std::size_t>(i)], 1e-9))
                 isoIdentical = false;
         check(isoIdentical, "slerp(ISO,ISO,0.5) = ISO (genel rotasyonda gidis-donus)");
         // Ust -> ISO ara kareleri de gecerli rotasyon olmali.
@@ -322,7 +322,7 @@ int main() {
         const auto expected = Camera::standardViewRotation(StandardView::Isometric);
         bool same = true;
         for (int i = 0; i < 9; ++i)
-            if (!near(r[static_cast<std::size_t>(i)], expected[static_cast<std::size_t>(i)])) same = false;
+            if (!approx(r[static_cast<std::size_t>(i)], expected[static_cast<std::size_t>(i)])) same = false;
         check(same, "ISO hedefi standardViewRotation(Isometric) — roll korunur");
         // Ve geometrik olarak ust-sol-on koseden bakar.
         const Vec3 d = row2(r);

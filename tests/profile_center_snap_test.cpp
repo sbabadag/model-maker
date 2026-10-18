@@ -28,9 +28,9 @@ static void check(bool ok, const char* what) {
     std::printf("%s %s\n", ok ? "PASS" : "FAIL", what);
     if (!ok) ++failures;
 }
-static bool near(double a, double b, double eps = 1e-6) { return std::abs(a - b) < eps; }
+static bool approx(double a, double b, double eps = 1e-6) { return std::abs(a - b) < eps; }
 static bool nearPoint(const Vec3& p, const Vec3& q, double eps = 1e-6) {
-    return near(p.x, q.x, eps) && near(p.y, q.y, eps) && near(p.z, q.z, eps);
+    return approx(p.x, q.x, eps) && approx(p.y, q.y, eps) && approx(p.z, q.z, eps);
 }
 
 // Yatay profil elemani (kati): X boyunca L, genislik w (Y'de ortalanmis),
@@ -163,7 +163,7 @@ int main() {
         const SnapResult r = SnapEngine::snap({L / 2.0, 4000.0, 0.0}, doc, tol, true, false,
                                               std::nullopt, &allOn);
         check(r.type == SnapType::ProfileCenter, "7a coklu profil: merkez snap'i");
-        check(near(r.point.y, 4000.0), "7b coklu profil: EN YAKIN merkez secilir (y=4000)");
+        check(approx(r.point.y, 4000.0), "7b coklu profil: EN YAKIN merkez secilir (y=4000)");
     }
 
     // --- 8) 3B (snap3D, plan gorunus): SANAL nokta ekranda dogru yere oturur ---

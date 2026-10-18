@@ -19,9 +19,9 @@ static void check(bool ok, const char* what) {
     std::printf("%s %s\n", ok ? "PASS" : "FAIL", what);
     if (!ok) ++failures;
 }
-static bool near(double a, double b, double eps = 1e-9) { return std::abs(a - b) < eps; }
+static bool approx(double a, double b, double eps = 1e-9) { return std::abs(a - b) < eps; }
 static bool nearV(const Vec3& a, const Vec3& b, double eps = 1e-9) {
-    return near(a.x, b.x, eps) && near(a.y, b.y, eps) && near(a.z, b.z, eps);
+    return approx(a.x, b.x, eps) && approx(a.y, b.y, eps) && approx(a.z, b.z, eps);
 }
 static double lengthOf(const Vec3& v) { return std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z); }
 static double dotOf(const Vec3& a, const Vec3& b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
@@ -32,7 +32,7 @@ static Vec3 crossOf(const Vec3& a, const Vec3& b) {
 // "Alt baslik XY duzlemine paralel" = baslik plakasinin normali (height) dunya
 // Z'sine paralel ve genislik ekseni (width) yatay.
 static bool flangeParallelToXY(const ProfileSectionFrame& f) {
-    return near(std::abs(f.height.z), 1.0, 1e-9) && near(f.width.z, 0.0, 1e-12);
+    return approx(std::abs(f.height.z), 1.0, 1e-9) && approx(f.width.z, 0.0, 1e-12);
 }
 
 int main() {
@@ -64,7 +64,7 @@ int main() {
     //    XY'ye paralel olamaz, ama web duseydir).
     {
         const auto f = profileSectionFrame(Vec3{0.7071067811865476, 0, 0.7071067811865476});
-        check(near(f.width.z, 0.0, 1e-12), "egik uye: genislik ekseni YATAY (web dusey)");
+        check(approx(f.width.z, 0.0, 1e-12), "egik uye: genislik ekseni YATAY (web dusey)");
         check(nearV(f.width, {0, 1, 0}), "egik uye: genislik +Y");
     }
 
@@ -95,13 +95,13 @@ int main() {
             const Vec3 axis{d[0], d[1], d[2]};
             const auto f = profileSectionFrame(axis);
             const double axisLen = lengthOf(axis);
-            if (!near(lengthOf(f.width), 1.0, 1e-9) || !near(lengthOf(f.height), 1.0, 1e-9) ||
-                !near(lengthOf(f.axis), 1.0, 1e-9)) {
+            if (!approx(lengthOf(f.width), 1.0, 1e-9) || !approx(lengthOf(f.height), 1.0, 1e-9) ||
+                !approx(lengthOf(f.axis), 1.0, 1e-9)) {
                 orthonormal = false;
             }
-            if (!near(dotOf(f.width, f.height), 0.0, 1e-9) ||
-                !near(dotOf(f.width, f.axis), 0.0, 1e-9) ||
-                !near(dotOf(f.height, f.axis), 0.0, 1e-9)) {
+            if (!approx(dotOf(f.width, f.height), 0.0, 1e-9) ||
+                !approx(dotOf(f.width, f.axis), 0.0, 1e-9) ||
+                !approx(dotOf(f.height, f.axis), 0.0, 1e-9)) {
                 orthonormal = false;
             }
             const Vec3 expectedAxis{axis.x / axisLen, axis.y / axisLen, axis.z / axisLen};
@@ -109,7 +109,7 @@ int main() {
             if (!nearV(crossOf(f.width, f.height), expectedAxis, 1e-9)) rightHanded = false;
             // Dusey olmayan her uyede genislik ekseni yatay kalir → baslik
             // plakasi en azindan plana gore yatay oturur.
-            if (std::abs(expectedAxis.z) < 0.99 && !near(f.width.z, 0.0, 1e-12)) horizontalWidth = false;
+            if (std::abs(expectedAxis.z) < 0.99 && !approx(f.width.z, 0.0, 1e-12)) horizontalWidth = false;
         }
         check(orthonormal, "tum yonlerde cerceve ortonormal");
         check(rightHanded, "tum yonlerde sag elli (Z = X ^ Y)");
@@ -139,10 +139,10 @@ int main() {
                 Vec3 expected{n.x - ua.x * along, n.y - ua.y * along, n.z - ua.z * along};
                 const double el = lengthOf(expected);
                 expected = Vec3{expected.x / el, expected.y / el, expected.z / el};
-                if (!near(std::abs(dotOf(f.height, expected)), 1.0, 1e-9)) parallel = false;
+                if (!approx(std::abs(dotOf(f.height, expected)), 1.0, 1e-9)) parallel = false;
                 // Genislik ekseni her zaman n'e DIK (n x axis).
-                if (!near(dotOf(f.width, n), 0.0, 1e-9)) inPlane = false;
-                if (!near(lengthOf(f.width), 1.0, 1e-9) || !near(lengthOf(f.height), 1.0, 1e-9) ||
+                if (!approx(dotOf(f.width, n), 0.0, 1e-9)) inPlane = false;
+                if (!approx(lengthOf(f.width), 1.0, 1e-9) || !approx(lengthOf(f.height), 1.0, 1e-9) ||
                     !nearV(crossOf(f.width, f.height), ua, 1e-9)) frameOk = false;
             }
         }

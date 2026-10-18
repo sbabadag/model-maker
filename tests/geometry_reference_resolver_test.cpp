@@ -25,9 +25,9 @@ static int failures = 0;
             std::printf("PASS %s\n", msg);                                   \
         }                                                                    \
     } while (0)
-static bool near(double a, double b, double tol = 1e-9) { return std::abs(a - b) < tol; }
+static bool approx(double a, double b, double tol = 1e-9) { return std::abs(a - b) < tol; }
 static bool nearVec(const Vec3& a, const Vec3& b, double tol = 1e-9) {
-    return near(a.x, b.x, tol) && near(a.y, b.y, tol) && near(a.z, b.z, tol);
+    return approx(a.x, b.x, tol) && approx(a.y, b.y, tol) && approx(a.z, b.z, tol);
 }
 
 int main() {

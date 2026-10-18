@@ -14,7 +14,7 @@ static void check(bool ok, const char* label) {
     std::printf("%s %s\n", ok ? "PASS" : "FAIL", label);
     if (!ok) ++g_failures;
 }
-static bool near(double a, double b, double tol = 1e-9) { return std::abs(a - b) < tol; }
+static bool approx(double a, double b, double tol = 1e-9) { return std::abs(a - b) < tol; }
 
 int main() {
     const double cos30 = 0.86602540378443864676;
@@ -24,7 +24,7 @@ int main() {
     {
         const ProfileSectionFrame s{{1, 0, 0}, {0, 1, 0}, {0, 0, 1}};
         const MemberLocalFrame f = makeMemberLocalFrame(s, {0, 0, 0});
-        check(near(f.u.x, 1.0) && near(f.v.y, 1.0) && near(f.w.z, 1.0),
+        check(approx(f.u.x, 1.0) && approx(f.v.y, 1.0) && approx(f.w.z, 1.0),
               "makeMemberLocalFrame: u/v/w atandi");
         check(isOrthonormalRightHanded(f), "birim cerceve ortonormal sag elli");
 
@@ -46,19 +46,19 @@ int main() {
         const SectionDims d{300, 300, 11, 19};
 
         const auto fp = resolveSemanticFacePlane(f, d, 3000, SemanticFaceRole::FlangeOuterPositive);
-        check(fp && near(fp->normal.y, 1.0) && near(fp->origin.y, 150.0),
+        check(fp && approx(fp->normal.y, 1.0) && approx(fp->origin.y, 150.0),
               "FlangeOuterPositive: +h/2=150, normal +v");
         const auto fn = resolveSemanticFacePlane(f, d, 3000, SemanticFaceRole::FlangeOuterNegative);
-        check(fn && near(fn->normal.y, -1.0) && near(fn->origin.y, -150.0),
+        check(fn && approx(fn->normal.y, -1.0) && approx(fn->origin.y, -150.0),
               "FlangeOuterNegative: -h/2=-150, normal -v");
         const auto wp = resolveSemanticFacePlane(f, d, 3000, SemanticFaceRole::WebPositive);
-        check(wp && near(wp->normal.x, 1.0) && near(wp->origin.x, 5.5),
+        check(wp && approx(wp->normal.x, 1.0) && approx(wp->origin.x, 5.5),
               "WebPositive: +tw/2=5.5, normal +u (b/2-tw/2 DEGIL)");
         const auto we = resolveSemanticFacePlane(f, d, 3000, SemanticFaceRole::FlangeEdgePositive);
-        check(we && near(we->normal.x, 1.0) && near(we->origin.x, 150.0),
+        check(we && approx(we->normal.x, 1.0) && approx(we->origin.x, 150.0),
               "FlangeEdgePositive: +b/2=150, normal +u");
         const auto me = resolveSemanticFacePlane(f, d, 3000, SemanticFaceRole::MemberEnd);
-        check(me && near(me->normal.z, 1.0) && near(me->origin.z, 3000.0),
+        check(me && approx(me->normal.z, 1.0) && approx(me->origin.z, 3000.0),
               "MemberEnd: z=3000, normal +w");
     }
 
@@ -75,9 +75,9 @@ int main() {
         check(c.status == ResolutionStatus::Resolved, "+Y kiris: Resolved");
         check(c.semanticFaceRole == SemanticFaceRole::FlangeOuterPositive,
               "+Y kiris: FlangeOuterPositive");
-        check(near(c.outwardNormal.y, 1.0), "+Y kiris: outward normal +Y");
-        check(near(c.contactPoint.y, 150.0), "+Y kiris: temas y=150 (flans yuzu)");
-        check(near(c.contactPoint.z, 2000.0), "+Y kiris: temas KOTU 2000 korunur (yuz merkezi degil)");
+        check(approx(c.outwardNormal.y, 1.0), "+Y kiris: outward normal +Y");
+        check(approx(c.contactPoint.y, 150.0), "+Y kiris: temas y=150 (flans yuzu)");
+        check(approx(c.contactPoint.z, 2000.0), "+Y kiris: temas KOTU 2000 korunur (yuz merkezi degil)");
     }
 
     // --- 4) -Y kiris -> FlangeOuterNegative (ters taraf) ------------------------
@@ -93,8 +93,8 @@ int main() {
         check(c.status == ResolutionStatus::Resolved && 
                   c.semanticFaceRole == SemanticFaceRole::FlangeOuterNegative,
               "-Y kiris: FlangeOuterNegative");
-        check(near(c.outwardNormal.y, -1.0), "-Y kiris: outward normal -Y");
-        check(near(c.contactPoint.y, -150.0), "-Y kiris: temas y=-150");
+        check(approx(c.outwardNormal.y, -1.0), "-Y kiris: outward normal -Y");
+        check(approx(c.contactPoint.y, -150.0), "-Y kiris: temas y=-150");
     }
 
     // --- 5) Kiris kotu kolon ustunun ustunde -> OutsideFace ---------------------
@@ -140,12 +140,12 @@ int main() {
         check(c.status == ResolutionStatus::Resolved, "30° kolon: Resolved");
         check(c.semanticFaceRole == SemanticFaceRole::FlangeOuterNegative,
               "30° kolon: FlangeOuterNegative");
-        check(near(c.outwardNormal.x, sin30) && near(c.outwardNormal.y, -cos30),
+        check(approx(c.outwardNormal.x, sin30) && approx(c.outwardNormal.y, -cos30),
               "30° kolon: outward normal dondurulmus (-v)");
-        check(near(c.contactPoint.z, 1500.0), "30° kolon: kot korunur");
+        check(approx(c.contactPoint.z, 1500.0), "30° kolon: kot korunur");
         const double dist = (c.contactPoint.x - nOut.x * 150.0) * nOut.x +
                             (c.contactPoint.y - nOut.y * 150.0) * nOut.y;
-        check(near(dist, 0.0, 1e-6), "30° kolon: temas noktasi yuz duzleminde");
+        check(approx(dist, 0.0, 1e-6), "30° kolon: temas noktasi yuz duzleminde");
     }
 
     // --- 8) Web yuzu (kiris govdeye baglanir) ------------------------------------
@@ -161,7 +161,7 @@ int main() {
         check(c.status == ResolutionStatus::Resolved &&
                   c.semanticFaceRole == SemanticFaceRole::WebPositive,
               "Web kiris: WebPositive");
-        check(near(c.contactPoint.x, 5.5), "Web kiris: temas x=tw/2=5.5 (b/2-tw/2 DEGIL)");
+        check(approx(c.contactPoint.x, 5.5), "Web kiris: temas x=tw/2=5.5 (b/2-tw/2 DEGIL)");
     }
 
     std::printf("FAILURES: %d\n", g_failures);

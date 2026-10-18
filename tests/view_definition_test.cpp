@@ -15,9 +15,9 @@ static void check(bool ok, const char* what) {
     std::printf("%s %s\n", ok ? "PASS" : "FAIL", what);
     if (!ok) ++failures;
 }
-static bool near(double a, double b, double eps = 1e-9) { return std::abs(a - b) < eps; }
+static bool approx(double a, double b, double eps = 1e-9) { return std::abs(a - b) < eps; }
 static bool nearV(const Vec3& a, const Vec3& b, double eps = 1e-9) {
-    return near(a.x, b.x, eps) && near(a.y, b.y, eps) && near(a.z, b.z, eps);
+    return approx(a.x, b.x, eps) && approx(a.y, b.y, eps) && approx(a.z, b.z, eps);
 }
 
 int main() {
@@ -26,8 +26,8 @@ int main() {
     check(v.has_value(), "two horizontal points -> view");
     check(nearV(v->right, {1, 0, 0}), "right axis = P1->P2 direction");
     check(nearV(v->up, {0, 0, 1}), "up axis = world Z (view perpendicular to XY)");
-    check(near(v->normal.z, 0.0), "view direction horizontal (parallel to XY)");
-    check(near(v->right.x * v->normal.x + v->right.y * v->normal.y + v->right.z * v->normal.z, 0.0),
+    check(approx(v->normal.z, 0.0), "view direction horizontal (parallel to XY)");
+    check(approx(v->right.x * v->normal.x + v->right.y * v->normal.y + v->right.z * v->normal.z, 0.0),
           "normal orthogonal to right");
 
     // 2) Kamerada: P1 solda, P2 sagda, yuksek Z yukarida, iki nokta ayni ekran yuksekliginde.
@@ -37,10 +37,10 @@ int main() {
     const Vec2 s1 = cam.project({0, 0, 0}, W, H), s2 = cam.project({6000, 0, 0}, W, H);
     const Vec2 top = cam.project({0, 0, 3000}, W, H);
     check(s1.x < s2.x, "P1 left of P2 on screen");
-    check(near(s1.y, s2.y), "P1 and P2 at same screen height");
+    check(approx(s1.y, s2.y), "P1 and P2 at same screen height");
     check(top.y < s1.y, "higher Z is drawn higher (not upside down)");
     const Vec2 depthA = cam.project({3000, -500, 1000}, W, H), depthB = cam.project({3000, 900, 1000}, W, H);
-    check(near(depthA.x, depthB.x) && near(depthA.y, depthB.y), "depth along normal does not move screen point");
+    check(approx(depthA.x, depthB.x) && approx(depthA.y, depthB.y), "depth along normal does not move screen point");
 
     // 3) Egik (diyagonal) iki nokta + Z farki: Z farki gorunusu egmez, yalniz XY yonu kullanilir.
     const auto d = viewFromTwoPoints({1000, 1000, 0}, {4000, 5000, 2500});
@@ -49,7 +49,7 @@ int main() {
     check(nearV(d->up, {0, 0, 1}), "Z difference ignored: up stays world Z");
     Camera dc; dc.setViewBasis(d->right, d->up, d->origin);
     const Vec2 a = dc.project({1000, 1000, 0}, W, H), b = dc.project({4000, 5000, 0}, W, H);
-    check(near(a.y, b.y) && a.x < b.x, "diagonal picks project to a horizontal screen line");
+    check(approx(a.y, b.y) && a.x < b.x, "diagonal picks project to a horizontal screen line");
 
     // 4) Gecersiz: ayni nokta / dusey (XY'de ayni) -> gorunus yok.
     check(!viewFromTwoPoints({1, 2, 3}, {1, 2, 3}).has_value(), "same point rejected");
@@ -74,7 +74,7 @@ int main() {
     Camera oc; oc.setViewBasis({3, 4, 0}, {0, 0, 2}, {0, 0, 0});
     const Vec2 o = oc.project({0, 0, 0}, W, H), ox = oc.project({0.6, 0.8, 0}, W, H),
                oz = oc.project({0, 0, 1}, W, H);
-    check(near(std::hypot(ox.x - o.x, ox.y - o.y), std::hypot(oz.x - o.x, oz.y - o.y), 1e-6),
+    check(approx(std::hypot(ox.x - o.x, ox.y - o.y), std::hypot(oz.x - o.x, oz.y - o.y), 1e-6),
           "basis normalized (equal scale on right/up)");
 
     // 8) Sigdirma kutusu: yalniz dilimdekiler; NaN guvenli; bos dilim bos ekran degil.
@@ -82,10 +82,10 @@ int main() {
                                      {{0, 8000, -9000}, {6000, 8200, 9000}}, // dilim disi (arkada)
                                      {{std::nan(""), 0, 0}, {1, 1, 1}}};     // bozuk
     const Bounds3 fit = viewFitBounds(beams, *s);
-    check(near(fit.minimum.z, 0.0) && near(fit.maximum.z, 400.0), "fit uses only beams inside slab");
+    check(approx(fit.minimum.z, 0.0) && approx(fit.maximum.z, 400.0), "fit uses only beams inside slab");
     check(std::isfinite(fit.minimum.x) && std::isfinite(fit.maximum.y), "NaN bounds ignored");
     const Bounds3 empty = viewFitBounds({}, *s);
-    check(empty.maximum.z - empty.minimum.z > 1000.0 && near(empty.maximum.x - empty.minimum.x, 6000.0),
+    check(empty.maximum.z - empty.minimum.z > 1000.0 && approx(empty.maximum.x - empty.minimum.x, 6000.0),
           "empty slab -> non-degenerate box around P1-P2");
     Camera fc; fc.setViewBasis(s->right, s->up, s->origin);
     check(fc.fit3D(fit.minimum, fit.maximum, W, H, 40.0), "camera can fit the view box");
@@ -148,9 +148,9 @@ int main() {
     check(nearV(plan->origin, {0, 0, 3600}), "plan origin sits on the given level");
     check(nearV(plan->right, {1, 0, 0}) && nearV(plan->up, {0, 1, 0}),
           "plan: screen right = +X, screen up = +Y");
-    check(near(plan->normal.z, 1.0) && near(plan->normal.x, 0.0) && near(plan->normal.y, 0.0),
+    check(approx(plan->normal.z, 1.0) && approx(plan->normal.x, 0.0) && approx(plan->normal.y, 0.0),
           "plan normal = +Z (view plane PARALLEL to XY)");
-    check(near(plan->length, 0.0), "plan view has no P1-P2 line");
+    check(approx(plan->length, 0.0), "plan view has no P1-P2 line");
     check(isPlanView(*plan) && !isPlanView(*v), "isPlanView separates plan from elevation");
     check(!viewFromPlanLevel(std::nan("")).has_value(), "NaN level rejected");
 
@@ -160,8 +160,8 @@ int main() {
     const Vec2 pO = pcam.project({0, 0, 3600}, W, H);
     const Vec2 pX = pcam.project({1000, 0, 3600}, W, H);
     const Vec2 pY = pcam.project({0, 1000, 3600}, W, H);
-    check(pX.x > pO.x && near(pO.y, pX.y), "plan: +X is screen right");
-    check(pY.y < pO.y && near(pO.x, pY.x), "plan: +Y is screen up");
+    check(pX.x > pO.x && approx(pO.y, pX.y), "plan: +X is screen right");
+    check(pY.y < pO.y && approx(pO.x, pY.x), "plan: +Y is screen up");
 
     // Kotun USTU/ALTINDA ne gorunur: dilim DUSEY (elevasyonda yataydi).
     const Bounds3 atLevel{{0, 0, 3590}, {100, 100, 3610}};
@@ -183,7 +183,7 @@ int main() {
           "plan fit box covers the model inside the slab");
     // Elevasyon davranisi DEGISMEDI (length > 0 -> yalniz Z payi).
     const Bounds3 efit = viewFitBounds({}, *v);
-    check(near(efit.minimum.x, 0.0) && near(efit.maximum.x, 6000.0),
+    check(approx(efit.minimum.x, 0.0) && approx(efit.maximum.x, 6000.0),
           "elevation fit box unchanged (no in-plane padding)");
 
     // Parca duzlemi view'i (viewFromPartPlane): UcsView -> ViewDefinition
@@ -193,7 +193,7 @@ int main() {
         const ViewDefinition pv = viewFromPartPlane(frame, PartPlane::Front, {100, 200, 300});
         check(nearV(pv.origin, {100, 200, 300}), "part view origin");
         check(nearV(pv.normal, {0, -1, 0}), "part front view normal = -Y (yatay kiris)");
-        check(near(pv.length, 0.0), "part view length = 0");
+        check(approx(pv.length, 0.0), "part view length = 0");
         // Sag-el: normal = right x up.
         const Vec3 n{pv.right.y * pv.up.z - pv.right.z * pv.up.y,
                      pv.right.z * pv.up.x - pv.right.x * pv.up.z,

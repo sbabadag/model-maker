@@ -35,7 +35,7 @@ static int failures = 0;
             std::printf("PASS %s\n", msg);                                   \
         }                                                                    \
     } while (0)
-static bool near(double a, double b, double tol = 1e-3) { return std::abs(a - b) < tol; }
+static bool approx(double a, double b, double tol = 1e-3) { return std::abs(a - b) < tol; }
 
 static SteelProfile heb(double name_h) {
     SteelProfile p;
@@ -113,15 +113,15 @@ int main() {
         const auto r = recompute(col300, colFrame({0, 0, 0}), dims300, 3000, {0, 500, 1500},
                                  {0, -1, 0}, params);
         CHECK(r.resolved, "A: temas cozuldu");
-        CHECK(near(r.contact.outwardNormal.y, 1.0), "A: dis normal +Y");
-        CHECK(near(r.contact.contactPoint.y, 0.0), "A: temas ust flans dis yuzu Y=0");
+        CHECK(approx(r.contact.outwardNormal.y, 1.0), "A: dis normal +Y");
+        CHECK(approx(r.contact.contactPoint.y, 0.0), "A: temas ust flans dis yuzu Y=0");
         // gap=0 + kalinlik 12 -> levha merkezi Y=+6, kolon tarafi Y=0 ile CAKISIK.
-        CHECK(near(r.placement.plateCenter.y, 6.0), "A: levha merkezi Y=+6 (gap=0, t=12)");
-        CHECK(near(r.placement.plateCenter.y - params.plateThickness * 0.5, 0.0),
+        CHECK(approx(r.placement.plateCenter.y, 6.0), "A: levha merkezi Y=+6 (gap=0, t=12)");
+        CHECK(approx(r.placement.plateCenter.y - params.plateThickness * 0.5, 0.0),
               "A: levha kolon tarafi Y=0 (gap=0, kolona girmiyor)");
-        CHECK(near(r.placement.plateCenter.z, 1500.0), "A: levha baglanti kotu 1500 korunur");
+        CHECK(approx(r.placement.plateCenter.z, 1500.0), "A: levha baglanti kotu 1500 korunur");
         // secWidth=100 + 2*20 = 140 ; secHeight=200 + 2*20 = 240.
-        CHECK(near(r.placement.plateWidth, 140.0) && near(r.placement.plateHeight, 240.0),
+        CHECK(approx(r.placement.plateWidth, 140.0) && approx(r.placement.plateHeight, 240.0),
               "A: levha boyutlari kiris kesitinden (140x240)");
         const TopoDS_Shape plate = buildEndPlateFromPlacement(r.placement);
         CHECK(!plate.IsNull() && shapeVolume(plate) > 0.0, "A: levha B-Rep uretildi");
@@ -140,8 +140,8 @@ int main() {
         const auto r = recompute(col400, colFrame({0, 0, 0}), dims400, 3000, {0, 500, 1500},
                                  {0, -1, 0}, params);
         CHECK(r.resolved, "B: HEB400 uzerinde yeniden cozum basarili");
-        CHECK(near(r.contact.contactPoint.y, 0.0), "B: temas yeni katinin ust flansi Y=0");
-        CHECK(near(r.placement.plateCenter.y, 6.0), "B: levha dogru oturdu (Y=+6)");
+        CHECK(approx(r.contact.contactPoint.y, 0.0), "B: temas yeni katinin ust flansi Y=0");
+        CHECK(approx(r.placement.plateCenter.y, 6.0), "B: levha dogru oturdu (Y=+6)");
         CHECK(holeCount(r.placement) == 8, "B: delik sayisi degismedi (8, birikme yok)");
     }
 
@@ -159,13 +159,13 @@ int main() {
         const Vec3 dir{sin30, -cos30, 0};
         const auto r = recompute(col30, rf, dims300, 3000, beamEnd, dir, params);
         CHECK(r.resolved, "C: 30° kolon temas cozuldu");
-        CHECK(near(r.contact.outwardNormal.x, -sin30) && near(r.contact.outwardNormal.y, cos30),
+        CHECK(approx(r.contact.outwardNormal.x, -sin30) && approx(r.contact.outwardNormal.y, cos30),
               "C: dis normal dondu (+v = -sin30, cos30)");
         // Levha merkezi = temas + 6*normal; normal artık dünya +Y DEĞİL.
         CHECK(std::abs(r.placement.plateCenter.x) > 1e-3, "C: levha X konumu dondu");
-        CHECK(near(r.placement.plateCenter.z, 1500.0), "C: kot korundu");
+        CHECK(approx(r.placement.plateCenter.z, 1500.0), "C: kot korundu");
         // Levha tabanı (u,v) de döndü -> axis = normal.
-        CHECK(near(r.placement.axis.x, -sin30) && near(r.placement.axis.y, cos30),
+        CHECK(approx(r.placement.axis.x, -sin30) && approx(r.placement.axis.y, cos30),
               "C: levha ekseni normalle ayni (dondurulmus)");
     }
 
@@ -176,9 +176,9 @@ int main() {
         const auto hi = recompute(col300, colFrame({0, 0, 0}), dims300, 3000, {0, 500, 2500},
                                   {0, -1, 0}, params);
         CHECK(lo.resolved && hi.resolved, "D: iki kot da cozuldu");
-        CHECK(near(hi.placement.plateCenter.z - lo.placement.plateCenter.z, 1000.0),
+        CHECK(approx(hi.placement.plateCenter.z - lo.placement.plateCenter.z, 1000.0),
               "D: levha +1000Z tasiyan kirisi takip etti");
-        CHECK(near(lo.placement.plateCenter.y, 6.0) && near(hi.placement.plateCenter.y, 6.0),
+        CHECK(approx(lo.placement.plateCenter.y, 6.0) && approx(hi.placement.plateCenter.y, 6.0),
               "D: Y konumu korundu (kot degisti)");
     }
 
@@ -189,9 +189,9 @@ int main() {
         const auto hi = recompute(col300, colFrame({0, 0, 0}), dims300, 3000, {0, 500, 2600},
                                   {0, -1, 0}, params);
         CHECK(lo.resolved && hi.resolved, "E: iki baglanti cozuldu");
-        CHECK(near(lo.placement.plateCenter.z, 400.0) && near(hi.placement.plateCenter.z, 2600.0),
+        CHECK(approx(lo.placement.plateCenter.z, 400.0) && approx(hi.placement.plateCenter.z, 2600.0),
               "E: iki baglanti ayri kotlarini korudu");
-        CHECK(near(lo.placement.plateCenter.y, hi.placement.plateCenter.y),
+        CHECK(approx(lo.placement.plateCenter.y, hi.placement.plateCenter.y),
               "E: iki levha ayni yuzde (Y ayni), kotlar bagimsiz");
     }
 
@@ -203,9 +203,9 @@ int main() {
         for (int i = 0; i < 5; ++i) {
             Recompute again = recompute(col300, colFrame({0, 0, 0}), dims300, 3000,
                                         {0, 500, 1500}, {0, -1, 0}, params);
-            if (!again.resolved || !near(again.placement.plateCenter.x, first.placement.plateCenter.x) ||
-                !near(again.placement.plateCenter.y, first.placement.plateCenter.y) ||
-                !near(again.placement.plateCenter.z, first.placement.plateCenter.z) ||
+            if (!again.resolved || !approx(again.placement.plateCenter.x, first.placement.plateCenter.x) ||
+                !approx(again.placement.plateCenter.y, first.placement.plateCenter.y) ||
+                !approx(again.placement.plateCenter.z, first.placement.plateCenter.z) ||
                 holeCount(again.placement) != 8)
                 stable = false;
         }
@@ -218,21 +218,21 @@ int main() {
     {
         double ymin, ymax;
         solidYBounds(col300, ymin, ymax);
-        CHECK(near(ymax, 0.0, 1e-6) && near(ymin, -300.0, 1e-6),
+        CHECK(approx(ymax, 0.0, 1e-6) && approx(ymin, -300.0, 1e-6),
               "N: Top anchor -> Y=[-300,0] (ust yuzey eksende, mevcut davranis)");
 
         const TopoDS_Shape colCenter =
             extrudeProfileSolid(heb300, {0, 0, 0}, {0, 0, 3000}, 0.0, {0, 1, 0},
                                 SectionAnchor::Center);
         solidYBounds(colCenter, ymin, ymax);
-        CHECK(near(ymax, 150.0, 1e-6) && near(ymin, -150.0, 1e-6),
+        CHECK(approx(ymax, 150.0, 1e-6) && approx(ymin, -150.0, 1e-6),
               "N: Center anchor -> Y=[-150,+150] (merkez eksende)");
 
         const TopoDS_Shape colBottom =
             extrudeProfileSolid(heb300, {0, 0, 0}, {0, 0, 3000}, 0.0, {0, 1, 0},
                                 SectionAnchor::Bottom);
         solidYBounds(colBottom, ymin, ymax);
-        CHECK(near(ymax, 300.0, 1e-6) && near(ymin, 0.0, 1e-6),
+        CHECK(approx(ymax, 300.0, 1e-6) && approx(ymin, 0.0, 1e-6),
               "N: Bottom anchor -> Y=[0,+300] (alt yuzey eksende)");
 
         // Top anchor HEB300->HEB400: ust yuz Y=0 SABIT (temas korunur), kesit
@@ -241,7 +241,7 @@ int main() {
             extrudeProfileSolid(heb400, {0, 0, 0}, {0, 0, 3000}, 0.0, {0, 1, 0},
                                 SectionAnchor::Top);
         solidYBounds(col400Top, ymin, ymax);
-        CHECK(near(ymax, 0.0, 1e-6) && near(ymin, -400.0, 1e-6),
+        CHECK(approx(ymax, 0.0, 1e-6) && approx(ymin, -400.0, 1e-6),
               "N: Top anchor HEB400 -> ust yuz Y=0 SABIT, kesit -400'e derinlesti");
     }
 

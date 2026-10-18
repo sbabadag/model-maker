@@ -22,7 +22,7 @@ static void check(bool ok, const char* what) {
     std::printf("%s %s\n", ok ? "PASS" : "FAIL", what);
     if (!ok) ++failures;
 }
-static bool near(double a, double b, double eps = 1e-9) { return std::abs(a - b) < eps; }
+static bool approx(double a, double b, double eps = 1e-9) { return std::abs(a - b) < eps; }
 
 static constexpr int kWidth = 1280;
 static constexpr int kHeight = 720;
@@ -67,7 +67,7 @@ int main() {
         const Vec3 before = camera.viewTransform(pivot - camera.center3D());
         camera.rotateAbout(pivot, 0.5, 0.3);
         const Vec3 after = camera.viewTransform(pivot - camera.center3D());
-        check(near(before.x, after.x, 1e-9) && near(before.y, after.y, 1e-9),
+        check(approx(before.x, after.x, 1e-9) && approx(before.y, after.y, 1e-9),
               "rotateAbout: R*(pivot-merkez) korunur (x,y)");
     }
 
@@ -81,12 +81,12 @@ int main() {
         withPivot.rotateAbout(pivot, 0.21, -0.13);
         plain.rotate(0.21, -0.13);
         // Ayni gorunus yonu (yaw/pitch/roll) — pivot yonu degistirmez.
-        check(near(withPivot.yaw(), plain.yaw(), 1e-12) &&
-              near(withPivot.pitch(), plain.pitch(), 1e-12) &&
-              near(withPivot.roll(), plain.roll(), 1e-12),
+        check(approx(withPivot.yaw(), plain.yaw(), 1e-12) &&
+              approx(withPivot.pitch(), plain.pitch(), 1e-12) &&
+              approx(withPivot.roll(), plain.roll(), 1e-12),
               "rotateAbout: yon (yaw/pitch/roll) rotate() ile AYNI");
-        check(!(near(withPivot.center3D().x, plain.center3D().x, 1e-9) &&
-                near(withPivot.center3D().y, plain.center3D().y, 1e-9)),
+        check(!(approx(withPivot.center3D().x, plain.center3D().x, 1e-9) &&
+                approx(withPivot.center3D().y, plain.center3D().y, 1e-9)),
               "rotateAbout: bakis merkezi pivot etrafinda kayar (farkli)");
     }
 
@@ -99,11 +99,11 @@ int main() {
         const Vec3 center = a.center3D();
         a.rotateAbout(center, 0.31, 0.17);
         b.rotate(0.31, 0.17);
-        check(near(a.center3D().x, b.center3D().x, 1e-12) &&
-              near(a.center3D().y, b.center3D().y, 1e-12) &&
-              near(a.center3D().z, b.center3D().z, 1e-12),
+        check(approx(a.center3D().x, b.center3D().x, 1e-12) &&
+              approx(a.center3D().y, b.center3D().y, 1e-12) &&
+              approx(a.center3D().z, b.center3D().z, 1e-12),
               "pivot == merkez: bakis merkezi DEGISMEZ (eski davranis)");
-        check(near(a.yaw(), b.yaw(), 1e-12) && near(a.pitch(), b.pitch(), 1e-12),
+        check(approx(a.yaw(), b.yaw(), 1e-12) && approx(a.pitch(), b.pitch(), 1e-12),
               "pivot == merkez: yon eski davranisla ayni");
     }
 
@@ -122,7 +122,7 @@ int main() {
             worst = std::max(worst, pixelDistance(before, screenOf(camera, pivot)));
         }
         check(worst < kPixelTolerance, "kayitli pivot: rotate() pivot etrafinda doner (ekranda sabit)");
-        check(near(camera.orbitPivot()->x, pivot.x, 1e-12),
+        check(approx(camera.orbitPivot()->x, pivot.x, 1e-12),
               "kayitli pivot: nokta degismez (dunya noktasi)");
 
         // Pivot merkeze olan uzakligi korunur (yorunge yaricapi) — 3B uzaklik.
@@ -137,7 +137,7 @@ int main() {
         camera.rotate(-0.2, 0.1);
         const double radius3 = radiusOf();
         check(radius > 1.0, "kayitli pivot: yorunge yaricapi sifirdan buyuk (gercek yorunge)");
-        check(near(radius, radius2, 1e-9) && near(radius, radius3, 1e-9),
+        check(approx(radius, radius2, 1e-9) && approx(radius, radius3, 1e-9),
               "kayitli pivot: yorunge yaricapi (3B uzaklik) sabit");
     }
 
@@ -202,9 +202,9 @@ int main() {
         Camera plain = camera;
         camera.rotate(0.17, 0.09);
         plain.rotate(0.17, 0.09);
-        check(near(camera.center3D().x, plain.center3D().x, 1e-12) &&
-              near(camera.center3D().y, plain.center3D().y, 1e-12) &&
-              near(camera.center3D().z, plain.center3D().z, 1e-12),
+        check(approx(camera.center3D().x, plain.center3D().x, 1e-12) &&
+              approx(camera.center3D().y, plain.center3D().y, 1e-12) &&
+              approx(camera.center3D().z, plain.center3D().z, 1e-12),
               "clearOrbitPivot sonrasi: merkez etrafinda eski davranis");
     }
 
@@ -229,9 +229,9 @@ int main() {
         const Vec3 pivot{120.0, 60.0, 30.0};
         const Vec3 center = camera.center3D();
         camera.rotateAbout(pivot, 0.0, 0.0);
-        check(near(camera.center3D().x, center.x, 1e-12) &&
-              near(camera.center3D().y, center.y, 1e-12) &&
-              near(camera.center3D().z, center.z, 1e-12),
+        check(approx(camera.center3D().x, center.x, 1e-12) &&
+              approx(camera.center3D().y, center.y, 1e-12) &&
+              approx(camera.center3D().z, center.z, 1e-12),
               "sifir aci: bakis merkezi degismez");
     }
 

@@ -16,7 +16,7 @@ static void check(bool ok, const char* label) {
     std::printf("%s %s\n", ok ? "PASS" : "FAIL", label);
     if (!ok) ++g_failures;
 }
-static bool near(double a, double b, double tol = 1e-9) { return std::abs(a - b) < tol; }
+static bool approx(double a, double b, double tol = 1e-9) { return std::abs(a - b) < tol; }
 
 // Cozumlenmis (resolved) duzlem referansi.
 static FaceReference makePlane(const Vec3& normal, const Vec3& origin) {
@@ -50,7 +50,7 @@ int main() {
         const auto r = cs.position({"h"});
         check(r.state == ConstraintState::Free, "0 kisit: FREE");
         check(r.dof == 3, "0 kisit: dof=3");
-        check(near(r.position.x, 1.0) && near(r.position.y, 2.0) && near(r.position.z, 3.0),
+        check(approx(r.position.x, 1.0) && approx(r.position.y, 2.0) && approx(r.position.z, 3.0),
               "0 kisit: konum korunur");
     }
 
@@ -63,11 +63,11 @@ int main() {
         const auto r = cs.position({"h"});
         check(r.state == ConstraintState::UnderConstrained, "1 kisit: UNDERCONSTRAINED");
         check(r.dof == 2, "1 kisit: dof=2");
-        check(near(r.position.x, 0.0), "1 kisit: x=0 duzlemine oturur");
-        check(near(r.position.y, 4.0) && near(r.position.z, 5.0),
+        check(approx(r.position.x, 0.0), "1 kisit: x=0 duzlemine oturur");
+        check(approx(r.position.y, 4.0) && approx(r.position.z, 5.0),
               "1 kisit: serbest yonlerde son konum korunur (en yakin cozum)");
         // Serbest yonler normale dik olmali.
-        check(near(r.freeAxis[0].x, 0.0) && near(r.freeAxis[1].x, 0.0),
+        check(approx(r.freeAxis[0].x, 0.0) && approx(r.freeAxis[1].x, 0.0),
               "1 kisit: serbest yonler x-eksenine dik");
     }
 
@@ -81,8 +81,8 @@ int main() {
         const auto r = cs.position({"h"});
         check(r.state == ConstraintState::UnderConstrained, "2 dik duzlem: UNDERCONSTRAINED");
         check(r.dof == 1, "2 dik duzlem: dof=1");
-        check(near(r.position.x, 0.0) && near(r.position.y, 0.0), "2 dik duzlem: x=y=0");
-        check(near(r.position.z, 7.0), "2 dik duzlem: z serbest (son konum korunur)");
+        check(approx(r.position.x, 0.0) && approx(r.position.y, 0.0), "2 dik duzlem: x=y=0");
+        check(approx(r.position.z, 7.0), "2 dik duzlem: z serbest (son konum korunur)");
     }
 
     // --- 4) 2 paralel TUTARLI duzlem: UNDERCONSTRAINED --------------------------
@@ -95,7 +95,7 @@ int main() {
         const auto r = cs.position({"h"});
         check(r.state == ConstraintState::UnderConstrained, "2 paralel tutarli: UNDERCONSTRAINED");
         check(r.dof == 2, "2 paralel tutarli: dof=2");
-        check(near(r.position.x, 0.0), "2 paralel tutarli: x=0");
+        check(approx(r.position.x, 0.0), "2 paralel tutarli: x=0");
     }
 
     // --- 5) 2 paralel CELISKILI duzlem: CONFLICT --------------------------------
@@ -120,7 +120,7 @@ int main() {
         const auto r = cs.position({"h"});
         check(r.state == ConstraintState::Solved, "3 bagimsiz duzlem: SOLVED");
         check(r.dof == 0, "3 bagimsiz duzlem: dof=0");
-        check(near(r.position.x, 1.0) && near(r.position.y, 2.0) && near(r.position.z, 3.0),
+        check(approx(r.position.x, 1.0) && approx(r.position.y, 2.0) && approx(r.position.z, 3.0),
               "3 bagimsiz duzlem: konum (1,2,3)");
     }
 
@@ -182,13 +182,13 @@ int main() {
         a.addHandle({"h"}, HandleKind::Point, {0.0, 0.0, 0.0});
         a.addDistanceConstraint(cstr("h", makePlane({1.0, 0.0, 0.0}, {0.0, 0.0, 0.0}), 5.0));
         a.solve();
-        check(near(a.position({"h"}).position.x, 5.0), "signedOffset +5 -> x=5");
+        check(approx(a.position({"h"}).position.x, 5.0), "signedOffset +5 -> x=5");
 
         ConstraintSystem b;
         b.addHandle({"h"}, HandleKind::Point, {0.0, 0.0, 0.0});
         b.addDistanceConstraint(cstr("h", makePlane({-1.0, 0.0, 0.0}, {0.0, 0.0, 0.0}), -5.0));
         b.solve();
-        check(near(b.position({"h"}).position.x, 5.0), "ters normal -n + offset -5 -> x=5 (ayni)");
+        check(approx(b.position({"h"}).position.x, 5.0), "ters normal -n + offset -5 -> x=5 (ayni)");
 
         // Ikisi birlikte: tutarli (celismez).
         ConstraintSystem c;
@@ -198,7 +198,7 @@ int main() {
         c.solve();
         check(c.position({"h"}).state == ConstraintState::UnderConstrained,
               "ters normal cifti: tutarli (CONFLICT degil)");
-        check(near(c.position({"h"}).position.x, 5.0), "ters normal cifti: x=5");
+        check(approx(c.position({"h"}).position.x, 5.0), "ters normal cifti: x=5");
     }
 
     // --- 11) Serbestlik kalan durumda onceki konuma en yakin cozum --------------
@@ -208,7 +208,7 @@ int main() {
         cs.addDistanceConstraint(cstr("h", makePlane({1.0, 0.0, 0.0}, {0.0, 0.0, 0.0})));
         cs.solve();
         const auto r = cs.position({"h"});
-        check(near(r.position.x, 0.0) && near(r.position.y, 3.0) && near(r.position.z, 4.0),
+        check(approx(r.position.x, 0.0) && approx(r.position.y, 3.0) && approx(r.position.z, 4.0),
               "onceki konuma en yakin: (0,3,4)");
     }
 
@@ -259,8 +259,8 @@ int main() {
         check(std::isfinite(r.position.x) && std::isfinite(r.position.y) &&
                   std::isfinite(r.position.z),
               "buyuk koordinat: NaN/Inf yok");
-        check(near(r.position.x, L + 1e-3, 1e-4), "buyuk koordinat: kucuk offset korunur");
-        check(near(r.position.y, L, 1e-4) && near(r.position.z, L, 1e-4),
+        check(approx(r.position.x, L + 1e-3, 1e-4), "buyuk koordinat: kucuk offset korunur");
+        check(approx(r.position.y, L, 1e-4) && approx(r.position.z, L, 1e-4),
               "buyuk koordinat: y/z dogru");
     }
 
@@ -275,7 +275,7 @@ int main() {
         const auto r = cs.position({"h"});
         check(r.state == ConstraintState::UnderConstrained, "30° duzlem: UNDERCONSTRAINED");
         const double d = r.position.x * n.x + r.position.y * n.y + r.position.z * n.z;
-        check(near(d, 0.0, 1e-9), "30° duzlem: konum duzlem uzerinde (n·x=0)");
+        check(approx(d, 0.0, 1e-9), "30° duzlem: konum duzlem uzerinde (n·x=0)");
     }
 
     // --- 17) Reviewer bulgusu: cakisan donguler (Tarjan SCC) ----------------------
@@ -320,7 +320,7 @@ int main() {
         check(r.state == ConstraintState::UnderConstrained, "neredeyse paralel: UNDERCONSTRAINED");
         const double e1 = r.position.x;                     // n1·x = x
         const double e2 = r.position.x + 1e-11 * r.position.y;  // n2·x
-        check(near(e1, 0.0, 1e-6) && near(e2, 0.0, 1e-6),
+        check(approx(e1, 0.0, 1e-6) && approx(e2, 0.0, 1e-6),
               "neredeyse paralel: konum her iki denklemi saglar (buyuk artik yok)");
     }
 
@@ -346,7 +346,7 @@ int main() {
         cs.addHandle({"h"}, HandleKind::Point, {9, 9, 9});  // ayni anahtar
         check(cs.handleCount() == 1, "mukerrer anahtar: tek kayit");
         cs.solve();
-        check(near(cs.position({"h"}).position.x, 9.0), "mukerrer anahtar: son konum guncellenir");
+        check(approx(cs.position({"h"}).position.x, 9.0), "mukerrer anahtar: son konum guncellenir");
     }
 
     std::printf("FAILURES: %d\n", g_failures);
