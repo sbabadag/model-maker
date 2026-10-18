@@ -4993,9 +4993,23 @@ bool Application::commitEndPlateConnection(std::size_t index, const PreparedEndP
         const auto& sp = document_.models()[p.secIdx].properties();
         const double halfT = p.placement.plateThickness * 0.5;
         const Vec3 farEnd{sp.axisFromX, sp.axisFromY, sp.axisFromZ};
-        const Vec3 beamEnd{p.placement.plateCenter.x + p.placement.axis.x * halfT,
-                           p.placement.plateCenter.y + p.placement.axis.y * halfT,
-                           p.placement.plateCenter.z + p.placement.axis.z * halfT};
+        // Levha arka yuzu plateCenter (kesit MERKEZI) + axis*halfT'dedir. Ama
+        // kiris EKSENI anchor cizgisindedir (Top anchor'da kesit merkezinden
+        // h/2 yukarida). plateCenter'i dogrudan beamEnd yaparsak kirisi h/2
+        // asagi indiririz. Bu yuzden farEnd'in anchor konumunu KORU ve kirisi
+        // SADECE eksen boyunca levha arka yuzune izdusur (kisalt).
+        const Vec3 axis = p.placement.axis;
+        const Vec3 backFace{p.placement.plateCenter.x + axis.x * halfT,
+                            p.placement.plateCenter.y + axis.y * halfT,
+                            p.placement.plateCenter.z + axis.z * halfT};
+        const double axLen2 = axis.x * axis.x + axis.y * axis.y + axis.z * axis.z;
+        const double proj = axLen2 > 1e-12
+            ? ((backFace.x - farEnd.x) * axis.x + (backFace.y - farEnd.y) * axis.y +
+               (backFace.z - farEnd.z) * axis.z) / axLen2
+            : 0.0;
+        const Vec3 beamEnd{farEnd.x + axis.x * proj,
+                           farEnd.y + axis.y * proj,
+                           farEnd.z + axis.z * proj};
         if (const SteelProfile* prof = findProfile(profileCatalog_, sp.profileName)) {
             const TopoDS_Shape shortSolid = extrudeProfileSolid(
                 *prof, farEnd, beamEnd, sp.profileRotation,
