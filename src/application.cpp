@@ -4396,24 +4396,31 @@ void Application::applyEndPlateFromParts(const std::vector<std::size_t>& parts) 
         return;
     }
 
-    // TEKLA "fit part end": kiriş kolonu GECTIYSE, once kiriş ucunu kolon giris
-    // yuzune fitting'le kes + eksen ucunu kesim noktasina guncelle, sonra levhayi
-    // yeni (kesilmis) uca oturt. Bu mutasyon levhayla AYNI undo kaydinda olur
-    // (asagidaki tek pushUndoSnapshot) — tek Ctrl+Z hem kesmeyi hem levhayi alir.
+    // TEKLA "fit part end": kiriş kolonu GECTIYSE, kiriş ucunu LEVHANIN ARKA
+    // YUZUNE fitting'le kes (levha kolon ile kiriş arasindadir: kolon yuzu →
+    // [gap] → levha kalinligi t → kiriş; kiriş levhaya kaynakli oturur). Eksen
+    // ucunu bu kesim noktasina guncelle, sonra levhayi yeni uca oturt. Mutasyon
+    // levhayla AYNI undo kaydinda (asagidaki tek pushUndoSnapshot) — tek Ctrl+Z
+    // hem kesmeyi hem levhayi alir.
     pushUndoSnapshot();
 #ifdef MM_HAS_OCC
     if (trim.needed) {
         ensureProfileCatalog();
         const auto& sp = document_.models()[secIdx].properties();
+        // Kirişin oturacagi nokta: levhanin kiris tarafindaki arka yuzu.
+        // entryNormal kolondan kirise dogru bakar; levha kolon yuzunden
+        // (gap + t) kadar kirise dogru uzanir.
+        const Vec3 beamEnd = trim.entryPoint
+                           + trim.entryNormal * (params.gap + params.plateThickness);
         if (const SteelProfile* prof = findProfile(profileCatalog_, sp.profileName)) {
-            // (1) Ekseni giris noktasina kisalt + katı yeniden uret (kullanıcı
+            // (1) Ekseni levha arka yuzune kisalt + katı yeniden uret (kullanıcı
             // şartı: "kiris eksen ucunu kesim noktasina guncelle"). Sabit ucu
             // trim.fixedEnd (DISARI) olarak koru; swap sonrasi beamFrom,
             // sp.axisFrom DEGIL — kiriş içeriden dışarıya çizildiyse sp.axisFrom
             // içeride kalır ve yanlış ucu sabitlerdi.
             const TopoDS_Shape shortSolid = extrudeProfileSolid(
                 *prof, trim.fixedEnd,
-                trim.entryPoint, sp.profileRotation,
+                beamEnd, sp.profileRotation,
                 Vec3{sp.sectionNormalX, sp.sectionNormalY, sp.sectionNormalZ},
                 sp.sectionAnchor);
             if (!shortSolid.IsNull()) {
@@ -4422,20 +4429,20 @@ void Application::applyEndPlateFromParts(const std::vector<std::size_t>& parts) 
                 shortProps.axisFromX = trim.fixedEnd.x;
                 shortProps.axisFromY = trim.fixedEnd.y;
                 shortProps.axisFromZ = trim.fixedEnd.z;
-                shortProps.axisToX = trim.entryPoint.x;
-                shortProps.axisToY = trim.entryPoint.y;
-                shortProps.axisToZ = trim.entryPoint.z;
+                shortProps.axisToX = beamEnd.x;
+                shortProps.axisToY = beamEnd.y;
+                shortProps.axisToZ = beamEnd.z;
                 shortModel.setProperties(std::move(shortProps));
                 document_.replaceModel(secIdx, {std::move(shortModel)});
                 putOccSolid(secIdx, shortSolid);
             }
         }
-        // (2) Fitting: ucu giris duzlemine KOPLANAR oturt — egik kolon/diyagonal
-        // kiriş icin eksene dik kapağı giris duzlemiyle ayni hizaya keser.
+        // (2) Fitting: ucu levha arka yuzune KOPLANAR oturt — egik kolon/diyagonal
+        // kiriş icin eksene dik kapağı levha duzlemiyle ayni hizaya keser.
         CutModifier fit;
         fit.kind = CutKind::Fitting;
         fit.target = document_.modelId(secIdx);
-        fit.planeOrigin = trim.entryPoint;
+        fit.planeOrigin = beamEnd;
         fit.planeNormal = trim.entryNormal;
         fit.keepPositive = true;
         fit.enabled = true;
