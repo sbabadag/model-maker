@@ -4686,6 +4686,18 @@ bool Application::resolveEndPlatePlacement(std::size_t mainIdx, std::size_t secI
             diagContactPoint = contact.contactPoint;
             diagContactNormal = contact.outwardNormal;
             faceResolved = true;
+            // Kiriş kolona DEĞİYORSA (geçmiyorsa) bile levha araya girer: kolon
+            // yuzu -> [gap] -> levha (t) -> kiriş. Kiriş levhanın ARKA yuzune
+            // oturmalı; temas noktası kolon yuzundeyken kiriş gap+t kadar geriye
+            // cekilmeli. (Pass-through degil; ışın kolona dogru atılır ve giriş
+            // yuzu normali kolondan dışarı/kirişe bakar.) Sabit uç = kolona en
+            // uzak uç (swap sonrası beamFrom).
+            if (trim) {
+                trim->needed = true;
+                trim->entryPoint = contact.contactPoint;
+                trim->entryNormal = contact.outwardNormal;
+                trim->fixedEnd = beamFrom;
+            }
         } else if (contact.status != ResolutionStatus::Unresolved) {
             // Kiris kolonu GECTIYSE (kiris ucu kolonun icinde), temas yuzu kirisin
             // ARKASINDA kalir ve resolver NoContact/OutsideFace/Ambiguous doner.
