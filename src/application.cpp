@@ -3778,6 +3778,9 @@ bool Application::pickPendingCutAt(int x, int y) {
 }
 
 std::optional<std::size_t> Application::modelIndexAt(int x, int y) const {
+    // COMPONENT SIMGESI: buyuk tiklama isareti normal model hit'ten once denenir
+    // (levha ince oldugu icin dogrudan isabet zordur).
+    if (const auto glyph = componentGlyphModelAt(x, y)) return glyph;
     // Imlecin altindaki modeli isabet-testi (2B/3B ortak esik; secim yoluyla
     // ayni). Profil/düzlem seciminde kullanilir.
     if (mode_ == EditMode::Draw2D)
@@ -3786,6 +3789,32 @@ std::optional<std::size_t> Application::modelIndexAt(int x, int y) const {
     GetClientRect(canvas_, &client);
     return hitTestModel3D({static_cast<double>(x), static_cast<double>(y)}, document_, camera_,
                           std::max(1L, client.right), std::max(1L, client.bottom), 10.0);
+}
+
+std::optional<std::size_t> Application::componentGlyphModelAt(int x, int y) const {
+    // End Plate levha merkezindeki buyuk simgeyi isabet-testi. Ekran-olcekli
+    // yaricap (~18 px) kullanilir — simge gercek levhadan cok daha buyuktur.
+    constexpr double kGlyphRadiusPx = 18.0;
+    RECT client{};
+    GetClientRect(canvas_, &client);
+    const int vw = std::max(1L, client.right);
+    const int vh = std::max(1L, client.bottom);
+    for (const auto& conn : document_.endPlateConnections()) {
+        if (!conn.enabled || conn.plateEntityId == kInvalidEntityId) continue;
+        const auto idx = document_.indexOfEntity(conn.plateEntityId);
+        if (!idx || *idx >= document_.modelBounds().size()) continue;
+        const Bounds3& b = document_.modelBounds()[*idx];
+        const Vec3 center{(b.minimum.x + b.maximum.x) * 0.5,
+                          (b.minimum.y + b.maximum.y) * 0.5,
+                          (b.minimum.z + b.maximum.z) * 0.5};
+        const Vec2 s = (mode_ == EditMode::Draw2D)
+                           ? camera_.project2D(center, vw, vh)
+                           : camera_.project(center, vw, vh);
+        const double dx = s.x - static_cast<double>(x);
+        const double dy = s.y - static_cast<double>(y);
+        if (dx * dx + dy * dy <= kGlyphRadiusPx * kGlyphRadiusPx) return idx;
+    }
+    return std::nullopt;
 }
 
 void Application::applyBoundaryCutFromSelection(CutKind kind) {
@@ -4458,6 +4487,7 @@ void Application::applyEndPlateFromParts(const std::vector<std::size_t>& parts) 
         fit.planeNormal = trim.entryNormal;
         fit.keepPositive = true;
         fit.enabled = true;
+        fit.hidden = true;   // component ic motor elemani — cizilmez/secilmez
         fit.name = "Fitting";
         document_.addCutModifier(fit);
         // (3) Zinciri yeniden uygula (fitting egik takozu keser, mesh yenilenir).
@@ -5753,6 +5783,19 @@ bool Application::toggleModelSelection(int x, int y) {
         const auto existing = std::find(selectedCutModifiers_.begin(), selectedCutModifiers_.end(), *cutHit);
         if (existing == selectedCutModifiers_.end()) selectedCutModifiers_.push_back(*cutHit);
         else selectedCutModifiers_.erase(existing);
+        return true;
+    }
+    // COMPONENT SIMGESI: buyuk isaret normal model hit'ten once denenir.
+    if (const auto glyph = componentGlyphModelAt(x, y)) {
+        selectedCutModifiers_.clear();
+        if (transformCommand_ == TransformCommand::Offset) {
+            selectedModels_.assign(1, *glyph);
+            selectionFirstCorner_.reset();
+            return true;
+        }
+        const auto existing = std::find(selectedModels_.begin(), selectedModels_.end(), *glyph);
+        if (existing == selectedModels_.end()) selectedModels_.push_back(*glyph);
+        else selectedModels_.erase(existing);
         return true;
     }
     std::optional<std::size_t> hit;
@@ -9473,6 +9516,21 @@ DraftView Application::draftView() const {
     view.filletFirstPick = filletFirstPick_;
     view.arrayItemCount = arrayItemCount_;
     view.modifierBoundaries = modifierBoundaries_;
+    // COMPONENT SIMGELERI: End Plate levha merkezleri (renderer buyuk tiklama
+    // isareti cizer; hit-test componentGlyphModelAt ile eslenir).
+    view.componentGlyphs.clear();
+    view.componentGlyphEntities.clear();
+    for (const auto& conn : document_.endPlateConnections()) {
+        if (!conn.enabled || conn.plateEntityId == kInvalidEntityId) continue;
+        const auto idx = document_.indexOfEntity(conn.plateEntityId);
+        if (!idx || *idx >= document_.modelBounds().size()) continue;
+        const Bounds3& b = document_.modelBounds()[*idx];
+        view.componentGlyphs.push_back(
+            Vec3{(b.minimum.x + b.maximum.x) * 0.5,
+                 (b.minimum.y + b.maximum.y) * 0.5,
+                 (b.minimum.z + b.maximum.z) * 0.5});
+        view.componentGlyphEntities.push_back(conn.plateEntityId);
+    }
     view.trimExtendPreviewSuppressed = trimExtendPreviewSuppressed_;
     view.zoomWindowActive = zoomWindowActive_; view.zoomWindowFirstCorner = zoomWindowFirstCorner_;
     view.interactiveNavigation = rotating_ || panning2D_ || viewCubeManipulating_ ||

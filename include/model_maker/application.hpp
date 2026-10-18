@@ -577,6 +577,9 @@ private:
     void deleteSelectedCutModifiers();
     // Imlecin altindaki kesme modifier'ini isabet-testi (2B/3B ortak yol).
     std::optional<std::size_t> hitTestCutModifierAt(int x, int y) const;
+    // COMPONENT SIMGESI: End Plate levha merkezindeki buyuk simgeye tiklama
+    // -> levha modelinin indeksi (normal model hit'ten ONCE denenir).
+    std::optional<std::size_t> componentGlyphModelAt(int x, int y) const;
     // P8: kesme nesnesi uzerinde Alt+sol tik -> kesme yonunu tersine cevirir
     // (invertSide). PlaneCut/LineCut keepPositive'i, Fitting otomatik tarafi
     // tersler; PolygonCut/BooleanCut yonsuz oldugu icin no-op (uyari).

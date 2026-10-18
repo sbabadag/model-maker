@@ -60,6 +60,10 @@ struct CutModifier {
     // yalnizca bu sahipligi tasiyan modifier'lar kaldirilir/yeniden uretilir.
     // Diger kesme turlerinde kInvalidEntityId.
     EntityId owner{kInvalidEntityId};
+    // GIZLI (motor eleman): true ise modifier COMPONENT ic mekanizmasidir
+    // (End Plate fitting'i gibi) — renderer CIZMEZ, hit-test SECMEZ, kullanici
+    // Alt+tik ile yon ceviremez/silemez. Kesme yine de uygulanir (recompute).
+    bool hidden{false};
     bool operator==(const CutModifier&) const = default;
 };
 

@@ -685,7 +685,8 @@ void writeMmw8(std::ostream& out, const Mmw8Document& doc) {
             for (const auto& p : mod.polygon) body << ' ' << p.x << ' ' << p.y << ' ' << p.z;
             body << ' ' << mod.source << ' ' << (mod.invertSide ? 1 : 0)
                  << ' ' << mod.diameter << ' ' << mod.owner
-                 << '\n';  // P6 kaynak; P8 yon tersi; B1 cap + sahiplik
+                 << ' ' << (mod.hidden ? 1 : 0)
+                 << '\n';  // P6 kaynak; P8 yon tersi; B1 cap + sahiplik; gizli
         }
         const std::string b = body.str();
         out << "C " << b.size() << '\n';
@@ -1068,6 +1069,9 @@ void readMmw8(std::istream& in, Mmw8Document& doc) {
                 // B1: bulon sahipligi (opsiyonel — eski dosyalarda yok).
                 std::uint64_t owner = 0;
                 if (ls >> owner) mod.owner = static_cast<EntityId>(owner);
+                // Gizli (motor eleman) (opsiyonel — eski dosyalarda yok).
+                std::uint64_t hidden = 0;
+                if (ls >> hidden) mod.hidden = hidden != 0;
                 parsed.cutModifiers.push_back(std::move(mod));
             }
         } else if (tag == 'G') {

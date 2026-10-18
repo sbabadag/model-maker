@@ -311,6 +311,13 @@ struct DraftView {
     // IKI NOKTALI GORUNUS penceresi: yalniz bu derinlik dilimindeki modeller
     // cizilir (nullptr = filtre yok — ana gorunus).
     const ViewDefinition* viewSlab{nullptr};
+    // COMPONENT SIMGELERI: End Plate gibi component'lerin buyuk tiklama
+    // isaretleri. Dunya koordinatinda levha merkezleri; renderer ekran-olcekli
+    // buyuk simge cizer, hit-test bu simgeyi levha modeline esler.
+    std::vector<Vec3> componentGlyphs;
+    // componentGlyphs ile BIREBIR: her simgenin karsi levha EntityId'si
+    // (renderer secim vurgusu icin model indeksine cozer).
+    std::vector<EntityId> componentGlyphEntities;
 };
 
 class Renderer {

@@ -826,7 +826,7 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         const COLORREF kCutRgb = RGB(255, 140, 40);
         for (std::size_t ci = 0; ci < document.cutModifiers().size(); ++ci) {
             const auto& raw = document.cutModifiers()[ci];
-            if (!raw.enabled) continue;
+            if (!raw.enabled || raw.hidden) continue;
             // P6: kaynagi varsa GUNCEL geometriden cozumle (cizim/secim ayni kaynak).
             const CutModifier mod = resolveCutModifierSource(raw, document);
             // PolygonCut: cokgen siniri kesikli cizgiyle (kesme rengi).
@@ -918,7 +918,7 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         const COLORREF kHovRgb = RGB(255, 255, 255);
         for (std::size_t ci = 0; ci < document.cutModifiers().size(); ++ci) {
             const auto& rawMod = document.cutModifiers()[ci];
-            if (!rawMod.enabled) continue;
+            if (!rawMod.enabled || rawMod.hidden) continue;
             const bool sel = std::find(draft.selectedCutModifiers.begin(),
                                        draft.selectedCutModifiers.end(), ci) !=
                              draft.selectedCutModifiers.end();
@@ -953,7 +953,35 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         }
     };
 
-    // BOLT YUZ SECIM HOVER VURGUSU: imlecin altindaki yuzun TAMAMI (ayni
+    // COMPONENT SIMGELERI: End Plate gibi component'lerin levha merkezinde
+    // buyuk, ekran-olcekli tiklama isareti. Hover'da buyur; secili ise sari.
+    const auto drawComponentGlyphs = [&]() {
+        if (draft.componentGlyphs.empty()) return;
+        constexpr COLORREF kGlyphRgb = RGB(0, 168, 196);       // turkuaz
+        constexpr COLORREF kGlyphSel = RGB(255, 206, 84);      // sari (secili)
+        for (std::size_t gi = 0; gi < draft.componentGlyphs.size(); ++gi) {
+            const POINT c = projectPoint(draft.componentGlyphs[gi]);
+            bool sel = false;
+            if (gi < draft.componentGlyphEntities.size()) {
+                if (const auto idx = document.indexOfEntity(draft.componentGlyphEntities[gi]))
+                    sel = std::find(draft.selectedModels.begin(), draft.selectedModels.end(),
+                                    *idx) != draft.selectedModels.end();
+            }
+            const COLORREF rgb = sel ? kGlyphSel : kGlyphRgb;
+            const int r = sel ? 13 : 11;
+            HPEN pen = CreatePen(PS_SOLID, 2, rgb);
+            HGDIOBJ oldPen = SelectObject(dc, pen);
+            HGDIOBJ oldBr = SelectObject(dc, GetStockObject(NULL_BRUSH));
+            // Elmas (kare 45°) — levhayi ayirt eder, gumball'dan farklidir.
+            const POINT d[4] = {{c.x, c.y - r}, {c.x + r, c.y},
+                                {c.x, c.y + r}, {c.x - r, c.y}};
+            Polygon(dc, d, 4);
+            SelectObject(dc, oldBr);
+            SelectObject(dc, oldPen);
+            DeleteObject(pen);
+            ++performance.renderedEntities;
+        }
+    };
     // baglantili duzlemsel yuzun tum ucgenleri) yari saydam amber dolgu +
     // DIS SINIR konturu ile vurgulanir. Tek tessellasyon ucgeni degil — bu
     // "ucgen yuz" goruntusunu giderir.
@@ -1046,6 +1074,7 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         drawConstruction();
         drawCutPlanes();
         drawCutSelectionHints();
+        drawComponentGlyphs();
         const bool motionDrafting = commandShowsSnapFeedback(
             draft.drawingActive, draft.workPlanePicking, draft.transformCommand,
             draft.transformPhase, draft.arrayItemCount.has_value(),
@@ -1875,6 +1904,7 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
     if (!draft.snapOnly && !draft.interactiveNavigation) {
         drawConstruction();
         drawCutPlanes();
+        drawComponentGlyphs();
     }
 
     // RHINO TARZI GUMBALL: tasima tutamaclari — GL kompozitinin ustune,

@@ -1474,7 +1474,7 @@ std::optional<std::size_t> hitTestCutModifier2D(const Vec3& cursor, const Docume
     const Vec2 c{cursor.x, cursor.y};
     for (std::size_t i = 0; i < mods.size(); ++i) {
         const auto& raw = mods[i];
-        if (!raw.enabled) continue;
+        if (!raw.enabled || raw.hidden) continue;
         // P6: kaynaga BAGLI (source var + kaynak varlik mevcut) modifier bagimsiz
         // secilemez — kaynak nesne (duzlem/cizgi/3DFACE) kesme nesnesinin
         // KENDISIDIR. Secim/tasima/silme kaynak nesne uzerinden yapilir.
@@ -1519,7 +1519,7 @@ std::optional<std::size_t> hitTestCutModifier3D(const Vec2& cursor, const Docume
     double bestDistance = tolerancePixels;
     for (std::size_t i = 0; i < mods.size(); ++i) {
         const auto& raw = mods[i];
-        if (!raw.enabled) continue;
+        if (!raw.enabled || raw.hidden) continue;
         // P6: kaynaga BAGLI (source var + kaynak varlik mevcut) modifier bagimsiz
         // secilemez — kaynak nesne (duzlem/cizgi/3DFACE) kesme nesnesinin
         // KENDISIDIR. Secim/tasima/silme kaynak nesne uzerinden yapilir.
