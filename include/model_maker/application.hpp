@@ -324,6 +324,8 @@ public:
 #ifdef MM_HAS_OCC
     struct PreparedEndPlate {
         std::size_t index{0};
+        std::size_t secIdx{0};            // ikincil (kiris) model indeksi — edit'te yeniden fit
+        EndPlatePlacement placement;      // yeni yerlesim (kiris yeniden kesimde kullanilir)
         EndPlateConnection updated;   // yeni bulon grubu (kimlikler korunur)
         TopoDS_Shape plateSolid;
         TopoDS_Shape boltSolid;

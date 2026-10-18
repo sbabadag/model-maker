@@ -4934,6 +4934,8 @@ Application::prepareEndPlateConnection(std::size_t index, const EndPlateParams* 
 
     PreparedEndPlate p;
     p.index = index;
+    p.secIdx = *secIdxOpt;
+    p.placement = placement;
     p.updated = conn;
     p.updated.params = effParams;          // yeni parametreler kayda yazılır
     p.updated.bolts = placement.bolts;  // yeni origin/pattern; kimlikler commit'te korunur
@@ -4972,6 +4974,48 @@ bool Application::commitEndPlateConnection(std::size_t index, const PreparedEndP
     // Delikler (CutKind::Hole) kolon + levhayi deler -> yeniden hesapla.
     if (after.mainPart != kInvalidEntityId) recomputeCutTarget(after.mainPart);
     if (after.plateEntityId != kInvalidEntityId) recomputeCutTarget(after.plateEntityId);
+    // EDIT/DUZENLEME: kirisi levhanin ARKA yuzune yeniden fit et (kalinlik/gap
+    // degisti). Levha kalinlastiginda/gap buyudugunde kiris eski kesim
+    // noktasinda kalirsa levhanin eklenen kalinligi kirisin icinde gizlenir ve
+    // kullanici "kalinlik degismiyor" gorur. Kirisi yeni arka yuzeye cek.
+    if (p.secIdx < document_.models().size() && after.secondaryPart != kInvalidEntityId) {
+        ensureProfileCatalog();
+        const auto& sp = document_.models()[p.secIdx].properties();
+        const double halfT = p.placement.plateThickness * 0.5;
+        const Vec3 farEnd{sp.axisFromX, sp.axisFromY, sp.axisFromZ};
+        const Vec3 beamEnd{p.placement.plateCenter.x + p.placement.axis.x * halfT,
+                           p.placement.plateCenter.y + p.placement.axis.y * halfT,
+                           p.placement.plateCenter.z + p.placement.axis.z * halfT};
+        if (const SteelProfile* prof = findProfile(profileCatalog_, sp.profileName)) {
+            const TopoDS_Shape shortSolid = extrudeProfileSolid(
+                *prof, farEnd, beamEnd, sp.profileRotation,
+                Vec3{sp.sectionNormalX, sp.sectionNormalY, sp.sectionNormalZ},
+                sp.sectionAnchor);
+            if (!shortSolid.IsNull()) {
+                auto shortModel = shapeToWireframeWithFaces(shortSolid, 0.15);
+                auto shortProps = sp;
+                shortProps.axisToX = beamEnd.x;
+                shortProps.axisToY = beamEnd.y;
+                shortProps.axisToZ = beamEnd.z;
+                shortModel.setProperties(std::move(shortProps));
+                document_.replaceModel(p.secIdx, {std::move(shortModel)});
+                putOccSolid(p.secIdx, shortSolid);
+                // Bu baglantiya ait gizli fitting'i yeni arka yuzeye tasi.
+                for (std::size_t mi = 0; mi < document_.cutModifiers().size(); ++mi) {
+                    const auto& m = document_.cutModifiers()[mi];
+                    if (m.kind == CutKind::Fitting && m.hidden &&
+                        m.target == after.secondaryPart) {
+                        CutModifier updated = m;
+                        updated.planeOrigin = beamEnd;
+                        updated.planeNormal = p.placement.axis;
+                        document_.setCutModifier(mi, updated);
+                        break;
+                    }
+                }
+                recomputeCutTarget(after.secondaryPart);
+            }
+        }
+    }
     return true;
 }
 
