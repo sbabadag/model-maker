@@ -619,8 +619,14 @@ if(BUILD_TESTING)
         add_executable(model_maker_occ_bolt_group_roundtrip tests/occ_bolt_group_roundtrip_test.cpp)
         target_link_libraries(model_maker_occ_bolt_group_roundtrip PRIVATE model_maker_occ)
         add_test(NAME model_maker_occ_bolt_group_roundtrip COMMAND model_maker_occ_bolt_group_roundtrip)
+        # END PLATE MMW8 ROUND-TRIP + RECOMPUTE (Slice 2d-3, Slice D): kayit/ac
+        # sonrasi baglanti kimlikleri + 2x4 M20 parametreleri + delikler korunur
+        # ve kolon degisiminde levha/bulon/delik GERCEK OCCT ile yeniden hesaplanir.
+        add_executable(model_maker_occ_end_plate_roundtrip tests/occ_end_plate_roundtrip_acceptance.cpp)
+        target_link_libraries(model_maker_occ_end_plate_roundtrip PRIVATE model_maker_occ)
+        add_test(NAME model_maker_occ_end_plate_roundtrip COMMAND model_maker_occ_end_plate_roundtrip)
         if(UNIX)
-            set_tests_properties(model_maker_occ_store_roundtrip model_maker_occ_document_roundtrip model_maker_occ_bolt_group_roundtrip PROPERTIES
+            set_tests_properties(model_maker_occ_store_roundtrip model_maker_occ_document_roundtrip model_maker_occ_bolt_group_roundtrip model_maker_occ_end_plate_roundtrip PROPERTIES
                 ENVIRONMENT "LD_LIBRARY_PATH=${OCC_ROOT}/lib:$ENV{LD_LIBRARY_PATH}")
         endif()
     endif()
