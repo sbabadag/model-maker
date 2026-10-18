@@ -711,7 +711,12 @@ void writeMmw8(std::ostream& out, const Mmw8Document& doc) {
                  << ' ' << g.displayEntityId << ' ' << (g.enabled ? 1 : 0)
                  << ' ' << g.countX << ' ' << g.countY
                  << ' ' << g.spacingX << ' ' << g.spacingY
-                 << ' ' << g.holeDepth << '\n';
+                 << ' ' << g.holeDepth
+                 << ' ' << g.spacingXs.size();
+            for (const double v : g.spacingXs) body << ' ' << v;
+            body << ' ' << g.spacingYs.size();
+            for (const double v : g.spacingYs) body << ' ' << v;
+            body << '\n';
         }
         const std::string b = body.str();
         out << "G " << b.size() << '\n';
@@ -745,7 +750,11 @@ void writeMmw8(std::ostream& out, const Mmw8Document& doc) {
                  << ' ' << (g.params.hasWasher ? 1 : 0) << ' ' << g.displayEntityId << ' '
                  << (g.enabled ? 1 : 0) << ' ' << g.countX << ' ' << g.countY << ' '
                  << g.spacingX << ' ' << g.spacingY << ' ' << g.holeDepth << ' '
-                 << c.params.gap << ' '
+                 << g.spacingXs.size();
+            for (const double v : g.spacingXs) body << ' ' << v;
+            body << ' ' << g.spacingYs.size();
+            for (const double v : g.spacingYs) body << ' ' << v;
+            body << ' ' << c.params.gap << ' '
                  << c.params.topExtra << ' ' << c.params.bottomExtra << ' '
                  << c.params.boltAlignH << ' ' << c.params.boltAlignV << ' '
                  << c.params.boltOffsetH << ' ' << c.params.boltOffsetV << ' '
@@ -764,7 +773,11 @@ void writeMmw8(std::ostream& out, const Mmw8Document& doc) {
             // (trailing, geriye uyumlu; eski okuyucu string sonrasi alanlari
             // gormez, yeni okuyucu fail-soft okur).
             body << ' ' << c.params.upperEdgeDistance << ' ' << c.params.lowerEdgeDistance
-                 << ' ' << c.params.plateWidthOverride << ' ' << c.params.plateHeightOverride;
+                 << ' ' << c.params.plateWidthOverride << ' ' << c.params.plateHeightOverride
+                 << ' ' << c.params.boltSpacingXs.size();
+            for (const double v : c.params.boltSpacingXs) body << ' ' << v;
+            body << ' ' << c.params.boltSpacingYs.size();
+            for (const double v : c.params.boltSpacingYs) body << ' ' << v;
             body << '\n';
         }
         const std::string b = body.str();
@@ -1151,6 +1164,22 @@ void readMmw8(std::istream& in, Mmw8Document& doc) {
                 double holeDepthVal = 0.0;
                 if (!(ls >> holeDepthVal)) holeDepthVal = 0.0;
                 g.holeDepth = holeDepthVal;
+                // Degisken araliklar (opsiyonel, trailing): count + degerler.
+                std::uint64_t nSx = 0, nSy = 0;
+                if (ls >> nSx && nSx <= kMmw8MaxBolts) {
+                    g.spacingXs.clear();
+                    for (std::uint64_t k = 0; k < nSx; ++k) {
+                        double v = 0.0;
+                        if (ls >> v) g.spacingXs.push_back(v);
+                    }
+                }
+                if (ls >> nSy && nSy <= kMmw8MaxBolts) {
+                    g.spacingYs.clear();
+                    for (std::uint64_t k = 0; k < nSy; ++k) {
+                        double v = 0.0;
+                        if (ls >> v) g.spacingYs.push_back(v);
+                    }
+                }
                 parsed.boltGroups.push_back(std::move(g));
             }
         } else if (tag == 'E') {
@@ -1223,6 +1252,22 @@ void readMmw8(std::istream& in, Mmw8Document& doc) {
                 double holeDepthVal = 0.0;
                 if (!(ls >> holeDepthVal)) holeDepthVal = 0.0;
                 g.holeDepth = holeDepthVal;
+                // Degisken araliklar (opsiyonel, trailing).
+                std::uint64_t nSxG = 0, nSyG = 0;
+                if (ls >> nSxG && nSxG <= kMmw8MaxBolts) {
+                    g.spacingXs.clear();
+                    for (std::uint64_t k = 0; k < nSxG; ++k) {
+                        double v = 0.0;
+                        if (ls >> v) g.spacingXs.push_back(v);
+                    }
+                }
+                if (ls >> nSyG && nSyG <= kMmw8MaxBolts) {
+                    g.spacingYs.clear();
+                    for (std::uint64_t k = 0; k < nSyG; ++k) {
+                        double v = 0.0;
+                        if (ls >> v) g.spacingYs.push_back(v);
+                    }
+                }
                 // gap (faz D1): kayit SONUNDA opsiyonel alan. Eski dosyalarda
                 // yoktur -> varsayilan 0.0 (geriye + ileriye uyumlu).
                 double gapVal = 0.0;
@@ -1291,6 +1336,22 @@ void readMmw8(std::istream& in, Mmw8Document& doc) {
                 c.params.lowerEdgeDistance = lowerED;
                 c.params.plateWidthOverride = wOvr;
                 c.params.plateHeightOverride = hOvr;
+                // Degisken bulon araliklari (trailing, fail-soft).
+                std::uint64_t nSpX = 0, nSpY = 0;
+                if (ls >> nSpX && nSpX <= kMmw8MaxBolts) {
+                    c.params.boltSpacingXs.clear();
+                    for (std::uint64_t k = 0; k < nSpX; ++k) {
+                        double v = 0.0;
+                        if (ls >> v) c.params.boltSpacingXs.push_back(v);
+                    }
+                }
+                if (ls >> nSpY && nSpY <= kMmw8MaxBolts) {
+                    c.params.boltSpacingYs.clear();
+                    for (std::uint64_t k = 0; k < nSpY; ++k) {
+                        double v = 0.0;
+                        if (ls >> v) c.params.boltSpacingYs.push_back(v);
+                    }
+                }
                 parsed.endPlateConnections.push_back(std::move(c));
             }
         } else if (tag == 'I') {

@@ -181,6 +181,25 @@ int main() {
         const std::vector<Vec3> origins = boltGroupBoltOrigins(g);
         check(origins.size() == 1u, "silinen bulon atlandi (2 -> 1)");
         if (origins.size() == 1u) check(approx(origins[0].x, 0.0), "kalan 1. bulon");
+
+        // Degisken bulon araliklari (Tekla "each space between bolts"): countX=3,
+        // spacingXs={80,120} -> kumulatif x = 0, 80, 200 (sabit spacingX yok sayilir).
+        BoltGroup vg;
+        vg.countX = 3;
+        vg.countY = 1;
+        vg.spacingX = 100.0;  // sabit (kullanilmaz: spacingXs oncelikli)
+        vg.spacingXs = {80.0, 120.0};
+        vg.origin = {0.0, 0.0, 0.0};
+        vg.axis = {0.0, 0.0, 1.0};
+        vg.xDir = {1.0, 0.0, 0.0};
+        const std::vector<Vec3> vorg = boltGroupBoltOrigins(vg);
+        check(vorg.size() == 3u, "degisken aralik: 3 bulon");
+        if (vorg.size() == 3u) {
+            check(approx(vorg[0].x, 0.0), "degisken: 1. bulon x=0");
+            check(approx(vorg[1].x, 80.0), "degisken: 2. bulon x=80");
+            check(approx(vorg[2].x, 200.0), "degisken: 3. bulon x=200");
+        }
+        check(approx(boltGroupSpanX(vg), 200.0), "degisken: grup acikligi 200");
     }
 
     // --- 2) Document kaydi + sahiplik ---------------------------------------
@@ -292,6 +311,8 @@ int main() {
         c3.params.boltOffsetV = 35.0;
         c3.params.boltSpacingX = 110.0;
         c3.params.boltSpacingY = 130.0;
+        c3.params.boltSpacingXs = {110.0};
+        c3.params.boltSpacingYs = {130.0};
         c3.params.deletedBolts = {2, 4};
         c3.params.boltStandard = "ISO 4014";
         c3.params.threadInMat = true;
@@ -365,6 +386,13 @@ int main() {
               "round-trip: plateWidthOverride 450");
         check(approx(d4.endPlateConnections()[0].params.plateHeightOverride, 320.0),
               "round-trip: plateHeightOverride 320");
+        const auto& rp = d4.endPlateConnections()[0].params;
+        check(rp.boltSpacingXs.size() == 1u, "round-trip: boltSpacingXs boyut 1");
+        if (rp.boltSpacingXs.size() == 1u)
+            check(approx(rp.boltSpacingXs[0], 110.0), "round-trip: boltSpacingXs[0] 110");
+        check(rp.boltSpacingYs.size() == 1u, "round-trip: boltSpacingYs boyut 1");
+        if (rp.boltSpacingYs.size() == 1u)
+            check(approx(rp.boltSpacingYs[0], 130.0), "round-trip: boltSpacingYs[0] 130");
     }
 
     std::printf("end_plate_test: %d check, %d failure\n", g_checks, g_failures);

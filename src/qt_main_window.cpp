@@ -1019,6 +1019,28 @@ bool QtMainWindow::openEndPlateParamsDialog(const mm::EndPlateParams& current,
     spacingYSpin->setSpecialValueText(QStringLiteral("Otomatik"));
     bltForm->addRow(QStringLiteral("Dikey aralık (0 = otomatik):"), spacingYSpin);
 
+    // Değişken bulon aralıkları (Tekla "each space between bolts"): N bulon için
+    // N-1 ayrı değer, boşlukla ayrılmış. Boş = sabit/otomatik aralık kullanılır.
+    QString varSxText;
+    for (std::size_t k = 0; k < current.boltSpacingXs.size(); ++k) {
+        if (k) varSxText += QLatin1Char(' ');
+        varSxText += QString::number(current.boltSpacingXs[k]);
+    }
+    auto* varSpXEdit = new QLineEdit(bltPage);
+    varSpXEdit->setText(varSxText);
+    varSpXEdit->setPlaceholderText(QStringLiteral("boş = otomatik; N-1 değer, boşlukla ayrılmış"));
+    bltForm->addRow(QStringLiteral("Yatay aralıklar (N-1):"), varSpXEdit);
+
+    QString varSyText;
+    for (std::size_t k = 0; k < current.boltSpacingYs.size(); ++k) {
+        if (k) varSyText += QLatin1Char(' ');
+        varSyText += QString::number(current.boltSpacingYs[k]);
+    }
+    auto* varSpYEdit = new QLineEdit(bltPage);
+    varSpYEdit->setText(varSyText);
+    varSpYEdit->setPlaceholderText(QStringLiteral("boş = otomatik; N-1 değer, boşlukla ayrılmış"));
+    bltForm->addRow(QStringLiteral("Dikey aralıklar (N-1):"), varSpYEdit);
+
     QString delText;
     for (std::size_t k = 0; k < current.deletedBolts.size(); ++k) {
         if (k) delText += QLatin1Char(',');
@@ -1128,6 +1150,18 @@ bool QtMainWindow::openEndPlateParamsDialog(const mm::EndPlateParams& current,
     out.boltOffsetV = offVSpin->value();
     out.boltSpacingX = spacingXSpin->value();
     out.boltSpacingY = spacingYSpin->value();
+    out.boltSpacingXs.clear();
+    for (const auto& t : varSpXEdit->text().split(QLatin1Char(' '), Qt::SkipEmptyParts)) {
+        bool ok = false;
+        const double v = t.trimmed().toDouble(&ok);
+        if (ok) out.boltSpacingXs.push_back(v);
+    }
+    out.boltSpacingYs.clear();
+    for (const auto& t : varSpYEdit->text().split(QLatin1Char(' '), Qt::SkipEmptyParts)) {
+        bool ok = false;
+        const double v = t.trimmed().toDouble(&ok);
+        if (ok) out.boltSpacingYs.push_back(v);
+    }
     out.deletedBolts.clear();
     for (const auto& t : delEdit->text().split(QLatin1Char(','))) {
         bool ok = false;

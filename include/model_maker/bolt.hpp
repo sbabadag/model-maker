@@ -72,6 +72,13 @@ struct BoltGroup {
     int countY{1};
     double spacingX{0.0};
     double spacingY{0.0};
+    // DEGISKEN BULON ARALIKLARI (Tekla "each space between bolts"): N bulon icin
+    // N-1 ayri aralik girilebilir. spacingXs[i] = i. ve (i+1). bulon arasindaki
+    // aralik (countX-1 adet olmali). Bos ise sabit spacingX kullanilir (geriye
+    // uyumlu). Ayni sekilde spacingYs (countY-1 adet). Kumulatif toplamla konum
+    // uretilir; grup acikligi boltGroupSpanX/Y ile alinir.
+    std::vector<double> spacingXs;
+    std::vector<double> spacingYs;
     // Silinen bulonlarin 1-based numaralari (Tekla "bolts to delete" listesi).
     // Numaralama boltGroupBoltOrigins ile ayni: j*satir + i (j=0 en alt satir,
     // i soldan saga). Silinen bulonlar delik/display uretiminde atlanir.
@@ -113,7 +120,14 @@ Vec3 boltGroupCenteredOrigin(const BoltGroup& bolt, const Vec3& boundsCenter,
 // Bulon grubundaki TUM bulon merkezlerini uretir (rectangular pattern):
 // origin + i*spacingX*xDir + j*spacingY*yDir, i in [0,countX), j in [0,countY).
 // yDir = normalize(axis) x xDir (eksene dik). countX/countY <= 0 ise 1 alinir.
+// DEGISKEN aralik: spacingXs/Ys tanimli ve (count-1) boyutunda ise sabit
+// spacingX/Y yerine kumulatif toplam kullanilir (Tekla "each space between bolts").
 std::vector<Vec3> boltGroupBoltOrigins(const BoltGroup& bolt) noexcept;
+
+// Grup acikligi (ilk bulondan son bulona eksen boyunca toplam uzaklik):
+// spacingXs/Ys tanimliysa kumulatif toplam, degilse (count-1)*spacingX/Y.
+double boltGroupSpanX(const BoltGroup& bolt) noexcept;
+double boltGroupSpanY(const BoltGroup& bolt) noexcept;
 
 // Bulon ekseni gecerli mi (birimlestirilebilir, sifir degil).
 bool isBoltAxisValid(const Vec3& axis) noexcept;

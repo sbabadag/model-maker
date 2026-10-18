@@ -80,14 +80,34 @@ BoltFrame boltFrame(const BoltGroup& bolt) noexcept {
 
 } // namespace
 
+double boltGroupSpanX(const BoltGroup& bolt) noexcept {
+    const int n = bolt.countX > 0 ? bolt.countX : 1;
+    if (n <= 1) return 0.0;
+    if (static_cast<int>(bolt.spacingXs.size()) == n - 1) {
+        double s = 0.0;
+        for (const double v : bolt.spacingXs) s += v;
+        return s;
+    }
+    return (n - 1) * bolt.spacingX;
+}
+
+double boltGroupSpanY(const BoltGroup& bolt) noexcept {
+    const int n = bolt.countY > 0 ? bolt.countY : 1;
+    if (n <= 1) return 0.0;
+    if (static_cast<int>(bolt.spacingYs.size()) == n - 1) {
+        double s = 0.0;
+        for (const double v : bolt.spacingYs) s += v;
+        return s;
+    }
+    return (n - 1) * bolt.spacingY;
+}
+
 Vec3 boltGroupCenteredOrigin(const BoltGroup& bolt, const Vec3& boundsCenter,
                              bool centerX, bool centerY) noexcept {
     const BoltFrame f = boltFrame(bolt);
-    const int nx = bolt.countX > 0 ? bolt.countX : 1;
-    const int ny = bolt.countY > 0 ? bolt.countY : 1;
     // Grup merkezinin origin'e gore yerel x/y uzakligi (pattern kose ortasi).
-    const double cx = (nx - 1) * 0.5 * bolt.spacingX;
-    const double cy = (ny - 1) * 0.5 * bolt.spacingY;
+    const double cx = 0.5 * boltGroupSpanX(bolt);
+    const double cy = 0.5 * boltGroupSpanY(bolt);
     Vec3 origin = bolt.origin;
     if (centerX) {
         const Vec3 d = boundsCenter - origin;
@@ -109,6 +129,20 @@ std::vector<Vec3> boltGroupBoltOrigins(const BoltGroup& bolt) noexcept {
     const int nx = bolt.countX > 0 ? bolt.countX : 1;
     const int ny = bolt.countY > 0 ? bolt.countY : 1;
     const BoltFrame f = boltFrame(bolt);
+    // Kumulatif x/y ofsetleri (degisken aralik destegi). Sabit aralik durumunda
+    // spacingX/Y'nin kumulatif toplami i*spacingX'e esittir (ayni sonuc).
+    const bool varX = static_cast<int>(bolt.spacingXs.size()) == nx - 1 && nx > 1;
+    const bool varY = static_cast<int>(bolt.spacingYs.size()) == ny - 1 && ny > 1;
+    std::vector<double> cumX(static_cast<std::size_t>(nx), 0.0);
+    std::vector<double> cumY(static_cast<std::size_t>(ny), 0.0);
+    for (int i = 1; i < nx; ++i)
+        cumX[static_cast<std::size_t>(i)] =
+            cumX[static_cast<std::size_t>(i - 1)] +
+            (varX ? bolt.spacingXs[static_cast<std::size_t>(i - 1)] : bolt.spacingX);
+    for (int j = 1; j < ny; ++j)
+        cumY[static_cast<std::size_t>(j)] =
+            cumY[static_cast<std::size_t>(j - 1)] +
+            (varY ? bolt.spacingYs[static_cast<std::size_t>(j - 1)] : bolt.spacingY);
     out.reserve(static_cast<std::size_t>(nx) * static_cast<std::size_t>(ny));
     for (int j = 0; j < ny; ++j)
         for (int i = 0; i < nx; ++i) {
@@ -120,12 +154,12 @@ std::vector<Vec3> boltGroupBoltOrigins(const BoltGroup& bolt) noexcept {
                     break;
                 }
             if (deleted) continue;
-            const double ox = bolt.origin.x + i * bolt.spacingX * f.u.x +
-                              j * bolt.spacingY * f.v.x;
-            const double oy = bolt.origin.y + i * bolt.spacingX * f.u.y +
-                              j * bolt.spacingY * f.v.y;
-            const double oz = bolt.origin.z + i * bolt.spacingX * f.u.z +
-                              j * bolt.spacingY * f.v.z;
+            const double ox = bolt.origin.x + cumX[static_cast<std::size_t>(i)] * f.u.x +
+                              cumY[static_cast<std::size_t>(j)] * f.v.x;
+            const double oy = bolt.origin.y + cumX[static_cast<std::size_t>(i)] * f.u.y +
+                              cumY[static_cast<std::size_t>(j)] * f.v.y;
+            const double oz = bolt.origin.z + cumX[static_cast<std::size_t>(i)] * f.u.z +
+                              cumY[static_cast<std::size_t>(j)] * f.v.z;
             out.push_back(Vec3{ox, oy, oz});
         }
     return out;

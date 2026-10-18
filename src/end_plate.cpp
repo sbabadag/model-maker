@@ -84,8 +84,26 @@ static BoltGroup makeEndPlateBolts(const EndPlatePlacement& out,
         sY = 0.0;
     }
 
-    const double gw = (nx - 1) * sX;  // grup yatay acikligi
-    const double gh = (ny - 1) * sY;  // grup dikey acikligi
+    // DEGISKEN bulon araliklari (Tekla "each space between bolts"): boyut
+    // count-1 degilse bos birakilir (sabit/otomatik aralik kullanilir — sessiz
+    // yanlis yorum OLMAZ). Grup acikligi degisken ise kumulatif, degilse sabit.
+    std::vector<double> varXs =
+        (static_cast<int>(params.boltSpacingXs.size()) == nx - 1) ? params.boltSpacingXs
+                                                                  : std::vector<double>{};
+    std::vector<double> varYs =
+        (static_cast<int>(params.boltSpacingYs.size()) == ny - 1) ? params.boltSpacingYs
+                                                                  : std::vector<double>{};
+    double gw = 0.0, gh = 0.0;
+    if (!varXs.empty()) {
+        for (const double v : varXs) gw += v;
+    } else {
+        gw = (nx - 1) * sX;
+    }
+    if (!varYs.empty()) {
+        for (const double v : varYs) gh += v;
+    } else {
+        gh = (ny - 1) * sY;
+    }
 
     // Yatay hizalama: en sol bulonun levha sol kenarindan u-yonlu uzakligi.
     double leftX;
@@ -132,6 +150,8 @@ static BoltGroup makeEndPlateBolts(const EndPlatePlacement& out,
     b.countY = ny;
     b.spacingX = sX;
     b.spacingY = sY;
+    b.spacingXs = varXs;
+    b.spacingYs = varYs;
     b.deletedBolts = params.deletedBolts;
     b.params.nominalDiameter = params.boltDiameter;
     b.params.holeDiameter = params.holeDiameter;

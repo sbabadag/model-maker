@@ -71,6 +71,10 @@ struct EndPlateParams {
     double boltOffsetV{-1.0};      // dikey konum olcusu (mm; Ust/Alt'ta <0 = boltEdge)
     double boltSpacingX{0.0};      // yatay aralik (0 = otomatik flans/2)
     double boltSpacingY{0.0};      // dikey aralik (0 = otomatik levha-2*boltEdge)
+    // DEGISKEN bulon araliklari (Tekla "each space between bolts"): N bulon icin
+    // N-1 ayri aralik. Bos ise sabit boltSpacingX/Y (veya otomatik) kullanilir.
+    std::vector<double> boltSpacingXs;
+    std::vector<double> boltSpacingYs;
     std::vector<int> deletedBolts; // silinen bulon numaralari (1-based)
     bool hasHead{true};
     bool hasNut{true};
