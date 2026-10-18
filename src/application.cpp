@@ -4688,17 +4688,25 @@ bool Application::resolveEndPlatePlacement(std::size_t mainIdx, std::size_t secI
             // giris yuzune oturur. (Ray-cast normali isin cikisina/beamFrom'a
             // bakacak sekilde yonlenir = giris yuzunun dis normali.)
             Vec3 entryPoint{}, entryNormal{0.0, 0.0, 1.0};
+            Vec3 fixedEnd = beamTo;  // varsayilan: kolona en yakin uc
             bool passThrough = false;
 #ifdef MM_HAS_OCC
             if (const TopoDS_Shape* solid = findOccSolid(mainIdx)) {
                 double entryDist = 0.0;
-                // Baglanan uc (beamTo, kolona en YAKIN uc) KORUNUR; kolonun
-                // otesindeki kuyruk atilir. Isin, baglanan uctan kolona dogru
-                // (-beamDir) atilir ki GIRIS yuzu (kirisin geldigi taraf)
-                // bulunsun — uzak uctan atilsaydi kolonun ARKA yuzu bulunur ve
-                // kiris yanlis taraftan (kisa taraf atilarak) kesilirdi.
-                const Vec3 towardColumn{-beamAxis.x, -beamAxis.y, -beamAxis.z};
-                if (raycastBrepFace(*solid, beamTo, towardColumn, entryPoint, entryNormal,
+                // Korunacak ucu belirle: kolon DISINDA kalan uc.
+                //  - beamTo kolon ICINDEYSE (kiris ucu kolona girmis): fixedEnd
+                //    = beamFrom (dışarıdaki uc); aksi halde kiris iceriden
+                //    dis yuze yeniden uretilip "hala kolona giriyor" gorunurdu.
+                //  - beamTo DISARIDAYSA (tam gecis): fixedEnd = beamTo (kolona
+                //    en yakin = kisa taraf, korunacak baglanti tarafi).
+                fixedEnd = pointInSolid(*solid, beamTo) ? beamFrom : beamTo;
+                // Ray-cast fixedEnd'ten kolon MERKEZINE dogru -> girisin yuzu
+                // (kirisin geldigi taraf). Kolon merkezine dogru isin, kolonun
+                // fixedEnd tarafindaki DIS yuzune carpar; boylece hem "uc
+                // iceride" hem "tam gecis" dogru yuzu bulur.
+                const Vec3 toColCenter{colCenter.x - fixedEnd.x, colCenter.y - fixedEnd.y,
+                                       colCenter.z - fixedEnd.z};
+                if (raycastBrepFace(*solid, fixedEnd, toColCenter, entryPoint, entryNormal,
                                     entryDist) &&
                     entryDist < beamAxisLen - 1e-6) {
                     passThrough = true;
@@ -4715,7 +4723,7 @@ bool Application::resolveEndPlatePlacement(std::size_t mainIdx, std::size_t secI
                     trim->needed = true;
                     trim->entryPoint = entryPoint;
                     trim->entryNormal = entryNormal;
-                    trim->fixedEnd = beamTo;
+                    trim->fixedEnd = fixedEnd;
                 }
             } else {
                 // Acik hata: paralel eksen / yuz disi / belirsiz — RASTGELE yerlestirme YOK.

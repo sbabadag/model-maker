@@ -29,6 +29,7 @@
 #include <BRepBuilderAPI_MakeEdge.hxx>
 #include <BRepBuilderAPI_MakeWire.hxx>
 #include <BRepClass_FaceClassifier.hxx>
+#include <BRepClass3d_SolidClassifier.hxx>
 #include <GeomAPI_IntCS.hxx>
 #include <Geom_Line.hxx>
 #include <Geom_Surface.hxx>
@@ -794,6 +795,14 @@ bool raycastBrepFace(const TopoDS_Shape& shape, const Vec3& rayOrigin,
     hitNormal = bestNormal;
     distance = bestW;
     return true;
+}
+
+bool pointInSolid(const TopoDS_Shape& solid, const Vec3& point) {
+    if (solid.IsNull()) return false;
+    BRepClass3d_SolidClassifier classifier(solid);
+    classifier.Perform(gp_Pnt(point.x, point.y, point.z), 1e-7);
+    const TopAbs_State state = classifier.State();
+    return state == TopAbs_IN || state == TopAbs_ON;
 }
 
 WireframeModel solidBoxSolid(double dx, double dy, double dz, double faceDeflection) {

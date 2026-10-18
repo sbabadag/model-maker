@@ -96,6 +96,11 @@ bool raycastBrepFace(const TopoDS_Shape& shape, const Vec3& rayOrigin,
                      const Vec3& rayDirection, Vec3& hitPoint, Vec3& hitNormal,
                      double& distance);
 
+// Noktanin bir B-Rep KATISININ icinde (veya yuzeyinde) olup olmadigini test
+// eder. BRepClass3d_SolidClassifier kullanir; katida dogru siniflandirma icin
+// mesh gerekmez (analitik). Null/gecersiz katida false doner.
+bool pointInSolid(const TopoDS_Shape& solid, const Vec3& point);
+
 WireframeModel solidBoxWireframe(double dx, double dy, double dz);
 
 WireframeModel solidCylinderWireframe(double radius, double height, int circleSegments = 48);
