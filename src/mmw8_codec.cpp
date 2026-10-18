@@ -617,6 +617,10 @@ void writeMmw8(std::ostream& out, const Mmw8Document& doc) {
             << p.transparency << ' ' << (p.visible ? 1 : 0) << ' ' << (p.frozen ? 1 : 0) << ' '
             << (p.locked ? 1 : 0) << ' ' << (p.plottable ? 1 : 0) << ' ';
         putString(out, p.description);
+        out << ' ';
+        putString(out, p.name);
+        out << ' ';
+        putString(out, p.finish);
         out << '\n';
     }
 
@@ -780,6 +784,10 @@ void writeMmw8(std::ostream& out, const Mmw8Document& doc) {
             for (const double v : c.params.boltSpacingYs) body << ' ' << v;
             body << ' ';
             putString(body, c.params.plateMaterial);   // Milestone 2: levha malzemesi (trailing)
+            body << ' ';
+            putString(body, c.params.plateName);       // levha adi (trailing)
+            body << ' ';
+            putString(body, c.params.plateFinish);     // levha yuzey islemi (trailing)
             body << '\n';
         }
         const std::string b = body.str();
@@ -963,6 +971,12 @@ void readMmw8(std::istream& in, Mmw8Document& doc) {
         props.locked = readBool(in, "locked");
         props.plottable = readBool(in, "plottable");
         props.description = readString(in);
+        // Milestone 2: trailing name + finish (fail-soft: legacy dosyalarda
+        // description'dan sonra dogrudan '\n' gelir -> alanlar bos kalir).
+        if (in.peek() != '\n') {
+            props.name = readString(in);
+            if (in.peek() != '\n') props.finish = readString(in);
+        }
         if (props.trueColor) props.effectiveColor = *props.trueColor;
 
         WireframeModel built = buildModel(std::move(vertices), std::move(edges),
@@ -1358,6 +1372,16 @@ void readMmw8(std::istream& in, Mmw8Document& doc) {
                     c.params.plateMaterial = readString(ls);   // levha malzemesi (trailing)
                 } catch (const std::runtime_error&) {
                     c.params.plateMaterial.clear();
+                }
+                try {
+                    c.params.plateName = readString(ls);       // levha adi (trailing)
+                } catch (const std::runtime_error&) {
+                    c.params.plateName.clear();
+                }
+                try {
+                    c.params.plateFinish = readString(ls);     // levha yuzey islemi (trailing)
+                } catch (const std::runtime_error&) {
+                    c.params.plateFinish.clear();
                 }
                 parsed.endPlateConnections.push_back(std::move(c));
             }

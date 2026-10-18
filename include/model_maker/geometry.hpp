@@ -134,6 +134,8 @@ struct EntityProperties {
     bool locked{};
     bool plottable{true};
     std::string description;
+    std::string name;      // parca adi (Tekla Plates: Name; bos = varsayilan)
+    std::string finish;    // yuzey islemi (Tekla Plates: Finish; bos = varsayilan)
     std::uint32_t effectiveColor{0x68CAFF};
     int effectiveLineWeight{};
     std::string effectiveLineType{"CONTINUOUS"};

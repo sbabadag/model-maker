@@ -56,6 +56,8 @@ struct EndPlateParams {
     double plateWidthOverride{0.0};
     double plateHeightOverride{0.0};
     std::string plateMaterial{};    // levha malzemesi (Tekla Plates: Material; bos = varsayilan)
+    std::string plateName{};        // levha adi (Tekla Plates: Name; bos = varsayilan)
+    std::string plateFinish{};      // levha yuzey islemi (Tekla Plates: Finish; bos = varsayilan)
     double gap{0.0};               // kolon yuzeyi ile levha arasi bosluk (mm, Tekla 101: 2 mm)
     double boltDiameter{20.0};     // bulon capi (M20)
     double holeDiameter{22.0};     // delik capi (M20 -> 22)

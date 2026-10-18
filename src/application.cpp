@@ -4974,6 +4974,8 @@ Application::prepareEndPlateConnection(std::size_t index, const EndPlateParams* 
         // material alanina yaz (kalici; MMW8'e de serilestirildi).
         auto pp = p.plateModel.properties();
         pp.material = effParams.plateMaterial;
+        pp.name = effParams.plateName;
+        pp.finish = effParams.plateFinish;
         p.plateModel.setProperties(std::move(pp));
     }
     {

@@ -922,6 +922,16 @@ bool QtMainWindow::openEndPlateParamsDialog(const mm::EndPlateParams& current,
     matEdit->setPlaceholderText(QStringLiteral("örn. S235JR"));
     pltForm->addRow(QStringLiteral("Levha malzemesi:"), matEdit);
 
+    auto* nameEdit = new QLineEdit(pltPage);
+    nameEdit->setText(QString::fromStdString(current.plateName));
+    nameEdit->setPlaceholderText(QStringLiteral("örn. ENDPLATE"));
+    pltForm->addRow(QStringLiteral("Levha adı:"), nameEdit);
+
+    auto* finEdit = new QLineEdit(pltPage);
+    finEdit->setText(QString::fromStdString(current.plateFinish));
+    finEdit->setPlaceholderText(QStringLiteral("örn. HDG, Paint"));
+    pltForm->addRow(QStringLiteral("Yüzey işlemi:"), finEdit);
+
     auto* pltNote = new QLabel(pltPage);
     pltNote->setWordWrap(true);
     pltNote->setStyleSheet(QStringLiteral("color: gray;"));
@@ -1144,6 +1154,8 @@ bool QtMainWindow::openEndPlateParamsDialog(const mm::EndPlateParams& current,
     out.gap = gapSpin->value();
     out.plateThickness = thickSpin->value();
     out.plateMaterial = matEdit->text().trimmed().toStdString();
+    out.plateName = nameEdit->text().trimmed().toStdString();
+    out.plateFinish = finEdit->text().trimmed().toStdString();
     out.boltDiameter = diaCombo->currentData().toDouble();
     out.boltGrade = gradeCombo->currentText().toStdString();
     out.holeDiameter = holeSpin->value();
