@@ -4692,7 +4692,13 @@ bool Application::resolveEndPlatePlacement(std::size_t mainIdx, std::size_t secI
 #ifdef MM_HAS_OCC
             if (const TopoDS_Shape* solid = findOccSolid(mainIdx)) {
                 double entryDist = 0.0;
-                if (raycastBrepFace(*solid, beamFrom, beamDir, entryPoint, entryNormal,
+                // Baglanan uc (beamTo, kolona en YAKIN uc) KORUNUR; kolonun
+                // otesindeki kuyruk atilir. Isin, baglanan uctan kolona dogru
+                // (-beamDir) atilir ki GIRIS yuzu (kirisin geldigi taraf)
+                // bulunsun — uzak uctan atilsaydi kolonun ARKA yuzu bulunur ve
+                // kiris yanlis taraftan (kisa taraf atilarak) kesilirdi.
+                const Vec3 towardColumn{-beamAxis.x, -beamAxis.y, -beamAxis.z};
+                if (raycastBrepFace(*solid, beamTo, towardColumn, entryPoint, entryNormal,
                                     entryDist) &&
                     entryDist < beamAxisLen - 1e-6) {
                     passThrough = true;
@@ -4709,7 +4715,7 @@ bool Application::resolveEndPlatePlacement(std::size_t mainIdx, std::size_t secI
                     trim->needed = true;
                     trim->entryPoint = entryPoint;
                     trim->entryNormal = entryNormal;
-                    trim->fixedEnd = beamFrom;
+                    trim->fixedEnd = beamTo;
                 }
             } else {
                 // Acik hata: paralel eksen / yuz disi / belirsiz — RASTGELE yerlestirme YOK.
