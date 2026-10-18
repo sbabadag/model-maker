@@ -32,16 +32,21 @@ EndPlateFrame endPlateFrame(const Vec3& beamAxis, const Vec3& referenceNormal) n
 }
 
 // Bulon grubunu levha boyutlari + cerceveden kurar (iki yerlesim fonksiyonu
-// ortak kullanir — tek dogruluk kaynagi).
+// ortak kullanir — tek dogruluk kaynagi). Genislik yonundeki civata acikligi
+// KIRIS FLANSINA dayanir (kullanıcı şartı: "profil başlık / 2" gauge cizgisi):
+// toplam aciklik = flans/2, yani 2 kolon icin civatalar ±flans/4'te. Yukseklik
+// yonu levha boyutundan kalir (params.boltEdge kenar payi).
 static BoltGroup makeEndPlateBolts(const EndPlatePlacement& out,
                                    const EndPlateParams& params) noexcept {
-    const double hw = out.plateWidth * 0.5;
+    const double flangeW = out.plateWidth - 2.0 * params.plateExtra;  // kiris flans genisligi
+    const double xHalf = (flangeW > 0.0) ? 0.25 * flangeW
+                                         : (out.plateWidth * 0.5 - params.boltEdge);
     const double hh = out.plateHeight * 0.5;
-    const double ox = out.plateCenter.x - out.u.x * (hw - params.boltEdge) -
+    const double ox = out.plateCenter.x - out.u.x * xHalf -
                       out.v.x * (hh - params.boltEdge);
-    const double oy = out.plateCenter.y - out.u.y * (hw - params.boltEdge) -
+    const double oy = out.plateCenter.y - out.u.y * xHalf -
                       out.v.y * (hh - params.boltEdge);
-    const double oz = out.plateCenter.z - out.u.z * (hw - params.boltEdge) -
+    const double oz = out.plateCenter.z - out.u.z * xHalf -
                       out.v.z * (hh - params.boltEdge);
     BoltGroup b;
     b.origin = Vec3{ox, oy, oz};
@@ -49,7 +54,8 @@ static BoltGroup makeEndPlateBolts(const EndPlatePlacement& out,
     b.xDir = out.u;
     b.countX = params.boltCountX > 0 ? params.boltCountX : 1;
     b.countY = params.boltCountY > 0 ? params.boltCountY : 1;
-    b.spacingX = (b.countX > 1) ? (out.plateWidth - 2.0 * params.boltEdge) : 0.0;
+    b.spacingX = (b.countX > 1) ? (2.0 * xHalf) / static_cast<double>(b.countX - 1)
+                                : 0.0;
     b.spacingY = (b.countY > 1) ? (out.plateHeight - 2.0 * params.boltEdge) /
                                       static_cast<double>(b.countY - 1)
                                 : 0.0;

@@ -4407,15 +4407,21 @@ void Application::applyEndPlateFromParts(const std::vector<std::size_t>& parts) 
         const auto& sp = document_.models()[secIdx].properties();
         if (const SteelProfile* prof = findProfile(profileCatalog_, sp.profileName)) {
             // (1) Ekseni giris noktasina kisalt + katı yeniden uret (kullanıcı
-            // şartı: "kiris eksen ucunu kesim noktasina guncelle").
+            // şartı: "kiris eksen ucunu kesim noktasina guncelle"). Sabit ucu
+            // trim.fixedEnd (DISARI) olarak koru; swap sonrasi beamFrom,
+            // sp.axisFrom DEGIL — kiriş içeriden dışarıya çizildiyse sp.axisFrom
+            // içeride kalır ve yanlış ucu sabitlerdi.
             const TopoDS_Shape shortSolid = extrudeProfileSolid(
-                *prof, Vec3{sp.axisFromX, sp.axisFromY, sp.axisFromZ},
+                *prof, trim.fixedEnd,
                 trim.entryPoint, sp.profileRotation,
                 Vec3{sp.sectionNormalX, sp.sectionNormalY, sp.sectionNormalZ},
                 sp.sectionAnchor);
             if (!shortSolid.IsNull()) {
                 auto shortModel = shapeToWireframeWithFaces(shortSolid, 0.15);
                 auto shortProps = sp;
+                shortProps.axisFromX = trim.fixedEnd.x;
+                shortProps.axisFromY = trim.fixedEnd.y;
+                shortProps.axisFromZ = trim.fixedEnd.z;
                 shortProps.axisToX = trim.entryPoint.x;
                 shortProps.axisToY = trim.entryPoint.y;
                 shortProps.axisToZ = trim.entryPoint.z;
@@ -4703,6 +4709,7 @@ bool Application::resolveEndPlatePlacement(std::size_t mainIdx, std::size_t secI
                     trim->needed = true;
                     trim->entryPoint = entryPoint;
                     trim->entryNormal = entryNormal;
+                    trim->fixedEnd = beamFrom;
                 }
             } else {
                 // Acik hata: paralel eksen / yuz disi / belirsiz — RASTGELE yerlestirme YOK.

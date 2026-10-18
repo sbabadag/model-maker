@@ -52,7 +52,9 @@ int main() {
         check(approx(pl.u.y, 1.0) || approx(pl.u.y, -1.0), "u genislik yonu Y ekseninde");
         check(approx(pl.v.z, 1.0) || approx(pl.v.z, -1.0), "v yukseklik yonu Z ekseninde");
         check(pl.bolts.countX == 2 && pl.bolts.countY == 2, "2x2 bulon");
-        check(approx(pl.bolts.spacingX, 180.0), "spacingX 180");
+        // Genislik yonu: flans/2 = 200/2 = 100 (Tekla gauge cizgisi). Yukseklik
+        // yonu levha boyutundan kalir: 340 - 2*30 = 280.
+        check(approx(pl.bolts.spacingX, 100.0), "spacingX 100 (flans/2)");
         check(approx(pl.bolts.spacingY, 280.0), "spacingY 280");
         const std::vector<Vec3> origins = boltGroupBoltOrigins(pl.bolts);
         check(origins.size() == 4, "4 bulon merkezi");

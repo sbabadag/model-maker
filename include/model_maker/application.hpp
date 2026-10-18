@@ -309,6 +309,7 @@ public:
         bool needed{false};
         Vec3 entryPoint{};           // kiris ekseninin kolon giris yuzunu kestigi nokta
         Vec3 entryNormal{0.0, 0.0, 1.0}; // giris yuzunun dis normali (kirise dogru)
+        Vec3 fixedEnd{};             // sabit kalacak uc (DISARI; swap sonrasi beamFrom)
     };
     // Basarida placement doldurulur + true; ACIK hata (paralel eksen / yuz disi /
     // belirsiz / eksik parca) err + false — cagiran belgeyi DEGISTIRMEZ.
