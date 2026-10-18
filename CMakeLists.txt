@@ -50,6 +50,7 @@ add_library(model_maker_core
     src/geometry_reference_resolver.cpp
     src/magnetic_frame.cpp
     src/component_recompute.cpp
+    src/component_framework.cpp
     src/assembly.cpp)
 target_include_directories(model_maker_core PUBLIC include)
 target_compile_options(model_maker_core PRIVATE -Wall -Wextra -Wpedantic)
@@ -811,6 +812,14 @@ if(BUILD_TESTING)
     target_link_options(model_maker_component_engine_test PRIVATE -static -static-libgcc -static-libstdc++)
     target_compile_options(model_maker_component_engine_test PRIVATE -Wall -Wextra -Wpedantic)
     add_test(NAME model_maker_component_engine_test COMMAND model_maker_component_engine_test)
+
+    # UNIVERSAL COMPONENT FRAMEWORK: ComponentBuilder + RelationshipGraph +
+    # ComponentObjectSpec (roleKey, cycle/unresolved/conflict). OCC'siz.
+    add_executable(model_maker_component_framework_test tests/component_framework_test.cpp)
+    target_link_libraries(model_maker_component_framework_test PRIVATE model_maker_core)
+    target_link_options(model_maker_component_framework_test PRIVATE -static -static-libgcc -static-libstdc++)
+    target_compile_options(model_maker_component_framework_test PRIVATE -Wall -Wextra -Wpedantic)
+    add_test(NAME model_maker_component_framework_test COMMAND model_maker_component_framework_test)
 
     # COMPONENT SERIALIZE (Phase C2b): ComponentInstanceRecord'un MMW8 'I' blogu
     # + Document save/load entegrasyonu; orphan tespiti + param migration +
