@@ -2111,6 +2111,16 @@ void Application::onLeftButtonDown(int x, int y) {
                                 if (boltEditRequest_) boltEditRequest_(bg);
                                 return;
                             }
+                        // END PLATE PARAMETRELERI (faz D1): levha veya bulon display'e
+                        // cift tik -> duzenleme diyalogu (endPlateEditRequest_).
+                        for (const auto& c : document_.endPlateConnections())
+                            if (c.plateEntityId == id || c.bolts.displayEntityId == id) {
+                                selectedModels_.clear();
+                                selectedModels_.push_back(*hit);
+                                updateControls(); updateStatus(); invalidateCanvas();
+                                if (endPlateEditRequest_) endPlateEditRequest_(c);
+                                return;
+                            }
                     }
                 }
             }
@@ -4386,7 +4396,9 @@ void Application::applyEndPlateFromParts(const std::vector<std::size_t>& parts) 
         publishStatus(L"End Plate: parcalar normal model olmali (konstruksiyon degil)");
         return;
     }
-    EndPlateParams params;  // M20/22, 12 mm levha, 2x4 bulon, gap=0 (varsayilan)
+    // Faz D1: parametreler uygulama-anı diyalogdan (pendingEndPlateParams_) gelir;
+    // diyalog yoksa EndPlateParams varsayılanları kullanılır.
+    EndPlateParams params = pendingEndPlateParams_;  // M20/22, 12 mm levha, 2x2 bulon (varsayilan)
     EndPlatePlacement placement;
     std::wstring err;
     EndPlateTrimInfo trim;
@@ -4848,21 +4860,26 @@ bool Application::resolveEndPlatePlacement(std::size_t mainIdx, std::size_t secI
 // basarisizlikta nullopt ve belge DEGISMEZ. (Eski rebuildEndPlateConnection'in
 // "coz + uret" yarisi; "uygula" yarisi commitEndPlateConnection'a tasindi.)
 std::optional<Application::PreparedEndPlate>
-Application::prepareEndPlateConnection(std::size_t index) {
+Application::prepareEndPlateConnection(std::size_t index, const EndPlateParams* paramsOverride) {
     if (index >= document_.endPlateConnections().size()) return std::nullopt;
     const EndPlateConnection conn = document_.endPlateConnections()[index];
     const auto mainIdxOpt = document_.indexOfEntity(conn.mainPart);
     const auto secIdxOpt = document_.indexOfEntity(conn.secondaryPart);
     if (!mainIdxOpt || !secIdxOpt) return std::nullopt;  // parca kayboldu
 
+    // Faz D1: parametre geçersiz kılınırsa (sonradan düzenleme) onu kullan,
+    // yoksa kayıttaki mevcut parametreler.
+    const EndPlateParams& effParams = paramsOverride ? *paramsOverride : conn.params;
+
     EndPlatePlacement placement;
     std::wstring err;
-    if (!resolveEndPlatePlacement(*mainIdxOpt, *secIdxOpt, conn.params, placement, err))
+    if (!resolveEndPlatePlacement(*mainIdxOpt, *secIdxOpt, effParams, placement, err))
         return std::nullopt;  // cozulemedi
 
     PreparedEndPlate p;
     p.index = index;
     p.updated = conn;
+    p.updated.params = effParams;          // yeni parametreler kayda yazılır
     p.updated.bolts = placement.bolts;  // yeni origin/pattern; kimlikler commit'te korunur
     p.plateSolid = buildEndPlateFromPlacement(placement);
     const double grip = placement.plateThickness + 15.0;
@@ -4899,6 +4916,50 @@ bool Application::commitEndPlateConnection(std::size_t index, const PreparedEndP
     if (after.plateEntityId != kInvalidEntityId) recomputeCutTarget(after.plateEntityId);
     return true;
 }
+
+// --- END PLATE PARAMETRELERI (faz D1) ----------------------------------------
+// Secili model bir End Plate LEVHASI veya BULON DISPLAY'i ise baglanti indeksi.
+std::optional<std::size_t> Application::selectedEndPlateConnectionIndex() const {
+    if (selectedModels_.empty() || selectedModels_.front() >= document_.models().size())
+        return std::nullopt;
+    const EntityId id = document_.modelId(selectedModels_.front());
+    for (std::size_t i = 0; i < document_.endPlateConnections().size(); ++i) {
+        const auto& c = document_.endPlateConnections()[i];
+        if (c.plateEntityId == id || c.bolts.displayEntityId == id) return i;
+    }
+    return std::nullopt;
+}
+
+bool Application::selectedEndPlateConnection(EndPlateConnection& out) const {
+    const auto idx = selectedEndPlateConnectionIndex();
+    if (!idx) return false;
+    out = document_.endPlateConnections()[*idx];
+    return true;
+}
+
+#ifdef MM_HAS_OCC
+bool Application::setSelectedEndPlateConnection(const EndPlateParams& newParams) {
+    const auto idxOpt = selectedEndPlateConnectionIndex();
+    if (!idxOpt) return false;
+    const std::size_t index = *idxOpt;
+    // PURE hazirlik: yeni parametrelerle yeniden coz + uret (belge DEGISMEZ).
+    const auto prepared = prepareEndPlateConnection(index, &newParams);
+    if (!prepared) {
+        publishStatus(L"End Plate yeniden uretilemedi (parametreler gecersiz)");
+        return false;
+    }
+    pushUndoSnapshot();
+    if (!commitEndPlateConnection(index, *prepared)) {
+        document_.rollbackOpenRecord();
+        publishStatus(L"End Plate guncelleme basarisiz");
+        return false;
+    }
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
+    return true;
+}
+#endif
 
 // SLICE 2d-2c P0/P1: GERCEK ATOMIK + GENERIC recompute.
 //

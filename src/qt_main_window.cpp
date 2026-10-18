@@ -303,6 +303,17 @@ QtMainWindow::QtMainWindow(QWidget* parent)
     app_.setBoltEditRequest([this](const mm::BoltGroup& bolt) {
         QTimer::singleShot(0, this, [this, bolt]() { openBoltPropertiesDialog(bolt); });
     });
+    // End Plate alt nesnesine (levha/bulon) cift tik -> parametre diyalogu.
+    // OK -> setSelectedEndPlateConnection (undo'lu yeniden uretim).
+    app_.setEndPlateEditRequest([this](const mm::EndPlateConnection& conn) {
+        QTimer::singleShot(0, this, [this, conn]() {
+            mm::EndPlateParams p = conn.params;
+            if (!openEndPlateParamsDialog(p, p)) return;
+#ifdef MM_HAS_OCC
+            app_.setSelectedEndPlateConnection(p);
+#endif
+        });
+    });
     // Iki noktali gorunus: Application iki noktayi secince yeni MDI penceresi.
     // Kuyruklanir: secim fare olayi isleyicisinin icinden donmeden pencere
     // olusturulmasin (yeniden giris / odak sorunlari olmasin).
@@ -623,7 +634,12 @@ void QtMainWindow::createMenus() {
     constructionMenu->addAction("&Bolt (Bulon)", this,
         [this]() { app_.startBoltCommand(); })->setIcon(makeToolIcon(ToolGlyph::Bolt));
     constructionMenu->addAction("&End Plate (Alın Levhası)", this,
-        [this]() { app_.startEndPlateCommand(); })->setIcon(makeToolIcon(ToolGlyph::Plate));
+        [this]() {
+            mm::EndPlateParams p = app_.pendingEndPlateParams();
+            if (!openEndPlateParamsDialog(p, p)) return;
+            app_.setPendingEndPlateParams(p);
+            app_.startEndPlateCommand();
+        })->setIcon(makeToolIcon(ToolGlyph::Plate));
 
     // ---- GÖRÜNÜM: kamera/navigasyon + standart yönler ----
     QMenu* viewMenu = appMenu_->addMenu("G&örünüm");
@@ -814,6 +830,107 @@ void QtMainWindow::openBoltPropertiesDialog(const mm::BoltGroup& bolt) {
     updated.spacingX = spacingXSpin->value();
     updated.spacingY = spacingYSpin->value();
     app_.setSelectedBoltGroup(updated);
+}
+
+bool QtMainWindow::openEndPlateParamsDialog(const mm::EndPlateParams& current,
+                                            mm::EndPlateParams& out) {
+    QDialog dlg(this);
+    dlg.setWindowTitle(QStringLiteral("End Plate Özellikleri"));
+    auto* form = new QFormLayout(&dlg);
+
+    auto* thickSpin = new QDoubleSpinBox(&dlg);
+    thickSpin->setRange(1.0, 200.0);
+    thickSpin->setDecimals(1);
+    thickSpin->setValue(current.plateThickness);
+    form->addRow(QStringLiteral("Levha kalınlığı (mm):"), thickSpin);
+
+    auto* extraSpin = new QDoubleSpinBox(&dlg);
+    extraSpin->setRange(0.0, 300.0);
+    extraSpin->setDecimals(1);
+    extraSpin->setValue(current.plateExtra);
+    form->addRow(QStringLiteral("Kesit payı (mm):"), extraSpin);
+
+    auto* gapSpin = new QDoubleSpinBox(&dlg);
+    gapSpin->setRange(0.0, 100.0);
+    gapSpin->setDecimals(1);
+    gapSpin->setValue(current.gap);
+    form->addRow(QStringLiteral("Kolon boşluğu (mm):"), gapSpin);
+
+    auto* diaCombo = new QComboBox(&dlg);
+    for (double d : mm::standardBoltDiameters())
+        diaCombo->addItem(QStringLiteral("M%1").arg(d, 0, 'f', 0), d);
+    int diaIdx = diaCombo->findData(current.boltDiameter);
+    if (diaIdx < 0) {
+        diaCombo->addItem(QStringLiteral("M%1").arg(current.boltDiameter, 0, 'f', 1),
+                          current.boltDiameter);
+        diaIdx = diaCombo->count() - 1;
+    }
+    diaCombo->setCurrentIndex(diaIdx);
+    form->addRow(QStringLiteral("Bulon çapı:"), diaCombo);
+
+    auto* gradeCombo = new QComboBox(&dlg);
+    gradeCombo->addItem(QStringLiteral("8.8"));
+    gradeCombo->addItem(QStringLiteral("10.9"));
+    const int gi = gradeCombo->findText(QString::fromStdString(current.boltGrade));
+    if (gi >= 0) gradeCombo->setCurrentIndex(gi);
+    form->addRow(QStringLiteral("Kalite:"), gradeCombo);
+
+    auto* holeSpin = new QDoubleSpinBox(&dlg);
+    holeSpin->setRange(1.0, 200.0);
+    holeSpin->setDecimals(1);
+    holeSpin->setValue(current.holeDiameter);
+    form->addRow(QStringLiteral("Delik çapı (mm):"), holeSpin);
+
+    auto* countXSpin = new QSpinBox(&dlg);
+    countXSpin->setRange(1, 50);
+    countXSpin->setValue(current.boltCountX > 0 ? current.boltCountX : 1);
+    form->addRow(QStringLiteral("Adet X:"), countXSpin);
+
+    auto* countYSpin = new QSpinBox(&dlg);
+    countYSpin->setRange(1, 50);
+    countYSpin->setValue(current.boltCountY > 0 ? current.boltCountY : 1);
+    form->addRow(QStringLiteral("Adet Y:"), countYSpin);
+
+    auto* edgeSpin = new QDoubleSpinBox(&dlg);
+    edgeSpin->setRange(1.0, 500.0);
+    edgeSpin->setDecimals(1);
+    edgeSpin->setValue(current.boltEdge);
+    form->addRow(QStringLiteral("Kenar payı (mm):"), edgeSpin);
+
+    auto* headChk = new QCheckBox(QStringLiteral("Baş"), &dlg);
+    headChk->setChecked(current.hasHead);
+    auto* nutChk = new QCheckBox(QStringLiteral("Somun"), &dlg);
+    nutChk->setChecked(current.hasNut);
+    auto* washChk = new QCheckBox(QStringLiteral("Pul"), &dlg);
+    washChk->setChecked(current.hasWasher);
+    auto* accRow = new QHBoxLayout;
+    accRow->addWidget(headChk);
+    accRow->addWidget(nutChk);
+    accRow->addWidget(washChk);
+    accRow->addStretch(1);
+    form->addRow(QStringLiteral("Elemanlar:"), accRow);
+
+    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
+    form->addRow(buttons);
+    QObject::connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+    QObject::connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+
+    if (dlg.exec() != QDialog::Accepted) return false;
+
+    out = current;
+    out.plateThickness = thickSpin->value();
+    out.plateExtra = extraSpin->value();
+    out.gap = gapSpin->value();
+    out.boltDiameter = diaCombo->currentData().toDouble();
+    out.boltGrade = gradeCombo->currentText().toStdString();
+    out.holeDiameter = holeSpin->value();
+    out.boltCountX = countXSpin->value();
+    out.boltCountY = countYSpin->value();
+    out.boltEdge = edgeSpin->value();
+    out.hasHead = headChk->isChecked();
+    out.hasNut = nutChk->isChecked();
+    out.hasWasher = washChk->isChecked();
+    return true;
 }
 
 void QtMainWindow::promptSaveNamedView() {
@@ -1272,7 +1389,12 @@ void QtMainWindow::createToolbar() {
         addBtn(lay, ToolGlyph::Delete,   "Part Cut",      "Parça ile kesme", [this]() { app_.startPartCutCommand(); });
         addSep(lay);
         addBtn(lay, ToolGlyph::Bolt,     "Bolt",          "İki parçayı bulonla birleştir", [this]() { app_.startBoltCommand(); });
-        addBtn(lay, ToolGlyph::Plate,    "End Plate",     "Alın levhası bağlantısı (kolon+kiriş)", [this]() { app_.startEndPlateCommand(); });
+        addBtn(lay, ToolGlyph::Plate,    "End Plate",     "Alın levhası bağlantısı (kolon+kiriş)", [this]() {
+            mm::EndPlateParams p = app_.pendingEndPlateParams();
+            if (!openEndPlateParamsDialog(p, p)) return;
+            app_.setPendingEndPlateParams(p);
+            app_.startEndPlateCommand();
+        });
         lay->addStretch();
     }
 

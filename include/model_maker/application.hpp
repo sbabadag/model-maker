@@ -332,7 +332,8 @@ public:
     };
     // PREPARE (pure, mutasyon yok): index'li baglantinin yeni yerlesimini coz +
     // levha/bulon/tel kafesi GECICI uret. Basarisizlikta nullopt — belge DEGISMEZ.
-    std::optional<PreparedEndPlate> prepareEndPlateConnection(std::size_t index);
+    std::optional<PreparedEndPlate> prepareEndPlateConnection(
+        std::size_t index, const EndPlateParams* paramsOverride = nullptr);
     // COMMIT (infallible): hazirlanani ACIK undo kaydina uygular (kararli kimlik).
     // Donus: baglanti basariyla uygulandiysa true; setEndPlateConnection
     // reddederse false (cagiran transaction'i rollback etmeli).
@@ -463,6 +464,27 @@ public:
     // setSelectedBoltGroup ile geri yazar.
     void setBoltEditRequest(std::function<void(const BoltGroup&)> callback) {
         boltEditRequest_ = std::move(callback);
+    }
+    // END PLATE PARAMETRELERI (faz D1): uygulama-anı parametre diyaloğu +
+    // sonradan düzenleme (canlı recompute, undo'lu). UI katmanı (Qt) diyaloğu
+    // açar; Application belge mutasyonunu yönetir.
+    void setPendingEndPlateParams(const EndPlateParams& p) { pendingEndPlateParams_ = p; }
+    const EndPlateParams& pendingEndPlateParams() const { return pendingEndPlateParams_; }
+    // Secili model bir End Plate LEVHASI veya BULON DISPLAY'i ise bağlantı
+    // indeksini döndürür; degilse nullopt.
+    std::optional<std::size_t> selectedEndPlateConnectionIndex() const;
+    // Secili model bir End Plate baglantisina aitse kaydını döndürür.
+    bool selectedEndPlateConnection(EndPlateConnection& out) const;
+#ifdef MM_HAS_OCC
+    // Secili End Plate baglantisinin parametrelerini günceller: yeniden çözer,
+    // levha/bulon/delikleri yeniden üretir (undo'lu). Secim bir bağlantı değilse
+    // veya çözülemezse false.
+    bool setSelectedEndPlateConnection(const EndPlateParams& newParams);
+#endif
+    // End Plate alt nesnesine (levha/bulon display) cift tik -> düzenleme
+    // diyaloğu isteği. Qt tarafi openEndPlateParamsDialog açar.
+    void setEndPlateEditRequest(std::function<void(const EndPlateConnection&)> cb) {
+        endPlateEditRequest_ = std::move(cb);
     }
     // Divide komutunu baslatir (edit box ile bolme sayisini sorar).
     void activateDivide();
@@ -998,6 +1020,12 @@ private:
     // VERB-NOUN END PLATE (Phase C1 GUI): [0]=main (kolon), [1]=secondary (kiris).
     bool pendingEndPlate_{};
     std::vector<std::size_t> pendingEndPlateParts_;
+    // END PLATE PARAMETRELERI (faz D1): uygulama-anı diyalogdan gelen degerler
+    // (startEndPlateCommand'dan önce UI set eder); applyEndPlateFromParts bunları
+    // kullanır. Kalıcı — son değer hatırlanır.
+    EndPlateParams pendingEndPlateParams_{};
+    // End Plate alt nesnesine çift tık -> düzenleme isteği callback'i.
+    std::function<void(const EndPlateConnection&)> endPlateEditRequest_;
     // BOLT TOOL PENCERESI (Phase B1): bolt display'ine cift tik -> duzenleme
     // istegi callback'i. Cift tik tespiti icin son sol tik zamani + konumu.
     std::function<void(const BoltGroup&)> boltEditRequest_;

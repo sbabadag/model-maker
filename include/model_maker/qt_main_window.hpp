@@ -49,6 +49,10 @@ private:
     // acilir. Cap/kalite/delik/bas/somun/pul + adet (countX/countY) + mesafe
     // (spacingX/spacingY) duzenlenir; OK -> app_.setSelectedBoltGroup.
     void openBoltPropertiesDialog(const mm::BoltGroup& bolt);
+    // End Plate parametre diyaloğu (faz D1): uygulama-anı (komuttan önce) ve
+    // sonradan düzenleme (çift tık) için ortak. current -> out; OK ise true.
+    bool openEndPlateParamsDialog(const mm::EndPlateParams& current,
+                                  mm::EndPlateParams& out);
     void createDockPanels();
     void resizeEmbeddedCanvas();
     void openTwoPointView(const ViewDefinition& view);
