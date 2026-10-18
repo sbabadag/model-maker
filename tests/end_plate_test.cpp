@@ -164,6 +164,7 @@ int main() {
         c3.mainPart = col;
         c3.secondaryPart = bm;
         c3.params = p;
+        c3.params.gap = 5.0;  // gap serilestirmesi dogrulaniyor
         c3.bolts = pl.bolts;
         d3.pushSnapshot();
         d3.addEndPlateConnection(c3, WireframeModel::rectangle({0, 0, 0}, {240, 340, 0}),
@@ -187,6 +188,8 @@ int main() {
         check(d4.endPlateConnections()[0].bolts.countX == 2, "round-trip: countX 2");
         check(approx(d4.endPlateConnections()[0].params.plateThickness, 12.0),
               "round-trip: kalinlik 12");
+        check(approx(d4.endPlateConnections()[0].params.gap, 5.0),
+              "round-trip: gap 5.0 serilestirildi");
     }
 
     std::printf("end_plate_test: %d check, %d failure\n", g_checks, g_failures);

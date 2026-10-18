@@ -9721,6 +9721,17 @@ void Application::openDocument() {
             if (document_.models()[i].properties().profileName.empty()) continue;
             recomputeCutTarget(document_.modelId(i));
         }
+        // AÇILIS SONRASI END PLATE YENIDEN COZUMU (operation record semantigi):
+        // baglanti KAYDI parametreleri tasir; pisirilmis levha/bulon geometrisi
+        // degil. Kaydedilen parametreler (gap dahil) mevcut ana/ikincil parcalar
+        // uzerine yeniden uygulanir -> kiris levhanin arka yuzune fit edilir,
+        // bulonlar guncel desende atilir. Undo gecmisi load'da sifirlandigi icin
+        // bu mutasyonlar geri alinmaz (dogru: dosya acmayi Ctrl+Z geri alamaz).
+        for (std::size_t i = 0; i < document_.endPlateConnections().size(); ++i) {
+            const auto prepared = prepareEndPlateConnection(i, nullptr);
+            if (!prepared) continue;  // parca kayboldu/cozulemedi: pisirilmis hal korunur
+            commitEndPlateConnection(i, *prepared);
+        }
 #endif
         purgeStaleAxisLines();
         refreshLayerCombo();

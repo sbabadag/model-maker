@@ -742,7 +742,7 @@ void writeMmw8(std::ostream& out, const Mmw8Document& doc) {
             body << ' ' << (g.params.hasHead ? 1 : 0) << ' ' << (g.params.hasNut ? 1 : 0)
                  << ' ' << (g.params.hasWasher ? 1 : 0) << ' ' << g.displayEntityId << ' '
                  << (g.enabled ? 1 : 0) << ' ' << g.countX << ' ' << g.countY << ' '
-                 << g.spacingX << ' ' << g.spacingY << '\n';
+                 << g.spacingX << ' ' << g.spacingY << ' ' << c.params.gap << '\n';
         }
         const std::string b = body.str();
         out << "E " << b.size() << '\n';
@@ -1186,6 +1186,11 @@ void readMmw8(std::istream& in, Mmw8Document& doc) {
                     g.spacingX = 0.0;
                     g.spacingY = 0.0;
                 }
+                // gap (faz D1): kayit SONUNDA opsiyonel alan. Eski dosyalarda
+                // yoktur -> varsayilan 0.0 (geriye + ileriye uyumlu).
+                double gapVal = 0.0;
+                if (!(ls >> gapVal)) gapVal = 0.0;
+                c.params.gap = gapVal;
                 parsed.endPlateConnections.push_back(std::move(c));
             }
         } else if (tag == 'I') {
