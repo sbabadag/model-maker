@@ -31,6 +31,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdlib>
 #include <cwchar>
 #include <exception>
 #include <fstream>
@@ -4455,6 +4456,49 @@ void Application::applyEndPlateFromParts(const std::vector<std::size_t>& parts) 
     invalidateCanvas();
 }
 
+// TESHIS YARDIMCILARI (End Plate yerlestirme hata ayiklama). MM_ENDPLATE_DIAG
+// set'liyken resolveEndPlatePlacement tum ara degerleri tek blok olarak
+// model-maker-endplate-diag.log'a yazar; kullanici bu dosyayi paylasir.
+namespace {
+const char* epAnchorName(SectionAnchor a) noexcept {
+    switch (a) {
+    case SectionAnchor::Top: return "Top";
+    case SectionAnchor::Center: return "Center";
+    case SectionAnchor::Bottom: return "Bottom";
+    }
+    return "?";
+}
+const char* epRoleName(SemanticFaceRole r) noexcept {
+    switch (r) {
+    case SemanticFaceRole::FlangeOuterPositive: return "FlangeOuterPositive";
+    case SemanticFaceRole::FlangeOuterNegative: return "FlangeOuterNegative";
+    case SemanticFaceRole::WebPositive: return "WebPositive";
+    case SemanticFaceRole::WebNegative: return "WebNegative";
+    case SemanticFaceRole::FlangeEdgePositive: return "FlangeEdgePositive";
+    case SemanticFaceRole::FlangeEdgeNegative: return "FlangeEdgeNegative";
+    case SemanticFaceRole::MemberStart: return "MemberStart";
+    case SemanticFaceRole::MemberEnd: return "MemberEnd";
+    default: return "None";
+    }
+}
+const char* epStatusName(ResolutionStatus s) noexcept {
+    switch (s) {
+    case ResolutionStatus::Resolved: return "Resolved";
+    case ResolutionStatus::NoContact: return "NoContact";
+    case ResolutionStatus::ParallelAxis: return "ParallelAxis";
+    case ResolutionStatus::OutsideFace: return "OutsideFace";
+    case ResolutionStatus::AmbiguousFace: return "AmbiguousFace";
+    case ResolutionStatus::Unresolved: return "Unresolved";
+    }
+    return "?";
+}
+std::string epVec(const Vec3& v) {
+    std::ostringstream os;
+    os << "(" << v.x << ", " << v.y << ", " << v.z << ")";
+    return os.str();
+}
+} // namespace
+
 bool Application::resolveEndPlatePlacement(std::size_t mainIdx, std::size_t secIdx,
                                            const EndPlateParams& params,
                                            EndPlatePlacement& placement, std::wstring& err) {
@@ -4475,6 +4519,11 @@ bool Application::resolveEndPlatePlacement(std::size_t mainIdx, std::size_t secI
         }
         beamAxis = Vec3{beamTo.x - beamFrom.x, beamTo.y - beamFrom.y, beamTo.z - beamFrom.z};
     }
+    // Uyenin EKSTRUZYON yonunu (swap ONCESI) sakla: kesit cercevesi bundan
+    // turetilir. Asagidaki baglanti-ucu secimi ekseni ters cevirir; kesit
+    // yukseklik yonu DEGISMEMELI (dusey uyede height = axis x fallback-width,
+    // eksen isaretine BAGLI — ters cevirince anchor ofseti yanlis tarafa kayar).
+    const Vec3 memberDir{beamAxis.x, beamAxis.y, beamAxis.z};
     // Kolon sinir kutusu merkezi; kirisin bu merkeze en yakin ucu baglanti ucu.
     Vec3 colCenter{};
     if (mainIdx < document_.modelBounds().size()) {
@@ -4498,14 +4547,41 @@ bool Application::resolveEndPlatePlacement(std::size_t mainIdx, std::size_t secI
     }
     // Kesit bbox: profil katalogundan (yoksa 200x300 mm varsayilan).
     double secWidth = 200.0, secHeight = 300.0;
+    // SectionAnchor kaymasi: kesit MERKEZININ kiris eksenine gore isaretli
+    // ofseti (Top -> -h/2, Center -> 0, Bottom -> +h/2). Profil bilinmiyorsa
+    // I-kesit kurali ±h/2 kullanilir (secHeight zaten varsayilan dolu).
+    double anchorOffset = 0.0;
     if (const SteelProfile* prof = findProfile(profileCatalog_, sp.profileName)) {
         secWidth = prof->width;
         secHeight = prof->height;
+        anchorOffset = profileSectionAnchorOffset(*prof, sp.sectionAnchor);
+    } else {
+        switch (sp.sectionAnchor) {
+        case SectionAnchor::Top: anchorOffset = -0.5 * secHeight; break;
+        case SectionAnchor::Bottom: anchorOffset = 0.5 * secHeight; break;
+        case SectionAnchor::Center: anchorOffset = 0.0; break;
+        }
     }
+    // Kiris kesit cercevesi (u=genislik, v=yukseklik, w=eksen) — kayitli
+    // referans normalinden. EKSTRUZYON yonunden (memberDir, swap oncesi)
+    // turetilir; anchor ofseti v (yukseklik) yonunde uygulanir.
+    const Vec3 beamSecNormal{sp.sectionNormalX, sp.sectionNormalY, sp.sectionNormalZ};
+    const double memberDirLen =
+        std::sqrt(memberDir.x * memberDir.x + memberDir.y * memberDir.y + memberDir.z * memberDir.z);
+    const ProfileSectionFrame beamSection = profileSectionFrame(
+        Vec3{memberDir.x / memberDirLen, memberDir.y / memberDirLen, memberDir.z / memberDirLen},
+        beamSecNormal);
+    const Vec3 sectionHeightDir = beamSection.height;
     // Kolonun GERCEK temas yuzunu + temas NOKTASINI coz (MemberLocalFrame +
     // kesit boyutlari). Bbox yolu yalnizca ACIK fallback olarak kalir.
     ReferencePlane face;
     bool faceResolved = false;
+    // Teshis izleme (MM_ENDPLATE_DIAG): resolver durumu + temas noktasi/normali.
+    ResolutionStatus contactStatus{ResolutionStatus::Unresolved};
+    SemanticFaceRole contactRole{SemanticFaceRole::None};
+    bool usedFallback{false};
+    Vec3 diagContactPoint{};
+    Vec3 diagContactNormal{0.0, 0.0, 1.0};
     const auto& mprop = document_.models()[mainIdx].properties();
     const Vec3 colFrom{mprop.axisFromX, mprop.axisFromY, mprop.axisFromZ};
     const Vec3 colTo{mprop.axisToX, mprop.axisToY, mprop.axisToZ};
@@ -4539,9 +4615,13 @@ bool Application::resolveEndPlatePlacement(std::size_t mainIdx, std::size_t secI
             contact = resolveContactPlacement(colFrame, colDims, colLen, beamTo, beamDir,
                                               SemanticFaceRole::FlangeOuterPositive);
         }
+        contactStatus = contact.status;
+        contactRole = contact.semanticFaceRole;
         if (contact.status == ResolutionStatus::Resolved) {
             face.origin = contact.contactPoint;
             face.normal = contact.outwardNormal;
+            diagContactPoint = contact.contactPoint;
+            diagContactNormal = contact.outwardNormal;
             faceResolved = true;
         } else if (contact.status != ResolutionStatus::Unresolved) {
             // Acik hata: paralel eksen / yuz disi / belirsiz — RASTGELE yerlestirme YOK.
@@ -4555,13 +4635,66 @@ bool Application::resolveEndPlatePlacement(std::size_t mainIdx, std::size_t secI
     }
     if (!faceResolved) {
         // ACIK fallback: bbox sinir duzlemi (kolon ekseni/profili cozulemediginde).
+        usedFallback = true;
         if (mainIdx < document_.modelBounds().size()) {
             const auto& cb = document_.modelBounds()[mainIdx];
             const Vec3 outward{-beamAxis.x, -beamAxis.y, -beamAxis.z};
             face = resolveBoundaryPlaneFacing(cb.minimum, cb.maximum, outward);
         }
     }
-    placement = computeEndPlatePlacementOnFace(face, params.gap, secWidth, secHeight, params);
+    placement = computeEndPlatePlacementOnFace(face, params.gap, secWidth, secHeight, params,
+                                               sectionHeightDir, anchorOffset);
+
+    // TESHIS (kisa yontem): Windows'ta `set MM_ENDPLATE_DIAG=1` sonra uygulamayi
+    // calistirip End Plate olusturunca exe yanindaki
+    // model-maker-endplate-diag.log'a tum ara degerler yazilir; bu dosyayi paylas.
+    if (std::getenv("MM_ENDPLATE_DIAG") != nullptr) {
+        // Kesit MERKEZININ temas duzlemi uzerindeki gercek konumu (anchor ofsetli).
+        const Vec3 sectionCenter{face.origin.x + sectionHeightDir.x * anchorOffset,
+                                 face.origin.y + sectionHeightDir.y * anchorOffset,
+                                 face.origin.z + sectionHeightDir.z * anchorOffset};
+        const Vec3 d{placement.plateCenter.x - sectionCenter.x,
+                     placement.plateCenter.y - sectionCenter.y,
+                     placement.plateCenter.z - sectionCenter.z};
+        const double du = d.x * placement.u.x + d.y * placement.u.y + d.z * placement.u.z;
+        const double dv = d.x * placement.v.x + d.y * placement.v.y + d.z * placement.v.z;
+        const double dn = d.x * placement.axis.x + d.y * placement.axis.y + d.z * placement.axis.z;
+        FILE* diag = fopen("model-maker-endplate-diag.log", "a");
+        if (diag) {
+            fprintf(diag,
+                    "=== ENDPLATE-DIAG ===\n"
+                    "main=%llu profile=%s anchor=%s\n"
+                    "secondary=%llu profile=%s anchor=%s\n"
+                    "beamAxisFrom=%s beamAxisTo=%s\n"
+                    "beamLocal u=%s v=%s w=%s\n"
+                    "beamSectionCentroidAtFace=%s\n"
+                    "resolver=%s role=%s fallback=%s\n"
+                    "contactPoint=%s\n"
+                    "contactNormal=%s\n"
+                    "faceOrigin=%s faceNormal=%s\n"
+                    "plateCenter=%s\n"
+                    "plate u=%s v=%s normal=%s\n"
+                    "gap=%.3f plateToColumnSignedDist=%.3f\n"
+                    "beamCenterToPlateLocalOffset=(u=%.3f v=%.3f n=%.3f)\n",
+                    (unsigned long long)document_.modelId(mainIdx), mprop.profileName.c_str(),
+                    epAnchorName(mprop.sectionAnchor),
+                    (unsigned long long)document_.modelId(secIdx), sp.profileName.c_str(),
+                    epAnchorName(sp.sectionAnchor),
+                    epVec(beamFrom).c_str(), epVec(beamTo).c_str(),
+                    epVec(beamSection.width).c_str(), epVec(beamSection.height).c_str(),
+                    epVec(beamSection.axis).c_str(),
+                    epVec(sectionCenter).c_str(),
+                    epStatusName(contactStatus), epRoleName(contactRole),
+                    usedFallback ? "yes" : "no",
+                    epVec(diagContactPoint).c_str(), epVec(diagContactNormal).c_str(),
+                    epVec(face.origin).c_str(), epVec(face.normal).c_str(),
+                    epVec(placement.plateCenter).c_str(),
+                    epVec(placement.u).c_str(), epVec(placement.v).c_str(),
+                    epVec(placement.axis).c_str(),
+                    params.gap, dn, du, dv, dn);
+            fclose(diag);
+        }
+    }
     return true;
 }
 

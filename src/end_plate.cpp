@@ -88,7 +88,9 @@ EndPlatePlacement computeEndPlatePlacement(const Vec3& beamEnd, const Vec3& beam
 
 EndPlatePlacement computeEndPlatePlacementOnFace(const ReferencePlane& face, double gap,
                                                  double secWidth, double secHeight,
-                                                 const EndPlateParams& params) noexcept {
+                                                 const EndPlateParams& params,
+                                                 const Vec3& sectionHeightDir,
+                                                 double anchorOffset) noexcept {
     EndPlatePlacement out;
     // Kalinlik yonu = yuzey normali (kolondan DISARI, kirise dogru). face.normal
     // birim oldugu varsayilir ama endPlateFrame yeniden normalize eder.
@@ -108,6 +110,17 @@ EndPlatePlacement computeEndPlatePlacementOnFace(const ReferencePlane& face, dou
     out.plateCenter = Vec3{face.origin.x + face.normal.x * (gap + halfT),
                            face.origin.y + face.normal.y * (gap + halfT),
                            face.origin.z + face.normal.z * (gap + halfT)};
+
+    // SectionAnchor duzeltmesi: levha, kiris EKSENINE degil kesit MERKEZINE
+    // oturmali. Top anchor'da kesit eksenin ALTINA sarkar, yani merkez
+    // sectionHeightDir yonunde -h/2 kayar (profileSectionAnchorOffset).
+    // sectionHeightDir ile levhanin v yonu dik baglantida CAKISIR; offseti
+    // bilincli olarak sectionHeightDir yonunde uygula (levha v'suyla degil).
+    if (std::abs(anchorOffset) > 1e-12) {
+        out.plateCenter.x += sectionHeightDir.x * anchorOffset;
+        out.plateCenter.y += sectionHeightDir.y * anchorOffset;
+        out.plateCenter.z += sectionHeightDir.z * anchorOffset;
+    }
 
     out.bolts = makeEndPlateBolts(out, params);
     return out;

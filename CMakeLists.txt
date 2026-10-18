@@ -625,8 +625,14 @@ if(BUILD_TESTING)
         add_executable(model_maker_occ_end_plate_roundtrip tests/occ_end_plate_roundtrip_acceptance.cpp)
         target_link_libraries(model_maker_occ_end_plate_roundtrip PRIVATE model_maker_occ)
         add_test(NAME model_maker_occ_end_plate_roundtrip COMMAND model_maker_occ_end_plate_roundtrip)
+        # END PLATE YERLESIMI SECTIONANCHOR KABULU: levha kirisin GERCEK kesit
+        # MERKEZINE oturur (eksene DEGIL); Top/Center/Bottom + 30° kolon + kot
+        # + bulonlar GERCEK OCCT B-Rep ile sayisal dogrulanir.
+        add_executable(model_maker_occ_end_plate_placement tests/occ_end_plate_placement_acceptance.cpp)
+        target_link_libraries(model_maker_occ_end_plate_placement PRIVATE model_maker_occ)
+        add_test(NAME model_maker_occ_end_plate_placement COMMAND model_maker_occ_end_plate_placement)
         if(UNIX)
-            set_tests_properties(model_maker_occ_store_roundtrip model_maker_occ_document_roundtrip model_maker_occ_bolt_group_roundtrip model_maker_occ_end_plate_roundtrip PROPERTIES
+            set_tests_properties(model_maker_occ_store_roundtrip model_maker_occ_document_roundtrip model_maker_occ_bolt_group_roundtrip model_maker_occ_end_plate_roundtrip model_maker_occ_end_plate_placement PROPERTIES
                 ENVIRONMENT "LD_LIBRARY_PATH=${OCC_ROOT}/lib:$ENV{LD_LIBRARY_PATH}")
         endif()
     endif()

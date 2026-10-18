@@ -105,8 +105,18 @@ EndPlatePlacement computeEndPlatePlacement(const Vec3& beamEnd, const Vec3& beam
 // uzerine oturur; levha kalinligi `face.normal` yonunde (kirise dogru) acilir.
 // Boylece gap=0 iken levha yuzu kolon yuzuyle CAKISIR, kolonun icine girmez.
 // (Egik kiris adaptasyonu sonraki dilimde.)
-EndPlatePlacement computeEndPlatePlacementOnFace(const ReferencePlane& face, double gap,
-                                                 double secWidth, double secHeight,
-                                                 const EndPlateParams& params) noexcept;
+//
+// SECTIONANCHOR DUZELTMESI: levha, kiris EKSENINE (anchor cizgisi) DEGIL,
+// kirisin GERCEK kesit MERKEZINE oturur. `sectionHeightDir` (birim) kirisin
+// kesit yukseklik yonu (profileSectionFrame(...).height), `anchorOffset` ise
+// kesit merkezinin eksene gore bu yondeki ISARETLI kaymasi
+// (profileSectionAnchorOffset: Top -> -h/2, Center -> 0, Bottom -> +h/2).
+// Levha merkezi `face.origin + normal*(gap+t/2) + sectionHeightDir*anchorOffset`
+// olur. Varsayilanlar (offset 0) eski "eksen uzerinde ortalama" davranisini
+// korur — yalnizca anchor bilinçli cagiran (resolveEndPlatePlacement) kaydirir.
+EndPlatePlacement computeEndPlatePlacementOnFace(
+    const ReferencePlane& face, double gap, double secWidth, double secHeight,
+    const EndPlateParams& params, const Vec3& sectionHeightDir = Vec3{0.0, 0.0, 1.0},
+    double anchorOffset = 0.0) noexcept;
 
 } // namespace mm
