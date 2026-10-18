@@ -15,11 +15,25 @@ static Vec3 cross(const Vec3& a, const Vec3& b) noexcept {
                 a.x * b.y - a.y * b.x};
 }
 
-// Etkin dusey kenar paylari: alan <0 ise plateExtra'ya geri don (geriye uyumlu).
-static void effectiveVerticalEdges(const EndPlateParams& p, double& topE,
-                                   double& botE) noexcept {
-    topE = (p.topExtra >= 0.0) ? p.topExtra : p.plateExtra;
-    botE = (p.bottomExtra >= 0.0) ? p.bottomExtra : p.plateExtra;
+// Tekla 144 isaret sozlesmesiyle etkin kenar mesafelerini uretir (Milestone 2).
+// upperD/lowerD: levha kenari - kesit kenari (POZITIF = levhayi kucult).
+// upperEdgeDistance/lowerEdgeDistance tanimliysa (>= -1e8) Tekla degeri kullan;
+// degilse legacy topExtra/bottomExtra (pozitif = buyut) ISARET CEVIRILEREK
+// migrate edilir: upperD = -topExtra (legacy +20 buyume = Tekla -20).
+static void effectiveEdgeDistances(const EndPlateParams& p, double& upperD,
+                                   double& lowerD) noexcept {
+    if (p.upperEdgeDistance > -1e8) {
+        upperD = p.upperEdgeDistance;
+    } else {
+        const double topE = (p.topExtra >= 0.0) ? p.topExtra : p.plateExtra;
+        upperD = -topE;
+    }
+    if (p.lowerEdgeDistance > -1e8) {
+        lowerD = p.lowerEdgeDistance;
+    } else {
+        const double botE = (p.bottomExtra >= 0.0) ? p.bottomExtra : p.plateExtra;
+        lowerD = -botE;
+    }
 }
 
 EndPlateFrame endPlateFrame(const Vec3& beamAxis, const Vec3& referenceNormal) noexcept {
@@ -52,7 +66,11 @@ static BoltGroup makeEndPlateBolts(const EndPlatePlacement& out,
     // başlık / 2"). Dikey aralik: elle girilmediyse levha - 2*boltEdge.
     double sX = params.boltSpacingX;
     if (nx > 1 && sX <= 0.0) {
-        const double flangeW = out.plateWidth - 2.0 * params.plateExtra;
+        // Flans gauge'i KIRIS KESIT genisliginden gelir (secWidth), levha
+        // boyutundan DEGIL — genislik override'i bulon acikligini bozmamali.
+        const double flangeW = (out.secWidth > 0.0)
+                                   ? out.secWidth
+                                   : (out.plateWidth - 2.0 * params.plateExtra);
         const double total = (flangeW > 0.0) ? 0.5 * flangeW
                                              : (out.plateWidth - 2.0 * params.boltEdge);
         sX = total / static_cast<double>(nx - 1);
@@ -139,11 +157,16 @@ EndPlatePlacement computeEndPlatePlacement(const Vec3& beamEnd, const Vec3& beam
     out.u = f.u;
     out.v = f.v;
     out.axis = f.axis;
-    double topE, botE;
-    effectiveVerticalEdges(params, topE, botE);
-    out.plateWidth = secWidth + 2.0 * params.plateExtra;
-    out.plateHeight = secHeight + topE + botE;
+    double upperD, lowerD;
+    effectiveEdgeDistances(params, upperD, lowerD);
+    out.plateWidth = (params.plateWidthOverride > 0.0)
+                         ? params.plateWidthOverride
+                         : (secWidth + 2.0 * params.plateExtra);
+    out.plateHeight = (params.plateHeightOverride > 0.0)
+                          ? params.plateHeightOverride
+                          : (secHeight - upperD - lowerD);
     out.plateThickness = params.plateThickness;
+    out.secWidth = secWidth;
     if (out.plateWidth < 1.0) out.plateWidth = 1.0;
     if (out.plateHeight < 1.0) out.plateHeight = 1.0;
 
@@ -153,11 +176,14 @@ EndPlatePlacement computeEndPlatePlacement(const Vec3& beamEnd, const Vec3& beam
     out.plateCenter = Vec3{beamEnd.x + f.axis.x * halfT, beamEnd.y + f.axis.y * halfT,
                            beamEnd.z + f.axis.z * halfT};
 
-    // Ayrı ust/alt pay: levha merkezini v yonunde (top-bottom)/2 kaydir.
-    if (std::abs(topE - botE) > 1e-12) {
-        out.plateCenter.x += f.v.x * 0.5 * (topE - botE);
-        out.plateCenter.y += f.v.y * 0.5 * (topE - botE);
-        out.plateCenter.z += f.v.z * 0.5 * (topE - botE);
+    // Ayrı ust/alt kenar: levha merkezini v yonunde (lowerD-upperD)/2 kaydir.
+    // (Tekla 144: pozitif UST mesafe levhayi ASAGI kaydirir — ust kenar iceri
+    //  cekilir; pozitif ALT mesafe levhayi yukari kaydirir.)
+    const double vShift = 0.5 * (lowerD - upperD);
+    if (std::abs(vShift) > 1e-12) {
+        out.plateCenter.x += f.v.x * vShift;
+        out.plateCenter.y += f.v.y * vShift;
+        out.plateCenter.z += f.v.z * vShift;
     }
 
     out.bolts = makeEndPlateBolts(out, params);
@@ -208,19 +234,24 @@ EndPlatePlacement computeEndPlatePlacementOnFace(const ReferencePlane& face, dou
     out.u = uu;
     out.v = vv;
     out.axis = axis;
-    double topE, botE;
-    effectiveVerticalEdges(params, topE, botE);
-    out.plateWidth = secWidth + 2.0 * params.plateExtra;
-    out.plateHeight = secHeight + topE + botE;
+    double upperD, lowerD;
+    effectiveEdgeDistances(params, upperD, lowerD);
+    out.plateWidth = (params.plateWidthOverride > 0.0)
+                         ? params.plateWidthOverride
+                         : (secWidth + 2.0 * params.plateExtra);
+    out.plateHeight = (params.plateHeightOverride > 0.0)
+                          ? params.plateHeightOverride
+                          : (secHeight - upperD - lowerD);
     out.plateThickness = params.plateThickness;
+    out.secWidth = secWidth;
     if (out.plateWidth < 1.0) out.plateWidth = 1.0;
     if (out.plateHeight < 1.0) out.plateHeight = 1.0;
 
     // Levha merkezi: temas noktasindan normal yonunde gap + t/2; duzlem-ici
-    // kesit ofseti (anchor + asimetrik pay) YALNIZ levha dikey ekseni vv
+    // kesit ofseti (anchor + asimetrik kenar) YALNIZ levha dikey ekseni vv
     // boyunca uygulanir -> gap normalde bozulmaz, kolona girip cikmaz.
     const double halfT = params.plateThickness * 0.5;
-    const double inPlaneShift = anchorOffset + 0.5 * (topE - botE);
+    const double inPlaneShift = anchorOffset + 0.5 * (lowerD - upperD);
     out.plateCenter = Vec3{face.origin.x + axis.x * (gap + halfT) + vv.x * inPlaneShift,
                            face.origin.y + axis.y * (gap + halfT) + vv.y * inPlaneShift,
                            face.origin.z + axis.z * (gap + halfT) + vv.z * inPlaneShift};

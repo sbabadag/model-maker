@@ -760,6 +760,11 @@ void writeMmw8(std::ostream& out, const Mmw8Document& doc) {
             putString(body, c.params.boltStandard);
             body << ' ';
             putString(body, c.params.boltComment);
+            // Milestone 2: Tekla upper/lower edge distance + acik boyut override
+            // (trailing, geriye uyumlu; eski okuyucu string sonrasi alanlari
+            // gormez, yeni okuyucu fail-soft okur).
+            body << ' ' << c.params.upperEdgeDistance << ' ' << c.params.lowerEdgeDistance
+                 << ' ' << c.params.plateWidthOverride << ' ' << c.params.plateHeightOverride;
             body << '\n';
         }
         const std::string b = body.str();
@@ -1275,6 +1280,17 @@ void readMmw8(std::istream& in, Mmw8Document& doc) {
                     c.params.boltStandard.clear();
                     c.params.boltComment.clear();
                 }
+                // Milestone 2: Tekla upper/lower edge distance + acik boyut
+                // override (trailing, fail-soft; eski dosyalarda yok -> sentinel/0).
+                double upperED = -1e9, lowerED = -1e9, wOvr = 0.0, hOvr = 0.0;
+                if (!(ls >> upperED)) upperED = -1e9;
+                if (!(ls >> lowerED)) lowerED = -1e9;
+                if (!(ls >> wOvr)) wOvr = 0.0;
+                if (!(ls >> hOvr)) hOvr = 0.0;
+                c.params.upperEdgeDistance = upperED;
+                c.params.lowerEdgeDistance = lowerED;
+                c.params.plateWidthOverride = wOvr;
+                c.params.plateHeightOverride = hOvr;
                 parsed.endPlateConnections.push_back(std::move(c));
             }
         } else if (tag == 'I') {

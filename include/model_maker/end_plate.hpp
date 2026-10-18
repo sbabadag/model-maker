@@ -41,8 +41,20 @@ struct EndPlateParams {
     // <0 = plateExtra kullan (geriye uyumlu, eski dosyalarda alan yok). Ayrı
     // ust/alt pay levha yuksekligini secHeight+top+bottom yapar ve levha
     // merkezini kesit merkezinden (top-bottom)/2 kadar kaydirir.
-    double topExtra{-1.0};         // UST kenar payi (mm)
-    double bottomExtra{-1.0};      // ALT kenar payi (mm)
+    double topExtra{-1.0};         // UST kenar payi (mm, LEGACY: pozitif = disari buyut)
+    double bottomExtra{-1.0};      // ALT kenar payi (mm, LEGACY: pozitif = disari buyut)
+    // --- Tekla 144 Picture: upper/lower edge distance (Milestone 2) ---------
+    // Tekla isaret sozlesmesi: POZITIF = levha kenarini ICERI ceker (levhayi
+    // kucultur), NEGATIF = DISARI tasir (levhayi buyutur). KESIN olarak legacy
+    // topExtra/bottomExtra'dan AYRIDIR (orada pozitif = buyut). < -1e8 (sentinel)
+    // = tanimsiz -> legacy topExtra/bottomExtra/plateExtra kullanilir (eski
+    // dosyalar kayipsiz acilir, ters isaret hatasi OLMAZ).
+    double upperEdgeDistance{-1e9};  // levha ust kenari - kesit ust kenari (Tekla)
+    double lowerEdgeDistance{-1e9};  // levha alt kenari - kesit alt kenari (Tekla)
+    // Acik levha boyutlari (0 = otomatik). Otomatik boyut ile manual override
+    // birbirini sessizce ezmez: override>0 ise otomatik boyut uretimi atlanir.
+    double plateWidthOverride{0.0};
+    double plateHeightOverride{0.0};
     double gap{0.0};               // kolon yuzeyi ile levha arasi bosluk (mm, Tekla 101: 2 mm)
     double boltDiameter{20.0};     // bulon capi (M20)
     double holeDiameter{22.0};     // delik capi (M20 -> 22)
@@ -83,6 +95,7 @@ struct EndPlatePlacement {
     Vec3 axis{0.0, 0.0, 1.0}; // kiris yonu (bulon ekseni)
     double plateWidth{0.0};
     double plateHeight{0.0};
+    double secWidth{0.0};          // kiris kesit genisligi (bulon flans gauge'i)
     double plateThickness{0.0};
     double colFlangeThickness{0.0}; // kolon flans kalinligi (bulon kavrama hesabi)
     double boltGripLength{0.0};     // bolon saft kavrama uzunlugu (levha+gap+flans)

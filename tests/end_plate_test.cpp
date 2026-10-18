@@ -86,6 +86,62 @@ int main() {
         check(approx(pl2.plateCenter.z, 0.0), "varsayilan merkez kaymaz");
     }
 
+    // --- 1b2) Tekla 144 isaret sozlesmesi: pozitif kenar mesafesi KUCULTUR ---
+    {
+        EndPlateParams p;
+        p.plateThickness = 12.0;
+        p.plateExtra = 20.0;
+        p.upperEdgeDistance = 10.0;   // Tekla: pozitif = ust kenar iceri (kucult)
+        p.lowerEdgeDistance = 20.0;   // pozitif = alt kenar iceri (kucult)
+        const EndPlatePlacement pl =
+            computeEndPlatePlacement({0, 0, 0}, {1, 0, 0}, 200.0, 300.0, p);
+        check(approx(pl.plateHeight, 270.0), "Tekla: 300-10-20=270 (pozitif kucultur)");
+        check(approx(pl.plateCenter.z, 5.0), "Tekla: merkez (20-10)/2=5");
+
+        // Negatif = buyutur.
+        EndPlateParams n;
+        n.plateThickness = 12.0;
+        n.plateExtra = 20.0;
+        n.upperEdgeDistance = -10.0;
+        n.lowerEdgeDistance = -10.0;
+        const EndPlatePlacement plN =
+            computeEndPlatePlacement({0, 0, 0}, {1, 0, 0}, 200.0, 300.0, n);
+        check(approx(plN.plateHeight, 320.0), "Tekla: 300+10+10=320 (negatif buyutur)");
+
+        // Migrasyon denkligi: legacy topExtra=+40 == Tekla upperEdgeDistance=-40.
+        EndPlateParams legacy;
+        legacy.plateThickness = 12.0;
+        legacy.plateExtra = 20.0;
+        legacy.topExtra = 40.0;
+        legacy.bottomExtra = 10.0;
+        const EndPlatePlacement plL =
+            computeEndPlatePlacement({0, 0, 0}, {1, 0, 0}, 200.0, 300.0, legacy);
+        EndPlateParams tekla;
+        tekla.plateThickness = 12.0;
+        tekla.plateExtra = 20.0;
+        tekla.upperEdgeDistance = -40.0;
+        tekla.lowerEdgeDistance = -10.0;
+        const EndPlatePlacement plT =
+            computeEndPlatePlacement({0, 0, 0}, {1, 0, 0}, 200.0, 300.0, tekla);
+        check(approx(plL.plateHeight, plT.plateHeight), "migrasyon: legacy==Tekla yukseklik");
+        check(approx(plL.plateCenter.z, plT.plateCenter.z), "migrasyon: legacy==Tekla merkez");
+
+        // Acik boyut override: otomatik boyut uretimi ezilir.
+        EndPlateParams ov;
+        ov.plateThickness = 12.0;
+        ov.plateExtra = 20.0;
+        ov.plateWidthOverride = 500.0;
+        ov.plateHeightOverride = 400.0;
+        const EndPlatePlacement plO =
+            computeEndPlatePlacement({0, 0, 0}, {1, 0, 0}, 200.0, 300.0, ov);
+        check(approx(plO.plateWidth, 500.0), "acik genislik override 500");
+        check(approx(plO.plateHeight, 400.0), "acik yukseklik override 400");
+        // Genislik override'i bulon gauge'ini bozmamali: gauge kiris kesit
+        // genisliginden (200) gelir, levha boyutundan (500) degil -> 100.
+        check(approx(plO.bolts.spacingX, 100.0),
+              "override: bulon gauge flanstan (100), levha boyutundan degil");
+    }
+
     // --- 1c) Bolt group dimensions (Tekla): hizalama + aralik + silme -------
     {
         EndPlateParams p;
@@ -244,6 +300,10 @@ int main() {
         c3.params.boltLengthIncrease = 15.0;
         c3.params.boltDirection = 2;
         c3.params.boltComment = "test yorum";
+        c3.params.upperEdgeDistance = 15.0;
+        c3.params.lowerEdgeDistance = -5.0;
+        c3.params.plateWidthOverride = 450.0;
+        c3.params.plateHeightOverride = 320.0;
         c3.bolts = pl.bolts;
         d3.pushSnapshot();
         d3.addEndPlateConnection(c3, WireframeModel::rectangle({0, 0, 0}, {240, 340, 0}),
@@ -297,6 +357,14 @@ int main() {
               "round-trip: boltDirection");
         check(d4.endPlateConnections()[0].params.boltComment == "test yorum",
               "round-trip: boltComment");
+        check(approx(d4.endPlateConnections()[0].params.upperEdgeDistance, 15.0),
+              "round-trip: upperEdgeDistance 15");
+        check(approx(d4.endPlateConnections()[0].params.lowerEdgeDistance, -5.0),
+              "round-trip: lowerEdgeDistance -5");
+        check(approx(d4.endPlateConnections()[0].params.plateWidthOverride, 450.0),
+              "round-trip: plateWidthOverride 450");
+        check(approx(d4.endPlateConnections()[0].params.plateHeightOverride, 320.0),
+              "round-trip: plateHeightOverride 320");
     }
 
     std::printf("end_plate_test: %d check, %d failure\n", g_checks, g_failures);

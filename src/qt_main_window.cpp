@@ -853,22 +853,26 @@ bool QtMainWindow::openEndPlateParamsDialog(const mm::EndPlateParams& current,
     extraSpin->setSuffix(QStringLiteral(" mm"));
     picForm->addRow(QStringLiteral("Yatay pay (levha genişliği = kesit + 2×pay):"), extraSpin);
 
-    const double effTop = (current.topExtra >= 0.0) ? current.topExtra : current.plateExtra;
-    const double effBot = (current.bottomExtra >= 0.0) ? current.bottomExtra : current.plateExtra;
+    const double effUpper = (current.upperEdgeDistance > -1e8)
+                                ? current.upperEdgeDistance
+                                : -((current.topExtra >= 0.0) ? current.topExtra : current.plateExtra);
+    const double effLower = (current.lowerEdgeDistance > -1e8)
+                                ? current.lowerEdgeDistance
+                                : -((current.bottomExtra >= 0.0) ? current.bottomExtra : current.plateExtra);
 
-    auto* topExtraSpin = new QDoubleSpinBox(picPage);
-    topExtraSpin->setRange(0.0, 300.0);
-    topExtraSpin->setDecimals(1);
-    topExtraSpin->setValue(effTop);
-    topExtraSpin->setSuffix(QStringLiteral(" mm"));
-    picForm->addRow(QStringLiteral("Üst kenar payı (kesit üstü → levha üstü):"), topExtraSpin);
+    auto* upperEdgeSpin = new QDoubleSpinBox(picPage);
+    upperEdgeSpin->setRange(-300.0, 300.0);
+    upperEdgeSpin->setDecimals(1);
+    upperEdgeSpin->setValue(effUpper);
+    upperEdgeSpin->setSuffix(QStringLiteral(" mm"));
+    picForm->addRow(QStringLiteral("Üst kenar mesafesi (kesit üstü → levha üstü):"), upperEdgeSpin);
 
-    auto* botExtraSpin = new QDoubleSpinBox(picPage);
-    botExtraSpin->setRange(0.0, 300.0);
-    botExtraSpin->setDecimals(1);
-    botExtraSpin->setValue(effBot);
-    botExtraSpin->setSuffix(QStringLiteral(" mm"));
-    picForm->addRow(QStringLiteral("Alt kenar payı (kesit altı → levha altı):"), botExtraSpin);
+    auto* lowerEdgeSpin = new QDoubleSpinBox(picPage);
+    lowerEdgeSpin->setRange(-300.0, 300.0);
+    lowerEdgeSpin->setDecimals(1);
+    lowerEdgeSpin->setValue(effLower);
+    lowerEdgeSpin->setSuffix(QStringLiteral(" mm"));
+    picForm->addRow(QStringLiteral("Alt kenar mesafesi (kesit altı → levha altı):"), lowerEdgeSpin);
 
     auto* gapSpin = new QDoubleSpinBox(picPage);
     gapSpin->setRange(0.0, 100.0);
@@ -877,12 +881,29 @@ bool QtMainWindow::openEndPlateParamsDialog(const mm::EndPlateParams& current,
     gapSpin->setSuffix(QStringLiteral(" mm"));
     picForm->addRow(QStringLiteral("Kolon boşluğu (levha ↔ ana parça):"), gapSpin);
 
+    auto* wOvrSpin = new QDoubleSpinBox(picPage);
+    wOvrSpin->setRange(0.0, 3000.0);
+    wOvrSpin->setDecimals(1);
+    wOvrSpin->setValue(current.plateWidthOverride);
+    wOvrSpin->setSpecialValueText(QStringLiteral("Otomatik"));
+    wOvrSpin->setSuffix(QStringLiteral(" mm"));
+    picForm->addRow(QStringLiteral("Levha genişliği (0 = otomatik):"), wOvrSpin);
+
+    auto* hOvrSpin = new QDoubleSpinBox(picPage);
+    hOvrSpin->setRange(0.0, 3000.0);
+    hOvrSpin->setDecimals(1);
+    hOvrSpin->setValue(current.plateHeightOverride);
+    hOvrSpin->setSpecialValueText(QStringLiteral("Otomatik"));
+    hOvrSpin->setSuffix(QStringLiteral(" mm"));
+    picForm->addRow(QStringLiteral("Levha yüksekliği (0 = otomatik):"), hOvrSpin);
+
     auto* picNote = new QLabel(picPage);
     picNote->setWordWrap(true);
     picNote->setStyleSheet(QStringLiteral("color: gray;"));
     picNote->setText(QStringLiteral(
-        "Levha kirişin gerçek kesitine ortalanır. Üst/alt pay ayrı ayrı ayarlanır; "
-        "üst pay > alt pay ise levha yukarı kayar (Tekla 144 Resim sekmesi karşılığı)."));
+        "Tekla 144 Resim sekmesi: pozitif kenar mesafesi levhayı küçültür, negatif "
+        "büyütür (levha kirişin gerçek kesitine ortalanır). Genişlik/yükseklik 0 ise "
+        "kesitten otomatik türetilir."));
     picForm->addRow(picNote);
 
     // ── Levha (Plates) sekmesi: kalınlık ───────────────────────────────────
@@ -1089,8 +1110,10 @@ bool QtMainWindow::openEndPlateParamsDialog(const mm::EndPlateParams& current,
 
     out = current;
     out.plateExtra = extraSpin->value();
-    out.topExtra = topExtraSpin->value();
-    out.bottomExtra = botExtraSpin->value();
+    out.upperEdgeDistance = upperEdgeSpin->value();
+    out.lowerEdgeDistance = lowerEdgeSpin->value();
+    out.plateWidthOverride = wOvrSpin->value();
+    out.plateHeightOverride = hOvrSpin->value();
     out.gap = gapSpin->value();
     out.plateThickness = thickSpin->value();
     out.boltDiameter = diaCombo->currentData().toDouble();
