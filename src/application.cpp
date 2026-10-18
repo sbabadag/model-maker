@@ -4978,7 +4978,23 @@ bool Application::commitEndPlateConnection(std::size_t index, const PreparedEndP
         return false;
 
     const EndPlateConnection& after = document_.endPlateConnections()[index];
-    if (const auto pi = document_.indexOfEntity(after.plateEntityId)) putOccSolid(*pi, p.plateSolid);
+    if (const auto pi = document_.indexOfEntity(after.plateEntityId)) {
+        putOccSolid(*pi, p.plateSolid);
+        // Levha base surumunu YENI katiya esitle. recomputeCutTarget kesmeyi
+        // base surumden uygular; base bayat kalirsa (eski kalinlik/genislik)
+        // delik kesme levhayi eski geometriye geri tesselatlar. Bulonlar bu
+        // yoldan gecmedigi icin dogru kalirdi -> "bulonlar oteleliyor ama levha
+        // kalinlasmiyor" kullanici raporunun kok nedeni budur.
+        if (auto* store = occSolidStore()) {
+            const VersionId v = store->activeVersion(after.plateEntityId);
+            if (v != kInvalidVersionId) {
+                const VersionId oldBase = store->baseVersion(after.plateEntityId);
+                store->setBaseVersion(after.plateEntityId, v);
+                if (oldBase != v)
+                    document_.recordBaseVersionDelta(after.plateEntityId, oldBase, v);
+            }
+        }
+    }
     if (const auto di = document_.indexOfEntity(after.bolts.displayEntityId))
         putOccSolid(*di, p.boltSolid);
     // Delikler (CutKind::Hole) kolon + levhayi deler -> yeniden hesapla.
