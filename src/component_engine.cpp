@@ -455,7 +455,7 @@ ComponentType finPlateComponentType() noexcept {
         lengthParam(L"plateHeight", L"mm", 240.0, 60.0, 800.0, L"levha yuksekligi"),
         lengthParam(L"boltDiameter", L"mm", 20.0, 12.0, 30.0, L"bulon capi"),
         lengthParam(L"holeDiameter", L"mm", 22.0, 12.0, 34.0, L"delik capi"),
-        intParam(L"boltCount", 2, 1, 8, L"bulon adedi (tek sira)"),
+        intParam(L"boltCount", 4, 1, 8, L"bulon adedi (tek sira)"),
         lengthParam(L"boltEdge", L"mm", 40.0, 10.0, 200.0, L"kenar mesafesi"),
         enumParam(L"grade", L"8.8", {L"8.8", L"10.9"}, L"bulon sinifi"),
     };

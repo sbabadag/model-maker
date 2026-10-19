@@ -225,7 +225,7 @@ int main() {
     check(ps && !ps->IsNull() && shapeVolume(*ps) > 0.0, "fin plate OCCT kati uretildi");
     const double plateBaseVol = ps ? shapeVolume(*ps) : 0.0;
 
-    // Delikler: bulon grubu parcalari {levha, KIRIS} -> 2 bulon x 2 = 4 delik.
+    // Delikler: bulon grubu parcalari {levha, KIRIS} -> 4 bulon x 2 = 8 delik.
     // Fin plate'te kolon KAYNAKLIDIR, delinmez (end plate'ten farkli).
     const auto bi = doc.indexOfBoltGroup(boltGroupId);
     check(bi.has_value(), "bolt group kayitli");
@@ -237,9 +237,9 @@ int main() {
         if (m.target == colId) ++colHoles;
         if (m.target == finPlateId) ++plateHoles;
     }
-    check(holes == 4, "4 delik (2 bulon x {levha, kiris})");
-    check(beamHoles == 2, "2 delik KIRIS govdesinde");
-    check(plateHoles == 2, "2 delik levhada");
+    check(holes == 8, "8 delik (4 bulon x {levha, kiris})");
+    check(beamHoles == 4, "4 delik KIRIS govdesinde");
+    check(plateHoles == 4, "4 delik levhada");
     check(colHoles == 0, "kolon DELINMEZ (fin plate kolona kaynaklidir)");
 
     // Sahiplik ComponentInstanceRecord'a yazildi.
