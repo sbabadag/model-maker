@@ -182,6 +182,93 @@ int main() {
     check(!prepW.ok, "Weld -> prepare Unsupported (ok=false)");
     check(!prepW.error.empty(), "Weld Unsupported hatasi dolu");
 
+    // --- C3: recompute — roleKey -> EntityId KORUNUR (kimlik stabil) ----------
+    {
+        // Mevcut ilk component'i (fin_plate + beam_bolts) yeniden hesapla:
+        // levha boyutu degisti, ayni roleKey ayni EntityId kalir.
+        const EntityId firstCompId = res.componentId;
+        const EntityId firstPlateId = plateId;
+        const EntityId firstBoltId = boltId;
+        const auto compIdx = doc.indexOfComponentInstance(firstCompId);
+        check(compIdx.has_value(), "recompute: component bulundu");
+        if (compIdx) {
+            const ComponentInstanceRecord existing = doc.componentInstances()[*compIdx];
+
+            PlateSpec bigger = plate;
+            bigger.width = 140.0;
+            bigger.height = 260.0;
+            BoltGroup newBolts = bolts;
+            ComponentBuilder rb;
+            rb.plate("fin_plate", bigger)
+                .boltGroup("beam_bolts", newBolts)
+                .attachedTo("beam_bolts", "fin_plate")
+                .ownedBy("fin_plate", "component")
+                .ownedBy("beam_bolts", "component");
+            const auto rbuilt = rb.build();
+            const ComponentPlan rplan =
+                componentPlanFromObjects(rbuilt.objects, rbuilt.relationships);
+            ComponentMaterializer::Prepared rprep = mat.prepare(rplan, mainId, {});
+            check(rprep.ok, "recompute prepare ok");
+
+            ComponentInstanceRecord newRec;
+            newRec.typeId = L"fin_plate";
+            newRec.mainPart = mainId;
+            ComponentMaterializer::CommitResult rres = mat.recompute(rprep, existing, newRec);
+            check(rres.ok, "recompute commit ok");
+            check(rres.componentId == firstCompId, "recompute: component id korunur");
+            check(rres.roleToEntity["fin_plate"] == firstPlateId,
+                  "recompute: fin_plate EntityId KORUNUR");
+            check(rres.roleToEntity["beam_bolts"] == firstBoltId,
+                  "recompute: beam_bolts EntityId KORUNUR");
+            check(doc.componentInstances().size() == 2, "recompute yeni instance EKLEMEDI");
+
+            // Levha yeniden boyutlandi: TABAN surumu yeni 140x260x10.
+            OccSolidStore* s = asSolidStore(&doc.occStore());
+            const VersionId base = s->baseVersion(firstPlateId);
+            if (base != kInvalidVersionId) {
+                const TopoDS_Shape* bs = s->findVersion(firstPlateId, base);
+                check(bs && !bs->IsNull() &&
+                          std::abs(shapeVolume(*bs) - 140.0 * 260.0 * 10.0) < 1.0,
+                      "recompute: levha tabani 140x260x10");
+            }
+        }
+    }
+
+    // --- C3: atomic rollback — prepare basarisizsa belge DEGISMEZ -------------
+    {
+        const std::size_t modelsBefore = doc.models().size();
+        const std::size_t compsBefore = doc.componentInstances().size();
+        // Dongu: a->b, b->a (AttachedTo) -> prepare Cyclic reddeder.
+        ComponentBuilder cyc;
+        PlateSpec pp;
+        cyc.plate("a", pp).plate("b", pp).attachedTo("a", "b").attachedTo("b", "a");
+        const auto cbuilt = cyc.build();
+        const ComponentPlan cplan =
+            componentPlanFromObjects(cbuilt.objects, cbuilt.relationships);
+        ComponentMaterializer::Prepared cprep = mat.prepare(cplan, mainId, {});
+        check(!cprep.ok, "dongu -> prepare Cyclic (ok=false)");
+        check(doc.models().size() == modelsBefore, "dongu: model eklenmedi (atomik)");
+        check(doc.componentInstances().size() == compsBefore,
+              "dongu: component eklenmedi (atomik)");
+    }
+
+    // --- C3: child removal/creation determinizm -------------------------------
+    {
+        ComponentChildTable t;
+        ComponentChildRecord a;
+        a.roleKey = "b_second";
+        a.kind = ComponentObjectKind::Plate;
+        a.plate = PlateSpec{};
+        ComponentChildRecord b2r;
+        b2r.roleKey = "a_first";
+        b2r.kind = ComponentObjectKind::BoltGroup;
+        b2r.boltGroup = BoltGroup{};
+        check(t.insert(b2r) && t.insert(a), "child tablo 2 ekle");
+        check(t.children()[0].roleKey == "a_first", "child sira a_first");
+        check(t.remove("a_first"), "child a_first silindi");
+        check(t.size() == 1 && t.find("a_first") == nullptr, "silinen child deterministik yok");
+    }
+
     std::printf("\n%d failure(s)\n", failures);
     return failures == 0 ? 0 : 1;
 }

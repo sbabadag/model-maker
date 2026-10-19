@@ -157,9 +157,36 @@ ComponentMaterializer::Prepared ComponentMaterializer::prepare(
             if (roleIndex.find(dep) == roleIndex.end()) {
                 out.error = L"cozulemeyen bagimlilik '" +
                             std::wstring(dep.begin(), dep.end()) + L"' (child '" +
-                            std::wstring(pc.record.roleKey.begin(), pc.record.roleKey.end()) + L"')";
+                            std::wstring(pc.record.roleKey.begin(), pc.record.roleKey.end()) + L"'";
                 return out;
             }
+        }
+    }
+
+    // Bagimlilik dongusu MEVCUT ConstraintSystem ile denetlenir (C4: ikinci
+    // solver YOK — RelationshipGraph.toConstraintSystem + ConstraintSystem::solve
+    // ile ayni motor). child'lar handle olarak eklenir, AttachedTo/DependsOn
+    // kenarlari addDependency olur; solve() false = dongu (Cyclic).
+    {
+        ConstraintSystem sys;
+        for (const auto& pc : out.children) {
+            Vec3 pos{};
+            if (pc.record.plate) pos = pc.record.plate->center;
+            else if (pc.record.boltGroup) pos = pc.record.boltGroup->origin;
+            else if (pc.record.cut) pos = pc.record.cut->planeOrigin;
+            sys.addHandle(HandleKey{pc.record.roleKey}, HandleKind::Point, pos);
+        }
+        for (const auto& pc : out.children) {
+            for (const auto& dep : pc.record.dependencies) {
+                if (dep == "main" || dep == "component" || dep.rfind("secondary_", 0) == 0)
+                    continue;  // rezerve/user part — cozum bagimliligi degil
+                if (roleIndex.find(dep) != roleIndex.end())
+                    sys.addDependency(HandleKey{pc.record.roleKey}, HandleKey{dep});
+            }
+        }
+        if (!sys.solve()) {
+            out.error = L"bagimlilik dongusu (ConstraintSystem Cyclic)";
+            return out;
         }
     }
 
@@ -327,6 +354,161 @@ ComponentMaterializer::CommitResult ComponentMaterializer::commit(const Prepared
     out.componentId = doc_.componentInstances()[ci].id;
 
     // Kesme zincirini etkilenen parcalara uygula (levha delikleri + kesmeler).
+    for (const EntityId pid : out.ownedPlateIds) applyCutsFor(pid);
+    for (const EntityId mid : out.ownedBoltGroupIds) {
+        const auto bi = doc_.indexOfBoltGroup(mid);
+        if (!bi) continue;
+        for (const EntityId part : doc_.boltGroups()[*bi].parts) applyCutsFor(part);
+    }
+
+    out.ok = true;
+    return out;
+}
+
+ComponentMaterializer::CommitResult ComponentMaterializer::recompute(
+    const Prepared& prep, const ComponentInstanceRecord& existing,
+    ComponentInstanceRecord record) {
+    CommitResult out;
+    if (!prep.ok || !store_) {
+        out.error = prep.ok ? L"OCC magaza yok" : prep.error;
+        return out;
+    }
+
+    // roleKey -> EntityId eslesmesi MEVCUT kayittan (children tablosu) okunur.
+    // Yeni eklenen child'lar icin kInvalidEntityId kalir -> yeni id atanir.
+    std::unordered_map<std::string, EntityId> stable;
+    for (const auto& c : existing.children) stable[c.roleKey] = c.entityId;
+
+    doc_.pushSnapshot();
+
+    const std::vector<std::size_t> order = orderChildren(prep.children, out.error);
+    if (order.empty() && !prep.children.empty()) {
+        doc_.rollbackOpenRecord();
+        out.ok = false;
+        return out;
+    }
+
+    for (const std::size_t ci : order) {
+        const PreparedChild& pc = prep.children[ci];
+        const auto stableIt = stable.find(pc.record.roleKey);
+        const bool hasStable = stableIt != stable.end() && stableIt->second != kInvalidEntityId;
+        const EntityId stableId = hasStable ? stableIt->second : kInvalidEntityId;
+
+        switch (pc.record.kind) {
+            case ComponentObjectKind::Plate: {
+                WireframeModel wf = shapeToWireframeWithFaces(pc.solid, 0.15);
+                if (hasStable && doc_.indexOfEntity(stableId)) {
+                    // Kimlik korunur: replaceModel + ayni EntityId'ye yeni kati.
+                    doc_.replaceModel(*doc_.indexOfEntity(stableId), {std::move(wf)});
+                    const VersionId before = store_->activeVersion(stableId);
+                    const VersionId after = store_->set(stableId, pc.solid);
+                    if (after == kInvalidVersionId) {
+                        doc_.rollbackOpenRecord();
+                        out.error = L"levha kati guncellenemedi: " +
+                                    std::wstring(pc.record.roleKey.begin(), pc.record.roleKey.end());
+                        return out;
+                    }
+                    store_->setBaseVersion(stableId, after);
+                    doc_.recordGeometryDelta(stableId, before, after);
+                    out.roleToEntity[pc.record.roleKey] = stableId;
+                    out.ownedPlateIds.push_back(stableId);
+                } else {
+                    doc_.addModel(std::move(wf));
+                    const EntityId id = doc_.modelId(doc_.models().size() - 1);
+                    const VersionId before = store_->activeVersion(id);
+                    const VersionId after = store_->set(id, pc.solid);
+                    if (after == kInvalidVersionId) {
+                        doc_.rollbackOpenRecord();
+                        out.error = L"levha kati yazilamadi: " +
+                                    std::wstring(pc.record.roleKey.begin(), pc.record.roleKey.end());
+                        return out;
+                    }
+                    store_->setBaseVersion(id, after);
+                    doc_.recordGeometryDelta(id, before, after);
+                    out.roleToEntity[pc.record.roleKey] = id;
+                    out.ownedPlateIds.push_back(id);
+                }
+                break;
+            }
+            case ComponentObjectKind::BoltGroup: {
+                BoltGroup bolt = pc.boltGroup;
+                std::vector<EntityId> parts;
+                for (const EntityId pid : out.ownedPlateIds)
+                    if (pid != kInvalidEntityId) parts.push_back(pid);
+                for (const EntityId up : bolt.parts)
+                    if (up != kInvalidEntityId &&
+                        std::find(parts.begin(), parts.end(), up) == parts.end())
+                        parts.push_back(up);
+                bolt.parts = std::move(parts);
+
+                const double grip = doc_.boltGripLength(bolt);
+                const TopoDS_Shape assembly =
+                    buildBoltGroupAssemblyShape(bolt, grip > 0.0 ? grip : 15.0);
+                WireframeModel display = assembly.IsNull()
+                                             ? WireframeModel::cube(10.0)
+                                             : shapeToWireframeWithFaces(assembly, 0.15);
+
+                if (hasStable && doc_.indexOfBoltGroup(stableId)) {
+                    bolt.id = stableId;
+                    doc_.setBoltGroup(*doc_.indexOfBoltGroup(stableId), bolt);
+                    const BoltGroup& updated = doc_.boltGroups()[*doc_.indexOfBoltGroup(stableId)];
+                    if (!assembly.IsNull()) {
+                        const VersionId before = store_->activeVersion(updated.displayEntityId);
+                        const VersionId after = store_->set(updated.displayEntityId, assembly);
+                        if (after != kInvalidVersionId)
+                            doc_.recordGeometryDelta(updated.displayEntityId, before, after);
+                    }
+                    out.roleToEntity[pc.record.roleKey] = updated.id;
+                    out.ownedBoltGroupIds.push_back(updated.id);
+                } else {
+                    bolt.id = kInvalidEntityId;
+                    const std::size_t bi = doc_.addBoltGroup(bolt, std::move(display));
+                    const BoltGroup& created = doc_.boltGroups()[bi];
+                    if (!assembly.IsNull()) {
+                        const VersionId before = store_->activeVersion(created.displayEntityId);
+                        const VersionId after = store_->set(created.displayEntityId, assembly);
+                        if (after != kInvalidVersionId)
+                            doc_.recordGeometryDelta(created.displayEntityId, before, after);
+                    }
+                    out.roleToEntity[pc.record.roleKey] = created.id;
+                    out.ownedBoltGroupIds.push_back(created.id);
+                }
+                break;
+            }
+            case ComponentObjectKind::Cut: {
+                CutModifier mod = pc.cut;
+                mod.enabled = true;
+                doc_.addCutModifier(std::move(mod));
+                break;
+            }
+            default:
+                doc_.rollbackOpenRecord();
+                out.error = L"desteklenmeyen child (recompute): " +
+                            std::wstring(pc.record.roleKey.begin(), pc.record.roleKey.end());
+                return out;
+        }
+    }
+
+    // Child tablosu + owned id'ler guncellenir; record kimligi korunur.
+    record.children.clear();
+    record.ownedPlateIds = out.ownedPlateIds;
+    record.ownedBoltGroupIds = out.ownedBoltGroupIds;
+    for (const std::size_t ci : order) {
+        ComponentChildRecord cr = prep.children[ci].record;
+        const auto it = out.roleToEntity.find(cr.roleKey);
+        cr.entityId = (it != out.roleToEntity.end()) ? it->second : kInvalidEntityId;
+        record.children.push_back(std::move(cr));
+    }
+
+    const auto idx = doc_.indexOfComponentInstance(existing.id);
+    if (!idx) {
+        doc_.rollbackOpenRecord();
+        out.error = L"component instance bulunamadi (recompute)";
+        return out;
+    }
+    doc_.setComponentInstance(*idx, std::move(record));
+    out.componentId = existing.id;
+
     for (const EntityId pid : out.ownedPlateIds) applyCutsFor(pid);
     for (const EntityId mid : out.ownedBoltGroupIds) {
         const auto bi = doc_.indexOfBoltGroup(mid);

@@ -56,6 +56,8 @@ public:
 
     // plan: roleKey koruyan uretim plani. mainId/secondaryIds: kullanici parcalari
     // (SAHIPLENMEZ, yalniz referanslanir). Weld varsa ok=false + Unsupported.
+    // Bagimlilik dongusu MEVCUT ConstraintSystem ile cozulur (ikinci solver YOK);
+    // dongu varsa ok=false (Cyclic).
     Prepared prepare(const ComponentPlan& plan, EntityId mainId,
                      const std::vector<EntityId>& secondaryIds) const;
 
@@ -73,6 +75,17 @@ public:
         std::wstring error;
     };
     CommitResult commit(const Prepared& prep, ComponentInstanceRecord record);
+
+    // --- RECOMPUTE (C3) ------------------------------------------------------
+    // Mevcut component'in child'larini YENI geometriyle gunceller. roleKey ->
+    // EntityId eslesmesi KORUNUR (existing.children tablosundan okunur; yeni
+    // eklenen child'lara yeni EntityId atanir). Plate -> replaceModel, BoltGroup
+    // -> setBoltGroup (kimlik korunur); tek undo kaydi. Basarisizlikta rollback.
+    //
+    // existing: document'taki GUNCEL kayit (children + owned id'ler dolu).
+    // record: cagiranin yeni parametre/referans durumu (id/typeId korunur).
+    CommitResult recompute(const Prepared& prep, const ComponentInstanceRecord& existing,
+                           ComponentInstanceRecord record);
 
     // --- Yardimci ------------------------------------------------------------
     // PlateSpec -> dikdortgen prizma (box) solid. Gecersiz boyut/taban -> null.
