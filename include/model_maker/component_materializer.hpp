@@ -23,6 +23,7 @@
 #include "model_maker/document.hpp"
 #include "model_maker/occ_solid_store.hpp"
 #include "model_maker/occ_geometry.hpp"
+#include "model_maker/geometry_reference_resolver.hpp"
 
 #include <TopoDS_Shape.hxx>
 
@@ -63,8 +64,14 @@ public:
     // (SAHIPLENMEZ, yalniz referanslanir). Weld varsa ok=false + Unsupported.
     // Bagimlilik dongusu MEVCUT ConstraintSystem ile cozulur (ikinci solver YOK);
     // dongu varsa ok=false (Cyclic).
+    //
+    // A2: geometrik iliskiler (Coincident/Offset/Align/FaceContact) resolver ile
+    // DistanceConstraint'a ADAPTE edilir ve cozulur; resolver yoksa veya yuz
+    // cozulemezse acik Unresolved dondurulur (SESSIZ basari YOK). Orientation
+    // (Parallel/Perpendicular/FollowFrame) her zaman acik Unsupported'tur.
     Prepared prepare(const ComponentPlan& plan, EntityId mainId,
-                     const std::vector<EntityId>& secondaryIds) const;
+                     const std::vector<EntityId>& secondaryIds,
+                     const GeometryReferenceResolver* resolver = nullptr) const;
 
     // --- COMMIT --------------------------------------------------------------
     // prepare ciktisini TEK undo kaydi altinda Document'a uygular. Basarisizlikta

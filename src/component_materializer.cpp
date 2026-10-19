@@ -57,7 +57,8 @@ TopoDS_Shape ComponentMaterializer::buildPlateSolid(const PlateSpec& p) {
 
 ComponentMaterializer::Prepared ComponentMaterializer::prepare(
     const ComponentPlan& plan, EntityId mainId,
-    const std::vector<EntityId>& secondaryIds) const {
+    const std::vector<EntityId>& secondaryIds,
+    const GeometryReferenceResolver* resolver) const {
     Prepared out;
     if (!plan.ok) {
         out.error = plan.error;
@@ -188,10 +189,9 @@ ComponentMaterializer::Prepared ComponentMaterializer::prepare(
         }
     }
 
-    // Bagimlilik dongusu MEVCUT ConstraintSystem ile denetlenir (C4: ikinci
-    // solver YOK — RelationshipGraph.toConstraintSystem + ConstraintSystem::solve
-    // ile ayni motor). child'lar handle olarak eklenir, AttachedTo/DependsOn
-    // kenarlari addDependency olur; solve() false = dongu (Cyclic).
+    // A2: iliski dogrulugu MEVCUT ConstraintSystem + GeometryReferenceResolver ile
+    // (ikinci solver YOK). Tek ConstraintSystem kurulur; hem bagimlilik dongusu
+    // hem geometrik mesafe kisitlari ayni motorla cozulur.
     {
         ConstraintSystem sys;
         for (const auto& pc : out.children) {
@@ -201,6 +201,7 @@ ComponentMaterializer::Prepared ComponentMaterializer::prepare(
             else if (pc.record.cut) pos = pc.record.cut->planeOrigin;
             sys.addHandle(HandleKey{pc.record.roleKey}, HandleKind::Point, pos);
         }
+        // (a) Bagimlilik: AttachedTo/DependsOn -> addDependency (ownership YOK).
         for (const auto& pc : out.children) {
             for (const auto& dep : pc.record.dependencies) {
                 if (dep == "main" || dep == "component" || dep.rfind("secondary_", 0) == 0)
@@ -209,27 +210,102 @@ ComponentMaterializer::Prepared ComponentMaterializer::prepare(
                     sys.addDependency(HandleKey{pc.record.roleKey}, HandleKey{dep});
             }
         }
+        // (b) Geometric mesafe iliskileri -> DistanceConstraint (A2.2). Hedef roleKey
+        //     "main"/"secondary_N" (kullanici parcasi) resolver ile ReferencePlane'e
+        //     cozulur; cozulemezse Unresolved (SESSIZ basari yok).
+        // (c) Orientation (Parallel/Perpendicular/FollowFrame) -> acik Unsupported
+        //     (OrientationConstraint dilimi YOK; sahte cozum uretilmez — A2.5).
+        for (const auto& r : plan.relationships.relationships()) {
+            if (!r.enabled) continue;
+            switch (r.kind) {
+                case RelationshipKind::Coincident:
+                case RelationshipKind::Offset:
+                case RelationshipKind::Align:
+                case RelationshipKind::FaceContact: {
+                    // Hedef roleKey -> EntityId + role.
+                    EntityId targetId = kInvalidEntityId;
+                    ComponentInputRole role = ComponentInputRole::None;
+                    if (r.to == "main") {
+                        targetId = mainId;
+                        role = ComponentInputRole::Main;
+                    } else if (r.to.rfind("secondary_", 0) == 0) {
+                        const std::string suffix =
+                            r.to.substr(std::string("secondary_").size());
+                        const int idx = suffix.empty() ? -1 : std::atoi(suffix.c_str());
+                        if (idx >= 0 && static_cast<std::size_t>(idx) < secondaryIds.size()) {
+                            targetId = secondaryIds[static_cast<std::size_t>(idx)];
+                            role = ComponentInputRole::Secondary;
+                        }
+                    } else {
+                        // component-owned child hedefi: EntityId henuz yok —
+                        // cozum commit'te; distance kisiti icin burada Unresolved.
+                        out.error = L"geometrik iliski hedefi child roleKey (prepare'da cozulemez): '" +
+                                    std::wstring(r.to.begin(), r.to.end()) + L"'";
+                        return out;
+                    }
+                    if (targetId == kInvalidEntityId) {
+                        out.error = L"geometrik iliski hedefi cozulemedi: '" +
+                                    std::wstring(r.to.begin(), r.to.end()) + L"'";
+                        return out;
+                    }
+                    if (!resolver) {
+                        out.error = L"geometrik iliski icin resolver yok (hedef: '" +
+                                    std::wstring(r.to.begin(), r.to.end()) + L"')";
+                        return out;
+                    }
+                    GeometryReference gref;
+                    gref.kind = GeometryReferenceKind::MemberFrame;
+                    gref.source = targetId;
+                    gref.role = role;
+                    const ResolvedGeometry rg = resolver->resolve(gref);
+                    if (!rg.resolved) {
+                        out.error = L"geometrik iliski hedef yuzu cozulemedi (Unresolved): '" +
+                                    std::wstring(r.to.begin(), r.to.end()) + L"'";
+                        return out;
+                    }
+                    DistanceConstraint dc;
+                    dc.handle = HandleKey{r.from};
+                    dc.target.source = targetId;
+                    dc.target.role = role;
+                    dc.target.faceRole = SemanticFaceRole::None;
+                    dc.target.resolved = true;
+                    dc.target.plane = rg.plane;
+                    dc.signedOffset =
+                        (r.kind == RelationshipKind::Offset) ? r.distance : 0.0;
+                    dc.enabled = true;
+                    sys.addDistanceConstraint(std::move(dc));
+                    break;
+                }
+                case RelationshipKind::Parallel:
+                case RelationshipKind::Perpendicular:
+                case RelationshipKind::FollowFrame: {
+                    out.error = L"desteklenmeyen orientation kisiti (OrientationConstraint yok): '" +
+                                std::wstring(r.from.begin(), r.from.end()) + L"' -> '" +
+                                std::wstring(r.to.begin(), r.to.end()) + L"'";
+                    return out;
+                }
+                default:
+                    break;  // ownership/parametric — geometrik dongu DEGIL
+            }
+        }
+
         if (!sys.solve()) {
             out.error = L"bagimlilik dongusu (ConstraintSystem Cyclic)";
             return out;
         }
-    }
-
-    // C4: geometrik iliskiler — desteklenmeyen ORIENTATION kisitlari (Parallel/
-    // Perpendicular) sessizce "basari" SAYILMAZ. ConstraintSystem su an yalnizca
-    // mesafe (DistanceConstraint) cozer; OrientationConstraint dilimi YOK. Bu
-    // yuzden plan Parallel/Perpendicular iceriyorsa acik Unsupported donulur.
-    // Distance-tipi iliskiler (Coincident/Offset/Align/FaceContact) FaceReference
-    // cozumuyle (OCCT adapter) DistanceConstraint'a baglanir — generator konumu
-    // zaten hesapladigi icin materializer burada yeniden cozmez; yalnizca
-    // desteklenmeyen turu reddeder.
-    for (const auto& r : plan.relationships.relationships()) {
-        if (!r.enabled) continue;
-        if (r.kind == RelationshipKind::Parallel || r.kind == RelationshipKind::Perpendicular) {
-            out.error = L"desteklenmeyen orientation kisiti (Parallel/Perpendicular — OrientationConstraint yok): '" +
-                        std::wstring(r.from.begin(), r.from.end()) + L"' -> '" +
-                        std::wstring(r.to.begin(), r.to.end()) + L"'";
-            return out;
+        // Cozum sonrasi: Conflict/Unresolved kisit basari SAYILMAZ (A2.4).
+        for (const auto& pc : out.children) {
+            const PositionSolveResult pr = sys.position(HandleKey{pc.record.roleKey});
+            if (pr.state == ConstraintState::Conflict) {
+                out.error = L"geometrik kisit catismasi (Conflict): '" +
+                            std::wstring(pc.record.roleKey.begin(), pc.record.roleKey.end()) + L"'";
+                return out;
+            }
+            if (pr.state == ConstraintState::Unresolved) {
+                out.error = L"cozulemeyen kisit (Unresolved): '" +
+                            std::wstring(pc.record.roleKey.begin(), pc.record.roleKey.end()) + L"'";
+                return out;
+            }
         }
     }
 

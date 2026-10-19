@@ -446,6 +446,69 @@ int main() {
         check(delDoc.models().size() < modelsAfterFirst, "plate_b modeli silindi");
     }
 
+    // === A2: Coincident/Offset -> DistanceConstraint (resolver ile adapte) ===
+    {
+        Document a2Doc;
+        a2Doc.setOccStore(makeOccSolidStore());
+        ComponentMaterializer a2Mat(a2Doc);
+        OccSolidStore* a2s = asSolidStore(&a2Doc.occStore());
+        WireframeModel a2col = WireframeModel::cube(100.0);
+        a2Doc.addModel(std::move(a2col));
+        const EntityId a2main = a2Doc.modelId(0);
+        if (a2s) {
+            PlateSpec s; s.center={0,0,0}; s.u={1,0,0}; s.v={0,1,0}; s.axis={0,0,1};
+            s.width=100; s.height=100; s.thickness=100;
+            const TopoDS_Shape solid = ComponentMaterializer::buildPlateSolid(s);
+            if (!solid.IsNull()) { a2s->set(a2main, solid); a2s->setBaseVersion(a2main, a2s->activeVersion(a2main)); }
+        }
+        // Resolver: main uyesi icin gecerli lokal cerceve.
+        BasicGeometryReferenceResolver::MemberRecord mr;
+        mr.frame.origin = {0,0,0}; mr.frame.u = {1,0,0}; mr.frame.v = {0,1,0}; mr.frame.w = {0,0,1};
+        mr.length = 100.0;
+        BasicGeometryReferenceResolver a2resolver({{a2main, mr}});
+
+        ComponentBuilder b;
+        PlateSpec pp; pp.width=100; pp.height=100; pp.thickness=8;
+        b.plate("fin_plate", pp)
+         .coincident("fin_plate", "main")
+         .ownedBy("fin_plate", "component");
+        const auto built = b.build();
+        const ComponentPlan plan = componentPlanFromObjects(built.objects, built.relationships);
+        ComponentMaterializer::Prepared prep = a2Mat.prepare(plan, a2main, {}, &a2resolver);
+        check(prep.ok, "A2: Coincident->main resolver ile adapte edildi (ok)");
+    }
+    {
+        // Resolver OLMADAN geometrik iliski -> acik Unresolved (sessiz basari YOK).
+        ComponentBuilder b;
+        PlateSpec pp; pp.width=100; pp.height=100; pp.thickness=8;
+        b.plate("fin_plate", pp).coincident("fin_plate", "main").ownedBy("fin_plate", "component");
+        const auto built = b.build();
+        const ComponentPlan plan = componentPlanFromObjects(built.objects, built.relationships);
+        ComponentMaterializer::Prepared prep = mat.prepare(plan, mainId, {});
+        check(!prep.ok, "A2: resolver yok + Coincident -> Unresolved (ok=false)");
+        check(!prep.error.empty(), "A2: resolver yok hatasi dolu");
+    }
+    {
+        // FollowFrame -> Unsupported (orientation ailesi).
+        ComponentBuilder b;
+        PlateSpec pp; pp.width=100; pp.height=100; pp.thickness=8;
+        b.plate("fin_plate", pp).followFrame("fin_plate", "main").ownedBy("fin_plate", "component");
+        const auto built = b.build();
+        const ComponentPlan plan = componentPlanFromObjects(built.objects, built.relationships);
+        ComponentMaterializer::Prepared prep = mat.prepare(plan, mainId, {});
+        check(!prep.ok, "A2: FollowFrame -> Unsupported (ok=false)");
+    }
+    {
+        // Ownership geometrik dongu DEGIL: ownedBy main'e cozumken prepare ok.
+        ComponentBuilder b;
+        PlateSpec pp; pp.width=100; pp.height=100; pp.thickness=8;
+        b.plate("fin_plate", pp).ownedBy("fin_plate", "component").attachedTo("fin_plate", "main");
+        const auto built = b.build();
+        const ComponentPlan plan = componentPlanFromObjects(built.objects, built.relationships);
+        ComponentMaterializer::Prepared prep = mat.prepare(plan, mainId, {});
+        check(prep.ok, "A2: ownership (main'e attached) geometrik dongu DEGIL");
+    }
+
     std::printf("\n%d failure(s)\n", failures);
     return failures == 0 ? 0 : 1;
 }
