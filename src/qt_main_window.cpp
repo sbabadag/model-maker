@@ -1,6 +1,7 @@
 #include "model_maker/qt_main_window.hpp"
 #include "model_maker/drafting.hpp"
 #include "model_maker/two_point_view.hpp"
+#include "model_maker/component_dialog_widget.hpp"
 
 #include <QApplication>
 #include <QMdiArea>
@@ -1221,6 +1222,25 @@ bool QtMainWindow::openEndPlateParamsDialog(const mm::EndPlateParams& current,
 bool QtMainWindow::openComponentParamsDialog(const mm::ComponentInstanceRecord& rec) {
     const mm::ComponentType* type = mm::ComponentRegistry::instance().findType(rec.typeId);
     if (!type) return false;
+
+    // Şematik parametre editörü: registry'de diyalog tanımı varsa (fin_plate vb.)
+    // Tekla-tarzi sol çizim + sağ gruplanmış editörler + çift yönlü hotspot vurgusu.
+    if (const auto* def = mm::ComponentDialogRegistry::instance().find(rec.typeId)) {
+        QDialog dlg(this);
+        dlg.setWindowTitle(QStringLiteral("Bileşen Özellikleri — ") +
+                           QString::fromStdWString(type->displayName));
+        dlg.setMinimumSize(760, 560);
+        auto* root = new QVBoxLayout(&dlg);
+        auto* widget = new mm::ComponentDialogWidget(*def, rec.params, &dlg);
+        root->addWidget(widget);
+        auto* buttons = new QDialogButtonBox(
+            QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
+        QObject::connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+        QObject::connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+        root->addWidget(buttons);
+        if (dlg.exec() != QDialog::Accepted) return false;
+        return app_.setSelectedComponentParams(rec.id, widget->resultParams());
+    }
 
     QDialog dlg(this);
     dlg.setWindowTitle(QStringLiteral("Bileşen Özellikleri — ") +

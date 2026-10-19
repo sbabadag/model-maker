@@ -25,6 +25,7 @@
 #include "model_maker/view_cube.hpp"
 #include "model_maker/contact_resolver.hpp"
 #include "model_maker/component_glyph.hpp"
+#include "model_maker/component_dialog.hpp"
 
 #include <QComboBox>
 
@@ -180,6 +181,9 @@ Application::Application(HINSTANCE instance, HWND /*parentCanvas*/) : instance_(
     // component instance'lari orphan (bilinmeyen typeId) isaretlenir ve Fin
     // Plate uretilemez. Idempotent (registerType tekrarli typeId reddeder).
     mm::registerBuiltInComponents(mm::ComponentRegistry::instance());
+    // UNIVERSAL COMPONENT DIALOG katalogu: sematik cizim + parametre editörü
+    // (fin_plate, end_plate) dialog registry'sine kaydedilir. Idempotent.
+    mm::registerBuiltInDialogs(mm::ComponentDialogRegistry::instance());
 #ifdef MM_HAS_OCC
     // BELGE-SAHIPLI B-Rep magazasi: OCC-acik derlemede GERCEK OCCT store'unu
     // Document'a ENJEKTE eder (constructor injection). Saglayici secimi LINK

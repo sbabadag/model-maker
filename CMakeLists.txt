@@ -63,7 +63,9 @@ set(MODELMAKER_QT_SOURCES
     src/two_point_view.cpp
     include/model_maker/two_point_view.hpp
     src/opengl_render_backend.cpp
-    include/model_maker/opengl_render_backend.hpp)
+    include/model_maker/opengl_render_backend.hpp
+    src/component_dialog_widget.cpp
+    include/model_maker/component_dialog_widget.hpp)
 set(MODELMAKER_QT_MISSING "")
 foreach(qt_file ${MODELMAKER_QT_SOURCES})
     if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/${qt_file}")
@@ -857,6 +859,23 @@ if(BUILD_TESTING)
     target_link_options(model_maker_component_dialog_test PRIVATE -static -static-libgcc -static-libstdc++)
     target_compile_options(model_maker_component_dialog_test PRIVATE -Wall -Wextra -Wpedantic)
     add_test(NAME model_maker_component_dialog_test COMMAND model_maker_component_dialog_test)
+
+    # UNIVERSAL COMPONENT DIALOG Qt OFFScreen testi: widget'in gercek davranisi
+    # (round-trip, sentinel koruma, bilinmeyen parametre) bassiz dogrulanir.
+    # Yalniz Qt6 varken (Linux); Windows'ta goruntu Asus'ta model-maker exe'siyle.
+    if(Qt6_FOUND AND UNIX AND NOT CMAKE_CROSSCOMPILING)
+        add_executable(model_maker_component_dialog_widget_test
+            tests/component_dialog_widget_test.cpp
+            src/component_dialog_widget.cpp
+            include/model_maker/component_dialog_widget.hpp)
+        target_include_directories(model_maker_component_dialog_widget_test PRIVATE include)
+        target_link_libraries(model_maker_component_dialog_widget_test PRIVATE
+            model_maker_core Qt6::Widgets)
+        add_test(NAME model_maker_component_dialog_widget_test
+                 COMMAND model_maker_component_dialog_widget_test)
+        set_tests_properties(model_maker_component_dialog_widget_test PROPERTIES
+            ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+    endif()
 
     # COMPONENT SERIALIZE (Phase C2b): ComponentInstanceRecord'un MMW8 'I' blogu
     # + Document save/load entegrasyonu; orphan tespiti + param migration +
