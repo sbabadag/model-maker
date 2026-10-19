@@ -262,6 +262,15 @@ struct ComponentPlan {
 ComponentPlan componentPlanFromObjects(const std::vector<ComponentObjectSpec>& objects,
                                        const ComponentRelationshipGraph& graph) noexcept;
 
+// GenerationPlan (registry generator ciktisi — generateFinPlate/generateEndPlate)
+// -> roleKey koruyan ComponentPlan. Generator flat plan uretir (roleKey YOK);
+// bu kopru EVRENSEL materializer icin her elemana deterministik roleKey atar:
+//   plate_i, bolt_group_i, cut_i, weld_i (0-bazli).
+// Boylece registry yolu (C5) ile builder yolu AYNI materializer'a beslenir.
+// Weld iceriliyorsa plan ok=true URETILIR (weld materializer'da Unsupported
+// reddedilir — kopru onu yutup "basari" ilan etmez).
+ComponentPlan componentPlanFromGenerationPlan(const GenerationPlan& plan) noexcept;
+
 // --- COMPONENT BUILDER (fluent, tip guvenli) ---------------------------------
 
 // Yeni bir component tanimini object + relationship + roleKey olarak kurar.

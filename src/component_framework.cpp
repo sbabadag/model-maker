@@ -320,6 +320,53 @@ ComponentPlan componentPlanFromObjects(const std::vector<ComponentObjectSpec>& o
     return out;
 }
 
+ComponentPlan componentPlanFromGenerationPlan(const GenerationPlan& plan) noexcept {
+    ComponentPlan out;
+    out.plan = plan;
+    if (!plan.ok) {
+        out.ok = false;
+        out.error = plan.error;
+        return out;
+    }
+    // Deterministik roleKey atamasi: generator sirasi (0-bazli).
+    for (std::size_t i = 0; i < plan.plates.size(); ++i) {
+        ComponentChildRecord c;
+        c.roleKey = "plate_" + std::to_string(i);
+        c.kind = ComponentObjectKind::Plate;
+        c.plate = plan.plates[i];
+        out.children.push_back(std::move(c));
+    }
+    for (std::size_t i = 0; i < plan.boltGroups.size(); ++i) {
+        ComponentChildRecord c;
+        c.roleKey = "bolt_group_" + std::to_string(i);
+        c.kind = ComponentObjectKind::BoltGroup;
+        c.boltGroup = plan.boltGroups[i];
+        out.children.push_back(std::move(c));
+    }
+    for (std::size_t i = 0; i < plan.cuts.size(); ++i) {
+        ComponentChildRecord c;
+        c.roleKey = "cut_" + std::to_string(i);
+        c.kind = ComponentObjectKind::Cut;
+        c.cut = plan.cuts[i];
+        out.children.push_back(std::move(c));
+    }
+    for (std::size_t i = 0; i < plan.welds.size(); ++i) {
+        ComponentChildRecord c;
+        c.roleKey = "weld_" + std::to_string(i);
+        c.kind = ComponentObjectKind::Weld;
+        c.weld = plan.welds[i];
+        out.children.push_back(std::move(c));
+    }
+    // Deterministik sira (roleKey zaten plate_/bolt_group_/cut_/weld_ on ekli,
+    // lexicographic sirada dogal olarak ayni tur gruplanir).
+    std::sort(out.children.begin(), out.children.end(),
+              [](const ComponentChildRecord& a, const ComponentChildRecord& b) {
+                  return a.roleKey < b.roleKey;
+              });
+    out.ok = true;
+    return out;
+}
+
 // --- ComponentBuilder --------------------------------------------------------
 
 namespace {

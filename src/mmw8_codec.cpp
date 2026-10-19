@@ -563,6 +563,35 @@ void writeFrameBlock(std::ostream& out, const std::vector<ComponentInstanceRecor
     out.write(b.data(), static_cast<std::streamsize>(b.size()));
 }
 
+// 'N' blogu: ComponentChildRecord tablosu (roleKey -> EntityId, C1). KALICI
+// child identity'nin MMW8 karsiligi: roleKey + kind + owned EntityId + bagimlilik
+// roleKey'leri. Uretim parametreleri (plate/boltGroup/cut/weld payload) burada
+// YENIDEN yazilmaz — bunlar registry generator'dan yeniden uretilir; kalici olan
+// roleKey->EntityId eslemesidir (recompute + MMW8 sonrasi stabil). Ileriye-uyumlu
+// AYRI blok; eski okuyucu bilinmeyen blogu kayipsiz korur. Bos ise yazilmaz.
+void writeChildBlock(std::ostream& out, const std::vector<ComponentInstanceRecord>& recs) {
+    std::size_t total = 0;
+    for (const auto& r : recs) total += r.children.size();
+    if (total == 0) return;
+    std::ostringstream body;
+    body << total << '\n';
+    for (const auto& r : recs)
+        for (const auto& c : r.children) {
+            body << r.id << ' ';
+            putString(body, c.roleKey);
+            body << ' ' << static_cast<int>(c.kind) << ' ' << c.entityId << ' '
+                 << c.dependencies.size();
+            for (const auto& d : c.dependencies) {
+                body << ' ';
+                putString(body, d);
+            }
+            body << '\n';
+        }
+    const std::string b = body.str();
+    out << "N " << b.size() << '\n';
+    out.write(b.data(), static_cast<std::streamsize>(b.size()));
+}
+
 } // namespace
 
 void writeMmw8(std::ostream& out, const Mmw8Document& doc) {
@@ -810,6 +839,7 @@ void writeMmw8(std::ostream& out, const Mmw8Document& doc) {
     writeFaceRefBlock(out, doc.componentInstances);      // 'J'
     writeConstraintBlock(out, doc.componentInstances);   // 'D'
     writeFrameBlock(out, doc.componentInstances);        // 'M'
+    writeChildBlock(out, doc.componentInstances);        // 'N' (C1 roleKey->EntityId)
 
     // Kuyruk: K blogu (konstruksiyon turleri, Phase 4.1).
     if (!doc.constructionKinds.empty()) {
@@ -1028,7 +1058,7 @@ void readMmw8(std::istream& in, Mmw8Document& doc) {
 
     // --- Kuyruk: etiket-gudumlu bloklar ---
     bool sawH = false, sawB = false, sawV = false, sawG = false, sawE = false, sawI = false;
-    bool sawJ = false, sawD = false, sawM = false, sawA = false;
+    bool sawJ = false, sawD = false, sawM = false, sawN = false, sawA = false;
     // 'M' bloguyla cerceve ATAYAN component id'leri — legacy turetme (origin/u/v/axis)
     // yalnizca 'M' kaydi OLMAYAN component'lere uygulanir.
     std::unordered_set<EntityId> framedComponents;
@@ -1490,6 +1520,37 @@ void readMmw8(std::istream& in, Mmw8Document& doc) {
                 }
                 parsed.componentInstances[static_cast<std::size_t>(idx)].frame = std::move(clf);
                 framedComponents.insert(compId);
+            }
+        } else if (tag == 'N') {
+            if (sawN) fail("repeated N block");
+            if (!sawI) fail("N block before I block (wrong order)");
+            sawN = true;
+            std::istringstream ns(body);
+            const std::uint64_t count = readUint64(ns, "child record count");
+            if (count > kMmw8MaxComponents * 8) fail("child record count exceeds limit");
+            std::string line;
+            std::getline(ns, line);  // count satırının kalanı (boş)
+            for (std::uint64_t ci = 0; ci < count; ++ci) {
+                if (!std::getline(ns, line)) fail("missing child record");
+                std::istringstream ls(line);
+                const EntityId compId = static_cast<EntityId>(readUint64(ls, "child component id"));
+                const std::int64_t idx = componentIndexById(parsed.componentInstances, compId);
+                if (idx < 0) fail("child component id not in component list");
+                ComponentChildRecord c;
+                c.roleKey = readString(ls);
+                const std::int64_t kind = readInt64(ls, "child kind");
+                if (kind < 0 || kind > 6) fail("invalid child kind");
+                c.kind = static_cast<ComponentObjectKind>(kind);
+                c.entityId = static_cast<EntityId>(readUint64(ls, "child entityId"));
+                const std::uint64_t nDep = readUint64(ls, "child dependency count");
+                if (nDep > kMmw8MaxComponents) fail("child dependency count exceeds limit");
+                c.dependencies.reserve(static_cast<std::size_t>(nDep));
+                for (std::uint64_t di = 0; di < nDep; ++di)
+                    c.dependencies.push_back(readString(ls));
+                // Payload uretimi YOK (registry generator yeniden uretir) — yalniz
+                // kalici roleKey->EntityId eslesmesi geri yuklenir.
+                parsed.componentInstances[static_cast<std::size_t>(idx)]
+                    .children.push_back(std::move(c));
             }
         } else if (tag == 'K') {
             std::istringstream ks(body);

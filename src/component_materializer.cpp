@@ -214,7 +214,11 @@ ComponentMaterializer::Prepared ComponentMaterializer::prepare(
 
 std::vector<std::size_t> ComponentMaterializer::orderChildren(
     const std::vector<PreparedChild>& children, std::wstring& error) {
-    // Kahn topolojik sira; esitlikte lexicographic roleKey (deterministik).
+    // Kahn topolojik sira; esitlikte KIND ONCELIKLI (Plate < BoltGroup < Cut <
+    // Weld) sonra lexicographic roleKey (deterministik). KIND ONCELIGI KRITIK:
+    // bulon grubu sahip olunan levhayi deler; levha ONCE materialize edilmeden
+    // bolt.parts'a eklenemez. Dolayisiyla bagimsiz (indeg 0) dugumler arasinda
+    // levha her zaman bulon grubundan once islenir.
     // dependencies roleKey -> indeks; yalnizca child'lar arasi kenarlar.
     std::unordered_map<std::string, std::size_t> roleIndex;
     for (std::size_t i = 0; i < children.size(); ++i)
@@ -232,15 +236,29 @@ std::vector<std::size_t> ComponentMaterializer::orderChildren(
         }
     }
 
-    // Hazir dugumler (indeg 0) lexicographic roleKey sirada.
+    const auto kindRank = [](ComponentObjectKind k) {
+        switch (k) {
+            case ComponentObjectKind::Plate: return 0;
+            case ComponentObjectKind::BoltGroup: return 1;
+            case ComponentObjectKind::Cut: return 2;
+            case ComponentObjectKind::Weld: return 3;
+            default: return 4;  // construction — plana dahil edilmez
+        }
+    };
+    const auto cmp = [&](std::size_t a, std::size_t b) {
+        const int ra = kindRank(children[a].record.kind);
+        const int rb = kindRank(children[b].record.kind);
+        if (ra != rb) return ra < rb;
+        return children[a].record.roleKey < children[b].record.roleKey;
+    };
+
+    // Hazir dugumler (indeg 0) kind-priority + lexicographic roleKey sirada.
     std::vector<std::size_t> order;
     order.reserve(children.size());
     std::vector<std::size_t> ready;
     for (std::size_t i = 0; i < children.size(); ++i)
         if (indeg[i] == 0) ready.push_back(i);
-    std::sort(ready.begin(), ready.end(), [&](std::size_t a, std::size_t b) {
-        return children[a].record.roleKey < children[b].record.roleKey;
-    });
+    std::sort(ready.begin(), ready.end(), cmp);
 
     while (!ready.empty()) {
         const std::size_t cur = ready.front();
@@ -249,9 +267,7 @@ std::vector<std::size_t> ComponentMaterializer::orderChildren(
         for (const std::size_t next : in[cur]) {
             if (--indeg[next] == 0) {
                 ready.push_back(next);
-                std::sort(ready.begin(), ready.end(), [&](std::size_t a, std::size_t b) {
-                    return children[a].record.roleKey < children[b].record.roleKey;
-                });
+                std::sort(ready.begin(), ready.end(), cmp);
             }
         }
     }
