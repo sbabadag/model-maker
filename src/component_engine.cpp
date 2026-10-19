@@ -585,9 +585,17 @@ GenerationPlan generateFinPlate(const ComponentInput& input) noexcept {
     plate.width = width;
     plate.height = height;
     plate.thickness = thickness;
-    plate.center = Vec3{facePoint.x + lenDir.x * (width * 0.5),
-                        facePoint.y + lenDir.y * (width * 0.5),
-                        facePoint.z + lenDir.z * (width * 0.5)};
+    // Y EKSANTRISITESI (t/2): levhanin kalinlik merkezi is cizgisinden (kiris govde
+    // merkezi = kolon merkezi) levha kalinliginin yarisi kadar DISA kayar; boylece
+    // levhanin bir yuzu is cizgisine oturur, kalinlik tek tarafa acilir (Tekla shear
+    // tab 'eccentricity'). Kayma sec.width (kalinlik) yonundedir; lenDir bileseni
+    // yoktur, levhanin kiris boyunca konumu degismez.
+    const Vec3 tabOffset{sec.width.x * (thickness * 0.5),
+                         sec.width.y * (thickness * 0.5),
+                         sec.width.z * (thickness * 0.5)};
+    plate.center = Vec3{facePoint.x + lenDir.x * (width * 0.5) + tabOffset.x,
+                        facePoint.y + lenDir.y * (width * 0.5) + tabOffset.y,
+                        facePoint.z + lenDir.z * (width * 0.5) + tabOffset.z};
     plate.name = L"Fin Levhasi";
     plan.plates.push_back(plate);
     plan.plateKeys.push_back("fin_plate");
@@ -600,9 +608,9 @@ GenerationPlan generateFinPlate(const ComponentInput& input) noexcept {
     const double hh = height * 0.5;
     // Bulon hatti = levha UZUNLUGUNUN ORTASI. Eskiden kaynak kenarinin (kolon
     // yuzu) tam uzerindeydi; orada kaynak bolgesi vardir, civata gecmez.
-    const Vec3 boltLine{facePoint.x + lenDir.x * (width * 0.5),
-                        facePoint.y + lenDir.y * (width * 0.5),
-                        facePoint.z + lenDir.z * (width * 0.5)};
+    const Vec3 boltLine{facePoint.x + lenDir.x * (width * 0.5) + tabOffset.x,
+                        facePoint.y + lenDir.y * (width * 0.5) + tabOffset.y,
+                        facePoint.z + lenDir.z * (width * 0.5) + tabOffset.z};
     b.origin = Vec3{boltLine.x - sec.height.x * (hh - edge),
                     boltLine.y - sec.height.y * (hh - edge),
                     boltLine.z - sec.height.z * (hh - edge)};

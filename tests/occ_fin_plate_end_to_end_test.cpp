@@ -159,9 +159,11 @@ int main() {
         check(std::fabs(dotAx) < 1e-6, "fin plate kalinligi kiris eksenine DIK (shear tab)");
         check(std::fabs(fpPlate.center.y - 210.0) < 1e-6,
               "fin plate kolon yuzunde (Y=150) + uzunluk/2");
-        check(std::fabs(fpPlate.center.x) < 1e-6 && std::fabs(fpPlate.center.z - 1500.0) < 1e-6,
-              "fin plate kiris kotunda (X=0, Z=1500)");
+        check(std::fabs(fpPlate.center.x + 5.0) < 1e-6 && std::fabs(fpPlate.center.z - 1500.0) < 1e-6,
+              "fin plate kiris kotunda (X=-5 (t/2 eksantrisite), Z=1500)");
         check(std::fabs(fpPlate.v.z - 1.0) < 1e-6, "fin plate yukseklik yonu +Z (dusey)");
+        check(std::fabs(fp.boltGroups[0].origin.x + 5.0) < 1e-6,
+              "fin plate bulon hatti levha merkeziyle hizali (X=-5)");
     }
 
     // --- regresyon: refNormal cizim is duzleminden gelir, YATAY olabilir.
