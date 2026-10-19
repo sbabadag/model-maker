@@ -53,6 +53,10 @@ private:
     // sonradan düzenleme (çift tık) için ortak. current -> out; OK ise true.
     bool openEndPlateParamsDialog(const mm::EndPlateParams& current,
                                   mm::EndPlateParams& out);
+    // Universal parametrik component (Fin Plate vb.) parametre diyaloğu: registry
+    // parametre semasindan (CompParamSpec) tip-agnostik olarak uretilir.
+    // OK -> app_.setSelectedComponentParams(rec.id, params) (recompute yolu).
+    bool openComponentParamsDialog(const mm::ComponentInstanceRecord& rec);
     void createDockPanels();
     void resizeEmbeddedCanvas();
     void openTwoPointView(const ViewDefinition& view);

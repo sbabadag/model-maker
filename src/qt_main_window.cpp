@@ -36,6 +36,7 @@
 #include <QTreeWidgetItem>
 #include <QFont>
 #include <functional>
+#include <variant>
 #include <QTableWidget>
 #include <QHeaderView>
 #include <QInputDialog>
@@ -313,6 +314,13 @@ QtMainWindow::QtMainWindow(QWidget* parent)
 #ifdef MM_HAS_OCC
             app_.setSelectedEndPlateConnection(conn.id, p);
 #endif
+        });
+    });
+    // Universal parametrik component (Fin Plate vb.) alt nesnesine cift tik ->
+    // registry parametre semasindan uretilen diyalog; OK -> recompute.
+    app_.setComponentEditRequest([this](const mm::ComponentInstanceRecord& rec) {
+        QTimer::singleShot(0, this, [this, rec]() {
+            openComponentParamsDialog(rec);
         });
     });
     // Iki noktali gorunus: Application iki noktayi secince yeni MDI penceresi.
@@ -1204,6 +1212,156 @@ bool QtMainWindow::openEndPlateParamsDialog(const mm::EndPlateParams& current,
     out.boltDirection = dirCombo->currentData().toInt();
     out.boltComment = commentEdit->text().toStdString();
     return true;
+}
+
+// UNIVERSAL PARAMETRIK COMPONENT parametre diyalogu (Fin Plate vb.).
+// Parametre semasi registry'den gelir (tip-agnostik): yeni bir component tipi
+// eklemek icin burada degisiklik GEREKMEZ. OK -> setSelectedComponentParams,
+// yani mevcut ComponentMaterializer::recompute yolu (undo'lu, tek kayit).
+bool QtMainWindow::openComponentParamsDialog(const mm::ComponentInstanceRecord& rec) {
+    const mm::ComponentType* type = mm::ComponentRegistry::instance().findType(rec.typeId);
+    if (!type) return false;
+
+    QDialog dlg(this);
+    dlg.setWindowTitle(QStringLiteral("Bileşen Özellikleri — ") +
+                       QString::fromStdWString(type->displayName));
+    dlg.setMinimumWidth(420);
+
+    auto* root = new QVBoxLayout(&dlg);
+    auto* form = new QFormLayout;
+    form->setLabelAlignment(Qt::AlignLeft);
+
+    const std::vector<mm::CompParam> aligned =
+        mm::alignParamsToSpecs(type->params, rec.params);
+
+    // Her spec icin bir editor; indeksler spec indeksiyle hizali.
+    std::vector<QWidget*> editors(type->params.size(), nullptr);
+    for (std::size_t i = 0; i < type->params.size(); ++i) {
+        const mm::CompParamSpec& spec = type->params[i];
+        const mm::CompParam* stored = mm::findParam(aligned, spec.name);
+        const mm::CompParamValue value = stored ? stored->value : mm::paramDefaultValue(spec);
+        const QString label = QString::fromStdWString(
+            spec.description.empty() ? spec.name : spec.description);
+
+        QWidget* editor = nullptr;
+        switch (spec.type) {
+            case mm::CompParamType::Length:
+            case mm::CompParamType::Angle: {
+                auto* spin = new QDoubleSpinBox(&dlg);
+                spin->setDecimals(2);
+                spin->setRange(spec.hasMinDouble ? spec.minDouble : -1.0e6,
+                               spec.hasMaxDouble ? spec.maxDouble : 1.0e6);
+                double v = spec.defDouble;
+                if (const auto* d = std::get_if<double>(&value)) v = *d;
+                spin->setValue(v);
+                if (!spec.unit.empty())
+                    spin->setSuffix(QStringLiteral(" ") +
+                                    QString::fromStdWString(spec.unit));
+                editor = spin;
+                break;
+            }
+            case mm::CompParamType::Integer: {
+                auto* spin = new QSpinBox(&dlg);
+                spin->setRange(spec.hasMinInt ? spec.minInt : -1000000,
+                               spec.hasMaxInt ? spec.maxInt : 1000000);
+                int v = spec.defInt;
+                if (const auto* n = std::get_if<int>(&value)) v = *n;
+                spin->setValue(v);
+                editor = spin;
+                break;
+            }
+            case mm::CompParamType::Boolean: {
+                auto* box = new QCheckBox(&dlg);
+                bool v = spec.defBool;
+                if (const auto* b = std::get_if<bool>(&value)) v = *b;
+                box->setChecked(v);
+                editor = box;
+                break;
+            }
+            case mm::CompParamType::Enum: {
+                auto* combo = new QComboBox(&dlg);
+                for (const auto& choice : spec.choices)
+                    combo->addItem(QString::fromStdWString(choice));
+                std::wstring v = spec.defString;
+                if (const auto* s = std::get_if<std::wstring>(&value)) v = *s;
+                const int idx = combo->findText(QString::fromStdWString(v));
+                if (idx >= 0) combo->setCurrentIndex(idx);
+                editor = combo;
+                break;
+            }
+            case mm::CompParamType::String:
+            case mm::CompParamType::Profile:
+            case mm::CompParamType::Material: {
+                auto* edit = new QLineEdit(&dlg);
+                std::wstring v = spec.defString;
+                if (const auto* s = std::get_if<std::wstring>(&value)) v = *s;
+                edit->setText(QString::fromStdWString(v));
+                editor = edit;
+                break;
+            }
+            case mm::CompParamType::EntityRef: {
+                // Varlik referanslari bu diyalogdan duzenlenmez (model secimi ister);
+                // mevcut deger salt-okunur gosterilir.
+                auto* edit = new QLineEdit(&dlg);
+                edit->setReadOnly(true);
+                unsigned long long v = 0;
+                if (const auto* e = std::get_if<mm::EntityId>(&value)) v = *e;
+                edit->setText(QString::number(v));
+                editor = edit;
+                break;
+            }
+        }
+        editors[i] = editor;
+        if (editor) form->addRow(label, editor);
+    }
+
+    if (!type->params.empty()) {
+        auto* note = new QLabel(&dlg);
+        note->setWordWrap(true);
+        note->setStyleSheet(QStringLiteral("color: gray;"));
+        note->setText(QStringLiteral(
+            "Değişiklikler OK ile uygulanır ve bağlantı yeniden hesaplanır "
+            "(levha, bulon ve delikler güncellenir). Tek undo adımı oluşur."));
+        root->addWidget(note);
+    }
+
+    auto* buttons = new QDialogButtonBox(
+        QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
+    QObject::connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+    QObject::connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+    root->addLayout(form);
+    root->addWidget(buttons);
+
+    if (dlg.exec() != QDialog::Accepted) return false;
+
+    std::vector<mm::CompParam> params;
+    params.reserve(type->params.size());
+    for (std::size_t i = 0; i < type->params.size(); ++i) {
+        const mm::CompParamSpec& spec = type->params[i];
+        QWidget* editor = editors[i];
+        if (!editor || spec.type == mm::CompParamType::EntityRef) continue;
+        mm::CompParamValue value{spec.defDouble};
+        switch (spec.type) {
+            case mm::CompParamType::Length:
+            case mm::CompParamType::Angle:
+                value = static_cast<QDoubleSpinBox*>(editor)->value();
+                break;
+            case mm::CompParamType::Integer:
+                value = static_cast<QSpinBox*>(editor)->value();
+                break;
+            case mm::CompParamType::Boolean:
+                value = static_cast<QCheckBox*>(editor)->isChecked();
+                break;
+            case mm::CompParamType::Enum:
+                value = static_cast<QComboBox*>(editor)->currentText().toStdWString();
+                break;
+            default:
+                value = static_cast<QLineEdit*>(editor)->text().toStdWString();
+                break;
+        }
+        params.push_back(mm::CompParam{spec.name, value});
+    }
+    return app_.setSelectedComponentParams(rec.id, params);
 }
 
 void QtMainWindow::promptSaveNamedView() {

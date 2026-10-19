@@ -517,6 +517,14 @@ public:
     void setEndPlateEditRequest(std::function<void(const EndPlateConnection&)> cb) {
         endPlateEditRequest_ = std::move(cb);
     }
+    // UNIVERSAL PARAMETRIK COMPONENT (Fin Plate vb.) alt nesnesine (sahip
+    // olunan levha / bulon display) cift tik -> parametre diyaloğu isteği.
+    // Qt tarafi openComponentParamsDialog açar; OK -> setSelectedComponentParams
+    // (ComponentMaterializer::recompute yolu). End Plate'in özel yolundan AYRI;
+    // registry'deki parametre şemasından üretilir (tip-agnostik).
+    void setComponentEditRequest(std::function<void(const ComponentInstanceRecord&)> cb) {
+        componentEditRequest_ = std::move(cb);
+    }
     // Divide komutunu baslatir (edit box ile bolme sayisini sorar).
     void activateDivide();
 
@@ -1066,6 +1074,9 @@ private:
     std::vector<CompParam> pendingFinPlateParams_;
     // End Plate alt nesnesine çift tık -> düzenleme isteği callback'i.
     std::function<void(const EndPlateConnection&)> endPlateEditRequest_;
+    // Universal parametrik component alt nesnesine (levha/bulon display) çift
+    // tık -> parametre diyaloğu isteği callback'i (Fin Plate vb.).
+    std::function<void(const ComponentInstanceRecord&)> componentEditRequest_;
     // BOLT TOOL PENCERESI (Phase B1): bolt display'ine cift tik -> duzenleme
     // istegi callback'i. Cift tik tespiti icin son sol tik zamani + konumu.
     std::function<void(const BoltGroup&)> boltEditRequest_;

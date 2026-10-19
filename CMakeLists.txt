@@ -51,6 +51,7 @@ add_library(model_maker_core
     src/magnetic_frame.cpp
     src/component_recompute.cpp
     src/component_framework.cpp
+    src/component_glyph.cpp
     src/assembly.cpp)
 target_include_directories(model_maker_core PUBLIC include)
 target_compile_options(model_maker_core PRIVATE -Wall -Wextra -Wpedantic)
@@ -837,6 +838,15 @@ if(BUILD_TESTING)
     target_link_options(model_maker_component_framework_test PRIVATE -static -static-libgcc -static-libstdc++)
     target_compile_options(model_maker_component_framework_test PRIVATE -Wall -Wextra -Wpedantic)
     add_test(NAME model_maker_component_framework_test COMMAND model_maker_component_framework_test)
+
+    # COMPONENT SEMBOLU (GLYPH): collectComponentGlyphs TEK KAYNAK — End Plate +
+    # universal parametrik component (Fin Plate) sembolleri, tekillesme, devre
+    # disi/orphan/gecersiz atlama. OCC'siz, Linux'ta kosar.
+    add_executable(model_maker_component_glyph_test tests/component_glyph_test.cpp)
+    target_link_libraries(model_maker_component_glyph_test PRIVATE model_maker_core)
+    target_link_options(model_maker_component_glyph_test PRIVATE -static -static-libgcc -static-libstdc++)
+    target_compile_options(model_maker_component_glyph_test PRIVATE -Wall -Wextra -Wpedantic)
+    add_test(NAME model_maker_component_glyph_test COMMAND model_maker_component_glyph_test)
 
     # COMPONENT SERIALIZE (Phase C2b): ComponentInstanceRecord'un MMW8 'I' blogu
     # + Document save/load entegrasyonu; orphan tespiti + param migration +

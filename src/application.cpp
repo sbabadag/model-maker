@@ -24,6 +24,7 @@
 #endif
 #include "model_maker/view_cube.hpp"
 #include "model_maker/contact_resolver.hpp"
+#include "model_maker/component_glyph.hpp"
 
 #include <QComboBox>
 
@@ -42,7 +43,9 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <type_traits>
 #include <unordered_set>
+#include <variant>
 
 namespace mm {
 namespace {
@@ -747,7 +750,7 @@ void Application::updatePropertiesPanel() {
     const auto& props = model.properties();
     const auto& verts = model.vertices();
 
-    struct Prop { const wchar_t* name; std::wstring value; };
+    struct Prop { std::wstring name; std::wstring value; };
     std::vector<Prop> properties;
 
     // Entity type
@@ -776,6 +779,37 @@ void Application::updatePropertiesPanel() {
             double dz = verts[1].z - verts[0].z;
             double len = std::sqrt(dx*dx + dy*dy + dz*dz);
             properties.push_back({L"Uzunluk", std::to_wstring(len)});
+        }
+    }
+
+    // UNIVERSAL COMPONENT: secili alt nesne (levha/bulon display) bir parametrik
+    // component'a aitse tip + TUM parametreleri goster. Bu, levha seciliyken
+    // baglantinin tek bir component olarak yonetildigini kullaniciya gosterir;
+    // duzenleme cift tik diyaloguyla (setSelectedComponentParams) yapilir.
+    {
+        ComponentInstanceRecord comp;
+        if (selectedComponentInstance(comp)) {
+            const ComponentType* type = ComponentRegistry::instance().findType(comp.typeId);
+            properties.push_back({L"Bilesen", type ? type->displayName : comp.typeId});
+            properties.push_back({L"Bilesen tipi", comp.typeId});
+            properties.push_back({L"Bilesen Id", std::to_wstring(comp.id)});
+            if (type) {
+                const auto aligned = alignParamsToSpecs(type->params, comp.params);
+                for (const auto& spec : type->params) {
+                    const CompParam* p = findParam(aligned, spec.name);
+                    if (!p) continue;
+                    std::wstring text;
+                    std::visit([&](const auto& v) {
+                        using T = std::decay_t<decltype(v)>;
+                        if constexpr (std::is_same_v<T, std::wstring>) text = v;
+                        else if constexpr (std::is_same_v<T, bool>) text = v ? L"true" : L"false";
+                        else if constexpr (std::is_same_v<T, EntityId>) text = std::to_wstring(v);
+                        else text = std::to_wstring(v);
+                    }, p->value);
+                    if (!spec.unit.empty()) text += L" " + spec.unit;
+                    properties.push_back({spec.name, text});
+                }
+            }
         }
     }
 
@@ -853,7 +887,7 @@ void Application::updatePropertiesPanel() {
         item.mask = LVIF_TEXT;
         item.iItem = row;
         item.iSubItem = 0;
-        item.pszText = const_cast<wchar_t*>(prop.name);
+        item.pszText = const_cast<wchar_t*>(prop.name.c_str());
         ListView_InsertItem(propsList_, &item);
         ListView_SetItemText(propsList_, row, 1, const_cast<wchar_t*>(prop.value.c_str()));
         ++row;
@@ -2139,6 +2173,30 @@ void Application::onLeftButtonDown(int x, int y) {
                                 if (endPlateEditRequest_) endPlateEditRequest_(c);
                                 return;
                             }
+                        // UNIVERSAL COMPONENT (Fin Plate vb.): sahip olunan levha
+                        // veya bulon display'e cift tik -> parametre diyalogu.
+                        // Duzenleme, component'in KENDI (parent) parametre kaydina
+                        // gider; levha bir alt nesne olarak secili kalir.
+                        for (const auto& rec : document_.componentInstances()) {
+                            bool owned = std::find(rec.ownedPlateIds.begin(),
+                                                   rec.ownedPlateIds.end(), id) !=
+                                         rec.ownedPlateIds.end();
+                            if (!owned) {
+                                for (const EntityId bg : rec.ownedBoltGroupIds) {
+                                    const auto bi = document_.indexOfBoltGroup(bg);
+                                    if (bi && document_.boltGroups()[*bi].displayEntityId == id) {
+                                        owned = true;
+                                        break;
+                                    }
+                                }
+                            }
+                            if (!owned) continue;
+                            selectedModels_.clear();
+                            selectedModels_.push_back(*hit);
+                            updateControls(); updateStatus(); invalidateCanvas();
+                            if (componentEditRequest_) componentEditRequest_(rec);
+                            return;
+                        }
                     }
                 }
             }
@@ -3812,29 +3870,31 @@ std::optional<std::size_t> Application::modelIndexAt(int x, int y) const {
 }
 
 std::optional<std::size_t> Application::componentGlyphModelAt(int x, int y) const {
-    // End Plate levha merkezindeki buyuk simgeyi isabet-testi. Ekran-olcekli
-    // yaricap (~18 px) kullanilir — simge gercek levhadan cok daha buyuktur.
+    // ALL COMPONENT SEMBOLLERI (End Plate + universal parametrik Fin Plate vb.)
+    // icin ortak liste: renderer ile AYNI kaynak (collectComponentGlyphs).
+    // Ekran-olcekli yaricap (~18 px) kullanilir — simge gercek levhadan buyuktur.
+    // Birden fazla sembol yaricap icine duserse EN YAKIN olan secilir.
     constexpr double kGlyphRadiusPx = 18.0;
     RECT client{};
     GetClientRect(canvas_, &client);
     const int vw = std::max(1L, client.right);
     const int vh = std::max(1L, client.bottom);
-    for (const auto& conn : document_.endPlateConnections()) {
-        if (!conn.enabled || conn.plateEntityId == kInvalidEntityId) continue;
-        const auto idx = document_.indexOfEntity(conn.plateEntityId);
-        if (!idx || *idx >= document_.modelBounds().size()) continue;
-        const Bounds3& b = document_.modelBounds()[*idx];
-        const Vec3 center{(b.minimum.x + b.maximum.x) * 0.5,
-                          (b.minimum.y + b.maximum.y) * 0.5,
-                          (b.minimum.z + b.maximum.z) * 0.5};
+    std::optional<std::size_t> best;
+    double bestDist2 = kGlyphRadiusPx * kGlyphRadiusPx;
+    for (const ComponentGlyph& glyph : collectComponentGlyphs(document_)) {
         const Vec2 s = (mode_ == EditMode::Draw2D)
-                           ? camera_.project2D(center, vw, vh)
-                           : camera_.project(center, vw, vh);
+                           ? camera_.project2D(glyph.anchor, vw, vh)
+                           : camera_.project(glyph.anchor, vw, vh);
         const double dx = s.x - static_cast<double>(x);
         const double dy = s.y - static_cast<double>(y);
-        if (dx * dx + dy * dy <= kGlyphRadiusPx * kGlyphRadiusPx) return idx;
+        const double dist2 = dx * dx + dy * dy;
+        if (dist2 > bestDist2) continue;
+        const auto index = document_.indexOfEntity(glyph.entityId);
+        if (!index) continue;
+        bestDist2 = dist2;
+        best = index;
     }
-    return std::nullopt;
+    return best;
 }
 
 void Application::applyBoundaryCutFromSelection(CutKind kind) {
@@ -10061,20 +10121,14 @@ DraftView Application::draftView() const {
     view.filletFirstPick = filletFirstPick_;
     view.arrayItemCount = arrayItemCount_;
     view.modifierBoundaries = modifierBoundaries_;
-    // COMPONENT SIMGELERI: End Plate levha merkezleri (renderer buyuk tiklama
-    // isareti cizer; hit-test componentGlyphModelAt ile eslenir).
+    // COMPONENT SIMGELERI: End Plate + universal parametrik component (Fin Plate
+    // vb.) levha merkezleri. Renderer buyuk tiklama isareti cizer; hit-test
+    // componentGlyphModelAt AYNI listeyi (collectComponentGlyphs) kullanir.
     view.componentGlyphs.clear();
     view.componentGlyphEntities.clear();
-    for (const auto& conn : document_.endPlateConnections()) {
-        if (!conn.enabled || conn.plateEntityId == kInvalidEntityId) continue;
-        const auto idx = document_.indexOfEntity(conn.plateEntityId);
-        if (!idx || *idx >= document_.modelBounds().size()) continue;
-        const Bounds3& b = document_.modelBounds()[*idx];
-        view.componentGlyphs.push_back(
-            Vec3{(b.minimum.x + b.maximum.x) * 0.5,
-                 (b.minimum.y + b.maximum.y) * 0.5,
-                 (b.minimum.z + b.maximum.z) * 0.5});
-        view.componentGlyphEntities.push_back(conn.plateEntityId);
+    for (const ComponentGlyph& glyph : collectComponentGlyphs(document_)) {
+        view.componentGlyphs.push_back(glyph.anchor);
+        view.componentGlyphEntities.push_back(glyph.entityId);
     }
     view.trimExtendPreviewSuppressed = trimExtendPreviewSuppressed_;
     view.zoomWindowActive = zoomWindowActive_; view.zoomWindowFirstCorner = zoomWindowFirstCorner_;

@@ -24,7 +24,7 @@
 //       src/camera.cpp src/occ_contact_resolver.cpp src/occ_solid_store.cpp \
 //       src/occ_brep_serialize.cpp src/occ_geometry.cpp src/bolt_geometry.cpp \
 //       src/end_plate_geometry.cpp src/sha256.cpp src/grid.cpp \
-//       src/occ_store_null.cpp \
+//       src/occ_store_null.cpp src/component_glyph.cpp \
 //       -lTKernel -lTKMath -lTKG2d -lTKG3d -lTKGeomBase -lTKBRep -lTKGeomAlgo \
 //       -lTKTopAlgo -lTKPrim -lTKBO -lTKBool -lTKShHealing -lTKMesh -lTKXSBase -lTKDESTEP \
 //       -o occ_fin_plate_end_to_end_test && ./occ_fin_plate_end_to_end_test
@@ -32,6 +32,7 @@
 #include "model_maker/component_materializer.hpp"
 #include "model_maker/component_framework.hpp"
 #include "model_maker/component_engine.hpp"
+#include "model_maker/component_glyph.hpp"
 #include "model_maker/document.hpp"
 #include "model_maker/occ_solid_store.hpp"
 #include "model_maker/occ_geometry.hpp"
@@ -186,15 +187,39 @@ int main() {
     check(crec.ownedPlateIds.size() == 1 && crec.ownedBoltGroupIds.size() == 1,
           "owned plate + bolt group kayitli");
 
+    // --- 7b. COMPONENT SEMBOLU (GLYPH): Fin Plate TEK, secilebilir component
+    //         olarak tek sembol uretmeli; ankraj levha bbox merkezinde. ---
+    const auto glyphsAfterCommit = collectComponentGlyphs(doc);
+    check(glyphsAfterCommit.size() == 1, "glyph: tek Fin Plate sembolu");
+    Vec3 glyphAnchorBefore{};
+    if (!glyphsAfterCommit.empty()) {
+        const ComponentGlyph& g = glyphsAfterCommit.front();
+        glyphAnchorBefore = g.anchor;
+        check(g.entityId == finPlateId, "glyph: sahip olunan levhaya bagli");
+        check(g.componentId == crec.id, "glyph: parent component kimligini tasir");
+        check(g.universal, "glyph: universal parametrik component");
+        bool centerOk = false;
+        if (const auto pi = doc.indexOfEntity(finPlateId);
+            pi && *pi < doc.modelBounds().size()) {
+            const Bounds3& b = doc.modelBounds()[*pi];
+            centerOk = std::abs(g.anchor.x - (b.minimum.x + b.maximum.x) * 0.5) < 1e-6 &&
+                       std::abs(g.anchor.y - (b.minimum.y + b.maximum.y) * 0.5) < 1e-6 &&
+                       std::abs(g.anchor.z - (b.minimum.z + b.maximum.z) * 0.5) < 1e-6;
+        }
+        check(centerOk, "glyph: levha bbox merkezinde");
+    }
+
     // --- 8. Undo/Redo: tek adimda component tamamen geri alinir ---
     const std::size_t modelsBeforeUndo = doc.models().size();
     check(doc.canUndo(), "undo mevcut (commit tek kayit acar)");
     check(doc.undo(), "undo component olusturmayi geri aldi");
     check(doc.componentInstances().empty(), "undo: component instance silindi");
+    check(collectComponentGlyphs(doc).empty(), "glyph: undo sonrasi sembol yok");
     check(doc.models().size() == 2, "undo: levha + bulon display + delikler kaldirildi (kolon+kiris kaldi)");
     check(doc.redo(), "redo component olusturmayi geri getirdi");
     check(doc.componentInstances().size() == 1, "redo: component instance geri geldi");
     check(doc.models().size() == modelsBeforeUndo, "redo: modeller geri geldi");
+    check(collectComponentGlyphs(doc).size() == 1, "glyph: redo sonrasi sembol geri geldi");
 
     // --- 9. MMW8 kaydet/ac ---
     bool saved = true;
@@ -223,6 +248,16 @@ int main() {
         check(plateKeyOk, "yuklenen plate_0 -> ayni EntityId");
         check(boltKeyOk, "yuklenen bolt_group_0 -> ayni EntityId");
 
+        // Glyph: MMW8 reopen sonrasi sembol tekrar var ve ayni kimliklere bagli.
+        const auto loadedGlyphs = collectComponentGlyphs(loaded);
+        check(loadedGlyphs.size() == 1, "glyph: MMW8 acilisinda sembol var");
+        if (!loadedGlyphs.empty()) {
+            check(loadedGlyphs.front().entityId == finPlateId,
+                  "glyph: acilis sonrasi ayni levha EntityId");
+            check(loadedGlyphs.front().componentId == lr.id,
+                  "glyph: acilis sonrasi parent component kimligi korunur");
+        }
+
         // --- 10. Acilan component uzerinde recompute (kiris tasinir) ---
         ComponentMaterializer lmat(loaded);
         OccSolidStore* ls = asSolidStore(&loaded.occStore());
@@ -250,6 +285,20 @@ int main() {
                   "recompute: beam_bolts EntityId KORUNUR (acilan doc)");
             check(loaded.componentInstances().size() == 1,
                   "recompute: yeni instance EKLEMEDI");
+
+            // Glyph: recompute sonrasi sembol konumu GUNCELLENDI (kiris tasindi).
+            const auto movedGlyphs = collectComponentGlyphs(loaded);
+            check(movedGlyphs.size() == 1, "glyph: recompute sonrasi tek sembol");
+            if (!movedGlyphs.empty()) {
+                const Vec3 d{movedGlyphs.front().anchor.x - glyphAnchorBefore.x,
+                             movedGlyphs.front().anchor.y - glyphAnchorBefore.y,
+                             movedGlyphs.front().anchor.z - glyphAnchorBefore.z};
+                check(std::sqrt(d.x * d.x + d.y * d.y + d.z * d.z) > 1.0,
+                      "glyph: recompute sonrasi konum guncellendi");
+                check(movedGlyphs.front().componentId ==
+                          loaded.componentInstances()[0].id,
+                      "glyph: recompute sonrasi parent kimligi korunur");
+            }
         }
     }
 
