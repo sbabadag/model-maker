@@ -46,11 +46,27 @@
 #include "model_maker/geometry.hpp"
 #include "model_maker/magnetic_frame.hpp"
 
+#include <optional>
 #include <string>
 #include <variant>
 #include <vector>
 
 namespace mm {
+
+// --- COMPONENT OBJECT KIND (ortak nesne turleri) -----------------------------
+// ComponentObjectSpec (component_framework.hpp) bu turu tasir; ComponentChildRecord
+// ve ComponentInstanceRecord da tip-guvenli KALICILIK icin ayni turu kullanir.
+// roleKey BIR KERE bir ture baglanir; ayni roleKey baska bir ture yeniden
+// baglanamaz (ComponentChildTable bunu denetler).
+enum class ComponentObjectKind {
+    Plate,
+    BoltGroup,
+    Cut,
+    Weld,
+    ConstructionPoint,
+    ConstructionLine,
+    ConstructionPlane,
+};
 
 // --- TIPLI PARAMETRE SEMASI --------------------------------------------------
 
@@ -233,6 +249,29 @@ private:
 
 // --- KALICI INSTANCE KAYDI (Document/MMW8 katmani sonra baglanir) ------------
 
+// TIP-GUVENLI, KALICI CHILD IDENTITY (C1). Bir component'in SAHIP OLDUGU veya
+// referansladigi alt nesnenin kararli kimligi. roleKey -> (kind, EntityId,
+// bagimliliklar, uretim parametreleri) iliskisini KORUR. roleKey bir ture
+// (kind) baglidir; ayni roleKey FARKLI bir ture yeniden baglanamaz
+// (ComponentChildTable::bind denetler). entityId materialization'da atanir ve
+// recompute/MMW8 sonrasi STABIL kalir (ayni roleKey ayni EntityId).
+struct ComponentChildRecord {
+    std::string roleKey;
+    ComponentObjectKind kind{ComponentObjectKind::Plate};
+    EntityId entityId{kInvalidEntityId};       // sahip olunan alt nesne (0 = henuz materialize degil)
+    std::vector<std::string> dependencies;     // bagli oldugu roleKey'ler (AttachedTo/DependsOn -> to)
+    // Uretim parametreleri (kind ile tutarli TEK payload dolu olmalidir):
+    std::optional<PlateSpec> plate;
+    std::optional<BoltGroup> boltGroup;
+    std::optional<CutModifier> cut;
+    std::optional<WeldSpec> weld;
+};
+
+// Bir child kaydinin TUTARLI oldugunu dogrular: gecerli roleKey + payload kind
+// ile uyumlu (kind == Plate ise plate dolu ve digerleri bos, ...). Type-safe
+// baglama bunu on kosul sayar.
+bool isValidComponentChildRecord(const ComponentChildRecord& c) noexcept;
+
 // Bir component INSTANCE'inin kalici kaydi. Kendi EntityId'si, TypeId +
 // SchemaVersion, main/secondary referanslari, tipli parametreler, yerlesim
 // (LCS), sahip olunan alt nesneler ve kirli/oksz durumu. Bu kayit Document
@@ -251,6 +290,12 @@ struct ComponentInstanceRecord {
     Vec3 axis{0.0, 0.0, 1.0};
     std::vector<EntityId> ownedPlateIds;      // sahip olunan levhalar
     std::vector<EntityId> ownedBoltGroupIds;  // sahip olunan bulon gruplari
+    // TIP-GUVENLI CHILD TABLOSU (C1): roleKey -> (kind, EntityId, bagimliliklar,
+    // uretim parametreleri). roleKey -> EntityId eslemesinin KALICI, deterministik
+    // kaynagidir; ownedPlateIds/ownedBoltGroupIds legacy listeleri korunur ama
+    // yeni kod bu tabloyu kullanir. MMW8'de ileriye-uyumlu ayri bloga yazilir
+    // (legacy dosyada yoksa bos — ownedPlateIds/ownedBoltGroupIds'tan turetilir).
+    std::vector<ComponentChildRecord> children;
     bool dirty{true};                         // yeniden hesaplama gerekli
     bool orphan{false};                       // typeId registry'de yok
     bool enabled{true};

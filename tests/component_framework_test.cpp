@@ -214,6 +214,92 @@ int main() {
         check(r.ok, "ownedBy(component) -> ok");
     }
 
+    // === C1: ComponentChildTable — tip-guvenli, deterministik child yonetimi ===
+    {
+        ComponentChildRecord plate;
+        plate.roleKey = "fin_plate";
+        plate.kind = ComponentObjectKind::Plate;
+        plate.plate = PlateSpec{};
+
+        ComponentChildTable table;
+        check(table.insert(plate), "table.insert yeni plate -> ok");
+        check(table.size() == 1, "tablo boyutu 1");
+
+        // Tekrarlanan roleKey deterministik reddedilir.
+        check(!table.insert(plate), "tekrarlanan roleKey -> reddedildi");
+
+        // Ayni roleKey FARKLI turde -> tip-guvenlik reddi.
+        ComponentChildRecord bolt;
+        bolt.roleKey = "fin_plate";  // ayni roleKey
+        bolt.kind = ComponentObjectKind::BoltGroup;
+        bolt.boltGroup = BoltGroup{};
+        check(!table.insert(bolt), "ayni roleKey farkli tur -> reddedildi");
+
+        // Gecersiz kayit (kind-payload uyusmazligi) -> reddedildi.
+        ComponentChildRecord bad;
+        bad.roleKey = "bad_child";
+        bad.kind = ComponentObjectKind::Plate;  // plate payload yok
+        check(!table.insert(bad), "kind-payload uyusmazligi -> reddedildi");
+
+        // Construction kind -> kalici child degil.
+        ComponentChildRecord ctor;
+        ctor.roleKey = "helper_pt";
+        ctor.kind = ComponentObjectKind::ConstructionPoint;
+        check(!table.insert(ctor), "construction child -> reddedildi");
+        check(!isValidComponentChildRecord(ctor), "isValidComponentChildRecord construction false");
+
+        // assignEntityId + entityIdFor.
+        const EntityId eid = static_cast<EntityId>(42);
+        check(table.assignEntityId("fin_plate", eid), "assignEntityId -> ok");
+        check(table.entityIdFor("fin_plate") == eid, "entityIdFor eslestirildi");
+        check(!table.assignEntityId("yok", eid), "assignEntityId bilinmeyen -> false");
+
+        // Deterministik sira: lexicographic roleKey.
+        ComponentChildRecord aa;
+        aa.roleKey = "a_first";
+        aa.kind = ComponentObjectKind::BoltGroup;
+        aa.boltGroup = BoltGroup{};
+        check(table.insert(aa), "ikinci child ekle");
+        const auto kids = table.children();
+        check(kids.size() == 2, "children() 2 kayit");
+        check(kids[0].roleKey == "a_first", "deterministik: a_first once");
+        check(kids[1].roleKey == "fin_plate", "deterministik: fin_plate sonra");
+
+        // remove deterministik.
+        check(table.remove("a_first"), "remove a_first -> true");
+        check(!table.remove("a_first"), "remove tekrar -> false");
+        check(table.size() == 1, "remove sonrasi 1 kayit");
+    }
+
+    // === C1: componentPlanFromObjects — roleKey korunur ===
+    {
+        ComponentBuilder b;
+        PlateSpec p;
+        p.width = 100.0;
+        p.height = 200.0;
+        p.thickness = 8.0;
+        BoltGroup bg;
+        bg.countY = 2;
+        b.plate("fin_plate", p).boltGroup("beam_bolts", bg)
+            .attachedTo("beam_bolts", "fin_plate");
+        const auto r = b.build();
+        check(r.ok, "C1 plan builder ok");
+        const ComponentPlan plan = componentPlanFromObjects(r.objects, r.relationships);
+        check(plan.ok, "C1 plan ok");
+        check(plan.plan.plates.size() == 1, "plan 1 plate (legacy)");
+        check(plan.plan.boltGroups.size() == 1, "plan 1 boltGroup (legacy)");
+        check(plan.children.size() == 2, "plan 2 child (roleKey korunur)");
+        // Deterministik sira: beam_bolts < fin_plate (lexicographic).
+        check(plan.children[0].roleKey == "beam_bolts", "child[0] beam_bolts");
+        check(plan.children[1].roleKey == "fin_plate", "child[1] fin_plate");
+        check(plan.children[1].kind == ComponentObjectKind::Plate, "child[1] kind Plate");
+        check(plan.children[1].plate.has_value() && plan.children[1].plate->width == 100.0,
+              "child[1] uretim parametreleri korunur");
+        // dependencies: beam_bolts -> fin_plate (AttachedTo from=beam_bolts to=fin_plate).
+        check(plan.children[0].dependencies.size() == 1, "beam_bolts 1 bagimlilik");
+        check(plan.children[0].dependencies[0] == "fin_plate", "beam_bolts -> fin_plate");
+    }
+
     std::printf("\n%d failure(s)\n", failures);
     return failures == 0 ? 0 : 1;
 }

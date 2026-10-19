@@ -184,7 +184,7 @@ ConstraintSystem ComponentRelationshipGraph::toConstraintSystem(
     return sys;
 }
 
-// --- GenerationPlan koprusu --------------------------------------------------
+// --- GenerationPlan koprusu + roleKey koruyan plan (C1) -----------------------
 
 GenerationPlan generationPlanFromObjects(const std::vector<ComponentObjectSpec>& objects) noexcept {
     GenerationPlan plan;
@@ -197,6 +197,126 @@ GenerationPlan generationPlanFromObjects(const std::vector<ComponentObjectSpec>&
     }
     plan.ok = true;
     return plan;
+}
+
+// --- TIP-GUVENLI CHILD TABLOSU (C1) ------------------------------------------
+
+bool ComponentChildTable::insert(const ComponentChildRecord& child) {
+    if (!isValidComponentChildRecord(child)) return false;
+    const auto it = records_.find(child.roleKey);
+    if (it != records_.end()) {
+        // Tekrarlanan roleKey: AYNI tür (kind) ise de bile deterministik REDDET
+        // (tekrarlanan roleKey yasak). Farkli tur zaten tip-guvenlik ihlali.
+        return false;
+    }
+    records_.emplace(child.roleKey, child);
+    return true;
+}
+
+bool ComponentChildTable::remove(const std::string& roleKey) {
+    return records_.erase(roleKey) > 0;
+}
+
+const ComponentChildRecord* ComponentChildTable::find(const std::string& roleKey) const noexcept {
+    const auto it = records_.find(roleKey);
+    return it == records_.end() ? nullptr : &it->second;
+}
+
+EntityId ComponentChildTable::entityIdFor(const std::string& roleKey) const noexcept {
+    const ComponentChildRecord* c = find(roleKey);
+    return c ? c->entityId : kInvalidEntityId;
+}
+
+bool ComponentChildTable::assignEntityId(const std::string& roleKey, EntityId id) {
+    auto it = records_.find(roleKey);
+    if (it == records_.end()) return false;  // roleKey yok — tablo degismez
+    it->second.entityId = id;
+    return true;
+}
+
+std::vector<ComponentChildRecord> ComponentChildTable::children() const {
+    std::vector<ComponentChildRecord> out;
+    out.reserve(records_.size());
+    for (const auto& [k, v] : records_) out.push_back(v);
+    return out;  // std::map -> lexicographic roleKey sirasi (deterministik)
+}
+
+// --- ROLEKEY KORUYAN PLAN (C1) ------------------------------------------------
+
+ComponentPlan componentPlanFromObjects(const std::vector<ComponentObjectSpec>& objects,
+                                       const ComponentRelationshipGraph& graph) noexcept {
+    ComponentPlan out;
+    out.plan = generationPlanFromObjects(objects);
+
+    // roleKey tekilligi: ayni roleKey iki nesnede olamaz (builder zaten engeller
+    // ama burada fail-closed denetlenir). Ayrica kind->payload tutarliligi
+    // isValidComponentChildRecord icinde dogrulanir.
+    for (const auto& o : objects) {
+        ComponentChildRecord child;
+        child.roleKey = o.roleKey;
+        child.kind = o.kind;
+        switch (o.kind) {
+            case ComponentObjectKind::Plate:
+                if (o.plate) child.plate = *o.plate;
+                break;
+            case ComponentObjectKind::BoltGroup:
+                if (o.boltGroup) child.boltGroup = *o.boltGroup;
+                break;
+            case ComponentObjectKind::Cut:
+                if (o.cut) child.cut = *o.cut;
+                break;
+            case ComponentObjectKind::Weld:
+                if (o.weld) child.weld = *o.weld;
+                break;
+            default:
+                break;  // construction — plana dahil edilmez
+        }
+        if (child.kind == ComponentObjectKind::ConstructionPoint ||
+            child.kind == ComponentObjectKind::ConstructionLine ||
+            child.kind == ComponentObjectKind::ConstructionPlane) {
+            continue;  // EntityId uretmez; yalnizca cozum asamasinda
+        }
+        if (!isValidComponentChildRecord(child)) {
+            out.ok = false;
+            out.error = L"gecersiz child (kind-payload uyusmazligi): " +
+                        std::wstring(child.roleKey.begin(), child.roleKey.end());
+            return out;
+        }
+        for (const auto& existing : out.children) {
+            if (existing.roleKey == child.roleKey) {
+                out.ok = false;
+                out.error = L"tekrarlanan roleKey: " +
+                            std::wstring(child.roleKey.begin(), child.roleKey.end());
+                return out;
+            }
+        }
+        out.children.push_back(std::move(child));
+    }
+
+    // dependencies: AttachedTo/DependsOn (from -> to) kenarlarindan. Bir child
+    // yalnizca baska bir CHILD'e veya rezerve role'e bagli olabilir; burada
+    // yalnizca roleKey listesi toplanir (cozum/kisit uretimi ConstraintSystem'da).
+    for (const auto& r : graph.relationships()) {
+        if (!r.enabled) continue;
+        if (!isDependencyRelationship(r.kind)) continue;
+        for (auto& child : out.children) {
+            if (child.roleKey == r.from) {
+                if (std::find(child.dependencies.begin(), child.dependencies.end(), r.to) ==
+                    child.dependencies.end()) {
+                    child.dependencies.push_back(r.to);
+                }
+            }
+        }
+    }
+
+    // Deterministik sira: lexicographic roleKey (ComponentChildTable ile ayni).
+    std::sort(out.children.begin(), out.children.end(),
+              [](const ComponentChildRecord& a, const ComponentChildRecord& b) {
+                  return a.roleKey < b.roleKey;
+              });
+
+    out.ok = true;
+    return out;
 }
 
 // --- ComponentBuilder --------------------------------------------------------

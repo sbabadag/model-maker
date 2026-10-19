@@ -49,6 +49,7 @@
 
 #include <optional>
 #include <string>
+#include <map>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -56,16 +57,8 @@
 namespace mm {
 
 // --- COMPONENT OBJECT SPEC (roleKey -> tipli ortak nesne) --------------------
-
-enum class ComponentObjectKind {
-    Plate,
-    BoltGroup,
-    Cut,
-    Weld,
-    ConstructionPoint,
-    ConstructionLine,
-    ConstructionPlane,
-};
+// (ComponentObjectKind artık component_engine.hpp'de tanimlidir — kalici child
+//  kaydi ComponentChildRecord ile ayni turu paylasir.)
 
 // Insaat yardimci nesneleri (plan asamasinda; EntityId materialization'da).
 struct ConstructionPointSpec {
@@ -98,6 +91,42 @@ struct ComponentObjectSpec {
 
 // roleKey'in gecerli/tekil oldugunu dogrular (bos degil, sadece [A-Za-z0-9_]).
 bool isValidRoleKey(const std::string& roleKey) noexcept;
+
+// --- TIP-GUVENLI CHILD TABLOSU (C1) ------------------------------------------
+// ComponentInstanceRecord.children'in deterministik, tip-guvenli yoneticisi.
+// roleKey -> ComponentChildRecord eslemesini kurar; ayni roleKey FARKLI bir
+// ture (kind) baglanamaz. Tekrarlanan roleKey deterministik reddedilir; silme
+// deterministiktir (std::map — lexicographic roleKey sirasi). Bu tablo
+// materialization'da roleKey -> EntityId eslemesinin KALICI kaynagidir.
+class ComponentChildTable {
+public:
+    // Yeni child ekle. Reddeder (false): gecersiz kayit, tekrarlanan roleKey,
+    // veya ayni roleKey farkli kind ile kayitli. Basarili eklemede true.
+    bool insert(const ComponentChildRecord& child);
+
+    // roleKey'i deterministik kaldir. Yoksa false.
+    bool remove(const std::string& roleKey);
+
+    // Kayitli child'i arar. Yoksa nullptr.
+    const ComponentChildRecord* find(const std::string& roleKey) const noexcept;
+
+    // roleKey -> owned EntityId (kayitsiz/atamamis ise kInvalidEntityId).
+    EntityId entityIdFor(const std::string& roleKey) const noexcept;
+
+    // Owned EntityId atar (materialization sonrasi). roleKey yoksa false ve
+    // tablo degismez (tip-guvenli: roleKey zaten kind'e bagli).
+    bool assignEntityId(const std::string& roleKey, EntityId id);
+
+    // Tum child'lar, deterministik (roleKey lexicographic) sirada.
+    std::vector<ComponentChildRecord> children() const;
+
+    std::size_t size() const noexcept { return records_.size(); }
+    bool empty() const noexcept { return records_.empty(); }
+    void clear() noexcept { records_.clear(); }
+
+private:
+    std::map<std::string, ComponentChildRecord> records_;  // roleKey sirali -> deterministik
+};
 
 // --- RELATIONSHIP GRAPH ------------------------------------------------------
 
@@ -208,6 +237,27 @@ private:
 // islenir). Insaat nesneleri (point/line/plane) plana dahil edilmez (onlar
 // yalnizca cozum asamasinda kullanilir).
 GenerationPlan generationPlanFromObjects(const std::vector<ComponentObjectSpec>& objects) noexcept;
+
+// --- ROLEKEY KORUYAN PLAN (C1) -----------------------------------------------
+// generationPlanFromObjects'un MAJOR bulgusunu giderir: roleKey -> child
+// eslesmesi KAYBOLMAZ. ComponentPlan; (1) legacy flat GenerationPlan'i (mevcut
+// generator/tuketici uyumlulugu icin) ve (2) roleKey'li, tip-guvenli
+// ComponentChildRecord tablosunu (deterministik, lexicographic sirada) birlikte
+// tasir. dependencies her child icin AttachedTo/DependsOn (from -> to)
+// kenarlarindan doldurulur. Construction nesneleri (point/line/plane) plana
+// dahil edilmez (cozum asamasinda kullanilir; EntityId uretmezler).
+struct ComponentPlan {
+    GenerationPlan plan;                         // legacy flat plan (plates/boltGroups/cuts/welds)
+    std::vector<ComponentChildRecord> children;  // roleKey -> (kind, params, deps) — deterministik
+    bool ok{true};
+    std::wstring error;
+};
+
+// objects + graph -> roleKey koruyan plan. ok=false ise plan KULLANILMAMALI
+// (belge kismen degistirilmez): gecersiz/tekrarlanan roleKey veya kind-payload
+// tutarsizligi (aynı roleKey iki farkli turde) reddedilir.
+ComponentPlan componentPlanFromObjects(const std::vector<ComponentObjectSpec>& objects,
+                                       const ComponentRelationshipGraph& graph) noexcept;
 
 // --- COMPONENT BUILDER (fluent, tip guvenli) ---------------------------------
 

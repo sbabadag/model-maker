@@ -204,6 +204,35 @@ EntityId paramAsEntity(const std::vector<CompParam>& params, const std::wstring&
     return e ? *e : fallback;
 }
 
+// --- KALICI CHILD KAYDI (C1) -------------------------------------------------
+
+bool isValidComponentChildRecord(const ComponentChildRecord& c) noexcept {
+    if (c.roleKey.empty()) return false;
+    for (char ch : c.roleKey) {
+        const bool alpha = (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z');
+        const bool digit = (ch >= '0' && ch <= '9');
+        if (!alpha && !digit && ch != '_') return false;
+    }
+    // kind ile TAM BIR payload eslesmeli; diger payload'lar bos olmali.
+    switch (c.kind) {
+        case ComponentObjectKind::Plate:
+            return c.plate.has_value() && !c.boltGroup && !c.cut && !c.weld;
+        case ComponentObjectKind::BoltGroup:
+            return c.boltGroup.has_value() && !c.plate && !c.cut && !c.weld;
+        case ComponentObjectKind::Cut:
+            return c.cut.has_value() && !c.plate && !c.boltGroup && !c.weld;
+        case ComponentObjectKind::Weld:
+            return c.weld.has_value() && !c.plate && !c.boltGroup && !c.cut;
+        case ComponentObjectKind::ConstructionPoint:
+        case ComponentObjectKind::ConstructionLine:
+        case ComponentObjectKind::ConstructionPlane:
+            // Construction nesneleri KALICI child degildir (cozum asamasinda,
+            // EntityId uretmezler) — kalici tabloya yazilamaz.
+            return false;
+    }
+    return false;
+}
+
 // --- Registry ----------------------------------------------------------------
 
 ComponentRegistry& ComponentRegistry::instance() noexcept {
