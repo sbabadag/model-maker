@@ -147,7 +147,7 @@ int main() {
 
     const ComponentPlan plan = componentPlanFromGenerationPlan(fp);
     check(plan.ok, "ComponentPlan koprusu ok (roleKey korunur)");
-    check(plan.children.size() == 2, "plan 2 child (plate_0 + bolt_group_0)");
+    check(plan.children.size() == 2, "plan 2 child (fin_plate + beam_bolts)");
 
     // --- 3-5. Materialize -> gercek OCCT levha + bulon + sahiplik ---
     ComponentMaterializer mat(doc);
@@ -161,10 +161,10 @@ int main() {
     rec.secondaryParts = {beamId};
     ComponentMaterializer::CommitResult res = mat.commit(prep, rec);
     check(res.ok, "commit ok");
-    const EntityId finPlateId = res.roleToEntity["plate_0"];
-    const EntityId boltGroupId = res.roleToEntity["bolt_group_0"];
-    check(finPlateId != kInvalidEntityId, "plate_0 -> EntityId");
-    check(boltGroupId != kInvalidEntityId, "bolt_group_0 -> EntityId");
+    const EntityId finPlateId = res.roleToEntity["fin_plate"];
+    const EntityId boltGroupId = res.roleToEntity["beam_bolts"];
+    check(finPlateId != kInvalidEntityId, "fin_plate -> EntityId");
+    check(boltGroupId != kInvalidEntityId, "beam_bolts -> EntityId");
 
     // Levha kati gercek OCCT.
     const TopoDS_Shape* ps = store->find(finPlateId);
@@ -217,8 +217,8 @@ int main() {
         check(lr.children.size() == 2, "yuklenen children 2 (roleKey->EntityId korunur)");
         bool plateKeyOk = false, boltKeyOk = false;
         for (const auto& c : lr.children) {
-            if (c.roleKey == "plate_0" && c.entityId == finPlateId) plateKeyOk = true;
-            if (c.roleKey == "bolt_group_0" && c.entityId == boltGroupId) boltKeyOk = true;
+            if (c.roleKey == "fin_plate" && c.entityId == finPlateId) plateKeyOk = true;
+            if (c.roleKey == "beam_bolts" && c.entityId == boltGroupId) boltKeyOk = true;
         }
         check(plateKeyOk, "yuklenen plate_0 -> ayni EntityId");
         check(boltKeyOk, "yuklenen bolt_group_0 -> ayni EntityId");
@@ -244,10 +244,10 @@ int main() {
             newRec.secondaryParts = {beamId};
             ComponentMaterializer::CommitResult rres = lmat.recompute(prep2, lr, newRec);
             check(rres.ok, "recompute: commit ok");
-            check(rres.roleToEntity["plate_0"] == finPlateId,
-                  "recompute: plate_0 EntityId KORUNUR (acilan doc)");
-            check(rres.roleToEntity["bolt_group_0"] == boltGroupId,
-                  "recompute: bolt_group_0 EntityId KORUNUR (acilan doc)");
+            check(rres.roleToEntity["fin_plate"] == finPlateId,
+                  "recompute: fin_plate EntityId KORUNUR (acilan doc)");
+            check(rres.roleToEntity["beam_bolts"] == boltGroupId,
+                  "recompute: beam_bolts EntityId KORUNUR (acilan doc)");
             check(loaded.componentInstances().size() == 1,
                   "recompute: yeni instance EKLEMEDI");
         }

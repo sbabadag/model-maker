@@ -416,12 +416,14 @@ GenerationPlan generateEndPlate(const ComponentInput& input) noexcept {
     plate.thickness = placement.plateThickness;
     plate.name = L"Alin Levhasi";
     plan.plates.push_back(plate);
+    plan.plateKeys.push_back("end_plate");
 
     BoltGroup bolts = placement.bolts;
     // Generator yalniz KULLANICI parcasini bilir (kolon). Levha materializasyonda
     // parts basina eklenir ({levha, kolon}).
     bolts.parts = {input.main.id};
     plan.boltGroups.push_back(bolts);
+    plan.boltGroupKeys.push_back("beam_bolts");
 
     plan.ok = true;
     return plan;
@@ -484,6 +486,7 @@ GenerationPlan generateFinPlate(const ComponentInput& input) noexcept {
                         beam.axisTo.z + f.axis.z * halfT};
     plate.name = L"Fin Levhasi";
     plan.plates.push_back(plate);
+    plan.plateKeys.push_back("fin_plate");
 
     // Bolonlar: levhanin merkez hattinda tek sira (yukseklik yonunde).
     BoltGroup b;
@@ -511,6 +514,7 @@ GenerationPlan generateFinPlate(const ComponentInput& input) noexcept {
     b.params.hasWasher = true;
     b.parts = {input.main.id};
     plan.boltGroups.push_back(b);
+    plan.boltGroupKeys.push_back("beam_bolts");
 
     plan.ok = true;
     return plan;

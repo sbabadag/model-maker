@@ -194,11 +194,23 @@ struct WeldSpec {
 // Uretim plani: generatorun CIKTISI. Sahip olunacak alt nesnelerin specleri +
 // kullanici parcalarina uygulanacak kesmeler. ok=false ise error dolu ve plan
 // kullanilmamali (belge KISMEN degistirilmez).
+//
+// STABIL SEMANTIC ROLEKEY (C6 sonrasi): generator her child'a KALICI bir roleKey
+// atayabilir (plateKeys[i] <-> plates[i]). Bu anahtar generator SIRASINDAN
+// BAGIMSIZDIR — generator ayni tür cocuklarin sirasini degistirse bile ayni
+// roleKey ayni EntityId'yi korur (recompute/MMW8 stabil kimlik). Anahtar bos
+// veya vektor kisa ise componentPlanFromGenerationPlan POSITIONAL fallback
+// ("plate_0", ...) kullanir. Anahtar [A-Za-z0-9_] olmali ve plan icinde TEKIL
+// olmali (baski kopru reddeder).
 struct GenerationPlan {
     std::vector<PlateSpec> plates;
     std::vector<BoltGroup> boltGroups;   // parts = {ana parca}; levha materializasyonda basata
     std::vector<CutModifier> cuts;
     std::vector<WeldSpec> welds;
+    std::vector<std::string> plateKeys;      // plates[i] -> semantic roleKey (bos = positional)
+    std::vector<std::string> boltGroupKeys;  // boltGroups[i] -> semantic roleKey
+    std::vector<std::string> cutKeys;        // cuts[i] -> semantic roleKey
+    std::vector<std::string> weldKeys;       // welds[i] -> semantic roleKey
     bool ok{true};
     std::wstring error;
 };

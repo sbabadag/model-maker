@@ -300,6 +300,60 @@ int main() {
         check(plan.children[0].dependencies[0] == "fin_plate", "beam_bolts -> fin_plate");
     }
 
+    // === C6/1.6: semantic roleKey generator sirasindan BAGIMSIZ ===
+    {
+        // Iki levhali plan: generator levhalari farkli sirada uretse bile
+        // semantic roleKey ayni child'a ayni EntityId'yi baglar.
+        GenerationPlan gpA;
+        PlateSpec p1, p2;
+        p1.width = 10.0;
+        p2.width = 20.0;
+        gpA.plates = {p1, p2};
+        gpA.plateKeys = {"left_plate", "right_plate"};
+        gpA.ok = true;
+        const ComponentPlan planA = componentPlanFromGenerationPlan(gpA);
+        check(planA.ok, "semantic plan A ok");
+
+        // Generator levha sirasini DEGISTIRDI (right once) ama semantic key ayni.
+        GenerationPlan gpB;
+        gpB.plates = {p2, p1};
+        gpB.plateKeys = {"right_plate", "left_plate"};
+        gpB.ok = true;
+        const ComponentPlan planB = componentPlanFromGenerationPlan(gpB);
+        check(planB.ok, "semantic plan B ok (yeniden siralanmis)");
+
+        // left_plate her iki planda da width==10.0'a karsilik gelmeli.
+        auto findWidth = [](const ComponentPlan& p, const std::string& key) -> double {
+            for (const auto& c : p.children)
+                if (c.roleKey == key) return c.plate ? c.plate->width : -1.0;
+            return -1.0;
+        };
+        check(findWidth(planA, "left_plate") == 10.0, "A: left_plate -> width 10");
+        check(findWidth(planA, "right_plate") == 20.0, "A: right_plate -> width 20");
+        check(findWidth(planB, "left_plate") == 10.0, "B: left_plate -> width 10 (sira degisti)");
+        check(findWidth(planB, "right_plate") == 20.0, "B: right_plate -> width 20 (sira degisti)");
+    }
+    {
+        // Tekrarlanan semantic roleKey -> reddedilir.
+        GenerationPlan gp;
+        PlateSpec p1, p2;
+        gp.plates = {p1, p2};
+        gp.plateKeys = {"same_key", "same_key"};
+        gp.ok = true;
+        const ComponentPlan plan = componentPlanFromGenerationPlan(gp);
+        check(!plan.ok, "tekrarlanan semantic roleKey -> ok=false");
+    }
+    {
+        // Gecersiz semantic roleKey (bosluk) -> reddedilir.
+        GenerationPlan gp;
+        PlateSpec p;
+        gp.plates = {p};
+        gp.plateKeys = {"bad key"};
+        gp.ok = true;
+        const ComponentPlan plan = componentPlanFromGenerationPlan(gp);
+        check(!plan.ok, "gecersiz semantic roleKey -> ok=false");
+    }
+
     std::printf("\n%d failure(s)\n", failures);
     return failures == 0 ? 0 : 1;
 }

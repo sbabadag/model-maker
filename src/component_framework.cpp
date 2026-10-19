@@ -328,37 +328,62 @@ ComponentPlan componentPlanFromGenerationPlan(const GenerationPlan& plan) noexce
         out.error = plan.error;
         return out;
     }
-    // Deterministik roleKey atamasi: generator sirasi (0-bazli).
+
+    // Semantic roleKey (C6 sonrasi): generatorun atadigi KALICI anahtar kullanilir;
+    // anahtar bos/eksik ise positional fallback ("plate_0", ...). Anahtar gecersiz
+    // karakter icerirse veya TEKRARLANIRSA plan reddedilir (kimlik belirsizligi
+    // yasak — ayni roleKey iki farkli child'a baglanamaz).
+    const auto key = [&](const std::vector<std::string>& keys, std::size_t i,
+                         const char* fallbackPrefix) -> std::string {
+        if (i < keys.size() && !keys[i].empty()) return keys[i];
+        return std::string(fallbackPrefix) + std::to_string(i);
+    };
+    std::unordered_set<std::string> seenKeys;
+    const auto addChild = [&](ComponentChildRecord c) -> bool {
+        if (!isValidRoleKey(c.roleKey)) {
+            out.error = L"gecersiz semantic roleKey: " +
+                        std::wstring(c.roleKey.begin(), c.roleKey.end());
+            return false;
+        }
+        if (seenKeys.count(c.roleKey)) {
+            out.error = L"tekrarlanan roleKey: " +
+                        std::wstring(c.roleKey.begin(), c.roleKey.end());
+            return false;
+        }
+        seenKeys.insert(c.roleKey);
+        out.children.push_back(std::move(c));
+        return true;
+    };
+
     for (std::size_t i = 0; i < plan.plates.size(); ++i) {
         ComponentChildRecord c;
-        c.roleKey = "plate_" + std::to_string(i);
+        c.roleKey = key(plan.plateKeys, i, "plate_");
         c.kind = ComponentObjectKind::Plate;
         c.plate = plan.plates[i];
-        out.children.push_back(std::move(c));
+        if (!addChild(std::move(c))) { out.ok = false; return out; }
     }
     for (std::size_t i = 0; i < plan.boltGroups.size(); ++i) {
         ComponentChildRecord c;
-        c.roleKey = "bolt_group_" + std::to_string(i);
+        c.roleKey = key(plan.boltGroupKeys, i, "bolt_group_");
         c.kind = ComponentObjectKind::BoltGroup;
         c.boltGroup = plan.boltGroups[i];
-        out.children.push_back(std::move(c));
+        if (!addChild(std::move(c))) { out.ok = false; return out; }
     }
     for (std::size_t i = 0; i < plan.cuts.size(); ++i) {
         ComponentChildRecord c;
-        c.roleKey = "cut_" + std::to_string(i);
+        c.roleKey = key(plan.cutKeys, i, "cut_");
         c.kind = ComponentObjectKind::Cut;
         c.cut = plan.cuts[i];
-        out.children.push_back(std::move(c));
+        if (!addChild(std::move(c))) { out.ok = false; return out; }
     }
     for (std::size_t i = 0; i < plan.welds.size(); ++i) {
         ComponentChildRecord c;
-        c.roleKey = "weld_" + std::to_string(i);
+        c.roleKey = key(plan.weldKeys, i, "weld_");
         c.kind = ComponentObjectKind::Weld;
         c.weld = plan.welds[i];
-        out.children.push_back(std::move(c));
+        if (!addChild(std::move(c))) { out.ok = false; return out; }
     }
-    // Deterministik sira (roleKey zaten plate_/bolt_group_/cut_/weld_ on ekli,
-    // lexicographic sirada dogal olarak ayni tur gruplanir).
+    // Deterministik sira (lexicographic roleKey).
     std::sort(out.children.begin(), out.children.end(),
               [](const ComponentChildRecord& a, const ComponentChildRecord& b) {
                   return a.roleKey < b.roleKey;
