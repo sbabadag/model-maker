@@ -860,6 +860,14 @@ if(BUILD_TESTING)
     target_compile_options(model_maker_component_dialog_test PRIVATE -Wall -Wextra -Wpedantic)
     add_test(NAME model_maker_component_dialog_test COMMAND model_maker_component_dialog_test)
 
+    # TEKLA 146 (Shear plate simple) pilotu: tip + generator + dialog tanimi.
+    # OCC'siz, Linux'ta kosar; geometri fin plate cekirdegine delege eder.
+    add_executable(model_maker_shear_plate_146_test tests/shear_plate_146_test.cpp)
+    target_link_libraries(model_maker_shear_plate_146_test PRIVATE model_maker_core)
+    target_link_options(model_maker_shear_plate_146_test PRIVATE -static -static-libgcc -static-libstdc++)
+    target_compile_options(model_maker_shear_plate_146_test PRIVATE -Wall -Wextra -Wpedantic)
+    add_test(NAME model_maker_shear_plate_146_test COMMAND model_maker_shear_plate_146_test)
+
     # UNIVERSAL COMPONENT DIALOG Qt OFFScreen testi: widget'in gercek davranisi
     # (round-trip, sentinel koruma, bilinmeyen parametre) bassiz dogrulanir.
     # Yalniz Qt6 varken (Linux); Windows'ta goruntu Asus'ta model-maker exe'siyle.

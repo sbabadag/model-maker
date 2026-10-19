@@ -530,6 +530,59 @@ ComponentDialogDefinition finPlateDialogDefinition() noexcept {
 void registerBuiltInDialogs(ComponentDialogRegistry& registry) noexcept {
     registry.registerDialog(endPlateDialogDefinition());
     registry.registerDialog(finPlateDialogDefinition());
+    registry.registerDialog(shearPlate146DialogDefinition());
+}
+
+ComponentDialogDefinition shearPlate146DialogDefinition() noexcept {
+    ComponentDialogDefinition def;
+    def.typeId = L"tekla_shear_plate_146";
+    def.schema.typeId = def.typeId;
+    // Engine semasi TEK KAYNAK (shearPlate146ComponentType); 146 core = fin plate
+    // core. Fazla Tekla 146 parametreleri blueprint'te documented_only olarak
+    // durur; dialog YALNIZ UYGULANAN alanlari gosterir (unsupported gizlenmez,
+    // bu dilimde dialogda acilmaz — coverage'ta raporlanir).
+    def.specs = shearPlate146ComponentType().params;
+
+    ComponentDiagramItem main;
+    main.id = L"main";
+    main.primitives.push_back(rectP(20.0, 20.0, 48.0, 220.0, true));
+
+    ComponentDiagramItem plate;
+    plate.id = L"plate";
+    plate.primitives.push_back(rectP(48.0, 80.0, 78.0, 180.0, true));
+
+    ComponentDiagramItem beam;
+    beam.id = L"beam";
+    beam.primitives.push_back(rectP(78.0, 110.0, 340.0, 150.0, true));
+
+    ComponentDiagramItem bolts;
+    bolts.id = L"bolts";
+    bolts.primitives.push_back(circleP(63.0, 105.0, 4.0));
+    bolts.primitives.push_back(circleP(63.0, 130.0, 4.0));
+    bolts.primitives.push_back(circleP(63.0, 155.0, 4.0));
+
+    def.schema.items = {main, plate, beam, bolts};
+
+    def.schema.hotspots = {
+        hotspot(L"hs_thickness", 63.0, 192.0, 8.0, std::wstring(L"plateThickness"), std::wstring(L"1")),
+        hotspot(L"hs_height", 63.0, 72.0, 8.0, std::wstring(L"plateHeight"), std::wstring(L"2")),
+        hotspot(L"hs_width", 100.0, 130.0, 8.0, std::wstring(L"plateWidth"), std::wstring(L"3")),
+        hotspot(L"hs_bolt_edge", 44.0, 105.0, 8.0, std::wstring(L"boltEdge"), std::wstring(L"4")),
+        hotspot(L"hs_bolt_count", 63.0, 130.0, 8.0, std::wstring(L"boltCount"), std::wstring(L"5")),
+    };
+
+    ComponentDialogGroup gTab;
+    gTab.id = L"tab_plate";
+    gTab.title = L"Tab plate";
+    gTab.paramNames = {L"plateThickness", L"plateWidth", L"plateHeight"};
+
+    ComponentDialogGroup gBolts;
+    gBolts.id = L"bolt_group";
+    gBolts.title = L"Bolt group";
+    gBolts.paramNames = {L"boltDiameter", L"holeDiameter", L"boltCount", L"boltEdge", L"grade"};
+
+    def.schema.groups = {gTab, gBolts};
+    return def;
 }
 
 } // namespace mm

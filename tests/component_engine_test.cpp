@@ -142,7 +142,7 @@ int main() {
         check(reg.typeCount() == 0, "registry baslangic bos");
 
         registerBuiltInComponents(reg);
-        check(reg.typeCount() == 2, "2 yerlesik component kaydedildi");
+        check(reg.typeCount() == 3, "3 yerlesik component kaydedildi");
 
         const ComponentType* ep = reg.findType(L"beam_to_column_end_plate");
         check(ep != nullptr, "end plate tipi bulundu");
@@ -152,7 +152,7 @@ int main() {
         check(reg.generator(L"fin_plate") != nullptr, "fin plate generator bulundu");
 
         auto ids = reg.typeIds();
-        check(ids.size() == 2, "typeIds 2 adet");
+        check(ids.size() == 3, "typeIds 3 adet");
 
         // tekil typeId reddi
         ComponentType dup = endPlateComponentType();

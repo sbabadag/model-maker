@@ -338,6 +338,15 @@ GenerationPlan generateEndPlate(const ComponentInput& input) noexcept;
 ComponentType finPlateComponentType() noexcept;
 GenerationPlan generateFinPlate(const ComponentInput& input) noexcept;
 
+// Tekla 146 "Shear plate simple" — tekli ortogonal shear tab. Geometri olarak
+// mevcut fin plate cekirdegiyle AYNI (kolon yuzune kaynakli, kiris govdesine
+// civatali, t-eksantrisite + SectionAnchor + rol tespiti). 146'nin fazla
+// parametreleri (beam gap, double tab, stiffener, haunch, seat angle, notch,
+// beam end cut, ...) blueprint/coverage'ta documented_only/unsupported olarak
+// tasinir; bu dilimde geometri onlari SESSIZCE UYDURMAZ.
+ComponentType shearPlate146ComponentType() noexcept;
+GenerationPlan generateShearPlateSimple146(const ComponentInput& input) noexcept;
+
 // Yerlesik katalogu bir registry'ye kaydeder (idempotent — ayni typeId zaten
 // varsa atlanir).
 void registerBuiltInComponents(ComponentRegistry& registry) noexcept;

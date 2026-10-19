@@ -689,6 +689,29 @@ GenerationPlan generateFinPlate(const ComponentInput& input) noexcept {
 void registerBuiltInComponents(ComponentRegistry& registry) noexcept {
     registry.registerType(endPlateComponentType(), &generateEndPlate);
     registry.registerType(finPlateComponentType(), &generateFinPlate);
+    registry.registerType(shearPlate146ComponentType(), &generateShearPlateSimple146);
+}
+
+// --- Tekla 146 (Shear plate simple) -------------------------------------------
+
+ComponentType shearPlate146ComponentType() noexcept {
+    // 146 core = fin plate core (tekli ortogonal shear tab): ayni 8 parametre
+    // (plateThickness/Width/Height, boltDiameter/holeDiameter, boltCount/boltEdge,
+    // grade). Kimlik farkli; sema ortak. Fazla Tekla 146 alanlari blueprint'te.
+    ComponentType t = finPlateComponentType();
+    t.typeId = L"tekla_shear_plate_146";
+    t.schemaVersion = 1;
+    t.displayName = L"Shear Plate Simple (146)";
+    return t;
+}
+
+GenerationPlan generateShearPlateSimple146(const ComponentInput& input) noexcept {
+    // Tekla 146 tekli ortogonal shear tab = mevcut fin plate cekirdegi. Ayni
+    // geometri, ayni roleKey'ler ("fin_plate", "beam_bolts"). 146'nin bu dilimde
+    // desteklenmeyen yuzeyi (double tab, stiffener, haunch, seat angle, notch,
+    // beam end cut, backing bar, ...) blueprint/coverage'ta documented_only olarak
+    // durur; geometri onlari uydurmaz. Fin Plate uretim yolu DEGISMEZ.
+    return generateFinPlate(input);
 }
 
 } // namespace mm

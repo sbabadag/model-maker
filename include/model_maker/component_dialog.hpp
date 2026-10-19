@@ -187,6 +187,7 @@ private:
 
 ComponentDialogDefinition endPlateDialogDefinition() noexcept;
 ComponentDialogDefinition finPlateDialogDefinition() noexcept;
+ComponentDialogDefinition shearPlate146DialogDefinition() noexcept;
 
 // Yerlesik dialog katalogunu bir registry'ye kaydeder (idempotent — ayni
 // typeId zaten varsa atlanir).

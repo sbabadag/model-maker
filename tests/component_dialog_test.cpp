@@ -160,9 +160,10 @@ int main() {
         ComponentDialogRegistry reg;
         check(reg.count() == 0, "bos registry");
         registerBuiltInDialogs(reg);
-        check(reg.count() == 2, "iki yerlesik dialog kayitli");
+        check(reg.count() == 3, "uc yerlesik dialog kayitli");
         check(reg.find(L"beam_to_column_end_plate") != nullptr, "end plate dialogu bulunur");
         check(reg.find(L"fin_plate") != nullptr, "fin plate dialogu bulunur");
+        check(reg.find(L"tekla_shear_plate_146") != nullptr, "146 dialogu bulunur");
         check(reg.find(L"yok") == nullptr, "bilinmeyen tip bulunmaz");
 
         // Tekil kayit: ayni typeId reddedilir.
@@ -170,7 +171,7 @@ int main() {
         // Bos typeId reddedilir.
         ComponentDialogDefinition empty;
         check(!reg.registerDialog(std::move(empty)), "bos typeId reddedilir");
-        check(reg.count() == 2, "reddedilen kayitlar sayiyi artirmaz");
+        check(reg.count() == 3, "reddedilen kayitlar sayiyi artirmaz");
     }
 
     std::printf("%s\n", failures == 0 ? "ALL PASS" : "SOME FAILED");
