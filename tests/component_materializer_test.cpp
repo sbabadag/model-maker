@@ -44,6 +44,8 @@ int main() {
     Document doc;
     doc.setOccStore(makeOccSolidStore());
     ComponentMaterializer mat(doc);
+    OccSolidStore* store = asSolidStore(&doc.occStore());
+    if (!store) { std::printf("FAIL no occ store\n"); return 1; }
 
     // --- Fin Plate benzeri: levha + bulon grubu + sahiplik -------------------
     PlateSpec plate;
@@ -67,10 +69,26 @@ int main() {
     bolts.params.holeDiameter = 22.0;
 
     // main = kullanici parcası (kolon), secondary = kiris. Bu testte basit bir
-    // main model ekleyip EntityId'sini kullaniriz.
+    // main model ekleyip EntityId'sini kullaniriz. Kolonun GERCEK B-Rep kati
+    // magazaya yazilir (bulon delikleri onu keser; A1.2: taban yoksa kesme FAIL).
     WireframeModel col = WireframeModel::cube(100.0);
     doc.addModel(std::move(col));
     const EntityId mainId = doc.modelId(0);
+    if (store) {
+        PlateSpec colSpec;
+        colSpec.center = {0.0, 0.0, 0.0};
+        colSpec.u = {1.0, 0.0, 0.0};
+        colSpec.v = {0.0, 1.0, 0.0};
+        colSpec.axis = {0.0, 0.0, 1.0};
+        colSpec.width = 100.0;
+        colSpec.height = 100.0;
+        colSpec.thickness = 100.0;
+        const TopoDS_Shape colSolid = ComponentMaterializer::buildPlateSolid(colSpec);
+        if (!colSolid.IsNull()) {
+            store->set(mainId, colSolid);
+            store->setBaseVersion(mainId, store->activeVersion(mainId));
+        }
+    }
     // Generator kullanici parcalarini bilir: bulonlar levha + main (kolon) deler.
     bolts.parts = {mainId};
 
@@ -105,7 +123,6 @@ int main() {
 
     // --- Plate OCCT gecerliligi ---------------------------------------------
     const EntityId plateId = res.roleToEntity["fin_plate"];
-    OccSolidStore* store = asSolidStore(&doc.occStore());
     check(store != nullptr, "occ store var");
     if (store) {
         const TopoDS_Shape* ps = store->find(plateId);
@@ -307,8 +324,126 @@ int main() {
         check(obuilt.ok, "cuts+ownedBy model katmani ok");
         const ComponentPlan oplan =
             componentPlanFromObjects(obuilt.objects, obuilt.relationships);
-        ComponentMaterializer::Prepared oprep = mat.prepare(oplan, mainId, {});
+        ComponentMaterializer::Prepared oprep = mat.prepare(oplan, mainId, {}); 
         check(oprep.ok, "cuts+ownedBy -> prepare ok (dongu DEGIL)");
+    }
+
+    // === A1.1: Cut hedef roleKey -> EntityId cozumu ===
+    {
+        // Cut "beam_fit" hedefi "main" (kullanici parcasi) olmali.
+        Document cutDoc;
+        cutDoc.setOccStore(makeOccSolidStore());
+        ComponentMaterializer cutMat(cutDoc);
+        OccSolidStore* cs = asSolidStore(&cutDoc.occStore());
+        WireframeModel ccol = WireframeModel::cube(100.0);
+        cutDoc.addModel(std::move(ccol));
+        const EntityId cmain = cutDoc.modelId(0);
+        if (cs) {
+            PlateSpec csSpec;
+            csSpec.center = {0,0,0}; csSpec.u = {1,0,0}; csSpec.v = {0,1,0}; csSpec.axis = {0,0,1};
+            csSpec.width = 100; csSpec.height = 100; csSpec.thickness = 100;
+            const TopoDS_Shape s = ComponentMaterializer::buildPlateSolid(csSpec);
+            if (!s.IsNull()) { cs->set(cmain, s); cs->setBaseVersion(cmain, cs->activeVersion(cmain)); }
+        }
+
+        ComponentBuilder cb;
+        PlateSpec pp;
+        pp.width = 100; pp.height = 100; pp.thickness = 8;
+        CutModifier fit;
+        fit.kind = CutKind::Fitting;
+        cb.plate("fin_plate", pp).cut("beam_fit", fit)
+            .cuts("beam_fit", "main")              // hedef = kullanici parcasi
+            .ownedBy("fin_plate", "component")
+            .ownedBy("beam_fit", "component");
+        const auto cbuilt = cb.build();
+        check(cbuilt.ok, "cut builder ok (hedef main)");
+        const ComponentPlan cplan = componentPlanFromObjects(cbuilt.objects, cbuilt.relationships);
+        ComponentMaterializer::Prepared cprep = cutMat.prepare(cplan, cmain, {});
+        check(cprep.ok, "cut prepare ok (hedef main cozuldu)");
+        ComponentInstanceRecord crec;
+        crec.typeId = L"fin_plate"; crec.mainPart = cmain;
+        ComponentMaterializer::CommitResult cres = cutMat.commit(cprep, crec);
+        check(cres.ok, "cut commit ok");
+        // Cut modifier hedefi main EntityId olmali.
+        bool cutTargetOk = false;
+        for (const auto& m : cutDoc.cutModifiers())
+            if (m.kind == CutKind::Fitting && m.target == cmain) cutTargetOk = true;
+        check(cutTargetOk, "cut hedefi main EntityId'ye cozuldu");
+    }
+    {
+        // Gecersiz cut hedefi (bilinmeyen roleKey) -> prepare FAIL (sessiz yok).
+        ComponentBuilder cb;
+        PlateSpec pp;
+        pp.width = 100; pp.height = 100; pp.thickness = 8;
+        CutModifier fit;
+        fit.kind = CutKind::Fitting;
+        cb.plate("fin_plate", pp).cut("beam_fit", fit).cuts("beam_fit", "yok_hedef");
+        const auto cbuilt = cb.build();
+        const ComponentPlan cplan = componentPlanFromObjects(cbuilt.objects, cbuilt.relationships);
+        ComponentMaterializer::Prepared cprep = mat.prepare(cplan, mainId, {});
+        check(!cprep.ok, "bilinmeyen cut hedefi -> prepare FAIL");
+    }
+
+    // === A1.2: invalid geometry -> prepare FAIL (sessiz ok=true yasak) ===
+    {
+        ComponentBuilder b;
+        PlateSpec bad;
+        bad.width = 0.0;  // gecersiz boyut -> levha kati uretilemez
+        bad.height = 100.0;
+        bad.thickness = 8.0;
+        b.plate("bad_plate", bad).ownedBy("bad_plate", "component");
+        const auto built = b.build();
+        const ComponentPlan plan = componentPlanFromObjects(built.objects, built.relationships);
+        ComponentMaterializer::Prepared prep = mat.prepare(plan, mainId, {});
+        check(!prep.ok, "gecersiz levha boyutu -> prepare FAIL");
+    }
+
+    // === A1.4: recompute kaldirilan child'i siler (kullanici parcasi korunur) ===
+    {
+        Document delDoc;
+        delDoc.setOccStore(makeOccSolidStore());
+        ComponentMaterializer delMat(delDoc);
+        OccSolidStore* ds = asSolidStore(&delDoc.occStore());
+        WireframeModel dcol = WireframeModel::cube(100.0);
+        delDoc.addModel(std::move(dcol));
+        const EntityId dmain = delDoc.modelId(0);
+        if (ds) {
+            PlateSpec s; s.center={0,0,0}; s.u={1,0,0}; s.v={0,1,0}; s.axis={0,0,1};
+            s.width=100; s.height=100; s.thickness=100;
+            const TopoDS_Shape solid = ComponentMaterializer::buildPlateSolid(s);
+            if (!solid.IsNull()) { ds->set(dmain, solid); ds->setBaseVersion(dmain, ds->activeVersion(dmain)); }
+        }
+        // Ilk commit: iki levha + bir bulon grubu.
+        PlateSpec p1; p1.width=100; p1.height=100; p1.thickness=8;
+        PlateSpec p2; p2.width=50; p2.height=50; p2.thickness=8;
+        BoltGroup bg; bg.axis={0,0,1}; bg.xDir={1,0,0}; bg.parts={dmain};
+        ComponentBuilder b1;
+        b1.plate("plate_a", p1).plate("plate_b", p2).boltGroup("bolts", bg)
+          .ownedBy("plate_a","component").ownedBy("plate_b","component").ownedBy("bolts","component");
+        const auto built1 = b1.build();
+        const ComponentPlan plan1 = componentPlanFromObjects(built1.objects, built1.relationships);
+        ComponentMaterializer::Prepared prep1 = delMat.prepare(plan1, dmain, {});
+        ComponentInstanceRecord rec1; rec1.typeId=L"test"; rec1.mainPart=dmain;
+        ComponentMaterializer::CommitResult res1 = delMat.commit(prep1, rec1);
+        check(res1.ok, "recompute-silme: ilk commit ok");
+        check(res1.ownedPlateIds.size() == 2, "recompute-silme: 2 levha");
+        const std::size_t modelsAfterFirst = delDoc.models().size();
+
+        // Ikinci plan: plate_b KALDIRILDI (yalniz plate_a + bolonlar).
+        ComponentBuilder b2;
+        b2.plate("plate_a", p1).boltGroup("bolts", bg)
+          .ownedBy("plate_a","component").ownedBy("bolts","component");
+        const auto built2 = b2.build();
+        const ComponentPlan plan2 = componentPlanFromObjects(built2.objects, built2.relationships);
+        ComponentMaterializer::Prepared prep2 = delMat.prepare(plan2, dmain, {});
+        check(prep2.ok, "recompute-silme: ikinci prepare ok");
+        ComponentMaterializer::CommitResult res2 = delMat.recompute(
+            prep2, delDoc.componentInstances()[0], rec1);
+        check(res2.ok, "recompute-silme: recompute ok");
+        check(res2.ownedPlateIds.size() == 1, "recompute-silme: 1 levha kaldi");
+        check(res2.roleToEntity.count("plate_b") == 0, "plate_b kaldirildi");
+        check(delDoc.indexOfEntity(dmain).has_value(), "kullanici parcasi (main) KORUNDU");
+        check(delDoc.models().size() < modelsAfterFirst, "plate_b modeli silindi");
     }
 
     std::printf("\n%d failure(s)\n", failures);

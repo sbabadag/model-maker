@@ -47,6 +47,11 @@ public:
         BoltGroup boltGroup;           // BoltGroup: parcalari cozumlenmis
         CutModifier cut;               // Cut/Hole: hedef cozumlenmis modifier
         bool weldUnsupported{false};   // Weld: motor yok (acik Unsupported)
+        // Cut HEDEF cozumu (A1.1): cut.target == kInvalidEntityId ise bu roleKey
+        // commit'te EntityId'ye cozulur. "main" / "secondary_N" = kullanici parcasi;
+        // diger = component-owned child roleKey. Bos = cut.target zaten gecerli
+        // EntityId (generator yolu) — cozum gerekmez.
+        std::string cutTargetRole;
     };
     struct Prepared {
         bool ok{false};
@@ -94,12 +99,19 @@ public:
     // Bir hedefin ETKIN kesme modifier'larini taban B-Rep'e uygular (kesme
     // zinciri) ve sonucu YENI surum olarak yazar. Application::recomputeCutTarget
     // ile ayni cekirdek; GUI/profil katalogu BAGIMLILIGI YOKTUR (yalniz Document
-    // + OccSolidStore). Basarisizlikta belge DEGISMEZ.
-    void applyCutsFor(EntityId target);
+    // + OccSolidStore). Basarisizlikta (hedef yok / taban yok / Boolean null)
+    // false dondurur ve belge DEGISMEZ — SESSIZ basari YOK.
+    bool applyCutsFor(EntityId target);
 
 private:
     Document& doc_;
     OccSolidStore* store_;
+
+    // setBaseVersion + taban surum deltasini undo kaydina ilistirir (A1.5):
+    // onceki taban kInvalid degilse veya yeni taban farkliysa
+    // recordBaseVersionDelta cagrilir — boylece recompute sonrasi undo pre-cut
+    // tabani da dogru geri getirir.
+    void setBaseVersionRecorded(EntityId id, VersionId version);
 
     // Topolojik sira (Kahn, lexicographic tie-break) — bagimliliklar once.
     static std::vector<std::size_t> orderChildren(const std::vector<PreparedChild>& children,

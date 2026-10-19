@@ -14,6 +14,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <set>
 
 namespace mm {
@@ -128,8 +129,32 @@ ComponentMaterializer::Prepared ComponentMaterializer::prepare(
                     return out;
                 }
                 pc.cut = *child.cut;
-                // Hedef cozumu commit'te (EntityId ataninca) yapilir; burada
-                // yalnizca modifier gecerliligi denetlenir.
+                // HEDEF COZUMU (A1.1): cut.target zaten gecerli EntityId ise
+                // (generator yolu) korunur. Degilse, Cuts iliskisinin hedef
+                // roleKey'i kaydedilir ve commit'te EntityId'ye cozulur.
+                if (pc.cut.target == kInvalidEntityId) {
+                    const std::string& key = child.roleKey;
+                    for (const auto& r : plan.relationships.relationships()) {
+                        if (!r.enabled) continue;
+                        if (r.kind == RelationshipKind::Cuts && r.from == key) {
+                            pc.cutTargetRole = r.to;
+                            break;
+                        }
+                    }
+                    if (pc.cutTargetRole.empty()) {
+                        out.error = L"Cut hedefi cozulemedi (target EntityId ve Cuts roleKey yok): " +
+                                    std::wstring(child.roleKey.begin(), child.roleKey.end());
+                        return out;
+                    }
+                    // Hedef roleKey gecerli olmali: main / secondary_N / component child.
+                    const bool isUser = pc.cutTargetRole == "main" ||
+                                        pc.cutTargetRole.rfind("secondary_", 0) == 0;
+                    if (!isUser && roleIndex.find(pc.cutTargetRole) == roleIndex.end()) {
+                        out.error = L"Cut hedefi cozulemedi (bilinmeyen roleKey): '" +
+                                    std::wstring(pc.cutTargetRole.begin(), pc.cutTargetRole.end()) + L"'";
+                        return out;
+                    }
+                }
                 break;
             }
             case ComponentObjectKind::Weld:
@@ -214,27 +239,16 @@ ComponentMaterializer::Prepared ComponentMaterializer::prepare(
 
 std::vector<std::size_t> ComponentMaterializer::orderChildren(
     const std::vector<PreparedChild>& children, std::wstring& error) {
-    // Kahn topolojik sira; esitlikte KIND ONCELIKLI (Plate < BoltGroup < Cut <
-    // Weld) sonra lexicographic roleKey (deterministik). KIND ONCELIGI KRITIK:
-    // bulon grubu sahip olunan levhayi deler; levha ONCE materialize edilmeden
-    // bolt.parts'a eklenemez. Dolayisiyla bagimsiz (indeg 0) dugumler arasinda
-    // levha her zaman bulon grubundan once islenir.
-    // dependencies roleKey -> indeks; yalnizca child'lar arasi kenarlar.
+    // Kahn topolojik sira + SERT kind degismezleri. KIND SIRASI TIE-BREAK DEGIL,
+    // KISIT OLARAK EKLENIR: her Plate her BoltGroup'tan ONCE, her BoltGroup her
+    // Cut'tan ONCE islenir. Bu degismez materializasyon icin ZORUNLUDUR — bulon
+    // grubu sahip oldugu levhayi deler (levha EntityId'si once atanmali), cut
+    // hedefini keser (hedef once materialize edilmeli). Explicit bagimlilik
+    // (AttachedTo/DependsOn) bu degismezle CELISIRSE (or. plate -> boltGroup)
+    // dongu olusur ve plan reddedilir — bu da dogrudur (ters bagimlilik gecersiz).
+    const std::size_t n = children.size();
     std::unordered_map<std::string, std::size_t> roleIndex;
-    for (std::size_t i = 0; i < children.size(); ++i)
-        roleIndex[children[i].record.roleKey] = i;
-
-    std::vector<std::set<std::size_t>> in(children.size());
-    std::vector<std::size_t> indeg(children.size(), 0);
-    for (std::size_t i = 0; i < children.size(); ++i) {
-        for (const auto& dep : children[i].record.dependencies) {
-            auto it = roleIndex.find(dep);
-            if (it == roleIndex.end()) continue;  // rezerve/user part -> kenar yok
-            if (it->second == i) continue;        // oz bagimlilik yok sayilir
-            in[it->second].insert(i);             // dep -> i (dep once)
-            indeg[i]++;
-        }
-    }
+    for (std::size_t i = 0; i < n; ++i) roleIndex[children[i].record.roleKey] = i;
 
     const auto kindRank = [](ComponentObjectKind k) {
         switch (k) {
@@ -242,9 +256,31 @@ std::vector<std::size_t> ComponentMaterializer::orderChildren(
             case ComponentObjectKind::BoltGroup: return 1;
             case ComponentObjectKind::Cut: return 2;
             case ComponentObjectKind::Weld: return 3;
-            default: return 4;  // construction — plana dahil edilmez
+            default: return 4;
         }
     };
+
+    std::vector<std::set<std::size_t>> in(n);  // in[x] = x'ten sonra islenecekler
+    std::vector<std::size_t> indeg(n, 0);
+    const auto addEdge = [&](std::size_t from, std::size_t to) {
+        if (from == to) return;
+        if (in[from].insert(to).second) indeg[to]++;
+    };
+
+    // (1) SERT kind degismezleri.
+    for (std::size_t i = 0; i < n; ++i)
+        for (std::size_t j = 0; j < n; ++j)
+            if (kindRank(children[i].record.kind) < kindRank(children[j].record.kind))
+                addEdge(i, j);
+
+    // (2) Explicit bagimliliklar (AttachedTo/DependsOn): dep -> dependent.
+    for (std::size_t i = 0; i < n; ++i)
+        for (const auto& dep : children[i].record.dependencies) {
+            auto it = roleIndex.find(dep);
+            if (it == roleIndex.end()) continue;
+            addEdge(it->second, i);
+        }
+
     const auto cmp = [&](std::size_t a, std::size_t b) {
         const int ra = kindRank(children[a].record.kind);
         const int rb = kindRank(children[b].record.kind);
@@ -252,11 +288,10 @@ std::vector<std::size_t> ComponentMaterializer::orderChildren(
         return children[a].record.roleKey < children[b].record.roleKey;
     };
 
-    // Hazir dugumler (indeg 0) kind-priority + lexicographic roleKey sirada.
     std::vector<std::size_t> order;
-    order.reserve(children.size());
+    order.reserve(n);
     std::vector<std::size_t> ready;
-    for (std::size_t i = 0; i < children.size(); ++i)
+    for (std::size_t i = 0; i < n; ++i)
         if (indeg[i] == 0) ready.push_back(i);
     std::sort(ready.begin(), ready.end(), cmp);
 
@@ -264,16 +299,15 @@ std::vector<std::size_t> ComponentMaterializer::orderChildren(
         const std::size_t cur = ready.front();
         ready.erase(ready.begin());
         order.push_back(cur);
-        for (const std::size_t next : in[cur]) {
+        for (const std::size_t next : in[cur])
             if (--indeg[next] == 0) {
                 ready.push_back(next);
                 std::sort(ready.begin(), ready.end(), cmp);
             }
-        }
     }
 
-    if (order.size() != children.size()) {
-        error = L"child bagimlilik dongusu (materialization sirasi cozulemedi)";
+    if (order.size() != n) {
+        error = L"child bagimlilik/kisit dongusu (materialization sirasi cozulemedi)";
         order.clear();
     }
     return order;
@@ -300,6 +334,22 @@ ComponentMaterializer::CommitResult ComponentMaterializer::commit(const Prepared
     }
 
     // roleKey -> EntityId (materialization sirasinda doldurulur).
+    // Cut hedefi cozumu (A1.1): "main" -> record.mainPart, "secondary_N" ->
+    // record.secondaryParts[N], diger -> out.roleToEntity (component child).
+    const auto resolveCutTarget = [&](const PreparedChild& pc) -> EntityId {
+        if (pc.cutTargetRole.empty()) return pc.cut.target;  // generator yolu (zaten EntityId)
+        if (pc.cutTargetRole == "main") return record.mainPart;
+        if (pc.cutTargetRole.rfind("secondary_", 0) == 0) {
+            const std::string suffix = pc.cutTargetRole.substr(std::string("secondary_").size());
+            const int idx = suffix.empty() ? -1 : std::atoi(suffix.c_str());
+            if (idx >= 0 && static_cast<std::size_t>(idx) < record.secondaryParts.size())
+                return record.secondaryParts[static_cast<std::size_t>(idx)];
+            return kInvalidEntityId;
+        }
+        const auto it = out.roleToEntity.find(pc.cutTargetRole);
+        return it != out.roleToEntity.end() ? it->second : kInvalidEntityId;
+    };
+
     for (const std::size_t ci : order) {
         const PreparedChild& pc = prep.children[ci];
         switch (pc.record.kind) {
@@ -315,7 +365,7 @@ ComponentMaterializer::CommitResult ComponentMaterializer::commit(const Prepared
                                 std::wstring(pc.record.roleKey.begin(), pc.record.roleKey.end());
                     return out;
                 }
-                store_->setBaseVersion(id, after);
+                setBaseVersionRecorded(id, after);
                 doc_.recordGeometryDelta(id, before, after);
                 out.roleToEntity[pc.record.roleKey] = id;
                 out.ownedPlateIds.push_back(id);
@@ -357,9 +407,20 @@ ComponentMaterializer::CommitResult ComponentMaterializer::commit(const Prepared
             }
             case ComponentObjectKind::Cut: {
                 CutModifier mod = pc.cut;
-                // Hedef cozumu: target roleKey -> EntityId (materialize edilmis
-                // child veya kullanici parcasi). Girdide zaten EntityId varsa
-                // (generator yolu) korunur.
+                mod.target = resolveCutTarget(pc);
+                if (mod.target == kInvalidEntityId) {
+                    doc_.rollbackOpenRecord();
+                    out.error = L"Cut hedefi EntityId'ye cozulemedi: '" +
+                                std::wstring(pc.cutTargetRole.begin(), pc.cutTargetRole.end()) + L"'";
+                    return out;
+                }
+                // Hedef varlik Document'ta mevcut olmali (kesme yapilabilir).
+                if (!doc_.indexOfEntity(mod.target)) {
+                    doc_.rollbackOpenRecord();
+                    out.error = L"Cut hedefi Document'ta yok: " +
+                                std::wstring(pc.cutTargetRole.begin(), pc.cutTargetRole.end());
+                    return out;
+                }
                 mod.enabled = true;
                 doc_.addCutModifier(std::move(mod));
                 break;
@@ -388,11 +449,27 @@ ComponentMaterializer::CommitResult ComponentMaterializer::commit(const Prepared
     out.componentId = doc_.componentInstances()[ci].id;
 
     // Kesme zincirini etkilenen parcalara uygula (levha delikleri + kesmeler).
-    for (const EntityId pid : out.ownedPlateIds) applyCutsFor(pid);
+    // A1.2: applyCutsFor basarisizsa (Boolean null / hedef-taban yok) ROLLBACK —
+    // sessiz ok=true YASAK.
+    for (const EntityId pid : out.ownedPlateIds) {
+        if (!applyCutsFor(pid)) {
+            doc_.rollbackOpenRecord();
+            out.error = L"levha kesme uygulanamadi (id=" +
+                        std::to_wstring(static_cast<std::uint64_t>(pid)) + L")";
+            return out;
+        }
+    }
     for (const EntityId mid : out.ownedBoltGroupIds) {
         const auto bi = doc_.indexOfBoltGroup(mid);
         if (!bi) continue;
-        for (const EntityId part : doc_.boltGroups()[*bi].parts) applyCutsFor(part);
+        for (const EntityId part : doc_.boltGroups()[*bi].parts) {
+            if (!applyCutsFor(part)) {
+                doc_.rollbackOpenRecord();
+                out.error = L"bulon deligi uygulanamadi (part id=" +
+                            std::to_wstring(static_cast<std::uint64_t>(part)) + L")";
+                return out;
+            }
+        }
     }
 
     out.ok = true;
@@ -422,6 +499,59 @@ ComponentMaterializer::CommitResult ComponentMaterializer::recompute(
         return out;
     }
 
+    // Cut hedefi cozumu (A1.1): "main" -> record.mainPart, "secondary_N" ->
+    // record.secondaryParts[N], diger -> out.roleToEntity (component child).
+    const auto resolveCutTarget = [&](const PreparedChild& pc) -> EntityId {
+        if (pc.cutTargetRole.empty()) return pc.cut.target;
+        if (pc.cutTargetRole == "main") return record.mainPart;
+        if (pc.cutTargetRole.rfind("secondary_", 0) == 0) {
+            const std::string suffix = pc.cutTargetRole.substr(std::string("secondary_").size());
+            const int idx = suffix.empty() ? -1 : std::atoi(suffix.c_str());
+            if (idx >= 0 && static_cast<std::size_t>(idx) < record.secondaryParts.size())
+                return record.secondaryParts[static_cast<std::size_t>(idx)];
+            return kInvalidEntityId;
+        }
+        const auto it = out.roleToEntity.find(pc.cutTargetRole);
+        return it != out.roleToEntity.end() ? it->second : kInvalidEntityId;
+    };
+
+    // A1.4: ARTIK URETILMEYEN child'lari kaldir. Yeni planda roleKey'i olmayan
+    // eski owned nesneler (levha/bulon grubu) silinir; kullanici parcalarina
+    // (main/secondary) DOKUNULMAZ. Bu islem ayni transaction icinde, geri alinabilir.
+    {
+        std::set<std::string> newKeys;
+        for (const auto& pc : prep.children) newKeys.insert(pc.record.roleKey);
+        for (const auto& c : existing.children) {
+            if (newKeys.count(c.roleKey)) continue;  // hala uretiliyor
+            if (c.entityId == kInvalidEntityId) continue;
+            switch (c.kind) {
+                case ComponentObjectKind::Plate: {
+                    if (const auto pi = doc_.indexOfEntity(c.entityId)) {
+                        // Levha modelini sil (yaprak — kesme/bulon kaskadi yok).
+                        doc_.deleteModels({*pi});
+                    }
+                    break;
+                }
+                case ComponentObjectKind::BoltGroup: {
+                    if (const auto bi = doc_.indexOfBoltGroup(c.entityId))
+                        doc_.removeBoltGroup(*bi);
+                    break;
+                }
+                case ComponentObjectKind::Cut: {
+                    // Eski cut modifier'lari kaldir: owner == component id olanlar.
+                    // (Cut child'in EntityId'si yok; Document index-bazli tutar.)
+                    // Not: cut kaldirma bir sonraki dilimde owner-takibi ile
+                    // kesinlestirilir; simdilik yeni cut'lar addCutModifier ile
+                    // eklenir, eski "component-owned" cut'lar document'ta ayri
+                    // tutulmazsa kaldirilamaz — burada bilerek no-op.
+                    break;
+                }
+                default:
+                    break;  // weld/construction — sahiplik yok
+            }
+        }
+    }
+
     for (const std::size_t ci : order) {
         const PreparedChild& pc = prep.children[ci];
         const auto stableIt = stable.find(pc.record.roleKey);
@@ -442,7 +572,7 @@ ComponentMaterializer::CommitResult ComponentMaterializer::recompute(
                                     std::wstring(pc.record.roleKey.begin(), pc.record.roleKey.end());
                         return out;
                     }
-                    store_->setBaseVersion(stableId, after);
+                    setBaseVersionRecorded(stableId, after);
                     doc_.recordGeometryDelta(stableId, before, after);
                     out.roleToEntity[pc.record.roleKey] = stableId;
                     out.ownedPlateIds.push_back(stableId);
@@ -457,7 +587,7 @@ ComponentMaterializer::CommitResult ComponentMaterializer::recompute(
                                     std::wstring(pc.record.roleKey.begin(), pc.record.roleKey.end());
                         return out;
                     }
-                    store_->setBaseVersion(id, after);
+                    setBaseVersionRecorded(id, after);
                     doc_.recordGeometryDelta(id, before, after);
                     out.roleToEntity[pc.record.roleKey] = id;
                     out.ownedPlateIds.push_back(id);
@@ -511,6 +641,19 @@ ComponentMaterializer::CommitResult ComponentMaterializer::recompute(
             }
             case ComponentObjectKind::Cut: {
                 CutModifier mod = pc.cut;
+                mod.target = resolveCutTarget(pc);
+                if (mod.target == kInvalidEntityId) {
+                    doc_.rollbackOpenRecord();
+                    out.error = L"Cut hedefi EntityId'ye cozulemedi: '" +
+                                std::wstring(pc.cutTargetRole.begin(), pc.cutTargetRole.end()) + L"'";
+                    return out;
+                }
+                if (!doc_.indexOfEntity(mod.target)) {
+                    doc_.rollbackOpenRecord();
+                    out.error = L"Cut hedefi Document'ta yok: " +
+                                std::wstring(pc.cutTargetRole.begin(), pc.cutTargetRole.end());
+                    return out;
+                }
                 mod.enabled = true;
                 doc_.addCutModifier(std::move(mod));
                 break;
@@ -543,32 +686,53 @@ ComponentMaterializer::CommitResult ComponentMaterializer::recompute(
     doc_.setComponentInstance(*idx, std::move(record));
     out.componentId = existing.id;
 
-    for (const EntityId pid : out.ownedPlateIds) applyCutsFor(pid);
+    for (const EntityId pid : out.ownedPlateIds) {
+        if (!applyCutsFor(pid)) {
+            doc_.rollbackOpenRecord();
+            out.error = L"recompute: levha kesme uygulanamadi (id=" +
+                        std::to_wstring(static_cast<std::uint64_t>(pid)) + L")";
+            return out;
+        }
+    }
     for (const EntityId mid : out.ownedBoltGroupIds) {
         const auto bi = doc_.indexOfBoltGroup(mid);
         if (!bi) continue;
-        for (const EntityId part : doc_.boltGroups()[*bi].parts) applyCutsFor(part);
+        for (const EntityId part : doc_.boltGroups()[*bi].parts) {
+            if (!applyCutsFor(part)) {
+                doc_.rollbackOpenRecord();
+                out.error = L"recompute: bulon deligi uygulanamadi (part id=" +
+                            std::to_wstring(static_cast<std::uint64_t>(part)) + L")";
+                return out;
+            }
+        }
     }
 
     out.ok = true;
     return out;
 }
 
-void ComponentMaterializer::applyCutsFor(EntityId target) {
-    if (!store_ || target == kInvalidEntityId) return;
+void ComponentMaterializer::setBaseVersionRecorded(EntityId id, VersionId version) {
+    if (!store_) return;
+    const VersionId oldBase = store_->baseVersion(id);
+    store_->setBaseVersion(id, version);
+    if (oldBase != version)
+        doc_.recordBaseVersionDelta(id, oldBase, version);
+}
+
+bool ComponentMaterializer::applyCutsFor(EntityId target) {
+    if (!store_ || target == kInvalidEntityId) return false;
     const auto idxOpt = doc_.indexOfEntity(target);
-    if (!idxOpt) return;
+    if (!idxOpt) return false;
     const std::size_t index = *idxOpt;
 
     VersionId base = store_->baseVersion(target);
     if (base == kInvalidVersionId) {
         base = store_->activeVersion(target);
-        if (base == kInvalidVersionId) return;
-        store_->setBaseVersion(target, base);
-        doc_.recordBaseVersionDelta(target, kInvalidVersionId, base);
+        if (base == kInvalidVersionId) return false;
+        setBaseVersionRecorded(target, base);
     }
     const TopoDS_Shape* baseShape = store_->findVersion(target, base);
-    if (!baseShape) return;
+    if (!baseShape) return false;
 
     const EntityProperties& props = doc_.models()[index].properties();
     const Vec3 axisFrom{props.axisFromX, props.axisFromY, props.axisFromZ};
@@ -583,7 +747,7 @@ void ComponentMaterializer::applyCutsFor(EntityId target) {
     };
     const TopoDS_Shape result =
         applyCutModifierChain(*baseShape, mods, axisFrom, axisTo, resolveTool);
-    if (result.IsNull()) return;
+    if (result.IsNull()) return false;  // Boolean failure — sessiz basari YOK
 
     auto cutModel = shapeToWireframeWithFaces(result, 0.15);
     EntityProperties cutProps = props;
@@ -591,7 +755,9 @@ void ComponentMaterializer::applyCutsFor(EntityId target) {
     doc_.replaceModel(index, {std::move(cutModel)});
     const VersionId before = store_->activeVersion(target);
     const VersionId after = store_->set(target, result);
-    if (after != kInvalidVersionId) doc_.recordGeometryDelta(target, before, after);
+    if (after == kInvalidVersionId) return false;
+    doc_.recordGeometryDelta(target, before, after);
+    return true;
 }
 
 }  // namespace mm
