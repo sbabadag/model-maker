@@ -4753,9 +4753,19 @@ static mm::MemberGeometry memberGeometryFor(const mm::Document& doc,
     g.refNormal = {p.sectionNormalX, p.sectionNormalY, p.sectionNormalZ};
     g.secWidth = 200.0;
     g.secHeight = 300.0;
+    g.sectionCenterOffset = 0.0;
     if (const mm::SteelProfile* prof = mm::findProfile(catalog, p.profileName)) {
         g.secWidth = prof->width;
         g.secHeight = prof->height;
+        // SectionAnchor: eksen kesitin ustunden gecebilir (varsayilan Top).
+        // Levha/bulon govde merkezine otursun diye kesit merkez ofsetini gecir.
+        g.sectionCenterOffset = mm::profileSectionAnchorOffset(*prof, p.sectionAnchor);
+    } else {
+        switch (p.sectionAnchor) {
+        case SectionAnchor::Top: g.sectionCenterOffset = -0.5 * g.secHeight; break;
+        case SectionAnchor::Bottom: g.sectionCenterOffset = 0.5 * g.secHeight; break;
+        case SectionAnchor::Center: g.sectionCenterOffset = 0.0; break;
+        }
     }
     return g;
 }

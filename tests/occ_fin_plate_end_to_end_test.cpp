@@ -181,6 +181,24 @@ int main() {
         }
     }
 
+    // --- regresyon: SectionAnchor Top (VARSAYILAN) -> levha GOVDE MERKEZINDE.
+    // Kiris ekseni kesitin ustunden gecer (IPE200 h=200 -> kesit merkezi -100).
+    // Levha Z=1500 (ust baslik) degil Z=1400 (govde merkezi) olmali; aksi halde
+    // delikler web'e denk gelmez (sahada levhada iki ayri delik kolonu gorundu).
+    {
+        MemberGeometry topAnchored = beamGeom;
+        topAnchored.sectionCenterOffset = -100.0;
+        const GenerationPlan gp3 = ComponentRegistry::instance().generate(
+            L"fin_plate", makeFinPlateInput(colGeom, topAnchored));
+        check(gp3.ok && !gp3.plates.empty(), "Top anchor: plan ok");
+        if (gp3.ok && !gp3.plates.empty()) {
+            check(std::fabs(gp3.plates[0].center.z - 1400.0) < 1e-6,
+                  "Top anchor: levha govde merkezinde (Z=1400)");
+            check(std::fabs(gp3.boltGroups[0].origin.z - 1320.0) < 1e-6,
+                  "Top anchor: civata govde merkezinde (Z=1320)");
+        }
+    }
+
     const ComponentPlan plan = componentPlanFromGenerationPlan(fp);
     check(plan.ok, "ComponentPlan koprusu ok (roleKey korunur)");
     check(plan.children.size() == 2, "plan 2 child (fin_plate + beam_bolts)");

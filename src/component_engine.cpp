@@ -547,8 +547,12 @@ GenerationPlan generateFinPlate(const ComponentInput& input) noexcept {
     if (colLen > 1e-6) colSec = profileSectionFrame(vnorm(colAxis), col.refNormal);
     const double aW = vdot(lenDir, colSec.width);
     const double aH = vdot(lenDir, colSec.height);
-    const double halfExtent =
-        std::fabs(aW) * col.secWidth * 0.5 + std::fabs(aH) * col.secHeight * 0.5;
+    // Destek fonksiyonu: kolon kesiti eksene gore KAYMIŞ olabilir (SectionAnchor
+    // varsayilani Top -> kesit h/2 yana kayar). Kayan kutunun lenDir yonundeki
+    // yari kapsami = yari-kapsam + ofset*cos(lenDir, height).
+    const double halfExtent = std::fabs(aW) * col.secWidth * 0.5 +
+                              std::fabs(aH) * col.secHeight * 0.5 +
+                              col.sectionCenterOffset * aH;
 
     // 4. Temas noktasi: kiris eksen cizgisinin kolon yuz duzlemiyle kesisimi.
     //    Duzlem: dot(p - colMid, lenDir) = halfExtent. Kiris cizgisi:
@@ -558,8 +562,19 @@ GenerationPlan generateFinPlate(const ComponentInput& input) noexcept {
     const double numer = halfExtent - vdot(Vec3{connEnd.x - colMid.x, connEnd.y - colMid.y,
                                                 connEnd.z - colMid.z}, lenDir);
     const double t = (std::fabs(denom) > 1e-9) ? numer / denom : 0.0;
-    const Vec3 facePoint{connEnd.x + beamDir.x * t, connEnd.y + beamDir.y * t,
-                         connEnd.z + beamDir.z * t};
+    Vec3 facePoint{connEnd.x + beamDir.x * t, connEnd.y + beamDir.y * t,
+                   connEnd.z + beamDir.z * t};
+    // SECTION ANCHOR DUZELTMESI (kiris): kiris ekseni kesitin ustunden gecerse
+    // (varsayilan Top), levha/bulon eksende kalinca UST BASLIGA oturur; govde
+    // h/2 asagidadir ve delikler web'e denk gelmez (sahada goruldu: levhada iki
+    // ayri delik kolonu). Levha merkezini kesit MERKEZINE (govde merkezine)
+    // kaydir. Ofset kesit yukseklik yonu boyunca oldugu icin lenDir bileseni
+    // yoktur; kiris boyunca konum degismez.
+    if (std::fabs(beam.sectionCenterOffset) > 1e-9) {
+        facePoint = Vec3{facePoint.x + sec.height.x * beam.sectionCenterOffset,
+                         facePoint.y + sec.height.y * beam.sectionCenterOffset,
+                         facePoint.z + sec.height.z * beam.sectionCenterOffset};
+    }
 
     // 5. Levha: kalinlik sec.width (govdeye dik), uzunluk lenDir, yukseklik
     //    sec.height. Kaynak kenari kolon yuzunde, serbest kenar kirise dogru.

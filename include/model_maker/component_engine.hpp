@@ -162,6 +162,11 @@ struct MemberGeometry {
     Vec3 refNormal{0.0, 0.0, 1.0};   // kesit referans normali
     double secWidth{0.0};            // kesit bbox genisligi (mm)
     double secHeight{0.0};           // kesit bbox yuksekligi (mm)
+    // Kesit MERKEZININ uye eksenine gore ISARETLI kaymasi (mm), kesit YUKSEKLIK
+    // yonu boyunca. SectionAnchor: Top -> -h/2 (eksen ust baslikta, govde
+    // asagida), Center -> 0, Bottom -> +h/2. Levha/bulon GOVDE MERKEZINE
+    // oturmali; yoksa ust basliga kayar ve delikler web'e denk gelmez.
+    double sectionCenterOffset{0.0};
 };
 
 // Generator girdisi: main (kolon) + secondary (kiris listesi) + parametreler.
