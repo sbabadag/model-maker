@@ -424,7 +424,8 @@ std::vector<std::size_t> ComponentMaterializer::orderChildren(
 }
 
 ComponentMaterializer::CommitResult ComponentMaterializer::commit(const Prepared& prep,
-                                                                  ComponentInstanceRecord record) {
+                                                                  ComponentInstanceRecord record,
+                                                                  bool openOwnRecord) {
     CommitResult out;
     if (!prep.ok || !store_) {
         out.error = prep.ok ? L"OCC magaza yok" : prep.error;
@@ -434,11 +435,14 @@ ComponentMaterializer::CommitResult ComponentMaterializer::commit(const Prepared
     // Tek undo kaydi: tum mutasyonlar bu snapshot altinda. Basarisizlikta
     // rollbackOpenRecord() kismi degisikligi geri alir (TD-1'i GENISLETMEZ —
     // redo kaybi raporlanir ama bu dilimde refactor yapilmaz).
-    doc_.pushSnapshot();
+    // openOwnRecord=false ise cagiran ZATEN acik bir transaction icindedir;
+    // materializer ayni kayda yazar ve rollback'i cagirana birakir.
+    if (openOwnRecord) doc_.pushSnapshot();
+    const auto rollback = [&]() { if (openOwnRecord) doc_.rollbackOpenRecord(); };
 
     const std::vector<std::size_t> order = orderChildren(prep.children, out.error);
     if (order.empty() && !prep.children.empty()) {
-        doc_.rollbackOpenRecord();
+        rollback();
         out.ok = false;
         return out;
     }
@@ -470,7 +474,7 @@ ComponentMaterializer::CommitResult ComponentMaterializer::commit(const Prepared
                 const VersionId before = store_->activeVersion(id);
                 const VersionId after = store_->set(id, pc.solid);
                 if (after == kInvalidVersionId) {
-                    doc_.rollbackOpenRecord();
+                    rollback();
                     out.error = L"levha kati yazilamadi: " +
                                 std::wstring(pc.record.roleKey.begin(), pc.record.roleKey.end());
                     return out;
@@ -519,14 +523,14 @@ ComponentMaterializer::CommitResult ComponentMaterializer::commit(const Prepared
                 CutModifier mod = pc.cut;
                 mod.target = resolveCutTarget(pc);
                 if (mod.target == kInvalidEntityId) {
-                    doc_.rollbackOpenRecord();
+                    rollback();
                     out.error = L"Cut hedefi EntityId'ye cozulemedi: '" +
                                 std::wstring(pc.cutTargetRole.begin(), pc.cutTargetRole.end()) + L"'";
                     return out;
                 }
                 // Hedef varlik Document'ta mevcut olmali (kesme yapilabilir).
                 if (!doc_.indexOfEntity(mod.target)) {
-                    doc_.rollbackOpenRecord();
+                    rollback();
                     out.error = L"Cut hedefi Document'ta yok: " +
                                 std::wstring(pc.cutTargetRole.begin(), pc.cutTargetRole.end());
                     return out;
@@ -539,7 +543,7 @@ ComponentMaterializer::CommitResult ComponentMaterializer::commit(const Prepared
             }
             default:
                 // Weld/Construction prepare'da zaten reddedilmisti.
-                doc_.rollbackOpenRecord();
+                rollback();
                 out.error = L"desteklenmeyen child (commit): " +
                             std::wstring(pc.record.roleKey.begin(), pc.record.roleKey.end());
                 return out;
@@ -573,7 +577,7 @@ ComponentMaterializer::CommitResult ComponentMaterializer::commit(const Prepared
     // sessiz ok=true YASAK.
     for (const EntityId pid : out.ownedPlateIds) {
         if (!applyCutsFor(pid)) {
-            doc_.rollbackOpenRecord();
+            rollback();
             out.error = L"levha kesme uygulanamadi (id=" +
                         std::to_wstring(static_cast<std::uint64_t>(pid)) + L")";
             return out;
@@ -584,7 +588,7 @@ ComponentMaterializer::CommitResult ComponentMaterializer::commit(const Prepared
         if (!bi) continue;
         for (const EntityId part : doc_.boltGroups()[*bi].parts) {
             if (!applyCutsFor(part)) {
-                doc_.rollbackOpenRecord();
+                rollback();
                 out.error = L"bulon deligi uygulanamadi (part id=" +
                             std::to_wstring(static_cast<std::uint64_t>(part)) + L")";
                 return out;
@@ -596,7 +600,7 @@ ComponentMaterializer::CommitResult ComponentMaterializer::commit(const Prepared
     for (const EntityId ct : out.cutTargets) {
         if (ct == kInvalidEntityId) continue;
         if (!applyCutsFor(ct)) {
-            doc_.rollbackOpenRecord();
+            rollback();
             out.error = L"cut hedefi kesilemedi (id=" +
                         std::to_wstring(static_cast<std::uint64_t>(ct)) + L")";
             return out;
@@ -609,7 +613,7 @@ ComponentMaterializer::CommitResult ComponentMaterializer::commit(const Prepared
 
 ComponentMaterializer::CommitResult ComponentMaterializer::recompute(
     const Prepared& prep, const ComponentInstanceRecord& existing,
-    ComponentInstanceRecord record) {
+    ComponentInstanceRecord record, bool openOwnRecord) {
     CommitResult out;
     if (!prep.ok || !store_) {
         out.error = prep.ok ? L"OCC magaza yok" : prep.error;
@@ -621,11 +625,12 @@ ComponentMaterializer::CommitResult ComponentMaterializer::recompute(
     std::unordered_map<std::string, EntityId> stable;
     for (const auto& c : existing.children) stable[c.roleKey] = c.entityId;
 
-    doc_.pushSnapshot();
+    if (openOwnRecord) doc_.pushSnapshot();
+    const auto rollback = [&]() { if (openOwnRecord) doc_.rollbackOpenRecord(); };
 
     const std::vector<std::size_t> order = orderChildren(prep.children, out.error);
     if (order.empty() && !prep.children.empty()) {
-        doc_.rollbackOpenRecord();
+        rollback();
         out.ok = false;
         return out;
     }
@@ -711,7 +716,7 @@ ComponentMaterializer::CommitResult ComponentMaterializer::recompute(
                     const VersionId before = store_->activeVersion(stableId);
                     const VersionId after = store_->set(stableId, pc.solid);
                     if (after == kInvalidVersionId) {
-                        doc_.rollbackOpenRecord();
+                        rollback();
                         out.error = L"levha kati guncellenemedi: " +
                                     std::wstring(pc.record.roleKey.begin(), pc.record.roleKey.end());
                         return out;
@@ -726,7 +731,7 @@ ComponentMaterializer::CommitResult ComponentMaterializer::recompute(
                     const VersionId before = store_->activeVersion(id);
                     const VersionId after = store_->set(id, pc.solid);
                     if (after == kInvalidVersionId) {
-                        doc_.rollbackOpenRecord();
+                        rollback();
                         out.error = L"levha kati yazilamadi: " +
                                     std::wstring(pc.record.roleKey.begin(), pc.record.roleKey.end());
                         return out;
@@ -787,13 +792,13 @@ ComponentMaterializer::CommitResult ComponentMaterializer::recompute(
                 CutModifier mod = pc.cut;
                 mod.target = resolveCutTarget(pc);
                 if (mod.target == kInvalidEntityId) {
-                    doc_.rollbackOpenRecord();
+                    rollback();
                     out.error = L"Cut hedefi EntityId'ye cozulemedi: '" +
                                 std::wstring(pc.cutTargetRole.begin(), pc.cutTargetRole.end()) + L"'";
                     return out;
                 }
                 if (!doc_.indexOfEntity(mod.target)) {
-                    doc_.rollbackOpenRecord();
+                    rollback();
                     out.error = L"Cut hedefi Document'ta yok: " +
                                 std::wstring(pc.cutTargetRole.begin(), pc.cutTargetRole.end());
                     return out;
@@ -805,7 +810,7 @@ ComponentMaterializer::CommitResult ComponentMaterializer::recompute(
                 break;
             }
             default:
-                doc_.rollbackOpenRecord();
+                rollback();
                 out.error = L"desteklenmeyen child (recompute): " +
                             std::wstring(pc.record.roleKey.begin(), pc.record.roleKey.end());
                 return out;
@@ -825,7 +830,7 @@ ComponentMaterializer::CommitResult ComponentMaterializer::recompute(
 
     const auto idx = doc_.indexOfComponentInstance(existing.id);
     if (!idx) {
-        doc_.rollbackOpenRecord();
+        rollback();
         out.error = L"component instance bulunamadi (recompute)";
         return out;
     }
@@ -834,7 +839,7 @@ ComponentMaterializer::CommitResult ComponentMaterializer::recompute(
 
     for (const EntityId pid : out.ownedPlateIds) {
         if (!applyCutsFor(pid)) {
-            doc_.rollbackOpenRecord();
+            rollback();
             out.error = L"recompute: levha kesme uygulanamadi (id=" +
                         std::to_wstring(static_cast<std::uint64_t>(pid)) + L")";
             return out;
@@ -845,7 +850,7 @@ ComponentMaterializer::CommitResult ComponentMaterializer::recompute(
         if (!bi) continue;
         for (const EntityId part : doc_.boltGroups()[*bi].parts) {
             if (!applyCutsFor(part)) {
-                doc_.rollbackOpenRecord();
+                rollback();
                 out.error = L"recompute: bulon deligi uygulanamadi (part id=" +
                             std::to_wstring(static_cast<std::uint64_t>(part)) + L")";
                 return out;
@@ -856,7 +861,7 @@ ComponentMaterializer::CommitResult ComponentMaterializer::recompute(
     for (const EntityId ct : out.cutTargets) {
         if (ct == kInvalidEntityId) continue;
         if (!applyCutsFor(ct)) {
-            doc_.rollbackOpenRecord();
+            rollback();
             out.error = L"recompute: cut hedefi kesilemedi (id=" +
                         std::to_wstring(static_cast<std::uint64_t>(ct)) + L")";
             return out;

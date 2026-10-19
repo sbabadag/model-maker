@@ -641,6 +641,13 @@ void QtMainWindow::createMenus() {
             app_.setPendingEndPlateParams(p);
             app_.startEndPlateCommand();
         })->setIcon(makeToolIcon(ToolGlyph::Plate));
+    constructionMenu->addAction("&Fin Plate (Kayma Levhası)", this,
+        [this]() {
+            // Parametrik component: varsayilan sema parametreleriyle basla;
+            // diyalog yoksa registry'nin varsayilanlari gecerli olur.
+            app_.setPendingFinPlateParams({});
+            app_.startFinPlateCommand();
+        })->setIcon(makeToolIcon(ToolGlyph::Plate));
 
     // ---- GÖRÜNÜM: kamera/navigasyon + standart yönler ----
     QMenu* viewMenu = appMenu_->addMenu("G&örünüm");
@@ -1660,6 +1667,10 @@ void QtMainWindow::createToolbar() {
             if (!openEndPlateParamsDialog(p, p)) return;
             app_.setPendingEndPlateParams(p);
             app_.startEndPlateCommand();
+        });
+        addBtn(lay, ToolGlyph::Plate,    "Fin Plate",     "Kayma levhası bağlantısı (kolon+kiriş)", [this]() {
+            app_.setPendingFinPlateParams({});
+            app_.startFinPlateCommand();
         });
         lay->addStretch();
     }

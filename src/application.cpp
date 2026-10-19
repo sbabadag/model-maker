@@ -10,6 +10,8 @@
 #include "model_maker/bolt_geometry.hpp"
 #include "model_maker/end_plate_geometry.hpp"
 #include "model_maker/occ_contact_resolver.hpp"
+#include "model_maker/component_materializer.hpp"
+#include "model_maker/component_framework.hpp"
 #endif
 #ifdef MM_HAS_OCC
 #include <BRepBuilderAPI_Transform.hxx>
@@ -170,6 +172,11 @@ bool forceGdiRequested() {
 
 Application::Application(HINSTANCE instance, HWND /*parentCanvas*/) : instance_(instance) {
     enabledSnapTypes_.fill(true);
+    // UNIVERSAL COMPONENT KATALOGU (Phase P1): yerlesik component tipleri
+    // (fin_plate, end_plate) REGISTRY'ye kaydedilir. Bu olmadan MMW8 acilista
+    // component instance'lari orphan (bilinmeyen typeId) isaretlenir ve Fin
+    // Plate uretilemez. Idempotent (registerType tekrarli typeId reddeder).
+    mm::registerBuiltInComponents(mm::ComponentRegistry::instance());
 #ifdef MM_HAS_OCC
     // BELGE-SAHIPLI B-Rep magazasi: OCC-acik derlemede GERCEK OCCT store'unu
     // Document'a ENJEKTE eder (constructor injection). Saglayici secimi LINK
@@ -1644,6 +1651,11 @@ LRESULT Application::handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lPa
             executePendingEndPlateCommand();
             updateControls(); invalidateCanvas(); return 0;
         }
+        if (pendingFinPlate_) {
+            // Verb-noun fin plate: sag tik komutu isletir (kolon + kiris seciliyse).
+            executePendingFinPlateCommand();
+            updateControls(); invalidateCanvas(); return 0;
+        }
         // BOLT SAG-TIK MENUSU: bos modda bir BOLT display'i uzerinde sag tik
         // -> Ortala X / Ortala Y popup menusu. Bulon degilse false doner ve
         // asagidaki normal sag-tik akisina dusulur.
@@ -1814,6 +1826,7 @@ LRESULT Application::handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lPa
             else if (pendingCutKind_) cancelPendingCutCommand();
             else if (pendingBolt_) cancelPendingBoltCommand();
             else if (pendingEndPlate_) cancelPendingEndPlateCommand();
+            else if (pendingFinPlate_) cancelPendingFinPlateCommand();
             else if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
             else cancelDrawing();
             if (mode_ == EditMode::View3D) drawingActive_ = false;
@@ -2084,6 +2097,11 @@ void Application::onLeftButtonDown(int x, int y) {
     // VERB-NOUN END PLATE (Phase C1 GUI): sol tik kolon/kiris secer.
     if (pendingEndPlate_) {
         pickPendingEndPlateAt(x, y);
+        return;
+    }
+    // VERB-NOUN FIN PLATE (Phase P1): sol tik kolon/kiris secer.
+    if (pendingFinPlate_) {
+        pickPendingFinPlateAt(x, y);
         return;
     }
     // BOLT TOOL PENCERESI (Phase B1): bolt display modeline cift tik -> duzenleme
@@ -2575,9 +2593,9 @@ void Application::onMouseMove(int x, int y, WPARAM buttons) {
         lastMouse_ = {x, y};
         updateHover(x, y);
         redraw = true;
-    } else if (pendingCutKind_ || pendingBolt_) {
-        // Verb-noun kesme/bolt bekleme modunda imlecin altindaki secilebilir
-        // profil/duzlem/parcayi vurgula (hover highlight). Idle moddaki
+    } else if (pendingCutKind_ || pendingBolt_ || pendingFinPlate_) {
+        // Verb-noun kesme/bolt/fin-plate bekleme modunda imlecin altindaki
+        // secilebilir profil/duzlem/parcayi vurgula (hover highlight). Idle moddaki
         // refreshHoverCandidate bu modda cagrilmadigi icin burada tazelenir.
         refreshHoverCandidate(x, y);
         redraw = true;
@@ -2956,6 +2974,7 @@ void Application::cancelDrawing() {
 
 void Application::startTransformCommand(TransformCommand command) {
     cancelPendingCutCommand();
+    cancelPendingFinPlateCommand();
     cancelZoomWindow2D();
     if (workPlanePicking_) cancelWorkPlaneCommand();
     // cancelDrawing seçimi de temizler; noun-verb akışı için koru.
@@ -3685,6 +3704,7 @@ void Application::enterPendingCutCommand(CutKind kind) {
     cancelDrawing();
     cancelPendingBoltCommand();
     cancelPendingEndPlateCommand();
+    cancelPendingFinPlateCommand();
     pendingCutKind_ = kind;
     pendingCutTargets_.clear();
     pendingCutPlane_.reset();
@@ -4039,6 +4059,7 @@ void Application::startBoltCommand() {
     cancelDrawing();
     cancelPendingCutCommand();
     cancelPendingEndPlateCommand();
+    cancelPendingFinPlateCommand();
     pendingBolt_ = true;
     pendingBoltParts_.clear();
     pendingBoltAxis_.reset();
@@ -4323,6 +4344,7 @@ void Application::startEndPlateCommand() {
     cancelDrawing();
     cancelPendingCutCommand();
     cancelPendingBoltCommand();
+    cancelPendingFinPlateCommand();
     pendingEndPlate_ = true;
     pendingEndPlateParts_.clear();
     selectedModels_.clear();
@@ -4400,6 +4422,100 @@ bool Application::pickPendingEndPlateAt(int x, int y) {
         publishStatus(L"Kolon + kiris secildi — sag tik uygular (Esc iptal)");
     else
         publishStatus(L"End Plate: kolon secin");
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
+    return true;
+}
+
+// --- UNIVERSAL COMPONENT (Phase P1): Fin Plate production ----------------------
+
+void Application::startFinPlateCommand() {
+    cancelZoomWindow2D();
+    if (workPlanePicking_) cancelWorkPlaneCommand();
+    if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
+    profileGrip_.reset();
+    cancelDrawing();
+    cancelPendingCutCommand();
+    cancelPendingBoltCommand();
+    cancelPendingEndPlateCommand();
+    pendingFinPlate_ = true;
+    pendingFinPlateParts_.clear();
+    selectedModels_.clear();
+    selectionFirstCorner_.reset();
+    hoverModel_.reset();
+    hoverFaceModel_.reset();
+    hoverFaceIndices_.clear();
+    publishStatus(L"Fin Plate: once KOLONU (main), sonra KIRISI (secondary) secin — sag tik uygular");
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
+}
+
+void Application::cancelPendingFinPlateCommand() {
+    if (!pendingFinPlate_) return;
+    pendingFinPlate_ = false;
+    pendingFinPlateParts_.clear();
+    hoverModel_.reset();
+    hoverFaceModel_.reset();
+    hoverFaceIndices_.clear();
+    selectedModels_.clear();
+    selectionFirstCorner_.reset();
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
+}
+
+void Application::executePendingFinPlateCommand() {
+    if (!pendingFinPlate_) return;
+    if (pendingFinPlateParts_.size() != 2) {
+        MessageBeep(MB_ICONWARNING);
+        publishStatus(L"Fin Plate: KOLON ve KIRISI secin (su an " +
+                      std::to_wstring(pendingFinPlateParts_.size()) + L" secili)");
+        return;
+    }
+    const std::vector<std::size_t> parts = pendingFinPlateParts_;
+    pendingFinPlate_ = false;
+    pendingFinPlateParts_.clear();
+    hoverModel_.reset();
+    hoverFaceModel_.reset();
+    hoverFaceIndices_.clear();
+    applyFinPlateFromParts(parts);
+}
+
+bool Application::pickPendingFinPlateAt(int x, int y) {
+    if (!pendingFinPlate_) return false;
+    const auto hit = modelIndexAt(x, y);
+    if (!hit || *hit >= document_.models().size()) {
+        MessageBeep(MB_ICONWARNING);
+        publishStatus(L"Fin Plate: bir parcaya tiklayin (normal model)");
+        return true;
+    }
+    const auto& model = document_.models()[*hit];
+    if (model.constructionKind() != ConstructionKind::None) {
+        MessageBeep(MB_ICONWARNING);
+        publishStatus(L"Fin Plate: parcalar normal model olmali (konstruksiyon degil)");
+        return true;
+    }
+    const auto it = std::find(pendingFinPlateParts_.begin(), pendingFinPlateParts_.end(), *hit);
+    if (it == pendingFinPlateParts_.end()) {
+        if (pendingFinPlateParts_.size() >= 2) {
+            MessageBeep(MB_ICONWARNING);
+            publishStatus(L"Fin Plate: zaten 2 parca secili (Esc iptal, sag tik uygula)");
+            return true;
+        }
+        pendingFinPlateParts_.push_back(*hit);
+    } else {
+        pendingFinPlateParts_.erase(it);
+    }
+    selectedModels_.clear();
+    for (const std::size_t p : pendingFinPlateParts_) selectedModels_.push_back(p);
+    if (pendingFinPlateParts_.size() == 1)
+        publishStatus(L"Kolon secildi — simdi KIRISI (secondary) secin");
+    else if (pendingFinPlateParts_.size() == 2)
+        publishStatus(L"Kolon + kiris secildi — sag tik uygular (Esc iptal)");
+    else
+        publishStatus(L"Fin Plate: kolon secin");
     updateControls();
     updateStatus();
     invalidateCanvas();
@@ -4550,6 +4666,107 @@ void Application::applyEndPlateFromParts(const std::vector<std::size_t>& parts) 
     // Kalici onay: updateStatus bu mesaji ezer (pendingEndPlate_ kapandi),
     // solidStatusMessage_ ise durum cubugunda kalir.
     solidStatusMessage_ = L"End Plate bağlantısı oluşturuldu (levha + bulonlar)";
+    selectedModels_.clear();
+    selectionFirstCorner_.reset();
+    updateHover(cursorScreen_.x, cursorScreen_.y);
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
+}
+
+// --- UNIVERSAL COMPONENT (Phase P1): Fin Plate production body ---------------
+
+// Bir model indeksinden generator icin MemberGeometry kurar (axis + kesit bbox).
+// Profil katalogundan secWidth/secHeight; yoksa varsayilan 200x300 mm.
+static mm::MemberGeometry memberGeometryFor(const mm::Document& doc,
+                                            const std::vector<mm::SteelProfile>& catalog,
+                                            std::size_t index) {
+    mm::MemberGeometry g;
+    g.id = doc.modelId(index);
+    const auto& p = doc.models()[index].properties();
+    g.axisFrom = {p.axisFromX, p.axisFromY, p.axisFromZ};
+    g.axisTo = {p.axisToX, p.axisToY, p.axisToZ};
+    g.refNormal = {p.sectionNormalX, p.sectionNormalY, p.sectionNormalZ};
+    g.secWidth = 200.0;
+    g.secHeight = 300.0;
+    if (const mm::SteelProfile* prof = mm::findProfile(catalog, p.profileName)) {
+        g.secWidth = prof->width;
+        g.secHeight = prof->height;
+    }
+    return g;
+}
+
+void Application::applyFinPlateFromParts(const std::vector<std::size_t>& parts) {
+    if (parts.size() != 2) {
+        MessageBeep(MB_ICONWARNING);
+        publishStatus(L"Fin Plate: kolon ve kiris secin (tam 2 secim)");
+        return;
+    }
+    const std::size_t mainIdx = parts[0];
+    const std::size_t secIdx = parts[1];
+    if (mainIdx >= document_.models().size() || secIdx >= document_.models().size()) {
+        MessageBeep(MB_ICONWARNING);
+        return;
+    }
+    if (document_.models()[mainIdx].constructionKind() != ConstructionKind::None ||
+        document_.models()[secIdx].constructionKind() != ConstructionKind::None) {
+        MessageBeep(MB_ICONWARNING);
+        publishStatus(L"Fin Plate: parcalar normal model olmali (konstruksiyon degil)");
+        return;
+    }
+
+#ifdef MM_HAS_OCC
+    ensureProfileCatalog();
+
+    // 1. Generator girdisi: main (kolon) + secondary (kiris) MemberGeometry.
+    mm::ComponentInput input;
+    input.main = memberGeometryFor(document_, profileCatalog_, mainIdx);
+    input.secondary = {memberGeometryFor(document_, profileCatalog_, secIdx)};
+    input.params = pendingFinPlateParams_;
+
+    // 2. Registry -> generateFinPlate -> GenerationPlan.
+    const mm::GenerationPlan gp =
+        mm::ComponentRegistry::instance().generate(L"fin_plate", input);
+    if (!gp.ok) {
+        publishStatus(L"Fin Plate uretilemedi: " + (gp.error.empty() ? L"gecersiz girdi" : gp.error));
+        return;
+    }
+
+    // 3. GenerationPlan -> roleKey koruyan ComponentPlan.
+    const mm::ComponentPlan plan = mm::componentPlanFromGenerationPlan(gp);
+    if (!plan.ok) {
+        publishStatus(L"Fin Plate plani olusturulamadi: " + plan.error);
+        return;
+    }
+
+    // 4. Ortak materializer: prepare (pure) + commit (tek undo kaydi).
+    mm::ComponentMaterializer mat(document_);
+    const mm::ComponentMaterializer::Prepared prep =
+        mat.prepare(plan, input.main.id, {input.secondary[0].id});
+    if (!prep.ok) {
+        publishStatus(L"Fin Plate hazirlanamadi: " + prep.error);
+        return;
+    }
+    mm::ComponentInstanceRecord rec;
+    rec.typeId = L"fin_plate";
+    rec.schemaVersion = 1;
+    rec.mainPart = input.main.id;
+    rec.secondaryParts = {input.secondary[0].id};
+    rec.params = input.params;
+    // Materializer kendi tek undo kaydini acar (commit icinde pushSnapshot) ve
+    // basarisizlikta rollbackOpenRecord ile kendini geri alir — burada AYRI bir
+    // pushUndoSnapshot ACILMAZ (cift kayit olur).
+    const mm::ComponentMaterializer::CommitResult res = mat.commit(prep, rec);
+    if (!res.ok) {
+        publishStatus(L"Fin Plate uygulanamadi: " + res.error);
+        return;
+    }
+    solidStatusMessage_ = L"Fin Plate bağlantısı oluşturuldu (levha + bulonlar)";
+#else
+    (void)mainIdx;
+    (void)secIdx;
+    publishStatus(L"Fin Plate: OCC devre disi — gercek geometri uretilemedi");
+#endif
     selectedModels_.clear();
     selectionFirstCorner_.reset();
     updateHover(cursorScreen_.x, cursorScreen_.y);
@@ -5100,6 +5317,165 @@ bool Application::selectedEndPlateConnection(EndPlateConnection& out) const {
     return true;
 }
 
+// --- UNIVERSAL COMPONENT (Phase P1): recompute + selection --------------------
+
+bool Application::selectedComponentInstance(ComponentInstanceRecord& out) const {
+    // Secili model bir component'in SAHIP OLDUGU alt nesne (levha veya bulon
+    // display) ise o instance'i dondurur.
+    for (const std::size_t idx : selectedModels_) {
+        if (idx >= document_.models().size()) continue;
+        const EntityId id = document_.modelId(idx);
+        for (const auto& rec : document_.componentInstances()) {
+            if (std::find(rec.ownedPlateIds.begin(), rec.ownedPlateIds.end(), id) !=
+                rec.ownedPlateIds.end()) {
+                out = rec;
+                return true;
+            }
+            for (const EntityId bg : rec.ownedBoltGroupIds) {
+                const auto bi = document_.indexOfBoltGroup(bg);
+                if (bi && document_.boltGroups()[*bi].displayEntityId == id) {
+                    out = rec;
+                    return true;
+                }
+            }
+        }
+    }
+    return false;
+}
+
+void Application::recomputeComponentInstancesFor(const std::vector<EntityId>& changedParts) {
+    if (changedParts.empty()) return;
+#ifdef MM_HAS_OCC
+    // End Plate baglantilari AYRI kalir (mevcut production yolu). Bu fonksiyon
+    // yalnizca parametrik ComponentInstanceRecord'larini (Fin Plate vb.) yeniden
+    // uretir. Ayni ComponentDependencyGraph + atomicRecompute cekirdegi kullanilir.
+    ensureProfileCatalog();
+    ComponentDependencyGraph graph;
+    graph.build(document_.componentInstances());
+    const std::vector<EntityId> affected = graph.dependentsOf(changedParts);
+    if (affected.empty()) return;
+
+    // Etkilenen ana parcalarin B-Rep tabanini BIR KEZ tazele (tasima/donme/profil
+    // degisimi sonrasi findOccSolid bayat kalmasin). End Plate recompute'taki
+    // rebuildCutBaseSolid ile AYNI kural: materializer bulon kesmelerini ESKI
+    // baseVersion uzerinden yeniden uygulayip geometriyi eski konuma dondurmesin.
+    for (EntityId part : changedParts) rebuildCutBaseSolid(part);
+
+    const auto indexOf = [&](EntityId cid) -> std::optional<std::size_t> {
+        return document_.indexOfComponentInstance(cid);
+    };
+
+    // PREPARE: guncel MemberGeometry + kayitli parametrelerle generator cagir.
+    const auto prepare = [&](EntityId cid) -> std::optional<ComponentMaterializer::Prepared> {
+        const auto idx = indexOf(cid);
+        if (!idx) return std::nullopt;
+        const ComponentInstanceRecord& rec = document_.componentInstances()[*idx];
+        if (rec.orphan) return std::nullopt;  // bilinmeyen typeId — cozulemez
+        const ComponentType* type = ComponentRegistry::instance().findType(rec.typeId);
+        if (!type) return std::nullopt;
+
+        ComponentInput input;
+        if (const auto mi = document_.indexOfEntity(rec.mainPart))
+            input.main = memberGeometryFor(document_, profileCatalog_, *mi);
+        else
+            return std::nullopt;
+        for (const EntityId sid : rec.secondaryParts) {
+            if (const auto si = document_.indexOfEntity(sid))
+                input.secondary.push_back(memberGeometryFor(document_, profileCatalog_, *si));
+            else
+                return std::nullopt;
+        }
+        input.params = rec.params;
+
+        const GenerationPlan gp = ComponentRegistry::instance().generate(rec.typeId, input);
+        if (!gp.ok) return std::nullopt;
+        const ComponentPlan plan = componentPlanFromGenerationPlan(gp);
+        if (!plan.ok) return std::nullopt;
+        ComponentMaterializer mat(document_);
+        return mat.prepare(plan, rec.mainPart, rec.secondaryParts);
+    };
+
+    // COMMIT: materializer.recompute ayni kimlikleri korur (roleKey->EntityId).
+    // openOwnRecord=false: move/reprofile ZATEN pushUndoSnapshot acti — materializer
+    // AYNI acik kayda yazar (ikinci kayit acmaz); basarisizlikta asagidaki
+    // rollbackOpenRecord move + tum recompute'u TEK atomik adimda geri alir
+    // (End Plate'in commitEndPlateConnection deseniyle ayni).
+    const auto commit = [&](EntityId cid, const ComponentMaterializer::Prepared& p) -> bool {
+        const auto idx = indexOf(cid);
+        if (!idx) return false;
+        ComponentMaterializer mat(document_);
+        ComponentInstanceRecord updated = document_.componentInstances()[*idx];
+        const auto res = mat.recompute(p, document_.componentInstances()[*idx], updated,
+                                       /*openOwnRecord=*/false);
+        return res.ok;
+    };
+
+    const auto res = atomicRecompute<ComponentMaterializer::Prepared>(affected, prepare, commit);
+    if (!res.allPrepared || res.commitFailed) {
+        const bool rolled = document_.rollbackOpenRecord();
+        std::wstring msg = L"Component recompute basarisiz";
+        if (!res.error.empty()) { msg += L": "; msg += res.error; }
+        msg += rolled ? L" — islem geri alindi."
+                      : L" — rollback BASARISIZ (belge tutarsiz olabilir)";
+        publishStatus(msg);
+    }
+#else
+    (void)changedParts;
+#endif
+}
+
+bool Application::setSelectedComponentParams(EntityId compId,
+                                             const std::vector<CompParam>& newParams) {
+#ifdef MM_HAS_OCC
+    const auto idx = document_.indexOfComponentInstance(compId);
+    if (!idx) return false;
+    const ComponentType* type =
+        ComponentRegistry::instance().findType(document_.componentInstances()[*idx].typeId);
+    if (!type) return false;
+
+    // Parametreleri semaya hizala (migration), ardindan yeniden uret.
+    ComponentInstanceRecord updated = document_.componentInstances()[*idx];
+    updated.params = alignParamsToSpecs(type->params, newParams);
+
+    // Guncel MemberGeometry + yeni parametrelerle generator -> plan.
+    ensureProfileCatalog();
+    ComponentInput input;
+    if (const auto mi = document_.indexOfEntity(updated.mainPart))
+        input.main = memberGeometryFor(document_, profileCatalog_, *mi);
+    else
+        return false;
+    for (const EntityId sid : updated.secondaryParts) {
+        if (const auto si = document_.indexOfEntity(sid))
+            input.secondary.push_back(memberGeometryFor(document_, profileCatalog_, *si));
+        else
+            return false;
+    }
+    input.params = updated.params;
+
+    const GenerationPlan gp = ComponentRegistry::instance().generate(updated.typeId, input);
+    if (!gp.ok) return false;
+    const ComponentPlan plan = componentPlanFromGenerationPlan(gp);
+    if (!plan.ok) return false;
+
+    ComponentMaterializer mat(document_);
+    const ComponentMaterializer::Prepared prep =
+        mat.prepare(plan, updated.mainPart, updated.secondaryParts);
+    if (!prep.ok) return false;
+
+    // Materializer.recompute kendi undo kaydini acar ve basarisizlikta kendini
+    // geri alir — burada pushUndoSnapshot ACILMAZ (cift kayit olur).
+    const auto res = mat.recompute(prep, document_.componentInstances()[*idx], updated);
+    if (!res.ok) return false;
+    invalidateCanvas();
+    updateStatus();
+    return true;
+#else
+    (void)compId;
+    (void)newParams;
+    return false;
+#endif
+}
+
 #ifdef MM_HAS_OCC
 bool Application::setSelectedEndPlateConnection(EntityId connId, const EndPlateParams& newParams) {
     const auto idxOpt = document_.indexOfEndPlateConnection(connId);
@@ -5153,8 +5529,8 @@ bool Application::setSelectedEndPlateConnection(EntityId connId, const EndPlateP
 // ROLLBACK edilir (document_.rollbackOpenRecord) — kolon profili/konumu +
 // levhalar + bulonlar + delikler + geometry version + undo/redo gecmisi ESKI
 // duruma doner; kismi belge degisikligi KALMAZ.
-void Application::recomputeEndPlateConnectionsFor(const std::vector<EntityId>& changedParts) {
-    if (changedParts.empty()) return;
+bool Application::recomputeEndPlateConnectionsFor(const std::vector<EntityId>& changedParts) {
+    if (changedParts.empty()) return true;
 
     std::vector<ComponentRefs> refs;
     refs.reserve(document_.endPlateConnections().size());
@@ -5163,7 +5539,7 @@ void Application::recomputeEndPlateConnectionsFor(const std::vector<EntityId>& c
     ComponentDependencyGraph graph;
     graph.build(refs);
     const std::vector<EntityId> affected = graph.dependentsOf(changedParts);
-    if (affected.empty()) return;
+    if (affected.empty()) return true;
 
     // Etkilenen ana parcalarin B-Rep tabanini BIR KEZ tazele (tasima/donme/profil
     // degisimi sonrasi findOccSolid bayat kalmasin). Transaction mutasyonudur;
@@ -5201,7 +5577,9 @@ void Application::recomputeEndPlateConnectionsFor(const std::vector<EntityId>& c
         msg += rolled ? L" — islem geri alindi."
                       : L" — rollback BASARISIZ (belge tutarsiz olabilir)";
         publishStatus(msg);
+        return false;
     }
+    return true;
 }
 
 void Application::rebuildBoltDisplay(const BoltGroup& bolt) {
@@ -5955,7 +6333,7 @@ void Application::refreshHoverCandidate(int x, int y) {
     hoverCutModifier_.reset();
     hoverFaceModel_.reset();
     hoverFaceIndices_.clear();
-    if (!pendingCutKind_ && !pendingBolt_) return;
+    if (!pendingCutKind_ && !pendingBolt_ && !pendingFinPlate_) return;
     // VERB-NOUN BOLT beklemede: yalnizca normal parcalar (konstrüksiyon
     // olmayan) vurgulanir. Tam 2 parca seciliyse YUZ secim adimidir: imlecin
     // altindaki yuz raycast ile bulunup vurgulanir (tiklaninca secilen yuz).
@@ -5969,6 +6347,26 @@ void Application::refreshHoverCandidate(int x, int y) {
             }
             return;
         }
+        const auto matchesRequired = [&](std::size_t index) {
+            if (index >= document_.models().size()) return false;
+            return document_.models()[index].constructionKind() == ConstructionKind::None;
+        };
+        std::optional<std::size_t> hit;
+        if (mode_ == EditMode::Draw2D)
+            hit = hitTestModel2D(screenTo2D(x, y), document_, 10.0 / (60.0 * camera_.zoom()));
+        else {
+            RECT client{}; GetClientRect(canvas_, &client);
+            hit = hitTestModel3D({static_cast<double>(x), static_cast<double>(y)}, document_,
+                                 camera_, std::max(1L, client.right), std::max(1L, client.bottom),
+                                 10.0);
+        }
+        if (hit && matchesRequired(*hit)) hoverModel_ = hit;
+        return;
+    }
+    // VERB-NOUN FIN PLATE beklemede: main/secondary icin yalnizca normal
+    // parcalar (konstrüksiyon olmayan) vurgulanir — Bolt'un parca-secim
+    // faziyla ayni kural.
+    if (pendingFinPlate_) {
         const auto matchesRequired = [&](std::size_t index) {
             if (index >= document_.models().size()) return false;
             return document_.models()[index].constructionKind() == ConstructionKind::None;
@@ -6449,7 +6847,13 @@ void Application::commitTransformPoint(const Vec3& point) {
             std::vector<EntityId> movedIds;
             movedIds.reserve(moving.size());
             for (const std::size_t idx : moving) movedIds.push_back(document_.modelId(idx));
-            recomputeEndPlateConnectionsFor(movedIds);
+            // 2d-2b: tasinan kolon/kirise bagli End Plate baglantilarini yeniden
+            // hesapla; basariliysa parametrik component'leri (Fin Plate vb.) de
+            // yeniden uret (ortak runtime, ikinci yol YOK). End Plate recompute
+            // basarisizsa (transaction rollback) DEVAM ETME — aksi halde ikinci
+            // yol eski/geri alinmis duruma yazar.
+            if (recomputeEndPlateConnectionsFor(movedIds))
+                recomputeComponentInstancesFor(movedIds);
         }
 #endif
         cancelTransformCommand();
@@ -6839,6 +7243,7 @@ void Application::executeCommand(int id) {
 
 void Application::selectTool(DrawTool tool) {
     cancelPendingCutCommand();
+    cancelPendingFinPlateCommand();
     cancelZoomWindow2D();
     if (workPlanePicking_) cancelWorkPlaneCommand();
     if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
@@ -6849,6 +7254,7 @@ void Application::selectTool(DrawTool tool) {
 
 void Application::deactivateAllCommands() {
     cancelPendingCutCommand();
+    cancelPendingFinPlateCommand();
     cancelZoomWindow2D();
     if (workPlanePicking_) cancelWorkPlaneCommand();
     if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
@@ -7149,6 +7555,14 @@ void Application::updateStatus() {
         } else if (pendingEndPlateParts_.empty())
             text += L"önce KOLONU (main), sonra KİRİŞİ (secondary) seçin — sağ tık uygular";
         else if (pendingEndPlateParts_.size() == 1)
+            text += L"kolon seçildi — şimdi KİRİŞİ (secondary) seçin";
+        else
+            text += L"kolon + kiriş seçildi — sağ tık uygular (Esc iptal)";
+    } else if (pendingFinPlate_) {
+        text += L"  |  FIN PLATE — ";
+        if (pendingFinPlateParts_.empty())
+            text += L"önce KOLONU (main), sonra KİRİŞİ (secondary) seçin — sağ tık uygular";
+        else if (pendingFinPlateParts_.size() == 1)
             text += L"kolon seçildi — şimdi KİRİŞİ (secondary) seçin";
         else
             text += L"kolon + kiriş seçildi — sağ tık uygular (Esc iptal)";
@@ -8751,8 +9165,10 @@ void Application::assignProfileToSelection(const std::string& profileName) {
             putOccSolid(selIdx, solid);
             reprofiled.push_back(document_.modelId(selIdx));
         }
-        if (!reprofiled.empty())
-            recomputeEndPlateConnectionsFor(reprofiled);
+        if (!reprofiled.empty()) {
+            if (recomputeEndPlateConnectionsFor(reprofiled))
+                recomputeComponentInstancesFor(reprofiled);
+        }
     }
 #endif
 }
@@ -9423,7 +9839,8 @@ void Application::gumballEndDrag() {
         std::vector<EntityId> movedIds;
         movedIds.reserve(movedSet.size());
         for (const std::size_t idx : movedSet) movedIds.push_back(document_.modelId(idx));
-        recomputeEndPlateConnectionsFor(movedIds);
+        if (recomputeEndPlateConnectionsFor(movedIds))
+            recomputeComponentInstancesFor(movedIds);
     }
 #endif
 }
@@ -9937,6 +10354,28 @@ void Application::openDocument() {
             const auto prepared = prepareEndPlateConnection(i, nullptr);
             if (!prepared) continue;  // parca kayboldu/cozulemedi: pisirilmis hal korunur
             commitEndPlateConnection(i, *prepared);
+        }
+        // P1: AÇILIS SONRASI PARAMETRIK COMPONENT RECOMPUTE (Fin Plate vb.).
+        // ComponentInstanceRecord parametreleri tasir; acilista yeniden uretilir
+        // (roleKey->EntityId korunur, MMW8 'N' blogu sayesinde). Bilinmeyen typeId
+        // (orphan) atlanir — kayit korunur, geometri uretilmez.
+        //
+        // TRANSACTION: load undo gecmisini sifirladigi icin burada ACIK kayit
+        // yoktur; materializer openOwnRecord=false ile yazarsa erken mutasyonlar
+        // kayit disi kalir ve basarisizlikta rollbackOpenRecord() false doner
+        // (kismi yazim kalir). Bu yuzden recompute ONCESINDE snapshot acilir;
+        // basariliysa load geri alinamaz oldugu icin gecmis yeniden temizlenir.
+        {
+            std::vector<EntityId> allParts;
+            for (const auto& rec : document_.componentInstances()) {
+                if (rec.mainPart != kInvalidEntityId) allParts.push_back(rec.mainPart);
+                for (const EntityId sid : rec.secondaryParts) allParts.push_back(sid);
+            }
+            if (!allParts.empty()) {
+                document_.pushSnapshot();
+                recomputeComponentInstancesFor(allParts);
+                document_.clearHistory();
+            }
         }
 #endif
         purgeStaleAxisLines();

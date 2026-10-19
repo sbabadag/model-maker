@@ -655,6 +655,90 @@ int main() {
         check(cutsAfter2 == 0, "Major(b): eski fitting cut kaldirildi (birikme yok)");
     }
 
+    // --- openOwnRecord=false: cagiran transaction'i (move/reprofile) paylasir ---
+    // P1: move/reprofile ZATEN pushUndoSnapshot acti; materializer AYNI acik kayda
+    // yazmali (IKINCI kayit ACILMAMALI). Basarisizlikta cagiran rollbackOpenRecord
+    // ile move + recompute TEK atomik adimda geri alinir (End Plate deseni).
+    {
+        Document d2;
+        d2.setOccStore(makeOccSolidStore());
+        OccSolidStore* s2 = asSolidStore(&d2.occStore());
+        ComponentMaterializer m2(d2);
+
+        WireframeModel col2 = WireframeModel::cube(100.0);
+        d2.addModel(std::move(col2));
+        const EntityId cmain2 = d2.modelId(0);
+        if (s2) {
+            PlateSpec cs; cs.center={0,0,0}; cs.u={1,0,0}; cs.v={0,1,0}; cs.axis={0,0,1};
+            cs.width=100; cs.height=100; cs.thickness=100;
+            const TopoDS_Shape csol = ComponentMaterializer::buildPlateSolid(cs);
+            if (!csol.IsNull()) { s2->set(cmain2, csol); s2->setBaseVersion(cmain2, s2->activeVersion(cmain2)); }
+        }
+
+        ComponentBuilder b1;
+        PlateSpec pp; pp.center={0,0,0}; pp.u={1,0,0}; pp.v={0,1,0}; pp.axis={0,0,1};
+        pp.width=100; pp.height=100; pp.thickness=8; pp.name=L"Fin";
+        b1.plate("fin_plate", pp).ownedBy("fin_plate", "component");
+        const auto built1 = b1.build();
+        const ComponentPlan plan1 = componentPlanFromObjects(built1.objects, built1.relationships);
+        ComponentMaterializer::Prepared prep1 = m2.prepare(plan1, cmain2, {});
+        ComponentInstanceRecord rec1; rec1.typeId=L"test"; rec1.mainPart=cmain2;
+
+        // Simule move: caller kendi kaydini acar.
+        d2.pushSnapshot();
+        const std::size_t modelsBefore = d2.models().size();
+        const ComponentMaterializer::CommitResult res1 =
+            m2.commit(prep1, rec1, /*openOwnRecord=*/false);
+        check(res1.ok, "openOwnRecord=false: commit cagiran kaydina yazar");
+        check(d2.models().size() == modelsBefore + 1,
+              "openOwnRecord=false: levha eklendi (ayni transaction)");
+        // IKINCI kayit acilmadi: tek undo kaydi. undo() -> her sey geri (levha + kayit).
+        d2.undo();
+        check(d2.models().size() == modelsBefore,
+              "openOwnRecord=false: tek undo kaydi ile tam geri alindi");
+
+        // Simule move + basarisiz recompute: cagiran rollbackOpenRecord ile atomik.
+        // Ayri dokumanda: once component'i NORMAL commit (kendi kaydi) ile kur,
+        // sonra move kaydi acip openOwnRecord=false recompute yap.
+        {
+            Document d3;
+            d3.setOccStore(makeOccSolidStore());
+            OccSolidStore* s3 = asSolidStore(&d3.occStore());
+            ComponentMaterializer m3(d3);
+            WireframeModel col3 = WireframeModel::cube(100.0);
+            d3.addModel(std::move(col3));
+            const EntityId cmain3 = d3.modelId(0);
+            if (s3) {
+                PlateSpec cs; cs.center={0,0,0}; cs.u={1,0,0}; cs.v={0,1,0}; cs.axis={0,0,1};
+                cs.width=100; cs.height=100; cs.thickness=100;
+                const TopoDS_Shape csol = ComponentMaterializer::buildPlateSolid(cs);
+                if (!csol.IsNull()) { s3->set(cmain3, csol); s3->setBaseVersion(cmain3, s3->activeVersion(cmain3)); }
+            }
+            ComponentBuilder b3;
+            PlateSpec pp3; pp3.center={0,0,0}; pp3.u={1,0,0}; pp3.v={0,1,0}; pp3.axis={0,0,1};
+            pp3.width=100; pp3.height=100; pp3.thickness=8; pp3.name=L"Fin";
+            b3.plate("fin_plate", pp3).ownedBy("fin_plate", "component");
+            const auto built3 = b3.build();
+            const ComponentPlan plan3 = componentPlanFromObjects(built3.objects, built3.relationships);
+            ComponentMaterializer::Prepared prep3 = m3.prepare(plan3, cmain3, {});
+            ComponentInstanceRecord rec3; rec3.typeId=L"test"; rec3.mainPart=cmain3;
+            const ComponentMaterializer::CommitResult cres = m3.commit(prep3, rec3);
+            check(cres.ok, "openOwnRecord=false: kurulum commit ok");
+            const ComponentInstanceRecord existing3 = d3.componentInstances()[0];
+
+            // Move kaydi ac; materializer AYNI kayda yazar (ikinci kayit yok).
+            d3.pushSnapshot();
+            const std::size_t modelsBefore3 = d3.models().size();
+            const ComponentMaterializer::CommitResult rres =
+                m3.recompute(prep3, existing3, rec3, /*openOwnRecord=*/false);
+            check(rres.ok, "openOwnRecord=false: recompute cagiran kaydina yazar");
+            // Tek undo kaydi: undo() ile move + recompute'un her ikisi de geri.
+            d3.undo();
+            check(d3.models().size() == modelsBefore3,
+                  "openOwnRecord=false: recompute tek undo kaydi ile geri alindi");
+        }
+    }
+
     std::printf("\n%d failure(s)\n", failures);
     return failures == 0 ? 0 : 1;
 }

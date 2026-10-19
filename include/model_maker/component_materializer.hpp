@@ -91,18 +91,27 @@ public:
         std::vector<EntityId> cutTargets;
         std::wstring error;
     };
-    CommitResult commit(const Prepared& prep, ComponentInstanceRecord record);
+    CommitResult commit(const Prepared& prep, ComponentInstanceRecord record,
+                        bool openOwnRecord = true);
 
     // --- RECOMPUTE (C3) ------------------------------------------------------
     // Mevcut component'in child'larini YENI geometriyle gunceller. roleKey ->
     // EntityId eslesmesi KORUNUR (existing.children tablosundan okunur; yeni
     // eklenen child'lara yeni EntityId atanir). Plate -> replaceModel, BoltGroup
-    // -> setBoltGroup (kimlik korunur); tek undo kaydi. Basarisizlikta rollback.
+    // -> setBoltGroup (kimlik korunur).
+    //
+    // openOwnRecord (varsayilan true): materializer KENDI undo kaydini acar ve
+    // basarisizlikta kendini geri alir (standalone create/edit icin dogru).
+    // false: cagiran ZATEN acik bir transaction icinde (orn. move/reprofile
+    // pushUndoSnapshot'i); materializer AYNI acik kayda yazar, pushSnapshot ve
+    // rollbackOpenRecord CAGIRMAZ — cagiran basarisizlikta rollback eder. Bu,
+    // End Plate'in commitEndPlateConnection deseniyle birebir aynidir ve
+    // move+recompute'un TEK atomik undo adimi olmasini saglar.
     //
     // existing: document'taki GUNCEL kayit (children + owned id'ler dolu).
     // record: cagiranin yeni parametre/referans durumu (id/typeId korunur).
     CommitResult recompute(const Prepared& prep, const ComponentInstanceRecord& existing,
-                           ComponentInstanceRecord record);
+                           ComponentInstanceRecord record, bool openOwnRecord = true);
 
     // --- Yardimci ------------------------------------------------------------
     // PlateSpec -> dikdortgen prizma (box) solid. Gecersiz boyut/taban -> null.

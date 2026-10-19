@@ -343,8 +343,36 @@ public:
 #endif
     // changedParts'e main/secondary olarak bagli TUM End Plate baglantilarini
     // yeniden hesaplar (deterministik kayit sirasi). Kolon/kiris tasininca,
-    // dondurulunce veya profili degisince cagrilir.
-    void recomputeEndPlateConnectionsFor(const std::vector<EntityId>& changedParts);
+    // dondurulunce veya profili degisince cagrilir. true = basarili (veya
+    // etkilenen baglanti yok); false = recompute basarisiz + transaction
+    // rollback edildi (cagiran component recompute'una DEVAM ETMEMELI).
+    bool recomputeEndPlateConnectionsFor(const std::vector<EntityId>& changedParts);
+
+    // --- UNIVERSAL COMPONENT (Phase P1): Fin Plate production entegrasyonu -----
+    // Verb-noun Fin Plate: once MAIN (kolon), sonra SECONDARY (kiris) secilir;
+    // sag tik uygular, Esc iptal. Gercek yol: ComponentRegistry -> generateFinPlate
+    // -> componentPlanFromGenerationPlan -> ComponentMaterializer::prepare/commit
+    // -> Document (ComponentInstanceRecord + semantic child kayitlari). End Plate
+    // icine AYRI bir uretim yolu YOKTUR — Fin Plate ortak runtime'i kullanir.
+    void startFinPlateCommand();
+    void cancelPendingFinPlateCommand();
+    void executePendingFinPlateCommand();
+    bool pickPendingFinPlateAt(int x, int y);
+    void applyFinPlateFromParts(const std::vector<std::size_t>& parts);
+    // changedParts'e main/secondary olarak bagli TUM parametrik component
+    // instance'larini (ComponentInstanceRecord) yeniden uretir. End Plate
+    // baglantilari AYRI kalir (mevcut production yolu). Deterministik kayit
+    // sirasi; basarisizlikta atomik rollback (eski model bozulmaz).
+    void recomputeComponentInstancesFor(const std::vector<EntityId>& changedParts);
+    // Secili model bir component instance'inin SAHIP OLDUGU alt nesne (levha/
+    // bulon display) ise kaydini dondurur; degilse false.
+    bool selectedComponentInstance(ComponentInstanceRecord& out) const;
+    // Component instance parametre guncelleme (canli recompute, undo'lu).
+    // typeId bilinen bir tipse parametreleri semaya hizalar, yeniden uretir.
+    bool setSelectedComponentParams(EntityId compId, const std::vector<CompParam>& newParams);
+    // Fin Plate parametreleri (uygulama-anı diyalogdan; kalici — son deger hatirlanir).
+    void setPendingFinPlateParams(const std::vector<CompParam>& p) { pendingFinPlateParams_ = p; }
+    const std::vector<CompParam>& pendingFinPlateParams() const { return pendingFinPlateParams_; }
     // Secili model bir BOLT display'i ise bulon parametrelerini okur (props
     // paneli). Donus false = secim bir bulon degil.
     bool selectedBoltProperties(double& nominalDiameter, double& holeDiameter,
@@ -1026,10 +1054,16 @@ private:
     // VERB-NOUN END PLATE (Phase C1 GUI): [0]=main (kolon), [1]=secondary (kiris).
     bool pendingEndPlate_{};
     std::vector<std::size_t> pendingEndPlateParts_;
+    // VERB-NOUN FIN PLATE (Phase P1): [0]=main (kolon), [1]=secondary (kiris).
+    bool pendingFinPlate_{};
+    std::vector<std::size_t> pendingFinPlateParts_;
     // END PLATE PARAMETRELERI (faz D1): uygulama-anı diyalogdan gelen degerler
     // (startEndPlateCommand'dan önce UI set eder); applyEndPlateFromParts bunları
     // kullanır. Kalıcı — son değer hatırlanır.
     EndPlateParams pendingEndPlateParams_{};
+    // FIN PLATE PARAMETRELERI (Phase P1): tipli CompParam listesi; uygulama-anı
+    // diyalogdan gelir, applyFinPlateFromParts bunlari kullanir. Kalıcı.
+    std::vector<CompParam> pendingFinPlateParams_;
     // End Plate alt nesnesine çift tık -> düzenleme isteği callback'i.
     std::function<void(const EndPlateConnection&)> endPlateEditRequest_;
     // BOLT TOOL PENCERESI (Phase B1): bolt display'ine cift tik -> duzenleme
