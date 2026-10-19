@@ -507,9 +507,19 @@ GenerationPlan generateFinPlate(const ComponentInput& input) noexcept {
     //    yonu, yukseklik = kesit YUKSEKLIGI yonu, uzunluk = kiris ekseni yonu.
     //    (Eski kod kalinligi kiris ekseni boyunca veriyordu = alin levhasi gibi
     //    kirise DIK; shear tab icin 90° yanlis yonelimdi.)
+    //
+    //    REFERANS NORMAL = DUNYA Z (sabit). beam.refNormal cizim anindaki is
+    //    duzleminden gelir ve gercek kiris geometrisiyle CELISEBILIR: yatay bir
+    //    is duzleminde cizilmis kiriste {+-1,0,0} olur -> levha YATAY duser,
+    //    civata DUSEY olur (sahada olculdu). Shear tab her zaman DUSEY bir
+    //    levhadir; dunya Z hem bunu garanti eder hem de "alt baslik XY'ye
+    //    paralel" profil kuraliyla tutarlidir. Egik kiriste de levha dusey kalir.
     const Vec3 lenDir = vnorm(Vec3{farEnd.x - connEnd.x, farEnd.y - connEnd.y,
                                    farEnd.z - connEnd.z});
-    const ProfileSectionFrame sec = profileSectionFrame(lenDir, beam.refNormal);
+    const Vec3 worldUp{0.0, 0.0, 1.0};
+    ProfileSectionFrame sec = profileSectionFrame(lenDir, worldUp);
+    // Dusey uye (kolon-kolon): dunya Z eksene paralel -> generik cerceveye dus.
+    if (std::fabs(vdot(lenDir, worldUp)) > 0.999) sec = profileSectionFrame(lenDir, beam.refNormal);
 
     // 3. Kolonun temas yuzu: kolon kesitinin lenDir yonundeki yari kapsami
     //    (dikdortgen destek fonksiyonu). lenDir kolondan kirise dogru disa bakar.

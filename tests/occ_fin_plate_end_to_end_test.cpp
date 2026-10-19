@@ -164,6 +164,23 @@ int main() {
         check(std::fabs(fpPlate.v.z - 1.0) < 1e-6, "fin plate yukseklik yonu +Z (dusey)");
     }
 
+    // --- regresyon: refNormal cizim is duzleminden gelir, YATAY olabilir.
+    // Levha yine DUSEY kalmali (shear tab); aksi halde levha kirisin ust
+    // basligina yatar ve civata dusey olur (sahada goruldu).
+    {
+        MemberGeometry tilted = beamGeom;
+        tilted.refNormal = Vec3{1.0, 0.0, 0.0};
+        const GenerationPlan gp2 = ComponentRegistry::instance().generate(
+            L"fin_plate", makeFinPlateInput(colGeom, tilted));
+        check(gp2.ok && !gp2.plates.empty(), "refNormal yatay: plan ok");
+        if (gp2.ok && !gp2.plates.empty()) {
+            check(std::fabs(gp2.plates[0].axis.z) < 1e-6,
+                  "refNormal yatay iken levha DUSEY kalir (regresyon)");
+            check(std::fabs(gp2.boltGroups[0].axis.z) < 1e-6,
+                  "refNormal yatay iken civata ekseni YATAY (govdeye dik)");
+        }
+    }
+
     const ComponentPlan plan = componentPlanFromGenerationPlan(fp);
     check(plan.ok, "ComponentPlan koprusu ok (roleKey korunur)");
     check(plan.children.size() == 2, "plan 2 child (fin_plate + beam_bolts)");
