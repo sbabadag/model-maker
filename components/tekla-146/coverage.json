@@ -1,0 +1,26 @@
+{
+  "componentTypeId": "tekla_shear_plate_146",
+  "status": "PARTIALLY_IMPLEMENTED",
+  "counts": {
+    "documentedParameters": 48,
+    "blueprintParameters": 48,
+    "implementedParameters": 8,
+    "documentedObjects": 9,
+    "implementedObjects": 2,
+    "schematicImagesProcessed": 8,
+    "schematicImagesUninterpretable": 0,
+    "testedParameterOptions": 4
+  },
+  "coverageRatio": 0.1667,
+  "openEngineeringUncertainties": [
+    "Beam-to-beam (main part is a horizontal beam) shear-tab web placement is documented but not implemented.",
+    "Double shear tab (near_and_far), stiffener, haunch, backing bar, seat angle geometry is documented but not implemented.",
+    "Beam end cut / notch / flange strip / weld access hole cut shapes have no CutModifier primitive yet.",
+    "Exact default bolt layout (spacing, AutoDefaults) depends on joints.def — treated as UNRESOLVED."
+  ],
+  "blockingIssues": [],
+  "notes": [
+    "The 8 implemented parameters drive a verified single shear tab (welded to column, bolted to secondary web).",
+    "Status is PARTIALLY_IMPLEMENTED, not GEOMETRY_VERIFIED, because only the orthogonal beam-to-column single-tab slice is verified; the remaining documented surface is still open."
+  ]
+}
