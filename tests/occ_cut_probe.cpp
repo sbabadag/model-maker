@@ -17,7 +17,9 @@
 
 #include <BRepBndLib.hxx>
 #include <BRepPrimAPI_MakeBox.hxx>
+#include <BRepCheck_Analyzer.hxx>
 #include <Bnd_Box.hxx>
+#include <TopExp_Explorer.hxx>
 
 #include <cmath>
 #include <cstdio>
@@ -75,14 +77,57 @@ int main() {
               "fitting: bbox x in [0,80]");
     }
 
-    // --- Fitting: kesmeyen duzlem (uzatma) -> base aynen (prototip siniri). ---
+    // --- Fitting: kesmeyen duzlem (uzatma) -> yakin uc duzleme kadar uzatilir. ---
+    // P9 sozlesmesi: duzlem ekseni kesmiyorsa (kiris kisa) yakin ucu uzatir.
+    // X=150 to ucundan (x=100) otede, from ucundan (x=0) da otede; iki uc da
+    // duzlemin ayni tarafinda (-X). Yakin uc = to (|sTo|=50 < |sFrom|=150) ->
+    // to ucu x=150'e uzar. Kiriş x in [0,150], hacim 150*50*20 = 150000.
     {
         CutModifier fit;
         fit.kind = CutKind::Fitting;
         fit.planeOrigin = {150, 0, 0};
         fit.planeNormal = {1, 0, 0};
         TopoDS_Shape cut = applyCutModifier(base, fit, axisFrom, axisTo);
-        check(nearD(shapeVolume(cut), baseVol, 1.0), "fitting: kesmeyen duzlem base'i korur");
+        double xMin, yMin, zMin, xMax, yMax, zMax;
+        bbox(cut, xMin, yMin, zMin, xMax, yMax, zMax);
+        check(nearD(shapeVolume(cut), 150000.0, 1.0),
+              "fitting: kesmeyen duzlem yakin to-ucunu uzatir (hacim 150000)");
+        check(nearD(xMin, 0.0, 1e-6) && nearD(xMax, 150.0, 1e-6),
+              "fitting: uzatma bbox x in [0,150]");
+        // Uzatilan sonuc gecerli ve KAPALI tek solid olmali.
+        BRepCheck_Analyzer an(cut);
+        check(an.IsValid(), "fitting: uzatma sonucu gecerli B-Rep");
+        int nSolids = 0;
+        for (TopExp_Explorer ex(cut, TopAbs_SOLID); ex.More(); ex.Next()) ++nSolids;
+        check(nSolids == 1, "fitting: uzatma sonucu tek kapali solid");
+    }
+
+    // --- Fitting uzatma + invertSide: kisa kirisde invertSide anlamsizdir ---
+    // (butun kiris korunur), yakin uc yine uzatilir -> sonuc DEGISMEZ.
+    {
+        CutModifier fit;
+        fit.kind = CutKind::Fitting;
+        fit.planeOrigin = {150, 0, 0};
+        fit.planeNormal = {1, 0, 0};
+        fit.invertSide = true;
+        TopoDS_Shape cut = applyCutModifier(base, fit, axisFrom, axisTo);
+        check(nearD(shapeVolume(cut), 150000.0, 1.0),
+              "fitting: kisa kiris + invertSide yine yakin ucu uzatir (150000)");
+    }
+
+    // --- Fitting uzatma: duzlem from ucunun gerisinde (x=-50) -> from ucu uzar. ---
+    {
+        CutModifier fit;
+        fit.kind = CutKind::Fitting;
+        fit.planeOrigin = {-50, 0, 0};
+        fit.planeNormal = {1, 0, 0};
+        TopoDS_Shape cut = applyCutModifier(base, fit, axisFrom, axisTo);
+        double xMin, yMin, zMin, xMax, yMax, zMax;
+        bbox(cut, xMin, yMin, zMin, xMax, yMax, zMax);
+        check(nearD(shapeVolume(cut), 150000.0, 1.0),
+              "fitting: kesmeyen duzlem yakin from-ucunu uzatir (hacim 150000)");
+        check(nearD(xMin, -50.0, 1e-6) && nearD(xMax, 100.0, 1e-6),
+              "fitting: uzatma bbox x in [-50,100]");
     }
 
     // --- PlaneCut: duzlem x=30, keepPositive=false -> x<30 korunur. ---
