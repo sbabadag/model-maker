@@ -52,6 +52,7 @@ add_library(model_maker_core
     src/component_recompute.cpp
     src/component_framework.cpp
     src/component_glyph.cpp
+    src/component_dialog.cpp
     src/assembly.cpp)
 target_include_directories(model_maker_core PUBLIC include)
 target_compile_options(model_maker_core PRIVATE -Wall -Wextra -Wpedantic)
@@ -847,6 +848,15 @@ if(BUILD_TESTING)
     target_link_options(model_maker_component_glyph_test PRIVATE -static -static-libgcc -static-libstdc++)
     target_compile_options(model_maker_component_glyph_test PRIVATE -Wall -Wextra -Wpedantic)
     add_test(NAME model_maker_component_glyph_test COMMAND model_maker_component_glyph_test)
+
+    # UNIVERSAL COMPONENT DIALOG + SCHEMATIC (Tekla-tarzi dialog): sematik cizim
+    # + hotspot <-> parametre baglantisi + parametre gruplari + EndPlateParams
+    # adaptoru + dialog registry. OCC'siz, Linux'ta kosar.
+    add_executable(model_maker_component_dialog_test tests/component_dialog_test.cpp)
+    target_link_libraries(model_maker_component_dialog_test PRIVATE model_maker_core)
+    target_link_options(model_maker_component_dialog_test PRIVATE -static -static-libgcc -static-libstdc++)
+    target_compile_options(model_maker_component_dialog_test PRIVATE -Wall -Wextra -Wpedantic)
+    add_test(NAME model_maker_component_dialog_test COMMAND model_maker_component_dialog_test)
 
     # COMPONENT SERIALIZE (Phase C2b): ComponentInstanceRecord'un MMW8 'I' blogu
     # + Document save/load entegrasyonu; orphan tespiti + param migration +
