@@ -236,7 +236,8 @@ int main() {
             const BoltGroup& b = plan.boltGroups[0];
             check(b.countX == 1, "fin plate tek sira");
             check(b.countY == 3, "fin plate 3 bulon (parametreden)");
-            check(b.parts.size() == 1 && b.parts[0] == EntityId{20}, "fin plate ana parca referansi");
+            check(b.parts.size() == 1 && b.parts[0] == EntityId{21},
+                  "fin plate bulonlari KIRISE referansli (kolona degil)");
         }
     }
 

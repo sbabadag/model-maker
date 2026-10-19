@@ -207,13 +207,22 @@ int main() {
     check(ps && !ps->IsNull() && shapeVolume(*ps) > 0.0, "fin plate OCCT kati uretildi");
     const double plateBaseVol = ps ? shapeVolume(*ps) : 0.0;
 
-    // Delikler: bulon grubu parcalari {levha, kolon} -> 2 bulon x 2 = 4 delik.
+    // Delikler: bulon grubu parcalari {levha, KIRIS} -> 2 bulon x 2 = 4 delik.
+    // Fin plate'te kolon KAYNAKLIDIR, delinmez (end plate'ten farkli).
     const auto bi = doc.indexOfBoltGroup(boltGroupId);
     check(bi.has_value(), "bolt group kayitli");
-    std::size_t holes = 0;
-    for (const auto& m : doc.cutModifiers())
-        if (m.kind == CutKind::Hole && m.owner == boltGroupId) ++holes;
-    check(holes == 4, "4 delik (2 bulon x {levha, kolon})");
+    std::size_t holes = 0, beamHoles = 0, colHoles = 0, plateHoles = 0;
+    for (const auto& m : doc.cutModifiers()) {
+        if (m.kind != CutKind::Hole || m.owner != boltGroupId) continue;
+        ++holes;
+        if (m.target == beamId) ++beamHoles;
+        if (m.target == colId) ++colHoles;
+        if (m.target == finPlateId) ++plateHoles;
+    }
+    check(holes == 4, "4 delik (2 bulon x {levha, kiris})");
+    check(beamHoles == 2, "2 delik KIRIS govdesinde");
+    check(plateHoles == 2, "2 delik levhada");
+    check(colHoles == 0, "kolon DELINMEZ (fin plate kolona kaynaklidir)");
 
     // Sahiplik ComponentInstanceRecord'a yazildi.
     check(doc.componentInstances().size() == 1, "1 component instance");

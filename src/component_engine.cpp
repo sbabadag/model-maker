@@ -4,7 +4,10 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
+#include <fstream>
 #include <optional>
+#include <sstream>
 #include <utility>
 
 namespace mm {
@@ -567,9 +570,14 @@ GenerationPlan generateFinPlate(const ComponentInput& input) noexcept {
     b.axis = sec.width;
     b.xDir = lenDir;
     const double hh = height * 0.5;
-    b.origin = Vec3{facePoint.x - sec.height.x * (hh - edge),
-                    facePoint.y - sec.height.y * (hh - edge),
-                    facePoint.z - sec.height.z * (hh - edge)};
+    // Bulon hatti = levha UZUNLUGUNUN ORTASI. Eskiden kaynak kenarinin (kolon
+    // yuzu) tam uzerindeydi; orada kaynak bolgesi vardir, civata gecmez.
+    const Vec3 boltLine{facePoint.x + lenDir.x * (width * 0.5),
+                        facePoint.y + lenDir.y * (width * 0.5),
+                        facePoint.z + lenDir.z * (width * 0.5)};
+    b.origin = Vec3{boltLine.x - sec.height.x * (hh - edge),
+                    boltLine.y - sec.height.y * (hh - edge),
+                    boltLine.z - sec.height.z * (hh - edge)};
     b.countX = 1;
     b.countY = boltCount;
     b.spacingX = 0.0;
@@ -585,9 +593,56 @@ GenerationPlan generateFinPlate(const ComponentInput& input) noexcept {
     b.params.hasHead = true;
     b.params.hasNut = true;
     b.params.hasWasher = true;
-    b.parts = {input.main.id};
+    // FIN PLATE (shear tab): bulonlar levhayi KIRIS GOVDESINE baglar. End
+    // plate'in aksine main (kolon) DELINMEZ — kolonla baglanti KAYNAKTIR.
+    // (Eski kod end plate'ten kopyalanmis {main.id} birakmisti: civatalar
+    // kolonu deliyordu.)
+    b.parts = {input.secondary[0].id};
     plan.boltGroups.push_back(b);
     plan.boltGroupKeys.push_back("beam_bolts");
+
+    // TESHIS (MM_FINPLATE_DIAG=1): saha modelinin gercek cerceve hesabini
+    // dosyaya dok. Ortam degiskeni set'li degilse HICBIR SEY yapmaz; normal
+    // calismayi etkilemez. Kullanici log'u paylasinca tahmin yerine sayilarla
+    // teshis edilir (levha neden hala yanlis yerde?).
+    if (std::getenv("MM_FINPLATE_DIAG") != nullptr) {
+        std::ofstream os("model-maker-finplate-diag.log", std::ios::app);
+        if (os) {
+            const auto v3 = [](const Vec3& v) {
+                std::ostringstream s;
+                s << "(" << v.x << ", " << v.y << ", " << v.z << ")";
+                return s.str();
+            };
+            os << "\n=== FIN PLATE DIAG ===\n";
+            os << "col  id=" << col.id << " from=" << v3(col.axisFrom) << " to=" << v3(col.axisTo)
+               << " refN=" << v3(col.refNormal) << " sec=" << col.secWidth << "x" << col.secHeight
+               << "\n";
+            os << "beam id=" << beam.id << " from=" << v3(beam.axisFrom)
+               << " to=" << v3(beam.axisTo) << " refN=" << v3(beam.refNormal)
+               << " sec=" << beam.secWidth << "x" << beam.secHeight << "\n";
+            os << "params w=" << width << " h=" << height << " th=" << thickness
+               << " bolts=" << boltCount << " edge=" << edge << "\n";
+            os << "toNear=" << (toNear ? 1 : 0) << " connEnd=" << v3(connEnd)
+               << " farEnd=" << v3(farEnd) << " lenDir=" << v3(lenDir) << "\n";
+            os << "sec.axis=" << v3(sec.axis) << " sec.width=" << v3(sec.width)
+               << " sec.height=" << v3(sec.height) << "\n";
+            os << "colSec.width=" << v3(colSec.width) << " colSec.height=" << v3(colSec.height)
+               << " aW=" << aW << " aH=" << aH << " halfExtent=" << halfExtent << "\n";
+            os << "denom=" << denom << " numer=" << numer << " t=" << t
+               << " facePoint=" << v3(facePoint) << "\n";
+            for (const auto& p : plan.plates) {
+                os << "plate center=" << v3(p.center) << " axis=" << v3(p.axis) << " u=" << v3(p.u)
+                   << " v=" << v3(p.v) << " w=" << p.width << " h=" << p.height
+                   << " th=" << p.thickness << "\n";
+            }
+            for (const auto& g : plan.boltGroups) {
+                os << "bolts origin=" << v3(g.origin) << " axis=" << v3(g.axis)
+                   << " xDir=" << v3(g.xDir) << " count=" << g.countX << "x" << g.countY
+                   << " spacing=" << g.spacingX << "," << g.spacingY << "\n";
+            }
+            os.flush();
+        }
+    }
 
     plan.ok = true;
     return plan;

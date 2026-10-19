@@ -22,6 +22,7 @@ model-maker-render.log
 model-maker-startup.log
 model-maker-trim.log
 model-maker-endplate-diag.log
+model-maker-finplate-diag.log
 build-occ/
 build-occ-linux/
 build-hermes/
