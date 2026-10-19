@@ -249,6 +249,9 @@ GenerationPlan generationPlanFromObjects(const std::vector<ComponentObjectSpec>&
 struct ComponentPlan {
     GenerationPlan plan;                         // legacy flat plan (plates/boltGroups/cuts/welds)
     std::vector<ComponentChildRecord> children;  // roleKey -> (kind, params, deps) — deterministik
+    ComponentRelationshipGraph relationships;    // TAM iliski grafigi (geometric/parametric/
+                                                 // dependency/ownership) — materializer C4
+                                                 // validasyonu icin KORUNUR (sessiz dusme yok).
     bool ok{true};
     std::wstring error;
 };

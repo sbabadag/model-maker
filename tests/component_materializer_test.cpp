@@ -269,6 +269,48 @@ int main() {
         check(t.size() == 1 && t.find("a_first") == nullptr, "silinen child deterministik yok");
     }
 
+    // --- C4: desteklenmeyen orientation kisiti acik Unsupported ---------------
+    {
+        ComponentBuilder par;
+        PlateSpec pp;
+        par.plate("a", pp).plate("b", pp).parallel("a", "b");
+        const auto pbuilt = par.build();
+        check(pbuilt.ok, "parallel model katmani ok (kaydedilir)");
+        const ComponentPlan pplan =
+            componentPlanFromObjects(pbuilt.objects, pbuilt.relationships);
+        ComponentMaterializer::Prepared pprep = mat.prepare(pplan, mainId, {});
+        check(!pprep.ok, "Parallel -> prepare Unsupported (ok=false)");
+        check(!pprep.error.empty(), "Parallel Unsupported hatasi dolu");
+
+        ComponentBuilder perp;
+        perp.plate("a", pp).plate("b", pp).perpendicular("a", "b");
+        const auto perbuilt = perp.build();
+        const ComponentPlan perplan =
+            componentPlanFromObjects(perbuilt.objects, perbuilt.relationships);
+        ComponentMaterializer::Prepared perprep = mat.prepare(perplan, mainId, {});
+        check(!perprep.ok, "Perpendicular -> prepare Unsupported (ok=false)");
+    }
+
+    // --- C4: ownership/weld/cut iliskileri geometrik dongu olarak COZULMEZ -----
+    {
+        // Cuts + OwnedBy kenarlari ConstraintSystem bagimliligina aktarilmaz
+        // (yapay Cyclic uretilmez) — materializer bu plani gecirmeli.
+        ComponentBuilder ow;
+        PlateSpec pp;
+        pp.width = 100.0;
+        pp.height = 100.0;
+        pp.thickness = 8.0;
+        CutModifier cut;
+        cut.kind = CutKind::PlaneCut;
+        ow.plate("a", pp).cut("c", cut).cuts("c", "a").ownedBy("a", "component");
+        const auto obuilt = ow.build();
+        check(obuilt.ok, "cuts+ownedBy model katmani ok");
+        const ComponentPlan oplan =
+            componentPlanFromObjects(obuilt.objects, obuilt.relationships);
+        ComponentMaterializer::Prepared oprep = mat.prepare(oplan, mainId, {});
+        check(oprep.ok, "cuts+ownedBy -> prepare ok (dongu DEGIL)");
+    }
+
     std::printf("\n%d failure(s)\n", failures);
     return failures == 0 ? 0 : 1;
 }

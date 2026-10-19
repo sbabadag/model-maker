@@ -247,6 +247,7 @@ ComponentPlan componentPlanFromObjects(const std::vector<ComponentObjectSpec>& o
                                        const ComponentRelationshipGraph& graph) noexcept {
     ComponentPlan out;
     out.plan = generationPlanFromObjects(objects);
+    out.relationships = graph;  // C4: TAM grafik korunur (materializer validasyonu)
 
     // roleKey tekilligi: ayni roleKey iki nesnede olamaz (builder zaten engeller
     // ama burada fail-closed denetlenir). Ayrica kind->payload tutarliligi

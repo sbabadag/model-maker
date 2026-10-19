@@ -190,6 +190,24 @@ ComponentMaterializer::Prepared ComponentMaterializer::prepare(
         }
     }
 
+    // C4: geometrik iliskiler — desteklenmeyen ORIENTATION kisitlari (Parallel/
+    // Perpendicular) sessizce "basari" SAYILMAZ. ConstraintSystem su an yalnizca
+    // mesafe (DistanceConstraint) cozer; OrientationConstraint dilimi YOK. Bu
+    // yuzden plan Parallel/Perpendicular iceriyorsa acik Unsupported donulur.
+    // Distance-tipi iliskiler (Coincident/Offset/Align/FaceContact) FaceReference
+    // cozumuyle (OCCT adapter) DistanceConstraint'a baglanir — generator konumu
+    // zaten hesapladigi icin materializer burada yeniden cozmez; yalnizca
+    // desteklenmeyen turu reddeder.
+    for (const auto& r : plan.relationships.relationships()) {
+        if (!r.enabled) continue;
+        if (r.kind == RelationshipKind::Parallel || r.kind == RelationshipKind::Perpendicular) {
+            out.error = L"desteklenmeyen orientation kisiti (Parallel/Perpendicular — OrientationConstraint yok): '" +
+                        std::wstring(r.from.begin(), r.from.end()) + L"' -> '" +
+                        std::wstring(r.to.begin(), r.to.end()) + L"'";
+            return out;
+        }
+    }
+
     out.ok = true;
     return out;
 }
