@@ -4,23 +4,26 @@
   "counts": {
     "documentedParameters": 48,
     "blueprintParameters": 48,
-    "implementedParameters": 8,
+    "implementedParameters": 19,
     "documentedObjects": 9,
-    "implementedObjects": 2,
+    "implementedObjects": 5,
     "schematicImagesProcessed": 8,
     "schematicImagesUninterpretable": 0,
-    "testedParameterOptions": 4
+    "testedParameterOptions": 12
   },
-  "coverageRatio": 0.1667,
+  "coverageRatio": 0.3958,
   "openEngineeringUncertainties": [
-    "Beam-to-beam (main part is a horizontal beam) shear-tab web placement is documented but not implemented.",
-    "Double shear tab (near_and_far), stiffener, haunch, backing bar, seat angle geometry is documented but not implemented.",
-    "Beam end cut / notch / flange strip / weld access hole cut shapes have no CutModifier primitive yet.",
-    "Exact default bolt layout (spacing, AutoDefaults) depends on joints.def — treated as UNRESOLVED."
+    "Notch / flange strip / weld access hole / beam end bevel + clipped flange cut shapes have no dedicated CutModifier primitive yet (PlaneCut/PolygonCut exist; exact Tekla notch shape deferred).",
+    "Stiffener vertical height uses the tab height, not the exact between-flange clear height, because MemberGeometry lacks flange/web thickness.",
+    "Seat angle requires the profile catalog (unsupported).",
+    "Haunch plate geometry documented but not implemented.",
+    "Slotted/oversized holes have no slot primitive (round holes only).",
+    "Exact default bolt layout (AutoDefaults / joints.def) treated as UNRESOLVED."
   ],
   "blockingIssues": [],
   "notes": [
-    "The 8 implemented parameters drive a verified single shear tab (welded to column, bolted to secondary web).",
-    "Status is PARTIALLY_IMPLEMENTED, not GEOMETRY_VERIFIED, because only the orthogonal beam-to-column single-tab slice is verified; the remaining documented surface is still open."
+    "19 parameters now drive geometry: single/double shear tab (shearTabPosition), tab gap (tabGapSecondary), beam end square cut + beam gap, full bolt group placement (variable spacing, vertical measure top/middle/below, vertical pos, deleted bolts), stiffener, backing bar.",
+    "OCC end-to-end verified: beam end cut trims the real beam solid (bbox Y-min pulled to face+gap); double tab materializes 2 plates + 12 holes (4 bolts x 3 parts); stiffener + backing bar materialize; undo/redo + roleKey->EntityId stable.",
+    "Remaining documented surface (notch, flange strip, haunch, seat angle, weld, weld access hole, slotted holes, chamfers, shearTabOrientation, plateWasher, beam end bevel/clipped) is NOT fabricated."
   ]
 }

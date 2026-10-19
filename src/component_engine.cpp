@@ -361,6 +361,16 @@ CompParamSpec enumParam(const std::wstring& name, std::wstring def,
     return s;
 }
 
+CompParamSpec stringParam(const std::wstring& name, const std::wstring& def,
+                          const std::wstring& desc = {}) noexcept {
+    CompParamSpec s;
+    s.name = name;
+    s.type = CompParamType::String;
+    s.defString = def;
+    s.description = desc;
+    return s;
+}
+
 } // namespace
 
 // --- End Plate ---------------------------------------------------------------
@@ -477,28 +487,154 @@ ComponentType finPlateComponentType() noexcept {
     return t;
 }
 
-GenerationPlan generateFinPlate(const ComponentInput& input) noexcept {
-    GenerationPlan plan;
+namespace {
+
+// Ortak shear-tab yerlesim cozumleyici (fin plate + Tekla 146 AYNI cekirdek).
+// Tek motor; paralel geometry kernel YOK. ROL TESPITI (dikeylik), kolona EN
+// YAKIN kiris ucu, kesit cercevesi (dunya Z), kolon yuzu (destek fonksiyonu)
+// ve SectionAnchor ofseti TEK yerden hesaplanir. Parametresizdir (saf geometri);
+// levha/bulon olusturma generator'a birakilir.
+struct ShearTabPlacement {
+    MemberGeometry col;
+    MemberGeometry beam;
+    bool rolesSwapped{false};
+    Vec3 colMid{};
+    Vec3 connEnd{};
+    Vec3 farEnd{};
+    Vec3 lenDir{};
+    Vec3 beamDir{};
+    double beamLen{0.0};
+    ProfileSectionFrame sec{};
+    ProfileSectionFrame colSec{};
+    double aW{0.0};
+    double aH{0.0};
+    double halfExtent{0.0};
+    double denom{0.0};
+    double numer{0.0};
+    double t{0.0};
+    Vec3 facePoint{};
+    bool ok{false};
+    std::wstring error;
+};
+
+ShearTabPlacement resolveShearTabPlacement(const ComponentInput& input) noexcept {
+    ShearTabPlacement p;
     if (input.secondary.empty()) {
-        plan.ok = false;
-        plan.error = L"ikincil parca (kiris) secilmeli";
-        return plan;
+        p.error = L"ikincil parca (kiris) secilmeli";
+        return p;
     }
     const MemberGeometry& beamPick = input.secondary[0];
 
-    // ROL DUZELTME: fin plate'te DESTEK (kolon) DUSEY, kiris YATAY olur. Kullanici
-    // secimi ters sirada yapabilir (kirişi once secer). Geometriye gore duzelt:
-    // daha dusey olan = kolon, daha yatay olan = kiris. Boylece secim sirasi
-    // sonucu degistirmez.
+    // ROL DUZELTME: destek (kolon) DUSEY, kiris YATAY. Kullanici ters sirada
+    // secebilir; dikeylik ile geometriden coz (secim sirasi sonucu degistirmez).
     const auto verticality = [](const MemberGeometry& g) {
         const Vec3 a{g.axisTo.x - g.axisFrom.x, g.axisTo.y - g.axisFrom.y,
                      g.axisTo.z - g.axisFrom.z};
         const double len = std::sqrt(a.x * a.x + a.y * a.y + a.z * a.z);
         return (len > 1e-9) ? std::fabs(a.z) / len : 0.0;  // 1 = dusey, 0 = yatay
     };
-    const bool rolesSwapped = verticality(input.main) + 1e-6 < verticality(beamPick);
-    const MemberGeometry& col = rolesSwapped ? beamPick : input.main;
-    const MemberGeometry& beam = rolesSwapped ? input.main : beamPick;
+    p.rolesSwapped = verticality(input.main) + 1e-6 < verticality(beamPick);
+    p.col = p.rolesSwapped ? beamPick : input.main;
+    p.beam = p.rolesSwapped ? input.main : beamPick;
+
+    // Kiris ekseni + baglanti ucu: kolona EN YAKIN uc.
+    const Vec3 beamAxis{p.beam.axisTo.x - p.beam.axisFrom.x,
+                        p.beam.axisTo.y - p.beam.axisFrom.y,
+                        p.beam.axisTo.z - p.beam.axisFrom.z};
+    p.beamLen = std::sqrt(beamAxis.x * beamAxis.x + beamAxis.y * beamAxis.y +
+                          beamAxis.z * beamAxis.z);
+    if (p.beamLen < 1e-6) {
+        p.error = L"kiris ekseni belirlenemedi (sifir uzunluk)";
+        return p;
+    }
+    p.colMid = Vec3{(p.col.axisFrom.x + p.col.axisTo.x) * 0.5,
+                    (p.col.axisFrom.y + p.col.axisTo.y) * 0.5,
+                    (p.col.axisFrom.z + p.col.axisTo.z) * 0.5};
+    const auto dist2 = [&](const Vec3& q) {
+        const double dx = q.x - p.colMid.x, dy = q.y - p.colMid.y, dz = q.z - p.colMid.z;
+        return dx * dx + dy * dy + dz * dz;
+    };
+    const bool toNear = dist2(p.beam.axisTo) <= dist2(p.beam.axisFrom);
+    p.connEnd = toNear ? p.beam.axisTo : p.beam.axisFrom;
+    p.farEnd = toNear ? p.beam.axisFrom : p.beam.axisTo;
+
+    // Levha uzunluk yonu = kolondan DISARI. Fin levha kolona KAYNAKLI, kiris
+    // govdesine CIVATALI; duzlemi govdeye PARALEL. REFERANS NORMAL = DUNYA Z
+    // (shear tab her zaman dusey levha).
+    p.lenDir = vnorm(Vec3{p.farEnd.x - p.connEnd.x, p.farEnd.y - p.connEnd.y,
+                          p.farEnd.z - p.connEnd.z});
+    const Vec3 worldUp{0.0, 0.0, 1.0};
+    p.sec = profileSectionFrame(p.lenDir, worldUp);
+    if (std::fabs(vdot(p.lenDir, worldUp)) > 0.999)
+        p.sec = profileSectionFrame(p.lenDir, p.beam.refNormal);
+
+    // Kolon temas yuzu: kolon kesitinin lenDir yonundeki yari kapsami (destek
+    // fonksiyonu; SectionAnchor ofseti dahil).
+    const Vec3 colAxis{p.col.axisTo.x - p.col.axisFrom.x,
+                       p.col.axisTo.y - p.col.axisFrom.y,
+                       p.col.axisTo.z - p.col.axisFrom.z};
+    const double colLen = std::sqrt(colAxis.x * colAxis.x + colAxis.y * colAxis.y +
+                                    colAxis.z * colAxis.z);
+    if (colLen > 1e-6) p.colSec = profileSectionFrame(vnorm(colAxis), p.col.refNormal);
+    p.aW = vdot(p.lenDir, p.colSec.width);
+    p.aH = vdot(p.lenDir, p.colSec.height);
+    p.halfExtent = std::fabs(p.aW) * p.col.secWidth * 0.5 +
+                   std::fabs(p.aH) * p.col.secHeight * 0.5 +
+                   p.col.sectionCenterOffset * p.aH;
+
+    // Temas noktasi: kiris ekseninin kolon yuz duzlemiyle kesisimi.
+    p.beamDir = Vec3{beamAxis.x / p.beamLen, beamAxis.y / p.beamLen,
+                     beamAxis.z / p.beamLen};
+    p.denom = vdot(p.beamDir, p.lenDir);
+    p.numer = p.halfExtent -
+              vdot(Vec3{p.connEnd.x - p.colMid.x, p.connEnd.y - p.colMid.y,
+                        p.connEnd.z - p.colMid.z}, p.lenDir);
+    p.t = (std::fabs(p.denom) > 1e-9) ? p.numer / p.denom : 0.0;
+    p.facePoint = Vec3{p.connEnd.x + p.beamDir.x * p.t,
+                       p.connEnd.y + p.beamDir.y * p.t,
+                       p.connEnd.z + p.beamDir.z * p.t};
+    // SECTION ANCHOR DUZELTMESI (kiris): eksen kesit USTUNDEN gecerse levha
+    // ust basliga oturur; govde merkezine kaydir.
+    if (std::fabs(p.beam.sectionCenterOffset) > 1e-9) {
+        p.facePoint = Vec3{p.facePoint.x + p.sec.height.x * p.beam.sectionCenterOffset,
+                           p.facePoint.y + p.sec.height.y * p.beam.sectionCenterOffset,
+                           p.facePoint.z + p.sec.height.z * p.beam.sectionCenterOffset};
+    }
+    p.ok = true;
+    return p;
+}
+
+// Boslukla ayrilmis sayi listeleri (Tekla "space separated" alanlari).
+std::vector<double> parseSpaceDoubles(const std::wstring& s) noexcept {
+    std::vector<double> out;
+    std::wstringstream ss(s);
+    double v;
+    while (ss >> v) out.push_back(v);
+    return out;
+}
+
+std::vector<int> parseSpaceInts(const std::wstring& s) noexcept {
+    std::vector<int> out;
+    std::wstringstream ss(s);
+    int v;
+    while (ss >> v) out.push_back(v);
+    return out;
+}
+
+} // namespace
+
+GenerationPlan generateFinPlate(const ComponentInput& input) noexcept {
+    GenerationPlan plan;
+    const ShearTabPlacement pl = resolveShearTabPlacement(input);
+    if (!pl.ok) {
+        plan.ok = false;
+        plan.error = pl.error;
+        return plan;
+    }
+    const MemberGeometry& beam = pl.beam;
+    const Vec3& lenDir = pl.lenDir;
+    const ProfileSectionFrame& sec = pl.sec;
+    const Vec3& facePoint = pl.facePoint;
 
     const double thickness = paramAsDouble(input.params, L"plateThickness", 10.0);
     const double width = paramAsDouble(input.params, L"plateWidth", 120.0);
@@ -509,90 +645,7 @@ GenerationPlan generateFinPlate(const ComponentInput& input) noexcept {
     const double edge = paramAsDouble(input.params, L"boltEdge", 40.0);
     const std::wstring grade = paramAsString(input.params, L"grade", L"8.8");
 
-    // 1. Kiris ekseni + baglanti ucu: kolona EN YAKIN uc. axisTo'nun dogru ucu
-    //    tuttugu GARANTI YOKTUR — kullanici kirisi iki yonde de cizebilir; ucu
-    //    kolon merkezine gore secmek fin levhanin uzak uca dusmesini onler.
-    const Vec3 beamAxis{beam.axisTo.x - beam.axisFrom.x, beam.axisTo.y - beam.axisFrom.y,
-                        beam.axisTo.z - beam.axisFrom.z};
-    const double beamLen = std::sqrt(beamAxis.x * beamAxis.x + beamAxis.y * beamAxis.y +
-                                     beamAxis.z * beamAxis.z);
-    if (beamLen < 1e-6) {
-        plan.ok = false;
-        plan.error = L"kiris ekseni belirlenemedi (sifir uzunluk)";
-        return plan;
-    }
-    const Vec3 colMid{(col.axisFrom.x + col.axisTo.x) * 0.5,
-                      (col.axisFrom.y + col.axisTo.y) * 0.5,
-                      (col.axisFrom.z + col.axisTo.z) * 0.5};
-    const auto dist2 = [&](const Vec3& p) {
-        const double dx = p.x - colMid.x, dy = p.y - colMid.y, dz = p.z - colMid.z;
-        return dx * dx + dy * dy + dz * dz;
-    };
-    const bool toNear = dist2(beam.axisTo) <= dist2(beam.axisFrom);
-    const Vec3 connEnd = toNear ? beam.axisTo : beam.axisFrom;
-    const Vec3 farEnd = toNear ? beam.axisFrom : beam.axisTo;
-
-    // 2. Levha uzunluk yonu = kolondan DISARI (kiris boyunca). Fin levha (shear
-    //    tab) kolona KAYNAKLI, kiris GOVDESINE CIVATALI oldugu icin levha
-    //    duzlemi kiris govdesine PARALEL olmali: kalinlik = kesit GENISLIGI
-    //    yonu, yukseklik = kesit YUKSEKLIGI yonu, uzunluk = kiris ekseni yonu.
-    //    (Eski kod kalinligi kiris ekseni boyunca veriyordu = alin levhasi gibi
-    //    kirise DIK; shear tab icin 90° yanlis yonelimdi.)
-    //
-    //    REFERANS NORMAL = DUNYA Z (sabit). beam.refNormal cizim anindaki is
-    //    duzleminden gelir ve gercek kiris geometrisiyle CELISEBILIR: yatay bir
-    //    is duzleminde cizilmis kiriste {+-1,0,0} olur -> levha YATAY duser,
-    //    civata DUSEY olur (sahada olculdu). Shear tab her zaman DUSEY bir
-    //    levhadir; dunya Z hem bunu garanti eder hem de "alt baslik XY'ye
-    //    paralel" profil kuraliyla tutarlidir. Egik kiriste de levha dusey kalir.
-    const Vec3 lenDir = vnorm(Vec3{farEnd.x - connEnd.x, farEnd.y - connEnd.y,
-                                   farEnd.z - connEnd.z});
-    const Vec3 worldUp{0.0, 0.0, 1.0};
-    ProfileSectionFrame sec = profileSectionFrame(lenDir, worldUp);
-    // Dusey uye (kolon-kolon): dunya Z eksene paralel -> generik cerceveye dus.
-    if (std::fabs(vdot(lenDir, worldUp)) > 0.999) sec = profileSectionFrame(lenDir, beam.refNormal);
-
-    // 3. Kolonun temas yuzu: kolon kesitinin lenDir yonundeki yari kapsami
-    //    (dikdortgen destek fonksiyonu). lenDir kolondan kirise dogru disa bakar.
-    const Vec3 colAxis{col.axisTo.x - col.axisFrom.x, col.axisTo.y - col.axisFrom.y,
-                       col.axisTo.z - col.axisFrom.z};
-    const double colLen = std::sqrt(colAxis.x * colAxis.x + colAxis.y * colAxis.y +
-                                    colAxis.z * colAxis.z);
-    ProfileSectionFrame colSec;
-    if (colLen > 1e-6) colSec = profileSectionFrame(vnorm(colAxis), col.refNormal);
-    const double aW = vdot(lenDir, colSec.width);
-    const double aH = vdot(lenDir, colSec.height);
-    // Destek fonksiyonu: kolon kesiti eksene gore KAYMIŞ olabilir (SectionAnchor
-    // varsayilani Top -> kesit h/2 yana kayar). Kayan kutunun lenDir yonundeki
-    // yari kapsami = yari-kapsam + ofset*cos(lenDir, height).
-    const double halfExtent = std::fabs(aW) * col.secWidth * 0.5 +
-                              std::fabs(aH) * col.secHeight * 0.5 +
-                              col.sectionCenterOffset * aH;
-
-    // 4. Temas noktasi: kiris eksen cizgisinin kolon yuz duzlemiyle kesisimi.
-    //    Duzlem: dot(p - colMid, lenDir) = halfExtent. Kiris cizgisi:
-    //    connEnd + t * beamDir (beamDir ile lenDir ayni dogru => denom = +-1).
-    const Vec3 beamDir{beamAxis.x / beamLen, beamAxis.y / beamLen, beamAxis.z / beamLen};
-    const double denom = vdot(beamDir, lenDir);
-    const double numer = halfExtent - vdot(Vec3{connEnd.x - colMid.x, connEnd.y - colMid.y,
-                                                connEnd.z - colMid.z}, lenDir);
-    const double t = (std::fabs(denom) > 1e-9) ? numer / denom : 0.0;
-    Vec3 facePoint{connEnd.x + beamDir.x * t, connEnd.y + beamDir.y * t,
-                   connEnd.z + beamDir.z * t};
-    // SECTION ANCHOR DUZELTMESI (kiris): kiris ekseni kesitin ustunden gecerse
-    // (varsayilan Top), levha/bulon eksende kalinca UST BASLIGA oturur; govde
-    // h/2 asagidadir ve delikler web'e denk gelmez (sahada goruldu: levhada iki
-    // ayri delik kolonu). Levha merkezini kesit MERKEZINE (govde merkezine)
-    // kaydir. Ofset kesit yukseklik yonu boyunca oldugu icin lenDir bileseni
-    // yoktur; kiris boyunca konum degismez.
-    if (std::fabs(beam.sectionCenterOffset) > 1e-9) {
-        facePoint = Vec3{facePoint.x + sec.height.x * beam.sectionCenterOffset,
-                         facePoint.y + sec.height.y * beam.sectionCenterOffset,
-                         facePoint.z + sec.height.z * beam.sectionCenterOffset};
-    }
-
-    // 5. Levha: kalinlik sec.width (govdeye dik), uzunluk lenDir, yukseklik
-    //    sec.height. Kaynak kenari kolon yuzunde, serbest kenar kirise dogru.
+    // Levha: kalinlik sec.width (govdeye dik), uzunluk lenDir, yukseklik sec.height.
     PlateSpec plate;
     plate.axis = sec.width;
     plate.u = lenDir;
@@ -600,14 +653,7 @@ GenerationPlan generateFinPlate(const ComponentInput& input) noexcept {
     plate.width = width;
     plate.height = height;
     plate.thickness = thickness;
-    // Y EKSANTRISITESI (t): levhanin ON YUZU is cizgisinden (kiris govde merkezi =
-    // kolon merkezi) t/2 kadar DISA kayar; levha merkezi ise t kadar kayar
-    // (t/2 yuz ofseti + t/2 yari kalinlik). Boylece levha is cizgisine gomulmez,
-    // kalinlik tek tarafa tamamen acilir (Tekla shear tab 'eccentricity').
-    // Kayma sec.width (kalinlik) yonundedir; lenDir bileseni yoktur, levhanin
-    // kiris boyunca konumu degismez.
-    const Vec3 tabOffset{sec.width.x * thickness,
-                         sec.width.y * thickness,
+    const Vec3 tabOffset{sec.width.x * thickness, sec.width.y * thickness,
                          sec.width.z * thickness};
     plate.center = Vec3{facePoint.x + lenDir.x * (width * 0.5) + tabOffset.x,
                         facePoint.y + lenDir.y * (width * 0.5) + tabOffset.y,
@@ -616,14 +662,10 @@ GenerationPlan generateFinPlate(const ComponentInput& input) noexcept {
     plan.plates.push_back(plate);
     plan.plateKeys.push_back("fin_plate");
 
-    // 6. Bulonlar: govde duzlemine dik tek sira (yukseklik yonunde; kolon
-    //    yuzunden baslar). Pattern: countX=1 x countY=boltCount.
     BoltGroup b;
     b.axis = sec.width;
     b.xDir = lenDir;
     const double hh = height * 0.5;
-    // Bulon hatti = levha UZUNLUGUNUN ORTASI. Eskiden kaynak kenarinin (kolon
-    // yuzu) tam uzerindeydi; orada kaynak bolgesi vardir, civata gecmez.
     const Vec3 boltLine{facePoint.x + lenDir.x * (width * 0.5) + tabOffset.x,
                         facePoint.y + lenDir.y * (width * 0.5) + tabOffset.y,
                         facePoint.z + lenDir.z * (width * 0.5) + tabOffset.z};
@@ -645,18 +687,11 @@ GenerationPlan generateFinPlate(const ComponentInput& input) noexcept {
     b.params.hasHead = true;
     b.params.hasNut = true;
     b.params.hasWasher = true;
-    // FIN PLATE (shear tab): bulonlar levhayi KIRIS GOVDESINE baglar. End
-    // plate'in aksine main (kolon) DELINMEZ — kolonla baglanti KAYNAKTIR.
-    // (Eski kod end plate'ten kopyalanmis {main.id} birakmisti: civatalar
-    // kolonu deliyordu.) Rol duzeltmesinden SONRAKI beam kimligi kullanilir.
     b.parts = {beam.id};
     plan.boltGroups.push_back(b);
     plan.boltGroupKeys.push_back("beam_bolts");
 
-    // TESHIS (MM_FINPLATE_DIAG=1): saha modelinin gercek cerceve hesabini
-    // dosyaya dok. Ortam degiskeni set'li degilse HICBIR SEY yapmaz; normal
-    // calismayi etkilemez. Kullanici log'u paylasinca tahmin yerine sayilarla
-    // teshis edilir (levha neden hala yanlis yerde?).
+    // TESHIS (MM_FINPLATE_DIAG=1).
     if (std::getenv("MM_FINPLATE_DIAG") != nullptr) {
         std::ofstream os("model-maker-finplate-diag.log", std::ios::app);
         if (os) {
@@ -666,33 +701,30 @@ GenerationPlan generateFinPlate(const ComponentInput& input) noexcept {
                 return s.str();
             };
             os << "\n=== FIN PLATE DIAG ===\n";
-            os << "rolesSwapped=" << (rolesSwapped ? 1 : 0) << "\n";
-            os << "col  id=" << col.id << " from=" << v3(col.axisFrom) << " to=" << v3(col.axisTo)
-               << " refN=" << v3(col.refNormal) << " sec=" << col.secWidth << "x" << col.secHeight
-               << "\n";
+            os << "rolesSwapped=" << (pl.rolesSwapped ? 1 : 0) << "\n";
+            os << "col  id=" << pl.col.id << " from=" << v3(pl.col.axisFrom)
+               << " to=" << v3(pl.col.axisTo) << " refN=" << v3(pl.col.refNormal)
+               << " sec=" << pl.col.secWidth << "x" << pl.col.secHeight << "\n";
             os << "beam id=" << beam.id << " from=" << v3(beam.axisFrom)
                << " to=" << v3(beam.axisTo) << " refN=" << v3(beam.refNormal)
                << " sec=" << beam.secWidth << "x" << beam.secHeight << "\n";
             os << "params w=" << width << " h=" << height << " th=" << thickness
                << " bolts=" << boltCount << " edge=" << edge << "\n";
-            os << "toNear=" << (toNear ? 1 : 0) << " connEnd=" << v3(connEnd)
-               << " farEnd=" << v3(farEnd) << " lenDir=" << v3(lenDir) << "\n";
+            os << "toNear=" << (pl.connEnd == pl.beam.axisTo ? 1 : 0)
+               << " connEnd=" << v3(pl.connEnd) << " farEnd=" << v3(pl.farEnd)
+               << " lenDir=" << v3(lenDir) << "\n";
             os << "sec.axis=" << v3(sec.axis) << " sec.width=" << v3(sec.width)
                << " sec.height=" << v3(sec.height) << "\n";
-            os << "colSec.width=" << v3(colSec.width) << " colSec.height=" << v3(colSec.height)
-               << " aW=" << aW << " aH=" << aH << " halfExtent=" << halfExtent << "\n";
-            os << "denom=" << denom << " numer=" << numer << " t=" << t
+            os << "colSec.width=" << v3(pl.colSec.width) << " colSec.height=" << v3(pl.colSec.height)
+               << " aW=" << pl.aW << " aH=" << pl.aH << " halfExtent=" << pl.halfExtent << "\n";
+            os << "denom=" << pl.denom << " numer=" << pl.numer << " t=" << pl.t
                << " facePoint=" << v3(facePoint) << "\n";
-            for (const auto& p : plan.plates) {
-                os << "plate center=" << v3(p.center) << " axis=" << v3(p.axis) << " u=" << v3(p.u)
-                   << " v=" << v3(p.v) << " w=" << p.width << " h=" << p.height
-                   << " th=" << p.thickness << "\n";
-            }
-            for (const auto& g : plan.boltGroups) {
-                os << "bolts origin=" << v3(g.origin) << " axis=" << v3(g.axis)
-                   << " xDir=" << v3(g.xDir) << " count=" << g.countX << "x" << g.countY
-                   << " spacing=" << g.spacingX << "," << g.spacingY << "\n";
-            }
+            os << "plate center=" << v3(plate.center) << " axis=" << v3(plate.axis)
+               << " u=" << v3(plate.u) << " v=" << v3(plate.v) << " w=" << plate.width
+               << " h=" << plate.height << " th=" << plate.thickness << "\n";
+            os << "bolts origin=" << v3(b.origin) << " axis=" << v3(b.axis)
+               << " xDir=" << v3(b.xDir) << " count=" << b.countX << "x" << b.countY
+               << " spacing=" << b.spacingX << "," << b.spacingY << "\n";
             os.flush();
         }
     }
@@ -710,31 +742,236 @@ void registerBuiltInComponents(ComponentRegistry& registry) noexcept {
 // --- Tekla 146 (Shear plate simple) -------------------------------------------
 
 ComponentType shearPlate146ComponentType() noexcept {
-    // 146 core = fin plate core (tekli ortogonal shear tab): ayni 8 parametre
-    // (plateThickness/Width/Height, boltDiameter/holeDiameter, boltCount/boltEdge,
-    // grade). Kimlik farkli; sema ortak. Fazla Tekla 146 alanlari blueprint'te.
+    // 146 core = fin plate core (tekli ortogonal shear tab) + Tekla 146'nin
+    // dogrulanabilir yuzeyi: cift tab, kiris ucu kare kesimi + beam gap, bulon
+    // grubu yerlesimi (degisken aralik/olcu/silinen), stiffener, backing bar.
+    // DESTEKLENMEYEN (kernel'de karsiligi yok): notch/flange strip/weld access
+    // hole/seat angle/slotted hole/chamfer/shearTabOrientation/plateWasher —
+    // bunlar blueprint/coverage'ta documented_only olarak durur, uydurulmaz.
     ComponentType t = finPlateComponentType();
     t.typeId = L"tekla_shear_plate_146";
     t.schemaVersion = 1;
     t.displayName = L"Shear Plate Simple (146)";
+    t.params = {
+        // --- Plates tab (tab plate) ---
+        lengthParam(L"plateThickness", L"mm", 10.0, 4.0, 60.0, L"levha kalinligi"),
+        lengthParam(L"plateWidth", L"mm", 120.0, 40.0, 400.0, L"levha genisligi"),
+        lengthParam(L"plateHeight", L"mm", 240.0, 60.0, 800.0, L"levha yuksekligi"),
+        // --- Plates tab (tab position) ---
+        enumParam(L"shearTabPosition", L"near_side",
+                  {L"near_side", L"far_side", L"near_and_far"}, L"tab tarafi (tek/cift)"),
+        lengthParam(L"tabGapSecondary", L"mm", 0.0, 0.0, 100.0,
+                    L"tab ile kiris govdesi arasi bosluk"),
+        // --- Picture tab (beam cut) ---
+        lengthParam(L"beamGap", L"mm", 20.0, 0.0, 200.0, L"kiris ucu ile kolon yuzu arasi bosluk"),
+        enumParam(L"beamEndCut", L"square", {L"square", L"none"}, L"kiris ucu kesimi"),
+        // --- Bolts tab ---
+        lengthParam(L"boltDiameter", L"mm", 20.0, 12.0, 30.0, L"bulon capi"),
+        lengthParam(L"holeDiameter", L"mm", 22.0, 12.0, 34.0, L"delik capi"),
+        intParam(L"boltCount", 4, 1, 12, L"bulon adedi (tek sira)"),
+        lengthParam(L"boltEdge", L"mm", 40.0, 10.0, 200.0, L"kenar mesafesi"),
+        enumParam(L"grade", L"8.8", {L"8.8", L"10.9"}, L"bulon sinifi"),
+        stringParam(L"boltSpacing", L"auto", L"bulon araliklari (mm, boslukla; 'auto' = turet)"),
+        enumParam(L"boltVerticalMeasure", L"middle", {L"top", L"middle", L"below"},
+                  L"bulon grubunun dusey konum referansi"),
+        lengthParam(L"boltVerticalPos", L"mm", 0.0, -1000.0, 1000.0,
+                    L"bulon grubunun dusey kaymasi"),
+        stringParam(L"deletedBolts", L"", L"silinecek bulon numaralari (1-based, boslukla)"),
+        // --- Stiffeners tab ---
+        enumParam(L"stiffenerCreation", L"none", {L"none", L"full"}, L"govde berkitmesi"),
+        lengthParam(L"stiffenerGapWeb", L"mm", 10.0, 0.0, 200.0, L"berkitme-govde boslugu"),
+        // --- Beam cut tab ---
+        lengthParam(L"backingBarT", L"mm", 0.0, 0.0, 60.0, L"kaynak arkalik cubugu kalinligi"),
+    };
     t.catalog.sourceComponentNumber = L"146";
     t.catalog.category = L"Shear connection";
     t.catalog.primaryMemberType = L"kolon";
     t.catalog.secondaryMemberType = L"kiris";
-    t.catalog.supportedFeatures = {L"kayma levhasi (shear tab)", L"bulon grubu"};
-    t.catalog.coverageStatus = L"PARTIALLY_IMPLEMENTED";  // 8/48 parametre; gerisi blueprint'te
+    t.catalog.supportedFeatures = {L"kayma levhasi (tek/cift)", L"bulon grubu (degisken aralik)",
+                                   L"kiris ucu kesimi", L"berkitme (stiffener)",
+                                   L"kaynak arkalik cubugu"};
+    t.catalog.coverageStatus = L"PARTIALLY_IMPLEMENTED";
     t.catalog.pickCount = 2;
     t.catalog.catalogVisible = true;
     return t;
 }
 
 GenerationPlan generateShearPlateSimple146(const ComponentInput& input) noexcept {
-    // Tekla 146 tekli ortogonal shear tab = mevcut fin plate cekirdegi. Ayni
-    // geometri, ayni roleKey'ler ("fin_plate", "beam_bolts"). 146'nin bu dilimde
-    // desteklenmeyen yuzeyi (double tab, stiffener, haunch, seat angle, notch,
-    // beam end cut, backing bar, ...) blueprint/coverage'ta documented_only olarak
-    // durur; geometri onlari uydurmaz. Fin Plate uretim yolu DEGISMEZ.
-    return generateFinPlate(input);
+    GenerationPlan plan;
+    const ShearTabPlacement pl = resolveShearTabPlacement(input);
+    if (!pl.ok) {
+        plan.ok = false;
+        plan.error = pl.error;
+        return plan;
+    }
+    const MemberGeometry& beam = pl.beam;
+    const Vec3& lenDir = pl.lenDir;
+    const ProfileSectionFrame& sec = pl.sec;
+    const Vec3& facePoint = pl.facePoint;
+    const Vec3& colMid = pl.colMid;
+    const Vec3 worldUp{0.0, 0.0, 1.0};
+
+    // --- parametreler ---
+    const double thickness = paramAsDouble(input.params, L"plateThickness", 10.0);
+    const double width = paramAsDouble(input.params, L"plateWidth", 120.0);
+    const double height = paramAsDouble(input.params, L"plateHeight", 240.0);
+    const double boltD = paramAsDouble(input.params, L"boltDiameter", 20.0);
+    const double holeD = paramAsDouble(input.params, L"holeDiameter", 22.0);
+    const int boltCount = std::max(1, paramAsInt(input.params, L"boltCount", 4));
+    const double edge = paramAsDouble(input.params, L"boltEdge", 40.0);
+    const std::wstring grade = paramAsString(input.params, L"grade", L"8.8");
+
+    const std::wstring tabPos = paramAsString(input.params, L"shearTabPosition", L"near_side");
+    const double tabGap = paramAsDouble(input.params, L"tabGapSecondary", 0.0);
+    const double beamGap = paramAsDouble(input.params, L"beamGap", 20.0);
+    const std::wstring endCut = paramAsString(input.params, L"beamEndCut", L"square");
+    const std::wstring stiffener = paramAsString(input.params, L"stiffenerCreation", L"none");
+    const double stiffGapWeb = paramAsDouble(input.params, L"stiffenerGapWeb", 10.0);
+    const std::wstring boltSpacing = paramAsString(input.params, L"boltSpacing", L"auto");
+    const std::wstring boltMeasure = paramAsString(input.params, L"boltVerticalMeasure", L"middle");
+    const double boltVPos = paramAsDouble(input.params, L"boltVerticalPos", 0.0);
+    const std::wstring delBolts = paramAsString(input.params, L"deletedBolts", L"");
+    const double backingBarT = paramAsDouble(input.params, L"backingBarT", 0.0);
+
+    // --- tab taraf ---
+    const bool nearTab = (tabPos == L"near_side" || tabPos == L"near_and_far");
+    const bool farTab = (tabPos == L"far_side" || tabPos == L"near_and_far");
+    // Eksantrisite: near tab merkezi is cizgisinden (govde merkezi) +sec.width*(t+gap);
+    // far tab -sec.width*(t+gap). t = kalinlik (yuze t/2 + yari kalinlik).
+    const double ecc = thickness + tabGap;
+    const Vec3 tabBase{facePoint.x + lenDir.x * (width * 0.5),
+                       facePoint.y + lenDir.y * (width * 0.5),
+                       facePoint.z + lenDir.z * (width * 0.5)};
+
+    const auto tabPlate = [&](double sign) {
+        PlateSpec p;
+        p.axis = sec.width;
+        p.u = lenDir;
+        p.v = sec.height;
+        p.width = width;
+        p.height = height;
+        p.thickness = thickness;
+        p.center = Vec3{tabBase.x + sec.width.x * (sign * ecc),
+                        tabBase.y + sec.width.y * (sign * ecc),
+                        tabBase.z + sec.width.z * (sign * ecc)};
+        p.name = (sign > 0.0) ? L"Shear Tab (near)" : L"Shear Tab (far)";
+        return p;
+    };
+    if (nearTab) {
+        plan.plates.push_back(tabPlate(+1.0));
+        plan.plateKeys.push_back("shear_tab_near");
+    }
+    if (farTab) {
+        plan.plates.push_back(tabPlate(-1.0));
+        plan.plateKeys.push_back("shear_tab_far");
+    }
+
+    // --- bulon grubu (kiriş gövdesini deler; malzemelemede tüm owned levhalar
+    //     başa eklenir) ---
+    BoltGroup b;
+    b.axis = sec.width;
+    b.xDir = lenDir;
+    b.countX = 1;
+    b.countY = boltCount;
+    const bool autoSpacing = (boltSpacing == L"auto");
+    double span = 0.0;
+    if (autoSpacing) {
+        b.spacingY = (boltCount > 1)
+                         ? (height - 2.0 * edge) / static_cast<double>(boltCount - 1)
+                         : 0.0;
+        span = (boltCount > 1) ? (height - 2.0 * edge) : 0.0;
+    } else {
+        const std::vector<double> vals = parseSpaceDoubles(boltSpacing);
+        b.spacingYs.resize(static_cast<std::size_t>(std::max(0, boltCount - 1)));
+        for (int i = 0; i < boltCount - 1; ++i) {
+            const double v = (i < static_cast<int>(vals.size()) && vals[static_cast<std::size_t>(i)] > 0.0)
+                                 ? vals[static_cast<std::size_t>(i)]
+                                 : (vals.empty() ? 0.0 : vals.back());
+            b.spacingYs[static_cast<std::size_t>(i)] = v;
+            span += v;
+        }
+    }
+    // Dusey konum: measure top/middle/below + boltVerticalPos. Referans nokta
+    // tab merkezi (govde merkezi = tabBase); sec.height yonu = dusey.
+    const double hh = height * 0.5;
+    double originOffset = -span * 0.5;  // middle (varsayilan)
+    if (boltMeasure == L"top") {
+        originOffset = (hh - edge) - span;   // ust bulon tabTop - edge'de
+    } else if (boltMeasure == L"below") {
+        originOffset = -(hh - edge);         // alt bulon tabBottom + edge'de
+    }
+    originOffset += boltVPos;
+    b.origin = Vec3{tabBase.x + sec.height.x * originOffset,
+                    tabBase.y + sec.height.y * originOffset,
+                    tabBase.z + sec.height.z * originOffset};
+    b.deletedBolts = parseSpaceInts(delBolts);
+    b.params.nominalDiameter = boltD;
+    b.params.holeDiameter = holeD;
+    {
+        std::string narrow;
+        narrow.assign(grade.begin(), grade.end());
+        b.params.grade = narrow;
+    }
+    b.params.hasHead = true;
+    b.params.hasNut = true;
+    b.params.hasWasher = true;
+    b.parts = {beam.id};
+    plan.boltGroups.push_back(b);
+    plan.boltGroupKeys.push_back("beam_bolts");
+
+    // --- kiris ucu kare kesimi (beam end cut) ---
+    if (endCut == L"square") {
+        CutModifier cut;
+        cut.kind = CutKind::PlaneCut;
+        cut.target = beam.id;
+        cut.planeOrigin = Vec3{facePoint.x + lenDir.x * beamGap,
+                               facePoint.y + lenDir.y * beamGap,
+                               facePoint.z + lenDir.z * beamGap};
+        cut.planeNormal = lenDir;
+        cut.keepPositive = true;  // korunan taraf = kiris govdesi (uzak taraf)
+        cut.name = "Beam end cut (square)";
+        plan.cuts.push_back(cut);
+        plan.cutKeys.push_back("cut_beam_end");
+    }
+
+    // --- stiffener (govde berkitmesi): dusey levha, kolon ekseninde, kiris
+    //     kotunda, lenDir'e DIK. Kalinlik lenDir boyunca; genislik kolon kesit
+    //     boyutu (lenDir'e dik) - 2*gapWeb; yukseklik tab yuksekligi (baglanti
+    //     boyu; Tekla "flanslar arasi" kesin boyu MemberGeometry'de flans
+    //     kalinligi olmadigi icin tab yuksekligine esit — yaklasik, dokumante). ---
+    if (stiffener == L"full") {
+        PlateSpec st;
+        st.axis = lenDir;
+        st.u = sec.width;
+        st.v = worldUp;
+        st.thickness = thickness;
+        st.width = std::max(0.0, pl.col.secWidth - 2.0 * stiffGapWeb);
+        st.height = std::max(0.0, height);
+        st.center = Vec3{colMid.x, colMid.y, facePoint.z};
+        st.name = L"Stiffener";
+        plan.plates.push_back(st);
+        plan.plateKeys.push_back("stiffener");
+    }
+
+    // --- backing bar (kaynak arkalik cubugu): kiris ucu yuzunde ince serit ---
+    if (backingBarT > 0.0) {
+        PlateSpec bb;
+        bb.axis = lenDir;
+        bb.u = sec.width;
+        bb.v = sec.height;
+        bb.thickness = backingBarT;
+        bb.width = beam.secWidth;
+        bb.height = beam.secHeight;
+        bb.center = Vec3{facePoint.x + lenDir.x * beamGap,
+                         facePoint.y + lenDir.y * beamGap,
+                         facePoint.z + lenDir.z * beamGap};
+        bb.name = L"Backing Bar";
+        plan.plates.push_back(bb);
+        plan.plateKeys.push_back("backing_bar");
+    }
+
+    plan.ok = true;
+    return plan;
 }
 
 } // namespace mm

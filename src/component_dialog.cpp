@@ -576,12 +576,34 @@ ComponentDialogDefinition shearPlate146DialogDefinition() noexcept {
     gTab.title = L"Tab plate";
     gTab.paramNames = {L"plateThickness", L"plateWidth", L"plateHeight"};
 
+    ComponentDialogGroup gTabPos;
+    gTabPos.id = L"tab_position";
+    gTabPos.title = L"Tab position";
+    gTabPos.paramNames = {L"shearTabPosition", L"tabGapSecondary"};
+
+    ComponentDialogGroup gBeamCut;
+    gBeamCut.id = L"beam_cut";
+    gBeamCut.title = L"Beam cut";
+    gBeamCut.paramNames = {L"beamGap", L"beamEndCut"};
+
     ComponentDialogGroup gBolts;
     gBolts.id = L"bolt_group";
     gBolts.title = L"Bolt group";
-    gBolts.paramNames = {L"boltDiameter", L"holeDiameter", L"boltCount", L"boltEdge", L"grade"};
+    gBolts.paramNames = {L"boltDiameter", L"holeDiameter", L"boltCount", L"boltEdge",
+                         L"grade", L"boltSpacing", L"boltVerticalMeasure",
+                         L"boltVerticalPos", L"deletedBolts"};
 
-    def.schema.groups = {gTab, gBolts};
+    ComponentDialogGroup gStiff;
+    gStiff.id = L"stiffener";
+    gStiff.title = L"Stiffener";
+    gStiff.paramNames = {L"stiffenerCreation", L"stiffenerGapWeb"};
+
+    ComponentDialogGroup gBacking;
+    gBacking.id = L"backing_bar";
+    gBacking.title = L"Backing bar";
+    gBacking.paramNames = {L"backingBarT"};
+
+    def.schema.groups = {gTab, gTabPos, gBeamCut, gBolts, gStiff, gBacking};
     return def;
 }
 
