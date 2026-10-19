@@ -585,14 +585,15 @@ GenerationPlan generateFinPlate(const ComponentInput& input) noexcept {
     plate.width = width;
     plate.height = height;
     plate.thickness = thickness;
-    // Y EKSANTRISITESI (t/2): levhanin kalinlik merkezi is cizgisinden (kiris govde
-    // merkezi = kolon merkezi) levha kalinliginin yarisi kadar DISA kayar; boylece
-    // levhanin bir yuzu is cizgisine oturur, kalinlik tek tarafa acilir (Tekla shear
-    // tab 'eccentricity'). Kayma sec.width (kalinlik) yonundedir; lenDir bileseni
-    // yoktur, levhanin kiris boyunca konumu degismez.
-    const Vec3 tabOffset{sec.width.x * (thickness * 0.5),
-                         sec.width.y * (thickness * 0.5),
-                         sec.width.z * (thickness * 0.5)};
+    // Y EKSANTRISITESI (t): levhanin ON YUZU is cizgisinden (kiris govde merkezi =
+    // kolon merkezi) t/2 kadar DISA kayar; levha merkezi ise t kadar kayar
+    // (t/2 yuz ofseti + t/2 yari kalinlik). Boylece levha is cizgisine gomulmez,
+    // kalinlik tek tarafa tamamen acilir (Tekla shear tab 'eccentricity').
+    // Kayma sec.width (kalinlik) yonundedir; lenDir bileseni yoktur, levhanin
+    // kiris boyunca konumu degismez.
+    const Vec3 tabOffset{sec.width.x * thickness,
+                         sec.width.y * thickness,
+                         sec.width.z * thickness};
     plate.center = Vec3{facePoint.x + lenDir.x * (width * 0.5) + tabOffset.x,
                         facePoint.y + lenDir.y * (width * 0.5) + tabOffset.y,
                         facePoint.z + lenDir.z * (width * 0.5) + tabOffset.z};
