@@ -168,7 +168,7 @@ option(BUILD_OCC_BRIDGE_DLL
     "Build mm_occ.dll — the C-API bridge for the Qt app (use MSYS2 toolchain)" OFF)
 
 if(MODELMAKER_OCC_READY)
-    add_library(model_maker_occ src/occ_geometry.cpp src/occ_solid_store.cpp src/occ_brep_serialize.cpp src/bolt_geometry.cpp src/end_plate_geometry.cpp src/occ_contact_resolver.cpp)
+    add_library(model_maker_occ src/occ_geometry.cpp src/occ_solid_store.cpp src/occ_brep_serialize.cpp src/bolt_geometry.cpp src/end_plate_geometry.cpp src/occ_contact_resolver.cpp src/component_materializer.cpp)
     target_link_libraries(model_maker_occ PUBLIC model_maker_core)
     target_include_directories(model_maker_occ PUBLIC include)
     if(OCC_INCLUDE_DIR)
@@ -637,8 +637,14 @@ if(BUILD_TESTING)
         add_executable(model_maker_occ_end_plate_144_geometry tests/occ_end_plate_144_geometry_test.cpp)
         target_link_libraries(model_maker_occ_end_plate_144_geometry PRIVATE model_maker_occ)
         add_test(NAME model_maker_occ_end_plate_144_geometry COMMAND model_maker_occ_end_plate_144_geometry)
+        # UNIVERSAL COMPONENT MATERIALIZER (C2): ComponentBuilder -> ComponentPlan
+        # -> gercek Document + OccSolidStore. roleKey->EntityId + ownership + delik
+        # + Weld Unsupported + coklu bagimsiz component. GERCEK OCCT.
+        add_executable(model_maker_component_materializer_test tests/component_materializer_test.cpp)
+        target_link_libraries(model_maker_component_materializer_test PRIVATE model_maker_occ)
+        add_test(NAME model_maker_component_materializer_test COMMAND model_maker_component_materializer_test)
         if(UNIX)
-            set_tests_properties(model_maker_occ_store_roundtrip model_maker_occ_document_roundtrip model_maker_occ_bolt_group_roundtrip model_maker_occ_end_plate_roundtrip model_maker_occ_end_plate_placement model_maker_occ_end_plate_144_geometry PROPERTIES
+            set_tests_properties(model_maker_occ_store_roundtrip model_maker_occ_document_roundtrip model_maker_occ_bolt_group_roundtrip model_maker_occ_end_plate_roundtrip model_maker_occ_end_plate_placement model_maker_occ_end_plate_144_geometry model_maker_component_materializer_test PROPERTIES
                 ENVIRONMENT "LD_LIBRARY_PATH=${OCC_ROOT}/lib:$ENV{LD_LIBRARY_PATH}")
         endif()
     endif()

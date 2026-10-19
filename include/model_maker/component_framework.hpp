@@ -326,32 +326,15 @@ private:
     std::wstring error_;  // addObject hatasi (tekrar/gecersiz roleKey) -> build() ok=false
 };
 
-// --- MATERIALIZER ARAYUZU (OCCT katmani implemente eder) ---------------------
-
-// GenerationPlan + ComponentObjectSpec'leri gercek Document/OCCT nesnelerine
-// cevirir. Bu arayuzun implementasyonu OCCT'ye (TopoDS_Shape) ve Document'a
-// baglidir; BU BASLIK OCCT BILMEZ (arayuz turu olarak opaque void* kullanilir).
+// --- MATERIALIZER (C2/C3) ----------------------------------------------------
+// KONKRET materializer OCCT katmanindadir: bkz. component_materializer.hpp
+// (ComponentMaterializer sinifi, MM_HAS_OCC). Bu baslik OCCT BILMEZ; arayuz
+// ve sozlesme suradadir:
 //
-// Materializer sözlesmesi:
-//   - roleKey -> EntityId eslemesi bu katmanda kurulur ve STABIL kalir
+//   - roleKey -> EntityId eslemesi materializer'da kurulur ve STABIL kalir
 //     (recompute + MMW8 sonrasi ayni roleKey ayni EntityId'yi yeniden uretir).
 //   - Kullanici parcalari (main/secondary) SAHIPLENMEZ, yalniz referanslanir.
-//   - Basarisiz materialization kismi belge degisikligi YAPMAZ (atomic).
-class ComponentMaterializer {
-public:
-    virtual ~ComponentMaterializer() = default;
-
-    struct MaterializeResult {
-        bool ok{false};
-        std::unordered_map<std::string, EntityId> roleToEntity;
-        std::wstring error;
-    };
-
-    // objects: roleKey'li ortak nesneler. mainId/secondaryIds: kullanici parcalari.
-    // Girdi -> cikti EntityId eslemesi (stable roleKey). Basarisizsa ok=false.
-    virtual MaterializeResult materialize(const std::vector<ComponentObjectSpec>& objects,
-                                          EntityId mainId,
-                                          const std::vector<EntityId>& secondaryIds) = 0;
-};
+//   - Basarisiz materialization kismi belge degisikligi YAPMAZ (atomic —
+//     prepare/commit iki asamali; commit basarisizligi rollbackOpenRecord).
 
 } // namespace mm
