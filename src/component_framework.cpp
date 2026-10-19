@@ -345,6 +345,13 @@ ComponentPlan componentPlanFromGenerationPlan(const GenerationPlan& plan) noexce
                         std::wstring(c.roleKey.begin(), c.roleKey.end());
             return false;
         }
+        // Rezerve roleKey'ler ("main"/"secondary_N") child kimligi OLAMAZ —
+        // kullanici parcasi anlamina gelir, ambiguity yaratir (Minor a).
+        if (isReservedRole(c.roleKey)) {
+            out.error = L"rezerve roleKey child kimligi olamaz: " +
+                        std::wstring(c.roleKey.begin(), c.roleKey.end());
+            return false;
+        }
         if (seenKeys.count(c.roleKey)) {
             out.error = L"tekrarlanan roleKey: " +
                         std::wstring(c.roleKey.begin(), c.roleKey.end());

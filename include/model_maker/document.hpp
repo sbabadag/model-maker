@@ -164,6 +164,13 @@ public:
     // dahil). Donus: kaldirilan modifier'larin HEDEFLERI (silinmemis kalan
     // hedefler) — cagiran bu hedefleri yeniden hesaplamali (recomputeCutTarget).
     std::vector<EntityId> deleteModels(const std::vector<std::size_t>& indices);
+    // Tek modeli (yaprak) kesme/bulon kaskadi OLMADAN siler. Component-owned
+    // levha gibi KENDI yasam dongusu baska kalici kayitlar (bulon grubu
+    // delikleri, bitisik baglanti) tarafindan yonetilen nesneler icindir;
+    // deleteModels'in kaskadi burada hâlâ yasayan bir bulon grubunu silmemeli.
+    // Delete op + geometry/base deltasi ile undo/redo'ya girer (eraseModelLeaf
+    // ile ayni kati islem, public yuzu).
+    void removeModelLeaf(std::size_t index);
     void replaceModel(std::size_t index, std::vector<WireframeModel> replacements);
     void clear() noexcept;
     void pushSnapshot();

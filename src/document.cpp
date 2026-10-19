@@ -2120,6 +2120,10 @@ std::vector<std::size_t> Document::cutModifiersForSource(EntityId source) const 
 
 // Tek bir modeli (yaprak — kesme kaskadi olmadan) siler ve Delete op kaydeder.
 // Kitap isleri deleteModels'in tek-indeks yolunun aynisidir.
+void Document::removeModelLeaf(std::size_t index) {
+    eraseModelLeaf(index);
+}
+
 void Document::eraseModelLeaf(std::size_t index) {
     if (index >= models_.size()) return;
     UndoOp op;

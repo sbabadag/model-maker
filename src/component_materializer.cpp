@@ -215,6 +215,12 @@ ComponentMaterializer::Prepared ComponentMaterializer::prepare(
         //     cozulur; cozulemezse Unresolved (SESSIZ basari yok).
         // (c) Orientation (Parallel/Perpendicular/FollowFrame) -> acik Unsupported
         //     (OrientationConstraint dilimi YOK; sahte cozum uretilmez — A2.5).
+        // A2 (rev): her mesafe kisiti URETILEN geometrinin GERCEK konumuyla
+        // dogrulanir — cozumcu konumu yalniz durum kontrolu degil, child'in
+        // hazirlanmis konumunun denklemi sagladigi da test edilir (sessiz
+        // uyumsuzluk yok).
+        struct DistCheck { std::string roleKey; Vec3 normal; double rhs; };
+        std::vector<DistCheck> distChecks;
         for (const auto& r : plan.relationships.relationships()) {
             if (!r.enabled) continue;
             switch (r.kind) {
@@ -273,7 +279,12 @@ ComponentMaterializer::Prepared ComponentMaterializer::prepare(
                     dc.signedOffset =
                         (r.kind == RelationshipKind::Offset) ? r.distance : 0.0;
                     dc.enabled = true;
-                    sys.addDistanceConstraint(std::move(dc));
+                    sys.addDistanceConstraint(dc);
+                    // Dogrulama kaydi: n·p = n·origin + signedOffset.
+                    const double d = rg.plane.normal.x * rg.plane.origin.x +
+                                     rg.plane.normal.y * rg.plane.origin.y +
+                                     rg.plane.normal.z * rg.plane.origin.z;
+                    distChecks.push_back({r.from, rg.plane.normal, d + dc.signedOffset});
                     break;
                 }
                 case RelationshipKind::Parallel:
@@ -304,6 +315,29 @@ ComponentMaterializer::Prepared ComponentMaterializer::prepare(
             if (pr.state == ConstraintState::Unresolved) {
                 out.error = L"cozulemeyen kisit (Unresolved): '" +
                             std::wstring(pc.record.roleKey.begin(), pc.record.roleKey.end()) + L"'";
+                return out;
+            }
+        }
+        // A2 (rev): URETILEN geometri konumu kisit denklemini saglamali.
+        // Child'in hazirlanmis konumu (levha merkezi / bulon orijini / cut
+        // duzlemi) n·p = rhs icinde ±1e-3 olmali; degilse generator iliskiyi
+        // islememis demektir -> Conflict (sessiz uyumsuzluk yok).
+        for (const auto& chk : distChecks) {
+            Vec3 pos{};
+            bool found = false;
+            for (const auto& pc : out.children) {
+                if (pc.record.roleKey != chk.roleKey) continue;
+                if (pc.record.plate) pos = pc.record.plate->center;
+                else if (pc.record.boltGroup) pos = pc.record.boltGroup->origin;
+                else if (pc.record.cut) pos = pc.record.cut->planeOrigin;
+                found = true;
+                break;
+            }
+            if (!found) continue;
+            const double npx = chk.normal.x * pos.x + chk.normal.y * pos.y + chk.normal.z * pos.z;
+            if (std::abs(npx - chk.rhs) > 1e-3) {
+                out.error = L"geometrik iliski URETILEN geometriyle uyumsuz (Conflict): '" +
+                            std::wstring(chk.roleKey.begin(), chk.roleKey.end()) + L"'";
                 return out;
             }
         }
@@ -498,7 +532,9 @@ ComponentMaterializer::CommitResult ComponentMaterializer::commit(const Prepared
                     return out;
                 }
                 mod.enabled = true;
-                doc_.addCutModifier(std::move(mod));
+                mod.owner = kInvalidEntityId;  // commit sonrasi component id atanir (asagi)
+                out.cutModifierIndices.push_back(doc_.addCutModifier(std::move(mod)));
+                out.cutTargets.push_back(mod.target);
                 break;
             }
             default:
@@ -524,6 +560,14 @@ ComponentMaterializer::CommitResult ComponentMaterializer::commit(const Prepared
     const std::size_t ci = doc_.addComponentInstance(std::move(record));
     out.componentId = doc_.componentInstances()[ci].id;
 
+    // Component-owned cut'lari isaretle (owner = component id) — recompute'ta
+    // stale kesmeler bu owner ile kaldirilir (Major b).
+    for (const std::size_t cutIdx : out.cutModifierIndices) {
+        CutModifier m = doc_.cutModifiers()[cutIdx];
+        m.owner = out.componentId;
+        doc_.setCutModifier(cutIdx, std::move(m));
+    }
+
     // Kesme zincirini etkilenen parcalara uygula (levha delikleri + kesmeler).
     // A1.2: applyCutsFor basarisizsa (Boolean null / hedef-taban yok) ROLLBACK —
     // sessiz ok=true YASAK.
@@ -545,6 +589,17 @@ ComponentMaterializer::CommitResult ComponentMaterializer::commit(const Prepared
                             std::to_wstring(static_cast<std::uint64_t>(part)) + L")";
                 return out;
             }
+        }
+    }
+    // Component-owned CUT'lar (Fitting/PlaneCut/BoooleanCut) hedef uzerinde de
+    // uygulanir — kullanici parcasina kesme bulon grubuna bagli olmayabilir.
+    for (const EntityId ct : out.cutTargets) {
+        if (ct == kInvalidEntityId) continue;
+        if (!applyCutsFor(ct)) {
+            doc_.rollbackOpenRecord();
+            out.error = L"cut hedefi kesilemedi (id=" +
+                        std::to_wstring(static_cast<std::uint64_t>(ct)) + L")";
+            return out;
         }
     }
 
@@ -592,39 +647,52 @@ ComponentMaterializer::CommitResult ComponentMaterializer::recompute(
     };
 
     // A1.4: ARTIK URETILMEYEN child'lari kaldir. Yeni planda roleKey'i olmayan
-    // eski owned nesneler (levha/bulon grubu) silinir; kullanici parcalarina
+    // eski owned nesneler (levha/bulon grubu/cut) silinir; kullanici parcalarina
     // (main/secondary) DOKUNULMAZ. Bu islem ayni transaction icinde, geri alinabilir.
     {
         std::set<std::string> newKeys;
         for (const auto& pc : prep.children) newKeys.insert(pc.record.roleKey);
         for (const auto& c : existing.children) {
             if (newKeys.count(c.roleKey)) continue;  // hala uretiliyor
-            if (c.entityId == kInvalidEntityId) continue;
             switch (c.kind) {
                 case ComponentObjectKind::Plate: {
+                    // OWNERSHIP DOGRULAMA: yalnizca component-owned levhalar silinir.
+                    const bool owned = std::find(existing.ownedPlateIds.begin(),
+                                                 existing.ownedPlateIds.end(),
+                                                 c.entityId) != existing.ownedPlateIds.end();
+                    if (!owned || c.entityId == kInvalidEntityId) continue;
                     if (const auto pi = doc_.indexOfEntity(c.entityId)) {
-                        // Levha modelini sil (yaprak — kesme/bulon kaskadi yok).
-                        doc_.deleteModels({*pi});
+                        // YAPRAK sil (kaskad YOK): deleteModels bulon kaskadini
+                        // tetikleyip HÂLÂ yasayan bir bulon grubunu silebilirdi.
+                        doc_.removeModelLeaf(*pi);
                     }
                     break;
                 }
                 case ComponentObjectKind::BoltGroup: {
+                    const bool owned = std::find(existing.ownedBoltGroupIds.begin(),
+                                                 existing.ownedBoltGroupIds.end(),
+                                                 c.entityId) != existing.ownedBoltGroupIds.end();
+                    if (!owned || c.entityId == kInvalidEntityId) continue;
                     if (const auto bi = doc_.indexOfBoltGroup(c.entityId))
                         doc_.removeBoltGroup(*bi);
                     break;
                 }
-                case ComponentObjectKind::Cut: {
-                    // Eski cut modifier'lari kaldir: owner == component id olanlar.
-                    // (Cut child'in EntityId'si yok; Document index-bazli tutar.)
-                    // Not: cut kaldirma bir sonraki dilimde owner-takibi ile
-                    // kesinlestirilir; simdilik yeni cut'lar addCutModifier ile
-                    // eklenir, eski "component-owned" cut'lar document'ta ayri
-                    // tutulmazsa kaldirilamaz — burada bilerek no-op.
+                case ComponentObjectKind::Cut:
+                    // Component-owned cut'lar ASAGIDA owner-takibiyle kaldirilir
+                    // (yeni plandaki cut'lar yeniden eklenmeden ONCE). Burada
+                    // islem yapilmaz — cut EntityId tasimaz.
                     break;
-                }
                 default:
                     break;  // weld/construction — sahiplik yok
             }
+        }
+    }
+
+    // A1.4/Major(b): component-owned CUT modifier'larini kaldir (owner == component
+    // id). Yeni plandaki cut'lar yeniden eklenecek; eski/değişmiş kesmeler birikmez.
+    {
+        for (std::size_t ci = doc_.cutModifiers().size(); ci-- > 0;) {
+            if (doc_.cutModifiers()[ci].owner == existing.id) doc_.removeCutModifier(ci);
         }
     }
 
@@ -731,6 +799,8 @@ ComponentMaterializer::CommitResult ComponentMaterializer::recompute(
                     return out;
                 }
                 mod.enabled = true;
+                mod.owner = existing.id;  // component-owned cut (recompute)
+                out.cutTargets.push_back(mod.target);
                 doc_.addCutModifier(std::move(mod));
                 break;
             }
@@ -780,6 +850,16 @@ ComponentMaterializer::CommitResult ComponentMaterializer::recompute(
                             std::to_wstring(static_cast<std::uint64_t>(part)) + L")";
                 return out;
             }
+        }
+    }
+    // Component-owned CUT'lar hedef uzerinde de uygulanir (Major a).
+    for (const EntityId ct : out.cutTargets) {
+        if (ct == kInvalidEntityId) continue;
+        if (!applyCutsFor(ct)) {
+            doc_.rollbackOpenRecord();
+            out.error = L"recompute: cut hedefi kesilemedi (id=" +
+                        std::to_wstring(static_cast<std::uint64_t>(ct)) + L")";
+            return out;
         }
     }
 

@@ -84,6 +84,11 @@ public:
         EntityId componentId{kInvalidEntityId};
         std::vector<EntityId> ownedPlateIds;
         std::vector<EntityId> ownedBoltGroupIds;
+        // Component-owned cut modifier'lari (indeks + hedef EntityId). Recomputeda
+        // owner-takibi icin kullanilir; commit'te cut hedefi UZERINDE de kesme
+        // uygulanir (kullanici parcasina kesme — bulon grubu disinda).
+        std::vector<std::size_t> cutModifierIndices;
+        std::vector<EntityId> cutTargets;
         std::wstring error;
     };
     CommitResult commit(const Prepared& prep, ComponentInstanceRecord record);

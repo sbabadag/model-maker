@@ -509,6 +509,152 @@ int main() {
         check(prep.ok, "A2: ownership (main'e attached) geometrik dongu DEGIL");
     }
 
+    // === A2 rev / Major(d): geometrik iliski URETILEN geometriyle uyumsuzsa FAIL ===
+    {
+        Document d;
+        d.setOccStore(makeOccSolidStore());
+        ComponentMaterializer m(d);
+        OccSolidStore* s = asSolidStore(&d.occStore());
+        WireframeModel col = WireframeModel::cube(100.0);
+        d.addModel(std::move(col));
+        const EntityId cmain = d.modelId(0);
+        if (s) {
+            PlateSpec spec; spec.center={0,0,0}; spec.u={1,0,0}; spec.v={0,1,0}; spec.axis={0,0,1};
+            spec.width=100; spec.height=100; spec.thickness=100;
+            const TopoDS_Shape solid = ComponentMaterializer::buildPlateSolid(spec);
+            if (!solid.IsNull()) { s->set(cmain, solid); s->setBaseVersion(cmain, s->activeVersion(cmain)); }
+        }
+        BasicGeometryReferenceResolver::MemberRecord mr;
+        mr.frame.origin = {0,0,0}; mr.frame.u = {1,0,0}; mr.frame.v = {0,1,0}; mr.frame.w = {0,0,1};
+        mr.length = 100.0;
+        BasicGeometryReferenceResolver resolver({{cmain, mr}});
+
+        // Coincident(fin_plate, main): main frame duzlemi origin {0,0,0}, normal w={0,0,1}.
+        // Levha merkezi z=50'ye koy — denklem n·p=0'i SAGLAMAZ -> Conflict.
+        ComponentBuilder b;
+        PlateSpec pp; pp.width=100; pp.height=100; pp.thickness=8;
+        pp.center = {0.0, 0.0, 50.0};  // uyumsuz konum
+        b.plate("fin_plate", pp).coincident("fin_plate", "main").ownedBy("fin_plate", "component");
+        const auto built = b.build();
+        const ComponentPlan plan = componentPlanFromObjects(built.objects, built.relationships);
+        ComponentMaterializer::Prepared prep = m.prepare(plan, cmain, {}, &resolver);
+        check(!prep.ok, "A2 rev: uyumsuz geometri (Coincident z=50) -> Conflict FAIL");
+        check(!prep.error.empty(), "A2 rev: uyumsuzluk hatasi dolu");
+    }
+
+    // === Major(a): Cut hedefi kullanici parcasi (main) — kesme UYGULANIR ===
+    {
+        Document d;
+        d.setOccStore(makeOccSolidStore());
+        ComponentMaterializer m(d);
+        OccSolidStore* s = asSolidStore(&d.occStore());
+        WireframeModel col = WireframeModel::cube(100.0);
+        {
+            EntityProperties p = col.properties();
+            p.axisFromZ = -50; p.axisToZ = 50;  // Fitting icin gecerli uye ekseni
+            col.setProperties(std::move(p));
+        }
+        d.addModel(std::move(col));
+        const EntityId cmain = d.modelId(0);
+        if (s) {
+            PlateSpec spec; spec.center={0,0,0}; spec.u={1,0,0}; spec.v={0,1,0}; spec.axis={0,0,1};
+            spec.width=100; spec.height=100; spec.thickness=100;
+            const TopoDS_Shape solid = ComponentMaterializer::buildPlateSolid(spec);
+            if (!solid.IsNull()) { s->set(cmain, solid); s->setBaseVersion(cmain, s->activeVersion(cmain)); }
+        }
+        // Fitting kesmesi main'i (kullanici parcasi) keser — bulon grubu YOK.
+        ComponentBuilder b;
+        PlateSpec pp; pp.width=100; pp.height=100; pp.thickness=8;
+        CutModifier fit;
+        fit.kind = CutKind::Fitting;
+        fit.planeOrigin = {0,0,0};
+        fit.planeNormal = {0,0,1};
+        fit.keepPositive = true;
+        b.plate("fin_plate", pp).cut("beam_fit", fit).cuts("beam_fit", "main")
+         .ownedBy("fin_plate", "component").ownedBy("beam_fit", "component");
+        const auto built = b.build();
+        const ComponentPlan plan = componentPlanFromObjects(built.objects, built.relationships);
+        ComponentMaterializer::Prepared prep = m.prepare(plan, cmain, {});
+        check(prep.ok, "Major(a): cut->main prepare ok");
+        ComponentInstanceRecord rec; rec.typeId = L"test"; rec.mainPart = cmain;
+        ComponentMaterializer::CommitResult res = m.commit(prep, rec);
+        check(res.ok, "Major(a): cut->main commit ok");
+        // Fitting modifier hedef main'e eklendi ve kesme uygulandi (hacim azaldi).
+        bool fittingOnMain = false;
+        for (const auto& mm : d.cutModifiers())
+            if (mm.kind == CutKind::Fitting && mm.target == cmain) fittingOnMain = true;
+        check(fittingOnMain, "Major(a): fitting modifier main hedefli");
+        const VersionId baseV = s->baseVersion(cmain);
+        const TopoDS_Shape* baseShape = s->findVersion(cmain, baseV);
+        const TopoDS_Shape* activeShape = s->find(cmain);
+        check(baseShape && activeShape && !activeShape->IsNull(), "Major(a): main aktif B-Rep var");
+        if (baseShape && activeShape) {
+            check(shapeVolume(*activeShape) < shapeVolume(*baseShape),
+                  "Major(a): main fitting ile kesildi (hacim azaldi)");
+        }
+    }
+
+    // === Major(b): recompute eski cut'u kaldirir (birikme yok) ===
+    {
+        Document d;
+        d.setOccStore(makeOccSolidStore());
+        ComponentMaterializer m(d);
+        OccSolidStore* s = asSolidStore(&d.occStore());
+        WireframeModel col = WireframeModel::cube(100.0);
+        {
+            EntityProperties p = col.properties();
+            p.axisFromZ = -50; p.axisToZ = 50;
+            col.setProperties(std::move(p));
+        }
+        d.addModel(std::move(col));
+        const EntityId cmain = d.modelId(0);
+        if (s) {
+            PlateSpec spec; spec.center={0,0,0}; spec.u={1,0,0}; spec.v={0,1,0}; spec.axis={0,0,1};
+            spec.width=100; spec.height=100; spec.thickness=100;
+            const TopoDS_Shape solid = ComponentMaterializer::buildPlateSolid(spec);
+            if (!solid.IsNull()) { s->set(cmain, solid); s->setBaseVersion(cmain, s->activeVersion(cmain)); }
+        }
+
+        auto buildWithCut = [](double z) {
+            ComponentBuilder b;
+            PlateSpec pp; pp.width=100; pp.height=100; pp.thickness=8;
+            CutModifier fit;
+            fit.kind = CutKind::Fitting;
+            fit.planeOrigin = {0,0,z};
+            fit.planeNormal = {0,0,1};
+            fit.keepPositive = true;
+            b.plate("fin_plate", pp).cut("beam_fit", fit).cuts("beam_fit", "main")
+             .ownedBy("fin_plate", "component").ownedBy("beam_fit", "component");
+            return b.build();
+        };
+
+        // Ilk commit: 1 fitting cut.
+        const auto built1 = buildWithCut(0.0);
+        const ComponentPlan plan1 = componentPlanFromObjects(built1.objects, built1.relationships);
+        ComponentMaterializer::Prepared prep1 = m.prepare(plan1, cmain, {});
+        ComponentInstanceRecord rec1; rec1.typeId = L"test"; rec1.mainPart = cmain;
+        ComponentMaterializer::CommitResult res1 = m.commit(prep1, rec1);
+        check(res1.ok, "Major(b): ilk commit ok");
+        std::size_t cutsAfter1 = 0;
+        for (const auto& mm : d.cutModifiers()) if (mm.kind == CutKind::Fitting) ++cutsAfter1;
+        check(cutsAfter1 == 1, "Major(b): 1 fitting cut sonra");
+
+        // Recompute: cut KALDIRILDI (yalniz levha kaldi).
+        ComponentBuilder b2;
+        PlateSpec pp; pp.width=100; pp.height=100; pp.thickness=8;
+        b2.plate("fin_plate", pp).ownedBy("fin_plate", "component");
+        const auto built2 = b2.build();
+        const ComponentPlan plan2 = componentPlanFromObjects(built2.objects, built2.relationships);
+        ComponentMaterializer::Prepared prep2 = m.prepare(plan2, cmain, {});
+        check(prep2.ok, "Major(b): ikinci prepare ok");
+        ComponentMaterializer::CommitResult res2 = m.recompute(
+            prep2, d.componentInstances()[0], rec1);
+        check(res2.ok, "Major(b): recompute ok");
+        std::size_t cutsAfter2 = 0;
+        for (const auto& mm : d.cutModifiers()) if (mm.kind == CutKind::Fitting) ++cutsAfter2;
+        check(cutsAfter2 == 0, "Major(b): eski fitting cut kaldirildi (birikme yok)");
+    }
+
     std::printf("\n%d failure(s)\n", failures);
     return failures == 0 ? 0 : 1;
 }
