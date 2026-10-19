@@ -643,8 +643,19 @@ if(BUILD_TESTING)
         add_executable(model_maker_component_materializer_test tests/component_materializer_test.cpp)
         target_link_libraries(model_maker_component_materializer_test PRIVATE model_maker_occ)
         add_test(NAME model_maker_component_materializer_test COMMAND model_maker_component_materializer_test)
+        # FIN PLATE UCTAN UCA (C5): registry (generateFinPlate) -> ComponentPlan
+        # -> ComponentMaterializer -> Document/OCCT; recompute + undo/redo + MMW8
+        # kayit/ac sonrasi roleKey->EntityId korunur. GERCEK OCCT.
+        add_executable(model_maker_occ_fin_plate_e2e tests/occ_fin_plate_end_to_end_test.cpp)
+        target_link_libraries(model_maker_occ_fin_plate_e2e PRIVATE model_maker_occ)
+        add_test(NAME model_maker_occ_fin_plate_e2e COMMAND model_maker_occ_fin_plate_e2e)
+        # END PLATE REGRESYON (A3): mevcut production hatti vs yeni ortak runtime.
+        # Ayni yerlesim iki yoldan beslenir; geometri/bulon/delik/ownership esit.
+        add_executable(model_maker_occ_end_plate_regression_vs_runtime tests/occ_end_plate_regression_vs_runtime.cpp)
+        target_link_libraries(model_maker_occ_end_plate_regression_vs_runtime PRIVATE model_maker_occ)
+        add_test(NAME model_maker_occ_end_plate_regression_vs_runtime COMMAND model_maker_occ_end_plate_regression_vs_runtime)
         if(UNIX)
-            set_tests_properties(model_maker_occ_store_roundtrip model_maker_occ_document_roundtrip model_maker_occ_bolt_group_roundtrip model_maker_occ_end_plate_roundtrip model_maker_occ_end_plate_placement model_maker_occ_end_plate_144_geometry model_maker_component_materializer_test PROPERTIES
+            set_tests_properties(model_maker_occ_store_roundtrip model_maker_occ_document_roundtrip model_maker_occ_bolt_group_roundtrip model_maker_occ_end_plate_roundtrip model_maker_occ_end_plate_placement model_maker_occ_end_plate_144_geometry model_maker_component_materializer_test model_maker_occ_fin_plate_e2e model_maker_occ_end_plate_regression_vs_runtime PROPERTIES
                 ENVIRONMENT "LD_LIBRARY_PATH=${OCC_ROOT}/lib:$ENV{LD_LIBRARY_PATH}")
         endif()
     endif()
