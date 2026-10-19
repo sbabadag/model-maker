@@ -241,6 +241,41 @@ int main() {
         }
     }
 
+    // --- 6b) Fin Plate: secim sirasi TERS (kiris once) -> roller duzeltilir ----
+    {
+        ComponentRegistry reg;
+        registerBuiltInComponents(reg);
+
+        // main = YATAY kiris (yanlis sirada secilmis), secondary = DUSEY kolon.
+        ComponentInput in;
+        in.main.id = EntityId{30};
+        in.main.axisFrom = {0, 0, 1500};
+        in.main.axisTo = {0, 4000, 1500};
+        in.main.refNormal = {1, 0, 0};  // cizim duzleminden gelebilir
+        in.main.secWidth = 100.0;
+        in.main.secHeight = 200.0;
+        MemberGeometry col;
+        col.id = EntityId{31};
+        col.axisFrom = {0, 0, 0};
+        col.axisTo = {0, 0, 3000};
+        col.refNormal = {0, 0, 1};
+        col.secWidth = 300.0;
+        col.secHeight = 300.0;
+        in.secondary.push_back(col);
+
+        GenerationPlan plan = reg.generate(L"fin_plate", in);
+        check(plan.ok, "ters sira: fin plate uretildi");
+        if (plan.ok && !plan.plates.empty()) {
+            check(std::fabs(plan.plates[0].axis.z) < 1e-6,
+                  "ters sira: levha yine DUSEY (roller duzeltildi)");
+        }
+        if (plan.ok && !plan.boltGroups.empty()) {
+            const BoltGroup& b = plan.boltGroups[0];
+            check(b.parts.size() == 1 && b.parts[0] == EntityId{30},
+                  "ters sira: bulonlar YATAY uyeye (kiris) referansli");
+        }
+    }
+
     // --- 7) Bilinmeyen tip / eksik ikincil parca -----------------------------
     {
         ComponentRegistry reg;

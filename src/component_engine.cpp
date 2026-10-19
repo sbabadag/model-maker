@@ -469,8 +469,21 @@ GenerationPlan generateFinPlate(const ComponentInput& input) noexcept {
         plan.error = L"ikincil parca (kiris) secilmeli";
         return plan;
     }
-    const MemberGeometry& beam = input.secondary[0];
-    const MemberGeometry& col = input.main;
+    const MemberGeometry& beamPick = input.secondary[0];
+
+    // ROL DUZELTME: fin plate'te DESTEK (kolon) DUSEY, kiris YATAY olur. Kullanici
+    // secimi ters sirada yapabilir (kirişi once secer). Geometriye gore duzelt:
+    // daha dusey olan = kolon, daha yatay olan = kiris. Boylece secim sirasi
+    // sonucu degistirmez.
+    const auto verticality = [](const MemberGeometry& g) {
+        const Vec3 a{g.axisTo.x - g.axisFrom.x, g.axisTo.y - g.axisFrom.y,
+                     g.axisTo.z - g.axisFrom.z};
+        const double len = std::sqrt(a.x * a.x + a.y * a.y + a.z * a.z);
+        return (len > 1e-9) ? std::fabs(a.z) / len : 0.0;  // 1 = dusey, 0 = yatay
+    };
+    const bool rolesSwapped = verticality(input.main) + 1e-6 < verticality(beamPick);
+    const MemberGeometry& col = rolesSwapped ? beamPick : input.main;
+    const MemberGeometry& beam = rolesSwapped ? input.main : beamPick;
 
     const double thickness = paramAsDouble(input.params, L"plateThickness", 10.0);
     const double width = paramAsDouble(input.params, L"plateWidth", 120.0);
@@ -596,8 +609,8 @@ GenerationPlan generateFinPlate(const ComponentInput& input) noexcept {
     // FIN PLATE (shear tab): bulonlar levhayi KIRIS GOVDESINE baglar. End
     // plate'in aksine main (kolon) DELINMEZ — kolonla baglanti KAYNAKTIR.
     // (Eski kod end plate'ten kopyalanmis {main.id} birakmisti: civatalar
-    // kolonu deliyordu.)
-    b.parts = {input.secondary[0].id};
+    // kolonu deliyordu.) Rol duzeltmesinden SONRAKI beam kimligi kullanilir.
+    b.parts = {beam.id};
     plan.boltGroups.push_back(b);
     plan.boltGroupKeys.push_back("beam_bolts");
 
@@ -614,6 +627,7 @@ GenerationPlan generateFinPlate(const ComponentInput& input) noexcept {
                 return s.str();
             };
             os << "\n=== FIN PLATE DIAG ===\n";
+            os << "rolesSwapped=" << (rolesSwapped ? 1 : 0) << "\n";
             os << "col  id=" << col.id << " from=" << v3(col.axisFrom) << " to=" << v3(col.axisTo)
                << " refN=" << v3(col.refNormal) << " sec=" << col.secWidth << "x" << col.secHeight
                << "\n";
