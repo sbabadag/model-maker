@@ -5381,31 +5381,6 @@ bool Application::selectedEndPlateConnection(EndPlateConnection& out) const {
     return true;
 }
 
-// --- UNIVERSAL COMPONENT (Phase P1): recompute + selection --------------------
-
-bool Application::selectedComponentInstance(ComponentInstanceRecord& out) const {
-    // Secili model bir component'in SAHIP OLDUGU alt nesne (levha veya bulon
-    // display) ise o instance'i dondurur.
-    for (const std::size_t idx : selectedModels_) {
-        if (idx >= document_.models().size()) continue;
-        const EntityId id = document_.modelId(idx);
-        for (const auto& rec : document_.componentInstances()) {
-            if (std::find(rec.ownedPlateIds.begin(), rec.ownedPlateIds.end(), id) !=
-                rec.ownedPlateIds.end()) {
-                out = rec;
-                return true;
-            }
-            for (const EntityId bg : rec.ownedBoltGroupIds) {
-                const auto bi = document_.indexOfBoltGroup(bg);
-                if (bi && document_.boltGroups()[*bi].displayEntityId == id) {
-                    out = rec;
-                    return true;
-                }
-            }
-        }
-    }
-    return false;
-}
 
 void Application::recomputeComponentInstancesFor(const std::vector<EntityId>& changedParts) {
     if (changedParts.empty()) return;
@@ -5488,57 +5463,6 @@ void Application::recomputeComponentInstancesFor(const std::vector<EntityId>& ch
 #endif
 }
 
-bool Application::setSelectedComponentParams(EntityId compId,
-                                             const std::vector<CompParam>& newParams) {
-#ifdef MM_HAS_OCC
-    const auto idx = document_.indexOfComponentInstance(compId);
-    if (!idx) return false;
-    const ComponentType* type =
-        ComponentRegistry::instance().findType(document_.componentInstances()[*idx].typeId);
-    if (!type) return false;
-
-    // Parametreleri semaya hizala (migration), ardindan yeniden uret.
-    ComponentInstanceRecord updated = document_.componentInstances()[*idx];
-    updated.params = alignParamsToSpecs(type->params, newParams);
-
-    // Guncel MemberGeometry + yeni parametrelerle generator -> plan.
-    ensureProfileCatalog();
-    ComponentInput input;
-    if (const auto mi = document_.indexOfEntity(updated.mainPart))
-        input.main = memberGeometryFor(document_, profileCatalog_, *mi);
-    else
-        return false;
-    for (const EntityId sid : updated.secondaryParts) {
-        if (const auto si = document_.indexOfEntity(sid))
-            input.secondary.push_back(memberGeometryFor(document_, profileCatalog_, *si));
-        else
-            return false;
-    }
-    input.params = updated.params;
-
-    const GenerationPlan gp = ComponentRegistry::instance().generate(updated.typeId, input);
-    if (!gp.ok) return false;
-    const ComponentPlan plan = componentPlanFromGenerationPlan(gp);
-    if (!plan.ok) return false;
-
-    ComponentMaterializer mat(document_);
-    const ComponentMaterializer::Prepared prep =
-        mat.prepare(plan, updated.mainPart, updated.secondaryParts);
-    if (!prep.ok) return false;
-
-    // Materializer.recompute kendi undo kaydini acar ve basarisizlikta kendini
-    // geri alir — burada pushUndoSnapshot ACILMAZ (cift kayit olur).
-    const auto res = mat.recompute(prep, document_.componentInstances()[*idx], updated);
-    if (!res.ok) return false;
-    invalidateCanvas();
-    updateStatus();
-    return true;
-#else
-    (void)compId;
-    (void)newParams;
-    return false;
-#endif
-}
 
 #ifdef MM_HAS_OCC
 bool Application::setSelectedEndPlateConnection(EntityId connId, const EndPlateParams& newParams) {
@@ -5682,6 +5606,86 @@ void Application::syncBoltGroupsForMoved(const std::vector<std::size_t>& indices
     }
 }
 #endif
+
+// --- UNIVERSAL COMPONENT (Phase P1): selection + param edit (portable) -----
+// OCC-siz derlemede de link gerekir; OCC blogunun DISINDA tanimlanir.
+// --- UNIVERSAL COMPONENT (Phase P1): recompute + selection --------------------
+
+bool Application::selectedComponentInstance(ComponentInstanceRecord& out) const {
+    // Secili model bir component'in SAHIP OLDUGU alt nesne (levha veya bulon
+    // display) ise o instance'i dondurur.
+    for (const std::size_t idx : selectedModels_) {
+        if (idx >= document_.models().size()) continue;
+        const EntityId id = document_.modelId(idx);
+        for (const auto& rec : document_.componentInstances()) {
+            if (std::find(rec.ownedPlateIds.begin(), rec.ownedPlateIds.end(), id) !=
+                rec.ownedPlateIds.end()) {
+                out = rec;
+                return true;
+            }
+            for (const EntityId bg : rec.ownedBoltGroupIds) {
+                const auto bi = document_.indexOfBoltGroup(bg);
+                if (bi && document_.boltGroups()[*bi].displayEntityId == id) {
+                    out = rec;
+                    return true;
+                }
+            }
+        }
+    }
+    return false;
+}
+
+bool Application::setSelectedComponentParams(EntityId compId,
+                                             const std::vector<CompParam>& newParams) {
+#ifdef MM_HAS_OCC
+    const auto idx = document_.indexOfComponentInstance(compId);
+    if (!idx) return false;
+    const ComponentType* type =
+        ComponentRegistry::instance().findType(document_.componentInstances()[*idx].typeId);
+    if (!type) return false;
+
+    // Parametreleri semaya hizala (migration), ardindan yeniden uret.
+    ComponentInstanceRecord updated = document_.componentInstances()[*idx];
+    updated.params = alignParamsToSpecs(type->params, newParams);
+
+    // Guncel MemberGeometry + yeni parametrelerle generator -> plan.
+    ensureProfileCatalog();
+    ComponentInput input;
+    if (const auto mi = document_.indexOfEntity(updated.mainPart))
+        input.main = memberGeometryFor(document_, profileCatalog_, *mi);
+    else
+        return false;
+    for (const EntityId sid : updated.secondaryParts) {
+        if (const auto si = document_.indexOfEntity(sid))
+            input.secondary.push_back(memberGeometryFor(document_, profileCatalog_, *si));
+        else
+            return false;
+    }
+    input.params = updated.params;
+
+    const GenerationPlan gp = ComponentRegistry::instance().generate(updated.typeId, input);
+    if (!gp.ok) return false;
+    const ComponentPlan plan = componentPlanFromGenerationPlan(gp);
+    if (!plan.ok) return false;
+
+    ComponentMaterializer mat(document_);
+    const ComponentMaterializer::Prepared prep =
+        mat.prepare(plan, updated.mainPart, updated.secondaryParts);
+    if (!prep.ok) return false;
+
+    // Materializer.recompute kendi undo kaydini acar ve basarisizlikta kendini
+    // geri alir — burada pushUndoSnapshot ACILMAZ (cift kayit olur).
+    const auto res = mat.recompute(prep, document_.componentInstances()[*idx], updated);
+    if (!res.ok) return false;
+    invalidateCanvas();
+    updateStatus();
+    return true;
+#else
+    (void)compId;
+    (void)newParams;
+    return false;
+#endif
+}
 
 bool Application::selectedBoltProperties(double& nominalDiameter, double& holeDiameter,
                                          std::string& grade) const {
