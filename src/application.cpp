@@ -1694,6 +1694,11 @@ LRESULT Application::handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lPa
             executePendingFinPlateCommand();
             updateControls(); invalidateCanvas(); return 0;
         }
+        if (componentCommandActive()) {
+            // Generic katalog komutu: sag tik komutu isletir (parcalar seciliyse).
+            executePendingComponentCommand();
+            updateControls(); invalidateCanvas(); return 0;
+        }
         // BOLT SAG-TIK MENUSU: bos modda bir BOLT display'i uzerinde sag tik
         // -> Ortala X / Ortala Y popup menusu. Bulon degilse false doner ve
         // asagidaki normal sag-tik akisina dusulur.
@@ -1865,6 +1870,7 @@ LRESULT Application::handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lPa
             else if (pendingBolt_) cancelPendingBoltCommand();
             else if (pendingEndPlate_) cancelPendingEndPlateCommand();
             else if (pendingFinPlate_) cancelPendingFinPlateCommand();
+            else if (componentCommandActive()) cancelPendingComponentCommand();
             else if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
             else cancelDrawing();
             if (mode_ == EditMode::View3D) drawingActive_ = false;
@@ -2140,6 +2146,11 @@ void Application::onLeftButtonDown(int x, int y) {
     // VERB-NOUN FIN PLATE (Phase P1): sol tik kolon/kiris secer.
     if (pendingFinPlate_) {
         pickPendingFinPlateAt(x, y);
+        return;
+    }
+    // GENERIC CATALOG COMMAND (C7): sol tik parca secer.
+    if (componentCommandActive()) {
+        pickPendingComponentAt(x, y);
         return;
     }
     // BOLT TOOL PENCERESI (Phase B1): bolt display modeline cift tik -> duzenleme
@@ -2655,7 +2666,7 @@ void Application::onMouseMove(int x, int y, WPARAM buttons) {
         lastMouse_ = {x, y};
         updateHover(x, y);
         redraw = true;
-    } else if (pendingCutKind_ || pendingBolt_ || pendingFinPlate_) {
+    } else if (pendingCutKind_ || pendingBolt_ || pendingFinPlate_ || componentCommandActive()) {
         // Verb-noun kesme/bolt/fin-plate bekleme modunda imlecin altindaki
         // secilebilir profil/duzlem/parcayi vurgula (hover highlight). Idle moddaki
         // refreshHoverCandidate bu modda cagrilmadigi icin burada tazelenir.
@@ -3037,6 +3048,7 @@ void Application::cancelDrawing() {
 void Application::startTransformCommand(TransformCommand command) {
     cancelPendingCutCommand();
     cancelPendingFinPlateCommand();
+    cancelPendingComponentCommand();
     cancelZoomWindow2D();
     if (workPlanePicking_) cancelWorkPlaneCommand();
     // cancelDrawing seçimi de temizler; noun-verb akışı için koru.
@@ -3581,6 +3593,7 @@ std::optional<Vec3> Application::resolveOrbitPivot(int x, int y) const {
 }
 
 void Application::startZoomWindow2D() {
+    cancelPendingComponentCommand();
     if (workPlanePicking_) cancelWorkPlaneCommand();
     if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
     cancelDrawing();
@@ -3626,6 +3639,7 @@ void Application::completeZoomWindow2D(int x, int y) {
 }
 
 void Application::startWorkPlaneCommand() {
+    cancelPendingComponentCommand();
     cancelZoomWindow2D();
     if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
     cancelDrawing();
@@ -3767,6 +3781,7 @@ void Application::enterPendingCutCommand(CutKind kind) {
     cancelPendingBoltCommand();
     cancelPendingEndPlateCommand();
     cancelPendingFinPlateCommand();
+    cancelPendingComponentCommand();
     pendingCutKind_ = kind;
     pendingCutTargets_.clear();
     pendingCutPlane_.reset();
@@ -4124,6 +4139,7 @@ void Application::startBoltCommand() {
     cancelPendingCutCommand();
     cancelPendingEndPlateCommand();
     cancelPendingFinPlateCommand();
+    cancelPendingComponentCommand();
     pendingBolt_ = true;
     pendingBoltParts_.clear();
     pendingBoltAxis_.reset();
@@ -4409,6 +4425,7 @@ void Application::startEndPlateCommand() {
     cancelPendingCutCommand();
     cancelPendingBoltCommand();
     cancelPendingFinPlateCommand();
+    cancelPendingComponentCommand();
     pendingEndPlate_ = true;
     pendingEndPlateParts_.clear();
     selectedModels_.clear();
@@ -4503,6 +4520,7 @@ void Application::startFinPlateCommand() {
     cancelPendingCutCommand();
     cancelPendingBoltCommand();
     cancelPendingEndPlateCommand();
+    cancelPendingComponentCommand();
     pendingFinPlate_ = true;
     pendingFinPlateParts_.clear();
     selectedModels_.clear();
@@ -4770,76 +4788,88 @@ static mm::MemberGeometry memberGeometryFor(const mm::Document& doc,
     return g;
 }
 
-void Application::applyFinPlateFromParts(const std::vector<std::size_t>& parts) {
-    if (parts.size() != 2) {
+void Application::applyComponentFromParts(const std::wstring& typeId,
+                                          const std::vector<std::size_t>& parts,
+                                          const std::vector<CompParam>& params) {
+    // GENERIC uretim (C7): herhangi bir registry tipi icin ortak yol. Fin Plate
+    // ile AYNI zincir: registry.generate -> componentPlan -> materializer.
+    const mm::ComponentType* type = mm::ComponentRegistry::instance().findType(typeId);
+    const std::wstring display = type ? type->displayName : typeId;
+    const int pickCount = (type && type->catalog.pickCount > 0) ? type->catalog.pickCount : 2;
+
+    if (parts.size() != static_cast<std::size_t>(pickCount)) {
         MessageBeep(MB_ICONWARNING);
-        publishStatus(L"Fin Plate: kolon ve kiris secin (tam 2 secim)");
+        publishStatus(display + L": tam " + std::to_wstring(pickCount) +
+                      L" parca secin (su an " + std::to_wstring(parts.size()) + L" secili)");
         return;
     }
     const std::size_t mainIdx = parts[0];
-    const std::size_t secIdx = parts[1];
-    if (mainIdx >= document_.models().size() || secIdx >= document_.models().size()) {
-        MessageBeep(MB_ICONWARNING);
-        return;
-    }
-    if (document_.models()[mainIdx].constructionKind() != ConstructionKind::None ||
-        document_.models()[secIdx].constructionKind() != ConstructionKind::None) {
-        MessageBeep(MB_ICONWARNING);
-        publishStatus(L"Fin Plate: parcalar normal model olmali (konstruksiyon degil)");
-        return;
+    for (const std::size_t p : parts) {
+        if (p >= document_.models().size()) {
+            MessageBeep(MB_ICONWARNING);
+            return;
+        }
+        if (document_.models()[p].constructionKind() != ConstructionKind::None) {
+            MessageBeep(MB_ICONWARNING);
+            publishStatus(display + L": parcalar normal model olmali (konstruksiyon degil)");
+            return;
+        }
     }
 
 #ifdef MM_HAS_OCC
     ensureProfileCatalog();
 
-    // 1. Generator girdisi: main (kolon) + secondary (kiris) MemberGeometry.
+    // 1. Generator girdisi: main (parts[0]) + secondary (parts[1..]). pickCount
+    // metadata'si ile tutarli: 1 main + (pickCount-1) secondary.
     mm::ComponentInput input;
     input.main = memberGeometryFor(document_, profileCatalog_, mainIdx);
-    input.secondary = {memberGeometryFor(document_, profileCatalog_, secIdx)};
-    input.params = pendingFinPlateParams_;
+    input.secondary.reserve(parts.size() - 1);
+    std::vector<EntityId> secondaryIds;
+    secondaryIds.reserve(parts.size() - 1);
+    for (std::size_t i = 1; i < parts.size(); ++i) {
+        input.secondary.push_back(memberGeometryFor(document_, profileCatalog_, parts[i]));
+        secondaryIds.push_back(input.secondary.back().id);
+    }
+    input.params = params;
 
-    // 2. Registry -> generateFinPlate -> GenerationPlan.
-    const mm::GenerationPlan gp =
-        mm::ComponentRegistry::instance().generate(L"fin_plate", input);
+    // 2. Registry -> generator -> GenerationPlan.
+    const mm::GenerationPlan gp = mm::ComponentRegistry::instance().generate(typeId, input);
     if (!gp.ok) {
-        publishStatus(L"Fin Plate uretilemedi: " + (gp.error.empty() ? L"gecersiz girdi" : gp.error));
+        publishStatus(display + L" uretilemedi: " + (gp.error.empty() ? L"gecersiz girdi" : gp.error));
         return;
     }
 
     // 3. GenerationPlan -> roleKey koruyan ComponentPlan.
     const mm::ComponentPlan plan = mm::componentPlanFromGenerationPlan(gp);
     if (!plan.ok) {
-        publishStatus(L"Fin Plate plani olusturulamadi: " + plan.error);
+        publishStatus(display + L" plani olusturulamadi: " + plan.error);
         return;
     }
 
     // 4. Ortak materializer: prepare (pure) + commit (tek undo kaydi).
     mm::ComponentMaterializer mat(document_);
     const mm::ComponentMaterializer::Prepared prep =
-        mat.prepare(plan, input.main.id, {input.secondary[0].id});
+        mat.prepare(plan, input.main.id, secondaryIds);
     if (!prep.ok) {
-        publishStatus(L"Fin Plate hazirlanamadi: " + prep.error);
+        publishStatus(display + L" hazirlanamadi: " + prep.error);
         return;
     }
     mm::ComponentInstanceRecord rec;
-    rec.typeId = L"fin_plate";
-    rec.schemaVersion = 1;
+    rec.typeId = typeId;
+    rec.schemaVersion = type ? type->schemaVersion : 1;
     rec.mainPart = input.main.id;
-    rec.secondaryParts = {input.secondary[0].id};
+    rec.secondaryParts = secondaryIds;
     rec.params = input.params;
-    // Materializer kendi tek undo kaydini acar (commit icinde pushSnapshot) ve
-    // basarisizlikta rollbackOpenRecord ile kendini geri alir — burada AYRI bir
-    // pushUndoSnapshot ACILMAZ (cift kayit olur).
     const mm::ComponentMaterializer::CommitResult res = mat.commit(prep, rec);
     if (!res.ok) {
-        publishStatus(L"Fin Plate uygulanamadi: " + res.error);
+        publishStatus(display + L" uygulanamadi: " + res.error);
         return;
     }
-    solidStatusMessage_ = L"Fin Plate bağlantısı oluşturuldu (levha + bulonlar)";
+    solidStatusMessage_ = display + L" bağlantısı oluşturuldu (levha + bulonlar)";
 #else
     (void)mainIdx;
-    (void)secIdx;
-    publishStatus(L"Fin Plate: OCC devre disi — gercek geometri uretilemedi");
+    (void)params;
+    publishStatus(display + L": OCC devre disi — gercek geometri uretilemedi");
 #endif
     selectedModels_.clear();
     selectionFirstCorner_.reset();
@@ -4847,6 +4877,127 @@ void Application::applyFinPlateFromParts(const std::vector<std::size_t>& parts) 
     updateControls();
     updateStatus();
     invalidateCanvas();
+}
+
+void Application::applyFinPlateFromParts(const std::vector<std::size_t>& parts) {
+    // Fin Plate uretim davranisi DEGISMEZ: generic katalog yoluna delege eder
+    // (ayni generator, ayni materializer, ayni parametre kaynagi).
+    applyComponentFromParts(L"fin_plate", parts, pendingFinPlateParams_);
+}
+
+// --- GENERIC COMPONENT CATALOG COMMAND (C7) -----------------------------------
+
+void Application::startComponentCommand(const std::wstring& typeId) {
+    cancelZoomWindow2D();
+    if (workPlanePicking_) cancelWorkPlaneCommand();
+    if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
+    profileGrip_.reset();
+    cancelDrawing();
+    cancelPendingCutCommand();
+    cancelPendingBoltCommand();
+    cancelPendingEndPlateCommand();
+    cancelPendingFinPlateCommand();
+    pendingComponentType_ = typeId;
+    pendingComponentParts_.clear();
+    selectedModels_.clear();
+    selectionFirstCorner_.reset();
+    hoverModel_.reset();
+    hoverFaceModel_.reset();
+    hoverFaceIndices_.clear();
+
+    const mm::ComponentType* type = mm::ComponentRegistry::instance().findType(typeId);
+    const std::wstring display = type ? type->displayName : typeId;
+    std::wstring hint = L"once MAIN, sonra SECONDARY secin — sag tik uygular";
+    if (type && !type->catalog.primaryMemberType.empty() && !type->catalog.secondaryMemberType.empty()) {
+        hint = L"once " + type->catalog.primaryMemberType + L" (main), sonra " +
+               type->catalog.secondaryMemberType + L" (secondary) secin — sag tik uygular";
+    }
+    publishStatus(display + L": " + hint);
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
+}
+
+void Application::cancelPendingComponentCommand() {
+    if (!componentCommandActive()) return;
+    pendingComponentType_.clear();
+    pendingComponentParts_.clear();
+    pendingComponentParams_.clear();
+    hoverModel_.reset();
+    hoverFaceModel_.reset();
+    hoverFaceIndices_.clear();
+    selectedModels_.clear();
+    selectionFirstCorner_.reset();
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
+}
+
+void Application::executePendingComponentCommand() {
+    if (!componentCommandActive()) return;
+    const mm::ComponentType* type = mm::ComponentRegistry::instance().findType(pendingComponentType_);
+    const std::wstring display = type ? type->displayName : pendingComponentType_;
+    const int pickCount = (type && type->catalog.pickCount > 0) ? type->catalog.pickCount : 2;
+    if (pendingComponentParts_.size() != static_cast<std::size_t>(pickCount)) {
+        MessageBeep(MB_ICONWARNING);
+        publishStatus(display + L": tam " + std::to_wstring(pickCount) +
+                      L" parca secin (su an " + std::to_wstring(pendingComponentParts_.size()) + L" secili)");
+        return;
+    }
+    const std::vector<std::size_t> parts = pendingComponentParts_;
+    const std::wstring typeId = pendingComponentType_;
+    const std::vector<CompParam> params = pendingComponentParams_;
+    pendingComponentType_.clear();
+    pendingComponentParts_.clear();
+    pendingComponentParams_.clear();
+    hoverModel_.reset();
+    hoverFaceModel_.reset();
+    hoverFaceIndices_.clear();
+    applyComponentFromParts(typeId, parts, params);
+}
+
+bool Application::pickPendingComponentAt(int x, int y) {
+    if (!componentCommandActive()) return false;
+    const mm::ComponentType* type = mm::ComponentRegistry::instance().findType(pendingComponentType_);
+    const std::wstring display = type ? type->displayName : pendingComponentType_;
+    const int pickCount = (type && type->catalog.pickCount > 0) ? type->catalog.pickCount : 2;
+
+    const auto hit = modelIndexAt(x, y);
+    if (!hit || *hit >= document_.models().size()) {
+        MessageBeep(MB_ICONWARNING);
+        publishStatus(display + L": bir parcaya tiklayin (normal model)");
+        return true;
+    }
+    const auto& model = document_.models()[*hit];
+    if (model.constructionKind() != ConstructionKind::None) {
+        MessageBeep(MB_ICONWARNING);
+        publishStatus(display + L": parcalar normal model olmali (konstruksiyon degil)");
+        return true;
+    }
+    const auto it = std::find(pendingComponentParts_.begin(), pendingComponentParts_.end(), *hit);
+    if (it == pendingComponentParts_.end()) {
+        if (pendingComponentParts_.size() >= static_cast<std::size_t>(pickCount)) {
+            MessageBeep(MB_ICONWARNING);
+            publishStatus(display + L": zaten " + std::to_wstring(pickCount) +
+                          L" parca secili (Esc iptal, sag tik uygula)");
+            return true;
+        }
+        pendingComponentParts_.push_back(*hit);
+    } else {
+        pendingComponentParts_.erase(it);
+    }
+    selectedModels_.clear();
+    for (const std::size_t p : pendingComponentParts_) selectedModels_.push_back(p);
+    if (pendingComponentParts_.size() == 1)
+        publishStatus(display + L": 1 parca secildi — digerini secin");
+    else if (pendingComponentParts_.size() == static_cast<std::size_t>(pickCount))
+        publishStatus(display + L": parcalar secildi — sag tik uygular (Esc iptal)");
+    else
+        publishStatus(display + L": parca secin");
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
+    return true;
 }
 
 // TESHIS YARDIMCILARI (End Plate yerlestirme hata ayiklama). MM_ENDPLATE_DIAG
@@ -6411,7 +6562,7 @@ void Application::refreshHoverCandidate(int x, int y) {
     hoverCutModifier_.reset();
     hoverFaceModel_.reset();
     hoverFaceIndices_.clear();
-    if (!pendingCutKind_ && !pendingBolt_ && !pendingFinPlate_) return;
+    if (!pendingCutKind_ && !pendingBolt_ && !pendingFinPlate_ && !componentCommandActive()) return;
     // VERB-NOUN BOLT beklemede: yalnizca normal parcalar (konstrüksiyon
     // olmayan) vurgulanir. Tam 2 parca seciliyse YUZ secim adimidir: imlecin
     // altindaki yuz raycast ile bulunup vurgulanir (tiklaninca secilen yuz).
@@ -6441,10 +6592,10 @@ void Application::refreshHoverCandidate(int x, int y) {
         if (hit && matchesRequired(*hit)) hoverModel_ = hit;
         return;
     }
-    // VERB-NOUN FIN PLATE beklemede: main/secondary icin yalnizca normal
-    // parcalar (konstrüksiyon olmayan) vurgulanir — Bolt'un parca-secim
-    // faziyla ayni kural.
-    if (pendingFinPlate_) {
+    // VERB-NOUN FIN PLATE / GENERIC CATALOG beklemede: main/secondary icin
+    // yalnizca normal parcalar (konstrüksiyon olmayan) vurgulanir — Bolt'un
+    // parca-secim faziyla ayni kural.
+    if (pendingFinPlate_ || componentCommandActive()) {
         const auto matchesRequired = [&](std::size_t index) {
             if (index >= document_.models().size()) return false;
             return document_.models()[index].constructionKind() == ConstructionKind::None;
@@ -7322,6 +7473,7 @@ void Application::executeCommand(int id) {
 void Application::selectTool(DrawTool tool) {
     cancelPendingCutCommand();
     cancelPendingFinPlateCommand();
+    cancelPendingComponentCommand();
     cancelZoomWindow2D();
     if (workPlanePicking_) cancelWorkPlaneCommand();
     if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
@@ -7333,6 +7485,7 @@ void Application::selectTool(DrawTool tool) {
 void Application::deactivateAllCommands() {
     cancelPendingCutCommand();
     cancelPendingFinPlateCommand();
+    cancelPendingComponentCommand();
     cancelZoomWindow2D();
     if (workPlanePicking_) cancelWorkPlaneCommand();
     if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
@@ -7644,6 +7797,21 @@ void Application::updateStatus() {
             text += L"kolon seçildi — şimdi KİRİŞİ (secondary) seçin";
         else
             text += L"kolon + kiriş seçildi — sağ tık uygular (Esc iptal)";
+    } else if (componentCommandActive()) {
+        // Generic katalog komutu: durum mesaji secilen tipin adiyla yazilir.
+        const mm::ComponentType* type =
+            mm::ComponentRegistry::instance().findType(pendingComponentType_);
+        const std::wstring display = type ? type->displayName : pendingComponentType_;
+        text += L"  |  " + display + L" — ";
+        const int pickCount = (type && type->catalog.pickCount > 0) ? type->catalog.pickCount : 2;
+        if (pendingComponentParts_.empty())
+            text += L"parça seçin (main, sonra secondary) — sağ tık uygular";
+        else if (pendingComponentParts_.size() == 1)
+            text += L"1 parça seçildi — ikinciyi seçin";
+        else if (pendingComponentParts_.size() == static_cast<std::size_t>(pickCount))
+            text += L"parçalar seçildi — sağ tık uygular (Esc iptal)";
+        else
+            text += L"parça seçin";
     } else if (pendingBolt_) {
         text += L"  |  BOLT — ";
         if (pendingBoltParts_.empty())
@@ -10360,6 +10528,7 @@ std::optional<std::filesystem::path> Application::chooseFile(bool save, bool dxf
 }
 
 void Application::newDocument() {
+    cancelPendingComponentCommand();
     document_.clear(); // B-Rep magazasi (Document-sahipli) da sifirlanir
     profileGrip_.reset();
     currentFilePath_.reset();
@@ -10397,6 +10566,7 @@ void Application::saveDocumentAs() {
 
 void Application::openDocument() {
     const auto path = chooseFile(false); if (!path) return;
+    cancelPendingComponentCommand();
     try {
         document_.load(*path);
         // Yukleme belge icerigini TAMAMEN degistirir; Document-sahipli B-Rep

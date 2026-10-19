@@ -383,6 +383,13 @@ ComponentType endPlateComponentType() noexcept {
         boolParam(L"hasNut", true, L"somun"),
         boolParam(L"hasWasher", true, L"pul"),
     };
+    t.catalog.sourceComponentNumber = L"144";
+    t.catalog.category = L"Beam to Column";
+    t.catalog.primaryMemberType = L"kolon";
+    t.catalog.secondaryMemberType = L"kiris";
+    t.catalog.supportedFeatures = {L"alin levhasi", L"bulon grubu"};
+    t.catalog.coverageStatus = L"PRODUCTION_READY";
+    t.catalog.catalogVisible = false;  // End Plate kendi zengin komut/uretim yolunu kullanir
     return t;
 }
 
@@ -459,6 +466,14 @@ ComponentType finPlateComponentType() noexcept {
         lengthParam(L"boltEdge", L"mm", 40.0, 10.0, 200.0, L"kenar mesafesi"),
         enumParam(L"grade", L"8.8", {L"8.8", L"10.9"}, L"bulon sinifi"),
     };
+    t.catalog.sourceComponentNumber = L"";  // genel shear tab (Tekla 146 cekirdegi)
+    t.catalog.category = L"Shear connection";
+    t.catalog.primaryMemberType = L"kolon";
+    t.catalog.secondaryMemberType = L"kiris";
+    t.catalog.supportedFeatures = {L"kayma levhasi (shear tab)", L"bulon grubu"};
+    t.catalog.coverageStatus = L"GEOMETRY_VERIFIED";
+    t.catalog.pickCount = 2;
+    t.catalog.catalogVisible = true;
     return t;
 }
 
@@ -702,6 +717,14 @@ ComponentType shearPlate146ComponentType() noexcept {
     t.typeId = L"tekla_shear_plate_146";
     t.schemaVersion = 1;
     t.displayName = L"Shear Plate Simple (146)";
+    t.catalog.sourceComponentNumber = L"146";
+    t.catalog.category = L"Shear connection";
+    t.catalog.primaryMemberType = L"kolon";
+    t.catalog.secondaryMemberType = L"kiris";
+    t.catalog.supportedFeatures = {L"kayma levhasi (shear tab)", L"bulon grubu"};
+    t.catalog.coverageStatus = L"PARTIALLY_IMPLEMENTED";  // 8/48 parametre; gerisi blueprint'te
+    t.catalog.pickCount = 2;
+    t.catalog.catalogVisible = true;
     return t;
 }
 

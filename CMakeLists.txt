@@ -53,6 +53,7 @@ add_library(model_maker_core
     src/component_framework.cpp
     src/component_glyph.cpp
     src/component_dialog.cpp
+    src/component_catalog.cpp
     src/assembly.cpp)
 target_include_directories(model_maker_core PUBLIC include)
 target_compile_options(model_maker_core PRIVATE -Wall -Wextra -Wpedantic)
@@ -867,6 +868,14 @@ if(BUILD_TESTING)
     target_link_options(model_maker_shear_plate_146_test PRIVATE -static -static-libgcc -static-libstdc++)
     target_compile_options(model_maker_shear_plate_146_test PRIVATE -Wall -Wextra -Wpedantic)
     add_test(NAME model_maker_shear_plate_146_test COMMAND model_maker_shear_plate_146_test)
+
+    # GENERIC COMPONENT CATALOG (C7) testi: registry+dialog kayitlarindan katalog
+    # derlemesi, metadata, generic uretim, dialog varligi. OCC'siz, Linux'ta kosar.
+    add_executable(model_maker_component_catalog_test tests/component_catalog_test.cpp)
+    target_link_libraries(model_maker_component_catalog_test PRIVATE model_maker_core)
+    target_link_options(model_maker_component_catalog_test PRIVATE -static -static-libgcc -static-libstdc++)
+    target_compile_options(model_maker_component_catalog_test PRIVATE -Wall -Wextra -Wpedantic)
+    add_test(NAME model_maker_component_catalog_test COMMAND model_maker_component_catalog_test)
 
     # UNIVERSAL COMPONENT DIALOG Qt OFFScreen testi: widget'in gercek davranisi
     # (round-trip, sentinel koruma, bilinmeyen parametre) bassiz dogrulanir.

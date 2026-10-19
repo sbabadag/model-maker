@@ -2,6 +2,7 @@
 #include "model_maker/drafting.hpp"
 #include "model_maker/two_point_view.hpp"
 #include "model_maker/component_dialog_widget.hpp"
+#include "model_maker/component_catalog.hpp"
 
 #include <QApplication>
 #include <QMdiArea>
@@ -657,6 +658,36 @@ void QtMainWindow::createMenus() {
             app_.setPendingFinPlateParams({});
             app_.startFinPlateCommand();
         })->setIcon(makeToolIcon(ToolGlyph::Plate));
+
+    // ---- GENEL COMPONENT KATALOĞU (C7) -------------------------------------
+    // Registry + dialog kayitlarindan URETILIR; yeni component icin BURAYA kod
+    // eklenmez. Her katalog girisi generic komut akisini (startComponentCommand)
+    // baslatir — Application/switch yok. End Plate kendi zengin komutunu
+    // kullandigi icin catalogVisible=false ile katalog disinda kalir.
+    {
+        const auto catalog = mm::buildComponentCatalog(
+            mm::ComponentRegistry::instance(), mm::ComponentDialogRegistry::instance());
+        if (!catalog.empty()) {
+            constructionMenu->addSeparator();
+            QMenu* catalogMenu = constructionMenu->addMenu("Component &Kataloğu");
+            for (const mm::CatalogEntry& e : catalog) {
+                QString label = QString::fromStdWString(e.displayName);
+                if (!e.sourceComponentNumber.empty())
+                    label += QStringLiteral(" (") +
+                             QString::fromStdWString(e.sourceComponentNumber) +
+                             QStringLiteral(")");
+                QString tip = QString::fromStdWString(e.category);
+                if (!e.coverageStatus.empty())
+                    tip += QStringLiteral(" — ") + QString::fromStdWString(e.coverageStatus);
+                QAction* act = catalogMenu->addAction(
+                    label, this, [this, typeId = e.typeId]() {
+                        app_.setPendingComponentParams({});
+                        app_.startComponentCommand(typeId);
+                    });
+                act->setToolTip(tip);
+            }
+        }
+    }
 
     // ---- GÖRÜNÜM: kamera/navigasyon + standart yönler ----
     QMenu* viewMenu = appMenu_->addMenu("G&örünüm");

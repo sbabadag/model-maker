@@ -78,6 +78,7 @@ public:
     void cancelZoomWindow2D() {}
     void cancelTransformCommand() { transformCommand_ = TransformCommand::None; }
     void cancelDrawing() {}
+    void cancelPendingComponentCommand() {}
     void updateHover(int, int) {}
     void updateControls() {}
     void updateStatus() {}

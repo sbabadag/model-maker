@@ -373,6 +373,25 @@ public:
     // Fin Plate parametreleri (uygulama-anı diyalogdan; kalici — son deger hatirlanir).
     void setPendingFinPlateParams(const std::vector<CompParam>& p) { pendingFinPlateParams_ = p; }
     const std::vector<CompParam>& pendingFinPlateParams() const { return pendingFinPlateParams_; }
+
+    // --- GENERIC COMPONENT CATALOG COMMAND (C7) -------------------------------
+    // Katalogdan secilen HERHANGI bir registry tipi icin tek bir verb-noun akisi.
+    // Fin Plate'in kendi ozel komutuyla AYNI secim/yerlestirme yolunu kullanir;
+    // typeId registry'den okunur. Yeni component icin BURAYA veya qt_main_window'a
+    // switch/case EKLENMEZ. End Plate ayri zengin yolunu korur (bu akisa girmez).
+    void startComponentCommand(const std::wstring& typeId);
+    void cancelPendingComponentCommand();
+    void executePendingComponentCommand();
+    bool pickPendingComponentAt(int x, int y);
+    bool componentCommandActive() const { return !pendingComponentType_.empty(); }
+    // Generic uretim: registry.generate(typeId) -> plan -> materializer (tek undo).
+    // params = component'e ait tipli parametreler (bos = registry varsayilani).
+    void applyComponentFromParts(const std::wstring& typeId,
+                                 const std::vector<std::size_t>& parts,
+                                 const std::vector<CompParam>& params);
+    void setPendingComponentParams(const std::vector<CompParam>& p) { pendingComponentParams_ = p; }
+    const std::vector<CompParam>& pendingComponentParams() const { return pendingComponentParams_; }
+    const std::wstring& pendingComponentTypeId() const { return pendingComponentType_; }
     // Secili model bir BOLT display'i ise bulon parametrelerini okur (props
     // paneli). Donus false = secim bir bulon degil.
     bool selectedBoltProperties(double& nominalDiameter, double& holeDiameter,
@@ -1072,6 +1091,11 @@ private:
     // FIN PLATE PARAMETRELERI (Phase P1): tipli CompParam listesi; uygulama-anı
     // diyalogdan gelir, applyFinPlateFromParts bunlari kullanir. Kalıcı.
     std::vector<CompParam> pendingFinPlateParams_;
+    // GENERIC COMPONENT CATALOG COMMAND (C7): etkin katalog komutu durumu.
+    // pendingComponentType_ bos degilse generic verb-noun akisi etkindir.
+    std::wstring pendingComponentType_;
+    std::vector<std::size_t> pendingComponentParts_;
+    std::vector<CompParam> pendingComponentParams_;
     // End Plate alt nesnesine çift tık -> düzenleme isteği callback'i.
     std::function<void(const EndPlateConnection&)> endPlateEditRequest_;
     // Universal parametrik component alt nesnesine (levha/bulon display) çift

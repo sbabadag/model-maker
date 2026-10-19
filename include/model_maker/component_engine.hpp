@@ -220,12 +220,29 @@ struct GenerationPlan {
     std::wstring error;
 };
 
+// --- COMPONENT CATALOG METADATA (C7) -----------------------------------------
+// Katalog/generic UI'nin bir component'i HERHANGI BIR switch/case OLMADAN
+// sunmasi icin gereken meta. ComponentType'in bir parcasidir; registry'de
+// saklanir, catalog view (component_catalog.hpp) buradan okur. Bos = ayarsiz
+// (katalogda gorunmez). IKINCI bir registry DEGILDIR — ayni kaydin alanidir.
+struct ComponentCatalogMeta {
+    std::wstring sourceComponentNumber;   // Tekla/standart no (orn "146"); bos = yok
+    std::wstring category;                // "Shear connection", "Beam to Column", ...
+    std::wstring primaryMemberType;       // secim ipucu: "kolon" / "kiris" / ...
+    std::wstring secondaryMemberType;     // secim ipucu
+    std::vector<std::wstring> supportedFeatures; // uretilen nesneler (levha/bulon/...)
+    std::wstring coverageStatus;          // DOCUMENTED_ONLY / PARTIALLY_IMPLEMENTED / ...
+    int pickCount{2};                     // secilecek parca sayisi (generic komut)
+    bool catalogVisible{false};           // generic katalogda gosterilir mi (acikca opt-in)
+};
+
 // Bir component tipinin kayit tanimi.
 struct ComponentType {
     std::wstring typeId;     // kalici tekil id (string) — yeni tip icin switch yok
     int schemaVersion{1};    // sema surumu (migration icin)
     std::wstring displayName;
     std::vector<CompParamSpec> params;
+    ComponentCatalogMeta catalog;  // C7: katalog/generic UI metadatasi (bos = gizli)
 };
 
 // Generator fonksiyon imzasi: girdi -> uretim plani.
