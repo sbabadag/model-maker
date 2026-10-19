@@ -146,6 +146,24 @@ int main() {
     check(fp.plates.size() == 1, "fin plate 1 levha");
     check(fp.boltGroups.size() == 1, "fin plate 1 bulon grubu");
 
+    // --- YERLESIM DOGRULAMA (regresyon): fin plate kolon yuzunde + govdeye paralel.
+    // Shear tab levhasi kiris GOVDESINE PARALEL olmali (kalinlik kiris eksenine
+    // DIK); eski hata levhayi alin levhasi gibi kirise DIK yerlestirip uzak uca
+    // atiyordu. Senaryo: kolon (0,0,0)-(0,0,3000), kiris +Y'den -Y'ye, baglanti
+    // ucu kolon +Y yuzunde (Y=150). Varsayilan levha uzunlugu 120 mm.
+    {
+        const Vec3 beamDir{0.0, -1.0, 0.0};  // axisTo-axisFrom normalize
+        const PlateSpec& fpPlate = fp.plates[0];
+        const double dotAx = fpPlate.axis.x * beamDir.x + fpPlate.axis.y * beamDir.y +
+                             fpPlate.axis.z * beamDir.z;
+        check(std::fabs(dotAx) < 1e-6, "fin plate kalinligi kiris eksenine DIK (shear tab)");
+        check(std::fabs(fpPlate.center.y - 210.0) < 1e-6,
+              "fin plate kolon yuzunde (Y=150) + uzunluk/2");
+        check(std::fabs(fpPlate.center.x) < 1e-6 && std::fabs(fpPlate.center.z - 1500.0) < 1e-6,
+              "fin plate kiris kotunda (X=0, Z=1500)");
+        check(std::fabs(fpPlate.v.z - 1.0) < 1e-6, "fin plate yukseklik yonu +Z (dusey)");
+    }
+
     const ComponentPlan plan = componentPlanFromGenerationPlan(fp);
     check(plan.ok, "ComponentPlan koprusu ok (roleKey korunur)");
     check(plan.children.size() == 2, "plan 2 child (fin_plate + beam_bolts)");

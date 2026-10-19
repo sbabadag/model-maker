@@ -76,6 +76,16 @@ std::optional<EntityId> toEntity(const CompParamValue& v) noexcept {
     return std::nullopt;
 }
 
+double vdot(const Vec3& a, const Vec3& b) noexcept {
+    return a.x * b.x + a.y * b.y + a.z * b.z;
+}
+
+Vec3 vnorm(const Vec3& a) noexcept {
+    const double len = std::sqrt(a.x * a.x + a.y * a.y + a.z * a.z);
+    if (len < 1e-12) return Vec3{0.0, 0.0, 0.0};
+    return Vec3{a.x / len, a.y / len, a.z / len};
+}
+
 } // namespace
 
 CompParamValue validateParamValue(const CompParamSpec& spec,
@@ -457,6 +467,7 @@ GenerationPlan generateFinPlate(const ComponentInput& input) noexcept {
         return plan;
     }
     const MemberGeometry& beam = input.secondary[0];
+    const MemberGeometry& col = input.main;
 
     const double thickness = paramAsDouble(input.params, L"plateThickness", 10.0);
     const double width = paramAsDouble(input.params, L"plateWidth", 120.0);
@@ -467,36 +478,88 @@ GenerationPlan generateFinPlate(const ComponentInput& input) noexcept {
     const double edge = paramAsDouble(input.params, L"boltEdge", 40.0);
     const std::wstring grade = paramAsString(input.params, L"grade", L"8.8");
 
+    // 1. Kiris ekseni + baglanti ucu: kolona EN YAKIN uc. axisTo'nun dogru ucu
+    //    tuttugu GARANTI YOKTUR — kullanici kirisi iki yonde de cizebilir; ucu
+    //    kolon merkezine gore secmek fin levhanin uzak uca dusmesini onler.
     const Vec3 beamAxis{beam.axisTo.x - beam.axisFrom.x, beam.axisTo.y - beam.axisFrom.y,
                         beam.axisTo.z - beam.axisFrom.z};
+    const double beamLen = std::sqrt(beamAxis.x * beamAxis.x + beamAxis.y * beamAxis.y +
+                                     beamAxis.z * beamAxis.z);
+    if (beamLen < 1e-6) {
+        plan.ok = false;
+        plan.error = L"kiris ekseni belirlenemedi (sifir uzunluk)";
+        return plan;
+    }
+    const Vec3 colMid{(col.axisFrom.x + col.axisTo.x) * 0.5,
+                      (col.axisFrom.y + col.axisTo.y) * 0.5,
+                      (col.axisFrom.z + col.axisTo.z) * 0.5};
+    const auto dist2 = [&](const Vec3& p) {
+        const double dx = p.x - colMid.x, dy = p.y - colMid.y, dz = p.z - colMid.z;
+        return dx * dx + dy * dy + dz * dz;
+    };
+    const bool toNear = dist2(beam.axisTo) <= dist2(beam.axisFrom);
+    const Vec3 connEnd = toNear ? beam.axisTo : beam.axisFrom;
+    const Vec3 farEnd = toNear ? beam.axisFrom : beam.axisTo;
 
-    // Fin levha: kiris ucuna dik, tek bolon sirasi. End Plate ile AYNI cerceve
-    // matematigi yeniden kullanilir (ortak eleman — yeniden yazilmaz).
-    const EndPlateFrame f = endPlateFrame(beamAxis, Vec3{0.0, 0.0, 1.0});
+    // 2. Levha uzunluk yonu = kolondan DISARI (kiris boyunca). Fin levha (shear
+    //    tab) kolona KAYNAKLI, kiris GOVDESINE CIVATALI oldugu icin levha
+    //    duzlemi kiris govdesine PARALEL olmali: kalinlik = kesit GENISLIGI
+    //    yonu, yukseklik = kesit YUKSEKLIGI yonu, uzunluk = kiris ekseni yonu.
+    //    (Eski kod kalinligi kiris ekseni boyunca veriyordu = alin levhasi gibi
+    //    kirise DIK; shear tab icin 90° yanlis yonelimdi.)
+    const Vec3 lenDir = vnorm(Vec3{farEnd.x - connEnd.x, farEnd.y - connEnd.y,
+                                   farEnd.z - connEnd.z});
+    const ProfileSectionFrame sec = profileSectionFrame(lenDir, beam.refNormal);
 
+    // 3. Kolonun temas yuzu: kolon kesitinin lenDir yonundeki yari kapsami
+    //    (dikdortgen destek fonksiyonu). lenDir kolondan kirise dogru disa bakar.
+    const Vec3 colAxis{col.axisTo.x - col.axisFrom.x, col.axisTo.y - col.axisFrom.y,
+                       col.axisTo.z - col.axisFrom.z};
+    const double colLen = std::sqrt(colAxis.x * colAxis.x + colAxis.y * colAxis.y +
+                                    colAxis.z * colAxis.z);
+    ProfileSectionFrame colSec;
+    if (colLen > 1e-6) colSec = profileSectionFrame(vnorm(colAxis), col.refNormal);
+    const double aW = vdot(lenDir, colSec.width);
+    const double aH = vdot(lenDir, colSec.height);
+    const double halfExtent =
+        std::fabs(aW) * col.secWidth * 0.5 + std::fabs(aH) * col.secHeight * 0.5;
+
+    // 4. Temas noktasi: kiris eksen cizgisinin kolon yuz duzlemiyle kesisimi.
+    //    Duzlem: dot(p - colMid, lenDir) = halfExtent. Kiris cizgisi:
+    //    connEnd + t * beamDir (beamDir ile lenDir ayni dogru => denom = +-1).
+    const Vec3 beamDir{beamAxis.x / beamLen, beamAxis.y / beamLen, beamAxis.z / beamLen};
+    const double denom = vdot(beamDir, lenDir);
+    const double numer = halfExtent - vdot(Vec3{connEnd.x - colMid.x, connEnd.y - colMid.y,
+                                                connEnd.z - colMid.z}, lenDir);
+    const double t = (std::fabs(denom) > 1e-9) ? numer / denom : 0.0;
+    const Vec3 facePoint{connEnd.x + beamDir.x * t, connEnd.y + beamDir.y * t,
+                         connEnd.z + beamDir.z * t};
+
+    // 5. Levha: kalinlik sec.width (govdeye dik), uzunluk lenDir, yukseklik
+    //    sec.height. Kaynak kenari kolon yuzunde, serbest kenar kirise dogru.
     PlateSpec plate;
-    plate.u = f.u;
-    plate.v = f.v;
-    plate.axis = f.axis;
+    plate.axis = sec.width;
+    plate.u = lenDir;
+    plate.v = sec.height;
     plate.width = width;
     plate.height = height;
     plate.thickness = thickness;
-    const double halfT = thickness * 0.5;
-    plate.center = Vec3{beam.axisTo.x + f.axis.x * halfT, beam.axisTo.y + f.axis.y * halfT,
-                        beam.axisTo.z + f.axis.z * halfT};
+    plate.center = Vec3{facePoint.x + lenDir.x * (width * 0.5),
+                        facePoint.y + lenDir.y * (width * 0.5),
+                        facePoint.z + lenDir.z * (width * 0.5)};
     plate.name = L"Fin Levhasi";
     plan.plates.push_back(plate);
     plan.plateKeys.push_back("fin_plate");
 
-    // Bolonlar: levhanin merkez hattinda tek sira (yukseklik yonunde).
+    // 6. Bulonlar: govde duzlemine dik tek sira (yukseklik yonunde; kolon
+    //    yuzunden baslar). Pattern: countX=1 x countY=boltCount.
     BoltGroup b;
-    b.axis = f.axis;
-    b.xDir = f.u;
-    const double hw = width * 0.5;
+    b.axis = sec.width;
+    b.xDir = lenDir;
     const double hh = height * 0.5;
-    b.origin = Vec3{plate.center.x - f.u.x * hw - f.v.x * (hh - edge),
-                    plate.center.y - f.u.y * hw - f.v.y * (hh - edge),
-                    plate.center.z - f.u.z * hw - f.v.z * (hh - edge)};
+    b.origin = Vec3{facePoint.x - sec.height.x * (hh - edge),
+                    facePoint.y - sec.height.y * (hh - edge),
+                    facePoint.z - sec.height.z * (hh - edge)};
     b.countX = 1;
     b.countY = boltCount;
     b.spacingX = 0.0;
