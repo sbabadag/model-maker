@@ -242,7 +242,13 @@ int main() {
     run("box 2.6^3", BRepPrimAPI_MakeBox(2.6, 2.6, 2.6).Shape());
     {
         const TopoDS_Shape cube = BRepPrimAPI_MakeBox(2.6, 2.6, 2.6).Shape();
-        const TopoDS_Shape cyl = BRepPrimAPI_MakeCylinder(1.3, 3.0).Shape();
+        // Silindir kutunun MERKEZINE yerlestirilir ve yaricapi net kucuktur:
+        // eski hali (MakeCylinder(1.3,3.0) orijinde, ekseni kutu kosesinden)
+        // silindiri kutu yuzlerine TEGET yapiyordu -> dejeneratif boolean ->
+        // patolojik cok-katili compound -> OCCT 7.9.3 Windows'ta yeniden fuse
+        // ederken BRepClass3d_SClassifier/Extrema_ExtCC segfault.
+        const gp_Ax2 cylAxis(gp_Pnt(1.3, 1.3, 0.0), gp_Dir(0, 0, 1));
+        const TopoDS_Shape cyl = BRepPrimAPI_MakeCylinder(cylAxis, 0.8, 3.0).Shape();
         run("boolean FUSE", BRepAlgoAPI_Fuse(cube, cyl).Shape());
         run("boolean CUT", BRepAlgoAPI_Cut(cube, cyl).Shape());
         run("boolean COMMON", BRepAlgoAPI_Common(cube, cyl).Shape());
