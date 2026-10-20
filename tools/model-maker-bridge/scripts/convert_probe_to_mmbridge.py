@@ -1,34 +1,22 @@
 #!/usr/bin/env python3
-"""ASUS Tekla probe JSON -> .mmbridge (formatVersion 2.0) donusturucu.
+"""Tekla probe JSON -> .mmbridge (formatVersion 2.0) donusturucu.
 
-ASUS tarafinda uretilen ham "bridge-geometry-probe-2" JSON'unu, importer'in
-(formatVersion 2.0) .mmbridge paket sozlesmesine donusturur.
+Kabul edilen girdi sekilleri:
+  A) GERCEK ASUS ciktisi: "schemaVersion": "bridge-geometry-probe-2"
+     (component.primary / component.secondaries, child.solid.minimumPoint/maximumPoint,
+      BoltArray + boltSize/boltStandard/holeTolerance/partToBeBoltedId/partToBoltToId,
+      Weld + weldSizeAbove/weldMainObject/weldSecondaryObject, exportedUtc)
+  B) Eski/duz fixture sekli: "probeVersion": 2, top-level primary/secondary,
+     child.bbox.min/max, BoltGroup + size/standardCode/tolerance
 
 DURUSTLUK KURALLARI (baglayici):
-  * Eksik/okunamayan alanlar UYDURULMAZ; unresolved diagnostic uretilir.
-  * Kritik alanlar (component / en az bir ContourPlate+bbox / en az bir BoltGroup)
-    yoksa paket YAZILMAZ, stderr'e hata yazilip exit 1 donulur (yarim paket
-    "basarili" kabul EDILMEZ).
-  * Bulon delik capi ve ekseni probe'da yoksa BOS birakilir (importer standard/
-    inferred yoluyla karar verir) — burada uydurulmaz.
-
-PROBE SOZLESMESI (hedef girdi; gercek ASUS dosyasiyla dogrulanmasi gerekir):
-  {
-    "probeVersion": 2,
-    "component": {"type": "Connection", "number": 146, "name": "...",
-                  "id": 5245, "guid": "5245"},
-    "primary":   {"id": 5165, "profile": "HEA400", "material": "S235JR", "role": "COLUMN"},
-    "secondary": [{"id": 5213, "profile": "HEA300", "material": "S235JR", "role": "BEAM"}],
-    "children": [
-      {"id": 5673, "type": "ContourPlate", "profile": "PL10", "material": "S235JR",
-       "bbox": {"min": [4.25,195,6959], "max": [14.25,365,7159]},
-       "topology": {"faces": 6, "loops": 6, "faceVertexOccurrences": 24, "holeLoops": 0}},
-      {"id": 5837, "type": "BoltGroup", "size": "M20", "standardCode": 7990,
-       "tolerance": 2, "boltPositions": [[0,265,7119], ...],
-       "partToBeBolted": 5213, "partToBoltTo": 5673},
-      {"id": 5701, "type": "Weld", "size": 5, "main": 5165, "secondary": 5673}
-    ]
-  }
+  * Eksik/okunamayan degerler UYDURULMAZ; unresolved diagnostic uretilir.
+  * Kritik alanlar (component / en az bir ContourPlate+olcu / en az bir Bulon grubu)
+    yoksa paket YAZILMAZ, stderr'e hata yazilip exit 1 donulur.
+  * Bulon delik capi ve delik ekseni probe'da guvenilir degilse BOS birakilir
+    (importer standard/inferred yoluyla karar verir) — burada uydurulmaz.
+    Probe'un boltCoordinateSystem.axisX'i grup cercevesi eksenidir, delik ekseni
+    olarak KULLANILMAZ (plaka normalinden importer cikarir).
 
 Kullanim:
     python3 convert_probe_to_mmbridge.py <probe.json> <cikti-paket-klasoru>
@@ -46,6 +34,7 @@ KIND_MAP = {
     "Beam": "Beam",
     "PolyBeam": "PolyBeam",
     "BoltGroup": "BoltGroup",
+    "BoltArray": "BoltGroup",   # gercek ASUS ciktisi
     "Weld": "Weld",
     "BooleanPart": "BooleanPart",
     "Fitting": "Fitting",
@@ -68,8 +57,36 @@ def as_str(v):
     return str(v)
 
 
+def to_float(v, default=None):
+    if isinstance(v, bool):
+        return default
+    if isinstance(v, (int, float)):
+        return float(v)
+    if isinstance(v, str):
+        s = v.strip()
+        if not s:
+            return default
+        try:
+            return float(s)
+        except ValueError:
+            return default
+    return default
+
+
+def to_int(v, default=None):
+    f = to_float(v)
+    if f is None:
+        return default
+    try:
+        return int(f)
+    except (ValueError, OverflowError):
+        return default
+
+
 def parse_metric_size(size):
-    """'M20' -> 20.0, '20' -> 20.0; taninamazsa None."""
+    """'M20' -> 20.0, '20' -> 20.0, 20 -> 20.0; taninamazsa None."""
+    if isinstance(size, (int, float)) and not isinstance(size, bool):
+        return float(size) if size > 0 else None
     if not isinstance(size, str):
         return None
     digits = "".join(ch for ch in size if ch.isdigit() or ch == ".")
@@ -81,22 +98,82 @@ def parse_metric_size(size):
         return None
 
 
-def build_manifest(probe, comp, diagnostics):
+def vec3_from(obj, diagnostics, ctx):
+    """{'x','y','z'} veya [x,y,z] -> {'x','y','z'}; okunamazsa None."""
+    if isinstance(obj, dict):
+        x, y, z = to_float(obj.get("x")), to_float(obj.get("y")), to_float(obj.get("z"))
+        if None not in (x, y, z):
+            return {"x": x, "y": y, "z": z}
+    elif isinstance(obj, (list, tuple)) and len(obj) == 3:
+        x, y, z = to_float(obj[0]), to_float(obj[1]), to_float(obj[2])
+        if None not in (x, y, z):
+            return {"x": x, "y": y, "z": z}
+    diagnostics["warnings"].append("%s: vec3 okunamadi: %r" % (ctx, obj))
+    return None
+
+
+def cross(a, b):
+    return {
+        "x": a["y"] * b["z"] - a["z"] * b["y"],
+        "y": a["z"] * b["x"] - a["x"] * b["z"],
+        "z": a["x"] * b["y"] - a["y"] * b["x"],
+    }
+
+
+def normalize(v):
+    mag = (v["x"] ** 2 + v["y"] ** 2 + v["z"] ** 2) ** 0.5
+    if mag <= 1e-12:
+        return None
+    return {"x": v["x"] / mag, "y": v["y"] / mag, "z": v["z"] / mag}
+
+
+def component_cs(comp, diagnostics):
+    """Gercek probe component.coordinateSystem (origin/axisX/axisY) -> origin/xAxis/yAxis/zAxis."""
+    cs = comp.get("coordinateSystem")
+    if not isinstance(cs, dict):
+        return dict(IDENTITY_CS)
+    origin = vec3_from(cs.get("origin"), diagnostics, "component.coordinateSystem.origin")
+    ax = vec3_from(cs.get("axisX"), diagnostics, "component.coordinateSystem.axisX")
+    ay = vec3_from(cs.get("axisY"), diagnostics, "component.coordinateSystem.axisY")
+    if not origin or not ax or not ay:
+        return dict(IDENTITY_CS)
+    nx, ny = normalize(ax), normalize(ay)
+    if not nx or not ny:
+        return dict(IDENTITY_CS)
+    nz = normalize(cross(nx, ny))
+    if not nz:
+        return dict(IDENTITY_CS)
+    return {"origin": origin, "xAxis": nx, "yAxis": ny, "zAxis": nz}
+
+
+def probe_root_version(probe):
+    """Gercek 'schemaVersion' veya eski 'probeVersion' -> tanimlayici string (yoksa '')."""
+    sv = probe.get("schemaVersion")
+    if isinstance(sv, str) and sv:
+        return sv
+    pv = probe.get("probeVersion")
+    if pv is not None:
+        return "probeVersion:%s" % pv
+    return ""
+
+
+def build_manifest(probe, comp, diagnostics, root_version):
     m = {
         "formatVersion": "2.0",
         "sourceApplication": "Tekla Structures",
-        "sourceVersion": probe.get("sourceVersion", ""),
+        "sourceVersion": as_str(probe.get("source", probe.get("sourceVersion", ""))),
         "sourceComponentType": comp.get("type", "Unknown"),
-        "sourceComponentNumber": int(comp.get("number", 0)),
+        "sourceComponentNumber": to_int(comp.get("number"), 0),
         "sourceComponentName": comp.get("name", ""),
-        "sourceModelIdentifier": probe.get("sourceModelIdentifier", ""),
-        "exportTimestamp": probe.get("exportTimestamp", ""),
+        "sourceModelIdentifier": as_str(probe.get("sourceModelIdentifier", "")),
+        "exportTimestamp": as_str(probe.get("exportedUtc", probe.get("exportTimestamp", ""))),
         "coordinateSystem": "TeklaGlobal",
         "lengthUnit": "mm",
         "componentIdentifier": "probe-" + as_str(comp.get("id", comp.get("guid", "?"))),
         "exportedObjectCount": 0,
         "knownLimitations": [],
         "exporterVersion": "2.0.0",
+        "probeRootVersion": root_version,
     }
     if not comp.get("type") or comp["type"] not in VALID_COMPONENT_TYPES:
         diagnostics["unsupportedFeatures"].append(
@@ -105,60 +182,141 @@ def build_manifest(probe, comp, diagnostics):
     if not m["sourceVersion"]:
         diagnostics["warnings"].append("sourceVersion yok (probe'tan okunamadi)")
     if not m["sourceModelIdentifier"]:
-        diagnostics["warnings"].append("sourceModelIdentifier yok")
+        diagnostics["warnings"].append("sourceModelIdentifier yok (probe bu alani saglamadi)")
+    if not m["exportTimestamp"]:
+        diagnostics["warnings"].append("exportTimestamp yok (probe bu alani saglamadi)")
     return m
 
 
-def member_from(probe_member, diag, role_default=None):
+def role_from(member, default=""):
+    role = member.get("role")
+    if isinstance(role, str) and role:
+        return role
+    # Gercek probe: uye adi COLUMN/BEAM/... olarak geliyor.
+    name = member.get("name")
+    if isinstance(name, str) and name:
+        up = name.upper().replace(" ", "_")
+        if up in ("COLUMN", "BEAM", "BRACE", "PURLIN", "SLAB", "PANEL"):
+            return up
+    return default
+
+
+def member_from(probe_member, diag, role_default=None, ctx="uye"):
     if not isinstance(probe_member, dict):
         return {"guid": "", "profile": "", "material": "", "role": ""}, False
     guid = as_str(probe_member.get("id", probe_member.get("guid", "")))
-    profile = probe_member.get("profile", "")
-    material = probe_member.get("material", "")
-    role = probe_member.get("role", "") or (role_default or "")
+    profile = as_str(probe_member.get("profile", ""))
+    material = as_str(probe_member.get("material", ""))
+    role = role_from(probe_member, role_default or "")
     if not profile:
-        diag["warnings"].append("uye %s: profile yok" % guid)
+        diag["warnings"].append("%s %s: profile yok" % (ctx, guid))
     if not role:
-        diag["warnings"].append("uye %s: role yok (bos birakildi)" % guid)
-    return {"guid": guid, "profile": profile, "material": material, "role": role}, bool(guid)
+        diag["warnings"].append("%s %s: role yok (bos birakildi)" % (ctx, guid))
+    ref: dict[str, object] = {
+        "guid": guid,
+        "profile": profile,
+        "material": material,
+        "role": role,
+    }
+    iid = to_int(probe_member.get("id"))
+    if iid is not None:
+        ref["identifierId"] = iid
+    sp = vec3_from(probe_member.get("start"), diag, ctx + " start") if "start" in probe_member else None
+    ep = vec3_from(probe_member.get("end"), diag, ctx + " end") if "end" in probe_member else None
+    if sp:
+        ref["startPoint"] = sp
+    if ep:
+        ref["endPoint"] = ep
+    return ref, bool(guid)
+
+
+def find_members(probe, comp):
+    """Gercek: comp['primary'] / comp['secondaries']; eski: probe['primary'] / probe['secondary']."""
+    primary = None
+    secondaries = []
+    if isinstance(comp.get("primary"), dict):
+        primary = comp["primary"]
+    elif isinstance(probe.get("primary"), dict):
+        primary = probe["primary"]
+    if isinstance(comp.get("secondaries"), list):
+        secondaries = comp["secondaries"]
+    elif isinstance(comp.get("secondary"), list):
+        secondaries = comp["secondary"]
+    elif isinstance(probe.get("secondary"), list):
+        secondaries = probe["secondary"]
+    elif isinstance(probe.get("secondary"), dict):
+        secondaries = [probe["secondary"]]
+    return primary, secondaries
 
 
 def build_component(probe, comp, diagnostics):
-    primary, pok = member_from(probe.get("primary"), diagnostics)
+    primary_obj, secondary_objs = find_members(probe, comp)
+    primary, pok = member_from(primary_obj, diagnostics, role_default="PRIMARY", ctx="primary")
     if not pok:
         diagnostics["warnings"].append("primary uye okunamadi (bos)")
     secondaries = []
-    sec = probe.get("secondary")
-    if isinstance(sec, list):
-        for s in sec:
-            m, ok = member_from(s, diagnostics, role_default="BEAM")
-            secondaries.append(m)
-    elif sec is not None:
-        m, ok = member_from(sec, diagnostics, role_default="BEAM")
+    for i, s in enumerate(secondary_objs):
+        if not isinstance(s, dict):
+            diagnostics["warnings"].append("secondary[%d] nesne degil, atlandi" % i)
+            continue
+        m, _ = member_from(s, diagnostics, role_default="BEAM", ctx="secondary[%d]" % i)
         secondaries.append(m)
     return {
         "sourceType": comp.get("type", "Unknown"),
         "name": comp.get("name", ""),
-        "number": int(comp.get("number", 0)),
+        "number": to_int(comp.get("number"), 0),
         "guid": as_str(comp.get("guid", comp.get("id", ""))),
-        "identifierId": comp.get("id"),
-        "coordinateSystem": IDENTITY_CS,
+        "identifierId": to_int(comp.get("id")),
+        "coordinateSystem": component_cs(comp, diagnostics),
         "primaryMember": primary,
         "secondaryMembers": secondaries,
     }
 
 
+def child_bbox(child):
+    """bbox.min/max (eski) veya solid.minimumPoint/maximumPoint (gercek)."""
+    bbox = child.get("bbox")
+    if isinstance(bbox, dict) and "min" in bbox and "max" in bbox:
+        return bbox["min"], bbox["max"]
+    solid = child.get("solid")
+    if isinstance(solid, dict) and "minimumPoint" in solid and "maximumPoint" in solid:
+        return solid["minimumPoint"], solid["maximumPoint"]
+    return None, None
+
+
+def child_topology(child):
+    """topology.faces/... (eski) veya solid.faceCount/... (gercek)."""
+    topo = child.get("topology")
+    if isinstance(topo, dict):
+        return {
+            "faceCount": to_int(topo.get("faces"), 0),
+            "loopCount": to_int(topo.get("loops"), 0),
+            "faceVertexOccurrences": to_int(topo.get("faceVertexOccurrences"), 0),
+            "holeLoops": to_int(topo.get("holeLoops"), 0),
+        }
+    solid = child.get("solid")
+    if isinstance(solid, dict):
+        return {
+            "faceCount": to_int(solid.get("faceCount"), 0),
+            "loopCount": to_int(solid.get("loopCount"), 0),
+            "faceVertexOccurrences": to_int(solid.get("vertexCount"), 0),
+            "holeLoops": to_int(solid.get("holeLoops"), 0),
+        }
+    return None
+
+
 def child_to_object(child, index, root, diagnostics):
+    ctype = child.get("type", "")
     o = {
         "sourceGUID": as_str(child.get("id", child.get("guid", "?"))),
-        "identifierId": child.get("id"),
+        "identifierId": to_int(child.get("id")),
         "kind": "Unknown",
-        "role": child.get("role", ""),
-        "profile": child.get("profile", ""),
-        "material": child.get("material", ""),
+        "role": as_str(child.get("role", "")),
+        "name": as_str(child.get("name", "")),
+        "profile": as_str(child.get("profile", "")),
+        "material": as_str(child.get("material", "")),
         "parentSourceGUID": as_str(child.get("parent", "")),
     }
-    ctype = child.get("type", "")
     if ctype in KIND_MAP:
         o["kind"] = KIND_MAP[ctype]
     else:
@@ -168,74 +326,83 @@ def child_to_object(child, index, root, diagnostics):
             "child %s: bilinmeyen tip %r (Unsupported)" % (o["sourceGUID"], ctype))
 
     # bbox -> geometry dosyasi
-    bbox = child.get("bbox")
-    if isinstance(bbox, dict) and "min" in bbox and "max" in bbox:
-        geo_name = "geometry/%04d.json" % index
-        gdir = root / "geometry"
-        gdir.mkdir(exist_ok=True)
-        geo = {
-            "formatVersion": "2.0",
-            "type": "bbox",
-            "bbox": {"min": {"x": bbox["min"][0], "y": bbox["min"][1], "z": bbox["min"][2]},
-                     "max": {"x": bbox["max"][0], "y": bbox["max"][1], "z": bbox["max"][2]}},
-        }
-        (gdir / ("%04d.json" % index)).write_text(
-            json.dumps(geo, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-        o["geometryFile"] = geo_name
+    bmin, bmax = child_bbox(child)
+    if bmin is not None and bmax is not None:
+        mn = vec3_from(bmin, diagnostics, "child %s bbox.min" % o["sourceGUID"])
+        mx = vec3_from(bmax, diagnostics, "child %s bbox.max" % o["sourceGUID"])
+        if mn and mx:
+            geo_name = "geometry/%04d.json" % index
+            gdir = root / "geometry"
+            gdir.mkdir(exist_ok=True)
+            geo = {"formatVersion": "2.0", "type": "bbox", "bbox": {"min": mn, "max": mx}}
+            (gdir / ("%04d.json" % index)).write_text(
+                json.dumps(geo, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+            o["geometryFile"] = geo_name
 
-    # topology
-    topo = child.get("topology")
+    topo = child_topology(child)
     if isinstance(topo, dict):
-        o["topology"] = {
-            "faceCount": int(topo.get("faces", 0)),
-            "loopCount": int(topo.get("loops", 0)),
-            "faceVertexOccurrences": int(topo.get("faceVertexOccurrences", 0)),
-            "holeLoops": int(topo.get("holeLoops", 0)),
-        }
+        o["topology"] = topo
 
-    # BoltGroup
+    # Bulon grubu (BoltGroup veya BoltArray)
     if o["kind"] == "BoltGroup":
+        size_raw = child.get("boltSize", child.get("size", ""))
+        nominal = parse_metric_size(size_raw)
+        size_str = as_str(child.get("size", ""))
+        if not size_str and nominal is not None:
+            size_str = "M%s" % (int(nominal) if float(nominal).is_integer() else nominal)
+            diagnostics["warnings"].append(
+                "bulon grubu %s: 'size' yok, boltSize=%r degerinden 'M' oneki turetildi "
+                "(geometri uydurulmadi)" % (o["sourceGUID"], size_raw))
         bg = {
-            "size": child.get("size", ""),
-            "standardCode": int(child.get("standardCode", 0)),
-            "tolerance": float(child.get("tolerance", 0.0)),
-            "slottedHoleX": float(child.get("slottedHoleX", 0.0)),
-            "slottedHoleY": float(child.get("slottedHoleY", 0.0)),
-            "partToBeBolted": as_str(child.get("partToBeBolted", "")),
-            "partToBoltTo": as_str(child.get("partToBoltTo", "")),
-            "axis": child.get("axis", ""),
-            "axisSource": child.get("axisSource", ""),
+            "size": size_str,
+            "standardCode": to_int(child.get("standardCode", child.get("boltStandard")), 0),
+            "tolerance": to_float(child.get("tolerance", child.get("holeTolerance")), 0.0),
+            "slottedHoleX": to_float(child.get("slottedHoleX"), 0.0),
+            "slottedHoleY": to_float(child.get("slottedHoleY"), 0.0),
+            "partToBeBolted": as_str(child.get("partToBeBolted", child.get("partToBeBoltedId", ""))),
+            "partToBoltTo": as_str(child.get("partToBoltTo", child.get("partToBoltToId", ""))),
+            "axis": as_str(child.get("axis", "")),
+            "axisSource": as_str(child.get("axisSource", "")),
             "bolts": [],
         }
-        nominal = parse_metric_size(child.get("size"))
+        if child.get("boltCoordinateSystem") is not None and not bg["axis"]:
+            diagnostics["warnings"].append(
+                "bulon grubu %s: probe'un boltCoordinateSystem ekseni delik ekseni olarak "
+                "KULLANILMADI (grup cercevesi); importer plaka normalinden inferred karar verir"
+                % o["sourceGUID"])
         positions = child.get("boltPositions", [])
         if not isinstance(positions, list):
             positions = []
-            diagnostics["warnings"].append("BoltGroup %s: boltPositions yok" % o["sourceGUID"])
-        for p in positions:
-            if isinstance(p, (list, tuple)) and len(p) == 3:
-                b = {"position": {"x": float(p[0]), "y": float(p[1]), "z": float(p[2])},
-                     "holeDiameterSource": "standard"}
-                if nominal is not None:
-                    b["nominalDiameter"] = nominal
-                bg["bolts"].append(b)
-            else:
-                diagnostics["warnings"].append(
-                    "BoltGroup %s: gecersiz bulon konumu atlandi: %r" % (o["sourceGUID"], p))
-        # Ekseni/capi UYDURMA: bos birak -> importer inferred/standard yapar.
-        if not bg["axis"]:
             diagnostics["warnings"].append(
-                "BoltGroup %s: eksen yok; importer inferred ile karar verecek" % o["sourceGUID"])
+                "bulon grubu %s: boltPositions yok" % o["sourceGUID"])
+        for p in positions:
+            pv = vec3_from(p, diagnostics, "bulon %s konumu" % o["sourceGUID"])
+            if not pv:
+                continue
+            b = {"position": pv, "holeDiameterSource": "standard"}
+            if nominal is not None:
+                b["nominalDiameter"] = nominal
+            bg["bolts"].append(b)
+        if not bg["bolts"]:
+            diagnostics["warnings"].append(
+                "bulon grubu %s: hic gecerli bulon konumu yok" % o["sourceGUID"])
         o["boltGroup"] = bg
 
     # Weld
     if o["kind"] == "Weld":
+        size_above = to_float(child.get("weldSizeAbove", child.get("size")), 0.0)
+        size_below = to_float(child.get("weldSizeBelow"), 0.0)
+        wt = as_str(child.get("weldTypeAbove", child.get("weldType", "fillet")))
+        if "FILLET" in wt.upper():
+            wt = "fillet"
         o["weld"] = {
-            "type": child.get("weldType", "fillet"),
-            "size": float(child.get("size", 0.0)),
-            "mainSourceGUID": as_str(child.get("main", "")),
-            "secondarySourceGUID": as_str(child.get("secondary", "")),
-            "position": child.get("position", ""),
+            "type": wt,
+            "size": size_above or 0.0,
+            "sizeBelow": size_below,
+            "mainSourceGUID": as_str(child.get("weldMainObject", child.get("main", ""))),
+            "secondarySourceGUID": as_str(
+                child.get("weldSecondaryObject", child.get("secondary", ""))),
+            "position": as_str(child.get("position", "")),
         }
         diagnostics["unsupportedFeatures"].append(
             "weld %s: yalniz metadata (model-maker kaynak motoru yok)" % o["sourceGUID"])
@@ -251,7 +418,8 @@ def collect_plate_dimensions(objects, root, diagnostics):
             if fp.is_file():
                 try:
                     g = json.loads(fp.read_text(encoding="utf-8"))
-                    mn = g["bbox"]["min"]; mx = g["bbox"]["max"]
+                    mn = g["bbox"]["min"]
+                    mx = g["bbox"]["max"]
                     dx = round(mx["x"] - mn["x"], 4)
                     dy = round(mx["y"] - mn["y"], 4)
                     dz = round(mx["z"] - mn["z"], 4)
@@ -285,8 +453,8 @@ def build_parameters(objects, root, diagnostics):
     bolt_size = ""
     for o in objects:
         if o["kind"] == "BoltGroup" and o.get("boltGroup"):
-            bolt_count = len(o["boltGroup"]["bolts"])
-            bolt_size = o["boltGroup"].get("size", "")
+            bolt_count += len(o["boltGroup"]["bolts"])
+            bolt_size = o["boltGroup"].get("size", "") or bolt_size
     if bolt_count:
         params.append({"name": "boltCount", "type": "Integer", "value": bolt_count,
                        "units": "", "source": "probe", "readable": "ok", "confidence": "observed"})
@@ -315,11 +483,19 @@ def main():
         print("HATA: probe kok nesne olmali", file=sys.stderr)
         return 1
 
+    root_version = probe_root_version(probe)
+    if not root_version:
+        print("HATA: probe kokunde 'schemaVersion'/'probeVersion' yok — paket yazilmadi",
+              file=sys.stderr)
+        return 1
+
     diagnostics = {"knownLimitations": [], "inaccessibleObjects": [],
                    "unsupportedFeatures": [], "warnings": []}
     diagnostics["knownLimitations"].append(
         "probe donusumu: kaynak geometri (weld fillet, ikincil uye govdesi) yeniden uretilmez; "
         "plaka bbox'tan eksen-hizali kutu olarak yeniden uretilir.")
+    diagnostics["knownLimitations"].append(
+        "probe root semasi: %s" % root_version)
 
     comp = probe.get("component")
     if not isinstance(comp, dict):
@@ -333,7 +509,7 @@ def main():
 
     out_root.mkdir(parents=True, exist_ok=True)
 
-    manifest = build_manifest(probe, comp, diagnostics)
+    manifest = build_manifest(probe, comp, diagnostics, root_version)
     component = build_component(probe, comp, diagnostics)
 
     objects = []
@@ -344,14 +520,15 @@ def main():
         objects.append(child_to_object(child, i, out_root, diagnostics))
     manifest["exportedObjectCount"] = len(objects)
 
-    # Kritik dogrulama: en az bir ContourPlate (bbox'lu) + bir BoltGroup olmali.
+    # Kritik dogrulama: en az bir ContourPlate (olculu) + bir bulon grubu olmali.
     has_plate = any(o["kind"] == "ContourPlate" and o.get("geometryFile") for o in objects)
     has_bolts = any(o["kind"] == "BoltGroup" and o.get("boltGroup") for o in objects)
     if not has_plate:
-        print("HATA: ContourPlate (bbox'lu) bulunamadi — paket yazilmadi", file=sys.stderr)
+        print("HATA: ContourPlate (olculu) bulunamadi — paket yazilmadi", file=sys.stderr)
         return 1
     if not has_bolts:
-        print("HATA: BoltGroup bulunamadi — paket yazilmadi", file=sys.stderr)
+        print("HATA: bulon grubu (BoltGroup/BoltArray) bulunamadi — paket yazilmadi",
+              file=sys.stderr)
         return 1
 
     parameters = build_parameters(objects, out_root, diagnostics)

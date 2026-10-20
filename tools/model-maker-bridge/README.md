@@ -144,15 +144,30 @@ Yapılmadı (sonraki dilim, dürüstçe):
 
 ```bash
 python3 tools/model-maker-bridge/scripts/convert_probe_to_mmbridge.py \
-  tools/model-maker-bridge/fixtures/probe-geometry-146.json /tmp/paket
+  tools/model-maker-bridge/fixtures/real-probe-146.json /tmp/paket
 python3 tools/model-maker-bridge/scripts/validate_bridge_package.py /tmp/paket
 ```
 
-Girdi sözleşmesi (hedef `bridge-geometry-probe-2` şeması) betik başındaki docstring'de
-belgelenmiştir. Kritik alanlar (component / ContourPlate+bbox / BoltGroup) yoksa paket
-yazılmaz (exit 1); eksik isteğe bağlı alanlar `diagnostics.json`'a unresolved olarak
-düşer. Bulon ekseni/delik çapı probe'ta yoksa boş bırakılır — importer inferred/standard
-kararını verir (uydurulmaz).
+İki girdi şekli kabul edilir:
+
+- **Gerçek ASUS çıktısı** (`"schemaVersion": "bridge-geometry-probe-2"`):
+  `component.primary` / `component.secondaries`, `child.solid.minimumPoint/maximumPoint`,
+  `BoltArray` (`boltSize` sayı, `boltStandard` string, `holeTolerance`,
+  `partToBeBoltedId`/`partToBoltToId`), `Weld` (`weldSizeAbove`, `weldMainObject`,
+  `weldSecondaryObject`), `exportedUtc`.
+- **Düz fixture** (`"probeVersion": 2`): top-level `primary`/`secondary`, `child.bbox`,
+  `BoltGroup` (`size`/`standardCode`/`tolerance`).
+
+Doğrulanmış gerçek örnek: `fixtures/real-probe-146.json` (component 5245, 146 Shear plate
+simple; plaka 10×170×200, 6×M20, std 7990). Dönüşüm çıktısı `fixtures/real-probe-146.mmbridge/`
+olarak da repoda (Windows'ta Python gerekmeden doğrudan import için). Gerçek dosya, C++
+importer'ın 51/51 OCC import testinden geçti.
+
+Dürüstlük kuralları: kritik alan yoksa paket yazılmaz (exit 1); eksik isteğe bağlı alanlar
+`diagnostics.json`'a unresolved düşer. Probe'un `boltCoordinateSystem.axisX`'i grup çerçevesi
+eksenidir, delik ekseni olarak KULLANILMAZ — importer plaka normalinden inferred karar verir
+(uydurulmaz). `boltSize` sayıysa `size` alanı "M20" olarak türetilir (geometri uydurulmaz,
+diagnostic ile işaretlenir).
 
 ## Veri akışı
 

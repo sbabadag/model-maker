@@ -1,0 +1,17 @@
+{
+  "formatVersion": "2.0",
+  "sourceApplication": "Tekla Structures",
+  "sourceVersion": "Tekla Structures 2025 SP6 Open API",
+  "sourceComponentType": "Connection",
+  "sourceComponentNumber": 146,
+  "sourceComponentName": "Shear plate simple",
+  "sourceModelIdentifier": "",
+  "exportTimestamp": "2026-10-20T11:28:38.4255289Z",
+  "coordinateSystem": "TeklaGlobal",
+  "lengthUnit": "mm",
+  "componentIdentifier": "probe-5245",
+  "exportedObjectCount": 8,
+  "knownLimitations": [],
+  "exporterVersion": "2.0.0",
+  "probeRootVersion": "bridge-geometry-probe-2"
+}
