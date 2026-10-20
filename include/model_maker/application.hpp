@@ -210,6 +210,12 @@ public:
     void beginDxfImport(const std::filesystem::path& path);
     void finishDxfImport();
     void exportDxf();
+    // TEKLA COMPONENT BRIDGE IMPORT (Windows GUI): .mmbridge paket klasorunu
+    // okur + dogrular (bridge_package) ve OCC-on importBridgeComponent ile
+    // Document'a ATOMIK isler. Basarida plaka secilir + gorunum cercevelenir;
+    // hata/warning durum cubuguna + mesaj kutusuna gider. OCC'siz derlemede
+    // uyarir ve false doner (belge degismez).
+    bool importTeklaBridge(const std::filesystem::path& packageDir);
 
     // Work plane (UCS) — Qt menü/ribbon erişimi için public
     // F1: GPU hatti — GL backend uretimi + F9 ile GDI/GL gecisi

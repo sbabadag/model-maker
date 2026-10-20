@@ -1,5 +1,6 @@
 #include "model_maker/application.hpp"
 #include "model_maker/dxf.hpp"
+#include "model_maker/bridge_package.hpp"
 #ifdef MM_HAS_SPACEMOUSE
 #include "model_maker/spacemouse.hpp"
 #endif
@@ -12,6 +13,7 @@
 #include "model_maker/occ_contact_resolver.hpp"
 #include "model_maker/component_materializer.hpp"
 #include "model_maker/component_framework.hpp"
+#include "model_maker/bridge_occ_adapter.hpp"
 #endif
 #ifdef MM_HAS_OCC
 #include <BRepBuilderAPI_Transform.hxx>
@@ -10726,6 +10728,55 @@ void Application::exportDxf() {
     if (!path) return;
     try { DxfFile::write(document_, *path); }
     catch (const std::exception& error) { showError(L"DXF dışa aktarma başarısız", error); }
+}
+
+bool Application::importTeklaBridge(const std::filesystem::path& packageDir) {
+#ifndef MM_HAS_OCC
+    publishStatus(L"Tekla Bridge: bu derleme OCC'siz; import yapilamadi.");
+    return false;
+#else
+    // Oku + dogrula (yarim paket "basarili" kabul edilmez).
+    mm::BridgePackage pkg;
+    std::vector<std::string> errors;
+    if (!mm::readBridgePackage(packageDir.string(), pkg, errors)) {
+        std::wstring detail = L"Paket okunamadi / gecersiz:";
+        for (const auto& e : errors) {
+            detail += L"\n- ";
+            detail.append(e.begin(), e.end());
+        }
+        const std::runtime_error importError(
+            std::string(detail.begin(), detail.end()));
+        showError(L"Tekla Component Bridge içe aktarma başarısız", importError);
+        return false;
+    }
+
+    // ATOMIK import (pushSnapshot + hata rollback importBridgeComponent içinde).
+    const mm::BridgeImportOutcome out = mm::importBridgeComponent(document_, pkg);
+    if (!out.ok) {
+        const std::runtime_error importError(out.error);
+        showError(L"Tekla Component Bridge içe aktarma başarısız", importError);
+        return false;
+    }
+
+    // Import edilen plakayi sec (glyph/secim/properties) + cercevele (zoom extents).
+    if (const auto idx = document_.indexOfEntity(out.plateId)) selectModel(*idx);
+    zoomExtents2D();
+    updateControls();
+    invalidateCanvas();
+
+    std::wstring status = L"Tekla Bridge: " +
+        std::wstring(pkg.component.name.begin(), pkg.component.name.end()) +
+        L" içe aktarıldı (" + std::to_wstring(out.holesCut) + L" delik)";
+    if (!out.warnings.empty()) {
+        status += L" — " + std::to_wstring(out.warnings.size()) + L" uyarı";
+        std::wstring first(out.warnings.front().begin(), out.warnings.front().end());
+        publishStatus(status);
+        publishStatus(first);
+    } else {
+        publishStatus(status);
+    }
+    return true;
+#endif
 }
 
 void Application::showError(const wchar_t* action, const std::exception& error) const {

@@ -48,6 +48,7 @@
 #include <QSpinBox>
 #include <QFormLayout>
 #include <QMessageBox>
+#include <QFileDialog>
 #include <QLineEdit>
 #include <QLabel>
 #include <QWindow>
@@ -598,6 +599,9 @@ void QtMainWindow::createMenus() {
     fileMenu->addAction("DXF &İçe Aktar...", this, [this]() { app_.importDxf(); })->setIcon(makeToolIcon(ToolGlyph::Import));
     fileMenu->addAction("DXF &Dışa Aktar...", this, [this]() { app_.exportDxf(); })->setIcon(makeToolIcon(ToolGlyph::Export));
     fileMenu->addSeparator();
+    fileMenu->addAction("Tekla Component &Bridge İçe Aktar...", this,
+        [this]() { importTeklaBridge(); })->setIcon(makeToolIcon(ToolGlyph::Import));
+    fileMenu->addSeparator();
     fileMenu->addAction("Çı&kış", qApp, &QApplication::quit);
 
     QMenu* drawMenu = appMenu_->addMenu("Çi&zim");
@@ -792,6 +796,15 @@ void QtMainWindow::createMenus() {
     });
     windowMenu->addSeparator();
     windowMenu->addAction("Tüm görünüşleri &kapat", this, [this]() { closeAllTwoPointViews(); });
+}
+
+void QtMainWindow::importTeklaBridge() {
+    // .mmbridge paket KLASORUNU sectir; import + dogrulama + atomik isleme
+    // Application::importTeklaBridge icinde (OCC-on). OCC'siz derlemede uyarir.
+    const QString dir = QFileDialog::getExistingDirectory(
+        this, QStringLiteral("Tekla Component Bridge paket klasörünü seç (.mmbridge)"));
+    if (dir.isEmpty()) return;
+    app_.importTeklaBridge(std::filesystem::path(dir.toStdWString()));
 }
 
 void QtMainWindow::openBoltPropertiesDialog(const mm::BoltGroup& bolt) {

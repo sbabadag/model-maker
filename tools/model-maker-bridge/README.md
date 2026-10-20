@@ -103,7 +103,7 @@ g++ -std=gnu++20 -O1 -DMM_HAS_OCC \
     -o /tmp/occ_bridge_146_import_test && /tmp/occ_bridge_146_import_test
 ```
 
-## Vertical slice durumu (P1 + OCC import dilimi)
+## Vertical slice durumu (P1 + OCC import + GUI dilimi)
 
 Yapıldı ve doğrulandı:
 - Sürümlü paket şeması (V1 + V2) + Python doğrulayıcı (fixture'lar GECERLI).
@@ -114,19 +114,45 @@ Yapıldı ve doğrulandı:
 - **V2 OCC-on import**: plaka kati (bbox -> 10x170x200, hacim 340000), 6 M20 delik
   (eksen +X inferred, cap 22 standard), Document'a atomik işleme + undo/redo +
   rollback. 51 OCC-on kabul kontrolü geçer.
-- 146 fixture paketleri (V1 + V2, açıkça FIXTURE işaretli).
+- **Probe -> .mmbridge dönüştürücü** (`scripts/convert_probe_to_mmbridge.py`): ASUS
+  ham `bridge-geometry-probe-2` JSON'unu formatVersion 2.0 paketine çevirir; eksik
+  alanı UYDURMAZ (unresolved diagnostic), kritik eksikte paket yazmaz. Çıktı,
+  C++ importer'ın 51/51 testinden geçer (uçtan uca doğrulandı).
+- **Windows GUI**: File > Import > Tekla Component Bridge menüsü + klasör seçici +
+  `Application::importTeklaBridge` (okur + doğrular + atomik import + plakayı seç +
+  zoom extents). Linux'ta derlenmez (Win32+Qt) — Windows'ta doğrulanacak.
+- **CMake**: OCC bridge import testi artık kalıcı ctest hedefi
+  (`model_maker_occ_bridge_146_import_test`), ASUS'ta elle CMake yaması gerekmez.
+- 146 fixture paketleri (V1 + V2) + probe fixture (açıkça FIXTURE işaretli).
 
 Yapılmadı (sonraki dilim, dürüstçe):
 - **Gerçek Tekla API çalışma zamanı testi** — Windows'ta Tekla 2025 SP6 ile (Linux'ta
   çalıştırılamaz; mock/static test gerçek test SAYILMAZ).
-- **Gerçek ASUS V2 JSON'u** — bu dilim doğrulanmış değerlerle elle yazılmış fixture
-  kullanır; tam extractor çıktısı Windows'tan istendiğinde beslenir.
+- **Gerçek ASUS probe-2 JSON'u** — dönüştürücü, doğrulanmış değerlerle elle yazılmış
+  probe fixture ile test edildi; gerçek ASUS dosyasıyla ALAN ADI uyumluluğu Windows'ta
+  doğrulanmalı (dönüştürücü katıdır, bilinmeyen alanı unresolved işaretler).
+- **Windows GUI çalışma zamanı** — menü/klasör seçici/import/zoom yazıldı ama yalnız
+  Windows'ta derlenir; ASUS'ta model-maker exe'siyle doğrulanacak.
 - **Codex reviewer** — standalone Codex CLI auth yok (401); erişilebilir olduğunda
   kritik OCC + Document değişiklikleri review edilecek.
-- **Qt arayüzü** (File > Import > Tekla Component Bridge) — Windows/Qt-only, Linux'ta
-  derlenmez. Giriş noktası `importBridgeComponent()` fonksiyonudur; UI bunu çağıracak.
+- **Windows B-Rep serializer SEGFAULT** — ayrı takip; test gizlenmedi/devre dışı
+  bırakılmadı.
 - **Kaynak geometrisi** (weld fillet) ve **ikincil uye govdesi** (HEA300 BEAM)
   yeniden üretilmez — yalnız metadata/referans.
+
+## Probe -> .mmbridge dönüştürücü (Linux'ta doğrulanır)
+
+```bash
+python3 tools/model-maker-bridge/scripts/convert_probe_to_mmbridge.py \
+  tools/model-maker-bridge/fixtures/probe-geometry-146.json /tmp/paket
+python3 tools/model-maker-bridge/scripts/validate_bridge_package.py /tmp/paket
+```
+
+Girdi sözleşmesi (hedef `bridge-geometry-probe-2` şeması) betik başındaki docstring'de
+belgelenmiştir. Kritik alanlar (component / ContourPlate+bbox / BoltGroup) yoksa paket
+yazılmaz (exit 1); eksik isteğe bağlı alanlar `diagnostics.json`'a unresolved olarak
+düşer. Bulon ekseni/delik çapı probe'ta yoksa boş bırakılır — importer inferred/standard
+kararını verir (uydurulmaz).
 
 ## Veri akışı
 
