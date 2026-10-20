@@ -22,7 +22,7 @@
       ],
       "additionalProperties": true,
       "properties": {
-        "formatVersion": { "type": "string", "pattern": "^1\\.0$" },
+        "formatVersion": { "type": "string", "pattern": "^[12]\\.0$" },
         "sourceApplication": { "const": "Tekla Structures" },
         "sourceVersion": { "type": "string" },
         "sourceComponentType": {
@@ -109,7 +109,10 @@
           "mappedKind": { "enum": ["Plate", "BoltGroup", "Cut", "Weld", "Beam", "ReferenceGeometry", "Unsupported"] },
           "geometryFile": { "type": "string" },
           "parametric": { "type": "object", "additionalProperties": true },
-          "unsupportedReason": { "type": "string" }
+          "unsupportedReason": { "type": "string" },
+          "boltGroup": { "$ref": "#/definitions/boltGroup" },
+          "weld": { "$ref": "#/definitions/weld" },
+          "topology": { "$ref": "#/definitions/topology" }
         }
       }
     },
@@ -145,9 +148,61 @@
         "identifierId": { "type": "integer" },
         "profile": { "type": "string" },
         "material": { "type": "string" },
+        "role": { "type": "string" },
         "startPoint": { "$ref": "#/definitions/vec3" },
         "endPoint": { "$ref": "#/definitions/vec3" },
         "class": { "type": "string" }
+      }
+    },
+    "bolt": {
+      "type": "object",
+      "required": ["position"],
+      "additionalProperties": true,
+      "properties": {
+        "position": { "$ref": "#/definitions/vec3" },
+        "nominalDiameter": { "type": "number" },
+        "holeDiameter": { "type": "number" },
+        "holeDiameterSource": { "enum": ["standard", "measured", ""] },
+        "axis": { "type": "string" },
+        "axisSource": { "enum": ["measured", "inferred", ""] }
+      }
+    },
+    "boltGroup": {
+      "type": "object",
+      "required": ["bolts"],
+      "additionalProperties": true,
+      "properties": {
+        "size": { "type": "string" },
+        "standardCode": { "type": "integer" },
+        "tolerance": { "type": "number" },
+        "slottedHoleX": { "type": "number" },
+        "slottedHoleY": { "type": "number" },
+        "partToBeBolted": { "type": "string" },
+        "partToBoltTo": { "type": "string" },
+        "axis": { "type": "string" },
+        "axisSource": { "enum": ["measured", "inferred", ""] },
+        "bolts": { "type": "array", "items": { "$ref": "#/definitions/bolt" } }
+      }
+    },
+    "weld": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "type": { "type": "string" },
+        "size": { "type": "number" },
+        "mainSourceGUID": { "type": "string" },
+        "secondarySourceGUID": { "type": "string" },
+        "position": { "type": "string" }
+      }
+    },
+    "topology": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "faceCount": { "type": "integer" },
+        "loopCount": { "type": "integer" },
+        "faceVertexOccurrences": { "type": "integer" },
+        "holeLoops": { "type": "integer" }
       }
     }
   }

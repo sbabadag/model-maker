@@ -55,8 +55,8 @@ def validate_manifest(m):
     for k in req:
         if k not in m:
             return fail("manifest.%s eksik" % k)
-    if m["formatVersion"] != "1.0":
-        return fail("manifest.formatVersion 1.0 olmali, bulunan: %r" % m["formatVersion"])
+    if m["formatVersion"] not in ("1.0", "2.0"):
+        return fail("manifest.formatVersion 1.0 veya 2.0 olmali, bulunan: %r" % m["formatVersion"])
     if m["sourceApplication"] != "Tekla Structures":
         return fail("manifest.sourceApplication 'Tekla Structures' olmali")
     if m["sourceComponentType"] not in VALID_COMPONENT_TYPES:
@@ -124,6 +124,41 @@ def safe_relative_path(p):
     return True
 
 
+def validate_bolt_group(bg, i):
+    if not isinstance(bg, dict):
+        return fail("objects[%d].boltGroup nesne olmali" % i)
+    if "bolts" not in bg or not isinstance(bg["bolts"], list):
+        return fail("objects[%d].boltGroup.bolts liste olmali" % i)
+    for j, b in enumerate(bg["bolts"]):
+        if not isinstance(b, dict) or "position" not in b or not is_vec3(b["position"]):
+            return fail("objects[%d].boltGroup.bolts[%d].position gecersiz" % (i, j))
+        for k in ("nominalDiameter", "holeDiameter"):
+            if k in b and (not isinstance(b[k], (int, float)) or isinstance(b[k], bool)):
+                return fail("objects[%d].boltGroup.bolts[%d].%s sayi olmali" % (i, j, k))
+        if b.get("holeDiameterSource") not in (None, "standard", "measured", ""):
+            return fail("objects[%d].boltGroup.bolts[%d].holeDiameterSource gecersiz" % (i, j))
+    if bg.get("tolerance") is not None and not isinstance(bg["tolerance"], (int, float)):
+        return fail("objects[%d].boltGroup.tolerance sayi olmali" % i)
+    return True
+
+
+def validate_weld(w, i):
+    if not isinstance(w, dict):
+        return fail("objects[%d].weld nesne olmali" % i)
+    if "size" in w and (not isinstance(w["size"], (int, float)) or isinstance(w["size"], bool)):
+        return fail("objects[%d].weld.size sayi olmali" % i)
+    return True
+
+
+def validate_topology(t, i):
+    if not isinstance(t, dict):
+        return fail("objects[%d].topology nesne olmali" % i)
+    for k in ("faceCount", "loopCount", "faceVertexOccurrences", "holeLoops"):
+        if k in t and not isinstance(t[k], int):
+            return fail("objects[%d].topology.%s tamsayi olmali" % (i, k))
+    return True
+
+
 def validate_objects(objects, root):
     if not isinstance(objects, list):
         return fail("objects liste olmali")
@@ -150,6 +185,12 @@ def validate_objects(objects, root):
             fp = root / gf
             if not fp.is_file():
                 return fail("objects[%d].geometryFile bulunamadi: %r" % (i, gf))
+        if "boltGroup" in o and not validate_bolt_group(o["boltGroup"], i):
+            return False
+        if "weld" in o and not validate_weld(o["weld"], i):
+            return False
+        if "topology" in o and not validate_topology(o["topology"], i):
+            return False
     return True
 
 
@@ -168,8 +209,8 @@ def validate_geometry_files(root):
             return fail("geometry okunamadi %s: %s" % (fp.name, e))
         if not isinstance(g, dict) or "formatVersion" not in g or "type" not in g:
             return fail("geometry %s: formatVersion/type eksik" % fp.name)
-        if g["formatVersion"] != "1.0":
-            return fail("geometry %s: formatVersion 1.0 olmali" % fp.name)
+        if g["formatVersion"] not in ("1.0", "2.0"):
+            return fail("geometry %s: formatVersion 1.0 veya 2.0 olmali" % fp.name)
         if g["type"] not in VALID_GEOM_TYPES:
             return fail("geometry %s: type gecersiz: %r" % (fp.name, g["type"]))
         if g["type"] == "bbox":

@@ -64,6 +64,67 @@ std::vector<std::string> strList(const json& j, const char* key) {
     return out;
 }
 
+// --- V2 alt-nesne ayristiricilari ------------------------------------------
+
+BridgeBoltGroupInfo parseBoltGroup(const json& g) {
+    BridgeBoltGroupInfo info;
+    info.size = str(g, "size");
+    if (g.contains("standardCode") && g["standardCode"].is_number_integer())
+        info.standardCode = static_cast<int>(g["standardCode"].get<int64_t>());
+    if (g.contains("tolerance") && g["tolerance"].is_number())
+        info.tolerance = g["tolerance"].get<double>();
+    if (g.contains("slottedHoleX") && g["slottedHoleX"].is_number())
+        info.slottedHoleX = g["slottedHoleX"].get<double>();
+    if (g.contains("slottedHoleY") && g["slottedHoleY"].is_number())
+        info.slottedHoleY = g["slottedHoleY"].get<double>();
+    info.partToBeBolted = str(g, "partToBeBolted");
+    info.partToBoltTo = str(g, "partToBoltTo");
+    info.axis = str(g, "axis");
+    info.axisSource = str(g, "axisSource");
+    if (g.contains("bolts") && g["bolts"].is_array()) {
+        for (const auto& b : g["bolts"]) {
+            if (!b.is_object()) continue;
+            BridgeBolt bolt;
+            if (b.contains("position") && isVec3(b["position"]))
+                bolt.position = toVec3(b["position"]);
+            if (b.contains("nominalDiameter") && b["nominalDiameter"].is_number())
+                bolt.nominalDiameter = b["nominalDiameter"].get<double>();
+            if (b.contains("holeDiameter") && b["holeDiameter"].is_number())
+                bolt.holeDiameter = b["holeDiameter"].get<double>();
+            bolt.holeDiameterSource = str(b, "holeDiameterSource");
+            bolt.axis = str(b, "axis");
+            bolt.axisSource = str(b, "axisSource");
+            info.bolts.push_back(std::move(bolt));
+        }
+    }
+    return info;
+}
+
+BridgeWeldInfo parseWeld(const json& w) {
+    BridgeWeldInfo info;
+    info.type = str(w, "type");
+    if (w.contains("size") && w["size"].is_number())
+        info.size = w["size"].get<double>();
+    info.mainSourceGUID = str(w, "mainSourceGUID");
+    info.secondarySourceGUID = str(w, "secondarySourceGUID");
+    info.position = str(w, "position");
+    return info;
+}
+
+BridgeTopology parseTopology(const json& t) {
+    BridgeTopology topo;
+    if (t.contains("faceCount") && t["faceCount"].is_number_integer())
+        topo.faceCount = static_cast<int>(t["faceCount"].get<int64_t>());
+    if (t.contains("loopCount") && t["loopCount"].is_number_integer())
+        topo.loopCount = static_cast<int>(t["loopCount"].get<int64_t>());
+    if (t.contains("faceVertexOccurrences") && t["faceVertexOccurrences"].is_number_integer())
+        topo.faceVertexOccurrences =
+            static_cast<int>(t["faceVertexOccurrences"].get<int64_t>());
+    if (t.contains("holeLoops") && t["holeLoops"].is_number_integer())
+        topo.holeLoops = static_cast<int>(t["holeLoops"].get<int64_t>());
+    return topo;
+}
+
 bool readJsonFile(const fs::path& p, json& out) {
     std::ifstream in(p);
     if (!in) return false;
@@ -148,8 +209,8 @@ bool readBridgePackage(const std::string& dir, BridgePackage& out,
     out.manifest.exportedObjectCount = static_cast<int>(integer(m, "exportedObjectCount"));
     out.manifest.knownLimitations = strList(m, "knownLimitations");
 
-    if (out.manifest.formatVersion != "1.0")
-        errors.push_back("manifest.formatVersion 1.0 olmali");
+    if (out.manifest.formatVersion != "1.0" && out.manifest.formatVersion != "2.0")
+        errors.push_back("manifest.formatVersion 1.0 veya 2.0 olmali");
     if (out.manifest.componentIdentifier.empty())
         errors.push_back("manifest.componentIdentifier bos");
     if (out.manifest.sourceComponentType.empty())
@@ -173,6 +234,7 @@ bool readBridgePackage(const std::string& dir, BridgePackage& out,
         out.component.primaryMember.guid = str(pm, "guid");
         out.component.primaryMember.profile = str(pm, "profile");
         out.component.primaryMember.material = str(pm, "material");
+        out.component.primaryMember.role = str(pm, "role");
         if (pm.contains("startPoint") && isVec3(pm["startPoint"]))
             out.component.primaryMember.startPoint = toVec3(pm["startPoint"]);
         if (pm.contains("endPoint") && isVec3(pm["endPoint"]))
@@ -185,6 +247,7 @@ bool readBridgePackage(const std::string& dir, BridgePackage& out,
             ref.guid = str(sm, "guid");
             ref.profile = str(sm, "profile");
             ref.material = str(sm, "material");
+            ref.role = str(sm, "role");
             if (sm.contains("startPoint") && isVec3(sm["startPoint"]))
                 ref.startPoint = toVec3(sm["startPoint"]);
             if (sm.contains("endPoint") && isVec3(sm["endPoint"]))
@@ -258,6 +321,14 @@ bool readBridgePackage(const std::string& dir, BridgePackage& out,
                     }
                 }
             }
+            // V2 alt-nesneler: boltGroup / weld / topology.
+            if (o.contains("boltGroup") && o["boltGroup"].is_object())
+                bo.boltGroup = parseBoltGroup(o["boltGroup"]);
+            if (o.contains("weld") && o["weld"].is_object())
+                bo.weld = parseWeld(o["weld"]);
+            if (o.contains("topology") && o["topology"].is_object())
+                bo.topology = parseTopology(o["topology"]);
+
             out.objects.push_back(std::move(bo));
         }
     } else {

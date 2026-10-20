@@ -1,0 +1,47 @@
+[
+  {
+    "name": "plateThickness",
+    "type": "Length",
+    "value": 10.0,
+    "units": "mm",
+    "source": "FIXTURE-V2",
+    "readable": "ok",
+    "confidence": "observed"
+  },
+  {
+    "name": "plateWidth",
+    "type": "Length",
+    "value": 170.0,
+    "units": "mm",
+    "source": "FIXTURE-V2",
+    "readable": "ok",
+    "confidence": "observed"
+  },
+  {
+    "name": "plateHeight",
+    "type": "Length",
+    "value": 200.0,
+    "units": "mm",
+    "source": "FIXTURE-V2",
+    "readable": "ok",
+    "confidence": "observed"
+  },
+  {
+    "name": "boltCount",
+    "type": "Integer",
+    "value": 6,
+    "units": "",
+    "source": "FIXTURE-V2",
+    "readable": "ok",
+    "confidence": "observed"
+  },
+  {
+    "name": "boltSize",
+    "type": "Enum",
+    "value": "M20",
+    "units": "",
+    "source": "FIXTURE-V2",
+    "readable": "ok",
+    "confidence": "observed"
+  }
+]

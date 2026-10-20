@@ -29,6 +29,7 @@ struct BridgeMemberRef {
     std::string guid;
     std::string profile;
     std::string material;
+    std::string role;              // "COLUMN" / "BEAM" / ... (uye rolu; V2)
     std::optional<BridgeVec3> startPoint;
     std::optional<BridgeVec3> endPoint;
 };
@@ -47,6 +48,51 @@ struct BridgeParameter {
     BridgeParamValue value;   // monostate = yok
 };
 
+// --- V2: bulon / kaynak / topoloji detaylari --------------------------------
+// Bu alanlar yalnizca ilgili kind icin anlamlidir; diger kind'larda bos kalir.
+// DEGERLER KAYNAK (Tekla) tarafindan bildirildigi gibi tasinir; importer bunlari
+// DOGRULAR (projeksiyon/eksen/cap) ve dogrulanamayani INFERRED/UNRESOLVED isaretler.
+
+// Tek bulon konumu + cap bilgisi (BoltGroup child'i).
+struct BridgeBolt {
+    BridgeVec3 position;             // global (Tekla is duzlemi)
+    double nominalDiameter = 0.0;    // mm (M20 -> 20)
+    double holeDiameter = 0.0;       // mm (22); 0 = standarddan turet
+    std::string holeDiameterSource;  // "standard" | "measured" | "" (belirsiz)
+    std::string axis;                // "x"|"y"|"z"|"" (bos = cikarilacak)
+    std::string axisSource;          // "measured" | "inferred" | ""
+};
+
+struct BridgeBoltGroupInfo {
+    std::string size;                // "M20"
+    int standardCode = 0;            // 7990
+    double tolerance = 0.0;          // mm (2)
+    double slottedHoleX = 0.0;
+    double slottedHoleY = 0.0;
+    std::string partToBeBolted;      // kaynak GUID (ikincil uye)
+    std::string partToBoltTo;        // kaynak GUID (levha)
+    std::string axis;                // "x"|"y"|"z"|"" 
+    std::string axisSource;          // "measured" | "inferred" | ""
+    std::vector<BridgeBolt> bolts;
+};
+
+struct BridgeWeldInfo {
+    std::string type;                // "fillet" | ...
+    double size = 0.0;               // mm (5)
+    std::string mainSourceGUID;      // ana uye (kolon)
+    std::string secondarySourceGUID; // ikincil (levha)
+    std::string position;            // "above_below" | ...
+};
+
+// Kati topolojisinin OLCULEN sayimlari (yuz/loop/kose). Kose KOORDINATLARI
+// tasinmaz; yalnizca sayim — geometri bbox'tan yeniden uretilir.
+struct BridgeTopology {
+    int faceCount = 0;               // 6
+    int loopCount = 0;               // 6
+    int faceVertexOccurrences = 0;   // 24
+    int holeLoops = 0;               // 0 (delik topolojisi yok -> "delinmis" IDDIA EDILMEZ)
+};
+
 struct BridgeObject {
     std::string sourceGUID;
     int identifierId = -1;    // -1 = yok
@@ -61,6 +107,9 @@ struct BridgeObject {
     std::string geometryFile;  // paket kokune goreli (guvenli) yol
     std::string unsupportedReason;
     std::optional<BridgeBBox> bbox;  // geometry dosyasindan yuklenir (varsa)
+    std::optional<BridgeBoltGroupInfo> boltGroup;  // kind == BoltGroup
+    std::optional<BridgeWeldInfo> weld;            // kind == Weld
+    std::optional<BridgeTopology> topology;        // olculen yuz/loop sayimlari
 };
 
 struct BridgeCoordinateSystem {

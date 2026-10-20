@@ -8,9 +8,10 @@ Maker'ın bu paketi açıp semantik nesneleri önizleyebildiği köprü.
 
 1. **Extractor** (`tekla-extractor/`, C# net48) — Tekla açıkken seçili bileşeni okuyup
    `.mmbridge` paketi yazar. Tekla'ya bağımlı; yalnızca Windows'ta çalışır.
-2. **Importer** (C++ OCC-off, `src/bridge_package.cpp` + `bridge_component_mapper.cpp`)
-   — paketi okur, doğrular, nesneleri semantik türlere eşler, önizleme üretir.
-   Linux'ta test edilir.
+2. **Importer** (C++, `src/bridge_package.cpp` + `bridge_component_mapper.cpp` + `bridge_occ_adapter.cpp`)
+   — paketi okur, doğrular, nesneleri semantik türlere eşler, önizleme üretir
+   (OCC-off); V2'de plaka kati + bulon delikleri gerçek OCCT ile Document'a ATOMIK
+   işler (OCC-on). Linux'ta test edilir.
 3. **Veri sözleşmesi** (`model-maker-bridge.schema.json`) — ikisinin konuştuğu
    sürümlü JSON biçimi.
 
@@ -32,7 +33,8 @@ Maker'ın bu paketi açıp semantik nesneleri önizleyebildiği köprü.
 tools/model-maker-bridge/
   model-maker-bridge.schema.json    # paket şeması (draft-07)
   scripts/validate_bridge_package.py  # stdlib yapısal doğrulayıcı
-  fixtures/fixture-146-shear-plate.mmbridge/  # FIXTURE (elle yazılmış, gerçek Tekla DEĞİL)
+  fixtures/fixture-146-shear-plate.mmbridge/     # FIXTURE V1 (elle, gerçek Tekla DEĞİL)
+  fixtures/fixture-146-shear-plate-v2.mmbridge/  # FIXTURE V2 (doğrulanmış 146 değerleri)
   tekla-extractor/
     ModelMaker.TeklaBridge.sln
     Directory.Build.props           # TeklaApiVersion / DisablePatchCodeBase (Linux)
@@ -75,29 +77,56 @@ Doğrulayıcı (Python, paket çıktısı için):
 
 ```bash
 python3 tools/model-maker-bridge/scripts/validate_bridge_package.py \
-  tools/model-maker-bridge/fixtures/fixture-146-shear-plate.mmbridge
+  tools/model-maker-bridge/fixtures/fixture-146-shear-plate-v2.mmbridge
 ```
 
-## Vertical slice durumu (P1)
+OCC-on import testi (gerçek OCCT ile plaka kati + 6 M20 delik + Document + undo/redo):
+
+```bash
+cd /home/ubuntu/model-maker-overnight
+g++ -std=gnu++20 -O1 -DMM_HAS_OCC \
+    -DMM_BRIDGE_FIXTURE_DIR="\"$(pwd)/tools/model-maker-bridge/fixtures\"" \
+    -I include -I third_party/nlohmann -I /usr/include/opencascade \
+    tests/occ_bridge_146_import_test.cpp \
+    src/bridge_package.cpp src/bridge_component_mapper.cpp src/bridge_occ_adapter.cpp \
+    src/component_materializer.cpp src/component_framework.cpp src/component_engine.cpp \
+    src/component_dialog.cpp src/document.cpp src/mmw8_codec.cpp src/end_plate.cpp \
+    src/bolt.cpp src/cut_modifier.cpp src/geometry.cpp src/profile_database.cpp \
+    src/reference_geometry.cpp src/constraint_system.cpp src/contact_resolver.cpp \
+    src/geometry_reference_resolver.cpp src/magnetic_frame.cpp src/component_recompute.cpp \
+    src/component.cpp src/assembly.cpp src/camera.cpp src/occ_contact_resolver.cpp \
+    src/occ_solid_store.cpp src/occ_brep_serialize.cpp src/occ_geometry.cpp \
+    src/bolt_geometry.cpp src/end_plate_geometry.cpp src/sha256.cpp src/grid.cpp \
+    src/occ_store_null.cpp src/component_glyph.cpp \
+    -lTKernel -lTKMath -lTKG2d -lTKG3d -lTKGeomBase -lTKBRep -lTKGeomAlgo \
+    -lTKTopAlgo -lTKPrim -lTKBO -lTKBool -lTKShHealing -lTKMesh -lTKXSBase -lTKDESTEP \
+    -o /tmp/occ_bridge_146_import_test && /tmp/occ_bridge_146_import_test
+```
+
+## Vertical slice durumu (P1 + OCC import dilimi)
 
 Yapıldı ve doğrulandı:
-- Sürümlü paket şeması + Python doğrulayıcı (fixture GECERLI).
+- Sürümlü paket şeması (V1 + V2) + Python doğrulayıcı (fixture'lar GECERLI).
 - C# Core (POCO + yazıcı + doğrulayıcı): 12/12 xUnit test.
 - C# Extractor (net48): Tekla API'sine karşı 0 hata derlenir.
 - C++ importer (okuyucu + doğrulayıcı + eşleyici + önizleme): OCC-off test geçer;
   tam ctest 78/78 (regresyon yok).
-- 146 fixture paketi (açıkça FIXTURE işaretli) + roundtrip.
+- **V2 OCC-on import**: plaka kati (bbox -> 10x170x200, hacim 340000), 6 M20 delik
+  (eksen +X inferred, cap 22 standard), Document'a atomik işleme + undo/redo +
+  rollback. 51 OCC-on kabul kontrolü geçer.
+- 146 fixture paketleri (V1 + V2, açıkça FIXTURE işaretli).
 
 Yapılmadı (sonraki dilim, dürüstçe):
-- **Gerçek Tekla API çalışma zamanı testi** — Windows'ta Tekla 2025 ile (Linux'ta
+- **Gerçek Tekla API çalışma zamanı testi** — Windows'ta Tekla 2025 SP6 ile (Linux'ta
   çalıştırılamaz; mock/static test gerçek test SAYILMAZ).
-- **Document/OCCT materializasyonu** — paketteki Plate/BoltGroup'ları gerçek
-  `Document`/`OccSolidStore` nesnelerine çevirme (member geometry + ComponentMaterializer
-  yolu). Şu an importer yalnızca önizleme + semantik kayıt üretir.
+- **Gerçek ASUS V2 JSON'u** — bu dilim doğrulanmış değerlerle elle yazılmış fixture
+  kullanır; tam extractor çıktısı Windows'tan istendiğinde beslenir.
+- **Codex reviewer** — standalone Codex CLI auth yok (401); erişilebilir olduğunda
+  kritik OCC + Document değişiklikleri review edilecek.
 - **Qt arayüzü** (File > Import > Tekla Component Bridge) — Windows/Qt-only, Linux'ta
-  derlenmez. Giriş noktası `mapBridgePackage()` fonksiyonudur; UI bunu çağıracak.
-- **Parametrik ComponentBlueprint üretimi** (parametreler -> GenerationPlan) ve
-  SOURCE B varyasyon karşılaştırması.
+  derlenmez. Giriş noktası `importBridgeComponent()` fonksiyonudur; UI bunu çağıracak.
+- **Kaynak geometrisi** (weld fillet) ve **ikincil uye govdesi** (HEA300 BEAM)
+  yeniden üretilmez — yalnız metadata/referans.
 
 ## Veri akışı
 
@@ -105,7 +134,7 @@ Yapılmadı (sonraki dilim, dürüstçe):
 Tekla (seçili bileşen)
    -> Extractor (GetSelectedObjects -> GetChildren -> GetSolid bbox -> GetAttribute)
    -> .mmbridge paketi (manifest/component/parameters/objects/geometry/diagnostics)
-   -> C++ readBridgePackage (oku + doğrula)
+   -> C++ readBridgePackage (oku + doğrula; V2: boltGroup/weld/topology/role)
    -> mapBridgePackage (semantik eşleme + önizleme)
-   -> [sonraki dilim] Document/OCCT materializasyonu
+   -> [OCC-on V2] importBridgeComponent (plaka kati + delikler + Document + undo/redo)
 ```

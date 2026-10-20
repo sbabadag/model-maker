@@ -82,6 +82,47 @@ int main() {
 
     CHECK(!res.previewText.empty());
 
+    // --- V2 paketi: boltGroup / weld / topology / member role ---
+    {
+        const std::string v2dir =
+            std::string(MM_BRIDGE_FIXTURE_DIR) + "/fixture-146-shear-plate-v2.mmbridge";
+        mm::BridgePackage v2;
+        std::vector<std::string> v2errs;
+        CHECK(mm::readBridgePackage(v2dir, v2, v2errs));
+        if (!v2errs.empty())
+            for (const auto& e : v2errs) std::printf("  v2err: %s\n", e.c_str());
+        CHECK(v2.manifest.formatVersion == "2.0");
+        CHECK(v2.component.primaryMember.role == "COLUMN");
+        CHECK(v2.component.secondaryMembers.size() == 1 &&
+              v2.component.secondaryMembers[0].role == "BEAM");
+
+        const mm::BridgeObject* v2bolt = nullptr;
+        const mm::BridgeObject* v2weld = nullptr;
+        const mm::BridgeObject* v2plate = nullptr;
+        for (const auto& o : v2.objects) {
+            if (o.kind == "BoltGroup") v2bolt = &o;
+            if (o.kind == "Weld") v2weld = &o;
+            if (o.kind == "ContourPlate") v2plate = &o;
+        }
+        CHECK(v2bolt && v2bolt->boltGroup.has_value());
+        if (v2bolt && v2bolt->boltGroup) {
+            CHECK(v2bolt->boltGroup->bolts.size() == 6);
+            CHECK(v2bolt->boltGroup->size == "M20");
+            CHECK(v2bolt->boltGroup->tolerance == 2.0);
+            CHECK(v2bolt->boltGroup->axis == "x");
+            CHECK(v2bolt->boltGroup->partToBeBolted == "5213");
+            CHECK(v2bolt->boltGroup->partToBoltTo == "5673");
+        }
+        CHECK(v2weld && v2weld->weld.has_value());
+        if (v2weld && v2weld->weld) {
+            CHECK(v2weld->weld->size == 5.0);
+            CHECK(v2weld->weld->mainSourceGUID == "5165");
+        }
+        CHECK(v2plate && v2plate->topology.has_value());
+        if (v2plate && v2plate->topology)
+            CHECK(v2plate->topology->faceCount == 6 && v2plate->topology->holeLoops == 0);
+    }
+
     // --- kotu paket reddedilir (componentIdentifier eksik) ---
     {
         std::string badDir = dir + "-bad";
