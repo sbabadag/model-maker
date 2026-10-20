@@ -19,6 +19,7 @@
 #include <BRepPrimAPI_MakeBox.hxx>
 #include <BRepCheck_Analyzer.hxx>
 #include <Bnd_Box.hxx>
+#include <BOPAlgo_Options.hxx>
 #include <TopExp_Explorer.hxx>
 
 #include <cmath>
@@ -42,6 +43,11 @@ static void bbox(const TopoDS_Shape& s, double& xMin, double& yMin, double& zMin
 }
 
 int main() {
+    // OCCT'nin PARALEL boolean motoru (BOPTools_Parallel::Perform) Windows'ta
+    // (gdb disinda) nondeterministik segfault uretir — bkz. commit 7ad0c13.
+    // Bu bagimsiz test magaza yaratmadigi icin makeOccSolidStore()'daki guard'i
+    // almaz; kesme (cutSolidByPlane -> BRepAlgoAPI_Cut) seri calissin.
+    BOPAlgo_Options::SetParallelMode(Standard_False);
     // "Kiris": X boyunca 100x50x20 kutu; profil ekseni merkezden.
     TopoDS_Shape base = BRepPrimAPI_MakeBox(100.0, 50.0, 20.0).Shape();
     const Vec3 axisFrom{0, 25, 10};

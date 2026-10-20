@@ -5,6 +5,7 @@
 #include <BRepGProp.hxx>
 #include <BRepBndLib.hxx>
 #include <Bnd_Box.hxx>
+#include <BOPAlgo_Options.hxx>
 #include <GProp_GProps.hxx>
 #include <gp_Pnt.hxx>
 #include <gp_Ax3.hxx>
@@ -19,6 +20,11 @@ using mm::Vec3;
 #include <filesystem>
 
 int main() {
+    // OCCT'nin PARALEL boolean motoru (BOPTools_Parallel::Perform) Windows'ta
+    // (gdb disinda) nondeterministik segfault uretir — bkz. commit 7ad0c13.
+    // Bu bagimsiz test magaza yaratmadigi icin makeOccSolidStore()'daki guard'i
+    // almaz; boolean islemleri seri calissin diye ayni global modu kapat.
+    BOPAlgo_Options::SetParallelMode(Standard_False);
     // 1) Kati kutu + hacim
     const double volume = mm::boxVolume(10.0, 10.0, 10.0);
     if (std::abs(volume - 1000.0) > 1e-6) {

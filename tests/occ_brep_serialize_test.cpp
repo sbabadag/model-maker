@@ -16,6 +16,7 @@
 #include "model_maker/occ_brep_serialize.hpp"
 
 #include <Bnd_Box.hxx>
+#include <BOPAlgo_Options.hxx>
 #include <BRepAlgoAPI_Common.hxx>
 #include <BRepAlgoAPI_Cut.hxx>
 #include <BRepAlgoAPI_Fuse.hxx>
@@ -184,6 +185,14 @@ TopoDS_Shape makeTrimmedSolid() {
 
 int main() {
     std::setvbuf(stdout, nullptr, _IOLBF, 0);
+    // OCCT'nin PARALEL boolean motoru (BOPTools_Parallel::Perform) is parcacigi
+    // yarisinda nondeterministik segfault uretir (Extrema_ExtCC / yuz
+    // siniflandirma); belirti yalniz Windows'ta, gdb DISINDA gorulur (bkz.
+    // commit 7ad0c13). makeOccSolidStore() bu global modu kapatir, ama bu
+    // BAGIMSIZ test magaza yaratmadigi icin o guard'i ALMAZ — dolayisiyla
+    // boolean Fuse/Cut/Common paralel motorda kosar ve ayni yarisa aciktir.
+    // Ayni global modu test oncesinde burada kapat (idempotent).
+    BOPAlgo_Options::SetParallelMode(Standard_False);
     std::printf("== B-Rep SERIALIZER round-trip (gercek OCCT %s, BinTools format v%d) ==\n",
                 occVersionString(), bRepFormatVersion());
 
