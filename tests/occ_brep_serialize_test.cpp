@@ -16,7 +16,6 @@
 #include "model_maker/occ_brep_serialize.hpp"
 
 #include <Bnd_Box.hxx>
-#include <BOPAlgo_Options.hxx>
 #include <BRepAlgoAPI_Common.hxx>
 #include <BRepAlgoAPI_Cut.hxx>
 #include <BRepAlgoAPI_Fuse.hxx>
@@ -134,18 +133,22 @@ bool booleanUsableAfterRoundTrip(const TopoDS_Shape& original) {
     TopoDS_Shape restored;
     if (!deserializeBRep(blob, restored)) return false;
     if (restored.IsNull()) return false;
-    // Probe, restore edilen seklin bbox'unu TAMAMEN saran bir kutu olmali.
-    // Sabit orijin kutusu (0,0,0..0.5) "boolean CUT" gibi merkezi bosluklu
-    // sekillerde boslugun icinde yuzer ve iki AYRIK katiyi kaynastirir; OCCT
-    // 7.9.3 (Windows) ayrik katilarin fuse'unda segfault uretir (Linux 7.9.2
-    // bunu sessizce compound olarak dondurur). Saran kutu sekli kesinlikle
-    // icerir -> her zaman gercek bir kesisme vardir, versiyondan bagimsiz.
+    // Probe, seklin bbox'unun ALT YARISINI kaplayan kutu (KISMI kesisme).
+    // KOK NEDEN (OCCT 7.9.3 Windows/MSYS2): sinir kesismesi OLMAYAN booleanlarda
+    // — sekil probe'un tamamen icinde (saran kutu) ya da tamamen disinda
+    // (orijinal box(0.5)) — yuz-siniflandirmasi (BRepClass3d_SClassifier)
+    // ray-cast ile calisir ve OCCT 7.9.3 bu yolda Extrema_ExtCC'de
+    // deterministik segfault uretir. Bu paralel motor yarisi DEGILDIR: OCCT
+    // 7.9'da paralel mod VARSAYILAN KAPALI'dir (BOPAlgo_Options ctor:
+    // myRunParallel(myGlobalRunParallel=false)). KISMI kesisme normal boolean
+    // yoludur (bulon deligi kesimi gibi) ve Windows 7.9.3'te kanitlidir
+    // (bridge 146 import testi 6 delik, 51/51).
     Box3 bb{};
     if (!boundsOf(restored, bb)) return false;
-    const double margin = 1.0;
+    const double zmid = bb.zmin + 0.5 * (bb.zmax - bb.zmin);
     const TopoDS_Shape probe = BRepPrimAPI_MakeBox(
-        gp_Pnt(bb.xmin - margin, bb.ymin - margin, bb.zmin - margin),
-        gp_Pnt(bb.xmax + margin, bb.ymax + margin, bb.zmax + margin)).Shape();
+        gp_Pnt(bb.xmin, bb.ymin, bb.zmin),
+        gp_Pnt(bb.xmax, bb.ymax, zmid)).Shape();
     TopoDS_Shape fused;
     try {
         BRepAlgoAPI_Fuse fuse(restored, probe);
@@ -197,14 +200,6 @@ TopoDS_Shape makeTrimmedSolid() {
 
 int main() {
     std::setvbuf(stdout, nullptr, _IOLBF, 0);
-    // OCCT'nin PARALEL boolean motoru (BOPTools_Parallel::Perform) is parcacigi
-    // yarisinda nondeterministik segfault uretir (Extrema_ExtCC / yuz
-    // siniflandirma); belirti yalniz Windows'ta, gdb DISINDA gorulur (bkz.
-    // commit 7ad0c13). makeOccSolidStore() bu global modu kapatir, ama bu
-    // BAGIMSIZ test magaza yaratmadigi icin o guard'i ALMAZ — dolayisiyla
-    // boolean Fuse/Cut/Common paralel motorda kosar ve ayni yarisa aciktir.
-    // Ayni global modu test oncesinde burada kapat (idempotent).
-    BOPAlgo_Options::SetParallelMode(Standard_False);
     std::printf("== B-Rep SERIALIZER round-trip (gercek OCCT %s, BinTools format v%d) ==\n",
                 occVersionString(), bRepFormatVersion());
 
