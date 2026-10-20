@@ -290,6 +290,83 @@ int main() {
               "3 owned levha (tab + stiffener + backing bar)");
     }
 
+    // ================= PART D: recompute bulon gorsel geometrisi =============
+    // SAHADA GORULDU: bulon parametresi degisince ESKI bulon ekranda kaliyor,
+    // delikler ise yeni sayiya gore aciliyordu (gorsel wireframe yenilenmiyordu).
+    // Recompute, bulon grubunun hem deliklerini hem CIZILEN wireframe'ini
+    // yenilemek zorundadir.
+    {
+        Setup s = makeSetup();
+        ComponentInput in = makeInput(s);
+        in.params = {{L"boltCount", CompParamValue{2}},
+                     {L"shearTabPosition", CompParamValue{std::wstring(L"near_side")}}};
+        const GenerationPlan gp = ComponentRegistry::instance().generate(
+            L"tekla_shear_plate_146", in);
+        check(gp.ok, "PART D: generate ok");
+
+        const ComponentPlan plan = componentPlanFromGenerationPlan(gp);
+        ComponentMaterializer mat(s.doc);
+        ComponentMaterializer::Prepared prep = mat.prepare(plan, s.colId, {s.beamId});
+        check(prep.ok, "PART D: prepare ok");
+
+        ComponentInstanceRecord rec;
+        rec.typeId = L"tekla_shear_plate_146";
+        rec.schemaVersion = 1;
+        rec.mainPart = s.colId;
+        rec.secondaryParts = {s.beamId};
+        ComponentMaterializer::CommitResult res = mat.commit(prep, rec);
+        check(res.ok, "PART D: commit ok");
+
+        const EntityId boltId = res.roleToEntity["beam_bolts"];
+        check(boltId != kInvalidEntityId, "PART D: bolt EntityId");
+        const auto bi = s.doc.indexOfBoltGroup(boltId);
+        check(bi.has_value(), "PART D: bolt grubu var");
+        const EntityId dispId = s.doc.boltGroups()[*bi].displayEntityId;
+        const auto di0 = s.doc.indexOfEntity(dispId);
+        const std::size_t vertsBefore = di0 ? s.doc.models()[*di0].vertices().size() : 0;
+        check(vertsBefore > 0, "PART D: ilk display geometrisi var");
+
+        // 2 -> 6 bulon: delikler VE gorsel geometri yenilenmeli.
+        ComponentInput in2 = makeInput(s);
+        in2.params = {{L"boltCount", CompParamValue{6}},
+                      {L"shearTabPosition", CompParamValue{std::wstring(L"near_side")}}};
+        const GenerationPlan gp2 = ComponentRegistry::instance().generate(
+            L"tekla_shear_plate_146", in2);
+        const ComponentPlan plan2 = componentPlanFromGenerationPlan(gp2);
+        ComponentMaterializer::Prepared prep2 = mat.prepare(plan2, s.colId, {s.beamId});
+        check(prep2.ok, "PART D: prepare2 ok");
+        ComponentMaterializer::CommitResult res2 =
+            mat.recompute(prep2, s.doc.componentInstances()[0], s.doc.componentInstances()[0]);
+        check(res2.ok, "PART D: recompute ok");
+
+        std::size_t holes = 0;
+        for (const auto& m : s.doc.cutModifiers())
+            if (m.kind == CutKind::Hole && m.owner == boltId) ++holes;
+        check(holes == 12, "PART D: delikler yeni sayiya gore (6x2)");
+
+        const auto di1 = s.doc.indexOfEntity(dispId);
+        const std::size_t vertsAfter = di1 ? s.doc.models()[*di1].vertices().size() : 0;
+        check(vertsAfter > vertsBefore,
+              "PART D: bulon DISPLAY geometrisi recompute'ta yenilendi (eski bulon kalmaz)");
+
+        // Konum degisimi de yansimali (boltVerticalPos).
+        ComponentInput in3 = makeInput(s);
+        in3.params = {{L"boltCount", CompParamValue{6}},
+                      {L"boltVerticalPos", CompParamValue{30.0}},
+                      {L"shearTabPosition", CompParamValue{std::wstring(L"near_side")}}};
+        const GenerationPlan gp3 = ComponentRegistry::instance().generate(
+            L"tekla_shear_plate_146", in3);
+        const ComponentPlan plan3 = componentPlanFromGenerationPlan(gp3);
+        ComponentMaterializer::Prepared prep3 = mat.prepare(plan3, s.colId, {s.beamId});
+        ComponentMaterializer::CommitResult res3 =
+            mat.recompute(prep3, s.doc.componentInstances()[0], s.doc.componentInstances()[0]);
+        check(res3.ok, "PART D: faz3 recompute ok");
+        std::size_t holes3 = 0;
+        for (const auto& m : s.doc.cutModifiers())
+            if (m.kind == CutKind::Hole && m.owner == boltId) ++holes3;
+        check(holes3 == 12, "PART D: delik BIRIKMESI yok (hala 12)");
+    }
+
     std::printf("\n%d failure(s)\n", failures);
     return failures == 0 ? 0 : 1;
 }

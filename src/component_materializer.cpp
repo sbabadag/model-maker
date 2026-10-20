@@ -765,6 +765,14 @@ ComponentMaterializer::CommitResult ComponentMaterializer::recompute(
                     bolt.id = stableId;
                     doc_.setBoltGroup(*doc_.indexOfBoltGroup(stableId), bolt);
                     const BoltGroup& updated = doc_.boltGroups()[*doc_.indexOfBoltGroup(stableId)];
+                    // GORSEL GEOMETRI GUNCELLE: store_->set yalniz OCC katisini
+                    // degistirir; Document'in cizdigi wireframe AYRIDIR. Burada
+                    // replaceModel cagrilmazsa ekranda ESKI bulonlar kalir, delikler
+                    // ise yeni sayiya gore acilir (sahada goruldu: "onceki bulon
+                    // aynen kaliyor, digerlerinin deligi aciliyor").
+                    if (auto di = doc_.indexOfEntity(updated.displayEntityId)) {
+                        doc_.replaceModel(*di, {std::move(display)});
+                    }
                     if (!assembly.IsNull()) {
                         const VersionId before = store_->activeVersion(updated.displayEntityId);
                         const VersionId after = store_->set(updated.displayEntityId, assembly);
