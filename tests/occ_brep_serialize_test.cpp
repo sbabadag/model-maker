@@ -133,7 +133,19 @@ bool booleanUsableAfterRoundTrip(const TopoDS_Shape& original) {
     if (!serializeBRep(original, blob)) return false;
     TopoDS_Shape restored;
     if (!deserializeBRep(blob, restored)) return false;
-    const TopoDS_Shape probe = BRepPrimAPI_MakeBox(0.5, 0.5, 0.5).Shape();
+    if (restored.IsNull()) return false;
+    // Probe, restore edilen seklin bbox'unu TAMAMEN saran bir kutu olmali.
+    // Sabit orijin kutusu (0,0,0..0.5) "boolean CUT" gibi merkezi bosluklu
+    // sekillerde boslugun icinde yuzer ve iki AYRIK katiyi kaynastirir; OCCT
+    // 7.9.3 (Windows) ayrik katilarin fuse'unda segfault uretir (Linux 7.9.2
+    // bunu sessizce compound olarak dondurur). Saran kutu sekli kesinlikle
+    // icerir -> her zaman gercek bir kesisme vardir, versiyondan bagimsiz.
+    Box3 bb{};
+    if (!boundsOf(restored, bb)) return false;
+    const double margin = 1.0;
+    const TopoDS_Shape probe = BRepPrimAPI_MakeBox(
+        gp_Pnt(bb.xmin - margin, bb.ymin - margin, bb.zmin - margin),
+        gp_Pnt(bb.xmax + margin, bb.ymax + margin, bb.zmax + margin)).Shape();
     TopoDS_Shape fused;
     try {
         BRepAlgoAPI_Fuse fuse(restored, probe);
