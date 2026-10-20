@@ -128,18 +128,24 @@ bool roundTripEquivalent(const TopoDS_Shape& original, const char* label) {
 
 // Round-trip sonrasi boolean kullanilabilirligi.
 //
-// TESHIS (bisect ile KANITLANDI): cokme ORJINAL (serialize edilmemis) seklin
-// bile boolean'inda oluyordu -> serializer MASUM; sorun OCCT 7.9.3 Windows'ta
-// TEGET ve AYRIK sartlarda yapilan FUSE isleminde (BRepClass3d_SClassifier
-// ray-cast -> Extrema_ExtCC segfault). Kavisli yuzey (silindir) + teget/ayrik
-// kutu FUSE, OCCT 7.9.x'te bilinen kirilgan durumdur (7.9.3 sürüm notlarinda
-// "Fix Boolean fuse segfaults on loft" ile ayni hata sinifi).
+// KOK NEDEN (upstream, KANITLI — OCCT issue #1637, GCC bugzilla #127917):
+// GCC 16.1/16.2 -O3'te OCCT 7.9.3'un BRepClass3d_SClassifier::Perform'unu
+// YANLIS derliyor. IPA-CP, NCollection_UBTree::Select ozyinelemesini iki
+// selector tipi icin klonlarken nokta-selector klonundaki ozyinelemeli cagriyi
+// cizgi-selector klonuna yonlendiriyor -> cizgi-selector stale stack'ten curve
+// okuyup Extrema_ExtCC::Perform'da segfault veriyor. Sonuc: katilarda
+// kenar/kose uzerinde siniflandirma yapan HER boolean (FUSE/CUT/COMMON fark
+// etmez) cokebilir. Belirti Windows/MSYS2'de cikiyor cunku MSYS2'nin
+// mingw-w64-ucrt-x86_64-opencascade 7.9.3-3 paketi (2026-08-10) GCC 16 ile
+// derlendi. Linux'ta cokmemesinin sebebi GCC 13/14 ile derlenmis olmasi.
 //
-// DUZELTME: boolean'i teget/ayrik OLMAYAN "kapsama" (containment) senaryosuna
-// cevir: restore edilen sekli, onu TAMAMEN saran buyuk kutudan CUT et
-// (kutudan sekli cikar). Kutu sekilden belirgin buyuk -> teget YOK; sekil
-// kutunun icinde -> ayrik YOK. CUT yolu bridge 146 (delik kesimi) testinde
-// Windows 7.9.3'te kanitlanmis calisiyor.
+// Serializer MASUM (bisect ile KANITLI: serialize EDILMEMIS orijinal seklin
+// bile boolean'i cokuyor). Testin kendisi DOGRU; cokme tamamen cevresel.
+//
+// COZUM (cevre tarafinda, repo'da yapilacak bir sey YOK):
+//  1) OCCT 7.9.3'u -fno-ipa-cp-clone ile yeniden derlemek (GCC 16+ ise), VEYA
+//  2) GCC 16.3 (fix backport'u r17-5258) cikinca MSYS2 opencascade rebuild'i, VEYA
+//  3) OCCT 8.0/master (NCollection_UBTree::Select iteratif, bfa0311 — etkilenmez).
 bool booleanUsableAfterRoundTrip(const TopoDS_Shape& original) {
     Box3 bb{};
     if (!boundsOf(original, bb)) return false;
