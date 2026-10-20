@@ -57,7 +57,7 @@ add_library(model_maker_core
     src/assembly.cpp
     src/bridge_package.cpp
     src/bridge_component_mapper.cpp)
-target_include_directories(model_maker_core PUBLIC include third_party/nlohmann)
+target_include_directories(model_maker_core PUBLIC include third_party)
 target_compile_options(model_maker_core PRIVATE -Wall -Wextra -Wpedantic)
 
 set(MODELMAKER_QT_SOURCES
