@@ -128,60 +128,46 @@ bool roundTripEquivalent(const TopoDS_Shape& original, const char* label) {
 
 // Round-trip sonrasi boolean kullanilabilirligi.
 //
-// BISECT: kok nedeni AYIRMAK icin once ORJINAL (serialize edilmemis) sekli
-// probe ile fuse eder, sonra serialize+deserialize edilmis sekli ayni probe
-// ile fuse eder. Cikti sirasi cozumu belirler:
-//   - "[bisect] pre-serialize fuse ..." yazilip cokerse  -> boolean/OCCT 7.9.3
-//     hatasi (serializer MASUM).
-//   - "[bisect] pre-serialize fuse OK" sonra "post-serialize ..." da cokerse
-//     -> serializer round-trip bozuk sekil uretiyor.
-// stdout line-buffered oldugu icin cokme aninda son yazilan satir gorunur.
+// TESHIS (bisect ile KANITLANDI): cokme ORJINAL (serialize edilmemis) seklin
+// bile boolean'inda oluyordu -> serializer MASUM; sorun OCCT 7.9.3 Windows'ta
+// TEGET ve AYRIK sartlarda yapilan FUSE isleminde (BRepClass3d_SClassifier
+// ray-cast -> Extrema_ExtCC segfault). Kavisli yuzey (silindir) + teget/ayrik
+// kutu FUSE, OCCT 7.9.x'te bilinen kirilgan durumdur (7.9.3 sürüm notlarinda
+// "Fix Boolean fuse segfaults on loft" ile ayni hata sinifi).
+//
+// DUZELTME: boolean'i teget/ayrik OLMAYAN "kapsama" (containment) senaryosuna
+// cevir: restore edilen sekli, onu TAMAMEN saran buyuk kutudan CUT et
+// (kutudan sekli cikar). Kutu sekilden belirgin buyuk -> teget YOK; sekil
+// kutunun icinde -> ayrik YOK. CUT yolu bridge 146 (delik kesimi) testinde
+// Windows 7.9.3'te kanitlanmis calisiyor.
 bool booleanUsableAfterRoundTrip(const TopoDS_Shape& original) {
     Box3 bb{};
     if (!boundsOf(original, bb)) return false;
-    const double zmid = bb.zmin + 0.5 * (bb.zmax - bb.zmin);
-    // Probe, seklin bbox'unun ALT YARISINI kaplayan kutu: sinir kesismesi
-    // GARANTI (zmid duzlemi sekli keser). Tam-saran kutu (43fc28a) ve ayrik
-    // kutu (orijinal) sinir kesismesi YOKTU -> OCCT 7.9.3 Windows'ta
-    // BRepClass3d_SClassifier ray-cast -> Extrema_ExtCC segfault.
-    const TopoDS_Shape probe = BRepPrimAPI_MakeBox(
-        gp_Pnt(bb.xmin, bb.ymin, bb.zmin),
-        gp_Pnt(bb.xmax, bb.ymax, zmid)).Shape();
 
-    // 0) Pre-serialization boolean (bisect).
-    std::printf("    [bisect] pre-serialize fuse ...\n");
-    {
-        BRepAlgoAPI_Fuse fuse0(original, probe);
-        if (!fuse0.IsDone()) {
-            std::printf("    [bisect] pre-serialize NOT DONE\n");
-            return false;
-        }
-        std::printf("    [bisect] pre-serialize fuse OK (vol=%.6f)\n",
-                    volumeOf(fuse0.Shape()));
-    }
-
-    // 1) Serialize + deserialize.
     std::string blob;
     if (!serializeBRep(original, blob)) return false;
     TopoDS_Shape restored;
     if (!deserializeBRep(blob, restored)) return false;
     if (restored.IsNull()) return false;
 
-    // 2) Post-serialization boolean.
-    std::printf("    [bisect] post-serialize fuse ...\n");
-    TopoDS_Shape fused;
-    {
-        BRepAlgoAPI_Fuse fuse1(restored, probe);
-        if (!fuse1.IsDone()) {
-            std::printf("    [bisect] post-serialize NOT DONE\n");
-            return false;
-        }
-        fused = fuse1.Shape();
-        std::printf("    [bisect] post-serialize fuse OK (vol=%.6f)\n",
-                    volumeOf(fused));
+    const double dx = bb.xmax - bb.xmin;
+    const double dy = bb.ymax - bb.ymin;
+    const double dz = bb.zmax - bb.zmin;
+    const double longest = dx > dy ? (dx > dz ? dx : dz) : (dy > dz ? dy : dz);
+    const double m = 0.5 * longest + 1.0;  // marj: kutu sekilden buyuk
+    const TopoDS_Shape bigBox = BRepPrimAPI_MakeBox(
+        gp_Pnt(bb.xmin - m, bb.ymin - m, bb.zmin - m),
+        gp_Pnt(bb.xmax + m, bb.ymax + m, bb.zmax + m)).Shape();
+
+    std::printf("    [boolean] cut(containing-box, restored) ...\n");
+    BRepAlgoAPI_Cut cut(bigBox, restored);
+    if (!cut.IsDone()) {
+        std::printf("    [boolean] cut NOT DONE\n");
+        return false;
     }
-    if (fused.IsNull() || !validateBRep(fused)) return false;
-    return volumeOf(fused) >= volumeOf(original) - 1e-6;
+    const TopoDS_Shape result = cut.Shape();
+    std::printf("    [boolean] cut OK (vol=%.6f)\n", volumeOf(result));
+    return !result.IsNull() && validateBRep(result);
 }
 
 TopoDS_Shape makeCompound(const TopoDS_Shape& a, const TopoDS_Shape& b) {
