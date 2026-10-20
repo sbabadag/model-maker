@@ -1,0 +1,38 @@
+[
+  {
+    "name": "plateThickness",
+    "type": "Length",
+    "value": 10.0,
+    "units": "mm",
+    "source": "FIXTURE",
+    "readable": "ok",
+    "confidence": "observed"
+  },
+  {
+    "name": "plateHeight",
+    "type": "Length",
+    "value": 240.0,
+    "units": "mm",
+    "source": "FIXTURE",
+    "readable": "ok",
+    "confidence": "observed"
+  },
+  {
+    "name": "boltCount",
+    "type": "Integer",
+    "value": 4,
+    "units": "",
+    "source": "FIXTURE",
+    "readable": "ok",
+    "confidence": "observed"
+  },
+  {
+    "name": "grade",
+    "type": "Enum",
+    "value": "8.8",
+    "units": "",
+    "source": "FIXTURE",
+    "readable": "ok",
+    "confidence": "observed"
+  }
+]

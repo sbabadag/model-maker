@@ -1,0 +1,154 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://model-maker.internal/schemas/model-maker-bridge.schema.json",
+  "title": "Model Maker Bridge Package",
+  "description": "Tekla Structures -> Model Maker koprusunun surumlu paket bicimi. Tekla Open API extractor'unun urettigi, Model Maker C++ importer'inin okudugu ara temsil. Tekla GUID'leri YALNIZCA kaynak referansidir; Model Maker EntityId'si importer tarafindan atanir.",
+  "type": "object",
+  "required": ["manifest", "component", "parameters", "objects", "diagnostics"],
+  "additionalProperties": false,
+  "properties": {
+    "manifest": {
+      "type": "object",
+      "required": [
+        "formatVersion",
+        "sourceApplication",
+        "sourceVersion",
+        "sourceComponentType",
+        "sourceComponentNumber",
+        "exportTimestamp",
+        "coordinateSystem",
+        "lengthUnit",
+        "componentIdentifier"
+      ],
+      "additionalProperties": true,
+      "properties": {
+        "formatVersion": { "type": "string", "pattern": "^1\\.0$" },
+        "sourceApplication": { "const": "Tekla Structures" },
+        "sourceVersion": { "type": "string" },
+        "sourceComponentType": {
+          "enum": ["Connection", "Component", "Detail", "CustomPart", "Seam", "Unknown"]
+        },
+        "sourceComponentNumber": { "type": "integer", "minimum": 0 },
+        "sourceComponentName": { "type": "string" },
+        "sourceModelIdentifier": { "type": "string" },
+        "exportTimestamp": { "type": "string", "format": "date-time" },
+        "coordinateSystem": { "const": "TeklaGlobal" },
+        "lengthUnit": { "const": "mm" },
+        "componentIdentifier": { "type": "string" },
+        "exportedObjectCount": { "type": "integer", "minimum": 0 },
+        "knownLimitations": { "type": "array", "items": { "type": "string" } },
+        "exporterVersion": { "type": "string" }
+      }
+    },
+    "component": {
+      "type": "object",
+      "required": ["sourceType", "name", "number", "guid", "coordinateSystem", "primaryMember", "secondaryMembers"],
+      "additionalProperties": true,
+      "properties": {
+        "sourceType": { "type": "string" },
+        "name": { "type": "string" },
+        "number": { "type": "integer" },
+        "guid": { "type": "string" },
+        "identifierId": { "type": "integer" },
+        "positionType": { "type": "string" },
+        "upVector": { "$ref": "#/definitions/vec3" },
+        "selectionOrder": { "type": "array", "items": { "type": "string" } },
+        "coordinateSystem": {
+          "type": "object",
+          "required": ["origin", "xAxis", "yAxis", "zAxis"],
+          "additionalProperties": true,
+          "properties": {
+            "origin": { "$ref": "#/definitions/vec3" },
+            "xAxis": { "$ref": "#/definitions/vec3" },
+            "yAxis": { "$ref": "#/definitions/vec3" },
+            "zAxis": { "$ref": "#/definitions/vec3" }
+          }
+        },
+        "primaryMember": { "$ref": "#/definitions/memberRef" },
+        "secondaryMembers": { "type": "array", "items": { "$ref": "#/definitions/memberRef" } },
+        "inputReferences": { "type": "array", "items": { "$ref": "#/definitions/memberRef" } }
+      }
+    },
+    "parameters": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "type", "value", "source", "readable", "confidence"],
+        "additionalProperties": true,
+        "properties": {
+          "name": { "type": "string" },
+          "type": {
+            "enum": ["Length", "Angle", "Integer", "Boolean", "Enum", "String", "Profile", "Material", "EntityRef", "Double", "Unknown"]
+          },
+          "value": {},
+          "units": { "type": "string" },
+          "source": { "type": "string" },
+          "readable": { "enum": ["ok", "unsupported", "error"] },
+          "confidence": { "enum": ["documented", "observed", "inferred", "unresolved"] }
+        }
+      }
+    },
+    "objects": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["sourceGUID", "kind", "role"],
+        "additionalProperties": true,
+        "properties": {
+          "sourceGUID": { "type": "string" },
+          "identifierId": { "type": "integer" },
+          "kind": {
+            "enum": ["Beam", "ContourPlate", "PolyBeam", "BoltGroup", "Weld", "BooleanPart", "Fitting", "ConstructionPlane", "Unknown"]
+          },
+          "name": { "type": "string" },
+          "role": { "type": "string" },
+          "profile": { "type": "string" },
+          "material": { "type": "string" },
+          "parentSourceGUID": { "type": "string" },
+          "mapped": { "type": "boolean" },
+          "mappedKind": { "enum": ["Plate", "BoltGroup", "Cut", "Weld", "Beam", "ReferenceGeometry", "Unsupported"] },
+          "geometryFile": { "type": "string" },
+          "parametric": { "type": "object", "additionalProperties": true },
+          "unsupportedReason": { "type": "string" }
+        }
+      }
+    },
+    "diagnostics": {
+      "type": "object",
+      "required": ["knownLimitations", "inaccessibleObjects", "unsupportedFeatures", "warnings"],
+      "additionalProperties": true,
+      "properties": {
+        "knownLimitations": { "type": "array", "items": { "type": "string" } },
+        "inaccessibleObjects": { "type": "array", "items": { "type": "string" } },
+        "unsupportedFeatures": { "type": "array", "items": { "type": "string" } },
+        "warnings": { "type": "array", "items": { "type": "string" } }
+      }
+    }
+  },
+  "definitions": {
+    "vec3": {
+      "type": "object",
+      "required": ["x", "y", "z"],
+      "additionalProperties": false,
+      "properties": {
+        "x": { "type": "number" },
+        "y": { "type": "number" },
+        "z": { "type": "number" }
+      }
+    },
+    "memberRef": {
+      "type": "object",
+      "required": ["guid"],
+      "additionalProperties": true,
+      "properties": {
+        "guid": { "type": "string" },
+        "identifierId": { "type": "integer" },
+        "profile": { "type": "string" },
+        "material": { "type": "string" },
+        "startPoint": { "$ref": "#/definitions/vec3" },
+        "endPoint": { "$ref": "#/definitions/vec3" },
+        "class": { "type": "string" }
+      }
+    }
+  }
+}

@@ -1,0 +1,41 @@
+[
+  {
+    "sourceGUID": "FIXTURE-PLATE",
+    "identifierId": 10,
+    "kind": "ContourPlate",
+    "role": "plate",
+    "profile": "PL10*200",
+    "material": "S235JR",
+    "parentSourceGUID": "FIXTURE-146-GUID",
+    "geometryFile": "geometry/0000.json"
+  },
+  {
+    "sourceGUID": "FIXTURE-STIFF",
+    "identifierId": 11,
+    "kind": "Beam",
+    "role": "beam",
+    "profile": "PL10*180",
+    "material": "S235JR",
+    "parentSourceGUID": "FIXTURE-146-GUID",
+    "geometryFile": "geometry/0001.json"
+  },
+  {
+    "sourceGUID": "FIXTURE-BOLTS",
+    "identifierId": 12,
+    "kind": "BoltGroup",
+    "role": "bolts",
+    "parentSourceGUID": "FIXTURE-146-GUID",
+    "parametric": {
+      "boltSize": 20.0,
+      "boltStandard": "8.8",
+      "boltCount": 4
+    }
+  },
+  {
+    "sourceGUID": "FIXTURE-WELD",
+    "identifierId": 13,
+    "kind": "Weld",
+    "role": "weld",
+    "parentSourceGUID": "FIXTURE-146-GUID"
+  }
+]

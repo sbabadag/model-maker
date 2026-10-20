@@ -1,0 +1,18 @@
+{
+  "formatVersion": "1.0",
+  "sourceApplication": "Tekla Structures",
+  "sourceVersion": "2025.0",
+  "sourceComponentType": "Connection",
+  "sourceComponentNumber": 146,
+  "sourceComponentName": "Shear plate simple",
+  "sourceModelIdentifier": "FIXTURE — gercek Tekla modeli DEGIL",
+  "exportTimestamp": "2026-10-20T00:00:00Z",
+  "coordinateSystem": "TeklaGlobal",
+  "lengthUnit": "mm",
+  "componentIdentifier": "FIXTURE-146-GUID",
+  "exportedObjectCount": 4,
+  "knownLimitations": [
+    "FIXTURE: bu paket elle yazilmis test verisidir; gercek Tekla extractor ciktisi DEGILDIR."
+  ],
+  "exporterVersion": "1.0.0"
+}

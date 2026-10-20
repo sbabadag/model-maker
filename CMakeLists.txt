@@ -54,8 +54,10 @@ add_library(model_maker_core
     src/component_glyph.cpp
     src/component_dialog.cpp
     src/component_catalog.cpp
-    src/assembly.cpp)
-target_include_directories(model_maker_core PUBLIC include)
+    src/assembly.cpp
+    src/bridge_package.cpp
+    src/bridge_component_mapper.cpp)
+target_include_directories(model_maker_core PUBLIC include third_party/nlohmann)
 target_compile_options(model_maker_core PRIVATE -Wall -Wextra -Wpedantic)
 
 set(MODELMAKER_QT_SOURCES
@@ -417,6 +419,14 @@ if(BUILD_TESTING)
     add_executable(model_maker_grid_test tests/grid_test.cpp)
     target_link_libraries(model_maker_grid_test PRIVATE model_maker_core)
     add_test(NAME model_maker_grid_test COMMAND model_maker_grid_test)
+
+    # TEKLA -> MODEL MAKER BRIDGE: surumlu paket okuyucu + semantik esleyici
+    # (import preview). OCC'siz; fixture paketini okur ve dogrular.
+    add_executable(model_maker_bridge_package_reader_test tests/bridge_package_reader_test.cpp)
+    target_link_libraries(model_maker_bridge_package_reader_test PRIVATE model_maker_core)
+    target_compile_definitions(model_maker_bridge_package_reader_test PRIVATE
+        MM_BRIDGE_FIXTURE_DIR="${CMAKE_SOURCE_DIR}/tools/model-maker-bridge/fixtures")
+    add_test(NAME model_maker_bridge_package_reader_test COMMAND model_maker_bridge_package_reader_test)
 
     # KARARLI VARLIK KIMLIGI (EntityId): vektor indeksi kalici kimlik DEGIL;
     # kimlik ekleme/silme/degistirme/undo/redo boyunca DOGRU varlikla eslesir,

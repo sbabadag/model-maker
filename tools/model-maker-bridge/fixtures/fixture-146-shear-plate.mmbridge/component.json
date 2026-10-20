@@ -1,0 +1,29 @@
+{
+  "sourceType": "Connection",
+  "name": "Shear plate simple",
+  "number": 146,
+  "guid": "FIXTURE-146-GUID",
+  "identifierId": 1,
+  "coordinateSystem": {
+    "origin": { "x": 0, "y": 0, "z": 0 },
+    "xAxis": { "x": 1, "y": 0, "z": 0 },
+    "yAxis": { "x": 0, "y": 1, "z": 0 },
+    "zAxis": { "x": 0, "y": 0, "z": 1 }
+  },
+  "primaryMember": {
+    "guid": "FIXTURE-COL",
+    "profile": "HEA400",
+    "material": "S235JR",
+    "startPoint": { "x": 0, "y": 0, "z": 0 },
+    "endPoint": { "x": 0, "y": 0, "z": 4000 }
+  },
+  "secondaryMembers": [
+    {
+      "guid": "FIXTURE-BEAM",
+      "profile": "IPE300",
+      "material": "S235JR",
+      "startPoint": { "x": 0, "y": 200, "z": 1500 },
+      "endPoint": { "x": 5000, "y": 200, "z": 1500 }
+    }
+  ]
+}
