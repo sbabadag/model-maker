@@ -127,35 +127,58 @@ bool roundTripEquivalent(const TopoDS_Shape& original, const char* label) {
 }
 
 // Round-trip sonrasi boolean kullanilabilirligi.
+//
+// BISECT: kok nedeni AYIRMAK icin once ORJINAL (serialize edilmemis) sekli
+// probe ile fuse eder, sonra serialize+deserialize edilmis sekli ayni probe
+// ile fuse eder. Cikti sirasi cozumu belirler:
+//   - "[bisect] pre-serialize fuse ..." yazilip cokerse  -> boolean/OCCT 7.9.3
+//     hatasi (serializer MASUM).
+//   - "[bisect] pre-serialize fuse OK" sonra "post-serialize ..." da cokerse
+//     -> serializer round-trip bozuk sekil uretiyor.
+// stdout line-buffered oldugu icin cokme aninda son yazilan satir gorunur.
 bool booleanUsableAfterRoundTrip(const TopoDS_Shape& original) {
+    Box3 bb{};
+    if (!boundsOf(original, bb)) return false;
+    const double zmid = bb.zmin + 0.5 * (bb.zmax - bb.zmin);
+    // Probe, seklin bbox'unun ALT YARISINI kaplayan kutu: sinir kesismesi
+    // GARANTI (zmid duzlemi sekli keser). Tam-saran kutu (43fc28a) ve ayrik
+    // kutu (orijinal) sinir kesismesi YOKTU -> OCCT 7.9.3 Windows'ta
+    // BRepClass3d_SClassifier ray-cast -> Extrema_ExtCC segfault.
+    const TopoDS_Shape probe = BRepPrimAPI_MakeBox(
+        gp_Pnt(bb.xmin, bb.ymin, bb.zmin),
+        gp_Pnt(bb.xmax, bb.ymax, zmid)).Shape();
+
+    // 0) Pre-serialization boolean (bisect).
+    std::printf("    [bisect] pre-serialize fuse ...\n");
+    {
+        BRepAlgoAPI_Fuse fuse0(original, probe);
+        if (!fuse0.IsDone()) {
+            std::printf("    [bisect] pre-serialize NOT DONE\n");
+            return false;
+        }
+        std::printf("    [bisect] pre-serialize fuse OK (vol=%.6f)\n",
+                    volumeOf(fuse0.Shape()));
+    }
+
+    // 1) Serialize + deserialize.
     std::string blob;
     if (!serializeBRep(original, blob)) return false;
     TopoDS_Shape restored;
     if (!deserializeBRep(blob, restored)) return false;
     if (restored.IsNull()) return false;
-    // Probe, seklin bbox'unun ALT YARISINI kaplayan kutu (KISMI kesisme).
-    // KOK NEDEN (OCCT 7.9.3 Windows/MSYS2): sinir kesismesi OLMAYAN booleanlarda
-    // — sekil probe'un tamamen icinde (saran kutu) ya da tamamen disinda
-    // (orijinal box(0.5)) — yuz-siniflandirmasi (BRepClass3d_SClassifier)
-    // ray-cast ile calisir ve OCCT 7.9.3 bu yolda Extrema_ExtCC'de
-    // deterministik segfault uretir. Bu paralel motor yarisi DEGILDIR: OCCT
-    // 7.9'da paralel mod VARSAYILAN KAPALI'dir (BOPAlgo_Options ctor:
-    // myRunParallel(myGlobalRunParallel=false)). KISMI kesisme normal boolean
-    // yoludur (bulon deligi kesimi gibi) ve Windows 7.9.3'te kanitlidir
-    // (bridge 146 import testi 6 delik, 51/51).
-    Box3 bb{};
-    if (!boundsOf(restored, bb)) return false;
-    const double zmid = bb.zmin + 0.5 * (bb.zmax - bb.zmin);
-    const TopoDS_Shape probe = BRepPrimAPI_MakeBox(
-        gp_Pnt(bb.xmin, bb.ymin, bb.zmin),
-        gp_Pnt(bb.xmax, bb.ymax, zmid)).Shape();
+
+    // 2) Post-serialization boolean.
+    std::printf("    [bisect] post-serialize fuse ...\n");
     TopoDS_Shape fused;
-    try {
-        BRepAlgoAPI_Fuse fuse(restored, probe);
-        if (!fuse.IsDone()) return false;
-        fused = fuse.Shape();
-    } catch (const std::exception&) {
-        return false;
+    {
+        BRepAlgoAPI_Fuse fuse1(restored, probe);
+        if (!fuse1.IsDone()) {
+            std::printf("    [bisect] post-serialize NOT DONE\n");
+            return false;
+        }
+        fused = fuse1.Shape();
+        std::printf("    [bisect] post-serialize fuse OK (vol=%.6f)\n",
+                    volumeOf(fused));
     }
     if (fused.IsNull() || !validateBRep(fused)) return false;
     return volumeOf(fused) >= volumeOf(original) - 1e-6;
