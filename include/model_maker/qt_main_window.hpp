@@ -68,6 +68,10 @@ private:
     // parametre semasindan (CompParamSpec) tip-agnostik olarak uretilir.
     // OK -> app_.setSelectedComponentParams(rec.id, params) (recompute yolu).
     bool openComponentParamsDialog(const mm::ComponentInstanceRecord& rec);
+    // KAYNAK (Weld) komutu + diyalogu (Phase W2): tip/olcu/uzunluk/shop-site
+    // secilir; OK -> app_.beginWeldCommand. Escape/Dialog iptali komut baslatmaz.
+    bool openWeldDialog(mm::WeldType& type, double& size, double& length, mm::WeldClass& cls);
+    void startWeldCommand();
     void createDockPanels();
     void resizeEmbeddedCanvas();
     void openTwoPointView(const ViewDefinition& view);

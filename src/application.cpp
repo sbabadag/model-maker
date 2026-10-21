@@ -1877,6 +1877,8 @@ LRESULT Application::handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lPa
             else if (pendingBolt_) cancelPendingBoltCommand();
             else if (pendingEndPlate_) cancelPendingEndPlateCommand();
             else if (pendingFinPlate_) cancelPendingFinPlateCommand();
+            else if (pendingWeld_) cancelPendingWeldCommand();
+            else if (!selectedWelds_.empty()) { clearWeldSelection(); invalidateCanvas(); }
             else if (componentCommandActive()) cancelPendingComponentCommand();
             else if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
             else cancelDrawing();
@@ -2282,7 +2284,12 @@ void Application::onLeftButtonDown(int x, int y) {
         }
         // Ctrl+tiklama: bos modda nesne secimi (profil atama icin).
         updateHover(x, y);
-        if (!toggleModelSelection(x, y)) { selectedModels_.clear(); selectedCutModifiers_.clear(); }
+        if (selectionMode_ == SelectionMode::Assembly) {
+            if (!selectAtAssemblyMode(x, y, /*additive*/ true))
+                { selectedModels_.clear(); selectedCutModifiers_.clear(); }
+        } else if (!toggleWeldSelectionAt(x, y)) {
+            if (!toggleModelSelection(x, y)) { selectedModels_.clear(); selectedCutModifiers_.clear(); }
+        }
         // updateStatus publishes to both the hidden Win32 fallback status and
         // the visible Qt status bar; direct SetWindowTextW only reached the
         // hidden host.
@@ -2521,11 +2528,27 @@ void Application::onLeftButtonDown(int x, int y) {
         if (selectionFirstCorner_) {
             completeWindowSelection(x, y);
             trimExtendLog(L"SECIM-PENCERE sel=" + std::to_wstring(selectedModels_.size()));
-        } else {
+        } else if (pendingWeld_) {
+            // KAYNAK KOMUTU: parca sec; 2 parca olunca kaynagi otomatik olustur.
+            std::optional<std::size_t> hit =
+                hitTestModel2D(screenTo2D(x, y), document_, 10.0 / (60.0 * camera_.zoom()));
+            if (hit) {
+                if (std::find(selectedModels_.begin(), selectedModels_.end(), *hit) == selectedModels_.end())
+                    selectedModels_.push_back(*hit);
+                if (selectedModels_.size() >= 2) {
+                    weldSelectedParts(pendingWeldType_, pendingWeldSize_, pendingWeldLength_, pendingWeldClass_);
+                    cancelPendingWeldCommand();
+                }
+            } else {
+                MessageBeep(MB_ICONWARNING);
+            }
+            selectionFirstCorner_.reset();
+        } else if (selectionMode_ == SelectionMode::Assembly) {
+            if (!selectAtAssemblyMode(x, y, /*additive*/ false))
+                selectionFirstCorner_ = POINT{x, y};
+        } else if (!toggleWeldSelectionAt(x, y)) {
             const bool toggled = toggleModelSelection(x, y);
             if (!toggled) selectionFirstCorner_ = POINT{x, y};
-            trimExtendLog(L"SECIM-TIK toggled=" + std::to_wstring(toggled) +
-                          L" sel=" + std::to_wstring(selectedModels_.size()));
         }
         updateHover(x, y);
     } else if (mode_ == EditMode::View3D) {
@@ -2534,11 +2557,28 @@ void Application::onLeftButtonDown(int x, int y) {
         if (selectionFirstCorner_) {
             completeWindowSelection(x, y);
             trimExtendLog(L"SECIM-PENCERE3D sel=" + std::to_wstring(selectedModels_.size()));
-        } else {
+        } else if (pendingWeld_) {
+            std::optional<std::size_t> hit;
+            RECT client{}; GetClientRect(canvas_, &client);
+            hit = hitTestModel3D({static_cast<double>(x), static_cast<double>(y)}, document_, camera_,
+                                 std::max(1L, client.right), std::max(1L, client.bottom), 10.0);
+            if (hit) {
+                if (std::find(selectedModels_.begin(), selectedModels_.end(), *hit) == selectedModels_.end())
+                    selectedModels_.push_back(*hit);
+                if (selectedModels_.size() >= 2) {
+                    weldSelectedParts(pendingWeldType_, pendingWeldSize_, pendingWeldLength_, pendingWeldClass_);
+                    cancelPendingWeldCommand();
+                }
+            } else {
+                MessageBeep(MB_ICONWARNING);
+            }
+            selectionFirstCorner_.reset();
+        } else if (selectionMode_ == SelectionMode::Assembly) {
+            if (!selectAtAssemblyMode(x, y, /*additive*/ false))
+                selectionFirstCorner_ = POINT{x, y};
+        } else if (!toggleWeldSelectionAt(x, y)) {
             const bool toggled = toggleModelSelection(x, y);
             if (!toggled) selectionFirstCorner_ = POINT{x, y};
-            trimExtendLog(L"SECIM-TIK3D toggled=" + std::to_wstring(toggled) +
-                          L" sel=" + std::to_wstring(selectedModels_.size()));
         }
         updateHover(x, y);
     }
@@ -8485,7 +8525,38 @@ void Application::expandSelectionToAssembly() {
     invalidateCanvas();
 }
 
-bool Application::weldSelectedParts(WeldType type, double size, WeldClass cls) {
+bool Application::selectAtAssemblyMode(int x, int y, bool additive) {
+    std::optional<std::size_t> hit;
+    if (mode_ == EditMode::Draw2D) {
+        hit = hitTestModel2D(screenTo2D(x, y), document_, 10.0 / (60.0 * camera_.zoom()));
+    } else {
+        RECT client{}; GetClientRect(canvas_, &client);
+        hit = hitTestModel3D({static_cast<double>(x), static_cast<double>(y)}, document_, camera_,
+                             std::max(1L, client.right), std::max(1L, client.bottom), 10.0);
+    }
+    if (!hit) return false;
+    selectedCutModifiers_.clear();
+    const EntityId partId = document_.modelId(*hit);
+    const auto members = document_.assemblyMembers(partId);
+    std::vector<std::size_t> toSelect;
+    for (const EntityId m : members) {
+        const auto mi = document_.indexOfEntity(m);
+        if (mi) toSelect.push_back(*mi);  // weld/bulon kimligi model degil -> atla
+    }
+    if (toSelect.empty()) toSelect.push_back(*hit);  // assembly disi parca: tek secim
+    if (additive) {
+        for (const std::size_t s : toSelect)
+            if (std::find(selectedModels_.begin(), selectedModels_.end(), s) == selectedModels_.end())
+                selectedModels_.push_back(s);
+    } else {
+        selectedModels_ = std::move(toSelect);
+    }
+    selectionFirstCorner_.reset();
+    invalidateCanvas();
+    return true;
+}
+
+bool Application::weldSelectedParts(WeldType type, double size, double length, WeldClass cls) {
     // GUVENLI GIRIS DOGRULAMASI: tam iki GERCek (model) parca, birbirinden farkli.
     if (selectedModels_.size() != 2) return false;
     const std::size_t i0 = selectedModels_[0];
@@ -8495,16 +8566,124 @@ bool Application::weldSelectedParts(WeldType type, double size, WeldClass cls) {
     const EntityId b = document_.modelId(i1);
     if (a == kInvalidEntityId || b == kInvalidEntityId || a == b) return false;
     if (size <= 0.0) return false;  // gecersiz kaynak olcusu
+    // Origin / direction / length: iki parcanin bbox merkezinden turetilir
+    // (kaynak KONUM simgesi — gercek OCC katisi uretilmez; metadata korunur).
+    Vec3 origin{0.0, 0.0, 0.0};
+    Vec3 direction{1.0, 0.0, 0.0};
+    double autoLength = length;
+    const auto& bounds = document_.modelBounds();
+    if (i0 < bounds.size() && i1 < bounds.size()) {
+        const Vec3 c0{(bounds[i0].minimum.x + bounds[i0].maximum.x) / 2.0,
+                      (bounds[i0].minimum.y + bounds[i0].maximum.y) / 2.0,
+                      (bounds[i0].minimum.z + bounds[i0].maximum.z) / 2.0};
+        const Vec3 c1{(bounds[i1].minimum.x + bounds[i1].maximum.x) / 2.0,
+                      (bounds[i1].minimum.y + bounds[i1].maximum.y) / 2.0,
+                      (bounds[i1].minimum.z + bounds[i1].maximum.z) / 2.0};
+        origin = Vec3{(c0.x + c1.x) / 2.0, (c0.y + c1.y) / 2.0, (c0.z + c1.z) / 2.0};
+        const double dx = c1.x - c0.x, dy = c1.y - c0.y, dz = c1.z - c0.z;
+        const double len = std::sqrt(dx * dx + dy * dy + dz * dz);
+        if (len > 1e-9) direction = Vec3{dx / len, dy / len, dz / len};
+        if (length <= 0.0) autoLength = len;  // otomatik: bbox merkezleri arasi
+    }
     Weld w;
     w.mainPart = a;
     w.secondaryPart = b;
     w.type = type;
     w.size = size;
+    w.length = autoLength;
     w.weldClass = cls;
+    w.origin = origin;
+    w.direction = direction;
+    // Kimlik: "W001", "W002", ... (mevcut kaynak sayisindan turetilir).
+    {
+        std::uint64_t seq = document_.welds().size() + 1;
+        std::wstring digits = std::to_wstring(seq);
+        while (digits.size() < 3) digits = L"0" + digits;
+        w.identification = "W";
+        for (const wchar_t ch : digits) w.identification.push_back(static_cast<char>(ch));
+    }
     document_.pushSnapshot();
     document_.addWeld(std::move(w));
     invalidateCanvas();
     return true;
+}
+
+// --- KAYNAK KOMUTU (verb-noun) + KAYNAK SECIMI (Phase W2) --------------------
+
+bool Application::editWeld(std::size_t index, WeldType type, double size, double length,
+                           WeldClass cls) {
+    if (index >= document_.welds().size()) return false;
+    if (size <= 0.0) return false;
+    Weld w = document_.welds()[index];
+    w.type = type;
+    w.size = size;
+    w.length = length;
+    w.weldClass = cls;
+    document_.pushSnapshot();
+    return document_.setWeld(index, std::move(w));
+}
+
+void Application::beginWeldCommand(WeldType type, double size, double length, WeldClass cls) {
+    cancelPendingWeldCommand();
+    pendingWeld_ = true;
+    pendingWeldType_ = type;
+    pendingWeldSize_ = size;
+    pendingWeldLength_ = length;
+    pendingWeldClass_ = cls;
+    selectedModels_.clear();
+    selectedCutModifiers_.clear();
+    clearWeldSelection();
+    invalidateCanvas();
+}
+
+void Application::cancelPendingWeldCommand() {
+    pendingWeld_ = false;
+}
+
+std::optional<std::size_t> Application::selectedWeldIndex() const {
+    return selectedWelds_.empty() ? std::nullopt
+                                  : std::optional<std::size_t>{selectedWelds_.front()};
+}
+
+void Application::selectWeld(std::size_t index) {
+    selectedWelds_.clear();
+    if (index < document_.welds().size()) selectedWelds_.push_back(index);
+    selectedModels_.clear();
+    selectedCutModifiers_.clear();
+    invalidateCanvas();
+}
+
+void Application::clearWeldSelection() {
+    selectedWelds_.clear();
+}
+
+bool Application::toggleWeldSelectionAt(int x, int y) {
+    // Kaynak glifi hit-test: her weld.origin ekrana izdusurulur, 12px yaricap.
+    const auto& welds = document_.welds();
+    if (welds.empty()) return false;
+    for (std::size_t wi = 0; wi < welds.size(); ++wi) {
+        const auto& w = welds[wi];
+        if (w.origin.x == 0.0 && w.origin.y == 0.0 && w.origin.z == 0.0 &&
+            w.direction.x == 1.0 && w.direction.y == 0.0 && w.direction.z == 0.0)
+            continue;
+        RECT client{}; GetClientRect(canvas_, &client);
+        const Vec2 px = mode_ == EditMode::Draw2D
+            ? camera_.project2D(w.origin, std::max(1L, client.right),
+                                std::max(1L, client.bottom))
+            : camera_.project(w.origin, std::max(1L, client.right),
+                              std::max(1L, client.bottom));
+        const double dx = px.x - static_cast<double>(x);
+        const double dy = px.y - static_cast<double>(y);
+        if (dx * dx + dy * dy <= 12.0 * 12.0) {
+            const auto existing = std::find(selectedWelds_.begin(), selectedWelds_.end(), wi);
+            if (existing == selectedWelds_.end()) selectedWelds_.push_back(wi);
+            else selectedWelds_.erase(existing);
+            if (!selectedWelds_.empty()) { selectedModels_.clear(); selectedCutModifiers_.clear(); }
+            invalidateCanvas();
+            return true;
+        }
+    }
+    return false;
 }
 
 std::string Application::selectedEntityProfile() const {
@@ -8962,6 +9141,18 @@ std::string Application::modelDisplayName(std::size_t index) const {
 void Application::selectModel(std::size_t index) {
     if (index >= document_.models().size()) return;
     selectedModels_.assign(1, index);
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
+}
+
+void Application::selectModels(const std::vector<std::size_t>& indices) {
+    selectedModels_.clear();
+    for (const std::size_t idx : indices)
+        if (idx < document_.models().size())
+            selectedModels_.push_back(idx);
+    selectedCutModifiers_.clear();
+    selectedWelds_.clear();
     updateControls();
     updateStatus();
     invalidateCanvas();
@@ -10380,6 +10571,8 @@ DraftView Application::draftView() const {
         view.componentGlyphs.push_back(glyph.anchor);
         view.componentGlyphEntities.push_back(glyph.entityId);
     }
+    // KAYNAK SIMGELERI: secili kaynak indeksleri (renderer glifi vurgular).
+    view.selectedWelds = selectedWelds_;
     view.trimExtendPreviewSuppressed = trimExtendPreviewSuppressed_;
     view.zoomWindowActive = zoomWindowActive_; view.zoomWindowFirstCorner = zoomWindowFirstCorner_;
     view.interactiveNavigation = rotating_ || panning2D_ || viewCubeManipulating_ ||

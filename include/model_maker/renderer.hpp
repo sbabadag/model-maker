@@ -318,6 +318,11 @@ struct DraftView {
     // componentGlyphs ile BIREBIR: her simgenin karsi levha EntityId'si
     // (renderer secim vurgusu icin model indeksine cozer).
     std::vector<EntityId> componentGlyphEntities;
+    // KAYNAK SIMGELERI: document.welds() sirasiyla secili kaynaklarin INDEKSLERI.
+    // Renderer her weld.origin'de kucuk, secilebilir bir fillet/butt simgesi
+    // cizer; bu listedeki indeksler vurgulanir. (Gercek OCC weld katisi yok —
+    // yalniz konum simgesi; entity + metadata Document'ta kalicidir.)
+    std::vector<std::size_t> selectedWelds;
 };
 
 class Renderer {

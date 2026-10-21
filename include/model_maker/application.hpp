@@ -177,6 +177,9 @@ public:
     std::string modelCategory(std::size_t index) const;
     std::string modelDisplayName(std::size_t index) const;
     void selectModel(std::size_t index);
+    // Coklu secim (Assembly agaci dugumunden tum uyeleri secmek icin): verilen
+    // model indekslerini secim yapar, cut/weld secimini temizler.
+    void selectModels(const std::vector<std::size_t>& indices);
     void focusModel(std::size_t index);
     // KOLON: tıklanan noktaya dik (Z boyunca) profil ekstrude kolon koyar.
     // Profil + malzeme + Top/Bottom yukseklik props panelinden gelir.
@@ -524,15 +527,38 @@ public:
     // Document::assemblyMembers kullanir — EntityId iliskilerinden turetilir,
     // gorunumdeki yakinliktan DEGIL. Gizli/kilitli/silinmis nesneler elenir.
     void expandSelectionToAssembly();
-    // --- KAYNAK KOMUTU (Phase W1) --------------------------------------------
+    // --- KAYNAK KOMUTU (Phase W1/W2) -----------------------------------------
     // Secili IKI parca arasinda kaynak olusturur. Secim iki gercek parca degilse
     // (0/1/3+ parca, ayni parca iki kez, gecersiz) islemi guvenli iptal eder ve
     // belgeyi DEGISTIRMEZ. Basarida Shop weld tek assembly kurar; Site weld
-    // kurmaz. Donus: true = weld olustu.
-    bool weldSelectedParts(WeldType type, double size, WeldClass cls);
+    // kurmaz. length<=0 ise otomatik (iki bbox merkezi arasi); origin/direction
+    // iki parcanin bbox merkezinden turetilir; identification "W001".. otomatik.
+    // Donus: true = weld olustu.
+    bool weldSelectedParts(WeldType type, double size, double length, WeldClass cls);
+    // Mevcut bir kaynagi duzenler (undo'lu; kimlik/assembly korunur).
+    bool editWeld(std::size_t index, WeldType type, double size, double length, WeldClass cls);
     // Kaynaklarin salt-okunur erisimi (model tree / properties icin).
     const std::vector<Weld>& welds() const noexcept { return document_.welds(); }
     const std::vector<AssemblyRecord>& assemblies() const noexcept { return document_.assemblies(); }
+
+    // --- KAYNAK KOMUTU (verb-noun, Phase W2 GUI) -----------------------------
+    // Qt once KAYNAK DIYALOGUNU acar (tip/olcu/uzunluk/shop-site); OK ile bu
+    // metod cagrilir. Ardindan kullanici IKI parca secer (ilk tik 1. parca,
+    // sonraki tik 2. parca ekler); 2 parca secilince kaynak otomatik olusur.
+    // Esc iptal eder. Ayni parca iki kez secilirse yok sayilir.
+    void beginWeldCommand(WeldType type, double size, double length, WeldClass cls);
+    void cancelPendingWeldCommand();
+    bool weldCommandActive() const noexcept { return pendingWeld_; }
+    // KAYNAK SECIMI (glif): document.welds() indeksi olarak. Model seciminden
+    // AYRI bir kumedir; Properties paneli + Model Agaci weld dugumunden beslenir.
+    void setWeldEditRequest(std::function<void(std::size_t)> cb) {
+        weldEditRequest_ = std::move(cb);
+    }
+    std::optional<std::size_t> selectedWeldIndex() const;
+    void selectWeld(std::size_t index);       // tekil (agactan)
+    bool toggleWeldSelectionAt(int x, int y); // viewport glif hit-test
+    void clearWeldSelection();
+    const std::vector<std::size_t>& selectedWeldIndices() const noexcept { return selectedWelds_; }
     VisualStyle visualStyle() const noexcept { return visualStyle_; }
     void cancelWorkPlaneCommand();
     void commitWorkPlanePoint(const Vec3& point);
@@ -614,6 +640,9 @@ private:
                                                    DWORD_PTR referenceData);
     LRESULT handleMessage(UINT message, WPARAM wParam, LPARAM lParam);
     LRESULT handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lParam);
+    // ASSEMBLY MODUNDA SECIM: tiklanan parcanin assembly'sinin TUM uyelerini
+    // secer (replace) veya ekler (additive, Ctrl+tik). Hit yoksa false.
+    bool selectAtAssemblyMode(int x, int y, bool additive);
     // Fitting/PlaneCut ortak yolu: secili (profil hedefi + konstrüksiyon
     // duzlemi) -> CutModifier -> addCutModifier -> (OCC) recomputeCutTarget.
     void applyCutFromSelection(CutKind kind);
@@ -1117,6 +1146,16 @@ private:
     std::vector<std::size_t> selectedModels_;
     SelectionMode selectionMode_{SelectionMode::Part};
     std::optional<POINT> selectionFirstCorner_;
+    // KAYNAK KOMUTU (verb-noun, Phase W2): pendingWeld_ aktifken parca secilir;
+    // 2 parca olunca kaynak otomatik olusur. Kaynak glif secimi (selectedWelds_)
+    // model seciminden ayridir.
+    bool pendingWeld_{false};
+    WeldType pendingWeldType_{WeldType::Fillet};
+    double pendingWeldSize_{5.0};
+    double pendingWeldLength_{0.0};
+    WeldClass pendingWeldClass_{WeldClass::Shop};
+    std::vector<std::size_t> selectedWelds_;
+    std::function<void(std::size_t)> weldEditRequest_;
     // VERB-NOUN KESME (Fitting/Plane Cut): komut girilince once profil(ler),
     // sonra duzlem secilir; sag tik uygular, Esc iptal. P12: TEK duzlem
     // birden cok profili kesebilir — pendingCutTargets_ coklu hedef tutar,

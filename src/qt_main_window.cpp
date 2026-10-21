@@ -697,6 +697,10 @@ void QtMainWindow::createMenus() {
         }
     }
 
+    // ---- ÇELİK: kaynak (weld) + imalat assembly -----------------------------
+    QMenu* steelMenu = appMenu_->addMenu("Çe&lik");
+    steelMenu->addAction("&Kaynak (Weld)...", this, [this]() { startWeldCommand(); });
+
     // ---- GÖRÜNÜM: kamera/navigasyon + standart yönler ----
     QMenu* viewMenu = appMenu_->addMenu("G&örünüm");
     viewMenu->addAction("&Zoom Extents", this, [this]() { app_.zoomExtents2D(); })->setIcon(makeToolIcon(ToolGlyph::Extents));
@@ -836,6 +840,69 @@ void QtMainWindow::saveTeklaBridgeTemplate() {
     if (!ok || name.trimmed().isEmpty()) return;
     app_.saveBridgeAsCatalogTemplate(std::filesystem::path(dir.toStdWString()),
                                      name.trimmed().toStdWString());
+}
+
+// --- KAYNAK (Weld) komutu + diyalogu (Phase W2) ------------------------------
+bool QtMainWindow::openWeldDialog(mm::WeldType& type, double& size, double& length,
+                                  mm::WeldClass& cls) {
+    QDialog dlg(this);
+    dlg.setWindowTitle(QStringLiteral("Kaynak (Weld)"));
+    auto* form = new QFormLayout(&dlg);
+
+    auto* typeCombo = new QComboBox(&dlg);
+    typeCombo->addItem(QStringLiteral("Fillet (Köşe)"), static_cast<int>(mm::WeldType::Fillet));
+    typeCombo->addItem(QStringLiteral("Butt (Alın)"), static_cast<int>(mm::WeldType::Butt));
+    typeCombo->setCurrentIndex(type == mm::WeldType::Butt ? 1 : 0);
+    form->addRow(QStringLiteral("Tip:"), typeCombo);
+
+    auto* sizeSpin = new QDoubleSpinBox(&dlg);
+    sizeSpin->setRange(0.5, 500.0);
+    sizeSpin->setDecimals(1);
+    sizeSpin->setValue(size <= 0.0 ? 5.0 : size);
+    sizeSpin->setSuffix(QStringLiteral(" mm"));
+    form->addRow(QStringLiteral("Ölçü (a):"), sizeSpin);
+
+    auto* lenSpin = new QDoubleSpinBox(&dlg);
+    lenSpin->setRange(0.0, 100000.0);
+    lenSpin->setDecimals(1);
+    lenSpin->setValue(length < 0.0 ? 0.0 : length);
+    lenSpin->setSuffix(QStringLiteral(" mm"));
+    lenSpin->setSpecialValueText(QStringLiteral("Otomatik"));
+    form->addRow(QStringLiteral("Uzunluk:"), lenSpin);
+
+    auto* clsCombo = new QComboBox(&dlg);
+    clsCombo->addItem(QStringLiteral("Shop (Atölye)"), static_cast<int>(mm::WeldClass::Shop));
+    clsCombo->addItem(QStringLiteral("Site (Şantiye)"), static_cast<int>(mm::WeldClass::Site));
+    clsCombo->setCurrentIndex(cls == mm::WeldClass::Site ? 1 : 0);
+    form->addRow(QStringLiteral("Sınıf:"), clsCombo);
+
+    auto* note = new QLabel(QStringLiteral(
+        "Gösterimde gerçek kaynak katısı üretilmez; yalnız konum sembolü çizilir.\n"
+        "OK sonrası iki parça seçin: ilk tık ana parça, ikinci tık ikincil parça.\n"
+        "Escape komutu iptal eder."), &dlg);
+    note->setWordWrap(true);
+    note->setStyleSheet(QStringLiteral("color: #9FA6B2; font-size: 8pt;"));
+    form->addRow(note);
+
+    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
+    QObject::connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+    QObject::connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+    form->addRow(buttons);
+
+    if (dlg.exec() != QDialog::Accepted) return false;
+    type = static_cast<mm::WeldType>(typeCombo->currentData().toInt());
+    size = sizeSpin->value();
+    length = lenSpin->value();
+    cls = static_cast<mm::WeldClass>(clsCombo->currentData().toInt());
+    return true;
+}
+
+void QtMainWindow::startWeldCommand() {
+    mm::WeldType type = mm::WeldType::Fillet;
+    double size = 5.0, length = 0.0;
+    mm::WeldClass cls = mm::WeldClass::Shop;
+    if (!openWeldDialog(type, size, length, cls)) return;
+    app_.beginWeldCommand(type, size, length, cls);
 }
 
 void QtMainWindow::openBoltPropertiesDialog(const mm::BoltGroup& bolt) {
@@ -2110,6 +2177,34 @@ void QtMainWindow::createToolbar() {
     });
     ribbon->addWidget(orthoBtn);
 
+    // PART / ASSEMBLY secim modu (Phase W2): birbirini dislayan iki checkable
+    // dugme. Part = yalniz tiklanan parca; Assembly = tiklanan parcanin tum
+    // assembly uyeleri (main + secondary + levhalar + weld'ler) birlikte secilir.
+    QPushButton* partBtn = new QPushButton(QStringLiteral("Parça"), ribbon);
+    partBtn->setCheckable(true);
+    partBtn->setChecked(app_.selectionMode() == mm::Application::SelectionMode::Part);
+    partBtn->setFixedSize(56, 28);
+    partBtn->setToolTip(QStringLiteral("Select Part: yalnız tıklanan parça seçilir"));
+    partBtn->setStyleSheet(QStringLiteral("QPushButton { font-size: 8pt; }"));
+    QPushButton* asmBtn = new QPushButton(QStringLiteral("Assembly"), ribbon);
+    asmBtn->setCheckable(true);
+    asmBtn->setChecked(app_.selectionMode() == mm::Application::SelectionMode::Assembly);
+    asmBtn->setFixedSize(74, 28);
+    asmBtn->setToolTip(QStringLiteral("Select Assembly: tıklanan parçanın tüm üyeleri seçilir"));
+    asmBtn->setStyleSheet(QStringLiteral("QPushButton { font-size: 8pt; }"));
+    QObject::connect(partBtn, &QPushButton::clicked, this, [this, partBtn, asmBtn]() {
+        asmBtn->setChecked(false);
+        partBtn->setChecked(true);
+        app_.setSelectionMode(mm::Application::SelectionMode::Part);
+    });
+    QObject::connect(asmBtn, &QPushButton::clicked, this, [this, partBtn, asmBtn]() {
+        partBtn->setChecked(false);
+        asmBtn->setChecked(true);
+        app_.setSelectionMode(mm::Application::SelectionMode::Assembly);
+    });
+    ribbon->addWidget(partBtn);
+    ribbon->addWidget(asmBtn);
+
     // Color palette button
     QPushButton* colorBtn = new QPushButton("\xF0\x9F\x8E\xA8", ribbon);
     colorBtn->setFixedSize(36, 28);
@@ -2497,6 +2592,14 @@ void QtMainWindow::createDockPanels() {
     typeLabel->setStyleSheet("color: #9FA6B2; font-size: 9pt;");
     propsLayout->addWidget(typeLabel);
 
+    // KAYNAK / ASSEMBLY bilgisi (salt okunur): weld veya assembly secildiginde
+    // burada detay gosterilir (Phase W2). Model seciminde bos kalir.
+    QLabel* weldAsmInfo = new QLabel(QString(), propsWidget);
+    weldAsmInfo->setObjectName("propsWeldAsm");
+    weldAsmInfo->setWordWrap(true);
+    weldAsmInfo->setStyleSheet("color: #D0B37E; font-size: 8.5pt;");
+    propsLayout->addWidget(weldAsmInfo);
+
     // Profil (AKTIF): secili nesnenin profilini gosterir/yazar; secim yokken
     // buradaki deger CIZILECEK kirisin profilidir. (Ust ribbon'daki ayri
     // profil cubugu kaldirildi — tek yer burasidir.)
@@ -2657,11 +2760,17 @@ void QtMainWindow::createDockPanels() {
     QObject::connect(treeTimer, &QTimer::timeout, this,
         [this, tree, treeSearch]() {
             static int lastCount = -1;
+            static std::size_t lastAsm = 0, lastWeld = 0;
             static QString lastFilter;
             const int count = app_.modelCount();
+            const std::size_t asmCount = app_.assemblies().size();
+            const std::size_t weldCount = app_.welds().size();
             const QString filter = treeSearch->text().trimmed();
-            if (count != lastCount || filter != lastFilter) {
+            if (count != lastCount || asmCount != lastAsm || weldCount != lastWeld ||
+                filter != lastFilter) {
                 lastCount = count;
+                lastAsm = asmCount;
+                lastWeld = weldCount;
                 lastFilter = filter;
                 tree->clear();
                 auto* topProf = new QTreeWidgetItem(tree);
@@ -2672,6 +2781,10 @@ void QtMainWindow::createDockPanels() {
                 topNode->setText(0, QStringLiteral("Noktalar"));
                 auto* topLine = new QTreeWidgetItem(tree);
                 topLine->setText(0, QStringLiteral("Çizgiler"));
+                auto* topAsm = new QTreeWidgetItem(tree);
+                topAsm->setText(0, QStringLiteral("Assembly'ler"));
+                auto* topWeld = new QTreeWidgetItem(tree);
+                topWeld->setText(0, QStringLiteral("Kaynaklar"));
                 for (int i = 0; i < count; ++i) {
                     const QString cat = QString::fromStdString(app_.modelCategory(static_cast<std::size_t>(i)));
                     const QString name = QString::fromStdString(app_.modelDisplayName(static_cast<std::size_t>(i)));
@@ -2683,43 +2796,116 @@ void QtMainWindow::createDockPanels() {
                     auto* child = new QTreeWidgetItem(top);
                     child->setText(0, name);
                     child->setData(0, Qt::UserRole, i);
+                    child->setData(0, Qt::UserRole + 1, QStringLiteral("part"));
+                }
+                // Assembly hiyerarsisi: Assembly A001 -> Ana parca + ikincil parcalar.
+                const auto& asms = app_.assemblies();
+                for (std::size_t ai = 0; ai < asms.size(); ++ai) {
+                    const auto& a = asms[ai];
+                    auto* asmNode = new QTreeWidgetItem(topAsm);
+                    asmNode->setText(0, QString::fromStdWString(a.name));
+                    asmNode->setData(0, Qt::UserRole, static_cast<qulonglong>(ai));
+                    asmNode->setData(0, Qt::UserRole + 1, QStringLiteral("assembly"));
+                    for (const mm::EntityId pid : a.parts) {
+                        if (const auto mi = app_.document().indexOfEntity(pid)) {
+                            auto* partNode = new QTreeWidgetItem(asmNode);
+                            const bool isMain = (pid == a.mainPart);
+                            partNode->setText(0, (isMain ? QStringLiteral("Ana: ") : QString()) +
+                                QString::fromStdString(app_.modelDisplayName(*mi)));
+                            partNode->setData(0, Qt::UserRole, static_cast<qulonglong>(*mi));
+                            partNode->setData(0, Qt::UserRole + 1, QStringLiteral("part"));
+                        }
+                    }
+                }
+                // Kaynak dugumleri: W001 — Fillet 5mm Shop.
+                const auto& welds = app_.welds();
+                for (std::size_t wi = 0; wi < welds.size(); ++wi) {
+                    const auto& w = welds[wi];
+                    const QString typeName = (w.type == mm::WeldType::Fillet)
+                        ? QStringLiteral("Fillet") : QStringLiteral("Butt");
+                    const QString clsName = (w.weldClass == mm::WeldClass::Shop)
+                        ? QStringLiteral("Shop") : QStringLiteral("Site");
+                    auto* wNode = new QTreeWidgetItem(topWeld);
+                    wNode->setText(0, QString::fromStdString(w.identification) +
+                        QStringLiteral(" — ") + typeName + QLatin1Char(' ') +
+                        QString::number(w.size) + QStringLiteral("mm ") + clsName);
+                    wNode->setData(0, Qt::UserRole, static_cast<qulonglong>(wi));
+                    wNode->setData(0, Qt::UserRole + 1, QStringLiteral("weld"));
                 }
                 topProf->setHidden(topProf->childCount() == 0);
                 topFace->setHidden(topFace->childCount() == 0);
                 topNode->setHidden(topNode->childCount() == 0);
                 topLine->setHidden(topLine->childCount() == 0);
+                topAsm->setHidden(topAsm->childCount() == 0);
+                topWeld->setHidden(topWeld->childCount() == 0);
                 tree->expandAll();
             }
-            // Secili ogeleri kalin goster (her turda).
+            // Secili ogeleri kalin goster (her turda, ozyinelemeli).
             const auto& sel = app_.selectedModelIndices();
-            for (int t = 0; t < tree->topLevelItemCount(); ++t) {
-                QTreeWidgetItem* top = tree->topLevelItem(t);
-                for (int c = 0; c < top->childCount(); ++c) {
-                    QTreeWidgetItem* child = top->child(c);
-                    const int idx = child->data(0, Qt::UserRole).toInt();
-                    const bool isSel = std::find(sel.begin(), sel.end(),
-                        static_cast<std::size_t>(idx)) != sel.end();
-                    QFont f = child->font(0);
-                    f.setBold(isSel);
-                    child->setFont(0, f);
+            const auto& wsel = app_.selectedWeldIndices();
+            std::function<void(QTreeWidgetItem*)> applyBold = [&](QTreeWidgetItem* node) {
+                const QString kind = node->data(0, Qt::UserRole + 1).toString();
+                bool on = false;
+                if (kind == QLatin1String("weld")) {
+                    const qulonglong wi = node->data(0, Qt::UserRole).toULongLong();
+                    on = std::find(wsel.begin(), wsel.end(),
+                                   static_cast<std::size_t>(wi)) != wsel.end();
+                } else if (kind == QLatin1String("part")) {
+                    const qulonglong idx = node->data(0, Qt::UserRole).toULongLong();
+                    on = std::find(sel.begin(), sel.end(),
+                                   static_cast<std::size_t>(idx)) != sel.end();
                 }
-            }
+                bool anyChildBold = false;
+                for (int c = 0; c < node->childCount(); ++c) {
+                    applyBold(node->child(c));
+                    anyChildBold = anyChildBold || node->child(c)->font(0).bold();
+                }
+                if (kind == QLatin1String("assembly")) on = anyChildBold;
+                QFont f = node->font(0);
+                f.setBold(on);
+                node->setFont(0, f);
+            };
+            for (int t = 0; t < tree->topLevelItemCount(); ++t)
+                applyBold(tree->topLevelItem(t));
         });
     treeTimer->start();
 
     QObject::connect(tree, &QTreeWidget::itemClicked, this,
         [this](QTreeWidgetItem* item, int) {
             if (!item) return;
-            const QVariant d = item->data(0, Qt::UserRole);
-            if (!d.isValid()) return;
-            app_.selectModel(static_cast<std::size_t>(d.toInt()));
+            const QString kind = item->data(0, Qt::UserRole + 1).toString();
+            if (kind == QLatin1String("assembly")) {
+                const qulonglong ai = item->data(0, Qt::UserRole).toULongLong();
+                const auto& asms = app_.assemblies();
+                if (ai < asms.size()) {
+                    std::vector<std::size_t> idxs;
+                    for (const mm::EntityId pid : asms[ai].parts)
+                        if (const auto mi = app_.document().indexOfEntity(pid)) idxs.push_back(*mi);
+                    app_.selectModels(idxs);
+                }
+            } else if (kind == QLatin1String("weld")) {
+                app_.selectWeld(static_cast<std::size_t>(item->data(0, Qt::UserRole).toULongLong()));
+            } else if (item->data(0, Qt::UserRole).isValid()) {
+                app_.selectModel(static_cast<std::size_t>(item->data(0, Qt::UserRole).toULongLong()));
+            }
         });
     QObject::connect(tree, &QTreeWidget::itemDoubleClicked, this,
         [this](QTreeWidgetItem* item, int) {
             if (!item) return;
-            const QVariant d = item->data(0, Qt::UserRole);
-            if (!d.isValid()) return;
-            app_.focusModel(static_cast<std::size_t>(d.toInt()));
+            const QString kind = item->data(0, Qt::UserRole + 1).toString();
+            if (kind == QLatin1String("weld")) {
+                // Kaynak dugumune cift tik: kaynak ozelliklerini acip duzenle.
+                const std::size_t wi = static_cast<std::size_t>(item->data(0, Qt::UserRole).toULongLong());
+                if (wi >= app_.welds().size()) return;
+                const mm::Weld w = app_.welds()[wi];
+                mm::WeldType type = w.type;
+                double size = w.size, length = w.length;
+                mm::WeldClass cls = w.weldClass;
+                if (!openWeldDialog(type, size, length, cls)) return;
+                app_.editWeld(wi, type, size, length, cls);
+            } else if (item->data(0, Qt::UserRole).isValid()) {
+                app_.focusModel(static_cast<std::size_t>(item->data(0, Qt::UserRole).toULongLong()));
+            }
         });
 
     // Secim degisince ozellikleri tazele (500ms yoklama — Application
@@ -2730,14 +2916,21 @@ void QtMainWindow::createDockPanels() {
                                                            propsColor, propsLineType, propsMaterial,
                                                            propsRotation, propsColumnTop,
                                                            propsColumnBottom,
-                                                           typeLabel, lengthValue]() {
+                                                           typeLabel, lengthValue, weldAsmInfo]() {
         static int lastIndex = -2;
         static QString lastProfile;
+        static std::optional<std::size_t> lastWeld;
+        static std::size_t lastSelSize = 0;
         const int index = app_.selectedModelIndex();
         const QString profile = QString::fromStdString(app_.selectedEntityProfile());
-        if (index == lastIndex && profile == lastProfile) return;
+        const std::optional<std::size_t> weldIdx = app_.selectedWeldIndex();
+        const std::size_t selSize = app_.selectedModelIndices().size();
+        if (index == lastIndex && profile == lastProfile &&
+            weldIdx == lastWeld && selSize == lastSelSize) return;
         lastIndex = index;
         lastProfile = profile;
+        lastWeld = weldIdx;
+        lastSelSize = selSize;
 
         const bool hasSelection = index >= 0;
         typeLabel->setText(hasSelection
@@ -2746,6 +2939,52 @@ void QtMainWindow::createDockPanels() {
         lengthValue->setText(hasSelection
             ? QString::fromStdString(app_.selectedEntityLengthLabel())
             : "-");
+
+        // KAYNAK / ASSEMBLY bilgisi (Phase W2).
+        QString asmInfo;
+        if (weldIdx && *weldIdx < app_.welds().size()) {
+            const mm::Weld& w = app_.welds()[*weldIdx];
+            const QString tn = (w.type == mm::WeldType::Fillet)
+                ? QStringLiteral("Fillet (Köşe)") : QStringLiteral("Butt (Alın)");
+            const QString cn = (w.weldClass == mm::WeldClass::Shop)
+                ? QStringLiteral("Shop (Atölye)") : QStringLiteral("Site (Şantiye)");
+            asmInfo = QString::fromStdString(w.identification) + QStringLiteral(" — ") + tn +
+                QStringLiteral("\nÖlçü: ") + QString::number(w.size) + QStringLiteral(" mm") +
+                QStringLiteral("\nUzunluk: ") +
+                (w.length > 0.0 ? QString::number(w.length) + QStringLiteral(" mm")
+                                : QStringLiteral("otomatik")) +
+                QStringLiteral("\nSınıf: ") + cn +
+                QStringLiteral("\nGeometri: ") +
+                (w.geometrySupported ? QStringLiteral("katı destekleniyor")
+                                     : QStringLiteral("katı üretilmez (sembol)"));
+        } else if (selSize > 0) {
+            const auto& asms = app_.assemblies();
+            const auto& sel = app_.selectedModelIndices();
+            for (const auto& a : asms) {
+                bool hit = false;
+                for (const std::size_t idx : sel) {
+                    if (idx >= app_.document().models().size()) continue;
+                    const auto c = app_.document().assemblyIdContaining(app_.document().modelId(idx));
+                    if (c && *c == a.id) { hit = true; break; }
+                }
+                if (!hit) continue;
+                std::size_t weldCount = 0;
+                for (const auto& w : app_.welds())
+                    if (std::find(a.parts.begin(), a.parts.end(), w.mainPart) != a.parts.end() &&
+                        std::find(a.parts.begin(), a.parts.end(), w.secondaryPart) != a.parts.end())
+                        ++weldCount;
+                QString mainName;
+                if (const auto mi = app_.document().indexOfEntity(a.mainPart))
+                    mainName = QString::fromStdString(app_.modelDisplayName(*mi));
+                asmInfo = QString::fromStdWString(a.name) +
+                    QStringLiteral("\nAna parça: ") + (mainName.isEmpty() ? QStringLiteral("-") : mainName) +
+                    QStringLiteral("\nParça sayısı: ") + QString::number(static_cast<qulonglong>(a.parts.size())) +
+                    QStringLiteral("\nKaynak sayısı: ") + QString::number(static_cast<qulonglong>(weldCount));
+                break;
+            }
+        }
+        weldAsmInfo->setText(asmInfo);
+        weldAsmInfo->setVisible(!asmInfo.isEmpty());
 
         // Profil: liste BIR KEZ kuruldu (yer tutucu + katalog). Burada yalniz
         // gosterilecek deger secilir — secim varsa nesnenin profili, yoksa

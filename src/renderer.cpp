@@ -982,7 +982,46 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
             ++performance.renderedEntities;
         }
     };
-    // baglantili duzlemsel yuzun tum ucgenleri) yari saydam amber dolgu +
+    // KAYNAK SIMGELERI: her weld.origin'de kucuk, secilebilir isaret. Gercek
+    // OCC weld katisi uretilmedigi icin bu bir KONUM simgesidir (geometriyi
+    // degistirmez). Fillet = ucgen, Butt = kisa kalin cizgi. Secili = sari.
+    const auto drawWeldGlyphs = [&]() {
+        const auto& welds = document.welds();
+        if (welds.empty()) return;
+        constexpr COLORREF kFilletRgb = RGB(255, 140, 0);   // turuncu (koseli)
+        constexpr COLORREF kButtRgb   = RGB(90, 200, 120);  // yesil (alin)
+        constexpr COLORREF kSelRgb    = RGB(255, 206, 84);  // sari (secili)
+        for (std::size_t wi = 0; wi < welds.size(); ++wi) {
+            const auto& w = welds[wi];
+            if (w.origin.x == 0.0 && w.origin.y == 0.0 && w.origin.z == 0.0 &&
+                w.direction.x == 1.0 && w.direction.y == 0.0 && w.direction.z == 0.0)
+                continue; // konum hesaplanmamis (varsayilan) -> cizme
+            const POINT c = projectPoint(w.origin);
+            const bool sel = std::find(draft.selectedWelds.begin(),
+                                       draft.selectedWelds.end(), wi) !=
+                             draft.selectedWelds.end();
+            const COLORREF base = (w.type == WeldType::Fillet) ? kFilletRgb : kButtRgb;
+            const COLORREF rgb = sel ? kSelRgb : base;
+            const int r = sel ? 9 : 7;
+            HPEN pen = CreatePen(PS_SOLID, 2, rgb);
+            HGDIOBJ oldPen = SelectObject(dc, pen);
+            HGDIOBJ oldBr = SelectObject(dc, GetStockObject(NULL_BRUSH));
+            if (w.type == WeldType::Butt) {
+                // Alin kaynagi: kisa kalin cizgi (ilerleme yonune dik de hisset,
+                // ama basitlik icin yatay 2r px cizgi).
+                line(dc, c.x - r, c.y, c.x + r, c.y);
+            } else {
+                // Koseli kaynak: yukari bakan ucgen (fillet kaynak isareti).
+                const POINT t[3] = {{c.x, c.y - r}, {c.x - r, c.y + r},
+                                    {c.x + r, c.y + r}};
+                Polygon(dc, t, 3);
+            }
+            SelectObject(dc, oldBr);
+            SelectObject(dc, oldPen);
+            DeleteObject(pen);
+            ++performance.renderedEntities;
+        }
+    };
     // DIS SINIR konturu ile vurgulanir. Tek tessellasyon ucgeni degil — bu
     // "ucgen yuz" goruntusunu giderir.
     const auto drawHoverFaceFill = [&]() {
@@ -1075,6 +1114,7 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         drawCutPlanes();
         drawCutSelectionHints();
         drawComponentGlyphs();
+        drawWeldGlyphs();
         const bool motionDrafting = commandShowsSnapFeedback(
             draft.drawingActive, draft.workPlanePicking, draft.transformCommand,
             draft.transformPhase, draft.arrayItemCount.has_value(),
@@ -1905,6 +1945,7 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         drawConstruction();
         drawCutPlanes();
         drawComponentGlyphs();
+        drawWeldGlyphs();
     }
 
     // RHINO TARZI GUMBALL: tasima tutamaclari — GL kompozitinin ustune,
