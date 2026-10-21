@@ -114,6 +114,7 @@ int main() {
             const CutModifier& c = s146.cuts[0];
             check(c.kind == CutKind::PlaneCut, "kesim turu PlaneCut");
             check(c.target == EntityId{21}, "kesim hedefi = kiris");
+            check(c.hidden, "kiris ucu kesimi gizli (motor eleman, cizilmez)");
             // facePoint = (0,150,3000); lenDir=(0,1,0); beamGap=20 -> (0,170,3000).
             check(sameV(c.planeOrigin, Vec3{0.0, 170.0, 3000.0}), "kesim duzlemi = yuz+gap");
             check(sameV(c.planeNormal, Vec3{0.0, 1.0, 0.0}), "kesim normali = lenDir");

@@ -1000,6 +1000,7 @@ GenerationPlan generateShearPlateSimple146(const ComponentInput& input) noexcept
                                facePoint.z + lenDir.z * beamGap};
         cut.planeNormal = lenDir;
         cut.keepPositive = true;  // korunan taraf = kiris govdesi (uzak taraf)
+        cut.hidden = true;        // component ic motor elemani — kesme duzlemi cizilmez/secilmez
         cut.name = "Beam end cut (square)";
         plan.cuts.push_back(cut);
         plan.cutKeys.push_back("cut_beam_end");
