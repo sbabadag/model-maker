@@ -10739,13 +10739,12 @@ bool Application::importTeklaBridge(const std::filesystem::path& packageDir) {
     mm::BridgePackage pkg;
     std::vector<std::string> errors;
     if (!mm::readBridgePackage(packageDir.string(), pkg, errors)) {
-        std::wstring detail = L"Paket okunamadi / gecersiz:";
+        std::string detail = "package read/validation failed";
         for (const auto& e : errors) {
-            detail += L"\n- ";
-            detail.append(e.begin(), e.end());
+            detail += "\n- ";
+            detail += e;
         }
-        const std::runtime_error importError(
-            std::string(detail.begin(), detail.end()));
+        const std::runtime_error importError(detail);
         showError(L"Tekla Component Bridge içe aktarma başarısız", importError);
         return false;
     }
@@ -10765,8 +10764,14 @@ bool Application::importTeklaBridge(const std::filesystem::path& packageDir) {
     invalidateCanvas();
 
     std::wstring status = L"Tekla Bridge: " +
-        std::wstring(pkg.component.name.begin(), pkg.component.name.end()) +
-        L" içe aktarıldı (" + std::to_wstring(out.holesCut) + L" delik)";
+        std::wstring(pkg.component.name.begin(), pkg.component.name.end());
+    if (out.duplicate) {
+        status += L" zaten içe aktarılmış (yinelenen import atlandı)";
+    } else {
+        status += L" içe aktarıldı (" + std::to_wstring(out.partsImported) + L" parça, " +
+                  std::to_wstring(out.boltGroupsImported) + L" bulon grubu, " +
+                  std::to_wstring(out.holesCut) + L" delik)";
+    }
     if (!out.warnings.empty()) {
         status += L" — " + std::to_wstring(out.warnings.size()) + L" uyarı";
         std::wstring first(out.warnings.front().begin(), out.warnings.front().end());

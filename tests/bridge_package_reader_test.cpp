@@ -123,6 +123,125 @@ int main() {
             CHECK(v2plate->topology->faceCount == 6 && v2plate->topology->holeLoops == 0);
     }
 
+    // --- V3 paketi: 146 (relationships + operations + checksums + roleKey) ---
+    {
+        const std::string v3dir =
+            std::string(MM_BRIDGE_FIXTURE_DIR) + "/fixture-146-shear-plate-v3.mmbridge";
+        mm::BridgePackage v3;
+        std::vector<std::string> v3errs;
+        CHECK(mm::readBridgePackage(v3dir, v3, v3errs));
+        for (const auto& e : v3errs) std::printf("  v3err: %s\n", e.c_str());
+        CHECK(v3.manifest.formatVersion == "3.0");
+        CHECK(v3.manifest.producerName == "ModelMaker.TeklaBridge");
+        CHECK(v3.manifest.sourceModelName == "fixture.db1");
+
+        // roleKey + geometryRepresentation + confidence.
+        const mm::BridgeObject* v3plate = nullptr;
+        for (const auto& o : v3.objects)
+            if (o.kind == "ContourPlate") v3plate = &o;
+        CHECK(v3plate != nullptr);
+        if (v3plate) {
+            CHECK(v3plate->roleKey == "shear_tab");
+            CHECK(v3plate->geometryRepresentation == "reconstructed");
+            CHECK(v3plate->confidence == "observed");
+            CHECK(v3plate->bbox.has_value());
+        }
+
+        // relationships + operations.
+        CHECK(v3.relationships.size() == 9);
+        int boltedTo = 0, weldedTo = 0;
+        for (const auto& r : v3.relationships) {
+            if (r.kind == "boltedTo") ++boltedTo;
+            if (r.kind == "weldedTo") ++weldedTo;
+        }
+        CHECK(boltedTo == 2);
+        CHECK(weldedTo == 2);
+        CHECK(v3.operations.size() == 1);
+        if (!v3.operations.empty()) {
+            CHECK(v3.operations[0].type == "BoltHole");
+            CHECK(v3.operations[0].targetPartGUID == "5673");
+        }
+    }
+
+    // --- V3 paketi: 144 cok parcali (mesh + 3 plaka + 2 bulon + 2 weld + fitting) ---
+    {
+        const std::string dir =
+            std::string(MM_BRIDGE_FIXTURE_DIR) + "/fixture-144-end-plate-v3.mmbridge";
+        mm::BridgePackage pkg;
+        std::vector<std::string> errs;
+        CHECK(mm::readBridgePackage(dir, pkg, errs));
+        for (const auto& e : errs) std::printf("  144err: %s\n", e.c_str());
+
+        CHECK(pkg.objects.size() == 9);
+        int plates = 0, bolts = 0, welds = 0, fittings = 0, bools = 0;
+        const mm::BridgeObject* endPlate = nullptr;
+        for (const auto& o : pkg.objects) {
+            if (o.kind == "ContourPlate") ++plates;
+            if (o.kind == "BoltGroup") ++bolts;
+            if (o.kind == "Weld") ++welds;
+            if (o.kind == "Fitting") ++fittings;
+            if (o.kind == "BooleanPart") ++bools;
+            if (o.roleKey == "end_plate") endPlate = &o;
+        }
+        CHECK(plates == 3);
+        CHECK(bolts == 2);
+        CHECK(welds == 2);
+        CHECK(fittings == 1);
+        CHECK(bools == 1);
+        CHECK(endPlate && endPlate->mesh.has_value());
+        if (endPlate && endPlate->mesh)
+            CHECK(endPlate->mesh->vertices.size() == 8 &&
+                  endPlate->mesh->triangles.size() == 12);
+
+        // fitting islemi operations.json'da (objects icinde degil).
+        int fittingOps = 0;
+        for (const auto& op : pkg.operations)
+            if (op.type == "Fitting") {
+                ++fittingOps;
+                CHECK(op.fittingPlane.has_value());
+                CHECK(op.inferred);
+                CHECK(op.keepSide == "negative");
+            }
+        CHECK(fittingOps == 1);
+    }
+
+    // --- V3 paketi: mesh kutu (mesh->solid yolu veri girisini dogrular) ---
+    {
+        const std::string dir =
+            std::string(MM_BRIDGE_FIXTURE_DIR) + "/fixture-mesh-box-v3.mmbridge";
+        mm::BridgePackage pkg;
+        std::vector<std::string> errs;
+        CHECK(mm::readBridgePackage(dir, pkg, errs));
+        CHECK(pkg.objects.size() == 1);
+        if (!pkg.objects.empty()) {
+            CHECK(pkg.objects[0].mesh.has_value());
+            if (pkg.objects[0].mesh)
+                CHECK(pkg.objects[0].mesh->vertices.size() == 8 &&
+                      pkg.objects[0].mesh->triangles.size() == 12);
+        }
+    }
+
+    // --- checksum butunlugu: bozuk dosya reddedilir ---
+    {
+        const std::string src =
+            std::string(MM_BRIDGE_FIXTURE_DIR) + "/fixture-146-shear-plate-v3.mmbridge";
+        const std::string bad = src + "-badcs";
+        std::filesystem::remove_all(bad);
+        std::filesystem::copy(src, bad, std::filesystem::copy_options::recursive);
+        // manifest.json'a fazladan bayt ekle (checksum bozulur).
+        std::ofstream(bad + "/manifest.json", std::ios::app) << "\n// tamper\n";
+        mm::BridgePackage pkg;
+        std::vector<std::string> errs;
+        const bool ok = mm::readBridgePackage(bad, pkg, errs);
+        CHECK(!ok);
+        bool foundIntegrity = false;
+        for (const auto& e : errs)
+            if (e.find("uyusmuyor") != std::string::npos || e.find("butunluk") != std::string::npos)
+                foundIntegrity = true;
+        CHECK(foundIntegrity);
+        std::filesystem::remove_all(bad);
+    }
+
     // --- kotu paket reddedilir (componentIdentifier eksik) ---
     {
         std::string badDir = dir + "-bad";

@@ -1,0 +1,8 @@
+{
+  "knownLimitations": [
+    "FIXTURE-V3: tek mesh kutu (mesh->solid yolu testi)."
+  ],
+  "inaccessibleObjects": [],
+  "unsupportedFeatures": [],
+  "warnings": []
+}

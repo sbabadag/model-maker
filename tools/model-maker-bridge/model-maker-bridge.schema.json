@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://model-maker.internal/schemas/model-maker-bridge.schema.json",
   "title": "Model Maker Bridge Package",
-  "description": "Tekla Structures -> Model Maker koprusunun surumlu paket bicimi. Tekla Open API extractor'unun urettigi, Model Maker C++ importer'inin okudugu ara temsil. Tekla GUID'leri YALNIZCA kaynak referansidir; Model Maker EntityId'si importer tarafindan atanir.",
+  "description": "Tekla Structures -> Model Maker koprusunun surumlu paket bicimi (V1/V2/V3). Tekla Open API extractor'unun urettigi, Model Maker C++ importer'inin okudugu ara temsil. Tekla GUID'leri YALNIZCA kaynak referansidir; Model Maker EntityId'si importer tarafindan atanir. V3: relationships.json (semantik iliskiler), operations.json (cut/fitting/boolean), checksums.json (dosya butunlugu), roleKey + geometryRepresentation + confidence etiketleri ekler. V1/V2 paketleri bu semada da gecerlidir (V3 dosyalari opsiyoneldir).",
   "type": "object",
   "required": ["manifest", "component", "parameters", "objects", "diagnostics"],
   "additionalProperties": false,
@@ -22,15 +22,24 @@
       ],
       "additionalProperties": true,
       "properties": {
-        "formatVersion": { "type": "string", "pattern": "^[12]\\.0$" },
+        "formatVersion": { "type": "string", "pattern": "^[123]\\.0$" },
         "sourceApplication": { "const": "Tekla Structures" },
         "sourceVersion": { "type": "string" },
+        "producer": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "name": { "type": "string" },
+            "version": { "type": "string" }
+          }
+        },
         "sourceComponentType": {
           "enum": ["Connection", "Component", "Detail", "CustomPart", "Seam", "Unknown"]
         },
         "sourceComponentNumber": { "type": "integer", "minimum": 0 },
         "sourceComponentName": { "type": "string" },
         "sourceModelIdentifier": { "type": "string" },
+        "sourceModelName": { "type": "string" },
         "exportTimestamp": { "type": "string", "format": "date-time" },
         "coordinateSystem": { "const": "TeklaGlobal" },
         "lengthUnit": { "const": "mm" },
@@ -84,7 +93,7 @@
           "units": { "type": "string" },
           "source": { "type": "string" },
           "readable": { "enum": ["ok", "unsupported", "error"] },
-          "confidence": { "enum": ["documented", "observed", "inferred", "unresolved"] }
+          "confidence": { "enum": ["documented", "observed", "inferred", "unresolved", "unsupported"] }
         }
       }
     },
@@ -92,7 +101,7 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["sourceGUID", "kind", "role"],
+        "required": ["sourceGUID", "kind", "roleKey"],
         "additionalProperties": true,
         "properties": {
           "sourceGUID": { "type": "string" },
@@ -102,19 +111,68 @@
           },
           "name": { "type": "string" },
           "role": { "type": "string" },
+          "roleKey": { "type": "string" },
           "profile": { "type": "string" },
           "material": { "type": "string" },
           "parentSourceGUID": { "type": "string" },
           "mapped": { "type": "boolean" },
-          "mappedKind": { "enum": ["Plate", "BoltGroup", "Cut", "Weld", "Beam", "ReferenceGeometry", "Unsupported"] },
+          "mappedKind": { "enum": ["Plate", "BoltGroup", "Cut", "Weld", "Beam", "Fitting", "ReferenceGeometry", "Unsupported"] },
           "geometryFile": { "type": "string" },
+          "geometryRepresentation": { "enum": ["exact", "reconstructed", "approximate", "reference", "unsupported"] },
+          "confidence": { "enum": ["documented", "observed", "inferred", "unresolved", "unsupported"] },
+          "localToGlobal": { "$ref": "#/definitions/transform" },
           "parametric": { "type": "object", "additionalProperties": true },
           "unsupportedReason": { "type": "string" },
           "boltGroup": { "$ref": "#/definitions/boltGroup" },
           "weld": { "$ref": "#/definitions/weld" },
+          "fitting": { "$ref": "#/definitions/fitting" },
+          "booleanPart": { "$ref": "#/definitions/booleanPart" },
           "topology": { "$ref": "#/definitions/topology" }
         }
       }
+    },
+    "relationships": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["kind", "sourceGUID", "targetGUID"],
+        "additionalProperties": true,
+        "properties": {
+          "id": { "type": "string" },
+          "kind": {
+            "enum": ["partOf", "boltedTo", "weldedTo", "cutBy", "fittedTo", "attachedTo", "memberOf", "secondaryOf", "operatedBy"]
+          },
+          "sourceGUID": { "type": "string" },
+          "targetGUID": { "type": "string" },
+          "role": { "type": "string" },
+          "confidence": { "enum": ["documented", "observed", "inferred", "unresolved", "unsupported"] }
+        }
+      }
+    },
+    "operations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "type", "targetPartGUID"],
+        "additionalProperties": true,
+        "properties": {
+          "id": { "type": "string" },
+          "type": { "enum": ["Cut", "Fitting", "BooleanCut", "BooleanUnion", "BoltHole"] },
+          "targetPartGUID": { "type": "string" },
+          "operatorGUID": { "type": "string" },
+          "cuttingSolidGUID": { "type": "string" },
+          "fittingPlane": { "$ref": "#/definitions/plane" },
+          "keepSide": { "enum": ["positive", "negative", ""] },
+          "inferred": { "type": "boolean" },
+          "confidence": { "enum": ["documented", "observed", "inferred", "unresolved", "unsupported"] },
+          "finalSolidGeometryFile": { "type": "string" }
+        }
+      }
+    },
+    "checksums": {
+      "type": "object",
+      "description": "Paket icindeki goreli dosya yolu -> SHA-256 hex (butunluk dogrulamasi).",
+      "additionalProperties": { "type": "string", "pattern": "^[0-9a-fA-F]{64}$" }
     },
     "diagnostics": {
       "type": "object",
@@ -124,7 +182,9 @@
         "knownLimitations": { "type": "array", "items": { "type": "string" } },
         "inaccessibleObjects": { "type": "array", "items": { "type": "string" } },
         "unsupportedFeatures": { "type": "array", "items": { "type": "string" } },
-        "warnings": { "type": "array", "items": { "type": "string" } }
+        "warnings": { "type": "array", "items": { "type": "string" } },
+        "errors": { "type": "array", "items": { "type": "string" } },
+        "unresolvedObjects": { "type": "array", "items": { "type": "string" } }
       }
     }
   },
@@ -139,6 +199,30 @@
         "z": { "type": "number" }
       }
     },
+    "plane": {
+      "type": "object",
+      "required": ["origin", "normal"],
+      "additionalProperties": true,
+      "properties": {
+        "origin": { "$ref": "#/definitions/vec3" },
+        "normal": { "$ref": "#/definitions/vec3" }
+      }
+    },
+    "transform": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "origin": { "$ref": "#/definitions/vec3" },
+        "xAxis": { "$ref": "#/definitions/vec3" },
+        "yAxis": { "$ref": "#/definitions/vec3" },
+        "zAxis": { "$ref": "#/definitions/vec3" },
+        "matrix": {
+          "type": "array",
+          "description": "4x4 satir-oncelikli donusum matrisi (dilimde kolon-oncelikli kullanilmaz).",
+          "items": { "type": "array", "items": { "type": "number" } }
+        }
+      }
+    },
     "memberRef": {
       "type": "object",
       "required": ["guid"],
@@ -149,6 +233,7 @@
         "profile": { "type": "string" },
         "material": { "type": "string" },
         "role": { "type": "string" },
+        "roleKey": { "type": "string" },
         "startPoint": { "$ref": "#/definitions/vec3" },
         "endPoint": { "$ref": "#/definitions/vec3" },
         "class": { "type": "string" }
@@ -181,6 +266,9 @@
         "partToBoltTo": { "type": "string" },
         "axis": { "type": "string" },
         "axisSource": { "enum": ["measured", "inferred", ""] },
+        "direction": { "$ref": "#/definitions/vec3" },
+        "boltType": { "type": "string" },
+        "boltStandard": { "type": "string" },
         "bolts": { "type": "array", "items": { "$ref": "#/definitions/bolt" } }
       }
     },
@@ -190,9 +278,32 @@
       "properties": {
         "type": { "type": "string" },
         "size": { "type": "number" },
+        "sizeAbove": { "type": "number" },
+        "sizeBelow": { "type": "number" },
         "mainSourceGUID": { "type": "string" },
         "secondarySourceGUID": { "type": "string" },
         "position": { "type": "string" }
+      }
+    },
+    "fitting": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "plane": { "$ref": "#/definitions/plane" },
+        "normal": { "$ref": "#/definitions/vec3" },
+        "targetPartGUID": { "type": "string" },
+        "keepSide": { "enum": ["positive", "negative", ""] },
+        "inferred": { "type": "boolean" }
+      }
+    },
+    "booleanPart": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "operationType": { "enum": ["Cut", "Union", "Intersect"] },
+        "targetPartGUID": { "type": "string" },
+        "operandGUID": { "type": "string" },
+        "inferred": { "type": "boolean" }
       }
     },
     "topology": {

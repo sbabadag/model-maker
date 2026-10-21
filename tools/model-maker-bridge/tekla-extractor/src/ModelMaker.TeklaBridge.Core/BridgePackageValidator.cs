@@ -19,12 +19,17 @@ namespace ModelMaker.TeklaBridge.Core
         private static readonly HashSet<string> ObjectKinds =
             new HashSet<string> { "Beam", "ContourPlate", "PolyBeam", "BoltGroup", "Weld", "BooleanPart", "Fitting", "ConstructionPlane", "Unknown" };
         private static readonly HashSet<string> MappedKinds =
-            new HashSet<string> { "Plate", "BoltGroup", "Cut", "Weld", "Beam", "ReferenceGeometry", "Unsupported" };
+            new HashSet<string> { "Plate", "BoltGroup", "Cut", "Weld", "Beam", "Fitting", "ReferenceGeometry", "Unsupported" };
         private static readonly HashSet<string> ParamTypes =
             new HashSet<string> { "Length", "Angle", "Integer", "Boolean", "Enum", "String", "Profile", "Material", "EntityRef", "Double", "Unknown" };
         private static readonly HashSet<string> Readable = new HashSet<string> { "ok", "unsupported", "error" };
-        private static readonly HashSet<string> Confidence = new HashSet<string> { "documented", "observed", "inferred", "unresolved" };
-        private static readonly HashSet<string> GeomTypes = new HashSet<string> { "bbox", "mesh", "unsupported" };
+        private static readonly HashSet<string> Confidence = new HashSet<string> { "documented", "observed", "inferred", "unresolved", "unsupported" };
+        private static readonly HashSet<string> GeomTypes = new HashSet<string> { "bbox", "mesh", "brep", "unsupported" };
+        private static readonly HashSet<string> GeomRepr = new HashSet<string> { "exact", "reconstructed", "approximate", "reference", "unsupported" };
+        private static readonly HashSet<string> RelationKinds = new HashSet<string>
+        { "partOf", "boltedTo", "weldedTo", "cutBy", "fittedTo", "attachedTo", "memberOf", "secondaryOf", "operatedBy" };
+        private static readonly HashSet<string> OperationTypes = new HashSet<string> { "Cut", "Fitting", "BooleanCut", "BooleanUnion", "BoltHole" };
+        private static readonly HashSet<string> FormatVersions = new HashSet<string> { "1.0", "2.0", "3.0" };
 
         public static List<string> Validate(BridgePackage pkg)
         {
@@ -35,6 +40,8 @@ namespace ModelMaker.TeklaBridge.Core
             ValidateComponent(pkg.Component, errors);
             ValidateParameters(pkg.Parameters, errors);
             ValidateObjects(pkg.Objects, errors);
+            ValidateRelationships(pkg.Relationships, errors);
+            ValidateOperations(pkg.Operations, errors);
             ValidateDiagnostics(pkg.Diagnostics, errors);
             return errors;
         }
@@ -51,7 +58,7 @@ namespace ModelMaker.TeklaBridge.Core
         private static void ValidateManifest(Manifest m, List<string> errors)
         {
             if (m == null) { errors.Add("manifest eksik"); return; }
-            if (m.FormatVersion != "1.0") errors.Add("manifest.formatVersion 1.0 olmali");
+            if (!FormatVersions.Contains(m.FormatVersion)) errors.Add("manifest.formatVersion 1.0/2.0/3.0 olmali");
             if (m.SourceApplication != "Tekla Structures") errors.Add("manifest.sourceApplication 'Tekla Structures' olmali");
             if (!ComponentTypes.Contains(m.SourceComponentType)) errors.Add("manifest.sourceComponentType gecersiz: " + m.SourceComponentType);
             if (string.IsNullOrEmpty(m.ComponentIdentifier)) errors.Add("manifest.componentIdentifier bos olamaz");
@@ -97,9 +104,40 @@ namespace ModelMaker.TeklaBridge.Core
                 if (o == null) { errors.Add("objects[" + i + "] null"); continue; }
                 if (string.IsNullOrEmpty(o.SourceGUID)) errors.Add("objects[" + i + "].sourceGUID bos");
                 if (!ObjectKinds.Contains(o.Kind)) errors.Add("objects[" + i + "].kind gecersiz: " + o.Kind);
+                if (string.IsNullOrEmpty(o.Role) && string.IsNullOrEmpty(o.RoleKey))
+                    errors.Add("objects[" + i + "].role/roleKey eksik (V2 'role', V3 'roleKey')");
                 if (o.MappedKind != null && !MappedKinds.Contains(o.MappedKind)) errors.Add("objects[" + i + "].mappedKind gecersiz: " + o.MappedKind);
+                if (o.GeometryRepresentation != null && !GeomRepr.Contains(o.GeometryRepresentation)) errors.Add("objects[" + i + "].geometryRepresentation gecersiz: " + o.GeometryRepresentation);
+                if (o.Confidence != null && !Confidence.Contains(o.Confidence)) errors.Add("objects[" + i + "].confidence gecersiz: " + o.Confidence);
                 if (o.GeometryFile != null && !IsSafeRelativePath(o.GeometryFile)) errors.Add("objects[" + i + "].geometryFile guvenli degil: " + o.GeometryFile);
                 if (!guids.Add(o.SourceGUID)) errors.Add("objects[" + i + "].sourceGUID tekrarli: " + o.SourceGUID);
+            }
+        }
+
+        private static void ValidateRelationships(List<RelationshipRecord> rs, List<string> errors)
+        {
+            if (rs == null) return;
+            for (var i = 0; i < rs.Count; i++)
+            {
+                var r = rs[i];
+                if (r == null) { errors.Add("relationships[" + i + "] null"); continue; }
+                if (!RelationKinds.Contains(r.Kind)) errors.Add("relationships[" + i + "].kind gecersiz: " + r.Kind);
+                if (string.IsNullOrEmpty(r.SourceGUID)) errors.Add("relationships[" + i + "].sourceGUID bos");
+                if (string.IsNullOrEmpty(r.TargetGUID)) errors.Add("relationships[" + i + "].targetGUID bos");
+            }
+        }
+
+        private static void ValidateOperations(List<OperationRecord> ops, List<string> errors)
+        {
+            if (ops == null) return;
+            var ids = new HashSet<string>();
+            for (var i = 0; i < ops.Count; i++)
+            {
+                var op = ops[i];
+                if (op == null) { errors.Add("operations[" + i + "] null"); continue; }
+                if (!OperationTypes.Contains(op.Type)) errors.Add("operations[" + i + "].type gecersiz: " + op.Type);
+                if (string.IsNullOrEmpty(op.TargetPartGUID)) errors.Add("operations[" + i + "].targetPartGUID bos");
+                if (op.Id != null && !ids.Add(op.Id)) errors.Add("operations[" + i + "].id tekrarli: " + op.Id);
             }
         }
 

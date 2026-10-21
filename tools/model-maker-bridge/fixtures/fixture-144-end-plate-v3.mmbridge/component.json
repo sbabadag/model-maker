@@ -1,0 +1,65 @@
+{
+  "sourceType": "Connection",
+  "name": "End plate (144)",
+  "number": 144,
+  "guid": "1441",
+  "identifierId": 1441,
+  "coordinateSystem": {
+    "origin": {
+      "x": 0,
+      "y": 0,
+      "z": 0
+    },
+    "xAxis": {
+      "x": 1,
+      "y": 0,
+      "z": 0
+    },
+    "yAxis": {
+      "x": 0,
+      "y": 1,
+      "z": 0
+    },
+    "zAxis": {
+      "x": 0,
+      "y": 0,
+      "z": 1
+    }
+  },
+  "primaryMember": {
+    "guid": "6100",
+    "profile": "HEA400",
+    "material": "S235JR",
+    "role": "COLUMN",
+    "roleKey": "COLUMN",
+    "startPoint": {
+      "x": 0,
+      "y": 0,
+      "z": 0
+    },
+    "endPoint": {
+      "x": 0,
+      "y": 0,
+      "z": 4000
+    }
+  },
+  "secondaryMembers": [
+    {
+      "guid": "6200",
+      "profile": "IPE300",
+      "material": "S235JR",
+      "role": "BEAM",
+      "roleKey": "BEAM",
+      "startPoint": {
+        "x": 0,
+        "y": 0,
+        "z": 2000
+      },
+      "endPoint": {
+        "x": 4000,
+        "y": 0,
+        "z": 2000
+      }
+    }
+  ]
+}

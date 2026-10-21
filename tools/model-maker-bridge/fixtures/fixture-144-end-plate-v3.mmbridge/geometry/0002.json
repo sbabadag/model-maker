@@ -1,0 +1,17 @@
+{
+  "formatVersion": "3.0",
+  "type": "bbox",
+  "representation": "reconstructed",
+  "bbox": {
+    "min": {
+      "x": -110,
+      "y": -300,
+      "z": 2050
+    },
+    "max": {
+      "x": -100,
+      "y": 300,
+      "z": 2250
+    }
+  }
+}

@@ -173,9 +173,87 @@ diagnostic ile işaretlenir).
 
 ```
 Tekla (seçili bileşen)
-   -> Extractor (GetSelectedObjects -> GetChildren -> GetSolid bbox -> GetAttribute)
-   -> .mmbridge paketi (manifest/component/parameters/objects/geometry/diagnostics)
-   -> C++ readBridgePackage (oku + doğrula; V2: boltGroup/weld/topology/role)
+   -> Extractor (GetSelectedObjects -> GetChildren -> GetSolid bbox/mesh -> GetAttribute)
+   -> .mmbridge paketi (manifest/component/parameters/objects/relationships/operations/diagnostics/checksums + geometry/*)
+   -> C++ readBridgePackage (oku + doğrula; V3: roleKey + mesh + relationships/operations/checksums)
    -> mapBridgePackage (semantik eşleme + önizleme)
-   -> [OCC-on V2] importBridgeComponent (plaka kati + delikler + Document + undo/redo)
+   -> [OCC-on] importBridgeComponent (cok parca + mesh->solid + delik + Document + undo/redo)
 ```
+
+## V3 — genel component import (formatVersion 3.0)
+
+V3, tek-component/tek-tip sınırını kaldırır: modeldeki Connection/Detail/Component/
+CustomPart nesneleri taranabilir (discovery), genel geometry extractor + versioned
+contract + cok parcali OCC import engine.
+
+Yeni paket dosyalari (V3; V1/V2 paketleri eski haliyle okunmaya devam eder):
+- `relationships.json` — semantik iliskiler (partOf/boltedTo/weldedTo/cutBy/fittedTo/
+  attachedTo/memberOf/secondaryOf/operatedBy).
+- `operations.json` — Cut/Fitting/BooleanCut/BooleanUnion/BoltHole islemleri
+  (targetPartGUID + operatorGUID + fittingPlane + keepSide + inferred).
+- `checksums.json` — goreli yol -> SHA-256 (butunluk; C++/Python dogrular).
+- `objects.json` — roleKey (semantik), geometryRepresentation (exact/reconstructed/
+  approximate/reference/unsupported), confidence, localToGlobal, fitting/booleanPart.
+- `geometry/*.json` — `type`: bbox | mesh | brep | unsupported; `representation`.
+
+Honest geometry: mesh YALNIZ deliksiz (holeLoops==0) katida yuz fan triangulation ile
+uretilir (approximate); delikli katida mesh uydurulmaz (bbox + bulon verisi ile
+yeniden uretilir, reconstructed). Yaklasik geometri asla exact diye etiketlenmez.
+
+### Discovery + export (Windows/Tekla)
+
+```powershell
+cd tools\model-maker-bridge\tekla-extractor
+powershell -ExecutionPolicy Bypass -File .\kur.ps1
+# modeldeki bilesenleri listele (tablo):
+dist\TeklaBridge.Extractor.exe list-components
+# JSON olarak:
+dist\TeklaBridge.Extractor.exe list-components --json
+# belirli bileseni export et (ID veya component numarasi):
+dist\TeklaBridge.Extractor.exe --id 5245 --output C:\dizin\paket --attributes e1,e2,t,boltSize
+dist\TeklaBridge.Extractor.exe --number 146 --output C:\dizin\paket
+```
+
+Ayni numarada birden fazla bilesen varsa `--id` ile ayristirin (list-components ID'yi verir).
+
+### V3 fixture'lar (Linux'ta dogrulanir)
+
+```bash
+# uret (deterministik; checksums dahil):
+python3 tools/model-maker-bridge/scripts/make_fixtures_v3.py tools/model-maker-bridge/fixtures
+python3 tools/model-maker-bridge/scripts/validate_bridge_package.py \
+  tools/model-maker-bridge/fixtures/fixture-146-shear-plate-v3.mmbridge
+python3 tools/model-maker-bridge/scripts/validate_bridge_package.py \
+  tools/model-maker-bridge/fixtures/fixture-144-end-plate-v3.mmbridge
+```
+
+Fixture'lar: `fixture-146-shear-plate-v3` (plate bbox + 6 bolt + weld + V3 dosyalari),
+`fixture-144-end-plate-v3` (end plate MESH + 2 stiffener + 2 bolt + 2 weld + fitting +
+boolean), `fixture-mesh-box-v3` (tek mesh kutu -> mesh->solid).
+
+### OCC-on V3 import testi (Linux, g++ tek-satiri)
+
+```bash
+cd /home/ubuntu/model-maker-overnight
+g++ -std=gnu++20 -O1 -DMM_HAS_OCC \
+    -DMM_BRIDGE_FIXTURE_DIR="\"$(pwd)/tools/model-maker-bridge/fixtures\"" \
+    -I include -I third_party/nlohmann -I /usr/include/opencascade \
+    tests/occ_bridge_v3_import_test.cpp \
+    src/bridge_package.cpp src/bridge_component_mapper.cpp src/bridge_occ_adapter.cpp \
+    src/component_materializer.cpp src/component_framework.cpp src/component_engine.cpp \
+    src/component_dialog.cpp src/document.cpp src/mmw8_codec.cpp src/end_plate.cpp \
+    src/bolt.cpp src/cut_modifier.cpp src/geometry.cpp src/profile_database.cpp \
+    src/reference_geometry.cpp src/constraint_system.cpp src/contact_resolver.cpp \
+    src/geometry_reference_resolver.cpp src/magnetic_frame.cpp src/component_recompute.cpp \
+    src/component.cpp src/assembly.cpp src/camera.cpp src/occ_contact_resolver.cpp \
+    src/occ_solid_store.cpp src/occ_brep_serialize.cpp src/occ_geometry.cpp \
+    src/bolt_geometry.cpp src/end_plate_geometry.cpp src/sha256.cpp src/grid.cpp \
+    src/occ_store_null.cpp src/component_glyph.cpp \
+    -lTKernel -lTKMath -lTKG2d -lTKG3d -lTKGeomBase -lTKBRep -lTKGeomAlgo \
+    -lTKTopAlgo -lTKPrim -lTKBO -lTKBool -lTKShHealing -lTKMesh -lTKXSBase -lTKDESTEP \
+    -o /tmp/occ_bridge_v3_import_test && /tmp/occ_bridge_v3_import_test
+```
+
+Test kapsami: mesh->solid (hacim 340000), transform, 146 V3 delme (6 delik, hacim
+317192), 144 cok parca (3 parca + 2 bulon grubu + mesh end plate 28.8M + fitting/
+boolean metadata), duplicate import (2. import duplicate=true), bos-objects rollback.

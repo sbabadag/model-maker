@@ -11,7 +11,20 @@
 #include "model_maker/occ_solid_store.hpp"
 
 #include <BRepPrimAPI_MakeBox.hxx>
+#include <BRep_Builder.hxx>
+#include <BRepBuilderAPI_MakeFace.hxx>
+#include <BRepBuilderAPI_MakePolygon.hxx>
+#include <BRepBuilderAPI_MakeSolid.hxx>
+#include <BRepBuilderAPI_Sewing.hxx>
+#include <BRepBuilderAPI_Transform.hxx>
+#include <ShapeFix_Shape.hxx>
+#include <TopExp_Explorer.hxx>
+#include <TopoDS.hxx>
+#include <TopoDS_Compound.hxx>
+#include <TopoDS_Shell.hxx>
+#include <gp_Mat.hxx>
 #include <gp_Pnt.hxx>
+#include <gp_Trsf.hxx>
 
 #include <algorithm>
 #include <cmath>
@@ -145,6 +158,72 @@ TopoDS_Shape buildBridgePlateSolid(const BridgeBBox& bbox) {
         .Shape();
 }
 
+TopoDS_Shape buildBridgeMeshSolid(const BridgeMesh& mesh) {
+    if (mesh.vertices.size() < 4 || mesh.triangles.empty()) return TopoDS_Shape{};
+
+    BRep_Builder B;
+    TopoDS_Compound comp;
+    B.MakeCompound(comp);
+
+    for (const auto& tri : mesh.triangles) {
+        const BridgeVec3& a = mesh.vertices[tri[0]];
+        const BridgeVec3& b = mesh.vertices[tri[1]];
+        const BridgeVec3& c = mesh.vertices[tri[2]];
+        BRepBuilderAPI_MakePolygon wire(gp_Pnt(a.x, a.y, a.z), gp_Pnt(b.x, b.y, b.z),
+                                        gp_Pnt(c.x, c.y, c.z), Standard_True);
+        if (!wire.IsDone()) continue;
+        BRepBuilderAPI_MakeFace face(wire.Wire());
+        if (!face.IsDone()) continue;
+        B.Add(comp, face.Face());
+    }
+
+    // Es-konum kenarlari dik (tolerans mm).
+    BRepBuilderAPI_Sewing sew(1e-3);
+    sew.Add(comp);
+    sew.Perform();
+    const TopoDS_Shape sewed = sew.SewedShape();
+    if (sewed.IsNull()) return TopoDS_Shape{};
+
+    TopExp_Explorer ex(sewed, TopAbs_SHELL);
+    if (!ex.More()) return TopoDS_Shape{};
+    const TopoDS_Shell shell = TopoDS::Shell(ex.Current());
+
+    BRepBuilderAPI_MakeSolid maker(shell);
+    if (!maker.IsDone()) return TopoDS_Shape{};
+    TopoDS_Solid solid = maker.Solid();
+
+    ShapeFix_Shape fix(solid);
+    fix.Perform();
+    return fix.Shape();
+}
+
+TopoDS_Shape transformBridgeShape(const TopoDS_Shape& shape, const BridgeTransform& tr) {
+    if (shape.IsNull() || !tr.valid) return shape;
+    gp_Trsf t;
+    if (tr.hasMatrix) {
+        gp_Mat m(tr.matrix[0], tr.matrix[1], tr.matrix[2],
+                 tr.matrix[4], tr.matrix[5], tr.matrix[6],
+                 tr.matrix[8], tr.matrix[9], tr.matrix[10]);
+        const gp_XYZ txyz(tr.matrix[3], tr.matrix[7], tr.matrix[11]);
+        t.SetValues(m(1, 1), m(1, 2), m(1, 3), txyz.X(),
+                    m(2, 1), m(2, 2), m(2, 3), txyz.Y(),
+                    m(3, 1), m(3, 2), m(3, 3), txyz.Z());
+    } else {
+        const gp_XYZ x(tr.xAxis.x, tr.xAxis.y, tr.xAxis.z);
+        const gp_XYZ y(tr.yAxis.x, tr.yAxis.y, tr.yAxis.z);
+        const gp_XYZ z(tr.zAxis.x, tr.zAxis.y, tr.zAxis.z);
+        const gp_Mat m(x.X(), y.X(), z.X(),
+                       x.Y(), y.Y(), z.Y(),
+                       x.Z(), y.Z(), z.Z());
+        t.SetValues(m(1, 1), m(1, 2), m(1, 3), tr.origin.x,
+                    m(2, 1), m(2, 2), m(2, 3), tr.origin.y,
+                    m(3, 1), m(3, 2), m(3, 3), tr.origin.z);
+    }
+    BRepBuilderAPI_Transform xform(shape, t, Standard_True /* copy */);
+    if (!xform.IsDone()) return shape;
+    return xform.Shape();
+}
+
 BridgeBoltPlan planBridgeBolts(const BridgeBoltGroupInfo& info,
                                const BridgeBBox& plateBBox) {
     BridgeBoltPlan plan;
@@ -265,148 +344,113 @@ BridgeHoleCutResult cutBridgeBoltHoles(const TopoDS_Shape& plateSolid,
 BridgeImportOutcome importBridgeComponent(Document& doc, const BridgePackage& pkg) {
     BridgeImportOutcome out;
 
-    // --- Kaynak nesneleri ayikla ---
-    const BridgeObject* plate = nullptr;
-    const BridgeObject* boltObj = nullptr;
-    const BridgeObject* weldObj = nullptr;
+    // --- Ayni kaynak GUID zaten import edilmis mi? (duplicate import) ---
+    const std::wstring srcGuid(pkg.component.guid.begin(), pkg.component.guid.end());
+    for (const auto& rec : doc.componentInstances()) {
+        if (rec.typeId != L"tekla_bridge_import") continue;
+        for (const auto& p : rec.params)
+            if (p.name == L"_bridge_source_guid" &&
+                std::holds_alternative<std::wstring>(p.value) &&
+                std::get<std::wstring>(p.value) == srcGuid) {
+                out.ok = true;
+                out.duplicate = true;
+                out.componentId = rec.id;
+                out.warnings.push_back(
+                    "ayni kaynak GUID zaten import edilmis; yinelenen import atlandi.");
+                return out;
+            }
+    }
+
+    // --- Parcalari topla (kati tasiyanlar) ---
+    struct PartPlan {
+        const BridgeObject* obj = nullptr;
+        TopoDS_Shape solid;
+        bool fromMesh = false;  // mesh -> delikler zaten icinde, tekrar delme
+        EntityId id{kInvalidEntityId};
+    };
+    std::vector<PartPlan> parts;
     for (const auto& o : pkg.objects) {
-        if (!plate && (o.kind == "ContourPlate" ||
-                       ((o.kind == "Beam") && isPlateProfile(o.profile))))
-            plate = &o;
-        if (!boltObj && o.kind == "BoltGroup") boltObj = &o;
-        if (!weldObj && o.kind == "Weld") weldObj = &o;
+        const bool solidKind =
+            o.kind == "ContourPlate" || o.kind == "Beam" || o.kind == "PolyBeam";
+        if (!solidKind || (!o.bbox && !o.mesh)) continue;
+        PartPlan pp;
+        pp.obj = &o;
+        pp.fromMesh = o.mesh.has_value();
+        TopoDS_Shape s;
+        if (o.mesh && !o.mesh->vertices.empty())
+            s = buildBridgeMeshSolid(*o.mesh);
+        if (s.IsNull() && o.bbox)
+            s = buildBridgePlateSolid(*o.bbox);
+        if (s.IsNull()) {
+            out.warnings.push_back("parca kati uretilemedi (guid=" + o.sourceGUID +
+                                   ", roleKey=" + o.roleKey + "); atlandi.");
+            continue;
+        }
+        if (o.localToGlobal) s = transformBridgeShape(s, *o.localToGlobal);
+        pp.solid = s;
+        parts.push_back(std::move(pp));
     }
-    if (!plate || !plate->bbox) {
-        out.error = "plaka (ContourPlate + bbox) bulunamadi";
+    if (parts.empty()) {
+        out.error = "import edilebilir parca (ContourPlate/Beam + bbox/mesh) bulunamadi";
         return out;
-    }
-    if (!boltObj || !boltObj->boltGroup) {
-        out.error = "bulon grubu (BoltGroup + boltGroup) bulunamadi";
-        return out;
-    }
-
-    // --- Eksen/cap plani ---
-    const BridgeBoltPlan plan = planBridgeBolts(*boltObj->boltGroup, *plate->bbox);
-    if (!plan.ok) {
-        out.error = plan.error;
-        return out;
-    }
-
-    // --- Plaka kati (deliksiz) ---
-    const TopoDS_Shape plateBox = buildBridgePlateSolid(*plate->bbox);
-    if (plateBox.IsNull()) {
-        out.error = "plaka kati uretilemedi";
-        return out;
-    }
-
-    // --- Bulon grubu pattern tespiti (uydurulmaz; basarisizsa bireysel delik) ---
-    BoltGroup bolt;
-    const bool gridOk = detectAxisAlignedBoltGrid(boltObj->boltGroup->bolts, plan.axis, bolt);
-    bolt.axis = plan.axis;
-    double nominal = 0.0;
-    for (const auto& b : boltObj->boltGroup->bolts)
-        if (b.nominalDiameter > 0.0) { nominal = b.nominalDiameter; break; }
-    if (nominal <= 0.0) nominal = parseMetricSize(boltObj->boltGroup->size);
-    bolt.params.nominalDiameter = nominal > 0.0 ? nominal : 20.0;
-    bolt.params.holeDiameter = plan.holeDiameter;
-    if (!gridOk) {
-        // Duzensiz bulon seti: pattern yerine TEKIL delikler kesilir (owner = bulon).
-        // countX=countY=1, origin=ilk bulon — display bir bulonu gosterir; geri kalan
-        // delikler asagida bireysel addCutModifier ile eklenir.
-        bolt.origin = boltObj->boltGroup->bolts.empty()
-                          ? Vec3{}
-                          : toVec3(boltObj->boltGroup->bolts[0].position);
-        bolt.xDir = (std::fabs(plan.axis.x) > 0.5) ? Vec3{0, 1, 0} : Vec3{1, 0, 0};
-        bolt.countX = 1;
-        bolt.countY = 1;
-        bolt.spacingX = 0.0;
-        bolt.spacingY = 0.0;
-        out.warnings.push_back(
-            "bulon konumlari duzgun eksen-hizali grid degil; bireysel delik yolu kullanildi");
     }
 
     // --- Atomik transaction ---
     doc.pushSnapshot();
     const auto rollback = [&]() { doc.rollbackOpenRecord(); };
 
-    // --- Plaka varligi ---
-    WireframeModel plateWf = shapeToWireframeWithFaces(plateBox, 0.15);
-    {
-        EntityProperties p = plateWf.properties();
-        p.profileName = plate->profile.empty() ? "PL" : plate->profile;
-        p.material = plate->material;
-        plateWf.setProperties(std::move(p));
-    }
-    doc.addModel(std::move(plateWf));
-    const EntityId plateId = doc.modelId(doc.models().size() - 1);
     OccSolidStore* store = asSolidStore(&doc.occStore());
     if (!store) {
         rollback();
         out.error = "OCC magaza yok";
         return out;
     }
-    {
-        const VersionId before = store->activeVersion(plateId);
-        const VersionId after = store->set(plateId, plateBox);
+
+    // --- Parcalari ekle (kati + wireframe + taban surumu) ---
+    for (auto& pp : parts) {
+        WireframeModel wf = shapeToWireframeWithFaces(pp.solid, 0.15);
+        {
+            EntityProperties props = wf.properties();
+            props.profileName = pp.obj->profile.empty() ? "PL" : pp.obj->profile;
+            props.material = pp.obj->material;
+            wf.setProperties(std::move(props));
+        }
+        doc.addModel(std::move(wf));
+        pp.id = doc.modelId(doc.models().size() - 1);
+        const VersionId before = store->activeVersion(pp.id);
+        const VersionId after = store->set(pp.id, pp.solid);
         if (after == kInvalidVersionId) {
             rollback();
-            out.error = "plaka kati yazilamadi";
+            out.error = "parca kati yazilamadi";
             return out;
         }
-        doc.recordGeometryDelta(plateId, before, after);
-        const VersionId oldBase = store->baseVersion(plateId);
-        store->setBaseVersion(plateId, after);  // taban = deliksiz kati
-        doc.recordBaseVersionDelta(plateId, oldBase, after);
+        doc.recordGeometryDelta(pp.id, before, after);
+        const VersionId oldBase = store->baseVersion(pp.id);
+        store->setBaseVersion(pp.id, after);
+        doc.recordBaseVersionDelta(pp.id, oldBase, after);
+        out.partIds.push_back(pp.id);
     }
-    out.plateId = plateId;
+    out.plateId = out.partIds.front();
+    out.partsImported = static_cast<int>(out.partIds.size());
 
-    // --- Bulon grubu ---
-    bolt.id = kInvalidEntityId;
-    bolt.parts = {plateId};  // yalniz yeniden uretilen levha delinir; ikincil uye YOK (referans)
-    const double grip =
-        (std::fabs(plan.axis.x) > 0.5) ? (plate->bbox->max.x - plate->bbox->min.x)
-        : (std::fabs(plan.axis.y) > 0.5) ? (plate->bbox->max.y - plate->bbox->min.y)
-                                         : (plate->bbox->max.z - plate->bbox->min.z);
-    const TopoDS_Shape assembly = buildBoltGroupAssemblyShape(bolt, grip > 0.0 ? grip : 10.0);
-    WireframeModel display =
-        assembly.IsNull() ? WireframeModel::cube(10.0) : shapeToWireframeWithFaces(assembly, 0.15);
-    const std::size_t bi = doc.addBoltGroup(bolt, std::move(display));
-    const BoltGroup& created = doc.boltGroups()[bi];
-    out.boltGroupId = created.id;
-    if (!assembly.IsNull()) {
-        const VersionId before = store->activeVersion(created.displayEntityId);
-        const VersionId after = store->set(created.displayEntityId, assembly);
-        if (after != kInvalidVersionId)
-            doc.recordGeometryDelta(created.displayEntityId, before, after);
-    }
+    const auto findPart = [&](const std::string& guid) -> PartPlan* {
+        for (auto& p : parts)
+            if (p.obj->sourceGUID == guid) return &p;
+        return nullptr;
+    };
 
-    // Duzensiz set icin bireysel delikler (grid pattern zaten 6 delik uretti ise gerek yok).
-    if (!gridOk) {
-        for (std::size_t i = 0; i < plan.holeOrigins.size(); ++i) {
-            if (!plan.boltInside[i]) {
-                ++out.holesSkipped;
-                if (!plan.diagnostics[i].empty()) out.diagnostics.push_back(plan.diagnostics[i]);
-                continue;
-            }
-            CutModifier mod =
-                makeHoleCutModifier(plateId, plan.holeOrigins[i], plan.axis, plan.holeDiameter, 0.0);
-            mod.owner = created.id;
-            doc.addCutModifier(std::move(mod));
-        }
-    }
-
-    // --- Plakaya delikleri uygula (materializer applyCutsFor ile AYNI yol) ---
-    {
-        VersionId base = store->baseVersion(plateId);
-        if (base == kInvalidVersionId) base = store->activeVersion(plateId);
-        const TopoDS_Shape* baseShape = base == kInvalidVersionId ? nullptr : store->findVersion(plateId, base);
+    // Hedef parcanin TUM delik modifier'larini yeniden uygular (applyCutsFor yolu).
+    const auto reapplyHoles = [&](EntityId partId, const char* what) -> bool {
+        VersionId base = store->baseVersion(partId);
+        if (base == kInvalidVersionId) base = store->activeVersion(partId);
+        const TopoDS_Shape* baseShape =
+            base == kInvalidVersionId ? nullptr : store->findVersion(partId, base);
         if (!baseShape || baseShape->IsNull()) {
-            rollback();
-            out.error = "plaka taban kati yok (delik uygulanamadi)";
-            return out;
+            out.error = std::string(what) + " taban kati yok (delik uygulanamadi)";
+            return false;
         }
         std::vector<CutModifier> mods;
-        for (const std::size_t ci : doc.cutModifiersForTarget(plateId))
+        for (const std::size_t ci : doc.cutModifiersForTarget(partId))
             mods.push_back(resolveCutModifierSource(doc.cutModifiers()[ci], doc));
         const ToolShapeResolver resolveTool = [&](EntityId id) -> const TopoDS_Shape* {
             return store->find(id);
@@ -414,44 +458,143 @@ BridgeImportOutcome importBridgeComponent(Document& doc, const BridgePackage& pk
         const TopoDS_Shape holed =
             applyCutModifierChain(*baseShape, mods, Vec3{}, Vec3{}, resolveTool);
         if (holed.IsNull()) {
-            rollback();
-            out.error = "delik boolean basarisiz (plaka kati null)";
-            return out;
+            out.error = std::string(what) + " delik boolean basarisiz";
+            return false;
         }
-        const auto idxOpt = doc.indexOfEntity(plateId);
+        const auto idxOpt = doc.indexOfEntity(partId);
         if (!idxOpt) {
-            rollback();
-            out.error = "plaka varligi bulunamadi";
-            return out;
+            out.error = std::string(what) + " varligi bulunamadi";
+            return false;
         }
         WireframeModel cutModel = shapeToWireframeWithFaces(holed, 0.15);
         cutModel.setProperties(doc.models()[*idxOpt].properties());
         doc.replaceModel(*idxOpt, {std::move(cutModel)});
-        const VersionId before = store->activeVersion(plateId);
-        const VersionId after = store->set(plateId, holed);
+        const VersionId before = store->activeVersion(partId);
+        const VersionId after = store->set(partId, holed);
         if (after == kInvalidVersionId) {
+            out.error = std::string(what) + " delikli kati yazilamadi";
+            return false;
+        }
+        doc.recordGeometryDelta(partId, before, after);
+        return true;
+    };
+
+    // --- Bulon gruplari ---
+    std::vector<std::pair<std::string, EntityId>> boltChildren;
+    for (const auto& bo : pkg.objects) {
+        if (bo.kind != "BoltGroup" || !bo.boltGroup) continue;
+
+        PartPlan* target = findPart(bo.boltGroup->partToBoltTo);
+        if (!target) target = &parts.front();
+        if (!target->obj->bbox) {
+            out.warnings.push_back("bulon grubu " + bo.sourceGUID +
+                                   ": hedef parca bbox yok; delik acilmadi.");
+            continue;
+        }
+        const BridgeBoltPlan plan = planBridgeBolts(*bo.boltGroup, *target->obj->bbox);
+        if (!plan.ok) {
+            out.warnings.push_back("bulon grubu " + bo.sourceGUID + ": " + plan.error +
+                                   " (delik acilmadi).");
+            continue;
+        }
+        const bool skipDrill = target->fromMesh;
+
+        BoltGroup bolt;
+        const bool gridOk = detectAxisAlignedBoltGrid(bo.boltGroup->bolts, plan.axis, bolt);
+        bolt.axis = plan.axis;
+        double nominal = 0.0;
+        for (const auto& b : bo.boltGroup->bolts)
+            if (b.nominalDiameter > 0.0) { nominal = b.nominalDiameter; break; }
+        if (nominal <= 0.0) nominal = parseMetricSize(bo.boltGroup->size);
+        bolt.params.nominalDiameter = nominal > 0.0 ? nominal : 20.0;
+        bolt.params.holeDiameter = plan.holeDiameter;
+        if (!gridOk) {
+            bolt.origin = bo.boltGroup->bolts.empty()
+                              ? Vec3{}
+                              : toVec3(bo.boltGroup->bolts[0].position);
+            bolt.xDir = (std::fabs(plan.axis.x) > 0.5) ? Vec3{0, 1, 0} : Vec3{1, 0, 0};
+            bolt.countX = 1;
+            bolt.countY = 1;
+            bolt.spacingX = 0.0;
+            bolt.spacingY = 0.0;
+            out.warnings.push_back(
+                "bulon konumlari duzgun eksen-hizali grid degil; bireysel delik yolu kullanildi.");
+        }
+
+        bolt.id = kInvalidEntityId;
+        bolt.parts = skipDrill ? std::vector<EntityId>{} : std::vector<EntityId>{target->id};
+        const double grip =
+            (std::fabs(plan.axis.x) > 0.5)
+                ? (target->obj->bbox->max.x - target->obj->bbox->min.x)
+            : (std::fabs(plan.axis.y) > 0.5)
+                ? (target->obj->bbox->max.y - target->obj->bbox->min.y)
+                : (target->obj->bbox->max.z - target->obj->bbox->min.z);
+        const TopoDS_Shape assembly =
+            buildBoltGroupAssemblyShape(bolt, grip > 0.0 ? grip : 10.0);
+        WireframeModel display =
+            assembly.IsNull() ? WireframeModel::cube(10.0)
+                              : shapeToWireframeWithFaces(assembly, 0.15);
+        const std::size_t bi = doc.addBoltGroup(bolt, std::move(display));
+        const BoltGroup& created = doc.boltGroups()[bi];
+        out.boltGroupIds.push_back(created.id);
+        if (out.boltGroupId == kInvalidEntityId) out.boltGroupId = created.id;
+        boltChildren.emplace_back(bo.roleKey.empty() ? "bolt_group" : bo.roleKey,
+                                  created.id);
+        if (!assembly.IsNull()) {
+            const VersionId before = store->activeVersion(created.displayEntityId);
+            const VersionId after = store->set(created.displayEntityId, assembly);
+            if (after != kInvalidVersionId)
+                doc.recordGeometryDelta(created.displayEntityId, before, after);
+        }
+
+        if (skipDrill) {
+            out.warnings.push_back("bulon grubu " + bo.sourceGUID +
+                                   ": hedef parca mesh (delikler kaynak katida zaten var); "
+                                   "tekrar delme atlandi (bulonlar gosteriliyor).");
+            ++out.boltGroupsImported;
+            continue;
+        }
+
+        if (!gridOk) {
+            for (std::size_t i = 0; i < plan.holeOrigins.size(); ++i) {
+                if (!plan.boltInside[i]) {
+                    ++out.holesSkipped;
+                    if (!plan.diagnostics[i].empty())
+                        out.diagnostics.push_back(plan.diagnostics[i]);
+                    continue;
+                }
+                CutModifier mod = makeHoleCutModifier(target->id, plan.holeOrigins[i],
+                                                      plan.axis, plan.holeDiameter, 0.0);
+                mod.owner = created.id;
+                doc.addCutModifier(std::move(mod));
+            }
+        }
+        if (!reapplyHoles(target->id, "parca")) {
             rollback();
-            out.error = "delikli plaka kati yazilamadi";
             return out;
         }
-        doc.recordGeometryDelta(plateId, before, after);
+        for (const auto& d : plan.diagnostics)
+            if (!d.empty()) out.diagnostics.push_back(d);
+        ++out.boltGroupsImported;
     }
 
     // --- Delik sayimi ---
     out.holesCut = 0;
     for (const auto& m : doc.cutModifiers())
-        if (m.kind == CutKind::Hole && m.owner == created.id && m.target == plateId) ++out.holesCut;
+        for (EntityId bgid : out.boltGroupIds)
+            if (m.kind == CutKind::Hole && m.owner == bgid) ++out.holesCut;
 
     // --- Component instance (orphan = parametrik DEGIL) ---
     ComponentInstanceRecord rec;
     rec.typeId = L"tekla_bridge_import";
-    rec.schemaVersion = 2;
-    rec.mainPart = kInvalidEntityId;  // kullanici parcalari YENIDEN uretilmez (yalniz referans)
+    rec.schemaVersion = 3;
+    rec.mainPart = kInvalidEntityId;  // kullanici parcalari YENIDEN uretilmez (referans)
     rec.secondaryParts.clear();
-    rec.origin = toVec3(plate->bbox->min);
-    rec.ownedPlateIds = {plateId};
-    rec.ownedBoltGroupIds = {created.id};
-    // Kaynak metadatasi: `_bridge_*` string parametreleri (provenance + refs + weld).
+    rec.origin = parts.front().obj->bbox ? toVec3(parts.front().obj->bbox->min)
+                                         : toVec3(pkg.component.coordinateSystem.origin);
+    rec.ownedPlateIds = out.partIds;
+    rec.ownedBoltGroupIds = out.boltGroupIds;
+
     const auto pushStr = [&](const std::wstring& k, const std::string& v) {
         rec.params.push_back(CompParam{k, CompParamValue{std::wstring(v.begin(), v.end())}});
     };
@@ -463,34 +606,57 @@ BridgeImportOutcome importBridgeComponent(Document& doc, const BridgePackage& pk
                                     pkg.component.primaryMember.role);
     for (const auto& sm : pkg.component.secondaryMembers)
         pushStr(L"_bridge_secondary", sm.guid + "/" + sm.profile + "/" + sm.role);
-    if (weldObj && weldObj->weld)
-        pushStr(L"_bridge_weld", weldObj->weld->type + "/" +
-                                     std::to_string(weldObj->weld->size) + "mm/" +
-                                     weldObj->weld->mainSourceGUID + "/" +
-                                     weldObj->weld->secondarySourceGUID);
-    pushStr(L"_bridge_axis_source", plan.axisSource);
-    pushStr(L"_bridge_diameter_source", plan.diameterSource);
-    // Child tablosu (roleKey -> EntityId; fin plate semantigiyle uyumlu).
-    rec.children.push_back(ComponentChildRecord{"shear_tab_near", ComponentObjectKind::Plate,
-                                                plateId, {}, std::nullopt, std::nullopt,
-                                                std::nullopt, std::nullopt});
-    rec.children.push_back(ComponentChildRecord{"beam_bolts", ComponentObjectKind::BoltGroup,
-                                                created.id, {}, std::nullopt, std::nullopt,
-                                                std::nullopt, std::nullopt});
+
+    // V3: weld / fitting / boolean / relationship metadata (acikca, uydurulmadan).
+    int weldSeq = 0;
+    for (const auto& o : pkg.objects) {
+        if (o.kind == "Weld" && o.weld) {
+            const std::wstring key =
+                weldSeq == 0 ? L"_bridge_weld" : L"_bridge_weld_" + std::to_wstring(weldSeq);
+            ++weldSeq;
+            pushStr(key, o.weld->type + "/" + std::to_string(o.weld->size) + "mm/" +
+                             o.weld->mainSourceGUID + "/" + o.weld->secondarySourceGUID);
+        } else if (o.kind == "Fitting" && o.fitting)
+            pushStr(L"_bridge_fitting_" + std::wstring(o.roleKey.begin(), o.roleKey.end()),
+                    o.fitting->targetPartGUID + "/" + o.fitting->keepSide +
+                        (o.fitting->inferred ? "/inferred" : ""));
+        else if (o.kind == "BooleanPart" && o.booleanPart)
+            pushStr(L"_bridge_boolean_" + std::wstring(o.roleKey.begin(), o.roleKey.end()),
+                    o.booleanPart->operationType + "/" + o.booleanPart->targetPartGUID +
+                        "/" + o.booleanPart->operandGUID);
+    }
+    int opSeq = 0;
+    for (const auto& op : pkg.operations)
+        pushStr(L"_bridge_op_" + std::to_wstring(opSeq++),
+                op.type + "/" + op.targetPartGUID + "/" + op.operatorGUID +
+                    (op.inferred ? "/inferred" : ""));
+
+    // Child tablosu (roleKey -> EntityId; semantik, kararli).
+    for (const auto& pp : parts) {
+        std::string rk = pp.obj->roleKey.empty() ? "part" : pp.obj->roleKey;
+        rec.children.push_back(ComponentChildRecord{rk, ComponentObjectKind::Plate, pp.id,
+                                                    {}, std::nullopt, std::nullopt,
+                                                    std::nullopt, std::nullopt});
+    }
+    for (const auto& bc : boltChildren)
+        rec.children.push_back(ComponentChildRecord{bc.first, ComponentObjectKind::BoltGroup,
+                                                    bc.second, {}, std::nullopt,
+                                                    std::nullopt, std::nullopt,
+                                                    std::nullopt});
     const std::size_t ci = doc.addComponentInstance(std::move(rec));
     out.componentId = doc.componentInstances()[ci].id;
 
     // Uyarilar (davranis sinirlari acikca raporlanir).
-    if (weldObj && weldObj->weld)
-        out.warnings.push_back("kaynak (weld) yalniz metadata olarak kaydedildi; "
-                               "model-maker kaynak geometri motoru yok.");
-    out.warnings.push_back("bulon display grip yalniz yeniden uretilen levha; ikincil uye "
-                           "(partToBeBolted) yeniden uretilmediginden tam grip YOK.");
-    out.warnings.push_back("import edilen component parametrik DEGILDIR (typeId registry'de yok); "
-                           "geometri dogrulanmis bbox + bulon konumlarindan YENIDEN uretildi.");
-
-    for (const auto& d : plan.diagnostics)
-        if (!d.empty()) out.diagnostics.push_back(d);
+    for (const auto& o : pkg.objects)
+        if (o.kind == "Weld")
+            out.warnings.push_back("kaynak (weld) yalniz metadata olarak kaydedildi; " +
+                                   std::string(o.roleKey) +
+                                   " icin model-maker kaynak geometri motoru yok.");
+    out.warnings.push_back("bulon display grip yalniz yeniden uretilen levhalar; ikincil "
+                           "uye govdeleri yeniden uretilmediginden tam grip YOK.");
+    out.warnings.push_back("import edilen component parametrik DEGILDIR (typeId registry'de "
+                           "yok); geometri dogrulanmis bbox/mesh + bulon konumlarindan "
+                           "YENIDEN uretildi.");
 
     out.ok = true;
     return out;

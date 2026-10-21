@@ -1,0 +1,29 @@
+[
+  {
+    "name": "endPlateThickness",
+    "type": "Length",
+    "value": 15.0,
+    "units": "mm",
+    "source": "FIXTURE-V3",
+    "readable": "ok",
+    "confidence": "observed"
+  },
+  {
+    "name": "boltRows",
+    "type": "Integer",
+    "value": 2,
+    "units": "",
+    "source": "FIXTURE-V3",
+    "readable": "ok",
+    "confidence": "observed"
+  },
+  {
+    "name": "boltSize",
+    "type": "Enum",
+    "value": "M20",
+    "units": "",
+    "source": "FIXTURE-V3",
+    "readable": "ok",
+    "confidence": "observed"
+  }
+]

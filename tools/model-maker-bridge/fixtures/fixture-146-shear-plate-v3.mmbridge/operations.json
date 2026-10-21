@@ -1,0 +1,9 @@
+[
+  {
+    "id": "op1",
+    "type": "BoltHole",
+    "targetPartGUID": "5673",
+    "operatorGUID": "5837",
+    "confidence": "observed"
+  }
+]

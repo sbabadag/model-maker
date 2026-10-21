@@ -32,6 +32,17 @@ namespace mm {
 // icin IsNull doner.
 TopoDS_Shape buildBridgePlateSolid(const BridgeBBox& bbox);
 
+// V3: ucgen mesh'ten su gecirmez B-Rep kati uretir (BRepBuilderAPI_Sewing +
+// MakeSolid + ShapeFix). Olcum: her ucgen ayri yuz olarak eklenir, es-konum
+// kenarlar dikilir. Sonuc yaklasik (approximate) kati; kaynak mesh su gecirmez
+// degilse veya tek kabuk uretilemezse IsNull doner (importer bbox'a duser).
+TopoDS_Shape buildBridgeMeshSolid(const BridgeMesh& mesh);
+
+// V3: BridgeTransform (origin+eksenler veya 4x4 matris) -> gp_Trsf uygulanmis
+// sekil. Gecersiz transform'da girdiyi aynen dondurur.
+TopoDS_Shape transformBridgeShape(const TopoDS_Shape& shape,
+                                  const BridgeTransform& tr);
+
 // Bulon ekseni + delik capi KARARI (belgelenmis; uydurulmaz).
 struct BridgeBoltPlan {
     bool ok = false;
@@ -78,15 +89,22 @@ struct BridgeImportOutcome {
     EntityId componentId{kInvalidEntityId};
     int holesCut = 0;
     int holesSkipped = 0;
+    int partsImported = 0;       // V3: import edilen parca sayisi
+    int boltGroupsImported = 0;  // V3: import edilen bulon grubu sayisi
+    bool duplicate = false;      // V3: ayni kaynak zaten import edilmis
+    std::vector<EntityId> partIds;       // V3: tum parca EntityId'leri
+    std::vector<EntityId> boltGroupIds;  // V3: tum bulon grubu EntityId'leri
     std::vector<std::string> diagnostics;
     std::vector<std::string> warnings;
 };
 
-// V2 paketini Document'a ATOMIK olarak isler (pushSnapshot + hata rollback).
-// Uretilenler: plaka (kati + wireframe + delikler), bulon grubu (display + delik
-// modifier'lari), component instance (typeId "tekla_bridge_import", orphan =
-// parametrik DEGIL). Basarisizlikta belge DEGISMEZ (rollbackOpenRecord).
-// Undo/redo tek adimda geri alir.
+// V2/V3 paketini Document'a ATOMIK olarak isler (pushSnapshot + hata rollback).
+// Uretilenler: parcalar (kati + wireframe; mesh varsa approximate mesh->solid,
+// yoksa reconstructed bbox kutu), bulon gruplari (display + delik modifier'lari
+// yalniz reconstructed hedefte), component instance (typeId "tekla_bridge_import",
+// orphan = parametrik DEGIL). V3'te cok parca + fitting/boolean metadata +
+// relationships korunur; ayni kaynak GUID tekrar import edilirse duplicate=true.
+// Basarisizlikta belge DEGISMEZ (rollbackOpenRecord). Undo/redo tek adimda.
 BridgeImportOutcome importBridgeComponent(Document& doc, const BridgePackage& pkg);
 
 }  // namespace mm

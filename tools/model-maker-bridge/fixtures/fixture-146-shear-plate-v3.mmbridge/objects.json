@@ -1,0 +1,126 @@
+[
+  {
+    "sourceGUID": "5673",
+    "identifierId": 5673,
+    "kind": "ContourPlate",
+    "name": "PLATE",
+    "roleKey": "shear_tab",
+    "profile": "PL10",
+    "material": "S235JR",
+    "parentSourceGUID": "5245",
+    "mapped": true,
+    "mappedKind": "Plate",
+    "geometryFile": "geometry/0000.json",
+    "geometryRepresentation": "reconstructed",
+    "confidence": "observed",
+    "topology": {
+      "faceCount": 6,
+      "loopCount": 6,
+      "faceVertexOccurrences": 24,
+      "holeLoops": 0
+    }
+  },
+  {
+    "sourceGUID": "5837",
+    "identifierId": 5837,
+    "kind": "BoltGroup",
+    "name": "BOLT",
+    "roleKey": "beam_bolts",
+    "parentSourceGUID": "5245",
+    "mapped": true,
+    "mappedKind": "BoltGroup",
+    "boltGroup": {
+      "size": "M20",
+      "standardCode": 7990,
+      "tolerance": 2.0,
+      "slottedHoleX": 0.0,
+      "slottedHoleY": 0.0,
+      "partToBeBolted": "5213",
+      "partToBoltTo": "5673",
+      "axis": "x",
+      "axisSource": "inferred",
+      "boltType": "BOLT",
+      "boltStandard": "7990",
+      "direction": {
+        "x": 1,
+        "y": 0,
+        "z": 0
+      },
+      "bolts": [
+        {
+          "position": {
+            "x": 0,
+            "y": 265,
+            "z": 7119
+          },
+          "nominalDiameter": 20,
+          "holeDiameterSource": "standard"
+        },
+        {
+          "position": {
+            "x": 0,
+            "y": 325,
+            "z": 7119
+          },
+          "nominalDiameter": 20,
+          "holeDiameterSource": "standard"
+        },
+        {
+          "position": {
+            "x": 0,
+            "y": 265,
+            "z": 7059
+          },
+          "nominalDiameter": 20,
+          "holeDiameterSource": "standard"
+        },
+        {
+          "position": {
+            "x": 0,
+            "y": 325,
+            "z": 7059
+          },
+          "nominalDiameter": 20,
+          "holeDiameterSource": "standard"
+        },
+        {
+          "position": {
+            "x": 0,
+            "y": 265,
+            "z": 6999
+          },
+          "nominalDiameter": 20,
+          "holeDiameterSource": "standard"
+        },
+        {
+          "position": {
+            "x": 0,
+            "y": 325,
+            "z": 6999
+          },
+          "nominalDiameter": 20,
+          "holeDiameterSource": "standard"
+        }
+      ]
+    }
+  },
+  {
+    "sourceGUID": "5701",
+    "identifierId": 5701,
+    "kind": "Weld",
+    "name": "WELD",
+    "roleKey": "shear_tab_weld",
+    "parentSourceGUID": "5245",
+    "mapped": true,
+    "mappedKind": "Weld",
+    "weld": {
+      "type": "fillet",
+      "size": 5.0,
+      "sizeAbove": 5.0,
+      "sizeBelow": 5.0,
+      "mainSourceGUID": "5165",
+      "secondarySourceGUID": "5673",
+      "position": "above_below"
+    }
+  }
+]

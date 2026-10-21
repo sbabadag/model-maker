@@ -674,13 +674,21 @@ if(BUILD_TESTING)
             MM_BRIDGE_FIXTURE_DIR="${CMAKE_SOURCE_DIR}/tools/model-maker-bridge/fixtures")
         add_test(NAME model_maker_occ_bridge_146_import_test
                  COMMAND model_maker_occ_bridge_146_import_test)
+        # TEKLA BRIDGE V3 OCC IMPORT: cok parcali + mesh->solid + fitting/boolean
+        # metadata + duplicate import + bos-objects rollback. GERCEK OCCT.
+        add_executable(model_maker_occ_bridge_v3_import_test tests/occ_bridge_v3_import_test.cpp)
+        target_link_libraries(model_maker_occ_bridge_v3_import_test PRIVATE model_maker_occ)
+        target_compile_definitions(model_maker_occ_bridge_v3_import_test PRIVATE
+            MM_BRIDGE_FIXTURE_DIR="${CMAKE_SOURCE_DIR}/tools/model-maker-bridge/fixtures")
+        add_test(NAME model_maker_occ_bridge_v3_import_test
+                 COMMAND model_maker_occ_bridge_v3_import_test)
         # END PLATE REGRESYON (A3): mevcut production hatti vs yeni ortak runtime.
         # Ayni yerlesim iki yoldan beslenir; geometri/bulon/delik/ownership esit.
         add_executable(model_maker_occ_end_plate_regression_vs_runtime tests/occ_end_plate_regression_vs_runtime.cpp)
         target_link_libraries(model_maker_occ_end_plate_regression_vs_runtime PRIVATE model_maker_occ)
         add_test(NAME model_maker_occ_end_plate_regression_vs_runtime COMMAND model_maker_occ_end_plate_regression_vs_runtime)
         if(UNIX)
-            set_tests_properties(model_maker_occ_store_roundtrip model_maker_occ_document_roundtrip model_maker_occ_bolt_group_roundtrip model_maker_occ_end_plate_roundtrip model_maker_occ_end_plate_placement model_maker_occ_end_plate_144_geometry model_maker_component_materializer_test model_maker_occ_fin_plate_e2e model_maker_occ_end_plate_regression_vs_runtime model_maker_occ_bridge_146_import_test PROPERTIES
+            set_tests_properties(model_maker_occ_store_roundtrip model_maker_occ_document_roundtrip model_maker_occ_bolt_group_roundtrip model_maker_occ_end_plate_roundtrip model_maker_occ_end_plate_placement model_maker_occ_end_plate_144_geometry model_maker_component_materializer_test model_maker_occ_fin_plate_e2e model_maker_occ_end_plate_regression_vs_runtime model_maker_occ_bridge_146_import_test model_maker_occ_bridge_v3_import_test PROPERTIES
                 ENVIRONMENT "LD_LIBRARY_PATH=${OCC_ROOT}/lib:$ENV{LD_LIBRARY_PATH}")
         endif()
     endif()
