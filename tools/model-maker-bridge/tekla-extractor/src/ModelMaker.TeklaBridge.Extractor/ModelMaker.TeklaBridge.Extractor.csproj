@@ -20,6 +20,10 @@
     <PackageReference Include="TSAppConfigPatcherTask" Version="2.1.3" />
     <!-- net48 hedefini Windows disinda da derlenebilir kilar. -->
     <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+    <!-- Tekla remoting istemcisi (Trimble.Remoting) System.Memory 4.0.1.2 ister;
+         Tekla.Structures.Model NuGet'i bunu net48 ciktisina transitif kopyalamaz,
+         runtime FileNotFoundException verir. Acik referansla publish'e kopyalat. -->
+    <PackageReference Include="System.Memory" Version="4.5.5" />
   </ItemGroup>
 
   <ItemGroup>
