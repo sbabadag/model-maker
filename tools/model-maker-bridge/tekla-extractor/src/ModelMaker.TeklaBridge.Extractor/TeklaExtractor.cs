@@ -509,7 +509,11 @@ namespace ModelMaker.TeklaBridge.Extractor
                 info.Axis = "";  // eksen dogrulanamadiysa bos -> importer inferred
                 info.AxisSource = "";
 
-                // Bulon konumlari.
+                // Bulon konumlari. Tekla BoltPositions LOKAL dondurur (bolt grubunun
+                // transformation plane'ine gore; bkz. Tekla dokumu). Global'e cevirmek
+                // icin GetCoordinateSystem() + TransformationPlane.TransformationMatrixToGlobal
+                // kullanilir. CS alinamazsa pozisyon oldugu gibi yazilir (importer bunu
+                // bbox disi bulursa delik acmaz, UNRESOLVED sayar).
                 var positions = Safe(() => bg.BoltPositions, null);
                 if (positions != null)
                 {
@@ -517,7 +521,17 @@ namespace ModelMaker.TeklaBridge.Extractor
                     if (pts != null)
                         foreach (var o in pts)
                             if (o is Point p)
-                                info.Bolts.Add(new BoltRecord { Position = ToVec3(p), NominalDiameter = Safe(() => bg.BoltSize, 0.0), HoleDiameterSource = "" });
+                            {
+                                Point g = p;
+                                try
+                                {
+                                    var cs = bg.GetCoordinateSystem();
+                                    if (cs != null)
+                                        g = new TransformationPlane(cs).TransformationMatrixToGlobal.Transform(p);
+                                }
+                                catch { /* CS yoksa local deger korunur */ }
+                                info.Bolts.Add(new BoltRecord { Position = ToVec3(g), NominalDiameter = Safe(() => bg.BoltSize, 0.0), HoleDiameterSource = "" });
+                            }
                 }
                 if (info.Bolts.Count == 0)
                     diag.Warnings.Add("Bulon grubu " + Safe(() => bg.Identifier.GUID.ToString(), "") + ": BoltPositions okunamadi.");

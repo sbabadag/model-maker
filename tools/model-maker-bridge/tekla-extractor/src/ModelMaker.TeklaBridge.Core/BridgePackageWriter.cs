@@ -19,7 +19,8 @@ namespace ModelMaker.TeklaBridge.Core
         {
             Formatting = Formatting.Indented,
             NullValueHandling = NullValueHandling.Ignore,
-            DefaultValueHandling = DefaultValueHandling.Ignore,
+            // NOT: DefaultValueHandling.Ignore kullanma — 0.0 mesru bir koordinattir
+            // (ornegin bolt X=0.0); atlanirsa JSON'da koordinat kaybolur.
         };
 
         public static void Write(BridgePackage package,
