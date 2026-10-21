@@ -14,6 +14,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <cstdlib>
 #include <set>
 
@@ -26,6 +27,17 @@ bool axisDir(const Vec3& a, gp_Dir& out) noexcept {
     if (len < 1e-12) return false;
     out = gp_Dir(a.x / len, a.y / len, a.z / len);
     return true;
+}
+
+// Renk konvansiyonu (Tekla tarzi): levha gri, civata (bolon) kahverengi.
+constexpr std::uint32_t kPlateColor = 0x808080u;  // gri
+constexpr std::uint32_t kBoltColor = 0x8B592Au;   // kahverengi (RGB 139,89,42)
+
+void applyColor(WireframeModel& model, std::uint32_t color) noexcept {
+    auto props = model.properties();
+    props.trueColor = color;
+    props.effectiveColor = color;
+    model.setProperties(std::move(props));
 }
 
 }  // namespace
@@ -469,6 +481,7 @@ ComponentMaterializer::CommitResult ComponentMaterializer::commit(const Prepared
         switch (pc.record.kind) {
             case ComponentObjectKind::Plate: {
                 WireframeModel wf = shapeToWireframeWithFaces(pc.solid, 0.15);
+                applyColor(wf, kPlateColor);
                 doc_.addModel(std::move(wf));
                 const EntityId id = doc_.modelId(doc_.models().size() - 1);
                 const VersionId before = store_->activeVersion(id);
@@ -512,6 +525,7 @@ ComponentMaterializer::CommitResult ComponentMaterializer::commit(const Prepared
                 WireframeModel display =
                     assembly.IsNull() ? WireframeModel::cube(10.0)
                                       : shapeToWireframeWithFaces(assembly, 0.15);
+                applyColor(display, kBoltColor);
                 const std::size_t bi = doc_.addBoltGroup(bolt, std::move(display));
                 const BoltGroup& created = doc_.boltGroups()[bi];
                 if (!assembly.IsNull()) {
@@ -715,6 +729,7 @@ ComponentMaterializer::CommitResult ComponentMaterializer::recompute(
         switch (pc.record.kind) {
             case ComponentObjectKind::Plate: {
                 WireframeModel wf = shapeToWireframeWithFaces(pc.solid, 0.15);
+                applyColor(wf, kPlateColor);
                 if (hasStable && doc_.indexOfEntity(stableId)) {
                     // Kimlik korunur: replaceModel + ayni EntityId'ye yeni kati.
                     doc_.replaceModel(*doc_.indexOfEntity(stableId), {std::move(wf)});
@@ -768,6 +783,7 @@ ComponentMaterializer::CommitResult ComponentMaterializer::recompute(
                 WireframeModel display = assembly.IsNull()
                                              ? WireframeModel::cube(10.0)
                                              : shapeToWireframeWithFaces(assembly, 0.15);
+                applyColor(display, kBoltColor);
 
                 if (hasStable && doc_.indexOfBoltGroup(stableId)) {
                     bolt.id = stableId;

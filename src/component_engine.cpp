@@ -947,9 +947,34 @@ GenerationPlan generateShearPlateSimple146(const ComponentInput& input) noexcept
     originOffset += boltVPos;
     // Yatay konum: kolon grubu genislikte MERKEZLENIR (origin = sol-alt bulon).
     const double xOffset = -spanX * 0.5;
-    b.origin = Vec3{tabBase.x + lenDir.x * xOffset + sec.height.x * originOffset,
-                    tabBase.y + lenDir.y * xOffset + sec.height.y * originOffset,
-                    tabBase.z + lenDir.z * xOffset + sec.height.z * originOffset};
+    // BULON EKSEN-YONU KONUMU + GRIP (display): bulonlar levhayi + KIRIS GOVDESINI
+    // (web) deler. Yigin govde uzak yuzu (-w/2) .. levha dis yuzu (ecc + t/2)
+    // arasinda uzanir; merkezi (ecc+t/2-w/2)/2'dedir. Bulon gorseli bu merkeze
+    // oturtulur ki bas/somun yiginin iki dis yuzune otursun. (Onceki hata: origin
+    // tabBase'de kaldigi icin civata yarim kalinlik kayiyordu.) Eksen-yonu kayma
+    // YALNIZ display'i etkiler; delikler through-cut (holeDepth=0) oldugundan
+    // konumlari degismez. bbox yontemi (Document::boltGripLength) kiris flans
+    // genisligini (300 mm) grip'e sokup civatayi gercek disi uzatirdi; yerine
+    // yigin boyu kullanilir. secWebThickness bilinmiyorsa (0) eski davranis
+    // korunur (origin tabBase'de, gripLength 0 -> commit'te bbox fallback).
+    double boltAxisShift = 0.0;
+    if (beam.secWebThickness > 0.0) {
+        const double t2 = thickness * 0.5;
+        const double w2 = beam.secWebThickness * 0.5;
+        if (nearTab && farTab) {
+            // Cift tab: yigin simetrik -> bulon tabBase merkezinde kalir.
+            b.gripLength = 2.0 * (ecc + t2);
+        } else {
+            const double tabDir = nearTab ? 1.0 : -1.0;  // far tab: -sec.width tarafi
+            const double plateOuter = ecc + t2;           // levha dis yuzu (merkezden)
+            const double webFar = -w2;                    // govde uzak yuzu (merkezden)
+            b.gripLength = plateOuter - webFar;           // yigin toplam boyu
+            boltAxisShift = tabDir * (plateOuter + webFar) * 0.5;
+        }
+    }
+    b.origin = Vec3{tabBase.x + sec.width.x * boltAxisShift + lenDir.x * xOffset + sec.height.x * originOffset,
+                    tabBase.y + sec.width.y * boltAxisShift + lenDir.y * xOffset + sec.height.y * originOffset,
+                    tabBase.z + sec.width.z * boltAxisShift + lenDir.z * xOffset + sec.height.z * originOffset};
     b.deletedBolts = parseSpaceInts(delBolts);
     b.params.nominalDiameter = boltD;
     b.params.holeDiameter = holeD;
@@ -961,16 +986,6 @@ GenerationPlan generateShearPlateSimple146(const ComponentInput& input) noexcept
     b.params.hasHead = true;
     b.params.hasNut = true;
     b.params.hasWasher = true;
-    // GRIP (civata DISPLAY boyu): bulonlar levhayi + KIRIS GOVDESINI (web) deler.
-    // bbox yontemi (Document::boltGripLength) kirisin flans genisligini (ornegin
-    // 300 mm) grip'e sokup civatayi gercek disi uzatir; bunun yerine levha
-    // kalinligi + gercat web kalinligi kullanilir. gripLength YALNIZ display
-    // icindir; holeDepth'e dokunulmaz (sinirli delik origin'i kavrama merkezine
-    // kaydirmayi gerektirir, delikleri bozardi). secWebThickness bilinmiyorsa (0)
-    // eski bbox davranisi korunur.
-    if (beam.secWebThickness > 0.0) {
-        b.gripLength = thickness + beam.secWebThickness;
-    }
     b.parts = {beam.id};
     plan.boltGroups.push_back(b);
     plan.boltGroupKeys.push_back("beam_bolts");
