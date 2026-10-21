@@ -7,6 +7,7 @@
 #include <cmath>
 #include <iterator>
 #include <cctype>
+#include <map>
 #include <numeric>
 #include <set>
 #include <stdexcept>
@@ -564,6 +565,16 @@ std::vector<EntityId> Document::deleteModels(const std::vector<std::size_t>& ind
         for (const EntityId part : boltGroups_[bi].parts) affectedTargets.push_back(part);
         removeBoltGroup(bi);
     }
+    // KAYNAK KASKADI (Phase W1): main/secondary parcalarindan HERHANGI biri
+    // silinen weld kaldirilir; assembly uyelikleri yeniden turetir. Site weld de
+    // kaldirilir (parcasi yok). Yuksekten dusuge — removeWeld kaydi sildigi icin
+    // indeks kaymasi guvenli.
+    for (std::size_t wi = welds_.size(); wi-- > 0;) {
+        const auto& w = welds_[wi];
+        if (deletedIds.count(w.mainPart) || deletedIds.count(w.secondaryPart)) {
+            removeWeld(wi);
+        }
+    }
     return affectedTargets;
 }
 
@@ -662,6 +673,8 @@ void Document::clear() noexcept {
     cutModifiers_.clear();
     boltGroups_.clear();
     endPlateConnections_.clear();
+    welds_.clear();
+    assemblies_.clear();
     invalidateDerivedState();
     documentBounds_.reset();
 }
@@ -1032,6 +1045,31 @@ void Document::applyUndoOp(const UndoOp& op, bool forward) {
     case UndoOp::Kind::ComponentReplace:
         if (op.componentIndex < componentInstances_.size())
             componentInstances_[op.componentIndex] = forward ? op.componentAfter : op.componentBefore;
+        break;
+    case UndoOp::Kind::WeldAdd:
+        if (forward) {
+            if (op.weldIndex <= welds_.size())
+                welds_.insert(welds_.begin() + static_cast<std::ptrdiff_t>(op.weldIndex),
+                              op.weldAfter);
+        } else if (op.weldIndex < welds_.size()) {
+            welds_.erase(welds_.begin() + static_cast<std::ptrdiff_t>(op.weldIndex));
+        }
+        break;
+    case UndoOp::Kind::WeldRemove:
+        if (forward) {
+            if (op.weldIndex < welds_.size())
+                welds_.erase(welds_.begin() + static_cast<std::ptrdiff_t>(op.weldIndex));
+        } else if (op.weldIndex <= welds_.size()) {
+            welds_.insert(welds_.begin() + static_cast<std::ptrdiff_t>(op.weldIndex),
+                          op.weldBefore);
+        }
+        break;
+    case UndoOp::Kind::WeldReplace:
+        if (op.weldIndex < welds_.size())
+            welds_[op.weldIndex] = forward ? op.weldAfter : op.weldBefore;
+        break;
+    case UndoOp::Kind::AssemblyReplace:
+        assemblies_ = forward ? op.assembliesAfter : op.assembliesBefore;
         break;
     case UndoOp::Kind::ProfileReplace:
         if (op.index < models_.size()) {
@@ -1589,6 +1627,8 @@ void Document::buildMmw8(Mmw8Document& out) const {
     out.boltGroups = boltGroups_;
     out.endPlateConnections = endPlateConnections_;
     out.componentInstances = componentInstances_;
+    out.welds = welds_;
+    out.assemblies = assemblies_;
     // Konstruksiyon turleri (K blogu): kind != None olan modellerin
     // EntityId -> kind eslemesi (model kaydi ConstructionKind tasimaz).
     out.constructionKinds.clear();
@@ -1710,6 +1750,34 @@ void Document::commitFromMmw8(Mmw8Document&& mdoc) {
     boltGroups_ = std::move(mdoc.boltGroups);
     endPlateConnections_ = std::move(mdoc.endPlateConnections);
     componentInstances_ = std::move(mdoc.componentInstances);
+    // Weld + Assembly (W/S blogu): yuklemede dangling referans dogrulanir.
+    // Gecersiz EntityId (model listesinde olmayan) referanslar elenir; bozuk
+    // iliski durumlari (duplicate member, cyclic ownership) asagida temizlenir.
+    welds_.clear();
+    for (auto& w : mdoc.welds) {
+        const bool mainOk = w.mainPart == kInvalidEntityId || indexOfEntity(w.mainPart).has_value();
+        const bool secOk = w.secondaryPart == kInvalidEntityId || indexOfEntity(w.secondaryPart).has_value();
+        if (!mainOk || !secOk) continue;  // dangling weld -> atla (kayipsiz değil ama tutarli)
+        if (w.mainPart == w.secondaryPart) continue;  // kendi kendine kaynak -> atla
+        welds_.push_back(std::move(w));
+    }
+    assemblies_.clear();
+    for (auto& a : mdoc.assemblies) {
+        if (a.id == kInvalidEntityId) continue;
+        // duplicate member + gecersiz uye temizligi.
+        std::vector<EntityId> cleaned;
+        for (const EntityId p : a.parts) {
+            if (p == kInvalidEntityId) continue;
+            if (!indexOfEntity(p).has_value()) continue;
+            if (std::find(cleaned.begin(), cleaned.end(), p) != cleaned.end()) continue;
+            cleaned.push_back(p);
+        }
+        a.parts = std::move(cleaned);
+        if (a.parts.empty()) continue;
+        if (std::find(a.parts.begin(), a.parts.end(), a.mainPart) == a.parts.end())
+            a.mainPart = a.parts.front();
+        assemblies_.push_back(std::move(a));
+    }
     // Component instance'lari registry'ye gore yeniden kur: bilinmeyen typeId
     // -> orphan (COKME YOK, kayit korunur); bilinen tip -> parametreleri semaya
     // hizala (surumlu migration) + dirty (recompute bekliyor).
@@ -2424,6 +2492,253 @@ std::optional<std::size_t> Document::indexOfComponentInstance(EntityId id) const
     for (std::size_t i = 0; i < componentInstances_.size(); ++i)
         if (componentInstances_[i].id == id) return i;
     return std::nullopt;
+}
+
+// --- KAYNAKLAR (WELD) + IMALAT ASSEMBLY'LERI (Phase W1) -----------------------
+
+std::optional<std::size_t> Document::indexOfWeld(EntityId id) const {
+    if (id == kInvalidEntityId) return std::nullopt;
+    for (std::size_t i = 0; i < welds_.size(); ++i)
+        if (welds_[i].id == id) return i;
+    return std::nullopt;
+}
+
+std::optional<std::size_t> Document::indexOfAssembly(EntityId id) const {
+    if (id == kInvalidEntityId) return std::nullopt;
+    for (std::size_t i = 0; i < assemblies_.size(); ++i)
+        if (assemblies_[i].id == id) return i;
+    return std::nullopt;
+}
+
+std::optional<EntityId> Document::assemblyIdContaining(EntityId partId) const {
+    if (partId == kInvalidEntityId) return std::nullopt;
+    for (const auto& a : assemblies_)
+        for (const EntityId p : a.parts)
+            if (p == partId) return a.id;
+    return std::nullopt;
+}
+
+// Shop-weld grafinden assembly'leri deterministik yeniden turet. Kimlik/name/
+// mainPart mumkun oldugunca korunur (merge'de en kucuk id'li assembly ayakta
+// kalir; split'te bir kök eski kimligi devralir, digerleri yeni kimlik alir).
+void Document::reassembleFromWelds() {
+    // Union-find yalnizca SHOP weld uclarini birlestirir. Site weld'ler grafe
+    // kenar OLARAK girmez (assembly birlestirmez).
+    std::unordered_map<EntityId, EntityId> parent;
+    auto find = [&](EntityId x) -> EntityId {
+        auto it = parent.find(x);
+        if (it == parent.end()) { parent[x] = x; return x; }
+        EntityId root = x;
+        while (parent[root] != root) root = parent[root];
+        // path compression
+        EntityId cur = x;
+        while (parent[cur] != cur) { const EntityId n = parent[cur]; parent[cur] = root; cur = n; }
+        return root;
+    };
+    auto unite = [&](EntityId a, EntityId b) {
+        const EntityId ra = find(a), rb = find(b);
+        if (ra != rb) parent[rb] = ra;
+    };
+    for (const auto& w : welds_) {
+        if (w.weldClass != WeldClass::Shop) continue;
+        if (w.mainPart == kInvalidEntityId || w.secondaryPart == kInvalidEntityId) continue;
+        if (w.mainPart == w.secondaryPart) continue;  // kendine kaynak baglanti kurmaz
+        // Yalniz GERCek model varliklarina atif yapan weld'ler grafe girer
+        // (dangling koruma — silinmis parca referansi asla grup kurmaz).
+        if (!indexOfEntity(w.mainPart) || !indexOfEntity(w.secondaryPart)) continue;
+        find(w.mainPart);
+        find(w.secondaryPart);
+        unite(w.mainPart, w.secondaryPart);
+    }
+
+    // Kök -> sirali parca listesi.
+    std::map<EntityId, std::vector<EntityId>> groups;
+    for (const auto& [part, _] : parent) {
+        groups[find(part)].push_back(part);
+    }
+
+    // Mevcut assembly kimliklerini köklere esle (identity korunumu).
+    // Bir assembly'nin TUM parcalari ayni kökteyse o kök eski assembly'yi
+    // devralabilir. Birden fazla assembly ayni köke duserse (merge) en kucuk
+    // id'li ayakta kalir.
+    std::map<EntityId, AssemblyRecord> inherited;
+    std::vector<AssemblyRecord> sortedAssemblies = assemblies_;
+    std::sort(sortedAssemblies.begin(), sortedAssemblies.end(),
+              [](const AssemblyRecord& a, const AssemblyRecord& b) { return a.id < b.id; });
+    for (const auto& a : sortedAssemblies) {
+        EntityId root = kInvalidEntityId;
+        bool single = true;
+        for (const EntityId p : a.parts) {
+            if (!parent.count(p)) continue;   // parca artık grafte yok
+            const EntityId r = find(p);
+            if (root == kInvalidEntityId) root = r;
+            else if (root != r) { single = false; break; }
+        }
+        if (root == kInvalidEntityId) continue;  // bos/grafte olmayan assembly -> dusur
+        if (!single) continue;                   // parcalari farkli köklere dagildi -> split
+        // Bu kökte henuz mirasci yoksa devral.
+        if (!inherited.count(root)) inherited[root] = a;
+    }
+
+    // Yeni assembly listesi. Kökler EntityId'ye gore sirali (deterministik).
+    std::vector<AssemblyRecord> next;
+    std::uint64_t nameSeq = 0;
+    for (const auto& a : assemblies_) {
+        // Mevcut "A<N>" adlarindan en buyuk N'i bul (yeni ad uretimi icin).
+        if (a.name.size() >= 2 && a.name[0] == L'A') {
+            bool allDigit = true;
+            std::uint64_t v = 0;
+            for (std::size_t i = 1; i < a.name.size(); ++i) {
+                if (a.name[i] < L'0' || a.name[i] > L'9') { allDigit = false; break; }
+                v = v * 10 + static_cast<std::uint64_t>(a.name[i] - L'0');
+            }
+            if (allDigit) nameSeq = std::max(nameSeq, v);
+        }
+    }
+    for (const auto& [root, parts] : groups) {
+        if (parts.empty()) continue;
+        AssemblyRecord rec;
+        const auto it = inherited.find(root);
+        if (it != inherited.end()) {
+            rec.id = it->second.id;
+            rec.name = it->second.name;
+            rec.createdAt = it->second.createdAt;
+            // mainPart hâlâ gruptaysa korunur; degilse en kucuk parca.
+            rec.mainPart = it->second.mainPart;
+        } else {
+            rec.id = allocateEntityIdRequired();
+            rec.createdAt = std::to_string(revision_);
+        }
+        rec.parts = parts;
+        std::sort(rec.parts.begin(), rec.parts.end());
+        const bool mainInGroup = std::find(rec.parts.begin(), rec.parts.end(), rec.mainPart)
+                                 != rec.parts.end();
+        if (!mainInGroup || rec.mainPart == kInvalidEntityId)
+            rec.mainPart = rec.parts.front();
+        if (rec.name.empty()) {
+            ++nameSeq;
+            rec.name = L"A";
+            // "A" + 3 basamakli sifirli sayi (A001, A002, ...).
+            std::wstring digits = std::to_wstring(nameSeq);
+            while (digits.size() < 3) digits = L"0" + digits;
+            rec.name += digits;
+        }
+        rec.updatedAt = std::to_string(revision_);
+        next.push_back(std::move(rec));
+    }
+    // Deterministik: id'ye gore sirala.
+    std::sort(next.begin(), next.end(),
+              [](const AssemblyRecord& a, const AssemblyRecord& b) { return a.id < b.id; });
+    assemblies_ = std::move(next);
+}
+
+void Document::recomputeAssemblies(const std::vector<AssemblyRecord>& before) {
+    reassembleFromWelds();
+    if (before == assemblies_) return;  // degisim yok -> undo op yok
+    UndoOp op;
+    op.kind = UndoOp::Kind::AssemblyReplace;
+    op.assembliesBefore = before;
+    op.assembliesAfter = assemblies_;
+    recordUndoOp(std::move(op));
+}
+
+std::size_t Document::addWeld(Weld weld) {
+    ++revision_;
+    opaqueBrepsStale_ = true;
+    if (weld.id == kInvalidEntityId) weld.id = allocateEntityIdRequired();
+    const auto asmBefore = assemblies_;
+    UndoOp op;
+    op.kind = UndoOp::Kind::WeldAdd;
+    op.weldIndex = welds_.size();
+    op.weldAfter = weld;
+    recordUndoOp(std::move(op));
+    welds_.push_back(std::move(weld));
+    recomputeAssemblies(asmBefore);
+    return welds_.size() - 1;
+}
+
+void Document::removeWeld(std::size_t index) {
+    if (index >= welds_.size()) return;
+    ++revision_;
+    opaqueBrepsStale_ = true;
+    const auto asmBefore = assemblies_;
+    const Weld weld = welds_[index];
+    UndoOp op;
+    op.kind = UndoOp::Kind::WeldRemove;
+    op.weldIndex = index;
+    op.weldBefore = weld;
+    recordUndoOp(std::move(op));
+    welds_.erase(welds_.begin() + static_cast<std::ptrdiff_t>(index));
+    recomputeAssemblies(asmBefore);
+}
+
+bool Document::setWeld(std::size_t index, Weld weld) {
+    if (index >= welds_.size()) return false;
+    ++revision_;
+    opaqueBrepsStale_ = true;
+    const auto asmBefore = assemblies_;
+    const Weld old = welds_[index];
+    weld.id = old.id;  // kimlik korunur
+    UndoOp op;
+    op.kind = UndoOp::Kind::WeldReplace;
+    op.weldIndex = index;
+    op.weldBefore = old;
+    op.weldAfter = weld;
+    recordUndoOp(std::move(op));
+    welds_[index] = weld;
+    recomputeAssemblies(asmBefore);
+    return true;
+}
+
+bool Document::setAssemblyMainPart(EntityId assemblyId, EntityId newMainPart) {
+    const auto idx = indexOfAssembly(assemblyId);
+    if (!idx) return false;
+    // mainPart assembly'nin uyesi olmali (ownership kurali).
+    auto& a = assemblies_[*idx];
+    if (std::find(a.parts.begin(), a.parts.end(), newMainPart) == a.parts.end())
+        return false;
+    ++revision_;
+    const auto before = assemblies_;
+    a.mainPart = newMainPart;
+    a.updatedAt = std::to_string(revision_);
+    UndoOp op;
+    op.kind = UndoOp::Kind::AssemblyReplace;
+    op.assembliesBefore = before;
+    op.assembliesAfter = assemblies_;
+    recordUndoOp(std::move(op));
+    return true;
+}
+
+std::vector<EntityId> Document::assemblyMembers(EntityId partId) const {
+    std::vector<EntityId> out;
+    const auto asmId = assemblyIdContaining(partId);
+    if (!asmId) {
+        if (partId != kInvalidEntityId) out.push_back(partId);
+        return out;
+    }
+    const auto idx = indexOfAssembly(*asmId);
+    if (!idx) { out.push_back(partId); return out; }
+    const auto& a = assemblies_[*idx];
+    // Parcalar (mainPart dahil).
+    for (const EntityId p : a.parts) out.push_back(p);
+    // Sahip olunan weld'ler: IKI ucu da bu assembly'de olan shop/site weld.
+    for (const auto& w : welds_) {
+        const bool mainIn = std::find(a.parts.begin(), a.parts.end(), w.mainPart) != a.parts.end();
+        const bool secIn = std::find(a.parts.begin(), a.parts.end(), w.secondaryPart) != a.parts.end();
+        if (mainIn && secIn) out.push_back(w.id);
+    }
+    // Sahip olunan bulonlar: TUM parcalari bu assembly'de olan bulon gruplari.
+    for (const auto& b : boltGroups_) {
+        if (b.parts.empty()) continue;
+        bool allIn = true;
+        for (const EntityId p : b.parts)
+            if (std::find(a.parts.begin(), a.parts.end(), p) == a.parts.end()) { allIn = false; break; }
+        if (allIn) {
+            out.push_back(b.id);
+            if (b.displayEntityId != kInvalidEntityId) out.push_back(b.displayEntityId);
+        }
+    }
+    return out;
 }
 
 // --- TEKLA GUID ESLEME -------------------------------------------------------

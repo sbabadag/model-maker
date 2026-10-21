@@ -22,6 +22,7 @@
 #include "model_maker/bolt.hpp"
 #include "model_maker/end_plate.hpp"
 #include "model_maker/component_engine.hpp"
+#include "model_maker/weld.hpp"
 
 #include <cstddef>
 #include <cstdint>
@@ -40,6 +41,8 @@ inline constexpr std::size_t kMmw8MaxCutModifiers = 100'000;
 inline constexpr std::size_t kMmw8MaxBolts = 100'000;
 inline constexpr std::size_t kMmw8MaxEndPlates = 100'000;
 inline constexpr std::size_t kMmw8MaxComponents = 100'000;
+inline constexpr std::size_t kMmw8MaxWelds = 100'000;
+inline constexpr std::size_t kMmw8MaxAssemblies = 100'000;
 // Slice 2d-3: component basina param ref/kisit/handle/alt nesne sayi sinirlari
 // (ayirma oncesi dogrulanir; asiri girdi reddedilir).
 inline constexpr std::size_t kMmw8MaxFaceRefs = 100'000;
@@ -119,6 +122,8 @@ struct Mmw8Document {
     std::vector<BoltGroup> boltGroups;                           // 'G' blogu (Phase B1)
     std::vector<EndPlateConnection> endPlateConnections;         // 'E' blogu (Phase C1)
     std::vector<ComponentInstanceRecord> componentInstances;     // 'I' blogu (Phase C2)
+    std::vector<Weld> welds;                                     // 'W' blogu (Phase W1)
+    std::vector<AssemblyRecord> assemblies;                      // 'S' blogu (Phase W1)
     std::vector<Mmw8ConstructionKind> constructionKinds;         // 'K' blogu (Phase 4.1)
     std::vector<Mmw8SectionAnchor> sectionAnchors;               // 'A' blogu (Slice 2d-3)
     std::vector<Mmw8TeklaGuid> teklaGuids;                       // 'T' blogu (Tekla GUID -> EntityId)

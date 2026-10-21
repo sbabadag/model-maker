@@ -1071,6 +1071,13 @@ if(BUILD_TESTING)
     target_link_options(model_maker_assembly_test PRIVATE -static -static-libgcc -static-libstdc++)
     target_compile_options(model_maker_assembly_test PRIVATE -Wall -Wextra -Wpedantic)
     add_test(NAME model_maker_assembly_test COMMAND model_maker_assembly_test)
+
+    # Weld + imalat Assembly (Phase W1): kaynak/assembly merge/split/undo/MMW8.
+    add_executable(model_maker_weld_assembly_test tests/weld_assembly_test.cpp)
+    target_link_libraries(model_maker_weld_assembly_test PRIVATE model_maker_core)
+    target_link_options(model_maker_weld_assembly_test PRIVATE -static -static-libgcc -static-libstdc++)
+    target_compile_options(model_maker_weld_assembly_test PRIVATE -Wall -Wextra -Wpedantic)
+    add_test(NAME model_maker_weld_assembly_test COMMAND model_maker_weld_assembly_test)
 endif()
 
 if(TARGET model-maker)

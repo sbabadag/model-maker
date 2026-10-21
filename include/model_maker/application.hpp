@@ -512,6 +512,27 @@ public:
     // Ikincil gorunus pencereleri icin salt-okunur erisim.
     const Document& document() const noexcept { return document_; }
     const std::vector<std::size_t>& selectedModelIndices() const noexcept { return selectedModels_; }
+    // --- SECIM MODLARI (Phase W1: Part / Assembly) ---------------------------
+    // Birbirini dislayan iki secim modu. Part: yalniz tiklanan parca secilir.
+    // Assembly: tiklanan parcanin assembly'sinin TUM uyeleri (main + secondary +
+    // levhalar + weld'ler + sahip olunan bulonlar) birlikte secilir. Secim modu
+    // degisince eski secim tutarsiz kalmasin (temizlenir).
+    enum class SelectionMode { Part, Assembly };
+    SelectionMode selectionMode() const noexcept { return selectionMode_; }
+    void setSelectionMode(SelectionMode mode);
+    // Secili parcalari assembly uyeliklerine gore genisletir (Assembly modunda).
+    // Document::assemblyMembers kullanir — EntityId iliskilerinden turetilir,
+    // gorunumdeki yakinliktan DEGIL. Gizli/kilitli/silinmis nesneler elenir.
+    void expandSelectionToAssembly();
+    // --- KAYNAK KOMUTU (Phase W1) --------------------------------------------
+    // Secili IKI parca arasinda kaynak olusturur. Secim iki gercek parca degilse
+    // (0/1/3+ parca, ayni parca iki kez, gecersiz) islemi guvenli iptal eder ve
+    // belgeyi DEGISTIRMEZ. Basarida Shop weld tek assembly kurar; Site weld
+    // kurmaz. Donus: true = weld olustu.
+    bool weldSelectedParts(WeldType type, double size, WeldClass cls);
+    // Kaynaklarin salt-okunur erisimi (model tree / properties icin).
+    const std::vector<Weld>& welds() const noexcept { return document_.welds(); }
+    const std::vector<AssemblyRecord>& assemblies() const noexcept { return document_.assemblies(); }
     VisualStyle visualStyle() const noexcept { return visualStyle_; }
     void cancelWorkPlaneCommand();
     void commitWorkPlanePoint(const Vec3& point);
@@ -1094,6 +1115,7 @@ private:
     TransformCommand lastTransformCommand_{TransformCommand::None};
     TransformPhase transformPhase_{TransformPhase::Selecting};
     std::vector<std::size_t> selectedModels_;
+    SelectionMode selectionMode_{SelectionMode::Part};
     std::optional<POINT> selectionFirstCorner_;
     // VERB-NOUN KESME (Fitting/Plane Cut): komut girilince once profil(ler),
     // sonra duzlem secilir; sag tik uygular, Esc iptal. P12: TEK duzlem

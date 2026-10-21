@@ -8,6 +8,7 @@
 #include "model_maker/bolt.hpp"
 #include "model_maker/end_plate.hpp"
 #include "model_maker/component_engine.hpp"
+#include "model_maker/weld.hpp"
 
 #include <array>
 #include <filesystem>
@@ -35,6 +36,7 @@ struct UndoOp {
                       CutAdd, CutRemove, CutReplace, BoltAdd, BoltRemove, BoltReplace,
                       EndPlateAdd, EndPlateRemove, EndPlateReplace,
                       ComponentAdd, ComponentRemove, ComponentReplace,
+                      WeldAdd, WeldRemove, WeldReplace, AssemblyReplace,
                       ProfileReplace };
     Kind kind{Kind::Add};
     std::size_t index{};
@@ -76,6 +78,15 @@ struct UndoOp {
     std::size_t componentIndex{};
     ComponentInstanceRecord componentBefore;
     ComponentInstanceRecord componentAfter;
+    // Weld (WeldAdd/WeldRemove/WeldReplace): kaynak ekle/sil/degistir.
+    std::size_t weldIndex{};
+    Weld weldBefore;
+    Weld weldAfter;
+    // Assembly (AssemblyReplace): tam assembly vektoru degistirildi (shop-weld
+    // grafinden yeniden turetim). Bireysel add/remove YOKTUR — deterministik
+    // yeniden turetim tek transaction'da onceki/sonraki vektoru tasir.
+    std::vector<AssemblyRecord> assembliesBefore;
+    std::vector<AssemblyRecord> assembliesAfter;
     // Profile (ProfileReplace): bir modelin profil adi degistirildi (HEB300 ->
     // HEB400). index = model indeksi; profileBefore/After = eski/yeni profil adi.
     std::string profileBefore;
@@ -345,6 +356,39 @@ public:
     // EntityId -> component instance indeksi; yoksa nullopt.
     std::optional<std::size_t> indexOfComponentInstance(EntityId id) const;
 
+    // --- KAYNAKLAR (WELD) + IMALAT ASSEMBLY'LERI (Phase W1) ------------------
+    // Weld KALICI bir kayittir (kendi EntityId'si); mainPart/secondaryPart
+    // kullanici parcalaridir (EntityId ile referans; weld silinse de parcalar
+    // KORUNUR). Shop weld iki parçayi AYNI assembly'ye sokar; Site weld
+    // assembly'leri birlestirmez (yalniz iliskili baglanti olarak tutulur).
+    // addWeld: id atar (gecersizse), shop ise assembly uyeliklerini yeniden
+    // turetir, undo kaydeder. Donus: kaynak indeksi.
+    std::size_t addWeld(Weld weld);
+    // removeWeld: kaydi siler ve assembly grafiğini yeniden turetir (baglantisi
+    // kopan gruplar guvenli split edilir). Undo ile weld + uyelikler geri gelir.
+    void removeWeld(std::size_t index);
+    // setWeld: kaydi degistirir (id korunur); shop/site veya main/secondary
+    // degistiğinde assembly yeniden turetir.
+    bool setWeld(std::size_t index, Weld weld);
+    const std::vector<Weld>& welds() const noexcept { return welds_; }
+    // EntityId -> kaynak indeksi; yoksa nullopt.
+    std::optional<std::size_t> indexOfWeld(EntityId id) const;
+
+    // Assembly kayitlari (shop-weld grafinden TURETILMIS, deterministik).
+    const std::vector<AssemblyRecord>& assemblies() const noexcept { return assemblies_; }
+    // EntityId -> assembly indeksi; yoksa nullopt.
+    std::optional<std::size_t> indexOfAssembly(EntityId id) const;
+    // Bir parcanin uye oldugu TEK assembly'nin id'si (parca en fazla bir
+    // bagimsiz imalat assembly'sinin dogrudan uyesi olabilir). Yoksa nullopt.
+    std::optional<EntityId> assemblyIdContaining(EntityId partId) const;
+    // Assembly main part'i degistirilir; geometri/EntityId DEGISMEZ. Yalniz
+    // mainPart alani guncellenir.
+    bool setAssemblyMainPart(EntityId assemblyId, EntityId newMainPart);
+    // Secim genisletme: bir parcanin assembly'sinin TUM uyelerini (parts +
+    // welds + sahip olunan bulonlar) EntityId olarak dondurur. Parca hicbir
+    // assembly'de degilse yalniz kendisi.
+    std::vector<EntityId> assemblyMembers(EntityId partId) const;
+
     // --- TEKLA GUID ESLEME (bridge native conversion, Phase C6) --------------
     // Bir EntityId'yi Tekla sourceGUID'i ile iliskilendirir (kalici; 'T' blogu).
     // Ayni guid baska bir varliga bagliysa ESKI iliski kaldirilir (birebir).
@@ -402,6 +446,15 @@ private:
     // std::runtime_error firlatir. Yeni varlik ekleyen tum yollar bunu kullanir —
     // KONTROLLU basarisizlik, kismi ekleme veya kimlik-0 model birakilmaz.
     EntityId allocateEntityIdRequired();
+    // Assembly'leri shop-weld grafinden YENIDEN TURET (deterministik). Mevcut
+    // assembly kimlik/name/mainPart bilgisi mumkun oldugunca korunur (ayni parca
+    // kumesinin tek kök grubu eski assembly'yi devralir). Site weld'ler
+    // birlestirmez. WeldAdd/WeldRemove/WeldReplace/setAssemblyMainPart sonrasi
+    // cagrilir; AssemblyReplace undo op kaydedilir.
+    void reassembleFromWelds();
+    // Kaynak indeksi (weld) icin assembly uyeliklerini guvenli turetir: shop
+    // weld main/secondary'i birlestirir. reassembleFromWelds'in ince sarmalayicisi.
+    void recomputeAssemblies(const std::vector<AssemblyRecord>& before);
 
     std::vector<WireframeModel> models_;
     // models_ ile BIREBIR hizali kimlik vektoru (modelIds_.size() == models_.size()
@@ -438,6 +491,8 @@ private:
     std::vector<BoltGroup> boltGroups_;
     std::vector<EndPlateConnection> endPlateConnections_;
     std::vector<ComponentInstanceRecord> componentInstances_;
+    std::vector<Weld> welds_;
+    std::vector<AssemblyRecord> assemblies_;
     std::unordered_map<std::string, EntityId> teklaGuids_;  // Tekla sourceGUID -> EntityId ('T')
 };
 

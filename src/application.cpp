@@ -8452,6 +8452,61 @@ int Application::selectedModelIndex() const {
         : static_cast<int>(selectedModels_.front());
 }
 
+// --- SECIM MODLARI + KAYNAK KOMUTU (Phase W1) --------------------------------
+
+void Application::setSelectionMode(SelectionMode mode) {
+    if (selectionMode_ == mode) return;
+    selectionMode_ = mode;
+    // Mod degisince eski secim yeni modda tutarsiz kalmasin: temizle.
+    selectedModels_.clear();
+    selectedCutModifiers_.clear();
+    invalidateCanvas();
+}
+
+void Application::expandSelectionToAssembly() {
+    if (selectedModels_.empty()) return;
+    // Secili parcalarin assembly uyelerini topla (EntityId iliskisinden).
+    std::vector<std::size_t> expanded;
+    std::unordered_set<std::size_t> seen;
+    for (const std::size_t idx : selectedModels_) {
+        if (idx >= document_.models().size()) continue;
+        const EntityId partId = document_.modelId(idx);
+        const auto members = document_.assemblyMembers(partId);
+        for (const EntityId m : members) {
+            const auto mi = document_.indexOfEntity(m);
+            if (!mi) continue;  // weld/bulon kimligi model degil -> atla
+            if (seen.count(*mi)) continue;
+            seen.insert(*mi);
+            expanded.push_back(*mi);
+        }
+    }
+    if (expanded.empty()) return;
+    selectedModels_ = std::move(expanded);
+    invalidateCanvas();
+}
+
+bool Application::weldSelectedParts(WeldType type, double size, WeldClass cls) {
+    // GUVENLI GIRIS DOGRULAMASI: tam iki GERCek (model) parca, birbirinden farkli.
+    if (selectedModels_.size() != 2) return false;
+    const std::size_t i0 = selectedModels_[0];
+    const std::size_t i1 = selectedModels_[1];
+    if (i0 >= document_.models().size() || i1 >= document_.models().size()) return false;
+    const EntityId a = document_.modelId(i0);
+    const EntityId b = document_.modelId(i1);
+    if (a == kInvalidEntityId || b == kInvalidEntityId || a == b) return false;
+    if (size <= 0.0) return false;  // gecersiz kaynak olcusu
+    Weld w;
+    w.mainPart = a;
+    w.secondaryPart = b;
+    w.type = type;
+    w.size = size;
+    w.weldClass = cls;
+    document_.pushSnapshot();
+    document_.addWeld(std::move(w));
+    invalidateCanvas();
+    return true;
+}
+
 std::string Application::selectedEntityProfile() const {
     if (selectedModels_.empty() ||
         selectedModels_.front() >= document_.models().size())

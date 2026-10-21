@@ -880,6 +880,53 @@ void writeMmw8(std::ostream& out, const Mmw8Document& doc) {
         out.write(b.data(), static_cast<std::streamsize>(b.size()));
     }
 
+    // Kuyruk: W blogu (kaynaklar, Phase W1).
+    if (!doc.welds.empty()) {
+        std::ostringstream body;
+        body << doc.welds.size() << '\n';
+        for (const auto& w : doc.welds) {
+            if (w.id == kInvalidEntityId || w.id == kExhaustedEntityId)
+                fail("weld id must be a valid identity");
+            body << w.id << ' ' << w.mainPart << ' ' << w.secondaryPart << ' '
+                 << static_cast<int>(w.type) << ' ' << w.size << ' ' << w.length << ' '
+                 << static_cast<int>(w.weldClass) << ' '
+                 << w.origin.x << ' ' << w.origin.y << ' ' << w.origin.z << ' '
+                 << w.direction.x << ' ' << w.direction.y << ' ' << w.direction.z << ' '
+                 << (w.aboveLine ? 1 : 0) << ' ' << (w.geometrySupported ? 1 : 0) << ' ';
+            putString(body, w.identification);
+            body << ' ';
+            putString(body, w.remarks);
+            body << ' ';
+            putString(body, w.unsupportedReason);
+            body << '\n';
+        }
+        const std::string b = body.str();
+        out << "W " << b.size() << '\n';
+        out.write(b.data(), static_cast<std::streamsize>(b.size()));
+    }
+
+    // Kuyruk: S blogu (imalat assembly'leri, Phase W1).
+    if (!doc.assemblies.empty()) {
+        std::ostringstream body;
+        body << doc.assemblies.size() << '\n';
+        for (const auto& a : doc.assemblies) {
+            if (a.id == kInvalidEntityId || a.id == kExhaustedEntityId)
+                fail("assembly id must be a valid identity");
+            body << a.id << ' ' << a.mainPart << ' ' << a.parts.size();
+            for (const EntityId p : a.parts) body << ' ' << p;
+            body << ' ';
+            putString(body, toUtf8(a.name));
+            body << ' ';
+            putString(body, a.createdAt);
+            body << ' ';
+            putString(body, a.updatedAt);
+            body << '\n';
+        }
+        const std::string b = body.str();
+        out << "S " << b.size() << '\n';
+        out.write(b.data(), static_cast<std::streamsize>(b.size()));
+    }
+
     // Kuyruk: V blogu (taban B-Rep blob'lari, Phase 4.2).
     if (!doc.baseBlobs.empty()) {
         std::ostringstream body;
@@ -1075,6 +1122,7 @@ void readMmw8(std::istream& in, Mmw8Document& doc) {
     // --- Kuyruk: etiket-gudumlu bloklar ---
     bool sawH = false, sawB = false, sawV = false, sawG = false, sawE = false, sawI = false;
     bool sawJ = false, sawD = false, sawM = false, sawN = false, sawA = false, sawT = false;
+    bool sawW = false, sawS = false;
     // 'M' bloguyla cerceve ATAYAN component id'leri — legacy turetme (origin/u/v/axis)
     // yalnizca 'M' kaydi OLMAYAN component'lere uygulanir.
     std::unordered_set<EntityId> framedComponents;
@@ -1618,6 +1666,75 @@ void readMmw8(std::istream& in, Mmw8Document& doc) {
                 seenGuid[tg.guid] = true;
                 parsed.teklaGuids.push_back(std::move(tg));
             }
+        } else if (tag == 'W') {
+            if (sawW) fail("repeated W block");
+            sawW = true;
+            std::istringstream ws(body);
+            const std::uint64_t count = readUint64(ws, "weld count");
+            if (count > kMmw8MaxWelds) fail("weld count exceeds limit");
+            std::string line;
+            std::getline(ws, line);  // count satırının kalanı (boş)
+            std::unordered_map<EntityId, bool> seenWeld;
+            for (std::uint64_t wi = 0; wi < count; ++wi) {
+                if (!std::getline(ws, line)) fail("missing weld record");
+                std::istringstream ls(line);
+                Weld w;
+                w.id = static_cast<EntityId>(readUint64(ls, "weld id"));
+                if (w.id == kInvalidEntityId || w.id == kExhaustedEntityId)
+                    fail("weld id must be a valid identity");
+                if (seenWeld.count(w.id)) fail("duplicate weld id");
+                seenWeld[w.id] = true;
+                w.mainPart = static_cast<EntityId>(readUint64(ls, "weld mainPart"));
+                w.secondaryPart = static_cast<EntityId>(readUint64(ls, "weld secondaryPart"));
+                const std::int64_t type = readInt64(ls, "weld type");
+                if (type < 0 || type > 1) fail("invalid weld type");
+                w.type = static_cast<WeldType>(type);
+                w.size = readDouble(ls, "weld size");
+                w.length = readDouble(ls, "weld length");
+                const std::int64_t wcls = readInt64(ls, "weld class");
+                if (wcls < 0 || wcls > 1) fail("invalid weld class");
+                w.weldClass = static_cast<WeldClass>(wcls);
+                w.origin.x = readDouble(ls, "weld origin x");
+                w.origin.y = readDouble(ls, "weld origin y");
+                w.origin.z = readDouble(ls, "weld origin z");
+                w.direction.x = readDouble(ls, "weld dir x");
+                w.direction.y = readDouble(ls, "weld dir y");
+                w.direction.z = readDouble(ls, "weld dir z");
+                w.aboveLine = readBool(ls, "weld aboveLine");
+                w.geometrySupported = readBool(ls, "weld geometrySupported");
+                w.identification = readString(ls);
+                w.remarks = readString(ls);
+                w.unsupportedReason = readString(ls);
+                parsed.welds.push_back(std::move(w));
+            }
+        } else if (tag == 'S') {
+            if (sawS) fail("repeated S block");
+            sawS = true;
+            std::istringstream ss(body);
+            const std::uint64_t count = readUint64(ss, "assembly count");
+            if (count > kMmw8MaxAssemblies) fail("assembly count exceeds limit");
+            std::string line;
+            std::getline(ss, line);  // count satırının kalanı (boş)
+            std::unordered_map<EntityId, bool> seenAsm;
+            for (std::uint64_t ai = 0; ai < count; ++ai) {
+                if (!std::getline(ss, line)) fail("missing assembly record");
+                std::istringstream ls(line);
+                AssemblyRecord a;
+                a.id = static_cast<EntityId>(readUint64(ls, "assembly id"));
+                if (a.id == kInvalidEntityId || a.id == kExhaustedEntityId)
+                    fail("assembly id must be a valid identity");
+                if (seenAsm.count(a.id)) fail("duplicate assembly id");
+                seenAsm[a.id] = true;
+                a.mainPart = static_cast<EntityId>(readUint64(ls, "assembly mainPart"));
+                const std::uint64_t nParts = readUint64(ls, "assembly part count");
+                if (nParts > kMmw8MaxModels) fail("assembly part count exceeds limit");
+                for (std::uint64_t pi = 0; pi < nParts; ++pi)
+                    a.parts.push_back(static_cast<EntityId>(readUint64(ls, "assembly part")));
+                a.name = fromUtf8(readString(ls));
+                a.createdAt = readString(ls);
+                a.updatedAt = readString(ls);
+                parsed.assemblies.push_back(std::move(a));
+            }
         } else {
             // Bilinmeyen blok: kayipsiz korunur.
             parsed.unknownBlocks.push_back(Mmw8UnknownBlock{tag, std::move(body)});
@@ -1635,6 +1752,10 @@ void readMmw8(std::istream& in, Mmw8Document& doc) {
     EntityId maxId = 0;
     for (const EntityId e : parsed.entityIds)
         if (e > maxId) maxId = e;
+    for (const auto& w : parsed.welds)
+        if (w.id > maxId) maxId = w.id;
+    for (const auto& a : parsed.assemblies)
+        if (a.id > maxId) maxId = a.id;
     if (parsed.nextEntityId <= maxId)
         fail("nextEntityId not greater than max entityId");
 
