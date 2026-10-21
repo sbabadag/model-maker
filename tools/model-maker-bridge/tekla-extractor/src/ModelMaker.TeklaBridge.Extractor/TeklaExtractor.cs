@@ -509,11 +509,10 @@ namespace ModelMaker.TeklaBridge.Extractor
                 info.Axis = "";  // eksen dogrulanamadiysa bos -> importer inferred
                 info.AxisSource = "";
 
-                // Bulon konumlari. Tekla BoltPositions LOKAL dondurur (bolt grubunun
-                // transformation plane'ine gore; bkz. Tekla dokumu). Global'e cevirmek
-                // icin GetCoordinateSystem() + TransformationPlane.TransformationMatrixToGlobal
-                // kullanilir. CS alinamazsa pozisyon oldugu gibi yazilir (importer bunu
-                // bbox disi bulursa delik acmaz, UNRESOLVED sayar).
+                // Bulon konumlari. NOT: Tekla BoltPositions Y ve Z'yi global verir;
+                // yalniz eksen boyuncaki bilesen (bu baglantida X) 0 donebilir.
+                // TransformationPlane ile tam donusum Y/Z'yi de bozdugu icin KULLANILMAZ;
+                // eksen-yonu duzeltmesi importer'da levha bbox'ina gore yapilir.
                 var positions = Safe(() => bg.BoltPositions, null);
                 if (positions != null)
                 {
@@ -521,17 +520,7 @@ namespace ModelMaker.TeklaBridge.Extractor
                     if (pts != null)
                         foreach (var o in pts)
                             if (o is Point p)
-                            {
-                                Point g = p;
-                                try
-                                {
-                                    var cs = bg.GetCoordinateSystem();
-                                    if (cs != null)
-                                        g = new TransformationPlane(cs).TransformationMatrixToGlobal.Transform(p);
-                                }
-                                catch { /* CS yoksa local deger korunur */ }
-                                info.Bolts.Add(new BoltRecord { Position = ToVec3(g), NominalDiameter = Safe(() => bg.BoltSize, 0.0), HoleDiameterSource = "" });
-                            }
+                                info.Bolts.Add(new BoltRecord { Position = ToVec3(p), NominalDiameter = Safe(() => bg.BoltSize, 0.0), HoleDiameterSource = "" });
                 }
                 if (info.Bolts.Count == 0)
                     diag.Warnings.Add("Bulon grubu " + Safe(() => bg.Identifier.GUID.ToString(), "") + ": BoltPositions okunamadi.");

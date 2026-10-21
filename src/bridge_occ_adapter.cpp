@@ -279,26 +279,37 @@ BridgeBoltPlan planBridgeBolts(const BridgeBoltGroupInfo& info,
     plan.diameterSource = diameterSource;
 
     // --- Bulonlari dogrula: eksene dik duzlemdeki koordinat plaka ayak izinde mi ---
+    // Ayrica eksen-yonundeki bilesen levha bbox merkezine HIZALANIR: Tekla
+    // BoltPositions bu bileseni 0 dondurebilir (shear tab X=0 iken levha X 4.25..14.25),
+    // aksi halde delik/montaj levhanin disinda kalir.
     const double ax = std::fabs(axis.x), ay = std::fabs(axis.y), az = std::fabs(axis.z);
+    const double axisMid =
+        (ax > 0.5) ? 0.5 * (plateBBox.min.x + plateBBox.max.x)
+      : (ay > 0.5) ? 0.5 * (plateBBox.min.y + plateBBox.max.y)
+      : 0.5 * (plateBBox.min.z + plateBBox.max.z);
     for (const auto& b : info.bolts) {
-        plan.holeOrigins.push_back(toVec3(b.position));
+        Vec3 p = toVec3(b.position);
+        if (ax > 0.5) p.x = axisMid;
+        else if (ay > 0.5) p.y = axisMid;
+        else p.z = axisMid;
+        plan.holeOrigins.push_back(p);
         bool inside = true;
         if (ax > 0.5) {
-            inside = b.position.y >= plateBBox.min.y - kTol && b.position.y <= plateBBox.max.y + kTol &&
-                     b.position.z >= plateBBox.min.z - kTol && b.position.z <= plateBBox.max.z + kTol;
+            inside = p.y >= plateBBox.min.y - kTol && p.y <= plateBBox.max.y + kTol &&
+                     p.z >= plateBBox.min.z - kTol && p.z <= plateBBox.max.z + kTol;
         } else if (ay > 0.5) {
-            inside = b.position.x >= plateBBox.min.x - kTol && b.position.x <= plateBBox.max.x + kTol &&
-                     b.position.z >= plateBBox.min.z - kTol && b.position.z <= plateBBox.max.z + kTol;
+            inside = p.x >= plateBBox.min.x - kTol && p.x <= plateBBox.max.x + kTol &&
+                     p.z >= plateBBox.min.z - kTol && p.z <= plateBBox.max.z + kTol;
         } else {
-            inside = b.position.x >= plateBBox.min.x - kTol && b.position.x <= plateBBox.max.x + kTol &&
-                     b.position.y >= plateBBox.min.y - kTol && b.position.y <= plateBBox.max.y + kTol;
+            inside = p.x >= plateBBox.min.x - kTol && p.x <= plateBBox.max.x + kTol &&
+                     p.y >= plateBBox.min.y - kTol && p.y <= plateBBox.max.y + kTol;
         }
         plan.boltInside.push_back(inside);
         if (inside) {
             plan.diagnostics.push_back("");
         } else {
             plan.diagnostics.push_back(
-                "bulon plaka ayak izi disinda; delik KESILMEDI: " + vecStr(toVec3(b.position)));
+                "bulon plaka ayak izi disinda; delik KESILMEDI: " + vecStr(p));
         }
     }
     plan.ok = true;
@@ -519,6 +530,19 @@ BridgeImportOutcome importBridgeComponent(Document& doc, const BridgePackage& pk
             bolt.spacingY = 0.0;
             out.warnings.push_back(
                 "bulon konumlari duzgun eksen-hizali grid degil; bireysel delik yolu kullanildi.");
+        }
+
+        // Gorsel montaj: bolt origin'in eksen-yonundeki bilesenini levha bbox merkezine
+        // hizala (grid ya da tek bulon fark etmez). Tekla BoltPositions bu bileseni 0
+        // dondurebilir; aksi halde montaj levhanin tamamen disinda kalir.
+        {
+            const double axisMid =
+                (std::fabs(plan.axis.x) > 0.5) ? 0.5 * (target->obj->bbox->min.x + target->obj->bbox->max.x)
+              : (std::fabs(plan.axis.y) > 0.5) ? 0.5 * (target->obj->bbox->min.y + target->obj->bbox->max.y)
+              : 0.5 * (target->obj->bbox->min.z + target->obj->bbox->max.z);
+            if (std::fabs(plan.axis.x) > 0.5) bolt.origin.x = axisMid;
+            else if (std::fabs(plan.axis.y) > 0.5) bolt.origin.y = axisMid;
+            else bolt.origin.z = axisMid;
         }
 
         bolt.id = kInvalidEntityId;
