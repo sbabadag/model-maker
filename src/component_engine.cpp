@@ -961,6 +961,16 @@ GenerationPlan generateShearPlateSimple146(const ComponentInput& input) noexcept
     b.params.hasHead = true;
     b.params.hasNut = true;
     b.params.hasWasher = true;
+    // GRIP (civata DISPLAY boyu): bulonlar levhayi + KIRIS GOVDESINI (web) deler.
+    // bbox yontemi (Document::boltGripLength) kirisin flans genisligini (ornegin
+    // 300 mm) grip'e sokup civatayi gercek disi uzatir; bunun yerine levha
+    // kalinligi + gercat web kalinligi kullanilir. gripLength YALNIZ display
+    // icindir; holeDepth'e dokunulmaz (sinirli delik origin'i kavrama merkezine
+    // kaydirmayi gerektirir, delikleri bozardi). secWebThickness bilinmiyorsa (0)
+    // eski bbox davranisi korunur.
+    if (beam.secWebThickness > 0.0) {
+        b.gripLength = thickness + beam.secWebThickness;
+    }
     b.parts = {beam.id};
     plan.boltGroups.push_back(b);
     plan.boltGroupKeys.push_back("beam_bolts");

@@ -88,6 +88,13 @@ struct BoltGroup {
     // -Placement bunu "levha + gap + kolon on flansi" olarak hesaplar; boylece
     // delik kolonun ARKA flansina ulasmaz. Cift-flans modunda 0 kalir.
     double holeDepth{0.0};
+    // GRIP (civata DISPLAY boyu, mm): shank/bas/somun montajinin eksen boyunca
+    // uzunlugu. holeDepth'ten AYRI tutulur cunku holeDepth sinirli delik icin
+    // origin'in KAVRAMA MERKEZINE kaydirilmasini gerektirir (occ_geometry
+    // depth>0 silindiri planeOrigin'de ortalar); generator origin'i kavrama
+    // merkezine kaydirmadiyse delik bozulur. gripLength yalniz display icindir,
+    // delik kesimini etkilemez. 0 = materializer holeDepth veya bbox'tan turetir.
+    double gripLength{0.0};
     bool enabled{true};
     bool operator==(const BoltGroup&) const = default;
 };

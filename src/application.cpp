@@ -4777,6 +4777,8 @@ static mm::MemberGeometry memberGeometryFor(const mm::Document& doc,
     if (const mm::SteelProfile* prof = mm::findProfile(catalog, p.profileName)) {
         g.secWidth = prof->width;
         g.secHeight = prof->height;
+        g.secWebThickness = prof->plateThickness;
+        g.secFlangeThickness = prof->flangeThickness;
         // SectionAnchor: eksen kesitin ustunden gecebilir (varsayilan Top).
         // Levha/bulon govde merkezine otursun diye kesit merkez ofsetini gecir.
         g.sectionCenterOffset = mm::profileSectionAnchorOffset(*prof, p.sectionAnchor);

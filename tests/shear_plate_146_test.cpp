@@ -273,6 +273,38 @@ int main() {
         }
     }
 
+    // --- 9) GRIP (civata boyu): web kalinligi biliniyorsa gripLength set edilir --
+    {
+        ComponentRegistry reg;
+        registerBuiltInComponents(reg);
+
+        // Web kalinligi BILINMIYOR (0): gripLength set edilmez (eski bbox davranisi).
+        {
+            ComponentInput in = makeInput();
+            GenerationPlan plan = reg.generate(L"tekla_shear_plate_146", in);
+            check(plan.ok, "146 (web bilinmiyor) uretildi");
+            if (plan.boltGroups.size() == 1)
+                check(plan.boltGroups[0].gripLength == 0.0,
+                      "146 gripLength 0 (web bilinmiyor) -> eski davranis");
+        }
+        // Web kalinligi BILINIYOR (I-profil govdesi): gripLength = levha + web.
+        {
+            ComponentInput in = makeInput();
+            in.secondary[0].secWebThickness = 8.5;   // HEA300 web ~8.5 mm
+            in.secondary[0].secFlangeThickness = 14.0;
+            in.params = {{L"plateThickness", CompParamValue{10.0}}};
+            GenerationPlan plan = reg.generate(L"tekla_shear_plate_146", in);
+            check(plan.ok, "146 (web biliniyor) uretildi");
+            if (plan.boltGroups.size() == 1) {
+                check(approx(plan.boltGroups[0].gripLength, 18.5),
+                      "146 gripLength = levha(10) + web(8.5) = 18.5");
+                // holeDepth delik kesimini ETKILEMEMELI (through-cut korunur).
+                check(plan.boltGroups[0].holeDepth == 0.0,
+                      "146 holeDepth 0 (delik through-cut, gripLength'ten ayri)");
+            }
+        }
+    }
+
     std::printf("FAILURES: %d\n", failures);
     return failures == 0 ? 0 : 1;
 }

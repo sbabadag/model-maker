@@ -64,6 +64,8 @@ MemberGeometry bridgeMemberGeometry(const Document& doc, EntityId id,
     if (const SteelProfile* prof = findProfile(catalog, p.profileName)) {
         g.secWidth = prof->width;
         g.secHeight = prof->height;
+        g.secWebThickness = prof->plateThickness;
+        g.secFlangeThickness = prof->flangeThickness;
         g.sectionCenterOffset = profileSectionAnchorOffset(*prof, p.sectionAnchor);
     } else {
         switch (p.sectionAnchor) {

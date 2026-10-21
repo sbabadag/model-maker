@@ -500,8 +500,13 @@ ComponentMaterializer::CommitResult ComponentMaterializer::commit(const Prepared
                         parts.push_back(up);
                 bolt.parts = std::move(parts);
 
-                // Grip: bagli parcalarin eksen boyunca kapsami (levha artık doc'ta).
-                const double grip = doc_.boltGripLength(bolt);
+                // Grip: oncelikle generator'in gripLength'i (levha + web); yoksa
+                // holeDepth; yoksa bagli parcalarin bbox kapsami (I-profil flans
+                // genisligini grip'e sokabilir — son care).
+                const double grip =
+                    (bolt.gripLength > 0.0) ? bolt.gripLength
+                    : (bolt.holeDepth > 0.0) ? bolt.holeDepth
+                    : doc_.boltGripLength(bolt);
                 const TopoDS_Shape assembly =
                     buildBoltGroupAssemblyShape(bolt, grip > 0.0 ? grip : 15.0);
                 WireframeModel display =
@@ -754,7 +759,10 @@ ComponentMaterializer::CommitResult ComponentMaterializer::recompute(
                         parts.push_back(up);
                 bolt.parts = std::move(parts);
 
-                const double grip = doc_.boltGripLength(bolt);
+                const double grip =
+                    (bolt.gripLength > 0.0) ? bolt.gripLength
+                    : (bolt.holeDepth > 0.0) ? bolt.holeDepth
+                    : doc_.boltGripLength(bolt);
                 const TopoDS_Shape assembly =
                     buildBoltGroupAssemblyShape(bolt, grip > 0.0 ? grip : 15.0);
                 WireframeModel display = assembly.IsNull()

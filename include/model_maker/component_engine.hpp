@@ -162,6 +162,13 @@ struct MemberGeometry {
     Vec3 refNormal{0.0, 0.0, 1.0};   // kesit referans normali
     double secWidth{0.0};            // kesit bbox genisligi (mm)
     double secHeight{0.0};           // kesit bbox yuksekligi (mm)
+    // Kesit PARCA kalinliklari (mm); profil katalogundan doldurulur. 0 = bilinmiyor.
+    // Bulon grip (boy) hesabinda bbox YERINE bunlar kullanilir: bir bulon I-profil
+    // govdesini delerse grip = web (secWebThickness), flansi delerse grip = flans
+    // (secFlangeThickness). bbox kullanmak flans genisligini (ornegin 300 mm) grip'e
+    // sokar ve civata boyunu gercek disi uzatir.
+    double secWebThickness{0.0};
+    double secFlangeThickness{0.0};
     // Kesit MERKEZININ uye eksenine gore ISARETLI kaymasi (mm), kesit YUKSEKLIK
     // yonu boyunca. SectionAnchor: Top -> -h/2 (eksen ust baslikta, govde
     // asagida), Center -> 0, Bottom -> +h/2. Levha/bulon GOVDE MERKEZINE
