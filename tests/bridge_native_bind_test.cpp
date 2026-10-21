@@ -34,15 +34,16 @@ static SteelProfile makeProfile(const char* name, double h, double b) {
 }
 
 // Iki uyeli (kolon + kiris) bir Document kurar. beamProfile bos degilse kiris
-// profili o olur (conflict testi icin IPE200 vb).
+// profili o olur (conflict testi icin IPE200 vb). colAxisLen kolon eksen boyu.
 static Document makeDoc(EntityId& colId, EntityId& beamId,
-                        const char* beamProfile = "HEA300") {
+                        const char* beamProfile = "HEA300",
+                        double colAxisLen = 3000.0) {
     Document doc;
     WireframeModel col = WireframeModel::cube(300.0);
     {
         EntityProperties p = col.properties();
         p.profileName = "HEA400";
-        p.axisFromZ = 0; p.axisToZ = 3000;
+        p.axisFromZ = 0; p.axisToZ = colAxisLen;
         col.setProperties(std::move(p));
     }
     doc.addModel(std::move(col));
@@ -165,6 +166,38 @@ int main() {
         check(b.ok, "kullanici secimi: baglama ok");
         check(b.primary.resolved && b.primary.entityId == colId, "secim: primary");
         check(b.secondary[0].resolved && b.secondary[0].entityId == beamId, "secim: secondary");
+    }
+
+    // --- 7) Ters sira secim: once kiris, sonra kolon -> profile gore dogru baglanir ---
+    {
+        EntityId colId, beamId;
+        Document doc = makeDoc(colId, beamId);  // hic GUID yok
+        const BridgeNativeMapping m = mapBridgeToNative(makePackage(), catalog);
+        BridgeMemberSelection sel;
+        sel.primaryId = beamId;      // YANLIS sira: once kiris secildi
+        sel.secondaryIds = {colId};  // sonra kolon
+        const BridgeMemberBinding b = resolveBridgeMemberBinding(doc, m, sel);
+        check(b.ok, "ters sira: baglama ok");
+        check(b.primary.resolved && b.primary.entityId == colId,
+              "ters sira: primary -> kolon (HEA400)");
+        check(b.secondary[0].resolved && b.secondary[0].entityId == beamId,
+              "ters sira: secondary -> kiris (HEA300)");
+    }
+
+    // --- 8) Farkli eksen boyu (3382 vs 7200) baglamayi ENGELLEMEZ ---------------
+    {
+        EntityId colId, beamId;
+        Document doc = makeDoc(colId, beamId, "HEA300", 3382.0);  // kolon 3382 mm
+        BridgePackage pkg = makePackage();
+        pkg.component.primaryMember.endPoint = BridgeVec3{0, 0, 7200};  // paket 7200 mm
+        const BridgeNativeMapping m = mapBridgeToNative(pkg, catalog);
+        BridgeMemberSelection sel;
+        sel.primaryId = colId;
+        sel.secondaryIds = {beamId};
+        const BridgeMemberBinding b = resolveBridgeMemberBinding(doc, m, sel);
+        check(b.ok, "farkli eksen boyu: baglama ok (boy kontrolu yok)");
+        check(b.primary.resolved && b.primary.entityId == colId,
+              "farkli boy: primary -> kolon");
     }
 
     // --- 5) MMW8 round-trip: GUID eslemesi korunur ----------------------------

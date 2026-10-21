@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <vector>
 
 namespace mm {
 
@@ -22,17 +23,6 @@ std::string entityProfile(const Document& doc, EntityId id) {
     return doc.models()[*idx].properties().profileName;
 }
 
-// Varlik eksen uzunlugu (sifir ise eksen bilinmiyor).
-double entityAxisLength(const Document& doc, EntityId id) {
-    const auto idx = doc.indexOfEntity(id);
-    if (!idx) return 0.0;
-    const auto& p = doc.models()[*idx].properties();
-    const double dx = p.axisToX - p.axisFromX;
-    const double dy = p.axisToY - p.axisFromY;
-    const double dz = p.axisToZ - p.axisFromZ;
-    return std::sqrt(dx * dx + dy * dy + dz * dz);
-}
-
 } // namespace
 
 bool bridgeMemberCompatible(const Document& doc, EntityId id,
@@ -42,32 +32,17 @@ bool bridgeMemberCompatible(const Document& doc, EntityId id,
         reason = "varlik yok";
         return false;
     }
-    // Profil uyumu (case-insensitive). Reconstructed profil bos ise kontrol atlanir.
+    // YALNIZ profil (kesit/tur) uyumu kontrol edilir.
+    // Eksen BOYU karsilastirilmaz: ayni fiziksel uye farkli modelde farkli uzunlukta
+    // cizilmis olabilir (or. Tekla'da 7200 mm kolon, Model Maker'da 3382 mm cizilmis).
+    // Baglanti geometrisi icin uyenin BOYU degil, KESITI ve KONUMU onemlidir; boy
+    // karsilastirmasi dogru secimi yanlislikla reddediyordu.
     if (!m.profile.empty()) {
         const std::string p = toLower(entityProfile(doc, id));
         const std::string want = toLower(m.profile);
         if (!p.empty() && !want.empty() && p != want) {
             reason = "profil uyumsuz: belge=\"" + p + "\" beklenen=\"" + want + "\"";
             return false;
-        }
-    }
-    // Eksen uzunluk uyumu (varsa, %5 tolerans).
-    if (m.hasAxis) {
-        const double docLen = entityAxisLength(doc, id);
-        const double wantLen = std::sqrt(
-            (m.geometry.axisTo.x - m.geometry.axisFrom.x) *
-                (m.geometry.axisTo.x - m.geometry.axisFrom.x) +
-            (m.geometry.axisTo.y - m.geometry.axisFrom.y) *
-                (m.geometry.axisTo.y - m.geometry.axisFrom.y) +
-            (m.geometry.axisTo.z - m.geometry.axisFrom.z) *
-                (m.geometry.axisTo.z - m.geometry.axisFrom.z));
-        if (docLen > 0.0 && wantLen > 0.0) {
-            const double tol = std::max(50.0, wantLen * 0.05);  // 5% + 50mm pay
-            if (std::fabs(docLen - wantLen) > tol) {
-                reason = "eksen boyu uyumsuz: belge=" + std::to_string(docLen) +
-                         " beklenen=" + std::to_string(wantLen);
-                return false;
-            }
         }
     }
     return true;
@@ -105,23 +80,39 @@ BridgeMemberBinding resolveBridgeMemberBinding(
     const BridgeMemberSelection& selection) noexcept {
     BridgeMemberBinding out;
 
-    const auto bindOne = [&](const BridgeReconstructedMember& m,
-                             EntityId selectedId) -> BridgeMemberBind {
+    // Kullanici secimlerini tek havuzda topla. SECIM SIRASI ONEMSIZ: her uye,
+    // kendi hedefinin PROFILINE gore havuza eslestirilir (hea400->primary,
+    // hea300->secondary), boylece kullanici yanlis sirada secse de dogru baglanir.
+    std::vector<EntityId> pool;
+    if (selection.primaryId != kInvalidEntityId) pool.push_back(selection.primaryId);
+    for (EntityId id : selection.secondaryIds)
+        if (id != kInvalidEntityId) pool.push_back(id);
+    std::vector<bool> used(pool.size(), false);
+
+    // Havuzdan, hedef uyeye profil olarak uyan ilk kullanilmamis varligi al.
+    const auto takeFromPool = [&](const BridgeReconstructedMember& m) -> EntityId {
+        for (std::size_t i = 0; i < pool.size(); ++i) {
+            if (used[i]) continue;
+            std::string reason;
+            if (bridgeMemberCompatible(doc, pool[i], m, reason)) {
+                used[i] = true;
+                return pool[i];
+            }
+        }
+        return kInvalidEntityId;
+    };
+
+    const auto bindOne = [&](const BridgeReconstructedMember& m) -> BridgeMemberBind {
         BridgeMemberBind b;
         b.guid = m.guid;
-        // 1) Acik kullanici secimi (varsa) — yine dogrula.
-        if (selectedId != kInvalidEntityId) {
-            std::string reason;
-            if (!bridgeMemberCompatible(doc, selectedId, m, reason)) {
-                b.conflict = true;
-                b.reason = reason;
-                return b;
-            }
+        // 1) Kullanici havuzundan profile uyan uye (sira onemsiz).
+        const EntityId picked = takeFromPool(m);
+        if (picked != kInvalidEntityId) {
             b.resolved = true;
-            b.entityId = selectedId;
+            b.entityId = picked;
             return b;
         }
-        // 2) Document'ta daha once iliskilendirilmis GUID.
+        // 2) Document'ta daha once iliskilendirilmis Tekla GUID.
         if (!m.guid.empty()) {
             const auto prev = doc.entityForTeklaGuid(m.guid);
             if (prev) {
@@ -136,18 +127,23 @@ BridgeMemberBinding resolveBridgeMemberBinding(
                 return b;
             }
         }
-        // 3) Cozulemedi (otomatik secim YAPILMAZ).
+        // 3) Kullanici secim yapti ama hicbir secim profile uymadi -> nedeni bildir.
+        for (std::size_t i = 0; i < pool.size(); ++i) {
+            if (used[i]) continue;
+            std::string reason;
+            if (!bridgeMemberCompatible(doc, pool[i], m, reason)) {
+                b.conflict = true;
+                b.reason = reason;
+                return b;
+            }
+        }
+        // 4) Cozulemedi (otomatik secim YAPILMAZ).
         b.reason = m.guid.empty() ? "uye GUID yok" : "GUID eslesmesi yok";
         return b;
     };
 
-    out.primary = bindOne(mapping.primary, selection.primaryId);
-    for (std::size_t i = 0; i < mapping.secondary.size(); ++i) {
-        const EntityId sel = i < selection.secondaryIds.size()
-                                 ? selection.secondaryIds[i]
-                                 : kInvalidEntityId;
-        out.secondary.push_back(bindOne(mapping.secondary[i], sel));
-    }
+    out.primary = bindOne(mapping.primary);
+    for (const auto& sec : mapping.secondary) out.secondary.push_back(bindOne(sec));
 
     // Sonuc: primary + en az bir secondary cozulmeli, conflict olmamali.
     bool anyConflict = out.primary.conflict;

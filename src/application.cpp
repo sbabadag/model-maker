@@ -10822,7 +10822,8 @@ bool Application::convertTeklaBridgeToNative(const std::filesystem::path& packag
         // Uye eksik: kullaniciya HANGI uyenin secilmesi gerektigini bildir.
         // Otomatik secim YAPILMAZ; orijinal import geometrisi korunur.
         std::wstring msg = L"Tekla Bridge native dönüşüm: üye eşlemesi gerekli.\n\n"
-                           L"Kolonu (primary) ve kirişi (secondary) seçip tekrar deneyin.\n\n"
+                           L"Kolonu ve kirişi birlikte seçip tekrar deneyin. Sıra önemli değil:\n"
+                           L"üyeler profillerine göre otomatik eşlenir (kolon HEA400, kiriş HEA300).\n\n"
                            L"Eksik üyeler:\n";
         for (const auto& m : out.missing) {
             msg.append(L"  • ");
