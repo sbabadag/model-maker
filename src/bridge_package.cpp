@@ -479,6 +479,13 @@ bool readBridgePackage(const std::string& dir, BridgePackage& out,
             if (o.contains("identifierId") && o["identifierId"].is_number_integer())
                 bo.identifierId = static_cast<int>(o["identifierId"].get<int64_t>());
             if (bo.sourceGUID.empty()) { errors.push_back("object sourceGUID bos"); continue; }
+            // Tum sifir GUID (00000000-0000-0000-0000-000000000000) gecersiz kimliktir:
+            // birden fazla nesnede gorulurse "tekrarli" hatasina donusur, kok nedeni gizler.
+            if (bo.sourceGUID.find_first_not_of("0-") == std::string::npos)
+            {
+                errors.push_back("object sourceGUID gecersiz (tum sifir): " + bo.sourceGUID);
+                continue;
+            }
             if (!seen.insert(bo.sourceGUID).second)
                 errors.push_back("object sourceGUID tekrarli: " + bo.sourceGUID);
             // V3: roleKey birincil, role yedek.

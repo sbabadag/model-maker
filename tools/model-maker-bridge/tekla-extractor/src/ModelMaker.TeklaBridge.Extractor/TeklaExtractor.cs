@@ -399,6 +399,17 @@ namespace ModelMaker.TeklaBridge.Extractor
                         Confidence = "observed"
                     };
 
+                    // Tekla bazi child'lara (orn. ControlPoint) Guid.Empty verir. Kimligi
+                    // olmayan nesne iliski/operasyon referansi olamaz; yazilirsa objects.json'da
+                    // tekrarli sourceGUID olusur ve import ("sourceGUID tekrarli") reddedilir.
+                    if (string.IsNullOrWhiteSpace(rec.SourceGUID) ||
+                        rec.SourceGUID == System.Guid.Empty.ToString())
+                    {
+                        diag.UnsupportedFeatures.Add(
+                            "GUID'si olmayan child atlandi: " + child.GetType().Name);
+                        continue;
+                    }
+
                     if (child is BoltGroup bg)
                     {
                         rec.Kind = "BoltGroup";
@@ -466,10 +477,10 @@ namespace ModelMaker.TeklaBridge.Extractor
                     }
                     else
                     {
-                        rec.Kind = "Unknown";
-                        rec.Role = "unknown";
-                        rec.RoleKey = "unknown";
-                        diag.UnsupportedFeatures.Add("Bilinmeyen child tipi: " + child.GetType().Name);
+                        // Taninmayan child (ControlPoint, vs.) nesne listesine YAZILMAZ:
+                        // geometrisi yok ve kimligi guvenilir degil; yalniz teshise yazilir.
+                        diag.UnsupportedFeatures.Add("Aktarilamayan child atlandi: " + child.GetType().Name);
+                        continue;
                     }
 
                     res.Objects.Add(rec);
