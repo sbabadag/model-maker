@@ -134,11 +134,11 @@ std::vector<WeldJunction> findWeldJunctions(const TopoDS_Shape& from,
         for (const auto& j : out) {
             bool dup = false;
             for (const auto& d : deduped) {
-                const auto near = [&](const Vec3& a, const Vec3& b) {
+                const auto ptsClose = [&](const Vec3& a, const Vec3& b) {
                     return vecLen(Vec3{a.x - b.x, a.y - b.y, a.z - b.z}) < tol;
                 };
-                if ((near(j.start, d.start) && near(j.end, d.end)) ||
-                    (near(j.start, d.end) && near(j.end, d.start))) {
+                if ((ptsClose(j.start, d.start) && ptsClose(j.end, d.end)) ||
+                    (ptsClose(j.start, d.end) && ptsClose(j.end, d.start))) {
                     dup = true;
                     break;
                 }
