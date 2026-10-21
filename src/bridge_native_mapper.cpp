@@ -592,4 +592,15 @@ BridgeNativeMapping mapBridgeToNative(const BridgePackage& pkg,
     return m;
 }
 
+std::vector<CompParam> mappedParamsToCompParams(const BridgeNativeMapping& mapping,
+                                                bool skipUnresolved) {
+    std::vector<CompParam> out;
+    out.reserve(mapping.params.size());
+    for (const auto& pm : mapping.params) {
+        if (skipUnresolved && pm.provenance == BridgeParamProvenance::Unresolved) continue;
+        out.push_back(CompParam{pm.name, pm.value});
+    }
+    return out;
+}
+
 } // namespace mm

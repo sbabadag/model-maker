@@ -27,6 +27,7 @@
 #include "model_maker/renderer.hpp"
 #include "model_maker/ribbon_layout.hpp"
 #include "model_maker/ucs.hpp"
+#include "model_maker/user_catalog.hpp"
 #include "model_maker/view_definition.hpp"
 #include "model_maker/view_cube.hpp"
 #include "model_maker/view_cube_renderer.hpp"
@@ -224,6 +225,23 @@ public:
     // import geometrisi korunur). Basarida native component secilir + cercevelenir.
     // OCC'siz derlemede uyarir ve false doner (belge degismez).
     bool convertTeklaBridgeToNative(const std::filesystem::path& packageDir);
+
+    // KULLANICI COMPONENT KATALOGU (portable derived sablonlar).
+    // Tekla bridge paketinden turetilen sablonu kullanici kataloguna KAYDEDER
+    // (kalici JSON dosyasi) ve ComponentRegistry'ye aninda kaydeder. Sablon
+    // Tekla kapaliyken bile katalog menüsünden secilip yeni projede parametrik
+    // component uretir. Unsupported geometri (NotEquivalent) varsa SESSIZCE
+    // eksik native component olarak kaydedilmez; kullaniciya sorulur ve yalniz
+    // acikca etiketlenmis REFERANS sablonu (isReferenceOnly) olarak kaydedilir.
+    // Donus: true = sablon katalogda ve registry'de.
+    bool saveBridgeAsCatalogTemplate(const std::filesystem::path& packageDir,
+                                     const std::wstring& templateName);
+    // Katalog dosyasini acilista yukler + registry/dialog'e kaydeder.
+    void loadUserCatalog();
+    // Katalog dosyasini diske yazar (mevcut registry'deki derived tipleri etkilemez).
+    bool saveUserCatalog();
+    // Calisma anindaki kullanici katalogu (salt-okunur erisim).
+    const mm::UserCatalog& userCatalog() const noexcept { return userCatalog_; }
 
     // Work plane (UCS) — Qt menü/ribbon erişimi için public
     // F1: GPU hatti — GL backend uretimi + F9 ile GDI/GL gecisi
@@ -1098,6 +1116,8 @@ private:
     // VERB-NOUN FIN PLATE (Phase P1): [0]=main (kolon), [1]=secondary (kiris).
     bool pendingFinPlate_{};
     std::vector<std::size_t> pendingFinPlateParts_;
+    // KULLANICI COMPONENT KATALOGU (portable derived sablonlar).
+    mm::UserCatalog userCatalog_;
     // END PLATE PARAMETRELERI (faz D1): uygulama-anı diyalogdan gelen degerler
     // (startEndPlateCommand'dan önce UI set eder); applyEndPlateFromParts bunları
     // kullanır. Kalıcı — son değer hatırlanır.

@@ -1,6 +1,7 @@
 #include "model_maker/application.hpp"
 #include "model_maker/dxf.hpp"
 #include "model_maker/bridge_package.hpp"
+#include "model_maker/bridge_native_mapper.hpp"
 #ifdef MM_HAS_SPACEMOUSE
 #include "model_maker/spacemouse.hpp"
 #endif
@@ -186,6 +187,10 @@ Application::Application(HINSTANCE instance, HWND /*parentCanvas*/) : instance_(
     // UNIVERSAL COMPONENT DIALOG katalogu: sematik cizim + parametre editörü
     // (fin_plate, end_plate) dialog registry'sine kaydedilir. Idempotent.
     mm::registerBuiltInDialogs(mm::ComponentDialogRegistry::instance());
+    // KULLANICI COMPONENT KATALOGU: kalici derived sablonlari yukler ve
+    // registry/dialog'e kaydeder. Bu, built-in katalogdan SONRA olmali ki
+    // family generator'lar (sourceTypeId) cozumlenebilsin.
+    loadUserCatalog();
 #ifdef MM_HAS_OCC
     // BELGE-SAHIPLI B-Rep magazasi: OCC-acik derlemede GERCEK OCCT store'unu
     // Document'a ENJEKTE eder (constructor injection). Saglayici secimi LINK
@@ -10624,6 +10629,23 @@ void Application::openDocument() {
             }
         }
 #endif
+        // KULLANICI KATALOGU ORPHAN TESHISI: proje, registry'de kayitli olmayan
+        // bir typeId'ye sahip component iceriyorsa (ornegin baska bilgisayardaki
+        // derived sablon) geometri KORUNUR ama recompute edilmez; acik uyari ver.
+        {
+            std::vector<std::wstring> orphans;
+            for (const auto& rec : document_.componentInstances())
+                if (rec.orphan) orphans.push_back(rec.typeId);
+            if (!orphans.empty()) {
+                std::wstring msg =
+                    L"Uyarı: kayıtlı olmayan component türü (recompute edilmez, geometri korunur): ";
+                for (std::size_t i = 0; i < orphans.size(); ++i) {
+                    if (i) msg += L", ";
+                    msg += orphans[i];
+                }
+                publishStatus(msg);
+            }
+        }
         purgeStaleAxisLines();
         refreshLayerCombo();
         if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
@@ -10862,10 +10884,149 @@ bool Application::convertTeklaBridgeToNative(const std::filesystem::path& packag
 #endif
 }
 
+// --- KULLANICI COMPONENT KATALOGU ---------------------------------------------
+
+namespace {
+std::filesystem::path userCatalogPath() {
+    wchar_t buffer[MAX_PATH]{};
+    const DWORD length = GetModuleFileNameW(nullptr, buffer, MAX_PATH);
+    if (length == 0 || length >= MAX_PATH) return L"user_catalog.json";
+    return std::filesystem::path(buffer).parent_path() / L"user_catalog.json";
+}
+} // namespace
+
+void Application::loadUserCatalog() {
+    const std::filesystem::path path = userCatalogPath();
+    std::string err;
+    if (!userCatalog_.load(path, err)) {
+        const std::runtime_error e(err.empty() ? "katalog yuklenemedi" : err);
+        showError(L"Kullanıcı kataloğu yüklenemedi", e);
+        return;
+    }
+    const auto warnings = userCatalog_.registerInto(mm::ComponentRegistry::instance(),
+                                                    mm::ComponentDialogRegistry::instance());
+    if (!warnings.empty()) {
+        std::wstring msg = L"Kullanıcı kataloğu: bazı şablonlar yüklenemedi (family kayıtlı değil):\n";
+        for (const auto& w : warnings) {
+            msg += L"  • ";
+            msg += w;
+            msg += L"\n";
+        }
+        publishStatus(msg);
+    }
+}
+
+bool Application::saveUserCatalog() {
+    std::string err;
+    if (!userCatalog_.save(userCatalogPath(), err)) {
+        const std::runtime_error e(err.empty() ? "katalog yazılamadı" : err);
+        showError(L"Kullanıcı kataloğu kaydedilemedi", e);
+        return false;
+    }
+    return true;
+}
+
+bool Application::saveBridgeAsCatalogTemplate(const std::filesystem::path& packageDir,
+                                              const std::wstring& templateName) {
+    if (templateName.empty()) {
+        publishStatus(L"Şablon kaydedilemedi: ad boş.");
+        return false;
+    }
+    // 1. Paket oku + dogrula (OCC gerektirmez).
+    mm::BridgePackage pkg;
+    std::vector<std::string> errors;
+    if (!mm::readBridgePackage(packageDir.string(), pkg, errors)) {
+        std::string detail = "package read/validation failed";
+        for (const auto& e : errors) {
+            detail += "\n- ";
+            detail += e;
+        }
+        const std::runtime_error importError(detail);
+        showError(L"Tekla Bridge şablonu okunamadı", importError);
+        return false;
+    }
+
+    // 2. Bridge -> native esleme (parametreler + esdegerlik). Profil katalogu
+    //    uye kesit boyutlari icin; bos olsa da parametre cikarimi calisir.
+    ensureProfileCatalog();
+    const mm::BridgeNativeMapping mapping = mm::mapBridgeToNative(pkg, profileCatalog_);
+
+    // 3. Family kaynak tipini registry'den coz. Yalnizca desteklenen family
+    //    (simdilik tekla_shear_plate_146) derive edilebilir.
+    const mm::ComponentType* source =
+        mm::ComponentRegistry::instance().findType(mapping.detected ? mapping.typeId : L"");
+    if (!source) {
+        publishStatus(L"Şablon kaydedilemedi: kaynak component desteklenen bir family değil.");
+        return false;
+    }
+
+    // 4. Override defaults (belirsiz (Unresolved) parametreler family varsayilanini korur).
+    const std::vector<CompParam> overrides = mm::mappedParamsToCompParams(mapping, true);
+
+    // 5. DURUSTLUK: unsupported geometri var mi? Varsa SESSIZCE calisir parametrik
+    //    component olarak kaydetme. Kullaniciya sor; yalnizca acikca etiketlenmis
+    //    REFERANS sablonu olarak kaydetmeye izin ver.
+    const bool hasUnsupported =
+        mapping.equivalence.state == mm::BridgeEquivalenceState::NotEquivalent ||
+        !mapping.unsupportedFeatures.empty();
+    bool isReferenceOnly = false;
+    std::wstring referenceNote;
+    if (hasUnsupported) {
+        std::wstring why = L"";
+        for (const auto& f : mapping.unsupportedFeatures) {
+            why += L"  • ";
+            why += std::wstring(f.begin(), f.end());
+            why += L"\n";
+        }
+        for (const auto& iss : mapping.equivalence.issues) {
+            why += L"  • ";
+            why += std::wstring(iss.begin(), iss.end());
+            why += L"\n";
+        }
+        std::wstring msg = L"Bu bağlantı native generator'ın TAM yeniden üretemediği geometri içeriyor:\n\n";
+        msg += why;
+        msg += L"\nÇalışır parametrik component olarak kaydedilemez. Yalnızca açıkça etiketlenmiş "
+               L"REFERANS şablonu olarak kaydedilebilir (parametreleri değiştirilemez, geometri birebir "
+               L"üretilmez).\n\nReferans şablonu olarak kaydetmek istiyor musunuz?";
+        const int r = MessageBoxW(window_, msg.c_str(), L"Model Maker — Unsupported Geometri",
+                                  MB_YESNO | MB_ICONWARNING);
+        if (r != IDYES) {
+            publishStatus(L"Şablon kaydedilmedi (unsupported geometri — kullanıcı iptal etti).");
+            return false;
+        }
+        isReferenceOnly = true;
+        referenceNote = L"unsupported geometri: " + std::wstring(why.begin(), why.end());
+    }
+
+    // 6. Sablon turet + benzersizlestir + katalog'a ekle + diske yaz + registry'ye kaydet.
+    mm::UserCatalogEntry entry = mm::deriveComponentTemplate(*source, templateName, overrides,
+                                                             isReferenceOnly, referenceNote);
+    userCatalog_.ensureUnique(entry);
+    userCatalog_.addOrUpdate(entry);
+    if (!saveUserCatalog()) return false;
+    const auto warnings = userCatalog_.registerInto(mm::ComponentRegistry::instance(),
+                                                    mm::ComponentDialogRegistry::instance());
+    if (!warnings.empty()) {
+        std::wstring msg = L"Şablon kaydedildi ancak bazı kayıtlar yapılamadı:\n";
+        for (const auto& w : warnings) {
+            msg += L"  • ";
+            msg += w;
+            msg += L"\n";
+        }
+        publishStatus(msg);
+    }
+
+    std::wstring status = L"Şablon kataloğa kaydedildi: " + entry.displayName;
+    status += isReferenceOnly ? L" (REFERANS şablonu — parametrik değil)"
+                              : L" (parametrik)";
+    status += L". Yeniden başlatınca Component Kataloğu menüsünde görünür.";
+    publishStatus(status);
+    return true;
+}
+
 void Application::showError(const wchar_t* action, const std::exception& error) const {
     std::wstring message(action); message += L".\n\n";
     const std::string detail = error.what(); message.append(detail.begin(), detail.end());
     MessageBoxW(window_, message.c_str(), L"Model Maker", MB_OK | MB_ICONERROR);
 }
-
 } // namespace mm

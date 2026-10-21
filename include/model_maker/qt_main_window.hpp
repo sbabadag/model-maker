@@ -45,6 +45,10 @@ private:
     // component'ine donusturur (app_.convertTeklaBridgeToNative). Uye eksikse
     // kullaniciya kolon+kiriş secmesi bildirilir (Windows GUI).
     void importTeklaBridgeNative();
+    // Tekla Component Bridge: .mmbridge paketini KULLANICI KATALOGUNA sablon
+    // olarak kaydeder (app_.saveBridgeAsCatalogTemplate). Kullaniciya sablon
+    // adi sorulur; unsupported geometri icin REFERANS sablonu onayi istenir.
+    void saveTeklaBridgeTemplate();
     // Tekla grid property pane karsiligi: grid spesifikasyonunu duzenler.
     bool editGridProperties(GridDefinition& grid, const QString& title);
     void createToolbar();

@@ -34,6 +34,7 @@
 #include "model_maker/occ_solid_store.hpp"
 #include "model_maker/occ_geometry.hpp"
 #include "model_maker/profile_database.hpp"
+#include "model_maker/user_catalog.hpp"
 
 #include <Bnd_Box.hxx>
 #include <BRepBndLib.hxx>
@@ -141,6 +142,7 @@ static ComponentInput makeInput(const Setup& s) {
 
 int main() {
     registerBuiltInComponents(ComponentRegistry::instance());
+    registerBuiltInDialogs(ComponentDialogRegistry::instance());
 
     // ================= PART A: varsayilan 146 + kiris ucu kesimi ==============
     {
@@ -678,6 +680,76 @@ int main() {
             (bolt.origin.z - plate.center.z) * au.z;
         check(approx(shift, -3.9, 1e-3),
               "G: bolt origin levha merkezinden yigin merkezine kaydi (-3.9)");
+    }
+
+    // ========= PART H: kullanici katalogundan turetilmis sablon (gercek OCC) ==
+    // Kabul kriteri: Tekla kapaliyken kendi katalogundan secilen sablon, YENI
+    // projede gercek OCC geometrisi uretmeli. Burada: deriveComponentTemplate
+    // (2x3 M20, 170x200x10) -> UserCatalog.registerInto -> derived typeId ile
+    // generate (BOS params = sablon varsayilanlari) -> materialize -> hacim/delik.
+    {
+        Setup s = makeSetup();
+        const double PI = std::acos(-1.0);
+
+        const ComponentType src = shearPlate146ComponentType();
+        const std::vector<CompParam> overrides = {
+            {L"plateThickness", CompParamValue{10.0}},
+            {L"plateWidth", CompParamValue{170.0}},
+            {L"plateHeight", CompParamValue{200.0}},
+            {L"boltCount", CompParamValue{3}},
+            {L"boltCountX", CompParamValue{2}},
+            {L"pitchX", CompParamValue{60.0}},
+            {L"pitchY", CompParamValue{60.0}},
+            {L"edgeX", CompParamValue{55.0}},
+            {L"edgeY", CompParamValue{40.0}},
+            {L"boltDiameter", CompParamValue{20.0}},
+            {L"holeDiameter", CompParamValue{22.0}},
+        };
+        UserCatalog catalog;
+        catalog.addOrUpdate(
+            deriveComponentTemplate(src, L"Shear Plate 146 - Özel", overrides));
+        const auto warn = catalog.registerInto(ComponentRegistry::instance(),
+                                               ComponentDialogRegistry::instance());
+        check(warn.empty(), "H: registerInto uyari yok");
+        const std::wstring derivedTypeId = catalog.entries().front().typeId;
+        check(ComponentRegistry::instance().findType(derivedTypeId) != nullptr,
+              "H: derived type registry'de");
+
+        // BOS params -> sablon varsayilanlari (derive edilen 2x3, 170x200x10).
+        ComponentInput in = makeInput(s);
+        const GenerationPlan gp = ComponentRegistry::instance().generate(derivedTypeId, in);
+        check(gp.ok, "H: derived generate ok");
+        check(gp.boltGroups.size() == 1 && gp.boltGroups[0].countX == 2 &&
+                  gp.boltGroups[0].countY == 3,
+              "H: 2x3 duzeni (sablon varsayilanlarindan)");
+
+        const ComponentPlan plan = componentPlanFromGenerationPlan(gp);
+        ComponentMaterializer mat(s.doc);
+        ComponentMaterializer::Prepared prep = mat.prepare(plan, s.colId, {s.beamId});
+        check(prep.ok, "H: prepare ok");
+        ComponentInstanceRecord rec;
+        rec.typeId = derivedTypeId;
+        rec.mainPart = s.colId;
+        rec.secondaryParts = {s.beamId};
+        ComponentMaterializer::CommitResult res = mat.commit(prep, rec);
+        check(res.ok, "H: commit ok");
+
+        const EntityId tabId = res.roleToEntity["shear_tab_near"];
+        const EntityId boltId = res.roleToEntity["beam_bolts"];
+        check(tabId != kInvalidEntityId, "H: tab EntityId");
+
+        const TopoDS_Shape* ts = s.store->find(tabId);
+        check(ts && !ts->IsNull(), "H: levha kati mevcut");
+        if (ts && !ts->IsNull()) {
+            const double vol = shapeVolume(*ts);
+            const double expected = 340000.0 - 6.0 * PI * 11.0 * 11.0 * 10.0;
+            check(approx(vol, expected, expected * 0.01),
+                  "H: delikli levha hacmi 317192 (sablondan gercek OCC)");
+        }
+        std::size_t plateHoles = 0;
+        for (const auto& m : s.doc.cutModifiers())
+            if (m.kind == CutKind::Hole && m.owner == boltId && m.target == tabId) ++plateHoles;
+        check(plateHoles == 6, "H: levhada 6 delik (sablondan)");
     }
 
     std::printf("\n%d failure(s)\n", failures);

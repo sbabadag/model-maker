@@ -105,4 +105,12 @@ struct BridgeNativeMapping {
 BridgeNativeMapping mapBridgeToNative(const BridgePackage& pkg,
                                       const std::vector<SteelProfile>& catalog) noexcept;
 
+// BridgeMappedParam listesini CompParam override listesine cevirir
+// (deriveComponentTemplate icin). skipUnresolved=true ise provenance'i
+// Unresolved olanlar ATLANIR (sablon varsayilanini family'nin varsayilani
+// olarak birakir); false ise hepsi aktarilir (Unresolved da CompParamValue
+// olarak gider, ancak deger yine de validate edilir).
+std::vector<CompParam> mappedParamsToCompParams(const BridgeNativeMapping& mapping,
+                                                bool skipUnresolved = true);
+
 } // namespace mm

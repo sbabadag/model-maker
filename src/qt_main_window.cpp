@@ -603,6 +603,8 @@ void QtMainWindow::createMenus() {
         [this]() { importTeklaBridge(); })->setIcon(makeToolIcon(ToolGlyph::Import));
     fileMenu->addAction("Tekla Bridge → &Native Component'e Dönüştür...", this,
         [this]() { importTeklaBridgeNative(); })->setIcon(makeToolIcon(ToolGlyph::Import));
+    fileMenu->addAction("Tekla Bridge → &Kataloğa Şablon Kaydet...", this,
+        [this]() { saveTeklaBridgeTemplate(); })->setIcon(makeToolIcon(ToolGlyph::Import));
     fileMenu->addSeparator();
     fileMenu->addAction("Çı&kış", qApp, &QApplication::quit);
 
@@ -817,6 +819,23 @@ void QtMainWindow::importTeklaBridgeNative() {
         this, QStringLiteral("Tekla Component Bridge paket klasörünü seç (.mmbridge) — Native dönüşüm"));
     if (dir.isEmpty()) return;
     app_.convertTeklaBridgeToNative(std::filesystem::path(dir.toStdWString()));
+}
+
+void QtMainWindow::saveTeklaBridgeTemplate() {
+    // 1) .mmbridge paket KLASORUNU sectir; 2) sablon ADINI sor; 3) Application
+    // saveBridgeAsCatalogTemplate (map + derive + save + register). Unsupported
+    // geometri icin Application kendi onay diyalogunu acar.
+    const QString dir = QFileDialog::getExistingDirectory(
+        this, QStringLiteral("Tekla Component Bridge paket klasörünü seç (.mmbridge) — Şablon kaynağı"));
+    if (dir.isEmpty()) return;
+    bool ok = false;
+    const QString name = QInputDialog::getText(
+        this, QStringLiteral("Kataloğa Şablon Kaydet"),
+        QStringLiteral("Yeni component şablonunun adı:"), QLineEdit::Normal,
+        QStringLiteral("Shear Plate 146 - Özel"), &ok);
+    if (!ok || name.trimmed().isEmpty()) return;
+    app_.saveBridgeAsCatalogTemplate(std::filesystem::path(dir.toStdWString()),
+                                     name.trimmed().toStdWString());
 }
 
 void QtMainWindow::openBoltPropertiesDialog(const mm::BoltGroup& bolt) {

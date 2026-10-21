@@ -58,7 +58,8 @@ add_library(model_maker_core
     src/bridge_package.cpp
     src/bridge_component_mapper.cpp
     src/bridge_native_mapper.cpp
-    src/bridge_native_bind.cpp)
+    src/bridge_native_bind.cpp
+    src/user_catalog.cpp)
 target_include_directories(model_maker_core PUBLIC include third_party)
 target_compile_options(model_maker_core PRIVATE -Wall -Wextra -Wpedantic)
 
@@ -469,6 +470,14 @@ if(BUILD_TESTING)
     target_link_libraries(model_maker_bridge_native_bind_test PRIVATE model_maker_core)
     target_compile_options(model_maker_bridge_native_bind_test PRIVATE -Wall -Wextra -Wpedantic)
     add_test(NAME model_maker_bridge_native_bind_test COMMAND model_maker_bridge_native_bind_test)
+
+    # KULLANICI COMPONENT KATALOGU: kalici/tasinabilir derived sablonlar
+    # (JSON round-trip, benzersiz typeId, family generator miras, register,
+    # derive, missing-family fallback). OCC'siz.
+    add_executable(model_maker_user_catalog_test tests/user_catalog_test.cpp)
+    target_link_libraries(model_maker_user_catalog_test PRIVATE model_maker_core)
+    target_compile_options(model_maker_user_catalog_test PRIVATE -Wall -Wextra -Wpedantic)
+    add_test(NAME model_maker_user_catalog_test COMMAND model_maker_user_catalog_test)
 
     # KARARLI VARLIK KIMLIGI (EntityId): vektor indeksi kalici kimlik DEGIL;
     # kimlik ekleme/silme/degistirme/undo/redo boyunca DOGRU varlikla eslesir,
