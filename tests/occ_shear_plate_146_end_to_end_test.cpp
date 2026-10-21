@@ -641,6 +641,45 @@ int main() {
         check(s.doc.redo(), "PART F: redo calisti");
     }
 
+    // ========= PART G: civata eksen-yonu konumu (origin + grip yigin merkezinde) ==
+    // v6'da grip dogruydu ama origin tabBase (govde merkezi) kaldigindan civata
+    // levhayi "opmuyordu" (bas govde uzak yuzunde boslukta, somun levhaya gomulu).
+    // v7 origin'i yigin merkezine kaydirdi. Bu test secWebThickness set ederek bu
+    // yolu gercek gecerliligine kavusturur (once end-to-end test bunu KAPSAMIYORDU).
+    {
+        Setup s = makeSetup();
+        s.beamGeom.secWebThickness = 5.6;    // IPE200 govde
+        s.beamGeom.secFlangeThickness = 8.5; // IPE200 baslik
+        ComponentInput in = makeInput(s);
+        in.params = {{L"plateThickness", CompParamValue{10.0}}};
+        const GenerationPlan gp = ComponentRegistry::instance().generate(
+            L"tekla_shear_plate_146", in);
+        check(gp.ok, "G: generate ok");
+        check(gp.plates.size() == 1 && gp.boltGroups.size() == 1,
+              "G: 1 levha + 1 bulon grubu");
+
+        const PlateSpec& plate = gp.plates[0];
+        const BoltGroup& bolt = gp.boltGroups[0];
+
+        // grip = levha dis yuzu (ecc + t/2) .. govde uzak yuzu (-w/2).
+        // ecc = thickness + tabGap = 10; t=10, w=5.6 -> grip = 15 + 2.8 = 17.8.
+        check(approx(bolt.gripLength, 17.8, 1e-3), "G: grip = ecc + t/2 + w/2 = 17.8");
+
+        // Bolt origin'in sec.width bileseni = (plateOuter + webFar)/2 = 6.1.
+        // Levha merkezi ecc=10'da; origin oradan (6.1 - 10) = -3.9 kaymis olmali
+        // (govdeye dogru). Bu, civatanin bas/somununun yiginin iki dis yuzune
+        // oturmasini saglar.
+        const Vec3 ax = plate.axis;  // sec.width (birim)
+        const double alen = std::sqrt(ax.x * ax.x + ax.y * ax.y + ax.z * ax.z);
+        const Vec3 au{ax.x / alen, ax.y / alen, ax.z / alen};
+        const double shift =
+            (bolt.origin.x - plate.center.x) * au.x +
+            (bolt.origin.y - plate.center.y) * au.y +
+            (bolt.origin.z - plate.center.z) * au.z;
+        check(approx(shift, -3.9, 1e-3),
+              "G: bolt origin levha merkezinden yigin merkezine kaydi (-3.9)");
+    }
+
     std::printf("\n%d failure(s)\n", failures);
     return failures == 0 ? 0 : 1;
 }
