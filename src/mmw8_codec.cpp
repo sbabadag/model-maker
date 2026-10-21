@@ -898,6 +898,13 @@ void writeMmw8(std::ostream& out, const Mmw8Document& doc) {
             putString(body, w.remarks);
             body << ' ';
             putString(body, w.unsupportedReason);
+            // Phase W3: kaynak olcusu anlami + cift tarafli + kati yonelim normali
+            // + goruntuleme modeli kimligi (sona ekli — eski dosyalar bu alanlar
+            // olmadan da okunur, varsayilan degerler korunur).
+            body << ' ' << (w.sizeIsThroat ? 1 : 0) << ' ' << (w.doubleSided ? 1 : 0)
+                 << ' ' << w.mainNormal.x << ' ' << w.mainNormal.y << ' ' << w.mainNormal.z
+                 << ' ' << w.secNormal.x << ' ' << w.secNormal.y << ' ' << w.secNormal.z
+                 << ' ' << w.displayEntityId;
             body << '\n';
         }
         const std::string b = body.str();
@@ -1705,6 +1712,22 @@ void readMmw8(std::istream& in, Mmw8Document& doc) {
                 w.identification = readString(ls);
                 w.remarks = readString(ls);
                 w.unsupportedReason = readString(ls);
+                // Phase W3 (geriye uyumlu): sona eklenen alanlar eski dosyalarda
+                // bulunmayabilir — kalan token varsa oku, yoksa varsayilan kalsin.
+                {
+                    std::string extra;
+                    if (ls >> extra) {
+                        w.sizeIsThroat = parseUint64(extra, "weld sizeIsThroat") != 0;
+                        w.doubleSided = readBool(ls, "weld doubleSided");
+                        w.mainNormal.x = readDouble(ls, "weld mainNormal x");
+                        w.mainNormal.y = readDouble(ls, "weld mainNormal y");
+                        w.mainNormal.z = readDouble(ls, "weld mainNormal z");
+                        w.secNormal.x = readDouble(ls, "weld secNormal x");
+                        w.secNormal.y = readDouble(ls, "weld secNormal y");
+                        w.secNormal.z = readDouble(ls, "weld secNormal z");
+                        w.displayEntityId = static_cast<EntityId>(readUint64(ls, "weld displayEntityId"));
+                    }
+                }
                 parsed.welds.push_back(std::move(w));
             }
         } else if (tag == 'S') {

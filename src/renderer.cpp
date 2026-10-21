@@ -996,6 +996,9 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
             if (w.origin.x == 0.0 && w.origin.y == 0.0 && w.origin.z == 0.0 &&
                 w.direction.x == 1.0 && w.direction.y == 0.0 && w.direction.z == 0.0)
                 continue; // konum hesaplanmamis (varsayilan) -> cizme
+            // Gercek OCC katisi olan kaynaklar kati olarak gorunur; glif
+            // yalnizca geometry unsupported kaynaklarda kalir (cift cizim yok).
+            if (w.geometrySupported && w.displayEntityId != kInvalidEntityId) continue;
             const POINT c = projectPoint(w.origin);
             const bool sel = std::find(draft.selectedWelds.begin(),
                                        draft.selectedWelds.end(), wi) !=

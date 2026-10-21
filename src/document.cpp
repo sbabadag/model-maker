@@ -2643,9 +2643,20 @@ void Document::recomputeAssemblies(const std::vector<AssemblyRecord>& before) {
 }
 
 std::size_t Document::addWeld(Weld weld) {
+    return addWeld(std::move(weld), WireframeModel{});
+}
+
+std::size_t Document::addWeld(Weld weld, WireframeModel displayModel) {
     ++revision_;
     opaqueBrepsStale_ = true;
     if (weld.id == kInvalidEntityId) weld.id = allocateEntityIdRequired();
+    // 1) Gosterim modeli (Add op) — kimligi yakala. Bos model (geometry
+    //    unsupported) eklenmez; kaynak glifi ile temsil edilir.
+    if (!displayModel.vertices().empty()) {
+        addModel(std::move(displayModel));
+        weld.displayEntityId = modelId(models_.size() - 1);
+    }
+    // 2) Kaynak kaydi (WeldAdd op).
     const auto asmBefore = assemblies_;
     UndoOp op;
     op.kind = UndoOp::Kind::WeldAdd;
@@ -2669,6 +2680,11 @@ void Document::removeWeld(std::size_t index) {
     op.weldBefore = weld;
     recordUndoOp(std::move(op));
     welds_.erase(welds_.begin() + static_cast<std::ptrdiff_t>(index));
+    // Display modelini sil (yaprak — kesme/bulon kaskadi yok).
+    if (weld.displayEntityId != kInvalidEntityId) {
+        if (auto di = indexOfEntity(weld.displayEntityId))
+            eraseModelLeaf(*di);
+    }
     recomputeAssemblies(asmBefore);
 }
 
@@ -2725,7 +2741,11 @@ std::vector<EntityId> Document::assemblyMembers(EntityId partId) const {
     for (const auto& w : welds_) {
         const bool mainIn = std::find(a.parts.begin(), a.parts.end(), w.mainPart) != a.parts.end();
         const bool secIn = std::find(a.parts.begin(), a.parts.end(), w.secondaryPart) != a.parts.end();
-        if (mainIn && secIn) out.push_back(w.id);
+        if (mainIn && secIn) {
+            out.push_back(w.id);
+            // Kaynak kati goruntuleme modeli de assembly uyesi (kati secilsin).
+            if (w.displayEntityId != kInvalidEntityId) out.push_back(w.displayEntityId);
+        }
     }
     // Sahip olunan bulonlar: TUM parcalari bu assembly'de olan bulon gruplari.
     for (const auto& b : boltGroups_) {

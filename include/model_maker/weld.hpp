@@ -36,12 +36,21 @@ struct Weld {
     EntityId mainPart{kInvalidEntityId};
     EntityId secondaryPart{kInvalidEntityId};
     WeldType type{WeldType::Fillet};
-    double size{5.0};          // mm (fillet: bacak olcusu; butt: agiz kalinligi)
+    double size{5.0};          // mm (bkz sizeIsThroat)
     double length{0.0};        // mm (0 = otomatik/tam temas uzunlugu)
     WeldClass weldClass{WeldClass::Shop};
+    // Kaynak olcusu anlami (Tekla'dan dogrulanmadan DONUSTURME): fillet icin
+    // bacak (leg) ya da bogaz (throat); butt icin agiz kalinligi. Varsayilan
+    // bacak (leg) — gercek tekla olcusunun anlami bilinmeden varsayilmaz.
+    bool sizeIsThroat{false};  // false = bacak (leg); true = bogaz (throat)
+    bool doubleSided{false};   // cift tarafli kaynak (iki ayri kati)
     // Kaynak referans geometrisi (otomatik hesaplanir; kullanici dogrulayabilir).
     Vec3 origin{};             // kaynak referans noktasi
     Vec3 direction{1.0, 0.0, 0.0}; // kaynak ilerleme yonu (birim)
+    // Kaynak kesitinin iki parçaya gore yonelim normali (gercek OCC kati uretimi
+    // icin; MMW8'de korunur). Gecersiz birlesimlerde sifir kalir.
+    Vec3 mainNormal{};         // ana parca yuzu normali (birim)
+    Vec3 secNormal{};          // ikincil parca yuzu normali (birim)
     // Ust / alt kaynak ozellikleri (Tekla Above/Below).
     bool aboveLine{true};
     // Kimlik / metadata.
@@ -51,6 +60,9 @@ struct Weld {
     // katı uretilmez; entity + metadata korunur, geometri acikca unsupported.
     bool geometrySupported{false};
     std::string unsupportedReason;
+    // Kaynak katisinin GORUNTULEME modelinin EntityId'si (normal model; OCC B-Rep
+    // bu kimlik altinda magazada tutulur). Gecersiz = kati uretilmedi/sembol.
+    EntityId displayEntityId{kInvalidEntityId};
 
     bool operator==(const Weld&) const = default;
 };

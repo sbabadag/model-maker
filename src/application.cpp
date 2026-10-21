@@ -15,6 +15,7 @@
 #include "model_maker/component_materializer.hpp"
 #include "model_maker/component_framework.hpp"
 #include "model_maker/bridge_occ_adapter.hpp"
+#include "model_maker/weld_geometry.hpp"
 #endif
 #ifdef MM_HAS_OCC
 #include <BRepBuilderAPI_Transform.hxx>
@@ -8556,6 +8557,14 @@ bool Application::selectAtAssemblyMode(int x, int y, bool additive) {
     return true;
 }
 
+#ifdef MM_HAS_OCC
+namespace {
+// Ileri bildirim: tanim editWeld sonrasinda (weldSelectedParts bundan yararlanir).
+bool prepareWeldGeometry(Weld& w, Document& doc, OccSolidStore* store,
+                         TopoDS_Shape& solidOut, WireframeModel& wfOut);
+}
+#endif
+
 bool Application::weldSelectedParts(WeldType type, double size, double length, WeldClass cls) {
     // GUVENLI GIRIS DOGRULAMASI: tam iki GERCek (model) parca, birbirinden farkli.
     if (selectedModels_.size() != 2) return false;
@@ -8602,6 +8611,29 @@ bool Application::weldSelectedParts(WeldType type, double size, double length, W
         w.identification = "W";
         for (const wchar_t ch : digits) w.identification.push_back(static_cast<char>(ch));
     }
+#ifdef MM_HAS_OCC
+    // Gercek OCC kaynak kati (Phase W3): main/sec B-Rep'lerinden fillet kati
+    // uret; basariliysa display model + kati ekle, degilse glif+metadata.
+    {
+        TopoDS_Shape solid;
+        WireframeModel wf;
+        if (prepareWeldGeometry(w, document_, occSolidStore(), solid, wf)) {
+            document_.pushSnapshot();
+            const std::size_t wi = document_.addWeld(std::move(w), std::move(wf));
+            const Weld& created = document_.welds()[wi];
+            if (created.displayEntityId != kInvalidEntityId) {
+                if (auto* store = occSolidStore()) {
+                    const VersionId before = store->activeVersion(created.displayEntityId);
+                    const VersionId after = store->set(created.displayEntityId, solid);
+                    if (after != kInvalidVersionId)
+                        document_.recordGeometryDelta(created.displayEntityId, before, after);
+                }
+            }
+            invalidateCanvas();
+            return true;
+        }
+    }
+#endif
     document_.pushSnapshot();
     document_.addWeld(std::move(w));
     invalidateCanvas();
@@ -8620,8 +8652,91 @@ bool Application::editWeld(std::size_t index, WeldType type, double size, double
     w.length = length;
     w.weldClass = cls;
     document_.pushSnapshot();
-    return document_.setWeld(index, std::move(w));
+    const bool ok = document_.setWeld(index, std::move(w));
+    if (ok) recomputeWeldGeometry(index);
+    invalidateCanvas();
+    return ok;
 }
+
+#ifdef MM_HAS_OCC
+namespace {
+// Kaynak katisi metalik celik mavisi (plaka gri 0x808080, bulon kahve 0x8B592A'dan ayri).
+constexpr std::uint32_t kWeldSolidColor = 0x5B8DB8u;
+
+// Kaynak katisi + goruntuleme modelini uretir (basariliysa true). `w` ustune
+// geometrySupported/origin/direction/normaller yazilir; `solidOut`/`wfOut`
+// doldurulur. Basarisizlikta w.unsupportedReason dolar ve false doner.
+bool prepareWeldGeometry(Weld& w, Document& doc, OccSolidStore* store,
+                         TopoDS_Shape& solidOut, WireframeModel& wfOut) {
+    if (!store) return false;
+    const auto* mainShape = store->find(w.mainPart);
+    const auto* secShape = store->find(w.secondaryPart);
+    if (!mainShape || !secShape) {
+        w.unsupportedReason = "parca B-Rep geometrisi yok (kaynak kati uretilemedi)";
+        return false;
+    }
+    const double leg = w.sizeIsThroat ? w.size * std::sqrt(2.0) : w.size;
+    std::string reason;
+    auto solids = buildWeldSolids(w, *mainShape, *secShape, leg, reason);
+    if (solids.empty()) {
+        w.unsupportedReason = reason.empty() ? "kaynak kati uretilemedi" : reason;
+        return false;
+    }
+    TopoDS_Shape fused = solids[0];
+    for (std::size_t si = 1; si < solids.size(); ++si)
+        fused = booleanFuseShape(fused, solids[si]);
+    if (fused.IsNull()) {
+        w.unsupportedReason = "kaynak kati birlestirilemedi";
+        return false;
+    }
+    const WeldJunction j = findBestWeldJunction(*mainShape, *secShape, 0.5);
+    if (j.valid) {
+        w.origin = j.start;
+        w.direction = j.direction;
+        w.mainNormal = j.mainNormal;
+        w.secNormal = j.secNormal;
+    }
+    w.geometrySupported = true;
+    w.unsupportedReason.clear();
+    WireframeModel wf = shapeToWireframeWithFaces(fused, 0.15);
+    auto props = wf.properties();
+    props.trueColor = kWeldSolidColor;
+    props.effectiveColor = kWeldSolidColor;
+    wf.setProperties(std::move(props));
+    solidOut = fused;
+    wfOut = std::move(wf);
+    return true;
+}
+}  // namespace
+
+void Application::recomputeWeldGeometry(std::size_t index) {
+    if (index >= document_.welds().size()) return;
+    Weld w = document_.welds()[index];
+    if (w.displayEntityId == kInvalidEntityId) return;  // glif-only: kati yok
+    auto* store = occSolidStore();
+    if (!store) return;
+    const auto di = document_.indexOfEntity(w.displayEntityId);
+    if (!di) return;
+    TopoDS_Shape solid;
+    WireframeModel wf;
+    if (!prepareWeldGeometry(w, document_, store, solid, wf)) {
+        // Kati gecersizlesti: kaydi glif'e dusur, display modelini kaldir.
+        w.geometrySupported = false;
+        w.displayEntityId = kInvalidEntityId;
+        document_.setWeld(index, std::move(w));
+        document_.removeModelLeaf(*di);
+        return;
+    }
+    document_.setWeld(index, std::move(w));
+    document_.replaceModel(*di, {std::move(wf)});
+    const VersionId before = store->activeVersion(w.displayEntityId);
+    const VersionId after = store->set(w.displayEntityId, solid);
+    if (after != kInvalidVersionId)
+        document_.recordGeometryDelta(w.displayEntityId, before, after);
+}
+#else
+void Application::recomputeWeldGeometry(std::size_t) {}
+#endif
 
 void Application::beginWeldCommand(WeldType type, double size, double length, WeldClass cls) {
     cancelPendingWeldCommand();

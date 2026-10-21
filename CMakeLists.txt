@@ -198,7 +198,7 @@ option(BUILD_OCC_BRIDGE_DLL
     "Build mm_occ.dll — the C-API bridge for the Qt app (use MSYS2 toolchain)" OFF)
 
 if(MODELMAKER_OCC_READY)
-    add_library(model_maker_occ src/occ_geometry.cpp src/occ_solid_store.cpp src/occ_brep_serialize.cpp src/bolt_geometry.cpp src/end_plate_geometry.cpp src/occ_contact_resolver.cpp src/component_materializer.cpp src/bridge_occ_adapter.cpp)
+    add_library(model_maker_occ src/occ_geometry.cpp src/occ_solid_store.cpp src/occ_brep_serialize.cpp src/bolt_geometry.cpp src/end_plate_geometry.cpp src/occ_contact_resolver.cpp src/component_materializer.cpp src/bridge_occ_adapter.cpp src/weld_geometry.cpp)
     target_link_libraries(model_maker_occ PUBLIC model_maker_core)
     target_include_directories(model_maker_occ PUBLIC include)
     if(OCC_INCLUDE_DIR)
@@ -703,6 +703,25 @@ if(BUILD_TESTING)
         add_executable(model_maker_occ_end_plate_144_geometry tests/occ_end_plate_144_geometry_test.cpp)
         target_link_libraries(model_maker_occ_end_plate_144_geometry PRIVATE model_maker_occ)
         add_test(NAME model_maker_occ_end_plate_144_geometry COMMAND model_maker_occ_end_plate_144_geometry)
+        # GERCEK OCC KAYNAK KATISI (Phase W3): fillet weld katisinin hacmi/
+        # BRepCheck + T-joint temas kenari tespiti + tek/cift tarafli + ayrik
+        # fallback. GERCEK OCCT ile sayisal dogrulanir.
+        add_executable(model_maker_occ_weld_geometry_test tests/occ_weld_geometry_test.cpp)
+        target_link_libraries(model_maker_occ_weld_geometry_test PRIVATE model_maker_occ)
+        add_test(NAME model_maker_occ_weld_geometry_test COMMAND model_maker_occ_weld_geometry_test)
+        if(UNIX)
+            set_tests_properties(model_maker_occ_weld_geometry_test PROPERTIES
+                ENVIRONMENT "LD_LIBRARY_PATH=${OCC_ROOT}/lib:$ENV{LD_LIBRARY_PATH}")
+        endif()
+        # KAYNAK KATISI MMW8 ROUND-TRIP (Phase W3): weld + display model + OCC kati
+        # kayit/ac sonrasi korunur (displayEntityId, boyut, kati hacmi, assembly).
+        add_executable(model_maker_occ_weld_document_roundtrip tests/occ_weld_document_roundtrip_test.cpp)
+        target_link_libraries(model_maker_occ_weld_document_roundtrip PRIVATE model_maker_occ)
+        add_test(NAME model_maker_occ_weld_document_roundtrip COMMAND model_maker_occ_weld_document_roundtrip)
+        if(UNIX)
+            set_tests_properties(model_maker_occ_weld_document_roundtrip PROPERTIES
+                ENVIRONMENT "LD_LIBRARY_PATH=${OCC_ROOT}/lib:$ENV{LD_LIBRARY_PATH}")
+        endif()
         # UNIVERSAL COMPONENT MATERIALIZER (C2): ComponentBuilder -> ComponentPlan
         # -> gercek Document + OccSolidStore. roleKey->EntityId + ownership + delik
         # + Weld Unsupported + coklu bagimsiz component. GERCEK OCCT.

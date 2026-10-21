@@ -537,6 +537,10 @@ public:
     bool weldSelectedParts(WeldType type, double size, double length, WeldClass cls);
     // Mevcut bir kaynagi duzenler (undo'lu; kimlik/assembly korunur).
     bool editWeld(std::size_t index, WeldType type, double size, double length, WeldClass cls);
+    // Kaynak katisini parametrelerden yeniden uretir (boyut/uzunluk/tip degisti).
+    // Acik undo kaydi icinde cagrilmali (editWeld setWeld'den sonra). OCC-kapali
+    // derlemede no-op. Gecersizlesen kati silinir ve glif'e dusulur.
+    void recomputeWeldGeometry(std::size_t index);
     // Kaynaklarin salt-okunur erisimi (model tree / properties icin).
     const std::vector<Weld>& welds() const noexcept { return document_.welds(); }
     const std::vector<AssemblyRecord>& assemblies() const noexcept { return document_.assemblies(); }

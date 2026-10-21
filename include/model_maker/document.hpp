@@ -364,8 +364,14 @@ public:
     // addWeld: id atar (gecersizse), shop ise assembly uyeliklerini yeniden
     // turetir, undo kaydeder. Donus: kaynak indeksi.
     std::size_t addWeld(Weld weld);
+    // GORUNTULEME MODELI OLAN surum (Phase W3): kaynak kati uretildiginde cagrilir.
+    // displayModel bos degilse normal model olarak eklenir (Add op) ve kimligi
+    // weld.displayEntityId'ye yazilir; cagiran OCC katisini bu kimlik altinda
+    // store'a yazar (recordGeometryDelta ile) — addBoltGroup deseniyle ayni.
+    std::size_t addWeld(Weld weld, WireframeModel displayModel);
     // removeWeld: kaydi siler ve assembly grafiğini yeniden turetir (baglantisi
     // kopan gruplar guvenli split edilir). Undo ile weld + uyelikler geri gelir.
+    // Gerekirse display modeli (yaprak) de silinir.
     void removeWeld(std::size_t index);
     // setWeld: kaydi degistirir (id korunur); shop/site veya main/secondary
     // degistiğinde assembly yeniden turetir.
