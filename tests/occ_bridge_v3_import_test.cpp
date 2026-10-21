@@ -101,6 +101,16 @@ int main() {
                 const auto& rec = doc.componentInstances()[0];
                 check(rec.schemaVersion == 3, "146 V3: schemaVersion 3");
                 check(hasParam(rec, L"_bridge_weld"), "146 V3: weld metadata");
+                // Native parametrik esleme sonucu metadata olarak kayitli.
+                check(hasParam(rec, L"_bridge_native_typeId"), "146 V3: native typeId metadata");
+                check(hasParam(rec, L"_bridge_native_state"), "146 V3: native state metadata");
+                const std::wstring* st = nullptr;
+                for (const auto& p : rec.params)
+                    if (p.name == L"_bridge_native_state" &&
+                        std::holds_alternative<std::wstring>(p.value))
+                        st = &std::get<std::wstring>(p.value);
+                check(st && *st == L"not_equivalent",
+                      "146 V3: native state = not_equivalent (2 kolonlu bulon)");
             }
             // MMW8 save/load (component instance kalici).
             // (Round-trip OCC store testi ayri; burada yalniz instance varligi.)

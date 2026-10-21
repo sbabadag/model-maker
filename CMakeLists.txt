@@ -56,7 +56,8 @@ add_library(model_maker_core
     src/component_catalog.cpp
     src/assembly.cpp
     src/bridge_package.cpp
-    src/bridge_component_mapper.cpp)
+    src/bridge_component_mapper.cpp
+    src/bridge_native_mapper.cpp)
 target_include_directories(model_maker_core PUBLIC include third_party)
 target_compile_options(model_maker_core PRIVATE -Wall -Wextra -Wpedantic)
 
@@ -427,6 +428,15 @@ if(BUILD_TESTING)
     target_compile_definitions(model_maker_bridge_package_reader_test PRIVATE
         MM_BRIDGE_FIXTURE_DIR="${CMAKE_SOURCE_DIR}/tools/model-maker-bridge/fixtures")
     add_test(NAME model_maker_bridge_package_reader_test COMMAND model_maker_bridge_package_reader_test)
+
+    # TEKLA -> NATIVE PARAMETRIC COMPONENT esleme: 146 paketini okur, parametreleri
+    # provenance ile cikarir, native generator esdegerligini degerlendirir. OCC'siz.
+    add_executable(model_maker_bridge_native_mapper_test tests/bridge_native_mapper_test.cpp)
+    target_link_libraries(model_maker_bridge_native_mapper_test PRIVATE model_maker_core)
+    target_compile_definitions(model_maker_bridge_native_mapper_test PRIVATE
+        MM_BRIDGE_FIXTURE_DIR="${CMAKE_SOURCE_DIR}/tools/model-maker-bridge/fixtures")
+    target_compile_options(model_maker_bridge_native_mapper_test PRIVATE -Wall -Wextra -Wpedantic)
+    add_test(NAME model_maker_bridge_native_mapper_test COMMAND model_maker_bridge_native_mapper_test)
 
     # KARARLI VARLIK KIMLIGI (EntityId): vektor indeksi kalici kimlik DEGIL;
     # kimlik ekleme/silme/degistirme/undo/redo boyunca DOGRU varlikla eslesir,

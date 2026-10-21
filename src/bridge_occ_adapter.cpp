@@ -6,6 +6,7 @@
 
 #include "model_maker/bolt.hpp"
 #include "model_maker/bolt_geometry.hpp"
+#include "model_maker/bridge_native_mapper.hpp"
 #include "model_maker/component_engine.hpp"
 #include "model_maker/occ_geometry.hpp"
 #include "model_maker/occ_solid_store.hpp"
@@ -667,6 +668,29 @@ BridgeImportOutcome importBridgeComponent(Document& doc, const BridgePackage& pk
                                                     bc.second, {}, std::nullopt,
                                                     std::nullopt, std::nullopt,
                                                     std::nullopt});
+
+    // --- Native parametrik esleme (Bridge V3 -> tekla_shear_plate_146) --------
+    // Uye EntityId'leri import'ta YOK (Tekla GUID'leri Model Maker EntityId'si
+    // DEGILDIR); bu yuzden native component TAM baglanmaz — yalnizca esleme
+    // sonucu (tip + esdegerlik + sebepler) metadata olarak kaydedilir. Geometri
+    // mevcut bbox+bulon rekonstruksiyonuyla AYNI kalir (veri kaybi YOK).
+    {
+        const BridgeNativeMapping nat = mapBridgeToNative(pkg, {});
+        if (nat.detected) {
+            pushStr(L"_bridge_native_typeId",
+                    std::string(nat.typeId.begin(), nat.typeId.end()));
+            pushStr(L"_bridge_native_state", bridgeEquivalenceName(nat.equivalence.state));
+            if (!nat.equivalence.issues.empty()) {
+                std::string joined;
+                for (std::size_t i = 0; i < nat.equivalence.issues.size(); ++i) {
+                    if (i) joined += "; ";
+                    joined += nat.equivalence.issues[i];
+                }
+                pushStr(L"_bridge_native_issues", joined);
+            }
+        }
+    }
+
     const std::size_t ci = doc.addComponentInstance(std::move(rec));
     out.componentId = doc.componentInstances()[ci].id;
 

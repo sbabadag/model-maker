@@ -88,7 +88,7 @@ g++ -std=gnu++20 -O1 -DMM_HAS_OCC \
     -DMM_BRIDGE_FIXTURE_DIR="\"$(pwd)/tools/model-maker-bridge/fixtures\"" \
     -I include -I third_party/nlohmann -I /usr/include/opencascade \
     tests/occ_bridge_146_import_test.cpp \
-    src/bridge_package.cpp src/bridge_component_mapper.cpp src/bridge_occ_adapter.cpp \
+    src/bridge_package.cpp src/bridge_component_mapper.cpp src/bridge_native_mapper.cpp src/bridge_occ_adapter.cpp \
     src/component_materializer.cpp src/component_framework.cpp src/component_engine.cpp \
     src/component_dialog.cpp src/document.cpp src/mmw8_codec.cpp src/end_plate.cpp \
     src/bolt.cpp src/cut_modifier.cpp src/geometry.cpp src/profile_database.cpp \
@@ -239,7 +239,7 @@ g++ -std=gnu++20 -O1 -DMM_HAS_OCC \
     -DMM_BRIDGE_FIXTURE_DIR="\"$(pwd)/tools/model-maker-bridge/fixtures\"" \
     -I include -I third_party/nlohmann -I /usr/include/opencascade \
     tests/occ_bridge_v3_import_test.cpp \
-    src/bridge_package.cpp src/bridge_component_mapper.cpp src/bridge_occ_adapter.cpp \
+    src/bridge_package.cpp src/bridge_component_mapper.cpp src/bridge_native_mapper.cpp src/bridge_occ_adapter.cpp \
     src/component_materializer.cpp src/component_framework.cpp src/component_engine.cpp \
     src/component_dialog.cpp src/document.cpp src/mmw8_codec.cpp src/end_plate.cpp \
     src/bolt.cpp src/cut_modifier.cpp src/geometry.cpp src/profile_database.cpp \
