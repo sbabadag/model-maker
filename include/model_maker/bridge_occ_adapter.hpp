@@ -19,8 +19,10 @@
 
 #ifdef MM_HAS_OCC
 
+#include "model_maker/bridge_native_bind.hpp"
 #include "model_maker/bridge_package.hpp"
 #include "model_maker/document.hpp"
+#include "model_maker/profile_database.hpp"
 
 #include <TopoDS_Shape.hxx>
 
@@ -106,6 +108,28 @@ struct BridgeImportOutcome {
 // relationships korunur; ayni kaynak GUID tekrar import edilirse duplicate=true.
 // Basarisizlikta belge DEGISMEZ (rollbackOpenRecord). Undo/redo tek adimda.
 BridgeImportOutcome importBridgeComponent(Document& doc, const BridgePackage& pkg);
+
+// --- NATIVE PARAMETRIK DONUSUM (Phase C6) -------------------------------------
+
+struct BridgeNativeConvertOutcome {
+    bool ok = false;                 // native component olusturuldu
+    bool needsMemberSelection = false;  // uyeler eksik -> kullanici secimi gerekli
+    std::vector<std::string> missing;   // cozulemeyen uyeler (diagnostic)
+    EntityId componentId{kInvalidEntityId};
+    std::string error;
+};
+
+// Bridge V3 paketini native tekla_shear_plate_146 component'ine donusturur.
+// Akis: mapBridgeToNative -> resolveBridgeMemberBinding (GUID map + secim) ->
+// generator + ComponentMaterializer (gercek OCC solid) -> Document'a ATOMIK
+// isle. Uyeler cozulemediyse (GUID yok + secim yok) needsMemberSelection=true
+// ve DONUSUM YAPILMAZ (orijinal import geometrisi KORUNUR). Basariliysa uye
+// Tekla GUID iliskileri Document'a yazilir (sonraki import'ta otomatik bulunur).
+// Basarisizlikta belge DEGISMEZ (rollback).
+BridgeNativeConvertOutcome convertBridgeToNative(
+    Document& doc, const BridgePackage& pkg,
+    const std::vector<SteelProfile>& catalog,
+    const BridgeMemberSelection& selection);
 
 }  // namespace mm
 

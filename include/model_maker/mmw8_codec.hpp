@@ -96,6 +96,16 @@ struct Mmw8SectionAnchor {
     SectionAnchor anchor{SectionAnchor::Top};
 };
 
+// Tekla kaynak GUID -> EntityId eslemesi (Phase C6 / bridge native conversion).
+// Bir uye (kolon/kiris) daha once bir Tekla GUID'i ile iliskilendirildiyse bu
+// blok o iliskiyi kalicilastirir; boylece yeniden import'ta ayni uye TEKRAR
+// secilmeden GUID'den bulunur. 'T' blogu (ileriye-uyumlu; eski okuyucu
+// bilinmeyen blogu kayipsiz korur).
+struct Mmw8TeklaGuid {
+    EntityId entityId{kInvalidEntityId};
+    std::string guid;  // Tekla sourceGUID (string; Model Maker EntityId'si DEGIL)
+};
+
 // MMW8 belge icerigi (OCCT'siz veri modeli).
 struct Mmw8Document {
     EntityId nextEntityId{1};
@@ -111,6 +121,7 @@ struct Mmw8Document {
     std::vector<ComponentInstanceRecord> componentInstances;     // 'I' blogu (Phase C2)
     std::vector<Mmw8ConstructionKind> constructionKinds;         // 'K' blogu (Phase 4.1)
     std::vector<Mmw8SectionAnchor> sectionAnchors;               // 'A' blogu (Slice 2d-3)
+    std::vector<Mmw8TeklaGuid> teklaGuids;                       // 'T' blogu (Tekla GUID -> EntityId)
     std::vector<Mmw8Blob> blobs;                                 // 'B' blogu (ETKIN B-Rep)
     std::vector<Mmw8Blob> baseBlobs;                             // 'V' blogu (TABAN B-Rep)
     std::vector<Mmw8UnknownBlock> unknownBlocks;

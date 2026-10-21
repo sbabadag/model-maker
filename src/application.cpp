@@ -10784,6 +10784,81 @@ bool Application::importTeklaBridge(const std::filesystem::path& packageDir) {
 #endif
 }
 
+bool Application::convertTeklaBridgeToNative(const std::filesystem::path& packageDir) {
+#ifndef MM_HAS_OCC
+    publishStatus(L"Tekla Bridge native dönüşüm: bu derleme OCC'siz; yapılamadı.");
+    return false;
+#else
+    // Oku + dogrula.
+    mm::BridgePackage pkg;
+    std::vector<std::string> errors;
+    if (!mm::readBridgePackage(packageDir.string(), pkg, errors)) {
+        std::string detail = "package read/validation failed";
+        for (const auto& e : errors) {
+            detail += "\n- ";
+            detail += e;
+        }
+        const std::runtime_error importError(detail);
+        showError(L"Tekla Component Bridge native dönüşüm başarısız", importError);
+        return false;
+    }
+
+    // Kullanici secimi -> uye baglama girdisi. Ilk secili model = primary (kolon),
+    // kalan secili modeller = secondary (kiris). Secim yoksa yalnizca Document'taki
+    // Tekla GUID map'i kullanilir (resolveBridgeMemberBinding icinde dogrulanir).
+    mm::BridgeMemberSelection selection;
+    const auto& sel = selectedModels_;
+    if (!sel.empty()) {
+        selection.primaryId = document_.modelId(sel.front());
+        for (std::size_t i = 1; i < sel.size(); ++i)
+            selection.secondaryIds.push_back(document_.modelId(sel[i]));
+    }
+
+    // Native donusum (GUID map + secim -> generator + gercek OCC + atomik isle).
+    const mm::BridgeNativeConvertOutcome out =
+        mm::convertBridgeToNative(document_, pkg, profileCatalog_, selection);
+
+    if (out.needsMemberSelection) {
+        // Uye eksik: kullaniciya HANGI uyenin secilmesi gerektigini bildir.
+        // Otomatik secim YAPILMAZ; orijinal import geometrisi korunur.
+        std::wstring msg = L"Tekla Bridge native dönüşüm: üye eşlemesi gerekli.\n\n"
+                           L"Kolonu (primary) ve kirişi (secondary) seçip tekrar deneyin.\n\n"
+                           L"Eksik üyeler:\n";
+        for (const auto& m : out.missing) {
+            msg.append(L"  • ");
+            msg.append(m.begin(), m.end());
+            msg.append(L"\n");
+        }
+        publishStatus(L"Tekla Bridge native dönüşüm: üye eşlemesi gerekli (kolon + kiriş seçin).");
+        std::wstring title = L"Model Maker";
+        MessageBoxW(window_, msg.c_str(), title.c_str(), MB_OK | MB_ICONINFORMATION);
+        return false;
+    }
+    if (!out.ok) {
+        const std::runtime_error convError(out.error);
+        showError(L"Tekla Component Bridge native dönüşüm başarısız", convError);
+        return false;
+    }
+
+    // Native component olustu; owned levhayi sec + cercevele + guncelle.
+    if (const auto ci = document_.indexOfComponentInstance(out.componentId)) {
+        const auto& rec = document_.componentInstances()[*ci];
+        if (!rec.ownedPlateIds.empty())
+            if (const auto idx = document_.indexOfEntity(rec.ownedPlateIds[0]))
+                selectModel(*idx);
+    }
+    zoomExtents2D();
+    updateControls();
+    invalidateCanvas();
+
+    std::wstring status = L"Tekla Bridge: native component oluşturuldu — ";
+    status.append(pkg.component.name.begin(), pkg.component.name.end());
+    status += L" (tekla_shear_plate_146, parametrik)";
+    publishStatus(status);
+    return true;
+#endif
+}
+
 void Application::showError(const wchar_t* action, const std::exception& error) const {
     std::wstring message(action); message += L".\n\n";
     const std::string detail = error.what(); message.append(detail.begin(), detail.end());

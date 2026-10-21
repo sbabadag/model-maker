@@ -68,11 +68,12 @@ struct BridgeEquivalence {
 
 // Yeniden olusturulmus uye (profil katalogundan + paketten).
 struct BridgeReconstructedMember {
-    MemberGeometry geometry;         // axisFrom/axisTo/secWidth/secHeight/...
-    std::string profile;             // "HEA400", ...
-    bool hasAxis{false};             // startPoint/endPoint vardi mi
+    std::string guid;             // Tekla sourceGUID (kaynak referansi)
+    MemberGeometry geometry;      // axisFrom/axisTo/secWidth/secHeight/...
+    std::string profile;          // "HEA400", ...
+    bool hasAxis{false};          // startPoint/endPoint vardi mi
     BridgeParamProvenance axisProvenance{BridgeParamProvenance::Unresolved};
-    bool hasSection{false};          // profil katalogunda bulundu mu
+    bool hasSection{false};       // profil katalogunda bulundu mu
 };
 
 // Bridge -> native esleme sonucu.

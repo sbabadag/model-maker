@@ -6,12 +6,13 @@
 //      bulon capi (observed), delik capi (inferred/standard), boltCount = dusey
 //      sira (observed), kenar mesafesi (observed), aralik (observed), grade
 //      (unresolved), malzeme (observed).
-//   3) Desteklenmeyen ozellikler ACIKCA raporlanir: kaynak + 2 kolonlu bulon.
+//   3) Desteklenmeyen ozellikler ACIKCA raporlanir: kaynak (weld).
 //   4) 144 fixture 146 degil -> detected=false.
 //   5) Uye ekseni eksikse equivalence Unverified (uydurulmaz).
-//   6) Cok kolonlu (countX>1) + uyeler mevcutsa NotEquivalent.
+//   6) Cok kolonlu (countX>1) artik native desteklenir: boltCountX/pitchX/edgeX.
 //   7) Tek kolonlu tutarli paket -> Equivalent (round-trip).
-//   8) Parametrik degistirme: kalinlik 10->12, sira 3->4 native generator'a yansir.
+//   8) Cok kolonlu tutarli paket (2x3, uyeler mevcut) -> Equivalent.
+//   9) Parametrik degistirme: kalinlik 10->12, sira 3->4, kolon 2->3 native'a yansir.
 
 #include "model_maker/bridge_native_mapper.hpp"
 #include "model_maker/bridge_package.hpp"
@@ -140,6 +141,24 @@ static BridgePackage makeSingleColumnPackage() {
     return pkg;
 }
 
+// Tutarli COK KOLONLU (2x3) shear tab paketi: round-trip Equivalent icin.
+static BridgePackage makeMultiColumnPackage() {
+    BridgePackage pkg = makeSingleColumnPackage();
+    // Tek kolonlu pakette bulonlar (5, 85, z) — Y=85 merkez. Bunu 2 kolona ac:
+    // Y=55/115 (aralik 60), Z=40/100/160 (aralik 120). edgeX=55, edgeY=40.
+    BridgeObject& bg = pkg.objects[1];  // BoltGroup
+    bg.boltGroup->bolts.clear();
+    for (double z : {40.0, 100.0, 160.0})
+        for (double y : {55.0, 115.0}) {
+            BridgeBolt b;
+            b.position = BridgeVec3{5, y, z};
+            b.nominalDiameter = 20;
+            b.holeDiameterSource = "standard";
+            bg.boltGroup->bolts.push_back(b);
+        }
+    return pkg;
+}
+
 int main() {
     // --- 1) 146 V3 fixture: tespit + cikarim + provenance ----------------------
     {
@@ -175,22 +194,25 @@ int main() {
                   m.materialProvenance == BridgeParamProvenance::Observed,
               "malzeme S235JR (observed)");
 
-        // Desteklenmeyenler: kaynak + 2 kolonlu bulon.
+        // Desteklenmeyenler: yalniz kaynak (weld). Cok kolonlu artik destekleniyor.
         bool hasWeld = false, hasTwoCol = false;
         for (const auto& u : m.unsupportedFeatures) {
             if (u.find("kaynak") != std::string::npos) hasWeld = true;
-            if (u.find("2 kolon") != std::string::npos) hasTwoCol = true;
+            if (u.find("kolon") != std::string::npos) hasTwoCol = true;
         }
         check(hasWeld, "kaynak desteklenmiyor raporlandi");
-        check(hasTwoCol, "2 kolonlu bulon desteklenmiyor raporlandi");
+        check(!hasTwoCol, "cok kolonlu artik unsupported DEGIL (destekleniyor)");
 
-        // 2 kolonlu bulon -> NotEquivalent (uye baglamindan bagimsiz).
-        check(m.equivalence.state == BridgeEquivalenceState::NotEquivalent,
-              "2 kolonlu -> equivalence NotEquivalent");
-        bool hasTwoColIssue = false;
-        for (const auto& i : m.equivalence.issues)
-            if (i.find("cok kolonlu") != std::string::npos) hasTwoColIssue = true;
-        check(hasTwoColIssue, "NotEquivalent sebebi: cok kolonlu bulon grubu");
+        // Cok kolonlu artik native desteklenir: boltCountX/pitchX/pitchY/edgeX/edgeY.
+        check(mappedInt(m, L"boltCountX") == 2, "boltCountX = 2 kolon (observed)");
+        check(approx(mappedDouble(m, L"pitchX"), 60.0), "pitchX 60 (observed)");
+        check(approx(mappedDouble(m, L"pitchY"), 60.0), "pitchY 60 (observed)");
+        check(approx(mappedDouble(m, L"edgeX"), 55.0), "edgeX 55 (observed, simetrik)");
+        check(approx(mappedDouble(m, L"edgeY"), 40.0), "edgeY 40 (observed, simetrik)");
+
+        // Fixture uye ekseni icermez -> Unverified (uydurulmaz).
+        check(m.equivalence.state == BridgeEquivalenceState::Unverified,
+              "uye ekseni yok -> equivalence Unverified (uydurulmaz)");
     }
 
     // --- 2) 144 fixture: 146 degil -------------------------------------------
@@ -244,6 +266,31 @@ int main() {
         GenerationPlan b2 = generateShearPlateSimple146(in);
         check(b2.ok && b2.boltGroups.size() == 1 && b2.boltGroups[0].countY == 4,
               "B: sira 3 -> 4 yansidi");
+
+        // C: kolon 1 -> 2 -> 3 (cok kolonlu). pitchX/pitchY/edgeX/edgeY bagimsiz.
+        in.params = {{L"plateThickness", CompParamValue{10.0}},
+                     {L"plateWidth", CompParamValue{170.0}},
+                     {L"plateHeight", CompParamValue{200.0}},
+                     {L"boltCount", CompParamValue{3}},
+                     {L"boltCountX", CompParamValue{1}}};
+        GenerationPlan c = generateShearPlateSimple146(in);
+        check(c.ok && c.boltGroups[0].countX == 1, "C: tek kolon (countX=1)");
+
+        in.params[4] = {L"boltCountX", CompParamValue{2}};
+        in.params.push_back({L"pitchX", CompParamValue{60.0}});
+        in.params.push_back({L"edgeX", CompParamValue{55.0}});
+        GenerationPlan c2 = generateShearPlateSimple146(in);
+        check(c2.ok && c2.boltGroups.size() == 1, "C: 2 kolon uretildi");
+        check(c2.boltGroups[0].countX == 2 && c2.boltGroups[0].countY == 3,
+              "C: 2x3 duzeni");
+        check(approx(c2.boltGroups[0].spacingX, 60.0), "C: spacingX=60 (pitchX)");
+        // edgeX=55 -> spanX = 170 - 2*55 = 60; ama pitchX=60 verildigi icin span=60.
+        // Yatay konum merkezli: origin.x = -spanX/2 = -30 (lenDir yonunde).
+
+        in.params[4] = {L"boltCountX", CompParamValue{3}};
+        GenerationPlan c3 = generateShearPlateSimple146(in);
+        check(c3.ok && c3.boltGroups[0].countX == 3,
+              "C: kolon 2 -> 3 yansidi");
     }
 
     // --- 4) Tek kolonlu tutarli paket -> Equivalent (round-trip) ---------------
@@ -254,6 +301,22 @@ int main() {
         check(mappedInt(m, L"boltCount") == 3, "tek kolon: boltCount 3");
         check(m.equivalence.state == BridgeEquivalenceState::Equivalent,
               "tek kolon: equivalence Equivalent");
+        if (m.equivalence.state != BridgeEquivalenceState::Equivalent)
+            for (const auto& i : m.equivalence.issues)
+                std::printf("  issue: %s\n", i.c_str());
+    }
+
+    // --- 4b) Cok kolonlu tutarli paket (2x3, uyeler mevcut) -> Equivalent -----
+    {
+        const BridgePackage pkg = makeMultiColumnPackage();
+        const BridgeNativeMapping m = mapBridgeToNative(pkg, catalog());
+        check(m.detected, "cok kolon: tespit edildi");
+        check(mappedInt(m, L"boltCountX") == 2, "cok kolon: boltCountX 2");
+        check(mappedInt(m, L"boltCount") == 3, "cok kolon: boltCount 3");
+        check(approx(mappedDouble(m, L"pitchX"), 60.0), "cok kolon: pitchX 60");
+        check(approx(mappedDouble(m, L"edgeX"), 55.0), "cok kolon: edgeX 55");
+        check(m.equivalence.state == BridgeEquivalenceState::Equivalent,
+              "cok kolon: equivalence Equivalent");
         if (m.equivalence.state != BridgeEquivalenceState::Equivalent)
             for (const auto& i : m.equivalence.issues)
                 std::printf("  issue: %s\n", i.c_str());

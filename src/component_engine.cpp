@@ -768,7 +768,12 @@ ComponentType shearPlate146ComponentType() noexcept {
         // --- Bolts tab ---
         lengthParam(L"boltDiameter", L"mm", 20.0, 12.0, 30.0, L"bulon capi"),
         lengthParam(L"holeDiameter", L"mm", 22.0, 12.0, 34.0, L"delik capi"),
-        intParam(L"boltCount", 4, 1, 12, L"bulon adedi (tek sira)"),
+        intParam(L"boltCount", 4, 1, 12, L"bulon adedi (sira; yukseklik yonu)"),
+        intParam(L"boltCountX", 1, 1, 12, L"bulon kolon adedi (genislik yonu)"),
+        lengthParam(L"pitchX", L"mm", 0.0, 0.0, 2000.0, L"kolon araligi (0 = auto)"),
+        lengthParam(L"pitchY", L"mm", 0.0, 0.0, 2000.0, L"sira araligi (0 = boltSpacing/auto)"),
+        lengthParam(L"edgeX", L"mm", 0.0, 0.0, 2000.0, L"genislik kenar mesafesi (0 = boltEdge)"),
+        lengthParam(L"edgeY", L"mm", 0.0, 0.0, 2000.0, L"yukseklik kenar mesafesi (0 = boltEdge)"),
         lengthParam(L"boltEdge", L"mm", 40.0, 10.0, 200.0, L"kenar mesafesi"),
         enumParam(L"grade", L"8.8", {L"8.8", L"10.9"}, L"bulon sinifi"),
         stringParam(L"boltSpacing", L"auto", L"bulon araliklari (mm, boslukla; 'auto' = turet)"),
@@ -819,6 +824,17 @@ GenerationPlan generateShearPlateSimple146(const ComponentInput& input) noexcept
     const double holeD = paramAsDouble(input.params, L"holeDiameter", 22.0);
     const int boltCount = std::max(1, paramAsInt(input.params, L"boltCount", 4));
     const double edge = paramAsDouble(input.params, L"boltEdge", 40.0);
+    // COK KOLONLU BULON (countX x countY): countX kolon genislik (lenDir) yonunde,
+    // countY sira yukseklik (sec.height) yonunde. pitchX/pitchY bagimsiz aralik,
+    // edgeX/edgeY bagimsiz kenar mesafesi. 0 degerleri boltEdge'den/auto'dan turer
+    // (geriye donuk uyum — tek kolonlu eski baglantilar degismez).
+    const int countX = std::clamp(paramAsInt(input.params, L"boltCountX", 1), 1, 12);
+    const double pitchX = std::max(0.0, paramAsDouble(input.params, L"pitchX", 0.0));
+    const double pitchY = std::max(0.0, paramAsDouble(input.params, L"pitchY", 0.0));
+    const double edgeX = std::max(0.0, paramAsDouble(input.params, L"edgeX", 0.0));
+    const double edgeY = std::max(0.0, paramAsDouble(input.params, L"edgeY", 0.0));
+    const double effEdgeX = edgeX > 0.0 ? edgeX : edge;
+    const double effEdgeY = edgeY > 0.0 ? edgeY : edge;
     const std::wstring grade = paramAsString(input.params, L"grade", L"8.8");
 
     const std::wstring tabPos = paramAsString(input.params, L"shearTabPosition", L"near_side");
@@ -869,17 +885,45 @@ GenerationPlan generateShearPlateSimple146(const ComponentInput& input) noexcept
     // --- bulon grubu (kiriş gövdesini deler; malzemelemede tüm owned levhalar
     //     başa eklenir) ---
     BoltGroup b;
-    b.axis = sec.width;
-    b.xDir = lenDir;
-    b.countX = 1;
+    // EKSEN ISARETI (kalici): BoltGroup'un yerel cercevesi v = axis x xDir olarak
+    // kurulur (sag-el). Plaka cercevesi ise sec.height = lenDir x sec.width'dir.
+    // Bu yuzden axis = sec.width iken v = sec.width x lenDir = -sec.height olur ve
+    // bulonlar YUKARI degil ASAGI dizilir (latent isaret hatasi; testler yalniz
+    // origin.z kontrol ettigi icin yakalanmadi). axis'i NEGATIFLEMEK v = +sec.height
+    // yapar: bulonlar govde boyunca yukari (dusey +Z) dizilir, origin alt satir
+    // (j=0) olur — boltGroupBoltOrigins'in "j=0 en alt satir" sozlesmesiyle tutar.
+    b.axis = Vec3{-sec.width.x, -sec.width.y, -sec.width.z};
+    b.xDir = lenDir;      // grup x ekseni = levha genislik yonu
+    b.countX = countX;
     b.countY = boltCount;
+
+    // Yatay (genislik) aciklik/aralik: countX==1 -> 0 (tek kolon merkezli).
+    // pitchX verilmisse sabit aralik; yoksa genislikten 2*effEdgeX dusulur.
+    double spanX = 0.0;
+    double spacingX = 0.0;
+    if (countX > 1) {
+        if (pitchX > 0.0) {
+            spacingX = pitchX;
+            spanX = static_cast<double>(countX - 1) * pitchX;
+        } else {
+            spanX = std::max(0.0, width - 2.0 * effEdgeX);
+            spacingX = spanX / static_cast<double>(countX - 1);
+        }
+    }
+    b.spacingX = spacingX;
+
+    // Dusey (yukseklik) aciklik/aralik: pitchY verilmisse sabit; yoksa mevcut
+    // boltSpacing (auto veya degisken liste) mantigi.
     const bool autoSpacing = (boltSpacing == L"auto");
-    double span = 0.0;
-    if (autoSpacing) {
+    double spanY = 0.0;
+    if (pitchY > 0.0) {
+        b.spacingY = pitchY;
+        spanY = static_cast<double>(boltCount - 1) * pitchY;
+    } else if (autoSpacing) {
         b.spacingY = (boltCount > 1)
-                         ? (height - 2.0 * edge) / static_cast<double>(boltCount - 1)
+                         ? (height - 2.0 * effEdgeY) / static_cast<double>(boltCount - 1)
                          : 0.0;
-        span = (boltCount > 1) ? (height - 2.0 * edge) : 0.0;
+        spanY = (boltCount > 1) ? (height - 2.0 * effEdgeY) : 0.0;
     } else {
         const std::vector<double> vals = parseSpaceDoubles(boltSpacing);
         b.spacingYs.resize(static_cast<std::size_t>(std::max(0, boltCount - 1)));
@@ -888,22 +932,24 @@ GenerationPlan generateShearPlateSimple146(const ComponentInput& input) noexcept
                                  ? vals[static_cast<std::size_t>(i)]
                                  : (vals.empty() ? 0.0 : vals.back());
             b.spacingYs[static_cast<std::size_t>(i)] = v;
-            span += v;
+            spanY += v;
         }
     }
     // Dusey konum: measure top/middle/below + boltVerticalPos. Referans nokta
     // tab merkezi (govde merkezi = tabBase); sec.height yonu = dusey.
     const double hh = height * 0.5;
-    double originOffset = -span * 0.5;  // middle (varsayilan)
+    double originOffset = -spanY * 0.5;  // middle (varsayilan)
     if (boltMeasure == L"top") {
-        originOffset = (hh - edge) - span;   // ust bulon tabTop - edge'de
+        originOffset = (hh - effEdgeY) - spanY;   // ust bulon tabTop - edge'de
     } else if (boltMeasure == L"below") {
-        originOffset = -(hh - edge);         // alt bulon tabBottom + edge'de
+        originOffset = -(hh - effEdgeY);          // alt bulon tabBottom + edge'de
     }
     originOffset += boltVPos;
-    b.origin = Vec3{tabBase.x + sec.height.x * originOffset,
-                    tabBase.y + sec.height.y * originOffset,
-                    tabBase.z + sec.height.z * originOffset};
+    // Yatay konum: kolon grubu genislikte MERKEZLENIR (origin = sol-alt bulon).
+    const double xOffset = -spanX * 0.5;
+    b.origin = Vec3{tabBase.x + lenDir.x * xOffset + sec.height.x * originOffset,
+                    tabBase.y + lenDir.y * xOffset + sec.height.y * originOffset,
+                    tabBase.z + lenDir.z * xOffset + sec.height.z * originOffset};
     b.deletedBolts = parseSpaceInts(delBolts);
     b.params.nominalDiameter = boltD;
     b.params.holeDiameter = holeD;

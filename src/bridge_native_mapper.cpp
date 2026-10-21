@@ -177,6 +177,31 @@ bool detectBoltGrid(const BridgeBoltGroupInfo& g, const Vec3& axis, int& countX,
     return true;
 }
 
+// Bulonlarin yatay (genislik) ve dusey (yukseklik) koordinat acikliklari.
+// detectBoltGrid ile AYNI eksen mantigi: dusey her zaman Z (shear tab diksiyonu),
+// yatay eksene dik yatay eksen. axisX icin yatay=Y, axisY icin yatay=X;
+// axisZ (dusey eksen, shear tab'da gercekci degil) icin yatay=X, dusey=Y.
+bool boltCoordSpans(const BridgeBoltGroupInfo& g, const Vec3& axis, double& horizMin,
+                    double& horizMax, double& vertMin, double& vertMax) {
+    if (g.bolts.empty()) return false;
+    const bool axX = std::fabs(axis.x) > 0.5;
+    const bool axZ = std::fabs(axis.z) > 0.5;
+    horizMin = vertMin = 1e18;
+    horizMax = vertMax = -1e18;
+    for (const auto& b : g.bolts) {
+        const BridgeVec3& p = b.position;
+        double h, v;
+        if (axZ) { h = p.x; v = p.y; }
+        else if (axX) { h = p.y; v = p.z; }
+        else { h = p.x; v = p.z; }  // axY
+        horizMin = std::min(horizMin, h);
+        horizMax = std::max(horizMax, h);
+        vertMin = std::min(vertMin, v);
+        vertMax = std::max(vertMax, v);
+    }
+    return true;
+}
+
 // Plaka bbox boyutlarini (kalinlik/genislik/yukseklik) cikar. kalinlik = eksen
 // boyuncaki boyut; yukseklik = dusey (Z) boyut; genislik = kalan yatay boyut.
 bool plateDimsFromBBox(const BridgeBBox& bbox, const Vec3& axis, double& thickness,
@@ -387,50 +412,68 @@ BridgeNativeMapping mapBridgeToNative(const BridgePackage& pkg,
                                    : "bulon holeDiameter")
                             : "kaynakta yok");
 
-    // Native boltCount = DUSEY sira sayisi (tek kolon). countX>1 ise cok kolonlu.
+    // Native boltCount = DUSEY sira sayisi (countY); boltCountX = kolon sayisi
+    // (countX). Grid cozulduyse ikisi de gozlenen; cozulmediyse toplam adet tek
+    // kolon olarak isaretlenir (uydurulmaz, Inferred).
     int paramBoltCount = 0;
-    if (paramInt(pkg, "boltCount", paramBoltCount) && paramBoltCount > 0) {
-        // parametre toplam adet verir; native tek kolon => dusey sira sayisi.
-        const int rows = gridOk ? gridY : paramBoltCount;
-        addInt(L"boltCount", rows, BridgeParamProvenance::Observed,
+    const bool haveCountParam = paramInt(pkg, "boltCount", paramBoltCount) && paramBoltCount > 0;
+    if (gridOk) {
+        addInt(L"boltCount", gridY, BridgeParamProvenance::Observed,
+               "bulon konumlarindan dusey sira sayisi");
+        addInt(L"boltCountX", gridX, BridgeParamProvenance::Observed,
+               "bulon konumlarindan kolon sayisi");
+    } else if (haveCountParam) {
+        addInt(L"boltCount", paramBoltCount, BridgeParamProvenance::Inferred,
                "parametre boltCount (toplam " + std::to_string(paramBoltCount) +
-                   ") -> dusey sira sayisi " + std::to_string(rows));
-    } else if (gridOk) {
-        addInt(L"boltCount", gridY, BridgeParamProvenance::Observed, "bulon konumlarindan dusey sira");
+                   "); grid cozulemedi, tek kolon varsayildi");
+        addInt(L"boltCountX", 1, BridgeParamProvenance::Inferred,
+               "grid cozulemedi; tek kolon varsayildi");
     } else if (boltTotal > 0) {
-        addInt(L"boltCount", boltTotal, BridgeParamProvenance::Inferred, "toplam bulon sayisi (grid cozulemedi)");
+        addInt(L"boltCount", boltTotal, BridgeParamProvenance::Inferred,
+               "toplam bulon sayisi (grid cozulemedi; tek kolon varsayildi)");
+        addInt(L"boltCountX", 1, BridgeParamProvenance::Inferred,
+               "grid cozulemedi; tek kolon varsayildi");
     } else {
         addInt(L"boltCount", 0, BridgeParamProvenance::Unresolved, "kaynakta yok");
+        addInt(L"boltCountX", 0, BridgeParamProvenance::Unresolved, "kaynakta yok");
     }
 
-    // Cok kolonlu bulon grubu -> native desteklemiyor (acikca raporlanir).
-    if (gridOk && gridX > 1) {
-        m.unsupportedFeatures.push_back(
-            "bulon grubu " + std::to_string(gridX) + " kolon x " + std::to_string(gridY) +
-            " sira; native tek kolon (countX=1) destekler — cok kolon yeniden uretilmez");
-    }
-
-    // Kenar mesafesi (dusey): (yukseklik - dusey aciklik)/2.
-    if (haveDims && gridOk && gridY >= 1 && !bolts->boltGroup->bolts.empty()) {
-        double zmin = 1e18, zmax = -1e18;
-        for (const auto& b : bolts->boltGroup->bolts) {
-            zmin = std::min(zmin, b.position.z);
-            zmax = std::max(zmax, b.position.z);
+    // Kenar mesafeleri (yatay + dusey): (boyut - aciklik)/2, SIMETRIK kabulu.
+    // Native kenar mesafesi tek deger urettigi icin simetrik esdeger raporlanir;
+    // gercek Tekla yerlesimi asimetrikse bu bir YAKLASIKLIKTIR ve asagida acikca
+    // unsupportedFeatures'e (ya da issue) yazilir — sessizce dogru sayilmaz.
+    if (haveDims && gridOk && bolts && bolts->boltGroup) {
+        double hmin, hmax, vmin, vmax;
+        if (boltCoordSpans(*bolts->boltGroup, boltAxis, hmin, hmax, vmin, vmax)) {
+            const double hspan = hmax - hmin;
+            const double vspan = vmax - vmin;
+            if (gridX > 1 && obsWidth > 0.0 && hspan >= 0.0 && hspan <= obsWidth + kTol) {
+                const double ex = (obsWidth - hspan) * 0.5;
+                addLength(L"edgeX", ex, BridgeParamProvenance::Observed,
+                          "bulon konumlari + plaka genisliginden (simetrik)");
+            }
+            if (obsHeight > 0.0 && vspan >= 0.0 && vspan <= obsHeight + kTol) {
+                const double ey = (obsHeight - vspan) * 0.5;
+                addLength(L"edgeY", ey, BridgeParamProvenance::Observed,
+                          "bulon konumlari + plaka yuksekliginden (simetrik)");
+                addLength(L"boltEdge", ey, BridgeParamProvenance::Observed,
+                          "bulon konumlari + plaka yuksekliginden (geriye donuk)");
+            }
         }
-        const double span = zmax - zmin;
-        if (obsHeight > 0.0 && span >= 0.0 && span <= obsHeight + kTol) {
-            const double edge = (obsHeight - span) * 0.5;
-            addLength(L"boltEdge", edge, BridgeParamProvenance::Observed,
-                      "bulon konumlari + plaka yuksekliginden");
-        }
     }
 
-    // Bulon araligi (dusey): gozlenen esit aralik; aksi halde 'auto'.
-    if (gridOk && gridY > 1) {
+    // Bulon araliklari: gozlenen esit aralik -> pitchX/pitchY; aksi halde auto.
+    if (gridOk && gridX > 1 && spX > 0.0) {
+        addLength(L"pitchX", spX, BridgeParamProvenance::Observed,
+                  "bulon konumlarindan yatay aralik");
+    }
+    if (gridOk && gridY > 1 && spY > 0.0) {
+        addLength(L"pitchY", spY, BridgeParamProvenance::Observed,
+                  "bulon konumlarindan dusey aralik");
         std::ostringstream os;
         os << spY;
         addStr(L"boltSpacing", os.str(), BridgeParamProvenance::Observed,
-               "bulon konumlarindan dusey aralik");
+               "bulon konumlarindan dusey aralik (geriye donuk)");
     }
 
     // Kalite: kaynakta belirtilmemis (native varsayilan 8.8).
@@ -467,6 +510,7 @@ BridgeNativeMapping mapBridgeToNative(const BridgePackage& pkg,
     // --- 8) Uye geometrisi (profil katalogundan + paketten) --------------------
     const auto reconstruct = [&](const BridgeMemberRef& ref) {
         BridgeReconstructedMember rm;
+        rm.guid = ref.guid;
         rm.profile = ref.profile;
         const SteelProfile* sp = findProfile(catalog, ref.profile);
         if (sp) {
@@ -496,9 +540,6 @@ BridgeNativeMapping mapBridgeToNative(const BridgePackage& pkg,
     if (!haveDims || !bolts || !bolts->boltGroup) {
         m.equivalence.state = BridgeEquivalenceState::Unverified;
         m.equivalence.issues.push_back("plaka bbox veya bulon grubu yok; karsilastirma yapilamadi");
-    } else if (gridOk && gridX > 1) {
-        m.equivalence.state = BridgeEquivalenceState::NotEquivalent;
-        m.equivalence.issues.push_back("cok kolonlu bulon grubu native tek kolon ile esdegil");
     } else {
         const bool membersReady = m.primary.hasAxis && m.primary.hasSection &&
                                   !m.secondary.empty() && m.secondary[0].hasAxis &&
@@ -531,7 +572,7 @@ BridgeNativeMapping mapBridgeToNative(const BridgePackage& pkg,
 
                 bool boltMatch = false;
                 for (const auto& bg : plan.boltGroups)
-                    if (bg.countY == gridY && bg.countX == 1) { boltMatch = true; break; }
+                    if (bg.countY == gridY && bg.countX == gridX) { boltMatch = true; break; }
 
                 if (plateMatch && boltMatch) {
                     m.equivalence.state = BridgeEquivalenceState::Equivalent;

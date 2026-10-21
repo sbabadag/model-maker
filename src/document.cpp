@@ -1606,6 +1606,12 @@ void Document::buildMmw8(Mmw8Document& out) const {
         if (anchor != SectionAnchor::Top)
             out.sectionAnchors.push_back(Mmw8SectionAnchor{modelIds_[i], anchor});
     }
+    // Tekla GUID -> EntityId eslemesi (T blogu). Silinmis varliklara ait olanlar
+    // yazilmaz (dangling koruma).
+    out.teklaGuids.clear();
+    for (const auto& [guid, id] : teklaGuids_)
+        if (indexOfEntity(id).has_value())
+            out.teklaGuids.push_back(Mmw8TeklaGuid{id, guid});
     // Taban B-Rep blob'lari (V blogu): kesme tabani (pre-cut) surumu olan
     // varliklar. Boylece "orijinal B-Rep kaybolmaz" kayit/ac sonrasinda da
     // korunur ve kesim sonradan duzenlenebilir.
@@ -1736,6 +1742,11 @@ void Document::commitFromMmw8(Mmw8Document&& mdoc) {
             models_[*idx].setProperties(std::move(p));
         }
     }
+    // Tekla GUID -> EntityId eslemesi (T blogu). Blok yoksa (eski dosya) bos.
+    teklaGuids_.clear();
+    for (const auto& tg : mdoc.teklaGuids)
+        if (indexOfEntity(tg.entityId).has_value())
+            teklaGuids_[tg.guid] = tg.entityId;
     opaqueBreps_ = std::move(opaque);
     opaqueBrepsStale_ = false;
     mmw8Metadata_ = mdoc.metadata;
@@ -2413,6 +2424,35 @@ std::optional<std::size_t> Document::indexOfComponentInstance(EntityId id) const
     for (std::size_t i = 0; i < componentInstances_.size(); ++i)
         if (componentInstances_[i].id == id) return i;
     return std::nullopt;
+}
+
+// --- TEKLA GUID ESLEME -------------------------------------------------------
+
+void Document::setTeklaGuid(EntityId id, const std::string& guid) {
+    if (id == kInvalidEntityId) return;
+    if (guid.empty()) { clearTeklaGuid(id); return; }
+    // Birebir esleme: ayni guid baska varliga bagliysa eski iliskiyi kaldir.
+    for (auto it = teklaGuids_.begin(); it != teklaGuids_.end();) {
+        if (it->first == guid || it->second == id) it = teklaGuids_.erase(it);
+        else ++it;
+    }
+    teklaGuids_[guid] = id;
+}
+
+std::optional<EntityId> Document::entityForTeklaGuid(const std::string& guid) const {
+    if (guid.empty()) return std::nullopt;
+    const auto it = teklaGuids_.find(guid);
+    if (it == teklaGuids_.end()) return std::nullopt;
+    // Dangling koruma: varlik silindiyse eslemeyi gecersiz say.
+    if (!indexOfEntity(it->second)) return std::nullopt;
+    return it->second;
+}
+
+void Document::clearTeklaGuid(EntityId id) {
+    for (auto it = teklaGuids_.begin(); it != teklaGuids_.end();) {
+        if (it->second == id) it = teklaGuids_.erase(it);
+        else ++it;
+    }
 }
 
 CutModifier resolveCutModifierSource(const CutModifier& mod, const Document& document) {

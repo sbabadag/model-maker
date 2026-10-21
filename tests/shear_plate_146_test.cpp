@@ -67,7 +67,7 @@ int main() {
         if (t) {
             check(t->displayName == L"Shear Plate Simple (146)", "146 displayName");
             check(t->schemaVersion == 1, "146 schemaVersion 1");
-            check(t->params.size() == 19, "146 semasi 19 parametre (8 core + 11 Tekla)");
+            check(t->params.size() == 24, "146 semasi 24 parametre (8 core + 16 Tekla; cok kolonlu eklendi)");
         }
     }
 
@@ -262,7 +262,7 @@ int main() {
                 std::printf("  problem: %ls\n", p.c_str());
         }
         // Tum grup parametreleri semada olmali.
-        check(def.specs.size() == 19, "146 dialog specs = 19 parametre");
+        check(def.specs.size() == 24, "146 dialog specs = 24 parametre");
 
         const auto hit = hitTestDiagramHotspot(def.schema, DiagramPoint{63.0, 192.0});
         check(hit.has_value(), "146 hotspot hit-test calisir");

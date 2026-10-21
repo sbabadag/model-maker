@@ -109,8 +109,8 @@ int main() {
                     if (p.name == L"_bridge_native_state" &&
                         std::holds_alternative<std::wstring>(p.value))
                         st = &std::get<std::wstring>(p.value);
-                check(st && *st == L"not_equivalent",
-                      "146 V3: native state = not_equivalent (2 kolonlu bulon)");
+                check(st && *st == L"unverified",
+                      "146 V3: native state = unverified (primary eksen yok, generator uydurmadi)");
             }
             // MMW8 save/load (component instance kalici).
             // (Round-trip OCC store testi ayri; burada yalniz instance varligi.)

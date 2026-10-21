@@ -864,6 +864,22 @@ void writeMmw8(std::ostream& out, const Mmw8Document& doc) {
         out.write(b.data(), static_cast<std::streamsize>(b.size()));
     }
 
+    // Kuyruk: T blogu (Tekla GUID -> EntityId, bridge native conversion).
+    if (!doc.teklaGuids.empty()) {
+        std::ostringstream body;
+        body << doc.teklaGuids.size() << '\n';
+        for (const auto& tg : doc.teklaGuids) {
+            if (tg.entityId == kInvalidEntityId || tg.entityId == kExhaustedEntityId)
+                fail("tekla guid entityId must be a valid identity");
+            body << tg.entityId << ' ';
+            putString(body, tg.guid);
+            body << '\n';
+        }
+        const std::string b = body.str();
+        out << "T " << b.size() << '\n';
+        out.write(b.data(), static_cast<std::streamsize>(b.size()));
+    }
+
     // Kuyruk: V blogu (taban B-Rep blob'lari, Phase 4.2).
     if (!doc.baseBlobs.empty()) {
         std::ostringstream body;
@@ -1058,7 +1074,7 @@ void readMmw8(std::istream& in, Mmw8Document& doc) {
 
     // --- Kuyruk: etiket-gudumlu bloklar ---
     bool sawH = false, sawB = false, sawV = false, sawG = false, sawE = false, sawI = false;
-    bool sawJ = false, sawD = false, sawM = false, sawN = false, sawA = false;
+    bool sawJ = false, sawD = false, sawM = false, sawN = false, sawA = false, sawT = false;
     // 'M' bloguyla cerceve ATAYAN component id'leri — legacy turetme (origin/u/v/axis)
     // yalnizca 'M' kaydi OLMAYAN component'lere uygulanir.
     std::unordered_set<EntityId> framedComponents;
@@ -1585,6 +1601,22 @@ void readMmw8(std::istream& in, Mmw8Document& doc) {
                 if (seenSa.count(sa.entityId)) fail("duplicate anchor entityId");
                 seenSa[sa.entityId] = true;
                 parsed.sectionAnchors.push_back(sa);
+            }
+        } else if (tag == 'T') {
+            if (sawT) fail("repeated T block");
+            sawT = true;
+            std::istringstream ts(body);
+            const std::uint64_t count = readUint64(ts, "tekla guid count");
+            if (count > kMmw8MaxModels) fail("tekla guid count exceeds limit");
+            std::unordered_map<std::string, bool> seenGuid;
+            for (std::uint64_t ti = 0; ti < count; ++ti) {
+                Mmw8TeklaGuid tg;
+                tg.entityId = static_cast<EntityId>(readUint64(ts, "tekla guid entityId"));
+                tg.guid = readString(ts);
+                if (!seenIds.count(tg.entityId)) fail("tekla guid entityId not in model list");
+                if (seenGuid.count(tg.guid)) fail("duplicate tekla guid");
+                seenGuid[tg.guid] = true;
+                parsed.teklaGuids.push_back(std::move(tg));
             }
         } else {
             // Bilinmeyen blok: kayipsiz korunur.

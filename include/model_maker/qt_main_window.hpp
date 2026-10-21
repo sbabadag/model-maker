@@ -41,6 +41,10 @@ private:
     // Tekla Component Bridge: .mmbridge paket KLASORUNU sectirir ve
     // app_.importTeklaBridge() ile atomik import yapar (Windows GUI).
     void importTeklaBridge();
+    // Tekla Component Bridge: .mmbridge paketini native tekla_shear_plate_146
+    // component'ine donusturur (app_.convertTeklaBridgeToNative). Uye eksikse
+    // kullaniciya kolon+kiriş secmesi bildirilir (Windows GUI).
+    void importTeklaBridgeNative();
     // Tekla grid property pane karsiligi: grid spesifikasyonunu duzenler.
     bool editGridProperties(GridDefinition& grid, const QString& title);
     void createToolbar();

@@ -345,6 +345,18 @@ public:
     // EntityId -> component instance indeksi; yoksa nullopt.
     std::optional<std::size_t> indexOfComponentInstance(EntityId id) const;
 
+    // --- TEKLA GUID ESLEME (bridge native conversion, Phase C6) --------------
+    // Bir EntityId'yi Tekla sourceGUID'i ile iliskilendirir (kalici; 'T' blogu).
+    // Ayni guid baska bir varliga bagliysa ESKI iliski kaldirilir (birebir).
+    void setTeklaGuid(EntityId id, const std::string& guid);
+    // Tekla sourceGUID'e karsilik gelen EntityId (yoksa nullopt).
+    std::optional<EntityId> entityForTeklaGuid(const std::string& guid) const;
+    // Bir EntityId'nin Tekla GUID iliskisini kaldirir (entity silinince temizlenir).
+    void clearTeklaGuid(EntityId id);
+    const std::unordered_map<std::string, EntityId>& teklaGuids() const noexcept {
+        return teklaGuids_;
+    }
+
 private:
     static constexpr std::size_t kMaxUndoEntries = 100;
     std::uint64_t revision_{0};
@@ -426,6 +438,7 @@ private:
     std::vector<BoltGroup> boltGroups_;
     std::vector<EndPlateConnection> endPlateConnections_;
     std::vector<ComponentInstanceRecord> componentInstances_;
+    std::unordered_map<std::string, EntityId> teklaGuids_;  // Tekla sourceGUID -> EntityId ('T')
 };
 
 // KESME KAYNAK COZUMU (P6): mod.source gecerliyse kaynak varligin GUNCEL

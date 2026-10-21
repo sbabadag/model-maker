@@ -57,7 +57,8 @@ add_library(model_maker_core
     src/assembly.cpp
     src/bridge_package.cpp
     src/bridge_component_mapper.cpp
-    src/bridge_native_mapper.cpp)
+    src/bridge_native_mapper.cpp
+    src/bridge_native_bind.cpp)
 target_include_directories(model_maker_core PUBLIC include third_party)
 target_compile_options(model_maker_core PRIVATE -Wall -Wextra -Wpedantic)
 
@@ -157,10 +158,30 @@ if(WIN32 AND OCC_ROOT)
         set(OCC_MANUAL_LIBS TKernel TKMath TKG2d TKG3d TKGeomBase TKBRep
             TKGeomAlgo TKTopAlgo TKPrim TKBO TKBool TKShHealing TKMesh
             TKXSBase TKDESTEP)
+        set(OCC_LIB_DIR ${OCC_ROOT}/lib)
         set(MODELMAKER_OCC_READY TRUE)
         message(STATUS "OpenCASCADE bulundu (el ile baglanti): ${OCC_INCLUDE_DIR}")
     else()
         message(STATUS "OCC_ROOT verildi ama opencascade basliklari bulunamadi: ${OCC_ROOT}")
+    endif()
+elseif(UNIX)
+    # Linux: sistem OCCT (apt opencascade). Debian'daki OpenCASCADEConfig,
+    # Visualization/TKIVtk hedefleri icin VTK gerektirdiginden find_package
+    # kirilir; gerekli modulleri (Visualization/Draw HARIC) dogrudan baglariz.
+    find_path(OCC_INCLUDE_DIR NAMES BRepPrimAPI_MakeBox.hxx
+              PATH_SUFFIXES opencascade
+              HINTS /usr/include /usr/local/include)
+    find_library(OCC_TKERNEL_LIB NAMES TKernel
+                 PATHS /usr/lib /usr/local/lib PATH_SUFFIXES x86_64-linux-gnu aarch64-linux-gnu)
+    if(OCC_INCLUDE_DIR AND OCC_TKERNEL_LIB)
+        set(OCC_MANUAL_LIBS TKernel TKMath TKG2d TKG3d TKGeomBase TKBRep
+            TKGeomAlgo TKTopAlgo TKPrim TKBO TKBool TKShHealing TKMesh
+            TKXSBase TKDESTEP)
+        get_filename_component(OCC_LIB_DIR "${OCC_TKERNEL_LIB}" DIRECTORY)
+        set(MODELMAKER_OCC_READY TRUE)
+        message(STATUS "OpenCASCADE bulundu (Linux el ile baglanti): ${OCC_INCLUDE_DIR}")
+    else()
+        message(STATUS "OpenCASCADE bulunamadi — OCC modulu kapali (vcpkg toolchain dosyasi ya da -DOCC_ROOT)")
     endif()
 else()
     find_package(OpenCASCADE QUIET)
@@ -186,7 +207,11 @@ if(MODELMAKER_OCC_READY)
         target_link_libraries(model_maker_occ PUBLIC ${OpenCASCADE_LIBRARIES})
     else()
         target_link_libraries(model_maker_occ PUBLIC ${OCC_MANUAL_LIBS})
-        target_link_directories(model_maker_occ PUBLIC ${OCC_ROOT}/lib)
+        if(DEFINED OCC_LIB_DIR AND NOT OCC_LIB_DIR STREQUAL "")
+            target_link_directories(model_maker_occ PUBLIC ${OCC_LIB_DIR})
+        elseif(OCC_ROOT)
+            target_link_directories(model_maker_occ PUBLIC ${OCC_ROOT}/lib)
+        endif()
     endif()
     target_compile_definitions(model_maker_occ PUBLIC MM_HAS_OCC)
     if(WIN32)
@@ -437,6 +462,13 @@ if(BUILD_TESTING)
         MM_BRIDGE_FIXTURE_DIR="${CMAKE_SOURCE_DIR}/tools/model-maker-bridge/fixtures")
     target_compile_options(model_maker_bridge_native_mapper_test PRIVATE -Wall -Wextra -Wpedantic)
     add_test(NAME model_maker_bridge_native_mapper_test COMMAND model_maker_bridge_native_mapper_test)
+
+    # TEKLA -> NATIVE uye baglama: Tekla GUID -> EntityId esleme (oncelik: kalici
+    # GUID, kullanici secimi; belirsizde otomatik secim YOK) + MMW8 round-trip.
+    add_executable(model_maker_bridge_native_bind_test tests/bridge_native_bind_test.cpp)
+    target_link_libraries(model_maker_bridge_native_bind_test PRIVATE model_maker_core)
+    target_compile_options(model_maker_bridge_native_bind_test PRIVATE -Wall -Wextra -Wpedantic)
+    add_test(NAME model_maker_bridge_native_bind_test COMMAND model_maker_bridge_native_bind_test)
 
     # KARARLI VARLIK KIMLIGI (EntityId): vektor indeksi kalici kimlik DEGIL;
     # kimlik ekleme/silme/degistirme/undo/redo boyunca DOGRU varlikla eslesir,
@@ -692,14 +724,33 @@ if(BUILD_TESTING)
             MM_BRIDGE_FIXTURE_DIR="${CMAKE_SOURCE_DIR}/tools/model-maker-bridge/fixtures")
         add_test(NAME model_maker_occ_bridge_v3_import_test
                  COMMAND model_maker_occ_bridge_v3_import_test)
+        # TEKLA BRIDGE NATIVE DONUSUM: convertBridgeToNative (GUID baglama +
+        # generator + gercek OCC solid + GUID iliskisi). GERCEK OCCT.
+        add_executable(model_maker_occ_bridge_native_convert_test tests/occ_bridge_native_convert_test.cpp)
+        target_link_libraries(model_maker_occ_bridge_native_convert_test PRIVATE model_maker_occ)
+        add_test(NAME model_maker_occ_bridge_native_convert_test
+                 COMMAND model_maker_occ_bridge_native_convert_test)
+        # TEKLA 146 UCTAN UCA (cok kolonlu bulon + hacim + recompute). GERCEK OCCT.
+        # PART E: 2x3 6xM20 delikli levha hacmi + kalinlik 10->12 recompute.
+        add_executable(model_maker_occ_shear_plate_146_end_to_end_test tests/occ_shear_plate_146_end_to_end_test.cpp)
+        target_link_libraries(model_maker_occ_shear_plate_146_end_to_end_test PRIVATE model_maker_occ)
+        add_test(NAME model_maker_occ_shear_plate_146_end_to_end_test
+                 COMMAND model_maker_occ_shear_plate_146_end_to_end_test)
         # END PLATE REGRESYON (A3): mevcut production hatti vs yeni ortak runtime.
         # Ayni yerlesim iki yoldan beslenir; geometri/bulon/delik/ownership esit.
         add_executable(model_maker_occ_end_plate_regression_vs_runtime tests/occ_end_plate_regression_vs_runtime.cpp)
         target_link_libraries(model_maker_occ_end_plate_regression_vs_runtime PRIVATE model_maker_occ)
         add_test(NAME model_maker_occ_end_plate_regression_vs_runtime COMMAND model_maker_occ_end_plate_regression_vs_runtime)
         if(UNIX)
-            set_tests_properties(model_maker_occ_store_roundtrip model_maker_occ_document_roundtrip model_maker_occ_bolt_group_roundtrip model_maker_occ_end_plate_roundtrip model_maker_occ_end_plate_placement model_maker_occ_end_plate_144_geometry model_maker_component_materializer_test model_maker_occ_fin_plate_e2e model_maker_occ_end_plate_regression_vs_runtime model_maker_occ_bridge_146_import_test model_maker_occ_bridge_v3_import_test PROPERTIES
-                ENVIRONMENT "LD_LIBRARY_PATH=${OCC_ROOT}/lib:$ENV{LD_LIBRARY_PATH}")
+            if(DEFINED OCC_LIB_DIR AND NOT OCC_LIB_DIR STREQUAL "")
+                set(_occ_ld "${OCC_LIB_DIR}")
+            elseif(OCC_ROOT)
+                set(_occ_ld "${OCC_ROOT}/lib")
+            else()
+                set(_occ_ld "")
+            endif()
+            set_tests_properties(model_maker_occ_store_roundtrip model_maker_occ_document_roundtrip model_maker_occ_bolt_group_roundtrip model_maker_occ_end_plate_roundtrip model_maker_occ_end_plate_placement model_maker_occ_end_plate_144_geometry model_maker_component_materializer_test model_maker_occ_fin_plate_e2e model_maker_occ_end_plate_regression_vs_runtime model_maker_occ_bridge_146_import_test model_maker_occ_bridge_v3_import_test model_maker_occ_bridge_native_convert_test model_maker_occ_shear_plate_146_end_to_end_test PROPERTIES
+                ENVIRONMENT "LD_LIBRARY_PATH=${_occ_ld}:$ENV{LD_LIBRARY_PATH}")
         endif()
     endif()
 

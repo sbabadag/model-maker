@@ -38,6 +38,8 @@
 #include <Bnd_Box.hxx>
 #include <BRepBndLib.hxx>
 
+#include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdio>
 
@@ -365,6 +367,278 @@ int main() {
         for (const auto& m : s.doc.cutModifiers())
             if (m.kind == CutKind::Hole && m.owner == boltId) ++holes3;
         check(holes3 == 12, "PART D: delik BIRIKMESI yok (hala 12)");
+    }
+
+    // ================= PART E: cok kolonlu 2x3 + hacim + recompute ============
+    // Gercek Tekla 146: 170x200x10 PL10, 6xM20 (2 kolon x 3 sira). Native generator
+    // cok kolonlu uretir; delikli levha hacmi analitik degerle karsilastirilir:
+    //   170*200*10 - 6 * pi*(22/2)^2 * 10 = 340000 - 22807.96 = 317192.04 mm^3.
+    {
+        Setup s = makeSetup();
+        ComponentInput in = makeInput(s);
+        in.params = {
+            {L"plateThickness", CompParamValue{10.0}},
+            {L"plateWidth", CompParamValue{170.0}},
+            {L"plateHeight", CompParamValue{200.0}},
+            {L"boltCount", CompParamValue{3}},      // 3 sira
+            {L"boltCountX", CompParamValue{2}},     // 2 kolon
+            {L"pitchX", CompParamValue{60.0}},
+            {L"pitchY", CompParamValue{60.0}},
+            {L"edgeX", CompParamValue{55.0}},
+            {L"edgeY", CompParamValue{40.0}},
+            {L"boltDiameter", CompParamValue{20.0}},
+            {L"holeDiameter", CompParamValue{22.0}},
+        };
+        const GenerationPlan gp = ComponentRegistry::instance().generate(
+            L"tekla_shear_plate_146", in);
+        check(gp.ok, "PART E: generate ok");
+        check(gp.boltGroups.size() == 1 && gp.boltGroups[0].countX == 2 &&
+                  gp.boltGroups[0].countY == 3,
+              "PART E: 2x3 bulon duzeni");
+        check(approx(gp.boltGroups[0].spacingX, 60.0) &&
+                  approx(gp.boltGroups[0].spacingY, 60.0),
+              "PART E: pitchX=pitchY=60");
+
+        const ComponentPlan plan = componentPlanFromGenerationPlan(gp);
+        ComponentMaterializer mat(s.doc);
+        ComponentMaterializer::Prepared prep = mat.prepare(plan, s.colId, {s.beamId});
+        check(prep.ok, "PART E: prepare ok");
+        ComponentInstanceRecord rec;
+        rec.typeId = L"tekla_shear_plate_146";
+        rec.mainPart = s.colId;
+        rec.secondaryParts = {s.beamId};
+        ComponentMaterializer::CommitResult res = mat.commit(prep, rec);
+        check(res.ok, "PART E: commit ok");
+
+        const EntityId tabId = res.roleToEntity["shear_tab_near"];
+        const EntityId boltId = res.roleToEntity["beam_bolts"];
+        check(tabId != kInvalidEntityId, "PART E: tab EntityId");
+
+        // Levha hacmi (6 delik sonrasi) analitik degerle karsilastirilir.
+        const TopoDS_Shape* ts = s.store->find(tabId);
+        check(ts && !ts->IsNull(), "PART E: levha kati mevcut");
+        if (ts && !ts->IsNull()) {
+            const double PI = std::acos(-1.0);
+            const double vol = shapeVolume(*ts);
+            const double expected = 340000.0 - 6.0 * PI * 11.0 * 11.0 * 10.0;
+            check(approx(vol, expected, expected * 0.01),
+                  "PART E: delikli levha hacmi analitik (317192)");
+            std::printf("  [info] levha hacmi = %.2f (beklenen %.2f)\n", vol, expected);
+        }
+
+        // Delik dagilimi: 6 bulon x {levha, kiris} = 12 delik.
+        std::size_t holes = 0, plateHoles = 0, beamHoles = 0;
+        for (const auto& m : s.doc.cutModifiers()) {
+            if (m.kind != CutKind::Hole || m.owner != boltId) continue;
+            ++holes;
+            if (m.target == tabId) ++plateHoles;
+            if (m.target == s.beamId) ++beamHoles;
+        }
+        check(holes == 12, "PART E: 12 delik (6 bulon x {levha, kiris})");
+        check(plateHoles == 6 && beamHoles == 6, "PART E: levha 6 + kiris 6 delik");
+
+        // Recompute: kalinlik 10->12 hacmi artirir; delikler yeni sayiya gore.
+        ComponentInput in2 = makeInput(s);
+        in2.params = in.params;
+        for (auto& p : in2.params)
+            if (p.name == L"plateThickness") p.value = CompParamValue{12.0};
+        const GenerationPlan gp2 = ComponentRegistry::instance().generate(
+            L"tekla_shear_plate_146", in2);
+        const ComponentPlan plan2 = componentPlanFromGenerationPlan(gp2);
+        ComponentMaterializer::Prepared prep2 = mat.prepare(plan2, s.colId, {s.beamId});
+        check(prep2.ok, "PART E: recompute prepare ok");
+        ComponentMaterializer::CommitResult res2 =
+            mat.recompute(prep2, s.doc.componentInstances()[0], s.doc.componentInstances()[0]);
+        check(res2.ok, "PART E: recompute ok");
+        const TopoDS_Shape* ts2 = s.store->find(tabId);
+        check(ts2 && !ts2->IsNull(), "PART E: recompute levha kati mevcut");
+        if (ts2 && !ts2->IsNull()) {
+            const double PI = std::acos(-1.0);
+            const double vol2 = shapeVolume(*ts2);
+            const double expected2 = 170.0 * 200.0 * 12.0 - 6.0 * PI * 11.0 * 11.0 * 12.0;
+            check(approx(vol2, expected2, expected2 * 0.01),
+                  "PART E: recompute kalinlik 12 hacmi yenilendi");
+        }
+    }
+
+    // ================= PART F: parametrik recompute zinciri (gercek OCC) ======
+    // Phase 3 senaryolari: countY 3->4, countX 2->3, M20->M24, pitch 60->70,
+    // levha boyut degisimi, ilk degere geri donus. Her adimda GERCEK OCCT
+    // dogrulanir: delik sayisi, hacim (analitik), bbox (boyut), delik merkez
+    // araligi (pitch), sabit EntityId (stable instance), child temizligi.
+    {
+        Setup s = makeSetup();
+        const double PI = std::acos(-1.0);
+
+        // Yardimcilar: tab EntityId uzerindeki delik sayisi + delik merkezleri.
+        auto plateHoles = [&](EntityId tabId, EntityId boltId,
+                              std::vector<Vec3>* centers = nullptr) {
+            std::size_t n = 0;
+            for (const auto& m : s.doc.cutModifiers())
+                if (m.kind == CutKind::Hole && m.owner == boltId && m.target == tabId) {
+                    ++n;
+                    if (centers) centers->push_back(m.planeOrigin);
+                }
+            return n;
+        };
+        auto plateVolume = [&](EntityId tabId) {
+            const TopoDS_Shape* ts = s.store->find(tabId);
+            return (ts && !ts->IsNull()) ? shapeVolume(*ts) : -1.0;
+        };
+        auto plateExtents = [&](EntityId tabId) {
+            const TopoDS_Shape* ts = s.store->find(tabId);
+            std::array<double, 3> e{0, 0, 0};
+            if (ts && !ts->IsNull()) {
+                Bnd_Box bb; BRepBndLib::Add(*ts, bb);
+                double mnx, mny, mnz, mxx, mxy, mxz;
+                bb.Get(mnx, mny, mnz, mxx, mxy, mxz);
+                e = {mxx - mnx, mxy - mny, mxz - mnz};
+                std::sort(e.begin(), e.end());
+            }
+            return e;
+        };
+        auto pairwiseDists = [](const std::vector<Vec3>& pts) {
+            std::vector<double> d;
+            for (std::size_t i = 0; i < pts.size(); ++i)
+                for (std::size_t j = i + 1; j < pts.size(); ++j)
+                    d.push_back(std::sqrt((pts[i].x - pts[j].x) * (pts[i].x - pts[j].x) +
+                                          (pts[i].y - pts[j].y) * (pts[i].y - pts[j].y) +
+                                          (pts[i].z - pts[j].z) * (pts[i].z - pts[j].z)));
+            return d;
+        };
+        auto hasDist = [](const std::vector<double>& d, double want, double tol) {
+            for (double x : d) if (std::abs(x - want) < tol) return true;
+            return false;
+        };
+
+        // Baslangic 2x3 M20 (hole 22), pitch 60, 170x200x10.
+        auto build = [&](double th, double w, double h, int cx, int cy,
+                         double px, double py, double boltD, double holeD) {
+            ComponentInput in = makeInput(s);
+            in.params = {{L"plateThickness", CompParamValue{th}},
+                         {L"plateWidth", CompParamValue{w}},
+                         {L"plateHeight", CompParamValue{h}},
+                         {L"boltCount", CompParamValue{cy}},
+                         {L"boltCountX", CompParamValue{cx}},
+                         {L"pitchX", CompParamValue{px}},
+                         {L"pitchY", CompParamValue{py}},
+                         {L"edgeX", CompParamValue{55.0}},
+                         {L"edgeY", CompParamValue{40.0}},
+                         {L"boltDiameter", CompParamValue{boltD}},
+                         {L"holeDiameter", CompParamValue{holeD}},
+                         {L"shearTabPosition", CompParamValue{std::wstring(L"near_side")}}};
+            return in;
+        };
+        auto materialize = [&](const ComponentInput& in) {
+            const GenerationPlan gp = ComponentRegistry::instance().generate(
+                L"tekla_shear_plate_146", in);
+            const ComponentPlan plan = componentPlanFromGenerationPlan(gp);
+            ComponentMaterializer mat(s.doc);
+            ComponentMaterializer::Prepared prep = mat.prepare(plan, s.colId, {s.beamId});
+            ComponentInstanceRecord rec;
+            rec.typeId = L"tekla_shear_plate_146";
+            rec.mainPart = s.colId;
+            rec.secondaryParts = {s.beamId};
+            return mat.commit(prep, rec);
+        };
+        auto recompute = [&](const ComponentInput& in) {
+            const GenerationPlan gp = ComponentRegistry::instance().generate(
+                L"tekla_shear_plate_146", in);
+            const ComponentPlan plan = componentPlanFromGenerationPlan(gp);
+            ComponentMaterializer mat(s.doc);
+            ComponentMaterializer::Prepared prep = mat.prepare(plan, s.colId, {s.beamId});
+            const auto& existing = s.doc.componentInstances()[0];
+            return mat.recompute(prep, existing, existing);
+        };
+
+        ComponentMaterializer::CommitResult res =
+            materialize(build(10, 170, 200, 2, 3, 60, 60, 20, 22));
+        check(res.ok, "PART F: ilk materialize ok");
+        const EntityId tabId = res.roleToEntity["shear_tab_near"];
+        const EntityId boltId = res.roleToEntity["beam_bolts"];
+        check(tabId != kInvalidEntityId && boltId != kInvalidEntityId, "PART F: tab+bolt id");
+
+        const double holeVol20 = PI * 11.0 * 11.0 * 10.0;   // M20/22 delik hacmi (th=10)
+        check(plateHoles(tabId, boltId) == 6, "PART F: baslangic 6 delik");
+        check(approx(plateVolume(tabId), 340000.0 - 6.0 * holeVol20, 1.0),
+              "PART F: baslangic hacim 317192");
+
+        // B: countY 3 -> 4 (8 delik). 4 sira 60mm pitch'te 200mm levhaya
+        // sigmaz (kenar 10 < delik yaricapi 11) — gercek muhendislikte levha
+        // buyur ya da pitch daralir; burada pitchY=40 (kenar 40) kullanilir.
+        res = recompute(build(10, 170, 200, 2, 4, 60, 40, 20, 22));
+        check(res.ok, "PART F: B recompute ok");
+        check(plateHoles(tabId, boltId) == 8, "PART F: B 8 delik (countY 4)");
+        check(approx(plateVolume(tabId), 340000.0 - 8.0 * holeVol20, 1.0),
+              "PART F: B hacim 309589");
+
+        // C: countX 2 -> 3 (9 delik, countY 3).
+        res = recompute(build(10, 170, 200, 3, 3, 60, 60, 20, 22));
+        check(res.ok, "PART F: C recompute ok");
+        check(plateHoles(tabId, boltId) == 9, "PART F: C 9 delik (countX 3)");
+        check(approx(plateVolume(tabId), 340000.0 - 9.0 * holeVol20, 1.0),
+              "PART F: C hacim 305788");
+
+        // D: M20 -> M24 (hole 26, 6 delik, 2x3).
+        res = recompute(build(10, 170, 200, 2, 3, 60, 60, 24, 26));
+        check(res.ok, "PART F: D recompute ok");
+        check(plateHoles(tabId, boltId) == 6, "PART F: D 6 delik (M24)");
+        {
+            const double holeVol24 = PI * 13.0 * 13.0 * 10.0;
+            check(approx(plateVolume(tabId), 340000.0 - 6.0 * holeVol24, 1.0),
+                  "PART F: D hacim 308144 (M24)");
+        }
+
+        // E: pitchX/pitchY 60 -> 70 (hacim degismez, merkez araligi degisir).
+        res = recompute(build(10, 170, 200, 2, 3, 70, 70, 20, 22));
+        check(res.ok, "PART F: E recompute ok");
+        {
+            std::vector<Vec3> centers;
+            check(plateHoles(tabId, boltId, &centers) == 6, "PART F: E 6 delik");
+            const auto d = pairwiseDists(centers);
+            check(hasDist(d, 70.0, 1e-3), "PART F: E merkez araligi 70 (pitch yeni)");
+            check(!hasDist(d, 60.0, 1e-3), "PART F: E eski 60 araligi KALMADI");
+        }
+
+        // F: levha 170x200 -> 180x220 (bbox + hacim).
+        res = recompute(build(10, 180, 220, 2, 3, 60, 60, 20, 22));
+        check(res.ok, "PART F: F recompute ok");
+        {
+            const auto e = plateExtents(tabId);
+            // OCC boolean toleransi bbox'i ~0.15mm sisirir; 0.5mm tolerans yeterli
+            // (10mm'lik bir boyut hatasini yine yakalar).
+            check(approx(e[0], 10.0, 0.5) && approx(e[1], 180.0, 0.5) &&
+                      approx(e[2], 220.0, 0.5),
+                  "PART F: F bbox 10 x 180 x 220");
+            check(approx(plateVolume(tabId), 180.0 * 220.0 * 10.0 - 6.0 * holeVol20, 1.0),
+                  "PART F: F hacim 373192");
+        }
+
+        // G: ilk degere geri don (170x200x10, 2x3, M20, pitch 60).
+        res = recompute(build(10, 170, 200, 2, 3, 60, 60, 20, 22));
+        check(res.ok, "PART F: G recompute ok");
+        check(plateHoles(tabId, boltId) == 6, "PART F: G 6 delik (geri dondu)");
+        check(approx(plateVolume(tabId), 340000.0 - 6.0 * holeVol20, 1.0),
+              "PART F: G hacim 317192 (ilk deger)");
+
+        // Sabit instance: tab/bolt EntityId hic degismedi (roleKey korunur).
+        check(tabId == res.roleToEntity["shear_tab_near"], "PART F: tab EntityId SABIT");
+        check(boltId == res.roleToEntity["beam_bolts"], "PART F: bolt EntityId SABIT");
+        check(s.doc.componentInstances().size() == 1, "PART F: tek component instance");
+
+        // Child temizligi: delik modifier'lari BIRIKMEDI (toplam == 2*6=12, levha 6).
+        std::size_t allHoles = 0;
+        for (const auto& m : s.doc.cutModifiers())
+            if (m.kind == CutKind::Hole && m.owner == boltId) ++allHoles;
+        check(allHoles == 12, "PART F: delik BIRIKMESI yok (6 levha + 6 kiris = 12)");
+
+        // Undo/redo: zincirde her recompute AYRI bir undo kaydi acar (dogru
+        // davranis). Tek adimli undo/redo PART A'da kapsanmistir; burada yalniz
+        // undo'nun isler oldugunu dogrulariz (kademeli geri alma).
+        check(s.doc.canUndo(), "PART F: undo mevcut");
+        check(s.doc.undo(), "PART F: undo calisti");
+        check(s.doc.componentInstances().size() == 1, "PART F: undo sonrasi instance hala var (kademeli)");
+        check(s.doc.redo(), "PART F: redo calisti");
     }
 
     std::printf("\n%d failure(s)\n", failures);

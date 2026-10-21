@@ -6,8 +6,11 @@
 
 #include "model_maker/bolt.hpp"
 #include "model_maker/bolt_geometry.hpp"
+#include "model_maker/bridge_native_bind.hpp"
 #include "model_maker/bridge_native_mapper.hpp"
 #include "model_maker/component_engine.hpp"
+#include "model_maker/component_framework.hpp"
+#include "model_maker/component_materializer.hpp"
 #include "model_maker/occ_geometry.hpp"
 #include "model_maker/occ_solid_store.hpp"
 
@@ -707,6 +710,96 @@ BridgeImportOutcome importBridgeComponent(Document& doc, const BridgePackage& pk
                            "YENIDEN uretildi.");
 
     out.ok = true;
+    return out;
+}
+
+// --- NATIVE PARAMETRIK DONUSUM ------------------------------------------------
+
+BridgeNativeConvertOutcome convertBridgeToNative(
+    Document& doc, const BridgePackage& pkg,
+    const std::vector<SteelProfile>& catalog,
+    const BridgeMemberSelection& selection) {
+    BridgeNativeConvertOutcome out;
+
+    const BridgeNativeMapping mapping = mapBridgeToNative(pkg, catalog);
+    if (!mapping.detected) {
+        out.error = "kaynak 146 shear plate degil; native donusum uygulanmadi";
+        return out;
+    }
+
+    // Uye baglama (GUID map + kullanici secimi; belirsizde otomatik secim YOK).
+    const BridgeMemberBinding binding = resolveBridgeMemberBinding(doc, mapping, selection);
+    if (binding.needsSelection) {
+        out.needsMemberSelection = true;
+        out.missing = binding.missing;
+        return out;  // donusum YAPILMAZ; orijinal import geometrisi KORUNUR.
+    }
+    if (!binding.ok) {
+        out.error = "uye baglama basarisiz";
+        out.missing = binding.missing;
+        return out;
+    }
+
+    // Generator girdisi: GERCEK Document uyelerinin geometrisi + native parametreler.
+    ComponentInput in;
+    in.main = bridgeMemberGeometry(doc, binding.primary.entityId, catalog);
+    in.main.id = binding.primary.entityId;
+    std::vector<EntityId> secIds;
+    for (const auto& s : binding.secondary) {
+        if (!s.resolved) continue;
+        MemberGeometry g = bridgeMemberGeometry(doc, s.entityId, catalog);
+        g.id = s.entityId;
+        in.secondary.push_back(std::move(g));
+        secIds.push_back(s.entityId);
+    }
+
+    for (const auto& pm : mapping.params)
+        in.params.push_back(CompParam{pm.name, pm.value});
+
+    const GenerationPlan gp =
+        ComponentRegistry::instance().generate(mapping.typeId, in);
+    if (!gp.ok) {
+        out.error = "generator hata: " + std::string(gp.error.begin(), gp.error.end());
+        return out;
+    }
+    const ComponentPlan plan = componentPlanFromGenerationPlan(gp);
+    if (!plan.ok) {
+        out.error = "ComponentPlan hata";
+        return out;
+    }
+
+    // Atomik materialize (tek undo kaydi; basarisizlikta rollback).
+    doc.pushSnapshot();
+    const auto rollback = [&]() { doc.rollbackOpenRecord(); };
+
+    ComponentMaterializer mat(doc);
+    ComponentMaterializer::Prepared prep =
+        mat.prepare(plan, binding.primary.entityId, secIds);
+    if (!prep.ok) {
+        rollback();
+        out.error = "prepare hata: " + std::string(prep.error.begin(), prep.error.end());
+        return out;
+    }
+    ComponentInstanceRecord rec;
+    rec.typeId = mapping.typeId;
+    rec.mainPart = binding.primary.entityId;
+    rec.secondaryParts = secIds;
+    rec.params = in.params;  // parametreler kalici kayda yazilir (Properties + recompute)
+    ComponentMaterializer::CommitResult res = mat.commit(prep, rec);
+    if (!res.ok) {
+        rollback();
+        out.error = "commit hata: " + std::string(res.error.begin(), res.error.end());
+        return out;
+    }
+
+    // Tekla GUID iliskilerini kalici yaz (sonraki import'ta otomatik bulunur).
+    doc.setTeklaGuid(binding.primary.entityId, mapping.primary.guid);
+    for (std::size_t i = 0; i < binding.secondary.size() && i < mapping.secondary.size(); ++i)
+        if (binding.secondary[i].resolved)
+            doc.setTeklaGuid(binding.secondary[i].entityId, mapping.secondary[i].guid);
+
+    out.ok = true;
+    out.componentId = res.componentId;
     return out;
 }
 

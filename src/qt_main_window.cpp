@@ -601,6 +601,8 @@ void QtMainWindow::createMenus() {
     fileMenu->addSeparator();
     fileMenu->addAction("Tekla Component &Bridge İçe Aktar...", this,
         [this]() { importTeklaBridge(); })->setIcon(makeToolIcon(ToolGlyph::Import));
+    fileMenu->addAction("Tekla Bridge → &Native Component'e Dönüştür...", this,
+        [this]() { importTeklaBridgeNative(); })->setIcon(makeToolIcon(ToolGlyph::Import));
     fileMenu->addSeparator();
     fileMenu->addAction("Çı&kış", qApp, &QApplication::quit);
 
@@ -805,6 +807,16 @@ void QtMainWindow::importTeklaBridge() {
         this, QStringLiteral("Tekla Component Bridge paket klasörünü seç (.mmbridge)"));
     if (dir.isEmpty()) return;
     app_.importTeklaBridge(std::filesystem::path(dir.toStdWString()));
+}
+
+void QtMainWindow::importTeklaBridgeNative() {
+    // .mmbridge paket KLASORUNU sectir; native tekla_shear_plate_146 donusumu
+    // Application::convertTeklaBridgeToNative icinde (GUID map + secim + gercek
+    // OCC + atomik isle). Uye eksikse kullaniciya secim bildirilir.
+    const QString dir = QFileDialog::getExistingDirectory(
+        this, QStringLiteral("Tekla Component Bridge paket klasörünü seç (.mmbridge) — Native dönüşüm"));
+    if (dir.isEmpty()) return;
+    app_.convertTeklaBridgeToNative(std::filesystem::path(dir.toStdWString()));
 }
 
 void QtMainWindow::openBoltPropertiesDialog(const mm::BoltGroup& bolt) {

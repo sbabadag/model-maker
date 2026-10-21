@@ -216,6 +216,14 @@ public:
     // hata/warning durum cubuguna + mesaj kutusuna gider. OCC'siz derlemede
     // uyarir ve false doner (belge degismez).
     bool importTeklaBridge(const std::filesystem::path& packageDir);
+    // TEKLA COMPONENT BRIDGE NATIVE DONUSUM (Windows GUI): .mmbridge paketini
+    // native tekla_shear_plate_146 component'ine donusturur. Uye baglama:
+    // Document'taki Tekla GUID map'i + mevcut secim (ilk secili = primary kolon,
+    // kalan = secondary kiris). Uye eksikse (needsMemberSelection) kullaniciya
+    // hangi uyenin secilmesi gerektigi bildirilir ve DONUSUM YAPILMAZ (orijinal
+    // import geometrisi korunur). Basarida native component secilir + cercevelenir.
+    // OCC'siz derlemede uyarir ve false doner (belge degismez).
+    bool convertTeklaBridgeToNative(const std::filesystem::path& packageDir);
 
     // Work plane (UCS) — Qt menü/ribbon erişimi için public
     // F1: GPU hatti — GL backend uretimi + F9 ile GDI/GL gecisi
