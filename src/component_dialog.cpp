@@ -557,6 +557,9 @@ void registerBuiltInDialogs(ComponentDialogRegistry& registry) noexcept {
     registry.registerDialog(shearPlate146DialogDefinition());
 }
 
+/* -------------------------------------------------------------------------
+   Shear plate simple (component 146) – modern Tekla‑style dialog
+   ------------------------------------------------------------------------- */
 ComponentDialogDefinition shearPlate146DialogDefinition() noexcept {
     ComponentDialogDefinition def;
     def.typeId = L"tekla_shear_plate_146";
