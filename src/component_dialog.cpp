@@ -580,6 +580,126 @@ ComponentDialogDefinition shearPlate146DialogDefinition() noexcept {
                 if (s.name == n) s.optional = true;
     }
 
+    // --- TEKLA 146 ALANLARI, GEOMETRISI YOK (documentedOnly) -----------------
+    // Kaynak: support.tekla.com .../conn_146_help. Diyalog Tekla duzenine
+    // benzesin diye gosterilir; alanlar GRI'dir ve sonuca yazilmaz (motor
+    // okumaz). Geometri yazildikca ilgili alan documentedOnly=false yapilir ve
+    // engine ComponentType'a tasinir.
+    const auto docLen = [&](const wchar_t* n, const wchar_t* label, double d) {
+        CompParamSpec s = lengthParamOpen(n, L"mm", d, label);
+        s.documentedOnly = true;
+        def.specs.push_back(s);
+    };
+    const auto docEnum = [&](const wchar_t* n, const wchar_t* label,
+                             std::vector<std::wstring> choices) {
+        CompParamSpec s = enumParam(n, choices.front(), choices, label);
+        s.documentedOnly = true;
+        def.specs.push_back(s);
+    };
+    const auto docStr = [&](const wchar_t* n, const wchar_t* label) {
+        CompParamSpec s = stringParam(n, L"", label);
+        s.documentedOnly = true;
+        def.specs.push_back(s);
+    };
+    const std::vector<std::wstring> chamferTypes = {
+        L"Default", L"No chamfer", L"Line chamfer", L"Convex arc", L"Concave arc"};
+
+    // Picture sekmesi (kiris kesimleri)
+    docLen(L"flangeStripSize", L"Flange strip size", 20.0);
+    docEnum(L"beamWebCut", L"Beam web cut", {L"Default", L"Bevel", L"Square"});
+    docEnum(L"beamFlangeCut", L"Beam flange cut", {L"Default", L"Bevel", L"Square"});
+    docEnum(L"beamBottomFlangeCut", L"Beam bottom flange cut",
+            {L"Default", L"Notch", L"Flange cut"});
+    docLen(L"bottomNotchRadius", L"Bottom notch radius", 0.0);
+    docLen(L"bottomNotchHeight", L"Bottom notch height", 0.0);
+
+    // Plates sekmesi
+    docStr(L"tabMaterial", L"Tab plate material");
+    docStr(L"tabName", L"Tab plate name");
+    docStr(L"tabFinish", L"Tab plate finish");
+    docEnum(L"tabPositionSloped", L"Shear tab position (sloped)",
+            {L"Default", L"Same level in main part", L"Same length"});
+    docLen(L"tabEdgeDistance", L"Shear tab edge distance", 0.0);
+    docEnum(L"tabEndCut", L"Shear tab end cut", {L"Default", L"Square", L"Bevel"});
+    docEnum(L"tabChamferType", L"Shear tab chamfer type", chamferTypes);
+    docLen(L"tabChamferH", L"Shear tab chamfer (horizontal)", 0.0);
+    docLen(L"tabChamferV", L"Shear tab chamfer (vertical)", 0.0);
+    docEnum(L"tabOrientation", L"Shear tab orientation",
+            {L"Default", L"Automatic", L"Sloped", L"Square", L"Modified sloped"});
+    docEnum(L"plateWasherType", L"Plate washer",
+            {L"Default", L"No plate washer", L"One plate washer",
+             L"Square washers (each bolt)", L"Round washers (each bolt)"});
+    docEnum(L"plateWasherSide", L"Plate washer side", {L"Default", L"One tab", L"Both tabs"});
+    docLen(L"plateWasherT", L"Plate washer thickness", 0.0);
+    docLen(L"plateWasherW", L"Plate washer width", 0.0);
+    docLen(L"plateWasherH", L"Plate washer height", 0.0);
+
+    // Stiffeners sekmesi
+    docLen(L"stiffenerT", L"Opposite web stiffener thickness", 0.0);
+    docLen(L"stiffenerW", L"Opposite web stiffener width", 0.0);
+    docLen(L"stiffenerH", L"Opposite web stiffener height", 0.0);
+    docLen(L"stiffenerGapFlange", L"Stiffener gap (to flanges)", 0.0);
+    docEnum(L"stiffenerOrientation", L"Stiffener orientation",
+            {L"Default", L"Perpendicular to main part", L"Parallel to secondary part"});
+    docEnum(L"stiffenerChamferType", L"Stiffener chamfer type", chamferTypes);
+    docLen(L"stiffenerChamferH", L"Stiffener chamfer (horizontal)", 0.0);
+    docLen(L"stiffenerChamferV", L"Stiffener chamfer (vertical)", 0.0);
+
+    // Haunch sekmesi
+    docEnum(L"haunchCreation", L"Haunch plate creation",
+            {L"Default", L"Automatic", L"Top and bottom", L"No haunch plates"});
+    docLen(L"haunchTopT", L"Top haunch plate thickness", 0.0);
+    docLen(L"haunchTopW", L"Top haunch plate width", 0.0);
+    docLen(L"haunchTopH", L"Top haunch plate height", 0.0);
+    docLen(L"haunchBottomT", L"Bottom haunch plate thickness", 0.0);
+    docLen(L"haunchBottomW", L"Bottom haunch plate width", 0.0);
+    docLen(L"haunchBottomH", L"Bottom haunch plate height", 0.0);
+    docLen(L"haunchTopChamferW", L"Top haunch chamfer width", 0.0);
+    docLen(L"haunchTopChamferH", L"Top haunch chamfer height", 0.0);
+    docLen(L"haunchBottomChamferH", L"Bottom haunch chamfer height", 0.0);
+    docLen(L"haunchBottomChamferW", L"Bottom haunch chamfer width", 0.0);
+
+    // Notch sekmesi - otomatik
+    docEnum(L"notchShape", L"Notch shape (automatic)",
+            {L"Default", L"Square to main web", L"Square to secondary web",
+             L"Mixed", L"No automatic notch", L"Both sides"});
+    docEnum(L"notchSizeRef", L"Notch size measured from",
+            {L"Default", L"Flange edge / under top flange", L"Center line / top flange",
+             L"Flange edge / outer top flange"});
+    docEnum(L"notchFlangeCutShape", L"Flange cut shape",
+            {L"Default", L"Parallel to main beam", L"Square"});
+    docEnum(L"notchRounding", L"Notch dimension rounding",
+            {L"Default", L"Not rounded", L"Rounded"});
+    docLen(L"notchRoundH", L"Rounding (horizontal)", 0.0);
+    docLen(L"notchRoundV", L"Rounding (vertical)", 0.0);
+    docEnum(L"notchPosition", L"Notch position",
+            {L"Default", L"Below main flange", L"Above main flange"});
+    docEnum(L"notchChamfer", L"Notch chamfer", {L"Default", L"No chamfer", L"Line", L"Radius"});
+    docLen(L"notchChamferRadius", L"Notch chamfer radius", 0.0);
+    // Notch sekmesi - manuel
+    docEnum(L"flangeNotchSide", L"Side of flange notch",
+            {L"Default", L"Automatic", L"Both sides", L"Near side", L"Far side"});
+    docEnum(L"flangeNotchShape", L"Flange notch shape",
+            {L"Default", L"Automatic", L"Chamfer", L"Default values", L"No cut",
+             L"Flush with web", L"Fields 1 and 2"});
+    docEnum(L"flangeNotchDepthRef", L"Flange notch depth",
+            {L"Default", L"Depth", L"From web center line"});
+    docLen(L"flangeNotchDepth", L"Flange notch depth value", 0.0);
+    docLen(L"notchCutH", L"Cut dimension (horizontal)", 10.0);
+    docLen(L"notchCutV", L"Cut dimension (vertical)", 0.0);
+    docLen(L"notchWebToFlange", L"Dimension from web to flange cut", 0.0);
+    docEnum(L"notchBcsa", L"BCSA notch definition", {L"Default", L"Yes", L"No"});
+    docLen(L"notchWebClearance", L"Cut clearance from beam web", 0.0);
+
+    // Bolts sekmesi
+    docEnum(L"boltStagger", L"Staggering of bolts",
+            {L"Default", L"Not staggered", L"Staggered type 1", L"Staggered type 2"});
+    docEnum(L"boltHorizRef", L"Horizontal dimension measured to",
+            {L"Default", L"Secondary part", L"Main part web"});
+    docEnum(L"boltVertRef", L"Vertical dimension measured to",
+            {L"Default", L"Secondary part (sloped)", L"Secondary part",
+             L"Main part", L"Main part center line"});
+
     // --- SEMATIK (Picture sekmesi): Tekla 146 resmi -------------------------
     // Kolon (dikey) + turuncu kayma levhasi (2x2 bulon deligi) + kiris (yatay).
     ComponentDiagramItem main;
@@ -669,54 +789,77 @@ ComponentDialogDefinition shearPlate146DialogDefinition() noexcept {
         def.schema.weldRows.push_back(r);
     }
 
-    // --- SEKMELER (Tekla 146 duzeni): Plates / Stiffeners / General / Notch /
-    // Bolts / Beam cut. SEMATIK sol panelde KALICI durur (Tekla'daki Picture
-    // sekmesinin islevi); bu yuzden ayrica "Picture" sekmesi acilmaz — ayni
-    // parametreler iki sekmede iki ayri editor olur ve degerler paylasilmazdi.
+    // --- SEKMELER (Tekla 146 duzeni): Picture / Plates / Stiffeners / Haunch /
+    // Notch / Bolts (+ Welds tablosu). SEMATIK sol panelde KALICI durur; Tekla'daki
+    // "Picture" sekmesi burada yalniz KIRIS KESIMI alanlarini tasir (sematik
+    // ayri bir editor degil, parametreler tek sekmede tutulur).
+    // Gri (documentedOnly) alanlar Tekla'da olup henuz geometrisi olmayanlardir.
+    ComponentDialogGroup gPicture;
+    gPicture.id = L"tab_picture";
+    gPicture.title = L"Picture";
+    gPicture.asTab = true;
+    gPicture.paramNames = {L"flangeStripSize", L"beamGap", L"beamEndCut",
+                           L"beamWebCut", L"beamFlangeCut", L"beamBottomFlangeCut",
+                           L"bottomNotchRadius", L"bottomNotchHeight", L"backingBarT"};
+
     ComponentDialogGroup gPlates;
     gPlates.id = L"tab_plates";
     gPlates.title = L"Plates";
     gPlates.asTab = true;
     gPlates.paramNames = {L"plateThickness", L"plateWidth", L"plateHeight",
-                          L"boltEdge", L"boltCount"};
+                          L"tabMaterial", L"tabName", L"tabFinish",
+                          L"shearTabPosition", L"tabGapSecondary", L"tabPositionSloped",
+                          L"tabEdgeDistance", L"tabEndCut",
+                          L"tabChamferType", L"tabChamferH", L"tabChamferV",
+                          L"tabOrientation",
+                          L"plateWasherType", L"plateWasherSide",
+                          L"plateWasherT", L"plateWasherW", L"plateWasherH"};
 
     ComponentDialogGroup gStiff;
     gStiff.id = L"tab_stiffeners";
     gStiff.title = L"Stiffeners";
     gStiff.asTab = true;
-    gStiff.paramNames = {L"stiffenerCreation", L"stiffenerGapWeb"};
+    gStiff.paramNames = {L"stiffenerT", L"stiffenerW", L"stiffenerH",
+                         L"stiffenerCreation", L"stiffenerGapFlange", L"stiffenerGapWeb",
+                         L"stiffenerOrientation",
+                         L"stiffenerChamferType", L"stiffenerChamferH", L"stiffenerChamferV"};
 
-    ComponentDialogGroup gGeneral;
-    gGeneral.id = L"tab_general";
-    gGeneral.title = L"General";
-    gGeneral.asTab = true;
-    gGeneral.paramNames = {L"shearTabPosition", L"tabGapSecondary", L"backingBarT"};
+    ComponentDialogGroup gHaunch;
+    gHaunch.id = L"tab_haunch";
+    gHaunch.title = L"Haunch";
+    gHaunch.asTab = true;
+    gHaunch.paramNames = {L"haunchCreation",
+                          L"haunchTopT", L"haunchTopW", L"haunchTopH",
+                          L"haunchBottomT", L"haunchBottomW", L"haunchBottomH",
+                          L"haunchTopChamferW", L"haunchTopChamferH",
+                          L"haunchBottomChamferH", L"haunchBottomChamferW"};
 
     ComponentDialogGroup gNotch;
     gNotch.id = L"tab_notch";
     gNotch.title = L"Notch";
     gNotch.asTab = true;
-    gNotch.paramNames = {L"beamEndCut"};
+    gNotch.paramNames = {L"notchShape", L"notchSizeRef", L"notchFlangeCutShape",
+                         L"notchRounding", L"notchRoundH", L"notchRoundV",
+                         L"notchPosition", L"notchChamfer", L"notchChamferRadius",
+                         L"flangeNotchSide", L"flangeNotchShape",
+                         L"flangeNotchDepthRef", L"flangeNotchDepth",
+                         L"notchCutH", L"notchCutV", L"notchWebToFlange",
+                         L"notchBcsa", L"notchWebClearance"};
 
     ComponentDialogGroup gBolts;
     gBolts.id = L"tab_bolts";
     gBolts.title = L"Bolts";
     gBolts.asTab = true;
-    gBolts.paramNames = {L"boltDiameter", L"holeDiameter", L"grade",
+    gBolts.paramNames = {L"boltHorizRef", L"boltEdge", L"boltCount", L"boltSpacing",
+                         L"boltVertRef", L"boltVerticalMeasure", L"boltVerticalPos",
+                         L"deletedBolts", L"boltStagger",
+                         L"boltDiameter", L"holeDiameter", L"grade",
                          L"boltStandard", L"tolerance", L"threadInMat",
                          L"holeType", L"rotateSlots", L"slotsIn", L"cutLength",
-                         L"boltCount", L"boltCountX", L"pitchX", L"pitchY",
-                         L"edgeX", L"edgeY", L"boltEdge", L"boltSpacing",
-                         L"boltVerticalMeasure", L"boltVerticalPos",
-                         L"deletedBolts", L"comment"};
+                         L"boltCountX", L"pitchX", L"pitchY",
+                         L"edgeX", L"edgeY", L"comment"};
 
-    ComponentDialogGroup gBeamCut;
-    gBeamCut.id = L"tab_beam_cut";
-    gBeamCut.title = L"Beam cut";
-    gBeamCut.asTab = true;
-    gBeamCut.paramNames = {L"beamGap", L"beamEndCut"};
-
-    def.schema.groups = {gPlates, gStiff, gGeneral, gNotch, gBolts, gBeamCut};
+    def.schema.groups = {gPicture, gPlates, gStiff, gHaunch, gNotch, gBolts};
     def.schema.useTabs = true;
     return def;
 }

@@ -160,8 +160,8 @@ int main() {
         const ComponentDialogDefinition def = shearPlate146DialogDefinition();
         check(def.schema.useTabs, "146: sekmeli duzen");
         check(def.schema.groups.size() == 6, "146: 6 sekme");
-        const wchar_t* expected[] = {L"Plates", L"Stiffeners", L"General",
-                                     L"Notch", L"Bolts", L"Beam cut"};
+        const wchar_t* expected[] = {L"Picture", L"Plates", L"Stiffeners",
+                                     L"Haunch", L"Notch", L"Bolts"};
         bool titlesOk = def.schema.groups.size() == 6;
         for (std::size_t i = 0; titlesOk && i < 6; ++i)
             titlesOk = def.schema.groups[i].title == expected[i] && def.schema.groups[i].asTab;
@@ -175,6 +175,36 @@ int main() {
             const CompParamSpec* s = findParamSpec(def.specs, name);
             check(s != nullptr, "146: Tekla bulon alani semada var");
             check(s && s->optional, "146: Tekla bulon alani Default kutulu");
+        }
+
+        // Tekla'da olup geometrisi olmayan alanlar: documentedOnly, motor
+        // parametreleriyle (ComponentType) ASLA cakismaz ve motor semasina girmez.
+        {
+            const auto engineParams = shearPlate146ComponentType().params;
+            std::size_t docCount = 0;
+            bool noClash = true, engineNotDoc = true;
+            for (const auto& s : def.specs) {
+                const bool inEngine = findParamSpec(engineParams, s.name) != nullptr;
+                if (s.documentedOnly) {
+                    ++docCount;
+                    if (inEngine) noClash = false;
+                } else if (!inEngine) {
+                    engineNotDoc = false;  // gri olmayan alan motorda olmali
+                }
+            }
+            check(docCount >= 60, "146: Tekla gri (documentedOnly) alanlari mevcut");
+            check(noClash, "146: gri alan motor parametresiyle cakismaz");
+            check(engineNotDoc, "146: gri olmayan her alan motor parametresi");
+            for (const wchar_t* n : {L"haunchCreation", L"notchShape", L"tabOrientation",
+                                     L"plateWasherType", L"flangeStripSize"}) {
+                const CompParamSpec* s = findParamSpec(def.specs, n);
+                check(s && s->documentedOnly, "146: Tekla alani gri olarak var");
+            }
+            for (const wchar_t* n : {L"plateThickness", L"beamGap", L"stiffenerCreation",
+                                     L"boltCount", L"shearTabPosition", L"backingBarT"}) {
+                const CompParamSpec* s = findParamSpec(def.specs, n);
+                check(s && !s->documentedOnly, "146: calisan alan gri degil");
+            }
         }
 
         const auto v = validateDialogSchema(def.schema, def.specs);

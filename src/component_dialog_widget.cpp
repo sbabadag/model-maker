@@ -360,6 +360,16 @@ void ComponentDialogWidget::addParamRow(QFormLayout* form, QWidget* box,
         spec->description.empty() ? spec->name : spec->description), labelHost);
     labelRow->addWidget(lbl, 1);
 
+    if (spec->documentedOnly) {
+        // Tekla'da var, bizde geometrisi yok: goster ama kilitle.
+        const QString hint = QStringLiteral(
+            "Tekla 146 alani - henuz geometriye etkisi yok (deger kaydedilmez)");
+        editor->setEnabled(false);
+        editor->setToolTip(hint);
+        lbl->setEnabled(false);
+        lbl->setToolTip(hint);
+    }
+
     form->addRow(labelHost, editor);
     editors_[pn] = editor;
     rows_[pn] = lbl;
@@ -553,6 +563,7 @@ std::vector<CompParam> ComponentDialogWidget::resultParams() const {
     for (const auto& spec : def_.specs) {
         const auto it = editors_.find(spec.name);
         if (it == editors_.end()) continue;
+        if (spec.documentedOnly) continue;  // motor okumaz; sonuca yazilmaz
         // "Default" onay kutusu isaretsizse deger SONUCA YAZILMAZ: motor kendi
         // varsayilanini uygular (Tekla davranisi). Onceden kayitli deger varsa
         // da kaldirilir — aksi halde "Default" secmek eski degeri korurdu.

@@ -11,6 +11,7 @@
 
 #include <QApplication>
 #include <QCheckBox>
+#include <QComboBox>
 #include <QHeaderView>
 #include <QTabWidget>
 #include <QTableWidget>
@@ -93,8 +94,9 @@ int main(int argc, char** argv) {
         // 6 parametre sekmesi + "Welds" kaynak tablosu sekmesi.
         CHECK(tabWidget && tabWidget->count() == 7, "146: 6 parametre + Welds sekmesi");
         if (tabWidget) {
-            CHECK(tabWidget->tabText(0) == QStringLiteral("Plates"), "146: ilk sekme Plates");
-            CHECK(tabWidget->tabText(1) == QStringLiteral("Stiffeners"), "146: ikinci sekme Stiffeners");
+            CHECK(tabWidget->tabText(0) == QStringLiteral("Picture"), "146: ilk sekme Picture");
+            CHECK(tabWidget->tabText(1) == QStringLiteral("Plates"), "146: ikinci sekme Plates");
+            CHECK(tabWidget->tabText(3) == QStringLiteral("Haunch"), "146: Haunch sekmesi var");
             CHECK(tabWidget->tabText(6) == QStringLiteral("Welds"), "146: son sekme Welds");
         }
 
@@ -104,6 +106,23 @@ int main(int argc, char** argv) {
         for (const auto& p : params)
             if (p.name == L"boltStandard") hasStandard = true;
         CHECK(hasStandard, "146: boltStandard sonuca yazilir (kutu isaretli)");
+
+        // Gri (documentedOnly) alanlar sonuca HIC yazilmaz; calisan alanlar yazilir.
+        {
+            bool docWritten = false, plateWritten = false;
+            for (const auto& p : params) {
+                if (p.name == L"haunchCreation" || p.name == L"notchShape" ||
+                    p.name == L"tabOrientation" || p.name == L"flangeStripSize")
+                    docWritten = true;
+                if (p.name == L"plateThickness") plateWritten = true;
+            }
+            CHECK(!docWritten, "146: gri alanlar sonuca yazilmaz");
+            CHECK(plateWritten, "146: calisan alan sonuca yazilir");
+            int disabledEditors = 0;
+            for (auto* cb : w146.findChildren<QComboBox*>())
+                if (!cb->isEnabled()) ++disabledEditors;
+            CHECK(disabledEditors > 0, "146: gri alan editorleri devre disi");
+        }
 
         // "Default" onay kutusunu bul (tooltip ile) ve isareti kaldir.
         QCheckBox* opt = nullptr;

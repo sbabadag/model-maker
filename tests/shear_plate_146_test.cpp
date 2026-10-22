@@ -266,7 +266,13 @@ int main() {
         // Tum grup parametreleri semada olmali. (24 temel + 8 Tekla bulon
         // ozelligi: boltStandard, tolerance, threadInMat, holeType, rotateSlots,
         // slotsIn, cutLength, comment.)
-        check(def.specs.size() == 32, "146 dialog specs = 32 parametre");
+        // Motor alanlari (gri olmayanlar) 32; Tekla'da olup geometrisi olmayan
+        // gri (documentedOnly) alanlar bunlarin USTUNE eklenir.
+        std::size_t engineSpecs = 0;
+        for (const auto& s : def.specs)
+            if (!s.documentedOnly) ++engineSpecs;
+        check(engineSpecs == 32, "146 dialog motor specs = 32 parametre");
+        check(def.specs.size() > engineSpecs, "146 dialog gri Tekla alanlari var");
 
         const auto hit = hitTestDiagramHotspot(def.schema, DiagramPoint{46.0, 120.0});
         check(hit.has_value(), "146 hotspot hit-test calisir");

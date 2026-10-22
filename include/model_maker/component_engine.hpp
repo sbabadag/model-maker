@@ -112,6 +112,11 @@ struct CompParamSpec {
     // (Tekla'daki "Default" davranisi). false = kutu yok, deger her zaman yazilir
     // (geriye uyumlu; mevcut parametrelerin davranisi degismez).
     bool optional{false};
+    // TEKLA ALANI AMA GEOMETRISI YOK: true ise dialog alani Tekla duzeninde
+    // GOSTERIR fakat devre disi (gri) birakir ve deger sonuca YAZILMAZ — motor
+    // bu alani okumaz, yani gorunen deger hicbir geometriyi degistirmez. Amac
+    // formu Tekla'ya benzetirken olmayan bir ozelligi varmis gibi gostermemek.
+    bool documentedOnly{false};
 };
 
 // Tipik deger kumesi. Turler (double/int/bool/wstring/EntityId) birbirinden
