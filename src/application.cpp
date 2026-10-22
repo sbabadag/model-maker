@@ -8638,8 +8638,13 @@ bool Application::weldSelectedParts(WeldType type, double size, double length, W
                 }
             }
             // Kalici onay: updateStatus bunu korur (publishStatus aninda ezilir).
+            // Bacak olcusu de yazilir — kullanici kaynagin neden kucuk gorunugunu
+            // (5 mm, 4 m kolonda ~1 px) anlar.
             solidStatusMessage_ = L"Kaynak katisi olusturuldu: " +
-                                  utf8ToWide(created.identification);
+                                  utf8ToWide(created.identification) +
+                                  L" (bacak " +
+                                  std::to_wstring(static_cast<int>(std::lround(created.size))) +
+                                  L" mm)";
             invalidateCanvas();
             return true;
         }
@@ -8690,8 +8695,9 @@ bool Application::editWeld(std::size_t index, WeldType type, double size, double
 
 #ifdef MM_HAS_OCC
 namespace {
-// Kaynak katisi metalik celik mavisi (plaka gri 0x808080, bulon kahve 0x8B592A'dan ayri).
-constexpr std::uint32_t kWeldSolidColor = 0x5B8DB8u;
+// Kaynak katisi yuksek kontrastli YESIL (plaka gri 0x808080, bulon kahve 0x8B592A,
+// acik mavi arka plan; eski 0x5B8DB8 celik mavisi arka planla karisiyordu).
+constexpr std::uint32_t kWeldSolidColor = 0x00C853u;
 
 // Kaynak katisi + goruntuleme modelini uretir (basariliysa true). `w` ustune
 // geometrySupported/origin/direction/normaller yazilir; `solidOut`/`wfOut`
