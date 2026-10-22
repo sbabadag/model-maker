@@ -237,7 +237,7 @@ std::vector<TopoDS_Shape> buildWeldSolids(const Weld& w,
     std::vector<WeldJunction> juncts = findWeldJunctions(secondaryShape, mainShape, tol);
     if (juncts.empty()) juncts = findWeldJunctions(mainShape, secondaryShape, tol);
     if (juncts.empty()) {
-        outUnsupportedReason = "uygun dogrusal temas kenari bulunamadi";
+        outUnsupportedReason = "secili iki parca birbirine TEMAS ETMIYOR (dogrusal temas kenari yok) — kaynak icin birbirine degen iki parca secin";
         return {};
     }
     std::vector<WeldJunction> chosen;

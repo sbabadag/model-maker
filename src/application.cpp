@@ -8637,14 +8637,28 @@ bool Application::weldSelectedParts(WeldType type, double size, double length, W
                         document_.recordGeometryDelta(created.displayEntityId, before, after);
                 }
             }
+            // Kalici onay: updateStatus bunu korur (publishStatus aninda ezilir).
+            solidStatusMessage_ = L"Kaynak katisi olusturuldu: " +
+                                  utf8ToWide(created.identification);
             invalidateCanvas();
             return true;
         }
-        // Kati uretilemedi: nedeni kullaniciya goster (sessiz glif dusmesi yok).
-        publishStatus(L"Kaynak katisi uretilemedi: " +
-                      utf8ToWide(w.unsupportedReason.empty()
-                                     ? std::string("bilinmeyen neden")
-                                     : w.unsupportedReason));
+        // Kati uretilemedi: nedeni KALICI durum mesajina yaz. publishStatus tek
+        // basina YETMEZ — click handler'dan sonra updateStatus() calisip durum
+        // cubugunu bastan kurar ve o mesaji ezer; kullanici "kati gozukmuyor"
+        // der ama nedeni goremez. solidStatusMessage_ ise status cubugunda kalir
+        // (End Plate / Shear Plate ayni alani kullanir).
+        solidStatusMessage_ = L"Kaynak katisi uretilemedi: " +
+                              utf8ToWide(w.unsupportedReason.empty()
+                                             ? std::string("bilinmeyen neden")
+                                             : w.unsupportedReason);
+        publishStatus(solidStatusMessage_);
+#ifdef _WIN32
+        // Durum cubugu satiri uzun ve kirpiliyor; neden KAYBOLMASIN diye modal
+        // uyari (uzaktan teshis icin kanitlanmis yontem — skill 3d-cad-viewport).
+        MessageBoxW(GetParent(canvas_), solidStatusMessage_.c_str(),
+                    L"Kaynak (Weld)", MB_ICONWARNING | MB_OK);
+#endif
         document_.addWeld(std::move(w));
         invalidateCanvas();
         return true;
