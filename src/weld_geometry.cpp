@@ -27,6 +27,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <sstream>
 #include <utility>
 #include <vector>
 
@@ -299,7 +300,21 @@ std::vector<TopoDS_Shape> buildWeldSolids(const Weld& w,
     std::vector<WeldJunction> juncts = findWeldJunctions(secondaryShape, mainShape, tol);
     if (juncts.empty()) juncts = findWeldJunctions(mainShape, secondaryShape, tol);
     if (juncts.empty()) {
-        outUnsupportedReason = "secili iki parca birbirine TEMAS ETMIYOR (dogrusal temas kenari yok) — kaynak icin birbirine degen iki parca secin";
+        // Teshis: iki katı arasindaki EN KISA mesafeyi olcup nedene ekle.
+        // "0.8mm" -> tolerans sorunu, "150mm" -> yerlesim/kesit olcusu hatasi.
+        double gap = -1.0;
+        if (BRepExtrema_DistShapeShape dist(mainShape, secondaryShape); dist.Perform()) {
+            if (dist.IsDone() && dist.NbSolution() > 0) gap = dist.Value();
+        }
+        std::ostringstream ss;
+        ss << "secili iki parca birbirine TEMAS ETMIYOR (dogrusal temas kenari yok)";
+        if (gap >= 0.0) {
+            ss.setf(std::ios::fixed);
+            ss.precision(2);
+            ss << "; en yakin mesafe " << gap << " mm";
+        }
+        ss << " — kaynak icin birbirine degen iki parca secin";
+        outUnsupportedReason = ss.str();
         return {};
     }
     // Aday temas kenarlarini sirayla dene: EN UZUN kenar her zaman dogru kaynak
