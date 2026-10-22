@@ -317,19 +317,20 @@ std::vector<TopoDS_Shape> buildWeldSolids(const Weld& w,
         outUnsupportedReason = ss.str();
         return {};
     }
-    // Aday temas kenarlarini sirayla dene: EN UZUN kenar her zaman dogru kaynak
-    // yeri degildir — parca kosesinde iki farkli yuz ayni noktadan gecer ve
-    // duzlem mesafesi ikisini de "temas" sayar. Kesiti her aday icin kur, sonra
-    // katının hacim merkezini olcup PARCA ICINDE kalan yerlesimi reddet.
+    // TAM CEVRE KAYNAGI: temas eden GERCEK her dogrusal kenara fillet uretilir
+    // (levha-kolon baglantisinda 4 kenar; kiris-kolon T'sinde kiris ucu cevresi).
+    // Eski davranis en UZUN tek kenari uretip geri kalanlari atiyordu — kullanicinin
+    // gordugu "bir kenarda kaynak var, digerlerinde yok" hatasi buydu. Her adayda
+    // kesit kurulup hacim merkezi PARCA ICINDE kalan yerlesim hâla reddedilir
+    // (parca kosesinde iki farkli yuz ayni noktadan gecerse duzlem mesafesi
+    // ikisini de "temas" sayar — geometri karar verir).
     std::vector<TopoDS_Shape> solids;
-    const std::size_t wanted = w.doubleSided ? 2u : 1u;
     const Vec3 secCentroid = shapeCentroid(secondaryShape);
     const Vec3 mainCentroid = shapeCentroid(mainShape);
     std::string lastReason;
-    for (std::size_t ji = 0; ji < juncts.size() && solids.size() < wanted; ++ji) {
+    double totalSeam = 0.0;
+    for (std::size_t ji = 0; ji < juncts.size(); ++ji) {
         const WeldJunction& j = juncts[ji];
-        // Ana yuz: diger parcaya BAKAN yuz. Kose noktasinda birden fazla yuz
-        // gecer; tek adayla yetinme — hepsini dene.
         const Vec3 towardSec{secCentroid.x - j.start.x, secCentroid.y - j.start.y,
                              secCentroid.z - j.start.z};
         const Vec3 towardMain{mainCentroid.x - j.start.x, mainCentroid.y - j.start.y,
@@ -340,9 +341,9 @@ std::vector<TopoDS_Shape> buildWeldSolids(const Weld& w,
             lastReason = "ana parca temas yuzu normali cozumlenemedi";
             continue;
         }
-        TopoDS_Shape built;
+        // Collect solids from both sides when possible
+        std::vector<TopoDS_Shape> builtSides;
         for (const Vec3& nm : mainCands) {
-            if (!built.IsNull()) break;
             std::vector<Vec3> secCands =
                 candidateFaceNormals(secondaryShape, j.start, tol, j.direction, towardMain);
             if (secCands.empty()) {
@@ -355,33 +356,34 @@ std::vector<TopoDS_Shape> buildWeldSolids(const Weld& w,
                 continue;
             }
             for (const Vec3& ns : secCands) {
-                if (built.IsNull()) {
-                    // Kesit iki taraftan da kurulabilir; hangisi gercekten
-                    // DISARIDA kaliyorsa o. Varsayim yok, geometri karar verir.
-                    for (int side = 0; side < 2 && built.IsNull(); ++side) {
-                        TopoDS_Shape s =
-                            buildFilletWeldSolid(j.start, j.end, nm, ns, leg, side == 0);
-                        if (s.IsNull()) continue;
-                        const Vec3 c = shapeCentroid(s);
-                        if (pointInsideShape(c, mainShape) || pointInsideShape(c, secondaryShape))
-                            continue;
-                        built = s;
-                    }
-                    if (built.IsNull())
-                        lastReason =
-                            "kaynak kesiti iki parca arasindaki koseye yerlestirilemedi (kati parca icinde kaliyor)";
+                // Try both sides of the fillet; add each valid solid
+                for (int side = 0; side < 2; ++side) {
+                    TopoDS_Shape s =
+                        buildFilletWeldSolid(j.start, j.end, nm, ns, leg, side == 0);
+                    if (s.IsNull()) continue;
+                    const Vec3 c = shapeCentroid(s);
+                    if (pointInsideShape(c, mainShape) || pointInsideShape(c, secondaryShape))
+                        continue;
+                    builtSides.push_back(std::move(s));
                 }
             }
         }
-        if (!built.IsNull()) {
-            if (outSeamLength && *outSeamLength == 0.0) *outSeamLength = j.length;
-            solids.push_back(std::move(built));
+        if (!builtSides.empty()) {
+            totalSeam += j.length;
+            for (auto& bs : builtSides) {
+                solids.push_back(std::move(bs));
+            }
+        } else {
+            // No valid side produced a solid
+            if (lastReason.empty())
+                lastReason = "kaynak kesiti iki parca arasindaki koseye yerlestirilemedi (kati parca icinde kaliyor)";
         }
     }
     if (solids.empty()) {
         outUnsupportedReason = lastReason.empty() ? "kaynak katisi uretilemedi" : lastReason;
         return {};
     }
+    if (outSeamLength) *outSeamLength = totalSeam;
     return solids;
 }
 

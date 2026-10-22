@@ -83,39 +83,50 @@ int main() {
         }
     }
 
-    // --- 3) buildWeldSolids: tek ve cift tarafli -----------------------------
+    // --- 3) buildWeldSolids: TAM CEVRE (TAM KAYNAK) ---------------------------
+    // Levha yuzunun 4 sinir kenari da kolona temas eder (2 x 20mm + 2 x 10mm)
+    // -> her kenara bir fillet. Eski davranis en uzun TEK kenara uretip geri
+    // kalanlari atiyordu ("bir kenarda kaynak var, digerlerinde yok" hatasi);
+    // kullanici tam cevres kaynak bekliyor (146 diyalogunun Welds tablosu).
     {
         Weld w;
         w.type = WeldType::Fillet;
         w.doubleSided = false;
         std::string reason;
-        auto single = buildWeldSolids(w, col, plate, 5.0, reason);
+        auto single = buildWeldSolids(w, col, plate, 5.0, reason, nullptr);
         std::printf("  single: %zu kati, neden='%s'\n", single.size(), reason.c_str());
-        check(single.size() == 1, "tek tarafli: 1 kati");
-        if (single.size() == 1) {
-            check(validSolid(single[0]), "tek tarafli kati gecerli");
-            std::printf("  tek tarafli hacim = %.3f (beklenen 250.0)\n", vol(single[0]));
-            check(std::fabs(vol(single[0]) - 250.0) < 1.0, "tek tarafli hacim = 250 mm^3");
-            // Yonelim: kaynak levhanin DISINA (y < -5) ve kolonun disina (x > 0).
-            double xmin, ymin, zmin, xmax, ymax, zmax;
-            bbox(single[0], xmin, ymin, zmin, xmax, ymax, zmax);
-            std::printf("  tek tarafli bbox: x[%.2f,%.2f] y[%.2f,%.2f] z[%.2f,%.2f]\n",
-                        xmin, xmax, ymin, ymax, zmin, zmax);
-            check(xmin >= -0.01 && ymax <= -5.0 + 0.01, "kaynak levhanin dis tarafinda (y<=-5, x>=0)");
+        check(single.size() == 4, "tam cevres: 4 kati (4 temas kenari)");
+        bool allValid = true;
+        double totV = 0.0;
+        for (const auto& sol : single) {
+            if (!validSolid(sol)) allValid = false;
+            totV += vol(sol);
         }
+        check(allValid, "tam cevres: hepsi BRepCheck gecerli");
+        std::printf("  tam cevres toplam hacim = %.3f (beklenen 750.0)\n", totV);
+        check(std::fabs(totV - 750.0) < 1.0, "tam cevres toplam hacim = 750 mm^3 (250+250+125+125)");
+        // Her katı levhanin DISINDA: kolon x<=0 oldugu icin kaynak katilari x >= 0
+        // olmalari gerekir; bacak 5mm oldugu icin x en cok 5'e uzanabilir.
+        bool xOutside = true;
+        for (const auto& sol : single) {
+            double cx0, cy0, cz0, cx1, cy1, cz1;
+            bbox(sol, cx0, cy0, cz0, cx1, cy1, cz1);
+            if (cx0 < -0.05 || cx1 > 5.05) { xOutside = false; break; }
+        }
+        check(xOutside, "tum kaynak katilari kolonun disinda (x:[0,5], bacak 5mm)");
 
+        // doubleSided MMW8'de korunur ama geometri değişmiyor: tam çe vre
+        // zaten her kenari kapsar (her kesitte tek fillet — geometri karar verir).
         Weld wd;
         wd.type = WeldType::Fillet;
         wd.doubleSided = true;
         std::string reason2;
-        auto dbl = buildWeldSolids(wd, col, plate, 5.0, reason2);
+        auto dbl = buildWeldSolids(wd, col, plate, 5.0, reason2, nullptr);
         std::printf("  double: %zu kati, neden='%s'\n", dbl.size(), reason2.c_str());
-        check(dbl.size() == 2, "cift tarafli: 2 kati");
-        if (dbl.size() == 2) {
-            check(validSolid(dbl[0]) && validSolid(dbl[1]), "cift tarafli katilar gecerli");
-            check(std::fabs(vol(dbl[0]) - 250.0) < 1.0 && std::fabs(vol(dbl[1]) - 250.0) < 1.0,
-                  "cift tarafli her kati 250 mm^3");
-        }
+        double dblV = 0.0;
+        for (const auto& sol : dbl) dblV += vol(sol);
+        check(dbl.size() == 4, "doubleSided: hala 4 kati (tam cevre)");
+        check(std::fabs(dblV - 750.0) < 1.0, "doubleSided toplam hacim 750 mm^3");
     }
 
     // --- 4) Ayrik parcalar -> guvenli fallback (kati uretilmez) --------------

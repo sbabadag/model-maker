@@ -55,13 +55,23 @@ int main() {
     w.weldClass = WeldClass::Shop;
     std::string reason;
     auto solids = buildWeldSolids(w, colSolid, plateSolid, 5.0, reason);
-    check(solids.size() == 1, "kaynak kati uretildi");
-    if (solids.empty()) return 1;
+    std::printf("  kaynak kati adedi = %zu (tam cevre: her temas kenari)\n", solids.size());
+    check(!solids.empty(), "kaynak kati uretildi");
+    if (solids.empty()) {
+        std::printf("  neden='%s'\n", reason.c_str());
+        return 1;
+    }
+    // TAM CEVRE KAYNAK: 4 temas kenari -> 4 fillet; display kati bunlarin
+    // birlesimi (materializer'daki buildWeldGeometry ile ayni yol).
+    TopoDS_Shape fused = solids[0];
+    for (std::size_t i = 1; i < solids.size(); ++i)
+        fused = booleanFuseShape(fused, solids[i]);
+    check(!fused.IsNull(), "tam cevre kati birlestirildi");
     w.geometrySupported = true;
-    doc.addWeld(std::move(w), shapeToWireframeWithFaces(solids[0], 0.15));
+    doc.addWeld(std::move(w), shapeToWireframeWithFaces(fused, 0.15));
     const Weld& created = doc.welds().back();
     check(created.displayEntityId != kInvalidEntityId, "displayEntityId atandi");
-    store->set(created.displayEntityId, solids[0]);
+    store->set(created.displayEntityId, fused);
     check(doc.assemblies().size() == 1, "shop weld tek assembly kurdu");
 
     // Kaydet -> temiz belgeye yukle.
@@ -82,8 +92,9 @@ int main() {
     const TopoDS_Shape* s2 = store2 ? store2->find(w2.displayEntityId) : nullptr;
     check(s2 != nullptr, "yukleme: kaynak kati geri geldi");
     if (s2) {
-        std::printf("  kaynak kati hacmi yukleme sonrasi = %.3f (beklenen 250.0)\n", vol(*s2));
-        check(std::fabs(vol(*s2) - 250.0) < 1.0, "yukleme: kaynak kati hacmi 250 mm^3");
+        std::printf("  kaynak kati hacmi yukleme sonrasi = %.3f (beklenen 750.0, tam cevre)\n",
+                    vol(*s2));
+        check(std::fabs(vol(*s2) - 750.0) < 1.0, "yukleme: kaynak kati hacmi 750 mm^3 (tam cevre)");
     }
 
     std::filesystem::remove(path);
