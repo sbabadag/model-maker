@@ -64,7 +64,8 @@ std::vector<TopoDS_Shape> buildWeldSolids(const Weld& w,
                                           const TopoDS_Shape& mainShape,
                                           const TopoDS_Shape& secondaryShape,
                                           double leg,
-                                          std::string& outUnsupportedReason);
+                                          std::string& outUnsupportedReason,
+                                          double* outSeamLength = nullptr);
 
 } // namespace mm
 

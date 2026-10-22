@@ -8644,6 +8644,8 @@ bool Application::weldSelectedParts(WeldType type, double size, double length, W
                                   utf8ToWide(created.identification) +
                                   L" (bacak " +
                                   std::to_wstring(static_cast<int>(std::lround(created.size))) +
+                                  L" mm, dikis " +
+                                  std::to_wstring(static_cast<int>(std::lround(created.length))) +
                                   L" mm)";
             invalidateCanvas();
             return true;
@@ -8713,7 +8715,9 @@ bool prepareWeldGeometry(Weld& w, Document& doc, OccSolidStore* store,
     }
     const double leg = w.sizeIsThroat ? w.size * std::sqrt(2.0) : w.size;
     std::string reason;
-    auto solids = buildWeldSolids(w, *mainShape, *secShape, leg, reason);
+    double seamLength = 0.0;
+    auto solids = buildWeldSolids(w, *mainShape, *secShape, leg, reason, &seamLength);
+    if (seamLength > 0.0) w.length = seamLength;  // gercek dikis uzunlugu
     if (solids.empty()) {
         w.unsupportedReason = reason.empty() ? "kaynak kati uretilemedi" : reason;
         return false;

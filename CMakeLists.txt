@@ -732,6 +732,17 @@ if(BUILD_TESTING)
             set_tests_properties(model_maker_occ_weld_profile_beam_test PROPERTIES
                 ENVIRONMENT "LD_LIBRARY_PATH=${OCC_ROOT}/lib:$ENV{LD_LIBRARY_PATH}")
         endif()
+        # KOSE YERLESIMI (regresyon): levha kenari kolonun kosе cizgisine denk
+        # gelince cornerFaceNormal sinirsiz DUZLEM mesafesiyle yanlis yuzu secip
+        # fillet'i kolonun ICINE dusuruyordu. Kaynak merkezi iki parcanin da
+        # DISINDA olmali (BRepClass3d_SolidClassifier ile dogrulanir).
+        add_executable(model_maker_occ_weld_corner_placement_test tests/occ_weld_corner_placement_test.cpp)
+        target_link_libraries(model_maker_occ_weld_corner_placement_test PRIVATE model_maker_occ)
+        add_test(NAME model_maker_occ_weld_corner_placement_test COMMAND model_maker_occ_weld_corner_placement_test)
+        if(UNIX)
+            set_tests_properties(model_maker_occ_weld_corner_placement_test PROPERTIES
+                ENVIRONMENT "LD_LIBRARY_PATH=${OCC_ROOT}/lib:$ENV{LD_LIBRARY_PATH}")
+        endif()
         # UNIVERSAL COMPONENT MATERIALIZER (C2): ComponentBuilder -> ComponentPlan
         # -> gercek Document + OccSolidStore. roleKey->EntityId + ownership + delik
         # + Weld Unsupported + coklu bagimsiz component. GERCEK OCCT.

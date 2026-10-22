@@ -8,9 +8,12 @@
 #include <BRepBuilderAPI_MakeVertex.hxx>
 #include <BRepBuilderAPI_MakeWire.hxx>
 #include <BRepCheck_Analyzer.hxx>
+#include <BRepClass3d_SolidClassifier.hxx>
 #include <BRepExtrema_DistShapeShape.hxx>
+#include <BRepGProp.hxx>
 #include <BRepPrimAPI_MakePrism.hxx>
 #include <BRep_Tool.hxx>
+#include <GProp_GProps.hxx>
 #include <Geom_Curve.hxx>
 #include <Geom_Line.hxx>
 #include <Geom_Plane.hxx>
@@ -24,6 +27,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <utility>
+#include <vector>
 
 namespace mm {
 
@@ -56,6 +61,32 @@ double pointToShapeDistance(const Vec3& p, const TopoDS_Shape& shape) {
     }
 }
 
+// Nokta katinin ICINDE mi? (kaynak katisi yanlis tarafa dusunce yakalamak icin)
+bool pointInsideShape(const Vec3& p, const TopoDS_Shape& shape) {
+    if (shape.IsNull()) return false;
+    try {
+        BRepClass3d_SolidClassifier cls(shape);
+        cls.Perform(toPnt(p), 1e-6);
+        return cls.State() == TopAbs_IN;
+    } catch (...) {
+        return false;
+    }
+}
+
+// Katinin hacim merkezi (kaynak katisinin nereye dustugunu olcmek icin).
+Vec3 shapeCentroid(const TopoDS_Shape& shape) {
+    if (shape.IsNull()) return Vec3{0, 0, 0};
+    try {
+        GProp_GProps props;
+        BRepGProp::VolumeProperties(shape, props);
+        if (props.Mass() <= 1e-9) return Vec3{0, 0, 0};
+        const gp_Pnt c = props.CentreOfMass();
+        return Vec3{c.X(), c.Y(), c.Z()};
+    } catch (...) {
+        return Vec3{0, 0, 0};
+    }
+}
+
 // Planar bir yuzun DISA yonlu normali (kati yoneliminden; TopAbs_REVERSED ise
 // ters cevrilir — standard OCCT yontemi). Planar degilse false.
 bool outwardPlanarNormal(const TopoDS_Face& face, Vec3& out) {
@@ -70,9 +101,38 @@ bool outwardPlanarNormal(const TopoDS_Face& face, Vec3& out) {
     return true;
 }
 
-// `p` noktasini iceren (tol) DISA yonlu planar yuz normali. Birden fazla yuz
-// iceriyorsa `refNormal`e DIK olan tercih edilir (kose kaynak yuzu); dik yuz
-// yoksa ilk bulunan doner. Bulunamazsa false.
+// p noktasina tol icinde kalan (GERCEK yuz sinirlari icinde — sinirsiz duzlem
+// degil) planar yuzler arasindan, normali `preferToward` yonune en iyi bakan
+// yuzu secer. Kose noktalarinda iki duzlem birden gecer; duzlem mesafesi tek
+// basina yetmez, bu yuzden gercek yuz mesafesi + yon tercihi kullanilir.
+// Uygun TUM yuz normallerini, `preferToward` yonune bakma skoruna gore azalan
+// sirada dondurur. Kose noktasinda secim tek adayla sinirli kalmasin — her aday
+// kesit kurulup geometriyle dogrulanir.
+std::vector<Vec3> candidateFaceNormals(const TopoDS_Shape& shape, const Vec3& p, double tol,
+                                       const Vec3& weldDir, const Vec3& preferToward) {
+    const Vec3 wd = normalized(weldDir);
+    const Vec3 pref = normalized(preferToward);
+    std::vector<std::pair<double, Vec3>> scored;
+    for (TopExp_Explorer fe(shape, TopAbs_FACE); fe.More(); fe.Next()) {
+        const TopoDS_Face face = TopoDS::Face(fe.Current());
+        Vec3 n;
+        if (!outwardPlanarNormal(face, n)) continue;
+        if (vecLen(wd) > 1e-6 && std::fabs(dot(n, wd)) > 1e-3) continue;
+        if (pointToShapeDistance(p, face) > tol) continue;
+        bool dup = false;
+        for (const auto& s : scored)
+            if (std::fabs(dot(s.second, n)) > 1.0 - 1e-6) { dup = true; break; }
+        if (dup) continue;
+        scored.emplace_back(vecLen(pref) > 1e-6 ? dot(n, pref) : 0.0, n);
+    }
+    std::sort(scored.begin(), scored.end(),
+              [](const auto& a, const auto& b) { return a.first > b.first; });
+    std::vector<Vec3> out;
+    out.reserve(scored.size());
+    for (const auto& s : scored) out.push_back(s.second);
+    return out;
+}
+
 // `weldDir` kaynak ilerleme yonu: yuz bu yon boyunca UZANMALI (normali weldDir'e
 // DIK) — kaynak kesiti weldDir'e dik duzlemde cizilir; weldDir'e paralel normali
 // olan "uc" yuzu (or. kirisin temas yuzu) kesitte NOKTA olur ve cross(weldDir,n)
@@ -223,8 +283,10 @@ std::vector<TopoDS_Shape> buildWeldSolids(const Weld& w,
                                           const TopoDS_Shape& mainShape,
                                           const TopoDS_Shape& secondaryShape,
                                           double leg,
-                                          std::string& outUnsupportedReason) {
+                                          std::string& outUnsupportedReason,
+                                          double* outSeamLength) {
     outUnsupportedReason.clear();
+    if (outSeamLength) *outSeamLength = 0.0;
     if (w.type != WeldType::Fillet) {
         outUnsupportedReason = "butt kaynak katisi bu surumde uretilmiyor (agiz/nufuziyet bilinmiyor)";
         return {};
@@ -240,22 +302,70 @@ std::vector<TopoDS_Shape> buildWeldSolids(const Weld& w,
         outUnsupportedReason = "secili iki parca birbirine TEMAS ETMIYOR (dogrusal temas kenari yok) — kaynak icin birbirine degen iki parca secin";
         return {};
     }
-    std::vector<WeldJunction> chosen;
-    chosen.push_back(juncts[0]);
-    if (w.doubleSided && juncts.size() >= 2) chosen.push_back(juncts[1]);
+    // Aday temas kenarlarini sirayla dene: EN UZUN kenar her zaman dogru kaynak
+    // yeri degildir — parca kosesinde iki farkli yuz ayni noktadan gecer ve
+    // duzlem mesafesi ikisini de "temas" sayar. Kesiti her aday icin kur, sonra
+    // katının hacim merkezini olcup PARCA ICINDE kalan yerlesimi reddet.
     std::vector<TopoDS_Shape> solids;
-    for (const auto& j : chosen) {
-        Vec3 nm, ns;
-        cornerFaceNormal(mainShape, j.start, tol, Vec3{0, 0, 0}, j.direction, nm);
-        if (vecLen(nm) < 1e-6) { outUnsupportedReason = "ana parca temas yuzu normali cozumlenemedi"; return {}; }
-        cornerFaceNormal(secondaryShape, j.start, tol, nm, j.direction, ns);
-        if (vecLen(ns) < 1e-6) { outUnsupportedReason = "ikincil parca temas yuzu normali cozumlenemedi"; return {}; }
-        TopoDS_Shape s = buildFilletWeldSolid(j.start, j.end, nm, ns, leg, true);
-        if (s.IsNull()) {
-            outUnsupportedReason = "kaynak kati uretilemedi (BRepCheck gecersiz)";
-            return {};
+    const std::size_t wanted = w.doubleSided ? 2u : 1u;
+    const Vec3 secCentroid = shapeCentroid(secondaryShape);
+    const Vec3 mainCentroid = shapeCentroid(mainShape);
+    std::string lastReason;
+    for (std::size_t ji = 0; ji < juncts.size() && solids.size() < wanted; ++ji) {
+        const WeldJunction& j = juncts[ji];
+        // Ana yuz: diger parcaya BAKAN yuz. Kose noktasinda birden fazla yuz
+        // gecer; tek adayla yetinme — hepsini dene.
+        const Vec3 towardSec{secCentroid.x - j.start.x, secCentroid.y - j.start.y,
+                             secCentroid.z - j.start.z};
+        const Vec3 towardMain{mainCentroid.x - j.start.x, mainCentroid.y - j.start.y,
+                              mainCentroid.z - j.start.z};
+        const std::vector<Vec3> mainCands =
+            candidateFaceNormals(mainShape, j.start, tol, j.direction, towardSec);
+        if (mainCands.empty()) {
+            lastReason = "ana parca temas yuzu normali cozumlenemedi";
+            continue;
         }
-        solids.push_back(s);
+        TopoDS_Shape built;
+        for (const Vec3& nm : mainCands) {
+            if (!built.IsNull()) break;
+            std::vector<Vec3> secCands =
+                candidateFaceNormals(secondaryShape, j.start, tol, j.direction, towardMain);
+            if (secCands.empty()) {
+                Vec3 ns;
+                if (cornerFaceNormal(secondaryShape, j.start, tol, nm, j.direction, ns))
+                    secCands.push_back(ns);
+            }
+            if (secCands.empty()) {
+                lastReason = "ikincil parca temas yuzu normali cozumlenemedi";
+                continue;
+            }
+            for (const Vec3& ns : secCands) {
+                if (built.IsNull()) {
+                    // Kesit iki taraftan da kurulabilir; hangisi gercekten
+                    // DISARIDA kaliyorsa o. Varsayim yok, geometri karar verir.
+                    for (int side = 0; side < 2 && built.IsNull(); ++side) {
+                        TopoDS_Shape s =
+                            buildFilletWeldSolid(j.start, j.end, nm, ns, leg, side == 0);
+                        if (s.IsNull()) continue;
+                        const Vec3 c = shapeCentroid(s);
+                        if (pointInsideShape(c, mainShape) || pointInsideShape(c, secondaryShape))
+                            continue;
+                        built = s;
+                    }
+                    if (built.IsNull())
+                        lastReason =
+                            "kaynak kesiti iki parca arasindaki koseye yerlestirilemedi (kati parca icinde kaliyor)";
+                }
+            }
+        }
+        if (!built.IsNull()) {
+            if (outSeamLength && *outSeamLength == 0.0) *outSeamLength = j.length;
+            solids.push_back(std::move(built));
+        }
+    }
+    if (solids.empty()) {
+        outUnsupportedReason = lastReason.empty() ? "kaynak katisi uretilemedi" : lastReason;
+        return {};
     }
     return solids;
 }
