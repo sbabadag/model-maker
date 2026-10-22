@@ -1,5 +1,6 @@
 #include "model_maker/component_dialog_widget.hpp"
 
+#include <QAbstractItemView>
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDoubleSpinBox>
@@ -14,6 +15,7 @@
 #include <QScrollArea>
 #include <QSpinBox>
 #include <QTabWidget>
+#include <QTableWidget>
 #include <QVBoxLayout>
 
 #include <algorithm>
@@ -168,7 +170,9 @@ void ComponentSchematicView::paintEvent(QPaintEvent*) {
     // Hotspot'lar.
     for (const auto& h : schema_.hotspots) {
         const QPointF c = toScreen(h.position);
-        const bool hl = h.paramName.has_value() && *h.paramName == highlightedParam_;
+        const bool hlParam = h.paramName.has_value() && *h.paramName == highlightedParam_;
+        const bool hlWeld = h.weldRow.has_value() && *h.weldRow == highlightedWeldRow_;
+        const bool hl = hlParam || hlWeld;
         const double rr = std::max(4.0, h.radius * scale_);
         p.setBrush(hl ? QColor(0xE8, 0x8A, 0x3A) : QColor(0xFF, 0xFF, 0xFF));
         p.setPen(hl ? QPen(QColor(0xC0, 0x50, 0x00), 2.0) : QPen(QColor(0x30, 0x30, 0x40), 1.2));
@@ -191,13 +195,25 @@ void ComponentSchematicView::mousePressEvent(QMouseEvent* e) {
         const auto id = hitTestDiagramHotspot(schema_, w);
         if (id) {
             const DiagramHotspot* h = findHotspot(schema_, *id);
-            QString param;
-            if (h && h->paramName.has_value())
-                param = QString::fromStdWString(*h->paramName);
-            emit hotspotClicked(param);
+            // Kaynak cagrisi ise tablo satirini sec; degilse parametre vurgusu.
+            if (h && h->weldRow.has_value()) {
+                setHighlightedWeldRow(*h->weldRow);
+                emit weldCalloutClicked(*h->weldRow);
+            } else {
+                QString param;
+                if (h && h->paramName.has_value())
+                    param = QString::fromStdWString(*h->paramName);
+                emit hotspotClicked(param);
+            }
         }
     }
     QWidget::mousePressEvent(e);
+}
+
+void ComponentSchematicView::setHighlightedWeldRow(int row) {
+    if (highlightedWeldRow_ == row) return;
+    highlightedWeldRow_ = row;
+    update();
 }
 
 // --- ComponentDialogWidget ----------------------------------------------------
@@ -274,6 +290,9 @@ ComponentDialogWidget::ComponentDialogWidget(const ComponentDialogDefinition& de
             }
         }
         root->addWidget(tabs_, /*stretch*/ 2);
+        // Tekla "Welds": kaynak tablosu ayri sekme; semadaki 1..N cagrilariyla
+        // cift yonlu eslesir (satir sec -> cagri vurgulanir, cagri tikla -> satir).
+        buildWeldTable(tabs_);
     } else {
         scroll_ = new QScrollArea(this);
         scroll_->setWidgetResizable(true);
@@ -345,6 +364,98 @@ void ComponentDialogWidget::addParamRow(QFormLayout* form, QWidget* box,
     editors_[pn] = editor;
     rows_[pn] = lbl;
     editor->installEventFilter(this);
+}
+
+// Tekla "Welds" tablosu: 12 sutun (No/Size/Type/Angle/Contour/Finish/Eff.thr./
+// R.opng./Placement/Prep./Length/Pitch). No sutununda onay kutusu + numara.
+// Satir secimi semadaki ayni numarali cagriyi vurgular; cagriya tiklamak satiri secer.
+void ComponentDialogWidget::buildWeldTable(QTabWidget* tabs) {
+    if (def_.schema.weldRows.empty()) return;
+    const int n = static_cast<int>(def_.schema.weldRows.size());
+    weldTable_ = new QTableWidget(n, 12, tabs);
+    const wchar_t* headers[] = {L"No",       L"Size",   L"Type",   L"Angle",
+                                L"Contour",  L"Finish", L"Eff.thr.", L"R.opng.",
+                                L"Placement", L"Prep.", L"Length", L"Pitch"};
+    QStringList labels;
+    for (const wchar_t* h : headers) labels << QString::fromStdWString(h);
+    weldTable_->setHorizontalHeaderLabels(labels);
+    weldTable_->setSelectionBehavior(QAbstractItemView::SelectRows);
+    weldTable_->setSelectionMode(QAbstractItemView::SingleSelection);
+
+    for (int r = 0; r < n; ++r) {
+        const WeldTableRow& row = def_.schema.weldRows[static_cast<std::size_t>(r)];
+        auto* no = new QTableWidgetItem(QString::number(row.number));
+        no->setFlags(Qt::ItemIsUserCheckable | Qt::ItemIsEnabled | Qt::ItemIsSelectable);
+        no->setCheckState(row.enabled ? Qt::Checked : Qt::Unchecked);
+        weldTable_->setItem(r, 0, no);
+        const auto num = [&](int c, double v) {
+            weldTable_->setItem(r, c, new QTableWidgetItem(QString::number(v, 'f', 1)));
+        };
+        num(1, row.size);
+        weldTable_->setItem(r, 2, new QTableWidgetItem(
+            row.type == WeldRowType::Fillet ? QStringLiteral("Fillet") : QStringLiteral("Butt")));
+        num(3, row.angle);
+        weldTable_->setItem(r, 4, new QTableWidgetItem(QString::fromStdWString(row.contour)));
+        weldTable_->setItem(r, 5, new QTableWidgetItem(QString::fromStdWString(row.finish)));
+        num(6, row.effThroat);
+        num(7, row.rootOpening);
+        weldTable_->setItem(r, 8, new QTableWidgetItem(QString::fromStdWString(row.placement)));
+        weldTable_->setItem(r, 9, new QTableWidgetItem(QString::fromStdWString(row.prep)));
+        num(10, row.length);
+        num(11, row.pitch);
+    }
+    weldTable_->resizeColumnsToContents();
+    weldTabIndex_ = tabs->addTab(weldTable_, QStringLiteral("Welds"));
+
+    QObject::connect(weldTable_, &QTableWidget::itemSelectionChanged, this, [this]() {
+        if (!schematic_ || !weldTable_) return;
+        const auto rows = weldTable_->selectionModel()->selectedRows();
+        schematic_->setHighlightedWeldRow(rows.isEmpty() ? -1 : rows.first().row());
+    });
+    // Semadaki numarali cagri -> tablo satiri (ve Welds sekmesine gecis).
+    QObject::connect(schematic_, &ComponentSchematicView::weldCalloutClicked, this,
+                     [this](int row) {
+                         if (!weldTable_) return;
+                         if (tabs_) tabs_->setCurrentIndex(weldTabIndex_);
+                         weldTable_->selectRow(row);
+                         if (auto* it = weldTable_->item(row, 0))
+                             weldTable_->scrollToItem(it);
+                     });
+}
+
+// Tablodaki duzenlenmis kaynak satirlarini geri okur (kaydetmek isteyen cagiran icin).
+std::vector<WeldTableRow> ComponentDialogWidget::resultWeldRows() const {
+    std::vector<WeldTableRow> out = def_.schema.weldRows;
+    if (!weldTable_) return out;
+    for (std::size_t r = 0; r < out.size(); ++r) {
+        const int row = static_cast<int>(r);
+        auto text = [&](int c) {
+            auto* it = weldTable_->item(row, c);
+            return it ? it->text() : QString();
+        };
+        auto value = [&](int c, double fallback) {
+            bool ok = false;
+            const double v = text(c).toDouble(&ok);
+            return ok ? v : fallback;
+        };
+        auto* no = weldTable_->item(row, 0);
+        out[r].enabled = no ? no->checkState() == Qt::Checked : out[r].enabled;
+        out[r].number = row + 1;
+        out[r].size = value(1, out[r].size);
+        out[r].type = text(2).compare(QStringLiteral("Butt"), Qt::CaseInsensitive) == 0
+                          ? WeldRowType::Butt
+                          : WeldRowType::Fillet;
+        out[r].angle = value(3, out[r].angle);
+        out[r].contour = text(4).toStdWString();
+        out[r].finish = text(5).toStdWString();
+        out[r].effThroat = value(6, out[r].effThroat);
+        out[r].rootOpening = value(7, out[r].rootOpening);
+        out[r].placement = text(8).toStdWString();
+        out[r].prep = text(9).toStdWString();
+        out[r].length = value(10, out[r].length);
+        out[r].pitch = value(11, out[r].pitch);
+    }
+    return out;
 }
 
 QWidget* ComponentDialogWidget::buildEditor(const CompParamSpec& spec,

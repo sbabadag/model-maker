@@ -187,6 +187,30 @@ int main() {
         bool hasDims = false;
         for (const auto& it : def.schema.items) hasDims = hasDims || it.id == L"dims";
         check(hasDims, "146: semada olcu cizgileri var");
+
+        // KAYNAK TABLOSU (Tekla "Welds"): 10 satir + 10 numarali cagri.
+        check(def.schema.weldRows.size() == 10, "146: 10 kaynak satiri");
+        bool rowsOk = def.schema.weldRows.size() == 10;
+        for (std::size_t i = 0; rowsOk && i < def.schema.weldRows.size(); ++i) {
+            const WeldTableRow& r = def.schema.weldRows[i];
+            rowsOk = r.number == static_cast<int>(i) + 1 && r.size > 0.0;
+        }
+        check(rowsOk, "146: kaynak satirlari sirali ve olculu");
+
+        int callouts = 0;
+        for (const auto& h : def.schema.hotspots)
+            if (h.weldRow.has_value()) ++callouts;
+        check(callouts == 10, "146: 10 kaynak cagrisi (hotspot)");
+        // Cagrilar satirlarla eslesir: label == satir numarasi.
+        bool calloutOk = true;
+        for (const auto& h : def.schema.hotspots) {
+            if (!h.weldRow.has_value()) continue;
+            const int row = *h.weldRow;
+            if (row < 0 || row >= static_cast<int>(def.schema.weldRows.size())) { calloutOk = false; break; }
+            if (!h.label.has_value()) { calloutOk = false; break; }
+            if (*h.label != std::to_wstring(def.schema.weldRows[row].number)) { calloutOk = false; break; }
+        }
+        check(calloutOk, "146: cagri etiketi satir numarasiyla ayni");
     }
 
     // --- 8) Registry ---------------------------------------------------------

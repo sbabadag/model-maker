@@ -90,6 +90,36 @@ struct DiagramHotspot {
     double radius{8.0};   // pick yaricapi (cizim birimi)
     std::optional<std::wstring> paramName;  // bagli parametre (bos = dekoratif)
     std::optional<std::wstring> label;      // gorunen etiket
+    // KAYNAK CAGRISI (Tekla 146 kaynak semasi): doluysa bu hotspot bir kaynak
+    // satirina baglidir (0-tabanli, schema.weldRows indeksi). Tiklama -> tablo
+    // satiri secilir; tablo satiri secilince -> bu cagri vurgulanir.
+    std::optional<int> weldRow;
+};
+
+// --- KAYNAK TABLOSU (Tekla "Welds" diyalogu) --------------------------------
+// Tekla'da kaynak diyalogu bir TABLODUR: her satir bir kaynak dikisi; sutunlar
+// No / Size / Type / Angle / Contour / Finish / Eff.thr. / R.opng / Placement /
+// Prep. / Length / Pitch. Sematik resimdeki 1..N numarali cagrilar satirlarla
+// eslesir, boylece "nerelerine kaynak atilacak" gorerek secilir.
+
+enum class WeldRowType { Fillet, Butt };
+
+struct WeldTableRow {
+    bool enabled{true};         // No sutunundaki onay kutusu
+    int number{1};              // gorunen numara (1..N) = semadaki cagri
+    double size{5.0};           // bacak (fillet) / agiz (butt), mm
+    WeldRowType type{WeldRowType::Fillet};
+    double angle{45.0};         // derece (fillet icin)
+    std::wstring contour{L"None"};   // kaynak konturu
+    std::wstring finish{L"None"};    // yuzey islemi
+    double effThroat{0.0};      // etkin bogaz (0 = olcuuden turetilir)
+    double rootOpening{0.0};    // kok acikligi (butt)
+    std::wstring placement{L"Auto"}; // kaynak yerlestirmesi
+    std::wstring prep{L"None"};      // agiz hazirligi
+    double length{0.0};         // 0 = otomatik (tam temas uzunlugu)
+    double pitch{0.0};          // aralikli kaynak adimi (0 = surekli)
+    std::wstring refText;       // referans metni
+    bool operator==(const WeldTableRow&) const = default;
 };
 
 // Parametre alanlarini bir sekme/bolum altinda siralar. paramNames sirasi ayrica
@@ -114,6 +144,9 @@ struct ComponentDialogSchema {
     // true: gruplar SEKME olarak cizilir (Tekla 146 duzeni); false: bolum
     // kutulari (eski davranis, varsayilan — geriye uyumlu).
     bool useTabs{false};
+    // Kaynak tablosu (Tekla "Welds"): bos degilse diyalog bir "Welds" sekmesi
+    // acar; satirlar semadaki numarali cagrilardan secilebilir.
+    std::vector<WeldTableRow> weldRows;
 };
 
 // --- DOGRULAMA ---------------------------------------------------------------

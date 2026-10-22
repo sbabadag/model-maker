@@ -31,6 +31,7 @@ class QScrollArea;
 class QVBoxLayout;
 class QFormLayout;
 class QTabWidget;
+class QTableWidget;
 class QCheckBox;
 
 namespace mm {
@@ -45,10 +46,16 @@ public:
     // Bu parametreye bağlı TÜM hotspot'ları vurgula (boş = vurgu yok).
     void setHighlightedParam(const std::wstring& paramName);
     std::wstring highlightedParam() const { return highlightedParam_; }
+    // Kaynak tablosu satirini vurgula (-1 = yok). Semadaki numarali cagri
+    // (weldRow) eslesen hotspot kalin/turuncu cizilir.
+    void setHighlightedWeldRow(int row);
+    int highlightedWeldRow() const { return highlightedWeldRow_; }
 
 signals:
     // Bir hotspot tıklandı; bağlı parametre adı (bağsız/dekoratif ise boş).
     void hotspotClicked(const QString& paramName);
+    // Kaynak cagrisina tiklandi (0-tabanli satir indeksi).
+    void weldCalloutClicked(int row);
 
 protected:
     void paintEvent(QPaintEvent* event) override;
@@ -61,6 +68,7 @@ private:
 
     const ComponentDialogSchema& schema_;
     std::wstring highlightedParam_;
+    int highlightedWeldRow_{-1};
     double scale_{1.0};
     double offsetX_{0.0};
     double offsetY_{0.0};
@@ -79,6 +87,9 @@ public:
     // parametreler `current`'tan korunur.
     std::vector<CompParam> resultParams() const;
 
+    // Kaynak tablosundaki düzenlenmiş satırlar (tablo yoksa şema varsayılanları).
+    std::vector<WeldTableRow> resultWeldRows() const;
+
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
 
@@ -92,6 +103,7 @@ private:
     void highlightParamRow(const std::wstring& paramName);
     void addParamRow(QFormLayout* form, QWidget* box, const std::wstring& paramName,
                      std::vector<std::wstring>& ungrouped);
+    void buildWeldTable(QTabWidget* tabs);
 
     ComponentDialogDefinition def_;       // kopya — registry ömründen bağımsız
     std::vector<CompParam> current_;
@@ -106,6 +118,8 @@ private:
     std::map<std::wstring, std::vector<std::wstring>> paramToHotspots_;
     std::map<std::wstring, int> paramTabIndex_;     // paramName -> sekme indeksi
     std::map<std::wstring, QCheckBox*> optionalChecks_;  // "Default" onay kutulari
+    QTableWidget* weldTable_{};                     // kaynak tablosu (varsa)
+    int weldTabIndex_{-1};                          // "Welds" sekmesi indeksi
     std::wstring highlightedRow_;
 };
 

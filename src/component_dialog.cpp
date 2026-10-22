@@ -214,6 +214,30 @@ DialogSchemaValidation validateDialogSchema(const ComponentDialogSchema& schema,
             result.problems.push_back(L"hotspot " + h.id + L" bilinmeyen parametreye bagli: " +
                                       *h.paramName);
         }
+        // Kaynak cagrisi: satir indeksi kaynak tablosunda VAR olmali.
+        if (h.weldRow.has_value() &&
+            (*h.weldRow < 0 || static_cast<std::size_t>(*h.weldRow) >= schema.weldRows.size())) {
+            result.ok = false;
+            result.problems.push_back(L"hotspot " + h.id + L" gecersiz kaynak satirina bagli");
+        }
+        if (h.weldRow.has_value() && h.paramName.has_value()) {
+            result.ok = false;
+            result.problems.push_back(L"hotspot " + h.id +
+                                      L" hem parametreye hem kaynak satirina bagli (biri olmali)");
+        }
+    }
+
+    // Kaynak tablosu: numaralar 1..N tekil ve sirali olmali (cagri numaralari).
+    for (std::size_t i = 0; i < schema.weldRows.size(); ++i) {
+        if (schema.weldRows[i].number != static_cast<int>(i) + 1) {
+            result.ok = false;
+            result.problems.push_back(L"kaynak satiri numarasi sirali degil");
+            break;
+        }
+        if (schema.weldRows[i].size <= 0.0) {
+            result.ok = false;
+            result.problems.push_back(L"kaynak satiri olcusu <= 0");
+        }
     }
 
     // Grup id'leri + parametre referanslari.
@@ -594,6 +618,53 @@ ComponentDialogDefinition shearPlate146DialogDefinition() noexcept {
         hotspot(L"hs_bolt_edge", 46.0, 100.0, 8.0, std::wstring(L"boltEdge"), std::wstring(L"4")),
         hotspot(L"hs_bolt_count", 62.0, 120.0, 8.0, std::wstring(L"boltCount"), std::wstring(L"5")),
     };
+
+    // --- KAYNAK TABLOSU + CAGRILAR (Tekla "Welds") ---------------------------
+    // Tekla 146 kaynak diyalogu: 10 satirlik tablo ve semada 1..10 numarali
+    // cagrilar. Burada varsayilan dikisler: levha-kolon (dikey iki kenar),
+    // levha-kiris (ust/alt), kiris govde levhasi. Kullanici satiri kapatabilir.
+    struct CalloutPos {
+        double x, y;
+    };
+    // 1..10 cagri noktalari (levha cevresi + kiris temaslari).
+    const CalloutPos callouts[] = {
+        {52.0, 166.0},  // 1 levha-kolon ust dikey dikis
+        {52.0, 74.0},   // 2 levha-kolon alt dikey dikis
+        {84.0, 170.0},  // 3 levha-kiris ust kose
+        {84.0, 70.0},   // 4 levha-kiris alt kose
+        {96.0, 148.0},  // 5 kiris alt flans - levha
+        {96.0, 92.0},   // 6 kiris ust flans - levha
+        {300.0, 120.0}, // 7 kiris uzak ucu (berkitme)
+        {46.0, 58.0},   // 8 levha alt kenar - kolon
+        {46.0, 182.0},  // 9 levha ust kenar - kolon
+        {68.0, 152.0},  // 10 bulon bolgesi cevresi
+    };
+    for (int i = 0; i < 10; ++i) {
+        std::wstring id = L"ws";
+        id += static_cast<wchar_t>(L'0' + (i + 1) / 10);
+        id += static_cast<wchar_t>(L'0' + (i + 1) % 10);
+        DiagramHotspot h = hotspot(id, callouts[i].x, callouts[i].y, 7.0, std::nullopt,
+                                   std::to_wstring(i + 1));
+        h.weldRow = i;  // 0-tabanli satir indeksi
+        def.schema.hotspots.push_back(h);
+    }
+
+    // 10 kaynak satiri: hepsi fillet a=5, etkin bogaz 3.5 mm (0.7*a), Auto/None.
+    def.schema.weldRows.clear();
+    for (int i = 0; i < 10; ++i) {
+        WeldTableRow r;
+        r.number = i + 1;
+        r.size = 5.0;
+        r.type = WeldRowType::Fillet;
+        r.angle = 45.0;
+        r.effThroat = 3.5;
+        r.rootOpening = 0.0;
+        r.placement = L"Auto";
+        r.prep = L"None";
+        r.length = 0.0;
+        r.pitch = 0.0;
+        def.schema.weldRows.push_back(r);
+    }
 
     // --- SEKMELER (Tekla 146 duzeni): Plates / Stiffeners / General / Notch /
     // Bolts / Beam cut. SEMATIK sol panelde KALICI durur (Tekla'daki Picture

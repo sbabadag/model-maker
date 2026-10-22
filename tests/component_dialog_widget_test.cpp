@@ -11,7 +11,9 @@
 
 #include <QApplication>
 #include <QCheckBox>
+#include <QHeaderView>
 #include <QTabWidget>
+#include <QTableWidget>
 
 #include <cstdio>
 
@@ -88,11 +90,12 @@ int main(int argc, char** argv) {
 
         auto* tabWidget = w146.findChild<QTabWidget*>();
         CHECK(tabWidget != nullptr, "146: QTabWidget kuruldu");
-        CHECK(tabWidget && tabWidget->count() == 6, "146: 6 sekme cizildi");
+        // 6 parametre sekmesi + "Welds" kaynak tablosu sekmesi.
+        CHECK(tabWidget && tabWidget->count() == 7, "146: 6 parametre + Welds sekmesi");
         if (tabWidget) {
             CHECK(tabWidget->tabText(0) == QStringLiteral("Plates"), "146: ilk sekme Plates");
             CHECK(tabWidget->tabText(1) == QStringLiteral("Stiffeners"), "146: ikinci sekme Stiffeners");
-            CHECK(tabWidget->tabText(5) == QStringLiteral("Beam cut"), "146: son sekme Beam cut");
+            CHECK(tabWidget->tabText(6) == QStringLiteral("Welds"), "146: son sekme Welds");
         }
 
         // Baslangicta Default kutulari isaretli -> alan sonuca yazilir.
@@ -114,6 +117,44 @@ int main(int argc, char** argv) {
             for (const auto& p : params)
                 if (p.name == L"boltStandard") stillThere = true;
             CHECK(!stillThere, "146: Default isaretsiz -> parametre yazilmaz");
+        }
+
+        // 7) KAYNAK TABLOSU (Tekla "Welds"): 10 satir x 12 sutun, cagri eslesmesi.
+        auto* table = w146.findChild<QTableWidget*>();
+        CHECK(table != nullptr, "146: kaynak tablosu kuruldu");
+        if (table) {
+            CHECK(table->rowCount() == 10, "146: 10 kaynak satiri");
+            CHECK(table->columnCount() == 12, "146: 12 kaynak sutunu");
+            CHECK(table->horizontalHeaderItem(0)->text() == QStringLiteral("No"),
+                  "146: ilk sutun No");
+            CHECK(table->horizontalHeaderItem(6)->text() == QStringLiteral("Eff.thr."),
+                  "146: Eff.thr. sutunu");
+            CHECK(table->horizontalHeaderItem(8)->text() == QStringLiteral("Placement"),
+                  "146: Placement sutunu");
+            CHECK(table->horizontalHeaderItem(11)->text() == QStringLiteral("Pitch"),
+                  "146: Pitch sutunu");
+
+            auto rows = w146.resultWeldRows();
+            CHECK(rows.size() == 10, "146: sonuc 10 kaynak satiri");
+            bool allEnabled = rows.size() == 10;
+            for (const auto& r : rows) allEnabled = allEnabled && r.enabled;
+            CHECK(allEnabled, "146: kaynak satirlari varsayilan acik");
+            CHECK(!rows.empty() && rows[0].size == 5.0 && rows[0].effThroat == 3.5,
+                  "146: varsayilan a=5 / bogaz 3.5");
+
+            // No sutunundaki onay kutusunu kaldir -> satir devre disi.
+            if (auto* no = table->item(0, 0)) {
+                no->setCheckState(Qt::Unchecked);
+                rows = w146.resultWeldRows();
+                CHECK(!rows.empty() && !rows[0].enabled, "146: onay kutusu -> satir kapali");
+            }
+
+            // Tablo satiri secilince semadaki ayni numarali cagri vurgulanir.
+            table->selectRow(3);
+            auto* sch = w146.findChild<mm::ComponentSchematicView*>();
+            CHECK(sch != nullptr, "146: sematik gorunum bulundu");
+            CHECK(sch && sch->highlightedWeldRow() == 3,
+                  "146: satir secimi -> semada 4 numarali cagri vurgulanir");
         }
     }
 
