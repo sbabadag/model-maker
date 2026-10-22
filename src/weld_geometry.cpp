@@ -73,9 +73,14 @@ bool outwardPlanarNormal(const TopoDS_Face& face, Vec3& out) {
 // `p` noktasini iceren (tol) DISA yonlu planar yuz normali. Birden fazla yuz
 // iceriyorsa `refNormal`e DIK olan tercih edilir (kose kaynak yuzu); dik yuz
 // yoksa ilk bulunan doner. Bulunamazsa false.
+// `weldDir` kaynak ilerleme yonu: yuz bu yon boyunca UZANMALI (normali weldDir'e
+// DIK) — kaynak kesiti weldDir'e dik duzlemde cizilir; weldDir'e paralel normali
+// olan "uc" yuzu (or. kirisin temas yuzu) kesitte NOKTA olur ve cross(weldDir,n)
+// dejenere olur (fillet kati uretilemez). weldDir sifirsa bu filtre devre disi.
 bool cornerFaceNormal(const TopoDS_Shape& shape, const Vec3& p, double tol,
-                      const Vec3& refNormal, Vec3& out) {
+                      const Vec3& refNormal, const Vec3& weldDir, Vec3& out) {
     const gp_Pnt pt = toPnt(p);
+    const Vec3 wd = normalized(weldDir);
     Vec3 fallback; bool haveFallback = false;
     for (TopExp_Explorer fe(shape, TopAbs_FACE); fe.More(); fe.Next()) {
         const TopoDS_Face face = TopoDS::Face(fe.Current());
@@ -84,6 +89,8 @@ bool cornerFaceNormal(const TopoDS_Shape& shape, const Vec3& p, double tol,
         Handle(Geom_Surface) surf = BRep_Tool::Surface(face);
         Handle(Geom_Plane) plane = Handle(Geom_Plane)::DownCast(surf);
         if (plane.IsNull() || plane->Pln().Distance(pt) > tol) continue;
+        // W3-FIX: weldDir'e PARALEL normali olan yuzu disla (kesit dejenere olur).
+        if (vecLen(wd) > 1e-6 && std::fabs(dot(n, wd)) > 1e-3) continue;
         if (!haveFallback) { fallback = n; haveFallback = true; }
         // refNormal'e DIK yuz tercih edilir (kose kaynagi bu yuzde).
         if (std::fabs(dot(n, refNormal)) < 1e-3) {
@@ -163,9 +170,9 @@ WeldJunction findBestWeldJunction(const TopoDS_Shape& main,
     cands.insert(cands.end(), cands2.begin(), cands2.end());
     if (cands.empty()) return none;
     WeldJunction best = cands.front();
-    cornerFaceNormal(main, best.start, tol, Vec3{0, 0, 0}, best.mainNormal);
+    cornerFaceNormal(main, best.start, tol, Vec3{0, 0, 0}, best.direction, best.mainNormal);
     if (vecLen(best.mainNormal) > 1e-6)
-        cornerFaceNormal(secondary, best.start, tol, best.mainNormal, best.secNormal);
+        cornerFaceNormal(secondary, best.start, tol, best.mainNormal, best.direction, best.secNormal);
     return best;
 }
 
@@ -239,9 +246,9 @@ std::vector<TopoDS_Shape> buildWeldSolids(const Weld& w,
     std::vector<TopoDS_Shape> solids;
     for (const auto& j : chosen) {
         Vec3 nm, ns;
-        cornerFaceNormal(mainShape, j.start, tol, Vec3{0, 0, 0}, nm);
+        cornerFaceNormal(mainShape, j.start, tol, Vec3{0, 0, 0}, j.direction, nm);
         if (vecLen(nm) < 1e-6) { outUnsupportedReason = "ana parca temas yuzu normali cozumlenemedi"; return {}; }
-        cornerFaceNormal(secondaryShape, j.start, tol, nm, ns);
+        cornerFaceNormal(secondaryShape, j.start, tol, nm, j.direction, ns);
         if (vecLen(ns) < 1e-6) { outUnsupportedReason = "ikincil parca temas yuzu normali cozumlenemedi"; return {}; }
         TopoDS_Shape s = buildFilletWeldSolid(j.start, j.end, nm, ns, leg, true);
         if (s.IsNull()) {

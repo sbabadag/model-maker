@@ -722,6 +722,16 @@ if(BUILD_TESTING)
             set_tests_properties(model_maker_occ_weld_document_roundtrip PROPERTIES
                 ENVIRONMENT "LD_LIBRARY_PATH=${OCC_ROOT}/lib:$ENV{LD_LIBRARY_PATH}")
         endif()
+        # GERCEK I-PROFIL T-BIRLESTIMI KAYNAK KATISI (W3-FIX regresyon): cornerFaceNormal
+        # kaynak yonune paralel normali olan "uc" yuzunu secip cross(d,n) dejenere
+        # oluyordu ("BRepCheck gecersiz"); HEB300 kolon + IPE200 kiris ile dogrulanir.
+        add_executable(model_maker_occ_weld_profile_beam_test tests/occ_weld_profile_beam_test.cpp)
+        target_link_libraries(model_maker_occ_weld_profile_beam_test PRIVATE model_maker_occ)
+        add_test(NAME model_maker_occ_weld_profile_beam_test COMMAND model_maker_occ_weld_profile_beam_test)
+        if(UNIX)
+            set_tests_properties(model_maker_occ_weld_profile_beam_test PROPERTIES
+                ENVIRONMENT "LD_LIBRARY_PATH=${OCC_ROOT}/lib:$ENV{LD_LIBRARY_PATH}")
+        endif()
         # UNIVERSAL COMPONENT MATERIALIZER (C2): ComponentBuilder -> ComponentPlan
         # -> gercek Document + OccSolidStore. roleKey->EntityId + ownership + delik
         # + Weld Unsupported + coklu bagimsiz component. GERCEK OCCT.

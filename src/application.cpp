@@ -8615,10 +8615,18 @@ bool Application::weldSelectedParts(WeldType type, double size, double length, W
     // Gercek OCC kaynak kati (Phase W3): main/sec B-Rep'lerinden fillet kati
     // uret; basariliysa display model + kati ekle, degilse glif+metadata.
     {
+        // W3-FIX: parcalar B-Rep katisi tasimiyorsa lazy uret (kesme akisindaki
+        // ensureCutSolid ile ayni). Dosyadan acilan modelde magaza bosalir (P7),
+        // piramit/Face3D gibi profilsiz parcalarda hic katı uretilmez — bu adim
+        // atlanirsa store->find null doner ve kaynak kati SESSIZCE uretilmez
+        // (yalniz glif + assembly kalir). Tek undo birimi: snapshot once acilir,
+        // parca katilari + kaynak ayni kayda yazilir.
+        document_.pushSnapshot();
+        ensureCutSolid(a);
+        ensureCutSolid(b);
         TopoDS_Shape solid;
         WireframeModel wf;
         if (prepareWeldGeometry(w, document_, occSolidStore(), solid, wf)) {
-            document_.pushSnapshot();
             const std::size_t wi = document_.addWeld(std::move(w), std::move(wf));
             const Weld& created = document_.welds()[wi];
             if (created.displayEntityId != kInvalidEntityId) {
@@ -8632,6 +8640,14 @@ bool Application::weldSelectedParts(WeldType type, double size, double length, W
             invalidateCanvas();
             return true;
         }
+        // Kati uretilemedi: nedeni kullaniciya goster (sessiz glif dusmesi yok).
+        publishStatus(L"Kaynak katisi uretilemedi: " +
+                      utf8ToWide(w.unsupportedReason.empty()
+                                     ? std::string("bilinmeyen neden")
+                                     : w.unsupportedReason));
+        document_.addWeld(std::move(w));
+        invalidateCanvas();
+        return true;
     }
 #endif
     document_.pushSnapshot();
@@ -8717,6 +8733,11 @@ void Application::recomputeWeldGeometry(std::size_t index) {
     if (!store) return;
     const auto di = document_.indexOfEntity(w.displayEntityId);
     if (!di) return;
+    // W3-FIX: dosyadan acilan modelde parca B-Rep'leri dustugu icin edit oncesi
+    // lazy uret; yoksa kaynak kati sessizce glif'e duser. editWeld snapshot'i
+    // zaten acmis durumda — deltalar ayni undo kaydina yazilir.
+    ensureCutSolid(w.mainPart);
+    ensureCutSolid(w.secondaryPart);
     TopoDS_Shape solid;
     WireframeModel wf;
     if (!prepareWeldGeometry(w, document_, store, solid, wf)) {
