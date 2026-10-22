@@ -118,6 +118,27 @@ int main() {
     const ComponentGenerator* g = reg.generator(e1.typeId);
     check(g != nullptr, "registerInto: derived generator miras alindi");
     check(dialogs.find(e1.typeId) != nullptr, "registerInto: derived dialog kayitli");
+    // Sablon eski surumde kaydedilmis olabilir (kayitli specs'te gri Tekla
+    // alanlari yok): derived dialog bunlari AILEDEN almali, yoksa Haunch/Notch
+    // sekmeleri bos kalip gizlenir. Motor tipine ise gri alan GIRMEZ.
+    if (const ComponentDialogDefinition* dd = dialogs.find(e1.typeId)) {
+        std::size_t doc = 0;
+        for (const auto& s : dd->specs)
+            if (s.documentedOnly) ++doc;
+        check(doc >= 60, "registerInto: derived dialog gri Tekla alanlarini aileden alir");
+        bool haunchHasParams = false;
+        for (const auto& grp : dd->schema.groups)
+            if (grp.title == L"Haunch" && !grp.paramNames.empty() &&
+                findParamSpec(dd->specs, grp.paramNames.front()) != nullptr)
+                haunchHasParams = true;
+        check(haunchHasParams, "registerInto: derived Haunch sekmesi bos degil");
+    }
+    if (const ComponentType* dt = reg.findType(e1.typeId)) {
+        bool anyDoc = false;
+        for (const auto& s : dt->params)
+            if (s.documentedOnly) anyDoc = true;
+        check(!anyDoc, "registerInto: gri alan motor tipine girmez");
+    }
 
     // derived generator GERCEKTEN plan uretir (family generatorunu cagirir).
     // Basit ortogonal kolon + kiris girdisi.

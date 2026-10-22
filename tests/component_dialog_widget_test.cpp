@@ -13,6 +13,7 @@
 #include <QCheckBox>
 #include <QComboBox>
 #include <QHeaderView>
+#include <QLabel>
 #include <QTabWidget>
 #include <QTableWidget>
 
@@ -106,6 +107,14 @@ int main(int argc, char** argv) {
         for (const auto& p : params)
             if (p.name == L"boltStandard") hasStandard = true;
         CHECK(hasStandard, "146: boltStandard sonuca yazilir (kutu isaretli)");
+
+        // Tekla yardim sayfasi sekilleri gomulu kaynaktan yuklenir (sekme basina).
+        {
+            int pixLabels = 0;
+            for (auto* l : w146.findChildren<QLabel*>())
+                if (!l->pixmap(Qt::ReturnByValue).isNull()) ++pixLabels;
+            CHECK(pixLabels >= 16, "146: Tekla sekilleri yuklendi (>=16 resim)");
+        }
 
         // Gri (documentedOnly) alanlar sonuca HIC yazilmaz; calisan alanlar yazilir.
         {

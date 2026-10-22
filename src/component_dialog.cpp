@@ -859,6 +859,35 @@ ComponentDialogDefinition shearPlate146DialogDefinition() noexcept {
                          L"boltCountX", L"pitchX", L"pitchY",
                          L"edgeX", L"edgeY", L"comment"};
 
+    // Tekla yardim sayfasindaki sekme basina olcu/ayrinti sekilleri
+    // (resources/tekla146.qrc). Yalniz bilgi amaclidir, parametre degildir.
+    const auto fig = [](const wchar_t* file, const wchar_t* caption) {
+        return DialogFigure{std::wstring(L":/tekla146/") + file, caption};
+    };
+    gPicture.figures = {
+        fig(L"picture_dimensions.png", L"Dimensions: 1 flange strip, 2 beam gap"),
+        fig(L"use_beam.png", L"Simple shear tab connected to a beam"),
+        fig(L"part_key.png", L"Part identification key: 1 shear tab, 2 haunch plate")};
+    gPlates.figures = {
+        fig(L"tab_gap.png", L"Gap between shear tab and secondary part"),
+        fig(L"tab_edge_distance.png", L"Shear tab edge distance"),
+        fig(L"tab_chamfers.png", L"Shear tab chamfers: 1 horizontal, 2 vertical")};
+    gStiff.figures = {
+        fig(L"stiffener_gap.png", L"Stiffener gap: 1 to flanges, 2 to web"),
+        fig(L"tab_chamfers.png", L"Stiffener chamfers: 1 horizontal, 2 vertical")};
+    gHaunch.figures = {
+        fig(L"haunch_chamfers.png", L"Haunch plate chamfers 1-4")};
+    gNotch.figures = {
+        fig(L"notch_size.png", L"Notch size"),
+        fig(L"notch_rounding.png", L"Notch dimension rounding"),
+        fig(L"notch_chamfer.png", L"Notch chamfer radius"),
+        fig(L"notch_cut_dimensions.png", L"Cut dimensions: 1 horizontal, 2 vertical"),
+        fig(L"notch_web_to_flange.png", L"Dimension from web to flange cut")};
+    gBolts.figures = {
+        fig(L"bolt_group_dimensions.png", L"Bolt group dimensions 1-7"),
+        fig(L"slotted_holes.png", L"Slotted holes: 1 vertical, 2 horizontal"),
+        fig(L"bolt_length_increase.png", L"Bolt length increase")};
+
     def.schema.groups = {gPicture, gPlates, gStiff, gHaunch, gNotch, gBolts};
     def.schema.useTabs = true;
     return def;

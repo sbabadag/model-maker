@@ -87,6 +87,7 @@ if(WIN32 AND Qt6_FOUND AND MODELMAKER_QT_MISSING STREQUAL "") # GUI Win32+GDI: y
         src/view_cube_renderer.cpp
         src/gdi_render_backend.cpp
         src/force_diagram.cpp
+        resources/tekla146.qrc
     )
     target_include_directories(model-maker PRIVATE include)
     target_link_libraries(model-maker PRIVATE model_maker_core Qt6::Widgets Qt6::Core Qt6::Gui
@@ -1022,7 +1023,8 @@ if(BUILD_TESTING)
         add_executable(model_maker_component_dialog_widget_test
             tests/component_dialog_widget_test.cpp
             src/component_dialog_widget.cpp
-            include/model_maker/component_dialog_widget.hpp)
+            include/model_maker/component_dialog_widget.hpp
+            resources/tekla146.qrc)
         target_include_directories(model_maker_component_dialog_widget_test PRIVATE include)
         target_link_libraries(model_maker_component_dialog_widget_test PRIVATE
             model_maker_core Qt6::Widgets)

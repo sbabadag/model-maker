@@ -1,0 +1,23 @@
+<RCC>
+    <!-- Tekla Structures 2026 "Shear plate simple (146)" yardim sayfasindan
+         (support.tekla.com/doc/tekla-structures/2026/conn_146_help) sekme basina
+         olcu/ayrinti sekilleri. Kaynak: Trimble User Assistance. -->
+    <qresource prefix="/tekla146">
+        <file alias="use_beam.png">tekla146/use_beam.png</file>
+        <file alias="part_key.png">tekla146/part_key.png</file>
+        <file alias="picture_dimensions.png">tekla146/picture_dimensions.png</file>
+        <file alias="tab_gap.png">tekla146/tab_gap.png</file>
+        <file alias="tab_edge_distance.png">tekla146/tab_edge_distance.png</file>
+        <file alias="tab_chamfers.png">tekla146/tab_chamfers.png</file>
+        <file alias="stiffener_gap.png">tekla146/stiffener_gap.png</file>
+        <file alias="haunch_chamfers.png">tekla146/haunch_chamfers.png</file>
+        <file alias="notch_size.png">tekla146/notch_size.png</file>
+        <file alias="notch_rounding.png">tekla146/notch_rounding.png</file>
+        <file alias="notch_chamfer.png">tekla146/notch_chamfer.png</file>
+        <file alias="notch_cut_dimensions.png">tekla146/notch_cut_dimensions.png</file>
+        <file alias="notch_web_to_flange.png">tekla146/notch_web_to_flange.png</file>
+        <file alias="bolt_group_dimensions.png">tekla146/bolt_group_dimensions.png</file>
+        <file alias="slotted_holes.png">tekla146/slotted_holes.png</file>
+        <file alias="bolt_length_increase.png">tekla146/bolt_length_increase.png</file>
+    </qresource>
+</RCC>

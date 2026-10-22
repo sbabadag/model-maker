@@ -5,6 +5,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include <algorithm>
 #include <cstdint>
 #include <fstream>
 #include <sstream>
@@ -411,6 +412,17 @@ std::vector<std::wstring> UserCatalog::registerInto(ComponentRegistry& reg,
             ComponentDialogDefinition d;
             d.typeId = e.typeId;
             d.specs = e.specs;
+            // Ailenin "documentedOnly" (Tekla'da var, geometrisi yok) alanlari
+            // sablonun KAYITLI specs'inde yoktur (sablon eski surumde kaydedilmis
+            // olabilir). Eksik kalirlarsa o alanlara bagli sekmeler bos kalip
+            // gizlenir; bu yuzden aileden eklenir. Motor ComponentType'ina
+            // GIRMEZ (yalniz dialog specs'i), deger kaydedilmez.
+            for (const auto& s : src->specs) {
+                if (!s.documentedOnly) continue;
+                const bool have = std::any_of(d.specs.begin(), d.specs.end(),
+                                              [&](const CompParamSpec& x) { return x.name == s.name; });
+                if (!have) d.specs.push_back(s);
+            }
             d.schema = src->schema;
             d.schema.typeId = e.typeId;
             dialogs.registerDialog(d);

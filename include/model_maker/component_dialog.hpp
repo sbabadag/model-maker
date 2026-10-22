@@ -122,6 +122,13 @@ struct WeldTableRow {
     bool operator==(const WeldTableRow&) const = default;
 };
 
+// Sekme altinda gosterilen aciklayici sekil (Qt kaynak yolu + baslik). Parametre
+// DEGILDIR: yalniz bilgi amaclidir (or. Tekla yardim sayfasindaki olcu sekilleri).
+struct DialogFigure {
+    std::wstring resource;  // orn. L":/tekla146/tab_gap.png"
+    std::wstring caption;   // sekil basligi
+};
+
 // Parametre alanlarini bir sekme/bolum altinda siralar. paramNames sirasi ayrica
 // goruntuleme sirasidir; her ad semada var olan bir parametreyi isaret etmeli.
 struct ComponentDialogGroup {
@@ -132,6 +139,8 @@ struct ComponentDialogGroup {
     // olarak cizilir (baslik = sekme adi). false = govde icinde bolum kutusu.
     // Bos paramNames'li sekme HIC cizilmez (bos sekme kullaniciya kafa karistirir).
     bool asTab{false};
+    // Sekmenin altinda gosterilen aciklayici sekiller (bos = sekil yok).
+    std::vector<DialogFigure> figures;
 };
 
 // Bir component tipinin TAM dialog semasi: cizim + hotspotlar + parametre

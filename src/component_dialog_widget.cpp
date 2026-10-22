@@ -12,6 +12,7 @@
 #include <QLineEdit>
 #include <QMouseEvent>
 #include <QPainter>
+#include <QPixmap>
 #include <QScrollArea>
 #include <QSpinBox>
 #include <QTabWidget>
@@ -30,6 +31,44 @@ namespace {
 const CompParamSpec* specByName(const std::vector<CompParamSpec>& specs,
                                 const std::wstring& name) noexcept {
     return findParamSpec(specs, name);
+}
+
+// Sekme formunun altina aciklayici sekilleri (Tekla yardim sayfasi olcu
+// sekilleri) ekler. Sekil yuklenemezse (kaynak gomulu degil) o sekil atlanir;
+// hic sekil yoksa form oldugu gibi doner. Sekiller parametre DEGILDIR.
+QWidget* wrapWithFigures(QWidget* form, const ComponentDialogGroup& g) {
+    if (g.figures.empty()) return form;
+    auto* box = new QGroupBox(QStringLiteral("Tekla 146 sekilleri"));
+    auto* v = new QVBoxLayout(box);
+    int shown = 0;
+    for (const auto& f : g.figures) {
+        QPixmap pm(QString::fromStdWString(f.resource));
+        if (pm.isNull()) continue;
+        // Kucuk simge boyutundaki sekilleri okunur yap (en fazla 2x), buyukleri
+        // sinirla; oran korunur.
+        const int w = pm.width();
+        const int target = w < 150 ? w * 2 : std::min(w, 420);
+        if (target != w) pm = pm.scaledToWidth(target, Qt::SmoothTransformation);
+        auto* cap = new QLabel(QString::fromStdWString(f.caption), box);
+        cap->setStyleSheet(QStringLiteral("font-weight: bold;"));
+        auto* img = new QLabel(box);
+        img->setPixmap(pm);
+        img->setToolTip(QString::fromStdWString(f.caption));
+        v->addWidget(cap);
+        v->addWidget(img);
+        ++shown;
+    }
+    if (shown == 0) {
+        delete box;
+        return form;
+    }
+    auto* outer = new QWidget;
+    auto* ol = new QVBoxLayout(outer);
+    ol->setContentsMargins(0, 0, 0, 0);
+    ol->addWidget(form);
+    ol->addWidget(box);
+    ol->addStretch(1);
+    return outer;
 }
 
 } // namespace
@@ -268,7 +307,7 @@ ComponentDialogWidget::ComponentDialogWidget(const ComponentDialogDefinition& de
             // Sekme icerigi KAYDIRILABILIR: 146 "Bolts" sekmesi 20+ satir tasir.
             auto* pageScroll = new QScrollArea;
             pageScroll->setWidgetResizable(true);
-            pageScroll->setWidget(page);
+            pageScroll->setWidget(wrapWithFigures(page, g));
             tabs_->addTab(pageScroll, QString::fromStdWString(g.title));
             const int idx = tabs_->count() - 1;
             for (const auto& pn : g.paramNames)
