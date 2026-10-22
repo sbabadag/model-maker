@@ -29,6 +29,9 @@
 
 class QScrollArea;
 class QVBoxLayout;
+class QFormLayout;
+class QTabWidget;
+class QCheckBox;
 
 namespace mm {
 
@@ -87,6 +90,8 @@ private:
                          QWidget* parent);
     static CompParamValue valueFromEditor(QWidget* editor, const CompParamSpec& spec);
     void highlightParamRow(const std::wstring& paramName);
+    void addParamRow(QFormLayout* form, QWidget* box, const std::wstring& paramName,
+                     std::vector<std::wstring>& ungrouped);
 
     ComponentDialogDefinition def_;       // kopya — registry ömründen bağımsız
     std::vector<CompParam> current_;
@@ -95,9 +100,12 @@ private:
     QScrollArea* scroll_{};
     QWidget* paramBody_{};
     QVBoxLayout* paramLayout_{};
+    QTabWidget* tabs_{};                            // useTabs modunda sekmeler
     std::map<std::wstring, QWidget*> editors_;      // paramName -> editor
     std::map<std::wstring, QWidget*> rows_;         // paramName -> satır etiketi (vurgu)
     std::map<std::wstring, std::vector<std::wstring>> paramToHotspots_;
+    std::map<std::wstring, int> paramTabIndex_;     // paramName -> sekme indeksi
+    std::map<std::wstring, QCheckBox*> optionalChecks_;  // "Default" onay kutulari
     std::wstring highlightedRow_;
 };
 

@@ -542,68 +542,108 @@ ComponentDialogDefinition shearPlate146DialogDefinition() noexcept {
     // durur; dialog YALNIZ UYGULANAN alanlari gosterir (unsupported gizlenmez,
     // bu dilimde dialogda acilmaz — coverage'ta raporlanir).
     def.specs = shearPlate146ComponentType().params;
+    // Tekla diyalogunda bu satirlarin solunda "Default" onay kutusu vardir:
+    // isaretsiz birakilirsa motor varsayilani kullanilir (parametre yazilmaz).
+    {
+        const std::wstring withDefaultBox[] = {
+            L"boltStandard", L"tolerance", L"threadInMat", L"holeType",
+            L"rotateSlots", L"slotsIn", L"cutLength", L"comment"};
+        for (auto& s : def.specs)
+            for (const auto& n : withDefaultBox)
+                if (s.name == n) s.optional = true;
+    }
 
+    // --- SEMATIK (Picture sekmesi): Tekla 146 resmi -------------------------
+    // Kolon (dikey) + turuncu kayma levhasi (2x2 bulon deligi) + kiris (yatay).
     ComponentDiagramItem main;
     main.id = L"main";
-    main.primitives.push_back(rectP(20.0, 20.0, 48.0, 220.0, true));
+    main.primitives.push_back(rectP(18.0, 18.0, 52.0, 222.0, true));   // kolon
 
     ComponentDiagramItem plate;
     plate.id = L"plate";
-    plate.primitives.push_back(rectP(48.0, 80.0, 78.0, 180.0, true));
+    plate.primitives.push_back(rectP(52.0, 62.0, 84.0, 178.0, true));  // levha
 
     ComponentDiagramItem beam;
     beam.id = L"beam";
-    beam.primitives.push_back(rectP(78.0, 110.0, 340.0, 150.0, true));
+    beam.primitives.push_back(rectP(84.0, 92.0, 320.0, 148.0, true));  // kiris
 
     ComponentDiagramItem bolts;
     bolts.id = L"bolts";
-    bolts.primitives.push_back(circleP(63.0, 105.0, 4.0));
-    bolts.primitives.push_back(circleP(63.0, 130.0, 4.0));
-    bolts.primitives.push_back(circleP(63.0, 155.0, 4.0));
+    bolts.primitives.push_back(circleP(62.0, 100.0, 4.0));
+    bolts.primitives.push_back(circleP(74.0, 100.0, 4.0));
+    bolts.primitives.push_back(circleP(62.0, 140.0, 4.0));
+    bolts.primitives.push_back(circleP(74.0, 140.0, 4.0));
 
-    def.schema.items = {main, plate, beam, bolts};
+    // Olcu cizgileri (Tekla resmindeki olcu oklarinin karsiligi).
+    ComponentDiagramItem dims;
+    dims.id = L"dims";
+    dims.primitives.push_back(lineP(52.0, 186.0, 84.0, 186.0, true));   // genislik olcusu
+    dims.primitives.push_back(lineP(52.0, 180.0, 52.0, 192.0));         // olcu basi (sol)
+    dims.primitives.push_back(lineP(84.0, 180.0, 84.0, 192.0));         // olcu basi (sag)
+    dims.primitives.push_back(lineP(92.0, 62.0, 92.0, 178.0, true));    // yukseklik olcusu
+    dims.primitives.push_back(lineP(88.0, 62.0, 96.0, 62.0));
+    dims.primitives.push_back(lineP(88.0, 178.0, 96.0, 178.0));
+    dims.primitives.push_back(lineP(46.0, 100.0, 46.0, 140.0, true));   // bulon araligi
+
+    def.schema.items = {main, plate, beam, bolts, dims};
 
     def.schema.hotspots = {
-        hotspot(L"hs_thickness", 63.0, 192.0, 8.0, std::wstring(L"plateThickness"), std::wstring(L"1")),
-        hotspot(L"hs_height", 63.0, 72.0, 8.0, std::wstring(L"plateHeight"), std::wstring(L"2")),
-        hotspot(L"hs_width", 100.0, 130.0, 8.0, std::wstring(L"plateWidth"), std::wstring(L"3")),
-        hotspot(L"hs_bolt_edge", 44.0, 105.0, 8.0, std::wstring(L"boltEdge"), std::wstring(L"4")),
-        hotspot(L"hs_bolt_count", 63.0, 130.0, 8.0, std::wstring(L"boltCount"), std::wstring(L"5")),
+        hotspot(L"hs_thickness", 46.0, 120.0, 8.0, std::wstring(L"plateThickness"), std::wstring(L"1")),
+        hotspot(L"hs_height", 92.0, 120.0, 8.0, std::wstring(L"plateHeight"), std::wstring(L"2")),
+        hotspot(L"hs_width", 68.0, 186.0, 8.0, std::wstring(L"plateWidth"), std::wstring(L"3")),
+        hotspot(L"hs_bolt_edge", 46.0, 100.0, 8.0, std::wstring(L"boltEdge"), std::wstring(L"4")),
+        hotspot(L"hs_bolt_count", 62.0, 120.0, 8.0, std::wstring(L"boltCount"), std::wstring(L"5")),
     };
 
-    ComponentDialogGroup gTab;
-    gTab.id = L"tab_plate";
-    gTab.title = L"Tab plate";
-    gTab.paramNames = {L"plateThickness", L"plateWidth", L"plateHeight"};
-
-    ComponentDialogGroup gTabPos;
-    gTabPos.id = L"tab_position";
-    gTabPos.title = L"Tab position";
-    gTabPos.paramNames = {L"shearTabPosition", L"tabGapSecondary"};
-
-    ComponentDialogGroup gBeamCut;
-    gBeamCut.id = L"beam_cut";
-    gBeamCut.title = L"Beam cut";
-    gBeamCut.paramNames = {L"beamGap", L"beamEndCut"};
-
-    ComponentDialogGroup gBolts;
-    gBolts.id = L"bolt_group";
-    gBolts.title = L"Bolt group";
-    gBolts.paramNames = {L"boltDiameter", L"holeDiameter", L"boltCount", L"boltEdge",
-                         L"grade", L"boltSpacing", L"boltVerticalMeasure",
-                         L"boltVerticalPos", L"deletedBolts"};
+    // --- SEKMELER (Tekla 146 duzeni): Plates / Stiffeners / General / Notch /
+    // Bolts / Beam cut. SEMATIK sol panelde KALICI durur (Tekla'daki Picture
+    // sekmesinin islevi); bu yuzden ayrica "Picture" sekmesi acilmaz — ayni
+    // parametreler iki sekmede iki ayri editor olur ve degerler paylasilmazdi.
+    ComponentDialogGroup gPlates;
+    gPlates.id = L"tab_plates";
+    gPlates.title = L"Plates";
+    gPlates.asTab = true;
+    gPlates.paramNames = {L"plateThickness", L"plateWidth", L"plateHeight",
+                          L"boltEdge", L"boltCount"};
 
     ComponentDialogGroup gStiff;
-    gStiff.id = L"stiffener";
-    gStiff.title = L"Stiffener";
+    gStiff.id = L"tab_stiffeners";
+    gStiff.title = L"Stiffeners";
+    gStiff.asTab = true;
     gStiff.paramNames = {L"stiffenerCreation", L"stiffenerGapWeb"};
 
-    ComponentDialogGroup gBacking;
-    gBacking.id = L"backing_bar";
-    gBacking.title = L"Backing bar";
-    gBacking.paramNames = {L"backingBarT"};
+    ComponentDialogGroup gGeneral;
+    gGeneral.id = L"tab_general";
+    gGeneral.title = L"General";
+    gGeneral.asTab = true;
+    gGeneral.paramNames = {L"shearTabPosition", L"tabGapSecondary", L"backingBarT"};
 
-    def.schema.groups = {gTab, gTabPos, gBeamCut, gBolts, gStiff, gBacking};
+    ComponentDialogGroup gNotch;
+    gNotch.id = L"tab_notch";
+    gNotch.title = L"Notch";
+    gNotch.asTab = true;
+    gNotch.paramNames = {L"beamEndCut"};
+
+    ComponentDialogGroup gBolts;
+    gBolts.id = L"tab_bolts";
+    gBolts.title = L"Bolts";
+    gBolts.asTab = true;
+    gBolts.paramNames = {L"boltDiameter", L"holeDiameter", L"grade",
+                         L"boltStandard", L"tolerance", L"threadInMat",
+                         L"holeType", L"rotateSlots", L"slotsIn", L"cutLength",
+                         L"boltCount", L"boltCountX", L"pitchX", L"pitchY",
+                         L"edgeX", L"edgeY", L"boltEdge", L"boltSpacing",
+                         L"boltVerticalMeasure", L"boltVerticalPos",
+                         L"deletedBolts", L"comment"};
+
+    ComponentDialogGroup gBeamCut;
+    gBeamCut.id = L"tab_beam_cut";
+    gBeamCut.title = L"Beam cut";
+    gBeamCut.asTab = true;
+    gBeamCut.paramNames = {L"beamGap", L"beamEndCut"};
+
+    def.schema.groups = {gPlates, gStiff, gGeneral, gNotch, gBolts, gBeamCut};
+    def.schema.useTabs = true;
     return def;
 }
 

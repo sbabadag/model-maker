@@ -98,6 +98,10 @@ struct ComponentDialogGroup {
     std::wstring id;      // sema icinde tekil
     std::wstring title;   // gorunen baslik
     std::vector<std::wstring> paramNames;  // bu gruptaki parametreler (sirali)
+    // Tekla 146 gibi SEKMELI diyaloglar icin: true ise bu grup ayri bir SEKME
+    // olarak cizilir (baslik = sekme adi). false = govde icinde bolum kutusu.
+    // Bos paramNames'li sekme HIC cizilmez (bos sekme kullaniciya kafa karistirir).
+    bool asTab{false};
 };
 
 // Bir component tipinin TAM dialog semasi: cizim + hotspotlar + parametre
@@ -107,6 +111,9 @@ struct ComponentDialogSchema {
     std::vector<ComponentDiagramItem> items;
     std::vector<DiagramHotspot> hotspots;
     std::vector<ComponentDialogGroup> groups;
+    // true: gruplar SEKME olarak cizilir (Tekla 146 duzeni); false: bolum
+    // kutulari (eski davranis, varsayilan — geriye uyumlu).
+    bool useTabs{false};
 };
 
 // --- DOGRULAMA ---------------------------------------------------------------

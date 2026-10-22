@@ -13,6 +13,7 @@
 #include <QPainter>
 #include <QScrollArea>
 #include <QSpinBox>
+#include <QTabWidget>
 #include <QVBoxLayout>
 
 #include <algorithm>
@@ -231,45 +232,119 @@ ComponentDialogWidget::ComponentDialogWidget(const ComponentDialogDefinition& de
     std::vector<std::wstring> ungrouped;
     for (const auto& spec : def_.specs) ungrouped.push_back(spec.name);
 
-    const auto addRow = [&](QFormLayout* form, QWidget* box, const std::wstring& pn) {
-        const CompParamSpec* spec = specByName(def_.specs, pn);
-        if (!spec) return;
-        ungrouped.erase(std::remove(ungrouped.begin(), ungrouped.end(), pn), ungrouped.end());
-        const CompParam* stored = findParam(current_, pn);
-        const CompParamValue value = stored ? stored->value : paramDefaultValue(*spec);
-        QWidget* editor = buildEditor(*spec, value, box);
-        auto* lbl = new QLabel(QString::fromStdWString(
-            spec->description.empty() ? spec->name : spec->description), box);
-        form->addRow(lbl, editor);
-        editors_[pn] = editor;
-        rows_[pn] = lbl;
-        editor->installEventFilter(this);
-    };
+    if (def_.schema.useTabs) {
+        // SEKMELI duzen (Tekla 146): her grup bir SEKME. Ayni parametre birden
+        // fazla sekmede listelenebilir (or. plateThickness hem Picture hem
+        // Plates) ama TEK editoru olur — ilk sekmede acilir, digeri atlanir;
+        // aksi halde iki editor ayni degeri paylasmaz ve son yazan kazanir.
+        tabs_ = new QTabWidget(this);
+        tabs_->setMinimumWidth(380);
+        for (const auto& g : def_.schema.groups) {
+            auto* page = new QWidget;
+            auto* form = new QFormLayout(page);
+            form->setLabelAlignment(Qt::AlignLeft);
+            form->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
+            for (const auto& pn : g.paramNames) addParamRow(form, page, pn, ungrouped);
+            if (form->rowCount() == 0) {  // bos sekme acma
+                delete page;
+                continue;
+            }
+            // Sekme icerigi KAYDIRILABILIR: 146 "Bolts" sekmesi 20+ satir tasir.
+            auto* pageScroll = new QScrollArea;
+            pageScroll->setWidgetResizable(true);
+            pageScroll->setWidget(page);
+            tabs_->addTab(pageScroll, QString::fromStdWString(g.title));
+            const int idx = tabs_->count() - 1;
+            for (const auto& pn : g.paramNames)
+                if (editors_.count(pn) && !paramTabIndex_.count(pn)) paramTabIndex_[pn] = idx;
+        }
+        if (!ungrouped.empty()) {
+            auto* page = new QWidget;
+            auto* form = new QFormLayout(page);
+            form->setLabelAlignment(Qt::AlignLeft);
+            form->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
+            for (const auto& pn : ungrouped) addParamRow(form, page, pn, ungrouped);
+            if (form->rowCount() > 0) {
+                auto* pageScroll = new QScrollArea;
+                pageScroll->setWidgetResizable(true);
+                pageScroll->setWidget(page);
+                tabs_->addTab(pageScroll, QStringLiteral("Diğer"));
+            } else {
+                delete page;
+            }
+        }
+        root->addWidget(tabs_, /*stretch*/ 2);
+    } else {
+        scroll_ = new QScrollArea(this);
+        scroll_->setWidgetResizable(true);
+        scroll_->setMinimumWidth(380);
+        paramBody_ = new QWidget;
+        paramLayout_ = new QVBoxLayout(paramBody_);
+        paramLayout_->setContentsMargins(4, 4, 4, 4);
+        paramLayout_->setSpacing(6);
 
-    for (const auto& g : def_.schema.groups) {
-        auto* box = new QGroupBox(QString::fromStdWString(g.title), paramBody_);
-        auto* form = new QFormLayout(box);
-        form->setLabelAlignment(Qt::AlignLeft);
-        form->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
-        for (const auto& pn : g.paramNames) addRow(form, box, pn);
-        paramLayout_->addWidget(box);
+        for (const auto& g : def_.schema.groups) {
+            auto* box = new QGroupBox(QString::fromStdWString(g.title), paramBody_);
+            auto* form = new QFormLayout(box);
+            form->setLabelAlignment(Qt::AlignLeft);
+            form->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
+            for (const auto& pn : g.paramNames) addParamRow(form, box, pn, ungrouped);
+            paramLayout_->addWidget(box);
+        }
+
+        if (!ungrouped.empty()) {
+            auto* box = new QGroupBox(QStringLiteral("Diğer"), paramBody_);
+            auto* form = new QFormLayout(box);
+            form->setLabelAlignment(Qt::AlignLeft);
+            form->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
+            for (const auto& pn : ungrouped) addParamRow(form, box, pn, ungrouped);
+            paramLayout_->addWidget(box);
+        }
+
+        paramLayout_->addStretch(1);
+        scroll_->setWidget(paramBody_);
+        root->addWidget(scroll_, /*stretch*/ 2);
     }
-
-    if (!ungrouped.empty()) {
-        auto* box = new QGroupBox(QStringLiteral("Diğer"), paramBody_);
-        auto* form = new QFormLayout(box);
-        form->setLabelAlignment(Qt::AlignLeft);
-        form->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
-        for (const auto& pn : ungrouped) addRow(form, box, pn);
-        paramLayout_->addWidget(box);
-    }
-
-    paramLayout_->addStretch(1);
-    scroll_->setWidget(paramBody_);
-    root->addWidget(scroll_, /*stretch*/ 2);
 
     connect(schematic_, &ComponentSchematicView::hotspotClicked,
             this, &ComponentDialogWidget::onHotspotClicked);
+}
+
+// Tek parametre satiri: [Default onay kutusu] etiket | editor.
+// `optional` parametrelerde onay kutusu isaretsizse deger sonuca YAZILMAZ
+// (motor varsayilani uygulanir) — Tekla'daki "Default" davranisi.
+void ComponentDialogWidget::addParamRow(QFormLayout* form, QWidget* box,
+                                        const std::wstring& pn,
+                                        std::vector<std::wstring>& ungrouped) {
+    const CompParamSpec* spec = specByName(def_.specs, pn);
+    if (!spec) return;
+    ungrouped.erase(std::remove(ungrouped.begin(), ungrouped.end(), pn), ungrouped.end());
+    if (editors_.count(pn)) return;  // ayni parametre icin TEK editor
+
+    const CompParam* stored = findParam(current_, pn);
+    const CompParamValue value = stored ? stored->value : paramDefaultValue(*spec);
+    QWidget* editor = buildEditor(*spec, value, box);
+
+    auto* labelHost = new QWidget(box);
+    auto* labelRow = new QHBoxLayout(labelHost);
+    labelRow->setContentsMargins(0, 0, 0, 0);
+    labelRow->setSpacing(4);
+    if (spec->optional) {
+        // Isaretli = deger kullanilir; bos = Default (motor varsayilani).
+        auto* cb = new QCheckBox(labelHost);
+        cb->setChecked(true);  // Tekla varsayilani: isaretli
+        cb->setToolTip(QStringLiteral("Isaretsiz = Default (motor varsayilani)"));
+        optionalChecks_[pn] = cb;
+        labelRow->addWidget(cb);
+    }
+    auto* lbl = new QLabel(QString::fromStdWString(
+        spec->description.empty() ? spec->name : spec->description), labelHost);
+    labelRow->addWidget(lbl, 1);
+
+    form->addRow(labelHost, editor);
+    editors_[pn] = editor;
+    rows_[pn] = lbl;
+    editor->installEventFilter(this);
 }
 
 QWidget* ComponentDialogWidget::buildEditor(const CompParamSpec& spec,
@@ -367,6 +442,16 @@ std::vector<CompParam> ComponentDialogWidget::resultParams() const {
     for (const auto& spec : def_.specs) {
         const auto it = editors_.find(spec.name);
         if (it == editors_.end()) continue;
+        // "Default" onay kutusu isaretsizse deger SONUCA YAZILMAZ: motor kendi
+        // varsayilanini uygular (Tekla davranisi). Onceden kayitli deger varsa
+        // da kaldirilir — aksi halde "Default" secmek eski degeri korurdu.
+        const auto oc = optionalChecks_.find(spec.name);
+        if (oc != optionalChecks_.end() && !oc->second->isChecked()) {
+            result.erase(std::remove_if(result.begin(), result.end(),
+                                        [&](const CompParam& p) { return p.name == spec.name; }),
+                         result.end());
+            continue;
+        }
         const CompParamValue v = valueFromEditor(it->second, spec);
         bool found = false;
         for (auto& p : result) {
@@ -382,7 +467,14 @@ std::vector<CompParam> ComponentDialogWidget::resultParams() const {
 }
 
 void ComponentDialogWidget::onHotspotClicked(const QString& paramName) {
-    highlightParamRow(paramName.toStdWString());
+    const std::wstring name = paramName.toStdWString();
+    // Sekmeli duzende hotspot'un parametresi baska bir sekmede olabilir:
+    // once o sekmeye gec, sonra satiri vurgula.
+    if (tabs_) {
+        const auto it = paramTabIndex_.find(name);
+        if (it != paramTabIndex_.end()) tabs_->setCurrentIndex(it->second);
+    }
+    highlightParamRow(name);
 }
 
 bool ComponentDialogWidget::eventFilter(QObject* watched, QEvent* event) {
@@ -410,7 +502,9 @@ void ComponentDialogWidget::highlightParamRow(const std::wstring& paramName) {
         it->second->setStyleSheet(QStringLiteral(
             "background: #FFE3B3; border-radius: 2px; padding: 1px;"));
         const auto eit = editors_.find(paramName);
-        if (eit != editors_.end()) scroll_->ensureWidgetVisible(eit->second, 0, 16);
+        // Sekmeli duzende scroll_ yoktur; editor zaten gorunur sekmede.
+        if (eit != editors_.end() && scroll_)
+            scroll_->ensureWidgetVisible(eit->second, 0, 16);
     }
 }
 

@@ -155,7 +155,41 @@ int main() {
               "bos bolge hotspot secmez");
     }
 
-    // --- 7) Registry ---------------------------------------------------------
+    // --- 7) Tekla 146 duzeni: sekmeler + bulon ozellik alanlari ---------------
+    {
+        const ComponentDialogDefinition def = shearPlate146DialogDefinition();
+        check(def.schema.useTabs, "146: sekmeli duzen");
+        check(def.schema.groups.size() == 6, "146: 6 sekme");
+        const wchar_t* expected[] = {L"Plates", L"Stiffeners", L"General",
+                                     L"Notch", L"Bolts", L"Beam cut"};
+        bool titlesOk = def.schema.groups.size() == 6;
+        for (std::size_t i = 0; titlesOk && i < 6; ++i)
+            titlesOk = def.schema.groups[i].title == expected[i] && def.schema.groups[i].asTab;
+        check(titlesOk, "146: sekme adlari ve sirasi Tekla ile ayni");
+
+        // Tekla "Bolt properties" alanlari semada VAR ve Default kutulu (optional).
+        const wchar_t* teklaBolt[] = {L"boltStandard", L"tolerance", L"threadInMat",
+                                      L"holeType", L"rotateSlots", L"slotsIn",
+                                      L"cutLength", L"comment"};
+        for (const wchar_t* name : teklaBolt) {
+            const CompParamSpec* s = findParamSpec(def.specs, name);
+            check(s != nullptr, "146: Tekla bulon alani semada var");
+            check(s && s->optional, "146: Tekla bulon alani Default kutulu");
+        }
+
+        const auto v = validateDialogSchema(def.schema, def.specs);
+        check(v.ok, "146: sekme semasi gecerli (hotspot/grup baglari)");
+        // Sematik: 2x2 bulon deligi (4 daire) + olcu cizgileri.
+        const ComponentDiagramItem* bolts = nullptr;
+        for (const auto& it : def.schema.items)
+            if (it.id == L"bolts") bolts = &it;
+        check(bolts && bolts->primitives.size() == 4, "146: levhada 2x2 bulon deligi");
+        bool hasDims = false;
+        for (const auto& it : def.schema.items) hasDims = hasDims || it.id == L"dims";
+        check(hasDims, "146: semada olcu cizgileri var");
+    }
+
+    // --- 8) Registry ---------------------------------------------------------
     {
         ComponentDialogRegistry reg;
         check(reg.count() == 0, "bos registry");

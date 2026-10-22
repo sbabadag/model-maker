@@ -10,6 +10,8 @@
 #include "model_maker/component_dialog_widget.hpp"
 
 #include <QApplication>
+#include <QCheckBox>
+#include <QTabWidget>
 
 #include <cstdio>
 
@@ -73,6 +75,47 @@ int main(int argc, char** argv) {
     // 5) Hit-test: hotspot dışı boş alan nullopt, hotspot içi id döner.
     const auto miss = mm::hitTestDiagramHotspot(ep.schema, mm::DiagramPoint{300.0, 10.0});
     CHECK(!miss.has_value(), "bos alan hotspot dondurmemeli");
+
+    // 6) Tekla 146 diyalogu: SEKMELER gercekten kurulur ve "Default" onay
+    //    kutusu isaretsiz birakilinca parametre sonuca YAZILMAZ.
+    {
+        const mm::ComponentDialogDefinition d = mm::shearPlate146DialogDefinition();
+        CHECK(d.schema.useTabs, "146: sekmeli duzen");
+        const std::vector<mm::CompParam> empty;
+        mm::ComponentDialogWidget w146(d, empty);
+        w146.resize(1000, 700);
+        w146.show();
+
+        auto* tabWidget = w146.findChild<QTabWidget*>();
+        CHECK(tabWidget != nullptr, "146: QTabWidget kuruldu");
+        CHECK(tabWidget && tabWidget->count() == 6, "146: 6 sekme cizildi");
+        if (tabWidget) {
+            CHECK(tabWidget->tabText(0) == QStringLiteral("Plates"), "146: ilk sekme Plates");
+            CHECK(tabWidget->tabText(1) == QStringLiteral("Stiffeners"), "146: ikinci sekme Stiffeners");
+            CHECK(tabWidget->tabText(5) == QStringLiteral("Beam cut"), "146: son sekme Beam cut");
+        }
+
+        // Baslangicta Default kutulari isaretli -> alan sonuca yazilir.
+        auto params = w146.resultParams();
+        bool hasStandard = false;
+        for (const auto& p : params)
+            if (p.name == L"boltStandard") hasStandard = true;
+        CHECK(hasStandard, "146: boltStandard sonuca yazilir (kutu isaretli)");
+
+        // "Default" onay kutusunu bul (tooltip ile) ve isareti kaldir.
+        QCheckBox* opt = nullptr;
+        for (auto* cb : w146.findChildren<QCheckBox*>())
+            if (cb->toolTip().contains(QStringLiteral("Default"))) { opt = cb; break; }
+        CHECK(opt != nullptr, "146: Default onay kutusu bulundu");
+        if (opt) {
+            opt->setChecked(false);
+            params = w146.resultParams();
+            bool stillThere = false;
+            for (const auto& p : params)
+                if (p.name == L"boltStandard") stillThere = true;
+            CHECK(!stillThere, "146: Default isaretsiz -> parametre yazilmaz");
+        }
+    }
 
     if (failures) {
         std::printf("%d kontrol basarisiz\n", failures);

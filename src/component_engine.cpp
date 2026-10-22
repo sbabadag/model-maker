@@ -782,6 +782,20 @@ ComponentType shearPlate146ComponentType() noexcept {
         lengthParam(L"boltVerticalPos", L"mm", 0.0, -1000.0, 1000.0,
                     L"bulon grubunun dusey kaymasi"),
         stringParam(L"deletedBolts", L"", L"silinecek bulon numaralari (1-based, boslukla)"),
+        // --- Tekla 146 "Bolt properties" (resimli diyalogdaki alanlar) -------
+        // Tekla diyalogunda her satirin solunda "Default" onay kutusu vardir;
+        // isaretsiz birakilan alan varsayilani kullanir (optional=true).
+        enumParam(L"boltStandard", L"Default",
+                  {L"Default", L"ISO 4014", L"ISO 4032", L"ISO 7412"}, L"bulon standardi"),
+        lengthParam(L"tolerance", L"mm", 0.0, 0.0, 10.0, L"delik toleransi"),
+        boolParam(L"threadInMat", true, L"dis bulonlu parcada (thread in mat)"),
+        enumParam(L"holeType", L"Default",
+                  {L"Default", L"Oversized", L"Slotted", L"Threaded"}, L"delik tipi"),
+        enumParam(L"rotateSlots", L"Default", {L"Default", L"No", L"Yes"}, L"yuvalari dondur"),
+        enumParam(L"slotsIn", L"Default", {L"Default", L"Plate", L"Beam"},
+                  L"yuvalar hangi parcada"),
+        enumParam(L"cutLength", L"Default", {L"Default", L"No", L"Yes"}, L"boyuna kesme"),
+        stringParam(L"comment", L"", L"aciklama"),
         // --- Stiffeners tab ---
         enumParam(L"stiffenerCreation", L"none", {L"none", L"full"}, L"govde berkitmesi"),
         lengthParam(L"stiffenerGapWeb", L"mm", 10.0, 0.0, 200.0, L"berkitme-govde boslugu"),

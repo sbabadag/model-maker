@@ -106,6 +106,12 @@ struct CompParamSpec {
     bool defBool{false};
     std::wstring defString;
     std::vector<std::wstring> choices;  // Enum
+    // TEKLA "Default" ONIZLEME KUTUSU: true ise dialog satirin solunda bir
+    // onay kutusu gosterir. Isaretli = kullanicinin degeri KULLANILIR; isaretsiz
+    // = parametre sonuc listesine HIC yazilmaz, motor varsayilani uygular
+    // (Tekla'daki "Default" davranisi). false = kutu yok, deger her zaman yazilir
+    // (geriye uyumlu; mevcut parametrelerin davranisi degismez).
+    bool optional{false};
 };
 
 // Tipik deger kumesi. Turler (double/int/bool/wstring/EntityId) birbirinden
