@@ -4,6 +4,8 @@
 #include "model_maker/bolt.hpp"
 #include "model_maker/bolt_geometry.hpp"
 #include "model_maker/cut_modifier.hpp"
+#include "model_maker/weld.hpp"
+#include "model_maker/weld_geometry.hpp"
 
 #include <BRepBuilderAPI_MakeFace.hxx>
 #include <BRepBuilderAPI_MakePolygon.hxx>
@@ -29,15 +31,55 @@ bool axisDir(const Vec3& a, gp_Dir& out) noexcept {
     return true;
 }
 
-// Renk konvansiyonu (Tekla tarzi): levha gri, civata (bolon) kahverengi.
+// Renk konvansiyonu (Tekla tarzi): levha gri, civata (bolon) kahverengi,
+// kaynak kati parlak yesil (W7: 4m kolonda 5mm kaynak uzaktan gorunur olsun).
 constexpr std::uint32_t kPlateColor = 0x808080u;  // gri
 constexpr std::uint32_t kBoltColor = 0x8B592Au;   // kahverengi (RGB 139,89,42)
+constexpr std::uint32_t kWeldColor = 0x00C853u;   // parlak yesil
 
 void applyColor(WireframeModel& model, std::uint32_t color) noexcept {
     auto props = model.properties();
     props.trueColor = color;
     props.effectiveColor = color;
     model.setProperties(std::move(props));
+}
+
+// Bir weld kaydi icin (main/sec B-Rep'ten) fillet kati + display modeli uretir.
+// Basariliysa solidOut/wfOut doldurulur ve w.geometrySupported=true; degilse
+// w.unsupportedReason'a neden yazilir ve false doner (SESSIZ yanlis kati YOK).
+bool buildWeldGeometry(Weld& w, const TopoDS_Shape& mainShape,
+                       const TopoDS_Shape& secShape, TopoDS_Shape& solidOut,
+                       WireframeModel& wfOut) {
+    const double leg = w.sizeIsThroat ? w.size * std::sqrt(2.0) : w.size;
+    std::string reason;
+    double seam = 0.0;
+    const auto solids = buildWeldSolids(w, mainShape, secShape, leg, reason, &seam);
+    if (seam > 0.0) w.length = seam;
+    if (solids.empty()) {
+        w.unsupportedReason = reason.empty() ? "kaynak kati uretilemedi" : reason;
+        return false;
+    }
+    TopoDS_Shape fused = solids[0];
+    for (std::size_t i = 1; i < solids.size(); ++i)
+        fused = booleanFuseShape(fused, solids[i]);
+    if (fused.IsNull()) {
+        w.unsupportedReason = "kaynak kati birlestirilemedi";
+        return false;
+    }
+    const WeldJunction j = findBestWeldJunction(mainShape, secShape, 0.5);
+    if (j.valid) {
+        w.origin = j.start;
+        w.direction = j.direction;
+        w.mainNormal = j.mainNormal;
+        w.secNormal = j.secNormal;
+    }
+    w.geometrySupported = true;
+    w.unsupportedReason.clear();
+    WireframeModel wf = shapeToWireframeWithFaces(fused, 0.15);
+    applyColor(wf, kWeldColor);
+    solidOut = fused;
+    wfOut = std::move(wf);
+    return true;
 }
 
 }  // namespace
@@ -170,13 +212,32 @@ ComponentMaterializer::Prepared ComponentMaterializer::prepare(
                 }
                 break;
             }
-            case ComponentObjectKind::Weld:
-                // GERCEK weld geometri motoru yok — acik Unsupported (sessiz
-                // "basari" URETILMEZ; C2 kurali).
-                pc.weldUnsupported = true;
-                out.error = L"Weld desteklenmiyor (weld geometri motoru yok): " +
-                            std::wstring(child.roleKey.begin(), child.roleKey.end());
-                return out;
+            case ComponentObjectKind::Weld: {
+                if (!child.weld) {
+                    out.error = L"Weld child payload eksik: " +
+                                std::wstring(child.roleKey.begin(), child.roleKey.end());
+                    return out;
+                }
+                // KAYNAK PARCA COZUMU commit/recompute'ta yapilir (owned levha
+                // EntityId'si henuz atanmamis). Burada yalnizca referans
+                // gecerliligi dogrulanir: her iki taraf da EntityId VEYA roleKey
+                // tasimali. Yetersiz referans -> acik Unsupported (sessiz basari
+                // URETILMEZ — C2 kurali).
+                const WeldSpec& ws = *child.weld;
+                const bool aOk = ws.partA != kInvalidEntityId || !ws.partARole.empty();
+                const bool bOk = ws.partB != kInvalidEntityId || !ws.partBRole.empty();
+                if (!aOk || !bOk) {
+                    out.error = L"Weld parcasi cozulemedi (partA/partB EntityId veya roleKey yok): '" +
+                                std::wstring(child.roleKey.begin(), child.roleKey.end()) + L"'";
+                    return out;
+                }
+                if (ws.size <= 0.0 && ws.throat <= 0.0) {
+                    out.error = L"Weld olcusu <= 0: '" +
+                                std::wstring(child.roleKey.begin(), child.roleKey.end()) + L"'";
+                    return out;
+                }
+                break;
+            }
             default:
                 // Construction (point/line/plane) plana dahil edilmemeliydi.
                 out.error = L"desteklenmeyen child kind: " +
@@ -476,6 +537,32 @@ ComponentMaterializer::CommitResult ComponentMaterializer::commit(const Prepared
         return it != out.roleToEntity.end() ? it->second : kInvalidEntityId;
     };
 
+    // Kaynak parcasi cozumu: EntityId verilmisse aynen; roleKey verilmisse
+    // \"main\"/\"secondary_N\" rezerve rol veya owned child (out.roleToEntity).
+    const auto resolveWeldPart = [&](EntityId direct, const std::string& role) -> EntityId {
+        if (direct != kInvalidEntityId) return direct;
+        if (role == "main") return record.mainPart;
+        if (role.rfind("secondary_", 0) == 0) {
+            const std::string suffix = role.substr(std::string("secondary_").size());
+            const int idx = suffix.empty() ? -1 : std::atoi(suffix.c_str());
+            if (idx >= 0 && static_cast<std::size_t>(idx) < record.secondaryParts.size())
+                return record.secondaryParts[static_cast<std::size_t>(idx)];
+            return kInvalidEntityId;
+        }
+        const auto it = out.roleToEntity.find(role);
+        return it != out.roleToEntity.end() ? it->second : kInvalidEntityId;
+    };
+
+    // Kaynak kimligi (\"W001\", ...) — mevcut kaynak sayisindan turetilir.
+    const auto nextWeldIdentification = [&]() {
+        std::uint64_t seq = doc_.welds().size() + 1;
+        std::string digits = std::to_string(seq);
+        while (digits.size() < 3) digits = "0" + digits;
+        std::string id = "W";
+        id += digits;
+        return id;
+    };
+
     for (const std::size_t ci : order) {
         const PreparedChild& pc = prep.children[ci];
         switch (pc.record.kind) {
@@ -560,8 +647,57 @@ ComponentMaterializer::CommitResult ComponentMaterializer::commit(const Prepared
                 out.cutTargets.push_back(mod.target);
                 break;
             }
+            case ComponentObjectKind::Weld: {
+                const WeldSpec& spec = *pc.record.weld;
+                const EntityId partA = resolveWeldPart(spec.partA, spec.partARole);
+                const EntityId partB = resolveWeldPart(spec.partB, spec.partBRole);
+                if (partA == kInvalidEntityId || partB == kInvalidEntityId || partA == partB) {
+                    rollback();
+                    out.error = L"Weld parcasi cozulemedi: '" +
+                                std::wstring(pc.record.roleKey.begin(), pc.record.roleKey.end()) + L"'";
+                    return out;
+                }
+                const auto* shapeA = store_->find(partA);
+                const auto* shapeB = store_->find(partB);
+                if (!shapeA || !shapeB) {
+                    rollback();
+                    out.error = L"Weld parcasi B-Rep yok: '" +
+                                std::wstring(pc.record.roleKey.begin(), pc.record.roleKey.end()) + L"'";
+                    return out;
+                }
+                Weld w;
+                w.mainPart = partA;
+                w.secondaryPart = partB;
+                w.type = WeldType::Fillet;
+                w.size = spec.size > 0.0 ? spec.size : spec.throat;
+                w.doubleSided = spec.doubleSided;
+                w.weldClass = WeldClass::Shop;
+                w.identification = nextWeldIdentification();
+                TopoDS_Shape solid;
+                WireframeModel wf;
+                if (buildWeldGeometry(w, *shapeA, *shapeB, solid, wf)) {
+                    const std::size_t wi = doc_.addWeld(std::move(w), std::move(wf));
+                    const Weld& created = doc_.welds()[wi];
+                    if (created.displayEntityId != kInvalidEntityId) {
+                        const VersionId before = store_->activeVersion(created.displayEntityId);
+                        const VersionId after = store_->set(created.displayEntityId, solid);
+                        if (after != kInvalidVersionId)
+                            doc_.recordGeometryDelta(created.displayEntityId, before, after);
+                    }
+                    out.roleToEntity[pc.record.roleKey] = created.id;
+                } else {
+                    // Geometri desteklenmiyor: kayit yine eklenir (metadata/glif) —
+                    // ama SESSIZ degil; unsupportedReason korunur (kullanici gorur).
+                    w.unsupportedReason = w.unsupportedReason.empty()
+                                               ? "kaynak kati uretilemedi"
+                                               : w.unsupportedReason;
+                    const std::size_t wi = doc_.addWeld(std::move(w));
+                    out.roleToEntity[pc.record.roleKey] = doc_.welds()[wi].id;
+                }
+                break;
+            }
             default:
-                // Weld/Construction prepare'da zaten reddedilmisti.
+                // Construction prepare'da zaten reddedilmisti.
                 rollback();
                 out.error = L"desteklenmeyen child (commit): " +
                             std::wstring(pc.record.roleKey.begin(), pc.record.roleKey.end());
@@ -670,6 +806,29 @@ ComponentMaterializer::CommitResult ComponentMaterializer::recompute(
         return it != out.roleToEntity.end() ? it->second : kInvalidEntityId;
     };
 
+    // Kaynak parcasi cozumu (commit'teki ile ayni).
+    const auto resolveWeldPart = [&](EntityId direct, const std::string& role) -> EntityId {
+        if (direct != kInvalidEntityId) return direct;
+        if (role == "main") return record.mainPart;
+        if (role.rfind("secondary_", 0) == 0) {
+            const std::string suffix = role.substr(std::string("secondary_").size());
+            const int idx = suffix.empty() ? -1 : std::atoi(suffix.c_str());
+            if (idx >= 0 && static_cast<std::size_t>(idx) < record.secondaryParts.size())
+                return record.secondaryParts[static_cast<std::size_t>(idx)];
+            return kInvalidEntityId;
+        }
+        const auto it = out.roleToEntity.find(role);
+        return it != out.roleToEntity.end() ? it->second : kInvalidEntityId;
+    };
+    const auto nextWeldIdentification = [&]() {
+        std::uint64_t seq = doc_.welds().size() + 1;
+        std::string digits = std::to_string(seq);
+        while (digits.size() < 3) digits = "0" + digits;
+        std::string id = "W";
+        id += digits;
+        return id;
+    };
+
     // A1.4: ARTIK URETILMEYEN child'lari kaldir. Yeni planda roleKey'i olmayan
     // eski owned nesneler (levha/bulon grubu/cut) silinir; kullanici parcalarina
     // (main/secondary) DOKUNULMAZ. Bu islem ayni transaction icinde, geri alinabilir.
@@ -706,8 +865,16 @@ ComponentMaterializer::CommitResult ComponentMaterializer::recompute(
                     // (yeni plandaki cut'lar yeniden eklenmeden ONCE). Burada
                     // islem yapilmaz — cut EntityId tasimaz.
                     break;
+                case ComponentObjectKind::Weld:
+                    // Sahip olunan kaynak: yeni planda yoksa kaldir (child tablosundaki
+                    // entityId = weld id). removeWeld display yapragini da siler ve
+                    // shop-weld assembly'lerini yeniden turetir.
+                    if (c.entityId == kInvalidEntityId) break;
+                    if (const auto wi = doc_.indexOfWeld(c.entityId))
+                        doc_.removeWeld(*wi);
+                    break;
                 default:
-                    break;  // weld/construction — sahiplik yok
+                    break;  // construction — sahiplik yok
             }
         }
     }
@@ -839,6 +1006,106 @@ ComponentMaterializer::CommitResult ComponentMaterializer::recompute(
                 mod.owner = existing.id;  // component-owned cut (recompute)
                 out.cutTargets.push_back(mod.target);
                 doc_.addCutModifier(std::move(mod));
+                break;
+            }
+            case ComponentObjectKind::Weld: {
+                const WeldSpec& spec = *pc.record.weld;
+                const EntityId partA = resolveWeldPart(spec.partA, spec.partARole);
+                const EntityId partB = resolveWeldPart(spec.partB, spec.partBRole);
+                if (partA == kInvalidEntityId || partB == kInvalidEntityId || partA == partB) {
+                    rollback();
+                    out.error = L"Weld parcasi cozulemedi: '" +
+                                std::wstring(pc.record.roleKey.begin(), pc.record.roleKey.end()) + L"'";
+                    return out;
+                }
+                const auto* shapeA = store_->find(partA);
+                const auto* shapeB = store_->find(partB);
+                if (!shapeA || !shapeB) {
+                    rollback();
+                    out.error = L"Weld parcasi B-Rep yok: '" +
+                                std::wstring(pc.record.roleKey.begin(), pc.record.roleKey.end()) + L"'";
+                    return out;
+                }
+                Weld w;
+                w.mainPart = partA;
+                w.secondaryPart = partB;
+                w.type = WeldType::Fillet;
+                w.size = spec.size > 0.0 ? spec.size : spec.throat;
+                w.doubleSided = spec.doubleSided;
+                w.weldClass = WeldClass::Shop;
+                TopoDS_Shape solid;
+                WireframeModel wf;
+                const bool geomOk = buildWeldGeometry(w, *shapeA, *shapeB, solid, wf);
+
+                const auto stableWeldIdx = doc_.indexOfWeld(stableId);
+                if (hasStable && stableWeldIdx) {
+                    const std::size_t wi = *stableWeldIdx;
+                    const Weld oldW = doc_.welds()[wi];
+                    w.id = stableId;
+                    w.identification = oldW.identification;
+                    if (geomOk) {
+                        if (oldW.displayEntityId != kInvalidEntityId &&
+                            doc_.indexOfEntity(oldW.displayEntityId)) {
+                            w.displayEntityId = oldW.displayEntityId;
+                            doc_.setWeld(wi, w);
+                            const Weld& updated = doc_.welds()[wi];
+                            if (auto di = doc_.indexOfEntity(updated.displayEntityId)) {
+                                doc_.replaceModel(*di, {std::move(wf)});
+                                const VersionId before =
+                                    store_->activeVersion(updated.displayEntityId);
+                                const VersionId after =
+                                    store_->set(updated.displayEntityId, solid);
+                                if (after != kInvalidVersionId)
+                                    doc_.recordGeometryDelta(updated.displayEntityId, before,
+                                                             after);
+                            }
+                        } else {
+                            // Eski kaynak glif-only idi — yeni display modeli ekle.
+                            doc_.addModel(std::move(wf));
+                            const EntityId newDisp = doc_.modelId(doc_.models().size() - 1);
+                            w.displayEntityId = newDisp;
+                            doc_.setWeld(wi, w);
+                            const VersionId before = store_->activeVersion(newDisp);
+                            const VersionId after = store_->set(newDisp, solid);
+                            if (after != kInvalidVersionId)
+                                doc_.recordGeometryDelta(newDisp, before, after);
+                        }
+                    } else {
+                        w.unsupportedReason = w.unsupportedReason.empty()
+                                                   ? "kaynak kati uretilemedi"
+                                                   : w.unsupportedReason;
+                        w.geometrySupported = false;
+                        const EntityId oldDisplay = oldW.displayEntityId;
+                        w.displayEntityId = kInvalidEntityId;
+                        doc_.setWeld(wi, w);
+                        if (oldDisplay != kInvalidEntityId)
+                            if (auto di = doc_.indexOfEntity(oldDisplay))
+                                doc_.removeModelLeaf(*di);
+                    }
+                    out.roleToEntity[pc.record.roleKey] = stableId;
+                } else {
+                    w.identification = nextWeldIdentification();
+                    if (geomOk) {
+                        const std::size_t wi = doc_.addWeld(std::move(w), std::move(wf));
+                        const Weld& created = doc_.welds()[wi];
+                        if (created.displayEntityId != kInvalidEntityId) {
+                            const VersionId before =
+                                store_->activeVersion(created.displayEntityId);
+                            const VersionId after =
+                                store_->set(created.displayEntityId, solid);
+                            if (after != kInvalidVersionId)
+                                doc_.recordGeometryDelta(created.displayEntityId, before,
+                                                         after);
+                        }
+                        out.roleToEntity[pc.record.roleKey] = created.id;
+                    } else {
+                        w.unsupportedReason = w.unsupportedReason.empty()
+                                                   ? "kaynak kati uretilemedi"
+                                                   : w.unsupportedReason;
+                        const std::size_t wi = doc_.addWeld(std::move(w));
+                        out.roleToEntity[pc.record.roleKey] = doc_.welds()[wi].id;
+                    }
+                }
                 break;
             }
             default:

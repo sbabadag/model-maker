@@ -205,7 +205,14 @@ struct PlateSpec {
 struct WeldSpec {
     EntityId partA{kInvalidEntityId};
     EntityId partB{kInvalidEntityId};
-    double throat{0.0};
+    // roleKey referanslari (generator yolu): uretilen levha gibi EntityId'si
+    // henuz atanmamis owned child'lar plan asamasinda roleKey ile isaret edilir;
+    // commit/recompute'ta EntityId'ye cozulur. \"main\"/\"secondary_N\" rezerve rol.
+    std::string partARole;
+    std::string partBRole;
+    double throat{0.0};        // legacy: bacak (leg) anlaminda tutulur
+    double size{5.0};          // kaynak olcusu (bacak, mm) — generator bunu kullanir
+    bool doubleSided{false};   // cift tarafli fillet kaynagi
     std::wstring name;
 };
 

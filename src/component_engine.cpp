@@ -862,6 +862,12 @@ GenerationPlan generateShearPlateSimple146(const ComponentInput& input) noexcept
     const double boltVPos = paramAsDouble(input.params, L"boltVerticalPos", 0.0);
     const std::wstring delBolts = paramAsString(input.params, L"deletedBolts", L"");
     const double backingBarT = paramAsDouble(input.params, L"backingBarT", 0.0);
+    // Kaynaklar: levha kolona kaynaklanir (kiris levhaya BULONLANIR — kaynak yok).
+    // Diyalogdaki \"Welds\" tablosunun onay/size durumu createWelds/weldSize ile
+    // generatora tasinir (openComponentParamsDialog resultWeldRows -> param).
+    const bool createWelds = paramAsBool(input.params, L"createWelds", true);
+    const double weldSize = paramAsDouble(input.params, L"weldSize", 5.0);
+    const bool weldDoubleSided = paramAsBool(input.params, L"weldDoubleSided", false);
 
     // --- tab taraf ---
     const bool nearTab = (tabPos == L"near_side" || tabPos == L"near_and_far");
@@ -894,6 +900,25 @@ GenerationPlan generateShearPlateSimple146(const ComponentInput& input) noexcept
     if (farTab) {
         plan.plates.push_back(tabPlate(-1.0));
         plan.plateKeys.push_back("shear_tab_far");
+    }
+
+    // --- kaynaklar (levha -> kolon) -----------------------------------------
+    // 146 kayma levhasi kolona FILLET kaynaklanir; kiris levhaya BULONLANIR.
+    // Her uretilen tab icin bir kaynak: partA = kolon (main, EntityId bilinir),
+    // partB = levha (owned child, roleKey ile isaretlenir; commit'te cozulur).
+    if (createWelds) {
+        const auto addPlateWeld = [&](const char* weldKey, const char* plateRole) {
+            WeldSpec w;
+            w.partA = input.main.id;   // kolon (ana parca)
+            w.partBRole = plateRole;   // levha roleKey'i (commit'te EntityId)
+            w.size = weldSize;
+            w.doubleSided = weldDoubleSided;
+            w.name = L"Kaynak: levha - kolon";
+            plan.welds.push_back(w);
+            plan.weldKeys.push_back(weldKey);
+        };
+        if (nearTab) addPlateWeld("weld_tab_near", "shear_tab_near");
+        if (farTab) addPlateWeld("weld_tab_far", "shear_tab_far");
     }
 
     // --- bulon grubu (kiriş gövdesini deler; malzemelemede tüm owned levhalar

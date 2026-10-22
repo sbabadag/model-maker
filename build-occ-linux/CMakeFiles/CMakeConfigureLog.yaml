@@ -96,11 +96,11 @@ events:
   -
     kind: "find-v1"
     backtrace:
-      - "/usr/share/cmake-4.2/Modules/CMakeNinjaFindMake.cmake:5 (find_program)"
+      - "/usr/share/cmake-4.2/Modules/CMakeUnixFindMake.cmake:5 (find_program)"
       - "CMakeLists.txt:5 (project)"
     mode: "program"
     variable: "CMAKE_MAKE_PROGRAM"
-    description: "Program used to build from build.ninja files."
+    description: "Path to a program."
     settings:
       SearchFramework: "NEVER"
       SearchAppBundle: "NEVER"
@@ -110,9 +110,9 @@ events:
       CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
       CMAKE_FIND_USE_INSTALL_PREFIX: true
     names:
-      - "ninja-build"
-      - "ninja"
-      - "samu"
+      - "gmake"
+      - "make"
+      - "smake"
     candidate_directories:
       - "/home/ubuntu/.local/bin/"
       - "/home/ubuntu/.deno/bin/"
@@ -137,56 +137,23 @@ events:
       - "/opt/homebrew/sbin/"
       - "/snap/bin/"
     searched_directories:
-      - "/home/ubuntu/.local/bin/ninja-build"
-      - "/home/ubuntu/.local/bin/ninja"
-      - "/home/ubuntu/.local/bin/samu"
-      - "/home/ubuntu/.deno/bin/ninja-build"
-      - "/home/ubuntu/.deno/bin/ninja"
-      - "/home/ubuntu/.deno/bin/samu"
-      - "/home/ubuntu/.hermes/tools/agent-browser-0.26.0-linux-x64/bin/ninja-build"
-      - "/home/ubuntu/.hermes/tools/agent-browser-0.26.0-linux-x64/bin/ninja"
-      - "/home/ubuntu/.hermes/tools/agent-browser-0.26.0-linux-x64/bin/samu"
-      - "/home/ubuntu/.hermes/tools/cua-driver-0.21.0-linux-x64/ninja-build"
-      - "/home/ubuntu/.hermes/tools/cua-driver-0.21.0-linux-x64/ninja"
-      - "/home/ubuntu/.hermes/tools/cua-driver-0.21.0-linux-x64/samu"
-      - "/home/ubuntu/.hermes/tools/ffmpeg-9.0.1-linux-x64/bin/ninja-build"
-      - "/home/ubuntu/.hermes/tools/ffmpeg-9.0.1-linux-x64/bin/ninja"
-      - "/home/ubuntu/.hermes/tools/ffmpeg-9.0.1-linux-x64/bin/samu"
-      - "/home/ubuntu/.hermes/tools/node-26.7.0-linux-x64/bin/ninja-build"
-      - "/home/ubuntu/.hermes/tools/node-26.7.0-linux-x64/bin/ninja"
-      - "/home/ubuntu/.hermes/tools/node-26.7.0-linux-x64/bin/samu"
-      - "/home/ubuntu/.hermes/tools/npm-12.0.2-linux-x64/bin/ninja-build"
-      - "/home/ubuntu/.hermes/tools/npm-12.0.2-linux-x64/bin/ninja"
-      - "/home/ubuntu/.hermes/tools/npm-12.0.2-linux-x64/bin/samu"
-      - "/home/ubuntu/.hermes/tools/python-3.14.7+20260901-linux-x64/bin/ninja-build"
-      - "/home/ubuntu/.hermes/tools/python-3.14.7+20260901-linux-x64/bin/ninja"
-      - "/home/ubuntu/.hermes/tools/python-3.14.7+20260901-linux-x64/bin/samu"
-      - "/home/ubuntu/.hermes/tools/ripgrep-15.2.0-linux-x64/ninja-build"
-      - "/home/ubuntu/.hermes/tools/ripgrep-15.2.0-linux-x64/ninja"
-      - "/home/ubuntu/.hermes/tools/ripgrep-15.2.0-linux-x64/samu"
-      - "/home/ubuntu/.hermes/tools/tirith-0.4.2-linux-x64/ninja-build"
-      - "/home/ubuntu/.hermes/tools/tirith-0.4.2-linux-x64/ninja"
-      - "/home/ubuntu/.hermes/tools/tirith-0.4.2-linux-x64/samu"
-      - "/home/ubuntu/.hermes/hermes-agent/.hermes/bin/ninja-build"
-      - "/home/ubuntu/.hermes/hermes-agent/.hermes/bin/ninja"
-      - "/home/ubuntu/.hermes/hermes-agent/.hermes/bin/samu"
-      - "/home/ubuntu/.hermes/installs/5f0a1ff4045d044e/environments/36e31116c87142da9778afd033bf3c11/venv/bin/ninja-build"
-      - "/home/ubuntu/.hermes/installs/5f0a1ff4045d044e/environments/36e31116c87142da9778afd033bf3c11/venv/bin/ninja"
-      - "/home/ubuntu/.hermes/installs/5f0a1ff4045d044e/environments/36e31116c87142da9778afd033bf3c11/venv/bin/samu"
-      - "/home/ubuntu/.hermes/hermes-agent/node_modules/.bin/ninja-build"
-      - "/home/ubuntu/.hermes/hermes-agent/node_modules/.bin/ninja"
-      - "/home/ubuntu/.hermes/hermes-agent/node_modules/.bin/samu"
-      - "/usr/local/sbin/ninja-build"
-      - "/usr/local/sbin/ninja"
-      - "/usr/local/sbin/samu"
-      - "/usr/local/bin/ninja-build"
-      - "/usr/local/bin/ninja"
-      - "/usr/local/bin/samu"
-      - "/usr/sbin/ninja-build"
-      - "/usr/sbin/ninja"
-      - "/usr/sbin/samu"
-      - "/usr/bin/ninja-build"
-    found: "/usr/bin/ninja"
+      - "/home/ubuntu/.local/bin/gmake"
+      - "/home/ubuntu/.deno/bin/gmake"
+      - "/home/ubuntu/.hermes/tools/agent-browser-0.26.0-linux-x64/bin/gmake"
+      - "/home/ubuntu/.hermes/tools/cua-driver-0.21.0-linux-x64/gmake"
+      - "/home/ubuntu/.hermes/tools/ffmpeg-9.0.1-linux-x64/bin/gmake"
+      - "/home/ubuntu/.hermes/tools/node-26.7.0-linux-x64/bin/gmake"
+      - "/home/ubuntu/.hermes/tools/npm-12.0.2-linux-x64/bin/gmake"
+      - "/home/ubuntu/.hermes/tools/python-3.14.7+20260901-linux-x64/bin/gmake"
+      - "/home/ubuntu/.hermes/tools/ripgrep-15.2.0-linux-x64/gmake"
+      - "/home/ubuntu/.hermes/tools/tirith-0.4.2-linux-x64/gmake"
+      - "/home/ubuntu/.hermes/hermes-agent/.hermes/bin/gmake"
+      - "/home/ubuntu/.hermes/installs/5f0a1ff4045d044e/environments/36e31116c87142da9778afd033bf3c11/venv/bin/gmake"
+      - "/home/ubuntu/.hermes/hermes-agent/node_modules/.bin/gmake"
+      - "/usr/local/sbin/gmake"
+      - "/usr/local/bin/gmake"
+      - "/usr/sbin/gmake"
+    found: "/usr/bin/gmake"
     search_context:
       ENV{PATH}:
         - "/home/ubuntu/.local/bin"
@@ -1385,8 +1352,8 @@ events:
     checks:
       - "Detecting CXX compiler ABI info"
     directories:
-      source: "/home/ubuntu/model-maker-overnight/build-occ-linux/CMakeFiles/CMakeScratch/TryCompile-BPUxY4"
-      binary: "/home/ubuntu/model-maker-overnight/build-occ-linux/CMakeFiles/CMakeScratch/TryCompile-BPUxY4"
+      source: "/home/ubuntu/model-maker-overnight/build-occ-linux/CMakeFiles/CMakeScratch/TryCompile-EuAA6B"
+      binary: "/home/ubuntu/model-maker-overnight/build-occ-linux/CMakeFiles/CMakeScratch/TryCompile-EuAA6B"
     cmakeVariables:
       CMAKE_CXX_FLAGS: ""
       CMAKE_CXX_FLAGS_DEBUG: "-g"
@@ -1396,10 +1363,13 @@ events:
       variable: "CMAKE_CXX_ABI_COMPILED"
       cached: true
       stdout: |
-        Change Dir: '/home/ubuntu/model-maker-overnight/build-occ-linux/CMakeFiles/CMakeScratch/TryCompile-BPUxY4'
+        Change Dir: '/home/ubuntu/model-maker-overnight/build-occ-linux/CMakeFiles/CMakeScratch/TryCompile-EuAA6B'
         
-        Run Build Command(s): /usr/bin/ninja -v cmTC_15f6b
-        [1/2] /usr/bin/c++   -v -o CMakeFiles/cmTC_15f6b.dir/CMakeCXXCompilerABI.cpp.o -c /usr/share/cmake-4.2/Modules/CMakeCXXCompilerABI.cpp
+        Run Build Command(s): /usr/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_a2c82/fast
+        /usr/bin/gmake  -f CMakeFiles/cmTC_a2c82.dir/build.make CMakeFiles/cmTC_a2c82.dir/build
+        gmake[1]: Entering directory '/home/ubuntu/model-maker-overnight/build-occ-linux/CMakeFiles/CMakeScratch/TryCompile-EuAA6B'
+        Building CXX object CMakeFiles/cmTC_a2c82.dir/CMakeCXXCompilerABI.cpp.o
+        /usr/bin/c++   -v -o CMakeFiles/cmTC_a2c82.dir/CMakeCXXCompilerABI.cpp.o -c /usr/share/cmake-4.2/Modules/CMakeCXXCompilerABI.cpp
         Using built-in specs.
         COLLECT_GCC=/usr/bin/c++
         OFFLOAD_TARGET_NAMES=nvptx-none:amdgcn-amdhsa
@@ -1409,8 +1379,8 @@ events:
         Thread model: posix
         Supported LTO compression algorithms: zlib zstd
         gcc version 15.2.0 (Ubuntu 15.2.0-16ubuntu1) 
-        COLLECT_GCC_OPTIONS='-v' '-o' 'CMakeFiles/cmTC_15f6b.dir/CMakeCXXCompilerABI.cpp.o' '-c' '-shared-libgcc' '-mtune=generic' '-march=x86-64-v3' '-dumpdir' 'CMakeFiles/cmTC_15f6b.dir/'
-         /usr/libexec/gcc/x86_64-linux-gnu/15/cc1plus -quiet -v -imultiarch x86_64-linux-gnu -D_GNU_SOURCE /usr/share/cmake-4.2/Modules/CMakeCXXCompilerABI.cpp -quiet -dumpdir CMakeFiles/cmTC_15f6b.dir/ -dumpbase CMakeCXXCompilerABI.cpp.cpp -dumpbase-ext .cpp -mtune=generic -march=x86-64-v3 -version -fasynchronous-unwind-tables -fstack-protector-strong -Wformat -Wformat-security -fstack-clash-protection -fcf-protection -fzero-init-padding-bits=all -Wbidi-chars=any -o /home/ubuntu/.hermes/cache/scratch/ccLYDY3d.s
+        COLLECT_GCC_OPTIONS='-v' '-o' 'CMakeFiles/cmTC_a2c82.dir/CMakeCXXCompilerABI.cpp.o' '-c' '-shared-libgcc' '-mtune=generic' '-march=x86-64-v3' '-dumpdir' 'CMakeFiles/cmTC_a2c82.dir/'
+         /usr/libexec/gcc/x86_64-linux-gnu/15/cc1plus -quiet -v -imultiarch x86_64-linux-gnu -D_GNU_SOURCE /usr/share/cmake-4.2/Modules/CMakeCXXCompilerABI.cpp -quiet -dumpdir CMakeFiles/cmTC_a2c82.dir/ -dumpbase CMakeCXXCompilerABI.cpp.cpp -dumpbase-ext .cpp -mtune=generic -march=x86-64-v3 -version -fasynchronous-unwind-tables -fstack-protector-strong -Wformat -Wformat-security -fstack-clash-protection -fcf-protection -fzero-init-padding-bits=all -Wbidi-chars=any -o /home/ubuntu/.hermes/cache/scratch/ccNWDR01.s
         GNU C++17 (Ubuntu 15.2.0-16ubuntu1) version 15.2.0 (x86_64-linux-gnu)
         	compiled by GNU C version 15.2.0, GMP version 6.3.0, MPFR version 4.2.2, MPC version 1.3.1, isl version isl-0.27-GMP
         
@@ -1431,13 +1401,14 @@ events:
          /usr/include
         End of search list.
         Compiler executable checksum: bdbb7a7d0feb566b1dda8131161bceec
-        COLLECT_GCC_OPTIONS='-v' '-o' 'CMakeFiles/cmTC_15f6b.dir/CMakeCXXCompilerABI.cpp.o' '-c' '-shared-libgcc' '-mtune=generic' '-march=x86-64-v3' '-dumpdir' 'CMakeFiles/cmTC_15f6b.dir/'
-         /usr/bin/x86_64-linux-gnu-as -v --64 -o CMakeFiles/cmTC_15f6b.dir/CMakeCXXCompilerABI.cpp.o /home/ubuntu/.hermes/cache/scratch/ccLYDY3d.s
+        COLLECT_GCC_OPTIONS='-v' '-o' 'CMakeFiles/cmTC_a2c82.dir/CMakeCXXCompilerABI.cpp.o' '-c' '-shared-libgcc' '-mtune=generic' '-march=x86-64-v3' '-dumpdir' 'CMakeFiles/cmTC_a2c82.dir/'
+         /usr/bin/x86_64-linux-gnu-as -v --64 -o CMakeFiles/cmTC_a2c82.dir/CMakeCXXCompilerABI.cpp.o /home/ubuntu/.hermes/cache/scratch/ccNWDR01.s
         GNU assembler version 2.46 (x86_64-linux-gnu) using BFD version (GNU Binutils for Ubuntu) 2.46
         COMPILER_PATH=/usr/libexec/gcc/x86_64-linux-gnu/15/:/usr/libexec/gcc/x86_64-linux-gnu/15/:/usr/libexec/gcc/x86_64-linux-gnu/:/usr/lib/gcc/x86_64-linux-gnu/15/:/usr/lib/gcc/x86_64-linux-gnu/
         LIBRARY_PATH=/usr/lib/gcc/x86_64-linux-gnu/15/:/usr/lib/gcc/x86_64-linux-gnu/15/../../../x86_64-linux-gnu/:/usr/lib/gcc/x86_64-linux-gnu/15/../../../../lib/:/lib/x86_64-linux-gnu/:/lib/../lib/:/usr/lib/x86_64-linux-gnu/:/usr/lib/../lib/:/usr/lib/gcc/x86_64-linux-gnu/15/../../../:/lib/:/usr/lib/
-        COLLECT_GCC_OPTIONS='-v' '-o' 'CMakeFiles/cmTC_15f6b.dir/CMakeCXXCompilerABI.cpp.o' '-c' '-shared-libgcc' '-mtune=generic' '-march=x86-64-v3' '-dumpdir' 'CMakeFiles/cmTC_15f6b.dir/CMakeCXXCompilerABI.cpp.'
-        [2/2] : && /usr/bin/c++  -v -Wl,-v CMakeFiles/cmTC_15f6b.dir/CMakeCXXCompilerABI.cpp.o -o cmTC_15f6b   && :
+        COLLECT_GCC_OPTIONS='-v' '-o' 'CMakeFiles/cmTC_a2c82.dir/CMakeCXXCompilerABI.cpp.o' '-c' '-shared-libgcc' '-mtune=generic' '-march=x86-64-v3' '-dumpdir' 'CMakeFiles/cmTC_a2c82.dir/CMakeCXXCompilerABI.cpp.'
+        Linking CXX executable cmTC_a2c82
+        /usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_a2c82.dir/link.txt --verbose=1
         Using built-in specs.
         COLLECT_GCC=/usr/bin/c++
         COLLECT_LTO_WRAPPER=/usr/libexec/gcc/x86_64-linux-gnu/15/lto-wrapper
@@ -1450,12 +1421,14 @@ events:
         gcc version 15.2.0 (Ubuntu 15.2.0-16ubuntu1) 
         COMPILER_PATH=/usr/libexec/gcc/x86_64-linux-gnu/15/:/usr/libexec/gcc/x86_64-linux-gnu/15/:/usr/libexec/gcc/x86_64-linux-gnu/:/usr/lib/gcc/x86_64-linux-gnu/15/:/usr/lib/gcc/x86_64-linux-gnu/
         LIBRARY_PATH=/usr/lib/gcc/x86_64-linux-gnu/15/:/usr/lib/gcc/x86_64-linux-gnu/15/../../../x86_64-linux-gnu/:/usr/lib/gcc/x86_64-linux-gnu/15/../../../../lib/:/lib/x86_64-linux-gnu/:/lib/../lib/:/usr/lib/x86_64-linux-gnu/:/usr/lib/../lib/:/usr/lib/gcc/x86_64-linux-gnu/15/../../../:/lib/:/usr/lib/
-        COLLECT_GCC_OPTIONS='-v' '-o' 'cmTC_15f6b' '-foffload-options=-l_GCC_stdc++' '-foffload-options=-l_GCC_m' '-shared-libgcc' '-mtune=generic' '-march=x86-64-v3' '-dumpdir' 'cmTC_15f6b.'
-         /usr/libexec/gcc/x86_64-linux-gnu/15/collect2 -plugin /usr/libexec/gcc/x86_64-linux-gnu/15/liblto_plugin.so -plugin-opt=/usr/libexec/gcc/x86_64-linux-gnu/15/lto-wrapper -plugin-opt=-fresolution=/home/ubuntu/.hermes/cache/scratch/cc7OnvY0.res -plugin-opt=-pass-through=-lgcc_s -plugin-opt=-pass-through=-lgcc -plugin-opt=-pass-through=-lc -plugin-opt=-pass-through=-lgcc_s -plugin-opt=-pass-through=-lgcc --build-id --eh-frame-hdr -m elf_x86_64 --hash-style=gnu --as-needed -dynamic-linker /lib64/ld-linux-x86-64.so.2 -pie -z now -z relro -o cmTC_15f6b /usr/lib/gcc/x86_64-linux-gnu/15/../../../x86_64-linux-gnu/Scrt1.o /usr/lib/gcc/x86_64-linux-gnu/15/../../../x86_64-linux-gnu/crti.o /usr/lib/gcc/x86_64-linux-gnu/15/crtbeginS.o -L/usr/lib/gcc/x86_64-linux-gnu/15 -L/usr/lib/gcc/x86_64-linux-gnu/15/../../../x86_64-linux-gnu -L/usr/lib/gcc/x86_64-linux-gnu/15/../../../../lib -L/lib/x86_64-linux-gnu -L/lib/../lib -L/usr/lib/x86_64-linux-gnu -L/usr/lib/../lib -L/usr/lib/gcc/x86_64-linux-gnu/15/../../.. -L/lib -L/usr/lib -v CMakeFiles/cmTC_15f6b.dir/CMakeCXXCompilerABI.cpp.o -lstdc++ -lm -lgcc_s -lgcc -lc -lgcc_s -lgcc /usr/lib/gcc/x86_64-linux-gnu/15/crtendS.o /usr/lib/gcc/x86_64-linux-gnu/15/../../../x86_64-linux-gnu/crtn.o
+        COLLECT_GCC_OPTIONS='-v' '-o' 'cmTC_a2c82' '-foffload-options=-l_GCC_stdc++' '-foffload-options=-l_GCC_m' '-shared-libgcc' '-mtune=generic' '-march=x86-64-v3' '-dumpdir' 'cmTC_a2c82.'
+         /usr/libexec/gcc/x86_64-linux-gnu/15/collect2 -plugin /usr/libexec/gcc/x86_64-linux-gnu/15/liblto_plugin.so -plugin-opt=/usr/libexec/gcc/x86_64-linux-gnu/15/lto-wrapper -plugin-opt=-fresolution=/home/ubuntu/.hermes/cache/scratch/ccEIz4IP.res -plugin-opt=-pass-through=-lgcc_s -plugin-opt=-pass-through=-lgcc -plugin-opt=-pass-through=-lc -plugin-opt=-pass-through=-lgcc_s -plugin-opt=-pass-through=-lgcc --build-id --eh-frame-hdr -m elf_x86_64 --hash-style=gnu --as-needed -dynamic-linker /lib64/ld-linux-x86-64.so.2 -pie -z now -z relro -o cmTC_a2c82 /usr/lib/gcc/x86_64-linux-gnu/15/../../../x86_64-linux-gnu/Scrt1.o /usr/lib/gcc/x86_64-linux-gnu/15/../../../x86_64-linux-gnu/crti.o /usr/lib/gcc/x86_64-linux-gnu/15/crtbeginS.o -L/usr/lib/gcc/x86_64-linux-gnu/15 -L/usr/lib/gcc/x86_64-linux-gnu/15/../../../x86_64-linux-gnu -L/usr/lib/gcc/x86_64-linux-gnu/15/../../../../lib -L/lib/x86_64-linux-gnu -L/lib/../lib -L/usr/lib/x86_64-linux-gnu -L/usr/lib/../lib -L/usr/lib/gcc/x86_64-linux-gnu/15/../../.. -L/lib -L/usr/lib -v CMakeFiles/cmTC_a2c82.dir/CMakeCXXCompilerABI.cpp.o -lstdc++ -lm -lgcc_s -lgcc -lc -lgcc_s -lgcc /usr/lib/gcc/x86_64-linux-gnu/15/crtendS.o /usr/lib/gcc/x86_64-linux-gnu/15/../../../x86_64-linux-gnu/crtn.o
         collect2 version 15.2.0
-        /usr/bin/ld -plugin /usr/libexec/gcc/x86_64-linux-gnu/15/liblto_plugin.so -plugin-opt=/usr/libexec/gcc/x86_64-linux-gnu/15/lto-wrapper -plugin-opt=-fresolution=/home/ubuntu/.hermes/cache/scratch/cc7OnvY0.res -plugin-opt=-pass-through=-lgcc_s -plugin-opt=-pass-through=-lgcc -plugin-opt=-pass-through=-lc -plugin-opt=-pass-through=-lgcc_s -plugin-opt=-pass-through=-lgcc --build-id --eh-frame-hdr -m elf_x86_64 --hash-style=gnu --as-needed -dynamic-linker /lib64/ld-linux-x86-64.so.2 -pie -z now -z relro -o cmTC_15f6b /usr/lib/gcc/x86_64-linux-gnu/15/../../../x86_64-linux-gnu/Scrt1.o /usr/lib/gcc/x86_64-linux-gnu/15/../../../x86_64-linux-gnu/crti.o /usr/lib/gcc/x86_64-linux-gnu/15/crtbeginS.o -L/usr/lib/gcc/x86_64-linux-gnu/15 -L/usr/lib/gcc/x86_64-linux-gnu/15/../../../x86_64-linux-gnu -L/usr/lib/gcc/x86_64-linux-gnu/15/../../../../lib -L/lib/x86_64-linux-gnu -L/lib/../lib -L/usr/lib/x86_64-linux-gnu -L/usr/lib/../lib -L/usr/lib/gcc/x86_64-linux-gnu/15/../../.. -L/lib -L/usr/lib -v CMakeFiles/cmTC_15f6b.dir/CMakeCXXCompilerABI.cpp.o -lstdc++ -lm -lgcc_s -lgcc -lc -lgcc_s -lgcc /usr/lib/gcc/x86_64-linux-gnu/15/crtendS.o /usr/lib/gcc/x86_64-linux-gnu/15/../../../x86_64-linux-gnu/crtn.o
+        /usr/bin/ld -plugin /usr/libexec/gcc/x86_64-linux-gnu/15/liblto_plugin.so -plugin-opt=/usr/libexec/gcc/x86_64-linux-gnu/15/lto-wrapper -plugin-opt=-fresolution=/home/ubuntu/.hermes/cache/scratch/ccEIz4IP.res -plugin-opt=-pass-through=-lgcc_s -plugin-opt=-pass-through=-lgcc -plugin-opt=-pass-through=-lc -plugin-opt=-pass-through=-lgcc_s -plugin-opt=-pass-through=-lgcc --build-id --eh-frame-hdr -m elf_x86_64 --hash-style=gnu --as-needed -dynamic-linker /lib64/ld-linux-x86-64.so.2 -pie -z now -z relro -o cmTC_a2c82 /usr/lib/gcc/x86_64-linux-gnu/15/../../../x86_64-linux-gnu/Scrt1.o /usr/lib/gcc/x86_64-linux-gnu/15/../../../x86_64-linux-gnu/crti.o /usr/lib/gcc/x86_64-linux-gnu/15/crtbeginS.o -L/usr/lib/gcc/x86_64-linux-gnu/15 -L/usr/lib/gcc/x86_64-linux-gnu/15/../../../x86_64-linux-gnu -L/usr/lib/gcc/x86_64-linux-gnu/15/../../../../lib -L/lib/x86_64-linux-gnu -L/lib/../lib -L/usr/lib/x86_64-linux-gnu -L/usr/lib/../lib -L/usr/lib/gcc/x86_64-linux-gnu/15/../../.. -L/lib -L/usr/lib -v CMakeFiles/cmTC_a2c82.dir/CMakeCXXCompilerABI.cpp.o -lstdc++ -lm -lgcc_s -lgcc -lc -lgcc_s -lgcc /usr/lib/gcc/x86_64-linux-gnu/15/crtendS.o /usr/lib/gcc/x86_64-linux-gnu/15/../../../x86_64-linux-gnu/crtn.o
         GNU ld (GNU Binutils for Ubuntu) 2.46
-        COLLECT_GCC_OPTIONS='-v' '-o' 'cmTC_15f6b' '-foffload-options=-l_GCC_stdc++' '-foffload-options=-l_GCC_m' '-shared-libgcc' '-mtune=generic' '-march=x86-64-v3' '-dumpdir' 'cmTC_15f6b.'
+        COLLECT_GCC_OPTIONS='-v' '-o' 'cmTC_a2c82' '-foffload-options=-l_GCC_stdc++' '-foffload-options=-l_GCC_m' '-shared-libgcc' '-mtune=generic' '-march=x86-64-v3' '-dumpdir' 'cmTC_a2c82.'
+        /usr/bin/c++  -v -Wl,-v CMakeFiles/cmTC_a2c82.dir/CMakeCXXCompilerABI.cpp.o -o cmTC_a2c82
+        gmake[1]: Leaving directory '/home/ubuntu/model-maker-overnight/build-occ-linux/CMakeFiles/CMakeScratch/TryCompile-EuAA6B'
         
       exitCode: 0
   -
@@ -1496,10 +1469,13 @@ events:
       Parsed CXX implicit link information:
         link line regex: [^( *|.*[/\\])(ld[0-9]*(|\\.[a-rt-z][a-z]*|\\.s[a-np-z][a-z]*|\\.so[a-z]+)|CMAKE_LINK_STARTFILE-NOTFOUND|([^/\\]+-)?ld|collect2)[^/\\]*( |$)]
         linker tool regex: [^[ 	]*(->|"|[0-9]+>[ 	-]*Build:[ 	0-9]+ ms[ 	]*)?[ 	]*(([^"]*[/\\])?(ld[0-9]*(|\\.[a-rt-z][a-z]*|\\.s[a-np-z][a-z]*|\\.so[a-z]+)))("|,| |$)]
-        ignore line: [Change Dir: '/home/ubuntu/model-maker-overnight/build-occ-linux/CMakeFiles/CMakeScratch/TryCompile-BPUxY4']
+        ignore line: [Change Dir: '/home/ubuntu/model-maker-overnight/build-occ-linux/CMakeFiles/CMakeScratch/TryCompile-EuAA6B']
         ignore line: []
-        ignore line: [Run Build Command(s): /usr/bin/ninja -v cmTC_15f6b]
-        ignore line: [[1/2] /usr/bin/c++   -v -o CMakeFiles/cmTC_15f6b.dir/CMakeCXXCompilerABI.cpp.o -c /usr/share/cmake-4.2/Modules/CMakeCXXCompilerABI.cpp]
+        ignore line: [Run Build Command(s): /usr/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_a2c82/fast]
+        ignore line: [/usr/bin/gmake  -f CMakeFiles/cmTC_a2c82.dir/build.make CMakeFiles/cmTC_a2c82.dir/build]
+        ignore line: [gmake[1]: Entering directory '/home/ubuntu/model-maker-overnight/build-occ-linux/CMakeFiles/CMakeScratch/TryCompile-EuAA6B']
+        ignore line: [Building CXX object CMakeFiles/cmTC_a2c82.dir/CMakeCXXCompilerABI.cpp.o]
+        ignore line: [/usr/bin/c++   -v -o CMakeFiles/cmTC_a2c82.dir/CMakeCXXCompilerABI.cpp.o -c /usr/share/cmake-4.2/Modules/CMakeCXXCompilerABI.cpp]
         ignore line: [Using built-in specs.]
         ignore line: [COLLECT_GCC=/usr/bin/c++]
         ignore line: [OFFLOAD_TARGET_NAMES=nvptx-none:amdgcn-amdhsa]
@@ -1509,8 +1485,8 @@ events:
         ignore line: [Thread model: posix]
         ignore line: [Supported LTO compression algorithms: zlib zstd]
         ignore line: [gcc version 15.2.0 (Ubuntu 15.2.0-16ubuntu1) ]
-        ignore line: [COLLECT_GCC_OPTIONS='-v' '-o' 'CMakeFiles/cmTC_15f6b.dir/CMakeCXXCompilerABI.cpp.o' '-c' '-shared-libgcc' '-mtune=generic' '-march=x86-64-v3' '-dumpdir' 'CMakeFiles/cmTC_15f6b.dir/']
-        ignore line: [ /usr/libexec/gcc/x86_64-linux-gnu/15/cc1plus -quiet -v -imultiarch x86_64-linux-gnu -D_GNU_SOURCE /usr/share/cmake-4.2/Modules/CMakeCXXCompilerABI.cpp -quiet -dumpdir CMakeFiles/cmTC_15f6b.dir/ -dumpbase CMakeCXXCompilerABI.cpp.cpp -dumpbase-ext .cpp -mtune=generic -march=x86-64-v3 -version -fasynchronous-unwind-tables -fstack-protector-strong -Wformat -Wformat-security -fstack-clash-protection -fcf-protection -fzero-init-padding-bits=all -Wbidi-chars=any -o /home/ubuntu/.hermes/cache/scratch/ccLYDY3d.s]
+        ignore line: [COLLECT_GCC_OPTIONS='-v' '-o' 'CMakeFiles/cmTC_a2c82.dir/CMakeCXXCompilerABI.cpp.o' '-c' '-shared-libgcc' '-mtune=generic' '-march=x86-64-v3' '-dumpdir' 'CMakeFiles/cmTC_a2c82.dir/']
+        ignore line: [ /usr/libexec/gcc/x86_64-linux-gnu/15/cc1plus -quiet -v -imultiarch x86_64-linux-gnu -D_GNU_SOURCE /usr/share/cmake-4.2/Modules/CMakeCXXCompilerABI.cpp -quiet -dumpdir CMakeFiles/cmTC_a2c82.dir/ -dumpbase CMakeCXXCompilerABI.cpp.cpp -dumpbase-ext .cpp -mtune=generic -march=x86-64-v3 -version -fasynchronous-unwind-tables -fstack-protector-strong -Wformat -Wformat-security -fstack-clash-protection -fcf-protection -fzero-init-padding-bits=all -Wbidi-chars=any -o /home/ubuntu/.hermes/cache/scratch/ccNWDR01.s]
         ignore line: [GNU C++17 (Ubuntu 15.2.0-16ubuntu1) version 15.2.0 (x86_64-linux-gnu)]
         ignore line: [	compiled by GNU C version 15.2.0  GMP version 6.3.0  MPFR version 4.2.2  MPC version 1.3.1  isl version isl-0.27-GMP]
         ignore line: []
@@ -1531,13 +1507,14 @@ events:
         ignore line: [ /usr/include]
         ignore line: [End of search list.]
         ignore line: [Compiler executable checksum: bdbb7a7d0feb566b1dda8131161bceec]
-        ignore line: [COLLECT_GCC_OPTIONS='-v' '-o' 'CMakeFiles/cmTC_15f6b.dir/CMakeCXXCompilerABI.cpp.o' '-c' '-shared-libgcc' '-mtune=generic' '-march=x86-64-v3' '-dumpdir' 'CMakeFiles/cmTC_15f6b.dir/']
-        ignore line: [ /usr/bin/x86_64-linux-gnu-as -v --64 -o CMakeFiles/cmTC_15f6b.dir/CMakeCXXCompilerABI.cpp.o /home/ubuntu/.hermes/cache/scratch/ccLYDY3d.s]
+        ignore line: [COLLECT_GCC_OPTIONS='-v' '-o' 'CMakeFiles/cmTC_a2c82.dir/CMakeCXXCompilerABI.cpp.o' '-c' '-shared-libgcc' '-mtune=generic' '-march=x86-64-v3' '-dumpdir' 'CMakeFiles/cmTC_a2c82.dir/']
+        ignore line: [ /usr/bin/x86_64-linux-gnu-as -v --64 -o CMakeFiles/cmTC_a2c82.dir/CMakeCXXCompilerABI.cpp.o /home/ubuntu/.hermes/cache/scratch/ccNWDR01.s]
         ignore line: [GNU assembler version 2.46 (x86_64-linux-gnu) using BFD version (GNU Binutils for Ubuntu) 2.46]
         ignore line: [COMPILER_PATH=/usr/libexec/gcc/x86_64-linux-gnu/15/:/usr/libexec/gcc/x86_64-linux-gnu/15/:/usr/libexec/gcc/x86_64-linux-gnu/:/usr/lib/gcc/x86_64-linux-gnu/15/:/usr/lib/gcc/x86_64-linux-gnu/]
         ignore line: [LIBRARY_PATH=/usr/lib/gcc/x86_64-linux-gnu/15/:/usr/lib/gcc/x86_64-linux-gnu/15/../../../x86_64-linux-gnu/:/usr/lib/gcc/x86_64-linux-gnu/15/../../../../lib/:/lib/x86_64-linux-gnu/:/lib/../lib/:/usr/lib/x86_64-linux-gnu/:/usr/lib/../lib/:/usr/lib/gcc/x86_64-linux-gnu/15/../../../:/lib/:/usr/lib/]
-        ignore line: [COLLECT_GCC_OPTIONS='-v' '-o' 'CMakeFiles/cmTC_15f6b.dir/CMakeCXXCompilerABI.cpp.o' '-c' '-shared-libgcc' '-mtune=generic' '-march=x86-64-v3' '-dumpdir' 'CMakeFiles/cmTC_15f6b.dir/CMakeCXXCompilerABI.cpp.']
-        ignore line: [[2/2] : && /usr/bin/c++  -v -Wl -v CMakeFiles/cmTC_15f6b.dir/CMakeCXXCompilerABI.cpp.o -o cmTC_15f6b   && :]
+        ignore line: [COLLECT_GCC_OPTIONS='-v' '-o' 'CMakeFiles/cmTC_a2c82.dir/CMakeCXXCompilerABI.cpp.o' '-c' '-shared-libgcc' '-mtune=generic' '-march=x86-64-v3' '-dumpdir' 'CMakeFiles/cmTC_a2c82.dir/CMakeCXXCompilerABI.cpp.']
+        ignore line: [Linking CXX executable cmTC_a2c82]
+        ignore line: [/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_a2c82.dir/link.txt --verbose=1]
         ignore line: [Using built-in specs.]
         ignore line: [COLLECT_GCC=/usr/bin/c++]
         ignore line: [COLLECT_LTO_WRAPPER=/usr/libexec/gcc/x86_64-linux-gnu/15/lto-wrapper]
@@ -1550,13 +1527,13 @@ events:
         ignore line: [gcc version 15.2.0 (Ubuntu 15.2.0-16ubuntu1) ]
         ignore line: [COMPILER_PATH=/usr/libexec/gcc/x86_64-linux-gnu/15/:/usr/libexec/gcc/x86_64-linux-gnu/15/:/usr/libexec/gcc/x86_64-linux-gnu/:/usr/lib/gcc/x86_64-linux-gnu/15/:/usr/lib/gcc/x86_64-linux-gnu/]
         ignore line: [LIBRARY_PATH=/usr/lib/gcc/x86_64-linux-gnu/15/:/usr/lib/gcc/x86_64-linux-gnu/15/../../../x86_64-linux-gnu/:/usr/lib/gcc/x86_64-linux-gnu/15/../../../../lib/:/lib/x86_64-linux-gnu/:/lib/../lib/:/usr/lib/x86_64-linux-gnu/:/usr/lib/../lib/:/usr/lib/gcc/x86_64-linux-gnu/15/../../../:/lib/:/usr/lib/]
-        ignore line: [COLLECT_GCC_OPTIONS='-v' '-o' 'cmTC_15f6b' '-foffload-options=-l_GCC_stdc++' '-foffload-options=-l_GCC_m' '-shared-libgcc' '-mtune=generic' '-march=x86-64-v3' '-dumpdir' 'cmTC_15f6b.']
-        link line: [ /usr/libexec/gcc/x86_64-linux-gnu/15/collect2 -plugin /usr/libexec/gcc/x86_64-linux-gnu/15/liblto_plugin.so -plugin-opt=/usr/libexec/gcc/x86_64-linux-gnu/15/lto-wrapper -plugin-opt=-fresolution=/home/ubuntu/.hermes/cache/scratch/cc7OnvY0.res -plugin-opt=-pass-through=-lgcc_s -plugin-opt=-pass-through=-lgcc -plugin-opt=-pass-through=-lc -plugin-opt=-pass-through=-lgcc_s -plugin-opt=-pass-through=-lgcc --build-id --eh-frame-hdr -m elf_x86_64 --hash-style=gnu --as-needed -dynamic-linker /lib64/ld-linux-x86-64.so.2 -pie -z now -z relro -o cmTC_15f6b /usr/lib/gcc/x86_64-linux-gnu/15/../../../x86_64-linux-gnu/Scrt1.o /usr/lib/gcc/x86_64-linux-gnu/15/../../../x86_64-linux-gnu/crti.o /usr/lib/gcc/x86_64-linux-gnu/15/crtbeginS.o -L/usr/lib/gcc/x86_64-linux-gnu/15 -L/usr/lib/gcc/x86_64-linux-gnu/15/../../../x86_64-linux-gnu -L/usr/lib/gcc/x86_64-linux-gnu/15/../../../../lib -L/lib/x86_64-linux-gnu -L/lib/../lib -L/usr/lib/x86_64-linux-gnu -L/usr/lib/../lib -L/usr/lib/gcc/x86_64-linux-gnu/15/../../.. -L/lib -L/usr/lib -v CMakeFiles/cmTC_15f6b.dir/CMakeCXXCompilerABI.cpp.o -lstdc++ -lm -lgcc_s -lgcc -lc -lgcc_s -lgcc /usr/lib/gcc/x86_64-linux-gnu/15/crtendS.o /usr/lib/gcc/x86_64-linux-gnu/15/../../../x86_64-linux-gnu/crtn.o]
+        ignore line: [COLLECT_GCC_OPTIONS='-v' '-o' 'cmTC_a2c82' '-foffload-options=-l_GCC_stdc++' '-foffload-options=-l_GCC_m' '-shared-libgcc' '-mtune=generic' '-march=x86-64-v3' '-dumpdir' 'cmTC_a2c82.']
+        link line: [ /usr/libexec/gcc/x86_64-linux-gnu/15/collect2 -plugin /usr/libexec/gcc/x86_64-linux-gnu/15/liblto_plugin.so -plugin-opt=/usr/libexec/gcc/x86_64-linux-gnu/15/lto-wrapper -plugin-opt=-fresolution=/home/ubuntu/.hermes/cache/scratch/ccEIz4IP.res -plugin-opt=-pass-through=-lgcc_s -plugin-opt=-pass-through=-lgcc -plugin-opt=-pass-through=-lc -plugin-opt=-pass-through=-lgcc_s -plugin-opt=-pass-through=-lgcc --build-id --eh-frame-hdr -m elf_x86_64 --hash-style=gnu --as-needed -dynamic-linker /lib64/ld-linux-x86-64.so.2 -pie -z now -z relro -o cmTC_a2c82 /usr/lib/gcc/x86_64-linux-gnu/15/../../../x86_64-linux-gnu/Scrt1.o /usr/lib/gcc/x86_64-linux-gnu/15/../../../x86_64-linux-gnu/crti.o /usr/lib/gcc/x86_64-linux-gnu/15/crtbeginS.o -L/usr/lib/gcc/x86_64-linux-gnu/15 -L/usr/lib/gcc/x86_64-linux-gnu/15/../../../x86_64-linux-gnu -L/usr/lib/gcc/x86_64-linux-gnu/15/../../../../lib -L/lib/x86_64-linux-gnu -L/lib/../lib -L/usr/lib/x86_64-linux-gnu -L/usr/lib/../lib -L/usr/lib/gcc/x86_64-linux-gnu/15/../../.. -L/lib -L/usr/lib -v CMakeFiles/cmTC_a2c82.dir/CMakeCXXCompilerABI.cpp.o -lstdc++ -lm -lgcc_s -lgcc -lc -lgcc_s -lgcc /usr/lib/gcc/x86_64-linux-gnu/15/crtendS.o /usr/lib/gcc/x86_64-linux-gnu/15/../../../x86_64-linux-gnu/crtn.o]
           arg [/usr/libexec/gcc/x86_64-linux-gnu/15/collect2] ==> ignore
           arg [-plugin] ==> ignore
           arg [/usr/libexec/gcc/x86_64-linux-gnu/15/liblto_plugin.so] ==> ignore
           arg [-plugin-opt=/usr/libexec/gcc/x86_64-linux-gnu/15/lto-wrapper] ==> ignore
-          arg [-plugin-opt=-fresolution=/home/ubuntu/.hermes/cache/scratch/cc7OnvY0.res] ==> ignore
+          arg [-plugin-opt=-fresolution=/home/ubuntu/.hermes/cache/scratch/ccEIz4IP.res] ==> ignore
           arg [-plugin-opt=-pass-through=-lgcc_s] ==> ignore
           arg [-plugin-opt=-pass-through=-lgcc] ==> ignore
           arg [-plugin-opt=-pass-through=-lc] ==> ignore
@@ -1574,7 +1551,7 @@ events:
           arg [-znow] ==> ignore
           arg [-zrelro] ==> ignore
           arg [-o] ==> ignore
-          arg [cmTC_15f6b] ==> ignore
+          arg [cmTC_a2c82] ==> ignore
           arg [/usr/lib/gcc/x86_64-linux-gnu/15/../../../x86_64-linux-gnu/Scrt1.o] ==> obj [/usr/lib/gcc/x86_64-linux-gnu/15/../../../x86_64-linux-gnu/Scrt1.o]
           arg [/usr/lib/gcc/x86_64-linux-gnu/15/../../../x86_64-linux-gnu/crti.o] ==> obj [/usr/lib/gcc/x86_64-linux-gnu/15/../../../x86_64-linux-gnu/crti.o]
           arg [/usr/lib/gcc/x86_64-linux-gnu/15/crtbeginS.o] ==> obj [/usr/lib/gcc/x86_64-linux-gnu/15/crtbeginS.o]
@@ -1589,7 +1566,7 @@ events:
           arg [-L/lib] ==> dir [/lib]
           arg [-L/usr/lib] ==> dir [/usr/lib]
           arg [-v] ==> ignore
-          arg [CMakeFiles/cmTC_15f6b.dir/CMakeCXXCompilerABI.cpp.o] ==> ignore
+          arg [CMakeFiles/cmTC_a2c82.dir/CMakeCXXCompilerABI.cpp.o] ==> ignore
           arg [-lstdc++] ==> lib [stdc++]
           arg [-lm] ==> lib [m]
           arg [-lgcc_s] ==> lib [gcc_s]
@@ -1600,7 +1577,7 @@ events:
           arg [/usr/lib/gcc/x86_64-linux-gnu/15/crtendS.o] ==> obj [/usr/lib/gcc/x86_64-linux-gnu/15/crtendS.o]
           arg [/usr/lib/gcc/x86_64-linux-gnu/15/../../../x86_64-linux-gnu/crtn.o] ==> obj [/usr/lib/gcc/x86_64-linux-gnu/15/../../../x86_64-linux-gnu/crtn.o]
         ignore line: [collect2 version 15.2.0]
-        ignore line: [/usr/bin/ld -plugin /usr/libexec/gcc/x86_64-linux-gnu/15/liblto_plugin.so -plugin-opt=/usr/libexec/gcc/x86_64-linux-gnu/15/lto-wrapper -plugin-opt=-fresolution=/home/ubuntu/.hermes/cache/scratch/cc7OnvY0.res -plugin-opt=-pass-through=-lgcc_s -plugin-opt=-pass-through=-lgcc -plugin-opt=-pass-through=-lc -plugin-opt=-pass-through=-lgcc_s -plugin-opt=-pass-through=-lgcc --build-id --eh-frame-hdr -m elf_x86_64 --hash-style=gnu --as-needed -dynamic-linker /lib64/ld-linux-x86-64.so.2 -pie -z now -z relro -o cmTC_15f6b /usr/lib/gcc/x86_64-linux-gnu/15/../../../x86_64-linux-gnu/Scrt1.o /usr/lib/gcc/x86_64-linux-gnu/15/../../../x86_64-linux-gnu/crti.o /usr/lib/gcc/x86_64-linux-gnu/15/crtbeginS.o -L/usr/lib/gcc/x86_64-linux-gnu/15 -L/usr/lib/gcc/x86_64-linux-gnu/15/../../../x86_64-linux-gnu -L/usr/lib/gcc/x86_64-linux-gnu/15/../../../../lib -L/lib/x86_64-linux-gnu -L/lib/../lib -L/usr/lib/x86_64-linux-gnu -L/usr/lib/../lib -L/usr/lib/gcc/x86_64-linux-gnu/15/../../.. -L/lib -L/usr/lib -v CMakeFiles/cmTC_15f6b.dir/CMakeCXXCompilerABI.cpp.o -lstdc++ -lm -lgcc_s -lgcc -lc -lgcc_s -lgcc /usr/lib/gcc/x86_64-linux-gnu/15/crtendS.o /usr/lib/gcc/x86_64-linux-gnu/15/../../../x86_64-linux-gnu/crtn.o]
+        ignore line: [/usr/bin/ld -plugin /usr/libexec/gcc/x86_64-linux-gnu/15/liblto_plugin.so -plugin-opt=/usr/libexec/gcc/x86_64-linux-gnu/15/lto-wrapper -plugin-opt=-fresolution=/home/ubuntu/.hermes/cache/scratch/ccEIz4IP.res -plugin-opt=-pass-through=-lgcc_s -plugin-opt=-pass-through=-lgcc -plugin-opt=-pass-through=-lc -plugin-opt=-pass-through=-lgcc_s -plugin-opt=-pass-through=-lgcc --build-id --eh-frame-hdr -m elf_x86_64 --hash-style=gnu --as-needed -dynamic-linker /lib64/ld-linux-x86-64.so.2 -pie -z now -z relro -o cmTC_a2c82 /usr/lib/gcc/x86_64-linux-gnu/15/../../../x86_64-linux-gnu/Scrt1.o /usr/lib/gcc/x86_64-linux-gnu/15/../../../x86_64-linux-gnu/crti.o /usr/lib/gcc/x86_64-linux-gnu/15/crtbeginS.o -L/usr/lib/gcc/x86_64-linux-gnu/15 -L/usr/lib/gcc/x86_64-linux-gnu/15/../../../x86_64-linux-gnu -L/usr/lib/gcc/x86_64-linux-gnu/15/../../../../lib -L/lib/x86_64-linux-gnu -L/lib/../lib -L/usr/lib/x86_64-linux-gnu -L/usr/lib/../lib -L/usr/lib/gcc/x86_64-linux-gnu/15/../../.. -L/lib -L/usr/lib -v CMakeFiles/cmTC_a2c82.dir/CMakeCXXCompilerABI.cpp.o -lstdc++ -lm -lgcc_s -lgcc -lc -lgcc_s -lgcc /usr/lib/gcc/x86_64-linux-gnu/15/crtendS.o /usr/lib/gcc/x86_64-linux-gnu/15/../../../x86_64-linux-gnu/crtn.o]
         linker tool for 'CXX': /usr/bin/ld
         collapse obj [/usr/lib/gcc/x86_64-linux-gnu/15/../../../x86_64-linux-gnu/Scrt1.o] ==> [/usr/lib/x86_64-linux-gnu/Scrt1.o]
         collapse obj [/usr/lib/gcc/x86_64-linux-gnu/15/../../../x86_64-linux-gnu/crti.o] ==> [/usr/lib/x86_64-linux-gnu/crti.o]
@@ -1645,8 +1622,8 @@ events:
       - "/usr/lib/x86_64-linux-gnu/cmake/Qt6/Qt6Config.cmake:190 (include)"
       - "CMakeLists.txt:25 (find_package)"
     directories:
-      source: "/home/ubuntu/model-maker-overnight/build-occ-linux/CMakeFiles/CMakeScratch/TryCompile-jXpshb"
-      binary: "/home/ubuntu/model-maker-overnight/build-occ-linux/CMakeFiles/CMakeScratch/TryCompile-jXpshb"
+      source: "/home/ubuntu/model-maker-overnight/build-occ-linux/CMakeFiles/CMakeScratch/TryCompile-0puijE"
+      binary: "/home/ubuntu/model-maker-overnight/build-occ-linux/CMakeFiles/CMakeScratch/TryCompile-0puijE"
     cmakeVariables:
       CMAKE_CXX_FLAGS: ""
       CMAKE_CXX_FLAGS_DEBUG: "-g"
@@ -1656,11 +1633,17 @@ events:
       variable: "CMAKE_HAVE_LIBC_PTHREAD"
       cached: true
       stdout: |
-        Change Dir: '/home/ubuntu/model-maker-overnight/build-occ-linux/CMakeFiles/CMakeScratch/TryCompile-jXpshb'
+        Change Dir: '/home/ubuntu/model-maker-overnight/build-occ-linux/CMakeFiles/CMakeScratch/TryCompile-0puijE'
         
-        Run Build Command(s): /usr/bin/ninja -v cmTC_816d4
-        [1/2] /usr/bin/c++ -DCMAKE_HAVE_LIBC_PTHREAD  -std=c++20 -o CMakeFiles/cmTC_816d4.dir/src.cxx.o -c /home/ubuntu/model-maker-overnight/build-occ-linux/CMakeFiles/CMakeScratch/TryCompile-jXpshb/src.cxx
-        [2/2] : && /usr/bin/c++   CMakeFiles/cmTC_816d4.dir/src.cxx.o -o cmTC_816d4   && :
+        Run Build Command(s): /usr/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_ffc78/fast
+        /usr/bin/gmake  -f CMakeFiles/cmTC_ffc78.dir/build.make CMakeFiles/cmTC_ffc78.dir/build
+        gmake[1]: Entering directory '/home/ubuntu/model-maker-overnight/build-occ-linux/CMakeFiles/CMakeScratch/TryCompile-0puijE'
+        Building CXX object CMakeFiles/cmTC_ffc78.dir/src.cxx.o
+        /usr/bin/c++ -DCMAKE_HAVE_LIBC_PTHREAD  -std=c++20 -o CMakeFiles/cmTC_ffc78.dir/src.cxx.o -c /home/ubuntu/model-maker-overnight/build-occ-linux/CMakeFiles/CMakeScratch/TryCompile-0puijE/src.cxx
+        Linking CXX executable cmTC_ffc78
+        /usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_ffc78.dir/link.txt --verbose=1
+        /usr/bin/c++ CMakeFiles/cmTC_ffc78.dir/src.cxx.o -o cmTC_ffc78
+        gmake[1]: Leaving directory '/home/ubuntu/model-maker-overnight/build-occ-linux/CMakeFiles/CMakeScratch/TryCompile-0puijE'
         
       exitCode: 0
   -
@@ -2332,8 +2315,8 @@ events:
     checks:
       - "Performing Test HAVE_STDATOMIC"
     directories:
-      source: "/home/ubuntu/model-maker-overnight/build-occ-linux/CMakeFiles/CMakeScratch/TryCompile-NrFI0b"
-      binary: "/home/ubuntu/model-maker-overnight/build-occ-linux/CMakeFiles/CMakeScratch/TryCompile-NrFI0b"
+      source: "/home/ubuntu/model-maker-overnight/build-occ-linux/CMakeFiles/CMakeScratch/TryCompile-0Tdz9q"
+      binary: "/home/ubuntu/model-maker-overnight/build-occ-linux/CMakeFiles/CMakeScratch/TryCompile-0Tdz9q"
     cmakeVariables:
       CMAKE_CXX_FLAGS: ""
       CMAKE_CXX_FLAGS_DEBUG: "-g"
@@ -2343,11 +2326,17 @@ events:
       variable: "HAVE_STDATOMIC"
       cached: true
       stdout: |
-        Change Dir: '/home/ubuntu/model-maker-overnight/build-occ-linux/CMakeFiles/CMakeScratch/TryCompile-NrFI0b'
+        Change Dir: '/home/ubuntu/model-maker-overnight/build-occ-linux/CMakeFiles/CMakeScratch/TryCompile-0Tdz9q'
         
-        Run Build Command(s): /usr/bin/ninja -v cmTC_b9491
-        [1/2] /usr/bin/c++ -DHAVE_STDATOMIC  -std=c++20 -o CMakeFiles/cmTC_b9491.dir/src.cxx.o -c /home/ubuntu/model-maker-overnight/build-occ-linux/CMakeFiles/CMakeScratch/TryCompile-NrFI0b/src.cxx
-        [2/2] : && /usr/bin/c++   CMakeFiles/cmTC_b9491.dir/src.cxx.o -o cmTC_b9491   && :
+        Run Build Command(s): /usr/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_79c82/fast
+        /usr/bin/gmake  -f CMakeFiles/cmTC_79c82.dir/build.make CMakeFiles/cmTC_79c82.dir/build
+        gmake[1]: Entering directory '/home/ubuntu/model-maker-overnight/build-occ-linux/CMakeFiles/CMakeScratch/TryCompile-0Tdz9q'
+        Building CXX object CMakeFiles/cmTC_79c82.dir/src.cxx.o
+        /usr/bin/c++ -DHAVE_STDATOMIC  -std=c++20 -o CMakeFiles/cmTC_79c82.dir/src.cxx.o -c /home/ubuntu/model-maker-overnight/build-occ-linux/CMakeFiles/CMakeScratch/TryCompile-0Tdz9q/src.cxx
+        Linking CXX executable cmTC_79c82
+        /usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_79c82.dir/link.txt --verbose=1
+        /usr/bin/c++ CMakeFiles/cmTC_79c82.dir/src.cxx.o -o cmTC_79c82
+        gmake[1]: Leaving directory '/home/ubuntu/model-maker-overnight/build-occ-linux/CMakeFiles/CMakeScratch/TryCompile-0Tdz9q'
         
       exitCode: 0
   -
@@ -6416,172 +6405,121 @@ events:
         - "/usr/lib/x86_64-linux-gnu/cmake/Qt6/3rdparty/extra-cmake-modules/find-modules"
         - "/usr/lib/x86_64-linux-gnu/cmake/Qt6/3rdparty/kwin"
   -
-    kind: "find_package-v1"
+    kind: "find-v1"
     backtrace:
-      - "CMakeLists.txt:148 (find_package)"
-    name: "OpenCASCADE"
-    configs:
-      -
-        filename: "OpenCASCADEConfig.cmake"
-        kind: "cmake"
-      -
-        filename: "opencascade-config.cmake"
-        kind: "cmake"
-    version_request:
-      exact: false
+      - "CMakeLists.txt:171 (find_path)"
+    mode: "path"
+    variable: "OCC_INCLUDE_DIR"
+    description: "Path to a file."
     settings:
-      required: "optional"
-      quiet: true
-      global: false
-      policy_scope: true
-      bypass_provider: false
-      names:
-        - "OpenCASCADE"
-      path_suffixes:
-        - ""
-      paths:
-        CMAKE_FIND_USE_CMAKE_PATH: true
-        CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: true
-        CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
-        CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
-        CMAKE_FIND_USE_INSTALL_PREFIX: true
-        CMAKE_FIND_USE_PACKAGE_ROOT_PATH: true
-        CMAKE_FIND_USE_CMAKE_PACKAGE_REGISTRY: true
-        CMAKE_FIND_USE_SYSTEM_PACKAGE_REGISTRY: true
-        CMAKE_FIND_ROOT_PATH_MODE: "BOTH"
-    candidates:
-      -
-        path: "/home/ubuntu/model-maker-overnight/build-occ-linux/CMakeFiles/pkgRedirects/OpenCASCADEConfig.cmake"
-        mode: "config"
-        reason: "no_exist"
-      -
-        path: "/home/ubuntu/model-maker-overnight/build-occ-linux/CMakeFiles/pkgRedirects/opencascade-config.cmake"
-        mode: "config"
-        reason: "no_exist"
-      -
-        path: "/home/ubuntu/.local/OpenCASCADEConfig.cmake"
-        mode: "config"
-        reason: "no_exist"
-      -
-        path: "/home/ubuntu/.local/opencascade-config.cmake"
-        mode: "config"
-        reason: "no_exist"
-      -
-        path: "/home/ubuntu/.deno/OpenCASCADEConfig.cmake"
-        mode: "config"
-        reason: "no_exist"
-      -
-        path: "/home/ubuntu/.deno/opencascade-config.cmake"
-        mode: "config"
-        reason: "no_exist"
-      -
-        path: "/home/ubuntu/.hermes/tools/agent-browser-0.26.0-linux-x64/OpenCASCADEConfig.cmake"
-        mode: "config"
-        reason: "no_exist"
-      -
-        path: "/home/ubuntu/.hermes/tools/agent-browser-0.26.0-linux-x64/opencascade-config.cmake"
-        mode: "config"
-        reason: "no_exist"
-      -
-        path: "/home/ubuntu/.hermes/tools/cua-driver-0.21.0-linux-x64/OpenCASCADEConfig.cmake"
-        mode: "config"
-        reason: "no_exist"
-      -
-        path: "/home/ubuntu/.hermes/tools/cua-driver-0.21.0-linux-x64/opencascade-config.cmake"
-        mode: "config"
-        reason: "no_exist"
-      -
-        path: "/home/ubuntu/.hermes/tools/ffmpeg-9.0.1-linux-x64/OpenCASCADEConfig.cmake"
-        mode: "config"
-        reason: "no_exist"
-      -
-        path: "/home/ubuntu/.hermes/tools/ffmpeg-9.0.1-linux-x64/opencascade-config.cmake"
-        mode: "config"
-        reason: "no_exist"
-      -
-        path: "/home/ubuntu/.hermes/tools/node-26.7.0-linux-x64/OpenCASCADEConfig.cmake"
-        mode: "config"
-        reason: "no_exist"
-      -
-        path: "/home/ubuntu/.hermes/tools/node-26.7.0-linux-x64/opencascade-config.cmake"
-        mode: "config"
-        reason: "no_exist"
-      -
-        path: "/home/ubuntu/.hermes/tools/npm-12.0.2-linux-x64/OpenCASCADEConfig.cmake"
-        mode: "config"
-        reason: "no_exist"
-      -
-        path: "/home/ubuntu/.hermes/tools/npm-12.0.2-linux-x64/opencascade-config.cmake"
-        mode: "config"
-        reason: "no_exist"
-      -
-        path: "/home/ubuntu/.hermes/tools/python-3.14.7+20260901-linux-x64/OpenCASCADEConfig.cmake"
-        mode: "config"
-        reason: "no_exist"
-      -
-        path: "/home/ubuntu/.hermes/tools/python-3.14.7+20260901-linux-x64/opencascade-config.cmake"
-        mode: "config"
-        reason: "no_exist"
-      -
-        path: "/home/ubuntu/.hermes/tools/ripgrep-15.2.0-linux-x64/OpenCASCADEConfig.cmake"
-        mode: "config"
-        reason: "no_exist"
-      -
-        path: "/home/ubuntu/.hermes/tools/ripgrep-15.2.0-linux-x64/opencascade-config.cmake"
-        mode: "config"
-        reason: "no_exist"
-      -
-        path: "/home/ubuntu/.hermes/tools/tirith-0.4.2-linux-x64/OpenCASCADEConfig.cmake"
-        mode: "config"
-        reason: "no_exist"
-      -
-        path: "/home/ubuntu/.hermes/tools/tirith-0.4.2-linux-x64/opencascade-config.cmake"
-        mode: "config"
-        reason: "no_exist"
-      -
-        path: "/home/ubuntu/.hermes/hermes-agent/.hermes/OpenCASCADEConfig.cmake"
-        mode: "config"
-        reason: "no_exist"
-      -
-        path: "/home/ubuntu/.hermes/hermes-agent/.hermes/opencascade-config.cmake"
-        mode: "config"
-        reason: "no_exist"
-      -
-        path: "/home/ubuntu/.hermes/installs/5f0a1ff4045d044e/environments/36e31116c87142da9778afd033bf3c11/venv/OpenCASCADEConfig.cmake"
-        mode: "config"
-        reason: "no_exist"
-      -
-        path: "/home/ubuntu/.hermes/installs/5f0a1ff4045d044e/environments/36e31116c87142da9778afd033bf3c11/venv/opencascade-config.cmake"
-        mode: "config"
-        reason: "no_exist"
-      -
-        path: "/home/ubuntu/.hermes/hermes-agent/node_modules/.bin/OpenCASCADEConfig.cmake"
-        mode: "config"
-        reason: "no_exist"
-      -
-        path: "/home/ubuntu/.hermes/hermes-agent/node_modules/.bin/opencascade-config.cmake"
-        mode: "config"
-        reason: "no_exist"
-      -
-        path: "/usr/local/OpenCASCADEConfig.cmake"
-        mode: "config"
-        reason: "no_exist"
-      -
-        path: "/usr/local/opencascade-config.cmake"
-        mode: "config"
-        reason: "no_exist"
-      -
-        path: "/usr/OpenCASCADEConfig.cmake"
-        mode: "config"
-        reason: "no_exist"
-      -
-        path: "/usr/opencascade-config.cmake"
-        mode: "config"
-        reason: "no_exist"
-    found:
-      path: "/usr/lib/x86_64-linux-gnu/cmake/opencascade/OpenCASCADEConfig.cmake"
-      mode: "config"
-      version: "7.9.2"
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: true
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "BRepPrimAPI_MakeBox.hxx"
+    candidate_directories:
+      - "C:/Qt/6.9.3/mingw_64/include/x86_64-linux-gnu/opencascade/"
+      - "C:/Qt/6.9.3/mingw_64/include/x86_64-linux-gnu/"
+      - "C:/Qt/6.9.3/mingw_64/include/opencascade/"
+      - "C:/Qt/6.9.3/mingw_64/include/"
+      - "C:/Qt/6.9.3/mingw_64/opencascade/"
+      - "C:/Qt/6.9.3/mingw_64/"
+      - "/usr/include/opencascade/"
+      - "/usr/include/"
+      - "/usr/local/include/opencascade/"
+      - "/usr/local/include/"
+      - "/home/ubuntu/.local/bin/opencascade/"
+      - "/home/ubuntu/.local/bin/"
+      - "/home/ubuntu/.deno/bin/opencascade/"
+      - "/home/ubuntu/.deno/bin/"
+      - "/home/ubuntu/.hermes/tools/agent-browser-0.26.0-linux-x64/bin/opencascade/"
+      - "/home/ubuntu/.hermes/tools/agent-browser-0.26.0-linux-x64/bin/"
+      - "/home/ubuntu/.hermes/tools/cua-driver-0.21.0-linux-x64/opencascade/"
+      - "/home/ubuntu/.hermes/tools/cua-driver-0.21.0-linux-x64/"
+      - "/home/ubuntu/.hermes/tools/ffmpeg-9.0.1-linux-x64/bin/opencascade/"
+      - "/home/ubuntu/.hermes/tools/ffmpeg-9.0.1-linux-x64/bin/"
+      - "/home/ubuntu/.hermes/tools/node-26.7.0-linux-x64/bin/opencascade/"
+      - "/home/ubuntu/.hermes/tools/node-26.7.0-linux-x64/bin/"
+      - "/home/ubuntu/.hermes/tools/npm-12.0.2-linux-x64/bin/opencascade/"
+      - "/home/ubuntu/.hermes/tools/npm-12.0.2-linux-x64/bin/"
+      - "/home/ubuntu/.hermes/tools/python-3.14.7+20260901-linux-x64/bin/opencascade/"
+      - "/home/ubuntu/.hermes/tools/python-3.14.7+20260901-linux-x64/bin/"
+      - "/home/ubuntu/.hermes/tools/ripgrep-15.2.0-linux-x64/opencascade/"
+      - "/home/ubuntu/.hermes/tools/ripgrep-15.2.0-linux-x64/"
+      - "/home/ubuntu/.hermes/tools/tirith-0.4.2-linux-x64/opencascade/"
+      - "/home/ubuntu/.hermes/tools/tirith-0.4.2-linux-x64/"
+      - "/home/ubuntu/.hermes/hermes-agent/.hermes/bin/opencascade/"
+      - "/home/ubuntu/.hermes/hermes-agent/.hermes/bin/"
+      - "/home/ubuntu/.hermes/installs/5f0a1ff4045d044e/environments/36e31116c87142da9778afd033bf3c11/venv/bin/opencascade/"
+      - "/home/ubuntu/.hermes/installs/5f0a1ff4045d044e/environments/36e31116c87142da9778afd033bf3c11/venv/bin/"
+      - "/home/ubuntu/.hermes/hermes-agent/node_modules/.bin/opencascade/"
+      - "/home/ubuntu/.hermes/hermes-agent/node_modules/.bin/"
+      - "/usr/local/sbin/opencascade/"
+      - "/usr/local/sbin/"
+      - "/usr/local/bin/opencascade/"
+      - "/usr/local/bin/"
+      - "/usr/sbin/opencascade/"
+      - "/usr/sbin/"
+      - "/usr/bin/opencascade/"
+      - "/usr/bin/"
+      - "/sbin/opencascade/"
+      - "/sbin/"
+      - "/bin/opencascade/"
+      - "/bin/"
+      - "/opt/homebrew/bin/opencascade/"
+      - "/opt/homebrew/bin/"
+      - "/opt/homebrew/sbin/opencascade/"
+      - "/opt/homebrew/sbin/"
+      - "/snap/bin/opencascade/"
+      - "/snap/bin/"
+      - "/usr/local/include/x86_64-linux-gnu/opencascade/"
+      - "/usr/local/include/x86_64-linux-gnu/"
+      - "/usr/local/include/opencascade/"
+      - "/usr/local/include/"
+      - "/usr/local/opencascade/"
+      - "/usr/local/"
+      - "/usr/include/x86_64-linux-gnu/opencascade/"
+      - "/usr/include/x86_64-linux-gnu/"
+      - "/usr/include/opencascade/"
+      - "/usr/include/"
+      - "/usr/opencascade/"
+      - "/usr/"
+      - "/include/x86_64-linux-gnu/opencascade/"
+      - "/include/x86_64-linux-gnu/"
+      - "/include/opencascade/"
+      - "/include/"
+      - "/usr/X11R6/include/x86_64-linux-gnu/opencascade/"
+      - "/usr/X11R6/include/x86_64-linux-gnu/"
+      - "/usr/X11R6/include/opencascade/"
+      - "/usr/X11R6/include/"
+      - "/usr/X11R6/opencascade/"
+      - "/usr/X11R6/"
+      - "/usr/pkg/include/x86_64-linux-gnu/opencascade/"
+      - "/usr/pkg/include/x86_64-linux-gnu/"
+      - "/usr/pkg/include/opencascade/"
+      - "/usr/pkg/include/"
+      - "/usr/pkg/opencascade/"
+      - "/usr/pkg/"
+      - "/opt/include/x86_64-linux-gnu/opencascade/"
+      - "/opt/include/x86_64-linux-gnu/"
+      - "/opt/include/opencascade/"
+      - "/opt/include/"
+      - "/opt/opencascade/"
+      - "/opt/"
+      - "/usr/include/X11/opencascade/"
+      - "/usr/include/X11/"
+    searched_directories:
+      - "C:/Qt/6.9.3/mingw_64/include/x86_64-linux-gnu/opencascade/BRepPrimAPI_MakeBox.hxx"
+      - "C:/Qt/6.9.3/mingw_64/include/x86_64-linux-gnu/BRepPrimAPI_MakeBox.hxx"
+      - "C:/Qt/6.9.3/mingw_64/include/opencascade/BRepPrimAPI_MakeBox.hxx"
+      - "C:/Qt/6.9.3/mingw_64/include/BRepPrimAPI_MakeBox.hxx"
+      - "C:/Qt/6.9.3/mingw_64/opencascade/BRepPrimAPI_MakeBox.hxx"
+      - "C:/Qt/6.9.3/mingw_64/BRepPrimAPI_MakeBox.hxx"
+    found: "/usr/include/opencascade/"
     search_context:
       CMAKE_PREFIX_PATH:
         - "C:/Qt/6.9.3/mingw_64"
@@ -6620,15 +6558,294 @@ events:
         - "/usr/X11R6"
         - "/usr/pkg"
         - "/opt"
-      CMAKE_MODULE_PATH:
-        - "/usr/lib/x86_64-linux-gnu/cmake/Qt6"
-        - "/usr/lib/x86_64-linux-gnu/cmake/Qt6/3rdparty/extra-cmake-modules/find-modules"
-        - "/usr/lib/x86_64-linux-gnu/cmake/Qt6/3rdparty/kwin"
+      CMAKE_SYSTEM_INCLUDE_PATH:
+        - "/usr/include/X11"
+  -
+    kind: "find-v1"
+    backtrace:
+      - "CMakeLists.txt:174 (find_library)"
+    mode: "library"
+    variable: "OCC_TKERNEL_LIB"
+    description: "Path to a library."
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: true
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "TKernel"
+    candidate_directories:
+      - "C:/Qt/6.9.3/mingw_64/lib/x86_64-linux-gnu/x86_64-linux-gnu/"
+      - "C:/Qt/6.9.3/mingw_64/lib/x86_64-linux-gnu/aarch64-linux-gnu/"
+      - "C:/Qt/6.9.3/mingw_64/lib/x86_64-linux-gnu/"
+      - "C:/Qt/6.9.3/mingw_64/lib/x86_64-linux-gnu/"
+      - "C:/Qt/6.9.3/mingw_64/lib/aarch64-linux-gnu/"
+      - "C:/Qt/6.9.3/mingw_64/lib/"
+      - "C:/Qt/6.9.3/mingw_64/x86_64-linux-gnu/"
+      - "C:/Qt/6.9.3/mingw_64/aarch64-linux-gnu/"
+      - "C:/Qt/6.9.3/mingw_64/"
+      - "/home/ubuntu/.local/bin/x86_64-linux-gnu/"
+      - "/home/ubuntu/.local/bin/aarch64-linux-gnu/"
+      - "/home/ubuntu/.local/bin/"
+      - "/home/ubuntu/.deno/bin/x86_64-linux-gnu/"
+      - "/home/ubuntu/.deno/bin/aarch64-linux-gnu/"
+      - "/home/ubuntu/.deno/bin/"
+      - "/home/ubuntu/.hermes/tools/agent-browser-0.26.0-linux-x64/bin/x86_64-linux-gnu/"
+      - "/home/ubuntu/.hermes/tools/agent-browser-0.26.0-linux-x64/bin/aarch64-linux-gnu/"
+      - "/home/ubuntu/.hermes/tools/agent-browser-0.26.0-linux-x64/bin/"
+      - "/home/ubuntu/.hermes/tools/cua-driver-0.21.0-linux-x64/x86_64-linux-gnu/"
+      - "/home/ubuntu/.hermes/tools/cua-driver-0.21.0-linux-x64/aarch64-linux-gnu/"
+      - "/home/ubuntu/.hermes/tools/cua-driver-0.21.0-linux-x64/"
+      - "/home/ubuntu/.hermes/tools/ffmpeg-9.0.1-linux-x64/bin/x86_64-linux-gnu/"
+      - "/home/ubuntu/.hermes/tools/ffmpeg-9.0.1-linux-x64/bin/aarch64-linux-gnu/"
+      - "/home/ubuntu/.hermes/tools/ffmpeg-9.0.1-linux-x64/bin/"
+      - "/home/ubuntu/.hermes/tools/node-26.7.0-linux-x64/bin/x86_64-linux-gnu/"
+      - "/home/ubuntu/.hermes/tools/node-26.7.0-linux-x64/bin/aarch64-linux-gnu/"
+      - "/home/ubuntu/.hermes/tools/node-26.7.0-linux-x64/bin/"
+      - "/home/ubuntu/.hermes/tools/npm-12.0.2-linux-x64/bin/x86_64-linux-gnu/"
+      - "/home/ubuntu/.hermes/tools/npm-12.0.2-linux-x64/bin/aarch64-linux-gnu/"
+      - "/home/ubuntu/.hermes/tools/npm-12.0.2-linux-x64/bin/"
+      - "/home/ubuntu/.hermes/tools/python-3.14.7+20260901-linux-x64/bin/x86_64-linux-gnu/"
+      - "/home/ubuntu/.hermes/tools/python-3.14.7+20260901-linux-x64/bin/aarch64-linux-gnu/"
+      - "/home/ubuntu/.hermes/tools/python-3.14.7+20260901-linux-x64/bin/"
+      - "/home/ubuntu/.hermes/tools/ripgrep-15.2.0-linux-x64/x86_64-linux-gnu/"
+      - "/home/ubuntu/.hermes/tools/ripgrep-15.2.0-linux-x64/aarch64-linux-gnu/"
+      - "/home/ubuntu/.hermes/tools/ripgrep-15.2.0-linux-x64/"
+      - "/home/ubuntu/.hermes/tools/tirith-0.4.2-linux-x64/x86_64-linux-gnu/"
+      - "/home/ubuntu/.hermes/tools/tirith-0.4.2-linux-x64/aarch64-linux-gnu/"
+      - "/home/ubuntu/.hermes/tools/tirith-0.4.2-linux-x64/"
+      - "/home/ubuntu/.hermes/hermes-agent/.hermes/bin/x86_64-linux-gnu/"
+      - "/home/ubuntu/.hermes/hermes-agent/.hermes/bin/aarch64-linux-gnu/"
+      - "/home/ubuntu/.hermes/hermes-agent/.hermes/bin/"
+      - "/home/ubuntu/.hermes/installs/5f0a1ff4045d044e/environments/36e31116c87142da9778afd033bf3c11/venv/bin/x86_64-linux-gnu/"
+      - "/home/ubuntu/.hermes/installs/5f0a1ff4045d044e/environments/36e31116c87142da9778afd033bf3c11/venv/bin/aarch64-linux-gnu/"
+      - "/home/ubuntu/.hermes/installs/5f0a1ff4045d044e/environments/36e31116c87142da9778afd033bf3c11/venv/bin/"
+      - "/home/ubuntu/.hermes/hermes-agent/node_modules/.bin/x86_64-linux-gnu/"
+      - "/home/ubuntu/.hermes/hermes-agent/node_modules/.bin/aarch64-linux-gnu/"
+      - "/home/ubuntu/.hermes/hermes-agent/node_modules/.bin/"
+      - "/usr/local/sbin/x86_64-linux-gnu/"
+      - "/usr/local/sbin/aarch64-linux-gnu/"
+      - "/usr/local/sbin/"
+      - "/usr/local/bin/x86_64-linux-gnu/"
+      - "/usr/local/bin/aarch64-linux-gnu/"
+      - "/usr/local/bin/"
+      - "/usr/sbin/x86_64-linux-gnu/"
+      - "/usr/sbin/aarch64-linux-gnu/"
+      - "/usr/sbin/"
+      - "/usr/bin/x86_64-linux-gnu/"
+      - "/usr/bin/aarch64-linux-gnu/"
+      - "/usr/bin/"
+      - "/sbin/x86_64-linux-gnu/"
+      - "/sbin/aarch64-linux-gnu/"
+      - "/sbin/"
+      - "/bin/x86_64-linux-gnu/"
+      - "/bin/aarch64-linux-gnu/"
+      - "/bin/"
+      - "/opt/homebrew/bin/x86_64-linux-gnu/"
+      - "/opt/homebrew/bin/aarch64-linux-gnu/"
+      - "/opt/homebrew/bin/"
+      - "/opt/homebrew/sbin/x86_64-linux-gnu/"
+      - "/opt/homebrew/sbin/aarch64-linux-gnu/"
+      - "/opt/homebrew/sbin/"
+      - "/snap/bin/x86_64-linux-gnu/"
+      - "/snap/bin/aarch64-linux-gnu/"
+      - "/snap/bin/"
+      - "/usr/local/lib/x86_64-linux-gnu/x86_64-linux-gnu/"
+      - "/usr/local/lib/x86_64-linux-gnu/aarch64-linux-gnu/"
+      - "/usr/local/lib/x86_64-linux-gnu/"
+      - "/usr/local/lib/x86_64-linux-gnu/"
+      - "/usr/local/lib/aarch64-linux-gnu/"
+      - "/usr/local/lib/"
+      - "/usr/local/x86_64-linux-gnu/"
+      - "/usr/local/aarch64-linux-gnu/"
+      - "/usr/local/"
+      - "/usr/lib/x86_64-linux-gnu/x86_64-linux-gnu/"
+      - "/usr/lib/x86_64-linux-gnu/aarch64-linux-gnu/"
+      - "/usr/lib/x86_64-linux-gnu/"
+      - "/usr/lib/x86_64-linux-gnu/"
+      - "/usr/lib/aarch64-linux-gnu/"
+      - "/usr/lib/"
+      - "/usr/x86_64-linux-gnu/"
+      - "/usr/aarch64-linux-gnu/"
+      - "/usr/"
+      - "/lib/x86_64-linux-gnu/x86_64-linux-gnu/"
+      - "/lib/x86_64-linux-gnu/aarch64-linux-gnu/"
+      - "/lib/x86_64-linux-gnu/"
+      - "/lib/x86_64-linux-gnu/"
+      - "/lib/aarch64-linux-gnu/"
+      - "/lib/"
+      - "/usr/X11R6/lib/x86_64-linux-gnu/x86_64-linux-gnu/"
+      - "/usr/X11R6/lib/x86_64-linux-gnu/aarch64-linux-gnu/"
+      - "/usr/X11R6/lib/x86_64-linux-gnu/"
+      - "/usr/X11R6/lib/x86_64-linux-gnu/"
+      - "/usr/X11R6/lib/aarch64-linux-gnu/"
+      - "/usr/X11R6/lib/"
+      - "/usr/X11R6/x86_64-linux-gnu/"
+      - "/usr/X11R6/aarch64-linux-gnu/"
+      - "/usr/X11R6/"
+      - "/usr/pkg/lib/x86_64-linux-gnu/x86_64-linux-gnu/"
+      - "/usr/pkg/lib/x86_64-linux-gnu/aarch64-linux-gnu/"
+      - "/usr/pkg/lib/x86_64-linux-gnu/"
+      - "/usr/pkg/lib/x86_64-linux-gnu/"
+      - "/usr/pkg/lib/aarch64-linux-gnu/"
+      - "/usr/pkg/lib/"
+      - "/usr/pkg/x86_64-linux-gnu/"
+      - "/usr/pkg/aarch64-linux-gnu/"
+      - "/usr/pkg/"
+      - "/opt/lib/x86_64-linux-gnu/x86_64-linux-gnu/"
+      - "/opt/lib/x86_64-linux-gnu/aarch64-linux-gnu/"
+      - "/opt/lib/x86_64-linux-gnu/"
+      - "/opt/lib/x86_64-linux-gnu/"
+      - "/opt/lib/aarch64-linux-gnu/"
+      - "/opt/lib/"
+      - "/opt/x86_64-linux-gnu/"
+      - "/opt/aarch64-linux-gnu/"
+      - "/opt/"
+      - "/usr/lib/X11/x86_64-linux-gnu/"
+      - "/usr/lib/X11/aarch64-linux-gnu/"
+      - "/usr/lib/X11/"
+      - "/usr/lib/x86_64-linux-gnu/"
+      - "/usr/lib/aarch64-linux-gnu/"
+      - "/usr/lib/"
+      - "/usr/local/lib/x86_64-linux-gnu/"
+      - "/usr/local/lib/aarch64-linux-gnu/"
+      - "/usr/local/lib/"
+    searched_directories:
+      - "C:/Qt/6.9.3/mingw_64/lib/x86_64-linux-gnu/x86_64-linux-gnu/"
+      - "C:/Qt/6.9.3/mingw_64/lib/x86_64-linux-gnu/aarch64-linux-gnu/"
+      - "C:/Qt/6.9.3/mingw_64/lib/x86_64-linux-gnu/"
+      - "C:/Qt/6.9.3/mingw_64/lib/x86_64-linux-gnu/"
+      - "C:/Qt/6.9.3/mingw_64/lib/aarch64-linux-gnu/"
+      - "C:/Qt/6.9.3/mingw_64/lib/"
+      - "C:/Qt/6.9.3/mingw_64/x86_64-linux-gnu/"
+      - "C:/Qt/6.9.3/mingw_64/aarch64-linux-gnu/"
+      - "C:/Qt/6.9.3/mingw_64/"
+      - "/home/ubuntu/.local/bin/x86_64-linux-gnu/"
+      - "/home/ubuntu/.local/bin/aarch64-linux-gnu/"
+      - "/home/ubuntu/.local/bin/"
+      - "/home/ubuntu/.deno/bin/x86_64-linux-gnu/"
+      - "/home/ubuntu/.deno/bin/aarch64-linux-gnu/"
+      - "/home/ubuntu/.deno/bin/"
+      - "/home/ubuntu/.hermes/tools/agent-browser-0.26.0-linux-x64/bin/x86_64-linux-gnu/"
+      - "/home/ubuntu/.hermes/tools/agent-browser-0.26.0-linux-x64/bin/aarch64-linux-gnu/"
+      - "/home/ubuntu/.hermes/tools/agent-browser-0.26.0-linux-x64/bin/"
+      - "/home/ubuntu/.hermes/tools/cua-driver-0.21.0-linux-x64/x86_64-linux-gnu/"
+      - "/home/ubuntu/.hermes/tools/cua-driver-0.21.0-linux-x64/aarch64-linux-gnu/"
+      - "/home/ubuntu/.hermes/tools/cua-driver-0.21.0-linux-x64/"
+      - "/home/ubuntu/.hermes/tools/ffmpeg-9.0.1-linux-x64/bin/x86_64-linux-gnu/"
+      - "/home/ubuntu/.hermes/tools/ffmpeg-9.0.1-linux-x64/bin/aarch64-linux-gnu/"
+      - "/home/ubuntu/.hermes/tools/ffmpeg-9.0.1-linux-x64/bin/"
+      - "/home/ubuntu/.hermes/tools/node-26.7.0-linux-x64/bin/x86_64-linux-gnu/"
+      - "/home/ubuntu/.hermes/tools/node-26.7.0-linux-x64/bin/aarch64-linux-gnu/"
+      - "/home/ubuntu/.hermes/tools/node-26.7.0-linux-x64/bin/"
+      - "/home/ubuntu/.hermes/tools/npm-12.0.2-linux-x64/bin/x86_64-linux-gnu/"
+      - "/home/ubuntu/.hermes/tools/npm-12.0.2-linux-x64/bin/aarch64-linux-gnu/"
+      - "/home/ubuntu/.hermes/tools/npm-12.0.2-linux-x64/bin/"
+      - "/home/ubuntu/.hermes/tools/python-3.14.7+20260901-linux-x64/bin/x86_64-linux-gnu/"
+      - "/home/ubuntu/.hermes/tools/python-3.14.7+20260901-linux-x64/bin/aarch64-linux-gnu/"
+      - "/home/ubuntu/.hermes/tools/python-3.14.7+20260901-linux-x64/bin/"
+      - "/home/ubuntu/.hermes/tools/ripgrep-15.2.0-linux-x64/x86_64-linux-gnu/"
+      - "/home/ubuntu/.hermes/tools/ripgrep-15.2.0-linux-x64/aarch64-linux-gnu/"
+      - "/home/ubuntu/.hermes/tools/ripgrep-15.2.0-linux-x64/"
+      - "/home/ubuntu/.hermes/tools/tirith-0.4.2-linux-x64/x86_64-linux-gnu/"
+      - "/home/ubuntu/.hermes/tools/tirith-0.4.2-linux-x64/aarch64-linux-gnu/"
+      - "/home/ubuntu/.hermes/tools/tirith-0.4.2-linux-x64/"
+      - "/home/ubuntu/.hermes/hermes-agent/.hermes/bin/x86_64-linux-gnu/"
+      - "/home/ubuntu/.hermes/hermes-agent/.hermes/bin/aarch64-linux-gnu/"
+      - "/home/ubuntu/.hermes/hermes-agent/.hermes/bin/"
+      - "/home/ubuntu/.hermes/installs/5f0a1ff4045d044e/environments/36e31116c87142da9778afd033bf3c11/venv/bin/x86_64-linux-gnu/"
+      - "/home/ubuntu/.hermes/installs/5f0a1ff4045d044e/environments/36e31116c87142da9778afd033bf3c11/venv/bin/aarch64-linux-gnu/"
+      - "/home/ubuntu/.hermes/installs/5f0a1ff4045d044e/environments/36e31116c87142da9778afd033bf3c11/venv/bin/"
+      - "/home/ubuntu/.hermes/hermes-agent/node_modules/.bin/x86_64-linux-gnu/"
+      - "/home/ubuntu/.hermes/hermes-agent/node_modules/.bin/aarch64-linux-gnu/"
+      - "/home/ubuntu/.hermes/hermes-agent/node_modules/.bin/"
+      - "/usr/local/sbin/x86_64-linux-gnu/"
+      - "/usr/local/sbin/aarch64-linux-gnu/"
+      - "/usr/local/sbin/"
+      - "/usr/local/bin/x86_64-linux-gnu/"
+      - "/usr/local/bin/aarch64-linux-gnu/"
+      - "/usr/local/bin/"
+      - "/usr/sbin/x86_64-linux-gnu/"
+      - "/usr/sbin/aarch64-linux-gnu/"
+      - "/usr/sbin/"
+      - "/usr/bin/x86_64-linux-gnu/"
+      - "/usr/bin/aarch64-linux-gnu/"
+      - "/usr/bin/"
+      - "/sbin/x86_64-linux-gnu/"
+      - "/sbin/aarch64-linux-gnu/"
+      - "/sbin/"
+      - "/bin/x86_64-linux-gnu/"
+      - "/bin/aarch64-linux-gnu/"
+      - "/bin/"
+      - "/opt/homebrew/bin/x86_64-linux-gnu/"
+      - "/opt/homebrew/bin/aarch64-linux-gnu/"
+      - "/opt/homebrew/bin/"
+      - "/opt/homebrew/sbin/x86_64-linux-gnu/"
+      - "/opt/homebrew/sbin/aarch64-linux-gnu/"
+      - "/opt/homebrew/sbin/"
+      - "/snap/bin/x86_64-linux-gnu/"
+      - "/snap/bin/aarch64-linux-gnu/"
+      - "/snap/bin/"
+      - "/usr/local/lib/x86_64-linux-gnu/x86_64-linux-gnu/"
+      - "/usr/local/lib/x86_64-linux-gnu/aarch64-linux-gnu/"
+      - "/usr/local/lib/x86_64-linux-gnu/"
+      - "/usr/local/lib/x86_64-linux-gnu/"
+      - "/usr/local/lib/aarch64-linux-gnu/"
+      - "/usr/local/lib/"
+      - "/usr/local/x86_64-linux-gnu/"
+      - "/usr/local/aarch64-linux-gnu/"
+      - "/usr/local/"
+      - "/usr/lib/x86_64-linux-gnu/x86_64-linux-gnu/"
+      - "/usr/lib/x86_64-linux-gnu/aarch64-linux-gnu/"
+    found: "/usr/lib/x86_64-linux-gnu/libTKernel.so"
+    search_context:
+      CMAKE_PREFIX_PATH:
+        - "C:/Qt/6.9.3/mingw_64"
+      ENV{PATH}:
+        - "/home/ubuntu/.local/bin"
+        - "/home/ubuntu/.deno/bin"
+        - "/home/ubuntu/.local/bin"
+        - "/home/ubuntu/.hermes/tools/agent-browser-0.26.0-linux-x64/bin"
+        - "/home/ubuntu/.hermes/tools/cua-driver-0.21.0-linux-x64"
+        - "/home/ubuntu/.hermes/tools/ffmpeg-9.0.1-linux-x64/bin"
+        - "/home/ubuntu/.hermes/tools/node-26.7.0-linux-x64/bin"
+        - "/home/ubuntu/.hermes/tools/npm-12.0.2-linux-x64/bin"
+        - "/home/ubuntu/.hermes/tools/python-3.14.7+20260901-linux-x64/bin"
+        - "/home/ubuntu/.hermes/tools/ripgrep-15.2.0-linux-x64"
+        - "/home/ubuntu/.hermes/tools/tirith-0.4.2-linux-x64"
+        - "/home/ubuntu/.hermes/hermes-agent/.hermes/bin"
+        - "/home/ubuntu/.hermes/installs/5f0a1ff4045d044e/environments/36e31116c87142da9778afd033bf3c11/venv/bin"
+        - "/home/ubuntu/.hermes/hermes-agent/node_modules/.bin"
+        - "/home/ubuntu/.local/bin"
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/sbin"
+        - "/usr/bin"
+        - "/sbin"
+        - "/bin"
+        - "/opt/homebrew/bin"
+        - "/opt/homebrew/sbin"
+        - "/snap/bin"
+      CMAKE_INSTALL_PREFIX: "/usr/local"
+      CMAKE_SYSTEM_PREFIX_PATH:
+        - "/usr/local"
+        - "/usr"
+        - "/"
+        - "/usr"
+        - "/usr/local"
+        - "/usr/X11R6"
+        - "/usr/pkg"
+        - "/opt"
+      CMAKE_SYSTEM_LIBRARY_PATH:
+        - "/usr/lib/X11"
   -
     kind: "find-v1"
     backtrace:
       - "/usr/share/cmake-4.2/Modules/CTest.cmake:171 (find_program)"
-      - "CMakeLists.txt:219 (include)"
+      - "CMakeLists.txt:262 (include)"
     mode: "program"
     variable: "GITCOMMAND"
     description: "Path to a program."
@@ -6748,7 +6965,7 @@ events:
     kind: "find-v1"
     backtrace:
       - "/usr/share/cmake-4.2/Modules/CTest.cmake:188 (find_program)"
-      - "CMakeLists.txt:219 (include)"
+      - "CMakeLists.txt:262 (include)"
     mode: "program"
     variable: "MEMORYCHECK_COMMAND"
     description: "Path to the memory checking command, used for memory error detection."
@@ -7106,7 +7323,7 @@ events:
     kind: "find-v1"
     backtrace:
       - "/usr/share/cmake-4.2/Modules/CTest.cmake:196 (find_program)"
-      - "CMakeLists.txt:219 (include)"
+      - "CMakeLists.txt:262 (include)"
     mode: "program"
     variable: "COVERAGE_COMMAND"
     description: "Path to the coverage program that CTest uses for performing coverage inspection"
@@ -7227,7 +7444,7 @@ events:
     backtrace:
       - "/usr/share/cmake-4.2/Modules/FindPython/Support.cmake:2071 (find_program)"
       - "/usr/share/cmake-4.2/Modules/FindPython3.cmake:671 (include)"
-      - "CMakeLists.txt:224 (find_package)"
+      - "CMakeLists.txt:267 (find_package)"
     mode: "program"
     variable: "_Python3_EXECUTABLE"
     description: "Path to a program."
@@ -8595,7 +8812,7 @@ events:
     backtrace:
       - "/usr/share/cmake-4.2/Modules/FindPython/Support.cmake:2083 (find_program)"
       - "/usr/share/cmake-4.2/Modules/FindPython3.cmake:671 (include)"
-      - "CMakeLists.txt:224 (find_package)"
+      - "CMakeLists.txt:267 (find_package)"
     mode: "program"
     variable: "_Python3_EXECUTABLE"
     description: "Path to a program."
@@ -13065,208 +13282,4 @@ events:
         - "/usr/X11R6"
         - "/usr/pkg"
         - "/opt"
-  -
-    kind: "find-v1"
-    backtrace:
-      - "CMakeLists.txt:593 (find_path)"
-    mode: "path"
-    variable: "MM_SYSTEM_OCC_INCLUDE"
-    description: "Path to a file."
-    settings:
-      SearchFramework: "NEVER"
-      SearchAppBundle: "NEVER"
-      CMAKE_FIND_USE_CMAKE_PATH: true
-      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: true
-      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
-      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
-      CMAKE_FIND_USE_INSTALL_PREFIX: true
-    names:
-      - "BRepPrimAPI_MakeBox.hxx"
-    candidate_directories:
-      - "C:/Qt/6.9.3/mingw_64/include/x86_64-linux-gnu/opencascade/"
-      - "C:/Qt/6.9.3/mingw_64/include/x86_64-linux-gnu/"
-      - "C:/Qt/6.9.3/mingw_64/include/opencascade/"
-      - "C:/Qt/6.9.3/mingw_64/include/"
-      - "C:/Qt/6.9.3/mingw_64/opencascade/"
-      - "C:/Qt/6.9.3/mingw_64/"
-      - "/home/ubuntu/.local/bin/opencascade/"
-      - "/home/ubuntu/.local/bin/"
-      - "/home/ubuntu/.deno/bin/opencascade/"
-      - "/home/ubuntu/.deno/bin/"
-      - "/home/ubuntu/.hermes/tools/agent-browser-0.26.0-linux-x64/bin/opencascade/"
-      - "/home/ubuntu/.hermes/tools/agent-browser-0.26.0-linux-x64/bin/"
-      - "/home/ubuntu/.hermes/tools/cua-driver-0.21.0-linux-x64/opencascade/"
-      - "/home/ubuntu/.hermes/tools/cua-driver-0.21.0-linux-x64/"
-      - "/home/ubuntu/.hermes/tools/ffmpeg-9.0.1-linux-x64/bin/opencascade/"
-      - "/home/ubuntu/.hermes/tools/ffmpeg-9.0.1-linux-x64/bin/"
-      - "/home/ubuntu/.hermes/tools/node-26.7.0-linux-x64/bin/opencascade/"
-      - "/home/ubuntu/.hermes/tools/node-26.7.0-linux-x64/bin/"
-      - "/home/ubuntu/.hermes/tools/npm-12.0.2-linux-x64/bin/opencascade/"
-      - "/home/ubuntu/.hermes/tools/npm-12.0.2-linux-x64/bin/"
-      - "/home/ubuntu/.hermes/tools/python-3.14.7+20260901-linux-x64/bin/opencascade/"
-      - "/home/ubuntu/.hermes/tools/python-3.14.7+20260901-linux-x64/bin/"
-      - "/home/ubuntu/.hermes/tools/ripgrep-15.2.0-linux-x64/opencascade/"
-      - "/home/ubuntu/.hermes/tools/ripgrep-15.2.0-linux-x64/"
-      - "/home/ubuntu/.hermes/tools/tirith-0.4.2-linux-x64/opencascade/"
-      - "/home/ubuntu/.hermes/tools/tirith-0.4.2-linux-x64/"
-      - "/home/ubuntu/.hermes/hermes-agent/.hermes/bin/opencascade/"
-      - "/home/ubuntu/.hermes/hermes-agent/.hermes/bin/"
-      - "/home/ubuntu/.hermes/installs/5f0a1ff4045d044e/environments/36e31116c87142da9778afd033bf3c11/venv/bin/opencascade/"
-      - "/home/ubuntu/.hermes/installs/5f0a1ff4045d044e/environments/36e31116c87142da9778afd033bf3c11/venv/bin/"
-      - "/home/ubuntu/.hermes/hermes-agent/node_modules/.bin/opencascade/"
-      - "/home/ubuntu/.hermes/hermes-agent/node_modules/.bin/"
-      - "/usr/local/sbin/opencascade/"
-      - "/usr/local/sbin/"
-      - "/usr/local/bin/opencascade/"
-      - "/usr/local/bin/"
-      - "/usr/sbin/opencascade/"
-      - "/usr/sbin/"
-      - "/usr/bin/opencascade/"
-      - "/usr/bin/"
-      - "/sbin/opencascade/"
-      - "/sbin/"
-      - "/bin/opencascade/"
-      - "/bin/"
-      - "/opt/homebrew/bin/opencascade/"
-      - "/opt/homebrew/bin/"
-      - "/opt/homebrew/sbin/opencascade/"
-      - "/opt/homebrew/sbin/"
-      - "/snap/bin/opencascade/"
-      - "/snap/bin/"
-      - "/usr/local/include/x86_64-linux-gnu/opencascade/"
-      - "/usr/local/include/x86_64-linux-gnu/"
-      - "/usr/local/include/opencascade/"
-      - "/usr/local/include/"
-      - "/usr/local/opencascade/"
-      - "/usr/local/"
-      - "/usr/include/x86_64-linux-gnu/opencascade/"
-      - "/usr/include/x86_64-linux-gnu/"
-      - "/usr/include/opencascade/"
-      - "/usr/include/"
-      - "/usr/opencascade/"
-      - "/usr/"
-      - "/include/x86_64-linux-gnu/opencascade/"
-      - "/include/x86_64-linux-gnu/"
-      - "/include/opencascade/"
-      - "/include/"
-      - "/usr/X11R6/include/x86_64-linux-gnu/opencascade/"
-      - "/usr/X11R6/include/x86_64-linux-gnu/"
-      - "/usr/X11R6/include/opencascade/"
-      - "/usr/X11R6/include/"
-      - "/usr/X11R6/opencascade/"
-      - "/usr/X11R6/"
-      - "/usr/pkg/include/x86_64-linux-gnu/opencascade/"
-      - "/usr/pkg/include/x86_64-linux-gnu/"
-      - "/usr/pkg/include/opencascade/"
-      - "/usr/pkg/include/"
-      - "/usr/pkg/opencascade/"
-      - "/usr/pkg/"
-      - "/opt/include/x86_64-linux-gnu/opencascade/"
-      - "/opt/include/x86_64-linux-gnu/"
-      - "/opt/include/opencascade/"
-      - "/opt/include/"
-      - "/opt/opencascade/"
-      - "/opt/"
-      - "/usr/include/X11/opencascade/"
-      - "/usr/include/X11/"
-    searched_directories:
-      - "C:/Qt/6.9.3/mingw_64/include/x86_64-linux-gnu/opencascade/BRepPrimAPI_MakeBox.hxx"
-      - "C:/Qt/6.9.3/mingw_64/include/x86_64-linux-gnu/BRepPrimAPI_MakeBox.hxx"
-      - "C:/Qt/6.9.3/mingw_64/include/opencascade/BRepPrimAPI_MakeBox.hxx"
-      - "C:/Qt/6.9.3/mingw_64/include/BRepPrimAPI_MakeBox.hxx"
-      - "C:/Qt/6.9.3/mingw_64/opencascade/BRepPrimAPI_MakeBox.hxx"
-      - "C:/Qt/6.9.3/mingw_64/BRepPrimAPI_MakeBox.hxx"
-      - "/home/ubuntu/.local/bin/opencascade/BRepPrimAPI_MakeBox.hxx"
-      - "/home/ubuntu/.local/bin/BRepPrimAPI_MakeBox.hxx"
-      - "/home/ubuntu/.deno/bin/opencascade/BRepPrimAPI_MakeBox.hxx"
-      - "/home/ubuntu/.deno/bin/BRepPrimAPI_MakeBox.hxx"
-      - "/home/ubuntu/.hermes/tools/agent-browser-0.26.0-linux-x64/bin/opencascade/BRepPrimAPI_MakeBox.hxx"
-      - "/home/ubuntu/.hermes/tools/agent-browser-0.26.0-linux-x64/bin/BRepPrimAPI_MakeBox.hxx"
-      - "/home/ubuntu/.hermes/tools/cua-driver-0.21.0-linux-x64/opencascade/BRepPrimAPI_MakeBox.hxx"
-      - "/home/ubuntu/.hermes/tools/cua-driver-0.21.0-linux-x64/BRepPrimAPI_MakeBox.hxx"
-      - "/home/ubuntu/.hermes/tools/ffmpeg-9.0.1-linux-x64/bin/opencascade/BRepPrimAPI_MakeBox.hxx"
-      - "/home/ubuntu/.hermes/tools/ffmpeg-9.0.1-linux-x64/bin/BRepPrimAPI_MakeBox.hxx"
-      - "/home/ubuntu/.hermes/tools/node-26.7.0-linux-x64/bin/opencascade/BRepPrimAPI_MakeBox.hxx"
-      - "/home/ubuntu/.hermes/tools/node-26.7.0-linux-x64/bin/BRepPrimAPI_MakeBox.hxx"
-      - "/home/ubuntu/.hermes/tools/npm-12.0.2-linux-x64/bin/opencascade/BRepPrimAPI_MakeBox.hxx"
-      - "/home/ubuntu/.hermes/tools/npm-12.0.2-linux-x64/bin/BRepPrimAPI_MakeBox.hxx"
-      - "/home/ubuntu/.hermes/tools/python-3.14.7+20260901-linux-x64/bin/opencascade/BRepPrimAPI_MakeBox.hxx"
-      - "/home/ubuntu/.hermes/tools/python-3.14.7+20260901-linux-x64/bin/BRepPrimAPI_MakeBox.hxx"
-      - "/home/ubuntu/.hermes/tools/ripgrep-15.2.0-linux-x64/opencascade/BRepPrimAPI_MakeBox.hxx"
-      - "/home/ubuntu/.hermes/tools/ripgrep-15.2.0-linux-x64/BRepPrimAPI_MakeBox.hxx"
-      - "/home/ubuntu/.hermes/tools/tirith-0.4.2-linux-x64/opencascade/BRepPrimAPI_MakeBox.hxx"
-      - "/home/ubuntu/.hermes/tools/tirith-0.4.2-linux-x64/BRepPrimAPI_MakeBox.hxx"
-      - "/home/ubuntu/.hermes/hermes-agent/.hermes/bin/opencascade/BRepPrimAPI_MakeBox.hxx"
-      - "/home/ubuntu/.hermes/hermes-agent/.hermes/bin/BRepPrimAPI_MakeBox.hxx"
-      - "/home/ubuntu/.hermes/installs/5f0a1ff4045d044e/environments/36e31116c87142da9778afd033bf3c11/venv/bin/opencascade/BRepPrimAPI_MakeBox.hxx"
-      - "/home/ubuntu/.hermes/installs/5f0a1ff4045d044e/environments/36e31116c87142da9778afd033bf3c11/venv/bin/BRepPrimAPI_MakeBox.hxx"
-      - "/home/ubuntu/.hermes/hermes-agent/node_modules/.bin/opencascade/BRepPrimAPI_MakeBox.hxx"
-      - "/home/ubuntu/.hermes/hermes-agent/node_modules/.bin/BRepPrimAPI_MakeBox.hxx"
-      - "/usr/local/sbin/opencascade/BRepPrimAPI_MakeBox.hxx"
-      - "/usr/local/sbin/BRepPrimAPI_MakeBox.hxx"
-      - "/usr/local/bin/opencascade/BRepPrimAPI_MakeBox.hxx"
-      - "/usr/local/bin/BRepPrimAPI_MakeBox.hxx"
-      - "/usr/sbin/opencascade/BRepPrimAPI_MakeBox.hxx"
-      - "/usr/sbin/BRepPrimAPI_MakeBox.hxx"
-      - "/usr/bin/opencascade/BRepPrimAPI_MakeBox.hxx"
-      - "/usr/bin/BRepPrimAPI_MakeBox.hxx"
-      - "/sbin/opencascade/BRepPrimAPI_MakeBox.hxx"
-      - "/sbin/BRepPrimAPI_MakeBox.hxx"
-      - "/bin/opencascade/BRepPrimAPI_MakeBox.hxx"
-      - "/bin/BRepPrimAPI_MakeBox.hxx"
-      - "/opt/homebrew/bin/opencascade/BRepPrimAPI_MakeBox.hxx"
-      - "/opt/homebrew/bin/BRepPrimAPI_MakeBox.hxx"
-      - "/opt/homebrew/sbin/opencascade/BRepPrimAPI_MakeBox.hxx"
-      - "/opt/homebrew/sbin/BRepPrimAPI_MakeBox.hxx"
-      - "/snap/bin/opencascade/BRepPrimAPI_MakeBox.hxx"
-      - "/snap/bin/BRepPrimAPI_MakeBox.hxx"
-      - "/usr/local/include/x86_64-linux-gnu/opencascade/BRepPrimAPI_MakeBox.hxx"
-      - "/usr/local/include/x86_64-linux-gnu/BRepPrimAPI_MakeBox.hxx"
-      - "/usr/local/include/opencascade/BRepPrimAPI_MakeBox.hxx"
-      - "/usr/local/include/BRepPrimAPI_MakeBox.hxx"
-      - "/usr/local/opencascade/BRepPrimAPI_MakeBox.hxx"
-      - "/usr/local/BRepPrimAPI_MakeBox.hxx"
-      - "/usr/include/x86_64-linux-gnu/opencascade/BRepPrimAPI_MakeBox.hxx"
-      - "/usr/include/x86_64-linux-gnu/BRepPrimAPI_MakeBox.hxx"
-    found: "/usr/include/opencascade/"
-    search_context:
-      CMAKE_PREFIX_PATH:
-        - "C:/Qt/6.9.3/mingw_64"
-      ENV{PATH}:
-        - "/home/ubuntu/.local/bin"
-        - "/home/ubuntu/.deno/bin"
-        - "/home/ubuntu/.local/bin"
-        - "/home/ubuntu/.hermes/tools/agent-browser-0.26.0-linux-x64/bin"
-        - "/home/ubuntu/.hermes/tools/cua-driver-0.21.0-linux-x64"
-        - "/home/ubuntu/.hermes/tools/ffmpeg-9.0.1-linux-x64/bin"
-        - "/home/ubuntu/.hermes/tools/node-26.7.0-linux-x64/bin"
-        - "/home/ubuntu/.hermes/tools/npm-12.0.2-linux-x64/bin"
-        - "/home/ubuntu/.hermes/tools/python-3.14.7+20260901-linux-x64/bin"
-        - "/home/ubuntu/.hermes/tools/ripgrep-15.2.0-linux-x64"
-        - "/home/ubuntu/.hermes/tools/tirith-0.4.2-linux-x64"
-        - "/home/ubuntu/.hermes/hermes-agent/.hermes/bin"
-        - "/home/ubuntu/.hermes/installs/5f0a1ff4045d044e/environments/36e31116c87142da9778afd033bf3c11/venv/bin"
-        - "/home/ubuntu/.hermes/hermes-agent/node_modules/.bin"
-        - "/home/ubuntu/.local/bin"
-        - "/usr/local/sbin"
-        - "/usr/local/bin"
-        - "/usr/sbin"
-        - "/usr/bin"
-        - "/sbin"
-        - "/bin"
-        - "/opt/homebrew/bin"
-        - "/opt/homebrew/sbin"
-        - "/snap/bin"
-      CMAKE_INSTALL_PREFIX: "/usr/local"
-      CMAKE_SYSTEM_PREFIX_PATH:
-        - "/usr/local"
-        - "/usr"
-        - "/"
-        - "/usr"
-        - "/usr/local"
-        - "/usr/X11R6"
-        - "/usr/pkg"
-        - "/opt"
-      CMAKE_SYSTEM_INCLUDE_PATH:
-        - "/usr/include/X11"
 ...

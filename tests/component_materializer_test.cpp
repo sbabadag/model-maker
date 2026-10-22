@@ -188,16 +188,96 @@ int main() {
     const EntityId plate2Id = res2.roleToEntity["fin_plate"];
     check(plate2Id != plateId, "iki levha farkli EntityId (bagimsiz sahiplik)");
 
-    // --- Weld -> acik Unsupported ---------------------------------------------
+    // --- Weld -> parca referansi yoksa acik Unsupported ----------------------
+    // Weld artik GERCEK kati uretir (W7); ancak partA/partB (EntityId veya
+    // roleKey) verilmezse prepare ACIK hata doner (sessiz basari YOK — C2).
     ComponentBuilder bw;
-    WeldSpec weld;
-    weld.throat = 6.0;
-    bw.plate("p", plate).weld("w", weld);
+    WeldSpec weldNoParts;
+    weldNoParts.throat = 6.0;
+    bw.plate("p", plate).weld("w", weldNoParts);
     const auto builtW = bw.build();
     const ComponentPlan planW = componentPlanFromObjects(builtW.objects, builtW.relationships);
     ComponentMaterializer::Prepared prepW = mat.prepare(planW, mainId, {});
-    check(!prepW.ok, "Weld -> prepare Unsupported (ok=false)");
-    check(!prepW.error.empty(), "Weld Unsupported hatasi dolu");
+    check(!prepW.ok, "Weld (parca yok) -> prepare hata (ok=false)");
+    check(!prepW.error.empty(), "Weld parcasi cozulemedi hatasi dolu");
+
+    // --- Weld -> GERCEK fillet kati (dokan geometri) --------------------------
+    // AYRI belge: kaynak kati 6mm bacakla temas kenari boyunca uretilmeli.
+    // (Paylasilan `doc`'a dokunmaz — asagidaki recompute instance sayisini bozmaz.)
+    {
+        Document docW;
+        docW.setOccStore(makeOccSolidStore());
+        OccSolidStore* storeW = asSolidStore(&docW.occStore());
+        ComponentMaterializer matW(docW);
+        check(storeW != nullptr, "Weld testi: occ store var");
+
+        // Kolon: 100 kutu (x[-50,50], y[-50,50], z[-50,50]).
+        WireframeModel colW = WireframeModel::cube(100.0);
+        docW.addModel(std::move(colW));
+        const EntityId colIdW = docW.modelId(0);
+        PlateSpec colSpec;
+        colSpec.center = {0.0, 0.0, 0.0};
+        colSpec.u = {1.0, 0.0, 0.0};
+        colSpec.v = {0.0, 1.0, 0.0};
+        colSpec.axis = {0.0, 0.0, 1.0};
+        colSpec.width = 100.0;
+        colSpec.height = 100.0;
+        colSpec.thickness = 100.0;
+        const TopoDS_Shape colSolidW = ComponentMaterializer::buildPlateSolid(colSpec);
+        if (storeW && !colSolidW.IsNull()) {
+            storeW->set(colIdW, colSolidW);
+            storeW->setBaseVersion(colIdW, storeW->activeVersion(colIdW));
+        }
+
+        PlateSpec sidePlate;
+        sidePlate.center = {55.0, 0.0, 0.0};
+        sidePlate.u = {0.0, 1.0, 0.0};
+        sidePlate.v = {0.0, 0.0, 1.0};
+        sidePlate.axis = {1.0, 0.0, 0.0};
+        sidePlate.width = 100.0;    // y
+        sidePlate.height = 100.0;   // z
+        sidePlate.thickness = 10.0; // x
+        sidePlate.name = L"Yan levha";
+
+        ComponentBuilder bwd;
+        WeldSpec weld;
+        weld.partA = colIdW;            // kolon (EntityId)
+        weld.partBRole = "side_plate";  // levha (roleKey, commit'te cozulur)
+        weld.size = 6.0;
+        bwd.plate("side_plate", sidePlate).weld("w", weld);
+        const auto builtW2 = bwd.build();
+        check(builtW2.ok, "Weld (dokan) builder ok");
+        const ComponentPlan planW2 =
+            componentPlanFromObjects(builtW2.objects, builtW2.relationships);
+        ComponentMaterializer::Prepared prepW2 = matW.prepare(planW2, colIdW, {});
+        check(prepW2.ok, "Weld (dokan) prepare ok");
+
+        ComponentInstanceRecord recW;
+        recW.typeId = L"weld_test";
+        recW.mainPart = colIdW;
+        ComponentMaterializer::CommitResult resW = matW.commit(prepW2, recW);
+        check(resW.ok, "Weld (dokan) commit ok");
+        check(docW.welds().size() == 1, "1 kaynak kaydi uretildi");
+        const EntityId weldId = resW.roleToEntity["w"];
+        check(weldId != kInvalidEntityId, "weld roleKey -> EntityId");
+        const auto wi = docW.indexOfWeld(weldId);
+        check(wi.has_value(), "weld indeksi bulundu");
+        if (wi) {
+            const Weld& w = docW.welds()[*wi];
+            check(w.mainPart == colIdW, "Weld main = kolon");
+            check(w.size == 6.0, "Weld bacagi 6mm");
+            check(w.geometrySupported, "Weld fillet kati uretildi (geometrySupported)");
+            check(w.displayEntityId != kInvalidEntityId, "Weld display modeli var");
+            if (w.displayEntityId != kInvalidEntityId) {
+                const TopoDS_Shape* ws = storeW->find(w.displayEntityId);
+                check(ws && !ws->IsNull() && shapeVolume(*ws) > 0.0,
+                      "Weld OCCT kati hacimli");
+                if (ws && !ws->IsNull())
+                    std::printf("  [weld] hacim = %.1f mm^3 (6mm bacak)\n",
+                                shapeVolume(*ws));
+            }
+        }
+    }
 
     // --- C3: recompute — roleKey -> EntityId KORUNUR (kimlik stabil) ----------
     {

@@ -13,8 +13,11 @@
 // MUTASYONU YOK), commit() tek undo kaydi altinda uygular. Prepare basarisizsa
 // commit CAGIRILMAZ (kismi component uretimi yoktur).
 //
-// WeldSpec icin GERCEK weld geometri motoru HENUZ YOKTUR — sessizce "basari"
-// URETILMEZ; prepare() acik Unsupported hatasi dondurur (C2 kurali).
+// WeldSpec GERCEK fillet kati uretir (W7): prepare() roleKey/EntityId
+// referanslarini dogrular, commit()/recompute() buildWeldSolids ile kaynak
+// katisini uretip Document'a ekler. Gecersiz/uyumsuz birlesimlerde kayit
+// metadata olarak korunur ama geometrySupported=false + unsupportedReason dolu
+// kalir (SESSIZ basari URETILMEZ — C2 kurali).
 //
 // Bu baslik OCCT bilir (TopoDS_Shape); yalnizca MM_HAS_OCC derleme birimleri
 // include eder. windows.h yok; Linux'ta gercek OCCT ile derlenir/test edilir.
@@ -47,7 +50,7 @@ public:
         TopoDS_Shape solid;            // Plate: levha kati; BoltGroup: montaj kati
         BoltGroup boltGroup;           // BoltGroup: parcalari cozumlenmis
         CutModifier cut;               // Cut/Hole: hedef cozumlenmis modifier
-        bool weldUnsupported{false};   // Weld: motor yok (acik Unsupported)
+        bool weldUnsupported{false};   // legacy: Weld artik destekleniyor (W7); bos birakilir
         // Cut HEDEF cozumu (A1.1): cut.target == kInvalidEntityId ise bu roleKey
         // commit'te EntityId'ye cozulur. "main" / "secondary_N" = kullanici parcasi;
         // diger = component-owned child roleKey. Bos = cut.target zaten gecerli

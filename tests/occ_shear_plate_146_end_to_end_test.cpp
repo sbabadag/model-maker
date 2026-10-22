@@ -216,6 +216,25 @@ int main() {
         check(beamHoles == 4 && plateHoles == 4 && colHoles == 0,
               "delik dagilimi: kiris 4, levha 4, kolon 0");
 
+        // WELD: varsayilan createWelds=true -> 1 kaynak (levha -> kolon) uretilir.
+        // Bu sentetik fixture'da kolon profilinin yerel orijini (Top ankraj) ile
+        // MemberGeometry.axisFrom (centroid varsayimi) 150mm celisir — tab gercek
+        // kolon katisina DEGMEZ; bu yuzden kaynak kati burada "temas yok" der.
+        // Gercek uygulamada memberGeometryFor sectionCenterOffset'i dogru kurar
+        // (kullanici modelinde kaynak uretildi). Bu test KAYIT bagini dogrular:
+        // generator weld specleri uretti + materializer kaydi dogru parcalara bagladi.
+        check(gp.welds.size() == 1, "146: 1 kaynak specleri (levha->kolon)");
+        check(gp.welds[0].partA == s.colId, "146: kaynak partA = kolon (EntityId)");
+        check(gp.welds[0].partBRole == "shear_tab_near", "146: kaynak partB roleKey = tab");
+        check(res.roleToEntity.count("weld_tab_near") != 0, "146: weld roleKey -> EntityId");
+        check(s.doc.welds().size() == 1, "146: Document'ta 1 kaynak kaydi");
+        if (!s.doc.welds().empty()) {
+            const Weld& w = s.doc.welds()[0];
+            check(w.mainPart == s.colId, "146: kaynak main = kolon");
+            check(w.secondaryPart == tabId, "146: kaynak secondary = levha");
+            check(w.size == 5.0, "146: kaynak bacagi 5mm");
+        }
+
         // Undo/redo.
         check(s.doc.undo(), "undo component geri aldi");
         check(s.doc.componentInstances().empty(), "undo: instance silindi");
@@ -750,6 +769,72 @@ int main() {
         for (const auto& m : s.doc.cutModifiers())
             if (m.kind == CutKind::Hole && m.owner == boltId && m.target == tabId) ++plateHoles;
         check(plateHoles == 6, "H: levhada 6 delik (sablondan)");
+    }
+
+    // ================= PART I: kaynaklar (createWelds / weldSize) =============
+    // "diyalogda kaynaklar acik" -> baglanti kaynak uretmeli; createWelds=false
+    // uretmemeli; weldSize bacagi degistirmeli (recompute'ta da korunmali).
+    {
+        // createWelds=false -> kaynak YOK.
+        Setup s = makeSetup();
+        ComponentInput in = makeInput(s);
+        in.params = {{L"createWelds", CompParamValue{false}}};
+        const GenerationPlan gp = ComponentRegistry::instance().generate(
+            L"tekla_shear_plate_146", in);
+        check(gp.ok && gp.welds.empty(), "I: createWelds=false -> kaynak yok");
+
+        // Varsayilan (createWelds yok) -> 1 kaynak, bacak 5mm, partA = kolon.
+        Setup s2 = makeSetup();
+        ComponentInput in2 = makeInput(s2);
+        const GenerationPlan gp2 = ComponentRegistry::instance().generate(
+            L"tekla_shear_plate_146", in2);
+        check(gp2.ok && gp2.welds.size() == 1, "I: varsayilan -> 1 kaynak");
+        check(gp2.welds[0].size == 5.0, "I: varsayilan bacak 5mm");
+        check(gp2.welds[0].partA == s2.colId, "I: kaynak partA = kolon (EntityId)");
+
+        const ComponentPlan plan2 = componentPlanFromGenerationPlan(gp2);
+        ComponentMaterializer mat2(s2.doc);
+        ComponentMaterializer::Prepared prep2 = mat2.prepare(plan2, s2.colId, {s2.beamId});
+        check(prep2.ok, "I: weld prepare ok");
+        ComponentInstanceRecord rec2;
+        rec2.typeId = L"tekla_shear_plate_146";
+        rec2.mainPart = s2.colId;
+        rec2.secondaryParts = {s2.beamId};
+        ComponentMaterializer::CommitResult res2 = mat2.commit(prep2, rec2);
+        check(res2.ok, "I: weld commit ok");
+        check(s2.doc.welds().size() == 1, "I: Document'ta 1 kaynak");
+        const EntityId weldId = res2.roleToEntity["weld_tab_near"];
+        check(weldId != kInvalidEntityId, "I: weld_tab_near -> EntityId");
+        const auto wi = s2.doc.indexOfWeld(weldId);
+        check(wi.has_value(), "I: kaynak indeksi bulundu");
+        if (wi) {
+            const Weld& w = s2.doc.welds()[*wi];
+            check(w.size == 5.0, "I: kaynak bacagi 5mm korundu");
+        }
+
+        // weldSize 8 -> kaynak kati bacak 8 uretilir (recompute'ta da korunur).
+        Setup s3 = makeSetup();
+        ComponentInput in3 = makeInput(s3);
+        in3.params = {{L"weldSize", CompParamValue{8.0}}};
+        const GenerationPlan gp3 = ComponentRegistry::instance().generate(
+            L"tekla_shear_plate_146", in3);
+        check(gp3.welds.size() == 1 && gp3.welds[0].size == 8.0,
+              "I: weldSize=8 bacagi 8");
+        const ComponentPlan plan3 = componentPlanFromGenerationPlan(gp3);
+        ComponentMaterializer mat3(s3.doc);
+        ComponentMaterializer::Prepared prep3 = mat3.prepare(plan3, s3.colId, {s3.beamId});
+        check(prep3.ok, "I: weldSize prepare ok");
+        ComponentInstanceRecord rec3;
+        rec3.typeId = L"tekla_shear_plate_146";
+        rec3.mainPart = s3.colId;
+        rec3.secondaryParts = {s3.beamId};
+        ComponentMaterializer::CommitResult res3 = mat3.commit(prep3, rec3);
+        check(res3.ok, "I: weldSize commit ok");
+        const auto wi3 = s3.doc.indexOfWeld(res3.roleToEntity["weld_tab_near"]);
+        if (wi3) {
+            const Weld& w3 = s3.doc.welds()[*wi3];
+            check(w3.size == 8.0, "I: kaynak kaydi bacak 8");
+        }
     }
 
     std::printf("\n%d failure(s)\n", failures);

@@ -1381,7 +1381,20 @@ bool QtMainWindow::openComponentParamsDialog(const mm::ComponentInstanceRecord& 
         QObject::connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
         root->addWidget(buttons);
         if (dlg.exec() != QDialog::Accepted) return false;
-        return app_.setSelectedComponentParams(rec.id, widget->resultParams());
+        auto params = widget->resultParams();
+        // Kaynak tablosu -> generator: en az bir satir aciksa createWelds=true,
+        // ilk acik satirin olcusu weldSize olur. Bunlar semada YOK (ekstra
+        // parametre) — alignParamsToSpecs bilinmeyen parametreleri KORUR, generator
+        // paramAsBool/paramAsDouble ile okur. Boylece "diyalogda kaynaklar acik"
+        // durumu baglantinin gercek kaynak uretmesine dogrudan baglanir.
+        const auto weldRows = widget->resultWeldRows();
+        bool anyWeld = false;
+        double weldSize = 5.0;
+        for (const auto& r : weldRows)
+            if (r.enabled) { anyWeld = true; weldSize = r.size; break; }
+        params.push_back(mm::CompParam{L"createWelds", anyWeld});
+        params.push_back(mm::CompParam{L"weldSize", weldSize});
+        return app_.setSelectedComponentParams(rec.id, params);
     }
 
     QDialog dlg(this);
