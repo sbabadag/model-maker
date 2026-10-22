@@ -79,7 +79,8 @@ static Setup makeSetup() {
     const SteelProfile heb300 = makeProfile("HEB300", 300.0, 300.0, 11.0, 19.0);
     const SteelProfile ipe200 = makeProfile("IPE200", 200.0, 100.0, 5.6, 8.5);
 
-    const TopoDS_Shape colSolid = extrudeProfileSolid(heb300, {0, 0, 0}, {0, 0, 3000}, 0.0, {0, 1, 0});
+    const TopoDS_Shape colSolid = extrudeProfileSolid(heb300, {0, 0, 0}, {0, 0, 3000}, 0.0, {0, 1, 0},
+                                                     SectionAnchor::Center);
     const TopoDS_Shape beamSolid = extrudeProfileSolid(ipe200, {0, 1000, 1500}, {0, 60, 1500}, 0.0, {0, 0, 1});
 
     s.doc.setOccStore(makeOccSolidStore());
@@ -124,6 +125,9 @@ static Setup makeSetup() {
     s.colGeom.axisTo = {0, 0, 3000};
     s.colGeom.secWidth = 300.0;
     s.colGeom.secHeight = 300.0;
+    // sectionCenterOffset = 0 (merkez ankraj) — kati da MERKEZ ankrajli cizilir
+    // (makeSetup icinde SectionAnchor::Center). Boylece tab'in temas noktasi
+    // gercek kolon yuzune duser ve kaynak kati uretilir.
 
     s.beamGeom.id = s.beamId;
     s.beamGeom.axisFrom = {0, 1000, 1500};
@@ -233,6 +237,16 @@ int main() {
             check(w.mainPart == s.colId, "146: kaynak main = kolon");
             check(w.secondaryPart == tabId, "146: kaynak secondary = levha");
             check(w.size == 5.0, "146: kaynak bacagi 5mm");
+            // KAYNAK KATISI: tutarli kolon geometrisinde (merkez ankraj) tab
+            // gercek kolon yuzune deger -> fillet kati uretilir, dikis > 0.
+            check(w.geometrySupported, "146: kaynak fillet katisi uretildi");
+            check(w.length > 1.0, "146: kaynak dikis uzunlugu > 0");
+            check(w.displayEntityId != kInvalidEntityId, "146: kaynak display modeli var");
+            if (w.displayEntityId != kInvalidEntityId) {
+                const TopoDS_Shape* ws = s.store->find(w.displayEntityId);
+                check(ws && !ws->IsNull() && shapeVolume(*ws) > 0.0,
+                      "146: kaynak OCCT kati hacimli");
+            }
         }
 
         // Undo/redo.

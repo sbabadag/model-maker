@@ -4915,7 +4915,34 @@ void Application::applyComponentFromParts(const std::wstring& typeId,
         publishStatus(display + L" uygulanamadi: " + res.error);
         return;
     }
-    solidStatusMessage_ = display + L" bağlantısı oluşturuldu (levha + bulonlar)";
+    // KAYNAK TESHIS: bilesenin urettigi weld kayitlarini ozetle. Kaynak kati
+    // uretilemediyse NEDENINI durum cubuguna yaz — kullanici "weld atmiyor"
+    // derken teshis edilebilir bilgi olsun (sessiz basarisizlik yok).
+    int weldOk = 0, weldBad = 0;
+    std::wstring weldReason;
+    for (const auto& kv : res.roleToEntity) {
+        if (kv.first.rfind("weld_", 0) != 0) continue;
+        const auto wi = document_.indexOfWeld(kv.second);
+        if (!wi) continue;
+        const Weld& w = document_.welds()[*wi];
+        if (w.geometrySupported) ++weldOk;
+        else {
+            ++weldBad;
+            if (weldReason.empty())
+                weldReason = std::wstring(w.unsupportedReason.begin(),
+                                          w.unsupportedReason.end());
+        }
+    }
+    if (weldOk > 0) {
+        solidStatusMessage_ = display + L" olusturuldu — kaynak: " +
+                              std::to_wstring(weldOk) + L" kati uretildi";
+    } else if (weldBad > 0) {
+        solidStatusMessage_ = display + L" olusturuldu — KAYNAK KATISI YOK: " +
+                              (weldReason.empty() ? L"bilinmeyen neden" : weldReason);
+    } else {
+        solidStatusMessage_ = display + L" olusturuldu — kaynak specleri yok"
+                              L" (createWelds kapali?)";
+    }
 #else
     (void)mainIdx;
     (void)params;
@@ -5888,6 +5915,31 @@ bool Application::setSelectedComponentParams(EntityId compId,
     // geri alir — burada pushUndoSnapshot ACILMAZ (cift kayit olur).
     const auto res = mat.recompute(prep, document_.componentInstances()[*idx], updated);
     if (!res.ok) return false;
+
+    // KAYNAK TESHISI (diyalog OK yolu): kaynak kati uretilmediyse NEDENINI
+    // durum cubuguna yaz. Aksi halde kullanici "weld atmiyor" der ama sebep
+    // gorunmez (sessiz basarisizlik).
+    int weldOk = 0, weldBad = 0;
+    std::wstring weldReason;
+    for (const auto& kv : res.roleToEntity) {
+        if (kv.first.rfind("weld_", 0) != 0) continue;
+        const auto wi = document_.indexOfWeld(kv.second);
+        if (!wi) continue;
+        const Weld& w = document_.welds()[*wi];
+        if (w.geometrySupported) ++weldOk;
+        else {
+            ++weldBad;
+            if (weldReason.empty())
+                weldReason = std::wstring(w.unsupportedReason.begin(),
+                                          w.unsupportedReason.end());
+        }
+    }
+    if (weldOk > 0)
+        solidStatusMessage_ = type->displayName + L" — kaynak: " +
+                              std::to_wstring(weldOk) + L" kati uretildi";
+    else if (weldBad > 0)
+        solidStatusMessage_ = type->displayName + L" — KAYNAK KATISI YOK: " +
+                              (weldReason.empty() ? L"bilinmeyen neden" : weldReason);
     invalidateCanvas();
     updateStatus();
     return true;
