@@ -11,6 +11,7 @@
 
 #include "model_maker/component_dialog.hpp"
 
+#include <set>
 #include <cmath>
 #include <cstdio>
 
@@ -209,62 +210,64 @@ int main() {
             }
         }
 
-        // Tekla parca satirlari: Plates 2 (Tab plate, Plate washer), Stiffeners 1,
-        // Haunch 2 (Top/Bottom), Beam cut 1 (Backing bar), Angle box 3.
+        // TEKLA SEKMELERI (canvas): her sekme kullanicinin gercek Tekla ekran
+        // goruntusu + ayni piksel konumunda kontroller.
         {
-            const auto rowsOf = [&](const wchar_t* title) -> std::size_t {
-                for (const auto& g : def.schema.groups)
-                    if (g.title == title) return g.partRows.size();
-                return 999;
-            };
-            check(rowsOf(L"Plates") == 2, "146: Plates 2 parca satiri");
-            check(rowsOf(L"Stiffeners") == 1, "146: Stiffeners 1 parca satiri");
-            check(rowsOf(L"Haunch") == 2, "146: Haunch ust+alt plaka satiri");
-            check(rowsOf(L"Beam cut") == 1, "146: Beam cut backing bar satiri");
-            check(rowsOf(L"Angle box") == 3, "146: Angle box 3 parca satiri");
-            // General / Design type: ekran goruntusundeki alanlar GRI olarak var.
-            for (const wchar_t* n : {L"upDirection", L"locked", L"classNo", L"connectionCode",
-                                     L"autoDefaultsGroup", L"autoConnectionGroup",
-                                     L"externalDesign", L"checkConnection", L"designCode",
-                                     L"loadDefinition", L"udlPercent", L"loadShear",
-                                     L"loadTension", L"loadMoment"}) {
-                const CompParamSpec* sp = findParamSpec(def.specs, n);
-                check(sp && sp->documentedOnly, "146: General/Design type alani gri olarak var");
-            }
-            const CompParamSpec* cls = findParamSpec(def.specs, L"classNo");
-            check(cls && cls->defInt == 99, "146: Class varsayilani 99 (ekran goruntusu)");
-            // Manuel notch: ust ve alt flans AYRI alan seti.
-            for (const wchar_t* n : {L"flangeNotchSideTop", L"flangeNotchSideBottom",
-                                     L"notchCutHTop", L"notchCutHBottom",
-                                     L"notchWebToFlangeTop", L"notchWebToFlangeBottom"})
-                check(findParamSpec(def.specs, n) != nullptr, "146: manuel notch ust/alt alani var");
-            // Analysis (gercek ekran goruntusu): 13 satir, Ux..Rz "a|b" ciftli.
-            const auto& last = def.schema.groups.back();
-            check(last.title == L"Analysis" && last.paramNames.size() == 13,
-                  "146: Analysis sekmesi 13 satir");
-            std::size_t pairs = 0;
-            for (const auto& pn : last.paramNames)
-                if (pn.find(L'|') != std::wstring::npos) ++pairs;
-            check(pairs == 6, "146: Analysis Ux/Uy/Uz/Rx/Ry/Rz 6 cift satir");
-            const CompParamSpec* sup = findParamSpec(def.specs, L"supportRx");
-            check(sup && sup->documentedOnly && sup->optional &&
-                      sup->choices.size() == 1 && sup->choices[0] == L"Pinned",
-                  "146: Rx = Pinned (ekran goruntusu), gri, Default kutulu");
-            // BoxPBolts / BoxSBolts: ozel yerlesim, ayni 29 alan, onek ayrimi.
-            for (const wchar_t* title : {L"BoxPBolts", L"BoxSBolts"}) {
-                const ComponentDialogGroup* bg = nullptr;
-                for (const auto& g : def.schema.groups)
-                    if (g.title == title) bg = &g;
-                check(bg && bg->layout == L"boxbolts" && bg->paramNames.size() == 24,
-                      "146: BoxP/BoxS boxbolts yerlesimi, 24 alan");
-                if (bg) {
-                    const CompParamSpec* hole = findParamSpec(def.specs, bg->prefix + L"TopHoleType");
-                    check(hole && hole->documentedOnly && hole->optional,
-                          "146: BoxP/BoxS Top hole type gri + Default kutulu");
-                    check(findParamSpec(def.specs, bg->prefix + L"BottomSlotsIn") != nullptr,
-                          "146: BoxP/BoxS Bottom alani var");
+            const auto engineParams = shearPlate146ComponentType().params;
+            bool allCanvas = true, inBounds = true, specsExist = true, governsOk = true;
+            std::set<std::wstring> placedNames;
+            bool noDup = true;
+            std::size_t controls = 0;
+            for (const auto& g : def.schema.groups) {
+                allCanvas = allCanvas && g.layout == L"canvas" &&
+                            g.background.rfind(L":/tekla146/tabs/", 0) == 0 &&
+                            g.canvasWidth >= 800 && g.canvasHeight >= 600 && g.partRows.empty();
+                for (const auto& c : g.placed) {
+                    ++controls;
+                    inBounds = inBounds && c.x >= 0 && c.y >= 0 && c.w > 0 && c.h > 0 &&
+                               c.x + c.w <= g.canvasWidth && c.y + c.h <= g.canvasHeight;
+                    if (c.kind == PlacedControlKind::DefaultCheck) {
+                        governsOk = governsOk && !c.governs.empty();
+                        for (const auto& gv : c.governs)
+                            governsOk = governsOk && findParamSpec(def.specs, gv) != nullptr;
+                        continue;
+                    }
+                    specsExist = specsExist && findParamSpec(def.specs, c.param) != nullptr;
+                    noDup = noDup && placedNames.insert(c.param).second;
                 }
             }
+            check(allCanvas, "146: 13 sekme Tekla goruntusu (canvas) + arka plan resmi");
+            check(controls >= 500, "146: Tekla sekmelerinde >=500 kontrol yerlestirildi");
+            check(inBounds, "146: her kontrol sekme resminin icinde");
+            check(specsExist, "146: her yerlestirilen kontrolun spec'i var");
+            check(noDup, "146: ayni parametre iki kez yerlestirilmez");
+            check(governsOk, "146: her Default kutusu en az bir alani yonetir");
+            // Motor alanlari Tekla'daki yerlerinde (Tekla'da karsiligi olmayan uc
+            // alan haric: delik capi / sira araligi / bulon sinifi -> "Diğer").
+            bool enginePlaced = true;
+            for (const auto& ep : engineParams) {
+                if (ep.name == L"holeDiameter" || ep.name == L"pitchY" || ep.name == L"grade")
+                    continue;
+                enginePlaced = enginePlaced && placedNames.count(ep.name) == 1;
+            }
+            check(enginePlaced, "146: motor alanlari Tekla sekmelerinde yerlesik");
+            // Plates: Tab plate t kutusu Tekla goruntusundeki yerinde (128,157 -> kirpma 3,127).
+            const ComponentDialogGroup* plates = nullptr;
+            for (const auto& g : def.schema.groups)
+                if (g.title == L"Plates") plates = &g;
+            bool tPos = false;
+            if (plates)
+                for (const auto& c : plates->placed)
+                    if (c.param == L"plateThickness")
+                        tPos = c.x == 125 && c.y == 30 && c.w == 38 && c.h == 18;
+            check(tPos, "146: Plates t kutusu Tekla piksel konumunda");
+            // Yerlestirilmeyen eski gri alan kalmaz; gri alanlar motor semasina girmez.
+            bool stale = false;
+            for (const auto& sp : def.specs)
+                if (sp.documentedOnly && !placedNames.count(sp.name)) stale = true;
+            check(!stale, "146: sekmede yeri olmayan gri alan yok");
+            const CompParamSpec* cls = findParamSpec(def.specs, L"classNo");
+            check(cls && cls->documentedOnly, "146: General Class alani gri olarak var");
         }
 
         const auto v = validateDialogSchema(def.schema, def.specs);

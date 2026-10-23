@@ -142,6 +142,24 @@ struct DialogPartRow {
     std::wstring material, name, finish;
 };
 
+// Tekla ekran goruntusu uzerine MUTLAK konumla yerlestirilen kontrol ("canvas"
+// sekme duzeni). Koordinatlar sekmenin arka plan resmine goredir (piksel).
+enum class PlacedControlKind {
+    Edit,          // duz giris kutusu
+    Combo,         // metin acilir listesi
+    IconCombo,     // Tekla resimli acilir liste (resim arka planda gorunur kalir)
+    Check,         // parametreye bagli onay kutusu
+    DefaultCheck,  // Tekla'nin alan solundaki onay kutusu: `governs` alanlarini yonetir
+};
+
+struct DialogPlacedControl {
+    std::wstring param;          // DefaultCheck icin yalniz tanim (parametre degil)
+    PlacedControlKind kind{PlacedControlKind::Edit};
+    int x{0}, y{0}, w{0}, h{0};  // arka plan resmindeki beyaz kutu
+    bool greyed{false};          // Tekla'da gri (pasif) cizilmis
+    std::vector<std::wstring> governs;  // DefaultCheck: yonettigi parametreler
+};
+
 // Parametre alanlarini bir sekme/bolum altinda siralar. paramNames sirasi ayrica
 // goruntuleme sirasidir; her ad semada var olan bir parametreyi isaret etmeli.
 struct ComponentDialogGroup {
@@ -165,6 +183,13 @@ struct ComponentDialogGroup {
     // (boxP / boxS). Bos = duz form.
     std::wstring layout;
     std::wstring prefix;
+    // layout == L"canvas": sekme, Tekla'nin kendi sekme goruntusu (background,
+    // Qt kaynak yolu, canvasWidth x canvasHeight piksel) uzerine `placed`
+    // kontrollerinin AYNI piksel konumlarina yerlestirilmesiyle cizilir.
+    std::wstring background;
+    int canvasWidth{0};
+    int canvasHeight{0};
+    std::vector<DialogPlacedControl> placed;
 };
 // paramNames girdisi "a|b" ise ayni satirda iki editor cizilir (Tekla: Ux
 // [Free v] [0.00]); onay kutusu ikisini birlikte yonetir.
@@ -263,6 +288,11 @@ private:
 ComponentDialogDefinition endPlateDialogDefinition() noexcept;
 ComponentDialogDefinition finPlateDialogDefinition() noexcept;
 ComponentDialogDefinition shearPlate146DialogDefinition() noexcept;
+// 146 sekmelerini Tekla ekran goruntulerine (canvas duzeni) cevirir: eksik
+// Tekla alanlarini documentedOnly spec olarak ekler, her sekmeye arka plan
+// resmini ve mutlak konumlu kontrolleri yazar. Uretilmis dosya:
+// src/component_dialog_146_canvas.cpp (tools/tekla146_canvas/gen.py).
+void applyShearPlate146Canvas(ComponentDialogDefinition& def) noexcept;
 
 // Yerlesik dialog katalogunu bir registry'ye kaydeder (idempotent — ayni
 // typeId zaten varsa atlanir).

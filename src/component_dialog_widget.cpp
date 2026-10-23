@@ -17,6 +17,9 @@
 #include <QPainter>
 #include <QPixmap>
 #include <QPushButton>
+#include <QGuiApplication>
+#include <QScreen>
+#include <QFrame>
 #include <QScrollArea>
 #include <QSpinBox>
 #include <QTabWidget>
@@ -304,7 +307,30 @@ ComponentDialogWidget::ComponentDialogWidget(const ComponentDialogDefinition& de
         // aksi halde iki editor ayni degeri paylasmaz ve son yazan kazanir.
         tabs_ = new QTabWidget(this);
         tabs_->setMinimumWidth(380);
+        int canvasTabs = 0;
         for (const auto& g : def_.schema.groups) {
+            if (g.layout == L"canvas" && !g.background.empty()) {
+                // Tekla'nin kendi sekmesi: resim + ayni konumda kontroller. Sabit
+                // boyutludur; ekran kucukse kaydirma cubugu cikar.
+                QWidget* canvas = buildCanvasPage(g, ungrouped);
+                auto* canvasScroll = new QScrollArea;
+                canvasScroll->setWidgetResizable(false);
+                canvasScroll->setFrameShape(QFrame::NoFrame);
+                canvasScroll->setAlignment(Qt::AlignLeft | Qt::AlignTop);
+                canvasScroll->setWidget(canvas);
+                QSize want(g.canvasWidth + 4, g.canvasHeight + 4);
+                if (const QScreen* scr = QGuiApplication::primaryScreen()) {
+                    const QRect av = scr->availableGeometry();
+                    want = want.boundedTo(QSize(av.width() - 80, av.height() - 190));
+                }
+                canvasScroll->setMinimumSize(want);
+                tabs_->addTab(canvasScroll, QString::fromStdWString(g.title));
+                const int idx = tabs_->count() - 1;
+                for (const auto& pn : g.paramNames)
+                    if (editors_.count(pn) && !paramTabIndex_.count(pn)) paramTabIndex_[pn] = idx;
+                ++canvasTabs;
+                continue;
+            }
             // Sayfa = [parca satirlari (t b h / Pos_No / Material...)] + [form satirlari].
             auto* page = new QWidget;
             auto* pageLay = new QVBoxLayout(page);
@@ -362,7 +388,14 @@ ComponentDialogWidget::ComponentDialogWidget(const ComponentDialogDefinition& de
             auto* form = new QFormLayout(page);
             form->setLabelAlignment(Qt::AlignLeft);
             form->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
-            for (const auto& pn : ungrouped) addParamRow(form, page, pn, ungrouped);
+            // Kopya uzerinde don: addParamRow `ungrouped`dan siler. Hicbir sekmede
+            // yeri olmayan GRI (documentedOnly) alan gosterilmez — motor okumaz.
+            const std::vector<std::wstring> rest = ungrouped;
+            for (const auto& pn : rest) {
+                const CompParamSpec* sp = specByName(def_.specs, pn);
+                if (sp && sp->documentedOnly) continue;
+                addParamRow(form, page, pn, ungrouped);
+            }
             if (form->rowCount() > 0) {
                 auto* pageScroll = new QScrollArea;
                 pageScroll->setWidgetResizable(true);
@@ -373,6 +406,9 @@ ComponentDialogWidget::ComponentDialogWidget(const ComponentDialogDefinition& de
             }
         }
         root->addWidget(tabs_, /*stretch*/ 2);
+        // Tum sekmeler Tekla goruntusu ise sol sematik gereksiz (Tekla'da yok).
+        // (Varsa "Diğer" sekmesi yalniz Tekla'da karsiligi olmayan motor alanlarini tasir.)
+        if (canvasTabs > 0) schematic_->hide();
         // Tekla "Welds...": ust cubuktaki dugmenin actigi kaynak tablosu; semadaki
         // 1..N cagrilariyla cift yonlu eslesir (satir sec -> cagri vurgulanir,
         // cagri tikla -> tablo acilir ve satir secilir).
@@ -516,6 +552,173 @@ QWidget* ComponentDialogWidget::makeBareEditor(const std::wstring& pn, QWidget* 
     rows_[pn] = editor;  // vurgu icin editorun kendisi
     editor->installEventFilter(this);
     return editor;
+}
+
+namespace {
+// Dar Tekla kutusu (38 px) icin: gereksiz sifirlari yazmayan sayi kutusu
+// ("240" / "10.25"); hassasiyet kaybi yok (decimals ayni kalir).
+class CompactDoubleSpin : public QDoubleSpinBox {
+public:
+    using QDoubleSpinBox::QDoubleSpinBox;
+    QString textFromValue(double v) const override {
+        return locale().toString(v, 'g', 12);
+    }
+};
+}  // namespace
+
+// TEKLA SEKMESI (canvas): kullanicinin gercek Tekla ekran goruntusu arka plandadir;
+// her kontrol, resimdeki beyaz kutunun TAM ustune (ayni piksel) yerlestirilir.
+// Resimli acilir listeler (IconCombo) seffaftir: Tekla resmi gorunur kalir, tiklayinca
+// secenek listesi acilir. Geometrisi olmayan (documentedOnly) ya da Tekla'da gri
+// cizilmis alanlar GRI/pasiftir ve sonuca yazilmaz.
+QWidget* ComponentDialogWidget::buildCanvasPage(const ComponentDialogGroup& g,
+                                               std::vector<std::wstring>& ungrouped) {
+    auto* page = new QWidget;
+    page->setObjectName(QStringLiteral("teklaCanvas"));
+    page->setFixedSize(g.canvasWidth, g.canvasHeight);
+    QFont f = page->font();
+    f.setPointSizeF(8.0);
+    page->setFont(f);
+    page->setStyleSheet(QStringLiteral(
+        "QLineEdit, QAbstractSpinBox { background: white; border: 1px solid #ECECEC;"
+        "  border-bottom: 1px solid #838383; padding: 0px 2px; margin: 0px; }"
+        "QLineEdit:disabled, QAbstractSpinBox:disabled { background: #F0F0F0; color: #8C8C8C;"
+        "  border: 1px solid #E0E0E0; }"
+        "QComboBox { background: white; border: 1px solid #ECECEC; border-bottom: 1px solid #838383;"
+        "  padding: 0px 2px; margin: 0px; }"
+        "QComboBox:disabled { background: #F0F0F0; color: #8C8C8C; border: 1px solid #E0E0E0; }"
+        "QComboBox QAbstractItemView { background: white; color: black; }"));
+
+    auto* bg = new QLabel(page);
+    bg->setObjectName(QStringLiteral("teklaCanvasBackground"));
+    bg->setPixmap(QPixmap(QString::fromStdWString(g.background)));
+    bg->setGeometry(0, 0, g.canvasWidth, g.canvasHeight);
+    bg->lower();
+
+    const QString docHint = QStringLiteral(
+        "Tekla 146 alani - henuz geometriye etkisi yok (deger kaydedilmez)");
+    const auto box = [](const DialogPlacedControl& c) {
+        return QRect(c.x - 1, c.y - 1, c.w + 2, c.h + 2);  // beyaz alan + 1 px cerceve
+    };
+
+    // 1) Parametre kontrolleri.
+    for (const auto& c : g.placed) {
+        if (c.kind == PlacedControlKind::DefaultCheck) continue;
+        const CompParamSpec* spec = specByName(def_.specs, c.param);
+        if (!spec) continue;
+        ungrouped.erase(std::remove(ungrouped.begin(), ungrouped.end(), c.param), ungrouped.end());
+        if (editors_.count(c.param)) continue;  // ayni parametre icin TEK editor
+        const CompParam* stored = findParam(current_, c.param);
+        const CompParamValue value = stored ? stored->value : paramDefaultValue(*spec);
+
+        QWidget* editor = nullptr;
+        const bool numeric =
+            spec->type == CompParamType::Length || spec->type == CompParamType::Angle;
+        if (numeric && c.kind == PlacedControlKind::Combo) {
+            // Tekla'da acilir liste olan sayisal alan (or. Bolt size): duzenlenebilir
+            // liste; standart bulon caplari + elle deger.
+            auto* combo = new QComboBox(page);
+            combo->setEditable(true);
+            double v = spec->defDouble;
+            if (const auto* d = std::get_if<double>(&value)) v = *d;
+            for (double s : {10.0, 12.0, 14.0, 16.0, 20.0, 22.0, 24.0, 27.0, 30.0, 33.0, 36.0}) {
+                if (spec->hasMinDouble && s < spec->minDouble) continue;
+                if (spec->hasMaxDouble && s > spec->maxDouble) continue;
+                combo->addItem(QString::number(s, 'g', 12));
+            }
+            combo->setCurrentText(QString::number(v, 'g', 12));
+            editor = combo;
+        } else if (numeric) {
+            auto* spin = new CompactDoubleSpin(page);
+            spin->setDecimals(4);
+            spin->setRange(spec->hasMinDouble ? spec->minDouble : -1e12,
+                           spec->hasMaxDouble ? spec->maxDouble : 1e12);
+            double v = spec->defDouble;
+            if (const auto* d = std::get_if<double>(&value)) v = *d;
+            spin->setValue(v);
+            spin->setButtonSymbols(QAbstractSpinBox::NoButtons);
+            if (!spec->unit.empty())
+                spin->setToolTip(QString::fromStdWString(spec->unit));
+            editor = spin;
+        } else {
+            editor = buildEditor(*spec, value, page);
+            if (auto* i = qobject_cast<QSpinBox*>(editor))
+                i->setButtonSymbols(QAbstractSpinBox::NoButtons);
+        }
+        if (!editor) continue;
+        editor->setObjectName(QString::fromStdWString(c.param));
+        const bool grey = spec->documentedOnly || c.greyed;
+        QRect r = box(c);
+        if (c.kind == PlacedControlKind::IconCombo) {
+            r = QRect(c.x, c.y, c.w, c.h);  // resmin tamami tiklanabilir
+            if (auto* cb = qobject_cast<QComboBox*>(editor)) {
+                cb->setStyleSheet(QStringLiteral(
+                    "QComboBox { background: transparent; border: none; color: transparent; }"
+                    "QComboBox::drop-down { border: none; width: 0px; }"
+                    "QComboBox QAbstractItemView { background: white; color: black; }"));
+                // Secim Tekla resminden farkliysa altta kucuk etiket gosterilir.
+                auto* badge = new QLabel(page);
+                badge->setStyleSheet(QStringLiteral(
+                    "background: rgba(255,255,255,220); border: 1px solid #838383;"
+                    "padding: 0px 2px;"));
+                const QString initial = cb->currentText();
+                const auto refresh = [badge, cb, initial, c]() {
+                    badge->setText(cb->currentText());
+                    badge->adjustSize();
+                    badge->move(c.x + 2, c.y + c.h - badge->height() - 2);
+                    badge->setVisible(cb->currentText() != initial);
+                };
+                QObject::connect(cb, &QComboBox::currentTextChanged, page, refresh);
+                refresh();
+                cb->setToolTip(QString::fromStdWString(
+                    spec->description.empty() ? spec->name : spec->description) +
+                    QStringLiteral(": ") + cb->currentText());
+            }
+            if (grey && !c.greyed) {
+                // Tekla'da aktif cizilmis ama bizde geometrisi yok: resmi soluklastir.
+                auto* veil = new QWidget(page);
+                veil->setGeometry(r);
+                veil->setStyleSheet(QStringLiteral("background: rgba(240,240,240,150);"));
+                veil->setAttribute(Qt::WA_TransparentForMouseEvents);
+                veil->setToolTip(docHint);
+            }
+        } else if (qobject_cast<QCheckBox*>(editor)) {
+            r = QRect(c.x - 1, c.y - 1, std::max(c.w, 13) + 3, std::max(c.h, 13) + 3);
+        }
+        editor->setGeometry(r);
+        if (grey) {
+            editor->setEnabled(false);
+            editor->setToolTip(spec->documentedOnly ? docHint
+                                                    : QStringLiteral("Tekla'da pasif (gri)"));
+        } else if (editor->toolTip().isEmpty()) {
+            editor->setToolTip(QString::fromStdWString(
+                spec->description.empty() ? spec->name : spec->description));
+        }
+        editor->raise();
+        editors_[c.param] = editor;
+        rows_[c.param] = editor;  // vurgu icin editorun kendisi
+        editor->installEventFilter(this);
+    }
+
+    // 2) Tekla'nin alan solundaki onay kutulari: isaretsiz = yonettigi alanlar
+    //    sonuca yazilmaz (motor varsayilani). Yonettigi alanlarin hepsi griyse gri.
+    for (const auto& c : g.placed) {
+        if (c.kind != PlacedControlKind::DefaultCheck) continue;
+        auto* cb = new QCheckBox(page);
+        cb->setChecked(true);  // Tekla varsayilani: isaretli
+        cb->setGeometry(c.x - 1, c.y - 1, std::max(c.w, 13) + 3, std::max(c.h, 13) + 3);
+        bool anyLive = false;
+        for (const auto& pn : c.governs) {
+            const auto it = editors_.find(pn);
+            if (it == editors_.end()) continue;
+            optionalChecks_[pn] = cb;
+            if (it->second->isEnabled()) anyLive = true;
+        }
+        cb->setEnabled(anyLive);
+        cb->setToolTip(QStringLiteral("Isaretsiz = Default (motor varsayilani)"));
+        cb->raise();
+    }
+    return page;
 }
 
 // Tekla BoxPBolts / BoxSBolts duzeni (gercek ekran goruntusu): solda cerceveli
@@ -917,8 +1120,19 @@ CompParamValue ComponentDialogWidget::valueFromEditor(QWidget* editor,
     if (!editor) return paramDefaultValue(spec);
     switch (spec.type) {
         case CompParamType::Length:
-        case CompParamType::Angle:
+        case CompParamType::Angle: {
+            // Tekla sekmesinde acilir liste olan sayisal alan (Bolt size).
+            if (auto* combo = qobject_cast<QComboBox*>(editor)) {
+                bool ok = false;
+                double v = combo->currentText().trimmed().replace(QLatin1Char(','),
+                                                                   QLatin1Char('.')).toDouble(&ok);
+                if (!ok) v = spec.defDouble;
+                if (spec.hasMinDouble) v = std::max(v, spec.minDouble);
+                if (spec.hasMaxDouble) v = std::min(v, spec.maxDouble);
+                return v;
+            }
             return static_cast<QDoubleSpinBox*>(editor)->value();
+        }
         case CompParamType::Integer:
             return static_cast<QSpinBox*>(editor)->value();
         case CompParamType::Boolean:

@@ -1598,7 +1598,8 @@ bool QtMainWindow::openComponentParamsDialog(const mm::ComponentInstanceRecord& 
             // Tekla duzeni: OK Apply Modify Get [x/o] Cancel .... Create
             root->addWidget(widget->createButtonBar(&dlg));
             dlg.setWindowTitle(QString::fromStdWString(type->displayName));
-            dlg.resize(980, 760);
+            // Tekla sekmeleri sabit boyutlu (ekran goruntusu): diyalog icerige gore.
+            dlg.resize(dlg.sizeHint().expandedTo(QSize(760, 560)));
         } else {
             auto* buttons = new QDialogButtonBox(
                 QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);

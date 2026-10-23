@@ -53,6 +53,7 @@ add_library(model_maker_core
     src/component_framework.cpp
     src/component_glyph.cpp
     src/component_dialog.cpp
+    src/component_dialog_146_canvas.cpp
     src/component_catalog.cpp
     src/assembly.cpp
     src/bridge_package.cpp

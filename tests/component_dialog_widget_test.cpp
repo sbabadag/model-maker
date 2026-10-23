@@ -21,6 +21,7 @@
 #include <QTableWidget>
 
 #include <cstdio>
+#include <cstdlib>
 
 static int failures = 0;
 #define CHECK(cond, msg)                                          \
@@ -96,7 +97,11 @@ int main(int argc, char** argv) {
         auto* tabWidget = w146.findChild<QTabWidget*>();
         CHECK(tabWidget != nullptr, "146: QTabWidget kuruldu");
         // 13 sekme, Tekla 146 sirasi; "Welds" sekme DEGIL, ust cubuktaki dugme.
-        CHECK(tabWidget && tabWidget->count() == 13, "146: 13 sekme (Welds sekme degil)");
+        // 13 Tekla sekmesi; Tekla'da karsiligi olmayan motor alanlari (delik capi,
+        // sira araligi, bulon sinifi) icin en sonda "Diğer" sekmesi.
+        CHECK(tabWidget && tabWidget->count() == 14 &&
+                  tabWidget->tabText(13) == QStringLiteral("Diğer"),
+              "146: 13 Tekla sekmesi + Diğer (Welds sekme degil)");
         if (tabWidget) {
             const char* want[] = {"Picture", "Plates", "Stiffeners", "General", "Haunch",
                                   "Notch", "Bolts", "Design type", "Beam cut", "Angle box",
@@ -120,40 +125,63 @@ int main(int argc, char** argv) {
             CHECK(helpBtn, "146: Help... dugmesi 146 icin acik");
             CHECK(saveGrey, "146: Save dugmesi gri (karsiligi yok)");
         }
-        // Parca satirlari: Plates sekmesinde Tab plate t/b/h kutulari + Default onay kutusu.
+        // TEKLA SEKMELERI: her sekmede Tekla ekran goruntusu arka plan; kontroller
+        // goruntudeki beyaz kutunun TAM ustunde; sol sematik gizli.
         {
-            int groupBoxLabels = 0;
+            int backgrounds = 0;
             for (auto* l : w146.findChildren<QLabel*>())
-                if (l->text() == QStringLiteral("Tab plate") ||
-                    l->text() == QStringLiteral("Plate washer") ||
-                    l->text() == QStringLiteral("Web stiffener") ||
-                    l->text() == QStringLiteral("Top angle") ||
-                    l->text() == QStringLiteral("Bottom angle") ||
-                    l->text() == QStringLiteral("Backing bar"))
-                    ++groupBoxLabels;
-            CHECK(groupBoxLabels >= 6, "146: Tekla parca satiri etiketleri cizildi");
-        }
-        // BoxPBolts / BoxSBolts: sol kutu + Top/Bottom kutulari + olcu kutusu.
-        {
-            int groupBoxes = 0;
-            bool hasTop = false, hasBottom = false, hasDims = false;
-            for (auto* gb : w146.findChildren<QGroupBox*>()) {
-                ++groupBoxes;
-                if (gb->title() == QStringLiteral("Top")) hasTop = true;
-                if (gb->title() == QStringLiteral("Bottom")) hasBottom = true;
-                if (gb->title() == QStringLiteral("Bolt group dimensions")) hasDims = true;
+                if (l->objectName() == QStringLiteral("teklaCanvasBackground") &&
+                    !l->pixmap(Qt::ReturnByValue).isNull())
+                    ++backgrounds;
+            CHECK(backgrounds == 13, "146: 13 Tekla sekme resmi yuklendi");
+            bool geomOk = true;
+            int placedEditors = 0;
+            for (const auto& g : d.schema.groups)
+                for (const auto& c : g.placed) {
+                    if (c.kind == mm::PlacedControlKind::DefaultCheck) continue;
+                    auto* ed = w146.findChild<QWidget*>(QString::fromStdWString(c.param));
+                    if (!ed) { geomOk = false; continue; }
+                    ++placedEditors;
+                    const QRect r = ed->geometry();
+                    // Kutu (x,y,w,h) editorun icinde kalmali, en fazla 3 px tasma.
+                    if (!(r.left() <= c.x && r.top() <= c.y && r.right() >= c.x + c.w - 1 &&
+                          r.bottom() >= c.y + c.h - 1 && c.x - r.left() <= 3 && c.y - r.top() <= 3))
+                        geomOk = false;
+                }
+            CHECK(placedEditors > 250, "146: Tekla sekmelerinde editorler kuruldu");
+            CHECK(geomOk, "146: her editor Tekla kutusunun ustunde (piksel)");
+            auto* plateT = w146.findChild<QWidget*>(QStringLiteral("plateThickness"));
+            CHECK(plateT && plateT->isEnabled() && plateT->geometry() == QRect(124, 29, 40, 20),
+                  "146: Plates t kutusu Tekla konumunda ve aktif");
+            // Bolt size Tekla'da acilir liste: sayisal deger listeden okunur/yazilir.
+            auto* boltSize = w146.findChild<QComboBox*>(QStringLiteral("boltDiameter"));
+            CHECK(boltSize && boltSize->isEditable() && boltSize->currentText() == QStringLiteral("20"),
+                  "146: Bolt size acilir liste, varsayilan 20");
+            if (boltSize) {
+                boltSize->setCurrentText(QStringLiteral("24"));
+                bool got24 = false;
+                for (const auto& p : w146.resultParams())
+                    if (p.name == L"boltDiameter")
+                        if (const auto* dv = std::get_if<double>(&p.value)) got24 = *dv == 24.0;
+                CHECK(got24, "146: Bolt size 24 -> boltDiameter=24");
+                boltSize->setCurrentText(QStringLiteral("20"));
             }
-            CHECK(hasTop && hasBottom && hasDims, "146: BoxP/BoxS Top/Bottom/olcu kutulari");
-            // Analysis: Ux satirinda iki editor (Free + 0.00) ayni satirda, gri.
-            int freeCombos = 0;
-            for (auto* cb : w146.findChildren<QComboBox*>())
-                if (cb->count() == 1 && cb->itemText(0) == QStringLiteral("Free") &&
-                    !cb->isEnabled()) ++freeCombos;
-            CHECK(freeCombos == 3, "146: Analysis Ux/Uy/Uz = Free (gri)");
-            int pinnedCombos = 0;
-            for (auto* cb : w146.findChildren<QComboBox*>())
-                if (cb->count() == 1 && cb->itemText(0) == QStringLiteral("Pinned")) ++pinnedCombos;
-            CHECK(pinnedCombos == 3, "146: Analysis Rx/Ry/Rz = Pinned");
+            auto* sch = w146.findChild<mm::ComponentSchematicView*>();
+            CHECK(sch && sch->isHidden(), "146: sol sematik gizli (Tekla'da yok)");
+            // Gorsel karsilastirma icin istege bagli: her Tekla sekmesini PNG'ye yaz.
+            if (const char* dir = std::getenv("MM_DIALOG_SNAPSHOT_DIR")) {
+                for (auto* l : w146.findChildren<QLabel*>()) {
+                    if (l->objectName() != QStringLiteral("teklaCanvasBackground")) continue;
+                    QWidget* page = l->parentWidget();
+                    for (int i = 0; i < tabWidget->count(); ++i)
+                        if (tabWidget->widget(i)->isAncestorOf(page)) {
+                            tabWidget->setCurrentIndex(i);
+                            QApplication::processEvents();
+                            page->grab().save(QString::fromLocal8Bit(dir) + QStringLiteral("/") +
+                                              tabWidget->tabText(i) + QStringLiteral(".png"));
+                        }
+                }
+            }
         }
         // Alt cubuk: OK/Apply/Modify/Get/toggle/Cancel/Create; Apply gri.
         {
@@ -179,14 +207,6 @@ int main(int argc, char** argv) {
         for (const auto& p : params)
             if (p.name == L"boltStandard") hasStandard = true;
         CHECK(hasStandard, "146: boltStandard sonuca yazilir (kutu isaretli)");
-
-        // Tekla yardim sayfasi sekilleri gomulu kaynaktan yuklenir (sekme basina).
-        {
-            int pixLabels = 0;
-            for (auto* l : w146.findChildren<QLabel*>())
-                if (!l->pixmap(Qt::ReturnByValue).isNull()) ++pixLabels;
-            CHECK(pixLabels >= 22, "146: Tekla sekilleri yuklendi (>=22 resim)");
-        }
 
         // Gri (documentedOnly) alanlar sonuca HIC yazilmaz; calisan alanlar yazilir.
         {

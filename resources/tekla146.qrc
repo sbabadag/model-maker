@@ -26,4 +26,22 @@
         <file alias="boxp_bolt_group.png">tekla146/boxp_bolt_group.png</file>
         <file alias="boxs_bolt_group.png">tekla146/boxs_bolt_group.png</file>
     </qresource>
+    <!-- Kullanicinin gercek Tekla 146 diyalog sekme goruntuleri (sekme paneli
+         kirpilmis): "canvas" sekmelerinin arka plani. Uretici:
+         tools/tekla146_canvas/gen.py -->
+    <qresource prefix="/tekla146">
+        <file alias="tabs/analysis.png">tekla146/tabs/analysis.png</file>
+        <file alias="tabs/angle_box.png">tekla146/tabs/angle_box.png</file>
+        <file alias="tabs/beam_cut.png">tekla146/tabs/beam_cut.png</file>
+        <file alias="tabs/bolts.png">tekla146/tabs/bolts.png</file>
+        <file alias="tabs/boxpbolts.png">tekla146/tabs/boxpbolts.png</file>
+        <file alias="tabs/boxsbolts.png">tekla146/tabs/boxsbolts.png</file>
+        <file alias="tabs/design_type.png">tekla146/tabs/design_type.png</file>
+        <file alias="tabs/general.png">tekla146/tabs/general.png</file>
+        <file alias="tabs/haunch.png">tekla146/tabs/haunch.png</file>
+        <file alias="tabs/notch.png">tekla146/tabs/notch.png</file>
+        <file alias="tabs/picture.png">tekla146/tabs/picture.png</file>
+        <file alias="tabs/plates.png">tekla146/tabs/plates.png</file>
+        <file alias="tabs/stiffners.png">tekla146/tabs/stiffners.png</file>
+    </qresource>
 </RCC>

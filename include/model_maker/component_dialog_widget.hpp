@@ -121,6 +121,8 @@ private:
     QWidget* buildHeaderBar();
     // Sekmenin ustundeki parca satirlari (t b h | Pos_No | Material | Name | Finish).
     QWidget* buildPartRows(const ComponentDialogGroup& g, std::vector<std::wstring>& ungrouped);
+    // Tekla sekme goruntusu (arka plan) + ayni piksel konumunda kontroller.
+    QWidget* buildCanvasPage(const ComponentDialogGroup& g, std::vector<std::wstring>& ungrouped);
     // Tek parametre icin duz editor (satir/etiket olmadan); ayni parametre ikinci
     // kez istenirse nullptr.
     QWidget* makeBareEditor(const std::wstring& pn, QWidget* parent,

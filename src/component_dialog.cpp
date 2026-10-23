@@ -1249,6 +1249,9 @@ ComponentDialogDefinition shearPlate146DialogDefinition() noexcept {
     def.schema.groups = {gPicture, gPlates,  gStiff,  gGeneral,  gHaunch,  gNotch, gBolts,
                          gDesign,  gBeamCut, gAngleBox, gBoxP,   gBoxS,    gAnalysis};
     def.schema.useTabs = true;
+    // Sekmeler Tekla ekran goruntulerinin BIREBIR kopyasi: arka plan resmi +
+    // ayni piksel konumunda kontroller (src/component_dialog_146_canvas.cpp).
+    applyShearPlate146Canvas(def);
     return def;
 }
 
