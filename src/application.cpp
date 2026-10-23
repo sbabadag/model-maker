@@ -8774,9 +8774,9 @@ bool prepareWeldGeometry(Weld& w, Document& doc, OccSolidStore* store,
         w.unsupportedReason = reason.empty() ? "kaynak kati uretilemedi" : reason;
         return false;
     }
-    TopoDS_Shape fused = solids[0];
-    for (std::size_t si = 1; si < solids.size(); ++si)
-        fused = booleanFuseShape(fused, solids[si]);
+    // Fuse YOK: dikis katilari compound'da toplanir (Windows OCCT 7.9.3-3 Fuse
+    // cokmesi, bkz. compoundOfShapes).
+    const TopoDS_Shape fused = compoundOfShapes(solids);
     if (fused.IsNull()) {
         w.unsupportedReason = "kaynak kati birlestirilemedi";
         return false;

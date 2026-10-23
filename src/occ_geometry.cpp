@@ -719,6 +719,19 @@ TopoDS_Shape booleanFuseShape(const TopoDS_Shape& a, const TopoDS_Shape& b) {
     return BRepAlgoAPI_Fuse(a, b).Shape();
 }
 
+TopoDS_Shape compoundOfShapes(const std::vector<TopoDS_Shape>& shapes) {
+    std::vector<const TopoDS_Shape*> live;
+    for (const auto& s : shapes)
+        if (!s.IsNull()) live.push_back(&s);
+    if (live.empty()) return TopoDS_Shape();
+    if (live.size() == 1) return *live.front();
+    BRep_Builder builder;
+    TopoDS_Compound comp;
+    builder.MakeCompound(comp);
+    for (const auto* s : live) builder.Add(comp, *s);
+    return comp;
+}
+
 TopoDS_Shape booleanCommonShape(const TopoDS_Shape& a, const TopoDS_Shape& b) {
     return BRepAlgoAPI_Common(a, b).Shape();
 }

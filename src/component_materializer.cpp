@@ -59,9 +59,9 @@ bool buildWeldGeometry(Weld& w, const TopoDS_Shape& mainShape,
         w.unsupportedReason = reason.empty() ? "kaynak kati uretilemedi" : reason;
         return false;
     }
-    TopoDS_Shape fused = solids[0];
-    for (std::size_t i = 1; i < solids.size(); ++i)
-        fused = booleanFuseShape(fused, solids[i]);
+    // Fuse YOK: dikis katilari compound'da toplanir (Windows OCCT 7.9.3-3 Fuse
+    // cokmesi, bkz. compoundOfShapes).
+    const TopoDS_Shape fused = compoundOfShapes(solids);
     if (fused.IsNull()) {
         w.unsupportedReason = "kaynak kati birlestirilemedi";
         return false;

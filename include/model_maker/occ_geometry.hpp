@@ -79,6 +79,11 @@ WireframeModel solidCylinderSolid(double radius, double height, double faceDefle
 
 // --- Boolean islemler: iki BRep kati uzerinde ---
 TopoDS_Shape booleanFuseShape(const TopoDS_Shape& a, const TopoDS_Shape& b);
+// Katilari BOOLEAN YAPMADAN tek compound'da toplar (tek kati varsa onu dondurur).
+// Kaynak dikisleri gibi ayri ayri gecerli katilar icin Fuse yerine kullanilir:
+// MSYS2 OCCT 7.9.3-3 (GCC16) Fuse -> BOPAlgo_BuilderSolid -> ComputeState ->
+// BRepClass3d_SClassifier -> Extrema_ExtCC Windows'ta SIGSEGV verir.
+TopoDS_Shape compoundOfShapes(const std::vector<TopoDS_Shape>& shapes);
 TopoDS_Shape booleanCommonShape(const TopoDS_Shape& a, const TopoDS_Shape& b);
 TopoDS_Shape booleanCutShape(const TopoDS_Shape& a, const TopoDS_Shape& b);
 

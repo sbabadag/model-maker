@@ -18,4 +18,12 @@ endforeach()
 if(_bad)
     message(FATAL_ERROR "BRepClass3d_SolidClassifier yasak (Windows GCC16 OCCT cokmesi): ${_bad}")
 endif()
+# Kaynak dikis katilari Fuse ile birlestirilmez (Fuse da ayni siniflandiriciya
+# girer: BOPAlgo_BuilderSolid -> ComputeState); compoundOfShapes kullanilir.
+foreach(_f IN LISTS _files)
+    file(STRINGS "${_f}" _hits REGEX "booleanFuseShape\\(fused, *solids")
+    if(_hits)
+        message(FATAL_ERROR "Kaynak katilari Fuse ile birlestiriliyor (compoundOfShapes kullan): ${_f}")
+    endif()
+endforeach()
 message(STATUS "OK: src altinda BRepClass3d_SolidClassifier yok")
