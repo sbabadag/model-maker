@@ -238,10 +238,33 @@ int main() {
                                      L"notchCutHTop", L"notchCutHBottom",
                                      L"notchWebToFlangeTop", L"notchWebToFlangeBottom"})
                 check(findParamSpec(def.specs, n) != nullptr, "146: manuel notch ust/alt alani var");
-            // Analysis sekmesi bos ama Tekla sirasini korur.
+            // Analysis (gercek ekran goruntusu): 13 satir, Ux..Rz "a|b" ciftli.
             const auto& last = def.schema.groups.back();
-            check(last.title == L"Analysis" && last.keepIfEmpty && last.paramNames.empty(),
-                  "146: Analysis sekmesi bos placeholder");
+            check(last.title == L"Analysis" && last.paramNames.size() == 13,
+                  "146: Analysis sekmesi 13 satir");
+            std::size_t pairs = 0;
+            for (const auto& pn : last.paramNames)
+                if (pn.find(L'|') != std::wstring::npos) ++pairs;
+            check(pairs == 6, "146: Analysis Ux/Uy/Uz/Rx/Ry/Rz 6 cift satir");
+            const CompParamSpec* sup = findParamSpec(def.specs, L"supportRx");
+            check(sup && sup->documentedOnly && sup->optional &&
+                      sup->choices.size() == 1 && sup->choices[0] == L"Pinned",
+                  "146: Rx = Pinned (ekran goruntusu), gri, Default kutulu");
+            // BoxPBolts / BoxSBolts: ozel yerlesim, ayni 29 alan, onek ayrimi.
+            for (const wchar_t* title : {L"BoxPBolts", L"BoxSBolts"}) {
+                const ComponentDialogGroup* bg = nullptr;
+                for (const auto& g : def.schema.groups)
+                    if (g.title == title) bg = &g;
+                check(bg && bg->layout == L"boxbolts" && bg->paramNames.size() == 24,
+                      "146: BoxP/BoxS boxbolts yerlesimi, 24 alan");
+                if (bg) {
+                    const CompParamSpec* hole = findParamSpec(def.specs, bg->prefix + L"TopHoleType");
+                    check(hole && hole->documentedOnly && hole->optional,
+                          "146: BoxP/BoxS Top hole type gri + Default kutulu");
+                    check(findParamSpec(def.specs, bg->prefix + L"BottomSlotsIn") != nullptr,
+                          "146: BoxP/BoxS Bottom alani var");
+                }
+            }
         }
 
         const auto v = validateDialogSchema(def.schema, def.specs);

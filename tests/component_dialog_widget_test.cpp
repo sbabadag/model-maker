@@ -14,6 +14,7 @@
 #include <QComboBox>
 #include <QDialog>
 #include <QPushButton>
+#include <QGroupBox>
 #include <QHeaderView>
 #include <QLabel>
 #include <QTabWidget>
@@ -131,6 +132,28 @@ int main(int argc, char** argv) {
                     l->text() == QStringLiteral("Backing bar"))
                     ++groupBoxLabels;
             CHECK(groupBoxLabels >= 6, "146: Tekla parca satiri etiketleri cizildi");
+        }
+        // BoxPBolts / BoxSBolts: sol kutu + Top/Bottom kutulari + olcu kutusu.
+        {
+            int groupBoxes = 0;
+            bool hasTop = false, hasBottom = false, hasDims = false;
+            for (auto* gb : w146.findChildren<QGroupBox*>()) {
+                ++groupBoxes;
+                if (gb->title() == QStringLiteral("Top")) hasTop = true;
+                if (gb->title() == QStringLiteral("Bottom")) hasBottom = true;
+                if (gb->title() == QStringLiteral("Bolt group dimensions")) hasDims = true;
+            }
+            CHECK(hasTop && hasBottom && hasDims, "146: BoxP/BoxS Top/Bottom/olcu kutulari");
+            // Analysis: Ux satirinda iki editor (Free + 0.00) ayni satirda, gri.
+            int freeCombos = 0;
+            for (auto* cb : w146.findChildren<QComboBox*>())
+                if (cb->count() == 1 && cb->itemText(0) == QStringLiteral("Free") &&
+                    !cb->isEnabled()) ++freeCombos;
+            CHECK(freeCombos == 3, "146: Analysis Ux/Uy/Uz = Free (gri)");
+            int pinnedCombos = 0;
+            for (auto* cb : w146.findChildren<QComboBox*>())
+                if (cb->count() == 1 && cb->itemText(0) == QStringLiteral("Pinned")) ++pinnedCombos;
+            CHECK(pinnedCombos == 3, "146: Analysis Rx/Ry/Rz = Pinned");
         }
         // Alt cubuk: OK/Apply/Modify/Get/toggle/Cancel/Create; Apply gri.
         {

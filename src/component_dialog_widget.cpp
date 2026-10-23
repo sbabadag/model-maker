@@ -315,8 +315,14 @@ ComponentDialogWidget::ComponentDialogWidget(const ComponentDialogDefinition& de
             auto* form = new QFormLayout(formHost);
             form->setLabelAlignment(Qt::AlignLeft);
             form->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
-            for (const auto& pn : g.paramNames) addParamRow(form, formHost, pn, ungrouped);
-            const bool hasContent = parts || form->rowCount() > 0;
+            QWidget* custom = nullptr;
+            if (g.layout == L"boxbolts") {
+                custom = buildBoxBoltsPage(g, ungrouped);
+                pageLay->addWidget(custom);
+            } else {
+                for (const auto& pn : g.paramNames) addParamRow(form, formHost, pn, ungrouped);
+            }
+            const bool hasContent = parts || custom || form->rowCount() > 0;
             if (!hasContent && !g.keepIfEmpty) {  // bos sekme acma
                 delete page;
                 continue;
@@ -340,7 +346,11 @@ ComponentDialogWidget::ComponentDialogWidget(const ComponentDialogDefinition& de
                 if (!pn.empty() && editors_.count(pn) && !paramTabIndex_.count(pn))
                     paramTabIndex_[pn] = idx;
             };
-            for (const auto& pn : g.paramNames) mapName(pn);
+            for (const auto& entry : g.paramNames) {
+                const auto bar = entry.find(L'|');
+                mapName(bar == std::wstring::npos ? entry : entry.substr(0, bar));
+                if (bar != std::wstring::npos) mapName(entry.substr(bar + 1));
+            }
             for (const auto& pr : g.partRows)
                 for (const std::wstring* pn : {&pr.t, &pr.b, &pr.h, &pr.profile, &pr.posPrefix,
                                                &pr.posStart, &pr.asmPrefix, &pr.asmStart,
@@ -407,8 +417,15 @@ ComponentDialogWidget::ComponentDialogWidget(const ComponentDialogDefinition& de
 // `optional` parametrelerde onay kutusu isaretsizse deger sonuca YAZILMAZ
 // (motor varsayilani uygulanir) — Tekla'daki "Default" davranisi.
 void ComponentDialogWidget::addParamRow(QFormLayout* form, QWidget* box,
-                                        const std::wstring& pn,
+                                        const std::wstring& entry,
                                         std::vector<std::wstring>& ungrouped) {
+    // "a|b": ayni satirda iki editor (Tekla: Ux [Free v] [0.00]).
+    std::wstring pn = entry;
+    std::wstring pairName;
+    if (const auto bar = entry.find(L'|'); bar != std::wstring::npos) {
+        pn = entry.substr(0, bar);
+        pairName = entry.substr(bar + 1);
+    }
     const CompParamSpec* spec = specByName(def_.specs, pn);
     if (!spec) return;
     ungrouped.erase(std::remove(ungrouped.begin(), ungrouped.end(), pn), ungrouped.end());
@@ -445,7 +462,22 @@ void ComponentDialogWidget::addParamRow(QFormLayout* form, QWidget* box,
         lbl->setToolTip(hint);
     }
 
-    form->addRow(labelHost, editor);
+    QWidget* rowEditor = editor;
+    if (!pairName.empty()) {
+        if (QWidget* second = makeBareEditor(pairName, box, ungrouped)) {
+            auto* hostW = new QWidget(box);
+            auto* hl = new QHBoxLayout(hostW);
+            hl->setContentsMargins(0, 0, 0, 0);
+            hl->setSpacing(6);
+            hl->addWidget(editor, 1);
+            hl->addWidget(second, 1);
+            rowEditor = hostW;
+            // Onay kutusu iki alani birlikte yonetir.
+            if (const auto it = optionalChecks_.find(pn); it != optionalChecks_.end())
+                optionalChecks_[pairName] = it->second;
+        }
+    }
+    form->addRow(labelHost, rowEditor);
     editors_[pn] = editor;
     rows_[pn] = lbl;
     editor->installEventFilter(this);
@@ -484,6 +516,57 @@ QWidget* ComponentDialogWidget::makeBareEditor(const std::wstring& pn, QWidget* 
     rows_[pn] = editor;  // vurgu icin editorun kendisi
     editor->installEventFilter(this);
     return editor;
+}
+
+// Tekla BoxPBolts / BoxSBolts duzeni (gercek ekran goruntusu): solda cerceveli
+// kutu (Bolt size/standard/Tolerance/Thread in mat/Top/Bottom) + altinda Comment;
+// yaninda "Top" ve "Bottom" kutulari (oval delik olculeri, Hole type, Rotate Slots,
+// Slots in, bulon boyu artisi); altta bulon grubu olculeri (1-5).
+QWidget* ComponentDialogWidget::buildBoxBoltsPage(const ComponentDialogGroup& g,
+                                                  std::vector<std::wstring>& ungrouped) {
+    auto* page = new QWidget;
+    auto* grid = new QGridLayout(page);
+    grid->setContentsMargins(4, 4, 4, 4);
+    grid->setHorizontalSpacing(10);
+    grid->setVerticalSpacing(8);
+    const std::wstring& p = g.prefix;
+    const auto formBox = [&](QWidget* parent, const QString& title) {
+        auto* box = new QGroupBox(title, parent);
+        auto* f = new QFormLayout(box);
+        f->setLabelAlignment(Qt::AlignLeft);
+        f->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
+        return std::make_pair(box, f);
+    };
+
+    auto [left, leftForm] = formBox(page, QString());
+    for (const wchar_t* sfx : {L"Size", L"Standard", L"Tolerance", L"ThreadInMat",
+                               L"SiteTop", L"SiteBottom"})
+        addParamRow(leftForm, left, p + sfx, ungrouped);
+    grid->addWidget(left, 0, 0);
+
+    for (int i = 0; i < 2; ++i) {
+        const std::wstring S = i == 0 ? L"Top" : L"Bottom";
+        auto [box, f] = formBox(page, QString::fromStdWString(S));
+        for (const wchar_t* sfx : {L"SlotV", L"SlotH", L"HoleType", L"RotateSlots",
+                                   L"SlotsIn", L"LengthIncrease"})
+            addParamRow(f, box, p + S + sfx, ungrouped);
+        grid->addWidget(box, 0, 1 + i);
+    }
+
+    auto [commentBox, commentForm] = formBox(page, QString());
+    commentBox->setFlat(true);
+    addParamRow(commentForm, commentBox, p + L"Comment", ungrouped);
+    grid->addWidget(commentBox, 1, 0);
+
+    auto [dims, dimsForm] = formBox(page, QStringLiteral("Bolt group dimensions"));
+    for (const wchar_t* sfx : {L"Pos1", L"Edge", L"Count", L"Spacing", L"Pos5"})
+        addParamRow(dimsForm, dims, p + sfx, ungrouped);
+    grid->addWidget(dims, 2, 0, 1, 3);
+
+    grid->setColumnStretch(1, 1);
+    grid->setColumnStretch(2, 1);
+    grid->setRowStretch(3, 1);
+    return page;
 }
 
 // Tekla parca satirlari: [etiket] [x] t b h | [x] Pos_No | [x] Material [...] |

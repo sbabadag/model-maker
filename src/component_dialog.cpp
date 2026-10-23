@@ -250,11 +250,17 @@ DialogSchemaValidation validateDialogSchema(const ComponentDialogSchema& schema,
             result.ok = false;
             result.problems.push_back(L"yinelenen grup id: " + g.id);
         }
-        for (const auto& pn : g.paramNames) {
-            if (specNames.find(pn) == specNames.end()) {
-                result.ok = false;
-                result.problems.push_back(L"grup " + g.id + L" bilinmeyen parametreyi isaret ediyor: " +
-                                          pn);
+        for (const auto& entry : g.paramNames) {
+            std::vector<std::wstring> parts;
+            const auto bar = entry.find(L'|');
+            if (bar == std::wstring::npos) parts.push_back(entry);
+            else { parts.push_back(entry.substr(0, bar)); parts.push_back(entry.substr(bar + 1)); }
+            for (const auto& pn : parts) {
+                if (specNames.find(pn) == specNames.end()) {
+                    result.ok = false;
+                    result.problems.push_back(L"grup " + g.id + L" bilinmeyen parametreyi isaret ediyor: " +
+                                              pn);
+                }
             }
         }
         for (const auto& pr : g.partRows) {
@@ -866,34 +872,78 @@ ComponentDialogDefinition shearPlate146DialogDefinition() noexcept {
     docLen(L"seatChamferV", L"Seat angle chamfer 1 (vertical)", 0.0);
     docLen(L"seatChamferH", L"Seat angle chamfer 2 (horizontal)", 0.0);
 
-    // BoxPBolts / BoxSBolts (seat angle -> main / secondary). NOT: bu iki sekmenin
-    // ekran goruntusu henuz yok; alanlar yardim PDF'inden.
+    // BoxPBolts / BoxSBolts (seat angle -> main / secondary): gercek Tekla ekran
+    // goruntusu. Sol kutu: Bolt size/standard/Tolerance/Thread in mat/Top/Bottom +
+    // Comment; Top ve Bottom kutulari: oval delik 2 olcu + Hole type/Rotate Slots/
+    // Slots in + bulon boyu artisi; ortada 5 bulon grubu olcusu (PDF'ten).
+    // Goruntude acilir listelerde yalniz "Default" gorundugu icin Default disinda
+    // secenek YAZILMADI (Hole type secenekleri PDF'ten).
     const auto docBoxBolts = [&](const std::wstring& p, bool toMain) {
-        docLen((p + L"Pos1").c_str(),
+        const auto name = [&](const wchar_t* sfx) { return (p + sfx); };
+        docEnum(name(L"Size").c_str(), L"Bolt size", {L"Default"});
+        docEnum(name(L"Standard").c_str(), L"Bolt standard", {L"Default"});
+        docStr(name(L"Tolerance").c_str(), L"Tolerance");
+        docEnum(name(L"ThreadInMat").c_str(), L"Thread in mat", {L"Default"});
+        docEnum(name(L"SiteTop").c_str(), L"Top", {L"Default"});
+        docEnum(name(L"SiteBottom").c_str(), L"Bottom", {L"Default"});
+        docStr(name(L"Comment").c_str(), L"Comment");
+        for (const wchar_t* side : {L"Top", L"Bottom"}) {
+            const std::wstring S = side;
+            docLen((p + S + L"SlotV").c_str(), L"Slotted hole 1 (vertical)", 0.0);
+            docLen((p + S + L"SlotH").c_str(), L"Slotted hole 2 (horizontal)", 0.0);
+            docEnum((p + S + L"HoleType").c_str(), L"Hole type",
+                    {L"Default", L"Slotted", L"Oversized", L"No hole", L"Tapped"});
+            docEnum((p + S + L"RotateSlots").c_str(), L"Rotate Slots:", {L"Default"});
+            docEnum((p + S + L"SlotsIn").c_str(), L"Slots in", {L"Default"});
+            docLen((p + S + L"LengthIncrease").c_str(), L"Bolt length increase", 0.0);
+        }
+        docLen(name(L"Pos1").c_str(),
                toMain ? L"1 Horizontal position (from secondary middle line)"
                       : L"1 Vertical position (from secondary middle line)", 0.0);
-        docLen((p + L"Edge").c_str(), L"2 Bolt edge distance", 0.0);
-        docInt((p + L"Count").c_str(), L"3 Number of bolts", 0);
-        docStr((p + L"Spacing").c_str(), L"4 Bolt spacing");
-        docLen((p + L"Pos5").c_str(),
+        docLen(name(L"Edge").c_str(), L"2 Bolt edge distance", 0.0);
+        docInt(name(L"Count").c_str(), L"3 Number of bolts", 0);
+        docStr(name(L"Spacing").c_str(), L"4 Bolt spacing");
+        docLen(name(L"Pos5").c_str(),
                toMain ? L"5 Vertical position (from secondary bottom)"
                       : L"5 Horizontal position (from secondary bottom)", 0.0);
-        docLen((p + L"Size").c_str(), L"Bolt size", 0.0);
-        docStr((p + L"Standard").c_str(), L"Bolt standard");
-        docLen((p + L"Tolerance").c_str(), L"Tolerance", 0.0);
-        docBool((p + L"ThreadInMat").c_str(), L"Thread in mat", true);
-        docEnum((p + L"SiteWorkshop").c_str(), L"Site/Workshop", siteWorkshop);
-        docStr((p + L"Comment").c_str(), L"Comment");
-        docLen((p + L"SlotV").c_str(), L"Slotted hole 1 (vertical)", 0.0);
-        docLen((p + L"SlotH").c_str(), L"Slotted hole 2 (horizontal)", 0.0);
-        docEnum((p + L"HoleType").c_str(), L"Hole type",
-                {L"Default", L"Slotted", L"Oversized", L"No hole", L"Tapped"});
-        docEnum((p + L"RotateSlots").c_str(), L"Rotate slots", {L"Default", L"No", L"Yes"});
-        docStr((p + L"SlotsIn").c_str(), L"Slots in");
-        docLen((p + L"LengthIncrease").c_str(), L"Bolt length increase", 0.0);
     };
     docBoxBolts(L"boxP", true);
     docBoxBolts(L"boxS", false);
+
+    // Analysis sekmesi (gercek Tekla ekran goruntusu). Acilir listelerde goruntude
+    // yalniz gorunen deger yazildi; "Restrain combination" resimli listedir ve
+    // secili ogesi bir KALEM simgesidir (metni yok) -> simge karakteriyle gosterilir.
+    docEnum(L"useAnalysisRestraints", L"Use analysis restraints", {L"Yes"});
+    docEnum(L"memberSelection", L"Member selection", {L"Primary"});
+    docEnum(L"restrainCombination", L"Restrain combination", {L"\u270E"});
+    docEnum(L"supportCondition", L"Support condition", {L"Connected"});
+    for (const wchar_t* ax : {L"Ux", L"Uy", L"Uz"}) {
+        const std::wstring a = ax;
+        docEnum((L"support" + a).c_str(), a.c_str(), {L"Free"});
+        docLen((L"support" + a + L"Value").c_str(), (a + L" value").c_str(), 0.0);
+    }
+    for (const wchar_t* ax : {L"Rx", L"Ry", L"Rz"}) {
+        const std::wstring a = ax;
+        docEnum((L"support" + a).c_str(), a.c_str(), {L"Pinned"});
+        docLen((L"support" + a + L"Value").c_str(), (a + L" value").c_str(), 0.0);
+    }
+    docLen(L"longitudinalMemberOffset", L"Longitudinal member offset", 0.0);
+    docStr(L"analysisProfile", L"Analysis profile");
+    docLen(L"analysisProfileLength", L"Analysis profile length", 0.0);
+
+    // Ekran goruntusunde BoxP/BoxS ve Analysis'teki HER satirin solunda "Default"
+    // onay kutusu var: bu alanlari optional yap (gri alanin kutusu da gri).
+    for (auto& sp : def.specs) {
+        const std::wstring& n = sp.name;
+        const bool isBox = n.rfind(L"boxP", 0) == 0 || n.rfind(L"boxS", 0) == 0;
+        const bool isAnalysis =
+            n == L"useAnalysisRestraints" || n == L"memberSelection" ||
+            n == L"restrainCombination" || n == L"supportCondition" ||
+            n.rfind(L"supportU", 0) == 0 || n.rfind(L"supportR", 0) == 0 ||
+            n == L"longitudinalMemberOffset" || n == L"analysisProfile" ||
+            n == L"analysisProfileLength";
+        if ((isBox || isAnalysis) && n.find(L"Value") == std::wstring::npos) sp.optional = true;
+    }
 
     // --- SEMATIK (Picture sekmesi): Tekla 146 resmi -------------------------
     // Kolon (dikey) + turuncu kayma levhasi (2x2 bulon deligi) + kiris (yatay).
@@ -1131,24 +1181,33 @@ ComponentDialogDefinition shearPlate146DialogDefinition() noexcept {
         g.id = id;
         g.title = title;
         g.asTab = true;
-        for (const wchar_t* suffix :
-             {L"Pos1", L"Edge", L"Count", L"Spacing", L"Pos5", L"Size", L"Standard",
-              L"Tolerance", L"ThreadInMat", L"SiteWorkshop", L"Comment", L"SlotV", L"SlotH",
-              L"HoleType", L"RotateSlots", L"SlotsIn", L"LengthIncrease"})
-            g.paramNames.push_back(p + suffix);
+        g.layout = L"boxbolts";
+        g.prefix = p;
+        for (const wchar_t* sfx : {L"Size", L"Standard", L"Tolerance", L"ThreadInMat",
+                                   L"SiteTop", L"SiteBottom", L"Comment"})
+            g.paramNames.push_back(p + sfx);
+        for (const wchar_t* side : {L"Top", L"Bottom"})
+            for (const wchar_t* sfx : {L"SlotV", L"SlotH", L"HoleType", L"RotateSlots",
+                                       L"SlotsIn", L"LengthIncrease"})
+                g.paramNames.push_back(p + side + sfx);
+        for (const wchar_t* sfx : {L"Pos1", L"Edge", L"Count", L"Spacing", L"Pos5"})
+            g.paramNames.push_back(p + sfx);
         return g;
     };
     ComponentDialogGroup gBoxP = boxBoltsTab(L"tab_boxpbolts", L"BoxPBolts", L"boxP");
     ComponentDialogGroup gBoxS = boxBoltsTab(L"tab_boxsbolts", L"BoxSBolts", L"boxS");
 
-    // Analysis: ekran goruntusu yok -> alan UYDURULMADI; sekme Tekla sirasini
-    // korumak icin acik ve bos (gri not).
     ComponentDialogGroup gAnalysis;
     gAnalysis.id = L"tab_analysis";
     gAnalysis.title = L"Analysis";
     gAnalysis.asTab = true;
-    gAnalysis.keepIfEmpty = true;
-    gAnalysis.emptyNote = L"Tekla Analysis sekmesi: alanlari henuz belirlenmedi (ekran goruntusu bekleniyor).";
+    gAnalysis.paramNames = {L"useAnalysisRestraints", L"memberSelection", L"restrainCombination",
+                            L"supportCondition",
+                            L"supportUx|supportUxValue", L"supportUy|supportUyValue",
+                            L"supportUz|supportUzValue", L"supportRx|supportRxValue",
+                            L"supportRy|supportRyValue", L"supportRz|supportRzValue",
+                            L"longitudinalMemberOffset", L"analysisProfile",
+                            L"analysisProfileLength"};
 
     // Tekla yardim sayfasindaki sekme basina olcu/ayrinti sekilleri
     // (resources/tekla146.qrc). Yalniz bilgi amaclidir, parametre degildir.

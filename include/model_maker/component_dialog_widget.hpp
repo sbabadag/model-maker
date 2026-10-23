@@ -112,6 +112,9 @@ private:
     void highlightParamRow(const std::wstring& paramName);
     void addParamRow(QFormLayout* form, QWidget* box, const std::wstring& paramName,
                      std::vector<std::wstring>& ungrouped);
+    // Tekla BoxPBolts/BoxSBolts duzeni: sol kutu + Top/Bottom kutulari + olculer.
+    QWidget* buildBoxBoltsPage(const ComponentDialogGroup& g,
+                               std::vector<std::wstring>& ungrouped);
     void buildWeldTable();
     void showWeldDialog();
     // Tekla ust cubuk: Save/Load/Save as/Help + "ignore other types" + Welds.

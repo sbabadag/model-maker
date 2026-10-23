@@ -160,7 +160,14 @@ struct ComponentDialogGroup {
     // emptyNote o zaman gri bilgi metni olarak gosterilir.
     bool keepIfEmpty{false};
     std::wstring emptyNote;
+    // Ozel yerlesim: L"boxbolts" = Tekla BoxPBolts/BoxSBolts duzeni (sol kutu +
+    // Top/Bottom kutulari + olcu kutusu). prefix = parametre adi oneki
+    // (boxP / boxS). Bos = duz form.
+    std::wstring layout;
+    std::wstring prefix;
 };
+// paramNames girdisi "a|b" ise ayni satirda iki editor cizilir (Tekla: Ux
+// [Free v] [0.00]); onay kutusu ikisini birlikte yonetir.
 
 // Bir component tipinin TAM dialog semasi: cizim + hotspotlar + parametre
 // gruplari. typeId ComponentRegistry'deki tipla eslesir.
