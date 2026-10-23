@@ -20,19 +20,42 @@ FILES = {
 }
 ORIG = {k: p.read_text(encoding="utf-8") for k, p in FILES.items()}
 
-GRID_CREATE = '    gridMenu->addAction("&Yapı Gridi Oluştur...", this, [this]() { promptCreateGrid(); });\n'
-GRID_MANAGER = '    gridMenu->addAction("&Yapı Gridleri...", this, [this]() { promptGridManager(); });\n'
-WMENU_LAST = '    windowMenu->addAction("Tüm görünüşleri &kapat", this, [this]() { closeAllTwoPointViews(); });'
+GRID_BLOCK = """    cats.push_back({QStringLiteral("&Grid"), QStringLiteral("Grid"), {
+        uiCmd(QStringLiteral("&Yapı Gridi Oluştur..."), QStringLiteral("Grid Oluştur"), QStringLiteral("Yapı gridi oluştur..."), ToolGlyph::Extents,
+              [this]() { promptCreateGrid(); }),
+        uiCmd(QStringLiteral("Yapı &Gridleri..."), QStringLiteral("Gridler"), QStringLiteral("Yapı gridleri..."), ToolGlyph::Extents,
+              [this]() { promptGridManager(); }),
+    }});"""
+GRID_EMPTY = """    cats.push_back({QStringLiteral("&Grid"), QStringLiteral("Grid"), {
+    }});"""
+WIN_LAST = """        uiCmd(QStringLiteral("Tüm görünüşleri &kapat"), QString(), QString(), ToolGlyph::Delete,
+              [this]() { closeAllTwoPointViews(); }),"""
+GRID_CMDS = """
+        uiCmd(QStringLiteral("&Yapı Gridi Oluştur..."), QString(), QString(), ToolGlyph::Extents,
+              [this]() { promptCreateGrid(); }),
+        uiCmd(QStringLiteral("Yapı &Gridleri..."), QString(), QString(), ToolGlyph::Extents,
+              [this]() { promptGridManager(); }),"""
+BOLT = """            uiCmd(QStringLiteral("&Bolt (Bulon)"), QStringLiteral("Bolt"), QStringLiteral("İki parçayı bulonla birleştir"), ToolGlyph::Bolt,
+                  [this]() { app_.startBoltCommand(); }),
+"""
+KCUT = """        uiCmd(QStringLiteral("&Fitting (Uç Kesme)"),"""
 
 MUTATIONS = [
     ("qt: plan gorunusu menusu yanlis komuta baglanir", "qt",
-     [("app_.startPlanViewCommand(); });", "app_.startTwoPointViewCommand(); });")], "py"),
-    ("qt: ribbon'dan plan gorunusu dugmesi kaldirilir", "qt",
-     [('        addBtn(lay, ToolGlyph::Extents, "Plan Gör.", "Plan görünüşü — Z kotu ile (Ctrl+Shift+P)", [this]() { app_.startPlanViewCommand(); });\n',
-       "")], "py"),
-    ("qt: grid komutlari windowMenu'dan SONRA eklenir (eski dagilmis hal)", "qt",
-     [(GRID_CREATE, ""), (GRID_MANAGER, ""),
-      (WMENU_LAST, WMENU_LAST + "\n" + GRID_CREATE + GRID_MANAGER)], "py"),
+     [("[this]() { app_.startPlanViewCommand(); })", "[this]() { app_.startTwoPointViewCommand(); })")], "py"),
+    ("qt: ribbon bir kategoriyi (Görünüşler) atlar -> menü ile ayrışır", "qt",
+     [("        if (cat.tabTitle.isEmpty()) continue;",
+       "        if (cat.tabTitle.isEmpty() || cat.tabTitle == QStringLiteral(\"Görünüşler\")) continue;")], "py"),
+    ("qt: grid komutlari Pencere menusune dagitilir (eski dagilmis hal)", "qt",
+     [(GRID_BLOCK, GRID_EMPTY), (WIN_LAST, WIN_LAST + GRID_CMDS)], "py"),
+    ("qt: Bolt Çelik yerine Konstrüksiyon'a karisir", "qt",
+     [(BOLT, ""), (KCUT, BOLT.replace("            ", "        ") + KCUT)], "py"),
+    ("qt: createMenus'a elle komut eklenir (tablo disi)", "qt",
+     [("        fillUiMenu(menu, this, cat.entries, true);\n    }\n",
+       "        fillUiMenu(menu, this, cat.entries, true);\n    }\n    appMenu_->addAction(QStringLiteral(\"X\"), this, [this]() { promptCreateGrid(); });\n")], "py"),
+    ("qt: ribbon'a elle düğme eklenir (tablo disi)", "qt",
+     [("    ribbon->addWidget(tabs);\n",
+       "    { QToolButton* b = new QToolButton(); QObject::connect(b, &QToolButton::clicked, this, [this]() { app_.startBoltCommand(); }); }\n    ribbon->addWidget(tabs);\n")], "py"),
     ("qt: plan basligi Z kotunu gostermez", "qt",
      [("plan ? QStringLiteral(\"  —  plan, Z = %1 mm\")", "plan ? QStringLiteral(\"  —  %1 mm, XY'ye dik\")")], "py"),
     ("app: requestLevelParameter kotu >0 sarti ekler (regresyon)", "app",

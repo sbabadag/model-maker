@@ -582,228 +582,447 @@ void QtMainWindow::resizeEmbeddedCanvas() {
     app_.tryEnableStartupGpu();
 }
 
+// ===========================================================================
+// TEK KAYNAK KOMUT TABLOSU (menü == ribbon)
+// ---------------------------------------------------------------------------
+// Her komut kategorisi (Çizim, Düzenle, Çelik, ...) BURADA bir kez tanımlanır.
+// createMenus() aynı tablodan "☰ Menü" altındaki menüyü, createToolbar() aynı
+// tablodan ribbon sekmesini ve Quick Launch listesini üretir. Böylece bir komut
+// menüde olup ribbon'da olmayamaz, yanlış kategoriye düşemez. YENİ KOMUT
+// EKLERKEN yalnız commandCategories() içine, doğru kategoriye ekle.
+//   - tabTitle boş kategori yalnız menüde görünür (Dosya, Pencere).
+//   - uiGroup: menüde alt menü, ribbon'da açılır (InstantPopup) düğme.
+//   - uiSep: menüde ayırıcı, ribbon'da ince dikey çizgi.
+// ===========================================================================
+namespace {
+
+struct UiCommand {
+    QString menuText;    // menüdeki ad (& = mnemonik)
+    QString ribbonText;  // ribbon düğmesinin kısa adı
+    QString tip;         // ribbon araç ipucu
+    ToolGlyph glyph{ToolGlyph::Extents};
+    std::function<void()> run;
+    QString shortcut;               // gösterilen kısayol
+    bool bindShortcut{false};       // true: menü eylemine QKeySequence bağlanır
+    std::function<bool()> checked;  // doluysa menüde onay işaretli eylem
+};
+
+struct UiEntry {
+    enum class Kind { Command, Separator, Group };
+    Kind kind{Kind::Command};
+    UiCommand cmd;                  // Command: komutun kendisi; Group: başlık
+    std::vector<UiEntry> children;  // Group: alt menü / açılır düğme içeriği
+};
+
+UiEntry uiCmd(const QString& menu, const QString& ribbon, const QString& tip,
+              ToolGlyph glyph, std::function<void()> run) {
+    UiEntry e;
+    e.cmd.menuText = menu;
+    e.cmd.ribbonText = ribbon;
+    e.cmd.tip = tip;
+    e.cmd.glyph = glyph;
+    e.cmd.run = std::move(run);
+    return e;
+}
+
+UiEntry uiKey(UiEntry e, const QString& shortcut, bool bind) {
+    e.cmd.shortcut = shortcut;
+    e.cmd.bindShortcut = bind;
+    return e;
+}
+
+UiEntry uiSep() {
+    UiEntry e;
+    e.kind = UiEntry::Kind::Separator;
+    return e;
+}
+
+UiEntry uiGroup(const QString& menu, const QString& ribbon, const QString& tip,
+                ToolGlyph glyph, std::vector<UiEntry> children) {
+    UiEntry e;
+    e.kind = UiEntry::Kind::Group;
+    e.cmd.menuText = menu;
+    e.cmd.ribbonText = ribbon;
+    e.cmd.tip = tip;
+    e.cmd.glyph = glyph;
+    e.children = std::move(children);
+    return e;
+}
+
+// "&Taşı\tCtrl+X" -> "Taşı" (Quick Launch ve araç ipucu için düz ad).
+QString plainCommandLabel(QString s) {
+    const int tab = s.indexOf(QLatin1Char('\t'));
+    if (tab >= 0) s.truncate(tab);
+    s.replace(QStringLiteral("&&"), QStringLiteral("\x01"));
+    s.remove(QLatin1Char('&'));
+    s.replace(QStringLiteral("\x01"), QStringLiteral("&"));
+    if (s.endsWith(QStringLiteral("..."))) s.chop(3);
+    return s.trimmed();
+}
+
+// Menü eylemi: metin + kısayol + ikon + onay durumu tek yerde.
+QAction* addUiAction(QMenu* menu, QObject* ctx, const UiCommand& c, bool withIcon) {
+    QString text = c.menuText;
+    if (!c.shortcut.isEmpty() && !c.bindShortcut) text += QStringLiteral("\t") + c.shortcut;
+    QAction* act = menu->addAction(text, ctx, c.run);
+    if (withIcon) act->setIcon(makeToolIcon(c.glyph));
+    if (c.bindShortcut && !c.shortcut.isEmpty()) act->setShortcut(QKeySequence(c.shortcut));
+    if (!c.tip.isEmpty()) act->setToolTip(c.tip);
+    if (c.checked) {
+        act->setCheckable(true);
+        act->setChecked(c.checked());
+        // F7 vb. ile menü dışından değişebilir: menü her açılışta yeniden okur.
+        QObject::connect(menu, &QMenu::aboutToShow, act,
+                         [act, get = c.checked]() { act->setChecked(get()); });
+    }
+    return act;
+}
+
+void fillUiMenu(QMenu* menu, QObject* ctx, const std::vector<UiEntry>& entries, bool withIcons) {
+    for (const UiEntry& e : entries) {
+        switch (e.kind) {
+        case UiEntry::Kind::Separator:
+            menu->addSeparator();
+            break;
+        case UiEntry::Kind::Command:
+            addUiAction(menu, ctx, e.cmd, withIcons);
+            break;
+        case UiEntry::Kind::Group: {
+            QMenu* sub = menu->addMenu(e.cmd.menuText);
+            if (withIcons) sub->setIcon(makeToolIcon(e.cmd.glyph));
+            fillUiMenu(sub, ctx, e.children, false);
+            break;
+        }
+        }
+    }
+}
+
+void collectQuickCommands(const std::vector<UiEntry>& entries,
+                          std::vector<std::pair<QString, std::function<void()>>>& out) {
+    for (const UiEntry& e : entries) {
+        if (e.kind == UiEntry::Kind::Command && e.cmd.run)
+            out.emplace_back(plainCommandLabel(e.cmd.menuText), e.cmd.run);
+        else if (e.kind == UiEntry::Kind::Group)
+            collectQuickCommands(e.children, out);
+    }
+}
+
+} // namespace
+
+struct QtMainWindow::CommandCategory {
+    QString menuTitle;   // "☰ Menü" altındaki başlık (& = mnemonik)
+    QString tabTitle;    // ribbon sekmesi; boş = yalnız menü
+    std::vector<UiEntry> entries;
+};
+
+std::vector<QtMainWindow::CommandCategory> QtMainWindow::commandCategories() {
+    std::vector<CommandCategory> cats;
+
+    // ---- DOSYA (yalnız menü) ----
+    cats.push_back({QStringLiteral("&Dosya"), QString(), {
+        uiKey(uiCmd(QStringLiteral("&Yeni"), QStringLiteral("Yeni"), QStringLiteral("Yeni belge"), ToolGlyph::New,
+              [this]() { app_.newDocument(); }), QStringLiteral("Ctrl+N"), false),
+        uiKey(uiCmd(QStringLiteral("&Aç..."), QStringLiteral("Aç"), QStringLiteral("Belge aç"), ToolGlyph::Open,
+              [this]() { app_.openDocument(); }), QStringLiteral("Ctrl+O"), false),
+        uiKey(uiCmd(QStringLiteral("&Kaydet"), QStringLiteral("Kaydet"), QStringLiteral("Belgeyi kaydet"), ToolGlyph::Save,
+              [this]() { app_.saveDocument(); }), QStringLiteral("Ctrl+S"), false),
+        uiCmd(QStringLiteral("Farklı Kay&det..."), QStringLiteral("Farklı Kaydet"), QStringLiteral("Farklı kaydet"), ToolGlyph::Save,
+              [this]() { app_.saveDocumentAs(); }),
+        uiSep(),
+        uiCmd(QStringLiteral("DXF &İçe Aktar..."), QStringLiteral("DXF Al"), QStringLiteral("DXF içe aktar"), ToolGlyph::Import,
+              [this]() { app_.importDxf(); }),
+        uiCmd(QStringLiteral("DXF D&ışa Aktar..."), QStringLiteral("DXF Ver"), QStringLiteral("DXF dışa aktar"), ToolGlyph::Export,
+              [this]() { app_.exportDxf(); }),
+        uiSep(),
+        uiCmd(QStringLiteral("Çı&kış"), QStringLiteral("Çıkış"), QStringLiteral("Uygulamadan çık"), ToolGlyph::Delete,
+              []() { QApplication::quit(); }),
+    }});
+
+    // ---- ÇİZİM ----
+    cats.push_back({QStringLiteral("Çi&zim"), QStringLiteral("Çizim"), {
+        uiCmd(QStringLiteral("Çiz&gi"), QStringLiteral("Çizgi"), QStringLiteral("Çizgi"), ToolGlyph::Line,
+              [this]() { app_.selectTool(DrawTool::Line); }),
+        uiCmd(QStringLiteral("&Polyline"), QStringLiteral("Polyline"), QStringLiteral("Polyline"), ToolGlyph::Polyline,
+              [this]() { app_.selectTool(DrawTool::Polyline); }),
+        uiCmd(QStringLiteral("Dikdört&gen"), QStringLiteral("Dikdörtgen"), QStringLiteral("Dikdörtgen"), ToolGlyph::Rect,
+              [this]() { app_.selectTool(DrawTool::Rectangle); }),
+        uiCmd(QStringLiteral("Dai&re"), QStringLiteral("Daire"), QStringLiteral("Daire"), ToolGlyph::Circle,
+              [this]() { app_.selectTool(DrawTool::Circle); }),
+        uiCmd(QStringLiteral("&3DFACE"), QStringLiteral("3DFACE"), QStringLiteral("3B yüzey (3DFACE)"), ToolGlyph::Face3D,
+              [this]() { app_.selectTool(DrawTool::Face3D); }),
+        uiSep(),
+        uiKey(uiCmd(QStringLiteral("Böl (&Divide)"), QStringLiteral("Böl"), QStringLiteral("İki nokta arasını eşit böl (D)"), ToolGlyph::LinearArray,
+              [this]() { app_.activateDivide(); }), QStringLiteral("D"), false),
+    }});
+
+    // ---- DÜZENLE ----
+    cats.push_back({QStringLiteral("Dü&zenle"), QStringLiteral("Düzenle"), {
+        uiKey(uiCmd(QStringLiteral("&Geri Al"), QStringLiteral("Geri"), QStringLiteral("Geri al (Ctrl+Z)"), ToolGlyph::Undo,
+              [this]() { app_.undo(); }), QStringLiteral("Ctrl+Z"), false),
+        uiKey(uiCmd(QStringLiteral("&Yinele"), QStringLiteral("İleri"), QStringLiteral("Yinele (Ctrl+Y)"), ToolGlyph::Redo,
+              [this]() { app_.redo(); }), QStringLiteral("Ctrl+Y"), false),
+        uiCmd(QStringLiteral("&Pasif"), QStringLiteral("Pasif"), QStringLiteral("Tüm komutları bırak"), ToolGlyph::Pan,
+              [this]() { app_.deactivateAllCommands(); }),
+        uiSep(),
+        uiCmd(QStringLiteral("&Taşı"), QStringLiteral("Taşı"), QStringLiteral("Taşı"), ToolGlyph::Move,
+              [this]() { app_.startTransformCommand(TransformCommand::Move); }),
+        uiCmd(QStringLiteral("&Kopyala"), QStringLiteral("Kopyala"), QStringLiteral("Kopyala"), ToolGlyph::Copy,
+              [this]() { app_.startTransformCommand(TransformCommand::Copy); }),
+        uiCmd(QStringLiteral("&Ofset"), QStringLiteral("Ofset"), QStringLiteral("Ofset"), ToolGlyph::Offset,
+              [this]() { app_.startTransformCommand(TransformCommand::Offset); }),
+        uiCmd(QStringLiteral("A&yna"), QStringLiteral("Ayna"), QStringLiteral("Ayna"), ToolGlyph::Mirror,
+              [this]() { app_.startTransformCommand(TransformCommand::Mirror); }),
+        uiCmd(QStringLiteral("&Sil"), QStringLiteral("Sil"), QStringLiteral("Sil"), ToolGlyph::Delete,
+              [this]() { app_.startTransformCommand(TransformCommand::Delete); }),
+        uiSep(),
+        uiCmd(QStringLiteral("Doğrusal &Dizi"), QStringLiteral("Dizi"), QStringLiteral("Doğrusal dizi"), ToolGlyph::LinearArray,
+              [this]() { app_.startTransformCommand(TransformCommand::LinearArray); }),
+        uiCmd(QStringLiteral("Dairesel Di&zi"), QStringLiteral("D.Dizi"), QStringLiteral("Dairesel dizi"), ToolGlyph::PolarArray,
+              [this]() { app_.startTransformCommand(TransformCommand::PolarArray); }),
+        uiSep(),
+        uiCmd(QStringLiteral("T&rim"), QStringLiteral("Trim"), QStringLiteral("Trim"), ToolGlyph::Trim,
+              [this]() { app_.startTransformCommand(TransformCommand::Trim); }),
+        uiCmd(QStringLiteral("E&xtend"), QStringLiteral("Extend"), QStringLiteral("Extend"), ToolGlyph::Extend,
+              [this]() { app_.startTransformCommand(TransformCommand::Extend); }),
+        uiCmd(QStringLiteral("&Fillet"), QStringLiteral("Fillet"), QStringLiteral("Fillet"), ToolGlyph::Fillet,
+              [this]() { app_.startTransformCommand(TransformCommand::Fillet); }),
+    }});
+
+    // ---- ÇELİK: bağlantılar (bulon, kaynak, levhalar) + component kataloğu
+    //      + Tekla Component Bridge ----
+    {
+        std::vector<UiEntry> steel = {
+            uiCmd(QStringLiteral("&Bolt (Bulon)"), QStringLiteral("Bolt"), QStringLiteral("İki parçayı bulonla birleştir"), ToolGlyph::Bolt,
+                  [this]() { app_.startBoltCommand(); }),
+            uiCmd(QStringLiteral("&Kaynak (Weld)..."), QStringLiteral("Kaynak"), QStringLiteral("İki parça arasına kaynak"), ToolGlyph::Fillet,
+                  [this]() { startWeldCommand(); }),
+            uiSep(),
+            uiCmd(QStringLiteral("&End Plate (Alın Levhası)"), QStringLiteral("End Plate"), QStringLiteral("Alın levhası bağlantısı (kolon+kiriş)"), ToolGlyph::Plate,
+                  [this]() {
+                      mm::EndPlateParams p = app_.pendingEndPlateParams();
+                      if (!openEndPlateParamsDialog(p, p)) return;
+                      app_.setPendingEndPlateParams(p);
+                      app_.startEndPlateCommand();
+                  }),
+            uiCmd(QStringLiteral("&Fin Plate (Kayma Levhası)"), QStringLiteral("Fin Plate"), QStringLiteral("Kayma levhası bağlantısı (kolon+kiriş)"), ToolGlyph::Plate,
+                  [this]() {
+                      // Parametrik component: varsayılan şema parametreleriyle başla.
+                      app_.setPendingFinPlateParams({});
+                      app_.startFinPlateCommand();
+                  }),
+        };
+
+        // GENEL COMPONENT KATALOĞU (C7): registry + dialog kayıtlarından ÜRETİLİR;
+        // yeni component için buraya kod eklenmez. End Plate catalogVisible=false.
+        const auto catalog = mm::buildComponentCatalog(
+            mm::ComponentRegistry::instance(), mm::ComponentDialogRegistry::instance());
+        if (!catalog.empty()) {
+            std::vector<UiEntry> items;
+            for (const mm::CatalogEntry& ce : catalog) {
+                QString label = QString::fromStdWString(ce.displayName);
+                if (!ce.sourceComponentNumber.empty())
+                    label += QStringLiteral(" (") + QString::fromStdWString(ce.sourceComponentNumber) +
+                             QStringLiteral(")");
+                QString tip = QString::fromStdWString(ce.category);
+                if (!ce.coverageStatus.empty())
+                    tip += QStringLiteral(" — ") + QString::fromStdWString(ce.coverageStatus);
+                items.push_back(uiCmd(label, label, tip, ToolGlyph::Plate,
+                    [this, typeId = ce.typeId]() {
+                        app_.setPendingComponentParams({});
+                        app_.startComponentCommand(typeId);
+                    }));
+            }
+            steel.push_back(uiGroup(QStringLiteral("Component &Kataloğu"), QStringLiteral("Katalog"),
+                                    QStringLiteral("Component kataloğu"), ToolGlyph::Plate, std::move(items)));
+        }
+
+        steel.push_back(uiSep());
+        steel.push_back(uiGroup(QStringLiteral("&Tekla Component Bridge"), QStringLiteral("Tekla Bridge"),
+            QStringLiteral("Tekla'dan .mmbridge paketi içe aktar / dönüştür / kataloğa kaydet"), ToolGlyph::Import, {
+            uiCmd(QStringLiteral("&İçe Aktar..."), QStringLiteral("İçe Aktar"), QStringLiteral("Tekla Component Bridge içe aktar"), ToolGlyph::Import,
+                  [this]() { importTeklaBridge(); }),
+            uiCmd(QStringLiteral("&Native Component'e Dönüştür..."), QStringLiteral("Native"), QStringLiteral("Bridge paketini native component'e dönüştür"), ToolGlyph::Import,
+                  [this]() { importTeklaBridgeNative(); }),
+            uiCmd(QStringLiteral("&Kataloğa Şablon Kaydet..."), QStringLiteral("Şablon"), QStringLiteral("Bridge paketini katalog şablonu olarak kaydet"), ToolGlyph::Import,
+                  [this]() { saveTeklaBridgeTemplate(); }),
+        }));
+
+        cats.push_back({QStringLiteral("Çe&lik"), QStringLiteral("Çelik"), std::move(steel)});
+    }
+
+    // ---- KONSTRÜKSİYON & KESME ----
+    cats.push_back({QStringLiteral("K&onstrüksiyon"), QStringLiteral("Konstrüksiyon"), {
+        uiCmd(QStringLiteral("Konstrüksiyon &Düzlemi (3 Nokta)"), QStringLiteral("K. Düzlem"), QStringLiteral("Konstrüksiyon düzlemi (3 nokta)"), ToolGlyph::Plane,
+              [this]() { app_.startConstructionPlaneCommand(); }),
+        uiCmd(QStringLiteral("Konstrüksiyon &Nesnelerini Göster/Gizle"), QStringLiteral("Gizle/Göster"), QStringLiteral("Konstrüksiyon nesnelerini göster/gizle"), ToolGlyph::Toggle3D,
+              [this]() { app_.toggleConstructionVisibility(); }),
+        uiSep(),
+        uiCmd(QStringLiteral("&Fitting (Uç Kesme)"), QStringLiteral("Fitting"), QStringLiteral("Fitting (uç kesme)"), ToolGlyph::Trim,
+              [this]() { app_.startFittingCommand(); }),
+        uiCmd(QStringLiteral("&Plane Cut"), QStringLiteral("Plane Cut"), QStringLiteral("Düzlemle kesme"), ToolGlyph::Plane,
+              [this]() { app_.startPlaneCutCommand(); }),
+        uiCmd(QStringLiteral("&Line Cut (Çizgi)"), QStringLiteral("Line Cut"), QStringLiteral("Çizgiyle kesme"), ToolGlyph::Line,
+              [this]() { app_.startLineCutCommand(); }),
+        uiCmd(QStringLiteral("P&olygon Cut (3DFACE)"), QStringLiteral("Polygon Cut"), QStringLiteral("3DFACE ile kesme"), ToolGlyph::Face3D,
+              [this]() { app_.startPolygonCutCommand(); }),
+        uiCmd(QStringLiteral("P&art Cut (Parça)"), QStringLiteral("Part Cut"), QStringLiteral("Parça ile kesme"), ToolGlyph::Delete,
+              [this]() { app_.startPartCutCommand(); }),
+    }});
+
+    // ---- GÖRÜNÜM: kamera/navigasyon + standart yönler ----
+    cats.push_back({QStringLiteral("G&örünüm"), QStringLiteral("Görünüm"), {
+        uiCmd(QStringLiteral("2&B / 3B"), QStringLiteral("2B/3B"), QStringLiteral("2B / 3B görünüm"), ToolGlyph::Toggle3D,
+              [this]() { app_.toggle3DView(); }),
+        uiCmd(QStringLiteral("&Zoom Extents"), QStringLiteral("Extents"), QStringLiteral("Zoom Extents"), ToolGlyph::Extents,
+              [this]() { app_.zoomExtents2D(); }),
+        uiCmd(QStringLiteral("Zoom &Window"), QStringLiteral("Zoom Penc."), QStringLiteral("Zoom Window"), ToolGlyph::Extents,
+              [this]() { app_.startZoomWindow2D(); }),
+        uiKey(uiCmd(QStringLiteral("Görünümü &Sıfırla"), QStringLiteral("Sıfırla"), QStringLiteral("Görünümü sıfırla (Ctrl+R)"), ToolGlyph::Reset,
+              [this]() { app_.resetView(); }), QStringLiteral("Ctrl+R"), true),
+        uiSep(),
+        uiGroup(QStringLiteral("Görü&nüş Yönü"), QStringLiteral("Görünüş"), QStringLiteral("Standart görünüş yönleri (Ctrl+1..7)"), ToolGlyph::Extents, {
+            uiKey(uiCmd(QStringLiteral("Ön&den"), QString(), QString(), ToolGlyph::Extents,
+                  [this]() { app_.setStandardView(StandardView::Front); }), QStringLiteral("Ctrl+1"), true),
+            uiKey(uiCmd(QStringLiteral("Ar&kadan"), QString(), QString(), ToolGlyph::Extents,
+                  [this]() { app_.setStandardView(StandardView::Back); }), QStringLiteral("Ctrl+2"), true),
+            uiKey(uiCmd(QStringLiteral("&Soldan"), QString(), QString(), ToolGlyph::Extents,
+                  [this]() { app_.setStandardView(StandardView::Left); }), QStringLiteral("Ctrl+3"), true),
+            uiKey(uiCmd(QStringLiteral("S&ağdan"), QString(), QString(), ToolGlyph::Extents,
+                  [this]() { app_.setStandardView(StandardView::Right); }), QStringLiteral("Ctrl+4"), true),
+            uiSep(),
+            uiKey(uiCmd(QStringLiteral("Üs&tten"), QString(), QString(), ToolGlyph::Extents,
+                  [this]() { app_.setStandardView(StandardView::Top); }), QStringLiteral("Ctrl+5"), true),
+            uiKey(uiCmd(QStringLiteral("A&lttan"), QString(), QString(), ToolGlyph::Extents,
+                  [this]() { app_.setStandardView(StandardView::Bottom); }), QStringLiteral("Ctrl+6"), true),
+            uiSep(),
+            uiKey(uiCmd(QStringLiteral("&İzometrik"), QString(), QString(), ToolGlyph::Extents,
+                  [this]() { app_.setStandardView(StandardView::Isometric); }), QStringLiteral("Ctrl+7"), true),
+        }),
+        uiGroup(QStringLiteral("Görsel &Stil"), QStringLiteral("Stil"), QStringLiteral("3B görsel stil (Alt+1..4)"), ToolGlyph::Toggle3D, {
+            uiKey(uiCmd(QStringLiteral("&Wireframe"), QString(), QString(), ToolGlyph::Toggle3D,
+                  [this]() { app_.setVisualStyle(mm::VisualStyle::Wireframe); }), QStringLiteral("Alt+1"), false),
+            uiKey(uiCmd(QStringLiteral("&Yarı Saydam"), QString(), QString(), ToolGlyph::Toggle3D,
+                  [this]() { app_.setVisualStyle(mm::VisualStyle::Transparent); }), QStringLiteral("Alt+2"), false),
+            uiKey(uiCmd(QStringLiteral("&Gizli Çizgi"), QString(), QString(), ToolGlyph::Toggle3D,
+                  [this]() { app_.setVisualStyle(mm::VisualStyle::HiddenLine); }), QStringLiteral("Alt+3"), false),
+            uiKey(uiCmd(QStringLiteral("&Solid"), QString(), QString(), ToolGlyph::Toggle3D,
+                  [this]() { app_.setVisualStyle(mm::VisualStyle::Solid); }), QStringLiteral("Alt+4"), false),
+        }),
+        uiSep(),
+        uiKey(uiCmd(QStringLiteral("&Döndürme Merkezi"), QStringLiteral("Dön. Mrk."), QStringLiteral("Döndürme merkezi seç (R)"), ToolGlyph::Toggle3D,
+              [this]() { app_.startRotateCenterCommand(); }), QStringLiteral("R"), false),
+        uiCmd(QStringLiteral("Döndürme Merkezini &Temizle"), QStringLiteral("Mrk. Sil"), QStringLiteral("Döndürme merkezini temizle"), ToolGlyph::Reset,
+              [this]() { app_.clearRotateCenter(); }),
+        uiSep(),
+        uiCmd(QStringLiteral("&Benchmark (GDI vs GL)"), QStringLiteral("Benchmark"), QStringLiteral("GDI vs GL render benchmark"), ToolGlyph::Extents,
+              [this]() {
+                  FILE* diag = fopen("model-maker-render.log", "a");
+                  if (diag) { fprintf(diag, "MENU-BENCH-CLICKED\n"); fclose(diag); }
+                  app_.runRenderBenchmark();
+              }),
+    }});
+
+    // ---- ÇALIŞMA DÜZLEMİ & UCS + adlandırılmış görünümler ----
+    {
+        UiEntry ghost = uiKey(uiCmd(QStringLiteral("Çalışma Düzlemi &Hayaleti"), QStringLiteral("Hayalet"), QStringLiteral("Çalışma düzlemi hayaleti (F7)"), ToolGlyph::Toggle3D,
+                                    [this]() { app_.toggleWorkPlaneGhost(); }), QStringLiteral("F7"), false);
+        ghost.cmd.checked = [this]() { return app_.workPlaneGhostVisible(); };
+        cats.push_back({QStringLiteral("Çalışma &Düzlemi"), QStringLiteral("Çalışma Düzlemi"), {
+            uiCmd(QStringLiteral("Çalışma &Düzlemi (3 Nokta)"), QStringLiteral("Düzlem"), QStringLiteral("Çalışma düzlemi (3 nokta)"), ToolGlyph::Plane,
+                  [this]() { app_.startWorkPlaneCommand(); }),
+            uiCmd(QStringLiteral("Düzlemi &Sıfırla (Dünya)"), QStringLiteral("Düz. Sıfır"), QStringLiteral("Düzlemi sıfırla (dünya)"), ToolGlyph::Reset,
+                  [this]() { app_.resetWorkPlane(); }),
+            ghost,
+            uiSep(),
+            uiCmd(QStringLiteral("UCS'ye &Dik Görünüş"), QStringLiteral("UCS Dik"), QStringLiteral("UCS'ye dik görünüş"), ToolGlyph::Plane,
+                  [this]() { app_.setViewToWorkPlane(); }),
+            uiGroup(QStringLiteral("Çalışma Düzlemi (&Global)"), QStringLiteral("Global"), QStringLiteral("Çalışma düzlemi (global)"), ToolGlyph::Plane, {
+                uiCmd(QStringLiteral("&XY (Üstten)"), QString(), QString(), ToolGlyph::Plane, [this]() { app_.setGlobalWorkPlane(0); }),
+                uiCmd(QStringLiteral("X&Z (Önden)"),  QString(), QString(), ToolGlyph::Plane, [this]() { app_.setGlobalWorkPlane(1); }),
+                uiCmd(QStringLiteral("&YZ (Sağdan)"), QString(), QString(), ToolGlyph::Plane, [this]() { app_.setGlobalWorkPlane(2); }),
+            }),
+            uiSep(),
+            uiCmd(QStringLiteral("Görünümü &Adlandır..."), QStringLiteral("Adlandır"), QStringLiteral("Görünümü adlandır..."), ToolGlyph::Save,
+                  [this]() { promptSaveNamedView(); }),
+            uiCmd(QStringLiteral("Adlandırılmış &Görünüme Git..."), QStringLiteral("Gör. Git"), QStringLiteral("Adlandırılmış görünüme git..."), ToolGlyph::Open,
+                  [this]() { promptGotoNamedView(); }),
+            uiCmd(QStringLiteral("Adlandırılmış Görünümü S&il..."), QStringLiteral("Gör. Sil"), QStringLiteral("Adlandırılmış görünümü sil..."), ToolGlyph::Delete,
+                  [this]() { promptDeleteNamedView(); }),
+        }});
+    }
+
+    // ---- GÖRÜNÜŞLER: yeni görünüş pencereleri (MDI) ----
+    cats.push_back({QStringLiteral("Görünüş&ler"), QStringLiteral("Görünüşler"), {
+        uiKey(uiCmd(QStringLiteral("&2 Noktalı Görünüş (XY'ye dik)"), QStringLiteral("2N Gör."), QStringLiteral("2 noktalı görünüş — XY'ye dik (Ctrl+Shift+V)"), ToolGlyph::Plane,
+              [this]() { app_.startTwoPointViewCommand(); }), QStringLiteral("Ctrl+Shift+V"), true),
+        uiKey(uiCmd(QStringLiteral("&Plan Görünüşü (Z kotu...)"), QStringLiteral("Plan Gör."), QStringLiteral("Plan görünüşü — Z kotu ile (Ctrl+Shift+P)"), ToolGlyph::Extents,
+              [this]() { app_.startPlanViewCommand(); }), QStringLiteral("Ctrl+Shift+P"), true),
+        uiGroup(QStringLiteral("&Yeni Görünüş"), QStringLiteral("Yeni Görünüş"), QStringLiteral("Tekla tarzı yeni görünüş komutları"), ToolGlyph::Plane, {
+            uiCmd(QStringLiteral("&3 Noktalı Görünüş"), QString(), QString(), ToolGlyph::Plane,
+                  [this]() { app_.startThreePointViewCommand(); }),
+            uiCmd(QStringLiteral("&Çalışma Düzleminde Görünüş"), QString(), QString(), ToolGlyph::Plane,
+                  [this]() { app_.startViewOnWorkPlaneCommand(); }),
+            uiSep(),
+            uiCmd(QStringLiteral("Parça &Ön Düzlemi"), QString(), QString(), ToolGlyph::Plane,
+                  [this]() { app_.startPartPlaneViewCommand(PartPlane::Front); }),
+            uiCmd(QStringLiteral("Parça Ü&st Düzlemi"), QString(), QString(), ToolGlyph::Plane,
+                  [this]() { app_.startPartPlaneViewCommand(PartPlane::Top); }),
+            uiCmd(QStringLiteral("Parça &Uç Düzlemi"), QString(), QString(), ToolGlyph::Plane,
+                  [this]() { app_.startPartPlaneViewCommand(PartPlane::End); }),
+            uiCmd(QStringLiteral("Parça &Arka Düzlemi"), QString(), QString(), ToolGlyph::Plane,
+                  [this]() { app_.startPartPlaneViewCommand(PartPlane::Back); }),
+            uiCmd(QStringLiteral("Parça A&lt Düzlemi"), QString(), QString(), ToolGlyph::Plane,
+                  [this]() { app_.startPartPlaneViewCommand(PartPlane::Bottom); }),
+            uiSep(),
+            uiCmd(QStringLiteral("Parçanın &Varsayılan Görünüşleri (Ön/Üst/Uç)"), QString(), QString(), ToolGlyph::Plane,
+                  [this]() { app_.startPartDefaultViewsCommand(); }),
+            uiCmd(QStringLiteral("Parçanın 3&B Görünüşü"), QString(), QString(), ToolGlyph::Toggle3D,
+                  [this]() { app_.startPart3DViewCommand(); }),
+            uiSep(),
+            uiCmd(QStringLiteral("&Grid Çizgileri Boyunca Görünüşler"), QString(), QString(), ToolGlyph::Extents,
+                  [this]() { app_.startGridViewsCommand(); }),
+        }),
+    }});
+
+    // ---- GRID ----
+    cats.push_back({QStringLiteral("&Grid"), QStringLiteral("Grid"), {
+        uiCmd(QStringLiteral("&Yapı Gridi Oluştur..."), QStringLiteral("Grid Oluştur"), QStringLiteral("Yapı gridi oluştur..."), ToolGlyph::Extents,
+              [this]() { promptCreateGrid(); }),
+        uiCmd(QStringLiteral("Yapı &Gridleri..."), QStringLiteral("Gridler"), QStringLiteral("Yapı gridleri..."), ToolGlyph::Extents,
+              [this]() { promptGridManager(); }),
+    }});
+
+    // ---- PENCERE (yalnız menü) ----
+    cats.push_back({QStringLiteral("&Pencere"), QString(), {
+        uiCmd(QStringLiteral("&Döşe"), QString(), QString(), ToolGlyph::Extents,
+              [this]() { if (mdiArea_) mdiArea_->tileSubWindows(); }),
+        uiCmd(QStringLiteral("&Basamakla"), QString(), QString(), ToolGlyph::Extents,
+              [this]() { if (mdiArea_) mdiArea_->cascadeSubWindows(); }),
+        uiCmd(QStringLiteral("&Model görünüşünü büyüt"), QString(), QString(), ToolGlyph::Extents,
+              [this]() {
+                  if (modelSubWindow_) { modelSubWindow_->showMaximized(); mdiArea_->setActiveSubWindow(modelSubWindow_); }
+              }),
+        uiSep(),
+        uiCmd(QStringLiteral("Tüm görünüşleri &kapat"), QString(), QString(), ToolGlyph::Delete,
+              [this]() { closeAllTwoPointViews(); }),
+    }});
+
+    return cats;
+}
+
 void QtMainWindow::createMenus() {
     // Tekla tarzi: ust menubar yerine sol ust kosedeki TEK "Menu" dugmesi.
     // Tum menuler bu tek kok menuye (appMenu_) baglanir; dugme createToolbar'da
     // ribbon'un en soluna InstantPopup olarak eklenir. Menubar gizlenir.
+    // Icerik TEK KAYNAK commandCategories() tablosundan uretilir (ribbon ile ayni).
     menuBar()->setVisible(false);
     appMenu_ = new QMenu(this);
     appMenu_->setTitle(QStringLiteral("Menü"));
 
-    QMenu* fileMenu = appMenu_->addMenu("&Dosya");
-    fileMenu->addAction("&Yeni", this, [this]() { app_.newDocument(); })->setIcon(makeToolIcon(ToolGlyph::New));
-    fileMenu->addAction("&Aç...", this, [this]() { app_.openDocument(); })->setIcon(makeToolIcon(ToolGlyph::Open));
-    fileMenu->addAction("&Kaydet", this, [this]() { app_.saveDocument(); })->setIcon(makeToolIcon(ToolGlyph::Save));
-    fileMenu->addAction("Farklı Kay&det...", this, [this]() { app_.saveDocumentAs(); });
-    fileMenu->addSeparator();
-    fileMenu->addAction("DXF &İçe Aktar...", this, [this]() { app_.importDxf(); })->setIcon(makeToolIcon(ToolGlyph::Import));
-    fileMenu->addAction("DXF &Dışa Aktar...", this, [this]() { app_.exportDxf(); })->setIcon(makeToolIcon(ToolGlyph::Export));
-    fileMenu->addSeparator();
-    fileMenu->addAction("Tekla Component &Bridge İçe Aktar...", this,
-        [this]() { importTeklaBridge(); })->setIcon(makeToolIcon(ToolGlyph::Import));
-    fileMenu->addAction("Tekla Bridge → &Native Component'e Dönüştür...", this,
-        [this]() { importTeklaBridgeNative(); })->setIcon(makeToolIcon(ToolGlyph::Import));
-    fileMenu->addAction("Tekla Bridge → &Kataloğa Şablon Kaydet...", this,
-        [this]() { saveTeklaBridgeTemplate(); })->setIcon(makeToolIcon(ToolGlyph::Import));
-    fileMenu->addSeparator();
-    fileMenu->addAction("Çı&kış", qApp, &QApplication::quit);
-
-    QMenu* drawMenu = appMenu_->addMenu("Çi&zim");
-    drawMenu->addAction("Çiz&gi", this, [this]() { app_.selectTool(DrawTool::Line); })->setIcon(makeToolIcon(ToolGlyph::Line));
-    drawMenu->addAction("&Polyline", this, [this]() { app_.selectTool(DrawTool::Polyline); })->setIcon(makeToolIcon(ToolGlyph::Polyline));
-    drawMenu->addAction("Dikdört&gen", this, [this]() { app_.selectTool(DrawTool::Rectangle); })->setIcon(makeToolIcon(ToolGlyph::Rect));
-    drawMenu->addAction("Dai&re", this, [this]() { app_.selectTool(DrawTool::Circle); })->setIcon(makeToolIcon(ToolGlyph::Circle));
-    drawMenu->addAction("Böl (&Divide)", this, [this]() { app_.activateDivide(); });
-    drawMenu->addAction("&3DFACE", this, [this]() { app_.selectTool(DrawTool::Face3D); })->setIcon(makeToolIcon(ToolGlyph::Face3D));
-
-    QMenu* modifyMenu = appMenu_->addMenu("Dü&zenle");
-    modifyMenu->addAction("&Pasif", this, [this]() { app_.deactivateAllCommands(); })->setIcon(makeToolIcon(ToolGlyph::Pan));
-    modifyMenu->addSeparator();
-    modifyMenu->addAction("&Taşı", this, [this]() { app_.startTransformCommand(TransformCommand::Move); })->setIcon(makeToolIcon(ToolGlyph::Move));
-    modifyMenu->addAction("&Kopyala", this, [this]() { app_.startTransformCommand(TransformCommand::Copy); })->setIcon(makeToolIcon(ToolGlyph::Copy));
-    modifyMenu->addAction("&Ofset", this, [this]() { app_.startTransformCommand(TransformCommand::Offset); })->setIcon(makeToolIcon(ToolGlyph::Offset));
-    modifyMenu->addAction("A&yna", this, [this]() { app_.startTransformCommand(TransformCommand::Mirror); })->setIcon(makeToolIcon(ToolGlyph::Mirror));
-    modifyMenu->addAction("&Sil", this, [this]() { app_.startTransformCommand(TransformCommand::Delete); })->setIcon(makeToolIcon(ToolGlyph::Delete));
-    modifyMenu->addSeparator();
-    modifyMenu->addAction("Doğrusal &Dizi", this, [this]() { app_.startTransformCommand(TransformCommand::LinearArray); })->setIcon(makeToolIcon(ToolGlyph::LinearArray));
-    modifyMenu->addAction("Dairesel Di&zi", this, [this]() { app_.startTransformCommand(TransformCommand::PolarArray); })->setIcon(makeToolIcon(ToolGlyph::PolarArray));
-    modifyMenu->addSeparator();
-    modifyMenu->addAction("&Trim", this, [this]() { app_.startTransformCommand(TransformCommand::Trim); })->setIcon(makeToolIcon(ToolGlyph::Trim));
-    modifyMenu->addAction("E&xtend", this, [this]() { app_.startTransformCommand(TransformCommand::Extend); })->setIcon(makeToolIcon(ToolGlyph::Extend));
-    modifyMenu->addAction("&Fillet", this, [this]() { app_.startTransformCommand(TransformCommand::Fillet); })->setIcon(makeToolIcon(ToolGlyph::Fillet));
-
-    // ---- KONSTRÜKSİYON & KESME: konstrüksiyon nesneleri + kesme komutları ----
-    QMenu* constructionMenu = appMenu_->addMenu("K&onstrüksiyon");
-    constructionMenu->addAction("Konstrüksiyon &Düzlemi (3 Nokta)", this,
-        [this]() { app_.startConstructionPlaneCommand(); })->setIcon(makeToolIcon(ToolGlyph::Plane));
-    constructionMenu->addAction("Konstrüksiyon &Nesnelerini Göster/Gizle", this,
-        [this]() { app_.toggleConstructionVisibility(); });
-    constructionMenu->addSeparator();
-    constructionMenu->addAction("&Fitting (Uç Kesme)", this,
-        [this]() { app_.startFittingCommand(); });
-    constructionMenu->addAction("&Plane Cut", this,
-        [this]() { app_.startPlaneCutCommand(); });
-    constructionMenu->addAction("&Line Cut (Çizgi)", this,
-        [this]() { app_.startLineCutCommand(); });
-    constructionMenu->addAction("&Polygon Cut (3DFACE)", this,
-        [this]() { app_.startPolygonCutCommand(); });
-    constructionMenu->addAction("&Part Cut (Parça)", this,
-        [this]() { app_.startPartCutCommand(); });
-    constructionMenu->addSeparator();
-    constructionMenu->addAction("&Bolt (Bulon)", this,
-        [this]() { app_.startBoltCommand(); })->setIcon(makeToolIcon(ToolGlyph::Bolt));
-    constructionMenu->addAction("&End Plate (Alın Levhası)", this,
-        [this]() {
-            mm::EndPlateParams p = app_.pendingEndPlateParams();
-            if (!openEndPlateParamsDialog(p, p)) return;
-            app_.setPendingEndPlateParams(p);
-            app_.startEndPlateCommand();
-        })->setIcon(makeToolIcon(ToolGlyph::Plate));
-    constructionMenu->addAction("&Fin Plate (Kayma Levhası)", this,
-        [this]() {
-            // Parametrik component: varsayilan sema parametreleriyle basla;
-            // diyalog yoksa registry'nin varsayilanlari gecerli olur.
-            app_.setPendingFinPlateParams({});
-            app_.startFinPlateCommand();
-        })->setIcon(makeToolIcon(ToolGlyph::Plate));
-
-    // ---- GENEL COMPONENT KATALOĞU (C7) -------------------------------------
-    // Registry + dialog kayitlarindan URETILIR; yeni component icin BURAYA kod
-    // eklenmez. Her katalog girisi generic komut akisini (startComponentCommand)
-    // baslatir — Application/switch yok. End Plate kendi zengin komutunu
-    // kullandigi icin catalogVisible=false ile katalog disinda kalir.
-    {
-        const auto catalog = mm::buildComponentCatalog(
-            mm::ComponentRegistry::instance(), mm::ComponentDialogRegistry::instance());
-        if (!catalog.empty()) {
-            constructionMenu->addSeparator();
-            QMenu* catalogMenu = constructionMenu->addMenu("Component &Kataloğu");
-            for (const mm::CatalogEntry& e : catalog) {
-                QString label = QString::fromStdWString(e.displayName);
-                if (!e.sourceComponentNumber.empty())
-                    label += QStringLiteral(" (") +
-                             QString::fromStdWString(e.sourceComponentNumber) +
-                             QStringLiteral(")");
-                QString tip = QString::fromStdWString(e.category);
-                if (!e.coverageStatus.empty())
-                    tip += QStringLiteral(" — ") + QString::fromStdWString(e.coverageStatus);
-                QAction* act = catalogMenu->addAction(
-                    label, this, [this, typeId = e.typeId]() {
-                        app_.setPendingComponentParams({});
-                        app_.startComponentCommand(typeId);
-                    });
-                act->setToolTip(tip);
-            }
-        }
+    for (const CommandCategory& cat : commandCategories()) {
+        QMenu* menu = appMenu_->addMenu(cat.menuTitle);
+        fillUiMenu(menu, this, cat.entries, true);
     }
-
-    // ---- ÇELİK: kaynak (weld) + imalat assembly -----------------------------
-    QMenu* steelMenu = appMenu_->addMenu("Çe&lik");
-    steelMenu->addAction("&Kaynak (Weld)...", this, [this]() { startWeldCommand(); });
-
-    // ---- GÖRÜNÜM: kamera/navigasyon + standart yönler ----
-    QMenu* viewMenu = appMenu_->addMenu("G&örünüm");
-    viewMenu->addAction("&Zoom Extents", this, [this]() { app_.zoomExtents2D(); })->setIcon(makeToolIcon(ToolGlyph::Extents));
-    viewMenu->addAction("Zoom &Window", this, [this]() { app_.startZoomWindow2D(); })->setIcon(makeToolIcon(ToolGlyph::Extents));
-    viewMenu->addAction("2&B / 3B", this, [this]() { app_.toggle3DView(); })->setIcon(makeToolIcon(ToolGlyph::Toggle3D));
-    viewMenu->addSeparator();
-    QMenu* viewDirMenu = viewMenu->addMenu("Görü&nüş");
-    viewDirMenu->addAction("Ön&den", this, [this]() { app_.setStandardView(StandardView::Front); })
-        ->setShortcut(QKeySequence(QStringLiteral("Ctrl+1")));
-    viewDirMenu->addAction("Ar&kadan", this, [this]() { app_.setStandardView(StandardView::Back); })
-        ->setShortcut(QKeySequence(QStringLiteral("Ctrl+2")));
-    viewDirMenu->addAction("&Sol", this, [this]() { app_.setStandardView(StandardView::Left); })
-        ->setShortcut(QKeySequence(QStringLiteral("Ctrl+3")));
-    viewDirMenu->addAction("&Sağ", this, [this]() { app_.setStandardView(StandardView::Right); })
-        ->setShortcut(QKeySequence(QStringLiteral("Ctrl+4")));
-    viewDirMenu->addSeparator();
-    viewDirMenu->addAction("Üs&t", this, [this]() { app_.setStandardView(StandardView::Top); })
-        ->setShortcut(QKeySequence(QStringLiteral("Ctrl+5")));
-    viewDirMenu->addAction("Al&t", this, [this]() { app_.setStandardView(StandardView::Bottom); })
-        ->setShortcut(QKeySequence(QStringLiteral("Ctrl+6")));
-    viewDirMenu->addSeparator();
-    viewDirMenu->addAction("&İzometrik", this, [this]() { app_.setStandardView(StandardView::Isometric); })
-        ->setShortcut(QKeySequence(QStringLiteral("Ctrl+7")));
-    viewMenu->addSeparator();
-    viewMenu->addAction("Görünümü Sıfırla (Ctrl+R)", this,
-        [this]() { app_.resetView(); })->setShortcut(QKeySequence(QStringLiteral("Ctrl+R")));
-    viewMenu->addAction("&Döndürme Merkezi (R)", this, [this]() { app_.startRotateCenterCommand(); });
-    viewMenu->addAction("Döndürme Merkezini &Temizle", this, [this]() { app_.clearRotateCenter(); });
-    viewMenu->addSeparator();
-    viewMenu->addAction("&Benchmark (GDI vs GL)", this, [this]() {
-        FILE* diag = fopen("model-maker-render.log", "a");
-        if (diag) { fprintf(diag, "MENU-BENCH-CLICKED\n"); fclose(diag); }
-        app_.runRenderBenchmark();
-    });
-
-    // ---- ÇALIŞMA DÜZLEMİ & UCS: work plane + UCS + adlandırılmış görünümler ----
-    QMenu* workPlaneMenu = appMenu_->addMenu("Çalışma &Düzlemi");
-    workPlaneMenu->addAction("Çalışma &Düzlemi (3 Nokta)", this, [this]() { app_.startWorkPlaneCommand(); })->setIcon(makeToolIcon(ToolGlyph::Plane));
-    workPlaneMenu->addAction("Düzlemi &Sıfırla (Dünya)", this, [this]() { app_.resetWorkPlane(); })->setIcon(makeToolIcon(ToolGlyph::Reset));
-    QAction* ghostPlaneAction = workPlaneMenu->addAction("Çalışma Düzlemi &Hayaleti (F7)", this,
-        [this]() { app_.toggleWorkPlaneGhost(); });
-    ghostPlaneAction->setCheckable(true);
-    ghostPlaneAction->setChecked(app_.workPlaneGhostVisible());
-    workPlaneMenu->addSeparator();
-    workPlaneMenu->addAction("UCS'ye &Dik Görünüş", this, [this]() { app_.setViewToWorkPlane(); })
-        ->setIcon(makeToolIcon(ToolGlyph::Plane));
-    QMenu* globalPlaneMenu = workPlaneMenu->addMenu("Çalışma Düzlemi (&Global)");
-    globalPlaneMenu->addAction("&XY (Üstten)", this, [this]() { app_.setGlobalWorkPlane(0); });
-    globalPlaneMenu->addAction("&XZ (Önden)", this, [this]() { app_.setGlobalWorkPlane(1); });
-    globalPlaneMenu->addAction("&YZ (Sağdan)", this, [this]() { app_.setGlobalWorkPlane(2); });
-    workPlaneMenu->addSeparator();
-    workPlaneMenu->addAction("Görünümü &Adlandır...", this, [this]() { promptSaveNamedView(); });
-    workPlaneMenu->addAction("Adlandırılmış &Görünüme Git...", this, [this]() { promptGotoNamedView(); });
-    workPlaneMenu->addAction("Adlandırılmış Görünümü &Sil...", this, [this]() { promptDeleteNamedView(); });
-
-    // ---- GÖRÜNÜŞLER: yeni görünüş pencereleri (MDI) ----
-    QMenu* viewsMenu = appMenu_->addMenu("Görünüş&ler");
-    QAction* twoPointAction = viewsMenu->addAction("&2 Noktalı Görünüş (XY'ye dik)", this,
-        [this]() { app_.startTwoPointViewCommand(); });
-    twoPointAction->setIcon(makeToolIcon(ToolGlyph::Plane));
-    twoPointAction->setShortcut(QKeySequence(QStringLiteral("Ctrl+Shift+V")));
-    QAction* planViewAction = viewsMenu->addAction("&Plan Görünüşü (Z kotu...)", this,
-        [this]() { app_.startPlanViewCommand(); });
-    planViewAction->setIcon(makeToolIcon(ToolGlyph::Extents));
-    planViewAction->setShortcut(QKeySequence(QStringLiteral("Ctrl+Shift+P")));
-    QMenu* newViewMenu = viewsMenu->addMenu("&Yeni Görünüş");
-    newViewMenu->addAction("&3 Noktalı Görünüş", this,
-        [this]() { app_.startThreePointViewCommand(); });
-    newViewMenu->addAction("&Çalışma Düzleminde Görünüş", this,
-        [this]() { app_.startViewOnWorkPlaneCommand(); });
-    newViewMenu->addSeparator();
-    newViewMenu->addAction("Parça &Ön Düzlemi", this,
-        [this]() { app_.startPartPlaneViewCommand(PartPlane::Front); });
-    newViewMenu->addAction("Parça &Üst Düzlemi", this,
-        [this]() { app_.startPartPlaneViewCommand(PartPlane::Top); });
-    newViewMenu->addAction("Parça &Uç Düzlemi", this,
-        [this]() { app_.startPartPlaneViewCommand(PartPlane::End); });
-    newViewMenu->addAction("Parça &Arka Düzlemi", this,
-        [this]() { app_.startPartPlaneViewCommand(PartPlane::Back); });
-    newViewMenu->addAction("Parça &Alt Düzlemi", this,
-        [this]() { app_.startPartPlaneViewCommand(PartPlane::Bottom); });
-    newViewMenu->addSeparator();
-    newViewMenu->addAction("Parçanın &Varsayılan Görünüşleri (Ön/Üst/Uç)", this,
-        [this]() { app_.startPartDefaultViewsCommand(); });
-    newViewMenu->addAction("Parçanın &3B Görünüşü", this,
-        [this]() { app_.startPart3DViewCommand(); });
-    newViewMenu->addSeparator();
-    newViewMenu->addAction("Grid &Çizgileri Boyunca Görünüşler", this,
-        [this]() { app_.startGridViewsCommand(); });
-
-    // ---- GRID ----
-    QMenu* gridMenu = appMenu_->addMenu("&Grid");
-    gridMenu->addAction("&Yapı Gridi Oluştur...", this, [this]() { promptCreateGrid(); });
-    gridMenu->addAction("&Yapı Gridleri...", this, [this]() { promptGridManager(); });
-
-    QMenu* windowMenu = appMenu_->addMenu("&Pencere");
-    windowMenu->addAction("&Döşe", this, [this]() { if (mdiArea_) mdiArea_->tileSubWindows(); });
-    windowMenu->addAction("&Basamakla", this, [this]() { if (mdiArea_) mdiArea_->cascadeSubWindows(); });
-    windowMenu->addAction("&Model görünüşünü büyüt", this, [this]() {
-        if (modelSubWindow_) { modelSubWindow_->showMaximized(); mdiArea_->setActiveSubWindow(modelSubWindow_); }
-    });
-    windowMenu->addSeparator();
-    windowMenu->addAction("Tüm görünüşleri &kapat", this, [this]() { closeAllTwoPointViews(); });
 }
 
 void QtMainWindow::importTeklaBridge() {
@@ -1875,214 +2094,54 @@ void QtMainWindow::createToolbar() {
     tabs->setDocumentMode(true);
     tabs->setTabPosition(QTabWidget::North);
 
-    // ---- Çizim tab ----
-    QWidget* drawTab = new QWidget();
-    QHBoxLayout* drawLayout = new QHBoxLayout(drawTab);
-    drawLayout->setContentsMargins(4, 2, 4, 2);
-    drawLayout->setSpacing(2);
-    auto addDrawBtn = [&](const ToolGlyph glyph, const QString& text, DrawTool tool) {
-        QToolButton* btn = new QToolButton(drawTab);
-        btn->setIcon(makeToolIcon(glyph));
-        btn->setIconSize(QSize(22, 22));
-        btn->setText(text);
-        btn->setToolButtonStyle(Qt::ToolButtonTextUnderIcon);
-        btn->setFixedSize(58, 48);
-        btn->setStyleSheet("QToolButton { font-size: 7.5pt; color: #E8E8E8; border: none; border-radius: 3px; background: transparent; }" "QToolButton:hover { background: #3C3C44; }" "QToolButton:pressed { background: #23232B; }");
-        QObject::connect(btn, &QToolButton::clicked, this, [this, tool]() { app_.selectTool(tool); });
-        drawLayout->addWidget(btn);
-    };
-    addDrawBtn(ToolGlyph::Line, "Çizgi", DrawTool::Line);
-    addDrawBtn(ToolGlyph::Polyline, "Polyline", DrawTool::Polyline);
-    addDrawBtn(ToolGlyph::Rect, "Dikdörtgen", DrawTool::Rectangle);
-    addDrawBtn(ToolGlyph::Circle, "Daire", DrawTool::Circle);
-    addDrawBtn(ToolGlyph::Face3D, "3DFACE", DrawTool::Face3D);
-    drawLayout->addStretch();
-    tabs->addTab(drawTab, "Çizim");
-
-    // ---- Düzenle tab ----
-    QWidget* modTab = new QWidget();
-    QHBoxLayout* modLayout = new QHBoxLayout(modTab);
-    modLayout->setContentsMargins(4, 2, 4, 2);
-    modLayout->setSpacing(2);
-    auto addModBtn = [&](const ToolGlyph glyph, const QString& text, auto action) {
-        QToolButton* btn = new QToolButton(modTab);
-        btn->setIcon(makeToolIcon(glyph));
-        btn->setIconSize(QSize(20, 20));
-        btn->setText(text);
-        btn->setToolButtonStyle(Qt::ToolButtonTextUnderIcon);
-        btn->setFixedSize(52, 48);
-        btn->setStyleSheet("QToolButton { font-size: 7.5pt; color: #E8E8E8; border: none; border-radius: 3px; background: transparent; }" "QToolButton:hover { background: #3C3C44; }" "QToolButton:pressed { background: #23232B; }");
-        QObject::connect(btn, &QToolButton::clicked, this, action);
-        modLayout->addWidget(btn);
-    };
-    addModBtn(ToolGlyph::Undo,  "Geri",   [this]() { app_.undo(); });
-    addModBtn(ToolGlyph::Redo,  "İleri",  [this]() { app_.redo(); });
-    addModBtn(ToolGlyph::Pan,   "Pasif",  [this]() { app_.deactivateAllCommands(); });
-    addModBtn(ToolGlyph::Move,  "Taşı",   [this]() { app_.startTransformCommand(TransformCommand::Move); });
-    addModBtn(ToolGlyph::Copy,  "Kopyala",[this]() { app_.startTransformCommand(TransformCommand::Copy); });
-    addModBtn(ToolGlyph::Offset,"Ofset",  [this]() { app_.startTransformCommand(TransformCommand::Offset); });
-    addModBtn(ToolGlyph::Mirror,"Ayna",   [this]() { app_.startTransformCommand(TransformCommand::Mirror); });
-    addModBtn(ToolGlyph::Delete,"Sil",    [this]() { app_.startTransformCommand(TransformCommand::Delete); });
-    addModBtn(ToolGlyph::LinearArray, "Dizi",   [this]() { app_.startTransformCommand(TransformCommand::LinearArray); });
-    addModBtn(ToolGlyph::PolarArray,  "D.Dizi", [this]() { app_.startTransformCommand(TransformCommand::PolarArray); });
-    addModBtn(ToolGlyph::Trim,   "Trim",   [this]() { app_.startTransformCommand(TransformCommand::Trim); });
-    addModBtn(ToolGlyph::Extend, "Extend", [this]() { app_.startTransformCommand(TransformCommand::Extend); });
-    addModBtn(ToolGlyph::Fillet, "Fillet", [this]() { app_.startTransformCommand(TransformCommand::Fillet); });
-    modLayout->addStretch();
-    tabs->addTab(modTab, "Düzenle");
-
-    // ---- Ortak sekme yardimcilari: her sekme ayni stil/davranisla kurulur ----
+    // ---- Ribbon sekmeleri: createMenus ile AYNI tablodan (commandCategories) ----
+    // Her menü kategorisi = bir ribbon sekmesi, aynı sıra ve aynı içerik.
+    // Grup = açılır düğme, ayırıcı = ince dikey çizgi. Yalnız-menü kategoriler
+    // (Dosya, Pencere) sekme açmaz.
     const QString tabBtnStyle = QStringLiteral(
         "QToolButton { font-size: 7.5pt; color: #E8E8E8; border: none; border-radius: 3px; background: transparent; }"
         "QToolButton:hover { background: #3C3C44; }"
         "QToolButton:pressed { background: #23232B; }"
         "QToolButton::menu-indicator { image: none; }");
-    auto beginTab = [&](const QString& title) {
-        QWidget* w = new QWidget();
-        QHBoxLayout* l = new QHBoxLayout(w);
-        l->setContentsMargins(4, 2, 4, 2);
-        l->setSpacing(2);
-        tabs->addTab(w, title);
-        return l;
-    };
-    auto addBtn = [&](QHBoxLayout* lay, const ToolGlyph glyph, const QString& text,
-                      const QString& tip, auto action) {
-        QToolButton* btn = new QToolButton();
-        btn->setIcon(makeToolIcon(glyph));
-        btn->setIconSize(QSize(22, 22));
-        btn->setText(text);
-        btn->setToolButtonStyle(Qt::ToolButtonTextUnderIcon);
-        btn->setFixedSize(58, 48);
-        btn->setToolTip(tip);
-        btn->setStyleSheet(tabBtnStyle);
-        QObject::connect(btn, &QToolButton::clicked, this, action);
-        lay->addWidget(btn);
-    };
-    auto addSep = [&](QHBoxLayout* lay) {
-        QFrame* line = new QFrame();
-        line->setFrameShape(QFrame::VLine);
-        line->setFrameShadow(QFrame::Plain);
-        line->setStyleSheet(QStringLiteral("color: #3C3C44;"));
-        lay->addWidget(line);
-    };
-    auto addDrop = [&](QHBoxLayout* lay, const ToolGlyph glyph, const QString& text,
-                       const QString& tip, auto fill) {
-        QToolButton* btn = new QToolButton();
-        btn->setIcon(makeToolIcon(glyph));
-        btn->setIconSize(QSize(22, 22));
-        btn->setText(text);
-        btn->setToolButtonStyle(Qt::ToolButtonTextUnderIcon);
-        btn->setFixedSize(58, 48);
-        btn->setToolTip(tip);
-        btn->setStyleSheet(tabBtnStyle);
-        btn->setPopupMode(QToolButton::InstantPopup);
-        QMenu* menu = new QMenu(btn);
-        fill(menu);
-        btn->setMenu(menu);
-        lay->addWidget(btn);
-    };
-
-    // ---- Konstrüksiyon sekmesi: konstrüksiyon nesneleri + kesme komutlari ----
-    {
-        QHBoxLayout* lay = beginTab("Konstrüksiyon");
-        addBtn(lay, ToolGlyph::Plane,    "K. Düzlem",     "Konstrüksiyon düzlemi (3 nokta)", [this]() { app_.startConstructionPlaneCommand(); });
-        addBtn(lay, ToolGlyph::Toggle3D, "Gizle/Göster",  "Konstrüksiyon nesnelerini göster/gizle", [this]() { app_.toggleConstructionVisibility(); });
-        addSep(lay);
-        addBtn(lay, ToolGlyph::Trim,     "Fitting",       "Fitting (uç kesme)", [this]() { app_.startFittingCommand(); });
-        addBtn(lay, ToolGlyph::Plane,    "Plane Cut",     "Düzlemle kesme", [this]() { app_.startPlaneCutCommand(); });
-        addBtn(lay, ToolGlyph::Line,     "Line Cut",      "Çizgiyle kesme", [this]() { app_.startLineCutCommand(); });
-        addBtn(lay, ToolGlyph::Face3D,   "Polygon Cut",   "3DFACE ile kesme", [this]() { app_.startPolygonCutCommand(); });
-        addBtn(lay, ToolGlyph::Delete,   "Part Cut",      "Parça ile kesme", [this]() { app_.startPartCutCommand(); });
-        addSep(lay);
-        addBtn(lay, ToolGlyph::Bolt,     "Bolt",          "İki parçayı bulonla birleştir", [this]() { app_.startBoltCommand(); });
-        addBtn(lay, ToolGlyph::Plate,    "End Plate",     "Alın levhası bağlantısı (kolon+kiriş)", [this]() {
-            mm::EndPlateParams p = app_.pendingEndPlateParams();
-            if (!openEndPlateParamsDialog(p, p)) return;
-            app_.setPendingEndPlateParams(p);
-            app_.startEndPlateCommand();
-        });
-        addBtn(lay, ToolGlyph::Plate,    "Fin Plate",     "Kayma levhası bağlantısı (kolon+kiriş)", [this]() {
-            app_.setPendingFinPlateParams({});
-            app_.startFinPlateCommand();
-        });
+    for (const CommandCategory& cat : commandCategories()) {
+        if (cat.tabTitle.isEmpty()) continue;
+        QWidget* page = new QWidget();
+        QHBoxLayout* lay = new QHBoxLayout(page);
+        lay->setContentsMargins(4, 2, 4, 2);
+        lay->setSpacing(2);
+        for (const UiEntry& e : cat.entries) {
+            if (e.kind == UiEntry::Kind::Separator) {
+                QFrame* line = new QFrame();
+                line->setFrameShape(QFrame::VLine);
+                line->setFrameShadow(QFrame::Plain);
+                line->setStyleSheet(QStringLiteral("color: #3C3C44;"));
+                lay->addWidget(line);
+                continue;
+            }
+            QToolButton* btn = new QToolButton();
+            btn->setIcon(makeToolIcon(e.cmd.glyph));
+            btn->setIconSize(QSize(22, 22));
+            btn->setText(e.cmd.ribbonText.isEmpty() ? plainCommandLabel(e.cmd.menuText) : e.cmd.ribbonText);
+            btn->setToolButtonStyle(Qt::ToolButtonTextUnderIcon);
+            btn->setFixedSize(58, 48);
+            btn->setToolTip(e.cmd.tip.isEmpty() ? plainCommandLabel(e.cmd.menuText) : e.cmd.tip);
+            btn->setStyleSheet(tabBtnStyle);
+            if (e.kind == UiEntry::Kind::Group) {
+                btn->setPopupMode(QToolButton::InstantPopup);
+                QMenu* menu = new QMenu(btn);
+                // Kısayollar yalnız ana menüye bağlanır; açılır listede metin
+                // olarak gösterilir (aynı tuşa iki eylem = belirsiz kısayol).
+                std::vector<UiEntry> shown = e.children;
+                for (UiEntry& c : shown) c.cmd.bindShortcut = false;
+                fillUiMenu(menu, this, shown, false);
+                btn->setMenu(menu);
+            } else {
+                QObject::connect(btn, &QToolButton::clicked, this, e.cmd.run);
+            }
+            lay->addWidget(btn);
+        }
         lay->addStretch();
-    }
-
-    // ---- Görünüm sekmesi: kamera/navigasyon + standart yönler ----
-    {
-        QHBoxLayout* lay = beginTab("Görünüm");
-        addBtn(lay, ToolGlyph::Toggle3D, "2B/3B",    "2B / 3B görünüm", [this]() { app_.toggle3DView(); });
-        addBtn(lay, ToolGlyph::Extents,  "Extents",  "Zoom Extents", [this]() { app_.zoomExtents2D(); });
-        addBtn(lay, ToolGlyph::Extents,  "Zoom Penc.","Zoom Window", [this]() { app_.startZoomWindow2D(); });
-        addBtn(lay, ToolGlyph::Reset,    "Sıfırla",  "Görünümü sıfırla (Ctrl+R)", [this]() { app_.resetView(); });
-        addSep(lay);
-        addDrop(lay, ToolGlyph::Extents, "Görünüş", "Standart görünüş yönleri (Ctrl+1..7)", [this](QMenu* m) {
-            m->addAction(QStringLiteral("Önden (Ctrl+1)"),  this, [this]() { app_.setStandardView(StandardView::Front); });
-            m->addAction(QStringLiteral("Arkadan (Ctrl+2)"), this, [this]() { app_.setStandardView(StandardView::Back); });
-            m->addAction(QStringLiteral("Soldan (Ctrl+3)"),  this, [this]() { app_.setStandardView(StandardView::Left); });
-            m->addAction(QStringLiteral("Sağdan (Ctrl+4)"),  this, [this]() { app_.setStandardView(StandardView::Right); });
-            m->addSeparator();
-            m->addAction(QStringLiteral("Üstten (Ctrl+5)"),  this, [this]() { app_.setStandardView(StandardView::Top); });
-            m->addAction(QStringLiteral("Alttan (Ctrl+6)"),  this, [this]() { app_.setStandardView(StandardView::Bottom); });
-            m->addSeparator();
-            m->addAction(QStringLiteral("İzometrik (Ctrl+7)"), this, [this]() { app_.setStandardView(StandardView::Isometric); });
-        });
-        addBtn(lay, ToolGlyph::Toggle3D, "Dön. Mrk.", "Döndürme merkezi seç (R)", [this]() { app_.startRotateCenterCommand(); });
-        addBtn(lay, ToolGlyph::Reset,    "Mrk. Sil",  "Döndürme merkezini temizle", [this]() { app_.clearRotateCenter(); });
-        addSep(lay);
-        addBtn(lay, ToolGlyph::Extents,  "Benchmark", "GDI vs GL render benchmark", [this]() { app_.runRenderBenchmark(); });
-        lay->addStretch();
-    }
-
-    // ---- Çalışma Düzlemi sekmesi: work plane + UCS + adlandırılmış görünümler ----
-    {
-        QHBoxLayout* lay = beginTab("Çalışma Düzlemi");
-        addBtn(lay, ToolGlyph::Plane,    "Düzlem",     "Çalışma düzlemi (3 nokta)", [this]() { app_.startWorkPlaneCommand(); });
-        addBtn(lay, ToolGlyph::Reset,    "Düz. Sıfır", "Düzlemi sıfırla (dünya)", [this]() { app_.resetWorkPlane(); });
-        addBtn(lay, ToolGlyph::Toggle3D, "Hayalet",    "Çalışma düzlemi hayaleti (F7)", [this]() { app_.toggleWorkPlaneGhost(); });
-        addSep(lay);
-        addBtn(lay, ToolGlyph::Plane,    "UCS Dik",    "UCS'ye dik görünüş", [this]() { app_.setViewToWorkPlane(); });
-        addDrop(lay, ToolGlyph::Plane,   "Global",     "Çalışma düzlemi (global)", [this](QMenu* m) {
-            m->addAction(QStringLiteral("XY (Üstten)"), this, [this]() { app_.setGlobalWorkPlane(0); });
-            m->addAction(QStringLiteral("XZ (Önden)"),  this, [this]() { app_.setGlobalWorkPlane(1); });
-            m->addAction(QStringLiteral("YZ (Sağdan)"), this, [this]() { app_.setGlobalWorkPlane(2); });
-        });
-        addSep(lay);
-        addBtn(lay, ToolGlyph::Save,   "Adlandır", "Görünümü adlandır...", [this]() { promptSaveNamedView(); });
-        addBtn(lay, ToolGlyph::Open,   "Gör. Git", "Adlandırılmış görünüme git...", [this]() { promptGotoNamedView(); });
-        addBtn(lay, ToolGlyph::Delete, "Gör. Sil", "Adlandırılmış görünümü sil...", [this]() { promptDeleteNamedView(); });
-        lay->addStretch();
-    }
-
-    // ---- Görünüşler sekmesi: yeni görünüş pencereleri (MDI) ----
-    {
-        QHBoxLayout* lay = beginTab("Görünüşler");
-        addBtn(lay, ToolGlyph::Plane,   "2N Gör.",  "2 noktalı görünüş — XY'ye dik (Ctrl+Shift+V)", [this]() { app_.startTwoPointViewCommand(); });
-        addBtn(lay, ToolGlyph::Extents, "Plan Gör.", "Plan görünüşü — Z kotu ile (Ctrl+Shift+P)", [this]() { app_.startPlanViewCommand(); });
-        addDrop(lay, ToolGlyph::Plane,  "Yeni Görünüş", "Tekla tarzı yeni görünüş komutları", [this](QMenu* m) {
-            m->addAction(QStringLiteral("3 Noktalı Görünüş"), this, [this]() { app_.startThreePointViewCommand(); });
-            m->addAction(QStringLiteral("Çalışma Düzleminde Görünüş"), this, [this]() { app_.startViewOnWorkPlaneCommand(); });
-            m->addSeparator();
-            m->addAction(QStringLiteral("Parça Ön Düzlemi"), this, [this]() { app_.startPartPlaneViewCommand(PartPlane::Front); });
-            m->addAction(QStringLiteral("Parça Üst Düzlemi"), this, [this]() { app_.startPartPlaneViewCommand(PartPlane::Top); });
-            m->addAction(QStringLiteral("Parça Uç Düzlemi"), this, [this]() { app_.startPartPlaneViewCommand(PartPlane::End); });
-            m->addAction(QStringLiteral("Parça Arka Düzlemi"), this, [this]() { app_.startPartPlaneViewCommand(PartPlane::Back); });
-            m->addAction(QStringLiteral("Parça Alt Düzlemi"), this, [this]() { app_.startPartPlaneViewCommand(PartPlane::Bottom); });
-            m->addSeparator();
-            m->addAction(QStringLiteral("Parçanın Varsayılan Görünüşleri (Ön/Üst/Uç)"), this, [this]() { app_.startPartDefaultViewsCommand(); });
-            m->addAction(QStringLiteral("Parçanın 3B Görünüşü"), this, [this]() { app_.startPart3DViewCommand(); });
-            m->addSeparator();
-            m->addAction(QStringLiteral("Grid Çizgileri Boyunca Görünüşler"), this, [this]() { app_.startGridViewsCommand(); });
-        });
-        lay->addStretch();
-    }
-
-    // ---- Grid sekmesi: yapı gridi ----
-    {
-        QHBoxLayout* lay = beginTab("Grid");
-        addBtn(lay, ToolGlyph::Extents, "Grid Oluştur", "Yapı gridi oluştur...", [this]() { promptCreateGrid(); });
-        addBtn(lay, ToolGlyph::Extents, "Gridler",      "Yapı gridleri...", [this]() { promptGridManager(); });
-        lay->addStretch();
+        tabs->addTab(page, cat.tabTitle);
     }
 
     ribbon->addWidget(tabs);
@@ -2101,28 +2160,26 @@ void QtMainWindow::createToolbar() {
     quick->setStyleSheet(
         "QLineEdit { background: #1E1E24; color: #E8E8E8; border: 1px solid #3C3C44; "
         "border-radius: 3px; padding: 3px 6px; }");
+    // Komut listesi menü/ribbon tablosundan üretilir (her komut aranabilir) +
+    // birkaç Tekla takma adı.
     struct QuickCmd { QString label; std::function<void()> run; };
     std::vector<QuickCmd> cmds = {
-        {QStringLiteral("Çizgi"),          [this]() { app_.selectTool(DrawTool::Line); }},
         {QStringLiteral("Kiriş"),          [this]() { app_.selectTool(DrawTool::Line); }},
-        {QStringLiteral("Dikdörtgen"),     [this]() { app_.selectTool(DrawTool::Rectangle); }},
-        {QStringLiteral("Daire"),          [this]() { app_.selectTool(DrawTool::Circle); }},
-        {QStringLiteral("3DFACE"),         [this]() { app_.selectTool(DrawTool::Face3D); }},
-        {QStringLiteral("Taşı"),           [this]() { app_.startTransformCommand(TransformCommand::Move); }},
-        {QStringLiteral("Kopyala"),        [this]() { app_.startTransformCommand(TransformCommand::Copy); }},
-        {QStringLiteral("Ayna"),           [this]() { app_.startTransformCommand(TransformCommand::Mirror); }},
-        {QStringLiteral("Sil"),            [this]() { app_.startTransformCommand(TransformCommand::Delete); }},
-        {QStringLiteral("Fitting"),        [this]() { app_.startFittingCommand(); }},
-        {QStringLiteral("Plane Cut"),      [this]() { app_.startPlaneCutCommand(); }},
-        {QStringLiteral("Line Cut"),       [this]() { app_.startLineCutCommand(); }},
-        {QStringLiteral("Polygon Cut"),    [this]() { app_.startPolygonCutCommand(); }},
-        {QStringLiteral("Part Cut"),       [this]() { app_.startPartCutCommand(); }},
         {QStringLiteral("Yapı Gridi"),     [this]() { promptCreateGrid(); }},
-        {QStringLiteral("2 Noktalı Görünüş"), [this]() { app_.startTwoPointViewCommand(); }},
-        {QStringLiteral("İzometrik"),      [this]() { app_.setStandardView(StandardView::Isometric); }},
         {QStringLiteral("Ön Görünüş"),     [this]() { app_.setStandardView(StandardView::Front); }},
         {QStringLiteral("Odaklan"),        [this]() { app_.focusOnSelection(); }},
     };
+    {
+        std::vector<std::pair<QString, std::function<void()>>> fromTable;
+        for (const CommandCategory& cat : commandCategories())
+            collectQuickCommands(cat.entries, fromTable);
+        for (auto& [label, run] : fromTable) {
+            if (label.isEmpty()) continue;
+            const bool dup = std::any_of(cmds.begin(), cmds.end(), [&](const QuickCmd& q) {
+                return q.label.compare(label, Qt::CaseInsensitive) == 0; });
+            if (!dup) cmds.push_back({label, run});
+        }
+    }
     QStringList cmdNames;
     for (const auto& c : cmds) cmdNames << c.label;
     QCompleter* quickCompleter = new QCompleter(cmdNames, quick);

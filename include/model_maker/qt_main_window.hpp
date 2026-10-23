@@ -7,6 +7,8 @@
 #include <QAction>
 #include <QWidget>
 
+#include <vector>
+
 #include "model_maker/application.hpp"
 
 class QComboBox;
@@ -30,6 +32,10 @@ protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
 
 private:
+    // TEK KAYNAK komut tablosu: menü (createMenus), ribbon sekmeleri
+    // (createToolbar) ve Quick Launch aynı kategori listesinden üretilir.
+    struct CommandCategory;
+    std::vector<CommandCategory> commandCategories();
     void createMenus();
     // Tekla "Create rectangular grid" + property pane esdegeri: grid
     // SPESIFIKASYONU (koordinat dili, etiketler, uzanti, orijin, gorunum)
