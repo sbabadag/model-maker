@@ -744,6 +744,20 @@ if(BUILD_TESTING)
             set_tests_properties(model_maker_occ_weld_corner_placement_test PROPERTIES
                 ENVIRONMENT "LD_LIBRARY_PATH=${OCC_ROOT}/lib:$ENV{LD_LIBRARY_PATH}")
         endif()
+        # BRepClass3d'SIZ NOKTA SINIFLANDIRMA (Windows GCC16 OCCT cokmesi):
+        # pointSolidState, Linux'ta saglam BRepClass3d oracle'i ile izgarada
+        # birebir ayni karari vermeli (kutu/silindir/delikli levha/L kesit).
+        add_executable(model_maker_occ_point_solid_state_test tests/occ_point_solid_state_test.cpp)
+        target_link_libraries(model_maker_occ_point_solid_state_test PRIVATE model_maker_occ)
+        add_test(NAME model_maker_occ_point_solid_state_test COMMAND model_maker_occ_point_solid_state_test)
+        if(UNIX)
+            set_tests_properties(model_maker_occ_point_solid_state_test PROPERTIES
+                ENVIRONMENT "LD_LIBRARY_PATH=${OCC_ROOT}/lib:$ENV{LD_LIBRARY_PATH}")
+        endif()
+        # src altinda BRepClass3d_SolidClassifier YASAK (Windows'ta SIGSEGV).
+        add_test(NAME model_maker_no_brepclass3d_in_src
+                 COMMAND ${CMAKE_COMMAND} -DSRC_DIR=${CMAKE_CURRENT_SOURCE_DIR}/src
+                         -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/check_no_brepclass3d.cmake)
         # UNIVERSAL COMPONENT MATERIALIZER (C2): ComponentBuilder -> ComponentPlan
         # -> gercek Document + OccSolidStore. roleKey->EntityId + ownership + delik
         # + Weld Unsupported + coklu bagimsiz component. GERCEK OCCT.

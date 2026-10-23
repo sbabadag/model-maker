@@ -97,9 +97,22 @@ bool raycastBrepFace(const TopoDS_Shape& shape, const Vec3& rayOrigin,
                      double& distance);
 
 // Noktanin bir B-Rep KATISININ icinde (veya yuzeyinde) olup olmadigini test
-// eder. BRepClass3d_SolidClassifier kullanir; katida dogru siniflandirma icin
-// mesh gerekmez (analitik). Null/gecersiz katida false doner.
+// eder (pointSolidState >= 0). Null/gecersiz katida false doner.
 bool pointInSolid(const TopoDS_Shape& solid, const Vec3& point);
+
+// BRepClass3d'ye HIC GIRMEYEN nokta siniflandirmasi: -1 = DISARIDA,
+// 0 = YUZEYDE (sinira uzaklik <= onTol), 1 = ICERIDE. Sinir mesafesi yalniz
+// yuzlerden, ic/dis karari 3 egik isinla parite oylamasiyla verilir.
+//
+// NEDEN: MSYS2 opencascade 7.9.3-3 (GCC 16 -O3) BRepClass3d_SClassifier'i yanlis
+// derliyor (OCCT #1637, GCC PR 127917) -> Extrema_ExtCC::Perform'da SIGSEGV.
+// BRepClass3d_SolidClassifier ve KATI iceren BRepExtrema_DistShapeShape
+// (SolidTreatment) bu yola girer; 146 kaynaginda Windows cokmesi buydu.
+int pointSolidState(const TopoDS_Shape& shape, const Vec3& point, double onTol = 1e-6);
+
+// Seklin yalniz yuzlerinden olusan compound (KATI icermez). BRepExtrema_
+// DistShapeShape'e bununla verilirse SolidTreatment/BRepClass3d calismaz.
+TopoDS_Shape boundaryFacesOf(const TopoDS_Shape& shape);
 
 WireframeModel solidBoxWireframe(double dx, double dy, double dz);
 

@@ -29,7 +29,12 @@
 #include <BRepBuilderAPI_MakeEdge.hxx>
 #include <BRepBuilderAPI_MakeWire.hxx>
 #include <BRepClass_FaceClassifier.hxx>
-#include <BRepClass3d_SolidClassifier.hxx>
+#include <BRepBuilderAPI_MakeVertex.hxx>
+#include <BRepExtrema_DistShapeShape.hxx>
+#include <BRep_Builder.hxx>
+#include <TopoDS_Compound.hxx>
+#include <gp_Lin.hxx>
+#include <gp_Pnt2d.hxx>
 #include <GeomAPI_IntCS.hxx>
 #include <Geom_Line.hxx>
 #include <Geom_Surface.hxx>
@@ -837,12 +842,87 @@ bool raycastBrepFace(const TopoDS_Shape& shape, const Vec3& rayOrigin,
     return true;
 }
 
+TopoDS_Shape boundaryFacesOf(const TopoDS_Shape& shape) {
+    if (shape.IsNull()) return shape;
+    if (!TopExp_Explorer(shape, TopAbs_SOLID).More()) return shape;  // zaten katisiz
+    BRep_Builder builder;
+    TopoDS_Compound comp;
+    builder.MakeCompound(comp);
+    int n = 0;
+    for (TopExp_Explorer ex(shape, TopAbs_FACE); ex.More(); ex.Next()) {
+        builder.Add(comp, ex.Current());
+        ++n;
+    }
+    if (n == 0) return shape;  // yuzsuz (kenar/kose) sekil: zaten kati yok
+    return comp;
+}
+
+int pointSolidState(const TopoDS_Shape& shape, const Vec3& point, double onTol) {
+    if (shape.IsNull()) return -1;
+    try {
+        const gp_Pnt p(point.x, point.y, point.z);
+        Bnd_Box box;
+        BRepBndLib::Add(shape, box);
+        if (box.IsVoid()) return -1;
+        box.Enlarge(std::max(onTol, 1e-7) * 2.0);
+        if (box.IsOut(p)) return -1;
+
+        // 1) YUZEYDE mi? Yalniz yuzlere mesafe (kati yok -> SolidTreatment yok).
+        {
+            const TopoDS_Shape vtx = BRepBuilderAPI_MakeVertex(p).Vertex();
+            BRepExtrema_DistShapeShape ext(vtx, boundaryFacesOf(shape));
+            if (ext.IsDone() && ext.NbSolution() > 0 && ext.Value() <= onTol) return 0;
+        }
+
+        // 2) ICERIDE mi? Egik (eksenlere hizali olmayan) 3 isinla parite oylamasi.
+        // Kenar/kose siyirmalari olcu-sifir; tek isin yine de yanilirsa cogunluk
+        // kazanir. Ayni noktada iki komsu yuzden gelen cift isabet tekillestirilir.
+        static const double dirs[3][3] = {{0.5773, 0.6123, 0.5401},
+                                          {-0.6427, 0.3714, 0.6700},
+                                          {0.2911, -0.8333, 0.4700}};
+        std::vector<std::pair<TopoDS_Face, Handle(Geom_Surface)>> fs;
+        for (TopExp_Explorer ex(shape, TopAbs_FACE); ex.More(); ex.Next()) {
+            const TopoDS_Face f = TopoDS::Face(ex.Current());
+            Handle(Geom_Surface) s = BRep_Tool::Surface(f);
+            if (!s.IsNull()) fs.emplace_back(f, s);
+        }
+        int insideVotes = 0;
+        for (const auto& dv : dirs) {
+            const Handle(Geom_Line) gline =
+                new Geom_Line(gp_Lin(p, gp_Dir(dv[0], dv[1], dv[2])));
+            std::vector<double> hits;
+            for (const auto& fsurf : fs) {
+                GeomAPI_IntCS inter(gline, fsurf.second);
+                if (!inter.IsDone()) continue;
+                for (Standard_Integer i = 1; i <= inter.NbPoints(); ++i) {
+                    Standard_Real u = 0.0, v = 0.0, w = 0.0;
+                    inter.Parameters(i, u, v, w);
+                    if (w <= 1e-9) continue;
+                    BRepClass_FaceClassifier fc;
+                    fc.Perform(fsurf.first, gp_Pnt2d(u, v), 1e-7);
+                    const TopAbs_State st = fc.State();
+                    if (st != TopAbs_IN && st != TopAbs_ON) continue;
+                    hits.push_back(w);
+                }
+            }
+            std::sort(hits.begin(), hits.end());
+            int count = 0;
+            double last = -1.0;
+            for (double w : hits) {
+                if (count > 0 && std::fabs(w - last) < 1e-6) continue;
+                ++count;
+                last = w;
+            }
+            if (count % 2 == 1) ++insideVotes;
+        }
+        return insideVotes >= 2 ? 1 : -1;
+    } catch (...) {
+        return -1;
+    }
+}
+
 bool pointInSolid(const TopoDS_Shape& solid, const Vec3& point) {
-    if (solid.IsNull()) return false;
-    BRepClass3d_SolidClassifier classifier(solid);
-    classifier.Perform(gp_Pnt(point.x, point.y, point.z), 1e-7);
-    const TopAbs_State state = classifier.State();
-    return state == TopAbs_IN || state == TopAbs_ON;
+    return pointSolidState(solid, point, 1e-7) >= 0;
 }
 
 WireframeModel solidBoxSolid(double dx, double dy, double dz, double faceDeflection) {

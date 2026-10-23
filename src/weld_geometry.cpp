@@ -1,6 +1,7 @@
 #ifdef MM_HAS_OCC
 
 #include "model_maker/weld_geometry.hpp"
+#include "model_maker/occ_geometry.hpp"  // boundaryFacesOf, pointSolidState
 
 #include <BRepBuilderAPI_MakeEdge.hxx>
 #include <BRepBuilderAPI_MakeFace.hxx>
@@ -8,7 +9,6 @@
 #include <BRepBuilderAPI_MakeVertex.hxx>
 #include <BRepBuilderAPI_MakeWire.hxx>
 #include <BRepCheck_Analyzer.hxx>
-#include <BRepClass3d_SolidClassifier.hxx>
 #include <BRepExtrema_DistShapeShape.hxx>
 #include <BRepGProp.hxx>
 #include <BRepPrimAPI_MakePrism.hxx>
@@ -50,11 +50,17 @@ Vec3 cross(const Vec3& a, const Vec3& b) {
 }
 double dot(const Vec3& a, const Vec3& b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
 
+// DIKKAT: Kati iceren BRepExtrema_DistShapeShape -> SolidTreatment ->
+// BRepClass3d_SClassifier -> MSYS2 OCCT 7.9.3-3 (GCC 16) Windows'ta
+// Extrema_ExtCC SIGSEGV (146 kaynak cokmesi). Bu yuzden hedef her zaman
+// yalniz YUZLERE indirgenir (boundaryFacesOf).
 double pointToShapeDistance(const Vec3& p, const TopoDS_Shape& shape) {
     if (shape.IsNull()) return 1e18;
     try {
         TopoDS_Shape vtx = BRepBuilderAPI_MakeVertex(toPnt(p)).Vertex();
-        BRepExtrema_DistShapeShape ext(vtx, shape);
+        const TopoDS_Shape target =
+            (shape.ShapeType() == TopAbs_FACE) ? shape : boundaryFacesOf(shape);
+        BRepExtrema_DistShapeShape ext(vtx, target);
         if (!ext.IsDone() || ext.NbSolution() == 0) return 1e18;
         return ext.Value();
     } catch (...) {
@@ -65,13 +71,8 @@ double pointToShapeDistance(const Vec3& p, const TopoDS_Shape& shape) {
 // Nokta katinin ICINDE mi? (kaynak katisi yanlis tarafa dusunce yakalamak icin)
 bool pointInsideShape(const Vec3& p, const TopoDS_Shape& shape) {
     if (shape.IsNull()) return false;
-    try {
-        BRepClass3d_SolidClassifier cls(shape);
-        cls.Perform(toPnt(p), 1e-6);
-        return cls.State() == TopAbs_IN;
-    } catch (...) {
-        return false;
-    }
+    // BRepClass3d_SolidClassifier KULLANILMAZ (GCC 16 OCCT cokmesi, yukari bkz).
+    return pointSolidState(shape, p, 1e-6) == 1;
 }
 
 // Katinin hacim merkezi (kaynak katisinin nereye dustugunu olcmek icin).
@@ -170,6 +171,7 @@ std::vector<WeldJunction> findWeldJunctions(const TopoDS_Shape& from,
                                             double tol) {
     std::vector<WeldJunction> out;
     if (from.IsNull() || onto.IsNull()) return out;
+    const TopoDS_Shape ontoFaces = boundaryFacesOf(onto);  // bir kez; kati yok
     for (TopExp_Explorer ee(from, TopAbs_EDGE); ee.More(); ee.Next()) {
         const TopoDS_Edge edge = TopoDS::Edge(ee.Current());
         double first = 0.0, last = 0.0;
@@ -183,9 +185,9 @@ std::vector<WeldJunction> findWeldJunctions(const TopoDS_Shape& from,
         const double len = vecLen(Vec3{end.x - start.x, end.y - start.y, end.z - start.z});
         if (len < 1e-9) continue;
         const Vec3 mid{(start.x + end.x) / 2, (start.y + end.y) / 2, (start.z + end.z) / 2};
-        if (pointToShapeDistance(start, onto) > tol) continue;
-        if (pointToShapeDistance(mid, onto) > tol) continue;
-        if (pointToShapeDistance(end, onto) > tol) continue;
+        if (pointToShapeDistance(start, ontoFaces) > tol) continue;
+        if (pointToShapeDistance(mid, ontoFaces) > tol) continue;
+        if (pointToShapeDistance(end, ontoFaces) > tol) continue;
         WeldJunction j;
         j.valid = true;
         j.start = start;
@@ -303,7 +305,10 @@ std::vector<TopoDS_Shape> buildWeldSolids(const Weld& w,
         // Teshis: iki katı arasindaki EN KISA mesafeyi olcup nedene ekle.
         // "0.8mm" -> tolerans sorunu, "150mm" -> yerlesim/kesit olcusu hatasi.
         double gap = -1.0;
-        if (BRepExtrema_DistShapeShape dist(mainShape, secondaryShape); dist.Perform()) {
+        // Yalniz YUZLER arasi (kati yok -> BRepClass3d'ye girilmez; bkz. ust not).
+        if (BRepExtrema_DistShapeShape dist(boundaryFacesOf(mainShape),
+                                            boundaryFacesOf(secondaryShape));
+            dist.Perform()) {
             if (dist.IsDone() && dist.NbSolution() > 0) gap = dist.Value();
         }
         std::ostringstream ss;
