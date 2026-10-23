@@ -19,5 +19,11 @@
         <file alias="bolt_group_dimensions.png">tekla146/bolt_group_dimensions.png</file>
         <file alias="slotted_holes.png">tekla146/slotted_holes.png</file>
         <file alias="bolt_length_increase.png">tekla146/bolt_length_increase.png</file>
+        <file alias="weld_access_hole_dimensions.png">tekla146/weld_access_hole_dimensions.png</file>
+        <file alias="seat_stiffener_offset.png">tekla146/seat_stiffener_offset.png</file>
+        <file alias="seat_gap.png">tekla146/seat_gap.png</file>
+        <file alias="seat_chamfers.png">tekla146/seat_chamfers.png</file>
+        <file alias="boxp_bolt_group.png">tekla146/boxp_bolt_group.png</file>
+        <file alias="boxs_bolt_group.png">tekla146/boxs_bolt_group.png</file>
     </qresource>
 </RCC>

@@ -92,13 +92,17 @@ int main(int argc, char** argv) {
 
         auto* tabWidget = w146.findChild<QTabWidget*>();
         CHECK(tabWidget != nullptr, "146: QTabWidget kuruldu");
-        // 6 parametre sekmesi + "Welds" kaynak tablosu sekmesi.
-        CHECK(tabWidget && tabWidget->count() == 7, "146: 6 parametre + Welds sekmesi");
+        // 10 parametre sekmesi (Tekla 146 sirasi) + "Welds" kaynak tablosu sekmesi.
+        CHECK(tabWidget && tabWidget->count() == 11, "146: 10 parametre + Welds sekmesi");
         if (tabWidget) {
             CHECK(tabWidget->tabText(0) == QStringLiteral("Picture"), "146: ilk sekme Picture");
             CHECK(tabWidget->tabText(1) == QStringLiteral("Plates"), "146: ikinci sekme Plates");
             CHECK(tabWidget->tabText(3) == QStringLiteral("Haunch"), "146: Haunch sekmesi var");
-            CHECK(tabWidget->tabText(6) == QStringLiteral("Welds"), "146: son sekme Welds");
+            CHECK(tabWidget->tabText(6) == QStringLiteral("Beam cut"), "146: Beam cut sekmesi");
+            CHECK(tabWidget->tabText(7) == QStringLiteral("Angle box"), "146: Angle box sekmesi");
+            CHECK(tabWidget->tabText(8) == QStringLiteral("BoxPBolts"), "146: BoxPBolts sekmesi");
+            CHECK(tabWidget->tabText(9) == QStringLiteral("BoxSBolts"), "146: BoxSBolts sekmesi");
+            CHECK(tabWidget->tabText(10) == QStringLiteral("Welds"), "146: son sekme Welds");
         }
 
         // Baslangicta Default kutulari isaretli -> alan sonuca yazilir.
@@ -113,7 +117,7 @@ int main(int argc, char** argv) {
             int pixLabels = 0;
             for (auto* l : w146.findChildren<QLabel*>())
                 if (!l->pixmap(Qt::ReturnByValue).isNull()) ++pixLabels;
-            CHECK(pixLabels >= 16, "146: Tekla sekilleri yuklendi (>=16 resim)");
+            CHECK(pixLabels >= 22, "146: Tekla sekilleri yuklendi (>=22 resim)");
         }
 
         // Gri (documentedOnly) alanlar sonuca HIC yazilmaz; calisan alanlar yazilir.

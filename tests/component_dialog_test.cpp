@@ -159,11 +159,12 @@ int main() {
     {
         const ComponentDialogDefinition def = shearPlate146DialogDefinition();
         check(def.schema.useTabs, "146: sekmeli duzen");
-        check(def.schema.groups.size() == 6, "146: 6 sekme");
-        const wchar_t* expected[] = {L"Picture", L"Plates", L"Stiffeners",
-                                     L"Haunch", L"Notch", L"Bolts"};
-        bool titlesOk = def.schema.groups.size() == 6;
-        for (std::size_t i = 0; titlesOk && i < 6; ++i)
+        check(def.schema.groups.size() == 10, "146: 10 sekme");
+        const wchar_t* expected[] = {L"Picture", L"Plates",    L"Stiffeners", L"Haunch",
+                                     L"Notch",   L"Bolts",     L"Beam cut",   L"Angle box",
+                                     L"BoxPBolts", L"BoxSBolts"};
+        bool titlesOk = def.schema.groups.size() == 10;
+        for (std::size_t i = 0; titlesOk && i < 10; ++i)
             titlesOk = def.schema.groups[i].title == expected[i] && def.schema.groups[i].asTab;
         check(titlesOk, "146: sekme adlari ve sirasi Tekla ile ayni");
 

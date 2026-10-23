@@ -700,6 +700,140 @@ ComponentDialogDefinition shearPlate146DialogDefinition() noexcept {
             {L"Default", L"Secondary part (sloped)", L"Secondary part",
              L"Main part", L"Main part center line"});
 
+    // --- PDF (conn_146_help, 23.10.2026) ile tamamlanan alanlar -------------
+    const auto docBool = [&](const wchar_t* n, const wchar_t* label, bool d) {
+        CompParamSpec s = boolParam(n, d, label);
+        s.documentedOnly = true;
+        def.specs.push_back(s);
+    };
+    const auto docInt = [&](const wchar_t* n, const wchar_t* label, int d) {
+        CompParamSpec s = intParam(n, d, 0, 100, label);
+        s.documentedOnly = true;
+        def.specs.push_back(s);
+    };
+    // Parca satiri (Pos_No onek + baslangic no, Material, Name, Finish).
+    const auto docPart = [&](const std::wstring& p, const std::wstring& title,
+                             bool withMaterial) {
+        docStr((p + L"PosPrefix").c_str(), (title + L" Pos_No prefix").c_str());
+        docInt((p + L"PosStart").c_str(), (title + L" Pos_No start number").c_str(), 1);
+        if (withMaterial) {
+            docStr((p + L"Material").c_str(), (title + L" material").c_str());
+            docStr((p + L"Name").c_str(), (title + L" name").c_str());
+            docStr((p + L"Finish").c_str(), (title + L" finish").c_str());
+        }
+    };
+    const std::vector<std::wstring> siteWorkshop = {L"Default", L"Site", L"Workshop"};
+
+    // Picture: beam gap olcum yonu
+    docEnum(L"beamGapMeasure", L"Beam gap measured",
+            {L"Default", L"Square to main part", L"Along secondary part"});
+    // Plates: Pos_No + plate washer parca satiri
+    docPart(L"tab", L"Tab plate", false);
+    docPart(L"washer", L"Plate washer", true);
+    // Stiffeners / Haunch: parca satirlari
+    docPart(L"stiffener", L"Stiffener", true);
+    docPart(L"haunch", L"Haunch plate", true);
+    // Bolts: eksik secenekler
+    docEnum(L"boltStaggerExtra", L"Staggering (type 3/4)",
+            {L"Default", L"Staggered type 3", L"Staggered type 4"});
+    docEnum(L"boltGroupOrientation", L"Bolt group orientation",
+            {L"Default", L"Automatic", L"Staggered", L"Square", L"Sloped"});
+    docEnum(L"boltingDirection", L"Bolting direction",
+            {L"Default", L"Bolting direction 1", L"Bolting direction 2"});
+    docEnum(L"boltSiteWorkshop", L"Site/Workshop", siteWorkshop);
+    docLen(L"slotV", L"Slotted hole 1 (vertical)", 0.0);
+    docLen(L"slotH", L"Slotted hole 2 (horizontal / oversize)", 0.0);
+    docBool(L"asmBolt", L"Bolt assembly: bolt", true);
+    docBool(L"asmWashers", L"Bolt assembly: washers", true);
+    docBool(L"asmNuts", L"Bolt assembly: nuts", true);
+    docBool(L"asmEffectInModify", L"Effect in modify", false);
+    docLen(L"boltLengthIncrease", L"Bolt length increase", 0.0);
+
+    // Beam cut sekmesi (weld backing bar, weld access hole, beam end prep)
+    docLen(L"backingBarW", L"Weld backing bar width", 0.0);
+    docPart(L"backingBar", L"Weld backing bar", true);
+    docLen(L"wahGapTop", L"1 Gap: secondary top flange - main part", 0.0);
+    docLen(L"wahVertical", L"2 Weld access hole vertical", 0.0);
+    docLen(L"wahHorizontal", L"3 Weld access hole horizontal", 0.0);
+    docLen(L"wahGapWeb", L"4 Gap: secondary web - main part (+Picture gap)", 0.0);
+    docLen(L"wahGapBottom", L"5 Gap: secondary bottom flange - main part", 0.0);
+    docEnum(L"weldAccessHoleType", L"Weld access holes",
+            {L"Default", L"Round", L"Square", L"Diagonal", L"Round (radius)",
+             L"Extended cone", L"Cone"});
+    docLen(L"wahRadiusR", L"Weld access hole R (large radius)", 35.0);
+    docLen(L"wahRadiusSmall", L"Weld access hole r (small radius)", 10.0);
+    docEnum(L"beamEndPreparation", L"Beam end preparation",
+            {L"Default", L"Automatic", L"Not prepared", L"Top and bottom flange",
+             L"Top flange", L"Bottom flange"});
+    docEnum(L"flangeCutTop", L"Flange cut (top)", {L"Default", L"Not cut", L"Cut"});
+    docEnum(L"flangeCutBottom", L"Flange cut (bottom)", {L"Default", L"Not cut", L"Cut"});
+    docEnum(L"backingBars", L"Weld backing bars",
+            {L"Default", L"None", L"Inside flanges", L"Outside flanges"});
+    docEnum(L"backingBarLengthType", L"Weld backing bar length",
+            {L"Default", L"Absolute length", L"Extension beyond flange edge"});
+    docLen(L"backingBarLength", L"Weld backing bar length value", 0.0);
+    docLen(L"backingBarPosition", L"Weld backing bar position (+/-)", 0.0);
+    docEnum(L"backingBarAssembly", L"Assembly type", siteWorkshop);
+
+    // Angle box sekmesi (seat angle)
+    docLen(L"seatStiffT", L"Seat stiffener thickness", 0.0);
+    docLen(L"seatStiffW", L"Seat stiffener width", 0.0);
+    docLen(L"seatStiffH", L"Seat stiffener height", 0.0);
+    docStr(L"seatProfile", L"Seat angle profile");
+    docPart(L"seat", L"Seat angle", true);
+    docEnum(L"seatPosition", L"Seat angle position",
+            {L"Default", L"No seat angle", L"Top", L"Bottom", L"Both"});
+    const std::vector<std::wstring> seatAttach = {
+        L"Default", L"Bolted", L"Welded-bolted", L"Bolted-welded", L"Welded"};
+    docEnum(L"seatAttachTop", L"Seat angle attachment (top)", seatAttach);
+    docEnum(L"seatAttachBottom", L"Seat angle attachment (bottom)", seatAttach);
+    docEnum(L"seatStiffType", L"Stiffener type",
+            {L"Default", L"Rectangular", L"Triangular", L"Leg-end line"});
+    docLen(L"seatStiffOffsetH", L"Stiffener offset 1 (horizontal)", 0.0);
+    docLen(L"seatStiffOffsetV", L"Stiffener offset 2 (vertical)", 0.0);
+    docEnum(L"seatRotation", L"Seat angle rotation",
+            {L"Default", L"Not rotated", L"Rotated 90"});
+    docEnum(L"seatOrientation", L"Seat angle orientation",
+            {L"Default", L"Long leg to secondary", L"Long leg to main", L"Automatic"});
+    docEnum(L"seatSideStiff", L"Side stiffener position",
+            {L"Default", L"None", L"Near side", L"Far side", L"Near and far"});
+    docEnum(L"seatMiddleStiff", L"Middle stiffener position",
+            {L"Default", L"None", L"Middle stiffeners", L"According to bolts"});
+    docInt(L"seatMiddleStiffCount", L"Number of middle stiffeners", 0);
+    docLen(L"seatOffset", L"Seat angle offset from main part center line", 0.0);
+    docLen(L"seatGap", L"Gap (top/bottom) seat angle - secondary part", 0.0);
+    docEnum(L"seatChamferType", L"Seat angle chamfer type", chamferTypes);
+    docLen(L"seatChamferV", L"Seat angle chamfer 1 (vertical)", 0.0);
+    docLen(L"seatChamferH", L"Seat angle chamfer 2 (horizontal)", 0.0);
+
+    // BoxPBolts / BoxSBolts (seat angle -> main / secondary)
+    const auto docBoxBolts = [&](const std::wstring& p, bool toMain) {
+        docLen((p + L"Pos1").c_str(),
+               toMain ? L"1 Horizontal position (from secondary middle line)"
+                      : L"1 Vertical position (from secondary middle line)", 0.0);
+        docLen((p + L"Edge").c_str(), L"2 Bolt edge distance", 0.0);
+        docInt((p + L"Count").c_str(), L"3 Number of bolts", 0);
+        docStr((p + L"Spacing").c_str(), L"4 Bolt spacing");
+        docLen((p + L"Pos5").c_str(),
+               toMain ? L"5 Vertical position (from secondary bottom)"
+                      : L"5 Horizontal position (from secondary bottom)", 0.0);
+        docLen((p + L"Size").c_str(), L"Bolt size", 0.0);
+        docStr((p + L"Standard").c_str(), L"Bolt standard");
+        docLen((p + L"Tolerance").c_str(), L"Tolerance", 0.0);
+        docBool((p + L"ThreadInMat").c_str(), L"Thread in mat", true);
+        docEnum((p + L"SiteWorkshop").c_str(), L"Site/Workshop", siteWorkshop);
+        docStr((p + L"Comment").c_str(), L"Comment");
+        docLen((p + L"SlotV").c_str(), L"Slotted hole 1 (vertical)", 0.0);
+        docLen((p + L"SlotH").c_str(), L"Slotted hole 2 (horizontal)", 0.0);
+        docEnum((p + L"HoleType").c_str(), L"Hole type",
+                {L"Default", L"Slotted", L"Oversized", L"No hole", L"Tapped"});
+        docEnum((p + L"RotateSlots").c_str(), L"Rotate slots", {L"Default", L"No", L"Yes"});
+        docStr((p + L"SlotsIn").c_str(), L"Slots in");
+        docLen((p + L"LengthIncrease").c_str(), L"Bolt length increase", 0.0);
+    };
+    docBoxBolts(L"boxP", true);
+    docBoxBolts(L"boxS", false);
+
     // --- SEMATIK (Picture sekmesi): Tekla 146 resmi -------------------------
     // Kolon (dikey) + turuncu kayma levhasi (2x2 bulon deligi) + kiris (yatay).
     ComponentDiagramItem main;
@@ -798,16 +932,19 @@ ComponentDialogDefinition shearPlate146DialogDefinition() noexcept {
     gPicture.id = L"tab_picture";
     gPicture.title = L"Picture";
     gPicture.asTab = true;
-    gPicture.paramNames = {L"flangeStripSize", L"beamGap", L"beamEndCut",
+    gPicture.paramNames = {L"flangeStripSize", L"beamGap", L"beamGapMeasure", L"beamEndCut",
                            L"beamWebCut", L"beamFlangeCut", L"beamBottomFlangeCut",
-                           L"bottomNotchRadius", L"bottomNotchHeight", L"backingBarT"};
+                           L"bottomNotchRadius", L"bottomNotchHeight"};
 
     ComponentDialogGroup gPlates;
     gPlates.id = L"tab_plates";
     gPlates.title = L"Plates";
     gPlates.asTab = true;
     gPlates.paramNames = {L"plateThickness", L"plateWidth", L"plateHeight",
+                          L"tabPosPrefix", L"tabPosStart",
                           L"tabMaterial", L"tabName", L"tabFinish",
+                          L"washerPosPrefix", L"washerPosStart",
+                          L"washerMaterial", L"washerName", L"washerFinish",
                           L"shearTabPosition", L"tabGapSecondary", L"tabPositionSloped",
                           L"tabEdgeDistance", L"tabEndCut",
                           L"tabChamferType", L"tabChamferH", L"tabChamferV",
@@ -820,6 +957,8 @@ ComponentDialogDefinition shearPlate146DialogDefinition() noexcept {
     gStiff.title = L"Stiffeners";
     gStiff.asTab = true;
     gStiff.paramNames = {L"stiffenerT", L"stiffenerW", L"stiffenerH",
+                         L"stiffenerPosPrefix", L"stiffenerPosStart", L"stiffenerMaterial",
+                         L"stiffenerName", L"stiffenerFinish",
                          L"stiffenerCreation", L"stiffenerGapFlange", L"stiffenerGapWeb",
                          L"stiffenerOrientation",
                          L"stiffenerChamferType", L"stiffenerChamferH", L"stiffenerChamferV"};
@@ -831,6 +970,8 @@ ComponentDialogDefinition shearPlate146DialogDefinition() noexcept {
     gHaunch.paramNames = {L"haunchCreation",
                           L"haunchTopT", L"haunchTopW", L"haunchTopH",
                           L"haunchBottomT", L"haunchBottomW", L"haunchBottomH",
+                          L"haunchPosPrefix", L"haunchPosStart", L"haunchMaterial",
+                          L"haunchName", L"haunchFinish",
                           L"haunchTopChamferW", L"haunchTopChamferH",
                           L"haunchBottomChamferH", L"haunchBottomChamferW"};
 
@@ -852,12 +993,59 @@ ComponentDialogDefinition shearPlate146DialogDefinition() noexcept {
     gBolts.asTab = true;
     gBolts.paramNames = {L"boltHorizRef", L"boltEdge", L"boltCount", L"boltSpacing",
                          L"boltVertRef", L"boltVerticalMeasure", L"boltVerticalPos",
-                         L"deletedBolts", L"boltStagger",
+                         L"deletedBolts", L"boltStagger", L"boltStaggerExtra",
+                         L"boltGroupOrientation", L"boltingDirection",
                          L"boltDiameter", L"holeDiameter", L"grade",
-                         L"boltStandard", L"tolerance", L"threadInMat",
-                         L"holeType", L"rotateSlots", L"slotsIn", L"cutLength",
+                         L"boltStandard", L"tolerance", L"threadInMat", L"boltSiteWorkshop",
+                         L"cutLength", L"comment",
+                         L"slotV", L"slotH", L"holeType", L"rotateSlots", L"slotsIn",
+                         L"asmBolt", L"asmWashers", L"asmNuts", L"asmEffectInModify",
+                         L"boltLengthIncrease",
                          L"boltCountX", L"pitchX", L"pitchY",
-                         L"edgeX", L"edgeY", L"comment"};
+                         L"edgeX", L"edgeY"};
+
+    ComponentDialogGroup gBeamCut;
+    gBeamCut.id = L"tab_beam_cut";
+    gBeamCut.title = L"Beam cut";
+    gBeamCut.asTab = true;
+    gBeamCut.paramNames = {L"backingBarT", L"backingBarW",
+                           L"backingBarPosPrefix", L"backingBarPosStart",
+                           L"backingBarMaterial", L"backingBarName", L"backingBarFinish",
+                           L"wahGapTop", L"wahVertical", L"wahHorizontal",
+                           L"wahGapWeb", L"wahGapBottom",
+                           L"weldAccessHoleType", L"wahRadiusR", L"wahRadiusSmall",
+                           L"beamEndPreparation", L"flangeCutTop", L"flangeCutBottom",
+                           L"backingBars", L"backingBarLengthType", L"backingBarLength",
+                           L"backingBarPosition", L"backingBarAssembly"};
+
+    ComponentDialogGroup gAngleBox;
+    gAngleBox.id = L"tab_angle_box";
+    gAngleBox.title = L"Angle box";
+    gAngleBox.asTab = true;
+    gAngleBox.paramNames = {L"seatStiffT", L"seatStiffW", L"seatStiffH", L"seatProfile",
+                            L"seatPosPrefix", L"seatPosStart", L"seatMaterial",
+                            L"seatName", L"seatFinish",
+                            L"seatPosition", L"seatAttachTop", L"seatAttachBottom",
+                            L"seatStiffType", L"seatStiffOffsetH", L"seatStiffOffsetV",
+                            L"seatRotation", L"seatOrientation",
+                            L"seatSideStiff", L"seatMiddleStiff", L"seatMiddleStiffCount",
+                            L"seatOffset", L"seatGap",
+                            L"seatChamferType", L"seatChamferV", L"seatChamferH"};
+
+    const auto boxBoltsTab = [](const wchar_t* id, const wchar_t* title, const std::wstring& p) {
+        ComponentDialogGroup g;
+        g.id = id;
+        g.title = title;
+        g.asTab = true;
+        for (const wchar_t* suffix :
+             {L"Pos1", L"Edge", L"Count", L"Spacing", L"Pos5", L"Size", L"Standard",
+              L"Tolerance", L"ThreadInMat", L"SiteWorkshop", L"Comment", L"SlotV", L"SlotH",
+              L"HoleType", L"RotateSlots", L"SlotsIn", L"LengthIncrease"})
+            g.paramNames.push_back(p + suffix);
+        return g;
+    };
+    ComponentDialogGroup gBoxP = boxBoltsTab(L"tab_boxpbolts", L"BoxPBolts", L"boxP");
+    ComponentDialogGroup gBoxS = boxBoltsTab(L"tab_boxsbolts", L"BoxSBolts", L"boxS");
 
     // Tekla yardim sayfasindaki sekme basina olcu/ayrinti sekilleri
     // (resources/tekla146.qrc). Yalniz bilgi amaclidir, parametre degildir.
@@ -887,8 +1075,17 @@ ComponentDialogDefinition shearPlate146DialogDefinition() noexcept {
         fig(L"bolt_group_dimensions.png", L"Bolt group dimensions 1-7"),
         fig(L"slotted_holes.png", L"Slotted holes: 1 vertical, 2 horizontal"),
         fig(L"bolt_length_increase.png", L"Bolt length increase")};
+    gBeamCut.figures = {
+        fig(L"weld_access_hole_dimensions.png", L"Weld access hole dimensions 1-5")};
+    gAngleBox.figures = {
+        fig(L"seat_stiffener_offset.png", L"Stiffener offset: 1 horizontal, 2 vertical"),
+        fig(L"seat_gap.png", L"Gap: 1 top/bottom seat angle - secondary part"),
+        fig(L"seat_chamfers.png", L"Seat angle chamfers: 1 vertical, 2 horizontal")};
+    gBoxP.figures = {fig(L"boxp_bolt_group.png", L"Seat angle bolt group dimensions 1-5")};
+    gBoxS.figures = {fig(L"boxs_bolt_group.png", L"Seat angle bolt group dimensions 1-5")};
 
-    def.schema.groups = {gPicture, gPlates, gStiff, gHaunch, gNotch, gBolts};
+    def.schema.groups = {gPicture, gPlates,   gStiff,    gHaunch, gNotch,
+                         gBolts,   gBeamCut,  gAngleBox, gBoxP,   gBoxS};
     def.schema.useTabs = true;
     return def;
 }
