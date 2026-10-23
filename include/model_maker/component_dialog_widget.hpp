@@ -33,6 +33,8 @@ class QFormLayout;
 class QTabWidget;
 class QTableWidget;
 class QCheckBox;
+class QDialog;
+class QGridLayout;
 
 namespace mm {
 
@@ -88,7 +90,14 @@ public:
     std::vector<CompParam> resultParams() const;
 
     // Kaynak tablosundaki düzenlenmiş satırlar (tablo yoksa şema varsayılanları).
+    // Üst çubuktaki "Welds" onay kutusu kapalıysa TÜM satırlar kapalı döner.
     std::vector<WeldTableRow> resultWeldRows() const;
+
+    // Tekla alt düğme çubuğu: OK / Apply / Modify / Get / (hepsini seç-bırak) /
+    // Cancel / Create. OK ve Cancel `dlg`'e bağlıdır; toggle düğmesi tüm
+    // "Default" onay kutularını açar/kapatır; Apply/Modify/Get/Create bu
+    // uygulamada karşılığı olmadığı için GRİ (devre dışı) durur.
+    QWidget* createButtonBar(QDialog* dlg);
 
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
@@ -103,7 +112,16 @@ private:
     void highlightParamRow(const std::wstring& paramName);
     void addParamRow(QFormLayout* form, QWidget* box, const std::wstring& paramName,
                      std::vector<std::wstring>& ungrouped);
-    void buildWeldTable(QTabWidget* tabs);
+    void buildWeldTable();
+    void showWeldDialog();
+    // Tekla ust cubuk: Save/Load/Save as/Help + "ignore other types" + Welds.
+    QWidget* buildHeaderBar();
+    // Sekmenin ustundeki parca satirlari (t b h | Pos_No | Material | Name | Finish).
+    QWidget* buildPartRows(const ComponentDialogGroup& g, std::vector<std::wstring>& ungrouped);
+    // Tek parametre icin duz editor (satir/etiket olmadan); ayni parametre ikinci
+    // kez istenirse nullptr.
+    QWidget* makeBareEditor(const std::wstring& pn, QWidget* parent,
+                            std::vector<std::wstring>& ungrouped);
 
     ComponentDialogDefinition def_;       // kopya — registry ömründen bağımsız
     std::vector<CompParam> current_;
@@ -119,7 +137,8 @@ private:
     std::map<std::wstring, int> paramTabIndex_;     // paramName -> sekme indeksi
     std::map<std::wstring, QCheckBox*> optionalChecks_;  // "Default" onay kutulari
     QTableWidget* weldTable_{};                     // kaynak tablosu (varsa)
-    int weldTabIndex_{-1};                          // "Welds" sekmesi indeksi
+    QDialog* weldDialog_{};                         // "Welds..." dugmesinin actigi pencere
+    QCheckBox* weldsCheck_{};                       // ust cubuk: kaynaklar acik/kapali
     std::wstring highlightedRow_;
 };
 

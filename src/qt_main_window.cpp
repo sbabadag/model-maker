@@ -1594,11 +1594,18 @@ bool QtMainWindow::openComponentParamsDialog(const mm::ComponentInstanceRecord& 
         auto* root = new QVBoxLayout(&dlg);
         auto* widget = new mm::ComponentDialogWidget(*def, rec.params, &dlg);
         root->addWidget(widget);
-        auto* buttons = new QDialogButtonBox(
-            QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
-        QObject::connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
-        QObject::connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
-        root->addWidget(buttons);
+        if (def->schema.useTabs) {
+            // Tekla duzeni: OK Apply Modify Get [x/o] Cancel .... Create
+            root->addWidget(widget->createButtonBar(&dlg));
+            dlg.setWindowTitle(QString::fromStdWString(type->displayName));
+            dlg.resize(980, 760);
+        } else {
+            auto* buttons = new QDialogButtonBox(
+                QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
+            QObject::connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+            QObject::connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+            root->addWidget(buttons);
+        }
         if (dlg.exec() != QDialog::Accepted) return false;
         auto params = widget->resultParams();
         // Kaynak tablosu -> generator: en az bir satir aciksa createWelds=true,

@@ -129,6 +129,19 @@ struct DialogFigure {
     std::wstring caption;   // sekil basligi
 };
 
+// Tekla "parca satiri": t b h | Pos_No | Material | Name | Finish. Her alan bir
+// parametre ADIDIR (bos = o kutu yok). profile doluysa t/b/h yerine profil metni
+// (ve "..." dugmesi) cizilir (Angle box: Top/Bottom angle). asmPrefix/asmStart
+// Pos_No'nun ikinci satiridir (montaj numarasi).
+struct DialogPartRow {
+    std::wstring label;
+    std::wstring t, b, h;
+    std::wstring profile;
+    std::wstring posPrefix, posStart;
+    std::wstring asmPrefix, asmStart;
+    std::wstring material, name, finish;
+};
+
 // Parametre alanlarini bir sekme/bolum altinda siralar. paramNames sirasi ayrica
 // goruntuleme sirasidir; her ad semada var olan bir parametreyi isaret etmeli.
 struct ComponentDialogGroup {
@@ -141,6 +154,12 @@ struct ComponentDialogGroup {
     bool asTab{false};
     // Sekmenin altinda gosterilen aciklayici sekiller (bos = sekil yok).
     std::vector<DialogFigure> figures;
+    // Sekmenin USTUNDE cizilen Tekla parca satirlari (t b h / Pos_No / Material...).
+    std::vector<DialogPartRow> partRows;
+    // true: parametresi/satiri olmasa da sekme acilir (Tekla sekme sirasini korur);
+    // emptyNote o zaman gri bilgi metni olarak gosterilir.
+    bool keepIfEmpty{false};
+    std::wstring emptyNote;
 };
 
 // Bir component tipinin TAM dialog semasi: cizim + hotspotlar + parametre

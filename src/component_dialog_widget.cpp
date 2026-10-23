@@ -3,9 +3,12 @@
 #include <QAbstractItemView>
 #include <QCheckBox>
 #include <QComboBox>
+#include <QDesktopServices>
+#include <QDialog>
 #include <QDoubleSpinBox>
 #include <QEvent>
 #include <QFormLayout>
+#include <QGridLayout>
 #include <QGroupBox>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -13,10 +16,12 @@
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPixmap>
+#include <QPushButton>
 #include <QScrollArea>
 #include <QSpinBox>
 #include <QTabWidget>
 #include <QTableWidget>
+#include <QUrl>
 #include <QVBoxLayout>
 
 #include <algorithm>
@@ -267,9 +272,14 @@ ComponentDialogWidget::ComponentDialogWidget(const ComponentDialogDefinition& de
             paramToHotspots_[*h.paramName].push_back(h.id);
     }
 
-    auto* root = new QHBoxLayout(this);
-    root->setContentsMargins(8, 8, 8, 8);
+    // Dis yerlesim: [Tekla ust cubuk] + [sol sematik | sag sekmeler].
+    auto* outer = new QVBoxLayout(this);
+    outer->setContentsMargins(8, 8, 8, 8);
+    outer->setSpacing(6);
+    if (def_.schema.useTabs) outer->addWidget(buildHeaderBar());
+    auto* root = new QHBoxLayout;
     root->setSpacing(8);
+    outer->addLayout(root, 1);
 
     schematic_ = new ComponentSchematicView(def_.schema, this);
     schematic_->setMinimumWidth(300);
@@ -295,23 +305,47 @@ ComponentDialogWidget::ComponentDialogWidget(const ComponentDialogDefinition& de
         tabs_ = new QTabWidget(this);
         tabs_->setMinimumWidth(380);
         for (const auto& g : def_.schema.groups) {
+            // Sayfa = [parca satirlari (t b h / Pos_No / Material...)] + [form satirlari].
             auto* page = new QWidget;
-            auto* form = new QFormLayout(page);
+            auto* pageLay = new QVBoxLayout(page);
+            pageLay->setContentsMargins(4, 4, 4, 4);
+            QWidget* parts = g.partRows.empty() ? nullptr : buildPartRows(g, ungrouped);
+            if (parts) pageLay->addWidget(parts);
+            auto* formHost = new QWidget(page);
+            auto* form = new QFormLayout(formHost);
             form->setLabelAlignment(Qt::AlignLeft);
             form->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
-            for (const auto& pn : g.paramNames) addParamRow(form, page, pn, ungrouped);
-            if (form->rowCount() == 0) {  // bos sekme acma
+            for (const auto& pn : g.paramNames) addParamRow(form, formHost, pn, ungrouped);
+            const bool hasContent = parts || form->rowCount() > 0;
+            if (!hasContent && !g.keepIfEmpty) {  // bos sekme acma
                 delete page;
                 continue;
             }
+            if (form->rowCount() > 0) pageLay->addWidget(formHost);
+            else delete formHost;
+            if (!hasContent && !g.emptyNote.empty()) {
+                auto* note = new QLabel(QString::fromStdWString(g.emptyNote), page);
+                note->setEnabled(false);  // gri: icerigi henuz yok
+                note->setWordWrap(true);
+                pageLay->addWidget(note);
+            }
+            pageLay->addStretch(1);
             // Sekme icerigi KAYDIRILABILIR: 146 "Bolts" sekmesi 20+ satir tasir.
             auto* pageScroll = new QScrollArea;
             pageScroll->setWidgetResizable(true);
             pageScroll->setWidget(wrapWithFigures(page, g));
             tabs_->addTab(pageScroll, QString::fromStdWString(g.title));
             const int idx = tabs_->count() - 1;
-            for (const auto& pn : g.paramNames)
-                if (editors_.count(pn) && !paramTabIndex_.count(pn)) paramTabIndex_[pn] = idx;
+            const auto mapName = [&](const std::wstring& pn) {
+                if (!pn.empty() && editors_.count(pn) && !paramTabIndex_.count(pn))
+                    paramTabIndex_[pn] = idx;
+            };
+            for (const auto& pn : g.paramNames) mapName(pn);
+            for (const auto& pr : g.partRows)
+                for (const std::wstring* pn : {&pr.t, &pr.b, &pr.h, &pr.profile, &pr.posPrefix,
+                                               &pr.posStart, &pr.asmPrefix, &pr.asmStart,
+                                               &pr.material, &pr.name, &pr.finish})
+                    mapName(*pn);
         }
         if (!ungrouped.empty()) {
             auto* page = new QWidget;
@@ -329,9 +363,10 @@ ComponentDialogWidget::ComponentDialogWidget(const ComponentDialogDefinition& de
             }
         }
         root->addWidget(tabs_, /*stretch*/ 2);
-        // Tekla "Welds": kaynak tablosu ayri sekme; semadaki 1..N cagrilariyla
-        // cift yonlu eslesir (satir sec -> cagri vurgulanir, cagri tikla -> satir).
-        buildWeldTable(tabs_);
+        // Tekla "Welds...": ust cubuktaki dugmenin actigi kaynak tablosu; semadaki
+        // 1..N cagrilariyla cift yonlu eslesir (satir sec -> cagri vurgulanir,
+        // cagri tikla -> tablo acilir ve satir secilir).
+        buildWeldTable();
     } else {
         scroll_ = new QScrollArea(this);
         scroll_->setWidgetResizable(true);
@@ -394,6 +429,7 @@ void ComponentDialogWidget::addParamRow(QFormLayout* form, QWidget* box,
         cb->setToolTip(QStringLiteral("Isaretsiz = Default (motor varsayilani)"));
         optionalChecks_[pn] = cb;
         labelRow->addWidget(cb);
+        if (spec->documentedOnly) cb->setEnabled(false);  // gri alanin kutusu da gri
     }
     auto* lbl = new QLabel(QString::fromStdWString(
         spec->description.empty() ? spec->name : spec->description), labelHost);
@@ -415,13 +451,224 @@ void ComponentDialogWidget::addParamRow(QFormLayout* form, QWidget* box,
     editor->installEventFilter(this);
 }
 
+// Tek parametre icin satirsiz/etiketsiz editor (parca satirlari kullanir).
+QWidget* ComponentDialogWidget::makeBareEditor(const std::wstring& pn, QWidget* parent,
+                                               std::vector<std::wstring>& ungrouped) {
+    if (pn.empty()) return nullptr;
+    const CompParamSpec* spec = specByName(def_.specs, pn);
+    if (!spec) return nullptr;
+    ungrouped.erase(std::remove(ungrouped.begin(), ungrouped.end(), pn), ungrouped.end());
+    if (editors_.count(pn)) return nullptr;
+    const CompParam* stored = findParam(current_, pn);
+    const CompParamValue value = stored ? stored->value : paramDefaultValue(*spec);
+    QWidget* editor = buildEditor(*spec, value, parent);
+    if (!editor) return nullptr;
+    // Dar hucre: ok dugmesiz, ek-siz.
+    if (auto* d = qobject_cast<QDoubleSpinBox*>(editor)) {
+        d->setSuffix(QString());
+        d->setButtonSymbols(QAbstractSpinBox::NoButtons);
+        d->setMinimumWidth(56);
+    } else if (auto* i = qobject_cast<QSpinBox*>(editor)) {
+        i->setButtonSymbols(QAbstractSpinBox::NoButtons);
+        i->setMinimumWidth(40);
+    } else if (auto* e = qobject_cast<QLineEdit*>(editor)) {
+        e->setMinimumWidth(44);
+    }
+    if (spec->documentedOnly) {
+        const QString hint = QStringLiteral(
+            "Tekla 146 alani - henuz geometriye etkisi yok (deger kaydedilmez)");
+        editor->setEnabled(false);
+        editor->setToolTip(hint);
+    }
+    editors_[pn] = editor;
+    rows_[pn] = editor;  // vurgu icin editorun kendisi
+    editor->installEventFilter(this);
+    return editor;
+}
+
+// Tekla parca satirlari: [etiket] [x] t b h | [x] Pos_No | [x] Material [...] |
+// [x] Name | [x] Finish. Onay kutusu = "Default degil, degeri kullan"; kapaliysa
+// hucredeki parametreler sonuca YAZILMAZ. Gri (documentedOnly) hucrelerin kutusu da gri.
+QWidget* ComponentDialogWidget::buildPartRows(const ComponentDialogGroup& g,
+                                              std::vector<std::wstring>& ungrouped) {
+    auto* host = new QWidget;
+    auto* grid = new QGridLayout(host);
+    grid->setContentsMargins(0, 0, 0, 6);
+    grid->setHorizontalSpacing(6);
+    grid->setVerticalSpacing(3);
+    // Sutunlar: 0 etiket | 1 x | 2 t | 3 b | 4 h | 5 x | 6 pos1 | 7 pos2 | 8 x |
+    //           9 material | 10 ... | 11 x | 12 name | 13 x | 14 finish
+    const auto header = [&](int col, const wchar_t* text, int span = 1) {
+        auto* l = new QLabel(QString::fromStdWString(text), host);
+        l->setAlignment(Qt::AlignHCenter | Qt::AlignBottom);
+        grid->addWidget(l, 0, col, 1, span);
+    };
+    bool anyTbh = false;
+    for (const auto& pr : g.partRows) anyTbh = anyTbh || !pr.t.empty() || !pr.b.empty() ||
+                                               !pr.h.empty() || !pr.profile.empty();
+    if (anyTbh) { header(2, L"t"); header(3, L"b"); header(4, L"h"); }
+    header(6, L"Pos_No", 2);
+    header(9, L"Material", 2);
+    header(12, L"Name");
+    header(14, L"Finish");
+
+    const auto addCell = [&](int row, int chkCol,
+                             std::vector<std::pair<std::wstring, int>> cells) {
+        std::vector<std::wstring> used;
+        bool allDoc = true;
+        for (const auto& [pn, col] : cells) {
+            QWidget* ed = makeBareEditor(pn, host, ungrouped);
+            if (!ed) continue;
+            grid->addWidget(ed, row, col);
+            used.push_back(pn);
+            const CompParamSpec* sp = specByName(def_.specs, pn);
+            if (sp && !sp->documentedOnly) allDoc = false;
+        }
+        if (used.empty()) return;
+        auto* cb = new QCheckBox(host);
+        cb->setChecked(true);  // Tekla varsayilani: isaretli
+        cb->setToolTip(QStringLiteral("Isaretsiz = Default (motor varsayilani)"));
+        if (allDoc) cb->setEnabled(false);
+        for (const auto& pn : used) optionalChecks_[pn] = cb;
+        grid->addWidget(cb, row, chkCol);
+    };
+    const auto addDots = [&](int row, int col) {
+        auto* b = new QPushButton(QStringLiteral("..."), host);
+        b->setFixedWidth(26);
+        b->setEnabled(false);  // malzeme/profil katalogu bu uygulamada yok
+        grid->addWidget(b, row, col);
+    };
+
+    int row = 1;
+    for (const auto& pr : g.partRows) {
+        auto* lbl = new QLabel(QString::fromStdWString(pr.label), host);
+        grid->addWidget(lbl, row, 0);
+        if (!pr.profile.empty()) {
+            addCell(row, 1, {{pr.profile, 2}});
+            if (auto* it = grid->itemAtPosition(row, 2)) {
+                // profil metni t/b/h sutunlarina yayilir
+                QWidget* w = it->widget();
+                grid->removeWidget(w);
+                grid->addWidget(w, row, 2, 1, 3);
+            }
+        } else {
+            addCell(row, 1, {{pr.t, 2}, {pr.b, 3}, {pr.h, 4}});
+        }
+        addCell(row, 5, {{pr.posPrefix, 6}, {pr.posStart, 7}});
+        addCell(row, 8, {{pr.material, 9}});
+        if (!pr.material.empty()) addDots(row, 10);
+        addCell(row, 11, {{pr.name, 12}});
+        addCell(row, 13, {{pr.finish, 14}});
+        ++row;
+        if (!pr.asmPrefix.empty()) {  // Pos_No ikinci satir (montaj numarasi)
+            addCell(row, 5, {{pr.asmPrefix, 6}, {pr.asmStart, 7}});
+            ++row;
+        }
+    }
+    grid->setColumnStretch(14, 1);
+    return host;
+}
+
+// Tekla ust cubuk. Save/Load/Save as (ayar dosyasi) ve "ignore other types"
+// bu uygulamada karsiligi olmadigi icin GRI; Help... Tekla sayfasini acar;
+// "Welds" onay kutusu + dugme kaynak tablosuna baglidir.
+QWidget* ComponentDialogWidget::buildHeaderBar() {
+    auto* host = new QWidget(this);
+    auto* v = new QVBoxLayout(host);
+    v->setContentsMargins(0, 0, 0, 4);
+    v->setSpacing(4);
+
+    auto* r1 = new QHBoxLayout;
+    const auto grey = [&](QWidget* w) { w->setEnabled(false); return w; };
+    r1->addWidget(grey(new QPushButton(QStringLiteral("Save"), host)));
+    r1->addWidget(grey(new QPushButton(QStringLiteral("Load"), host)));
+    auto* preset = new QComboBox(host);
+    preset->addItem(QStringLiteral("standard"));
+    preset->setMinimumWidth(180);
+    r1->addWidget(grey(preset), 1);
+    r1->addWidget(grey(new QPushButton(QStringLiteral("Save as"), host)));
+    auto* presetName = new QLineEdit(QStringLiteral("standard"), host);
+    r1->addWidget(grey(presetName), 1);
+    auto* help = new QPushButton(QStringLiteral("Help..."), host);
+    help->setEnabled(def_.typeId == L"tekla_shear_plate_146");
+    QObject::connect(help, &QPushButton::clicked, this, []() {
+        QDesktopServices::openUrl(QUrl(QStringLiteral(
+            "https://support.tekla.com/doc/tekla-structures/2026/conn_146_help")));
+    });
+    r1->addWidget(help);
+    v->addLayout(r1);
+
+    auto* r2 = new QHBoxLayout;
+    auto* ignore = new QComboBox(host);
+    ignore->addItem(QStringLiteral("ignore other types"));
+    r2->addWidget(grey(ignore));
+    r2->addSpacing(40);
+    weldsCheck_ = new QCheckBox(host);
+    weldsCheck_->setChecked(true);
+    weldsCheck_->setToolTip(QStringLiteral("Isaretsiz = baglanti kaynak uretmez"));
+    r2->addWidget(weldsCheck_);
+    auto* weldsBtn = new QPushButton(QStringLiteral("Welds..."), host);
+    weldsBtn->setEnabled(!def_.schema.weldRows.empty());
+    QObject::connect(weldsBtn, &QPushButton::clicked, this, [this]() { showWeldDialog(); });
+    r2->addWidget(weldsBtn);
+    r2->addStretch(1);
+    v->addLayout(r2);
+    return host;
+}
+
+// Tekla alt cubuk: OK Apply Modify Get [x/o] Cancel .... Create
+QWidget* ComponentDialogWidget::createButtonBar(QDialog* dlg) {
+    auto* host = new QWidget(dlg);
+    auto* l = new QHBoxLayout(host);
+    l->setContentsMargins(0, 4, 0, 0);
+    auto* ok = new QPushButton(QStringLiteral("OK"), host);
+    ok->setDefault(true);
+    QObject::connect(ok, &QPushButton::clicked, dlg, &QDialog::accept);
+    l->addWidget(ok);
+    for (const wchar_t* name : {L"Apply", L"Modify", L"Get"}) {
+        auto* b = new QPushButton(QString::fromStdWString(name), host);
+        b->setEnabled(false);  // karsiligi yok -> gri
+        l->addWidget(b);
+    }
+    // "x / o": tum Default onay kutularini isaretle / kaldir.
+    auto* toggle = new QPushButton(QStringLiteral("\u2611 / \u2610"), host);
+    toggle->setToolTip(QStringLiteral("Tum Default onay kutularini isaretle / kaldir"));
+    QObject::connect(toggle, &QPushButton::clicked, this, [this]() {
+        bool anyChecked = false;
+        for (const auto& [name, cb] : optionalChecks_)
+            if (cb->isEnabled() && cb->isChecked()) { anyChecked = true; break; }
+        for (const auto& [name, cb] : optionalChecks_)
+            if (cb->isEnabled()) cb->setChecked(!anyChecked);
+    });
+    l->addWidget(toggle);
+    auto* cancel = new QPushButton(QStringLiteral("Cancel"), host);
+    QObject::connect(cancel, &QPushButton::clicked, dlg, &QDialog::reject);
+    l->addWidget(cancel);
+    l->addStretch(1);
+    auto* create = new QPushButton(QStringLiteral("Create"), host);
+    create->setEnabled(false);
+    l->addWidget(create);
+    return host;
+}
+
 // Tekla "Welds" tablosu: 12 sutun (No/Size/Type/Angle/Contour/Finish/Eff.thr./
 // R.opng./Placement/Prep./Length/Pitch). No sutununda onay kutusu + numara.
 // Satir secimi semadaki ayni numarali cagriyi vurgular; cagriya tiklamak satiri secer.
-void ComponentDialogWidget::buildWeldTable(QTabWidget* tabs) {
+void ComponentDialogWidget::buildWeldTable() {
     if (def_.schema.weldRows.empty()) return;
     const int n = static_cast<int>(def_.schema.weldRows.size());
-    weldTable_ = new QTableWidget(n, 12, tabs);
+    weldDialog_ = new QDialog(this);
+    weldDialog_->setWindowTitle(QStringLiteral("Welds"));
+    weldDialog_->resize(900, 360);
+    auto* weldLay = new QVBoxLayout(weldDialog_);
+    weldTable_ = new QTableWidget(n, 12, weldDialog_);
+    weldLay->addWidget(weldTable_);
+    auto* closeBtn = new QPushButton(QStringLiteral("Kapat"), weldDialog_);
+    QObject::connect(closeBtn, &QPushButton::clicked, weldDialog_, &QDialog::hide);
+    auto* closeRow = new QHBoxLayout;
+    closeRow->addStretch(1);
+    closeRow->addWidget(closeBtn);
+    weldLay->addLayout(closeRow);
     const wchar_t* headers[] = {L"No",       L"Size",   L"Type",   L"Angle",
                                 L"Contour",  L"Finish", L"Eff.thr.", L"R.opng.",
                                 L"Placement", L"Prep.", L"Length", L"Pitch"};
@@ -454,28 +701,36 @@ void ComponentDialogWidget::buildWeldTable(QTabWidget* tabs) {
         num(11, row.pitch);
     }
     weldTable_->resizeColumnsToContents();
-    weldTabIndex_ = tabs->addTab(weldTable_, QStringLiteral("Welds"));
 
     QObject::connect(weldTable_, &QTableWidget::itemSelectionChanged, this, [this]() {
         if (!schematic_ || !weldTable_) return;
         const auto rows = weldTable_->selectionModel()->selectedRows();
         schematic_->setHighlightedWeldRow(rows.isEmpty() ? -1 : rows.first().row());
     });
-    // Semadaki numarali cagri -> tablo satiri (ve Welds sekmesine gecis).
+    // Semadaki numarali cagri -> kaynak penceresi acilir, satir secilir.
     QObject::connect(schematic_, &ComponentSchematicView::weldCalloutClicked, this,
                      [this](int row) {
                          if (!weldTable_) return;
-                         if (tabs_) tabs_->setCurrentIndex(weldTabIndex_);
+                         showWeldDialog();
                          weldTable_->selectRow(row);
                          if (auto* it = weldTable_->item(row, 0))
                              weldTable_->scrollToItem(it);
                      });
 }
 
+void ComponentDialogWidget::showWeldDialog() {
+    if (!weldDialog_) return;
+    weldDialog_->show();
+    weldDialog_->raise();
+    weldDialog_->activateWindow();
+}
+
 // Tablodaki duzenlenmis kaynak satirlarini geri okur (kaydetmek isteyen cagiran icin).
 std::vector<WeldTableRow> ComponentDialogWidget::resultWeldRows() const {
     std::vector<WeldTableRow> out = def_.schema.weldRows;
     if (!weldTable_) return out;
+    // Ust cubuktaki "Welds" onay kutusu kapaliysa hicbir kaynak uretilmez.
+    const bool weldsOn = !weldsCheck_ || weldsCheck_->isChecked();
     for (std::size_t r = 0; r < out.size(); ++r) {
         const int row = static_cast<int>(r);
         auto text = [&](int c) {
@@ -488,7 +743,7 @@ std::vector<WeldTableRow> ComponentDialogWidget::resultWeldRows() const {
             return ok ? v : fallback;
         };
         auto* no = weldTable_->item(row, 0);
-        out[r].enabled = no ? no->checkState() == Qt::Checked : out[r].enabled;
+        out[r].enabled = (no ? no->checkState() == Qt::Checked : out[r].enabled) && weldsOn;
         out[r].number = row + 1;
         out[r].size = value(1, out[r].size);
         out[r].type = text(2).compare(QStringLiteral("Butt"), Qt::CaseInsensitive) == 0

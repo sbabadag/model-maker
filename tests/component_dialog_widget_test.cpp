@@ -12,6 +12,8 @@
 #include <QApplication>
 #include <QCheckBox>
 #include <QComboBox>
+#include <QDialog>
+#include <QPushButton>
 #include <QHeaderView>
 #include <QLabel>
 #include <QTabWidget>
@@ -92,17 +94,60 @@ int main(int argc, char** argv) {
 
         auto* tabWidget = w146.findChild<QTabWidget*>();
         CHECK(tabWidget != nullptr, "146: QTabWidget kuruldu");
-        // 10 parametre sekmesi (Tekla 146 sirasi) + "Welds" kaynak tablosu sekmesi.
-        CHECK(tabWidget && tabWidget->count() == 11, "146: 10 parametre + Welds sekmesi");
+        // 13 sekme, Tekla 146 sirasi; "Welds" sekme DEGIL, ust cubuktaki dugme.
+        CHECK(tabWidget && tabWidget->count() == 13, "146: 13 sekme (Welds sekme degil)");
         if (tabWidget) {
-            CHECK(tabWidget->tabText(0) == QStringLiteral("Picture"), "146: ilk sekme Picture");
-            CHECK(tabWidget->tabText(1) == QStringLiteral("Plates"), "146: ikinci sekme Plates");
-            CHECK(tabWidget->tabText(3) == QStringLiteral("Haunch"), "146: Haunch sekmesi var");
-            CHECK(tabWidget->tabText(6) == QStringLiteral("Beam cut"), "146: Beam cut sekmesi");
-            CHECK(tabWidget->tabText(7) == QStringLiteral("Angle box"), "146: Angle box sekmesi");
-            CHECK(tabWidget->tabText(8) == QStringLiteral("BoxPBolts"), "146: BoxPBolts sekmesi");
-            CHECK(tabWidget->tabText(9) == QStringLiteral("BoxSBolts"), "146: BoxSBolts sekmesi");
-            CHECK(tabWidget->tabText(10) == QStringLiteral("Welds"), "146: son sekme Welds");
+            const char* want[] = {"Picture", "Plates", "Stiffeners", "General", "Haunch",
+                                  "Notch", "Bolts", "Design type", "Beam cut", "Angle box",
+                                  "BoxPBolts", "BoxSBolts", "Analysis"};
+            for (int i = 0; i < 13 && i < tabWidget->count(); ++i)
+                CHECK(tabWidget->tabText(i) == QString::fromLatin1(want[i]),
+                      "146: sekme sirasi Tekla ile ayni");
+            for (int i = 0; i < tabWidget->count(); ++i)
+                CHECK(tabWidget->tabText(i) != QStringLiteral("Welds"),
+                      "146: Welds sekme olarak yok");
+        }
+        // Ust cubuk: Welds onay kutusu + Welds... dugmesi + Help... + gri Save/Load.
+        {
+            bool weldsBtn = false, helpBtn = false, saveGrey = false;
+            for (auto* b : w146.findChildren<QPushButton*>()) {
+                if (b->text() == QStringLiteral("Welds...")) weldsBtn = b->isEnabled();
+                if (b->text() == QStringLiteral("Help...")) helpBtn = b->isEnabled();
+                if (b->text() == QStringLiteral("Save")) saveGrey = !b->isEnabled();
+            }
+            CHECK(weldsBtn, "146: Welds... dugmesi var ve acik");
+            CHECK(helpBtn, "146: Help... dugmesi 146 icin acik");
+            CHECK(saveGrey, "146: Save dugmesi gri (karsiligi yok)");
+        }
+        // Parca satirlari: Plates sekmesinde Tab plate t/b/h kutulari + Default onay kutusu.
+        {
+            int groupBoxLabels = 0;
+            for (auto* l : w146.findChildren<QLabel*>())
+                if (l->text() == QStringLiteral("Tab plate") ||
+                    l->text() == QStringLiteral("Plate washer") ||
+                    l->text() == QStringLiteral("Web stiffener") ||
+                    l->text() == QStringLiteral("Top angle") ||
+                    l->text() == QStringLiteral("Bottom angle") ||
+                    l->text() == QStringLiteral("Backing bar"))
+                    ++groupBoxLabels;
+            CHECK(groupBoxLabels >= 6, "146: Tekla parca satiri etiketleri cizildi");
+        }
+        // Alt cubuk: OK/Apply/Modify/Get/toggle/Cancel/Create; Apply gri.
+        {
+            QDialog dlgProbe;
+            QWidget* bar = w146.createButtonBar(&dlgProbe);
+            int total = 0;
+            bool applyGrey = false, okOn = false, cancelOn = false, createGrey = false;
+            for (auto* b : bar->findChildren<QPushButton*>()) {
+                ++total;
+                if (b->text() == QStringLiteral("Apply")) applyGrey = !b->isEnabled();
+                if (b->text() == QStringLiteral("OK")) okOn = b->isEnabled();
+                if (b->text() == QStringLiteral("Cancel")) cancelOn = b->isEnabled();
+                if (b->text() == QStringLiteral("Create")) createGrey = !b->isEnabled();
+            }
+            CHECK(total == 7, "146: alt cubukta 7 dugme");
+            CHECK(applyGrey && createGrey, "146: Apply/Create gri");
+            CHECK(okOn && cancelOn, "146: OK/Cancel acik");
         }
 
         // Baslangicta Default kutulari isaretli -> alan sonuca yazilir.
@@ -137,18 +182,26 @@ int main(int argc, char** argv) {
             CHECK(disabledEditors > 0, "146: gri alan editorleri devre disi");
         }
 
-        // "Default" onay kutusunu bul (tooltip ile) ve isareti kaldir.
-        QCheckBox* opt = nullptr;
-        for (auto* cb : w146.findChildren<QCheckBox*>())
-            if (cb->toolTip().contains(QStringLiteral("Default"))) { opt = cb; break; }
-        CHECK(opt != nullptr, "146: Default onay kutusu bulundu");
-        if (opt) {
-            opt->setChecked(false);
+        // Tum ACIK "Default" onay kutularini (tooltip ile) kaldir: bulon alani VE
+        // parca satirindaki (Tab plate t/b/h) alan sonuca yazilmamali. Gri
+        // alanlarin kutulari zaten kapali/devre disi.
+        int optCount = 0, optEnabled = 0;
+        for (auto* cb : w146.findChildren<QCheckBox*>()) {
+            if (!cb->toolTip().contains(QStringLiteral("Default"))) continue;
+            ++optCount;
+            if (cb->isEnabled()) { ++optEnabled; cb->setChecked(false); }
+        }
+        CHECK(optCount > 0, "146: Default onay kutusu bulundu");
+        CHECK(optEnabled > 0 && optEnabled < optCount, "146: gri alanlarin Default kutusu devre disi");
+        if (optCount > 0) {
             params = w146.resultParams();
-            bool stillThere = false;
-            for (const auto& p : params)
+            bool stillThere = false, plateThere = false;
+            for (const auto& p : params) {
                 if (p.name == L"boltStandard") stillThere = true;
+                if (p.name == L"plateThickness") plateThere = true;
+            }
             CHECK(!stillThere, "146: Default isaretsiz -> parametre yazilmaz");
+            CHECK(!plateThere, "146: parca satiri Default isaretsiz -> t yazilmaz");
         }
 
         // 7) KAYNAK TABLOSU (Tekla "Welds"): 10 satir x 12 sutun, cagri eslesmesi.

@@ -159,12 +159,13 @@ int main() {
     {
         const ComponentDialogDefinition def = shearPlate146DialogDefinition();
         check(def.schema.useTabs, "146: sekmeli duzen");
-        check(def.schema.groups.size() == 10, "146: 10 sekme");
-        const wchar_t* expected[] = {L"Picture", L"Plates",    L"Stiffeners", L"Haunch",
-                                     L"Notch",   L"Bolts",     L"Beam cut",   L"Angle box",
-                                     L"BoxPBolts", L"BoxSBolts"};
-        bool titlesOk = def.schema.groups.size() == 10;
-        for (std::size_t i = 0; titlesOk && i < 10; ++i)
+        check(def.schema.groups.size() == 13, "146: 13 sekme (Tekla ekran goruntusu)");
+        const wchar_t* expected[] = {L"Picture", L"Plates", L"Stiffeners", L"General",
+                                     L"Haunch", L"Notch", L"Bolts", L"Design type",
+                                     L"Beam cut", L"Angle box", L"BoxPBolts", L"BoxSBolts",
+                                     L"Analysis"};
+        bool titlesOk = def.schema.groups.size() == 13;
+        for (std::size_t i = 0; titlesOk && i < 13; ++i)
             titlesOk = def.schema.groups[i].title == expected[i] && def.schema.groups[i].asTab;
         check(titlesOk, "146: sekme adlari ve sirasi Tekla ile ayni");
 
@@ -206,6 +207,41 @@ int main() {
                 const CompParamSpec* s = findParamSpec(def.specs, n);
                 check(s && !s->documentedOnly, "146: calisan alan gri degil");
             }
+        }
+
+        // Tekla parca satirlari: Plates 2 (Tab plate, Plate washer), Stiffeners 1,
+        // Haunch 2 (Top/Bottom), Beam cut 1 (Backing bar), Angle box 3.
+        {
+            const auto rowsOf = [&](const wchar_t* title) -> std::size_t {
+                for (const auto& g : def.schema.groups)
+                    if (g.title == title) return g.partRows.size();
+                return 999;
+            };
+            check(rowsOf(L"Plates") == 2, "146: Plates 2 parca satiri");
+            check(rowsOf(L"Stiffeners") == 1, "146: Stiffeners 1 parca satiri");
+            check(rowsOf(L"Haunch") == 2, "146: Haunch ust+alt plaka satiri");
+            check(rowsOf(L"Beam cut") == 1, "146: Beam cut backing bar satiri");
+            check(rowsOf(L"Angle box") == 3, "146: Angle box 3 parca satiri");
+            // General / Design type: ekran goruntusundeki alanlar GRI olarak var.
+            for (const wchar_t* n : {L"upDirection", L"locked", L"classNo", L"connectionCode",
+                                     L"autoDefaultsGroup", L"autoConnectionGroup",
+                                     L"externalDesign", L"checkConnection", L"designCode",
+                                     L"loadDefinition", L"udlPercent", L"loadShear",
+                                     L"loadTension", L"loadMoment"}) {
+                const CompParamSpec* sp = findParamSpec(def.specs, n);
+                check(sp && sp->documentedOnly, "146: General/Design type alani gri olarak var");
+            }
+            const CompParamSpec* cls = findParamSpec(def.specs, L"classNo");
+            check(cls && cls->defInt == 99, "146: Class varsayilani 99 (ekran goruntusu)");
+            // Manuel notch: ust ve alt flans AYRI alan seti.
+            for (const wchar_t* n : {L"flangeNotchSideTop", L"flangeNotchSideBottom",
+                                     L"notchCutHTop", L"notchCutHBottom",
+                                     L"notchWebToFlangeTop", L"notchWebToFlangeBottom"})
+                check(findParamSpec(def.specs, n) != nullptr, "146: manuel notch ust/alt alani var");
+            // Analysis sekmesi bos ama Tekla sirasini korur.
+            const auto& last = def.schema.groups.back();
+            check(last.title == L"Analysis" && last.keepIfEmpty && last.paramNames.empty(),
+                  "146: Analysis sekmesi bos placeholder");
         }
 
         const auto v = validateDialogSchema(def.schema, def.specs);
