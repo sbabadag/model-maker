@@ -253,7 +253,7 @@ int main(int argc, char** argv) {
                 QApplication::processEvents();
                 int withPix = 0, withText = 0;
                 for (auto* l : w146.findChildren<QLabel*>())
-                    if (l->isVisible() && l->geometry() == cb->geometry()) {
+                    if (!l->isHidden() && l->geometry() == cb->geometry()) {
                         if (!l->pixmap(Qt::ReturnByValue).isNull()) ++withPix;
                         else if (!l->text().isEmpty()) ++withText;
                     }
