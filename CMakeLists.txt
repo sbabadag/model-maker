@@ -1019,6 +1019,13 @@ if(BUILD_TESTING)
     target_compile_options(model_maker_component_glyph_test PRIVATE -Wall -Wextra -Wpedantic)
     add_test(NAME model_maker_component_glyph_test COMMAND model_maker_component_glyph_test)
 
+    # COMPONENT KASKAD SILME: ana/ikincil parca silinince tum component silinir.
+    add_executable(model_maker_component_cascade_delete_test tests/component_cascade_delete_test.cpp)
+    target_link_libraries(model_maker_component_cascade_delete_test PRIVATE model_maker_core)
+    target_link_options(model_maker_component_cascade_delete_test PRIVATE -static -static-libgcc -static-libstdc++)
+    target_compile_options(model_maker_component_cascade_delete_test PRIVATE -Wall -Wextra -Wpedantic)
+    add_test(NAME model_maker_component_cascade_delete_test COMMAND model_maker_component_cascade_delete_test)
+
     # UNIVERSAL COMPONENT DIALOG + SCHEMATIC (Tekla-tarzi dialog): sematik cizim
     # + hotspot <-> parametre baglantisi + parametre gruplari + EndPlateParams
     # adaptoru + dialog registry. OCC'siz, Linux'ta kosar.

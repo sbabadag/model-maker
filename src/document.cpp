@@ -534,6 +534,38 @@ std::vector<EntityId> Document::deleteModels(const std::vector<std::size_t>& ind
     spatialIndexDirty_ = true;
     documentBounds_.reset();
     if (!valid.empty()) invalidateDerivedState();
+    // UNIVERSAL COMPONENT KASKADI: bir component'in baglandigi ANA veya IKINCIL
+    // parcalardan HERHANGI biri silinirse TUM component silinir: kayit + sahip
+    // olunan levhalar + bulon gruplari (delikleriyle) + kaynaklar + component'a ait
+    // kesmeler. Bu kaskad end-plate/bulon/kaynak kaskadlarindan ONCE calisir; boylece
+    // component'in cocuklari yetim kalmaz. Kalan (silinmemis) baglanti parcalari
+    // affectedTargets'a eklenir (kesmeler kalkinca yeniden hesaplansin).
+    for (std::size_t ki = componentInstances_.size(); ki-- > 0;) {
+        const ComponentInstanceRecord& rc = componentInstances_[ki];
+        bool touches = deletedIds.count(rc.mainPart) != 0;
+        for (const EntityId sp : rc.secondaryParts)
+            if (deletedIds.count(sp)) { touches = true; break; }
+        if (!touches) continue;
+        const ComponentInstanceRecord rec = rc;  // kopya: asagida liste degisir
+        if (rec.mainPart != kInvalidEntityId && !deletedIds.count(rec.mainPart))
+            affectedTargets.push_back(rec.mainPart);
+        for (const EntityId sp : rec.secondaryParts)
+            if (sp != kInvalidEntityId && !deletedIds.count(sp)) affectedTargets.push_back(sp);
+        removeComponentInstance(ki);
+        // Bulon gruplari (delikler + display)
+        for (const EntityId bg : rec.ownedBoltGroupIds)
+            if (const auto bi = indexOfBoltGroup(bg)) removeBoltGroup(*bi);
+        // Kaynaklar (child tablosundaki weld kimlikleri)
+        for (const auto& ch : rec.children)
+            if (ch.kind == ComponentObjectKind::Weld && ch.entityId != kInvalidEntityId)
+                if (const auto wi = indexOfWeld(ch.entityId)) removeWeld(*wi);
+        // Component'a ait kesmeler (owner == component id)
+        for (std::size_t ci = cutModifiers_.size(); ci-- > 0;)
+            if (cutModifiers_[ci].owner == rec.id) removeCutModifier(ci);
+        // Levhalar (yaprak)
+        for (const EntityId pid : rec.ownedPlateIds)
+            if (const auto pi = indexOfEntity(pid)) eraseModelLeaf(*pi);
+    }
     // ALIN LEVHASI KASKADI (Phase C1): kullanici parcalarindan (main/secondary)
     // HERHANGI biri silinen baglanti kaldirilir; alt nesnelerinden (levha veya
     // bulon montaji) biri silinen baglanti de kaldirilir. removeEndPlateConnection
