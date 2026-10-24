@@ -5873,6 +5873,36 @@ bool Application::selectedComponentInstance(ComponentInstanceRecord& out) const 
     return false;
 }
 
+std::vector<ComponentInstanceRecord> Application::selectedComponentInstances(
+    const std::wstring& typeId) const {
+    std::vector<ComponentInstanceRecord> out;
+    const auto add = [&](const ComponentInstanceRecord& rec) {
+        if (!typeId.empty() && rec.typeId != typeId) return;
+        for (const auto& o : out)
+            if (o.id == rec.id) return;
+        out.push_back(rec);
+    };
+    for (const std::size_t idx : selectedModels_) {
+        if (idx >= document_.models().size()) continue;
+        const EntityId id = document_.modelId(idx);
+        for (const auto& rec : document_.componentInstances()) {
+            if (std::find(rec.ownedPlateIds.begin(), rec.ownedPlateIds.end(), id) !=
+                rec.ownedPlateIds.end()) {
+                add(rec);
+                continue;
+            }
+            for (const EntityId bg : rec.ownedBoltGroupIds) {
+                const auto bi = document_.indexOfBoltGroup(bg);
+                if (bi && document_.boltGroups()[*bi].displayEntityId == id) {
+                    add(rec);
+                    break;
+                }
+            }
+        }
+    }
+    return out;
+}
+
 bool Application::setSelectedComponentParams(EntityId compId,
                                              const std::vector<CompParam>& newParams) {
 #ifdef MM_HAS_OCC

@@ -24,6 +24,7 @@
 #include "model_maker/component_dialog.hpp"
 
 #include <QWidget>
+#include <functional>
 #include <map>
 #include <vector>
 
@@ -93,11 +94,28 @@ public:
     // Üst çubuktaki "Welds" onay kutusu kapalıysa TÜM satırlar kapalı döner.
     std::vector<WeldTableRow> resultWeldRows() const;
 
+    // Tekla alt düğme çubuğu eylemleri. Boş (atanmamış) eylemin düğmesi GRİ durur.
+    //   apply  : düzenlenen bağlantıya uygula, pencereyi KAPATMA
+    //   modify : seçili aynı tip bağlantılara uygula
+    //   get    : seçili bağlantının değerlerini pencereye al (setParams)
+    //   create : bu ayarlarla yeni bağlantı oluşturma komutunu başlat
+    struct ButtonActions {
+        std::function<void()> apply;
+        std::function<void()> modify;
+        std::function<void()> get;
+        std::function<void()> create;
+    };
+
     // Tekla alt düğme çubuğu: OK / Apply / Modify / Get / (hepsini seç-bırak) /
     // Cancel / Create. OK ve Cancel `dlg`'e bağlıdır; toggle düğmesi tüm
-    // "Default" onay kutularını açar/kapatır; Apply/Modify/Get/Create bu
-    // uygulamada karşılığı olmadığı için GRİ (devre dışı) durur.
-    QWidget* createButtonBar(QDialog* dlg);
+    // "Default" onay kutularını açar/kapatır; Apply/Modify/Get/Create `actions`
+    // içindeki geri çağrıya bağlanır (atanmadıysa gri).
+    QWidget* createButtonBar(QDialog* dlg, const ButtonActions& actions = ButtonActions{});
+
+    // Pencere değerlerini `p`'den yükler (Get). `p`'de olmayan alanlar şema
+    // varsayılanına döner; p'deki ekstra parametreler (createWelds vb.) korunur.
+    // "Default" onay kutusu: parametre p'de varsa işaretli, yoksa işaretsiz.
+    void setParams(const std::vector<CompParam>& p);
 
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
@@ -109,6 +127,8 @@ private:
     QWidget* buildEditor(const CompParamSpec& spec, const CompParamValue& value,
                          QWidget* parent);
     static CompParamValue valueFromEditor(QWidget* editor, const CompParamSpec& spec);
+    static void setEditorValue(QWidget* editor, const CompParamSpec& spec,
+                               const CompParamValue& value);
     void highlightParamRow(const std::wstring& paramName);
     void addParamRow(QFormLayout* form, QWidget* box, const std::wstring& paramName,
                      std::vector<std::wstring>& ungrouped);

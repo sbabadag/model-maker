@@ -15,6 +15,8 @@
 #include <QStandardItemModel>
 #include <cctype>
 #include <map>
+#include <memory>
+#include <QPointer>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QTabWidget>
@@ -1587,6 +1589,111 @@ bool QtMainWindow::openComponentParamsDialog(const mm::ComponentInstanceRecord& 
     // Şematik parametre editörü: registry'de diyalog tanımı varsa (fin_plate vb.)
     // Tekla-tarzi sol çizim + sağ gruplanmış editörler + çift yönlü hotspot vurgusu.
     if (const auto* def = mm::ComponentDialogRegistry::instance().find(rec.typeId)) {
+        // TEKLA (sekmeli) pencere MODELESS: pencere acikken modelde baska baglantilar
+        // secilebilir. Apply/Modify/Get/Create calisir:
+        //   Apply  : pencere degerlerini duzenlenen baglantiya uygular (acik kalir)
+        //   Modify : degerleri SECILI tum ayni tip baglantilara uygular
+        //   Get    : secili baglantinin degerlerini pencereye alir
+        //   Create : degerleri yeni baglanti icin saklar, yerlestirme komutunu baslatir
+        //   OK     : duzenlenen baglantiya uygular ve kapatir
+        if (def->schema.useTabs) {
+            struct ModelessHandle {
+                QPointer<QDialog> dlg;
+                std::function<void(const mm::ComponentInstanceRecord&)> load;
+            };
+            static std::map<std::wstring, ModelessHandle> openDialogs;
+            if (auto it = openDialogs.find(rec.typeId);
+                it != openDialogs.end() && !it->second.dlg.isNull()) {
+                // Ayni tipte pencere zaten acik: tekrar acma, bu baglantiyi yukle.
+                it->second.load(rec);
+                it->second.dlg->show();
+                it->second.dlg->raise();
+                it->second.dlg->activateWindow();
+                return true;
+            }
+            auto* dlg = new QDialog(this);
+            dlg->setAttribute(Qt::WA_DeleteOnClose);
+            dlg->setModal(false);
+            dlg->setWindowFlag(Qt::Tool, true);  // ana pencerenin uzerinde kalir
+            auto* root = new QVBoxLayout(dlg);
+            auto* widget = new mm::ComponentDialogWidget(*def, rec.params, dlg);
+            root->addWidget(widget);
+            const QString baseTitle = QString::fromStdWString(type->displayName);
+            auto curId = std::make_shared<mm::EntityId>(rec.id);
+            const std::wstring typeId = rec.typeId;
+            const auto retitle = [dlg, baseTitle, curId]() {
+                dlg->setWindowTitle(baseTitle + QStringLiteral(" — #") +
+                                    QString::number(static_cast<qulonglong>(*curId)));
+            };
+            retitle();
+
+            // Pencere degerleri + kaynak tablosu ekstralari (createWelds/weldSize).
+            const auto collect = [widget]() {
+                auto params = widget->resultParams();
+                bool anyWeld = false;
+                double weldSize = 5.0;
+                for (const auto& r : widget->resultWeldRows())
+                    if (r.enabled) { anyWeld = true; weldSize = r.size; break; }
+                params.push_back(mm::CompParam{L"createWelds", anyWeld});
+                params.push_back(mm::CompParam{L"weldSize", weldSize});
+                return params;
+            };
+            const auto say = [this](const QString& m) { statusBar()->showMessage(m, 5000); };
+
+            mm::ComponentDialogWidget::ButtonActions act;
+            act.apply = [this, curId, collect, say]() {
+                say(app_.setSelectedComponentParams(*curId, collect())
+                        ? QStringLiteral("Uygulandı")
+                        : QStringLiteral("Uygulanamadı (geometri üretilemedi)"));
+            };
+            act.modify = [this, typeId, collect, say]() {
+                const auto targets = app_.selectedComponentInstances(typeId);
+                if (targets.empty()) {
+                    say(QStringLiteral("Modify: modelde aynı tipte seçili bağlantı yok"));
+                    return;
+                }
+                const auto params = collect();
+                int ok = 0;
+                for (const auto& t : targets)
+                    if (app_.setSelectedComponentParams(t.id, params)) ++ok;
+                say(QStringLiteral("Modify: %1/%2 bağlantı güncellendi")
+                        .arg(ok).arg(static_cast<int>(targets.size())));
+            };
+            act.get = [this, typeId, widget, curId, retitle, say]() {
+                const auto targets = app_.selectedComponentInstances(typeId);
+                if (targets.empty()) {
+                    say(QStringLiteral("Get: modelde aynı tipte seçili bağlantı yok"));
+                    return;
+                }
+                widget->setParams(targets.front().params);
+                *curId = targets.front().id;
+                retitle();
+                say(QStringLiteral("Get: bağlantı #%1 değerleri alındı")
+                        .arg(static_cast<qulonglong>(targets.front().id)));
+            };
+            act.create = [this, typeId, collect]() {
+                // Yeni baglanti: pencere ACIK kalir; kullanici ana + ikincil parcayi secer.
+                app_.setPendingComponentParams(collect());
+                app_.startComponentCommand(typeId);
+            };
+            root->addWidget(widget->createButtonBar(dlg, act));
+            // OK = duzenlenen baglantiya uygula + kapat; Cancel = kapat (bar bagladi).
+            QObject::connect(dlg, &QDialog::accepted, this, [this, curId, collect]() {
+                app_.setSelectedComponentParams(*curId, collect());
+            });
+            // Disaridan (cift tik) gelen baglantiyi pencereye yukle.
+            openDialogs[typeId] = ModelessHandle{
+                QPointer<QDialog>(dlg),
+                [widget, curId, retitle](const mm::ComponentInstanceRecord& r) {
+                    widget->setParams(r.params);
+                    *curId = r.id;
+                    retitle();
+                }};
+            dlg->resize(dlg->sizeHint().expandedTo(QSize(760, 560)));
+            dlg->show();
+            return true;
+        }
+
         QDialog dlg(this);
         dlg.setWindowTitle(QStringLiteral("Bileşen Özellikleri — ") +
                            QString::fromStdWString(type->displayName));

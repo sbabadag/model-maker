@@ -402,6 +402,11 @@ public:
     // Secili model bir component instance'inin SAHIP OLDUGU alt nesne (levha/
     // bulon display) ise kaydini dondurur; degilse false.
     bool selectedComponentInstance(ComponentInstanceRecord& out) const;
+    // Secimdeki TUM component instance'lari (secili levha/bulon display'lerinden
+    // sahiplik yoluyla cozulur; ayni instance bir kez). typeId bos degilse yalniz o
+    // tip. Modeless component penceresindeki Modify/Get dugmeleri kullanir.
+    std::vector<ComponentInstanceRecord> selectedComponentInstances(
+        const std::wstring& typeId = std::wstring()) const;
     // Component instance parametre guncelleme (canli recompute, undo'lu).
     // typeId bilinen bir tipse parametreleri semaya hizalar, yeniden uretir.
     bool setSelectedComponentParams(EntityId compId, const std::vector<CompParam>& newParams);

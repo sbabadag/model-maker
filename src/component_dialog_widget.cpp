@@ -903,7 +903,7 @@ QWidget* ComponentDialogWidget::buildHeaderBar() {
 }
 
 // Tekla alt cubuk: OK Apply Modify Get [x/o] Cancel .... Create
-QWidget* ComponentDialogWidget::createButtonBar(QDialog* dlg) {
+QWidget* ComponentDialogWidget::createButtonBar(QDialog* dlg, const ButtonActions& actions) {
     auto* host = new QWidget(dlg);
     auto* l = new QHBoxLayout(host);
     l->setContentsMargins(0, 4, 0, 0);
@@ -911,9 +911,18 @@ QWidget* ComponentDialogWidget::createButtonBar(QDialog* dlg) {
     ok->setDefault(true);
     QObject::connect(ok, &QPushButton::clicked, dlg, &QDialog::accept);
     l->addWidget(ok);
-    for (const wchar_t* name : {L"Apply", L"Modify", L"Get"}) {
-        auto* b = new QPushButton(QString::fromStdWString(name), host);
-        b->setEnabled(false);  // karsiligi yok -> gri
+    const struct { const wchar_t* name; const std::function<void()>* fn; const char* tip; } tekla[] = {
+        {L"Apply", &actions.apply, "Degerleri duzenlenen baglantiya uygula (pencere acik kalir)"},
+        {L"Modify", &actions.modify, "Degerleri secili ayni tip baglantilara uygula"},
+        {L"Get", &actions.get, "Secili baglantinin degerlerini pencereye al"}};
+    for (const auto& t : tekla) {
+        auto* b = new QPushButton(QString::fromStdWString(t.name), host);
+        if (*t.fn) {
+            b->setToolTip(QString::fromUtf8(t.tip));
+            QObject::connect(b, &QPushButton::clicked, this, [fn = *t.fn]() { fn(); });
+        } else {
+            b->setEnabled(false);  // karsiligi yok -> gri
+        }
         l->addWidget(b);
     }
     // "x / o": tum Default onay kutularini isaretle / kaldir.
@@ -932,7 +941,13 @@ QWidget* ComponentDialogWidget::createButtonBar(QDialog* dlg) {
     l->addWidget(cancel);
     l->addStretch(1);
     auto* create = new QPushButton(QStringLiteral("Create"), host);
-    create->setEnabled(false);
+    if (actions.create) {
+        create->setToolTip(QStringLiteral("Bu ayarlarla yeni baglanti olustur (ana ve ikincil parcayi secin)"));
+        QObject::connect(create, &QPushButton::clicked, this,
+                         [fn = actions.create]() { fn(); });
+    } else {
+        create->setEnabled(false);
+    }
     l->addWidget(create);
     return host;
 }
@@ -1113,6 +1128,70 @@ QWidget* ComponentDialogWidget::buildEditor(const CompParamSpec& spec,
         }
     }
     return nullptr;
+}
+
+void ComponentDialogWidget::setEditorValue(QWidget* editor, const CompParamSpec& spec,
+                                           const CompParamValue& value) {
+    if (!editor) return;
+    switch (spec.type) {
+        case CompParamType::Length:
+        case CompParamType::Angle: {
+            double v = spec.defDouble;
+            if (const auto* d = std::get_if<double>(&value)) v = *d;
+            if (auto* combo = qobject_cast<QComboBox*>(editor)) {
+                combo->setEditText(QString::number(v, 'g', 12));
+            } else if (auto* spin = qobject_cast<QDoubleSpinBox*>(editor)) {
+                spin->setValue(v);
+            }
+            break;
+        }
+        case CompParamType::Integer: {
+            int v = spec.defInt;
+            if (const auto* n = std::get_if<int>(&value)) v = *n;
+            if (auto* spin = qobject_cast<QSpinBox*>(editor)) spin->setValue(v);
+            break;
+        }
+        case CompParamType::Boolean: {
+            bool v = spec.defBool;
+            if (const auto* b = std::get_if<bool>(&value)) v = *b;
+            if (auto* box = qobject_cast<QCheckBox*>(editor)) box->setChecked(v);
+            break;
+        }
+        case CompParamType::Enum: {
+            std::wstring v = spec.defString;
+            if (const auto* s = std::get_if<std::wstring>(&value)) v = *s;
+            if (auto* combo = qobject_cast<QComboBox*>(editor)) {
+                const int idx = combo->findText(QString::fromStdWString(v));
+                if (idx >= 0) combo->setCurrentIndex(idx);
+            }
+            break;
+        }
+        case CompParamType::EntityRef:
+            break;  // salt-okunur
+        case CompParamType::String:
+        case CompParamType::Profile:
+        case CompParamType::Material:
+        default: {
+            std::wstring v = spec.defString;
+            if (const auto* s = std::get_if<std::wstring>(&value)) v = *s;
+            if (auto* edit = qobject_cast<QLineEdit*>(editor))
+                edit->setText(QString::fromStdWString(v));
+            break;
+        }
+    }
+}
+
+void ComponentDialogWidget::setParams(const std::vector<CompParam>& p) {
+    current_ = p;
+    for (const auto& spec : def_.specs) {
+        const auto it = editors_.find(spec.name);
+        if (it == editors_.end() || spec.documentedOnly) continue;
+        const CompParam* stored = findParam(p, spec.name);
+        setEditorValue(it->second, spec, stored ? stored->value : paramDefaultValue(spec));
+        const auto oc = optionalChecks_.find(spec.name);
+        if (oc != optionalChecks_.end() && oc->second->isEnabled())
+            oc->second->setChecked(stored != nullptr);
+    }
 }
 
 CompParamValue ComponentDialogWidget::valueFromEditor(QWidget* editor,

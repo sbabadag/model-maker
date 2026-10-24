@@ -200,6 +200,45 @@ int main(int argc, char** argv) {
             CHECK(applyGrey && createGrey, "146: Apply/Create gri");
             CHECK(okOn && cancelOn, "146: OK/Cancel acik");
         }
+        // Eylem atanirsa Apply/Modify/Get/Create ACIK ve geri cagriyi cagirir;
+        // Get -> setParams ile pencere degerleri degisir (modeless Tekla akisi).
+        {
+            QDialog dlgProbe;
+            int nApply = 0, nModify = 0, nGet = 0, nCreate = 0;
+            mm::ComponentDialogWidget::ButtonActions act;
+            act.apply = [&]() { ++nApply; };
+            act.modify = [&]() { ++nModify; };
+            act.get = [&]() { ++nGet; };
+            act.create = [&]() { ++nCreate; };
+            QWidget* bar = w146.createButtonBar(&dlgProbe, act);
+            bool allOn = true;
+            for (auto* b : bar->findChildren<QPushButton*>()) {
+                const QString t = b->text();
+                if (t == QStringLiteral("Apply") || t == QStringLiteral("Modify") ||
+                    t == QStringLiteral("Get") || t == QStringLiteral("Create")) {
+                    if (!b->isEnabled()) allOn = false;
+                    b->click();
+                }
+            }
+            CHECK(allOn, "146: eylemli cubukta Apply/Modify/Get/Create acik");
+            CHECK(nApply == 1 && nModify == 1 && nGet == 1 && nCreate == 1,
+                  "146: dugmeler geri cagrilari tetikler");
+
+            std::vector<mm::CompParam> src = w146.resultParams();
+            for (auto& p : src)
+                if (p.name == L"plateThickness") p.value = mm::CompParamValue{18.0};
+                else if (p.name == L"holeType") p.value = mm::CompParamValue{std::wstring(L"Slotted")};
+                else if (p.name == L"boltCount") p.value = mm::CompParamValue{6};
+            w146.setParams(src);
+            double t = 0.0; int n = 0; std::wstring ht;
+            for (const auto& p : w146.resultParams()) {
+                if (p.name == L"plateThickness") t = std::get<double>(p.value);
+                if (p.name == L"boltCount") n = std::get<int>(p.value);
+                if (p.name == L"holeType") ht = std::get<std::wstring>(p.value);
+            }
+            CHECK(t == 18.0 && n == 6 && ht == L"Slotted",
+                  "146: setParams (Get) pencere degerlerini yukler");
+        }
 
         // Baslangicta Default kutulari isaretli -> alan sonuca yazilir.
         auto params = w146.resultParams();
