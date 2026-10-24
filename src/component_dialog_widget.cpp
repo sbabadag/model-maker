@@ -1,4 +1,5 @@
 #include "model_maker/component_dialog_widget.hpp"
+#include "model_maker/component_option_icons.hpp"
 
 #include <QAbstractItemView>
 #include <QCheckBox>
@@ -21,6 +22,8 @@
 #include <QPixmap>
 #include <QPushButton>
 #include <QGuiApplication>
+#include <QIcon>
+#include <QListView>
 #include <QScreen>
 #include <QFrame>
 #include <QScrollArea>
@@ -662,6 +665,12 @@ QWidget* ComponentDialogWidget::buildCanvasPage(const ComponentDialogGroup& g,
         if (c.kind == PlacedControlKind::IconCombo) {
             r = QRect(c.x, c.y, c.w, c.h);  // resmin tamami tiklanabilir
             if (auto* cb = qobject_cast<QComboBox*>(editor)) {
+                // Kapali kutuda secili resim Tekla'nin arka plan resminde zaten var:
+                // kutu yuzundeki simgeyi gizle, acilan listede buyuk resim kalsin.
+                if (cb->property("hasOptionIcons").toBool()) {
+                    cb->setIconSize(QSize(0, 0));
+                    cb->view()->setIconSize(QSize(120, 70));
+                }
                 cb->setStyleSheet(QStringLiteral(
                     "QComboBox { background: transparent; border: none; color: transparent; }"
                     "QComboBox::drop-down { border: none; width: 0px; }"
@@ -1110,8 +1119,29 @@ QWidget* ComponentDialogWidget::buildEditor(const CompParamSpec& spec,
         }
         case CompParamType::Enum: {
             auto* combo = new QComboBox(parent);
-            for (const auto& choice : spec.choices)
-                combo->addItem(QString::fromStdWString(choice));
+            // Tekla yardim sayfasindaki secenek resimleri: her satir "resim + ad".
+            const auto* icons = optionIconsFor(spec.name);
+            bool anyIcon = false;
+            for (std::size_t ci = 0; ci < spec.choices.size(); ++ci) {
+                const QString text = QString::fromStdWString(spec.choices[ci]);
+                if (icons && ci < icons->size() && !(*icons)[ci].empty()) {
+                    const QIcon ic{QString::fromStdWString((*icons)[ci])};
+                    if (!ic.isNull()) {
+                        combo->addItem(ic, text);
+                        anyIcon = true;
+                        continue;
+                    }
+                }
+                combo->addItem(text);
+            }
+            if (anyIcon) {
+                auto* view = new QListView(combo);
+                view->setUniformItemSizes(false);
+                combo->setView(view);
+                combo->setIconSize(QSize(36, 22));          // kapali kutudaki kucuk resim
+                combo->view()->setIconSize(QSize(120, 70)); // acilan listede buyuk resim
+                combo->setProperty("hasOptionIcons", true);
+            }
             std::wstring v = spec.defString;
             if (const auto* s = std::get_if<std::wstring>(&value)) v = *s;
             const int idx = combo->findText(QString::fromStdWString(v));

@@ -201,6 +201,23 @@ int main(int argc, char** argv) {
             }
             CHECK(found == 13 && enabled == 13, "146: Stiffeners alanlari (13) tamami aktif");
         }
+        // Acilir listeler: Tekla yardim sayfasi secenek resimleri her satirda.
+        {
+            int iconCombos = 0, allIcon = 0;
+            for (const char* nm : {"stiffenerCreation", "stiffenerOrientation", "stiffenerChamferType",
+                                   "tabChamferType", "tabOrientation", "boltStagger", "notchShape",
+                                   "haunchCreation", "shearTabPosition", "plateWasherType"}) {
+                auto* cb = w146.findChild<QComboBox*>(QString::fromLatin1(nm));
+                if (!cb) continue;
+                ++iconCombos;
+                bool all = cb->count() > 0;
+                for (int i = 0; i < cb->count(); ++i)
+                    if (cb->itemIcon(i).isNull() || cb->itemIcon(i).pixmap(60, 40).isNull()) all = false;
+                if (all) ++allIcon;
+                else std::printf("  resimsiz satir: %s\n", nm);
+            }
+            CHECK(iconCombos == 10 && allIcon == 10, "146: acilir listelerin her satirinda secenek resmi");
+        }
         // Alt cubuk: OK/Apply/Modify/Get/toggle/Cancel/Create; Apply gri.
         {
             QDialog dlgProbe;

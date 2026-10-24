@@ -72,6 +72,8 @@ set(MODELMAKER_QT_SOURCES
     src/opengl_render_backend.cpp
     include/model_maker/opengl_render_backend.hpp
     src/component_dialog_widget.cpp
+    src/component_option_icons.cpp
+    include/model_maker/component_option_icons.hpp
     include/model_maker/component_dialog_widget.hpp)
 set(MODELMAKER_QT_MISSING "")
 foreach(qt_file ${MODELMAKER_QT_SOURCES})
@@ -1064,6 +1066,7 @@ if(BUILD_TESTING)
         add_executable(model_maker_component_dialog_widget_test
             tests/component_dialog_widget_test.cpp
             src/component_dialog_widget.cpp
+            src/component_option_icons.cpp
             include/model_maker/component_dialog_widget.hpp
             resources/tekla146.qrc)
         target_include_directories(model_maker_component_dialog_widget_test PRIVATE include)
