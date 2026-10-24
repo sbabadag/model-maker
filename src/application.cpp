@@ -2096,6 +2096,39 @@ void Application::onLeftButtonDown(int x, int y) {
             return;
         }
     }
+    // ALT + SOL TIK = COMPONENT'I AC. Secili parcanin gumball'u component sembolunun
+    // (glyph) uzerine denk gelip tiklamayi yutuyordu; Alt+tik gumball'dan ONCE
+    // islenir. Sembol, levha veya bulon display'ine Alt+tik -> parametre diyalogu.
+    // (Alt+tik kesme-yonu cevirme / profil-uc-grip: component'e isabet YOKSA calisir.)
+    if ((GetKeyState(VK_MENU) & 0x8000) != 0 && transformCommand_ == TransformCommand::None &&
+        !drawingActive_ && !workPlanePicking_ && !zoomWindowActive_ && !profileGrip_ &&
+        !pendingEndPlate_ && !pendingFinPlate_ && !componentCommandActive() &&
+        gumballDrag_ == GumballHandle::None) {
+        if (const auto hit = modelIndexAt(x, y)) {
+            if (*hit < document_.models().size()) {
+                const EntityId id = document_.modelId(*hit);
+                for (const auto& rec : document_.componentInstances()) {
+                    bool owned = std::find(rec.ownedPlateIds.begin(), rec.ownedPlateIds.end(),
+                                           id) != rec.ownedPlateIds.end();
+                    if (!owned) {
+                        for (const EntityId bg : rec.ownedBoltGroupIds) {
+                            const auto bi = document_.indexOfBoltGroup(bg);
+                            if (bi && document_.boltGroups()[*bi].displayEntityId == id) {
+                                owned = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (!owned) continue;
+                    selectedModels_.clear();
+                    selectedModels_.push_back(*hit);
+                    updateControls(); updateStatus(); invalidateCanvas();
+                    if (componentEditRequest_) componentEditRequest_(rec);
+                    return;
+                }
+            }
+        }
+    }
     // RHINO TARZI GUMBALL: tutamaca basildiysa tasima suruklemesini baslat
     // (normal secim/transform'a dusmez).
     if (gumballVisible_) {
