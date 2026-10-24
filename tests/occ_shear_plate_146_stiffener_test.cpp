@@ -31,6 +31,8 @@ static void check(bool ok, const char* label) {
 }
 static bool approx(double a, double b, double tol = 1e-3) { return std::abs(a - b) < tol; }
 static Vec3 gColRef{0.0, 1.0, 0.0};
+static SectionAnchor gColAnchor = SectionAnchor::Center;
+static double gColOffset = 0.0;
 static SteelProfile makeProfile(const char* name, double h, double b, double tw, double tf) {
     SteelProfile p;
     p.name = name;
@@ -58,7 +60,7 @@ static Setup makeSetup() {
     const SteelProfile ipe200 = makeProfile("IPE200", 200.0, 100.0, 5.6, 8.5);
 
     const TopoDS_Shape colSolid = extrudeProfileSolid(heb300, {0, 0, 0}, {0, 0, 3000}, 0.0, gColRef,
-                                                     SectionAnchor::Center);
+                                                     gColAnchor);
     const TopoDS_Shape beamSolid = extrudeProfileSolid(ipe200, {0, 1000, 1500}, {0, 60, 1500}, 0.0, {0, 0, 1});
 
     s.doc.setOccStore(makeOccSolidStore());
@@ -104,6 +106,7 @@ static Setup makeSetup() {
     s.colGeom.secWidth = 300.0;
     s.colGeom.secHeight = 300.0;
     s.colGeom.refNormal = gColRef;
+    s.colGeom.sectionCenterOffset = gColOffset;
     s.colGeom.secWebThickness = 11.0;
     s.colGeom.secFlangeThickness = 19.0;
     // sectionCenterOffset = 0 (merkez ankraj) — kati da MERKEZ ankrajli cizilir
@@ -132,7 +135,7 @@ struct Out {
     bool ok{false};
     bool hasStiff{false};
     double vol{0.0};
-    Vec3 bmin{}, bmax{};
+    Vec3 bmin{}, bmax{}, cmin{}, cmax{};
     std::string name, material, finish, desc;
 };
 
@@ -168,6 +171,14 @@ static Out runCase(const std::vector<CompParam>& params) {
         bb.Get(a, b, c, d, e, f);
         out.bmin = {a, b, c};
         out.bmax = {d, e, f};
+    }
+    if (const TopoDS_Shape* cs = s.store->find(s.colId)) {
+        Bnd_Box cb;
+        BRepBndLib::Add(*cs, cb);
+        double a, b, c, d, e, f;
+        cb.Get(a, b, c, d, e, f);
+        out.cmin = {a, b, c};
+        out.cmax = {d, e, f};
     }
     if (const auto idx = s.doc.indexOfEntity(it->second)) {
         const auto& p = s.doc.models()[*idx].properties();
@@ -278,6 +289,26 @@ int main() {
                                 D(L"stiffenerChamferH", 20.0), D(L"stiffenerChamferV", 20.0)});
         check(ch.hasStiff && approx(ch.vol, 262.0 * 183.0 * 10.0 - 4.0 * 200.0 * 10.0, 1.0),
               "A2: Case A dort kosede pah");
+    }
+
+    // ---------- VARSAYILAN ANKRAJ (Top): kolon kesiti eksenden kaymis -------------
+    // Berkitme HER ZAMAN kolon kati icinde (bbox) durmali; eksen kesit ustunden gecse de.
+    gColAnchor = SectionAnchor::Top;
+    gColOffset = -150.0;
+    for (int cs = 0; cs < 2; ++cs) {
+        gColRef = cs == 0 ? Vec3{0.0, 1.0, 0.0} : Vec3{1.0, 0.0, 0.0};  // A, B
+        for (const wchar_t* orient : {L"Default", L"Perpendicular to main part"}) {
+            const Out o = runCase({S(L"stiffenerCreation", L"Full"), S(L"stiffenerOrientation", orient)});
+            const double tol = 0.01;
+            const bool inside = o.hasStiff && o.bmin.x >= o.cmin.x - tol && o.bmax.x <= o.cmax.x + tol &&
+                                o.bmin.y >= o.cmin.y - tol && o.bmax.y <= o.cmax.y + tol &&
+                                o.bmin.z >= o.cmin.z - tol && o.bmax.z <= o.cmax.z + tol;
+            std::printf("  Top-anchor %s %ls: stf (%.1f..%.1f, %.1f..%.1f) col (%.1f..%.1f, %.1f..%.1f)\n",
+                        cs == 0 ? "A" : "B", orient, o.bmin.x, o.bmax.x, o.bmin.y, o.bmax.y, o.cmin.x,
+                        o.cmax.x, o.cmin.y, o.cmax.y);
+            check(inside, cs == 0 ? "Top ankraj Case A: berkitme kolon kati icinde"
+                                  : "Top ankraj Case B: berkitme kolon kati icinde");
+        }
     }
 
     std::printf("%s (%d failure)\n", failures == 0 ? "ALL PASS" : "SOME FAILED", failures);

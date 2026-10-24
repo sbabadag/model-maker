@@ -1355,7 +1355,18 @@ GenerationPlan generateShearPlateSimple146(const ComponentInput& input) noexcept
         PlateSpec stf;
         stf.name = L"Stiffener";
         stf.thickness = st_t;
-        Vec3 base{colMid.x, colMid.y, facePoint.z + vMid};
+        // Kolon kesit merkezi: eksen SectionAnchor'a (varsayilan Top) gore kesitin
+        // USTUNDEN gecebilir -> kesit merkezi eksenden Hd*sectionCenterOffset kadar
+        // kayiktir (halfExtent ile ayni isaret). Berkitme GERCEK kesit icinde durmali.
+        const Vec3 colC{colMid.x + Hd.x * pl.col.sectionCenterOffset,
+                        colMid.y + Hd.y * pl.col.sectionCenterOffset,
+                        colMid.z + Hd.z * pl.col.sectionCenterOffset};
+        // Case B: tab duzleminde (tabin H konumu) ama govde orta duzleminde (W = kolon merkezi).
+        const double wOff = vdot(Vec3{facePoint.x - colC.x, facePoint.y - colC.y, facePoint.z - colC.z}, Wd);
+        const Vec3 onWeb{facePoint.x - Wd.x * wOff, facePoint.y - Wd.y * wOff,
+                         facePoint.z - Wd.z * wOff};
+        Vec3 base = caseB ? Vec3{onWeb.x, onWeb.y, facePoint.z + vMid}
+                          : Vec3{colC.x, colC.y, facePoint.z + vMid};
         if (horizontal) {
             // Yatay (kolon eksenine dik) sureklilik levhasi: O boyunca b, H boyunca h.
             const double b = sW > 0.0 ? sW : bOut;
@@ -1365,8 +1376,8 @@ GenerationPlan generateShearPlateSimple146(const ComponentInput& input) noexcept
             stf.v = Hd;
             stf.width = b;
             stf.height = h;
-            stf.center = Vec3{colMid.x + O.x * (tw * 0.5 + stiffGapWeb + b * 0.5),
-                              colMid.y + O.y * (tw * 0.5 + stiffGapWeb + b * 0.5),
+            stf.center = Vec3{colC.x + O.x * (tw * 0.5 + stiffGapWeb + b * 0.5),
+                              colC.y + O.y * (tw * 0.5 + stiffGapWeb + b * 0.5),
                               facePoint.z};
         } else if (caseB) {
             // Dusey levha, tab duzleminde; govdeden uca dogru (O) b uzunlugunda.
