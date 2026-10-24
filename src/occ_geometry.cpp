@@ -364,6 +364,65 @@ static TopoDS_Shape fitEndToPlane(const TopoDS_Shape& base,
     return cutSolidByPlane(unifier.Shape(), planeOrigin, planeNormal, keepPositive);
 }
 
+// YUVALI DELIK ARACI (Tekla "Slotted holes"): eksene dik yuvarlatilmis dikdortgen
+// (kenar yaricapi min(en,boy)/2) kesiti `length` boyunca extrude eder. BOOLEAN
+// YOK: tel (2 cizgi + 2 yay) -> yuzey -> prizma; Windows OCCT'de Fuse/BOPAlgo
+// segfault riski tasimaz. slotDir eksene dik izdusumle birimlenir; dejenere ise
+// (veya iki uzanti da 0 ise) bos shape doner ve cagiran yuvarlak silindire duser.
+static TopoDS_Shape makeSlotHoleTool(const gp_Pnt& start, const gp_Dir& axis,
+                                     const Vec3& slotDir, double diameter,
+                                     double along, double across, double length) {
+    if (!(diameter > 0.0) || !(length > 0.0)) return TopoDS_Shape();
+    if (!(along > 0.0) && !(across > 0.0)) return TopoDS_Shape();
+    const double aAlong = std::max(0.0, along);
+    const double aAcross = std::max(0.0, across);
+    // slotDir'i eksene dik duzleme iz dusur.
+    double ux = slotDir.x, uy = slotDir.y, uz = slotDir.z;
+    const double dotAu = ux * axis.X() + uy * axis.Y() + uz * axis.Z();
+    ux -= dotAu * axis.X();
+    uy -= dotAu * axis.Y();
+    uz -= dotAu * axis.Z();
+    const double ul = std::sqrt(ux * ux + uy * uy + uz * uz);
+    if (ul < 1e-9) return TopoDS_Shape();
+    const gp_Dir u(ux / ul, uy / ul, uz / ul);
+    const gp_Dir v = axis.Crossed(u);  // axis x u (sag-el)
+
+    // Yarim uzunluklar: u boyunca a, v boyunca b.
+    const double a = 0.5 * (diameter + aAlong);
+    const double b = 0.5 * (diameter + aAcross);
+    const bool longIsU = a >= b;
+    const gp_Dir L = longIsU ? u : v;           // uzun yon
+    const gp_Dir S = axis.Crossed(L);           // L ile sag-el yan yon
+    const double r = std::min(a, b);
+    const double h = std::fabs(a - b);
+    auto pt = [&](double l, double s) {
+        return gp_Pnt(start.X() + L.X() * l + S.X() * s,
+                      start.Y() + L.Y() * l + S.Y() * s,
+                      start.Z() + L.Z() * l + S.Z() * s);
+    };
+    BRepBuilderAPI_MakeWire wire;
+    if (h < 1e-9) {
+        BRepBuilderAPI_MakeEdge e(gp_Circ(gp_Ax2(start, axis, L), r));
+        if (!e.IsDone()) return TopoDS_Shape();
+        wire.Add(e.Edge());
+    } else {
+        const double kPi = 3.14159265358979323846;
+        BRepBuilderAPI_MakeEdge e1(pt(-h, -r), pt(h, -r));
+        BRepBuilderAPI_MakeEdge e2(gp_Circ(gp_Ax2(pt(h, 0.0), axis, L), r), -0.5 * kPi, 0.5 * kPi);
+        BRepBuilderAPI_MakeEdge e3(pt(h, r), pt(-h, r));
+        BRepBuilderAPI_MakeEdge e4(gp_Circ(gp_Ax2(pt(-h, 0.0), axis, L), r), 0.5 * kPi, 1.5 * kPi);
+        if (!e1.IsDone() || !e2.IsDone() || !e3.IsDone() || !e4.IsDone()) return TopoDS_Shape();
+        wire.Add(e1.Edge());
+        wire.Add(e2.Edge());
+        wire.Add(e3.Edge());
+        wire.Add(e4.Edge());
+    }
+    if (!wire.IsDone()) return TopoDS_Shape();
+    BRepBuilderAPI_MakeFace face(wire.Wire(), true);
+    if (!face.IsDone()) return TopoDS_Shape();
+    return BRepPrimAPI_MakePrism(face.Face(), gp_Vec(axis) * length).Shape();
+}
+
 TopoDS_Shape applyCutModifier(const TopoDS_Shape& base, const CutModifier& mod,
                               const Vec3& axisFrom, const Vec3& axisTo,
                               const ToolShapeResolver& toolShape) {
@@ -460,7 +519,10 @@ TopoDS_Shape applyCutModifier(const TopoDS_Shape& base, const CutModifier& mod,
                 const double h = mod.depth + 2.0;
                 const gp_Pnt center(mod.planeOrigin.x, mod.planeOrigin.y,
                                     mod.planeOrigin.z);
-                cylinder = BRepPrimAPI_MakeCylinder(gp_Ax2(center, axisDir), radius, h).Shape();
+                cylinder = makeSlotHoleTool(center, axisDir, mod.slotDir, mod.diameter,
+                                            mod.slotAlong, mod.slotAcross, h);
+                if (cylinder.IsNull())
+                    cylinder = BRepPrimAPI_MakeCylinder(gp_Ax2(center, axisDir), radius, h).Shape();
             } else {
                 Bnd_Box bb;
                 BRepBndLib::Add(base, bb);
@@ -474,8 +536,11 @@ TopoDS_Shape applyCutModifier(const TopoDS_Shape& base, const CutModifier& mod,
                 const gp_Pnt center(mod.planeOrigin.x - axisDir.X() * half,
                                     mod.planeOrigin.y - axisDir.Y() * half,
                                     mod.planeOrigin.z - axisDir.Z() * half);
-                cylinder = BRepPrimAPI_MakeCylinder(gp_Ax2(center, axisDir), radius,
-                                                    2.0 * half).Shape();
+                cylinder = makeSlotHoleTool(center, axisDir, mod.slotDir, mod.diameter,
+                                            mod.slotAlong, mod.slotAcross, 2.0 * half);
+                if (cylinder.IsNull())
+                    cylinder = BRepPrimAPI_MakeCylinder(gp_Ax2(center, axisDir), radius,
+                                                        2.0 * half).Shape();
             }
             return booleanCutShape(base, cylinder);
         }

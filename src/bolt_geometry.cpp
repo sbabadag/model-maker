@@ -11,6 +11,7 @@
 #include <gp_Pnt.hxx>
 #include <gp_Vec.hxx>
 
+#include <algorithm>
 #include <cmath>
 
 namespace mm {
@@ -125,18 +126,25 @@ TopoDS_Shape buildBoltAssemblyShape(const BoltGroup& bolt, double gripLength) {
         fuse(boltWasherDisc({headWasher.X(), headWasher.Y(), headWasher.Z()},
                             bolt.axis, d.washerOuterDiameter, d.washerThickness));
     }
-    // Govde (grip boyunca).
-    fuse(boltShank(bolt.origin, bolt.axis, bolt.params.nominalDiameter, grip));
+    // Govde (grip boyunca). lengthIncrease (Tekla "Bolt length increase", boya payi
+    // vb.) govdeyi SOMUN tarafina uzatir: govde merkezi dir*inc/2 kayar, somun ve
+    // somun pulu dir*inc kayar; bas tarafi degismez.
+    const double inc = std::max(0.0, bolt.params.lengthIncrease);
+    {
+        const gp_Pnt shankCenter = shift(c, z, dir * inc * 0.5);
+        fuse(boltShank({shankCenter.X(), shankCenter.Y(), shankCenter.Z()}, bolt.axis,
+                       bolt.params.nominalDiameter, grip + inc));
+    }
     // Somun tarafi (direction 1: +eksen yonu): somun pulu + somun.
     if (bolt.params.hasWasher) {
         const gp_Pnt nutWasher =
-            shift(c, z, dir * (halfGrip + d.washerThickness * 0.5));
+            shift(c, z, dir * (halfGrip + inc + d.washerThickness * 0.5));
         fuse(boltWasherDisc({nutWasher.X(), nutWasher.Y(), nutWasher.Z()},
                             bolt.axis, d.washerOuterDiameter, d.washerThickness));
     }
     if (bolt.params.hasNut) {
         const gp_Pnt nutCenter =
-            shift(c, z, dir * (halfGrip + washerT + d.nutHeight * 0.5));
+            shift(c, z, dir * (halfGrip + inc + washerT + d.nutHeight * 0.5));
         fuse(boltHexPrism({nutCenter.X(), nutCenter.Y(), nutCenter.Z()},
                           bolt.axis, d.nutAcrossFlats, d.nutHeight));
     }

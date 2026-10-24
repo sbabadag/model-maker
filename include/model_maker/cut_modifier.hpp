@@ -60,6 +60,15 @@ struct CutModifier {
     // bu uzunlukta keser — ornegin End Plate bulonu kolonun YALNIZ on flansini
     // deler, arka flansa ulasmaz. Diger turlerde 0.
     double depth{0.0};
+    // YUVALI / OVAL DELIK (Tekla "Slotted holes", CutKind::Hole): her iki deger
+    // delik capina EKLENEN uzunluktur (mm). slotAlong = slotDir boyunca, slotAcross
+    // = slotDir'e (ve eksene) dik yonde. Ikisi de 0 = yuvarlak delik (eski davranis).
+    // Kesit: kenar yaricapi min(en,boy)/2 olan yuvarlatilmis dikdortgen (tek uzun
+    // yonde "stadyum" yuva). slotDir birim ve eksene dik olmali; degilse delik
+    // yuvarlak kesilir (guvenli no-op).
+    double slotAlong{0.0};
+    double slotAcross{0.0};
+    Vec3 slotDir{0.0, 0.0, 0.0};
     // BULON SAHIPLIGI (Phase B1): bu modifier'i ureten BoltGroup'un EntityId'si.
     // Hole modifier'lari bir bulon grubuna aittir; bulon silinince/taşıninca
     // yalnizca bu sahipligi tasiyan modifier'lar kaldirilir/yeniden uretilir.

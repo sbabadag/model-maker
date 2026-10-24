@@ -715,13 +715,6 @@ ComponentDialogDefinition shearPlate146DialogDefinition() noexcept {
     docLen(L"notchWebClearance", L"Cut clearance from beam web", 0.0);
 
     // Bolts sekmesi
-    docEnum(L"boltStagger", L"Staggering of bolts",
-            {L"Default", L"Not staggered", L"Staggered type 1", L"Staggered type 2"});
-    docEnum(L"boltHorizRef", L"Horizontal dimension measured to",
-            {L"Default", L"Secondary part", L"Main part web"});
-    docEnum(L"boltVertRef", L"Vertical dimension measured to",
-            {L"Default", L"Secondary part (sloped)", L"Secondary part",
-             L"Main part", L"Main part center line"});
 
     // --- Tekla ekran goruntuleri + yardim PDF'i ile tamamlanan alanlar ---------
     // (conn_146_help PDF'i, 23.10.2026 + kullanicinin gercek diyalog ekran
@@ -788,15 +781,6 @@ ComponentDialogDefinition shearPlate146DialogDefinition() noexcept {
     docStr(L"loadMoment", L"Loads from secondary: Moment, M");
 
     // Bolts: eksik secenekler
-    docEnum(L"boltStaggerExtra", L"Staggering (type 3/4)",
-            {L"Default", L"Staggered type 3", L"Staggered type 4"});
-    docEnum(L"boltGroupOrientation", L"Bolt group orientation",
-            {L"Default", L"Automatic", L"Staggered", L"Square", L"Sloped"});
-    docEnum(L"boltingDirection", L"Bolting direction",
-            {L"Default", L"Bolting direction 1", L"Bolting direction 2"});
-    docEnum(L"boltSiteWorkshop", L"Site/Workshop", siteWorkshop);
-    docLen(L"slotV", L"Slotted hole 1 (vertical)", 0.0);
-    docLen(L"slotH", L"Slotted hole 2 (horizontal / oversize)", 0.0);
     // Bolt assembly: ekranda 6 onay kutusu var, etiketi yok (simgeler). Varsayilanlar
     // goruntudeki isaret durumundan okundu: 1 ve 5-6 isaretli.
     {
@@ -808,7 +792,6 @@ ComponentDialogDefinition shearPlate146DialogDefinition() noexcept {
         }
     }
     docBool(L"asmEffectInModify", L"Effect in modify", true);
-    docLen(L"boltLengthIncrease", L"Bolt length increase", 0.0);
 
     // Beam cut sekmesi (weld backing bar, weld access hole, beam end preparation)
     docLen(L"backingBarW", L"Backing bar b", 0.0);

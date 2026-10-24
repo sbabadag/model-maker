@@ -767,7 +767,11 @@ ComponentType shearPlate146ComponentType() noexcept {
         enumParam(L"beamEndCut", L"square", {L"square", L"none"}, L"kiris ucu kesimi"),
         // --- Bolts tab ---
         lengthParam(L"boltDiameter", L"mm", 20.0, 12.0, 30.0, L"bulon capi"),
-        lengthParam(L"holeDiameter", L"mm", 22.0, 12.0, 34.0, L"delik capi"),
+        // 0 = bulon katalogundan (standardBoltHoleDiameter); tolerance>0 ise
+        // cap + tolerance. (Eski sabit 22 mm bulon capi degisince delikten kucuk
+        // kalabiliyordu.)
+        lengthParam(L"holeDiameter", L"mm", 0.0, 0.0, 60.0,
+                    L"delik capi (0 = bulon katalogu; tolerans>0 ise bulon capi+tolerans)"),
         intParam(L"boltCount", 4, 1, 12, L"bulon adedi (sira; yukseklik yonu)"),
         intParam(L"boltCountX", 1, 1, 12, L"bulon kolon adedi (genislik yonu)"),
         lengthParam(L"pitchX", L"mm", 0.0, 0.0, 2000.0, L"kolon araligi (0 = auto)"),
@@ -781,21 +785,54 @@ ComponentType shearPlate146ComponentType() noexcept {
                   L"bulon grubunun dusey konum referansi"),
         lengthParam(L"boltVerticalPos", L"mm", 0.0, -1000.0, 1000.0,
                     L"bulon grubunun dusey kaymasi"),
+        // Yatay konum: kiris ucundan (veya kolon yuzunden) ilk bulon kolonuna mesafe.
+        // 0 = grup levha genisliginde ortalanir (eski davranis).
+        lengthParam(L"boltHorizontalPos", L"mm", 0.0, 0.0, 2000.0,
+                    L"yatay konum: ilk bulon kolonuna mesafe (0 = levhada ortali)"),
+        enumParam(L"boltHorizRef", L"Default", {L"Default", L"Secondary part", L"Main part web"},
+                  L"yatay olcu referansi"),
+        enumParam(L"boltVertRef", L"Default",
+                  {L"Default", L"Secondary part (sloped)", L"Secondary part", L"Main part",
+                   L"Main part center line"},
+                  L"dusey olcu referansi"),
         stringParam(L"deletedBolts", L"", L"silinecek bulon numaralari (1-based, boslukla)"),
+        // Staggering (yardim sayfasi ikonlari) + Bolt group orientation.
+        enumParam(L"boltStagger", L"Default",
+                  {L"Default", L"Not staggered", L"Staggered type 1", L"Staggered type 2"},
+                  L"bulon staggering (tip 1/2)"),
+        enumParam(L"boltStaggerExtra", L"Default",
+                  {L"Default", L"Staggered type 3", L"Staggered type 4"},
+                  L"bulon staggering (tip 3/4)"),
+        enumParam(L"boltGroupOrientation", L"Default",
+                  {L"Default", L"Automatic", L"Staggered", L"Square", L"Sloped"},
+                  L"bulon grubu yonelimi"),
         // --- Tekla 146 "Bolt properties" (resimli diyalogdaki alanlar) -------
         // Tekla diyalogunda her satirin solunda "Default" onay kutusu vardir;
         // isaretsiz birakilan alan varsayilani kullanir (optional=true).
         enumParam(L"boltStandard", L"Default",
                   {L"Default", L"ISO 4014", L"ISO 4032", L"ISO 7412"}, L"bulon standardi"),
-        lengthParam(L"tolerance", L"mm", 0.0, 0.0, 10.0, L"delik toleransi"),
+        lengthParam(L"tolerance", L"mm", 0.0, 0.0, 10.0,
+                    L"delik toleransi (delik capi = bulon capi + tolerans; 0 = katalog)"),
         boolParam(L"threadInMat", true, L"dis bulonlu parcada (thread in mat)"),
+        enumParam(L"boltSiteWorkshop", L"Default", {L"Default", L"Site", L"Workshop"},
+                  L"montaj yeri (atolye/saha)"),
+        enumParam(L"boltingDirection", L"Default",
+                  {L"Default", L"Bolting direction 1", L"Bolting direction 2"},
+                  L"bulonlama yonu (bas tarafi)"),
+        stringParam(L"comment", L"", L"aciklama"),
+        // Cut length: bulonun parcalari ARADIGI derinlik (mm). 0 = Tekla varsayilani
+        // (tum yigin). Bulon baslangicindan bu mesafeden uzak parcalar delinmez.
+        lengthParam(L"cutLength", L"mm", 0.0, 0.0, 5000.0, L"kesme (arama) uzunlugu, 0 = tumu"),
+        lengthParam(L"boltLengthIncrease", L"mm", 0.0, 0.0, 200.0, L"bulon boyu artisi"),
+        // Slotted holes: delik tipi + yuva olculeri. slotV = dusey, slotH = yatay
+        // olcu (delik capina EKLENEN uzunluk); oversized'ta slotH = buyutme payi.
         enumParam(L"holeType", L"Default",
-                  {L"Default", L"Oversized", L"Slotted", L"Threaded"}, L"delik tipi"),
+                  {L"Default", L"Oversized", L"Slotted", L"Tapped", L"No hole"}, L"delik tipi"),
+        lengthParam(L"slotV", L"mm", 0.0, 0.0, 500.0, L"yuva: dusey olcu (1)"),
+        lengthParam(L"slotH", L"mm", 0.0, 0.0, 500.0, L"yuva: yatay olcu / oversized payi (2)"),
         enumParam(L"rotateSlots", L"Default", {L"Default", L"No", L"Yes"}, L"yuvalari dondur"),
         enumParam(L"slotsIn", L"Default", {L"Default", L"Plate", L"Beam"},
                   L"yuvalar hangi parcada"),
-        enumParam(L"cutLength", L"Default", {L"Default", L"No", L"Yes"}, L"boyuna kesme"),
-        stringParam(L"comment", L"", L"aciklama"),
         // --- Stiffeners tab ---
         enumParam(L"stiffenerCreation", L"none", {L"none", L"full"}, L"govde berkitmesi"),
         lengthParam(L"stiffenerGapWeb", L"mm", 10.0, 0.0, 200.0, L"berkitme-govde boslugu"),
@@ -832,10 +869,17 @@ GenerationPlan generateShearPlateSimple146(const ComponentInput& input) noexcept
 
     // --- parametreler ---
     const double thickness = paramAsDouble(input.params, L"plateThickness", 10.0);
-    const double width = paramAsDouble(input.params, L"plateWidth", 120.0);
+    double width = paramAsDouble(input.params, L"plateWidth", 120.0);
     const double height = paramAsDouble(input.params, L"plateHeight", 240.0);
     const double boltD = paramAsDouble(input.params, L"boltDiameter", 20.0);
-    const double holeD = paramAsDouble(input.params, L"holeDiameter", 22.0);
+    // Delik capi: tolerance>0 -> bulon capi + tolerans (Tekla "Tolerance: gap between
+    // the bolt and the hole"); degilse holeDiameter parametresi; 0 ise bulon katalogu.
+    // Delik bulondan kucuk olamaz (bulon capi degisip holeDiameter eski kaldiysa).
+    const double tolerance = std::max(0.0, paramAsDouble(input.params, L"tolerance", 0.0));
+    const double holeParam = paramAsDouble(input.params, L"holeDiameter", 0.0);
+    double holeD = (holeParam > 0.0) ? holeParam : standardBoltHoleDiameter(boltD);
+    if (tolerance > 0.0) holeD = boltD + tolerance;
+    if (holeD < boltD) holeD = standardBoltHoleDiameter(boltD);
     const int boltCount = std::max(1, paramAsInt(input.params, L"boltCount", 4));
     const double edge = paramAsDouble(input.params, L"boltEdge", 40.0);
     // COK KOLONLU BULON (countX x countY): countX kolon genislik (lenDir) yonunde,
@@ -850,6 +894,21 @@ GenerationPlan generateShearPlateSimple146(const ComponentInput& input) noexcept
     const double effEdgeX = edgeX > 0.0 ? edgeX : edge;
     const double effEdgeY = edgeY > 0.0 ? edgeY : edge;
     const std::wstring grade = paramAsString(input.params, L"grade", L"8.8");
+    // Bolts tab: Tekla "Bolt properties", yon, yuva, uzunluk artisi, cut length.
+    const std::wstring boltStandard = paramAsString(input.params, L"boltStandard", L"Default");
+    const bool threadInMat = paramAsBool(input.params, L"threadInMat", true);
+    const std::wstring siteWorkshop = paramAsString(input.params, L"boltSiteWorkshop", L"Default");
+    const int boltDirection =
+        (paramAsString(input.params, L"boltingDirection", L"Default") == L"Bolting direction 2") ? 2 : 1;
+    const std::wstring boltComment = paramAsString(input.params, L"comment", L"");
+    const double cutLength = std::max(0.0, paramAsDouble(input.params, L"cutLength", 0.0));
+    const double boltLengthIncrease =
+        std::max(0.0, paramAsDouble(input.params, L"boltLengthIncrease", 0.0));
+    const std::wstring holeType = paramAsString(input.params, L"holeType", L"Default");
+    const double slotV = std::max(0.0, paramAsDouble(input.params, L"slotV", 0.0));
+    const double slotH = std::max(0.0, paramAsDouble(input.params, L"slotH", 0.0));
+    const std::wstring rotateSlots = paramAsString(input.params, L"rotateSlots", L"Default");
+    const std::wstring slotsIn = paramAsString(input.params, L"slotsIn", L"Default");
 
     const std::wstring tabPos = paramAsString(input.params, L"shearTabPosition", L"near_side");
     const double tabGap = paramAsDouble(input.params, L"tabGapSecondary", 0.0);
@@ -868,6 +927,71 @@ GenerationPlan generateShearPlateSimple146(const ComponentInput& input) noexcept
     const bool createWelds = paramAsBool(input.params, L"createWelds", true);
     const double weldSize = paramAsDouble(input.params, L"weldSize", 5.0);
     const bool weldDoubleSided = paramAsBool(input.params, L"weldDoubleSided", false);
+
+    // --- bulon grubu konum referanslari (Tekla Bolt group dimensions 1 ve 5) -----
+    // Yatay (1): kiris ucundan (varsayilan, kare kesimde kolon yuzu + beamGap) ya da
+    // ana parca govdesinden ilk bulon kolonuna mesafe. 0 = grup levhada ortali.
+    // Dusey (5): bu surum yalniz ikincil parcaya (kiris) gore olcer; ana parcaya gore
+    // olcu egimli / kiris-kiris durumunda anlamli oldugundan SESSIZCE yok sayilmaz,
+    // acik hata verilir (fail-closed).
+    const double hPos = std::max(0.0, paramAsDouble(input.params, L"boltHorizontalPos", 0.0));
+    const std::wstring hRef = paramAsString(input.params, L"boltHorizRef", L"Default");
+    const std::wstring vRef = paramAsString(input.params, L"boltVertRef", L"Default");
+    if (vRef == L"Main part" || vRef == L"Main part center line") {
+        plan.ok = false;
+        plan.error = L"boltVertRef '" + vRef +
+                     L"': ana parcaya gore dusey olcu bu surumde yok (yalniz 'Secondary part')";
+        return plan;
+    }
+    // Staggering (Tekla icon secenekleri; yardim sayfasi resimlerinden):
+    //  1: 1. ve 3. (tek) sira bir kolon eksik, yarim aralik saga kayik (3-4-3)
+    //  2: 2. (cift) sira bir kolon eksik, yarim aralik saga kayik (4-3-4)
+    //  3: tek siralar yarim aralik saga (zikzak)   4: cift siralar yarim aralik saga
+    //  5: Bolt group orientation = Staggered: tek kolonlar yarim dusey aralik yukari
+    // Siralar USTTEN sayilir (ikonlarda 1. sira ustte). Sloped: egimli kiris yok.
+    const std::wstring staggerSel = paramAsString(input.params, L"boltStagger", L"Default");
+    const std::wstring staggerExtra = paramAsString(input.params, L"boltStaggerExtra", L"Default");
+    const std::wstring orientSel = paramAsString(input.params, L"boltGroupOrientation", L"Default");
+    int staggerMode = 0;
+    if (staggerExtra == L"Staggered type 3") staggerMode = 3;
+    else if (staggerExtra == L"Staggered type 4") staggerMode = 4;
+    else if (staggerSel == L"Staggered type 1") staggerMode = 1;
+    else if (staggerSel == L"Staggered type 2") staggerMode = 2;
+    else if (orientSel == L"Staggered") staggerMode = 5;
+    if (orientSel == L"Sloped") {
+        plan.ok = false;
+        plan.error = L"boltGroupOrientation 'Sloped': egimli ikincil parca bu surumde yok";
+        return plan;
+    }
+    double xFromFace = -1.0;  // <0: ortali (eski davranis)
+    if (hPos > 0.0) {
+        if (hRef == L"Main part web") {
+            xFromFace = hPos;
+        } else {
+            if (endCut != L"square") {
+                plan.ok = false;
+                plan.error = L"boltHorizontalPos kiris ucuna gore olculur: Beam end cut = square olmali";
+                return plan;
+            }
+            xFromFace = beamGap + hPos;
+        }
+    }
+    // Bulon grubu levha genisligine sigmazsa levha buyutulur (Tekla: bulon grubu
+    // olculeri levha boyutunu belirler). Yalniz yatay konum verildiginde.
+    if (xFromFace >= 0.0) {
+        double spanPre = 0.0;
+        if (countX > 1)
+            spanPre = (pitchX > 0.0) ? static_cast<double>(countX - 1) * pitchX
+                                     : std::max(0.0, width - xFromFace - effEdgeX);
+        double staggerPre = 0.0;
+        if (staggerMode == 3 || staggerMode == 4) {
+            const double pitchPre =
+                countX > 1 ? ((pitchX > 0.0) ? pitchX : spanPre / static_cast<double>(countX - 1))
+                           : pitchX;
+            staggerPre = 0.5 * pitchPre;
+        }
+        width = std::max(width, xFromFace + spanPre + staggerPre + effEdgeX);
+    }
 
     // --- tab taraf ---
     const bool nearTab = (tabPos == L"near_side" || tabPos == L"near_and_far");
@@ -945,11 +1069,21 @@ GenerationPlan generateShearPlateSimple146(const ComponentInput& input) noexcept
             spacingX = pitchX;
             spanX = static_cast<double>(countX - 1) * pitchX;
         } else {
-            spanX = std::max(0.0, width - 2.0 * effEdgeX);
+            spanX = std::max(0.0, width - (xFromFace >= 0.0 ? xFromFace : effEdgeX) - effEdgeX);
             spacingX = spanX / static_cast<double>(countX - 1);
         }
     }
     b.spacingX = spacingX;
+    double staggerXOffset = 0.0;
+    if (staggerMode == 3 || staggerMode == 4) {
+        const double pitchEff = (countX > 1) ? spacingX : pitchX;
+        if (!(pitchEff > 0.0)) {
+            plan.ok = false;
+            plan.error = L"Staggered type 3/4: kolon araligi gerekli (boltCountX>1 veya pitchX>0)";
+            return plan;
+        }
+        staggerXOffset = 0.5 * pitchEff;
+    }
 
     // Dusey (yukseklik) aciklik/aralik: pitchY verilmisse sabit; yoksa mevcut
     // boltSpacing (auto veya degisken liste) mantigi.
@@ -974,6 +1108,22 @@ GenerationPlan generateShearPlateSimple146(const ComponentInput& input) noexcept
             spanY += v;
         }
     }
+    // Staggered (orientation) : tek kolonlar yarim dusey aralik yukari kayar -> grup
+    // dusey acikligi o kadar artar.
+    double staggerYOffset = 0.0;
+    if (staggerMode == 5) {
+        const double pitchEffY =
+            (b.spacingY > 0.0) ? b.spacingY : (b.spacingYs.empty() ? 0.0 : b.spacingYs.front());
+        if (!(pitchEffY > 0.0)) {
+            plan.ok = false;
+            plan.error = L"Bolt group orientation 'Staggered': sira araligi gerekli (boltCount>1)";
+            return plan;
+        }
+        staggerYOffset = 0.5 * pitchEffY;
+        spanY += staggerYOffset;
+    }
+    b.staggerMode = staggerMode;
+    b.staggerOffset = (staggerMode == 5) ? staggerYOffset : staggerXOffset;
     // Dusey konum: measure top/middle/below + boltVerticalPos. Referans nokta
     // tab merkezi (govde merkezi = tabBase); sec.height yonu = dusey.
     const double hh = height * 0.5;
@@ -985,35 +1135,68 @@ GenerationPlan generateShearPlateSimple146(const ComponentInput& input) noexcept
     }
     originOffset += boltVPos;
     // Yatay konum: kolon grubu genislikte MERKEZLENIR (origin = sol-alt bulon).
-    const double xOffset = -spanX * 0.5;
+    const double xOffset = -(spanX + staggerXOffset) * 0.5;
     // BULON EKSEN-YONU KONUMU + GRIP (display): bulonlar levhayi + KIRIS GOVDESINI
-    // (web) deler. Yigin govde uzak yuzu (-w/2) .. levha dis yuzu (ecc + t/2)
-    // arasinda uzanir; merkezi (ecc+t/2-w/2)/2'dedir. Bulon gorseli bu merkeze
-    // oturtulur ki bas/somun yiginin iki dis yuzune otursun. (Onceki hata: origin
-    // tabBase'de kaldigi icin civata yarim kalinlik kayiyordu.) Eksen-yonu kayma
-    // YALNIZ display'i etkiler; delikler through-cut (holeDepth=0) oldugundan
-    // konumlari degismez. bbox yontemi (Document::boltGripLength) kiris flans
-    // genisligini (300 mm) grip'e sokup civatayi gercek disi uzatirdi; yerine
-    // yigin boyu kullanilir. secWebThickness bilinmiyorsa (0) eski davranis
-    // korunur (origin tabBase'de, gripLength 0 -> commit'te bbox fallback).
+    // deler. Yigin = delinen parcalarin eksen (sec.width) boyunca kapladigi aralik;
+    // bulon gorseli bu araligin MERKEZINE oturur ki bas/somun yiginin iki dis
+    // yuzune otursun. Eksen-yonu kayma YALNIZ display'i etkiler; delikler
+    // through-cut (holeDepth=0) oldugundan konumlari degismez. bbox yontemi
+    // (Document::boltGripLength) kiris flans genisligini (300 mm) grip'e sokup
+    // civatayi gercek disi uzatirdi; yerine yigin boyu kullanilir.
+    // secWebThickness bilinmiyorsa (0) eski davranis korunur (origin tabBase'de,
+    // gripLength 0 -> commit'te bbox fallback).
+    //
+    // CUT LENGTH (Tekla): bulon, baslangic (bas) yuzunden itibaren yalniz bu
+    // mesafe icindeki parcalari deler. 0 = tum yigin. Kapsam disi kalan KIRIS
+    // delinmez (bolt.parts bos); kapsam disi kalan LEVHA acik hata verir
+    // (levhalar materializer'da otomatik eklenir, buradan cikarilamaz).
     double boltAxisShift = 0.0;
+    bool beamDrilled = true;
     if (beam.secWebThickness > 0.0) {
         const double t2 = thickness * 0.5;
         const double w2 = beam.secWebThickness * 0.5;
-        if (nearTab && farTab) {
-            // Cift tab: yigin simetrik -> bulon tabBase merkezinde kalir.
-            b.gripLength = 2.0 * (ecc + t2);
-        } else {
-            const double tabDir = nearTab ? 1.0 : -1.0;  // far tab: -sec.width tarafi
-            const double plateOuter = ecc + t2;           // levha dis yuzu (merkezden)
-            const double webFar = -w2;                    // govde uzak yuzu (merkezden)
-            b.gripLength = plateOuter - webFar;           // yigin toplam boyu
-            boltAxisShift = tabDir * (plateOuter + webFar) * 0.5;
+        struct Span { double lo, hi; bool isBeam; bool isPlate; };
+        std::vector<Span> spans;
+        spans.push_back({-w2, w2, true, false});
+        if (nearTab) spans.push_back({ecc - t2, ecc + t2, false, true});
+        if (farTab) spans.push_back({-ecc - t2, -ecc + t2, false, true});
+        if (cutLength > 0.0) {
+            // bas yuzu: yonde 1 -> +sec.width ucu (bulon ekseni = -sec.width, bas
+            // -eksen tarafinda), yonde 2 -> -sec.width ucu.
+            const bool headHigh = (boltDirection != 2);
+            double wStart = headHigh ? -1.0e18 : 1.0e18;
+            for (const auto& sp : spans)
+                wStart = headHigh ? std::max(wStart, sp.hi) : std::min(wStart, sp.lo);
+            std::vector<Span> kept;
+            for (const auto& sp : spans) {
+                const double d = headHigh ? (wStart - sp.hi) : (sp.lo - wStart);
+                if (d < cutLength) {
+                    kept.push_back(sp);
+                } else if (sp.isPlate) {
+                    plan.ok = false;
+                    plan.error = L"cutLength (" + std::to_wstring(static_cast<int>(cutLength)) +
+                                 L" mm) levhayi kapsamiyor: bulon yigini daha uzun";
+                    return plan;
+                } else if (sp.isBeam) {
+                    beamDrilled = false;
+                }
+            }
+            spans = std::move(kept);
         }
+        double lo = 1.0e18, hi = -1.0e18;
+        for (const auto& sp : spans) {
+            lo = std::min(lo, sp.lo);
+            hi = std::max(hi, sp.hi);
+        }
+        b.gripLength = hi - lo;
+        boltAxisShift = 0.5 * (hi + lo);
     }
-    b.origin = Vec3{tabBase.x + sec.width.x * boltAxisShift + lenDir.x * xOffset + sec.height.x * originOffset,
-                    tabBase.y + sec.width.y * boltAxisShift + lenDir.y * xOffset + sec.height.y * originOffset,
-                    tabBase.z + sec.width.z * boltAxisShift + lenDir.z * xOffset + sec.height.z * originOffset};
+    // Yatay konum: ilk bulon kolonu kolon yuzunden xFromFace (varsa) ya da grup
+    // levha genisliginde ortali (varsayilan).
+    const double xFromFaceFinal = (xFromFace >= 0.0) ? xFromFace : (width * 0.5 + xOffset);
+    b.origin = Vec3{facePoint.x + sec.width.x * boltAxisShift + lenDir.x * xFromFaceFinal + sec.height.x * originOffset,
+                    facePoint.y + sec.width.y * boltAxisShift + lenDir.y * xFromFaceFinal + sec.height.y * originOffset,
+                    facePoint.z + sec.width.z * boltAxisShift + lenDir.z * xFromFaceFinal + sec.height.z * originOffset};
     b.deletedBolts = parseSpaceInts(delBolts);
     b.params.nominalDiameter = boltD;
     b.params.holeDiameter = holeD;
@@ -1025,7 +1208,43 @@ GenerationPlan generateShearPlateSimple146(const ComponentInput& input) noexcept
     b.params.hasHead = true;
     b.params.hasNut = true;
     b.params.hasWasher = true;
-    b.parts = {beam.id};
+    // --- Tekla "Bolt basic properties" / yon / yuva (boltStandard..slotsIn) ---
+    {
+        const auto narrowStr = [](const std::wstring& w) {
+            std::string n;
+            n.assign(w.begin(), w.end());
+            return n;
+        };
+        b.params.standard = (boltStandard == L"Default") ? std::string() : narrowStr(boltStandard);
+        b.params.threadInMat = threadInMat;
+        b.params.siteWorkshop = (siteWorkshop == L"Workshop") ? 1 : 0;
+        b.params.direction = boltDirection;
+        b.params.lengthIncrease = boltLengthIncrease;
+        b.params.cutLength = cutLength;
+        b.params.comment = narrowStr(boltComment);
+    }
+    // --- Delik tipi (Hole type) + Slots in ---
+    b.createHoles = (holeType != L"No hole");
+    {
+        // Slots in: Default = kayma levhasi, Beam = kiris govdesi.
+        const int target = (slotsIn == L"Beam") ? 2 : 1;
+        if (holeType == L"Oversized" && slotH > 0.0) {
+            b.holeShapeTarget = target;
+            b.shapeHoleDiameter = holeD + slotH;  // slotH = buyutme payi
+        } else if (holeType == L"Slotted" && (slotV > 0.0 || slotH > 0.0)) {
+            b.holeShapeTarget = target;
+            b.shapeHoleDiameter = holeD;
+            const bool rot = (rotateSlots == L"Yes");
+            b.slotAlong = rot ? slotH : slotV;   // slotDir = dusey (sec.height)
+            b.slotAcross = rot ? slotV : slotH;
+            b.slotDir = sec.height;
+        } else if (holeType == L"Tapped") {
+            b.holeShapeTarget = target;
+            b.shapeHoleDiameter = boltD;          // disli delik = nominal cap
+        }
+    }
+    if (beamDrilled) b.parts = {beam.id};
+    else b.parts.clear();
     plan.boltGroups.push_back(b);
     plan.boltGroupKeys.push_back("beam_bolts");
 

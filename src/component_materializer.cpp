@@ -599,6 +599,7 @@ ComponentMaterializer::CommitResult ComponentMaterializer::commit(const Prepared
                         std::find(parts.begin(), parts.end(), up) == parts.end())
                         parts.push_back(up);
                 bolt.parts = std::move(parts);
+                resolveHoleShapeParts(bolt, out.ownedPlateIds);  // Tekla Slots in / Hole type
 
                 // Grip: oncelikle generator'in gripLength'i (levha + web); yoksa
                 // holeDepth; yoksa bagli parcalarin bbox kapsami (I-profil flans
@@ -940,6 +941,7 @@ ComponentMaterializer::CommitResult ComponentMaterializer::recompute(
                         std::find(parts.begin(), parts.end(), up) == parts.end())
                         parts.push_back(up);
                 bolt.parts = std::move(parts);
+                resolveHoleShapeParts(bolt, out.ownedPlateIds);  // Tekla Slots in / Hole type
 
                 const double grip =
                     (bolt.gripLength > 0.0) ? bolt.gripLength

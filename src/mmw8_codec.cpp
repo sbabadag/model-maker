@@ -719,6 +719,8 @@ void writeMmw8(std::ostream& out, const Mmw8Document& doc) {
             body << ' ' << mod.source << ' ' << (mod.invertSide ? 1 : 0)
                  << ' ' << mod.diameter << ' ' << mod.owner
                  << ' ' << (mod.hidden ? 1 : 0) << ' ' << mod.depth
+                 << ' ' << mod.slotAlong << ' ' << mod.slotAcross << ' ' << mod.slotDir.x
+                 << ' ' << mod.slotDir.y << ' ' << mod.slotDir.z
                  << '\n';  // P6 kaynak; P8 yon tersi; B1 cap + sahiplik + derinlik; gizli
         }
         const std::string b = body.str();
@@ -1227,6 +1229,15 @@ void readMmw8(std::istream& in, Mmw8Document& doc) {
                 // Delik derinligi (opsiyonel — eski dosyalarda yok -> 0 through-cut).
                 double depth = 0.0;
                 if (ls >> depth) mod.depth = depth;
+                // Yuvali delik uzantilari (opsiyonel — eski dosyalarda yok -> yuvarlak).
+                {
+                    double sa = 0.0, sc = 0.0, dx = 0.0, dy = 0.0, dz = 0.0;
+                    if (ls >> sa >> sc >> dx >> dy >> dz) {
+                        mod.slotAlong = sa;
+                        mod.slotAcross = sc;
+                        mod.slotDir = Vec3{dx, dy, dz};
+                    }
+                }
                 parsed.cutModifiers.push_back(std::move(mod));
             }
         } else if (tag == 'G') {

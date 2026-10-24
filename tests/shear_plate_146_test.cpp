@@ -67,8 +67,8 @@ int main() {
         if (t) {
             check(t->displayName == L"Shear Plate Simple (146)", "146 displayName");
             check(t->schemaVersion == 1, "146 schemaVersion 1");
-            check(t->params.size() == 32,
-                  "146 semasi 32 parametre (8 core + 16 Tekla + 8 bulon ozelligi)");
+            check(t->params.size() == 43,
+                  "146 semasi 43 parametre (Bolts sekmesi alanlari artik motor parametresi)");
         }
     }
 
@@ -271,7 +271,7 @@ int main() {
         std::size_t engineSpecs = 0;
         for (const auto& s : def.specs)
             if (!s.documentedOnly) ++engineSpecs;
-        check(engineSpecs == 32, "146 dialog motor specs = 32 parametre");
+        check(engineSpecs == 43, "146 dialog motor specs = 43 parametre");
         check(def.specs.size() > engineSpecs, "146 dialog gri Tekla alanlari var");
 
         const auto hit = hitTestDiagramHotspot(def.schema, DiagramPoint{46.0, 120.0});

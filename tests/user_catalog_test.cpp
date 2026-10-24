@@ -60,7 +60,7 @@ int main() {
     check(cntX && cntX->defInt == 2, "derive: boltCountX default 2");
     // override EDILMEYEN parametre family varsayilanini korur
     const CompParamSpec* hole = findParamSpec(e1.specs, L"holeDiameter");
-    check(hole && std::fabs(hole->defDouble - 22.0) < 1e-9, "derive: holeDiameter family default 22");
+    check(hole && std::fabs(hole->defDouble - 0.0) < 1e-9, "derive: holeDiameter family default 0 (bulon katalogundan)");
 
     // --- 2) idempotency + benzersizlik -------------------------------------
     UserCatalogEntry e2 = deriveComponentTemplate(src, L"Shear Plate 146 - Özel", overrides);

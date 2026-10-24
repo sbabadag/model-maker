@@ -35,6 +35,7 @@ struct BoltParams {
     bool threadInMat{false};        // disin bulonlu parcada olup olmadigi (Tekla default Yes)
     int siteWorkshop{0};            // 0=Site, 1=Workshop
     int cutLengthMode{0};           // 0=tek flans, 1=cift flans (grip derinligi)
+    double cutLength{0.0};          // Tekla "Cut length": parca arama derinligi (mm), 0 = tum yigin
     double lengthIncrease{0.0};     // bulon boyu artisi (mm)
     int direction{1};               // 1=bas kolon tarafi (-eksen), 2=bas kiris tarafi (+eksen)
     std::string comment{};          // aciklama
@@ -95,9 +96,38 @@ struct BoltGroup {
     // merkezine kaydirmadiyse delik bozulur. gripLength yalniz display icindir,
     // delik kesimini etkilemez. 0 = materializer holeDepth veya bbox'tan turetir.
     double gripLength{0.0};
+    // DELIK SEKLI (Tekla "Hole type" / "Slotted holes" / "Slots in"):
+    //  - createHoles=false  -> "No hole": hic delik modifier'i uretilmez.
+    //  - holeShapeTarget    -> ozel delik sekli HANGI parcalarda uygulanir:
+    //      0 = hicbirinde (hepsi params.holeDiameter yuvarlak),
+    //      1 = component'in kendi levhalarinda (levhalar generator'da bilinmez;
+    //          materializer resolveHoleShapeParts ile shapeParts'i doldurur),
+    //      2 = kullanici parcalarinda (levha olmayanlar), 3 = tum parcalarda.
+    //  - shapeHoleDiameter  -> ozel sekilli deligin temel capi (>0; 0 ise
+    //      params.holeDiameter). Oversized: buyutulmus cap; Tapped: nominal cap.
+    //  - slotAlong/slotAcross/slotDir -> yuva uzantilari (cut_modifier.hpp).
+    // Varsayilanlar eski davranisi KORUR (yuvarlak, tum parcalar, delik var).
+    // STAGGERING (Tekla "Staggering of bolts" / orientation=Staggered):
+    //  0 yok; 1: tek (ustten sayilan) siralar bir kolon eksik, yarim aralik kayik;
+    //  2: cift siralar ayni; 3: tek siralar +yarim aralik (staggerOffset) x'te;
+    //  4: cift siralar; 5: tek kolonlar staggerOffset kadar +y'de (yukari).
+    int staggerMode{0};
+    double staggerOffset{0.0};
+    bool createHoles{true};
+    int holeShapeTarget{0};
+    double shapeHoleDiameter{0.0};
+    double slotAlong{0.0};
+    double slotAcross{0.0};
+    Vec3 slotDir{0.0, 0.0, 0.0};
+    std::vector<EntityId> shapeParts;
     bool enabled{true};
     bool operator==(const BoltGroup&) const = default;
 };
+
+// holeShapeTarget'a gore shapeParts'i doldurur. ownedPlates = component'in
+// kendi levha EntityId'leri (bolt.parts icinde bulunabilir). bolt.parts
+// degismez. target 1: parts ∩ ownedPlates; 2: parts \ ownedPlates; 3: parts.
+void resolveHoleShapeParts(BoltGroup& bolt, const std::vector<EntityId>& ownedPlates) noexcept;
 
 // Bir parca icin Hole CutModifier uretir: eksen = normalize(axis), merkez =
 // origin, cap = holeDiameter. Hedef parcanin EntityId'si KORUNUR (kimlik

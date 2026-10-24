@@ -1,5 +1,6 @@
 #include "model_maker/bolt.hpp"
 
+#include <algorithm>
 #include <cmath>
 
 namespace mm {
@@ -144,7 +145,9 @@ std::vector<Vec3> boltGroupBoltOrigins(const BoltGroup& bolt) noexcept {
             cumY[static_cast<std::size_t>(j - 1)] +
             (varY ? bolt.spacingYs[static_cast<std::size_t>(j - 1)] : bolt.spacingY);
     out.reserve(static_cast<std::size_t>(nx) * static_cast<std::size_t>(ny));
-    for (int j = 0; j < ny; ++j)
+    for (int j = 0; j < ny; ++j) {
+        const int rowFromTop = ny - j;               // 1 = ust sira
+        const bool oddRow = (rowFromTop % 2) == 1;
         for (int i = 0; i < nx; ++i) {
             const int boltNo = j * nx + i + 1;  // 1-based (j=0 en alt, i soldan)
             bool deleted = false;
@@ -154,27 +157,75 @@ std::vector<Vec3> boltGroupBoltOrigins(const BoltGroup& bolt) noexcept {
                     break;
                 }
             if (deleted) continue;
-            const double ox = bolt.origin.x + cumX[static_cast<std::size_t>(i)] * f.u.x +
-                              cumY[static_cast<std::size_t>(j)] * f.v.x;
-            const double oy = bolt.origin.y + cumX[static_cast<std::size_t>(i)] * f.u.y +
-                              cumY[static_cast<std::size_t>(j)] * f.v.y;
-            const double oz = bolt.origin.z + cumX[static_cast<std::size_t>(i)] * f.u.z +
-                              cumY[static_cast<std::size_t>(j)] * f.v.z;
+            double cx = cumX[static_cast<std::size_t>(i)];
+            double cy = cumY[static_cast<std::size_t>(j)];
+            switch (bolt.staggerMode) {
+                case 1:
+                case 2: {
+                    const bool shiftedRow = (bolt.staggerMode == 1) ? oddRow : !oddRow;
+                    if (shiftedRow && nx > 1) {
+                        if (i == nx - 1) continue;  // bir kolon eksik
+                        cx = 0.5 * (cx + cumX[static_cast<std::size_t>(i + 1)]);
+                    }
+                    break;
+                }
+                case 3:
+                    if (oddRow) cx += bolt.staggerOffset;
+                    break;
+                case 4:
+                    if (!oddRow) cx += bolt.staggerOffset;
+                    break;
+                case 5:
+                    if ((i % 2) == 1) cy += bolt.staggerOffset;
+                    break;
+                default:
+                    break;
+            }
+            const double ox = bolt.origin.x + cx * f.u.x + cy * f.v.x;
+            const double oy = bolt.origin.y + cx * f.u.y + cy * f.v.y;
+            const double oz = bolt.origin.z + cx * f.u.z + cy * f.v.z;
             out.push_back(Vec3{ox, oy, oz});
         }
+    }
     return out;
+}
+
+void resolveHoleShapeParts(BoltGroup& bolt, const std::vector<EntityId>& ownedPlates) noexcept {
+    bolt.shapeParts.clear();
+    if (bolt.holeShapeTarget <= 0) return;
+    for (const EntityId p : bolt.parts) {
+        if (p == kInvalidEntityId) continue;
+        const bool isPlate =
+            std::find(ownedPlates.begin(), ownedPlates.end(), p) != ownedPlates.end();
+        const bool take = (bolt.holeShapeTarget == 3) ||
+                          (bolt.holeShapeTarget == 1 && isPlate) ||
+                          (bolt.holeShapeTarget == 2 && !isPlate);
+        if (take) bolt.shapeParts.push_back(p);
+    }
 }
 
 std::vector<CutModifier> boltGroupHoleModifiers(const BoltGroup& bolt) noexcept {
     std::vector<CutModifier> out;
+    if (!bolt.createHoles) return out;  // Tekla "No hole"
     const std::vector<Vec3> origins = boltGroupBoltOrigins(bolt);
     out.reserve(origins.size() * bolt.parts.size());
     for (const Vec3& o : origins) {
         for (EntityId part : bolt.parts) {
             if (part == kInvalidEntityId) continue;
-            out.push_back(makeHoleCutModifier(part, o, bolt.axis,
-                                              bolt.params.holeDiameter,
-                                              bolt.holeDepth));
+            const bool shaped =
+                bolt.holeShapeTarget > 0 &&
+                std::find(bolt.shapeParts.begin(), bolt.shapeParts.end(), part) !=
+                    bolt.shapeParts.end();
+            const double dia = (shaped && bolt.shapeHoleDiameter > 0.0)
+                                   ? bolt.shapeHoleDiameter
+                                   : bolt.params.holeDiameter;
+            CutModifier m = makeHoleCutModifier(part, o, bolt.axis, dia, bolt.holeDepth);
+            if (shaped && (bolt.slotAlong > 0.0 || bolt.slotAcross > 0.0)) {
+                m.slotAlong = bolt.slotAlong;
+                m.slotAcross = bolt.slotAcross;
+                m.slotDir = bolt.slotDir;
+            }
+            out.push_back(std::move(m));
         }
     }
     return out;
