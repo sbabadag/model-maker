@@ -9,7 +9,10 @@
 
 #include "model_maker/component_dialog_widget.hpp"
 
+#include <QAbstractSpinBox>
 #include <QApplication>
+#include <QImage>
+#include <QStyle>
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDialog>
@@ -323,6 +326,47 @@ int main(int argc, char** argv) {
             CHECK(sch && sch->highlightedWeldRow() == 3,
                   "146: satir secimi -> semada 4 numarali cagri vurgulanir");
         }
+    }
+
+    // 3) KOYU TEMA: aktif alanlarin yazisi siyah olmali (beyaz kutuda beyaz yazi
+    //    gorunmuyordu) ve odaklanan alan arka plani degistirmez (yazi vurgulanir).
+    {
+        QPalette dark;
+        dark.setColor(QPalette::Window, QColor(32, 32, 32));
+        dark.setColor(QPalette::WindowText, Qt::white);
+        dark.setColor(QPalette::Base, QColor(45, 45, 45));
+        dark.setColor(QPalette::Text, Qt::white);
+        dark.setColor(QPalette::ButtonText, Qt::white);
+        QApplication::setPalette(dark);
+        mm::ComponentDialogWidget wd(mm::shearPlate146DialogDefinition(), {});
+        wd.resize(900, 700);
+        wd.show();
+        QApplication::processEvents();
+        int checked = 0, withDarkText = 0;
+        for (auto* e : wd.findChildren<QAbstractSpinBox*>()) {
+            if (!e->isEnabled() || !e->isVisibleTo(&wd)) continue;
+            const QImage img = e->grab().toImage();
+            bool dark_px = false;
+            for (int y = 0; y < img.height() && !dark_px; ++y)
+                for (int x = 0; x < img.width(); ++x)
+                    if (qGray(img.pixel(x, y)) < 70) { dark_px = true; break; }
+            ++checked;
+            if (dark_px) ++withDarkText;
+            if (checked >= 6) break;
+        }
+        CHECK(checked > 0 && withDarkText == checked,
+              "koyu temada aktif alan yazisi siyah (gorunur)");
+        // Odak: arka plan ayni kalir (turuncu satir yok).
+        auto* anySpin = wd.findChildren<QAbstractSpinBox*>().isEmpty()
+                            ? nullptr
+                            : wd.findChildren<QAbstractSpinBox*>().first();
+        if (anySpin && anySpin->isEnabled()) {
+            anySpin->setFocus();
+            QApplication::processEvents();
+            CHECK(!anySpin->styleSheet().contains(QStringLiteral("FFE3B3")),
+                  "odakta turuncu satir/kutu zemini yok");
+        }
+        QApplication::setPalette(QApplication::style()->standardPalette());
     }
 
     if (failures) {

@@ -13,6 +13,9 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
+#include <QAbstractSpinBox>
+#include <QTimer>
+#include <QPointer>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPixmap>
@@ -579,7 +582,12 @@ QWidget* ComponentDialogWidget::buildCanvasPage(const ComponentDialogGroup& g,
     QFont f = page->font();
     f.setPointSizeF(8.0);
     page->setFont(f);
+    // Aktif (kullanilabilir) alanlarin yazisi SIYAH: koyu sistem temasinda varsayilan
+    // metin rengi beyaz olup beyaz Tekla kutusunda gorunmuyordu. Secili metin mavi
+    // zeminle vurgulanir (aktif alanda satir/kutu degil YAZI vurgulanir).
     page->setStyleSheet(QStringLiteral(
+        "QLineEdit, QAbstractSpinBox, QComboBox { color: black;"
+        "  selection-background-color: #3399FF; selection-color: white; }"
         "QLineEdit, QAbstractSpinBox { background: white; border: 1px solid #ECECEC;"
         "  border-bottom: 1px solid #838383; padding: 0px 2px; margin: 0px; }"
         "QLineEdit:disabled, QAbstractSpinBox:disabled { background: #F0F0F0; color: #8C8C8C;"
@@ -1273,6 +1281,18 @@ bool ComponentDialogWidget::eventFilter(QObject* watched, QEvent* event) {
     if (event->type() == QEvent::FocusIn || event->type() == QEvent::MouseButtonPress) {
         for (const auto& [name, editor] : editors_) {
             if (editor == watched) {
+                // Odaklanan metin alaninin YAZISI secili (vurgulu) olur.
+                if (event->type() == QEvent::FocusIn && editor->isEnabled()) {
+                    QPointer<QWidget> guard(editor);
+                    QTimer::singleShot(0, editor, [guard]() {
+                        if (!guard) return;
+                        if (auto* le = qobject_cast<QLineEdit*>(guard.data())) le->selectAll();
+                        else if (auto* sp = qobject_cast<QAbstractSpinBox*>(guard.data()))
+                            sp->selectAll();
+                        else if (auto* cb = qobject_cast<QComboBox*>(guard.data()))
+                            if (cb->isEditable() && cb->lineEdit()) cb->lineEdit()->selectAll();
+                    });
+                }
                 highlightParamRow(name);
                 schematic_->setHighlightedParam(name);
                 break;
@@ -1282,17 +1302,25 @@ bool ComponentDialogWidget::eventFilter(QObject* watched, QEvent* event) {
     return QWidget::eventFilter(watched, event);
 }
 
+namespace {
+// Aktif alan vurgusu: kutu/satir ARKA PLANI degismez; yalniz yazi mavi + kalin olur.
+// Resimli (IconCombo) kutular kendi saydam stilini tasir -> dokunulmaz.
+const char* kHighlightSheet =
+    "QLabel, QLineEdit, QAbstractSpinBox, QComboBox { color: #0B57D0; font-weight: bold; }";
+}  // namespace
+
 void ComponentDialogWidget::highlightParamRow(const std::wstring& paramName) {
     if (!highlightedRow_.empty()) {
         const auto it = rows_.find(highlightedRow_);
-        if (it != rows_.end()) it->second->setStyleSheet(QString());
+        if (it != rows_.end() && it->second->styleSheet() == QLatin1String(kHighlightSheet))
+            it->second->setStyleSheet(QString());
     }
     highlightedRow_ = paramName;
     if (paramName.empty()) return;
     const auto it = rows_.find(paramName);
     if (it != rows_.end()) {
-        it->second->setStyleSheet(QStringLiteral(
-            "background: #FFE3B3; border-radius: 2px; padding: 1px;"));
+        if (it->second->styleSheet().isEmpty() && it->second->isEnabled())
+            it->second->setStyleSheet(QLatin1String(kHighlightSheet));
         const auto eit = editors_.find(paramName);
         // Sekmeli duzende scroll_ yoktur; editor zaten gorunur sekmede.
         if (eit != editors_.end() && scroll_)
