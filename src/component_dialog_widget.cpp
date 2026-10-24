@@ -719,17 +719,25 @@ QWidget* ComponentDialogWidget::buildCanvasPage(const ComponentDialogGroup& g,
                     "QComboBox { background: transparent; border: none; color: transparent; }"
                     "QComboBox::drop-down { border: none; width: 0px; }"
                     "QComboBox QAbstractItemView { background: white; color: black; }"));
-                // Secim Tekla resminden farkliysa altta kucuk etiket gosterilir.
-                auto* badge = new QLabel(page);
-                badge->setStyleSheet(QStringLiteral(
-                    "background: rgba(255,255,255,220); border: 1px solid #838383;"
-                    "padding: 0px 2px;"));
+                // Secim Tekla'nin arka plan resminden FARKLIYSA: ayri bir yazi kutusu
+                // gostermek yerine, combo'nun bulundugu alana secilen secenegin RESMI
+                // (resim yoksa yazisi) cizilir; combo bunun USTUNDE seffaf kalir.
+                auto* shown = new QLabel(page);
+                shown->setGeometry(r);
+                shown->setAlignment(Qt::AlignCenter);
+                shown->setStyleSheet(QStringLiteral("background: white; color: black;"));
+                shown->setAttribute(Qt::WA_TransparentForMouseEvents);
                 const QString initial = cb->currentText();
-                const auto refresh = [badge, cb, initial, c]() {
-                    badge->setText(cb->currentText());
-                    badge->adjustSize();
-                    badge->move(c.x + 2, c.y + c.h - badge->height() - 2);
-                    badge->setVisible(cb->currentText() != initial);
+                const auto refresh = [shown, cb, initial, r]() {
+                    if (cb->currentText() == initial) { shown->hide(); return; }
+                    const QIcon ic = cb->itemIcon(cb->currentIndex());
+                    if (!ic.isNull()) {
+                        shown->setPixmap(ic.pixmap(QSize(r.width() - 4, r.height() - 4)));
+                    } else {
+                        shown->setPixmap(QPixmap());
+                        shown->setText(cb->currentText());
+                    }
+                    shown->show();
                 };
                 QObject::connect(cb, &QComboBox::currentTextChanged, page, refresh);
                 refresh();

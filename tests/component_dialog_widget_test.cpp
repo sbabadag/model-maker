@@ -241,6 +241,27 @@ int main(int argc, char** argv) {
             }
             CHECK(ok, "146: acilir liste combo'ya hizali acilir (kayik degil)");
         }
+        // Secim degisince yanina AYRI yazi/edit kutusu cikmaz; secilen secenegin resmi
+        // combo alaninda gosterilir.
+        {
+            auto* cb = w146.findChild<QComboBox*>(QStringLiteral("stiffenerCreation"));
+            bool ok = (cb != nullptr);
+            if (cb) {
+                const int before = w146.findChildren<QLabel*>().size();
+                const int cur = cb->currentIndex();
+                cb->setCurrentIndex((cur + 1) % cb->count());
+                QApplication::processEvents();
+                int withPix = 0, withText = 0;
+                for (auto* l : w146.findChildren<QLabel*>())
+                    if (l->isVisible() && l->geometry() == cb->geometry()) {
+                        if (!l->pixmap(Qt::ReturnByValue).isNull()) ++withPix;
+                        else if (!l->text().isEmpty()) ++withText;
+                    }
+                ok = withPix == 1 && withText == 0 && w146.findChildren<QLabel*>().size() == before;
+                cb->setCurrentIndex(cur);
+            }
+            CHECK(ok, "146: secim degisince combo alaninda secenegin RESMI gosterilir, ek yazi kutusu yok");
+        }
         // Alt cubuk: OK/Apply/Modify/Get/toggle/Cancel/Create; Apply gri.
         {
             QDialog dlgProbe;
