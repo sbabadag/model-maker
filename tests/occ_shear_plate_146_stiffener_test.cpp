@@ -135,7 +135,9 @@ struct Out {
     bool ok{false};
     bool hasStiff{false};
     double vol{0.0};
-    Vec3 bmin{}, bmax{}, cmin{}, cmax{};
+    Vec3 bmin{}, bmax{}, cmin{}, cmax{}, umin{1e9, 1e9, 1e9}, umax{-1e9, -1e9, -1e9};
+    int count{0};
+    double totVol{0.0};
     std::string name, material, finish, desc;
 };
 
@@ -171,6 +173,20 @@ static Out runCase(const std::vector<CompParam>& params) {
         bb.Get(a, b, c, d, e, f);
         out.bmin = {a, b, c};
         out.bmax = {d, e, f};
+    }
+    for (const char* key : {"stiffener", "stiffener2", "stiffener3", "stiffener4"}) {
+        const auto k = res.roleToEntity.find(key);
+        if (k == res.roleToEntity.end() || k->second == kInvalidEntityId) continue;
+        const TopoDS_Shape* ks = s.store->find(k->second);
+        if (!ks || ks->IsNull()) continue;
+        ++out.count;
+        out.totVol += shapeVolume(*ks);
+        Bnd_Box kb;
+        BRepBndLib::Add(*ks, kb);
+        double a, b, c, d, e, f;
+        kb.Get(a, b, c, d, e, f);
+        out.umin = {std::min(out.umin.x, a), std::min(out.umin.y, b), std::min(out.umin.z, c)};
+        out.umax = {std::max(out.umax.x, d), std::max(out.umax.y, e), std::max(out.umax.z, f)};
     }
     if (const TopoDS_Shape* cs = s.store->find(s.colId)) {
         Bnd_Box cb;
@@ -256,14 +272,15 @@ int main() {
                                  D(L"stiffenerChamferH", 20.0), D(L"stiffenerChamferV", 20.0)});
         check(nch.hasStiff && approx(nch.vol, base, 1.0), "B9: No chamfer -> pahsiz");
 
-        // Yatay (ana parcaya dik) sureklilik levhasi: b=134.5 (govdeden uca), h = 300-38 = 262
+        // Yatay (XY'ye paralel) sureklilik levhalari: Case B -> yalniz karsi cep, ust+alt
+        // baslik kotu = 2 levha, her biri 134.5 x 262 x 10 (kiris baslik orta kotu 1500 +- 95.75)
         const Out hor = runCase({S(L"stiffenerCreation", L"Full"),
                                  S(L"stiffenerOrientation", L"Perpendicular to main part")});
-        check(hor.hasStiff && approx(hor.vol, 134.5 * 262.0 * 10.0, 1.0),
-              "B10: Perpendicular -> yatay levha 134.5 x 262 x 10");
-        check(hor.hasStiff && approx(hor.bmax.z - hor.bmin.z, 10.0, 0.01) &&
-                  approx(0.5 * (hor.bmax.z + hor.bmin.z), 1500.0, 0.01) ,
-              "B10: yatay levha kiris kotunda (z=1500) ve 10 mm kalin");
+        check(hor.count == 2 && approx(hor.totVol, 2.0 * 134.5 * 262.0 * 10.0, 2.0),
+              "B10: Perpendicular Full: 2 levha (ust+alt kot), toplam hacim 2 x 134.5 x 262 x 10");
+        check(hor.count == 2 && approx(hor.umin.z, 1500.0 - 95.75 - 5.0, 0.01) &&
+                  approx(hor.umax.z, 1500.0 + 95.75 + 5.0, 0.01),
+              "B10: levhalar kirisin alt/ust baslik kotunda (z 1399.25..1600.75 araliginda)");
 
         // Parca ozellikleri
         const Out props = runCase({S(L"stiffenerCreation", L"Full"), S(L"stiffenerMaterial", L"S355"),
@@ -300,14 +317,23 @@ int main() {
         for (const wchar_t* orient : {L"Default", L"Perpendicular to main part"}) {
             const Out o = runCase({S(L"stiffenerCreation", L"Full"), S(L"stiffenerOrientation", orient)});
             const double tol = 0.01;
-            const bool inside = o.hasStiff && o.bmin.x >= o.cmin.x - tol && o.bmax.x <= o.cmax.x + tol &&
-                                o.bmin.y >= o.cmin.y - tol && o.bmax.y <= o.cmax.y + tol &&
-                                o.bmin.z >= o.cmin.z - tol && o.bmax.z <= o.cmax.z + tol;
-            std::printf("  Top-anchor %s %ls: stf (%.1f..%.1f, %.1f..%.1f) col (%.1f..%.1f, %.1f..%.1f)\n",
-                        cs == 0 ? "A" : "B", orient, o.bmin.x, o.bmax.x, o.bmin.y, o.bmax.y, o.cmin.x,
-                        o.cmax.x, o.cmin.y, o.cmax.y);
-            check(inside, cs == 0 ? "Top ankraj Case A: berkitme kolon kati icinde"
-                                  : "Top ankraj Case B: berkitme kolon kati icinde");
+            const bool inside = o.count > 0 && o.umin.x >= o.cmin.x - tol && o.umax.x <= o.cmax.x + tol &&
+                                o.umin.y >= o.cmin.y - tol && o.umax.y <= o.cmax.y + tol &&
+                                o.umin.z >= o.cmin.z - tol && o.umax.z <= o.cmax.z + tol;
+            std::printf("  Top-anchor %s %ls: n=%d stf (%.1f..%.1f, %.1f..%.1f) col (%.1f..%.1f, %.1f..%.1f)\n",
+                        cs == 0 ? "A" : "B", orient, o.count, o.umin.x, o.umax.x, o.umin.y, o.umax.y,
+                        o.cmin.x, o.cmax.x, o.cmin.y, o.cmax.y);
+            if (cs == 1 && std::wstring(orient) == L"Default") {
+                // Case B + Top ankraj: kiris ekseni (H=0) kolonun UST kenarinda kalir, dusey
+                // levha kesit cebine hic sigmaz -> fail-closed (hicbir berkitme uretilmez),
+                // kolonun disina levha ATILMAZ.
+                check(o.count == 0, "Top ankraj Case B dusey: cebe sigmiyorsa berkitme uretilmez (fail-closed)");
+                continue;
+            }
+            check(inside, cs == 0 ? "Top ankraj Case A: tum berkitmeler kolon kati icinde"
+                                  : "Top ankraj Case B: tum berkitmeler kolon kati icinde");
+            if (std::wstring(orient) == L"Perpendicular to main part")
+                check(o.count == (cs == 0 ? 4 : 2), cs == 0 ? "Top ankraj Case A dik: 4 levha" : "Top ankraj Case B dik: 2 levha");
         }
     }
 

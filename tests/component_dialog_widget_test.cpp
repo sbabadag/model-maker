@@ -218,6 +218,29 @@ int main(int argc, char** argv) {
             }
             CHECK(iconCombos == 10 && allIcon == 10, "146: acilir listelerin her satirinda secenek resmi");
         }
+        // Acilir liste KAYIK acilmaz: popup combo'nun ALTINDA, sol kenarlari hizali.
+        {
+            auto* cb = w146.findChild<QComboBox*>(QStringLiteral("stiffenerCreation"));
+            bool ok = (cb != nullptr);
+            if (cb) {
+                w146.show();
+                QApplication::processEvents();
+                cb->showPopup();
+                QApplication::processEvents();
+                QWidget* pop = cb->view()->window();
+                const QPoint belowLeft = cb->mapToGlobal(QPoint(0, cb->height()));
+                const QRect g = pop->geometry();
+                std::printf("  popup (%d,%d %dx%d) combo-alti (%d,%d)\n", g.x(), g.y(), g.width(), g.height(),
+                            belowLeft.x(), belowLeft.y());
+                // Ekrana siginca altta; sigmazsa ustte (alt kenar = combo ustu): ikisi de "hizali".
+                const QPoint topLeft = cb->mapToGlobal(QPoint(0, 0));
+                const bool below = std::abs(g.x() - belowLeft.x()) <= 2 && std::abs(g.y() - belowLeft.y()) <= 2;
+                const bool above = std::abs(g.x() - topLeft.x()) <= 2 && std::abs(g.bottom() + 1 - topLeft.y()) <= 2;
+                ok = (below || above) && g.width() >= cb->width();
+                cb->hidePopup();
+            }
+            CHECK(ok, "146: acilir liste combo'ya hizali acilir (kayik degil)");
+        }
         // Alt cubuk: OK/Apply/Modify/Get/toggle/Cancel/Create; Apply gri.
         {
             QDialog dlgProbe;

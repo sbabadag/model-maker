@@ -572,6 +572,50 @@ public:
 };
 }  // namespace
 
+namespace {
+// Acilir liste kutusu (popup) HER ZAMAN combo'nun ALTINDA ve combo'ya hizali acilir.
+// Fusion/Windows stilinde Qt, secili satiri combo'nun ustune oturtur; satirlar
+// buyuk resimli (70 px) oldugunda liste "kayik" gorunur. Burada acilista konum
+// duzeltilir: sol kenar = combo, ust kenar = combo alti (yer yoksa ustune), genislik
+// en az resim+metin kadar, ekrandan tasmaz.
+class PopupAligner : public QObject {
+public:
+    PopupAligner(QComboBox* combo, QWidget* container) : QObject(container), combo_(combo), container_(container) {
+        container->installEventFilter(this);
+    }
+    bool eventFilter(QObject* obj, QEvent* ev) override {
+        if (obj == container_ && ev->type() == QEvent::Show && combo_) align();
+        return false;
+    }
+    void align() {
+        QScreen* screen = combo_->screen() ? combo_->screen() : QGuiApplication::primaryScreen();
+        const QRect avail = screen ? screen->availableGeometry() : QRect(0, 0, 1920, 1080);
+        const int w = std::max({container_->width(), combo_->width(), combo_->view()->sizeHintForColumn(0) + 24});
+        int h = container_->height();
+        const QPoint below = combo_->mapToGlobal(QPoint(0, combo_->height()));
+        const QPoint above = combo_->mapToGlobal(QPoint(0, 0));
+        int x = below.x();
+        int y = below.y();
+        if (y + h > avail.bottom()) {
+            const int roomBelow = avail.bottom() - y;
+            const int roomAbove = above.y() - avail.top();
+            if (roomAbove > roomBelow) {
+                h = std::min(h, roomAbove);
+                y = above.y() - h;
+            } else {
+                h = std::min(h, roomBelow);
+            }
+        }
+        if (x + w > avail.right()) x = std::max(avail.left(), avail.right() - w);
+        container_->setGeometry(x, y, w, h);
+    }
+
+private:
+    QPointer<QComboBox> combo_;
+    QWidget* container_;
+};
+}  // namespace
+
 // TEKLA SEKMESI (canvas): kullanicinin gercek Tekla ekran goruntusu arka plandadir;
 // her kontrol, resimdeki beyaz kutunun TAM ustune (ayni piksel) yerlestirilir.
 // Resimli acilir listeler (IconCombo) seffaftir: Tekla resmi gorunur kalir, tiklayinca
@@ -1140,6 +1184,7 @@ QWidget* ComponentDialogWidget::buildEditor(const CompParamSpec& spec,
                 combo->setView(view);
                 combo->setIconSize(QSize(36, 22));          // kapali kutudaki kucuk resim
                 combo->view()->setIconSize(QSize(120, 70)); // acilan listede buyuk resim
+                new PopupAligner(combo, combo->view()->window());
                 combo->setProperty("hasOptionIcons", true);
             }
             std::wstring v = spec.defString;

@@ -8,6 +8,7 @@
 #include "model_maker/component_engine.hpp"
 
 #include <cmath>
+#include <algorithm>
 #include <cstdio>
 #include <optional>
 
@@ -21,6 +22,7 @@ static void check(bool ok, const char* label) {
 static bool approx(double a, double b, double tol = 1e-6) { return std::abs(a - b) < tol; }
 
 // HEB300 kolon (tw 11, tf 19) + IPE200 kiris (flans 8.5); kolon refNormal verilir.
+static Vec3 gBeamTo{0, 4000, 3000};
 static GenerationPlan gen(const Vec3& colRef, const std::vector<CompParam>& params) {
     ComponentRegistry reg;
     registerBuiltInComponents(reg);
@@ -36,7 +38,7 @@ static GenerationPlan gen(const Vec3& colRef, const std::vector<CompParam>& para
     MemberGeometry beam;
     beam.id = EntityId{21};
     beam.axisFrom = {0, 0, 3000};
-    beam.axisTo = {0, 4000, 3000};
+    beam.axisTo = gBeamTo;
     beam.refNormal = {0, 0, 1};
     beam.secWidth = 100.0;
     beam.secHeight = 200.0;
@@ -77,7 +79,7 @@ int main() {
             // tab duzleminde (x=-10), govdenin karsi tarafinda (y<0), kiris kotunda
             check(approx(s->center.x, -10.0) && approx(s->center.y, -82.75) && approx(s->center.z, 3000.0),
                   "Case B: merkez (-10, -82.75, 3000)");
-            check(approx(s->axis.x, -1.0) && approx(s->u.y, -1.0), "Case B: normal = tab normali, u = disari");
+            check(approx(std::fabs(s->axis.x), 1.0) && approx(s->u.y, -1.0), "Case B: normal = tab normali, u = disari");
         }
     }
     {
@@ -96,6 +98,64 @@ int main() {
                                                I(L"boltCount", 2)}));
         check(sp && approx(sp->height, 151.5) && approx(sp->center.z, 3000.0 + 15.75),
               "Partial: ust Full, alt tab alti (h=151.5, z kaymasi 15.75)");
+    }
+
+    // --- sayi ve kotlar: dik (yatay) berkitme ---------------------------------------
+    {
+        const auto count = [](const GenerationPlan& p) {
+            int n = 0;
+            for (const auto& k : p.plateKeys) if (k.rfind("stiffener", 0) == 0) ++n;
+            return n;
+        };
+        const std::vector<CompParam> perp = {S(L"stiffenerCreation", L"Full"),
+                                             S(L"stiffenerOrientation", L"Perpendicular to main part")};
+        const GenerationPlan a = gen(refA, perp);   // kiris kolon FLANSINA gelir
+        check(count(a) == 4, "Perpendicular + Full, kiris flansa: 2 kot x 2 cep = 4 berkitme");
+        const GenerationPlan b = gen(refB, perp);   // kiris GOVDEYE gelir
+        check(count(b) == 2, "Perpendicular + Full, kiris govdeye: karsi cep, 2 kot = 2 berkitme");
+        // kotlar: kiris ust ve alt baslik orta kotlari 3000 +- (100 - 8.5/2)
+        std::vector<double> zs;
+        for (std::size_t i = 0; i < a.plates.size(); ++i)
+            if (a.plateKeys[i].rfind("stiffener", 0) == 0) zs.push_back(a.plates[i].center.z);
+        std::sort(zs.begin(), zs.end());
+        check(zs.size() == 4 && approx(zs[0], 3000.0 - 95.75) && approx(zs[1], 3000.0 - 95.75) &&
+                  approx(zs[2], 3000.0 + 95.75) && approx(zs[3], 3000.0 + 95.75),
+              "yatay berkitmeler kirisin alt/ust baslik kotunda (3000 +- 95.75)");
+        bool allHoriz = true, bothSides = false;
+        double ymin = 1e9, ymax = -1e9;
+        for (std::size_t i = 0; i < a.plates.size(); ++i) {
+            if (a.plateKeys[i].rfind("stiffener", 0) != 0) continue;
+            allHoriz = allHoriz && approx(std::fabs(a.plates[i].axis.z), 1.0);   // XY'ye paralel
+            // Case A: Wd = X ekseni -> govdenin iki yaninda (x<0 ve x>0)
+            ymin = std::min(ymin, a.plates[i].center.x);
+            ymax = std::max(ymax, a.plates[i].center.x);
+        }
+        bothSides = ymin < -10.0 && ymax > 10.0;
+        check(allHoriz, "dik secenek: levhalar XY duzlemine paralel (normal = Z)");
+        check(bothSides, "Case A: berkitmeler govdenin iki yaninda");
+        const GenerationPlan part = gen(refA, {S(L"stiffenerCreation", L"Partial"),
+                                               S(L"stiffenerOrientation", L"Perpendicular to main part")});
+        check(count(part) == 2, "Partial + dik: yalniz ust kot (2 cep = 2)");
+        const GenerationPlan det = gen(refA, {S(L"stiffenerCreation", L"Determined by shear tab"),
+                                              S(L"stiffenerOrientation", L"Perpendicular to main part")});
+        check(count(det) == 4, "Determined by shear tab + dik: tab ust/alt kenari kotlari = 4");
+    }
+
+    // --- kiris ACILI (kolona dik degil): paralel secenek kiris duzleminde ------------------
+    {
+        const Vec3 saved = gBeamTo;
+        gBeamTo = {2000, 3464, 3000};  // kiris +Y ye gore 30 derece acili (yatay izdusum 60 deg)
+        const GenerationPlan p = gen(refB, {S(L"stiffenerCreation", L"Full")});
+        const auto s = stiff(p);
+        check(p.ok && s.has_value(), "acili kiris: berkitme uretildi");
+        if (s) {
+            // Kiris yatay yonu d = (2000, 3464)/4000 -> levha u ekseni d'ye paralel
+            const double dx = 2000.0 / 4000.0, dy = 3464.0 / 4000.0;
+            const double dot = s->u.x * dx + s->u.y * dy;
+            check(approx(std::fabs(dot), 1.0, 1e-3), "acili kiris: levha duzlemi kirisin yatay yonune PARALEL");
+            check(approx(s->axis.z, 0.0), "acili kiris: levha dusey (normal yatay)");
+        }
+        gBeamTo = saved;
     }
 
     // --- gap, olculer -----------------------------------------------------------------
@@ -118,7 +178,7 @@ int main() {
               "Perpendicular: yatay levha (normal=Z), 134.5 x 262");
         const auto par = stiff(gen(refB, {S(L"stiffenerCreation", L"Full"),
                                                 S(L"stiffenerOrientation", L"Parallel to secondary part")}));
-        check(par && approx(par->axis.x, -1.0), "Parallel to secondary part: dusey tab duzlemi");
+        check(par && approx(std::fabs(par->axis.x), 1.0), "Parallel to secondary part: dusey tab duzlemi");
     }
 
     // --- pah ------------------------------------------------------------------------------

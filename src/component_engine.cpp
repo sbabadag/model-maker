@@ -1352,87 +1352,158 @@ GenerationPlan generateShearPlateSimple146(const ComponentInput& input) noexcept
         const double bOut = std::max(0.0, colW * 0.5 - tw * 0.5 - stiffGapWeb);
         const double hBetween = std::max(0.0, colHt - 2.0 * tf - 2.0 * stiffGapFlange);
 
-        PlateSpec stf;
-        stf.name = L"Stiffener";
-        stf.thickness = st_t;
         // Kolon kesit merkezi: eksen SectionAnchor'a (varsayilan Top) gore kesitin
         // USTUNDEN gecebilir -> kesit merkezi eksenden Hd*sectionCenterOffset kadar
         // kayiktir (halfExtent ile ayni isaret). Berkitme GERCEK kesit icinde durmali.
         const Vec3 colC{colMid.x + Hd.x * pl.col.sectionCenterOffset,
                         colMid.y + Hd.y * pl.col.sectionCenterOffset,
                         colMid.z + Hd.z * pl.col.sectionCenterOffset};
-        // Case B: tab duzleminde (tabin H konumu) ama govde orta duzleminde (W = kolon merkezi).
-        const double wOff = vdot(Vec3{facePoint.x - colC.x, facePoint.y - colC.y, facePoint.z - colC.z}, Wd);
-        const Vec3 onWeb{facePoint.x - Wd.x * wOff, facePoint.y - Wd.y * wOff,
-                         facePoint.z - Wd.z * wOff};
-        Vec3 base = caseB ? Vec3{onWeb.x, onWeb.y, facePoint.z + vMid}
-                          : Vec3{colC.x, colC.y, facePoint.z + vMid};
-        if (horizontal) {
-            // Yatay (kolon eksenine dik) sureklilik levhasi: O boyunca b, H boyunca h.
-            const double b = sW > 0.0 ? sW : bOut;
-            const double h = sH > 0.0 ? sH : hBetween;
-            stf.axis = worldUp;
-            stf.u = O;
-            stf.v = Hd;
-            stf.width = b;
-            stf.height = h;
-            stf.center = Vec3{colC.x + O.x * (tw * 0.5 + stiffGapWeb + b * 0.5),
-                              colC.y + O.y * (tw * 0.5 + stiffGapWeb + b * 0.5),
-                              facePoint.z};
-        } else if (caseB) {
-            // Dusey levha, tab duzleminde; govdeden uca dogru (O) b uzunlugunda.
-            const double b = sW > 0.0 ? sW : bOut;
-            stf.axis = sec.width;
-            stf.u = O;
-            stf.v = worldUp;
-            stf.width = b;
-            stf.height = vLen;
-            stf.center = Vec3{
-                base.x + O.x * (tw * 0.5 + stiffGapWeb + b * 0.5) + sec.width.x * (tabSign * ecc),
-                base.y + O.y * (tw * 0.5 + stiffGapWeb + b * 0.5) + sec.width.y * (tabSign * ecc),
-                base.z + sec.width.z * (tabSign * ecc)};
-        } else {
-            // Case A: govdeye PARALEL dusey levha, govdenin karsi yaninda.
-            const double b = sW > 0.0 ? sW : hBetween;
-            stf.axis = Wd;
-            stf.u = lenDir;
-            stf.v = worldUp;
-            stf.width = b;
-            stf.height = vLen;
-            stf.center = Vec3{base.x + O.x * (tw * 0.5 + stiffGapWeb + st_t * 0.5),
-                              base.y + O.y * (tw * 0.5 + stiffGapWeb + st_t * 0.5), base.z};
-        }
+        // Kesit duzlemi (W,H) koordinati: P -> (w,h) kolon merkezine gore.
+        const auto toW = [&](const Vec3& q) {
+            return vdot(Vec3{q.x - colC.x, q.y - colC.y, q.z - colC.z}, Wd);
+        };
+        const auto toH = [&](const Vec3& q) {
+            return vdot(Vec3{q.x - colC.x, q.y - colC.y, q.z - colC.z}, Hd);
+        };
+        const auto fromWH = [&](double w, double h, double z) {
+            return Vec3{colC.x + Wd.x * w + Hd.x * h, colC.y + Wd.y * w + Hd.y * h, z};
+        };
 
-        // Pah (govde tarafi koseleri; kose 0/3 = u-min ucu).
+        // Ortak parca ozellikleri / pah (her berkitme levhasina).
         const std::wstring chType = paramAsString(input.params, L"stiffenerChamferType", L"Default");
         const double chH = std::max(0.0, paramAsDouble(input.params, L"stiffenerChamferH", 0.0));
         const double chV = std::max(0.0, paramAsDouble(input.params, L"stiffenerChamferV", 0.0));
-        if (chType != L"No chamfer" && chH > 0.0 && chV > 0.0) {
-            const int type = (chType == L"Convex arc chamfer") ? 2
-                             : (chType == L"Concave arc chamfer") ? 3 : 1;
-            const bool allCorners = !horizontal && !caseB;
-            for (int ci = 0; ci < 4; ++ci) {
-                if (!allCorners && ci != 0 && ci != 3) continue;
-                stf.chamfers.push_back(PlateSpec::Chamfer{ci, type, chH, chV});
-            }
-        }
-
-        // Parca ozellikleri.
         const std::wstring prefix = paramAsString(input.params, L"stiffenerPosPrefix", L"");
         const int posStart = paramAsInt(input.params, L"stiffenerPosStart", 1);
-        if (!prefix.empty()) stf.posNo = prefix + std::to_wstring(posStart);
-        stf.material = paramAsString(input.params, L"stiffenerMaterial", L"");
-        stf.finish = paramAsString(input.params, L"stiffenerFinish", L"");
+        const std::wstring stfMaterial = paramAsString(input.params, L"stiffenerMaterial", L"");
+        const std::wstring stfFinish = paramAsString(input.params, L"stiffenerFinish", L"");
         const std::wstring stfName = paramAsString(input.params, L"stiffenerName", L"");
-        if (!stfName.empty()) stf.name = stfName;
+        int stfCount = 0;
+        const auto addStiffener = [&](PlateSpec stf, bool allCorners) -> bool {
+            if (chType != L"No chamfer" && chH > 0.0 && chV > 0.0) {
+                const int type = (chType == L"Convex arc chamfer") ? 2
+                                 : (chType == L"Concave arc chamfer") ? 3 : 1;
+                for (int ci = 0; ci < 4; ++ci) {
+                    if (!allCorners && ci != 0 && ci != 3) continue;
+                    stf.chamfers.push_back(PlateSpec::Chamfer{ci, type, chH, chV});
+                }
+            }
+            if (!prefix.empty()) stf.posNo = prefix + std::to_wstring(posStart + stfCount);
+            stf.material = stfMaterial;
+            stf.finish = stfFinish;
+            stf.name = stfName.empty() ? L"Stiffener" : stfName;
+            if (stf.width <= 0.0 || stf.height <= 0.0 || stf.thickness <= 0.0) {
+                plan.ok = false;
+                plan.error = L"berkitme olculeri gecersiz (genislik/yukseklik/kalinlik > 0 olmali)";
+                return false;
+            }
+            plan.plates.push_back(stf);
+            plan.plateKeys.push_back(stfCount == 0 ? std::string("stiffener")
+                                                   : "stiffener" + std::to_string(stfCount + 1));
+            ++stfCount;
+            return true;
+        };
 
-        if (stf.width <= 0.0 || stf.height <= 0.0 || stf.thickness <= 0.0) {
-            plan.ok = false;
-            plan.error = L"berkitme olculeri gecersiz (genislik/yukseklik/kalinlik > 0 olmali)";
-            return plan;
+        if (horizontal) {
+            // "Perpendicular to main part": XY duzlemine PARALEL (yatay) sureklilik
+            // levhalari, KOLONUN ICINDE (flanslar arasi, govdenin yaninda):
+            //  - Full: kirisin ust ve alt BASLIK seviyelerinde (2 kot);
+            //  - Determined by shear tab: tabin ust ve alt kenari seviyesinde;
+            //  - Partial: yalniz ust kotta.
+            //  Kiris kolon FLANSINA geliyorsa (Case A) govdenin IKI yanindaki cep
+            //  (2 taraf) -> 2 kot x 2 taraf = 4 levha; govde yuzune geliyorsa (Case B)
+            //  kiris kendi cebinde oldugundan yalniz KARSI cep -> 2 levha.
+            const double b = sW > 0.0 ? sW : bOut;
+            const double h = sH > 0.0 ? sH : hBetween;
+            const double bf = beam.secFlangeThickness > 0.0 ? beam.secFlangeThickness : 0.05 * beam.secHeight;
+            std::vector<double> levels;  // facePoint.z'ye gore
+            if (stiffener == L"Determined by shear tab") {
+                levels = {height * 0.5 - st_t * 0.5, -(height * 0.5 - st_t * 0.5)};
+            } else {
+                const double fl = beam.secHeight * 0.5 - bf * 0.5;  // baslik orta kotu
+                levels = {fl, -fl};
+            }
+            if (stiffener == L"Partial") levels.resize(1);  // yalniz ust kot
+            std::vector<double> sides;
+            if (caseB) sides = {sigma};
+            else sides = {sigma, -sigma};
+            for (const double side : sides) {
+                const Vec3 Os{Wd.x * side, Wd.y * side, Wd.z * side};
+                for (const double lv : levels) {
+                    PlateSpec stf;
+                    stf.thickness = st_t;
+                    stf.axis = worldUp;
+                    stf.u = Os;
+                    stf.v = Hd;
+                    stf.width = b;
+                    stf.height = h;
+                    stf.center = Vec3{colC.x + Os.x * (tw * 0.5 + stiffGapWeb + b * 0.5),
+                                      colC.y + Os.y * (tw * 0.5 + stiffGapWeb + b * 0.5),
+                                      facePoint.z + lv};
+                    if (!addStiffener(stf, false)) return plan;
+                }
+            }
+        } else {
+            // "Parallel to secondary part" (varsayilan): DUSEY levha, KIRISE PARALEL
+            // duzlemde (kiris kolona dik degil, ACILI ise de kiris yonunde). Duzlem
+            // kiris yonunu (yatay izdusum) icerir; kolonun karsi cebinin icine
+            // KIRPILIR (dikdortgen cep ile dogru parcasi kesisimi).
+            Vec3 d = lenDir;                       // yatay kiris yonu
+            d.z = 0.0;
+            d = vnorm(d);
+            const double dw = vdot(d, Wd), dh = vdot(d, Hd);
+            // Dogru uzerindeki Q noktasi (kesit koordinati): Case B'de tab konumu
+            // (govde orta duzlemi), Case A'da govdenin hemen yaninda (karsi cep).
+            double qw, qh;
+            if (caseB) {
+                qw = 0.0;
+                qh = toH(facePoint) + tabSign * ecc * vdot(sec.width, Hd);
+            } else {
+                qw = sigma * (tw * 0.5 + stiffGapWeb + st_t * 0.5);
+                qh = 0.0;
+            }
+            // Cep dikdortgeni (sigma tarafi): w in [w0,w1], h in [-hB/2, hB/2].
+            double w0 = sigma * (tw * 0.5 + stiffGapWeb);
+            double w1 = sigma * (colW * 0.5);
+            if (sW > 0.0 && caseB) w1 = w0 + sigma * sW;
+            const double wlo = std::min(w0, w1), whi = std::max(w0, w1);
+            const double hlo = -hBetween * 0.5, hhi = hBetween * 0.5;
+            // Q + s*(dw,dh) kirpma: s araligi.
+            double smin = -1e9, smax = 1e9;
+            const auto clip = [&](double q, double dir, double lo, double hi) {
+                if (std::fabs(dir) < 1e-9) {
+                    if (q < lo - 1e-9 || q > hi + 1e-9) { smin = 1; smax = 0; }
+                    return;
+                }
+                double s1 = (lo - q) / dir, s2 = (hi - q) / dir;
+                if (s1 > s2) std::swap(s1, s2);
+                smin = std::max(smin, s1);
+                smax = std::min(smax, s2);
+            };
+            clip(qw, dw, wlo, whi);
+            clip(qh, dh, hlo, hhi);
+            if (!(smax - smin > 1e-6)) {
+                plan.ok = false;
+                plan.error = L"berkitme kolon kesiti icine sigmiyor (bosluk/kesit olculerini kontrol edin)";
+                return plan;
+            }
+            const double len = smax - smin;
+            const double sm = 0.5 * (smin + smax);
+            const double cw = qw + dw * sm, ch2 = qh + dh * sm;
+            // u: cepte govdeden uzaga dogru (dot(u,O) >= 0).
+            Vec3 u = d;
+            if (vdot(u, O) < 0.0) u = Vec3{-u.x, -u.y, -u.z};
+            PlateSpec stf;
+            stf.thickness = st_t;
+            stf.axis = vnorm(Vec3{worldUp.y * u.z - worldUp.z * u.y, worldUp.z * u.x - worldUp.x * u.z,
+                                  worldUp.x * u.y - worldUp.y * u.x});
+            stf.u = u;
+            stf.v = worldUp;
+            stf.width = (sW > 0.0 && !caseB) ? std::min(sW, len) : len;
+            stf.height = vLen;
+            stf.center = fromWH(cw, ch2, facePoint.z + vMid);
+            if (!addStiffener(stf, !caseB)) return plan;
         }
-        plan.plates.push_back(stf);
-        plan.plateKeys.push_back("stiffener");
     }
 
     // --- backing bar (kaynak arkalik cubugu): kiris ucu yuzunde ince serit ---
