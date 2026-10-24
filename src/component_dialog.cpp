@@ -652,15 +652,6 @@ ComponentDialogDefinition shearPlate146DialogDefinition() noexcept {
     docLen(L"plateWasherH", L"Plate washer height", 0.0);
 
     // Stiffeners sekmesi
-    docLen(L"stiffenerT", L"Opposite web stiffener thickness", 0.0);
-    docLen(L"stiffenerW", L"Opposite web stiffener width", 0.0);
-    docLen(L"stiffenerH", L"Opposite web stiffener height", 0.0);
-    docLen(L"stiffenerGapFlange", L"Stiffener gap (to flanges)", 0.0);
-    docEnum(L"stiffenerOrientation", L"Stiffener orientation",
-            {L"Default", L"Perpendicular to main part", L"Parallel to secondary part"});
-    docEnum(L"stiffenerChamferType", L"Stiffener chamfer type", chamferTypes);
-    docLen(L"stiffenerChamferH", L"Stiffener chamfer (horizontal)", 0.0);
-    docLen(L"stiffenerChamferV", L"Stiffener chamfer (vertical)", 0.0);
 
     // Haunch sekmesi
     docEnum(L"haunchCreation", L"Haunch plate creation",
@@ -754,7 +745,6 @@ ComponentDialogDefinition shearPlate146DialogDefinition() noexcept {
     docPart(L"tab", L"Tab plate", true, false);
     docPart(L"washer", L"Plate washer", true, true);
     // Stiffeners
-    docPart(L"stiffener", L"Web stiffener", false, true);
     // Haunch: ust + alt plaka ayri satirlar
     docPart(L"haunchTop", L"Top plate", false, true);
     docPart(L"haunchBottom", L"Bottom plate", false, true);

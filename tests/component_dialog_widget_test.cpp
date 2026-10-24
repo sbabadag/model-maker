@@ -186,6 +186,21 @@ int main(int argc, char** argv) {
                 }
             }
         }
+        // Stiffeners sekmesi: Tekla ekraninda gri cizilen "gap to flange" alani artik
+        // GERCEK motor parametresi -> aktif; ayrica tum Stiffeners alanlari aktif.
+        {
+            int found = 0, enabled = 0;
+            for (const char* nm : {"stiffenerCreation", "stiffenerOrientation", "stiffenerT", "stiffenerW",
+                                   "stiffenerH", "stiffenerGapFlange", "stiffenerGapWeb",
+                                   "stiffenerChamferType", "stiffenerChamferH", "stiffenerChamferV",
+                                   "stiffenerMaterial", "stiffenerName", "stiffenerFinish"}) {
+                QWidget* e = w146.findChild<QWidget*>(QString::fromLatin1(nm));
+                if (!e) continue;
+                ++found;
+                if (e->isEnabled()) ++enabled;
+            }
+            CHECK(found == 13 && enabled == 13, "146: Stiffeners alanlari (13) tamami aktif");
+        }
         // Alt cubuk: OK/Apply/Modify/Get/toggle/Cancel/Create; Apply gri.
         {
             QDialog dlgProbe;

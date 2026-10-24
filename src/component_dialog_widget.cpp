@@ -655,7 +655,9 @@ QWidget* ComponentDialogWidget::buildCanvasPage(const ComponentDialogGroup& g,
         }
         if (!editor) continue;
         editor->setObjectName(QString::fromStdWString(c.param));
-        const bool grey = spec->documentedOnly || c.greyed;
+        // Tekla ekran goruntusunde gri cizilmis ama bizde GERCEK (motor parametresi olan)
+        // alan aktiftir: gri yalniz geometrisi olmayan (documentedOnly) alanlar icin.
+        const bool grey = spec->documentedOnly;
         QRect r = box(c);
         if (c.kind == PlacedControlKind::IconCombo) {
             r = QRect(c.x, c.y, c.w, c.h);  // resmin tamami tiklanabilir

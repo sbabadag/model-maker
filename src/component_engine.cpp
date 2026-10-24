@@ -834,8 +834,29 @@ ComponentType shearPlate146ComponentType() noexcept {
         enumParam(L"slotsIn", L"Default", {L"Default", L"Plate", L"Beam"},
                   L"yuvalar hangi parcada"),
         // --- Stiffeners tab ---
-        enumParam(L"stiffenerCreation", L"none", {L"none", L"full"}, L"govde berkitmesi"),
-        lengthParam(L"stiffenerGapWeb", L"mm", 10.0, 0.0, 200.0, L"berkitme-govde boslugu"),
+        // Tekla Stiffeners sekmesi (karsi-govde berkitme). Default/No stiffeners = yok.
+        enumParam(L"stiffenerCreation", L"Default",
+                  {L"Default", L"Full", L"Determined by shear tab", L"Partial", L"No stiffeners"},
+                  L"karsi govde berkitmesi"),
+        enumParam(L"stiffenerOrientation", L"Default",
+                  {L"Default", L"Perpendicular to main part", L"Parallel to secondary part"},
+                  L"berkitme yonelimi"),
+        lengthParam(L"stiffenerT", L"mm", 0.0, 0.0, 60.0, L"berkitme kalinligi t (0 = tab kalinligi)"),
+        lengthParam(L"stiffenerW", L"mm", 0.0, 0.0, 1000.0, L"berkitme genisligi b (0 = otomatik)"),
+        lengthParam(L"stiffenerH", L"mm", 0.0, 0.0, 2000.0, L"berkitme yuksekligi h (0 = otomatik)"),
+        lengthParam(L"stiffenerGapFlange", L"mm", 0.0, 0.0, 200.0, L"berkitme-flans boslugu (1)"),
+        lengthParam(L"stiffenerGapWeb", L"mm", 10.0, 0.0, 200.0, L"berkitme-govde boslugu (2)"),
+        enumParam(L"stiffenerChamferType", L"Default",
+                  {L"Default", L"No chamfer", L"Line chamfer", L"Convex arc chamfer",
+                   L"Concave arc chamfer"},
+                  L"berkitme pah tipi"),
+        lengthParam(L"stiffenerChamferH", L"mm", 0.0, 0.0, 200.0, L"pah yatay olcu (1)"),
+        lengthParam(L"stiffenerChamferV", L"mm", 0.0, 0.0, 200.0, L"pah dusey olcu (2)"),
+        stringParam(L"stiffenerPosPrefix", L"", L"berkitme Pos_No oneki"),
+        intParam(L"stiffenerPosStart", 1, 0, 100000, L"berkitme Pos_No baslangic"),
+        stringParam(L"stiffenerMaterial", L"", L"berkitme malzemesi"),
+        stringParam(L"stiffenerName", L"", L"berkitme adi"),
+        stringParam(L"stiffenerFinish", L"", L"berkitme yuzey islemi"),
         // --- Beam cut tab ---
         lengthParam(L"backingBarT", L"mm", 0.0, 0.0, 60.0, L"kaynak arkalik cubugu kalinligi"),
     };
@@ -914,8 +935,9 @@ GenerationPlan generateShearPlateSimple146(const ComponentInput& input) noexcept
     const double tabGap = paramAsDouble(input.params, L"tabGapSecondary", 0.0);
     const double beamGap = paramAsDouble(input.params, L"beamGap", 20.0);
     const std::wstring endCut = paramAsString(input.params, L"beamEndCut", L"square");
-    const std::wstring stiffener = paramAsString(input.params, L"stiffenerCreation", L"none");
-    const double stiffGapWeb = paramAsDouble(input.params, L"stiffenerGapWeb", 10.0);
+    const std::wstring stiffener = paramAsString(input.params, L"stiffenerCreation", L"Default");
+    const double stiffGapWeb = std::max(0.0, paramAsDouble(input.params, L"stiffenerGapWeb", 10.0));
+    const double stiffGapFlange = std::max(0.0, paramAsDouble(input.params, L"stiffenerGapFlange", 0.0));
     const std::wstring boltSpacing = paramAsString(input.params, L"boltSpacing", L"auto");
     const std::wstring boltMeasure = paramAsString(input.params, L"boltVerticalMeasure", L"middle");
     const double boltVPos = paramAsDouble(input.params, L"boltVerticalPos", 0.0);
@@ -1264,22 +1286,141 @@ GenerationPlan generateShearPlateSimple146(const ComponentInput& input) noexcept
         plan.cutKeys.push_back("cut_beam_end");
     }
 
-    // --- stiffener (govde berkitmesi): dusey levha, kolon ekseninde, kiris
-    //     kotunda, lenDir'e DIK. Kalinlik lenDir boyunca; genislik kolon kesit
-    //     boyutu (lenDir'e dik) - 2*gapWeb; yukseklik tab yuksekligi (baglanti
-    //     boyu; Tekla "flanslar arasi" kesin boyu MemberGeometry'de flans
-    //     kalinligi olmadigi icin tab yuksekligine esit — yaklasik, dokumante). ---
-    if (stiffener == L"full") {
-        PlateSpec st;
-        st.axis = lenDir;
-        st.u = sec.width;
-        st.v = worldUp;
-        st.thickness = thickness;
-        st.width = std::max(0.0, pl.col.secWidth - 2.0 * stiffGapWeb);
-        st.height = std::max(0.0, height);
-        st.center = Vec3{colMid.x, colMid.y, facePoint.z};
-        st.name = L"Stiffener";
-        plan.plates.push_back(st);
+    // --- STIFFENER (Tekla "opposite web stiffener") ---------------------------
+    // Ana parcanin GOVDESININ, kayma levhasina GORE KARSI tarafinda duran berkitme.
+    // Kesit cercevesi (colSec): W = govde normali (flans genisligi yonu), H = govde
+    // yonu (kesit yuksekligi). Govde W in [-tw/2, tw/2], flanslar H = +-(h/2-tf..h/2).
+    //  - Kiris govdeye dik gelirse (|lenDir.W| > |lenDir.H|, "Case B"): karsi taraf
+    //    -lenDir; kiris flans yuzune gelirse (Case A): karsi taraf levhanin yanal
+    //    ofsetinin tersi.
+    //  - Orientation: Default / "Parallel to secondary part" = DUSEY levha (kayma
+    //    levhasi duzleminde, tabin hizasinda); "Perpendicular to main part" = ana
+    //    parca eksenine DIK (yatay) sureklilik levhasi, flanslar arasinda.
+    //  - Gap 1 = flanslara, Gap 2 = govdeye bosluk (Tekla yardim sayfasi resmi).
+    //  - Creation: Full = kiris govdesinin temiz derinligi; Determined by shear tab =
+    //    tab yuksekligi (alt kenarlar hizali); Partial = ust Full ile, alt tab alt
+    //    kenarinda. h/b/t sifir ise otomatik.
+    //  Pah: govde tarafindaki koseler (Case A'da dort kose).
+    const bool wantStiff = (stiffener == L"Full" || stiffener == L"Determined by shear tab" ||
+                            stiffener == L"Partial");
+    if (wantStiff) {
+        const std::wstring orient = paramAsString(input.params, L"stiffenerOrientation", L"Default");
+        const bool horizontal = (orient == L"Perpendicular to main part");
+        const double sT = paramAsDouble(input.params, L"stiffenerT", 0.0);
+        const double sW = paramAsDouble(input.params, L"stiffenerW", 0.0);
+        const double sH = paramAsDouble(input.params, L"stiffenerH", 0.0);
+        const double st_t = sT > 0.0 ? sT : thickness;
+
+        // Ana parca kesit olculeri; bilinmiyorsa (0) katalogsuz kaba oranlar.
+        const double colW = std::max(1.0, pl.col.secWidth);
+        const double colHt = std::max(1.0, pl.col.secHeight);
+        const double tw = pl.col.secWebThickness > 0.0 ? pl.col.secWebThickness : 0.04 * colW;
+        const double tf = pl.col.secFlangeThickness > 0.0 ? pl.col.secFlangeThickness : 0.06 * colHt;
+        const Vec3 Wd = pl.colSec.width;
+        const Vec3 Hd = pl.colSec.height;
+        const bool caseB = std::fabs(pl.aW) > std::fabs(pl.aH);
+        const double tabSign = nearTab ? 1.0 : -1.0;  // ilk uretilen tab tarafi
+
+        // KARSI taraf yonu (O = govde normali boyunca, kayma levhasinin tersine).
+        double sigma;
+        if (caseB) sigma = (pl.aW >= 0.0) ? -1.0 : 1.0;
+        else sigma = (vdot(sec.width, Wd) * tabSign >= 0.0) ? -1.0 : 1.0;
+        const Vec3 O{Wd.x * sigma, Wd.y * sigma, Wd.z * sigma};
+
+        // Dusey aralik (zc merkez, [zlo, zhi] kiris eksenine gore).
+        const double beamClear =
+            beam.secWebThickness > 0.0 && beam.secFlangeThickness > 0.0
+                ? std::max(1.0, beam.secHeight - 2.0 * beam.secFlangeThickness)
+                : std::max(1.0, beam.secHeight);
+        double zhi = beamClear * 0.5 - stiffGapFlange;
+        double zlo = -beamClear * 0.5 + stiffGapFlange;
+        if (stiffener == L"Determined by shear tab") {
+            zhi = height * 0.5;
+            zlo = -height * 0.5;
+        } else if (stiffener == L"Partial") {
+            zlo = std::max(zlo, -height * 0.5);
+        }
+        if (sH > 0.0 && !horizontal) {
+            const double mid = 0.5 * (zhi + zlo);
+            zhi = mid + sH * 0.5;
+            zlo = mid - sH * 0.5;
+        }
+        const double vLen = std::max(0.0, zhi - zlo);
+        const double vMid = 0.5 * (zhi + zlo);
+
+        // Govde disina uzanan "b" (govdeden uc ucuna) ve flanslar arasi "h" (H yonu).
+        const double bOut = std::max(0.0, colW * 0.5 - tw * 0.5 - stiffGapWeb);
+        const double hBetween = std::max(0.0, colHt - 2.0 * tf - 2.0 * stiffGapFlange);
+
+        PlateSpec stf;
+        stf.name = L"Stiffener";
+        stf.thickness = st_t;
+        Vec3 base{colMid.x, colMid.y, facePoint.z + vMid};
+        if (horizontal) {
+            // Yatay (kolon eksenine dik) sureklilik levhasi: O boyunca b, H boyunca h.
+            const double b = sW > 0.0 ? sW : bOut;
+            const double h = sH > 0.0 ? sH : hBetween;
+            stf.axis = worldUp;
+            stf.u = O;
+            stf.v = Hd;
+            stf.width = b;
+            stf.height = h;
+            stf.center = Vec3{colMid.x + O.x * (tw * 0.5 + stiffGapWeb + b * 0.5),
+                              colMid.y + O.y * (tw * 0.5 + stiffGapWeb + b * 0.5),
+                              facePoint.z};
+        } else if (caseB) {
+            // Dusey levha, tab duzleminde; govdeden uca dogru (O) b uzunlugunda.
+            const double b = sW > 0.0 ? sW : bOut;
+            stf.axis = sec.width;
+            stf.u = O;
+            stf.v = worldUp;
+            stf.width = b;
+            stf.height = vLen;
+            stf.center = Vec3{
+                base.x + O.x * (tw * 0.5 + stiffGapWeb + b * 0.5) + sec.width.x * (tabSign * ecc),
+                base.y + O.y * (tw * 0.5 + stiffGapWeb + b * 0.5) + sec.width.y * (tabSign * ecc),
+                base.z + sec.width.z * (tabSign * ecc)};
+        } else {
+            // Case A: govdeye PARALEL dusey levha, govdenin karsi yaninda.
+            const double b = sW > 0.0 ? sW : hBetween;
+            stf.axis = Wd;
+            stf.u = lenDir;
+            stf.v = worldUp;
+            stf.width = b;
+            stf.height = vLen;
+            stf.center = Vec3{base.x + O.x * (tw * 0.5 + stiffGapWeb + st_t * 0.5),
+                              base.y + O.y * (tw * 0.5 + stiffGapWeb + st_t * 0.5), base.z};
+        }
+
+        // Pah (govde tarafi koseleri; kose 0/3 = u-min ucu).
+        const std::wstring chType = paramAsString(input.params, L"stiffenerChamferType", L"Default");
+        const double chH = std::max(0.0, paramAsDouble(input.params, L"stiffenerChamferH", 0.0));
+        const double chV = std::max(0.0, paramAsDouble(input.params, L"stiffenerChamferV", 0.0));
+        if (chType != L"No chamfer" && chH > 0.0 && chV > 0.0) {
+            const int type = (chType == L"Convex arc chamfer") ? 2
+                             : (chType == L"Concave arc chamfer") ? 3 : 1;
+            const bool allCorners = !horizontal && !caseB;
+            for (int ci = 0; ci < 4; ++ci) {
+                if (!allCorners && ci != 0 && ci != 3) continue;
+                stf.chamfers.push_back(PlateSpec::Chamfer{ci, type, chH, chV});
+            }
+        }
+
+        // Parca ozellikleri.
+        const std::wstring prefix = paramAsString(input.params, L"stiffenerPosPrefix", L"");
+        const int posStart = paramAsInt(input.params, L"stiffenerPosStart", 1);
+        if (!prefix.empty()) stf.posNo = prefix + std::to_wstring(posStart);
+        stf.material = paramAsString(input.params, L"stiffenerMaterial", L"");
+        stf.finish = paramAsString(input.params, L"stiffenerFinish", L"");
+        const std::wstring stfName = paramAsString(input.params, L"stiffenerName", L"");
+        if (!stfName.empty()) stf.name = stfName;
+
+        if (stf.width <= 0.0 || stf.height <= 0.0 || stf.thickness <= 0.0) {
+            plan.ok = false;
+            plan.error = L"berkitme olculeri gecersiz (genislik/yukseklik/kalinlik > 0 olmali)";
+            return plan;
+        }
+        plan.plates.push_back(stf);
         plan.plateKeys.push_back("stiffener");
     }
 

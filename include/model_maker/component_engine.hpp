@@ -204,6 +204,23 @@ struct PlateSpec {
     double height{0.0};
     double thickness{0.0};
     std::wstring name;
+    // Tekla parca ozellikleri (Material / Finish / Pos_No). Bos = varsayilan.
+    // Pos_No modelde ayri alan olarak yok: "Pos_No: <onek><baslangic>" olarak
+    // parcanin aciklamasina (EntityProperties::description) yazilir.
+    std::wstring material;
+    std::wstring finish;
+    std::wstring posNo;
+    // KOSE PAHLARI (Tekla "chamfers"). corner: 0 = (-u,-v), 1 = (+u,-v), 2 = (+u,+v),
+    // 3 = (-u,+v) (levha merkezine gore). type: 1 = dogru pah, 2 = konveks yay,
+    // 3 = konkav yay. h = u yonunde, v = v yonunde bacak (mm). Bos = dikdortgen.
+    struct Chamfer {
+        int corner{0};
+        int type{1};
+        double h{0.0};
+        double v{0.0};
+        bool operator==(const Chamfer&) const = default;
+    };
+    std::vector<Chamfer> chamfers;
 };
 
 // Kaynak spec'i (plan asamasinda; ileriki fazlarda Weld modeli).

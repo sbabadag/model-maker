@@ -303,7 +303,7 @@ int main() {
     {
         Setup s = makeSetup();
         ComponentInput in = makeInput(s);
-        in.params = {{L"stiffenerCreation", CompParamValue{std::wstring(L"full")}},
+        in.params = {{L"stiffenerCreation", CompParamValue{std::wstring(L"Full")}},
                      {L"backingBarT", CompParamValue{8.0}}};
         const GenerationPlan gp = ComponentRegistry::instance().generate(
             L"tekla_shear_plate_146", in);

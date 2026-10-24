@@ -67,8 +67,8 @@ int main() {
         if (t) {
             check(t->displayName == L"Shear Plate Simple (146)", "146 displayName");
             check(t->schemaVersion == 1, "146 schemaVersion 1");
-            check(t->params.size() == 43,
-                  "146 semasi 43 parametre (Bolts sekmesi alanlari artik motor parametresi)");
+            check(t->params.size() == 56,
+                  "146 semasi 56 parametre (Bolts sekmesi alanlari artik motor parametresi)");
         }
     }
 
@@ -214,7 +214,7 @@ int main() {
         registerBuiltInComponents(reg);
 
         ComponentInput in = makeInput();
-        in.params = {{L"stiffenerCreation", CompParamValue{std::wstring(L"full")}},
+        in.params = {{L"stiffenerCreation", CompParamValue{std::wstring(L"Full")}},
                      {L"backingBarT", CompParamValue{8.0}}};
         GenerationPlan plan = reg.generate(L"tekla_shear_plate_146", in);
         check(plan.ok, "146 (stiffener + backing bar) uretildi");
@@ -225,8 +225,10 @@ int main() {
         for (std::size_t i = 0; i < plan.plateKeys.size(); ++i) {
             if (plan.plateKeys[i] == "stiffener") {
                 hasStiff = true;
-                check(sameV(plan.plates[i].center, Vec3{0.0, 0.0, 3000.0}),
-                      "stiffener kolon ekseninde + kiris kotunda");
+                // Berkitme govdenin KARSI tarafinda (kolon ekseninde degil) ve kiris
+                // kotunda (ayrintili geometri: shear_plate_146_stiffener_test).
+                check(std::fabs(plan.plates[i].center.x) > 1.0 && approx(plan.plates[i].center.z, 3000.0),
+                      "stiffener govdenin karsi yaninda + kiris kotunda");
             }
             if (plan.plateKeys[i] == "backing_bar") {
                 hasBacking = true;
@@ -271,7 +273,7 @@ int main() {
         std::size_t engineSpecs = 0;
         for (const auto& s : def.specs)
             if (!s.documentedOnly) ++engineSpecs;
-        check(engineSpecs == 43, "146 dialog motor specs = 43 parametre");
+        check(engineSpecs == 56, "146 dialog motor specs = 56 parametre");
         check(def.specs.size() > engineSpecs, "146 dialog gri Tekla alanlari var");
 
         const auto hit = hitTestDiagramHotspot(def.schema, DiagramPoint{46.0, 120.0});

@@ -9,6 +9,9 @@
 
 #include <BRepBuilderAPI_MakeFace.hxx>
 #include <BRepBuilderAPI_MakePolygon.hxx>
+#include <BRepBuilderAPI_MakeWire.hxx>
+#include <BRepBuilderAPI_MakeEdge.hxx>
+#include <GC_MakeArcOfCircle.hxx>
 #include <BRepPrimAPI_MakePrism.hxx>
 #include <gp_Dir.hxx>
 #include <gp_Pnt.hxx>
@@ -36,6 +39,23 @@ bool axisDir(const Vec3& a, gp_Dir& out) noexcept {
 constexpr std::uint32_t kPlateColor = 0x808080u;  // gri
 constexpr std::uint32_t kBoltColor = 0x8B592Au;   // kahverengi (RGB 139,89,42)
 constexpr std::uint32_t kWeldColor = 0x00C853u;   // parlak yesil
+
+// Tekla parca ozellikleri: Name / Material / Finish / Pos_No (-> description).
+// Bos alan mevcut degere DOKUNMAZ.
+void applyPlateProps(WireframeModel& model, const PlateSpec& spec) noexcept {
+    const auto narrow = [](const std::wstring& w) {
+        std::string n;
+        n.reserve(w.size());
+        for (const wchar_t ch : w) n.push_back(ch < 0x80 ? static_cast<char>(ch) : '?');
+        return n;
+    };
+    auto props = model.properties();
+    if (!spec.name.empty()) props.name = narrow(spec.name);
+    if (!spec.material.empty()) props.material = narrow(spec.material);
+    if (!spec.finish.empty()) props.finish = narrow(spec.finish);
+    if (!spec.posNo.empty()) props.description = "Pos_No: " + narrow(spec.posNo);
+    model.setProperties(std::move(props));
+}
 
 void applyColor(WireframeModel& model, std::uint32_t color) noexcept {
     auto props = model.properties();
@@ -95,16 +115,95 @@ TopoDS_Shape ComponentMaterializer::buildPlateSolid(const PlateSpec& p) {
     const double hh = p.height * 0.5;
     const gp_Pnt c(p.center.x, p.center.y, p.center.z);
     const gp_Pnt base = c.Translated(gp_Vec(z) * (-p.thickness * 0.5));
-    BRepBuilderAPI_MakePolygon poly;
-    const auto corner = [&](double su, double sv) {
-        return base.Translated(gp_Vec(uu) * (su * hw) + gp_Vec(vv) * (sv * hh));
+    // (su, sv) yerel koordinat (mm, levha merkezine gore) -> dunya noktasi.
+    const auto pt = [&](double lu, double lv) {
+        return base.Translated(gp_Vec(uu) * lu + gp_Vec(vv) * lv);
     };
-    poly.Add(corner(-1.0, -1.0));
-    poly.Add(corner(1.0, -1.0));
-    poly.Add(corner(1.0, 1.0));
-    poly.Add(corner(-1.0, 1.0));
-    poly.Close();
-    BRepBuilderAPI_MakeFace face(poly.Wire());
+
+    // Pahsiz levha: eski dogrudan poligon yolu (davranis degismez).
+    if (p.chamfers.empty()) {
+        BRepBuilderAPI_MakePolygon poly;
+        poly.Add(pt(-hw, -hh));
+        poly.Add(pt(hw, -hh));
+        poly.Add(pt(hw, hh));
+        poly.Add(pt(-hw, hh));
+        poly.Close();
+        BRepBuilderAPI_MakeFace face(poly.Wire());
+        if (!face.IsDone()) return TopoDS_Shape();
+        return BRepPrimAPI_MakePrism(face.Face(), gp_Vec(z) * p.thickness).Shape();
+    }
+
+    // PAHLI levha: kontur 4 kose; pahli kose iki noktaya (+ yay orta noktasina) bolunur.
+    // Boolean YOK (tel -> yuzey -> prizma). Bacaklar levha yarisini gecmeyecek sekilde
+    // kirpilir (komsu pahlar cakismasin).
+    struct Cn { double sx, sy; };
+    const Cn corners[4] = {{-1, -1}, {1, -1}, {1, 1}, {-1, 1}};
+    struct Seg { gp_Pnt a; gp_Pnt mid; gp_Pnt b; bool arc; };
+    std::vector<gp_Pnt> verts;               // sirali kontur noktalari
+    std::vector<bool> arcAfter;              // verts[i] -> verts[i+1] yay mi
+    std::vector<gp_Pnt> arcMid;              // yay orta noktasi (arc ise)
+    const auto findChamfer = [&](int idx) -> const PlateSpec::Chamfer* {
+        for (const auto& ch : p.chamfers)
+            if (ch.corner == idx && ch.h > 1e-9 && ch.v > 1e-9) return &ch;
+        return nullptr;
+    };
+    for (int i = 0; i < 4; ++i) {
+        const Cn& cn = corners[i];
+        const PlateSpec::Chamfer* ch = findChamfer(i);
+        if (!ch) {
+            verts.push_back(pt(cn.sx * hw, cn.sy * hh));
+            arcAfter.push_back(false);
+            arcMid.push_back(gp_Pnt());
+            continue;
+        }
+        const double a = std::min(ch->h, p.width * 0.5);   // u yonunde bacak
+        const double b = std::min(ch->v, p.height * 0.5);  // v yonunde bacak
+        // Kontur saat yonunun tersi (0->1->2->3). Kosede gelen kenar ve giden kenar:
+        // gelen nokta kosenin "onceki" kenarinda, giden nokta "sonraki" kenarinda.
+        // Kose (cu,cv); ic yon (-sx,-sy). P_u: u-kenari uzerinde (cu - sx*a, cv),
+        // P_v: v-kenari uzerinde (cu, cv - sy*b).
+        const double cu = cn.sx * hw, cv = cn.sy * hh;
+        const gp_Pnt pu = pt(cu - cn.sx * a, cv);
+        const gp_Pnt pv = pt(cu, cv - cn.sy * b);
+        // Kontur yonu: i=0:(-,-) -> 1:(+,-) -> 2:(+,+) -> 3:(-,+): dolasim sagin tersi.
+        // Kose 0 ve 2'de gelen kenar v-kenari, giden u-kenari; 1 ve 3'te tersi.
+        const bool incomingIsV = (i == 0 || i == 2);
+        const gp_Pnt first = incomingIsV ? pv : pu;
+        const gp_Pnt second = incomingIsV ? pu : pv;
+        // Yay orta noktasi: ic merkez C = (cu - sx*a, cv - sy*b); konveks = C +
+        // (sx*a, sy*b)*cos45 ; konkav (merkez koseye) = kose + (-sx*a, -sy*b)*cos45.
+        const double k = 0.70710678118654752;
+        gp_Pnt mid;
+        if (ch->type == 2)
+            mid = pt(cu - cn.sx * a + cn.sx * a * k, cv - cn.sy * b + cn.sy * b * k);
+        else
+            mid = pt(cu - cn.sx * a * (1.0 - k), cv - cn.sy * b * (1.0 - k));
+        // not: konkav icin kose merkezli yay; orta nokta kose + (-s*a*k, -s*b*k) =
+        // cu - sx*a*k ... asagida duzeltilir.
+        if (ch->type == 3) mid = pt(cu - cn.sx * a * k, cv - cn.sy * b * k);
+        verts.push_back(first);
+        arcAfter.push_back(ch->type == 2 || ch->type == 3);
+        arcMid.push_back(mid);
+        verts.push_back(second);
+        arcAfter.push_back(false);
+        arcMid.push_back(gp_Pnt());
+    }
+    BRepBuilderAPI_MakeWire wire;
+    const std::size_t n = verts.size();
+    for (std::size_t i = 0; i < n; ++i) {
+        const gp_Pnt& a = verts[i];
+        const gp_Pnt& b = verts[(i + 1) % n];
+        if (a.Distance(b) < 1e-7) continue;
+        if (arcAfter[i]) {
+            GC_MakeArcOfCircle arc(a, arcMid[i], b);
+            if (!arc.IsDone()) return TopoDS_Shape();
+            wire.Add(BRepBuilderAPI_MakeEdge(arc.Value()).Edge());
+        } else {
+            wire.Add(BRepBuilderAPI_MakeEdge(a, b).Edge());
+        }
+    }
+    if (!wire.IsDone()) return TopoDS_Shape();
+    BRepBuilderAPI_MakeFace face(wire.Wire());
     if (!face.IsDone()) return TopoDS_Shape();
     return BRepPrimAPI_MakePrism(face.Face(), gp_Vec(z) * p.thickness).Shape();
 }
@@ -569,6 +668,7 @@ ComponentMaterializer::CommitResult ComponentMaterializer::commit(const Prepared
             case ComponentObjectKind::Plate: {
                 WireframeModel wf = shapeToWireframeWithFaces(pc.solid, 0.15);
                 applyColor(wf, kPlateColor);
+                if (pc.record.plate) applyPlateProps(wf, *pc.record.plate);
                 doc_.addModel(std::move(wf));
                 const EntityId id = doc_.modelId(doc_.models().size() - 1);
                 const VersionId before = store_->activeVersion(id);
@@ -898,6 +998,7 @@ ComponentMaterializer::CommitResult ComponentMaterializer::recompute(
             case ComponentObjectKind::Plate: {
                 WireframeModel wf = shapeToWireframeWithFaces(pc.solid, 0.15);
                 applyColor(wf, kPlateColor);
+                if (pc.record.plate) applyPlateProps(wf, *pc.record.plate);
                 if (hasStable && doc_.indexOfEntity(stableId)) {
                     // Kimlik korunur: replaceModel + ayni EntityId'ye yeni kati.
                     doc_.replaceModel(*doc_.indexOfEntity(stableId), {std::move(wf)});

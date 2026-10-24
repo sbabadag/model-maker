@@ -807,6 +807,11 @@ if(BUILD_TESTING)
         target_link_libraries(model_maker_occ_shear_plate_146_bolts_test PRIVATE model_maker_occ)
         add_test(NAME model_maker_occ_shear_plate_146_bolts_test
                  COMMAND model_maker_occ_shear_plate_146_bolts_test)
+        # TEKLA 146 STIFFENERS: berkitme hacmi/konumu/pah (analitik). GERCEK OCCT.
+        add_executable(model_maker_occ_shear_plate_146_stiffener_test tests/occ_shear_plate_146_stiffener_test.cpp)
+        target_link_libraries(model_maker_occ_shear_plate_146_stiffener_test PRIVATE model_maker_occ)
+        add_test(NAME model_maker_occ_shear_plate_146_stiffener_test
+                 COMMAND model_maker_occ_shear_plate_146_stiffener_test)
         # END PLATE REGRESYON (A3): mevcut production hatti vs yeni ortak runtime.
         # Ayni yerlesim iki yoldan beslenir; geometri/bulon/delik/ownership esit.
         add_executable(model_maker_occ_end_plate_regression_vs_runtime tests/occ_end_plate_regression_vs_runtime.cpp)
@@ -1036,6 +1041,13 @@ if(BUILD_TESTING)
     target_link_options(model_maker_shear_plate_146_bolts_test PRIVATE -static -static-libgcc -static-libstdc++)
     target_compile_options(model_maker_shear_plate_146_bolts_test PRIVATE -Wall -Wextra -Wpedantic)
     add_test(NAME model_maker_shear_plate_146_bolts_test COMMAND model_maker_shear_plate_146_bolts_test)
+
+    # TEKLA 146 STIFFENERS sekmesi: karsi-govde berkitmesi uretim plani. OCC'siz.
+    add_executable(model_maker_shear_plate_146_stiffener_test tests/shear_plate_146_stiffener_test.cpp)
+    target_link_libraries(model_maker_shear_plate_146_stiffener_test PRIVATE model_maker_core)
+    target_link_options(model_maker_shear_plate_146_stiffener_test PRIVATE -static -static-libgcc -static-libstdc++)
+    target_compile_options(model_maker_shear_plate_146_stiffener_test PRIVATE -Wall -Wextra -Wpedantic)
+    add_test(NAME model_maker_shear_plate_146_stiffener_test COMMAND model_maker_shear_plate_146_stiffener_test)
 
     # GENERIC COMPONENT CATALOG (C7) testi: registry+dialog kayitlarindan katalog
     # derlemesi, metadata, generic uretim, dialog varligi. OCC'siz, Linux'ta kosar.
