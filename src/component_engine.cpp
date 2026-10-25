@@ -1904,8 +1904,12 @@ GenerationPlan generateHaunch40(const ComponentInput& input) noexcept {
         // second in-plane vector is axis CROSS xDir = end.v (right-handed).
         // The origin is the first (lower-left) point of countX x countY
         // rectangular pattern, NOT the centre of that group.
-        const Vec3 groupCentre=add(end.center,
-                                  scale(end.v,offset + D*0.5));
+        // Anchor the bolt rows to the REAL beam/haunch envelope. Moving
+        // the plate centre for unequal top/bottom edges must NOT drag both
+        // bolt groups with it (otherwise eT/eB measurements are wrong).
+        const Vec3 groupCentre=add(
+            add(p.facePoint,scale(dir,gap+endT*0.5)),
+            scale(end.v,offset));
         // X origin references the actual plate LEFT edge, rather than
         // assuming symmetric bolt spacing about its centreline.
         bg.origin=add(add(groupCentre,
