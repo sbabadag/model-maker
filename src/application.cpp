@@ -4913,7 +4913,10 @@ void Application::applyComponentFromParts(const std::wstring& typeId,
         input.secondary.push_back(memberGeometryFor(document_, profileCatalog_, parts[i]));
         secondaryIds.push_back(input.secondary.back().id);
     }
-    input.params = params;
+    // New Haunch40 instances must persist complete editable defaults at the
+    // first commit, not only once the Properties panel is opened.
+    input.params = (typeId == L"tekla_haunch_40" && type)
+        ? mm::alignParamsToSpecs(type->params, params) : params;
 
     // 2. Registry -> generator -> GenerationPlan.
     const mm::GenerationPlan gp = mm::ComponentRegistry::instance().generate(typeId, input);
