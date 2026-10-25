@@ -1641,7 +1641,11 @@ GenerationPlan generateHaunch40(const ComponentInput& input) noexcept {
     const double pitchY = paramAsDouble(input.params,L"boltPitchY",80.0);
     const double hBeam = p.beam.secHeight;
     const double wBeam = p.beam.secWidth;
-    const double plateW = std::max(wBeam+20.0, pitchX+2.0*edge);
+    // Auto-sized end plate must satisfy the SAME clearances as an
+    // explicitly dimensioned plate. Small edge values and larger holes
+    // previously made the automatic plate width fail its own validation.
+    const double plateW = std::max({wBeam+20.0, pitchX+2.0*edge,
+                                    pitchX+holeD+15.0});
     const double plateH = hBeam+D+2.0*edge;
     const double givenW = paramAsDouble(input.params,L"endPlateWidth",0.0);
     const double givenH = paramAsDouble(input.params,L"endPlateHeight",0.0);
