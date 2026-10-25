@@ -448,6 +448,18 @@ int main(int argc, char** argv) {
                   std::find(webFields.begin(),webFields.end(),L"haunchLength")!=webFields.end() &&
                   std::find(webFields.begin(),webFields.end(),L"haunchDepth")!=webFields.end(),
                   "P4: only selected web's four parameters appear");
+            // Actual left-button events at the cap's projected generator
+            // anchor must pick that role (not only direct selectRole calls).
+            const QPointF capClick=left->roleScreenAnchor("haunch_top_plate");
+            QMouseEvent capDown(QEvent::MouseButtonPress,capClick,
+                                Qt::LeftButton,Qt::LeftButton,Qt::NoModifier);
+            QMouseEvent capUp(QEvent::MouseButtonRelease,capClick,
+                              Qt::LeftButton,Qt::NoButton,Qt::NoModifier);
+            QApplication::sendEvent(left,&capDown);
+            QApplication::sendEvent(left,&capUp);
+            QApplication::processEvents();
+            CHECK(left->activeRole()=="haunch_top_plate",
+                  "P4: real mouse click picks projected cap-plate polygon");
             left->selectRole("haunch_top_plate");
             QApplication::processEvents();
             const auto capFields=left->visibleOverlayParams();
