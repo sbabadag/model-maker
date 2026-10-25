@@ -781,6 +781,24 @@ BridgeNativeConvertOutcome convertBridgeToNative(
         return out;
     }
 
+    // Never substitute the historical 200x300 placeholder when the actual
+    // selected Model Maker section is absent from the active catalog. This
+    // component must be computed from TARGET member profiles, not Tekla labels.
+    const auto targetProfileReady = [&](EntityId id) {
+        const auto idx = doc.indexOfEntity(id);
+        return idx && findProfile(catalog, doc.models()[*idx].properties().profileName);
+    };
+    if (!targetProfileReady(binding.primary.entityId)) {
+        out.error = "native 146: secili ana uyenin GERCEK kesiti profil katalogunda bulunamadi";
+        return out;
+    }
+    for (const auto& s : binding.secondary) {
+        if (s.resolved && !targetProfileReady(s.entityId)) {
+            out.error = "native 146: secili ikincil uyenin GERCEK kesiti profil katalogunda bulunamadi";
+            return out;
+        }
+    }
+
     // Generator girdisi: GERCEK Document uyelerinin geometrisi + native parametreler.
     ComponentInput in;
     in.main = bridgeMemberGeometry(doc, binding.primary.entityId, catalog);
