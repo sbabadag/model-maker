@@ -680,228 +680,127 @@ int main(int argc, char** argv) {
                 CHECK(p->previewPlan().ok,
                       "P4: loaded saved dimensions keep 3D/orthographic previews");
 
-            // Existing MMW8 records only have boltEdge. A Get/load must
-            // migrate into four visible individual controls, preserving
-            // physical dimensions (legacy top/bottom were edge+20).
-            // Deliberately editing independent edges releases only the
-            // corresponding manual plate dimension (0 means auto) so eL/eR
-            // and eT/eB can be achieved without conflicting fixed sizes.
-            h40.setParams({
-                {L"endPlateWidth",mm::CompParamValue{300.0}},
-                {L"endPlateHeight",mm::CompParamValue{600.0}}
-            });
-            auto* manualW=h40.findChild<QDoubleSpinBox*>(
-                QStringLiteral("endPlateWidth"));
-            auto* manualH=h40.findChild<QDoubleSpinBox*>(
-                QStringLiteral("endPlateHeight"));
-            auto* adjustL=h40.findChild<QDoubleSpinBox*>(
-                QStringLiteral("boltEdgeLeft"));
-            auto* adjustT=h40.findChild<QDoubleSpinBox*>(
-                QStringLiteral("boltEdgeTop"));
-            CHECK(manualW && manualH && adjustL && adjustT,
-                  "P4D: fixed plate dims and independent edge controls present");
-            if(manualW && manualH && adjustL && adjustT) {
-                adjustL->setValue(45.0);
-                QApplication::processEvents();
-                CHECK(manualW->value()==0.0 &&
-                      std::fabs(manualH->value()-600.0)<1e-6,
-                      "P4D: editing eL releases only fixed plate width");
-                const auto beforeTop=left->previewPlan();
-                const mm::Vec3 earlierUpper=beforeTop.boltGroups[0].origin;
-                const mm::Vec3 earlierLower=beforeTop.boltGroups[1].origin;
-                const mm::Vec3 earlierPlate=beforeTop.plates[0].center;
-                adjustT->setValue(65.0);
-                QApplication::processEvents();
-                const auto afterTop=left->previewPlan();
-                const auto& v=afterTop.plates[0].v;
-                const auto alongV=[&](mm::Vec3 one,mm::Vec3 two) {
-                    const mm::Vec3 delta=one-two;
-                    return delta.x*v.x+delta.y*v.y+delta.z*v.z;
-                };
-                CHECK(std::fabs(manualH->value()-600.0)<1e-6 &&
-                      afterTop.ok &&
-                      std::fabs(afterTop.plates[0].height-600.0)<1e-6 &&
-                      std::fabs(alongV(afterTop.plates[0].center,earlierPlate))<1e-6 &&
-                      std::fabs(alongV(afterTop.boltGroups[0].origin,earlierUpper)+10.0)<1e-6 &&
-                      std::fabs(alongV(afterTop.boltGroups[1].origin,earlierLower))<1e-6 &&
-                      std::fabs(left->boltOverlayMetrics("haunch_bolts_upper").topEdge
-                                -65.0)<1e-6,
-                      "P4F: fixed plate stays unchanged; editing eT moves ONLY upper bolt grid");
-                auto* adjustB=h40.findChild<QDoubleSpinBox*>(
-                    QStringLiteral("boltEdgeBottom"));
-                if(adjustB) {
-                    const mm::Vec3 beforeLower=afterTop.boltGroups[1].origin;
-                    const mm::Vec3 beforeUpper=afterTop.boltGroups[0].origin;
-                    adjustB->setValue(80.0);
-                    QApplication::processEvents();
-                    const auto& later=left->previewPlan();
-                    CHECK(later.ok &&
-                          std::fabs(later.plates[0].height-600.0)<1e-6 &&
-                          std::fabs(alongV(later.plates[0].center,earlierPlate))<1e-6 &&
-                          std::fabs(alongV(later.boltGroups[0].origin,beforeUpper))<1e-6 &&
-                          std::fabs(alongV(later.boltGroups[1].origin,beforeLower)-25.0)<1e-6,
-                          "P4F: fixed plate stays unchanged; editing eB moves ONLY lower bolt grid");
-                }
-            }
-
-            // Regression: both height and width must shrink to the
-            // current bolt layout's TRUE physical minimum, not the
-            // structural beam+haunch envelope from the old UI.
+            // Independent upper and lower CLEAR EDGE offsets. Geometry
+            // must move only the selected bolt group, not the end plate.
             h40.setParams({});
             QApplication::processEvents();
-            auto* smallerH=h40.findChild<QDoubleSpinBox*>(
+            auto* manualH=h40.findChild<QDoubleSpinBox*>(
                 QStringLiteral("endPlateHeight"));
-            auto* smallerW=h40.findChild<QDoubleSpinBox*>(
+            auto* manualW=h40.findChild<QDoubleSpinBox*>(
                 QStringLiteral("endPlateWidth"));
-            auto* newTop=h40.findChild<QDoubleSpinBox*>(
-                QStringLiteral("boltEdgeTop"));
-            auto* newBottom=h40.findChild<QDoubleSpinBox*>(
-                QStringLiteral("boltEdgeBottom"));
-            CHECK(smallerH && smallerW && newTop && newBottom,
-                  "P4E: plate dimensions and vertical bolt offsets editable");
-            if(smallerH && smallerW && newTop && newBottom && left) {
-                // AUTO-sized end plate must not grow/shrink/shift on an
-                // upper or lower bolt-edge edit either (manual tested above).
-                const auto autoBefore=left->previewPlan();
-                newTop->setValue(75.0);
+            auto* upperClear=h40.findChild<QDoubleSpinBox*>(
+                QStringLiteral("upperBoltEdgeClear"));
+            auto* lowerClear=h40.findChild<QDoubleSpinBox*>(
+                QStringLiteral("lowerBoltEdgeClear"));
+            CHECK(manualH && manualW && upperClear && lowerClear,
+                  "P4G: independent net edge and plate dimension editors exist");
+            if(manualH && manualW && upperClear && lowerClear && left) {
+                const auto first=left->previewPlan();
+                CHECK(first.ok && first.boltGroups.size()==2 && !first.plates.empty(),
+                      "P4G: base plan has independent upper and lower groups");
+                const auto v=first.plates[0].v;
+                const auto along=[&](mm::Vec3 a,mm::Vec3 b) {
+                    const mm::Vec3 d=a-b;
+                    return d.x*v.x+d.y*v.y+d.z*v.z;
+                };
+                upperClear->setValue(64.0);  // 44 -> 64, 20 mm downward
                 QApplication::processEvents();
-                const auto autoAfter=left->previewPlan();
-                CHECK(autoAfter.ok && autoBefore.ok &&
-                      std::fabs(autoAfter.plates[0].height-
-                                autoBefore.plates[0].height)<1e-6 &&
-                      std::fabs(autoAfter.plates[0].center.z-
-                                autoBefore.plates[0].center.z)<1e-6 &&
-                      std::fabs(left->boltOverlayMetrics("haunch_bolts_upper").topEdge
-                                -75.0)<1e-6,
-                      "P4F: eT moves bolts on auto-sized plate without changing plate height/position");
-                newTop->setValue(55.0);
+                const auto changedTop=left->previewPlan();
+                CHECK(changedTop.ok && first.ok &&
+                      std::fabs(changedTop.plates[0].height-first.plates[0].height)<1e-6 &&
+                      std::fabs(along(changedTop.plates[0].center,first.plates[0].center))<1e-6 &&
+                      std::fabs(along(changedTop.boltGroups[0].origin,
+                                      first.boltGroups[0].origin)+20.0)<1e-6 &&
+                      std::fabs(along(changedTop.boltGroups[1].origin,
+                                      first.boltGroups[1].origin))<1e-6 &&
+                      std::fabs(left->boltOverlayMetrics("haunch_bolts_upper").topEdge-
+                                (64.0+changedTop.boltGroups[0].params.holeDiameter*0.5))<1e-6,
+                      "P4G: upper clear edge moves only upper bolts, plate stays fixed");
+                lowerClear->setValue(59.0);  // 44 -> 59, 15 mm upward
                 QApplication::processEvents();
-                // The real 3D editor, not just the right-hand Qt property
-                // field, must propagate eT to the native bolt generator.
+                const auto changedLower=left->previewPlan();
+                CHECK(changedLower.ok && changedTop.ok &&
+                      std::fabs(changedLower.plates[0].height-
+                                changedTop.plates[0].height)<1e-6 &&
+                      std::fabs(along(changedLower.boltGroups[0].origin,
+                                      changedTop.boltGroups[0].origin))<1e-6 &&
+                      std::fabs(along(changedLower.boltGroups[1].origin,
+                                      changedTop.boltGroups[1].origin)-15.0)<1e-6,
+                      "P4G: lower clear edge moves only lower bolts");
+                // Confirm 3D edits use the same independent form field.
                 left->selectRole("haunch_bolts_upper");
                 QApplication::processEvents();
                 QDoubleSpinBox* top3d=nullptr;
-                for(auto* d:left->findChildren<QDoubleSpinBox*>())
-                    if(d->toolTip()==QStringLiteral("boltEdgeTop"))
-                        top3d=d;
+                for(auto* sp:left->findChildren<QDoubleSpinBox*>())
+                    if(sp->toolTip()==QStringLiteral("upperBoltEdgeClear"))
+                        top3d=sp;
                 CHECK(top3d && top3d->isVisibleTo(left),
-                      "P4F: 3D top-edge bolt-position control is visible");
+                      "P4G: upper 3D clear-edge input visible");
                 if(top3d) {
-                    const auto previous=left->previewPlan();
-                    const mm::Vec3 v=previous.plates[0].v;
-                    top3d->setValue(70.0);
+                    const auto before=left->previewPlan();
+                    top3d->setValue(54.0);
                     QApplication::processEvents();
-                    const auto moved=left->previewPlan();
-                    const mm::Vec3 du=moved.boltGroups[0].origin-
-                                      previous.boltGroups[0].origin;
-                    const mm::Vec3 dl=moved.boltGroups[1].origin-
-                                      previous.boltGroups[1].origin;
-                    CHECK(moved.ok &&
-                          std::fabs(newTop->value()-70.0)<1e-6 &&
-                          std::fabs(moved.plates[0].height-
-                                    previous.plates[0].height)<1e-6 &&
-                          std::fabs(du.x*v.x+du.y*v.y+du.z*v.z+15.0)<1e-6 &&
-                          std::fabs(dl.x*v.x+dl.y*v.y+dl.z*v.z)<1e-6,
-                          "P4F: 3D eT edit moves ONLY upper bolts; plate/right panel synchronized");
-                    top3d->setValue(55.0);
-                    QApplication::processEvents();
+                    const auto after=left->previewPlan();
+                    CHECK(after.ok && std::fabs(upperClear->value()-54.0)<1e-6 &&
+                          std::fabs(after.plates[0].height-before.plates[0].height)<1e-6 &&
+                          std::fabs(along(after.boltGroups[0].origin,
+                                          before.boltGroups[0].origin)-10.0)<1e-6 &&
+                          std::fabs(along(after.boltGroups[1].origin,
+                                          before.boltGroups[1].origin))<1e-6,
+                          "P4G: 3D upper clear edge moves upper only, synchronizes panel");
                 }
                 left->selectRole("haunch_bolts_lower");
                 QApplication::processEvents();
                 QDoubleSpinBox* bottom3d=nullptr;
-                for(auto* d:left->findChildren<QDoubleSpinBox*>())
-                    if(d->toolTip()==QStringLiteral("boltEdgeBottom"))
-                        bottom3d=d;
+                for(auto* sp:left->findChildren<QDoubleSpinBox*>())
+                    if(sp->toolTip()==QStringLiteral("lowerBoltEdgeClear"))
+                        bottom3d=sp;
                 CHECK(bottom3d && bottom3d->isVisibleTo(left),
-                      "P4F: 3D bottom-edge bolt-position control is visible");
+                      "P4G: lower 3D clear-edge input visible");
                 if(bottom3d) {
-                    const auto previous=left->previewPlan();
-                    const mm::Vec3 v=previous.plates[0].v;
-                    bottom3d->setValue(75.0);
+                    bottom3d->setValue(49.0);
                     QApplication::processEvents();
-                    const auto moved=left->previewPlan();
-                    const mm::Vec3 du=moved.boltGroups[0].origin-
-                                      previous.boltGroups[0].origin;
-                    const mm::Vec3 dl=moved.boltGroups[1].origin-
-                                      previous.boltGroups[1].origin;
-                    CHECK(moved.ok &&
-                          std::fabs(newBottom->value()-75.0)<1e-6 &&
-                          std::fabs(moved.plates[0].height-
-                                    previous.plates[0].height)<1e-6 &&
-                          std::fabs(du.x*v.x+du.y*v.y+du.z*v.z)<1e-6 &&
-                          std::fabs(dl.x*v.x+dl.y*v.y+dl.z*v.z-20.0)<1e-6,
-                          "P4F: 3D eB edit moves ONLY lower bolts; plate/right panel synchronized");
-                    bottom3d->setValue(55.0);
-                    QApplication::processEvents();
+                    CHECK(std::fabs(lowerClear->value()-49.0)<1e-6 &&
+                          left->previewPlan().ok,
+                          "P4G: 3D lower clear edge synchronizes lower panel only");
                 }
-                smallerH->setValue(350.0);
+                // A shorter plate is a separate explicit user decision,
+                // and remains independent of bolt-group positioning edits.
+                h40.setParams({});
+                manualH->setValue(350.0);
                 QApplication::processEvents();
-                CHECK(std::fabs(smallerH->value()-350.0)<0.01 &&
+                CHECK(std::fabs(manualH->value()-350.0)<0.01 &&
                       left->previewPlan().ok &&
                       std::fabs(left->previewPlan().plates[0].height-350.0)<0.01,
-                      "P4E: actual plate shrinks to 350 mm rather than old 560+ limit");
-                newTop->setValue(45.0);
-                newBottom->setValue(75.0);
+                      "P4G: manual 350mm plate allowed with independent groups");
+                upperClear->setValue(34.0);
+                lowerClear->setValue(64.0);
                 QApplication::processEvents();
-                const auto top=left->boltOverlayMetrics("haunch_bolts_upper");
-                const auto bottom=left->boltOverlayMetrics("haunch_bolts_lower");
-                CHECK(std::fabs(smallerH->value()-350.0)<0.01 &&
-                      top.valid && bottom.valid &&
-                      std::fabs(top.topEdge-45.0)<0.01 &&
-                      std::fabs(bottom.bottomEdge-75.0)<0.01,
-                      "P4E: 45/75 vertical edge edits keep 350 mm manual plate and move bolts");
-                // At 2x2 and 120 mm pitch, an explicit width 165 mm
-                // leaves >=20 mm centre-to-edge clearance on each side.
-                smallerW->setValue(165.0);
+                const auto compact=left->previewPlan();
+                CHECK(compact.ok && std::fabs(manualH->value()-350.0)<0.01 &&
+                      std::fabs(compact.plates[0].height-350.0)<0.01 &&
+                      std::fabs(left->boltOverlayMetrics("haunch_bolts_upper").topEdge-
+                                45.0)<1e-6 &&
+                      std::fabs(left->boltOverlayMetrics("haunch_bolts_lower").bottomEdge-
+                                75.0)<1e-6,
+                      "P4G: net 34/64 means centre 45/75, plate height unchanged");
+                manualW->setValue(165.0);
                 QApplication::processEvents();
-                const auto m=left->boltOverlayMetrics("haunch_bolts_lower");
-                CHECK(m.valid && left->previewPlan().ok &&
-                      std::fabs(left->previewPlan().plates[0].width-165.0)<0.01 &&
-                      std::fabs(m.leftEdge-22.5)<0.01 &&
-                      std::fabs(m.rightEdge-22.5)<0.01,
-                      "P4E: 165 mm explicit width is allowed with 22.5 mm side clearances");
-                smallerH->setValue(200.0);
-                QApplication::processEvents();
-                CHECK(smallerH->value()>200.0 && left->previewPlan().ok,
-                      "P4E: height clamps only at actual bolt overlap/clearance minimum");
-                left->selectRole("haunch_bolts_upper");
-                QApplication::processEvents();
-                auto* previewTop=left->findChild<QDoubleSpinBox*>();
-                QDoubleSpinBox* previewBottom=nullptr;
-                for(auto* d:left->findChildren<QDoubleSpinBox*>()) {
-                    if(d->toolTip()==QStringLiteral("boltEdgeTop"))previewTop=d;
-                    if(d->toolTip()==QStringLiteral("boltEdgeBottom"))previewBottom=d;
-                }
-                CHECK(previewTop && previewBottom &&
-                      previewTop->isVisibleTo(left) && previewBottom->isVisibleTo(left) &&
-                      !previewTop->geometry().intersects(previewBottom->geometry()),
-                      "P4E: eT/eB 3D editors remain visible, independently clickable");
+                CHECK(left->previewPlan().ok &&
+                      std::fabs(left->previewPlan().plates[0].width-165.0)<0.01,
+                      "P4G: manual plate width remains independently editable");
             }
-
             h40.setParams({{L"boltEdge",mm::CompParamValue{50.0}}});
             QApplication::processEvents();
-            auto* eLeft=h40.findChild<QDoubleSpinBox*>(
-                QStringLiteral("boltEdgeLeft"));
-            auto* eRight=h40.findChild<QDoubleSpinBox*>(
-                QStringLiteral("boltEdgeRight"));
-            auto* eTop=h40.findChild<QDoubleSpinBox*>(
-                QStringLiteral("boltEdgeTop"));
-            auto* eBottom=h40.findChild<QDoubleSpinBox*>(
-                QStringLiteral("boltEdgeBottom"));
-            CHECK(eLeft && eRight && eTop && eBottom &&
-                  std::fabs(eLeft->value()-50.0)<1e-6 &&
-                  std::fabs(eRight->value()-50.0)<1e-6 &&
-                  std::fabs(eTop->value()-70.0)<1e-6 &&
-                  std::fabs(eBottom->value()-70.0)<1e-6,
-                  "P4D: loaded legacy boltEdge=50 migrates to 50/50/70/70");
-            if(left) {
-                const auto top=left->boltOverlayMetrics("haunch_bolts_upper");
-                const auto bottom=left->boltOverlayMetrics("haunch_bolts_lower");
-                CHECK(top.valid && bottom.valid &&
-                      std::fabs(top.leftEdge-50.0)<1e-6 &&
-                      std::fabs(top.topEdge-70.0)<1e-6 &&
-                      std::fabs(bottom.bottomEdge-70.0)<1e-6,
-                      "P4D: converted legacy dimensions match native geometry");
+            if(upperClear && lowerClear && left) {
+                const auto up=left->boltOverlayMetrics("haunch_bolts_upper");
+                const auto lo=left->boltOverlayMetrics("haunch_bolts_lower");
+                CHECK(std::fabs(upperClear->value()-59.0)<1e-6 &&
+                      std::fabs(lowerClear->value()-59.0)<1e-6 &&
+                      up.valid && lo.valid &&
+                      std::fabs(up.topEdge-70.0)<1e-6 &&
+                      std::fabs(lo.bottomEdge-70.0)<1e-6,
+                      "P4G: saved boltEdge=50 maps to 59mm net/70mm centre offsets");
             }
         }
     }
