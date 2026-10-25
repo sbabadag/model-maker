@@ -459,6 +459,14 @@ if(BUILD_TESTING)
         MM_BRIDGE_FIXTURE_DIR="${CMAKE_SOURCE_DIR}/tools/model-maker-bridge/fixtures")
     add_test(NAME model_maker_bridge_package_reader_test COMMAND model_maker_bridge_package_reader_test)
 
+    # Bridge V3.1 Stage 2: generated 144/146/40 legacy packages fed through
+    # the EXISTING C++ V3 parser and semantic preview. OCC-independent.
+    add_executable(model_maker_bridge_v31_package_test tests/bridge_v31_package_test.cpp)
+    target_link_libraries(model_maker_bridge_v31_package_test PRIVATE model_maker_core)
+    target_compile_definitions(model_maker_bridge_v31_package_test PRIVATE
+        MM_BRIDGE_V31_EXAMPLES_DIR="${CMAKE_SOURCE_DIR}/tools/tekla_bridge_v31/examples")
+    add_test(NAME model_maker_bridge_v31_package_test COMMAND model_maker_bridge_v31_package_test)
+
     # TEKLA -> NATIVE PARAMETRIC COMPONENT esleme: 146 paketini okur, parametreleri
     # provenance ile cikarir, native generator esdegerligini degerlendirir. OCC'siz.
     add_executable(model_maker_bridge_native_mapper_test tests/bridge_native_mapper_test.cpp)
