@@ -115,6 +115,42 @@ namespace ModelMaker.TeklaBridge.Core.Tests
         }
 
         [Fact]
+        public void PartHasHolesReportIsNotPermissionForSixPhysicalCuts()
+        {
+            var rec = new ObjectRecord
+            {
+                SourceGUID = "plate-146",
+                Kind = "ContourPlate",
+                PlateHoleProbe = new PlateHoleReportProbe
+                {
+                    ReportReadable = true,
+                    ReportValue = 1,
+                    HasBoltHoles = true,
+                    RawTopology = new SolidTopologyProbe
+                    {
+                        FaceCount = 6, LoopCount = 6, HoleLoops = 0
+                    },
+                    NormalTopology = new SolidTopologyProbe
+                    {
+                        FaceCount = 6, LoopCount = 6, HoleLoops = 0
+                    },
+                    TopologyDiffers = false,
+                    VerifiedHoleCount = null,
+                    VerifiedForDrilling = false
+                }
+            };
+            var json = Newtonsoft.Json.JsonConvert.SerializeObject(rec);
+            var parsed = Newtonsoft.Json.JsonConvert.DeserializeObject<ObjectRecord>(json);
+            Assert.NotNull(parsed.PlateHoleProbe);
+            Assert.Equal(1, parsed.PlateHoleProbe.ReportValue);
+            Assert.True(parsed.PlateHoleProbe.HasBoltHoles.HasValue &&
+                        parsed.PlateHoleProbe.HasBoltHoles.Value);
+            Assert.False(parsed.PlateHoleProbe.TopologyDiffers.Value);
+            Assert.Null(parsed.PlateHoleProbe.VerifiedHoleCount);
+            Assert.False(parsed.PlateHoleProbe.VerifiedForDrilling);
+        }
+
+        [Fact]
         public void DegenerateAxesAreRejectedInsteadOfInvented()
         {
             Assert.Throws<InvalidOperationException>(() =>
