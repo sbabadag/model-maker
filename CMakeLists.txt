@@ -1099,8 +1099,9 @@ if(BUILD_TESTING)
 
     # UNIVERSAL COMPONENT DIALOG Qt OFFScreen testi: widget'in gercek davranisi
     # (round-trip, sentinel koruma, bilinmeyen parametre) bassiz dogrulanir.
-    # Yalniz Qt6 varken (Linux); Windows'ta goruntu Asus'ta model-maker exe'siyle.
-    if(Qt6_FOUND AND UNIX AND NOT CMAKE_CROSSCOMPILING)
+    # Qt widget regressions run headless on Linux AND Windows (Qt6 available).
+    # Real pointer picking and model-overlay edits must be exercised on Windows too.
+    if(Qt6_FOUND AND (UNIX OR WIN32) AND NOT CMAKE_CROSSCOMPILING)
         add_executable(model_maker_component_dialog_widget_test
             tests/component_dialog_widget_test.cpp
             src/component_dialog_widget.cpp
