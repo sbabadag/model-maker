@@ -510,12 +510,47 @@ int main() {
             ComponentInput unsafe=in;
             unsafe.params={
                 {L"endPlateWidth",CompParamValue{300.0}},
-                {L"endPlateHeight",CompParamValue{560.0}},
+                {L"endPlateHeight",CompParamValue{350.0}},
                 {L"boltEdgeTop",CompParamValue{200.0}},
                 {L"boltEdgeBottom",CompParamValue{55.0}}
             };
             check(!reg.generate(L"tekla_haunch_40",unsafe).ok,
                   "P4D: explicit plate height rejects lower holes outside its real edge");
+        }
+        // An explicitly SHORTER plate is legal when actual upper/lower
+        // bolt centres, pitches, edge offsets and hole sizes still fit.
+        // Previously endPlateHeight could never fall below hBeam+D+20.
+        {
+            ComponentInput compact=in;
+            compact.params={
+                {L"endPlateHeight",CompParamValue{350.0}},
+                {L"boltEdgeTop",CompParamValue{45.0}},
+                {L"boltEdgeBottom",CompParamValue{75.0}}
+            };
+            const auto shrunk=reg.generate(L"tekla_haunch_40",compact);
+            check(shrunk.ok && shrunk.plates.size()>=1 &&
+                  approx(shrunk.plates[0].height,350.0),
+                  "P4E: 350mm manual plate height is allowed below beam+haunch envelope");
+            if(shrunk.ok && shrunk.plates.size()>=1 &&
+               shrunk.boltGroups.size()==2) {
+                const auto& plate=shrunk.plates.front();
+                double upperY=-1e9,lowerY=1e9;
+                for(const auto& pt:boltGroupBoltOrigins(shrunk.boltGroups[0])) {
+                    const Vec3 d=pt-plate.center;
+                    upperY=std::max(upperY,d.x*plate.v.x+d.y*plate.v.y+d.z*plate.v.z);
+                }
+                for(const auto& pt:boltGroupBoltOrigins(shrunk.boltGroups[1])) {
+                    const Vec3 d=pt-plate.center;
+                    lowerY=std::min(lowerY,d.x*plate.v.x+d.y*plate.v.y+d.z*plate.v.z);
+                }
+                check(approx(plate.height*0.5-upperY,45.0,1e-6) &&
+                      approx(plate.height*0.5+lowerY,75.0,1e-6),
+                      "P4E: upper/lower row positions follow real plate edges when shrunk");
+            }
+            ComponentInput tooShort=compact;
+            tooShort.params[0].value=CompParamValue{290.0};
+            check(!reg.generate(L"tekla_haunch_40",tooShort).ok,
+                  "P4E: insufficient height with two bolt groups is rejected");
         }
         // Old saved records with only boltEdge must retain their previous
         // layout without requiring an MMW8 file migration.
