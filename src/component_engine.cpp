@@ -1694,6 +1694,13 @@ GenerationPlan generateHaunch40(const ComponentInput& input) noexcept {
     const double actualH = givenH>0 ? givenH : plateH;
     const double flWparam=paramAsDouble(input.params,L"haunchFlangeWidth",0.0);
     const double flW=flWparam>0 ? flWparam : wBeam;
+    // A manually dimensioned legacy plate may legitimately be shorter
+    // than the new auto height (e.g. 600 vs 610 mm). Preserve that
+    // behaviour, but check its ACTUAL extreme bolt centre clearances
+    // rather than blindly accepting any short/shifted plate. The GUI
+    // switches fixed height to automatic when eT or eB is edited.
+    const double achievedTop=(actualH-hBeam-D+40.0+edgeT-edgeB)*0.5;
+    const double achievedBottom=(actualH-hBeam-D+40.0-edgeT+edgeB)*0.5;
     if (!(L > 80.0 && D > tip+25.0 && tip > 5.0 && webT > 0.0 &&
           flangeT > 0.0 && endT > 0.0 && holeD >= bD &&
           holeD > 0.0 && pitchX > holeD && pitchY > holeD &&
@@ -1702,7 +1709,7 @@ GenerationPlan generateHaunch40(const ComponentInput& input) noexcept {
           edgeT>holeD*0.5+20.0 && edgeB>holeD*0.5+20.0 &&
           flW >= webT && actualW+1e-6 >= spanX + edgeL + edgeR &&
           actualW >= spanX + holeD + 15.0 &&
-          actualH+1e-6 >= plateH &&
+          achievedTop>holeD*0.5 && achievedBottom>holeD*0.5 &&
           actualH >= hBeam+D+20.0)) {
         plan.ok=false;
         plan.error=L"Haunch 40: haunch/levha/bulon olculeri tutarsiz";
