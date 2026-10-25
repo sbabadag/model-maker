@@ -1762,13 +1762,34 @@ GenerationPlan generateHaunch40(const ComponentInput& input) noexcept {
         plan.error=L"Haunch 40: iki bulon grubu alin levhasina sigmiyor";
         return plan;
     }
+    // Real bolt stack: end plate + physical supporting column FLANGE,
+    // not the entire HEB/HEA 300-mm bounding box or every haunch plate.
+    // Auto-grip from all owned solids caused the enormous shanks which
+    // appeared on both sides of the connection in the first Windows preview.
+    if (!(p.col.secFlangeThickness > 0.0)) {
+        plan.ok=false;
+        plan.error=L"Haunch 40: secili kolonun gercek flans kalinligi bilinmiyor";
+        return plan;
+    }
+    const double gripLength=endT+gap+p.col.secFlangeThickness;
     const std::wstring gradeW=paramAsString(input.params,L"grade",L"8.8");
     const std::string grade(gradeW.begin(),gradeW.end());
     const auto pushBolts=[&](const char* role,double offset) {
         BoltGroup bg;
-        bg.origin=add(end.center,add(scale(W,-pitchX*0.5),
-                   scale(H,offset + D*0.5 - pitchY*0.5)));
-        bg.axis=dir;bg.xDir=W;
+        // Use the SAME measured plate frame for both groups. BoltFrame's
+        // second in-plane vector is axis CROSS xDir = end.v (right-handed).
+        // The origin is the first (lower-left) point of a 2x2 rectangular
+        // group, NOT the centre of that group.
+        const Vec3 groupCentre=add(end.center,
+                                  scale(end.v,offset + D*0.5));
+        bg.origin=add(add(groupCentre,scale(end.u,-pitchX*0.5)),
+                      scale(end.v,-pitchY*0.5));
+        // The shank centre is in the real plate+column-flange grip stack,
+        // not at the end plate midplane or column section centreline.
+        bg.origin=add(bg.origin,
+                      scale(end.axis,-0.5*(gap+p.col.secFlangeThickness)));
+        bg.axis=end.axis;
+        bg.xDir=end.u;
         bg.countX=2;bg.countY=2;
         bg.spacingX=pitchX;bg.spacingY=pitchY;
         bg.params.nominalDiameter=bD;
@@ -1777,6 +1798,12 @@ GenerationPlan generateHaunch40(const ComponentInput& input) noexcept {
         bg.params.hasHead=true;
         bg.params.hasNut=true;
         bg.params.hasWasher=true;
+        // Head sits on the accessible beam/end-plate side (+end.axis);
+        // nut sits behind the column flange (-end.axis).
+        bg.params.direction=2;
+        bg.gripLength=gripLength;
+        bg.holeDepth=gripLength+2.0; // 1 mm clearance at each end
+        bg.targetOwnedPlateRole="haunch_end_plate";
         bg.parts={p.col.id};
         plan.boltGroups.push_back(std::move(bg));
         plan.boltGroupKeys.push_back(role);
