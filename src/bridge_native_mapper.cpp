@@ -462,6 +462,19 @@ BridgeNativeMapping mapBridgeToNative(const BridgePackage& pkg,
         }
     }
 
+    // Stage4: NC1 independently verified non-central bolt pattern.
+    // Existing native 146 generator can now retain this offset instead of
+    // silently re-centering an asymmetric grid.
+    {
+        double measuredX=0.0, measuredY=0.0;
+        if (paramDouble(pkg, "bridgeNcBoltOffsetX", measuredX))
+            addLength(L"boltGroupOffsetX", measuredX, BridgeParamProvenance::Observed,
+                      "NC1 + Part.GetDSTVCoordinateSystem checked source offset");
+        if (paramDouble(pkg, "bridgeNcBoltOffsetY", measuredY))
+            addLength(L"boltGroupOffsetY", measuredY, BridgeParamProvenance::Observed,
+                      "NC1 + Part.GetDSTVCoordinateSystem checked source offset");
+    }
+
     // Bulon araliklari: gozlenen esit aralik -> pitchX/pitchY; aksi halde auto.
     if (gridOk && gridX > 1 && spX > 0.0) {
         addLength(L"pitchX", spX, BridgeParamProvenance::Observed,
