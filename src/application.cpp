@@ -11362,9 +11362,12 @@ bool Application::convertTeklaBridgeToNative(const std::filesystem::path& packag
             selection.secondaryIds.push_back(document_.modelId(sel[i]));
     }
 
-    // Native donusum (GUID map + secim -> generator + gercek OCC + atomik isle).
+    // Native 146 creation is enabled ONLY with independently supplied and
+    // geometrically matched DSTV/NC1 evidence. Existing Tekla package remains
+    // unchanged. Reuses the editable production generator and undo/redo.
+    ensureProfileCatalog();
     const mm::BridgeNativeConvertOutcome out =
-        mm::convertBridgeToNative(document_, pkg, profileCatalog_, selection);
+        mm::convertBridge146FromNc1(document_, pkg, nc1Path, profileCatalog_, selection);
 
     if (out.needsMemberSelection) {
         // Uye eksik: kullaniciya HANGI uyenin secilmesi gerektigini bildir.
