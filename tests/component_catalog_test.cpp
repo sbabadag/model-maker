@@ -55,10 +55,10 @@ int main() {
 
     registerBuiltInComponents(reg);
     registerBuiltInDialogs(dialogs);
-    check(reg.typeCount() == 3, "3 yerlesik tip kayitli (end plate + fin plate + 146)");
+    check(reg.typeCount() == 4, "4 yerlesik tip kayitli (end plate + fin plate + 146 + 40)");
 
     const std::vector<CatalogEntry> catalog = buildComponentCatalog(reg, dialogs);
-    check(catalog.size() == 2, "katalogda 2 gorunur giris (fin plate + 146; end plate gizli)");
+    check(catalog.size() == 3, "katalogda 3 gorunur giris (fin plate + 146 + 40)");
 
     // --- 2) End Plate gizli (kendi zengin komut yolu) ------------------------
     check(findCatalogEntry(catalog, L"beam_to_column_end_plate") == nullptr,
@@ -80,6 +80,17 @@ int main() {
         check(!e146->dialogGroups.empty(), "146 dialog gruplari dolu");
     }
 
+    // --- 3B) Haunch 40: native generator and editable dialog -----------------
+    const CatalogEntry* h40 = findCatalogEntry(catalog, L"tekla_haunch_40");
+    check(h40 != nullptr, "Haunch 40 katalogda");
+    if (h40) {
+        check(h40->sourceComponentNumber == L"40", "Haunch 40 kaynak numarasi");
+        check(h40->pickCount == 2, "Haunch 40 kolon + kiris");
+        check(h40->coverageStatus == L"PARTIALLY_IMPLEMENTED", "Haunch 40 coverage");
+        check(h40->hasGenerator && h40->hasDialog, "Haunch 40 generator + dialog");
+        check(!h40->dialogGroups.empty(), "Haunch 40 tabbed parameter groups");
+    }
+
     // --- 4) Fin Plate de katalogda (ikinci tip; mekanizma tekrar kullanılabilir)
     const CatalogEntry* efp = findCatalogEntry(catalog, L"fin_plate");
     check(efp != nullptr, "fin plate katalogda");
@@ -90,13 +101,16 @@ int main() {
     }
 
     // --- 5) Deterministik sıralama: category artan; ayni kategoride number ---
-    check(catalog[0].typeId == L"fin_plate" || catalog[0].typeId == L"tekla_shear_plate_146",
-          "katalog girisleri category'ye gore siralanmis");
+    check(!catalog.empty() && catalog[0].typeId == L"tekla_haunch_40",
+          "katalog kategoriye gore siralanmis (Moment / Haunch once)");
 
     // --- 6) Generic üretim zinciri (katalog komutunun beslediği yol) ---------
     {
         GenerationPlan fp = reg.generate(L"fin_plate", makeInput());
         GenerationPlan s146 = reg.generate(L"tekla_shear_plate_146", makeInput());
+        GenerationPlan h40p = reg.generate(L"tekla_haunch_40", makeInput());
+        check(h40p.ok && h40p.plates.size() == 4 && h40p.boltGroups.size() == 2,
+              "generic Haunch 40 generation");
         check(fp.ok && s146.ok, "generic uretim: fin_plate ve 146 gecerli plan");
         check(fp.plates.size() == 1 && fp.boltGroups.size() == 1,
               "generic uretim: levha + bulon grubu");
