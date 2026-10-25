@@ -35,6 +35,7 @@
 #include <QVBoxLayout>
 
 #include <algorithm>
+#include <utility>
 #include <cmath>
 #include <limits>
 
