@@ -364,7 +364,13 @@ ComponentDialogWidget::ComponentDialogWidget(const ComponentDialogDefinition& de
     for (const auto& spec : def_.specs) {
         // Preserve legacy boltEdge in model records, but do not expose an
         // extra confusing common-edge field alongside editable eL/eR/eT/eB.
-        if(def_.typeId==L"tekla_haunch_40" && spec.name==L"boltEdge")continue;
+        if(def_.typeId==L"tekla_haunch_40" &&
+           (spec.name==L"boltEdge" ||
+            spec.name==L"boltCountX" || spec.name==L"boltCountY" ||
+            spec.name==L"boltPitchX" || spec.name==L"boltPitchY" ||
+            spec.name==L"boltDiameter" || spec.name==L"holeDiameter" ||
+            spec.name==L"boltEdgeTop" || spec.name==L"boltEdgeBottom"))
+            continue;
         ungrouped.push_back(spec.name);
     }
 
@@ -1409,164 +1415,160 @@ void ComponentDialogWidget::releaseFixedPlateSizeOnEdgeEdit(
 }
 void ComponentDialogWidget::enforceHaunchInputLimits(const std::wstring& changed) {
     if(def_.typeId!=L"tekla_haunch_40")return;
-    // Unlike independent schema min/max, these values are physically coupled.
-    // Only the in-dialog values change; no Document write until Apply/Modify.
-    auto spin=[this](const wchar_t* key)->QDoubleSpinBox* {
-        const auto it=editors_.find(key);
+    auto dbl=[this](const std::wstring& k)->QDoubleSpinBox* {
+        const auto it=editors_.find(k);
         return it==editors_.end()?nullptr:qobject_cast<QDoubleSpinBox*>(it->second);
     };
-    auto value=[&](const wchar_t* key,double fallback)->double {
-        const auto* s=spin(key);
-        return s?s->value():fallback;
+    auto integer=[this](const std::wstring& k)->QSpinBox* {
+        const auto it=editors_.find(k);
+        return it==editors_.end()?nullptr:qobject_cast<QSpinBox*>(it->second);
     };
-    auto bounds=[&](const wchar_t* key,double minimum,double maximum) {
-        if(auto* s=spin(key)) {
-            QSignalBlocker guard(s);
+    auto value=[&](const std::wstring& k,double fallback)->double {
+        if(auto* s=dbl(k))return s->value();
+        if(auto* s=integer(k))return s->value();
+        return fallback;
+    };
+    auto bounds=[&](const std::wstring& key,double minimum,double maximum) {
+        if(auto* s=dbl(key)) {
+            QSignalBlocker block(s);
             s->setRange(minimum,std::max(minimum,maximum));
         }
     };
-    auto requiredIfExplicit=[&](const wchar_t* key,double minimum) {
-        if(auto* s=spin(key)) {
-            if(s->value()>0.0 && s->value()<minimum) {
-                QSignalBlocker guard(s);
-                s->setValue(minimum); // 0 remains "automatic" for this field
-            }
+    auto minExplicit=[&](const std::wstring& key,double minimum) {
+        if(auto* s=dbl(key)) {
+            QSignalBlocker block(s);
+            if(s->value()>0.0 && s->value()<minimum)s->setValue(minimum);
         }
     };
-    // The generator demands hole >= nominal diameter. Prefer the native
-    // default 2 mm clearance; when the bolt grows, grow the hole with it.
-    const double bolt=value(L"boltDiameter",20.0);
-    bounds(L"holeDiameter",std::max(13.0,bolt+2.0),50.0);
-    if(auto* h=spin(L"holeDiameter"))
-        h->setToolTip(QStringLiteral("Delik capi >= bulon capi + 2 mm; bagli sinir otomatik korunur."));
-    const double hole=value(L"holeDiameter",22.0);
-    bounds(L"boltPitchX",std::max(40.0,hole+0.01),500.0);
-    // Edges are measured from HOLE CENTRES, not the hole circumference.
-    // No fixed 20mm structural offset is required with a manually sized
-    // plate: the bolt rows move with its real top/bottom boundaries.
-    const double sideMin=std::max(20.0,hole*0.5+0.2);
-    const double verticalMin=std::max(20.0,hole*0.5+0.2);
-    bounds(L"boltEdgeLeft",sideMin,200.0);
-    bounds(L"boltEdgeRight",sideMin,200.0);
-    bounds(L"boltEdgeTop",verticalMin,200.0);
-    bounds(L"boltEdgeBottom",verticalMin,200.0);
-
-    // The web wedge must retain strictly positive taper clearance.
+    const double legacy=std::clamp(paramAsDouble(current_,L"boltEdge",35.0),
+                                   20.0,120.0);
+    const double boltMin=12.0;
+    const double edgeMin=10.0;
     const double tip=value(L"haunchTipDepth",25.0);
     bounds(L"haunchDepth",std::max(60.0,tip+25.01),1000.0);
     const double depth=value(L"haunchDepth",240.0);
     bounds(L"haunchTipDepth",10.0,std::min(200.0,depth-25.01));
-
-    // Integer row/column counts feed the same native bolt generator as the
-    // preview. The outermost rows stay fixed; extra rows grow inwards in
-    // BOTH groups, which limits the permissible vertical spacing.
-    const auto count=[this](const wchar_t* key,int fallback)->int {
-        const auto it=editors_.find(key);
-        if(it==editors_.end())return fallback;
-        if(auto* s=qobject_cast<QSpinBox*>(it->second))return s->value();
-        return fallback;
+    struct Group {
+        std::wstring prefix;
+        int nx{2},ny{2};
+        double px{120.0},py{80.0},hole{22.0},diameter{20.0},clear{44.0};
+        double spanX() const {return (nx-1)*px;}
+        double spanY() const {return (ny-1)*py;}
     };
-    const double pitchMin=std::max(40.0,hole+0.01);
-    const double manualH=value(L"endPlateHeight",0.0);
-    const double legacyEdge=std::clamp(
-        paramAsDouble(current_,L"boltEdge",35.0),20.0,120.0);
-    // The GENERATOR's auto end plate height is structural, not tied
-    // to eT/eB. Exactly the same static reference is used in the UI.
+    auto read=[&](const wchar_t* prefix) {
+        Group g;g.prefix=prefix;
+        g.nx=static_cast<int>(value(g.prefix+L"BoltCountX",2.0));
+        g.ny=static_cast<int>(value(g.prefix+L"BoltCountY",2.0));
+        g.px=value(g.prefix+L"BoltPitchX",120.0);
+        g.py=value(g.prefix+L"BoltPitchY",80.0);
+        g.diameter=value(g.prefix+L"BoltDiameter",20.0);
+        g.hole=value(g.prefix+L"HoleDiameter",22.0);
+        g.clear=value(g.prefix+L"BoltEdgeClear",44.0);
+        return g;
+    };
+    // Keep physical hole diameter coupled only to its OWN group's bolt,
+    // including when sizes are edited directly in the 3D mockup.
+    for(const wchar_t* groupName:{L"upper",L"lower"}) {
+        const std::wstring prefix(groupName);
+        bounds(prefix+L"BoltDiameter",boltMin,36.0);
+        const double bolt=value(prefix+L"BoltDiameter",20.0);
+        bounds(prefix+L"HoleDiameter",std::max(13.0,bolt+2.0),50.0);
+        const double hole=value(prefix+L"HoleDiameter",22.0);
+        bounds(prefix+L"BoltPitchX",std::max(40.0,hole+0.01),500.0);
+        bounds(prefix+L"BoltPitchY",std::max(40.0,hole+0.01),500.0);
+        bounds(prefix+L"BoltEdgeClear",edgeMin,190.0);
+    }
+    Group upper=read(L"upper"),lower=read(L"lower");
     const double autoH=haunchBeamHeight_>0.0
-        ?haunchBeamHeight_+depth+2.0*legacyEdge:0.0;
-    // If the user is shrinking the plate itself, preserve row count and
-    // pitch and stop at the physical minimum. Edge edits NEVER resize it.
-    if(manualH>0.0 &&
-       (changed.empty() || changed==L"endPlateHeight")) {
-        const int existingRows=count(L"boltCountY",2);
-        const double existingPitch=value(L"boltPitchY",80.0);
-        requiredIfExplicit(L"endPlateHeight",
-            value(L"boltEdgeTop",55.0)+value(L"boltEdgeBottom",55.0)+
-            2.0*(existingRows-1)*existingPitch+hole+0.20);
+        ?haunchBeamHeight_+depth+2.0*legacy:0.0;
+    double height=value(L"endPlateHeight",0.0);
+    const bool manual=height>0.0;
+    if(!manual)height=autoH;
+    auto minHeight=[&](const Group& u,const Group& l) {
+        return u.clear+l.clear+u.hole+l.hole+
+               u.spanY()+l.spanY()+0.20;
+    };
+    // When the user changes the plate height, clamp the plate (not the
+    // bolts) at the true physical minimum for two independent grids.
+    if(manual && (changed.empty() || changed==L"endPlateHeight")) {
+        minExplicit(L"endPlateHeight",minHeight(upper,lower));
+        height=value(L"endPlateHeight",height);
     }
-    const double effectiveH=manualH>0.0
-        ?value(L"endPlateHeight",manualH):autoH;
-    // Keep the user's OTHER edge fixed while editing one side. Each
-    // group's bolt centres move; neither the plate nor bolt pitch changes.
-    // A dynamic upper bound refuses an impossible edge instead of silently
-    // enlarging the plate or mutating the opposite bolt group.
-    if(effectiveH>0.0) {
-        const double occupied=2.0*(count(L"boltCountY",2)-1)*
-                              value(L"boltPitchY",80.0)+hole+0.20;
-        const auto limitEdge=[&](const wchar_t* key,const wchar_t* opposite) {
-            const double other=value(opposite,55.0);
-            const double maximum=std::min(200.0,effectiveH-other-occupied);
-            bounds(key,verticalMin,std::max(verticalMin,maximum));
-        };
-        if(changed==L"boltEdgeBottom") {
-            limitEdge(L"boltEdgeBottom",L"boltEdgeTop");
-            limitEdge(L"boltEdgeTop",L"boltEdgeBottom");
-        } else {
-            limitEdge(L"boltEdgeTop",L"boltEdgeBottom");
-            limitEdge(L"boltEdgeBottom",L"boltEdgeTop");
-        }
-    }
-    const double top=value(L"boltEdgeTop",55.0);
-    const double bottom=value(L"boltEdgeBottom",55.0);
-    const double available=effectiveH>0.0
-        ?effectiveH-top-bottom-hole-0.20:500.0;
-    if(haunchBeamHeight_>0.0 || effectiveH>0.0) {
-        const int maxRows=std::clamp(
-            1+static_cast<int>(std::floor(std::max(0.0,available)/(2.0*pitchMin))),
-            1,4);
-        const auto it=editors_.find(L"boltCountY");
-        if(it!=editors_.end()) {
-            if(auto* s=qobject_cast<QSpinBox*>(it->second)) {
-                QSignalBlocker guard(s);
+    const auto fits=[&](const Group& u,const Group& l) {
+        return height<=0.0 || minHeight(u,l)<=height+1e-7;
+    };
+    // The edited group receives the limits. The opposite group's data is
+    // NEVER clamped while editing this one.
+    auto clampChangedGroup=[&](Group& current,const Group& other) {
+        if(!changed.starts_with(current.prefix))return;
+        const std::wstring key=current.prefix+L"BoltEdgeClear";
+        if(changed==key) {
+            const double occupied=other.clear+current.hole+other.hole+
+                                 current.spanY()+other.spanY()+0.20;
+            bounds(key,edgeMin,std::min(190.0,
+                   std::max(edgeMin,height-occupied)));
+        } else if(changed==current.prefix+L"BoltPitchY" ||
+                  changed==current.prefix+L"BoltCountY") {
+            const double occupied=current.clear+other.clear+
+                                  current.hole+other.hole+other.spanY()+0.20;
+            const double available=std::max(0.0,height-occupied);
+            const int maxRows=std::clamp(1+
+               static_cast<int>(std::floor(available/
+                                    std::max(40.0,current.py))),1,4);
+            if(auto* s=integer(current.prefix+L"BoltCountY")) {
+                QSignalBlocker block(s);
                 s->setRange(1,maxRows);
             }
+            const int rows=static_cast<int>(
+                value(current.prefix+L"BoltCountY",2.0));
+            if(rows>1)
+                bounds(current.prefix+L"BoltPitchY",
+                       std::max(40.0,current.hole+0.01),
+                       std::min(500.0,std::max(40.0,available/(rows-1))));
+        }
+        current=read(current.prefix.c_str());
+    };
+    if(height>0.0) {
+        if(changed.starts_with(L"lower"))clampChangedGroup(lower,upper);
+        else if(changed.starts_with(L"upper"))clampChangedGroup(upper,lower);
+        // A new bolt/hole diameter may require more room even at the
+        // same counts. Prefer to preserve the other group and plate size.
+        if(manual && !fits(upper,lower) &&
+           (changed.empty() || changed==L"endPlateHeight")) {
+            minExplicit(L"endPlateHeight",minHeight(upper,lower));
         }
     }
-    const int rows=count(L"boltCountY",2);
-    const double spanDiv=2.0*std::max(1,rows-1);
-    // Two rows/groups: separation between the innermost rows must exceed
-    // the physical hole diameter. One row/group leaves pitch unused.
-    const double maxPitch=(haunchBeamHeight_>0.0 || effectiveH>0.0)
-        ?available/spanDiv:500.0;
-    bounds(L"boltPitchY",pitchMin,std::min(500.0,
-           rows>1?maxPitch:500.0));
-
-    // Explicit plate dimensions cannot undercut the connection geometry.
-    // Keep zero as the native "derive from real member section" sentinel.
-    const double pitchX=value(L"boltPitchX",120.0);
-    const int columns=count(L"boltCountX",2);
+    const double holeMax=std::max(upper.hole,lower.hole);
+    const double minSide=std::max(20.0,holeMax*0.5+0.20);
+    bounds(L"boltEdgeLeft",minSide,200.0);
+    bounds(L"boltEdgeRight",minSide,200.0);
     const double left=value(L"boltEdgeLeft",35.0);
-    const double spanX=(columns-1)*pitchX;
-    // Where the actual beam section governs plate width (notably nx=1),
-    // raise the RIGHT edge minimum so entered/achieved distances stay
-    // equal instead of silently displaying a larger measured value.
-    const double rightNeeded=std::max(sideMin,
-        haunchBeamWidth_+20.0-spanX-left);
-    // Beam-width cover is an AUTO-sizing rule, not a minimum width for
-    // plates that the user deliberately dimensions more narrowly.
-    if(value(L"endPlateWidth",0.0)==0.0 &&
-       haunchBeamWidth_>0.0 && rightNeeded<=200.0)
-        bounds(L"boltEdgeRight",rightNeeded,200.0);
     const double right=value(L"boltEdgeRight",35.0);
-    // Fixed-width edit mode: keep the legacy centred grid, but let the
-    // user reduce plate width to the actual physical side-hole limits.
-    // Reconcile the visible eL/eR fields to the ACHIEVED symmetric values.
+    const double spanX=std::max(upper.spanX(),lower.spanX());
+    const double minW=std::max({
+        spanX+2.0*minSide,
+        upper.spanX()+upper.hole+15.0,
+        lower.spanX()+lower.hole+15.0
+    });
     const double fixedW=value(L"endPlateWidth",0.0);
-    const double minW=std::max(spanX+2.0*sideMin,spanX+hole+15.0);
     if(fixedW>0.0) {
-        requiredIfExplicit(L"endPlateWidth",minW);
+        minExplicit(L"endPlateWidth",minW);
         const double achieved=(value(L"endPlateWidth",minW)-spanX)*0.5;
-        for(const auto* key:{L"boltEdgeLeft",L"boltEdgeRight"})
-            if(auto* s=spin(key)) {
-                QSignalBlocker guard(s);
+        // Legacy fixed-width grid is centred; shared horizontal side
+        // controls describe achieved spacing without moving plate here.
+        for(const wchar_t* key:{L"boltEdgeLeft",L"boltEdgeRight"})
+            if(auto* s=dbl(key)) {
+                QSignalBlocker block(s);
                 s->setValue(achieved);
             }
+    } else if(haunchBeamWidth_>0.0) {
+        const double required=haunchBeamWidth_+20.0-spanX-left;
+        if(required<=200.0)
+            bounds(L"boltEdgeRight",std::max(minSide,required),200.0);
     }
-    // eT/eB bounds were reconciled above against the unchanged actual
-    // plate height. Do not recalculate or grow endPlateHeight here.
     const double flangeWidth=value(L"haunchFlangeWidth",0.0);
-    const double webT=value(L"haunchWebThickness",10.0);
-    if(flangeWidth>0.0)requiredIfExplicit(L"haunchFlangeWidth",webT);
+    if(flangeWidth>0.0)
+        minExplicit(L"haunchFlangeWidth",value(L"haunchWebThickness",10.0));
 }
 void ComponentDialogWidget::updatePreviewFromForm(const std::wstring& changed) {
     if(nativePreview_) {
