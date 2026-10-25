@@ -1468,21 +1468,48 @@ void ComponentDialogWidget::enforceHaunchInputLimits(const std::wstring& changed
     };
     const double pitchMin=std::max(40.0,hole+0.01);
     const double manualH=value(L"endPlateHeight",0.0);
-    const double top=value(L"boltEdgeTop",55.0);
-    const double bottom=value(L"boltEdgeBottom",55.0);
-    // Respect the user's existing row count/pitch first. Reducing plate
-    // height must not silently remove a row of bolts or alter their pitch;
-    // it stops at the true geometric minimum for the CURRENT grid.
-    if(manualH>0.0) {
+    const double legacyEdge=std::clamp(
+        paramAsDouble(current_,L"boltEdge",35.0),20.0,120.0);
+    // The GENERATOR's auto end plate height is structural, not tied
+    // to eT/eB. Exactly the same static reference is used in the UI.
+    const double autoH=haunchBeamHeight_>0.0
+        ?haunchBeamHeight_+depth+2.0*legacyEdge:0.0;
+    // If the user is shrinking the plate itself, preserve row count and
+    // pitch and stop at the physical minimum. Edge edits NEVER resize it.
+    if(manualH>0.0 &&
+       (changed.empty() || changed==L"endPlateHeight")) {
         const int existingRows=count(L"boltCountY",2);
         const double existingPitch=value(L"boltPitchY",80.0);
         requiredIfExplicit(L"endPlateHeight",
-            top+bottom+2.0*(existingRows-1)*existingPitch+hole+0.20);
+            value(L"boltEdgeTop",55.0)+value(L"boltEdgeBottom",55.0)+
+            2.0*(existingRows-1)*existingPitch+hole+0.20);
     }
-    const double effectiveH=value(L"endPlateHeight",0.0);
+    const double effectiveH=manualH>0.0
+        ?value(L"endPlateHeight",manualH):autoH;
+    // Keep the user's OTHER edge fixed while editing one side. Each
+    // group's bolt centres move; neither the plate nor bolt pitch changes.
+    // A dynamic upper bound refuses an impossible edge instead of silently
+    // enlarging the plate or mutating the opposite bolt group.
+    if(effectiveH>0.0) {
+        const double occupied=2.0*(count(L"boltCountY",2)-1)*
+                              value(L"boltPitchY",80.0)+hole+0.20;
+        const auto limitEdge=[&](const wchar_t* key,const wchar_t* opposite) {
+            const double other=value(opposite,55.0);
+            const double maximum=std::min(200.0,effectiveH-other-occupied);
+            bounds(key,verticalMin,std::max(verticalMin,maximum));
+        };
+        if(changed==L"boltEdgeBottom") {
+            limitEdge(L"boltEdgeBottom",L"boltEdgeTop");
+            limitEdge(L"boltEdgeTop",L"boltEdgeBottom");
+        } else {
+            limitEdge(L"boltEdgeTop",L"boltEdgeBottom");
+            limitEdge(L"boltEdgeBottom",L"boltEdgeTop");
+        }
+    }
+    const double top=value(L"boltEdgeTop",55.0);
+    const double bottom=value(L"boltEdgeBottom",55.0);
     const double available=effectiveH>0.0
-        ?effectiveH-top-bottom-hole-0.20
-        :haunchBeamHeight_+depth-40.0-hole-0.20;
+        ?effectiveH-top-bottom-hole-0.20:500.0;
     if(haunchBeamHeight_>0.0 || effectiveH>0.0) {
         const int maxRows=std::clamp(
             1+static_cast<int>(std::floor(std::max(0.0,available)/(2.0*pitchMin))),
@@ -1535,23 +1562,8 @@ void ComponentDialogWidget::enforceHaunchInputLimits(const std::wstring& changed
                 s->setValue(achieved);
             }
     }
-    // Unlike the old hard stop at hBeam+D, the new minimum depends only
-    // on the two edge clearances, the rows' actual spans and hole clearance.
-    // Zero still means legacy automatic end-plate height.
-    const double spanY=(rows-1)*value(L"boltPitchY",80.0);
-    const double minH=top+bottom+2.0*spanY+hole+0.20;
-    if(manualH>0.0) {
-        requiredIfExplicit(L"endPlateHeight",minH);
-        const double fixedHeight=value(L"endPlateHeight",minH);
-        // With explicit height, eT/eB edits relocate rows; do NOT grow or
-        // reset plate to auto when editing the upper or lower clearance.
-        const double maxT=std::min(200.0,
-            fixedHeight-value(L"boltEdgeBottom",55.0)-2.0*spanY-hole-0.20);
-        bounds(L"boltEdgeTop",verticalMin,std::max(verticalMin,maxT));
-        const double maxB=std::min(200.0,
-            fixedHeight-value(L"boltEdgeTop",55.0)-2.0*spanY-hole-0.20);
-        bounds(L"boltEdgeBottom",verticalMin,std::max(verticalMin,maxB));
-    }
+    // eT/eB bounds were reconciled above against the unchanged actual
+    // plate height. Do not recalculate or grow endPlateHeight here.
     const double flangeWidth=value(L"haunchFlangeWidth",0.0);
     const double webT=value(L"haunchWebThickness",10.0);
     if(flangeWidth>0.0)requiredIfExplicit(L"haunchFlangeWidth",webT);
