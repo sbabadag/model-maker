@@ -10,6 +10,8 @@
 
 #include <cmath>
 #include <cstdio>
+#include <utility>
+#include <vector>
 
 using namespace mm;
 
