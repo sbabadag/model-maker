@@ -1975,11 +1975,13 @@ GenerationPlan generateHaunch40(const ComponentInput& input) noexcept {
         const Vec3 groupCentre=add(
             add(p.facePoint,scale(dir,gap+endT*0.5)),
             scale(end.v,offset));
-        // A manually fixed plate width preserves the historical centered
-        // bolt group. Editing eL/eR switches that fixed dimension to auto;
-        // then the exact entered asymmetric left/right edges take effect.
-        const double startX=givenW>0.0 ? -g.spanX*0.5
-                                       : -actualW*0.5+edgeL;
+        // Each group is anchored to the SAME stable member/column frame,
+        // NOT to the auto-sized plate's left edge. If upper count/pitch
+        // enlarges the auto plate, the lower group's world-space origin
+        // must NOT shift. Shared eL/eR determine only the common alignment
+        // offset; per-group span centres differ independently.
+        const double offsetX=givenW>0.0 ? 0.0 : (edgeL-edgeR)*0.5;
+        const double startX=offsetX-g.spanX*0.5;
         bg.origin=add(add(groupCentre,scale(end.u,startX)),
                       scale(end.v,-g.spanY*0.5));
         // The shank centre is in the real plate+column-flange grip stack,
