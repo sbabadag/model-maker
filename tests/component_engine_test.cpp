@@ -316,7 +316,13 @@ int main() {
             check(cut.target==EntityId{41} && cut.kind==CutKind::PlaneCut &&
                   cut.keepPositive && cut.hidden,
                   "Haunch 40: hidden square cut ONLY targets actual beam");
-            check(std::sqrt(d.x*d.x+d.y*d.y+d.z*d.z)<1e-6,
+            // Plane coincidence, NOT point coincidence: the end plate
+            // centre is shifted vertically by half the haunch depth,
+            // while the beam cut's origin is on the beam centreline.
+            // A tangent-plane shift is expected and must not fail.
+            const double signedDistance =
+                d.x*ep.axis.x+d.y*ep.axis.y+d.z*ep.axis.z;
+            check(std::fabs(signedDistance)<1e-6,
                   "Haunch 40: cut on END PLATE beam-side face");
             check(approx(cut.planeNormal.x,ep.axis.x) &&
                   approx(cut.planeNormal.y,ep.axis.y) &&
