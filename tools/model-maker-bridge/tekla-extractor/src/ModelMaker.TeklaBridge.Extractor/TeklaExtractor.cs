@@ -451,6 +451,7 @@ namespace ModelMaker.TeklaBridge.Extractor
                         rec.RoleKey = "plate";
                         rec.Profile = Safe(() => cp.Profile.ProfileString, "");
                         rec.Material = Safe(() => cp.Material.MaterialString, "");
+                        rec.PlateHoleProbe = BuildPlateHoleProbe(cp, diag);
                         AttachGeometry(cp, seq, rec, res, diag);
                     }
                     else if (child is Beam bm)
@@ -654,6 +655,88 @@ namespace ModelMaker.TeklaBridge.Extractor
             }
             catch (Exception ex) { diag.InaccessibleObjects.Add("booleanPart: " + ex.Message); }
             return info;
+        }
+
+        // Tekla 2025: HAS_HOLES is a part report attribute returning 1 when
+        // the part contains bolt holes and 0 otherwise (ordinary cuts excluded).
+        // RAW/NORMAL comparison is just another read-only observation.
+        // Neither is sufficient for an authoritative per-hole drilling axis.
+        private static PlateHoleReportProbe BuildPlateHoleProbe(ContourPlate plate, Diagnostics diag)
+        {
+            var probe = new PlateHoleReportProbe();
+            try
+            {
+                int n = -1;
+                if (plate.GetReportProperty("HAS_HOLES", ref n) && (n == 0 || n == 1))
+                {
+                    probe.ReportReadable = true;
+                    probe.ReportValue = n;
+                    probe.HasBoltHoles = n == 1;
+                }
+                else
+                {
+                    // Some environments expose report attributes as strings.
+                    string raw = "";
+                    if (plate.GetReportProperty("HAS_HOLES", ref raw) &&
+                        int.TryParse(raw.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out n) &&
+                        (n == 0 || n == 1))
+                    {
+                        probe.ReportReadable = true;
+                        probe.ReportValue = n;
+                        probe.HasBoltHoles = n == 1;
+                    }
+                }
+                if (!probe.ReportReadable)
+                    diag.Warnings.Add("ContourPlate HAS_HOLES rapor alani okunamadi: " +
+                        Safe(() => plate.Identifier.GUID.ToString(), ""));
+            }
+            catch (Exception ex)
+            {
+                diag.Warnings.Add("ContourPlate HAS_HOLES hatasi: " + ex.Message);
+            }
+            try
+            {
+                probe.RawTopology = ReadSolidTopology(
+                    plate.GetSolid(Solid.SolidCreationTypeEnum.RAW));
+            }
+            catch (Exception ex) { diag.Warnings.Add("RAW topology probe: " + ex.Message); }
+            try
+            {
+                probe.NormalTopology = ReadSolidTopology(
+                    plate.GetSolid(Solid.SolidCreationTypeEnum.NORMAL));
+            }
+            catch (Exception ex) { diag.Warnings.Add("NORMAL topology probe: " + ex.Message); }
+
+            if (probe.RawTopology != null && probe.NormalTopology != null)
+                probe.TopologyDiffers =
+                    probe.RawTopology.FaceCount != probe.NormalTopology.FaceCount ||
+                    probe.RawTopology.LoopCount != probe.NormalTopology.LoopCount ||
+                    probe.RawTopology.HoleLoops != probe.NormalTopology.HoleLoops;
+            // Delik SAYISI, ekseni ve her biri icin cap geometrisi dogrulanmadi.
+            probe.VerifiedHoleCount = null;
+            probe.VerifiedForDrilling = false;
+            return probe;
+        }
+
+        private static SolidTopologyProbe ReadSolidTopology(Solid solid)
+        {
+            if (solid == null) return null;
+            int faces = 0, loops = 0;
+            var faceEnumerator = solid.GetFaceEnumerator();
+            while (faceEnumerator != null && faceEnumerator.MoveNext())
+            {
+                if (!(faceEnumerator.Current is Face face)) continue;
+                faces++;
+                var loopEnumerator = face.GetLoopEnumerator();
+                while (loopEnumerator != null && loopEnumerator.MoveNext())
+                    if (loopEnumerator.Current is Loop) loops++;
+            }
+            return new SolidTopologyProbe
+            {
+                FaceCount = faces,
+                LoopCount = loops,
+                HoleLoops = Math.Max(0, loops - faces)
+            };
         }
 
         // Parca solid'inden bbox + topoloji + (deliksiz ise) mesh cikarir.
