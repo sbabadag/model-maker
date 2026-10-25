@@ -136,8 +136,8 @@ private:
     static void setEditorValue(QWidget* editor, const CompParamSpec& spec,
                                const CompParamValue& value);
     void highlightParamRow(const std::wstring& paramName);
-    void updatePreviewFromForm();
-    void enforceHaunchInputLimits();
+    void updatePreviewFromForm(const std::wstring& changed = {});
+    void enforceHaunchInputLimits(const std::wstring& changed = {});
     void releaseFixedPlateSizeOnEdgeEdit(const std::wstring& name);
     void updateFormFromPreview(const std::wstring& name,double value);
     void addParamRow(QFormLayout* form, QWidget* box, const std::wstring& paramName,
