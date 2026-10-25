@@ -4878,12 +4878,19 @@ std::optional<ComponentInput> Application::componentPreviewInput(EntityId compId
     const ComponentInstanceRecord& rec=document_.componentInstances()[*i];
     const auto mainIndex=document_.indexOfEntity(rec.mainPart);
     if(!mainIndex)return std::nullopt;
+    // Preview must NOT reuse memberGeometryFor's legacy 200x300 fallback
+    // if a section is missing: that would misrepresent the native connection.
+    const auto hasProfile=[&](std::size_t idx) {
+        return findProfile(profileCatalog_,
+                           document_.models()[idx].properties().profileName)!=nullptr;
+    };
+    if(!hasProfile(*mainIndex))return std::nullopt;
     ComponentInput in;
     in.main=memberGeometryFor(document_,profileCatalog_,*mainIndex);
     for(EntityId sid:rec.secondaryParts) {
         const auto memberIndex=document_.indexOfEntity(sid);
-        if(memberIndex)
-            in.secondary.push_back(memberGeometryFor(document_,profileCatalog_,*memberIndex));
+        if(!memberIndex || !hasProfile(*memberIndex))return std::nullopt;
+        in.secondary.push_back(memberGeometryFor(document_,profileCatalog_,*memberIndex));
     }
     if(in.secondary.empty())return std::nullopt;
     in.params=rec.params;
