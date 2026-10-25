@@ -138,6 +138,7 @@ private:
     void highlightParamRow(const std::wstring& paramName);
     void updatePreviewFromForm();
     void enforceHaunchInputLimits();
+    void releaseFixedPlateSizeOnEdgeEdit(const std::wstring& name);
     void updateFormFromPreview(const std::wstring& name,double value);
     void addParamRow(QFormLayout* form, QWidget* box, const std::wstring& paramName,
                      std::vector<std::wstring>& ungrouped);
