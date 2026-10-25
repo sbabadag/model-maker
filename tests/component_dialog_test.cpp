@@ -242,15 +242,28 @@ int main() {
             check(specsExist, "146: her yerlestirilen kontrolun spec'i var");
             check(noDup, "146: ayni parametre iki kez yerlestirilmez");
             check(governsOk, "146: her Default kutusu en az bir alani yonetir");
-            // Motor alanlari Tekla'daki yerlerinde (Tekla'da karsiligi olmayan uc
-            // alan haric: delik capi / sira araligi / bulon sinifi -> "Diğer").
-            bool enginePlaced = true;
+            // Exactly five native-only (not Tekla screenshot) controls stay
+            // editable via component properties rather than inventing canvas
+            // pixel positions: hole diameter, pitchY, grade and the two
+            // DSTV/NC1 source-verified asymmetric bolt group offsets.
+            // All actual Tekla 146 screenshot fields must still be placed.
+            const std::set<std::wstring> nativeOnly = {
+                L"holeDiameter", L"pitchY", L"grade",
+                L"boltGroupOffsetX", L"boltGroupOffsetY"
+            };
+            bool enginePlaced = true, nativeSpecsPresent = true;
             for (const auto& ep : engineParams) {
-                if (ep.name == L"holeDiameter" || ep.name == L"pitchY" || ep.name == L"grade")
-                    continue;
+                if (nativeOnly.count(ep.name)) continue;
                 enginePlaced = enginePlaced && placedNames.count(ep.name) == 1;
             }
-            check(enginePlaced, "146: motor alanlari Tekla sekmelerinde yerlesik");
+            for (const auto& name : nativeOnly) {
+                nativeSpecsPresent = nativeSpecsPresent &&
+                    findParamSpec(engineParams, name) != nullptr;
+            }
+            check(nativeSpecsPresent,
+                  "146: native-only hole/grid/offset schemas retained");
+            check(enginePlaced,
+                  "146: source Tekla motor alanlari canvas'ta yerlesik");
             // Plates: Tab plate t kutusu Tekla goruntusundeki yerinde (128,157 -> kirpma 3,127).
             const ComponentDialogGroup* plates = nullptr;
             for (const auto& g : def.schema.groups)
