@@ -5,6 +5,7 @@
 #include <QDoubleSpinBox>
 #include <QPainter>
 #include <QPainterPath>
+#include <QPolygonF>
 #include <QMouseEvent>
 #include <QWheelEvent>
 #include <QResizeEvent>
@@ -105,7 +106,9 @@ std::vector<Vec3> sectionI(Vec3 center,Vec3 u,Vec3 v,
     return result;
 }
 void addMember(std::vector<Poly>& polys,const MemberGeometry& m,
-               Vec3 focus,QColor col,const std::string& role) {
+               const std::vector<Vec3>& featurePoints,
+               const std::vector<CutModifier>& cuts,
+               QColor col,const std::string& role) {
     Vec3 axis=unit(minus(m.axisTo,m.axisFrom));
     Vec3 h=minus(m.refNormal,mul(axis,dot(m.refNormal,axis)));
     if(length(h)<0.01)h=minus(Vec3{0,0,1},mul(axis,axis.z));
@@ -114,9 +117,36 @@ void addMember(std::vector<Poly>& polys,const MemberGeometry& m,
     const Vec3 w=unit(cross(axis,h));
     const double total=length(minus(m.axisTo,m.axisFrom));
     if(total<1)return;
-    const double pos=dot(minus(focus,m.axisFrom),axis);
-    const double lower=std::clamp(pos-450.0,0.0,total);
-    const double upper=std::clamp(pos+620.0,lower,total);
+    // P5: keep the entire parent steel context spanning ALL attached child
+    // features. A column cap high above a haunch must NEVER float alone
+    // because the preview truncated the support around just the end plate.
+    double lower=total, upper=0.0;
+    for(const Vec3 pt:featurePoints) {
+        const double t=dot(minus(pt,m.axisFrom),axis);
+        lower=std::min(lower,t-180.0);
+        upper=std::max(upper,t+180.0);
+    }
+    if(featurePoints.empty()){lower=0;upper=total;}
+    lower=std::clamp(lower,0.0,total);
+    upper=std::clamp(upper,lower,total);
+    // P6: visually mirror persistent generated PlaneCut. A source beam
+    // overlapping the support must appear TRIMMED at the current end-plate
+    // face, not through the cap/column.
+    for(const auto& c:cuts) {
+        if(c.target!=m.id || c.kind!=CutKind::PlaneCut)continue;
+        const double den=dot(c.planeNormal,axis);
+        if(std::fabs(den)<1e-9)continue;
+        const double t=dot(minus(c.planeOrigin,m.axisFrom),c.planeNormal)/den;
+        if(c.keepPositive) {
+            if(den>0) lower=std::max(lower,t);
+            else upper=std::min(upper,t);
+        } else {
+            if(den>0)upper=std::min(upper,t);
+            else lower=std::max(lower,t);
+        }
+    }
+    lower=std::clamp(lower,0.0,total);
+    upper=std::clamp(upper,0.0,total);
     if(upper-lower<1.0)return;
     auto sectionAt=[&](double t){
         Vec3 centre=plus(m.axisFrom,mul(axis,t));
@@ -372,10 +402,15 @@ void ComponentLivePreviewWidget::paintEvent(QPaintEvent*) {
 void ComponentLivePreviewWidget::drawModel(QPainter& p) {
     std::vector<Poly> faces;
     if(!plan_.plates.empty()) {
-        const Vec3 focus=plan_.plates.front().center;
-        addMember(faces,input_.main,focus,QColor("#a5b5c5"),"column");
+        std::vector<Vec3> anchors;
+        for(const auto& plate:plan_.plates) {
+            anchors.push_back(plate.center);
+            const auto vertices=plateOutline(plate,+1.0);
+            anchors.insert(anchors.end(),vertices.begin(),vertices.end());
+        }
+        addMember(faces,input_.main,anchors,plan_.cuts,QColor("#a5b5c5"),"column");
         for(const auto& b:input_.secondary)
-            addMember(faces,b,focus,QColor("#c5cdd6"),"beam");
+            addMember(faces,b,anchors,plan_.cuts,QColor("#c5cdd6"),"beam");
     }
     for(std::size_t i=0;i<plan_.plates.size();++i) {
         const auto& plate=plan_.plates[i];
