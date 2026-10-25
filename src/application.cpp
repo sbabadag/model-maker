@@ -4871,6 +4871,25 @@ static mm::MemberGeometry memberGeometryFor(const mm::Document& doc,
     return g;
 }
 
+std::optional<ComponentInput> Application::componentPreviewInput(EntityId compId) {
+    const auto i=document_.indexOfComponentInstance(compId);
+    if(!i)return std::nullopt;
+    ensureProfileCatalog();
+    const ComponentInstanceRecord& rec=document_.componentInstances()[*i];
+    const auto mainIndex=document_.indexOfEntity(rec.mainPart);
+    if(!mainIndex)return std::nullopt;
+    ComponentInput in;
+    in.main=memberGeometryFor(document_,profileCatalog_,*mainIndex);
+    for(EntityId sid:rec.secondaryParts) {
+        const auto memberIndex=document_.indexOfEntity(sid);
+        if(memberIndex)
+            in.secondary.push_back(memberGeometryFor(document_,profileCatalog_,*memberIndex));
+    }
+    if(in.secondary.empty())return std::nullopt;
+    in.params=rec.params;
+    return in;
+}
+
 void Application::applyComponentFromParts(const std::wstring& typeId,
                                           const std::vector<std::size_t>& parts,
                                           const std::vector<CompParam>& params) {
