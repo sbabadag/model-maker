@@ -1458,6 +1458,20 @@ void ComponentDialogWidget::updateFormFromPreview(const std::wstring& name,
 
 void ComponentDialogWidget::setParams(const std::vector<CompParam>& p) {
     current_ = p;
+    // Reset prior dynamic limits BEFORE loading Get/another component.
+    // Otherwise a hole constrained by the previous M36 could silently
+    // rewrite the incoming valid M20/22 values to 38 during setValue.
+    if(def_.typeId==L"tekla_haunch_40") {
+        for(const auto& spec:def_.specs) {
+            const auto it=editors_.find(spec.name);
+            if(it==editors_.end())continue;
+            if(auto* d=qobject_cast<QDoubleSpinBox*>(it->second)) {
+                QSignalBlocker guard(d);
+                d->setRange(spec.hasMinDouble?spec.minDouble:-1e12,
+                            spec.hasMaxDouble?spec.maxDouble:1e12);
+            }
+        }
+    }
     for (const auto& spec : def_.specs) {
         const auto it = editors_.find(spec.name);
         if (it == editors_.end() || spec.documentedOnly) continue;
@@ -1467,8 +1481,10 @@ void ComponentDialogWidget::setParams(const std::vector<CompParam>& p) {
             setEditorValue(it->second, spec, stored ? stored->value : paramDefaultValue(spec));
         }
         const auto oc = optionalChecks_.find(spec.name);
-        if (oc != optionalChecks_.end() && oc->second->isEnabled())
+        if (oc != optionalChecks_.end() && oc->second->isEnabled()) {
+            QSignalBlocker guard(oc->second);
             oc->second->setChecked(stored != nullptr);
+        }
     }
     updatePreviewFromForm();
 }
