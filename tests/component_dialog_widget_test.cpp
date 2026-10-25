@@ -501,9 +501,13 @@ int main(int argc, char** argv) {
         if(overlay) {
             overlay->setValue(570.0);   // preview -> real component form
             QApplication::processEvents();
-            const mm::CompParam* p=mm::findParam(h40.resultParams(),L"haunchLength");
+            // resultParams() returns a vector BY VALUE. Never take an
+            // element pointer from that temporary: the previous test used
+            // a dangling CompParam* and reported a spurious sync failure.
+            const auto formParams=h40.resultParams();
+            const mm::CompParam* p=mm::findParam(formParams,L"haunchLength");
             CHECK(p && std::holds_alternative<double>(p->value) &&
-                  std::get<double>(p->value)==570.0,
+                  std::fabs(std::get<double>(p->value)-570.0)<1e-6,
                   "Haunch 40: preview edit synchronizes right-side real params");
             const auto& plan=left->previewPlan();
             CHECK(plan.ok && plan.plates.size()>=3 &&
