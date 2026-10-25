@@ -420,6 +420,38 @@ int main() {
                   approx(adapt.plates[3].height,320.0),
                   "Haunch 40: cap follows COLUMN dimensions, not beam flange");
         }
+        // Reversed member axis direction must not move the cap to the
+        // physically LOWER endpoint of the column.
+        {
+            ComponentInput axisReversed=in;
+            axisReversed.main.axisFrom={0,0,7200};
+            axisReversed.main.axisTo={0,0,0};
+            axisReversed.params.clear();
+            const GenerationPlan revCol=reg.generate(L"tekla_haunch_40",axisReversed);
+            check(revCol.ok,"Haunch 40: reversed column axis accepted");
+            if(revCol.ok && revCol.plates.size()>=4) {
+                check(approx(revCol.plates[3].center.z,7205.0,1e-6),
+                      "Haunch 40: reversed column still gets top cap");
+            }
+        }
+        // Slight roof slope: cap must remain horizontal to the actual
+        // column end face rather than tilting with the I-beam flange.
+        {
+            ComponentInput sloped=in;
+            sloped.params.clear();
+            sloped.secondary[0].axisFrom={0,2200,6080};
+            sloped.secondary[0].axisTo={0,100,6000};
+            const GenerationPlan sp=reg.generate(L"tekla_haunch_40",sloped);
+            check(sp.ok,"Haunch 40: sloped beam supported");
+            if(sp.ok && sp.plates.size()>=4) {
+                check(approx(sp.plates[3].axis.z,1.0) &&
+                      approx(sp.plates[3].axis.x,0) &&
+                      approx(sp.plates[3].axis.y,0),
+                      "Haunch 40: cap stays horizontal for sloped beam");
+                check(approx(sp.plates[3].center.z,7205.0,1e-5),
+                      "Haunch 40: cap tracks column top instead of beam slope");
+            }
+        }
         // Two members selected reversed: physical roles still detected.
         ComponentInput reversed;
         reversed.main=beam;reversed.secondary={in.main};
