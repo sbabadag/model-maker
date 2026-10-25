@@ -30,7 +30,7 @@ From an existing test worktree:
     git switch -c bridge-v31-stage3-local --track github/tmp/bridge-v3.1-stage3-exporter-20261025
 
     $root = "tools\model-maker-bridge\tekla-extractor"
-    dotnet test "$root\ModelMaker.TeklaBridge.sln" -c Release --nologo
+    dotnet test "$root\tests\ModelMaker.TeklaBridge.Core.Tests\ModelMaker.TeklaBridge.Core.Tests.csproj" -c Release --nologo
     if ($LASTEXITCODE -ne 0) { throw "C# unit tests failed" }
 
     dotnet build "$root\src\ModelMaker.TeklaBridge.Extractor\ModelMaker.TeklaBridge.Extractor.csproj" -c Release -p:TeklaVersion=2025.0 --nologo
@@ -46,9 +46,9 @@ a raw attribute names file containing actual verified names (not .inp syntax):
 
     $attrs = "C:\work\bridge-146-attributes.txt"
     @("YOUR_CONFIRMED_RAW_ATTRIBUTE_NAME") | Set-Content -Encoding UTF8 $attrs
-    & $exe --id 12345 --attributes-file $attrs --output C:\work\bridge-146-test
+    & $exe --attributes-file $attrs --output C:\work\bridge-146-test
 
-Replace 12345 with the live ID; do not reuse IDs from older probe sessions.
+With a single selected Tekla component, no ID is needed. If selecting by ID, use the live ID from list-components; do not reuse IDs from older probe sessions.
 The output is a V3 (manifest.formatVersion=3.0) package, not a parametric
 connection. Inspect parameters.json, diagnostics.json, and checksums.json,
 then test with Model Maker's existing Bridge importer. Unknown names must show
