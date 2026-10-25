@@ -8,6 +8,7 @@
 #include "model_maker/bolt_geometry.hpp"
 #include "model_maker/bridge_native_bind.hpp"
 #include "model_maker/bridge_native_mapper.hpp"
+#include "model_maker/bridge_nc146.hpp"
 #include "model_maker/bridge_drilling_policy.hpp"
 #include "model_maker/component_engine.hpp"
 #include "model_maker/component_framework.hpp"
