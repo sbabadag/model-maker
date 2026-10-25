@@ -184,6 +184,21 @@ BridgeNc146Result prepareBridge146FromNc1(
     const double nz = minAxis == 0 ? normal.x : minAxis == 1 ? normal.y : normal.z;
     if (std::fabs(nz) < 0.999)
         return fail("Measured DSTV face normal does not follow plate thickness");
+    // The native 146 generator currently supports this verified upright
+    // shear-tab geometry: X thickness, Y along beam, Z vertical.
+    if (minAxis != 0)
+        return fail("Native 146 NC1 adapter supports X-thickness vertical plate only");
+    if (source.component.secondaryMembers.empty() ||
+        !source.component.secondaryMembers.front().startPoint ||
+        !source.component.secondaryMembers.front().endPoint)
+        return fail("Source secondary beam axis needed for NC1 offset orientation");
+    const BridgeVec3& beamStart = *source.component.secondaryMembers.front().startPoint;
+    const BridgeVec3& beamEnd = *source.component.secondaryMembers.front().endPoint;
+    const BridgeVec3 beamDir{beamEnd.x-beamStart.x, beamEnd.y-beamStart.y,
+                             beamEnd.z-beamStart.z};
+    if (len(beamDir) < 1.0 || std::fabs(beamDir.y)/len(beamDir) < 0.99)
+        return fail("Native 146 NC1 adapter expects a Y-axis source beam");
+    const double beamSign = beamDir.y > 0.0 ? 1.0 : -1.0;
 
     const auto& bolts = group->boltGroup->bolts;
     if (bolts.size() != nc.holes.size())
@@ -236,9 +251,36 @@ BridgeNc146Result prepareBridge146FromNc1(
         finalCenters.push_back(centre);
     }
 
+    // Carry the observed 15 mm asymmetric grid shift as editable native
+    // parameters. Old mapper would centre the two columns (55/55), whereas
+    // actual NC1/source positions are 70/40 from the plate Y edges.
+    double ymin=1e100, ymax=-1e100, zmin=1e100, zmax=-1e100;
+    for (const auto& p : finalCenters) {
+        ymin=std::min(ymin,p.y); ymax=std::max(ymax,p.y);
+        zmin=std::min(zmin,p.z); zmax=std::max(zmax,p.z);
+    }
+    const double offX=beamSign*(0.5*(ymin+ymax)-center.y);
+    const double offY=0.5*(zmin+zmax)-center.z;
+    if (!std::isfinite(offX) || !std::isfinite(offY) ||
+        std::fabs(offX)>1000.0 || std::fabs(offY)>1000.0)
+        return fail("Non-finite/excessive NC1 bolt group offset");
+
     // Promote only this independently checked *copy* as observed for
     // Stage3C drill guard and editable native 146 generator.
     result.prepared=source;
+    auto appendNcOffset = [&](const char* key,double value) {
+        BridgeParameter p;
+        p.name=key;
+        p.type="Length";
+        p.units="mm";
+        p.source="Verified NC1 + source plate DSTV frame";
+        p.readable="ok";
+        p.confidence="observed";
+        p.value=value;
+        result.prepared.parameters.push_back(std::move(p));
+    };
+    appendNcOffset("bridgeNcBoltOffsetX",offX);
+    appendNcOffset("bridgeNcBoltOffsetY",offY);
     for (auto& obj : result.prepared.objects) {
         if (obj.kind != "BoltGroup" || !obj.boltGroup) continue;
         auto& g=*obj.boltGroup;
