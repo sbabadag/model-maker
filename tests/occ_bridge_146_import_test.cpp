@@ -4,7 +4,9 @@
 //   * plaka bbox (4.25,195,6959)..(14.25,365,7159) -> 10x170x200, hacim 340000.
 //   * 6 x M20 bulon, eksen +X (inferred), delik capi 22 (standard), X=0 konum
 //     levha disinda GORUNUR ama eksen X boyunca projeksiyon levhayi deler.
-//   * 6 delik kesilir; hacim ~317192 (340000 - 6*pi*11^2*10).
+//   * Legacy source bolt axis/hole diameter INFERRED: import never drills.
+//   * Only low-level cutBridgeBoltHoles is exercised separately as a numerical
+//     primitive; this does NOT authorize import/manufacturing hole geometry.
 //   * Document'a atomik import + undo/redo + negatif (dis bulon delinmez).
 //
 // Derleme (Linux + OCCT): testin baslik yorumundaki kaynak listesi +
@@ -126,13 +128,18 @@ int main() {
             check(out.plateId != kInvalidEntityId, "plaka EntityId");
             check(out.boltGroupId != kInvalidEntityId, "bulon EntityId");
             check(out.componentId != kInvalidEntityId, "component EntityId");
-            check(out.holesCut == 6, "6 delik kayitli");
+            check(out.holesCut == 0, "inferred axis/dia: Document 0 otomatik delik");
 
             OccSolidStore* store = asSolidStore(&doc.occStore());
             const TopoDS_Shape* ps = store ? store->find(out.plateId) : nullptr;
             check(ps && !ps->IsNull(), "Document plaka kati mevcut");
-            if (ps) check(approx(shapeVolume(*ps), 317192.0, 2.0), "Document plaka kati delikli");
+            if (ps) check(approx(shapeVolume(*ps), 340000.0, 2.0), "Document plaka kati deliksiz (fail-closed)");
 
+            bool warnedUnsafe = false;
+            for (const auto& w : out.warnings)
+                if (w.find("otomatik delik acilmadi") != std::string::npos)
+                    warnedUnsafe = true;
+            check(warnedUnsafe, "guvensiz bulon acik uyariyla reddedildi");
             check(doc.componentInstances().size() == 1, "1 component instance");
             const auto& rec = doc.componentInstances()[0];
             check(rec.typeId == L"tekla_bridge_import", "typeId tekla_bridge_import (orphan)");
