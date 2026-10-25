@@ -822,6 +822,36 @@ int main(int argc, char** argv) {
                       "P4F: eT moves bolts on auto-sized plate without changing plate height/position");
                 newTop->setValue(55.0);
                 QApplication::processEvents();
+                // The real 3D editor, not just the right-hand Qt property
+                // field, must propagate eT to the native bolt generator.
+                left->selectRole("haunch_bolts_upper");
+                QApplication::processEvents();
+                QDoubleSpinBox* top3d=nullptr;
+                for(auto* d:left->findChildren<QDoubleSpinBox*>())
+                    if(d->toolTip()==QStringLiteral("boltEdgeTop"))
+                        top3d=d;
+                CHECK(top3d && top3d->isVisibleTo(left),
+                      "P4F: 3D top-edge bolt-position control is visible");
+                if(top3d) {
+                    const auto previous=left->previewPlan();
+                    const mm::Vec3 v=previous.plates[0].v;
+                    top3d->setValue(70.0);
+                    QApplication::processEvents();
+                    const auto moved=left->previewPlan();
+                    const mm::Vec3 du=moved.boltGroups[0].origin-
+                                      previous.boltGroups[0].origin;
+                    const mm::Vec3 dl=moved.boltGroups[1].origin-
+                                      previous.boltGroups[1].origin;
+                    CHECK(moved.ok &&
+                          std::fabs(newTop->value()-70.0)<1e-6 &&
+                          std::fabs(moved.plates[0].height-
+                                    previous.plates[0].height)<1e-6 &&
+                          std::fabs(du.x*v.x+du.y*v.y+du.z*v.z+15.0)<1e-6 &&
+                          std::fabs(dl.x*v.x+dl.y*v.y+dl.z*v.z)<1e-6,
+                          "P4F: 3D eT edit moves ONLY upper bolts; plate/right panel synchronized");
+                    top3d->setValue(55.0);
+                    QApplication::processEvents();
+                }
                 smallerH->setValue(350.0);
                 QApplication::processEvents();
                 CHECK(std::fabs(smallerH->value()-350.0)<0.01 &&
