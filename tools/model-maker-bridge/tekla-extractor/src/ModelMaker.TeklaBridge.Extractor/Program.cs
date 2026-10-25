@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using ModelMaker.TeklaBridge.Core;
 
 namespace ModelMaker.TeklaBridge.Extractor
 {
@@ -60,6 +61,26 @@ namespace ModelMaker.TeklaBridge.Extractor
                         if (i + 1 >= args.Length) { Console.Error.WriteLine("--output icin deger gerekli."); return false; }
                         opts.OutputDir = args[++i];
                         break;
+                    case "--attributes-file":
+                        if (i + 1 >= args.Length)
+                        {
+                            Console.Error.WriteLine("--attributes-file icin dosya yolu gerekli.");
+                            return false;
+                        }
+                        var attrFile = args[++i];
+                        try
+                        {
+                            opts.AttributeNames.AddRange(AttributeNameFile.Read(attrFile));
+                        }
+                        catch (Exception ex) when (ex is System.IO.IOException ||
+                                                   ex is UnauthorizedAccessException ||
+                                                   ex is ArgumentException ||
+                                                   ex is FormatException)
+                        {
+                            Console.Error.WriteLine("Attribute listesi okunamadi: " + ex.Message);
+                            return false;
+                        }
+                        break;
                     case "-a":
                     case "--attributes":
                         if (i + 1 >= args.Length) { Console.Error.WriteLine("--attributes icin deger gerekli."); return false; }
@@ -80,7 +101,7 @@ namespace ModelMaker.TeklaBridge.Extractor
             Console.WriteLine("");
             Console.WriteLine("Kullanim:");
             Console.WriteLine("  TeklaBridge.Extractor.exe list-components [--json]");
-            Console.WriteLine("  TeklaBridge.Extractor.exe [--id <ID> | --number <N>] [--output <klasor>] [--attributes <ad1,ad2,...>]");
+            Console.WriteLine("  TeklaBridge.Extractor.exe [--id <ID> | --number <N>] [--output <klasor>] [--attributes <ad1,ad2,...>] [--attributes-file <names.txt>]");
             Console.WriteLine("");
             Console.WriteLine("  Tekla acik ve model yukluyken calistirin.");
             Console.WriteLine("  list-components: modeldeki Connection/Detail/Component/CustomPart nesnelerini");
@@ -90,6 +111,7 @@ namespace ModelMaker.TeklaBridge.Extractor
             Console.WriteLine("                   fazla bilesen varsa --id ile ayristirin).");
             Console.WriteLine("  --attributes:    GetAttribute ile okunacak ham Tekla attribute adlari");
             Console.WriteLine("                   (virgul/space ile). Verilmezse parameters.json bos kalir.");
+            Console.WriteLine("  --attributes-file:  Ham attribute adlari; satir basina bir veya CSV, # yorum. .inp DOSYASI DEGIL");
             Console.WriteLine("  --output:        paket klasoru (varsayilan: .\\model-maker-bridge-export)");
         }
     }
