@@ -73,6 +73,7 @@ private:
     std::string viewName_{"iso"};
     std::function<void()> onPick_;
     QPoint lastMouse_;
+    QPoint mouseDown_;
     bool orbiting_{false}, panning_{false};
     double yaw_{0.64}, pitch_{0.40}, zoom_{1.0};
     QPointF pan_{0.0,0.0};
