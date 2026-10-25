@@ -179,8 +179,9 @@ ComponentLivePreviewWidget::ComponentLivePreviewWidget(QWidget* parent)
     // Short labels correspond to the SAME native schema parameters as the
     // real property panel. No second parameter source of truth.
     // Grouped by the physical child that the user can click.
-    // Ten bolt controls: counts, pitches, M/hole and four independent edges.
-    const std::array<std::tuple<const wchar_t*,const wchar_t*,const char*,QPointF>,21> defs{{
+    // Seven controls PER independent group; only the relevant vertical
+    // clearance is editable in each role. No phantom opposite-edge control.
+    const std::array<std::tuple<const wchar_t*,const wchar_t*,const char*,QPointF>,25> defs{{
         {L"haunchLength",L"L","haunch_web",QPointF(35,-90)},
         {L"haunchDepth",L"D","haunch_web",QPointF(-150,15)},
         {L"haunchTipDepth",L"tip","haunch_web",QPointF(45,75)},
@@ -190,16 +191,20 @@ ComponentLivePreviewWidget::ComponentLivePreviewWidget(QWidget* parent)
         {L"endPlateThickness",L"t ep","haunch_end_plate",QPointF(-150,-95)},
         {L"endPlateWidth",L"b ep","haunch_end_plate",QPointF(55,-95)},
         {L"endPlateHeight",L"h ep","haunch_end_plate",QPointF(-160,90)},
-        {L"boltCountX",L"nx","haunch_bolts_upper",QPointF(-150,104)},
-        {L"boltCountY",L"ny","haunch_bolts_upper",QPointF(55,104)},
-        {L"boltPitchX",L"g","haunch_bolts_upper",QPointF(-150,55)},
-        {L"boltPitchY",L"p","haunch_bolts_upper",QPointF(55,55)},
-        {L"boltDiameter",L"M","haunch_bolts_upper",QPointF(50,-75)},
-        {L"holeDiameter",L"delik","haunch_bolts_upper",QPointF(50,-35)},
-        {L"boltEdgeLeft",L"eL","haunch_bolts_upper",QPointF(-150,-65)},
-        {L"boltEdgeRight",L"eR","haunch_bolts_upper",QPointF(55,-115)},
-        {L"boltEdgeTop",L"eT","haunch_bolts_upper",QPointF(-150,145)},
-        {L"boltEdgeBottom",L"eB","haunch_bolts_upper",QPointF(55,145)},
+        {L"upperBoltCountX",L"nx","haunch_bolts_upper",QPointF(-150,104)},
+        {L"upperBoltCountY",L"ny","haunch_bolts_upper",QPointF(55,104)},
+        {L"upperBoltPitchX",L"g","haunch_bolts_upper",QPointF(-150,55)},
+        {L"upperBoltPitchY",L"p","haunch_bolts_upper",QPointF(55,55)},
+        {L"upperBoltDiameter",L"M","haunch_bolts_upper",QPointF(50,-75)},
+        {L"upperHoleDiameter",L"delik","haunch_bolts_upper",QPointF(50,-35)},
+        {L"upperBoltEdgeClear",L"eT net","haunch_bolts_upper",QPointF(-150,145)},
+        {L"lowerBoltCountX",L"nx","haunch_bolts_lower",QPointF(-150,104)},
+        {L"lowerBoltCountY",L"ny","haunch_bolts_lower",QPointF(55,104)},
+        {L"lowerBoltPitchX",L"g","haunch_bolts_lower",QPointF(-150,55)},
+        {L"lowerBoltPitchY",L"p","haunch_bolts_lower",QPointF(55,55)},
+        {L"lowerBoltDiameter",L"M","haunch_bolts_lower",QPointF(50,-75)},
+        {L"lowerHoleDiameter",L"delik","haunch_bolts_lower",QPointF(50,-35)},
+        {L"lowerBoltEdgeClear",L"eB net","haunch_bolts_lower",QPointF(55,145)},
         {L"stiffenerThickness",L"t stiff","haunch_beam_stiffener",QPointF(75,35)},
         {L"topPlateThickness",L"t cap","haunch_top_plate",QPointF(60,-70)}
     }};
@@ -210,7 +215,7 @@ ComponentLivePreviewWidget::ComponentLivePreviewWidget(QWidget* parent)
         a.targetRole=std::get<2>(def);
         a.shift=std::get<3>(def);
         a.spin=new QDoubleSpinBox(this);
-        const bool integer=(a.name==L"boltCountX" || a.name==L"boltCountY");
+        const bool integer=a.name.find(L"BoltCount")==5;
         a.spin->setDecimals(integer?0:1);
         a.spin->setRange(integer?1.0:0.0,integer?4.0:10000.0);
         a.spin->setSingleStep(integer?1.0:5.0);
@@ -223,7 +228,7 @@ ComponentLivePreviewWidget::ComponentLivePreviewWidget(QWidget* parent)
         const std::wstring key=a.name;
         QObject::connect(a.spin,QOverload<double>::of(&QDoubleSpinBox::valueChanged),
                          this,[this,key](double val) {
-            const bool integer=(key==L"boltCountX" || key==L"boltCountY");
+            const bool integer=key.find(L"BoltCount")==5;
             const CompParamValue next=integer
                 ?CompParamValue{static_cast<int>(std::lround(val))}
                 :CompParamValue{val};
@@ -537,36 +542,32 @@ void ComponentLivePreviewWidget::positionEditors() {
         for(const auto& role:plan_.plateKeys)if(role==c.targetRole)exists=true;
         for(const auto& role:plan_.boltGroupKeys)
             if(role==c.targetRole)exists=true;
-        // Bolt-grid parameters are shared by both groups. Render these
-        // two edit fields next to the one actually clicked.
-        const bool selected=(c.targetRole==activeRole_ ||
-            (activeRole_=="haunch_bolts_lower" &&
-             c.targetRole=="haunch_bolts_upper"));
+        // Independent group: only expose the parameters actually owned by
+        // the selected upper OR lower bolt group.
+        const bool selected=c.targetRole==activeRole_;
         if(!exists || !selected){c.spin->hide();continue;}
-        const std::string anchorRole=(activeRole_=="haunch_bolts_lower" &&
-                                      c.targetRole=="haunch_bolts_upper")
-                                       ?activeRole_:c.targetRole;
-        const bool boltRole=(activeRole_=="haunch_bolts_upper" ||
-                             activeRole_=="haunch_bolts_lower");
-        if(boltRole && c.targetRole=="haunch_bolts_upper") {
-            // Never clamp ten independent editors onto the same bottom
-            // edge: that previously made eT/eB appear uneditable.
-            // Keep them in a consistent two-column five-row inspector.
-            static const std::array<std::wstring,10> order{{
-                L"boltCountX",L"boltCountY",
-                L"boltPitchX",L"boltPitchY",
-                L"boltDiameter",L"holeDiameter",
-                L"boltEdgeLeft",L"boltEdgeRight",
-                L"boltEdgeTop",L"boltEdgeBottom"
+        const std::string anchorRole=c.targetRole;
+        const bool boltRole=activeRole_=="haunch_bolts_upper" ||
+                            activeRole_=="haunch_bolts_lower";
+        if(boltRole) {
+            const bool upper=activeRole_=="haunch_bolts_upper";
+            static const std::array<std::wstring,7> upperKeys{{
+                L"upperBoltCountX",L"upperBoltCountY",
+                L"upperBoltPitchX",L"upperBoltPitchY",
+                L"upperBoltDiameter",L"upperHoleDiameter",
+                L"upperBoltEdgeClear"
             }};
+            static const std::array<std::wstring,7> lowerKeys{{
+                L"lowerBoltCountX",L"lowerBoltCountY",
+                L"lowerBoltPitchX",L"lowerBoltPitchY",
+                L"lowerBoltDiameter",L"lowerHoleDiameter",
+                L"lowerBoltEdgeClear"
+            }};
+            const auto& order=upper?upperKeys:lowerKeys;
             const auto it=std::find(order.begin(),order.end(),c.name);
             if(it!=order.end()) {
                 const int index=static_cast<int>(it-order.begin());
-                // Title occupies the first 60px. At minimum 380px high,
-                // last editor stays within the viewport and is not occluded.
-                const int xx=8+(index%2)*108;
-                const int yy=85+(index/2)*52;
-                c.spin->move(xx,yy);
+                c.spin->move(8+(index%2)*108,85+(index/2)*52);
             }
         } else {
             const QPointF q=project(roleAnchor(anchorRole))+c.shift;
@@ -725,10 +726,15 @@ void ComponentLivePreviewWidget::drawBoltOverlay(
         QStringLiteral("eL ")+mm(m.leftEdge),QPointF(0,46));
     dim(point(m.xmax,m.ymin),point(hw,m.ymin),
         QStringLiteral("eR ")+mm(m.rightEdge),QPointF(0,46));
-    dim(point(m.xmax,topY),point(m.xmax,hh),
-        QStringLiteral("eT ")+mm(topClear),QPointF(28,0));
-    dim(point(m.xmin,-hh),point(m.xmin,bottomY),
-        QStringLiteral("eB ")+mm(bottomClear),QPointF(-48,0));
+    const bool upperSelected=activeRole_=="haunch_bolts_upper";
+    if(upperSelected)
+        dim(point(m.xmax,topY),point(m.xmax,hh),
+            QStringLiteral("eT net ")+mm(topClear-m.holeDiameter*0.5),
+            QPointF(28,0));
+    else
+        dim(point(m.xmin,-hh),point(m.xmin,bottomY),
+            QStringLiteral("eB net ")+mm(bottomClear-m.holeDiameter*0.5),
+            QPointF(-48,0));
 
     // Readable summary remains useful when orthographic projection makes
     // a dimension nearly edge-on, or Qt spinboxes cover a leader line.
@@ -749,9 +755,11 @@ void ComponentLivePreviewWidget::drawBoltOverlay(
     p.drawText(panel.adjusted(9,53,-8,-36),Qt::AlignLeft|Qt::AlignVCenter,
         QStringLiteral("g %1   p %2 mm").arg(mm(m.pitchX),mm(m.pitchY)));
     p.drawText(panel.adjusted(9,76,-8,-13),Qt::AlignLeft|Qt::AlignVCenter,
-        QStringLiteral("eL %1  eR %2  eT %3  eB %4")
-            .arg(mm(m.leftEdge),mm(m.rightEdge),
-                 mm(topClear),mm(bottomClear)));
+        (upperSelected
+            ?QStringLiteral("Ust net kenar: %1 mm")
+                 .arg(mm(topClear-m.holeDiameter*0.5))
+            :QStringLiteral("Alt net kenar: %1 mm")
+                 .arg(mm(bottomClear-m.holeDiameter*0.5))));
     p.restore();
 }
 
