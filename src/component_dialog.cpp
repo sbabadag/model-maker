@@ -614,19 +614,19 @@ ComponentDialogDefinition haunch40DialogDefinition() noexcept {
         return group;
     };
     def.schema.groups={
-        tab(L"picture","Olculer",
+        tab(L"picture",L"Olculer",
             {L"haunchLength",L"haunchDepth",L"haunchTipDepth",L"gap"}),
-        tab(L"haunch","Haunch",
+        tab(L"haunch",L"Haunch",
             {L"haunchWebThickness",L"haunchFlangeThickness",L"haunchFlangeWidth",
              L"topPlateThickness",L"topPlateLength",L"plateMaterial"}),
-        tab(L"endplate","Alin levhasi",
+        tab(L"endplate",L"Alin levhasi",
             {L"endPlateThickness",L"endPlateWidth",L"endPlateHeight"}),
-        tab(L"stiffeners","Berkitmeler",
+        tab(L"stiffeners",L"Berkitmeler",
             {L"createBeamStiffener",L"stiffenerThickness"}),
-        tab(L"bolts","Bulonlar",
+        tab(L"bolts",L"Bulonlar",
             {L"boltDiameter",L"holeDiameter",L"boltPitchX",L"boltPitchY",
              L"boltEdge",L"grade"}),
-        tab(L"welds","Kaynaklar",
+        tab(L"welds",L"Kaynaklar",
             {L"createWelds",L"weldSize"})
     };
     return def;
