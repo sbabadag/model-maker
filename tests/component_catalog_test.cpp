@@ -36,6 +36,8 @@ static ComponentInput makeInput() {
     in.main.refNormal = {0, 0, 1};
     in.main.secWidth = 300.0;
     in.main.secHeight = 300.0;
+    in.main.secWebThickness = 11.0;
+    in.main.secFlangeThickness = 19.0;  // known physical flange for 40 bolt grip
     MemberGeometry beam;
     beam.id = EntityId{21};
     beam.axisFrom = {0, 0, 3000};
