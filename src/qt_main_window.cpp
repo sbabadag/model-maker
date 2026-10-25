@@ -1626,6 +1626,11 @@ bool QtMainWindow::openComponentParamsDialog(const mm::ComponentInstanceRecord& 
             dlg->setWindowFlag(Qt::Tool, true);  // ana pencerenin uzerinde kalir
             auto* root = new QVBoxLayout(dlg);
             auto* widget = new mm::ComponentDialogWidget(*def, rec.params, dlg);
+            if(rec.typeId==L"tekla_haunch_40") {
+                if(auto source=app_.componentPreviewInput(rec.id))
+                    widget->setPreviewInput(*source);
+                dlg->resize(1140,720);
+            }
             root->addWidget(widget);
             const QString baseTitle = QString::fromStdWString(type->displayName);
             auto curId = std::make_shared<mm::EntityId>(rec.id);
@@ -1675,6 +1680,10 @@ bool QtMainWindow::openComponentParamsDialog(const mm::ComponentInstanceRecord& 
                     return;
                 }
                 widget->setParams(targets.front().params);
+                if(targets.front().typeId==L"tekla_haunch_40") {
+                    if(auto source=app_.componentPreviewInput(targets.front().id))
+                        widget->setPreviewInput(*source);
+                }
                 *curId = targets.front().id;
                 retitle();
                 say(QStringLiteral("Get: bağlantı #%1 değerleri alındı")
@@ -1693,8 +1702,12 @@ bool QtMainWindow::openComponentParamsDialog(const mm::ComponentInstanceRecord& 
             // Disaridan (cift tik) gelen baglantiyi pencereye yukle.
             openDialogs[typeId] = ModelessHandle{
                 QPointer<QDialog>(dlg),
-                [widget, curId, retitle](const mm::ComponentInstanceRecord& r) {
+                [this, widget, curId, retitle](const mm::ComponentInstanceRecord& r) {
                     widget->setParams(r.params);
+                    if(r.typeId==L"tekla_haunch_40") {
+                        if(auto source=app_.componentPreviewInput(r.id))
+                            widget->setPreviewInput(*source);
+                    }
                     *curId = r.id;
                     retitle();
                 }};
