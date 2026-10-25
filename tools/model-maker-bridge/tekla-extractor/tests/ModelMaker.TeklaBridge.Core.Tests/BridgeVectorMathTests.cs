@@ -151,6 +151,28 @@ namespace ModelMaker.TeklaBridge.Core.Tests
         }
 
         [Fact]
+        public void HoleReportUnavailabilityAndRegularHoleMinusOneRoundtrip()
+        {
+            var probe = new BoltHoleSettingsProbe
+            {
+                VerifiedForDrilling = false,
+                ReportProbes = new System.Collections.Generic.List<BoltReportValueProbe>
+                {
+                    new BoltReportValueProbe { Name = "HOLE_1_TYPE", Readable = true, Value = "-1" },
+                    new BoltReportValueProbe { Name = "DIAMETER_X", Readable = false, Value = null }
+                }
+            };
+            var json = Newtonsoft.Json.JsonConvert.SerializeObject(probe);
+            var restored = Newtonsoft.Json.JsonConvert.DeserializeObject<BoltHoleSettingsProbe>(json);
+            Assert.Equal(2, restored.ReportProbes.Count);
+            Assert.Equal("-1", restored.ReportProbes[0].Value);
+            Assert.True(restored.ReportProbes[0].Readable);
+            Assert.False(restored.ReportProbes[1].Readable);
+            Assert.Null(restored.ReportProbes[1].Value);
+            Assert.False(restored.VerifiedForDrilling);
+        }
+
+        [Fact]
         public void DegenerateAxesAreRejectedInsteadOfInvented()
         {
             Assert.Throws<InvalidOperationException>(() =>
