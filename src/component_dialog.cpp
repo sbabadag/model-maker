@@ -620,7 +620,7 @@ ComponentDialogDefinition haunch40DialogDefinition() noexcept {
             {L"haunchWebThickness",L"haunchFlangeThickness",L"haunchFlangeWidth",
              L"plateMaterial"}),
         tab(L"cap",L"Kolon Cap",
-            {L"topPlateThickness",L"topPlateLength"}),
+            {L"topPlateThickness"}),
         tab(L"endplate",L"Alin levhasi",
             {L"endPlateThickness",L"endPlateWidth",L"endPlateHeight"}),
         tab(L"stiffeners",L"Berkitmeler",
