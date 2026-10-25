@@ -106,6 +106,16 @@ int main(int argc, char** argv) {
                "hole too close to the plate edge blocks drilling");
     }
     {
+        auto g = measuredBolts(); g.direction = BridgeVec3{0, 1, 0};
+        expect(!authorizeBridgeAutoDrill(g, box, "plate-guid").allowed,
+               "contradictory observed direction blocks drilling");
+    }
+    {
+        auto g = measuredBolts(); g.bolts[0].holeDiameter = 23.0;
+        expect(!authorizeBridgeAutoDrill(g, box, "plate-guid").allowed,
+               "inconsistent measured hole diameters block drilling");
+    }
+    {
         auto g = measuredBolts();
         g.bolts[0].position.z = std::numeric_limits<double>::quiet_NaN();
         expect(!authorizeBridgeAutoDrill(g, box, "plate-guid").allowed,
