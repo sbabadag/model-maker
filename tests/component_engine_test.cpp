@@ -317,6 +317,49 @@ int main() {
             check(p.plates[2].height>450.0 &&
                   p.plates[2].height<540.0,
                   "Haunch 40: inclined flange real length");
+            // The materializer's chamfer-1 joins x=-L/2+25 at the
+            // LOWER web edge to x=+L/2 at the (D-tip) height. Both
+            // flange INNER-face endpoints must land on this SAME line.
+            const PlateSpec& web=p.plates[1];
+            const PlateSpec& flange=p.plates[2];
+            const double chamferU=web.chamfers.front().h;
+            const double chamferV=web.chamfers.front().v;
+            const Vec3 near=web.center+
+                web.u*(-web.width*0.5+web.width-chamferU)+
+                web.v*(-web.height*0.5);
+            const Vec3 far=web.center+
+                web.u*(web.width*0.5)+
+                web.v*(-web.height*0.5+chamferV);
+            const Vec3 innerMid=flange.center-
+                flange.axis*(flange.thickness*0.5);
+            const Vec3 flangeNear=innerMid-
+                flange.v*(flange.height*0.5);
+            const Vec3 flangeFar=innerMid+
+                flange.v*(flange.height*0.5);
+            const auto gap3=[](Vec3 a,Vec3 b) {
+                const Vec3 d=a-b;
+                return std::sqrt(d.x*d.x+d.y*d.y+d.z*d.z);
+            };
+            check(gap3(flangeNear,near)<1e-5 &&
+                  gap3(flangeFar,far)<1e-5,
+                  "Haunch 40: inclined flange inner face exactly follows web chamfer");
+            check(approx(flange.height,gap3(near,far),1e-5),
+                  "Haunch 40: exact web chamfer angle and flange span");
+            // Column's actual top is 7200mm, beam top is ~6150mm.
+            // Cap must be horizontal and on COLUMN, never on beam.
+            const PlateSpec& cap=p.plates[3];
+            check(approx(cap.center.z,7200.0+cap.thickness*0.5,1e-6),
+                  "Haunch 40: cap LOWER face rests at real column top Z=7200");
+            check(approx(cap.axis.x,0) && approx(cap.axis.y,0) &&
+                  approx(cap.axis.z,1),
+                  "Haunch 40: cap plate horizontal with +Z thickness");
+            check(approx(cap.width,420.0) &&
+                  approx(cap.height,320.0),
+                  "Haunch 40: cap covers real 300x400 column footprint");
+            check(p.welds.size()==4 &&
+                  p.welds[3].partA==EntityId{40} &&
+                  p.welds[3].partBRole=="haunch_top_plate",
+                  "Haunch 40: cap is welded to column, not beam");
         }
         if(p.boltGroups.size()==2) {
             for(const auto& b:p.boltGroups) {
@@ -373,8 +416,9 @@ int main() {
             check(approx(adapt.plates[1].width,600.0) &&
                   approx(adapt.plates[1].height,300.0),
                   "Haunch 40: editable length/depth recomputed");
-            check(approx(adapt.plates[3].width,120.0),
-                  "Haunch 40: top plate adapts to target flange width");
+            check(approx(adapt.plates[3].width,420.0) &&
+                  approx(adapt.plates[3].height,320.0),
+                  "Haunch 40: cap follows COLUMN dimensions, not beam flange");
         }
         // Two members selected reversed: physical roles still detected.
         ComponentInput reversed;
