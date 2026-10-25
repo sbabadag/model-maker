@@ -73,6 +73,8 @@ set(MODELMAKER_QT_SOURCES
     src/opengl_render_backend.cpp
     include/model_maker/opengl_render_backend.hpp
     src/component_dialog_widget.cpp
+    src/component_live_preview_widget.cpp
+    include/model_maker/component_live_preview_widget.hpp
     src/component_option_icons.cpp
     include/model_maker/component_option_icons.hpp
     include/model_maker/component_dialog_widget.hpp)
