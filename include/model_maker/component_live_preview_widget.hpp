@@ -9,6 +9,7 @@
 #include "model_maker/component_engine.hpp"
 #include <QWidget>
 #include <QPointF>
+#include <QPolygonF>
 #include <functional>
 #include <map>
 #include <string>
@@ -34,6 +35,12 @@ public:
     void setCompact(bool compact);  // thumbnail: same plan, no editor overlay
     void setOnPick(std::function<void()> cb);
     std::wstring highlightedParam() const { return highlight_; }
+    // P4: hit-selected component role; empty means no overlay.
+    std::string activeRole() const { return activeRole_; }
+    void selectRole(const std::string& role);  // GUI + automated tests
+    std::vector<std::wstring> visibleOverlayParams() const;
+    // P6 diagnostics: all child geometry is recomputed from ONE generator plan.
+    const GenerationPlan& previewPlan() const { return plan_; }
 
 protected:
     void paintEvent(QPaintEvent*) override;
@@ -55,6 +62,11 @@ private:
     std::vector<CompParam> params_;
     std::vector<Callout> callouts_;
     std::wstring highlight_;
+    std::string activeRole_;
+    struct HitRegion { QPolygonF polygon; std::string role; };
+    std::vector<HitRegion> hits_;
+    std::vector<std::pair<QPointF,std::string>> boltHits_;
+    bool dragging_{false};
     std::function<void(const std::wstring&,double)> onEdit_;
     bool haveInput_{false};
     bool compact_{false};
@@ -73,6 +85,8 @@ private:
     QPointF project(Vec3 p) const;
     void drawModel(QPainter& p);
     Vec3 roleAnchor(const std::string& role) const;
+    std::string hitRole(QPoint pos) const;
+    void centerSelection();
 };
 
 } // namespace mm
