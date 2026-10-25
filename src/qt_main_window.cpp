@@ -1043,7 +1043,13 @@ void QtMainWindow::importTeklaBridgeNative() {
     const QString dir = QFileDialog::getExistingDirectory(
         this, QStringLiteral("Tekla Component Bridge paket klasörünü seç (.mmbridge) — Native dönüşüm"));
     if (dir.isEmpty()) return;
-    app_.convertTeklaBridgeToNative(std::filesystem::path(dir.toStdWString()));
+    // Explicit user-supplied NC1 evidence, required for safe real holes.
+    const QString nc = QFileDialog::getOpenFileName(
+        this, QStringLiteral("Tekla 146 levhasinin DSTV/NC1 dosyasini sec"),
+        QString(), QStringLiteral("DSTV NC1 (*.nc1);;Tum dosyalar (*)"));
+    if (nc.isEmpty()) return;
+    app_.convertTeklaBridgeToNative(std::filesystem::path(dir.toStdWString()),
+                                    std::filesystem::path(nc.toStdWString()));
 }
 
 void QtMainWindow::saveTeklaBridgeTemplate() {
