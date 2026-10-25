@@ -1748,10 +1748,10 @@ GenerationPlan generateHaunch40(const ComponentInput& input) noexcept {
     };
     // 1) Bolted end plate. The origin follows the actual column face.
     PlateSpec end;
-    // Place the upper plate edge at the requested distance from the
-    // uppermost bolt centre. Extra explicit height extends downward.
-    const double plateCenterV =
-        -D*0.5+(edgeT-edgeB)*0.5-(actualH-plateH)*0.5;
+    // Keep an explicitly dimensioned plate centred as in legacy Haunch
+    // records. Editing eT/eB in the dialog changes fixed height to auto;
+    // with auto sizing both top and bottom measured edges match requests.
+    const double plateCenterV =-D*0.5+(edgeT-edgeB)*0.5;
     end.center=add(p.facePoint,add(scale(dir,gap+endT*0.5),
                                     scale(H,plateCenterV)));
     end.u=W; end.v=H; end.axis=dir;
@@ -1913,10 +1913,12 @@ GenerationPlan generateHaunch40(const ComponentInput& input) noexcept {
         const Vec3 groupCentre=add(
             add(p.facePoint,scale(dir,gap+endT*0.5)),
             scale(end.v,offset));
-        // X origin references the actual plate LEFT edge, rather than
-        // assuming symmetric bolt spacing about its centreline.
-        bg.origin=add(add(groupCentre,
-                          scale(end.u,-actualW*0.5+edgeL)),
+        // A manually fixed plate width preserves the historical centered
+        // bolt group. Editing eL/eR switches that fixed dimension to auto;
+        // then the exact entered asymmetric left/right edges take effect.
+        const double startX=givenW>0.0 ? -spanX*0.5
+                                       : -actualW*0.5+edgeL;
+        bg.origin=add(add(groupCentre,scale(end.u,startX)),
                       scale(end.v,-spanY*0.5));
         // The shank centre is in the real plate+column-flange grip stack,
         // not at the end plate midplane or column section centreline.
