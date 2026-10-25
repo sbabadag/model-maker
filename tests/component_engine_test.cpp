@@ -305,6 +305,24 @@ int main() {
         check(p.plates.size()==4,"Haunch 40: end+web+bottom+top 4 plates");
         check(p.boltGroups.size()==2,"Haunch 40: two bolt groups");
         check(p.welds.size()==4,"Haunch 40: four weld relations");
+        check(p.cuts.size()==1 && p.cutKeys.size()==1 &&
+              p.cutKeys[0]=="haunch_beam_end_cut",
+              "Haunch 40: one persistent beam end cut");
+        if(p.cuts.size()==1 && p.plates.size()>=1) {
+            const CutModifier& cut=p.cuts[0];
+            const PlateSpec& ep=p.plates[0];
+            const Vec3 outerFace=ep.center+ep.axis*(ep.thickness*0.5);
+            const Vec3 d=cut.planeOrigin-outerFace;
+            check(cut.target==EntityId{41} && cut.kind==CutKind::PlaneCut &&
+                  cut.keepPositive && cut.hidden,
+                  "Haunch 40: hidden square cut ONLY targets actual beam");
+            check(std::sqrt(d.x*d.x+d.y*d.y+d.z*d.z)<1e-6,
+                  "Haunch 40: cut on END PLATE beam-side face");
+            check(approx(cut.planeNormal.x,ep.axis.x) &&
+                  approx(cut.planeNormal.y,ep.axis.y) &&
+                  approx(cut.planeNormal.z,ep.axis.z),
+                  "Haunch 40: keeps steel away from column");
+        }
         check(p.plateKeys.size()==p.plates.size(),"Haunch 40: stable plate role keys");
         if(p.plates.size()>=3) {
             check(approx(p.plates[0].thickness,20.0),
@@ -353,9 +371,9 @@ int main() {
             check(approx(cap.axis.x,0) && approx(cap.axis.y,0) &&
                   approx(cap.axis.z,1),
                   "Haunch 40: cap plate horizontal with +Z thickness");
-            check(approx(cap.width,420.0) &&
-                  approx(cap.height,320.0),
-                  "Haunch 40: cap covers real 300x400 column footprint");
+            check(approx(cap.width,300.0) &&
+                  approx(cap.height,400.0),
+                  "Haunch 40: cap EXACT 300x400 column profile footprint");
             check(p.welds.size()==4 &&
                   p.welds[3].partA==EntityId{40} &&
                   p.welds[3].partBRole=="haunch_top_plate",
@@ -416,9 +434,9 @@ int main() {
             check(approx(adapt.plates[1].width,600.0) &&
                   approx(adapt.plates[1].height,300.0),
                   "Haunch 40: editable length/depth recomputed");
-            check(approx(adapt.plates[3].width,420.0) &&
-                  approx(adapt.plates[3].height,320.0),
-                  "Haunch 40: cap follows COLUMN dimensions, not beam flange");
+            check(approx(adapt.plates[3].width,300.0) &&
+                  approx(adapt.plates[3].height,400.0),
+                  "Haunch 40: cap follows EXACT column section, not beam flange");
         }
         // Reversed member axis direction must not move the cap to the
         // physically LOWER endpoint of the column.
@@ -450,6 +468,26 @@ int main() {
                       "Haunch 40: cap stays horizontal for sloped beam");
                 check(approx(sp.plates[3].center.z,7205.0,1e-5),
                       "Haunch 40: cap tracks column top instead of beam slope");
+            }
+        }
+        // Changing plate thickness or gap MUST reposition the beam end
+        // cut along the SAME column face (not a stale global plane).
+        {
+            ComponentInput changed=in;
+            changed.params={
+                {L"endPlateThickness",CompParamValue{30.0}},
+                {L"gap",CompParamValue{12.0}}
+            };
+            GenerationPlan remap=reg.generate(L"tekla_haunch_40",changed);
+            check(remap.ok && remap.cuts.size()==1,
+                  "Haunch 40: edited plate thickness/gap recomputes beam end cut");
+            if(remap.ok && remap.cuts.size()==1 && p.cuts.size()==1) {
+                const Vec3 delta=remap.cuts[0].planeOrigin-p.cuts[0].planeOrigin;
+                const Vec3 normal=p.cuts[0].planeNormal;
+                const double advance=delta.x*normal.x+
+                                     delta.y*normal.y+delta.z*normal.z;
+                check(approx(advance,22.0,1e-6),
+                      "Haunch 40: beam cut moves 10mm PL + 12mm gap");
             }
         }
         // Two members selected reversed: physical roles still detected.
