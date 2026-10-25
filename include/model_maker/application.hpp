@@ -411,6 +411,9 @@ public:
     // Component instance parametre guncelleme (canli recompute, undo'lu).
     // typeId bilinen bir tipse parametreleri semaya hizalar, yeniden uretir.
     bool setSelectedComponentParams(EntityId compId, const std::vector<CompParam>& newParams);
+    // Source geometry for a NON-MUTATING component-dialog 3D preview.
+    // Uses the actual selected column/beam and active target section catalog.
+    std::optional<ComponentInput> componentPreviewInput(EntityId compId);
     // Fin Plate parametreleri (uygulama-anı diyalogdan; kalici — son deger hatirlanir).
     void setPendingFinPlateParams(const std::vector<CompParam>& p) { pendingFinPlateParams_ = p; }
     const std::vector<CompParam>& pendingFinPlateParams() const { return pendingFinPlateParams_; }
