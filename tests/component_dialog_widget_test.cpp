@@ -10,6 +10,7 @@
 #include "model_maker/component_live_preview_widget.hpp"
 #include "model_maker/component_engine.hpp"
 #include <QDoubleSpinBox>
+#include <QSpinBox>
 #include <QMouseEvent>
 #include <algorithm>
 #include <cmath>
@@ -468,13 +469,15 @@ int main(int argc, char** argv) {
             left->selectRole("haunch_bolts_lower");
             QApplication::processEvents();
             const auto lower=left->visibleOverlayParams();
-            CHECK(lower.size()==5 &&
+            CHECK(lower.size()==7 &&
+                  std::find(lower.begin(),lower.end(),L"boltCountX")!=lower.end() &&
+                  std::find(lower.begin(),lower.end(),L"boltCountY")!=lower.end() &&
                   std::find(lower.begin(),lower.end(),L"boltPitchX")!=lower.end() &&
                   std::find(lower.begin(),lower.end(),L"boltPitchY")!=lower.end() &&
                   std::find(lower.begin(),lower.end(),L"boltDiameter")!=lower.end() &&
                   std::find(lower.begin(),lower.end(),L"holeDiameter")!=lower.end() &&
                   std::find(lower.begin(),lower.end(),L"boltEdge")!=lower.end(),
-                  "P4B: lower bolt group exposes five shared bolt/hole controls");
+                  "P4B: lower group exposes two integer counts and five dimensions");
             const auto lowerMetrics=left->boltOverlayMetrics("haunch_bolts_lower");
             const auto upperMetrics=left->boltOverlayMetrics("haunch_bolts_upper");
             CHECK(lowerMetrics.valid && upperMetrics.valid &&
@@ -495,9 +498,9 @@ int main(int argc, char** argv) {
                   "P4B: four centre-to-edge values measured separately per bolt group");
             left->selectRole("haunch_bolts_upper");
             QApplication::processEvents();
-            CHECK(left->visibleOverlayParams().size()==5 &&
+            CHECK(left->visibleOverlayParams().size()==7 &&
                   left->boltOverlayMetrics(left->activeRole()).valid,
-                  "P4B: upper bolt selection exposes the same five fields");
+                  "P4B: upper bolt selection exposes both counts and all dimensions");
             QDoubleSpinBox* hole3d=nullptr;
             for(auto* spin:left->findChildren<QDoubleSpinBox*>())
                 if(spin->toolTip()==QStringLiteral("holeDiameter")) {
@@ -515,6 +518,41 @@ int main(int argc, char** argv) {
                                 -24.0)<1e-6,
                       "P4B: 3D hole edit updates real form and generated geometry");
                 hole3d->setValue(22.0);
+                QApplication::processEvents();
+            }
+            auto* countX=h40.findChild<QSpinBox*>(QStringLiteral("boltCountX"));
+            auto* countY=h40.findChild<QSpinBox*>(QStringLiteral("boltCountY"));
+            QDoubleSpinBox* count3dX=nullptr;
+            QDoubleSpinBox* count3dY=nullptr;
+            for(auto* spin:left->findChildren<QDoubleSpinBox*>()) {
+                if(spin->toolTip()==QStringLiteral("boltCountX"))count3dX=spin;
+                if(spin->toolTip()==QStringLiteral("boltCountY"))count3dY=spin;
+            }
+            CHECK(countX && countY && count3dX && count3dY &&
+                  countX->value()==2 && countY->value()==2,
+                  "P4C: native integer count editors exist in tab and 3D view");
+            if(countX && countY && count3dX && count3dY) {
+                count3dX->setValue(3.0);
+                count3dY->setValue(3.0);
+                QApplication::processEvents();
+                const auto changed=left->boltOverlayMetrics("haunch_bolts_lower");
+                CHECK(changed.valid && countX->value()==3 && countY->value()==3 &&
+                      changed.columns==3 && changed.rows==3 &&
+                      changed.count==9 && changed.totalCount==18 &&
+                      left->previewPlan().cuts.size()==1,
+                      "P4C: 3D 3x3 edit updates tab, 18 native bolts and beam cut");
+                countY->setValue(4);
+                QApplication::processEvents();
+                const auto tall=left->boltOverlayMetrics("haunch_bolts_upper");
+                auto* pitchY=h40.findChild<QDoubleSpinBox*>(
+                    QStringLiteral("boltPitchY"));
+                CHECK(tall.valid && tall.rows==4 && tall.columns==3 &&
+                      tall.totalCount==24 && pitchY &&
+                      pitchY->value()<80.0 && left->previewPlan().ok,
+                      "P4C: 4 rows keep 24 bolts within physical vertical span");
+                countX->setValue(2);
+                countY->setValue(2);
+                if(pitchY)pitchY->setValue(80.0);
                 QApplication::processEvents();
             }
             // Exercise the real mouse path, not just the test selection API.
