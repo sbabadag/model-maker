@@ -6,6 +6,7 @@
 // kullaniyor. OCC'siz, Linux'ta kosar; saf veri + uretim plani.
 
 #include "model_maker/component_engine.hpp"
+#include "model_maker/bolt.hpp"
 
 #include <cmath>
 #include <cstdio>
@@ -324,6 +325,40 @@ int main() {
                       "Haunch 40: bolt through actual support");
                 check(approx(b.params.holeDiameter,22),"Haunch 40: round Ø22");
             }
+        }
+        // HOTFIX: The 8 physical bolt centres MUST lie on the same end-plate
+        // local frame, with a realistic end plate + column-flange stack.
+        if (p.plates.size() >= 1 && p.boltGroups.size() == 2) {
+            const PlateSpec& ep=p.plates[0];
+            int boltCount=0;
+            for (const auto& bg:p.boltGroups) {
+                check(bg.targetOwnedPlateRole=="haunch_end_plate",
+                      "Haunch 40: drills only owned end plate");
+                check(approx(bg.gripLength, ep.thickness+in.main.secFlangeThickness),
+                      "Haunch 40: short physical flange grip, not column width");
+                check(approx(bg.holeDepth,bg.gripLength+2.0),
+                      "Haunch 40: drill depth limits cuts to actual stack");
+                check(bg.params.direction==2,
+                      "Haunch 40: bolt heads on accessible beam face");
+                check(approx(bg.axis.x,ep.axis.x) &&
+                      approx(bg.axis.y,ep.axis.y) &&
+                      approx(bg.axis.z,ep.axis.z),
+                      "Haunch 40: bolt axis equals end-plate normal");
+                const auto pts=boltGroupBoltOrigins(bg);
+                boltCount+=static_cast<int>(pts.size());
+                for(const Vec3& c:pts) {
+                    const Vec3 d=c-ep.center;
+                    const double axial=d.x*ep.axis.x+d.y*ep.axis.y+d.z*ep.axis.z;
+                    const double x=d.x*ep.u.x+d.y*ep.u.y+d.z*ep.u.z;
+                    const double y=d.x*ep.v.x+d.y*ep.v.y+d.z*ep.v.z;
+                    check(approx(axial,-0.5*in.main.secFlangeThickness,0.001),
+                          "Haunch 40: correct bolt grip midplane");
+                    check(std::abs(x)+11.0<ep.width*0.5 &&
+                          std::abs(y)+11.0<ep.height*0.5,
+                          "Haunch 40: bolt hole fully inside end plate");
+                }
+            }
+            check(boltCount==8,"Haunch 40: exactly 8 local-frame bolt centres");
         }
         // Section adaptation and editable param changes.
         in.secondary[0].secWidth=120;
