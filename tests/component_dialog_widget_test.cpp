@@ -852,6 +852,34 @@ int main(int argc, char** argv) {
                     top3d->setValue(55.0);
                     QApplication::processEvents();
                 }
+                left->selectRole("haunch_bolts_lower");
+                QApplication::processEvents();
+                QDoubleSpinBox* bottom3d=nullptr;
+                for(auto* d:left->findChildren<QDoubleSpinBox*>())
+                    if(d->toolTip()==QStringLiteral("boltEdgeBottom"))
+                        bottom3d=d;
+                CHECK(bottom3d && bottom3d->isVisibleTo(left),
+                      "P4F: 3D bottom-edge bolt-position control is visible");
+                if(bottom3d) {
+                    const auto previous=left->previewPlan();
+                    const mm::Vec3 v=previous.plates[0].v;
+                    bottom3d->setValue(75.0);
+                    QApplication::processEvents();
+                    const auto moved=left->previewPlan();
+                    const mm::Vec3 du=moved.boltGroups[0].origin-
+                                      previous.boltGroups[0].origin;
+                    const mm::Vec3 dl=moved.boltGroups[1].origin-
+                                      previous.boltGroups[1].origin;
+                    CHECK(moved.ok &&
+                          std::fabs(newBottom->value()-75.0)<1e-6 &&
+                          std::fabs(moved.plates[0].height-
+                                    previous.plates[0].height)<1e-6 &&
+                          std::fabs(du.x*v.x+du.y*v.y+du.z*v.z)<1e-6 &&
+                          std::fabs(dl.x*v.x+dl.y*v.y+dl.z*v.z-20.0)<1e-6,
+                          "P4F: 3D eB edit moves ONLY lower bolts; plate/right panel synchronized");
+                    bottom3d->setValue(55.0);
+                    QApplication::processEvents();
+                }
                 smallerH->setValue(350.0);
                 QApplication::processEvents();
                 CHECK(std::fabs(smallerH->value()-350.0)<0.01 &&
