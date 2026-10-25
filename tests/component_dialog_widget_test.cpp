@@ -752,13 +752,42 @@ int main(int argc, char** argv) {
                 CHECK(manualW->value()==0.0 &&
                       std::fabs(manualH->value()-600.0)<1e-6,
                       "P4D: editing eL releases only fixed plate width");
+                const auto beforeTop=left->previewPlan();
+                const mm::Vec3 earlierUpper=beforeTop.boltGroups[0].origin;
+                const mm::Vec3 earlierLower=beforeTop.boltGroups[1].origin;
+                const mm::Vec3 earlierPlate=beforeTop.plates[0].center;
                 adjustT->setValue(65.0);
                 QApplication::processEvents();
+                const auto afterTop=left->previewPlan();
+                const auto& v=afterTop.plates[0].v;
+                const auto alongV=[&](mm::Vec3 one,mm::Vec3 two) {
+                    const mm::Vec3 delta=one-two;
+                    return delta.x*v.x+delta.y*v.y+delta.z*v.z;
+                };
                 CHECK(std::fabs(manualH->value()-600.0)<1e-6 &&
-                      left && left->previewPlan().ok &&
+                      afterTop.ok &&
+                      std::fabs(afterTop.plates[0].height-600.0)<1e-6 &&
+                      std::fabs(alongV(afterTop.plates[0].center,earlierPlate))<1e-6 &&
+                      std::fabs(alongV(afterTop.boltGroups[0].origin,earlierUpper)+10.0)<1e-6 &&
+                      std::fabs(alongV(afterTop.boltGroups[1].origin,earlierLower))<1e-6 &&
                       std::fabs(left->boltOverlayMetrics("haunch_bolts_upper").topEdge
                                 -65.0)<1e-6,
-                      "P4E: editing eT retains fixed plate height and moves upper bolt rows");
+                      "P4F: fixed plate stays unchanged; editing eT moves ONLY upper bolt grid");
+                auto* adjustB=h40.findChild<QDoubleSpinBox*>(
+                    QStringLiteral("boltEdgeBottom"));
+                if(adjustB) {
+                    const mm::Vec3 beforeLower=afterTop.boltGroups[1].origin;
+                    const mm::Vec3 beforeUpper=afterTop.boltGroups[0].origin;
+                    adjustB->setValue(80.0);
+                    QApplication::processEvents();
+                    const auto& later=left->previewPlan();
+                    CHECK(later.ok &&
+                          std::fabs(later.plates[0].height-600.0)<1e-6 &&
+                          std::fabs(alongV(later.plates[0].center,earlierPlate))<1e-6 &&
+                          std::fabs(alongV(later.boltGroups[0].origin,beforeUpper))<1e-6 &&
+                          std::fabs(alongV(later.boltGroups[1].origin,beforeLower)-25.0)<1e-6,
+                          "P4F: fixed plate stays unchanged; editing eB moves ONLY lower bolt grid");
+                }
             }
 
             // Regression: both height and width must shrink to the
@@ -777,6 +806,22 @@ int main(int argc, char** argv) {
             CHECK(smallerH && smallerW && newTop && newBottom,
                   "P4E: plate dimensions and vertical bolt offsets editable");
             if(smallerH && smallerW && newTop && newBottom && left) {
+                // AUTO-sized end plate must not grow/shrink/shift on an
+                // upper or lower bolt-edge edit either (manual tested above).
+                const auto autoBefore=left->previewPlan();
+                newTop->setValue(75.0);
+                QApplication::processEvents();
+                const auto autoAfter=left->previewPlan();
+                CHECK(autoAfter.ok && autoBefore.ok &&
+                      std::fabs(autoAfter.plates[0].height-
+                                autoBefore.plates[0].height)<1e-6 &&
+                      std::fabs(autoAfter.plates[0].center.z-
+                                autoBefore.plates[0].center.z)<1e-6 &&
+                      std::fabs(left->boltOverlayMetrics("haunch_bolts_upper").topEdge
+                                -75.0)<1e-6,
+                      "P4F: eT moves bolts on auto-sized plate without changing plate height/position");
+                newTop->setValue(55.0);
+                QApplication::processEvents();
                 smallerH->setValue(350.0);
                 QApplication::processEvents();
                 CHECK(std::fabs(smallerH->value()-350.0)<0.01 &&
