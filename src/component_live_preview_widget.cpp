@@ -249,14 +249,18 @@ std::vector<std::wstring> ComponentLivePreviewWidget::visibleOverlayParams() con
     return names;
 }
 void ComponentLivePreviewWidget::centerSelection() {
-    // Pan WITHOUT modifying world coordinates or exploding/detaching
-    // children. Full parent context is still drawn in the same projection.
+    // Clicking a VISIBLE child must not repeatedly walk the whole model
+    // sideways. Only nudge the camera when a programmatically selected
+    // child is near/outside the viewport edge; preserve full parent context.
     const QPointF screen=project(roleAnchor(activeRole_));
-    // Keep parents in-frame: no large sudden camera jump when selecting
-    // a cap remote from the beam connection. Full zoom remains user-owned.
-    const QPointF change(width()*0.50-screen.x(),height()*0.51-screen.y());
-    pan_+=QPointF(std::clamp(change.x(),-width()*0.15,width()*0.15),
-                  std::clamp(change.y(),-height()*0.12,height()*0.12));
+    const double mx=width()*0.18, my=height()*0.18;
+    double dx=0.0,dy=0.0;
+    if(screen.x()<mx)dx=mx-screen.x();
+    else if(screen.x()>width()-mx)dx=width()-mx-screen.x();
+    if(screen.y()<my)dy=my-screen.y();
+    else if(screen.y()>height()-my)dy=height()-my-screen.y();
+    pan_+=QPointF(std::clamp(dx,-width()*0.15,width()*0.15),
+                  std::clamp(dy,-height()*0.12,height()*0.12));
 }
 std::string ComponentLivePreviewWidget::hitRole(QPoint mouse) const {
     // Bolt heads are thin lines: a proximity test makes them clickable.
@@ -280,6 +284,19 @@ std::string ComponentLivePreviewWidget::hitRole(QPoint mouse) const {
 }
 
 void ComponentLivePreviewWidget::setInput(ComponentInput input) {
+    // A different pair of members starts a new editing context. Edits to
+    // the SAME pair preserve role selection and user-controlled camera.
+    const bool differentMembers=haveInput_ &&
+        (input_.main.id!=input.main.id ||
+         input_.secondary.size()!=input.secondary.size() ||
+         (!input_.secondary.empty() && !input.secondary.empty() &&
+          input_.secondary.front().id!=input.secondary.front().id));
+    if(differentMembers) {
+        activeRole_.clear();
+        highlight_.clear();
+        pan_=QPointF{};
+        zoom_=1.0;
+    }
     input_=std::move(input);
     haveInput_=input_.main.id!=kInvalidEntityId && !input_.secondary.empty();
     recompute();
@@ -511,9 +528,25 @@ void ComponentLivePreviewWidget::drawModel(QPainter& p) {
             const auto vertices=plateOutline(plate,+1.0);
             anchors.insert(anchors.end(),vertices.begin(),vertices.end());
         }
-        addMember(faces,input_.main,anchors,plan_.cuts,QColor("#a5b5c5"),"column");
-        for(const auto& b:input_.secondary)
-            addMember(faces,b,anchors,plan_.cuts,QColor("#c5cdd6"),"beam");
+        // The native generator resolves column/beam by verticality even
+        // when the user picks beam first. The preview must agree with that
+        // physical role assignment rather than blindly trusting main/secondary.
+        const auto verticality=[](const MemberGeometry& m) {
+            const Vec3 d=minus(m.axisTo,m.axisFrom);
+            const double n=length(d);
+            return n>1e-9?std::fabs(d.z)/n:0.0;
+        };
+        const bool swapped=!input_.secondary.empty() &&
+            verticality(input_.main)+1e-6<verticality(input_.secondary.front());
+        addMember(faces,input_.main,anchors,plan_.cuts,
+                  swapped?QColor("#c5cdd6"):QColor("#a5b5c5"),
+                  swapped?"beam":"column");
+        for(std::size_t i=0;i<input_.secondary.size();++i) {
+            const bool isColumn=swapped && i==0;
+            addMember(faces,input_.secondary[i],anchors,plan_.cuts,
+                      isColumn?QColor("#a5b5c5"):QColor("#c5cdd6"),
+                      isColumn?"column":"beam");
+        }
     }
     for(std::size_t i=0;i<plan_.plates.size();++i) {
         const auto& plate=plan_.plates[i];
