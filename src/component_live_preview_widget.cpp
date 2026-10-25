@@ -179,8 +179,8 @@ ComponentLivePreviewWidget::ComponentLivePreviewWidget(QWidget* parent)
     // Short labels correspond to the SAME native schema parameters as the
     // real property panel. No second parameter source of truth.
     // Grouped by the physical child that the user can click.
-    // Seven bolt controls: two integer counts, pitch X/Y, M, hole and edge.
-    const std::array<std::tuple<const wchar_t*,const wchar_t*,const char*,QPointF>,18> defs{{
+    // Ten bolt controls: counts, pitches, M/hole and four independent edges.
+    const std::array<std::tuple<const wchar_t*,const wchar_t*,const char*,QPointF>,21> defs{{
         {L"haunchLength",L"L","haunch_web",QPointF(35,-90)},
         {L"haunchDepth",L"D","haunch_web",QPointF(-150,15)},
         {L"haunchTipDepth",L"tip","haunch_web",QPointF(45,75)},
@@ -196,7 +196,10 @@ ComponentLivePreviewWidget::ComponentLivePreviewWidget(QWidget* parent)
         {L"boltPitchY",L"p","haunch_bolts_upper",QPointF(55,55)},
         {L"boltDiameter",L"M","haunch_bolts_upper",QPointF(50,-75)},
         {L"holeDiameter",L"delik","haunch_bolts_upper",QPointF(50,-35)},
-        {L"boltEdge",L"e","haunch_bolts_upper",QPointF(-145,-65)},
+        {L"boltEdgeLeft",L"eL","haunch_bolts_upper",QPointF(-150,-65)},
+        {L"boltEdgeRight",L"eR","haunch_bolts_upper",QPointF(55,-115)},
+        {L"boltEdgeTop",L"eT","haunch_bolts_upper",QPointF(-150,145)},
+        {L"boltEdgeBottom",L"eB","haunch_bolts_upper",QPointF(55,145)},
         {L"stiffenerThickness",L"t stiff","haunch_beam_stiffener",QPointF(75,35)},
         {L"topPlateThickness",L"t cap","haunch_top_plate",QPointF(60,-70)}
     }};
