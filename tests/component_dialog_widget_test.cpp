@@ -1,16 +1,16 @@
-// UNIVERSAL COMPONENT DIALOG — Qt offscreen testi (Linux, Qt6 varken).
+// UNIVERSAL COMPONENT DIALOG — Qt offscreen testi (Linux/Windows, Qt6 varken).
 //
 // Widget'ın gerçek davranışını başsız (offscreen) doğrular: end plate şeması
 // kurulur, düzenlenmemiş değerler round-trip'te korunur (özellikle -1e9
 // "tanımsız" sentinel'leri — spinbox kelepçelememeli), bilinmeyen (ekstra)
 // parametreler korunur, fin plate şeması kurulur ve şema doğrulaması geçer.
-// Windows'ta bu test kurulmaz (model-maker exe'si görsel olarak aynı widget'ı
-// kullanır); Linux'ta Qt6 yoksa CMake bu testi hiç eklemez.
+// Windows ve Linux'ta Qt6 mevcutsa CMake bu testi ekler.
 
 #include "model_maker/component_dialog_widget.hpp"
 #include "model_maker/component_live_preview_widget.hpp"
 #include "model_maker/component_engine.hpp"
 #include <QDoubleSpinBox>
+#include <QMouseEvent>
 #include <algorithm>
 #include <cmath>
 
@@ -456,13 +456,24 @@ int main(int argc, char** argv) {
             left->selectRole("haunch_bolts_lower");
             QApplication::processEvents();
             const auto lower=left->visibleOverlayParams();
-            CHECK(lower.size()==3 &&
-                  std::find(lower.begin(),lower.end(),L"boltPitchX")!=lower.end(),
-                  "P4: lower bolt group shows editable pitch/diameter");
-            left->selectRole("");
+            CHECK(lower.size()==4 &&
+                  std::find(lower.begin(),lower.end(),L"boltPitchX")!=lower.end() &&
+                  std::find(lower.begin(),lower.end(),L"boltPitchY")!=lower.end() &&
+                  std::find(lower.begin(),lower.end(),L"boltDiameter")!=lower.end() &&
+                  std::find(lower.begin(),lower.end(),L"boltEdge")!=lower.end(),
+                  "P4: lower bolt group exposes all four shared bolt parameters");
+            // Exercise the real mouse path, not just the test selection API.
+            // Top-left empty background must clear the active overlays.
+            const QPointF empty(3.0,3.0);
+            QMouseEvent down(QEvent::MouseButtonPress,empty,
+                             Qt::LeftButton,Qt::LeftButton,Qt::NoModifier);
+            QMouseEvent up(QEvent::MouseButtonRelease,empty,
+                           Qt::LeftButton,Qt::NoButton,Qt::NoModifier);
+            QApplication::sendEvent(left,&down);
+            QApplication::sendEvent(left,&up);
             QApplication::processEvents();
-            CHECK(left->visibleOverlayParams().empty(),
-                  "P4: empty selection clears overlays while 3D context remains");
+            CHECK(left->activeRole().empty() && left->visibleOverlayParams().empty(),
+                  "P4: clicking empty viewport clears overlay without deleting context");
             left->selectRole("haunch_web");
             QApplication::processEvents();
         }
