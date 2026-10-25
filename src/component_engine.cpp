@@ -1710,11 +1710,8 @@ GenerationPlan generateHaunch40(const ComponentInput& input) noexcept {
     const double flangeT = paramAsDouble(input.params,L"haunchFlangeThickness",10.0);
     const double endT = paramAsDouble(input.params,L"endPlateThickness",20.0);
     const double gap = paramAsDouble(input.params,L"gap",0.0);
-    const double legacyEdge=paramAsDouble(input.params,L"boltEdge",35.0);
     const double edgeL=paramAsDouble(input.params,L"boltEdgeLeft",35.0);
     const double edgeR=paramAsDouble(input.params,L"boltEdgeRight",35.0);
-    const double edgeT=paramAsDouble(input.params,L"boltEdgeTop",55.0);
-    const double edgeB=paramAsDouble(input.params,L"boltEdgeBottom",55.0);
     struct BoltRowGroup {
         int nx{2}, ny{2};
         double pitchX{120.0}, pitchY{80.0};
