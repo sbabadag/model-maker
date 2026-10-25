@@ -504,6 +504,19 @@ int main() {
                 }
             }
         }
+        // Do not let a legacy manual height bypass real hole containment
+        // after a strongly asymmetric (or externally supplied) edge edit.
+        {
+            ComponentInput unsafe=in;
+            unsafe.params={
+                {L"endPlateWidth",CompParamValue{300.0}},
+                {L"endPlateHeight",CompParamValue{560.0}},
+                {L"boltEdgeTop",CompParamValue{200.0}},
+                {L"boltEdgeBottom",CompParamValue{55.0}}
+            };
+            check(!reg.generate(L"tekla_haunch_40",unsafe).ok,
+                  "P4D: explicit plate height rejects lower holes outside its real edge");
+        }
         // Old saved records with only boltEdge must retain their previous
         // layout without requiring an MMW8 file migration.
         {
