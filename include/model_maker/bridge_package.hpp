@@ -166,6 +166,8 @@ struct BridgeObject {
     std::string confidence;    // documented/observed/inferred/unresolved/unsupported
     std::string unsupportedReason;
     std::optional<BridgeBBox> bbox;  // geometry dosyasindan yuklenir (varsa)
+    std::string platePartMark;  // Stage 3H optional Tekla Part.GetPartMark
+    std::optional<BridgeTransform> plateDstvFrame;  // Part.GetDSTVCoordinateSystem
     std::optional<BridgeBoltGroupInfo> boltGroup;  // kind == BoltGroup
     std::optional<BridgeWeldInfo> weld;            // kind == Weld
     std::optional<BridgeTopology> topology;        // olculen yuz/loop sayimlari
