@@ -137,6 +137,7 @@ private:
                                const CompParamValue& value);
     void highlightParamRow(const std::wstring& paramName);
     void updatePreviewFromForm();
+    void enforceHaunchInputLimits();
     void updateFormFromPreview(const std::wstring& name,double value);
     void addParamRow(QFormLayout* form, QWidget* box, const std::wstring& paramName,
                      std::vector<std::wstring>& ungrouped);
@@ -175,6 +176,7 @@ private:
     QDialog* weldDialog_{};                         // "Welds..." dugmesinin actigi pencere
     QCheckBox* weldsCheck_{};                       // ust cubuk: kaynaklar acik/kapali
     std::wstring highlightedRow_;
+    double haunchBeamHeight_{0.0};  // actual selected beam, for bolt row fit
 };
 
 } // namespace mm
