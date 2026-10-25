@@ -480,11 +480,11 @@ int main(int argc, char** argv) {
                   std::find(lower.begin(),lower.end(),L"upperBoltEdgeClear")==lower.end(),
                   "P4G: lower selects own six group parameters and ONLY bottom net edge");
             const auto low=left->boltOverlayMetrics("haunch_bolts_lower");
-            const auto up=left->boltOverlayMetrics("haunch_bolts_upper");
-            CHECK(low.valid && up.valid && low.count==4 &&
-                  up.count==4 && low.totalCount==8 &&
+            const auto upperMetrics=left->boltOverlayMetrics("haunch_bolts_upper");
+            CHECK(low.valid && upperMetrics.valid && low.count==4 &&
+                  upperMetrics.count==4 && low.totalCount==8 &&
                   std::fabs(low.bottomEdge-55.0)<1e-6 &&
-                  std::fabs(up.topEdge-55.0)<1e-6,
+                  std::fabs(upperMetrics.topEdge-55.0)<1e-6,
                   "P4G: migrated defaults preserve physical bolt position");
             left->selectRole("haunch_bolts_upper");
             QApplication::processEvents();
