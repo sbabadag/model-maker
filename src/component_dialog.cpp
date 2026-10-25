@@ -607,27 +607,26 @@ ComponentDialogDefinition haunch40DialogDefinition() noexcept {
     const auto tab=[](const wchar_t* id,const wchar_t* title,
                        std::vector<std::wstring> fields) {
         ComponentDialogGroup group;
-        const std::string idStr(id), titleStr(title);
-        group.id=std::wstring(idStr.begin(),idStr.end());
-        group.title=std::wstring(titleStr.begin(),titleStr.end());
+        group.id=id;
+        group.title=title;
         group.paramNames=std::move(fields);
         group.asTab=true;
         return group;
     };
     def.schema.groups={
-        tab("picture","Olculer",
+        tab(L"picture","Olculer",
             {L"haunchLength",L"haunchDepth",L"haunchTipDepth",L"gap"}),
-        tab("haunch","Haunch",
+        tab(L"haunch","Haunch",
             {L"haunchWebThickness",L"haunchFlangeThickness",L"haunchFlangeWidth",
              L"topPlateThickness",L"topPlateLength",L"plateMaterial"}),
-        tab("endplate","Alin levhasi",
+        tab(L"endplate","Alin levhasi",
             {L"endPlateThickness",L"endPlateWidth",L"endPlateHeight"}),
-        tab("stiffeners","Berkitmeler",
+        tab(L"stiffeners","Berkitmeler",
             {L"createBeamStiffener",L"stiffenerThickness"}),
-        tab("bolts","Bulonlar",
+        tab(L"bolts","Bulonlar",
             {L"boltDiameter",L"holeDiameter",L"boltPitchX",L"boltPitchY",
              L"boltEdge",L"grade"}),
-        tab("welds","Kaynaklar",
+        tab(L"welds","Kaynaklar",
             {L"createWelds",L"weldSize"})
     };
     return def;
