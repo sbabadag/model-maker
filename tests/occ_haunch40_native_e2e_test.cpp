@@ -9,6 +9,9 @@
 #include "model_maker/occ_solid_store.hpp"
 #include "model_maker/profile_database.hpp"
 
+#include <BRepBndLib.hxx>
+#include <Bnd_Box.hxx>
+
 #include <cmath>
 #include <cstdio>
 
@@ -87,6 +90,17 @@ int main() {
     }
     ck(gp.plates.size()==4,"4 generated plates");
     ck(gp.boltGroups.size()==2,"2x2 + 2x2 bolts");
+    // The plate centre and actual OCC solid must be at the TOP of column,
+    // not hovering over the attached IPE beam.
+    ck(gp.plates.size()>=4 && std::fabs(gp.plates[3].center.z-3005.0)<0.01,
+       "Stage40 cap plate placed on column top, not beam top");
+    if(gp.plates.size()>=4)
+        ck(gp.plates[3].axis.z>0.999,
+           "Stage40 cap plate outward +Z horizontal normal");
+    if(gp.welds.size()>=4)
+        ck(gp.welds[3].partA==s.col,
+           "Stage40 cap weld now references selected column");
+
     const ComponentPlan cp=componentPlanFromGenerationPlan(gp);
     ck(cp.ok,"ComponentPlan valid");
     if(!cp.ok) return 1;
@@ -117,6 +131,21 @@ int main() {
         ck(saved.ownedPlateIds.size()==4,"4 owned physical plate entities");
         ck(saved.ownedBoltGroupIds.size()==2,"2 owned bolt groups");
         ck(saved.typeId==L"tekla_haunch_40","Native identity persisted");
+        const auto capIt=result.roleToEntity.find("haunch_top_plate");
+        ck(capIt!=result.roleToEntity.end(),"Stage40 stable cap child role");
+        if(capIt!=result.roleToEntity.end()) {
+            const TopoDS_Shape* cap=s.store->find(capIt->second);
+            ck(cap && !cap->IsNull(),"Stage40 real OCC cap solid");
+            if(cap && !cap->IsNull()) {
+                Bnd_Box box;
+                BRepBndLib::Add(*cap,box);
+                Standard_Real xmin=0,ymin=0,zmin=0,xmax=0,ymax=0,zmax=0;
+                box.Get(xmin,ymin,zmin,xmax,ymax,zmax);
+                ck(std::fabs(zmin-3000.0)<0.1 &&
+                   std::fabs(zmax-3010.0)<0.1,
+                   "Stage40 OCC column cap lower face Z3000, upper Z3010");
+            }
+        }
         const auto endIt=result.roleToEntity.find("haunch_end_plate");
         ck(endIt!=result.roleToEntity.end(),
            "Hotfix end plate semantic role preserved");
