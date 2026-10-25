@@ -156,8 +156,12 @@ TopoDS_Shape ComponentMaterializer::buildPlateSolid(const PlateSpec& p) {
             arcMid.push_back(gp_Pnt());
             continue;
         }
-        const double a = std::min(ch->h, p.width * 0.5);   // u yonunde bacak
-        const double b = std::min(ch->v, p.height * 0.5);  // v yonunde bacak
+        // A single chamfer can describe an almost full-edge tapered haunch
+        // web. Only multiple adjacent corner chamfers need the legacy half-
+        // dimension overlap cap. Leave tiny material at the far web tip.
+        const double maxFraction = (p.chamfers.size() == 1) ? 0.98 : 0.5;
+        const double a = std::min(ch->h, p.width * maxFraction);
+        const double b = std::min(ch->v, p.height * maxFraction);
         // Kontur saat yonunun tersi (0->1->2->3). Kosede gelen kenar ve giden kenar:
         // gelen nokta kosenin "onceki" kenarinda, giden nokta "sonraki" kenarinda.
         // Kose (cu,cv); ic yon (-sx,-sy). P_u: u-kenari uzerinde (cu - sx*a, cv),
