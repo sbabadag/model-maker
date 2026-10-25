@@ -546,12 +546,36 @@ void ComponentLivePreviewWidget::positionEditors() {
         const std::string anchorRole=(activeRole_=="haunch_bolts_lower" &&
                                       c.targetRole=="haunch_bolts_upper")
                                        ?activeRole_:c.targetRole;
-        const QPointF q=project(roleAnchor(anchorRole))+c.shift;
-        const int xx=std::clamp(static_cast<int>(q.x()),4,
-                                std::max(4,width()-c.spin->width()-4));
-        const int yy=std::clamp(static_cast<int>(q.y()),26,
-                                std::max(26,height()-c.spin->height()-8));
-        c.spin->move(xx,yy);
+        const bool boltRole=(activeRole_=="haunch_bolts_upper" ||
+                             activeRole_=="haunch_bolts_lower");
+        if(boltRole && c.targetRole=="haunch_bolts_upper") {
+            // Never clamp ten independent editors onto the same bottom
+            // edge: that previously made eT/eB appear uneditable.
+            // Keep them in a consistent two-column five-row inspector.
+            static const std::array<std::wstring,10> order{{
+                L"boltCountX",L"boltCountY",
+                L"boltPitchX",L"boltPitchY",
+                L"boltDiameter",L"holeDiameter",
+                L"boltEdgeLeft",L"boltEdgeRight",
+                L"boltEdgeTop",L"boltEdgeBottom"
+            }};
+            const auto it=std::find(order.begin(),order.end(),c.name);
+            if(it!=order.end()) {
+                const int index=static_cast<int>(it-order.begin());
+                // Title occupies the first 60px. At minimum 380px high,
+                // last editor stays within the viewport and is not occluded.
+                const int xx=8+(index%2)*108;
+                const int yy=85+(index/2)*52;
+                c.spin->move(xx,yy);
+            }
+        } else {
+            const QPointF q=project(roleAnchor(anchorRole))+c.shift;
+            const int xx=std::clamp(static_cast<int>(q.x()),4,
+                                    std::max(4,width()-c.spin->width()-4));
+            const int yy=std::clamp(static_cast<int>(q.y()),26,
+                                    std::max(26,height()-c.spin->height()-8));
+            c.spin->move(xx,yy);
+        }
         c.spin->show();
         c.spin->raise();
     }
