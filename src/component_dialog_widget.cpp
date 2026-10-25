@@ -551,6 +551,7 @@ void ComponentDialogWidget::addParamRow(QFormLayout* form, QWidget* box,
     const CompParam* stored = findParam(current_, pn);
     const CompParamValue value = stored ? stored->value : paramDefaultValue(*spec);
     QWidget* editor = buildEditor(*spec, value, box);
+    if(editor)editor->setObjectName(QString::fromStdWString(pn));
 
     auto* labelHost = new QWidget(box);
     auto* labelRow = new QHBoxLayout(labelHost);
@@ -612,6 +613,7 @@ QWidget* ComponentDialogWidget::makeBareEditor(const std::wstring& pn, QWidget* 
     const CompParamValue value = stored ? stored->value : paramDefaultValue(*spec);
     QWidget* editor = buildEditor(*spec, value, parent);
     if (!editor) return nullptr;
+    editor->setObjectName(QString::fromStdWString(pn));
     // Dar hucre: ok dugmesiz, ek-siz.
     if (auto* d = qobject_cast<QDoubleSpinBox*>(editor)) {
         d->setSuffix(QString());
