@@ -150,6 +150,36 @@ std::vector<CompParam> migrateHaunch40Edges(const std::vector<CompParam>& values
     for(const auto& entry:defaults)
         if(!findParam(values,entry.name))
             result.push_back(CompParam{entry.name,CompParamValue{entry.value}});
+    // Migration keeps each group's ORIGINAL common values when a saved
+    // component predates independent upper/lower patterns. Once present,
+    // scoped parameters become the sole source of truth for that group.
+    const auto inherit=[&](const wchar_t* key,CompParamValue v) {
+        if(!findParam(values,key))
+            result.push_back(CompParam{key,std::move(v)});
+    };
+    const double dia=paramAsDouble(values,L"boltDiameter",20.0);
+    const double hole=paramAsDouble(values,L"holeDiameter",22.0);
+    for(const auto prefix:{std::wstring(L"upper"),std::wstring(L"lower")}) {
+        inherit((prefix+L"BoltCountX").c_str(),
+                CompParamValue{paramAsInt(values,L"boltCountX",2)});
+        inherit((prefix+L"BoltCountY").c_str(),
+                CompParamValue{paramAsInt(values,L"boltCountY",2)});
+        inherit((prefix+L"BoltPitchX").c_str(),
+                CompParamValue{paramAsDouble(values,L"boltPitchX",120.0)});
+        inherit((prefix+L"BoltPitchY").c_str(),
+                CompParamValue{paramAsDouble(values,L"boltPitchY",80.0)});
+        inherit((prefix+L"BoltDiameter").c_str(),CompParamValue{dia});
+        inherit((prefix+L"HoleDiameter").c_str(),CompParamValue{hole});
+    }
+    // New eT/eB inputs are CLEAR distances to the actual HOLE CIRCUMFERENCE,
+    // not centre-to-edge dimensions. Existing data stored centres, so use
+    // the group's respective historic hole radius on migration.
+    inherit(L"upperBoltEdgeClear",CompParamValue{std::max(0.0,
+        paramAsDouble(values,L"boltEdgeTop",edge+20.0)-
+        paramAsDouble(result,L"upperHoleDiameter",hole)*0.5)});
+    inherit(L"lowerBoltEdgeClear",CompParamValue{std::max(0.0,
+        paramAsDouble(values,L"boltEdgeBottom",edge+20.0)-
+        paramAsDouble(result,L"lowerHoleDiameter",hole)*0.5)});
     return result;
 }
 
@@ -1614,6 +1644,24 @@ ComponentType haunch40ComponentType() noexcept {
                     L"ust levha kenari - ust civata merkezi"),
         lengthParam(L"boltEdgeBottom", L"mm", 55.0, 20.0, 200.0,
                     L"alt levha kenari - alt civata merkezi"),
+        // Independent group-owned inputs. The legacy common parameters
+        // remain in persisted models, but are not shown on the new tabs.
+        intParam(L"upperBoltCountX",2,1,4,L"ust grup yatay adet"),
+        intParam(L"upperBoltCountY",2,1,4,L"ust grup dikey adet"),
+        lengthParam(L"upperBoltPitchX",L"mm",120.0,40.0,500.0,L"ust yatay aralik"),
+        lengthParam(L"upperBoltPitchY",L"mm",80.0,40.0,500.0,L"ust dikey aralik"),
+        lengthParam(L"upperBoltDiameter",L"mm",20.0,12.0,36.0,L"ust bulon capi"),
+        lengthParam(L"upperHoleDiameter",L"mm",22.0,13.0,50.0,L"ust delik capi"),
+        lengthParam(L"upperBoltEdgeClear",L"mm",44.0,10.0,190.0,
+                    L"levha ust kenarindan ust delik disina net mesafe"),
+        intParam(L"lowerBoltCountX",2,1,4,L"alt grup yatay adet"),
+        intParam(L"lowerBoltCountY",2,1,4,L"alt grup dikey adet"),
+        lengthParam(L"lowerBoltPitchX",L"mm",120.0,40.0,500.0,L"alt yatay aralik"),
+        lengthParam(L"lowerBoltPitchY",L"mm",80.0,40.0,500.0,L"alt dikey aralik"),
+        lengthParam(L"lowerBoltDiameter",L"mm",20.0,12.0,36.0,L"alt bulon capi"),
+        lengthParam(L"lowerHoleDiameter",L"mm",22.0,13.0,50.0,L"alt delik capi"),
+        lengthParam(L"lowerBoltEdgeClear",L"mm",44.0,10.0,190.0,
+                    L"levha alt kenarindan alt delik disina net mesafe"),
         enumParam(L"grade", L"8.8", {L"8.8", L"10.9"},
                   L"bulon kalitesi"),
         boolParam(L"createWelds", true, L"haunch kaynaklari"),
@@ -1667,52 +1715,65 @@ GenerationPlan generateHaunch40(const ComponentInput& input) noexcept {
     const double edgeR=paramAsDouble(input.params,L"boltEdgeRight",35.0);
     const double edgeT=paramAsDouble(input.params,L"boltEdgeTop",55.0);
     const double edgeB=paramAsDouble(input.params,L"boltEdgeBottom",55.0);
-    const double bD = paramAsDouble(input.params,L"boltDiameter",20.0);
-    const double holeD = paramAsDouble(input.params,L"holeDiameter",22.0);
-    const double pitchX = paramAsDouble(input.params,L"boltPitchX",120.0);
-    const double pitchY = paramAsDouble(input.params,L"boltPitchY",80.0);
-    const int countX=paramAsInt(input.params,L"boltCountX",2);
-    const int countY=paramAsInt(input.params,L"boltCountY",2);
-    const double spanX=(countX-1)*pitchX;
-    const double spanY=(countY-1)*pitchY;
-    const double hBeam = p.beam.secHeight;
-    const double wBeam = p.beam.secWidth;
-    // Auto-sized end plate must satisfy the SAME clearances as an
-    // explicitly dimensioned plate. Small edge values and larger holes
-    // previously made the automatic plate width fail its own validation.
-    // eL/eR/eT/eB are HOLE-CENTRE-to-PLATE-edge dimensions.
-    // Preserve minimum beam flange cover for a single-column group:
-    // where the beam width governs, eR is an achieved MINIMUM, and
-    // the measured overlay reports its actual larger dimension.
-    const double plateW = std::max({wBeam+20.0,spanX+edgeL+edgeR,
-                                    spanX+holeD+15.0});
-    // The plate has its OWN dimensions: eT/eB only move the bolt groups.
-    // Keep the historic auto height tied to structural beam/haunch + the
-    // persisted legacy allowance, NEVER to the edited bolt offsets.
-    const double plateH = hBeam+D+2.0*legacyEdge;
-    const double givenW = paramAsDouble(input.params,L"endPlateWidth",0.0);
-    const double givenH = paramAsDouble(input.params,L"endPlateHeight",0.0);
-    const double actualW = givenW>0 ? givenW : plateW;
-    const double actualH = givenH>0 ? givenH : plateH;
+    struct BoltRowGroup {
+        int nx{2}, ny{2};
+        double pitchX{120.0}, pitchY{80.0};
+        double diameter{20.0}, hole{22.0}, clear{44.0};
+        double spanX{120.0}, spanY{80.0};
+    };
+    const auto readGroup=[&](const wchar_t* which,double fallbackClear) {
+        const std::wstring prefix(which);
+        BoltRowGroup g;
+        g.nx=paramAsInt(input.params,prefix+L"BoltCountX",2);
+        g.ny=paramAsInt(input.params,prefix+L"BoltCountY",2);
+        g.pitchX=paramAsDouble(input.params,prefix+L"BoltPitchX",120.0);
+        g.pitchY=paramAsDouble(input.params,prefix+L"BoltPitchY",80.0);
+        g.diameter=paramAsDouble(input.params,prefix+L"BoltDiameter",20.0);
+        g.hole=paramAsDouble(input.params,prefix+L"HoleDiameter",22.0);
+        g.clear=paramAsDouble(input.params,prefix+L"BoltEdgeClear",fallbackClear);
+        g.spanX=(g.nx-1)*g.pitchX;
+        g.spanY=(g.ny-1)*g.pitchY;
+        return g;
+    };
+    const BoltRowGroup upper=readGroup(L"upper",44.0);
+    const BoltRowGroup lower=readGroup(L"lower",44.0);
+    const double edgeT=upper.clear+upper.hole*0.5;
+    const double edgeB=lower.clear+lower.hole*0.5;
+    const double maxSpanX=std::max(upper.spanX,lower.spanX);
+    const double maxHoleSpanX=std::max(upper.spanX+upper.hole,
+                                        lower.spanX+lower.hole);
+    const double hBeam=p.beam.secHeight, wBeam=p.beam.secWidth;
+    const double legacyEdge=paramAsDouble(input.params,L"boltEdge",35.0);
+    // End-plate size and centre depend ONLY on the plate dimensions and
+    // original structural auto-sizing policy, not on either bolt offset.
+    const double plateW=std::max({wBeam+20.0,
+                                  maxSpanX+edgeL+edgeR,
+                                  maxHoleSpanX+15.0});
+    const double plateH=hBeam+D+2.0*legacyEdge;
+    const double givenW=paramAsDouble(input.params,L"endPlateWidth",0.0);
+    const double givenH=paramAsDouble(input.params,L"endPlateHeight",0.0);
+    const double actualW=givenW>0.0?givenW:plateW;
+    const double actualH=givenH>0.0?givenH:plateH;
     const double flWparam=paramAsDouble(input.params,L"haunchFlangeWidth",0.0);
-    const double flW=flWparam>0 ? flWparam : wBeam;
-    // When endPlateHeight is explicit, BOTH bolt grids are laid out
-    // from that plate's upper/lower edges, not frozen against the original
-    // beam/haunch outer boundaries. The allowable minimum is therefore
-    // governed by bolt centres and the two opposing groups, not hBeam+D.
-    // Strict clearance prevents hole overlap at the innermost rows.
-    const double minimumPlateH=edgeT+edgeB+2.0*spanY+holeD+0.2;
-    if (!(L > 80.0 && D > tip+25.0 && tip > 5.0 && webT > 0.0 &&
-          flangeT > 0.0 && endT > 0.0 && holeD >= bD &&
-          holeD > 0.0 && pitchX > holeD && pitchY > holeD &&
-          countX>=1 && countX<=4 && countY>=1 && countY<=4 &&
-          edgeL>holeD*0.5 && edgeR>holeD*0.5 &&
-          edgeT>holeD*0.5 && edgeB>holeD*0.5 &&
-          flW >= webT && actualW+1e-6 >= spanX + edgeL + edgeR &&
-          actualW >= spanX + holeD + 15.0 &&
-          actualH+1e-6>=minimumPlateH)) {
+    const double flW=flWparam>0.0?flWparam:wBeam;
+    const auto validGroup=[](const BoltRowGroup& g) {
+        return g.nx>=1 && g.nx<=4 && g.ny>=1 && g.ny<=4 &&
+               g.hole>=g.diameter && g.hole>0.0 &&
+               g.pitchX>g.hole && g.pitchY>g.hole &&
+               g.clear>0.0;
+    };
+    const double minimumPlateH=edgeT+edgeB+upper.spanY+lower.spanY+
+                               (upper.hole+lower.hole)*0.5+0.2;
+    if(!(L>80.0 && D>tip+25.0 && tip>5.0 && webT>0.0 &&
+         flangeT>0.0 && endT>0.0 && flW>=webT &&
+         validGroup(upper) && validGroup(lower) &&
+         edgeL>std::max(upper.hole,lower.hole)*0.5 &&
+         edgeR>std::max(upper.hole,lower.hole)*0.5 &&
+         actualW+1e-6>=maxSpanX+edgeL+edgeR &&
+         actualW>=maxHoleSpanX+15.0 &&
+         actualH+1e-6>=minimumPlateH)) {
         plan.ok=false;
-        plan.error=L"Haunch 40: haunch/levha/bulon olculeri tutarsiz";
+        plan.error=L"Haunch 40: bagimsiz ust/alt bulon veya levha olculeri tutarsiz";
         return plan;
     }
     const auto add=[](Vec3 a,Vec3 b) {
@@ -1883,9 +1944,11 @@ GenerationPlan generateHaunch40(const ComponentInput& input) noexcept {
     // Changing eT shifts ONLY the upper bolt group; changing eB shifts
     // ONLY the lower group. The end plate remains unchanged in both auto
     // and manual sizing modes. Legacy eT=eB=legacyEdge+20 retains old rows.
-    const double upperCenter=plateCenterV+actualH*0.5-edgeT-spanY*0.5;
-    const double lowerCenter=plateCenterV-actualH*0.5+edgeB+spanY*0.5;
-    if(upperCenter-lowerCenter <= spanY+holeD+0.1) {
+    const double upperCenter=plateCenterV+actualH*0.5-edgeT-upper.spanY*0.5;
+    const double lowerCenter=plateCenterV-actualH*0.5+edgeB+lower.spanY*0.5;
+    if(upperCenter-lowerCenter <=
+       (upper.spanY+lower.spanY)*0.5+
+       (upper.hole+lower.hole)*0.5+0.1) {
         plan.ok=false;
         plan.error=L"Haunch 40: iki bulon grubu alin levhasina sigmiyor";
         return plan;
@@ -1902,7 +1965,7 @@ GenerationPlan generateHaunch40(const ComponentInput& input) noexcept {
     const double gripLength=endT+gap+p.col.secFlangeThickness;
     const std::wstring gradeW=paramAsString(input.params,L"grade",L"8.8");
     const std::string grade(gradeW.begin(),gradeW.end());
-    const auto pushBolts=[&](const char* role,double offset) {
+    const auto pushBolts=[&](const char* role,double offset,const BoltRowGroup& g) {
         BoltGroup bg;
         // Use the SAME measured plate frame for both groups. BoltFrame's
         // second in-plane vector is axis CROSS xDir = end.v (right-handed).
@@ -1918,20 +1981,20 @@ GenerationPlan generateHaunch40(const ComponentInput& input) noexcept {
         // A manually fixed plate width preserves the historical centered
         // bolt group. Editing eL/eR switches that fixed dimension to auto;
         // then the exact entered asymmetric left/right edges take effect.
-        const double startX=givenW>0.0 ? -spanX*0.5
+        const double startX=givenW>0.0 ? -g.spanX*0.5
                                        : -actualW*0.5+edgeL;
         bg.origin=add(add(groupCentre,scale(end.u,startX)),
-                      scale(end.v,-spanY*0.5));
+                      scale(end.v,-g.spanY*0.5));
         // The shank centre is in the real plate+column-flange grip stack,
         // not at the end plate midplane or column section centreline.
         bg.origin=add(bg.origin,
                       scale(end.axis,-0.5*(gap+p.col.secFlangeThickness)));
         bg.axis=end.axis;
         bg.xDir=end.u;
-        bg.countX=countX;bg.countY=countY;
-        bg.spacingX=pitchX;bg.spacingY=pitchY;
-        bg.params.nominalDiameter=bD;
-        bg.params.holeDiameter=holeD;
+        bg.countX=g.nx;bg.countY=g.ny;
+        bg.spacingX=g.pitchX;bg.spacingY=g.pitchY;
+        bg.params.nominalDiameter=g.diameter;
+        bg.params.holeDiameter=g.hole;
         bg.params.grade=grade;
         bg.params.hasHead=true;
         bg.params.hasNut=true;
@@ -1946,8 +2009,8 @@ GenerationPlan generateHaunch40(const ComponentInput& input) noexcept {
         plan.boltGroups.push_back(std::move(bg));
         plan.boltGroupKeys.push_back(role);
     };
-    pushBolts("haunch_bolts_upper",upperCenter);
-    pushBolts("haunch_bolts_lower",lowerCenter);
+    pushBolts("haunch_bolts_upper",upperCenter,upper);
+    pushBolts("haunch_bolts_lower",lowerCenter,lower);
 
     // Identified semantic weld relationships. No automatic weld-to-column
     // for the bolted end plate; it is welded to the secondary beam.
