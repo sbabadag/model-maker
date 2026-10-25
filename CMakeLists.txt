@@ -467,6 +467,14 @@ if(BUILD_TESTING)
         MM_BRIDGE_V31_EXAMPLES_DIR="${CMAKE_SOURCE_DIR}/tools/tekla_bridge_v31/examples")
     add_test(NAME model_maker_bridge_v31_package_test COMMAND model_maker_bridge_v31_package_test)
 
+    # V3.1 Stage 3C: source-observed-only hole drilling guard, without OCC.
+    # Optional live 146 package can be passed to executable for manual smoke.
+    add_executable(model_maker_bridge_auto_drill_policy_test
+        tests/bridge_auto_drill_policy_test.cpp)
+    target_link_libraries(model_maker_bridge_auto_drill_policy_test PRIVATE model_maker_core)
+    add_test(NAME model_maker_bridge_auto_drill_policy_test
+        COMMAND model_maker_bridge_auto_drill_policy_test)
+
     # TEKLA -> NATIVE PARAMETRIC COMPONENT esleme: 146 paketini okur, parametreleri
     # provenance ile cikarir, native generator esdegerligini degerlendirir. OCC'siz.
     add_executable(model_maker_bridge_native_mapper_test tests/bridge_native_mapper_test.cpp)
