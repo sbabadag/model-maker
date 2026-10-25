@@ -28,6 +28,7 @@
 #include <QScreen>
 #include <QFrame>
 #include <QScrollArea>
+#include <QSignalBlocker>
 #include <QSpinBox>
 #include <QTabWidget>
 #include <QTableWidget>
