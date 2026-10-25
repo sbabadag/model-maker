@@ -1540,6 +1540,25 @@ void ComponentDialogWidget::enforceHaunchInputLimits(const std::wstring& changed
             minExplicit(L"endPlateHeight",minHeight(upper,lower));
         }
     }
+    // When a user shortens the haunch (thus reducing AUTO plate height),
+    // keep the row counts and clear offsets; reduce only the necessary
+    // pitch(es) rather than losing a bolt row or displaying stale geometry.
+    // This path is not taken during either group's edge-offset edit.
+    if(height>0.0 &&
+       (changed==L"haunchDepth" || changed==L"haunchTipDepth") &&
+       !fits(upper,lower)) {
+        auto shrinkPitch=[&](Group& g,const Group& other) {
+            if(g.ny<=1)return;
+            const double room=height-(g.clear+other.clear+
+                  g.hole+other.hole+other.spanY()+0.20);
+            bounds(g.prefix+L"BoltPitchY",
+                   std::max(40.0,g.hole+0.01),
+                   std::max(40.0,room/(g.ny-1)));
+            g=read(g.prefix.c_str());
+        };
+        shrinkPitch(upper,lower);
+        if(!fits(upper,lower))shrinkPitch(lower,upper);
+    }
     const double holeMax=std::max(upper.hole,lower.hole);
     const double minSide=std::max(20.0,holeMax*0.5+0.20);
     bounds(L"boltEdgeLeft",minSide,200.0);
