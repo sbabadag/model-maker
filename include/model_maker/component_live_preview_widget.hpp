@@ -39,6 +39,20 @@ public:
     std::string activeRole() const { return activeRole_; }
     void selectRole(const std::string& role);  // GUI + automated tests
     std::vector<std::wstring> visibleOverlayParams() const;
+    // P4B: measured from actual generated bolt origins in the selected
+    // end-plate local frame (edge distances are centre-to-plate-edge, mm).
+    struct BoltOverlayMetrics {
+        bool valid{false};
+        int count{0}, totalCount{0}, rows{0}, columns{0};
+        double nominalDiameter{0.0}, holeDiameter{0.0};
+        double pitchX{0.0}, pitchY{0.0};
+        double leftEdge{0.0}, rightEdge{0.0};
+        double topEdge{0.0}, bottomEdge{0.0};
+        double xmin{0.0}, xmax{0.0}, ymin{0.0}, ymax{0.0};
+        double plateWidth{0.0}, plateHeight{0.0}, plateThickness{0.0};
+        Vec3 plateCenter{}, plateU{}, plateV{}, plateAxis{};
+    };
+    BoltOverlayMetrics boltOverlayMetrics(const std::string& role) const;
     // Read-only anchor for consistent viewport labels and pointer regressions.
     QPointF roleScreenAnchor(const std::string& role) const;
     // P6 diagnostics: all child geometry is recomputed from ONE generator plan.
@@ -88,6 +102,7 @@ private:
     void positionEditors();
     QPointF project(Vec3 p) const;
     void drawModel(QPainter& p);
+    void drawBoltOverlay(QPainter& p, const BoltOverlayMetrics& m);
     Vec3 roleAnchor(const std::string& role) const;
     std::string hitRole(QPoint pos) const;
     void centerSelection();
