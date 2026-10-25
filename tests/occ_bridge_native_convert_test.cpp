@@ -21,6 +21,8 @@
 
 #include <cmath>
 #include <cstdio>
+#include <filesystem>
+#include <fstream>
 #include <vector>
 
 using namespace mm;
@@ -207,6 +209,70 @@ int main() {
         check(s.doc.componentInstances().size() == oldComps &&
               s.doc.models().size() == oldModels,
               "native safety: Document unchanged after rejected conversion");
+    }
+
+    // --- Stage 4: real NC1 evidence -> editable native 146 with six holes -----
+    {
+        S s = makeSetup();
+        s.doc.setTeklaGuid(s.colId, "c1");
+        s.doc.setTeklaGuid(s.beamId, "b1");
+        BridgePackage pkg=makePackage();
+        auto& sourcePlate=pkg.objects[0];
+        sourcePlate.platePartMark="1001";
+        BridgeTransform frame;
+        frame.valid=true;
+        frame.origin={4.25,195,6959};
+        frame.xAxis={0,0,1};
+        frame.yAxis={0,1,0};
+        frame.zAxis={-1,0,0};
+        sourcePlate.plateDstvFrame=frame;
+        auto& sourceBg=*pkg.objects[1].boltGroup;
+        sourceBg.axis.clear();
+        sourceBg.axisSource.clear();
+        sourceBg.direction.reset();
+        for (auto& bolt: sourceBg.bolts) {
+            bolt.position.x=0.0;
+            bolt.holeDiameter=0.0;
+            bolt.holeDiameterSource.clear();
+        }
+        const std::filesystem::path nc=
+            std::filesystem::temp_directory_path()/"mm_bridge_native_146_acceptance.nc1";
+        {
+            std::ofstream out(nc,std::ios::binary);
+            out << "ST\n** 1001.nc1\n1\n1001\n1\n1001\nS235JR\n1\nPL10\nB\n"
+                   "200\n170\n10\nAK\n"
+                   "v 0.00u 0.00 0 0 0 0 0\n"
+                   "200 0 0 0 0 0 0\n200 170 0 0 0 0 0\n"
+                   "0 170 0 0 0 0 0\n0 0 0 0 0 0 0\nBO\n"
+                   "v 40.00s 70.00 22.00\nv 40.00s 130.00 22.00\n"
+                   "v 100.00s 70.00 22.00\nv 100.00s 130.00 22.00\n"
+                   "v 160.00s 70.00 22.00\nv 160.00s 130.00 22.00\nEN\n";
+        }
+        const BridgeNativeConvertOutcome native=
+            convertBridge146FromNc1(s.doc,pkg,nc,catalog,{});
+        check(native.ok,"Stage4 verified NC1 creates editable native 146");
+        if(!native.ok) std::printf("  Native Stage4 error: %s\n",native.error.c_str());
+        if(native.ok) {
+            const auto index=s.doc.indexOfComponentInstance(native.componentId);
+            check(index.has_value(),"Stage4 native component stored");
+            if(index) {
+                const auto& rec=s.doc.componentInstances()[*index];
+                check(rec.typeId==L"tekla_shear_plate_146","Stage4 native registry type");
+                check(!rec.ownedPlateIds.empty() && !rec.ownedBoltGroupIds.empty(),
+                      "Stage4 editable plate + bolt group owned");
+                if (!rec.ownedPlateIds.empty()) {
+                    const TopoDS_Shape* shape=s.store->find(rec.ownedPlateIds.front());
+                    check(shape && !shape->IsNull(),"Stage4 physical OCC plate solid");
+                    if(shape && !shape->IsNull()) {
+                        const double expectVolume=340000.0-6.0*std::acos(-1.0)*121.0*10.0;
+                        check(approx(shapeVolume(*shape),expectVolume,expectVolume*0.01),
+                              "Stage4 OCCT 6 through Ø22 holes in PL10");
+                    }
+                }
+            }
+        }
+        std::error_code ec;
+        std::filesystem::remove(nc,ec);
     }
 
     // --- 2) Uye bagli degil -> needsMemberSelection, donusum YOK ---------------
