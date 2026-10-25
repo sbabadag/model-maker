@@ -497,6 +497,22 @@ int main() {
                       "P4G: raising upper net offset moves upper holes only, plate and lower stay");
             }
         }
+        // When one independent group's x-pattern grows, auto plate width
+        // can increase, but the OTHER group's origin must remain anchored
+        // in the unchanged column coordinate frame.
+        {
+            ComponentInput xBase=in;
+            const auto original=reg.generate(L"tekla_haunch_40",xBase);
+            ComponentInput xEdit=in;
+            xEdit.params={{L"upperBoltCountX",CompParamValue{3}},
+                          {L"upperBoltPitchX",CompParamValue{135.0}}};
+            const auto changed=reg.generate(L"tekla_haunch_40",xEdit);
+            check(original.ok && changed.ok && original.boltGroups.size()==2 &&
+                  changed.boltGroups.size()==2 &&
+                  changed.plates[0].width>original.plates[0].width &&
+                  changed.boltGroups[1].origin==original.boltGroups[1].origin,
+                  "P4G: widening upper array/auto plate does NOT shift lower in column frame");
+        }
         // Independent hole-centre/plate-edge offsets. The bolt groups are
         // located from the structural beam frame even when the plate centre
         // shifts vertically, and x=0 is not assumed to be group centre.
