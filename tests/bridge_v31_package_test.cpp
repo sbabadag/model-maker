@@ -114,9 +114,88 @@ void verifyExample(const char* folder, int expectedNumber,
                 folder, expectedNumber, pkg.objects.size(),
                 pkg.parameters.size(), pkg.unsupportedFeatures.size());
 }
+
+void verifyLivePackage(const fs::path& dir) {
+    const std::string path = dir.string();
+    require(fs::is_directory(dir), "live package folder missing");
+    require(fs::is_regular_file(dir / "checksums.json"), "live package checksums missing");
+    if (!fs::is_directory(dir)) return;
+
+    std::vector<std::string> checksumErrors;
+    const bool integrity = mm::verifyBridgeChecksums(path, checksumErrors);
+    require(integrity, "live package checksums failed");
+    for (const auto& e : checksumErrors)
+        std::printf("  checksum error: %s\n", e.c_str());
+    if (!integrity) return;
+
+    mm::BridgePackage pkg;
+    std::vector<std::string> errors;
+    const bool loaded = mm::readBridgePackage(path, pkg, errors);
+    require(loaded, "live package C++ reader rejected package");
+    for (const auto& e : errors)
+        std::printf("  reader error: %s\n", e.c_str());
+    if (!loaded) return; // Never use partially parsed data.
+
+    require(pkg.manifest.formatVersion == "3.0", "live package V3 required");
+    require(pkg.manifest.componentIdentifier == pkg.component.guid,
+            "live component GUID mismatch");
+    require(pkg.manifest.sourceComponentNumber == pkg.component.number,
+            "live component number mismatch");
+    require(pkg.manifest.exportedObjectCount == static_cast<int>(pkg.objects.size()),
+            "live exported object count mismatch");
+    require(!pkg.component.primaryMember.guid.empty(), "live primary member GUID missing");
+
+    int plates = 0, bolts = 0, welds = 0, fittings = 0;
+    int unknownAxes = 0;
+    std::size_t boltPositions = 0;
+    for (const auto& o : pkg.objects) {
+        require(!o.sourceGUID.empty(), "live object GUID empty");
+        if (o.kind == "ContourPlate") ++plates;
+        else if (o.kind == "BoltGroup") {
+            ++bolts;
+            if (!o.boltGroup) {
+                require(false, "live bolt group data missing");
+                continue;
+            }
+            boltPositions += o.boltGroup->bolts.size();
+            if (o.boltGroup->axis.empty()) ++unknownAxes;
+        }
+        else if (o.kind == "Weld") ++welds;
+        else if (o.kind == "Fitting") ++fittings;
+    }
+    require(plates > 0 && bolts > 0, "live package missing plate or bolt group");
+
+    const mm::BridgeImportResult preview = mm::mapBridgePackage(pkg);
+    require(preview.ok, "live C++ semantic mapping failed");
+    require(preview.records.size() == pkg.objects.size(),
+            "live preview object count differs");
+    require(preview.supportedCount + preview.unsupportedCount ==
+                static_cast<int>(pkg.objects.size()),
+            "live preview accounting inconsistent");
+
+    std::printf("LIVE V3 C++ READ OK: component %d (%s)\n",
+                pkg.component.number, pkg.component.guid.c_str());
+    std::printf("  objects=%zu parameters=%zu plates=%d boltGroups=%d welds=%d fittings=%d\n",
+                pkg.objects.size(), pkg.parameters.size(), plates, bolts, welds, fittings);
+    std::printf("  boltPositions=%zu unknownBoltAxes=%d\n", boltPositions, unknownAxes);
+    std::printf("  semantic preview supported=%d unsupported=%d; diagnostic omissions=%zu\n",
+                preview.supportedCount, preview.unsupportedCount,
+                pkg.unsupportedFeatures.size());
+    if (pkg.parameters.empty())
+        std::puts("  NOTE: no native parameters exported (--attributes-file still needed)");
+    std::puts("  NOTE: read/preview only; no OCCT solid or parametrically editable connection proven");
+}
 }  // namespace
 
-int main() {
+int main(int argc, char** argv) {
+    if (argc == 2) {
+        verifyLivePackage(argv[1]);
+        return failures == 0 ? 0 : 1;
+    }
+    if (argc > 2) {
+        std::fputs("Usage: model_maker_bridge_v31_package_test [live-package-folder]\n", stderr);
+        return 2;
+    }
     verifyExample("end-plate-144-v3", 144, 3, 10, 3);
     verifyExample("real-146-v3", 146, 8, 0, 7);
     verifyExample("haunch-40-v3", 40, 67, 0, 57);
