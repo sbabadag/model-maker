@@ -822,9 +822,12 @@ std::vector<QtMainWindow::CommandCategory> QtMainWindow::commandCategories() {
             std::vector<UiEntry> items;
             for (const mm::CatalogEntry& ce : catalog) {
                 QString label = QString::fromStdWString(ce.displayName);
-                if (!ce.sourceComponentNumber.empty())
-                    label += QStringLiteral(" (") + QString::fromStdWString(ce.sourceComponentNumber) +
-                             QStringLiteral(")");
+                if (!ce.sourceComponentNumber.empty()) {
+                    const QString suffix = QStringLiteral(" (") +
+                        QString::fromStdWString(ce.sourceComponentNumber) +
+                        QStringLiteral(")");
+                    if (!label.endsWith(suffix)) label += suffix;
+                }
                 QString tip = QString::fromStdWString(ce.category);
                 if (!ce.coverageStatus.empty())
                     tip += QStringLiteral(" — ") + QString::fromStdWString(ce.coverageStatus);
