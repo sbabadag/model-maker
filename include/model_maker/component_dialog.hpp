@@ -288,6 +288,7 @@ private:
 ComponentDialogDefinition endPlateDialogDefinition() noexcept;
 ComponentDialogDefinition finPlateDialogDefinition() noexcept;
 ComponentDialogDefinition shearPlate146DialogDefinition() noexcept;
+ComponentDialogDefinition haunch40DialogDefinition() noexcept;
 // 146 sekmelerini Tekla ekran goruntulerine (canvas duzeni) cevirir: eksik
 // Tekla alanlarini documentedOnly spec olarak ekler, her sekmeye arka plan
 // resmini ve mutlak konumlu kontrolleri yazar. Uretilmis dosya:
