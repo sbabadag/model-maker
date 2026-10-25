@@ -5,13 +5,12 @@
 // paketinin primary/secondary uyelerini GERCEK Document uyelerine GUVENLI
 // sekilde baglar:
 //
-//   Baglama onceligi:
-//     1) Document'ta daha once iliskilendirilmis Tekla GUID varsa kullan;
-//        nesne turu + geometri uyumunu dogrula.
-//     2) Kullanici secimi (BridgeMemberSelection) varsa kullan; yine dogrula.
-//     3) Belirsiz/celiski durumda OTOMATIK secim YAPMA — needsSelection doner.
-//     4) Her iki uye (primary + en az bir secondary) cozulmeden tamamlanmis
-//        sayilmaz (ok=false).
+//   Baglama:
+//     1) Secilen gercek Model Maker tasiyici uyeleri rol eksenlerine gore ayir;
+//        Tekla kaynak profil etiketini kesit zorunlulugu olarak KULLANMA.
+//     2) Acik secim yoksa onceden kaydedilmis Tekla GUID link'lerini dene.
+//     3) Ayni Document EntityId primary ve secondary olamaz.
+//     4) Kolon ve kiris baglanmadan native 146 uretimi yapilmaz.
 //
 // OCCT'sizdir; Linux OCC-off ctest'te kosar. Yalnizca Document + profile katalogu
 // + bridge_native_mapper bagimliliklari vardir. GERCEK materializasyon (generator
@@ -50,9 +49,9 @@ struct BridgeMemberBinding {
     std::vector<std::string> missing;  // cozulemeyen GUID/rol aciklamalari
 };
 
-// Bir Document varliginin, yeniden olusturulmus uyeyle TIP + GEOMETRI uyumunu
-// dogrular. Profil adi (case-insensitive) eslesmeli; eksen uzunlugu (varsa)
-// %5 tolerans icinde eslesmeli. Uyumsuzlukta false + reason.
+// Belgedeki gercek celik uyenin profil etiketinin ve fiziksel ekseninin
+// mevcut oldugunu dogrular. Kaynak Tekla profil ADI veya eksen BOYU ile
+// esitlik aranmaz; component secilen Document kesitlerine adapte olur.
 bool bridgeMemberCompatible(const Document& doc, EntityId id,
                             const BridgeReconstructedMember& m,
                             std::string& reason) noexcept;
