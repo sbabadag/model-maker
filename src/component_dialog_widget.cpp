@@ -515,6 +515,9 @@ ComponentDialogWidget::ComponentDialogWidget(const ComponentDialogDefinition& de
             if(auto* d=qobject_cast<QDoubleSpinBox*>(editor)) {
                 QObject::connect(d,QOverload<double>::of(&QDoubleSpinBox::valueChanged),
                                  this,[this](double){updatePreviewFromForm();});
+            } else if(auto* integer=qobject_cast<QSpinBox*>(editor)) {
+                QObject::connect(integer,QOverload<int>::of(&QSpinBox::valueChanged),
+                                 this,[this](int){updatePreviewFromForm();});
             } else if(auto* b=qobject_cast<QCheckBox*>(editor)) {
                 QObject::connect(b,&QCheckBox::toggled,
                                  this,[this](bool){updatePreviewFromForm();});
@@ -1416,18 +1419,44 @@ void ComponentDialogWidget::enforceHaunchInputLimits() {
     const double depth=value(L"haunchDepth",240.0);
     bounds(L"haunchTipDepth",10.0,std::min(200.0,depth-25.01));
 
-    // Both 2x2 bolt groups must fit vertically in the end plate.
+    // Integer row/column counts feed the same native bolt generator as the
+    // preview. The outermost rows stay fixed; extra rows grow inwards in
+    // BOTH groups, which limits the permissible vertical spacing.
+    const auto count=[this](const wchar_t* key,int fallback)->int {
+        const auto it=editors_.find(key);
+        if(it==editors_.end())return fallback;
+        if(auto* s=qobject_cast<QSpinBox*>(it->second))return s->value();
+        return fallback;
+    };
     const double pitchMin=std::max(40.0,hole+0.01);
-    // Leave >=0.1 mm geometric slack: a two-decimal QDoubleSpinBox
-    // otherwise rounds the strict generator upper bound UP to equality.
-    const double upper=haunchBeamHeight_>0.0
-        ? (haunchBeamHeight_+depth-40.0-hole-0.20)*0.5 : 500.0;
-    bounds(L"boltPitchY",pitchMin,std::min(500.0,upper));
+    if(haunchBeamHeight_>0.0) {
+        const double available=haunchBeamHeight_+depth-40.0-hole-0.20;
+        const int maxRows=std::clamp(
+            1+static_cast<int>(std::floor(std::max(0.0,available)/(2.0*pitchMin))),
+            1,4);
+        const auto it=editors_.find(L"boltCountY");
+        if(it!=editors_.end()) {
+            if(auto* s=qobject_cast<QSpinBox*>(it->second)) {
+                QSignalBlocker guard(s);
+                s->setRange(1,maxRows);
+            }
+        }
+    }
+    const int rows=count(L"boltCountY",2);
+    const double spanDiv=2.0*std::max(1,rows-1);
+    // Two rows/groups: separation between the innermost rows must exceed
+    // the physical hole diameter. One row/group leaves pitch unused.
+    const double maxPitch=haunchBeamHeight_>0.0
+        ? (haunchBeamHeight_+depth-40.0-hole-0.20)/spanDiv : 500.0;
+    bounds(L"boltPitchY",pitchMin,std::min(500.0,
+           rows>1?maxPitch:500.0));
 
     // Explicit plate dimensions cannot undercut the connection geometry.
     // Keep zero as the native "derive from real member section" sentinel.
     const double pitchX=value(L"boltPitchX",120.0);
-    requiredIfExplicit(L"endPlateWidth",pitchX+hole+15.0);
+    const int columns=count(L"boltCountX",2);
+    requiredIfExplicit(L"endPlateWidth",
+                       (columns-1)*pitchX+hole+15.0);
     if(haunchBeamHeight_>0.0)
         requiredIfExplicit(L"endPlateHeight",haunchBeamHeight_+depth+20.0);
     const double flangeWidth=value(L"haunchFlangeWidth",0.0);
@@ -1449,6 +1478,9 @@ void ComponentDialogWidget::updateFormFromPreview(const std::wstring& name,
     if(auto* d=qobject_cast<QDoubleSpinBox*>(it->second)) {
         const QSignalBlocker guard(d);
         d->setValue(value);
+    } else if(auto* integer=qobject_cast<QSpinBox*>(it->second)) {
+        const QSignalBlocker guard(integer);
+        integer->setValue(static_cast<int>(std::lround(value)));
     }
     if(const auto ck=optionalChecks_.find(name);ck!=optionalChecks_.end()) {
         const QSignalBlocker guard(ck->second);
