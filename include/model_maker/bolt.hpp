@@ -60,6 +60,12 @@ BoltDimensions boltDimensions(double nominalDiameter) noexcept;
 struct BoltGroup {
     EntityId id{kInvalidEntityId};              // bulon grubunun kendi kimligi
     std::vector<EntityId> parts;                // bagli parcalar (ilk = main)
+    // Optional source-generator role of the ONLY component-owned plate to drill.
+    // Empty = backward-compatible all-owned-plates policy. Haunch 40 uses
+    // "haunch_end_plate": it must not drill the web, flange or stiffeners.
+    // The materializer resolves this against the stable child role->EntityId
+    // table; persistent bolt.parts already stores resolved physical targets.
+    std::string targetOwnedPlateRole;
     Vec3 origin{};                              // bulon merkezi (mm)
     Vec3 axis{0.0, 0.0, 1.0};                   // bulon ekseni (birim)
     Vec3 xDir{1.0, 0.0, 0.0};                   // grup x ekseni (eksene dik)
