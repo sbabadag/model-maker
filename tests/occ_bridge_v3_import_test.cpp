@@ -46,7 +46,11 @@ static bool hasParam(const ComponentInstanceRecord& rec, const std::wstring& nam
     return false;
 }
 
-int main() {
+int main(int argc, char** argv) {
+    if (argc > 2) {
+        std::fputs("Usage: model_maker_occ_bridge_v3_import_test [live-146-folder]\n", stderr);
+        return 2;
+    }
     // ================= PART A: mesh -> solid (birim) =========================
     {
         BridgeMesh empty;
@@ -181,6 +185,47 @@ int main() {
         const BridgeImportOutcome out = importBridgeComponent(doc, pkg);
         check(!out.ok, "bos objects -> import basarisiz");
         check(doc.models().empty(), "bos objects -> belge degismedi");
+    }
+
+    // ================= PART G: optional real Tekla SP6 live V3 smoke ============
+    if (argc == 2) {
+        BridgePackage pkg;
+        std::vector<std::string> errors;
+        const bool loaded = readBridgePackage(argv[1], pkg, errors);
+        check(loaded, "LIVE: original V3 JSON read");
+        if (!loaded)
+            for (const auto& e : errors)
+                std::printf("  LIVE reader error: %s\n", e.c_str());
+        else {
+            check(pkg.component.number == 146, "LIVE: source is component 146");
+            Document doc;
+            doc.setOccStore(makeOccSolidStore());
+            const BridgeImportOutcome out = importBridgeComponent(doc, pkg);
+            check(out.ok, "LIVE: actual OCC import succeeded");
+            if (out.ok) {
+                check(out.partsImported == 1, "LIVE: one source plate imported");
+                check(out.boltGroupsImported == 1, "LIVE: one bolt group for reference");
+                check(out.holesCut == 0, "LIVE: unresolved axis => no physical holes");
+                check(out.componentId != kInvalidEntityId, "LIVE: component instance retained");
+                bool warnedUnsafe = false;
+                for (const auto& warning : out.warnings)
+                    if (warning.find("otomatik delik acilmadi") != std::string::npos)
+                        warnedUnsafe = true;
+                check(warnedUnsafe, "LIVE: fail-closed warning retained");
+                const OccSolidStore* store = asSolidStore(&doc.occStore());
+                const TopoDS_Shape* plate = store ? store->find(out.plateId) : nullptr;
+                check(plate && !plate->IsNull(), "LIVE: physical plate OCC solid exists");
+                if (plate && !plate->IsNull()) {
+                    const double volume = shapeVolume(*plate);
+                    std::printf("LIVE: plate OCC volume=%.3f mm^3, holesCut=%d\n",
+                                volume, out.holesCut);
+                    check(approx(volume, 340000.0, 50.0),
+                          "LIVE: plate volume 340000 mm^3 (no fabricated cuts)");
+                }
+            } else {
+                std::printf("  LIVE OCC importer error: %s\n", out.error.c_str());
+            }
+        }
     }
 
     std::printf("\n%d failure(s)\n", failures);
