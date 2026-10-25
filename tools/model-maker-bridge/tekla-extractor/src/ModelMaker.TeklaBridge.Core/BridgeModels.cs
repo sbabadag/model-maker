@@ -214,6 +214,28 @@ namespace ModelMaker.TeklaBridge.Core
         [JsonProperty("holeLoops")] public int HoleLoops { get; set; }
     }
 
+    // Read-only Tekla evidence: HAS_HOLES checks any bolt holes in a part.
+    // RAW/NORMAL topology differences are diagnostic, NOT hole count proof.
+    public class SolidTopologyProbe
+    {
+        [JsonProperty("faceCount")] public int FaceCount { get; set; }
+        [JsonProperty("loopCount")] public int LoopCount { get; set; }
+        [JsonProperty("holeLoops")] public int HoleLoops { get; set; }
+    }
+
+    public class PlateHoleReportProbe
+    {
+        [JsonProperty("source")] public string Source { get; set; } = "Part.GetReportProperty(HAS_HOLES)";
+        [JsonProperty("reportReadable")] public bool ReportReadable { get; set; }
+        [JsonProperty("reportValue")] public int? ReportValue { get; set; }
+        [JsonProperty("hasBoltHoles")] public bool? HasBoltHoles { get; set; }
+        [JsonProperty("rawTopology")] public SolidTopologyProbe RawTopology { get; set; }
+        [JsonProperty("normalTopology")] public SolidTopologyProbe NormalTopology { get; set; }
+        [JsonProperty("topologyDiffers")] public bool? TopologyDiffers { get; set; }
+        [JsonProperty("verifiedHoleCount")] public int? VerifiedHoleCount { get; set; }
+        [JsonProperty("verifiedForDrilling")] public bool VerifiedForDrilling { get; set; } = false;
+    }
+
     public class ObjectRecord
     {
         [JsonProperty("sourceGUID")] public string SourceGUID { get; set; }
@@ -233,6 +255,8 @@ namespace ModelMaker.TeklaBridge.Core
         [JsonProperty("localToGlobal")] public Transform LocalToGlobal { get; set; }
         [JsonProperty("parametric")] public Dictionary<string, object> Parametric { get; set; }
         [JsonProperty("unsupportedReason")] public string UnsupportedReason { get; set; }
+        [JsonProperty("plateHoleProbe", NullValueHandling = NullValueHandling.Ignore)]
+        public PlateHoleReportProbe PlateHoleProbe { get; set; }
         [JsonProperty("boltGroup")] public BoltGroupInfo BoltGroup { get; set; }
         [JsonProperty("weld")] public WeldInfo Weld { get; set; }
         [JsonProperty("fitting")] public FittingInfo Fitting { get; set; }
