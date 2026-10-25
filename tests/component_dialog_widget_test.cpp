@@ -520,6 +520,49 @@ int main(int argc, char** argv) {
             CHECK(left->isVisibleTo(&h40),
                   "Haunch 40: orbit/front/side/top main view stays active");
         }
+
+        // Changing nominal bolt size must not destroy four synchronized
+        // previews because the old hole was smaller than the new bolt.
+        auto* boltDiameter=h40.findChild<QDoubleSpinBox*>(
+            QStringLiteral("boltDiameter"));
+        auto* holeDiameter=h40.findChild<QDoubleSpinBox*>(
+            QStringLiteral("holeDiameter"));
+        auto* boltPitchY=h40.findChild<QDoubleSpinBox*>(
+            QStringLiteral("boltPitchY"));
+        auto* haunchDepth=h40.findChild<QDoubleSpinBox*>(
+            QStringLiteral("haunchDepth"));
+        auto* tipDepth=h40.findChild<QDoubleSpinBox*>(
+            QStringLiteral("haunchTipDepth"));
+        CHECK(boltDiameter && holeDiameter && boltPitchY && haunchDepth && tipDepth,
+              "Haunch 40: dependent property editors are addressable");
+        if(boltDiameter && holeDiameter && boltPitchY && haunchDepth && tipDepth) {
+            boltDiameter->setValue(25.0);
+            QApplication::processEvents();
+            CHECK(std::fabs(holeDiameter->value()-27.0)<0.001 &&
+                  holeDiameter->minimum()>=27.0,
+                  "P4: M25 automatically requires >=27mm physical hole");
+            CHECK(left && left->previewPlan().ok && left->previewPlan().boltGroups.size()==2,
+                  "P4: enlarged bolt and hole preserve native live preview");
+            // An invalid manual hole entry is clamped, not accepted and
+            // only rejected later by ComponentRegistry during repaint.
+            holeDiameter->setValue(22.0);
+            QApplication::processEvents();
+            CHECK(holeDiameter->value()>=27.0,
+                  "P4: hole editor cannot shrink below live bolt clearance");
+            boltPitchY->setValue(500.0);
+            QApplication::processEvents();
+            CHECK(boltPitchY->value()<500.0 && boltPitchY->value()>27.0 &&
+                  left && left->previewPlan().ok,
+                  "P4: vertical bolt pitch clamps to actual beam/haunch fit");
+            tipDepth->setValue(50.0);
+            haunchDepth->setValue(60.0);
+            QApplication::processEvents();
+            CHECK(haunchDepth->value()>75.0 && left && left->previewPlan().ok,
+                  "P4: wedge depth remains strictly above tip + 25 mm");
+            if(left)for(auto* p:previews)
+                CHECK(p->previewPlan().ok,
+                      "P4: main 3D and all 3 orthographic plans stay valid");
+        }
     }
 
     // 3) KOYU TEMA: aktif alanlarin yazisi siyah olmali (beyaz kutuda beyaz yazi
