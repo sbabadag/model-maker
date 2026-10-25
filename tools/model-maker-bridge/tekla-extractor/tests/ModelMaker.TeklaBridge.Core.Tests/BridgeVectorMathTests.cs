@@ -83,6 +83,38 @@ namespace ModelMaker.TeklaBridge.Core.Tests
         }
 
         [Fact]
+        public void PerPlyHoleMetadataIsReadableButNotDrillAuthority()
+        {
+            var probe = new BoltHoleSettingsProbe
+            {
+                BoltPresent = true,
+                PlainHoleType = "HOLE_TYPE_THROUGH",
+                SpecialHoleType = "HOLE_TYPE_SLOTTED",
+                Hole1 = false,
+                Hole2 = false,
+                Hole3 = false,
+                Hole4 = false,
+                Hole5 = false,
+                VerifiedForDrilling = false,
+                PerPlySpecialHoles = new System.Collections.Generic.List<BoltPlyHoleProbe>
+                {
+                    new BoltPlyHoleProbe
+                    {
+                        PlyIndex = 1, SpecialHoleType = "HOLE_TYPE_SLOTTED",
+                        LongHoleX = 0.0, LongHoleY = 0.0
+                    }
+                }
+            };
+            var json = Newtonsoft.Json.JsonConvert.SerializeObject(probe);
+            var restored = Newtonsoft.Json.JsonConvert.DeserializeObject<BoltHoleSettingsProbe>(json);
+            Assert.True(restored.BoltPresent.HasValue && restored.BoltPresent.Value);
+            Assert.False(restored.VerifiedForDrilling);
+            Assert.False(restored.Hole1);
+            Assert.Single(restored.PerPlySpecialHoles);
+            Assert.Equal(1, restored.PerPlySpecialHoles[0].PlyIndex);
+        }
+
+        [Fact]
         public void DegenerateAxesAreRejectedInsteadOfInvented()
         {
             Assert.Throws<InvalidOperationException>(() =>
