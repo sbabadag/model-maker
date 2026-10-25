@@ -583,6 +583,17 @@ namespace ModelMaker.TeklaBridge.Extractor
                     diag.Warnings.Add("BoltHolesAttributes probe okunamadi: " + ex.Message);
                 }
 
+                // HOLE_* template report values may be unavailable via model
+                // GetReportProperty; keep unsupported fields readable=false.
+                // Numeric -1 has a real meaning (ordinary hole).
+                foreach (var reportName in new[]
+                {
+                    "HOLE_1_TYPE", "HOLE_2_TYPE", "HOLE_3_TYPE",
+                    "HOLE_4_TYPE", "HOLE_5_TYPE", "PLAIN_HOLE_TYPE",
+                    "DIAMETER_X", "DIAMETER_Y"
+                })
+                    info.HoleSettingsProbe.ReportProbes.Add(ReadBoltReportProbe(bg, reportName));
+
                 // Preserve source BoltPositions AS RETURNED. Do not silently
                 // reinterpret active selection-plane positions as world points,
                 // and do not move X=0 into a 4.25..14.25 plate.
@@ -600,6 +611,41 @@ namespace ModelMaker.TeklaBridge.Extractor
             }
             catch (Exception ex) { diag.InaccessibleObjects.Add("bolt group: " + ex.Message); }
             return info;
+        }
+
+        private static BoltReportValueProbe ReadBoltReportProbe(
+            BoltGroup bg, string reportName)
+        {
+            var field = new BoltReportValueProbe { Name = reportName, Readable = false };
+            try
+            {
+                int vi = 0;
+                if (bg.GetReportProperty(reportName, ref vi))
+                {
+                    field.Readable = true;
+                    field.Value = vi.ToString(CultureInfo.InvariantCulture);
+                    return field;
+                }
+                double vd = 0.0;
+                if (bg.GetReportProperty(reportName, ref vd))
+                {
+                    field.Readable = true;
+                    field.Value = vd.ToString(CultureInfo.InvariantCulture);
+                    return field;
+                }
+                string vs = "";
+                if (bg.GetReportProperty(reportName, ref vs))
+                {
+                    field.Readable = true;
+                    field.Value = vs;
+                }
+            }
+            catch (Exception)
+            {
+                // Missing report attribute is normal for this API/model object.
+                // Probe is optional; no synthetic value is substituted.
+            }
+            return field;
         }
 
         private static WeldInfo BuildWeld(Weld w, Diagnostics diag)
