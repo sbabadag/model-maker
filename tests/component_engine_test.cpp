@@ -476,6 +476,34 @@ int main() {
                       "P4D: asymmetric edge recompute preserves parent cut/welds");
             }
         }
+        // A legacy explicit-size plate must not shift its centre or
+        // re-anchor a previously centred bolt grid merely because the
+        // four-edge schema was introduced.
+        {
+            ComponentInput manual=in;
+            manual.params={
+                {L"endPlateWidth",CompParamValue{300.0}},
+                {L"endPlateHeight",CompParamValue{600.0}}
+            };
+            const auto old=reg.generate(L"tekla_haunch_40",manual);
+            check(old.ok && old.plates.size()>=1 && old.boltGroups.size()==2,
+                  "P4D: explicit legacy end-plate dimensions still valid");
+            if(old.ok && old.plates.size()>=1 && old.boltGroups.size()==2) {
+                const auto& ep=old.plates.front();
+                check(approx(ep.width,300.0) && approx(ep.height,600.0),
+                      "P4D: legacy plate dimensions retained");
+                for(const auto& bg:old.boltGroups) {
+                    double minX=1e9,maxX=-1e9;
+                    for(const auto& pt:boltGroupBoltOrigins(bg)) {
+                        const Vec3 d=pt-ep.center;
+                        const double x=d.x*ep.u.x+d.y*ep.u.y+d.z*ep.u.z;
+                        minX=std::min(minX,x);maxX=std::max(maxX,x);
+                    }
+                    check(approx(minX,-60.0) && approx(maxX,60.0),
+                          "P4D: manually sized legacy plate preserves bolt-grid centring");
+                }
+            }
+        }
         // Old saved records with only boltEdge must retain their previous
         // layout without requiring an MMW8 file migration.
         {
