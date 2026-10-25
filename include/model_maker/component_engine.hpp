@@ -155,6 +155,11 @@ double paramAsDouble(const std::vector<CompParam>& params, const std::wstring& n
                      double fallback) noexcept;
 int paramAsInt(const std::vector<CompParam>& params, const std::wstring& name,
                int fallback) noexcept;
+
+// Backward-compatible Haunch 40 edge migration. Old "boltEdge" denotes
+// the structural allowance; measured centre-to-plate edges are eL/eR=E,
+// eT/eB=E+20 because the outermost bolt rows sit 20 mm inward.
+std::vector<CompParam> migrateHaunch40Edges(const std::vector<CompParam>& values);
 bool paramAsBool(const std::vector<CompParam>& params, const std::wstring& name,
                  bool fallback) noexcept;
 std::wstring paramAsString(const std::vector<CompParam>& params,
