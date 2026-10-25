@@ -53,6 +53,16 @@ inline BridgeDrillAuthorization authorizeBridgeAutoDrill(
         return reject("no measured bolt positions");
 
     constexpr double tol = 1e-6;
+    if (g.direction) {
+        const double dx = g.direction->x, dy = g.direction->y, dz = g.direction->z;
+        const double len = std::sqrt(dx * dx + dy * dy + dz * dz);
+        const double expected = (axisX ? dx : axisY ? dy : dz) *
+                                (g.axis[0] == '-' ? -1.0 : 1.0);
+        if (!std::isfinite(len) || len <= tol ||
+            std::fabs(expected / len - 1.0) > tol)
+            return reject("observed group direction conflicts with named axis");
+    }
+    double firstDiameter = 0.0;
     for (const BridgeBolt& b : g.bolts) {
         const double x = b.position.x, y = b.position.y, z = b.position.z;
         const double r = b.holeDiameter * 0.5;
@@ -60,6 +70,13 @@ inline BridgeDrillAuthorization authorizeBridgeAutoDrill(
             return reject("non-finite bolt coordinates");
         if (!std::isfinite(r) || r <= 0.0 || !observed(b.holeDiameterSource))
             return reject("hole diameter is inferred or unresolved; automatic drilling disabled");
+        if (!b.axis.empty() && b.axis != g.axis)
+            return reject("bolt axis disagrees with observed group axis");
+        if (!b.axisSource.empty() && !observed(b.axisSource))
+            return reject("individual bolt axis was inferred");
+        if (firstDiameter == 0.0) firstDiameter = b.holeDiameter;
+        else if (std::fabs(firstDiameter - b.holeDiameter) > tol)
+            return reject("inconsistent measured hole diameters in one group");
         // Do NOT silently shift the source bolt along its drilling axis into
         // the plate. A source X=0 with plate X=4.25..14.25 is unverified.
         if (x < plate.min.x - tol || x > plate.max.x + tol ||
