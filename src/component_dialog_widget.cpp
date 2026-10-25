@@ -1394,15 +1394,12 @@ void ComponentDialogWidget::setPreviewInput(const ComponentInput& input) {
 void ComponentDialogWidget::releaseFixedPlateSizeOnEdgeEdit(
     const std::wstring& name) {
     if(def_.typeId!=L"tekla_haunch_40")return;
-    // Exact independently requested edges and a separately fixed plate
-    // width/height are over-constrained. A deliberate edge edit switches
-    // only the corresponding dimension back to auto-generated (0 mm).
-    const wchar_t* key=nullptr;
-    if(name==L"boltEdgeLeft" || name==L"boltEdgeRight")
-        key=L"endPlateWidth";
-    else if(name==L"boltEdgeTop" || name==L"boltEdgeBottom")
-        key=L"endPlateHeight";
-    if(!key)return;
+    // A manual width and two independent horizontal edge distances
+    // overconstrain the layout, so editing eL/eR selects auto width.
+    // Vertical edges are DIFFERENT: keep manually set plate height and
+    // move the upper/lower bolt grids within its boundaries.
+    if(name!=L"boltEdgeLeft" && name!=L"boltEdgeRight")return;
+    const wchar_t* key=L"endPlateWidth";
     const auto it=editors_.find(key);
     if(it==editors_.end())return;
     if(auto* d=qobject_cast<QDoubleSpinBox*>(it->second)) {
@@ -1444,11 +1441,11 @@ void ComponentDialogWidget::enforceHaunchInputLimits() {
         h->setToolTip(QStringLiteral("Delik capi >= bulon capi + 2 mm; bagli sinir otomatik korunur."));
     const double hole=value(L"holeDiameter",22.0);
     bounds(L"boltPitchX",std::max(40.0,hole+0.01),500.0);
-    // Measured centre-to-edge dimensions; upper/lower bolt rows are
-    // located 20 mm inward from beam/haunch envelope, leaving room for
-    // at least 10 mm of actual plate overhang.
-    const double sideMin=std::max(20.0,hole*0.5+0.1);
-    const double verticalMin=std::max(30.0,hole*0.5+20.1);
+    // Edges are measured from HOLE CENTRES, not the hole circumference.
+    // No fixed 20mm structural offset is required with a manually sized
+    // plate: the bolt rows move with its real top/bottom boundaries.
+    const double sideMin=std::max(20.0,hole*0.5+0.2);
+    const double verticalMin=std::max(20.0,hole*0.5+0.2);
     bounds(L"boltEdgeLeft",sideMin,200.0);
     bounds(L"boltEdgeRight",sideMin,200.0);
     bounds(L"boltEdgeTop",verticalMin,200.0);
@@ -1470,8 +1467,13 @@ void ComponentDialogWidget::enforceHaunchInputLimits() {
         return fallback;
     };
     const double pitchMin=std::max(40.0,hole+0.01);
-    if(haunchBeamHeight_>0.0) {
-        const double available=haunchBeamHeight_+depth-40.0-hole-0.20;
+    const double manualH=value(L"endPlateHeight",0.0);
+    const double top=value(L"boltEdgeTop",55.0);
+    const double bottom=value(L"boltEdgeBottom",55.0);
+    const double available=manualH>0.0
+        ?manualH-top-bottom-hole-0.20
+        :haunchBeamHeight_+depth-40.0-hole-0.20;
+    if(haunchBeamHeight_>0.0 || manualH>0.0) {
         const int maxRows=std::clamp(
             1+static_cast<int>(std::floor(std::max(0.0,available)/(2.0*pitchMin))),
             1,4);
@@ -1487,8 +1489,8 @@ void ComponentDialogWidget::enforceHaunchInputLimits() {
     const double spanDiv=2.0*std::max(1,rows-1);
     // Two rows/groups: separation between the innermost rows must exceed
     // the physical hole diameter. One row/group leaves pitch unused.
-    const double maxPitch=haunchBeamHeight_>0.0
-        ? (haunchBeamHeight_+depth-40.0-hole-0.20)/spanDiv : 500.0;
+    const double maxPitch=(haunchBeamHeight_>0.0 || manualH>0.0)
+        ?available/spanDiv:500.0;
     bounds(L"boltPitchY",pitchMin,std::min(500.0,
            rows>1?maxPitch:500.0));
 
@@ -1506,13 +1508,37 @@ void ComponentDialogWidget::enforceHaunchInputLimits() {
     if(haunchBeamWidth_>0.0 && rightNeeded<=200.0)
         bounds(L"boltEdgeRight",rightNeeded,200.0);
     const double right=value(L"boltEdgeRight",35.0);
-    const double top=value(L"boltEdgeTop",55.0);
-    const double bottom=value(L"boltEdgeBottom",55.0);
-    requiredIfExplicit(L"endPlateWidth",std::max(spanX+left+right,
-                                                  spanX+hole+15.0));
-    if(haunchBeamHeight_>0.0)
-        requiredIfExplicit(L"endPlateHeight",
-                           haunchBeamHeight_+depth-40.0+top+bottom);
+    // Fixed-width edit mode: keep the legacy centred grid, but let the
+    // user reduce plate width to the actual physical side-hole limits.
+    // Reconcile the visible eL/eR fields to the ACHIEVED symmetric values.
+    const double fixedW=value(L"endPlateWidth",0.0);
+    const double minW=std::max(spanX+2.0*sideMin,spanX+hole+15.0);
+    if(fixedW>0.0) {
+        requiredIfExplicit(L"endPlateWidth",minW);
+        const double achieved=(value(L"endPlateWidth",minW)-spanX)*0.5;
+        for(const auto* key:{L"boltEdgeLeft",L"boltEdgeRight"})
+            if(auto* s=spin(key)) {
+                QSignalBlocker guard(s);
+                s->setValue(achieved);
+            }
+    }
+    // Unlike the old hard stop at hBeam+D, the new minimum depends only
+    // on the two edge clearances, the rows' actual spans and hole clearance.
+    // Zero still means legacy automatic end-plate height.
+    const double spanY=(rows-1)*value(L"boltPitchY",80.0);
+    const double minH=top+bottom+2.0*spanY+hole+0.20;
+    if(manualH>0.0) {
+        requiredIfExplicit(L"endPlateHeight",minH);
+        const double fixedHeight=value(L"endPlateHeight",minH);
+        // With explicit height, eT/eB edits relocate rows; do NOT grow or
+        // reset plate to auto when editing the upper or lower clearance.
+        const double maxT=std::min(200.0,
+            fixedHeight-value(L"boltEdgeBottom",55.0)-2.0*spanY-hole-0.20);
+        bounds(L"boltEdgeTop",verticalMin,std::max(verticalMin,maxT));
+        const double maxB=std::min(200.0,
+            fixedHeight-value(L"boltEdgeTop",55.0)-2.0*spanY-hole-0.20);
+        bounds(L"boltEdgeBottom",verticalMin,std::max(verticalMin,maxB));
+    }
     const double flangeWidth=value(L"haunchFlangeWidth",0.0);
     const double webT=value(L"haunchWebThickness",10.0);
     if(flangeWidth>0.0)requiredIfExplicit(L"haunchFlangeWidth",webT);
