@@ -568,10 +568,76 @@ ComponentDialogDefinition finPlateDialogDefinition() noexcept {
     return def;
 }
 
+// Native Tekla 40 - Haunch V1: grouped, editable real generation parameters.
+// Source Tekla 40 has more options; this dialog exposes ONLY implemented ones.
+ComponentDialogDefinition haunch40DialogDefinition() noexcept {
+    ComponentDialogDefinition def;
+    def.typeId=L"tekla_haunch_40";
+    def.schema.typeId=def.typeId;
+    def.specs=haunch40ComponentType().params;
+    def.schema.useTabs=true;
+
+    ComponentDiagramItem column;
+    column.id=L"column";
+    column.primitives.push_back(rectP(22,24,68,230,true));
+    ComponentDiagramItem beam;
+    beam.id=L"beam";
+    beam.primitives.push_back(rectP(87,150,348,178,true));
+    ComponentDiagramItem endPlate;
+    endPlate.id=L"end_plate";
+    endPlate.primitives.push_back(rectP(68,104,87,210,true));
+    ComponentDiagramItem web;
+    web.id=L"haunch_web";
+    web.primitives.push_back(lineP(87,150,87,103));
+    web.primitives.push_back(lineP(87,103,290,150));
+    web.primitives.push_back(lineP(87,150,290,150));
+    ComponentDiagramItem bolt;
+    bolt.id=L"bolts";
+    for(double y: {119.0,139.0,178.0,198.0})
+        bolt.primitives.push_back(circleP(77.0,y,3.5));
+    def.schema.items={column,beam,endPlate,web,bolt};
+    def.schema.hotspots={
+        hotspot(L"hs_hlen",192.0,147.0,10.0,
+                std::wstring(L"haunchLength"),std::wstring(L"L")),
+        hotspot(L"hs_hdepth",95.0,114.0,10.0,
+                std::wstring(L"haunchDepth"),std::wstring(L"H")),
+        hotspot(L"hs_endplate",76.0,212.0,10.0,
+                std::wstring(L"endPlateThickness"),std::wstring(L"t"))
+    };
+    const auto tab=[](const wchar_t* id,const wchar_t* title,
+                       std::vector<std::wstring> fields) {
+        ComponentDialogGroup group;
+        const std::string idStr(id), titleStr(title);
+        group.id=std::wstring(idStr.begin(),idStr.end());
+        group.title=std::wstring(titleStr.begin(),titleStr.end());
+        group.paramNames=std::move(fields);
+        group.asTab=true;
+        return group;
+    };
+    def.schema.groups={
+        tab("picture","Olculer",
+            {L"haunchLength",L"haunchDepth",L"haunchTipDepth",L"gap"}),
+        tab("haunch","Haunch",
+            {L"haunchWebThickness",L"haunchFlangeThickness",L"haunchFlangeWidth",
+             L"topPlateThickness",L"topPlateLength",L"plateMaterial"}),
+        tab("endplate","Alin levhasi",
+            {L"endPlateThickness",L"endPlateWidth",L"endPlateHeight"}),
+        tab("stiffeners","Berkitmeler",
+            {L"createBeamStiffener",L"stiffenerThickness"}),
+        tab("bolts","Bulonlar",
+            {L"boltDiameter",L"holeDiameter",L"boltPitchX",L"boltPitchY",
+             L"boltEdge",L"grade"}),
+        tab("welds","Kaynaklar",
+            {L"createWelds",L"weldSize"})
+    };
+    return def;
+}
+
 void registerBuiltInDialogs(ComponentDialogRegistry& registry) noexcept {
     registry.registerDialog(endPlateDialogDefinition());
     registry.registerDialog(finPlateDialogDefinition());
     registry.registerDialog(shearPlate146DialogDefinition());
+    registry.registerDialog(haunch40DialogDefinition());
 }
 
 /* -------------------------------------------------------------------------
