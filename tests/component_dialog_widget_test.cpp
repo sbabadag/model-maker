@@ -726,6 +726,34 @@ int main(int argc, char** argv) {
                 CHECK(p->previewPlan().ok,
                       "P4: loaded saved dimensions keep 3D/orthographic previews");
 
+            // Existing MMW8 records only have boltEdge. A Get/load must
+            // migrate into four visible individual controls, preserving
+            // physical dimensions (legacy top/bottom were edge+20).
+            h40.setParams({{L"boltEdge",mm::CompParamValue{50.0}}});
+            QApplication::processEvents();
+            auto* eLeft=h40.findChild<QDoubleSpinBox*>(
+                QStringLiteral("boltEdgeLeft"));
+            auto* eRight=h40.findChild<QDoubleSpinBox*>(
+                QStringLiteral("boltEdgeRight"));
+            auto* eTop=h40.findChild<QDoubleSpinBox*>(
+                QStringLiteral("boltEdgeTop"));
+            auto* eBottom=h40.findChild<QDoubleSpinBox*>(
+                QStringLiteral("boltEdgeBottom"));
+            CHECK(eLeft && eRight && eTop && eBottom &&
+                  std::fabs(eLeft->value()-50.0)<1e-6 &&
+                  std::fabs(eRight->value()-50.0)<1e-6 &&
+                  std::fabs(eTop->value()-70.0)<1e-6 &&
+                  std::fabs(eBottom->value()-70.0)<1e-6,
+                  "P4D: loaded legacy boltEdge=50 migrates to 50/50/70/70");
+            if(left) {
+                const auto top=left->boltOverlayMetrics("haunch_bolts_upper");
+                const auto bottom=left->boltOverlayMetrics("haunch_bolts_lower");
+                CHECK(top.valid && bottom.valid &&
+                      std::fabs(top.leftEdge-50.0)<1e-6 &&
+                      std::fabs(top.topEdge-70.0)<1e-6 &&
+                      std::fabs(bottom.bottomEdge-70.0)<1e-6,
+                      "P4D: converted legacy dimensions match native geometry");
+            }
         }
     }
 
