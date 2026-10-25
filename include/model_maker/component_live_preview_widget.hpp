@@ -22,6 +22,7 @@ class QWheelEvent;
 namespace mm {
 
 class ComponentLivePreviewWidget final : public QWidget {
+    Q_OBJECT
 public:
     explicit ComponentLivePreviewWidget(QWidget* parent=nullptr);
 
