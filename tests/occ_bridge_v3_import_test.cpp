@@ -90,12 +90,12 @@ int main() {
         if (out.ok) {
             check(out.partsImported == 1, "146 V3: 1 parca");
             check(out.boltGroupsImported == 1, "146 V3: 1 bulon grubu");
-            check(out.holesCut == 6, "146 V3: 6 delik");
+            check(out.holesCut == 0, "146 V3: unverified axis/dia -> 0 otomatik delik");
             check(out.plateId != kInvalidEntityId && out.boltGroupId != kInvalidEntityId,
                   "146 V3: plate + bolt id");
             OccSolidStore* store = asSolidStore(&doc.occStore());
             const TopoDS_Shape* ps = store ? store->find(out.plateId) : nullptr;
-            if (ps) check(approx(shapeVolume(*ps), 317192.0, 2.0), "146 V3: delikli hacim");
+            if (ps) check(approx(shapeVolume(*ps), 340000.0, 2.0), "146 V3: deliksiz hacim");
             check(doc.componentInstances().size() == 1, "146 V3: 1 instance");
             if (!doc.componentInstances().empty()) {
                 const auto& rec = doc.componentInstances()[0];
