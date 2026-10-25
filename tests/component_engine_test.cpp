@@ -429,6 +429,64 @@ int main() {
             }
             check(boltCount==8,"Haunch 40: exactly 8 local-frame bolt centres");
         }
+        // Independent hole-centre/plate-edge offsets. The bolt groups are
+        // located from the structural beam frame even when the plate centre
+        // shifts vertically, and x=0 is not assumed to be group centre.
+        {
+            ComponentInput asym=in;
+            asym.params={
+                {L"boltCountX",CompParamValue{3}},
+                {L"boltCountY",CompParamValue{2}},
+                {L"boltEdgeLeft",CompParamValue{40.0}},
+                {L"boltEdgeRight",CompParamValue{60.0}},
+                {L"boltEdgeTop",CompParamValue{45.0}},
+                {L"boltEdgeBottom",CompParamValue{75.0}}
+            };
+            const auto g=reg.generate(L"tekla_haunch_40",asym);
+            check(g.ok && g.boltGroups.size()==2 && !g.plates.empty(),
+                  "P4D: generator accepts independently controlled edges");
+            if(g.ok && g.boltGroups.size()==2 && !g.plates.empty()) {
+                const auto& ep=g.plates.front();
+                check(approx(ep.width,340.0,1e-6) &&
+                      approx(ep.height,in.secondary[0].secHeight+240.0+80.0,1e-6),
+                      "P4D: asymmetric plate width and height from four edges");
+                for(std::size_t bi=0;bi<g.boltGroups.size();++bi) {
+                    const auto& group=g.boltGroups[bi];
+                    double xmin=1e9,xmax=-1e9,ymin=1e9,ymax=-1e9;
+                    for(const Vec3& pt:boltGroupBoltOrigins(group)) {
+                        const Vec3 delta=pt-ep.center;
+                        const double xx=delta.x*ep.u.x+delta.y*ep.u.y+delta.z*ep.u.z;
+                        const double yy=delta.x*ep.v.x+delta.y*ep.v.y+delta.z*ep.v.z;
+                        xmin=std::min(xmin,xx);xmax=std::max(xmax,xx);
+                        ymin=std::min(ymin,yy);ymax=std::max(ymax,yy);
+                    }
+                    check(approx(ep.width*0.5+xmin,40.0,1e-6) &&
+                          approx(ep.width*0.5-xmax,60.0,1e-6),
+                          "P4D: eL/eR measure actual extremal bolt centres");
+                    if(bi==0)
+                        check(approx(ep.height*0.5-ymax,45.0,1e-6),
+                              "P4D: upper group eT exactly matches actual plate edge");
+                    else
+                        check(approx(ep.height*0.5+ymin,75.0,1e-6),
+                              "P4D: lower group eB exactly matches actual plate edge");
+                    check(group.countX==3 && group.countY==2,
+                          "P4D: count and real holes preserved after edge edits");
+                }
+                check(g.cuts.size()==1 && g.welds.size()==p.welds.size(),
+                      "P4D: asymmetric edge recompute preserves parent cut/welds");
+            }
+        }
+        // Old saved records with only boltEdge must retain their previous
+        // layout without requiring an MMW8 file migration.
+        {
+            ComponentInput legacy=in;
+            legacy.params={{L"boltEdge",CompParamValue{50.0}}};
+            const auto g=reg.generate(L"tekla_haunch_40",legacy);
+            check(g.ok && g.boltGroups.size()==2 &&
+                  approx(g.plates[0].width,220.0) &&
+                  approx(g.plates[0].height,in.secondary[0].secHeight+240.0+100.0),
+                  "P4D: old boltEdge=50 migrates to eL/eR=50, eT/eB=70");
+        }
         // Editable bolt columns and rows use generator-owned geometry,
         // not UI-only circles. Legacy (missing keys) stays 2x2 per group.
         for(const auto& cfg:std::vector<std::pair<int,int>>{
