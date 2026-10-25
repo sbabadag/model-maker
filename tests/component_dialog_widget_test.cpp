@@ -11,6 +11,8 @@
 #include "model_maker/component_live_preview_widget.hpp"
 #include "model_maker/component_engine.hpp"
 #include <QDoubleSpinBox>
+#include <algorithm>
+#include <cmath>
 
 #include <QAbstractSpinBox>
 #include <QApplication>
@@ -435,6 +437,35 @@ int main(int argc, char** argv) {
         CHECK(previews.size()==4,"Haunch 40: main 3D + 3 live orthographic previews");
         auto* left = previews.empty()?nullptr:previews.first();
         CHECK(left!=nullptr,"Haunch 40: real 3D preview widget exists");
+        if(left) {
+            CHECK(left->activeRole().empty() &&
+                  left->visibleOverlayParams().empty(),
+                  "P4: no component selected -> no floating edit boxes");
+            left->selectRole("haunch_web");
+            QApplication::processEvents();
+            const auto webFields=left->visibleOverlayParams();
+            CHECK(webFields.size()==4 &&
+                  std::find(webFields.begin(),webFields.end(),L"haunchLength")!=webFields.end() &&
+                  std::find(webFields.begin(),webFields.end(),L"haunchDepth")!=webFields.end(),
+                  "P4: only selected web's four parameters appear");
+            left->selectRole("haunch_top_plate");
+            QApplication::processEvents();
+            const auto capFields=left->visibleOverlayParams();
+            CHECK(capFields.size()==1 && capFields.front()==L"topPlateThickness",
+                  "P4: column cap shows only its own thickness");
+            left->selectRole("haunch_bolts_lower");
+            QApplication::processEvents();
+            const auto lower=left->visibleOverlayParams();
+            CHECK(lower.size()==3 &&
+                  std::find(lower.begin(),lower.end(),L"boltPitchX")!=lower.end(),
+                  "P4: lower bolt group shows editable pitch/diameter");
+            left->selectRole("");
+            QApplication::processEvents();
+            CHECK(left->visibleOverlayParams().empty(),
+                  "P4: empty selection clears overlays while 3D context remains");
+            left->selectRole("haunch_web");
+            QApplication::processEvents();
+        }
         QDoubleSpinBox* overlay=nullptr;
         if(left) {
             for(auto* d:left->findChildren<QDoubleSpinBox*>()) {
@@ -451,6 +482,12 @@ int main(int argc, char** argv) {
             CHECK(p && std::holds_alternative<double>(p->value) &&
                   std::get<double>(p->value)==570.0,
                   "Haunch 40: preview edit synchronizes right-side real params");
+            const auto& plan=left->previewPlan();
+            CHECK(plan.ok && plan.plates.size()>=3 &&
+                  std::fabs(plan.plates[1].width-570.0)<1e-6,
+                  "P6: editing child length regenerates its native haunch web");
+            CHECK(plan.cuts.size()==1 && plan.boltGroups.size()==2,
+                  "P6: dependent parent cut and both bolt groups remain attached");
         }
         if(left) {
             left->setView("front");
