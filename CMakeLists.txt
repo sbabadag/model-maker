@@ -60,6 +60,7 @@ add_library(model_maker_core
     src/bridge_component_mapper.cpp
     src/bridge_native_mapper.cpp
     src/bridge_native_bind.cpp
+    src/bridge_nc146.cpp
     src/user_catalog.cpp)
 target_include_directories(model_maker_core PUBLIC include third_party)
 target_compile_options(model_maker_core PRIVATE -Wall -Wextra -Wpedantic)
@@ -474,6 +475,11 @@ if(BUILD_TESTING)
     target_link_libraries(model_maker_bridge_auto_drill_policy_test PRIVATE model_maker_core)
     add_test(NAME model_maker_bridge_auto_drill_policy_test
         COMMAND model_maker_bridge_auto_drill_policy_test)
+    # Stage 4: independently verified DSTV NC1 -> native editable 146 inputs.
+    add_executable(model_maker_bridge_nc146_test tests/bridge_nc146_test.cpp)
+    target_link_libraries(model_maker_bridge_nc146_test PRIVATE model_maker_core)
+    add_test(NAME model_maker_bridge_nc146_test COMMAND model_maker_bridge_nc146_test)
+
 
     # TEKLA -> NATIVE PARAMETRIC COMPONENT esleme: 146 paketini okur, parametreleri
     # provenance ile cikarir, native generator esdegerligini degerlendirir. OCC'siz.
