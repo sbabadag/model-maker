@@ -11331,7 +11331,8 @@ bool Application::importTeklaBridge(const std::filesystem::path& packageDir) {
 #endif
 }
 
-bool Application::convertTeklaBridgeToNative(const std::filesystem::path& packageDir) {
+bool Application::convertTeklaBridgeToNative(const std::filesystem::path& packageDir,
+                                             const std::filesystem::path& nc1Path) {
 #ifndef MM_HAS_OCC
     publishStatus(L"Tekla Bridge native dönüşüm: bu derleme OCC'siz; yapılamadı.");
     return false;
