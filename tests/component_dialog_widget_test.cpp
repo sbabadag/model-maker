@@ -729,6 +729,36 @@ int main(int argc, char** argv) {
             // Existing MMW8 records only have boltEdge. A Get/load must
             // migrate into four visible individual controls, preserving
             // physical dimensions (legacy top/bottom were edge+20).
+            // Deliberately editing independent edges releases only the
+            // corresponding manual plate dimension (0 means auto) so eL/eR
+            // and eT/eB can be achieved without conflicting fixed sizes.
+            h40.setParams({
+                {L"endPlateWidth",mm::CompParamValue{300.0}},
+                {L"endPlateHeight",mm::CompParamValue{600.0}}
+            });
+            auto* manualW=h40.findChild<QDoubleSpinBox*>(
+                QStringLiteral("endPlateWidth"));
+            auto* manualH=h40.findChild<QDoubleSpinBox*>(
+                QStringLiteral("endPlateHeight"));
+            auto* adjustL=h40.findChild<QDoubleSpinBox*>(
+                QStringLiteral("boltEdgeLeft"));
+            auto* adjustT=h40.findChild<QDoubleSpinBox*>(
+                QStringLiteral("boltEdgeTop"));
+            CHECK(manualW && manualH && adjustL && adjustT,
+                  "P4D: fixed plate dims and independent edge controls present");
+            if(manualW && manualH && adjustL && adjustT) {
+                adjustL->setValue(45.0);
+                QApplication::processEvents();
+                CHECK(manualW->value()==0.0 &&
+                      std::fabs(manualH->value()-600.0)<1e-6,
+                      "P4D: editing eL releases only fixed plate width");
+                adjustT->setValue(65.0);
+                QApplication::processEvents();
+                CHECK(manualH->value()==0.0 &&
+                      left && left->previewPlan().ok,
+                      "P4D: editing eT releases fixed plate height and recomputes");
+            }
+
             h40.setParams({{L"boltEdge",mm::CompParamValue{50.0}}});
             QApplication::processEvents();
             auto* eLeft=h40.findChild<QDoubleSpinBox*>(
