@@ -179,8 +179,8 @@ ComponentLivePreviewWidget::ComponentLivePreviewWidget(QWidget* parent)
     // Short labels correspond to the SAME native schema parameters as the
     // real property panel. No second parameter source of truth.
     // Grouped by the physical child that the user can click.
-    // Bolt groups have five edit boxes: pitch X/Y, diameter, hole and edge.
-    const std::array<std::tuple<const wchar_t*,const wchar_t*,const char*,QPointF>,16> defs{{
+    // Seven bolt controls: two integer counts, pitch X/Y, M, hole and edge.
+    const std::array<std::tuple<const wchar_t*,const wchar_t*,const char*,QPointF>,18> defs{{
         {L"haunchLength",L"L","haunch_web",QPointF(35,-90)},
         {L"haunchDepth",L"D","haunch_web",QPointF(-150,15)},
         {L"haunchTipDepth",L"tip","haunch_web",QPointF(45,75)},
@@ -190,6 +190,8 @@ ComponentLivePreviewWidget::ComponentLivePreviewWidget(QWidget* parent)
         {L"endPlateThickness",L"t ep","haunch_end_plate",QPointF(-150,-95)},
         {L"endPlateWidth",L"b ep","haunch_end_plate",QPointF(55,-95)},
         {L"endPlateHeight",L"h ep","haunch_end_plate",QPointF(-160,90)},
+        {L"boltCountX",L"nx","haunch_bolts_upper",QPointF(-150,104)},
+        {L"boltCountY",L"ny","haunch_bolts_upper",QPointF(55,104)},
         {L"boltPitchX",L"g","haunch_bolts_upper",QPointF(-150,55)},
         {L"boltPitchY",L"p","haunch_bolts_upper",QPointF(55,55)},
         {L"boltDiameter",L"M","haunch_bolts_upper",QPointF(50,-75)},
@@ -205,10 +207,11 @@ ComponentLivePreviewWidget::ComponentLivePreviewWidget(QWidget* parent)
         a.targetRole=std::get<2>(def);
         a.shift=std::get<3>(def);
         a.spin=new QDoubleSpinBox(this);
-        a.spin->setDecimals(1);
-        a.spin->setRange(0.0,10000.0);
-        a.spin->setSingleStep(5.0);
-        a.spin->setSuffix(QStringLiteral(" mm"));
+        const bool integer=(a.name==L"boltCountX" || a.name==L"boltCountY");
+        a.spin->setDecimals(integer?0:1);
+        a.spin->setRange(integer?1.0:0.0,integer?4.0:10000.0);
+        a.spin->setSingleStep(integer?1.0:5.0);
+        if(!integer)a.spin->setSuffix(QStringLiteral(" mm"));
         a.spin->setFixedWidth(96);
         a.spin->setToolTip(QString::fromStdWString(a.name));
         a.spin->setStyleSheet(QStringLiteral(
@@ -217,8 +220,12 @@ ComponentLivePreviewWidget::ComponentLivePreviewWidget(QWidget* parent)
         const std::wstring key=a.name;
         QObject::connect(a.spin,QOverload<double>::of(&QDoubleSpinBox::valueChanged),
                          this,[this,key](double val) {
-            for(auto& p:params_)if(p.name==key){p.value=val;break;}
-            if(!findParam(params_,key))params_.push_back(CompParam{key,val});
+            const bool integer=(key==L"boltCountX" || key==L"boltCountY");
+            const CompParamValue next=integer
+                ?CompParamValue{static_cast<int>(std::lround(val))}
+                :CompParamValue{val};
+            for(auto& p:params_)if(p.name==key){p.value=next;break;}
+            if(!findParam(params_,key))params_.push_back(CompParam{key,next});
             highlight_=key;
             if(onEdit_) {
                 // The containing dialog enforces coupled limits first,
@@ -354,10 +361,16 @@ void ComponentLivePreviewWidget::syncEditors() {
     const ComponentType* type=ComponentRegistry::instance().findType(L"tekla_haunch_40");
     for(auto& c:callouts_) {
         const CompParamSpec* spec=type?findParamSpec(type->params,c.name):nullptr;
-        const double value=numericParam(params_,c.name,spec?spec->defDouble:0.0);
+        const bool integer=spec && spec->type==CompParamType::Integer;
+        const double fallback=spec
+            ?(integer?static_cast<double>(spec->defInt):spec->defDouble):0.0;
+        const double value=numericParam(params_,c.name,fallback);
         QSignalBlocker block(c.spin);
-        c.spin->setRange(spec&&spec->hasMinDouble?spec->minDouble:0.0,
-                         spec&&spec->hasMaxDouble?spec->maxDouble:10000.0);
+        c.spin->setRange(
+            integer?(spec->hasMinInt?spec->minInt:1):
+                    (spec&&spec->hasMinDouble?spec->minDouble:0.0),
+            integer?(spec->hasMaxInt?spec->maxInt:4):
+                    (spec&&spec->hasMaxDouble?spec->maxDouble:10000.0));
         c.spin->setValue(value);
     }
 }
