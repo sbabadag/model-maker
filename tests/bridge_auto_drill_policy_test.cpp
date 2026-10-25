@@ -17,7 +17,7 @@ void expect(bool value, const char* label) {
 }
 
 BridgeBBox plate() {
-    return {{0, 0, 0}, {10, 170, 200}};
+    return {{4.25, 0, 0}, {14.25, 170, 200}};
 }
 BridgeBoltGroupInfo measuredBolts() {
     BridgeBoltGroupInfo g;
@@ -93,7 +93,7 @@ int main(int argc, char** argv) {
     {
         auto g = measuredBolts(); g.bolts[0].position.x = 0.0;
         expect(!authorizeBridgeAutoDrill(g, box, "plate-guid").allowed,
-               "Tekla X=0 versus plate X=0..10 must not silently re-center");
+               "Tekla X=0 versus plate X=4.25..14.25 must not silently re-center");
     }
     {
         auto g = measuredBolts();
