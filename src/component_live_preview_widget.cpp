@@ -218,8 +218,13 @@ ComponentLivePreviewWidget::ComponentLivePreviewWidget(QWidget* parent)
             for(auto& p:params_)if(p.name==key){p.value=val;break;}
             if(!findParam(params_,key))params_.push_back(CompParam{key,val});
             highlight_=key;
-            recompute();
-            if(onEdit_)onEdit_(key,val);
+            if(onEdit_) {
+                // The containing dialog enforces coupled limits first,
+                // then broadcasts ONE normalized parameter set to all views.
+                onEdit_(key,val);
+            } else {
+                recompute();
+            }
         });
         callouts_.push_back(std::move(a));
     }
@@ -299,6 +304,11 @@ void ComponentLivePreviewWidget::setInput(ComponentInput input) {
         highlight_.clear();
         pan_=QPointF{};
         zoom_=1.0;
+        // Last valid geometry from another selected pair is not a valid
+        // fallback for this pair: do not display an unrelated connection.
+        plan_=GenerationPlan{};
+        plan_.ok=false;
+        previewWarning_.clear();
     }
     input_=std::move(input);
     haveInput_=input_.main.id!=kInvalidEntityId && !input_.secondary.empty();
@@ -352,11 +362,23 @@ void ComponentLivePreviewWidget::syncEditors() {
 void ComponentLivePreviewWidget::recompute() {
     if(!haveInput_) {
         plan_.ok=false;plan_.error=L"Modelde bagli kolon ve kiris bulunamadi";
+        previewWarning_.clear();
         for(auto& c:callouts_)c.spin->hide();
         update();return;
     }
     input_.params=params_;
-    plan_=ComponentRegistry::instance().generate(L"tekla_haunch_40",input_);
+    GenerationPlan next=ComponentRegistry::instance().generate(L"tekla_haunch_40",input_);
+    if(next.ok) {
+        plan_=std::move(next);
+        previewWarning_.clear();
+    } else if(plan_.ok && !plan_.plates.empty()) {
+        // Preserve the last *valid* geometry while indicating clearly that
+        // unsaved draft dimensions were NOT applied. Document is untouched.
+        previewWarning_=next.error;
+    } else {
+        plan_=std::move(next);
+        previewWarning_.clear();
+    }
     // An optional selected child (e.g. a disabled stiffener) may cease
     // to exist after parameter edits. Clear its selection rather than
     // fading every remaining part against an invisible phantom child.
@@ -480,6 +502,17 @@ void ComponentLivePreviewWidget::paintEvent(QPaintEvent*) {
         return;
     }
     drawModel(painter);
+    if(!previewWarning_.empty()) {
+        painter.setPen(QColor("#92400e"));
+        painter.setBrush(QColor("#fff2db"));
+        const QRect warningRect(10,height()-(compact_?36:72),
+                                width()-20,compact_?28:48);
+        painter.drawRoundedRect(warningRect,5.0,5.0);
+        const QString label=QStringLiteral("Son gecerli geometri (yeni olculer uygulanmadi): ")
+                             +QString::fromStdWString(previewWarning_);
+        painter.drawText(warningRect.adjusted(7,2,-7,-2),
+                         Qt::AlignCenter|Qt::TextWordWrap,label);
+    }
     painter.setPen(QColor("#344c64"));
     if(compact_) {
         QFont mini=painter.font();
