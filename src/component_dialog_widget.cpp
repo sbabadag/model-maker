@@ -1,4 +1,5 @@
 #include "model_maker/component_dialog_widget.hpp"
+#include "model_maker/component_live_preview_widget.hpp"
 #include "model_maker/component_option_icons.hpp"
 
 #include <QAbstractItemView>
@@ -292,7 +293,40 @@ ComponentDialogWidget::ComponentDialogWidget(const ComponentDialogDefinition& de
 
     schematic_ = new ComponentSchematicView(def_.schema, this);
     schematic_->setMinimumWidth(300);
-    root->addWidget(schematic_, /*stretch*/ 3);
+    if (def_.typeId == L"tekla_haunch_40") {
+        // Native 40's new own 3D preview is the MAIN PAGE. The standard
+        // schema-driven property editors remain authoritative on the right.
+        auto* left = new QWidget(this);
+        auto* vertical = new QVBoxLayout(left);
+        vertical->setContentsMargins(0,0,0,0);
+        vertical->setSpacing(5);
+        auto* views = new QHBoxLayout;
+        auto* title = new QLabel(QStringLiteral("3D Canli Onizleme"),left);
+        title->setStyleSheet(QStringLiteral("font-weight:700;font-size:14px;color:#314760"));
+        views->addWidget(title,1);
+        for(const auto& view: {
+                std::pair<const char*,const char*>{"iso","3D"},
+                {"front","On"},{"side","Yan"},{"top","Ust"}}) {
+            auto* button=new QPushButton(QString::fromUtf8(view.second),left);
+            button->setFixedWidth(52);
+            QObject::connect(button,&QPushButton::clicked,this,
+                [this,key=std::string(view.first)]() {
+                    if(nativePreview_)nativePreview_->setView(key);
+                });
+            views->addWidget(button);
+        }
+        vertical->addLayout(views);
+        nativePreview_=new ComponentLivePreviewWidget(left);
+        nativePreview_->setOnEdit([this](const std::wstring& name,double value) {
+            updateFormFromPreview(name,value);
+        });
+        nativePreview_->setParams(current_);
+        vertical->addWidget(nativePreview_,1);
+        root->addWidget(left, /*stretch*/ 5);
+        schematic_->hide();
+    } else {
+        root->addWidget(schematic_, /*stretch*/ 3);
+    }
 
     scroll_ = new QScrollArea(this);
     scroll_->setWidgetResizable(true);
@@ -453,6 +487,25 @@ ComponentDialogWidget::ComponentDialogWidget(const ComponentDialogDefinition& de
 
     connect(schematic_, &ComponentSchematicView::hotspotClicked,
             this, &ComponentDialogWidget::onHotspotClicked);
+    if(nativePreview_) {
+        // Connect all existing right-side editors to the ONE native
+        // param/value source. No duplicate edits or fake 'Apply' callbacks.
+        for(const auto& [name, editor]:editors_) {
+            if(auto* d=qobject_cast<QDoubleSpinBox*>(editor)) {
+                QObject::connect(d,QOverload<double>::of(&QDoubleSpinBox::valueChanged),
+                                 this,[this](double){updatePreviewFromForm();});
+            } else if(auto* b=qobject_cast<QCheckBox*>(editor)) {
+                QObject::connect(b,&QCheckBox::toggled,
+                                 this,[this](bool){updatePreviewFromForm();});
+            } else if(auto* combo=qobject_cast<QComboBox*>(editor)) {
+                QObject::connect(combo,QOverload<int>::of(&QComboBox::currentIndexChanged),
+                                 this,[this](int){updatePreviewFromForm();});
+            } else if(auto* text=qobject_cast<QLineEdit*>(editor)) {
+                QObject::connect(text,&QLineEdit::editingFinished,
+                                 this,[this](){updatePreviewFromForm();});
+            }
+        }
+    }
 }
 
 // Tek parametre satiri: [Default onay kutusu] etiket | editor.
@@ -1274,6 +1327,30 @@ void ComponentDialogWidget::setEditorValue(QWidget* editor, const CompParamSpec&
     }
 }
 
+void ComponentDialogWidget::setPreviewInput(const ComponentInput& input) {
+    if(nativePreview_) {
+        nativePreview_->setInput(input);
+        nativePreview_->setParams(resultParams());
+    }
+}
+void ComponentDialogWidget::updatePreviewFromForm() {
+    if(nativePreview_)nativePreview_->setParams(resultParams());
+}
+void ComponentDialogWidget::updateFormFromPreview(const std::wstring& name,
+                                                   double value) {
+    const auto it=editors_.find(name);
+    if(it==editors_.end())return;
+    if(auto* d=qobject_cast<QDoubleSpinBox*>(it->second)) {
+        const QSignalBlocker guard(d);
+        d->setValue(value);
+    }
+    if(const auto ck=optionalChecks_.find(name);ck!=optionalChecks_.end()) {
+        const QSignalBlocker guard(ck->second);
+        ck->second->setChecked(true);
+    }
+    onHotspotClicked(QString::fromStdWString(name));
+}
+
 void ComponentDialogWidget::setParams(const std::vector<CompParam>& p) {
     current_ = p;
     for (const auto& spec : def_.specs) {
@@ -1285,6 +1362,7 @@ void ComponentDialogWidget::setParams(const std::vector<CompParam>& p) {
         if (oc != optionalChecks_.end() && oc->second->isEnabled())
             oc->second->setChecked(stored != nullptr);
     }
+    updatePreviewFromForm();
 }
 
 CompParamValue ComponentDialogWidget::valueFromEditor(QWidget* editor,
@@ -1395,6 +1473,7 @@ const char* kHighlightSheet =
 }  // namespace
 
 void ComponentDialogWidget::highlightParamRow(const std::wstring& paramName) {
+    if(nativePreview_)nativePreview_->setHighlightedParam(paramName);
     if (!highlightedRow_.empty()) {
         const auto it = rows_.find(highlightedRow_);
         if (it != rows_.end() && it->second->styleSheet() == QLatin1String(kHighlightSheet))
