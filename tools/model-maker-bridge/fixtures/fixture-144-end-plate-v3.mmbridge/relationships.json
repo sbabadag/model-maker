@@ -1,0 +1,86 @@
+[
+  {
+    "id": "r1",
+    "kind": "partOf",
+    "sourceGUID": "7701",
+    "targetGUID": "1441",
+    "confidence": "observed"
+  },
+  {
+    "id": "r2",
+    "kind": "partOf",
+    "sourceGUID": "7702",
+    "targetGUID": "1441",
+    "confidence": "observed"
+  },
+  {
+    "id": "r3",
+    "kind": "partOf",
+    "sourceGUID": "7703",
+    "targetGUID": "1441",
+    "confidence": "observed"
+  },
+  {
+    "id": "r4",
+    "kind": "boltedTo",
+    "sourceGUID": "7704",
+    "targetGUID": "7701",
+    "confidence": "observed"
+  },
+  {
+    "id": "r5",
+    "kind": "boltedTo",
+    "sourceGUID": "7705",
+    "targetGUID": "7701",
+    "confidence": "observed"
+  },
+  {
+    "id": "r6",
+    "kind": "weldedTo",
+    "sourceGUID": "7706",
+    "targetGUID": "7701",
+    "confidence": "observed"
+  },
+  {
+    "id": "r7",
+    "kind": "weldedTo",
+    "sourceGUID": "7707",
+    "targetGUID": "7701",
+    "confidence": "observed"
+  },
+  {
+    "id": "r8",
+    "kind": "memberOf",
+    "sourceGUID": "6100",
+    "targetGUID": "1441",
+    "confidence": "observed"
+  },
+  {
+    "id": "r9",
+    "kind": "secondaryOf",
+    "sourceGUID": "6200",
+    "targetGUID": "1441",
+    "confidence": "observed"
+  },
+  {
+    "id": "r10",
+    "kind": "cutBy",
+    "sourceGUID": "6200",
+    "targetGUID": "1441",
+    "confidence": "inferred"
+  },
+  {
+    "id": "r11",
+    "kind": "fittedTo",
+    "sourceGUID": "7708",
+    "targetGUID": "6200",
+    "confidence": "inferred"
+  },
+  {
+    "id": "r12",
+    "kind": "operatedBy",
+    "sourceGUID": "7709",
+    "targetGUID": "6200",
+    "confidence": "inferred"
+  }
+]

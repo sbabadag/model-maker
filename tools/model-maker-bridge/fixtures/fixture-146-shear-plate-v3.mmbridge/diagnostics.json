@@ -1,0 +1,12 @@
+{
+  "knownLimitations": [
+    "FIXTURE-V3: elle yazilmis test verisi.",
+    "plaka kati delik topolojisi icermiyor; delikler bulon verisinden yeniden uretilir."
+  ],
+  "inaccessibleObjects": [],
+  "unsupportedFeatures": [
+    "kaynak geometrisi yeniden uretilmez (yalniz metadata).",
+    "ikincil uye (HEA300 BEAM) govdesi yeniden uretilmez (yalniz referans)."
+  ],
+  "warnings": []
+}

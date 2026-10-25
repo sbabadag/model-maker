@@ -12,17 +12,25 @@
 
 namespace mm {
 
-enum class DrawTool { Line, Polyline, Rectangle, Circle, Face3D };
+enum class DrawTool { Line, Polyline, Rectangle, Circle, Face3D, Column, Divide };
 enum class SnapType {
     None, Grid, Endpoint, Midpoint, Center, GeometricCenter, Node, Quadrant,
     Intersection, ApparentIntersection, Extension, Insertion, Perpendicular,
-    Tangent, Nearest, Parallel
+    Tangent, Nearest, Parallel,
+    // SANAL PROFIL MERKEZI: profil elemaninin (katisinin) sinir kutusu merkezi.
+    // Gercek bir kose/kenar DEGILDIR — hicbir vertex/edge orada olmasa da snap
+    // oraya oturur (kullanici sarti: "profilin tam merkezinde bir sanal snap
+    // noktasi olustur"). EN SONA eklendi: mevcut turlerin indeksleri ve
+    // kayitli/sabit maskeler kaymaz.
+    ProfileCenter
 };
 enum class SnapMarkerSymbol {
     None, GridCross, Square, Triangle, Circle, CircleCross, CrossedCircle, Diamond, Cross,
     ExtensionLine, LinkedSquares, RightAngle, TangentCircle, Hourglass, BoxedCross, ParallelLines
 };
-using SnapTypeMask = std::array<bool, static_cast<std::size_t>(SnapType::Parallel) + 1>;
+// Maske boyutu EN SON turden turetilir (tek kaynak): yeni bir tur eklenince
+// liste uzar, ayri bir sayi guncellemek gerekmez.
+using SnapTypeMask = std::array<bool, static_cast<std::size_t>(SnapType::ProfileCenter) + 1>;
 
 enum class OrthoAxis { None, X, Y, Z };
 
@@ -42,6 +50,10 @@ struct TemporaryTrackingResult {
     SnapResult result{};
     std::vector<TrackingGuide> guides;
     std::vector<Vec3> derivedPoints;
+    // DIKME (perpendicular) ayaklari: iki izleme noktasinin tanimladigi dogruya
+    // imlecin dikme ayagi. Ayri tutulur cunku cizimde farkli isaretlenir
+    // (sag aci / PERP) ve snapping'te SnapType::Perpendicular uretir.
+    std::vector<Vec3> perpendicularPoints;
     bool locked{};
 };
 
@@ -68,22 +80,23 @@ EntityProperties resolveEntityStyle(
 class SnapEngine {
 public:
     static SnapResult snap(const Vec3& cursor, const Document& document,
-                           double objectTolerance, double gridSpacing,
+                           double objectTolerance,
                            bool objectSnapEnabled = true, bool gridSnapEnabled = true,
                            std::optional<Vec3> referencePoint = std::nullopt,
                            const SnapTypeMask* enabledTypes = nullptr);
     static SnapResult snap3D(const Vec2& screenCursor, const Document& document,
                              const Camera& camera, int viewportWidth, int viewportHeight,
-                             double objectTolerancePixels, double gridSpacing, double workPlaneZ,
+                             double objectTolerancePixels, double workPlaneZ,
                              bool objectSnapEnabled = true, bool gridSnapEnabled = true,
                              std::optional<Vec3> referencePoint = std::nullopt,
                              const SnapTypeMask* enabledTypes = nullptr);
     static SnapResult snap3D(const Vec2& screenCursor, const Document& document,
                              const Camera& camera, int viewportWidth, int viewportHeight,
-                             double objectTolerancePixels, double gridSpacing, const WorkPlane& workPlane,
+                             double objectTolerancePixels, const WorkPlane& workPlane,
                              bool objectSnapEnabled = true, bool gridSnapEnabled = true,
                              std::optional<Vec3> referencePoint = std::nullopt,
-                             const SnapTypeMask* enabledTypes = nullptr);
+                             const SnapTypeMask* enabledTypes = nullptr,
+                             bool visibleEdgesOnly = false);
 };
 
 std::optional<Vec3> parseDynamicPoint(std::wstring_view text,
@@ -91,6 +104,9 @@ std::optional<Vec3> parseDynamicPoint(std::wstring_view text,
                                       std::optional<Vec3> directionPoint = std::nullopt) noexcept;
 const wchar_t* snapTypeLabel(SnapType type) noexcept;
 SnapMarkerSymbol snapMarkerSymbol(SnapType type) noexcept;
+// Snap turune gore marker rengi (COLORREF, RGB makrosuz — renderer'da
+// kur). Her snap ayri renk: tek yesil marker ayirt edilmiyordu.
+unsigned long snapMarkerColorRgb(SnapType type) noexcept;
 const wchar_t* toolLabel(DrawTool tool) noexcept;
 bool shouldEvaluateSnapping(bool selectingEntities, bool zoomPhase, bool cameraNavigating) noexcept;
 Vec3 constrainOrtho(const Vec3& anchor, const Vec3& cursor) noexcept;
@@ -128,6 +144,34 @@ std::optional<std::size_t> hitTestModel2D(const Vec3& cursor, const Document& do
 std::optional<std::size_t> hitTestModel3D(const Vec2& cursor, const Document& document,
                                          const Camera& camera, int viewportWidth, int viewportHeight,
                                          double tolerancePixels);
+// Yalniz belirtilen aday modeller uzerinde isabet testi (orn. kati trim
+// icin yalniz yuzu olan modeller).
+std::optional<std::size_t> hitTestModelCandidates2D(const Vec3& cursor, const Document& document,
+                                                    double tolerance,
+                                                    const std::vector<std::size_t>& candidates);
+std::optional<std::size_t> hitTestModelCandidates3D(const Vec2& cursor, const Document& document,
+                                                    const Camera& camera, int viewportWidth,
+                                                    int viewportHeight, double tolerancePixels,
+                                                    const std::vector<std::size_t>& candidates);
+// --- KESME NESNELERI SECIMI (P5) -------------------------------------------
+// Kesme modifier'inin SECILEBILIR geometrisi. Renderer (cizim) ve hit-test
+// AYNI kaynaktan beslenir: PlaneCut/Fitting -> hedef kutusundan turetilen
+// sonlu duzlem dikdortgeni (4 kose); PolygonCut -> mod.polygon (>=3 kose);
+// LineCut -> {bas, son} segment. BooleanCut'in kendi sekli yoktur (kesici
+// parca zaten ayri bir MODEL olarak secilir). targetBounds hedef parcanin
+// AABB'si; kutu gecersizse (yeni/hedefsiz) varsayilan 500 mm yari-boyut.
+struct CutPickGeometry {
+    std::vector<Vec3> polygon; // >=3 kose (kapali) VEYA 2 kose (segment)
+    bool isSegment{false};
+};
+CutPickGeometry cutModifierPickGeometry(const CutModifier& mod,
+                                        const Bounds3& targetBounds) noexcept;
+std::optional<std::size_t> hitTestCutModifier2D(const Vec3& cursor, const Document& document,
+                                                double tolerance, bool includeSourceBound = false);
+std::optional<std::size_t> hitTestCutModifier3D(const Vec2& cursor, const Document& document,
+                                                const Camera& camera, int viewportWidth,
+                                                int viewportHeight, double tolerancePixels,
+                                                bool includeSourceBound = false);
 std::vector<std::size_t> selectModelsInRect2D(const Vec3& firstCorner, const Vec3& secondCorner,
                                               const Document& document, bool crossing);
 std::vector<std::size_t> selectModelsInRect3D(const Vec2& firstCorner, const Vec2& secondCorner,

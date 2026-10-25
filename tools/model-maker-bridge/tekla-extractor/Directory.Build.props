@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Model Maker Tekla Bridge — Gacless Tekla Open API ayarlari (tekla-metraj deseni).
+  Tekla farkli bir surume kuruluysa -p:TeklaVersion= ile degistirin.
+  TeklaApiVersion: en eski calisan surumle derle -> o surum ve sonrasi calisir.
+-->
+<Project ToolsVersion="14.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <TeklaVersion Condition="'$(TeklaVersion)' == ''">2025.0</TeklaVersion>
+    <TeklaExtensionsFolder Condition="'$(TeklaExtensionsFolder)' == ''">C:\ProgramData\Trimble\Tekla Structures\2025.0\Environments\common\extensions</TeklaExtensionsFolder>
+    <TeklaApiVersion Condition="'$(TeklaApiVersion)' == ''">2021.0.0</TeklaApiVersion>
+    <DisablePatchCodeBaseToAppConfigFiles Condition="'$(OS)' != 'Windows_NT'">true</DisablePatchCodeBaseToAppConfigFiles>
+  </PropertyGroup>
+</Project>

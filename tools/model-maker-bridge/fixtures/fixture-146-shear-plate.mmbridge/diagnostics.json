@@ -1,0 +1,10 @@
+{
+  "knownLimitations": [
+    "FIXTURE: elle yazilmis test verisi; gercek Tekla ciktisi degil."
+  ],
+  "inaccessibleObjects": [],
+  "unsupportedFeatures": [
+    "seat angle, haunch, notch — fixture'da yok"
+  ],
+  "warnings": []
+}

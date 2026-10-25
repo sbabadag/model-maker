@@ -160,13 +160,13 @@ int main() {
             return cross2dCount;
         }, reps);
         const double snap2d = medianMilliseconds([&] {
-            const auto r = mm::SnapEngine::snap(cursor, document, pickTolerance, 1.0,
+            const auto r = mm::SnapEngine::snap(cursor, document, pickTolerance,
                                                 true, false, std::nullopt, nullptr);
             return r.point.x + r.point.y + static_cast<double>(r.type != mm::SnapType::None);
         }, reps);
         const double snap3d = medianMilliseconds([&] {
             const auto r = mm::SnapEngine::snap3D(fittedCenter, document, fitted,
-                                                  viewportWidth, viewportHeight, 10.0, 1.0, 0.0,
+                                                  viewportWidth, viewportHeight, 10.0, 0.0,
                                                   true, false, std::nullopt, nullptr);
             return r.point.x + r.point.y + static_cast<double>(r.type != mm::SnapType::None);
         }, reps);

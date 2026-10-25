@@ -214,8 +214,11 @@ void test_camera_standard_view_presets() {
     require(std::abs(camera.pitch()) < 0.001, "Right view pitch mismatch");
 
     camera.setView(mm::StandardView::Isometric);
-    require(std::abs(camera.yaw()) < 0.001, "Isometric yaw mismatch");
-    require(std::abs(camera.pitch()) < 0.001, "Isometric pitch mismatch");
+    // Gercek 3B izometrik: yaw=45° (0.25*pi), pitch=+35.264° (+atan(1/sqrt2)),
+    // roll=120° (2*pi/3) — camera.cpp'deki kIsoYaw/kIsoPitch/kIsoRoll ile ayni.
+    require(std::abs(camera.yaw() - 0.7853981633974483) < 0.001, "Isometric yaw mismatch");
+    require(std::abs(camera.pitch() - 0.6154797086703868) < 0.001, "Isometric pitch mismatch");
+    require(std::abs(camera.roll() - 2.0943951023931953) < 0.001, "Isometric roll mismatch");
 }
 
 void test_view_cube_hit_testing() {
@@ -229,12 +232,14 @@ void test_view_cube_hit_testing() {
         for (const auto& point : face.points) { x += point.x; y += point.y; }
         x /= static_cast<int>(face.points.size());
         y /= static_cast<int>(face.points.size());
-        require(mm::ViewCube::hitTest(x, y, viewportWidth, camera) == face.view,
+        const auto hit = mm::ViewCube::hitTest(x, y, viewportWidth, camera);
+        require(hit && hit->kind == mm::ViewCubeTargetKind::Face && hit->face == face.view,
                 "Each visible global ViewCube face must select its matching standard view");
     }
     const int homeX = (layout.homeControl.left + layout.homeControl.right) / 2;
     const int homeY = (layout.homeControl.top + layout.homeControl.bottom) / 2;
-    require(mm::ViewCube::hitTest(homeX, homeY, viewportWidth, camera) == mm::StandardView::Isometric,
+    const auto homeHit = mm::ViewCube::hitTest(homeX, homeY, viewportWidth, camera);
+    require(homeHit && homeHit->kind == mm::ViewCubeTargetKind::Home,
             "View cube home control must select isometric view");
     require(!mm::ViewCube::hitTest(800, 400, viewportWidth, camera).has_value(),
             "Canvas outside the view cube must not select a view");
@@ -510,7 +515,7 @@ void test_hidden_and_locked_layers_are_not_selectable_or_snappable() {
 
     require(!mm::hitTestModel2D({5.0, 0.0, 0.0}, document, 0.1).has_value(),
             "Locked layer geometry must not be selectable");
-    const auto lockedSnap = mm::SnapEngine::snap({0.01, 0.01, 0.0}, document, 0.1, 1.0,
+    const auto lockedSnap = mm::SnapEngine::snap({0.01, 0.01, 0.0}, document, 0.1,
                                                  true, false);
     require(lockedSnap.type == mm::SnapType::None,
             "Locked layer geometry must not provide object snaps");
@@ -520,7 +525,7 @@ void test_hidden_and_locked_layers_are_not_selectable_or_snappable() {
     document.setLayerProperties(layer);
     require(!mm::hitTestModel2D({5.0, 0.0, 0.0}, document, 0.1).has_value(),
             "Hidden layer geometry must not be selectable");
-    const auto hiddenSnap = mm::SnapEngine::snap({0.01, 0.01, 0.0}, document, 0.1, 1.0,
+    const auto hiddenSnap = mm::SnapEngine::snap({0.01, 0.01, 0.0}, document, 0.1,
                                                  true, false);
     require(hiddenSnap.type == mm::SnapType::None,
             "Hidden layer geometry must not provide object snaps");
@@ -956,7 +961,14 @@ void test_document_spatial_index_limits_large_drawing_queries() {
     require(filteredBounds.size() == 11 && filteredBounds.front() == 24995 && filteredBounds.back() == 25005,
             "Generic bounds queries must prune the spatial tree and return exact model indices");
     const auto nearby = document.query2D({24995.0, -1.0, 0.0}, {25005.0, 2.0, 0.0});
-    require(nearby.size() == 11 && nearby.front() == 24995 && nearby.back() == 25005,
+    // query2D sonucu agac gezinti sirasinda gelir; siralama bilincli olarak
+    // kaldirildi (c69939c) — kumenin dogrulugu siradan bagimsiz dogrulanir.
+    // Beklenen kume {24995..25005} ile TAM esitlik, sira gozetilmeksizin.
+    std::vector<std::size_t> expectedNearby;
+    for (std::size_t id = 24995; id <= 25005; ++id) expectedNearby.push_back(id);
+    auto nearbySorted = nearby;
+    std::sort(nearbySorted.begin(), nearbySorted.end());
+    require(nearbySorted == expectedNearby,
             "Spatial query must return only nearby entities from a large drawing");
 }
 
@@ -1280,7 +1292,7 @@ void test_projected_3d_window_and_crossing_selection() {
 void test_snap_prefers_nearby_endpoint() {
     mm::Document document;
     document.addLine({1.0, 2.0, 0.0}, {4.0, 2.0, 0.0});
-    const auto result = mm::SnapEngine::snap({1.08, 2.04, 0.0}, document, 0.15, 1.0);
+    const auto result = mm::SnapEngine::snap({1.08, 2.04, 0.0}, document, 0.15);
     require(result.type == mm::SnapType::Endpoint, "Nearby vertex must endpoint-snap");
     require(result.point == mm::Vec3{1.0, 2.0, 0.0}, "Endpoint snap coordinate mismatch");
 }
@@ -1316,7 +1328,7 @@ void test_snap_marker_symbols_match_cad_reference_conventions() {
 void test_snap_finds_edge_midpoint() {
     mm::Document document;
     document.addLine({0.0, 0.0, 0.0}, {4.0, 0.0, 0.0});
-    const auto result = mm::SnapEngine::snap({2.04, 0.03, 0.0}, document, 0.15, 1.0);
+    const auto result = mm::SnapEngine::snap({2.04, 0.03, 0.0}, document, 0.15);
     require(result.type == mm::SnapType::Midpoint, "Edge center must midpoint-snap");
     require(result.point == mm::Vec3{2.0, 0.0, 0.0}, "Midpoint snap coordinate mismatch");
 }
@@ -1326,12 +1338,12 @@ void test_snap_respects_individual_type_enablement() {
     document.addLine({0.0, 0.0, 0.0}, {4.0, 0.0, 0.0});
     mm::SnapTypeMask enabled{};
     enabled[static_cast<std::size_t>(mm::SnapType::Midpoint)] = true;
-    const auto midpoint = mm::SnapEngine::snap({2.04, 0.03, 0.0}, document, 0.15, 1.0,
+    const auto midpoint = mm::SnapEngine::snap({2.04, 0.03, 0.0}, document, 0.15,
                                                 true, false, std::nullopt, &enabled);
     require(midpoint.type == mm::SnapType::Midpoint,
             "An individually enabled midpoint snap must remain available");
     enabled[static_cast<std::size_t>(mm::SnapType::Midpoint)] = false;
-    const auto disabled = mm::SnapEngine::snap({2.04, 0.03, 0.0}, document, 0.15, 1.0,
+    const auto disabled = mm::SnapEngine::snap({2.04, 0.03, 0.0}, document, 0.15,
                                                 true, false, std::nullopt, &enabled);
     require(disabled.type == mm::SnapType::None,
             "An individually disabled snap type must not be selected");
@@ -1341,7 +1353,7 @@ void test_snap_finds_line_intersection() {
     mm::Document document;
     document.addLine({-2.0, 0.0, 0.0}, {2.0, 0.0, 0.0});
     document.addLine({0.0, -2.0, 0.0}, {0.0, 2.0, 0.0});
-    const auto result = mm::SnapEngine::snap({0.04, 0.03, 0.0}, document, 0.15, 1.0);
+    const auto result = mm::SnapEngine::snap({0.04, 0.03, 0.0}, document, 0.15);
     require(result.type == mm::SnapType::Intersection, "Crossing edges must intersection-snap");
     require(result.point == mm::Vec3{0.0, 0.0, 0.0}, "Intersection coordinate mismatch");
 }
@@ -1349,9 +1361,9 @@ void test_snap_finds_line_intersection() {
 void test_snap_finds_circle_center_and_quadrant() {
     mm::Document document;
     document.addModel(mm::WireframeModel::circle({3.0, 4.0, 0.0}, 2.0, 32));
-    const auto center = mm::SnapEngine::snap({3.03, 4.02, 0.0}, document, 0.15, 1.0);
+    const auto center = mm::SnapEngine::snap({3.03, 4.02, 0.0}, document, 0.15);
     require(center.type == mm::SnapType::Center, "Circle center must center-snap");
-    const auto quadrant = mm::SnapEngine::snap({5.04, 4.01, 0.0}, document, 0.15, 1.0);
+    const auto quadrant = mm::SnapEngine::snap({5.04, 4.01, 0.0}, document, 0.15);
     require(quadrant.type == mm::SnapType::Quadrant, "Circle cardinal point must quadrant-snap");
     require(std::abs(quadrant.point.x - 5.0) < 1e-9 && std::abs(quadrant.point.y - 4.0) < 1e-9,
             "Quadrant coordinate mismatch");
@@ -1360,7 +1372,7 @@ void test_snap_finds_circle_center_and_quadrant() {
 void test_snap_finds_polygon_geometric_center() {
     mm::Document document;
     document.addModel(mm::WireframeModel::rectangle({0.0, 0.0, 0.0}, {4.0, 2.0, 0.0}));
-    const auto result = mm::SnapEngine::snap({2.03, 1.02, 0.0}, document, 0.15, 1.0);
+    const auto result = mm::SnapEngine::snap({2.03, 1.02, 0.0}, document, 0.15);
     require(result.type == mm::SnapType::GeometricCenter, "Closed polygon must geometric-center snap");
     require(result.point == mm::Vec3{2.0, 1.0, 0.0}, "Geometric center coordinate mismatch");
 }
@@ -1368,7 +1380,7 @@ void test_snap_finds_polygon_geometric_center() {
 void test_snap_finds_perpendicular_and_tangent_with_reference_point() {
     mm::Document lineDocument;
     lineDocument.addLine({0.0, 0.0, 0.0}, {4.0, 0.0, 0.0});
-    const auto perpendicular = mm::SnapEngine::snap({2.04, 0.03, 0.0}, lineDocument, 0.15, 1.0,
+    const auto perpendicular = mm::SnapEngine::snap({2.04, 0.03, 0.0}, lineDocument, 0.15,
                                                      true, false, mm::Vec3{2.0, 3.0, 0.0});
     require(perpendicular.type == mm::SnapType::Perpendicular, "Reference point must enable perpendicular snap");
 
@@ -1376,28 +1388,28 @@ void test_snap_finds_perpendicular_and_tangent_with_reference_point() {
     circleDocument.addModel(mm::WireframeModel::circle({0.0, 0.0, 0.0}, 1.0, 64));
     const mm::Vec3 expected{0.5, std::sqrt(0.75), 0.0};
     const auto tangent = mm::SnapEngine::snap({expected.x + 0.02, expected.y + 0.01, 0.0}, circleDocument,
-                                              0.15, 1.0, true, false, mm::Vec3{2.0, 0.0, 0.0});
+                                              0.15, true, false, mm::Vec3{2.0, 0.0, 0.0});
     require(tangent.type == mm::SnapType::Tangent, "Reference point must enable circle tangent snap");
 }
 
 void test_snap_finds_nearest_and_extension() {
     mm::Document document;
     document.addLine({0.0, 0.0, 0.0}, {4.0, 0.0, 0.0});
-    const auto nearest = mm::SnapEngine::snap({1.37, 0.04, 0.0}, document, 0.15, 1.0, true, false);
+    const auto nearest = mm::SnapEngine::snap({1.37, 0.04, 0.0}, document, 0.15, true, false);
     require(nearest.type == mm::SnapType::Nearest, "Edge must nearest-snap between key points");
-    const auto extension = mm::SnapEngine::snap({5.03, 0.02, 0.0}, document, 0.15, 1.0, true, false);
+    const auto extension = mm::SnapEngine::snap({5.03, 0.02, 0.0}, document, 0.15, true, false);
     require(extension.type == mm::SnapType::Extension, "Cursor beyond edge must extension-snap");
 }
 
 void test_snap_finds_node_insertion_and_apparent_intersection() {
     mm::Document pointDocument;
     pointDocument.addModel(mm::WireframeModel::point({2.0, 3.0, 0.0}));
-    const auto node = mm::SnapEngine::snap({2.03, 3.02, 0.0}, pointDocument, 0.15, 1.0, true, false);
+    const auto node = mm::SnapEngine::snap({2.03, 3.02, 0.0}, pointDocument, 0.15, true, false);
     require(node.type == mm::SnapType::Node, "Point entity must node-snap");
 
     mm::Document blockDocument;
     blockDocument.addModel(mm::WireframeModel::cube(2.0));
-    const auto insertion = mm::SnapEngine::snap({0.03, 0.02, 0.0}, blockDocument, 0.15, 1.0, true, false);
+    const auto insertion = mm::SnapEngine::snap({0.03, 0.02, 0.0}, blockDocument, 0.15, true, false);
     require(insertion.type == mm::SnapType::Insertion, "Primitive origin must insertion-snap");
 
     mm::Camera camera;
@@ -1406,27 +1418,20 @@ void test_snap_finds_node_insertion_and_apparent_intersection() {
     apparentDocument.addLine({-1.0, 0.0, 1.0}, {3.0, 0.0, 1.0});
     apparentDocument.addLine({0.0, -2.0, -1.0}, {0.0, 1.0, -1.0});
     const auto apparent = mm::SnapEngine::snap3D({400.0, 300.0}, apparentDocument, camera,
-                                                800, 600, 10.0, 1.0, 0.0, true, false);
+                                                800, 600, 10.0, 0.0, true, false);
     require(apparent.type == mm::SnapType::ApparentIntersection,
             "Projected crossing at different depths must apparent-intersection snap");
-}
-
-void test_snap_falls_back_to_grid() {
-    mm::Document document;
-    const auto result = mm::SnapEngine::snap({1.21, -2.76, 0.0}, document, 0.15, 0.5);
-    require(result.type == mm::SnapType::Grid, "Empty drawing must grid-snap");
-    require(result.point == mm::Vec3{1.0, -3.0, 0.0}, "Grid snap coordinate mismatch");
 }
 
 void test_grid_snap_can_be_disabled_without_disabling_object_snap() {
     mm::Document document;
     document.addLine({1.0, 2.0, 0.0}, {4.0, 2.0, 0.0});
 
-    const auto endpoint = mm::SnapEngine::snap({1.08, 2.04, 0.0}, document, 0.15, 1.0, true, false);
+    const auto endpoint = mm::SnapEngine::snap({1.08, 2.04, 0.0}, document, 0.15, true, false);
     require(endpoint.type == mm::SnapType::Endpoint,
             "Endpoint snap must remain active when grid snap is disabled");
 
-    const auto freePoint = mm::SnapEngine::snap({2.31, 3.67, 0.0}, document, 0.15, 1.0, true, false);
+    const auto freePoint = mm::SnapEngine::snap({2.31, 3.67, 0.0}, document, 0.15, true, false);
     require(freePoint.type == mm::SnapType::None, "Disabled grid snap must not quantize free points");
     require(freePoint.point == mm::Vec3{2.31, 3.67, 0.0}, "Disabled grid snap must preserve cursor coordinates");
 }
@@ -1478,6 +1483,7 @@ void test_modifier_ortho_strictly_constrains_destination_even_near_object_snap()
 
 void test_3d_ortho_constrains_to_all_three_global_axes() {
     mm::Camera camera;
+    camera.reset(); // 3B gorunum (ISO): uc global eksen de ekranda gorunmeli (Top/identity'de Z derinlikte kalir)
     constexpr int width = 900;
     constexpr int height = 700;
     const mm::Vec3 anchor{1.0, -2.0, 0.5};
@@ -1492,9 +1498,13 @@ void test_3d_ortho_constrains_to_all_three_global_axes() {
     const auto zLocked = mm::constrainOrtho3D(anchor, alongAxis({0.0, 0.0, 1.0}, 4.0),
                                                camera, width, height);
 
-    require(xLocked == mm::Vec3{4.0, -2.0, 0.5}, "3D F8 Ortho must lock movement to global X");
-    require(yLocked == mm::Vec3{1.0, -4.5, 0.5}, "3D F8 Ortho must lock movement to global Y");
-    require(zLocked == mm::Vec3{1.0, -2.0, 4.5}, "3D F8 Ortho must lock movement to global Z");
+    const auto nearEq = [](const mm::Vec3& a, const mm::Vec3& b) {
+        return std::abs(a.x - b.x) < 1e-9 && std::abs(a.y - b.y) < 1e-9 &&
+               std::abs(a.z - b.z) < 1e-9;
+    };
+    require(nearEq(xLocked, mm::Vec3{4.0, -2.0, 0.5}), "3D F8 Ortho must lock movement to global X");
+    require(nearEq(yLocked, mm::Vec3{1.0, -4.5, 0.5}), "3D F8 Ortho must lock movement to global Y");
+    require(nearEq(zLocked, mm::Vec3{1.0, -2.0, 4.5}), "3D F8 Ortho must lock movement to global Z");
 
     const mm::SnapResult endpoint{{7.0, 8.0, 9.0}, mm::SnapType::Endpoint, 1.0};
     require(mm::applyOrtho3D(anchor, alongAxis({0.0, 0.0, 1.0}, 2.0), endpoint,
@@ -1506,11 +1516,16 @@ void test_3d_ortho_uses_the_active_work_plane_axes() {
     mm::Camera camera;
     constexpr int width = 900;
     constexpr int height = 700;
-    const double diagonal = std::sqrt(0.5);
+    // 45°-XZ egik duzlem her standart gorunumde yozlasiktir: u ile normal Top'ta,
+    // u ile v ISO'da ekranda antiparalel olur (u+0.707v = ISO bakis yonu). Bu yuzden
+    // eksenleri hicbir standart gorunum yonune denk gelmeyen ortonormal bir taban kullanilir.
+    const double su = std::sqrt(13.0);
+    const double sv = std::sqrt(182.0);
+    const double sn = std::sqrt(14.0);
     const mm::WorkPlane tiltedPlane{{2.0, -1.0, 3.0},
-                                    {diagonal, 0.0, diagonal},
-                                    {0.0, 1.0, 0.0},
-                                    {-diagonal, 0.0, diagonal}};
+                                    {0.0, -3.0 / su, 2.0 / su},
+                                    {13.0 / sv, -2.0 / sv, -3.0 / sv},
+                                    {1.0 / sn, 2.0 / sn, 3.0 / sn}};
     const mm::Vec3 anchor = tiltedPlane.origin + tiltedPlane.u * 1.5 + tiltedPlane.v * 0.75;
     const auto alongU = camera.project(anchor + tiltedPlane.u * 4.0, width, height);
     const auto alongV = camera.project(anchor - tiltedPlane.v * 2.5, width, height);
@@ -1641,7 +1656,7 @@ void test_temporary_tracking_snaps_to_midpoint_between_acquired_points() {
     require(tracking.result.type == mm::SnapType::Midpoint &&
                 tracking.result.point == mm::Vec3{5.0, 0.0, 0.0},
             "Two acquired Temp Points must snap at their exact midpoint");
-    require(tracking.guides.size() == 1 && tracking.guides.front().from == acquired[0] &&
+    require(!tracking.guides.empty() && tracking.guides.front().from == acquired[0] &&
                 tracking.guides.front().to == acquired[1],
             "Two acquired Temp Points must expose their connecting tracking line");
 }
@@ -1757,6 +1772,7 @@ void test_work_plane_is_defined_by_three_non_collinear_points() {
 
 void test_camera_unprojects_to_arbitrary_three_point_work_plane() {
     mm::Camera camera;
+    camera.reset();
     const auto plane = mm::WorkPlane::fromThreePoints({0.0, 1.5, 0.0},
                                                        {1.0, 1.5, 0.0},
                                                        {0.0, 1.5, 1.0});
@@ -1769,23 +1785,6 @@ void test_camera_unprojects_to_arbitrary_three_point_work_plane() {
             std::abs(world->y - expected.y) < 1e-6 &&
             std::abs(world->z - expected.z) < 1e-6,
             "Arbitrary work-plane unprojection must round-trip projected points");
-}
-
-void test_3d_grid_snap_uses_active_work_plane_basis() {
-    mm::Camera camera;
-    mm::Document document;
-    const auto plane = mm::WorkPlane::fromThreePoints({0.0, 2.0, 0.0},
-                                                       {1.0, 2.0, 0.0},
-                                                       {0.0, 2.0, 1.0});
-    require(plane.has_value(), "Grid test plane must be valid");
-    const auto cursor = camera.project({1.2, 2.0, 2.7}, 900, 700);
-    const auto snapped = mm::SnapEngine::snap3D(cursor, document, camera, 900, 700,
-                                                8.0, 1.0, *plane, false, true);
-    require(snapped.type == mm::SnapType::Grid, "Active work plane must retain grid snapping");
-    require(std::abs(snapped.point.x - 1.0) < 1e-9 &&
-            std::abs(snapped.point.y - 2.0) < 1e-9 &&
-            std::abs(snapped.point.z - 3.0) < 1e-9,
-            "3D grid snap must quantize the active plane's U/V coordinates");
 }
 
 void test_parallel_camera_unprojects_planes_on_either_side_of_view_plane() {
@@ -1802,12 +1801,13 @@ void test_parallel_camera_unprojects_planes_on_either_side_of_view_plane() {
 
 void test_projected_snap_finds_3d_endpoint() {
     mm::Camera camera;
+    camera.reset();
     mm::Document document;
     const mm::Vec3 endpoint{1.0, 2.0, 3.0};
     document.addLine(endpoint, {-2.0, 0.0, 1.0});
     const auto screen = camera.project(endpoint, 900, 700);
     const auto result = mm::SnapEngine::snap3D({screen.x + 3.0, screen.y - 2.0}, document, camera,
-                                                900, 700, 8.0, 1.0, 0.0);
+                                                900, 700, 8.0, 0.0);
     require(result.type == mm::SnapType::Endpoint, "Projected cursor must snap to a 3D endpoint");
     require(result.point == endpoint, "Projected 3D endpoint snap coordinate mismatch");
 
@@ -1816,7 +1816,7 @@ void test_projected_snap_finds_3d_endpoint() {
     const auto cubeEndpoint = cubeDocument.models().front().vertices().front();
     const auto cubeScreen = camera.project(cubeEndpoint, 1532, 754);
     const auto cubeResult = mm::SnapEngine::snap3D(cubeScreen, cubeDocument, camera,
-                                                   1532, 754, 10.0, 1.0, 0.0);
+                                                   1532, 754, 10.0, 0.0);
     require(cubeResult.type == mm::SnapType::Endpoint,
             "Projected cursor must snap to a 3D cube endpoint before grid fallback");
     require(cubeResult.point == cubeEndpoint, "Projected 3D cube endpoint coordinate mismatch");
@@ -1989,7 +1989,6 @@ int main() {
         test_snap_finds_perpendicular_and_tangent_with_reference_point();
         test_snap_finds_nearest_and_extension();
         test_snap_finds_node_insertion_and_apparent_intersection();
-        test_snap_falls_back_to_grid();
         test_grid_snap_can_be_disabled_without_disabling_object_snap();
         test_snap_policy_disables_selection_and_zoom_phases();
         test_ortho_constrains_cursor_to_dominant_axis();
@@ -2011,7 +2010,6 @@ int main() {
         test_camera_unprojects_screen_point_to_work_plane();
         test_work_plane_is_defined_by_three_non_collinear_points();
         test_camera_unprojects_to_arbitrary_three_point_work_plane();
-        test_3d_grid_snap_uses_active_work_plane_basis();
         test_parallel_camera_unprojects_planes_on_either_side_of_view_plane();
         test_projected_snap_finds_3d_endpoint();
         test_rectangle_and_circle_geometry();

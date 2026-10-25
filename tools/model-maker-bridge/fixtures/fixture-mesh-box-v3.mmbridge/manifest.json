@@ -1,0 +1,23 @@
+{
+  "formatVersion": "3.0",
+  "sourceApplication": "Tekla Structures",
+  "sourceVersion": "2025 SP6",
+  "producer": {
+    "name": "ModelMaker.TeklaBridge",
+    "version": "3.0.0"
+  },
+  "sourceComponentType": "Detail",
+  "sourceComponentNumber": 0,
+  "sourceComponentName": "Mesh box probe",
+  "sourceModelIdentifier": "FIXTURE-V3-mesh-9001",
+  "sourceModelName": "fixture.db1",
+  "exportTimestamp": "2026-10-21T00:00:00Z",
+  "coordinateSystem": "TeklaGlobal",
+  "lengthUnit": "mm",
+  "componentIdentifier": "FIXTURE-V3-mesh-9001",
+  "knownLimitations": [
+    "FIXTURE-V3: elle yazilmis test verisi; gercek Tekla extractor ciktisi degil."
+  ],
+  "exporterVersion": "3.0.0",
+  "exportedObjectCount": 1
+}

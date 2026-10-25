@@ -1,0 +1,9 @@
+[
+  {
+    "id": "r1",
+    "kind": "partOf",
+    "sourceGUID": "9002",
+    "targetGUID": "9001",
+    "confidence": "observed"
+  }
+]

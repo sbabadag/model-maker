@@ -79,7 +79,7 @@ int main() {
     endpointOnly[static_cast<std::size_t>(mm::SnapType::Endpoint)] = true;
     const auto snap3D = medianMilliseconds([&] {
         const auto result = mm::SnapEngine::snap3D(endpoint, document, camera,
-            viewportWidth, viewportHeight, 10.0, 1.0, 0.0,
+            viewportWidth, viewportHeight, 10.0, 0.0,
             true, false, std::nullopt, &endpointOnly);
         return result.point.x + result.point.y +
                static_cast<double>(result.type == mm::SnapType::Endpoint);

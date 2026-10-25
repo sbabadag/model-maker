@@ -27,6 +27,30 @@ int main(int argc, char* argv[]) {
     SetUnhandledExceptionFilter(crashFilter);
     milestone("main-start");
     try {
+        // HYBRID DPI DUZELTMESI (kok neden): Qt6 kabugu + gomulu Win32 GDI
+        // canvas ayni surecte yasar. Qt host pencereleri Per-Monitor-V2
+        // farkindadir ve GetClientRect FIZIKSEL piksel doner; ama application
+        // .cpp'nin CreateWindowExW ile yarattigi Win32 canvas HWND'si ayni
+        // farkindaligi miras almazsa GetClientRect MANTIKSAL (virtualized)
+        // piksel doner. resizeEmbeddedCanvas tuvali FIZIKSEL boyuta ayarlar,
+        // projeksiyon ise tuvalin MANTIKSAL olcusunu okur -> cizim tuvalin
+        // kose/bolgesinde kalir ("yarim pencere"). Cozum: sureci EN BASTA
+        // (herhangi bir pencere yaratilmadan once) Per-Monitor-V2 farkinda
+        // yap — Qt ve Win32 canvas ayni (fiziksel) koordinat uzayini kullanir.
+        // QT_SCALE_FACTOR=1 denemesi kaldirildi: yalniz Qt'yi 1:1'e ceker,
+        // Win32 canvas'in GetClientRect'ini DEGISTIRMEZ ve 125% ekranda
+        // arayuzu kucultup kotu gosterir.
+        if (!SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2)) {
+            // Zaten ayarlanmis surec (Qt daha once kurmus olabilir) ya da cok eski
+            // Windows. Farkli BIR context onceden kurulduysa koordinat uzaylari
+            // yine ayrisir — bu yuzden etkin farkindaligi asagida logla.
+        }
+        // Teshis: etkin farkindalik PMv2 mi? (startup log'una yaz; Windows'ta
+        // "dpi-pmv2-ok" gorunmuyorsa koordinat uzayi hala ayrik olabilir.)
+        milestone(GetThreadDpiAwarenessContext() == DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2
+                      ? "dpi-pmv2-ok"
+                      : "dpi-pmv2-FAILED");
+
         HINSTANCE instance = GetModuleHandleW(nullptr);
         mm::registerForceDiagramClass(instance);
 

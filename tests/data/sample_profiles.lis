@@ -1,0 +1,41 @@
+PROFILE DATABASE EXPORT VERSION = 2
+
+PROFILE_NAME = "KKR30*3";
+{
+    TYPE = 8; SUB_TYPE = 8002; COORDINATE = 0.000;
+    {
+        "ROUNDING_RADIUS"                   5.800000191E+000
+        "PLATE_THICKNESS"                   3.000000000E+000
+        "WIDTH"                             3.000000000E+001
+        "HEIGHT"                            3.000000000E+001
+        "RADIUS_OF_GYRATION_Y"              1.080000043E+001
+        "RADIUS_OF_GYRATION_X"              1.080000043E+001
+        "SECTION_MODULUS_Y"                 2.339999914E+003
+        "SECTION_MODULUS_X"                 2.339999914E+003
+        "MOMENT_OF_INERTIA_Y"               3.500000000E+004
+        "MOMENT_OF_INERTIA_X"               3.500000000E+004
+        "WEIGHT_PER_UNIT_LENGTH"            2.359999895E+000
+        "COVER_AREA"                        1.000000015E+005
+        "CROSS_SECTION_AREA"                3.010000000E+002
+    }
+}
+
+PROFILE_NAME = "KKR40*4";
+{
+    TYPE = 8; SUB_TYPE = 8002; COORDINATE = 0.000;
+    {
+        "ROUNDING_RADIUS"                   8.000000000E+000
+        "PLATE_THICKNESS"                   4.000000000E+000
+        "WIDTH"                             4.000000000E+001
+        "HEIGHT"                            4.000000000E+001
+        "RADIUS_OF_GYRATION_Y"              1.440000057E+001
+        "RADIUS_OF_GYRATION_X"              1.440000057E+001
+        "SECTION_MODULUS_Y"                 5.539999962E+003
+        "SECTION_MODULUS_X"                 5.539999962E+003
+        "MOMENT_OF_INERTIA_Y"               1.110000038E+005
+        "MOMENT_OF_INERTIA_X"               1.110000038E+005
+        "WEIGHT_PER_UNIT_LENGTH"            4.199999809E+000
+        "COVER_AREA"                        1.500000060E+005
+        "CROSS_SECTION_AREA"                5.350000000E+002
+    }
+}

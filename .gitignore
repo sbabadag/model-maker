@@ -16,3 +16,18 @@ test_pp*
 test_imgui_inc.cpp
 .hermes.md
 .hermes/
+
+build-linux/
+model-maker-render.log
+model-maker-startup.log
+model-maker-trim.log
+model-maker-endplate-diag.log
+model-maker-finplate-diag.log
+build-occ/
+build-occ-linux/
+build-hermes/
+build-debug/
+# Tekla Bridge extractor (dotnet) artifacts
+tools/model-maker-bridge/tekla-extractor/**/bin/
+tools/model-maker-bridge/tekla-extractor/**/obj/
+dist/ 

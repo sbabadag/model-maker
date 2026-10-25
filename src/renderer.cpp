@@ -1,5 +1,7 @@
 #include "model_maker/renderer.hpp"
+#include "model_maker/color_contrast.hpp"
 #include "model_maker/opengl_render_backend.hpp"
+#include "model_maker/reference_layer.hpp"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -12,9 +14,130 @@
 
 namespace mm {
 namespace {
+// Track/guide renkleri tuval fonuna gore ZIT (color_contrast.hpp).
+COLORREF rgbToColorRef(std::uint32_t rgb) noexcept {
+    return RGB((rgb >> 16) & 0xFFu, (rgb >> 8) & 0xFFu, rgb & 0xFFu);
+}
+COLORREF trackGuideColor() noexcept { return rgbToColorRef(trackGuideRgb()); }
+COLORREF guideAxisColor(OrthoAxis axis) noexcept {
+    switch (axis) {
+    case OrthoAxis::X: return rgbToColorRef(kGuideAxisXRgb);
+    case OrthoAxis::Y: return rgbToColorRef(kGuideAxisYRgb);
+    case OrthoAxis::Z: return rgbToColorRef(kGuideAxisZRgb);
+    default: return trackGuideColor();
+    }
+}
 void line(HDC dc, int x1, int y1, int x2, int y2) {
     MoveToEx(dc, x1, y1, nullptr);
     LineTo(dc, x2, y2);
+}
+
+// Snap isaretcisi cizimi: TEK kaynak. Motion overlay ve normal drafting yolu ayni
+// fonksiyonu cagirir; boyut kSnapMarkerScale ile olceklenir (taban yaricap 7 px).
+constexpr int kSnapMarkerScale = 2;
+constexpr int sm(int v) noexcept { return v * kSnapMarkerScale; }
+
+void drawSnapMarkerShape(HDC dc, const POINT& p, SnapMarkerSymbol symbol) {
+    switch (symbol) {
+    case SnapMarkerSymbol::Triangle: {
+        POINT triangle[4]{{p.x, p.y - sm(7)}, {p.x - sm(7), p.y + sm(6)},
+                          {p.x + sm(7), p.y + sm(6)}, {p.x, p.y - sm(7)}};
+        Polyline(dc, triangle, 4);
+        break;
+    }
+    case SnapMarkerSymbol::Circle:
+        Ellipse(dc, p.x - sm(7), p.y - sm(7), p.x + sm(8), p.y + sm(8));
+        break;
+    case SnapMarkerSymbol::CircleCross:
+        Ellipse(dc, p.x - sm(7), p.y - sm(7), p.x + sm(8), p.y + sm(8));
+        line(dc, p.x - sm(4), p.y, p.x + sm(5), p.y);
+        line(dc, p.x, p.y - sm(4), p.x, p.y + sm(5));
+        break;
+    case SnapMarkerSymbol::CrossedCircle:
+        Ellipse(dc, p.x - sm(7), p.y - sm(7), p.x + sm(8), p.y + sm(8));
+        line(dc, p.x - sm(6), p.y - sm(6), p.x + sm(7), p.y + sm(7));
+        line(dc, p.x - sm(6), p.y + sm(6), p.x + sm(7), p.y - sm(7));
+        break;
+    case SnapMarkerSymbol::Diamond: {
+        POINT diamond[5]{{p.x, p.y - sm(7)}, {p.x + sm(7), p.y}, {p.x, p.y + sm(7)},
+                         {p.x - sm(7), p.y}, {p.x, p.y - sm(7)}};
+        Polyline(dc, diamond, 5);
+        break;
+    }
+    case SnapMarkerSymbol::Cross:
+        line(dc, p.x - sm(6), p.y - sm(6), p.x + sm(7), p.y + sm(7));
+        line(dc, p.x - sm(6), p.y + sm(6), p.x + sm(7), p.y - sm(7));
+        break;
+    case SnapMarkerSymbol::BoxedCross:
+        Rectangle(dc, p.x - sm(7), p.y - sm(7), p.x + sm(8), p.y + sm(8));
+        line(dc, p.x - sm(5), p.y - sm(5), p.x + sm(6), p.y + sm(6));
+        line(dc, p.x - sm(5), p.y + sm(5), p.x + sm(6), p.y - sm(6));
+        break;
+    case SnapMarkerSymbol::ExtensionLine:
+        line(dc, p.x - sm(9), p.y, p.x - sm(5), p.y);
+        line(dc, p.x - sm(2), p.y, p.x + sm(3), p.y);
+        line(dc, p.x + sm(6), p.y, p.x + sm(10), p.y);
+        break;
+    case SnapMarkerSymbol::LinkedSquares:
+        Rectangle(dc, p.x - sm(7), p.y - sm(7), p.x + sm(2), p.y + sm(2));
+        Rectangle(dc, p.x - sm(1), p.y - sm(1), p.x + sm(8), p.y + sm(8));
+        break;
+    case SnapMarkerSymbol::RightAngle:
+        line(dc, p.x - sm(7), p.y + sm(7), p.x - sm(7), p.y - sm(5));
+        line(dc, p.x - sm(7), p.y - sm(5), p.x + sm(6), p.y - sm(5));
+        line(dc, p.x - sm(2), p.y - sm(5), p.x - sm(2), p.y + sm(1));
+        line(dc, p.x - sm(2), p.y + sm(1), p.x + sm(4), p.y + sm(1));
+        break;
+    case SnapMarkerSymbol::TangentCircle:
+        Ellipse(dc, p.x - sm(6), p.y - sm(6), p.x + sm(7), p.y + sm(7));
+        line(dc, p.x - sm(8), p.y - sm(7), p.x + sm(9), p.y - sm(7));
+        break;
+    case SnapMarkerSymbol::Hourglass: {
+        POINT hourglass[5]{{p.x - sm(7), p.y - sm(6)}, {p.x + sm(7), p.y - sm(6)},
+                           {p.x - sm(7), p.y + sm(6)}, {p.x + sm(7), p.y + sm(6)},
+                           {p.x - sm(7), p.y - sm(6)}};
+        Polyline(dc, hourglass, 5);
+        break;
+    }
+    case SnapMarkerSymbol::ParallelLines:
+        line(dc, p.x - sm(8), p.y + sm(5), p.x, p.y - sm(5));
+        line(dc, p.x, p.y + sm(5), p.x + sm(8), p.y - sm(5));
+        break;
+    case SnapMarkerSymbol::GridCross:
+        line(dc, p.x - sm(7), p.y, p.x + sm(8), p.y);
+        line(dc, p.x, p.y - sm(7), p.x, p.y + sm(8));
+        Rectangle(dc, p.x - sm(3), p.y - sm(3), p.x + sm(4), p.y + sm(4));
+        break;
+    case SnapMarkerSymbol::Square:
+        Rectangle(dc, p.x - sm(6), p.y - sm(6), p.x + sm(7), p.y + sm(7));
+        break;
+    case SnapMarkerSymbol::None:
+        break;
+    }
+}
+
+
+// Profil uc tutamagi isareti: ic dolu daire; aktifse dis beyaz halka (vurgu).
+void drawGripMarker(HDC dc, int x, int y, COLORREF color, bool active) {
+    const int r = active ? 6 : 4;
+    HBRUSH brush = CreateSolidBrush(color);
+    HPEN pen = CreatePen(PS_SOLID, 1, active ? RGB(255, 255, 255) : color);
+    const HGDIOBJ oldBrush = SelectObject(dc, brush);
+    const HGDIOBJ oldPen = SelectObject(dc, pen);
+    Ellipse(dc, x - r, y - r, x + r + 1, y + r + 1);
+    SelectObject(dc, oldPen);
+    SelectObject(dc, oldBrush);
+    DeleteObject(pen);
+    DeleteObject(brush);
+    if (active) {
+        HPEN ring = CreatePen(PS_SOLID, 2, RGB(255, 255, 255));
+        const HGDIOBJ oldRing = SelectObject(dc, ring);
+        const HGDIOBJ oldRB = SelectObject(dc, GetStockObject(NULL_BRUSH));
+        Ellipse(dc, x - r - 3, y - r - 3, x + r + 4, y + r + 4);
+        SelectObject(dc, oldRB);
+        SelectObject(dc, oldRing);
+        DeleteObject(ring);
+    }
 }
 
 COLORREF nativeColor(std::uint32_t rgb) noexcept {
@@ -22,7 +145,10 @@ COLORREF nativeColor(std::uint32_t rgb) noexcept {
 }
 
 COLORREF shadedFaceColor(std::uint32_t rgb) noexcept {
-    constexpr double factor = 0.42;
+    // GDI yuzleri: GL ile ayni aydinlik ton (tek yonlu esdegeri ~0.81).
+    // Eski 0.42 beyaz yuzleri 107 gri yapiyordu — koyu bloklar "gizli
+    // cizgi" saniliyordu.
+    constexpr double factor = 0.81;
     return RGB(static_cast<int>(((rgb >> 16) & 0xFF) * factor),
                static_cast<int>(((rgb >> 8) & 0xFF) * factor),
                static_cast<int>((rgb & 0xFF) * factor));
@@ -125,7 +251,7 @@ bool Renderer::presentRasterZoom(HDC target, int width, int height, Vec2 offset,
     const int destinationY = static_cast<int>(std::lround(offset.y));
     const int destinationWidth = std::max(1, static_cast<int>(std::lround(width * factor)));
     const int destinationHeight = std::max(1, static_cast<int>(std::lround(height * factor)));
-    HBRUSH background = CreateSolidBrush(RGB(15, 18, 26));
+    HBRUSH background = CreateSolidBrush(canvasBackgroundColor());
     if (destinationX > 0) {
         RECT border{0, 0, std::min(width, destinationX), height}; FillRect(target, &border, background);
     }
@@ -180,10 +306,21 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
     HDC dc = draft.snapOnly ? target : ensureBackBuffer(target, width, height);
     if (!dc) return;
 
-    if (!draft.snapOnly) {
-    HBRUSH background = CreateSolidBrush(RGB(15, 18, 26));
-    FillRect(dc, &client, background);
-    DeleteObject(background);
+    {
+    // Arka plan HER karede boyanir (snapOnly dahil). GRADIENT: ust acik
+    // mavi -> alt beyaza kacan (kullanici talebi). GL kompoziti opak
+    // oldugundan 3B'de GL clear rengi (ust ton) zemin olur; GDI
+    // kenarlarinda ve 2B'de gradient gorunur.
+    TRIVERTEX gradientVertices[2] = {
+        {client.left, client.top, static_cast<COLOR16>(((kCanvasGradientTopRgb >> 16) & 0xFFu) << 8),
+         static_cast<COLOR16>(((kCanvasGradientTopRgb >> 8) & 0xFFu) << 8),
+         static_cast<COLOR16>((kCanvasGradientTopRgb & 0xFFu) << 8), 0xFF00},
+        {client.right, client.bottom, static_cast<COLOR16>(((kCanvasGradientBottomRgb >> 16) & 0xFFu) << 8),
+         static_cast<COLOR16>(((kCanvasGradientBottomRgb >> 8) & 0xFFu) << 8),
+         static_cast<COLOR16>((kCanvasGradientBottomRgb & 0xFFu) << 8), 0xFF00},
+    };
+    GRADIENT_RECT gradientRect{0, 1};
+    GradientFill(dc, gradientVertices, 2, &gradientRect, 1, GRADIENT_FILL_RECT_V);
     }
     HFONT font = CreateFontW(-15, 0, 0, 0, FW_SEMIBOLD, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
                              OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
@@ -194,37 +331,79 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         const auto projected = mode == EditMode::Draw2D
             ? camera.project2D(point, canvas.right - canvas.left, canvas.bottom - canvas.top)
             : camera.project(point, canvas.right - canvas.left, canvas.bottom - canvas.top);
-        return POINT{static_cast<LONG>(projected.x + canvas.left),
-                     static_cast<LONG>(projected.y + canvas.top)};
+        // SIMETRIK YUVARLAMA (once static_cast<LONG> = KESME idi). Kesme hatayi
+        // hep ayni yone (sol-yukari) yigar: sabit referans katmani alt-piksel
+        // hareket eden GL modeline karsi kayar/titrer. lround hatayi [-0.5,+0.5]
+        // araligina indirir ve yanliligi kaldirir -> pan'da katmanlar modelle
+        // ayni hizada kalir.
+        return POINT{static_cast<LONG>(std::lround(projected.x + canvas.left)),
+                     static_cast<LONG>(std::lround(projected.y + canvas.top))};
     };
     HGDIOBJ stockPen = GetCurrentObject(dc, OBJ_PEN);
-    {
-        HPEN gridPen = CreatePen(PS_SOLID, 1,
-                                 mode == EditMode::View3D ? RGB(66, 68, 72) : RGB(34, 40, 53));
-        SelectObject(dc, gridPen);
-        if (mode == EditMode::Draw2D) {
-            const POINT origin = projectPoint({0.0, 0.0, 0.0});
-            const POINT unit = projectPoint({1.0, 0.0, 0.0});
-            const int gridSpacing = std::max(1, static_cast<int>(std::abs(unit.x - origin.x)));
-            for (int x = origin.x % gridSpacing; x < canvas.right; x += gridSpacing)
-                line(dc, x, canvas.top, x, canvas.bottom);
-            for (int y = origin.y % gridSpacing; y < canvas.bottom; y += gridSpacing)
-                line(dc, canvas.left, y, canvas.right, y);
-        } else {
-            constexpr int gridExtent = 10;
-            for (int coordinate = -gridExtent; coordinate <= gridExtent; ++coordinate) {
-                const POINT verticalA = projectPoint(draft.workPlane.fromPlane({static_cast<double>(coordinate), -gridExtent}));
-                const POINT verticalB = projectPoint(draft.workPlane.fromPlane({static_cast<double>(coordinate), gridExtent}));
-                const POINT horizontalA = projectPoint(draft.workPlane.fromPlane({-gridExtent, static_cast<double>(coordinate)}));
-                const POINT horizontalB = projectPoint(draft.workPlane.fromPlane({gridExtent, static_cast<double>(coordinate)}));
-                line(dc, verticalA.x, verticalA.y, verticalB.x, verticalB.y);
-                line(dc, horizontalA.x, horizontalA.y, horizontalB.x, horizontalB.y);
-            }
-        }
+    // YUVARLANMAMIS (double) projeksiyon. projectPoint POINT'e (tamsayi) oturtur;
+    // tamsayiya oturmus degerleri bolerek EKRAN-OLCEKLI bir nicelik turetmek
+    // (120/glyphPx, 0.30*span/ghostPx) zoom'da boyutu kare kare oynatir = flicker.
+    // Olculdu (saf zoom, 240 kare): hayalet duzlem yarim-kenari tamsayi girdiyle
+    // 180.00..182.49 px arasinda gidip geliyor ve 240 karenin 182'sinde YON
+    // DEGISTIRIYOR; yuvarlanmamis projeksiyonla sapma 0.000 px. (Kesme -> lround
+    // degisikligi bunu GIDERMEZ: lround ile de 183 yon degisimi olur.) Sabit
+    // katmanin olcek turetmesi BUNDAN beslenmeli; POINT'e oturtulmus surum
+    // yalnizca cizim icin.
+    const auto projectPointPrecise = [&](const Vec3& point) {
+        const auto projected = mode == EditMode::Draw2D
+            ? camera.project2D(point, canvas.right - canvas.left, canvas.bottom - canvas.top)
+            : camera.project(point, canvas.right - canvas.left, canvas.bottom - canvas.top);
+        return Vec2{projected.x + static_cast<double>(canvas.left),
+                    projected.y + static_cast<double>(canvas.top)};
+    };
+    // IKI NOKTALI GORUNUM YON SECIMI oku: verilen dunya noktasindan, verilen
+    // birim yonde (normal) sabit EKRAN uzunluklu ok cizer (UCS glifi ile ayni
+    // teknik — zoom'dan bagimsiz).
+    const auto drawViewDirectionArrow = [&](const Vec3& at, const Vec3& normal, COLORREF color) {
+        const Vec2 base = projectPointPrecise(at);
+        const Vec2 tipW = projectPointPrecise({at.x + normal.x, at.y + normal.y, at.z + normal.z});
+        const double dx = tipW.x - base.x, dy = tipW.y - base.y;
+        const double len = std::hypot(dx, dy);
+        if (len < 1e-9) return;
+        const double scale = 46.0 / len; // sabit 46 px ok
+        const POINT a{static_cast<LONG>(std::lround(base.x)),
+                      static_cast<LONG>(std::lround(base.y))};
+        const POINT b{static_cast<LONG>(std::lround(base.x + dx * scale)),
+                      static_cast<LONG>(std::lround(base.y + dy * scale))};
+        HPEN pen = CreatePen(PS_SOLID, 2, color);
+        SelectObject(dc, pen);
+        line(dc, a.x, a.y, b.x, b.y);
+        const double ux = dx / len, uy = dy / len;
+        const POINT h1{b.x - static_cast<LONG>(std::lround(ux * 8.0 - uy * 4.0)),
+                       b.y - static_cast<LONG>(std::lround(uy * 8.0 + ux * 4.0))};
+        const POINT h2{b.x - static_cast<LONG>(std::lround(ux * 8.0 + uy * 4.0)),
+                       b.y - static_cast<LONG>(std::lround(uy * 8.0 - ux * 4.0))};
+        line(dc, b.x, b.y, h1.x, h1.y);
+        line(dc, b.x, b.y, h2.x, h2.y);
         SelectObject(dc, stockPen);
-        DeleteObject(gridPen);
+        DeleteObject(pen);
+    };
+    const auto drawGridAndAxes = [&](HDC targetDc) {
+        // MILIMETRIK ADAPTIF GRID KALDIRILDI (kullanici istegi): eski AutoCAD
+        // 1-2-5 adaptif grid cizilmez — sadece UCS ok glifi ve custom yapi
+        // akslari kalir. Grid snap artik custom akslara gider (drafting).
+        // (customUcsPlane/gridColor sadece milimetrik blokta kullanildigi
+        //  icin kaldirildi; UCS ok renkleri sabit.)
 
-        const auto axisGlyph = workPlaneAxisGlyph(draft.workPlane, 2.0);
+        // UCS ok glifi: dunya duzleminde kisa (2m), ozel UCS seciliyken
+        // grid adiminin ~4 kati — secilen duzlem net gorunsun (X/Y oklari
+        // + Z). Grid zaten workPlane.fromPlane ile o duzlemde cizilir.
+        const Vec2 glyphOriginPrecise = projectPointPrecise(draft.workPlane.origin);
+        const Vec2 glyphUnitPrecise = projectPointPrecise(draft.workPlane.fromPlane({1.0, 0.0}));
+        const double glyphPx = std::hypot(glyphUnitPrecise.x - glyphOriginPrecise.x,
+                                          glyphUnitPrecise.y - glyphOriginPrecise.y);
+        // EKRAN-OLCEKLI olmak ZORUNDA (bkz. reference_layer.hpp). ONCEKI kod
+        // dunya biriminde bir ALT SINIR (60) tasiyordu: zoom arttikca glyphPx
+        // buyur, 120/glyphPx 60'in altina duser, kelepce 60'a oturur ve cizilen
+        // EKRAN uzunlugu 60*glyphPx olur — yani zoom ile DOGRUSAL buyur. Olcum
+        // (48 detent = 231x, 1600x900 ISO): ok ekranda 120 px -> 758 px.
+        const double glyphLen = referenceGlyphWorldLength(glyphPx, 120.0);
+        const auto axisGlyph = workPlaneAxisGlyph(draft.workPlane, glyphLen);
         const POINT axisOrigin = projectPoint(axisGlyph.origin);
         const auto drawAxisArrow = [&](const Vec3& worldEnd, COLORREF color, const wchar_t* label) {
             const POINT end = projectPoint(worldEnd);
@@ -232,28 +411,28 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
             const double dy = static_cast<double>(end.y - axisOrigin.y);
             const double length = std::hypot(dx, dy);
             HPEN pen = CreatePen(PS_SOLID, 2, color);
-            SelectObject(dc, pen);
+            SelectObject(targetDc, pen);
             if (length >= 7.0) {
-                line(dc, axisOrigin.x, axisOrigin.y, end.x, end.y);
+                line(targetDc, axisOrigin.x, axisOrigin.y, end.x, end.y);
                 const double ux = dx / length;
                 const double uy = dy / length;
                 const POINT headA{static_cast<LONG>(std::lround(end.x - ux * 8.0 - uy * 4.0)),
                                   static_cast<LONG>(std::lround(end.y - uy * 8.0 + ux * 4.0))};
                 const POINT headB{static_cast<LONG>(std::lround(end.x - ux * 8.0 + uy * 4.0)),
                                   static_cast<LONG>(std::lround(end.y - uy * 8.0 - ux * 4.0))};
-                line(dc, end.x, end.y, headA.x, headA.y);
-                line(dc, end.x, end.y, headB.x, headB.y);
-                drawText(dc, end.x + static_cast<int>(std::lround(ux * 5.0)) - 4,
+                line(targetDc, end.x, end.y, headA.x, headA.y);
+                line(targetDc, end.x, end.y, headB.x, headB.y);
+                drawText(targetDc, end.x + static_cast<int>(std::lround(ux * 5.0)) - 4,
                          end.y + static_cast<int>(std::lround(uy * 5.0)) - 8, label, color);
             } else {
-                HGDIOBJ oldBrush = SelectObject(dc, GetStockObject(NULL_BRUSH));
-                Ellipse(dc, axisOrigin.x - 5, axisOrigin.y - 5,
+                HGDIOBJ oldBrush = SelectObject(targetDc, GetStockObject(NULL_BRUSH));
+                Ellipse(targetDc, axisOrigin.x - 5, axisOrigin.y - 5,
                         axisOrigin.x + 6, axisOrigin.y + 6);
-                SelectObject(dc, oldBrush);
-                SetPixel(dc, axisOrigin.x, axisOrigin.y, color);
-                drawText(dc, axisOrigin.x + 7, axisOrigin.y - 10, label, color);
+                SelectObject(targetDc, oldBrush);
+                SetPixel(targetDc, axisOrigin.x, axisOrigin.y, color);
+                drawText(targetDc, axisOrigin.x + 7, axisOrigin.y - 10, label, color);
             }
-            SelectObject(dc, stockPen);
+            SelectObject(targetDc, stockPen);
             DeleteObject(pen);
         };
         drawAxisArrow(axisGlyph.x, RGB(235, 82, 96), L"X");
@@ -261,13 +440,202 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         drawAxisArrow(axisGlyph.z, RGB(78, 148, 255), L"Z");
 
         HPEN basePointPen = CreatePen(PS_SOLID, 1, RGB(190, 194, 202));
-        SelectObject(dc, basePointPen);
-        HGDIOBJ oldBaseBrush = SelectObject(dc, GetStockObject(NULL_BRUSH));
-        Ellipse(dc, axisOrigin.x - 3, axisOrigin.y - 3, axisOrigin.x + 4, axisOrigin.y + 4);
-        SelectObject(dc, oldBaseBrush);
-        SelectObject(dc, stockPen);
+        SelectObject(targetDc, basePointPen);
+        HGDIOBJ oldBaseBrush = SelectObject(targetDc, GetStockObject(NULL_BRUSH));
+        Ellipse(targetDc, axisOrigin.x - 3, axisOrigin.y - 3, axisOrigin.x + 4, axisOrigin.y + 4);
+        SelectObject(targetDc, oldBaseBrush);
+        SelectObject(targetDc, stockPen);
         DeleteObject(basePointPen);
-    } // grid + eksenler: interaktif karelerde de çizilir (flicker önleme)
+
+        // TEKLA-TARZI YAPI GRIDI: grid bir 3B DUZLEMLER KOMPLEKSIDIR; bir
+        // pencerede YALNIZCA gorunus duzlemini KESEN duzlemlerin kesisim
+        // cizgileri cizilir (dokuman: "The grid is shown on the view plane
+        // using dash-and-dot lines" / "...only shown in the view if any of the
+        // grids' planes intersect with the view plane"). Gorunus duzlemine
+        // PARALEL aile cizilmez → pencerenin duzlemine gore yalniz XY / XZ /
+        // YZ gridi gorunur; "3B grid" OLUSMAZ.
+        // Gorunus duzlemi KAMERADA KILITLI bakis yonunden gelir: yon gorunus
+        // tabani kurulurken BIR KEZ saklanir (Camera::gridViewDirection —
+        // reset/setView/setViewBasis). Yorunge donusu (rotate), pan ve zoom
+        // bunu DEGISTIRMEZ -> "3B goruntuyu dondurmek grid cizimini
+        // degistirmez" ve 45 derece esiklerinde aile SICRAMASI olmaz
+        // (kullanici sarti: "bir kez tek duzlemde cizilir"). Canli R_
+        // KULLANILMAZ.
+        const GridViewPlane gridPlane = gridViewPlaneForDirection(camera.gridViewDirection());
+        // Renk/yazi boyu GRID SPESIFIKASYONUNDAN gelir (Tekla grid property:
+        // Grid color / Label font size and color). Her stilde cizilir
+        // (referans katman) — Wireframe dahil.
+        for (const auto& grid : document.grids()) {
+            if (!grid.visible) continue;
+            const auto rgbOf = [](unsigned int c) {
+                return RGB((c >> 16) & 0xFFu, (c >> 8) & 0xFFu, c & 0xFFu);
+            };
+            const COLORREF axisColor = rgbOf(grid.color);
+            const COLORREF labelColor = rgbOf(grid.labelColor);
+            // Etiket yazi boyu (Tekla: "Label font size"). Negatif height =
+            // karakter yuksekligi; 1..120 px araligina kelepcele.
+            const int fontPx = std::clamp(grid.labelFontSize, 6, 120);
+            HFONT labelFont = CreateFontW(-fontPx, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+                                          DEFAULT_CHARSET, OUT_TT_PRECIS, CLIP_DEFAULT_PRECIS,
+                                          CLEARTYPE_QUALITY, DEFAULT_PITCH, L"Segoe UI");
+            HGDIOBJ oldFont = labelFont ? SelectObject(targetDc, labelFont) : nullptr;
+            const int oldBkMode = SetBkMode(targetDc, TRANSPARENT);
+            const std::vector<GridAxisLine> viewAxes = gridAxesForView(grid, gridPlane);
+            // Kesikli kalem (Tekla: dash-and-dot). {5,3}: ~5px cizgi, ~3px bosluk.
+            // KALEM DONGU DISINDA BIR KEZ: eskiden her aks icin ExtCreatePen +
+            // DeleteObject yapiliyordu (her karede 8 GDI nesnesi yarat/yik).
+            LOGBRUSH gridBrush{BS_SOLID, axisColor, 0};
+            DWORD gridPattern[] = {5, 3};
+            HPEN axisPen = ExtCreatePen(PS_GEOMETRIC | PS_USERSTYLE | PS_ENDCAP_FLAT,
+                                        1, &gridBrush, 2, gridPattern);
+            if (!axisPen) axisPen = CreatePen(PS_SOLID, 1, axisColor);
+            HGDIOBJ oldAxisPen = SelectObject(targetDc, axisPen);
+            // EKRAN-UZAYI KIRPMA SINIRI (bkz. reference_layer.hpp). Tuval + 64 px
+            // pay: etiket/ofset kenarda kesilmesin, ama dev cizgiler yine kirpilsin.
+            const double clipMargin = 64.0;
+            const double clipL = canvas.left - clipMargin;
+            const double clipT = canvas.top - clipMargin;
+            const double clipR = canvas.right + clipMargin;
+            const double clipB = canvas.bottom + clipMargin;
+            for (const auto& axis : viewAxes) {
+                const POINT from = projectPoint(axis.from);
+                const POINT to = projectPoint(axis.to);
+                // Referans katmani DUNYA geometrisidir ve dogrudan projeksiyonlanir;
+                // KIRPMA OLMADAN derin zoom'da ayni cizgi ekranda dogrusal buyur.
+                // Olcum (1600x900, ISO plan gridi, 48 detent = 231x): toplam cizilen
+                // ekran uzunlugu 8.091 px -> 1.864.015 px, tek aks 1.093 -> 251.894 px.
+                // Akslar PS_GEOMETRIC|PS_USERSTYLE kesikli kalemle cizilir; GDI
+                // geometric pen desen fazini TUM hat boyunca hesaplar, yani maliyet
+                // cizgi uzunluguyla buyur -> "zoom derinlestikce cok yavasliyor".
+                // Kirpinca cizgi <= tuval kosegeni olur ve maliyet zoom'dan bagimsiz kalir.
+                double x0 = from.x, y0 = from.y, x1 = to.x, y1 = to.y;
+                if (clipSegmentToRect(x0, y0, x1, y1, clipL, clipT, clipR, clipB) &&
+                    std::hypot(x1 - x0, y1 - y0) >= 0.5) {
+                    MoveToEx(targetDc, static_cast<int>(std::lround(x0)),
+                             static_cast<int>(std::lround(y0)), nullptr);
+                    LineTo(targetDc, static_cast<int>(std::lround(x1)),
+                           static_cast<int>(std::lround(y1)));
+                }
+                // Etiket: aks ucundan olcekli ofsetle, hat kesilmeden ayrilmis.
+                // KIRPILMAMIS uctan hesaplanir — etiket yeri zoom'dan bagimsiz sabit.
+                const double len = std::hypot(static_cast<double>(to.x - from.x),
+                                              static_cast<double>(to.y - from.y));
+                if (len > 1.0 && !axis.label.empty()) {
+                    const double ux = (to.x - from.x) / len, uy = (to.y - from.y) / len;
+                    const double labelXd = to.x + ux * 16.0;
+                    const double labelYd = to.y + uy * 16.0;
+                    if (labelXd >= clipL && labelXd <= clipR &&
+                        labelYd >= clipT && labelYd <= clipB)
+                        drawText(targetDc, static_cast<int>(std::lround(labelXd)),
+                                 static_cast<int>(std::lround(labelYd)),
+                                 std::wstring(axis.label.begin(), axis.label.end()).c_str(),
+                                 labelColor);
+                }
+            }
+            SelectObject(targetDc, oldAxisPen);
+            DeleteObject(axisPen);
+            SetBkMode(targetDc, oldBkMode);
+            if (oldFont) SelectObject(targetDc, oldFont);
+            if (labelFont) DeleteObject(labelFont);
+        }
+        // CALISMA DUZLEMI HAYALETI (ghost work plane): aktif is duzlemi HER
+        // pencerede yari saydam bir duzlem yamasi olarak gosterilir. Yalnizca
+        // cizimdir — secilemez ve snap'lenemez; hicbir belge nesnesi uretmez,
+        // hicbir secim/snap yoluna dokunmaz. Ekran-olcekli: kamera zoom'unda da
+        // her pencerede kullanilabilir kalir, model boyutlarini degistirmez.
+        if (draft.workPlaneGhostVisible) {
+            const Vec2 ghostOriginPrecise = projectPointPrecise(draft.workPlane.origin);
+            const Vec2 ghostUnitPrecise = projectPointPrecise(draft.workPlane.fromPlane({1.0, 0.0}));
+            const double ghostPixelPerUnit =
+                std::hypot(ghostUnitPrecise.x - ghostOriginPrecise.x,
+                           ghostUnitPrecise.y - ghostOriginPrecise.y);
+            const double canvasSpan =
+                static_cast<double>(std::min(canvas.right - canvas.left,
+                                             canvas.bottom - canvas.top));
+            const double ghostHalf = ghostPixelPerUnit > 1e-9
+                ? std::clamp(0.30 * canvasSpan / ghostPixelPerUnit, 1e-3, 1e7)
+                : 1.0;
+            const auto ghostCorner = [&](double su, double sv) {
+                return projectPoint(draft.workPlane.fromPlane({su * ghostHalf, sv * ghostHalf}));
+            };
+            const POINT ghostQuad[4] = {ghostCorner(-1.0, -1.0), ghostCorner(1.0, -1.0),
+                                        ghostCorner(1.0, 1.0), ghostCorner(-1.0, 1.0)};
+            // Yari saydam dolgu: ekran-kapi (hatch) deseni — ustune cizildigi
+            // nesneyi kapatmaz, "hayalet" gorunur (GDI alpha yerine desen).
+            HBRUSH ghostFill = CreateHatchBrush(HS_FDIAGONAL, RGB(126, 156, 186));
+            HGDIOBJ ghostOldBrush = SelectObject(targetDc, ghostFill);
+            // Desen fircasi (hatch) DC'nin FIRCA KAYNAGINA cakilir; varsayilan
+            // cihaz kaynagi (0,0) iken duzlem pan/zoom'da kaydiginda doku
+            // duzlemin ALTINDAN akar (crawling = flicker). Kaynagi duzlemin
+            // ekran orijinine sabitle: doku duzlemle birlikte hareket eder,
+            // yuzeye yapismis gibi sabit okunur. 8x8 desen periyoduna gore
+            // normalize edilir (negatif modulo GDI'da tasma yapmasin).
+            const auto brushPhase = [](double value) {
+                const int v = static_cast<int>(std::lround(value)) % 8;
+                return v < 0 ? v + 8 : v;
+            };
+            POINT ghostPrevBrushOrg{};
+            SetBrushOrgEx(targetDc, brushPhase(ghostOriginPrecise.x),
+                          brushPhase(ghostOriginPrecise.y), &ghostPrevBrushOrg);
+            HGDIOBJ ghostOldPen = SelectObject(targetDc, GetStockObject(NULL_PEN));
+            const int ghostOldBkMode = SetBkMode(targetDc, TRANSPARENT);
+            Polygon(targetDc, ghostQuad, 4);
+            // Firca kaynagini geri al (DC durumu paylasimli; digger cizimleri
+            // etkilemesin).
+            SetBrushOrgEx(targetDc, ghostPrevBrushOrg.x, ghostPrevBrushOrg.y, nullptr);
+            SetBkMode(targetDc, ghostOldBkMode);
+            SelectObject(targetDc, ghostOldPen);
+            SelectObject(targetDc, ghostOldBrush);
+            DeleteObject(ghostFill);
+            // Ic mesh: seyrek ve soluk — duzlem hissi verir, dikkat cekmez.
+            constexpr int ghostDivisions = 6;
+            HPEN ghostMeshPen = CreatePen(PS_SOLID, 1, RGB(146, 176, 204));
+            SelectObject(targetDc, ghostMeshPen);
+            for (int i = 1; i < ghostDivisions; ++i) {
+                const double t = -1.0 + 2.0 * i / ghostDivisions;
+                const POINT alongU0 = ghostCorner(t, -1.0), alongU1 = ghostCorner(t, 1.0);
+                line(targetDc, alongU0.x, alongU0.y, alongU1.x, alongU1.y);
+                const POINT alongV0 = ghostCorner(-1.0, t), alongV1 = ghostCorner(1.0, t);
+                line(targetDc, alongV0.x, alongV0.y, alongV1.x, alongV1.y);
+            }
+            SelectObject(targetDc, stockPen);
+            DeleteObject(ghostMeshPen);
+            // Cerceve: duzlem sinirini net gosteren ince kenar (kapali dortgen).
+            HPEN ghostBorderPen = CreatePen(PS_SOLID, 2, RGB(74, 110, 152));
+            SelectObject(targetDc, ghostBorderPen);
+            for (int i = 0; i < 4; ++i) {
+                const POINT& a = ghostQuad[i];
+                const POINT& b = ghostQuad[(i + 1) % 4];
+                line(targetDc, a.x, a.y, b.x, b.y);
+            }
+            SelectObject(targetDc, stockPen);
+            DeleteObject(ghostBorderPen);
+        }
+        // DONDURME MERKEZI (R tusu) isareti: ekran-olcekli capraz + halka.
+        // Pivot donuslerde bu noktada SABIT kalir (Camera::rotateAbout), yani
+        // isaret donme sirasinda kaymaz. Secilemez/snap'lenemez: hicbir belge
+        // nesnesi uretmez, yalnizca referans katmanina cizilir.
+        if (draft.orbitPivotVisible) {
+            const Vec2 pivotPrecise = projectPointPrecise(draft.orbitPivot);
+            const POINT pivotCenter{static_cast<LONG>(std::lround(pivotPrecise.x)),
+                                    static_cast<LONG>(std::lround(pivotPrecise.y))};
+            constexpr int pivotArm = 9;
+            constexpr int pivotRing = 6;
+            HPEN pivotPen = CreatePen(PS_SOLID, 2, RGB(176, 62, 196));
+            SelectObject(targetDc, pivotPen);
+            HGDIOBJ oldPivotBrush = SelectObject(targetDc, GetStockObject(NULL_BRUSH));
+            line(targetDc, pivotCenter.x - pivotArm, pivotCenter.y,
+                 pivotCenter.x + pivotArm, pivotCenter.y);
+            line(targetDc, pivotCenter.x, pivotCenter.y - pivotArm,
+                 pivotCenter.x, pivotCenter.y + pivotArm);
+            Ellipse(targetDc, pivotCenter.x - pivotRing, pivotCenter.y - pivotRing,
+                    pivotCenter.x + pivotRing + 1, pivotCenter.y + pivotRing + 1);
+            SelectObject(targetDc, oldPivotBrush);
+            SelectObject(targetDc, stockPen);
+            DeleteObject(pivotPen);
+        }
+    }; // drawGridAndAxes (grid + eksenler: interaktif karelerde de çizilir)
+    if (!useGpuLines) drawGridAndAxes(dc);
 
     std::vector<POINT> projectedChain;
     std::size_t interactiveModelStride = 1;
@@ -316,21 +684,452 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
     };
     if (selectedIndexSet_.assign(document.models().size(), draft.selectedModels))
         ++performance.frameBufferGrowths;
+    // Ikincil gorunus: secim vurgusu yalniz dilimdeki nesneler icin.
+    const auto inViewSlab = [&](std::size_t index) {
+        if (!draft.viewSlab) return true;
+        const auto& allBounds = document.modelBounds();
+        return index < allBounds.size() && boundsInViewSlab(allBounds[index], *draft.viewSlab);
+    };
     const auto isSelected = [&](std::size_t index) {
         return selectedIndexSet_.contains(index);
+    };
+
+    // KONSTRUKSIYON NESNELERI (P0): Point/Line/Plane ayri katmanda cizilir.
+    // GDI taban dongusu, yuz dolgusu, kontur ve GL batch'inden DISLANIRLAR;
+    // boylece yari saydam duzlem + sinir + yerel eksen TEK yerden cizilir.
+    // BILINEN SINIRLAMA (P0): GL modunda derinlik-dogru degildir — duzlem 3B
+    // modelin USTUNE cizilir (referans overlay), dogru z-sirasi yoktur.
+    const auto drawConstruction = [&]() {
+        const COLORREF kConstructionRgb = RGB(0, 190, 220);
+        for (std::size_t index = 0; index < document.models().size(); ++index) {
+            const auto& model = document.models()[index];
+            const auto kind = model.constructionKind();
+            if (kind == ConstructionKind::None) continue;
+            const auto& properties = document.effectiveProperties(index);
+            if (!properties.visible) continue;
+            const auto& vertices = model.vertices();
+            if (vertices.empty()) continue;
+            if (draft.viewSlab && index < document.modelBounds().size() &&
+                !boundsInViewSlab(document.modelBounds()[index], *draft.viewSlab))
+                continue;
+            // Secim hintleri (P5): secili konstrüksiyon nesnesi parlak sari,
+            // hover edileni beyaz vurgulanir (varsayilan camgobegi).
+            const bool cSel = std::find(draft.selectedModels.begin(), draft.selectedModels.end(),
+                                        index) != draft.selectedModels.end();
+            const bool cHov = draft.hoverModel && *draft.hoverModel == index;
+            const COLORREF cRgb = cSel ? RGB(255, 220, 60)
+                                       : (cHov ? RGB(255, 255, 255) : kConstructionRgb);
+            const int cWidth = cSel ? 3 : 1;
+            if (kind == ConstructionKind::Plane) {
+                const auto frame = constructionPlaneFrame(model);
+                if (!frame || vertices.size() != 4) continue;
+                const POINT quad[4] = {projectPoint(vertices[0]), projectPoint(vertices[1]),
+                                       projectPoint(vertices[2]), projectPoint(vertices[3])};
+                // P9: duzlem SADE cizilir — sinir + yerel eksenler; ic dolgu
+                // yari saydam (taramasiz) doldurulur.
+                // P10: SECILI duzlem sari, IDLE/HOVER duzlem mavi dolgu.
+                // GDI AlphaBlend ile dusuk opaklikta doldurulur (face vurgusu
+                // ile ayni desen); model arkada gorunur kalir.
+                {
+                    const COLORREF fillRgb = cSel ? RGB(255, 220, 60) : kConstructionRgb;
+                    LONG fillLeft = quad[0].x, fillRight = quad[0].x;
+                    LONG fillTop = quad[0].y, fillBottom = quad[0].y;
+                    for (const POINT& p : quad) {
+                        fillLeft = std::min(fillLeft, p.x); fillRight = std::max(fillRight, p.x);
+                        fillTop = std::min(fillTop, p.y); fillBottom = std::max(fillBottom, p.y);
+                    }
+                    fillLeft = std::clamp<LONG>(fillLeft, 0, width);
+                    fillRight = std::clamp<LONG>(fillRight, 0, width);
+                    fillTop = std::clamp<LONG>(fillTop, 0, height);
+                    fillBottom = std::clamp<LONG>(fillBottom, 0, height);
+                    const int fillWidth = fillRight - fillLeft;
+                    const int fillHeight = fillBottom - fillTop;
+                    if (fillWidth > 0 && fillHeight > 0) {
+                        HDC fillDc = CreateCompatibleDC(dc);
+                        HBITMAP fillBmp = CreateCompatibleBitmap(dc, fillWidth, fillHeight);
+                        HGDIOBJ oldFillBmp = SelectObject(fillDc, fillBmp);
+                        BitBlt(fillDc, 0, 0, fillWidth, fillHeight, dc, fillLeft, fillTop, SRCCOPY);
+                        std::vector<POINT> local = {quad[0], quad[1], quad[2], quad[3]};
+                        for (auto& p : local) { p.x -= fillLeft; p.y -= fillTop; }
+                        HBRUSH fillBrush = CreateSolidBrush(fillRgb);
+                        HGDIOBJ oldFillBrush = SelectObject(fillDc, fillBrush);
+                        HGDIOBJ oldFillPen = SelectObject(fillDc, GetStockObject(NULL_PEN));
+                        Polygon(fillDc, local.data(), static_cast<int>(local.size()));
+                        SelectObject(fillDc, oldFillPen);
+                        SelectObject(fillDc, oldFillBrush);
+                        BLENDFUNCTION fillBlend{AC_SRC_OVER, 0, 72, 0};
+                        AlphaBlend(dc, fillLeft, fillTop, fillWidth, fillHeight,
+                                   fillDc, 0, 0, fillWidth, fillHeight, fillBlend);
+                        SelectObject(fillDc, oldFillBmp);
+                        DeleteObject(fillBrush);
+                        DeleteObject(fillBmp);
+                        DeleteDC(fillDc);
+                    }
+                }
+                // Sinir (4 kenar) — duzlem sinirlari.
+                HPEN border = CreatePen(PS_SOLID, cWidth, cRgb);
+                SelectObject(dc, border);
+                line(dc, quad[0].x, quad[0].y, quad[1].x, quad[1].y);
+                line(dc, quad[1].x, quad[1].y, quad[2].x, quad[2].y);
+                line(dc, quad[2].x, quad[2].y, quad[3].x, quad[3].y);
+                line(dc, quad[3].x, quad[3].y, quad[0].x, quad[0].y);
+                SelectObject(dc, stockPen);
+                DeleteObject(border);
+                // Yerel eksenler: U (yesil, kesikli) ve V (mavi, kesikli).
+                const double half = std::hypot(vertices[1].x - vertices[0].x,
+                                               vertices[1].y - vertices[0].y,
+                                               vertices[1].z - vertices[0].z) * 0.5;
+                const POINT o = projectPoint(frame->origin);
+                const POINT ue = projectPoint(frame->origin + frame->u * half);
+                const POINT ve = projectPoint(frame->origin + frame->v * half);
+                HPEN axisU = CreatePen(PS_DASH, 1, RGB(0, 200, 80));
+                SelectObject(dc, axisU);
+                line(dc, o.x, o.y, ue.x, ue.y);
+                SelectObject(dc, stockPen);
+                DeleteObject(axisU);
+                HPEN axisV = CreatePen(PS_DASH, 1, RGB(80, 120, 255));
+                SelectObject(dc, axisV);
+                line(dc, o.x, o.y, ve.x, ve.y);
+                SelectObject(dc, stockPen);
+                DeleteObject(axisV);
+                ++performance.renderedEntities;
+            } else if (kind == ConstructionKind::Line) {
+                HPEN pen = CreatePen(cSel ? PS_SOLID : PS_DASH, cWidth, cRgb);
+                SelectObject(dc, pen);
+                for (const auto& edge : model.edges()) {
+                    const POINT a = projectPoint(vertices[edge.from]);
+                    const POINT b = projectPoint(vertices[edge.to]);
+                    line(dc, a.x, a.y, b.x, b.y);
+                }
+                SelectObject(dc, stockPen);
+                DeleteObject(pen);
+                ++performance.renderedEntities;
+            } else { // ConstructionKind::Point
+                const POINT p = projectPoint(vertices.front());
+                HPEN pen = CreatePen(PS_SOLID, cWidth, cRgb);
+                SelectObject(dc, pen);
+                constexpr int r = 4;
+                line(dc, p.x - r, p.y - r, p.x + r, p.y + r);
+                line(dc, p.x - r, p.y + r, p.x + r, p.y - r);
+                SelectObject(dc, stockPen);
+                DeleteObject(pen);
+                ++performance.renderedEntities;
+            }
+        }
+    };
+
+    // KESME NESNELERI (P1): CutModifier duzlemleri (PlaneCut/Fitting) ayri
+    // katmanda yari saydam cizilir — kesme objesi GORUNUR kalir. Hedef parca
+    // boyutundan turetilen sonlu dikdortgen + normal yonu oku. BILINEN
+    // SINIRLAMA: GL modunda derinlik-dogru degil (referans overlay).
+    const auto drawCutPlanes = [&]() {
+        const COLORREF kCutRgb = RGB(255, 140, 40);
+        for (std::size_t ci = 0; ci < document.cutModifiers().size(); ++ci) {
+            const auto& raw = document.cutModifiers()[ci];
+            if (!raw.enabled || raw.hidden) continue;
+            // P6: kaynagi varsa GUNCEL geometriden cozumle (cizim/secim ayni kaynak).
+            const CutModifier mod = resolveCutModifierSource(raw, document);
+            // PolygonCut: cokgen siniri kesikli cizgiyle (kesme rengi).
+            if (mod.kind == CutKind::PolygonCut) {
+                const auto& poly = mod.polygon;
+                if (poly.size() < 3) continue;
+                HPEN polyPen = CreatePen(PS_DOT, 1, kCutRgb);
+                SelectObject(dc, polyPen);
+                for (std::size_t i = 0; i < poly.size(); ++i) {
+                    const POINT a = projectPoint(poly[i]);
+                    const POINT b = projectPoint(poly[(i + 1) % poly.size()]);
+                    line(dc, a.x, a.y, b.x, b.y);
+                }
+                SelectObject(dc, stockPen);
+                DeleteObject(polyPen);
+                ++performance.renderedEntities;
+                continue;
+            }
+            // LineCut: cizgi + kesme duzlemi normali oku.
+            if (mod.kind == CutKind::LineCut) {
+                const auto& poly = mod.polygon;
+                if (poly.size() < 2) continue;
+                HPEN linePen = CreatePen(PS_DOT, 1, kCutRgb);
+                SelectObject(dc, linePen);
+                const POINT a = projectPoint(poly[0]);
+                const POINT b = projectPoint(poly[1]);
+                line(dc, a.x, a.y, b.x, b.y);
+                const auto ln = lineCutPlaneNormal(poly[0], poly[1], mod.planeNormal);
+                if (ln) {
+                    const POINT c = projectPoint(poly[0]);
+                    const POINT d = projectPoint(poly[0] + *ln * 500.0);
+                    line(dc, c.x, c.y, d.x, d.y);
+                }
+                SelectObject(dc, stockPen);
+                DeleteObject(linePen);
+                ++performance.renderedEntities;
+                continue;
+            }
+            if (mod.kind != CutKind::PlaneCut && mod.kind != CutKind::Fitting) continue;
+            // P6: kaynak konstrüksiyon duzlemi VARSA kopya (sari) duzlem CIZME —
+            // mavi kaynak duzlem kesme duzleminin KENDISIDIR (tek duzlem; ekranda
+            // ikinci bir sari duzlem olusmaz). Secim hinti yine de calisir.
+            if (raw.source != kInvalidEntityId && document.indexOfEntity(raw.source)) continue;
+            const double nl = std::hypot(mod.planeNormal.x, mod.planeNormal.y, mod.planeNormal.z);
+            if (!(nl > 1e-9)) continue;
+            const WorkPlane plane =
+                WorkPlane::fromAxisAndPoint(mod.planeOrigin, mod.planeOrigin + mod.planeNormal);
+            double half = 500.0;
+            if (const auto t = document.indexOfEntity(mod.target)) {
+                if (*t < document.modelBounds().size()) {
+                    const Bounds3& b = document.modelBounds()[*t];
+                    half = std::max({std::abs(b.maximum.x - b.minimum.x),
+                                     std::abs(b.maximum.y - b.minimum.y),
+                                     std::abs(b.maximum.z - b.minimum.z)}) * 0.75;
+                }
+            }
+            if (!(half > 1.0)) half = 500.0;
+            const POINT quad[4] = {projectPoint(plane.fromPlane({-half, -half})),
+                                   projectPoint(plane.fromPlane({half, -half})),
+                                   projectPoint(plane.fromPlane({half, half})),
+                                   projectPoint(plane.fromPlane({-half, half}))};
+            // P9: kesme duzlemi de SADE cizilir (seffaf, taramasiz) — yalniz
+            // sinir + normal oku. Dolgu yok (kullanici: "seffaf taramasiz").
+            HPEN border = CreatePen(PS_SOLID, 1, kCutRgb);
+            SelectObject(dc, border);
+            line(dc, quad[0].x, quad[0].y, quad[1].x, quad[1].y);
+            line(dc, quad[1].x, quad[1].y, quad[2].x, quad[2].y);
+            line(dc, quad[2].x, quad[2].y, quad[3].x, quad[3].y);
+            line(dc, quad[3].x, quad[3].y, quad[0].x, quad[0].y);
+            SelectObject(dc, stockPen);
+            DeleteObject(border);
+            // Normal yonu (kesme/keep yonu) oku.
+            const POINT o = projectPoint(mod.planeOrigin);
+            const POINT n = projectPoint(mod.planeOrigin + mod.planeNormal * half);
+            HPEN arr = CreatePen(PS_SOLID, 1, kCutRgb);
+            SelectObject(dc, arr);
+            line(dc, o.x, o.y, n.x, n.y);
+            SelectObject(dc, stockPen);
+            DeleteObject(arr);
+            ++performance.renderedEntities;
+        }
+    };
+
+    // KESME NESNELERI SECIM HINTLERI (P5): secili kesme modifier'i parlak
+    // sari, hover edileni beyaz kesikli konturla vurgulanir. Geometri
+    // cutModifierPickGeometry'den gelir (drawCutPlanes ile AYNI kaynak).
+    const auto drawCutSelectionHints = [&]() {
+        const COLORREF kSelRgb = RGB(255, 220, 60);
+        const COLORREF kHovRgb = RGB(255, 255, 255);
+        for (std::size_t ci = 0; ci < document.cutModifiers().size(); ++ci) {
+            const auto& rawMod = document.cutModifiers()[ci];
+            if (!rawMod.enabled || rawMod.hidden) continue;
+            const bool sel = std::find(draft.selectedCutModifiers.begin(),
+                                       draft.selectedCutModifiers.end(), ci) !=
+                             draft.selectedCutModifiers.end();
+            const bool hov = draft.hoverCutModifier && *draft.hoverCutModifier == ci;
+            if (!sel && !hov) continue;
+            // P6: kaynaktan GUNCEL geometriyi cozumle (tasinan duzlem/cizgi izlenir).
+            const CutModifier mod = resolveCutModifierSource(rawMod, document);
+            Bounds3 tb{};
+            if (const auto t = document.indexOfEntity(mod.target)) {
+                if (*t < document.modelBounds().size()) tb = document.modelBounds()[*t];
+            }
+            const auto geo = cutModifierPickGeometry(mod, tb);
+            if (geo.polygon.empty()) continue;
+            const COLORREF rgb = sel ? kSelRgb : kHovRgb;
+            HPEN pen = CreatePen(sel ? PS_SOLID : PS_DOT, sel ? 3 : 2, rgb);
+            SelectObject(dc, pen);
+            if (geo.isSegment) {
+                if (geo.polygon.size() == 2) {
+                    const POINT a = projectPoint(geo.polygon[0]);
+                    const POINT b = projectPoint(geo.polygon[1]);
+                    line(dc, a.x, a.y, b.x, b.y);
+                }
+            } else {
+                for (std::size_t k = 0; k < geo.polygon.size(); ++k) {
+                    const POINT a = projectPoint(geo.polygon[k]);
+                    const POINT b = projectPoint(geo.polygon[(k + 1) % geo.polygon.size()]);
+                    line(dc, a.x, a.y, b.x, b.y);
+                }
+            }
+            SelectObject(dc, stockPen);
+            DeleteObject(pen);
+        }
+    };
+
+    // COMPONENT SIMGELERI: End Plate gibi component'lerin levha merkezinde
+    // buyuk, ekran-olcekli tiklama isareti. Hover'da buyur; secili ise sari.
+    const auto drawComponentGlyphs = [&]() {
+        if (draft.componentGlyphs.empty()) return;
+        constexpr COLORREF kGlyphRgb = RGB(0, 168, 196);       // turkuaz
+        constexpr COLORREF kGlyphSel = RGB(255, 206, 84);      // sari (secili)
+        for (std::size_t gi = 0; gi < draft.componentGlyphs.size(); ++gi) {
+            const POINT c = projectPoint(draft.componentGlyphs[gi]);
+            bool sel = false;
+            if (gi < draft.componentGlyphEntities.size()) {
+                if (const auto idx = document.indexOfEntity(draft.componentGlyphEntities[gi]))
+                    sel = std::find(draft.selectedModels.begin(), draft.selectedModels.end(),
+                                    *idx) != draft.selectedModels.end();
+            }
+            const COLORREF rgb = sel ? kGlyphSel : kGlyphRgb;
+            const int r = sel ? 13 : 11;
+            HPEN pen = CreatePen(PS_SOLID, 2, rgb);
+            HGDIOBJ oldPen = SelectObject(dc, pen);
+            HGDIOBJ oldBr = SelectObject(dc, GetStockObject(NULL_BRUSH));
+            // Elmas (kare 45°) — levhayi ayirt eder, gumball'dan farklidir.
+            const POINT d[4] = {{c.x, c.y - r}, {c.x + r, c.y},
+                                {c.x, c.y + r}, {c.x - r, c.y}};
+            Polygon(dc, d, 4);
+            SelectObject(dc, oldBr);
+            SelectObject(dc, oldPen);
+            DeleteObject(pen);
+            ++performance.renderedEntities;
+        }
+    };
+    // KAYNAK SIMGELERI: her weld.origin'de kucuk, secilebilir isaret. Gercek
+    // OCC weld katisi uretilmedigi icin bu bir KONUM simgesidir (geometriyi
+    // degistirmez). Fillet = ucgen, Butt = kisa kalin cizgi. Secili = sari.
+    const auto drawWeldGlyphs = [&]() {
+        const auto& welds = document.welds();
+        if (welds.empty()) return;
+        constexpr COLORREF kFilletRgb = RGB(255, 140, 0);   // turuncu (koseli)
+        constexpr COLORREF kButtRgb   = RGB(90, 200, 120);  // yesil (alin)
+        constexpr COLORREF kSelRgb    = RGB(255, 206, 84);  // sari (secili)
+        for (std::size_t wi = 0; wi < welds.size(); ++wi) {
+            const auto& w = welds[wi];
+            if (w.origin.x == 0.0 && w.origin.y == 0.0 && w.origin.z == 0.0 &&
+                w.direction.x == 1.0 && w.direction.y == 0.0 && w.direction.z == 0.0)
+                continue; // konum hesaplanmamis (varsayilan) -> cizme
+            // Gercek OCC katisi olan kaynaklar kati olarak gorunur; glif
+            // yalnizca geometry unsupported kaynaklarda kalir (cift cizim yok).
+            if (w.geometrySupported && w.displayEntityId != kInvalidEntityId) continue;
+            const POINT c = projectPoint(w.origin);
+            const bool sel = std::find(draft.selectedWelds.begin(),
+                                       draft.selectedWelds.end(), wi) !=
+                             draft.selectedWelds.end();
+            const COLORREF base = (w.type == WeldType::Fillet) ? kFilletRgb : kButtRgb;
+            const COLORREF rgb = sel ? kSelRgb : base;
+            const int r = sel ? 9 : 7;
+            HPEN pen = CreatePen(PS_SOLID, 2, rgb);
+            HGDIOBJ oldPen = SelectObject(dc, pen);
+            HGDIOBJ oldBr = SelectObject(dc, GetStockObject(NULL_BRUSH));
+            if (w.type == WeldType::Butt) {
+                // Alin kaynagi: kisa kalin cizgi (ilerleme yonune dik de hisset,
+                // ama basitlik icin yatay 2r px cizgi).
+                line(dc, c.x - r, c.y, c.x + r, c.y);
+            } else {
+                // Koseli kaynak: yukari bakan ucgen (fillet kaynak isareti).
+                const POINT t[3] = {{c.x, c.y - r}, {c.x - r, c.y + r},
+                                    {c.x + r, c.y + r}};
+                Polygon(dc, t, 3);
+            }
+            SelectObject(dc, oldBr);
+            SelectObject(dc, oldPen);
+            DeleteObject(pen);
+            ++performance.renderedEntities;
+        }
+    };
+    // DIS SINIR konturu ile vurgulanir. Tek tessellasyon ucgeni degil — bu
+    // "ucgen yuz" goruntusunu giderir.
+    const auto drawHoverFaceFill = [&]() {
+        if (!draft.hoverFaceModel) return;
+        const std::size_t mi = *draft.hoverFaceModel;
+        if (mi >= document.models().size()) return;
+        const auto& model = document.models()[mi];
+        const auto& verts = model.vertices();
+        if (draft.hoverFaceIndices.empty()) return;
+        // Grup dis siniri = grupta yalniz BIR kez paylasilan kenar.
+        std::map<std::pair<std::size_t, std::size_t>, int> edgeCount;
+        std::vector<std::vector<POINT>> triPts;
+        triPts.reserve(draft.hoverFaceIndices.size());
+        LONG left = 1000000000L, right = -1000000000L;
+        LONG top = 1000000000L, bottom = -1000000000L;
+        for (const std::size_t fi : draft.hoverFaceIndices) {
+            if (fi >= model.faces().size()) continue;
+            const auto& face = model.faces()[fi];
+            if (face.size() < 3) continue;
+            std::vector<POINT> pts;
+            pts.reserve(face.size());
+            bool ok = true;
+            for (const std::size_t vi : face) {
+                if (vi >= verts.size()) { ok = false; break; }
+                const POINT p = projectPoint(verts[vi]);
+                pts.push_back(p);
+                left = std::min(left, p.x); right = std::max(right, p.x);
+                top = std::min(top, p.y); bottom = std::max(bottom, p.y);
+            }
+            if (!ok || pts.size() < 3) continue;
+            for (std::size_t k = 0; k < face.size(); ++k) {
+                std::size_t a = face[k], b = face[(k + 1) % face.size()];
+                if (a > b) std::swap(a, b);
+                ++edgeCount[{a, b}];
+            }
+            triPts.push_back(std::move(pts));
+        }
+        if (triPts.empty()) return;
+        left = std::clamp<LONG>(left, 0, width);
+        right = std::clamp<LONG>(right, 0, width);
+        top = std::clamp<LONG>(top, 0, height);
+        bottom = std::clamp<LONG>(bottom, 0, height);
+        const int w = right - left, h = bottom - top;
+        if (w > 0 && h > 0) {
+            // TUM ucgenleri TEK bitmap'e ciz -> tek AlphaBlend (ucgen basina
+            // cakisan alfa dolgusundan dogan dikiş cizgileri olusmaz).
+            HDC fillDc = CreateCompatibleDC(dc);
+            HBITMAP fillBmp = CreateCompatibleBitmap(dc, w, h);
+            HGDIOBJ oldBmp = SelectObject(fillDc, fillBmp);
+            BitBlt(fillDc, 0, 0, w, h, dc, left, top, SRCCOPY);
+            HBRUSH brush = CreateSolidBrush(RGB(255, 180, 0));
+            HGDIOBJ oldBrush = SelectObject(fillDc, brush);
+            HGDIOBJ oldPen = SelectObject(fillDc, GetStockObject(NULL_PEN));
+            for (auto& pts : triPts) {
+                for (auto& p : pts) { p.x -= left; p.y -= top; }
+                Polygon(fillDc, pts.data(), static_cast<int>(pts.size()));
+            }
+            SelectObject(fillDc, oldPen);
+            SelectObject(fillDc, oldBrush);
+            BLENDFUNCTION blend{AC_SRC_OVER, 0, 96, 0};
+            AlphaBlend(dc, left, top, w, h, fillDc, 0, 0, w, h, blend);
+            SelectObject(fillDc, oldBmp);
+            DeleteObject(brush);
+            DeleteObject(fillBmp);
+            DeleteDC(fillDc);
+        }
+        // Dis sinir konturu (yalniz bir kez paylasilan kenarlar — ic ucgen
+        // kosegenleri cizilmez).
+        HPEN outline = CreatePen(PS_SOLID, 2, RGB(255, 255, 255));
+        HGDIOBJ oldOutline = SelectObject(dc, outline);
+        for (const auto& [edge, count] : edgeCount) {
+            if (count != 1) continue;
+            if (edge.first >= verts.size() || edge.second >= verts.size()) continue;
+            const POINT a = projectPoint(verts[edge.first]);
+            const POINT b = projectPoint(verts[edge.second]);
+            line(dc, a.x, a.y, b.x, b.y);
+        }
+        SelectObject(dc, oldOutline);
+        DeleteObject(outline);
+        ++performance.renderedEntities;
     };
 
     // Hareket kareleri geri bildirim katmanı: seçim vurgusu, transform
     // izleyicisi/hayaletleri, trim/extend önizlemesi, çizim lastik bandı,
     // snap işareti ve dinamik giriş. Temel geometri motion tabanından gelir.
     const auto drawMotionFeedback = [&]() {
+        // Konstrüksiyon katmani interaktif/hizli karelerde de gorunsun
+        // (taban dongusunden dislandigi icin burada cizilir).
+        drawConstruction();
+        drawCutPlanes();
+        drawCutSelectionHints();
+        drawComponentGlyphs();
+        drawWeldGlyphs();
         const bool motionDrafting = commandShowsSnapFeedback(
             draft.drawingActive, draft.workPlanePicking, draft.transformCommand,
             draft.transformPhase, draft.arrayItemCount.has_value(),
             draft.offsetDistance.has_value());
+        // Hover modeli (verb-noun kesmede profil/duzlem) hareket karesinde
+        // de vurgulansin — feedbackActive false kalirsa hover yalniz tam
+        // karede (hareket durunca) cizilir ve gecikmeli gorunur.
         const bool feedbackActive = draft.transformCommand != TransformCommand::None ||
                                     !draft.selectedModels.empty() ||
-                                    (draft.drawingActive && draft.anchor && draft.cursor);
+                                    (draft.drawingActive && draft.anchor && draft.cursor) ||
+                                    draft.hoverModel.has_value() ||
+                                    draft.hoverFaceModel.has_value();
         if (feedbackActive) {
             // Statik secim hover'inda secili objeler tabana gomuludur — yeniden
             // cizme. Yalnizca: transform (hayalet), secim penceresi suruklemesi
@@ -343,25 +1142,38 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
                 HPEN selectedPen = CreatePen(PS_SOLID, 3, RGB(90, 255, 145));
                 SelectObject(dc, selectedPen);
                 for (const auto index : draft.selectedModels) {
-                    if (index < document.models().size() && document.modelIsEditable(index))
+                    if (index < document.models().size() && document.modelIsEditable(index) &&
+                        inViewSlab(index) &&
+                        document.models()[index].constructionKind() == ConstructionKind::None)
                         drawModel(document.models()[index]);
                 }
                 SelectObject(dc, stockPen);
                 DeleteObject(selectedPen);
             }
+            // HOVER (kati/profil): imlecin altindaki normal model beyaz
+            // konturla vurgulanir — verb-noun kesmede profil adiminda
+            // secilebilir hedefi gosterir.
+            if (draft.hoverModel && *draft.hoverModel < document.models().size()) {
+                const auto& hm = document.models()[*draft.hoverModel];
+                if (hm.constructionKind() == ConstructionKind::None &&
+                    !isSelected(*draft.hoverModel) && document.modelIsEditable(*draft.hoverModel) &&
+                    inViewSlab(*draft.hoverModel) &&
+                    document.effectiveProperties(*draft.hoverModel).visible &&
+                    !hm.faces().empty()) {
+                    HPEN hoverPen = CreatePen(PS_SOLID, 2, RGB(255, 255, 255));
+                    SelectObject(dc, hoverPen);
+                    drawModel(hm);
+                    SelectObject(dc, stockPen);
+                    DeleteObject(hoverPen);
+                }
+            }
+            drawHoverFaceFill();
             if (draft.transformCommand != TransformCommand::None &&
                 draft.transformPhase == TransformPhase::Destination &&
                 draft.transformBase && draft.cursor) {
                 const POINT basePoint = projectPoint(*draft.transformBase);
                 const POINT destinationPoint = projectPoint(*draft.cursor);
-                const COLORREF trackerColor = [&]() -> COLORREF {
-                    switch (draft.orthoAxis) {
-                    case OrthoAxis::X: return RGB(235, 82, 96);
-                    case OrthoAxis::Y: return RGB(72, 211, 121);
-                    case OrthoAxis::Z: return RGB(78, 148, 255);
-                    default: return RGB(255, 206, 84);
-                    }
-                }();
+                const COLORREF trackerColor = guideAxisColor(draft.orthoAxis);
                 HPEN trackerPen = CreatePen(PS_DOT, 1, trackerColor);
                 SelectObject(dc, trackerPen);
                 line(dc, basePoint.x, basePoint.y, destinationPoint.x, destinationPoint.y);
@@ -423,6 +1235,13 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
                 }
                 SelectObject(dc, stockPen);
                 DeleteObject(pickPen);
+                // IKI NOKTALI GORUNUM YON SECIMI: iki noktanin ucunda, secilen
+                // bakis yonunu gosteren ok (imlecin tarafina gore cevrilir).
+                if (draft.twoPointViewDirectionActive && draft.workPlanePoints.size() >= 2) {
+                    for (std::size_t i = 0; i < 2; ++i)
+                        drawViewDirectionArrow(draft.workPlanePoints[i],
+                                               draft.twoPointViewDirection, RGB(80, 200, 255));
+                }
             }
             if ((draft.transformCommand == TransformCommand::Trim ||
                  draft.transformCommand == TransformCommand::Extend) &&
@@ -474,14 +1293,7 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
                 // daire, 3DFACE) — sadece sari duz cizgi degil.
                 const POINT a = projectPoint(*draft.anchor);
                 const POINT b = projectPoint(*draft.cursor);
-                const COLORREF previewColor = [&]() -> COLORREF {
-                    switch (draft.orthoAxis) {
-                    case OrthoAxis::X: return RGB(235, 82, 96);
-                    case OrthoAxis::Y: return RGB(72, 211, 121);
-                    case OrthoAxis::Z: return RGB(78, 148, 255);
-                    default: return RGB(255, 206, 84);
-                    }
-                }();
+                const COLORREF previewColor = guideAxisColor(draft.orthoAxis);
                 HPEN preview = CreatePen(PS_DASH, 1, previewColor);
                 SelectObject(dc, preview);
                 const auto drawPreviewEdges = [&](const WireframeModel& model) {
@@ -596,89 +1408,20 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
                 drawText(dc, selection.left + 3, std::max(3L, selection.top - 19), L"ZOOM", RGB(54, 142, 224));
             }
      
-        if (motionDrafting && draft.cursor && draft.snapType != SnapType::None) {
+        if ((motionDrafting || draft.gripMoveActive) && draft.cursor &&
+            draft.snapType != SnapType::None) {
             const POINT p = projectPoint(*draft.cursor);
-            HPEN snapPen = CreatePen(PS_SOLID, 2, RGB(90, 255, 145));
+            // Snap turune ozel renk: tek yesil marker ayirt edilmiyordu.
+            const unsigned long rgb = snapMarkerColorRgb(draft.snapType);
+            HPEN snapPen = CreatePen(PS_SOLID, 2,
+                RGB((rgb) & 0xFF, (rgb >> 8) & 0xFF, (rgb >> 16) & 0xFF));
             SelectObject(dc, snapPen);
             HGDIOBJ oldBrush = SelectObject(dc, GetStockObject(NULL_BRUSH));
-            switch (snapMarkerSymbol(draft.snapType)) {
-            case SnapMarkerSymbol::Triangle: {
-                POINT triangle[4]{{p.x, p.y - 7}, {p.x - 7, p.y + 6}, {p.x + 7, p.y + 6}, {p.x, p.y - 7}};
-                Polyline(dc, triangle, 4);
-                break;
-            }
-            case SnapMarkerSymbol::Circle:
-                Ellipse(dc, p.x - 7, p.y - 7, p.x + 8, p.y + 8);
-                break;
-            case SnapMarkerSymbol::CircleCross:
-                Ellipse(dc, p.x - 7, p.y - 7, p.x + 8, p.y + 8);
-                line(dc, p.x - 4, p.y, p.x + 5, p.y); line(dc, p.x, p.y - 4, p.x, p.y + 5);
-                break;
-            case SnapMarkerSymbol::CrossedCircle:
-                Ellipse(dc, p.x - 7, p.y - 7, p.x + 8, p.y + 8);
-                line(dc, p.x - 6, p.y - 6, p.x + 7, p.y + 7);
-                line(dc, p.x - 6, p.y + 6, p.x + 7, p.y - 7);
-                break;
-            case SnapMarkerSymbol::Diamond: {
-                POINT diamond[5]{{p.x, p.y - 7}, {p.x + 7, p.y}, {p.x, p.y + 7},
-                                 {p.x - 7, p.y}, {p.x, p.y - 7}};
-                Polyline(dc, diamond, 5);
-                break;
-            }
-            case SnapMarkerSymbol::Cross:
-                line(dc, p.x - 6, p.y - 6, p.x + 7, p.y + 7);
-                line(dc, p.x - 6, p.y + 6, p.x + 7, p.y - 7);
-                break;
-            case SnapMarkerSymbol::BoxedCross:
-                Rectangle(dc, p.x - 7, p.y - 7, p.x + 8, p.y + 8);
-                line(dc, p.x - 5, p.y - 5, p.x + 6, p.y + 6);
-                line(dc, p.x - 5, p.y + 5, p.x + 6, p.y - 6);
-                break;
-            case SnapMarkerSymbol::ExtensionLine:
-                line(dc, p.x - 9, p.y, p.x - 5, p.y);
-                line(dc, p.x - 2, p.y, p.x + 3, p.y);
-                line(dc, p.x + 6, p.y, p.x + 10, p.y);
-                break;
-            case SnapMarkerSymbol::LinkedSquares:
-                Rectangle(dc, p.x - 7, p.y - 7, p.x + 2, p.y + 2);
-                Rectangle(dc, p.x - 1, p.y - 1, p.x + 8, p.y + 8);
-                break;
-            case SnapMarkerSymbol::RightAngle:
-                line(dc, p.x - 7, p.y + 7, p.x - 7, p.y - 5);
-                line(dc, p.x - 7, p.y - 5, p.x + 6, p.y - 5);
-                line(dc, p.x - 2, p.y - 5, p.x - 2, p.y + 1);
-                line(dc, p.x - 2, p.y + 1, p.x + 4, p.y + 1);
-                break;
-            case SnapMarkerSymbol::TangentCircle:
-                Ellipse(dc, p.x - 6, p.y - 6, p.x + 7, p.y + 7);
-                line(dc, p.x - 8, p.y - 7, p.x + 9, p.y - 7);
-                break;
-            case SnapMarkerSymbol::Hourglass: {
-                POINT hourglass[5]{{p.x - 7, p.y - 6}, {p.x + 7, p.y - 6},
-                                   {p.x - 7, p.y + 6}, {p.x + 7, p.y + 6},
-                                   {p.x - 7, p.y - 6}};
-                Polyline(dc, hourglass, 5);
-                break;
-            }
-            case SnapMarkerSymbol::ParallelLines:
-                line(dc, p.x - 8, p.y + 5, p.x, p.y - 5);
-                line(dc, p.x, p.y + 5, p.x + 8, p.y - 5);
-                break;
-            case SnapMarkerSymbol::GridCross:
-                line(dc, p.x - 7, p.y, p.x + 8, p.y);
-                line(dc, p.x, p.y - 7, p.x, p.y + 8);
-                Rectangle(dc, p.x - 3, p.y - 3, p.x + 4, p.y + 4);
-                break;
-            case SnapMarkerSymbol::Square:
-                Rectangle(dc, p.x - 6, p.y - 6, p.x + 7, p.y + 7);
-                break;
-            case SnapMarkerSymbol::None:
-                break;
-            }
+            drawSnapMarkerShape(dc, p, snapMarkerSymbol(draft.snapType));
             SelectObject(dc, oldBrush);
             SelectObject(dc, stockPen);
             DeleteObject(snapPen);
-            drawText(dc, p.x + 10, p.y + 8, snapTypeLabel(draft.snapType), RGB(90, 255, 145));
+            drawText(dc, p.x + sm(10), p.y + sm(8), snapTypeLabel(draft.snapType), RGB(90, 255, 145));
         }
         if (motionDrafting && draft.dynamicInputEnabled && draft.cursor &&
             !(draft.transformCommand != TransformCommand::None &&
@@ -712,6 +1455,17 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
             drawText(dc, boxX + 7, boxY + 4, info,
                      draft.input.empty() ? RGB(221, 228, 241) : RGB(255, 216, 104));
         }
+
+        // PROFIL TUTAMAGI MOVE track line: baz -> imlec (baslangic-bitis).
+        if (draft.gripMoveActive) {
+            const POINT from = projectPoint(draft.gripTrackFrom);
+            const POINT to = projectPoint(draft.gripTrackTo);
+            HPEN trackPen = CreatePen(PS_DOT, 1, trackGuideColor());
+            SelectObject(dc, trackPen);
+            line(dc, from.x, from.y, to.x, to.y);
+            SelectObject(dc, stockPen);
+            DeleteObject(trackPen);
+        }
     };
 
     // Hızlı yol: geçerli motion tabanı VARSA ve kamera taban çekildiğinden beri
@@ -719,6 +1473,11 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
     // bayrağına güvenilmez: spurious navigasyon bayrakları (touchpad mikro
     // delta'lari vb.) hover karelerini fallback'e düşürüp FAST/FALLBACK karışımından
     // seçim vurgusunda flicker üretiyordu — karar artık gerçek kamera durumuna bağlı.
+    // EK KAPI (flicker): pan/zoom/rotate SURERKEN hizli yola GIRILMEZ. Parmak izi
+    // 4 noktayi TAMSAYI karsilastirir; yavas/yaklasan harekette kamera degistigi
+    // halde iz ayni kalabilir ve BAYAT taban basılır -> sabit referans katmani
+    // (grid/UCS/hayalet duzlem) bir kare eski konumda gorunup sonra ziplar.
+    // Navigasyon kareleri artik TEK TIP (tam kare) olur.
     const POINT probe0 = projectPoint(Vec3{0.0, 0.0, 0.0});
     const POINT probe1 = projectPoint(Vec3{1.0, 0.0, 0.0});
     const POINT probe2 = projectPoint(Vec3{0.0, 1.0, 0.0});
@@ -729,6 +1488,7 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         motionBaseProbe_[2].x == probe2.x && motionBaseProbe_[2].y == probe2.y &&
         motionBaseProbe_[3].x == probe3.x && motionBaseProbe_[3].y == probe3.y;
     if (draft.snapPreviewActive && !draft.snapOnly && !useGpuLines &&
+        !draft.panning && !draft.rotating && !draft.wheelNavigating && !draft.viewCubeActive &&
         motionBaseValid_ && cameraUnchanged &&
         motionBaseWidth_ == width && motionBaseHeight_ == height) {
         if (lastMotionPath_ != 0) {
@@ -781,6 +1541,19 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
     performance.visibleEntities = glWireframeSkip
         ? document.models().size() : visibleModels.size();
 
+    // IKI NOKTALI GORUNUS: derinlik dilimi disindakileri at (GDI yolu;
+    // ikincil pencereler GL backend kullanmaz).
+    if (draft.viewSlab && !glWireframeSkip) {
+        const auto& allBounds = document.modelBounds();
+        std::vector<std::size_t> inSlab;
+        inSlab.reserve(visibleModels.size());
+        for (const auto index : visibleModels)
+            if (index < allBounds.size() && boundsInViewSlab(allBounds[index], *draft.viewSlab))
+                inSlab.push_back(index);
+        visibleModels = std::move(inSlab);
+        performance.visibleEntities = visibleModels.size();
+    }
+
     // Z-depth clipping: filter visible models to workplane range
     if (draft.depthClipEnabled && draft.resultsLoaded && draft.resultView > 0) {
         std::vector<std::size_t> clipped;
@@ -829,11 +1602,15 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         COLORREF edgeColor{};
     };
     const unsigned char faceAlpha = visualStyleFaceAlpha(draft.visualStyle);
-    if (!draft.snapOnly && faceAlpha != 0 && !draft.interactiveNavigation) {
+    // GL modunda yuzler GPU batch'inde cizilir (F8 mimarisi); GDI dolgusu
+    // yalniz saf-GDI yolunda calisir — cift cizim ve DWM titremesi onlenir.
+    if (!useGpuLines && !draft.snapOnly && faceAlpha != 0 && !draft.interactiveNavigation) {
+        int gdiSolidFaceCount = 0;
         std::vector<ProjectedFace> projectedFaces;
         for (const auto index : visibleModels) {
             if (index >= document.models().size()) continue;
             const auto& model = document.models()[index];
+            if (model.constructionKind() != ConstructionKind::None) continue;
             const auto& properties = document.effectiveProperties(index);
             if (!properties.visible) continue;
             for (const auto& face : model.faces()) {
@@ -858,17 +1635,17 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         for (const auto& face : projectedFaces) {
             if (face.points.size() < 3) continue;
             if (faceAlpha == 255) {
+                // Yalniz dolgu: kenar kalemi ucgen sinirlarini cizer ve
+                // duz yuzeylerde "mesh cizgileri" olarak gorunur (GDI
+                // sorununun kok nedeni). NULL_PEN zaten secili.
                 HBRUSH brush = CreateSolidBrush(face.color);
                 HGDIOBJ oldBrush = SelectObject(dc, brush);
-                HPEN borderPen = CreatePen(PS_SOLID, 1, face.edgeColor);
-                HGDIOBJ previousPen = SelectObject(dc, borderPen);
                 Polygon(dc, face.points.data(), static_cast<int>(face.points.size()));
                 ++performance.drawCalls;
                 performance.projectedVertices += face.points.size();
-                SelectObject(dc, previousPen);
                 SelectObject(dc, oldBrush);
-                DeleteObject(borderPen);
                 DeleteObject(brush);
+                gdiSolidFaceCount++;
                 continue;
             }
 
@@ -908,6 +1685,62 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
             DeleteDC(overlayDc);
         }
         SelectObject(dc, oldPen);
+        // GDI SOLID KONTUR: GL'deki renderContourLines'in birebir GDA
+        // portu — front/back yonlenme sayimiyla siluet kenarlari. GL'de
+        // gorunen koyu kontur GDI'da yoktu ("ilki gdi... gdi da belirsiz").
+        if (faceAlpha == 255 && gdiSolidFaceCount > 0) {
+            // Sabit koyu kontur (GL ile ayni): varlik oranli koyulastirma
+            // golgeli yuzlerde yetersiz kaliyordu.
+            const auto darken = [](std::uint32_t, int) {
+                return RGB(40, 40, 40);
+            };
+            for (const auto index : visibleModels) {
+                if (index >= document.models().size()) continue;
+                const auto& model = document.models()[index];
+                if (model.constructionKind() != ConstructionKind::None) continue;
+                const auto& modelProps = document.effectiveProperties(index);
+                if (!modelProps.visible) continue;
+                const auto& vertices = model.vertices();
+                const auto& faces = model.faces();
+                if (vertices.empty() || faces.empty()) continue;
+                std::map<std::pair<std::size_t, std::size_t>, int> frontCount;
+                std::map<std::pair<std::size_t, std::size_t>, int> backCount;
+                for (const auto& face : faces) {
+                    if (face.size() < 3) continue;
+                    double faceReference = 0.0;
+                    for (std::size_t i = 1; i + 1 < face.size(); ++i) {
+                        const POINT p0 = projectPoint(vertices[face[0]]);
+                        const POINT p1 = projectPoint(vertices[face[i]]);
+                        const POINT p2 = projectPoint(vertices[face[i + 1]]);
+                        const double area = (p1.x - p0.x) * (p2.y - p0.y) -
+                                            (p1.y - p0.y) * (p2.x - p0.x);
+                        if (faceReference == 0.0) faceReference = area > 0.0 ? 1.0 : -1.0;
+                        const bool front = area * faceReference > 0.0;
+                        const std::array<std::size_t, 3> triangle = {face[0], face[i], face[i + 1]};
+                        for (std::size_t edge = 0; edge < 3; ++edge) {
+                            std::size_t va = triangle[edge];
+                            std::size_t vb = triangle[(edge + 1) % 3];
+                            if (va > vb) std::swap(va, vb);
+                            ++(front ? frontCount : backCount)[std::make_pair(va, vb)];
+                        }
+                    }
+                }
+                HPEN contourPen = CreatePen(PS_SOLID, 2,
+                    darken(modelProps.effectiveColor, 45));
+                HGDIOBJ oldContourPen = SelectObject(dc, contourPen);
+                for (const auto& [key, count] : frontCount) {
+                    if (count > 0 && backCount[key] > 0) {
+                        const POINT a0 = projectPoint(vertices[key.first]);
+                        const POINT b0 = projectPoint(vertices[key.second]);
+                        MoveToEx(dc, a0.x, a0.y, nullptr);
+                        LineTo(dc, b0.x, b0.y);
+                        ++performance.drawCalls;
+                    }
+                }
+                SelectObject(dc, oldContourPen);
+                DeleteObject(contourPen);
+            }
+        }
     }
 
     // Phase 1 GPU-retained line rendering:
@@ -927,12 +1760,47 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         const std::size_t modelCount = document.models().size();
         if (!cachedGpuBatchValid_ || revision != cachedGpuRevision_ ||
             selectionSig != cachedGpuSelectionSig_ || modelCount != cachedGpuModelCount_) {
+            // PROFILLI KAYNAK CIZGILERI GIZLE: ayni eksende bir kati varsa
+            // cizgi artik cizilmez (kati kendi eksenini tasir; cizgi yalniz
+            // giris aracidir — eski dosyalardan kalan sarI "extra cizgiler").
+            std::vector<std::pair<Vec3, Vec3>> solidAxes;
+            for (std::size_t index = 0; index < modelCount; ++index) {
+                const auto& m = document.models()[index];
+                if (m.faces().empty() || m.properties().profileName.empty()) continue;
+                solidAxes.emplace_back(
+                    Vec3{m.properties().axisFromX, m.properties().axisFromY, m.properties().axisFromZ},
+                    Vec3{m.properties().axisToX, m.properties().axisToY, m.properties().axisToZ});
+            }
+            const auto isHiddenSourceLine = [&](const mm::WireframeModel& m) {
+                if (m.vertices().size() != 2 || m.edges().size() != 1 ||
+                    m.properties().profileName.empty() || solidAxes.empty())
+                    return false;
+                const Vec3 lf = m.vertices()[0];
+                const Vec3 lt = m.vertices()[1];
+                for (const auto& [af, at] : solidAxes) {
+                    const bool fwd = std::abs(lf.x - af.x) < 1e-6 && std::abs(lf.y - af.y) < 1e-6 &&
+                        std::abs(lf.z - af.z) < 1e-6 && std::abs(lt.x - at.x) < 1e-6 &&
+                        std::abs(lt.y - at.y) < 1e-6 && std::abs(lt.z - at.z) < 1e-6;
+                    const bool rev = std::abs(lf.x - at.x) < 1e-6 && std::abs(lf.y - at.y) < 1e-6 &&
+                        std::abs(lf.z - at.z) < 1e-6 && std::abs(lt.x - af.x) < 1e-6 &&
+                        std::abs(lt.y - af.y) < 1e-6 && std::abs(lt.z - af.z) < 1e-6;
+                    if (fwd || rev) return true;
+                }
+                return false;
+            };
             cachedGpuBatch_.clear();
             cachedGpuBatch_.reserve(modelCount);
             for (std::size_t index = 0; index < modelCount; ++index) {
                 const auto& model = document.models()[index];
                 if (model.edges().empty()) continue;
-                if (isSelected(index)) continue;
+                if (isHiddenSourceLine(model)) continue; // katinin eksen cizgisi
+                // KONSTRUKSIYON NESNELERI GL batch'ine GIRMEZ — ayri GDI
+                // overlay pass'inde cizilir (derinlik-dogru degil, P0 sinirlama).
+                if (model.constructionKind() != ConstructionKind::None) continue;
+                // Secili modeller artik GL batch'te YER ALIR: eskiden
+                // dislandiklarindan Solid stilde yuzleri hicbir katmanda
+                // cizilmiyor, secilen katı "kayboluyordu". Yesil secim
+                // vurgusu GDI tarafinda uste cizilmeye devam eder.
                 const auto properties = document.effectiveProperties(index);
                 if (!properties.visible) continue;
                 auto modelCopy = model;
@@ -969,10 +1837,21 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
             (isSelected(index) && draft.transformCommand != TransformCommand::None))
             continue;
         const auto& model = document.models()[index];
+        // KONSTRUKSIYON NESNELERI ayri pass'te cizilir (yari saydam duzlem,
+        // eksenler); taban dongusunde cift cizim olmasin.
+        if (model.constructionKind() != ConstructionKind::None) continue;
         const auto& properties = document.effectiveProperties(index);
         if (!properties.visible) continue;
-        if (draft.visualStyle == VisualStyle::Solid && !draft.interactiveNavigation &&
-            !model.faces().empty()) continue;
+        // SOLID: kenarlar HICBIR backend'de cizilmez (GL yuz+siluet, GDI
+        // yuz dolgusu). GDI'da drawModel butun tel kafesi (arka kenarlar
+        // dahil) cizdigi icin "gizli cizgiler" ortaya cikiyordu — piksel
+        // kaniti: 297k duz (51,103,206) GDI dolgusu + 15k tam renk cizgi.
+        // HiddenLine kenarlari GL'de cizilir; GDI'da da cizilir (ucuz
+        // fallback — derinlik ayiklamasi olmadan ama kenarli gorunum).
+        if (draft.visualStyle == VisualStyle::Solid &&
+            !draft.interactiveNavigation && !model.faces().empty()) continue;
+        if (draft.visualStyle == VisualStyle::HiddenLine &&
+            !draft.interactiveNavigation && !model.faces().empty() && useGpuLines) continue;
         // F7: GL modunda modeller yalniz GPU'da cizilir — GDI pass yalniz
         // arka plan/grid/eksen/feedback. Hizalama delta=0.0 ile kanitli,
         // siyah canvas gizli pencere ile cozuldu; skip guvenle geri doner.
@@ -1018,22 +1897,269 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
     if (useGpuLines) {
         glBackend->renderBatchToDc(
             gpuBatchPtr ? *gpuBatchPtr : emptyGpuBatch_, camera, width, height, dc,
-            mode == EditMode::Draw2D, document.revision());
+            mode == EditMode::Draw2D, document.revision(), faceAlpha,
+            draft.visualStyle == VisualStyle::HiddenLine);
         performance.drawCalls += glBackend->drawCallsPerFrame();
+        // GL modunda grid + eksenler referans katmani olarak kompozitin
+        // USTUNE cizilir. SOLID istisnasi: Tekla model gorunumunde grid
+        // yoktur (alttan tagan cizgiler kafa karistirmasin); UCS eksen
+        // oklari yine cizilir.
+        drawGridAndAxes(dc);
+        {
+            static int gridTopDiag = 0;
+            if (gridTopDiag++ < 3) {
+                FILE* diag = fopen("model-maker-render.log", "a");
+                if (diag) { fprintf(diag, "GRIDTOP drawn (GL ust katman)\n"); fclose(diag); }
+            }
+        }
+    }
+
+    // NOKTALAR: point objeleri (tek tepe, kenar yok) — GDI model loop'u GL
+    // modunda atlar (F7), GL line batch'i de kenarsiz modelleri cizmez. Bu
+    // pass her iki modda da GL kompozitinin USTUNE ekran-uzayi X isareti
+    // cizer; boylece Divide/DXF point objeleri gorunur ve snap'lenebilir.
+    if (!draft.snapOnly && !draft.interactiveNavigation) {
+        for (std::size_t index = 0; index < document.models().size(); ++index) {
+            const auto& model = document.models()[index];
+            if (!model.isPointEntity() || model.vertices().empty()) continue;
+            // KONSTRUKSIYON NOKTASI ayri pass'te cizilir (farkli renk).
+            if (model.constructionKind() != ConstructionKind::None) continue;
+            if (draft.viewSlab) {
+                const Vec3 p = model.vertices().front();
+                if (!boundsInViewSlab(Bounds3{p, p}, *draft.viewSlab)) continue;
+            }
+            const auto& properties = document.effectiveProperties(index);
+            if (!properties.visible) continue;
+            const POINT p = projectPoint(model.vertices().front());
+            HPEN pen = createEntityPen(properties);
+            HGDIOBJ oldPen = SelectObject(dc, pen);
+            constexpr int r = 4;
+            line(dc, p.x - r, p.y - r, p.x + r, p.y + r);
+            line(dc, p.x - r, p.y + r, p.x + r, p.y - r);
+            SelectObject(dc, oldPen);
+            DeleteObject(pen);
+            ++performance.renderedEntities;
+        }
+    }
+
+    // KONSTRUKSIYON KATMANI: normal (interaktif olmayan) tam karede burada;
+    // interaktif/hizli karelerde drawMotionFeedback icinden cizilir.
+    if (!draft.snapOnly && !draft.interactiveNavigation) {
+        drawConstruction();
+        drawCutPlanes();
+        drawComponentGlyphs();
+        drawWeldGlyphs();
+    }
+
+    // RHINO TARZI GUMBALL: tasima tutamaclari — GL kompozitinin ustune,
+    // ekran-olcekli. Oklar eksen boyunca, kareler duzlem icinde tasir.
+    if (draft.gumballVisible && !draft.interactiveNavigation && draft.gumballWorldSize > 1e-9) {
+        const Vec3 go = draft.gumballOrigin;
+        const double gl = draft.gumballWorldSize;
+        const POINT gc = projectPoint(go);
+        const int hover = draft.gumballHover;
+        const bool threeD = draft.gumball3D;
+        const Vec3 gaxis[3] = {draft.gumballAxisX, draft.gumballAxisY, draft.gumballAxisZ};
+        const COLORREF gcol[3] = {RGB(210, 40, 40), RGB(20, 140, 55), RGB(35, 90, 215)};
+        const COLORREF ghot[3] = {RGB(235, 70, 70), RGB(35, 170, 75), RGB(65, 120, 240)};
+        const COLORREF gfill[3] = {RGB(244, 157, 157), RGB(151, 218, 168), RGB(153, 190, 246)};
+        const COLORREF gfillHot[3] = {RGB(255, 185, 185), RGB(180, 240, 195), RGB(181, 210, 255)};
+        const int planeA[3] = {0, 1, 2}, planeB[3] = {1, 2, 0}, planeH[3] = {3, 4, 5};
+        const int planeNormal[3] = {2, 0, 1}; // XY=Z blue, YZ=X red, ZX=Y green.
+        const double gps = 0.32 * gl;
+        for (int k = 0; k < (threeD ? 3 : 1); ++k) {
+            const bool hot = (hover == planeH[k]);
+            const POINT p1 = projectPoint(go + gaxis[planeA[k]] * gps);
+            const POINT p2 = projectPoint(go + gaxis[planeA[k]] * gps + gaxis[planeB[k]] * gps);
+            const POINT p3 = projectPoint(go + gaxis[planeB[k]] * gps);
+            const int normal = planeNormal[k];
+            HPEN border = CreatePen(PS_SOLID, hot ? 3 : 2, hot ? ghot[normal] : gcol[normal]);
+            HBRUSH fill = CreateSolidBrush(hot ? gfillHot[normal] : gfill[normal]);
+            HGDIOBJ oldB = SelectObject(dc, fill);
+            HGDIOBJ oldP = SelectObject(dc, border);
+            POINT quad[4] = {gc, p1, p2, p3};
+            Polygon(dc, quad, 4);
+            SelectObject(dc, oldP);
+            SelectObject(dc, oldB);
+            DeleteObject(border);
+            DeleteObject(fill);
+        }
+        // DONUSME YAYLARI (rotasyon): eksene dik duzlemde ~0.80L yaricap.
+        {
+            const double rr = 0.80 * gl;
+            constexpr int segs = 64;
+            for (int i = 0; i < (threeD ? 3 : 2); ++i) {
+                const bool hot = (hover == 7 + i);
+                const Vec3 u = gaxis[(i + 1) % 3], v = gaxis[(i + 2) % 3];
+                HPEN pen = CreatePen(PS_SOLID, hot ? 4 : 3, hot ? ghot[i] : gcol[i]);
+                HGDIOBJ oldP = SelectObject(dc, pen);
+                POINT pts[segs + 1];
+                for (int s = 0; s < segs; ++s) {
+                    const double a = 6.283185307179586 * s / segs;
+                    pts[s] = projectPoint(go + u * (rr * std::cos(a)) + v * (rr * std::sin(a)));
+                }
+                pts[segs] = pts[0]; // Polyline does not close the last segment itself.
+                Polyline(dc, pts, segs + 1);
+                SelectObject(dc, oldP);
+                DeleteObject(pen);
+            }
+        }
+        for (int i = 0; i < (threeD ? 3 : 2); ++i) {
+            const bool hot = (hover == i);
+            HPEN pen = CreatePen(PS_SOLID, hot ? 5 : 3, hot ? ghot[i] : gcol[i]);
+            HGDIOBJ oldP = SelectObject(dc, pen);
+            const POINT tip = projectPoint(go + gaxis[i] * gl);
+            line(dc, gc.x, gc.y, tip.x, tip.y);
+            const double dx = static_cast<double>(tip.x - gc.x);
+            const double dy = static_cast<double>(tip.y - gc.y);
+            const double len = std::sqrt(dx * dx + dy * dy);
+            if (len > 8.0) {
+                const double ux = dx / len, uy = dy / len;
+                const double ah = 12.0, aw = 6.0;
+                const double bx = tip.x - ux * ah, by = tip.y - uy * ah;
+                line(dc, tip.x, tip.y, static_cast<int>(bx - uy * aw), static_cast<int>(by + ux * aw));
+                line(dc, tip.x, tip.y, static_cast<int>(bx + uy * aw), static_cast<int>(by - ux * aw));
+            }
+            SelectObject(dc, oldP);
+            DeleteObject(pen);
+        }
+        // OLCEK tutamaclari: eksende 0.55L'de kucuk dolu kare (axis scale).
+        {
+            const double sd = 0.55 * gl;
+            for (int i = 0; i < (threeD ? 3 : 2); ++i) {
+                const bool hot = (hover == 10 + i);
+                const POINT p = projectPoint(go + gaxis[i] * sd);
+                HPEN pen = CreatePen(PS_SOLID, 1, RGB(255, 255, 255));
+                HBRUSH br = CreateSolidBrush(hot ? ghot[i] : gcol[i]);
+                HGDIOBJ oldB = SelectObject(dc, br);
+                HGDIOBJ oldP = SelectObject(dc, pen);
+                Rectangle(dc, p.x - 4, p.y - 4, p.x + 5, p.y + 5);
+                SelectObject(dc, oldP);
+                SelectObject(dc, oldB);
+                DeleteObject(pen);
+                DeleteObject(br);
+            }
+        }
+        // MERKEZ: dis halka = serbest tasima (camera duzlemi), ic kare = tek
+        // bicim olcekleme. Ikisi ayri tutamac (hit-test onceligi:Uniform sonra Center).
+        {
+            const bool hotCenter = (hover == 6);
+            const bool hotUniform = (hover == 13);
+            HPEN ringPen = CreatePen(PS_SOLID, hotCenter ? 4 : 3,
+                                     hotCenter ? RGB(255, 190, 30) : RGB(90, 90, 90));
+            HGDIOBJ oldP = SelectObject(dc, ringPen);
+            HGDIOBJ oldB = SelectObject(dc, GetStockObject(NULL_BRUSH));
+            Ellipse(dc, gc.x - 11, gc.y - 11, gc.x + 12, gc.y + 12);
+            SelectObject(dc, oldB);
+            SelectObject(dc, oldP);
+            DeleteObject(ringPen);
+            HPEN pen = CreatePen(PS_SOLID, 1, RGB(255, 255, 255));
+            HBRUSH br = CreateSolidBrush(hotUniform ? RGB(255, 190, 30) : RGB(60, 60, 60));
+            oldB = SelectObject(dc, br);
+            oldP = SelectObject(dc, pen);
+            Rectangle(dc, gc.x - 4, gc.y - 4, gc.x + 5, gc.y + 5);
+            SelectObject(dc, oldP);
+            SelectObject(dc, oldB);
+            DeleteObject(pen);
+            DeleteObject(br);
+        }
+        ++performance.drawCalls;
     }
 
     if (!draft.interactiveNavigation) {
         if (!draft.selectedModels.empty()) {
+            // Secili profilli kaynak cizgileri gizle: ayni eksende kati varsa
+            // yesil tel kafes "extra cizgi" olarak gorunmez.
+            std::vector<std::pair<Vec3, Vec3>> selSolidAxes;
+            for (const auto index : draft.selectedModels) {
+                if (index >= document.models().size()) continue;
+                const auto& m = document.models()[index];
+                if (m.faces().empty() || m.properties().profileName.empty()) continue;
+                selSolidAxes.emplace_back(
+                    Vec3{m.properties().axisFromX, m.properties().axisFromY, m.properties().axisFromZ},
+                    Vec3{m.properties().axisToX, m.properties().axisToY, m.properties().axisToZ});
+            }
+            const auto selHiddenSource = [&](std::size_t index) {
+                if (index >= document.models().size() || selSolidAxes.empty()) return false;
+                const auto& m = document.models()[index];
+                if (m.vertices().size() != 2 || m.edges().size() != 1 ||
+                    m.properties().profileName.empty())
+                    return false;
+                const Vec3 lf = m.vertices()[0];
+                const Vec3 lt = m.vertices()[1];
+                for (const auto& [af, at] : selSolidAxes) {
+                    const bool fwd = std::abs(lf.x - af.x) < 1e-6 && std::abs(lf.y - af.y) < 1e-6 &&
+                        std::abs(lf.z - af.z) < 1e-6 && std::abs(lt.x - at.x) < 1e-6 &&
+                        std::abs(lt.y - at.y) < 1e-6 && std::abs(lt.z - at.z) < 1e-6;
+                    const bool rev = std::abs(lf.x - at.x) < 1e-6 && std::abs(lf.y - at.y) < 1e-6 &&
+                        std::abs(lf.z - at.z) < 1e-6 && std::abs(lt.x - af.x) < 1e-6 &&
+                        std::abs(lt.y - af.y) < 1e-6 && std::abs(lt.z - af.z) < 1e-6;
+                    if (fwd || rev) return true;
+                }
+                return false;
+            };
             HPEN selectedPen = CreatePen(PS_SOLID, 3, RGB(90, 255, 145));
             SelectObject(dc, selectedPen);
             for (const auto index : draft.selectedModels) {
-                if (document.modelIsEditable(index)) {
+                if (document.modelIsEditable(index) && !selHiddenSource(index) && inViewSlab(index)) {
                     drawModel(document.models()[index]);
                     ++performance.renderedEntities;
                 }
             }
             SelectObject(dc, stockPen);
             DeleteObject(selectedPen);
+        }
+
+        // HOVER (kati/profil): imlecin altindaki normal model beyaz konturla
+        // vurgulanir — verb-noun kesmede profil adiminda secilebilir hedefi
+        // gosterir. Konstrüksiyon hover'i drawConstruction icinde ele alinir.
+        if (draft.hoverModel && *draft.hoverModel < document.models().size()) {
+            const auto& hm = document.models()[*draft.hoverModel];
+            if (hm.constructionKind() == ConstructionKind::None &&
+                !isSelected(*draft.hoverModel) && document.modelIsEditable(*draft.hoverModel) &&
+                inViewSlab(*draft.hoverModel) &&
+                document.effectiveProperties(*draft.hoverModel).visible &&
+                !hm.faces().empty()) {
+                HPEN hoverPen = CreatePen(PS_SOLID, 2, RGB(255, 255, 255));
+                SelectObject(dc, hoverPen);
+                drawModel(hm);
+                SelectObject(dc, stockPen);
+                DeleteObject(hoverPen);
+                ++performance.renderedEntities;
+            }
+        }
+        drawHoverFaceFill();
+
+        // PROFIL UC TUTAMAKLARI (grip edit): yalniz SECILI profilli katilarin
+        // iki ucuna sari (from) ve mor (to) tutamak cizilir (kullanici istegi:
+        // noktalar sadece seciliyken gorunur). View3D'de; tabana gomulur.
+        // GORUNUS DILIMI (plan / iki noktali gorunus) pencerelerinde de cizilir:
+        // eskiden `!draft.viewSlab` kosulu bu pencerelerde tutamaklari TAMAMEN
+        // gizliyordu ("plan gorunusunde tasima noktalari gozukmuyor"). Dilim
+        // DISINDAKI secili katilar o pencerede gorunmedigi icin tutamaklari da
+        // cizilmez (aksi halde bos alanda asili tutamaklar olusurdu).
+        if (mode == EditMode::View3D && !draft.snapOnly) {
+            const auto& gripBounds = document.modelBounds();
+            for (const std::size_t gi : draft.selectedModels) {
+                if (gi >= document.models().size()) continue;
+                const auto& gm = document.models()[gi];
+                if (gm.faces().empty() || gm.properties().profileName.empty()) continue;
+                if (draft.viewSlab && (gi >= gripBounds.size() ||
+                                       !boundsInViewSlab(gripBounds[gi], *draft.viewSlab)))
+                    continue;
+                const Vec3 gfrom{gm.properties().axisFromX, gm.properties().axisFromY,
+                                  gm.properties().axisFromZ};
+                const Vec3 gto{gm.properties().axisToX, gm.properties().axisToY,
+                               gm.properties().axisToZ};
+                const POINT pf = projectPoint(gfrom);
+                const POINT pt = projectPoint(gto);
+                const bool isActive =
+                    draft.activeGripSolid && *draft.activeGripSolid == gi;
+                drawGripMarker(dc, pf.x, pf.y, RGB(255, 206, 84),
+                               isActive && !draft.activeGripEndIsTo);
+                drawGripMarker(dc, pt.x, pt.y, RGB(170, 90, 220),
+                               isActive && draft.activeGripEndIsTo);
+            }
         }
 
         // Snapshot vurgudan SONRA: statik secim yesil haliyle tabana gomulur —
@@ -1133,18 +2259,22 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
                  L"ZOOM WINDOW", RGB(54, 142, 224));
     }
 
+    // PROFIL TUTAMAGI MOVE track line (tam kare): baz -> imlec (baslangic-bitis).
+    if (draft.gripMoveActive) {
+        const POINT gripFrom = projectPoint(draft.gripTrackFrom);
+        const POINT gripTo = projectPoint(draft.gripTrackTo);
+        HPEN gripTrackPen = CreatePen(PS_DOT, 1, trackGuideColor());
+        SelectObject(dc, gripTrackPen);
+        line(dc, gripFrom.x, gripFrom.y, gripTo.x, gripTo.y);
+        SelectObject(dc, stockPen);
+        DeleteObject(gripTrackPen);
+    }
+
     if (draft.transformCommand != TransformCommand::None &&
         draft.transformPhase == TransformPhase::Destination && draft.transformBase && draft.cursor) {
         const POINT basePoint = projectPoint(*draft.transformBase);
         const POINT destinationPoint = projectPoint(*draft.cursor);
-        const COLORREF trackerColor = [&]() -> COLORREF {
-            switch (draft.orthoAxis) {
-            case OrthoAxis::X: return RGB(235, 82, 96);   // Red
-            case OrthoAxis::Y: return RGB(72, 211, 121);  // Green
-            case OrthoAxis::Z: return RGB(78, 148, 255);  // Blue
-            default: return RGB(255, 206, 84);            // Yellow (no ortho)
-            }
-        }();
+        const COLORREF trackerColor = guideAxisColor(draft.orthoAxis);
         HPEN trackerPen = CreatePen(PS_DOT, 1, trackerColor);
         SelectObject(dc, trackerPen);
         line(dc, basePoint.x, basePoint.y, destinationPoint.x, destinationPoint.y);
@@ -1224,10 +2354,12 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
 
     // Draw beam load arrows
     if (draft.beamLoads && !draft.beamLoads->empty()) {
-        for (const auto& [modelIdx, load] : *draft.beamLoads) {
+        for (const auto& [entityId, load] : *draft.beamLoads) {
             if (load.wY == 0.0 && load.wZ == 0.0) continue;
-            if (modelIdx >= document.models().size()) continue;
-            const auto& m = document.models()[modelIdx];
+            // Kimlik -> guncel indeks (indeks KALICI degildir).
+            const auto loadIndex = document.indexOfEntity(entityId);
+            if (!loadIndex || *loadIndex >= document.models().size()) continue;
+            const auto& m = document.models()[*loadIndex];
             if (m.vertices().size() != 2) continue;
             const POINT p1 = projectPoint(m.vertices()[0]);
             const POINT p2 = projectPoint(m.vertices()[1]);
@@ -1380,6 +2512,11 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         }
         SelectObject(dc, stockPen);
         DeleteObject(pickPen);
+        if (draft.twoPointViewDirectionActive && draft.workPlanePoints.size() >= 2) {
+            for (std::size_t i = 0; i < 2; ++i)
+                drawViewDirectionArrow(draft.workPlanePoints[i],
+                                       draft.twoPointViewDirection, RGB(80, 200, 255));
+        }
         for (std::size_t index = 0; index < draft.workPlanePoints.size(); ++index) {
             const POINT point = projectPoint(draft.workPlanePoints[index]);
             HBRUSH marker = CreateSolidBrush(RGB(255, 206, 84));
@@ -1396,8 +2533,9 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         draft.drawingActive, draft.workPlanePicking, draft.transformCommand, draft.transformPhase,
         draft.arrayItemCount.has_value(), draft.offsetDistance.has_value());
 
-    if (drafting && draft.polarTrackingEnabled && !draft.temporaryTrackingPoints.empty()) {
-        const COLORREF trackingColor = RGB(80, 225, 255);
+    if ((drafting || draft.gripMoveActive) && draft.polarTrackingEnabled &&
+        !draft.temporaryTrackingPoints.empty()) {
+        const COLORREF trackingColor = trackGuideColor();
         HPEN trackingPen = CreatePen(PS_DOT, 1, trackingColor);
         SelectObject(dc, trackingPen);
         for (const auto& guide : draft.temporaryTrackingGuides) {
@@ -1434,6 +2572,27 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         }
         SelectObject(dc, stockPen);
         DeleteObject(derivedPen);
+
+        // DIKME ayagi: iki izleme noktasinin tanimladigi dogruya imlecin dikme
+        // ayagi. Snap isaretiyle ayni renk (camgobegi) + sag aci glifi, boylece
+        // "dik nokta" oldugu bir bakista anlasilir.
+        if (!draft.temporaryPerpendicularPoints.empty()) {
+            const COLORREF perpendicularColor = RGB(44, 225, 225);
+            HPEN perpendicularPen = CreatePen(PS_SOLID, 2, perpendicularColor);
+            SelectObject(dc, perpendicularPen);
+            HGDIOBJ oldPerpendicularBrush = SelectObject(dc, GetStockObject(NULL_BRUSH));
+            for (const auto& foot : draft.temporaryPerpendicularPoints) {
+                const POINT point = projectPoint(foot);
+                line(dc, point.x - 8, point.y + 8, point.x - 8, point.y);
+                line(dc, point.x - 8, point.y, point.x + 8, point.y);
+                line(dc, point.x - 8, point.y + 8, point.x + 8, point.y + 8);
+                line(dc, point.x + 8, point.y + 8, point.x + 8, point.y);
+                drawText(dc, point.x + 11, point.y + 2, L"PERP", perpendicularColor);
+            }
+            SelectObject(dc, oldPerpendicularBrush);
+            SelectObject(dc, stockPen);
+            DeleteObject(perpendicularPen);
+        }
     }
 
     if (draft.polarTrackingEnabled && draft.polarTrackingLocked &&
@@ -1442,6 +2601,7 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
             ? draft.transformBase : draft.anchor;
         if (!polarAnchor && draft.workPlanePicking && !draft.workPlanePoints.empty())
             polarAnchor = draft.workPlanePoints.back();
+        if (draft.gripMoveActive) polarAnchor = draft.gripTrackFrom;
         if (polarAnchor) {
             const POINT from = projectPoint(*polarAnchor);
             const POINT through = projectPoint(*draft.cursor);
@@ -1452,22 +2612,24 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
                 const double extension = static_cast<double>(std::max(width, height));
                 const POINT to{through.x + static_cast<LONG>(dx * extension / length),
                                through.y + static_cast<LONG>(dy * extension / length)};
-                HPEN polarPen = CreatePen(PS_DOT, 1, RGB(80, 225, 255));
+                HPEN polarPen = CreatePen(PS_DOT, 1, trackGuideColor());
                 SelectObject(dc, polarPen);
                 line(dc, from.x, from.y, to.x, to.y);
                 SelectObject(dc, stockPen);
                 DeleteObject(polarPen);
-                drawText(dc, through.x + 12, through.y - 22, L"POLAR 90°", RGB(80, 225, 255));
+                drawText(dc, through.x + 12, through.y - 22, L"POLAR 90°", trackGuideColor());
             }
         }
     }
 
     // 3B ORTHO: dunya X/Y/Z eksen guide'lari — aktif eksen dolu cizgi,
     // digerleri noktali. Renkler: X=kirmizi, Y=yesil, Z=mavi.
-    if (draft.orthoEnabled && mode == EditMode::View3D && draft.anchor && draft.cursor) {
-        const POINT origin = projectPoint(*draft.anchor);
+    if (draft.orthoEnabled && mode == EditMode::View3D &&
+        (draft.anchor || draft.gripMoveActive) && draft.cursor) {
+        const Vec3 guideOrigin = draft.gripMoveActive ? draft.gripTrackFrom : *draft.anchor;
+        const POINT origin = projectPoint(guideOrigin);
         const auto axisGuideDir = [&](const Vec3& axis) {
-            const POINT end = projectPoint(*draft.anchor + axis);
+            const POINT end = projectPoint(guideOrigin + axis);
             double dx = static_cast<double>(end.x - origin.x);
             double dy = static_cast<double>(end.y - origin.y);
             const double len = std::hypot(dx, dy);
@@ -1484,9 +2646,9 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
             SelectObject(dc, stockPen);
             DeleteObject(guidePen);
         };
-        drawAxisGuide({1.0, 0.0, 0.0}, RGB(235, 82, 96), draft.orthoAxis == OrthoAxis::X);
-        drawAxisGuide({0.0, 1.0, 0.0}, RGB(72, 211, 121), draft.orthoAxis == OrthoAxis::Y);
-        drawAxisGuide({0.0, 0.0, 1.0}, RGB(78, 148, 255), draft.orthoAxis == OrthoAxis::Z);
+        drawAxisGuide({1.0, 0.0, 0.0}, guideAxisColor(OrthoAxis::X), draft.orthoAxis == OrthoAxis::X);
+        drawAxisGuide({0.0, 1.0, 0.0}, guideAxisColor(OrthoAxis::Y), draft.orthoAxis == OrthoAxis::Y);
+        drawAxisGuide({0.0, 0.0, 1.0}, guideAxisColor(OrthoAxis::Z), draft.orthoAxis == OrthoAxis::Z);
     }
 
     // Ortho acik ama henuz eksen kilitlenmemisken sari onizleme cizme —
@@ -1495,14 +2657,7 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
     if (drafting && draft.anchor && draft.cursor && !orthoGuideUnlocked) {
         const POINT a = projectPoint(*draft.anchor);
         const POINT b = projectPoint(*draft.cursor);
-        const COLORREF previewColor = [&]() -> COLORREF {
-            switch (draft.orthoAxis) {
-            case OrthoAxis::X: return RGB(235, 82, 96);
-            case OrthoAxis::Y: return RGB(72, 211, 121);
-            case OrthoAxis::Z: return RGB(78, 148, 255);
-            default: return RGB(255, 206, 84);
-            }
-        }();
+        const COLORREF previewColor = guideAxisColor(draft.orthoAxis);
         HPEN preview = CreatePen(PS_DASH, 1, previewColor);
         SelectObject(dc, preview);
         const auto drawPreviewModel = [&](const WireframeModel& model) {
@@ -1555,84 +2710,11 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         HPEN snapPen = CreatePen(PS_SOLID, 2, RGB(90, 255, 145));
         SelectObject(dc, snapPen);
         HGDIOBJ oldBrush = SelectObject(dc, GetStockObject(NULL_BRUSH));
-        switch (snapMarkerSymbol(draft.snapType)) {
-        case SnapMarkerSymbol::Triangle: {
-            POINT triangle[4]{{p.x, p.y - 7}, {p.x - 7, p.y + 6}, {p.x + 7, p.y + 6}, {p.x, p.y - 7}};
-            Polyline(dc, triangle, 4);
-            break;
-        }
-        case SnapMarkerSymbol::Circle:
-            Ellipse(dc, p.x - 7, p.y - 7, p.x + 8, p.y + 8);
-            break;
-        case SnapMarkerSymbol::CircleCross:
-            Ellipse(dc, p.x - 7, p.y - 7, p.x + 8, p.y + 8);
-            line(dc, p.x - 4, p.y, p.x + 5, p.y); line(dc, p.x, p.y - 4, p.x, p.y + 5);
-            break;
-        case SnapMarkerSymbol::CrossedCircle:
-            Ellipse(dc, p.x - 7, p.y - 7, p.x + 8, p.y + 8);
-            line(dc, p.x - 6, p.y - 6, p.x + 7, p.y + 7);
-            line(dc, p.x - 6, p.y + 6, p.x + 7, p.y - 7);
-            break;
-        case SnapMarkerSymbol::Diamond: {
-            POINT diamond[5]{{p.x, p.y - 7}, {p.x + 7, p.y}, {p.x, p.y + 7},
-                             {p.x - 7, p.y}, {p.x, p.y - 7}};
-            Polyline(dc, diamond, 5);
-            break;
-        }
-        case SnapMarkerSymbol::Cross:
-            line(dc, p.x - 6, p.y - 6, p.x + 7, p.y + 7);
-            line(dc, p.x - 6, p.y + 6, p.x + 7, p.y - 7);
-            break;
-        case SnapMarkerSymbol::BoxedCross:
-            Rectangle(dc, p.x - 7, p.y - 7, p.x + 8, p.y + 8);
-            line(dc, p.x - 5, p.y - 5, p.x + 6, p.y + 6);
-            line(dc, p.x - 5, p.y + 5, p.x + 6, p.y - 6);
-            break;
-        case SnapMarkerSymbol::ExtensionLine:
-            line(dc, p.x - 9, p.y, p.x - 5, p.y);
-            line(dc, p.x - 2, p.y, p.x + 3, p.y);
-            line(dc, p.x + 6, p.y, p.x + 10, p.y);
-            break;
-        case SnapMarkerSymbol::LinkedSquares:
-            Rectangle(dc, p.x - 7, p.y - 7, p.x + 2, p.y + 2);
-            Rectangle(dc, p.x - 1, p.y - 1, p.x + 8, p.y + 8);
-            break;
-        case SnapMarkerSymbol::RightAngle:
-            line(dc, p.x - 7, p.y + 7, p.x - 7, p.y - 5);
-            line(dc, p.x - 7, p.y - 5, p.x + 6, p.y - 5);
-            line(dc, p.x - 2, p.y - 5, p.x - 2, p.y + 1);
-            line(dc, p.x - 2, p.y + 1, p.x + 4, p.y + 1);
-            break;
-        case SnapMarkerSymbol::TangentCircle:
-            Ellipse(dc, p.x - 6, p.y - 6, p.x + 7, p.y + 7);
-            line(dc, p.x - 8, p.y - 7, p.x + 9, p.y - 7);
-            break;
-        case SnapMarkerSymbol::Hourglass: {
-            POINT hourglass[5]{{p.x - 7, p.y - 6}, {p.x + 7, p.y - 6},
-                               {p.x - 7, p.y + 6}, {p.x + 7, p.y + 6},
-                               {p.x - 7, p.y - 6}};
-            Polyline(dc, hourglass, 5);
-            break;
-        }
-        case SnapMarkerSymbol::ParallelLines:
-            line(dc, p.x - 8, p.y + 5, p.x, p.y - 5);
-            line(dc, p.x, p.y + 5, p.x + 8, p.y - 5);
-            break;
-        case SnapMarkerSymbol::GridCross:
-            line(dc, p.x - 7, p.y, p.x + 8, p.y);
-            line(dc, p.x, p.y - 7, p.x, p.y + 8);
-            Rectangle(dc, p.x - 3, p.y - 3, p.x + 4, p.y + 4);
-            break;
-        case SnapMarkerSymbol::Square:
-            Rectangle(dc, p.x - 6, p.y - 6, p.x + 7, p.y + 7);
-            break;
-        case SnapMarkerSymbol::None:
-            break;
-        }
+        drawSnapMarkerShape(dc, p, snapMarkerSymbol(draft.snapType));
         SelectObject(dc, oldBrush);
         SelectObject(dc, stockPen);
         DeleteObject(snapPen);
-        drawText(dc, p.x + 10, p.y + 8, snapTypeLabel(draft.snapType), RGB(90, 255, 145));
+        drawText(dc, p.x + sm(10), p.y + sm(8), snapTypeLabel(draft.snapType), RGB(90, 255, 145));
     }
 
     if (!draft.snapOnly) {
@@ -1834,10 +2916,38 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
                                     (draft.drawingActive && draft.anchor && draft.cursor);
         if (feedbackActive) {
             if (!draft.selectedModels.empty()) {
+                // Kaynak eksen cizgileri (profilli + ayni eksende kati) gizle.
+                std::vector<std::pair<Vec3, Vec3>> fbAxes;
+                for (std::size_t i = 0; i < document.models().size(); ++i) {
+                    const auto& m = document.models()[i];
+                    if (m.faces().empty() || m.properties().profileName.empty()) continue;
+                    fbAxes.emplace_back(
+                        Vec3{m.properties().axisFromX, m.properties().axisFromY, m.properties().axisFromZ},
+                        Vec3{m.properties().axisToX, m.properties().axisToY, m.properties().axisToZ});
+                }
+                const auto fbHidden = [&](std::size_t index) {
+                    if (index >= document.models().size() || fbAxes.empty()) return false;
+                    const auto& m = document.models()[index];
+                    if (m.vertices().size() != 2 || m.edges().size() != 1 ||
+                        m.properties().profileName.empty()) return false;
+                    const Vec3 lf = m.vertices()[0];
+                    const Vec3 lt = m.vertices()[1];
+                    for (const auto& [af, at] : fbAxes) {
+                        const bool fwd = std::abs(lf.x - af.x) < 1e-6 && std::abs(lf.y - af.y) < 1e-6 &&
+                            std::abs(lf.z - af.z) < 1e-6 && std::abs(lt.x - at.x) < 1e-6 &&
+                            std::abs(lt.y - at.y) < 1e-6 && std::abs(lt.z - at.z) < 1e-6;
+                        const bool rev = std::abs(lf.x - at.x) < 1e-6 && std::abs(lf.y - at.y) < 1e-6 &&
+                            std::abs(lf.z - at.z) < 1e-6 && std::abs(lt.x - af.x) < 1e-6 &&
+                            std::abs(lt.y - af.y) < 1e-6 && std::abs(lt.z - af.z) < 1e-6;
+                        if (fwd || rev) return true;
+                    }
+                    return false;
+                };
                 HPEN selectedPen = CreatePen(PS_SOLID, 3, RGB(90, 255, 145));
                 SelectObject(dc, selectedPen);
                 for (const auto index : draft.selectedModels) {
-                    if (index < document.models().size() && document.modelIsEditable(index))
+                    if (index < document.models().size() && document.modelIsEditable(index) &&
+                        !fbHidden(index) && inViewSlab(index))
                         drawModel(document.models()[index]);
                 }
                 SelectObject(dc, stockPen);
@@ -1848,14 +2958,7 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
                 draft.transformBase && draft.cursor) {
                 const POINT basePoint = projectPoint(*draft.transformBase);
                 const POINT destinationPoint = projectPoint(*draft.cursor);
-                const COLORREF trackerColor = [&]() -> COLORREF {
-                    switch (draft.orthoAxis) {
-                    case OrthoAxis::X: return RGB(235, 82, 96);   // Red
-                    case OrthoAxis::Y: return RGB(72, 211, 121);  // Green
-                    case OrthoAxis::Z: return RGB(78, 148, 255);  // Blue
-                    default: return RGB(255, 206, 84);            // Yellow (no ortho)
-                    }
-                }();
+                const COLORREF trackerColor = guideAxisColor(draft.orthoAxis);
                 HPEN trackerPen = CreatePen(PS_DOT, 1, trackerColor);
                 SelectObject(dc, trackerPen);
                 line(dc, basePoint.x, basePoint.y, destinationPoint.x, destinationPoint.y);

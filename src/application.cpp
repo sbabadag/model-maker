@@ -1,6 +1,35 @@
 #include "model_maker/application.hpp"
 #include "model_maker/dxf.hpp"
+#include "model_maker/bridge_package.hpp"
+#include "model_maker/bridge_native_mapper.hpp"
+#ifdef MM_HAS_SPACEMOUSE
+#include "model_maker/spacemouse.hpp"
+#endif
+#ifdef MM_HAS_OCC
+#include "model_maker/occ_geometry.hpp"
+#include "model_maker/occ_solid_store.hpp"
+#include "model_maker/component_recompute.hpp"
+#include "model_maker/bolt_geometry.hpp"
+#include "model_maker/end_plate_geometry.hpp"
+#include "model_maker/occ_contact_resolver.hpp"
+#include "model_maker/component_materializer.hpp"
+#include "model_maker/component_framework.hpp"
+#include "model_maker/bridge_occ_adapter.hpp"
+#include "model_maker/weld_geometry.hpp"
+#endif
+#ifdef MM_HAS_OCC
+#include <BRepBuilderAPI_Transform.hxx>
+#include <BRepPrimAPI_MakeBox.hxx>
+#include <BRepPrimAPI_MakeCylinder.hxx>
+#include <gp_Trsf.hxx>
+#include <gp_Vec.hxx>
+#include <TopExp_Explorer.hxx>
+#include <TopAbs.hxx>
+#endif
 #include "model_maker/view_cube.hpp"
+#include "model_maker/contact_resolver.hpp"
+#include "model_maker/component_glyph.hpp"
+#include "model_maker/component_dialog.hpp"
 
 #include <QComboBox>
 
@@ -10,12 +39,18 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdlib>
 #include <cwchar>
 #include <exception>
 #include <fstream>
 #include <iterator>
+#include <locale>
+#include <sstream>
 #include <stdexcept>
 #include <string>
+#include <type_traits>
+#include <unordered_set>
+#include <variant>
 
 namespace mm {
 namespace {
@@ -23,11 +58,16 @@ constexpr int ribbonHeight = RibbonLayout::height;
 constexpr int statusHeight = 27;
 constexpr wchar_t className[] = L"ModelMakerWindow";
 constexpr wchar_t canvasClassName[] = L"ModelMakerCanvas";
+// KONSTRUKSIYON DUZLEMI varsayilan boyutu (mm, kose kenari). Tekla duzlemleri
+// sonsuzdur; biz sonlu dikdortgenle temsil ederiz. Modelden bagimsiz sabit bir
+// varsayilan kullanilir (model sinirlari bos/devasa/değişken olabilir) —
+// ileride ozellik panelinden duzenlenebilir hale getirilecek.
+constexpr double kDefaultConstructionPlaneSize = 500.0;
 
 enum CommandId {
     CmdNew = 100, CmdOpen, CmdSave, CmdImportDxf, CmdExportDxf,
-    CmdLine = 200, CmdPolyline, CmdRectangle, CmdCircle, CmdFace3D,
-    CmdCube = 300, CmdPyramid, CmdResetView, CmdView3D, CmdWorkPlane, CmdZoomExtents, CmdZoomWindow,
+    CmdLine = 200, CmdPolyline, CmdRectangle, CmdCircle, CmdFace3D, CmdColumn,
+    CmdCube = 300, CmdPyramid, CmdCylinder, CmdResetView, CmdView3D, CmdWorkPlane, CmdZoomExtents, CmdZoomWindow,
     CmdVisualStyle, CmdStandardView, CmdWireframe = 310, CmdSolid, CmdTransparent,
     CmdViewFront = 320, CmdViewBack, CmdViewLeft, CmdViewRight, CmdViewIsometric,
     CmdViewTop, CmdViewBottom,
@@ -36,13 +76,14 @@ enum CommandId {
     CmdTrim, CmdExtend, CmdNeutral, CmdFillet,
     CmdTabFile = 600, CmdTabDrawing, CmdTabModify, CmdTabView, CmdTabAids,
     CmdDxfProgress = 700, CmdSnapTypeFirst = 720,
-    CmdLayerCombo = 800, CmdColorCombo, CmdLineTypeCombo,
+    CmdLayerCombo = 800, CmdColorCombo, CmdLineTypeCombo, CmdProfileCombo,
+    CmdProfileButton, CmdProfilePopup,
     CmdProperties = 820, CmdPropsSearch = 821, CmdPropsList = 822, CmdPropsFilter = 823,
     CmdFilterPopup = 824, CmdFilterFind = 825, CmdFilterSelect = 826,
 };
 
 struct SnapChoice { SnapType type; const wchar_t* label; };
-constexpr std::array<SnapChoice, 14> snapChoices{{
+constexpr std::array<SnapChoice, 15> snapChoices{{
     {SnapType::Endpoint, L"Endpoint"}, {SnapType::Midpoint, L"Midpoint"},
     {SnapType::Center, L"Center"}, {SnapType::GeometricCenter, L"Geometric Center"},
     {SnapType::Node, L"Node"}, {SnapType::Quadrant, L"Quadrant"},
@@ -50,8 +91,13 @@ constexpr std::array<SnapChoice, 14> snapChoices{{
     {SnapType::ApparentIntersection, L"Apparent Intersection"},
     {SnapType::Extension, L"Extension"}, {SnapType::Insertion, L"Insertion"},
     {SnapType::Perpendicular, L"Perpendicular"}, {SnapType::Tangent, L"Tangent"},
-    {SnapType::Nearest, L"Nearest"}, {SnapType::Parallel, L"Parallel"}
+    {SnapType::Nearest, L"Nearest"}, {SnapType::Parallel, L"Parallel"},
+    {SnapType::ProfileCenter, L"Profile Center"}
 }};
+// TEK KAYNAK KILIDI: onay kutusu dizisi ile tur listesi ayni sayida olmali.
+// Bir tarafa tur eklenip digeri unutulursa DERLEME HATA verir (sessiz tasma yok).
+static_assert(snapChoices.size() == Application::kSnapChoiceCount,
+              "snapChoices ile snapTypeCheckboxes_ sayisi ayni olmali");
 
 struct ColorChoice { const wchar_t* label; std::optional<std::uint32_t> color; };
 constexpr std::array<ColorChoice, 8> colorChoices{{
@@ -112,11 +158,58 @@ HCURSOR createSquarePickboxCursor(HINSTANCE instance) {
 }
 }
 
+namespace {
+// GL ACILIS KORUMASI: acilista GL init/ilk kare surucu duzeyinde donarsa veya
+// cokerse kullanici bir daha hic acamaz hale gelmesin diye exe yanina bir
+// "guard" dosyasi yazilir; ilk GL karesi basariyla cizilince silinir. Dosya
+// bir sonraki acilista hala duruyorsa onceki GL denemesi yarida kalmistir ->
+// bu acilis GDI ile yapilir (F6 ile elle GL denenebilir).
+std::filesystem::path startupGpuGuardPath() {
+    wchar_t buffer[MAX_PATH]{};
+    const DWORD length = GetModuleFileNameW(nullptr, buffer, MAX_PATH);
+    if (length == 0 || length >= MAX_PATH) return L"model-maker-gl-startup.guard";
+    return std::filesystem::path(buffer).parent_path() / L"model-maker-gl-startup.guard";
+}
+
+bool forceGdiRequested() {
+    wchar_t value[8]{};
+    const DWORD length = GetEnvironmentVariableW(L"MM_FORCE_GDI", value, 8);
+    return length > 0 && length < 8 && value[0] != L'0';
+}
+} // namespace
+
 Application::Application(HINSTANCE instance, HWND /*parentCanvas*/) : instance_(instance) {
     enabledSnapTypes_.fill(true);
+    // UNIVERSAL COMPONENT KATALOGU (Phase P1): yerlesik component tipleri
+    // (fin_plate, end_plate) REGISTRY'ye kaydedilir. Bu olmadan MMW8 acilista
+    // component instance'lari orphan (bilinmeyen typeId) isaretlenir ve Fin
+    // Plate uretilemez. Idempotent (registerType tekrarli typeId reddeder).
+    mm::registerBuiltInComponents(mm::ComponentRegistry::instance());
+    // UNIVERSAL COMPONENT DIALOG katalogu: sematik cizim + parametre editörü
+    // (fin_plate, end_plate) dialog registry'sine kaydedilir. Idempotent.
+    mm::registerBuiltInDialogs(mm::ComponentDialogRegistry::instance());
+    // KULLANICI COMPONENT KATALOGU: kalici derived sablonlari yukler ve
+    // registry/dialog'e kaydeder. Bu, built-in katalogdan SONRA olmali ki
+    // family generator'lar (sourceTypeId) cozumlenebilsin.
+    loadUserCatalog();
+#ifdef MM_HAS_OCC
+    // BELGE-SAHIPLI B-Rep magazasi: OCC-acik derlemede GERCEK OCCT store'unu
+    // Document'a ENJEKTE eder (constructor injection). Saglayici secimi LINK
+    // SIRASINA bagli DEGILDIR — OCC'sizken Document no-op store'la kurulur.
+    document_.setOccStore(mm::makeOccSolidStore());
+#endif
 }
 
 Application::~Application() {
+    // Qt kabugu tuvalleri Application'dan SONRA yok eder; gec gelen
+    // WM_DESTROY vb. olu nesneye ulasmasin.
+    const auto detachWindow = [](HWND h) {
+        if (h && IsWindow(h)) SetWindowLongPtrW(h, GWLP_USERDATA, 0);
+    };
+    detachWindow(canvas_);
+    for (const auto& view : views_) if (view) detachWindow(view->canvas);
+    detachWindow(window_);
+    clearStartupGpuGuard(); // temiz kapanis: GL acilisi sorunsuz sayilir
     if (dxfImportThread_.joinable()) {
         dxfImportThread_.request_stop();
         dxfImportThread_.join();
@@ -132,6 +225,9 @@ Application::~Application() {
 
 int Application::run(int showCommand, std::optional<std::filesystem::path> startupDxf) {
     createMainWindow(showCommand);
+    // VARSAYILAN BASLANGIC (kullanici talebi): 3B + Solid + GL (guvenli yol).
+    applyStartupDefaults3D();
+    ensureSpaceMouseStarted();
     if (startupDxf && startupDxf->extension() == L".dxf") beginDxfImport(*startupDxf);
     MSG message{};
     while (GetMessageW(&message, nullptr, 0, 0) > 0) {
@@ -231,9 +327,11 @@ void Application::createControlPanel() {
     rectangleButton_ = addCommand(L"□", CmdRectangle, BS_AUTOCHECKBOX | BS_PUSHLIKE);
     circleButton_ = addCommand(L"○", CmdCircle, BS_AUTOCHECKBOX | BS_PUSHLIKE);
     face3DButton_ = addCommand(L"▱", CmdFace3D, BS_AUTOCHECKBOX | BS_PUSHLIKE);
+    columnButton_ = addCommand(L"▮", CmdColumn, BS_AUTOCHECKBOX | BS_PUSHLIKE);
 
     addCommand(L"◇", CmdCube);
     addCommand(L"△", CmdPyramid);
+    addCommand(L"⬤", CmdCylinder);
     addCommand(L"⌂", CmdResetView);
     view3DButton_ = addCommand(L"3B", CmdView3D, BS_AUTOCHECKBOX | BS_PUSHLIKE);
     workPlaneButton_ = addCommand(L"▱", CmdWorkPlane, BS_AUTOCHECKBOX | BS_PUSHLIKE);
@@ -293,6 +391,7 @@ void Application::createControlPanel() {
         regTT(GetDlgItem(window_, CmdFace3D), L"3DFACE");
         regTT(GetDlgItem(window_, CmdCube), L"Küp");
         regTT(GetDlgItem(window_, CmdPyramid), L"Piramit");
+        regTT(GetDlgItem(window_, CmdCylinder), L"Silindir");
         regTT(GetDlgItem(window_, CmdResetView), L"Sıfırla");
         regTT(GetDlgItem(window_, CmdView3D), L"2B / 3B");
         regTT(GetDlgItem(window_, CmdWorkPlane), L"Düzlem");
@@ -366,6 +465,35 @@ void Application::createControlPanel() {
     layerCombo_ = createCombo(CmdLayerCombo, 150);
     colorCombo_ = createCombo(CmdColorCombo, 120);
     lineTypeCombo_ = createCombo(CmdLineTypeCombo, 130);
+    profileCombo_ = createCombo(CmdProfileCombo, 150);
+    styleLabels_[3] = createStyleLabel(L"Profil");
+    profileButton_ = CreateWindowExW(0, L"BUTTON", L"Profil: KKR30*3",
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+        0, 0, 150, 24, window_,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(CmdProfileButton)),
+        instance_, nullptr);
+    if (profileButton_) {
+        SendMessageW(profileButton_, WM_SETFONT,
+                     reinterpret_cast<WPARAM>(uiFont_), TRUE);
+    }
+    // Popup liste: WS_POPUP — ribbon boyasinin altinda kalma ihtimali yok.
+    profilePopup_ = CreateWindowExW(WS_EX_TOPMOST | WS_EX_TOOLWINDOW,
+        L"LISTBOX", nullptr,
+        WS_POPUP | WS_BORDER | WS_VSCROLL | LBS_NOTIFY | LBS_NOINTEGRALHEIGHT,
+        0, 0, 240, 420, window_,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(CmdProfilePopup)),
+        instance_, nullptr);
+    if (profilePopup_) {
+        SendMessageW(profilePopup_, WM_SETFONT,
+                     reinterpret_cast<WPARAM>(uiFont_), TRUE);
+    }
+    // Z-order: profil combosu ustte kalsin (ozel boyalı ribbonun altinda
+    // kalma ihtimaline karsi).
+    if (profileCombo_) SetWindowPos(profileCombo_, HWND_TOP, 0, 0, 0, 0,
+                                    SWP_NOMOVE | SWP_NOSIZE);
+    // Ebeveyn pencere cocuklarin uzerine boyamasin (WS_CLIPCHILDREN).
+    SetWindowLongPtrW(window_, GWL_STYLE,
+                      GetWindowLongPtrW(window_, GWL_STYLE) | WS_CLIPCHILDREN);
     for (const auto& choice : colorChoices)
         SendMessageW(colorCombo_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(choice.label));
     for (const auto& choice : lineTypeChoices)
@@ -373,6 +501,7 @@ void Application::createControlPanel() {
     SendMessageW(colorCombo_, CB_SETCURSEL, 0, 0);
     SendMessageW(lineTypeCombo_, CB_SETCURSEL, 0, 0);
     refreshLayerCombo();
+    refreshProfileCombo();
 
     // Properties panel (floating popup window with filter toggle)
     propsPanel_ = CreateWindowExW(WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE, L"STATIC", L"Ozellikler",
@@ -468,9 +597,10 @@ HWND Application::createButton(const wchar_t* text, int id, int x, int y, int wi
 }
 
 void Application::layoutChildren(int width, int height) {
-    if (!canvas_ || !status_) return;
+    const HWND mainCanvasWindow = mainCanvas();
+    if (!mainCanvasWindow || !status_) return;
     const int contentHeight = std::max(ribbonHeight + 1, height - statusHeight);
-    MoveWindow(canvas_, 0, ribbonHeight, std::max(1, width),
+    MoveWindow(mainCanvasWindow, 0, ribbonHeight, std::max(1, width),
                std::max(1, contentHeight - ribbonHeight), TRUE);
     const bool showProgress = dxfImportInProgress_ && dxfProgressBar_;
     const int progressWidth = std::min(300, std::max(180, width / 4));
@@ -517,15 +647,19 @@ void Application::layoutChildren(int width, int height) {
         }
     }
     const int commandsRight = geometry.commandButtons.empty() ? 350 : geometry.commandButtons.back().rect.right;
-    const int styleX = std::min(std::max(commandsRight + 24, 365), std::max(365, width - 426));
-    const std::array<int, 3> xPositions{{styleX, styleX + 158, styleX + 286}};
-    const std::array<int, 3> widths{{150, 120, 130}};
+    // 4. sutun (Profil) icin sag bosluk buyutuldu — dar pencerelerde
+    // combo ekran disina tasiyordu (gorunmez dropdown hatasi).
+    const int styleX = std::min(std::max(commandsRight + 24, 365), std::max(365, width - 570));
+    const std::array<int, 4> xPositions{{styleX, styleX + 148, styleX + 268, styleX + 388}};
+    const std::array<int, 4> widths{{140, 110, 110, 150}};
     for (std::size_t i = 0; i < styleLabels_.size(); ++i) {
         if (styleLabels_[i]) MoveWindow(styleLabels_[i], xPositions[i], 65, widths[i], 17, TRUE);
     }
     if (layerCombo_) MoveWindow(layerCombo_, xPositions[0], 83, widths[0], 220, TRUE);
     if (colorCombo_) MoveWindow(colorCombo_, xPositions[1], 83, widths[1], 220, TRUE);
     if (lineTypeCombo_) MoveWindow(lineTypeCombo_, xPositions[2], 83, widths[2], 220, TRUE);
+    if (profileCombo_) MoveWindow(profileCombo_, xPositions[3], 83, widths[3], 220, TRUE);
+    if (profileButton_) MoveWindow(profileButton_, xPositions[3], 81, widths[3], 25, TRUE);
 
 #ifndef NDEBUG
     // --- Overlap validation rule ---
@@ -628,7 +762,7 @@ void Application::updatePropertiesPanel() {
     const auto& props = model.properties();
     const auto& verts = model.vertices();
 
-    struct Prop { const wchar_t* name; std::wstring value; };
+    struct Prop { std::wstring name; std::wstring value; };
     std::vector<Prop> properties;
 
     // Entity type
@@ -657,6 +791,37 @@ void Application::updatePropertiesPanel() {
             double dz = verts[1].z - verts[0].z;
             double len = std::sqrt(dx*dx + dy*dy + dz*dz);
             properties.push_back({L"Uzunluk", std::to_wstring(len)});
+        }
+    }
+
+    // UNIVERSAL COMPONENT: secili alt nesne (levha/bulon display) bir parametrik
+    // component'a aitse tip + TUM parametreleri goster. Bu, levha seciliyken
+    // baglantinin tek bir component olarak yonetildigini kullaniciya gosterir;
+    // duzenleme cift tik diyaloguyla (setSelectedComponentParams) yapilir.
+    {
+        ComponentInstanceRecord comp;
+        if (selectedComponentInstance(comp)) {
+            const ComponentType* type = ComponentRegistry::instance().findType(comp.typeId);
+            properties.push_back({L"Bilesen", type ? type->displayName : comp.typeId});
+            properties.push_back({L"Bilesen tipi", comp.typeId});
+            properties.push_back({L"Bilesen Id", std::to_wstring(comp.id)});
+            if (type) {
+                const auto aligned = alignParamsToSpecs(type->params, comp.params);
+                for (const auto& spec : type->params) {
+                    const CompParam* p = findParam(aligned, spec.name);
+                    if (!p) continue;
+                    std::wstring text;
+                    std::visit([&](const auto& v) {
+                        using T = std::decay_t<decltype(v)>;
+                        if constexpr (std::is_same_v<T, std::wstring>) text = v;
+                        else if constexpr (std::is_same_v<T, bool>) text = v ? L"true" : L"false";
+                        else if constexpr (std::is_same_v<T, EntityId>) text = std::to_wstring(v);
+                        else text = std::to_wstring(v);
+                    }, p->value);
+                    if (!spec.unit.empty()) text += L" " + spec.unit;
+                    properties.push_back({spec.name, text});
+                }
+            }
         }
     }
 
@@ -734,7 +899,7 @@ void Application::updatePropertiesPanel() {
         item.mask = LVIF_TEXT;
         item.iItem = row;
         item.iSubItem = 0;
-        item.pszText = const_cast<wchar_t*>(prop.name);
+        item.pszText = const_cast<wchar_t*>(prop.name.c_str());
         ListView_InsertItem(propsList_, &item);
         ListView_SetItemText(propsList_, row, 1, const_cast<wchar_t*>(prop.value.c_str()));
         ++row;
@@ -745,10 +910,16 @@ void Application::activateRibbonTab(RibbonTab tab) {
     activeRibbonTab_ = tab;
     for (HWND button : ribbonCommandButtons_) ShowWindow(button, SW_HIDE);
     const bool showProperties = tab == RibbonTab::Drawing || tab == RibbonTab::Modify;
-    for (HWND label : styleLabels_) if (label) ShowWindow(label, showProperties ? SW_SHOW : SW_HIDE);
+    for (std::size_t i = 0; i < styleLabels_.size(); ++i)
+        if (styleLabels_[i]) ShowWindow(styleLabels_[i],
+            showProperties || i == 3 ? SW_SHOW : SW_HIDE);
     if (layerCombo_) ShowWindow(layerCombo_, showProperties ? SW_SHOW : SW_HIDE);
     if (colorCombo_) ShowWindow(colorCombo_, showProperties ? SW_SHOW : SW_HIDE);
     if (lineTypeCombo_) ShowWindow(lineTypeCombo_, showProperties ? SW_SHOW : SW_HIDE);
+    // Native controls remain as a standalone fallback. The shipped Qt shell
+    // uses its own always-visible profile toolbar.
+    if (profileCombo_) ShowWindow(profileCombo_, SW_SHOW);
+    if (profileButton_) ShowWindow(profileButton_, SW_SHOW);
     const auto geometry = RibbonLayout::layout(tab, window_ ? [] (HWND window) {
         RECT client{}; GetClientRect(window, &client); return std::max(1L, client.right);
     }(window_) : 1280);
@@ -888,12 +1059,326 @@ LRESULT CALLBACK Application::canvasProc(HWND window, UINT message, WPARAM wPara
     if (message == WM_NCCREATE) {
         auto* create = reinterpret_cast<CREATESTRUCTW*>(lParam);
         app = static_cast<Application*>(create->lpCreateParams);
-        app->canvas_ = window;
+        // Ikincil viewport olusturulurken aktif canvas_ EZILMEZ.
+        if (!app->creatingViewportCanvas_) app->canvas_ = window;
         SetWindowLongPtrW(window, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(app));
     } else {
         app = reinterpret_cast<Application*>(GetWindowLongPtrW(window, GWLP_USERDATA));
     }
-    return app ? app->handleCanvasMessage(message, wParam, lParam) : DefWindowProcW(window, message, wParam, lParam);
+    if (!app) return DefWindowProcW(window, message, wParam, lParam);
+    return app->routeCanvasMessage(window, message, wParam, lParam);
+}
+
+// ---------------------------------------------------------------------------
+// COKLU VIEWPORT. Tum tuvaller ayni Application'i paylasir; gorunuse ozgu
+// alanlar (canvas_, camera_, mode_, renderer_, workPlane_, viewDef_) AKTIF
+// viewport'tadir. Bir tuvale girdi gelince o viewport aktif edilir ve mesaj
+// ana isleyiciye (handleCanvasMessage) aynen gider -> tum komutlar/kisayollar/
+// snap/gumball/secim her pencerede BIREBIR ayni calisir. Pasif tuvallerin
+// WM_PAINT'i alanlari gecici takasla kendi kamerasiyla cizilir.
+// ---------------------------------------------------------------------------
+void Application::ensureViewRegistry() {
+    if (!views_.empty()) return;
+    views_.push_back(std::make_unique<ViewportState>()); // [0] ana; alanlar uyelerde
+    activeView_ = 0;
+}
+
+std::optional<std::size_t> Application::viewIndexOf(HWND canvas) const {
+    if (!canvas) return std::nullopt;
+    if (views_.empty()) return canvas == canvas_ ? std::optional<std::size_t>{0} : std::nullopt;
+    for (std::size_t i = 0; i < views_.size(); ++i) {
+        const HWND h = (i == activeView_) ? canvas_ : views_[i]->canvas;
+        if (h == canvas) return i;
+    }
+    return std::nullopt;
+}
+
+void Application::swapViewFields(ViewportState& slot) {
+    std::swap(canvas_, slot.canvas);
+    std::swap(camera_, slot.camera);
+    std::swap(mode_, slot.mode);
+    std::swap(renderer_, slot.renderer);
+    std::swap(workPlane_, slot.workPlane);
+    std::swap(viewDef_, slot.viewDef);
+    std::swap(visualStyle_, slot.visualStyle); // stil de pencereye ozgu
+}
+
+void Application::applyPickFilter() {
+    if (viewDef_) {
+        const ViewDefinition slab = *viewDef_;
+        document_.setPickFilter([slab](const Bounds3& b) { return boundsInViewSlab(b, slab); });
+    } else {
+        document_.setPickFilter({});
+    }
+}
+
+void Application::activateViewport(std::size_t index) {
+    ensureViewRegistry();
+    if (index >= views_.size() || index == activeView_) return;
+    // Yarim kalan gorunuse-ozgu etkilesimler (ekran koordinatli) eski
+    // pencerede kalir: kamera surukleme / pencere secimi / zoom penceresi.
+    if (rotating_ || panning2D_ || viewCubeManipulating_ || ctrlRotatePending_) ReleaseCapture();
+    rotating_ = panning2D_ = viewCubeManipulating_ = false;
+    ctrlRotatePending_ = false;
+    viewCubePressedView_.reset();
+    selectionFirstCorner_.reset();
+    zoomWindowFirstCorner_.reset();
+    zoomAnimActive_ = false; zoomAnimTarget_ = 1.0;
+    // ViewCube gecis animasyonu da pencereye ozgu: takasda iptal.
+    viewCubeAnimActive_ = false;
+    viewCubeAnimTarget_.reset();
+    viewCubeHoverValid_ = false;
+    KillTimer(window_, 9);
+    wheelNavigating_ = false; wheelPreviewFactor_ = 1.0; wheelPreviewOffset_ = {};
+    snapPreviewActive_ = false;
+    hover_.reset();
+    if (gumballDrag_ != GumballHandle::None) gumballCancelDrag();
+    const HWND oldCanvas = canvas_;
+    swapViewFields(*views_[activeView_]); // eski aktifin alanlarini yuvasina koy
+    activeView_ = index;
+    swapViewFields(*views_[activeView_]); // yeni aktifin alanlarini uyelere al
+    applyPickFilter();
+    if (oldCanvas) InvalidateRect(oldCanvas, nullptr, FALSE); // eski hover/izleri sil
+    updateControls();
+}
+
+LRESULT Application::routeCanvasMessage(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
+    const auto index = viewIndexOf(window);
+    if (!index) return DefWindowProcW(window, message, wParam, lParam);
+    if (*index != activeView_) {
+        switch (message) {
+        case WM_PAINT: paintPassiveViewport(*index); return 0;
+        case WM_ERASEBKGND: return 1;
+        case WM_SIZE:
+            if (*index == 0 && renderBackend_) renderBackend_->resize(LOWORD(lParam), HIWORD(lParam));
+            InvalidateRect(window, nullptr, FALSE);
+            return 0;
+        case WM_SETCURSOR:
+        case WM_NCHITTEST:
+        case WM_NCDESTROY:
+        case WM_CAPTURECHANGED:
+            return DefWindowProcW(window, message, wParam, lParam);
+        case WM_DESTROY:
+            removeViewport(*index);
+            return 0;
+        default:
+            // Kullanici girdisi / odak: bu viewport aktif olur, mesaj ana
+            // isleyiciye aynen gider.
+            if ((message >= WM_MOUSEFIRST && message <= WM_MOUSELAST) ||
+                (message >= WM_KEYFIRST && message <= WM_KEYLAST) ||
+                message == WM_SETFOCUS || message == WM_MOUSEWHEEL) {
+                // Fare yakalamasi baska tuvaldeyse (surukleme) gecis yapma.
+                const HWND capture = GetCapture();
+                if (message == WM_MOUSEMOVE && capture && capture != window) return 0;
+                activateViewport(*index);
+                // Odak bizim tuvallerimizden birindeyse imlecin altindakine
+                // tasi (klavye komutlari/koordinat girisi o pencerede devam).
+                if (message == WM_MOUSEMOVE && viewIndexOf(GetFocus())) SetFocus(window);
+                break;
+            }
+            return DefWindowProcW(window, message, wParam, lParam);
+        }
+    }
+    if (message == WM_DESTROY && *index != 0) {
+        removeViewport(*index);
+        return 0;
+    }
+    const LRESULT result = handleCanvasMessage(message, wParam, lParam);
+    if (message != WM_PAINT) syncPassiveViewports();
+    return result;
+}
+
+void Application::syncPassiveViewports() {
+    // Belge / secim / stil degistiyse diger pencereleri tazele (ucuz imza;
+    // her fare hareketinde tum pencereleri yeniden cizmez).
+    if (views_.size() < 2) return;
+    std::uint64_t signature = document_.revision() * 1000003ull;
+    signature ^= static_cast<std::uint64_t>(selectedModels_.size()) * 0x9E3779B97F4A7C15ull;
+    for (const auto index : selectedModels_) signature = signature * 31u + index + 1u;
+    // Gorsel stil ARTIK VIEWPORT BASINA (Alt+1..4 yalniz aktif pencereyi
+    // degistirir): imzaya yalniz PASIF pencerelerin kendi stilleri girer —
+    // aktif pencerenin stilini degistirmek digerlerini tazelemez.
+    for (std::size_t i = 0; i < views_.size(); ++i) {
+        if (i == activeView_) continue; // aktif yuvada yer tutucu durur
+        signature = signature * 1000003ull + static_cast<std::uint64_t>(views_[i]->visualStyle) + 11u;
+    }
+    if (signature == passiveSignature_) return;
+    passiveSignature_ = signature;
+    invalidateOtherViewports();
+}
+
+void Application::invalidateOtherViewports() {
+    for (std::size_t i = 0; i < views_.size(); ++i) {
+        if (i == activeView_) continue;
+        if (views_[i]->canvas) InvalidateRect(views_[i]->canvas, nullptr, FALSE);
+    }
+}
+
+void Application::paintPassiveViewport(std::size_t index) {
+    // Gecici takas: pasif pencere kendi kamera/renderer'iyla, ortak belge ve
+    // ortak secimle cizilir; komut onizlemeleri (imlec konumu aktif
+    // pencereye ait) gizlenir. GL kullanilmaz (saf GDI).
+    ViewportState& slot = *views_[index];
+    PAINTSTRUCT paint{};
+    HDC dc = BeginPaint(slot.canvas, &paint);
+    if (!dc) return;
+    RECT client{};
+    GetClientRect(slot.canvas, &client);
+    if (client.right > 0 && client.bottom > 0 && slot.renderer) {
+        DraftView view = draftView(); // ortak durum (secim, komut)
+        view.visualStyle = slot.visualStyle; // stil bu pencereye ait, aktifin degil
+        // Donus merkezi de bu pencerenin KENDI kamerasindan gelir (aktifin
+        // degil): pivot kamerayla birlikte viewport takasinda tasinir.
+        view.orbitPivotVisible = slot.camera.hasOrbitPivot();
+        if (const auto& pivot = slot.camera.orbitPivot()) view.orbitPivot = *pivot;
+        view.cursor.reset();
+        view.hoverModel.reset();
+        view.hoverCutModifier.reset();
+        view.hoverFaceModel.reset();
+        view.hoverFaceIndices.clear();
+        view.snapType = SnapType::None;
+        view.anchor.reset();
+        view.facePoints.clear();
+        view.selectionFirstCorner.reset();
+        view.zoomWindowFirstCorner.reset();
+        view.temporaryTrackingGuides.clear();
+        view.temporaryDerivedPoints.clear();
+        view.temporaryPerpendicularPoints.clear();
+        view.transformCommand = TransformCommand::None; // hayalet onizleme yok
+        view.drawingActive = false;
+        view.workPlanePicking = false;
+        view.gumballVisible = false;
+        view.gripMoveActive = false;
+        view.interactiveNavigation = false;
+        view.wheelNavigating = false;
+        view.rotating = false;
+        view.panning = false;
+        view.viewCubeActive = false;
+        view.motionOverlay = false;
+        view.snapPreviewActive = false;
+        view.rasterZoomPreview = false;
+        view.snapOnly = false;
+        view.viewSlab = slot.viewDef ? &*slot.viewDef : nullptr;
+        view.workPlane = slot.workPlane;
+        // Ana gorunus pasifken de GL ile cizilir (gorunum stili degismesin);
+        // GL baglami gizli pencerede, tuvalden bagimsiz.
+        IRenderBackend* backend = (index == 0 && renderBackend_ && gpuLinesEnabled_ &&
+                                   slot.mode == EditMode::View3D) ? renderBackend_.get() : nullptr;
+        try {
+            slot.renderer->draw(dc, client, document_, slot.camera, slot.mode, view, backend);
+        } catch (...) {
+            // Pasif pencerede cizim hatasi uygulamayi dusurmesin.
+        }
+    }
+    EndPaint(slot.canvas, &paint);
+}
+
+HWND Application::createViewport(HWND parent, const ViewDefinition& definition) {
+    if (!parent || !IsWindow(parent)) return nullptr;
+    ensureViewRegistry();
+    auto slot = std::make_unique<ViewportState>();
+    slot->renderer = std::make_unique<Renderer>();
+    slot->mode = EditMode::View3D;
+    slot->viewDef = definition;
+    slot->visualStyle = visualStyle_; // yeni pencere acildigi andaki stille baslar
+    slot->workPlane = viewWorkPlane(definition); // cizim/snap gorunus duzleminde
+    slot->camera.setViewBasis(definition.right, definition.up, definition.origin);
+    RECT rc{}; GetClientRect(parent, &rc);
+    creatingViewportCanvas_ = true;
+    const HWND canvas = CreateWindowExW(0, canvasClassName, nullptr,
+                                        WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_CLIPSIBLINGS,
+                                        0, 0, std::max(1L, rc.right), std::max(1L, rc.bottom),
+                                        parent, nullptr, instance_, this);
+    creatingViewportCanvas_ = false;
+    if (!canvas) return nullptr;
+    slot->canvas = canvas;
+    {
+        RECT cr{}; GetClientRect(canvas, &cr);
+        const Bounds3 box = viewFitBounds(document_.modelBounds(), definition);
+        slot->camera.fit3D(box.minimum, box.maximum, std::max(1L, cr.right),
+                           std::max(1L, cr.bottom), 40.0);
+    }
+    views_.push_back(std::move(slot));
+    return canvas;
+}
+
+void Application::removeViewport(std::size_t index) {
+    if (index == 0 || index >= views_.size()) return; // ana gorunus kaldirilmaz
+    if (index == activeView_) activateViewport(0);    // alanlari geri al
+    views_.erase(views_.begin() + static_cast<std::ptrdiff_t>(index));
+    if (activeView_ > index) --activeView_;
+    invalidateCanvas();
+}
+
+void Application::destroyViewport(HWND canvas) {
+    const auto index = viewIndexOf(canvas);
+    if (!index || *index == 0) return;
+    // Once kayittan cikar (alanlar ana gorunuse doner), sonra pencereyi yok et.
+    removeViewport(*index);
+    if (IsWindow(canvas)) {
+        SetWindowLongPtrW(canvas, GWLP_USERDATA, 0); // gec gelen mesajlar uygulamaya ulasmasin
+        DestroyWindow(canvas);
+    }
+}
+
+std::optional<ViewDefinition> Application::viewportDefinition(HWND canvas) const {
+    const auto index = viewIndexOf(canvas);
+    if (!index) return std::nullopt;
+    return *index == activeView_ ? viewDef_ : views_[*index]->viewDef;
+}
+
+void Application::setViewportDepth(HWND canvas, double front, double back) {
+    const auto index = viewIndexOf(canvas);
+    if (!index || *index == 0) return;
+    auto& def = (*index == activeView_) ? viewDef_ : views_[*index]->viewDef;
+    if (!def) return;
+    if (std::isfinite(front) && front >= 0.0) def->depthFront = front;
+    if (std::isfinite(back) && back >= 0.0) def->depthBack = back;
+    if (*index == activeView_) applyPickFilter();
+    InvalidateRect(canvas, nullptr, FALSE);
+}
+
+void Application::fitViewport(HWND canvas) {
+    const auto index = viewIndexOf(canvas);
+    if (!index) return;
+    if (*index != activeView_) activateViewport(*index);
+    if (!viewDef_) { zoomExtents2D(); return; }
+    RECT rc{}; GetClientRect(canvas_, &rc);
+    const Bounds3 box = viewFitBounds(document_.modelBounds(), *viewDef_);
+    camera_.setViewBasis(viewDef_->right, viewDef_->up, viewDef_->origin);
+    camera_.fit3D(box.minimum, box.maximum, std::max(1L, rc.right), std::max(1L, rc.bottom), 40.0);
+    updateHover(cursorScreen_.x, cursorScreen_.y);
+    invalidateCanvas();
+}
+
+// Bir gorunum penceresini AKTIF DURUMUNU DEGISTIRMEDEN kendi kamerasiyla
+// sigdirir. resize sirasinda kullanilir: boyut degisince pasif pencerenin
+// kamerasi eski (kucuk) canvas'a gore fit edilmis kalmasin diye yeniden
+// sigdirilir; aktif view degistirilmez (fitViewport aktiflestirir — resize'da
+// yanlis). Aktif gorunum icin de ayni isi, aktifligi koruyarak yapar.
+void Application::fitViewportPassive(HWND canvas) {
+    const auto index = viewIndexOf(canvas);
+    if (!index) return;
+    if (*index == activeView_) {
+        if (!viewDef_) { zoomExtents2D(); return; }
+        RECT rc{}; GetClientRect(canvas_, &rc);
+        if (rc.right <= 0 || rc.bottom <= 0) return;
+        const Bounds3 box = viewFitBounds(document_.modelBounds(), *viewDef_);
+        camera_.setViewBasis(viewDef_->right, viewDef_->up, viewDef_->origin);
+        camera_.fit3D(box.minimum, box.maximum, std::max(1L, rc.right),
+                      std::max(1L, rc.bottom), 40.0);
+        invalidateCanvas();
+        return;
+    }
+    auto& slot = *views_[*index];
+    if (!slot.viewDef) return;
+    RECT rc{}; GetClientRect(slot.canvas, &rc);
+    if (rc.right <= 0 || rc.bottom <= 0) return;
+    const Bounds3 box = viewFitBounds(document_.modelBounds(), *slot.viewDef);
+    slot.camera.setViewBasis(slot.viewDef->right, slot.viewDef->up, slot.viewDef->origin);
+    slot.camera.fit3D(box.minimum, box.maximum, std::max(1L, rc.right),
+                      std::max(1L, rc.bottom), 40.0);
+    InvalidateRect(slot.canvas, nullptr, FALSE);
 }
 
 LRESULT CALLBACK Application::propsWndProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
@@ -983,9 +1468,31 @@ LRESULT Application::handleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
         return reinterpret_cast<LRESULT>(GetStockObject(DC_BRUSH));
     }
     case WM_COMMAND:
+        // Handle the profile button before the generic BN_CLICKED path. The
+        // old ordering swallowed this command in executeCommand(), so even a
+        // visible native fallback button could never open its picker.
+        if (HIWORD(wParam) == BN_CLICKED && LOWORD(wParam) == CmdProfileButton) {
+            if (profilePickerCallback_) profilePickerCallback_();
+            else toggleProfilePopup();
+            return 0;
+        }
         if (HIWORD(wParam) == BN_CLICKED) executeCommand(LOWORD(wParam));
         else if (HIWORD(wParam) == EN_CHANGE && LOWORD(wParam) == CmdPropsSearch) {
             if (propsPanelOpen_) updatePropertiesPanel();
+        }
+        else if (LOWORD(wParam) == CmdProfilePopup) {
+            if (HIWORD(wParam) == LBN_SELCHANGE || HIWORD(wParam) == LBN_DBLCLK) {
+                applyProfilePopupSelection();
+                SetFocus(canvas_);
+            }
+            return 0;
+        }
+        else if (HIWORD(wParam) == CBN_SELCHANGE && LOWORD(wParam) == CmdProfileCombo) {
+            const int selection = static_cast<int>(
+                SendMessageW(profileCombo_, CB_GETCURSEL, 0, 0));
+            if (selection >= 0 && selection < static_cast<int>(profileCatalog_.size()))
+                assignProfileToSelection(profileCatalog_[static_cast<std::size_t>(selection)].name);
+            SetFocus(canvas_);
         }
         else if (HIWORD(wParam) == CBN_SELCHANGE &&
                  (LOWORD(wParam) == CmdLayerCombo || LOWORD(wParam) == CmdColorCombo ||
@@ -1003,25 +1510,8 @@ LRESULT Application::handleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
             invalidateCanvas();
             return 0;
         }
-        if (wParam == 5) {
-            KillTimer(window_, 5);
-            if (temporaryPointDwellCandidate_ && hover_ && polarTrackingEnabled_ &&
-                temporaryPointDwellCandidate_->point == hover_->point &&
-                temporaryPointDwellCandidate_->type == hover_->type) {
-                const Vec3 point = temporaryPointDwellCandidate_->point;
-                if (std::find(temporaryTrackingPoints_.begin(), temporaryTrackingPoints_.end(), point) ==
-                    temporaryTrackingPoints_.end()) {
-                    if (temporaryTrackingPoints_.size() == 8)
-                        temporaryTrackingPoints_.erase(temporaryTrackingPoints_.begin());
-                    temporaryTrackingPoints_.push_back(point);
-                }
-            }
-            temporaryPointDwellCandidate_.reset();
-            updateHover(cursorScreen_.x, cursorScreen_.y);
-            updateStatus();
-            invalidateCanvas();
-            return 0;
-        }
+        // Timer 5 (eski 450 ms TP dwell) KALDIRILDI: TP artik TAB tusuyla
+        // kaydedilir (kullanici sarti). Bkz. acquireTemporaryTrackingPoint().
         if (wParam == 4) {
             KillTimer(window_, 4);
             if (!snapPreviewActive_) invalidateCanvas();
@@ -1036,6 +1526,52 @@ LRESULT Application::handleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
         if (wParam == 7) {
             KillTimer(window_, 7);
             runRenderBenchmark();
+            return 0;
+        }
+        if (wParam == 9) {
+            // VIEWCUBE gecis animasyonu karesi (16 ms). Yumusak baslangic/bitis
+            // icin smoothstep; hedefe varinca kesin apply + kilit.
+            if (!viewCubeAnimActive_) {
+                KillTimer(window_, 9);
+                return 0;
+            }
+            viewCubeAnimT_ += 0.09;
+            const double t = std::clamp(viewCubeAnimT_, 0.0, 1.0);
+            const double eased = t * t * (3.0 - 2.0 * t);
+            camera_.setRotationMatrix(
+                viewCubeSlerpRotation(viewCubeAnimFrom_, viewCubeAnimTo_, eased));
+            if (t >= 1.0) {
+                finishViewCubeAnimation();
+            } else {
+                invalidateCanvas();
+            }
+            return 0;
+        }
+        if (wParam == 8) {
+            // Sönümlemeli zoom karesi: kalan hedefin ~%28'i uygulanır
+            // (üstel yakınlama; ~5 karede (~75ms) tamamlanır — ani değil,
+            // algılanabilir yumuşaklık). Çarpan 1'e yaklaştığında biter.
+            if (!zoomAnimActive_) { KillTimer(window_, 8); return 0; }
+            RECT wc{}; GetClientRect(canvas_, &wc);
+            const double step = 1.0 + (zoomAnimTarget_ - 1.0) * 0.28;
+            const bool done = std::abs(zoomAnimTarget_ - 1.0) < 0.004;
+            const double apply = done ? zoomAnimTarget_ : step;
+            if (mode_ == EditMode::Draw2D)
+                camera_.zoom2DAt(zoomAnimCursor_, apply,
+                                 std::max(1L, wc.right), std::max(1L, wc.bottom));
+            else
+                camera_.zoom3DAt(zoomAnimCursor_, apply,
+                                 std::max(1L, wc.right), std::max(1L, wc.bottom));
+            zoomAnimTarget_ /= apply;
+            if (done || std::abs(zoomAnimTarget_ - 1.0) < 0.004) {
+                zoomAnimTarget_ = 1.0;
+                zoomAnimActive_ = false;
+                KillTimer(window_, 8);
+                // Animasyon bitti: tekerlek ~120ms sessiz kalirsa navigasyon
+                // kapanir (timer 2 mevcut akis — hover/snap geri gelir).
+                SetTimer(window_, 2, 120, nullptr);
+            }
+            invalidateCanvas();
             return 0;
         }
         if (wParam == 2) {
@@ -1079,8 +1615,20 @@ LRESULT Application::handleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
         // Canvas odagi yokken F10 dis pencereye duser — toggle'i burada da
         // yakala (canvas odakliyken canvasProc halledince buraya gelmez).
         if (wParam == VK_F6) { toggleGpuLines(); return 0; }
+        if (wParam == VK_F7) { toggleWorkPlaneGhost(); return 0; }
         if (wParam == VK_F5) { runRenderBenchmark(); return 0; }
+        // TAB = TP kaydi; odak canvas'ta degilse (or. kurdele dugmesi aktif)
+        // tus buraya duser, kayit yine calissin.
+        if (wParam == VK_TAB) { acquireTemporaryTrackingPoint(); return 0; }
         return 0;
+    case WM_SYSKEYDOWN:
+        // F10 SISTEM TUSU: odak dis pencerede olsa da WM_SYSKEYDOWN gelir.
+        // Polar tracking'in kayitli tusu F10 — menuye kaptirmadan yakala.
+        if (wParam == VK_F10 && (GetKeyState(VK_MENU) & 0x8000) == 0) {
+            togglePolarTracking();
+            return 0;
+        }
+        return DefWindowProcW(window_, message, wParam, lParam);
     case WM_DESTROY:
         if (renderBackend_) { renderBackend_->shutdown(); renderBackend_.reset(); }
         if (dxfImportThread_.joinable()) dxfImportThread_.request_stop();
@@ -1134,6 +1682,39 @@ LRESULT Application::handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lPa
     case WM_LBUTTONDOWN: SetFocus(canvas_); onLeftButtonDown(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)); return 0;
     case WM_RBUTTONDOWN:
         SetFocus(canvas_);
+        if (pendingCutKind_) {
+            // Verb-noun kesme: sag tik komutu isletir (profil + duzlem seciliyse).
+            executePendingCutCommand();
+            updateControls(); invalidateCanvas(); return 0;
+        }
+        if (pendingBolt_) {
+            // Verb-noun bolt: sag tik komutu isletir (2 parca seciliyse).
+            executePendingBoltCommand();
+            updateControls(); invalidateCanvas(); return 0;
+        }
+        if (pendingEndPlate_) {
+            // Verb-noun end plate: sag tik komutu isletir (kolon + kiris seciliyse).
+            executePendingEndPlateCommand();
+            updateControls(); invalidateCanvas(); return 0;
+        }
+        if (pendingFinPlate_) {
+            // Verb-noun fin plate: sag tik komutu isletir (kolon + kiris seciliyse).
+            executePendingFinPlateCommand();
+            updateControls(); invalidateCanvas(); return 0;
+        }
+        if (componentCommandActive()) {
+            // Generic katalog komutu: sag tik komutu isletir (parcalar seciliyse).
+            executePendingComponentCommand();
+            updateControls(); invalidateCanvas(); return 0;
+        }
+        // BOLT SAG-TIK MENUSU: bos modda bir BOLT display'i uzerinde sag tik
+        // -> Ortala X / Ortala Y popup menusu. Bulon degilse false doner ve
+        // asagidaki normal sag-tik akisina dusulur.
+        if (mode_ == EditMode::View3D && transformCommand_ == TransformCommand::None &&
+            !drawingActive_ && !zoomWindowActive_ && !workPlanePicking_ && !profileGrip_) {
+            if (showBoltContextMenu(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)))
+                return 0;
+        }
         if (zoomWindowActive_) cancelZoomWindow2D();
         else if (workPlanePicking_) cancelWorkPlaneCommand();
         else if (transformCommand_ == TransformCommand::Copy) {
@@ -1148,10 +1729,17 @@ LRESULT Application::handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lPa
         updateControls(); invalidateCanvas(); return 0;
     case WM_MBUTTONDOWN:
         SetFocus(canvas_);
-        // 3B: orta tus surukleme = rotate; Alt + orta tus = pan.
+        // 3B: orta tus surukleme = turntable orbit; SHIFT + orta tus = pan.
         // 2B: orta tus surukleme = pan.
-        if (mode_ == EditMode::View3D && !(GetKeyState(VK_MENU) & 0x8000)) {
+        // Gorunus penceresi: yon sabit -> orta tus = PAN (Tekla).
+        if (mode_ == EditMode::View3D && !viewRotationLocked() && !(GetKeyState(VK_SHIFT) & 0x8000)) {
             rotating_ = true;
+            // AKILLI YORUNGE PIVOTU: jest basinda BIR KEZ cozulur ve jest
+            // boyunca sabit kalir. Oncelik: imlec alti 3B isabet -> secim
+            // merkezi -> kayitli pivot -> model kutusu merkezi. R-tusu kalici
+            // pivotu AYRI yoldur (Ctrl+sol tus); MMB ona dokunmaz, kendi
+            // jest pivotunu kullanir.
+            orbitGesturePivot_ = resolveOrbitPivot(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
         } else {
             panning2D_ = true;
         }
@@ -1162,6 +1750,7 @@ LRESULT Application::handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lPa
     case WM_MBUTTONUP:
         rotating_ = false;
         panning2D_ = false;
+        orbitGesturePivot_.reset();
         ReleaseCapture();
         updateHover(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
         invalidateCanvas();
@@ -1169,6 +1758,8 @@ LRESULT Application::handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lPa
     case WM_CAPTURECHANGED:
         rotating_ = false;
         panning2D_ = false;
+        orbitGesturePivot_.reset();
+        ctrlRotatePending_ = false;
         if (reinterpret_cast<HWND>(lParam) != canvas_) {
             viewCubeManipulating_ = false;
             viewCubePressedView_.reset();
@@ -1209,44 +1800,94 @@ LRESULT Application::handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lPa
         // atliyor, tiklamalar "yanlis yere" dusuyor ve redraw'lar flicker
         // uretiyor. Detentler BIRIKTIRILIR; 64ms'de en fazla BIR zoom
         // uygulanir, artan zamanlayiciya birakilir (case 2 flush).
-        wheelPendingFactor_ *= factor;
-        const auto wheelNowMs = GetTickCount64();
-        if (wheelNowMs - lastWheelApplyMs_ >= 64 || lastWheelApplyMs_ == 0) {
-            const double applied = wheelPendingFactor_;
-            wheelPendingFactor_ = 1.0;
-            lastWheelApplyMs_ = wheelNowMs;
-            if (mode_ == EditMode::Draw2D)
-                camera_.zoom2DAt({static_cast<double>(zoomCursor.x), static_cast<double>(zoomCursor.y)}, applied,
-                                 std::max(1L, zoomClient.right), std::max(1L, zoomClient.bottom));
-            else
-                camera_.zoom3DAt({static_cast<double>(zoomCursor.x), static_cast<double>(zoomCursor.y)}, applied,
-                                 std::max(1L, zoomClient.right), std::max(1L, zoomClient.bottom));
-            wheelPreviewOffset_.x = applied * wheelPreviewOffset_.x + (1.0 - applied) * zoomCursor.x;
-            wheelPreviewOffset_.y = applied * wheelPreviewOffset_.y + (1.0 - applied) * zoomCursor.y;
-            wheelPreviewFactor_ *= applied;
-        }
+        // SÖNÜMLEMELİ ZOOM: tekerlek hedefi biriktirir; uygulama animasyon
+        // karelerinde (timer 8, ~15ms) küçük adımlarla yapılır. İmleç
+        // çapası sabit — her adım zoomXAt ile imleç altındaki noktaya
+        // kilitli, böylece toplam etki eski anlık %12 sıçramasıyla aynı
+        // fakat akıcı (Tekla/OCC viewer hissi). Hız sınırlayıcı kalktı:
+        // artık kayıp yok, her detent hedefe eklenir.
+        (void)wheelPendingFactor_; (void)lastWheelApplyMs_;
+        zoomAnimTarget_ *= factor;
+        zoomAnimCursor_ = {static_cast<double>(zoomCursor.x), static_cast<double>(zoomCursor.y)};
+        if (!zoomAnimActive_) { zoomAnimActive_ = true; SetTimer(window_, 8, 15, nullptr); }
         wheelNavigating_ = true;
         if (mode_ == EditMode::Draw2D || drawingActive_ || workPlanePicking_ ||
             (transformCommand_ != TransformCommand::None && transformPhase_ != TransformPhase::Selecting))
             updateHover(cursorScreen_.x, cursorScreen_.y);
         else hover_.reset();
-        // Flush: teker durduktan ~120ms sonra kalan zoom artigi uygulanir
-        // (350ms'lik eski deger "gorevi ertelenmis/yavas zoom" hissi
-        // veriyordu; GL kompozit artig tek sunumlu oldugundan hiz siniri
-        // daraltilabilir).
-        SetTimer(window_, 2, 120, nullptr);
         invalidateCanvas();
         }
         return 0;
     case WM_CHAR: onCharacter(static_cast<wchar_t>(wParam)); return 0;
+    case WM_GETDLGCODE:
+        // TAB'i biz isleriz (TP kaydi) — odak degistirme zincirine birakma.
+        return DLGC_WANTTAB;
+    case WM_SYSKEYDOWN: {
+        // Alt+1..4: 3B gorsel stiller (AutoCAD VPMONITOR tarzi)
+        const bool altDown = (GetKeyState(VK_MENU) & 0x8000) != 0;
+        if (altDown) {
+            if (wParam == '1') { setVisualStyle(VisualStyle::Wireframe); return 0; }
+            if (wParam == '2') { setVisualStyle(VisualStyle::Transparent); return 0; }
+            if (wParam == '3') { setVisualStyle(VisualStyle::HiddenLine); return 0; }
+            if (wParam == '4') { setVisualStyle(VisualStyle::Solid); return 0; }
+        }
+        // F10 ve Alt+<tus> SISTEM TUSLARIDIR (MSDN: "the function keys other
+        // than F10" tek istisna) — Windows bunlari WM_KEYDOWN ile GONDERMEZ.
+        // Polar tracking F10'u WM_KEYDOWN'da bekliyordu; o dal hic
+        // calismiyordu, F10 kayitlarin arasinda sessizce kayboluyordu.
+        // Bilerek DefWindowProc'a BIRAKILMAZ: F10 menuyu acmasin, polar
+        // takip acilsin (AutoCAD davranisi).
+        if (wParam == VK_F10) { togglePolarTracking(); return 0; }
+        break;
+    }
     case WM_KEYDOWN:
         if (wParam == VK_ESCAPE) {
+            if (profilePopup_ && IsWindowVisible(profilePopup_)) {
+                ShowWindow(profilePopup_, SW_HIDE);
+                SetFocus(canvas_);
+                return 0;
+            }
+            // Gumball drag aktifse: iptal (geometri drag oncesi haline doner).
+            if (gumballDrag_ != GumballHandle::None) {
+                gumballCancelDrag();
+                return 0;
+            }
+            // Esc TP'leri SIFIRLAR (kullanici sarti) — komut iptalinden bagimsiz
+            // olarak her Esc'te gecici izleme noktalari/kilavuzlari temizlenir.
+            clearTemporaryTracking();
             input_.clear();
-            if (zoomWindowActive_) cancelZoomWindow2D();
+            // Esc aktif navigasyonu da iptal eder (MMB orbit / Shift+MMB pan
+            // suruklemesi): bayraklari temizle, yakalamayi birak.
+            if (rotating_ || panning2D_) {
+                rotating_ = panning2D_ = false;
+                orbitGesturePivot_.reset();
+                ReleaseCapture();
+                invalidateCanvas();
+                return 0;
+            }
+            if (ctrlRotatePending_) {
+                // Yarim kalan Ctrl+sol tus jesti (henuz rotasyona terfi
+                // etmedi): iptal, secim degismez.
+                ctrlRotatePending_ = false;
+                ReleaseCapture();
+            }
+            if (profileGrip_) cancelProfileGrip();
+            else if (zoomWindowActive_) cancelZoomWindow2D();
             else if (workPlanePicking_) cancelWorkPlaneCommand();
+            else if (pendingCutKind_) cancelPendingCutCommand();
+            else if (pendingBolt_) cancelPendingBoltCommand();
+            else if (pendingEndPlate_) cancelPendingEndPlateCommand();
+            else if (pendingFinPlate_) cancelPendingFinPlateCommand();
+            else if (pendingWeld_) cancelPendingWeldCommand();
+            else if (!selectedWelds_.empty()) { clearWeldSelection(); invalidateCanvas(); }
+            else if (componentCommandActive()) cancelPendingComponentCommand();
             else if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
             else cancelDrawing();
             if (mode_ == EditMode::View3D) drawingActive_ = false;
+        } else if (wParam == VK_TAB) {
+            // TAB = gecici izleme noktasi (TP) kaydet (polar tracking).
+            acquireTemporaryTrackingPoint();
+            return 0;  // Tab odak degistirmesin; WM_CHAR'\t' de yok sayilir.
         } else if (wParam == VK_F3) snapEnabled_ = !snapEnabled_;
         else if (wParam == VK_F8) {
             orthoEnabled_ = !orthoEnabled_;
@@ -1255,14 +1896,22 @@ LRESULT Application::handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lPa
                 clearTemporaryTracking();
             }
         }
-        else if (wParam == VK_F6) toggleGpuLines(); // F10 menulerce SYSKEY olarak yutuluyor + Polar Tracking'in tusuydu
+        else if (wParam == VK_F6) toggleGpuLines();
+        else if (wParam == VK_F7) toggleWorkPlaneGhost();
         else if (wParam == VK_F9) gridSnapEnabled_ = !gridSnapEnabled_;
-        else if (wParam == VK_F10) {
-            polarTrackingEnabled_ = !polarTrackingEnabled_;
-            if (polarTrackingEnabled_) orthoEnabled_ = false;
-            else clearTemporaryTracking();
-        }
+        // VK_F10 buraya NORMALDE HIC DUSMEZ (yukaridaki WM_SYSKEYDOWN'a gelir).
+        // Bazi tus esleyiciler/sanat sanal ortamlar yine de KEYDOWN uretebiliyor:
+        // yedek dal, polar yine de acilir.
+        else if (wParam == VK_F10) togglePolarTracking();
         else if (wParam == VK_F12) dynamicInputEnabled_ = !dynamicInputEnabled_;
+        else if (wParam == VK_F2) {
+            // Gorsel stil dongusu: Wireframe -> Solid -> Transparent
+            visualStyle_ = visualStyle_ == VisualStyle::Wireframe ? VisualStyle::Solid
+                         : visualStyle_ == VisualStyle::Solid ? VisualStyle::Transparent
+                         : visualStyle_ == VisualStyle::Transparent ? VisualStyle::HiddenLine
+                         : VisualStyle::Wireframe;
+            updateControls(); invalidateCanvas();
+        }
         else if (wParam == VK_F11) { performanceOverlayEnabled_ = !performanceOverlayEnabled_; invalidateCanvas(); }
         else if (wParam == VK_F5) runRenderBenchmark();
         else if (wParam == 'Z' && (GetKeyState(VK_CONTROL) & 0x8000)) undo();
@@ -1270,11 +1919,29 @@ LRESULT Application::handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lPa
         else if (wParam == 'N' && (GetKeyState(VK_CONTROL) & 0x8000)) newDocument();
         else if (wParam == 'O' && (GetKeyState(VK_CONTROL) & 0x8000)) openDocument();
         else if (wParam == 'S' && (GetKeyState(VK_CONTROL) & 0x8000)) saveDocument();
+        // STANDART GORUNUSLER: Ctrl+1..7 = On/Arka/Sol/Sag/Ust/Alt/ISO.
+        else if (wParam == '1' && (GetKeyState(VK_CONTROL) & 0x8000))
+            setStandardView(StandardView::Front);
+        else if (wParam == '2' && (GetKeyState(VK_CONTROL) & 0x8000))
+            setStandardView(StandardView::Back);
+        else if (wParam == '3' && (GetKeyState(VK_CONTROL) & 0x8000))
+            setStandardView(StandardView::Left);
+        else if (wParam == '4' && (GetKeyState(VK_CONTROL) & 0x8000))
+            setStandardView(StandardView::Right);
+        else if (wParam == '5' && (GetKeyState(VK_CONTROL) & 0x8000))
+            setStandardView(StandardView::Top);
+        else if (wParam == '6' && (GetKeyState(VK_CONTROL) & 0x8000))
+            setStandardView(StandardView::Bottom);
+        else if (wParam == '7' && (GetKeyState(VK_CONTROL) & 0x8000))
+            setStandardView(StandardView::Isometric);
         else if (wParam == 'L') selectTool(DrawTool::Line);
         else if (wParam == 'P') selectTool(DrawTool::Polyline);
         else if (wParam == 'A') selectTool(DrawTool::Rectangle);
         else if (wParam == 'C') selectTool(DrawTool::Circle);
-        else if (wParam == 'F') selectTool(DrawTool::Face3D);
+        else if (wParam == 'D') activateDivide();
+        else if (wParam == 'F') focusOnSelection();
+        else if (wParam == 'H') selectTool(DrawTool::Face3D);
+        else if (wParam == 'G') selectTool(DrawTool::Column);
         else if (wParam == 'M') startTransformCommand(TransformCommand::Move);
         else if (wParam == 'K') startTransformCommand(TransformCommand::Copy);
         else if (wParam == 'O' && !(GetKeyState(VK_CONTROL) & 0x8000))
@@ -1287,14 +1954,52 @@ LRESULT Application::handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lPa
         else if (wParam == 'W') startWorkPlaneCommand();
         else if (wParam == 'B') addCube();
         else if (wParam == 'Y') addPyramid();
-        else if (wParam == 'R' && mode_ == EditMode::View3D) camera_.reset();
+        else if (wParam == 'S') addCylinder();
+        else if (wParam == 'X') {
+            // In the Qt shell X opens the actual visible QComboBox. Retain
+            // the Win32 popup only as a standalone Application fallback.
+            if (profilePickerCallback_) profilePickerCallback_();
+            else toggleProfilePopup();
+        }
+#ifdef MM_HAS_OCC
+        else if (wParam == 'J') {
+            if (GetKeyState(VK_CONTROL) < 0) addBooleanCommon();
+            else if (GetKeyState(VK_SHIFT) < 0) addBooleanCut();
+            else addBooleanFuse();
+        }
+#endif
+        else if (wParam == 'R' && mode_ == EditMode::View3D) {
+            if (GetKeyState(VK_CONTROL) & 0x8000) {
+                // Ctrl+R: gorunumu sifirla (eski R davranisi).
+                resetView();
+            } else if (viewRotationLocked()) {
+                // Gorunus penceresi: yon sabit -> "yeniden sigdir" (redraw view).
+                resetView();
+            } else {
+                // R: EKRAN DONUS MERKEZI sec (Tekla benzeri). Secilen nokta
+                // kullanici yeni merkez secene kadar Ctrl+sol tus suruklemenin
+                // pivotu olur.
+                startRotateCenterCommand();
+            }
+        }
         else if (wParam == VK_DELETE) startTransformCommand(TransformCommand::Delete);
         else if (wParam == 'S' && (GetKeyState(VK_CONTROL) & 0x8000)) saveDocument();
         else if (wParam == 'O' && (GetKeyState(VK_CONTROL) & 0x8000)) openDocument();
         updateHover(cursorScreen_.x, cursorScreen_.y); updateControls(); invalidateCanvas();
         return 0;
     case WM_SIZE:
-        if (renderBackend_) renderBackend_->resize(LOWORD(lParam), HIWORD(lParam));
+        // GL baglamasi ana gorunuse aittir; ikincil pencereler saf GDI cizer
+        // (FBO'yu baska bir tuvalin olcusune gore boyutlamayalim).
+        if (renderBackend_ && !viewDef_) renderBackend_->resize(LOWORD(lParam), HIWORD(lParam));
+        invalidateCanvas(); return 0;
+    case WM_DPICHANGED:
+    case WM_DPICHANGED_AFTERPARENT:
+        // Per-Monitor-V2: tuval Qt kabuguna reparent edilip farkli DPI'li
+        // monitore tasininca DPI degisir. Fiziksel boyut SetWindowPos ile Qt
+        // tarafindan zaten dogru ayarlanir; burada yalniz yeniden cizerek DPI
+        // degisimini yansit (suggested rect uygulanmaz — boyutun TEK sahibi
+        // Qt host'tur). (invalidateCanvas yalniz repaint tetikler; font/olcek
+        // guncellemesi yapmaz — DPI'ya duyarli olcekler kullanan kod yok.)
         invalidateCanvas(); return 0;
     default: return DefWindowProcW(canvas_, message, wParam, lParam);
     }
@@ -1320,8 +2025,10 @@ void Application::onCanvasPaint() {
     // 2B'de GL overlay kapali: FBO+AlphaBlend kompoziti DWM tarafinda arka
     // planda "gradient" flicker uretiyordu (drawing/koordinatlar saglikliydi).
     // 3B modunda GL acik kalir; F5 (kalici VBO + GPU kompozit) 2B'ye geri doner.
+    // Ikincil gorunusler (viewDef_) GL kullanmaz: tek GL baglami ana
+    // gorunusun FBO boyutuna bagli; saf GDI ile surucu riski de yok.
     IRenderBackend* activeBackend =
-        (renderBackend_ && gpuLinesEnabled_ && mode_ == EditMode::View3D)
+        (renderBackend_ && gpuLinesEnabled_ && mode_ == EditMode::View3D && !viewDef_)
             ? renderBackend_.get() : nullptr;
     {
         // Kosulsuz oturum isareti: log yolunun calistigini ve bu build'in
@@ -1330,7 +2037,7 @@ void Application::onCanvasPaint() {
         if (!sessionLogged) {
             sessionLogged = true;
             FILE* diag = fopen("model-maker-render.log", "a");
-            if (diag) { fprintf(diag, "SESSION-START build=2026-08-18-bench\n"); fclose(diag); }
+            if (diag) { fprintf(diag, "SESSION-START built=" __DATE__ " " __TIME__ "\n"); fclose(diag); }
         }
     }
     {
@@ -1339,7 +2046,17 @@ void Application::onCanvasPaint() {
         // Gorunum > Benchmark menu ogesiyle calisir.
     }
     const auto paintStart = std::chrono::steady_clock::now();
-    renderer_.draw(dc, client, document_, camera_, mode_, draftView(), activeBackend);
+    renderer_->draw(dc, client, document_, camera_, mode_, draftView(), activeBackend);
+    // MODERN VIEWCUBE: kameraya kilitli kup + 26 tiklanabilir yon. GL
+    // kompozitinden SONRA ayni DC'ye cizilir (kup her zaman en ustte) ve
+    // yalnizca KENDI panel dikdortgenine dokunur. Iki noktali gorunus
+    // pencerelerinde yon tanimli oldugu icin kup cizilmez.
+    if (mode_ == EditMode::View3D && !viewDef_)
+        viewCubeRenderer_.draw(dc, client, cursorScreen_, camera_);
+    // Ilk GERCEK GL karesi (model varken) donmadan/cokmeden bitti -> acilis
+    // korumasini kaldir. Bos belgede GL cizmez; o durumda temiz kapanis siler.
+    if (startupGpuGuardArmed_ && activeBackend && !document_.models().empty())
+        clearStartupGpuGuard();
     if (paintSequence_ <= 10 && paintSequence_ > 0)
         trimExtendLog(L"PAINT-EXIT " + std::to_wstring(paintSequence_ - 1));
     const double paintMs = std::chrono::duration<double, std::milli>(
@@ -1361,8 +2078,15 @@ void Application::onLeftButtonDown(int x, int y) {
         else zoomWindowFirstCorner_ = POINT{x, y};
         updateControls(); invalidateCanvas(); return;
     }
-    if (mode_ == EditMode::View3D) {
+    if (mode_ == EditMode::View3D && !viewDef_) { // gorunus pencerelerinde kup yok (sabit yon)
         if (ViewCube::containsWidget(x, y, client.right)) {
+            // Kup tutamacina basildi: kosan gecis animasyonu iptal (yoksa
+            // surukleme ile animasyon birbirini ezer).
+            if (viewCubeAnimActive_) {
+                viewCubeAnimActive_ = false;
+                viewCubeAnimTarget_.reset();
+                KillTimer(window_, 9);
+            }
             viewCubeManipulating_ = true;
             viewCubeDragged_ = false;
             viewCubePressedView_ = ViewCube::hitTest(x, y, client.right, camera_);
@@ -1372,14 +2096,348 @@ void Application::onLeftButtonDown(int x, int y) {
             return;
         }
     }
+    // ALT + SOL TIK = COMPONENT'I AC. Secili parcanin gumball'u component sembolunun
+    // (glyph) uzerine denk gelip tiklamayi yutuyordu; Alt+tik gumball'dan ONCE
+    // islenir. Sembol, levha veya bulon display'ine Alt+tik -> parametre diyalogu.
+    // (Alt+tik kesme-yonu cevirme / profil-uc-grip: component'e isabet YOKSA calisir.)
+    if ((GetKeyState(VK_MENU) & 0x8000) != 0 && transformCommand_ == TransformCommand::None &&
+        !drawingActive_ && !workPlanePicking_ && !zoomWindowActive_ && !profileGrip_ &&
+        !pendingEndPlate_ && !pendingFinPlate_ && !componentCommandActive() &&
+        gumballDrag_ == GumballHandle::None) {
+        if (const auto hit = modelIndexAt(x, y)) {
+            if (*hit < document_.models().size()) {
+                const EntityId id = document_.modelId(*hit);
+                for (const auto& rec : document_.componentInstances()) {
+                    bool owned = std::find(rec.ownedPlateIds.begin(), rec.ownedPlateIds.end(),
+                                           id) != rec.ownedPlateIds.end();
+                    if (!owned) {
+                        for (const EntityId bg : rec.ownedBoltGroupIds) {
+                            const auto bi = document_.indexOfBoltGroup(bg);
+                            if (bi && document_.boltGroups()[*bi].displayEntityId == id) {
+                                owned = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (!owned) continue;
+                    selectedModels_.clear();
+                    selectedModels_.push_back(*hit);
+                    updateControls(); updateStatus(); invalidateCanvas();
+                    if (componentEditRequest_) componentEditRequest_(rec);
+                    return;
+                }
+            }
+        }
+    }
+    // RHINO TARZI GUMBALL: tutamaca basildiysa tasima suruklemesini baslat
+    // (normal secim/transform'a dusmez).
+    if (gumballVisible_) {
+        updateGumball();
+        const auto gumballHit = gumballHitTest(x, y);
+        if (gumballHit != GumballHandle::None) {
+            // GUMBALL CIFT TIK: UCS'ye hizala <-> yerel eksenlere hizala (toggle).
+            const DWORD now = GetMessageTime();
+            const bool dbl =
+                (now - lastLeftClickTime_ <= static_cast<DWORD>(GetDoubleClickTime())) &&
+                std::abs(x - lastLeftClickPos_.x) <= 4 &&
+                std::abs(y - lastLeftClickPos_.y) <= 4;
+            lastLeftClickTime_ = now;
+            lastLeftClickPos_ = {x, y};
+            if (dbl) {
+                gumballAlignedToUcs_ = !gumballAlignedToUcs_;
+                gumballUpdateFrame();
+                publishStatus(gumballAlignedToUcs_
+                                  ? L"Gumball: UCS'ye hizalandı (tekrar çift tık = yerel)"
+                                  : L"Gumball: yerel eksenlere hizalandı (tekrar çift tık = UCS)");
+                invalidateCanvas();
+                return;
+            }
+            gumballBeginDrag(x, y, gumballHit);
+            return;
+        }
+    }
     if (workPlanePicking_) {
         updateHover(x, y);
         if (hover_) {
             const Vec3 point = hover_->point;
             clearTemporaryTracking();
             commitWorkPlanePoint(point);
+        } else if (pointPickPurpose_ == PointPickPurpose::RotateCenter) {
+            // Sessiz no-op kullaniciyi sasirtir: merkez secimi bir noktaya
+            // (tercihen snap noktasina) tiklamayi gerektirir.
+            MessageBeep(MB_ICONWARNING);
+            publishStatus(L"Dönüş merkezi: imleçte geçerli nokta yok — bir noktaya tıklayın");
         }
         updateControls(); invalidateCanvas(); return;
+    }
+    // VERB-NOUN KESME (P11): Fitting/Plane Cut komutu bekliyorsa sol tik
+    // profil/duzlem secimi yapar (once profil, sonra duzlem; sag tik uygular).
+    if (pendingCutKind_) {
+        pickPendingCutAt(x, y);
+        return;
+    }
+    // VERB-NOUN BOLT (Phase B1): sol tik baglanacak parcayi ekler/cikarir.
+    if (pendingBolt_) {
+        pickPendingBoltAt(x, y);
+        return;
+    }
+    // VERB-NOUN END PLATE (Phase C1 GUI): sol tik kolon/kiris secer.
+    if (pendingEndPlate_) {
+        pickPendingEndPlateAt(x, y);
+        return;
+    }
+    // VERB-NOUN FIN PLATE (Phase P1): sol tik kolon/kiris secer.
+    if (pendingFinPlate_) {
+        pickPendingFinPlateAt(x, y);
+        return;
+    }
+    // GENERIC CATALOG COMMAND (C7): sol tik parca secer.
+    if (componentCommandActive()) {
+        pickPendingComponentAt(x, y);
+        return;
+    }
+    // BOLT TOOL PENCERESI (Phase B1): bolt display modeline cift tik -> duzenleme
+    // diyalogu acilir (callback). Tek tik normal secim akisina duser.
+    {
+        const bool altD = (GetKeyState(VK_MENU) & 0x8000) != 0;
+        if (!altD && transformCommand_ == TransformCommand::None && !drawingActive_ &&
+            !workPlanePicking_ && !zoomWindowActive_ && !profileGrip_) {
+            const DWORD now = GetMessageTime();
+            const bool dbl =
+                (now - lastLeftClickTime_ <= static_cast<DWORD>(GetDoubleClickTime())) &&
+                std::abs(x - lastLeftClickPos_.x) <= 4 &&
+                std::abs(y - lastLeftClickPos_.y) <= 4;
+            lastLeftClickTime_ = now;
+            lastLeftClickPos_ = {x, y};
+            if (dbl) {
+                if (const auto hit = modelIndexAt(x, y)) {
+                    if (*hit < document_.models().size()) {
+                        const EntityId id = document_.modelId(*hit);
+                        for (const auto& bg : document_.boltGroups())
+                            if (bg.displayEntityId == id) {
+                                selectedModels_.clear();
+                                selectedModels_.push_back(*hit);
+                                updateControls(); updateStatus(); invalidateCanvas();
+                                if (boltEditRequest_) boltEditRequest_(bg);
+                                return;
+                            }
+                        // END PLATE PARAMETRELERI (faz D1): levha veya bulon display'e
+                        // cift tik -> duzenleme diyalogu (endPlateEditRequest_).
+                        for (const auto& c : document_.endPlateConnections())
+                            if (c.plateEntityId == id || c.bolts.displayEntityId == id) {
+                                selectedModels_.clear();
+                                selectedModels_.push_back(*hit);
+                                updateControls(); updateStatus(); invalidateCanvas();
+                                if (endPlateEditRequest_) endPlateEditRequest_(c);
+                                return;
+                            }
+                        // UNIVERSAL COMPONENT (Fin Plate vb.): sahip olunan levha
+                        // veya bulon display'e cift tik -> parametre diyalogu.
+                        // Duzenleme, component'in KENDI (parent) parametre kaydina
+                        // gider; levha bir alt nesne olarak secili kalir.
+                        for (const auto& rec : document_.componentInstances()) {
+                            bool owned = std::find(rec.ownedPlateIds.begin(),
+                                                   rec.ownedPlateIds.end(), id) !=
+                                         rec.ownedPlateIds.end();
+                            if (!owned) {
+                                for (const EntityId bg : rec.ownedBoltGroupIds) {
+                                    const auto bi = document_.indexOfBoltGroup(bg);
+                                    if (bi && document_.boltGroups()[*bi].displayEntityId == id) {
+                                        owned = true;
+                                        break;
+                                    }
+                                }
+                            }
+                            if (!owned) continue;
+                            selectedModels_.clear();
+                            selectedModels_.push_back(*hit);
+                            updateControls(); updateStatus(); invalidateCanvas();
+                            if (componentEditRequest_) componentEditRequest_(rec);
+                            return;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    // PROFIL UC TUTAMAKLARI (grip edit): Alt+tik tutamaga basinca move modu
+    // aktif olur; 1. tik tasima baslangici (baz), 2. tik destinasyondur —
+    // normal Move komutu gibi.
+    const bool altDown = (GetKeyState(VK_MENU) & 0x8000) != 0;
+    if (altDown && transformCommand_ == TransformCommand::None && !drawingActive_ &&
+        !workPlanePicking_ && !zoomWindowActive_ && !profileGrip_) {
+        // P8: Alt+sol tik kesme nesnesi uzerinde -> kesme yonunu tersine
+        // cevirir (invertSide). Isabet yoksa asagidaki profil-uc-grip
+        // Alt davranisina dusulur.
+        if (const auto cutHit = hitTestCutModifierAt(x, y)) {
+            flipCutDirection(*cutHit);
+            return;
+        }
+    }
+    if (altDown && mode_ == EditMode::View3D) {
+        if (const auto grip = profileGripAt(x, y)) {
+            profileGrip_ = ProfileGrip{};
+            profileGrip_->solidIndex = grip->first;
+            profileGrip_->endIsTo = grip->second;
+            profileGrip_->basePicked = false;
+            selectedModels_.assign(1, grip->first);
+            const auto& m = document_.models()[grip->first];
+            const Vec3 from{m.properties().axisFromX, m.properties().axisFromY,
+                            m.properties().axisFromZ};
+            const Vec3 to{m.properties().axisToX, m.properties().axisToY,
+                          m.properties().axisToZ};
+            profileGrip_->fixedPoint = grip->second ? from : to;
+            profileGrip_->trackFrom = grip->second ? to : from;
+            profileGrip_->cursorPoint = profileGrip_->trackFrom;
+            clearTemporaryTracking();
+            publishStatus(L"Move modu aktif — tasima baslangic noktasini secin (1. tik)");
+        } else {
+            profileGrip_.reset();
+        }
+        updateControls(); updateStatus(); invalidateCanvas();
+        return;
+    }
+    if (profileGrip_ && mode_ == EditMode::View3D) {
+        // Move akisi: 1. tik baz, 2. tik destinasyon.
+        profileGripClick(x, y);
+        return;
+    }
+    if (GetKeyState(VK_CONTROL) < 0) {
+        // Ctrl+sol tus (kullanici sarti): SURUKLEME = ekrani kayitli donus
+        // merkezi etrafinda dondur. TIK (esik asilmadi) = eski Ctrl+tik
+        // secimi. Karar BIRAKMADA verilir; boylece Ctrl+tik ile coklu
+        // secim davranisi bozulmaz.
+        if (mode_ == EditMode::View3D && !viewRotationLocked() && !drawingActive_ &&
+            transformCommand_ == TransformCommand::None && !workPlanePicking_ &&
+            !zoomWindowActive_ && !profileGrip_) {
+            ctrlRotatePending_ = true;
+            ctrlRotateStart_ = POINT{x, y};
+            lastMouse_ = {x, y};
+            SetCapture(canvas_);
+            return;
+        }
+        // Ctrl+tiklama: bos modda nesne secimi (profil atama icin).
+        updateHover(x, y);
+        if (selectionMode_ == SelectionMode::Assembly) {
+            if (!selectAtAssemblyMode(x, y, /*additive*/ true))
+                { selectedModels_.clear(); selectedCutModifiers_.clear(); }
+        } else if (!toggleWeldSelectionAt(x, y)) {
+            if (!toggleModelSelection(x, y)) { selectedModels_.clear(); selectedCutModifiers_.clear(); }
+        }
+        // updateStatus publishes to both the hidden Win32 fallback status and
+        // the visible Qt status bar; direct SetWindowTextW only reached the
+        // hidden host.
+        updateStatus();
+        invalidateCanvas();
+        return;
+    }
+    bool documentHasSolids = false;
+    for (std::size_t i = 0; i < document_.models().size(); ++i) {
+        if (!document_.models()[i].faces().empty() &&
+            !document_.models()[i].properties().profileName.empty()) {
+            documentHasSolids = true;
+            break;
+        }
+    }
+    if (transformCommand_ == TransformCommand::Trim && documentHasSolids) {
+        // 3B kati trim (yalniz dokumanda profil katisi varken devrede):
+        // kati -> kesim cizgisi -> kalacak taraf. Kati yokken normal 2B
+        // cizgi trim akisi (asagidaki genel dal) oldugu gibi calisir.
+        const auto hit = trimSolidPhase_ == 0 ? solidTrimTargetAt(x, y)
+                : trimSolidPhase_ == 1 ? trimLineTargetAt(x, y)
+                                       : trimExtendTargetAt(x, y);
+        if (trimSolidPhase_ == 0) {
+            if (hit && *hit < document_.models().size() &&
+                !document_.models()[*hit].faces().empty()) {
+                trimSolidIndex_ = *hit;
+                trimSolidPhase_ = 1;
+                selectedModels_.assign(1, *hit);
+                publishStatus(L"Kesim çizgisini seçin (katiyi kesecek çizgi)");
+                updateControls();
+                invalidateCanvas();
+            }
+            FILE* phaseLog = fopen("model-maker-render.log", "a");
+            if (phaseLog) {
+                fprintf(phaseLog, "TRIM-PHASE0 hit=%d hasFaces=%d\n",
+                        hit ? static_cast<int>(*hit) : -1,
+                        (hit && *hit < document_.models().size() &&
+                         !document_.models()[*hit].faces().empty()) ? 1 : 0);
+                fclose(phaseLog);
+            }
+            if (hit && *hit < document_.models().size() &&
+                document_.models()[*hit].faces().empty() &&
+                document_.models()[*hit].vertices().size() == 2 &&
+                document_.models()[*hit].properties().profileName.empty()) {
+                trimLineIndex_ = *hit;
+                trimSolidPhase_ = 3;
+                selectedModels_.assign(1, *hit);
+                publishStatus(L"Kesilecek katiya tıklayın");
+                updateControls();
+                invalidateCanvas();
+                return;
+            }
+            return;
+        }
+        if (trimSolidPhase_ == 3) {
+            if (const auto solid = solidTrimTargetAt(x, y)) {
+                trimSolidIndex_ = *solid;
+                selectedModels_.push_back(*solid);
+                updateControls();
+                invalidateCanvas();
+                performSolidTrimByLine(trimLineIndex_);
+            }
+            return;
+        }
+        if (trimSolidPhase_ == 1) {
+            RECT viewport{}; GetClientRect(canvas_, &viewport);
+            std::optional<Vec3> pickPoint;
+            if (mode_ == EditMode::Draw2D) {
+                pickPoint = screenTo2D(x, y);
+            } else {
+                pickPoint = camera_.unprojectToPlane(
+                    {static_cast<double>(x), static_cast<double>(y)},
+                    std::max(1L, viewport.right), std::max(1L, viewport.bottom), workPlane_);
+            }
+            if (pickPoint) {
+                double bestDistance = 1e18;
+                std::optional<std::size_t> bestLine;
+                for (std::size_t i = 0; i < document_.models().size(); ++i) {
+                    const auto& candidate = document_.models()[i];
+                    if (!candidate.faces().empty() || candidate.vertices().size() != 2) continue;
+                    // Profil atanmis eksen cizgisi (kirisin olustugu cizgi)
+                    // kesim cizgisi OLAMAZ — onunla kesim boruyu boyuna yarar.
+                    if (!candidate.properties().profileName.empty()) continue;
+                    const Vec3 a = candidate.vertices()[0];
+                    const Vec3 b = candidate.vertices()[1];
+                    const double abx = b.x - a.x, aby = b.y - a.y, abz = b.z - a.z;
+                    const double lengthSq = abx * abx + aby * aby + abz * abz;
+                    double t = 0.0;
+                    if (lengthSq > 1e-12) {
+                        t = std::clamp(((pickPoint->x - a.x) * abx +
+                                        (pickPoint->y - a.y) * aby +
+                                        (pickPoint->z - a.z) * abz) / lengthSq, 0.0, 1.0);
+                    }
+                    const double dx = pickPoint->x - (a.x + t * abx);
+                    const double dy = pickPoint->y - (a.y + t * aby);
+                    const double dz = pickPoint->z - (a.z + t * abz);
+                    const double distance = std::sqrt(dx * dx + dy * dy + dz * dz);
+                    if (distance < bestDistance) {
+                        bestDistance = distance;
+                        bestLine = i;
+                    }
+                }
+                if (!bestLine) {
+                    publishStatus(L"Yakin cizgi bulunamadi — once bir cizgi cizin");
+                } else {
+                    selectedModels_.push_back(*bestLine);
+                    updateControls();
+                    invalidateCanvas();
+                    performSolidTrimByLine(*bestLine);
+                }
+            }
+            return;
+        }
+
     }
     if (transformCommand_ != TransformCommand::None) {
         if (transformCommand_ == TransformCommand::Trim ||
@@ -1477,7 +2535,7 @@ void Application::onLeftButtonDown(int x, int y) {
             if (HDC dc = GetDC(canvas_)) {
                 RECT client{};
                 GetClientRect(canvas_, &client);
-                renderer_.draw(dc, client, document_, camera_, mode_, draftView());
+                renderer_->draw(dc, client, document_, camera_, mode_, draftView());
                 ReleaseDC(canvas_, dc);
                 trimExtendLog(L"SYNC DRAW tamam client=" +
                               std::to_wstring(client.right) + L"x" +
@@ -1504,11 +2562,27 @@ void Application::onLeftButtonDown(int x, int y) {
         if (selectionFirstCorner_) {
             completeWindowSelection(x, y);
             trimExtendLog(L"SECIM-PENCERE sel=" + std::to_wstring(selectedModels_.size()));
-        } else {
+        } else if (pendingWeld_) {
+            // KAYNAK KOMUTU: parca sec; 2 parca olunca kaynagi otomatik olustur.
+            std::optional<std::size_t> hit =
+                hitTestModel2D(screenTo2D(x, y), document_, 10.0 / (60.0 * camera_.zoom()));
+            if (hit) {
+                if (std::find(selectedModels_.begin(), selectedModels_.end(), *hit) == selectedModels_.end())
+                    selectedModels_.push_back(*hit);
+                if (selectedModels_.size() >= 2) {
+                    weldSelectedParts(pendingWeldType_, pendingWeldSize_, pendingWeldLength_, pendingWeldClass_);
+                    cancelPendingWeldCommand();
+                }
+            } else {
+                MessageBeep(MB_ICONWARNING);
+            }
+            selectionFirstCorner_.reset();
+        } else if (selectionMode_ == SelectionMode::Assembly) {
+            if (!selectAtAssemblyMode(x, y, /*additive*/ false))
+                selectionFirstCorner_ = POINT{x, y};
+        } else if (!toggleWeldSelectionAt(x, y)) {
             const bool toggled = toggleModelSelection(x, y);
             if (!toggled) selectionFirstCorner_ = POINT{x, y};
-            trimExtendLog(L"SECIM-TIK toggled=" + std::to_wstring(toggled) +
-                          L" sel=" + std::to_wstring(selectedModels_.size()));
         }
         updateHover(x, y);
     } else if (mode_ == EditMode::View3D) {
@@ -1517,11 +2591,28 @@ void Application::onLeftButtonDown(int x, int y) {
         if (selectionFirstCorner_) {
             completeWindowSelection(x, y);
             trimExtendLog(L"SECIM-PENCERE3D sel=" + std::to_wstring(selectedModels_.size()));
-        } else {
+        } else if (pendingWeld_) {
+            std::optional<std::size_t> hit;
+            RECT client{}; GetClientRect(canvas_, &client);
+            hit = hitTestModel3D({static_cast<double>(x), static_cast<double>(y)}, document_, camera_,
+                                 std::max(1L, client.right), std::max(1L, client.bottom), 10.0);
+            if (hit) {
+                if (std::find(selectedModels_.begin(), selectedModels_.end(), *hit) == selectedModels_.end())
+                    selectedModels_.push_back(*hit);
+                if (selectedModels_.size() >= 2) {
+                    weldSelectedParts(pendingWeldType_, pendingWeldSize_, pendingWeldLength_, pendingWeldClass_);
+                    cancelPendingWeldCommand();
+                }
+            } else {
+                MessageBeep(MB_ICONWARNING);
+            }
+            selectionFirstCorner_.reset();
+        } else if (selectionMode_ == SelectionMode::Assembly) {
+            if (!selectAtAssemblyMode(x, y, /*additive*/ false))
+                selectionFirstCorner_ = POINT{x, y};
+        } else if (!toggleWeldSelectionAt(x, y)) {
             const bool toggled = toggleModelSelection(x, y);
             if (!toggled) selectionFirstCorner_ = POINT{x, y};
-            trimExtendLog(L"SECIM-TIK3D toggled=" + std::to_wstring(toggled) +
-                          L" sel=" + std::to_wstring(selectedModels_.size()));
         }
         updateHover(x, y);
     }
@@ -1529,17 +2620,43 @@ void Application::onLeftButtonDown(int x, int y) {
 }
 
 void Application::onLeftButtonUp(int x, int y) {
+    if (gumballDrag_ != GumballHandle::None) {
+        if (gumballNumericActive_) return;
+        gumballDragMove(x, y); // include final pointer position before release
+        if (!gumballPointerMoved_) {
+            // Merkez tutamaci: tek tik sayisal kutu ACMAZ — cift tik UCS/yerel
+            // hizalama icin ayrilmistir. Eksen/duzlem/olcek tutamaclari eskisi
+            // gibi sayisal giris kutusu acar (yazilarak hassas deger girilir).
+            if (gumballDrag_ == GumballHandle::Center) gumballEndDrag();
+            else gumballRequestNumeric();
+        }
+        else gumballEndDrag();
+        return;
+    }
     if (viewCubeManipulating_) {
         RECT client{};
         GetClientRect(canvas_, &client);
         if (!viewCubeDragged_ && viewCubePressedView_) {
             const auto releasedView = ViewCube::hitTest(x, y, client.right, camera_);
-            if (releasedView == viewCubePressedView_) camera_.setView(*viewCubePressedView_);
+            // Basma ve birakma AYNI hedefte: animasyonlu gecisi baslat.
+            if (releasedView == viewCubePressedView_) applyViewCubeTarget(*viewCubePressedView_);
         }
         viewCubeManipulating_ = false;
         viewCubePressedView_.reset();
         ReleaseCapture();
         updateHover(x, y);
+        invalidateCanvas();
+        return;
+    }
+    if (ctrlRotatePending_) {
+        // Esik asilmadi: bu bir Ctrl+TIK'tir -> eski secim davranisi
+        // (bos alanda secim temizlenir). Ctrl+tik coklu secim KORUNUR.
+        ctrlRotatePending_ = false;
+        ReleaseCapture();
+        updateHover(x, y);
+        if (!toggleModelSelection(x, y)) { selectedModels_.clear(); selectedCutModifiers_.clear(); }
+        updateStatus();
+        updateControls();
         invalidateCanvas();
         return;
     }
@@ -1553,13 +2670,53 @@ void Application::onLeftButtonUp(int x, int y) {
 void Application::onMouseMove(int x, int y, WPARAM buttons) {
     cursorScreen_ = {x, y};
     trimExtendPreviewSuppressed_ = false;
+    if (gumballDrag_ != GumballHandle::None) {
+        gumballDragMove(x, y);
+        return;
+    }
+    if (ctrlRotatePending_) {
+        // Ctrl+sol tus: esik asilinca rotasyona terfi et (ayni karede
+        // asagidaki rotating_ dali devralir; lastMouse_ basma noktasinda
+        // oldugu icin sicrama olmaz).
+        if (std::abs(x - ctrlRotateStart_.x) + std::abs(y - ctrlRotateStart_.y) >
+            kCtrlRotateDragThresholdPx) {
+            ctrlRotatePending_ = false;
+            rotating_ = true;
+        }
+    }
     bool redraw = false;
     bool snapRedraw = false;
+    // VIEWCUBE HOVER: kup uzerindeki hedef (yuz/kenar/kose/ISO) degistiginde
+    // kareyi tazele — vurgu ancak cizimle gorunur. Kup uzerindeyken normal
+    // snap/hover hatti calismaz (kup tuvalin en ustunde).
+    if (mode_ == EditMode::View3D && !viewDef_ && !viewCubeManipulating_) {
+        RECT cubeClient{};
+        GetClientRect(canvas_, &cubeClient);
+        if (ViewCube::containsWidget(x, y, cubeClient.right)) {
+            const auto hovered = ViewCube::hitTest(x, y, cubeClient.right, camera_);
+            if (!viewCubeHoverValid_ || !(hovered == viewCubeHover_)) {
+                viewCubeHover_ = hovered;
+                viewCubeHoverValid_ = true;
+                invalidateCanvas();
+            }
+            return;
+        }
+        viewCubeHoverValid_ = false;
+    }
+    if (profileGrip_ && mode_ == EditMode::View3D) {
+        // Move modunda track line + snap + tracking guide'lar: updateHover
+        // tam snap/tracking/ortho/polar hattini calistirir (hover_ + cursorPoint).
+        updateHover(x, y);
+        KillTimer(window_, 4);
+        snapPreviewActive_ = true;
+        invalidateCanvas();
+        return;
+    }
     if (viewCubeManipulating_ && (buttons & MK_LBUTTON) && mode_ == EditMode::View3D) {
         const int dx = x - lastMouse_.x;
         const int dy = y - lastMouse_.y;
         if (dx != 0 || dy != 0) {
-            camera_.rotate(dx * 0.008, dy * 0.008);
+            camera_.rotate(-dx * 0.008, dy * 0.008);
             viewCubeDragged_ = true;
             lastMouse_ = {x, y};
             if (drawingActive_) updateHover(x, y);
@@ -1569,7 +2726,14 @@ void Application::onMouseMove(int x, int y, WPARAM buttons) {
         const int dx = x - lastMouse_.x;
         const int dy = y - lastMouse_.y;
         if (dx != 0 || dy != 0) {
-            camera_.rotate(dx * 0.008, dy * 0.008);
+            // TURNTABLE ORBIT, DOGRUDAN tepki (yumusatma/inertia YOK). Yatay =
+            // yaw (dunya Z), dikey = pitch (kamera X), ±89° sinirli (Camera
+            // icinde). Jest pivotu varsa onun etrafinda, yoksa R-tusu pivottu/
+            // merkez etrafinda doner.
+            const double yawDelta = dx * Camera::kOrbitRadiansPerPixel;
+            const double pitchDelta = dy * Camera::kOrbitRadiansPerPixel;
+            if (orbitGesturePivot_) camera_.rotateAbout(*orbitGesturePivot_, yawDelta, pitchDelta);
+            else camera_.rotate(yawDelta, pitchDelta);
             lastMouse_ = {x, y};
             if (drawingActive_) updateHover(x, y);
             redraw = true;
@@ -1582,6 +2746,12 @@ void Application::onMouseMove(int x, int y, WPARAM buttons) {
         }
         lastMouse_ = {x, y};
         updateHover(x, y);
+        redraw = true;
+    } else if (pendingCutKind_ || pendingBolt_ || pendingFinPlate_ || componentCommandActive()) {
+        // Verb-noun kesme/bolt/fin-plate bekleme modunda imlecin altindaki
+        // secilebilir profil/duzlem/parcayi vurgula (hover highlight). Idle moddaki
+        // refreshHoverCandidate bu modda cagrilmadigi icin burada tazelenir.
+        refreshHoverCandidate(x, y);
         redraw = true;
     } else if (zoomWindowActive_ ||
                (transformCommand_ != TransformCommand::None && transformPhase_ == TransformPhase::Selecting) ||
@@ -1617,6 +2787,63 @@ void Application::onMouseMove(int x, int y, WPARAM buttons) {
 }
 
 void Application::onCharacter(wchar_t character) {
+    // TAB: TP kaydi WM_KEYDOWN'da yapilir (acquireTemporaryTrackingPoint);
+    // TranslateMessage bunun WM_CHAR kopyasini da kuyruga koyar — yok say.
+    if (character == L'\t') return;
+    // GUMBALL drag surerken NUMERIK GIRIS: rakam/nokta/isaret -> input_;
+    // Enter -> tam deger (mesafe mm / aci derece / olcek faktor) uygulanir.
+    if (gumballDrag_ != GumballHandle::None) {
+        if (character == L'\r') {
+            if (!input_.empty()) {
+                try {
+                    const double value = std::stod(input_);
+                    input_.clear();
+                    applyGumballNumeric(value);
+                    gumballEndDrag();
+                    return;
+                } catch (...) {
+                    input_.clear();
+                    MessageBeep(MB_ICONWARNING);
+                }
+            }
+            updateStatus();
+            invalidateCanvas();
+            return;
+        }
+        if (character == L'\b') {
+            if (!input_.empty()) input_.pop_back();
+            updateStatus();
+            invalidateCanvas();
+            return;
+        }
+        if ((character >= L'0' && character <= L'9') || character == L'.' ||
+            character == L',' || character == L'-') {
+            input_.push_back(character == L',' ? L'.' : character);
+            updateStatus();
+            invalidateCanvas();
+        }
+        return;
+    }
+    if (profileAssignmentActive_) {
+        if (character == L'\r') { commitProfileAssignment(); return; }
+        if (character == 27) { // Esc
+            profileAssignmentActive_ = false;
+            profileInput_.clear();
+            updateStatus(); invalidateCanvas();
+            return;
+        }
+        if (character == L'\b') {
+            if (!profileInput_.empty()) profileInput_.pop_back();
+        } else if (iswalnum(character) || character == L'*' || character == L'-' ||
+                   character == L'.' || character == L' ') {
+            profileInput_ += static_cast<wchar_t>(towupper(character));
+        } else {
+            return;
+        }
+        std::wstring prompt = L"Profil adı: " + profileInput_;
+        SetWindowTextW(status_, prompt.c_str());
+        return;
+    }
     if (character == L'\r' && transformCommand_ == TransformCommand::None &&
         lastTransformCommand_ != TransformCommand::None &&
         shouldRepeatLastModifierOnEnter(drawingActive_, !input_.empty(),
@@ -1652,7 +2879,12 @@ void Application::onCharacter(wchar_t character) {
                      (transformCommand_ != TransformCommand::Offset || selectedModels_.size() == 1)) {
                 if (transformCommand_ == TransformCommand::Delete) {
                     pushUndoSnapshot();
-                    document_.deleteModels(selectedModels_);
+                    const auto affected [[maybe_unused]] = document_.deleteModels(selectedModels_);
+#ifdef MM_HAS_OCC
+                    // P6: silinen varlik kesme KAYNAGI/ARACI ise kaskad kaldirilan
+                    // modifier'larin hedeflerini yeniden hesapla (kesme geri alinir).
+                    for (const EntityId target : affected) recomputeCutTarget(target);
+#endif
                     cancelTransformCommand();
                 } else if (transformCommand_ == TransformCommand::Trim ||
                            transformCommand_ == TransformCommand::Extend) {
@@ -1662,6 +2894,8 @@ void Application::onCharacter(wchar_t character) {
                         if (index < document_.models().size())
                             modifierBoundaries_.push_back(document_.models()[index]);
                     selectedModels_.clear();
+                    transformPhase_ = TransformPhase::Destination;
+                } else if (transformCommand_ == TransformCommand::Offset && offsetDistance_) {
                     transformPhase_ = TransformPhase::Destination;
                 } else transformPhase_ = TransformPhase::BasePoint;
             }
@@ -1722,6 +2956,12 @@ void Application::onCharacter(wchar_t character) {
 }
 
 void Application::commitPoint(const Vec3& point) {
+    // KOLON: tek tıkla tıklanan noktaya dik kolon (props profil+malzeme+top/bottom).
+    if (tool_ == DrawTool::Column) {
+        placeColumn(point);
+        anchor_.reset();
+        return;
+    }
     if (tool_ == DrawTool::Face3D) {
         if (!facePoints_.empty() && point == facePoints_.back()) {
             MessageBeep(MB_ICONWARNING);
@@ -1741,7 +2981,16 @@ void Application::commitPoint(const Vec3& point) {
     const Vec3 start = *anchor_;
     switch (tool_) {
     case DrawTool::Line:
-        if (point != start) addStyledModel(WireframeModel::line(start, point));
+        if (point != start) {
+            if (!pendingProfileName_.empty()) {
+                // PROFIL CIZIM MODU: secli profil ile cizilen cizgi hemen
+                // kirişe (ekstrüde katiya) donusur — ayrica secime gerek
+                // yok, Tekla tarzi dogrudan cizim.
+                assignProfileToLine(start, point, pendingProfileName_);
+            } else {
+                addStyledModel(WireframeModel::line(start, point));
+            }
+        }
         anchor_.reset();
         break;
     case DrawTool::Polyline:
@@ -1787,17 +3036,79 @@ void Application::commitPoint(const Vec3& point) {
     }
     case DrawTool::Face3D:
         break;
+    case DrawTool::Divide: {
+        // DIVIDE: iki nokta arasina, girilen ADET kadar point objesi atar
+        // (esit aralikli; uclar haric). N adet -> t = 1/(N+1) .. N/(N+1).
+        if (point != start) {
+            pushUndoSnapshot();
+            std::size_t placed = 0;
+            for (std::size_t i = 1; i <= divideCount_; ++i) {
+                const double t = static_cast<double>(i) / static_cast<double>(divideCount_ + 1);
+                auto pt = WireframeModel::point(start + (point - start) * t);
+                EntityProperties props = currentEntityProperties();
+                // trueColor SART: BYLAYER (colorIndex 256) + trueColor yoksa
+                // Document effectiveColor'i KATMAN renginden yeniden hesaplar
+                // (resolveEffectiveProperties) ve entity'nin kendi rengini ezer.
+                props.trueColor = 0xFF0000u;     // kirmizi
+                props.effectiveColor = 0xFF0000u;
+                pt.setProperties(props);
+                document_.addModel(std::move(pt));
+                ++placed;
+            }
+            publishStatus(L"Bölme: " + std::to_wstring(placed) + L" nokta yerleştirildi (" +
+                          std::to_wstring(divideCount_) + L" adet)");
+        }
+        anchor_.reset();
+        break;
+    }
     }
 }
 
 void Application::clearTemporaryTracking() {
+    // Timer 5 (eski 450 ms dwell) artik kurulmuyor; yine de kalinti olmasin.
     if (window_) KillTimer(window_, 5);
-    temporaryPointDwellCandidate_.reset();
+    temporaryAcquireCandidate_.reset();
     temporaryTrackingPoints_.clear();
     temporaryTrackingGuides_.clear();
     temporaryDerivedPoints_.clear();
+    temporaryPerpendicularPoints_.clear();
     polarTrackingLocked_ = false;
     temporaryTrackingLocked_ = false;
+}
+
+// TP (gecici izleme noktasi) KAYDI — TAB tusu. Eskiden nokta 450 ms BEKLEME
+// (dwell) ile OTOMATIK kaydediliyordu; kullanici sarti: "TP noktalarini tab
+// tusu ile koyalim, esc tp leri sifirlar". Boylece nokta kullanicinin istedigi
+// anda ve istedigi snap noktasina konur (bekleme sirasinda kacirma yok).
+//
+// HAM snap adayi kullanilir (temporaryAcquireCandidate_), hover_->point DEGIL:
+// hover_ polar/ortho kisitiyla DEGISMIS olabilir, TP gercek snap noktasina
+// oturmali. Aday updateHover'da tazelenir (polar acik + obje snap'i varken).
+void Application::acquireTemporaryTrackingPoint() {
+    if (!polarTrackingEnabled_) {
+        publishStatus(L"TP: polar tracking kapali (F10 ile ac)");
+        MessageBeep(MB_ICONWARNING);
+        return;
+    }
+    if (!temporaryAcquireCandidate_) {
+        publishStatus(L"TP: imlecte snap noktasi yok");
+        MessageBeep(MB_ICONWARNING);
+        return;
+    }
+    const Vec3 point = temporaryAcquireCandidate_->point;
+    if (std::find(temporaryTrackingPoints_.begin(), temporaryTrackingPoints_.end(), point) !=
+        temporaryTrackingPoints_.end()) {
+        publishStatus(L"TP: bu nokta zaten kayitli");
+        return;
+    }
+    if (temporaryTrackingPoints_.size() >= 8) temporaryTrackingPoints_.erase(temporaryTrackingPoints_.begin());
+    temporaryTrackingPoints_.push_back(point);
+    publishStatus(L"TP" + std::to_wstring(temporaryTrackingPoints_.size()) +
+                  L" kaydedildi (TAB) — Esc hepsini temizler");
+    // Yeni TP ile turetilmis noktalar (orta/dikme/kose) hemen hesaplansin.
+    updateHover(cursorScreen_.x, cursorScreen_.y);
+    updateStatus();
+    invalidateCanvas();
 }
 
 void Application::cancelDrawing() {
@@ -1809,29 +3120,67 @@ void Application::cancelDrawing() {
     drawingActive_ = false;
     selectedModels_.clear();
     selectionFirstCorner_.reset();
+    // KESME NESNELERI SECIMI (P5): kesme secimi + hover hinti de sifirlanir.
+    selectedCutModifiers_.clear();
+    hoverModel_.reset();
+    hoverCutModifier_.reset();
 }
 
 void Application::startTransformCommand(TransformCommand command) {
+    cancelPendingCutCommand();
+    cancelPendingFinPlateCommand();
+    cancelPendingComponentCommand();
     cancelZoomWindow2D();
     if (workPlanePicking_) cancelWorkPlaneCommand();
     // cancelDrawing seçimi de temizler; noun-verb akışı için koru.
     trimExtendLog(L"STARTCMD cmd=" + std::to_wstring(static_cast<int>(command)) +
                   L" sel-giris=" + std::to_wstring(selectedModels_.size()));
     auto preservedSelection = std::move(selectedModels_);
+    auto preservedCuts = std::move(selectedCutModifiers_);
     cancelDrawing();
     selectedModels_ = std::move(preservedSelection);
+    selectedCutModifiers_ = std::move(preservedCuts);
     trimExtendLog(L"STARTCMD cancel-sonrasi sel=" + std::to_wstring(selectedModels_.size()));
 
-    // Noun-verb: boş ekranda seçilmiş modeller komutun verisidir.
-    if (command == TransformCommand::Delete && !selectedModels_.empty()) {
-        pushUndoSnapshot();
-        document_.deleteModels(selectedModels_);
-        selectedModels_.clear();
+    // Noun-verb: boş ekranda seçilmiş modeller/kesmeler komutun verisidir.
+    if (command == TransformCommand::Delete &&
+        (!selectedModels_.empty() || !selectedCutModifiers_.empty())) {
+        if (!selectedModels_.empty()) {
+            pushUndoSnapshot();
+            const auto affected [[maybe_unused]] = document_.deleteModels(selectedModels_);
+            selectedModels_.clear();
+#ifdef MM_HAS_OCC
+            // P6: silinen varlik kesme KAYNAGI/ARACI ise kaskad kaldirilan
+            // modifier'larin hedeflerini yeniden hesapla (kesme geri alinir).
+            for (const EntityId target : affected) recomputeCutTarget(target);
+#endif
+        }
+        deleteSelectedCutModifiers();
         cancelTransformCommand();
         updateControls();
         updateStatus();
         invalidateCanvas();
         return;
+    }
+
+    // PARAMETRELI KOMUTLAR: edit box (Qt QInputDialog) ile parametreyi iste.
+    transformBase_.reset();
+    filletFirstPick_.reset();
+    offsetDistance_.reset();
+    arrayItemCount_.reset();
+    if (command == TransformCommand::Offset) {
+        const auto distance = requestDoubleParameter(L"Ofset mesafesi", L"");
+        if (!distance) { updateStatus(); return; }
+        offsetDistance_ = *distance;
+    } else if (command == TransformCommand::Fillet) {
+        const auto radius = requestDoubleParameter(L"Fillet yarıçapı", L"1.0");
+        if (!radius) { updateStatus(); return; }
+        filletRadius_ = *radius;
+    } else if (command == TransformCommand::LinearArray ||
+               command == TransformCommand::PolarArray) {
+        const auto count = requestCountParameter(L"Dizi öğe sayısı (2-1000)", L"2");
+        if (!count) { updateStatus(); return; }
+        arrayItemCount_ = *count;
     }
 
     lastTransformCommand_ = command;
@@ -1853,16 +3202,15 @@ void Application::startTransformCommand(TransformCommand command) {
     } else if (command == TransformCommand::Offset && selectedModels_.size() != 1) {
         selectedModels_.clear();
         transformPhase_ = TransformPhase::Selecting;
+    } else if (command == TransformCommand::Offset && offsetDistance_) {
+        // Mesafe onceden girildi (edit box): dogrudan yan taraf secimine gec.
+        transformPhase_ = TransformPhase::Destination;
     } else if (!selectedModels_.empty()) {
         transformPhase_ = TransformPhase::BasePoint;
     } else {
         transformPhase_ = TransformPhase::Selecting;
     }
     selectionFirstCorner_.reset();
-    transformBase_.reset();
-    offsetDistance_.reset();
-    filletFirstPick_.reset();
-    arrayItemCount_.reset();
     lastTrimExtendStatus_.clear();
     drawingActive_ = false;
     hover_.reset();
@@ -1874,17 +3222,169 @@ void Application::startTransformCommand(TransformCommand command) {
     trimExtendLog(L"APP BASLADI build=" __DATE__ " " __TIME__);
 }
 
+void Application::applyStartupDefaults() {
+    // TAM NO-OP — kilitlenme teşhisi.
+    // 3165c04 (no-op): donma yok (teyit). 962720b (grid otomatik olusunca):
+    // donma. O halde donmayi YAPAN grid'in acilista otomatik olusmasi —
+    // GL degil (0050b1c'de GL kapatilip grid birakilinca da dondu).
+    // Grid'i menuden elle ekleyince test et; acilista otomatik ekleme kapali.
+    // (Kullanici "Yapı Gridi Oluştur" ile zaten grid ekleyebilir — 32cf62d.)
+}
+
+void Application::applyStartupDefaults3D() {
+    // VARSAYILAN BASLANGIC (kullanici talebi): 3B + Solid + GL.
+    // Grid otomatik OLUSTURULMAZ (2562b57: acilista grid donmaya yol acti).
+    // Kamera/zoom extents cagrilmaz (0x0 canvas'ta fit kamerayi bozabilir).
+    if (mode_ != EditMode::View3D) toggle3DView();
+    setVisualStyle(VisualStyle::Solid);
+    tryEnableStartupGpu(); // canvas henuz 0x0 ise ilk gecerli resize'da tekrar denenir
+}
+
+void Application::tryEnableStartupGpu() {
+    if (gpuLinesEnabled_ || !startupGpuEnabled_) return; // zaten GL / istek yok / denendi
+    if (!canvas_ || !IsWindow(canvas_)) return;           // canvas henuz yok
+    RECT rc{};
+    if (!GetClientRect(canvas_, &rc) || rc.right <= 0 || rc.bottom <= 0) return; // 0x0: ertele
+    startupGpuEnabled_ = false; // TEK deneme
+
+    std::error_code ec;
+    const auto guard = startupGpuGuardPath();
+    if (forceGdiRequested()) {
+        startupNotice_ = L"GDI (MM_FORCE_GDI)";
+        updateStatus();
+        return;
+    }
+    if (std::filesystem::exists(guard, ec)) {
+        // Onceki acilista GL yarida kaldi (donma/cokme) -> bu sefer GDI.
+        std::filesystem::remove(guard, ec);
+        startupNotice_ = L"Önceki açılışta GL yanıt vermedi — GDI ile başlatıldı (F6 = GL)";
+        FILE* diag = fopen("model-maker-render.log", "a");
+        if (diag) { fprintf(diag, "STARTUP-GL skipped (stale guard)\n"); fclose(diag); }
+        updateStatus();
+        return;
+    }
+    {
+        std::ofstream marker(guard, std::ios::trunc);
+        marker << "GL startup in progress\n";
+        startupGpuGuardArmed_ = static_cast<bool>(marker);
+    }
+    toggleGpuLines();
+    const bool glActive = gpuLinesEnabled_ && renderBackend_ && renderBackend_->isHardwareAccelerated();
+    if (!glActive) {
+        // GL baglami kurulamadi (eski surucu / RDP / GL 3.3 yok): GDI'de kal.
+        if (gpuLinesEnabled_) gpuLinesEnabled_ = false;
+        clearStartupGpuGuard();
+        startupNotice_ = L"GL başlatılamadı — GDI kullanılıyor";
+        updateStatus();
+        invalidateCanvas();
+    }
+}
+
+void Application::clearStartupGpuGuard() {
+    if (!startupGpuGuardArmed_) return;
+    startupGpuGuardArmed_ = false;
+    std::error_code ec;
+    std::filesystem::remove(startupGpuGuardPath(), ec);
+}
+
+std::size_t Application::createModelGrid(GridDefinition grid) {
+    // TEKLA TARZI GRID: kaynak SPESIFIKASYONDUR (xCoords/yCoords/zCoords +
+    // etiketler + uzanti + orijin); cizim geometrisi buradan TUREtilir.
+    if (grid.name.empty()) grid.name = "GRID";
+    // Etiketler: liste doluysa eksikler otomatik tamamlanir; liste tamamen
+    // bos birakilirsa etiketsiz kalir (Tekla: etiket kutusu bos olabilir).
+    ensureGridLabels(grid);
+    rebuildGridAxes(grid);
+
+    pushUndoSnapshot();
+    // Document::addGrid KENDI undo op'unu (GridAdd) kaydeder — burada ikinci
+    // kez kaydetme (cift geri alma adimi olur).
+    const std::size_t index = document_.addGrid(std::move(grid));
+    updateControls();
+    invalidateCanvas();
+    return index;
+}
+
+bool Application::updateModelGrid(std::size_t index, GridDefinition grid) {
+    if (index >= document_.grids().size()) return false;
+    ensureGridLabels(grid);
+    pushUndoSnapshot();
+    if (!document_.setGrid(index, std::move(grid))) return false;
+    updateControls();
+    invalidateCanvas();
+    return true;
+}
+
+bool Application::removeModelGrid(std::size_t index) {
+    if (index >= document_.grids().size()) return false;
+    pushUndoSnapshot();
+    document_.removeGrid(index);
+    updateControls();
+    invalidateCanvas();
+    return true;
+}
+
+bool Application::setModelGridVisible(std::size_t index, bool visible) {
+    const bool ok = document_.setGridVisible(index, visible);
+    if (ok) {
+        updateControls();
+        invalidateCanvas();
+    }
+    return ok;
+}
+
 void Application::toggle3DView() {
+    if (viewDef_) {
+        // Gorunus penceresi her zaman 3B (sabit duzlem); 2B plan yok.
+        // V = gorunusu ilk yonune dondur ve sigdir (Tekla "redraw view").
+        fitViewport(canvas_);
+        publishStatus(L"Görünüş penceresi 2B plana geçmez — görünüş yeniden sığdırıldı");
+        return;
+    }
     cancelZoomWindow2D();
     if (workPlanePicking_) cancelWorkPlaneCommand();
     if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
+    profileGrip_.reset();
     cancelDrawing();
+    const bool entering3D = mode_ != EditMode::View3D;
     mode_ = mode_ == EditMode::View3D ? EditMode::Draw2D : EditMode::View3D;
     drawingActive_ = mode_ == EditMode::Draw2D;
+    // 3D'ye gecince kamerayi izometrik konuma al: XY duzlemi yere paralel
+    // (yatay), Z dikey yukari — Tekla/AutoCAD model gorunumu. 2B'ye donuste
+    // kamera ayarina dokunma (plan bakisi Draw2D projeksiyonundan gelir).
+    if (entering3D) camera_.setView(StandardView::Isometric);
     updateHover(cursorScreen_.x, cursorScreen_.y);
     updateControls();
     updateStatus();
     invalidateCanvas();
+#ifdef MM_HAS_SPACEMOUSE
+    // SpaceMouse her 3B girisinde (yeniden) baslatilir; 2B'ye donunce durur.
+    if (mode_ == EditMode::View3D) {
+        ensureSpaceMouseStarted();
+    } else {
+        if (spaceMouse_ && spaceMouse_->running()) {
+            spaceMouse_->stop();
+        }
+    }
+#endif
+}
+
+void Application::ensureSpaceMouseStarted() {
+#ifdef MM_HAS_SPACEMOUSE
+    if (mode_ != EditMode::View3D) return;
+    if (!spaceMouse_) {
+        spaceMouse_ = std::make_unique<SpaceMouseNav>(camera_, document_);
+        spaceMouse_->setViewChangedCallback([this]() {
+            // Navlib kendi thread'inden cagirir — boyama ana thread'de.
+            InvalidateRect(canvas_, nullptr, FALSE);
+        });
+    }
+    if (!spaceMouse_->running()) {
+        const bool started = spaceMouse_->start();
+        publishStatus(started ? L"SpaceMouse etkin (3Dconnexion Navlib)"
+                              : L"SpaceMouse kurulamadi (surucu/navlib.dll yok)");
+    }
+#endif
 }
 
 void Application::toggleSnapType(SnapType type) noexcept {
@@ -1892,14 +3392,41 @@ void Application::toggleSnapType(SnapType type) noexcept {
     if (idx < enabledSnapTypes_.size()) enabledSnapTypes_[idx] = !enabledSnapTypes_[idx];
 }
 
+void Application::setCurrentLayer(const std::string& layer) {
+    currentLayer_ = layer;
+    // Secili nesneler varsa katman dogrudan atanir (AutoCAD davranisi).
+    if (!selectedModels_.empty()) {
+        document_.setModelLayer(selectedModels_, layer);
+        updateControls();
+        invalidateCanvas();
+    }
+}
+
 void Application::setCurrentColorChoice(int index) noexcept {
-    if (index >= 0 && index < static_cast<int>(colorChoices.size()))
-        currentColorChoice_ = index;
+    if (index < 0 || index >= static_cast<int>(colorChoices.size())) return;
+    currentColorChoice_ = index;
+    // Secili nesne varsa renk dogrudan atanir (AutoCAD davranisi);
+    // yoksa renk sonraki cizimlerin rengi olur.
+    if (selectedModels_.empty()) return;
+    const auto choice = colorChoices[static_cast<std::size_t>(index)];
+    // KULLANICI: "props taki ozellikler secili elemana saglikli uygulanmiyor".
+    // Eskiden ByLayer secildiginde erken return ediliyordu: yani listeden
+    // "ByLayer" secmek secili elemanin rengini DEGISTIRMIYORDU (onceki
+    // override rengi kaliyordu). Artik ByLayer override'i TEMIZLER
+    // (trueColor = nullopt, colorIndex = 256) — katman rengine doner.
+    document_.setModelColor(selectedModels_, choice.color);
+    updateControls();
+    invalidateCanvas();
 }
 
 void Application::setCurrentLineTypeChoice(int index) noexcept {
-    if (index >= 0 && index < static_cast<int>(lineTypeChoices.size()))
-        currentLineTypeChoice_ = index;
+    if (index < 0 || index >= static_cast<int>(lineTypeChoices.size())) return;
+    currentLineTypeChoice_ = index;
+    if (selectedModels_.empty()) return;
+    const auto& choice = lineTypeChoices[static_cast<std::size_t>(index)];
+    document_.setModelLineType(selectedModels_, choice.value);
+    updateControls();
+    invalidateCanvas();
 }
 
 void Application::refreshLayerList() { refreshLayerCombo(); }
@@ -1933,6 +3460,17 @@ Application::layerProperties() const {
     return document_.layers();
 }
 
+const std::vector<std::string>&
+Application::lineTypePalette() {
+    static std::vector<std::string> values;
+    if (values.empty()) {
+        values.reserve(lineTypeChoices.size());
+        for (const auto& choice : lineTypeChoices)
+            values.push_back(choice.value);
+    }
+    return values;
+}
+
 const std::vector<std::pair<const wchar_t*, std::optional<std::uint32_t>>>&
 Application::colorPalette() {
     static const std::vector<std::pair<const wchar_t*, std::optional<std::uint32_t>>> palette = []() {
@@ -1945,17 +3483,97 @@ Application::colorPalette() {
 }
 
 void Application::setStandardView(StandardView view) {
+    // Gorunus penceresi: yon iki noktayla tanimli — standart gorunus yonu
+    // DEGISTIRMEZ; dilim normali sabit kalsin diye yalnizca yeniden sigdirir.
+    if (viewRotationLocked()) {
+        fitViewport(canvas_);
+        publishStatus(L"Görünüş yönü iki noktayla tanımlı — sığdırıldı");
+        return;
+    }
+    cancelZoomWindow2D();
+    // Kosan bir ViewCube animasyonu varsa iptal et: kullanici baska bir
+    // gorunus istedi, iki animasyon ustuste binmesin.
+    if (viewCubeAnimActive_) {
+        viewCubeAnimActive_ = false;
+        viewCubeAnimTarget_.reset();
+        KillTimer(window_, 9);
+    }
+    if (workPlanePicking_) cancelWorkPlaneCommand();
+    if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
+    cancelDrawing();
+    profileGrip_.reset();
+    hover_.reset();
+    camera_.setView(view);
+    mode_ = EditMode::View3D;
+    drawingActive_ = false;
+    ensureSpaceMouseStarted();
+    updateHover(cursorScreen_.x, cursorScreen_.y);
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
+}
+
+// --- MODERN VIEWCUBE (26 yon) ------------------------------------------------
+// Gecis animasyonu: mevcut rotasyon ile hedef rotasyon arasinda quaternion
+// slerp. Ara kareler setRotationMatrix ile yazilir — donus merkezi ve GRID
+// KILIDI dokunulmaz (yoksa animasyon sirasinda grid ailesi sicrar). Son
+// karede hedefe KESIN oturulur ve kilit/pivot normal apply ile kurulur.
+void Application::applyViewCubeTarget(const ViewCubeTarget& target) {
+    // Iki noktali gorunus penceresi: yon tanimli — yalniz yeniden sigdir.
+    if (viewRotationLocked()) {
+        fitViewport(canvas_);
+        publishStatus(L"Görünüş yönü iki noktayla tanımlı — sığdırıldı");
+        return;
+    }
     cancelZoomWindow2D();
     if (workPlanePicking_) cancelWorkPlaneCommand();
     if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
     cancelDrawing();
-    camera_.setView(view);
+    profileGrip_.reset();
+    hover_.reset();
+
+    viewCubeAnimTarget_ = target;
+    viewCubeAnimFrom_ = camera_.rotationMatrix();
+    viewCubeAnimTo_ = viewCubeTargetRotation(target);
+    viewCubeAnimT_ = 0.0;
+    viewCubeAnimActive_ = true;
     mode_ = EditMode::View3D;
     drawingActive_ = false;
+    ensureSpaceMouseStarted();
+    // 16 ms kare: ~0.09 adim -> ~11 kare ~180 ms yumusak gecis.
+    SetTimer(window_, 9, 16, nullptr);
+    invalidateCanvas();
+}
+
+void Application::finishViewCubeAnimation() {
+    KillTimer(window_, 9);
+    viewCubeAnimActive_ = false;
+    viewCubeAnimT_ = 1.0;
+    if (viewCubeAnimTarget_) {
+        const ViewCubeTarget target = *viewCubeAnimTarget_;
+        viewCubeAnimTarget_.reset();
+        if (target.kind == ViewCubeTargetKind::Home) {
+            // ISO'nun roll'u turntable ailesinde YOK — standart gorunusten al.
+            camera_.setView(StandardView::Isometric);
+        } else if (target.kind == ViewCubeTargetKind::Face) {
+            camera_.setView(target.face); // Ctrl+1..7 ile AYNI yol (tek kaynak)
+        } else {
+            // Kenar/kose: hedef rotasyonun ekran-saga/ekran-yukari satirlari.
+            const auto rotation = viewCubeTargetRotation(target);
+            camera_.setViewBasis({rotation[0], rotation[1], rotation[2]},
+                                 {rotation[3], rotation[4], rotation[5]},
+                                 camera_.center3D());
+        }
+    }
+    updateHover(cursorScreen_.x, cursorScreen_.y);
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
 }
 
 void Application::zoomExtents2D() {
     cancelZoomWindow2D();
+    if (viewDef_ && canvas_) { fitViewport(canvas_); return; } // gorunus: dilime sigdir
     RECT client{}; GetClientRect(canvas_, &client);
     const auto bounds = document_.bounds();
     if (!bounds) camera_.reset();
@@ -1971,7 +3589,92 @@ void Application::zoomExtents2D() {
     invalidateCanvas();
 }
 
+void Application::focusOnSelection() {
+    // F: secime odaklan (3B navigasyon). Secili geometrinin kutusunu
+    // cercevele, bakis yonu KORUNUR (fit3D yonu degistirmez), orbit pivotu
+    // odak merkezine guncellenir. Secim yoksa tum gorunur model cercevelenir.
+    // Bos model -> kamera sifirla.
+    RECT client{}; GetClientRect(canvas_, &client);
+    const int vw = std::max(1L, client.right), vh = std::max(1L, client.bottom);
+    std::optional<Bounds3> target;
+    const auto& mb = document_.modelBounds();
+    if (!selectedModels_.empty()) {
+        for (const std::size_t i : selectedModels_) {
+            if (i >= mb.size()) continue;
+            if (!target) {
+                target = mb[i];
+                continue;
+            }
+            target->minimum.x = std::min(target->minimum.x, mb[i].minimum.x);
+            target->minimum.y = std::min(target->minimum.y, mb[i].minimum.y);
+            target->minimum.z = std::min(target->minimum.z, mb[i].minimum.z);
+            target->maximum.x = std::max(target->maximum.x, mb[i].maximum.x);
+            target->maximum.y = std::max(target->maximum.y, mb[i].maximum.y);
+            target->maximum.z = std::max(target->maximum.z, mb[i].maximum.z);
+        }
+    }
+    if (!target) target = document_.bounds();
+    if (!target) { camera_.reset(); invalidateCanvas(); return; }
+    if (mode_ == EditMode::View3D) {
+        camera_.fit3D(target->minimum, target->maximum, vw, vh, 50.0);
+        camera_.setOrbitPivot(Vec3{(target->minimum.x + target->maximum.x) * 0.5,
+                                   (target->minimum.y + target->maximum.y) * 0.5,
+                                   (target->minimum.z + target->maximum.z) * 0.5});
+    } else {
+        camera_.fit2D(target->minimum, target->maximum, vw, vh, 50.0);
+    }
+    updateHover(cursorScreen_.x, cursorScreen_.y);
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
+}
+
+std::optional<Vec3> Application::resolveOrbitPivot(int x, int y) const {
+    // Akilli orbit pivotu onceligi (MMB jesti basinda BIR KEZ cozulur):
+    //   1) imlec altindaki modelin kutu merkezi (3B isabet)
+    //   2) secili geometrinin kutu merkezi
+    //   3) kayitli orbit pivotu (R-tusu / focus)
+    //   4) tum modelin kutu merkezi
+    // Hicbiri yoksa nullopt -> kamera mevcut center3D etrafinda doner.
+    const auto& mb = document_.modelBounds();
+    if (mode_ == EditMode::View3D) {
+        const auto hit = modelIndexAt(x, y);
+        if (hit && *hit < mb.size()) {
+            const auto& b = mb[*hit];
+            return Vec3{(b.minimum.x + b.maximum.x) * 0.5,
+                        (b.minimum.y + b.maximum.y) * 0.5,
+                        (b.minimum.z + b.maximum.z) * 0.5};
+        }
+    }
+    if (!selectedModels_.empty()) {
+        std::optional<Bounds3> u;
+        for (const std::size_t i : selectedModels_) {
+            if (i >= mb.size()) continue;
+            if (!u) {
+                u = mb[i];
+                continue;
+            }
+            u->minimum.x = std::min(u->minimum.x, mb[i].minimum.x);
+            u->minimum.y = std::min(u->minimum.y, mb[i].minimum.y);
+            u->minimum.z = std::min(u->minimum.z, mb[i].minimum.z);
+            u->maximum.x = std::max(u->maximum.x, mb[i].maximum.x);
+            u->maximum.y = std::max(u->maximum.y, mb[i].maximum.y);
+            u->maximum.z = std::max(u->maximum.z, mb[i].maximum.z);
+        }
+        if (u) return Vec3{(u->minimum.x + u->maximum.x) * 0.5,
+                           (u->minimum.y + u->maximum.y) * 0.5,
+                           (u->minimum.z + u->maximum.z) * 0.5};
+    }
+    if (camera_.hasOrbitPivot()) return *camera_.orbitPivot();
+    if (const auto b = document_.bounds())
+        return Vec3{(b->minimum.x + b->maximum.x) * 0.5,
+                    (b->minimum.y + b->maximum.y) * 0.5,
+                    (b->minimum.z + b->maximum.z) * 0.5};
+    return std::nullopt;
+}
+
 void Application::startZoomWindow2D() {
+    cancelPendingComponentCommand();
     if (workPlanePicking_) cancelWorkPlaneCommand();
     if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
     cancelDrawing();
@@ -2017,6 +3720,7 @@ void Application::completeZoomWindow2D(int x, int y) {
 }
 
 void Application::startWorkPlaneCommand() {
+    cancelPendingComponentCommand();
     cancelZoomWindow2D();
     if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
     cancelDrawing();
@@ -2032,8 +3736,2623 @@ void Application::startWorkPlaneCommand() {
     invalidateCanvas();
 }
 
+void Application::startConstructionPlaneCommand() {
+    // KONSTRUKSIYON DUZLEMI (P0, Tekla construction plane): ayni 3-nokta
+    // secim akisini (snap + track + kesik onizleme + Esc/sag tik iptal)
+    // paylasir; ucuncu noktada Document'e ConstructionPlane modeli eklenir.
+    // Calisma duzlemi (workPlane_) DEGISMEZ — ikisi ayri kavram.
+    startWorkPlaneCommand();
+    pointPickPurpose_ = PointPickPurpose::ConstructionPlane;
+    updateStatus();
+}
+
+void Application::toggleConstructionVisibility() {
+    // Tek kaynak: menu. Tum ConstructionKind nesnelerinin gorunurlugunu
+    // tek bayrakla degistirir. Undo KAPSAMINDA DEGIL (setModelColor/setModelLayer
+    // gibi mevcut ozellik degistiricilerle ayni davranis; F7 hayalet duzlemi
+    // gibi bir gorunum toggledir, belge geometrisini degistirmez).
+    constructionVisible_ = !constructionVisible_;
+    document_.setConstructionVisible(constructionVisible_);
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
+}
+
+void Application::applyCutFromSelection(CutKind kind) {
+    // Noun-verb (P1): secili kume icinde profiller + BIR konstrüksiyon
+    // duzlemi aranir. P12: TEK duzlem birden cok profili keser — tum secili
+    // profiller hedef olur. Target = profileName dolu normal model; plane
+    // cercevesi constructionPlaneFrame()'ten alinir.
+    std::vector<std::size_t> targets;
+    std::optional<std::size_t> planeIdx;
+    for (const auto index : selectedModels_) {
+        if (index >= document_.models().size()) continue;
+        const auto& model = document_.models()[index];
+        if (model.constructionKind() == ConstructionKind::Plane && !planeIdx) planeIdx = index;
+        else if (model.constructionKind() == ConstructionKind::None &&
+                 !model.properties().profileName.empty())
+            targets.push_back(index);
+    }
+    if (targets.empty() || !planeIdx) {
+        MessageBeep(MB_ICONWARNING);
+        publishStatus(L"Fitting/Plane Cut: en az bir profil hedefi VE bir konstrüksiyon düzlemi seçin");
+        return;
+    }
+    applyCutFromTargets(kind, targets, *planeIdx);
+}
+
+void Application::applyCutFromPair(CutKind kind, std::size_t targetIdx, std::size_t planeIdx) {
+    // Tek hedef + tek duzlem: coklu-hedef yolunun tek elemanli ozel hali.
+    applyCutFromTargets(kind, {targetIdx}, planeIdx);
+}
+
+void Application::applyCutFromTargets(CutKind kind, const std::vector<std::size_t>& targets,
+                                      std::size_t planeIdx) {
+    // P12: TEK duzlem birden cok profili keser. Her hedefe ayni kaynak duzlemle
+    // AYRI CutModifier kurulur (Tekla semantigi: ayni hedefte ayni turden
+    // mevcut modifier EZILIR — bir uca bir fitting). Hepsini TEK undo aninda
+    // yapar. Hem noun-verb (applyCutFromSelection) hem verb-noun
+    // (executePendingCutCommand) yolu buraya duser.
+    if (targets.empty() || planeIdx >= document_.models().size()) {
+        MessageBeep(MB_ICONWARNING);
+        publishStatus(L"Fitting/Plane Cut: gecersiz secim — yeniden secin");
+        return;
+    }
+    for (const std::size_t targetIdx : targets) {
+        if (targetIdx >= document_.models().size()) {
+            MessageBeep(MB_ICONWARNING);
+            publishStatus(L"Fitting/Plane Cut: gecersiz secim — yeniden secin");
+            return;
+        }
+    }
+    const auto frame = constructionPlaneFrame(document_.models()[planeIdx]);
+    if (!frame) {
+        MessageBeep(MB_ICONWARNING);
+        publishStatus(L"Fitting/Plane Cut: konstrüksiyon düzlemi bozuk — yeniden oluşturun");
+        return;
+    }
+    // P6: duzlemi KOPYALAMA — kaynak konstrüksiyon duzlemini referans al.
+    // Kesme, duzlemin GUNCEL geometrisinden cozumlenir; duzlem tasininca izler,
+    // silinince kaskad kaldirilir, ayri kopya kesme objesi cizilmez.
+    const EntityId planeId = document_.modelId(planeIdx);
+    pushUndoSnapshot();
+    for (const std::size_t targetIdx : targets) {
+        CutModifier modifier;
+        modifier.kind = kind;
+        modifier.target = document_.modelId(targetIdx);
+        modifier.source = planeId;
+        modifier.planeOrigin = frame->origin;
+        modifier.planeNormal = frame->normal;
+        modifier.keepPositive = true;  // Fitting: otomatik taraf (bu alan yok sayilir)
+        modifier.enabled = true;
+        modifier.name = kind == CutKind::Fitting ? "Fitting" : "Plane Cut";
+        // Tekla semantigi: ayni hedefte ayni turden mevcut modifier EZILIR.
+        std::optional<std::size_t> existing;
+        for (std::size_t ci = 0; ci < document_.cutModifiers().size(); ++ci) {
+            const auto& m = document_.cutModifiers()[ci];
+            if (m.kind == kind && m.target == modifier.target) { existing = ci; break; }
+        }
+        if (existing) document_.setCutModifier(*existing, modifier);
+        else document_.addCutModifier(modifier);
+#ifdef MM_HAS_OCC
+        recomputeCutTarget(modifier.target);
+#endif
+    }
+    selectedModels_.clear();
+    selectionFirstCorner_.reset();
+    updateHover(cursorScreen_.x, cursorScreen_.y);
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
+}
+
+void Application::startFittingCommand() { enterPendingCutCommand(CutKind::Fitting); }
+
+void Application::startPlaneCutCommand() { enterPendingCutCommand(CutKind::PlaneCut); }
+
+void Application::enterPendingCutCommand(CutKind kind) {
+    // Verb-noun: komut girilince aktif cizim/transform/secim kapatilir, kesme
+    // komutu BEKLEMEDE kalir; profil ve duzlem sirasiyla secilir, sag tik
+    // uygular, Esc iptal.
+    cancelZoomWindow2D();
+    if (workPlanePicking_) cancelWorkPlaneCommand();
+    if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
+    profileGrip_.reset();
+    cancelDrawing();
+    cancelPendingBoltCommand();
+    cancelPendingEndPlateCommand();
+    cancelPendingFinPlateCommand();
+    cancelPendingComponentCommand();
+    pendingCutKind_ = kind;
+    pendingCutTargets_.clear();
+    pendingCutPlane_.reset();
+    const wchar_t* name = kind == CutKind::Fitting ? L"Fitting" : L"Plane Cut";
+    publishStatus(std::wstring(name) + L": profili seçin (sol tık, birden çok), sonra düzlemi seçin");
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
+}
+
+void Application::cancelPendingCutCommand() {
+    // Beklemede kesme yoksa HICBIR SEY yapmaz (secime dokunmaz) — boylece
+    // startTransformCommand/selectTool/deactivateAllCommands basinda noun-verb
+    // secimini silmeden güvenle cagrilabilir.
+    if (!pendingCutKind_) return;
+    pendingCutKind_.reset();
+    pendingCutTargets_.clear();
+    pendingCutPlane_.reset();
+    hoverModel_.reset();
+    hoverCutModifier_.reset();
+    selectedModels_.clear();
+    selectionFirstCorner_.reset();
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
+}
+
+void Application::executePendingCutCommand() {
+    if (!pendingCutKind_) return;
+    if (pendingCutTargets_.empty() || !pendingCutPlane_) {
+        MessageBeep(MB_ICONWARNING);
+        publishStatus(L"Önce en az bir profili ve düzlemi seçin (sağ tık uygular)");
+        return;
+    }
+    const CutKind kind = *pendingCutKind_;
+    const std::vector<std::size_t> targets = pendingCutTargets_;
+    const std::size_t plane = *pendingCutPlane_;
+    // Bekleme durumu once temizlenir; applyCutFromTargets secimi de temizler.
+    pendingCutKind_.reset();
+    pendingCutTargets_.clear();
+    pendingCutPlane_.reset();
+    hoverModel_.reset();
+    hoverCutModifier_.reset();
+    applyCutFromTargets(kind, targets, plane);
+}
+
+bool Application::pickPendingCutAt(int x, int y) {
+    if (!pendingCutKind_) return false;
+    const auto hit = modelIndexAt(x, y);
+    if (!hit || *hit >= document_.models().size()) {
+        MessageBeep(MB_ICONWARNING);
+        publishStatus(pendingCutTargets_.empty() ? L"Bir profil hedefi seçin"
+                                                 : L"Bir konstrüksiyon düzlemi seçin");
+        return true;
+    }
+    const auto& model = document_.models()[*hit];
+    if (model.constructionKind() == ConstructionKind::None &&
+        !model.properties().profileName.empty()) {
+        // P12: profil tiklamasi hedef listesine EKLE/CIKAR (toggle) — tek duzlem
+        // birden cok profili kesebilir.
+        const auto it = std::find(pendingCutTargets_.begin(), pendingCutTargets_.end(), *hit);
+        if (it == pendingCutTargets_.end()) pendingCutTargets_.push_back(*hit);
+        else pendingCutTargets_.erase(it);
+    } else if (model.constructionKind() == ConstructionKind::Plane) {
+        pendingCutPlane_ = *hit;
+    } else {
+        MessageBeep(MB_ICONWARNING);
+        publishStatus(pendingCutTargets_.empty() ? L"Bir profil hedefi seçin"
+                                                 : L"Bir konstrüksiyon düzlemi seçin");
+        updateControls(); updateStatus(); invalidateCanvas();
+        return true;
+    }
+    // Secim, secilen profil(ler) + duzlem grubunu gosterecek sekilde kurulur.
+    selectedModels_.clear();
+    for (const std::size_t t : pendingCutTargets_) selectedModels_.push_back(t);
+    if (pendingCutPlane_) selectedModels_.push_back(*pendingCutPlane_);
+    if (!pendingCutTargets_.empty() && pendingCutPlane_)
+        publishStatus(L"Hazır — sağ tık ile uygula (" +
+                      std::to_wstring(pendingCutTargets_.size()) + L" profil, Esc iptal)");
+    else if (!pendingCutTargets_.empty())
+        publishStatus(std::to_wstring(pendingCutTargets_.size()) +
+                      L" profil seçildi — düzlemi seçin");
+    else if (pendingCutPlane_)
+        publishStatus(L"Düzlem seçildi — profili seçin");
+    else
+        publishStatus(L"Profili seçin (sol tık, birden çok)");
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
+    return true;
+}
+
+std::optional<std::size_t> Application::modelIndexAt(int x, int y) const {
+    // COMPONENT SIMGESI: buyuk tiklama isareti normal model hit'ten once denenir
+    // (levha ince oldugu icin dogrudan isabet zordur).
+    if (const auto glyph = componentGlyphModelAt(x, y)) return glyph;
+    // Imlecin altindaki modeli isabet-testi (2B/3B ortak esik; secim yoluyla
+    // ayni). Profil/düzlem seciminde kullanilir.
+    if (mode_ == EditMode::Draw2D)
+        return hitTestModel2D(screenTo2D(x, y), document_, 10.0 / (60.0 * camera_.zoom()));
+    RECT client{};
+    GetClientRect(canvas_, &client);
+    return hitTestModel3D({static_cast<double>(x), static_cast<double>(y)}, document_, camera_,
+                          std::max(1L, client.right), std::max(1L, client.bottom), 10.0);
+}
+
+std::optional<std::size_t> Application::componentGlyphModelAt(int x, int y) const {
+    // ALL COMPONENT SEMBOLLERI (End Plate + universal parametrik Fin Plate vb.)
+    // icin ortak liste: renderer ile AYNI kaynak (collectComponentGlyphs).
+    // Ekran-olcekli yaricap (~18 px) kullanilir — simge gercek levhadan buyuktur.
+    // Birden fazla sembol yaricap icine duserse EN YAKIN olan secilir.
+    constexpr double kGlyphRadiusPx = 18.0;
+    RECT client{};
+    GetClientRect(canvas_, &client);
+    const int vw = std::max(1L, client.right);
+    const int vh = std::max(1L, client.bottom);
+    std::optional<std::size_t> best;
+    double bestDist2 = kGlyphRadiusPx * kGlyphRadiusPx;
+    for (const ComponentGlyph& glyph : collectComponentGlyphs(document_)) {
+        const Vec2 s = (mode_ == EditMode::Draw2D)
+                           ? camera_.project2D(glyph.anchor, vw, vh)
+                           : camera_.project(glyph.anchor, vw, vh);
+        const double dx = s.x - static_cast<double>(x);
+        const double dy = s.y - static_cast<double>(y);
+        const double dist2 = dx * dx + dy * dy;
+        if (dist2 > bestDist2) continue;
+        const auto index = document_.indexOfEntity(glyph.entityId);
+        if (!index) continue;
+        bestDist2 = dist2;
+        best = index;
+    }
+    return best;
+}
+
+void Application::applyBoundaryCutFromSelection(CutKind kind) {
+    // Noun-verb (P2): secili kume icinde BIR profil hedefi + BIR sinir objesi
+    // aranir. LineCut: 2 koseli cizgi modeli (polygon = {bas,son}, planeNormal =
+    // aktif is duzlemi normali). PolygonCut: face3D modeli (polygon = koseler).
+    std::optional<std::size_t> targetIdx;
+    std::optional<std::size_t> boundaryIdx;
+    // Iki ayri gecis (sira BAGIMSIZ): once profil hedefi, sonra sinir objesi.
+    for (const auto index : selectedModels_) {
+        if (index >= document_.models().size()) continue;
+        const auto& model = document_.models()[index];
+        if (!targetIdx && model.constructionKind() == ConstructionKind::None &&
+            !model.properties().profileName.empty())
+            targetIdx = index;
+    }
+    for (const auto index : selectedModels_) {
+        if (index >= document_.models().size()) continue;
+        if (targetIdx && index == *targetIdx) continue;
+        const auto& model = document_.models()[index];
+        if (kind == CutKind::PolygonCut) {
+            if (model.isFace3D() && model.vertices().size() >= 3) { boundaryIdx = index; break; }
+        } else {
+            if (model.vertices().size() == 2 && !model.isFace3D()) { boundaryIdx = index; break; }
+        }
+    }
+    if (!targetIdx || !boundaryIdx) {
+        MessageBeep(MB_ICONWARNING);
+        publishStatus(kind == CutKind::PolygonCut
+                          ? L"Polygon Cut: bir profil hedefi VE bir 3DFACE (4 köşe) seçin"
+                          : L"Line Cut: bir profil hedefi VE bir çizgi (2 nokta) seçin");
+        return;
+    }
+    const auto& boundary = document_.models()[*boundaryIdx];
+    CutModifier modifier;
+    modifier.kind = kind;
+    modifier.target = document_.modelId(*targetIdx);
+    // P6: sinir objesini (cizgi/3DFACE) referans al — tasininca izler, silinince
+    // kaskad kaldirilir.
+    modifier.source = document_.modelId(*boundaryIdx);
+    modifier.enabled = true;
+    if (kind == CutKind::PolygonCut) {
+        modifier.polygon = boundary.vertices();
+        if (modifier.polygon.size() < 3) { MessageBeep(MB_ICONWARNING); return; }
+        modifier.name = "Polygon Cut";
+    } else {
+        const auto& v = boundary.vertices();
+        if (v.size() < 2) { MessageBeep(MB_ICONWARNING); return; }
+        modifier.polygon = {v[0], v[1]};
+        modifier.planeOrigin = v[0];
+        modifier.planeNormal = workPlane_.normal;  // cizginin cizildigi duzlem
+        modifier.keepPositive = true;              // taraf secimi sonraki faz
+        modifier.name = "Line Cut";
+    }
+    // Tekla semantigi: Line/Polygon cut COKLUDUR (bir parcada birden fazla
+    // kesme olabilir) -> her zaman YENI modifier eklenir; Fitting/PlaneCut'in
+    // "bir uce bir kesme" ezme kuralindan FARKLI. Kesme objesi ayri silinebilir
+    // bir kayittir (kesme objesi silme = modifier kaydini sil).
+    pushUndoSnapshot();
+    document_.addCutModifier(modifier);
+#ifdef MM_HAS_OCC
+    recomputeCutTarget(modifier.target);
+#endif
+    selectedModels_.clear();
+    selectionFirstCorner_.reset();
+    updateHover(cursorScreen_.x, cursorScreen_.y);
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
+}
+
+void Application::startLineCutCommand() { applyBoundaryCutFromSelection(CutKind::LineCut); }
+
+void Application::startPolygonCutCommand() { applyBoundaryCutFromSelection(CutKind::PolygonCut); }
+
+void Application::applyPartCutFromSelection() {
+    // Noun-verb (P3): secili kume icinde TAM 2 model — hedef (ilk secilen) +
+    // kesici parca (ikinci secilen). Tekla: once hedef, sonra kesici secilir.
+    // Ikisi de normal (konstrüksiyon olmayan) model olmali.
+    if (selectedModels_.size() != 2) {
+        MessageBeep(MB_ICONWARNING);
+        publishStatus(L"Part Cut: hedef parcayi VE kesici parcayi secin (tam 2 secim)");
+        return;
+    }
+    const std::size_t targetIdx = selectedModels_[0];
+    const std::size_t toolIdx = selectedModels_[1];
+    if (targetIdx >= document_.models().size() || toolIdx >= document_.models().size()) {
+        MessageBeep(MB_ICONWARNING);
+        return;
+    }
+    const auto& targetModel = document_.models()[targetIdx];
+    const auto& toolModel = document_.models()[toolIdx];
+    if (targetModel.constructionKind() != ConstructionKind::None ||
+        toolModel.constructionKind() != ConstructionKind::None) {
+        MessageBeep(MB_ICONWARNING);
+        publishStatus(L"Part Cut: hedef ve kesici parca normal model olmali (konstrüksiyon degil)");
+        return;
+    }
+    CutModifier modifier;
+    modifier.kind = CutKind::BooleanCut;
+    modifier.target = document_.modelId(targetIdx);
+    modifier.tool = document_.modelId(toolIdx);
+    modifier.enabled = true;
+    modifier.name = "Part Cut";
+    // Part Cut da COKLUDUR (bir parcada birden fazla kesici olabilir) -> ekle.
+    pushUndoSnapshot();
+    document_.addCutModifier(modifier);
+#ifdef MM_HAS_OCC
+    recomputeCutTarget(modifier.target);
+#endif
+    selectedModels_.clear();
+    selectionFirstCorner_.reset();
+    updateHover(cursorScreen_.x, cursorScreen_.y);
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
+}
+
+void Application::startPartCutCommand() { applyPartCutFromSelection(); }
+
+void Application::applyBoltFromParts(const std::vector<std::size_t>& parts,
+                                     std::optional<Vec3> axisOpt) {
+    // Ortak yol (Phase B1): verilen TAM 2 model = baglanacak iki celik parca.
+    if (parts.size() != 2) {
+        MessageBeep(MB_ICONWARNING);
+        publishStatus(L"Bolt: baglanacak IKI parcayi secin (tam 2 secim)");
+        return;
+    }
+    const std::size_t aIdx = parts[0];
+    const std::size_t bIdx = parts[1];
+    if (aIdx >= document_.models().size() || bIdx >= document_.models().size()) {
+        MessageBeep(MB_ICONWARNING);
+        return;
+    }
+    if (document_.models()[aIdx].constructionKind() != ConstructionKind::None ||
+        document_.models()[bIdx].constructionKind() != ConstructionKind::None) {
+        MessageBeep(MB_ICONWARNING);
+        publishStatus(L"Bolt: baglanacak parcalar normal model olmali (konstrüksiyon degil)");
+        return;
+    }
+    // Bulon origin = iki parcanin birlesik sinir kutusunun ortasi.
+    Vec3 lo{1e100, 1e100, 1e100}, hi{-1e100, -1e100, -1e100};
+    for (const std::size_t idx : {aIdx, bIdx}) {
+        if (idx >= document_.modelBounds().size()) { MessageBeep(MB_ICONWARNING); return; }
+        const auto& b = document_.modelBounds()[idx];
+        lo.x = std::min(lo.x, b.minimum.x); lo.y = std::min(lo.y, b.minimum.y);
+        lo.z = std::min(lo.z, b.minimum.z);
+        hi.x = std::max(hi.x, b.maximum.x); hi.y = std::max(hi.y, b.maximum.y);
+        hi.z = std::max(hi.z, b.maximum.z);
+    }
+    const Vec3 origin = (lo + hi) * 0.5;
+    // Eksen: secili yuz normali verildiyse o (hassas); yoksa birlestik
+    // kutunun EN INCE boyutu (iki levha icin = levha kalinligi yonu = bulon
+    // ekseni — yuz secimi basarisiz olsa bile dogru yonde deler). Ince yon
+    // bulunamazsa is duzlemi normali, o da dejenereyse dunya Z.
+    Vec3 axis;
+    if (axisOpt) {
+        axis = *axisOpt;
+    } else {
+        const double dx = hi.x - lo.x, dy = hi.y - lo.y, dz = hi.z - lo.z;
+        if (dx <= dy && dx <= dz) axis = {1.0, 0.0, 0.0};
+        else if (dy <= dx && dy <= dz) axis = {0.0, 1.0, 0.0};
+        else axis = {0.0, 0.0, 1.0};
+        // Yon: bulon basi is duzlemi normaliyle ayni tarafa baksin.
+        const double dot = workPlane_.normal.x * axis.x + workPlane_.normal.y * axis.y +
+                           workPlane_.normal.z * axis.z;
+        if (dot < 0.0) axis = {-axis.x, -axis.y, -axis.z};
+    }
+    const double axLen = std::sqrt(axis.x * axis.x + axis.y * axis.y + axis.z * axis.z);
+    if (axLen < 1e-12) axis = {0.0, 0.0, 1.0};
+
+    BoltGroup bolt;
+    bolt.parts = {document_.modelId(aIdx), document_.modelId(bIdx)};
+    bolt.origin = origin;
+    bolt.axis = axis;
+    bolt.params.nominalDiameter = 20.0;
+    bolt.params.holeDiameter = 22.0;
+    bolt.params.grade = "8.8";
+
+    pushUndoSnapshot();
+#ifdef MM_HAS_OCC
+    const double grip = document_.boltGripLength(bolt);
+    const TopoDS_Shape assembly = mm::buildBoltGroupAssemblyShape(bolt, grip);
+    WireframeModel displayModel =
+        assembly.IsNull() ? WireframeModel::cube(20.0)
+                          : mm::shapeToWireframeWithFaces(assembly, 0.15);
+#else
+    WireframeModel displayModel = WireframeModel::cube(20.0);  // OCC'siz fallback
+#endif
+    // Civata (bolon) montaji kahverengi: RGB(139, 89, 42) = 0x8B592A.
+    {
+        auto boltProps = displayModel.properties();
+        boltProps.trueColor = 0x8B592A;
+        boltProps.effectiveColor = 0x8B592A;
+        displayModel.setProperties(std::move(boltProps));
+    }
+    const std::size_t bi = document_.addBoltGroup(bolt, std::move(displayModel));
+    const BoltGroup& created = document_.boltGroups()[bi];
+#ifdef MM_HAS_OCC
+    if (!assembly.IsNull()) {
+        if (const auto di = document_.indexOfEntity(created.displayEntityId))
+            putOccSolid(*di, assembly);
+        for (const EntityId part : created.parts) recomputeCutTarget(part);
+    }
+#endif
+    selectedModels_.clear();
+    selectionFirstCorner_.reset();
+    updateHover(cursorScreen_.x, cursorScreen_.y);
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
+}
+
+void Application::applyBoltFromSelection() { applyBoltFromParts(selectedModels_); }
+
+void Application::startBoltCommand() {
+    // Verb-noun (Phase B1): komut girilince iki parca SONRADAN secilir.
+    cancelZoomWindow2D();
+    if (workPlanePicking_) cancelWorkPlaneCommand();
+    if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
+    profileGrip_.reset();
+    cancelDrawing();
+    cancelPendingCutCommand();
+    cancelPendingEndPlateCommand();
+    cancelPendingFinPlateCommand();
+    cancelPendingComponentCommand();
+    pendingBolt_ = true;
+    pendingBoltParts_.clear();
+    pendingBoltAxis_.reset();
+    selectedModels_.clear();
+    selectionFirstCorner_.reset();
+    hoverModel_.reset();
+    hoverFaceModel_.reset();
+    hoverFaceIndices_.clear();
+    publishStatus(L"Bolt: baglanacak IKI parcayi secin (sol tık, toggle), sağ tık uygular");
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
+}
+
+void Application::cancelPendingBoltCommand() {
+    if (!pendingBolt_) return;
+    pendingBolt_ = false;
+    pendingBoltParts_.clear();
+    pendingBoltAxis_.reset();
+    hoverModel_.reset();
+    hoverFaceModel_.reset();
+    hoverFaceIndices_.clear();
+    selectedModels_.clear();
+    selectionFirstCorner_.reset();
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
+}
+
+void Application::executePendingBoltCommand() {
+    if (!pendingBolt_) return;
+    if (pendingBoltParts_.size() != 2) {
+        MessageBeep(MB_ICONWARNING);
+        publishStatus(L"Bolt: baglanacak TAM IKI parca secin (su an " +
+                      std::to_wstring(pendingBoltParts_.size()) + L" secili)");
+        return;
+    }
+    if (!pendingBoltAxis_) {
+        // Yuz secimi OPSIYONEL: yuz bulunamadiysa bile bulon, parcalarin
+        // en ince boyutu (levha kalinligi yonu) ekseninde olusturulur.
+        publishStatus(L"Yuz secilmedi — eksen parcalarin en ince boyutundan turetilir");
+    }
+    const std::vector<std::size_t> parts = pendingBoltParts_;
+    const std::optional<Vec3> axis = pendingBoltAxis_;
+    pendingBolt_ = false;
+    pendingBoltParts_.clear();
+    pendingBoltAxis_.reset();
+    hoverModel_.reset();
+    hoverFaceModel_.reset();
+    hoverFaceIndices_.clear();
+    applyBoltFromParts(parts, axis);
+}
+
+std::optional<Application::PendingFaceHit> Application::pendingBoltFaceHit(int x, int y) const {
+    if (pendingBoltParts_.empty()) return std::nullopt;
+    RECT client{};
+    GetClientRect(canvas_, &client);
+    if (client.right <= 0 || client.bottom <= 0 || camera_.zoom() <= 0.0) return std::nullopt;
+    const double scale = camera_.pixelsPerUnit() * camera_.zoom();
+    const double camX = (x - client.right * 0.5) / scale;
+    const double camY = (client.bottom * 0.5 - y) / scale;
+    const std::array<double, 9> R = camera_.rotationMatrix();
+    const Vec3 c = camera_.center3D();
+    // ORTOGRAFIK projeksiyonda derinlik kirpma YOKTUR: parcalar merkez duzleminin
+    // "arkasinda" (kameraZ > 0) bile ekranda gorunur. Eski isin kokeni kameraZ=-1
+    // (merkezin 1 birim onu) + t>=0 yalniz merkezin ONUNU supuruyordu → parcalar
+    // izleyici tarafinda kalinca isin hepsini iskaliyordu (tam isabet: parcalar
+    // kameraZ=+4471'de, koken kameraZ=-1'de). Cozum: kokeni izleyici tarafina
+    // (kameraZ=+D, D=secili parcalarin merkeze en uzak kose mesafesi) koy, ekran
+    // icine at → isin TUM gorunur geometriyi supurur, "en yakin" = izleyiciye
+    // en yakin yuz.
+    Vec3 lo{1e100, 1e100, 1e100}, hi{-1e100, -1e100, -1e100};
+    for (const std::size_t p : pendingBoltParts_) {
+        if (p >= document_.modelBounds().size()) continue;
+        const auto& b = document_.modelBounds()[p];
+        lo.x = std::min(lo.x, b.minimum.x); lo.y = std::min(lo.y, b.minimum.y);
+        lo.z = std::min(lo.z, b.minimum.z);
+        hi.x = std::max(hi.x, b.maximum.x); hi.y = std::max(hi.y, b.maximum.y);
+        hi.z = std::max(hi.z, b.maximum.z);
+    }
+    double D = 1.0;
+    for (int k = 0; k < 8; ++k) {
+        const double px = (k & 1) ? hi.x : lo.x;
+        const double py = (k & 2) ? hi.y : lo.y;
+        const double pz = (k & 4) ? hi.z : lo.z;
+        const double dx = px - c.x, dy = py - c.y, dz = pz - c.z;
+        D = std::max(D, std::sqrt(dx * dx + dy * dy + dz * dz));
+    }
+    const double big = D + 1.0;
+    const Vec3 origin{c.x + R[0] * camX + R[3] * camY + R[6] * big,
+                      c.y + R[1] * camX + R[4] * camY + R[7] * big,
+                      c.z + R[2] * camX + R[5] * camY + R[8] * big};
+    const Vec3 direction{-R[6], -R[7], -R[8]};
+    std::optional<PendingFaceHit> best;
+    for (const std::size_t p : pendingBoltParts_) {
+        if (p >= document_.models().size()) continue;
+        // 1) Goruntu mesh'i (faceIndex ile vurgu da calisir).
+        const auto h = raycastMesh(document_.models()[p], origin, direction);
+        if (h) {
+            if (!best || h->distance < best->hit.distance)
+                best = PendingFaceHit{p, *h};
+            continue;
+        }
+#ifdef MM_HAS_OCC
+        // 2) GERCEK B-Rep yuzey isabeti (fallback): mesh yuzleri bos/bayat olsa
+        // bile OCCT'nin asil B-Rep'i her zaman mevcuttur. Bu, kullanicinin
+        // onerdigi "OCCT face selection" yaklasimidir — ucgen yaklasimi degil,
+        // tam yuzey kesisimi. faceIndex yok (mesh yok) → yuz vurgusu cizilmez
+        // ama eksen normali dogru alinir.
+        if (const TopoDS_Shape* solid = findOccSolid(p)) {
+            Vec3 hitPoint, hitNormal;
+            double dist = 0.0;
+            if (raycastBrepFace(*solid, origin, direction, hitPoint, hitNormal, dist)) {
+                const MeshRayHit brepHit{hitPoint, hitNormal, dist, std::size_t(-1)};
+                if (!best || dist < best->hit.distance)
+                    best = PendingFaceHit{p, brepHit};
+            }
+        }
+#endif
+    }
+    return best;
+}
+
+bool Application::pickPendingBoltAt(int x, int y) {
+    if (!pendingBolt_) return false;
+    // 2 parca zaten seciliyse: bu tik bir YUZ secimidir (bulon ekseni = yuz
+    // normali). Isin imlec altindaki en yakin yuzun normalini yakalar.
+    if (pendingBoltParts_.size() >= 2) {
+        const auto faceHit = pendingBoltFaceHit(x, y);
+        if (!faceHit) {
+            // Tanı: (a) yüz verisi (faces) sayısını gösteren, gözden kaçmayan
+            // MessageBox; (b) otomatik fallback eksen (en ince bbox boyutu) ile
+            // kullanıcı bloklanmaz — sağ tık yine de bulon oluşturur.
+            std::size_t totalFaces = 0;
+            for (const std::size_t p : pendingBoltParts_)
+                if (p < document_.models().size())
+                    totalFaces += document_.models()[p].faces().size();
+            Vec3 lo{1e100, 1e100, 1e100}, hi{-1e100, -1e100, -1e100};
+            for (const std::size_t p : pendingBoltParts_) {
+                if (p >= document_.modelBounds().size()) continue;
+                const auto& b = document_.modelBounds()[p];
+                lo.x = std::min(lo.x, b.minimum.x); lo.y = std::min(lo.y, b.minimum.y);
+                lo.z = std::min(lo.z, b.minimum.z);
+                hi.x = std::max(hi.x, b.maximum.x); hi.y = std::max(hi.y, b.maximum.y);
+                hi.z = std::max(hi.z, b.maximum.z);
+            }
+            const double dx = hi.x - lo.x, dy = hi.y - lo.y, dz = hi.z - lo.z;
+            Vec3 axis;
+            if (dx <= dy && dx <= dz) axis = {1.0, 0.0, 0.0};
+            else if (dy <= dx && dy <= dz) axis = {0.0, 1.0, 0.0};
+            else axis = {0.0, 0.0, 1.0};
+            const double dot = workPlane_.normal.x * axis.x + workPlane_.normal.y * axis.y +
+                               workPlane_.normal.z * axis.z;
+            if (dot < 0.0) axis = {-axis.x, -axis.y, -axis.z};
+            pendingBoltAxis_ = axis;
+
+            // KAPSAMLI TANI: isin ve kamera durumunu, isinin parcalarin kutusunu
+            // kesip kesmedigini ve B-Rep kati mevcudiyetini goster. Boylece
+            // "isin yanlis" mi "raycast yanlis" mi tek ekranda ayrilir.
+            RECT client{};
+            GetClientRect(canvas_, &client);
+            const double scale = camera_.pixelsPerUnit() * camera_.zoom();
+            const double camX = (x - client.right * 0.5) / scale;
+            const double camY = (client.bottom * 0.5 - y) / scale;
+            const std::array<double, 9> R = camera_.rotationMatrix();
+            const Vec3 c = camera_.center3D();
+            // TANI isini da DUZELTILMIS kokenle kur (parcalar kameraZ>0'da olsa
+            // bile isabet eder): izleyici tarafina +big.
+            double tD = 1.0;
+            for (int tk = 0; tk < 8; ++tk) {
+                const double px = (tk & 1) ? hi.x : lo.x;
+                const double py = (tk & 2) ? hi.y : lo.y;
+                const double pz = (tk & 4) ? hi.z : lo.z;
+                const double tdx = px - c.x, tdy = py - c.y, tdz = pz - c.z;
+                tD = std::max(tD, std::sqrt(tdx * tdx + tdy * tdy + tdz * tdz));
+            }
+            const double tBig = tD + 1.0;
+            const Vec3 origin{c.x + R[0] * camX + R[3] * camY + R[6] * tBig,
+                              c.y + R[1] * camX + R[4] * camY + R[7] * tBig,
+                              c.z + R[2] * camX + R[5] * camY + R[8] * tBig};
+            const Vec3 dir{-R[6], -R[7], -R[8]};
+            bool boxHit = true;
+            double tmin = 0.0, tmax = 1e18;
+            {
+                const double oa[3]{origin.x, origin.y, origin.z};
+                const double da[3]{dir.x, dir.y, dir.z};
+                const double la[3]{lo.x, lo.y, lo.z};
+                const double ha[3]{hi.x, hi.y, hi.z};
+                for (int i = 0; i < 3; ++i) {
+                    if (std::abs(da[i]) < 1e-12) {
+                        if (oa[i] < la[i] || oa[i] > ha[i]) { boxHit = false; break; }
+                    } else {
+                        double t1 = (la[i] - oa[i]) / da[i];
+                        double t2 = (ha[i] - oa[i]) / da[i];
+                        if (t1 > t2) std::swap(t1, t2);
+                        tmin = std::max(tmin, t1);
+                        tmax = std::min(tmax, t2);
+                        if (tmin > tmax) { boxHit = false; break; }
+                    }
+                }
+            }
+            int brepFound = 0;
+#ifdef MM_HAS_OCC
+            for (const std::size_t p : pendingBoltParts_)
+                if (findOccSolid(p)) ++brepFound;
+#endif
+            wchar_t msg[1024]{};
+            std::swprintf(msg, std::size(msg),
+                L"Yuz algilanamadi.\n\n"
+                L"faces: %llu  |  isin bbox kesiyor: %ls  |  B-Rep kati: %d/2\n\n"
+                L"Kamera: merkez=(%.1f, %.1f, %.1f)  zoom=%.4f\n"
+                L"Tiklama: (%d,%d)  tuval=(%ld,%ld)  scale=%.4f\n\n"
+                L"isin kok=(%.1f, %.1f, %.1f)\n"
+                L"isin yon=(%.4f, %.4f, %.4f)\n\n"
+                L"BBox: (%0.1f..%.1f, %.1f..%.1f, %.1f..%.1f)\n\n"
+                L"Eksen en ince boyuttan turetildi — sag tik uygular.\n"
+                L"NOT: hash GUNCEL degilse (bayat exe) sorun surer.",
+                static_cast<unsigned long long>(totalFaces),
+                boxHit ? L"EVET" : L"HAYIR", brepFound,
+                c.x, c.y, c.z, camera_.zoom(),
+                x, y, client.right, client.bottom, scale,
+                origin.x, origin.y, origin.z,
+                dir.x, dir.y, dir.z,
+                lo.x, hi.x, lo.y, hi.y, lo.z, hi.z);
+            MessageBoxW(canvas_, msg, L"Bolt — yuz secimi (TANI)", MB_OK | MB_ICONINFORMATION);
+            publishStatus(L"Yuz bulunamadi — eksen en ince boyuttan turetildi (sag tik uygula)");
+            return true;
+        }
+        pendingBoltAxis_ = faceHit->hit.normal;
+        hoverFaceModel_.reset();
+        hoverFaceIndices_.clear();
+        publishStatus(L"Yuz secildi — sağ tık ile uygula (eksen = yuz normali, Esc iptal)");
+        updateControls();
+        updateStatus();
+        invalidateCanvas();
+        return true;
+    }
+    const auto hit = modelIndexAt(x, y);
+    if (!hit || *hit >= document_.models().size()) {
+        MessageBeep(MB_ICONWARNING);
+        publishStatus(L"Bolt: baglanacak bir parcaya tiklayin (normal model)");
+        return true;
+    }
+    const auto& model = document_.models()[*hit];
+    if (model.constructionKind() != ConstructionKind::None) {
+        MessageBeep(MB_ICONWARNING);
+        publishStatus(L"Bolt: baglanacak parcalar normal model olmali (konstrüksiyon degil)");
+        return true;
+    }
+    const auto it = std::find(pendingBoltParts_.begin(), pendingBoltParts_.end(), *hit);
+    if (it == pendingBoltParts_.end()) {
+        if (pendingBoltParts_.size() >= 2) {
+            MessageBeep(MB_ICONWARNING);
+            publishStatus(L"Bolt: zaten 2 parca secili (Esc iptal, sağ tık uygula)");
+            return true;
+        }
+        pendingBoltParts_.push_back(*hit);
+    } else {
+        pendingBoltParts_.erase(it);
+    }
+    selectedModels_.clear();
+    for (const std::size_t p : pendingBoltParts_) selectedModels_.push_back(p);
+    if (pendingBoltParts_.size() == 2)
+        publishStatus(L"2 parca secildi — simdi bir YUZ secin (bulon ekseni = yuz normali)");
+    else
+        publishStatus(std::to_wstring(pendingBoltParts_.size()) +
+                      L" parca secildi — ikinci parcayi secin (sağ tık uygular, Esc iptal)");
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
+    return true;
+}
+
+// --- ALIN LEVHASI BAGLANTISI (Phase C1 GUI) ---------------------------------
+
+void Application::startEndPlateCommand() {
+    // Verb-noun: once MAIN (kolon), sonra SECONDARY (kiris) SONRADAN secilir.
+    cancelZoomWindow2D();
+    if (workPlanePicking_) cancelWorkPlaneCommand();
+    if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
+    profileGrip_.reset();
+    cancelDrawing();
+    cancelPendingCutCommand();
+    cancelPendingBoltCommand();
+    cancelPendingFinPlateCommand();
+    cancelPendingComponentCommand();
+    pendingEndPlate_ = true;
+    pendingEndPlateParts_.clear();
+    selectedModels_.clear();
+    selectionFirstCorner_.reset();
+    hoverModel_.reset();
+    hoverFaceModel_.reset();
+    hoverFaceIndices_.clear();
+    publishStatus(L"End Plate: once KOLONU (main), sonra KIRISI (secondary) secin — sag tik uygular");
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
+}
+
+void Application::cancelPendingEndPlateCommand() {
+    if (!pendingEndPlate_) return;
+    pendingEndPlate_ = false;
+    pendingEndPlateParts_.clear();
+    hoverModel_.reset();
+    hoverFaceModel_.reset();
+    hoverFaceIndices_.clear();
+    selectedModels_.clear();
+    selectionFirstCorner_.reset();
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
+}
+
+void Application::executePendingEndPlateCommand() {
+    if (!pendingEndPlate_) return;
+    if (pendingEndPlateParts_.size() != 2) {
+        MessageBeep(MB_ICONWARNING);
+        publishStatus(L"End Plate: KOLON ve KIRISI secin (su an " +
+                      std::to_wstring(pendingEndPlateParts_.size()) + L" secili)");
+        return;
+    }
+    const std::vector<std::size_t> parts = pendingEndPlateParts_;
+    pendingEndPlate_ = false;
+    pendingEndPlateParts_.clear();
+    hoverModel_.reset();
+    hoverFaceModel_.reset();
+    hoverFaceIndices_.clear();
+    applyEndPlateFromParts(parts);
+}
+
+bool Application::pickPendingEndPlateAt(int x, int y) {
+    if (!pendingEndPlate_) return false;
+    const auto hit = modelIndexAt(x, y);
+    if (!hit || *hit >= document_.models().size()) {
+        MessageBeep(MB_ICONWARNING);
+        publishStatus(L"End Plate: bir parcaya tiklayin (normal model)");
+        return true;
+    }
+    const auto& model = document_.models()[*hit];
+    if (model.constructionKind() != ConstructionKind::None) {
+        MessageBeep(MB_ICONWARNING);
+        publishStatus(L"End Plate: parcalar normal model olmali (konstruksiyon degil)");
+        return true;
+    }
+    const auto it = std::find(pendingEndPlateParts_.begin(), pendingEndPlateParts_.end(), *hit);
+    if (it == pendingEndPlateParts_.end()) {
+        if (pendingEndPlateParts_.size() >= 2) {
+            MessageBeep(MB_ICONWARNING);
+            publishStatus(L"End Plate: zaten 2 parca secili (Esc iptal, sag tik uygula)");
+            return true;
+        }
+        pendingEndPlateParts_.push_back(*hit);
+    } else {
+        pendingEndPlateParts_.erase(it);
+    }
+    selectedModels_.clear();
+    for (const std::size_t p : pendingEndPlateParts_) selectedModels_.push_back(p);
+    if (pendingEndPlateParts_.size() == 1)
+        publishStatus(L"Kolon secildi — simdi KIRISI (secondary) secin");
+    else if (pendingEndPlateParts_.size() == 2)
+        publishStatus(L"Kolon + kiris secildi — sag tik uygular (Esc iptal)");
+    else
+        publishStatus(L"End Plate: kolon secin");
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
+    return true;
+}
+
+// --- UNIVERSAL COMPONENT (Phase P1): Fin Plate production ----------------------
+
+void Application::startFinPlateCommand() {
+    cancelZoomWindow2D();
+    if (workPlanePicking_) cancelWorkPlaneCommand();
+    if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
+    profileGrip_.reset();
+    cancelDrawing();
+    cancelPendingCutCommand();
+    cancelPendingBoltCommand();
+    cancelPendingEndPlateCommand();
+    cancelPendingComponentCommand();
+    pendingFinPlate_ = true;
+    pendingFinPlateParts_.clear();
+    selectedModels_.clear();
+    selectionFirstCorner_.reset();
+    hoverModel_.reset();
+    hoverFaceModel_.reset();
+    hoverFaceIndices_.clear();
+    publishStatus(L"Fin Plate: once KOLONU (main), sonra KIRISI (secondary) secin — sag tik uygular");
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
+}
+
+void Application::cancelPendingFinPlateCommand() {
+    if (!pendingFinPlate_) return;
+    pendingFinPlate_ = false;
+    pendingFinPlateParts_.clear();
+    hoverModel_.reset();
+    hoverFaceModel_.reset();
+    hoverFaceIndices_.clear();
+    selectedModels_.clear();
+    selectionFirstCorner_.reset();
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
+}
+
+void Application::executePendingFinPlateCommand() {
+    if (!pendingFinPlate_) return;
+    if (pendingFinPlateParts_.size() != 2) {
+        MessageBeep(MB_ICONWARNING);
+        publishStatus(L"Fin Plate: KOLON ve KIRISI secin (su an " +
+                      std::to_wstring(pendingFinPlateParts_.size()) + L" secili)");
+        return;
+    }
+    const std::vector<std::size_t> parts = pendingFinPlateParts_;
+    pendingFinPlate_ = false;
+    pendingFinPlateParts_.clear();
+    hoverModel_.reset();
+    hoverFaceModel_.reset();
+    hoverFaceIndices_.clear();
+    applyFinPlateFromParts(parts);
+}
+
+bool Application::pickPendingFinPlateAt(int x, int y) {
+    if (!pendingFinPlate_) return false;
+    const auto hit = modelIndexAt(x, y);
+    if (!hit || *hit >= document_.models().size()) {
+        MessageBeep(MB_ICONWARNING);
+        publishStatus(L"Fin Plate: bir parcaya tiklayin (normal model)");
+        return true;
+    }
+    const auto& model = document_.models()[*hit];
+    if (model.constructionKind() != ConstructionKind::None) {
+        MessageBeep(MB_ICONWARNING);
+        publishStatus(L"Fin Plate: parcalar normal model olmali (konstruksiyon degil)");
+        return true;
+    }
+    const auto it = std::find(pendingFinPlateParts_.begin(), pendingFinPlateParts_.end(), *hit);
+    if (it == pendingFinPlateParts_.end()) {
+        if (pendingFinPlateParts_.size() >= 2) {
+            MessageBeep(MB_ICONWARNING);
+            publishStatus(L"Fin Plate: zaten 2 parca secili (Esc iptal, sag tik uygula)");
+            return true;
+        }
+        pendingFinPlateParts_.push_back(*hit);
+    } else {
+        pendingFinPlateParts_.erase(it);
+    }
+    selectedModels_.clear();
+    for (const std::size_t p : pendingFinPlateParts_) selectedModels_.push_back(p);
+    if (pendingFinPlateParts_.size() == 1)
+        publishStatus(L"Kolon secildi — simdi KIRISI (secondary) secin");
+    else if (pendingFinPlateParts_.size() == 2)
+        publishStatus(L"Kolon + kiris secildi — sag tik uygular (Esc iptal)");
+    else
+        publishStatus(L"Fin Plate: kolon secin");
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
+    return true;
+}
+
+void Application::applyEndPlateFromParts(const std::vector<std::size_t>& parts) {
+    // Ortak yol (Phase C1 GUI): [0]=main (kolon), [1]=secondary (kiris).
+    if (parts.size() != 2) {
+        MessageBeep(MB_ICONWARNING);
+        publishStatus(L"End Plate: kolon ve kiris secin (tam 2 secim)");
+        return;
+    }
+    const std::size_t mainIdx = parts[0];
+    const std::size_t secIdx = parts[1];
+    if (mainIdx >= document_.models().size() || secIdx >= document_.models().size()) {
+        MessageBeep(MB_ICONWARNING);
+        return;
+    }
+    if (document_.models()[mainIdx].constructionKind() != ConstructionKind::None ||
+        document_.models()[secIdx].constructionKind() != ConstructionKind::None) {
+        MessageBeep(MB_ICONWARNING);
+        publishStatus(L"End Plate: parcalar normal model olmali (konstruksiyon degil)");
+        return;
+    }
+    // Faz D1: parametreler uygulama-anı diyalogdan (pendingEndPlateParams_) gelir;
+    // diyalog yoksa EndPlateParams varsayılanları kullanılır.
+    EndPlateParams params = pendingEndPlateParams_;  // M20/22, 12 mm levha, 2x2 bulon (varsayilan)
+    EndPlatePlacement placement;
+    std::wstring err;
+    EndPlateTrimInfo trim;
+    if (!resolveEndPlatePlacement(mainIdx, secIdx, params, placement, err, &trim)) {
+        MessageBoxW(canvas_, err.empty() ? L"End Plate yerlesimi cozulemedi." : err.c_str(),
+                    L"End Plate — temas cozulemedi", MB_OK | MB_ICONWARNING);
+        return;
+    }
+
+    // TEKLA "fit part end": kiriş kolonu GECTIYSE, kiriş ucunu LEVHANIN ARKA
+    // YUZUNE fitting'le kes (levha kolon ile kiriş arasindadir: kolon yuzu →
+    // [gap] → levha kalinligi t → kiriş; kiriş levhaya kaynakli oturur). Eksen
+    // ucunu bu kesim noktasina guncelle, sonra levhayi yeni uca oturt. Mutasyon
+    // levhayla AYNI undo kaydinda (asagidaki tek pushUndoSnapshot) — tek Ctrl+Z
+    // hem kesmeyi hem levhayi alir.
+    pushUndoSnapshot();
+#ifdef MM_HAS_OCC
+    if (trim.needed) {
+        ensureProfileCatalog();
+        const auto& sp = document_.models()[secIdx].properties();
+        // Kirişin oturacagi nokta: levhanin kiris tarafindaki arka yuzu.
+        // entryNormal kolondan kirise dogru bakar; levha kolon yuzunden
+        // (gap + t) kadar kirise dogru uzanir.
+        const Vec3 beamEnd = trim.entryPoint
+                           + trim.entryNormal * (params.gap + params.plateThickness);
+        if (const SteelProfile* prof = findProfile(profileCatalog_, sp.profileName)) {
+            // (1) Ekseni levha arka yuzune kisalt + katı yeniden uret (kullanıcı
+            // şartı: "kiris eksen ucunu kesim noktasina guncelle"). Sabit ucu
+            // trim.fixedEnd (DISARI) olarak koru; swap sonrasi beamFrom,
+            // sp.axisFrom DEGIL — kiriş içeriden dışarıya çizildiyse sp.axisFrom
+            // içeride kalır ve yanlış ucu sabitlerdi.
+            const TopoDS_Shape shortSolid = extrudeProfileSolid(
+                *prof, trim.fixedEnd,
+                beamEnd, sp.profileRotation,
+                Vec3{sp.sectionNormalX, sp.sectionNormalY, sp.sectionNormalZ},
+                sp.sectionAnchor);
+            if (!shortSolid.IsNull()) {
+                auto shortModel = shapeToWireframeWithFaces(shortSolid, 0.15);
+                auto shortProps = sp;
+                shortProps.axisFromX = trim.fixedEnd.x;
+                shortProps.axisFromY = trim.fixedEnd.y;
+                shortProps.axisFromZ = trim.fixedEnd.z;
+                shortProps.axisToX = beamEnd.x;
+                shortProps.axisToY = beamEnd.y;
+                shortProps.axisToZ = beamEnd.z;
+                shortModel.setProperties(std::move(shortProps));
+                document_.replaceModel(secIdx, {std::move(shortModel)});
+                putOccSolid(secIdx, shortSolid);
+            }
+        }
+        // (2) Fitting: ucu levha arka yuzune KOPLANAR oturt — egik kolon/diyagonal
+        // kiriş icin eksene dik kapağı levha duzlemiyle ayni hizaya keser.
+        CutModifier fit;
+        fit.kind = CutKind::Fitting;
+        fit.target = document_.modelId(secIdx);
+        fit.planeOrigin = beamEnd;
+        fit.planeNormal = trim.entryNormal;
+        fit.keepPositive = true;
+        fit.enabled = true;
+        fit.hidden = true;   // component ic motor elemani — cizilmez/secilmez
+        fit.name = "Fitting";
+        document_.addCutModifier(fit);
+        // (3) Zinciri yeniden uygula (fitting egik takozu keser, mesh yenilenir).
+        recomputeCutTarget(document_.modelId(secIdx));
+    }
+#endif
+
+    EndPlateConnection conn;
+    conn.mainPart = document_.modelId(mainIdx);
+    conn.secondaryPart = document_.modelId(secIdx);
+    conn.params = params;
+    conn.bolts = placement.bolts;
+    conn.enabled = true;
+
+    WireframeModel plateModel;
+    WireframeModel boltDisplay;
+#ifdef MM_HAS_OCC
+    const TopoDS_Shape plateSolid = buildEndPlateFromPlacement(placement);
+    plateModel = plateSolid.IsNull()
+                     ? WireframeModel::rectangle({-100.0, -100.0, 0.0}, {100.0, 100.0, 0.0})
+                     : shapeToWireframeWithFaces(plateSolid, 0.15);
+    // Bulon kavrama uzunlugu: levha + gap + kolon flansi (resolveEndPlatePlacement
+    // icinde hesaplanir; 0 ise eski tahmini davranisa dus).
+    const double grip = placement.boltGripLength > 0.0
+                            ? placement.boltGripLength
+                            : placement.plateThickness + 15.0;
+    // YALNIZ bulon montaji (bas/somun/saft) — levha AYRI model olarak zaten
+    // ekleniyor; levhayi ikinci kez cizmek icin buildEndPlateAssemblyShape
+    // KULLANMA (cift levha = daginik goruntu).
+    const TopoDS_Shape boltSolid = buildBoltGroupAssemblyShape(placement.bolts, grip);
+    boltDisplay = boltSolid.IsNull() ? WireframeModel::cube(10.0)
+                                     : shapeToWireframeWithFaces(boltSolid, 0.15);
+    {
+        auto bp = boltDisplay.properties();
+        bp.trueColor = 0x8B592A;
+        bp.effectiveColor = 0x8B592A;
+        boltDisplay.setProperties(std::move(bp));
+    }
+#else
+    plateModel = WireframeModel::rectangle({-100.0, -100.0, 0.0}, {100.0, 100.0, 0.0});
+    boltDisplay = WireframeModel::cube(10.0);
+#endif
+    const std::size_t ci = document_.addEndPlateConnection(std::move(conn),
+                                                            std::move(plateModel),
+                                                            std::move(boltDisplay));
+    const EndPlateConnection& created = document_.endPlateConnections()[ci];
+#ifdef MM_HAS_OCC
+    if (!plateSolid.IsNull()) {
+        if (const auto pi = document_.indexOfEntity(created.plateEntityId))
+            putOccSolid(*pi, plateSolid);
+    }
+    if (!boltSolid.IsNull()) {
+        if (const auto di = document_.indexOfEntity(created.bolts.displayEntityId))
+            putOccSolid(*di, boltSolid);
+    }
+    // Delikler (CutKind::Hole) kolon + levhayi deler -> yeniden hesapla.
+    if (created.mainPart != kInvalidEntityId) recomputeCutTarget(created.mainPart);
+    if (created.plateEntityId != kInvalidEntityId) recomputeCutTarget(created.plateEntityId);
+#endif
+    // Kalici onay: updateStatus bu mesaji ezer (pendingEndPlate_ kapandi),
+    // solidStatusMessage_ ise durum cubugunda kalir.
+    solidStatusMessage_ = L"End Plate bağlantısı oluşturuldu (levha + bulonlar)";
+    selectedModels_.clear();
+    selectionFirstCorner_.reset();
+    updateHover(cursorScreen_.x, cursorScreen_.y);
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
+}
+
+// --- UNIVERSAL COMPONENT (Phase P1): Fin Plate production body ---------------
+
+// Bir model indeksinden generator icin MemberGeometry kurar (axis + kesit bbox).
+// Profil katalogundan secWidth/secHeight; yoksa varsayilan 200x300 mm.
+static mm::MemberGeometry memberGeometryFor(const mm::Document& doc,
+                                            const std::vector<mm::SteelProfile>& catalog,
+                                            std::size_t index) {
+    mm::MemberGeometry g;
+    g.id = doc.modelId(index);
+    const auto& p = doc.models()[index].properties();
+    g.axisFrom = {p.axisFromX, p.axisFromY, p.axisFromZ};
+    g.axisTo = {p.axisToX, p.axisToY, p.axisToZ};
+    g.refNormal = {p.sectionNormalX, p.sectionNormalY, p.sectionNormalZ};
+    g.secWidth = 200.0;
+    g.secHeight = 300.0;
+    g.sectionCenterOffset = 0.0;
+    if (const mm::SteelProfile* prof = mm::findProfile(catalog, p.profileName)) {
+        g.secWidth = prof->width;
+        g.secHeight = prof->height;
+        g.secWebThickness = prof->plateThickness;
+        g.secFlangeThickness = prof->flangeThickness;
+        // SectionAnchor: eksen kesitin ustunden gecebilir (varsayilan Top).
+        // Levha/bulon govde merkezine otursun diye kesit merkez ofsetini gecir.
+        g.sectionCenterOffset = mm::profileSectionAnchorOffset(*prof, p.sectionAnchor);
+    } else {
+        switch (p.sectionAnchor) {
+        case SectionAnchor::Top: g.sectionCenterOffset = -0.5 * g.secHeight; break;
+        case SectionAnchor::Bottom: g.sectionCenterOffset = 0.5 * g.secHeight; break;
+        case SectionAnchor::Center: g.sectionCenterOffset = 0.0; break;
+        }
+    }
+    return g;
+}
+
+void Application::applyComponentFromParts(const std::wstring& typeId,
+                                          const std::vector<std::size_t>& parts,
+                                          const std::vector<CompParam>& params) {
+    // GENERIC uretim (C7): herhangi bir registry tipi icin ortak yol. Fin Plate
+    // ile AYNI zincir: registry.generate -> componentPlan -> materializer.
+    const mm::ComponentType* type = mm::ComponentRegistry::instance().findType(typeId);
+    const std::wstring display = type ? type->displayName : typeId;
+    const int pickCount = (type && type->catalog.pickCount > 0) ? type->catalog.pickCount : 2;
+
+    if (parts.size() != static_cast<std::size_t>(pickCount)) {
+        MessageBeep(MB_ICONWARNING);
+        publishStatus(display + L": tam " + std::to_wstring(pickCount) +
+                      L" parca secin (su an " + std::to_wstring(parts.size()) + L" secili)");
+        return;
+    }
+    const std::size_t mainIdx = parts[0];
+    for (const std::size_t p : parts) {
+        if (p >= document_.models().size()) {
+            MessageBeep(MB_ICONWARNING);
+            return;
+        }
+        if (document_.models()[p].constructionKind() != ConstructionKind::None) {
+            MessageBeep(MB_ICONWARNING);
+            publishStatus(display + L": parcalar normal model olmali (konstruksiyon degil)");
+            return;
+        }
+    }
+
+#ifdef MM_HAS_OCC
+    ensureProfileCatalog();
+
+    // 1. Generator girdisi: main (parts[0]) + secondary (parts[1..]). pickCount
+    // metadata'si ile tutarli: 1 main + (pickCount-1) secondary.
+    mm::ComponentInput input;
+    input.main = memberGeometryFor(document_, profileCatalog_, mainIdx);
+    input.secondary.reserve(parts.size() - 1);
+    std::vector<EntityId> secondaryIds;
+    secondaryIds.reserve(parts.size() - 1);
+    for (std::size_t i = 1; i < parts.size(); ++i) {
+        input.secondary.push_back(memberGeometryFor(document_, profileCatalog_, parts[i]));
+        secondaryIds.push_back(input.secondary.back().id);
+    }
+    input.params = params;
+
+    // 2. Registry -> generator -> GenerationPlan.
+    const mm::GenerationPlan gp = mm::ComponentRegistry::instance().generate(typeId, input);
+    if (!gp.ok) {
+        publishStatus(display + L" uretilemedi: " + (gp.error.empty() ? L"gecersiz girdi" : gp.error));
+        return;
+    }
+
+    // 3. GenerationPlan -> roleKey koruyan ComponentPlan.
+    const mm::ComponentPlan plan = mm::componentPlanFromGenerationPlan(gp);
+    if (!plan.ok) {
+        publishStatus(display + L" plani olusturulamadi: " + plan.error);
+        return;
+    }
+
+    // 4. Ortak materializer: prepare (pure) + commit (tek undo kaydi).
+    mm::ComponentMaterializer mat(document_);
+    const mm::ComponentMaterializer::Prepared prep =
+        mat.prepare(plan, input.main.id, secondaryIds);
+    if (!prep.ok) {
+        publishStatus(display + L" hazirlanamadi: " + prep.error);
+        return;
+    }
+    mm::ComponentInstanceRecord rec;
+    rec.typeId = typeId;
+    rec.schemaVersion = type ? type->schemaVersion : 1;
+    rec.mainPart = input.main.id;
+    rec.secondaryParts = secondaryIds;
+    rec.params = input.params;
+    const mm::ComponentMaterializer::CommitResult res = mat.commit(prep, rec);
+    if (!res.ok) {
+        publishStatus(display + L" uygulanamadi: " + res.error);
+        return;
+    }
+    // KAYNAK TESHIS: bilesenin urettigi weld kayitlarini ozetle. Kaynak kati
+    // uretilemediyse NEDENINI durum cubuguna yaz — kullanici "weld atmiyor"
+    // derken teshis edilebilir bilgi olsun (sessiz basarisizlik yok).
+    int weldOk = 0, weldBad = 0;
+    std::wstring weldReason;
+    for (const auto& kv : res.roleToEntity) {
+        if (kv.first.rfind("weld_", 0) != 0) continue;
+        const auto wi = document_.indexOfWeld(kv.second);
+        if (!wi) continue;
+        const Weld& w = document_.welds()[*wi];
+        if (w.geometrySupported) ++weldOk;
+        else {
+            ++weldBad;
+            if (weldReason.empty())
+                weldReason = std::wstring(w.unsupportedReason.begin(),
+                                          w.unsupportedReason.end());
+        }
+    }
+    if (weldOk > 0) {
+        solidStatusMessage_ = display + L" olusturuldu — kaynak: " +
+                              std::to_wstring(weldOk) + L" kati uretildi";
+    } else if (weldBad > 0) {
+        solidStatusMessage_ = display + L" olusturuldu — KAYNAK KATISI YOK: " +
+                              (weldReason.empty() ? L"bilinmeyen neden" : weldReason);
+    } else {
+        solidStatusMessage_ = display + L" olusturuldu — kaynak specleri yok"
+                              L" (createWelds kapali?)";
+    }
+#else
+    (void)mainIdx;
+    (void)params;
+    publishStatus(display + L": OCC devre disi — gercek geometri uretilemedi");
+#endif
+    selectedModels_.clear();
+    selectionFirstCorner_.reset();
+    updateHover(cursorScreen_.x, cursorScreen_.y);
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
+}
+
+void Application::applyFinPlateFromParts(const std::vector<std::size_t>& parts) {
+    // Fin Plate uretim davranisi DEGISMEZ: generic katalog yoluna delege eder
+    // (ayni generator, ayni materializer, ayni parametre kaynagi).
+    applyComponentFromParts(L"fin_plate", parts, pendingFinPlateParams_);
+}
+
+// --- GENERIC COMPONENT CATALOG COMMAND (C7) -----------------------------------
+
+void Application::startComponentCommand(const std::wstring& typeId) {
+    cancelZoomWindow2D();
+    if (workPlanePicking_) cancelWorkPlaneCommand();
+    if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
+    profileGrip_.reset();
+    cancelDrawing();
+    cancelPendingCutCommand();
+    cancelPendingBoltCommand();
+    cancelPendingEndPlateCommand();
+    cancelPendingFinPlateCommand();
+    pendingComponentType_ = typeId;
+    pendingComponentParts_.clear();
+    selectedModels_.clear();
+    selectionFirstCorner_.reset();
+    hoverModel_.reset();
+    hoverFaceModel_.reset();
+    hoverFaceIndices_.clear();
+
+    const mm::ComponentType* type = mm::ComponentRegistry::instance().findType(typeId);
+    const std::wstring display = type ? type->displayName : typeId;
+    std::wstring hint = L"once MAIN, sonra SECONDARY secin — sag tik uygular";
+    if (type && !type->catalog.primaryMemberType.empty() && !type->catalog.secondaryMemberType.empty()) {
+        hint = L"once " + type->catalog.primaryMemberType + L" (main), sonra " +
+               type->catalog.secondaryMemberType + L" (secondary) secin — sag tik uygular";
+    }
+    publishStatus(display + L": " + hint);
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
+}
+
+void Application::cancelPendingComponentCommand() {
+    if (!componentCommandActive()) return;
+    pendingComponentType_.clear();
+    pendingComponentParts_.clear();
+    pendingComponentParams_.clear();
+    hoverModel_.reset();
+    hoverFaceModel_.reset();
+    hoverFaceIndices_.clear();
+    selectedModels_.clear();
+    selectionFirstCorner_.reset();
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
+}
+
+void Application::executePendingComponentCommand() {
+    if (!componentCommandActive()) return;
+    const mm::ComponentType* type = mm::ComponentRegistry::instance().findType(pendingComponentType_);
+    const std::wstring display = type ? type->displayName : pendingComponentType_;
+    const int pickCount = (type && type->catalog.pickCount > 0) ? type->catalog.pickCount : 2;
+    if (pendingComponentParts_.size() != static_cast<std::size_t>(pickCount)) {
+        MessageBeep(MB_ICONWARNING);
+        publishStatus(display + L": tam " + std::to_wstring(pickCount) +
+                      L" parca secin (su an " + std::to_wstring(pendingComponentParts_.size()) + L" secili)");
+        return;
+    }
+    const std::vector<std::size_t> parts = pendingComponentParts_;
+    const std::wstring typeId = pendingComponentType_;
+    const std::vector<CompParam> params = pendingComponentParams_;
+    pendingComponentType_.clear();
+    pendingComponentParts_.clear();
+    pendingComponentParams_.clear();
+    hoverModel_.reset();
+    hoverFaceModel_.reset();
+    hoverFaceIndices_.clear();
+    applyComponentFromParts(typeId, parts, params);
+}
+
+bool Application::pickPendingComponentAt(int x, int y) {
+    if (!componentCommandActive()) return false;
+    const mm::ComponentType* type = mm::ComponentRegistry::instance().findType(pendingComponentType_);
+    const std::wstring display = type ? type->displayName : pendingComponentType_;
+    const int pickCount = (type && type->catalog.pickCount > 0) ? type->catalog.pickCount : 2;
+
+    const auto hit = modelIndexAt(x, y);
+    if (!hit || *hit >= document_.models().size()) {
+        MessageBeep(MB_ICONWARNING);
+        publishStatus(display + L": bir parcaya tiklayin (normal model)");
+        return true;
+    }
+    const auto& model = document_.models()[*hit];
+    if (model.constructionKind() != ConstructionKind::None) {
+        MessageBeep(MB_ICONWARNING);
+        publishStatus(display + L": parcalar normal model olmali (konstruksiyon degil)");
+        return true;
+    }
+    const auto it = std::find(pendingComponentParts_.begin(), pendingComponentParts_.end(), *hit);
+    if (it == pendingComponentParts_.end()) {
+        if (pendingComponentParts_.size() >= static_cast<std::size_t>(pickCount)) {
+            MessageBeep(MB_ICONWARNING);
+            publishStatus(display + L": zaten " + std::to_wstring(pickCount) +
+                          L" parca secili (Esc iptal, sag tik uygula)");
+            return true;
+        }
+        pendingComponentParts_.push_back(*hit);
+    } else {
+        pendingComponentParts_.erase(it);
+    }
+    selectedModels_.clear();
+    for (const std::size_t p : pendingComponentParts_) selectedModels_.push_back(p);
+    if (pendingComponentParts_.size() == 1)
+        publishStatus(display + L": 1 parca secildi — digerini secin");
+    else if (pendingComponentParts_.size() == static_cast<std::size_t>(pickCount))
+        publishStatus(display + L": parcalar secildi — sag tik uygular (Esc iptal)");
+    else
+        publishStatus(display + L": parca secin");
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
+    return true;
+}
+
+// TESHIS YARDIMCILARI (End Plate yerlestirme hata ayiklama). MM_ENDPLATE_DIAG
+// set'liyken resolveEndPlatePlacement tum ara degerleri tek blok olarak
+// model-maker-endplate-diag.log'a yazar; kullanici bu dosyayi paylasir.
+namespace {
+const char* epAnchorName(SectionAnchor a) noexcept {
+    switch (a) {
+    case SectionAnchor::Top: return "Top";
+    case SectionAnchor::Center: return "Center";
+    case SectionAnchor::Bottom: return "Bottom";
+    }
+    return "?";
+}
+const char* epRoleName(SemanticFaceRole r) noexcept {
+    switch (r) {
+    case SemanticFaceRole::FlangeOuterPositive: return "FlangeOuterPositive";
+    case SemanticFaceRole::FlangeOuterNegative: return "FlangeOuterNegative";
+    case SemanticFaceRole::WebPositive: return "WebPositive";
+    case SemanticFaceRole::WebNegative: return "WebNegative";
+    case SemanticFaceRole::FlangeEdgePositive: return "FlangeEdgePositive";
+    case SemanticFaceRole::FlangeEdgeNegative: return "FlangeEdgeNegative";
+    case SemanticFaceRole::MemberStart: return "MemberStart";
+    case SemanticFaceRole::MemberEnd: return "MemberEnd";
+    default: return "None";
+    }
+}
+const char* epStatusName(ResolutionStatus s) noexcept {
+    switch (s) {
+    case ResolutionStatus::Resolved: return "Resolved";
+    case ResolutionStatus::NoContact: return "NoContact";
+    case ResolutionStatus::ParallelAxis: return "ParallelAxis";
+    case ResolutionStatus::OutsideFace: return "OutsideFace";
+    case ResolutionStatus::AmbiguousFace: return "AmbiguousFace";
+    case ResolutionStatus::Unresolved: return "Unresolved";
+    }
+    return "?";
+}
+std::string epVec(const Vec3& v) {
+    std::ostringstream os;
+    os << "(" << v.x << ", " << v.y << ", " << v.z << ")";
+    return os.str();
+}
+} // namespace
+
+bool Application::resolveEndPlatePlacement(std::size_t mainIdx, std::size_t secIdx,
+                                           const EndPlateParams& params,
+                                           EndPlatePlacement& placement, std::wstring& err,
+                                           EndPlateTrimInfo* trim) {
+    if (trim) *trim = EndPlateTrimInfo{};
+    if (mainIdx >= document_.models().size() || secIdx >= document_.models().size()) {
+        err = L"End Plate: kolon veya kiris bulunamadi.";
+        return false;
+    }
+    // Kiris ekseni + ucu. Once kalici eksen; yoksa cizginin 2 kosesinden turet.
+    const auto& sp = document_.models()[secIdx].properties();
+    Vec3 beamFrom{sp.axisFromX, sp.axisFromY, sp.axisFromZ};
+    Vec3 beamTo{sp.axisToX, sp.axisToY, sp.axisToZ};
+    Vec3 beamAxis{beamTo.x - beamFrom.x, beamTo.y - beamFrom.y, beamTo.z - beamFrom.z};
+    if (beamAxis.x * beamAxis.x + beamAxis.y * beamAxis.y + beamAxis.z * beamAxis.z < 1e-12) {
+        const auto& vs = document_.models()[secIdx].vertices();
+        if (vs.size() >= 2) {
+            beamFrom = vs[0];
+            beamTo = vs.back();
+        }
+        beamAxis = Vec3{beamTo.x - beamFrom.x, beamTo.y - beamFrom.y, beamTo.z - beamFrom.z};
+    }
+    // Uyenin EKSTRUZYON yonunu (swap ONCESI) sakla: kesit cercevesi bundan
+    // turetilir. Asagidaki baglanti-ucu secimi ekseni ters cevirir; kesit
+    // yukseklik yonu DEGISMEMELI (dusey uyede height = axis x fallback-width,
+    // eksen isaretine BAGLI — ters cevirince anchor ofseti yanlis tarafa kayar).
+    const Vec3 memberDir{beamAxis.x, beamAxis.y, beamAxis.z};
+    // Kolon sinir kutusu merkezi; kirisin bu merkeze en yakin ucu baglanti ucu.
+    Vec3 colCenter{};
+    if (mainIdx < document_.modelBounds().size()) {
+        const auto& b = document_.modelBounds()[mainIdx];
+        colCenter = Vec3{0.5 * (b.minimum.x + b.maximum.x), 0.5 * (b.minimum.y + b.maximum.y),
+                         0.5 * (b.minimum.z + b.maximum.z)};
+    }
+    const auto dist2 = [&](const Vec3& p) {
+        const double dx = p.x - colCenter.x, dy = p.y - colCenter.y, dz = p.z - colCenter.z;
+        return dx * dx + dy * dy + dz * dz;
+    };
+    if (dist2(beamFrom) < dist2(beamTo)) {
+        std::swap(beamFrom, beamTo);
+        beamAxis = Vec3{-beamAxis.x, -beamAxis.y, -beamAxis.z};
+    }
+    const double beamAxisLen =
+        std::sqrt(beamAxis.x * beamAxis.x + beamAxis.y * beamAxis.y + beamAxis.z * beamAxis.z);
+    if (beamAxisLen < 1e-6) {
+        err = L"Kirişin ekseni belirlenemedi (sıfır uzunluk).";
+        return false;
+    }
+    // Kesit bbox: profil katalogundan (yoksa 200x300 mm varsayilan).
+    double secWidth = 200.0, secHeight = 300.0;
+    // SectionAnchor kaymasi: kesit MERKEZININ kiris eksenine gore isaretli
+    // ofseti (Top -> -h/2, Center -> 0, Bottom -> +h/2). Profil bilinmiyorsa
+    // I-kesit kurali ±h/2 kullanilir (secHeight zaten varsayilan dolu).
+    double anchorOffset = 0.0;
+    if (const SteelProfile* prof = findProfile(profileCatalog_, sp.profileName)) {
+        secWidth = prof->width;
+        secHeight = prof->height;
+        anchorOffset = profileSectionAnchorOffset(*prof, sp.sectionAnchor);
+    } else {
+        switch (sp.sectionAnchor) {
+        case SectionAnchor::Top: anchorOffset = -0.5 * secHeight; break;
+        case SectionAnchor::Bottom: anchorOffset = 0.5 * secHeight; break;
+        case SectionAnchor::Center: anchorOffset = 0.0; break;
+        }
+    }
+    // Kiris kesit cercevesi (u=genislik, v=yukseklik, w=eksen) — kayitli
+    // referans normalinden. EKSTRUZYON yonunden (memberDir, swap oncesi)
+    // turetilir; anchor ofseti v (yukseklik) yonunde uygulanir.
+    const Vec3 beamSecNormal{sp.sectionNormalX, sp.sectionNormalY, sp.sectionNormalZ};
+    const double memberDirLen =
+        std::sqrt(memberDir.x * memberDir.x + memberDir.y * memberDir.y + memberDir.z * memberDir.z);
+    const ProfileSectionFrame beamSection = profileSectionFrame(
+        Vec3{memberDir.x / memberDirLen, memberDir.y / memberDirLen, memberDir.z / memberDirLen},
+        beamSecNormal);
+    // PROFILE ROTATION (Tekla Test D): kesit genislik/yukseklik eksenleri uye
+    // ekseni etrafinda profileRotation kadar doner (extrudeProfileSolid ile
+    // AYNI kural). Donmus kiriste levha cercevesi + anchor ofseti gercek kesit
+    // yonune oturmali. Donme: w' = w*ca + h*sa, h' = h*ca - w*sa.
+    Vec3 sectionWidthDir = beamSection.width;
+    Vec3 sectionHeightDir = beamSection.height;
+    if (std::abs(sp.profileRotation) > 1e-9) {
+        const double a = sp.profileRotation * 0.017453292519943295;
+        const double ca = std::cos(a), sa = std::sin(a);
+        const Vec3 w = beamSection.width, h = beamSection.height;
+        sectionWidthDir = Vec3{w.x * ca + h.x * sa, w.y * ca + h.y * sa, w.z * ca + h.z * sa};
+        sectionHeightDir = Vec3{h.x * ca - w.x * sa, h.y * ca - w.y * sa, h.z * ca - w.z * sa};
+    }
+    // Kolonun GERCEK temas yuzunu + temas NOKTASINI coz (MemberLocalFrame +
+    // kesit boyutlari). Bbox yolu yalnizca ACIK fallback olarak kalir.
+    ReferencePlane face;
+    bool faceResolved = false;
+    // Teshis izleme (MM_ENDPLATE_DIAG): resolver durumu + temas noktasi/normali.
+    ResolutionStatus contactStatus{ResolutionStatus::Unresolved};
+    SemanticFaceRole contactRole{SemanticFaceRole::None};
+    bool usedFallback{false};
+    Vec3 diagContactPoint{};
+    Vec3 diagContactNormal{0.0, 0.0, 1.0};
+    const auto& mprop = document_.models()[mainIdx].properties();
+    const Vec3 colFrom{mprop.axisFromX, mprop.axisFromY, mprop.axisFromZ};
+    const Vec3 colTo{mprop.axisToX, mprop.axisToY, mprop.axisToZ};
+    const Vec3 colAxis{colTo.x - colFrom.x, colTo.y - colFrom.y, colTo.z - colFrom.z};
+    const double colLen = std::sqrt(colAxis.x * colAxis.x + colAxis.y * colAxis.y +
+                                    colAxis.z * colAxis.z);
+    // Kolon flans genisligi (bulon deligi kapsama kontrolu icin; profil yoksa
+    // varsayilan 300 mm). Delik silindiri bu genisligin icinde kalmali.
+    double colFlangeWidth = 300.0;
+    double colFlangeThickness = 15.0; // bulon kavrama (levha+gap+flans) icin
+    if (colLen > 1e-6) {
+        const Vec3 colDir{colAxis.x / colLen, colAxis.y / colLen, colAxis.z / colLen};
+        const Vec3 secNormal{mprop.sectionNormalX, mprop.sectionNormalY, mprop.sectionNormalZ};
+        const ProfileSectionFrame colSection = profileSectionFrame(colDir, secNormal);
+        const MemberLocalFrame colFrame = makeMemberLocalFrame(colSection, colFrom);
+        SectionDims colDims{300.0, 300.0, 11.0, 19.0};
+        if (const SteelProfile* cprof = findProfile(profileCatalog_, mprop.profileName)) {
+            colDims.h = cprof->height;
+            colDims.b = cprof->width;
+            colDims.tw = cprof->plateThickness;
+            colDims.tf = cprof->flangeThickness;
+        }
+        colFlangeWidth = colDims.b;
+        colFlangeThickness = colDims.tf;
+        const Vec3 beamDir{beamAxis.x / beamAxisLen, beamAxis.y / beamAxisLen,
+                           beamAxis.z / beamAxisLen};
+        ContactPlacement contact;
+        bool haveContact = false;
+#ifdef MM_HAS_OCC
+        if (const TopoDS_Shape* solid = findOccSolid(mainIdx)) {
+            contact = resolveOcctContact(*solid, colFrame, colDims, colLen, beamTo, beamDir,
+                                         SemanticFaceRole::None);
+            haveContact = true;
+        }
+#endif
+        if (!haveContact || contact.status == ResolutionStatus::Unresolved) {
+            contact = resolveContactPlacement(colFrame, colDims, colLen, beamTo, beamDir,
+                                              SemanticFaceRole::None);
+        }
+        contactStatus = contact.status;
+        contactRole = contact.semanticFaceRole;
+        if (contact.status == ResolutionStatus::Resolved) {
+            face.origin = contact.contactPoint;
+            face.normal = contact.outwardNormal;
+            diagContactPoint = contact.contactPoint;
+            diagContactNormal = contact.outwardNormal;
+            faceResolved = true;
+            // Kiriş kolona DEĞİYORSA (geçmiyorsa) bile levha araya girer: kolon
+            // yuzu -> [gap] -> levha (t) -> kiriş. Kiriş levhanın ARKA yuzune
+            // oturmalı; temas noktası kolon yuzundeyken kiriş gap+t kadar geriye
+            // cekilmeli. (Pass-through degil; ışın kolona dogru atılır ve giriş
+            // yuzu normali kolondan dışarı/kirişe bakar.) Sabit uç = kolona en
+            // uzak uç (swap sonrası beamFrom).
+            if (trim) {
+                trim->needed = true;
+                trim->entryPoint = contact.contactPoint;
+                trim->entryNormal = contact.outwardNormal;
+                trim->fixedEnd = beamFrom;
+            }
+        } else if (contact.status != ResolutionStatus::Unresolved) {
+            // Kiris kolonu GECTIYSE (kiris ucu kolonun icinde), temas yuzu kirisin
+            // ARKASINDA kalir ve resolver NoContact/OutsideFace/Ambiguous doner.
+            // Giris yuzunu kirisin UZAK ucundan (beamFrom) kolona dogru isin atarak
+            // coz: isabet noktasi kiris ucundan ONCE ise (dist < eksen uzunlugu)
+            // kiris kolonu geciyor demektir. Bu durumda fitting uygulanmali; levha
+            // giris yuzune oturur. (Ray-cast normali isin cikisina/beamFrom'a
+            // bakacak sekilde yonlenir = giris yuzunun dis normali.)
+            Vec3 entryPoint{}, entryNormal{0.0, 0.0, 1.0};
+            Vec3 fixedEnd = beamTo;  // varsayilan: kolona en yakin uc
+            bool passThrough = false;
+#ifdef MM_HAS_OCC
+            if (const TopoDS_Shape* solid = findOccSolid(mainIdx)) {
+                double entryDist = 0.0;
+                // Korunacak ucu belirle: kolon DISINDA kalan uc.
+                //  - beamTo kolon ICINDEYSE (kiris ucu kolona girmis): fixedEnd
+                //    = beamFrom (dışarıdaki uc); aksi halde kiris iceriden
+                //    dis yuze yeniden uretilip "hala kolona giriyor" gorunurdu.
+                //  - beamTo DISARIDAYSA (tam gecis): fixedEnd = beamTo (kolona
+                //    en yakin = kisa taraf, korunacak baglanti tarafi).
+                fixedEnd = pointInSolid(*solid, beamTo) ? beamFrom : beamTo;
+                // Ray-cast fixedEnd'ten kolon MERKEZINE dogru -> girisin yuzu
+                // (kirisin geldigi taraf). Kolon merkezine dogru isin, kolonun
+                // fixedEnd tarafindaki DIS yuzune carpar; boylece hem "uc
+                // iceride" hem "tam gecis" dogru yuzu bulur.
+                const Vec3 toColCenter{colCenter.x - fixedEnd.x, colCenter.y - fixedEnd.y,
+                                       colCenter.z - fixedEnd.z};
+                if (raycastBrepFace(*solid, fixedEnd, toColCenter, entryPoint, entryNormal,
+                                    entryDist) &&
+                    entryDist < beamAxisLen - 1e-6) {
+                    passThrough = true;
+                }
+            }
+#endif
+            if (passThrough) {
+                face.origin = entryPoint;
+                face.normal = entryNormal;
+                diagContactPoint = entryPoint;
+                diagContactNormal = entryNormal;
+                faceResolved = true;
+                if (trim) {
+                    trim->needed = true;
+                    trim->entryPoint = entryPoint;
+                    trim->entryNormal = entryNormal;
+                    trim->fixedEnd = fixedEnd;
+                }
+            } else {
+                // Acik hata: paralel eksen / yuz disi / belirsiz — RASTGELE yerlestirme YOK.
+                err = contact.status == ResolutionStatus::ParallelAxis
+                          ? L"Kiris ekseni kolon yuzeyine paralel; temas cozulemedi."
+                      : contact.status == ResolutionStatus::OutsideFace
+                          ? L"Temas noktasi kolonun sonlu yuzeyinin disinda."
+                          : L"Temas yuzeyi belirsiz/gecersiz; component yerlestirilmedi.";
+                return false;
+            }
+        }
+    }
+    if (!faceResolved) {
+        // ACIK fallback: bbox sinir duzlemi (kolon ekseni/profili cozulemediginde).
+        usedFallback = true;
+        if (mainIdx < document_.modelBounds().size()) {
+            const auto& cb = document_.modelBounds()[mainIdx];
+            const Vec3 outward{-beamAxis.x, -beamAxis.y, -beamAxis.z};
+            face = resolveBoundaryPlaneFacing(cb.minimum, cb.maximum, outward);
+        }
+    }
+    placement = computeEndPlatePlacementOnFace(face, params.gap, secWidth, secHeight, params,
+                                               sectionHeightDir, anchorOffset, sectionWidthDir);
+
+    // BULON DELIGI FLANS KENARINA TAKILMASIN: levha kiris kesitine gore
+    // (plateExtra ile) buyutuldugu icin, dar kolonlarda (ornegin HEB260 kolon +
+    // HEB260 kiris) en dis bulon deligi kolon flansinin kenarini 1 mm kadar deler.
+    // Bu yari-teget kesim OCC boolean'ini dejenere edip Windows'ta
+    // Extrema_ExtCC segfault'u uretiyordu. Flans genisligi yonundeki bulon
+    // acikligini, delik + kenar payi (3 mm) flans genisligi ICINDE kalacak
+    // sekilde kucult (desen levha merkezinde ortali kalir).
+    const int boltNX = placement.bolts.countX > 1 ? placement.bolts.countX : 1;
+    const double boltHalfU = (boltNX - 1) * 0.5 * placement.bolts.spacingX;
+    const double holeRadius = params.holeDiameter * 0.5;
+    const double flangeHalfW = colFlangeWidth * 0.5;
+    constexpr double kFlangeClearance = 3.0;
+    const double maxHalfU = flangeHalfW - holeRadius - kFlangeClearance;
+    if (boltHalfU > maxHalfU && maxHalfU > 0.0 && boltNX > 1) {
+        const double shift = boltHalfU - maxHalfU;
+        placement.bolts.spacingX = 2.0 * maxHalfU / static_cast<double>(boltNX - 1);
+        // Origin'i +xDir (levha genislik yonu) boyunca kaydir ki desen ortali kalsin.
+        placement.bolts.origin.x += placement.bolts.xDir.x * shift;
+        placement.bolts.origin.y += placement.bolts.xDir.y * shift;
+        placement.bolts.origin.z += placement.bolts.xDir.z * shift;
+    }
+
+    // BULON KAVRAMA + YUZ YERI: bolon levha + gap + kolon flansini KENETLER.
+    // Bas kolon flansinin uzak (ic) yuzunde, somun levhanin kiris tarafinda
+    // oturur. Saft yiginin [flans uzak yuz .. levha kiris yuzu] araligini
+    // doldurur; saft simetri merkezi yigin merkezine cekilir (plateCenter,
+    // yigin merkezine gore -(gap+tf)/2 kayik). Delik through-cut oldugundan
+    // origin'in eksen yonundeki bu kaymasi delik geometrisini DEGISTIRMEZ.
+    placement.colFlangeThickness = colFlangeThickness;
+    // CUT LENGTH (Tekla): 0 = tek flans (kolonun kirise bakan flansi), 1 = cift
+    // flans (bulon kolon boyunca gecer). Grip buna gore derinlesir.
+    const double flangeDepth = (params.boltCutLengthMode == 1)
+                                   ? 2.0 * colFlangeThickness
+                                   : colFlangeThickness;
+    // BOLT LENGTH INCREASE: boy artisi yalniz somun tarafina (kiris tarafina)
+    // eklenir; bas tarafi kolon flansinin uzak (ic) yuzunde sabit kalir.
+    placement.boltGripLength = placement.plateThickness + params.gap + flangeDepth +
+                               params.boltLengthIncrease;
+    const double gripShift = 0.5 * (params.gap + flangeDepth - params.boltLengthIncrease);
+    placement.bolts.origin.x -= placement.axis.x * gripShift;
+    placement.bolts.origin.y -= placement.axis.y * gripShift;
+    placement.bolts.origin.z -= placement.axis.z * gripShift;
+
+    // DELIK DERINLIGI: tek flans modunda delik yalniz levha + gap + kolon ON
+    // flansini deler (arka flansa ulasmaz). Cift flans modunda 0 (through-cut):
+    // bulon kolon boyunca gecer, delik de oyle. Sinirli delik origin'de
+    // (kavrama merkezi) ortalanir; boylece [flans ic yuz .. levha kiris yuzu]
+    // araligini birebir kaplar.
+    placement.bolts.holeDepth =
+        (params.boltCutLengthMode == 1)
+            ? 0.0
+            : (params.plateThickness + params.gap + colFlangeThickness);
+
+    // TESHIS (kisa yontem): Windows'ta `set MM_ENDPLATE_DIAG=1` sonra uygulamayi
+    // calistirip End Plate olusturunca exe yanindaki
+    // model-maker-endplate-diag.log'a tum ara degerler yazilir; bu dosyayi paylas.
+    if (std::getenv("MM_ENDPLATE_DIAG") != nullptr) {
+        // Kesit MERKEZININ temas duzlemi uzerindeki gercek konumu (anchor ofsetli).
+        const Vec3 sectionCenter{face.origin.x + sectionHeightDir.x * anchorOffset,
+                                 face.origin.y + sectionHeightDir.y * anchorOffset,
+                                 face.origin.z + sectionHeightDir.z * anchorOffset};
+        const Vec3 d{placement.plateCenter.x - sectionCenter.x,
+                     placement.plateCenter.y - sectionCenter.y,
+                     placement.plateCenter.z - sectionCenter.z};
+        const double du = d.x * placement.u.x + d.y * placement.u.y + d.z * placement.u.z;
+        const double dv = d.x * placement.v.x + d.y * placement.v.y + d.z * placement.v.z;
+        const double dn = d.x * placement.axis.x + d.y * placement.axis.y + d.z * placement.axis.z;
+        FILE* diag = fopen("model-maker-endplate-diag.log", "a");
+        if (diag) {
+            fprintf(diag,
+                    "=== ENDPLATE-DIAG ===\n"
+                    "main=%llu profile=%s anchor=%s\n"
+                    "secondary=%llu profile=%s anchor=%s\n"
+                    "beamAxisFrom=%s beamAxisTo=%s\n"
+                    "beamLocal u=%s v=%s w=%s\n"
+                    "beamSectionCentroidAtFace=%s\n"
+                    "resolver=%s role=%s fallback=%s\n"
+                    "contactPoint=%s\n"
+                    "contactNormal=%s\n"
+                    "faceOrigin=%s faceNormal=%s\n"
+                    "plateCenter=%s\n"
+                    "plate u=%s v=%s normal=%s\n"
+                    "gap=%.3f plateToColumnSignedDist=%.3f\n"
+                    "beamCenterToPlateLocalOffset=(u=%.3f v=%.3f n=%.3f)\n",
+                    (unsigned long long)document_.modelId(mainIdx), mprop.profileName.c_str(),
+                    epAnchorName(mprop.sectionAnchor),
+                    (unsigned long long)document_.modelId(secIdx), sp.profileName.c_str(),
+                    epAnchorName(sp.sectionAnchor),
+                    epVec(beamFrom).c_str(), epVec(beamTo).c_str(),
+                    epVec(beamSection.width).c_str(), epVec(beamSection.height).c_str(),
+                    epVec(beamSection.axis).c_str(),
+                    epVec(sectionCenter).c_str(),
+                    epStatusName(contactStatus), epRoleName(contactRole),
+                    usedFallback ? "yes" : "no",
+                    epVec(diagContactPoint).c_str(), epVec(diagContactNormal).c_str(),
+                    epVec(face.origin).c_str(), epVec(face.normal).c_str(),
+                    epVec(placement.plateCenter).c_str(),
+                    epVec(placement.u).c_str(), epVec(placement.v).c_str(),
+                    epVec(placement.axis).c_str(),
+                    params.gap, dn, du, dv, dn);
+            fclose(diag);
+        }
+    }
+    return true;
+}
+
+#ifdef MM_HAS_OCC
+// SLICE 2d-2c P0: PREPARE (pure) — bir End Plate baglantisinin yeni yerlesimini
+// coz + levha/bulon/tel kafesi GECICI uret. Hicbir belge mutasyonu YOKTUR;
+// basarisizlikta nullopt ve belge DEGISMEZ. (Eski rebuildEndPlateConnection'in
+// "coz + uret" yarisi; "uygula" yarisi commitEndPlateConnection'a tasindi.)
+std::optional<Application::PreparedEndPlate>
+Application::prepareEndPlateConnection(std::size_t index, const EndPlateParams* paramsOverride) {
+    if (index >= document_.endPlateConnections().size()) return std::nullopt;
+    const EndPlateConnection conn = document_.endPlateConnections()[index];
+    const auto mainIdxOpt = document_.indexOfEntity(conn.mainPart);
+    const auto secIdxOpt = document_.indexOfEntity(conn.secondaryPart);
+    if (!mainIdxOpt || !secIdxOpt) return std::nullopt;  // parca kayboldu
+
+    // Faz D1: parametre geçersiz kılınırsa (sonradan düzenleme) onu kullan,
+    // yoksa kayıttaki mevcut parametreler.
+    const EndPlateParams& effParams = paramsOverride ? *paramsOverride : conn.params;
+
+    EndPlatePlacement placement;
+    std::wstring err;
+    if (!resolveEndPlatePlacement(*mainIdxOpt, *secIdxOpt, effParams, placement, err))
+        return std::nullopt;  // cozulemedi
+
+    PreparedEndPlate p;
+    p.index = index;
+    p.secIdx = *secIdxOpt;
+    p.placement = placement;
+    p.updated = conn;
+    p.updated.params = effParams;          // yeni parametreler kayda yazılır
+    p.updated.bolts = placement.bolts;  // yeni origin/pattern; kimlikler commit'te korunur
+    p.plateSolid = buildEndPlateFromPlacement(placement);
+    const double grip = placement.boltGripLength > 0.0
+                            ? placement.boltGripLength
+                            : placement.plateThickness + 15.0;
+    p.boltSolid = buildBoltGroupAssemblyShape(placement.bolts, grip);
+    if (p.plateSolid.IsNull() || p.boltSolid.IsNull()) return std::nullopt;  // geometri hatasi
+    p.plateModel = shapeToWireframeWithFaces(p.plateSolid, 0.15);
+    p.boltDisplay = shapeToWireframeWithFaces(p.boltSolid, 0.15);
+    {
+        // Levha malzemesi (Tekla Plates: Material). Bos degilse levha modelinin
+        // material alanina yaz (kalici; MMW8'e de serilestirildi).
+        auto pp = p.plateModel.properties();
+        pp.material = effParams.plateMaterial;
+        pp.name = effParams.plateName;
+        pp.finish = effParams.plateFinish;
+        p.plateModel.setProperties(std::move(pp));
+    }
+    {
+        auto bp = p.boltDisplay.properties();
+        bp.trueColor = 0x8B592A;
+        bp.effectiveColor = 0x8B592A;
+        p.boltDisplay.setProperties(std::move(bp));
+    }
+    return p;
+}
+
+// SLICE 2d-2c P0: COMMIT (infallible) — hazirlanan baglantiyi ACIK undo kaydina
+// uygular (kararli kimlikler: setEndPlateConnection + putOccSolid + kesme).
+// Tum fallible isler prepare'da bitti; burada yalnizca document yazimi var.
+bool Application::commitEndPlateConnection(std::size_t index, const PreparedEndPlate& p) {
+    // setEndPlateConnection EndPlateReplace + BoltReplace + CutReplace + model
+    // Replace op'larini ACIK kayda ekler; kimlikler (levha/bulon/display) sabit.
+    if (!document_.setEndPlateConnection(index, p.updated,
+                                         WireframeModel{p.plateModel},
+                                         WireframeModel{p.boltDisplay}))
+        return false;
+
+    const EndPlateConnection& after = document_.endPlateConnections()[index];
+    if (const auto pi = document_.indexOfEntity(after.plateEntityId)) {
+        putOccSolid(*pi, p.plateSolid);
+        // Levha base surumunu YENI katiya esitle. recomputeCutTarget kesmeyi
+        // base surumden uygular; base bayat kalirsa (eski kalinlik/genislik)
+        // delik kesme levhayi eski geometriye geri tesselatlar. Bulonlar bu
+        // yoldan gecmedigi icin dogru kalirdi -> "bulonlar oteleliyor ama levha
+        // kalinlasmiyor" kullanici raporunun kok nedeni budur.
+        if (auto* store = occSolidStore()) {
+            const VersionId v = store->activeVersion(after.plateEntityId);
+            if (v != kInvalidVersionId) {
+                const VersionId oldBase = store->baseVersion(after.plateEntityId);
+                store->setBaseVersion(after.plateEntityId, v);
+                if (oldBase != v)
+                    document_.recordBaseVersionDelta(after.plateEntityId, oldBase, v);
+            }
+        }
+    }
+    if (const auto di = document_.indexOfEntity(after.bolts.displayEntityId))
+        putOccSolid(*di, p.boltSolid);
+    // Delikler (CutKind::Hole) kolon + levhayi deler -> yeniden hesapla.
+    if (after.mainPart != kInvalidEntityId) recomputeCutTarget(after.mainPart);
+    if (after.plateEntityId != kInvalidEntityId) recomputeCutTarget(after.plateEntityId);
+    // EDIT/DUZENLEME: kirisi levhanin ARKA yuzune yeniden fit et (kalinlik/gap
+    // degisti). Levha kalinlastiginda/gap buyudugunde kiris eski kesim
+    // noktasinda kalirsa levhanin eklenen kalinligi kirisin icinde gizlenir ve
+    // kullanici "kalinlik degismiyor" gorur. Kirisi yeni arka yuzeye cek.
+    if (p.secIdx < document_.models().size() && after.secondaryPart != kInvalidEntityId) {
+        ensureProfileCatalog();
+        const auto& sp = document_.models()[p.secIdx].properties();
+        const double halfT = p.placement.plateThickness * 0.5;
+        const Vec3 farEnd{sp.axisFromX, sp.axisFromY, sp.axisFromZ};
+        // Levha arka yuzu plateCenter (kesit MERKEZI) + axis*halfT'dedir. Ama
+        // kiris EKSENI anchor cizgisindedir (Top anchor'da kesit merkezinden
+        // h/2 yukarida). plateCenter'i dogrudan beamEnd yaparsak kirisi h/2
+        // asagi indiririz. Bu yuzden farEnd'in anchor konumunu KORU ve kirisi
+        // SADECE eksen boyunca levha arka yuzune izdusur (kisalt).
+        const Vec3 axis = p.placement.axis;
+        const Vec3 backFace{p.placement.plateCenter.x + axis.x * halfT,
+                            p.placement.plateCenter.y + axis.y * halfT,
+                            p.placement.plateCenter.z + axis.z * halfT};
+        const double axLen2 = axis.x * axis.x + axis.y * axis.y + axis.z * axis.z;
+        const double proj = axLen2 > 1e-12
+            ? ((backFace.x - farEnd.x) * axis.x + (backFace.y - farEnd.y) * axis.y +
+               (backFace.z - farEnd.z) * axis.z) / axLen2
+            : 0.0;
+        const Vec3 beamEnd{farEnd.x + axis.x * proj,
+                           farEnd.y + axis.y * proj,
+                           farEnd.z + axis.z * proj};
+        if (const SteelProfile* prof = findProfile(profileCatalog_, sp.profileName)) {
+            const TopoDS_Shape shortSolid = extrudeProfileSolid(
+                *prof, farEnd, beamEnd, sp.profileRotation,
+                Vec3{sp.sectionNormalX, sp.sectionNormalY, sp.sectionNormalZ},
+                sp.sectionAnchor);
+            if (!shortSolid.IsNull()) {
+                auto shortModel = shapeToWireframeWithFaces(shortSolid, 0.15);
+                auto shortProps = sp;
+                shortProps.axisToX = beamEnd.x;
+                shortProps.axisToY = beamEnd.y;
+                shortProps.axisToZ = beamEnd.z;
+                shortModel.setProperties(std::move(shortProps));
+                document_.replaceModel(p.secIdx, {std::move(shortModel)});
+                putOccSolid(p.secIdx, shortSolid);
+                // Bu baglantiya ait gizli fitting'i yeni arka yuzeye tasi.
+                for (std::size_t mi = 0; mi < document_.cutModifiers().size(); ++mi) {
+                    const auto& m = document_.cutModifiers()[mi];
+                    if (m.kind == CutKind::Fitting && m.hidden &&
+                        m.target == after.secondaryPart) {
+                        CutModifier updated = m;
+                        updated.planeOrigin = beamEnd;
+                        updated.planeNormal = p.placement.axis;
+                        document_.setCutModifier(mi, updated);
+                        break;
+                    }
+                }
+                recomputeCutTarget(after.secondaryPart);
+            }
+        }
+    }
+    return true;
+}
+
+// --- END PLATE PARAMETRELERI (faz D1) ----------------------------------------
+// Secili model bir End Plate LEVHASI veya BULON DISPLAY'i ise baglanti indeksi.
+std::optional<std::size_t> Application::selectedEndPlateConnectionIndex() const {
+    if (selectedModels_.empty() || selectedModels_.front() >= document_.models().size())
+        return std::nullopt;
+    const EntityId id = document_.modelId(selectedModels_.front());
+    for (std::size_t i = 0; i < document_.endPlateConnections().size(); ++i) {
+        const auto& c = document_.endPlateConnections()[i];
+        if (c.plateEntityId == id || c.bolts.displayEntityId == id) return i;
+    }
+    return std::nullopt;
+}
+
+bool Application::selectedEndPlateConnection(EndPlateConnection& out) const {
+    const auto idx = selectedEndPlateConnectionIndex();
+    if (!idx) return false;
+    out = document_.endPlateConnections()[*idx];
+    return true;
+}
+
+
+void Application::recomputeComponentInstancesFor(const std::vector<EntityId>& changedParts) {
+    if (changedParts.empty()) return;
+#ifdef MM_HAS_OCC
+    // End Plate baglantilari AYRI kalir (mevcut production yolu). Bu fonksiyon
+    // yalnizca parametrik ComponentInstanceRecord'larini (Fin Plate vb.) yeniden
+    // uretir. Ayni ComponentDependencyGraph + atomicRecompute cekirdegi kullanilir.
+    ensureProfileCatalog();
+    ComponentDependencyGraph graph;
+    graph.build(document_.componentInstances());
+    const std::vector<EntityId> affected = graph.dependentsOf(changedParts);
+    if (affected.empty()) return;
+
+    // Etkilenen ana parcalarin B-Rep tabanini BIR KEZ tazele (tasima/donme/profil
+    // degisimi sonrasi findOccSolid bayat kalmasin). End Plate recompute'taki
+    // rebuildCutBaseSolid ile AYNI kural: materializer bulon kesmelerini ESKI
+    // baseVersion uzerinden yeniden uygulayip geometriyi eski konuma dondurmesin.
+    for (EntityId part : changedParts) rebuildCutBaseSolid(part);
+
+    const auto indexOf = [&](EntityId cid) -> std::optional<std::size_t> {
+        return document_.indexOfComponentInstance(cid);
+    };
+
+    // PREPARE: guncel MemberGeometry + kayitli parametrelerle generator cagir.
+    const auto prepare = [&](EntityId cid) -> std::optional<ComponentMaterializer::Prepared> {
+        const auto idx = indexOf(cid);
+        if (!idx) return std::nullopt;
+        const ComponentInstanceRecord& rec = document_.componentInstances()[*idx];
+        if (rec.orphan) return std::nullopt;  // bilinmeyen typeId — cozulemez
+        const ComponentType* type = ComponentRegistry::instance().findType(rec.typeId);
+        if (!type) return std::nullopt;
+
+        ComponentInput input;
+        if (const auto mi = document_.indexOfEntity(rec.mainPart))
+            input.main = memberGeometryFor(document_, profileCatalog_, *mi);
+        else
+            return std::nullopt;
+        for (const EntityId sid : rec.secondaryParts) {
+            if (const auto si = document_.indexOfEntity(sid))
+                input.secondary.push_back(memberGeometryFor(document_, profileCatalog_, *si));
+            else
+                return std::nullopt;
+        }
+        input.params = rec.params;
+
+        const GenerationPlan gp = ComponentRegistry::instance().generate(rec.typeId, input);
+        if (!gp.ok) return std::nullopt;
+        const ComponentPlan plan = componentPlanFromGenerationPlan(gp);
+        if (!plan.ok) return std::nullopt;
+        ComponentMaterializer mat(document_);
+        return mat.prepare(plan, rec.mainPart, rec.secondaryParts);
+    };
+
+    // COMMIT: materializer.recompute ayni kimlikleri korur (roleKey->EntityId).
+    // openOwnRecord=false: move/reprofile ZATEN pushUndoSnapshot acti — materializer
+    // AYNI acik kayda yazar (ikinci kayit acmaz); basarisizlikta asagidaki
+    // rollbackOpenRecord move + tum recompute'u TEK atomik adimda geri alir
+    // (End Plate'in commitEndPlateConnection deseniyle ayni).
+    const auto commit = [&](EntityId cid, const ComponentMaterializer::Prepared& p) -> bool {
+        const auto idx = indexOf(cid);
+        if (!idx) return false;
+        ComponentMaterializer mat(document_);
+        ComponentInstanceRecord updated = document_.componentInstances()[*idx];
+        const auto res = mat.recompute(p, document_.componentInstances()[*idx], updated,
+                                       /*openOwnRecord=*/false);
+        return res.ok;
+    };
+
+    const auto res = atomicRecompute<ComponentMaterializer::Prepared>(affected, prepare, commit);
+    if (!res.allPrepared || res.commitFailed) {
+        const bool rolled = document_.rollbackOpenRecord();
+        std::wstring msg = L"Component recompute basarisiz";
+        if (!res.error.empty()) { msg += L": "; msg += res.error; }
+        msg += rolled ? L" — islem geri alindi."
+                      : L" — rollback BASARISIZ (belge tutarsiz olabilir)";
+        publishStatus(msg);
+    }
+#else
+    (void)changedParts;
+#endif
+}
+
+
+#ifdef MM_HAS_OCC
+bool Application::setSelectedEndPlateConnection(EntityId connId, const EndPlateParams& newParams) {
+    const auto idxOpt = document_.indexOfEndPlateConnection(connId);
+    if (!idxOpt) {
+        if (std::getenv("MM_ENDPLATE_DIAG") != nullptr) {
+            FILE* d = fopen("model-maker-endplate-diag.log", "a");
+            if (d) { fprintf(d, "EDIT conn=%llu -> INDEX BULUNAMADI\n", (unsigned long long)connId); fclose(d); }
+        }
+        return false;
+    }
+    const std::size_t index = *idxOpt;
+    if (std::getenv("MM_ENDPLATE_DIAG") != nullptr) {
+        FILE* d = fopen("model-maker-endplate-diag.log", "a");
+        if (d) {
+            fprintf(d, "EDIT conn=%llu idx=%zu newThickness=%.3f oldThickness=%.3f\n",
+                    (unsigned long long)connId, index, newParams.plateThickness,
+                    document_.endPlateConnections()[index].params.plateThickness);
+            fclose(d);
+        }
+    }
+    // PURE hazirlik: yeni parametrelerle yeniden coz + uret (belge DEGISMEZ).
+    const auto prepared = prepareEndPlateConnection(index, &newParams);
+    if (!prepared) {
+        publishStatus(L"End Plate yeniden uretilemedi (parametreler gecersiz)");
+        return false;
+    }
+    pushUndoSnapshot();
+    if (!commitEndPlateConnection(index, *prepared)) {
+        document_.rollbackOpenRecord();
+        publishStatus(L"End Plate guncelleme basarisiz");
+        return false;
+    }
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
+    return true;
+}
+#endif
+
+// SLICE 2d-2c P0/P1: GERCEK ATOMIK + GENERIC recompute.
+//
+// P1 (generic): gercek EndPlateConnection kayitlari ORTAK ComponentRefs
+// adapter'i uzerinden ComponentDependencyGraph'a baglanir — Document icinde
+// component tipine OZEL recompute yolu YOKTUR; gelecekte Base Plate/Fin Plate/
+// Gusset/Splice ayni grafigi ve ayni atomicRecompute hattini kullanir.
+//
+// P0 (atomik): etkilenen baglantilar ONCE tamamen hazirlanir (prepare — yeni
+// geometri + modifier sonuclari gecici uretilir, belge DEGISMEZ); yalnizca
+// HEPSI basariliysa TEK transaction'da uygulanir (commit). Bir prepare bile
+// basarisizsa HICBIR commit calismaz (atomicRecompute) ve ACIK transaction
+// ROLLBACK edilir (document_.rollbackOpenRecord) — kolon profili/konumu +
+// levhalar + bulonlar + delikler + geometry version + undo/redo gecmisi ESKI
+// duruma doner; kismi belge degisikligi KALMAZ.
+bool Application::recomputeEndPlateConnectionsFor(const std::vector<EntityId>& changedParts) {
+    if (changedParts.empty()) return true;
+
+    std::vector<ComponentRefs> refs;
+    refs.reserve(document_.endPlateConnections().size());
+    for (const EndPlateConnection& c : document_.endPlateConnections())
+        refs.push_back(componentRefs(c));
+    ComponentDependencyGraph graph;
+    graph.build(refs);
+    const std::vector<EntityId> affected = graph.dependentsOf(changedParts);
+    if (affected.empty()) return true;
+
+    // Etkilenen ana parcalarin B-Rep tabanini BIR KEZ tazele (tasima/donme/profil
+    // degisimi sonrasi findOccSolid bayat kalmasin). Transaction mutasyonudur;
+    // asagida basarisizlikta rollback ile geri alinir.
+    for (EntityId part : changedParts) rebuildCutBaseSolid(part);
+
+    // Component EntityId -> kayit indeksi (deterministik).
+    const auto indexOf = [&](EntityId cid) -> std::optional<std::size_t> {
+        for (std::size_t i = 0; i < document_.endPlateConnections().size(); ++i)
+            if (document_.endPlateConnections()[i].id == cid) return i;
+        return std::nullopt;
+    };
+
+    const auto prepare = [&](EntityId cid) -> std::optional<PreparedEndPlate> {
+        const auto idx = indexOf(cid);
+        if (!idx) return std::nullopt;
+        return prepareEndPlateConnection(*idx);
+    };
+    const auto commit = [&](EntityId cid, const PreparedEndPlate& p) -> bool {
+        const auto idx = indexOf(cid);
+        if (!idx) return false;
+        return commitEndPlateConnection(*idx, p);
+    };
+
+    const auto res = atomicRecompute<PreparedEndPlate>(affected, prepare, commit);
+    if (!res.allPrepared || res.commitFailed) {
+        // GERCEK ROLLBACK (P0): basarisiz islem belgeyi tutarsiz birakamaz.
+        // Tabani/aktif surumleri/op'lari/redo gecmisini geri getirir.
+        const bool rolled = document_.rollbackOpenRecord();
+        std::wstring msg = L"Component recompute basarisiz";
+        if (!res.error.empty()) {
+            msg += L": ";
+            msg += res.error;
+        }
+        msg += rolled ? L" — islem geri alindi."
+                      : L" — rollback BASARISIZ (belge tutarsiz olabilir)";
+        publishStatus(msg);
+        return false;
+    }
+    return true;
+}
+
+void Application::rebuildBoltDisplay(const BoltGroup& bolt) {
+    OccSolidStore* store = occSolidStore();
+    if (!store) return;
+    const auto di = document_.indexOfEntity(bolt.displayEntityId);
+    if (!di) return;
+    const double grip = document_.boltGripLength(bolt);
+    const TopoDS_Shape assembly = mm::buildBoltGroupAssemblyShape(bolt, grip);
+    if (assembly.IsNull()) return;
+    putOccSolid(*di, assembly);
+    auto wire = mm::shapeToWireframeWithFaces(assembly, 0.15);
+    auto props = document_.models()[*di].properties();
+    wire.setProperties(std::move(props));
+    document_.replaceModel(*di, {std::move(wire)});
+}
+
+void Application::syncBoltGroupsForMoved(const std::vector<std::size_t>& indices,
+                                         const Vec3& displacement) {
+    if (std::abs(displacement.x) + std::abs(displacement.y) +
+            std::abs(displacement.z) < 1e-12)
+        return;
+    for (const std::size_t index : indices) {
+        if (index >= document_.models().size()) continue;
+        const EntityId id = document_.modelId(index);
+        std::optional<std::size_t> bi;
+        for (std::size_t k = 0; k < document_.boltGroups().size(); ++k)
+            if (document_.boltGroups()[k].displayEntityId == id) { bi = k; break; }
+        if (!bi) continue;
+        BoltGroup bolt = document_.boltGroups()[*bi];
+        bolt.origin = bolt.origin + displacement;
+        document_.setBoltGroup(*bi, std::move(bolt));
+        const BoltGroup& updated = document_.boltGroups()[*bi];
+        rebuildBoltDisplay(updated);
+        for (const EntityId part : updated.parts) recomputeCutTarget(part);
+    }
+}
+#endif
+
+// --- UNIVERSAL COMPONENT (Phase P1): selection + param edit (portable) -----
+// OCC-siz derlemede de link gerekir; OCC blogunun DISINDA tanimlanir.
+// --- UNIVERSAL COMPONENT (Phase P1): recompute + selection --------------------
+
+bool Application::selectedComponentInstance(ComponentInstanceRecord& out) const {
+    // Secili model bir component'in SAHIP OLDUGU alt nesne (levha veya bulon
+    // display) ise o instance'i dondurur.
+    for (const std::size_t idx : selectedModels_) {
+        if (idx >= document_.models().size()) continue;
+        const EntityId id = document_.modelId(idx);
+        for (const auto& rec : document_.componentInstances()) {
+            if (std::find(rec.ownedPlateIds.begin(), rec.ownedPlateIds.end(), id) !=
+                rec.ownedPlateIds.end()) {
+                out = rec;
+                return true;
+            }
+            for (const EntityId bg : rec.ownedBoltGroupIds) {
+                const auto bi = document_.indexOfBoltGroup(bg);
+                if (bi && document_.boltGroups()[*bi].displayEntityId == id) {
+                    out = rec;
+                    return true;
+                }
+            }
+        }
+    }
+    return false;
+}
+
+std::vector<ComponentInstanceRecord> Application::selectedComponentInstances(
+    const std::wstring& typeId) const {
+    std::vector<ComponentInstanceRecord> out;
+    const auto add = [&](const ComponentInstanceRecord& rec) {
+        if (!typeId.empty() && rec.typeId != typeId) return;
+        for (const auto& o : out)
+            if (o.id == rec.id) return;
+        out.push_back(rec);
+    };
+    for (const std::size_t idx : selectedModels_) {
+        if (idx >= document_.models().size()) continue;
+        const EntityId id = document_.modelId(idx);
+        for (const auto& rec : document_.componentInstances()) {
+            if (std::find(rec.ownedPlateIds.begin(), rec.ownedPlateIds.end(), id) !=
+                rec.ownedPlateIds.end()) {
+                add(rec);
+                continue;
+            }
+            for (const EntityId bg : rec.ownedBoltGroupIds) {
+                const auto bi = document_.indexOfBoltGroup(bg);
+                if (bi && document_.boltGroups()[*bi].displayEntityId == id) {
+                    add(rec);
+                    break;
+                }
+            }
+        }
+    }
+    return out;
+}
+
+bool Application::setSelectedComponentParams(EntityId compId,
+                                             const std::vector<CompParam>& newParams) {
+#ifdef MM_HAS_OCC
+    const auto idx = document_.indexOfComponentInstance(compId);
+    if (!idx) return false;
+    const ComponentType* type =
+        ComponentRegistry::instance().findType(document_.componentInstances()[*idx].typeId);
+    if (!type) return false;
+
+    // Parametreleri semaya hizala (migration), ardindan yeniden uret.
+    ComponentInstanceRecord updated = document_.componentInstances()[*idx];
+    updated.params = alignParamsToSpecs(type->params, newParams);
+
+    // Guncel MemberGeometry + yeni parametrelerle generator -> plan.
+    ensureProfileCatalog();
+    ComponentInput input;
+    if (const auto mi = document_.indexOfEntity(updated.mainPart))
+        input.main = memberGeometryFor(document_, profileCatalog_, *mi);
+    else
+        return false;
+    for (const EntityId sid : updated.secondaryParts) {
+        if (const auto si = document_.indexOfEntity(sid))
+            input.secondary.push_back(memberGeometryFor(document_, profileCatalog_, *si));
+        else
+            return false;
+    }
+    input.params = updated.params;
+
+    const GenerationPlan gp = ComponentRegistry::instance().generate(updated.typeId, input);
+    if (!gp.ok) return false;
+    const ComponentPlan plan = componentPlanFromGenerationPlan(gp);
+    if (!plan.ok) return false;
+
+    ComponentMaterializer mat(document_);
+    const ComponentMaterializer::Prepared prep =
+        mat.prepare(plan, updated.mainPart, updated.secondaryParts);
+    if (!prep.ok) return false;
+
+    // Materializer.recompute kendi undo kaydini acar ve basarisizlikta kendini
+    // geri alir — burada pushUndoSnapshot ACILMAZ (cift kayit olur).
+    const auto res = mat.recompute(prep, document_.componentInstances()[*idx], updated);
+    if (!res.ok) return false;
+
+    // KAYNAK TESHISI (diyalog OK yolu): kaynak kati uretilmediyse NEDENINI
+    // durum cubuguna yaz. Aksi halde kullanici "weld atmiyor" der ama sebep
+    // gorunmez (sessiz basarisizlik).
+    int weldOk = 0, weldBad = 0;
+    std::wstring weldReason;
+    for (const auto& kv : res.roleToEntity) {
+        if (kv.first.rfind("weld_", 0) != 0) continue;
+        const auto wi = document_.indexOfWeld(kv.second);
+        if (!wi) continue;
+        const Weld& w = document_.welds()[*wi];
+        if (w.geometrySupported) ++weldOk;
+        else {
+            ++weldBad;
+            if (weldReason.empty())
+                weldReason = std::wstring(w.unsupportedReason.begin(),
+                                          w.unsupportedReason.end());
+        }
+    }
+    if (weldOk > 0)
+        solidStatusMessage_ = type->displayName + L" — kaynak: " +
+                              std::to_wstring(weldOk) + L" kati uretildi";
+    else if (weldBad > 0)
+        solidStatusMessage_ = type->displayName + L" — KAYNAK KATISI YOK: " +
+                              (weldReason.empty() ? L"bilinmeyen neden" : weldReason);
+    invalidateCanvas();
+    updateStatus();
+    return true;
+#else
+    (void)compId;
+    (void)newParams;
+    return false;
+#endif
+}
+
+bool Application::selectedBoltProperties(double& nominalDiameter, double& holeDiameter,
+                                         std::string& grade) const {
+    if (selectedModels_.empty() || selectedModels_.front() >= document_.models().size())
+        return false;
+    const EntityId id = document_.modelId(selectedModels_.front());
+    for (const auto& bg : document_.boltGroups())
+        if (bg.displayEntityId == id) {
+            nominalDiameter = bg.params.nominalDiameter;
+            holeDiameter = bg.params.holeDiameter;
+            grade = bg.params.grade;
+            return true;
+        }
+    return false;
+}
+
+void Application::setSelectedBoltProperties(double nominalDiameter, double holeDiameter,
+                                            const std::string& grade) {
+    if (selectedModels_.empty() || selectedModels_.front() >= document_.models().size())
+        return;
+    const EntityId id = document_.modelId(selectedModels_.front());
+    std::optional<std::size_t> bi;
+    for (std::size_t k = 0; k < document_.boltGroups().size(); ++k)
+        if (document_.boltGroups()[k].displayEntityId == id) { bi = k; break; }
+    if (!bi) return;
+    if (nominalDiameter <= 0.0 || holeDiameter <= 0.0) return;
+    pushUndoSnapshot();
+    BoltGroup bolt = document_.boltGroups()[*bi];
+    bolt.params.nominalDiameter = nominalDiameter;
+    bolt.params.holeDiameter = holeDiameter;
+    bolt.params.grade = grade;
+    document_.setBoltGroup(*bi, std::move(bolt));
+#ifdef MM_HAS_OCC
+    const BoltGroup& updated = document_.boltGroups()[*bi];
+    rebuildBoltDisplay(updated);
+    for (const EntityId part : updated.parts) recomputeCutTarget(part);
+#endif
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
+}
+
+bool Application::selectedBoltGroup(BoltGroup& out) const {
+    if (selectedModels_.empty() || selectedModels_.front() >= document_.models().size())
+        return false;
+    const EntityId id = document_.modelId(selectedModels_.front());
+    for (const auto& bg : document_.boltGroups())
+        if (bg.displayEntityId == id) { out = bg; return true; }
+    return false;
+}
+
+void Application::setSelectedBoltGroup(const BoltGroup& bolt) {
+    if (selectedModels_.empty() || selectedModels_.front() >= document_.models().size())
+        return;
+    const EntityId id = document_.modelId(selectedModels_.front());
+    std::optional<std::size_t> bi;
+    for (std::size_t k = 0; k < document_.boltGroups().size(); ++k)
+        if (document_.boltGroups()[k].displayEntityId == id) { bi = k; break; }
+    if (!bi) return;
+    if (bolt.params.nominalDiameter <= 0.0 || bolt.params.holeDiameter <= 0.0) return;
+    pushUndoSnapshot();
+    BoltGroup updated = bolt;
+    updated.id = document_.boltGroups()[*bi].id;             // kimlik korunur
+    updated.displayEntityId = document_.boltGroups()[*bi].displayEntityId;
+    document_.setBoltGroup(*bi, std::move(updated));
+#ifdef MM_HAS_OCC
+    const BoltGroup& ng = document_.boltGroups()[*bi];
+    rebuildBoltDisplay(ng);
+    for (const EntityId part : ng.parts) recomputeCutTarget(part);
+#endif
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
+}
+
+bool Application::showBoltContextMenu(int x, int y) {
+    constexpr int kCtxBoltCenterX = 1;
+    constexpr int kCtxBoltCenterY = 2;
+    const auto hit = modelIndexAt(x, y);
+    if (!hit || *hit >= document_.models().size()) return false;
+    const EntityId id = document_.modelId(*hit);
+    std::optional<std::size_t> bi;
+    for (std::size_t k = 0; k < document_.boltGroups().size(); ++k)
+        if (document_.boltGroups()[k].displayEntityId == id) { bi = k; break; }
+    if (!bi) return false;
+    // Secimi bu bulona getir (menu hedefi + gorsel tutarlilik).
+    selectedModels_.clear();
+    selectedModels_.push_back(*hit);
+    selectedCutModifiers_.clear();
+    updateControls(); updateStatus(); invalidateCanvas();
+
+    HMENU menu = CreatePopupMenu();
+    if (!menu) return true;
+    AppendMenuW(menu, MF_STRING, kCtxBoltCenterX, L"Ortala X");
+    AppendMenuW(menu, MF_STRING, kCtxBoltCenterY, L"Ortala Y");
+    POINT pt{x, y};
+    ClientToScreen(canvas_, &pt);
+    const int cmd = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_NONOTIFY,
+                                   pt.x, pt.y, 0, canvas_, nullptr);
+    DestroyMenu(menu);
+    if (cmd == kCtxBoltCenterX) centerSelectedBolt(true, false);
+    else if (cmd == kCtxBoltCenterY) centerSelectedBolt(false, true);
+    return true;
+}
+
+void Application::centerSelectedBolt(bool centerX, bool centerY) {
+    if (!(centerX || centerY)) return;
+    if (selectedModels_.empty() || selectedModels_.front() >= document_.models().size())
+        return;
+    const EntityId id = document_.modelId(selectedModels_.front());
+    std::optional<std::size_t> bi;
+    for (std::size_t k = 0; k < document_.boltGroups().size(); ++k)
+        if (document_.boltGroups()[k].displayEntityId == id) { bi = k; break; }
+    if (!bi) return;
+    const BoltGroup& bg = document_.boltGroups()[*bi];
+    // Bagli parcalarin birlesik sinir kutusu merkezi = "yuzey" ayak izi merkezi
+    // (levha icin birebir yuzey kutusu; profil icin parca kutusu yaklasimi).
+    Vec3 lo{1e100, 1e100, 1e100}, hi{-1e100, -1e100, -1e100};
+    bool any = false;
+    for (const EntityId part : bg.parts) {
+        const auto idx = document_.indexOfEntity(part);
+        if (!idx || *idx >= document_.modelBounds().size()) continue;
+        const auto& b = document_.modelBounds()[*idx];
+        lo.x = std::min(lo.x, b.minimum.x); lo.y = std::min(lo.y, b.minimum.y);
+        lo.z = std::min(lo.z, b.minimum.z);
+        hi.x = std::max(hi.x, b.maximum.x); hi.y = std::max(hi.y, b.maximum.y);
+        hi.z = std::max(hi.z, b.maximum.z);
+        any = true;
+    }
+    if (!any) {
+        MessageBeep(MB_ICONWARNING);
+        publishStatus(L"Ortala: bulonun bagli parcasi yok / kutu hesaplanamadi");
+        return;
+    }
+    const Vec3 center = (lo + hi) * 0.5;
+    pushUndoSnapshot();
+    BoltGroup bolt = bg;
+    bolt.origin = mm::boltGroupCenteredOrigin(bolt, center, centerX, centerY);
+    document_.setBoltGroup(*bi, std::move(bolt));
+#ifdef MM_HAS_OCC
+    const BoltGroup& updated = document_.boltGroups()[*bi];
+    rebuildBoltDisplay(updated);
+    for (const EntityId part : updated.parts) recomputeCutTarget(part);
+#endif
+    publishStatus(centerX && centerY ? L"Bulon ortalandı (X ve Y)"
+                  : centerX        ? L"Bulon ortalandı (X)"
+                                   : L"Bulon ortalandı (Y)");
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
+}
+
+void Application::startTwoPointViewCommand() {
+    startWorkPlaneCommand(); // ayni secim akisi: snap + track + kesik onizleme
+    pointPickPurpose_ = PointPickPurpose::TwoPointView;
+    updateStatus();
+}
+
+void Application::startPlanViewCommand() {
+    // PLAN GORUNUSU: nokta secmeye gerek YOK — tek parametre Z kotudur.
+    // Kot edit box ile alinir (0/negatif olabilir); iptal = komut baslamaz.
+    if (!twoPointViewCallback_) { MessageBeep(MB_ICONWARNING); return; }
+    // Yarim kalmis nokta secimi varsa temizle (aksi halde arka planda kalir).
+    if (workPlanePicking_) cancelWorkPlaneCommand();
+    const auto level = requestLevelParameter(L"Plan görünüşü Z kotu (mm)", L"0");
+    if (!level) { // iptal veya gecersiz
+        publishStatus(L"Plan görünüşü: geçerli bir Z kotu girilmedi");
+        return;
+    }
+    const auto view = viewFromPlanLevel(*level);
+    if (!view) { MessageBeep(MB_ICONWARNING); return; }
+    twoPointViewCallback_(*view);
+}
+
+void Application::startThreePointViewCommand() {
+    // 3 NOKTALI GORUNUS: origin + X + Y (snap/track aktif). Ayni secim akisi;
+    // ucuncu noktada ViewDefinition uretilir, yeni MDI penceresi acilir.
+    if (!twoPointViewCallback_) { MessageBeep(MB_ICONWARNING); return; }
+    startWorkPlaneCommand(); // ayni secim akisi: snap + track + kesik onizleme
+    pointPickPurpose_ = PointPickPurpose::ThreePointView;
+    updateStatus();
+}
+
+void Application::startViewOnWorkPlaneCommand() {
+    // CALISMA DUZLEMINDE GORUNUS (yeni pencere): secim yok, mevcut work plane
+    // dogrudan gorunus duzlemidir.
+    if (!twoPointViewCallback_) { MessageBeep(MB_ICONWARNING); return; }
+    if (workPlanePicking_) cancelWorkPlaneCommand();
+    const Ucs ucs = Ucs::fromWorkPlane(workPlane_);
+    const UcsView basis = viewFromUcs(ucs);
+    ViewDefinition view;
+    view.origin = workPlane_.origin;
+    view.right = basis.right;
+    view.up = basis.up;
+    view.normal = basis.normal;
+    view.length = 0.0;
+    view.depthFront = kDefaultViewDepth;
+    view.depthBack = kDefaultViewDepth;
+    twoPointViewCallback_(view);
+}
+
+// Secili TEK parcanin (profil uyesi) eksen cercevesini ve eksen orijinini
+// dondurur. Secim tam olarak bir profil uyesi degilse nullopt.
+std::optional<Ucs> Application::selectedPartFrame(Vec3& axisOrigin) const {
+    if (selectedModels_.size() != 1) return std::nullopt;
+    const std::size_t index = selectedModels_.front();
+    if (index >= document_.models().size()) return std::nullopt;
+    const auto& model = document_.models()[index];
+    const EntityProperties& props = model.properties();
+    if (props.profileName.empty()) return std::nullopt; // parca degil (cizgi vb.)
+    const Vec3 from{props.axisFromX, props.axisFromY, props.axisFromZ};
+    const Vec3 to{props.axisToX, props.axisToY, props.axisToZ};
+    const Vec3 axis{to.x - from.x, to.y - from.y, to.z - from.z};
+    if (!(std::sqrt(axis.x * axis.x + axis.y * axis.y + axis.z * axis.z) > 1e-9))
+        return std::nullopt; // ekseni tanimsiz
+    axisOrigin = from;
+    const Vec3 refNormal{props.sectionNormalX, props.sectionNormalY, props.sectionNormalZ};
+    return Ucs::fromPartFrame(from, axis, refNormal);
+}
+
+void Application::startPartPlaneViewCommand(PartPlane plane) {
+    if (!twoPointViewCallback_) { MessageBeep(MB_ICONWARNING); return; }
+    if (workPlanePicking_) cancelWorkPlaneCommand();
+    Vec3 origin{};
+    const auto frame = selectedPartFrame(origin);
+    if (!frame) {
+        MessageBeep(MB_ICONWARNING);
+        publishStatus(L"Parça görünüşü: tam olarak bir profil üyesi seçin");
+        return;
+    }
+    twoPointViewCallback_(viewFromPartPlane(*frame, plane, origin));
+}
+
+void Application::startPartDefaultViewsCommand() {
+    if (!twoPointViewCallback_) { MessageBeep(MB_ICONWARNING); return; }
+    if (workPlanePicking_) cancelWorkPlaneCommand();
+    Vec3 origin{};
+    const auto frame = selectedPartFrame(origin);
+    if (!frame) {
+        MessageBeep(MB_ICONWARNING);
+        publishStatus(L"Parça görünüşleri: tam olarak bir profil üyesi seçin");
+        return;
+    }
+    // Tekla "default views of part": front, top, end (3B ana pencerede zaten
+    // parcaya sigdirilir).
+    twoPointViewCallback_(viewFromPartPlane(*frame, PartPlane::Front, origin));
+    twoPointViewCallback_(viewFromPartPlane(*frame, PartPlane::Top, origin));
+    twoPointViewCallback_(viewFromPartPlane(*frame, PartPlane::End, origin));
+}
+
+void Application::startPart3DViewCommand() {
+    // 3B GORUNUMDE PARCAYA SIGDIR: secili parcanin sinir kutusuna 3B kamerayi
+    // sigdirir (yeni pencere DEGIL — Tekla'daki "3D view of part" davranisinin
+    // karsiligi; parca ana 3B gorunumde ortalanir).
+    if (selectedModels_.size() != 1) {
+        MessageBeep(MB_ICONWARNING);
+        publishStatus(L"Parça 3B: tam olarak bir parça seçin");
+        return;
+    }
+    const std::size_t index = selectedModels_.front();
+    const auto bounds = document_.modelBounds();
+    if (index >= bounds.size()) return;
+    cancelZoomWindow2D();
+    if (workPlanePicking_) cancelWorkPlaneCommand();
+    if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
+    cancelDrawing();
+    RECT client{}; GetClientRect(canvas_, &client);
+    if (viewRotationLocked()) { // gorunus penceresi: aktiflestirmeden sigdir
+        fitViewport(canvas_);
+        return;
+    }
+    camera_.setView(StandardView::Isometric);
+    camera_.fit3D(bounds[index].minimum, bounds[index].maximum,
+                  std::max(1L, client.right), std::max(1L, client.bottom), 50.0);
+    mode_ = EditMode::View3D;
+    drawingActive_ = false;
+    updateHover(cursorScreen_.x, cursorScreen_.y);
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
+}
+
+void Application::startGridViewsCommand() {
+    if (!twoPointViewCallback_) { MessageBeep(MB_ICONWARNING); return; }
+    if (workPlanePicking_) cancelWorkPlaneCommand();
+    const auto& grids = document_.grids();
+    if (grids.empty()) {
+        MessageBeep(MB_ICONWARNING);
+        publishStatus(L"Grid görünüşleri: modelde yapı gridi yok");
+        return;
+    }
+    std::size_t count = 0;
+    for (const auto& grid : grids) {
+        for (const ViewDefinition& view : viewsAlongGridLines(grid)) {
+            twoPointViewCallback_(view);
+            ++count;
+        }
+    }
+    publishStatus(L"Grid görünüşleri: " + std::to_wstring(count) + L" pencere açıldı");
+}
+
+void Application::startRotateCenterCommand() {
+    // Gorunus penceresinde yon sabit (kilitli) — donus merkezi anlamsiz.
+    if (viewRotationLocked()) {
+        MessageBeep(MB_ICONWARNING);
+        publishStatus(L"Bu pencerede görünüş yönü sabit — döndürme merkezi kullanılamaz");
+        return;
+    }
+    // Nokta secme akisini paylas (snap + track + Esc/sag tik iptal aynen
+    // calisir); tek nokta yeter, bu yuzden lastik onizleme gorunmez
+    // (workPlanePoints_ bos kalir).
+    startWorkPlaneCommand();
+    pointPickPurpose_ = PointPickPurpose::RotateCenter;
+    updateStatus();
+}
+
+void Application::clearRotateCenter() {
+    camera_.clearOrbitPivot();
+    updateHover(cursorScreen_.x, cursorScreen_.y);
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
+}
+
+void Application::resetView() {
+    // TEK KAYNAK: eskiden R tusunun yaptigi is. Gorunus penceresinde yon
+    // kilitli oldugu icin yalnizca yeniden sigdirilir.
+    if (viewRotationLocked()) {
+        fitViewport(canvas_);
+    } else if (mode_ == EditMode::View3D) {
+        camera_.reset();
+    }
+    updateHover(cursorScreen_.x, cursorScreen_.y);
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
+}
+
 void Application::cancelWorkPlaneCommand() {
     workPlanePicking_ = false;
+    pointPickPurpose_ = PointPickPurpose::WorkPlane;
     workPlanePoints_.clear();
     hover_.reset();
     clearTemporaryTracking();
@@ -2049,7 +6368,273 @@ void Application::resetWorkPlane() {
     invalidateCanvas();
 }
 
+// --- P1 UCS/VIEW (UI baglantisi) -------------------------------------------
+
+void Application::setViewToWorkPlane() {
+    // Gorunus penceresi: yon iki noktayla tanimli — yalniz yeniden sigdir.
+    if (viewRotationLocked()) {
+        fitViewport(canvas_);
+        publishStatus(L"Görünüş yönü iki noktayla tanımlı — sığdırıldı");
+        return;
+    }
+    cancelZoomWindow2D();
+    if (workPlanePicking_) cancelWorkPlaneCommand();
+    if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
+    cancelDrawing();
+    profileGrip_.reset();
+    hover_.reset();
+    const Ucs ucs = Ucs::fromWorkPlane(workPlane_);
+    const UcsView view = viewFromUcs(ucs);
+    camera_.setViewBasis(view.right, view.up, camera_.center3D());
+    mode_ = EditMode::View3D;
+    drawingActive_ = false;
+    ensureSpaceMouseStarted();
+    updateHover(cursorScreen_.x, cursorScreen_.y);
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
+}
+
+void Application::setGlobalWorkPlane(int which) {
+    cancelZoomWindow2D();
+    if (workPlanePicking_) cancelWorkPlaneCommand();
+    if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
+    cancelDrawing();
+    profileGrip_.reset();
+    hover_.reset();
+    const Vec3 origin = workPlane_.origin;
+    switch (which) {
+    case 1: workPlane_ = Ucs::planeXZ(origin).toWorkPlane(); break;
+    case 2: workPlane_ = Ucs::planeYZ(origin).toWorkPlane(); break;
+    default: workPlane_ = Ucs::planeXY(origin).toWorkPlane(); break;
+    }
+    updateHover(cursorScreen_.x, cursorScreen_.y);
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
+}
+
+bool Application::saveNamedView(const std::wstring& name) {
+    if (name.empty()) return false;
+    const auto R = camera_.rotationMatrix(); // row-major world->camera
+    Ucs ucs;
+    ucs.origin = camera_.center3D();
+    ucs.xAxis = {R[0], R[1], R[2]}; // ekran saga (dunya)
+    ucs.yAxis = {R[3], R[4], R[5]}; // ekran yukari (dunya)
+    ucs.zAxis = {R[6], R[7], R[8]}; // izleyiciye dogru (dunya)
+    NamedView view;
+    view.name = name;
+    view.ucs = ucs;
+    view.origin = ucs.origin;
+    return namedViews_.add(std::move(view));
+}
+
+bool Application::applyNamedView(const std::wstring& name) {
+    const NamedView* view = namedViews_.find(name);
+    if (!view) return false;
+    // Gorunus penceresi: yon iki noktayla tanimli — yalniz yeniden sigdir.
+    if (viewRotationLocked()) {
+        fitViewport(canvas_);
+        publishStatus(L"Görünüş yönü iki noktayla tanımlı — sığdırıldı");
+        return true;
+    }
+    cancelZoomWindow2D();
+    if (workPlanePicking_) cancelWorkPlaneCommand();
+    if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
+    cancelDrawing();
+    profileGrip_.reset();
+    hover_.reset();
+    const UcsView basis = viewFromUcs(view->ucs);
+    camera_.setViewBasis(basis.right, basis.up, view->origin);
+    mode_ = EditMode::View3D;
+    drawingActive_ = false;
+    ensureSpaceMouseStarted();
+    updateHover(cursorScreen_.x, cursorScreen_.y);
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
+    return true;
+}
+
+std::vector<std::wstring> Application::namedViewNames() const {
+    return namedViews_.names();
+}
+
+bool Application::removeNamedView(const std::wstring& name) {
+    return namedViews_.remove(name);
+}
+
+// --- PARAMETRE GIRISI (edit box) -------------------------------------------
+// Parametreli komutlar sayisal degeri Qt QInputDialog (edit box) ile ister.
+
+std::optional<double> Application::requestDoubleParameter(const std::wstring& prompt,
+                                                         const std::wstring& initial) {
+    if (!parameterRequest_) return std::nullopt;
+    std::wstring out = initial;
+    if (!parameterRequest_(prompt, initial, out)) return std::nullopt; // iptal
+    try {
+        std::size_t used{};
+        const double value = std::stod(out, &used);
+        if (used != out.size() || !std::isfinite(value) || value <= 0.0) return std::nullopt;
+        return value;
+    } catch (...) { return std::nullopt; }
+}
+
+std::optional<std::size_t> Application::requestCountParameter(const std::wstring& prompt,
+                                                              const std::wstring& initial) {
+    if (!parameterRequest_) return std::nullopt;
+    std::wstring out = initial;
+    if (!parameterRequest_(prompt, initial, out)) return std::nullopt; // iptal
+    try {
+        std::size_t used{};
+        const long value = std::stol(out, &used);
+        if (used != out.size() || value < 2 || value > 1000) return std::nullopt;
+        return static_cast<std::size_t>(value);
+    } catch (...) { return std::nullopt; }
+}
+
+std::optional<double> Application::requestLevelParameter(const std::wstring& prompt,
+                                                        const std::wstring& initial) {
+    if (!parameterRequest_) return std::nullopt;
+    std::wstring out = initial;
+    if (!parameterRequest_(prompt, initial, out)) return std::nullopt; // iptal
+    try {
+        std::size_t used{};
+        const double value = std::stod(out, &used);
+        // Kot 0 ya da NEGATIF olabilir; yalniz sonlu olmasi sart.
+        if (used != out.size() || !std::isfinite(value)) return std::nullopt;
+        return value;
+    } catch (...) { return std::nullopt; }
+}
+
+void Application::activateDivide() {
+    const auto count = requestCountParameter(L"Nokta sayısı (2-1000)",
+                                             std::to_wstring(divideCount_));
+    if (!count) return; // iptal
+    divideCount_ = *count;
+    selectTool(DrawTool::Divide);
+}
+
 void Application::commitWorkPlanePoint(const Vec3& point) {
+    if (pointPickPurpose_ == PointPickPurpose::RotateCenter) {
+        if (!std::isfinite(point.x) || !std::isfinite(point.y) || !std::isfinite(point.z)) {
+            MessageBeep(MB_ICONWARNING);
+            return;
+        }
+        // Ekran donus merkezi: pivot DUNYA noktasi olarak saklanir, goruntu
+        // ZIPLAMAZ (kamera pivot etrafinda doner, pivot pikselde sabit kalir).
+        camera_.setOrbitPivot(point);
+        cancelWorkPlaneCommand();
+        updateControls();
+        updateStatus();   // durum cubugu "DÖNÜŞ MERKEZİ — Ctrl+sol tuş" yazar
+        invalidateCanvas();
+        return;
+    }
+    if (pointPickPurpose_ == PointPickPurpose::TwoPointView) {
+        if (!std::isfinite(point.x) || !std::isfinite(point.y) || !std::isfinite(point.z)) {
+            MessageBeep(MB_ICONWARNING);
+            return;
+        }
+        workPlanePoints_.push_back(point);
+        if (workPlanePoints_.size() < 2) return;
+        const auto view = viewFromTwoPoints(workPlanePoints_[0], workPlanePoints_[1]);
+        if (!view) {
+            // Ayni nokta / dusey cift: yon tanimsiz -> 2. noktayi yeniden iste.
+            workPlanePoints_.pop_back();
+            MessageBeep(MB_ICONWARNING);
+            publishStatus(L"Görünüş: iki nokta XY düzleminde farklı olmalı — 2. noktayı yeniden seçin");
+            return;
+        }
+        // TEKLA AKISI: iki nokta tamam, simdi BAKIS YONU secilir. P1-P2
+        // cizgisi ekran-saga dogru sabitlenir (right); izleyici ya +normal ya
+        // -normal tarafinda olur. Imlec cizginin hangi tarafindaysa normal o
+        // tarafa cevrilir (ok onizlemesi); tik yonu onaylar.
+        pointPickPurpose_ = PointPickPurpose::TwoPointViewDirection;
+        twoPointViewNormal_ = view->normal;
+        updateStatus();
+        invalidateCanvas();
+        return;
+    }
+    if (pointPickPurpose_ == PointPickPurpose::TwoPointViewDirection) {
+        if (!std::isfinite(point.x) || !std::isfinite(point.y) || !std::isfinite(point.z)) {
+            MessageBeep(MB_ICONWARNING);
+            return;
+        }
+        // Tik noktasi hangi taraftaysa normal oraya cevrilir; sonra view
+        // uretilir ve iki noktali gorunum penceresi acilir. Normal, bakis
+        // yonudur; diger taraf secildiyse gorunum AYNALANIR (Tekla davranisi:
+        // duzlemin arkasindan bakinca sag/sol yer degistirir). Tutarlilik icin
+        // normal = right x up korunur -> right da terslenir.
+        const auto base = viewFromTwoPoints(workPlanePoints_[0], workPlanePoints_[1]);
+        if (!base) {
+            cancelWorkPlaneCommand();
+            return;
+        }
+        ViewDefinition view = *base;
+        view.normal = twoPointViewNormal_;
+        const bool flipped = view.normal.x * base->normal.x + view.normal.y * base->normal.y +
+                                 view.normal.z * base->normal.z < 0.0;
+        if (flipped) {
+            view.right = {-view.right.x, -view.right.y, -view.right.z};
+        }
+        cancelWorkPlaneCommand();
+        if (twoPointViewCallback_) twoPointViewCallback_(view);
+        return;
+    }
+    if (pointPickPurpose_ == PointPickPurpose::ThreePointView) {
+        if (!std::isfinite(point.x) || !std::isfinite(point.y) || !std::isfinite(point.z)) {
+            MessageBeep(MB_ICONWARNING);
+            return;
+        }
+        workPlanePoints_.push_back(point);
+        if (workPlanePoints_.size() < 3) return;
+        // Origin + X + Y -> Ucs -> ViewDefinition -> yeni MDI penceresi.
+        const auto ucs = Ucs::fromThreePoints(workPlanePoints_[0], workPlanePoints_[1],
+                                              workPlanePoints_[2]);
+        if (!ucs) {
+            workPlanePoints_.pop_back();
+            MessageBeep(MB_ICONWARNING);
+            publishStatus(L"3 noktalı görünüş: noktalar doğrusal/çakışık — 3. noktayı yeniden seçin");
+            return;
+        }
+        const UcsView basis = viewFromUcs(*ucs);
+        ViewDefinition view;
+        view.origin = workPlanePoints_[0];
+        view.right = basis.right;
+        view.up = basis.up;
+        view.normal = basis.normal;
+        view.length = 0.0;
+        view.depthFront = kDefaultViewDepth;
+        view.depthBack = kDefaultViewDepth;
+        cancelWorkPlaneCommand();
+        if (twoPointViewCallback_) twoPointViewCallback_(view);
+        return;
+    }
+    if (pointPickPurpose_ == PointPickPurpose::ConstructionPlane) {
+        if (!std::isfinite(point.x) || !std::isfinite(point.y) || !std::isfinite(point.z)) {
+            MessageBeep(MB_ICONWARNING);
+            return;
+        }
+        workPlanePoints_.push_back(point);
+        if (workPlanePoints_.size() < 3) return;
+        const auto plane = WorkPlane::fromThreePoints(workPlanePoints_[0], workPlanePoints_[1],
+                                                      workPlanePoints_[2]);
+        if (!plane) {
+            workPlanePoints_.pop_back();
+            MessageBeep(MB_ICONWARNING);
+            publishStatus(L"Konstrüksiyon düzlemi: noktalar doğrusal/çakışık — 3. noktayı yeniden seçin");
+            return;
+        }
+        // Tek undo adimi: duzlem eklenir; is-duzlemi (workPlane_) DEGISMEZ.
+        pushUndoSnapshot();
+        document_.addConstructionPlane(*plane, kDefaultConstructionPlaneSize);
+        cancelWorkPlaneCommand();
+        updateHover(cursorScreen_.x, cursorScreen_.y);
+        updateControls();
+        updateStatus();
+        invalidateCanvas();
+        return;
+    }
     workPlanePoints_.push_back(point);
     if (workPlanePoints_.size() < 3) return;
     if (const auto plane = WorkPlane::fromThreePoints(workPlanePoints_[0], workPlanePoints_[1],
@@ -2065,6 +6650,8 @@ void Application::commitWorkPlanePoint(const Vec3& point) {
 void Application::cancelTransformCommand() {
     transformCommand_ = TransformCommand::None;
     transformPhase_ = TransformPhase::Selecting;
+    trimSolidPhase_ = 0;
+    trimSolidIndex_ = 0;
     selectedModels_.clear();
     selectionFirstCorner_.reset();
     transformBase_.reset();
@@ -2079,6 +6666,38 @@ void Application::cancelTransformCommand() {
 }
 
 bool Application::toggleModelSelection(int x, int y) {
+    // KESME NESNELERI SECIMI (P5): kesme modifier'i modelin USTUNDE cizilir,
+    // once o denenir. Isabet varsa (bos modda) model secimi temizlenir ve
+    // modifier toggle'lanir; model isabetinde kesme secimi temizlenir.
+    std::optional<std::size_t> cutHit;
+    if (mode_ == EditMode::Draw2D) {
+        cutHit = hitTestCutModifier2D(screenTo2D(x, y), document_, 10.0 / (60.0 * camera_.zoom()));
+    } else {
+        RECT client{}; GetClientRect(canvas_, &client);
+        cutHit = hitTestCutModifier3D({static_cast<double>(x), static_cast<double>(y)}, document_, camera_,
+                                      std::max(1L, client.right), std::max(1L, client.bottom), 10.0);
+    }
+    if (cutHit && transformCommand_ == TransformCommand::None) {
+        selectedModels_.clear();
+        selectionFirstCorner_.reset();
+        const auto existing = std::find(selectedCutModifiers_.begin(), selectedCutModifiers_.end(), *cutHit);
+        if (existing == selectedCutModifiers_.end()) selectedCutModifiers_.push_back(*cutHit);
+        else selectedCutModifiers_.erase(existing);
+        return true;
+    }
+    // COMPONENT SIMGESI: buyuk isaret normal model hit'ten once denenir.
+    if (const auto glyph = componentGlyphModelAt(x, y)) {
+        selectedCutModifiers_.clear();
+        if (transformCommand_ == TransformCommand::Offset) {
+            selectedModels_.assign(1, *glyph);
+            selectionFirstCorner_.reset();
+            return true;
+        }
+        const auto existing = std::find(selectedModels_.begin(), selectedModels_.end(), *glyph);
+        if (existing == selectedModels_.end()) selectedModels_.push_back(*glyph);
+        else selectedModels_.erase(existing);
+        return true;
+    }
     std::optional<std::size_t> hit;
     if (mode_ == EditMode::Draw2D) {
         hit = hitTestModel2D(screenTo2D(x, y), document_, 10.0 / (60.0 * camera_.zoom()));
@@ -2088,6 +6707,8 @@ bool Application::toggleModelSelection(int x, int y) {
                              std::max(1L, client.right), std::max(1L, client.bottom), 10.0);
     }
     if (!hit) return false;
+    // Model secildi: kesme modifier secimi temizlenir (iki secim ayri).
+    selectedCutModifiers_.clear();
     if (transformCommand_ == TransformCommand::Offset) {
         selectedModels_.assign(1, *hit);
         selectionFirstCorner_.reset();
@@ -2097,6 +6718,150 @@ bool Application::toggleModelSelection(int x, int y) {
     if (existing == selectedModels_.end()) selectedModels_.push_back(*hit);
     else selectedModels_.erase(existing);
     return true;
+}
+
+void Application::refreshHoverCandidate(int x, int y) {
+    // Yalniz VERB-NOUN KESME bekleme modunda hover vurgusu; bos (gezinme)
+    // modda vurgu yok (kullanici istegi).
+    hoverModel_.reset();
+    hoverCutModifier_.reset();
+    hoverFaceModel_.reset();
+    hoverFaceIndices_.clear();
+    if (!pendingCutKind_ && !pendingBolt_ && !pendingFinPlate_ && !componentCommandActive()) return;
+    // VERB-NOUN BOLT beklemede: yalnizca normal parcalar (konstrüksiyon
+    // olmayan) vurgulanir. Tam 2 parca seciliyse YUZ secim adimidir: imlecin
+    // altindaki yuz raycast ile bulunup vurgulanir (tiklaninca secilen yuz).
+    if (pendingBolt_) {
+        if (pendingBoltParts_.size() >= 2) {
+            const auto faceHit = pendingBoltFaceHit(x, y);
+            if (faceHit) {
+                hoverFaceModel_ = faceHit->model;
+                hoverFaceIndices_ = planarFaceTriangleGroup(
+                    document_.models()[faceHit->model], faceHit->hit.faceIndex);
+            }
+            return;
+        }
+        const auto matchesRequired = [&](std::size_t index) {
+            if (index >= document_.models().size()) return false;
+            return document_.models()[index].constructionKind() == ConstructionKind::None;
+        };
+        std::optional<std::size_t> hit;
+        if (mode_ == EditMode::Draw2D)
+            hit = hitTestModel2D(screenTo2D(x, y), document_, 10.0 / (60.0 * camera_.zoom()));
+        else {
+            RECT client{}; GetClientRect(canvas_, &client);
+            hit = hitTestModel3D({static_cast<double>(x), static_cast<double>(y)}, document_,
+                                 camera_, std::max(1L, client.right), std::max(1L, client.bottom),
+                                 10.0);
+        }
+        if (hit && matchesRequired(*hit)) hoverModel_ = hit;
+        return;
+    }
+    // VERB-NOUN FIN PLATE / GENERIC CATALOG beklemede: main/secondary icin
+    // yalnizca normal parcalar (konstrüksiyon olmayan) vurgulanir — Bolt'un
+    // parca-secim faziyla ayni kural.
+    if (pendingFinPlate_ || componentCommandActive()) {
+        const auto matchesRequired = [&](std::size_t index) {
+            if (index >= document_.models().size()) return false;
+            return document_.models()[index].constructionKind() == ConstructionKind::None;
+        };
+        std::optional<std::size_t> hit;
+        if (mode_ == EditMode::Draw2D)
+            hit = hitTestModel2D(screenTo2D(x, y), document_, 10.0 / (60.0 * camera_.zoom()));
+        else {
+            RECT client{}; GetClientRect(canvas_, &client);
+            hit = hitTestModel3D({static_cast<double>(x), static_cast<double>(y)}, document_,
+                                 camera_, std::max(1L, client.right), std::max(1L, client.bottom),
+                                 10.0);
+        }
+        if (hit && matchesRequired(*hit)) hoverModel_ = hit;
+        return;
+    }
+    // VERB-NOUN KESME beklemede: yalnizca gerekli tur vurgulanir. P12 (coklu
+    // hedef): once profiller (en az biri gerekli), sonra duzlem; ikisi de
+    // tamamlaninca vurgu yok (hazir). Kesme modifier'lari bu modda vurgulanmaz.
+    const bool needProfiles = pendingCutTargets_.empty();
+    const bool needPlane = !pendingCutPlane_.has_value();
+    if (!needProfiles && !needPlane) return;
+    const auto matchesRequired = [&](std::size_t index) {
+        if (index >= document_.models().size()) return false;
+        const auto& m = document_.models()[index];
+        if (needProfiles)
+            return m.constructionKind() == ConstructionKind::None &&
+                   !m.properties().profileName.empty();
+        return m.constructionKind() == ConstructionKind::Plane;
+    };
+    std::optional<std::size_t> hit;
+    if (mode_ == EditMode::Draw2D)
+        hit = hitTestModel2D(screenTo2D(x, y), document_, 10.0 / (60.0 * camera_.zoom()));
+    else {
+        RECT client{}; GetClientRect(canvas_, &client);
+        hit = hitTestModel3D({static_cast<double>(x), static_cast<double>(y)}, document_,
+                             camera_, std::max(1L, client.right), std::max(1L, client.bottom),
+                             10.0);
+    }
+    if (hit && matchesRequired(*hit)) hoverModel_ = hit;
+}
+
+void Application::deleteSelectedCutModifiers() {
+    if (selectedCutModifiers_.empty()) return;
+    pushUndoSnapshot();
+    // Indeksler AZALAN sirada silinir (onceki silme sonraki indeksleri kaydirmasin).
+    std::sort(selectedCutModifiers_.begin(), selectedCutModifiers_.end(), std::greater<std::size_t>());
+    std::vector<EntityId> targets;
+    for (const std::size_t ci : selectedCutModifiers_) {
+        if (ci < document_.cutModifiers().size()) {
+            targets.push_back(document_.cutModifiers()[ci].target);
+            document_.removeCutModifier(ci);
+        }
+    }
+    selectedCutModifiers_.clear();
+#ifdef MM_HAS_OCC
+    // Hedefleri KALAN modifier'larla yeniden hesapla (silinen kesme geri alinir).
+    for (const EntityId target : targets) recomputeCutTarget(target);
+#endif
+    updateHover(cursorScreen_.x, cursorScreen_.y);
+    updateStatus();
+    invalidateCanvas();
+}
+
+std::optional<std::size_t> Application::hitTestCutModifierAt(int x, int y) const {
+    // Kesme modifier'i isabet testi icin 2B/3B ortak yol (P8 Alt+sol tik +
+    // P5 secim/hint ile ayni esikler).
+    if (mode_ == EditMode::Draw2D)
+        return hitTestCutModifier2D(screenTo2D(x, y), document_,
+                                    10.0 / (60.0 * camera_.zoom()), true);
+    RECT client{};
+    GetClientRect(canvas_, &client);
+    return hitTestCutModifier3D({static_cast<double>(x), static_cast<double>(y)}, document_, camera_,
+                                std::max(1L, client.right), std::max(1L, client.bottom), 10.0, true);
+}
+
+void Application::flipCutDirection(std::size_t index) {
+    // P8: kesme nesnesi uzerinde Alt+sol tik -> yonu tersine cevir.
+    if (index >= document_.cutModifiers().size()) return;
+    CutModifier mod = document_.cutModifiers()[index];
+    switch (mod.kind) {
+    case CutKind::PlaneCut:
+    case CutKind::Fitting:
+    case CutKind::LineCut:
+        mod.invertSide = !mod.invertSide;
+        break;
+    default:  // PolygonCut / BooleanCut: yonsuz through-cut / boolean.
+        MessageBeep(MB_ICONINFORMATION);
+        publishStatus(L"Bu kesme türünün yönü yok (through-cut / boolean)");
+        return;
+    }
+    pushUndoSnapshot();
+    document_.setCutModifier(index, mod);
+#ifdef MM_HAS_OCC
+    recomputeCutTarget(mod.target);
+#endif
+    publishStatus(L"Kesme yönü tersine çevrildi");
+    updateHover(cursorScreen_.x, cursorScreen_.y);
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
 }
 
 void Application::completeWindowSelection(int x, int y) {
@@ -2119,6 +6884,88 @@ void Application::completeWindowSelection(int x, int y) {
             selectedModels_.push_back(index);
     }
 }
+
+std::optional<std::size_t> Application::solidTrimTargetAt(int x, int y) const {
+    // Yalniz kati modeller (yuzu olanlar) icin isabet testi: kesim cizgisi
+    // katinin ustunde duruyorsa bile kati oncelikli secilir.
+    std::vector<std::size_t> solids;
+    for (std::size_t i = 0; i < document_.models().size(); ++i)
+        if (!document_.models()[i].faces().empty()) solids.push_back(i);
+    if (solids.empty()) return std::nullopt;
+    if (mode_ == EditMode::Draw2D)
+        return hitTestModelCandidates2D(screenTo2D(x, y), document_,
+                                        10.0 / (60.0 * camera_.zoom()), solids);
+    RECT viewport{};
+    GetClientRect(canvas_, &viewport);
+    return hitTestModelCandidates3D({static_cast<double>(x), static_cast<double>(y)}, document_,
+                                    camera_, std::max(1L, viewport.right),
+                                    std::max(1L, viewport.bottom), 10.0, solids);
+}
+
+std::optional<std::size_t> Application::trimLineTargetAt(int x, int y) const {
+    // Kesim cizgisi secimi: yalniz yuzsuz (cizgi/egri) modeller — katinin
+    // dolgulu yuzu cizginin uzerindeyse bile cizgiyi calamasin.
+    std::vector<std::size_t> lines;
+    for (std::size_t i = 0; i < document_.models().size(); ++i)
+        if (document_.models()[i].faces().empty() &&
+            document_.models()[i].properties().profileName.empty())
+            lines.push_back(i);
+    if (lines.empty()) return std::nullopt;
+    if (mode_ == EditMode::Draw2D)
+        return hitTestModelCandidates2D(screenTo2D(x, y), document_,
+                                        10.0 / (60.0 * camera_.zoom()), lines);
+    RECT viewport{};
+    GetClientRect(canvas_, &viewport);
+    return hitTestModelCandidates3D({static_cast<double>(x), static_cast<double>(y)}, document_,
+                                    camera_, std::max(1L, viewport.right),
+                                    std::max(1L, viewport.bottom), 10.0, lines);
+}
+
+#ifdef MM_HAS_OCC
+void Application::performSolidTrimByLine(std::size_t lineIndex) {
+    if (lineIndex >= document_.models().size()) return;
+    const auto& cutLine = document_.models()[lineIndex];
+    if (cutLine.vertices().size() != 2) return;
+    const Vec3 a = cutLine.vertices()[0];
+    const Vec3 b = cutLine.vertices()[1];
+    Vec3 direction{b.x - a.x, b.y - a.y, b.z - a.z};
+    const double length = std::sqrt(direction.x * direction.x +
+                                    direction.y * direction.y +
+                                    direction.z * direction.z);
+    if (length <= 1e-9) return;
+    direction = {direction.x / length, direction.y / length, direction.z / length};
+    const Vec3& n = workPlane_.normal;
+    Vec3 planeNormal{direction.y * n.z - direction.z * n.y,
+                     direction.z * n.x - direction.x * n.z,
+                     direction.x * n.y - direction.y * n.x};
+    const double normalLength = std::sqrt(planeNormal.x * planeNormal.x +
+                                          planeNormal.y * planeNormal.y +
+                                          planeNormal.z * planeNormal.z);
+    if (normalLength <= 1e-9) return;
+    planeNormal = {planeNormal.x / normalLength, planeNormal.y / normalLength,
+                   planeNormal.z / normalLength};
+    trimPlanePoint_ = a;
+    trimPlaneNormal_ = planeNormal;
+    const auto& solidModel = document_.models()[trimSolidIndex_];
+    Vec3 center{0.0, 0.0, 0.0};
+    for (const auto& vertex : solidModel.vertices()) {
+        center.x += vertex.x;
+        center.y += vertex.y;
+        center.z += vertex.z;
+    }
+    const double count =
+        static_cast<double>(std::max<std::size_t>(1, solidModel.vertices().size()));
+    center = {center.x / count, center.y / count, center.z / count};
+    const double side = (center.x - a.x) * planeNormal.x +
+                        (center.y - a.y) * planeNormal.y +
+                        (center.z - a.z) * planeNormal.z;
+    executeSolidTrim(side >= 0.0);
+    trimSolidPhase_ = 0;
+    trimSolidIndex_ = 0;
+    trimLineIndex_ = 0;
+    cancelTransformCommand();
+}
+#endif
 
 std::optional<std::size_t> Application::trimExtendTargetAt(int x, int y) const {
     if (mode_ == EditMode::Draw2D)
@@ -2378,38 +7225,82 @@ void Application::commitTransformPoint(const Vec3& point) {
     }
     if (transformCommand_ == TransformCommand::Move) {
         pushUndoSnapshot();
-        document_.moveModels(selectedModels_, displacement);
+        // P9: kesme hedefi tasinirsa kaynak duzlem/cizgi/3DFACE onunla birlikte
+        // tasinir; bagli kaynaklar secime eklenip tek hamlede donusturulur.
+        const std::vector<std::size_t> moving = transformIndicesWithAttachedCutSources(selectedModels_);
+        document_.moveModels(moving, displacement);
+#ifdef MM_HAS_OCC
+        // P6+P9: tasinan varlik bir kesme KAYNAGI/ARACI veya HEDEFI ise bagli
+        // hedefleri yeniden hesapla (hedef tasindiginda taban da yeniden uretilir).
+        recomputeTargetsForMovedModels(moving);
+        // B1: tasinan bir BOLT DISPLAY'i varsa bulon origin'ini otele + delik +
+        // display yeniden hesapla.
+        syncBoltGroupsForMoved(moving, displacement);
+        // 2d-2b: tasinan kolon/kirise bagli End Plate baglantilarini yeniden hesapla.
+        {
+            std::vector<EntityId> movedIds;
+            movedIds.reserve(moving.size());
+            for (const std::size_t idx : moving) movedIds.push_back(document_.modelId(idx));
+            // 2d-2b: tasinan kolon/kirise bagli End Plate baglantilarini yeniden
+            // hesapla; basariliysa parametrik component'leri (Fin Plate vb.) de
+            // yeniden uret (ortak runtime, ikinci yol YOK). End Plate recompute
+            // basarisizsa (transaction rollback) DEVAM ETME — aksi halde ikinci
+            // yol eski/geri alinmis duruma yazar.
+            if (recomputeEndPlateConnectionsFor(movedIds))
+                recomputeComponentInstancesFor(movedIds);
+        }
+#endif
         cancelTransformCommand();
     } else if (transformCommand_ == TransformCommand::Copy) {
+        // AUTOCAD AKISI: komut Destination fazinda AKTIF kalir; her hedef
+        // tiklamasi bir kopya daha uretir. Kritik duzeltmeler:
+        //  1) KAYNAK hep orijinaller: secim degismez — eskiden secim
+        //     kopyalara gecince her tiklama kopyalarin kopyasini uretip
+        //     "golge nesneler ilerliyor" anomaliydi.
+        //  2) Taban noktasi her kopyada GUNCELLENIR: yeni kopya son
+        //     tiklanan noktadan degil, tabandan degiserek uretilir
+        //     (AutoCAD "Multiple" davranisi — ayni delta degil, imlec
+        //     nereye giderse oraya).
         pushUndoSnapshot();
         document_.copyModels(selectedModels_, displacement);
-        // AutoCAD tarzı: her hedef tıklaması yeni bir kopya üretir;
-        // komut sağ tık veya Escape ile bitirilinceye kadar Destination
-        // fazında kalır.
+        // Taban SABIT kalir (AutoCAD): kopya = kaynak + (tiklanan - taban).
+        // Tabani tıklamaya güncellemek deltayı bozuyordu: ikinci kopya
+        // kaynağın üstüne biniyor, toplu rotasyonda nesneler "yer
+        // değiştirmiş" gibi görünüyordu.
     }
 }
 
 void Application::updateHover(int x, int y) {
     if (!canvas_) return;
     cursorScreen_ = {x, y};
+    // Secim hinti: her karede sifirlanir, yalniz bos modda tazelenir.
+    hoverModel_.reset();
+    hoverCutModifier_.reset();
+    // RHINO TARZI GUMBALL: gorunurluk + vurgulu tutamac.
+    updateGumball();
+    gumballHover_ = gumballVisible_ ? gumballHitTest(x, y) : GumballHandle::None;
     polarTrackingLocked_ = false;
     temporaryTrackingLocked_ = false;
-    const bool snapCommandActive = workPlanePicking_ ||
+    const bool snapCommandActive = workPlanePicking_ || profileGrip_.has_value() ||
         commandAllowsSnapping(drawingActive_, transformCommand_, transformPhase_,
                               arrayItemCount_.has_value(), offsetDistance_.has_value());
     if (!snapCommandActive) {
         clearTemporaryTracking();
         hover_.reset();
+        // Bos modda imlecin altindaki secilebilir nesneyi vurgula (navigasyon
+        // sirasinda gereksiz yuk olmasin).
+        if (!rotating_ && !panning2D_ && !wheelNavigating_ && !viewCubeManipulating_)
+            refreshHoverCandidate(x, y);
         return;
     }
     const bool selectingEntities = transformCommand_ != TransformCommand::None &&
                                    transformPhase_ == TransformPhase::Selecting;
     const bool cameraNavigating = wheelNavigating_ || panning2D_ || rotating_ || viewCubeManipulating_;
     if (!shouldEvaluateSnapping(selectingEntities, zoomWindowActive_, cameraNavigating)) {
-        KillTimer(window_, 5);
-        temporaryPointDwellCandidate_.reset();
+        temporaryAcquireCandidate_.reset();
         temporaryTrackingGuides_.clear();
         temporaryDerivedPoints_.clear();
+        temporaryPerpendicularPoints_.clear();
         hover_.reset();
         return;
     }
@@ -2432,35 +7323,44 @@ void Application::updateHover(int x, int y) {
     }
     if (mode_ == EditMode::Draw2D) {
         const auto reference = transformPhase_ == TransformPhase::Destination ? transformBase_ : anchor_;
-        hover_ = SnapEngine::snap(screenTo2D(x, y), document_, 10.0 / (60.0 * camera_.zoom()), 1.0,
+        // Grid snap artik CUSTOM yapi akslarina gider (milimetrik adaptif
+        // grid kaldirildi) — SnapEngine document.grids() uzerinden yapar.
+        hover_ = SnapEngine::snap(screenTo2D(x, y), document_, 10.0 / (60.0 * camera_.zoom()),
                                   snapEnabled_, gridSnapEnabled_, reference, &enabledSnapTypes_);
     } else {
         RECT client{}; GetClientRect(canvas_, &client);
         const int width = std::max(1L, client.right);
         const int height = std::max(1L, client.bottom);
-        const auto reference = transformPhase_ == TransformPhase::Destination ? transformBase_ : anchor_;
+        const auto reference = profileGrip_ ? gripReferencePoint()
+            : (transformPhase_ == TransformPhase::Destination ? transformBase_ : anchor_);
         WorkPlane activePlane = workPlane_;
         if (reference && !workPlanePicking_) activePlane.origin = *reference;
+        // 3B grid snap: CUSTOM yapi akslarina (milimetrik adaptif yok).
+        // SOLID stil: snap yalniz gorunur (kameraya donuk) kenarlarda —
+        // arka yuzler dolguyla ortuludur, arkadaki kenarlara snap kafa
+        // karistirir. Wireframe/saydam/hidden'da tum kenarlar.
         hover_ = SnapEngine::snap3D({static_cast<double>(x), static_cast<double>(y)}, document_, camera_,
-                                    width, height, 10.0, 1.0, activePlane,
-                                    snapEnabled_, gridSnapEnabled_, reference, &enabledSnapTypes_);
+                                    width, height, 10.0, activePlane,
+                                    snapEnabled_, gridSnapEnabled_, reference, &enabledSnapTypes_,
+                                    visualStyle_ == VisualStyle::Solid);
     }
+    // IKI NOKTALI GORUNUS (viewDef_): secilen nokta IS DUZLEMINE iz dusurulur.
+    // Gorunus duzleminin normali = bakis yonu oldugu icin iz dusum EKRANDA
+    // noktayi OYNATMAZ; ama duzlem disi geometriye (baska derinlikteki uye
+    // ucuna) snap olsa bile tasima/kopyalama is duzlemi ICINDE kalir. Aksi
+    // halde ornegin baz bir derinlikteki ucdan, hedef baska derinlikteki
+    // noktadan secilince nesne derinlige kayip gorunusten (derinlik dilimi)
+    // CIKABILIYOR. Tek kaynak: WorkPlane::projectPoint.
+    if (viewDef_ && hover_) hover_->point = workPlane_.projectPoint(hover_->point);
     const SnapResult rawSnap = *hover_;
-    const bool acquirable = polarTrackingEnabled_ && rawSnap.type != SnapType::None &&
-                            rawSnap.type != SnapType::Grid;
-    const bool alreadyAcquired = std::find(temporaryTrackingPoints_.begin(),
-        temporaryTrackingPoints_.end(), rawSnap.point) != temporaryTrackingPoints_.end();
-    if (acquirable && !alreadyAcquired) {
-        if (!temporaryPointDwellCandidate_ || temporaryPointDwellCandidate_->point != rawSnap.point ||
-            temporaryPointDwellCandidate_->type != rawSnap.type) {
-            KillTimer(window_, 5);
-            temporaryPointDwellCandidate_ = rawSnap;
-            SetTimer(window_, 5, 450, nullptr);
-        }
-    } else {
-        KillTimer(window_, 5);
-        temporaryPointDwellCandidate_.reset();
-    }
+    // TP adayi: TAB ile kaydedilecek HAM snap noktasi. Eskiden burada 450 ms
+    // BEKLEME (dwell) zamanlayicisi kurulup nokta OTOMATIK kaydediliyordu;
+    // kullanici sarti: "TP noktalarini tab tusu ile koyalim, esc tp leri
+    // sifirlar" -> otomatik kayit kaldirildi, aday yalnizca saklanir.
+    if (polarTrackingEnabled_ && rawSnap.type != SnapType::None && rawSnap.type != SnapType::Grid)
+        temporaryAcquireCandidate_ = rawSnap;
+    else
+        temporaryAcquireCandidate_.reset();
 
     temporaryTrackingGuides_.clear();
     temporaryDerivedPoints_.clear();
@@ -2471,33 +7371,17 @@ void Application::updateHover(int x, int y) {
         hover_ = tracking.result;
         temporaryTrackingGuides_ = std::move(tracking.guides);
         temporaryDerivedPoints_ = std::move(tracking.derivedPoints);
+        temporaryPerpendicularPoints_ = std::move(tracking.perpendicularPoints);
         polarTrackingLocked_ = tracking.locked;
         temporaryTrackingLocked_ = tracking.locked;
     }
-    auto orthoAnchor = transformPhase_ == TransformPhase::Destination ? transformBase_ : anchor_;
+    auto orthoAnchor = profileGrip_ ? gripReferencePoint()
+        : (transformPhase_ == TransformPhase::Destination ? transformBase_ : anchor_);
     if (!orthoAnchor && workPlanePicking_ && !workPlanePoints_.empty())
         orthoAnchor = workPlanePoints_.back();
     if (orthoEnabled_ && orthoAnchor && hover_) {
-        if (mode_ == EditMode::View3D) {
-            RECT client{}; GetClientRect(canvas_, &client);
-            const bool modifying = transformCommand_ != TransformCommand::None;
-            if (modifying) {
-                // Transform: is duzleminin U/V eksenleri (README davranisi).
-                hover_ = applyOrtho3D(*orthoAnchor, {static_cast<double>(x), static_cast<double>(y)}, *hover_,
-                                      camera_, std::max(1L, client.right), std::max(1L, client.bottom),
-                                      workPlane_, true, false);
-            } else {
-                // Cizim: DUNYA X/Y/Z eksenleri — uc renkli ortho guide'in
-                // kilitlendigi eksenlerle birebir ayni kume. Eski kod is
-                // duzlemi normalini (gorus yonu) kullandigi icin Z yonunde
-                // izleme calismiyordu.
-                hover_ = applyOrtho3D(*orthoAnchor, {static_cast<double>(x), static_cast<double>(y)}, *hover_,
-                                      camera_, std::max(1L, client.right), std::max(1L, client.bottom),
-                                      false);
-            }
-        } else {
-            hover_ = applyOrtho(*orthoAnchor, *hover_, transformCommand_ == TransformCommand::None);
-        }
+        // Tek yol: obje snap'lari ortho'yu ezer (asagidaki metoda bak).
+        hover_ = applyOrthoConstraint(*orthoAnchor, *hover_, x, y);
     } else if (polarTrackingEnabled_ && !polarTrackingLocked_ && orthoAnchor && hover_) {
         const SnapResult original = *hover_;
         hover_ = mode_ == EditMode::View3D
@@ -2505,6 +7389,56 @@ void Application::updateHover(int x, int y) {
             : applyPolarTracking(*orthoAnchor, *hover_, 90.0, 12.0, true);
         polarTrackingLocked_ = hover_->point != original.point;
     }
+    if (profileGrip_ && hover_) profileGrip_->cursorPoint = hover_->point;
+
+    // IKI NOKTALI GORUNUM YON SECIMI: imlec P1-P2 cizgisinin hangi tarafindaysa
+    // bakis yonu (normal) o tarafa cevrilir. Ok onizlemesi renderer'da bu
+    // vektoru kullanir. Snap noktasi yeterli: yalnizca YON (isaret) onemlidir.
+    if (pointPickPurpose_ == PointPickPurpose::TwoPointViewDirection &&
+        workPlanePoints_.size() >= 2 && hover_) {
+        const Vec3& p1 = workPlanePoints_[0];
+        const Vec3& p2 = workPlanePoints_[1];
+        const double dx = p2.x - p1.x, dy = p2.y - p1.y;
+        const double horizontal = std::sqrt(dx * dx + dy * dy);
+        if (horizontal > 1e-6) {
+            // Ekran-saga (right) ve normal tabani (right x up, up=Z).
+            const Vec3 right{dx / horizontal, dy / horizontal, 0.0};
+            const Vec3 baseNormal{right.y, -right.x, 0.0}; // right x (0,0,1)
+            const Vec3 rel{hover_->point.x - p1.x, hover_->point.y - p1.y,
+                           hover_->point.z - p1.z};
+            const double side = rel.x * baseNormal.x + rel.y * baseNormal.y;
+            twoPointViewNormal_ = side >= 0.0 ? baseNormal
+                                              : Vec3{-baseNormal.x, -baseNormal.y, 0.0};
+        }
+    }
+}
+
+// F8 Ortho kisiti. OBJE SNAP'LARI ORTHO'YU EZER — AutoCAD'de de osnap ortho'dan
+// ustundur: uc/orta/kesisim gibi bir snap bulunduysa nokta oraya oturur, F8
+// yalnizca SERBEST imleci (ve grid snap'ini) en yakin eksene kilitler. Eskiden
+// burada preserveObjectSnaps=false geciliyordu ve obje snap'i eziliyordu
+// (kullanici: "ortho mode acikken snap tutmuyor").
+SnapResult Application::applyOrthoConstraint(const Vec3& anchor, SnapResult candidate,
+                                            int x, int y) const {
+    const Vec2 cursor{static_cast<double>(x), static_cast<double>(y)};
+    if (mode_ == EditMode::View3D) {
+        RECT client{}; GetClientRect(canvas_, &client);
+        const int viewportWidth = static_cast<int>(std::max(1L, client.right));
+        const int viewportHeight = static_cast<int>(std::max(1L, client.bottom));
+        // Transform ya da ozel UCS: is duzleminin U/V eksenleri (README
+        // davranisi; AutoCAD UCS: kullanici duzlem secince objeler o duzlemde
+        // ilerler). Dunya duzlemi: uc renkli X/Y/Z eksen kumesi (Z dahil).
+        const bool customUcs =
+            std::abs(workPlane_.u.x - 1.0) > 1e-9 || std::abs(workPlane_.u.y) > 1e-9 ||
+            std::abs(workPlane_.u.z) > 1e-9 || std::abs(workPlane_.v.y - 1.0) > 1e-9 ||
+            std::abs(workPlane_.v.x) > 1e-9 || std::abs(workPlane_.v.z) > 1e-9;
+        if (transformCommand_ != TransformCommand::None || customUcs)
+            return applyOrtho3D(anchor, cursor, candidate, camera_, viewportWidth, viewportHeight,
+                                workPlane_, true, /*preserveObjectSnaps=*/true);
+        return applyOrtho3D(anchor, cursor, candidate, camera_, viewportWidth, viewportHeight,
+                            /*preserveObjectSnaps=*/true);
+    }
+    return applyOrtho(anchor, candidate, /*preserveObjectSnaps=*/true);
 }
 
 void Application::executeCommand(int id) {
@@ -2602,12 +7536,12 @@ void Application::executeCommand(int id) {
         break;
     }
     case CmdNew:
-        document_.clear();
+        document_.clear(); // B-Rep magazasi (Document-sahipli) da sifirlanir
         refreshLayerCombo();
         if (workPlanePicking_) cancelWorkPlaneCommand();
         if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
         else cancelDrawing();
-        camera_.reset();
+        if (viewRotationLocked()) fitViewport(canvas_); else camera_.reset();
         drawingActive_ = mode_ == EditMode::Draw2D;
         break;
     case CmdOpen: openDocument(); break;
@@ -2619,9 +7553,14 @@ void Application::executeCommand(int id) {
     case CmdRectangle: selectTool(DrawTool::Rectangle); break;
     case CmdCircle: selectTool(DrawTool::Circle); break;
     case CmdFace3D: selectTool(DrawTool::Face3D); break;
+    case CmdColumn: selectTool(DrawTool::Column); break;
     case CmdCube: addCube(); break;
     case CmdPyramid: addPyramid(); break;
-    case CmdResetView: camera_.reset(); break;
+    case CmdCylinder: addCylinder(); break;
+    case CmdResetView:
+        // Gorunus penceresi: yon iki noktayla tanimli -> sifirlama yerine sigdir.
+        if (viewRotationLocked()) fitViewport(canvas_); else camera_.reset();
+        break;
     case CmdView3D: toggle3DView(); break;
     case CmdWorkPlane: startWorkPlaneCommand(); break;
     case CmdZoomExtents: zoomExtents2D(); break;
@@ -2674,11 +7613,7 @@ void Application::executeCommand(int id) {
     case CmdOsnap: snapEnabled_ = !snapEnabled_; break;
     case CmdGridSnap: gridSnapEnabled_ = !gridSnapEnabled_; break;
     case CmdDynamicInput: dynamicInputEnabled_ = !dynamicInputEnabled_; break;
-    case CmdPolarTracking:
-        polarTrackingEnabled_ = !polarTrackingEnabled_;
-        if (polarTrackingEnabled_) orthoEnabled_ = false;
-        else clearTemporaryTracking();
-        break;
+    case CmdPolarTracking: togglePolarTracking(); break;
     case CmdSnapSettings:
         snapPanelOpen_ = !snapPanelOpen_;
         updateSnapPanelVisibility();
@@ -2701,17 +7636,25 @@ void Application::executeCommand(int id) {
 }
 
 void Application::selectTool(DrawTool tool) {
+    cancelPendingCutCommand();
+    cancelPendingFinPlateCommand();
+    cancelPendingComponentCommand();
     cancelZoomWindow2D();
     if (workPlanePicking_) cancelWorkPlaneCommand();
     if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
+    profileGrip_.reset();
     tool_ = tool; cancelDrawing(); drawingActive_ = true;
     updateHover(cursorScreen_.x, cursorScreen_.y); updateControls(); invalidateCanvas();
 }
 
 void Application::deactivateAllCommands() {
+    cancelPendingCutCommand();
+    cancelPendingFinPlateCommand();
+    cancelPendingComponentCommand();
     cancelZoomWindow2D();
     if (workPlanePicking_) cancelWorkPlaneCommand();
     if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
+    profileGrip_.reset();
     cancelDrawing();
     drawingActive_ = false;
     lastTransformCommand_ = TransformCommand::None;
@@ -2732,6 +7675,7 @@ void Application::updateControls() {
     check(rectangleButton_, drawingActive_ && tool_ == DrawTool::Rectangle);
     check(circleButton_, drawingActive_ && tool_ == DrawTool::Circle);
     check(face3DButton_, drawingActive_ && tool_ == DrawTool::Face3D);
+    check(columnButton_, drawingActive_ && tool_ == DrawTool::Column);
     check(snapButton_, snapEnabled_);
     check(gridSnapButton_, gridSnapEnabled_);
     check(dynamicInputButton_, dynamicInputEnabled_);
@@ -2833,6 +7777,7 @@ void Application::undo() {
     if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
     if (!document_.undo()) return;
     polylineModelIndex_.reset();
+    profileGrip_.reset();
     selectedModels_.clear();
     selectionFirstCorner_.reset();
     refreshLayerCombo();
@@ -2846,6 +7791,7 @@ void Application::redo() {
     if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
     if (!document_.redo()) return;
     polylineModelIndex_.reset();
+    profileGrip_.reset();
     selectedModels_.clear();
     selectionFirstCorner_.reset();
     refreshLayerCombo();
@@ -2857,8 +7803,53 @@ void Application::redo() {
 
 void Application::addStyledModel(WireframeModel model) {
     pushUndoSnapshot();
-    model.setProperties(currentEntityProperties());
+    // Stil alanlari (katman/renk/cizgi tipi) akimdan gelir; modelin kendi
+    // tasiydigi profil kimligi (profileName/Rotation/SourceLine) KORUNUR —
+    // Onceki kod butun ozellikleri eziyor, katinin kaynak cizgisi kayboluyordu.
+    auto styled = currentEntityProperties();
+    auto kept = model.properties();
+    styled.profileName = kept.profileName;
+    styled.profileRotation = kept.profileRotation;
+    styled.profileSourceLine = kept.profileSourceLine;
+    styled.axisFromX = kept.axisFromX; styled.axisFromY = kept.axisFromY;
+    styled.axisFromZ = kept.axisFromZ;
+    styled.axisToX = kept.axisToX; styled.axisToY = kept.axisToY;
+    styled.axisToZ = kept.axisToZ;
+    styled.material = kept.material;
+    model.setProperties(std::move(styled));
     document_.addModel(std::move(model));
+}
+
+void Application::purgeStaleAxisLines() {
+    // Eski tasarim artiklari: profilli katinin ekseniyle cakisan 2-ugencli
+    // cizgiler (kaynak eksen cizgileri) silinir — kati kendi eksenini
+    // tasir, cizgi yalniz giris aracidir. Dosya acilisi ve atama sonrasi
+    // cagirilir; sarI "extra cizgiler" bu artiklardi.
+    std::vector<std::size_t> stale;
+    for (std::size_t i = 0; i < document_.models().size(); ++i) {
+        const auto& m = document_.models()[i];
+        if (m.vertices().size() != 2 || m.edges().size() != 1) continue;
+        if (m.properties().profileName.empty()) continue; // yalniz profilli kaynak cizgiler
+        const Vec3 lf = m.vertices()[0];
+        const Vec3 lt = m.vertices()[1];
+        for (std::size_t k = 0; k < document_.models().size(); ++k) {
+            if (k == i) continue;
+            const auto& solid = document_.models()[k];
+            if (solid.faces().empty() || solid.properties().profileName.empty()) continue;
+            const Vec3 af(solid.properties().axisFromX, solid.properties().axisFromY,
+                          solid.properties().axisFromZ);
+            const Vec3 at(solid.properties().axisToX, solid.properties().axisToY,
+                          solid.properties().axisToZ);
+            const bool fwd = std::abs(lf.x - af.x) < 1e-6 && std::abs(lf.y - af.y) < 1e-6 &&
+                std::abs(lf.z - af.z) < 1e-6 && std::abs(lt.x - at.x) < 1e-6 &&
+                std::abs(lt.y - at.y) < 1e-6 && std::abs(lt.z - at.z) < 1e-6;
+            const bool rev = std::abs(lf.x - at.x) < 1e-6 && std::abs(lf.y - at.y) < 1e-6 &&
+                std::abs(lf.z - at.z) < 1e-6 && std::abs(lt.x - af.x) < 1e-6 &&
+                std::abs(lt.y - af.y) < 1e-6 && std::abs(lt.z - af.z) < 1e-6;
+            if (fwd || rev) { stale.push_back(i); break; }
+        }
+    }
+    if (!stale.empty()) document_.deleteModels(stale);
 }
 
 void Application::updateStatus() {
@@ -2881,18 +7872,127 @@ void Application::updateStatus() {
         return;
     }
     std::wstring text = L"   ";
-    text += mode_ == EditMode::View3D ? L"3B Paralel" : L"2B Plan XY";
+    if (viewDef_) text += viewDef_->name.empty() ? L"Görünüş" : viewDef_->name; // aktif pencere
+    else text += mode_ == EditMode::View3D ? L"3B Paralel" : L"2B Plan XY";
     {
         // GPU modu gostergesi: her durum guncellemesinde aktif modu gosterir.
         const bool glActive = gpuLinesEnabled_ && renderBackend_ &&
                               renderBackend_->isHardwareAccelerated();
         text += glActive ? L"  |  GPU: GL" : L"  |  GPU: GDI";
+        if (!glActive && !startupNotice_.empty()) text += L" (" + startupNotice_ + L")";
     }
-    if (workPlanePicking_) {
+    // Keep selection and section data near the start of the Qt status bar so
+    // A/Ix/Wx/G remain visible even when the remaining CAD state is lengthy.
+    if (!selectedModels_.empty()) {
+        text += L"  |  Seçim: " + std::to_wstring(selectedModels_.size());
+        bool haveProfile = false;
+        bool mixedProfiles = false;
+        std::string selectedProfile;
+        for (const auto index : selectedModels_) {
+            if (index >= document_.models().size()) continue;
+            const auto& name = document_.models()[index].properties().profileName;
+            if (!haveProfile) {
+                selectedProfile = name;
+                haveProfile = true;
+            } else if (name != selectedProfile) {
+                mixedProfiles = true;
+                break;
+            }
+        }
+        if (haveProfile && mixedProfiles) {
+            text += L"  |  Profil: karma";
+        } else if (haveProfile && selectedProfile.empty()) {
+            text += L"  |  Profil: atanmamış";
+        } else if (haveProfile) {
+            text += L"  |  Profil: " + utf8ToWide(selectedProfile);
+            if (const auto* profile = mm::findProfile(profileCatalog_, selectedProfile)) {
+                wchar_t section[192]{};
+                std::swprintf(section, std::size(section),
+                              L"  |  A=%.0f mm²  Ix=%.0f cm⁴  Wx=%.0f cm³  G=%.2f kg/m",
+                              profile->crossSectionArea, profile->inertiaX / 1.0e4,
+                              profile->sectionModulusX / 1.0e3,
+                              profile->weightPerUnitLength);
+                text += section;
+            }
+        }
+    }
+    if (workPlanePicking_ && pointPickPurpose_ == PointPickPurpose::TwoPointView) {
+        text += L"  |  2 NOKTALI GÖRÜNÜŞ — ";
+        text += workPlanePoints_.empty() ? L"1. noktayı belirtin (görünüş solu)"
+                                         : L"2. noktayı belirtin (görünüş sağı)";
+    } else if (workPlanePicking_ &&
+               pointPickPurpose_ == PointPickPurpose::TwoPointViewDirection) {
+        text += L"  |  2 NOKTALI GÖRÜNÜŞ — bakış yönünü seçin (ok, tıklayın)";
+    } else if (workPlanePicking_ && pointPickPurpose_ == PointPickPurpose::ThreePointView) {
+        text += L"  |  3 NOKTALI GÖRÜNÜŞ — ";
+        if (workPlanePoints_.empty()) text += L"orijini belirtin";
+        else if (workPlanePoints_.size() == 1) text += L"X yönünü belirtin";
+        else text += L"Y (düzlem) noktasını belirtin";
+    } else if (workPlanePicking_ && pointPickPurpose_ == PointPickPurpose::RotateCenter) {
+        text += L"  |  DÖNÜŞ MERKEZİ — ekranın döneceği noktayı seçin (Esc iptal)";
+    } else if (workPlanePicking_ && pointPickPurpose_ == PointPickPurpose::ConstructionPlane) {
+        text += L"  |  KONSTRÜKSİYON DÜZLEMİ — ";
+        if (workPlanePoints_.empty()) text += L"1. noktayı belirtin";
+        else if (workPlanePoints_.size() == 1) text += L"2. noktayı belirtin (U ekseni)";
+        else text += L"3. noktayı belirtin (düzlem yönü)";
+    } else if (workPlanePicking_) {
         text += L"  |  WORK PLANE — ";
         if (workPlanePoints_.empty()) text += L"1. noktayı belirtin";
         else if (workPlanePoints_.size() == 1) text += L"2. noktayı belirtin (U ekseni)";
         else text += L"3. noktayı belirtin (düzlem yönü)";
+    } else if (pendingEndPlate_) {
+        // Verb-noun End Plate: durum mesajı updateStatus'un genel metnini
+        // EZMEDEN kalıcı gösterilir (publishStatus'un üzerine yazılırdı).
+        text += L"  |  END PLATE — ";
+        if (mode_ != EditMode::View3D) {
+            // 2B'de dikey kolon bir NOKTAYA izdüşer ve tıklanamaz; End Plate
+            // 3B bir bağlantıdır. Kullanıcıyı 3B'ye yönlendir.
+            text += L"3B bağlantıdır — 2B/3B ile 3B görünüme geçin (dikey kolon 2B'de seçilemez)";
+        } else if (pendingEndPlateParts_.empty())
+            text += L"önce KOLONU (main), sonra KİRİŞİ (secondary) seçin — sağ tık uygular";
+        else if (pendingEndPlateParts_.size() == 1)
+            text += L"kolon seçildi — şimdi KİRİŞİ (secondary) seçin";
+        else
+            text += L"kolon + kiriş seçildi — sağ tık uygular (Esc iptal)";
+    } else if (pendingFinPlate_) {
+        text += L"  |  FIN PLATE — ";
+        if (pendingFinPlateParts_.empty())
+            text += L"önce KOLONU (main), sonra KİRİŞİ (secondary) seçin — sağ tık uygular";
+        else if (pendingFinPlateParts_.size() == 1)
+            text += L"kolon seçildi — şimdi KİRİŞİ (secondary) seçin";
+        else
+            text += L"kolon + kiriş seçildi — sağ tık uygular (Esc iptal)";
+    } else if (componentCommandActive()) {
+        // Generic katalog komutu: durum mesaji secilen tipin adiyla yazilir.
+        const mm::ComponentType* type =
+            mm::ComponentRegistry::instance().findType(pendingComponentType_);
+        const std::wstring display = type ? type->displayName : pendingComponentType_;
+        text += L"  |  " + display + L" — ";
+        const int pickCount = (type && type->catalog.pickCount > 0) ? type->catalog.pickCount : 2;
+        if (pendingComponentParts_.empty())
+            text += L"parça seçin (main, sonra secondary) — sağ tık uygular";
+        else if (pendingComponentParts_.size() == 1)
+            text += L"1 parça seçildi — ikinciyi seçin";
+        else if (pendingComponentParts_.size() == static_cast<std::size_t>(pickCount))
+            text += L"parçalar seçildi — sağ tık uygular (Esc iptal)";
+        else
+            text += L"parça seçin";
+    } else if (pendingBolt_) {
+        text += L"  |  BOLT — ";
+        if (pendingBoltParts_.empty())
+            text += L"bağlanacak İKİ parçayı seçin (sol tık, toggle), sağ tık uygular";
+        else if (pendingBoltParts_.size() == 1)
+            text += L"1 parça seçildi — ikinci parçayı seçin";
+        else
+            text += L"2 parça seçildi — şimdi bir YÜZ seçin (bulon ekseni = yüz normali)";
+    } else if (pendingCutKind_) {
+        text += L"  |  KESME — ";
+        if (pendingCutTargets_.empty())
+            text += L"profili seçin (sol tık, birden çok), sonra düzlemi seçin";
+        else if (!pendingCutPlane_)
+            text += L"şimdi düzlemi seçin";
+        else
+            text += L"sağ tık uygular (Esc iptal)";
     } else if (zoomWindowActive_) {
         text += zoomWindowFirstCorner_ ? L"  |  ZOOM WINDOW — diğer köşeyi belirtin"
                                        : L"  |  ZOOM WINDOW — ilk köşeyi belirtin";
@@ -2946,12 +8046,16 @@ void Application::updateStatus() {
             text += L"  |  ";
             text += lastTrimExtendStatus_;
         }
+    } else if (camera_.hasOrbitPivot()) {
+        text += L"  |  DÖNÜŞ MERKEZİ — Ctrl+sol tuş ile sürükleyip döndürün (R: merkezi değiştir)";
     } else if (!drawingActive_) {
         text += L"  |  PASİF — Komut yok; Snap pasif";
     } else {
         text += L"  |  Araç: "; text += toolLabel(tool_);
         if (tool_ == DrawTool::Face3D)
             text += L" — " + std::to_wstring(facePoints_.size() + 1) + L". köşeyi belirtin (4 köşe)";
+        else if (tool_ == DrawTool::Divide)
+            text += L" — " + std::to_wstring(divideCount_) + L" nokta";
     }
     text += L"  |  Nesne: " + std::to_wstring(document_.models().size());
     const bool snapEffective = snapEnabled_ && (workPlanePicking_ ||
@@ -2981,6 +8085,8 @@ void Application::updateStatus() {
     case VisualStyle::Solid: text += L"Solid"; break;
     case VisualStyle::Transparent: text += L"Saydam"; break;
     }
+    if (!solidStatusMessage_.empty())
+        text += L"  |  " + solidStatusMessage_;
     if (hover_) {
         wchar_t coordinates[96]{};
         std::swprintf(coordinates, std::size(coordinates), L"  |  X %.3f  Y %.3f  Z %.3f",
@@ -2991,10 +8097,111 @@ void Application::updateStatus() {
     SetWindowTextW(status_, text.c_str());
 }
 
+void Application::publishStatus(const std::wstring& text) {
+    if (statusCallback_) statusCallback_(text);
+    if (status_) SetWindowTextW(status_, text.c_str());
+}
+
 void Application::invalidateCanvas() { if (canvas_) InvalidateRect(canvas_, nullptr, FALSE); }
+
+#ifdef _WIN32
+void Application::ensureOccBridge() {
+    static bool tried = false;
+    if (tried || occBridgeDll_) return;
+    tried = true;
+    wchar_t exePath[MAX_PATH]{};
+    GetModuleFileNameW(nullptr, exePath, MAX_PATH);
+    const auto exeDir = std::filesystem::path(exePath).parent_path();
+    const auto dllPath = exeDir / L"occ" / L"mm_occ.dll";
+    // OCC DLL'leri occ\ alt dizininde yasar; MSYS2 runtime'lari da oradadir.
+    // LoadLibrary'den ONCE o dizini DLL arama yoluna ekle ki uygulamanin
+    // kendi runtime'ina (Qt GCC13 libstdc++) dokunulmasin.
+    const auto addDllDir = reinterpret_cast<void* (WINAPI*)(PCWSTR)>(
+        reinterpret_cast<void*>(GetProcAddress(GetModuleHandleW(L"kernel32.dll"), "AddDllDirectory")));
+    if (addDllDir) addDllDir((exeDir / L"occ").c_str());
+    occBridgeDll_ = LoadLibraryW(dllPath.c_str());
+    if (!occBridgeDll_) {
+        FILE* diag = fopen("model-maker-render.log", "a");
+        if (diag) {
+            fprintf(diag, "OCC-BRIDGE-LOAD-FAILED err=%lu path=%ls\n",
+                    static_cast<unsigned long>(GetLastError()), dllPath.c_str());
+            fclose(diag);
+        }
+        return;
+    }
+    occBridgeVersion_ = reinterpret_cast<decltype(occBridgeVersion_)>(
+        reinterpret_cast<void*>(GetProcAddress(occBridgeDll_, "mm_occ_version")));
+    {
+        // Kanit satiri: koprunun yuklendigini ve surumunu loga yaz.
+        FILE* diag = fopen("model-maker-render.log", "a");
+        if (diag) {
+            fprintf(diag, "OCC-BRIDGE-OK version=%s\n",
+                    occBridgeVersion_ ? occBridgeVersion_() : "?");
+            fclose(diag);
+        }
+    }
+    occBridgeSolidBox_ = reinterpret_cast<decltype(occBridgeSolidBox_)>(
+        reinterpret_cast<void*>(GetProcAddress(occBridgeDll_, "mm_occ_solid_box")));
+    occBridgeFree_ = reinterpret_cast<decltype(occBridgeFree_)>(
+        reinterpret_cast<void*>(GetProcAddress(occBridgeDll_, "mm_occ_free")));
+}
+#endif
 
 void Application::addCube() {
     if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
+#ifdef MM_HAS_OCC
+    // vcpkg/Linux: OCC ayni derleyiciyle dogrudan derlenmistir — kopru
+    // gereksiz, gercek BRep kutu dogrudan uretilir.
+    {
+        TopoDS_Shape shape = BRepPrimAPI_MakeBox(2.6, 2.6, 2.6).Shape();
+        const double offset = static_cast<double>(document_.models().size() % 4) * 0.45;
+        if (offset != 0.0) {
+            gp_Trsf trsf; trsf.SetTranslation(gp_Vec(offset, 0.0, 0.0));
+            shape = BRepBuilderAPI_Transform(shape, trsf).Shape();
+        }
+        auto cube = mm::shapeToWireframeWithFaces(shape, 0.15);
+        cube.translate({offset, 0.0, 0.0});
+        addStyledModel(std::move(cube)); mode_ = EditMode::View3D;
+        // KARARLI KIMLIK: sekil, YENI eklenen varligin kimligiyle anahtarlanir.
+        // (Eskiden addStyledModel'DEN ONCE models().size()-1 kullaniliyordu →
+        //  bir ONCEKI varliga baglaniyordu; ilk eklemede anahtar size_t(-1).)
+        putOccSolid(document_.models().size() - 1, shape);
+        cancelDrawing(); drawingActive_ = false;
+        wchar_t message[96]{};
+        std::swprintf(message, std::size(message), L"Kutu (BRep) hacmi: %.2f birim³",
+                      mm::shapeVolume(shape));
+        solidStatusMessage_ = message;
+        updateStatus();
+        return;
+    }
+#endif
+#ifdef _WIN32
+    // OCC koprusu varsa gercek BRep kutu uret; yoksa eski analitik
+    // WireframeModel::cube yolu aynen calisir.
+    ensureOccBridge();
+    if (occBridgeSolidBox_ && occBridgeFree_) {
+        float* verts = nullptr; int nv = 0;
+        unsigned int* ed = nullptr; int ne = 0;
+        if (occBridgeSolidBox_(2.6, 2.6, 2.6, &verts, &nv, &ed, &ne) == 0 &&
+            verts && ed && nv > 0 && ne > 0) {
+            std::vector<Vec3> vertices(static_cast<std::size_t>(nv));
+            for (int i = 0; i < nv; ++i)
+                vertices[static_cast<std::size_t>(i)] = {verts[i * 3], verts[i * 3 + 1], verts[i * 3 + 2]};
+            std::vector<Edge> edges(static_cast<std::size_t>(ne));
+            for (int i = 0; i < ne; ++i)
+                edges[static_cast<std::size_t>(i)] = {ed[i * 2], ed[i * 2 + 1]};
+            occBridgeFree_(verts);
+            occBridgeFree_(ed);
+            auto cube = WireframeModel(std::move(vertices), std::move(edges));
+            cube.translate({static_cast<double>(document_.models().size() % 4) * 0.45, 0.0, 0.0});
+            addStyledModel(std::move(cube)); mode_ = EditMode::View3D;
+            cancelDrawing(); drawingActive_ = false;
+            return;
+        }
+        if (verts) occBridgeFree_(verts);
+        if (ed) occBridgeFree_(ed);
+    }
+#endif
     auto cube = WireframeModel::cube(2.6);
     cube.translate({static_cast<double>(document_.models().size() % 4) * 0.45, 0.0, 0.0});
     addStyledModel(std::move(cube)); mode_ = EditMode::View3D;
@@ -3008,6 +8215,1882 @@ void Application::addPyramid() {
     cancelDrawing(); drawingActive_ = false;
 }
 
+void Application::addCylinder() {
+    if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
+#ifdef MM_HAS_OCC
+    {
+        // OCC BRep silindir: r=1.3, h=3.0 (kutu/piramit ile ayni sabit-olusum akisi).
+        // DIKKAT: BRepPrimAPI_MakeCylinder'in 3-arg overload'i (R, H, Angle)'dir;
+        // ucuncu argüman radyan cinsinden ACI'dir ve TAM TUR OLMAYAN bir dilim uretir.
+        // Tam silindir icin 2-arg (R, H) kullanilmalidir; aksi halde "silindir"
+        // komutu ~172 derecelik pasta dilimi olusturuyordu (hacim pi*r^2*h'nin
+        // yarisi bile degil).
+        TopoDS_Shape shape = BRepPrimAPI_MakeCylinder(1.3, 3.0).Shape();
+        const double offset = static_cast<double>(document_.models().size() % 4) * 0.45;
+        if (offset != 0.0) {
+            gp_Trsf trsf; trsf.SetTranslation(gp_Vec(offset, 0.0, 0.0));
+            shape = BRepBuilderAPI_Transform(shape, trsf).Shape();
+        }
+        auto cylinder = mm::shapeToWireframeWithFaces(shape, 0.15);
+        cylinder.translate({offset, 0.0, 0.0});
+        addStyledModel(std::move(cylinder)); mode_ = EditMode::View3D;
+        putOccSolid(document_.models().size() - 1, shape);
+        cancelDrawing(); drawingActive_ = false;
+        wchar_t message[96]{};
+        std::swprintf(message, std::size(message), L"Silindir (BRep) hacmi: %.2f birim³",
+                      mm::shapeVolume(shape));
+        solidStatusMessage_ = message;
+        updateStatus();
+        return;
+    }
+#endif
+    // OCC yoksa yaklasik tel kafes silindir (2 daire + 2 dik cizgi)
+    auto cylinder = WireframeModel::circle({0.0, 0.0, 0.0}, 1.3, 48);
+    auto top = WireframeModel::circle({0.0, 0.0, 3.0}, 1.3, 48);
+    addStyledModel(std::move(cylinder));
+    addStyledModel(std::move(top));
+    addStyledModel(WireframeModel::line({1.3, 0.0, 0.0}, {1.3, 0.0, 3.0}));
+    addStyledModel(WireframeModel::line({-1.3, 0.0, 0.0}, {-1.3, 0.0, 3.0}));
+    mode_ = EditMode::View3D;
+    cancelDrawing(); drawingActive_ = false;
+}
+
+#ifdef MM_HAS_OCC
+void Application::addBooleanFuse() {
+    if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
+    // Operandlar: en son iki CANLI kati (kimlik sirasi = olusturma sirasi).
+    // Silinmis varliklarin kayitlari ATLANIR; operandlar TUKETILMEZ — mevcut
+    // davranis korunur (sonuc AYRI bir varlik olarak eklenir).
+    const auto operands = lastLiveSolids(2);
+    if (operands.size() < 2) {
+        publishStatus(L"Boolean: en az 2 kati gerekli (B ve S ile ekleyin)");
+        return;
+    }
+    const TopoDS_Shape result = mm::booleanFuseShape(operands[1], operands[0]);
+    auto model = mm::shapeToWireframeWithFaces(result, 0.15);
+    addStyledModel(std::move(model)); mode_ = EditMode::View3D;
+    putOccSolid(document_.models().size() - 1, result);
+    cancelDrawing(); drawingActive_ = false;
+    wchar_t message[96]{};
+    std::swprintf(message, std::size(message), L"Birlesim (Fuse) hacmi: %.2f birim³",
+                  mm::shapeVolume(result));
+    solidStatusMessage_ = message;
+    updateStatus();
+}
+
+void Application::addBooleanCommon() {
+    if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
+    const auto operands = lastLiveSolids(2);
+    if (operands.size() < 2) {
+        publishStatus(L"Boolean: en az 2 kati gerekli (B ve S ile ekleyin)");
+        return;
+    }
+    const TopoDS_Shape result = mm::booleanCommonShape(operands[1], operands[0]);
+    auto model = mm::shapeToWireframeWithFaces(result, 0.15);
+    addStyledModel(std::move(model)); mode_ = EditMode::View3D;
+    putOccSolid(document_.models().size() - 1, result);
+    cancelDrawing(); drawingActive_ = false;
+    wchar_t message[96]{};
+    std::swprintf(message, std::size(message), L"Kesisim (Common) hacmi: %.2f birim³",
+                  mm::shapeVolume(result));
+    solidStatusMessage_ = message;
+    updateStatus();
+}
+
+void Application::addBooleanCut() {
+    if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
+    const auto operands = lastLiveSolids(2);
+    if (operands.size() < 2) {
+        publishStatus(L"Boolean: en az 2 kati gerekli (B ve S ile ekleyin)");
+        return;
+    }
+    // Sondan bir onceki canli sekilden sonuncusunu cikar (A - B).
+    const TopoDS_Shape result = mm::booleanCutShape(operands[1], operands[0]);
+    auto model = mm::shapeToWireframeWithFaces(result, 0.15);
+    addStyledModel(std::move(model)); mode_ = EditMode::View3D;
+    putOccSolid(document_.models().size() - 1, result);
+    cancelDrawing(); drawingActive_ = false;
+    wchar_t message[96]{};
+    std::swprintf(message, std::size(message), L"Cikarma (Cut) hacmi: %.2f birim³",
+                  mm::shapeVolume(result));
+    solidStatusMessage_ = message;
+    updateStatus();
+}
+#endif
+
+#ifdef MM_HAS_OCC
+// ---- Belge-sahipli B-Rep magazasi koprusu ---------------------------------
+OccSolidStore* Application::occSolidStore() noexcept {
+    // TEK donusum noktasi: Document magazasinin SOMUT (OCCT) arayuzu (YAZMA).
+    return mm::asSolidStore(&document_.occStore());
+}
+
+const OccSolidStore* Application::occSolidStore() const noexcept {
+    // Const baglam (lastLiveSolids/findOccSolid/occSolidCount) icin OKUMA.
+    return mm::asSolidStore(&document_.occStore());
+}
+
+void Application::putOccSolid(std::size_t index, const TopoDS_Shape& shape) {
+    // KARARLI KIMLIK: varlik INDEKSININ kimligi altina yazilir (indeks KALICI
+    // degildir). Silme/undo/siralama kimligi kaydirmadigindan YANLIS ESLEME
+    // imkansizdir (eski indeks-anahtarli haritanin sessiz hatasi).
+    if (auto* store = occSolidStore()) {
+        const EntityId id = document_.modelId(index);
+        // ON-GORUNTU: yazmadan ONCEKI etkin surum (undo bunu geri yukler).
+        const VersionId before = store->activeVersion(id);
+        const VersionId after = store->set(id, shape);
+        // Geometri deltasini ACIK undo kaydina ilistir (kayit yoksa Document
+        // kendi kaydini acar — sessiz dusme YOK).
+        if (after != kInvalidVersionId)
+            document_.recordGeometryDelta(id, before, after);
+    }
+}
+
+// P7 (ACILAN DOSYA KATILARI): MMW1..7 B-Rep SAKLAMAZ; Document::load() belge
+// icerigini degistirip magazayi bosaltir (bkz. openDocument). O yuzden
+// "Open" ile acilan bir profil kirisi ekranda (tesselasyon mesh'i) gorunur
+// AMA magazada B-Rep'i yoktur → ilk kesme hesaplanacak sekil bulamaz.
+// Bu yardimci, kesme YAPILMADAN hemen once hedefin kalici ozelliklerinden
+// (profil adi + eksen + kesit referans normali + rotasyon — hepsi mmw8'de
+// saklanir) katiyi YENIDEN uretip putOccSolid ile aktif surumu yazar. Bu
+// yalniz profilli kirisler icin mumkun; ilkel katilar (kutu/piramit/silindir)
+// kalici uretim parametresi tasimadigi icin yeniden uretilemez ve kesme
+// onlarda eski davranisiyla calismaz (sessiz no-op, gecersiz geometri korunur).
+bool Application::ensureCutSolid(EntityId target) {
+    OccSolidStore* store = occSolidStore();
+    if (!store) return false;
+    if (store->activeVersion(target) != kInvalidVersionId) return true;
+    const auto idxOpt = document_.indexOfEntity(target);
+    if (!idxOpt) return false;
+    const std::size_t index = *idxOpt;
+    const EntityProperties& props = document_.models()[index].properties();
+    if (props.profileName.empty()) return false;
+    ensureProfileCatalog();
+    const auto* profile = mm::findProfile(profileCatalog_, props.profileName);
+    if (!profile) return false;
+    const Vec3 from{props.axisFromX, props.axisFromY, props.axisFromZ};
+    const Vec3 to{props.axisToX, props.axisToY, props.axisToZ};
+    if (std::abs(to.x - from.x) + std::abs(to.y - from.y) +
+        std::abs(to.z - from.z) < 1e-9) return false;
+    const Vec3 sectionReference{props.sectionNormalX, props.sectionNormalY,
+                                props.sectionNormalZ};
+    const TopoDS_Shape solid = mm::extrudeProfileSolid(
+        *profile, from, to, props.profileRotation, sectionReference);
+    if (solid.IsNull()) return false;
+    putOccSolid(index, solid);
+    return true;
+}
+
+// P9: profilli hedef tasindiginda/donduruldugunde taban (pre-cut) B-Rep eski
+// konumda kalir; bu yardimci kalici ozelliklerden (yeni eksen + referans
+// normal + rotasyon) YENIDEN uretip yeni taban surumu olarak yazar. Profilsiz
+// (ilkel kati) hedefte uretilemez -> no-op (mevcut taban korunur).
+void Application::rebuildCutBaseSolid(EntityId target) {
+    OccSolidStore* store = occSolidStore();
+    if (!store) return;
+    const auto idxOpt = document_.indexOfEntity(target);
+    if (!idxOpt) return;
+    const EntityProperties& props = document_.models()[*idxOpt].properties();
+    if (props.profileName.empty()) return;
+    ensureProfileCatalog();
+    const auto* profile = mm::findProfile(profileCatalog_, props.profileName);
+    if (!profile) return;
+    const Vec3 from{props.axisFromX, props.axisFromY, props.axisFromZ};
+    const Vec3 to{props.axisToX, props.axisToY, props.axisToZ};
+    if (std::abs(to.x - from.x) + std::abs(to.y - from.y) +
+        std::abs(to.z - from.z) < 1e-9) return;
+    const Vec3 sectionReference{props.sectionNormalX, props.sectionNormalY,
+                                props.sectionNormalZ};
+    const TopoDS_Shape solid = mm::extrudeProfileSolid(
+        *profile, from, to, props.profileRotation, sectionReference);
+    if (solid.IsNull()) return;
+    // Taban surum degisimini undo/redo'ya DAHIL ET (Slice 2d-2c): putOccSolid
+    // etkin surum deltasini kaydeder; taban deltasi da AYRI kaydedilir — yoksa
+    // rollback/undo tabani bayat birakir (kesme yanlis tabandan turer).
+    const VersionId oldBase = store->baseVersion(target);
+    putOccSolid(*idxOpt, solid);
+    const VersionId newBase = store->activeVersion(target);
+    if (newBase != kInvalidVersionId) {
+        store->setBaseVersion(target, newBase);
+        if (oldBase != newBase)
+            document_.recordBaseVersionDelta(target, oldBase, newBase);
+    }
+}
+
+// Kesme modifier'larini hedef parcaya yeniden uygular (Phase 4.2 recompute):
+// Taban (pre-cut) B-Rep'ten baslar, tum ETKIN modifier'lari SIRA ILE uygular
+// ve sonucu YENI bir surum olarak yazar (putOccSolid -> geometry delta + undo).
+// Taban yoksa GUVENLI kurulur (lazy: etkin surum taban olur — ilk kesim onceki
+// hali). Basarisizlikta (magaza yok / taban geometri yok / varlik yok) mevcut
+// GECERLI geometri DEGISMEZ.
+void Application::recomputeCutTarget(EntityId target) {
+    OccSolidStore* store = occSolidStore();
+    if (!store) return;
+    const auto idxOpt = document_.indexOfEntity(target);
+    if (!idxOpt) return;
+    const std::size_t index = *idxOpt;
+
+    // P7: Open ile acilan katilarda B-Rep yoksa, kalici ozelliklerden yeniden
+    // uret (profil kirisi). Uretilemezse (ilkel kati / profil yok) asagidaki
+    // "geometri yok" yolu eski davranisi korur (sessiz no-op).
+    ensureCutSolid(target);
+
+    // P11: profilli hedefin taban (pre-cut) B-Rep'i KALICI ozelliklerden her
+    // recompute'ta yeniden uretilir. Move/gumball/undo/redo bir profili
+    // tasiyinca OCC magazasi ESKI konumda kalir (moveModels/applyUndoOp
+    // magazaya dokunmaz; kesmesi yoksa recomputeTargetsForMovedModels da onu
+    // atlar). Kesme ilk kez uygulanirken bu eski katiyi kullanip profili eski
+    // noktaya geri ziplatirdi. Taban her zaman guncel eksen/rotasyondan
+    // turetildigi icin bu drift kendiliginden onarilir. Profilsiz ilkel
+    // katilar yeniden uretilemez -> no-op, eski davranis korunur.
+    rebuildCutBaseSolid(target);
+
+    VersionId base = store->baseVersion(target);
+    if (base == kInvalidVersionId) {
+        base = store->activeVersion(target);
+        if (base == kInvalidVersionId) return;  // geometri yok
+        store->setBaseVersion(target, base);
+        document_.recordBaseVersionDelta(target, kInvalidVersionId, base);
+    }
+    const TopoDS_Shape* baseShape = store->findVersion(target, base);
+    if (!baseShape) return;
+
+    const EntityProperties& props = document_.models()[index].properties();
+    const Vec3 axisFrom{props.axisFromX, props.axisFromY, props.axisFromZ};
+    const Vec3 axisTo{props.axisToX, props.axisToY, props.axisToZ};
+
+    std::vector<CutModifier> mods;
+    for (const std::size_t ci : document_.cutModifiersForTarget(target))
+        // P6: kaynak varlik varsa GUNCEL geometrisinden cozumle (duzlem/cizgi/
+        // 3DFACE tasindiginda kesme onu izler).
+        mods.push_back(resolveCutModifierSource(document_.cutModifiers()[ci], document_));
+
+    // Arac (kesici parca) cozumleyici: BooleanCut icin aracin ETKIN sekli.
+    // Store uzerinden kimlige gore bakilir; yoksa applyCutModifier base doner.
+    const mm::ToolShapeResolver resolveTool = [&](EntityId id) -> const TopoDS_Shape* {
+        return store->find(id);
+    };
+    const TopoDS_Shape result =
+        mm::applyCutModifierChain(*baseShape, mods, axisFrom, axisTo, resolveTool);
+    if (result.IsNull()) return;  // Boolean tam yutma vb. basarisizlikta dokunma
+    // GORSEL GUNCELLEME: kesme yalniz OCC magazasina yaziliyordu; renderer ise
+    // belge mesh'ini (model.faces()) cizer. Sonucu yeniden tesselatla ve belge
+    // modelini YERINE koy — yoksa kesme objesi gorunur ama kati ekranda
+    // kesilmemis kalirdi (kullanici raporu: "kesim objeleri var, kesim yok").
+    auto cutModel = mm::shapeToWireframeWithFaces(result, 0.15);
+    EntityProperties cutProps = document_.models()[index].properties();
+    cutModel.setProperties(std::move(cutProps));
+    document_.replaceModel(index, {std::move(cutModel)});
+    putOccSolid(index, result);
+}
+
+void Application::recomputeTargetsUsingTool(EntityId tool) {
+    // Canli Part Cut: kesici parca (tool) tasininca bu parçayi ARAÇ olarak
+    // kullanan tum BooleanCut modifier'larinin HEDEFLERI yeniden hesaplanir.
+    for (const std::size_t ci : document_.cutModifiersUsingTool(tool)) {
+        const EntityId target = document_.cutModifiers()[ci].target;
+        recomputeCutTarget(target);
+    }
+}
+
+void Application::recomputeTargetsForMovedModels(const std::vector<std::size_t>& indices) {
+    // P6+P9: tasinan varliklari KAYNAK (source), ARAÇ (BooleanCut tool) veya
+    // HEDEF (target) olarak kullanan kesme modifier'larinin hedeflerini
+    // yeniden hesapla. Hedefin kendisi tasindiysa taban B-Rep eski konumda
+    // kalir; once rebuildCutBaseSolid ile yeniden uretilir (yoksa kesme eski
+    // konuma geri ziplar), sonra kesme zinciri uygulanir.
+    std::unordered_set<EntityId> movedIds;
+    for (const std::size_t index : indices)
+        if (index < document_.models().size()) movedIds.insert(document_.modelId(index));
+    std::unordered_set<EntityId> targets;
+    for (const auto& mod : document_.cutModifiers()) {
+        const bool isSource = movedIds.count(mod.source) != 0;
+        const bool isTool = mod.kind == CutKind::BooleanCut && movedIds.count(mod.tool) != 0;
+        const bool isTarget = movedIds.count(mod.target) != 0;
+        if ((isSource || isTool || isTarget) && mod.target != kInvalidEntityId)
+            targets.insert(mod.target);
+    }
+    for (const EntityId target : targets) {
+        if (movedIds.count(target) != 0) rebuildCutBaseSolid(target);
+        recomputeCutTarget(target);
+    }
+}
+
+std::size_t Application::occSolidCount() const noexcept {
+    const auto* store = occSolidStore();
+    return store ? store->size() : 0u;
+}
+
+const TopoDS_Shape* Application::findOccSolid(std::size_t index) const {
+    const auto* store = occSolidStore();
+    return store ? store->find(document_.modelId(index)) : nullptr;
+}
+
+std::vector<TopoDS_Shape> Application::lastLiveSolids(std::size_t count) const {
+    // Kimlik sirasi = olusturma sirasi (kimlikler monoton artar). Sondan
+    // geriye: silinmis varliklarin kayitlari atlanir → yalniz CANLI katilar.
+    const auto* store = occSolidStore();
+    if (!store) return {};
+    return store->lastLive(count, [this](EntityId id) {
+        return document_.indexOfEntity(id).has_value();
+    });
+}
+#endif
+
+// P9: kesme HEDEFI tasinir/dondurulurse, onu kesen kaynak (duzlem/cizgi/
+// 3DFACE) varliklar da ayni rijit donusumu alir. Verilen kumeye bu bagli
+// kaynak indekslerini ekleyip DONUSTURULECEK tam kumeyi doner. OCC-gard'siz:
+// kesme kayitlari belgede her zaman vardir; OCC kapaliyken kesme yapilamayip
+// cutModifiers bos kaldigi icin dogal no-op olur.
+std::vector<std::size_t> Application::transformIndicesWithAttachedCutSources(
+    const std::vector<std::size_t>& indices) const {
+    std::vector<std::size_t> combined = indices;
+    std::unordered_set<EntityId> targetIds;
+    for (const std::size_t i : indices)
+        if (i < document_.models().size()) targetIds.insert(document_.modelId(i));
+    for (const auto& mod : document_.cutModifiers()) {
+        if (!mod.enabled || mod.target == kInvalidEntityId ||
+            mod.source == kInvalidEntityId)
+            continue;
+        if (targetIds.count(mod.target) == 0) continue;
+        const auto src = document_.indexOfEntity(mod.source);
+        if (!src) continue;
+        if (std::find(combined.begin(), combined.end(), *src) == combined.end())
+            combined.push_back(*src);
+    }
+    return combined;
+}
+
+void Application::ensureProfileCatalog() {
+    if (profileCatalogTried_) return;
+    profileCatalogTried_ = true;
+    const wchar_t* candidates[] = {
+        L"C:\\TeklaStructures\\2025.0\\Environments\\default\\General\\Shared\\Profil",
+        L"C:\\TeklaStructures\\2023.0\\Environments\\default\\General\\Shared\\Profil",
+    };
+    for (const auto* directory : candidates) {
+        std::error_code errorCode;
+        if (!std::filesystem::exists(directory, errorCode)) continue;
+        profileCatalog_ = mm::loadProfileCatalog(directory);
+        if (!profileCatalog_.empty()) break;
+    }
+    // Gömülü Avrupa kataloğu (HEA/HEB/HEM/IPE/IPN/UPN — 123 profil):
+    // exe'nin yanindaki profiles klasöründen eklenir. Tekla yoksa bile
+    // bu katalog her zaman yuklenir.
+    wchar_t exePath[MAX_PATH]{};
+    GetModuleFileNameW(nullptr, exePath, MAX_PATH);
+    std::filesystem::path european(exePath);
+    european = european.parent_path() / "profiles" / "european.lis";
+    {
+        std::error_code europeanError;
+        if (std::filesystem::exists(european, europeanError)) {
+            auto europeanProfiles = mm::parseTeklaProfileDatabase(european);
+            std::unordered_set<std::string> existing;
+            for (const auto& profile : profileCatalog_)
+                existing.insert(profile.name);
+            for (auto& profile : europeanProfiles)
+                if (existing.insert(profile.name).second)
+                    profileCatalog_.push_back(std::move(profile));
+        }
+    }
+    if (!profileCatalog_.empty()) {
+        FILE* diag = fopen("model-maker-render.log", "a");
+        if (diag) {
+            fprintf(diag, "PROFILE-CATALOG loaded=%zu\n", profileCatalog_.size());
+            fclose(diag);
+        }
+    }
+}
+
+int Application::selectedModelIndex() const {
+    return selectedModels_.empty()
+        ? -1
+        : static_cast<int>(selectedModels_.front());
+}
+
+// --- SECIM MODLARI + KAYNAK KOMUTU (Phase W1) --------------------------------
+
+void Application::setSelectionMode(SelectionMode mode) {
+    if (selectionMode_ == mode) return;
+    selectionMode_ = mode;
+    // Mod degisince eski secim yeni modda tutarsiz kalmasin: temizle.
+    selectedModels_.clear();
+    selectedCutModifiers_.clear();
+    invalidateCanvas();
+}
+
+void Application::expandSelectionToAssembly() {
+    if (selectedModels_.empty()) return;
+    // Secili parcalarin assembly uyelerini topla (EntityId iliskisinden).
+    std::vector<std::size_t> expanded;
+    std::unordered_set<std::size_t> seen;
+    for (const std::size_t idx : selectedModels_) {
+        if (idx >= document_.models().size()) continue;
+        const EntityId partId = document_.modelId(idx);
+        const auto members = document_.assemblyMembers(partId);
+        for (const EntityId m : members) {
+            const auto mi = document_.indexOfEntity(m);
+            if (!mi) continue;  // weld/bulon kimligi model degil -> atla
+            if (seen.count(*mi)) continue;
+            seen.insert(*mi);
+            expanded.push_back(*mi);
+        }
+    }
+    if (expanded.empty()) return;
+    selectedModels_ = std::move(expanded);
+    invalidateCanvas();
+}
+
+bool Application::selectAtAssemblyMode(int x, int y, bool additive) {
+    std::optional<std::size_t> hit;
+    if (mode_ == EditMode::Draw2D) {
+        hit = hitTestModel2D(screenTo2D(x, y), document_, 10.0 / (60.0 * camera_.zoom()));
+    } else {
+        RECT client{}; GetClientRect(canvas_, &client);
+        hit = hitTestModel3D({static_cast<double>(x), static_cast<double>(y)}, document_, camera_,
+                             std::max(1L, client.right), std::max(1L, client.bottom), 10.0);
+    }
+    if (!hit) return false;
+    selectedCutModifiers_.clear();
+    const EntityId partId = document_.modelId(*hit);
+    const auto members = document_.assemblyMembers(partId);
+    std::vector<std::size_t> toSelect;
+    for (const EntityId m : members) {
+        const auto mi = document_.indexOfEntity(m);
+        if (mi) toSelect.push_back(*mi);  // weld/bulon kimligi model degil -> atla
+    }
+    if (toSelect.empty()) toSelect.push_back(*hit);  // assembly disi parca: tek secim
+    if (additive) {
+        for (const std::size_t s : toSelect)
+            if (std::find(selectedModels_.begin(), selectedModels_.end(), s) == selectedModels_.end())
+                selectedModels_.push_back(s);
+    } else {
+        selectedModels_ = std::move(toSelect);
+    }
+    selectionFirstCorner_.reset();
+    invalidateCanvas();
+    return true;
+}
+
+#ifdef MM_HAS_OCC
+namespace {
+// Ileri bildirim: tanim editWeld sonrasinda (weldSelectedParts bundan yararlanir).
+bool prepareWeldGeometry(Weld& w, Document& doc, OccSolidStore* store,
+                         TopoDS_Shape& solidOut, WireframeModel& wfOut);
+}
+#endif
+
+bool Application::weldSelectedParts(WeldType type, double size, double length, WeldClass cls) {
+    // GUVENLI GIRIS DOGRULAMASI: tam iki GERCek (model) parca, birbirinden farkli.
+    if (selectedModels_.size() != 2) return false;
+    const std::size_t i0 = selectedModels_[0];
+    const std::size_t i1 = selectedModels_[1];
+    if (i0 >= document_.models().size() || i1 >= document_.models().size()) return false;
+    const EntityId a = document_.modelId(i0);
+    const EntityId b = document_.modelId(i1);
+    if (a == kInvalidEntityId || b == kInvalidEntityId || a == b) return false;
+    if (size <= 0.0) return false;  // gecersiz kaynak olcusu
+    // Origin / direction / length: iki parcanin bbox merkezinden turetilir
+    // (kaynak KONUM simgesi — gercek OCC katisi uretilmez; metadata korunur).
+    Vec3 origin{0.0, 0.0, 0.0};
+    Vec3 direction{1.0, 0.0, 0.0};
+    double autoLength = length;
+    const auto& bounds = document_.modelBounds();
+    if (i0 < bounds.size() && i1 < bounds.size()) {
+        const Vec3 c0{(bounds[i0].minimum.x + bounds[i0].maximum.x) / 2.0,
+                      (bounds[i0].minimum.y + bounds[i0].maximum.y) / 2.0,
+                      (bounds[i0].minimum.z + bounds[i0].maximum.z) / 2.0};
+        const Vec3 c1{(bounds[i1].minimum.x + bounds[i1].maximum.x) / 2.0,
+                      (bounds[i1].minimum.y + bounds[i1].maximum.y) / 2.0,
+                      (bounds[i1].minimum.z + bounds[i1].maximum.z) / 2.0};
+        origin = Vec3{(c0.x + c1.x) / 2.0, (c0.y + c1.y) / 2.0, (c0.z + c1.z) / 2.0};
+        const double dx = c1.x - c0.x, dy = c1.y - c0.y, dz = c1.z - c0.z;
+        const double len = std::sqrt(dx * dx + dy * dy + dz * dz);
+        if (len > 1e-9) direction = Vec3{dx / len, dy / len, dz / len};
+        if (length <= 0.0) autoLength = len;  // otomatik: bbox merkezleri arasi
+    }
+    Weld w;
+    w.mainPart = a;
+    w.secondaryPart = b;
+    w.type = type;
+    w.size = size;
+    w.length = autoLength;
+    w.weldClass = cls;
+    w.origin = origin;
+    w.direction = direction;
+    // Kimlik: "W001", "W002", ... (mevcut kaynak sayisindan turetilir).
+    {
+        std::uint64_t seq = document_.welds().size() + 1;
+        std::wstring digits = std::to_wstring(seq);
+        while (digits.size() < 3) digits = L"0" + digits;
+        w.identification = "W";
+        for (const wchar_t ch : digits) w.identification.push_back(static_cast<char>(ch));
+    }
+#ifdef MM_HAS_OCC
+    // Gercek OCC kaynak kati (Phase W3): main/sec B-Rep'lerinden fillet kati
+    // uret; basariliysa display model + kati ekle, degilse glif+metadata.
+    {
+        // W3-FIX: parcalar B-Rep katisi tasimiyorsa lazy uret (kesme akisindaki
+        // ensureCutSolid ile ayni). Dosyadan acilan modelde magaza bosalir (P7),
+        // piramit/Face3D gibi profilsiz parcalarda hic katı uretilmez — bu adim
+        // atlanirsa store->find null doner ve kaynak kati SESSIZCE uretilmez
+        // (yalniz glif + assembly kalir). Tek undo birimi: snapshot once acilir,
+        // parca katilari + kaynak ayni kayda yazilir.
+        document_.pushSnapshot();
+        ensureCutSolid(a);
+        ensureCutSolid(b);
+        TopoDS_Shape solid;
+        WireframeModel wf;
+        if (prepareWeldGeometry(w, document_, occSolidStore(), solid, wf)) {
+            const std::size_t wi = document_.addWeld(std::move(w), std::move(wf));
+            const Weld& created = document_.welds()[wi];
+            if (created.displayEntityId != kInvalidEntityId) {
+                if (auto* store = occSolidStore()) {
+                    const VersionId before = store->activeVersion(created.displayEntityId);
+                    const VersionId after = store->set(created.displayEntityId, solid);
+                    if (after != kInvalidVersionId)
+                        document_.recordGeometryDelta(created.displayEntityId, before, after);
+                }
+            }
+            // Kalici onay: updateStatus bunu korur (publishStatus aninda ezilir).
+            // Bacak olcusu de yazilir — kullanici kaynagin neden kucuk gorunugunu
+            // (5 mm, 4 m kolonda ~1 px) anlar.
+            solidStatusMessage_ = L"Kaynak katisi olusturuldu: " +
+                                  utf8ToWide(created.identification) +
+                                  L" (bacak " +
+                                  std::to_wstring(static_cast<int>(std::lround(created.size))) +
+                                  L" mm, dikis " +
+                                  std::to_wstring(static_cast<int>(std::lround(created.length))) +
+                                  L" mm)";
+            invalidateCanvas();
+            return true;
+        }
+        // Kati uretilemedi: nedeni KALICI durum mesajina yaz. publishStatus tek
+        // basina YETMEZ — click handler'dan sonra updateStatus() calisip durum
+        // cubugunu bastan kurar ve o mesaji ezer; kullanici "kati gozukmuyor"
+        // der ama nedeni goremez. solidStatusMessage_ ise status cubugunda kalir
+        // (End Plate / Shear Plate ayni alani kullanir).
+        solidStatusMessage_ = L"Kaynak katisi uretilemedi: " +
+                              utf8ToWide(w.unsupportedReason.empty()
+                                             ? std::string("bilinmeyen neden")
+                                             : w.unsupportedReason);
+        publishStatus(solidStatusMessage_);
+#ifdef _WIN32
+        // Durum cubugu satiri uzun ve kirpiliyor; neden KAYBOLMASIN diye modal
+        // uyari (uzaktan teshis icin kanitlanmis yontem — skill 3d-cad-viewport).
+        MessageBoxW(GetParent(canvas_), solidStatusMessage_.c_str(),
+                    L"Kaynak (Weld)", MB_ICONWARNING | MB_OK);
+#endif
+        document_.addWeld(std::move(w));
+        invalidateCanvas();
+        return true;
+    }
+#endif
+    document_.pushSnapshot();
+    document_.addWeld(std::move(w));
+    invalidateCanvas();
+    return true;
+}
+
+// --- KAYNAK KOMUTU (verb-noun) + KAYNAK SECIMI (Phase W2) --------------------
+
+bool Application::editWeld(std::size_t index, WeldType type, double size, double length,
+                           WeldClass cls) {
+    if (index >= document_.welds().size()) return false;
+    if (size <= 0.0) return false;
+    Weld w = document_.welds()[index];
+    w.type = type;
+    w.size = size;
+    w.length = length;
+    w.weldClass = cls;
+    document_.pushSnapshot();
+    const bool ok = document_.setWeld(index, std::move(w));
+    if (ok) recomputeWeldGeometry(index);
+    invalidateCanvas();
+    return ok;
+}
+
+#ifdef MM_HAS_OCC
+namespace {
+// Kaynak katisi yuksek kontrastli YESIL (plaka gri 0x808080, bulon kahve 0x8B592A,
+// acik mavi arka plan; eski 0x5B8DB8 celik mavisi arka planla karisiyordu).
+constexpr std::uint32_t kWeldSolidColor = 0x00C853u;
+
+// Kaynak katisi + goruntuleme modelini uretir (basariliysa true). `w` ustune
+// geometrySupported/origin/direction/normaller yazilir; `solidOut`/`wfOut`
+// doldurulur. Basarisizlikta w.unsupportedReason dolar ve false doner.
+bool prepareWeldGeometry(Weld& w, Document& doc, OccSolidStore* store,
+                         TopoDS_Shape& solidOut, WireframeModel& wfOut) {
+    if (!store) return false;
+    const auto* mainShape = store->find(w.mainPart);
+    const auto* secShape = store->find(w.secondaryPart);
+    if (!mainShape || !secShape) {
+        w.unsupportedReason = "parca B-Rep geometrisi yok (kaynak kati uretilemedi)";
+        return false;
+    }
+    const double leg = w.sizeIsThroat ? w.size * std::sqrt(2.0) : w.size;
+    std::string reason;
+    double seamLength = 0.0;
+    auto solids = buildWeldSolids(w, *mainShape, *secShape, leg, reason, &seamLength);
+    if (seamLength > 0.0) w.length = seamLength;  // gercek dikis uzunlugu
+    if (solids.empty()) {
+        w.unsupportedReason = reason.empty() ? "kaynak kati uretilemedi" : reason;
+        return false;
+    }
+    // Fuse YOK: dikis katilari compound'da toplanir (Windows OCCT 7.9.3-3 Fuse
+    // cokmesi, bkz. compoundOfShapes).
+    const TopoDS_Shape fused = compoundOfShapes(solids);
+    if (fused.IsNull()) {
+        w.unsupportedReason = "kaynak kati birlestirilemedi";
+        return false;
+    }
+    const WeldJunction j = findBestWeldJunction(*mainShape, *secShape, 0.5);
+    if (j.valid) {
+        w.origin = j.start;
+        w.direction = j.direction;
+        w.mainNormal = j.mainNormal;
+        w.secNormal = j.secNormal;
+    }
+    w.geometrySupported = true;
+    w.unsupportedReason.clear();
+    WireframeModel wf = shapeToWireframeWithFaces(fused, 0.15);
+    auto props = wf.properties();
+    props.trueColor = kWeldSolidColor;
+    props.effectiveColor = kWeldSolidColor;
+    wf.setProperties(std::move(props));
+    solidOut = fused;
+    wfOut = std::move(wf);
+    return true;
+}
+}  // namespace
+
+void Application::recomputeWeldGeometry(std::size_t index) {
+    if (index >= document_.welds().size()) return;
+    Weld w = document_.welds()[index];
+    if (w.displayEntityId == kInvalidEntityId) return;  // glif-only: kati yok
+    auto* store = occSolidStore();
+    if (!store) return;
+    const auto di = document_.indexOfEntity(w.displayEntityId);
+    if (!di) return;
+    // W3-FIX: dosyadan acilan modelde parca B-Rep'leri dustugu icin edit oncesi
+    // lazy uret; yoksa kaynak kati sessizce glif'e duser. editWeld snapshot'i
+    // zaten acmis durumda — deltalar ayni undo kaydina yazilir.
+    ensureCutSolid(w.mainPart);
+    ensureCutSolid(w.secondaryPart);
+    TopoDS_Shape solid;
+    WireframeModel wf;
+    if (!prepareWeldGeometry(w, document_, store, solid, wf)) {
+        // Kati gecersizlesti: kaydi glif'e dusur, display modelini kaldir.
+        w.geometrySupported = false;
+        w.displayEntityId = kInvalidEntityId;
+        document_.setWeld(index, std::move(w));
+        document_.removeModelLeaf(*di);
+        return;
+    }
+    document_.setWeld(index, std::move(w));
+    document_.replaceModel(*di, {std::move(wf)});
+    const VersionId before = store->activeVersion(w.displayEntityId);
+    const VersionId after = store->set(w.displayEntityId, solid);
+    if (after != kInvalidVersionId)
+        document_.recordGeometryDelta(w.displayEntityId, before, after);
+}
+#else
+void Application::recomputeWeldGeometry(std::size_t) {}
+#endif
+
+void Application::beginWeldCommand(WeldType type, double size, double length, WeldClass cls) {
+    cancelPendingWeldCommand();
+    pendingWeld_ = true;
+    pendingWeldType_ = type;
+    pendingWeldSize_ = size;
+    pendingWeldLength_ = length;
+    pendingWeldClass_ = cls;
+    selectedModels_.clear();
+    selectedCutModifiers_.clear();
+    clearWeldSelection();
+    invalidateCanvas();
+}
+
+void Application::cancelPendingWeldCommand() {
+    pendingWeld_ = false;
+}
+
+std::optional<std::size_t> Application::selectedWeldIndex() const {
+    return selectedWelds_.empty() ? std::nullopt
+                                  : std::optional<std::size_t>{selectedWelds_.front()};
+}
+
+void Application::selectWeld(std::size_t index) {
+    selectedWelds_.clear();
+    if (index < document_.welds().size()) selectedWelds_.push_back(index);
+    selectedModels_.clear();
+    selectedCutModifiers_.clear();
+    invalidateCanvas();
+}
+
+void Application::clearWeldSelection() {
+    selectedWelds_.clear();
+}
+
+bool Application::toggleWeldSelectionAt(int x, int y) {
+    // Kaynak glifi hit-test: her weld.origin ekrana izdusurulur, 12px yaricap.
+    const auto& welds = document_.welds();
+    if (welds.empty()) return false;
+    for (std::size_t wi = 0; wi < welds.size(); ++wi) {
+        const auto& w = welds[wi];
+        if (w.origin.x == 0.0 && w.origin.y == 0.0 && w.origin.z == 0.0 &&
+            w.direction.x == 1.0 && w.direction.y == 0.0 && w.direction.z == 0.0)
+            continue;
+        RECT client{}; GetClientRect(canvas_, &client);
+        const Vec2 px = mode_ == EditMode::Draw2D
+            ? camera_.project2D(w.origin, std::max(1L, client.right),
+                                std::max(1L, client.bottom))
+            : camera_.project(w.origin, std::max(1L, client.right),
+                              std::max(1L, client.bottom));
+        const double dx = px.x - static_cast<double>(x);
+        const double dy = px.y - static_cast<double>(y);
+        if (dx * dx + dy * dy <= 12.0 * 12.0) {
+            const auto existing = std::find(selectedWelds_.begin(), selectedWelds_.end(), wi);
+            if (existing == selectedWelds_.end()) selectedWelds_.push_back(wi);
+            else selectedWelds_.erase(existing);
+            if (!selectedWelds_.empty()) { selectedModels_.clear(); selectedCutModifiers_.clear(); }
+            invalidateCanvas();
+            return true;
+        }
+    }
+    return false;
+}
+
+std::string Application::selectedEntityProfile() const {
+    if (selectedModels_.empty() ||
+        selectedModels_.front() >= document_.models().size())
+        return {};
+    return document_.models()[selectedModels_.front()].properties().profileName;
+}
+
+std::string Application::selectedEntityLayer() const {
+    if (selectedModels_.empty() ||
+        selectedModels_.front() >= document_.models().size())
+        return {};
+    return document_.models()[selectedModels_.front()].properties().layer;
+}
+
+int Application::selectedEntityColorIndex() const {
+    if (selectedModels_.empty() ||
+        selectedModels_.front() >= document_.models().size())
+        return -1;
+    const auto& props = document_.models()[selectedModels_.front()].properties();
+    // trueColor YOK = BYLAYER: palette[0] ("ByLayer") gosterilir. Eskiden
+    // sentinel (0xFFFFFFFF) hicbir ogeyle eslesmiyordu ve -1 donuyordu, yani
+    // props panelindeki Renk satiri secili elemanin rengini YANSITMIYORDU.
+    if (!props.trueColor) return 0;
+    for (std::size_t i = 0; i < colorChoices.size(); ++i)
+        if (colorChoices[i].color && *colorChoices[i].color == *props.trueColor)
+            return static_cast<int>(i);
+    return -1;
+}
+
+std::string Application::selectedEntityLineType() const {
+    if (selectedModels_.empty() ||
+        selectedModels_.front() >= document_.models().size())
+        return {};
+    return document_.models()[selectedModels_.front()].properties().lineType;
+}
+
+double Application::selectedEntityProfileRotation() const {
+    if (selectedModels_.empty() ||
+        selectedModels_.front() >= document_.models().size())
+        return 0.0;
+    return document_.models()[selectedModels_.front()].properties().profileRotation;
+}
+
+bool Application::selectedEntityColumnLevels(double& top, double& bottom) const {
+    // Secili eleman profilli ve DUSEY ise ust/alt kotu dondurur (props
+    // panelindeki Kolon Us/Alt satirlarinin secimi yansitmasi icin).
+    if (selectedModels_.empty() ||
+        selectedModels_.front() >= document_.models().size())
+        return false;
+    const auto& model = document_.models()[selectedModels_.front()];
+    if (model.faces().empty()) return false;
+    const auto& props = model.properties();
+    if (props.profileName.empty()) return false;
+    const double dx = props.axisToX - props.axisFromX;
+    const double dy = props.axisToY - props.axisFromY;
+    const double dz = props.axisToZ - props.axisFromZ;
+    if (std::abs(dz) < std::sqrt(dx * dx + dy * dy)) return false;
+    bottom = props.axisFromZ < props.axisToZ ? props.axisFromZ : props.axisToZ;
+    top = props.axisFromZ < props.axisToZ ? props.axisToZ : props.axisFromZ;
+    return true;
+}
+
+void Application::applyColumnLevels(double top, double bottom) {
+    // TEK YOL: deger her durumda sonraki kolon yerlesimi icin saklanir;
+    // secim varsa secili kolona da uygulanir (ENTER ve UYGULA ayni yol).
+    setColumnProps(top, bottom, columnMaterial_);
+    if (!hasSelection()) return;
+    // NO-OP KORUMASI: secili kolonun kotu zaten budur (ornek: kullanici spin
+    // kutusuna tiklayip baska yere tiklar → editingFinished ayni degerle
+    // gelir). O durumda yeniden uretime ve BOS geri-alma kaydina gerek yok;
+    // yoksa Ctrl+Z hicbir sey yapmiyor gibi gorunur.
+    double currentTop = 0.0;
+    double currentBottom = 0.0;
+    if (selectedEntityColumnLevels(currentTop, currentBottom)) {
+        const double eps = 1e-6;
+        if (std::abs(currentTop - top) <= eps && std::abs(currentBottom - bottom) <= eps)
+            return;
+    }
+    setSelectedEntityColumnLevels(top, bottom);
+}
+
+#ifdef MM_HAS_OCC
+
+void Application::setSelectedEntityProfileRotation(double degrees) {
+    // TOPLU ROTASYON: secimdeki TUM profilli uyelere ayni aci uygulanir
+    // (override). Her kati kendi ekseninde yeniden uretilir; eksen
+    // koordinatlari katinin uzerinde tasindigindan indeks kaymalari ve
+    // yanlis nesne eslesmesi soz konusu olamaz. Eski dosyalarda secilen
+    // eksen cizgisi, uc noktalariyla partner katiya yonlendirilir.
+    if (selectedModels_.empty()) return;
+    ensureProfileCatalog();
+
+    // 1) Hedefleri topla: secimdeki her oge -> islenecek KATI indeksi.
+    //    Cizgi secildiyse partner kati bulunur; kati dogrudan hedeftir.
+    std::vector<std::size_t> targets;
+    for (const auto selIdx : selectedModels_) {
+        if (selIdx >= document_.models().size()) continue;
+        std::size_t target = selIdx;
+        const auto& sel = document_.models()[selIdx];
+        if (sel.faces().empty() && sel.vertices().size() == 2 && sel.edges().size() == 1) {
+            const Vec3 lf = sel.vertices()[0];
+            const Vec3 lt = sel.vertices()[1];
+            bool found = false;
+            for (std::size_t i = 0; i < document_.models().size(); ++i) {
+                const auto& m = document_.models()[i];
+                if (m.faces().empty() || m.properties().profileName.empty()) continue;
+                const Vec3 af(m.properties().axisFromX, m.properties().axisFromY,
+                              m.properties().axisFromZ);
+                const Vec3 at(m.properties().axisToX, m.properties().axisToY,
+                              m.properties().axisToZ);
+                const bool fwd = std::abs(af.x - lf.x) < 1e-6 && std::abs(af.y - lf.y) < 1e-6 &&
+                    std::abs(af.z - lf.z) < 1e-6 && std::abs(at.x - lt.x) < 1e-6 &&
+                    std::abs(at.y - lt.y) < 1e-6 && std::abs(at.z - lt.z) < 1e-6;
+                const bool rev = std::abs(af.x - lt.x) < 1e-6 && std::abs(af.y - lt.y) < 1e-6 &&
+                    std::abs(af.z - lt.z) < 1e-6 && std::abs(at.x - lf.x) < 1e-6 &&
+                    std::abs(at.y - lf.y) < 1e-6 && std::abs(at.z - lf.z) < 1e-6;
+                if (fwd || rev) { target = i; found = true; break; }
+            }
+            if (!found) continue; // profilsiz cizgi — rotasyon islemi yok
+        }
+        const auto& m = document_.models()[target];
+        if (m.properties().profileName.empty()) continue;
+        bool dup = false;
+        for (const auto t : targets) if (t == target) { dup = true; break; }
+        if (!dup) targets.push_back(target);
+    }
+    if (targets.empty()) return;
+    // KARARLI KIMLIK: hedeflerin kimligini SIMDI yakala. Asagida eski dosya
+    // temizligi (adim 4) cizgi siler ve INDEKSLERI kaydirir; kimlik kaymaz,
+    // bu yuzden secim sonunda KIMLIKTEN yeniden cozulur.
+    std::vector<EntityId> targetIds;
+    targetIds.reserve(targets.size());
+    for (const auto t : targets) targetIds.push_back(document_.modelId(t));
+
+    // 2) Hedeflerin mevcut ozelliklerini kopyala (dongu ici degisimlere dayanikli)
+    struct TargetInfo {
+        std::string profileName;
+        std::string material, lineType, layer;
+        std::optional<std::uint32_t> trueColor; int colorIndex;
+        std::int64_t profileSourceLine;
+        double axisFrom[3], axisTo[3];
+        double sectionNormal[3]; // kesit referans normali (yeniden uretimde korunur)
+    };
+    std::vector<TargetInfo> infos;
+    infos.reserve(targets.size());
+    for (const auto t : targets) {
+        const auto& props = document_.models()[t].properties();
+        TargetInfo info;
+        info.profileName = props.profileName;
+        info.material = props.material;
+        info.lineType = props.lineType;
+        info.layer = props.layer;
+        info.trueColor = props.trueColor;
+        info.colorIndex = props.colorIndex;
+        info.profileSourceLine = props.profileSourceLine;
+        info.axisFrom[0] = props.axisFromX; info.axisFrom[1] = props.axisFromY;
+        info.axisFrom[2] = props.axisFromZ;
+        info.axisTo[0] = props.axisToX; info.axisTo[1] = props.axisToY;
+        info.axisTo[2] = props.axisToZ;
+        // Referans normal KATIYLA SAKLANIR; yeniden uretim ayni degeri kullanir.
+        info.sectionNormal[0] = props.sectionNormalX;
+        info.sectionNormal[1] = props.sectionNormalY;
+        info.sectionNormal[2] = props.sectionNormalZ;
+        infos.push_back(std::move(info));
+    }
+
+    // 3) Her hedefi kendi ekseninde yeniden uret ve YERINE koy.
+    pushUndoSnapshot();
+    std::size_t applied = 0;
+    for (std::size_t k = 0; k < targets.size(); ++k) {
+        const auto& info = infos[k];
+        const auto* profile = mm::findProfile(profileCatalog_, info.profileName);
+        if (!profile) continue;
+        const Vec3 from{info.axisFrom[0], info.axisFrom[1], info.axisFrom[2]};
+        const Vec3 to{info.axisTo[0], info.axisTo[1], info.axisTo[2]};
+        if (std::abs(to.x - from.x) + std::abs(to.y - from.y) +
+            std::abs(to.z - from.z) < 1e-9) continue;
+        const TopoDS_Shape solid = mm::extrudeProfileSolid(
+            *profile, from, to, degrees,
+            Vec3{info.sectionNormal[0], info.sectionNormal[1], info.sectionNormal[2]});
+        if (solid.IsNull()) continue;
+        auto solidModel = mm::shapeToWireframeWithFaces(solid, 0.15);
+        auto solidProps = solidModel.properties();
+        solidProps.profileName = info.profileName;
+        solidProps.profileRotation = degrees;
+        solidProps.profileSourceLine = info.profileSourceLine;
+        solidProps.axisFromX = info.axisFrom[0]; solidProps.axisFromY = info.axisFrom[1];
+        solidProps.axisFromZ = info.axisFrom[2];
+        solidProps.axisToX = info.axisTo[0]; solidProps.axisToY = info.axisTo[1];
+        solidProps.axisToZ = info.axisTo[2];
+        solidProps.sectionNormalX = info.sectionNormal[0];
+        solidProps.sectionNormalY = info.sectionNormal[1];
+        solidProps.sectionNormalZ = info.sectionNormal[2];
+        solidProps.material = info.material;
+        solidProps.trueColor = info.trueColor;
+        solidProps.colorIndex = info.colorIndex;
+        solidProps.lineType = info.lineType;
+        solidProps.layer = info.layer;
+        solidModel.setProperties(std::move(solidProps));
+        document_.replaceModel(targets[k], {std::move(solidModel)});
+        putOccSolid(targets[k], solid);
+        ++applied;
+    }
+
+    // 4) Eski dosya temizligi: hedef eksenlerle cakisan cizgileri sil.
+    {
+        std::vector<std::size_t> staleLines;
+        for (std::size_t i = 0; i < document_.models().size(); ++i) {
+            const auto& m = document_.models()[i];
+            if (m.vertices().size() != 2 || m.edges().size() != 1) continue;
+            bool isTarget = false;
+            for (const auto& info : infos) {
+                const Vec3 af(info.axisFrom[0], info.axisFrom[1], info.axisFrom[2]);
+                const Vec3 at(info.axisTo[0], info.axisTo[1], info.axisTo[2]);
+                const Vec3 lf = m.vertices()[0];
+                const Vec3 lt = m.vertices()[1];
+                const bool fwd = std::abs(lf.x - af.x) < 1e-6 && std::abs(lf.y - af.y) < 1e-6 &&
+                    std::abs(lf.z - af.z) < 1e-6 && std::abs(lt.x - at.x) < 1e-6 &&
+                    std::abs(lt.y - at.y) < 1e-6 && std::abs(lt.z - at.z) < 1e-6;
+                const bool rev = std::abs(lf.x - at.x) < 1e-6 && std::abs(lf.y - at.y) < 1e-6 &&
+                    std::abs(lf.z - at.z) < 1e-6 && std::abs(lt.x - af.x) < 1e-6 &&
+                    std::abs(lt.y - af.y) < 1e-6 && std::abs(lt.z - af.z) < 1e-6;
+                if (fwd || rev) { isTarget = true; break; }
+            }
+            if (isTarget) staleLines.push_back(i);
+        }
+        if (!staleLines.empty()) {
+            // KARARLI KIMLIK sayesinde YENIDEN ESLEME GEREKMEZ: silinen
+            // cizgilerin occShapes_ kaydi yoktur ve kati KIMLIKLERI silme
+            // sirasinda kaymaz (indeks gibi degil). Eski indeks-tabanli
+            // yeniden esleme yalniz profilli+yuzlu katilari tasirdi; kutu/
+            // silindir/boolean sekillerini SESSIZCE DUSURURDU (Phase 1 #4).
+            document_.deleteModels(staleLines);
+        }
+    }
+
+    // Secim, silme sonrasi indeks kaymasindan ETKILENMESIN: KIMLIKTEN coz.
+    // (targets indeksleri adim 4'teki silme ile kaymis olabilir.)
+    {
+        std::vector<std::size_t> keptTargets;
+        keptTargets.reserve(targetIds.size());
+        for (const EntityId id : targetIds) {
+            if (const auto index = document_.indexOfEntity(id)) keptTargets.push_back(*index);
+        }
+        selectedModels_ = std::move(keptTargets);
+    }
+    {
+        FILE* rotationDiag = fopen("model-maker-render.log", "a");
+        if (rotationDiag) {
+            fprintf(rotationDiag, "ROTATION-BULK deg=%.1f applied=%zu\n",
+                    degrees, applied);
+            fclose(rotationDiag);
+        }
+    }
+    updateControls();
+    invalidateCanvas();
+}
+
+void Application::setSelectedEntityColumnLevels(double top, double bottom) {
+    // KULLANICI: "props taki ozellikler secili elemana saglikli uygulanmiyor,
+    // ozellikle KOLON BOYUNU degistirmiyor". Props panelindeki Kolon Us
+    // Alt kutulari eskiden YALNIZCA sonraki kolon yerlesimi icin saklaniyordu
+    // (setColumnProps) — secili kolona hic dokunmuyordu. Bu metot secili
+    // DUSEY profilli elemanin iki ucunun Z kotunu bottom/top yapip katiyi
+    // yeniden uretir; profil, rotasyon, kesit referans normali ve stil
+    // (malzeme/renk/katman/cizgi tipi) KORUNUR. TEK undo adimi.
+    if (selectedModels_.empty()) return;
+    if (!(top > bottom)) {
+        publishStatus(L"Kolon ust kotu alt kottan buyuk olmali.");
+        return;
+    }
+    ensureProfileCatalog();
+
+    // Hedefleri once KOPYALA (replaceModel dongu icinde modeli degistirir;
+    // referans tutmak sarkma yaratir). Eslesme indeksle yapilir — delta=0.
+    struct Target {
+        std::size_t index{};
+        double x{}, y{};
+        double rotation{};
+        double sectionNormal[3]{};
+    };
+    std::vector<Target> targets;
+    for (const auto selIdx : selectedModels_) {
+        if (selIdx >= document_.models().size()) continue;
+        const auto& model = document_.models()[selIdx];
+        const auto& props = model.properties();
+        if (model.faces().empty() || props.profileName.empty()) continue;
+        const double dx = props.axisToX - props.axisFromX;
+        const double dy = props.axisToY - props.axisFromY;
+        const double dz = props.axisToZ - props.axisFromZ;
+        // Kolon kotlari yalniz DUSEY (veya baskin dikey) elemanlarda anlamli:
+        // yatay kiriste uclarin Z'sini degistirmek elemani egip bozardi.
+        if (std::abs(dz) < std::sqrt(dx * dx + dy * dy)) continue;
+        Target target;
+        target.index = selIdx;
+        target.x = props.axisFromX;
+        target.y = props.axisFromY;
+        target.rotation = props.profileRotation;
+        target.sectionNormal[0] = props.sectionNormalX;
+        target.sectionNormal[1] = props.sectionNormalY;
+        target.sectionNormal[2] = props.sectionNormalZ;
+        targets.push_back(target);
+    }
+    if (targets.empty()) {
+        publishStatus(L"Kolon kotlari icin dusey profilli bir eleman secin "
+                      L"(yatay kirise uygulanmaz).");
+        return;
+    }
+
+    pushUndoSnapshot();
+    std::size_t applied = 0;
+    for (const auto& target : targets) {
+        // Stil alanlari replaceModel'DEN ONCE kopyalanir.
+        const auto& props = document_.models()[target.index].properties();
+        const std::string profileName = props.profileName;
+        const std::string material = props.material;
+        const std::string lineType = props.lineType;
+        const std::string layer = props.layer;
+        const std::optional<std::uint32_t> trueColor = props.trueColor;
+        const int colorIndex = props.colorIndex;
+        const std::int64_t profileSourceLine = props.profileSourceLine;
+        const double rotation = props.profileRotation;
+
+        const auto* profile = mm::findProfile(profileCatalog_, profileName);
+        if (!profile) continue;
+        const Vec3 from{target.x, target.y, bottom};
+        const Vec3 to{target.x, target.y, top};
+        const TopoDS_Shape solid = mm::extrudeProfileSolid(
+            *profile, from, to, rotation,
+            Vec3{target.sectionNormal[0], target.sectionNormal[1],
+                 target.sectionNormal[2]});
+        if (solid.IsNull()) continue;
+        auto solidModel = mm::shapeToWireframeWithFaces(solid, 0.15);
+        auto solidProps = solidModel.properties();
+        solidProps.profileName = profileName;
+        solidProps.profileRotation = rotation;
+        solidProps.profileSourceLine = profileSourceLine;
+        solidProps.axisFromX = from.x; solidProps.axisFromY = from.y;
+        solidProps.axisFromZ = from.z;
+        solidProps.axisToX = to.x; solidProps.axisToY = to.y; solidProps.axisToZ = to.z;
+        solidProps.sectionNormalX = target.sectionNormal[0];
+        solidProps.sectionNormalY = target.sectionNormal[1];
+        solidProps.sectionNormalZ = target.sectionNormal[2];
+        solidProps.material = material;
+        solidProps.trueColor = trueColor;
+        solidProps.colorIndex = colorIndex;
+        solidProps.lineType = lineType;
+        solidProps.layer = layer;
+        solidModel.setProperties(std::move(solidProps));
+        document_.replaceModel(target.index, {std::move(solidModel)});
+        putOccSolid(target.index, solid);
+        ++applied;
+    }
+    if (applied == 0) {
+        publishStatus(L"Kolon kotlari uygulanmadi (profil/BRep bulunamadi).");
+    } else {
+        publishStatus(L"Kolon kotlari guncellendi");
+    }
+    updateControls();
+    invalidateCanvas();
+}
+
+#else // !MM_HAS_OCC - kati (BRep) profil rotasyonu yok
+
+void Application::setSelectedEntityProfileRotation(double) {
+    // OCC kapali (vcpkg/OCCT yok): kati yeniden uretilemez, komut etkisiz.
+    publishStatus(L"Kati profil rotasyonu icin OpenCASCADE gerekli (OCC kapali)");
+}
+
+void Application::setSelectedEntityColumnLevels(double, double) {
+    publishStatus(L"Kolon kotu degisikligi icin OpenCASCADE gerekli (OCC kapali)");
+}
+
+// onLeftButtonDown icindeki kati-trim akisi bu metodu korumasiz cagirir;
+// govde MM_HAS_OCC blogunda kaldigi icin OCC kapaliyken linker hatasi
+// (undefined reference) veriyordu. Stub ile akis sessizce no-op olur.
+void Application::performSolidTrimByLine(std::size_t) {
+    publishStatus(L"Kati kesme icin OpenCASCADE gerekli (OCC kapali)");
+}
+
+#endif // MM_HAS_OCC
+
+std::string Application::selectedEntityMaterial() const {
+    if (selectedModels_.empty() ||
+        selectedModels_.front() >= document_.models().size())
+        return {};
+    return document_.models()[selectedModels_.front()].properties().material;
+}
+
+void Application::setSelectedEntityLineType(const std::string& lineType) {
+    if (selectedModels_.empty()) return;
+    document_.setModelLineType(selectedModels_, lineType);
+    updateControls();
+    invalidateCanvas();
+}
+
+void Application::setSelectedEntityMaterial(const std::string& material) {
+    if (selectedModels_.empty()) return;
+    document_.setModelMaterial(selectedModels_, material);
+    updateControls();
+    invalidateCanvas();
+}
+
+std::string Application::selectedEntityTypeLabel() const {
+    if (selectedModels_.empty() ||
+        selectedModels_.front() >= document_.models().size())
+        return {};
+    const auto& model = document_.models()[selectedModels_.front()];
+    if (!model.properties().profileName.empty()) return "PROFIL (3B kati)";
+    if (model.isFace3D()) return "3DFACE";
+    if (model.isPointEntity()) return "NOKTA";
+    return "CIZGI";
+}
+
+std::string Application::selectedEntityLengthLabel() const {
+    if (selectedModels_.empty() ||
+        selectedModels_.front() >= document_.models().size())
+        return {};
+    const auto& model = document_.models()[selectedModels_.front()];
+    if (model.vertices().size() < 2) return {};
+    const Vec3 a = model.vertices().front();
+    const Vec3 b = model.vertices().back();
+    const double dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z;
+    const double length = std::sqrt(dx * dx + dy * dy + dz * dz);
+    char buffer[64]{};
+    std::snprintf(buffer, sizeof(buffer), "%.2f mm", length);
+    return buffer;
+}
+
+int Application::modelCount() const {
+    return static_cast<int>(document_.models().size());
+}
+
+std::string Application::modelCategory(std::size_t index) const {
+    if (index >= document_.models().size()) return {};
+    const auto& model = document_.models()[index];
+    if (!model.properties().profileName.empty()) return "PROFIL";
+    if (model.isFace3D()) return "3DFACE";
+    if (model.isPointEntity()) return "NOKTA";
+    return "CIZGI";
+}
+
+std::string Application::modelDisplayName(std::size_t index) const {
+    if (index >= document_.models().size()) return {};
+    const auto& model = document_.models()[index];
+    const std::string& profile = model.properties().profileName;
+    if (!profile.empty()) return profile;
+    if (model.isFace3D()) return "3DFACE " + std::to_string(index);
+    if (model.isPointEntity()) return "Nokta " + std::to_string(index);
+    return "Çizgi " + std::to_string(index);
+}
+
+void Application::selectModel(std::size_t index) {
+    if (index >= document_.models().size()) return;
+    selectedModels_.assign(1, index);
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
+}
+
+void Application::selectModels(const std::vector<std::size_t>& indices) {
+    selectedModels_.clear();
+    for (const std::size_t idx : indices)
+        if (idx < document_.models().size())
+            selectedModels_.push_back(idx);
+    selectedCutModifiers_.clear();
+    selectedWelds_.clear();
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
+}
+
+void Application::focusModel(std::size_t index) {
+    selectModel(index);
+    focusOnSelection();
+}
+
+std::vector<std::string> Application::profileNames() {
+    ensureProfileCatalog();
+    std::vector<std::string> names;
+    names.reserve(profileCatalog_.size());
+    for (const auto& profile : profileCatalog_) names.push_back(profile.name);
+    // Dogal (sayisal) sira: HEA100 < HEA120 < HEA1000, IPE80 < IPE100.
+    // Duz std::sort sozluk sirasi verir (HEA1000 < HEA120) — yanlis gorunum.
+    std::sort(names.begin(), names.end(),
+              [](const std::string& a, const std::string& b) {
+                  return mm::profileNameLess(a, b);
+              });
+    return names;
+}
+
+void Application::startProfileAssignment() {
+    if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
+    ensureProfileCatalog();
+    if (profileCatalog_.empty()) {
+        SetWindowTextW(status_, L"Profil katalogu bulunamadi — Tekla .lis dosyalari yok");
+        return;
+    }
+    profileAssignmentActive_ = true;
+    profileInput_.clear();
+    SetWindowTextW(status_, L"Profil adı: (Esc = iptal)");
+    invalidateCanvas();
+}
+
+void Application::commitProfileAssignment() {
+    profileAssignmentActive_ = false;
+    if (profileInput_.empty()) { updateStatus(); return; }
+    // Genis -> UTF-8 (profil adlari ASCII olsa da O gibi karakterler icin)
+    char utf8Buffer[128]{};
+    WideCharToMultiByte(CP_UTF8, 0, profileInput_.c_str(), -1, utf8Buffer,
+                        static_cast<int>(std::size(utf8Buffer)), nullptr, nullptr);
+    const std::string name(utf8Buffer);
+    profileInput_.clear();
+    const auto* profile = mm::findProfile(profileCatalog_, name);
+    if (!profile) {
+        wchar_t message[160]{};
+        std::swprintf(message, std::size(message), L"Profil bulunamadi: %hs", name.c_str());
+        SetWindowTextW(status_, message);
+        updateStatus();
+        return;
+    }
+    if (document_.models().empty()) {
+        SetWindowTextW(status_, L"Once bir cizgi cizin (L)");
+        updateStatus();
+        return;
+    }
+    const std::size_t index = document_.models().size() - 1;
+    const auto& model = document_.models()[index];
+    if (model.vertices().size() != 2 || model.edges().size() != 1) {
+        SetWindowTextW(status_, L"Son eklenen nesne cizgi degil — once cizgi cizin (L)");
+        updateStatus();
+        return;
+    }
+    document_.setModelProfile({index}, profile->name);
+    solidStatusMessage_ = L"";
+    wchar_t message[220]{};
+    std::swprintf(message, std::size(message),
+                  L"%hs atandi: A=%.0f mm², Ix=%.0f cm⁴, Wx=%.0f cm³, G=%.2f kg/m",
+                  profile->name.c_str(), profile->crossSectionArea,
+                  profile->inertiaX / 1.0e4, profile->sectionModulusX / 1.0e3,
+                  profile->weightPerUnitLength);
+    SetWindowTextW(status_, message);
+    updateControls(); invalidateCanvas();
+}
+
+void Application::refreshProfileCombo() {
+    ensureProfileCatalog();
+    if (!profileCombo_) return;
+    SendMessageW(profileCombo_, CB_RESETCONTENT, 0, 0);
+    for (const auto& profile : profileCatalog_) {
+        wchar_t wide[128]{};
+        MultiByteToWideChar(CP_UTF8, 0, profile.name.c_str(), -1, wide,
+                            static_cast<int>(std::size(wide)));
+        SendMessageW(profileCombo_, CB_ADDSTRING, 0,
+                     reinterpret_cast<LPARAM>(wide));
+    }
+    if (!profileCatalog_.empty())
+        SendMessageW(profileCombo_, CB_SETCURSEL, 0, 0);
+    if (profilePopup_) {
+        SendMessageW(profilePopup_, LB_RESETCONTENT, 0, 0);
+        for (const auto& profile : profileCatalog_) {
+            wchar_t wide[128]{};
+            MultiByteToWideChar(CP_UTF8, 0, profile.name.c_str(), -1, wide,
+                                static_cast<int>(std::size(wide)));
+            SendMessageW(profilePopup_, LB_ADDSTRING, 0,
+                         reinterpret_cast<LPARAM>(wide));
+        }
+    }
+    if (profileButton_ && !profileCatalog_.empty()) {
+        wchar_t wide[128]{};
+        MultiByteToWideChar(CP_UTF8, 0, profileCatalog_.front().name.c_str(), -1,
+                            wide, static_cast<int>(std::size(wide)));
+        std::wstring caption = L"Profil: " + std::wstring(wide);
+        SetWindowTextW(profileButton_, caption.c_str());
+    }
+}
+
+void Application::toggleProfilePopup() {
+    if (!profilePopup_) return;
+    ensureProfileCatalog();
+    if (profileCatalog_.empty()) {
+        SetWindowTextW(status_, L"Profil katalogu bulunamadi — Tekla .lis dosyalari yok");
+        return;
+    }
+    const bool visible = IsWindowVisible(profilePopup_);
+    if (!visible) {
+        RECT buttonRect{};
+        GetWindowRect(profileButton_, &buttonRect);
+        SetWindowPos(profilePopup_, HWND_TOPMOST, buttonRect.left,
+                     buttonRect.bottom + 2, 240, 420,
+                     SWP_NOACTIVATE);
+        ShowWindow(profilePopup_, SW_SHOWNOACTIVATE);
+        SetFocus(profilePopup_);
+    } else {
+        ShowWindow(profilePopup_, SW_HIDE);
+    }
+}
+
+void Application::applyProfilePopupSelection() {
+    if (!profilePopup_) return;
+    const LRESULT selection = SendMessageW(profilePopup_, LB_GETCURSEL, 0, 0);
+    ShowWindow(profilePopup_, SW_HIDE);
+    if (selection < 0 ||
+        selection >= static_cast<LRESULT>(profileCatalog_.size())) return;
+    assignProfileToSelection(
+        profileCatalog_[static_cast<std::size_t>(selection)].name);
+}
+
+#ifdef MM_HAS_OCC
+void Application::executeSolidTrim(bool keepPositive) {
+    FILE* trace = fopen("model-maker-render.log", "a");
+    if (trace) {
+        fprintf(trace, "TRIM-TRACE index=%zu models=%zu shapes=%zu keepPos=%d\n",
+                trimSolidIndex_, document_.models().size(), occSolidCount(),
+                keepPositive ? 1 : 0);
+        fclose(trace);
+    }
+    if (trimSolidIndex_ >= document_.models().size()) {
+        publishStatus(L"Trim: kati bulunamadi");
+        return;
+    }
+    const auto* found = findOccSolid(trimSolidIndex_);
+    if (found == nullptr || found->IsNull()) {
+        publishStatus(L"Trim: bu kati icin BRep sekli yok (Boolean/extrude ile olusturun)");
+        return;
+    }
+    const TopoDS_Shape result =
+        mm::cutSolidByPlane(*found, trimPlanePoint_, trimPlaneNormal_, keepPositive);
+    if (result.IsNull()) {
+        MessageBeep(MB_ICONWARNING);
+        return;
+    }
+    auto model = mm::shapeToWireframeWithFaces(result, 0.15);
+    {
+        // Kesim sonucunun yapisal teşhisi (bozuk gorunum avi)
+        int faceCount = 0, edgeCount = 0;
+        for (TopExp_Explorer faces(result, TopAbs_FACE); faces.More(); faces.Next()) ++faceCount;
+        for (TopExp_Explorer edges(result, TopAbs_EDGE); edges.More(); edges.Next()) ++edgeCount;
+        FILE* diag = fopen("model-maker-render.log", "a");
+        if (diag) {
+            fprintf(diag, "TRIM-RESULT faces=%d edges=%d tessTri=%zu keepPos=%d\n",
+                    faceCount, edgeCount, model.faces().size(),
+                    keepPositive ? 1 : 0);
+            fclose(diag);
+        }
+    }
+    const auto oldProps = document_.models()[trimSolidIndex_].properties();
+    auto props = model.properties();
+    props.profileName = oldProps.profileName;
+    model.setProperties(std::move(props));
+    pushUndoSnapshot();
+    document_.replaceModel(trimSolidIndex_, {std::move(model)});
+    // Yerinde guncelleme: kesilmis sekil AYNI varlik KIMLIGI altina yazilir
+    // (belge-sahipli magaza; eski map'teki `found->second = result` karsiligi).
+    putOccSolid(trimSolidIndex_, result);
+    publishStatus(L"Kati duzlemle kesildi");
+    updateControls();
+    invalidateCanvas();
+}
+#endif
+
+void Application::assignProfileToLine(const Vec3& from, const Vec3& to,
+                                       const std::string& profileName) {
+    ensureProfileCatalog();
+    const auto* profile = mm::findProfile(profileCatalog_, profileName);
+    if (!profile) {
+        publishStatus(L"Profil bulunamadı: " + utf8ToWide(profileName));
+        return;
+    }
+    // Cizgiyi ekle, secili yap, mevcut atama akisina birak (ekstrude +
+    // kaynak cizgi silme + occShapes eslesmesi ayni kod — kopyalanmaz).
+    // Snapshot atama akisinin icindeki addStyledModel/delete zincirinde
+    // alinir — burada ek bir snapshot Ctrl+Z'de cift adim yapar.
+    document_.addModel(WireframeModel::line(from, to));
+    selectedModels_.assign(1, document_.models().size() - 1);
+    assignProfileToSelection(profile->name);
+    selectedModels_.clear();
+}
+
+void Application::placeColumn(const Vec3& point) {
+    // Kolon: tıklanan nokta alt uctur; profil kesiti Z boyunca
+    // Bottom..Top kotlari arasina ekstrude edilir (dik kolon).
+    ensureProfileCatalog();
+    // Profil: pending secim (profil-cizim modu) varsa o, yoksa onceden
+    // atanmis profil yoksa uyari.
+    std::string profileName = pendingProfileName_;
+    if (profileName.empty()) {
+        // Secili nesnede profil varsa onu kullan.
+        if (!selectedModels_.empty() && selectedModels_.front() < document_.models().size()) {
+            const auto& p = document_.models()[selectedModels_.front()].properties();
+            if (!p.profileName.empty()) profileName = p.profileName;
+        }
+    }
+    if (profileName.empty()) {
+        publishStatus(L"Kolon icin profil seçin (profil listesinden).");
+        return;
+    }
+    const Vec3 from{point.x, point.y, columnBottomZ_};
+    const Vec3 to{point.x, point.y, columnTopZ_};
+    if (to.z <= from.z) {
+        publishStatus(L"Kolon üst kotu alt kottan büyük olmalı.");
+        return;
+    }
+    assignProfileToLine(from, to, profileName);
+    // Malzeme atanmis ise katiya isle.
+    if (!columnMaterial_.empty()) {
+        document_.setModelMaterial({document_.models().size() - 1}, columnMaterial_);
+        invalidateCanvas();
+    }
+}
+
+void Application::assignProfileToSelection(const std::string& profileName) {
+    ensureProfileCatalog();
+    const auto* profile = mm::findProfile(profileCatalog_, profileName);
+    if (!profile) {
+        publishStatus(L"Profil bulunamadı: " + utf8ToWide(profileName));
+        return;
+    }
+    if (selectedModels_.empty()) {
+        publishStatus(L"Önce çizgiyi Ctrl+tıklama ile seçin, sonra profili seçin.");
+        return;
+    }
+    // SLICE 2d-2b: profil atamasi (setModelProfile ProfileReplace op) + kati
+    // yeniden uretimi + bagli End Plate recompute TEK atomik undo kaydinda
+    // olsun (HEB300->HEB400 + levha/bulon/delik tek Ctrl+Z adiminda geri alinir).
+    pushUndoSnapshot();
+    const std::size_t assigned = document_.setModelProfile(selectedModels_, profile->name);
+    if (assigned == 0) {
+        publishStatus(L"Profil atanamadı — seçili nesne kilitli olabilir.");
+        return;
+    }
+    solidStatusMessage_ = L"";
+    {
+        FILE* diag = fopen("model-maker-render.log", "a");
+        if (diag) {
+            fprintf(diag,
+                    "PROFILE-ASSIGN name=%s requested=%zu assigned=%zu "
+                    "A=%.0f Ix=%.0f Wx=%.0f G=%.2f\n",
+                    profile->name.c_str(), selectedModels_.size(), assigned,
+                    profile->crossSectionArea, profile->inertiaX,
+                    profile->sectionModulusX, profile->weightPerUnitLength);
+            fclose(diag);
+        }
+    }
+    // updateControls() calls updateStatus(), which derives the persistent
+    // profile summary from the selected models and publishes it to Qt.
+    updateControls();
+    invalidateCanvas();
+#ifdef MM_HAS_OCC
+    // 3B extruded gorsel: secili cizgiler icin profil kesitini cizgi ekseni
+    // boyunca extrude edip kati olarak ekle (cizgi merkez eksen kalir).
+    {
+        // Toplu atama: secili cizgilerin EKSEN KOORDINATLARI once kopyalanir
+        // (dongu icinde replace/add/delete indeksleri degistirir; eski
+        // indeksler yanlis nesneyi isaret eder — "diger objenin yerinin
+        // degismesi" hatasinin nedeni). Eslesme yalniz koordinatla yapilir.
+        struct AxisTarget { Vec3 from, to; double rotation; };
+        std::vector<AxisTarget> axes;
+        for (const auto index : selectedModels_) {
+            if (index >= document_.models().size()) continue;
+            const auto& model = document_.models()[index];
+            if (model.vertices().size() != 2 || model.edges().size() != 1) {
+                FILE* assignDiag = fopen("model-maker-render.log", "a");
+                if (assignDiag) {
+                    fprintf(assignDiag,
+                            "ASSIGN-SKIP index=%zu verts=%zu edges=%zu (cizgi degil)\n",
+                            index, model.vertices().size(), model.edges().size());
+                    fclose(assignDiag);
+                }
+                continue;
+            }
+            AxisTarget target;
+            target.from = model.vertices()[0];
+            target.to = model.vertices()[1];
+            target.rotation = model.properties().profileRotation;
+            axes.push_back(target);
+        }
+        std::vector<std::size_t> solidIndices;
+        std::vector<Vec3> consumedAxes;
+        // Baslik plakalari AKTIF IS DUZLEMINE paralel uretilir ve referans
+        // normal katiyla saklanir (gumball/yeniden uretim ayni degeri kullanir).
+        const Vec3 sectionReference = profileSectionReference();
+        for (const auto& axis : axes) {
+            const Vec3 from = axis.from;
+            const Vec3 to = axis.to;
+            const TopoDS_Shape solid = mm::extrudeProfileSolid(
+                *profile, from, to, axis.rotation, sectionReference);
+            if (solid.IsNull()) continue;
+            auto solidModel = mm::shapeToWireframeWithFaces(solid, 0.15);
+            auto solidProps = solidModel.properties();
+            solidProps.profileName = profile->name;
+            solidProps.profileRotation = axis.rotation;
+            solidProps.sectionNormalX = sectionReference.x;
+            solidProps.sectionNormalY = sectionReference.y;
+            solidProps.sectionNormalZ = sectionReference.z;
+            solidProps.axisFromX = from.x; solidProps.axisFromY = from.y; solidProps.axisFromZ = from.z;
+            solidProps.axisToX = to.x; solidProps.axisToY = to.y; solidProps.axisToZ = to.z;
+            solidModel.setProperties(std::move(solidProps));
+            // MEVCUT KATI ESLENMESI EKSENLE: ayni profil + ayni eksen
+            // baslangic noktasi = ayni eleman (yerinde degistirilir).
+            // Farkli eksen = baska eleman; ASLA degistirilmez/silinmez.
+            std::optional<std::size_t> existingSolid;
+            for (std::size_t i = 0; i < document_.models().size(); ++i) {
+                const auto& checkProps = document_.models()[i].properties();
+                if (document_.models()[i].faces().empty() || checkProps.profileName.empty())
+                    continue;
+                const bool sameStart =
+                    std::abs(checkProps.axisFromX - from.x) < 1e-6 &&
+                    std::abs(checkProps.axisFromY - from.y) < 1e-6 &&
+                    std::abs(checkProps.axisFromZ - from.z) < 1e-6;
+                const bool sameEnd =
+                    std::abs(checkProps.axisToX - to.x) < 1e-6 &&
+                    std::abs(checkProps.axisToY - to.y) < 1e-6 &&
+                    std::abs(checkProps.axisToZ - to.z) < 1e-6;
+                if (sameStart && sameEnd) { existingSolid = i; break; }
+            }
+            // Eski, eslesen elemanlar (indeks kaymalarindan artiklalar):
+            // ayni eksen + farkli profil = bu cizginin eski katisi -> sil.
+            std::vector<std::size_t> duplicates;
+            for (std::size_t i = 0; i < document_.models().size(); ++i) {
+                if (existingSolid && i == *existingSolid) continue;
+                const auto& checkProps = document_.models()[i].properties();
+                if (document_.models()[i].faces().empty() || checkProps.profileName.empty())
+                    continue;
+                const bool sameStart =
+                    std::abs(checkProps.axisFromX - from.x) < 1e-6 &&
+                    std::abs(checkProps.axisFromY - from.y) < 1e-6 &&
+                    std::abs(checkProps.axisFromZ - from.z) < 1e-6;
+                const bool sameEnd =
+                    std::abs(checkProps.axisToX - to.x) < 1e-6 &&
+                    std::abs(checkProps.axisToY - to.y) < 1e-6 &&
+                    std::abs(checkProps.axisToZ - to.z) < 1e-6;
+                if (sameStart && sameEnd) duplicates.push_back(i);
+            }
+            if (existingSolid) {
+                // 1:1 degistirme: kimlik KORUNUR → ayni anahtarla guncelle.
+                // Snapshot fonksiyon basinda (profil atamasi) AÇILDI; burada
+                // ek snapshot Ctrl+Z'de cift adim yapar (2d-2b: tek atomik
+                // islem). replaceModel op'u ve geometri deltasi acik kayda yazilir.
+                document_.replaceModel(*existingSolid, {std::move(solidModel)});
+                putOccSolid(*existingSolid, solid);
+                solidIndices.push_back(*existingSolid);
+            } else {
+                addStyledModel(std::move(solidModel));
+                solidIndices.push_back(document_.models().size() - 1);
+                // YENI varlik: KIMLIGIYLE anahtarla (eskiden indeks anahtari).
+                putOccSolid(document_.models().size() - 1, solid);
+            }
+            consumedAxes.push_back(from);
+            consumedAxes.push_back(to);
+            if (!duplicates.empty()) document_.deleteModels(duplicates);
+            {
+                const auto& addedModel = document_.models().back();
+                FILE* solidLog = fopen("model-maker-render.log", "a");
+                if (solidLog) {
+                    fprintf(solidLog,
+                            "SOLID-MODEL verts=%zu edges=%zu faces=%zu\n",
+                            addedModel.vertices().size(), addedModel.edges().size(),
+                            addedModel.faces().size());
+                    fclose(solidLog);
+                }
+            }
+        }
+        // KATI OLUSUNCA KAYNAK CIZGIYI SIL — cizgi yalnizca giris aracidir;
+        // kati kendi eksenini tasir, tum islemler (rotasyon/trim/modify)
+        // artik kati uzerinden yurur. Eslesme koordinatla: ayni from+to.
+        if (!consumedAxes.empty()) {
+            std::vector<std::size_t> sourceLines;
+            for (std::size_t i = 0; i < document_.models().size(); ++i) {
+                const auto& m = document_.models()[i];
+                if (m.vertices().size() != 2 || m.edges().size() != 1) continue;
+                const Vec3 mf = m.vertices()[0];
+                const Vec3 mt = m.vertices()[1];
+                const bool hasProfile = !m.properties().profileName.empty();
+                if (!hasProfile) continue;
+                for (std::size_t k = 0; k < consumedAxes.size(); k += 2) {
+                    const Vec3 cf = consumedAxes[k];
+                    const Vec3 ct = consumedAxes[k + 1];
+                    const bool sameF = std::abs(mf.x - cf.x) < 1e-6 &&
+                        std::abs(mf.y - cf.y) < 1e-6 && std::abs(mf.z - cf.z) < 1e-6;
+                    const bool sameT = std::abs(mt.x - ct.x) < 1e-6 &&
+                        std::abs(mt.y - ct.y) < 1e-6 && std::abs(mt.z - ct.z) < 1e-6;
+                    if (sameF && sameT) { sourceLines.push_back(i); break; }
+                }
+            }
+            if (!sourceLines.empty()) {
+                // KARARLI KIMLIK: kaynak CIZGILER silinir; kati KIMLIKLERI
+                // kaymaz, occShapes_ DOKUNULMADAN dogru kalir. (Eskiden indeks
+                // tabanli yeniden esleme yalniz profilli+yuzlu katilari tasir,
+                // kutu/silindir/boolean sekillerini SESSIZCE DUSURURDU.)
+                document_.deleteModels(sourceLines);
+                FILE* lineLog = fopen("model-maker-render.log", "a");
+                if (lineLog) {
+                    fprintf(lineLog, "SOURCE-LINES-REMOVED count=%zu shapes=%zu\n",
+                            sourceLines.size(), occSolidCount());
+                    fclose(lineLog);
+                }
+            }
+            // Secim artik kaynagi silinen katilari gostersin: eksen
+            // eslenmesiyle secili katilarin YENI indekslerini bul.
+            if (!selectedModels_.empty()) {
+                std::vector<std::size_t> keptProps;
+                for (const auto selIdx : selectedModels_) {
+                    if (selIdx >= document_.models().size()) continue;
+                    const auto& m = document_.models()[selIdx];
+                    if (!m.properties().profileName.empty() && !m.faces().empty())
+                        keptProps.push_back(selIdx);
+                }
+                (void)keptProps; // indeks duzeltmesi asagida eksen bazli yapilir
+                std::vector<std::size_t> newSelection;
+                for (const auto& consumed : consumedAxes) (void)consumed;
+                for (std::size_t k = 0; k + 1 < consumedAxes.size(); k += 2) {
+                    const Vec3 cf = consumedAxes[k];
+                    const Vec3 ct = consumedAxes[k + 1];
+                    for (std::size_t i = 0; i < document_.models().size(); ++i) {
+                        const auto& m = document_.models()[i];
+                        if (m.faces().empty() || m.properties().profileName.empty()) continue;
+                        const Vec3 af(m.properties().axisFromX, m.properties().axisFromY,
+                                      m.properties().axisFromZ);
+                        const Vec3 at(m.properties().axisToX, m.properties().axisToY,
+                                      m.properties().axisToZ);
+                        const bool sameF = std::abs(af.x - cf.x) < 1e-6 &&
+                            std::abs(af.y - cf.y) < 1e-6 && std::abs(af.z - cf.z) < 1e-6;
+                        const bool sameT = std::abs(at.x - ct.x) < 1e-6 &&
+                            std::abs(at.y - ct.y) < 1e-6 && std::abs(at.z - ct.z) < 1e-6;
+                        if (sameF && sameT) { newSelection.push_back(i); break; }
+                    }
+                }
+                if (!newSelection.empty())
+                    selectedModels_ = std::move(newSelection);
+            }
+        }
+        if (!solidIndices.empty()) {
+            FILE* diag = fopen("model-maker-render.log", "a");
+            if (diag) {
+                const auto& firstLine = document_.models()[selectedModels_.front()];
+                const Vec3 diagFrom = firstLine.vertices()[0];
+                const Vec3 diagTo = firstLine.vertices()[1];
+                fprintf(diag,
+                        "PROFILE-EXTRUDE count=%zu profile=%s "
+                        "line=(%.2f,%.2f,%.2f)->(%.2f,%.2f,%.2f) dir=(%.2f,%.2f,%.2f)\n",
+                        solidIndices.size(), profile->name.c_str(),
+                        diagFrom.x, diagFrom.y, diagFrom.z,
+                        diagTo.x, diagTo.y, diagTo.z,
+                        diagTo.x - diagFrom.x, diagTo.y - diagFrom.y,
+                        diagTo.z - diagFrom.z);
+                fclose(diag);
+            }
+        }
+    }
+    // SLICE 2d-2b: SECILI KATININ profil degisimi (HEB300 -> HEB400) icin
+    // B-Rep + tel kafesi yeni kesitle yeniden uret (1:1, kimlik korunur) ve
+    // bagli End Plate baglantilarini yeni temas yuzune gore yeniden hesapla.
+    // Cizgi->kati yolu yukarida islendi; bu dal ZATEN kati olan secimleri kapsar.
+    {
+        std::vector<EntityId> reprofiled;
+        for (const auto selIdx : selectedModels_) {
+            if (selIdx >= document_.models().size()) continue;
+            const auto& m = document_.models()[selIdx];
+            if (m.faces().empty() || m.properties().profileName.empty()) continue;
+            const Vec3 from{m.properties().axisFromX, m.properties().axisFromY,
+                            m.properties().axisFromZ};
+            const Vec3 to{m.properties().axisToX, m.properties().axisToY,
+                           m.properties().axisToZ};
+            if ((to.x - from.x) * (to.x - from.x) + (to.y - from.y) * (to.y - from.y) +
+                    (to.z - from.z) * (to.z - from.z) < 1e-9)
+                continue;
+            const Vec3 ref{m.properties().sectionNormalX, m.properties().sectionNormalY,
+                           m.properties().sectionNormalZ};
+            const double rot = m.properties().profileRotation;
+            const TopoDS_Shape solid = mm::extrudeProfileSolid(*profile, from, to, rot, ref);
+            if (solid.IsNull()) continue;
+            auto solidModel = mm::shapeToWireframeWithFaces(solid, 0.15);
+            auto props = m.properties();  // kalici alanlar (malzeme/renk/eksen) korunur
+            props.profileName = profile->name;
+            solidModel.setProperties(std::move(props));
+            document_.replaceModel(selIdx, {std::move(solidModel)});
+            putOccSolid(selIdx, solid);
+            reprofiled.push_back(document_.modelId(selIdx));
+        }
+        if (!reprofiled.empty()) {
+            if (recomputeEndPlateConnectionsFor(reprofiled))
+                recomputeComponentInstancesFor(reprofiled);
+        }
+    }
+#endif
+}
+
+// --- PROFIL UC TUTAMAKLARI (grip edit) -------------------------------------
+// 3B gorunumde secili profilli katilarin iki ucuna (sari=from, mor=to) tutamak
+// konur. Alt+tik tutamaga basinca move modu aktif olur; 1. tik tasima
+// baslangici (baz), 2. tik destinasyondur — normal Move komutu gibi, profil o
+// vektorle tasinir (sabit uc yerinde, secilen uc oynar).
+
+std::optional<std::pair<std::size_t, bool>> Application::profileGripAt(int x, int y) const {
+    RECT client{};
+    GetClientRect(canvas_, &client);
+    const int w = std::max(1L, client.right);
+    const int h = std::max(1L, client.bottom);
+    const double tolerance = 9.0; // piksel
+    std::optional<std::pair<std::size_t, bool>> best;
+    double bestDistance = tolerance;
+    for (std::size_t i = 0; i < document_.models().size(); ++i) {
+        const auto& m = document_.models()[i];
+        if (m.faces().empty() || m.properties().profileName.empty()) continue;
+        const Vec3 from{m.properties().axisFromX, m.properties().axisFromY,
+                        m.properties().axisFromZ};
+        const Vec3 to{m.properties().axisToX, m.properties().axisToY,
+                      m.properties().axisToZ};
+        const Vec2 sf = camera_.project(from, w, h);
+        const Vec2 st = camera_.project(to, w, h);
+        const double df = std::hypot(sf.x - static_cast<double>(x),
+                                     sf.y - static_cast<double>(y));
+        const double dt = std::hypot(st.x - static_cast<double>(x),
+                                     st.y - static_cast<double>(y));
+        if (df < bestDistance) { best = {i, false}; bestDistance = df; }
+        if (dt < bestDistance) { best = {i, true}; bestDistance = dt; }
+    }
+    return best;
+}
+
+std::optional<Vec3> Application::gripReferencePoint() const {
+    if (!profileGrip_) return std::nullopt;
+    if (profileGrip_->basePicked) return profileGrip_->basePoint;
+    if (profileGrip_->solidIndex >= document_.models().size()) return std::nullopt;
+    const auto& m = document_.models()[profileGrip_->solidIndex];
+    const Vec3 from{m.properties().axisFromX, m.properties().axisFromY,
+                    m.properties().axisFromZ};
+    const Vec3 to{m.properties().axisToX, m.properties().axisToY,
+                  m.properties().axisToZ};
+    return profileGrip_->endIsTo ? to : from;
+}
+
+void Application::profileGripClick(int x, int y) {
+    if (!profileGrip_) return;
+    const ProfileGrip grip = *profileGrip_;
+    if (grip.solidIndex >= document_.models().size()) {
+        profileGrip_.reset();
+        hover_.reset();
+        clearTemporaryTracking();
+        invalidateCanvas();
+        return;
+    }
+    // Snap + tracking: updateHover grip referansiyla (basePicked'e gore)
+    // hesap eder; hover_ snap/tracking/ortho/polar sonucudur.
+    updateHover(x, y);
+    const Vec3 snappedPoint = hover_ ? hover_->point : Vec3{};
+
+    if (!grip.basePicked) {
+        // 1. tik: tasima baslangici (baz noktasi). Track line artik bazdan.
+        profileGrip_->basePicked = true;
+        profileGrip_->basePoint = snappedPoint;
+        profileGrip_->trackFrom = snappedPoint;
+        profileGrip_->cursorPoint = snappedPoint;
+        publishStatus(L"Hedef noktayi secin (2. tik) — profil o vektorle tasinacak");
+        updateStatus();
+        invalidateCanvas();
+        return;
+    }
+    // 2. tik: destinasyon. displacement = hedef - baz.
+    const auto& m = document_.models()[grip.solidIndex];
+    const Vec3 from{m.properties().axisFromX, m.properties().axisFromY,
+                    m.properties().axisFromZ};
+    const Vec3 to{m.properties().axisToX, m.properties().axisToY,
+                  m.properties().axisToZ};
+    const Vec3 movingEnd = grip.endIsTo ? to : from;
+    const Vec3 displacement = snappedPoint - grip.basePoint;
+    const Vec3 newMovingEnd = movingEnd + displacement;
+    profileGrip_.reset();
+    hover_.reset();
+    clearTemporaryTracking();
+#ifdef MM_HAS_OCC
+    reExtrudeProfileGrip(grip.solidIndex, grip.endIsTo, newMovingEnd);
+#else
+    publishStatus(L"Profil ucunu tasimak icin OpenCASCADE gerekli (OCC kapali).");
+    invalidateCanvas();
+#endif
+}
+
+void Application::cancelProfileGrip() {
+    profileGrip_.reset();
+    hover_.reset();
+    clearTemporaryTracking();
+    invalidateCanvas();
+}
+
+#ifdef MM_HAS_OCC
+void Application::reExtrudeProfileGrip(std::size_t solidIndex, bool endIsTo,
+                                       const Vec3& newPoint) {
+    if (solidIndex >= document_.models().size()) return;
+    const auto& solid = document_.models()[solidIndex];
+    const auto& props = solid.properties();
+    if (props.profileName.empty() || solid.faces().empty()) return;
+    ensureProfileCatalog();
+    const auto* profile = mm::findProfile(profileCatalog_, props.profileName);
+    if (!profile) {
+        publishStatus(L"Profil bulunamadi: " + utf8ToWide(props.profileName));
+        return;
+    }
+    Vec3 from{props.axisFromX, props.axisFromY, props.axisFromZ};
+    Vec3 to{props.axisToX, props.axisToY, props.axisToZ};
+    if (endIsTo) to = newPoint; else from = newPoint;
+    if (from == to) {
+        publishStatus(L"Profil uzunlugu sifir olamaz.");
+        return;
+    }
+    const TopoDS_Shape shape =
+        mm::extrudeProfileSolid(*profile, from, to, props.profileRotation,
+                                Vec3{props.sectionNormalX, props.sectionNormalY,
+                                     props.sectionNormalZ});
+    if (shape.IsNull()) return;
+    auto solidModel = mm::shapeToWireframeWithFaces(shape, 0.15);
+    // Mevcut stil/kimlik ozelliklerini koru; yalniz eksen degisti.
+    auto newProps = props;
+    newProps.axisFromX = from.x; newProps.axisFromY = from.y; newProps.axisFromZ = from.z;
+    newProps.axisToX = to.x; newProps.axisToY = to.y; newProps.axisToZ = to.z;
+    solidModel.setProperties(std::move(newProps));
+    pushUndoSnapshot();
+    document_.replaceModel(solidIndex, {std::move(solidModel)});
+    putOccSolid(solidIndex, shape);
+    // Kesici parca olarak kullaniliyorsa bagli hedefleri yeniden hesapla
+    // (canli Part Cut: profil ucu tasinininca kesilen hedef guncellenir).
+    recomputeTargetsUsingTool(document_.modelId(solidIndex));
+    publishStatus(endIsTo ? L"Profil ust ucu uzatildi" : L"Profil alt ucu uzatildi");
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
+}
+#endif
+
 Vec3 Application::screenTo2D(int x, int y) const noexcept {
     RECT client{}; GetClientRect(canvas_, &client);
     return camera_.unproject2D({static_cast<double>(x), static_cast<double>(y)},
@@ -3015,11 +10098,703 @@ Vec3 Application::screenTo2D(int x, int y) const noexcept {
 }
 
 HCURSOR Application::currentCanvasCursor() const noexcept {
+    // Verb-noun kesme beklemedeyken imlec "obje secim" kutusuna (kare pickbox)
+    // doner — profil/duzlem tiklama modunda oldugunu gorsel olarak belirtir.
+    if (pendingCutKind_ || pendingBolt_)
+        return modifyCursor_;
     if (transformCommand_ == TransformCommand::None)
         return (drawingActive_ || workPlanePicking_ || zoomWindowActive_) ? draftingCursor_ : neutralCursor_;
     return modifierUsesPointCursor(transformCommand_, transformPhase_, arrayItemCount_.has_value(),
                                    offsetDistance_.has_value())
         ? draftingCursor_ : modifyCursor_;
+}
+
+// --- RHINO TARZI GUMBALL (tasima tutamaclari) ------------------------------
+
+Vec3 Application::profileSectionReference() const {
+    // Baslik plakalari aktif IS DUZLEMINE paralel uretilir; iki noktali
+    // gorunuste is duzlemi otomatik GORUNUS duzlemidir → orada dunya Z
+    // (bkz. view_definition.hpp profileSectionReferenceNormal).
+    // NOT: gumball metotlarindan AYRI durur — run_gumball_interaction.py
+    // gumballProject..draftView arasini cekip sahte sinirda derler; bu metot
+    // workPlane_/viewDef_ kullanir ve o sahte Application'da BULUNMAZ.
+    return mm::profileSectionReferenceNormal(workPlane_, viewDef_ ? &*viewDef_ : nullptr);
+}
+
+Vec2 Application::gumballProject(const Vec3& point) const {
+    RECT vp{};
+    GetClientRect(canvas_, &vp);
+    const int w = static_cast<int>(std::max(1L, vp.right));
+    const int h = static_cast<int>(std::max(1L, vp.bottom));
+    return (mode_ == EditMode::View3D) ? camera_.project(point, w, h)
+                                       : camera_.project2D(point, w, h);
+}
+
+double Application::gumballWorldLength() const {
+    // Ekran-olcekli: daha kompakt, kamera zoom'undan bagimsiz boyut.
+    constexpr double kGumballPixels = 82.0;
+    if (!canvas_) return 1.0;
+    const Vec2 a = gumballProject(gumballOrigin_);
+    Vec2 b = gumballProject(gumballOrigin_ + Vec3{1, 0, 0});
+    double pixels = std::hypot(b.x - a.x, b.y - a.y);
+    if (pixels < 1e-6) {
+        b = gumballProject(gumballOrigin_ + Vec3{0, 1, 0});
+        pixels = std::hypot(b.x - a.x, b.y - a.y);
+    }
+    if (pixels < 1e-6) return 1.0;
+    return kGumballPixels / pixels;
+}
+
+// Yerel eksen boyunca olcek matrisi: M = R * diag(f) * R^T (R sutunlari=frame).
+// YEREL eksende olcekleme icin sart — world-eksenli diag yeterli degil.
+static std::array<double, 9> gumballLocalScale(const Vec3 frame[3], const Vec3& factors) {
+    const double r[9] = {frame[0].x, frame[1].x, frame[2].x,
+                         frame[0].y, frame[1].y, frame[2].y,
+                         frame[0].z, frame[1].z, frame[2].z};
+    const double s[9] = {factors.x, 0, 0, 0, factors.y, 0, 0, 0, factors.z};
+    const double rt[9] = {r[0], r[3], r[6], r[1], r[4], r[7], r[2], r[5], r[8]};
+    const auto mul = [](const double a[9], const double b[9]) {
+        std::array<double, 9> out{};
+        for (int i = 0; i < 3; ++i)
+            for (int j = 0; j < 3; ++j)
+                out[i * 3 + j] = a[i * 3 + 0] * b[j] + a[i * 3 + 1] * b[3 + j] +
+                                 a[i * 3 + 2] * b[6 + j];
+        return out;
+    };
+    const auto rs = mul(r, s);
+    return mul(rs.data(), rt);
+}
+
+// YEREL CERCEVE (object-local): secili nesnenin KENDI eksenleri — world degil.
+//  - Tek profil kirisi : uye ekseni (axisFrom->axisTo) + profileRotation
+//  - Tek nesne        : en uzun kenar (x) + ona dik en uzun kenar (y)
+//  - Coklu secim / uygun degil : world cercevesi
+void Application::gumballUpdateFrame() {
+    // CIFT TIK HIZALAMA: UCS (calisma duzlemi) eksenleri isteniyorsa yerel cerceve
+    // hesabina hic girme; gumball dogrudan calisma duzleminin X/Y/Z eksenlerine oturur.
+    if (gumballAlignedToUcs_) {
+        const auto norm = [](const Vec3& v) {
+            const double l = std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
+            return l > 1e-12 ? Vec3{v.x / l, v.y / l, v.z / l} : Vec3{0, 0, 1};
+        };
+        gumballFrame_[0] = norm(workPlane_.u);
+        gumballFrame_[1] = norm(workPlane_.v);
+        gumballFrame_[2] = norm(workPlane_.normal);
+        return;
+    }
+    gumballFrame_[0] = Vec3{1, 0, 0};
+    gumballFrame_[1] = Vec3{0, 1, 0};
+    gumballFrame_[2] = Vec3{0, 0, 1};
+    if (selectedModels_.size() != 1) return;
+    const std::size_t idx = selectedModels_.front();
+    if (idx >= document_.models().size()) return;
+    const auto& model = document_.models()[idx];
+    const auto& props = model.properties();
+    const auto norm = [](const Vec3& v) {
+        const double l = std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
+        return l > 1e-12 ? Vec3{v.x / l, v.y / l, v.z / l} : Vec3{0, 0, 1};
+    };
+    const auto cross3 = [](const Vec3& a, const Vec3& b) {
+        return Vec3{a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x};
+    };
+    const auto& verts = model.vertices();
+    Vec3 ex{};
+    bool haveX = false;
+    if (!props.profileName.empty()) {
+        const Vec3 d = Vec3{props.axisToX, props.axisToY, props.axisToZ} -
+                       Vec3{props.axisFromX, props.axisFromY, props.axisFromZ};
+        if (d.x * d.x + d.y * d.y + d.z * d.z > 1e-12) {
+            ex = norm(d);
+            haveX = true;
+        }
+    }
+    if (!haveX) {
+        double best = 0.0;
+        for (const auto& e : model.edges()) {
+            if (e.from >= verts.size() || e.to >= verts.size()) continue;
+            const Vec3 d = verts[e.to] - verts[e.from];
+            const double l2 = d.x * d.x + d.y * d.y + d.z * d.z;
+            if (l2 > best) { best = l2; ex = d; }
+        }
+        if (best > 1e-12) { ex = norm(ex); haveX = true; }
+    }
+    if (!haveX) return;
+    Vec3 ey{};
+    bool haveY = false;
+    if (!props.profileName.empty()) {
+        // Kati ile AYNI kural (tek kaynak: profileSectionFrame): baslik
+        // plakalari katinin URETILDIGI referans duzleme paralel. Referans
+        // katiyla birlikte SAKLANIR (props.sectionNormal) — aktif is duzlemi
+        // degisse bile tutamaclar cizilen profille birebir ortusur (eskiden
+        // tutamaclar dunya cercevesine gore 90° kayik kaliyordu).
+        const ProfileSectionFrame frame = profileSectionFrame(
+            ex, Vec3{props.sectionNormalX, props.sectionNormalY, props.sectionNormalZ});
+        ey = frame.width;
+        haveY = true;
+    }
+    if (props.profileName.empty()) {
+        double best = 0.0;
+        for (const auto& e : model.edges()) {
+            if (e.from >= verts.size() || e.to >= verts.size()) continue;
+            Vec3 d = verts[e.to] - verts[e.from];
+            const double dot = d.x * ex.x + d.y * ex.y + d.z * ex.z;
+            d = Vec3{d.x - ex.x * dot, d.y - ex.y * dot, d.z - ex.z * dot};
+            const double l2 = d.x * d.x + d.y * d.y + d.z * d.z;
+            if (l2 > best) { best = l2; ey = d; }
+        }
+        if (best > 1e-12) { ey = norm(ey); haveY = true; }
+    }
+    if (!haveY) {
+        const Vec3 up = (std::abs(ex.z) > 0.9) ? Vec3{0, 1, 0} : Vec3{0, 0, 1};
+        ey = norm(cross3(up, ex));
+    }
+    Vec3 ez = norm(cross3(ex, ey));
+    ey = norm(cross3(ez, ex)); // tam ortogonalize
+    if (!props.profileName.empty() && std::abs(props.profileRotation) > 1e-9) {
+        const double a = props.profileRotation * 0.017453292519943295; // derece
+        const double ca = std::cos(a), sa = std::sin(a);
+        const Vec3 ny = ey * ca + ez * sa;
+        const Vec3 nz = ez * ca - ey * sa;
+        ey = ny;
+        ez = nz;
+    }
+    gumballFrame_[0] = ex;
+    gumballFrame_[1] = ey;
+    gumballFrame_[2] = ez;
+}
+
+void Application::updateGumball() {
+    if (gumballDrag_ != GumballHandle::None) return; // surukleme surerken dokunma
+    const bool show = !selectedModels_.empty() &&
+                      transformCommand_ == TransformCommand::None &&
+                      !profileGrip_ && !workPlanePicking_ && !zoomWindowActive_ &&
+                      !viewCubeManipulating_;
+    Vec3 lo{1e100, 1e100, 1e100}, hi{-1e100, -1e100, -1e100};
+    bool any = false;
+    for (const auto index : selectedModels_) {
+        if (index >= document_.models().size()) continue;
+        if (index >= document_.modelBounds().size()) continue;
+        const auto& b = document_.modelBounds()[index];
+        lo.x = std::min(lo.x, b.minimum.x);
+        lo.y = std::min(lo.y, b.minimum.y);
+        lo.z = std::min(lo.z, b.minimum.z);
+        hi.x = std::max(hi.x, b.maximum.x);
+        hi.y = std::max(hi.y, b.maximum.y);
+        hi.z = std::max(hi.z, b.maximum.z);
+        any = true;
+    }
+    if (!show || !any) {
+        gumballVisible_ = false;
+        gumballHover_ = GumballHandle::None;
+        return;
+    }
+    gumballVisible_ = true;
+    gumballUpdateFrame();   // yerel (object-local) eksenler
+    gumballOrigin_ = (lo + hi) * 0.5;
+}
+
+GumballHandle Application::gumballHitTest(int x, int y) const {
+    if (!gumballVisible_ && gumballDrag_ == GumballHandle::None) return GumballHandle::None;
+    if (gumballDrag_ != GumballHandle::None) return gumballDrag_;
+    const bool threeD = (mode_ == EditMode::View3D);
+    const double L = gumballWorldLength();
+    const double px = static_cast<double>(x), py = static_cast<double>(y);
+    const Vec2 c = gumballProject(gumballOrigin_);
+    const double distC = std::hypot(px - c.x, py - c.y);
+    const Vec3* axes = gumballFrame_;   // YEREL eksenler
+    // Oncelik: tek-bicim olcek (ic kare) -> serbest tasima (halka) -> eksen olcek.
+    if (distC <= 5.0) return GumballHandle::ScaleUniform;
+    if (distC <= 13.0) return GumballHandle::Center;
+    {
+        const double sd = 0.55 * L;
+        for (int i = 0; i < (threeD ? 3 : 2); ++i) {
+            const Vec2 p = gumballProject(gumballOrigin_ + axes[i] * sd);
+            if (std::hypot(px - p.x, py - p.y) <= 7.0)
+                return static_cast<GumballHandle>(10 + i);
+        }
+    }
+    const int planeA[3] = {0, 1, 2}, planeB[3] = {1, 2, 0}, planeH[3] = {3, 4, 5};
+    const double ps = 0.32 * L;
+    const auto cross2 = [](const Vec2& a, const Vec2& b) { return a.x * b.y - a.y * b.x; };
+    for (int k = (threeD ? 2 : 0); k >= 0; --k) {
+        const Vec2 p1 = gumballProject(gumballOrigin_ + axes[planeA[k]] * ps);
+        const Vec2 p2 = gumballProject(gumballOrigin_ + axes[planeA[k]] * ps + axes[planeB[k]] * ps);
+        const Vec2 p3 = gumballProject(gumballOrigin_ + axes[planeB[k]] * ps);
+        const Vec2 quad[4] = {c, p1, p2, p3};
+        double sign = 0.0;
+        bool inside = true;
+        for (int i = 0; i < 4; ++i) {
+            const Vec2 e{quad[(i + 1) % 4].x - quad[i].x, quad[(i + 1) % 4].y - quad[i].y};
+            const Vec2 vr{px - quad[i].x, py - quad[i].y};
+            const double s = cross2(e, vr);
+            if (std::abs(s) < 1e-9) continue;
+            if (sign == 0.0) sign = s;
+            else if ((s > 0) != (sign > 0)) { inside = false; break; }
+        }
+        if (inside && sign != 0.0) return static_cast<GumballHandle>(planeH[k]);
+    }
+    for (int i = 0; i < (threeD ? 3 : 2); ++i) {
+        const Vec2 tip = gumballProject(gumballOrigin_ + axes[i] * L);
+        const double ex = tip.x - c.x, ey = tip.y - c.y;
+        const double len2 = ex * ex + ey * ey;
+        if (len2 < 1.0) continue;
+        double t = ((px - c.x) * ex + (py - c.y) * ey) / len2;
+        t = std::max(0.0, std::min(1.0, t));
+        const double d = std::hypot(px - (c.x + ex * t), py - (c.y + ey * t));
+        if (t > 0.35 && d <= 9.0) return static_cast<GumballHandle>(i);
+    }
+    // DONUSME YAYLARI: izdusumu ornekleyerek en yakin mesafe (egik/kenardan
+    // bakista da dogru; tam kenardan bakista yay merkeze duser — kabul).
+    {
+        const double rr = 0.80 * L;
+        for (int i = 0; i < (threeD ? 3 : 2); ++i) {
+            const Vec3 u = axes[(i + 1) % 3], v = axes[(i + 2) % 3];
+            double best = 1e100;
+            for (int s = 0; s < 64; ++s) {
+                const double a = 6.283185307179586 * s / 64.0;
+                const Vec2 p = gumballProject(gumballOrigin_ + u * (rr * std::cos(a)) +
+                                              v * (rr * std::sin(a)));
+                best = std::min(best, std::hypot(px - p.x, py - p.y));
+            }
+            if (best <= 8.0) return static_cast<GumballHandle>(7 + i);
+        }
+    }
+    return GumballHandle::None;
+}
+
+Vec3 Application::gumballPlanePoint(int x, int y, GumballHandle handle) const {
+    if (!canvas_) return gumballDragStartOrigin_;
+    RECT vp{};
+    GetClientRect(canvas_, &vp);
+    const int w = static_cast<int>(std::max(1L, vp.right));
+    const int h = static_cast<int>(std::max(1L, vp.bottom));
+    const Vec2 s{static_cast<double>(x), static_cast<double>(y)};
+    if (mode_ == EditMode::Draw2D) return camera_.unproject2D(s, w, h);
+    Vec3 n = gumballFrame_[2];
+    if (handle == GumballHandle::PlaneXY) n = gumballFrame_[2];
+    else if (handle == GumballHandle::PlaneYZ) n = gumballFrame_[0];
+    else if (handle == GumballHandle::PlaneZX) n = gumballFrame_[1];
+    else n = camera_.viewTransform(Vec3{0, 0, 1}); // merkez: kameraya bakan duzlem
+    const auto norm3 = [](const Vec3& a) {
+        const double l = std::sqrt(a.x * a.x + a.y * a.y + a.z * a.z);
+        return l > 1e-9 ? Vec3{a.x / l, a.y / l, a.z / l} : Vec3{0, 0, 1};
+    };
+    const auto cross3 = [](const Vec3& a, const Vec3& b) {
+        return Vec3{a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x};
+    };
+    const Vec3 nn = norm3(n);
+    const Vec3 helper = (std::abs(nn.z) < 0.9) ? Vec3{0, 0, 1} : Vec3{1, 0, 0};
+    WorkPlane plane;
+    plane.origin = gumballDragStartOrigin_;
+    plane.u = norm3(cross3(helper, nn));
+    plane.v = cross3(nn, plane.u);
+    plane.normal = nn;
+    const auto wp = camera_.unprojectToPlane(s, w, h, plane);
+    return wp.value_or(gumballDragStartWorld_);
+}
+
+// SHIFT + tutamak = KOPYALA. Secim yerinde kalir, ayni konumda kopya uretilir ve
+// secim KOPYALARA gecer; boylece surukleme yalniz kopyalari tasir. Cagiran
+// pushUndoSnapshot() yaptiktan sonra cagirmalidir: Add (kopya) + Transform/Move
+// ayni geri-alma adimina yazilir → Ctrl+Z tek adimda hem kopyayi siler hem
+// hareketi geri alir.
+void Application::gumballCopyIfNeeded() {
+    if (!gumballCopyMode_ || gumballCopyMade_ || selectedModels_.empty()) return;
+    const std::size_t modelCount = document_.models().size();
+    std::vector<std::size_t> originals;
+    originals.reserve(selectedModels_.size());
+    for (const auto index : selectedModels_)
+        if (index < modelCount) originals.push_back(index);
+    if (originals.empty()) return;
+    const std::size_t firstCopy = modelCount;
+    document_.copyModels(originals, Vec3{});   // sifir ofset: kopyalar ust uste
+    std::vector<std::size_t> copies;
+    copies.reserve(originals.size());
+    for (std::size_t k = 0; k < originals.size(); ++k) copies.push_back(firstCopy + k);
+    gumballCopyOriginals_ = std::move(originals);
+    selectedModels_ = std::move(copies);
+    gumballCopyMade_ = true;
+    publishStatus(L"Gumball kopya (Shift) — kopyalar taşınıyor");
+}
+
+void Application::gumballBeginDrag(int x, int y, GumballHandle handle) {
+    if (selectedModels_.empty() || !canvas_) return;
+    gumballPressPoint_ = {x, y};
+    gumballPointerMoved_ = false;
+    gumballUndoStarted_ = false;
+    gumballNumericActive_ = false;
+    // Shift basili tutamak = KOPYALA (orijinaller yerinde kalir).
+    gumballCopyMode_ = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
+    gumballCopyMade_ = false;
+    gumballCopyOriginals_.clear();
+    input_.clear();
+    gumballDrag_ = handle;
+    gumballAppliedDelta_ = {};
+    gumballAppliedAngle_ = 0.0;
+    gumballTotalAngle_ = 0.0;
+    gumballAppliedFactor_ = 1.0;
+    gumballDragStartOrigin_ = gumballOrigin_;
+    gumballDragScreenOrigin_ = gumballProject(gumballOrigin_);
+    gumballDragPrevAngle_ = std::atan2(y - gumballDragScreenOrigin_.y,
+                                       x - gumballDragScreenOrigin_.x);
+    const Vec3* axes = gumballFrame_;   // YEREL eksenler
+    const int ai = gumballAxisIndex(handle);
+    if (gumballIsAxis(handle)) {
+        const double L = gumballWorldLength();
+        gumballDragAxisWorld_ = axes[ai];
+        const Vec2 tip = gumballProject(gumballOrigin_ + axes[ai] * L);
+        const double ex = tip.x - gumballDragScreenOrigin_.x;
+        const double ey = tip.y - gumballDragScreenOrigin_.y;
+        const double len = std::hypot(ex, ey);
+        gumballDragAxisUnit_ = (len > 1e-6) ? Vec2{ex / len, ey / len} : Vec2{1.0, 0.0};
+        gumballDragPixelsPerWorld_ = (len > 1e-6 && L > 1e-9) ? len / L : 1.0;
+        gumballDragT0_ = (x - gumballDragScreenOrigin_.x) * gumballDragAxisUnit_.x +
+                         (y - gumballDragScreenOrigin_.y) * gumballDragAxisUnit_.y;
+    } else if (gumballIsRotate(handle)) {
+        gumballDragAxisWorld_ = axes[ai];
+        // Isaret: eksenin kameraya bakan bilesenine gore (CCW ekran = +aci).
+        const Vec3 cam = camera_.viewTransform(axes[ai]);
+        gumballDragSign_ = (cam.z >= 0.0) ? 1.0 : -1.0;
+    } else if (gumballIsScaleAxis(handle)) {
+        const double L = gumballWorldLength();
+        gumballDragAxisWorld_ = axes[ai];
+        const Vec2 tip = gumballProject(gumballOrigin_ + axes[ai] * L);
+        const double ex = tip.x - gumballDragScreenOrigin_.x;
+        const double ey = tip.y - gumballDragScreenOrigin_.y;
+        const double len = std::hypot(ex, ey);
+        gumballDragAxisUnit_ = (len > 1e-6) ? Vec2{ex / len, ey / len} : Vec2{1.0, 0.0};
+        gumballDragT0_ = (x - gumballDragScreenOrigin_.x) * gumballDragAxisUnit_.x +
+                         (y - gumballDragScreenOrigin_.y) * gumballDragAxisUnit_.y;
+    } else if (handle == GumballHandle::ScaleUniform) {
+        gumballDragStartDist_ = std::hypot(x - gumballDragScreenOrigin_.x,
+                                           y - gumballDragScreenOrigin_.y);
+        if (gumballDragStartDist_ < 8.0) gumballDragStartDist_ = 8.0;
+    } else {
+        gumballDragStartWorld_ = gumballPlanePoint(x, y, handle);
+    }
+    SetCapture(canvas_);
+    invalidateCanvas();
+}
+
+void Application::gumballDragMove(int x, int y) {
+    if (gumballNumericActive_ || gumballDrag_ == GumballHandle::None || selectedModels_.empty()) return;
+    if (!gumballPointerMoved_) {
+        if (std::hypot(x - gumballPressPoint_.x, y - gumballPressPoint_.y) < 4.0) return;
+        gumballPointerMoved_ = true;
+    }
+    if (!gumballUndoStarted_) {
+        pushUndoSnapshot();
+        gumballUndoStarted_ = true;
+        gumballCopyIfNeeded(); // Shift basiliysa secim kopyalanir, kopyalar suruklenir
+        // P9: kesme hedefi tasinir/dondurulurse kaynak duzlem/cizgi/3DFACE onunla
+        // rijit donusur. Donusturulecek tam kume bu surukleme icin bir kez kurulur.
+        gumballTransformSet_ = transformIndicesWithAttachedCutSources(selectedModels_);
+    }
+    const Vec3 pivot = gumballDragStartOrigin_;
+    if (gumballIsAxis(gumballDrag_)) {
+        const double t = (x - gumballDragScreenOrigin_.x) * gumballDragAxisUnit_.x +
+                         (y - gumballDragScreenOrigin_.y) * gumballDragAxisUnit_.y;
+        const double dist = (t - gumballDragT0_) / std::max(1e-6, gumballDragPixelsPerWorld_);
+        const Vec3 delta = gumballDragAxisWorld_ * dist;
+        const Vec3 step = delta - gumballAppliedDelta_;
+        if (std::abs(step.x) + std::abs(step.y) + std::abs(step.z) > 1e-12) {
+            document_.moveModels(gumballTransformSet_, step);
+            gumballAppliedDelta_ = delta;
+            gumballOrigin_ = gumballDragStartOrigin_ + delta;
+        }
+    } else if (gumballIsRotate(gumballDrag_)) {
+        const double ang = std::atan2(y - gumballDragScreenOrigin_.y,
+                                      x - gumballDragScreenOrigin_.x);
+        double d = ang - gumballDragPrevAngle_;
+        if (d > 3.141592653589793) d -= 6.283185307179586;
+        else if (d < -3.141592653589793) d += 6.283185307179586;
+        gumballDragPrevAngle_ = ang;
+        gumballTotalAngle_ += d * gumballDragSign_;
+        const double step = gumballTotalAngle_ - gumballAppliedAngle_;
+        if (std::abs(step) > 1e-9) {
+            document_.rotateModels(gumballTransformSet_, pivot, gumballDragAxisWorld_, step);
+            gumballAppliedAngle_ = gumballTotalAngle_;
+        }
+    } else if (gumballIsScaleAxis(gumballDrag_)) {
+        const double t = (x - gumballDragScreenOrigin_.x) * gumballDragAxisUnit_.x +
+                         (y - gumballDragScreenOrigin_.y) * gumballDragAxisUnit_.y;
+        if (std::abs(gumballDragT0_) > 6.0) {
+            const double f = std::min(100.0, std::max(0.02, t / std::abs(gumballDragT0_)));
+            const double step = f / gumballAppliedFactor_;
+            if (std::abs(step - 1.0) > 1e-9) {
+                Vec3 fac{1, 1, 1};
+                const int ai = gumballAxisIndex(gumballDrag_);
+                (ai == 0 ? fac.x : ai == 1 ? fac.y : fac.z) = step;
+                const Vec3 inv{1.0 / fac.x, 1.0 / fac.y, 1.0 / fac.z};
+                document_.transformModels(selectedModels_, pivot,
+                                          gumballLocalScale(gumballFrame_, fac),
+                                          gumballLocalScale(gumballFrame_, inv));
+                gumballAppliedFactor_ = f;
+            }
+        }
+    } else if (gumballDrag_ == GumballHandle::ScaleUniform) {
+        const double d = std::hypot(x - gumballDragScreenOrigin_.x,
+                                    y - gumballDragScreenOrigin_.y);
+        const double f = std::min(100.0, std::max(0.02, d / std::max(1.0, gumballDragStartDist_)));
+        const double step = f / gumballAppliedFactor_;
+        if (std::abs(step - 1.0) > 1e-9) {
+            document_.scaleModels(selectedModels_, pivot, Vec3{step, step, step});
+            gumballAppliedFactor_ = f;
+        }
+    } else {
+        const Vec3 wp = gumballPlanePoint(x, y, gumballDrag_);
+        const Vec3 delta = wp - gumballDragStartWorld_;
+        const Vec3 step = delta - gumballAppliedDelta_;
+        if (std::abs(step.x) + std::abs(step.y) + std::abs(step.z) > 1e-12) {
+            document_.moveModels(gumballTransformSet_, step);
+            gumballAppliedDelta_ = delta;
+            gumballOrigin_ = gumballDragStartOrigin_ + delta;
+        }
+    }
+    // Durum geri bildirimi: rotasyon acisi / olcek faktoru.
+    if (gumballIsRotate(gumballDrag_)) {
+        wchar_t buf[96]{};
+        std::swprintf(buf, std::size(buf), L"Gumball donusme: %.2f°",
+                      gumballTotalAngle_ * 57.29577951308232);
+        publishStatus(buf);
+    } else if (gumballIsScaleAxis(gumballDrag_) || gumballDrag_ == GumballHandle::ScaleUniform) {
+        wchar_t buf[96]{};
+        std::swprintf(buf, std::size(buf), L"Gumball olcek: %.4f x", gumballAppliedFactor_);
+        publishStatus(buf);
+    } else {
+        updateStatus();
+    }
+    invalidateCanvas();
+}
+
+void Application::gumballEndDrag() {
+    if (gumballDrag_ == GumballHandle::None) return;
+#ifdef MM_HAS_OCC
+    // P7: gercek bir tasima/cevirme/olcek oldu mu (yalniz tik degil). Kesme
+    // recompute'u icin bu bilgi reset'ten ONCE yakalanmali.
+    const bool didTransform = gumballUndoStarted_;
+    // P9: yalniz RIJIT donusumler (tasima/dondurme) kesme hedefinin tabanini
+    // yeniden uretir; olcek + kesme desteklenmedigi icin olcekte recompute
+    // anlamsizdir ve olceklenmis katiyi bozardi.
+    const bool rigidTransform = !(gumballIsScaleAxis(gumballDrag_) ||
+                                  gumballDrag_ == GumballHandle::ScaleUniform);
+    // P10: gumballTransformSet_ asagida temizleniyor; recompute icin SIMDI
+    // kopyala (yoksa bos kume gider ve tasinan kaynak/hedef kesme guncellemez).
+    const std::vector<std::size_t> movedSet = gumballTransformSet_;
+    // B1: bulon display tasinirsa gerekli olan net oteleme (reset'ten ONCE).
+    const Vec3 appliedDelta = gumballAppliedDelta_;
+#endif
+    gumballDrag_ = GumballHandle::None;
+    gumballNumericActive_ = false;
+    gumballPointerMoved_ = false;
+    gumballUndoStarted_ = false;
+    gumballCopyMode_ = false;
+    gumballCopyMade_ = false;
+    gumballCopyOriginals_.clear();
+    gumballTransformSet_.clear();
+    input_.clear();
+    if (canvas_) ReleaseCapture();
+    gumballAppliedDelta_ = {};
+    gumballAppliedAngle_ = 0.0;
+    gumballTotalAngle_ = 0.0;
+    gumballAppliedFactor_ = 1.0;
+    updateGumball();
+    updateStatus();
+    invalidateCanvas();
+#ifdef MM_HAS_OCC
+    // P7+P9: gumball ile tasinan/cevrilen varlik bir kesme KAYNAGI/ARACI veya
+    // HEDEFI ise bagli hedefleri yeniden hesapla (rijit donusumde hedef tabani
+    // da yeniden uretilir). gumballTransformSet_ = secim + bagli kaynaklar.
+    if (didTransform && rigidTransform)
+        recomputeTargetsForMovedModels(movedSet);
+    // B1: gumball ile tasinan bulon display'ini senkronla (origin + delik + display).
+    if (didTransform && rigidTransform)
+        syncBoltGroupsForMoved(movedSet, appliedDelta);
+    // 2d-2b: gumball ile tasinan/dondurulen kolon/kirise bagli End Plate'leri yeniden hesapla.
+    if (didTransform && rigidTransform) {
+        std::vector<EntityId> movedIds;
+        movedIds.reserve(movedSet.size());
+        for (const std::size_t idx : movedSet) movedIds.push_back(document_.modelId(idx));
+        if (recomputeEndPlateConnectionsFor(movedIds))
+            recomputeComponentInstancesFor(movedIds);
+    }
+#endif
+}
+
+// Escape ile iptal: uygulanan toplam donusumun TERSINI uygulayip geometriyi
+// drag oncesi haline dondurur (undo kaydinda forward+inverse net sifir kalir).
+void Application::gumballCancelDrag() {
+    if (gumballDrag_ == GumballHandle::None) return;
+    if (!gumballUndoStarted_) { gumballEndDrag(); return; }
+    const Vec3 pivot = gumballDragStartOrigin_;
+    const Vec3 negDelta{-gumballAppliedDelta_.x, -gumballAppliedDelta_.y,
+                        -gumballAppliedDelta_.z};
+    if (gumballCopyMade_) {
+        // Shift-kopya iptali: kopyalar silinir, secim orijinallere doner.
+        // Kayit acik kaldigi icin Delete op'i ayni geri-alma adimina yazilir:
+        // Add + Transform + Delete net sifir — geometri drag oncesi haldedir.
+        document_.deleteModels(selectedModels_);
+        selectedModels_ = gumballCopyOriginals_;
+    } else if (gumballIsAxis(gumballDrag_)) {
+        document_.moveModels(gumballTransformSet_, negDelta);
+    } else if (gumballIsRotate(gumballDrag_)) {
+        document_.rotateModels(gumballTransformSet_, pivot, gumballDragAxisWorld_,
+                               -gumballTotalAngle_);
+    } else if (gumballIsScaleAxis(gumballDrag_)) {
+        Vec3 fac{1, 1, 1};
+        const int ai = gumballAxisIndex(gumballDrag_);
+        (ai == 0 ? fac.x : ai == 1 ? fac.y : fac.z) = 1.0 / gumballAppliedFactor_;
+        const Vec3 inv{1.0 / fac.x, 1.0 / fac.y, 1.0 / fac.z};
+        document_.transformModels(selectedModels_, pivot,
+                                  gumballLocalScale(gumballFrame_, fac),
+                                  gumballLocalScale(gumballFrame_, inv));
+    } else if (gumballDrag_ == GumballHandle::ScaleUniform) {
+        const double inv = 1.0 / gumballAppliedFactor_;
+        document_.scaleModels(selectedModels_, pivot, Vec3{inv, inv, inv});
+    } else {
+        document_.moveModels(gumballTransformSet_, negDelta);
+    }
+    if (canvas_) ReleaseCapture();
+    gumballDrag_ = GumballHandle::None;
+    gumballAppliedDelta_ = {};
+    gumballAppliedAngle_ = 0.0;
+    gumballTotalAngle_ = 0.0;
+    gumballAppliedFactor_ = 1.0;
+    gumballCopyMode_ = false;
+    gumballCopyMade_ = false;
+    gumballCopyOriginals_.clear();
+    gumballTransformSet_.clear();
+    updateGumball();
+    updateStatus();
+    invalidateCanvas();
+}
+
+// A click (not a drag) opens the existing Qt parameter edit box.
+// Release native capture before entering its nested modal event loop.
+void Application::gumballRequestNumeric() {
+    if (gumballDrag_ == GumballHandle::None || gumballNumericActive_) return;
+    gumballNumericActive_ = true;
+    ReleaseCapture();
+    if (parameterRequest_) {
+        const int axis = gumballAxisIndex(gumballDrag_);
+        const bool plane = gumballIsPlane(gumballDrag_);
+        const bool center = gumballDrag_ == GumballHandle::Center;
+        const int firstAxis = plane ? static_cast<int>(gumballDrag_) - 3 : 0;
+        const int dimensions = plane ? 2 : center ? 3 : 1;
+        const std::wstring axisName = plane ? std::wstring({L"XYZ"[firstAxis], L"XYZ"[(firstAxis+1)%3]}) :
+            axis >= 0 ? std::wstring(1, L"XYZ"[axis]) : L"XYZ";
+        const bool scaling = gumballIsScaleAxis(gumballDrag_) || gumballDrag_ == GumballHandle::ScaleUniform;
+        const std::wstring prompt = L"Gumball — Yerel " + axisName +
+            (gumballIsRotate(gumballDrag_) ? L" dönüş açısı (derece, +/-)" :
+             scaling ? L" ölçek faktörü (0.02–100)" :
+             dimensions > 1 ? L" öteleme (mm, +/-; değerleri ; ile ayırın): " +
+                (plane ? std::wstring(1, axisName[0]) + L";" + axisName[1] : L"X;Y;Z") :
+             L" öteleme mesafesi (mm, +/-)");
+        std::wstring text = scaling ? L"1" : plane ? L"0;0" : center ? L"0;0;0" : L"0";
+        bool invalid = false;
+        while (parameterRequest_((invalid ? L"Geçersiz değer. " : L"") + prompt, text, text)) {
+            std::replace(text.begin(), text.end(), L',', L'.');
+            std::wistringstream parser(text);
+            parser.imbue(std::locale::classic());
+            double values[3]{};
+            bool valid = true;
+            for (int i = 0; i < dimensions; ++i) {
+                if (!(parser >> values[i]) || !std::isfinite(values[i])) { valid = false; break; }
+                if (i + 1 < dimensions) {
+                    wchar_t separator{};
+                    if (!(parser >> separator) || separator != L';') { valid = false; break; }
+                }
+            }
+            parser >> std::ws;
+            valid = valid && parser.eof() && (!scaling || (values[0] >= 0.02 && values[0] <= 100.0));
+            if (valid) {
+                if (dimensions == 1) {
+                    applyGumballNumeric(values[0]);
+                } else {
+                    Vec3 delta{};
+                    for (int i = 0; i < dimensions; ++i)
+                        delta = delta + gumballFrame_[(firstAxis+i)%3] * values[i];
+                    if (delta.x != 0.0 || delta.y != 0.0 || delta.z != 0.0) {
+                        pushUndoSnapshot();
+                        gumballUndoStarted_ = true;
+                        gumballCopyIfNeeded(); // Shift basiliysa kopyala
+                        document_.moveModels(selectedModels_, delta);
+                        gumballAppliedDelta_ = delta;
+                        gumballOrigin_ = gumballDragStartOrigin_ + delta;
+                    }
+                }
+                break;
+            }
+            invalid = true;
+        }
+    }
+    gumballEndDrag();
+    if (canvas_) SetFocus(canvas_);
+}
+
+// Gumball drag surerken numerik tam deger uygula.
+// Eksen tasima -> mesafe (mm); rotasyon -> aci (derece); olcek -> faktor.
+void Application::applyGumballNumeric(double value) {
+    if (gumballDrag_ == GumballHandle::None || selectedModels_.empty() || !std::isfinite(value)) return;
+    const bool scaling = gumballIsScaleAxis(gumballDrag_) || gumballDrag_ == GumballHandle::ScaleUniform;
+    if (scaling && (value < 0.02 || value > 100.0)) return;
+    if (!gumballIsAxis(gumballDrag_) && !gumballIsRotate(gumballDrag_) && !scaling) return;
+    if (!gumballUndoStarted_) {
+        if (value == (scaling ? 1.0 : 0.0)) return; // accepted no-op keeps redo history
+        pushUndoSnapshot();
+        gumballUndoStarted_ = true;
+        gumballCopyIfNeeded(); // Shift basiliysa kopyala (orijinaller yerinde kalir)
+        // P9: kesme hedefi tasinir/dondurulurse kaynak onunla rijit donusur.
+        gumballTransformSet_ = transformIndicesWithAttachedCutSources(selectedModels_);
+    }
+    const Vec3 pivot = gumballDragStartOrigin_;
+    if (gumballIsAxis(gumballDrag_)) {
+        const Vec3 delta = gumballDragAxisWorld_ * value;
+        const Vec3 step = delta - gumballAppliedDelta_;
+        document_.moveModels(gumballTransformSet_, step);
+        gumballAppliedDelta_ = delta;
+        gumballOrigin_ = gumballDragStartOrigin_ + delta;
+        wchar_t buf[96]{};
+        std::swprintf(buf, std::size(buf), L"Gumball tasima: %.3f mm", value);
+        publishStatus(buf);
+    } else if (gumballIsRotate(gumballDrag_)) {
+        const double total = value * 0.017453292519943295; // derece -> radyan
+        const double step = total - gumballAppliedAngle_;
+        document_.rotateModels(gumballTransformSet_, pivot, gumballDragAxisWorld_, step);
+        gumballAppliedAngle_ = total;
+        gumballTotalAngle_ = total;
+        wchar_t buf[96]{};
+        std::swprintf(buf, std::size(buf), L"Gumball donusme: %.3f°", value);
+        publishStatus(buf);
+    } else if (gumballIsScaleAxis(gumballDrag_)) {
+        const double f = std::min(100.0, std::max(0.02, value));
+        const double step = f / gumballAppliedFactor_;
+        Vec3 fac{1, 1, 1};
+        const int ai = gumballAxisIndex(gumballDrag_);
+        (ai == 0 ? fac.x : ai == 1 ? fac.y : fac.z) = step;
+        const Vec3 inv{1.0 / fac.x, 1.0 / fac.y, 1.0 / fac.z};
+        document_.transformModels(selectedModels_, pivot,
+                                  gumballLocalScale(gumballFrame_, fac),
+                                  gumballLocalScale(gumballFrame_, inv));
+        gumballAppliedFactor_ = f;
+        wchar_t buf[96]{};
+        std::swprintf(buf, std::size(buf), L"Gumball olcek: %.4f x", f);
+        publishStatus(buf);
+    } else if (gumballDrag_ == GumballHandle::ScaleUniform) {
+        const double f = std::min(100.0, std::max(0.02, value));
+        const double step = f / gumballAppliedFactor_;
+        document_.scaleModels(selectedModels_, pivot, Vec3{step, step, step});
+        gumballAppliedFactor_ = f;
+        wchar_t buf[96]{};
+        std::swprintf(buf, std::size(buf), L"Gumball olcek: %.4f x", f);
+        publishStatus(buf);
+    } else {
+        // Duzlem/merkez tasimada tek sayi yon belirlemez — yoksay.
+        MessageBeep(MB_ICONWARNING);
+        return;
+    }
+    updateGumball();
+    invalidateCanvas();
 }
 
 DraftView Application::draftView() const {
@@ -3039,17 +10814,40 @@ DraftView Application::draftView() const {
     view.temporaryTrackingPoints = temporaryTrackingPoints_;
     view.temporaryTrackingGuides = temporaryTrackingGuides_;
     view.temporaryDerivedPoints = temporaryDerivedPoints_;
+    view.temporaryPerpendicularPoints = temporaryPerpendicularPoints_;
     view.workPlaneZ = workPlane_.origin.z; view.workPlane = workPlane_;
     view.workPlanePicking = workPlanePicking_; view.workPlanePoints = workPlanePoints_;
+    view.twoPointViewDirectionActive =
+        workPlanePicking_ && pointPickPurpose_ == PointPickPurpose::TwoPointViewDirection;
+    view.twoPointViewDirection = twoPointViewNormal_;
+    view.workPlaneGhostVisible = workPlaneGhostVisible_;
+    // Donus merkezi (R) isareti: aktif pencerenin kamerasi. Renderer dunya
+    // noktasini kendi kamerasiyla projekte eder (pasif pencerede slot.camera).
+    view.orbitPivotVisible = camera_.hasOrbitPivot();
+    if (const auto& pivot = camera_.orbitPivot()) view.orbitPivot = *pivot;
     view.input = input_; view.cursorScreen = cursorScreen_;
     view.transformCommand = transformCommand_; view.transformPhase = transformPhase_;
     view.selectedModels = selectedModels_; view.selectionFirstCorner = selectionFirstCorner_;
+    view.selectedCutModifiers = selectedCutModifiers_;
+    view.hoverModel = hoverModel_; view.hoverCutModifier = hoverCutModifier_;
+    view.hoverFaceModel = hoverFaceModel_; view.hoverFaceIndices = hoverFaceIndices_;
     view.transformBase = transformBase_;
     view.offsetDistance = offsetDistance_;
     view.filletRadius = filletRadius_;
     view.filletFirstPick = filletFirstPick_;
     view.arrayItemCount = arrayItemCount_;
     view.modifierBoundaries = modifierBoundaries_;
+    // COMPONENT SIMGELERI: End Plate + universal parametrik component (Fin Plate
+    // vb.) levha merkezleri. Renderer buyuk tiklama isareti cizer; hit-test
+    // componentGlyphModelAt AYNI listeyi (collectComponentGlyphs) kullanir.
+    view.componentGlyphs.clear();
+    view.componentGlyphEntities.clear();
+    for (const ComponentGlyph& glyph : collectComponentGlyphs(document_)) {
+        view.componentGlyphs.push_back(glyph.anchor);
+        view.componentGlyphEntities.push_back(glyph.entityId);
+    }
+    // KAYNAK SIMGELERI: secili kaynak indeksleri (renderer glifi vurgular).
+    view.selectedWelds = selectedWelds_;
     view.trimExtendPreviewSuppressed = trimExtendPreviewSuppressed_;
     view.zoomWindowActive = zoomWindowActive_; view.zoomWindowFirstCorner = zoomWindowFirstCorner_;
     view.interactiveNavigation = rotating_ || panning2D_ || viewCubeManipulating_ ||
@@ -3058,7 +10856,7 @@ DraftView Application::draftView() const {
                          !viewCubeManipulating_ && !wheelNavigating_;
     view.snapPreviewActive = snapPreviewActive_;
     view.wheelNavigating = wheelNavigating_; view.rotating = rotating_;
-    view.panning = panning2D_; view.viewCubeActive = viewCubeManipulating_;
+    view.panning = panning2D_; view.viewCubeActive = viewCubeManipulating_ || viewCubeAnimActive_;
     // Esik 8'000'e indirildi: 18k'lik cizimde tekerlek zoom'u stride-4 seyrek
     // fallback kareler uretiyordu (modellerin ~%75'i kaybolup geri geliyordu
     // = zoom sirasinda nabiz/flicker). Raster preview son tam kareyi esnetir —
@@ -3067,6 +10865,25 @@ DraftView Application::draftView() const {
                              std::abs(wheelPreviewFactor_ - 1.0) > 1e-12;
     view.rasterZoomFactor = wheelPreviewFactor_;
     view.rasterZoomOffset = wheelPreviewOffset_;
+    // Profil uc tutamagi (grip edit) vurgusu + move track line.
+    if (profileGrip_) {
+        view.activeGripSolid = profileGrip_->solidIndex;
+        view.activeGripEndIsTo = profileGrip_->endIsTo;
+        view.gripMoveActive = true;
+        view.gripTrackFrom = profileGrip_->trackFrom;
+        view.gripTrackTo = profileGrip_->cursorPoint;
+    }
+    // RHINO TARZI GUMBALL
+    view.gumballVisible = gumballVisible_;
+    view.gumball3D = (mode_ == EditMode::View3D);
+    view.gumballOrigin = gumballOrigin_;
+    view.gumballWorldSize = gumballVisible_ ? gumballWorldLength() : 1.0;
+    view.gumballHover = static_cast<int>(gumballHover_);
+    view.gumballDragging = (gumballDrag_ != GumballHandle::None);
+    view.gumballAxisX = gumballFrame_[0];
+    view.gumballAxisY = gumballFrame_[1];
+    view.gumballAxisZ = gumballFrame_[2];
+    view.viewSlab = viewDef_ ? &*viewDef_ : nullptr; // ikincil gorunus: derinlik dilimi
     return view;
 }
 
@@ -3094,9 +10911,9 @@ void Application::runRenderBenchmark() {
             while (PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE)) {
                 TranslateMessage(&msg);
                 DispatchMessageW(&msg);
-                if (renderer_.performanceFrameNumber() >= target) return true;
+                if (renderer_->performanceFrameNumber() >= target) return true;
             }
-            if (renderer_.performanceFrameNumber() >= target) return true;
+            if (renderer_->performanceFrameNumber() >= target) return true;
             Sleep(5);
         }
         return false;
@@ -3107,9 +10924,9 @@ void Application::runRenderBenchmark() {
         const auto step = [&](auto&& apply) {
             apply();
             invalidateCanvas();
-            const std::uint64_t target = renderer_.performanceFrameNumber() + 1;
+            const std::uint64_t target = renderer_->performanceFrameNumber() + 1;
             if (!pumpUntilFrame(target)) return;
-            const auto sample = renderer_.latestPerformanceSample();
+            const auto sample = renderer_->latestPerformanceSample();
             total += sample.cpuFrameMilliseconds; ++n;
             mn = std::min(mn, sample.cpuFrameMilliseconds);
             mx = std::max(mx, sample.cpuFrameMilliseconds);
@@ -3158,18 +10975,62 @@ void Application::runRenderBenchmark() {
     invalidateCanvas();
 }
 
+void Application::setVisualStyle(VisualStyle style) noexcept {
+    // Gorsel stil (Alt+1..4): Wireframe / Tar-Şeffaf / Hidden / Solid.
+    // Hidden = Wireframe'in derinlik duyarli varyanti: cizgiler gorunur ama
+    // arkadakiler soluk cizilir (renderer mevcut stillerle esler).
+    visualStyle_ = style;
+    updateControls();
+    invalidateCanvas();
+}
+
+void Application::togglePolarTracking() {
+    // Tek kaynak: kurdele dugmesi, F10 (WM_SYSKEYDOWN) ve dis pencere proc'u.
+    polarTrackingEnabled_ = !polarTrackingEnabled_;
+    if (polarTrackingEnabled_) {
+        orthoEnabled_ = false; // ikisi ayni anda acik olmaz (AutoCAD davranisi)
+    } else {
+        clearTemporaryTracking(); // kalinti TP/guide cizgileri ekranda kalmasin
+    }
+    updateHover(cursorScreen_.x, cursorScreen_.y);
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
+}
+
+void Application::toggleWorkPlaneGhost() {
+    // Tek kaynak: menu/kurdele, F7 (canvas proc) ve dis pencere proc'u.
+    // Yalnizca cizim katmani — secim ve snap'i ETKILEMEZ.
+    workPlaneGhostVisible_ = !workPlaneGhostVisible_;
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
+}
+
 void Application::toggleGpuLines() {
+    startupNotice_.clear(); // elle F6 / yeni deneme: eski dusus notu gecersiz
     gpuLinesEnabled_ = !gpuLinesEnabled_;
     if (gpuLinesEnabled_ && !backendInitTried_) {
         // Ilk GL acilisinda backend uretilir (GL basarisizsa GDI'ye dus).
         backendInitTried_ = true;
         RECT canvasRect{}; GetClientRect(canvas_, &canvasRect);
-        renderBackend_ = createOpenGLRenderBackend();
-        if (!renderBackend_ ||
-            !renderBackend_->initialize(canvas_, canvasRect.right, canvasRect.bottom)) {
-            renderBackend_ = createGdiRenderBackend();
-            if (renderBackend_)
-                renderBackend_->initialize(canvas_, canvasRect.right, canvasRect.bottom);
+        bool glReady = false;
+        try {
+            renderBackend_ = createOpenGLRenderBackend();
+            glReady = renderBackend_ &&
+                      renderBackend_->initialize(canvas_, canvasRect.right, canvasRect.bottom);
+        } catch (...) {
+            glReady = false; // bad_alloc vb. — GDI'ye dus, uygulama cokmesin
+        }
+        if (!glReady) {
+            if (renderBackend_) { renderBackend_->shutdown(); renderBackend_.reset(); }
+            try {
+                renderBackend_ = createGdiRenderBackend();
+                if (renderBackend_)
+                    renderBackend_->initialize(canvas_, canvasRect.right, canvasRect.bottom);
+            } catch (...) {
+                renderBackend_.reset(); // backend yok -> renderer saf GDI yolu
+            }
         }
     }
     FILE* diag = fopen("model-maker-render.log", "a");
@@ -3199,7 +11060,10 @@ std::optional<std::filesystem::path> Application::chooseFile(bool save, bool dxf
 }
 
 void Application::newDocument() {
-    document_.clear();
+    cancelPendingComponentCommand();
+    document_.clear(); // B-Rep magazasi (Document-sahipli) da sifirlanir
+    profileGrip_.reset();
+    currentFilePath_.reset();
     refreshLayerCombo();
     if (workPlanePicking_) cancelWorkPlaneCommand();
     if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
@@ -3213,17 +11077,104 @@ void Application::newDocument() {
 }
 
 void Application::saveDocument() {
+    // Kayitli/açik dosya uzerine kaydet (AutoCAD davranisi); yeni belge
+    // veya Save As -> dosya diyalogu. currentFilePath_ save/open'ta hatirlanir.
+    std::optional<std::filesystem::path> path = currentFilePath_;
+    if (!path) path = chooseFile(true);
+    if (!path) return;
+    try {
+        document_.save(*path);
+        currentFilePath_ = *path;
+    } catch (const std::exception& error) { showError(L"Kaydetme başarısız", error); }
+}
+
+void Application::saveDocumentAs() {
     const auto path = chooseFile(true); if (!path) return;
-    try { document_.save(*path); } catch (const std::exception& error) { showError(L"Kaydetme başarısız", error); }
+    try {
+        document_.save(*path);
+        currentFilePath_ = *path;
+    } catch (const std::exception& error) { showError(L"Kaydetme başarısız", error); }
 }
 
 void Application::openDocument() {
     const auto path = chooseFile(false); if (!path) return;
+    cancelPendingComponentCommand();
     try {
         document_.load(*path);
+        // Yukleme belge icerigini TAMAMEN degistirir; Document-sahipli B-Rep
+        // magazasini da Document::load() KENDISI sifirlar (MMW1..7 B-Rep
+        // saklamaz → katilar yeniden uretilene kadar magaza bostur). Ayri bir
+        // Application temizleme cagrisi GEREKMEZ.
+        currentFilePath_ = path;
+#ifdef MM_HAS_OCC
+        // AÇILIS SONRASI PROFIL YENIDEN URETIMI: MMW8 yalniz MESH'i saklar;
+        // profilin B-Rep'i (ve GUNCEL radiuslu kesiti) parametrelerden yeniden
+        // uretilir. Eski surumde radiussuz kaydedilmis profiller acilinca
+        // radiuslu gelir; bolt/kesme delikleri de yeniden B-Rep'te acilir.
+        // recomputeCutTarget: ensureCutSolid + rebuildCutBaseSolid + kesme
+        // zinciri + mesh tazeleme — profilin TAMAMINI guncel koddan kurar.
+        ensureProfileCatalog();
+        for (std::size_t i = 0; i < document_.models().size(); ++i) {
+            if (document_.models()[i].properties().profileName.empty()) continue;
+            recomputeCutTarget(document_.modelId(i));
+        }
+        // AÇILIS SONRASI END PLATE YENIDEN COZUMU (operation record semantigi):
+        // baglanti KAYDI parametreleri tasir; pisirilmis levha/bulon geometrisi
+        // degil. Kaydedilen parametreler (gap dahil) mevcut ana/ikincil parcalar
+        // uzerine yeniden uygulanir -> kiris levhanin arka yuzune fit edilir,
+        // bulonlar guncel desende atilir. Undo gecmisi load'da sifirlandigi icin
+        // bu mutasyonlar geri alinmaz (dogru: dosya acmayi Ctrl+Z geri alamaz).
+        for (std::size_t i = 0; i < document_.endPlateConnections().size(); ++i) {
+            const auto prepared = prepareEndPlateConnection(i, nullptr);
+            if (!prepared) continue;  // parca kayboldu/cozulemedi: pisirilmis hal korunur
+            commitEndPlateConnection(i, *prepared);
+        }
+        // P1: AÇILIS SONRASI PARAMETRIK COMPONENT RECOMPUTE (Fin Plate vb.).
+        // ComponentInstanceRecord parametreleri tasir; acilista yeniden uretilir
+        // (roleKey->EntityId korunur, MMW8 'N' blogu sayesinde). Bilinmeyen typeId
+        // (orphan) atlanir — kayit korunur, geometri uretilmez.
+        //
+        // TRANSACTION: load undo gecmisini sifirladigi icin burada ACIK kayit
+        // yoktur; materializer openOwnRecord=false ile yazarsa erken mutasyonlar
+        // kayit disi kalir ve basarisizlikta rollbackOpenRecord() false doner
+        // (kismi yazim kalir). Bu yuzden recompute ONCESINDE snapshot acilir;
+        // basariliysa load geri alinamaz oldugu icin gecmis yeniden temizlenir.
+        {
+            std::vector<EntityId> allParts;
+            for (const auto& rec : document_.componentInstances()) {
+                if (rec.mainPart != kInvalidEntityId) allParts.push_back(rec.mainPart);
+                for (const EntityId sid : rec.secondaryParts) allParts.push_back(sid);
+            }
+            if (!allParts.empty()) {
+                document_.pushSnapshot();
+                recomputeComponentInstancesFor(allParts);
+                document_.clearHistory();
+            }
+        }
+#endif
+        // KULLANICI KATALOGU ORPHAN TESHISI: proje, registry'de kayitli olmayan
+        // bir typeId'ye sahip component iceriyorsa (ornegin baska bilgisayardaki
+        // derived sablon) geometri KORUNUR ama recompute edilmez; acik uyari ver.
+        {
+            std::vector<std::wstring> orphans;
+            for (const auto& rec : document_.componentInstances())
+                if (rec.orphan) orphans.push_back(rec.typeId);
+            if (!orphans.empty()) {
+                std::wstring msg =
+                    L"Uyarı: kayıtlı olmayan component türü (recompute edilmez, geometri korunur): ";
+                for (std::size_t i = 0; i < orphans.size(); ++i) {
+                    if (i) msg += L", ";
+                    msg += orphans[i];
+                }
+                publishStatus(msg);
+            }
+        }
+        purgeStaleAxisLines();
         refreshLayerCombo();
         if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
         else cancelDrawing();
+        // Dosya acildiginda icerik ekrana sigsin (zoom extents).
+        zoomExtents2D();
     } catch (const std::exception& error) { showError(L"Dosya açılamadı", error); }
 }
 
@@ -3294,6 +11245,7 @@ void Application::finishDxfImport() {
         cancelDrawing();
         hover_.reset();
         document_ = std::move(*loaded);
+        applyPickFilter(); // yeni belge: aktif gorunusun dilim filtresi
         refreshLayerCombo();
         const auto bounds = document_.bounds();
         drawingActive_ = mode_ == EditMode::Draw2D;
@@ -3325,10 +11277,279 @@ void Application::exportDxf() {
     catch (const std::exception& error) { showError(L"DXF dışa aktarma başarısız", error); }
 }
 
+bool Application::importTeklaBridge(const std::filesystem::path& packageDir) {
+#ifndef MM_HAS_OCC
+    publishStatus(L"Tekla Bridge: bu derleme OCC'siz; import yapilamadi.");
+    return false;
+#else
+    // Oku + dogrula (yarim paket "basarili" kabul edilmez).
+    mm::BridgePackage pkg;
+    std::vector<std::string> errors;
+    if (!mm::readBridgePackage(packageDir.string(), pkg, errors)) {
+        std::string detail = "package read/validation failed";
+        for (const auto& e : errors) {
+            detail += "\n- ";
+            detail += e;
+        }
+        const std::runtime_error importError(detail);
+        showError(L"Tekla Component Bridge içe aktarma başarısız", importError);
+        return false;
+    }
+
+    // ATOMIK import (pushSnapshot + hata rollback importBridgeComponent içinde).
+    const mm::BridgeImportOutcome out = mm::importBridgeComponent(document_, pkg);
+    if (!out.ok) {
+        const std::runtime_error importError(out.error);
+        showError(L"Tekla Component Bridge içe aktarma başarısız", importError);
+        return false;
+    }
+
+    // Import edilen plakayi sec (glyph/secim/properties) + cercevele (zoom extents).
+    if (const auto idx = document_.indexOfEntity(out.plateId)) selectModel(*idx);
+    zoomExtents2D();
+    updateControls();
+    invalidateCanvas();
+
+    std::wstring status = L"Tekla Bridge: " +
+        std::wstring(pkg.component.name.begin(), pkg.component.name.end());
+    if (out.duplicate) {
+        status += L" zaten içe aktarılmış (yinelenen import atlandı)";
+    } else {
+        status += L" içe aktarıldı (" + std::to_wstring(out.partsImported) + L" parça, " +
+                  std::to_wstring(out.boltGroupsImported) + L" bulon grubu, " +
+                  std::to_wstring(out.holesCut) + L" delik)";
+    }
+    if (!out.warnings.empty()) {
+        status += L" — " + std::to_wstring(out.warnings.size()) + L" uyarı";
+        std::wstring first(out.warnings.front().begin(), out.warnings.front().end());
+        publishStatus(status);
+        publishStatus(first);
+    } else {
+        publishStatus(status);
+    }
+    return true;
+#endif
+}
+
+bool Application::convertTeklaBridgeToNative(const std::filesystem::path& packageDir) {
+#ifndef MM_HAS_OCC
+    publishStatus(L"Tekla Bridge native dönüşüm: bu derleme OCC'siz; yapılamadı.");
+    return false;
+#else
+    // Oku + dogrula.
+    mm::BridgePackage pkg;
+    std::vector<std::string> errors;
+    if (!mm::readBridgePackage(packageDir.string(), pkg, errors)) {
+        std::string detail = "package read/validation failed";
+        for (const auto& e : errors) {
+            detail += "\n- ";
+            detail += e;
+        }
+        const std::runtime_error importError(detail);
+        showError(L"Tekla Component Bridge native dönüşüm başarısız", importError);
+        return false;
+    }
+
+    // Kullanici secimi -> uye baglama girdisi. Ilk secili model = primary (kolon),
+    // kalan secili modeller = secondary (kiris). Secim yoksa yalnizca Document'taki
+    // Tekla GUID map'i kullanilir (resolveBridgeMemberBinding icinde dogrulanir).
+    mm::BridgeMemberSelection selection;
+    const auto& sel = selectedModels_;
+    if (!sel.empty()) {
+        selection.primaryId = document_.modelId(sel.front());
+        for (std::size_t i = 1; i < sel.size(); ++i)
+            selection.secondaryIds.push_back(document_.modelId(sel[i]));
+    }
+
+    // Native donusum (GUID map + secim -> generator + gercek OCC + atomik isle).
+    const mm::BridgeNativeConvertOutcome out =
+        mm::convertBridgeToNative(document_, pkg, profileCatalog_, selection);
+
+    if (out.needsMemberSelection) {
+        // Uye eksik: kullaniciya HANGI uyenin secilmesi gerektigini bildir.
+        // Otomatik secim YAPILMAZ; orijinal import geometrisi korunur.
+        std::wstring msg = L"Tekla Bridge native dönüşüm: üye eşlemesi gerekli.\n\n"
+                           L"Kolonu ve kirişi birlikte seçip tekrar deneyin. Sıra önemli değil:\n"
+                           L"üyeler profillerine göre otomatik eşlenir (kolon HEA400, kiriş HEA300).\n\n"
+                           L"Eksik üyeler:\n";
+        for (const auto& m : out.missing) {
+            msg.append(L"  • ");
+            msg.append(m.begin(), m.end());
+            msg.append(L"\n");
+        }
+        publishStatus(L"Tekla Bridge native dönüşüm: üye eşlemesi gerekli (kolon + kiriş seçin).");
+        std::wstring title = L"Model Maker";
+        MessageBoxW(window_, msg.c_str(), title.c_str(), MB_OK | MB_ICONINFORMATION);
+        return false;
+    }
+    if (!out.ok) {
+        const std::runtime_error convError(out.error);
+        showError(L"Tekla Component Bridge native dönüşüm başarısız", convError);
+        return false;
+    }
+
+    // Native component olustu; owned levhayi sec + cercevele + guncelle.
+    if (const auto ci = document_.indexOfComponentInstance(out.componentId)) {
+        const auto& rec = document_.componentInstances()[*ci];
+        if (!rec.ownedPlateIds.empty())
+            if (const auto idx = document_.indexOfEntity(rec.ownedPlateIds[0]))
+                selectModel(*idx);
+    }
+    zoomExtents2D();
+    updateControls();
+    invalidateCanvas();
+
+    std::wstring status = L"Tekla Bridge: native component oluşturuldu — ";
+    status.append(pkg.component.name.begin(), pkg.component.name.end());
+    status += L" (tekla_shear_plate_146, parametrik)";
+    publishStatus(status);
+    return true;
+#endif
+}
+
+// --- KULLANICI COMPONENT KATALOGU ---------------------------------------------
+
+namespace {
+std::filesystem::path userCatalogPath() {
+    wchar_t buffer[MAX_PATH]{};
+    const DWORD length = GetModuleFileNameW(nullptr, buffer, MAX_PATH);
+    if (length == 0 || length >= MAX_PATH) return L"user_catalog.json";
+    return std::filesystem::path(buffer).parent_path() / L"user_catalog.json";
+}
+} // namespace
+
+void Application::loadUserCatalog() {
+    const std::filesystem::path path = userCatalogPath();
+    std::string err;
+    if (!userCatalog_.load(path, err)) {
+        const std::runtime_error e(err.empty() ? "katalog yuklenemedi" : err);
+        showError(L"Kullanıcı kataloğu yüklenemedi", e);
+        return;
+    }
+    const auto warnings = userCatalog_.registerInto(mm::ComponentRegistry::instance(),
+                                                    mm::ComponentDialogRegistry::instance());
+    if (!warnings.empty()) {
+        std::wstring msg = L"Kullanıcı kataloğu: bazı şablonlar yüklenemedi (family kayıtlı değil):\n";
+        for (const auto& w : warnings) {
+            msg += L"  • ";
+            msg += w;
+            msg += L"\n";
+        }
+        publishStatus(msg);
+    }
+}
+
+bool Application::saveUserCatalog() {
+    std::string err;
+    if (!userCatalog_.save(userCatalogPath(), err)) {
+        const std::runtime_error e(err.empty() ? "katalog yazılamadı" : err);
+        showError(L"Kullanıcı kataloğu kaydedilemedi", e);
+        return false;
+    }
+    return true;
+}
+
+bool Application::saveBridgeAsCatalogTemplate(const std::filesystem::path& packageDir,
+                                              const std::wstring& templateName) {
+    if (templateName.empty()) {
+        publishStatus(L"Şablon kaydedilemedi: ad boş.");
+        return false;
+    }
+    // 1. Paket oku + dogrula (OCC gerektirmez).
+    mm::BridgePackage pkg;
+    std::vector<std::string> errors;
+    if (!mm::readBridgePackage(packageDir.string(), pkg, errors)) {
+        std::string detail = "package read/validation failed";
+        for (const auto& e : errors) {
+            detail += "\n- ";
+            detail += e;
+        }
+        const std::runtime_error importError(detail);
+        showError(L"Tekla Bridge şablonu okunamadı", importError);
+        return false;
+    }
+
+    // 2. Bridge -> native esleme (parametreler + esdegerlik). Profil katalogu
+    //    uye kesit boyutlari icin; bos olsa da parametre cikarimi calisir.
+    ensureProfileCatalog();
+    const mm::BridgeNativeMapping mapping = mm::mapBridgeToNative(pkg, profileCatalog_);
+
+    // 3. Family kaynak tipini registry'den coz. Yalnizca desteklenen family
+    //    (simdilik tekla_shear_plate_146) derive edilebilir.
+    const mm::ComponentType* source =
+        mm::ComponentRegistry::instance().findType(mapping.detected ? mapping.typeId : L"");
+    if (!source) {
+        publishStatus(L"Şablon kaydedilemedi: kaynak component desteklenen bir family değil.");
+        return false;
+    }
+
+    // 4. Override defaults (belirsiz (Unresolved) parametreler family varsayilanini korur).
+    const std::vector<CompParam> overrides = mm::mappedParamsToCompParams(mapping, true);
+
+    // 5. DURUSTLUK: unsupported geometri var mi? Varsa SESSIZCE calisir parametrik
+    //    component olarak kaydetme. Kullaniciya sor; yalnizca acikca etiketlenmis
+    //    REFERANS sablonu olarak kaydetmeye izin ver.
+    const bool hasUnsupported =
+        mapping.equivalence.state == mm::BridgeEquivalenceState::NotEquivalent ||
+        !mapping.unsupportedFeatures.empty();
+    bool isReferenceOnly = false;
+    std::wstring referenceNote;
+    if (hasUnsupported) {
+        std::wstring why = L"";
+        for (const auto& f : mapping.unsupportedFeatures) {
+            why += L"  • ";
+            why += std::wstring(f.begin(), f.end());
+            why += L"\n";
+        }
+        for (const auto& iss : mapping.equivalence.issues) {
+            why += L"  • ";
+            why += std::wstring(iss.begin(), iss.end());
+            why += L"\n";
+        }
+        std::wstring msg = L"Bu bağlantı native generator'ın TAM yeniden üretemediği geometri içeriyor:\n\n";
+        msg += why;
+        msg += L"\nÇalışır parametrik component olarak kaydedilemez. Yalnızca açıkça etiketlenmiş "
+               L"REFERANS şablonu olarak kaydedilebilir (parametreleri değiştirilemez, geometri birebir "
+               L"üretilmez).\n\nReferans şablonu olarak kaydetmek istiyor musunuz?";
+        const int r = MessageBoxW(window_, msg.c_str(), L"Model Maker — Unsupported Geometri",
+                                  MB_YESNO | MB_ICONWARNING);
+        if (r != IDYES) {
+            publishStatus(L"Şablon kaydedilmedi (unsupported geometri — kullanıcı iptal etti).");
+            return false;
+        }
+        isReferenceOnly = true;
+        referenceNote = L"unsupported geometri: " + std::wstring(why.begin(), why.end());
+    }
+
+    // 6. Sablon turet + benzersizlestir + katalog'a ekle + diske yaz + registry'ye kaydet.
+    mm::UserCatalogEntry entry = mm::deriveComponentTemplate(*source, templateName, overrides,
+                                                             isReferenceOnly, referenceNote);
+    userCatalog_.ensureUnique(entry);
+    userCatalog_.addOrUpdate(entry);
+    if (!saveUserCatalog()) return false;
+    const auto warnings = userCatalog_.registerInto(mm::ComponentRegistry::instance(),
+                                                    mm::ComponentDialogRegistry::instance());
+    if (!warnings.empty()) {
+        std::wstring msg = L"Şablon kaydedildi ancak bazı kayıtlar yapılamadı:\n";
+        for (const auto& w : warnings) {
+            msg += L"  • ";
+            msg += w;
+            msg += L"\n";
+        }
+        publishStatus(msg);
+    }
+
+    std::wstring status = L"Şablon kataloğa kaydedildi: " + entry.displayName;
+    status += isReferenceOnly ? L" (REFERANS şablonu — parametrik değil)"
+                              : L" (parametrik)";
+    status += L". Yeniden başlatınca Component Kataloğu menüsünde görünür.";
+    publishStatus(status);
+    return true;
+}
+
 void Application::showError(const wchar_t* action, const std::exception& error) const {
     std::wstring message(action); message += L".\n\n";
     const std::string detail = error.what(); message.append(detail.begin(), detail.end());
     MessageBoxW(window_, message.c_str(), L"Model Maker", MB_OK | MB_ICONERROR);
 }
-
 } // namespace mm

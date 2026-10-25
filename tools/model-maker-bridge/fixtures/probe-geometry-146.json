@@ -1,0 +1,68 @@
+{
+  "_comment": "FIXTURE: dogrulanmis Tekla 2025 SP6 146 degerlerinden elle yazilmis PROBE girdisi. Gercek ASUS bridge-geometry-probe-2 ciktisi DEGILDIR; convert_probe_to_mmbridge.py'nin girdi sozlesmesini dogrulamak icindir.",
+  "probeVersion": 2,
+  "sourceVersion": "2025 SP6",
+  "sourceModelIdentifier": "FIXTURE-PROBE-146-V2",
+  "exportTimestamp": "2026-10-20T00:00:00Z",
+  "component": {
+    "type": "Connection",
+    "number": 146,
+    "name": "Shear plate simple",
+    "id": 5245,
+    "guid": "5245"
+  },
+  "primary": {
+    "id": 5165,
+    "profile": "HEA400",
+    "material": "S235JR",
+    "role": "COLUMN"
+  },
+  "secondary": [
+    {
+      "id": 5213,
+      "profile": "HEA300",
+      "material": "S235JR",
+      "role": "BEAM"
+    }
+  ],
+  "children": [
+    {
+      "id": 5673,
+      "type": "ContourPlate",
+      "role": "shear_tab",
+      "profile": "PL10",
+      "material": "S235JR",
+      "parent": 5245,
+      "bbox": { "min": [4.25, 195, 6959], "max": [14.25, 365, 7159] },
+      "topology": { "faces": 6, "loops": 6, "faceVertexOccurrences": 24, "holeLoops": 0 }
+    },
+    {
+      "id": 5837,
+      "type": "BoltGroup",
+      "role": "beam_bolts",
+      "size": "M20",
+      "standardCode": 7990,
+      "tolerance": 2,
+      "partToBeBolted": 5213,
+      "partToBoltTo": 5673,
+      "boltPositions": [
+        [0, 265, 7119],
+        [0, 325, 7119],
+        [0, 265, 7059],
+        [0, 325, 7059],
+        [0, 265, 6999],
+        [0, 325, 6999]
+      ]
+    },
+    {
+      "id": 5701,
+      "type": "Weld",
+      "role": "weld",
+      "weldType": "fillet",
+      "size": 5,
+      "main": 5165,
+      "secondary": 5673,
+      "position": "above_below"
+    }
+  ]
+}

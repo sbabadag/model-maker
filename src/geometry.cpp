@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <map>
 #include <numbers>
 #include <stdexcept>
 #include <utility>
@@ -30,6 +31,27 @@ Vec3 Vec3::operator+(const Vec3& other) const noexcept { return {x + other.x, y 
 Vec3 Vec3::operator-(const Vec3& other) const noexcept { return {x - other.x, y - other.y, z - other.z}; }
 Vec3 Vec3::operator*(double scalar) const noexcept { return {x * scalar, y * scalar, z * scalar}; }
 
+ProfileSectionFrame profileSectionFrame(const Vec3& axisDirection,
+                                        const Vec3& referenceNormal) noexcept {
+    ProfileSectionFrame frame;
+    const auto axis = normalized(axisDirection);
+    if (!axis) return frame; // sifir uzunluk: dunya cercevesi
+    frame.axis = *axis;
+    // Genislik ekseni = n x axis → baslik plakalari (normal = height) n
+    // duzleminin PARALELI olur. n = dunya Z iken sonuc eskisiyle BIREBIR ayni
+    // ({-ay, ax, 0}).
+    const Vec3 worldUp{0.0, 0.0, 1.0};
+    const Vec3 reference = normalized(referenceNormal).value_or(worldUp);
+    // Kademeli dusme: (1) istenen duzlem, (2) n ∥ axis ise dunya Z kurali,
+    // (3) o da dejenere ise (dusey uye) dunya X — eski davranis.
+    auto width = normalized(cross3(reference, *axis));
+    if (!width) width = normalized(cross3(worldUp, *axis));
+    frame.width = width ? *width : Vec3{1.0, 0.0, 0.0};
+    const auto height = normalized(cross3(frame.axis, frame.width));
+    frame.height = height ? *height : Vec3{0.0, 1.0, 0.0}; // sag elli: Z ^ X = Y
+    return frame;
+}
+
 std::optional<WorkPlane> WorkPlane::fromThreePoints(Vec3 first, Vec3 second, Vec3 third) noexcept {
     const auto uAxis = normalized(second - first);
     if (!uAxis) return std::nullopt;
@@ -38,6 +60,22 @@ std::optional<WorkPlane> WorkPlane::fromThreePoints(Vec3 first, Vec3 second, Vec
     const auto vAxis = normalized(cross3(*normalAxis, *uAxis));
     if (!vAxis) return std::nullopt;
     return WorkPlane{first, *uAxis, *vAxis, *normalAxis};
+}
+
+std::optional<WorkPlane> constructionPlaneFrame(const WireframeModel& model) noexcept {
+    const auto& vertices = model.vertices();
+    if (model.constructionKind() != ConstructionKind::Plane || vertices.size() != 4)
+        return std::nullopt;
+    for (const auto& v : vertices)
+        if (!std::isfinite(v.x) || !std::isfinite(v.y) || !std::isfinite(v.z)) return std::nullopt;
+    const auto uAxis = normalized(vertices[1] - vertices[0]);
+    if (!uAxis) return std::nullopt;
+    const auto vAxis = normalized(vertices[3] - vertices[0]);
+    if (!vAxis) return std::nullopt;
+    const auto normalAxis = normalized(cross3(*uAxis, *vAxis));
+    if (!normalAxis) return std::nullopt;
+    const Vec3 origin = (vertices[0] + vertices[1] + vertices[2] + vertices[3]) * 0.25;
+    return WorkPlane{origin, *uAxis, *vAxis, *normalAxis};
 }
 
 Vec3 WorkPlane::fromPlane(Vec2 point) const noexcept {
@@ -112,6 +150,18 @@ WorkPlane WorkPlane::rotatedZ(double angleDeg) const noexcept {
         u * c + v * s,
         v * c - u * s,
         normal};
+}
+
+// Noktayi is duzlemine IZ DUSUR: normal yonundeki bilesen atilir.
+// Iki noktali gorunuste secilen noktalar icin kullanilir (bkz. application.cpp):
+// gorunus duzleminin normali = bakis yonu oldugundan izdusum EKRANDA noktayi
+// oynatmaz, ama duzlem disi geometriye snap olsa bile tasima/kopyalama duzlem
+// ICINDE kalir.
+Vec3 WorkPlane::projectPoint(Vec3 point) const noexcept {
+    const auto n = normalized(normal);
+    if (!n) return point; // bozuk normal: dokunma
+    const double offset = dot3(point - origin, *n);
+    return point - (*n) * offset;
 }
 
 WireframeModel::WireframeModel(std::vector<Vec3> vertices, std::vector<Edge> edges,
@@ -254,6 +304,18 @@ void WireframeModel::translate(const Vec3& offset) noexcept {
     if (analyticCenter_) *analyticCenter_ = *analyticCenter_ + offset;
 }
 
+void WireframeModel::affineAbout(const Vec3& center, const std::array<double, 9>& m) noexcept {
+    const auto apply = [&](const Vec3& v) {
+        const Vec3 d = v - center;
+        return Vec3{center.x + m[0] * d.x + m[1] * d.y + m[2] * d.z,
+                    center.y + m[3] * d.x + m[4] * d.y + m[5] * d.z,
+                    center.z + m[6] * d.x + m[7] * d.y + m[8] * d.z};
+    };
+    for (auto& vertex : vertices_) vertex = apply(vertex);
+    if (insertionPoint_) *insertionPoint_ = apply(*insertionPoint_);
+    if (analyticCenter_) *analyticCenter_ = apply(*analyticCenter_);
+}
+
 void WireframeModel::rotateAroundZ(const Vec3& center, double radians) noexcept {
     const double cosine = std::cos(radians);
     const double sine = std::sin(radians);
@@ -287,6 +349,133 @@ void WireframeModel::rotateAroundAxis(const Vec3& center, const Vec3& axis, doub
     for (auto& vertex : vertices_) vertex = rotatePoint(vertex);
     if (insertionPoint_) *insertionPoint_ = rotatePoint(*insertionPoint_);
     if (analyticCenter_) *analyticCenter_ = rotatePoint(*analyticCenter_);
+}
+
+std::optional<MeshRayHit> raycastMesh(const WireframeModel& model, Vec3 rayOrigin,
+                                      Vec3 rayDirection) noexcept {
+    const std::vector<Vec3>& verts = model.vertices();
+    const std::vector<Face>& faces = model.faces();
+    if (verts.empty() || faces.empty()) return std::nullopt;
+    // Isin yonunu birimle (giris birim olmayabilir).
+    double rl = std::sqrt(rayDirection.x * rayDirection.x + rayDirection.y * rayDirection.y +
+                          rayDirection.z * rayDirection.z);
+    if (rl <= 1e-12) return std::nullopt;
+    const Vec3 dir{rayDirection.x / rl, rayDirection.y / rl, rayDirection.z / rl};
+
+    const double eps = 1e-9;
+    std::optional<MeshRayHit> best;
+    for (std::size_t faceIdx = 0; faceIdx < faces.size(); ++faceIdx) {
+        const Face& face = faces[faceIdx];
+        if (face.size() < 3) continue;
+        // Fan ucleme: {v0, vi, vi+1} — poligon ve ucgen girdileri birlikte isler.
+        const Vec3& v0 = verts[face[0]];
+        for (std::size_t i = 1; i + 1 < face.size(); ++i) {
+            const Vec3& v1 = verts[face[i]];
+            const Vec3& v2 = verts[face[i + 1]];
+            const Vec3 e1{v1.x - v0.x, v1.y - v0.y, v1.z - v0.z};
+            const Vec3 e2{v2.x - v0.x, v2.y - v0.y, v2.z - v0.z};
+            const Vec3 pvec{dir.y * e2.z - dir.z * e2.y, dir.z * e2.x - dir.x * e2.z,
+                            dir.x * e2.y - dir.y * e2.x};
+            const double det = e1.x * pvec.x + e1.y * pvec.y + e1.z * pvec.z;
+            if (std::abs(det) < eps) continue;
+            const double inv = 1.0 / det;
+            const Vec3 tvec{rayOrigin.x - v0.x, rayOrigin.y - v0.y, rayOrigin.z - v0.z};
+            const double u = (tvec.x * pvec.x + tvec.y * pvec.y + tvec.z * pvec.z) * inv;
+            if (u < 0.0 || u > 1.0) continue;
+            const Vec3 qvec{tvec.y * e1.z - tvec.z * e1.y, tvec.z * e1.x - tvec.x * e1.z,
+                            tvec.x * e1.y - tvec.y * e1.x};
+            const double v = (dir.x * qvec.x + dir.y * qvec.y + dir.z * qvec.z) * inv;
+            if (v < 0.0 || u + v > 1.0) continue;
+            const double t = (e2.x * qvec.x + e2.y * qvec.y + e2.z * qvec.z) * inv;
+            if (t < 0.0) continue;
+            if (best && t >= best->distance) continue;
+            Vec3 n{e1.y * e2.z - e1.z * e2.y, e1.z * e2.x - e1.x * e2.z,
+                   e1.x * e2.y - e1.y * e2.x};
+            const double nl = std::sqrt(n.x * n.x + n.y * n.y + n.z * n.z);
+            if (nl <= 1e-12) continue;
+            n = Vec3{n.x / nl, n.y / nl, n.z / nl};
+            MeshRayHit hit;
+            hit.point = Vec3{rayOrigin.x + dir.x * t, rayOrigin.y + dir.y * t,
+                             rayOrigin.z + dir.z * t};
+            hit.normal = n;
+            hit.distance = t;
+            hit.faceIndex = faceIdx;
+            best = hit;
+        }
+    }
+    return best;
+}
+
+std::vector<std::size_t> planarFaceTriangleGroup(const WireframeModel& model,
+                                                 std::size_t startTriangle) noexcept {
+    const auto& faces = model.faces();
+    const auto& verts = model.vertices();
+    std::vector<std::size_t> result;
+    if (startTriangle >= faces.size()) return result;
+    if (faces[startTriangle].size() < 3) {
+        result.push_back(startTriangle);
+        return result;
+    }
+    // Ucgen normali (capraz carpim), birimlenmis.
+    const auto triNormal = [&](std::size_t fi, double& nx, double& ny, double& nz) {
+        const auto& f = faces[fi];
+        if (f.size() < 3) return false;
+        const Vec3& a = verts[f[0]];
+        const Vec3& b = verts[f[1]];
+        const Vec3& c = verts[f[2]];
+        const double e1x = b.x - a.x, e1y = b.y - a.y, e1z = b.z - a.z;
+        const double e2x = c.x - a.x, e2y = c.y - a.y, e2z = c.z - a.z;
+        nx = e1y * e2z - e1z * e2y;
+        ny = e1z * e2x - e1x * e2z;
+        nz = e1x * e2y - e1y * e2x;
+        const double l = std::sqrt(nx * nx + ny * ny + nz * nz);
+        if (l <= 1e-12) return false;
+        nx /= l; ny /= l; nz /= l;
+        return true;
+    };
+    double rnx = 0.0, rny = 0.0, rnz = 0.0;
+    if (!triNormal(startTriangle, rnx, rny, rnz)) {
+        result.push_back(startTriangle);
+        return result;
+    }
+    // Kenar (siralanmis iki kose) -> ucgen listesi komsuluk haritasi.
+    std::map<std::pair<std::size_t, std::size_t>, std::vector<std::size_t>> edgeMap;
+    for (std::size_t fi = 0; fi < faces.size(); ++fi) {
+        const auto& f = faces[fi];
+        if (f.size() < 3) continue;
+        for (std::size_t k = 0; k < f.size(); ++k) {
+            std::size_t a = f[k], b = f[(k + 1) % f.size()];
+            if (a > b) std::swap(a, b);
+            edgeMap[{a, b}].push_back(fi);
+        }
+    }
+    // Es-duzlemsel baglantili yayilim.
+    std::vector<bool> visited(faces.size(), false);
+    std::vector<std::size_t> stack{startTriangle};
+    visited[startTriangle] = true;
+    while (!stack.empty()) {
+        const std::size_t fi = stack.back();
+        stack.pop_back();
+        result.push_back(fi);
+        const auto& f = faces[fi];
+        for (std::size_t k = 0; k < f.size(); ++k) {
+            std::size_t a = f[k], b = f[(k + 1) % f.size()];
+            if (a > b) std::swap(a, b);
+            const auto it = edgeMap.find({a, b});
+            if (it == edgeMap.end()) continue;
+            for (const std::size_t nb : it->second) {
+                if (nb == fi || visited[nb]) continue;
+                double nnx = 0.0, nny = 0.0, nnz = 0.0;
+                if (!triNormal(nb, nnx, nny, nnz)) continue;
+                const double dot = nnx * rnx + nny * rny + nnz * rnz;
+                if (std::abs(dot) > 0.999) {
+                    visited[nb] = true;
+                    stack.push_back(nb);
+                }
+            }
+        }
+    }
+    return result;
 }
 
 } // namespace mm
