@@ -119,8 +119,19 @@ def check(nc_file, package_root):
     frame = probe.get("dstvCoordinateSystem")
     centre_match = None
     frame_bounds = None
+    normal_aligns_plate_thickness = None
     global_centres = None
     if frame:
+        # The NC front-face normal must follow the measured plate thickness.
+        plate_spans = {k: bbox["max"][k] - bbox["min"][k]
+                       for k in ("x", "y", "z")}
+        thin_axis = min(plate_spans, key=plate_spans.get)
+        normal = frame["zAxis"]
+        normal_len = math.sqrt(sum(normal[k]**2 for k in ("x", "y", "z")))
+        normal_aligns_plate_thickness = (
+            normal_len > 1e-8 and
+            abs(normal[thin_axis]) / normal_len >= 0.999
+        )
         global_centres = [nc_to_world(frame, hole) for hole in nc["holes"]]
         # The exported BoltPositions may have a different coordinate along
         # the drill normal. Compare only the 2 dimensions transverse to the
@@ -159,6 +170,7 @@ def check(nc_file, package_root):
         "dstvFrameAvailable": bool(frame),
         "ncCentersMatchTeklaTransversePositions": centre_match,
         "ncCentersInsideMeasuredPlateBBox": frame_bounds,
+        "dstvNormalAlignsPlateThickness": normal_aligns_plate_thickness,
         "ncHoleCentersGlobalOnDstvPlane": global_centres,
         "theoreticalPlateVolumeAfterSixThroughHolesMm3": round(expected_volume, 3),
         "drillingAuthorized": False,
@@ -179,7 +191,8 @@ def main():
             not result["holeDiameterMatchesNominalPlusTolerance"] or
             result["markMatchesNcHeader"] is False or
             result["ncCentersMatchTeklaTransversePositions"] is False or
-            result["ncCentersInsideMeasuredPlateBBox"] is False):
+            result["ncCentersInsideMeasuredPlateBBox"] is False or
+            result["dstvNormalAlignsPlateThickness"] is False):
         raise SystemExit(1)
 
 
