@@ -1470,10 +1470,20 @@ void ComponentDialogWidget::enforceHaunchInputLimits() {
     const double manualH=value(L"endPlateHeight",0.0);
     const double top=value(L"boltEdgeTop",55.0);
     const double bottom=value(L"boltEdgeBottom",55.0);
-    const double available=manualH>0.0
-        ?manualH-top-bottom-hole-0.20
+    // Respect the user's existing row count/pitch first. Reducing plate
+    // height must not silently remove a row of bolts or alter their pitch;
+    // it stops at the true geometric minimum for the CURRENT grid.
+    if(manualH>0.0) {
+        const int existingRows=count(L"boltCountY",2);
+        const double existingPitch=value(L"boltPitchY",80.0);
+        requiredIfExplicit(L"endPlateHeight",
+            top+bottom+2.0*(existingRows-1)*existingPitch+hole+0.20);
+    }
+    const double effectiveH=value(L"endPlateHeight",0.0);
+    const double available=effectiveH>0.0
+        ?effectiveH-top-bottom-hole-0.20
         :haunchBeamHeight_+depth-40.0-hole-0.20;
-    if(haunchBeamHeight_>0.0 || manualH>0.0) {
+    if(haunchBeamHeight_>0.0 || effectiveH>0.0) {
         const int maxRows=std::clamp(
             1+static_cast<int>(std::floor(std::max(0.0,available)/(2.0*pitchMin))),
             1,4);
@@ -1489,7 +1499,7 @@ void ComponentDialogWidget::enforceHaunchInputLimits() {
     const double spanDiv=2.0*std::max(1,rows-1);
     // Two rows/groups: separation between the innermost rows must exceed
     // the physical hole diameter. One row/group leaves pitch unused.
-    const double maxPitch=(haunchBeamHeight_>0.0 || manualH>0.0)
+    const double maxPitch=(haunchBeamHeight_>0.0 || effectiveH>0.0)
         ?available/spanDiv:500.0;
     bounds(L"boltPitchY",pitchMin,std::min(500.0,
            rows>1?maxPitch:500.0));
@@ -1505,7 +1515,10 @@ void ComponentDialogWidget::enforceHaunchInputLimits() {
     // equal instead of silently displaying a larger measured value.
     const double rightNeeded=std::max(sideMin,
         haunchBeamWidth_+20.0-spanX-left);
-    if(haunchBeamWidth_>0.0 && rightNeeded<=200.0)
+    // Beam-width cover is an AUTO-sizing rule, not a minimum width for
+    // plates that the user deliberately dimensions more narrowly.
+    if(value(L"endPlateWidth",0.0)==0.0 &&
+       haunchBeamWidth_>0.0 && rightNeeded<=200.0)
         bounds(L"boltEdgeRight",rightNeeded,200.0);
     const double right=value(L"boltEdgeRight",35.0);
     // Fixed-width edit mode: keep the legacy centred grid, but let the
