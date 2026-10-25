@@ -178,6 +178,7 @@ private:
     QCheckBox* weldsCheck_{};                       // ust cubuk: kaynaklar acik/kapali
     std::wstring highlightedRow_;
     double haunchBeamHeight_{0.0};  // actual selected beam, for bolt row fit
+    double haunchBeamWidth_{0.0};   // actual selected flange envelope, for bolt edge fit
 };
 
 } // namespace mm
