@@ -577,6 +577,22 @@ int main(int argc, char** argv) {
                   std::fabs(holeDiameter->value()-22.0)<0.001 &&
                   left && left->previewPlan().ok,
                   "P4: Get restores 20/22 without retaining old M36 bounds");
+
+            // Reproduce the user's saved-dialog screenshot directly: loaded
+            // values are M25 and old hole=22. Loading must repair the draft
+            // and all four previews without changing the real Document.
+            h40.setParams({
+                {L"boltDiameter",mm::CompParamValue{25.0}},
+                {L"holeDiameter",mm::CompParamValue{22.0}}
+            });
+            QApplication::processEvents();
+            CHECK(std::fabs(holeDiameter->value()-27.0)<0.001 &&
+                  left && left->previewPlan().ok,
+                  "P4: existing M25/22 dialog loads as valid M25/27 draft");
+            for(auto* p:previews)
+                CHECK(p->previewPlan().ok,
+                      "P4: loaded saved dimensions keep 3D/orthographic previews");
+
         }
     }
 
