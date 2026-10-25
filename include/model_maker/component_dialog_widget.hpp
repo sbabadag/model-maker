@@ -38,6 +38,8 @@ class QDialog;
 class QGridLayout;
 
 namespace mm {
+class ComponentLivePreviewWidget;
+struct ComponentInput;
 
 // Sematik tuval: normalize 2B çizimi çizer, hotspot tıklamasını yakalar.
 class ComponentSchematicView : public QWidget {
