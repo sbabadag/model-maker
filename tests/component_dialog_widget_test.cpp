@@ -469,15 +469,18 @@ int main(int argc, char** argv) {
             left->selectRole("haunch_bolts_lower");
             QApplication::processEvents();
             const auto lower=left->visibleOverlayParams();
-            CHECK(lower.size()==7 &&
+            CHECK(lower.size()==10 &&
                   std::find(lower.begin(),lower.end(),L"boltCountX")!=lower.end() &&
                   std::find(lower.begin(),lower.end(),L"boltCountY")!=lower.end() &&
                   std::find(lower.begin(),lower.end(),L"boltPitchX")!=lower.end() &&
                   std::find(lower.begin(),lower.end(),L"boltPitchY")!=lower.end() &&
                   std::find(lower.begin(),lower.end(),L"boltDiameter")!=lower.end() &&
                   std::find(lower.begin(),lower.end(),L"holeDiameter")!=lower.end() &&
-                  std::find(lower.begin(),lower.end(),L"boltEdge")!=lower.end(),
-                  "P4B: lower group exposes two integer counts and five dimensions");
+                  std::find(lower.begin(),lower.end(),L"boltEdgeLeft")!=lower.end() &&
+                  std::find(lower.begin(),lower.end(),L"boltEdgeRight")!=lower.end() &&
+                  std::find(lower.begin(),lower.end(),L"boltEdgeTop")!=lower.end() &&
+                  std::find(lower.begin(),lower.end(),L"boltEdgeBottom")!=lower.end(),
+                  "P4D: lower group exposes four separately editable edges");
             const auto lowerMetrics=left->boltOverlayMetrics("haunch_bolts_lower");
             const auto upperMetrics=left->boltOverlayMetrics("haunch_bolts_upper");
             CHECK(lowerMetrics.valid && upperMetrics.valid &&
@@ -498,7 +501,7 @@ int main(int argc, char** argv) {
                   "P4B: four centre-to-edge values measured separately per bolt group");
             left->selectRole("haunch_bolts_upper");
             QApplication::processEvents();
-            CHECK(left->visibleOverlayParams().size()==7 &&
+            CHECK(left->visibleOverlayParams().size()==10 &&
                   left->boltOverlayMetrics(left->activeRole()).valid,
                   "P4B: upper bolt selection exposes both counts and all dimensions");
             QDoubleSpinBox* hole3d=nullptr;
@@ -605,18 +608,47 @@ int main(int argc, char** argv) {
             CHECK(left->isVisibleTo(&h40),
                   "Haunch 40: orbit/front/side/top main view stays active");
             auto* pitch=h40.findChild<QDoubleSpinBox*>(QStringLiteral("boltPitchX"));
-            auto* edge=h40.findChild<QDoubleSpinBox*>(QStringLiteral("boltEdge"));
-            CHECK(pitch && edge,"P4B: bolt pitch and end-plate edge controls found");
-            if(pitch && edge) {
+            auto* edgeL=h40.findChild<QDoubleSpinBox*>(QStringLiteral("boltEdgeLeft"));
+            auto* edgeR=h40.findChild<QDoubleSpinBox*>(QStringLiteral("boltEdgeRight"));
+            auto* edgeT=h40.findChild<QDoubleSpinBox*>(QStringLiteral("boltEdgeTop"));
+            auto* edgeB=h40.findChild<QDoubleSpinBox*>(QStringLiteral("boltEdgeBottom"));
+            CHECK(pitch && edgeL && edgeR && edgeT && edgeB,
+                  "P4D: pitch and four individual edge controls found");
+            if(pitch && edgeL && edgeR && edgeT && edgeB) {
                 pitch->setValue(150.0);
-                edge->setValue(42.0);
+                edgeL->setValue(42.0);
+                edgeR->setValue(62.0);
+                edgeT->setValue(70.0);
+                edgeB->setValue(80.0);
                 QApplication::processEvents();
-                const auto live=left->boltOverlayMetrics("haunch_bolts_lower");
-                CHECK(live.valid && std::fabs(live.pitchX-150.0)<1e-6 &&
-                      std::fabs(live.leftEdge-42.0)<1e-6 &&
-                      std::fabs(live.rightEdge-42.0)<1e-6 &&
+                const auto lower=left->boltOverlayMetrics("haunch_bolts_lower");
+                const auto upper=left->boltOverlayMetrics("haunch_bolts_upper");
+                CHECK(lower.valid && upper.valid &&
+                      std::fabs(lower.pitchX-150.0)<1e-6 &&
+                      std::fabs(lower.leftEdge-42.0)<1e-6 &&
+                      std::fabs(lower.rightEdge-62.0)<1e-6 &&
+                      std::fabs(lower.bottomEdge-80.0)<1e-6 &&
+                      std::fabs(upper.topEdge-70.0)<1e-6 &&
                       left->previewPlan().ok,
-                      "P4B: dimension labels track actual resized bolts and end-plate");
+                      "P4D: four independently edited edge dimensions follow real geometry");
+                left->selectRole("haunch_bolts_lower");
+                QApplication::processEvents();
+                QDoubleSpinBox* editLeft=nullptr;
+                for(auto* editor:left->findChildren<QDoubleSpinBox*>())
+                    if(editor->toolTip()==QStringLiteral("boltEdgeLeft"))
+                        editLeft=editor;
+                CHECK(editLeft!=nullptr,"P4D: 3D left edge editor exists");
+                if(editLeft) {
+                    editLeft->setValue(48.0);
+                    QApplication::processEvents();
+                    const auto values=h40.resultParams();
+                    const auto* v=mm::findParam(values,L"boltEdgeLeft");
+                    CHECK(v && std::holds_alternative<double>(v->value) &&
+                          std::fabs(std::get<double>(v->value)-48.0)<1e-6 &&
+                          std::fabs(left->boltOverlayMetrics("haunch_bolts_lower").leftEdge
+                                    -48.0)<1e-6,
+                          "P4D: changing 3D eL synchronizes tab and physical hole centres");
+                }
             }
             CHECK(!left->boltOverlayMetrics("haunch_web").valid,
                   "P4B: no bolt dimensions attached to non-bolt role");
