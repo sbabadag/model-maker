@@ -710,6 +710,22 @@ namespace ModelMaker.TeklaBridge.Extractor
         private static PlateHoleReportProbe BuildPlateHoleProbe(ContourPlate plate, Diagnostics diag)
         {
             var probe = new PlateHoleReportProbe();
+            // Stable Tekla part identity and the actual DSTV-local frame used
+            // for NC export, NOT automatically trusted for hole cutting.
+            try
+            {
+                probe.PartMark = Safe(() => plate.GetPartMark(), "");
+                var cs = plate.GetDSTVCoordinateSystem();
+                if (cs != null)
+                    probe.DstvCoordinateSystem = BridgeVectorMath.OrthonormalFrame(
+                        ToVec3(cs.Origin), ToVec3(cs.AxisX), ToVec3(cs.AxisY));
+                else
+                    diag.Warnings.Add("ContourPlate DSTV frame null.");
+            }
+            catch (Exception ex)
+            {
+                diag.Warnings.Add("ContourPlate DSTV frame probe: " + ex.Message);
+            }
             try
             {
                 int n = -1;
