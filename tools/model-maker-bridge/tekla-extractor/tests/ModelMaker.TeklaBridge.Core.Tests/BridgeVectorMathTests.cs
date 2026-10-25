@@ -45,6 +45,44 @@ namespace ModelMaker.TeklaBridge.Core.Tests
         }
 
         [Fact]
+        public void BoltFrameProbeSerializesWithoutAuthorizingDrilling()
+        {
+            var bg = new BoltGroupInfo
+            {
+                Size = "M20",
+                Axis = "",
+                AxisSource = "",
+                Direction = null,
+                FrameProbe = new BoltFrameProbe
+                {
+                    CoordinateSystem = BridgeVectorMath.OrthonormalFrame(
+                        new Vec3 { X = 0, Y = 0, Z = 0 },
+                        new Vec3 { X = 0, Y = 1000, Z = 0 },
+                        new Vec3 { X = 0, Y = 0, Z = 1000 }),
+                    NormalCandidate = new Vec3 { X = 1, Y = 0, Z = 0 },
+                    VerifiedForDrilling = false
+                },
+                HoleSettingsProbe = new BoltHoleSettingsProbe
+                {
+                    PlainHoleType = "HOLE_TYPE_THROUGH",
+                    Hole1 = true,
+                    VerifiedForDrilling = false
+                }
+            };
+            var json = Newtonsoft.Json.JsonConvert.SerializeObject(bg);
+            Assert.Contains("\"frameProbe\"", json);
+            Assert.Contains("\"holeSettingsProbe\"", json);
+            var copy = Newtonsoft.Json.JsonConvert.DeserializeObject<BoltGroupInfo>(json);
+            Assert.NotNull(copy.FrameProbe);
+            Assert.Equal(1.0, copy.FrameProbe.CoordinateSystem.ZAxis.X, 10);
+            Assert.False(copy.FrameProbe.VerifiedForDrilling);
+            Assert.False(copy.HoleSettingsProbe.VerifiedForDrilling);
+            Assert.True(copy.HoleSettingsProbe.Hole1);
+            Assert.Equal("", copy.Axis);
+            Assert.Null(copy.Direction);
+        }
+
+        [Fact]
         public void DegenerateAxesAreRejectedInsteadOfInvented()
         {
             Assert.Throws<InvalidOperationException>(() =>
