@@ -25,6 +25,7 @@
 #include "model_maker/profile_database.hpp"
 
 #include <TopoDS_Shape.hxx>
+#include <filesystem>
 
 namespace mm {
 
