@@ -1582,11 +1582,11 @@ void ComponentDialogWidget::enforceHaunchInputLimits(const std::wstring& changed
                 QSignalBlocker block(s);
                 s->setValue(achieved);
             }
-    } else if(haunchBeamWidth_>0.0) {
-        const double required=haunchBeamWidth_+20.0-spanX-left;
-        if(required<=200.0)
-            bounds(L"boltEdgeRight",std::max(minSide,required),200.0);
     }
+    // A wider auto plate is allowed to have a larger achieved margin.
+    // Never rewrite shared horizontal offsets while the user changes
+    // either group's counts/pitches: doing so would displace the OTHER
+    // group's bolts even though the column did not move.
     const double flangeWidth=value(L"haunchFlangeWidth",0.0);
     if(flangeWidth>0.0)
         minExplicit(L"haunchFlangeWidth",value(L"haunchWebThickness",10.0));
