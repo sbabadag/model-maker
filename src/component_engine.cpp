@@ -1708,7 +1708,7 @@ GenerationPlan generateHaunch40(const ComponentInput& input) noexcept {
           edgeT>holeD*0.5 && edgeB>holeD*0.5 &&
           flW >= webT && actualW+1e-6 >= spanX + edgeL + edgeR &&
           actualW >= spanX + holeD + 15.0 &&
-          actualH>=minimumPlateH)) {
+          actualH+1e-6>=minimumPlateH)) {
         plan.ok=false;
         plan.error=L"Haunch 40: haunch/levha/bulon olculeri tutarsiz";
         return plan;
@@ -1908,9 +1908,10 @@ GenerationPlan generateHaunch40(const ComponentInput& input) noexcept {
         // second in-plane vector is axis CROSS xDir = end.v (right-handed).
         // The origin is the first (lower-left) point of countX x countY
         // rectangular pattern, NOT the centre of that group.
-        // Anchor the bolt rows to the REAL beam/haunch envelope. Moving
-        // the plate centre for unequal top/bottom edges must NOT drag both
-        // bolt groups with it (otherwise eT/eB measurements are wrong).
+        // These are the absolute vertical positions of the two bolt-grid
+        // centres in the actual connection section frame. When a user
+        // resizes the plate, groups follow its selected eT/eB clearances,
+        // while legacy automatic plate sizing reproduces old positions.
         const Vec3 groupCentre=add(
             add(p.facePoint,scale(dir,gap+endT*0.5)),
             scale(end.v,offset));
