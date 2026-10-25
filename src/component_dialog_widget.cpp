@@ -521,7 +521,10 @@ ComponentDialogWidget::ComponentDialogWidget(const ComponentDialogDefinition& de
         for(const auto& [name, editor]:editors_) {
             if(auto* d=qobject_cast<QDoubleSpinBox*>(editor)) {
                 QObject::connect(d,QOverload<double>::of(&QDoubleSpinBox::valueChanged),
-                                 this,[this](double){updatePreviewFromForm();});
+                                 this,[this,name](double){
+                                     releaseFixedPlateSizeOnEdgeEdit(name);
+                                     updatePreviewFromForm();
+                                 });
             } else if(auto* integer=qobject_cast<QSpinBox*>(editor)) {
                 QObject::connect(integer,QOverload<int>::of(&QSpinBox::valueChanged),
                                  this,[this](int){updatePreviewFromForm();});
@@ -1385,6 +1388,25 @@ void ComponentDialogWidget::setPreviewInput(const ComponentInput& input) {
         }
     }
 }
+void ComponentDialogWidget::releaseFixedPlateSizeOnEdgeEdit(
+    const std::wstring& name) {
+    if(def_.typeId!=L"tekla_haunch_40")return;
+    // Exact independently requested edges and a separately fixed plate
+    // width/height are over-constrained. A deliberate edge edit switches
+    // only the corresponding dimension back to auto-generated (0 mm).
+    const wchar_t* key=nullptr;
+    if(name==L"boltEdgeLeft" || name==L"boltEdgeRight")
+        key=L"endPlateWidth";
+    else if(name==L"boltEdgeTop" || name==L"boltEdgeBottom")
+        key=L"endPlateHeight";
+    if(!key)return;
+    const auto it=editors_.find(key);
+    if(it==editors_.end())return;
+    if(auto* d=qobject_cast<QDoubleSpinBox*>(it->second)) {
+        QSignalBlocker guard(d);
+        if(d->value()>0.0)d->setValue(0.0);
+    }
+}
 void ComponentDialogWidget::enforceHaunchInputLimits() {
     if(def_.typeId!=L"tekla_haunch_40")return;
     // Unlike independent schema min/max, these values are physically coupled.
@@ -1508,6 +1530,7 @@ void ComponentDialogWidget::updateFormFromPreview(const std::wstring& name,
         const QSignalBlocker guard(ck->second);
         ck->second->setChecked(true);
     }
+    releaseFixedPlateSizeOnEdgeEdit(name);
     onHotspotClicked(QString::fromStdWString(name));
     updatePreviewFromForm();
 }
