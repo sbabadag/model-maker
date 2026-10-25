@@ -538,6 +538,7 @@ namespace ModelMaker.TeklaBridge.Extractor
                 // not hole dimensions or verified drill permission.
                 info.HoleSettingsProbe = new BoltHoleSettingsProbe
                 {
+                    BoltPresent = Safe(() => (bool?)bg.Bolt, (bool?)null),
                     PlainHoleType = Safe(() => bg.PlainHoleType.ToString(), ""),
                     SpecialHoleType = Safe(() => bg.HoleType.ToString(), ""),
                     SlottedHoleX = Safe(() => bg.SlottedHoleX, 0.0),
@@ -549,6 +550,37 @@ namespace ModelMaker.TeklaBridge.Extractor
                     Hole5 = Safe(() => bg.Hole5, false),
                     VerifiedForDrilling = false
                 };
+
+                // The five Hole1..Hole5 flags SELECT SPECIAL HOLES in plies,
+                // not whether normal circular bolt holes exist.
+                // A false flag cannot establish a solid/uncut target.
+                try
+                {
+                    var parts = bg.BoltHolesAttributes;
+                    if (parts != null)
+                    {
+                        var perPly = new List<BoltPlyHoleProbe>();
+                        for (int i = 0; i < parts.Count; ++i)
+                        {
+                            var item = parts[i];
+                            if (item == null) continue;
+                            perPly.Add(new BoltPlyHoleProbe
+                            {
+                                PlyIndex = i + 1,
+                                SpecialHoleType = Safe(() => item.HoleType.ToString(), ""),
+                                LongHoleX = Safe(() => item.LongHoleX, 0.0),
+                                LongHoleY = Safe(() => item.LongHoleY, 0.0),
+                                SlotOffsetX = Safe(() => item.SlotOffsetX, 0.0),
+                                SlotOffsetY = Safe(() => item.SlotOffsetY, 0.0)
+                            });
+                        }
+                        info.HoleSettingsProbe.PerPlySpecialHoles = perPly;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    diag.Warnings.Add("BoltHolesAttributes probe okunamadi: " + ex.Message);
+                }
 
                 // Preserve source BoltPositions AS RETURNED. Do not silently
                 // reinterpret active selection-plane positions as world points,
