@@ -90,6 +90,13 @@ int main() {
     }
     ck(gp.plates.size()==4,"4 generated plates");
     ck(gp.boltGroups.size()==2,"2x2 + 2x2 bolts");
+    ck(gp.cuts.size()==1 && gp.cuts[0].target==s.beam &&
+       gp.cuts[0].kind==CutKind::PlaneCut,
+       "Stage40 actual secondary beam face cut planned");
+    ck(gp.plates.size()>=4 &&
+       std::fabs(gp.plates[3].width-300.0)<0.01 &&
+       std::fabs(gp.plates[3].height-300.0)<0.01,
+       "Stage40 cap EXACT HEB300 section footprint (no 20mm margin)");
     // The plate centre and actual OCC solid must be at the TOP of column,
     // not hovering over the attached IPE beam.
     ck(gp.plates.size()>=4 && std::fabs(gp.plates[3].center.z-3005.0)<0.01,
@@ -167,8 +174,31 @@ int main() {
                 actualBoltCount+=static_cast<int>(boltGroupBoltOrigins(group).size());
             }
             ck(actualBoltCount==8,"Hotfix exactly 8 native M20 bolt solids");
-            ck(s.doc.cutModifiers().size()==16,
-               "Hotfix 8 bores through exactly 2 correct targets");
+            ck(s.doc.cutModifiers().size()==17,
+               "Hotfix 16 bolt bores + 1 beam face cut");
+            int matched=0;
+            for(const auto& cut:s.doc.cutModifiers()) {
+                if(cut.kind==CutKind::PlaneCut && cut.target==s.beam &&
+                   cut.name=="Haunch 40 - Beam End at Column Face + Plate")
+                    ++matched;
+            }
+            ck(matched==1,"Stage40 Document has exact beam end plane cut");
+            // The original IPE extends INTO the column. After the modifier
+            // its BRep beam shape must stop against the beam-side end plate.
+            const TopoDS_Shape* cutBeam=s.store->find(s.beam);
+            ck(cutBeam && !cutBeam->IsNull(),
+               "Stage40 cut beam OCC shape remains valid");
+            if(cutBeam && !cutBeam->IsNull() && !gp.cuts.empty()) {
+                Bnd_Box box;
+                BRepBndLib::Add(*cutBeam,box);
+                Standard_Real x0=0,y0=0,z0=0,x1=0,y1=0,z1=0;
+                box.Get(x0,y0,z0,x1,y1,z1);
+                // Our fixture beam approaches from +Y, so the cut is
+                // perpendicular to +Y. The end cannot remain inside column.
+                const double cutY=gp.cuts.front().planeOrigin.y;
+                ck(y0>=cutY-0.1 && y0<cutY+0.1,
+                   "Stage40 OCC beam actually trimmed at end plate face");
+            }
         }
         for(EntityId id:saved.ownedPlateIds) {
             const TopoDS_Shape* solid=s.store->find(id);
