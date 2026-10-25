@@ -251,7 +251,7 @@ namespace ModelMaker.TeklaBridge.Extractor
                 FormatVersion = "3.0",
                 SourceApplication = "Tekla Structures",
                 SourceVersion = ReadTeklaVersion(),
-                Producer = new Producer { Name = "ModelMaker.TeklaBridge", Version = "3.0.0" },
+                Producer = new Producer { Name = "ModelMaker.TeklaBridge", Version = "3.1.0-stage3a" },
                 SourceComponentType = type,
                 SourceComponentNumber = number,
                 SourceComponentName = Safe(() => component.Name, ""),
@@ -261,12 +261,12 @@ namespace ModelMaker.TeklaBridge.Extractor
                 CoordinateSystem = "TeklaGlobal",
                 LengthUnit = "mm",
                 ComponentIdentifier = guid,
-                ExporterVersion = "3.0.0",
+                ExporterVersion = "3.1.0-stage3a",
                 KnownLimitations = new List<string>
                 {
                     "Mesh yalniz deliksiz (holeLoops==0) katilarda fan triangulation ile uretilir (approximate).",
                     "Eğrisel yuzeyler fan triangulation ile yaklasik temsil edilir (approximate).",
-                    "Parametreler yalnizca --attributes ile verilen ham Tekla attribute adlariyla okunur."
+                    "Parametreler yalnizca --attributes / --attributes-file ile verilen ham Tekla attribute adlariyla okunur."
                 }
             };
         }
@@ -342,14 +342,15 @@ namespace ModelMaker.TeklaBridge.Extractor
                                                             Diagnostics diag)
         {
             var result = new List<ParameterRecord>();
+            var seenNames = new HashSet<string>(StringComparer.Ordinal);
             if (attributeNames == null || attributeNames.Count == 0)
             {
-                diag.Warnings.Add("Parametre listesi bos: --attributes ile ham Tekla attribute adlari verilmedikce parameters.json bos kalir.");
+                diag.Warnings.Add("Parametre listesi bos: --attributes veya --attributes-file ile ham Tekla attribute adlari verilmedikce parameters.json bos kalir.");
                 return result;
             }
             foreach (var name in attributeNames)
             {
-                if (string.IsNullOrWhiteSpace(name)) continue;
+                if (string.IsNullOrWhiteSpace(name) || !seenNames.Add(name)) continue;
                 double d = 0.0;
                 if (Safe(() => component.GetAttribute(name, ref d), false))
                 { result.Add(new ParameterRecord { Name = name, Type = "Double", Value = d, Source = "GetAttribute", Readable = "ok", Confidence = "observed" }); continue; }
