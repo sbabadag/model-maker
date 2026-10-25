@@ -4,6 +4,7 @@
 
 #include <QDoubleSpinBox>
 #include <QPainter>
+#include <QFontMetrics>
 #include <QPainterPath>
 #include <QPolygonF>
 #include <QMouseEvent>
@@ -178,8 +179,8 @@ ComponentLivePreviewWidget::ComponentLivePreviewWidget(QWidget* parent)
     // Short labels correspond to the SAME native schema parameters as the
     // real property panel. No second parameter source of truth.
     // Grouped by the physical child that the user can click.
-    // At most four boxes appear at once instead of the entire dialog.
-    const std::array<std::tuple<const wchar_t*,const wchar_t*,const char*,QPointF>,15> defs{{
+    // Bolt groups have five edit boxes: pitch X/Y, diameter, hole and edge.
+    const std::array<std::tuple<const wchar_t*,const wchar_t*,const char*,QPointF>,16> defs{{
         {L"haunchLength",L"L","haunch_web",QPointF(35,-90)},
         {L"haunchDepth",L"D","haunch_web",QPointF(-150,15)},
         {L"haunchTipDepth",L"tip","haunch_web",QPointF(45,75)},
@@ -192,6 +193,7 @@ ComponentLivePreviewWidget::ComponentLivePreviewWidget(QWidget* parent)
         {L"boltPitchX",L"g","haunch_bolts_upper",QPointF(-150,55)},
         {L"boltPitchY",L"p","haunch_bolts_upper",QPointF(55,55)},
         {L"boltDiameter",L"M","haunch_bolts_upper",QPointF(50,-75)},
+        {L"holeDiameter",L"delik","haunch_bolts_upper",QPointF(50,-35)},
         {L"boltEdge",L"e","haunch_bolts_upper",QPointF(-145,-65)},
         {L"stiffenerThickness",L"t stiff","haunch_beam_stiffener",QPointF(75,35)},
         {L"topPlateThickness",L"t cap","haunch_top_plate",QPointF(60,-70)}
@@ -423,6 +425,59 @@ Vec3 ComponentLivePreviewWidget::roleAnchor(const std::string& role) const {
     }
     return worldCenter_;
 }
+
+ComponentLivePreviewWidget::BoltOverlayMetrics
+ComponentLivePreviewWidget::boltOverlayMetrics(const std::string& role) const {
+    BoltOverlayMetrics m;
+    if(!plan_.ok || role.empty())return m;
+    for(const auto& group:plan_.boltGroups)
+        m.totalCount+=static_cast<int>(boltGroupBoltOrigins(group).size());
+    for(std::size_t i=0;i<plan_.boltGroups.size();++i) {
+        if(i>=plan_.boltGroupKeys.size() || plan_.boltGroupKeys[i]!=role)
+            continue;
+        const auto& group=plan_.boltGroups[i];
+        const PlateSpec* plate=nullptr;
+        for(std::size_t j=0;j<plan_.plates.size();++j) {
+            if(j<plan_.plateKeys.size() &&
+               plan_.plateKeys[j]==group.targetOwnedPlateRole) {
+                plate=&plan_.plates[j];
+                break;
+            }
+        }
+        const auto positions=boltGroupBoltOrigins(group);
+        if(!plate || positions.empty() || plate->width<=0.0 ||
+           plate->height<=0.0)return m;
+
+        double xmin=std::numeric_limits<double>::max(), xmax=-xmin;
+        double ymin=xmin, ymax=-xmin;
+        for(const Vec3& pt:positions) {
+            const Vec3 d=minus(pt,plate->center);
+            const double x=dot(d,plate->u),y=dot(d,plate->v);
+            xmin=std::min(xmin,x);xmax=std::max(xmax,x);
+            ymin=std::min(ymin,y);ymax=std::max(ymax,y);
+        }
+        m.valid=true;
+        m.count=static_cast<int>(positions.size());
+        m.columns=group.countX;
+        m.rows=group.countY;
+        m.nominalDiameter=group.params.nominalDiameter;
+        m.holeDiameter=group.params.holeDiameter;
+        m.xmin=xmin;m.xmax=xmax;m.ymin=ymin;m.ymax=ymax;
+        m.pitchX=m.columns>1?(xmax-xmin)/(m.columns-1):0.0;
+        m.pitchY=m.rows>1?(ymax-ymin)/(m.rows-1):0.0;
+        // These are centre-to-edge distances, not hole-edge clearances.
+        m.leftEdge=plate->width*0.5+xmin;
+        m.rightEdge=plate->width*0.5-xmax;
+        m.bottomEdge=plate->height*0.5+ymin;
+        m.topEdge=plate->height*0.5-ymax;
+        m.plateWidth=plate->width;m.plateHeight=plate->height;
+        m.plateThickness=plate->thickness;
+        m.plateCenter=plate->center;
+        m.plateU=plate->u;m.plateV=plate->v;m.plateAxis=plate->axis;
+        return m;
+    }
+    return m;
+}
 void ComponentLivePreviewWidget::positionEditors() {
     if(!plan_.ok) {
         for(auto& c:callouts_)c.spin->hide();
@@ -552,7 +607,99 @@ void ComponentLivePreviewWidget::paintEvent(QPaintEvent*) {
         painter.drawText(QPointF(c.spin->x()+3,c.spin->y()-4),
                          QString::fromStdWString(c.shortLabel));
     }
+    const auto boltMetrics=boltOverlayMetrics(activeRole_);
+    if(boltMetrics.valid)drawBoltOverlay(painter,boltMetrics);
 }
+
+void ComponentLivePreviewWidget::drawBoltOverlay(
+    QPainter& p, const BoltOverlayMetrics& m) {
+    p.save();
+    QFont dimFont=p.font();
+    dimFont.setPointSizeF(8.0);
+    dimFont.setBold(true);
+    p.setFont(dimFont);
+
+    const auto point=[&](double u,double v) {
+        // Slightly in front of the real end-plate face; measured endpoints
+        // remain tied to the generator's actual plate and bolt coordinates.
+        return plus(plus(m.plateCenter,mul(m.plateU,u)),
+                    plus(mul(m.plateV,v),
+                         mul(m.plateAxis,m.plateThickness*0.5+1.0)));
+    };
+    const auto dim=[&](Vec3 from,Vec3 to,const QString& label,
+                      QPointF offset) {
+        QPointF a=project(from),b=project(to);
+        if(std::hypot(a.x()-b.x(),a.y()-b.y())<5.0)return;
+        const QPointF aa=a+offset,bb=b+offset;
+        p.setPen(QPen(QColor("#25647c"),1.25));
+        p.setBrush(Qt::NoBrush);
+        p.drawLine(a,aa);p.drawLine(b,bb);p.drawLine(aa,bb);
+        const QPointF direction=bb-aa;
+        const double distance=std::hypot(direction.x(),direction.y());
+        if(distance>8.0) {
+            const QPointF dir=direction/distance;
+            const QPointF normal(-dir.y(),dir.x());
+            const QPointF ar1=aa+dir*5.0+normal*2.4;
+            const QPointF ar2=aa+dir*5.0-normal*2.4;
+            const QPointF br1=bb-dir*5.0+normal*2.4;
+            const QPointF br2=bb-dir*5.0-normal*2.4;
+            p.drawLine(aa,ar1);p.drawLine(aa,ar2);
+            p.drawLine(bb,br1);p.drawLine(bb,br2);
+        }
+        const QPointF middle=(aa+bb)*0.5;
+        const int textWidth=p.fontMetrics().horizontalAdvance(label);
+        const QRectF labelRect(middle.x()-textWidth*0.5-5.0,
+                               middle.y()-9.5,textWidth+10.0,19.0);
+        p.setPen(QPen(QColor("#a9c1d0"),0.8));
+        p.setBrush(QColor(253,254,255,236));
+        p.drawRoundedRect(labelRect,4.0,4.0);
+        p.setPen(QColor("#194b65"));
+        p.drawText(labelRect,Qt::AlignCenter,label);
+    };
+    const auto mm=[](double v) {return QString::number(v,'f',1);};
+    const double hw=m.plateWidth*0.5,hh=m.plateHeight*0.5;
+    // Six dimensions: two centre-to-centre pitches and four actual
+    // centre-to-plate-edge clearances for the selected bolt group.
+    if(m.columns>1)
+        dim(point(m.xmin,m.ymin),point(m.xmax,m.ymin),
+            QStringLiteral("g ")+mm(m.pitchX),QPointF(0,24));
+    if(m.rows>1)
+        dim(point(m.xmin,m.ymin),point(m.xmin,m.ymax),
+            QStringLiteral("p ")+mm(m.pitchY),QPointF(-30,0));
+    dim(point(-hw,m.ymin),point(m.xmin,m.ymin),
+        QStringLiteral("eL ")+mm(m.leftEdge),QPointF(0,46));
+    dim(point(m.xmax,m.ymin),point(hw,m.ymin),
+        QStringLiteral("eR ")+mm(m.rightEdge),QPointF(0,46));
+    dim(point(m.xmax,m.ymax),point(m.xmax,hh),
+        QStringLiteral("eT ")+mm(m.topEdge),QPointF(28,0));
+    dim(point(m.xmin,-hh),point(m.xmin,m.ymin),
+        QStringLiteral("eB ")+mm(m.bottomEdge),QPointF(-48,0));
+
+    // Readable summary remains useful when orthographic projection makes
+    // a dimension nearly edge-on, or Qt spinboxes cover a leader line.
+    const qreal panelW=218.0, panelH=109.0;
+    const QRectF panel(std::max(8.0,width()-panelW-12.0),
+                       59.0,panelW,panelH);
+    p.setPen(QPen(QColor("#a6bdcf"),1.0));
+    p.setBrush(QColor(255,255,255,236));
+    p.drawRoundedRect(panel,7.0,7.0);
+    p.setPen(QColor("#1b3b52"));
+    p.drawText(panel.adjusted(9,6,-8,-83),Qt::AlignLeft|Qt::AlignVCenter,
+        QStringLiteral("%1 adet / %2 toplam · %3x%4")
+            .arg(m.count).arg(m.totalCount).arg(m.columns).arg(m.rows));
+    p.setPen(QColor("#2a5570"));
+    p.drawText(panel.adjusted(9,30,-8,-59),Qt::AlignLeft|Qt::AlignVCenter,
+        QStringLiteral("M%1  /  delik Ø%2")
+            .arg(mm(m.nominalDiameter)).arg(mm(m.holeDiameter)));
+    p.drawText(panel.adjusted(9,53,-8,-36),Qt::AlignLeft|Qt::AlignVCenter,
+        QStringLiteral("g %1   p %2 mm").arg(mm(m.pitchX),mm(m.pitchY)));
+    p.drawText(panel.adjusted(9,76,-8,-13),Qt::AlignLeft|Qt::AlignVCenter,
+        QStringLiteral("eL %1  eR %2  eT %3  eB %4")
+            .arg(mm(m.leftEdge),mm(m.rightEdge),
+                 mm(m.topEdge),mm(m.bottomEdge)));
+    p.restore();
+}
+
 void ComponentLivePreviewWidget::drawModel(QPainter& p) {
     hits_.clear();
     boltHits_.clear();
