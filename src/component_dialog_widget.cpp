@@ -1512,12 +1512,14 @@ void ComponentDialogWidget::enforceHaunchInputLimits(const std::wstring& changed
             const double occupied=current.clear+other.clear+
                                   current.hole+other.hole+other.spanY()+0.20;
             const double available=std::max(0.0,height-occupied);
-            const int maxRows=std::clamp(1+
-               static_cast<int>(std::floor(available/
-                                    std::max(40.0,current.py))),1,4);
-            if(auto* s=integer(current.prefix+L"BoltCountY")) {
-                QSignalBlocker block(s);
-                s->setRange(1,maxRows);
+            if(changed==current.prefix+L"BoltCountY") {
+                const int maxRows=std::clamp(1+
+                   static_cast<int>(std::floor(available/
+                                        std::max(40.0,current.py))),1,4);
+                if(auto* s=integer(current.prefix+L"BoltCountY")) {
+                    QSignalBlocker block(s);
+                    s->setRange(1,maxRows);
+                }
             }
             const int rows=static_cast<int>(
                 value(current.prefix+L"BoltCountY",2.0));
