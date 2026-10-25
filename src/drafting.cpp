@@ -7,8 +7,6 @@
 #include <functional>
 #include <limits>
 #include <numbers>
-#include <map>
-#include <set>
 #include <string>
 #include <vector>
 
@@ -22,38 +20,6 @@ double distance2D(const Vec3& a, const Vec3& b) noexcept {
 
 double dot2D(const Vec3& a, const Vec3& b) noexcept { return a.x * b.x + a.y * b.y; }
 
-Vec3 cross3(const Vec3& u, const Vec3& v) noexcept {
-    return Vec3{u.y * v.z - u.z * v.y, u.z * v.x - u.x * v.z, u.x * v.y - u.y * v.x};
-}
-
-// Iki aile aksinin GERCEK kesisimi (yapi gridi caprazi). Gorunus duzlemi
-// icinde iki aile birbirine DIK dogru parcalaridir; kesim noktasi cozulur ve
-// her iki parcada da ARALIGINDA olmasi sart kosulur.
-//
-// NEDEN: eski formul {xa->from.x, ya->from.y, xa->from.z} idi — x bileseni
-// X-ailesinden, y bileseni Y-ailesinden, z bileseni X-ailesinin BASINDAN.
-// Bu YALNIZ plan (XY) duzleminde dogruydu; elevasyonda (XZ/YZ) z bileseni
-// taban kotuna cekiliyordu ve kesisimler yanlis yerde olusuyordu (olculdu:
-// XZ elevasyonda z=3600 kesisimi z=zBottom'a dusuyordu).
-bool lineCrossing(const GridAxisLine& a, const GridAxisLine& b, Vec3& out) noexcept {
-    const Vec3 dA = a.to - a.from;
-    const Vec3 dB = b.to - b.from;
-    const Vec3 n = cross3(dA, dB);
-    const double n2 = n.x * n.x + n.y * n.y + n.z * n.z;
-    if (n2 <= epsilon) return false;   // paralel/dejenere
-    const Vec3 w = b.from - a.from;
-    const Vec3 wxd = cross3(w, dB);
-    // A.from + t*dA = kesisim  ->  t = dot((B.from-A.from) x dB, dA x dB)/|n|^2
-    const double t = (wxd.x * n.x + wxd.y * n.y + wxd.z * n.z) / n2;
-    if (t < 0.0 || t > 1.0) return false;
-    out = a.from + dA * t;
-    const double dB2 = dB.x * dB.x + dB.y * dB.y + dB.z * dB.z;
-    if (dB2 <= epsilon) return false;
-    const double s = ((out.x - b.from.x) * dB.x + (out.y - b.from.y) * dB.y +
-                      (out.z - b.from.z) * dB.z) / dB2;
-    return s >= -1e-9 && s <= 1.0 + 1e-9;
-}
-
 int priority(SnapType type) noexcept {
     switch (type) {
     case SnapType::Endpoint: return 0;
@@ -63,7 +29,6 @@ int priority(SnapType type) noexcept {
     case SnapType::Midpoint: return 4;
     case SnapType::Center: return 5;
     case SnapType::GeometricCenter: return 6;
-    case SnapType::ProfileCenter: return 6;   // merkez ailesi (GeometricCenter ile ayni oncelik)
     case SnapType::Quadrant: return 7;
     case SnapType::Node: return 8;
     case SnapType::Insertion: return 9;
@@ -161,32 +126,10 @@ void addCandidate(std::vector<Candidate>& candidates, const Vec3& point, SnapTyp
         candidates.push_back({point, type, distance});
 }
 
-// Onceden hesaplanmis (cezali) mesafe ile aday — derinlik cezasi tasiyan
-// apparent-int ciftleri icin: metric yeniden hesaplanmaz.
-void addCandidateAtDistance(std::vector<Candidate>& candidates, const Vec3& point, SnapType type,
-                            double tolerance, double distance) {
-    if (std::isfinite(distance) && distance <= tolerance + epsilon)
-        candidates.push_back({point, type, distance});
-}
-
-// 3B modda NEAREST/EXTENSION 't' parametresi ekran-uzayinda cozulur:
-// cursor'un is-duzlemi unproject'i kenar uzerinden bambaşka bir yerden
-// gecer (ekran ustunde kenarin tam ustunde bile) — NEAREST hic dogmazdi.
-struct ScreenSpaceNearest {
-    const Camera* camera{};
-    int width{};
-    int height{};
-    Vec2 cursor{};
-    // SOLID gorunumu: snap yalniz gorunur (kameraya donuk) kenarlarda.
-    // Wireframe/saylam/hidden'da tum kenarlar cizilir — filtre yok.
-    bool visibleEdgesOnly{};
-};
-
 std::vector<Candidate> objectCandidates(const Vec3& cursor, const Document& document,
                                         double tolerance, const Metric& metric,
                                         std::optional<Vec3> referencePoint,
-                                        const std::vector<std::size_t>* candidateIndices = nullptr,
-                                        const ScreenSpaceNearest* screenSpace = nullptr) {
+                                        const std::vector<std::size_t>* candidateIndices = nullptr) {
     std::vector<Candidate> candidates;
     struct Segment { Vec3 a; Vec3 b; bool analyticCircle{}; };
     std::vector<Segment> segments;
@@ -198,7 +141,7 @@ std::vector<Candidate> objectCandidates(const Vec3& cursor, const Document& docu
     }
     std::size_t totalVertices{}, totalEdges{};
     for (const auto modelIndex : *candidateIndices) {
-        if (!document.modelIsPickable(modelIndex)) continue;
+        if (!document.modelIsEditable(modelIndex)) continue;
         totalVertices += document.models()[modelIndex].vertices().size();
         totalEdges += document.models()[modelIndex].edges().size();
     }
@@ -208,80 +151,11 @@ std::vector<Candidate> objectCandidates(const Vec3& cursor, const Document& docu
     const std::size_t edgeStride = std::max<std::size_t>(1, (totalEdges + candidateBudget - 1) /
                                                              candidateBudget);
 
-    // SANAL PROFIL MERKEZI icin sinir kutulari: `Document::modelBounds()`
-    // ONBELLEKLI AABB'dir (spatial index ile ayni kaynak) — ikinci bir sinir
-    // kutusu hesabi YAZILMAZ. Dizin model indeksiyle paraleldir.
-    const auto& modelBounds = document.modelBounds();
-
     for (const auto modelIndex : *candidateIndices) {
-        if (!document.modelIsPickable(modelIndex)) continue;
+        if (!document.modelIsEditable(modelIndex)) continue;
         const auto& model = document.models()[modelIndex];
         const auto circle = detectCircle(model);
         const auto& vertices = model.vertices();
-        // SOLID gorunur-kenar filtresi: kenar, yalnizca bitisik yuzlerden
-        // en az biri kameraya donukse aday olur. Yuz normali kameraya
-        // donuk = normal * ileri yonu > 0 (view-z buyur). Kenar-yuz
-        // eslesmesi ucgen index ciftleriyle (uzun kenarlar bolenleriyle).
-        std::set<std::pair<std::size_t, std::size_t>> visibleEdges;
-        if (screenSpace && screenSpace->visibleEdgesOnly && !model.faces().empty()) {
-            // Model merkezi: yuz normalinin ISARETINI duzeltmek icin. OCC
-            // tesselasyonunun normal yonu GARANTI DEGIL — olcum (IPE200, plan):
-            // UST yuz -Z normalli geliyordu, yani gorunur yuz "gizli" sayilip
-            // kenarlari Solid stilde eleniyordu. Normal, yuz merkezinden model
-            // merkezine giden vektore gore DISA yonlendirilir (kapali kati).
-            Vec3 modelCenter{};
-            if (!vertices.empty()) {
-                Vec3 sum{};
-                for (const auto& v : vertices) sum = sum + v;
-                modelCenter = sum * (1.0 / static_cast<double>(vertices.size()));
-            }
-            // kenar -> yuz esle (hizli hash: kenar index cifti -> ilk yuz)
-            std::map<std::pair<std::size_t, std::size_t>, std::vector<const std::vector<std::size_t>*>> edgeFaces;
-            for (const auto& face : model.faces()) {
-                for (std::size_t fi = 0; fi < face.size(); ++fi) {
-                    std::size_t va = face[fi], vb = face[(fi + 1) % face.size()];
-                    if (va > vb) std::swap(va, vb);
-                    edgeFaces[{va, vb}].push_back(&face);
-                }
-            }
-            for (const auto& edge : model.edges()) {
-                std::size_t va = edge.from, vb = edge.to;
-                if (va > vb) std::swap(va, vb);
-                const auto found = edgeFaces.find({va, vb});
-                if (found == edgeFaces.end()) continue;
-                for (const auto* face : found->second) {
-                    if (face->size() < 3) continue;
-                    const Vec3& f0 = vertices[(*face)[0]];
-                    const Vec3& f1 = vertices[(*face)[1]];
-                    const Vec3& f2 = vertices[(*face)[2]];
-                    const Vec3 e1v{f1.x - f0.x, f1.y - f0.y, f1.z - f0.z};
-                    const Vec3 e2v{f2.x - f0.x, f2.y - f0.y, f2.z - f0.z};
-                    double nx = e1v.y * e2v.z - e1v.z * e2v.y;
-                    double ny = e1v.z * e2v.x - e1v.x * e2v.z;
-                    double nz = e1v.x * e2v.y - e1v.y * e2v.x;
-                    const double nl = std::sqrt(nx * nx + ny * ny + nz * nz);
-                    if (nl < epsilon) continue;
-                    nx /= nl; ny /= nl; nz /= nl;
-                    // Yuz merkezi: normal bu merkezden MODEL merkezine gore
-                    // DISA yonlendirilir (OCC normalleri ic/dis olabilir).
-                    Vec3 faceCenter{};
-                    for (const auto index : *face) faceCenter = faceCenter + vertices[index];
-                    faceCenter = faceCenter * (1.0 / static_cast<double>(face->size()));
-                    if (nx * (faceCenter.x - modelCenter.x) +
-                        ny * (faceCenter.y - modelCenter.y) +
-                        nz * (faceCenter.z - modelCenter.z) < 0.0) {
-                        nx = -nx; ny = -ny; nz = -nz;
-                    }
-                    const Vec3 fn = screenSpace->camera->viewTransform(
-                        {f0.x + nx, f0.y + ny, f0.z + nz});
-                    const Vec3 f0v = screenSpace->camera->viewTransform(f0);
-                    if (fn.z > f0v.z) {
-                        visibleEdges.insert({va, vb});
-                        break;
-                    }
-                }
-            }
-        }
         if (model.isPointEntity() && !vertices.empty())
             addCandidate(candidates, vertices.front(), SnapType::Node, tolerance, metric);
         if (!circle && !model.isPointEntity()) {
@@ -293,55 +167,23 @@ std::vector<Candidate> objectCandidates(const Vec3& cursor, const Document& docu
             const auto& edge = model.edges()[edgeIndex];
             const Vec3& a = vertices[edge.from];
             const Vec3& b = vertices[edge.to];
-            // SOLID: gorunur kenar degilse atla (endpoint/mid/near/perp yok).
-            // Filtre YALNIZCA gorunurluk GERCEKTEN siniflandirilmissa uygulanir.
-            // Yuz verisi olmayan model (duz cizgi, polyline, tel kafes) icin
-            // visibleEdges BOS kalir; eski kosul bu durumda TUM kenarlari
-            // eliyordu → varsayilan Solid stilde cizgi/ORTA-NOKTA snap'i
-            // tamamen kaybolurdu. Yuz yoksa siniflandirma yapilamaz: filtreyi
-            // atla (tum kenarlar aday) — Wireframe davranisi.
-            if (!visibleEdges.empty()) {
-                if (visibleEdges.find(std::make_pair(std::min(edge.from, edge.to),
-                                                     std::max(edge.from, edge.to))) == visibleEdges.end())
-                    continue;
-            }
             segments.push_back({a, b, circle.has_value()});
             if (circle) continue;
             addCandidate(candidates, (a + b) * 0.5, SnapType::Midpoint, tolerance, metric);
-            // 3B DOT: eski dot2D dikey (Z) kenarlarda lengthSquared=0 uretip
-            // kenari tamamen atliyordu — katilarin dik kenarlarinda near/perp
-            // snap olmuyordu. Perp ayagi artik gercek 3B dikme.
             const Vec3 direction = b - a;
-            const double lengthSquared = direction.x * direction.x + direction.y * direction.y +
-                                         direction.z * direction.z;
+            const double lengthSquared = dot2D(direction, direction);
             if (lengthSquared <= epsilon) continue;
-            const auto dot3 = [](const Vec3& u, const Vec3& v) {
-                return u.x * v.x + u.y * v.y + u.z * v.z;
-            };
-            // NEAREST t: 3B'de ekran-uzayi izdusumu (afin — kapali formul),
-            // 2B'de duzlem cursor'i zaten dogru.
-            double rawT;
-            if (screenSpace) {
-                const Vec2 pa = screenSpace->camera->project(a, screenSpace->width, screenSpace->height);
-                const Vec2 pb = screenSpace->camera->project(b, screenSpace->width, screenSpace->height);
-                const double sdx = pb.x - pa.x, sdy = pb.y - pa.y;
-                const double screenLen2 = sdx * sdx + sdy * sdy;
-                rawT = screenLen2 > epsilon
-                    ? ((screenSpace->cursor.x - pa.x) * sdx + (screenSpace->cursor.y - pa.y) * sdy) / screenLen2
-                    : 0.0;
-            } else {
-                rawT = dot3(cursor - a, direction) / lengthSquared;
-            }
+            const double rawT = dot2D(cursor - a, direction) / lengthSquared;
             const double clampedT = std::clamp(rawT, 0.0, 1.0);
             addCandidate(candidates, a + direction * clampedT, SnapType::Nearest, tolerance, metric);
             if (rawT < 0.0 || rawT > 1.0)
                 addCandidate(candidates, a + direction * rawT, SnapType::Extension, tolerance, metric);
             if (referencePoint) {
-                const double perpendicularT = dot3(*referencePoint - a, direction) / lengthSquared;
+                const double perpendicularT = dot2D(*referencePoint - a, direction) / lengthSquared;
                 if (perpendicularT >= 0.0 && perpendicularT <= 1.0)
                     addCandidate(candidates, a + direction * perpendicularT,
                                  SnapType::Perpendicular, tolerance, metric);
-                const double parallelT = dot3(cursor - *referencePoint, direction) / lengthSquared;
+                const double parallelT = dot2D(cursor - *referencePoint, direction) / lengthSquared;
                 addCandidate(candidates, *referencePoint + direction * parallelT,
                              SnapType::Parallel, tolerance, metric);
             }
@@ -393,22 +235,6 @@ std::vector<Candidate> objectCandidates(const Vec3& cursor, const Document& docu
 
         if (const auto insertion = model.insertionPoint())
             addCandidate(candidates, *insertion, SnapType::Insertion, tolerance, metric);
-
-        // SANAL PROFIL MERKEZI (kullanici sarti: "profilin tam merkezinde bir
-        // sanal snap noktasi olustur"). Yalnizca PROFIL elemanlari icin
-        // uretilir (profileName dolu) — duz cizgi/kutu/silindir etkilenmez.
-        //
-        // Merkez = elemanin sinir kutusunun merkezi: simetrik kesitte kesitin
-        // agirlik merkezinden ve boyuna orta noktadan gecer (profil ust
-        // yuzunden oturdugu icin govde asagi sarkar; AABB merkezi tam olarak
-        // kesitin ortasidir). GERCEK bir kose/kenar DEGIL: bu yuzden kenar
-        // gorunurluk filtresinden ve vertex/edge listelerinden BAGIMSIZDIR —
-        // Wireframe/Solid ayni, 2B ve 3B ayni sekilde uretir.
-        if (!model.properties().profileName.empty() && modelIndex < modelBounds.size()) {
-            const Bounds3& bounds = modelBounds[modelIndex];
-            addCandidate(candidates, (bounds.minimum + bounds.maximum) * 0.5,
-                         SnapType::ProfileCenter, tolerance, metric);
-        }
     }
 
     constexpr std::size_t intersectionSegmentBudget = 256;
@@ -431,84 +257,8 @@ std::vector<Candidate> objectCandidates(const Vec3& cursor, const Document& docu
     return candidates;
 }
 
-// YAPI GRIDI: aks cizgileri TUM snap turleri icin cizilebilir geometridir
-// (kullanici sarti: "grid'e tum snaplar yapismali"). Ayni sekil model kenarlari
-// icin uretilen adaylarin karsiligi uretilir: uc, orta nokta, aks uzerinde en
-// yakin nokta ve referans noktasindan aksa dikme ayagi. Kesisimler (yapi gridi
-// caprazi) SnapType::Grid olarak kalir — mevcut davranis ve isaret korunur.
-//
-// Geometri KAYNAGI `grid.axes`'tir (rebuildGridAxes turetir) — ikinci bir
-// geometri hesabi YAZMA. 3B'de `screenSpace` verilir: en yakin nokta ekran
-// uzayinda cozulur (model kenarlarindaki NEAREST ile ayni kalip), 2B'de duzlem
-// imleci zaten dogrudur. Her turun kapisi `choose(enabledTypes)` maskesidir;
-// bu yuzden kullanici bir snap turunu kapattiysa grid de o turu uretmez.
-void addGridLineCandidates(std::vector<Candidate>& candidates, const Document& document,
-                           const Vec3& cursor, double tolerance, const Metric& metric,
-                           const std::optional<Vec3>& referencePoint,
-                           const ScreenSpaceNearest* screenSpace = nullptr,
-                           GridViewPlane plane = GridViewPlane::XY) {
-    const auto dot3 = [](const Vec3& u, const Vec3& v) {
-        return u.x * v.x + u.y * v.y + u.z * v.z;
-    };
-    for (const auto& grid : document.grids()) {
-        if (!grid.visible) continue;
-        // GORUNUS DUZLEMI: cizimle AYNI geometri kaynagi (`gridAxesForView`).
-        // Eskiden `grid.axes` (PLAN tabani) kullaniliyordu; o taban tum plan
-        // cizgilerini z=origin.z'de tutar, kat cizgileri ise yalniz on/arka
-        // kenardadir. Bu yuzden XZ/YZ elevasyonda snap YALNIZCA taban kotundeki
-        // XY noktalarina kilitleniyordu (kullanici sarti: "her grid snap
-        // ozelligine kilitlenmeli").
-        const std::vector<GridAxisLine> viewAxes = gridAxesForView(grid, plane);
-        for (const auto& axis : viewAxes) {
-            const Vec3& a = axis.from;
-            const Vec3& b = axis.to;
-            const Vec3 direction = b - a;
-            const double lengthSquared = dot3(direction, direction);
-            if (lengthSquared <= epsilon) continue;
-            addCandidate(candidates, a, SnapType::Endpoint, tolerance, metric);
-            addCandidate(candidates, b, SnapType::Endpoint, tolerance, metric);
-            addCandidate(candidates, (a + b) * 0.5, SnapType::Midpoint, tolerance, metric);
-            double rawT;
-            if (screenSpace) {
-                const Vec2 pa = screenSpace->camera->project(a, screenSpace->width, screenSpace->height);
-                const Vec2 pb = screenSpace->camera->project(b, screenSpace->width, screenSpace->height);
-                const double sdx = pb.x - pa.x, sdy = pb.y - pa.y;
-                const double screenLen2 = sdx * sdx + sdy * sdy;
-                rawT = screenLen2 > epsilon
-                    ? ((screenSpace->cursor.x - pa.x) * sdx + (screenSpace->cursor.y - pa.y) * sdy) / screenLen2
-                    : 0.0;
-            } else {
-                rawT = dot3(cursor - a, direction) / lengthSquared;
-            }
-            const double clampedT = std::clamp(rawT, 0.0, 1.0);
-            addCandidate(candidates, a + direction * clampedT, SnapType::Nearest, tolerance, metric);
-            if (referencePoint) {
-                const double perpendicularT = dot3(*referencePoint - a, direction) / lengthSquared;
-                if (perpendicularT >= 0.0 && perpendicularT <= 1.0)
-                    addCandidate(candidates, a + direction * perpendicularT,
-                                 SnapType::Perpendicular, tolerance, metric);
-            }
-        }
-        // Iki ailenin GERCEK kesisimi: yapi gridi caprazi (SnapType::Grid).
-        // Eski formul YALNIZ plan icin dogruydu ve elevasyonda z'yi taban
-        // kotuna cekiyordu; artik iki dogru parcasinin gercek kesismesi
-        // cozulur (lineCrossing).
-        std::vector<const GridAxisLine*> verticalAxes, levelAxes;
-        for (const auto& axis : viewAxes)
-            (axis.horizontal ? levelAxes : verticalAxes).push_back(&axis);
-        for (const auto* va : verticalAxes) {
-            for (const auto* la : levelAxes) {
-                Vec3 intersection{};
-                if (!lineCrossing(*va, *la, intersection)) continue;
-                addCandidate(candidates, intersection, SnapType::Grid, tolerance, metric);
-            }
-        }
-    }
-}
-
 SnapResult choose(std::vector<Candidate> candidates, const Vec3& raw,
-                  const SnapTypeMask* enabledTypes = nullptr,
-                  const Camera* depthCamera = nullptr) {
+                  const SnapTypeMask* enabledTypes = nullptr) {
     if (enabledTypes) {
         std::erase_if(candidates, [&](const Candidate& candidate) {
             const auto index = static_cast<std::size_t>(candidate.type);
@@ -526,22 +276,9 @@ SnapResult choose(std::vector<Candidate> candidates, const Vec3& raw,
         });
     }
     if (candidates.empty()) return {raw, SnapType::None, 0.0};
-    // EKRAN MESAFESI -> ONCELIK -> DERINLIK. Derinlik son kriter cunku plan/ust
-    // gorunuste iki kenar (gorunur olan ve ALTINDAKI gizli) AYNI ekran noktasina
-    // iz dusurulur ve ekran mesafesi birebir esit cikar. Eskiden esitlik ilk
-    // gelen adaya gidiyordu; kenar listesi siralamasina bagli olarak GIZLI kenar
-    // kazanip kullaniciyi yanlis kotuna (or. kirisin altina) snap'liyordu
-    // ("plan gorunusunde midpoint bazen calismiyor"). Once oncelik (endpoint >
-    // midpoint) korunur, ayni oncelikte IZLEYICIYE YAKIN olan (view-z BUYUK)
-    // kazanir — satir ~558'deki kati-kati cakisma kuraliyla ayni konvansiyon.
-    const auto viewDepth = [&](const Vec3& point) {
-        return depthCamera ? depthCamera->viewTransform(point).z
-                           : 0.0;
-    };
-    const auto best = std::min_element(candidates.begin(), candidates.end(), [&](const Candidate& a, const Candidate& b) {
+    const auto best = std::min_element(candidates.begin(), candidates.end(), [](const Candidate& a, const Candidate& b) {
         if (std::abs(a.distance - b.distance) > 1e-7) return a.distance < b.distance;
-        if (priority(a.type) != priority(b.type)) return priority(a.type) < priority(b.type);
-        return viewDepth(a.point) > viewDepth(b.point);
+        return priority(a.type) < priority(b.type);
     });
     return {best->point, best->type, best->distance};
 }
@@ -572,7 +309,7 @@ std::optional<double> parseNumber(std::wstring_view text) noexcept {
 }
 
 SnapResult SnapEngine::snap(const Vec3& cursor, const Document& document,
-                            double objectTolerance,
+                            double objectTolerance, double gridSpacing,
                             bool objectSnapEnabled, bool gridSnapEnabled,
                             std::optional<Vec3> referencePoint,
                             const SnapTypeMask* enabledTypes) {
@@ -592,84 +329,35 @@ SnapResult SnapEngine::snap(const Vec3& cursor, const Document& document,
         }
         if (result.type != SnapType::None) return result;
     }
-    // YAPI GRIDI (2B): aks cizgileri de TUM snap turleri icin cizilebilir
-    // geometridir (kullanici sarti: "grid'e tum snaplar yapismali"). Obje
-    // snap'i kazanamadiysa grid akslarindan aday uretilir; her turun kapisi
-    // enabledSnapTypes_ maskesidir (uc/orta/en yakin/dikme + kesisim).
-    if (gridSnapEnabled) {
-        std::vector<Candidate> gridCandidates;
-        addGridLineCandidates(gridCandidates, document, cursor, objectTolerance,
-                              [&](const Vec3& point) { return distance2D(cursor, point); },
-                              referencePoint, nullptr);
-        auto gridResult = choose(std::move(gridCandidates), cursor, enabledTypes);
-        if (gridResult.type != SnapType::None) return gridResult;
-    }
-    // Grid snap ARTIK SADECE CUSTOM YAPI AKS KESISIM NOKTALARINA gider
-    // (near yok). X-akslari (horizontal=false) ve Y-akslari (horizontal=true)
-    // ayri toplanir; her X × her Y kesisim noktasi hesap edilir ve en
-    // yakin kesisime imlec yapisir. Milimetrik adaptif grid kaldirildi.
-    // (Bu blok eski davranistir: tolerans kapisi YOK, her zaman en yakin
-    // kesisime yapistirir — korunuyor.)
-    if (gridSnapEnabled) {
-        // Kesisim: X-aksi baslangici (yDir yonunde cizilir) ile Y-aksi
-        // baslangici (xDir yonunde cizilir) — x bileseni X-akstan, y
-        // bileseni Y-akstan gelir. grid en az bir X ve bir Y aksina sahipse
-        // kesim noktalari vardir.
-        for (const auto& grid : document.grids()) {
-            if (!grid.visible) continue;
-            std::vector<const GridAxisLine*> xAxes, yAxes;
-            for (const auto& axis : grid.axes)
-                (axis.horizontal ? yAxes : xAxes).push_back(&axis);
-            if (xAxes.empty() || yAxes.empty()) continue;
-            Vec3 best{};
-            bool found = false;
-            double bestDist = 0.0;
-            for (const auto* xa : xAxes) {
-                for (const auto* ya : yAxes) {
-                    // Yapi gridi her zaman eksen-hizalidir (xDir=(1,0,0),
-                    // yDir=(0,1,0)). Kesisim: x bileseni X-akstan, y
-                    // bileseni Y-akstan, z'yi X-akstan al — origin cift
-                    // sayilmaz (xa.from.x + ya.from.x YANLIS tutardi).
-                    const Vec3 intersection{xa->from.x,
-                                            ya->from.y,
-                                            xa->from.z};
-                    const double d = distance2D(cursor, intersection);
-                    if (!found || d < bestDist) { best = intersection; bestDist = d; found = true; }
-                }
-            }
-            if (found) return {best, SnapType::Grid, bestDist};
-        }
+    if (gridSnapEnabled && gridSpacing > 0.0) {
+        const Vec3 grid{std::round(cursor.x / gridSpacing) * gridSpacing,
+                        std::round(cursor.y / gridSpacing) * gridSpacing, cursor.z};
+        return {grid, SnapType::Grid, distance2D(cursor, grid)};
     }
     return {cursor, SnapType::None, 0.0};
 }
 
 SnapResult SnapEngine::snap3D(const Vec2& screenCursor, const Document& document,
                               const Camera& camera, int viewportWidth, int viewportHeight,
-                              double objectTolerancePixels, double workPlaneZ,
+                              double objectTolerancePixels, double gridSpacing, double workPlaneZ,
                               bool objectSnapEnabled, bool gridSnapEnabled,
                               std::optional<Vec3> referencePoint,
                               const SnapTypeMask* enabledTypes) {
     return snap3D(screenCursor, document, camera, viewportWidth, viewportHeight,
-                  objectTolerancePixels,
+                  objectTolerancePixels, gridSpacing,
                   WorkPlane{{0.0, 0.0, workPlaneZ}, {1.0, 0.0, 0.0},
                             {0.0, 1.0, 0.0}, {0.0, 0.0, 1.0}},
-                  objectSnapEnabled, gridSnapEnabled, referencePoint, enabledTypes, false);
+                  objectSnapEnabled, gridSnapEnabled, referencePoint, enabledTypes);
 }
 
 SnapResult SnapEngine::snap3D(const Vec2& screenCursor, const Document& document,
                               const Camera& camera, int viewportWidth, int viewportHeight,
-                              double objectTolerancePixels, const WorkPlane& workPlane,
+                              double objectTolerancePixels, double gridSpacing, const WorkPlane& workPlane,
                               bool objectSnapEnabled, bool gridSnapEnabled,
                               std::optional<Vec3> referencePoint,
-                              const SnapTypeMask* enabledTypes,
-                              bool visibleEdgesOnly) {
+                              const SnapTypeMask* enabledTypes) {
     const auto raw = camera.unprojectToPlane(screenCursor, viewportWidth, viewportHeight, workPlane);
     if (!raw) return {workPlane.origin, SnapType::None, 0.0};
-    // GRID SNAP GORUNUS DUZLEMI: cizim `gridAxesForView(grid, plane)` kullanir;
-    // snap de AYNI duzlemden turetilmeli, yoksa XZ/YZ 2 noktali gorunuste snap
-    // yalnizca taban (XY) noktalarina kilitlenir. Duzlem kameranin KILITLI
-    // gorunus yonunden gelir (rotasyon kilidi degistirmez; cizimle tutarli).
-    const GridViewPlane gridPlane = gridViewPlaneForDirection(camera.gridViewDirection());
     if (objectSnapEnabled) {
         const auto metric = [&](const Vec3& point) {
             const Vec2 projected = camera.project(point, viewportWidth, viewportHeight);
@@ -677,17 +365,14 @@ SnapResult SnapEngine::snap3D(const Vec2& screenCursor, const Document& document
         };
         const auto nearby = projectedCandidates(screenCursor, document, camera, viewportWidth,
                                                 viewportHeight, objectTolerancePixels);
-        const ScreenSpaceNearest screenNearest{&camera, viewportWidth, viewportHeight, screenCursor,
-                                               visibleEdgesOnly};
         auto candidates = objectCandidates(*raw, document, objectTolerancePixels, metric,
-                                           referencePoint, &nearby, &screenNearest);
+                                           referencePoint, &nearby);
         struct ProjectedEdge { Vec3 a; Vec3 b; Vec2 pa; Vec2 pb; };
         std::vector<ProjectedEdge> edges;
         constexpr std::size_t apparentIntersectionEdgeLimit = 512;
         // Only iterate nearby models (spatial-index filtered), not the entire document
         for (const auto index : nearby) {
             if (index >= document.models().size()) continue;
-            if (!document.modelIsPickable(index)) continue; // gizli/kilitli/dilim disi
             const auto& model = document.models()[index];
             for (const auto& edge : model.edges()) {
                 if (edges.size() >= apparentIntersectionEdgeLimit) break;
@@ -712,97 +397,24 @@ SnapResult SnapEngine::snap3D(const Vec2& screenCursor, const Document& document
                 if (t < 0.0 || t > 1.0 || u < 0.0 || u > 1.0) continue;
                 const Vec3 worldA = a.a + (a.b - a.a) * t;
                 const Vec3 worldB = b.a + (b.b - b.a) * u;
-                const double worldGap = std::hypot(std::hypot(worldA.x - worldB.x, worldA.y - worldB.y),
-                                                   worldA.z - worldB.z);
-                if (worldGap <= 1e-7)
-                    continue; // tam ust uste: ayri apparent gerek yok
-                // KATI-KATI CAKISMASI: iki katinin kenarlari gercek uzayda
-                // cogunlukla skew'dur; eski kod yalniz apparent uretiyordu.
-                // Cakisma bolgesinde (kenarlar ekranda kesisiyor) INT de
-                // aday olsun: 3B orta nokta, olcu ekran-uzayi.
-                const double pxPerMm = cameraScreenScale(camera);
-                // INT: YALNIZ gercek temas (gap < 1 px). 4x toleransli eski
-                // gevseklik cezasiz skew ciftleri INT adayi yapiyor, dogru
-                // cezali adayi eziyordu ("hala yanlis yer").
-                if (worldGap * pxPerMm < 1.0)
-                    addCandidate(candidates, (worldA + worldB) * 0.5, SnapType::Intersection,
-                                 objectTolerancePixels, metric);
-                // APPARENT: nokta artik is-duzlemi unproject'iyle DEGIL
-                // kenarlarin 3B orta noktasinda (ayni ekran konumu, dogru
-                // derinlik). DERINLIK CEZASI: ekranda ayni yerde bircok
-                // kenar cifti kesisebilir (flans ust/alt siluetleri);
-                // yalniz imlec mesafesiyle secim yanlis cifti tutuyordu
-                // ("IPE400 ust flansin ALT tarafini tutuyor"). Skew ciftler
-                // worldGap kadar px ceza alir — gercek cakisan kenarlar
-                // (gap~0) daima one gecer.
+                if (std::hypot(std::hypot(worldA.x - worldB.x, worldA.y - worldB.y), worldA.z - worldB.z) <= 1e-7)
+                    continue;
                 const Vec2 crossing{a.pa.x + t * adx, a.pa.y + t * ady};
-                (void)crossing;
-                // Tolerans cezayla GENISLER (aday asla dusturulmez); ceza
-                // yalnizca best-karsilastirmasinda skew ciftleri geriye
-                // iter. NOKTA artik orta nokta DEGIL: kameraya YAKIN olan
-                // kenarin kesisim noktasi — orta nokta ekranda iki kenar
-                // arasinda kayik gorunuyordu ("yanlis yer"). view-z buyuk =
-                // izleyiciye yakin (kamera konvansiyonu).
-                const double depthA = camera.viewTransform(worldA).z;
-                const double depthB = camera.viewTransform(worldB).z;
-                const Vec3 crossingPoint = depthA >= depthB ? worldA : worldB;
-                const double gapPenalty = worldGap * pxPerMm;
-                addCandidateAtDistance(candidates, crossingPoint, SnapType::ApparentIntersection,
-                                        objectTolerancePixels + gapPenalty,
-                                        metric(crossingPoint) + gapPenalty);
+                if (const auto point = camera.unprojectToPlane(crossing, viewportWidth, viewportHeight, workPlane))
+                    addCandidate(candidates, *point, SnapType::ApparentIntersection,
+                                 objectTolerancePixels, metric);
             }
         }
-        // Derinlik tercihi icin kamera verilir: esit ekran mesafesinde
-        // izleyiciye YAKIN aday kazanir (gizli kenara snap'i onler).
-        auto result = choose(std::move(candidates), *raw, enabledTypes, &camera);
+        auto result = choose(std::move(candidates), *raw, enabledTypes);
         if (result.type != SnapType::None) return result;
     }
-    // YAPI GRIDI (3B): aks cizgileri de TUM snap turleri icin cizilebilir
-    // geometridir (kullanici sarti: "grid'e tum snaplar yapismali"). Obje
-    // snap'i kazanamadiysa grid akslarindan aday uretilir; en yakin nokta
-    // EKRAN uzayinda cozulur (model kenarlarindaki NEAREST ile ayni kalip).
-    // Her turun kapisi enabledSnapTypes_ maskesidir.
-    if (gridSnapEnabled) {
-        const auto gridMetric = [&](const Vec3& point) {
-            const Vec2 projected = camera.project(point, viewportWidth, viewportHeight);
-            return std::hypot(screenCursor.x - projected.x, screenCursor.y - projected.y);
-        };
-        const ScreenSpaceNearest gridNearest{&camera, viewportWidth, viewportHeight, screenCursor, false};
-        std::vector<Candidate> gridCandidates;
-        addGridLineCandidates(gridCandidates, document, *raw, objectTolerancePixels, gridMetric,
-                              referencePoint, &gridNearest, gridPlane);
-        auto gridResult = choose(std::move(gridCandidates), *raw, enabledTypes, &camera);
-        if (gridResult.type != SnapType::None) return gridResult;
-    }
-    // Grid snap ARTIK SADECE CUSTOM YAPI AKS KESISIM NOKTALARINA gider
-    // (near yok). Ekran-uzayi projeksiyon mesafesiyle en yakin kesisim.
-    // (Bu blok eski davranistir: tolerans kapisi YOK, her zaman en yakin
-    // kesisime yapistirir — korunuyor.)
-    if (gridSnapEnabled) {
-        for (const auto& grid : document.grids()) {
-            if (!grid.visible) continue;
-            const std::vector<GridAxisLine> viewAxes = gridAxesForView(grid, gridPlane);
-            std::vector<const GridAxisLine*> verticalAxes, levelAxes;
-            for (const auto& axis : viewAxes)
-                (axis.horizontal ? levelAxes : verticalAxes).push_back(&axis);
-            if (verticalAxes.empty() || levelAxes.empty()) continue;
-            Vec3 best{};
-            bool found = false;
-            double bestPx = 0.0;
-            for (const auto* va : verticalAxes) {
-                for (const auto* la : levelAxes) {
-                    // Gorunus duzlemindeki GERCEK kesisim (plan-ozel eski formul
-                    // elevasyonda z'yi taban kotuna cekiyordu).
-                    Vec3 intersection{};
-                    if (!lineCrossing(*va, *la, intersection)) continue;
-                    const Vec2 projected = camera.project(intersection, viewportWidth, viewportHeight);
-                    const double d = std::hypot(screenCursor.x - projected.x,
-                                                screenCursor.y - projected.y);
-                    if (!found || d < bestPx) { best = intersection; bestPx = d; found = true; }
-                }
-            }
-            if (found) return {best, SnapType::Grid, bestPx};
-        }
+    if (gridSnapEnabled && gridSpacing > 0.0) {
+        const Vec2 local = workPlane.toPlane(*raw);
+        const Vec3 grid = workPlane.fromPlane({std::round(local.x / gridSpacing) * gridSpacing,
+                                                std::round(local.y / gridSpacing) * gridSpacing});
+        const Vec2 projected = camera.project(grid, viewportWidth, viewportHeight);
+        return {grid, SnapType::Grid,
+                std::hypot(screenCursor.x - projected.x, screenCursor.y - projected.y)};
     }
     return {*raw, SnapType::None, 0.0};
 }
@@ -858,7 +470,6 @@ const wchar_t* snapTypeLabel(SnapType type) noexcept {
     case SnapType::Midpoint: return L"MIDPOINT";
     case SnapType::Center: return L"CENTER";
     case SnapType::GeometricCenter: return L"GEOM CENTER";
-    case SnapType::ProfileCenter: return L"PROF CENTER";
     case SnapType::Node: return L"NODE";
     case SnapType::Quadrant: return L"QUADRANT";
     case SnapType::Intersection: return L"INTERSECTION";
@@ -900,8 +511,6 @@ const wchar_t* toolLabel(DrawTool tool) noexcept {
     case DrawTool::Rectangle: return L"RECTANGLE";
     case DrawTool::Circle: return L"CIRCLE";
     case DrawTool::Face3D: return L"3DFACE";
-    case DrawTool::Column: return L"COLUMN";
-    case DrawTool::Divide: return L"DIVIDE";
     }
     return L"";
 }
@@ -1087,13 +696,6 @@ TemporaryTrackingResult resolveTemporaryPointTracking(
     };
     const Vec2 cursorLocal = plane.toPlane(candidate.point);
     const double cursorNormal = normalDistance(candidate.point);
-    // DIKME TAKIBI: iki izleme noktasi bir dogru tanimlar. Imlecin o dogruya
-    // dikme ayagi ekranda gorunur ve snap noktasi olur ("iki nokta secildi ->
-    // ona dik nokta"). Gorunurluk yaricapi snap yaricapindan genis tutulur ki
-    // kullanici yaklasirken noktayi gorsun, ama uzakta ekran kirlenmesin.
-    const Vec3 pointerPoint = candidate.point;
-    double bestPerpendicularDistance = std::max(0.0, tolerance) * 4.0;
-    std::optional<Vec3> perpendicularFoot;
     for (std::size_t first = 0; first < acquiredPoints.size(); ++first) {
         for (std::size_t second = first + 1; second < acquiredPoints.size(); ++second) {
             tracking.guides.push_back({acquiredPoints[first], acquiredPoints[second]});
@@ -1111,46 +713,13 @@ TemporaryTrackingResult resolveTemporaryPointTracking(
 
             const Vec2 firstLocal = plane.toPlane(acquiredPoints[first]);
             const Vec2 secondLocal = plane.toPlane(acquiredPoints[second]);
-            // DIKME: imlecin bu ikilinin tanimladigi dogruya dikme ayagi.
-            // Noktalar farkli kotlarda olsalar da PLANDA bir dogru tanimlarlar,
-            // bu yuzden koplanarlik kontrolunden ONCE hesaplanir. Sonsuz dogru
-            // kullanilir; snap zaten ~10 px aperature ile sinirlidir.
-            const Vec2 pairDelta{secondLocal.x - firstLocal.x, secondLocal.y - firstLocal.y};
-            const double pairLengthSquared =
-                pairDelta.x * pairDelta.x + pairDelta.y * pairDelta.y;
-            if (pairLengthSquared > epsilon) {
-                const double footT = ((cursorLocal.x - firstLocal.x) * pairDelta.x +
-                                      (cursorLocal.y - firstLocal.y) * pairDelta.y) /
-                                     pairLengthSquared;
-                const Vec2 footLocal{firstLocal.x + pairDelta.x * footT,
-                                     firstLocal.y + pairDelta.y * footT};
-                const double footDistance = std::hypot(cursorLocal.x - footLocal.x,
-                                                       cursorLocal.y - footLocal.y);
-                const Vec3 foot = plane.fromPlane(footLocal) + plane.normal * cursorNormal;
-                if (footDistance < bestPerpendicularDistance) {
-                    bestPerpendicularDistance = footDistance;
-                    perpendicularFoot = foot;
-                }
-                // ACIK nesne snap'i varsa o kazanir (mevcut davranis); yoksa
-                // dikme ayagi diger turetilmis noktalarla mesafeye gore yarisir.
-                if (!explicitObjectSnap && footDistance < bestDistance) {
-                    bestDistance = footDistance;
-                    tracking.result = {foot, SnapType::Perpendicular, footDistance};
-                    tracking.locked = true;
-                    // Kilitlenen ayak GOSTERILEN ayak olur: snap noktasi ile
-                    // ekrandaki PERP isareti her zaman ayni nokta olsun.
-                    perpendicularFoot = foot;
-                }
-            }
-            // DIK BIRLESIM KOSESI: iki TP'nin izleme cizgilerinin (yatay x dusey)
-            // planDA kesisimi — (P1.u, P2.v) ve (P2.u, P1.v). Noktalar FARKLI
-            // KOTTA da olsa (3B cercevede uyeler farkli yukseklikte) plan kosesi
-            // gecerli oldugu icin kot kapisi YOKTUR; kose, dikme ayagi gibi
-            // IMLECIN duzlemine (cursorNormal) konur ki plan snap'i calissin ve
-            // isaret imlecin altinda kalsin.
+            const double firstNormal = normalDistance(acquiredPoints[first]);
+            const double secondNormal = normalDistance(acquiredPoints[second]);
+            if (std::abs(firstNormal - secondNormal) > std::max(tolerance, epsilon)) continue;
+            const double normal = (firstNormal + secondNormal) * 0.5;
             const std::array<Vec3, 2> corners{
-                plane.fromPlane({firstLocal.x, secondLocal.y}) + plane.normal * cursorNormal,
-                plane.fromPlane({secondLocal.x, firstLocal.y}) + plane.normal * cursorNormal};
+                plane.fromPlane({firstLocal.x, secondLocal.y}) + plane.normal * normal,
+                plane.fromPlane({secondLocal.x, firstLocal.y}) + plane.normal * normal};
             for (const auto& corner : corners) {
                 if (std::find(acquiredPoints.begin(), acquiredPoints.end(), corner) != acquiredPoints.end())
                     continue;
@@ -1159,8 +728,9 @@ TemporaryTrackingResult resolveTemporaryPointTracking(
                     tracking.derivedPoints.push_back(corner);
                 if (explicitObjectSnap) continue;
                 const Vec2 cornerLocal = plane.toPlane(corner);
-                const double distance = std::hypot(cursorLocal.x - cornerLocal.x,
-                                                   cursorLocal.y - cornerLocal.y);
+                const double distance = std::hypot(
+                    std::hypot(cursorLocal.x - cornerLocal.x, cursorLocal.y - cornerLocal.y),
+                    cursorNormal - normal);
                 if (distance <= bestDistance) {
                     bestDistance = distance;
                     tracking.result = {corner, SnapType::Intersection, distance};
@@ -1168,12 +738,6 @@ TemporaryTrackingResult resolveTemporaryPointTracking(
                 }
             }
         }
-    }
-    // Dikme ayagi bulunduysa: turetilmis nokta olarak goster ve imlece dik
-    // kilavuz cizgisini ciz (dik aciyi gozle dogrulanabilir yapar).
-    if (perpendicularFoot) {
-        tracking.perpendicularPoints.push_back(*perpendicularFoot);
-        tracking.guides.push_back({*perpendicularFoot, pointerPoint});
     }
     if (!explicitObjectSnap && !tracking.locked) {
         std::optional<TrackingGuide> activeAxisGuide;
@@ -1212,9 +776,6 @@ double pointSegmentDistance(const Vec2& point, const Vec2& from, const Vec2& to)
     return std::hypot(point.x - (from.x + t * dx), point.y - (from.y + t * dy));
 }
 
-// Işın atma: nokta (basit/cokgen) cokgen icinde mi — yuz (ucgen) isabeti icin.
-bool pointInPolygon(const Vec2& point, const std::vector<Vec2>& polygon) noexcept;
-
 template <typename Project>
 std::optional<std::size_t> hitTestModel(const Vec2& cursor, const Document& document,
                                         double tolerance, Project project,
@@ -1228,30 +789,8 @@ std::optional<std::size_t> hitTestModel(const Vec2& cursor, const Document& docu
         candidates = &allIndices;
     }
     for (const auto index : *candidates) {
-        if (!document.modelIsPickable(index)) continue;
+        if (!document.modelIsEditable(index)) continue;
         const auto& model = document.models()[index];
-        // Yuz isabeti: 3B katilarin dolgulu yuzlerine tiklanabilir (kenar
-        // testi tek basina yuz ortasini kaciriyordu — modify secilemiyordu).
-        bool faceHit = false;
-        for (const auto& face : model.faces()) {
-            if (face.size() < 3) continue;
-            std::vector<Vec2> projected;
-            projected.reserve(face.size());
-            bool valid = true;
-            for (const auto vertexIndex : face) {
-                if (vertexIndex >= model.vertices().size()) { valid = false; break; }
-                projected.push_back(project(model.vertices()[vertexIndex]));
-            }
-            if (!valid || projected.size() < 3) continue;
-            if (pointInPolygon(cursor, projected)) {
-                faceHit = true;
-                break;
-            }
-        }
-        if (faceHit) {
-            if (0.0 <= bestDistance) { bestDistance = 0.0; bestIndex = index; }
-            continue;
-        }
         for (const auto& edge : model.edges()) {
             const double distance = pointSegmentDistance(cursor, project(model.vertices()[edge.from]),
                                                          project(model.vertices()[edge.to]));
@@ -1282,22 +821,6 @@ bool pointInBounds(const Vec2& point, const SelectionBounds& bounds) noexcept {
 
 double orientation(const Vec2& a, const Vec2& b, const Vec2& c) noexcept {
     return (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
-}
-
-// Işın atma: nokta (basit/cokgen) cokgen icinde mi — yuz (ucgen) isabeti icin.
-bool pointInPolygon(const Vec2& point, const std::vector<Vec2>& polygon) noexcept {
-    bool inside = false;
-    for (std::size_t i = 0, j = polygon.size() - 1; i < polygon.size(); j = i++) {
-        const bool straddles = (polygon[i].y > point.y) != (polygon[j].y > point.y);
-        if (straddles) {
-            const double crossX = (polygon[j].x - polygon[i].x) *
-                                      (point.y - polygon[i].y) /
-                                      (polygon[j].y - polygon[i].y) +
-                                  polygon[i].x;
-            if (point.x < crossX) inside = !inside;
-        }
-    }
-    return inside;
 }
 
 bool segmentsTouch(const Vec2& a, const Vec2& b, const Vec2& c, const Vec2& d) noexcept {
@@ -1334,7 +857,7 @@ std::vector<std::size_t> selectModelsInRect(const Vec2& firstCorner, const Vec2&
         candidates = &allIndices;
     }
     for (const auto index : *candidates) {
-        if (!document.modelIsPickable(index)) continue;
+        if (!document.modelIsEditable(index)) continue;
         const auto& model = document.models()[index];
         const bool allInside = !model.vertices().empty() &&
             std::all_of(model.vertices().begin(), model.vertices().end(), [&](const Vec3& vertex) {
@@ -1407,156 +930,6 @@ std::optional<std::size_t> hitTestModel3D(const Vec2& cursor, const Document& do
     return hitTestModel(cursor, document, tolerancePixels, [&](const Vec3& point) {
         return camera.project(point, viewportWidth, viewportHeight);
     }, &nearby);
-}
-
-std::optional<std::size_t> hitTestModelCandidates2D(const Vec3& cursor, const Document& document,
-                                                    double tolerance,
-                                                    const std::vector<std::size_t>& candidates) {
-    return hitTestModel(Vec2{cursor.x, cursor.y}, document, tolerance,
-                        [](const Vec3& point) { return Vec2{point.x, point.y}; }, &candidates);
-}
-
-std::optional<std::size_t> hitTestModelCandidates3D(const Vec2& cursor, const Document& document,
-                                                    const Camera& camera, int viewportWidth,
-                                                    int viewportHeight, double tolerancePixels,
-                                                    const std::vector<std::size_t>& candidates) {
-    return hitTestModel(cursor, document, tolerancePixels,
-                        [&](const Vec3& point) {
-                            return camera.project(point, viewportWidth, viewportHeight);
-                        },
-                        &candidates);
-}
-
-CutPickGeometry cutModifierPickGeometry(const CutModifier& mod,
-                                        const Bounds3& targetBounds) noexcept {
-    CutPickGeometry out;
-    switch (mod.kind) {
-    case CutKind::PolygonCut:
-        out.polygon = mod.polygon;
-        out.isSegment = false;
-        break;
-    case CutKind::LineCut:
-        if (mod.polygon.size() >= 2)
-            out.polygon.assign(mod.polygon.begin(), mod.polygon.begin() + 2);
-        out.isSegment = true;
-        break;
-    case CutKind::PlaneCut:
-    case CutKind::Fitting: {
-        const double nl = std::hypot(mod.planeNormal.x, mod.planeNormal.y, mod.planeNormal.z);
-        if (!(nl > 1e-9)) break;
-        // Hedef kutusundan turetilen sonlu dikdortgen (renderer drawCutPlanes
-        // ile AYNI yari-boyut kurali: max extent * 0.75, alt sinir 500 mm).
-        double half = 500.0;
-        const double extent =
-            std::max({std::abs(targetBounds.maximum.x - targetBounds.minimum.x),
-                      std::abs(targetBounds.maximum.y - targetBounds.minimum.y),
-                      std::abs(targetBounds.maximum.z - targetBounds.minimum.z)});
-        if (extent > 0.0) half = extent * 0.75;
-        const WorkPlane plane =
-            WorkPlane::fromAxisAndPoint(mod.planeOrigin, mod.planeOrigin + mod.planeNormal);
-        out.polygon = {plane.fromPlane({-half, -half}), plane.fromPlane({half, -half}),
-                       plane.fromPlane({half, half}), plane.fromPlane({-half, half})};
-        out.isSegment = false;
-        break;
-    }
-    case CutKind::BooleanCut:
-    default:
-        break; // BooleanCut: ayri MODEL olarak secilir (burada sekil yok)
-    }
-    return out;
-}
-
-std::optional<std::size_t> hitTestCutModifier2D(const Vec3& cursor, const Document& document,
-                                                double tolerance, bool includeSourceBound) {
-    const auto& mods = document.cutModifiers();
-    std::optional<std::size_t> best;
-    double bestDistance = tolerance;
-    const Vec2 c{cursor.x, cursor.y};
-    for (std::size_t i = 0; i < mods.size(); ++i) {
-        const auto& raw = mods[i];
-        if (!raw.enabled || raw.hidden) continue;
-        // P6: kaynaga BAGLI (source var + kaynak varlik mevcut) modifier bagimsiz
-        // secilemez — kaynak nesne (duzlem/cizgi/3DFACE) kesme nesnesinin
-        // KENDISIDIR. Secim/tasima/silme kaynak nesne uzerinden yapilir.
-        // P8 (Alt+sol tik yon tersi) kaynak-bagli modifier'i DA bulmali; o yuzden
-        // includeSourceBound=true iken bu atlama devre disi birakilir.
-        if (!includeSourceBound && raw.source != kInvalidEntityId &&
-            document.indexOfEntity(raw.source)) continue;
-        // P6: kaynaktan GUNCEL geometriyi cozumle (tasinan duzlem/cizgi isabet eder).
-        const CutModifier mod = resolveCutModifierSource(raw, document);
-        Bounds3 targetBounds{};
-        if (const auto t = document.indexOfEntity(mod.target)) {
-            if (*t < document.modelBounds().size()) targetBounds = document.modelBounds()[*t];
-        }
-        const auto geo = cutModifierPickGeometry(mod, targetBounds);
-        if (geo.polygon.empty()) continue;
-        const auto project = [](const Vec3& p) { return Vec2{p.x, p.y}; };
-        if (geo.isSegment) {
-            if (geo.polygon.size() != 2) continue;
-            const double d = pointSegmentDistance(c, project(geo.polygon[0]), project(geo.polygon[1]));
-            if (d <= bestDistance) { bestDistance = d; best = i; }
-            continue;
-        }
-        if (geo.polygon.size() < 3) continue;
-        std::vector<Vec2> projected;
-        projected.reserve(geo.polygon.size());
-        for (const auto& p : geo.polygon) projected.push_back(project(p));
-        if (pointInPolygon(c, projected)) return i; // ic isabet: kesin
-        for (std::size_t k = 0; k < projected.size(); ++k) {
-            const double d = pointSegmentDistance(c, projected[k], projected[(k + 1) % projected.size()]);
-            if (d <= bestDistance) { bestDistance = d; best = i; }
-        }
-    }
-    return best;
-}
-
-std::optional<std::size_t> hitTestCutModifier3D(const Vec2& cursor, const Document& document,
-                                                const Camera& camera, int viewportWidth,
-                                                int viewportHeight, double tolerancePixels,
-                                                bool includeSourceBound) {
-    const auto& mods = document.cutModifiers();
-    std::optional<std::size_t> best;
-    double bestDistance = tolerancePixels;
-    for (std::size_t i = 0; i < mods.size(); ++i) {
-        const auto& raw = mods[i];
-        if (!raw.enabled || raw.hidden) continue;
-        // P6: kaynaga BAGLI (source var + kaynak varlik mevcut) modifier bagimsiz
-        // secilemez — kaynak nesne (duzlem/cizgi/3DFACE) kesme nesnesinin
-        // KENDISIDIR. Secim/tasima/silme kaynak nesne uzerinden yapilir.
-        // P8 (Alt+sol tik yon tersi) kaynak-bagli modifier'i DA bulmali; o yuzden
-        // includeSourceBound=true iken bu atlama devre disi birakilir.
-        if (!includeSourceBound && raw.source != kInvalidEntityId &&
-            document.indexOfEntity(raw.source)) continue;
-        // P6: kaynaktan GUNCEL geometriyi cozumle (tasinan duzlem/cizgi isabet eder).
-        const CutModifier mod = resolveCutModifierSource(raw, document);
-        Bounds3 targetBounds{};
-        if (const auto t = document.indexOfEntity(mod.target)) {
-            if (*t < document.modelBounds().size()) targetBounds = document.modelBounds()[*t];
-        }
-        const auto geo = cutModifierPickGeometry(mod, targetBounds);
-        if (geo.polygon.empty()) continue;
-        const auto project = [&](const Vec3& p) {
-            return camera.project(p, viewportWidth, viewportHeight);
-        };
-        if (geo.isSegment) {
-            if (geo.polygon.size() != 2) continue;
-            const double d = pointSegmentDistance(cursor, project(geo.polygon[0]),
-                                                 project(geo.polygon[1]));
-            if (d <= bestDistance) { bestDistance = d; best = i; }
-            continue;
-        }
-        if (geo.polygon.size() < 3) continue;
-        std::vector<Vec2> projected;
-        projected.reserve(geo.polygon.size());
-        for (const auto& p : geo.polygon) projected.push_back(project(p));
-        if (pointInPolygon(cursor, projected)) return i; // ic isabet: kesin
-        for (std::size_t k = 0; k < projected.size(); ++k) {
-            const double d = pointSegmentDistance(cursor, projected[k],
-                                                  projected[(k + 1) % projected.size()]);
-            if (d <= bestDistance) { bestDistance = d; best = i; }
-        }
-    }
-    return best;
 }
 
 std::vector<std::size_t> selectModelsInRect2D(const Vec3& firstCorner, const Vec3& secondCorner,
@@ -1745,25 +1118,7 @@ std::optional<WireframeModel> mirrorModel2D(const WireframeModel& source, const 
         for (const auto& vertex : source.vertices()) vertices.push_back(reflect(vertex));
         result = WireframeModel(std::move(vertices), source.edges(), source.faces());
     }
-    auto props = source.properties();
-    if (!props.profileName.empty()) {
-        // Yansitilan katinin eksen koordinatlari da yansitilir: aksi halde
-        // rotasyon/degistirme islemi katiyi ESKI konumda yeniden uretir.
-        const Vec3 from{props.axisFromX, props.axisFromY, props.axisFromZ};
-        const Vec3 to{props.axisToX, props.axisToY, props.axisToZ};
-        const Vec3 rf = reflect(from);
-        const Vec3 rt = reflect(to);
-        props.axisFromX = rf.x; props.axisFromY = rf.y; props.axisFromZ = rf.z;
-        props.axisToX = rt.x; props.axisToY = rt.y; props.axisToZ = rt.z;
-        // Referans normal de yansitilir (yansima dogrusal kismi; z korunur) —
-        // gumball cercevesi aynali katiyla ortussun.
-        const Vec3 n{props.sectionNormalX, props.sectionNormalY, props.sectionNormalZ};
-        const double np = (n.x * axisX + n.y * axisY) / lengthSquared;
-        props.sectionNormalX = 2.0 * np * axisX - n.x;
-        props.sectionNormalY = 2.0 * np * axisY - n.y;
-        props.sectionNormalZ = n.z;
-    }
-    result.setProperties(std::move(props));
+    result.setProperties(source.properties());
     return result;
 }
 
@@ -1775,18 +1130,7 @@ std::vector<WireframeModel> linearArray2D(const WireframeModel& source, std::siz
     copies.reserve(itemCount - 1);
     for (std::size_t index = 1; index < itemCount; ++index) {
         copies.push_back(source);
-        const Vec3 shift = spacing * static_cast<double>(index);
-        copies.back().translate(shift);
-        auto props = copies.back().properties();
-        if (!props.profileName.empty()) {
-            // Kopyanin sakli ekseni de kaydirilir (rotasyon sonrasi
-            // kopya eski yerde yeniden uretilmesin).
-            props.axisFromX += shift.x; props.axisFromY += shift.y;
-            props.axisFromZ += shift.z;
-            props.axisToX += shift.x; props.axisToY += shift.y;
-            props.axisToZ += shift.z;
-            copies.back().setProperties(std::move(props));
-        }
+        copies.back().translate(spacing * static_cast<double>(index));
     }
     return copies;
 }
@@ -1799,31 +1143,7 @@ std::vector<WireframeModel> polarArray2D(const WireframeModel& source, std::size
     const double step = 2.0 * std::numbers::pi / static_cast<double>(itemCount);
     for (std::size_t index = 1; index < itemCount; ++index) {
         copies.push_back(source);
-        const double angle = step * static_cast<double>(index);
-        copies.back().rotateAroundZ(center, angle);
-        auto props = copies.back().properties();
-        if (!props.profileName.empty()) {
-            // Donen kopyanin sakli ekseni de ayni aciyla dondurulur.
-            const auto rotatePt = [&](Vec3 p) {
-                const double dx = p.x - center.x;
-                const double dy = p.y - center.y;
-                const double cosA = std::cos(angle);
-                const double sinA = std::sin(angle);
-                return Vec3{center.x + dx * cosA - dy * sinA,
-                            center.y + dx * sinA + dy * cosA, p.z};
-            };
-            const Vec3 rf = rotatePt(Vec3{props.axisFromX, props.axisFromY, props.axisFromZ});
-            const Vec3 rt = rotatePt(Vec3{props.axisToX, props.axisToY, props.axisToZ});
-            props.axisFromX = rf.x; props.axisFromY = rf.y; props.axisFromZ = rf.z;
-            props.axisToX = rt.x; props.axisToY = rt.y; props.axisToZ = rt.z;
-            // Referans normal de ayni aciyla Z etrafinda doner (z sabit).
-            const Vec3 n{props.sectionNormalX, props.sectionNormalY, props.sectionNormalZ};
-            const double c = std::cos(angle), s = std::sin(angle);
-            props.sectionNormalX = n.x * c - n.y * s;
-            props.sectionNormalY = n.x * s + n.y * c;
-            props.sectionNormalZ = n.z;
-            copies.back().setProperties(std::move(props));
-        }
+        copies.back().rotateAroundZ(center, step * static_cast<double>(index));
     }
     return copies;
 }
@@ -2330,7 +1650,6 @@ SnapMarkerSymbol snapMarkerSymbol(SnapType type) noexcept {
     case SnapType::Midpoint: return SnapMarkerSymbol::Triangle;
     case SnapType::Center: return SnapMarkerSymbol::Circle;
     case SnapType::GeometricCenter: return SnapMarkerSymbol::CircleCross;
-    case SnapType::ProfileCenter: return SnapMarkerSymbol::CircleCross;
     case SnapType::Node: return SnapMarkerSymbol::CrossedCircle;
     case SnapType::Quadrant: return SnapMarkerSymbol::Diamond;
     case SnapType::Intersection: return SnapMarkerSymbol::Cross;
@@ -2343,30 +1662,6 @@ SnapMarkerSymbol snapMarkerSymbol(SnapType type) noexcept {
     case SnapType::Parallel: return SnapMarkerSymbol::ParallelLines;
     }
     return SnapMarkerSymbol::None;
-}
-
-unsigned long snapMarkerColorRgb(SnapType type) noexcept {
-    // 0x00BBGGRR (COLORREF duzeni). AutoCAD paleti uyarlamasi:
-    switch (type) {
-    case SnapType::None: return 0x00000000;
-    case SnapType::Grid: return 0x00A8A8A8;          // gri
-    case SnapType::Endpoint: return 0x000000EE;      // kirmizi
-    case SnapType::Midpoint: return 0x0000C86B;      // acik yesil
-    case SnapType::Center: return 0x00CB8C15;        // turuncu
-    case SnapType::GeometricCenter: return 0x009C6A14; // koyu turuncu
-    case SnapType::ProfileCenter: return 0x00FF40FF;   // parlak magenta (merkez ailesi)
-    case SnapType::Node: return 0x004B3BE6;          // koyu mavi
-    case SnapType::Quadrant: return 0x00B653BF;      // mor
-    case SnapType::Intersection: return 0x0000E9E9;  // sari... kirmizi ile karismasin:
-    case SnapType::ApparentIntersection: return 0x009B6BE1; // acik leylak
-    case SnapType::Extension: return 0x00A6A63E;     // haki
-    case SnapType::Insertion: return 0x00D98C3C;     // gok mavisi-lavanta
-    case SnapType::Perpendicular: return 0x00E1E12C; // camgobegi
-    case SnapType::Tangent: return 0x00B93E76;       // pembemsi mor
-    case SnapType::Nearest: return 0x0058B0B0;       // buz camgobegi
-    case SnapType::Parallel: return 0x0094D284;      // nane yesili
-    }
-    return 0x00000000;
 }
 
 } // namespace mm

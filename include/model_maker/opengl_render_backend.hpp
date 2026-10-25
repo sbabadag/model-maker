@@ -1,7 +1,6 @@
 #pragma once
 
 #include "model_maker/camera.hpp"
-#include "model_maker/contour_builder.hpp"
 #include "model_maker/geometry.hpp"
 #include "model_maker/render_backend.hpp"
 
@@ -105,13 +104,7 @@ public:
     bool renderBatchToDc(
         const std::vector<std::pair<std::size_t, WireframeModel>>& models,
         const Camera& camera, int width, int height, void* targetHdc,
-        bool useProjection2D = false, std::uint64_t contentRevision = 0,
-        std::uint8_t faceAlpha = 0, bool hiddenLineStyle = false);
-
-    // Dolu/yarisaydam yuz gecisleri (faceAlpha > 0 ise): modellerin
-    // faces() ucgenleri GL_TRIANGLES olarak derinlik testiyle cizilir;
-    // tel kafes cizgileri ustune biner. 0 = yalniz tel kafes.
-    std::size_t renderedTriangleCount() const noexcept { return renderedTriangles_; }
+        bool useProjection2D = false, std::uint64_t contentRevision = 0);
 
     // ── Performance counters ─────────────────────────────────────
     std::size_t drawCallsPerFrame() const noexcept { return drawCalls_; }
@@ -124,15 +117,8 @@ private:
     void ensureBatch(const std::vector<std::pair<std::size_t, WireframeModel>>& models,
                      std::uint64_t contentRevision = 0);
     void uploadBatch(GpuLineBatch& batch);
-    void renderContourLines(const std::vector<std::pair<std::size_t, WireframeModel>>& models,
-                            const Camera& camera, int width, int height, bool useProjection2D,
-                            std::uint64_t contentRevision);
     void renderBatch(const GpuLineBatch& batch, const Camera& camera,
                      int width, int height, bool useProjection2D = false);
-    void ensureFaceBatch(const std::vector<std::pair<std::size_t, WireframeModel>>& models,
-                         std::uint64_t contentRevision = 0);
-    void renderFaceBatch(const GpuLineBatch& batch, const Camera& camera,
-                         int width, int height, bool useProjection2D, std::uint8_t faceAlpha);
     void ensureFbo(int width, int height);
     void ensureBlitBuffer(int width, int height);
     void cleanupGL();
@@ -154,35 +140,10 @@ private:
     std::uint32_t shaderProgram_{};
     std::int32_t uniformMvp_{};
     std::int32_t uniformScreenSize_{};
-    std::int32_t uniformAlpha_{};
     unsigned int cameraUbo_{0}; // F3: kamera UBO (std140 mat4)
 
     // Line batch
     GpuLineBatch lineBatch_;
-    // Asenkron readback: iki PBO donusumlu — glReadPixels bir kare onceki
-    // tamponu bekletmeden geri okur (zoom gecikmesinin asil nedeni buydu).
-    std::uint32_t pboPair_[2]{};
-    std::uint32_t pboFrame_{};
-    GpuLineBatch faceBatch_;  // ayni vertex duzeni; indeksler GL_TRIANGLES
-    // Kontur (siluet + gercek kenar) batch'i — ONBELLEKLI. Eski kod bu pass'i
-    // her karede kurup GPU buffer'larini yikiyordu (18k modelde 337 ms/kare;
-    // olcum: tests/zoom_cost_probe.cpp). Anahtar icerik surumu + tuval olcusu +
-    // 2B/3B + kameranin DONME tabani; zoom/pan bu tabani DEGISTIRMEDIGI icin
-    // tekerlek zoom'u ve pan'da pass hic calismaz.
-    GpuLineBatch contourBatch_;
-    ContourWorkspace contourWorkspace_;
-    std::size_t contourTag_{};
-    std::size_t contourModelCount_{};
-    int contourWidth_{};
-    int contourHeight_{};
-    bool contourProjection2D_{false};
-    double contourBasis_[9]{};
-    bool contourCacheValid_{false};
-    std::size_t contourSilhouetteSegments_{};
-    std::size_t contourLoggedSegments_{static_cast<std::size_t>(-1)};
-    std::uint8_t faceAlpha_{};
-    bool hiddenLineStyle_{false}; // HiddenLine stili: dolu yuz + cizgiler
-    std::size_t renderedTriangles_{};
 
     // FBO for offscreen GL rendering → GDI compositing
     std::uint32_t fbo_{};

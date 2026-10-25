@@ -3,7 +3,6 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
-#include <map>
 
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -32,15 +31,6 @@ namespace GLConst {
     constexpr GLenum DYNAMIC_DRAW = 0x88E8;
     constexpr GLenum UNIFORM_BUFFER = 0x8A11;
     constexpr GLenum LINES = 0x0001;
-    constexpr GLenum TRIANGLES = 0x0004;
-    constexpr GLenum DEPTH_TEST = 0x0B71;
-    constexpr GLenum DEPTH_FUNC = 0x0B74;
-    constexpr GLenum LEQUAL = 0x0203;
-    constexpr GLenum POLYGON_OFFSET_FILL = 0x8037;
-    constexpr GLenum POLYGON_OFFSET_LINE = 0x2A02;
-    constexpr GLenum PIXEL_PACK_BUFFER = 0x88EB;
-    constexpr GLenum STREAM_READ = 0x88E1;
-    constexpr GLenum READ_ONLY = 0x88B8;
     constexpr GLenum BLEND_MODE = 0x0BE2;
     constexpr GLenum SRC_ALPHA = 0x0302;
     constexpr GLenum ONE_MINUS_SRC_ALPHA = 0x0303;
@@ -95,12 +85,6 @@ using PFNGLCLEARCOLORPROC = void (APIENTRY *)(GLfloat, GLfloat, GLfloat, GLfloat
 using PFNGLVIEWPORTPROC = void (APIENTRY *)(GLint, GLint, GLsizei, GLsizei);
 using PFNGLDRAWELEMENTSPROC = void (APIENTRY *)(GLenum, GLsizei, GLenum, const void*);
 using PFNGLENABLEPROC = void (APIENTRY *)(GLenum);
-using PFNGLUNIFORM1FPROC = void (APIENTRY *)(GLint, GLfloat);
-using PFNGLDEPTHFUNCPROC = void (APIENTRY *)(GLenum);
-using PFNGLDEPTHMASKPROC = void (APIENTRY *)(GLboolean);
-using PFNGLPOLYGONOFFSETPROC = void (APIENTRY *)(GLfloat, GLfloat);
-using PFNGLMAPBUFFERPROC = void* (APIENTRY *)(GLenum, GLenum);
-using PFNGLUNMAPBUFFERPROC = GLboolean (APIENTRY *)(GLenum);
 using PFNGLDISABLEPROC = void (APIENTRY *)(GLenum);
 using PFNGLBLENDFUNCPROC = void (APIENTRY *)(GLenum, GLenum);
 using PFNGLFINISHPROC = void (APIENTRY *)();
@@ -153,20 +137,11 @@ PFNGLENABLEVERTEXATTRIBARRAYPROC glEnableVertexAttribArray = nullptr;
 PFNGLDISABLEVERTEXATTRIBARRAYPROC glDisableVertexAttribArray = nullptr;
 PFNGLCLEARPROC glClear = nullptr;
 PFNGLCLEARCOLORPROC glClearColor = nullptr;
-// MinGW basit GL basliklarinda PFNGLLINEWIDTHPROC bulunmayabilir — elle bildir.
-using PFNGLLINEWIDTHPROC_LOCAL = void (APIENTRY *)(GLfloat);
-PFNGLLINEWIDTHPROC_LOCAL glLineWidth = nullptr;
 PFNGLVIEWPORTPROC glViewport = nullptr;
 PFNGLDRAWELEMENTSPROC glDrawElements = nullptr;
 PFNGLENABLEPROC glEnable = nullptr;
 PFNGLDISABLEPROC glDisable = nullptr;
 PFNGLBLENDFUNCPROC glBlendFunc = nullptr;
-PFNGLUNIFORM1FPROC glUniform1f = nullptr;
-PFNGLDEPTHFUNCPROC glDepthFunc = nullptr;
-PFNGLDEPTHMASKPROC glDepthMask = nullptr;
-PFNGLPOLYGONOFFSETPROC glPolygonOffset = nullptr;
-PFNGLMAPBUFFERPROC glMapBuffer = nullptr;
-PFNGLUNMAPBUFFERPROC glUnmapBuffer = nullptr;
 PFNGLFINISHPROC glFinish = nullptr;
 // MinGW basliklarinda PFNGLGETERRORPROC tanimli degil — elle bildir.
 using PFNGLGETERRORPROC = GLenum(APIENTRY*)(void);
@@ -207,38 +182,14 @@ const char* fragmentShaderSource = R"GLSL(
 #version 330 core
 in vec4 fragColor;
 layout(location = 0) out vec4 outColor;
-uniform float uAlpha;
 void main() {
-    outColor = vec4(fragColor.rgb, fragColor.a * uAlpha);
+    outColor = fragColor;
 }
 )GLSL";
 
 // ── WGL / loading helpers ────────────────────────────────────────
 
-// WGL_ARB_multisample / WGL_ARB_pixel_format sabitleri (wglext.h yerine)
-constexpr int WGL_DRAW_TO_WINDOW_ARB = 0x2001;
-constexpr int WGL_SUPPORT_OPENGL_ARB = 0x2010;
-constexpr int WGL_ACCELERATION_ARB = 0x2003;
-constexpr int WGL_FULL_ACCELERATION_ARB = 0x2027;
-constexpr int WGL_COLOR_BITS_ARB = 0x2014;
-constexpr int WGL_ALPHA_BITS_ARB = 0x201B;
-constexpr int WGL_DEPTH_BITS_ARB = 0x2022;
-constexpr int WGL_DOUBLE_BUFFER_ARB = 0x2011;
-constexpr int WGL_SAMPLE_BUFFERS_ARB = 0x2041;
-constexpr int WGL_SAMPLES_ARB = 0x2042;
-using PFNWGLCHOOSEPIXELFORMATARBPROC = BOOL(WINAPI*)(HDC, const int*, const FLOAT*, UINT, int*, UINT*);
-static PFNWGLCHOOSEPIXELFORMATARBPROC wglChoosePixelFormatARB = nullptr;
-
 bool loadWglExtensions(HDC hdc) {
-    (void)hdc; // gercek HDC'nin piksel formati MSAA secimi icin temiz kalir
-    // Gecici gizli pencere uzerinde gecici context: WGL uzantilari yuklenir,
-    // gercek pencerenin piksel formati sonra MSAA'li secilir.
-    HWND tempWindow = CreateWindowExA(0, "STATIC", "temp", WS_POPUP, 0, 0, 1, 1,
-                                      nullptr, nullptr, nullptr, nullptr);
-    if (!tempWindow) return false;
-    HDC tempHdc = GetDC(tempWindow);
-    if (!tempHdc) { DestroyWindow(tempWindow); return false; }
-
     PIXELFORMATDESCRIPTOR pfd = {};
     pfd.nSize = sizeof(PIXELFORMATDESCRIPTOR);
     pfd.nVersion = 1;
@@ -248,25 +199,18 @@ bool loadWglExtensions(HDC hdc) {
     pfd.cDepthBits = 24;
     pfd.iLayerType = PFD_MAIN_PLANE;
 
-    int format = ChoosePixelFormat(tempHdc, &pfd);
-    if (!format) { ReleaseDC(tempWindow, tempHdc); DestroyWindow(tempWindow); return false; }
-    if (!SetPixelFormat(tempHdc, format, &pfd)) {
-        ReleaseDC(tempWindow, tempHdc); DestroyWindow(tempWindow);
-        return false;
+    int format = ChoosePixelFormat(hdc, &pfd);
+    if (!format) return false;
+    if (!SetPixelFormat(hdc, format, &pfd)) {
+        if (GetPixelFormat(hdc) == 0) return false;
     }
 
-    HGLRC tempContext = wglCreateContext(tempHdc);
-    if (!tempContext) { ReleaseDC(tempWindow, tempHdc); DestroyWindow(tempWindow); return false; }
-    if (!wglMakeCurrent(tempHdc, tempContext)) {
-        wglDeleteContext(tempContext);
-        ReleaseDC(tempWindow, tempHdc); DestroyWindow(tempWindow);
-        return false;
-    }
+    HGLRC tempContext = wglCreateContext(hdc);
+    if (!tempContext) return false;
+    if (!wglMakeCurrent(hdc, tempContext)) { wglDeleteContext(tempContext); return false; }
 
     wglCreateContextAttribsARB = reinterpret_cast<PFNWGLCREATECONTEXTATTRIBSARBPROC>(
         wglGetProcAddress("wglCreateContextAttribsARB"));
-    wglChoosePixelFormatARB = reinterpret_cast<PFNWGLCHOOSEPIXELFORMATARBPROC>(
-        wglGetProcAddress("wglChoosePixelFormatARB"));
 
     auto loadProc = [](const char* name) -> void* {
         void* proc = reinterpret_cast<void*>(wglGetProcAddress(name));
@@ -305,18 +249,11 @@ bool loadWglExtensions(HDC hdc) {
     LOAD_GL(glDisableVertexAttribArray);
     LOAD_GL(glClear);
     LOAD_GL(glClearColor);
-    LOAD_GL(glLineWidth);
     LOAD_GL(glViewport);
     LOAD_GL(glDrawElements);
     LOAD_GL(glEnable);
     LOAD_GL(glDisable);
     LOAD_GL(glBlendFunc);
-    LOAD_GL(glUniform1f);
-    LOAD_GL(glDepthFunc);
-    LOAD_GL(glDepthMask);
-    LOAD_GL(glPolygonOffset);
-    LOAD_GL(glMapBuffer);
-    LOAD_GL(glUnmapBuffer);
     LOAD_GL(glFinish);
     LOAD_GL(glGetError);
     // FBO
@@ -334,10 +271,8 @@ bool loadWglExtensions(HDC hdc) {
     LOAD_GL(glReadBuffer);
     #undef LOAD_GL
 
-    wglMakeCurrent(nullptr, nullptr);
+    wglMakeCurrent(hdc, nullptr);
     wglDeleteContext(tempContext);
-    ReleaseDC(tempWindow, tempHdc);
-    DestroyWindow(tempWindow);
     return glCreateShader && glCreateProgram && glGenVertexArrays && glGenBuffers
            && glGenFramebuffers && glBindFramebuffer;
 }
@@ -411,25 +346,7 @@ void computeMVPMatrix(const Camera& camera, int width, int height, float* out,
     out[5] = static_cast<float>(ey.y - o.y);
     out[9] = static_cast<float>(ez.y - o.y);
     out[13] = static_cast<float>(o.y);
-    // Z SATIRI — GERCEK DERINLIK: affine orneklemeli kurulum x/y'yi ekrandan
-    // aliyr ama z'yi sifir birakiyordu; tum cizim z=0'da yapilir, DEPTH_TEST
-    // anlamsizdi ("gizli cizgiler gozukuyor" — arka kenarlar hicbir zaman
-    // oclude olmadi). viewTransform dogrusal rotasyon oldugundan clip.z =
-    // row_z * p + sabit; sabit terim butun vertexlerde ayni oldugundan
-    // LEQUAL karsilastirmasi etkilenmez. Olcek 1e-6: ~1e6 mm'ye kadar NDC
-    // icinde kalir, mm farklari float hassasiyetinin cok ustunde.
-    // depthOf farklari: viewTransform dogrusal, sabit terim (center) farkta duser.
-    // ISARET: view-z buyuk = izleyiciye YAKIN (iso z-satiri (1,1,1)/sqrt3,
-    // izleyici +oktantta). GL NDC kucuk-z = yakin oldugundan negatiflenir;
-    // boylece yakin yuz kucuk NDC-z alir, LEQUAL ile arka kenar oclude olur.
-    const double zFarScale = -1.0e-6;
-    const double zX = camera.viewTransform({1.0, 0.0, 0.0}).z - camera.viewTransform({0.0, 0.0, 0.0}).z;
-    const double zY = camera.viewTransform({0.0, 1.0, 0.0}).z - camera.viewTransform({0.0, 0.0, 0.0}).z;
-    const double zZ = camera.viewTransform({0.0, 0.0, 1.0}).z - camera.viewTransform({0.0, 0.0, 0.0}).z;
-    out[2] = static_cast<float>(zX * zFarScale);
-    out[6] = static_cast<float>(zY * zFarScale);
-    out[10] = static_cast<float>(zZ * zFarScale);
-    out[14] = 0.0f;
+    out[2] = 0.0f; out[6] = 0.0f; out[10] = 0.0f; out[14] = 0.0f;
     out[3] = 0.0f; out[7] = 0.0f; out[11] = 0.0f; out[15] = 1.0f;
 }
 std::uint32_t toRGBA8(std::uint32_t rgb24) {
@@ -480,31 +397,6 @@ bool OpenGLRenderBackend::initialize(void* windowHandle, int initialWidth, int i
         return false;
     }
 
-    // MSAA 4x piksel formati (WGL_ARB_multisample — modern GPU'larda standart).
-    // Secilemezse varsayilan format kalir, uygulama yine calisir.
-    if (wglChoosePixelFormatARB) {
-        const int msaaAttribs[] = {
-            WGL_DRAW_TO_WINDOW_ARB, 1,
-            WGL_SUPPORT_OPENGL_ARB, 1,
-            WGL_ACCELERATION_ARB, WGL_FULL_ACCELERATION_ARB,
-            WGL_COLOR_BITS_ARB, 24,
-            WGL_ALPHA_BITS_ARB, 8,
-            WGL_DEPTH_BITS_ARB, 24,
-            WGL_DOUBLE_BUFFER_ARB, 1,
-            WGL_SAMPLE_BUFFERS_ARB, 1,
-            WGL_SAMPLES_ARB, 4,
-            0, 0
-        };
-        UINT formatCount = 0;
-        int msaaFormat = 0;
-        if (wglChoosePixelFormatARB(hdc, msaaAttribs, nullptr, 1, &msaaFormat, &formatCount) &&
-            formatCount > 0) {
-            PIXELFORMATDESCRIPTOR msaaPfd = {};
-            DescribePixelFormat(hdc, msaaFormat, sizeof(msaaPfd), &msaaPfd);
-            SetPixelFormat(hdc, msaaFormat, &msaaPfd);
-        }
-    }
-
     glContext_ = createGL33Context(hdc);
     if (!glContext_) {
         ReleaseDC(static_cast<HWND>(wglWindow_), hdc); deviceContext_ = nullptr;
@@ -519,8 +411,6 @@ bool OpenGLRenderBackend::initialize(void* windowHandle, int initialWidth, int i
         return false;
     }
 
-    glEnable(0x809D); // GL_MULTISAMPLE — MSAA 4x kenar yumusatma
-
     if (!compileShaders()) {
         wglMakeCurrent(hdc, nullptr);
         wglDeleteContext(static_cast<HGLRC>(glContext_)); glContext_ = nullptr;
@@ -529,42 +419,41 @@ bool OpenGLRenderBackend::initialize(void* windowHandle, int initialWidth, int i
         return false;
     }
 
-    // FBO + clear rengi context CURRENT iken kurulmali: current context yokken
-    // wglGetProcAddress ile alinmis surucu fonksiyonlarini cagirmak tanimsiz
-    // davranis (bazi suruculerde erisim ihlali = acilis cokmesi). 0x0 canvas'ta
-    // FBO kurulmaz; renderLines ilk gecerli boyutta ensureFbo ile kurar.
-    if (width_ > 0 && height_ > 0) ensureFbo(width_, height_);
-    glClearColor(198.0f / 255.0f, 224.0f / 255.0f, 246.0f / 255.0f, 1.0f); // gradient ustu acik mavi
-
     // Context'i current birakma: ayni pencerede GL context'i current iken GDI
     // cizimi (BeginPaint) bazi suruculerde bozuluyor — GDI varsayilan modda
     // cizgiler tamamen kayboluyordu. beginFrame() cizim icin tekrar alir,
     // endFrame()'den sonra yine birakir.
     wglMakeCurrent(hdc, nullptr);
+
+    // Create FBO for offscreen rendering
+    ensureFbo(width_, height_);
+
+    glClearColor(0.0588f, 0.0706f, 0.102f, 1.0f); // RGB(15,18,26)
     initialized_ = true;
     hasWindowsGL = true;
     return true;
 }
 
 void OpenGLRenderBackend::shutdown() {
-    // SIRA ONEMLI: GL nesneleri context CURRENT iken silinir; ancak sonra
-    // context silinir, DC birakilir, gizli pencere yok edilir. (Eski sira
-    // once DC/pencereyi birakip context'siz glDelete* cagiriyordu — kapanista
-    // ve GDI'ye dususte surucu erisim ihlali riski.)
-    HDC hdc = static_cast<HDC>(deviceContext_);
-    if (glContext_) {
-        if (initialized_ && hdc && wglMakeCurrent(hdc, static_cast<HGLRC>(glContext_)))
-            cleanupGL();
-        wglMakeCurrent(nullptr, nullptr);
-        wglDeleteContext(static_cast<HGLRC>(glContext_));
-        glContext_ = nullptr;
+    if (deviceContext_ && wglWindow_) {
+        wglMakeCurrent(static_cast<HDC>(deviceContext_), nullptr);
+        ReleaseDC(static_cast<HWND>(wglWindow_), static_cast<HDC>(deviceContext_));
+        deviceContext_ = nullptr;
     }
-    if (hdc && wglWindow_) ReleaseDC(static_cast<HWND>(wglWindow_), hdc);
-    deviceContext_ = nullptr;
     if (wglWindow_) { DestroyWindow(static_cast<HWND>(wglWindow_)); wglWindow_ = nullptr; }
-    if (initialized_ && openglModule) { FreeLibrary(openglModule); openglModule = nullptr; }
+    if (!initialized_) return;
+    HDC hdc = static_cast<HDC>(deviceContext_);
+    if (hdc) wglMakeCurrent(hdc, nullptr);
+    cleanupGL();
+    if (glContext_) { wglDeleteContext(static_cast<HGLRC>(glContext_)); glContext_ = nullptr; }
+    if (deviceContext_ && windowHandle_) {
+        ReleaseDC(static_cast<HWND>(windowHandle_), static_cast<HDC>(deviceContext_));
+        deviceContext_ = nullptr;
+    }
+    if (openglModule) { FreeLibrary(openglModule); openglModule = nullptr; }
     initialized_ = false;
     hasWindowsGL = false;
+    if (wglWindow_) { DestroyWindow(static_cast<HWND>(wglWindow_)); wglWindow_ = nullptr; }
 }
 
 void OpenGLRenderBackend::resize(int width, int height) {
@@ -648,16 +537,6 @@ void OpenGLRenderBackend::ensureBlitBuffer(int width, int height) {
     if (blitBuffer_.size() != needed) {
         blitBuffer_.resize(needed);
         if (blitDib_) { DeleteObject(static_cast<HBITMAP>(blitDib_)); blitDib_ = nullptr; }
-        // PBO cifti boyut degisince yeniden kurulur (asenkron readback).
-        if (pboPair_[0] != 0) { glDeleteBuffers(2, pboPair_); pboPair_[0] = pboPair_[1] = 0; }
-        glGenBuffers(2, pboPair_);
-        for (const std::uint32_t pbo : pboPair_) {
-            glBindBuffer(GLConst::PIXEL_PACK_BUFFER, pbo);
-            glBufferData(GLConst::PIXEL_PACK_BUFFER, static_cast<GLsizeiptr>(needed),
-                         nullptr, GLConst::STREAM_READ);
-        }
-        glBindBuffer(GLConst::PIXEL_PACK_BUFFER, 0);
-        pboFrame_ = 0;
     }
 }
 
@@ -711,10 +590,8 @@ bool OpenGLRenderBackend::blitToDC(void* target, int width, int height) {
 bool OpenGLRenderBackend::renderBatchToDc(
     const std::vector<std::pair<std::size_t, WireframeModel>>& models,
     const Camera& camera, int width, int height, void* targetHdc,
-    bool useProjection2D, std::uint64_t contentRevision,
-    std::uint8_t faceAlpha, bool hiddenLineStyle) {
+    bool useProjection2D, std::uint64_t contentRevision) {
     if (!initialized_ || models.empty()) return false;
-    if (width <= 0 || height <= 0) return false; // simge durumu / 0x0 canvas: GDI yolu
     const auto glDiag = [this](const char* step) {
         if (glDiagCount_ >= 8) return;
         FILE* diag = fopen("model-maker-render.log", "a");
@@ -733,69 +610,21 @@ bool OpenGLRenderBackend::renderBatchToDc(
     glDiag("FBO-OK");
     glBindFramebuffer(GLConst::FRAMEBUFFER, fbo_);
     glViewport(0, 0, width, height);
-    // KREM opak zemin: FBO komple boyanir; AlphaBlend artik yalniz GL
-    // icerigini tasinmasinda kullanilir (BI_RGB DIB alfa bayti guvenilmez
-    // oldugundan seffaf clear + alfa kompoziti siyah/gri kaliyordu —
-    // "GL bolgesinde arka plan calismiyor" buydu). Grid/eksenler GDI
-    // tarafinda kompozitin USTUNE cizildiginden zemin krem gorunur.
-    glClearColor(198.0f / 255.0f, 224.0f / 255.0f, 246.0f / 255.0f, 1.0f); // gradient ustu
+    // Seffaf zemin: GDI icerigi AlphaBlend ile alttan gorunur, yalniz
+    // cizgiler kompozite edilir.
+    glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
     glClear(GLConst::COLOR_BUFFER_BIT);
 
     ensureBatch(models, contentRevision);
     glDiag("BATCH-OK");
-    faceAlpha_ = faceAlpha;
-    hiddenLineStyle_ = hiddenLineStyle;
-    renderedTriangles_ = 0;
-    if (faceAlpha != 0) {
-        // Yuzler once, derinlik testiyle: opak dolgu + dogru ortme;
-        // tel kafes cizgileri ustte kalir (depth yazilmaz/yok sayilir).
-        ensureFaceBatch(models, contentRevision);
-        renderFaceBatch(faceBatch_, camera, width, height, useProjection2D, faceAlpha);
-        renderedTriangles_ = faceBatch_.indexCount / 3;
-        // DERINLIK TEMIZLENMEZ: renderContourLines artik gercek kenarlari
-        // da ciziyor; arka kenarlarin yuzlerce oclude edilmesi icin yuz
-        // batch'inin yazdigi depth buffer KALMALI. (Eski siluet cizimi
-        // kendi batch'ini kurup depth'i temizliyordu — tum kenarlar
-        // cizilirken bu, gizli kenarlarin ortaya cikmasina neden oldu.)
-        renderContourLines(models, camera, width, height, useProjection2D, contentRevision);
-    }
-    // Solid stilde (tam opak yuzler) tel kafes cizilmez: gorunum yalniz
-    // dolu yuzler + dis siluet (kontur). Ic kiris kenarlari ve arkadaki
-    // kenarlar boylece gizlenir — AutoCAD solid gorusu davranisi.
-    // Wireframe (faceAlpha==0) ve saydam (0<faceAlpha<255) stillerinde
-    // cizgiler her zamanki gibi cizilir. HiddenLine (alpha 255 + stil
-    // bayragi) cizgileri de ister: yuz dolgusu USTUNE kenar cizgileri.
-    // TEKLA GORUNUMU: Solid stilde de gorunur (on bakan) KENARLAR cizilir —
-    // yuz dolgusu + kisa kirpma filtreli gercek kenarlar ustte. Icis
-    // gorunmeyen (arka) kenarlar depth testiyle zaten gizlenir; boylece
-    // I-kirisin flans yonleri/derinligi okunur, model "kafa karistirmaz".
-    // (Onceki tasarim: solid = yalniz siluet — yon okunamiyordu.)
-    // Solid = yalniz dolu yuzler + siluet (ic kenar YOK — "ikincil alt
-    // cizgiler" sikayetinin kaynagi idi). HiddenLine = kenarli gorunum;
-    // RENKLE BOYANIR (Tekla boyali model gorunumu): yuz dolgusu + gercek
-    // kenarlar ustte. edgesOnTop artik yalniz HiddenLine'da.
-    const bool hiddenLineMode = hiddenLineStyle_ && faceAlpha == 255;
-    if (lineBatch_.indexCount != 0 && (faceAlpha != 255 || hiddenLineMode)) {
-        if (hiddenLineMode) {
-            // derinlik testi acik + hafif offset: yuz dolgusu USTUNE
-            // gercek kenarlar dusturulmadan cizilir (Tekla boyali
-            // hidden-line gorunumu).
-            glEnable(GLConst::POLYGON_OFFSET_FILL);
-            glPolygonOffset(-1.0f, -1.0f);
-        }
+    if (lineBatch_.indexCount != 0) {
         renderBatch(lineBatch_, camera, width, height, useProjection2D);
-        if (hiddenLineMode) {
-            glDisable(GLConst::POLYGON_OFFSET_FILL);
-        }
         drawCalls_ = 1;
         renderedLines_ = lineBatch_.indexCount / 2;
     }
 
     glFinish();
     ensureBlitBuffer(width, height);
-    // PBO asenkron denemesi (d409420) geri alindi: glMapBuffer bu makinede
-    // yine de bekliyordu ve zoom 80-90 FPS'ten 30-50'ye dustu. Senkron
-    // readback kanitli: kare basina ~3ms, GDI paritesine yakin.
     glReadPixels(0, 0, width, height, GLConst::BGRA_EXT, GLConst::UNSIGNED_BYTE_TYPE,
                  blitBuffer_.data());
     // Readback taramasi: TUM tampon + ilk opak pikselin satiri + beklenen
@@ -858,10 +687,6 @@ bool OpenGLRenderBackend::compileShaders() {
     shaderProgram_ = program;
     uniformMvp_ = mvpLoc;
     uniformScreenSize_ = screenLoc;
-    uniformAlpha_ = glGetUniformLocation(shaderProgram_, "uAlpha");
-    glUseProgram(shaderProgram_);
-    if (uniformAlpha_ >= 0) glUniform1f(uniformAlpha_, 1.0f);
-    glUseProgram(0);
     // F3: kamera UBO'su (64 bayt = mat4) — her karede glBufferSubData ile
     // guncellenir, glUniform cagrisi ve string lookup yok.
     glGenBuffers(1, &cameraUbo_);
@@ -937,293 +762,6 @@ void OpenGLRenderBackend::ensureBatch(
     }
     lineBatch_.indexCount = lineBatch_.indices.size();
     uploadBatch(lineBatch_);
-}
-
-void OpenGLRenderBackend::ensureFaceBatch(
-    const std::vector<std::pair<std::size_t, WireframeModel>>& models,
-    std::uint64_t contentRevision) {
-    std::size_t totalFaces = 0;
-    for (const auto& [idx, model] : models) totalFaces += model.faces().size();
-    std::size_t tag = contentRevision
-        ? static_cast<std::size_t>(contentRevision)
-        : (models.size() ^ (totalFaces << 16));
-    if (tag == faceBatch_.versionTag && !faceBatch_.dirty) return;
-
-    faceBatch_.versionTag = tag;
-    faceBatch_.dirty = true;
-    faceBatch_.modelCount = models.size();
-
-    // Isikli golgelendirme: renk ucgen basina sabit (flat) oldugundan her
-    // ucgen kendi 3 kosesini tasir — paylasimli koseler 3'e katlanir.
-    std::size_t totalVertices = 0, totalIndices = 0;
-    for (const auto& [idx, model] : models) {
-        if (model.faces().empty()) continue;
-        for (const auto& face : model.faces())
-            if (face.size() >= 3) {
-                totalVertices += (face.size() - 2) * 3;
-                totalIndices += (face.size() - 2) * 3;
-            }
-    }
-
-    faceBatch_.vertices.clear();
-    faceBatch_.vertices.reserve(totalVertices);
-    faceBatch_.indices.clear();
-    faceBatch_.indices.reserve(totalIndices);
-
-    std::size_t vertexBase = 0;
-    // Sabit lamba yonu (normalize ~1.0) — ust-sol-on; OCC viewer benzeri.
-    constexpr double lightX = 0.45, lightY = -0.5, lightZ = 0.74;
-    // YUMUSAK GOLGELENDIRME (Gouraud): kose basina normal = komsu yuz
-    // normallerinin ortalamasi. Duz yuzlerde ayni rengi korur; egri
-    // yuzeylerde (fason radius) surekli gecis verir, faceted "ucgen"
-    // goruntusu kaybolur. Kivrim acisi 40°'den buyukse SERT kenar sayilip
-    // normal ayrilir (flanş-gövde 90° kavsagi keskin kalir, radius tegetligi
-    // yumusar). Renk ucu basina interpolasyonla tasinir — shader degismez.
-    const double creaseCos = std::cos(40.0 * 3.14159265358979323846 / 180.0);
-    for (const auto& [modelIdx, model] : models) {
-        const auto& vertices = model.vertices();
-        const auto& faces = model.faces();
-        if (vertices.empty() || faces.empty()) continue;
-        const auto props = model.properties();
-        const std::uint32_t baseColor = props.effectiveColor;
-        const double baseR = static_cast<double>((baseColor >> 16) & 0xFFu);
-        const double baseG = static_cast<double>((baseColor >> 8) & 0xFFu);
-        const double baseB = static_cast<double>(baseColor & 0xFFu);
-        // Pass 1: yuz normalleri + kose bazinda yumusatma gruplari.
-        struct NormalGroup { double nx{}, ny{}, nz{}, w{}; };
-        std::vector<std::vector<NormalGroup>> vertexGroups(vertices.size());
-        std::vector<std::vector<std::size_t>> faceGroups(faces.size());
-        const auto assignGroup = [&](std::size_t vi, double fNx, double fNy,
-                                     double fNz) -> std::size_t {
-            auto& groups = vertexGroups[vi];
-            for (std::size_t gi = 0; gi < groups.size(); ++gi) {
-                const double mag = std::sqrt(groups[gi].nx * groups[gi].nx +
-                                             groups[gi].ny * groups[gi].ny +
-                                             groups[gi].nz * groups[gi].nz);
-                if (mag < 1e-12) continue;
-                const double dot = (groups[gi].nx * fNx + groups[gi].ny * fNy +
-                                    groups[gi].nz * fNz) / mag;
-                if (dot > creaseCos) {
-                    groups[gi].nx += fNx; groups[gi].ny += fNy;
-                    groups[gi].nz += fNz; groups[gi].w += 1.0;
-                    return gi;
-                }
-            }
-            groups.push_back({fNx, fNy, fNz, 1.0});
-            return groups.size() - 1;
-        };
-        for (std::size_t fi = 0; fi < faces.size(); ++fi) {
-            const auto& face = faces[fi];
-            if (face.size() < 3) continue;
-            const Vec3& n0 = vertices[face[0]];
-            const Vec3& n1 = vertices[face[1]];
-            const Vec3& n2 = vertices[face[2]];
-            const double e1x = n1.x - n0.x, e1y = n1.y - n0.y, e1z = n1.z - n0.z;
-            const double e2x = n2.x - n0.x, e2y = n2.y - n0.y, e2z = n2.z - n0.z;
-            double nx = e1y * e2z - e1z * e2y;
-            double ny = e1z * e2x - e1x * e2z;
-            double nz = e1x * e2y - e1y * e2x;
-            const double normalLength = std::sqrt(nx * nx + ny * ny + nz * nz);
-            if (normalLength > 1e-12) {
-                nx /= normalLength; ny /= normalLength; nz /= normalLength;
-            } else {
-                nx = 0.0; ny = 0.0; nz = 1.0;
-            }
-            auto& fg = faceGroups[fi];
-            fg.resize(face.size());
-            for (std::size_t vi = 0; vi < face.size(); ++vi)
-                fg[vi] = assignGroup(face[vi], nx, ny, nz);
-        }
-        // Pass 2: kose rengi = grup normaline gore cift yonlu lambert.
-        const auto groupNormal = [&](std::size_t vi, std::size_t gi, double& gx,
-                                     double& gy, double& gz) -> bool {
-            const auto& groups = vertexGroups[vi];
-            if (gi >= groups.size()) return false;
-            const auto& g = groups[gi];
-            const double mag = std::sqrt(g.nx * g.nx + g.ny * g.ny + g.nz * g.nz);
-            if (mag < 1e-12) return false;
-            gx = g.nx / mag; gy = g.ny / mag; gz = g.nz / mag;
-            return true;
-        };
-        const auto shade = [&](double gx, double gy, double gz) -> std::uint32_t {
-            double lambert = gx * lightX + gy * lightY + gz * lightZ;
-            if (lambert < 0.0) lambert = -lambert;
-            const double factor = 0.62 + 0.38 * lambert;
-            return toRGBA8(
-                ((static_cast<std::uint32_t>(baseR * factor) & 0xFFu) << 16) |
-                ((static_cast<std::uint32_t>(baseG * factor) & 0xFFu) << 8) |
-                (static_cast<std::uint32_t>(baseB * factor) & 0xFFu));
-        };
-        for (std::size_t fi = 0; fi < faces.size(); ++fi) {
-            const auto& face = faces[fi];
-            if (face.size() < 3) continue;
-            const auto& fg = faceGroups[fi];
-            for (std::size_t i = 1; i + 1 < face.size(); ++i) {
-                const std::size_t tri[3] = {face[0], face[i], face[i + 1]};
-                const std::size_t grp[3] = {fg[0], fg[i], fg[i + 1]};
-                for (std::size_t c = 0; c < 3; ++c) {
-                    const auto& v = vertices[tri[c]];
-                    double gx = 0.0, gy = 0.0, gz = 1.0;
-                    if (!groupNormal(tri[c], grp[c], gx, gy, gz)) {
-                        gx = 0.0; gy = 0.0; gz = 1.0;
-                    }
-                    GpuLineBatch::GpuVertex gv;
-                    gv.x = static_cast<float>(v.x);
-                    gv.y = static_cast<float>(v.y);
-                    gv.z = static_cast<float>(v.z);
-                    gv.color = shade(gx, gy, gz);
-                    faceBatch_.vertices.push_back(gv);
-                }
-                faceBatch_.indices.push_back(static_cast<std::uint32_t>(vertexBase));
-                faceBatch_.indices.push_back(static_cast<std::uint32_t>(vertexBase + 1));
-                faceBatch_.indices.push_back(static_cast<std::uint32_t>(vertexBase + 2));
-                vertexBase += 3;
-            }
-        }
-    }
-    faceBatch_.indexCount = faceBatch_.indices.size();
-    uploadBatch(faceBatch_);
-}
-
-void OpenGLRenderBackend::renderFaceBatch(const GpuLineBatch& batch, const Camera& camera,
-                                          int width, int height, bool useProjection2D,
-                                          std::uint8_t faceAlpha) {
-    if (batch.indexCount == 0 || batch.vao == 0) return;
-    glUseProgram(shaderProgram_);
-    float mvp[16];
-    computeMVPMatrix(camera, width, height, mvp, useProjection2D);
-    glBindBuffer(GLConst::UNIFORM_BUFFER, cameraUbo_);
-    glBufferSubData(GLConst::UNIFORM_BUFFER, 0, 64, mvp);
-    glBindBuffer(GLConst::UNIFORM_BUFFER, 0);
-    if (uniformAlpha_ >= 0)
-        glUniform1f(uniformAlpha_, static_cast<float>(faceAlpha) / 255.0f);
-
-    glEnable(GLConst::DEPTH_TEST);
-    glDepthFunc(GLConst::LEQUAL);
-    glClear(GLConst::DEPTH_BUFFER_BIT);
-    glEnable(GLConst::BLEND_MODE);
-    glBlendFunc(GLConst::SRC_ALPHA, GLConst::ONE_MINUS_SRC_ALPHA);
-    glDepthMask(faceAlpha == 255 ? GLConst::GL_TRUE : GLConst::GL_FALSE);
-    // Cizgilerin yuzeyle ayni duzlemde kaybolmasini onle: yuzleri hafifce
-    // geri it (poligon ofseti) — tel kafes her zaman gorunur kalir.
-    glEnable(GLConst::POLYGON_OFFSET_FILL);
-    glPolygonOffset(1.0f, 1.0f);
-    glBindVertexArray(batch.vao);
-    glDrawElements(GLConst::TRIANGLES, static_cast<GLsizei>(batch.indexCount),
-                   GLConst::UNSIGNED_INT_TYPE, nullptr);
-    glBindVertexArray(0);
-    glDisable(GLConst::POLYGON_OFFSET_FILL);
-    glDisable(GLConst::BLEND_MODE);
-    glDepthMask(GLConst::GL_TRUE);
-    glDisable(GLConst::DEPTH_TEST);
-    if (uniformAlpha_ >= 0) glUniform1f(uniformAlpha_, 1.0f);
-}
-
-void OpenGLRenderBackend::renderContourLines(
-    const std::vector<std::pair<std::size_t, WireframeModel>>& models,
-    const Camera& camera, int width, int height, bool useProjection2D,
-    std::uint64_t contentRevision) {
-    // KONTUR (siluet + gercek kenarlar) — ONBELLEKLI.
-    //
-    // Eski govde bu pass'i HER KAREDE bastan kuruyordu: model basina iki
-    // std::map, ~1M segmentlik ara vektor ve kare basina GPU buffer
-    // yarat/yik. Olculdu (tests/zoom_cost_probe.cpp, 18k profil kati /
-    // 648k kenar / 252k yuz): 337 ms/kare — tekerlek zoom'u bu yuzden
-    // ~2 FPS'e dusuyordu.
-    //
-    // Siniflandirma (front/back) YALNIZ kameranin donme tabanina baglidir;
-    // izdusum alaninin isareti duzgun zoom + oteleme altinda korunur. Bu
-    // yuzden onbellek anahtari DONME tabanini icerir, zoom/pan'i icermez:
-    // tekerlek zoom'unda ve pan'da pass hic calismaz.
-    if (models.empty()) return;
-
-    std::size_t totalEdges = 0;
-    for (const auto& [index, model] : models) {
-        (void)index;
-        totalEdges += model.edges().size();
-    }
-    const std::size_t contentTag = contentRevision
-        ? static_cast<std::size_t>(contentRevision)
-        : (models.size() ^ (totalEdges << 16));
-
-    const Vec3 basisX = camera.viewTransform({1.0, 0.0, 0.0});
-    const Vec3 basisY = camera.viewTransform({0.0, 1.0, 0.0});
-    const Vec3 basisZ = camera.viewTransform({0.0, 0.0, 1.0});
-    const double basis[9] = {basisX.x, basisX.y, basisX.z,
-                             basisY.x, basisY.y, basisY.z,
-                             basisZ.x, basisZ.y, basisZ.z};
-
-    bool cacheHit = contourCacheValid_ &&
-        contourTag_ == contentTag &&
-        contourModelCount_ == models.size() &&
-        contourWidth_ == width && contourHeight_ == height &&
-        contourProjection2D_ == useProjection2D;
-    if (cacheHit) {
-        for (int i = 0; i < 9; ++i) {
-            if (contourBasis_[i] != basis[i]) { cacheHit = false; break; }
-        }
-    }
-
-    if (!cacheHit) {
-        contourSilhouetteSegments_ = 0;
-        contourBatch_.indexCount = mm::buildContourBatch(
-            models, camera, width, height, toRGBA8((40u << 16) | (40u << 8) | 40u),
-            contourBatch_.vertices, contourBatch_.indices, contourWorkspace_,
-            &contourSilhouetteSegments_);
-        if (contourBatch_.indexCount == 0) {
-            contourCacheValid_ = false;
-            return;
-        }
-        contourBatch_.dirty = true;
-        contourBatch_.versionTag = contentTag;
-        contourBatch_.modelCount = models.size();
-        uploadBatch(contourBatch_);
-        contourTag_ = contentTag;
-        contourModelCount_ = models.size();
-        contourWidth_ = width;
-        contourHeight_ = height;
-        contourProjection2D_ = useProjection2D;
-        for (int i = 0; i < 9; ++i) contourBasis_[i] = basis[i];
-        contourCacheValid_ = true;
-        if (contourBatch_.indexCount != contourLoggedSegments_) {
-            contourLoggedSegments_ = contourBatch_.indexCount;
-            FILE* contourLog = fopen("model-maker-render.log", "a");
-            if (contourLog) {
-                fprintf(contourLog, "CONTOUR-SEGMENTS count=%zu silhouette=%zu rebuilding=1\n",
-                        contourBatch_.indexCount / 2, contourSilhouetteSegments_);
-                fclose(contourLog);
-            }
-        }
-    }
-    if (contourBatch_.indexCount == 0 || contourBatch_.vao == 0) return;
-
-    glUseProgram(shaderProgram_);
-    float mvp[16];
-    computeMVPMatrix(camera, width, height, mvp, useProjection2D);
-    glBindBuffer(GLConst::UNIFORM_BUFFER, cameraUbo_);
-    glBufferSubData(GLConst::UNIFORM_BUFFER, 0, 64, mvp);
-    glBindBuffer(GLConst::UNIFORM_BUFFER, 0);
-    if (uniformAlpha_ >= 0) glUniform1f(uniformAlpha_, 1.0f);
-    glEnable(GLConst::DEPTH_TEST);
-    glDepthFunc(GLConst::LEQUAL);
-    glDepthMask(GLConst::GL_FALSE);
-    glEnable(GLConst::BLEND_MODE);
-    glBlendFunc(GLConst::SRC_ALPHA, GLConst::ONE_MINUS_SRC_ALPHA);
-    glEnable(GLConst::POLYGON_OFFSET_LINE);
-    glPolygonOffset(-1.0f, -1.0f);
-    glLineWidth(2.0f); // kontur daha belirgin (GL odak modu)
-    glBindVertexArray(contourBatch_.vao);
-    glDrawElements(GLConst::LINES, static_cast<GLsizei>(contourBatch_.indexCount),
-                   GLConst::UNSIGNED_INT_TYPE, nullptr);
-    glBindVertexArray(0);
-    glLineWidth(1.0f);
-    glDisable(GLConst::POLYGON_OFFSET_LINE);
-    glDisable(GLConst::BLEND_MODE);
-    glDepthMask(GLConst::GL_TRUE);
-    glDisable(GLConst::DEPTH_TEST);
-    // NOT: GPU buffer'lari BURADA SILINMEZ — onbellekli batch bir sonraki
-    // karede yeniden kullanilir. Silme cleanupGL()'de ve baglam
-    // kaybinda yapilir.
 }
 
 void OpenGLRenderBackend::uploadBatch(GpuLineBatch& batch) {
@@ -1323,14 +861,6 @@ void OpenGLRenderBackend::cleanupGL() {
     if (lineBatch_.vao) { glDeleteVertexArrays(1, &lineBatch_.vao); lineBatch_.vao = 0; }
     if (lineBatch_.vbo) { glDeleteBuffers(1, &lineBatch_.vbo); lineBatch_.vbo = 0; }
     if (lineBatch_.ebo) { glDeleteBuffers(1, &lineBatch_.ebo); lineBatch_.ebo = 0; }
-    // Kontur batch'i de onbellekli kalici bir GPU kaynagidir — baglam
-    // yikilirken burada serbest birakilir; onbellek anahtari GECERSIZ kilinir
-    // ki bir sonraki kare bayat buffer'a cizmesin.
-    if (contourBatch_.vao) { glDeleteVertexArrays(1, &contourBatch_.vao); contourBatch_.vao = 0; }
-    if (contourBatch_.vbo) { glDeleteBuffers(1, &contourBatch_.vbo); contourBatch_.vbo = 0; }
-    if (contourBatch_.ebo) { glDeleteBuffers(1, &contourBatch_.ebo); contourBatch_.ebo = 0; }
-    contourBatch_.indexCount = 0;
-    contourCacheValid_ = false;
     if (shaderProgram_) { glDeleteProgram(shaderProgram_); shaderProgram_ = 0; }
     if (cameraUbo_) { glDeleteBuffers(1, &cameraUbo_); cameraUbo_ = 0; }
     if (fbo_) { glDeleteFramebuffers(1, &fbo_); fbo_ = 0; }

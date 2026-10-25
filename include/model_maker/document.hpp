@@ -1,20 +1,10 @@
 #pragma once
 
-#include "model_maker/entity_id.hpp"
 #include "model_maker/geometry.hpp"
-#include "model_maker/grid.hpp"
-#include "model_maker/mmw8_codec.hpp"
-#include "model_maker/cut_modifier.hpp"
-#include "model_maker/bolt.hpp"
-#include "model_maker/end_plate.hpp"
-#include "model_maker/component_engine.hpp"
-#include "model_maker/weld.hpp"
 
-#include <array>
 #include <filesystem>
 #include <functional>
 #include <deque>
-#include <memory>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -22,192 +12,44 @@
 
 namespace mm {
 
-// OPAK B-Rep magazasi: TANIMI bu baslikta degil (occ_store.hpp). Document
-// yalnizca soyut arayuz uzerinden sahiplenir; OCCT tipi bu basliga SIZMAZ.
-class OccStore;
-
 struct Bounds3 {
     Vec3 minimum{};
     Vec3 maximum{};
 };
 
 struct UndoOp {
-    enum class Kind { Add, Delete, Replace, Move, Transform, GridAdd, GridRemove, GridReplace,
-                      CutAdd, CutRemove, CutReplace, BoltAdd, BoltRemove, BoltReplace,
-                      EndPlateAdd, EndPlateRemove, EndPlateReplace,
-                      ComponentAdd, ComponentRemove, ComponentReplace,
-                      WeldAdd, WeldRemove, WeldReplace, AssemblyReplace,
-                      ProfileReplace };
+    enum class Kind { Add, Delete, Replace, Move };
     Kind kind{Kind::Add};
     std::size_t index{};
     std::vector<WireframeModel> beforeModels; // delete: silinenler; replace: eski model
     std::vector<WireframeModel> afterModels;  // add: eklenen; replace: yeni modeller
-    // KARARLI KIMLIK: before/after modelleriyle BIREBIR hizali kimlikler.
-    // Geri al/yinele sirasinda DOGRU varlik kimligi geri getirilir (yeni
-    // varlik yaratildiginda yeni kimlik atanirken ureten taraf kaydeder).
-    std::vector<EntityId> beforeIds;          // delete/replace: silinen/eski varliklarin kimligi
-    std::vector<EntityId> afterIds;           // add/replace: eklenen/yeni varliklarin kimligi
     std::vector<std::size_t> indices;         // delete (azalan) / move: etkilenen indeksler
     Vec3 displacement{};                      // move: uygulanan yer değiştirme
-    // Transform (rotate/scale gumball): v' = pivot + linear*(v - pivot).
-    // Undo/redo linearInverse ile uygulanir (tam tersinir).
-    Vec3 pivot{};
-    std::array<double, 9> linear{1, 0, 0, 0, 1, 0, 0, 0, 1};
-    std::array<double, 9> linearInverse{1, 0, 0, 0, 1, 0, 0, 0, 1};
-    // Grid (GridAdd/GridRemove/GridReplace): yapi gridi ekle/sil/degistir.
-    // GridAdd: gridAfter eklendi (gridIndex'e). GridRemove: gridBefore silindi.
-    // GridReplace: gridBefore -> gridAfter (ayni indeks).
-    std::size_t gridIndex{};
-    GridDefinition gridBefore;
-    GridDefinition gridAfter;
-    // Cut (CutAdd/CutRemove/CutReplace): kesme modifier ekle/sil/degistir.
-    std::size_t cutIndex{};
-    CutModifier cutBefore;
-    CutModifier cutAfter;
-    // Bolt (BoltAdd/BoltRemove/BoltReplace): bulon grubu ekle/sil/degistir.
-    std::size_t boltIndex{};
-    BoltGroup boltBefore;
-    BoltGroup boltAfter;
-    // End plate (EndPlateAdd/EndPlateRemove/EndPlateReplace): alin levhasi
-    // baglantisi ekle/sil/degistir.
-    std::size_t endPlateIndex{};
-    EndPlateConnection endPlateBefore;
-    EndPlateConnection endPlateAfter;
-    // Component (ComponentAdd/ComponentRemove/ComponentReplace): parametrik
-    // component instance kaydi ekle/sil/degistir.
-    std::size_t componentIndex{};
-    ComponentInstanceRecord componentBefore;
-    ComponentInstanceRecord componentAfter;
-    // Weld (WeldAdd/WeldRemove/WeldReplace): kaynak ekle/sil/degistir.
-    std::size_t weldIndex{};
-    Weld weldBefore;
-    Weld weldAfter;
-    // Assembly (AssemblyReplace): tam assembly vektoru degistirildi (shop-weld
-    // grafinden yeniden turetim). Bireysel add/remove YOKTUR — deterministik
-    // yeniden turetim tek transaction'da onceki/sonraki vektoru tasir.
-    std::vector<AssemblyRecord> assembliesBefore;
-    std::vector<AssemblyRecord> assembliesAfter;
-    // Profile (ProfileReplace): bir modelin profil adi degistirildi (HEB300 ->
-    // HEB400). index = model indeksi; profileBefore/After = eski/yeni profil adi.
-    std::string profileBefore;
-    std::string profileAfter;
 };
 struct UndoRecord {
     std::vector<UndoOp> ops;
     std::unordered_map<std::string, EntityProperties> layersBefore;
     std::unordered_map<std::string, EntityProperties> layersAfter;
-    // GEOMETRI SURUM REFERANSLARI (OCCT tipi YOK — yalniz EntityId+VersionId).
-    // Bir komutta DEGISEN tum EntityId'leri kapsar. Ayni EntityId birden fazla
-    // yazilirsa: ILK oncesi (geometryBefore) ve SON sonrasi (geometryAfter)
-    // saklanir — ARA surumler bagimsiz undo adimlarina donusmez. `version ==
-    // kInvalidVersionId` "o varlik icin etkin geometri YOK" demektir (gecerli).
-    std::vector<GeometrySlotRef> geometryBefore;  // islem ONCESI etkin surumler
-    std::vector<GeometrySlotRef> geometryAfter;   // islem SONRASI etkin surumler
-    // KESME TABAN SURUM DELTASI (Slice 2d-2c): taban (pre-cut) surum degisimleri
-    // de geri alinabilir — undo/redo/rollback tabani tutarli geri getirir.
-    // Ayni EntityId icin ILK before / SON after korunur (geometry delta ile ayni).
-    std::vector<GeometrySlotRef> baseBefore;  // islem ONCESI taban surumler
-    std::vector<GeometrySlotRef> baseAfter;   // islem SONRASI taban surumler
 };
-
-// GridDefinition / GridAxisLine ve Tekla koordinat dili `model_maker/grid.hpp`
-// icinde tanimlidir (portatif cekirdek). Aks cizgisi geometrisi `axes` alaninda
-// TUREtilmis olarak durur; kaynak olan spesifikasyondur (xCoords/yCoords/...).
 
 class Document {
 public:
     Document();
-    // OPAK B-Rep magazasi (PIMPL): OCCT tipi bu baslikta GORUNMEZ. Yikici ve
-    // tasima islemleri OUT-OF-LINE tanimlidir — std::unique_ptr<OccStore>
-    // yok edilirken tam tip gerekir (document.cpp occ_store.hpp'yi include eder).
-    // Document TASINABILIR (DxfFile::read + optional<Document>), KOPYALANAMAZ
-    // (magaza tek sahipli).
-    ~Document();
-    Document(Document&&) noexcept;
-    Document& operator=(Document&&) noexcept;
-    Document(const Document&) = delete;
-    Document& operator=(const Document&) = delete;
-
-    // Belge-sahipli B-Rep magazasi. Varsayilan: no-op store (OCC-kapali guvenli).
-    // OCC-acik Application baslangicta gercek OCCT store'unu ENJEKTE eder
-    // (makeOccSolidStore) — saglayici secimi LINK SIRASINA bagli degildir.
-    OccStore& occStore() noexcept { return *occStore_; }
-    const OccStore& occStore() const noexcept { return *occStore_; }
-    void setOccStore(std::unique_ptr<OccStore> store) noexcept;
-
     void addModel(WireframeModel model);
     void addLine(const Vec3& from, const Vec3& to);
-    // KONSTRUKSIYON NESNELERI (P2): Point/Line/Plane. Standart WireframeModel
-    // olarak saklanir — snap/secim/gumball/EntityId/undo zaten model yollarinda
-    // calisir; ConstructionKind etiketiyle ayristirilir. Eklenen modelin
-    // indeksini dondurur.
-    std::size_t addConstructionPoint(const Vec3& position);
-    std::size_t addConstructionLine(const Vec3& from, const Vec3& to);
-    std::size_t addConstructionPlane(const WorkPlane& plane, double size);
-    // ConstructionKind != None olan model indeksleri (belge sirasinda).
-    std::vector<std::size_t> constructionObjects() const;
-    bool isConstruction(std::size_t index) const;
-    // Tum konstruksiyon nesnelerinin gorunurlugunu tek bayrakla degistirir.
-    bool setConstructionVisible(bool visible);
     void reserveModels(std::size_t count);
     void moveModels(const std::vector<std::size_t>& indices, const Vec3& displacement);
     void copyModels(const std::vector<std::size_t>& indices, const Vec3& displacement);
-    // Gumball rotate/scale: pivot etrafinda afin donusum (tek transform yolu).
-    // linear row-major 3x3; linearInverse tam tersi (undo icin).
-    void transformModels(const std::vector<std::size_t>& indices, const Vec3& pivot,
-                         const std::array<double, 9>& linear,
-                         const std::array<double, 9>& linearInverse);
-    // Kolaylik: pivot etrafinda axis (birim) ekseninde aci (radyan) kadar dondur.
-    void rotateModels(const std::vector<std::size_t>& indices, const Vec3& pivot,
-                      const Vec3& axis, double radians);
-    // Kolaylik: pivot etrafinda eksen-bazli olcekleme (factors.x/y/z).
-    void scaleModels(const std::vector<std::size_t>& indices, const Vec3& pivot,
-                     const Vec3& factors);
     std::size_t setModelLayer(const std::vector<std::size_t>& indices, const std::string& layer);
     std::size_t setModelColor(const std::vector<std::size_t>& indices,
                               std::optional<std::uint32_t> color);
     std::size_t setModelProfile(const std::vector<std::size_t>& indices,
                                 const std::string& profileName);
     std::size_t setModelLineType(const std::vector<std::size_t>& indices, const std::string& lineType);
-    std::size_t setModelMaterial(const std::vector<std::size_t>& indices, const std::string& material);
-    // Modelleri siler. KESME KASKADI (P6): silinen varligi source/target/tool
-    // olarak kullanan kesme modifier'lari da kaldirilir (CutRemove undo kaydi
-    // dahil). Donus: kaldirilan modifier'larin HEDEFLERI (silinmemis kalan
-    // hedefler) — cagiran bu hedefleri yeniden hesaplamali (recomputeCutTarget).
-    std::vector<EntityId> deleteModels(const std::vector<std::size_t>& indices);
-    // Tek modeli (yaprak) kesme/bulon kaskadi OLMADAN siler. Component-owned
-    // levha gibi KENDI yasam dongusu baska kalici kayitlar (bulon grubu
-    // delikleri, bitisik baglanti) tarafindan yonetilen nesneler icindir;
-    // deleteModels'in kaskadi burada hâlâ yasayan bir bulon grubunu silmemeli.
-    // Delete op + geometry/base deltasi ile undo/redo'ya girer (eraseModelLeaf
-    // ile ayni kati islem, public yuzu).
-    void removeModelLeaf(std::size_t index);
+    void deleteModels(const std::vector<std::size_t>& indices);
     void replaceModel(std::size_t index, std::vector<WireframeModel> replacements);
     void clear() noexcept;
     void pushSnapshot();
-    // ACIK (kapanmamis) bir undo kaydi var mi? (pushSnapshot() sonrasi true.)
-    bool hasOpenUndoRecord() const noexcept { return !undoStack_.empty(); }
-    // GERCEK TRANSACTION ROLLBACK (Slice 2d-2c P0): acik undo kaydini GERI
-    // uygular ve kaydi TAMAMEN ATAR (redo gecmisine basarisiz islem EKLENMEZ).
-    // undo()'nun aksine redoStack_'e dokunmaz — basarisiz bir islem belgeyi,
-    // geometry version'larini ve undo/redo yigini tutarsiz birakmaz. Acik/
-    // etkili kayit yoksa false (hicbir sey degismez). Dogrulama (FAZ 1) basari-
-    // sizsa da false doner ve belge DEGISMEZ.
-    bool rollbackOpenRecord();
-    // GEOMETRI SURUM DELTASI. Bir varligin etkin B-Rep surumu `before`dan
-    // `after`a degistiginde cagrilir. Acik kayit YOKSA GUVENLI bicimde kendi
-    // kaydini ACAR — boylece geometri degisikligi SESSIZCE undo disinda
-    // KALMAZ (mevcut `recordUndoOp` davranisindan bilincli FARKI budur).
-    // Ayni EntityId icin ILK `before` ve SON `after` korunur (ara surumler
-    // bagimsiz undo adimina donusmez).
-    void recordGeometryDelta(EntityId entity, VersionId before, VersionId after);
-    // KESME TABAN SURUM DELTASI (Slice 2d-2c). Bir varligin taban (pre-cut)
-    // surumu `before`dan `after`a degistiginde cagrilir (or. kesme tabani
-    // yeniden uretildiginde). recordGeometryDelta ile AYNI ilk-before/son-after
-    // kurali; acik kayit yoksa kendi kaydini acar. undo/redo/rollback tabani
-    // geri getirir — boylece basarisiz bir recompute sonrasi taban surumu bayat
-    // kalmaz.
-    void recordBaseVersionDelta(EntityId entity, VersionId before, VersionId after);
     bool undo();
     bool redo();
     bool canUndo() const noexcept;
@@ -217,18 +59,8 @@ public:
     // (boyut degismeyen pozisyon degisikliklerini de yakalar).
     std::uint64_t revision() const noexcept { return revision_; }
 
-    // Bir sonraki tahsis edilecek EntityId (MMW8 kaliciligi/teshis icin).
-    // kExhaustedEntityId = kimlik uzayi tukendi.
-    EntityId nextEntityId() const noexcept { return nextEntityId_; }
-
     std::vector<WireframeModel>& mutableModels() noexcept;
     const std::vector<WireframeModel>& models() const noexcept;
-    // KARARLI KIMLIK: index -> EntityId (gecersiz index icin kInvalidEntityId).
-    // Indeks KALICI degildir; kimlik varlik yasam dongusu boyunca sabit kalir.
-    EntityId modelId(std::size_t index) const noexcept;
-    // EntityId -> guncel indeks (kimlik tektir). Yoksa nullopt.
-    std::optional<std::size_t> indexOfEntity(EntityId id) const noexcept;
-    const std::vector<EntityId>& modelIds() const noexcept { return modelIds_; }
     void setLayerProperties(EntityProperties properties);
     const std::unordered_map<std::string, EntityProperties>& layers() const noexcept;
     bool createLayer(std::string name);
@@ -238,13 +70,6 @@ public:
     EntityProperties effectiveProperties(const WireframeModel& model) const;
     const EntityProperties& effectiveProperties(std::size_t index) const;
     bool modelIsEditable(std::size_t index) const;
-    // ETKILESIM FILTRESI (ikincil gorunus pencereleri): ayarliyken isabet,
-    // pencere secimi ve snap yalniz filtreyi gecen (or. gorunus derinlik
-    // dilimindeki) modelleri gorur. Duzenlenebilirligi DEGISTIRMEZ (secili
-    // nesne move/delete edilebilir). Bos fonksiyon = filtre yok (ana gorunus).
-    void setPickFilter(std::function<bool(const Bounds3&)> filter) { pickFilter_ = std::move(filter); }
-    bool hasPickFilter() const noexcept { return static_cast<bool>(pickFilter_); }
-    bool modelIsPickable(std::size_t index) const;
     std::optional<Bounds3> bounds() const;
     const std::vector<Bounds3>& modelBounds() const;
     std::vector<std::size_t> queryBounds(const std::function<bool(const Bounds3&)>& intersects) const;
@@ -258,154 +83,10 @@ public:
     const std::unordered_map<std::string, NodeConstraint>& nodeConstraints() const noexcept;
     void clearNodeConstraints();
 
-    // KIRIS YUKLERI: KARARLI KIMLIK (EntityId) anahtarli.
-    // Indeks KALICI degildir; yuk, varlik silinip geri alinsa bile DOGRU
-    // varliga bagli kalir (bkz. entity_id.hpp). YASAM DONGUSU POLITIKASI:
-    // (a) silinen varligin kaydi KORUNUR — geri alma AYNI kimligi geri
-    //     getirir ve yuk yeniden baglanir; kimlikler YENI varliklara asla
-    //     yeniden kullanilmadigi icin baska bir varliga baglanamaz;
-    // (b) belge temizleme (clear) ve dosya yukleme (load) kayitlari SIFIRLAR.
-    void setBeamLoad(EntityId entityId, BeamLoad load);
-    std::optional<BeamLoad> getBeamLoad(EntityId entityId) const;
-    const std::unordered_map<EntityId, BeamLoad>& beamLoads() const noexcept;
+    void setBeamLoad(std::size_t modelIndex, BeamLoad load);
+    std::optional<BeamLoad> getBeamLoad(std::size_t modelIndex) const;
+    const std::unordered_map<std::size_t, BeamLoad>& beamLoads() const noexcept;
     void clearBeamLoads();
-    // Yapi gridleri (Tekla tarzi aks cizgileri)
-    std::size_t addGrid(GridDefinition grid);
-    void clearGrids() noexcept;
-    const std::vector<GridDefinition>& grids() const noexcept { return grids_; }
-    GridDefinition* mutableGrid(std::size_t index) noexcept;
-    bool setGridVisible(std::size_t index, bool visible);
-    // Tekla tarzi: grid SPESIFIKASYONUNU degistirir ve `axes`'i yeniden uretir.
-    bool setGrid(std::size_t index, GridDefinition grid);
-    void removeGrid(std::size_t index);
-    // Kesme modifier'leri (P3): kalici + duzenlenebilir. Indeks-bazli (grid
-    // gibi); hedef/arac parcalar EntityId ile referanslanir (parca kimligi
-    // korunur). add/remove/set undo/redo'ya girer.
-    std::size_t addCutModifier(CutModifier modifier);
-    void removeCutModifier(std::size_t index);
-    bool setCutModifier(std::size_t index, CutModifier modifier);
-    const std::vector<CutModifier>& cutModifiers() const noexcept { return cutModifiers_; }
-    // O varligi hedefleyen kesme modifier'larinin INDEKSLERI (belge sirasinda).
-    // Recompute zinciri bu sirayla uygulanir (deterministik). Devre disi olanlar
-    // da dondurulur; uygulama zinciri onlari atlar.
-    std::vector<std::size_t> cutModifiersForTarget(EntityId target) const;
-    // O varligi ARAÇ (kesici) olarak kullanan BooleanCut modifier'larinin
-    // INDEKSLERI (canli Part Cut: kesici tasininca hedefler yeniden hesaplanir).
-    std::vector<std::size_t> cutModifiersUsingTool(EntityId tool) const;
-    // O varligi KAYNAK (source) olarak kullanan modifier'larin indeksleri (P6).
-    std::vector<std::size_t> cutModifiersForSource(EntityId source) const;
-
-    // --- BULON GRUPLARI (Phase B1) ------------------------------------------
-    // Bulon grubu KALICI bir kayittir (kendi EntityId'si); bagli parcalara
-    // EntityId ile referans verir. Delikleri CutKind::Hole modifier'lari olarak
-    // uretir (owner = bulon id). GORSEL montaj `displayModel` bir NORMAL model
-    // olarak eklenir ve kimligi bolt.displayEntityId'ye yazilir.
-    // addBoltGroup: id atar (gecersizse), delikleri ekler, display modeli ekler.
-    //   Donus: bulon grubu indeksi.
-    std::size_t addBoltGroup(BoltGroup bolt, WireframeModel displayModel);
-    // removeBoltGroup: kaydi + sahip oldugu delikleri + display modelini siler.
-    void removeBoltGroup(std::size_t index);
-    // setBoltGroup: kaydi degistirir ve delikleri yeniden uretir (eski sahipli
-    // delikler kaldirilir, yenileri eklenir). Display modele DOKUNMAZ (cagiran
-    // tasir/yeniden uretir). id korunur (girdideki id yok sayilir).
-    bool setBoltGroup(std::size_t index, BoltGroup bolt);
-    const std::vector<BoltGroup>& boltGroups() const noexcept { return boltGroups_; }
-    // EntityId -> bulon grubu indeksi; yoksa nullopt.
-    std::optional<std::size_t> indexOfBoltGroup(EntityId id) const;
-    // Bulon grubunun sahip oldugu delik modifier indeksleri (owner == id).
-    std::vector<std::size_t> boltGroupHoles(EntityId boltId) const;
-    // Bagli parcalarin sinir kutularinin bulon ekseni boyunca uzunlugu (grip).
-    // Parca bulunamazsa / gecersiz eksende 0 doner.
-    double boltGripLength(const BoltGroup& bolt) const;
-
-    // --- ALIN LEVHASI BAGLANTILARI (Phase C1) -------------------------------
-    // Alin levhasi baglantisi KALICI bir kayittir (kendi EntityId'si); kullanici
-    // parcalarina (mainPart=kolon, secondaryPart=kiris) EntityId ile referans verir.
-    // Sahip oldugu alt nesneler: (1) alin levhasi (plateModel, normal model),
-    // (2) bulon grubu (conn.bolts; delikler owner=bolts.id, montaj boltDisplayModel).
-    // addEndPlateConnection: id atar (gecersizse), levha modelini ekler, bulon
-    // grubunu ekler (delikler + montaj), kaydi ekler. Donus: baglanti indeksi.
-    std::size_t addEndPlateConnection(EndPlateConnection conn, WireframeModel plateModel,
-                                      WireframeModel boltDisplayModel);
-    // removeEndPlateConnection: kaydi + levhayi + bulon grubunu (delikler + montaj)
-    // siler. Kullanici parcalari (main/secondary) KORUNUR.
-    void removeEndPlateConnection(std::size_t index);
-    // setEndPlateConnection: kaydi degistirir; levha modeli yeniden uretilir
-    // (replaceModel), bulon grubu guncellenir (delikler yeniden uretilir). id korunur.
-    bool setEndPlateConnection(std::size_t index, EndPlateConnection conn,
-                               WireframeModel plateModel, WireframeModel boltDisplayModel);
-    const std::vector<EndPlateConnection>& endPlateConnections() const noexcept {
-        return endPlateConnections_;
-    }
-    // EntityId -> baglanti indeksi; yoksa nullopt.
-    std::optional<std::size_t> indexOfEndPlateConnection(EntityId id) const;
-
-    // --- PARAMETRIK COMPONENT INSTANCE'LARI (Phase C2) -----------------------
-    // ComponentInstanceRecord'un KALICI kaydi (kendi EntityId'si; TypeId +
-    // SchemaVersion + tipli parametreler + yerlesim + referanslar + sahip olunan
-    // alt nesneler). Bu dilim yalniz SERILESTIRME + kayit yasam dongusu saglar:
-    // gercek materyalizasyon (GenerationPlan -> levha/bulon/kesme uretimi) ve
-    // recompute SONRAKI dilimdedir — addComponentInstance sahip olunan alt
-    // nesne kimliklerini OLDUGU GIBI saklar (cagiran saglar).
-    std::size_t addComponentInstance(ComponentInstanceRecord record);
-    void removeComponentInstance(std::size_t index);
-    bool setComponentInstance(std::size_t index, ComponentInstanceRecord record);
-    const std::vector<ComponentInstanceRecord>& componentInstances() const noexcept {
-        return componentInstances_;
-    }
-    // EntityId -> component instance indeksi; yoksa nullopt.
-    std::optional<std::size_t> indexOfComponentInstance(EntityId id) const;
-
-    // --- KAYNAKLAR (WELD) + IMALAT ASSEMBLY'LERI (Phase W1) ------------------
-    // Weld KALICI bir kayittir (kendi EntityId'si); mainPart/secondaryPart
-    // kullanici parcalaridir (EntityId ile referans; weld silinse de parcalar
-    // KORUNUR). Shop weld iki parçayi AYNI assembly'ye sokar; Site weld
-    // assembly'leri birlestirmez (yalniz iliskili baglanti olarak tutulur).
-    // addWeld: id atar (gecersizse), shop ise assembly uyeliklerini yeniden
-    // turetir, undo kaydeder. Donus: kaynak indeksi.
-    std::size_t addWeld(Weld weld);
-    // GORUNTULEME MODELI OLAN surum (Phase W3): kaynak kati uretildiginde cagrilir.
-    // displayModel bos degilse normal model olarak eklenir (Add op) ve kimligi
-    // weld.displayEntityId'ye yazilir; cagiran OCC katisini bu kimlik altinda
-    // store'a yazar (recordGeometryDelta ile) — addBoltGroup deseniyle ayni.
-    std::size_t addWeld(Weld weld, WireframeModel displayModel);
-    // removeWeld: kaydi siler ve assembly grafiğini yeniden turetir (baglantisi
-    // kopan gruplar guvenli split edilir). Undo ile weld + uyelikler geri gelir.
-    // Gerekirse display modeli (yaprak) de silinir.
-    void removeWeld(std::size_t index);
-    // setWeld: kaydi degistirir (id korunur); shop/site veya main/secondary
-    // degistiğinde assembly yeniden turetir.
-    bool setWeld(std::size_t index, Weld weld);
-    const std::vector<Weld>& welds() const noexcept { return welds_; }
-    // EntityId -> kaynak indeksi; yoksa nullopt.
-    std::optional<std::size_t> indexOfWeld(EntityId id) const;
-
-    // Assembly kayitlari (shop-weld grafinden TURETILMIS, deterministik).
-    const std::vector<AssemblyRecord>& assemblies() const noexcept { return assemblies_; }
-    // EntityId -> assembly indeksi; yoksa nullopt.
-    std::optional<std::size_t> indexOfAssembly(EntityId id) const;
-    // Bir parcanin uye oldugu TEK assembly'nin id'si (parca en fazla bir
-    // bagimsiz imalat assembly'sinin dogrudan uyesi olabilir). Yoksa nullopt.
-    std::optional<EntityId> assemblyIdContaining(EntityId partId) const;
-    // Assembly main part'i degistirilir; geometri/EntityId DEGISMEZ. Yalniz
-    // mainPart alani guncellenir.
-    bool setAssemblyMainPart(EntityId assemblyId, EntityId newMainPart);
-    // Secim genisletme: bir parcanin assembly'sinin TUM uyelerini (parts +
-    // welds + sahip olunan bulonlar) EntityId olarak dondurur. Parca hicbir
-    // assembly'de degilse yalniz kendisi.
-    std::vector<EntityId> assemblyMembers(EntityId partId) const;
-
-    // --- TEKLA GUID ESLEME (bridge native conversion, Phase C6) --------------
-    // Bir EntityId'yi Tekla sourceGUID'i ile iliskilendirir (kalici; 'T' blogu).
-    // Ayni guid baska bir varliga bagliysa ESKI iliski kaldirilir (birebir).
-    void setTeklaGuid(EntityId id, const std::string& guid);
-    // Tekla sourceGUID'e karsilik gelen EntityId (yoksa nullopt).
-    std::optional<EntityId> entityForTeklaGuid(const std::string& guid) const;
-    // Bir EntityId'nin Tekla GUID iliskisini kaldirir (entity silinince temizlenir).
-    void clearTeklaGuid(EntityId id);
-    const std::unordered_map<std::string, EntityId>& teklaGuids() const noexcept {
-        return teklaGuids_;
-    }
 
 private:
     static constexpr std::size_t kMaxUndoEntries = 100;
@@ -429,53 +110,10 @@ private:
                           std::vector<std::size_t>& result) const;
     void recordUndoOp(UndoOp op);
     void recordLayerState();
-    // SURUM BUDAMA (Phase 3.2C): canli referans kumesini (etkin surumler +
-    // undo/redo kayitlarindaki geometryBefore/geometryAfter + kimlikle
-    // referanslanan varliklar) hesaplar ve magazadan geri kalanini budar.
-    void pruneDeadVersions();
-    // MMW8 (Phase 3.4C): guncel durumdan Mmw8Document kurar (save icin) ve
-    // ayristirilmis Mmw8Document'i Document durumuna isler (load icin).
-    void buildMmw8(Mmw8Document& out) const;
-    void commitFromMmw8(Mmw8Document&& mdoc);
     void markPending(std::size_t index);
     void applyUndoOp(const UndoOp& op, bool forward);
-    // Tek bir modeli (yaprak — kesme kaskadi olmadan) siler ve Delete op kaydeder.
-    // removeBoltGroup'ta bulon display modelini kaldirmak icin; deleteModels'i
-    // cagirmaz (o bulon kaskadini yeniden tetikler -> recursion). Kitap
-    // isleri (modelBounds_/effectiveCache_/spatial) deleteModels ile aynidir.
-    void eraseModelLeaf(std::size_t index);
-    // Yeni, tekil, monoton bir varlik kimligi uretir (0 uretmez). Id uzayi
-    // TUKENDIYSE (nextEntityId_ == kExhaustedEntityId) kInvalidEntityId doner
-    // ve sayac DEGISMEZ — ayni id ASLA ikinci kez uretilmez.
-    EntityId allocateEntityId() noexcept;
-    // allocateEntityId'in FIRLATAN sarmalayicisi: tukenme durumunda
-    // std::runtime_error firlatir. Yeni varlik ekleyen tum yollar bunu kullanir —
-    // KONTROLLU basarisizlik, kismi ekleme veya kimlik-0 model birakilmaz.
-    EntityId allocateEntityIdRequired();
-    // Assembly'leri shop-weld grafinden YENIDEN TURET (deterministik). Mevcut
-    // assembly kimlik/name/mainPart bilgisi mumkun oldugunca korunur (ayni parca
-    // kumesinin tek kök grubu eski assembly'yi devralir). Site weld'ler
-    // birlestirmez. WeldAdd/WeldRemove/WeldReplace/setAssemblyMainPart sonrasi
-    // cagrilir; AssemblyReplace undo op kaydedilir.
-    void reassembleFromWelds();
-    // Kaynak indeksi (weld) icin assembly uyeliklerini guvenli turetir: shop
-    // weld main/secondary'i birlestirir. reassembleFromWelds'in ince sarmalayicisi.
-    void recomputeAssemblies(const std::vector<AssemblyRecord>& before);
 
     std::vector<WireframeModel> models_;
-    // models_ ile BIREBIR hizali kimlik vektoru (modelIds_.size() == models_.size()
-    // belirtsizdir). Silme kaydirmasi/undo-redo burada da ayni sekilde uygulanir.
-    std::vector<EntityId> modelIds_;
-    EntityId nextEntityId_{1};
-    // Document-SAHIPLI B-Rep magazasi (tek dogruluk kaynagi). Application'da
-    // AYRI bir harita YOKTUR; tum kati yollari buradan gecer.
-    std::unique_ptr<OccStore> occStore_;
-    // MMW8 (Phase 3.4C): OCC-kapali derlemede B-Rep'i OPAK korur. OCC-acik
-    // derlemede B-Rep gercek store'dadir ve opaqueBreps_ BOS kalir.
-    std::unordered_map<EntityId, std::string> opaqueBreps_;
-    bool opaqueBrepsStale_{false};
-    Mmw8Metadata mmw8Metadata_;
-    std::vector<Mmw8UnknownBlock> mmw8UnknownBlocks_;
     std::unordered_map<std::string, EntityProperties> layers_;
     std::deque<UndoRecord> undoStack_;
     std::deque<UndoRecord> redoStack_;
@@ -484,28 +122,13 @@ private:
     mutable bool effectiveCacheDirty_{true};
     mutable std::vector<EntityProperties> effectiveCache_;
     mutable std::vector<Bounds3> modelBounds_;
-    std::function<bool(const Bounds3&)> pickFilter_;
     mutable std::vector<std::size_t> spatialOrder_;
     mutable std::vector<std::size_t> pendingIndexRebuild_;
     mutable std::vector<unsigned char> pendingMask_; // pending uyelik maskesi (O(1))
     mutable std::vector<SpatialNode> spatialNodes_;
     mutable std::optional<Bounds3> documentBounds_;
     std::unordered_map<std::string, NodeConstraint> nodeConstraints_;
-    std::unordered_map<EntityId, BeamLoad> beamLoads_;
-    std::vector<GridDefinition> grids_;
-    std::vector<CutModifier> cutModifiers_;
-    std::vector<BoltGroup> boltGroups_;
-    std::vector<EndPlateConnection> endPlateConnections_;
-    std::vector<ComponentInstanceRecord> componentInstances_;
-    std::vector<Weld> welds_;
-    std::vector<AssemblyRecord> assemblies_;
-    std::unordered_map<std::string, EntityId> teklaGuids_;  // Tekla sourceGUID -> EntityId ('T')
+    std::unordered_map<std::size_t, BeamLoad> beamLoads_;
 };
-
-// KESME KAYNAK COZUMU (P6): mod.source gecerliyse kaynak varligin GUNCEL
-// geometrisini mod'a yansitir (duzlem cercevesi / cizgi / 3DFACE koseleri).
-// Kaynak yoksa (silinmis — kaskad onu zaten kaldirmis olmali) veya source
-// kInvalidEntityId ise mod AYNEN dondurulur (sabit/kopya geometri kullanilir).
-CutModifier resolveCutModifierSource(const CutModifier& mod, const Document& document);
 
 } // namespace mm
