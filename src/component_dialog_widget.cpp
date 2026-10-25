@@ -1503,6 +1503,10 @@ void ComponentDialogWidget::setParams(const std::vector<CompParam>& p) {
                 QSignalBlocker guard(d);
                 d->setRange(spec.hasMinDouble?spec.minDouble:-1e12,
                             spec.hasMaxDouble?spec.maxDouble:1e12);
+            } else if(auto* i=qobject_cast<QSpinBox*>(it->second)) {
+                QSignalBlocker guard(i);
+                i->setRange(spec.hasMinInt?spec.minInt:1,
+                            spec.hasMaxInt?spec.maxInt:4);
             }
         }
     }
