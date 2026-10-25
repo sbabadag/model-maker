@@ -331,7 +331,7 @@ int main() {
         if (haunch) {
             check(validateDialogSchema(haunch->schema,haunch->specs).ok,
                   "Haunch 40 dialog sekmeleri semaya uygun");
-            check(haunch->schema.groups.size() == 6, "Haunch 40 alti duzenlenebilir sekme");
+            check(haunch->schema.groups.size() == 7, "Haunch 40 yedi duzenlenebilir sekme (Kolon Cap dahil)");
         }
         check(reg.find(L"fin_plate") != nullptr, "fin plate dialogu bulunur");
         check(reg.find(L"tekla_shear_plate_146") != nullptr, "146 dialogu bulunur");
