@@ -1610,9 +1610,9 @@ ComponentType haunch40ComponentType() noexcept {
                     L"sol levha kenari - civata merkezi"),
         lengthParam(L"boltEdgeRight", L"mm", 35.0, 20.0, 200.0,
                     L"sag levha kenari - civata merkezi"),
-        lengthParam(L"boltEdgeTop", L"mm", 55.0, 30.0, 200.0,
+        lengthParam(L"boltEdgeTop", L"mm", 55.0, 20.0, 200.0,
                     L"ust levha kenari - ust civata merkezi"),
-        lengthParam(L"boltEdgeBottom", L"mm", 55.0, 30.0, 200.0,
+        lengthParam(L"boltEdgeBottom", L"mm", 55.0, 20.0, 200.0,
                     L"alt levha kenari - alt civata merkezi"),
         enumParam(L"grade", L"8.8", {L"8.8", L"10.9"},
                   L"bulon kalitesi"),
@@ -1694,23 +1694,21 @@ GenerationPlan generateHaunch40(const ComponentInput& input) noexcept {
     const double actualH = givenH>0 ? givenH : plateH;
     const double flWparam=paramAsDouble(input.params,L"haunchFlangeWidth",0.0);
     const double flW=flWparam>0 ? flWparam : wBeam;
-    // A manually dimensioned legacy plate may legitimately be shorter
-    // than the new auto height (e.g. 600 vs 610 mm). Preserve that
-    // behaviour, but check its ACTUAL extreme bolt centre clearances
-    // rather than blindly accepting any short/shifted plate. The GUI
-    // switches fixed height to automatic when eT or eB is edited.
-    const double achievedTop=(actualH-hBeam-D+40.0+edgeT-edgeB)*0.5;
-    const double achievedBottom=(actualH-hBeam-D+40.0-edgeT+edgeB)*0.5;
+    // When endPlateHeight is explicit, BOTH bolt grids are laid out
+    // from that plate's upper/lower edges, not frozen against the original
+    // beam/haunch outer boundaries. The allowable minimum is therefore
+    // governed by bolt centres and the two opposing groups, not hBeam+D.
+    // Strict clearance prevents hole overlap at the innermost rows.
+    const double minimumPlateH=edgeT+edgeB+2.0*spanY+holeD+0.2;
     if (!(L > 80.0 && D > tip+25.0 && tip > 5.0 && webT > 0.0 &&
           flangeT > 0.0 && endT > 0.0 && holeD >= bD &&
           holeD > 0.0 && pitchX > holeD && pitchY > holeD &&
           countX>=1 && countX<=4 && countY>=1 && countY<=4 &&
           edgeL>holeD*0.5 && edgeR>holeD*0.5 &&
-          edgeT>holeD*0.5+20.0 && edgeB>holeD*0.5+20.0 &&
+          edgeT>holeD*0.5 && edgeB>holeD*0.5 &&
           flW >= webT && actualW+1e-6 >= spanX + edgeL + edgeR &&
           actualW >= spanX + holeD + 15.0 &&
-          achievedTop>holeD*0.5 && achievedBottom>holeD*0.5 &&
-          actualH >= hBeam+D+20.0)) {
+          actualH>=minimumPlateH)) {
         plan.ok=false;
         plan.error=L"Haunch 40: haunch/levha/bulon olculeri tutarsiz";
         return plan;
@@ -1880,18 +1878,14 @@ GenerationPlan generateHaunch40(const ComponentInput& input) noexcept {
         pushPlate(rib,"haunch_beam_stiffener");
     }
 
-    // Two independent semantic bolt groups; both share user-controlled X/Y
-    // counts. Keep the OUTERMOST rows 20 mm from the structural beam/
-    // haunch reference edges; adding rows grows each group inwards.
-    // Legacy records without count params default to 2x2 (8 total).
-    const double upperCenter=hBeam*0.5-0.5*spanY-20.0;
-    const double lowerCenter=-(hBeam*0.5+D)+0.5*spanY+20.0;
-    // Physical plate ends follow the editable offsets, not one boltEdge.
-    const double topEdge=hBeam*0.5-20.0+edgeT;
-    const double bottomEdge=-(hBeam*0.5+D)+20.0-edgeB;
-    if(upperCenter+0.5*spanY+holeD*0.5 >= topEdge ||
-       lowerCenter-0.5*spanY-holeD*0.5 <= bottomEdge ||
-       upperCenter-lowerCenter <= spanY+holeD) {
+    // Anchor outermost bolt centres to the ACTUAL end-plate edges.
+    // For the automatic legacy height, these reduce exactly to the prior
+    // structural positions (20mm inside beam/haunch reference boundaries).
+    // With manually reduced height, both groups move inward and the user
+    // can independently adjust eT/eB without expanding the end plate.
+    const double upperCenter=plateCenterV+actualH*0.5-edgeT-spanY*0.5;
+    const double lowerCenter=plateCenterV-actualH*0.5+edgeB+spanY*0.5;
+    if(upperCenter-lowerCenter <= spanY+holeD+0.1) {
         plan.ok=false;
         plan.error=L"Haunch 40: iki bulon grubu alin levhasina sigmiyor";
         return plan;
