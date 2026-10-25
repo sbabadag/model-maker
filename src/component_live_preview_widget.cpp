@@ -454,7 +454,12 @@ void ComponentLivePreviewWidget::paintEvent(QPaintEvent*) {
     title.setBold(false);title.setPointSize(9);painter.setFont(title);
     painter.setPen(QColor("#63758b"));
     painter.drawText(QPoint(16,height()-14),
-        QStringLiteral("Drag: orbit   •   Middle-drag: pan   •   Wheel: zoom"));
+        QStringLiteral("Parca sec: tikla   •   Don: surukle   •   Kaydir: orta tus   •   Zoom: tekerlek"));
+    painter.setPen(QColor("#4d687f"));
+    const QString partName=activeRole_.empty()
+        ?QStringLiteral("Olcu icin bir parca veya civata grubu sec")
+        :QStringLiteral("Secili: %1").arg(QString::fromStdString(activeRole_));
+    painter.drawText(QPoint(16,48),partName);
     for(const auto& c:callouts_) {
         if(!c.spin->isVisible())continue;
         const QPointF target=project(roleAnchor(c.targetRole));
@@ -470,6 +475,8 @@ void ComponentLivePreviewWidget::paintEvent(QPaintEvent*) {
     }
 }
 void ComponentLivePreviewWidget::drawModel(QPainter& p) {
+    hits_.clear();
+    boltHits_.clear();
     std::vector<Poly> faces;
     if(!plan_.plates.empty()) {
         std::vector<Vec3> anchors;
@@ -503,7 +510,13 @@ void ComponentLivePreviewWidget::drawModel(QPainter& p) {
         QPolygonF polygon;
         for(const auto& v:face.vertices)polygon<<project(v);
         QColor fill=face.face;
-        if(face.role=="column"||face.role=="beam") fill.setAlpha(185);
+        const bool isSupport=face.role=="column"||face.role=="beam";
+        if(!activeRole_.empty() && activeRole_!="column" &&
+           activeRole_!="beam") {
+            if(isSupport)fill.setAlpha(95);     // P5 keep parent context
+            else if(face.role!=activeRole_)fill.setAlpha(122);
+            else fill=fill.lighter(125);       // active child in focus
+        } else if(isSupport)fill.setAlpha(185);
         if(!highlight_.empty()) {
             const bool sel=(highlight_==L"haunchLength"||
                             highlight_==L"haunchDepth"||
@@ -517,20 +530,34 @@ void ComponentLivePreviewWidget::drawModel(QPainter& p) {
             if(sel)fill=fill.lighter(122);
         }
         p.setBrush(fill);
-        p.setPen(QPen(QColor("#455469"),0.8));
+        const bool selected=face.role==activeRole_;
+        p.setPen(QPen(selected?QColor("#b86911"):QColor("#455469"),
+                      selected?2.2:0.8));
         p.drawPolygon(polygon);
+        if(!compact_)hits_.push_back({polygon,face.role});
     }
-    // Individual bolts from the actual production bolt group algorithm.
-    p.setPen(QPen(QColor("#574f47"),2.0));
-    for(const auto& group:plan_.boltGroups) {
+    // Individual bolt groups: preserve exact generator positions, and make
+    // the heads hit-testable even though they occupy few screen pixels.
+    for(std::size_t gi=0;gi<plan_.boltGroups.size();++gi) {
+        const auto& group=plan_.boltGroups[gi];
+        const std::string role=gi<plan_.boltGroupKeys.size()
+                                   ?plan_.boltGroupKeys[gi]:"bolts";
+        const bool selected=role==activeRole_;
+        QColor shaft=selected?QColor("#b86911"):QColor("#574f47");
+        if(!activeRole_.empty()&&!selected)shaft.setAlpha(145);
+        p.setPen(QPen(shaft,selected?3.0:2.0));
         for(const Vec3 pt:boltGroupBoltOrigins(group)) {
             const Vec3 a=plus(pt,mul(group.axis,-0.5*group.gripLength));
             const Vec3 b=plus(pt,mul(group.axis,+0.5*group.gripLength));
             p.drawLine(project(a),project(b));
-            p.setBrush(QColor("#f4c65d"));
-            p.drawEllipse(project(b),4.0,4.0);
+            p.setBrush(selected?QColor("#f6a642"):QColor("#f4c65d"));
+            p.drawEllipse(project(b),selected?6.0:4.0,selected?6.0:4.0);
             p.setBrush(QColor("#a77a47"));
             p.drawEllipse(project(a),3.0,3.0);
+            if(!compact_){
+                boltHits_.push_back({project(b),role});
+                boltHits_.push_back({project(a),role});
+            }
         }
     }
 }
@@ -544,6 +571,7 @@ void ComponentLivePreviewWidget::mousePressEvent(QMouseEvent* e) {
         e->accept();return;
     }
     lastMouse_=e->pos();
+    dragging_=false;
     orbiting_=e->button()==Qt::LeftButton;
     panning_=e->button()==Qt::MiddleButton;
     e->accept();
@@ -551,6 +579,9 @@ void ComponentLivePreviewWidget::mousePressEvent(QMouseEvent* e) {
 void ComponentLivePreviewWidget::mouseMoveEvent(QMouseEvent* e) {
     const QPoint delta=e->pos()-lastMouse_;
     lastMouse_=e->pos();
+    if(orbiting_||panning_) {
+        if(delta.manhattanLength()>0)dragging_=true;
+    }
     if(orbiting_) {
         yaw_+=delta.x()*0.008;
         pitch_=std::clamp(pitch_-delta.y()*0.007,-1.52,1.52);
@@ -559,7 +590,10 @@ void ComponentLivePreviewWidget::mouseMoveEvent(QMouseEvent* e) {
     positionEditors();update();e->accept();
 }
 void ComponentLivePreviewWidget::mouseReleaseEvent(QMouseEvent* e) {
-    orbiting_=panning_=false;QWidget::mouseReleaseEvent(e);
+    const bool wasClick=orbiting_&&!dragging_&&e->button()==Qt::LeftButton;
+    orbiting_=panning_=false;
+    if(wasClick)selectRole(hitRole(e->pos()));
+    QWidget::mouseReleaseEvent(e);
 }
 void ComponentLivePreviewWidget::wheelEvent(QWheelEvent* e) {
     zoom_=std::clamp(zoom_*std::pow(1.12,e->angleDelta().y()/120.0),0.2,8.0);
