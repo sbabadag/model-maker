@@ -498,6 +498,25 @@ int main(int argc, char** argv) {
             CHECK(left->visibleOverlayParams().size()==5 &&
                   left->boltOverlayMetrics(left->activeRole()).valid,
                   "P4B: upper bolt selection exposes the same five fields");
+            QDoubleSpinBox* hole3d=nullptr;
+            for(auto* spin:left->findChildren<QDoubleSpinBox*>())
+                if(spin->toolTip()==QStringLiteral("holeDiameter")) {
+                    hole3d=spin;break;
+                }
+            CHECK(hole3d!=nullptr,"P4B: 3D hole diameter editor exists");
+            if(hole3d) {
+                hole3d->setValue(24.0);
+                QApplication::processEvents();
+                const auto synced=h40.resultParams();
+                const auto* hole=mm::findParam(synced,L"holeDiameter");
+                CHECK(hole && std::holds_alternative<double>(hole->value) &&
+                      std::fabs(std::get<double>(hole->value)-24.0)<1e-6 &&
+                      std::fabs(left->boltOverlayMetrics("haunch_bolts_upper").holeDiameter
+                                -24.0)<1e-6,
+                      "P4B: 3D hole edit updates real form and generated geometry");
+                hole3d->setValue(22.0);
+                QApplication::processEvents();
+            }
             // Exercise the real mouse path, not just the test selection API.
             // Top-left empty background must clear the active overlays.
             const QPointF empty(3.0,3.0);
