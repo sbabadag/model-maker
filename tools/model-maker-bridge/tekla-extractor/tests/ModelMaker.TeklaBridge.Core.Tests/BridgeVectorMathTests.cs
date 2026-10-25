@@ -173,6 +173,35 @@ namespace ModelMaker.TeklaBridge.Core.Tests
         }
 
         [Fact]
+        public void PlateDstvFrameAndPartMarkRoundtripWithoutDrillingPermission()
+        {
+            var plate = new ObjectRecord
+            {
+                Kind = "ContourPlate",
+                SourceGUID = "synthetic-plate",
+                PlateHoleProbe = new PlateHoleReportProbe
+                {
+                    PartMark = "1001",
+                    DstvCoordinateSystem = BridgeVectorMath.OrthonormalFrame(
+                        new Vec3 { X = 4.25, Y = 195, Z = 6959 },
+                        new Vec3 { X = 0, Y = 0, Z = 1000 },
+                        new Vec3 { X = 0, Y = 1000, Z = 0 }),
+                    HasBoltHoles = true,
+                    VerifiedHoleCount = null,
+                    VerifiedForDrilling = false
+                }
+            };
+            var json = Newtonsoft.Json.JsonConvert.SerializeObject(plate);
+            var restored = Newtonsoft.Json.JsonConvert.DeserializeObject<ObjectRecord>(json);
+            Assert.Equal("1001", restored.PlateHoleProbe.PartMark);
+            Assert.NotNull(restored.PlateHoleProbe.DstvCoordinateSystem);
+            Assert.Equal(1.0, restored.PlateHoleProbe.DstvCoordinateSystem.XAxis.Z, 10);
+            Assert.Equal(-1.0, restored.PlateHoleProbe.DstvCoordinateSystem.ZAxis.X, 10);
+            Assert.Null(restored.PlateHoleProbe.VerifiedHoleCount);
+            Assert.False(restored.PlateHoleProbe.VerifiedForDrilling);
+        }
+
+        [Fact]
         public void DegenerateAxesAreRejectedInsteadOfInvented()
         {
             Assert.Throws<InvalidOperationException>(() =>
