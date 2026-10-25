@@ -1,6 +1,7 @@
 // Haunch (40) native OCC acceptance: registry -> real BRep -> Document
 // -> recompute. No Tekla profile-name restriction or guessed source geometry.
 #include "model_maker/component_engine.hpp"
+#include "model_maker/bolt.hpp"
 #include "model_maker/component_framework.hpp"
 #include "model_maker/component_materializer.hpp"
 #include "model_maker/document.hpp"
@@ -116,6 +117,30 @@ int main() {
         ck(saved.ownedPlateIds.size()==4,"4 owned physical plate entities");
         ck(saved.ownedBoltGroupIds.size()==2,"2 owned bolt groups");
         ck(saved.typeId==L"tekla_haunch_40","Native identity persisted");
+        const auto endIt=result.roleToEntity.find("haunch_end_plate");
+        ck(endIt!=result.roleToEntity.end(),
+           "Hotfix end plate semantic role preserved");
+        if(endIt!=result.roleToEntity.end()) {
+            const EntityId endId=endIt->second;
+            int actualBoltCount=0;
+            for(EntityId boltId:saved.ownedBoltGroupIds) {
+                const auto bi=s.doc.indexOfBoltGroup(boltId);
+                ck(bi.has_value(),"Hotfix bolt group in Document");
+                if(!bi) continue;
+                const BoltGroup& group=s.doc.boltGroups()[*bi];
+                ck(group.parts.size()==2 && group.parts[0]==endId &&
+                   group.parts[1]==s.col,
+                   "Hotfix holes target end plate + real column ONLY");
+                ck(std::abs(group.gripLength-39.0)<0.01,
+                   "Hotfix M20 length = PL20 + HEB300 flange19");
+                ck(group.params.direction==2,
+                   "Hotfix heads face beam, nuts face column");
+                actualBoltCount+=static_cast<int>(boltGroupBoltOrigins(group).size());
+            }
+            ck(actualBoltCount==8,"Hotfix exactly 8 native M20 bolt solids");
+            ck(s.doc.cutModifiers().size()==16,
+               "Hotfix 8 bores through exactly 2 correct targets");
+        }
         for(EntityId id:saved.ownedPlateIds) {
             const TopoDS_Shape* solid=s.store->find(id);
             ck(solid && !solid->IsNull() && shapeVolume(*solid)>0.0,
