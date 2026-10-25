@@ -4,6 +4,7 @@
 #include "model_maker/bridge_drilling_policy.hpp"
 
 #include <cstdio>
+#include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <string>
@@ -57,6 +58,12 @@ BridgePackage sample() {
     BridgePackage pkg;
     pkg.manifest.sourceComponentNumber = 146;
     pkg.component.number=146;
+    BridgeMemberRef beam;
+    beam.guid="secondary-146";
+    beam.profile="HEA300";
+    beam.startPoint=BridgeVec3{0,0,7200};
+    beam.endPoint=BridgeVec3{0,2200,7200};
+    pkg.component.secondaryMembers.push_back(beam);
     BridgeObject plate;
     plate.sourceGUID="plate-146";
     plate.kind="ContourPlate";
@@ -108,6 +115,14 @@ int main(int argc,char** argv) {
               "bolt centers safely located on plate midplane");
         check(authorizeBridgeAutoDrill(g,*pkg.objects[0].bbox,"plate-146").allowed,
               "Stage3C native drill authorization passes verified copy");
+        bool hasOffsetX=false;
+        for (const auto& p: result.prepared.parameters) {
+            if (p.name=="bridgeNcBoltOffsetX") {
+                if (const double* v=std::get_if<double>(&p.value))
+                    hasOffsetX=std::fabs(*v-15.0)<0.01;
+            }
+        }
+        check(hasOffsetX,"NC-verified asymmetric grid +15mm is preserved");
     }
     { auto bad=sample();bad.objects[1].boltGroup->partToBoltTo="other";
       check(!prepareBridge146FromNc1(bad,path).ok,"wrong target GUID refused"); }
