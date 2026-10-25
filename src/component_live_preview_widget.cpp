@@ -250,7 +250,11 @@ void ComponentLivePreviewWidget::centerSelection() {
     // Pan WITHOUT modifying world coordinates or exploding/detaching
     // children. Full parent context is still drawn in the same projection.
     const QPointF screen=project(roleAnchor(activeRole_));
-    pan_+=QPointF(width()*0.50-screen.x(),height()*0.51-screen.y());
+    // Keep parents in-frame: no large sudden camera jump when selecting
+    // a cap remote from the beam connection. Full zoom remains user-owned.
+    const QPointF change(width()*0.50-screen.x(),height()*0.51-screen.y());
+    pan_+=QPointF(std::clamp(change.x(),-width()*0.15,width()*0.15),
+                  std::clamp(change.y(),-height()*0.12,height()*0.12));
 }
 std::string ComponentLivePreviewWidget::hitRole(QPoint mouse) const {
     // Bolt heads are thin lines: a proximity test makes them clickable.
@@ -585,6 +589,7 @@ void ComponentLivePreviewWidget::mousePressEvent(QMouseEvent* e) {
         e->accept();return;
     }
     lastMouse_=e->pos();
+    mouseDown_=e->pos();
     dragging_=false;
     orbiting_=e->button()==Qt::LeftButton;
     panning_=e->button()==Qt::MiddleButton;
@@ -594,8 +599,9 @@ void ComponentLivePreviewWidget::mouseMoveEvent(QMouseEvent* e) {
     const QPoint delta=e->pos()-lastMouse_;
     lastMouse_=e->pos();
     if(orbiting_||panning_) {
-        if(delta.manhattanLength()>0)dragging_=true;
+        if((e->pos()-mouseDown_).manhattanLength()>5)dragging_=true;
     }
+    if(!dragging_)return;  // allow normal click even with minor mouse jitter
     if(orbiting_) {
         yaw_+=delta.x()*0.008;
         pitch_=std::clamp(pitch_-delta.y()*0.007,-1.52,1.52);
