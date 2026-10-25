@@ -448,8 +448,8 @@ int main() {
             if(g.ok && g.boltGroups.size()==2 && !g.plates.empty()) {
                 const auto& ep=g.plates.front();
                 check(approx(ep.width,340.0,1e-6) &&
-                      approx(ep.height,in.secondary[0].secHeight+240.0+80.0,1e-6),
-                      "P4D: asymmetric plate width and height from four edges");
+                      approx(ep.height,in.secondary[0].secHeight+240.0+70.0,1e-6),
+                      "P4D: height stays at legacy auto dimension while bolt offsets change");
                 for(std::size_t bi=0;bi<g.boltGroups.size();++bi) {
                     const auto& group=g.boltGroups[bi];
                     double xmin=1e9,xmax=-1e9,ymin=1e9,ymax=-1e9;
@@ -474,6 +474,57 @@ int main() {
                 }
                 check(g.cuts.size()==1 && g.welds.size()==p.welds.size(),
                       "P4D: asymmetric edge recompute preserves parent cut/welds");
+            }
+        }
+        // Editing eT/eB must move exactly ONE native bolt group, not
+        // resize/translate ANY plate or disturb the other bolt group.
+        // Assert both auto (0) and manually dimensioned plate modes.
+        for(const double manualHeight:{0.0,350.0}) {
+            ComponentInput base=in;
+            if(manualHeight>0.0)
+                base.params={{L"endPlateHeight",CompParamValue{manualHeight}}};
+            const auto original=reg.generate(L"tekla_haunch_40",base);
+            check(original.ok && original.boltGroups.size()==2,
+                  "P4F: baseline edge-position generator is valid");
+            if(!original.ok || original.boltGroups.size()!=2)continue;
+            for(const auto& change:std::vector<std::pair<std::wstring,double>>{
+                    {L"boltEdgeTop",80.0},{L"boltEdgeBottom",90.0}}) {
+                ComponentInput edited=base;
+                edited.params.push_back({change.first,CompParamValue{change.second}});
+                const auto moved=reg.generate(L"tekla_haunch_40",edited);
+                check(moved.ok && moved.boltGroups.size()==2 &&
+                      moved.plates.size()==original.plates.size(),
+                      "P4F: edited edge keeps valid same-size connection");
+                if(!moved.ok || moved.boltGroups.size()!=2 ||
+                   moved.plates.size()!=original.plates.size())continue;
+                for(std::size_t j=0;j<original.plates.size();++j) {
+                    const auto& before=original.plates[j];
+                    const auto& after=moved.plates[j];
+                    check(approx(after.width,before.width) &&
+                          approx(after.height,before.height) &&
+                          approx(after.thickness,before.thickness) &&
+                          approx(after.center.x,before.center.x) &&
+                          approx(after.center.y,before.center.y) &&
+                          approx(after.center.z,before.center.z),
+                          "P4F: eT/eB never move/resize any generated plate");
+                }
+                const auto& up0=original.boltGroups[0];
+                const auto& lo0=original.boltGroups[1];
+                const auto& up=moved.boltGroups[0];
+                const auto& lo=moved.boltGroups[1];
+                const auto& frame=original.plates[0];
+                const auto localDelta=[&](const Vec3& later,const Vec3& earlier) {
+                    const Vec3 diff=later-earlier;
+                    return diff.x*frame.v.x+diff.y*frame.v.y+diff.z*frame.v.z;
+                };
+                const bool editTop=change.first==L"boltEdgeTop";
+                const double upMovement=localDelta(up.origin,up0.origin);
+                const double loMovement=localDelta(lo.origin,lo0.origin);
+                check(editTop ? (approx(upMovement,-25.0) &&
+                                 approx(loMovement,0.0))
+                              : (approx(upMovement,0.0) &&
+                                 approx(loMovement,35.0)),
+                      "P4F: eT moves only upper bolts; eB moves only lower bolts");
             }
         }
         // A legacy explicit-size plate must not shift its centre or
