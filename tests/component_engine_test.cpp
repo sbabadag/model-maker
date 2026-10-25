@@ -496,6 +496,70 @@ int main() {
                       "Haunch 40: beam cut moves 10mm PL + 12mm gap");
             }
         }
+        // P6 integration: resize multiple connected children in ONE edit.
+        // The column/cap face, beam cut, flange/web contact and bolt grip
+        // must remain physically coupled instead of floating independently.
+        {
+            ComponentInput multi=in;
+            multi.params={
+                {L"haunchLength",CompParamValue{650.0}},
+                {L"haunchDepth",CompParamValue{260.0}},
+                {L"endPlateThickness",CompParamValue{30.0}},
+                {L"gap",CompParamValue{12.0}},
+                {L"topPlateThickness",CompParamValue{16.0}},
+                {L"boltPitchX",CompParamValue{140.0}},
+                {L"boltPitchY",CompParamValue{90.0}}
+            };
+            const GenerationPlan mp=reg.generate(L"tekla_haunch_40",multi);
+            check(mp.ok && mp.plates.size()>=4 && mp.cuts.size()==1 &&
+                  mp.boltGroups.size()==2,
+                  "P6: all child and parent geometry regenerated together");
+            if(mp.ok && mp.plates.size()>=4 && mp.cuts.size()==1 &&
+               mp.boltGroups.size()==2) {
+                const auto& ep=mp.plates[0];
+                const auto& web=mp.plates[1];
+                const auto& flange=mp.plates[2];
+                const auto& cap=mp.plates[3];
+                const Vec3 epOuter=ep.center+ep.axis*(ep.thickness*0.5);
+                const Vec3 diff=mp.cuts[0].planeOrigin-epOuter;
+                const double signedDist=diff.x*ep.axis.x+
+                                        diff.y*ep.axis.y+diff.z*ep.axis.z;
+                check(approx(signedDist,0.0,1e-6) &&
+                      mp.cuts[0].target==EntityId{41},
+                      "P6: resized end plate stays flush with actual beam cut");
+                check(approx(web.width,650.0) && approx(web.height,260.0),
+                      "P6: haunch web responds to both editable sizes");
+                const double chamferU=web.chamfers.front().h;
+                const double chamferV=web.chamfers.front().v;
+                const Vec3 near=web.center+
+                    web.u*(web.width*0.5-chamferU)+
+                    web.v*(-web.height*0.5);
+                const Vec3 far=web.center+
+                    web.u*(web.width*0.5)+
+                    web.v*(-web.height*0.5+chamferV);
+                const Vec3 inner=flange.center-
+                    flange.axis*(flange.thickness*0.5);
+                const auto distance=[](Vec3 a,Vec3 b) {
+                    const Vec3 d=a-b;
+                    return std::sqrt(d.x*d.x+d.y*d.y+d.z*d.z);
+                };
+                check(distance(inner-flange.v*(flange.height*0.5),near)<1e-5 &&
+                      distance(inner+flange.v*(flange.height*0.5),far)<1e-5,
+                      "P6: resized inclined flange still welded along web edge");
+                check(approx(cap.center.z,7208.0,1e-6) &&
+                      approx(cap.width,300.0) && approx(cap.height,400.0),
+                      "P6: thicker cap still rests on EXACT column section top");
+                int boltCount=0;bool grips=true;
+                for(const auto& bolt:mp.boltGroups) {
+                    boltCount+=static_cast<int>(boltGroupBoltOrigins(bolt).size());
+                    grips=grips && approx(bolt.gripLength,
+                                        30.0+12.0+in.main.secFlangeThickness,1e-6) &&
+                          bolt.targetOwnedPlateRole=="haunch_end_plate";
+                }
+                check(boltCount==8 && grips,
+                      "P6: all 8 bolts remain attached to resized physical stack");
+            }
+        }
         // Two members selected reversed: physical roles still detected.
         ComponentInput reversed;
         reversed.main=beam;reversed.secondary={in.main};
