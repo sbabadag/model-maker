@@ -183,6 +183,32 @@ int main() {
         check(s.doc.entityForTeklaGuid("b1").has_value(), "convert: b1 GUID iliskisi");
     }
 
+    // --- 1B) Unverified live-like bolt geometry must NOT generate native solid.
+    {
+        S s = makeSetup();
+        s.doc.setTeklaGuid(s.colId, "c1");
+        s.doc.setTeklaGuid(s.beamId, "b1");
+        BridgePackage pkg = makePackage();
+        // Same problematic combination observed on a live 2025 SP6 146 export.
+        BridgeBoltGroupInfo& bg = *pkg.objects[1].boltGroup;
+        bg.axis.clear();
+        bg.axisSource.clear();
+        for (auto& bolt : bg.bolts) {
+            bolt.position.x = 0.0; // source X=0, plate X=4.25..14.25
+            bolt.holeDiameter = 0.0;
+            bolt.holeDiameterSource.clear();
+        }
+        const std::size_t oldComps = s.doc.componentInstances().size();
+        const std::size_t oldModels = s.doc.models().size();
+        const BridgeNativeConvertOutcome blocked =
+            convertBridgeToNative(s.doc, pkg, catalog, {});
+        check(!blocked.ok, "native safety: unverified source holes block conversion");
+        check(!blocked.error.empty(), "native safety: diagnostic provided");
+        check(s.doc.componentInstances().size() == oldComps &&
+              s.doc.models().size() == oldModels,
+              "native safety: Document unchanged after rejected conversion");
+    }
+
     // --- 2) Uye bagli degil -> needsMemberSelection, donusum YOK ---------------
     {
         S s = makeSetup();  // hic GUID yok
