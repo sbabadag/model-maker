@@ -527,6 +527,7 @@ ComponentDialogWidget::ComponentDialogWidget(const ComponentDialogDefinition& de
             }
         }
     }
+    if(nativePreview_) enforceHaunchInputLimits();
 }
 
 // Tek parametre satiri: [Default onay kutusu] etiket | editor.
@@ -1350,16 +1351,88 @@ void ComponentDialogWidget::setEditorValue(QWidget* editor, const CompParamSpec&
 
 void ComponentDialogWidget::setPreviewInput(const ComponentInput& input) {
     if(nativePreview_) {
+        haunchBeamHeight_=0.0;
+        if(!input.secondary.empty()) {
+            const auto verticality=[](const MemberGeometry& m) {
+                const Vec3 d=m.axisTo-m.axisFrom;
+                const double len=std::sqrt(d.x*d.x+d.y*d.y+d.z*d.z);
+                return len>1e-9?std::fabs(d.z)/len:0.0;
+            };
+            const bool swapped=verticality(input.main)+1e-6<
+                               verticality(input.secondary.front());
+            haunchBeamHeight_=swapped?input.main.secHeight:
+                                     input.secondary.front().secHeight;
+        }
+        enforceHaunchInputLimits();
         nativePreview_->setInput(input);
-        nativePreview_->setParams(resultParams());
+        const auto params=resultParams();
+        nativePreview_->setParams(params);
         for(auto* view:thumbnailViews_) {
             view->setInput(input);
-            view->setParams(resultParams());
+            view->setParams(params);
         }
     }
 }
+void ComponentDialogWidget::enforceHaunchInputLimits() {
+    if(def_.typeId!=L"tekla_haunch_40")return;
+    // Unlike independent schema min/max, these values are physically coupled.
+    // Only the in-dialog values change; no Document write until Apply/Modify.
+    auto spin=[this](const wchar_t* key)->QDoubleSpinBox* {
+        const auto it=editors_.find(key);
+        return it==editors_.end()?nullptr:qobject_cast<QDoubleSpinBox*>(it->second);
+    };
+    auto value=[&](const wchar_t* key,double fallback)->double {
+        const auto* s=spin(key);
+        return s?s->value():fallback;
+    };
+    auto bounds=[&](const wchar_t* key,double minimum,double maximum) {
+        if(auto* s=spin(key)) {
+            QSignalBlocker guard(s);
+            s->setRange(minimum,std::max(minimum,maximum));
+        }
+    };
+    auto requiredIfExplicit=[&](const wchar_t* key,double minimum) {
+        if(auto* s=spin(key)) {
+            if(s->value()>0.0 && s->value()<minimum) {
+                QSignalBlocker guard(s);
+                s->setValue(minimum); // 0 remains "automatic" for this field
+            }
+        }
+    };
+    // The generator demands hole >= nominal diameter. Prefer the native
+    // default 2 mm clearance; when the bolt grows, grow the hole with it.
+    const double bolt=value(L"boltDiameter",20.0);
+    bounds(L"holeDiameter",std::max(13.0,bolt+2.0),50.0);
+    if(auto* h=spin(L"holeDiameter"))
+        h->setToolTip(QStringLiteral("Delik capi >= bulon capi + 2 mm; bagli sinir otomatik korunur."));
+    const double hole=value(L"holeDiameter",22.0);
+    bounds(L"boltPitchX",std::max(40.0,hole+0.01),500.0);
+
+    // The web wedge must retain strictly positive taper clearance.
+    const double tip=value(L"haunchTipDepth",25.0);
+    bounds(L"haunchDepth",std::max(60.0,tip+25.01),1000.0);
+    const double depth=value(L"haunchDepth",240.0);
+    bounds(L"haunchTipDepth",10.0,std::min(200.0,depth-25.01));
+
+    // Both 2x2 bolt groups must fit vertically in the end plate.
+    const double pitchMin=std::max(40.0,hole+0.01);
+    const double upper=haunchBeamHeight_>0.0
+        ? (haunchBeamHeight_+depth-40.0-hole-0.01)*0.5 : 500.0;
+    bounds(L"boltPitchY",pitchMin,std::min(500.0,upper));
+
+    // Explicit plate dimensions cannot undercut the connection geometry.
+    // Keep zero as the native "derive from real member section" sentinel.
+    const double pitchX=value(L"boltPitchX",120.0);
+    requiredIfExplicit(L"endPlateWidth",pitchX+hole+15.0);
+    if(haunchBeamHeight_>0.0)
+        requiredIfExplicit(L"endPlateHeight",haunchBeamHeight_+depth+20.0);
+    const double flangeWidth=value(L"haunchFlangeWidth",0.0);
+    const double webT=value(L"haunchWebThickness",10.0);
+    if(flangeWidth>0.0)requiredIfExplicit(L"haunchFlangeWidth",webT);
+}
 void ComponentDialogWidget::updatePreviewFromForm() {
     if(nativePreview_) {
+        enforceHaunchInputLimits();
         const auto params=resultParams();
         nativePreview_->setParams(params);
         for(auto* view:thumbnailViews_)view->setParams(params);
@@ -1378,7 +1451,7 @@ void ComponentDialogWidget::updateFormFromPreview(const std::wstring& name,
         ck->second->setChecked(true);
     }
     onHotspotClicked(QString::fromStdWString(name));
-    for(auto* view:thumbnailViews_)view->setParams(resultParams());
+    updatePreviewFromForm();
 }
 
 void ComponentDialogWidget::setParams(const std::vector<CompParam>& p) {
@@ -1387,7 +1460,10 @@ void ComponentDialogWidget::setParams(const std::vector<CompParam>& p) {
         const auto it = editors_.find(spec.name);
         if (it == editors_.end() || spec.documentedOnly) continue;
         const CompParam* stored = findParam(p, spec.name);
-        setEditorValue(it->second, spec, stored ? stored->value : paramDefaultValue(spec));
+        {
+            QSignalBlocker guard(it->second);
+            setEditorValue(it->second, spec, stored ? stored->value : paramDefaultValue(spec));
+        }
         const auto oc = optionalChecks_.find(spec.name);
         if (oc != optionalChecks_.end() && oc->second->isEnabled())
             oc->second->setChecked(stored != nullptr);
