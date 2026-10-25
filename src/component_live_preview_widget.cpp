@@ -12,6 +12,9 @@
 #include <QToolTip>
 #include <algorithm>
 #include <array>
+#include <tuple>
+#include <QLinearGradient>
+#include <QColor>
 #include <cmath>
 #include <limits>
 
@@ -199,12 +202,26 @@ void ComponentLivePreviewWidget::setOnEdit(std::function<void(const std::wstring
     onEdit_=std::move(cb);
 }
 void ComponentLivePreviewWidget::setView(const std::string& name) {
+    viewName_=name;
     if(name=="front"){yaw_=0.0;pitch_=0.0;}
     else if(name=="side"){yaw_=kPi*0.5;pitch_=0.0;}
     else if(name=="top"){yaw_=0.0;pitch_=kPi*0.5;}
     else {yaw_=0.67;pitch_=0.48;}
     pan_=QPointF{};zoom_=1.0;
     positionEditors();update();
+}
+void ComponentLivePreviewWidget::setCompact(bool compact) {
+    compact_=compact;
+    if(compact_){
+        setMinimumSize(130,75);
+        setSizePolicy(QSizePolicy::Expanding,QSizePolicy::Fixed);
+        for(auto& c:callouts_)c.spin->hide();
+    }
+    positionEditors();
+    update();
+}
+void ComponentLivePreviewWidget::setOnPick(std::function<void()> cb) {
+    onPick_=std::move(cb);
 }
 void ComponentLivePreviewWidget::syncEditors() {
     const ComponentType* type=ComponentRegistry::instance().findType(L"tekla_haunch_40");
@@ -278,8 +295,13 @@ void ComponentLivePreviewWidget::positionEditors() {
     if(xmin<=xmax && ymin<=ymax) {
         const double w=std::max(100.0,xmax-xmin);
         const double h=std::max(100.0,ymax-ymin);
-        modelScale_=std::min((width()-205.0)/w,(height()-155.0)/h);
+        modelScale_=std::min((width()-(compact_?16.0:205.0))/w,
+                             (height()-(compact_?18.0:155.0))/h);
         modelScale_=std::max(0.035,modelScale_);
+    }
+    if(compact_) {
+        for(auto& c:callouts_)c.spin->hide();
+        return;
     }
     for(auto& c:callouts_) {
         // Editor cards are ordinary Qt spinboxes (keyboard, accessibility,
@@ -315,6 +337,16 @@ void ComponentLivePreviewWidget::paintEvent(QPaintEvent*) {
     }
     drawModel(painter);
     painter.setPen(QColor("#344c64"));
+    if(compact_) {
+        QFont mini=painter.font();
+        mini.setBold(true);mini.setPointSize(9);painter.setFont(mini);
+        const QString label=viewName_=="front"?QStringLiteral("ON"):
+                            viewName_=="side"?QStringLiteral("YAN"):
+                            viewName_=="top"?QStringLiteral("UST"):
+                                               QStringLiteral("3D");
+        painter.drawText(QPoint(8,15),label);
+        return;
+    }
     QFont title=painter.font();title.setBold(true);title.setPointSize(12);
     painter.setFont(title);
     painter.drawText(QPoint(16,26),QStringLiteral("HAUNCH 40  ·  NATIVE 3D"));
@@ -401,6 +433,10 @@ void ComponentLivePreviewWidget::resizeEvent(QResizeEvent* e) {
     positionEditors();
 }
 void ComponentLivePreviewWidget::mousePressEvent(QMouseEvent* e) {
+    if(compact_) {
+        if(e->button()==Qt::LeftButton && onPick_)onPick_();
+        e->accept();return;
+    }
     lastMouse_=e->pos();
     orbiting_=e->button()==Qt::LeftButton;
     panning_=e->button()==Qt::MiddleButton;
