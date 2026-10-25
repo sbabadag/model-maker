@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <array>
 #include <tuple>
+#include <utility>
 #include <QLinearGradient>
 #include <QColor>
 #include <cmath>
@@ -326,7 +327,7 @@ void ComponentLivePreviewWidget::paintEvent(QPaintEvent*) {
     QLinearGradient bg(0,0,width(),height());
     bg.setColorAt(0,QColor("#f6f9fd"));
     bg.setColorAt(1,QColor("#dce5f1"));
-    painter.fillRect(rect(),bg);
+    painter.fillRect(rect(),QBrush(bg));
     if(!plan_.ok) {
         painter.setPen(QColor("#a73c3c"));
         painter.drawText(rect().adjusted(24,40,-24,-30),
