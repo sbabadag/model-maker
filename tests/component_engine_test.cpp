@@ -549,15 +549,17 @@ int main() {
                 check(approx(cap.center.z,7208.0,1e-6) &&
                       approx(cap.width,300.0) && approx(cap.height,400.0),
                       "P6: thicker cap still rests on EXACT column section top");
-                int boltCount=0;bool grips=true;
+                int boltCount=0;bool grips=true;bool spacing=true;
                 for(const auto& bolt:mp.boltGroups) {
                     boltCount+=static_cast<int>(boltGroupBoltOrigins(bolt).size());
                     grips=grips && approx(bolt.gripLength,
                                         30.0+12.0+in.main.secFlangeThickness,1e-6) &&
                           bolt.targetOwnedPlateRole=="haunch_end_plate";
+                    spacing=spacing && approx(bolt.spacingX,140.0) &&
+                            approx(bolt.spacingY,90.0);
                 }
-                check(boltCount==8 && grips,
-                      "P6: all 8 bolts remain attached to resized physical stack");
+                check(boltCount==8 && grips && spacing,
+                      "P6: 8 bolts preserve edited X/Y spacing and physical grip");
             }
         }
         // Two members selected reversed: physical roles still detected.
