@@ -287,13 +287,8 @@ namespace ModelMaker.TeklaBridge.Extractor
                 var cs = component.GetCoordinateSystem();
                 if (cs != null)
                 {
-                    rec.CoordinateSystem = new ModelMaker.TeklaBridge.Core.CoordinateSystem
-                    {
-                        Origin = ToVec3(cs.Origin),
-                        XAxis = ToVec3(cs.AxisX),
-                        YAxis = ToVec3(cs.AxisY),
-                        ZAxis = Cross(cs.AxisX, cs.AxisY)
-                    };
+                    rec.CoordinateSystem = BridgeVectorMath.OrthonormalFrame(
+                        ToVec3(cs.Origin), ToVec3(cs.AxisX), ToVec3(cs.AxisY));
                 }
             }
             catch (Exception ex) { diag.InaccessibleObjects.Add("koordinat sistemi: " + ex.Message); }
@@ -558,7 +553,9 @@ namespace ModelMaker.TeklaBridge.Extractor
                 if (plane != null)
                 {
                     var origin = Safe(() => plane.Origin, null);
-                    var normal = Cross(Safe(() => plane.AxisX, null), Safe(() => plane.AxisY, null));
+                    var normal = BridgeVectorMath.UnitCross(
+                        ToVec3(Safe(() => plane.AxisX, null)),
+                        ToVec3(Safe(() => plane.AxisY, null)));
                     info.Plane = new PlaneRecord { Origin = ToVec3(origin), Normal = normal };
                     info.Normal = normal;
                 }
@@ -829,17 +826,6 @@ namespace ModelMaker.TeklaBridge.Extractor
         {
             if (v == null) return null;
             return new Vec3 { X = v.X, Y = v.Y, Z = v.Z };
-        }
-
-        private static Vec3 Cross(Vector a, Vector b)
-        {
-            if (a == null || b == null) return new Vec3 { X = 0, Y = 0, Z = 1 };
-            return new Vec3
-            {
-                X = a.Y * b.Z - a.Z * b.Y,
-                Y = a.Z * b.X - a.X * b.Z,
-                Z = a.X * b.Y - a.Y * b.X
-            };
         }
 
         private static T Safe<T>(Func<T> fn, T fallback)
