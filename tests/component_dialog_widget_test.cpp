@@ -469,94 +469,68 @@ int main(int argc, char** argv) {
             left->selectRole("haunch_bolts_lower");
             QApplication::processEvents();
             const auto lower=left->visibleOverlayParams();
-            CHECK(lower.size()==10 &&
-                  std::find(lower.begin(),lower.end(),L"boltCountX")!=lower.end() &&
-                  std::find(lower.begin(),lower.end(),L"boltCountY")!=lower.end() &&
-                  std::find(lower.begin(),lower.end(),L"boltPitchX")!=lower.end() &&
-                  std::find(lower.begin(),lower.end(),L"boltPitchY")!=lower.end() &&
-                  std::find(lower.begin(),lower.end(),L"boltDiameter")!=lower.end() &&
-                  std::find(lower.begin(),lower.end(),L"holeDiameter")!=lower.end() &&
-                  std::find(lower.begin(),lower.end(),L"boltEdgeLeft")!=lower.end() &&
-                  std::find(lower.begin(),lower.end(),L"boltEdgeRight")!=lower.end() &&
-                  std::find(lower.begin(),lower.end(),L"boltEdgeTop")!=lower.end() &&
-                  std::find(lower.begin(),lower.end(),L"boltEdgeBottom")!=lower.end(),
-                  "P4D: lower group exposes four separately editable edges");
-            const auto lowerMetrics=left->boltOverlayMetrics("haunch_bolts_lower");
-            const auto upperMetrics=left->boltOverlayMetrics("haunch_bolts_upper");
-            CHECK(lowerMetrics.valid && upperMetrics.valid &&
-                  lowerMetrics.count==4 && lowerMetrics.totalCount==8 &&
-                  lowerMetrics.columns==2 && lowerMetrics.rows==2,
-                  "P4B: actual bolt-group count 4, total 8, arrangement 2x2");
-            CHECK(std::fabs(lowerMetrics.pitchX-120.0)<1e-6 &&
-                  std::fabs(lowerMetrics.pitchY-80.0)<1e-6 &&
-                  std::fabs(lowerMetrics.nominalDiameter-20.0)<1e-6 &&
-                  std::fabs(lowerMetrics.holeDiameter-22.0)<1e-6,
-                  "P4B: on-model pitch and M/diameter come from generated bolts");
-            CHECK(std::fabs(lowerMetrics.leftEdge-35.0)<1e-6 &&
-                  std::fabs(lowerMetrics.rightEdge-35.0)<1e-6 &&
-                  std::fabs(lowerMetrics.bottomEdge-55.0)<1e-6 &&
-                  std::fabs(upperMetrics.topEdge-55.0)<1e-6 &&
-                  lowerMetrics.topEdge>upperMetrics.topEdge &&
-                  upperMetrics.bottomEdge>lowerMetrics.bottomEdge,
-                  "P4B: four centre-to-edge values measured separately per bolt group");
+            CHECK(lower.size()==7 &&
+                  std::find(lower.begin(),lower.end(),L"lowerBoltCountX")!=lower.end() &&
+                  std::find(lower.begin(),lower.end(),L"lowerBoltCountY")!=lower.end() &&
+                  std::find(lower.begin(),lower.end(),L"lowerBoltPitchX")!=lower.end() &&
+                  std::find(lower.begin(),lower.end(),L"lowerBoltPitchY")!=lower.end() &&
+                  std::find(lower.begin(),lower.end(),L"lowerBoltDiameter")!=lower.end() &&
+                  std::find(lower.begin(),lower.end(),L"lowerHoleDiameter")!=lower.end() &&
+                  std::find(lower.begin(),lower.end(),L"lowerBoltEdgeClear")!=lower.end() &&
+                  std::find(lower.begin(),lower.end(),L"upperBoltEdgeClear")==lower.end(),
+                  "P4G: lower selects own six group parameters and ONLY bottom net edge");
+            const auto low=left->boltOverlayMetrics("haunch_bolts_lower");
+            const auto up=left->boltOverlayMetrics("haunch_bolts_upper");
+            CHECK(low.valid && up.valid && low.count==4 &&
+                  up.count==4 && low.totalCount==8 &&
+                  std::fabs(low.bottomEdge-55.0)<1e-6 &&
+                  std::fabs(up.topEdge-55.0)<1e-6,
+                  "P4G: migrated defaults preserve physical bolt position");
             left->selectRole("haunch_bolts_upper");
             QApplication::processEvents();
-            CHECK(left->visibleOverlayParams().size()==10 &&
-                  left->boltOverlayMetrics(left->activeRole()).valid,
-                  "P4B: upper bolt selection exposes both counts and all dimensions");
-            QDoubleSpinBox* hole3d=nullptr;
-            for(auto* spin:left->findChildren<QDoubleSpinBox*>())
-                if(spin->toolTip()==QStringLiteral("holeDiameter")) {
-                    hole3d=spin;break;
-                }
-            CHECK(hole3d!=nullptr,"P4B: 3D hole diameter editor exists");
-            if(hole3d) {
-                hole3d->setValue(24.0);
-                QApplication::processEvents();
-                const auto synced=h40.resultParams();
-                const auto* hole=mm::findParam(synced,L"holeDiameter");
-                CHECK(hole && std::holds_alternative<double>(hole->value) &&
-                      std::fabs(std::get<double>(hole->value)-24.0)<1e-6 &&
-                      std::fabs(left->boltOverlayMetrics("haunch_bolts_upper").holeDiameter
-                                -24.0)<1e-6,
-                      "P4B: 3D hole edit updates real form and generated geometry");
-                hole3d->setValue(22.0);
-                QApplication::processEvents();
+            const auto upperFields=left->visibleOverlayParams();
+            CHECK(upperFields.size()==7 &&
+                  std::find(upperFields.begin(),upperFields.end(),
+                            L"upperBoltEdgeClear")!=upperFields.end() &&
+                  std::find(upperFields.begin(),upperFields.end(),
+                            L"lowerBoltEdgeClear")==upperFields.end(),
+                  "P4G: upper selection exposes ONLY upper net edge");
+            QDoubleSpinBox* upperHole3d=nullptr;
+            QDoubleSpinBox* upperCount3d=nullptr;
+            for(auto* sp:left->findChildren<QDoubleSpinBox*>()) {
+                if(sp->toolTip()==QStringLiteral("upperHoleDiameter"))upperHole3d=sp;
+                if(sp->toolTip()==QStringLiteral("upperBoltCountX"))upperCount3d=sp;
             }
-            auto* countX=h40.findChild<QSpinBox*>(QStringLiteral("boltCountX"));
-            auto* countY=h40.findChild<QSpinBox*>(QStringLiteral("boltCountY"));
-            QDoubleSpinBox* count3dX=nullptr;
-            QDoubleSpinBox* count3dY=nullptr;
-            for(auto* spin:left->findChildren<QDoubleSpinBox*>()) {
-                if(spin->toolTip()==QStringLiteral("boltCountX"))count3dX=spin;
-                if(spin->toolTip()==QStringLiteral("boltCountY"))count3dY=spin;
-            }
-            CHECK(countX && countY && count3dX && count3dY &&
-                  countX->value()==2 && countY->value()==2,
-                  "P4C: native integer count editors exist in tab and 3D view");
-            if(countX && countY && count3dX && count3dY) {
-                count3dX->setValue(3.0);
-                count3dY->setValue(3.0);
+            auto* upperCount=h40.findChild<QSpinBox*>(
+                QStringLiteral("upperBoltCountX"));
+            auto* lowerCount=h40.findChild<QSpinBox*>(
+                QStringLiteral("lowerBoltCountX"));
+            CHECK(upperHole3d && upperCount3d && upperCount && lowerCount,
+                  "P4G: independent 3D and right-panel count/hole controls");
+            if(upperHole3d && upperCount3d && upperCount && lowerCount) {
+                const auto oldLower=left->previewPlan().boltGroups[1];
+                upperHole3d->setValue(24.0);
                 QApplication::processEvents();
-                const auto changed=left->boltOverlayMetrics("haunch_bolts_lower");
-                CHECK(changed.valid && countX->value()==3 && countY->value()==3 &&
-                      changed.columns==3 && changed.rows==3 &&
-                      changed.count==9 && changed.totalCount==18 &&
-                      left->previewPlan().cuts.size()==1,
-                      "P4C: 3D 3x3 edit updates tab, 18 native bolts and beam cut");
-                countY->setValue(4);
+                const auto changed=left->boltOverlayMetrics("haunch_bolts_upper");
+                CHECK(changed.valid &&
+                      std::fabs(changed.holeDiameter-24.0)<1e-6 &&
+                      std::fabs(left->boltOverlayMetrics("haunch_bolts_lower")
+                                .holeDiameter-22.0)<1e-6,
+                      "P4G: upper hole size edit leaves lower hole untouched");
+                upperCount3d->setValue(3.0);
                 QApplication::processEvents();
-                const auto tall=left->boltOverlayMetrics("haunch_bolts_upper");
-                auto* pitchY=h40.findChild<QDoubleSpinBox*>(
-                    QStringLiteral("boltPitchY"));
-                CHECK(tall.valid && tall.rows==4 && tall.columns==3 &&
-                      tall.totalCount==24 && pitchY &&
-                      pitchY->value()<80.0 && left->previewPlan().ok,
-                      "P4C: 4 rows keep 24 bolts within physical vertical span");
-                countX->setValue(2);
-                countY->setValue(2);
-                if(pitchY)pitchY->setValue(80.0);
+                const auto u=left->boltOverlayMetrics("haunch_bolts_upper");
+                const auto l=left->boltOverlayMetrics("haunch_bolts_lower");
+                CHECK(u.valid && l.valid && upperCount->value()==3 &&
+                      lowerCount->value()==2 &&
+                      u.count==6 && l.count==4 && u.totalCount==10,
+                      "P4G: upper 3x2 becomes 6 while lower remains 2x2");
+                upperHole3d->setValue(22.0);
+                upperCount3d->setValue(2.0);
                 QApplication::processEvents();
+                CHECK(left->previewPlan().ok &&
+                      oldLower.countX==left->previewPlan().boltGroups[1].countX,
+                      "P4G: changing upper controls never mutates lower group layout");
             }
             // Exercise the real mouse path, not just the test selection API.
             // Top-left empty background must clear the active overlays.
