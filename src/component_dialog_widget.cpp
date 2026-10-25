@@ -1563,8 +1563,6 @@ void ComponentDialogWidget::enforceHaunchInputLimits(const std::wstring& changed
     const double minSide=std::max(20.0,holeMax*0.5+0.20);
     bounds(L"boltEdgeLeft",minSide,200.0);
     bounds(L"boltEdgeRight",minSide,200.0);
-    const double left=value(L"boltEdgeLeft",35.0);
-    const double right=value(L"boltEdgeRight",35.0);
     const double spanX=std::max(upper.spanX(),lower.spanX());
     const double minW=std::max({
         spanX+2.0*minSide,
