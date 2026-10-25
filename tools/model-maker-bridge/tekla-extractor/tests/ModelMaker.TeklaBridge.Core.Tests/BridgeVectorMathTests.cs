@@ -9,7 +9,7 @@ namespace ModelMaker.TeklaBridge.Core.Tests
         public void Real146AxesAreUnitLengthAndRightHanded()
         {
             var f = BridgeVectorMath.OrthonormalFrame(
-                new Vec3 { X = 0, Y = 195, Z = 7055 },
+                new Vec3 { X = 10, Y = 20, Z = 30 },
                 new Vec3 { X = 0, Y = 1000, Z = 0 },
                 new Vec3 { X = 0, Y = 0, Z = 1000 });
             Assert.Equal(0.0, f.XAxis.X, 10);
@@ -17,7 +17,7 @@ namespace ModelMaker.TeklaBridge.Core.Tests
             Assert.Equal(1.0, f.YAxis.Z, 10);
             Assert.Equal(1.0, f.ZAxis.X, 10);
             Assert.Equal(0.0, f.ZAxis.Y, 10);
-            Assert.Equal(7055.0, f.Origin.Z, 10);
+            Assert.Equal(30.0, f.Origin.Z, 10);
         }
 
         [Fact]
