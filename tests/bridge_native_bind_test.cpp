@@ -2,7 +2,7 @@
 //
 // Dogrular:
 //   1) Document'ta iliskilendirilmis Tekla GUID bulunursa o uye kullanilir.
-//   2) Profil uyumsuzsa conflict (otomatik secim YAPILMAZ).
+//   2) Kaynak Tekla profilinden farkli Model Maker profili kabul edilir; rol ve geometri belirleyicidir.
 //   3) GUID yok + secim yok -> needsSelection (eksik uye acikca raporlanir).
 //   4) Kullanici secimi (BridgeMemberSelection) GUID yokken uyeyi baglar.
 //   5) MMW8 round-trip: setTeklaGuid sonrasi save->load GUID eslemesi korunur.
@@ -14,6 +14,7 @@
 #include "model_maker/document.hpp"
 
 #include <cstdio>
+#include <filesystem>
 #include <string>
 #include <vector>
 
@@ -110,7 +111,8 @@ static BridgePackage makePackage() {
 
 int main() {
     std::vector<SteelProfile> catalog = {makeProfile("HEA400", 300, 300),
-                                         makeProfile("HEA300", 300, 200)};
+                                         makeProfile("HEA300", 300, 200),
+                                         makeProfile("IPE200", 200, 100)};
 
     // --- 1) GUID map ile baglama: hem primary hem secondary GUID'den cozulur ---
     {
@@ -129,18 +131,20 @@ int main() {
               "secondary -> kiris EntityId");
     }
 
-    // --- 2) Profil uyumsuz -> conflict (otomatik secim YAPILMAZ) --------------
+    // --- 2) Source HEA300 vs target IPE200 must NOT block native adaptation ---
     {
         EntityId colId, beamId;
-        Document doc = makeDoc(colId, beamId, "IPE200");  // kiris profili yanlis
+        Document doc = makeDoc(colId, beamId, "IPE200");
         doc.setTeklaGuid(colId, "c1");
         doc.setTeklaGuid(beamId, "b1");
-
         const BridgeNativeMapping m = mapBridgeToNative(makePackage(), catalog);
         const BridgeMemberBinding b = resolveBridgeMemberBinding(doc, m, {});
-        check(!b.ok, "profil uyumsuz: ok=false");
-        check(b.needsSelection, "profil uyumsuz: needsSelection");
-        check(b.secondary[0].conflict, "profil uyumsuz: conflict isaretli");
+        check(b.ok && !b.needsSelection, "source HEA300 -> IPE200 accepted");
+        check(b.secondary[0].resolved && b.secondary[0].entityId==beamId,
+              "target IPE200 beam correctly linked");
+        const MemberGeometry actual=bridgeMemberGeometry(doc,beamId,catalog);
+        check(actual.secHeight==200 && actual.secWidth==100,
+              "native geometry uses target IPE200 actual section");
     }
 
     // --- 3) GUID yok + secim yok -> needsSelection ----------------------------
@@ -179,9 +183,52 @@ int main() {
         const BridgeMemberBinding b = resolveBridgeMemberBinding(doc, m, sel);
         check(b.ok, "ters sira: baglama ok");
         check(b.primary.resolved && b.primary.entityId == colId,
-              "ters sira: primary -> kolon (HEA400)");
+              "ters sira: primary -> column by axis");
         check(b.secondary[0].resolved && b.secondary[0].entityId == beamId,
-              "ters sira: secondary -> kiris (HEA300)");
+              "ters sira: secondary -> beam by axis");
+    }
+
+    // --- 7B) Both are HEA400: section equality must not confuse roles ---
+    {
+        EntityId colId, beamId;
+        Document doc=makeDoc(colId,beamId,"HEA400");
+        const BridgeNativeMapping m=mapBridgeToNative(makePackage(),catalog);
+        BridgeMemberSelection sel;
+        sel.primaryId=beamId; // deliberately reversed
+        sel.secondaryIds={colId};
+        const BridgeMemberBinding b=resolveBridgeMemberBinding(doc,m,sel);
+        check(b.ok,"same-profile column and beam accepted");
+        check(b.primary.entityId==colId && b.secondary[0].entityId==beamId,
+              "same-profile entities assigned by real member directions");
+    }
+
+    // --- 7C) One physical member is never both primary and secondary --------
+    {
+        EntityId colId, beamId;
+        Document doc=makeDoc(colId,beamId,"HEA400");
+        doc.setTeklaGuid(colId,"c1");
+        doc.setTeklaGuid(colId,"b1");  // same GUID target object
+        const BridgeNativeMapping m=mapBridgeToNative(makePackage(),catalog);
+        BridgeMemberSelection sel;
+        sel.primaryId=colId;
+        const BridgeMemberBinding b=resolveBridgeMemberBinding(doc,m,sel);
+        check(!b.ok && b.needsSelection,"cannot bind one member as two roles");
+    }
+
+    // --- 7D) Role-oriented association survives source profile changes -----
+    {
+        EntityId colId, beamId;
+        Document doc=makeDoc(colId,beamId,"IPE200");
+        BridgePackage pkg=makePackage();
+        pkg.component.primaryMember.profile="IPE500"; // unrelated old template
+        pkg.component.secondaryMembers[0].profile="HEA400";
+        const BridgeNativeMapping m=mapBridgeToNative(pkg,catalog);
+        BridgeMemberSelection sel;
+        sel.primaryId=beamId; sel.secondaryIds={colId};
+        const BridgeMemberBinding b=resolveBridgeMemberBinding(doc,m,sel);
+        check(b.ok && b.primary.entityId==colId &&
+              b.secondary[0].entityId==beamId,
+              "source profile labels ignored, physical roles retained");
     }
 
     // --- 8) Farkli eksen boyu (3382 vs 7200) baglamayi ENGELLEMEZ ---------------
@@ -207,7 +254,7 @@ int main() {
         doc.setTeklaGuid(colId, "c1");
         doc.setTeklaGuid(beamId, "b1");
 
-        const std::string path = "/tmp/bridge_bind_roundtrip.mmw8";
+        const std::string path = (std::filesystem::temp_directory_path() / "bridge_bind_roundtrip.mmw8").string();
         doc.save(path);
 
         Document doc2;
