@@ -39,6 +39,8 @@ public:
     std::string activeRole() const { return activeRole_; }
     void selectRole(const std::string& role);  // GUI + automated tests
     std::vector<std::wstring> visibleOverlayParams() const;
+    // Read-only anchor for consistent viewport labels and pointer regressions.
+    QPointF roleScreenAnchor(const std::string& role) const;
     // P6 diagnostics: all child geometry is recomputed from ONE generator plan.
     const GenerationPlan& previewPlan() const { return plan_; }
 
