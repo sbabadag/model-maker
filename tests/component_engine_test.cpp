@@ -142,7 +142,7 @@ int main() {
         check(reg.typeCount() == 0, "registry baslangic bos");
 
         registerBuiltInComponents(reg);
-        check(reg.typeCount() == 3, "3 yerlesik component kaydedildi");
+        check(reg.typeCount() == 4, "4 yerlesik component kaydedildi");
 
         const ComponentType* ep = reg.findType(L"beam_to_column_end_plate");
         check(ep != nullptr, "end plate tipi bulundu");
@@ -150,9 +150,12 @@ int main() {
         check(reg.findType(L"fin_plate") != nullptr, "fin plate tipi bulundu");
         check(reg.findType(L"olmayan") == nullptr, "bilinmeyen tip -> null");
         check(reg.generator(L"fin_plate") != nullptr, "fin plate generator bulundu");
+        const ComponentType* h40=reg.findType(L"tekla_haunch_40");
+        check(h40 && h40->catalog.catalogVisible, "Haunch 40 katalogda gorunur");
+        check(h40 && h40->catalog.sourceComponentNumber==L"40", "Haunch 40 kaynak numarasi");
 
         auto ids = reg.typeIds();
-        check(ids.size() == 3, "typeIds 3 adet");
+        check(ids.size() == 4, "typeIds 4 adet");
 
         // tekil typeId reddi
         ComponentType dup = endPlateComponentType();
@@ -274,6 +277,83 @@ int main() {
             check(b.parts.size() == 1 && b.parts[0] == EntityId{30},
                   "ters sira: bulonlar YATAY uyeye (kiris) referansli");
         }
+    }
+
+    // --- Haunch 40: selected Model Maker sections, NOT source Tekla labels ---
+    {
+        ComponentRegistry reg;
+        registerBuiltInComponents(reg);
+        ComponentInput in;
+        in.main.id=EntityId{40};
+        in.main.axisFrom={0,0,0};
+        in.main.axisTo={0,0,7200};
+        in.main.refNormal={0,1,0};
+        in.main.secWidth=300;in.main.secHeight=400;
+        in.main.secWebThickness=10;in.main.secFlangeThickness=18;
+        MemberGeometry beam;
+        beam.id=EntityId{41};
+        beam.axisFrom={0,2200,6000};
+        beam.axisTo={0,100,6000};
+        beam.refNormal={0,0,1};
+        beam.secWidth=200;beam.secHeight=300;
+        beam.secWebThickness=8;beam.secFlangeThickness=12;
+        in.secondary={beam};
+
+        GenerationPlan p=reg.generate(L"tekla_haunch_40",in);
+        check(p.ok,"Haunch 40: independent native generator builds");
+        check(p.plates.size()==4,"Haunch 40: end+web+bottom+top 4 plates");
+        check(p.boltGroups.size()==2,"Haunch 40: two bolt groups");
+        check(p.welds.size()==4,"Haunch 40: four weld relations");
+        check(p.plateKeys.size()==p.plates.size(),"Haunch 40: stable plate role keys");
+        if(p.plates.size()>=3) {
+            check(approx(p.plates[0].thickness,20.0),
+                  "Haunch 40: PL20 end plate");
+            check(p.plates[1].chamfers.size()==1,
+                  "Haunch 40: actual tapered web chamfer");
+            check(approx(p.plates[1].width,450.0) &&
+                  approx(p.plates[1].height,240.0),
+                  "Haunch 40: 450x240 taper");
+            check(p.plates[2].height>450.0 &&
+                  p.plates[2].height<540.0,
+                  "Haunch 40: inclined flange real length");
+        }
+        if(p.boltGroups.size()==2) {
+            for(const auto& b:p.boltGroups) {
+                check(b.countX==2 && b.countY==2,"Haunch 40: 2x2 pattern");
+                check(b.parts.size()==1 && b.parts[0]==EntityId{40},
+                      "Haunch 40: bolt through actual support");
+                check(approx(b.params.holeDiameter,22),"Haunch 40: round Ø22");
+            }
+        }
+        // Section adaptation and editable param changes.
+        in.secondary[0].secWidth=120;
+        in.secondary[0].secHeight=240; // e.g. IPE240, source type irrelevant
+        in.params={{L"haunchLength",CompParamValue{600.0}},
+                   {L"haunchDepth",CompParamValue{300.0}},
+                   {L"createBeamStiffener",CompParamValue{true}}};
+        GenerationPlan adapt=reg.generate(L"tekla_haunch_40",in);
+        check(adapt.ok,"Haunch 40: different target section accepted");
+        check(adapt.plates.size()==5,"Haunch 40: optional stiffener created");
+        if(adapt.plates.size()>=4) {
+            check(approx(adapt.plates[1].width,600.0) &&
+                  approx(adapt.plates[1].height,300.0),
+                  "Haunch 40: editable length/depth recomputed");
+            check(approx(adapt.plates[3].width,120.0),
+                  "Haunch 40: top plate adapts to target flange width");
+        }
+        // Two members selected reversed: physical roles still detected.
+        ComponentInput reversed;
+        reversed.main=beam;reversed.secondary={in.main};
+        GenerationPlan rp=reg.generate(L"tekla_haunch_40",reversed);
+        check(rp.ok,"Haunch 40: reversed selection accepted");
+        if(rp.boltGroups.size()==2)
+            check(rp.boltGroups[0].parts[0]==EntityId{40},
+                  "Haunch 40: real column chosen for bolt target");
+
+        in.params={{L"haunchDepth",CompParamValue{20.0}},
+                   {L"haunchTipDepth",CompParamValue{25.0}}};
+        check(!reg.generate(L"tekla_haunch_40",in).ok,
+              "Haunch 40: invalid taper geometry rejected");
     }
 
     // --- 7) Bilinmeyen tip / eksik ikincil parca -----------------------------
