@@ -101,13 +101,16 @@ static BridgePackage makePackage() {
     bg.boltGroup = BridgeBoltGroupInfo{};
     bg.boltGroup->size = "M20";
     bg.boltGroup->axis = "x";
+    bg.boltGroup->axisSource = "measured";
+    bg.boltGroup->partToBoltTo = "p1";
     bg.boltGroup->direction = BridgeVec3{1, 0, 0};
     for (double z : {6999.0, 7059.0, 7119.0})
         for (double y : {265.0, 325.0}) {
             BridgeBolt b;
-            b.position = BridgeVec3{0, y, z};
+            b.position = BridgeVec3{9.25, y, z};
             b.nominalDiameter = 20;
-            b.holeDiameterSource = "standard";
+            b.holeDiameter = 22.0;
+            b.holeDiameterSource = "measured";
             bg.boltGroup->bolts.push_back(b);
         }
     pkg.objects.push_back(bg);
