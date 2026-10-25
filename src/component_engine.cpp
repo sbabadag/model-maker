@@ -737,6 +737,7 @@ void registerBuiltInComponents(ComponentRegistry& registry) noexcept {
     registry.registerType(endPlateComponentType(), &generateEndPlate);
     registry.registerType(finPlateComponentType(), &generateFinPlate);
     registry.registerType(shearPlate146ComponentType(), &generateShearPlateSimple146);
+    registry.registerType(haunch40ComponentType(), &generateHaunch40);
 }
 
 // --- Tekla 146 (Shear plate simple) -------------------------------------------
