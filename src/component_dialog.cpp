@@ -626,8 +626,8 @@ ComponentDialogDefinition haunch40DialogDefinition() noexcept {
         tab(L"stiffeners",L"Berkitmeler",
             {L"createBeamStiffener",L"stiffenerThickness"}),
         tab(L"bolts",L"Bulonlar",
-            {L"boltDiameter",L"holeDiameter",L"boltPitchX",L"boltPitchY",
-             L"boltEdge",L"grade"}),
+            {L"boltCountX",L"boltCountY",L"boltDiameter",L"holeDiameter",
+             L"boltPitchX",L"boltPitchY",L"boltEdge",L"grade"}),
         tab(L"welds",L"Kaynaklar",
             {L"createWelds",L"weldSize"})
     };
