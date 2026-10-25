@@ -696,8 +696,23 @@ ComponentMaterializer::CommitResult ComponentMaterializer::commit(const Prepared
                 // Generator yalnizca kullanici parcalarini bilir; levhalar burada
                 // eklenir (End Plate ile ayni kural: {levha..., main...}).
                 std::vector<EntityId> parts;
-                for (const EntityId pid : out.ownedPlateIds)
-                    if (pid != kInvalidEntityId) parts.push_back(pid);
+                if (!bolt.targetOwnedPlateRole.empty()) {
+                    const auto role = out.roleToEntity.find(bolt.targetOwnedPlateRole);
+                    if (role == out.roleToEntity.end() ||
+                        std::find(out.ownedPlateIds.begin(), out.ownedPlateIds.end(),
+                                  role->second) == out.ownedPlateIds.end()) {
+                        rollback();
+                        out.error = L"bulonun hedef owned levha rolu bulunamadi: " +
+                            std::wstring(bolt.targetOwnedPlateRole.begin(),
+                                         bolt.targetOwnedPlateRole.end());
+                        return out;
+                    }
+                    parts.push_back(role->second);
+                } else {
+                    // Legacy generator: all owned plates remain in the stack.
+                    for (const EntityId pid : out.ownedPlateIds)
+                        if (pid != kInvalidEntityId) parts.push_back(pid);
+                }
                 for (const EntityId up : bolt.parts)
                     if (up != kInvalidEntityId &&
                         std::find(parts.begin(), parts.end(), up) == parts.end())
@@ -1039,8 +1054,23 @@ ComponentMaterializer::CommitResult ComponentMaterializer::recompute(
             case ComponentObjectKind::BoltGroup: {
                 BoltGroup bolt = pc.boltGroup;
                 std::vector<EntityId> parts;
-                for (const EntityId pid : out.ownedPlateIds)
-                    if (pid != kInvalidEntityId) parts.push_back(pid);
+                if (!bolt.targetOwnedPlateRole.empty()) {
+                    const auto role = out.roleToEntity.find(bolt.targetOwnedPlateRole);
+                    if (role == out.roleToEntity.end() ||
+                        std::find(out.ownedPlateIds.begin(), out.ownedPlateIds.end(),
+                                  role->second) == out.ownedPlateIds.end()) {
+                        rollback();
+                        out.error = L"bulonun hedef owned levha rolu bulunamadi: " +
+                            std::wstring(bolt.targetOwnedPlateRole.begin(),
+                                         bolt.targetOwnedPlateRole.end());
+                        return out;
+                    }
+                    parts.push_back(role->second);
+                } else {
+                    // Legacy generator: all owned plates remain in the stack.
+                    for (const EntityId pid : out.ownedPlateIds)
+                        if (pid != kInvalidEntityId) parts.push_back(pid);
+                }
                 for (const EntityId up : bolt.parts)
                     if (up != kInvalidEntityId &&
                         std::find(parts.begin(), parts.end(), up) == parts.end())
