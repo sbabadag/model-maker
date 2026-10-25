@@ -30,6 +30,8 @@ public:
     void setHighlightedParam(const std::wstring& name);
     void setOnEdit(std::function<void(const std::wstring&,double)> cb);
     void setView(const std::string& view);  // iso/front/side/top
+    void setCompact(bool compact);  // thumbnail: same plan, no editor overlay
+    void setOnPick(std::function<void()> cb);
     std::wstring highlightedParam() const { return highlight_; }
 
 protected:
@@ -54,6 +56,9 @@ private:
     std::wstring highlight_;
     std::function<void(const std::wstring&,double)> onEdit_;
     bool haveInput_{false};
+    bool compact_{false};
+    std::string viewName_{"iso"};
+    std::function<void()> onPick_;
     QPoint lastMouse_;
     bool orbiting_{false}, panning_{false};
     double yaw_{0.64}, pitch_{0.40}, zoom_{1.0};
