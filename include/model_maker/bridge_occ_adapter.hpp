@@ -131,6 +131,13 @@ BridgeNativeConvertOutcome convertBridgeToNative(
     const std::vector<SteelProfile>& catalog,
     const BridgeMemberSelection& selection);
 
+// Creates a REAL editable 'tekla_shear_plate_146' in Document with actual
+// member selection and observed NC1 hole evidence. Source package untouched.
+BridgeNativeConvertOutcome convertBridge146FromNc1(
+    Document& doc, const BridgePackage& pkg, const std::filesystem::path& nc1,
+    const std::vector<SteelProfile>& catalog,
+    const BridgeMemberSelection& selection);
+
 }  // namespace mm
 
 #endif  // MM_HAS_OCC
