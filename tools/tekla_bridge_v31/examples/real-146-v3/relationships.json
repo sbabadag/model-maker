@@ -1,0 +1,34 @@
+[
+  {
+    "id": "probe-id:5701:main",
+    "kind": "Welds",
+    "sourceGUID": "probe-id:5701",
+    "targetGUID": "probe-id:5165",
+    "role": "main",
+    "confidence": "observed"
+  },
+  {
+    "id": "probe-id:5701:secondary",
+    "kind": "Welds",
+    "sourceGUID": "probe-id:5701",
+    "targetGUID": "probe-id:5673",
+    "role": "secondary",
+    "confidence": "observed"
+  },
+  {
+    "id": "probe-id:5837:bolted_to",
+    "kind": "AttachedTo",
+    "sourceGUID": "probe-id:5837",
+    "targetGUID": "probe-id:5213",
+    "role": "bolted_to",
+    "confidence": "observed"
+  },
+  {
+    "id": "probe-id:5837:bolt_plate",
+    "kind": "AttachedTo",
+    "sourceGUID": "probe-id:5837",
+    "targetGUID": "probe-id:5673",
+    "role": "bolt_plate",
+    "confidence": "observed"
+  }
+]

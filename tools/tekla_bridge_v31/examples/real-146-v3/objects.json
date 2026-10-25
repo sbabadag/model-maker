@@ -1,0 +1,387 @@
+[
+  {
+    "sourceGUID": "probe-id:5647",
+    "identifierId": 5647,
+    "kind": "Fitting",
+    "name": "",
+    "profile": "",
+    "material": "",
+    "parentSourceGUID": "probe-id:5245",
+    "roleKey": "fitting_17299089c052",
+    "mappedKind": "Cut",
+    "mapped": false,
+    "confidence": "observed",
+    "geometryRepresentation": "reference",
+    "unsupportedReason": "not supported as editable native geometry in V3 adapter",
+    "localToGlobal": {
+      "origin": {
+        "x": 0.0,
+        "y": 215.0,
+        "z": 7300.0
+      },
+      "xAxis": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": -1.0
+      },
+      "yAxis": {
+        "x": 1.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "zAxis": {
+        "x": 0.0,
+        "y": -1.0,
+        "z": 0.0
+      }
+    }
+  },
+  {
+    "sourceGUID": "probe-id:5663",
+    "identifierId": 5663,
+    "kind": "ControlPoint",
+    "name": "",
+    "profile": "",
+    "material": "",
+    "parentSourceGUID": "probe-id:5245",
+    "roleKey": "point_58ba23fc3aa7",
+    "mappedKind": "Unsupported",
+    "mapped": false,
+    "confidence": "observed",
+    "geometryRepresentation": "reference",
+    "unsupportedReason": "not supported as editable native geometry in V3 adapter",
+    "localToGlobal": {
+      "origin": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "xAxis": {
+        "x": 1.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "yAxis": {
+        "x": 0.0,
+        "y": 1.0,
+        "z": 0.0
+      },
+      "zAxis": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 1.0
+      }
+    }
+  },
+  {
+    "sourceGUID": "probe-id:5668",
+    "identifierId": 5668,
+    "kind": "ControlPoint",
+    "name": "",
+    "profile": "",
+    "material": "",
+    "parentSourceGUID": "probe-id:5245",
+    "roleKey": "point_3364a87f7f93",
+    "mappedKind": "Unsupported",
+    "mapped": false,
+    "confidence": "observed",
+    "geometryRepresentation": "reference",
+    "unsupportedReason": "not supported as editable native geometry in V3 adapter",
+    "localToGlobal": {
+      "origin": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "xAxis": {
+        "x": 1.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "yAxis": {
+        "x": 0.0,
+        "y": 1.0,
+        "z": 0.0
+      },
+      "zAxis": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 1.0
+      }
+    }
+  },
+  {
+    "sourceGUID": "probe-id:5673",
+    "identifierId": 5673,
+    "kind": "ContourPlate",
+    "name": "PLATE",
+    "profile": "PL10",
+    "material": "S235JR",
+    "parentSourceGUID": "probe-id:5245",
+    "roleKey": "plate_f25297b45489",
+    "mappedKind": "Plate",
+    "mapped": true,
+    "confidence": "observed",
+    "geometryRepresentation": "reference",
+    "localToGlobal": {
+      "origin": {
+        "x": 9.25,
+        "y": 195.0,
+        "z": 7159.0
+      },
+      "xAxis": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": -1.0
+      },
+      "yAxis": {
+        "x": 0.0,
+        "y": 1.0,
+        "z": 0.0
+      },
+      "zAxis": {
+        "x": 1.0,
+        "y": -0.0,
+        "z": 0.0
+      }
+    },
+    "topology": {
+      "faceCount": 6,
+      "loopCount": 6,
+      "faceVertexOccurrences": 24
+    },
+    "geometryFile": "geometry/0003.json"
+  },
+  {
+    "sourceGUID": "probe-id:5701",
+    "identifierId": 5701,
+    "kind": "Weld",
+    "name": "",
+    "profile": "",
+    "material": "",
+    "parentSourceGUID": "probe-id:5245",
+    "roleKey": "weld_3e92f36de26d",
+    "mappedKind": "Weld",
+    "mapped": false,
+    "confidence": "observed",
+    "geometryRepresentation": "reference",
+    "unsupportedReason": "not supported as editable native geometry in V3 adapter",
+    "localToGlobal": {
+      "origin": {
+        "x": 4.25,
+        "y": 195.0,
+        "z": 7059.0
+      },
+      "xAxis": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": -1.0
+      },
+      "yAxis": {
+        "x": 0.0,
+        "y": 1.0,
+        "z": 0.0
+      },
+      "zAxis": {
+        "x": 1.0,
+        "y": -0.0,
+        "z": 0.0
+      }
+    },
+    "weld": {
+      "type": "WELD_TYPE_FILLET",
+      "sizeAbove": 5.0,
+      "sizeBelow": 5.0,
+      "mainSourceGUID": "probe-id:5165",
+      "secondarySourceGUID": "probe-id:5673"
+    }
+  },
+  {
+    "sourceGUID": "probe-id:5827",
+    "identifierId": 5827,
+    "kind": "ControlPoint",
+    "name": "",
+    "profile": "",
+    "material": "",
+    "parentSourceGUID": "probe-id:5245",
+    "roleKey": "point_3a502f98018b",
+    "mappedKind": "Unsupported",
+    "mapped": false,
+    "confidence": "observed",
+    "geometryRepresentation": "reference",
+    "unsupportedReason": "not supported as editable native geometry in V3 adapter",
+    "localToGlobal": {
+      "origin": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "xAxis": {
+        "x": 1.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "yAxis": {
+        "x": 0.0,
+        "y": 1.0,
+        "z": 0.0
+      },
+      "zAxis": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 1.0
+      }
+    }
+  },
+  {
+    "sourceGUID": "probe-id:5832",
+    "identifierId": 5832,
+    "kind": "ControlPoint",
+    "name": "",
+    "profile": "",
+    "material": "",
+    "parentSourceGUID": "probe-id:5245",
+    "roleKey": "point_01ec91505b78",
+    "mappedKind": "Unsupported",
+    "mapped": false,
+    "confidence": "observed",
+    "geometryRepresentation": "reference",
+    "unsupportedReason": "not supported as editable native geometry in V3 adapter",
+    "localToGlobal": {
+      "origin": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "xAxis": {
+        "x": 1.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "yAxis": {
+        "x": 0.0,
+        "y": 1.0,
+        "z": 0.0
+      },
+      "zAxis": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 1.0
+      }
+    }
+  },
+  {
+    "sourceGUID": "probe-id:5837",
+    "identifierId": 5837,
+    "kind": "BoltGroup",
+    "name": "",
+    "profile": "",
+    "material": "",
+    "parentSourceGUID": "probe-id:5245",
+    "roleKey": "bolt_group_9b62bfdb5d1e",
+    "mappedKind": "BoltGroup",
+    "mapped": true,
+    "confidence": "observed",
+    "geometryRepresentation": "reference",
+    "localToGlobal": {
+      "origin": {
+        "x": 0.0,
+        "y": 295.0,
+        "z": 7119.0
+      },
+      "xAxis": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": -1.0
+      },
+      "yAxis": {
+        "x": 0.0,
+        "y": 1.0,
+        "z": 0.0
+      },
+      "zAxis": {
+        "x": 1.0,
+        "y": -0.0,
+        "z": 0.0
+      }
+    },
+    "boltGroup": {
+      "size": "20",
+      "boltStandard": "7990",
+      "tolerance": 2.0,
+      "slottedHoleX": 0.0,
+      "slottedHoleY": 0.0,
+      "axisSource": "unresolved",
+      "partToBeBolted": "probe-id:5213",
+      "partToBoltTo": "probe-id:5673",
+      "bolts": [
+        {
+          "position": {
+            "x": 0.0,
+            "y": 265.0,
+            "z": 7119.0
+          },
+          "nominalDiameter": 20.0,
+          "holeDiameter": 0,
+          "holeDiameterSource": "",
+          "axisSource": "unresolved"
+        },
+        {
+          "position": {
+            "x": 0.0,
+            "y": 325.0,
+            "z": 7119.0
+          },
+          "nominalDiameter": 20.0,
+          "holeDiameter": 0,
+          "holeDiameterSource": "",
+          "axisSource": "unresolved"
+        },
+        {
+          "position": {
+            "x": 0.0,
+            "y": 265.0,
+            "z": 7059.0
+          },
+          "nominalDiameter": 20.0,
+          "holeDiameter": 0,
+          "holeDiameterSource": "",
+          "axisSource": "unresolved"
+        },
+        {
+          "position": {
+            "x": 0.0,
+            "y": 325.0,
+            "z": 7059.0
+          },
+          "nominalDiameter": 20.0,
+          "holeDiameter": 0,
+          "holeDiameterSource": "",
+          "axisSource": "unresolved"
+        },
+        {
+          "position": {
+            "x": 0.0,
+            "y": 265.0,
+            "z": 6999.0
+          },
+          "nominalDiameter": 20.0,
+          "holeDiameter": 0,
+          "holeDiameterSource": "",
+          "axisSource": "unresolved"
+        },
+        {
+          "position": {
+            "x": 0.0,
+            "y": 325.0,
+            "z": 6999.0
+          },
+          "nominalDiameter": 20.0,
+          "holeDiameter": 0,
+          "holeDiameterSource": "",
+          "axisSource": "unresolved"
+        }
+      ]
+    }
+  }
+]

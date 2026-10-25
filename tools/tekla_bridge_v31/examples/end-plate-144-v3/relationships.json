@@ -1,0 +1,18 @@
+[
+  {
+    "id": "ID-W-01:main",
+    "kind": "Welds",
+    "sourceGUID": "ID-W-01",
+    "targetGUID": "ID-BEAM-01",
+    "role": "main",
+    "confidence": "observed"
+  },
+  {
+    "id": "ID-W-01:secondary",
+    "kind": "Welds",
+    "sourceGUID": "ID-W-01",
+    "targetGUID": "ID-PL-01",
+    "role": "secondary",
+    "confidence": "observed"
+  }
+]

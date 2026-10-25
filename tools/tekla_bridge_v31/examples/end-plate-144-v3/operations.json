@@ -1,0 +1,9 @@
+[
+  {
+    "id": "ID-PL-01:cut:0",
+    "type": "BooleanPart",
+    "targetPartGUID": "ID-PL-01",
+    "confidence": "unresolved",
+    "inferred": false
+  }
+]

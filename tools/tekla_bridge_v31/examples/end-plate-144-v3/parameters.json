@@ -1,0 +1,92 @@
+[
+  {
+    "name": "tpl1",
+    "type": "Length",
+    "units": "mm",
+    "value": 20.0,
+    "source": "Tekla Open API GetAttribute",
+    "readable": "ok",
+    "confidence": "observed"
+  },
+  {
+    "name": "ext_top",
+    "type": "Length",
+    "units": "mm",
+    "value": 50.0,
+    "source": "Tekla Open API GetAttribute",
+    "readable": "ok",
+    "confidence": "observed"
+  },
+  {
+    "name": "ext_bottom",
+    "type": "Length",
+    "units": "mm",
+    "value": 50.0,
+    "source": "Tekla Open API GetAttribute",
+    "readable": "ok",
+    "confidence": "observed"
+  },
+  {
+    "name": "ext_side",
+    "type": "Length",
+    "units": "mm",
+    "value": 0.0,
+    "source": "Tekla Open API GetAttribute",
+    "readable": "ok",
+    "confidence": "observed"
+  },
+  {
+    "name": "bolt_dv",
+    "type": "String",
+    "units": "",
+    "value": "80 3*80",
+    "source": "Tekla Open API GetAttribute",
+    "readable": "ok",
+    "confidence": "observed"
+  },
+  {
+    "name": "bolt_dh",
+    "type": "Length",
+    "units": "mm",
+    "value": 90.0,
+    "source": "Tekla Open API GetAttribute",
+    "readable": "ok",
+    "confidence": "observed"
+  },
+  {
+    "name": "bolt_d",
+    "type": "Length",
+    "units": "mm",
+    "value": 20.0,
+    "source": "Tekla Open API GetAttribute",
+    "readable": "ok",
+    "confidence": "observed"
+  },
+  {
+    "name": "bolt_std",
+    "type": "String",
+    "units": "",
+    "value": "8.8XOX",
+    "source": "Tekla Open API GetAttribute",
+    "readable": "ok",
+    "confidence": "observed"
+  },
+  {
+    "name": "tolerance",
+    "type": "Length",
+    "units": "mm",
+    "value": 2.0,
+    "source": "Tekla Open API GetAttribute",
+    "readable": "ok",
+    "confidence": "observed"
+  },
+  {
+    "name": "mat",
+    "type": "Material",
+    "units": "",
+    "value": "S355JR",
+    "source": "Tekla Open API GetAttribute",
+    "readable": "ok",
+    "confidence": "observed"
+  }
+]

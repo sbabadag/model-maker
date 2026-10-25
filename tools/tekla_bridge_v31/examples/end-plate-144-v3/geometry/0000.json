@@ -1,0 +1,10 @@
+{
+  "type": "reference",
+  "representation": "reference",
+  "sourceKind": "ContourPlate",
+  "reportedDimensions": {
+    "length": 400,
+    "width": 150,
+    "height": 20
+  }
+}

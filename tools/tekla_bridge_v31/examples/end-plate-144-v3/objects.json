@@ -1,0 +1,153 @@
+[
+  {
+    "sourceGUID": "ID-PL-01",
+    "identifierId": 0,
+    "kind": "ContourPlate",
+    "name": "END PLATE",
+    "profile": "PL20*150",
+    "material": "S355JR",
+    "parentSourceGUID": "ID-EP144-0001",
+    "roleKey": "plate_5987b798b14e",
+    "mappedKind": "Plate",
+    "mapped": true,
+    "confidence": "observed",
+    "geometryRepresentation": "reference",
+    "geometryFile": "geometry/0000.json"
+  },
+  {
+    "sourceGUID": "ID-BG-01",
+    "identifierId": 0,
+    "kind": "BoltGroup",
+    "name": "",
+    "profile": "",
+    "material": "",
+    "parentSourceGUID": "ID-EP144-0001",
+    "roleKey": "bolt_group_b28164f66035",
+    "mappedKind": "BoltGroup",
+    "mapped": true,
+    "confidence": "observed",
+    "geometryRepresentation": "reference",
+    "boltGroup": {
+      "size": "20",
+      "boltStandard": "8.8XOX",
+      "tolerance": 2.0,
+      "slottedHoleX": 0.0,
+      "slottedHoleY": 0.0,
+      "axisSource": "unresolved",
+      "partToBeBolted": "",
+      "partToBoltTo": "",
+      "bolts": [
+        {
+          "position": {
+            "x": 5000.0,
+            "y": 45.0,
+            "z": 120.0
+          },
+          "nominalDiameter": 20.0,
+          "holeDiameter": 0,
+          "holeDiameterSource": "",
+          "axisSource": "unresolved"
+        },
+        {
+          "position": {
+            "x": 5000.0,
+            "y": -45.0,
+            "z": 120.0
+          },
+          "nominalDiameter": 20.0,
+          "holeDiameter": 0,
+          "holeDiameterSource": "",
+          "axisSource": "unresolved"
+        },
+        {
+          "position": {
+            "x": 5000.0,
+            "y": 45.0,
+            "z": 40.0
+          },
+          "nominalDiameter": 20.0,
+          "holeDiameter": 0,
+          "holeDiameterSource": "",
+          "axisSource": "unresolved"
+        },
+        {
+          "position": {
+            "x": 5000.0,
+            "y": -45.0,
+            "z": 40.0
+          },
+          "nominalDiameter": 20.0,
+          "holeDiameter": 0,
+          "holeDiameterSource": "",
+          "axisSource": "unresolved"
+        },
+        {
+          "position": {
+            "x": 5000.0,
+            "y": 45.0,
+            "z": -40.0
+          },
+          "nominalDiameter": 20.0,
+          "holeDiameter": 0,
+          "holeDiameterSource": "",
+          "axisSource": "unresolved"
+        },
+        {
+          "position": {
+            "x": 5000.0,
+            "y": -45.0,
+            "z": -40.0
+          },
+          "nominalDiameter": 20.0,
+          "holeDiameter": 0,
+          "holeDiameterSource": "",
+          "axisSource": "unresolved"
+        },
+        {
+          "position": {
+            "x": 5000.0,
+            "y": 45.0,
+            "z": -120.0
+          },
+          "nominalDiameter": 20.0,
+          "holeDiameter": 0,
+          "holeDiameterSource": "",
+          "axisSource": "unresolved"
+        },
+        {
+          "position": {
+            "x": 5000.0,
+            "y": -45.0,
+            "z": -120.0
+          },
+          "nominalDiameter": 20.0,
+          "holeDiameter": 0,
+          "holeDiameterSource": "",
+          "axisSource": "unresolved"
+        }
+      ]
+    }
+  },
+  {
+    "sourceGUID": "ID-W-01",
+    "identifierId": 0,
+    "kind": "Weld",
+    "name": "",
+    "profile": "",
+    "material": "",
+    "parentSourceGUID": "ID-EP144-0001",
+    "roleKey": "weld_02adafe5c3b4",
+    "mappedKind": "Weld",
+    "mapped": false,
+    "confidence": "observed",
+    "geometryRepresentation": "reference",
+    "unsupportedReason": "not supported as editable native geometry in V3 adapter",
+    "weld": {
+      "type": "WELD_TYPE_FILLET",
+      "sizeAbove": 6.0,
+      "sizeBelow": 6.0,
+      "mainSourceGUID": "ID-BEAM-01",
+      "secondarySourceGUID": "ID-PL-01"
+    }
+  }
+]

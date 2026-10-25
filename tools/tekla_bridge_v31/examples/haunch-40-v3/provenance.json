@@ -1,0 +1,17 @@
+{
+  "adapterVersion": "3.1.0-stage1",
+  "sourceSchema": "probe1",
+  "sourceComponentNumber": 40,
+  "rawChildCount": 67,
+  "convertedChildCount": 67,
+  "kindCounts": {
+    "Fitting": 2,
+    "ControlPoint": 24,
+    "Beam": 3,
+    "ContourPlate": 7,
+    "Weld": 29,
+    "BoltGroup": 2
+  },
+  "coordinateVerification": "unverified",
+  "sourceIdentifiersPersistent": false
+}

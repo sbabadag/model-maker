@@ -1,0 +1,19 @@
+{
+  "knownLimitations": [
+    "Adapter preserves source metadata, not an editable OCCT B-Rep.",
+    "Parametric equivalence and structural fabrication geometry are NOT verified."
+  ],
+  "inaccessibleObjects": [],
+  "unsupportedFeatures": [
+    "ID-BG-01: bolt axis / real hole diameter not proven; do not drill holes automatically",
+    "ID-PL-01: BooleanPart operand and cutting geometry missing",
+    "ID-W-01: Weld: not supported as editable native geometry in V3 adapter"
+  ],
+  "warnings": [
+    "Some source identifiers are not canonical Tekla GUIDs; preview/test only until GUID provenance verified"
+  ],
+  "errors": [],
+  "unresolvedObjects": [
+    "ID-W-01"
+  ]
+}

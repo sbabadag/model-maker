@@ -1,0 +1,64 @@
+{
+  "sourceType": "Connection",
+  "number": 146,
+  "name": "Shear plate simple",
+  "guid": "probe-id:5245",
+  "secondaryMembers": [
+    {
+      "guid": "probe-id:5213",
+      "profile": "HEA300",
+      "material": "S235JR",
+      "role": "SECONDARY_0",
+      "roleKey": "secondary_0",
+      "startPoint": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 7200.0
+      },
+      "endPoint": {
+        "x": 0.0,
+        "y": 2200.0,
+        "z": 7200.0
+      }
+    }
+  ],
+  "primaryMember": {
+    "guid": "probe-id:5165",
+    "profile": "HEA400",
+    "material": "S235JR",
+    "role": "MAIN",
+    "roleKey": "main",
+    "startPoint": {
+      "x": 0.0,
+      "y": 0.0,
+      "z": 0.0
+    },
+    "endPoint": {
+      "x": 0.0,
+      "y": 0.0,
+      "z": 7200.0
+    }
+  },
+  "coordinateSystem": {
+    "origin": {
+      "x": 0.0,
+      "y": 195.0,
+      "z": 7055.0
+    },
+    "xAxis": {
+      "x": 0.0,
+      "y": 1.0,
+      "z": 0.0
+    },
+    "yAxis": {
+      "x": 0.0,
+      "y": 0.0,
+      "z": 1.0
+    },
+    "zAxis": {
+      "x": 1.0,
+      "y": 0.0,
+      "z": 0.0
+    }
+  }
+}

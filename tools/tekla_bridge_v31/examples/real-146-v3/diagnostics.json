@@ -1,0 +1,33 @@
+{
+  "knownLimitations": [
+    "Adapter preserves source metadata, not an editable OCCT B-Rep.",
+    "Contour vertices lack reliable solid thickness direction; stored as reference, not exact B-Rep",
+    "Face/loop vertex probes are diagnostic; exact analytic B-Rep not present",
+    "Parametric equivalence and structural fabrication geometry are NOT verified.",
+    "Probe contains Tekla integer IDs, not persistent Tekla GUIDs. IDs are not safe for automatic cross-session binding."
+  ],
+  "inaccessibleObjects": [],
+  "unsupportedFeatures": [
+    "probe-id:5647: Fitting: not supported as editable native geometry in V3 adapter",
+    "probe-id:5663: ControlPoint: not supported as editable native geometry in V3 adapter",
+    "probe-id:5668: ControlPoint: not supported as editable native geometry in V3 adapter",
+    "probe-id:5701: Weld: not supported as editable native geometry in V3 adapter",
+    "probe-id:5827: ControlPoint: not supported as editable native geometry in V3 adapter",
+    "probe-id:5832: ControlPoint: not supported as editable native geometry in V3 adapter",
+    "probe-id:5837: bolt axis / real hole diameter not proven; do not drill holes automatically"
+  ],
+  "warnings": [
+    "Component uses probe-id surrogate; NOT a persistent Tekla GUID",
+    "No component parameters present; no editable-param equivalence",
+    "probe-id:5647: fitting plane / affected member unknown; retained as unresolved object"
+  ],
+  "errors": [],
+  "unresolvedObjects": [
+    "probe-id:5647",
+    "probe-id:5663",
+    "probe-id:5668",
+    "probe-id:5701",
+    "probe-id:5827",
+    "probe-id:5832"
+  ]
+}

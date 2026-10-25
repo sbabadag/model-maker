@@ -1,0 +1,68 @@
+{
+  "schema": "mm.tekla.v1",
+  "units": "mm",
+  "tekla_version": "2024.0 (örnek veri)",
+  "model": "ornek_model",
+  "exported_at": "2026-10-25T11:00:00Z",
+  "components": [
+    {
+      "name": "End plate",
+      "number": 144,
+      "kind": "connection",
+      "guid": "ID-EP144-0001",
+      "parameters": {
+        "tpl1":       { "type": "distance",      "value": 20.0 },
+        "ext_top":    { "type": "distance",      "value": 50.0 },
+        "ext_bottom": { "type": "distance",      "value": 50.0 },
+        "ext_side":   { "type": "distance",      "value": 0.0 },
+        "bolt_dv":    { "type": "distance_list", "value": "80 3*80" },
+        "bolt_dh":    { "type": "distance",      "value": 90.0 },
+        "bolt_d":     { "type": "distance",      "value": 20.0 },
+        "bolt_std":   { "type": "bolt_standard", "value": "8.8XOX" },
+        "tolerance":  { "type": "distance",      "value": 2.0 },
+        "mat":        { "type": "material",      "value": "S355JR" }
+      },
+      "inputs": {
+        "primary": {
+          "type": "beam", "guid": "ID-COL-01", "name": "COLUMN",
+          "profile": "HEA300", "profile_type": "I", "material": "S355JR", "class": "2",
+          "start": [5145, 0, -1500], "end": [5145, 0, 1500],
+          "cs": { "origin": [5145, 0, -1500], "ax": [0, 0, 1], "ay": [-1, 0, 0] },
+          "profile_dims": { "height": 290, "width": 300, "web_thickness": 8.5, "flange_thickness": 14 }
+        },
+        "secondary": [
+          {
+            "type": "beam", "guid": "ID-BEAM-01", "name": "BEAM",
+            "profile": "IPE300", "profile_type": "I", "material": "S355JR", "class": "3",
+            "start": [0, 0, 0], "end": [5000, 0, 0],
+            "cs": { "origin": [0, 0, 0], "ax": [1, 0, 0], "ay": [0, 0, 1] },
+            "profile_dims": { "height": 300, "width": 150, "web_thickness": 7.1, "flange_thickness": 10.7 }
+          }
+        ]
+      },
+      "children": [
+        {
+          "type": "plate", "guid": "ID-PL-01", "name": "END PLATE",
+          "profile": "PL20*150", "material": "S355JR", "class": "4",
+          "bbox_dims": { "length": 400, "width": 150, "height": 20 },
+          "booleans": [ { "type": "BooleanPart" } ]
+        },
+        {
+          "type": "bolt_group", "guid": "ID-BG-01",
+          "size": 20, "standard": "8.8XOX", "tolerance": 2, "cut_length": 60, "bolt": true,
+          "positions": [
+            [5000,  45,  120], [5000, -45,  120],
+            [5000,  45,   40], [5000, -45,   40],
+            [5000,  45,  -40], [5000, -45,  -40],
+            [5000,  45, -120], [5000, -45, -120]
+          ]
+        },
+        {
+          "type": "weld", "guid": "ID-W-01",
+          "size_above": 6, "size_below": 6, "type_above": "WELD_TYPE_FILLET", "type_below": "WELD_TYPE_FILLET",
+          "main": "ID-BEAM-01", "secondary": "ID-PL-01"
+        }
+      ]
+    }
+  ]
+}

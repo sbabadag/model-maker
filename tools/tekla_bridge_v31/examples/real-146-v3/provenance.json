@@ -1,0 +1,16 @@
+{
+  "adapterVersion": "3.1.0-stage1",
+  "sourceSchema": "probe2",
+  "sourceComponentNumber": 146,
+  "rawChildCount": 8,
+  "convertedChildCount": 8,
+  "kindCounts": {
+    "Fitting": 1,
+    "ControlPoint": 4,
+    "ContourPlate": 1,
+    "Weld": 1,
+    "BoltGroup": 1
+  },
+  "coordinateVerification": "global",
+  "sourceIdentifiersPersistent": false
+}

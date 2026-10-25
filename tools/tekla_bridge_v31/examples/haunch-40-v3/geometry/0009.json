@@ -1,0 +1,23 @@
+{
+  "type": "reference",
+  "representation": "reference",
+  "sourceKind": "ContourPlate",
+  "contourPoints": [
+    {
+      "x": 120.0,
+      "y": 9049.000000000098,
+      "z": 5610.88410394795
+    },
+    {
+      "x": 120.0,
+      "y": 9049.000000000098,
+      "z": 5810.88410394795
+    },
+    {
+      "x": 120.0,
+      "y": 8599.000000000098,
+      "z": 5836.336592807047
+    }
+  ],
+  "reportedProfile": "PL10"
+}
