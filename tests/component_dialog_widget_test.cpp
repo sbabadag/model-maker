@@ -562,6 +562,21 @@ int main(int argc, char** argv) {
             if(left)for(auto* p:previews)
                 CHECK(p->previewPlan().ok,
                       "P4: main 3D and all 3 orthographic plans stay valid");
+            // Loading a different component's saved parameters must clear
+            // limits inherited from the previously edited connection.
+            h40.setParams({
+                {L"boltDiameter",mm::CompParamValue{36.0}},
+                {L"holeDiameter",mm::CompParamValue{38.0}}
+            });
+            h40.setParams({
+                {L"boltDiameter",mm::CompParamValue{20.0}},
+                {L"holeDiameter",mm::CompParamValue{22.0}}
+            });
+            QApplication::processEvents();
+            CHECK(std::fabs(boltDiameter->value()-20.0)<0.001 &&
+                  std::fabs(holeDiameter->value()-22.0)<0.001 &&
+                  left && left->previewPlan().ok,
+                  "P4: Get restores 20/22 without retaining old M36 bounds");
         }
     }
 
