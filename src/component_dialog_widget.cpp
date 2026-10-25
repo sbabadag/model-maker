@@ -1367,6 +1367,7 @@ void ComponentDialogWidget::setEditorValue(QWidget* editor, const CompParamSpec&
 void ComponentDialogWidget::setPreviewInput(const ComponentInput& input) {
     if(nativePreview_) {
         haunchBeamHeight_=0.0;
+        haunchBeamWidth_=0.0;
         if(!input.secondary.empty()) {
             const auto verticality=[](const MemberGeometry& m) {
                 const Vec3 d=m.axisTo-m.axisFrom;
@@ -1377,6 +1378,8 @@ void ComponentDialogWidget::setPreviewInput(const ComponentInput& input) {
                                verticality(input.secondary.front());
             haunchBeamHeight_=swapped?input.main.secHeight:
                                      input.secondary.front().secHeight;
+            haunchBeamWidth_=swapped?input.main.secWidth:
+                                    input.secondary.front().secWidth;
         }
         enforceHaunchInputLimits();
         nativePreview_->setInput(input);
@@ -1494,10 +1497,17 @@ void ComponentDialogWidget::enforceHaunchInputLimits() {
     const double pitchX=value(L"boltPitchX",120.0);
     const int columns=count(L"boltCountX",2);
     const double left=value(L"boltEdgeLeft",35.0);
+    const double spanX=(columns-1)*pitchX;
+    // Where the actual beam section governs plate width (notably nx=1),
+    // raise the RIGHT edge minimum so entered/achieved distances stay
+    // equal instead of silently displaying a larger measured value.
+    const double rightNeeded=std::max(sideMin,
+        haunchBeamWidth_+20.0-spanX-left);
+    if(haunchBeamWidth_>0.0 && rightNeeded<=200.0)
+        bounds(L"boltEdgeRight",rightNeeded,200.0);
     const double right=value(L"boltEdgeRight",35.0);
     const double top=value(L"boltEdgeTop",55.0);
     const double bottom=value(L"boltEdgeBottom",55.0);
-    const double spanX=(columns-1)*pitchX;
     requiredIfExplicit(L"endPlateWidth",std::max(spanX+left+right,
                                                   spanX+hole+15.0));
     if(haunchBeamHeight_>0.0)
