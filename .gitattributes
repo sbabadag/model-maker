@@ -1,5 +1,0 @@
-# Bridge paket fixture'lari byte-ayni kalmalidir: checksum'lar ham dosya baytlari
-# uzerinden hesaplanir (SHA-256). Windows git'in core.autocrlf ayari checkout'ta
-# LF -> CRLF cevirip butunluk dogrulamasini (checksums.json) bozuyor. -text ile
-# bu dosyalarda satir sonu donusumu tamamen kapatilir; her platformda byte-ayni.
-tools/model-maker-bridge/fixtures/** -text

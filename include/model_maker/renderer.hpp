@@ -5,7 +5,6 @@
 #include "model_maker/drafting.hpp"
 #include "model_maker/performance.hpp"
 #include "model_maker/render_backend.hpp"
-#include "model_maker/view_definition.hpp"
 
 #include <windows.h>
 #include <chrono>
@@ -17,47 +16,16 @@
 
 namespace mm {
 
-enum class VisualStyle { Wireframe, Solid, Transparent, HiddenLine };
-
-// ADAPTIF GRID ADIMI (AutoCAD 1-2-5): ekran araligi ~50px olacak sekilde
-// kademeli adim; mm cinsinden taban 10mm. Snap ve cizim AYNI adimi
-// kullanir — grid nereye cizilirse snap oraya yapisir.
-constexpr double kMinGridStepMm = 10.0;
-
-// KREM arka plan (kullanici talebi — Tekla model-view zemin tonu).
-// Tek kaynak: GDI dolgulari, GL clear, ViewCube, saf-GDI backend.
-constexpr unsigned long kCanvasBgRgb = 246u * 65536u + 224u * 256u + 198u; // ust acik mavi (198,224,246)
-inline COLORREF canvasBackgroundColor() noexcept { return static_cast<COLORREF>(kCanvasBgRgb); }
-inline double niceGridStep(double pixelsPerUnit) noexcept {
-    if (pixelsPerUnit <= 1e-9) return kMinGridStepMm;
-    const double raw = 50.0 / pixelsPerUnit; // hedef ~50 piksel
-    double scale = 1.0; // 10^n tabani (log10/floor yerine dongu)
-    if (raw >= 1.0) { while (raw / scale >= 10.0) scale *= 10.0; }
-    else { while (raw / scale < 1.0) scale /= 10.0; }
-    const double norm = raw / scale; // 1..10 araligina normalize
-    const double nice = norm <= 1.0 ? 1.0 : norm <= 2.0 ? 2.0 : norm <= 5.0 ? 5.0 : 10.0;
-    const double step = nice * scale;
-    return step < kMinGridStepMm ? kMinGridStepMm : step;
-}
+enum class VisualStyle { Wireframe, Solid, Transparent };
 
 constexpr unsigned char visualStyleFaceAlpha(VisualStyle style) noexcept {
     switch (style) {
     case VisualStyle::Wireframe: return 0;
     case VisualStyle::Solid: return 255;
     case VisualStyle::Transparent: return 96;
-    case VisualStyle::HiddenLine: return 255; // cizgiler gorunur, yuzler dolu ama
-                                              // cizgiler uzerine cizilir (GDI/GL ayni)
     }
     return 0;
 }
-
-// CALISMA DUZLEMI HAYALETI kill-switch (TEK KAYNAK).
-// Kullanici istegi: hayalet duzlem goruntusu GECICI OLARAK devre disi.
-// Varsayilan KAPALI. application.hpp bayragi ve DraftView alani AYNI
-// sabitten turer; ikinci bir varsayilan literal YAZILMAZ (yoksa ikisi
-// zamanla ayrisir ve hayalet kendiliginden geri gelir).
-// F7 / Gorunum menusu hala acip kapatabilir (geri donusu kolay olsun diye).
-inline constexpr bool kWorkPlaneGhostDefaultVisible = false;
 
 enum class EditMode { Draw2D, View3D };
 enum class TransformCommand {
@@ -156,33 +124,6 @@ inline WorkPlaneAxisGlyph workPlaneAxisGlyph(const WorkPlane& plane, double leng
             plane.origin + plane.v * length, plane.origin + plane.normal * length};
 }
 
-// RHINO TARZI GUMBALL: tutamac kimlikleri (DraftView + Application ortak).
-enum class GumballHandle : int {
-    None = -1, AxisX = 0, AxisY = 1, AxisZ = 2,
-    PlaneXY = 3, PlaneYZ = 4, PlaneZX = 5, Center = 6,
-    RotX = 7, RotY = 8, RotZ = 9,
-    ScaleX = 10, ScaleY = 11, ScaleZ = 12, ScaleUniform = 13
-};
-constexpr bool gumballIsAxis(GumballHandle h) noexcept {
-    return h == GumballHandle::AxisX || h == GumballHandle::AxisY || h == GumballHandle::AxisZ;
-}
-constexpr bool gumballIsPlane(GumballHandle h) noexcept {
-    return h == GumballHandle::PlaneXY || h == GumballHandle::PlaneYZ || h == GumballHandle::PlaneZX;
-}
-constexpr bool gumballIsRotate(GumballHandle h) noexcept {
-    return h == GumballHandle::RotX || h == GumballHandle::RotY || h == GumballHandle::RotZ;
-}
-constexpr bool gumballIsScaleAxis(GumballHandle h) noexcept {
-    return h == GumballHandle::ScaleX || h == GumballHandle::ScaleY || h == GumballHandle::ScaleZ;
-}
-// Eksen yonu (0=X,1=Y,2=Z) ya da -1 (eksen-disi tutamac).
-constexpr int gumballAxisIndex(GumballHandle h) noexcept {
-    return (h == GumballHandle::AxisX || h == GumballHandle::ScaleX || h == GumballHandle::RotX) ? 0
-         : (h == GumballHandle::AxisY || h == GumballHandle::ScaleY || h == GumballHandle::RotY) ? 1
-         : (h == GumballHandle::AxisZ || h == GumballHandle::ScaleZ || h == GumballHandle::RotZ) ? 2
-         : -1;
-}
-
 struct DraftView {
     DrawTool tool{DrawTool::Line};
     VisualStyle visualStyle{VisualStyle::Wireframe};
@@ -201,56 +142,17 @@ struct DraftView {
     std::vector<Vec3> temporaryTrackingPoints;
     std::vector<TrackingGuide> temporaryTrackingGuides;
     std::vector<Vec3> temporaryDerivedPoints;
-    std::vector<Vec3> temporaryPerpendicularPoints;
     bool dynamicInputEnabled{true};
     double workPlaneZ{};
     WorkPlane workPlane{};
     bool workPlanePicking{};
     std::vector<Vec3> workPlanePoints;
-    // IKI NOKTALI GORUNUM YON SECIMI: iki nokta secildikten sonra bakis yonu
-    // oku (P1 ve P2 ucunda). twoPointViewDirection = birim normal (izleyiciye
-    // dogru); imlecin tarafina gore guncellenir.
-    bool twoPointViewDirectionActive{};
-    Vec3 twoPointViewDirection{0.0, -1.0, 0.0};
-    // CALISMA DUZLEMI HAYALETI: aktif is duzlemi HER pencerede yari saydam
-    // duzlem yamasi olarak gosterilir. Yalnizca cizimdir — secilemez,
-    // snap'lenemez, hicbir belge nesnesi/olayi uretmez.
-    // Varsayilan kWorkPlaneGhostDefaultVisible (su an: KAPALI).
-    bool workPlaneGhostVisible{kWorkPlaneGhostDefaultVisible};
-    // DONDURME MERKEZI (R tusu) isareti: pivot dunya noktasi. Renderer
-    // gecerli kamerasiyla projekte eder (pasif pencerede KENDI kamerasi),
-    // ekran-olcekli capraz + halka cizer; secilemez/snap'lenemez.
-    bool orbitPivotVisible{false};
-    Vec3 orbitPivot{};
     std::wstring input;
     POINT cursorScreen{};
     TransformCommand transformCommand{TransformCommand::None};
     TransformPhase transformPhase{TransformPhase::Selecting};
     std::vector<std::size_t> selectedModels;
     std::optional<POINT> selectionFirstCorner;
-    // KESME NESNELERI SECIMI (P5): secili kesme modifier'larinin indeksleri
-    // (document.cutModifiers()). Modellerden AYRI bir secim kumesidir; Delete
-    // bunlari kaldirir + hedefi yeniden hesaplar.
-    std::vector<std::size_t> selectedCutModifiers;
-    // Secim hintleri: imlecin altindaki secilebilir nesne. Kesme modifier'i
-    // ONCELIKLIDIR (modellerin ustunde cizilir); yoksa model indeksi.
-    std::optional<std::size_t> hoverModel;
-    std::optional<std::size_t> hoverCutModifier;
-    // Bolt yuz secim adiminda hover edilen YUZ (model + AYNI duzlemsel yuzun
-    // TUM ucgen indeksleri). Tek tessellasyon ucgeni degil, yuzun tamami yari
-    // saydam dolgu + kontur ile vurgulanir (kullanici hangi yuzu sececegini
-    // gorur; "ucgen yuz" goruntusu kalkar).
-    std::optional<std::size_t> hoverFaceModel;
-    std::vector<std::size_t> hoverFaceIndices;
-    // PROFIL UC TUTAMAKLARI (grip edit): secili profilli katilarin iki ucuna
-    // sari (from) ve mor (to) tutamak cizilir. Bu alan yalniz secilen (aktif)
-    // tutamagin vurgusunu tasir.
-    std::optional<std::size_t> activeGripSolid; // aktif (secili) tutamagin katisi
-    bool activeGripEndIsTo{false};              // false=from(sari), true=to(mor)
-    // Move modunda baz -> imlec track line (baslangic-bitis).
-    bool gripMoveActive{false};
-    Vec3 gripTrackFrom{};
-    Vec3 gripTrackTo{};
     std::optional<Vec3> transformBase;
     std::optional<Vec3> rotateAxis;
     std::optional<double> offsetDistance;
@@ -281,9 +183,7 @@ struct DraftView {
     const std::unordered_set<std::string>* selectedNodeKeys{};
     bool nodeConstraintsVisible{};
     std::optional<POINT> nodeSelectionFirstCorner;
-    // Kiris yukleri: KARARLI KIMLIK (EntityId) anahtarli (bkz. document.hpp).
-    // Cizim, kimligi guncel indekse document.indexOfEntity ile cozer.
-    const std::unordered_map<EntityId, BeamLoad>* beamLoads{};
+    const std::unordered_map<std::size_t, BeamLoad>* beamLoads{};
     Vec2 rasterZoomOffset{};
     // Lightweight repaint: only snap markers, skip model rendering
     bool snapOnly{};
@@ -297,32 +197,6 @@ struct DraftView {
     bool depthClipEnabled{true};
     double depthClipZMin{-1e100};
     double depthClipZMax{1e100};
-    // --- RHINO TARZI GUMBALL (tasima tutamaclari) ---
-    bool gumballVisible{false};
-    bool gumball3D{true};          // false -> 2B (yalniz X/Y oklari + XY duzlemi)
-    Vec3 gumballOrigin{};
-    double gumballWorldSize{1.0};  // ok uzunlugu (dunya birimi)
-    int gumballHover{-1};          // vurgulu tutamac (GumballHandle int degeri)
-    bool gumballDragging{false};
-    // YEREL eksenler (object-local): oklar/kareler/yaylar bu uclu uzerinde.
-    Vec3 gumballAxisX{1, 0, 0};
-    Vec3 gumballAxisY{0, 1, 0};
-    Vec3 gumballAxisZ{0, 0, 1};
-    // IKI NOKTALI GORUNUS penceresi: yalniz bu derinlik dilimindeki modeller
-    // cizilir (nullptr = filtre yok — ana gorunus).
-    const ViewDefinition* viewSlab{nullptr};
-    // COMPONENT SIMGELERI: End Plate gibi component'lerin buyuk tiklama
-    // isaretleri. Dunya koordinatinda levha merkezleri; renderer ekran-olcekli
-    // buyuk simge cizer, hit-test bu simgeyi levha modeline esler.
-    std::vector<Vec3> componentGlyphs;
-    // componentGlyphs ile BIREBIR: her simgenin karsi levha EntityId'si
-    // (renderer secim vurgusu icin model indeksine cozer).
-    std::vector<EntityId> componentGlyphEntities;
-    // KAYNAK SIMGELERI: document.welds() sirasiyla secili kaynaklarin INDEKSLERI.
-    // Renderer her weld.origin'de kucuk, secilebilir bir fillet/butt simgesi
-    // cizer; bu listedeki indeksler vurgulanir. (Gercek OCC weld katisi yok —
-    // yalniz konum simgesi; entity + metadata Document'ta kalicidir.)
-    std::vector<std::size_t> selectedWelds;
 };
 
 class Renderer {
