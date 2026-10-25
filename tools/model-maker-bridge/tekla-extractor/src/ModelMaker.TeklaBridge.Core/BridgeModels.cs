@@ -145,8 +145,23 @@ namespace ModelMaker.TeklaBridge.Core
         [JsonProperty("verifiedForDrilling")] public bool VerifiedForDrilling { get; set; } = false;
     }
 
+    // Tekla 2025 BoltHolesAttributes describes special holes by connected ply.
+    // This is metadata ONLY; it is not proof that the target part contains cuts.
+    public class BoltPlyHoleProbe
+    {
+        [JsonProperty("plyIndex")] public int PlyIndex { get; set; }
+        [JsonProperty("specialHoleType")] public string SpecialHoleType { get; set; }
+        [JsonProperty("longHoleX")] public double LongHoleX { get; set; }
+        [JsonProperty("longHoleY")] public double LongHoleY { get; set; }
+        [JsonProperty("slotOffsetX")] public double SlotOffsetX { get; set; }
+        [JsonProperty("slotOffsetY")] public double SlotOffsetY { get; set; }
+    }
+
     public class BoltHoleSettingsProbe
     {
+        // BoltGroup.Bolt true=bolt with hole, false=hole only (not "no hole").
+        [JsonProperty("boltPresent")] public bool? BoltPresent { get; set; }
+        [JsonProperty("perPlySpecialHoles")] public List<BoltPlyHoleProbe> PerPlySpecialHoles { get; set; }
         [JsonProperty("plainHoleType")] public string PlainHoleType { get; set; }
         [JsonProperty("specialHoleType")] public string SpecialHoleType { get; set; }
         [JsonProperty("slottedHoleX")] public double SlottedHoleX { get; set; }
