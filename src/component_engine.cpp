@@ -139,7 +139,10 @@ CompParamValue validateParamValue(const CompParamSpec& spec,
 
 std::vector<CompParam> migrateHaunch40Edges(const std::vector<CompParam>& values) {
     std::vector<CompParam> result=values;
-    const double edge=paramAsDouble(values,L"boltEdge",35.0);
+    // Match the original schema clamp before translating saved values;
+    // otherwise legacy out-of-range dimensions could alter plate geometry.
+    const double edge=std::clamp(paramAsDouble(values,L"boltEdge",35.0),
+                                 20.0,120.0);
     const struct {const wchar_t* name;double value;} defaults[]{
         {L"boltEdgeLeft",edge},{L"boltEdgeRight",edge},
         {L"boltEdgeTop",edge+20.0},{L"boltEdgeBottom",edge+20.0}
