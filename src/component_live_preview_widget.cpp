@@ -177,14 +177,22 @@ ComponentLivePreviewWidget::ComponentLivePreviewWidget(QWidget* parent)
     setToolTip(QStringLiteral("Sol tus: dondur | Orta tus: kaydir | Tekerlek: yakinlas"));
     // Short labels correspond to the SAME native schema parameters as the
     // real property panel. No second parameter source of truth.
-    const std::array<std::tuple<const wchar_t*,const wchar_t*,const char*,QPointF>,7> defs{{
-        {L"haunchLength",L"L","haunch_web",QPointF(50,-75)},
-        {L"haunchDepth",L"D","haunch_web",QPointF(-165,40)},
-        {L"haunchTipDepth",L"tip","haunch_lower_flange",QPointF(55,60)},
-        {L"endPlateThickness",L"t ep","haunch_end_plate",QPointF(-160,-90)},
-        {L"boltPitchX",L"g","haunch_bolts_upper",QPointF(-175,100)},
-        {L"boltPitchY",L"p","haunch_bolts_upper",QPointF(60,105)},
-        {L"topPlateThickness",L"t cap","haunch_top_plate",QPointF(65,-75)}
+    // Grouped by the physical child that the user can click.
+    // At most four boxes appear at once instead of the entire dialog.
+    const std::array<std::tuple<const wchar_t*,const wchar_t*,const char*,QPointF>,13> defs{{
+        {L"haunchLength",L"L","haunch_web",QPointF(35,-90)},
+        {L"haunchDepth",L"D","haunch_web",QPointF(-150,15)},
+        {L"haunchTipDepth",L"tip","haunch_web",QPointF(45,75)},
+        {L"haunchWebThickness",L"t web","haunch_web",QPointF(-150,105)},
+        {L"haunchFlangeThickness",L"t alt","haunch_lower_flange",QPointF(45,-85)},
+        {L"haunchFlangeWidth",L"b alt","haunch_lower_flange",QPointF(60,65)},
+        {L"endPlateThickness",L"t ep","haunch_end_plate",QPointF(-150,-95)},
+        {L"endPlateWidth",L"b ep","haunch_end_plate",QPointF(55,-95)},
+        {L"endPlateHeight",L"h ep","haunch_end_plate",QPointF(-160,90)},
+        {L"boltPitchX",L"g","haunch_bolts_upper",QPointF(-150,55)},
+        {L"boltPitchY",L"p","haunch_bolts_upper",QPointF(55,55)},
+        {L"boltDiameter",L"M","haunch_bolts_upper",QPointF(50,-75)},
+        {L"topPlateThickness",L"t cap","haunch_top_plate",QPointF(60,-70)}
     }};
     for(const auto& def:defs) {
         Callout a;
@@ -347,11 +355,7 @@ Vec3 ComponentLivePreviewWidget::roleAnchor(const std::string& role) const {
             return plan_.plates[i].center;
     }
     for(std::size_t i=0;i<plan_.boltGroups.size();++i) {
-        if(i<plan_.boltGroupKeys.size()&&
-           (plan_.boltGroupKeys[i]==role ||
-            (role=="haunch_bolts_upper" &&
-             plan_.boltGroupKeys[i]=="haunch_bolts_lower" &&
-             activeRole_=="haunch_bolts_lower"))) {
+        if(i<plan_.boltGroupKeys.size()&&plan_.boltGroupKeys[i]==role) {
             const auto points=boltGroupBoltOrigins(plan_.boltGroups[i]);
             if(points.empty())return plan_.boltGroups[i].origin;
             Vec3 c{};
@@ -410,7 +414,10 @@ void ComponentLivePreviewWidget::positionEditors() {
             (activeRole_=="haunch_bolts_lower" &&
              c.targetRole=="haunch_bolts_upper"));
         if(!exists || !selected){c.spin->hide();continue;}
-        const QPointF q=project(roleAnchor(c.targetRole))+c.shift;
+        const std::string anchorRole=(activeRole_=="haunch_bolts_lower" &&
+                                      c.targetRole=="haunch_bolts_upper")
+                                       ?activeRole_:c.targetRole;
+        const QPointF q=project(roleAnchor(anchorRole))+c.shift;
         const int xx=std::clamp(static_cast<int>(q.x()),4,
                                 std::max(4,width()-c.spin->width()-4));
         const int yy=std::clamp(static_cast<int>(q.y()),26,
@@ -462,7 +469,10 @@ void ComponentLivePreviewWidget::paintEvent(QPaintEvent*) {
     painter.drawText(QPoint(16,48),partName);
     for(const auto& c:callouts_) {
         if(!c.spin->isVisible())continue;
-        const QPointF target=project(roleAnchor(c.targetRole));
+        const std::string anchorRole=(activeRole_=="haunch_bolts_lower" &&
+                                      c.targetRole=="haunch_bolts_upper")
+                                       ?activeRole_:c.targetRole;
+        const QPointF target=project(roleAnchor(anchorRole));
         const QPointF end=c.spin->geometry().center();
         painter.setPen(QPen(highlight_==c.name?QColor("#d47b2c"):QColor("#8295a8"),
                             highlight_==c.name?2.2:1.3));
@@ -525,7 +535,11 @@ void ComponentLivePreviewWidget::drawModel(QPainter& p) {
                               :(highlight_==L"topPlateThickness")
                                 ?face.role=="haunch_top_plate"
                                 :(highlight_==L"endPlateThickness"||
-                                  highlight_==L"boltPitchX"||highlight_==L"boltPitchY")
+                                  highlight_==L"endPlateWidth"||
+                                  highlight_==L"endPlateHeight"||
+                                  highlight_==L"boltPitchX"||
+                                  highlight_==L"boltPitchY"||
+                                  highlight_==L"boltDiameter")
                                   ?face.role=="haunch_end_plate":false;
             if(sel)fill=fill.lighter(122);
         }
