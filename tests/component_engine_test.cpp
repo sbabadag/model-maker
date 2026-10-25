@@ -350,8 +350,13 @@ int main() {
             check(rp.boltGroups[0].parts[0]==EntityId{40},
                   "Haunch 40: real column chosen for bolt target");
 
-        in.params={{L"haunchDepth",CompParamValue{20.0}},
-                   {L"haunchTipDepth",CompParamValue{25.0}}};
+        // Both values are individually within their declared param limits,
+        // but the resulting 60mm depth cannot accommodate a 50mm tapered tip
+        // plus the minimum 25mm web wedge clearance. Before this fix the
+        // test used depth=20, silently clamped by the registry to 60, which
+        // made its originally paired tip=25 geometry valid.
+        in.params={{L"haunchDepth",CompParamValue{60.0}},
+                   {L"haunchTipDepth",CompParamValue{50.0}}};
         check(!reg.generate(L"tekla_haunch_40",in).ok,
               "Haunch 40: invalid taper geometry rejected");
     }
