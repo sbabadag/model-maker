@@ -493,6 +493,21 @@ bool readBridgePackage(const std::string& dir, BridgePackage& out,
 
             loadGeometryFile(root, bo.geometryFile, bo, errors);
 
+            // Stage 3H: optional measured DSTV frame for NC1-native creation.
+            if (o.contains("plateHoleProbe") && o["plateHoleProbe"].is_object()) {
+                const auto& pp = o["plateHoleProbe"];
+                bo.platePartMark = str(pp, "partMark");
+                if (pp.contains("dstvCoordinateSystem") && pp["dstvCoordinateSystem"].is_object()) {
+                    const auto& cs = pp["dstvCoordinateSystem"];
+                    if (cs.contains("origin") && isVec3(cs["origin"]) &&
+                        cs.contains("xAxis") && isVec3(cs["xAxis"]) &&
+                        cs.contains("yAxis") && isVec3(cs["yAxis"]) &&
+                        cs.contains("zAxis") && isVec3(cs["zAxis"])) {
+                        const auto frame = parseTransform(cs);
+                        if (frame.valid) bo.plateDstvFrame = frame;
+                    }
+                }
+            }
             if (o.contains("boltGroup") && o["boltGroup"].is_object())
                 bo.boltGroup = parseBoltGroup(o["boltGroup"]);
             if (o.contains("weld") && o["weld"].is_object())
