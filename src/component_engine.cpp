@@ -1569,9 +1569,9 @@ ComponentType haunch40ComponentType() noexcept {
         lengthParam(L"gap", L"mm", 0.0, 0.0, 100.0,
                     L"kolon yuzu ve alin levhasi arasi bosluk"),
         lengthParam(L"topPlateThickness", L"mm", 10.0, 0.0, 60.0,
-                    L"ust baslik takviye levhasi (0 = yok)"),
+                    L"kolon cap levhasi et kalinligi (0 = yok)"),
         lengthParam(L"topPlateLength", L"mm", 230.0, 50.0, 1000.0,
-                    L"ust baslik takviye uzunlugu"),
+                    L"cap levhasi boyu (kolon kesitini tam orter)"),
         boolParam(L"createBeamStiffener", false,
                   L"haunch bitisinde enine kiris berkitmesi"),
         lengthParam(L"stiffenerThickness", L"mm", 10.0, 4.0, 40.0,
@@ -1599,7 +1599,7 @@ ComponentType haunch40ComponentType() noexcept {
     t.catalog.secondaryMemberType = L"kiris";
     t.catalog.supportedFeatures = {
         L"alın levhası", L"taper haunch gövdesi", L"eğimli alt başlık levhası",
-        L"üst levha", L"iki grup M20 bulon", L"kaynaklar", L"opsiyonel enine berkitme"
+        L"kolon ust cap levhasi", L"iki grup M20 bulon", L"kaynaklar", L"opsiyonel enine berkitme"
     };
     t.catalog.coverageStatus = L"PARTIALLY_IMPLEMENTED";
     t.catalog.pickCount = 2;
@@ -1698,35 +1698,89 @@ GenerationPlan generateHaunch40(const ComponentInput& input) noexcept {
     web.name=L"40 - Tapered Haunch Web";
     pushPlate(web,"haunch_web");
 
-    // 3) Inclined lower compression flange follows the taper line.
-    const Vec3 lowerNear=add(start,scale(H,-hBeam*0.5-D));
-    const Vec3 lowerFar=add(add(start,scale(dir,L)),scale(H,-hBeam*0.5-tip));
+    // 3) Inclined compression flange: use the EXACT two endpoints of the
+    // haunch web's chamfer (corner=1). The chamfer starts 25 mm after
+    // the column-side lower corner, NOT at x=0. The previous flange used
+    // x=0 and visibly diverged from the sloping web edge.
+    const double webChamferStart=L-web.chamfers.front().h; // = 25 mm
+    const double webChamferEndHeight=web.chamfers.front().v; // = D-tip
+    const Vec3 lowerNear=add(add(start,scale(dir,webChamferStart)),
+                              scale(H,-hBeam*0.5-D));
+    const Vec3 lowerFar=add(add(start,scale(dir,L)),
+                             scale(H,-hBeam*0.5-D+webChamferEndHeight));
     const Vec3 slant{lowerFar.x-lowerNear.x,lowerFar.y-lowerNear.y,
                      lowerFar.z-lowerNear.z};
     const double slantL=length(slant);
-    if (slantL<=1.0) {
+    if(slantL<=1.0) {
         plan.ok=false;plan.error=L"Haunch 40: egimli flans boyu sifir";
         return plan;
     }
     const Vec3 slope=scale(slant,1.0/slantL);
+    // W x slope faces OUT of the web (below the haunch); shift half the
+    // thickness so the INNER FLANGE FACE, not its mid-surface, contacts
+    // the exact chamfer edge at both ends.
+    const Vec3 outward=vnorm(cross(W,slope));
+    if(length(outward)<0.99) {
+        plan.ok=false;plan.error=L"Haunch 40: egimli flans normal ekseni bozuk";
+        return plan;
+    }
     PlateSpec flange;
-    flange.center=scale(add(lowerNear,lowerFar),0.5);
-    flange.u=W;flange.v=slope;flange.axis=vnorm(cross(W,slope));
+    flange.center=add(scale(add(lowerNear,lowerFar),0.5),
+                      scale(outward,flangeT*0.5));
+    flange.u=W;flange.v=slope;flange.axis=outward;
     flange.width=flW;flange.height=slantL;flange.thickness=flangeT;
     flange.name=L"40 - Inclined Lower Flange";
     pushPlate(flange,"haunch_lower_flange");
 
-    // 4) Top flange cover plate, oriented to the beam's true local section.
+    // 4) CAP PLATE belongs on the ACTUAL COLUMN TOP, never the beam top.
+    // Keep existing editable parameter keys for MMW8/recompute compatibility.
     const double topT=paramAsDouble(input.params,L"topPlateThickness",10.0);
     if(topT>0.0) {
-        const double topL=paramAsDouble(input.params,L"topPlateLength",230.0);
-        PlateSpec top;
-        top.center=add(start,add(scale(dir,topL*0.5),
-                                 scale(H,hBeam*0.5+topT*0.5)));
-        top.u=W;top.v=dir;top.axis=H;
-        top.width=wBeam;top.height=topL;top.thickness=topT;
-        top.name=L"40 - Top Plate";
-        pushPlate(top,"haunch_top_plate");
+        const Vec3 up{0.0,0.0,1.0};
+        const Vec3 colDelta{
+            p.col.axisTo.x-p.col.axisFrom.x,
+            p.col.axisTo.y-p.col.axisFrom.y,
+            p.col.axisTo.z-p.col.axisFrom.z
+        };
+        const double colLength=length(colDelta);
+        if(colLength<1.0 || std::fabs(vdot(vnorm(colDelta),up))<0.95) {
+            plan.ok=false;
+            plan.error=L"Haunch 40: cap levhasi icin duseye yakin kolon gerekli";
+            return plan;
+        }
+        // Top is the physically higher endpoint regardless of axis order.
+        const Vec3 columnTop=p.col.axisTo.z>=p.col.axisFrom.z
+                                 ? p.col.axisTo : p.col.axisFrom;
+        // For non-centred section anchors the steel section is displaced
+        // transversely from the member axis (e.g. SectionAnchor::Top).
+        const Vec3 columnSectionTop=add(
+            columnTop,scale(p.colSec.height,p.col.sectionCenterOffset));
+        // A true HORIZONTAL frame using the beam's plan direction.
+        const Vec3 planBeam{dir.x,dir.y,0.0};
+        if(length(planBeam)<1e-6) {
+            plan.ok=false;plan.error=L"Haunch 40: cap duzlem yonu tanimsiz";
+            return plan;
+        }
+        const Vec3 capU=vnorm(planBeam);
+        const Vec3 capV=vnorm(cross(up,capU)); // capU x capV = +world Z
+        // Cover the real COLUMN outline, even if the legacy topPlateLength
+        // parameter is smaller than the selected HEB/HEA footprint.
+        const double halfExtentU =
+            0.5*(std::fabs(vdot(capU,p.colSec.width))*p.col.secWidth +
+                 std::fabs(vdot(capU,p.colSec.height))*p.col.secHeight);
+        const double halfExtentV =
+            0.5*(std::fabs(vdot(capV,p.colSec.width))*p.col.secWidth +
+                 std::fabs(vdot(capV,p.colSec.height))*p.col.secHeight);
+        const double requestedL=paramAsDouble(input.params,L"topPlateLength",230.0);
+        PlateSpec cap;
+        cap.axis=up;cap.u=capU;cap.v=capV;
+        cap.width=std::max(requestedL,2.0*halfExtentU+20.0);
+        cap.height=2.0*halfExtentV+20.0;
+        cap.thickness=topT;
+        // The cap's lower surface is exactly the COLUMN TOP plane.
+        cap.center=add(columnSectionTop,scale(up,topT*0.5));
+        cap.name=L"40 - Column Cap Plate";
+        pushPlate(cap,"haunch_top_plate"); // stable role id for old records
     }
 
     // 5) Optional transverse web stiffener at the far haunch termination.
@@ -1827,7 +1881,15 @@ GenerationPlan generateHaunch40(const ComponentInput& input) noexcept {
         weld("weld_haunch_end_plate","haunch_end_plate");
         weld("weld_haunch_web","haunch_web");
         weld("weld_haunch_lower_flange","haunch_lower_flange");
-        if(topT>0.0) weld("weld_haunch_top_plate","haunch_top_plate");
+        if(topT>0.0) {
+            WeldSpec capWeld;
+            capWeld.partA=p.col.id;
+            capWeld.partBRole="haunch_top_plate";
+            capWeld.size=size;
+            capWeld.name=L"40 - Column Cap Weld";
+            plan.welds.push_back(capWeld);
+            plan.weldKeys.push_back("weld_haunch_top_plate"); // stable id
+        }
     }
     plan.ok=true;
     return plan;
