@@ -133,8 +133,38 @@ namespace ModelMaker.TeklaBridge.Core
         [JsonProperty("axisSource")] public string AxisSource { get; set; }
     }
 
+    // Stage 3D: read-only geometry diagnostics from Tekla, NOT drilling authorization.
+    // The BoltPositions coordinate plane may not match the global model frame.
+    public class BoltFrameProbe
+    {
+        [JsonProperty("coordinateSystem")] public CoordinateSystem CoordinateSystem { get; set; }
+        [JsonProperty("normalCandidate")] public Vec3 NormalCandidate { get; set; }
+        [JsonProperty("source")] public string Source { get; set; } = "BoltGroup.GetCoordinateSystem";
+        [JsonProperty("positionReference")] public string PositionReference { get; set; } =
+            "BoltPositions in group XY plane relative to selection transformation plane";
+        [JsonProperty("verifiedForDrilling")] public bool VerifiedForDrilling { get; set; } = false;
+    }
+
+    public class BoltHoleSettingsProbe
+    {
+        [JsonProperty("plainHoleType")] public string PlainHoleType { get; set; }
+        [JsonProperty("specialHoleType")] public string SpecialHoleType { get; set; }
+        [JsonProperty("slottedHoleX")] public double SlottedHoleX { get; set; }
+        [JsonProperty("slottedHoleY")] public double SlottedHoleY { get; set; }
+        [JsonProperty("hole1")] public bool Hole1 { get; set; }
+        [JsonProperty("hole2")] public bool Hole2 { get; set; }
+        [JsonProperty("hole3")] public bool Hole3 { get; set; }
+        [JsonProperty("hole4")] public bool Hole4 { get; set; }
+        [JsonProperty("hole5")] public bool Hole5 { get; set; }
+        [JsonProperty("verifiedForDrilling")] public bool VerifiedForDrilling { get; set; } = false;
+    }
+
     public class BoltGroupInfo
     {
+        [JsonProperty("frameProbe", NullValueHandling = NullValueHandling.Ignore)]
+        public BoltFrameProbe FrameProbe { get; set; }
+        [JsonProperty("holeSettingsProbe", NullValueHandling = NullValueHandling.Ignore)]
+        public BoltHoleSettingsProbe HoleSettingsProbe { get; set; }
         [JsonProperty("size")] public string Size { get; set; }
         [JsonProperty("standardCode")] public int StandardCode { get; set; }
         [JsonProperty("tolerance")] public double Tolerance { get; set; }
