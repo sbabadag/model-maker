@@ -322,6 +322,25 @@ ComponentDialogWidget::ComponentDialogWidget(const ComponentDialogDefinition& de
         });
         nativePreview_->setParams(current_);
         vertical->addWidget(nativePreview_,1);
+        // Three REAL orthographic projections of the SAME native generator
+        // plan, not separate static/embedded images.
+        auto* orthos=new QHBoxLayout;
+        for(const auto& view : {
+              std::pair<const char*,const char*>{"front","On"},
+              {"side","Yan"},{"top","Ust"}}) {
+            auto* small=new ComponentLivePreviewWidget(left);
+            small->setCompact(true);
+            small->setFixedHeight(100);
+            small->setView(view.first);
+            small->setParams(current_);
+            const std::string key=view.first;
+            small->setOnPick([this,key]() {
+                if(nativePreview_)nativePreview_->setView(key);
+            });
+            thumbnailViews_.push_back(small);
+            orthos->addWidget(small,1);
+        }
+        vertical->addLayout(orthos);
         root->addWidget(left, /*stretch*/ 5);
         schematic_->hide();
     } else {
@@ -1331,10 +1350,18 @@ void ComponentDialogWidget::setPreviewInput(const ComponentInput& input) {
     if(nativePreview_) {
         nativePreview_->setInput(input);
         nativePreview_->setParams(resultParams());
+        for(auto* view:thumbnailViews_) {
+            view->setInput(input);
+            view->setParams(resultParams());
+        }
     }
 }
 void ComponentDialogWidget::updatePreviewFromForm() {
-    if(nativePreview_)nativePreview_->setParams(resultParams());
+    if(nativePreview_) {
+        const auto params=resultParams();
+        nativePreview_->setParams(params);
+        for(auto* view:thumbnailViews_)view->setParams(params);
+    }
 }
 void ComponentDialogWidget::updateFormFromPreview(const std::wstring& name,
                                                    double value) {
@@ -1349,6 +1376,7 @@ void ComponentDialogWidget::updateFormFromPreview(const std::wstring& name,
         ck->second->setChecked(true);
     }
     onHotspotClicked(QString::fromStdWString(name));
+    for(auto* view:thumbnailViews_)view->setParams(resultParams());
 }
 
 void ComponentDialogWidget::setParams(const std::vector<CompParam>& p) {
