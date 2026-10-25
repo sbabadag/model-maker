@@ -18,6 +18,7 @@
 #endif
 
 #include "model_maker/camera.hpp"
+#include "model_maker/component_engine.hpp"
 #include "model_maker/document.hpp"
 #include "model_maker/drafting.hpp"
 #include "model_maker/profile_database.hpp"
