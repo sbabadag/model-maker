@@ -227,7 +227,8 @@ public:
     // hangi uyenin secilmesi gerektigi bildirilir ve DONUSUM YAPILMAZ (orijinal
     // import geometrisi korunur). Basarida native component secilir + cercevelenir.
     // OCC'siz derlemede uyarir ve false doner (belge degismez).
-    bool convertTeklaBridgeToNative(const std::filesystem::path& packageDir);
+    bool convertTeklaBridgeToNative(const std::filesystem::path& packageDir,
+                                    const std::filesystem::path& nc1Path);
 
     // KULLANICI COMPONENT KATALOGU (portable derived sablonlar).
     // Tekla bridge paketinden turetilen sablonu kullanici kataloguna KAYDEDER
