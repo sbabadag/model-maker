@@ -778,6 +778,11 @@ ComponentType shearPlate146ComponentType() noexcept {
         lengthParam(L"pitchY", L"mm", 0.0, 0.0, 2000.0, L"sira araligi (0 = boltSpacing/auto)"),
         lengthParam(L"edgeX", L"mm", 0.0, 0.0, 2000.0, L"genislik kenar mesafesi (0 = boltEdge)"),
         lengthParam(L"edgeY", L"mm", 0.0, 0.0, 2000.0, L"yukseklik kenar mesafesi (0 = boltEdge)"),
+        // NC1 source-verified asymmetric group placement (zero for all legacy components).
+        lengthParam(L"boltGroupOffsetX", L"mm", 0.0, -1000.0, 1000.0,
+                    L"bulon grubu yatay merkez kaymasi (NC1)"),
+        lengthParam(L"boltGroupOffsetY", L"mm", 0.0, -1000.0, 1000.0,
+                    L"bulon grubu dusey merkez kaymasi (NC1)"),
         lengthParam(L"boltEdge", L"mm", 40.0, 10.0, 200.0, L"kenar mesafesi"),
         enumParam(L"grade", L"8.8", {L"8.8", L"10.9"}, L"bulon sinifi"),
         stringParam(L"boltSpacing", L"auto", L"bulon araliklari (mm, boslukla; 'auto' = turet)"),
@@ -914,6 +919,8 @@ GenerationPlan generateShearPlateSimple146(const ComponentInput& input) noexcept
     const double edgeY = std::max(0.0, paramAsDouble(input.params, L"edgeY", 0.0));
     const double effEdgeX = edgeX > 0.0 ? edgeX : edge;
     const double effEdgeY = edgeY > 0.0 ? edgeY : edge;
+    const double boltGroupOffsetX = paramAsDouble(input.params, L"boltGroupOffsetX", 0.0);
+    const double boltGroupOffsetY = paramAsDouble(input.params, L"boltGroupOffsetY", 0.0);
     const std::wstring grade = paramAsString(input.params, L"grade", L"8.8");
     // Bolts tab: Tekla "Bolt properties", yon, yuva, uzunluk artisi, cut length.
     const std::wstring boltStandard = paramAsString(input.params, L"boltStandard", L"Default");
@@ -1155,7 +1162,7 @@ GenerationPlan generateShearPlateSimple146(const ComponentInput& input) noexcept
     } else if (boltMeasure == L"below") {
         originOffset = -(hh - effEdgeY);          // alt bulon tabBottom + edge'de
     }
-    originOffset += boltVPos;
+    originOffset += boltVPos + boltGroupOffsetY;
     // Yatay konum: kolon grubu genislikte MERKEZLENIR (origin = sol-alt bulon).
     const double xOffset = -(spanX + staggerXOffset) * 0.5;
     // BULON EKSEN-YONU KONUMU + GRIP (display): bulonlar levhayi + KIRIS GOVDESINI
@@ -1215,7 +1222,9 @@ GenerationPlan generateShearPlateSimple146(const ComponentInput& input) noexcept
     }
     // Yatay konum: ilk bulon kolonu kolon yuzunden xFromFace (varsa) ya da grup
     // levha genisliginde ortali (varsayilan).
-    const double xFromFaceFinal = (xFromFace >= 0.0) ? xFromFace : (width * 0.5 + xOffset);
+    const double xFromFaceFinal = ((xFromFace >= 0.0) ? xFromFace
+                                                             : (width * 0.5 + xOffset))
+                                  + boltGroupOffsetX;
     b.origin = Vec3{facePoint.x + sec.width.x * boltAxisShift + lenDir.x * xFromFaceFinal + sec.height.x * originOffset,
                     facePoint.y + sec.width.y * boltAxisShift + lenDir.y * xFromFaceFinal + sec.height.y * originOffset,
                     facePoint.z + sec.width.z * boltAxisShift + lenDir.z * xFromFaceFinal + sec.height.z * originOffset};
