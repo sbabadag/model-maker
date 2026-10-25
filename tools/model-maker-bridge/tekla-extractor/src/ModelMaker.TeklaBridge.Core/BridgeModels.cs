@@ -238,6 +238,12 @@ namespace ModelMaker.TeklaBridge.Core
 
     public class PlateHoleReportProbe
     {
+        // Part.GetPartMark() and Part.GetDSTVCoordinateSystem() are observed
+        // reference data for comparing an independently exported NC1 file.
+        // Neither field authorizes fabrication geometry by itself.
+        [JsonProperty("partMark")] public string PartMark { get; set; }
+        [JsonProperty("dstvCoordinateSystem", NullValueHandling = NullValueHandling.Ignore)]
+        public CoordinateSystem DstvCoordinateSystem { get; set; }
         [JsonProperty("source")] public string Source { get; set; } = "Part.GetReportProperty(HAS_HOLES)";
         [JsonProperty("reportReadable")] public bool ReportReadable { get; set; }
         [JsonProperty("reportValue")] public int? ReportValue { get; set; }
