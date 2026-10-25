@@ -277,7 +277,9 @@ void ComponentSchematicView::setHighlightedWeldRow(int row) {
 ComponentDialogWidget::ComponentDialogWidget(const ComponentDialogDefinition& def,
                                              const std::vector<CompParam>& current,
                                              QWidget* parent)
-    : QWidget(parent), def_(def), current_(current) {
+    : QWidget(parent), def_(def),
+      current_(def.typeId==L"tekla_haunch_40"
+                   ?migrateHaunch40Edges(current):current) {
     // param -> hotspot id'leri (ters bağ).
     for (const auto& h : def_.schema.hotspots) {
         if (h.paramName.has_value())
@@ -359,7 +361,12 @@ ComponentDialogWidget::ComponentDialogWidget(const ComponentDialogDefinition& de
 
     // Grup başına bir bölüm; grupta olmayan spec'ler "Diğer" bölümüne.
     std::vector<std::wstring> ungrouped;
-    for (const auto& spec : def_.specs) ungrouped.push_back(spec.name);
+    for (const auto& spec : def_.specs) {
+        // Preserve legacy boltEdge in model records, but do not expose an
+        // extra confusing common-edge field alongside editable eL/eR/eT/eB.
+        if(def_.typeId==L"tekla_haunch_40" && spec.name==L"boltEdge")continue;
+        ungrouped.push_back(spec.name);
+    }
 
     if (def_.schema.useTabs) {
         // SEKMELI duzen (Tekla 146): her grup bir SEKME. Ayni parametre birden
@@ -1412,6 +1419,15 @@ void ComponentDialogWidget::enforceHaunchInputLimits() {
         h->setToolTip(QStringLiteral("Delik capi >= bulon capi + 2 mm; bagli sinir otomatik korunur."));
     const double hole=value(L"holeDiameter",22.0);
     bounds(L"boltPitchX",std::max(40.0,hole+0.01),500.0);
+    // Measured centre-to-edge dimensions; upper/lower bolt rows are
+    // located 20 mm inward from beam/haunch envelope, leaving room for
+    // at least 10 mm of actual plate overhang.
+    const double sideMin=std::max(20.0,hole*0.5+0.1);
+    const double verticalMin=std::max(30.0,hole*0.5+20.1);
+    bounds(L"boltEdgeLeft",sideMin,200.0);
+    bounds(L"boltEdgeRight",sideMin,200.0);
+    bounds(L"boltEdgeTop",verticalMin,200.0);
+    bounds(L"boltEdgeBottom",verticalMin,200.0);
 
     // The web wedge must retain strictly positive taper clearance.
     const double tip=value(L"haunchTipDepth",25.0);
@@ -1455,10 +1471,16 @@ void ComponentDialogWidget::enforceHaunchInputLimits() {
     // Keep zero as the native "derive from real member section" sentinel.
     const double pitchX=value(L"boltPitchX",120.0);
     const int columns=count(L"boltCountX",2);
-    requiredIfExplicit(L"endPlateWidth",
-                       (columns-1)*pitchX+hole+15.0);
+    const double left=value(L"boltEdgeLeft",35.0);
+    const double right=value(L"boltEdgeRight",35.0);
+    const double top=value(L"boltEdgeTop",55.0);
+    const double bottom=value(L"boltEdgeBottom",55.0);
+    const double spanX=(columns-1)*pitchX;
+    requiredIfExplicit(L"endPlateWidth",std::max(spanX+left+right,
+                                                  spanX+hole+15.0));
     if(haunchBeamHeight_>0.0)
-        requiredIfExplicit(L"endPlateHeight",haunchBeamHeight_+depth+20.0);
+        requiredIfExplicit(L"endPlateHeight",
+                           haunchBeamHeight_+depth-40.0+top+bottom);
     const double flangeWidth=value(L"haunchFlangeWidth",0.0);
     const double webT=value(L"haunchWebThickness",10.0);
     if(flangeWidth>0.0)requiredIfExplicit(L"haunchFlangeWidth",webT);
@@ -1491,7 +1513,8 @@ void ComponentDialogWidget::updateFormFromPreview(const std::wstring& name,
 }
 
 void ComponentDialogWidget::setParams(const std::vector<CompParam>& p) {
-    current_ = p;
+    current_ = def_.typeId==L"tekla_haunch_40"
+        ?migrateHaunch40Edges(p):p;
     // Reset prior dynamic limits BEFORE loading Get/another component.
     // Otherwise a hole constrained by the previous M36 could silently
     // rewrite the incoming valid M20/22 values to 38 during setValue.
@@ -1513,7 +1536,7 @@ void ComponentDialogWidget::setParams(const std::vector<CompParam>& p) {
     for (const auto& spec : def_.specs) {
         const auto it = editors_.find(spec.name);
         if (it == editors_.end() || spec.documentedOnly) continue;
-        const CompParam* stored = findParam(p, spec.name);
+        const CompParam* stored = findParam(current_, spec.name);
         {
             QSignalBlocker guard(it->second);
             setEditorValue(it->second, spec, stored ? stored->value : paramDefaultValue(spec));
