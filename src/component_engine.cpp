@@ -1580,6 +1580,8 @@ ComponentType haunch40ComponentType() noexcept {
                     L"bulon nominal capi"),
         lengthParam(L"holeDiameter", L"mm", 22.0, 13.0, 50.0,
                     L"yuvarlak delik capi"),
+        intParam(L"boltCountX", 2, 1, 4, L"her grupta yatay bulon adedi"),
+        intParam(L"boltCountY", 2, 1, 4, L"her grupta dikey bulon adedi"),
         lengthParam(L"boltPitchX", L"mm", 120.0, 40.0, 500.0,
                     L"iki bulon kolonu araligi"),
         lengthParam(L"boltPitchY", L"mm", 80.0, 40.0, 500.0,
@@ -1639,13 +1641,17 @@ GenerationPlan generateHaunch40(const ComponentInput& input) noexcept {
     const double holeD = paramAsDouble(input.params,L"holeDiameter",22.0);
     const double pitchX = paramAsDouble(input.params,L"boltPitchX",120.0);
     const double pitchY = paramAsDouble(input.params,L"boltPitchY",80.0);
+    const int countX=paramAsInt(input.params,L"boltCountX",2);
+    const int countY=paramAsInt(input.params,L"boltCountY",2);
+    const double spanX=(countX-1)*pitchX;
+    const double spanY=(countY-1)*pitchY;
     const double hBeam = p.beam.secHeight;
     const double wBeam = p.beam.secWidth;
     // Auto-sized end plate must satisfy the SAME clearances as an
     // explicitly dimensioned plate. Small edge values and larger holes
     // previously made the automatic plate width fail its own validation.
-    const double plateW = std::max({wBeam+20.0, pitchX+2.0*edge,
-                                    pitchX+holeD+15.0});
+    const double plateW = std::max({wBeam+20.0, spanX+2.0*edge,
+                                    spanX+holeD+15.0});
     const double plateH = hBeam+D+2.0*edge;
     const double givenW = paramAsDouble(input.params,L"endPlateWidth",0.0);
     const double givenH = paramAsDouble(input.params,L"endPlateHeight",0.0);
@@ -1656,7 +1662,8 @@ GenerationPlan generateHaunch40(const ComponentInput& input) noexcept {
     if (!(L > 80.0 && D > tip+25.0 && tip > 5.0 && webT > 0.0 &&
           flangeT > 0.0 && endT > 0.0 && holeD >= bD &&
           holeD > 0.0 && pitchX > holeD && pitchY > holeD &&
-          flW >= webT && actualW >= pitchX + holeD + 15.0 &&
+          countX>=1 && countX<=4 && countY>=1 && countY<=4 &&
+          flW >= webT && actualW >= spanX + holeD + 15.0 &&
           actualH >= hBeam+D+20.0)) {
         plan.ok=false;
         plan.error=L"Haunch 40: haunch/levha/bulon olculeri tutarsiz";
@@ -1822,14 +1829,17 @@ GenerationPlan generateHaunch40(const ComponentInput& input) noexcept {
         pushPlate(rib,"haunch_beam_stiffener");
     }
 
-    // Two 2x2 M20 bolt groups, 8 bolts total (same count as observed source 40).
-    const double upperCenter=hBeam*0.5-0.5*pitchY-20.0;
-    const double lowerCenter=-(hBeam*0.5+D)+0.5*pitchY+20.0;
+    // Two independent semantic bolt groups; both share user-controlled X/Y
+    // counts. Keep the OUTERMOST rows 20 mm from the structural beam/
+    // haunch reference edges; adding rows grows each group inwards.
+    // Legacy records without count params default to 2x2 (8 total).
+    const double upperCenter=hBeam*0.5-0.5*spanY-20.0;
+    const double lowerCenter=-(hBeam*0.5+D)+0.5*spanY+20.0;
     const double topEdge=hBeam*0.5+edge;
     const double bottomEdge=-(hBeam*0.5+D)-edge;
-    if(upperCenter+0.5*pitchY+holeD*0.5 >= topEdge ||
-       lowerCenter-0.5*pitchY-holeD*0.5 <= bottomEdge ||
-       upperCenter-lowerCenter <= pitchY+holeD) {
+    if(upperCenter+0.5*spanY+holeD*0.5 >= topEdge ||
+       lowerCenter-0.5*spanY-holeD*0.5 <= bottomEdge ||
+       upperCenter-lowerCenter <= spanY+holeD) {
         plan.ok=false;
         plan.error=L"Haunch 40: iki bulon grubu alin levhasina sigmiyor";
         return plan;
@@ -1850,19 +1860,19 @@ GenerationPlan generateHaunch40(const ComponentInput& input) noexcept {
         BoltGroup bg;
         // Use the SAME measured plate frame for both groups. BoltFrame's
         // second in-plane vector is axis CROSS xDir = end.v (right-handed).
-        // The origin is the first (lower-left) point of a 2x2 rectangular
-        // group, NOT the centre of that group.
+        // The origin is the first (lower-left) point of countX x countY
+        // rectangular pattern, NOT the centre of that group.
         const Vec3 groupCentre=add(end.center,
                                   scale(end.v,offset + D*0.5));
-        bg.origin=add(add(groupCentre,scale(end.u,-pitchX*0.5)),
-                      scale(end.v,-pitchY*0.5));
+        bg.origin=add(add(groupCentre,scale(end.u,-spanX*0.5)),
+                      scale(end.v,-spanY*0.5));
         // The shank centre is in the real plate+column-flange grip stack,
         // not at the end plate midplane or column section centreline.
         bg.origin=add(bg.origin,
                       scale(end.axis,-0.5*(gap+p.col.secFlangeThickness)));
         bg.axis=end.axis;
         bg.xDir=end.u;
-        bg.countX=2;bg.countY=2;
+        bg.countX=countX;bg.countY=countY;
         bg.spacingX=pitchX;bg.spacingY=pitchY;
         bg.params.nominalDiameter=bD;
         bg.params.holeDiameter=holeD;
