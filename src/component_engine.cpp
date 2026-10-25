@@ -1662,6 +1662,7 @@ GenerationPlan generateHaunch40(const ComponentInput& input) noexcept {
     const double flangeT = paramAsDouble(input.params,L"haunchFlangeThickness",10.0);
     const double endT = paramAsDouble(input.params,L"endPlateThickness",20.0);
     const double gap = paramAsDouble(input.params,L"gap",0.0);
+    const double legacyEdge=paramAsDouble(input.params,L"boltEdge",35.0);
     const double edgeL=paramAsDouble(input.params,L"boltEdgeLeft",35.0);
     const double edgeR=paramAsDouble(input.params,L"boltEdgeRight",35.0);
     const double edgeT=paramAsDouble(input.params,L"boltEdgeTop",55.0);
@@ -1685,9 +1686,10 @@ GenerationPlan generateHaunch40(const ComponentInput& input) noexcept {
     // the measured overlay reports its actual larger dimension.
     const double plateW = std::max({wBeam+20.0,spanX+edgeL+edgeR,
                                     spanX+holeD+15.0});
-    // The outermost bolt rows stay 20 mm inside the structural envelope.
-    // At eT=eB=legacy boltEdge+20 this yields EXACT legacy plate height.
-    const double plateH = hBeam+D-40.0+edgeT+edgeB;
+    // The plate has its OWN dimensions: eT/eB only move the bolt groups.
+    // Keep the historic auto height tied to structural beam/haunch + the
+    // persisted legacy allowance, NEVER to the edited bolt offsets.
+    const double plateH = hBeam+D+2.0*legacyEdge;
     const double givenW = paramAsDouble(input.params,L"endPlateWidth",0.0);
     const double givenH = paramAsDouble(input.params,L"endPlateHeight",0.0);
     const double actualW = givenW>0 ? givenW : plateW;
@@ -1753,10 +1755,9 @@ GenerationPlan generateHaunch40(const ComponentInput& input) noexcept {
     };
     // 1) Bolted end plate. The origin follows the actual column face.
     PlateSpec end;
-    // Keep an explicitly dimensioned plate centred as in legacy Haunch
-    // records. Editing eT/eB in the dialog changes fixed height to auto;
-    // with auto sizing both top and bottom measured edges match requests.
-    const double plateCenterV =-D*0.5+(edgeT-edgeB)*0.5;
+    // Plate origin is independent of bolt edge controls. Previous coupling
+    // moved the plate itself whenever eT/eB were edited.
+    const double plateCenterV=-D*0.5;
     end.center=add(p.facePoint,add(scale(dir,gap+endT*0.5),
                                     scale(H,plateCenterV)));
     end.u=W; end.v=H; end.axis=dir;
@@ -1879,10 +1880,9 @@ GenerationPlan generateHaunch40(const ComponentInput& input) noexcept {
     }
 
     // Anchor outermost bolt centres to the ACTUAL end-plate edges.
-    // For the automatic legacy height, these reduce exactly to the prior
-    // structural positions (20mm inside beam/haunch reference boundaries).
-    // With manually reduced height, both groups move inward and the user
-    // can independently adjust eT/eB without expanding the end plate.
+    // Changing eT shifts ONLY the upper bolt group; changing eB shifts
+    // ONLY the lower group. The end plate remains unchanged in both auto
+    // and manual sizing modes. Legacy eT=eB=legacyEdge+20 retains old rows.
     const double upperCenter=plateCenterV+actualH*0.5-edgeT-spanY*0.5;
     const double lowerCenter=plateCenterV-actualH*0.5+edgeB+spanY*0.5;
     if(upperCenter-lowerCenter <= spanY+holeD+0.1) {
