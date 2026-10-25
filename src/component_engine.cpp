@@ -1571,7 +1571,7 @@ ComponentType haunch40ComponentType() noexcept {
         lengthParam(L"topPlateThickness", L"mm", 10.0, 0.0, 60.0,
                     L"kolon cap levhasi et kalinligi (0 = yok)"),
         lengthParam(L"topPlateLength", L"mm", 230.0, 50.0, 1000.0,
-                    L"cap levhasi boyu (kolon kesitini tam orter)"),
+                    L"eski uyumluluk alani; cap olcusu kolon kesitinden otomatik"),
         boolParam(L"createBeamStiffener", false,
                   L"haunch bitisinde enine kiris berkitmesi"),
         lengthParam(L"stiffenerThickness", L"mm", 10.0, 4.0, 40.0,
@@ -1671,7 +1671,24 @@ GenerationPlan generateHaunch40(const ComponentInput& input) noexcept {
         return std::sqrt(a.x*a.x+a.y*a.y+a.z*a.z);
     };
     const Vec3 dir=p.lenDir, W=p.sec.width, H=p.sec.height;
+    // The actual welded beam end must stop at the OUTER face of the
+    // bolted end plate. Column face = p.facePoint; the plate occupies
+    // [facePoint+gap, facePoint+gap+endT]. Never let the beam penetrate
+    // the column or the plate. Use a persistent hidden PlaneCut on
+    // the selected Document beam, just like Tekla 146.
     const Vec3 start=add(p.facePoint,scale(dir,gap+endT));
+    {
+        CutModifier cut;
+        cut.kind=CutKind::PlaneCut;
+        cut.target=p.beam.id;
+        cut.planeOrigin=start;
+        cut.planeNormal=dir;
+        cut.keepPositive=true;  // keep the beam's outward/remote side
+        cut.hidden=true;
+        cut.name="Haunch 40 - Beam End at Column Face + Plate";
+        plan.cuts.push_back(cut);
+        plan.cutKeys.push_back("haunch_beam_end_cut");
+    }
 
     std::wstring plateMaterial=paramAsString(input.params,L"plateMaterial",L"S235JR");
     const auto pushPlate=[&](PlateSpec plate,const char* role) {
@@ -1755,27 +1772,24 @@ GenerationPlan generateHaunch40(const ComponentInput& input) noexcept {
         // transversely from the member axis (e.g. SectionAnchor::Top).
         const Vec3 columnSectionTop=add(
             columnTop,scale(p.colSec.height,p.col.sectionCenterOffset));
-        // A true HORIZONTAL frame using the beam's plan direction.
-        const Vec3 planBeam{dir.x,dir.y,0.0};
-        if(length(planBeam)<1e-6) {
-            plan.ok=false;plan.error=L"Haunch 40: cap duzlem yonu tanimsiz";
+        // Dimension cap in the COLUMN'S OWN section frame, not the beam
+        // direction. Previous use of a projected beam-aligned bounding box
+        // plus 20-mm margins enlarged/misrotated the cap.
+        const Vec3 projectedWidth{
+            p.colSec.width.x,p.colSec.width.y,0.0
+        };
+        if(length(projectedWidth)<1e-8) {
+            plan.ok=false;plan.error=L"Haunch 40: kolon kesit genislik yonu tanimsiz";
             return plan;
         }
-        const Vec3 capU=vnorm(planBeam);
-        const Vec3 capV=vnorm(cross(up,capU)); // capU x capV = +world Z
-        // Cover the real COLUMN outline, even if the legacy topPlateLength
-        // parameter is smaller than the selected HEB/HEA footprint.
-        const double halfExtentU =
-            0.5*(std::fabs(vdot(capU,p.colSec.width))*p.col.secWidth +
-                 std::fabs(vdot(capU,p.colSec.height))*p.col.secHeight);
-        const double halfExtentV =
-            0.5*(std::fabs(vdot(capV,p.colSec.width))*p.col.secWidth +
-                 std::fabs(vdot(capV,p.colSec.height))*p.col.secHeight);
-        const double requestedL=paramAsDouble(input.params,L"topPlateLength",230.0);
+        const Vec3 capU=vnorm(projectedWidth);
+        const Vec3 capV=vnorm(cross(up,capU)); // right-handed, XY plane
         PlateSpec cap;
         cap.axis=up;cap.u=capU;cap.v=capV;
-        cap.width=std::max(requestedL,2.0*halfExtentU+20.0);
-        cap.height=2.0*halfExtentV+20.0;
+        // EXACT target profile bbox b x h; no allowance, no beam-based
+        // projection, and no overriding old topPlateLength dimension.
+        cap.width=p.col.secWidth;
+        cap.height=p.col.secHeight;
         cap.thickness=topT;
         // The cap's lower surface is exactly the COLUMN TOP plane.
         cap.center=add(columnSectionTop,scale(up,topT*0.5));
