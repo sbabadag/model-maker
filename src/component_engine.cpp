@@ -137,6 +137,19 @@ CompParamValue validateParamValue(const CompParamSpec& spec,
     return paramDefaultValue(spec);
 }
 
+std::vector<CompParam> migrateHaunch40Edges(const std::vector<CompParam>& values) {
+    std::vector<CompParam> result=values;
+    const double edge=paramAsDouble(values,L"boltEdge",35.0);
+    const struct {const wchar_t* name;double value;} defaults[]{
+        {L"boltEdgeLeft",edge},{L"boltEdgeRight",edge},
+        {L"boltEdgeTop",edge+20.0},{L"boltEdgeBottom",edge+20.0}
+    };
+    for(const auto& entry:defaults)
+        if(!findParam(values,entry.name))
+            result.push_back(CompParam{entry.name,CompParamValue{entry.value}});
+    return result;
+}
+
 std::vector<CompParam> alignParamsToSpecs(const std::vector<CompParamSpec>& specs,
                                           const std::vector<CompParam>& values) noexcept {
     std::vector<CompParam> aligned;
@@ -300,7 +313,9 @@ GenerationPlan ComponentRegistry::generate(const std::wstring& typeId,
     }
     // Parametreleri semaya hizala (migration) ve generatora gecerli degerler ver.
     ComponentInput aligned = input;
-    aligned.params = alignParamsToSpecs(type->params, input.params);
+    aligned.params = alignParamsToSpecs(type->params,
+        typeId==L"tekla_haunch_40" ? migrateHaunch40Edges(input.params)
+                                   : input.params);
     plan = (*gen)(aligned);
     return plan;
 }
@@ -1587,7 +1602,15 @@ ComponentType haunch40ComponentType() noexcept {
         lengthParam(L"boltPitchY", L"mm", 80.0, 40.0, 500.0,
                     L"her bulon grubu dikey araligi"),
         lengthParam(L"boltEdge", L"mm", 35.0, 20.0, 120.0,
-                    L"delik kenar boslugu"),
+                    L"eski kayitlar icin ortak kenar payi"),
+        lengthParam(L"boltEdgeLeft", L"mm", 35.0, 20.0, 200.0,
+                    L"sol levha kenari - civata merkezi"),
+        lengthParam(L"boltEdgeRight", L"mm", 35.0, 20.0, 200.0,
+                    L"sag levha kenari - civata merkezi"),
+        lengthParam(L"boltEdgeTop", L"mm", 55.0, 30.0, 200.0,
+                    L"ust levha kenari - ust civata merkezi"),
+        lengthParam(L"boltEdgeBottom", L"mm", 55.0, 30.0, 200.0,
+                    L"alt levha kenari - alt civata merkezi"),
         enumParam(L"grade", L"8.8", {L"8.8", L"10.9"},
                   L"bulon kalitesi"),
         boolParam(L"createWelds", true, L"haunch kaynaklari"),
@@ -1636,7 +1659,10 @@ GenerationPlan generateHaunch40(const ComponentInput& input) noexcept {
     const double flangeT = paramAsDouble(input.params,L"haunchFlangeThickness",10.0);
     const double endT = paramAsDouble(input.params,L"endPlateThickness",20.0);
     const double gap = paramAsDouble(input.params,L"gap",0.0);
-    const double edge = paramAsDouble(input.params,L"boltEdge",35.0);
+    const double edgeL=paramAsDouble(input.params,L"boltEdgeLeft",35.0);
+    const double edgeR=paramAsDouble(input.params,L"boltEdgeRight",35.0);
+    const double edgeT=paramAsDouble(input.params,L"boltEdgeTop",55.0);
+    const double edgeB=paramAsDouble(input.params,L"boltEdgeBottom",55.0);
     const double bD = paramAsDouble(input.params,L"boltDiameter",20.0);
     const double holeD = paramAsDouble(input.params,L"holeDiameter",22.0);
     const double pitchX = paramAsDouble(input.params,L"boltPitchX",120.0);
@@ -1650,9 +1676,15 @@ GenerationPlan generateHaunch40(const ComponentInput& input) noexcept {
     // Auto-sized end plate must satisfy the SAME clearances as an
     // explicitly dimensioned plate. Small edge values and larger holes
     // previously made the automatic plate width fail its own validation.
-    const double plateW = std::max({wBeam+20.0, spanX+2.0*edge,
+    // eL/eR/eT/eB are HOLE-CENTRE-to-PLATE-edge dimensions.
+    // Preserve minimum beam flange cover for a single-column group:
+    // where the beam width governs, eR is an achieved MINIMUM, and
+    // the measured overlay reports its actual larger dimension.
+    const double plateW = std::max({wBeam+20.0,spanX+edgeL+edgeR,
                                     spanX+holeD+15.0});
-    const double plateH = hBeam+D+2.0*edge;
+    // The outermost bolt rows stay 20 mm inside the structural envelope.
+    // At eT=eB=legacy boltEdge+20 this yields EXACT legacy plate height.
+    const double plateH = hBeam+D-40.0+edgeT+edgeB;
     const double givenW = paramAsDouble(input.params,L"endPlateWidth",0.0);
     const double givenH = paramAsDouble(input.params,L"endPlateHeight",0.0);
     const double actualW = givenW>0 ? givenW : plateW;
@@ -1663,7 +1695,11 @@ GenerationPlan generateHaunch40(const ComponentInput& input) noexcept {
           flangeT > 0.0 && endT > 0.0 && holeD >= bD &&
           holeD > 0.0 && pitchX > holeD && pitchY > holeD &&
           countX>=1 && countX<=4 && countY>=1 && countY<=4 &&
-          flW >= webT && actualW >= spanX + holeD + 15.0 &&
+          edgeL>holeD*0.5 && edgeR>holeD*0.5 &&
+          edgeT>holeD*0.5+20.0 && edgeB>holeD*0.5+20.0 &&
+          flW >= webT && actualW+1e-6 >= spanX + edgeL + edgeR &&
+          actualW >= spanX + holeD + 15.0 &&
+          actualH+1e-6 >= plateH &&
           actualH >= hBeam+D+20.0)) {
         plan.ok=false;
         plan.error=L"Haunch 40: haunch/levha/bulon olculeri tutarsiz";
@@ -1709,7 +1745,12 @@ GenerationPlan generateHaunch40(const ComponentInput& input) noexcept {
     };
     // 1) Bolted end plate. The origin follows the actual column face.
     PlateSpec end;
-    end.center=add(p.facePoint,add(scale(dir,gap+endT*0.5),scale(H,-D*0.5)));
+    // Place the upper plate edge at the requested distance from the
+    // uppermost bolt centre. Extra explicit height extends downward.
+    const double plateCenterV =
+        -D*0.5+(edgeT-edgeB)*0.5-(actualH-plateH)*0.5;
+    end.center=add(p.facePoint,add(scale(dir,gap+endT*0.5),
+                                    scale(H,plateCenterV)));
     end.u=W; end.v=H; end.axis=dir;
     end.width=actualW;end.height=actualH;end.thickness=endT;
     end.name=L"40 - End Plate";
@@ -1835,8 +1876,9 @@ GenerationPlan generateHaunch40(const ComponentInput& input) noexcept {
     // Legacy records without count params default to 2x2 (8 total).
     const double upperCenter=hBeam*0.5-0.5*spanY-20.0;
     const double lowerCenter=-(hBeam*0.5+D)+0.5*spanY+20.0;
-    const double topEdge=hBeam*0.5+edge;
-    const double bottomEdge=-(hBeam*0.5+D)-edge;
+    // Physical plate ends follow the editable offsets, not one boltEdge.
+    const double topEdge=hBeam*0.5-20.0+edgeT;
+    const double bottomEdge=-(hBeam*0.5+D)+20.0-edgeB;
     if(upperCenter+0.5*spanY+holeD*0.5 >= topEdge ||
        lowerCenter-0.5*spanY-holeD*0.5 <= bottomEdge ||
        upperCenter-lowerCenter <= spanY+holeD) {
@@ -1864,7 +1906,10 @@ GenerationPlan generateHaunch40(const ComponentInput& input) noexcept {
         // rectangular pattern, NOT the centre of that group.
         const Vec3 groupCentre=add(end.center,
                                   scale(end.v,offset + D*0.5));
-        bg.origin=add(add(groupCentre,scale(end.u,-spanX*0.5)),
+        // X origin references the actual plate LEFT edge, rather than
+        // assuming symmetric bolt spacing about its centreline.
+        bg.origin=add(add(groupCentre,
+                          scale(end.u,-actualW*0.5+edgeL)),
                       scale(end.v,-spanY*0.5));
         // The shank centre is in the real plate+column-flange grip stack,
         // not at the end plate midplane or column section centreline.
