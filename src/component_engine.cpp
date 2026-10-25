@@ -1536,4 +1536,273 @@ GenerationPlan generateShearPlateSimple146(const ComponentInput& input) noexcept
     return plan;
 }
 
+// --- Tekla Haunch (40): initial editable native welded-plate core -------------
+// The SOURCE Tekla 40 reference has multiple plates, 2x4 M20 bolt positions
+// and many welds. This generator builds the SUPPORTED native core only; it
+// adapts dimensions to the selected Model Maker beams/columns and does NOT
+// silently claim full per-feature Tekla geometry equivalence.
+ComponentType haunch40ComponentType() noexcept {
+    ComponentType t;
+    t.typeId = L"tekla_haunch_40";
+    t.schemaVersion = 1;
+    t.displayName = L"Haunch (40)";
+    t.params = {
+        lengthParam(L"haunchLength", L"mm", 450.0, 120.0, 2000.0,
+                    L"kolondan kirise dogru haunch uzunlugu"),
+        lengthParam(L"haunchDepth", L"mm", 240.0, 60.0, 1000.0,
+                    L"kolon tarafinda haunch derinligi"),
+        lengthParam(L"haunchTipDepth", L"mm", 25.0, 10.0, 200.0,
+                    L"kiris tarafindaki haunch web derinligi"),
+        lengthParam(L"haunchWebThickness", L"mm", 10.0, 4.0, 40.0,
+                    L"haunch govde levhasi"),
+        lengthParam(L"haunchFlangeThickness", L"mm", 10.0, 4.0, 60.0,
+                    L"egimli alt baslik levhasi"),
+        lengthParam(L"haunchFlangeWidth", L"mm", 0.0, 0.0, 1000.0,
+                    L"0 = mevcut kiris flans genisligi"),
+        lengthParam(L"endPlateThickness", L"mm", 20.0, 6.0, 80.0,
+                    L"alin levhasi kalinligi"),
+        lengthParam(L"endPlateWidth", L"mm", 0.0, 0.0, 1000.0,
+                    L"0 = kiris kesiti ve bulon araligindan otomatik"),
+        lengthParam(L"endPlateHeight", L"mm", 0.0, 0.0, 2000.0,
+                    L"0 = kiris yuksekligi + haunch + kenar bosluklari"),
+        lengthParam(L"gap", L"mm", 0.0, 0.0, 100.0,
+                    L"kolon yuzu ve alin levhasi arasi bosluk"),
+        lengthParam(L"topPlateThickness", L"mm", 10.0, 0.0, 60.0,
+                    L"ust baslik takviye levhasi (0 = yok)"),
+        lengthParam(L"topPlateLength", L"mm", 230.0, 50.0, 1000.0,
+                    L"ust baslik takviye uzunlugu"),
+        boolParam(L"createBeamStiffener", false,
+                  L"haunch bitisinde enine kiris berkitmesi"),
+        lengthParam(L"stiffenerThickness", L"mm", 10.0, 4.0, 40.0,
+                    L"kiriş berkitme kalinligi"),
+        lengthParam(L"boltDiameter", L"mm", 20.0, 12.0, 36.0,
+                    L"bulon nominal capi"),
+        lengthParam(L"holeDiameter", L"mm", 22.0, 13.0, 50.0,
+                    L"yuvarlak delik capi"),
+        lengthParam(L"boltPitchX", L"mm", 120.0, 40.0, 500.0,
+                    L"iki bulon kolonu araligi"),
+        lengthParam(L"boltPitchY", L"mm", 80.0, 40.0, 500.0,
+                    L"her bulon grubu dikey araligi"),
+        lengthParam(L"boltEdge", L"mm", 35.0, 20.0, 120.0,
+                    L"delik kenar boslugu"),
+        enumParam(L"grade", L"8.8", {L"8.8", L"10.9"},
+                  L"bulon kalitesi"),
+        boolParam(L"createWelds", true, L"haunch kaynaklari"),
+        lengthParam(L"weldSize", L"mm", 6.0, 3.0, 30.0,
+                    L"fillet kaynak bacagi"),
+        stringParam(L"plateMaterial", L"S235JR", L"levha malzemesi"),
+    };
+    t.catalog.sourceComponentNumber = L"40";
+    t.catalog.category = L"Moment connection / Haunch";
+    t.catalog.primaryMemberType = L"kolon";
+    t.catalog.secondaryMemberType = L"kiris";
+    t.catalog.supportedFeatures = {
+        L"alın levhası", L"taper haunch gövdesi", L"eğimli alt başlık levhası",
+        L"üst levha", L"iki grup M20 bulon", L"kaynaklar", L"opsiyonel enine berkitme"
+    };
+    t.catalog.coverageStatus = L"PARTIALLY_IMPLEMENTED";
+    t.catalog.pickCount = 2;
+    t.catalog.catalogVisible = true;
+    return t;
+}
+
+GenerationPlan generateHaunch40(const ComponentInput& input) noexcept {
+    GenerationPlan plan;
+    // Share the production 146 contact placement: actual selected member
+    // axes/sections, automatic column vs beam role recognition, local frame.
+    const ShearTabPlacement p = resolveShearTabPlacement(input);
+    if (!p.ok) { plan.ok = false; plan.error = p.error; return plan; }
+    if (p.beam.secHeight < 80.0 || p.beam.secWidth < 60.0 ||
+        p.col.secHeight < 80.0 || p.col.secWidth < 60.0 ||
+        p.col.id == p.beam.id || p.col.id == kInvalidEntityId ||
+        p.beam.id == kInvalidEntityId) {
+        plan.ok = false;
+        plan.error = L"Haunch 40: farkli ve gercek kolon/kiris kesitleri gerekli";
+        return plan;
+    }
+    if (std::fabs(vdot(p.lenDir, Vec3{0,0,1})) > 0.65) {
+        plan.ok = false;
+        plan.error = L"Haunch 40: bu surum duseye yakin kiris desteklemiyor";
+        return plan;
+    }
+
+    const double L = paramAsDouble(input.params,L"haunchLength",450.0);
+    const double D = paramAsDouble(input.params,L"haunchDepth",240.0);
+    const double tip = paramAsDouble(input.params,L"haunchTipDepth",25.0);
+    const double webT = paramAsDouble(input.params,L"haunchWebThickness",10.0);
+    const double flangeT = paramAsDouble(input.params,L"haunchFlangeThickness",10.0);
+    const double endT = paramAsDouble(input.params,L"endPlateThickness",20.0);
+    const double gap = paramAsDouble(input.params,L"gap",0.0);
+    const double edge = paramAsDouble(input.params,L"boltEdge",35.0);
+    const double bD = paramAsDouble(input.params,L"boltDiameter",20.0);
+    const double holeD = paramAsDouble(input.params,L"holeDiameter",22.0);
+    const double pitchX = paramAsDouble(input.params,L"boltPitchX",120.0);
+    const double pitchY = paramAsDouble(input.params,L"boltPitchY",80.0);
+    const double hBeam = p.beam.secHeight;
+    const double wBeam = p.beam.secWidth;
+    const double plateW = std::max(wBeam+20.0, pitchX+2.0*edge);
+    const double plateH = hBeam+D+2.0*edge;
+    const double givenW = paramAsDouble(input.params,L"endPlateWidth",0.0);
+    const double givenH = paramAsDouble(input.params,L"endPlateHeight",0.0);
+    const double actualW = givenW>0 ? givenW : plateW;
+    const double actualH = givenH>0 ? givenH : plateH;
+    const double flWparam=paramAsDouble(input.params,L"haunchFlangeWidth",0.0);
+    const double flW=flWparam>0 ? flWparam : wBeam;
+    if (!(L > 80.0 && D > tip+25.0 && tip > 5.0 && webT > 0.0 &&
+          flangeT > 0.0 && endT > 0.0 && holeD >= bD &&
+          holeD > 0.0 && pitchX > holeD && pitchY > holeD &&
+          flW >= webT && actualW >= pitchX + holeD + 15.0 &&
+          actualH >= hBeam+D+20.0)) {
+        plan.ok=false;
+        plan.error=L"Haunch 40: haunch/levha/bulon olculeri tutarsiz";
+        return plan;
+    }
+    const auto add=[](Vec3 a,Vec3 b) {
+        return Vec3{a.x+b.x,a.y+b.y,a.z+b.z};
+    };
+    const auto scale=[](Vec3 a,double k) {
+        return Vec3{a.x*k,a.y*k,a.z*k};
+    };
+    const auto cross=[](Vec3 a,Vec3 b) {
+        return Vec3{a.y*b.z-a.z*b.y,a.z*b.x-a.x*b.z,a.x*b.y-a.y*b.x};
+    };
+    const auto length=[](Vec3 a) {
+        return std::sqrt(a.x*a.x+a.y*a.y+a.z*a.z);
+    };
+    const Vec3 dir=p.lenDir, W=p.sec.width, H=p.sec.height;
+    const Vec3 start=add(p.facePoint,scale(dir,gap+endT));
+
+    std::wstring plateMaterial=paramAsString(input.params,L"plateMaterial",L"S235JR");
+    const auto pushPlate=[&](PlateSpec plate,const char* role) {
+        plate.material=plateMaterial;
+        plan.plates.push_back(std::move(plate));
+        plan.plateKeys.push_back(role);
+    };
+    // 1) Bolted end plate. The origin follows the actual column face.
+    PlateSpec end;
+    end.center=add(p.facePoint,add(scale(dir,gap+endT*0.5),scale(H,-D*0.5)));
+    end.u=W; end.v=H; end.axis=dir;
+    end.width=actualW;end.height=actualH;end.thickness=endT;
+    end.name=L"40 - End Plate";
+    pushPlate(end,"haunch_end_plate");
+
+    // 2) Haunch web: rectangular stock with large bottom-outboard chamfer
+    // creates a true tapered PL web (thinner at far beam end).
+    PlateSpec web;
+    web.center=add(start,add(scale(dir,L*0.5),
+                              scale(H,-hBeam*0.5-D*0.5)));
+    web.u=dir; web.v=H; web.axis=W;
+    web.width=L;web.height=D;web.thickness=webT;
+    web.chamfers.push_back(PlateSpec::Chamfer{1,1,L-25.0,D-tip});
+    web.name=L"40 - Tapered Haunch Web";
+    pushPlate(web,"haunch_web");
+
+    // 3) Inclined lower compression flange follows the taper line.
+    const Vec3 lowerNear=add(start,scale(H,-hBeam*0.5-D));
+    const Vec3 lowerFar=add(add(start,scale(dir,L)),scale(H,-hBeam*0.5-tip));
+    const Vec3 slant{lowerFar.x-lowerNear.x,lowerFar.y-lowerNear.y,
+                     lowerFar.z-lowerNear.z};
+    const double slantL=length(slant);
+    if (slantL<=1.0) {
+        plan.ok=false;plan.error=L"Haunch 40: egimli flans boyu sifir";
+        return plan;
+    }
+    const Vec3 slope=scale(slant,1.0/slantL);
+    PlateSpec flange;
+    flange.center=scale(add(lowerNear,lowerFar),0.5);
+    flange.u=W;flange.v=slope;flange.axis=vnorm(cross(W,slope));
+    flange.width=flW;flange.height=slantL;flange.thickness=flangeT;
+    flange.name=L"40 - Inclined Lower Flange";
+    pushPlate(flange,"haunch_lower_flange");
+
+    // 4) Top flange cover plate, oriented to the beam's true local section.
+    const double topT=paramAsDouble(input.params,L"topPlateThickness",10.0);
+    if(topT>0.0) {
+        const double topL=paramAsDouble(input.params,L"topPlateLength",230.0);
+        PlateSpec top;
+        top.center=add(start,add(scale(dir,topL*0.5),
+                                 scale(H,hBeam*0.5+topT*0.5)));
+        top.u=W;top.v=dir;top.axis=H;
+        top.width=wBeam;top.height=topL;top.thickness=topT;
+        top.name=L"40 - Top Plate";
+        pushPlate(top,"haunch_top_plate");
+    }
+
+    // 5) Optional transverse web stiffener at the far haunch termination.
+    if(paramAsBool(input.params,L"createBeamStiffener",false)) {
+        const double st=paramAsDouble(input.params,L"stiffenerThickness",10.0);
+        if(p.beam.secWebThickness<=0.0 || p.beam.secFlangeThickness<=0.0) {
+            plan.ok=false;
+            plan.error=L"Haunch 40: kiriș berkitmesi icin flans/govde et kalinliklari gerekli";
+            return plan;
+        }
+        PlateSpec rib;
+        rib.center=add(start,scale(dir,L));
+        rib.u=W;rib.v=H;rib.axis=dir;
+        rib.width=wBeam-2.0*p.beam.secFlangeThickness;
+        rib.height=hBeam-2.0*p.beam.secFlangeThickness;
+        rib.thickness=st;rib.name=L"40 - Beam Stiffener";
+        if(rib.width<=0.0 || rib.height<=0.0) {
+            plan.ok=false;plan.error=L"Haunch 40: berkitme kesite sigmiyor";
+            return plan;
+        }
+        pushPlate(rib,"haunch_beam_stiffener");
+    }
+
+    // Two 2x2 M20 bolt groups, 8 bolts total (same count as observed source 40).
+    const double upperCenter=hBeam*0.5-0.5*pitchY-20.0;
+    const double lowerCenter=-(hBeam*0.5+D)+0.5*pitchY+20.0;
+    const double topEdge=hBeam*0.5+edge;
+    const double bottomEdge=-(hBeam*0.5+D)-edge;
+    if(upperCenter+0.5*pitchY+holeD*0.5 >= topEdge ||
+       lowerCenter-0.5*pitchY-holeD*0.5 <= bottomEdge ||
+       upperCenter-lowerCenter <= pitchY+holeD) {
+        plan.ok=false;
+        plan.error=L"Haunch 40: iki bulon grubu alin levhasina sigmiyor";
+        return plan;
+    }
+    const std::wstring gradeW=paramAsString(input.params,L"grade",L"8.8");
+    const std::string grade(gradeW.begin(),gradeW.end());
+    const auto pushBolts=[&](const char* role,double offset) {
+        BoltGroup bg;
+        bg.origin=add(end.center,add(scale(W,-pitchX*0.5),
+                   scale(H,offset + D*0.5 - pitchY*0.5)));
+        bg.axis=dir;bg.xDir=W;
+        bg.countX=2;bg.countY=2;
+        bg.spacingX=pitchX;bg.spacingY=pitchY;
+        bg.params.nominalDiameter=bD;
+        bg.params.holeDiameter=holeD;
+        bg.params.grade=grade;
+        bg.params.hasHead=true;
+        bg.params.hasNut=true;
+        bg.params.hasWasher=true;
+        bg.parts={p.col.id};
+        plan.boltGroups.push_back(std::move(bg));
+        plan.boltGroupKeys.push_back(role);
+    };
+    pushBolts("haunch_bolts_upper",upperCenter);
+    pushBolts("haunch_bolts_lower",lowerCenter);
+
+    // Identified semantic weld relationships. No automatic weld-to-column
+    // for the bolted end plate; it is welded to the secondary beam.
+    if(paramAsBool(input.params,L"createWelds",true)) {
+        const double size=paramAsDouble(input.params,L"weldSize",6.0);
+        const auto weld=[&](const char* role,const char* plateRole) {
+            WeldSpec w;
+            w.partA=p.beam.id;
+            w.partBRole=plateRole;
+            w.size=size;
+            w.name=L"40 - Haunch Weld";
+            plan.welds.push_back(w);
+            plan.weldKeys.push_back(role);
+        };
+        weld("weld_haunch_end_plate","haunch_end_plate");
+        weld("weld_haunch_web","haunch_web");
+        weld("weld_haunch_lower_flange","haunch_lower_flange");
+        if(topT>0.0) weld("weld_haunch_top_plate","haunch_top_plate");
+    }
+    plan.ok=true;
+    return plan;
+}
+
 } // namespace mm
