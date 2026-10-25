@@ -61,6 +61,7 @@ private:
     };
     ComponentInput input_;
     GenerationPlan plan_;
+    std::wstring previewWarning_; // invalid draft: show last valid geometry with a warning
     std::vector<CompParam> params_;
     std::vector<Callout> callouts_;
     std::wstring highlight_;
