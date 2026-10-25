@@ -636,13 +636,19 @@ void ComponentLivePreviewWidget::paintEvent(QPaintEvent*) {
         const std::string anchorRole=(activeRole_=="haunch_bolts_lower" &&
                                       c.targetRole=="haunch_bolts_upper")
                                        ?activeRole_:c.targetRole;
-        const QPointF target=project(roleAnchor(anchorRole));
-        const QPointF end=c.spin->geometry().center();
-        painter.setPen(QPen(highlight_==c.name?QColor("#d47b2c"):QColor("#8295a8"),
-                            highlight_==c.name?2.2:1.3));
-        painter.drawLine(target,end);
-        painter.setBrush(QColor(highlight_==c.name?"#e38b32":"#ffffff"));
-        painter.drawEllipse(target,3.8,3.8);
+        const bool boltInspector=(activeRole_=="haunch_bolts_upper" ||
+                                  activeRole_=="haunch_bolts_lower");
+        if(!boltInspector) {
+            const QPointF target=project(roleAnchor(anchorRole));
+            const QPointF end=c.spin->geometry().center();
+            painter.setPen(QPen(highlight_==c.name?QColor("#d47b2c"):QColor("#8295a8"),
+                                highlight_==c.name?2.2:1.3));
+            painter.drawLine(target,end);
+            painter.setBrush(QColor(highlight_==c.name?"#e38b32":"#ffffff"));
+            painter.drawEllipse(target,3.8,3.8);
+        }
+        // In bolt inspector mode the dimension lines already point to
+        // the physical holes. Ten extra leader lines would obscure them.
         painter.setPen(QColor("#36516b"));
         painter.drawText(QPointF(c.spin->x()+3,c.spin->y()-4),
                          QString::fromStdWString(c.shortLabel));
