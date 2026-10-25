@@ -248,6 +248,9 @@ std::vector<std::wstring> ComponentLivePreviewWidget::visibleOverlayParams() con
             names.push_back(c.name);
     return names;
 }
+QPointF ComponentLivePreviewWidget::roleScreenAnchor(const std::string& role) const {
+    return project(roleAnchor(role));
+}
 void ComponentLivePreviewWidget::centerSelection() {
     // Clicking a VISIBLE child must not repeatedly walk the whole model
     // sideways. Only nudge the camera when a programmatically selected
