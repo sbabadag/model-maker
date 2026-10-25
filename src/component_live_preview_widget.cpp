@@ -179,7 +179,7 @@ ComponentLivePreviewWidget::ComponentLivePreviewWidget(QWidget* parent)
     // real property panel. No second parameter source of truth.
     // Grouped by the physical child that the user can click.
     // At most four boxes appear at once instead of the entire dialog.
-    const std::array<std::tuple<const wchar_t*,const wchar_t*,const char*,QPointF>,13> defs{{
+    const std::array<std::tuple<const wchar_t*,const wchar_t*,const char*,QPointF>,15> defs{{
         {L"haunchLength",L"L","haunch_web",QPointF(35,-90)},
         {L"haunchDepth",L"D","haunch_web",QPointF(-150,15)},
         {L"haunchTipDepth",L"tip","haunch_web",QPointF(45,75)},
@@ -192,6 +192,8 @@ ComponentLivePreviewWidget::ComponentLivePreviewWidget(QWidget* parent)
         {L"boltPitchX",L"g","haunch_bolts_upper",QPointF(-150,55)},
         {L"boltPitchY",L"p","haunch_bolts_upper",QPointF(55,55)},
         {L"boltDiameter",L"M","haunch_bolts_upper",QPointF(50,-75)},
+        {L"boltEdge",L"e","haunch_bolts_upper",QPointF(-145,-65)},
+        {L"stiffenerThickness",L"t stiff","haunch_beam_stiffener",QPointF(75,35)},
         {L"topPlateThickness",L"t cap","haunch_top_plate",QPointF(60,-70)}
     }};
     for(const auto& def:defs) {
