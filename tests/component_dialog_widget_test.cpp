@@ -8,6 +8,9 @@
 // kullanır); Linux'ta Qt6 yoksa CMake bu testi hiç eklemez.
 
 #include "model_maker/component_dialog_widget.hpp"
+#include "model_maker/component_live_preview_widget.hpp"
+#include "model_maker/component_engine.hpp"
+#include <QDoubleSpinBox>
 
 #include <QAbstractSpinBox>
 #include <QApplication>
@@ -401,6 +404,61 @@ int main(int argc, char** argv) {
             CHECK(sch != nullptr, "146: sematik gorunum bulundu");
             CHECK(sch && sch->highlightedWeldRow() == 3,
                   "146: satir secimi -> semada 4 numarali cagri vurgulanir");
+        }
+    }
+
+    // Native Haunch 40 P1/P2/P3: real generator's 3D plan, 3 orthographic
+    // mini-previews and one synchronized model-overlay dimension edit.
+    {
+        mm::registerBuiltInComponents(mm::ComponentRegistry::instance());
+        mm::ComponentDialogWidget h40(mm::haunch40DialogDefinition(),{});
+        h40.resize(1140,760);
+        mm::ComponentInput input;
+        input.main.id=mm::EntityId{711};
+        input.main.axisFrom={0,0,0};
+        input.main.axisTo={0,0,3000};
+        input.main.refNormal={0,1,0};
+        input.main.secWidth=300;input.main.secHeight=300;
+        input.main.secWebThickness=11;input.main.secFlangeThickness=19;
+        mm::MemberGeometry beam;
+        beam.id=mm::EntityId{712};
+        beam.axisFrom={0,1200,1500};
+        beam.axisTo={0,60,1500};
+        beam.refNormal={0,0,1};
+        beam.secWidth=100;beam.secHeight=200;
+        beam.secWebThickness=5.6;beam.secFlangeThickness=8.5;
+        input.secondary.push_back(beam);
+        h40.setPreviewInput(input);
+        h40.show();
+        QApplication::processEvents();
+        const auto previews=h40.findChildren<mm::ComponentLivePreviewWidget*>();
+        CHECK(previews.size()==4,"Haunch 40: main 3D + 3 live orthographic previews");
+        auto* left = previews.empty()?nullptr:previews.first();
+        CHECK(left!=nullptr,"Haunch 40: real 3D preview widget exists");
+        QDoubleSpinBox* overlay=nullptr;
+        if(left) {
+            for(auto* d:left->findChildren<QDoubleSpinBox*>()) {
+                if(d->toolTip()==QStringLiteral("haunchLength")) {
+                    overlay=d;break;
+                }
+            }
+        }
+        CHECK(overlay!=nullptr,"Haunch 40: editable haunchLength overlay");
+        if(overlay) {
+            overlay->setValue(570.0);   // preview -> real component form
+            QApplication::processEvents();
+            const mm::CompParam* p=mm::findParam(h40.resultParams(),L"haunchLength");
+            CHECK(p && std::holds_alternative<double>(p->value) &&
+                  std::get<double>(p->value)==570.0,
+                  "Haunch 40: preview edit synchronizes right-side real params");
+        }
+        if(left) {
+            left->setView("front");
+            left->setView("side");
+            left->setView("top");
+            left->setView("iso");
+            CHECK(left->isVisibleTo(&h40),
+                  "Haunch 40: orbit/front/side/top main view stays active");
         }
     }
 
