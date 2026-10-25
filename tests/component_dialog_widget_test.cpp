@@ -468,12 +468,36 @@ int main(int argc, char** argv) {
             left->selectRole("haunch_bolts_lower");
             QApplication::processEvents();
             const auto lower=left->visibleOverlayParams();
-            CHECK(lower.size()==4 &&
+            CHECK(lower.size()==5 &&
                   std::find(lower.begin(),lower.end(),L"boltPitchX")!=lower.end() &&
                   std::find(lower.begin(),lower.end(),L"boltPitchY")!=lower.end() &&
                   std::find(lower.begin(),lower.end(),L"boltDiameter")!=lower.end() &&
+                  std::find(lower.begin(),lower.end(),L"holeDiameter")!=lower.end() &&
                   std::find(lower.begin(),lower.end(),L"boltEdge")!=lower.end(),
-                  "P4: lower bolt group exposes all four shared bolt parameters");
+                  "P4B: lower bolt group exposes five shared bolt/hole controls");
+            const auto lowerMetrics=left->boltOverlayMetrics("haunch_bolts_lower");
+            const auto upperMetrics=left->boltOverlayMetrics("haunch_bolts_upper");
+            CHECK(lowerMetrics.valid && upperMetrics.valid &&
+                  lowerMetrics.count==4 && lowerMetrics.totalCount==8 &&
+                  lowerMetrics.columns==2 && lowerMetrics.rows==2,
+                  "P4B: actual bolt-group count 4, total 8, arrangement 2x2");
+            CHECK(std::fabs(lowerMetrics.pitchX-120.0)<1e-6 &&
+                  std::fabs(lowerMetrics.pitchY-80.0)<1e-6 &&
+                  std::fabs(lowerMetrics.nominalDiameter-20.0)<1e-6 &&
+                  std::fabs(lowerMetrics.holeDiameter-22.0)<1e-6,
+                  "P4B: on-model pitch and M/diameter come from generated bolts");
+            CHECK(std::fabs(lowerMetrics.leftEdge-35.0)<1e-6 &&
+                  std::fabs(lowerMetrics.rightEdge-35.0)<1e-6 &&
+                  std::fabs(lowerMetrics.bottomEdge-55.0)<1e-6 &&
+                  std::fabs(upperMetrics.topEdge-55.0)<1e-6 &&
+                  lowerMetrics.topEdge>upperMetrics.topEdge &&
+                  upperMetrics.bottomEdge>lowerMetrics.bottomEdge,
+                  "P4B: four centre-to-edge values measured separately per bolt group");
+            left->selectRole("haunch_bolts_upper");
+            QApplication::processEvents();
+            CHECK(left->visibleOverlayParams().size()==5 &&
+                  left->boltOverlayMetrics(left->activeRole()).valid,
+                  "P4B: upper bolt selection exposes the same five fields");
             // Exercise the real mouse path, not just the test selection API.
             // Top-left empty background must clear the active overlays.
             const QPointF empty(3.0,3.0);
@@ -523,6 +547,22 @@ int main(int argc, char** argv) {
             left->setView("iso");
             CHECK(left->isVisibleTo(&h40),
                   "Haunch 40: orbit/front/side/top main view stays active");
+            auto* pitch=h40.findChild<QDoubleSpinBox*>(QStringLiteral("boltPitchX"));
+            auto* edge=h40.findChild<QDoubleSpinBox*>(QStringLiteral("boltEdge"));
+            CHECK(pitch && edge,"P4B: bolt pitch and end-plate edge controls found");
+            if(pitch && edge) {
+                pitch->setValue(150.0);
+                edge->setValue(42.0);
+                QApplication::processEvents();
+                const auto live=left->boltOverlayMetrics("haunch_bolts_lower");
+                CHECK(live.valid && std::fabs(live.pitchX-150.0)<1e-6 &&
+                      std::fabs(live.leftEdge-42.0)<1e-6 &&
+                      std::fabs(live.rightEdge-42.0)<1e-6 &&
+                      left->previewPlan().ok,
+                      "P4B: dimension labels track actual resized bolts and end-plate");
+            }
+            CHECK(!left->boltOverlayMetrics("haunch_web").valid,
+                  "P4B: no bolt dimensions attached to non-bolt role");
         }
 
         // Changing nominal bolt size must not destroy four synchronized
