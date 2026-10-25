@@ -337,6 +337,16 @@ void ComponentLivePreviewWidget::recompute() {
     }
     input_.params=params_;
     plan_=ComponentRegistry::instance().generate(L"tekla_haunch_40",input_);
+    // An optional selected child (e.g. a disabled stiffener) may cease
+    // to exist after parameter edits. Clear its selection rather than
+    // fading every remaining part against an invisible phantom child.
+    if(plan_.ok && !activeRole_.empty() &&
+       activeRole_!="column" && activeRole_!="beam") {
+        bool exists=false;
+        for(const auto& name:plan_.plateKeys)exists|=(name==activeRole_);
+        for(const auto& name:plan_.boltGroupKeys)exists|=(name==activeRole_);
+        if(!exists){activeRole_.clear();highlight_.clear();}
+    }
     // Incompatible values may make generation invalid. Show error, never
     // invent fallback geometry or silently mutate the real Document.
     if(plan_.ok && !plan_.plates.empty()) {
