@@ -523,11 +523,11 @@ ComponentDialogWidget::ComponentDialogWidget(const ComponentDialogDefinition& de
                 QObject::connect(d,QOverload<double>::of(&QDoubleSpinBox::valueChanged),
                                  this,[this,name](double){
                                      releaseFixedPlateSizeOnEdgeEdit(name);
-                                     updatePreviewFromForm();
+                                     updatePreviewFromForm(name);
                                  });
             } else if(auto* integer=qobject_cast<QSpinBox*>(editor)) {
                 QObject::connect(integer,QOverload<int>::of(&QSpinBox::valueChanged),
-                                 this,[this](int){updatePreviewFromForm();});
+                                 this,[this,name](int){updatePreviewFromForm(name);});
             } else if(auto* b=qobject_cast<QCheckBox*>(editor)) {
                 QObject::connect(b,&QCheckBox::toggled,
                                  this,[this](bool){updatePreviewFromForm();});
@@ -1407,7 +1407,7 @@ void ComponentDialogWidget::releaseFixedPlateSizeOnEdgeEdit(
         if(d->value()>0.0)d->setValue(0.0);
     }
 }
-void ComponentDialogWidget::enforceHaunchInputLimits() {
+void ComponentDialogWidget::enforceHaunchInputLimits(const std::wstring& changed) {
     if(def_.typeId!=L"tekla_haunch_40")return;
     // Unlike independent schema min/max, these values are physically coupled.
     // Only the in-dialog values change; no Document write until Apply/Modify.
@@ -1556,9 +1556,9 @@ void ComponentDialogWidget::enforceHaunchInputLimits() {
     const double webT=value(L"haunchWebThickness",10.0);
     if(flangeWidth>0.0)requiredIfExplicit(L"haunchFlangeWidth",webT);
 }
-void ComponentDialogWidget::updatePreviewFromForm() {
+void ComponentDialogWidget::updatePreviewFromForm(const std::wstring& changed) {
     if(nativePreview_) {
-        enforceHaunchInputLimits();
+        enforceHaunchInputLimits(changed);
         const auto params=resultParams();
         nativePreview_->setParams(params);
         for(auto* view:thumbnailViews_)view->setParams(params);
@@ -1581,7 +1581,7 @@ void ComponentDialogWidget::updateFormFromPreview(const std::wstring& name,
     }
     releaseFixedPlateSizeOnEdgeEdit(name);
     onHotspotClicked(QString::fromStdWString(name));
-    updatePreviewFromForm();
+    updatePreviewFromForm(name);
 }
 
 void ComponentDialogWidget::setParams(const std::vector<CompParam>& p) {
