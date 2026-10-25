@@ -182,8 +182,8 @@ ComponentLivePreviewWidget::ComponentLivePreviewWidget(QWidget* parent)
         {L"haunchDepth",L"D","haunch_web",QPointF(-165,40)},
         {L"haunchTipDepth",L"tip","haunch_lower_flange",QPointF(55,60)},
         {L"endPlateThickness",L"t ep","haunch_end_plate",QPointF(-160,-90)},
-        {L"boltPitchX",L"g","haunch_end_plate",QPointF(-175,100)},
-        {L"boltPitchY",L"p","haunch_end_plate",QPointF(60,105)},
+        {L"boltPitchX",L"g","haunch_bolts_upper",QPointF(-175,100)},
+        {L"boltPitchY",L"p","haunch_bolts_upper",QPointF(60,105)},
         {L"topPlateThickness",L"t cap","haunch_top_plate",QPointF(65,-75)}
     }};
     for(const auto& def:defs) {
@@ -215,6 +215,56 @@ ComponentLivePreviewWidget::ComponentLivePreviewWidget(QWidget* parent)
     }
     syncEditors();
 }
+// P4: role selection drives only the current child element's editors.
+void ComponentLivePreviewWidget::selectRole(const std::string& role) {
+    if(compact_)return;
+    bool exists=role.empty() || role=="column" || role=="beam";
+    for(const auto& key:plan_.plateKeys) if(role==key)exists=true;
+    for(const auto& key:plan_.boltGroupKeys) if(role==key)exists=true;
+    if(!exists)return;
+    if(activeRole_==role)return;
+    activeRole_=role;
+    highlight_.clear();
+    // No hidden objects: reframe selected feature but preserve whole support.
+    if(!activeRole_.empty() && activeRole_!="column" && activeRole_!="beam")
+        centerSelection();
+    positionEditors();
+    update();
+}
+std::vector<std::wstring> ComponentLivePreviewWidget::visibleOverlayParams() const {
+    std::vector<std::wstring> names;
+    for(const auto& c:callouts_)
+        if(c.spin->isVisible() && !compact_)
+            names.push_back(c.name);
+    return names;
+}
+void ComponentLivePreviewWidget::centerSelection() {
+    // Pan WITHOUT modifying world coordinates or exploding/detaching
+    // children. Full parent context is still drawn in the same projection.
+    const QPointF screen=project(roleAnchor(activeRole_));
+    pan_+=QPointF(width()*0.50-screen.x(),height()*0.51-screen.y());
+}
+std::string ComponentLivePreviewWidget::hitRole(QPoint mouse) const {
+    // Bolt heads are thin lines: a proximity test makes them clickable.
+    double best=11.0*11.0;
+    std::string bolt;
+    for(const auto& [pt,role]:boltHits_) {
+        const QPointF d=pt-QPointF(mouse);
+        const double sq=d.x()*d.x()+d.y()*d.y();
+        if(sq<best){best=sq;bolt=role;}
+    }
+    if(!bolt.empty())return bolt;
+    // Depth-sorted faces were painted back-to-front. The last matching
+    // component plate is the visible one; support member is fallback only.
+    std::string context;
+    for(auto it=hits_.rbegin();it!=hits_.rend();++it) {
+        if(!it->polygon.containsPoint(QPointF(mouse),Qt::OddEvenFill))continue;
+        if(it->role!="column" && it->role!="beam")return it->role;
+        if(context.empty())context=it->role;
+    }
+    return context;
+}
+
 void ComponentLivePreviewWidget::setInput(ComponentInput input) {
     input_=std::move(input);
     haveInput_=input_.main.id!=kInvalidEntityId && !input_.secondary.empty();
@@ -296,6 +346,19 @@ Vec3 ComponentLivePreviewWidget::roleAnchor(const std::string& role) const {
         if(i<plan_.plateKeys.size()&&plan_.plateKeys[i]==role)
             return plan_.plates[i].center;
     }
+    for(std::size_t i=0;i<plan_.boltGroups.size();++i) {
+        if(i<plan_.boltGroupKeys.size()&&
+           (plan_.boltGroupKeys[i]==role ||
+            (role=="haunch_bolts_upper" &&
+             plan_.boltGroupKeys[i]=="haunch_bolts_lower" &&
+             activeRole_=="haunch_bolts_lower"))) {
+            const auto points=boltGroupBoltOrigins(plan_.boltGroups[i]);
+            if(points.empty())return plan_.boltGroups[i].origin;
+            Vec3 c{};
+            for(const auto& pt:points)c=plus(c,pt);
+            return mul(c,1.0/points.size());
+        }
+    }
     return worldCenter_;
 }
 void ComponentLivePreviewWidget::positionEditors() {
@@ -339,7 +402,14 @@ void ComponentLivePreviewWidget::positionEditors() {
         // validation), positioned with model-space anchor leader lines.
         bool exists=false;
         for(const auto& role:plan_.plateKeys)if(role==c.targetRole)exists=true;
-        if(!exists){c.spin->hide();continue;}
+        for(const auto& role:plan_.boltGroupKeys)
+            if(role==c.targetRole)exists=true;
+        // Bolt-grid parameters are shared by both groups. Render these
+        // two edit fields next to the one actually clicked.
+        const bool selected=(c.targetRole==activeRole_ ||
+            (activeRole_=="haunch_bolts_lower" &&
+             c.targetRole=="haunch_bolts_upper"));
+        if(!exists || !selected){c.spin->hide();continue;}
         const QPointF q=project(roleAnchor(c.targetRole))+c.shift;
         const int xx=std::clamp(static_cast<int>(q.x()),4,
                                 std::max(4,width()-c.spin->width()-4));
