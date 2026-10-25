@@ -502,13 +502,57 @@ namespace ModelMaker.TeklaBridge.Extractor
                 info.PartToBoltTo = Safe(() => bg.PartToBoltTo.Identifier.GUID.ToString(), "");
                 info.BoltType = Safe(() => bg.BoltType.ToString(), "");
                 info.BoltStandard = Safe(() => bg.BoltStandard, "");
-                info.Axis = "";  // eksen dogrulanamadiysa bos -> importer inferred
+                info.Axis = "";  // Stage 3D must not authorize uncertain drilling
                 info.AxisSource = "";
+                info.Direction = null;
 
-                // Bulon konumlari. NOT: Tekla BoltPositions Y ve Z'yi global verir;
-                // yalniz eksen boyuncaki bilesen (bu baglantida X) 0 donebilir.
-                // TransformationPlane ile tam donusum Y/Z'yi de bozdugu icin KULLANILMAZ;
-                // eksen-yonu duzeltmesi importer'da levha bbox'ina gore yapilir.
+                // Tekla 2025 documents BoltPositions in the BOLT GROUP XY plane,
+                // relative to the transformation plane selected at model lookup.
+                // The normal of bg.GetCoordinateSystem() is ONLY a candidate;
+                // it is not yet a verified global hole axis or cutting origin.
+                try
+                {
+                    var bgCS = bg.GetCoordinateSystem();
+                    if (bgCS != null)
+                    {
+                        var frame = BridgeVectorMath.OrthonormalFrame(
+                            ToVec3(bgCS.Origin), ToVec3(bgCS.AxisX), ToVec3(bgCS.AxisY));
+                        info.FrameProbe = new BoltFrameProbe
+                        {
+                            CoordinateSystem = frame,
+                            NormalCandidate = frame.ZAxis,
+                            VerifiedForDrilling = false
+                        };
+                    }
+                    else
+                    {
+                        diag.Warnings.Add("BoltGroup.GetCoordinateSystem bos: eksen probe kaydedilemedi.");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    diag.Warnings.Add("BoltGroup koordinat probe okunamadi: " + ex.Message);
+                }
+
+                // Read-only hole settings. Hole1..5 indicate per-part selection,
+                // not hole dimensions or verified drill permission.
+                info.HoleSettingsProbe = new BoltHoleSettingsProbe
+                {
+                    PlainHoleType = Safe(() => bg.PlainHoleType.ToString(), ""),
+                    SpecialHoleType = Safe(() => bg.HoleType.ToString(), ""),
+                    SlottedHoleX = Safe(() => bg.SlottedHoleX, 0.0),
+                    SlottedHoleY = Safe(() => bg.SlottedHoleY, 0.0),
+                    Hole1 = Safe(() => bg.Hole1, false),
+                    Hole2 = Safe(() => bg.Hole2, false),
+                    Hole3 = Safe(() => bg.Hole3, false),
+                    Hole4 = Safe(() => bg.Hole4, false),
+                    Hole5 = Safe(() => bg.Hole5, false),
+                    VerifiedForDrilling = false
+                };
+
+                // Preserve source BoltPositions AS RETURNED. Do not silently
+                // reinterpret active selection-plane positions as world points,
+                // and do not move X=0 into a 4.25..14.25 plate.
                 var positions = Safe(() => bg.BoltPositions, null);
                 if (positions != null)
                 {
