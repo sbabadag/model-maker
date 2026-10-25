@@ -8,6 +8,7 @@
 #include "model_maker/bolt_geometry.hpp"
 #include "model_maker/bridge_native_bind.hpp"
 #include "model_maker/bridge_native_mapper.hpp"
+#include "model_maker/bridge_drilling_policy.hpp"
 #include "model_maker/component_engine.hpp"
 #include "model_maker/component_framework.hpp"
 #include "model_maker/component_materializer.hpp"
@@ -512,7 +513,16 @@ BridgeImportOutcome importBridgeComponent(Document& doc, const BridgePackage& pk
                                    " (delik acilmadi).");
             continue;
         }
-        const bool skipDrill = target->fromMesh;
+        // NEVER cut physical holes based on inferred bolt axis, standard-guessed
+        // hole diameter, unknown target, or source coordinates shifted into BBox.
+        // Preview/display may still use inferred positioning, marked as diagnostic.
+        const BridgeDrillAuthorization drill =
+            authorizeBridgeAutoDrill(*bo.boltGroup, *target->obj->bbox,
+                                     target->obj->sourceGUID);
+        const bool skipDrill = target->fromMesh || !drill.allowed;
+        if (!drill.allowed)
+            out.warnings.push_back("bulon grubu " + bo.sourceGUID + ": " + drill.reason +
+                                   " (otomatik delik acilmadi).");
 
         BoltGroup bolt;
         const bool gridOk = detectAxisAlignedBoltGrid(bo.boltGroup->bolts, plan.axis, bolt);
@@ -576,9 +586,11 @@ BridgeImportOutcome importBridgeComponent(Document& doc, const BridgePackage& pk
         }
 
         if (skipDrill) {
-            out.warnings.push_back("bulon grubu " + bo.sourceGUID +
-                                   ": hedef parca mesh (delikler kaynak katida zaten var); "
-                                   "tekrar delme atlandi (bulonlar gosteriliyor).");
+            if (target->fromMesh)
+                out.warnings.push_back("bulon grubu " + bo.sourceGUID +
+                                       ": hedef mesh approximate; delik topolojisi "
+                                       "kanitlanmadi, otomatik delme atlandi "
+                                       "(bulonlar referans olarak gosteriliyor).");
             ++out.boltGroupsImported;
             continue;
         }
@@ -724,6 +736,34 @@ BridgeNativeConvertOutcome convertBridgeToNative(
     const BridgeNativeMapping mapping = mapBridgeToNative(pkg, catalog);
     if (!mapping.detected) {
         out.error = "kaynak 146 shear plate degil; native donusum uygulanmadi";
+        return out;
+    }
+
+    // Native generator also drills physical holes. A live Tekla 146 whose axis
+    // or hole diameter is unresolved must remain in reference/preview form.
+    // Bound members alone do NOT make the source drilling geometry authoritative.
+    bool anyVerifiedBoltGroup = false;
+    for (const auto& obj : pkg.objects) {
+        if (obj.kind != "BoltGroup" || !obj.boltGroup) continue;
+        const BridgeObject* target = nullptr;
+        for (const auto& part : pkg.objects)
+            if (part.sourceGUID == obj.boltGroup->partToBoltTo && part.bbox)
+                target = &part;
+        if (!target) {
+            out.error = "native 146: bulon hedef levha GUID/bbox dogrulanmadi";
+            return out;
+        }
+        const BridgeDrillAuthorization drilling =
+            authorizeBridgeAutoDrill(*obj.boltGroup, *target->bbox, target->sourceGUID);
+        if (!drilling.allowed) {
+            out.error = "native 146: dogrulanmamis bulon/delik geometrisi (" +
+                        drilling.reason + "); kaynak model korunuyor";
+            return out;
+        }
+        anyVerifiedBoltGroup = true;
+    }
+    if (!anyVerifiedBoltGroup) {
+        out.error = "native 146: dogrulanmis bulon grubu yok; otomatik uretim engellendi";
         return out;
     }
 
