@@ -429,6 +429,74 @@ int main() {
             }
             check(boltCount==8,"Haunch 40: exactly 8 local-frame bolt centres");
         }
+        // Independent upper/lower patterns: counts, spacing, diameters,
+        // holes and one NET hole-edge offset per group. Edits in one group
+        // must not modify the other group or resize the end plate.
+        {
+            ComponentInput independent=in;
+            independent.params={
+                {L"upperBoltCountX",CompParamValue{3}},
+                {L"upperBoltCountY",CompParamValue{2}},
+                {L"upperBoltPitchX",CompParamValue{90.0}},
+                {L"upperBoltPitchY",CompParamValue{75.0}},
+                {L"upperBoltDiameter",CompParamValue{20.0}},
+                {L"upperHoleDiameter",CompParamValue{22.0}},
+                {L"upperBoltEdgeClear",CompParamValue{34.0}},
+                {L"lowerBoltCountX",CompParamValue{2}},
+                {L"lowerBoltCountY",CompParamValue{3}},
+                {L"lowerBoltPitchX",CompParamValue{120.0}},
+                {L"lowerBoltPitchY",CompParamValue{55.0}},
+                {L"lowerBoltDiameter",CompParamValue{16.0}},
+                {L"lowerHoleDiameter",CompParamValue{18.0}},
+                {L"lowerBoltEdgeClear",CompParamValue{49.0}}
+            };
+            const auto split=reg.generate(L"tekla_haunch_40",independent);
+            check(split.ok && split.boltGroups.size()==2,
+                  "P4G: independent 3x2 upper and 2x3 lower grids generate");
+            if(split.ok && split.boltGroups.size()==2) {
+                const auto& up=split.boltGroups[0];
+                const auto& down=split.boltGroups[1];
+                check(up.countX==3 && up.countY==2 &&
+                      down.countX==2 && down.countY==3 &&
+                      boltGroupBoltOrigins(up).size()==6 &&
+                      boltGroupBoltOrigins(down).size()==6,
+                      "P4G: each bolt group's counts belong only to itself");
+                check(approx(up.spacingX,90.0) && approx(up.spacingY,75.0) &&
+                      approx(down.spacingX,120.0) && approx(down.spacingY,55.0) &&
+                      approx(up.params.holeDiameter,22.0) &&
+                      approx(down.params.holeDiameter,18.0) &&
+                      approx(up.params.nominalDiameter,20.0) &&
+                      approx(down.params.nominalDiameter,16.0),
+                      "P4G: two bolt groups have genuinely separate pitch and hole/bolt sizes");
+                const auto& plate=split.plates[0];
+                check(approx(plate.height,in.secondary[0].secHeight+240.0+70.0),
+                      "P4G: neither clear edge affects auto end-plate height");
+                const auto clearance=[&](std::size_t index) {
+                    double y=index==0?-1e9:1e9;
+                    for(const auto& pt:boltGroupBoltOrigins(split.boltGroups[index])) {
+                        const Vec3 d=pt-plate.center;
+                        const double v=d.x*plate.v.x+d.y*plate.v.y+d.z*plate.v.z;
+                        if(index==0)y=std::max(y,v);
+                        else y=std::min(y,v);
+                    }
+                    return plate.height*0.5+
+                           (index==0?-y:y)-
+                           split.boltGroups[index].params.holeDiameter*0.5;
+                };
+                check(approx(clearance(0),34.0) &&
+                      approx(clearance(1),49.0),
+                      "P4G: net eT/eB measure to physical hole circumference");
+                ComponentInput changed=independent;
+                for(auto& par:changed.params)
+                    if(par.name==L"upperBoltEdgeClear")par.value=CompParamValue{54.0};
+                const auto displaced=reg.generate(L"tekla_haunch_40",changed);
+                check(displaced.ok && displaced.boltGroups.size()==2 &&
+                      displaced.plates[0].height==plate.height &&
+                      displaced.plates[0].center==plate.center &&
+                      displaced.boltGroups[1].origin==down.origin,
+                      "P4G: raising upper net offset moves upper holes only, plate and lower stay");
+            }
+        }
         // Independent hole-centre/plate-edge offsets. The bolt groups are
         // located from the structural beam frame even when the plate centre
         // shifts vertically, and x=0 is not assumed to be group centre.
