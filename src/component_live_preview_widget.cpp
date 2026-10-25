@@ -674,8 +674,17 @@ void ComponentLivePreviewWidget::drawBoltOverlay(
     };
     const auto mm=[](double v) {return QString::number(v,'f',1);};
     const double hw=m.plateWidth*0.5,hh=m.plateHeight*0.5;
+    // eT belongs to the UPPER outermost bolt row; eB to the LOWER
+    // outermost row. These four edited dimensions describe the entire
+    // bolt arrangement even if the lower group was the clicked role.
+    const auto topGroup=boltOverlayMetrics("haunch_bolts_upper");
+    const auto bottomGroup=boltOverlayMetrics("haunch_bolts_lower");
+    const double topY=topGroup.valid?topGroup.ymax:m.ymax;
+    const double bottomY=bottomGroup.valid?bottomGroup.ymin:m.ymin;
+    const double topClear=topGroup.valid?topGroup.topEdge:m.topEdge;
+    const double bottomClear=bottomGroup.valid?bottomGroup.bottomEdge:m.bottomEdge;
     // Six dimensions: two centre-to-centre pitches and four actual
-    // centre-to-plate-edge clearances for the selected bolt group.
+    // centre-to-plate-edge clearances for the full bolt assembly.
     if(m.columns>1)
         dim(point(m.xmin,m.ymin),point(m.xmax,m.ymin),
             QStringLiteral("g ")+mm(m.pitchX),QPointF(0,24));
@@ -686,10 +695,10 @@ void ComponentLivePreviewWidget::drawBoltOverlay(
         QStringLiteral("eL ")+mm(m.leftEdge),QPointF(0,46));
     dim(point(m.xmax,m.ymin),point(hw,m.ymin),
         QStringLiteral("eR ")+mm(m.rightEdge),QPointF(0,46));
-    dim(point(m.xmax,m.ymax),point(m.xmax,hh),
-        QStringLiteral("eT ")+mm(m.topEdge),QPointF(28,0));
-    dim(point(m.xmin,-hh),point(m.xmin,m.ymin),
-        QStringLiteral("eB ")+mm(m.bottomEdge),QPointF(-48,0));
+    dim(point(m.xmax,topY),point(m.xmax,hh),
+        QStringLiteral("eT ")+mm(topClear),QPointF(28,0));
+    dim(point(m.xmin,-hh),point(m.xmin,bottomY),
+        QStringLiteral("eB ")+mm(bottomClear),QPointF(-48,0));
 
     // Readable summary remains useful when orthographic projection makes
     // a dimension nearly edge-on, or Qt spinboxes cover a leader line.
@@ -712,7 +721,7 @@ void ComponentLivePreviewWidget::drawBoltOverlay(
     p.drawText(panel.adjusted(9,76,-8,-13),Qt::AlignLeft|Qt::AlignVCenter,
         QStringLiteral("eL %1  eR %2  eT %3  eB %4")
             .arg(mm(m.leftEdge),mm(m.rightEdge),
-                 mm(m.topEdge),mm(m.bottomEdge)));
+                 mm(topClear),mm(bottomClear)));
     p.restore();
 }
 
