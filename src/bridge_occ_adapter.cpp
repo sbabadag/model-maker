@@ -844,6 +844,21 @@ BridgeNativeConvertOutcome convertBridgeToNative(
     return out;
 }
 
+BridgeNativeConvertOutcome convertBridge146FromNc1(
+    Document& doc, const BridgePackage& pkg, const std::filesystem::path& nc1,
+    const std::vector<SteelProfile>& catalog,
+    const BridgeMemberSelection& selection) {
+    const BridgeNc146Result verified = prepareBridge146FromNc1(pkg, nc1);
+    if (!verified.ok) {
+        BridgeNativeConvertOutcome out;
+        out.error = "NC1 dogrulamasi basarisiz: " + verified.error;
+        return out; // Document is untouched
+    }
+    // Reuse the production component registry, profile/GUID member bindings,
+    // materializer, undo/redo and recompute; no separate fabricated geometry.
+    return convertBridgeToNative(doc, verified.prepared, catalog, selection);
+}
+
 }  // namespace mm
 
 #endif  // MM_HAS_OCC
