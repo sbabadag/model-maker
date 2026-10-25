@@ -427,6 +427,54 @@ int main() {
             }
             check(boltCount==8,"Haunch 40: exactly 8 local-frame bolt centres");
         }
+        // Editable bolt columns and rows use generator-owned geometry,
+        // not UI-only circles. Legacy (missing keys) stays 2x2 per group.
+        for(const auto& cfg:std::vector<std::pair<int,int>>{
+                {1,1},{3,2},{2,3},{4,4}}) {
+            ComponentInput varied=in;
+            varied.params={
+                {L"boltCountX",CompParamValue{cfg.first}},
+                {L"boltCountY",CompParamValue{cfg.second}},
+                {L"boltPitchX",CompParamValue{cfg.first==4?70.0:120.0}},
+                {L"boltPitchY",CompParamValue{cfg.second==4?50.0:80.0}}
+            };
+            const auto changed=reg.generate(L"tekla_haunch_40",varied);
+            check(changed.ok && changed.boltGroups.size()==2,
+                  "Haunch40 count: selected rows/columns generate valid plan");
+            if(changed.ok && changed.boltGroups.size()==2) {
+                const int expected=cfg.first*cfg.second;
+                const auto& plate=changed.plates.front();
+                for(const auto& bg:changed.boltGroups) {
+                    check(bg.countX==cfg.first && bg.countY==cfg.second &&
+                          static_cast<int>(boltGroupBoltOrigins(bg).size())==expected,
+                          "Haunch40 count: each native group has exact X*Y bolts");
+                    for(const auto& pt:boltGroupBoltOrigins(bg)) {
+                        const Vec3 d=pt-plate.center;
+                        const double x=d.x*plate.u.x+d.y*plate.u.y+d.z*plate.u.z;
+                        const double y=d.x*plate.v.x+d.y*plate.v.y+d.z*plate.v.z;
+                        check(std::abs(x)+bg.params.holeDiameter*0.5 <
+                                  plate.width*0.5 &&
+                              std::abs(y)+bg.params.holeDiameter*0.5 <
+                                  plate.height*0.5,
+                              "Haunch40 count: every hole is within actual end plate");
+                    }
+                }
+                check(changed.boltGroupKeys==p.boltGroupKeys &&
+                      changed.cutKeys==p.cutKeys &&
+                      changed.weldKeys==p.weldKeys,
+                      "Haunch40 count: stable roles and dependent beam cut/welds");
+            }
+        }
+        {
+            ComponentInput invalid=in;
+            invalid.params={
+                {L"boltCountX",CompParamValue{4}},
+                {L"boltCountY",CompParamValue{4}},
+                {L"boltPitchY",CompParamValue{120.0}}
+            };
+            check(!reg.generate(L"tekla_haunch_40",invalid).ok,
+                  "Haunch40 count: reject overlapping inner upper/lower bolt rows");
+        }
         // A larger bolt with an old smaller hole is invalid at the
         // generator boundary (headless/API callers must still be rejected).
         // The Qt form fixes the pair before calling the generator.
