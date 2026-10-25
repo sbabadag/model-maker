@@ -406,6 +406,12 @@ GenerationPlan generateFinPlate(const ComponentInput& input) noexcept;
 ComponentType shearPlate146ComponentType() noexcept;
 GenerationPlan generateShearPlateSimple146(const ComponentInput& input) noexcept;
 
+// Tekla 40 - Haunch: gercek hedef uyelerin geometri/kesitlerinden tureyen
+// parametrik alin levhasi + konik haunch web/flans + 2 bulon grubu.
+// Stage H40 v1 = supported core, 40'in tum ozel opsiyonlari DEGIL.
+ComponentType haunch40ComponentType() noexcept;
+GenerationPlan generateHaunch40(const ComponentInput& input) noexcept;
+
 // Yerlesik katalogu bir registry'ye kaydeder (idempotent — ayni typeId zaten
 // varsa atlanir).
 void registerBuiltInComponents(ComponentRegistry& registry) noexcept;
