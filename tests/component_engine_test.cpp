@@ -427,6 +427,26 @@ int main() {
             }
             check(boltCount==8,"Haunch 40: exactly 8 local-frame bolt centres");
         }
+        // A larger bolt with an old smaller hole is invalid at the
+        // generator boundary (headless/API callers must still be rejected).
+        // The Qt form fixes the pair before calling the generator.
+        {
+            ComponentInput boltCase=in;
+            boltCase.secondary[0].secWidth=100.0;
+            boltCase.params={
+                {L"boltDiameter",CompParamValue{25.0}},
+                {L"holeDiameter",CompParamValue{22.0}},
+                {L"boltPitchX",CompParamValue{125.0}},
+                {L"boltEdge",CompParamValue{20.0}}
+            };
+            check(!reg.generate(L"tekla_haunch_40",boltCase).ok,
+                  "Haunch 40: engine still rejects M25 with 22 mm hole");
+            boltCase.params[1].value=CompParamValue{27.0};
+            const GenerationPlan sized=reg.generate(L"tekla_haunch_40",boltCase);
+            check(sized.ok && !sized.plates.empty() &&
+                  approx(sized.plates[0].width,167.0),
+                  "Haunch 40: auto width covers bolt pitch + hole + 15mm");
+        }
         // Section adaptation and editable param changes.
         in.secondary[0].secWidth=120;
         in.secondary[0].secHeight=240; // e.g. IPE240, source type irrelevant
