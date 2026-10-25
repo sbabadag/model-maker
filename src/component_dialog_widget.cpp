@@ -1418,8 +1418,10 @@ void ComponentDialogWidget::enforceHaunchInputLimits() {
 
     // Both 2x2 bolt groups must fit vertically in the end plate.
     const double pitchMin=std::max(40.0,hole+0.01);
+    // Leave >=0.1 mm geometric slack: a two-decimal QDoubleSpinBox
+    // otherwise rounds the strict generator upper bound UP to equality.
     const double upper=haunchBeamHeight_>0.0
-        ? (haunchBeamHeight_+depth-40.0-hole-0.01)*0.5 : 500.0;
+        ? (haunchBeamHeight_+depth-40.0-hole-0.20)*0.5 : 500.0;
     bounds(L"boltPitchY",pitchMin,std::min(500.0,upper));
 
     // Explicit plate dimensions cannot undercut the connection geometry.
