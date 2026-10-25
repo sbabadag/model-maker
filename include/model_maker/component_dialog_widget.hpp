@@ -119,6 +119,10 @@ public:
     // "Default" onay kutusu: parametre p'de varsa işaretli, yoksa işaretsiz.
     void setParams(const std::vector<CompParam>& p);
 
+    // The actual selected Document column + beam geometry for 3D preview.
+    // Preview never changes Document; generation is an in-memory dry run.
+    void setPreviewInput(const ComponentInput& input);
+
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
 
@@ -132,6 +136,8 @@ private:
     static void setEditorValue(QWidget* editor, const CompParamSpec& spec,
                                const CompParamValue& value);
     void highlightParamRow(const std::wstring& paramName);
+    void updatePreviewFromForm();
+    void updateFormFromPreview(const std::wstring& name,double value);
     void addParamRow(QFormLayout* form, QWidget* box, const std::wstring& paramName,
                      std::vector<std::wstring>& ungrouped);
     // Tekla BoxPBolts/BoxSBolts duzeni: sol kutu + Top/Bottom kutulari + olculer.
@@ -154,6 +160,7 @@ private:
     std::vector<CompParam> current_;
 
     ComponentSchematicView* schematic_{};
+    ComponentLivePreviewWidget* nativePreview_{};
     QScrollArea* scroll_{};
     QWidget* paramBody_{};
     QVBoxLayout* paramLayout_{};
