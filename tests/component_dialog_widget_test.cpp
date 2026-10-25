@@ -754,9 +754,71 @@ int main(int argc, char** argv) {
                       "P4D: editing eL releases only fixed plate width");
                 adjustT->setValue(65.0);
                 QApplication::processEvents();
-                CHECK(manualH->value()==0.0 &&
-                      left && left->previewPlan().ok,
-                      "P4D: editing eT releases fixed plate height and recomputes");
+                CHECK(std::fabs(manualH->value()-600.0)<1e-6 &&
+                      left && left->previewPlan().ok &&
+                      std::fabs(left->boltOverlayMetrics("haunch_bolts_upper").topEdge
+                                -65.0)<1e-6,
+                      "P4E: editing eT retains fixed plate height and moves upper bolt rows");
+            }
+
+            // Regression: both height and width must shrink to the
+            // current bolt layout's TRUE physical minimum, not the
+            // structural beam+haunch envelope from the old UI.
+            h40.setParams({});
+            QApplication::processEvents();
+            auto* smallerH=h40.findChild<QDoubleSpinBox*>(
+                QStringLiteral("endPlateHeight"));
+            auto* smallerW=h40.findChild<QDoubleSpinBox*>(
+                QStringLiteral("endPlateWidth"));
+            auto* newTop=h40.findChild<QDoubleSpinBox*>(
+                QStringLiteral("boltEdgeTop"));
+            auto* newBottom=h40.findChild<QDoubleSpinBox*>(
+                QStringLiteral("boltEdgeBottom"));
+            CHECK(smallerH && smallerW && newTop && newBottom,
+                  "P4E: plate dimensions and vertical bolt offsets editable");
+            if(smallerH && smallerW && newTop && newBottom && left) {
+                smallerH->setValue(350.0);
+                QApplication::processEvents();
+                CHECK(std::fabs(smallerH->value()-350.0)<0.01 &&
+                      left->previewPlan().ok &&
+                      std::fabs(left->previewPlan().plates[0].height-350.0)<0.01,
+                      "P4E: actual plate shrinks to 350 mm rather than old 560+ limit");
+                newTop->setValue(45.0);
+                newBottom->setValue(75.0);
+                QApplication::processEvents();
+                const auto top=left->boltOverlayMetrics("haunch_bolts_upper");
+                const auto bottom=left->boltOverlayMetrics("haunch_bolts_lower");
+                CHECK(std::fabs(smallerH->value()-350.0)<0.01 &&
+                      top.valid && bottom.valid &&
+                      std::fabs(top.topEdge-45.0)<0.01 &&
+                      std::fabs(bottom.bottomEdge-75.0)<0.01,
+                      "P4E: 45/75 vertical edge edits keep 350 mm manual plate and move bolts");
+                // At 2x2 and 120 mm pitch, an explicit width 165 mm
+                // leaves >=20 mm centre-to-edge clearance on each side.
+                smallerW->setValue(165.0);
+                QApplication::processEvents();
+                const auto m=left->boltOverlayMetrics("haunch_bolts_lower");
+                CHECK(m.valid && left->previewPlan().ok &&
+                      std::fabs(left->previewPlan().plates[0].width-165.0)<0.01 &&
+                      std::fabs(m.leftEdge-22.5)<0.01 &&
+                      std::fabs(m.rightEdge-22.5)<0.01,
+                      "P4E: 165 mm explicit width is allowed with 22.5 mm side clearances");
+                smallerH->setValue(200.0);
+                QApplication::processEvents();
+                CHECK(smallerH->value()>200.0 && left->previewPlan().ok,
+                      "P4E: height clamps only at actual bolt overlap/clearance minimum");
+                left->selectRole("haunch_bolts_upper");
+                QApplication::processEvents();
+                auto* previewTop=left->findChild<QDoubleSpinBox*>();
+                QDoubleSpinBox* previewBottom=nullptr;
+                for(auto* d:left->findChildren<QDoubleSpinBox*>()) {
+                    if(d->toolTip()==QStringLiteral("boltEdgeTop"))previewTop=d;
+                    if(d->toolTip()==QStringLiteral("boltEdgeBottom"))previewBottom=d;
+                }
+                CHECK(previewTop && previewBottom &&
+                      previewTop->isVisibleTo(left) && previewBottom->isVisibleTo(left) &&
+                      !previewTop->geometry().intersects(previewBottom->geometry()),
+                      "P4E: eT/eB 3D editors remain visible, independently clickable");
             }
 
             h40.setParams({{L"boltEdge",mm::CompParamValue{50.0}}});
