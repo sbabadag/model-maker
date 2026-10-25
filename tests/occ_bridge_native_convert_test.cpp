@@ -185,6 +185,36 @@ int main() {
         check(s.doc.entityForTeklaGuid("b1").has_value(), "convert: b1 GUID iliskisi");
     }
 
+    // --- Stage4B: source HEA400/HEA300 -> actual HEB300/IPE200 (no profile lock).
+    // Selection is deliberately reversed, role axes assign the real column/beam.
+    {
+        S s=makeSetup();
+        BridgePackage pkg=makePackage();
+        pkg.component.primaryMember.profile="HEA400";
+        pkg.component.secondaryMembers[0].profile="HEA300";
+        BridgeMemberSelection sel;
+        sel.primaryId=s.beamId;       // click beam first
+        sel.secondaryIds={s.colId};  // then column
+        const BridgeNativeConvertOutcome r=
+            convertBridgeToNative(s.doc,pkg,catalog,sel);
+        check(r.ok,"Stage4B: target profiles differ from Tekla and native created");
+        if(!r.ok) std::printf("  Stage4B error: %s\n",r.error.c_str());
+        if(r.ok) {
+            const auto idx=s.doc.indexOfComponentInstance(r.componentId);
+            check(idx.has_value(),"Stage4B: native instance stored");
+            if(idx) {
+                const auto& rec=s.doc.componentInstances()[*idx];
+                check(rec.mainPart==s.colId,
+                      "Stage4B: vertical HEB300 chosen as actual primary");
+                check(rec.secondaryParts.size()==1 &&
+                      rec.secondaryParts.front()==s.beamId,
+                      "Stage4B: horizontal IPE200 chosen as actual secondary");
+                check(!rec.ownedPlateIds.empty(),
+                      "Stage4B: actual target sections produce native plate");
+            }
+        }
+    }
+
     // --- 1B) Unverified live-like bolt geometry must NOT generate native solid.
     {
         S s = makeSetup();
