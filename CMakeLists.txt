@@ -1104,6 +1104,8 @@ if(BUILD_TESTING)
         add_executable(model_maker_component_dialog_widget_test
             tests/component_dialog_widget_test.cpp
             src/component_dialog_widget.cpp
+            src/component_live_preview_widget.cpp
+            include/model_maker/component_live_preview_widget.hpp
             src/component_option_icons.cpp
             include/model_maker/component_dialog_widget.hpp
             resources/tekla146.qrc)
