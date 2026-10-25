@@ -581,48 +581,28 @@ int main(int argc, char** argv) {
             left->setView("iso");
             CHECK(left->isVisibleTo(&h40),
                   "Haunch 40: orbit/front/side/top main view stays active");
-            auto* pitch=h40.findChild<QDoubleSpinBox*>(QStringLiteral("boltPitchX"));
-            auto* edgeL=h40.findChild<QDoubleSpinBox*>(QStringLiteral("boltEdgeLeft"));
-            auto* edgeR=h40.findChild<QDoubleSpinBox*>(QStringLiteral("boltEdgeRight"));
-            auto* edgeT=h40.findChild<QDoubleSpinBox*>(QStringLiteral("boltEdgeTop"));
-            auto* edgeB=h40.findChild<QDoubleSpinBox*>(QStringLiteral("boltEdgeBottom"));
-            CHECK(pitch && edgeL && edgeR && edgeT && edgeB,
-                  "P4D: pitch and four individual edge controls found");
-            if(pitch && edgeL && edgeR && edgeT && edgeB) {
+            auto* pitch=h40.findChild<QDoubleSpinBox*>(
+                QStringLiteral("upperBoltPitchX"));
+            auto* edgeL=h40.findChild<QDoubleSpinBox*>(
+                QStringLiteral("boltEdgeLeft"));
+            auto* edgeR=h40.findChild<QDoubleSpinBox*>(
+                QStringLiteral("boltEdgeRight"));
+            CHECK(pitch && edgeL && edgeR,
+                  "P4G: upper pitch and shared side margins found");
+            if(pitch && edgeL && edgeR) {
                 pitch->setValue(150.0);
                 edgeL->setValue(42.0);
                 edgeR->setValue(62.0);
-                edgeT->setValue(70.0);
-                edgeB->setValue(80.0);
                 QApplication::processEvents();
-                const auto lower=left->boltOverlayMetrics("haunch_bolts_lower");
                 const auto upper=left->boltOverlayMetrics("haunch_bolts_upper");
-                CHECK(lower.valid && upper.valid &&
-                      std::fabs(lower.pitchX-150.0)<1e-6 &&
-                      std::fabs(lower.leftEdge-42.0)<1e-6 &&
-                      std::fabs(lower.rightEdge-62.0)<1e-6 &&
-                      std::fabs(lower.bottomEdge-80.0)<1e-6 &&
-                      std::fabs(upper.topEdge-70.0)<1e-6 &&
+                const auto lower=left->boltOverlayMetrics("haunch_bolts_lower");
+                CHECK(upper.valid && lower.valid &&
+                      std::fabs(upper.pitchX-150.0)<1e-6 &&
+                      std::fabs(lower.pitchX-120.0)<1e-6 &&
+                      std::fabs(upper.leftEdge-42.0)<1e-6 &&
+                      std::fabs(upper.rightEdge-62.0)<1e-6 &&
                       left->previewPlan().ok,
-                      "P4D: four independently edited edge dimensions follow real geometry");
-                left->selectRole("haunch_bolts_lower");
-                QApplication::processEvents();
-                QDoubleSpinBox* editLeft=nullptr;
-                for(auto* editor:left->findChildren<QDoubleSpinBox*>())
-                    if(editor->toolTip()==QStringLiteral("boltEdgeLeft"))
-                        editLeft=editor;
-                CHECK(editLeft!=nullptr,"P4D: 3D left edge editor exists");
-                if(editLeft) {
-                    editLeft->setValue(48.0);
-                    QApplication::processEvents();
-                    const auto values=h40.resultParams();
-                    const auto* v=mm::findParam(values,L"boltEdgeLeft");
-                    CHECK(v && std::holds_alternative<double>(v->value) &&
-                          std::fabs(std::get<double>(v->value)-48.0)<1e-6 &&
-                          std::fabs(left->boltOverlayMetrics("haunch_bolts_lower").leftEdge
-                                    -48.0)<1e-6,
-                          "P4D: changing 3D eL synchronizes tab and physical hole centres");
-                }
+                      "P4G: upper pitch edit leaves lower pitch independent");
             }
             CHECK(!left->boltOverlayMetrics("haunch_web").valid,
                   "P4B: no bolt dimensions attached to non-bolt role");
@@ -631,11 +611,11 @@ int main(int argc, char** argv) {
         // Changing nominal bolt size must not destroy four synchronized
         // previews because the old hole was smaller than the new bolt.
         auto* boltDiameter=h40.findChild<QDoubleSpinBox*>(
-            QStringLiteral("boltDiameter"));
+            QStringLiteral("upperBoltDiameter"));
         auto* holeDiameter=h40.findChild<QDoubleSpinBox*>(
-            QStringLiteral("holeDiameter"));
+            QStringLiteral("upperHoleDiameter"));
         auto* boltPitchY=h40.findChild<QDoubleSpinBox*>(
-            QStringLiteral("boltPitchY"));
+            QStringLiteral("upperBoltPitchY"));
         auto* haunchDepth=h40.findChild<QDoubleSpinBox*>(
             QStringLiteral("haunchDepth"));
         auto* tipDepth=h40.findChild<QDoubleSpinBox*>(
