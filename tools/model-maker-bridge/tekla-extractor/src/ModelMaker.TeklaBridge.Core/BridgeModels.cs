@@ -157,8 +157,21 @@ namespace ModelMaker.TeklaBridge.Core
         [JsonProperty("slotOffsetY")] public double SlotOffsetY { get; set; }
     }
 
+    // Optional Tekla report attributes on BoltGroup: some HOLE_* template
+    // fields can be unavailable through model GetReportProperty. Preserve that
+    // distinction rather than substituting a guessed type/dimension.
+    public class BoltReportValueProbe
+    {
+        [JsonProperty("name")] public string Name { get; set; }
+        [JsonProperty("readable")] public bool Readable { get; set; }
+        [JsonProperty("value")] public string Value { get; set; }
+        [JsonProperty("source")] public string Source { get; set; } = "BoltGroup.GetReportProperty";
+    }
+
     public class BoltHoleSettingsProbe
     {
+        [JsonProperty("reportProbes")] public List<BoltReportValueProbe> ReportProbes { get; set; } =
+            new List<BoltReportValueProbe>();
         // BoltGroup.Bolt true=bolt with hole, false=hole only (not "no hole").
         [JsonProperty("boltPresent")] public bool? BoltPresent { get; set; }
         [JsonProperty("perPlySpecialHoles")] public List<BoltPlyHoleProbe> PerPlySpecialHoles { get; set; }
