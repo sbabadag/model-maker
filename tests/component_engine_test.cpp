@@ -775,7 +775,40 @@ int main() {
                    {L"createBeamStiffener",CompParamValue{true}}};
         GenerationPlan adapt=reg.generate(L"tekla_haunch_40",in);
         check(adapt.ok,"Haunch 40: different target section accepted");
-        check(adapt.plates.size()==5,"Haunch 40: optional stiffener created");
+        check(adapt.plates.size()==6,"Haunch 40: optional beam stiffener created as TWO plates");
+        {
+            // One plate on each side of the beam web, mirrored, web-side corners clipped.
+            std::vector<const PlateSpec*> ribs;
+            for(std::size_t i=0;i<adapt.plates.size();++i)
+                if(adapt.plateKeys[i].compare(0,21,"haunch_beam_stiffener")==0)
+                    ribs.push_back(&adapt.plates[i]);
+            check(ribs.size()==2 &&
+                  adapt.plateKeys[4]=="haunch_beam_stiffener" &&
+                  adapt.plateKeys[5]=="haunch_beam_stiffener_2",
+                  "Haunch 40: beam stiffener keys haunch_beam_stiffener + _2");
+            if(ribs.size()==2) {
+                check(approx(ribs[0]->width,(120.0-8.0)*0.5,1e-6) &&
+                      approx(ribs[0]->height,240.0-2*12.0,1e-6) &&
+                      approx(ribs[1]->width,ribs[0]->width,1e-6) &&
+                      approx(ribs[1]->height,ribs[0]->height,1e-6),
+                      "Haunch 40: each beam stiffener half = (flange width - web)/2 x clear web height");
+                check(approx(ribs[0]->center.x,-ribs[1]->center.x,1e-6) &&
+                      approx(std::fabs(ribs[0]->center.x),4.0+28.0,1e-6) &&
+                      approx(ribs[0]->center.y,ribs[1]->center.y,1e-6) &&
+                      approx(ribs[0]->center.z,ribs[1]->center.z,1e-6),
+                      "Haunch 40: beam stiffener halves mirrored about the beam web");
+                bool clipped=true;
+                for(const auto* r:ribs) {
+                    bool c0=false,c3=false;
+                    for(const auto& c:r->chamfers) {
+                        c0|=c.corner==0&&approx(c.h,15.0)&&approx(c.v,15.0)&&c.type==1;
+                        c3|=c.corner==3&&approx(c.h,15.0)&&approx(c.v,15.0)&&c.type==1;
+                    }
+                    clipped&=r->chamfers.size()==2&&c0&&c3;
+                }
+                check(clipped,"Haunch 40: beam stiffener halves clipped 15 mm at web/flange root corners");
+            }
+        }
         if(adapt.plates.size()>=4) {
             check(approx(adapt.plates[1].width,600.0) &&
                   approx(adapt.plates[1].height,300.0),

@@ -1651,7 +1651,7 @@ ComponentType haunch40ComponentType() noexcept {
         lengthParam(L"diagStiffenerWidth", L"mm", 80.0, 20.0, 400.0,
                     L"capraz berkitme genisligi"),
         lengthParam(L"stiffenerClipSize", L"mm", 15.0, 0.0, 100.0,
-                    L"kolon berkitmelerinin kaynak bolgesi kesigi (gövde-flans kök kaynagi icin kose pahi); 0 = kesik yok"),
+                    L"berkitmelerin (kolon cepleri, capraz, kiris) kaynak bolgesi kose kesigi; 0 = kesik yok"),
         lengthParam(L"boltDiameter", L"mm", 20.0, 12.0, 36.0,
                     L"bulon nominal capi"),
         lengthParam(L"holeDiameter", L"mm", 22.0, 13.0, 50.0,
@@ -1944,6 +1944,11 @@ GenerationPlan generateHaunch40(const ComponentInput& input) noexcept {
         pushPlate(cap,"haunch_top_plate"); // stable role id for old records
     }
 
+    // Weld-zone clip shared by every stiffener (corner cut at the web/flange
+    // root). 0 = none; a clip >= half the smaller plate side is rejected.
+    const double clip=std::max(0.0,paramAsDouble(input.params,L"stiffenerClipSize",15.0));
+    const auto clipFits=[&](double a,double b) { return clip<=0.0 || clip<0.5*std::min(a,b); };
+
     // 5) Optional transverse web stiffener at the far haunch termination.
     if(paramAsBool(input.params,L"createBeamStiffener",false)) {
         const double st=paramAsDouble(input.params,L"stiffenerThickness",10.0);
@@ -1952,17 +1957,37 @@ GenerationPlan generateHaunch40(const ComponentInput& input) noexcept {
             plan.error=L"Haunch 40: kiriș berkitmesi icin flans/govde et kalinliklari gerekli";
             return plan;
         }
-        PlateSpec rib;
-        rib.center=add(start,scale(dir,L));
-        rib.u=W;rib.v=H;rib.axis=dir;
-        rib.width=wBeam-2.0*p.beam.secFlangeThickness;
-        rib.height=hBeam-2.0*p.beam.secFlangeThickness;
-        rib.thickness=st;rib.name=L"40 - Beam Stiffener";
-        if(rib.width<=0.0 || rib.height<=0.0) {
+        // TWO plates, one on each side of the beam web (a single plate cannot
+        // pass through the web). Each runs from the web face to the flange tip
+        // and from flange to flange, with the web/flange-root corners clipped
+        // so the continuous fillet weld along web and flanges stays open.
+        const double tw=p.beam.secWebThickness;
+        const double ribW=(wBeam-tw)*0.5;
+        const double ribH=hBeam-2.0*p.beam.secFlangeThickness;
+        if(!(st>0.0 && ribW>st && ribH>st)) {
             plan.ok=false;plan.error=L"Haunch 40: berkitme kesite sigmiyor";
             return plan;
         }
-        pushPlate(rib,"haunch_beam_stiffener");
+        if(!clipFits(ribW,ribH)) {
+            plan.ok=false;
+            plan.error=L"Haunch 40: berkitme kaynak kesigi berkitme boyutuna gore cok buyuk";
+            return plan;
+        }
+        const Vec3 ribCentre=add(start,scale(dir,L));
+        for(int n=0;n<2;++n) {
+            const double side=n==0?1.0:-1.0;
+            const Vec3 Os=scale(W,side);   // local -u always faces the web
+            PlateSpec rib;
+            rib.center=add(ribCentre,scale(Os,tw*0.5+ribW*0.5));
+            rib.u=Os;rib.v=H;rib.axis=dir;
+            rib.width=ribW;rib.height=ribH;
+            rib.thickness=st;rib.name=L"40 - Beam Stiffener";
+            if(clip>0.0) {
+                rib.chamfers.push_back(PlateSpec::Chamfer{0,1,clip,clip});
+                rib.chamfers.push_back(PlateSpec::Chamfer{3,1,clip,clip});
+            }
+            pushPlate(rib,n==0?"haunch_beam_stiffener":"haunch_beam_stiffener_2");
+        }
     }
 
     // 5b) Tekla Haunch (40) column stiffeners (Parameters tab). Horizontal
@@ -1991,12 +2016,8 @@ GenerationPlan generateHaunch40(const ComponentInput& input) noexcept {
         const double zRafter=-hBeam*0.5+bf*0.5;
         const double zCompr=-hBeam*0.5-D-flangeT*0.5;
         const double zMorris=0.5*(zRafter+zCompr);
-        // Weld-zone clip: the pocket plate corners that meet the web/flange
-        // root get a straight corner cut so the continuous fillet weld along
-        // web and flange is not blocked by the root radius (Tekla stiffener
-        // chamfers). Local corners 0 and 3 are the web side (-u).
-        const double clip=std::max(0.0,paramAsDouble(input.params,L"stiffenerClipSize",15.0));
-        const auto clipFits=[&](double a,double b) { return clip<=0.0 || clip<0.5*std::min(a,b); };
+        // Pocket plate corners that meet the web/flange root get the shared
+        // corner clip (local corners 0 and 3 are the web side, -u).
         const auto pocket=[&](const wchar_t* flag,const wchar_t* thickParam,
                               const char* role,double level) -> bool {
             if(!paramAsBool(input.params,flag,false))return true;
