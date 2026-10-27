@@ -64,6 +64,44 @@
 #include <QPen>
 #include <QBrush>
 #include <cmath>
+#include <QCoreApplication>
+#include <filesystem>
+#include "model_maker/component_presets.hpp"
+
+namespace {
+// Component ayar setleri (Tekla Save / Save as / Load): exe'nin yanindaki
+// component_presets.json. Ilk kullanimda yuklenir; bozuk dosya SESSIZCE ezilmez —
+// once .bozuk yedegi alinir, sonra bos depo ile devam edilir.
+std::filesystem::path componentPresetPath() {
+    return std::filesystem::path(QCoreApplication::applicationDirPath().toStdWString()) /
+           L"component_presets.json";
+}
+mm::ComponentPresetStore& componentPresetStore() {
+    static mm::ComponentPresetStore store;
+    static bool loaded = false;
+    if (!loaded) {
+        loaded = true;
+        std::string err;
+        if (!store.load(componentPresetPath(), err)) {
+            std::error_code ec;
+            std::filesystem::path backup = componentPresetPath();
+            backup += L".bozuk";
+            std::filesystem::copy_file(componentPresetPath(), backup,
+                                       std::filesystem::copy_options::overwrite_existing, ec);
+        }
+    }
+    return store;
+}
+bool persistComponentPresets(std::string& err) {
+    return componentPresetStore().save(componentPresetPath(), err);
+}
+// Menuden yeni yerlestirilen bilesen: kayitli "standard" set varsa onunla baslar,
+// yoksa bos (motor/sema varsayilanlari).
+std::vector<mm::CompParam> standardComponentParams(const std::wstring& typeId) {
+    const mm::ComponentPreset* p = componentPresetStore().find(typeId, mm::kStandardPresetName);
+    return p ? p->params : std::vector<mm::CompParam>{};
+}
+} // namespace
 
 namespace {
 // AutoCAD tarzi renkli ribbon ikonlari: QPainter ile runtime'da cizilir
@@ -833,7 +871,7 @@ std::vector<QtMainWindow::CommandCategory> QtMainWindow::commandCategories() {
                     tip += QStringLiteral(" — ") + QString::fromStdWString(ce.coverageStatus);
                 items.push_back(uiCmd(label, label, tip, ToolGlyph::Plate,
                     [this, typeId = ce.typeId]() {
-                        app_.setPendingComponentParams({});
+                        app_.setPendingComponentParams(standardComponentParams(typeId));
                         app_.startComponentCommand(typeId);
                     }));
             }
@@ -1626,6 +1664,7 @@ bool QtMainWindow::openComponentParamsDialog(const mm::ComponentInstanceRecord& 
             dlg->setWindowFlag(Qt::Tool, true);  // ana pencerenin uzerinde kalir
             auto* root = new QVBoxLayout(dlg);
             auto* widget = new mm::ComponentDialogWidget(*def, rec.params, dlg);
+            widget->setPresetStore(&componentPresetStore(), persistComponentPresets);
             if(rec.typeId==L"tekla_haunch_40") {
                 if(auto source=app_.componentPreviewInput(rec.id))
                     widget->setPreviewInput(*source);
@@ -1722,6 +1761,7 @@ bool QtMainWindow::openComponentParamsDialog(const mm::ComponentInstanceRecord& 
         dlg.setMinimumSize(760, 560);
         auto* root = new QVBoxLayout(&dlg);
         auto* widget = new mm::ComponentDialogWidget(*def, rec.params, &dlg);
+        widget->setPresetStore(&componentPresetStore(), persistComponentPresets);
         root->addWidget(widget);
         if (def->schema.useTabs) {
             // Tekla duzeni: OK Apply Modify Get [x/o] Cancel .... Create

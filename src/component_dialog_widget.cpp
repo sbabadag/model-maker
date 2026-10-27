@@ -36,6 +36,7 @@
 #include <QVBoxLayout>
 
 #include <algorithm>
+#include <initializer_list>
 #include <utility>
 #include <cmath>
 #include <limits>
@@ -1040,15 +1041,35 @@ QWidget* ComponentDialogWidget::buildHeaderBar() {
 
     auto* r1 = new QHBoxLayout;
     const auto grey = [&](QWidget* w) { w->setEnabled(false); return w; };
-    r1->addWidget(grey(new QPushButton(QStringLiteral("Save"), host)));
-    r1->addWidget(grey(new QPushButton(QStringLiteral("Load"), host)));
-    auto* preset = new QComboBox(host);
-    preset->addItem(QStringLiteral("standard"));
-    preset->setMinimumWidth(180);
-    r1->addWidget(grey(preset), 1);
-    r1->addWidget(grey(new QPushButton(QStringLiteral("Save as"), host)));
-    auto* presetName = new QLineEdit(QStringLiteral("standard"), host);
-    r1->addWidget(grey(presetName), 1);
+    // Save / Load / liste / Save as: adlandirilmis parametre setleri. Depo
+    // setPresetStore ile baglanana kadar gri.
+    presetSaveBtn_ = new QPushButton(QStringLiteral("Save"), host);
+    presetLoadBtn_ = new QPushButton(QStringLiteral("Load"), host);
+    presetCombo_ = new QComboBox(host);
+    presetCombo_->addItem(QString::fromWCharArray(kStandardPresetName));
+    presetCombo_->setMinimumWidth(180);
+    presetSaveAsBtn_ = new QPushButton(QStringLiteral("Save as"), host);
+    presetName_ = new QLineEdit(QString::fromWCharArray(kStandardPresetName), host);
+    presetSaveBtn_->setObjectName(QStringLiteral("presetSave"));
+    presetLoadBtn_->setObjectName(QStringLiteral("presetLoad"));
+    presetSaveAsBtn_->setObjectName(QStringLiteral("presetSaveAs"));
+    presetCombo_->setObjectName(QStringLiteral("presetCombo"));
+    presetName_->setObjectName(QStringLiteral("presetName"));
+    presetSaveBtn_->setToolTip(QStringLiteral("Listede secili seti mevcut degerlerle uzerine yazar"));
+    presetLoadBtn_->setToolTip(QStringLiteral("Listede secili setin degerlerini pencereye yukler"));
+    presetSaveAsBtn_->setToolTip(QStringLiteral("Mevcut degerleri sagdaki adla yeni set olarak kaydeder"));
+    r1->addWidget(grey(presetSaveBtn_));
+    r1->addWidget(grey(presetLoadBtn_));
+    r1->addWidget(grey(presetCombo_), 1);
+    r1->addWidget(grey(presetSaveAsBtn_));
+    r1->addWidget(grey(presetName_), 1);
+    QObject::connect(presetSaveBtn_, &QPushButton::clicked, this, [this]() { onPresetSave(); });
+    QObject::connect(presetLoadBtn_, &QPushButton::clicked, this, [this]() { onPresetLoad(); });
+    QObject::connect(presetSaveAsBtn_, &QPushButton::clicked, this, [this]() { onPresetSaveAs(); });
+    QObject::connect(presetCombo_, &QComboBox::currentTextChanged, this,
+                     [this](const QString& t) {
+                         if (presetName_ && !t.isEmpty()) presetName_->setText(t);
+                     });
     auto* help = new QPushButton(QStringLiteral("Help..."), host);
     help->setEnabled(def_.typeId == L"tekla_shear_plate_146");
     QObject::connect(help, &QPushButton::clicked, this, []() {
@@ -1071,6 +1092,11 @@ QWidget* ComponentDialogWidget::buildHeaderBar() {
     weldsBtn->setEnabled(!def_.schema.weldRows.empty());
     QObject::connect(weldsBtn, &QPushButton::clicked, this, [this]() { showWeldDialog(); });
     r2->addWidget(weldsBtn);
+    r2->addSpacing(20);
+    presetStatus_ = new QLabel(host);
+    presetStatus_->setObjectName(QStringLiteral("presetStatus"));
+    presetStatus_->setStyleSheet(QStringLiteral("color:#4d687f"));
+    r2->addWidget(presetStatus_, 1);
     r2->addStretch(1);
     v->addLayout(r2);
     return host;
@@ -1786,6 +1812,100 @@ void ComponentDialogWidget::highlightParamRow(const std::wstring& paramName) {
         // Sekmeli duzende scroll_ yoktur; editor zaten gorunur sekmede.
         if (eit != editors_.end() && scroll_)
             scroll_->ensureWidgetVisible(eit->second, 0, 16);
+    }
+}
+
+
+// --- AYAR SETLERI (Tekla Save / Save as / Load) --------------------------------
+
+void ComponentDialogWidget::setPresetStore(ComponentPresetStore* store,
+                                           std::function<bool(std::string&)> persist) {
+    presetStore_ = store;
+    presetPersist_ = std::move(persist);
+    const bool on = store != nullptr;
+    for (QWidget* w : std::initializer_list<QWidget*>{presetSaveBtn_, presetLoadBtn_,
+                                                       presetCombo_, presetSaveAsBtn_,
+                                                       presetName_})
+        if (w) w->setEnabled(on);
+    refreshPresetCombo(kStandardPresetName);
+}
+
+void ComponentDialogWidget::refreshPresetCombo(const std::wstring& select) {
+    if (!presetCombo_) return;
+    const QSignalBlocker guard(presetCombo_);
+    presetCombo_->clear();
+    const auto names = presetStore_ ? presetStore_->names(def_.typeId)
+                                    : std::vector<std::wstring>{kStandardPresetName};
+    for (const auto& n : names) presetCombo_->addItem(QString::fromStdWString(n));
+    const int idx = presetCombo_->findText(QString::fromStdWString(select));
+    presetCombo_->setCurrentIndex(idx >= 0 ? idx : 0);
+    if (presetName_) presetName_->setText(presetCombo_->currentText());
+}
+
+void ComponentDialogWidget::presetMessage(const QString& text, bool error) {
+    if (!presetStatus_) return;
+    presetStatus_->setStyleSheet(QString::fromLatin1(error ? "color:#a73c3c" : "color:#4d687f"));
+    presetStatus_->setText(text);
+}
+
+std::vector<CompParam> ComponentDialogWidget::presetParams() const {
+    std::vector<CompParam> params = resultParams();
+    if (!findParam(params, L"createWelds") || !findParam(params, L"weldSize")) {
+        bool anyWeld = false;
+        double weldSize = 5.0;
+        const auto rows = resultWeldRows();
+        for (const auto& r : rows)
+            if (r.enabled) { anyWeld = true; weldSize = r.size; break; }
+        if (!rows.empty()) {
+            if (!findParam(params, L"createWelds")) params.push_back(CompParam{L"createWelds", anyWeld});
+            if (!findParam(params, L"weldSize")) params.push_back(CompParam{L"weldSize", weldSize});
+        }
+    }
+    return params;
+}
+
+void ComponentDialogWidget::putPreset(const std::wstring& rawName) {
+    if (!presetStore_) return;
+    const std::wstring name = ComponentPresetStore::trimmed(rawName);
+    if (!ComponentPresetStore::validName(name)) {
+        presetMessage(QStringLiteral("Gecersiz ad (bos, 64 karakterden uzun ya da kontrol karakteri)"), true);
+        return;
+    }
+    const bool created = presetStore_->put(def_.typeId, name, presetParams());
+    std::string error;
+    if (presetPersist_ && !presetPersist_(error)) {
+        presetMessage(QStringLiteral("Dosyaya yazilamadi: ") + QString::fromStdString(error), true);
+        refreshPresetCombo(name);
+        return;
+    }
+    refreshPresetCombo(name);
+    presetMessage(QStringLiteral("%1: %2").arg(created ? QStringLiteral("Kaydedildi")
+                                                       : QStringLiteral("Uzerine yazildi"),
+                                               QString::fromStdWString(name)), false);
+}
+
+void ComponentDialogWidget::onPresetSave() {
+    if (!presetCombo_) return;
+    putPreset(presetCombo_->currentText().toStdWString());
+}
+
+void ComponentDialogWidget::onPresetSaveAs() {
+    if (!presetName_) return;
+    putPreset(presetName_->text().toStdWString());
+}
+
+void ComponentDialogWidget::onPresetLoad() {
+    if (!presetStore_ || !presetCombo_) return;
+    const std::wstring name = presetCombo_->currentText().toStdWString();
+    const ComponentPreset* preset = presetStore_->find(def_.typeId, name);
+    if (preset) {
+        setParams(preset->params);
+        presetMessage(QStringLiteral("Yuklendi: ") + QString::fromStdWString(name), false);
+    } else if (name == kStandardPresetName) {
+        setParams({});  // kayitli standard yok -> sema varsayilanlari
+        presetMessage(QStringLiteral("Yuklendi: standard (sema varsayilanlari)"), false);
+    } else {
+        presetMessage(QStringLiteral("Set bulunamadi: ") + QString::fromStdWString(name), true);
     }
 }
 

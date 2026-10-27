@@ -22,6 +22,7 @@
 // component_dialog_widget_test.cpp ile doğrulanır).
 
 #include "model_maker/component_dialog.hpp"
+#include "model_maker/component_presets.hpp"
 
 #include <QWidget>
 #include <functional>
@@ -36,6 +37,10 @@ class QTableWidget;
 class QCheckBox;
 class QDialog;
 class QGridLayout;
+class QComboBox;
+class QLabel;
+class QLineEdit;
+class QPushButton;
 
 namespace mm {
 class ComponentLivePreviewWidget;
@@ -119,6 +124,17 @@ public:
     // "Default" onay kutusu: parametre p'de varsa işaretli, yoksa işaretsiz.
     void setParams(const std::vector<CompParam>& p);
 
+    // Tekla ust cubuk: Save / Load / liste / Save as. Adlandirilmis PARAMETRE
+    // SETLERI bilesen typeId'sine gore saklanir (secili kolon/kiris SAKLANMAZ).
+    // `persist` her degisiklikten sonra cagrilir (depoyu diske yazar; hata mesaji
+    // `error`a); store=nullptr => dugmeler gri (eski davranis). Depo cagirana aittir
+    // ve widget'tan uzun yasamalidir.
+    void setPresetStore(ComponentPresetStore* store,
+                        std::function<bool(std::string& error)> persist = {});
+    // Pencerenin kaydedecegi set: resultParams() + kaynak tablosundan createWelds/
+    // weldSize (semada yoksa) — Application::collect ile ayni ekstralar.
+    std::vector<CompParam> presetParams() const;
+
     // The actual selected Document column + beam geometry for 3D preview.
     // Preview never changes Document; generation is an in-memory dry run.
     void setPreviewInput(const ComponentInput& input);
@@ -149,6 +165,12 @@ private:
     void showWeldDialog();
     // Tekla ust cubuk: Save/Load/Save as/Help + "ignore other types" + Welds.
     QWidget* buildHeaderBar();
+    void refreshPresetCombo(const std::wstring& select);
+    void onPresetLoad();
+    void onPresetSave();
+    void onPresetSaveAs();
+    void putPreset(const std::wstring& name);
+    void presetMessage(const QString& text, bool error);
     // Sekmenin ustundeki parca satirlari (t b h | Pos_No | Material | Name | Finish).
     QWidget* buildPartRows(const ComponentDialogGroup& g, std::vector<std::wstring>& ungrouped);
     // Tekla sekme goruntusu (arka plan) + ayni piksel konumunda kontroller.
@@ -176,6 +198,14 @@ private:
     QTableWidget* weldTable_{};                     // kaynak tablosu (varsa)
     QDialog* weldDialog_{};                         // "Welds..." dugmesinin actigi pencere
     QCheckBox* weldsCheck_{};                       // ust cubuk: kaynaklar acik/kapali
+    ComponentPresetStore* presetStore_{};           // adlandirilmis parametre setleri
+    std::function<bool(std::string&)> presetPersist_;
+    QPushButton* presetSaveBtn_{};
+    QPushButton* presetLoadBtn_{};
+    QPushButton* presetSaveAsBtn_{};
+    QComboBox* presetCombo_{};
+    QLineEdit* presetName_{};
+    QLabel* presetStatus_{};
     std::wstring highlightedRow_;
     double haunchBeamHeight_{0.0};  // actual selected beam, for bolt row fit
     double haunchBeamWidth_{0.0};   // actual selected flange envelope, for bolt edge fit

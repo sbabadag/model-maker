@@ -61,7 +61,8 @@ add_library(model_maker_core
     src/bridge_native_mapper.cpp
     src/bridge_native_bind.cpp
     src/bridge_nc146.cpp
-    src/user_catalog.cpp)
+    src/user_catalog.cpp
+    src/component_presets.cpp)
 target_include_directories(model_maker_core PUBLIC include third_party)
 target_compile_options(model_maker_core PRIVATE -Wall -Wextra -Wpedantic)
 
@@ -506,6 +507,13 @@ if(BUILD_TESTING)
     target_link_libraries(model_maker_user_catalog_test PRIVATE model_maker_core)
     target_compile_options(model_maker_user_catalog_test PRIVATE -Wall -Wextra -Wpedantic)
     add_test(NAME model_maker_user_catalog_test COMMAND model_maker_user_catalog_test)
+
+    # COMPONENT AYAR SETLERI (Tekla Save / Save as / Load): adlandirilmis parametre
+    # setleri, JSON gidis-donus, bilesen basina izole, 'standard' ozel adi. OCC'siz.
+    add_executable(model_maker_component_presets_test tests/component_presets_test.cpp)
+    target_link_libraries(model_maker_component_presets_test PRIVATE model_maker_core)
+    target_compile_options(model_maker_component_presets_test PRIVATE -Wall -Wextra -Wpedantic)
+    add_test(NAME model_maker_component_presets_test COMMAND model_maker_component_presets_test)
 
     # KARARLI VARLIK KIMLIGI (EntityId): vektor indeksi kalici kimlik DEGIL;
     # kimlik ekleme/silme/degistirme/undo/redo boyunca DOGRU varlikla eslesir,

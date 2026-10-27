@@ -27,6 +27,7 @@
 #include <QGroupBox>
 #include <QHeaderView>
 #include <QLabel>
+#include <QLineEdit>
 #include <QTabWidget>
 #include <QTableWidget>
 
@@ -916,6 +917,185 @@ int main(int argc, char** argv) {
                   "odakta turuncu satir/kutu zemini yok");
         }
         QApplication::setPalette(QApplication::style()->standardPalette());
+    }
+
+    // Ayar setleri (Tekla Save / Save as / Load): adlandirilmis PARAMETRE setleri,
+    // bilesen typeId'sine gore; tum diyalog tabanli bilesenlerde ayni mekanizma.
+    {
+        mm::registerBuiltInComponents(mm::ComponentRegistry::instance());
+        mm::ComponentPresetStore store;
+        int persistCalls = 0;
+        bool failPersist = false;
+        const auto persist = [&](std::string& err) {
+            ++persistCalls;
+            if (failPersist) { err = "disk dolu"; return false; }
+            return true;
+        };
+        const auto btn = [](QWidget& w, const char* name) {
+            return w.findChild<QPushButton*>(QString::fromLatin1(name));
+        };
+        const auto comboOf = [](QWidget& w) { return w.findChild<QComboBox*>(QStringLiteral("presetCombo")); };
+        const auto nameOf = [](QWidget& w) { return w.findChild<QLineEdit*>(QStringLiteral("presetName")); };
+        const auto statusOf = [](QWidget& w) {
+            auto* l = w.findChild<QLabel*>(QStringLiteral("presetStatus"));
+            return l ? l->text() : QString();
+        };
+        const auto numeric = [](const std::vector<mm::CompParam>& v, const wchar_t* n) {
+            for (const auto& p : v)
+                if (p.name == n)
+                    if (const auto* d = std::get_if<double>(&p.value)) return *d;
+            return -1.0;
+        };
+
+        // --- 146: gidis-donus, ustune yazma, standard, gecersiz ad, disk hatasi ---
+        const auto def146 = mm::shearPlate146DialogDefinition();
+        // Gidis-donusu gercekten yapan bir uzunluk parametresi sec ("Default" kutulu
+        // veya editorsuz alanlar sonuca yazilmaz; onlar bu testin konusu degil).
+        const mm::CompParamSpec* lenSpec = nullptr;
+        {
+            mm::ComponentDialogWidget probe(def146, {});
+            for (const auto& sp : def146.specs) {
+                if (sp.type != mm::CompParamType::Length || sp.documentedOnly ||
+                    !sp.hasMinDouble || !sp.hasMaxDouble || sp.maxDouble - sp.minDouble <= 20.0)
+                    continue;
+                const double probeValue = std::round(sp.minDouble + (sp.maxDouble - sp.minDouble) * 0.37);
+                probe.setParams({{sp.name, mm::CompParamValue{probeValue}}});
+                if (std::fabs(numeric(probe.resultParams(), sp.name.c_str()) - probeValue) < 1e-9) {
+                    lenSpec = &sp;
+                    break;
+                }
+            }
+        }
+        CHECK(lenSpec != nullptr, "Presets: 146'da sinirli bir uzunluk parametresi var");
+        if (lenSpec) {
+            // Editor birkac ondalikla yuvarlar: tam sayi mm kullan.
+            const double v1 = std::round(lenSpec->minDouble + (lenSpec->maxDouble - lenSpec->minDouble) * 0.37);
+            const double v2 = std::round(lenSpec->minDouble + (lenSpec->maxDouble - lenSpec->minDouble) * 0.71);
+            mm::ComponentDialogWidget w(def146, {});
+            CHECK(btn(w, "presetSave") && !btn(w, "presetSave")->isEnabled() &&
+                      !btn(w, "presetSaveAs")->isEnabled() && !comboOf(w)->isEnabled(),
+                  "Presets: depo baglanana kadar Save/Save as/liste gri");
+            w.setPresetStore(&store, persist);
+            CHECK(btn(w, "presetSave")->isEnabled() && btn(w, "presetLoad")->isEnabled() &&
+                      btn(w, "presetSaveAs")->isEnabled() && comboOf(w)->isEnabled() &&
+                      comboOf(w)->count() == 1 && comboOf(w)->itemText(0) == QStringLiteral("standard"),
+                  "Presets: depo baglaninca dugmeler acilir, liste yalniz 'standard'");
+
+            w.setParams({{lenSpec->name, mm::CompParamValue{v1}}});
+            nameOf(w)->setText(QStringLiteral("  Muhendis A "));
+            btn(w, "presetSaveAs")->click();
+            const auto* saved = store.find(def146.typeId, L"Muhendis A");
+            CHECK(saved != nullptr && std::fabs(numeric(saved->params, lenSpec->name.c_str()) - v1) < 1e-9,
+                  "Presets: Save as adla kirpilmis kaydeder, deger saklanir");
+            CHECK(persistCalls == 1 && comboOf(w)->currentText() == QStringLiteral("Muhendis A") &&
+                      comboOf(w)->count() == 2 && statusOf(w).contains(QStringLiteral("Kaydedildi")),
+                  "Presets: Save as depoyu yazar, listede secer, durum 'Kaydedildi'");
+
+            w.setParams({{lenSpec->name, mm::CompParamValue{v2}}});
+            CHECK(std::fabs(numeric(w.resultParams(), lenSpec->name.c_str()) - v2) < 1e-9,
+                  "Presets: pencere degeri degisti");
+            btn(w, "presetLoad")->click();
+            CHECK(std::fabs(numeric(w.resultParams(), lenSpec->name.c_str()) - v1) < 1e-9 &&
+                      statusOf(w).contains(QStringLiteral("Yuklendi")),
+                  "Presets: Load kayitli degeri pencereye geri yukler");
+
+            w.setParams({{lenSpec->name, mm::CompParamValue{v2}}});
+            btn(w, "presetSave")->click();
+            const auto* over = store.find(def146.typeId, L"Muhendis A");
+            CHECK(over && std::fabs(numeric(over->params, lenSpec->name.c_str()) - v2) < 1e-9 &&
+                      statusOf(w).contains(QStringLiteral("Uzerine")) && persistCalls == 2,
+                  "Presets: Save secili seti uzerine yazar");
+
+            comboOf(w)->setCurrentText(QStringLiteral("standard"));
+            btn(w, "presetLoad")->click();
+            {
+                // Sema varsayilani: "Default" kutulu alan sonuca yazilmaz (motor kendi
+                // varsayilanini uygular), kutusuz alan varsayilan degeriyle yazilir.
+                const double got = numeric(w.resultParams(), lenSpec->name.c_str());
+                CHECK(got < 0.0 || std::fabs(got - lenSpec->defDouble) < 1e-9,
+                      "Presets: kayitsiz standard Load -> sema varsayilani");
+                CHECK(std::fabs(got - v2) > 1e-9, "Presets: standard Load onceki degeri birakir");
+            }
+            CHECK(nameOf(w)->text() == QStringLiteral("standard"),
+                  "Presets: liste secimi ad kutusuna yansir");
+
+            const std::size_t before = store.size();
+            const int callsBefore = persistCalls;
+            nameOf(w)->setText(QStringLiteral("   "));
+            btn(w, "presetSaveAs")->click();
+            CHECK(store.size() == before && persistCalls == callsBefore &&
+                      statusOf(w).contains(QStringLiteral("Gecersiz")),
+                  "Presets: gecersiz ad kaydetmez, diske yazmaz, hata gosterir");
+
+            failPersist = true;
+            nameOf(w)->setText(QStringLiteral("DiskHatasi"));
+            btn(w, "presetSaveAs")->click();
+            CHECK(statusOf(w).contains(QStringLiteral("Dosyaya yazilamadi")) &&
+                      statusOf(w).contains(QStringLiteral("disk dolu")),
+                  "Presets: disk hatasi acikca gosterilir");
+            failPersist = false;
+
+            // Yeniden acilan ayni tip pencere ayni seti gorur; baska tip gormez.
+            mm::ComponentDialogWidget again(def146, {});
+            again.setPresetStore(&store, persist);
+            bool hasA = false;
+            for (int i = 0; i < comboOf(again)->count(); ++i)
+                hasA |= comboOf(again)->itemText(i) == QStringLiteral("Muhendis A");
+            CHECK(hasA, "Presets: yeniden acilan pencere kayitli seti listeler");
+            mm::ComponentDialogWidget other(mm::haunch40DialogDefinition(), {});
+            other.setPresetStore(&store, persist);
+            CHECK(comboOf(other)->count() == 1 &&
+                      comboOf(other)->itemText(0) == QStringLiteral("standard"),
+                  "Presets: baska bilesen tipi 146 setlerini gormez");
+        }
+
+        // --- Haunch 40: Load canli 3B onizlemeyi de gunceller (tum aileler ayni yol) ---
+        {
+            mm::ComponentDialogWidget h40(mm::haunch40DialogDefinition(), {});
+            h40.resize(1140, 760);
+            mm::ComponentInput input;
+            input.main.id = mm::EntityId{911};
+            input.main.axisFrom = {0, 0, 0};
+            input.main.axisTo = {0, 0, 3000};
+            input.main.refNormal = {0, 1, 0};
+            input.main.secWidth = 300; input.main.secHeight = 300;
+            input.main.secWebThickness = 11; input.main.secFlangeThickness = 19;
+            mm::MemberGeometry beam;
+            beam.id = mm::EntityId{912};
+            beam.axisFrom = {0, 1200, 1500};
+            beam.axisTo = {0, 60, 1500};
+            beam.refNormal = {0, 0, 1};
+            beam.secWidth = 100; beam.secHeight = 200;
+            beam.secWebThickness = 5.6; beam.secFlangeThickness = 8.5;
+            input.secondary.push_back(beam);
+            h40.setPreviewInput(input);
+            h40.setPresetStore(&store, persist);
+            h40.show();
+            QApplication::processEvents();
+            auto* main3d = h40.findChildren<mm::ComponentLivePreviewWidget*>().value(0);
+            CHECK(main3d != nullptr, "Presets/Haunch: canli onizleme var");
+            if (main3d) {
+                h40.setParams({{L"haunchLength", mm::CompParamValue{650.0}},
+                               {L"createBeamStiffener", mm::CompParamValue{true}}});
+                QApplication::processEvents();
+                CHECK(main3d->previewPlan().ok && std::fabs(main3d->previewPlan().plates[1].width - 650.0) < 1e-6 &&
+                          main3d->previewPlan().plateKeys.size() == 6,
+                      "Presets/Haunch: 650 mm + berkitme (iki levha) onizlemede");
+                nameOf(h40)->setText(QStringLiteral("Uzun berkitmeli"));
+                btn(h40, "presetSaveAs")->click();
+                h40.setParams({});
+                QApplication::processEvents();
+                CHECK(std::fabs(main3d->previewPlan().plates[1].width - 450.0) < 1e-6 &&
+                          main3d->previewPlan().plateKeys.size() == 4,
+                      "Presets/Haunch: varsayilana donunce onizleme 450 mm, berkitmesiz");
+                comboOf(h40)->setCurrentText(QStringLiteral("Uzun berkitmeli"));
+                btn(h40, "presetLoad")->click();
+                QApplication::processEvents();
+                CHECK(std::fabs(main3d->previewPlan().plates[1].width - 650.0) < 1e-6 &&
+                          main3d->previewPlan().plateKeys.size() == 6,
+                      "Presets/Haunch: Load canli onizlemeyi 650 mm + berkitmeye geri getirir");
+            }
+        }
     }
 
     if (failures) {
