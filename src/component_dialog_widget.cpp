@@ -324,6 +324,13 @@ ComponentDialogWidget::ComponentDialogWidget(const ComponentDialogDefinition& de
         nativePreview_->setOnEdit([this](const std::wstring& name,double value) {
             updateFormFromPreview(name,value);
         });
+        nativePreview_->setOnToggle([this](const std::wstring& name,bool on) {
+            // Alt+click on a stiffener flips the REAL form checkbox; its
+            // toggled signal re-broadcasts the parameters to every view.
+            const auto it=editors_.find(name);
+            if(it==editors_.end())return;
+            if(auto* box=qobject_cast<QCheckBox*>(it->second))box->setChecked(on);
+        });
         nativePreview_->setParams(current_);
         vertical->addWidget(nativePreview_,1);
         // Three REAL orthographic projections of the SAME native generator

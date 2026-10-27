@@ -1624,6 +1624,32 @@ ComponentType haunch40ComponentType() noexcept {
                   L"haunch bitisinde enine kiris berkitmesi"),
         lengthParam(L"stiffenerThickness", L"mm", 10.0, 4.0, 40.0,
                     L"kiriş berkitme kalinligi"),
+        // Tekla Haunch (40) Parameters-tab stiffeners (conn_40_help). All
+        // OFF by default; the live preview shows them as grey ghosts and
+        // Alt+click toggles the flag. Column-pocket geometry is an
+        // APPROXIMATION from the help text (pictures not verified).
+        boolParam(L"createAddStiffener", false,
+                  L"ilave berkitme: kolonda kiris ust basligi kotunda yatay"),
+        lengthParam(L"addStiffenerThickness", L"mm", 10.0, 4.0, 40.0,
+                    L"ilave berkitme kalinligi"),
+        boolParam(L"createRafterBottomStiffener", false,
+                  L"kiris alt berkitmesi: kolonda kiris alt basligi kotunda yatay"),
+        lengthParam(L"rafterBottomStiffenerThickness", L"mm", 10.0, 4.0, 40.0,
+                    L"kiris alt berkitme kalinligi"),
+        boolParam(L"createComprStiffener", false,
+                  L"basinc berkitmesi: kolonda haunch basinc flansi kotunda yatay"),
+        lengthParam(L"comprStiffenerThickness", L"mm", 10.0, 4.0, 40.0,
+                    L"basinc berkitme kalinligi"),
+        boolParam(L"createMorrisStiffener", false,
+                  L"Morris berkitmesi: kolonda alt baslik ile basinc flansi arasi yatay"),
+        lengthParam(L"morrisStiffenerThickness", L"mm", 10.0, 4.0, 40.0,
+                    L"Morris berkitme kalinligi"),
+        boolParam(L"createDiagStiffener", false,
+                  L"capraz berkitme: kolon govdesi yaninda ilave ve basinc kotlari arasi"),
+        lengthParam(L"diagStiffenerThickness", L"mm", 10.0, 4.0, 40.0,
+                    L"capraz berkitme kalinligi"),
+        lengthParam(L"diagStiffenerWidth", L"mm", 80.0, 20.0, 400.0,
+                    L"capraz berkitme genisligi"),
         lengthParam(L"boltDiameter", L"mm", 20.0, 12.0, 36.0,
                     L"bulon nominal capi"),
         lengthParam(L"holeDiameter", L"mm", 22.0, 13.0, 50.0,
@@ -1935,6 +1961,94 @@ GenerationPlan generateHaunch40(const ComponentInput& input) noexcept {
             return plan;
         }
         pushPlate(rib,"haunch_beam_stiffener");
+    }
+
+    // 5b) Tekla Haunch (40) column stiffeners (Parameters tab). Horizontal
+    // pocket plates sit INSIDE the column between the flanges beside the web,
+    // like the 146 continuity plates. Levels are measured from the beam axis
+    // at the column face. APPROXIMATION from the Tekla help text only.
+    {
+        const Vec3 worldUp{0.0,0.0,1.0};
+        const Vec3 Wd=p.colSec.width, Hd=p.colSec.height;
+        const double colW=std::max(1.0,p.col.secWidth);
+        const double colHt=std::max(1.0,p.col.secHeight);
+        const double tw=p.col.secWebThickness>0.0?p.col.secWebThickness:0.04*colW;
+        const double tf=p.col.secFlangeThickness>0.0?p.col.secFlangeThickness:0.06*colHt;
+        const double bf=p.beam.secFlangeThickness>0.0
+                            ?p.beam.secFlangeThickness:0.05*hBeam;
+        const bool caseB=std::fabs(p.aW)>std::fabs(p.aH);
+        const double sigma=caseB?((p.aW>=0.0)?-1.0:1.0):1.0;
+        const std::vector<double> sides=caseB?std::vector<double>{sigma}
+                                              :std::vector<double>{1.0,-1.0};
+        const double bOut=std::max(0.0,colW*0.5-tw*0.5);
+        const double hBetween=std::max(0.0,colHt-2.0*tf);
+        const Vec3 colC{p.colMid.x+Hd.x*p.col.sectionCenterOffset,
+                        p.colMid.y+Hd.y*p.col.sectionCenterOffset,
+                        p.colMid.z+Hd.z*p.col.sectionCenterOffset};
+        const double zAdd=hBeam*0.5-bf*0.5;
+        const double zRafter=-hBeam*0.5+bf*0.5;
+        const double zCompr=-hBeam*0.5-D-flangeT*0.5;
+        const double zMorris=0.5*(zRafter+zCompr);
+        const auto pocket=[&](const wchar_t* flag,const wchar_t* thickParam,
+                              const char* role,double level) -> bool {
+            if(!paramAsBool(input.params,flag,false))return true;
+            const double t=paramAsDouble(input.params,thickParam,10.0);
+            if(!(t>0.0 && bOut>t && hBetween>t)) {
+                plan.ok=false;
+                plan.error=L"Haunch 40: kolon berkitmesi kolon kesitine sigmiyor";
+                return false;
+            }
+            int n=0;
+            for(const double side:sides) {
+                const Vec3 Os=scale(Wd,side);
+                PlateSpec stf;
+                stf.thickness=t;stf.axis=worldUp;stf.u=Os;stf.v=Hd;
+                stf.width=bOut;stf.height=hBetween;
+                stf.center=Vec3{colC.x+Os.x*(tw*0.5+bOut*0.5),
+                                colC.y+Os.y*(tw*0.5+bOut*0.5),
+                                p.facePoint.z+level};
+                stf.name=L"40 - Column Stiffener";
+                pushPlate(stf,n==0?role:(std::string(role)+"_2").c_str());
+                ++n;
+            }
+            return true;
+        };
+        if(!pocket(L"createAddStiffener",L"addStiffenerThickness",
+                   "haunch_stiff_additional",zAdd))return plan;
+        if(!pocket(L"createRafterBottomStiffener",L"rafterBottomStiffenerThickness",
+                   "haunch_stiff_rafter_bottom",zRafter))return plan;
+        if(!pocket(L"createComprStiffener",L"comprStiffenerThickness",
+                   "haunch_stiff_compression",zCompr))return plan;
+        if(!pocket(L"createMorrisStiffener",L"morrisStiffenerThickness",
+                   "haunch_stiff_morris",zMorris))return plan;
+        if(paramAsBool(input.params,L"createDiagStiffener",false)) {
+            const double t=paramAsDouble(input.params,L"diagStiffenerThickness",10.0);
+            const double w=paramAsDouble(input.params,L"diagStiffenerWidth",80.0);
+            const double dz=zAdd-zCompr, dh=hBetween;
+            const double len=std::sqrt(dz*dz+dh*dh);
+            if(!(t>0.0 && w>0.0 && len>w && hBetween>0.0)) {
+                plan.ok=false;
+                plan.error=L"Haunch 40: capraz berkitme kolon kesitine sigmiyor";
+                return plan;
+            }
+            int n=0;
+            for(const double side:sides) {
+                const Vec3 Os=scale(Wd,side);
+                // Diagonal inside the web-parallel plane (Hd x worldUp), from the
+                // compression level at one flange to the additional level at the other.
+                const Vec3 diag=vnorm(add(scale(Hd,dh),scale(worldUp,dz)));
+                PlateSpec stf;
+                stf.thickness=t;stf.axis=Os;stf.u=diag;
+                stf.v=vnorm(cross(Os,diag));
+                stf.width=len;stf.height=w;
+                stf.center=Vec3{colC.x+Os.x*(tw*0.5+t*0.5),
+                                colC.y+Os.y*(tw*0.5+t*0.5),
+                                p.facePoint.z+0.5*(zAdd+zCompr)};
+                stf.name=L"40 - Diagonal Stiffener";
+                pushPlate(stf,n==0?"haunch_stiff_diagonal":"haunch_stiff_diagonal_2");
+                ++n;
+            }
+        }
     }
 
     // Anchor outermost bolt centres to the ACTUAL end-plate edges.

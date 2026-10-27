@@ -14,6 +14,7 @@
 #include <QMouseEvent>
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 
 #include <QAbstractSpinBox>
 #include <QApplication>
@@ -438,6 +439,77 @@ int main(int argc, char** argv) {
         CHECK(previews.size()==4,"Haunch 40: main 3D + 3 live orthographic previews");
         auto* left = previews.empty()?nullptr:previews.first();
         CHECK(left!=nullptr,"Haunch 40: real 3D preview widget exists");
+        // Stiffeners: every optional one is drawn as a grey ghost while OFF;
+        // Alt+click toggles it (on, then off again) without selecting or orbiting.
+        if(left) {
+            const auto ghosts=left->ghostStiffenerRoles();
+            const auto hasGhost=[&](const char* prefix) {
+                return std::any_of(ghosts.begin(),ghosts.end(),[&](const std::string& r) {
+                    return r.compare(0,std::strlen(prefix),prefix)==0;
+                });
+            };
+            CHECK(hasGhost("haunch_beam_stiffener") && hasGhost("haunch_stiff_additional") &&
+                  hasGhost("haunch_stiff_rafter_bottom") && hasGhost("haunch_stiff_compression") &&
+                  hasGhost("haunch_stiff_morris") && hasGhost("haunch_stiff_diagonal"),
+                  "Stiffeners: all six Tekla stiffeners shown as grey ghosts when OFF");
+            CHECK(left->previewPlan().plateKeys.size()==4,
+                  "Stiffeners: ghosts are NOT part of the real plan (4 core plates)");
+            const std::string role="haunch_stiff_additional";
+            const QPointF at=left->ghostScreenAnchor(role);
+            const std::string hit=left->stiffenerRoleAt(at.toPoint());
+            CHECK(!hit.empty(),"Stiffeners: ghost is hit-testable at its projected centre");
+            const auto flagOf=[](const std::string& r) {
+                return r.compare(0,23,"haunch_stiff_additional")==0;
+            };
+            if(!hit.empty() && flagOf(hit)) {
+                // Plain left click must neither select nor toggle a ghost.
+                QMouseEvent plainDown(QEvent::MouseButtonPress,at,Qt::LeftButton,
+                                      Qt::LeftButton,Qt::NoModifier);
+                QMouseEvent plainUp(QEvent::MouseButtonRelease,at,Qt::LeftButton,
+                                    Qt::NoButton,Qt::NoModifier);
+                QApplication::sendEvent(left,&plainDown);
+                QApplication::sendEvent(left,&plainUp);
+                QApplication::processEvents();
+                // A plain click behaves as before (it may pick the column behind
+                // the ghost) but never toggles or selects a stiffener.
+                CHECK(left->ghostStiffenerRoles().size()==ghosts.size() &&
+                      left->stiffenerRoleAt(at.toPoint())==hit &&
+                      left->activeRole().compare(0,13,"haunch_stiff_")!=0,
+                      "Stiffeners: plain click does not toggle or select a ghost");
+                left->selectRole("");
+                QApplication::processEvents();
+                // Alt+click turns it ON.
+                QMouseEvent altDown(QEvent::MouseButtonPress,at,Qt::LeftButton,
+                                    Qt::LeftButton,Qt::AltModifier);
+                QMouseEvent altUp(QEvent::MouseButtonRelease,at,Qt::LeftButton,
+                                  Qt::NoButton,Qt::AltModifier);
+                QApplication::sendEvent(left,&altDown);
+                QApplication::sendEvent(left,&altUp);
+                QApplication::processEvents();
+                const auto& keys=left->previewPlan().plateKeys;
+                CHECK(std::find(keys.begin(),keys.end(),hit)!=keys.end(),
+                      "Stiffeners: Alt+click on a grey ghost adds the real stiffener");
+                CHECK(left->activeRole().empty(),
+                      "Stiffeners: Alt+click does not select a role");
+                const auto after=left->ghostStiffenerRoles();
+                CHECK(std::none_of(after.begin(),after.end(),[&](const std::string& r) {
+                          return r==hit;
+                      }),"Stiffeners: enabled stiffener leaves the ghost list");
+                // Alt+click again at the same screen point turns it OFF.
+                const QPointF onAt=left->roleScreenAnchor(hit);
+                QMouseEvent alt2Down(QEvent::MouseButtonPress,onAt,Qt::LeftButton,
+                                     Qt::LeftButton,Qt::AltModifier);
+                QMouseEvent alt2Up(QEvent::MouseButtonRelease,onAt,Qt::LeftButton,
+                                   Qt::NoButton,Qt::AltModifier);
+                QApplication::sendEvent(left,&alt2Down);
+                QApplication::sendEvent(left,&alt2Up);
+                QApplication::processEvents();
+                const auto& keys2=left->previewPlan().plateKeys;
+                CHECK(std::find(keys2.begin(),keys2.end(),hit)==keys2.end() &&
+                      keys2.size()==4,
+                      "Stiffeners: second Alt+click switches the stiffener OFF again");
+            }
+        }
         if(left) {
             CHECK(left->activeRole().empty() &&
                   left->visibleOverlayParams().empty(),

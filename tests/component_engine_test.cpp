@@ -10,6 +10,7 @@
 
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 #include <utility>
 #include <vector>
 
@@ -782,6 +783,72 @@ int main() {
             check(approx(adapt.plates[3].width,300.0) &&
                   approx(adapt.plates[3].height,400.0),
                   "Haunch 40: cap follows EXACT column section, not beam flange");
+        }
+        // Tekla Haunch (40) column stiffeners: all OFF by default, each flag
+        // adds only its own plate(s) at the documented level inside the column.
+        {
+            ComponentInput st=in;
+            st.params.clear();
+            const GenerationPlan base=reg.generate(L"tekla_haunch_40",st);
+            check(base.ok && base.plates.size()==4,
+                  "Haunch 40 stiffeners: none created by default");
+            const auto keyCount=[&](const GenerationPlan& g,const char* prefix) {
+                int n=0;
+                for(const auto& k:g.plateKeys)
+                    if(k.compare(0,std::strlen(prefix),prefix)==0)++n;
+                return n;
+            };
+            const auto zOfFirst=[&](const GenerationPlan& g,const char* prefix) {
+                for(std::size_t i=0;i<g.plateKeys.size();++i)
+                    if(g.plateKeys[i].compare(0,std::strlen(prefix),prefix)==0)
+                        return g.plates[i].center.z;
+                return -1e9;
+            };
+            const struct { const wchar_t* flag; const char* prefix; } kinds[]={
+                {L"createAddStiffener","haunch_stiff_additional"},
+                {L"createRafterBottomStiffener","haunch_stiff_rafter_bottom"},
+                {L"createComprStiffener","haunch_stiff_compression"},
+                {L"createMorrisStiffener","haunch_stiff_morris"},
+                {L"createDiagStiffener","haunch_stiff_diagonal"}};
+            for(const auto& k:kinds) {
+                ComponentInput one=st;
+                one.params={{k.flag,CompParamValue{true}}};
+                const GenerationPlan g=reg.generate(L"tekla_haunch_40",one);
+                check(g.ok && keyCount(g,k.prefix)>=1 &&
+                      g.plates.size()==base.plates.size()+keyCount(g,k.prefix),
+                      "Haunch 40 stiffeners: each flag adds only its own plate(s)");
+                check(g.plateKeys.size()==g.plates.size(),
+                      "Haunch 40 stiffeners: stable role keys stay aligned");
+            }
+            ComponentInput all=st;
+            for(const auto& k:kinds)all.params.push_back({k.flag,CompParamValue{true}});
+            const GenerationPlan g=reg.generate(L"tekla_haunch_40",all);
+            check(g.ok,"Haunch 40 stiffeners: all five column stiffeners together build");
+            // Beam axis z=6000, beam 240 high (flange 12), haunch depth 240 (flange 10).
+            check(approx(zOfFirst(g,"haunch_stiff_additional"),6000+120-6,1e-6),
+                  "Haunch 40 stiffeners: additional at beam top flange level");
+            check(approx(zOfFirst(g,"haunch_stiff_rafter_bottom"),6000-120+6,1e-6),
+                  "Haunch 40 stiffeners: rafter bottom at beam bottom flange level");
+            check(approx(zOfFirst(g,"haunch_stiff_compression"),6000-120-240-5,1e-6),
+                  "Haunch 40 stiffeners: compression at haunch compression flange level");
+            check(approx(zOfFirst(g,"haunch_stiff_morris"),
+                         0.5*((6000-120+6)+(6000-120-240-5)),1e-6),
+                  "Haunch 40 stiffeners: Morris midway between rafter bottom and compression");
+            check(approx(zOfFirst(g,"haunch_stiff_diagonal"),
+                         0.5*((6000+120-6)+(6000-120-240-5)),1e-6),
+                  "Haunch 40 stiffeners: diagonal centred between additional and compression");
+            bool inside=true;
+            for(std::size_t i=0;i<g.plates.size();++i)
+                if(g.plateKeys[i].compare(0,13,"haunch_stiff_")==0)
+                    inside&=std::fabs(g.plates[i].center.x)<=150.0+1e-6 &&
+                            std::fabs(g.plates[i].center.y)<=200.0+1e-6;
+            check(inside,"Haunch 40 stiffeners: plates lie inside the 300x400 column footprint");
+            // A column too small for the pocket must fail loudly, never silently.
+            ComponentInput tiny=st;
+            tiny.main.secWidth=20;tiny.main.secHeight=30;
+            tiny.params={{L"createAddStiffener",CompParamValue{true}}};
+            check(!reg.generate(L"tekla_haunch_40",tiny).ok,
+                  "Haunch 40 stiffeners: column too small is rejected");
         }
         // Reversed member axis direction must not move the cap to the
         // physically LOWER endpoint of the column.

@@ -34,6 +34,17 @@ public:
     void setView(const std::string& view);  // iso/front/side/top
     void setCompact(bool compact);  // thumbnail: same plan, no editor overlay
     void setOnPick(std::function<void()> cb);
+    // Alt+click on any stiffener (grey ghost = off, coloured = on) flips its
+    // create flag. The owner mirrors it into the real form editor.
+    void setOnToggle(std::function<void(const std::wstring&,bool)> cb);
+    // Role keys of currently OFF stiffeners drawn as grey ghosts.
+    std::vector<std::string> ghostStiffenerRoles() const;
+    // Stiffener (ghost or active) under a widget position, "" if none.
+    std::string stiffenerRoleAt(QPoint pos) const;
+    // Flip the create flag of the stiffener under pos. False if none.
+    bool toggleStiffenerAt(QPoint pos);
+    // Projected centre of a grey ghost stiffener ((-1,-1) if absent).
+    QPointF ghostScreenAnchor(const std::string& role) const;
     std::wstring highlightedParam() const { return highlight_; }
     // P4: hit-selected component role; empty means no overlay.
     std::string activeRole() const { return activeRole_; }
@@ -83,6 +94,13 @@ private:
     struct HitRegion { QPolygonF polygon; std::string role; };
     std::vector<HitRegion> hits_;
     std::vector<std::pair<QPointF,std::string>> boltHits_;
+    // Stiffeners switched OFF are still generated (one flag at a time) and
+    // drawn grey; hits are kept in paint order so the topmost wins.
+    struct Ghost { PlateSpec plate; std::string role; };
+    std::vector<Ghost> ghosts_;
+    std::vector<HitRegion> stiffHits_;
+    std::function<void(const std::wstring&,bool)> onToggle_;
+    bool altPress_{false};
     bool dragging_{false};
     std::function<void(const std::wstring&,double)> onEdit_;
     bool haveInput_{false};

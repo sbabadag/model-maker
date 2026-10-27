@@ -20,6 +20,7 @@
 #include <QColor>
 #include <cmath>
 #include <limits>
+#include <cstring>
 
 namespace mm {
 namespace {
@@ -72,7 +73,21 @@ std::vector<Vec3> plateOutline(const PlateSpec& p, double side) {
     }
     return out;
 }
+// Tekla Haunch (40) stiffeners: role-key prefix -> create flag.
+const std::array<std::pair<const char*,const wchar_t*>,6> kStiffeners{{
+    {"haunch_beam_stiffener",L"createBeamStiffener"},
+    {"haunch_stiff_additional",L"createAddStiffener"},
+    {"haunch_stiff_rafter_bottom",L"createRafterBottomStiffener"},
+    {"haunch_stiff_compression",L"createComprStiffener"},
+    {"haunch_stiff_morris",L"createMorrisStiffener"},
+    {"haunch_stiff_diagonal",L"createDiagStiffener"}}};
+const wchar_t* stiffenerFlagFor(const std::string& role) {
+    for(const auto& [prefix,flag]:kStiffeners)
+        if(role.compare(0,std::strlen(prefix),prefix)==0)return flag;
+    return nullptr;
+}
 QColor plateColor(const std::string& role) {
+    if(stiffenerFlagFor(role))return QColor("#7fc48f");
     if(role.find("end_plate")!=std::string::npos)return QColor("#7ea7c7");
     if(role.find("web")!=std::string::npos)return QColor("#b8a1d6");
     if(role.find("flange")!=std::string::npos)return QColor("#e5a461");
@@ -175,7 +190,7 @@ ComponentLivePreviewWidget::ComponentLivePreviewWidget(QWidget* parent)
     setSizePolicy(QSizePolicy::Expanding,QSizePolicy::Expanding);
     setMouseTracking(true);
     setFocusPolicy(Qt::StrongFocus);
-    setToolTip(QStringLiteral("Sol tus: dondur | Orta tus: kaydir | Tekerlek: yakinlas"));
+    setToolTip(QStringLiteral("Sol tus: dondur | Orta tus: kaydir | Tekerlek: yakinlas | Alt+tik: berkitme ac/kapat"));
     // Short labels correspond to the SAME native schema parameters as the
     // real property panel. No second parameter source of truth.
     // Grouped by the physical child that the user can click.
@@ -365,6 +380,43 @@ void ComponentLivePreviewWidget::setCompact(bool compact) {
 void ComponentLivePreviewWidget::setOnPick(std::function<void()> cb) {
     onPick_=std::move(cb);
 }
+void ComponentLivePreviewWidget::setOnToggle(
+        std::function<void(const std::wstring&,bool)> cb) {
+    onToggle_=std::move(cb);
+}
+std::vector<std::string> ComponentLivePreviewWidget::ghostStiffenerRoles() const {
+    std::vector<std::string> roles;
+    for(const auto& g:ghosts_)roles.push_back(g.role);
+    return roles;
+}
+QPointF ComponentLivePreviewWidget::ghostScreenAnchor(const std::string& role) const {
+    for(const auto& g:ghosts_)
+        if(g.role==role)return project(g.plate.center);
+    return QPointF(-1.0,-1.0);
+}
+std::string ComponentLivePreviewWidget::stiffenerRoleAt(QPoint pos) const {
+    // Paint order: the last matching polygon is the visible one.
+    for(auto it=stiffHits_.rbegin();it!=stiffHits_.rend();++it)
+        if(it->polygon.containsPoint(QPointF(pos),Qt::OddEvenFill))return it->role;
+    return {};
+}
+bool ComponentLivePreviewWidget::toggleStiffenerAt(QPoint pos) {
+    const std::string role=stiffenerRoleAt(pos);
+    const wchar_t* flag=role.empty()?nullptr:stiffenerFlagFor(role);
+    if(!flag)return false;
+    const bool next=!paramAsBool(params_,flag,false);
+    if(onToggle_) {
+        // The owning dialog flips the real checkbox, which re-broadcasts the
+        // normalized parameter set to every view (including this one).
+        onToggle_(flag,next);
+    } else {
+        bool found=false;
+        for(auto& param:params_)if(param.name==flag){param.value=next;found=true;}
+        if(!found)params_.push_back(CompParam{flag,CompParamValue{next}});
+        recompute();
+    }
+    return true;
+}
 void ComponentLivePreviewWidget::syncEditors() {
     const ComponentType* type=ComponentRegistry::instance().findType(L"tekla_haunch_40");
     for(auto& c:callouts_) {
@@ -401,6 +453,26 @@ void ComponentLivePreviewWidget::recompute() {
     } else {
         plan_=std::move(next);
         previewWarning_.clear();
+    }
+    // Stiffeners that are OFF: generate each flag alone with the SAME draft
+    // parameters so the grey ghost is the exact geometry Alt+click would add.
+    ghosts_.clear();
+    if(plan_.ok && previewWarning_.empty()) {
+        for(const auto& [prefix,flag]:kStiffeners) {
+            if(paramAsBool(params_,flag,false))continue;
+            ComponentInput probe=input_;
+            probe.params=params_;
+            bool found=false;
+            for(auto& param:probe.params)
+                if(param.name==flag){param.value=true;found=true;}
+            if(!found)probe.params.push_back(CompParam{flag,CompParamValue{true}});
+            const GenerationPlan g=ComponentRegistry::instance().generate(
+                L"tekla_haunch_40",probe);
+            if(!g.ok)continue;
+            for(std::size_t i=0;i<g.plates.size()&&i<g.plateKeys.size();++i)
+                if(g.plateKeys[i].compare(0,std::strlen(prefix),prefix)==0)
+                    ghosts_.push_back({g.plates[i],g.plateKeys[i]});
+        }
     }
     // An optional selected child (e.g. a disabled stiffener) may cease
     // to exist after parameter edits. Clear its selection rather than
@@ -627,6 +699,11 @@ void ComponentLivePreviewWidget::paintEvent(QPaintEvent*) {
     painter.setPen(QColor("#63758b"));
     painter.drawText(QPoint(16,height()-14),
         QStringLiteral("Parca sec: tikla   •   Don: surukle   •   Kaydir: orta tus   •   Zoom: tekerlek"));
+    if(!ghosts_.empty()) {
+        painter.setPen(QColor("#6b7a8c"));
+        painter.drawText(QPoint(16,height()-30),
+            QStringLiteral("Gri = pasif berkitme   •   Alt+tik: ac / kapat"));
+    }
     painter.setPen(QColor("#4d687f"));
     const QString partName=activeRole_.empty()
         ?QStringLiteral("Olcu icin bir parca veya civata grubu sec")
@@ -766,6 +843,7 @@ void ComponentLivePreviewWidget::drawBoltOverlay(
 void ComponentLivePreviewWidget::drawModel(QPainter& p) {
     hits_.clear();
     boltHits_.clear();
+    stiffHits_.clear();
     std::vector<Poly> faces;
     if(!plan_.plates.empty()) {
         std::vector<Vec3> anchors;
@@ -800,6 +878,9 @@ void ComponentLivePreviewWidget::drawModel(QPainter& p) {
         addPrism(faces,plateOutline(plate,+1.0),plateOutline(plate,-1.0),
                  plateColor(role),role);
     }
+    for(const auto& g:ghosts_)
+        addPrism(faces,plateOutline(g.plate,+1.0),plateOutline(g.plate,-1.0),
+                 QColor("#9aa3ad"),"ghost:"+g.role);
     const Vec3 toward{std::cos(pitch_)*std::sin(yaw_),
                       -std::cos(pitch_)*std::cos(yaw_),std::sin(pitch_)};
     for(auto& face:faces) {
@@ -814,6 +895,15 @@ void ComponentLivePreviewWidget::drawModel(QPainter& p) {
         if(face.vertices.size()<3)continue;
         QPolygonF polygon;
         for(const auto& v:face.vertices)polygon<<project(v);
+        if(face.role.compare(0,6,"ghost:")==0) {
+            // Disabled stiffener: translucent grey, dashed outline, no
+            // selection/fade logic. Alt+click turns it on.
+            p.setBrush(QColor(150,160,172,80));
+            p.setPen(QPen(QColor("#8794a3"),0.9,Qt::DashLine));
+            p.drawPolygon(polygon);
+            if(!compact_)stiffHits_.push_back({polygon,face.role.substr(6)});
+            continue;
+        }
         QColor fill=face.face;
         const bool isSupport=face.role=="column"||face.role=="beam";
         if(!activeRole_.empty() && activeRole_!="column" &&
@@ -843,7 +933,10 @@ void ComponentLivePreviewWidget::drawModel(QPainter& p) {
         p.setPen(QPen(selected?QColor("#b86911"):QColor("#455469"),
                       selected?2.2:0.8));
         p.drawPolygon(polygon);
-        if(!compact_)hits_.push_back({polygon,face.role});
+        if(!compact_) {
+            hits_.push_back({polygon,face.role});
+            if(stiffenerFlagFor(face.role))stiffHits_.push_back({polygon,face.role});
+        }
     }
     // Individual bolt groups: preserve exact generator positions, and make
     // the heads hit-testable even though they occupy few screen pixels.
@@ -882,7 +975,10 @@ void ComponentLivePreviewWidget::mousePressEvent(QMouseEvent* e) {
     lastMouse_=e->pos();
     mouseDown_=e->pos();
     dragging_=false;
-    orbiting_=e->button()==Qt::LeftButton;
+    // Alt+left is the stiffener on/off gesture: no orbit, no role selection.
+    altPress_=e->button()==Qt::LeftButton &&
+              (e->modifiers()&Qt::AltModifier);
+    orbiting_=e->button()==Qt::LeftButton && !altPress_;
     panning_=e->button()==Qt::MiddleButton;
     e->accept();
 }
@@ -901,6 +997,12 @@ void ComponentLivePreviewWidget::mouseMoveEvent(QMouseEvent* e) {
     positionEditors();update();e->accept();
 }
 void ComponentLivePreviewWidget::mouseReleaseEvent(QMouseEvent* e) {
+    if(altPress_ && e->button()==Qt::LeftButton) {
+        altPress_=false;
+        if((e->pos()-mouseDown_).manhattanLength()<=5)toggleStiffenerAt(e->pos());
+        e->accept();
+        return;
+    }
     const bool wasClick=orbiting_&&!dragging_&&e->button()==Qt::LeftButton;
     orbiting_=panning_=false;
     if(wasClick)selectRole(hitRole(e->pos()));
