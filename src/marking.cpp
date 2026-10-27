@@ -33,9 +33,10 @@ double dist(const Vec3& a, const Vec3& b) {
 } // namespace
 
 bool PartSignature::operator<(const PartSignature& o) const {
-    return std::tie(profile, material, name, finish, length, shapeHash, faceCount, vertexCount) <
+    return std::tie(profile, material, name, finish, length, shapeHash, faceCount, vertexCount,
+                    drillHash) <
            std::tie(o.profile, o.material, o.name, o.finish, o.length, o.shapeHash, o.faceCount,
-                    o.vertexCount);
+                    o.vertexCount, o.drillHash);
 }
 
 bool AssemblySignature::operator<(const AssemblySignature& o) const {
@@ -178,7 +179,8 @@ std::string MarkRegistry::serialize() const {
                          {"material", toUtf8(s.material)}, {"name", toUtf8(s.name)},
                          {"finish", toUtf8(s.finish)}, {"length", s.length},
                          {"shapeHash", s.shapeHash}, {"faceCount", s.faceCount},
-                         {"vertexCount", s.vertexCount}});
+                         {"vertexCount", s.vertexCount},
+                         {"drillHash", s.drillHash}});
     root["parts"] = parts;
     json asms = json::array();
     for (const auto& [n, s] : assemblySigs_)
@@ -221,6 +223,7 @@ bool MarkRegistry::deserialize(const std::string& text, MarkRegistry& out, std::
             s.shapeHash = j.at("shapeHash").get<std::uint64_t>();
             s.faceCount = j.at("faceCount").get<int>();
             s.vertexCount = j.at("vertexCount").get<int>();
+            s.drillHash = j.value("drillHash", std::uint64_t{0});  // eski kayitlarda yok
             if (n < 1 || r.partSigs_.count(n) || r.partByKey_.count(s) || n >= r.nextPart_) {
                 error = "mark kaydi: gecersiz/yinelenen part numarasi";
                 return false;

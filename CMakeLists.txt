@@ -64,6 +64,7 @@ add_library(model_maker_core
     src/user_catalog.cpp
     src/component_presets.cpp
     src/marking.cpp
+    src/fabrication.cpp
     src/drawing.cpp
     src/drawing_builder.cpp)
 target_include_directories(model_maker_core PUBLIC include third_party)

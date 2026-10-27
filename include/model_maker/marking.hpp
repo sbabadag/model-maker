@@ -63,6 +63,9 @@ struct PartSignature {
     std::uint64_t shapeHash{0};    // sirali kenar-uzunluk dagiliminin FNV-1a'si
     int faceCount{0};
     int vertexCount{0};
+    // P2A: DELME/KESME parmak izi. Iki ayni sekilli levha farkli delikli ise farkli mark alir.
+    // 0 = delik/kesme bilgisi yok (eski kayitlar ve delikSIZ parcalar: imza degismez).
+    std::uint64_t drillHash{0};
     bool operator==(const PartSignature&) const = default;
     bool operator<(const PartSignature& o) const;
 };
