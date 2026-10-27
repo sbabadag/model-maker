@@ -630,7 +630,7 @@ ComponentDialogDefinition haunch40DialogDefinition() noexcept {
              L"createComprStiffener",L"comprStiffenerThickness",
              L"createMorrisStiffener",L"morrisStiffenerThickness",
              L"createDiagStiffener",L"diagStiffenerThickness",
-             L"diagStiffenerWidth"}),
+             L"diagStiffenerWidth",L"stiffenerClipSize"}),
         tab(L"upperbolts",L"Ust civata grubu",
             {L"upperBoltCountX",L"upperBoltCountY",
              L"upperBoltPitchX",L"upperBoltPitchY",

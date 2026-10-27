@@ -843,6 +843,46 @@ int main() {
                     inside&=std::fabs(g.plates[i].center.x)<=150.0+1e-6 &&
                             std::fabs(g.plates[i].center.y)<=200.0+1e-6;
             check(inside,"Haunch 40 stiffeners: plates lie inside the 300x400 column footprint");
+            // Weld-zone clips: pocket plates cut the two web-side corners (0 and 3),
+            // the diagonal all four; default 15 mm; 0 = none; oversize is rejected.
+            {
+                bool pocketsOk=true, diagOk=true;
+                int pockets=0, diags=0;
+                for(std::size_t i=0;i<g.plates.size();++i) {
+                    const auto& pl=g.plates[i];
+                    const std::string& key=g.plateKeys[i];
+                    if(key.compare(0,13,"haunch_stiff_")!=0)continue;
+                    if(key.compare(0,21,"haunch_stiff_diagonal")==0) {
+                        ++diags;
+                        diagOk&=pl.chamfers.size()==4;
+                        for(const auto& c:pl.chamfers)diagOk&=approx(c.h,15.0)&&approx(c.v,15.0)&&c.type==1;
+                    } else {
+                        ++pockets;
+                        bool c0=false,c3=false;
+                        for(const auto& c:pl.chamfers) {
+                            c0|=c.corner==0&&approx(c.h,15.0)&&approx(c.v,15.0);
+                            c3|=c.corner==3&&approx(c.h,15.0)&&approx(c.v,15.0);
+                        }
+                        pocketsOk&=pl.chamfers.size()==2&&c0&&c3;
+                    }
+                }
+                check(pockets>=4 && pocketsOk,
+                      "Haunch 40 stiffeners: pocket plates clipped 15 mm at the two web-side corners");
+                check(diags>=1 && diagOk,
+                      "Haunch 40 stiffeners: diagonal clipped 15 mm at all four corners");
+                ComponentInput noClip=all;
+                noClip.params.push_back({L"stiffenerClipSize",CompParamValue{0.0}});
+                const GenerationPlan plain=reg.generate(L"tekla_haunch_40",noClip);
+                bool none=plain.ok;
+                for(std::size_t i=0;i<plain.plates.size();++i)
+                    if(plain.plateKeys[i].compare(0,13,"haunch_stiff_")==0)
+                        none&=plain.plates[i].chamfers.empty();
+                check(none,"Haunch 40 stiffeners: clip size 0 leaves plain rectangles");
+                ComponentInput huge=all;
+                huge.params.push_back({L"stiffenerClipSize",CompParamValue{90.0}});
+                check(!reg.generate(L"tekla_haunch_40",huge).ok,
+                      "Haunch 40 stiffeners: clip larger than half the plate is rejected");
+            }
             // A column too small for the pocket must fail loudly, never silently.
             ComponentInput tiny=st;
             tiny.main.secWidth=20;tiny.main.secHeight=30;

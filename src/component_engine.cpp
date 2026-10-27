@@ -1650,6 +1650,8 @@ ComponentType haunch40ComponentType() noexcept {
                     L"capraz berkitme kalinligi"),
         lengthParam(L"diagStiffenerWidth", L"mm", 80.0, 20.0, 400.0,
                     L"capraz berkitme genisligi"),
+        lengthParam(L"stiffenerClipSize", L"mm", 15.0, 0.0, 100.0,
+                    L"kolon berkitmelerinin kaynak bolgesi kesigi (gövde-flans kök kaynagi icin kose pahi); 0 = kesik yok"),
         lengthParam(L"boltDiameter", L"mm", 20.0, 12.0, 36.0,
                     L"bulon nominal capi"),
         lengthParam(L"holeDiameter", L"mm", 22.0, 13.0, 50.0,
@@ -1989,6 +1991,12 @@ GenerationPlan generateHaunch40(const ComponentInput& input) noexcept {
         const double zRafter=-hBeam*0.5+bf*0.5;
         const double zCompr=-hBeam*0.5-D-flangeT*0.5;
         const double zMorris=0.5*(zRafter+zCompr);
+        // Weld-zone clip: the pocket plate corners that meet the web/flange
+        // root get a straight corner cut so the continuous fillet weld along
+        // web and flange is not blocked by the root radius (Tekla stiffener
+        // chamfers). Local corners 0 and 3 are the web side (-u).
+        const double clip=std::max(0.0,paramAsDouble(input.params,L"stiffenerClipSize",15.0));
+        const auto clipFits=[&](double a,double b) { return clip<=0.0 || clip<0.5*std::min(a,b); };
         const auto pocket=[&](const wchar_t* flag,const wchar_t* thickParam,
                               const char* role,double level) -> bool {
             if(!paramAsBool(input.params,flag,false))return true;
@@ -1996,6 +2004,11 @@ GenerationPlan generateHaunch40(const ComponentInput& input) noexcept {
             if(!(t>0.0 && bOut>t && hBetween>t)) {
                 plan.ok=false;
                 plan.error=L"Haunch 40: kolon berkitmesi kolon kesitine sigmiyor";
+                return false;
+            }
+            if(!clipFits(bOut,hBetween)) {
+                plan.ok=false;
+                plan.error=L"Haunch 40: berkitme kaynak kesigi berkitme boyutuna gore cok buyuk";
                 return false;
             }
             int n=0;
@@ -2008,6 +2021,10 @@ GenerationPlan generateHaunch40(const ComponentInput& input) noexcept {
                                 colC.y+Os.y*(tw*0.5+bOut*0.5),
                                 p.facePoint.z+level};
                 stf.name=L"40 - Column Stiffener";
+                if(clip>0.0) {
+                    stf.chamfers.push_back(PlateSpec::Chamfer{0,1,clip,clip});
+                    stf.chamfers.push_back(PlateSpec::Chamfer{3,1,clip,clip});
+                }
                 pushPlate(stf,n==0?role:(std::string(role)+"_2").c_str());
                 ++n;
             }
@@ -2031,6 +2048,11 @@ GenerationPlan generateHaunch40(const ComponentInput& input) noexcept {
                 plan.error=L"Haunch 40: capraz berkitme kolon kesitine sigmiyor";
                 return plan;
             }
+            if(!clipFits(len,w)) {
+                plan.ok=false;
+                plan.error=L"Haunch 40: berkitme kaynak kesigi berkitme boyutuna gore cok buyuk";
+                return plan;
+            }
             int n=0;
             for(const double side:sides) {
                 const Vec3 Os=scale(Wd,side);
@@ -2045,6 +2067,10 @@ GenerationPlan generateHaunch40(const ComponentInput& input) noexcept {
                                 colC.y+Os.y*(tw*0.5+t*0.5),
                                 p.facePoint.z+0.5*(zAdd+zCompr)};
                 stf.name=L"40 - Diagonal Stiffener";
+                // Both ends land on a flange/web root: clip all four corners.
+                if(clip>0.0)
+                    for(int corner=0;corner<4;++corner)
+                        stf.chamfers.push_back(PlateSpec::Chamfer{corner,1,clip,clip});
                 pushPlate(stf,n==0?"haunch_stiff_diagonal":"haunch_stiff_diagonal_2");
                 ++n;
             }
