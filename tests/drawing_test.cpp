@@ -468,7 +468,9 @@ int main() {
                 dp.addCutModifier(h);
             }
         MarkRegistry rp;
-        const BuildResult hp = buildSheet(dp, rp, plate);
+        DrawingOptions p1opt;
+        p1opt.autoLayout = false;   // P1 dogrusal satir yerlesimi (bu bolum P1 zincir iliskisini dogrular; P2A motoru ayri testte)
+        const BuildResult hp = buildSheet(dp, rp, plate, p1opt);
         check(hp.ok, "H: delikli plaka cizimi uretildi");
         const DrawingView* f = hp.sheet.viewOfKind(ViewKind::Front);
         const DrawingView* t = hp.sheet.viewOfKind(ViewKind::Top);
@@ -550,8 +552,10 @@ int main() {
         for (const Dimension2D& d : as.sheet.dimensions)
             if (d.viewId == f->id && d.role == DimensionRole::PartPosition && d.direction == DimensionDirection::Horizontal) {
                 pos.push_back(d.value);
-                if (d.value * as.sheet.scale < 5.0) shortWithLevel += d.textLevel > 0;
-                else wideWithLevel += d.textLevel > 0;
+                // P2A: dar olcunun metni merkezden kaydirilir (cizgi uzantisi) veya kademelenir; genis olan merkezde kalir.
+                const bool moved = d.textLevel > 0 || std::fabs(d.textT - 0.5) > 1e-9;
+                if (d.value * as.sheet.scale < 5.0) shortWithLevel += moved;
+                else wideWithLevel += moved;
             }
         std::sort(pos.begin(), pos.end());
         check(pos.size() == 3 && nearTo(pos[0], 12) && nearTo(pos[1], 12) && nearTo(pos[2], 3976),

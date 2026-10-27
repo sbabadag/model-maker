@@ -35,7 +35,7 @@ namespace mm::drawing {
 using ElementId = std::uint64_t; // cizim ici kimlik (EntityId ile KARISMAZ); 0 = gecersiz
 
 enum class DrawingKind { SinglePart, Assembly };
-enum class ViewKind { Front, Top, Side };
+enum class ViewKind { Front, Top, Side, Detail };   // Detail: levha yuzu detay gorunumu (kendi olcegi)
 enum class LineStyle { Visible, Hidden };
 enum class ProjectionMethod { ThirdAngle, FirstAngle };
 enum class SheetSize { A4, A3, A2, A1, A0 };
@@ -44,8 +44,28 @@ enum class DimensionRole {
     MemberLength,   // ana parca ekseni boyu (gercek 3B uzunluk)
     OverallWidth,   // gorunus sinir kutusu genisligi
     OverallHeight,  // gorunus sinir kutusu yuksekligi
-    HoleSpacing,    // delik zinciri: kenar -> delik -> delik -> kenar (merkezler arasi)
-    PartPosition    // montaj uyelerinin kenar konumlari zinciri (assembly)
+    HoleSpacing,    // delik zinciri: kenar -> delik -> delik -> kenar (merkezler arasi) [P1 yedek zincir]
+    PartPosition,   // montaj uyelerinin kenar konumlari zinciri (assembly)
+    // --- P2A: otomatik imalat olculeri (fab::FabricationInventory'den; featureKey ile izlenir) ---
+    PlateWidth,     // levha u boyu (levha yuzunu gosteren gorunumde)
+    PlateHeight,    // levha v boyu
+    HolePitch,      // bir bulon grubunda ardisik delik merkezleri arasi (yatay/dusey adim)
+    HoleEdge,       // levha zarf kenari -> grubun en dis deligin DIS kenari (NET kenar mesafesi)
+    PlateOffsetX,   // uye BASLANGICINDAN levha yakin yuzune, uye ekseni (x') boyunca
+    PlateOffsetY,   // uye baslangicindan levha zarfi min y' (uye-yerel)
+    PlateOffsetZ    // uye baslangicindan levha zarfi min z' (uye-yerel)
+};
+
+// Gorunumun 3B cercevesi. Varsayilan (dunya) Front/Top/Side ile ayni; egik/donuk uyede UYE cercevesi.
+//   proj(P) = (P.right, P.up); normal = izleyiciye (gozden bakana) dogru, right x up = normal.
+struct ViewFrame {
+    Vec3 right{1.0, 0.0, 0.0};
+    Vec3 up{0.0, 0.0, 1.0};
+    Vec3 normal{0.0, -1.0, 0.0};
+    bool memberAligned{false};   // true: dunya eksenlerine degil uye eksenine hizali
+    Vec2 project(const Vec3& p) const noexcept {
+        return {p.x * right.x + p.y * right.y + p.z * right.z, p.x * up.x + p.y * up.y + p.z * up.z};
+    }
 };
 
 struct Segment2 {
@@ -93,6 +113,8 @@ struct DrawingView {
     Bounds2 bounds;                       // segments'in sinirlari (view-yerel)
     std::vector<ViewMember> members;
     std::string label;                    // "FRONT", "TOP"... (UTF-8)
+    ViewFrame frame;                      // P2A: 3B -> 2B cerceve (gercek uzunluk kurali bunu kullanir)
+    EntityId detailPlate{kInvalidEntityId};   // kind == Detail: gosterilen levha (Document EntityId)
 
     Vec2 toPaper(const Vec2& local) const noexcept {
         return {origin.x + local.x * scale, origin.y + local.y * scale};
@@ -123,10 +145,88 @@ struct Dimension2D {
     Vec2 p2{};
     double value{0.0};
     double offset{12.0};
-    int textLevel{0};   // 0: olcu cizgisi ustunde; >0: dar aralikta metin yukari/yana kaydirilir (kademe)
+    // --- DUZENLENEBILIR YERLESIM PARAMETRELERI (P2B kancasi; MUHENDISLIK DEGERINI DEGISTIRMEZ) ---
+    int side{1};          // +1: gorunumun alt(yatay)/sag(dusey)/dis(hizali) tarafi; -1: ters taraf
+    double textT{0.5};    // metin merkezinin olcu cizgisi boyunca konumu (0=p1, 1=p2; disi serbest)
+    int textSide{-1};     // -1: metin cizginin gorunume bakan tarafinda; +1: dis tarafinda
+    int textLevel{0};     // >0: metin cizgiden kademe kademe uzaklasir (kilavuz cizgisiyle)
+    ElementId chain{0};   // ayni zincir/satir kimligi (yerlesim bunu birlikte kaydirir)
     EntityId source{kInvalidEntityId};
+    // --- KAYNAK / SURUM (P2A): bu deger HANGI imalat ozelliginden, HANGI model surumunden geldi ---
+    std::string featureKey;        // fab::featureKey (bos: P1 geometri olcusu)
+    std::string basis;             // insan okur: "plate-local u pitch col1-col2"
+    std::uint64_t documentRevision{0};
     // p1-p2'den yeniden olculen uzunluk (yon'e gore).
     double measured() const noexcept;
+};
+
+enum class TextKind { HoleCallout, PlateNote, GeneralNote, Legend, StatusStamp, ViewTitle };
+
+// Serbest metin (callout/not/etiket). Konum kagit mm (sol-alt); anchor view-yerel (modele bagli).
+struct TextAnnotation {
+    ElementId id{0};
+    ElementId viewId{0};              // 0: sayfa duzeyi
+    TextKind kind{TextKind::GeneralNote};
+    std::vector<std::string> lines;   // UTF-8
+    double height{3.5};               // kagit mm (okunabilir minimum yerlesim ayarindan)
+    bool hasAnchor{false};
+    Vec2 anchor{};                    // view-yerel
+    Vec2 pos{};                       // kagit: metin kutusunun sol-alt kosesi
+    bool leader{false};               // anchor'a kilavuz cizgisi
+    bool bold{false};
+    EntityId source{kInvalidEntityId};
+    std::string featureKey;
+};
+
+enum class ChecklistState { Satisfied, Unresolved, NotApplicable };
+
+struct ChecklistItem {
+    std::string key;       // makine kodu: PLATE_OUTLINE, HOLE_DIAMETER, ...
+    std::string label;     // insan metni (UTF-8)
+    ChecklistState state{ChecklistState::Unresolved};
+    std::string detail;
+    std::string featureKey;
+};
+
+// Imalat tamlik durumu: `draft == false` YALNIZ tum gerekli oge Satisfied/NotApplicable ise.
+struct FabricationStatus {
+    bool evaluated{false};
+    bool draft{true};
+    std::vector<ChecklistItem> checklist;
+    std::vector<std::string> unresolvedCodes;
+};
+
+struct LayoutConfig {
+    double dimTextHeight{3.0};     // kagit mm (buyuk harf/rakam yuksekligi)
+    double noteTextHeight{3.5};
+    double minDimText{3.0};        // alt sinir: bunun altina ASLA inilmez (ihlal -> sorun raporu)
+    double minNoteText{3.5};
+    double clearance{1.0};         // metin/cizgi/gorunus arasi minimum bosluk (kagit mm)
+    double rowPitch{0.0};          // 0: otomatik (metin yuksekligi + 4.5)
+    double firstOffset{10.0};
+    SheetSize minSheet{SheetSize::A4};
+    SheetSize maxSheet{SheetSize::A1};
+    double fixedScaleDen{0.0};     // >0: sadece bu olcek (ornegin 10 -> 1:10); 0: standart olceklerden otomatik
+    int maxIterations{6};
+    bool operator==(const LayoutConfig&) const = default;
+};
+
+struct LayoutIssue {
+    std::string code;      // TEXT_OVERLAP, ELEMENT_UNPLACEABLE, TEXT_TOO_SMALL, NO_FIT, ...
+    std::string detail;
+    ElementId element{0};
+    bool operator==(const LayoutIssue&) const = default;
+};
+
+struct LayoutReport {
+    bool ran{false};
+    bool ok{false};                    // true: tum zorunlu ogeler cakismasiz yerlesti
+    SheetSize requestedSheet{SheetSize::A3};
+    SheetSize finalSheet{SheetSize::A3};
+    double scaleDenominator{0.0};
+    int attempts{0};
+    int escalations{0};                // buyuk kagida gecis sayisi
+    std::vector<LayoutIssue> issues;
 };
 
 struct Revision {
@@ -172,11 +272,19 @@ struct DrawingSheet {
     std::vector<DrawingView> views;
     std::vector<MarkAnnotation> marks;
     std::vector<Dimension2D> dimensions;
+    std::vector<TextAnnotation> texts;
+    FabricationStatus fabrication;
+    LayoutConfig layoutConfig;
+    LayoutReport layout;
+    std::uint64_t documentRevision{0};   // cizimin uretildigi Document surumu
     ElementId nextId{1};
 
     ElementId allocateId() noexcept { return nextId++; }
     const DrawingView* findView(ElementId id) const noexcept;
     const DrawingView* viewOfKind(ViewKind kind) const noexcept;
+    // Not/legend icin ayrilan serit: title block'un SOLU (cerceve ici), kagit mm.
+    Bounds2 notesArea() const noexcept;
+    Bounds2 titleBlockRect() const noexcept;
     // Cizim cercevesi icinde (title block ayrilmis) kullanilabilir alan, kagit mm.
     Bounds2 drawingArea() const noexcept;
 };

@@ -66,6 +66,7 @@ add_library(model_maker_core
     src/marking.cpp
     src/fabrication.cpp
     src/drawing.cpp
+    src/drawing_layout.cpp
     src/drawing_builder.cpp)
 target_include_directories(model_maker_core PUBLIC include third_party)
 target_compile_options(model_maker_core PRIVATE -Wall -Wextra -Wpedantic)
@@ -526,6 +527,20 @@ if(BUILD_TESTING)
     target_link_libraries(model_maker_marking_test PRIVATE model_maker_core)
     target_compile_options(model_maker_marking_test PRIVATE -Wall -Wextra -Wpedantic)
     add_test(NAME model_maker_marking_test COMMAND model_maker_marking_test)
+
+    # FABRICATION FEATURES (P2A): Document -> tipli imalat ozellikleri (delik/levha/uye datumu), uydurma YOK.
+    add_executable(model_maker_fabrication_test tests/fabrication_test.cpp)
+    target_include_directories(model_maker_fabrication_test PRIVATE tests)
+    target_link_libraries(model_maker_fabrication_test PRIVATE model_maker_core)
+    target_compile_options(model_maker_fabrication_test PRIVATE -Wall -Wextra -Wpedantic)
+    add_test(NAME model_maker_fabrication_test COMMAND model_maker_fabrication_test)
+
+    # DRAWING P2A: otomatik imalat olculeri + akilli yerlesim (fixture: uc levhasi + 2 bagimsiz grup + oteli levha).
+    add_executable(model_maker_drawing_fab_test tests/drawing_fab_test.cpp)
+    target_include_directories(model_maker_drawing_fab_test PRIVATE tests)
+    target_link_libraries(model_maker_drawing_fab_test PRIVATE model_maker_core)
+    target_compile_options(model_maker_drawing_fab_test PRIVATE -Wall -Wextra -Wpedantic)
+    add_test(NAME model_maker_drawing_fab_test COMMAND model_maker_drawing_fab_test)
 
     # DRAWING FOUNDATION (P1): Document -> mark -> Front/Top/Side -> A3 yerlesim -> mark/olcu -> JSON.
     add_executable(model_maker_drawing_test tests/drawing_test.cpp)
@@ -1150,6 +1165,7 @@ if(BUILD_TESTING)
         target_include_directories(model_maker_drawing_gui_test PRIVATE include)
         target_link_libraries(model_maker_drawing_gui_test PRIVATE model_maker_core Qt6::Widgets)
         add_test(NAME model_maker_drawing_gui_test COMMAND model_maker_drawing_gui_test)
+
         set_tests_properties(model_maker_component_dialog_widget_test PROPERTIES
             ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
     endif()

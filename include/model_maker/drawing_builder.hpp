@@ -24,6 +24,7 @@
 
 #include "model_maker/document.hpp"
 #include "model_maker/drawing.hpp"
+#include "model_maker/fabrication.hpp"
 #include "model_maker/marking.hpp"
 
 #include <string>
@@ -41,6 +42,12 @@ struct DrawingOptions {
     std::string project;
     std::string drawnBy;
     std::string date;
+    // --- P2A ---
+    bool fabrication{true};      // otomatik imalat olculeri + callout + kontrol listesi
+    bool autoLayout{true};       // akilli yerlesim motoru (kapali: P1 dogrusal yerlesim)
+    bool memberAlignedViews{true};   // uye dunya eksenine hizali degilse gorunumleri uye eksenine hizala
+    bool detailViews{true};          // assembly'de delikli levhalar icin kendi olcekli levha-yuzu DETAY gorunumu
+    LayoutConfig layout;
 };
 
 struct DocumentMarkSummary {
@@ -52,6 +59,7 @@ struct BuildResult {
     bool ok{false};
     std::string error;
     DrawingSheet sheet;
+    fab::FabricationInventory inventory;   // P2A: olculerin dayandigi imalat ozellikleri
 };
 
 // 3B nokta -> gorunus-yerel ham 2B (olceksiz, ofsetsiz). Sag-el kurali, Z yukari:
@@ -74,13 +82,23 @@ DocumentMarkSummary markDocument(const Document& document, MarkRegistry& registr
 std::vector<EntityId> subjectParts(const Document& document, EntityId subject, DrawingKind& kind,
                                    std::string& error);
 
+// Gorunum cercevesi: `datum` verilirse ve uye dunya eksenlerine hizali DEGILSE uye cercevesi
+// (Front=(x',z'), Top=(x',y'), Side=(y',z')); aksi halde dunya cercevesi (P1 ile ayni).
+ViewFrame frameFor(ViewKind kind, const fab::MemberDatum* datum, bool memberAligned = true) noexcept;
+
 // Tek gorunus. Segmentler yerel koordinatta (min=(0,0)), olcek=1, origin=(0,0).
+// frame == nullptr: dunya cercevesi.
 DrawingView generateView(const Document& document, const std::vector<EntityId>& parts,
-                         EntityId subject, ViewKind kind, bool hiddenLines);
+                         EntityId subject, ViewKind kind, bool hiddenLines,
+                         const ViewFrame* frame = nullptr);
 
 // En iyi standart olcegi secip gorunusleri sheet uzerine yerlestirir.
 // Sigmazsa standart olmayan olcek (scaleIsStandard=false); alan sifir ise false.
 bool placeViews(DrawingSheet& sheet, const DrawingOptions& options);
+
+// Imalat kontrol listesini (sheet.fabrication) inventory + uretilen annotation'lardan hesaplar.
+// `layoutOk`: yerlesim sonucu. draft = herhangi bir madde Unresolved.
+void evaluateFabricationStatus(DrawingSheet& sheet, const fab::FabricationInventory& inv, bool layoutOk);
 
 BuildResult buildSheet(const Document& document, MarkRegistry& registry, EntityId subject,
                        const DrawingOptions& options = {});

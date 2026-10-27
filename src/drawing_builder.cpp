@@ -1,5 +1,6 @@
 #include "model_maker/drawing_builder.hpp"
 
+#include "model_maker/drawing_layout.hpp"
 #include "model_maker/utf8.hpp"
 
 #include <algorithm>
@@ -7,7 +8,9 @@
 #include <cmath>
 #include <cstdio>
 #include <map>
+#include <initializer_list>
 #include <set>
+#include <tuple>
 
 namespace mm::drawing {
 namespace {
@@ -17,6 +20,7 @@ const char* labelOf(ViewKind k) {
     case ViewKind::Front: return "FRONT";
     case ViewKind::Top: return "TOP";
     case ViewKind::Side: return "SIDE";
+    case ViewKind::Detail: return "DETAIL";
     }
     return "";
 }
@@ -58,16 +62,10 @@ Vec3 faceNormal(const std::vector<Vec3>& v, const Face& f) {
     return {n.x / l, n.y / l, n.z / l};
 }
 
-std::set<std::pair<std::size_t, std::size_t>> hiddenEdges(const WireframeModel& m, ViewKind kind) {
+std::set<std::pair<std::size_t, std::size_t>> hiddenEdges(const WireframeModel& m, const Vec3& toViewer) {
     std::set<std::pair<std::size_t, std::size_t>> hidden;
     const auto& v = m.vertices();
     if (m.faces().empty() || v.empty()) return hidden;
-    Vec3 toViewer{0, 0, 1};
-    switch (kind) {
-    case ViewKind::Front: toViewer = {0, -1, 0}; break;
-    case ViewKind::Top: toViewer = {0, 0, 1}; break;
-    case ViewKind::Side: toViewer = {1, 0, 0}; break;
-    }
     const Vec3 c = bboxCentre(m);
     std::map<std::pair<std::size_t, std::size_t>, std::vector<double>> dots;
     for (const Face& f : m.faces()) {
@@ -87,15 +85,6 @@ std::set<std::pair<std::size_t, std::size_t>> hiddenEdges(const WireframeModel& 
     for (const auto& [edge, ds] : dots)
         if (std::all_of(ds.begin(), ds.end(), [](double d) { return d < -1e-6; })) hidden.insert(edge);
     return hidden;
-}
-
-Vec3 viewNormal(ViewKind k) {
-    switch (k) {
-    case ViewKind::Front: return {0, 1, 0};
-    case ViewKind::Top: return {0, 0, 1};
-    case ViewKind::Side: return {1, 0, 0};
-    }
-    return {0, 1, 0};
 }
 
 std::string fmtNum(double v) {
@@ -129,17 +118,43 @@ Vec2 projectToView(const Vec3& p, ViewKind kind) noexcept {
     case ViewKind::Front: return {p.x, p.z};
     case ViewKind::Top: return {p.x, p.y};
     case ViewKind::Side: return {p.y, p.z};
+    case ViewKind::Detail: return {p.x, p.y};   // detay kendi cercevesini tasir; dunya yedegi
     }
     return {p.x, p.z};
 }
 
 Bounds2 markLabelBox(const MarkAnnotation& m) noexcept {
+    // GUI cizimiyle AYNI formul: kutu genisligi = max(metin + 3, h + 3), yukseklik = h + 2.
     const double h = m.isAssembly ? 5.0 : 3.5;
-    const double w = 3.0 + h * 0.75 * static_cast<double>(std::max<std::size_t>(m.text.size(), 2));
+    const double w = std::max(textWidthEstimate(m.text, h, m.isAssembly) + 3.0, h + 3.0);
     Bounds2 b;
     b.include(m.labelPos);
     b.include({m.labelPos.x + w, m.labelPos.y + h + 2.0});
     return b;
+}
+
+ViewFrame frameFor(ViewKind kind, const fab::MemberDatum* datum, bool memberAligned) noexcept {
+    ViewFrame f;   // dunya: Front (x,z), Top (x,y), Side (y,z)
+    const Vec3 X{1, 0, 0}, Y{0, 1, 0}, Z{0, 0, 1};
+    Vec3 x = X, y = Y, z = Z;
+    if (datum && datum->valid && memberAligned) {
+        const Vec3 a{std::fabs(datum->x.x), std::fabs(datum->x.y), std::fabs(datum->x.z)};
+        const bool worldAligned = std::max({a.x, a.y, a.z}) > 1.0 - 1e-9;
+        if (!worldAligned) {
+            x = datum->x;
+            y = datum->y;
+            z = datum->z;
+            f.memberAligned = true;
+        }
+    }
+    const auto neg = [](const Vec3& v) { return Vec3{-v.x, -v.y, -v.z}; };
+    switch (kind) {
+    case ViewKind::Front: f.right = x; f.up = z; f.normal = neg(y); break;
+    case ViewKind::Top: f.right = x; f.up = y; f.normal = z; break;
+    case ViewKind::Side: f.right = y; f.up = z; f.normal = x; break;
+    case ViewKind::Detail: f.right = x; f.up = y; f.normal = z; break;   // yedek; gercek detay cercevesi cagirandan gelir
+    }
+    return f;
 }
 
 bool isDrawablePart(const WireframeModel& m) noexcept {
@@ -152,7 +167,9 @@ DocumentMarkSummary markDocument(const Document& doc, MarkRegistry& reg) {
     const auto& models = doc.models();
     for (std::size_t i = 0; i < models.size(); ++i) {
         if (!isDrawablePart(models[i])) continue;
-        reg.markPart(doc.modelId(i), partSignatureOf(models[i]));
+        PartSignature sig = partSignatureOf(models[i]);
+        sig.drillHash = fab::drillingFingerprint(doc, doc.modelId(i));   // P2A: delik/kesme imzaya katilir
+        reg.markPart(doc.modelId(i), sig);
         ++s.parts;
     }
     for (const AssemblyRecord& a : doc.assemblies()) {
@@ -199,8 +216,11 @@ std::vector<EntityId> subjectParts(const Document& doc, EntityId subject, Drawin
 }
 
 DrawingView generateView(const Document& doc, const std::vector<EntityId>& parts, EntityId subject,
-                         ViewKind kind, bool hiddenLines) {
+                         ViewKind kind, bool hiddenLines, const ViewFrame* framePtr) {
     DrawingView view;
+    const ViewFrame fr = framePtr ? *framePtr : frameFor(kind, nullptr);
+    view.frame = fr;
+    const auto proj = [&](const Vec3& p) { return fr.project(p); };
     view.kind = kind;
     view.subject = subject;
     view.label = labelOf(kind);
@@ -216,13 +236,13 @@ DrawingView generateView(const Document& doc, const std::vector<EntityId>& parts
         const WireframeModel& m = doc.models()[*idx];
         const auto& v = m.vertices();
         std::set<std::pair<std::size_t, std::size_t>> hid;
-        if (hiddenLines) hid = hiddenEdges(m, kind);
+        if (hiddenLines) hid = hiddenEdges(m, fr.normal);
         Bounds2 mb;
-        for (const Vec3& p : v) mb.include(projectToView(p, kind));
+        for (const Vec3& p : v) mb.include(proj(p));
         for (const Edge& e : m.edges()) {
             if (e.from >= v.size() || e.to >= v.size()) continue;
-            const Vec2 a = projectToView(v[e.from], kind);
-            const Vec2 b = projectToView(v[e.to], kind);
+            const Vec2 a = proj(v[e.from]);
+            const Vec2 b = proj(v[e.to]);
             if (std::hypot(b.x - a.x, b.y - a.y) < 1e-6) continue; // goruntude nokta
             const auto key = std::minmax(e.from, e.to);
             raw.push_back({a, b, hid.count({key.first, key.second}) ? LineStyle::Hidden
@@ -275,7 +295,7 @@ DrawingView generateView(const Document& doc, const std::vector<EntityId>& parts
     //     hiddenLines acik -> kesik cizgi (deligin parca icindeki iki kenari). Egik eksen atlanir.
     //     Delik boyu = parcanin delik ekseni boyunca uzanimi (sinirli derinlik/yuva dikkate alinmaz).
     {
-        const Vec3 n = viewNormal(kind);
+        const Vec3 n = fr.normal;
         struct Group { EntityId owner; double dia; std::size_t first; int count; };
         std::set<Key> holeSeen;
         std::vector<Group> groups;
@@ -291,7 +311,7 @@ DrawingView generateView(const Document& doc, const std::vector<EntityId>& parts
                 if (al < 1e-9) continue;
                 const Vec3 ax{hm.planeNormal.x / al, hm.planeNormal.y / al, hm.planeNormal.z / al};
                 const double d = std::fabs(ax.x * n.x + ax.y * n.y + ax.z * n.z);
-                const Vec2 c = local(projectToView(hm.planeOrigin, kind));
+                const Vec2 c = local(proj(hm.planeOrigin));
                 if (d >= 0.999) {
                     Circle2 ci;
                     ci.center = c;
@@ -311,8 +331,8 @@ DrawingView generateView(const Document& doc, const std::vector<EntityId>& parts
                         tmax = std::max(tmax, t);
                     }
                     const auto at = [&](double t) {
-                        return local(projectToView({hm.planeOrigin.x + ax.x * t, hm.planeOrigin.y + ax.y * t,
-                                                    hm.planeOrigin.z + ax.z * t}, kind));
+                        return local(proj({hm.planeOrigin.x + ax.x * t, hm.planeOrigin.y + ax.y * t,
+                                           hm.planeOrigin.z + ax.z * t}));
                     };
                     const Vec2 a = at(tmin), b = at(tmax);
                     const double len = std::hypot(b.x - a.x, b.y - a.y);
@@ -347,6 +367,7 @@ bool placeViews(DrawingSheet& sheet, const DrawingOptions& opt) {
         case ViewKind::Front: return third ? std::pair{0, 0} : std::pair{1, 1};
         case ViewKind::Top: return third ? std::pair{0, 1} : std::pair{1, 0};
         case ViewKind::Side: return third ? std::pair{1, 0} : std::pair{0, 1};
+        case ViewKind::Detail: return std::pair{2, 0};
         }
         return {0, 0};
     };
@@ -419,8 +440,204 @@ bool placeViews(DrawingSheet& sheet, const DrawingOptions& opt) {
     return true;
 }
 
-BuildResult buildSheet(const Document& doc, MarkRegistry& reg, EntityId subject,
-                       const DrawingOptions& opt) {
+// ================================================================ P2A: imalat olculeri + yerlesim
+namespace {
+
+constexpr double kMinGap = 0.5;
+
+// 3B nokta -> gorunum-yerel (projectionOffset cikarilmis).
+Vec2 localOf(const DrawingView& v, const Vec3& p) {
+    const Vec2 q = v.frame.project(p);
+    return {q.x - v.projectionOffset.x, q.y - v.projectionOffset.y};
+}
+
+// Eksen gorunum duzleminde mi (gercek uzunluk)? dx/dy: gorunumdeki izdusum bilesenleri.
+struct AxisInView {
+    bool inPlane{false};
+    double px{0}, py{0};   // gorunum (right, up) bilesenleri (birim vektor icin)
+    DimensionDirection dir{DimensionDirection::Aligned};
+};
+AxisInView axisInView(const DrawingView& v, const Vec3& unitAxis) {
+    AxisInView r;
+    const double px = unitAxis.x * v.frame.right.x + unitAxis.y * v.frame.right.y + unitAxis.z * v.frame.right.z;
+    const double py = unitAxis.x * v.frame.up.x + unitAxis.y * v.frame.up.y + unitAxis.z * v.frame.up.z;
+    r.px = px;
+    r.py = py;
+    r.inPlane = std::hypot(px, py) >= 1.0 - 1e-6;   // gercek uzunluk: eksen gorunum duzleminde
+    if (std::fabs(py) < 1e-6) r.dir = DimensionDirection::Horizontal;
+    else if (std::fabs(px) < 1e-6) r.dir = DimensionDirection::Vertical;
+    return r;
+}
+
+std::string fmt1(double v) {
+    char b[32];
+    std::snprintf(b, sizeof(b), "%.1f", v);
+    return b;
+}
+
+} // namespace
+
+void evaluateFabricationStatus(DrawingSheet& sheet, const fab::FabricationInventory& inv, bool layoutOk) {
+    FabricationStatus& st = sheet.fabrication;
+    st.evaluated = true;
+    st.checklist.clear();
+    st.unresolvedCodes.clear();
+    const auto item = [&](const char* key, const char* label, ChecklistState state, std::string detail,
+                          std::string fk = {}) {
+        st.checklist.push_back({key, label, state, std::move(detail), std::move(fk)});
+    };
+    const auto countDims = [&](DimensionRole r, const std::string& fk) {
+        int n = 0;
+        for (const Dimension2D& d : sheet.dimensions)
+            if (d.role == r && (fk.empty() || d.featureKey == fk)) ++n;
+        return n;
+    };
+    const auto hasText = [&](TextKind k, const std::string& fk) {
+        for (const TextAnnotation& t : sheet.texts)
+            if (t.kind == k && t.featureKey == fk) return true;
+        return false;
+    };
+    const auto codeDetail = [&](std::initializer_list<const char*> codes) {
+        std::string out;
+        for (const fab::Unresolved& u : inv.unresolved)
+            for (const char* c : codes)
+                if (u.code == c) out += (out.empty() ? "" : "; ") + u.code + ": " + u.detail;
+        return out;
+    };
+    const auto anyOf = [&](std::initializer_list<const char*> codes) {
+        for (const fab::Unresolved& u : inv.unresolved)
+            for (const char* c : codes)
+                if (u.code == c) return true;
+        return false;
+    };
+
+    // Mark'lar
+    item("PART_MARK", "Parca mark'i", sheet.marks.empty() ? ChecklistState::Unresolved : ChecklistState::Satisfied,
+         sheet.marks.empty() ? "mark etiketi yok" : "");
+    item("ASSEMBLY_MARK", "Assembly mark'i",
+         sheet.kind == DrawingKind::Assembly
+             ? (std::any_of(sheet.marks.begin(), sheet.marks.end(), [](const MarkAnnotation& m) { return m.isAssembly; })
+                    ? ChecklistState::Satisfied
+                    : ChecklistState::Unresolved)
+             : ChecklistState::NotApplicable,
+         "");
+
+    // Uye datumu
+    const bool needDatum = std::any_of(inv.plates.begin(), inv.plates.end(), [&](const fab::PlateFeature& p) {
+        return p.plate != inv.mainPart;
+    });
+    if (needDatum)
+        item("MEMBER_DATUM", "Uye baslangic datumu ve yerel eksenler",
+             inv.datum.valid && inv.datum.rollResolved ? ChecklistState::Satisfied : ChecklistState::Unresolved,
+             inv.datum.valid ? (inv.datum.rollResolved ? inv.datum.orientationBasis : codeDetail({"MEMBER_ROLL_UNRESOLVED"}))
+                             : codeDetail({"MEMBER_AXIS_MISSING"}),
+             inv.datum.id);
+
+    // Levhalar
+    if (inv.plates.empty()) {
+        item("PLATE_OUTLINE", "Levha olculeri (boy/en)", ChecklistState::NotApplicable, "cizimde kayitli cerceveli levha yok");
+    }
+    for (const fab::PlateFeature& p : inv.plates) {
+        const int w = countDims(DimensionRole::PlateWidth, p.id), h = countDims(DimensionRole::PlateHeight, p.id);
+        const bool ok = w >= 1 && h >= 1 && p.outlineExact;
+        item("PLATE_OUTLINE", "Levha olculeri (boy/en)", ok ? ChecklistState::Satisfied : ChecklistState::Unresolved,
+             ok ? "" : (!p.outlineExact ? "yay pah yaklasik" : "levha yuzunu gosteren gercek-uzunluk gorunumu yok"), p.id);
+        item("PLATE_THICKNESS", "Levha kalinligi", hasText(TextKind::PlateNote, p.id) ? ChecklistState::Satisfied : ChecklistState::Unresolved,
+             hasText(TextKind::PlateNote, p.id) ? "PL " + fmt1(p.thickness) + " notu" : "kalinlik notu uretilemedi", p.id);
+        if (p.plate != inv.mainPart) {
+            bool satisfied = inv.datum.valid;
+            std::string missing;
+            if (inv.datum.valid) {
+                const DimensionRole rr[3] = {DimensionRole::PlateOffsetX, DimensionRole::PlateOffsetY, DimensionRole::PlateOffsetZ};
+                static const char* an[3] = {"x'", "y'", "z'"};
+                for (int k = 0; k < 3; ++k) {
+                    const double ref = p.offsetRef(k);
+                    if (std::fabs(ref) > 0.5 && countDims(rr[k], p.id) == 0) {
+                        satisfied = false;
+                        missing += std::string(an[k]) + " ";
+                    }
+                }
+            }
+            item("PLATE_OFFSET", "Levha ofseti (uye baslangicindan)",
+                 satisfied ? ChecklistState::Satisfied : ChecklistState::Unresolved,
+                 satisfied ? "" : (inv.datum.valid ? "gercek-uzunluk gorunumu yok: " + missing : codeDetail({"MEMBER_AXIS_MISSING"})),
+                 p.id);
+        }
+    }
+    // Delikler
+    if (inv.groups.empty() && !anyOf({"HOLE_FRAME_UNAVAILABLE", "HOLE_OWNER_UNKNOWN", "HOLE_NOT_NORMAL_TO_PLATE",
+                                      "HOLE_PARTIAL_DEPTH", "HOLE_OUTSIDE_PLATE"})) {
+        item("HOLES", "Delik capi/adedi/konumu/adimlari/kenar mesafeleri", ChecklistState::NotApplicable, "delik yok");
+    }
+    for (const fab::HoleGroupFeature& g : inv.groups) {
+        const bool callout = hasText(TextKind::HoleCallout, g.id);
+        item("HOLE_DIAMETER_COUNT", "Delik capi ve adedi", callout ? ChecklistState::Satisfied : ChecklistState::Unresolved,
+             callout ? "" : "callout uretilemedi", g.id);
+        // u adimlari: ayni levhada ayni sutun imzali gruplardan biri tasir; v adimlari ve net kenarlar grubun kendi anahtarinda.
+        int vPitch = 0, uPitch = 0, edge = 0;
+        for (const Dimension2D& d : sheet.dimensions) {
+            if (d.role == DimensionRole::HolePitch && d.basis.find("along plate u") != std::string::npos) {
+                for (const fab::HoleGroupFeature& o : inv.groups)
+                    if (o.id == d.featureKey && o.plate == g.plate && o.colU.size() == g.colU.size() &&
+                        std::fabs(o.diameter - g.diameter) < 1e-6) {
+                        bool same = true;
+                        for (std::size_t i = 0; i < g.colU.size(); ++i) same = same && std::fabs(o.colU[i] - g.colU[i]) < 0.05;
+                        if (same) { ++uPitch; break; }
+                    }
+            }
+            if (d.featureKey != g.id) continue;
+            if (d.role == DimensionRole::HolePitch && d.basis.find("along plate v") != std::string::npos) ++vPitch;
+            if (d.role == DimensionRole::HoleEdge) ++edge;
+        }
+        const bool posOk = g.regular && g.shape == fab::HoleShape::Round && uPitch >= g.cols - 1 && vPitch >= g.rows - 1 &&
+                           edge >= 1;
+        item("HOLE_POSITIONS", "Delik merkezleri / adimlar / net kenar mesafeleri",
+             posOk ? ChecklistState::Satisfied : ChecklistState::Unresolved,
+             posOk ? "" : "duzgun olmayan dizilim, yuvali delik veya gercek-uzunluk gorunumu yok", g.id);
+    }
+    if (anyOf({"HOLE_FRAME_UNAVAILABLE", "HOLE_OWNER_UNKNOWN", "HOLE_NOT_NORMAL_TO_PLATE", "HOLE_PARTIAL_DEPTH",
+               "HOLE_OUTSIDE_PLATE", "HOLE_PATTERN_IRREGULAR", "SLOT_NOT_DRAWN", "HOLE_BREAKS_EDGE"}))
+        item("HOLES_UNRESOLVED", "Cozumlenemeyen delik/yuva", ChecklistState::Unresolved,
+             codeDetail({"HOLE_FRAME_UNAVAILABLE", "HOLE_OWNER_UNKNOWN", "HOLE_NOT_NORMAL_TO_PLATE", "HOLE_PARTIAL_DEPTH",
+                         "HOLE_OUTSIDE_PLATE", "HOLE_PATTERN_IRREGULAR", "SLOT_NOT_DRAWN", "HOLE_BREAKS_EDGE"}));
+    // Kesim / kaynak
+    item("CUTS", "Kesim/kopya olculeri",
+         anyOf({"CUT_NOT_DIMENSIONED"}) ? ChecklistState::Unresolved : ChecklistState::NotApplicable,
+         codeDetail({"CUT_NOT_DIMENSIONED"}));
+    item("WELDS", "Kaynak sembolleri/olculeri",
+         anyOf({"WELD_NOT_DIMENSIONED"}) ? ChecklistState::Unresolved : ChecklistState::NotApplicable,
+         codeDetail({"WELD_NOT_DIMENSIONED"}));
+    if (anyOf({"PLATE_FRAME_STALE", "PLATE_SPEC_INVALID", "PLATE_OUTLINE_APPROX"}))
+        item("PLATE_FRAME", "Levha cercevesi dogrulugu", ChecklistState::Unresolved,
+             codeDetail({"PLATE_FRAME_STALE", "PLATE_SPEC_INVALID", "PLATE_OUTLINE_APPROX"}));
+    // Yerlesim
+    item("LAYOUT", "Cakismasiz sayfa yerlesimi", layoutOk ? ChecklistState::Satisfied : ChecklistState::Unresolved,
+         layoutOk ? "" : (sheet.layout.issues.empty() ? "yerlesim calistirilmadi" : sheet.layout.issues.front().code));
+
+    for (const fab::Unresolved& u : inv.unresolved) st.unresolvedCodes.push_back(u.code);
+    std::sort(st.unresolvedCodes.begin(), st.unresolvedCodes.end());
+    st.unresolvedCodes.erase(std::unique(st.unresolvedCodes.begin(), st.unresolvedCodes.end()), st.unresolvedCodes.end());
+    st.draft = false;
+    for (const ChecklistItem& c : st.checklist)
+        if (c.state == ChecklistState::Unresolved) st.draft = true;
+}
+
+namespace {
+
+// Sayfa duzeyi metin (damga/legend/checklist).
+TextAnnotation& addText(DrawingSheet& sheet, TextKind kind, std::vector<std::string> lines, double height) {
+    TextAnnotation t;
+    t.id = sheet.allocateId();
+    t.kind = kind;
+    t.lines = std::move(lines);
+    t.height = height;
+    sheet.texts.push_back(std::move(t));
+    return sheet.texts.back();
+}
+
+} // namespace
+
+BuildResult buildSheet(const Document& doc, MarkRegistry& reg, EntityId subject, const DrawingOptions& opt) {
     BuildResult res;
     markDocument(doc, reg);
 
@@ -441,21 +658,8 @@ BuildResult buildSheet(const Document& doc, MarkRegistry& reg, EntityId subject,
     sheet.projection = opt.projection;
     sheet.id = 1;
     sheet.name = text::toUtf8(subjectMark->text());
-
-    for (const ViewKind k : opt.views) {
-        DrawingView v = generateView(doc, parts, subject, k, opt.hiddenLines);
-        if (v.bounds.empty) continue;
-        v.id = sheet.allocateId();
-        sheet.views.push_back(std::move(v));
-    }
-    if (sheet.views.empty()) {
-        res.error = "gorunus uretilemedi (geometri bos)";
-        return res;
-    }
-    if (!placeViews(sheet, opt)) {
-        res.error = "gorunusler kagit alanina yerlestirilemedi";
-        return res;
-    }
+    sheet.layoutConfig = opt.layout;
+    sheet.documentRevision = doc.revision();
 
     // Ana parca: assembly ise mainPart, degilse konu.
     EntityId mainPart = parts.front();
@@ -468,11 +672,81 @@ BuildResult buildSheet(const Document& doc, MarkRegistry& reg, EntityId subject,
     const bool hasAxis = axisOf(mainModel, axA, axB);
     const double axisLen = hasAxis ? dist3(axA, axB) : 0.0;
 
+    // Imalat envanteri (Document'tan; cizimden bagimsiz).
+    fab::FabricationInventory inv = fab::extractFabrication(doc, parts, mainPart);
+
+    for (const ViewKind k : opt.views) {
+        const ViewFrame fr = frameFor(k, &inv.datum, opt.memberAlignedViews);
+        DrawingView v = generateView(doc, parts, subject, k, opt.hiddenLines, &fr);
+        if (v.bounds.empty) continue;
+        v.id = sheet.allocateId();
+        sheet.views.push_back(std::move(v));
+    }
+    if (sheet.views.empty()) {
+        res.error = "gorunus uretilemedi (geometri bos)";
+        return res;
+    }
+    // P2A: assembly'de delikli levhalar icin DETAY gorunumu (levha yuzu, kendi olcegi). Delik/levha olculeri burada.
+    std::set<EntityId> detailPlates;
+    if (opt.fabrication && opt.detailViews && (sheet.kind == DrawingKind::Assembly || parts.size() > 1)) {
+        for (const fab::PlateFeature& P : inv.plates) {
+            bool hasHoles = false;
+            for (const fab::HoleGroupFeature& g : inv.groups) hasHoles = hasHoles || g.plate == P.plate;
+            if (!hasHoles || P.plate == mainPart) continue;
+            ViewFrame fr;
+            fr.right = P.u;
+            fr.up = P.v;
+            fr.normal = {P.u.y * P.v.z - P.u.z * P.v.y, P.u.z * P.v.x - P.u.x * P.v.z, P.u.x * P.v.y - P.u.y * P.v.x};
+            DrawingView dv = generateView(doc, {P.plate}, P.plate, ViewKind::Detail, false, &fr);
+            if (dv.bounds.empty) continue;
+            dv.id = sheet.allocateId();
+            dv.detailPlate = P.plate;
+            const auto pm = reg.markOf(P.plate);
+            dv.label = "DETAIL" + (pm ? " " + text::toUtf8(pm->text()) : std::string());
+            detailPlates.insert(P.plate);
+            sheet.views.push_back(std::move(dv));
+        }
+    }
+    if (!placeViews(sheet, opt)) {
+        res.error = "gorunusler kagit alanina yerlestirilemedi";
+        return res;
+    }
+
+    // Cozumlenmis levha-delik sahipleri: P1 yedek zinciri bunlar icin URETILMEZ (yinelenen zincir yok).
+    std::set<EntityId> fabOwners;
+    for (const fab::HoleGroupFeature& g : inv.groups) fabOwners.insert(g.plate);
+
+    // Olcu birikimi (gorunum bazinda yerel liste; sonra sheet.dimensions'a).
+    struct Pending { Dimension2D d; int group; };
+    std::vector<Pending> pend;
+    const auto sameDim = [](const Dimension2D& a, const Dimension2D& b) {
+        const auto close = [](const Vec2& p, const Vec2& q) { return std::fabs(p.x - q.x) < 0.01 && std::fabs(p.y - q.y) < 0.01; };
+        return a.viewId == b.viewId && a.direction == b.direction &&
+               ((close(a.p1, b.p1) && close(a.p2, b.p2)) || (close(a.p1, b.p2) && close(a.p2, b.p1)));
+    };
+    const auto isFabRole = [](DimensionRole r) {
+        return r == DimensionRole::PlateWidth || r == DimensionRole::PlateHeight || r == DimensionRole::HolePitch ||
+               r == DimensionRole::HoleEdge || r == DimensionRole::PlateOffsetX || r == DimensionRole::PlateOffsetY ||
+               r == DimensionRole::PlateOffsetZ;
+    };
+
     for (DrawingView& v : sheet.views) {
         const Bounds2 pb = v.paperBounds();
 
         // --- mark etiketleri ---
-        {
+        if (v.kind == ViewKind::Detail) {
+            if (const auto pm = reg.markOf(v.detailPlate)) {
+                MarkAnnotation m;
+                m.id = sheet.allocateId();
+                m.viewId = v.id;
+                m.target = v.detailPlate;
+                m.text = text::toUtf8(pm->text());
+                m.isAssembly = false;
+                m.anchor = v.bounds.centre();
+                m.labelPos = {pb.min.x, pb.max.y + 8.0};
+                sheet.marks.push_back(std::move(m));
+            }
+        } else {
             MarkAnnotation m;
             m.id = sheet.allocateId();
             m.viewId = v.id;
@@ -483,7 +757,7 @@ BuildResult buildSheet(const Document& doc, MarkRegistry& reg, EntityId subject,
             m.labelPos = {pb.min.x, pb.max.y + 8.0};
             sheet.marks.push_back(std::move(m));
         }
-        if (sheet.kind == DrawingKind::Assembly) {
+        if (sheet.kind == DrawingKind::Assembly && v.kind != ViewKind::Detail) {
             std::set<int> doneParts;
             for (const ViewMember& vm : v.members) {
                 const auto pm = reg.markOf(vm.entity);
@@ -500,8 +774,7 @@ BuildResult buildSheet(const Document& doc, MarkRegistry& reg, EntityId subject,
                 sheet.marks.push_back(std::move(m));
             }
         }
-
-        // Etiketler birbirine binmesin: sirayla, cakisan etiketi yukari kaydir (deterministik).
+        // P1 yedek yerlesimi (autoLayout kapaliyken): cakisan etiketi yukari kaydir.
         {
             std::vector<std::size_t> mine;
             for (std::size_t i = 0; i < sheet.marks.size(); ++i)
@@ -522,29 +795,46 @@ BuildResult buildSheet(const Document& doc, MarkRegistry& reg, EntityId subject,
             }
         }
 
-        // --- olculer: gercek geometriye bagli ---
-        const Vec2 rawMin = v.projectionOffset; // yerel = projectToView(P) - projectionOffset
-        struct Pending { Dimension2D d; int group; };
-        std::vector<Pending> pend;
+        // --- gorunum basligi (yerlesim bunu da engel sayar) ---
+        {
+            TextAnnotation& t = addText(sheet, TextKind::ViewTitle, {v.label + "  " + sheet.titleBlock.scaleText},
+                                        opt.layout.noteTextHeight);
+            t.viewId = v.id;
+        }
+
         const auto newDim = [&](DimensionRole role, DimensionDirection dir, Vec2 p1, Vec2 p2, double value,
-                                EntityId src, int group, double offset = 0.0) {
+                                EntityId src, int group, std::string fkey = {}, std::string basis = {},
+                                int side = 1) {
+            if (isFabRole(role) && value < kMinGap) return;   // sifir/negatif imalat olcusu uretilmez (Unresolved ayrica raporlanir)
             Dimension2D d;
-            d.id = sheet.allocateId();
+            d.id = 0;
             d.viewId = v.id;
             d.role = role;
             d.direction = dir;
             d.p1 = p1;
             d.p2 = p2;
             d.value = value;
-            d.offset = offset;
+            d.offset = 0.0;
+            d.side = side;
             d.source = src;
+            d.featureKey = std::move(fkey);
+            d.basis = std::move(basis);
+            d.documentRevision = doc.revision();
+            // Yinelenen/fazlalik zincir engeli: ayni gorunum+yon+uc noktalar zaten varsa EKLENMEZ
+            // (imalat rolu, genel olcuden onceliklidir).
+            for (Pending& q : pend) {
+                if (!sameDim(q.d, d)) continue;
+                if (isFabRole(role) && !isFabRole(q.d.role)) { d.id = sheet.allocateId(); q.d = d; q.group = group; }
+                return;
+            }
+            d.id = sheet.allocateId();
             pend.push_back({d, group});
         };
-        constexpr double kMinGap = 0.5;
-        constexpr int kLengthGroup = 100, kOverallGroup = 101;
+        constexpr int kLengthGroup = 100, kOverallGroup = 101, kPlateGroup = 60, kOffsetGroup = 70;
 
+        const bool isDetail = v.kind == ViewKind::Detail;
         // (1) Montaj uyelerinin kenar konumlari zinciri (yalniz assembly, >1 uye).
-        if (sheet.kind == DrawingKind::Assembly && v.members.size() > 1) {
+        if (!isDetail && sheet.kind == DrawingKind::Assembly && v.members.size() > 1) {
             std::vector<double> xs{v.bounds.min.x, v.bounds.max.x}, ys{v.bounds.min.y, v.bounds.max.y};
             for (const ViewMember& vm : v.members) {
                 xs.push_back(vm.bounds.min.x); xs.push_back(vm.bounds.max.x);
@@ -555,18 +845,19 @@ BuildResult buildSheet(const Document& doc, MarkRegistry& reg, EntityId subject,
             if (xs.size() > 2)
                 for (std::size_t i = 0; i + 1 < xs.size(); ++i)
                     newDim(DimensionRole::PartPosition, DimensionDirection::Horizontal, {xs[i], v.bounds.min.y},
-                           {xs[i + 1], v.bounds.min.y}, xs[i + 1] - xs[i], subject, 0);
+                           {xs[i + 1], v.bounds.min.y}, xs[i + 1] - xs[i], subject, 0, {}, "member edge chain");
             if (ys.size() > 2)
                 for (std::size_t i = 0; i + 1 < ys.size(); ++i)
                     newDim(DimensionRole::PartPosition, DimensionDirection::Vertical, {v.bounds.max.x, ys[i]},
-                           {v.bounds.max.x, ys[i + 1]}, ys[i + 1] - ys[i], subject, 0);
+                           {v.bounds.max.x, ys[i + 1]}, ys[i + 1] - ys[i], subject, 0, {}, "member edge chain");
         }
 
-        // (2) Delik zincirleri (parca basina): kenar -> delik -> delik -> kenar, merkezler arasi.
+        // (2) P1 yedek delik zincirleri: yalniz imalat cercevesi OLMAYAN sahipler icin.
         {
             std::vector<EntityId> owners;
             for (const Circle2& c : v.circles)
-                if (std::find(owners.begin(), owners.end(), c.owner) == owners.end()) owners.push_back(c.owner);
+                if (!fabOwners.count(c.owner) && !isDetail && std::find(owners.begin(), owners.end(), c.owner) == owners.end())
+                    owners.push_back(c.owner);
             int group = 1;
             for (const EntityId owner : owners) {
                 const ViewMember* pm = nullptr;
@@ -580,52 +871,231 @@ BuildResult buildSheet(const Document& doc, MarkRegistry& reg, EntityId subject,
                 for (const Vec2& c : centres) { cx.push_back(c.x); cy.push_back(c.y); }
                 cx = uniqueSorted(cx, 0.05);
                 cy = uniqueSorted(cy, 0.05);
-                const Bounds2& pb = pm->bounds;
-                // Nokta + bagli oldugu ikinci koordinat (uzatma cizgisi nereden baslar).
+                const Bounds2& pbm = pm->bounds;
                 std::vector<std::pair<double, double>> hx, hy;
-                hx.push_back({pb.min.x, pb.min.y});
+                hx.push_back({pbm.min.x, pbm.min.y});
                 for (const double x : cx) {
                     double y = 1e300;
                     for (const Vec2& c : centres) if (std::fabs(c.x - x) <= 0.05) y = std::min(y, c.y);
                     hx.push_back({x, y});
                 }
-                hx.push_back({pb.max.x, pb.min.y});
-                hy.push_back({pb.min.y, pb.max.x});
+                hx.push_back({pbm.max.x, pbm.min.y});
+                hy.push_back({pbm.min.y, pbm.max.x});
                 for (const double y : cy) {
                     double x = -1e300;
                     for (const Vec2& c : centres) if (std::fabs(c.y - y) <= 0.05) x = std::max(x, c.x);
                     hy.push_back({y, x});
                 }
-                hy.push_back({pb.max.y, pb.max.x});
+                hy.push_back({pbm.max.y, pbm.max.x});
                 for (std::size_t i = 0; i + 1 < hx.size(); ++i) {
                     const double gap = hx[i + 1].first - hx[i].first;
                     if (gap >= kMinGap)
                         newDim(DimensionRole::HoleSpacing, DimensionDirection::Horizontal, {hx[i].first, hx[i].second},
-                               {hx[i + 1].first, hx[i + 1].second}, gap, owner, group);
+                               {hx[i + 1].first, hx[i + 1].second}, gap, owner, group, {},
+                               "P1 fallback: view-projected hole circles (no plate frame)");
                 }
                 for (std::size_t i = 0; i + 1 < hy.size(); ++i) {
                     const double gap = hy[i + 1].first - hy[i].first;
                     if (gap >= kMinGap)
                         newDim(DimensionRole::HoleSpacing, DimensionDirection::Vertical, {hy[i].second, hy[i].first},
-                               {hy[i + 1].second, hy[i + 1].first}, gap, owner, group);
+                               {hy[i + 1].second, hy[i + 1].first}, gap, owner, group, {},
+                               "P1 fallback: view-projected hole circles (no plate frame)");
                 }
                 ++group;
             }
         }
 
-        // (3) Uye boyu (ana parca ekseni, gorunus duzleminde ise) + genel olculer.
+        // (2b) P2A: imalat olculeri — YALNIZ levha yuzunu gercek uzunlukta gosteren gorunumde.
+        if (opt.fabrication) {
+            for (const fab::PlateFeature& P : inv.plates) {
+                if (isDetail) { if (v.detailPlate != P.plate) continue; }
+                else if (detailPlates.count(P.plate)) continue;   // bu levhanin olculeri DETAY gorunumunde
+                const double facing = std::fabs(P.n.x * v.frame.normal.x + P.n.y * v.frame.normal.y + P.n.z * v.frame.normal.z);
+                if (facing < 1.0 - 1e-6) continue;   // levha bu gorunumde yuz-yuze degil
+                const auto uvLocal = [&](double u, double w) {
+                    return localOf(v, {P.origin.x + P.u.x * u + P.v.x * w, P.origin.y + P.u.y * u + P.v.y * w,
+                                       P.origin.z + P.u.z * u + P.v.z * w});
+                };
+                const AxisInView au = axisInView(v, P.u), av = axisInView(v, P.v);
+                if (!au.inPlane || !av.inPlane) continue;
+                // Zincir yonu: u ekseninin gorunumdeki yonu.
+                const DimensionDirection dirU = au.dir, dirV = av.dir;
+                // Levha iki yonu da yatay/dusey degilse Aligned.
+                std::vector<const fab::HoleGroupFeature*> gs;
+                for (const fab::HoleGroupFeature& g : inv.groups)
+                    if (g.plate == P.plate) gs.push_back(&g);
+                // Gorunumde en alt / en sag satir-sutun secimi.
+                const auto viewYOfV = [&](double u, double w) { return uvLocal(u, w).y; };
+                const auto viewXOfU = [&](double u, double w) { return uvLocal(u, w).x; };
+                int chainNo = 1;
+                std::set<std::string> doneU;   // ayni sutun listesi yinelenmez
+                // --- u yonu zinciri (her grup kendi sutunlariyla) ---
+                std::vector<const fab::HoleGroupFeature*> ordered = gs;
+                std::sort(ordered.begin(), ordered.end(), [](const fab::HoleGroupFeature* a, const fab::HoleGroupFeature* b) {
+                    return a->rowV.front() > b->rowV.front();   // ustten alta
+                });
+                for (const fab::HoleGroupFeature* g : ordered) {
+                    if (!g->regular || g->shape != fab::HoleShape::Round) continue;
+                    std::string sig;
+                    for (const double cu : g->colU) sig += std::to_string(std::llround(cu * 10)) + ",";
+                    sig += "d" + std::to_string(std::llround(g->diameter * 10));
+                    if (!doneU.insert(sig).second) continue;   // ayni sutun zinciri zaten var
+                    // temsilci satir: u ekseni yataysa gorunumde en alt, dikeyse en sag
+                    double rep = g->rowV.front();
+                    double bestScore = 1e300;
+                    for (const double rv : g->rowV) {
+                        const double sc = dirU == DimensionDirection::Vertical ? -viewXOfU(g->colU.front(), rv)
+                                                                              : viewYOfV(g->colU.front(), rv);
+                        if (sc < bestScore - 1e-9) { bestScore = sc; rep = rv; }
+                    }
+                    const double r = g->diameter / 2.0;
+                    const int grp = 10 + chainNo++;
+                    const auto add = [&](DimensionRole role, double ua, double ub, double value, const char* basis) {
+                        newDim(role, dirU, uvLocal(ua, rep), uvLocal(ub, rep), value, P.plate, grp, g->id, basis);
+                    };
+                    add(DimensionRole::HoleEdge, P.envMinU, g->colU.front() - r, g->edgeMinU, "net edge: plate min-u edge to hole outer edge");
+                    for (std::size_t i = 0; i + 1 < g->colU.size(); ++i)
+                        add(DimensionRole::HolePitch, g->colU[i], g->colU[i + 1], g->pitchU[i], "centre pitch along plate u");
+                    add(DimensionRole::HoleEdge, g->colU.back() + r, P.envMaxU, g->edgeMaxU, "net edge: hole outer edge to plate max-u edge");
+                }
+                // --- v yonu zinciri: grup zincirlerini tek plaka zincirine bagla (ustten alta) ---
+                {
+                    std::vector<const fab::HoleGroupFeature*> vg;
+                    for (const fab::HoleGroupFeature* g : ordered)
+                        if (g->regular && g->shape == fab::HoleShape::Round) vg.push_back(g);
+                    if (!vg.empty()) {
+                        const int grp = 10 + chainNo++;
+                        // temsilci sutun: v ekseni dikeyse gorunumde en sag; yataysa en alt
+                        const auto repCol = [&](const fab::HoleGroupFeature* g) {
+                            double rep = g->colU.back();
+                            double best = 1e300;
+                            for (const double cu : g->colU) {
+                                const double sc = dirV == DimensionDirection::Horizontal ? viewYOfV(cu, g->rowV.front()) : -viewXOfU(cu, g->rowV.front());
+                                if (sc < best - 1e-9) { best = sc; rep = cu; }
+                            }
+                            return rep;
+                        };
+                        const auto addv = [&](DimensionRole role, double ua, double va, double ub, double vb, double value,
+                                              const std::string& fk, const char* basis) {
+                            newDim(role, dirV, uvLocal(ua, va), uvLocal(ub, vb), value, P.plate, grp, fk, basis);
+                        };
+                        const fab::HoleGroupFeature* top = vg.front();
+                        addv(DimensionRole::HoleEdge, repCol(top), P.envMaxV, repCol(top), top->rowV.front() + top->diameter / 2.0,
+                             top->edgeTop, top->id, "net edge: plate max-v edge to upper hole outer edge");
+                        for (std::size_t gi = 0; gi < vg.size(); ++gi) {
+                            const fab::HoleGroupFeature* g = vg[gi];
+                            const double r = g->diameter / 2.0;
+                            const double uc = repCol(g);
+                            for (std::size_t i = 0; i + 1 < g->rowV.size(); ++i)
+                                addv(DimensionRole::HolePitch, uc, g->rowV[i], uc, g->rowV[i + 1], g->pitchV[i], g->id,
+                                     "centre pitch along plate v");
+                            if (gi + 1 < vg.size()) {
+                                const fab::HoleGroupFeature* nx = vg[gi + 1];
+                                const double upper = g->rowV.back() - r;
+                                const double lower = nx->rowV.front() + nx->diameter / 2.0;
+                                const double gap = upper - lower;
+                                if (gap > 0.0)
+                                    addv(DimensionRole::HoleEdge, repCol(g), upper, repCol(nx), lower, gap, nx->id,
+                                         "net gap between independent bolt groups");
+                            }
+                        }
+                        const fab::HoleGroupFeature* bot = vg.back();
+                        addv(DimensionRole::HoleEdge, repCol(bot), bot->rowV.back() - bot->diameter / 2.0, repCol(bot), P.envMinV,
+                             bot->edgeBottom, bot->id, "net edge: lower hole outer edge to plate min-v edge");
+                    }
+                }
+                // --- levha boy/en ---
+                if (P.outlineExact) {
+                    newDim(DimensionRole::PlateWidth, dirU, uvLocal(P.envMinU, P.envMinV), uvLocal(P.envMaxU, P.envMinV),
+                           P.width, P.plate, kPlateGroup, P.id, "plate width along u (outline envelope)");
+                    newDim(DimensionRole::PlateHeight, dirV, uvLocal(P.envMaxU, P.envMinV), uvLocal(P.envMaxU, P.envMaxV),
+                           P.height, P.plate, kPlateGroup + 1, P.id, "plate height along v (outline envelope)");
+                }
+                // --- callout'lar (anchor view-yerel) ---
+                for (const fab::HoleGroupFeature* g : ordered) {
+                    TextAnnotation& t = addText(sheet, TextKind::HoleCallout, {}, opt.layout.noteTextHeight);
+                    const std::string mm = fmt1(g->diameter);
+                    std::string dia = mm;
+                    if (dia.size() > 2 && dia.substr(dia.size() - 2) == ".0") dia.resize(dia.size() - 2);
+                    t.lines = {std::to_string(g->count()) + " x \xC3\x98" + dia +
+                               (g->shape == fab::HoleShape::Slot ? " (YUVA)" : "")};
+                    t.viewId = v.id;
+                    t.hasAnchor = true;
+                    t.leader = true;
+                    t.anchor = uvLocal(g->colU.front(), g->rowV.front());
+                    t.source = P.plate;
+                    t.featureKey = g->id;
+                }
+                {
+                    TextAnnotation& t = addText(sheet, TextKind::PlateNote, {}, opt.layout.noteTextHeight);
+                    t.lines = {"PL " + (std::fabs(P.thickness - std::round(P.thickness)) < 0.05 ? std::to_string(std::lround(P.thickness)) : fmt1(P.thickness)) +
+                               (P.material.empty() ? std::string() : "  " + P.material)};
+                    t.viewId = v.id;
+                    t.hasAnchor = true;
+                    t.leader = true;
+                    t.anchor = uvLocal(P.envMaxU, P.envMaxV);
+                    t.source = P.plate;
+                    t.featureKey = P.id;
+                }
+            }
+        }
+
+        // (2c) P2A: levha ofsetleri (uye BASLANGICINDAN) — uye ekseninin gorunum duzleminde oldugu gorunum.
+        if (opt.fabrication && inv.datum.valid && !isDetail) {
+            const fab::MemberDatum& D = inv.datum;
+            for (const fab::PlateFeature& P : inv.plates) {
+                if (P.plate == D.member) continue;
+                const double cn[3] = {P.localCentre.x, P.localCentre.y, P.localCentre.z};
+                const Vec3 axes[3] = {D.x, D.y, D.z};
+                const DimensionRole roles[3] = {DimensionRole::PlateOffsetX, DimensionRole::PlateOffsetY, DimensionRole::PlateOffsetZ};
+                static const char* an[3] = {"x'", "y'", "z'"};
+                for (int k = 0; k < 3; ++k) {
+                    bool straddle = false;
+                    const double ref = P.offsetRef(k, &straddle);
+                    if (std::fabs(ref) <= 0.5) continue;   // levha yuzu/merkezi uye baslangicinda: ofset yok
+                    // Bu gorunumde k. eksen gercek uzunluk mu? (yalniz bir gorunumde uret: ilk uygun)
+                    const AxisInView ai = axisInView(v, axes[k]);
+                    if (!ai.inPlane || ai.dir == DimensionDirection::Aligned) continue;
+                    bool alreadyElsewhere = false;
+                    for (const Pending& q : pend) if (q.d.role == roles[k] && q.d.featureKey == P.id) alreadyElsewhere = true;
+                    for (const Dimension2D& q : sheet.dimensions) if (q.role == roles[k] && q.featureKey == P.id) alreadyElsewhere = true;
+                    if (alreadyElsewhere) continue;
+                    // Uc noktalar: uye baslangici (eksen uzerinde) ve levha ofset noktasi.
+                    Vec3 target = D.start;
+                    target = {target.x + axes[k].x * ref, target.y + axes[k].y * ref, target.z + axes[k].z * ref};
+                    const int other = k == 0 ? 1 : 0;   // dik koordinat: levha zarf merkezi (ext cizgisi levhaya degsin)
+                    (void)other;
+                    // Levha noktasi: zarfin bu eksendeki ref kademesinde, gorunumdeki dik koordinat levha merkezine esit.
+                    Vec3 plateP = target;
+                    for (int m = 0; m < 3; ++m) {
+                        if (m == k) continue;
+                        const AxisInView am = axisInView(v, axes[m]);
+                        if (!am.inPlane) continue;   // gorunume dik eksen: izdusumde etkisiz
+                        plateP = {plateP.x + axes[m].x * cn[m], plateP.y + axes[m].y * cn[m], plateP.z + axes[m].z * cn[m]};
+                    }
+                    newDim(roles[k], ai.dir, localOf(v, D.start), localOf(v, plateP), std::fabs(ref), P.plate, kOffsetGroup + k,
+                           P.id,
+                           std::string("offset along member-local ") + an[k] + " from member START to " +
+                               (straddle ? "plate centre (plate straddles axis)" : "plate near edge"),
+                           -1);
+                }
+            }
+        }
+
+        // (3) Uye boyu (ana parca ekseni, gorunum duzleminde ise) + genel olculer.
         bool haveLength = false;
         DimensionDirection lengthDir = DimensionDirection::Horizontal;
-        if (hasAxis) {
-            const Vec2 pa = projectToView(axA, v.kind), pb2 = projectToView(axB, v.kind);
+        if (hasAxis && !isDetail) {
+            const Vec2 pa = v.frame.project(axA), pb2 = v.frame.project(axB);
             const double projLen = std::hypot(pb2.x - pa.x, pb2.y - pa.y);
-            if (projLen >= axisLen * 0.999) { // eksen gorunus duzleminde: gercek boy olculur
+            if (projLen >= axisLen * 0.999) {   // eksen gorunum duzleminde: gercek boy olculur
                 const double adx = std::fabs(pb2.x - pa.x), ady = std::fabs(pb2.y - pa.y);
                 lengthDir = ady < projLen * 1e-3   ? DimensionDirection::Horizontal
                             : adx < projLen * 1e-3 ? DimensionDirection::Vertical
                                                    : DimensionDirection::Aligned;
-                newDim(DimensionRole::MemberLength, lengthDir, {pa.x - rawMin.x, pa.y - rawMin.y},
-                       {pb2.x - rawMin.x, pb2.y - rawMin.y}, axisLen, mainPart, kLengthGroup);
+                newDim(DimensionRole::MemberLength, lengthDir, {pa.x - v.projectionOffset.x, pa.y - v.projectionOffset.y},
+                       {pb2.x - v.projectionOffset.x, pb2.y - v.projectionOffset.y}, axisLen, mainPart, kLengthGroup,
+                       inv.datum.valid ? inv.datum.id : std::string(), "member axis length (true 3D axis, axis in view plane)");
                 haveLength = true;
             }
         }
@@ -633,55 +1103,47 @@ BuildResult buildSheet(const Document& doc, MarkRegistry& reg, EntityId subject,
             return haveLength && lengthDir == dir && std::fabs(value - axisLen) < 0.5;
         };
         const double w = v.bounds.width(), h = v.bounds.height();
-        if (w >= 0.5 && !sameAsLength(DimensionDirection::Horizontal, w))
+        if (!isDetail && w >= 0.5 && !sameAsLength(DimensionDirection::Horizontal, w))
             newDim(DimensionRole::OverallWidth, DimensionDirection::Horizontal, {v.bounds.min.x, v.bounds.min.y},
-                   {v.bounds.max.x, v.bounds.min.y}, w, subject, kOverallGroup);
-        if (h >= 0.5 && !sameAsLength(DimensionDirection::Vertical, h))
+                   {v.bounds.max.x, v.bounds.min.y}, w, subject, kOverallGroup, {}, "view bounding box width");
+        if (!isDetail && h >= 0.5 && !sameAsLength(DimensionDirection::Vertical, h))
             newDim(DimensionRole::OverallHeight, DimensionDirection::Vertical, {v.bounds.max.x, v.bounds.min.y},
-                   {v.bounds.max.x, v.bounds.max.y}, h, subject, kOverallGroup);
+                   {v.bounds.max.x, v.bounds.max.y}, h, subject, kOverallGroup, {}, "view bounding box height");
 
-        // (4) Satir (offset) atamasi: ayni yondeki gruplar yakindan uzaga; metin kademesi.
+        // (4) P1 yedek satir atamasi (autoLayout kapaliyken kullanilir; layout bunu yeniden hesaplar).
         {
             int rowsH = 0, rowsV = 0;
             for (const auto dir : {DimensionDirection::Horizontal, DimensionDirection::Vertical}) {
                 std::vector<int> groups;
                 for (const Pending& p : pend)
-                    if (p.d.direction == dir) groups.push_back(p.group);
+                    if (p.d.viewId == v.id && p.d.direction == dir) groups.push_back(p.group);
                 std::sort(groups.begin(), groups.end());
                 groups.erase(std::unique(groups.begin(), groups.end()), groups.end());
                 (dir == DimensionDirection::Horizontal ? rowsH : rowsV) = static_cast<int>(groups.size());
                 for (Pending& p : pend)
-                    if (p.d.direction == dir) {
+                    if (p.d.viewId == v.id && p.d.direction == dir) {
                         const auto row = std::find(groups.begin(), groups.end(), p.group) - groups.begin();
                         p.d.offset = 10.0 + 8.0 * static_cast<double>(row);
                     }
-                // Dar aralikli zincir parcalarinda metni kademeli kaydir (ust uste binmesin).
-                for (const int g : groups) {
-                    std::vector<Pending*> chain;
-                    for (Pending& p : pend)
-                        if (p.d.direction == dir && p.group == g &&
-                            (p.d.role == DimensionRole::HoleSpacing || p.d.role == DimensionRole::PartPosition))
-                            chain.push_back(&p);
-                    std::sort(chain.begin(), chain.end(), [&](const Pending* a, const Pending* b) {
-                        return dir == DimensionDirection::Horizontal ? a->d.p1.x < b->d.p1.x : a->d.p1.y < b->d.p1.y;
-                    });
-                    int k = 0;
-                    for (Pending* p : chain) {
-                        const double textW = 2.0 * static_cast<double>(fmtNum(p->d.value).size()) + 1.5;
-                        if (p->d.value * sheet.scale < textW) p->d.textLevel = 1 + (k++ % 2);
-                        else k = 0;
-                    }
-                }
             }
             for (Pending& p : pend)
-                if (p.d.direction == DimensionDirection::Aligned)
+                if (p.d.viewId == v.id && p.d.direction == DimensionDirection::Aligned)
                     p.d.offset = 10.0 + 8.0 * static_cast<double>(std::max(rowsH, rowsV));
-            std::stable_sort(pend.begin(), pend.end(), [](const Pending& a, const Pending& b) {
-                return a.group < b.group;
-            });
-            for (Pending& p : pend) sheet.dimensions.push_back(std::move(p.d));
         }
     }
+
+    // Olculeri sheet'e al: oncelik sirasi (grup) korunur; zincir kimligi = grup x yon.
+    std::stable_sort(pend.begin(), pend.end(), [](const Pending& a, const Pending& b) { return a.group < b.group; });
+    for (Pending& p : pend) {
+        p.d.chain = static_cast<ElementId>(p.group * 4 + static_cast<int>(p.d.direction) + 1) + p.d.viewId * 1000;
+        sheet.dimensions.push_back(std::move(p.d));
+    }
+
+    // Circle2 etiketleri: callout'u olan imalat gruplarinin dairelerinde P1 etiketini kaldir (cift metin yok).
+    if (opt.fabrication)
+        for (DrawingView& v : sheet.views)
+            for (Circle2& c : v.circles)
+                if (fabOwners.count(c.owner)) c.label.clear();
 
     // --- title block ---
     TitleBlock& tb = sheet.titleBlock;
@@ -693,6 +1155,53 @@ BuildResult buildSheet(const Document& doc, MarkRegistry& reg, EntityId subject,
     const std::string nm = deriveName(mainModel);
     if (!nm.empty()) tb.title += " - " + nm;
 
+    // --- yerlesim ---
+    bool layoutOk = true;
+    if (opt.autoLayout) {
+        const auto stampLines = [&]() {
+            std::vector<std::string> st;
+            if (sheet.fabrication.draft) {
+                st.push_back("TASLAK / EKSIK IMALAT VERISI");
+                st.push_back("IMALATA UYGUN DEGIL");
+                int shown = 0;
+                for (const ChecklistItem& c : sheet.fabrication.checklist)
+                    if (c.state == ChecklistState::Unresolved && shown++ < 3)
+                        st.push_back("- " + c.key + (c.detail.empty() ? std::string() : ": " + c.detail.substr(0, 38)));
+            } else {
+                st.push_back("Imalat verisi: desteklenen kapsam icin tam");
+            }
+            return st;
+        };
+        const auto installNotes = [&]() {
+            sheet.texts.erase(std::remove_if(sheet.texts.begin(), sheet.texts.end(), [](const TextAnnotation& t) {
+                                  return t.kind == TextKind::StatusStamp || t.kind == TextKind::Legend;
+                              }), sheet.texts.end());
+            if (!opt.fabrication) return;
+            TextAnnotation& stamp = addText(sheet, TextKind::StatusStamp, stampLines(), opt.layout.noteTextHeight);
+            stamp.bold = sheet.fabrication.draft;
+            addText(sheet, TextKind::Legend,
+                    {"Kapsam: levha olculeri+kalinlik, yuvarlak delik", "capi/adet/merkez/adim/net kenar, uye ofseti.",
+                     "Disi: kesim, kaynak, yuvali delik, egik delik."},
+                    opt.layout.noteTextHeight);
+        };
+        if (opt.fabrication) evaluateFabricationStatus(sheet, inv, true);
+        installNotes();
+        layoutOk = layoutSheet(sheet);
+        for (int round = 0; round < 2 && opt.fabrication; ++round) {
+            evaluateFabricationStatus(sheet, inv, layoutOk);
+            const std::vector<std::string> want = stampLines();
+            const auto it = std::find_if(sheet.texts.begin(), sheet.texts.end(),
+                                         [](const TextAnnotation& t) { return t.kind == TextKind::StatusStamp; });
+            if (it != sheet.texts.end() && it->lines == want) break;   // damga guncel
+            installNotes();
+            layoutOk = layoutSheet(sheet) && layoutOk;
+        }
+    } else if (opt.fabrication) {
+        evaluateFabricationStatus(sheet, inv, false);
+        sheet.layout.ran = false;
+    }
+
+    res.inventory = std::move(inv);
     res.sheet = std::move(sheet);
     res.ok = true;
     return res;

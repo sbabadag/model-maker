@@ -10,7 +10,7 @@ namespace mm::drawing {
 namespace {
 
 using json = nlohmann::json;
-constexpr int kSchemaVersion = 1;
+constexpr int kSchemaVersion = 2;   // v1 (P1) okunabilir: yeni alanlar varsayilan
 
 // --- enum <-> string (kalici ad; sayisal deger degil => yeniden siralamaya dayanikli) ---
 const char* name(DrawingKind k) { return k == DrawingKind::Assembly ? "assembly" : "singlePart"; }
@@ -19,6 +19,7 @@ const char* name(ViewKind k) {
     case ViewKind::Front: return "front";
     case ViewKind::Top: return "top";
     case ViewKind::Side: return "side";
+    case ViewKind::Detail: return "detail";
     }
     return "front";
 }
@@ -41,6 +42,13 @@ const char* name(DimensionRole r) {
     case DimensionRole::OverallHeight: return "overallHeight";
     case DimensionRole::HoleSpacing: return "holeSpacing";
     case DimensionRole::PartPosition: return "partPosition";
+    case DimensionRole::PlateWidth: return "plateWidth";
+    case DimensionRole::PlateHeight: return "plateHeight";
+    case DimensionRole::HolePitch: return "holePitch";
+    case DimensionRole::HoleEdge: return "holeEdge";
+    case DimensionRole::PlateOffsetX: return "plateOffsetX";
+    case DimensionRole::PlateOffsetY: return "plateOffsetY";
+    case DimensionRole::PlateOffsetZ: return "plateOffsetZ";
     }
     return "overallWidth";
 }
@@ -54,6 +62,7 @@ bool parse(const std::string& s, ViewKind& o) {
     if (s == "front") { o = ViewKind::Front; return true; }
     if (s == "top") { o = ViewKind::Top; return true; }
     if (s == "side") { o = ViewKind::Side; return true; }
+    if (s == "detail") { o = ViewKind::Detail; return true; }
     return false;
 }
 bool parse(const std::string& s, LineStyle& o) {
@@ -78,8 +87,49 @@ bool parse(const std::string& s, DimensionRole& o) {
     if (s == "overallHeight") { o = DimensionRole::OverallHeight; return true; }
     if (s == "holeSpacing") { o = DimensionRole::HoleSpacing; return true; }
     if (s == "partPosition") { o = DimensionRole::PartPosition; return true; }
+    if (s == "plateWidth") { o = DimensionRole::PlateWidth; return true; }
+    if (s == "plateHeight") { o = DimensionRole::PlateHeight; return true; }
+    if (s == "holePitch") { o = DimensionRole::HolePitch; return true; }
+    if (s == "holeEdge") { o = DimensionRole::HoleEdge; return true; }
+    if (s == "plateOffsetX") { o = DimensionRole::PlateOffsetX; return true; }
+    if (s == "plateOffsetY") { o = DimensionRole::PlateOffsetY; return true; }
+    if (s == "plateOffsetZ") { o = DimensionRole::PlateOffsetZ; return true; }
     return false;
 }
+
+const char* name(TextKind k) {
+    switch (k) {
+    case TextKind::HoleCallout: return "holeCallout";
+    case TextKind::PlateNote: return "plateNote";
+    case TextKind::GeneralNote: return "generalNote";
+    case TextKind::Legend: return "legend";
+    case TextKind::StatusStamp: return "statusStamp";
+    case TextKind::ViewTitle: return "viewTitle";
+    }
+    return "generalNote";
+}
+bool parse(const std::string& s, TextKind& o) {
+    for (TextKind k : {TextKind::HoleCallout, TextKind::PlateNote, TextKind::GeneralNote, TextKind::Legend,
+                       TextKind::StatusStamp, TextKind::ViewTitle})
+        if (s == name(k)) { o = k; return true; }
+    return false;
+}
+const char* name(ChecklistState k) {
+    switch (k) {
+    case ChecklistState::Satisfied: return "satisfied";
+    case ChecklistState::Unresolved: return "unresolved";
+    case ChecklistState::NotApplicable: return "notApplicable";
+    }
+    return "unresolved";
+}
+bool parse(const std::string& s, ChecklistState& o) {
+    for (ChecklistState k : {ChecklistState::Satisfied, ChecklistState::Unresolved, ChecklistState::NotApplicable})
+        if (s == name(k)) { o = k; return true; }
+    return false;
+}
+
+json v3(const Vec3& v) { return json::array({v.x, v.y, v.z}); }
+Vec3 v3From(const json& j) { return Vec3{j.at(0).get<double>(), j.at(1).get<double>(), j.at(2).get<double>()}; }
 bool parseSize(const std::string& s, SheetSize& o) {
     for (SheetSize z : {SheetSize::A4, SheetSize::A3, SheetSize::A2, SheetSize::A1, SheetSize::A0})
         if (s == sheetSizeName(z)) { o = z; return true; }
@@ -139,7 +189,9 @@ json viewJson(const DrawingView& v) {
     return {{"id", v.id}, {"kind", name(v.kind)}, {"subject", v.subject}, {"scale", v.scale},
             {"origin", v2(v.origin)}, {"projectionOffset", v2(v.projectionOffset)},
             {"segments", segs}, {"bounds", boundsJson(v.bounds)},
-            {"members", mem}, {"label", v.label}, {"circles", circles}};
+            {"members", mem}, {"label", v.label}, {"circles", circles}, {"detailPlate", v.detailPlate},
+            {"frame", {{"right", v3(v.frame.right)}, {"up", v3(v.frame.up)}, {"normal", v3(v.frame.normal)},
+                       {"memberAligned", v.frame.memberAligned}}}};
 }
 bool viewFrom(const json& j, DrawingView& v) {
     v.id = j.at("id").get<ElementId>();
@@ -169,6 +221,14 @@ bool viewFrom(const json& j, DrawingView& v) {
     for (const json& m : j.at("members"))
         v.members.push_back({m.at("entity").get<EntityId>(), boundsFrom(m.at("bounds"))});
     v.label = j.at("label").get<std::string>();
+    v.detailPlate = j.value("detailPlate", EntityId{0});
+    if (j.contains("frame")) {  // v1 kayitlarinda yok: dunya cercevesi (varsayilan)
+        const json& f = j.at("frame");
+        v.frame.right = v3From(f.at("right"));
+        v.frame.up = v3From(f.at("up"));
+        v.frame.normal = v3From(f.at("normal"));
+        v.frame.memberAligned = f.at("memberAligned").get<bool>();
+    }
     return true;
 }
 
@@ -240,6 +300,20 @@ const DrawingView* DrawingSheet::viewOfKind(ViewKind k) const noexcept {
     return nullptr;
 }
 
+Bounds2 DrawingSheet::titleBlockRect() const noexcept {
+    Bounds2 b;
+    b.include({format.width - format.margin - format.titleWidth, format.margin});
+    b.include({format.width - format.margin, format.margin + format.titleHeight});
+    return b;
+}
+
+Bounds2 DrawingSheet::notesArea() const noexcept {
+    Bounds2 b;
+    b.include({format.margin + 2.0, format.margin + 2.0});
+    b.include({format.width - format.margin - format.titleWidth - 2.0, format.margin + format.titleHeight - 2.0});
+    return b;
+}
+
 Bounds2 DrawingSheet::drawingArea() const noexcept {
     Bounds2 b;
     b.include({format.margin, format.margin + format.titleHeight});
@@ -266,15 +340,45 @@ std::string DrawingDocument::serialize() const {
             dims.push_back({{"id", d.id}, {"viewId", d.viewId}, {"role", name(d.role)},
                             {"direction", name(d.direction)}, {"p1", v2(d.p1)}, {"p2", v2(d.p2)},
                             {"value", d.value}, {"offset", d.offset}, {"textLevel", d.textLevel},
-                            {"source", d.source}});
+                            {"side", d.side}, {"textT", d.textT}, {"textSide", d.textSide},
+                            {"chain", d.chain}, {"source", d.source}, {"featureKey", d.featureKey},
+                            {"basis", d.basis}, {"documentRevision", d.documentRevision}});
         json views = json::array();
         for (const DrawingView& v : s.views) views.push_back(viewJson(v));
+        json texts = json::array();
+        for (const TextAnnotation& t : s.texts)
+            texts.push_back({{"id", t.id}, {"viewId", t.viewId}, {"kind", name(t.kind)}, {"lines", t.lines},
+                             {"height", t.height}, {"hasAnchor", t.hasAnchor}, {"anchor", v2(t.anchor)},
+                             {"pos", v2(t.pos)}, {"leader", t.leader}, {"bold", t.bold},
+                             {"source", t.source}, {"featureKey", t.featureKey}});
+        json checklist = json::array();
+        for (const ChecklistItem& c : s.fabrication.checklist)
+            checklist.push_back({{"key", c.key}, {"label", c.label}, {"state", name(c.state)},
+                                 {"detail", c.detail}, {"featureKey", c.featureKey}});
+        json fab = {{"evaluated", s.fabrication.evaluated}, {"draft", s.fabrication.draft},
+                    {"checklist", checklist}, {"unresolvedCodes", s.fabrication.unresolvedCodes}};
+        const LayoutConfig& lc = s.layoutConfig;
+        json lcj = {{"dimTextHeight", lc.dimTextHeight}, {"noteTextHeight", lc.noteTextHeight},
+                    {"minDimText", lc.minDimText}, {"minNoteText", lc.minNoteText}, {"clearance", lc.clearance},
+                    {"rowPitch", lc.rowPitch}, {"firstOffset", lc.firstOffset},
+                    {"minSheet", sheetSizeName(lc.minSheet)}, {"maxSheet", sheetSizeName(lc.maxSheet)},
+                    {"fixedScaleDen", lc.fixedScaleDen}, {"maxIterations", lc.maxIterations}};
+        json issues = json::array();
+        for (const LayoutIssue& i : s.layout.issues)
+            issues.push_back({{"code", i.code}, {"detail", i.detail}, {"element", i.element}});
+        json lay = {{"ran", s.layout.ran}, {"ok", s.layout.ok},
+                    {"requestedSheet", sheetSizeName(s.layout.requestedSheet)},
+                    {"finalSheet", sheetSizeName(s.layout.finalSheet)},
+                    {"scaleDenominator", s.layout.scaleDenominator}, {"attempts", s.layout.attempts},
+                    {"escalations", s.layout.escalations}, {"issues", issues}};
         sheets.push_back(
             {{"id", s.id}, {"name", s.name}, {"size", sheetSizeName(s.format.size)},
              {"margin", s.format.margin}, {"kind", name(s.kind)},
              {"projection", name(s.projection)}, {"subject", s.subject}, {"scale", s.scale},
              {"scaleIsStandard", s.scaleIsStandard}, {"titleBlock", titleJson(s.titleBlock)},
-             {"views", views}, {"marks", marks}, {"dimensions", dims}, {"nextId", s.nextId}});
+             {"views", views}, {"marks", marks}, {"dimensions", dims}, {"texts", texts},
+             {"fabrication", fab}, {"layoutConfig", lcj}, {"layoutReport", lay},
+             {"documentRevision", s.documentRevision}, {"nextId", s.nextId}});
     }
     json root = {{"version", kSchemaVersion}, {"nextSheetId", nextSheetId_}, {"sheets", sheets}};
     return root.dump(2);
@@ -284,7 +388,8 @@ bool DrawingDocument::deserialize(const std::string& text, DrawingDocument& out,
     error.clear();
     try {
         const json root = json::parse(text);
-        if (!root.is_object() || root.value("version", 0) != kSchemaVersion) {
+        const int ver = root.is_object() ? root.value("version", 0) : 0;
+        if (ver != 1 && ver != kSchemaVersion) {
             error = "cizim kaydi: surum tanimsiz/desteklenmiyor";
             return false;
         }
@@ -343,9 +448,90 @@ bool DrawingDocument::deserialize(const std::string& text, DrawingDocument& out,
                 d.value = jd.at("value").get<double>();
                 d.offset = jd.at("offset").get<double>();
                 d.textLevel = jd.value("textLevel", 0);
+                d.side = jd.value("side", 1);
+                d.textT = jd.value("textT", 0.5);
+                d.textSide = jd.value("textSide", -1);
+                d.chain = jd.value("chain", ElementId{0});
                 d.source = jd.at("source").get<EntityId>();
+                d.featureKey = jd.value("featureKey", std::string{});
+                d.basis = jd.value("basis", std::string{});
+                d.documentRevision = jd.value("documentRevision", std::uint64_t{0});
                 s.dimensions.push_back(std::move(d));
             }
+            if (js.contains("texts"))
+                for (const json& jt : js.at("texts")) {
+                    TextAnnotation t;
+                    t.id = jt.at("id").get<ElementId>();
+                    t.viewId = jt.at("viewId").get<ElementId>();
+                    if (!parse(jt.at("kind").get<std::string>(), t.kind)) {
+                        error = "cizim kaydi: bilinmeyen metin turu";
+                        return false;
+                    }
+                    t.lines = jt.at("lines").get<std::vector<std::string>>();
+                    t.height = jt.at("height").get<double>();
+                    t.hasAnchor = jt.at("hasAnchor").get<bool>();
+                    t.anchor = v2From(jt.at("anchor"));
+                    t.pos = v2From(jt.at("pos"));
+                    t.leader = jt.at("leader").get<bool>();
+                    t.bold = jt.at("bold").get<bool>();
+                    t.source = jt.at("source").get<EntityId>();
+                    t.featureKey = jt.at("featureKey").get<std::string>();
+                    s.texts.push_back(std::move(t));
+                }
+            if (js.contains("fabrication")) {
+                const json& jf = js.at("fabrication");
+                s.fabrication.evaluated = jf.at("evaluated").get<bool>();
+                s.fabrication.draft = jf.at("draft").get<bool>();
+                s.fabrication.unresolvedCodes = jf.at("unresolvedCodes").get<std::vector<std::string>>();
+                for (const json& jc : jf.at("checklist")) {
+                    ChecklistItem c;
+                    c.key = jc.at("key").get<std::string>();
+                    c.label = jc.at("label").get<std::string>();
+                    if (!parse(jc.at("state").get<std::string>(), c.state)) {
+                        error = "cizim kaydi: bilinmeyen kontrol listesi durumu";
+                        return false;
+                    }
+                    c.detail = jc.at("detail").get<std::string>();
+                    c.featureKey = jc.at("featureKey").get<std::string>();
+                    s.fabrication.checklist.push_back(std::move(c));
+                }
+            }
+            if (js.contains("layoutConfig")) {
+                const json& jl = js.at("layoutConfig");
+                LayoutConfig& lc = s.layoutConfig;
+                lc.dimTextHeight = jl.at("dimTextHeight").get<double>();
+                lc.noteTextHeight = jl.at("noteTextHeight").get<double>();
+                lc.minDimText = jl.at("minDimText").get<double>();
+                lc.minNoteText = jl.at("minNoteText").get<double>();
+                lc.clearance = jl.at("clearance").get<double>();
+                lc.rowPitch = jl.at("rowPitch").get<double>();
+                lc.firstOffset = jl.at("firstOffset").get<double>();
+                if (!parseSize(jl.at("minSheet").get<std::string>(), lc.minSheet) ||
+                    !parseSize(jl.at("maxSheet").get<std::string>(), lc.maxSheet)) {
+                    error = "cizim kaydi: bilinmeyen yerlesim kagit boyutu";
+                    return false;
+                }
+                lc.fixedScaleDen = jl.at("fixedScaleDen").get<double>();
+                lc.maxIterations = jl.at("maxIterations").get<int>();
+            }
+            if (js.contains("layoutReport")) {
+                const json& jr = js.at("layoutReport");
+                LayoutReport& r = s.layout;
+                r.ran = jr.at("ran").get<bool>();
+                r.ok = jr.at("ok").get<bool>();
+                if (!parseSize(jr.at("requestedSheet").get<std::string>(), r.requestedSheet) ||
+                    !parseSize(jr.at("finalSheet").get<std::string>(), r.finalSheet)) {
+                    error = "cizim kaydi: bilinmeyen yerlesim raporu kagidi";
+                    return false;
+                }
+                r.scaleDenominator = jr.at("scaleDenominator").get<double>();
+                r.attempts = jr.at("attempts").get<int>();
+                r.escalations = jr.at("escalations").get<int>();
+                for (const json& ji : jr.at("issues"))
+                    r.issues.push_back({ji.at("code").get<std::string>(), ji.at("detail").get<std::string>(),
+                                        ji.at("element").get<ElementId>()});
+            }
+            s.documentRevision = js.value("documentRevision", std::uint64_t{0});
             s.nextId = js.at("nextId").get<ElementId>();
             doc.sheets_.push_back(std::move(s));
         }
