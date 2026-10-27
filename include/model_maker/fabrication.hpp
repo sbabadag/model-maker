@@ -34,6 +34,9 @@ enum class FeatureKind { MemberDatum, Plate, HoleGroup, Hole };
 // Kararli imalat ozelligi kimligi: yeniden uretimde, kaydet/ac sonrasi AYNI model icin AYNI anahtar.
 //   datum:<memberId>   plate:<plateId>   group:<plateId>.<boltGroupId>.<dia*10>
 //   hole:<plateId>.<boltGroupId>.<row>.<col>      (row: ustten 1.., col: soldan 1.. — levha cercevesinde)
+// BAGIMSIZ (elle acilmis, bulon grubuna ait olmayan) delikler icin `boltGroupId` yerine kararli,
+// cakismayan anonim grup kimligi (ust bit isaretli) yazilir; ayni levha + geometri -> ayni anahtar.
+// `hole:` icin row/col, harmanlanmis anonim grupta da levha cercevesindeki gercek u/v sirasidir.
 std::string featureKey(FeatureKind kind, EntityId owner, EntityId group = kInvalidEntityId,
                        long long a = 0, long long b = 0);
 

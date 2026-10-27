@@ -623,7 +623,90 @@ DrawingPreviewDialog::DrawingPreviewDialog(std::vector<SubjectChoice> subjects, 
     rebuild();
 }
 
+void DrawingPreviewDialog::setRebuildConfirmation(std::function<bool(const QString&)> confirm) {
+    confirmDiscard_ = std::move(confirm);
+}
+
+std::vector<std::pair<int, DrawingSheet>> DrawingPreviewDialog::collectEditedSheets() const {
+    std::vector<std::pair<int, DrawingSheet>> out;
+    if (!haveDoc_) return out;
+    for (std::size_t i = 0; i < doc_.sheets().size(); ++i) {
+        const DrawingSheet& cur =
+            (edit_ && static_cast<int>(i) == currentSheet_) ? edit_->sheet() : doc_.sheets()[i];
+        const DrawingSheet& base = i < baseline_.size() ? baseline_[i] : cur;
+        DrawingDocument a;
+        DrawingDocument b;
+        a.addSheet(base);
+        b.addSheet(cur);
+        if (a.serialize() != b.serialize()) out.emplace_back(static_cast<int>(i), cur);
+    }
+    return out;
+}
+
+// P2D: duzenlemeleri yeniden uretilen paftalara uygular. Eslesme PAFTA INDEKSI ile degil, KAYNAK
+// OGEDEN (gorunus/olcu/mark/metin anahtari) yapilir: sigdirma bir gorunusu baska paftaya tasisa da
+// olcu yerlesimi kaybolmaz. Kullanici 2B sekilleri pafta duzenindedir: indeks varsa o paftaya,
+// sayfa sayisi azaldiysa ana paftaya eklenir (kimlik cakismasi yeniden atanir).
+int DrawingPreviewDialog::mergePreservedEdits(const std::vector<std::pair<int, DrawingSheet>>& edits,
+                                              DrawingSetResult& r) {
+    if (edits.empty() || r.document.sheets().empty()) return 0;
+    const std::size_t n = r.document.sheets().size();
+    int applied = 0;
+    for (DrawingSheet& sheet : r.document.sheets()) {
+        std::vector<DrawingSheet> editedOnly;
+        for (const auto& e : edits) editedOnly.push_back(e.second);
+        const PaperEditMerge m = mergePaperEdits(editedOnly, sheet, false);
+        applied = std::max(applied, m.sheets);
+    }
+    std::vector<std::vector<PaperShape>> shapesFor(n);
+    for (const auto& [idx, edited] : edits) {
+        const std::size_t target =
+            (idx >= 0 && static_cast<std::size_t>(idx) < n) ? static_cast<std::size_t>(idx) : 0;
+        shapesFor[target].insert(shapesFor[target].end(), edited.shapes.begin(), edited.shapes.end());
+    }
+    for (std::size_t i = 0; i < n; ++i) {
+        if (shapesFor[i].empty()) continue;
+        appendPaperShapes(r.document.sheets()[i], shapesFor[i]);
+    }
+    for (DrawingSheet& sheet : r.document.sheets()) refreshSheetQuality(sheet);
+    bool allOk = true;
+    bool draft = false;
+    for (const DrawingSheet& s : r.document.sheets()) {
+        allOk = allOk && s.layout.ok && measureOverlaps(s).total() == 0;
+        draft = draft || s.fabrication.draft;
+    }
+    r.layoutValid = allOk;
+    r.ready = allOk && !draft;
+    return applied;
+}
+
 void DrawingPreviewDialog::rebuild() {
+    // P2D: konu degisikligi kaynak eslesmesini bozar -> duzenlemeler tasinamaz; ACIK onay istenir.
+    const int wantedIdx = subjectCombo_ ? subjectCombo_->currentIndex() : -1;
+    const bool sameSubject = builtSubjectIndex_ < 0 || wantedIdx == builtSubjectIndex_;
+    std::vector<std::pair<int, DrawingSheet>> edits;
+    if (setBuilder_ && sameSubject) edits = collectEditedSheets();
+    if (setBuilder_ && !sameSubject && haveDoc_ && !collectEditedSheets().empty()) {
+        const QString msg = QStringLiteral(
+            "Konu degisiyor: onceki paftadaki duzenlemeler yeni cizime tasinamaz. Devam edilsin mi?");
+        const bool go = confirmDiscard_
+                            ? confirmDiscard_(msg)
+                            : (QMessageBox::question(this, QStringLiteral("Pafta duzenlemeleri"), msg,
+                                                     QMessageBox::Yes | QMessageBox::No, QMessageBox::No) ==
+                               QMessageBox::Yes);
+        if (!go) {   // reddedildi: hicbir sey kaybolmaz, konu eski haline doner
+            if (builtSubjectIndex_ >= 0) {
+                const QSignalBlocker block(subjectCombo_);
+                subjectCombo_->setCurrentIndex(builtSubjectIndex_);
+            }
+            return;
+        }
+    }
+    // Yeniden uretim BASARISIZ olursa onceki cizim + duzenlemeler korunur (sessiz kayip yok).
+    const DrawingDocument prevDoc = doc_;
+    const std::vector<DrawingSheet> prevBaseline = baseline_;
+    const int prevSheet = currentSheet_;
+    const bool prevHave = haveDoc_;
     haveSheet_ = false;
     haveDoc_ = false;
     currentSheet_ = 0;
@@ -662,16 +745,45 @@ void DrawingPreviewDialog::rebuild() {
         p.autoFirst = SheetSize::A3;
         p.autoMax = SheetSize::A0;
         prefs_ = p;
-        const DrawingSetResult r = setBuilder_(subjects_[static_cast<std::size_t>(idx)].id, o, p);
+        DrawingSetResult r = setBuilder_(subjects_[static_cast<std::size_t>(idx)].id, o, p);
         if (!r.ok) {
             status_->setStyleSheet(QStringLiteral("color:#a73c3c"));
             QString msg = QStringLiteral("\u00c7izim \u00fcretilemedi: ") + qs(r.error);
             if (!r.issues.empty()) msg += QStringLiteral(" (%1 sorun)").arg(r.issues.size());
+            if (prevHave && !prevDoc.sheets().empty()) {   // onceki cizim/duzenlemeler korunur
+                doc_ = prevDoc;
+                baseline_ = prevBaseline;
+                haveDoc_ = true;
+                if (subjectCombo_ && builtSubjectIndex_ >= 0) {
+                    const QSignalBlocker block(subjectCombo_);
+                    subjectCombo_->setCurrentIndex(builtSubjectIndex_);
+                }
+                if (sheetCombo_) {
+                    const QSignalBlocker block(sheetCombo_);
+                    sheetCombo_->clear();
+                    for (std::size_t i = 0; i < doc_.sheets().size(); ++i)
+                        sheetCombo_->addItem(QStringLiteral("%1/%2  %3  %4")
+                                                 .arg(i + 1)
+                                                 .arg(doc_.sheets().size())
+                                                 .arg(qs(doc_.sheets()[i].sheetNumber))
+                                                 .arg(QString::fromLatin1(
+                                                     sheetSizeName(doc_.sheets()[i].format.size))));
+                    sheetCombo_->setCurrentIndex(std::clamp(prevSheet, 0, static_cast<int>(doc_.sheets().size()) - 1));
+                }
+                showSheet(std::clamp(prevSheet, 0, static_cast<int>(doc_.sheets().size()) - 1));
+                msg += QStringLiteral(" \u2014 \u00f6nceki \u00e7izim ve d\u00fczenlemeler korundu");
+            }
             status_->setText(msg);
             return;
         }
+        int preserved = 0;
+        // Karsilastirma tabani: yeniden uretilen TEMIZ paftalar (duzenleme sonradan uygulanir).
+        baseline_.clear();
+        for (const DrawingSheet& s : r.document.sheets()) baseline_.push_back(s);
+        if (!edits.empty()) preserved = mergePreservedEdits(edits, r);
         doc_ = r.document;
         haveDoc_ = true;
+        builtSubjectIndex_ = idx;
         {
             const QSignalBlocker block(sheetCombo_);
             for (std::size_t i = 0; i < doc_.sheets().size(); ++i) {
@@ -688,12 +800,8 @@ void DrawingPreviewDialog::rebuild() {
         status_->setStyleSheet(r.ready ? QStringLiteral("color:#3f7a4f")
                                        : (r.layoutValid ? QStringLiteral("color:#8a6b2a")
                                                         : QStringLiteral("color:#a73c3c")));
-        QString text = r.ready ? QStringLiteral("HAZIR")
-                               : (r.layoutValid ? QStringLiteral("TASLAK / EKSIK IMALAT VERISI")
-                                                : QStringLiteral("NO_FIT"));
-        text += QStringLiteral(" \u2014 %1 pafta (%2)").arg(doc_.sheets().size()).arg(
-            r.singleSheet ? QStringLiteral("tek pafta") : QStringLiteral("bagli coklu pafta"));
-        if (!r.issues.empty()) text += QStringLiteral(" \u2014 %1 sorun").arg(r.issues.size());
+        QString text = qs(statusText(r));
+        if (preserved > 0) text += QStringLiteral(" — pafta duzenlemeleri korundu (%1)").arg(preserved);
         status_->setText(text);
         return;
     }

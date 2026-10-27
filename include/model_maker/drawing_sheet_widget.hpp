@@ -15,6 +15,7 @@
 
 #include <functional>
 #include <memory>
+#include <utility>
 #include <vector>
 
 class QCheckBox;
@@ -119,12 +120,19 @@ public:
     // Set modunda tum paftalar; yoksa nullptr.
     const DrawingDocument* currentDocument() const noexcept { return haveDoc_ ? &doc_ : nullptr; }
 
+    // P2D: konu degisikligi gibi kaynak eslesmesi OLMAYAN (yikici) yeniden uretimden once sorulur.
+    // Varsayilan: QMessageBox. Testler kendi kararini enjekte eder (modal olmadan dogrulanabilir).
+    void setRebuildConfirmation(std::function<bool(const QString&)> confirm);
+
 private:
     void rebuild();
     void onExportPdf();
     void onSaveJson();
     void showSheet(int index);
     void syncEditedSheet(int index);
+    // O anki pafta duzenlemeleri: (pafta indeksi, duzenlenmis kopya). Yeniden uretimde korunur.
+    std::vector<std::pair<int, DrawingSheet>> collectEditedSheets() const;
+    int mergePreservedEdits(const std::vector<std::pair<int, DrawingSheet>>& edits, DrawingSetResult& r);
 
     std::vector<SubjectChoice> subjects_;
     Builder builder_;
@@ -135,6 +143,10 @@ private:
     bool haveDoc_{false};
     DrawingPreferences prefs_{};
     int currentSheet_{0};
+    int builtSubjectIndex_{-1};                 // doc_ hangi konu indeksinden uretildi
+    std::vector<DrawingSheet> baseline_;        // uretim sonrasi (duzenleme karsilastirma tabani)
+    std::function<bool(const QString&)> confirmDiscard_;
+    bool rebuilding_{false};
     DrawingSheetWidget* view_{};
     std::unique_ptr<PaperEditHistory> edit_;
     QComboBox* subjectCombo_{};

@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cmath>
 #include <map>
+#include <set>
 #include <string>
 #include <utility>
 
@@ -331,6 +332,47 @@ void preservePaperEdits(const DrawingSheet& edited, DrawingSheet& regenerated) {
     regenerated.nextId = next;
 
     evaluateAnnotationStatus(regenerated);
+}
+
+PaperEditMerge mergePaperEdits(const std::vector<DrawingSheet>& edited, DrawingSheet& regenerated,
+                               bool withShapes) {
+    PaperEditMerge out;
+    for (const DrawingSheet& e : edited) {
+        preservePaperEdits(e, regenerated);   // eslesen gorunus/olcu/mark/metin yerlesimi
+        ++out.sheets;
+    }
+    if (withShapes) {
+        // preservePaperEdits sekilleri her cagrida EZER: tum duzenlenmis paftalarin sekillerini birlestir.
+        std::vector<PaperShape> shapes;
+        for (const DrawingSheet& e : edited) shapes.insert(shapes.end(), e.shapes.begin(), e.shapes.end());
+        regenerated.shapes.clear();
+        appendPaperShapes(regenerated, shapes);
+    }
+    out.shapes = regenerated.shapes.size();
+    evaluateAnnotationStatus(regenerated);
+    return out;
+}
+
+std::size_t appendPaperShapes(DrawingSheet& s, const std::vector<PaperShape>& shapes) {
+    const auto sameShape = [](const PaperShape& a, const PaperShape& b) {
+        if (a.kind != b.kind || a.featureKey != b.featureKey) return false;
+        const auto close = [](double x, double y) { return std::fabs(x - y) < 1e-9; };
+        return close(a.a.x, b.a.x) && close(a.a.y, b.a.y) && close(a.b.x, b.b.x) && close(a.b.y, b.b.y) &&
+               close(a.center.x, b.center.x) && close(a.center.y, b.center.y) && close(a.radius, b.radius);
+    };
+    std::size_t added = 0;
+    for (const PaperShape& src : shapes) {
+        bool duplicate = false;
+        for (const PaperShape& u : s.shapes) duplicate = duplicate || sameShape(u, src);
+        if (duplicate) continue;
+        PaperShape c = src;
+        bool idTaken = false;
+        for (const PaperShape& u : s.shapes) idTaken = idTaken || u.id == c.id;
+        if (c.id == 0 || idTaken) c.id = s.allocateId();
+        s.shapes.push_back(c);
+        ++added;
+    }
+    return added;
 }
 
 PaperEditHistory::PaperEditHistory(DrawingSheet initial, std::size_t limit)

@@ -51,6 +51,22 @@ void evaluateAnnotationStatus(DrawingSheet& sheet);
 // mark (gorunus+hedef+assembly), metin (gorunus+tur+featureKey+ilk satir). Kullanici sekilleri aynen tasinir.
 void preservePaperEdits(const DrawingSheet& edited, DrawingSheet& regenerated);
 
+// P2D: kagit boyutu / pafta sayisi degistiginde BIRDEN FAZLA duzenlenmis paftayi TEK yeniden
+// uretilmis paftaya uygular (eslesen kaynak ogeler korunur; kullanici 2B sekilleri kimlik
+// cakismasi olmadan BIRLESIR). Hicbir sey sessizce atilmaz: sonuc `evaluateAnnotationStatus` ile
+// yeniden degerlendirilir; cagiran ayrica `refreshSheetQuality` ile cakisma kontrolu yapmalidir.
+struct PaperEditMerge {
+    int sheets{0};              // uygulanan duzenlenmis pafta sayisi
+    std::size_t shapes{0};      // sonuc paftadaki kullanici 2B sekli
+};
+// `withShapes == false`: yalniz eslesen gorunus/olcu/mark/metin YERLESIMI uygulanir (sekiller
+// cagiran tarafindan ayrica eklenir) — cok paftali birlestirmede sekil ciftlenmesini onler.
+PaperEditMerge mergePaperEdits(const std::vector<DrawingSheet>& edited, DrawingSheet& regenerated,
+                               bool withShapes = true);
+
+// Kullanici 2B sekillerini paftaya ekler: ayni geometri tek kez, ElementId cakismasi yeniden atanir.
+std::size_t appendPaperShapes(DrawingSheet& sheet, const std::vector<PaperShape>& shapes);
+
 // Snapshot tabanli geri al/yinele (deterministik; sinirli gecmis).
 class PaperEditHistory {
 public:

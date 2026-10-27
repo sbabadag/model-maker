@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <map>
 #include <set>
 #include <string>
 #include <utility>
@@ -102,6 +103,7 @@ std::string detailTitle(const DrawingSheet& base, const std::vector<ElementId>& 
 struct Part {
     DrawingSheet sheet;
     std::string title;
+    std::string reason;   // insan okur: neden bu kagit / neden bu pafta (deterministik)
 };
 
 struct Assembly {
@@ -109,56 +111,118 @@ struct Assembly {
     std::vector<std::string> issues;
 };
 
-// Tek pafta kaliteyi saglamadiginda: ana gorunusler ana paftada, delikli levha detaylari
-// numarali detay paftalarinda. Hicbir yazi kucultulmez, olcu atilmaz.
-Assembly splitSheet(const DrawingSheet& base, const DrawingPreferences& prefs) {
+std::string paperReason(const DrawingSheet& s) {
+    if (!s.layout.ran) return "yerlesim calistirilmadi";
+    if (s.layout.finalSheet > s.layout.requestedSheet)
+        return std::string("kagit buyutuldu ") + sheetSizeName(s.layout.requestedSheet) + "->" +
+               sheetSizeName(s.layout.finalSheet) + " (yazi/olcu kucultulmedi)";
+    return std::string("kagit ") + sheetSizeName(s.format.size) + " yeterli";
+}
+
+// Verilen gorunus kumesini tek paftada dener; `out` her durumda o kumenin paftasidir.
+bool tryPack(const DrawingSheet& base, const std::vector<ElementId>& ids, SheetRole role,
+             const DrawingPreferences& prefs, DrawingSheet& out) {
+    out = subsetOf(base, ids, role);
+    applyPreferences(out, prefs);
+    return layoutOk(out);
+}
+
+// P1/P2D: BELIRLEYICI EN-IYI SIGDIRMA. Kural:
+//   * once ana gorunusler (+ sigdigi kadar detay) TEK paftada; sigmayan ana gorunus devam paftasina,
+//   * kalan gorunusler "once-sigdir" ile paftalara doldurulur (her paftada sigdigi kadar gorunus),
+//     boylece sayfa sayisi en azdir; ayni levhanin detaylari yan yana gruplanir,
+//   * hicbir gorunus sessizce DUSMEZ: sigmayan gorunus kendi paftasinda NO_FIT olarak raporlanir.
+// Metin/olcu kucultme yok; yerlesim motorunun kalite kapisi (cakisma = 0) korunur.
+Assembly packSheets(const DrawingSheet& base, const DrawingPreferences& prefs) {
     Assembly as;
-    std::vector<ElementId> mainIds, detailIds;
+    std::vector<ElementId> mains, details;
+    std::map<ElementId, EntityId> plateOfView;
     for (const DrawingView& v : base.views) {
-        if (v.kind == ViewKind::Detail) detailIds.push_back(v.id);
-        else mainIds.push_back(v.id);
-    }
-    if (mainIds.empty()) {
-        mainIds = detailIds;
-        detailIds.clear();
-    }
-
-    DrawingSheet primary = subsetOf(base, mainIds, SheetRole::Primary);
-    applyPreferences(primary, prefs);
-    bool primaryOk = layoutOk(primary);
-    std::vector<ElementId> moved;
-    while (!primaryOk && mainIds.size() > 1) {
-        moved.insert(moved.begin(), mainIds.back());
-        mainIds.pop_back();
-        primary = subsetOf(base, mainIds, SheetRole::Primary);
-        applyPreferences(primary, prefs);
-        primaryOk = layoutOk(primary);
-    }
-    as.parts.push_back({std::move(primary), "ANA PAFTA"});
-    if (!primaryOk) as.issues.push_back("PRIMARY_SHEET_NOT_PLACED");
-
-    if (!moved.empty()) {
-        DrawingSheet cont = subsetOf(base, moved, SheetRole::Continuation);
-        applyPreferences(cont, prefs);
-        if (layoutOk(cont)) {
-            as.parts.push_back({std::move(cont), "DEVAM"});
+        if (v.kind == ViewKind::Detail) {
+            details.push_back(v.id);
+            plateOfView[v.id] = v.detailPlate;
         } else {
-            for (const ElementId id : moved) {
-                DrawingSheet one = subsetOf(base, {id}, SheetRole::Continuation);
-                applyPreferences(one, prefs);
-                layoutOk(one);
-                as.parts.push_back({std::move(one), "DEVAM"});
+            mains.push_back(v.id);
+        }
+    }
+    if (mains.empty()) {
+        mains = details;
+        details.clear();
+    }
+    // Ayni levhanin detaylari ardisik gelsin: (levha kimligi, gorunus kimligi) — BELIRLEYICI.
+    std::stable_sort(details.begin(), details.end(), [&](ElementId a, ElementId b) {
+        const EntityId pa = plateOfView.count(a) ? plateOfView[a] : kInvalidEntityId;
+        const EntityId pb = plateOfView.count(b) ? plateOfView[b] : kInvalidEntityId;
+        return pa != pb ? pa < pb : a < b;
+    });
+
+    // (1) Ana pafta: ana gorunusler; sigmazsa sondan devam paftasina tasi (deterministik).
+    std::vector<ElementId> primaryIds = mains;
+    std::vector<ElementId> moved;
+    DrawingSheet primary;
+    bool primaryOk = tryPack(base, primaryIds, SheetRole::Primary, prefs, primary);
+    while (!primaryOk && primaryIds.size() > 1) {
+        moved.insert(moved.begin(), primaryIds.back());
+        primaryIds.pop_back();
+        primaryOk = tryPack(base, primaryIds, SheetRole::Primary, prefs, primary);
+    }
+
+    // (2) Kalan tum gorunusler (tasinan ana + detaylar): ana paftaya sigdigi kadar ekle.
+    std::vector<ElementId> remaining = moved;
+    remaining.insert(remaining.end(), details.begin(), details.end());
+    std::size_t addedToPrimary = 0;
+    if (primaryOk) {
+        std::vector<ElementId> cand = primaryIds;
+        for (auto it = remaining.begin(); it != remaining.end();) {
+            cand.push_back(*it);
+            DrawingSheet trial;
+            if (tryPack(base, cand, SheetRole::Primary, prefs, trial)) {
+                primary = std::move(trial);
+                ++addedToPrimary;
+                it = remaining.erase(it);
+            } else {
+                cand.pop_back();
+                ++it;
             }
         }
     }
+    std::string primaryReason = paperReason(primary);
+    if (addedToPrimary > 0)
+        primaryReason += ", " + std::to_string(addedToPrimary) + " ek gorunus ayni paftada";
+    as.parts.push_back({std::move(primary), "ANA PAFTA", primaryReason});
+    if (!primaryOk) as.issues.push_back("PRIMARY_SHEET_NOT_PLACED");
 
-    // Detay paftalari: her delikli levha detayi kendi paftasinda (deterministik, deneme yok).
-    // Boylece tek-pafta aramasi basarisiz oldugunda maliyet dogrusal kalir; yazi/olcu kucultulmez.
-    for (const ElementId id : detailIds) {
-        DrawingSheet s = subsetOf(base, {id}, SheetRole::DetailSheet);
-        applyPreferences(s, prefs);
-        layoutOk(s);
-        as.parts.push_back({std::move(s), detailTitle(base, {id})});
+    // (3) Kalanlar: her yeni pafta icin once-sigdir (mumkun oldugunca cok gorunus, en az sayfa).
+    const std::set<ElementId> detailSet(details.begin(), details.end());
+    while (!remaining.empty()) {
+        std::vector<ElementId> ids{remaining.front()};
+        remaining.erase(remaining.begin());
+        const auto roleOf = [&]() {
+            for (const ElementId id : ids)
+                if (!detailSet.count(id)) return SheetRole::Continuation;
+            return SheetRole::DetailSheet;
+        };
+        SheetRole role = roleOf();
+        DrawingSheet sheet;
+        bool ok = tryPack(base, ids, role, prefs, sheet);
+        for (auto it = remaining.begin(); it != remaining.end();) {
+            ids.push_back(*it);
+            const SheetRole r2 = roleOf();
+            DrawingSheet trial;
+            if (tryPack(base, ids, r2, prefs, trial)) {
+                sheet = std::move(trial);
+                role = r2;
+                it = remaining.erase(it);
+            } else {
+                ids.pop_back();
+                ++it;
+            }
+        }
+        std::string title = (role == SheetRole::DetailSheet) ? detailTitle(base, ids) : "DEVAM";
+        std::string reason = std::to_string(ids.size()) + " gorunus tek paftada (en az sayfa)";
+        if (!ok) reason = "NO_FIT: bu gorunusler secilen kagida/olcege sigmadi (olcu kucultulmedi)";
+        as.parts.push_back({std::move(sheet), std::move(title), std::move(reason)});
+        if (!ok) as.issues.push_back("DETAIL_SHEET_NOT_PLACED");
     }
     return as;
 }
@@ -200,6 +264,8 @@ void finish(DrawingSetResult& res, std::vector<Part> parts, const DrawingPrefere
     }
 
     bool allLayout = true;
+    std::vector<std::string> reasons;
+    for (const Part& p : parts) reasons.push_back(p.reason);
     for (Part& p : parts) {
         applyPreferences(p.sheet, prefs);
         const bool ok = layoutOk(p.sheet);
@@ -276,6 +342,17 @@ void finish(DrawingSetResult& res, std::vector<Part> parts, const DrawingPrefere
     res.layoutValid = allLayout;
     res.ready = ready;
     res.issues = std::move(issues);
+    res.plan.clear();
+    for (std::size_t i = 0; i < res.document.sheets().size(); ++i) {
+        const DrawingSheet& s = res.document.sheets()[i];
+        SheetPlanEntry e;
+        e.number = s.sheetNumber;
+        e.size = s.format.size;
+        e.scale = s.titleBlock.scaleText;
+        e.views = s.views.size();
+        e.reason = i < reasons.size() ? reasons[i] : std::string();
+        res.plan.push_back(std::move(e));
+    }
     res.ok = true;
 }
 
@@ -315,7 +392,7 @@ DrawingSetResult buildDrawingSet(const Document& document, MarkRegistry& registr
         if (!preferences.autoMultiSheetFallback) {
             issues.push_back("MULTI_SHEET_DISABLED");
             std::vector<Part> one;
-            one.push_back({std::move(sheet), "ANA PAFTA"});
+            one.push_back({std::move(sheet), "ANA PAFTA", "tek pafta kaliteyi saglamadi (coklu pafta yedegi kapali)"});
             finish(res, std::move(one), preferences, std::move(issues));
             res.ok = false;
             res.layoutValid = false;
@@ -326,13 +403,14 @@ DrawingSetResult buildDrawingSet(const Document& document, MarkRegistry& registr
     }
 
     if (single) {
+        std::string reason = paperReason(sheet) + ", tek pafta";
         std::vector<Part> one;
-        one.push_back({std::move(sheet), "ANA PAFTA"});
+        one.push_back({std::move(sheet), "ANA PAFTA", std::move(reason)});
         finish(res, std::move(one), preferences, std::move(issues));
         return res;
     }
 
-    Assembly as = splitSheet(sheet, preferences);
+    Assembly as = packSheets(sheet, preferences);
     for (std::string& i : as.issues) issues.push_back("MULTI " + i);
     finish(res, std::move(as.parts), preferences, std::move(issues));
     return res;
@@ -431,6 +509,35 @@ bool validateDrawingSet(const DrawingDocument& document, std::vector<std::string
         }
     }
     return issues.empty();
+}
+
+bool refreshSheetQuality(DrawingSheet& sheet) {
+    const OverlapReport m = measureOverlaps(sheet);
+    const bool ok = sheet.layout.ok && m.total() == 0;
+    if (!ok) {
+        bool reported = false;
+        for (const LayoutIssue& i : sheet.layout.issues)
+            if (i.code == "USER_EDIT_OVERLAP") reported = true;
+        if (!reported)
+            sheet.layout.issues.push_back(
+                {"USER_EDIT_OVERLAP", "kagit duzenlemesi sonrasi cakisma/okunamaz yazi (olcu kucultulmedi)", 0});
+        sheet.layout.ok = false;
+    }
+    statusForLayout(sheet, ok);
+    return ok;
+}
+
+std::string statusText(const DrawingSetResult& r) {
+    if (!r.ok) return "CIZIM YOK: " + (r.error.empty() ? std::string("bilinmeyen hata") : r.error);
+    std::string t = r.ready ? "HAZIR" : (r.layoutValid ? "TASLAK / EKSIK IMALAT VERISI" : "NO_FIT");
+    t += " - " + std::to_string(r.document.sheets().size()) + " pafta (" +
+         (r.singleSheet ? "tek pafta" : "bagli coklu pafta") + ")";
+    for (const SheetPlanEntry& p : r.plan) {
+        t += " | " + p.number + ": " + sheetSizeName(p.size) + " " + (p.scale.empty() ? "-" : p.scale);
+        if (!p.reason.empty()) t += " (" + p.reason + ")";
+    }
+    if (!r.issues.empty()) t += " | " + std::to_string(r.issues.size()) + " sorun";
+    return t;
 }
 
 } // namespace mm::drawing

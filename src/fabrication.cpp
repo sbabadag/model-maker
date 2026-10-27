@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdlib>
 #include <map>
 #include <set>
 #include <tuple>
@@ -93,6 +94,25 @@ std::vector<Vec2> plateOutline(const PlateSpec& p, bool& exact, bool& tapered) {
 }
 
 } // namespace
+
+// P2D: BAGIMSIZ (elle acilmis, hicbir bulon grubuna ait olmayan) delik gruplari icin kimlik uzayi.
+// Kural: kimlik (a) tekrar uretilebilir (ayni levha + geometri -> ayni kimlik), (b) gercek
+// EntityId'lerle CAKISMAZ (Document kimlikleri kucuk sayaclardir; ust bit bu modulun rezervi),
+// (c) ayni levhadaki farkli bagimsiz gruplarda benzersiz. FeatureKey'ler bu kimligi tasir,
+// bu yuzden karsilastirmali/degismez olmasi zorunlu.
+inline constexpr EntityId kAnonymousGroupBit = (EntityId{1} << 63);
+
+EntityId anonymousGroupId(EntityId plate, double dia, double slotAlong, double slotAcross,
+                          const std::set<EntityId>& taken) {
+    std::uint64_t h = 14695981039346656037ull;
+    mix(h, plate);
+    mix(h, static_cast<std::uint64_t>(std::llabs(q10(dia))));
+    mix(h, static_cast<std::uint64_t>(std::llabs(q10(slotAlong))));
+    mix(h, static_cast<std::uint64_t>(std::llabs(q10(slotAcross))));
+    EntityId id = kAnonymousGroupBit | (h & 0x7FFFFFFFFFFFFFFfull);
+    while (id == kInvalidEntityId || taken.count(id)) ++id;   // deterministik sondalama
+    return id;
+}
 
 std::string featureKey(FeatureKind kind, EntityId owner, EntityId group, long long a, long long b) {
     switch (kind) {
@@ -260,9 +280,27 @@ FabricationInventory extractFabrication(const Document& doc, const std::vector<E
             }
 
     // --- (3) Delikler (gercek Hole CutModifier) ---
+    // Sahip cozumleme: bulon grubuna ait delikler o grubun kimligini tasir; BAGIMSIZ (elle
+    // acilmis) delikler icin kararli, cakismayan anonim grup kimligi uretilir (P2D).
     std::map<std::tuple<EntityId, EntityId, long long, int, long long, long long>, std::vector<std::size_t>> byGroup;
     const auto& mods = doc.cutModifiers();
     std::set<EntityId> nonPlateHoleParts, cutParts;
+    std::set<EntityId> realGroupIds;
+    for (const BoltGroup& bg : doc.boltGroups()) realGroupIds.insert(bg.id);
+    std::set<EntityId> anonIds;
+    std::map<std::tuple<EntityId, long long, long long, long long>, EntityId> anonBySignature;
+    const auto groupIdOf = [&](const CutModifier& m) {
+        if (m.owner != kInvalidEntityId) return m.owner;
+        const auto sig = std::make_tuple(m.target, q10(m.diameter), q10(m.slotAlong), q10(m.slotAcross));
+        const auto it = anonBySignature.find(sig);
+        if (it != anonBySignature.end()) return it->second;
+        std::set<EntityId> taken = realGroupIds;
+        taken.insert(anonIds.begin(), anonIds.end());
+        const EntityId id = anonymousGroupId(m.target, m.diameter, m.slotAlong, m.slotAcross, taken);
+        anonIds.insert(id);
+        anonBySignature.emplace(sig, id);
+        return id;
+    };
     for (std::size_t mi = 0; mi < mods.size(); ++mi) {
         const CutModifier& m = mods[mi];
         if (!m.enabled || !partSet.count(m.target)) continue;
@@ -280,10 +318,6 @@ FabricationInventory extractFabrication(const Document& doc, const std::vector<E
                 unresolved("HOLE_FRAME_UNAVAILABLE",
                            "parcada delik var ama kalici levha cercevesi (PlateSpec) yok: delik konumlari imalat verisi olarak uretilemedi",
                            m.target);
-            continue;
-        }
-        if (m.owner == kInvalidEntityId) {
-            unresolved("HOLE_OWNER_UNKNOWN", "delik bir bulon grubuna ait degil (sahiplik cozumlenemedi)", m.target);
             continue;
         }
         const double al = len(m.planeNormal);
@@ -308,7 +342,9 @@ FabricationInventory extractFabrication(const Document& doc, const std::vector<E
             continue;
         }
         const bool slot = m.slotAlong > 0.0 || m.slotAcross > 0.0;
-        byGroup[{m.target, m.owner, q10(m.diameter), slot ? 1 : 0, q10(m.slotAlong), q10(m.slotAcross)}].push_back(mi);
+        // P2D: sahipsiz (elle acilmis) delik de ayni geometri dogrulamasindan gecer; kimligi anonim gruptur.
+        const EntityId gid = groupIdOf(m);
+        byGroup[{m.target, gid, q10(m.diameter), slot ? 1 : 0, q10(m.slotAlong), q10(m.slotAcross)}].push_back(mi);
     }
 
     for (const auto& [key, mlist] : byGroup) {

@@ -185,8 +185,17 @@ int main() {
         DrawingPreferences p;
         p.autoMax = SheetSize::A2;      // izinli ust sinir
         DrawingSetResult r = buildDrawingSet(f.doc, reg, firstAssembly(f), o, p);
-        check(r.ok && !r.singleSheet && r.document.sheets().size() >= 4,
-              "D: tek pafta sigmadi -> ana + bagli paftalar (>=4)");
+        std::size_t detailTotal = 0, maxDetails = 0;
+        for (const DrawingSheet& s : r.document.sheets()) {
+            std::size_t d = 0;
+            for (const DrawingView& v : s.views) d += v.kind == ViewKind::Detail ? 1 : 0;
+            detailTotal += d;
+            maxDetails = std::max(maxDetails, d);
+        }
+        check(r.ok && !r.singleSheet && r.document.sheets().size() >= 2 &&
+                  r.document.sheets().size() < detailTotal + 1,
+              "D: tek pafta sigmadi -> bagli paftalar, detaylar TEK TEK dagitilmadi (en az sayfa)");
+        check(maxDetails >= 2, "D: birden fazla detay ayni paftada toplandi (P2D sigdirma)");
         check(r.layoutValid && allSheetsPlaced(r.document), "D: TUM paftalarda yerlestim, bagimsiz olcumde cakisma 0");
         check(!r.issues.empty() && hasIssue(r.issues, "SINGLE_SHEET_NOT_VALID"),
               "D: tek pafta neden olmadi -> acik rapor (gizlenmedi)");

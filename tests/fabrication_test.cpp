@@ -197,7 +197,13 @@ int main() {
         CutModifier m = makeHoleCutModifier(g.finPlate, g.xf.pt({1450, 80, 0}), {0, 1, 0}, 14);
         g.doc.addCutModifier(m);   // owner = 0
         const FabricationInventory i = extractAll(g);
-        check(i.hasCode("HOLE_OWNER_UNKNOWN") && i.holes.size() == 16, "C2: sahipsiz (manuel) delik -> HOLE_OWNER_UNKNOWN, envantere girmez");
+        check(!i.hasCode("HOLE_OWNER_UNKNOWN") && i.holes.size() == 17,
+              "C2: sahipsiz (manuel) delik envantere GIRER: 16 bulon + 1 manual = 17 (P2D)");
+        const HoleGroupFeature* man = nullptr;
+        for (const HoleGroupFeature& grp : i.groups)
+            if (grp.plate == g.finPlate && grp.boltGroup != g.groupFin) man = &grp;
+        check(man != nullptr && man->count() == 1 && man->boltGroup != kInvalidEntityId,
+              "C2: manual delik kararli, cakismayan bagimsiz grup kimligiyle envanterde");
     }
     {
         // C3: egik delik

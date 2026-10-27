@@ -551,6 +551,20 @@ if(BUILD_TESTING)
     target_compile_options(model_maker_drawing_set_test PRIVATE -Wall -Wextra -Wpedantic)
     add_test(NAME model_maker_drawing_set_test COMMAND model_maker_drawing_set_test)
 
+    # DRAWING P2D: belirleyici en-iyi sigdirma (detaylari ayni paftada toplama, sabit/otomatik kagit, durum/plan).
+    add_executable(model_maker_drawing_p2d_sheet_test tests/drawing_p2d_sheet_test.cpp)
+    target_include_directories(model_maker_drawing_p2d_sheet_test PRIVATE tests)
+    target_link_libraries(model_maker_drawing_p2d_sheet_test PRIVATE model_maker_core)
+    target_compile_options(model_maker_drawing_p2d_sheet_test PRIVATE -Wall -Wextra -Wpedantic)
+    add_test(NAME model_maker_drawing_p2d_sheet_test COMMAND model_maker_drawing_p2d_sheet_test)
+
+    # FABRICATION P2D: bagimsiz (elle acilmis) deliklerin envanteri + kaynak tabanli olculendirme.
+    add_executable(model_maker_p2d_holes_test tests/p2d_holes_test.cpp)
+    target_include_directories(model_maker_p2d_holes_test PRIVATE tests)
+    target_link_libraries(model_maker_p2d_holes_test PRIVATE model_maker_core)
+    target_compile_options(model_maker_p2d_holes_test PRIVATE -Wall -Wextra -Wpedantic)
+    add_test(NAME model_maker_p2d_holes_test COMMAND model_maker_p2d_holes_test)
+
     # DRAWING P2B: paper-space 2B duzenleme cekirdegi (hit-test, tasima, sekil, undo/redo, kalicilik).
     add_executable(model_maker_paper_editing_test tests/paper_editing_test.cpp)
     target_include_directories(model_maker_paper_editing_test PRIVATE tests)
@@ -1208,6 +1222,16 @@ if(BUILD_TESTING)
         target_include_directories(model_maker_paper_editing_gui_test PRIVATE include tests)
         target_link_libraries(model_maker_paper_editing_gui_test PRIVATE model_maker_core Qt6::Widgets)
         add_test(NAME model_maker_paper_editing_gui_test COMMAND model_maker_paper_editing_gui_test)
+
+        # DRAWING GUI (P2D): kagit secenegi degisince yeniden uretim + pafta duzenlemelerinin korunmasi,
+        # yikici degisiklikte onay, durum satiri kagit/olcek/sebep, PDF/JSON determinizmi.
+        add_executable(model_maker_drawing_p2d_gui_test
+            tests/drawing_p2d_gui_test.cpp
+            src/drawing_sheet_widget.cpp
+            include/model_maker/drawing_sheet_widget.hpp)
+        target_include_directories(model_maker_drawing_p2d_gui_test PRIVATE include tests)
+        target_link_libraries(model_maker_drawing_p2d_gui_test PRIVATE model_maker_core Qt6::Widgets)
+        add_test(NAME model_maker_drawing_p2d_gui_test COMMAND model_maker_drawing_p2d_gui_test)
         set_tests_properties(model_maker_component_dialog_widget_test PROPERTIES
             ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
     endif()

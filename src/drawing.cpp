@@ -46,6 +46,7 @@ const char* name(DimensionRole r) {
     case DimensionRole::PlateHeight: return "plateHeight";
     case DimensionRole::HolePitch: return "holePitch";
     case DimensionRole::HoleEdge: return "holeEdge";
+    case DimensionRole::HoleOrdinate: return "holeOrdinate";
     case DimensionRole::PlateOffsetX: return "plateOffsetX";
     case DimensionRole::PlateOffsetY: return "plateOffsetY";
     case DimensionRole::PlateOffsetZ: return "plateOffsetZ";
@@ -122,6 +123,7 @@ bool parse(const std::string& s, DimensionRole& o) {
     if (s == "plateHeight") { o = DimensionRole::PlateHeight; return true; }
     if (s == "holePitch") { o = DimensionRole::HolePitch; return true; }
     if (s == "holeEdge") { o = DimensionRole::HoleEdge; return true; }
+    if (s == "holeOrdinate") { o = DimensionRole::HoleOrdinate; return true; }
     if (s == "plateOffsetX") { o = DimensionRole::PlateOffsetX; return true; }
     if (s == "plateOffsetY") { o = DimensionRole::PlateOffsetY; return true; }
     if (s == "plateOffsetZ") { o = DimensionRole::PlateOffsetZ; return true; }

@@ -22,6 +22,15 @@
 
 namespace mm::drawing {
 
+// P2D: bir paftanin secilmis kagit/olcek ve GEREKCESI (GUI durum satiri + testler icin; Qt'siz).
+struct SheetPlanEntry {
+    std::string number;
+    SheetSize size{SheetSize::A3};
+    std::string scale;      // antet olcek metni ("1:10"); bos: olcek yazilmadi
+    std::size_t views{0};
+    std::string reason;     // "kagit A2 yeterli", "kagit buyutuldu A3->A2", "3 gorunus tek paftada (en az sayfa)"
+};
+
 struct DrawingSetResult {
     bool ok{false};              // uretim basarili (kalite icin layoutValid/ready ayri raporlanir)
     std::string error;
@@ -32,8 +41,17 @@ struct DrawingSetResult {
     bool layoutValid{false};     // tum paftalar yerlesti + bagimsiz olcumde cakisma 0
     bool ready{false};           // layoutValid && imalat verisi tam (TASLAK degil)
     std::vector<std::string> issues;   // set duzeyi cozulmemis sorunlar (makine kodu: detay)
+    std::vector<SheetPlanEntry> plan;  // pafta basina kagit/olcek/sebep (deterministik sira)
     const DrawingSheet* primary() const noexcept { return document.primarySheet(); }
 };
+
+// Durum satiri metni (Qt'siz, deterministik): "HAZIR - 2 pafta ... | A100: A2 1:10 (sebep)".
+std::string statusText(const DrawingSetResult& result);
+
+// Kullanici kagit duzenlemesi uygulandiktan SONRA kalite durumunu yeniden degerlendirir:
+// bagimsiz cakisma olcumu + LAYOUT kontrol maddesi + TASLAK. Sahte READY uretmez.
+// true: pafta hala cakismasiz (duzenleme kaliteyi bozmadi).
+bool refreshSheetQuality(DrawingSheet& sheet);
 
 // Tek pafta dener; gerekirse (ve izinliyse) bagli coklu pafta seti uretir. Deterministik.
 DrawingSetResult buildDrawingSet(const Document& document, MarkRegistry& registry, EntityId subject,

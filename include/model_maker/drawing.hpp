@@ -53,6 +53,8 @@ enum class DimensionRole {
     PlateHeight,    // levha v boyu
     HolePitch,      // bir bulon grubunda ardisik delik merkezleri arasi (yatay/dusey adim)
     HoleEdge,       // levha zarf kenari -> grubun en dis deligin DIS kenari (NET kenar mesafesi)
+    HoleOrdinate,   // P2D: duzensiz/manual dizilimde delik MERKEZININ levha kenarindan gercek koordinati
+                    // (uydurma adim YOK; her delik icin gercek u/v degeri)
     PlateOffsetX,   // uye BASLANGICINDAN levha yakin yuzune, uye ekseni (x') boyunca
     PlateOffsetY,   // uye baslangicindan levha zarfi min y' (uye-yerel)
     PlateOffsetZ    // uye baslangicindan levha zarfi min z' (uye-yerel)

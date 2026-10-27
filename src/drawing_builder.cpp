@@ -574,7 +574,7 @@ void evaluateFabricationStatus(DrawingSheet& sheet, const fab::FabricationInvent
         item("HOLE_DIAMETER_COUNT", "Delik capi ve adedi", callout ? ChecklistState::Satisfied : ChecklistState::Unresolved,
              callout ? "" : "callout uretilemedi", g.id);
         // u adimlari: ayni levhada ayni sutun imzali gruplardan biri tasir; v adimlari ve net kenarlar grubun kendi anahtarinda.
-        int vPitch = 0, uPitch = 0, edge = 0;
+        int vPitch = 0, uPitch = 0, edge = 0, ord = 0;
         for (const Dimension2D& d : sheet.dimensions) {
             if (d.role == DimensionRole::HolePitch && d.basis.find("along plate u") != std::string::npos) {
                 for (const fab::HoleGroupFeature& o : inv.groups)
@@ -588,18 +588,28 @@ void evaluateFabricationStatus(DrawingSheet& sheet, const fab::FabricationInvent
             if (d.featureKey != g.id) continue;
             if (d.role == DimensionRole::HolePitch && d.basis.find("along plate v") != std::string::npos) ++vPitch;
             if (d.role == DimensionRole::HoleEdge) ++edge;
+            if (d.role == DimensionRole::HoleOrdinate) ++ord;
         }
-        const bool posOk = g.regular && g.shape == fab::HoleShape::Round && uPitch >= g.cols - 1 && vPitch >= g.rows - 1 &&
-                           edge >= 1;
+        // P2D: duzgun dizilim -> adim + net kenar; duzensiz/manual dizilim -> her delik icin
+        // iki GERCEK merkez koordinati (u,v). Ikisi de kaynak geometriden; uydurma adim yok.
+        const int neededOrd = static_cast<int>(2 * g.holes.size());
+        const bool posOk = g.shape == fab::HoleShape::Round &&
+                           (g.regular ? (uPitch >= g.cols - 1 && vPitch >= g.rows - 1 && edge >= 1) : ord >= neededOrd);
         item("HOLE_POSITIONS", "Delik merkezleri / adimlar / net kenar mesafeleri",
              posOk ? ChecklistState::Satisfied : ChecklistState::Unresolved,
-             posOk ? "" : "duzgun olmayan dizilim, yuvali delik veya gercek-uzunluk gorunumu yok", g.id);
+             posOk ? "" : (g.shape == fab::HoleShape::Slot
+                               ? "yuvali delik: kontur/olcu desteklenmiyor"
+                               : (g.regular ? "gercek-uzunluk gorunumu yok ya da adim/kenar olcusu uretilemedi"
+                                            : "duzensiz dizilimde delik merkez koordinatlari uretilemedi")),
+             g.id);
     }
+    // HOLE_PATTERN_IRREGULAR artik TASLAK nedeni DEGIL: duzensiz dizilim gercek merkez koordinatlariyla
+    // olculuyor (HOLE_POSITIONS). Yuva/kontur ve cerceve sorunlari TASLAK kalir.
     if (anyOf({"HOLE_FRAME_UNAVAILABLE", "HOLE_OWNER_UNKNOWN", "HOLE_NOT_NORMAL_TO_PLATE", "HOLE_PARTIAL_DEPTH",
-               "HOLE_OUTSIDE_PLATE", "HOLE_PATTERN_IRREGULAR", "SLOT_NOT_DRAWN", "HOLE_BREAKS_EDGE"}))
+               "HOLE_OUTSIDE_PLATE", "SLOT_NOT_DRAWN", "HOLE_BREAKS_EDGE"}))
         item("HOLES_UNRESOLVED", "Cozumlenemeyen delik/yuva", ChecklistState::Unresolved,
              codeDetail({"HOLE_FRAME_UNAVAILABLE", "HOLE_OWNER_UNKNOWN", "HOLE_NOT_NORMAL_TO_PLATE", "HOLE_PARTIAL_DEPTH",
-                         "HOLE_OUTSIDE_PLATE", "HOLE_PATTERN_IRREGULAR", "SLOT_NOT_DRAWN", "HOLE_BREAKS_EDGE"}));
+                         "HOLE_OUTSIDE_PLATE", "SLOT_NOT_DRAWN", "HOLE_BREAKS_EDGE"}));
     // Kesim / kaynak
     item("CUTS", "Kesim/kopya olculeri",
          anyOf({"CUT_NOT_DIMENSIONED"}) ? ChecklistState::Unresolved : ChecklistState::NotApplicable,
@@ -726,7 +736,8 @@ BuildResult buildSheet(const Document& doc, MarkRegistry& reg, EntityId subject,
     };
     const auto isFabRole = [](DimensionRole r) {
         return r == DimensionRole::PlateWidth || r == DimensionRole::PlateHeight || r == DimensionRole::HolePitch ||
-               r == DimensionRole::HoleEdge || r == DimensionRole::PlateOffsetX || r == DimensionRole::PlateOffsetY ||
+               r == DimensionRole::HoleEdge || r == DimensionRole::HoleOrdinate ||
+               r == DimensionRole::PlateOffsetX || r == DimensionRole::PlateOffsetY ||
                r == DimensionRole::PlateOffsetZ;
     };
 
@@ -935,7 +946,23 @@ BuildResult buildSheet(const Document& doc, MarkRegistry& reg, EntityId subject,
                     return a->rowV.front() > b->rowV.front();   // ustten alta
                 });
                 for (const fab::HoleGroupFeature* g : ordered) {
-                    if (!g->regular || g->shape != fab::HoleShape::Round) continue;
+                    if (g->shape != fab::HoleShape::Round) continue;
+                    if (!g->regular) {
+                        // P2D: duzensiz (kademeli/silinmis bulon ya da elle acilmis karisik) dizilim.
+                        // Uydurma periyodik adim URETILMEZ; her deligin levha kenarindan GERCEK
+                        // merkez koordinati (u ve v) olculur. Boylece hicbir delik olcusuz kalmaz.
+                        const int grp = 10 + chainNo++;
+                        for (const std::size_t hi : g->holes) {
+                            const fab::HoleFeature& h = inv.holes[hi];
+                            newDim(DimensionRole::HoleOrdinate, dirU, uvLocal(P.envMinU, h.v), uvLocal(h.u, h.v),
+                                   h.u - P.envMinU, P.plate, grp, g->id,
+                                   "true centre ordinate: plate min-u edge to hole centre u (irregular pattern)");
+                            newDim(DimensionRole::HoleOrdinate, dirV, uvLocal(h.u, P.envMinV), uvLocal(h.u, h.v),
+                                   h.v - P.envMinV, P.plate, grp, g->id,
+                                   "true centre ordinate: plate min-v edge to hole centre v (irregular pattern)");
+                        }
+                        continue;
+                    }
                     std::string sig;
                     for (const double cu : g->colU) sig += std::to_string(std::llround(cu * 10)) + ",";
                     sig += "d" + std::to_string(std::llround(g->diameter * 10));
