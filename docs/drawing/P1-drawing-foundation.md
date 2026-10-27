@@ -22,6 +22,9 @@ Durum: ilk calisan cekirdek (OCCT'siz, Qt'siz, Linux ctest'te kosar). GUI yok.
 - **Iki uzay.** View-yerel koordinat (model mm, olceksiz, min=(0,0)) geometriye bagli her seyi tutar (segment, olcu noktasi, mark ankraji). Kagit koordinati = `origin + scale * yerel`. Modelin dunya konumu yalniz `projectionOffset`'te kalir; modeli otelemek kagit uzayi sonucunu degistirmez (test B).
 - **Projeksiyon** `projectToView`: Front (x,z), Top (x,y), Side (y,z); Z her elevation'da yukari. `Camera::standardViewRotation` kullanilmadi (bkz. asagi).
 - **Yerlesim.** Standart olcek listesi (1:1..1:1000); A3 cizim alani = cerceve - title block seridi - padding. 3. aci (varsayilan) veya 1. aci. Sigmazsa standart olmayan olcek (`scaleIsStandard=false`).
+- **Delikler** (`CutKind::Hole`): ekseni gorunuse dik -> daire + eksen isareti + "N x Ø22" etiketi; parca basina **delik zinciri** (kenar-delik-delik-kenar, merkezler arasi, yatay + dusey). Ekseni gorunus duzleminde olan delikler yalniz hiddenLines acikken kesik cizgi. Sinirli derinlik/yuvali delik dikkate alinmaz (tam boy, yuvarlak).
+- **Assembly uye konum zinciri** (`PartPosition`): uyelerin kenar konumlari (or. plaka-kiris-plaka 12 / 3976 / 12). Zincirler genel olculerden **once** (govdeye yakin satir) dizilir; kagitta dar kalan olcu metinleri kademelenir (`textLevel`).
+- **Cizgi agirliklari** (`lineWeightMm`, PDF'te gercek mm): gorunur 0.18, gizli/olcu 0.10, cerceve 0.35.
 - **Olculer** gercek geometriden: `MemberLength` = ana parcanin properties ekseni (gorunus duzleminde ise), `OverallWidth/Height` = gorunusun sinir kutusu. `Dimension2D::measured()` noktalardan yeniden olcer; testler `value == measured()` ve modelden bagimsiz hesapla karsilastirir.
 
 ## Genisleme noktalari

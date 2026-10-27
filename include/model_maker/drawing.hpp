@@ -40,7 +40,13 @@ enum class LineStyle { Visible, Hidden };
 enum class ProjectionMethod { ThirdAngle, FirstAngle };
 enum class SheetSize { A4, A3, A2, A1, A0 };
 enum class DimensionDirection { Horizontal, Vertical, Aligned };
-enum class DimensionRole { MemberLength, OverallWidth, OverallHeight };
+enum class DimensionRole {
+    MemberLength,   // ana parca ekseni boyu (gercek 3B uzunluk)
+    OverallWidth,   // gorunus sinir kutusu genisligi
+    OverallHeight,  // gorunus sinir kutusu yuksekligi
+    HoleSpacing,    // delik zinciri: kenar -> delik -> delik -> kenar (merkezler arasi)
+    PartPosition    // montaj uyelerinin kenar konumlari zinciri (assembly)
+};
 
 struct Segment2 {
     Vec2 a{};
@@ -58,6 +64,16 @@ struct Bounds2 {
     void include(const Vec2& p) noexcept;
 };
 
+// Delik (ekseni gorunus duzlemine dik): view-yerel merkez + yaricap. `label` yalniz gruptaki ilk
+// delikte dolu: "4 x \xC3\x98" + cap (UTF-8). Eksen-gorunus paralel delikler Segment2(Hidden) olur.
+struct Circle2 {
+    Vec2 center{};
+    double radius{0.0};
+    LineStyle style{LineStyle::Visible};
+    EntityId owner{kInvalidEntityId};   // deligin ait oldugu parca
+    std::string label;
+};
+
 // Gorunumdeki bir uyenin (parca) yerel sinirlari — part mark etiketi icin.
 struct ViewMember {
     EntityId entity{kInvalidEntityId};
@@ -73,6 +89,7 @@ struct DrawingView {
     Vec2 projectionOffset{};              // ham 2B projeksiyonda yerel (0,0)'in konumu:
                                           // yerel = projectToView(P, kind) - projectionOffset
     std::vector<Segment2> segments;       // view-yerel, olceksiz
+    std::vector<Circle2> circles;         // delikler (eksen gorunuse dik), view-yerel
     Bounds2 bounds;                       // segments'in sinirlari (view-yerel)
     std::vector<ViewMember> members;
     std::string label;                    // "FRONT", "TOP"... (UTF-8)
@@ -106,6 +123,7 @@ struct Dimension2D {
     Vec2 p2{};
     double value{0.0};
     double offset{12.0};
+    int textLevel{0};   // 0: olcu cizgisi ustunde; >0: dar aralikta metin yukari/yana kaydirilir (kademe)
     EntityId source{kInvalidEntityId};
     // p1-p2'den yeniden olculen uzunluk (yon'e gore).
     double measured() const noexcept;

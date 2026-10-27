@@ -39,6 +39,8 @@ const char* name(DimensionRole r) {
     case DimensionRole::MemberLength: return "memberLength";
     case DimensionRole::OverallWidth: return "overallWidth";
     case DimensionRole::OverallHeight: return "overallHeight";
+    case DimensionRole::HoleSpacing: return "holeSpacing";
+    case DimensionRole::PartPosition: return "partPosition";
     }
     return "overallWidth";
 }
@@ -74,6 +76,8 @@ bool parse(const std::string& s, DimensionRole& o) {
     if (s == "memberLength") { o = DimensionRole::MemberLength; return true; }
     if (s == "overallWidth") { o = DimensionRole::OverallWidth; return true; }
     if (s == "overallHeight") { o = DimensionRole::OverallHeight; return true; }
+    if (s == "holeSpacing") { o = DimensionRole::HoleSpacing; return true; }
+    if (s == "partPosition") { o = DimensionRole::PartPosition; return true; }
     return false;
 }
 bool parseSize(const std::string& s, SheetSize& o) {
@@ -125,13 +129,17 @@ json viewJson(const DrawingView& v) {
     json segs = json::array();
     for (const Segment2& s : v.segments)
         segs.push_back({v2(s.a), v2(s.b), name(s.style)});
+    json circles = json::array();
+    for (const Circle2& c : v.circles)
+        circles.push_back({{"c", v2(c.center)}, {"r", c.radius}, {"style", name(c.style)},
+                           {"owner", c.owner}, {"label", c.label}});
     json mem = json::array();
     for (const ViewMember& m : v.members)
         mem.push_back({{"entity", m.entity}, {"bounds", boundsJson(m.bounds)}});
     return {{"id", v.id}, {"kind", name(v.kind)}, {"subject", v.subject}, {"scale", v.scale},
             {"origin", v2(v.origin)}, {"projectionOffset", v2(v.projectionOffset)},
             {"segments", segs}, {"bounds", boundsJson(v.bounds)},
-            {"members", mem}, {"label", v.label}};
+            {"members", mem}, {"label", v.label}, {"circles", circles}};
 }
 bool viewFrom(const json& j, DrawingView& v) {
     v.id = j.at("id").get<ElementId>();
@@ -148,6 +156,16 @@ bool viewFrom(const json& j, DrawingView& v) {
         v.segments.push_back(seg);
     }
     v.bounds = boundsFrom(j.at("bounds"));
+    if (j.contains("circles"))  // eski kayitlarda yok
+        for (const json& c : j.at("circles")) {
+            Circle2 ci;
+            ci.center = v2From(c.at("c"));
+            ci.radius = c.at("r").get<double>();
+            if (!parse(c.at("style").get<std::string>(), ci.style)) return false;
+            ci.owner = c.at("owner").get<EntityId>();
+            ci.label = c.at("label").get<std::string>();
+            v.circles.push_back(std::move(ci));
+        }
     for (const json& m : j.at("members"))
         v.members.push_back({m.at("entity").get<EntityId>(), boundsFrom(m.at("bounds"))});
     v.label = j.at("label").get<std::string>();
@@ -247,7 +265,8 @@ std::string DrawingDocument::serialize() const {
         for (const Dimension2D& d : s.dimensions)
             dims.push_back({{"id", d.id}, {"viewId", d.viewId}, {"role", name(d.role)},
                             {"direction", name(d.direction)}, {"p1", v2(d.p1)}, {"p2", v2(d.p2)},
-                            {"value", d.value}, {"offset", d.offset}, {"source", d.source}});
+                            {"value", d.value}, {"offset", d.offset}, {"textLevel", d.textLevel},
+                            {"source", d.source}});
         json views = json::array();
         for (const DrawingView& v : s.views) views.push_back(viewJson(v));
         sheets.push_back(
@@ -323,6 +342,7 @@ bool DrawingDocument::deserialize(const std::string& text, DrawingDocument& out,
                 d.p2 = v2From(jd.at("p2"));
                 d.value = jd.at("value").get<double>();
                 d.offset = jd.at("offset").get<double>();
+                d.textLevel = jd.value("textLevel", 0);
                 d.source = jd.at("source").get<EntityId>();
                 s.dimensions.push_back(std::move(d));
             }

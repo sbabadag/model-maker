@@ -140,6 +140,7 @@ int main(int argc, char** argv) {
     {
         QTemporaryDir dir;
         const QString path = dir.filePath(QStringLiteral("a1.pdf"));
+        if (const char* keep = std::getenv("MM_DRAWING_PDF")) exportSheetPdf(sheet, QString::fromLocal8Bit(keep));
         QString err;
         check(exportSheetPdf(sheet, path, &err) && err.isEmpty(), "PDF yazildi");
         QFile f(path);
@@ -219,6 +220,50 @@ int main(int argc, char** argv) {
         auto* badStatus = bad.findChild<QLabel*>(QStringLiteral("drawingStatus"));
         check(bad.currentSheet() == nullptr && badStatus && badStatus->text().contains(QStringLiteral("test hatasi")),
               "C: builder hatasi durum satirinda");
+    }
+
+    // --- E) delikli plaka: daire render'i + ince cizgi agirliklari ---
+    {
+        using namespace mm::drawing::lineWeightMm;
+        check(visible <= 0.2 && hidden <= 0.12 && dimension <= 0.12 && frame <= 0.4 && titleOuter <= 0.3,
+              "E: cizgi agirliklari ince (gorunur <=0.2, gizli/olcu <=0.12, cerceve <=0.4 mm)");
+        Document dp;
+        const EntityId plate = add(dp, makeBox({0, 0, 0}, {300, 20, 200}, "PL20", "Plaka"));
+        for (double x : {50.0, 250.0})
+            for (double z : {40.0, 160.0}) {
+                CutModifier h;
+                h.kind = CutKind::Hole;
+                h.target = plate;
+                h.planeOrigin = {x, 10, z};
+                h.planeNormal = {0, 1, 0};
+                h.diameter = 22;
+                dp.addCutModifier(h);
+            }
+        MarkRegistry rp;
+        const BuildResult hp = buildSheet(dp, rp, plate);
+        check(hp.ok, "E: delikli plaka cizimi");
+        if (hp.ok) {
+            const QImage himg = renderSheetImage(hp.sheet, 2100);
+            if (const char* png = std::getenv("MM_DRAWING_PNG_HOLES")) himg.save(QString::fromLocal8Bit(png));
+            const DrawingView* f = hp.sheet.viewOfKind(ViewKind::Front);
+            const double pxPerMm = himg.width() / hp.sheet.format.width;
+            int ringOk = 0, insideClear = 0;
+            for (const Circle2& c : f->circles) {
+                const Vec2 pc = f->toPaper(c.center);
+                const double rpx = c.radius * f->scale * pxPerMm;
+                const QPoint ctr = toPx(hp.sheet, himg, pc.x, pc.y);
+                // Halka uzerinde (sag, sol, ust, alt) en az 3 nokta koyu piksel icerir.
+                int hits = 0;
+                for (const QPoint d : {QPoint(int(rpx), 0), QPoint(-int(rpx), 0), QPoint(0, int(rpx)), QPoint(0, -int(rpx))})
+                    hits += darkCount(himg, QRect(ctr + d - QPoint(2, 2), QSize(5, 5)), 170) > 0;
+                ringOk += hits >= 3;
+                // Capraz ic noktada (eksen cizgisi yok) cizgi yok.
+                const QPoint inner = ctr + QPoint(int(rpx * 0.45), int(rpx * 0.45));
+                insideClear += darkCount(himg, QRect(inner - QPoint(1, 1), QSize(3, 3)), 200) == 0;
+            }
+            check(f->circles.size() == 4 && ringOk == 4, "E: 4 delik dairesi halkasi gercekten cizili");
+            check(insideClear == 4, "E: daire ici bos (dolgu yok), yalniz eksen isaretleri");
+        }
     }
 
     // --- D) secimden konu cikarma (menu komutunun mantigi) ---

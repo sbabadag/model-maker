@@ -449,6 +449,120 @@ int main() {
         check(d1.serialize() == d2.serialize(), "G: ayni girdi -> bayt-bayt ayni cizim");
     }
 
+    // =========================================================================
+    // H) Deliklerin cizime ve olculere girmesi + montaj uye konum zinciri.
+    // =========================================================================
+    {
+        Document dp;
+        // Plaka X 0..300, Y 0..20 (kalinlik), Z 0..200; delik ekseni Y (Front'a DIK).
+        const EntityId plate = add(dp, makeBox({0, 0, 0}, {300, 20, 200}, "PL20", "Plaka", false));
+        const double holeX[2] = {50, 250}, holeZ[2] = {40, 160};
+        for (double x : holeX)
+            for (double z : holeZ) {
+                CutModifier h;
+                h.kind = CutKind::Hole;
+                h.target = plate;
+                h.planeOrigin = {x, 10, z};
+                h.planeNormal = {0, 1, 0};
+                h.diameter = 22;
+                dp.addCutModifier(h);
+            }
+        MarkRegistry rp;
+        const BuildResult hp = buildSheet(dp, rp, plate);
+        check(hp.ok, "H: delikli plaka cizimi uretildi");
+        const DrawingView* f = hp.sheet.viewOfKind(ViewKind::Front);
+        const DrawingView* t = hp.sheet.viewOfKind(ViewKind::Top);
+        check(f && f->circles.size() == 4, "H: Front'ta 4 delik dairesi (eksen gorunuse dik)");
+        if (!f || !t) return 1;
+        bool geomOk = true;
+        for (const Circle2& c : f->circles) {
+            bool match = false;
+            for (double x : holeX)
+                for (double z : holeZ) match |= nearTo(c.center.x, x) && nearTo(c.center.y, z);
+            geomOk &= match && nearTo(c.radius, 11) && c.owner == plate;
+        }
+        check(geomOk, "H: daire merkezleri/yaricap modeldeki Hole kayitlariyla birebir (x,z)=(50|250,40|160), r=11");
+        int labelled = 0;
+        std::string label;
+        for (const Circle2& c : f->circles) if (!c.label.empty()) { ++labelled; label = c.label; }
+        check(labelled == 1 && label == std::string("4 x \xC3\x98") + "22", "H: tek etiket '4 x Ø22'");
+        check(t->circles.empty() && std::none_of(t->segments.begin(), t->segments.end(),
+                                                 [](const Segment2& s) { return s.style == LineStyle::Hidden; }),
+              "H: Top'ta (eksen gorunus duzleminde) hiddenLines kapaliyken delik cizilmez");
+
+        // Zincir: kenar-delik-delik-kenar. Beklenen degerler MODEL kayitlarindan bagimsiz hesaplanir.
+        std::vector<double> hDims, vDims;
+        double hOff = -1, vOff = -1, ovOff = -1;
+        for (const Dimension2D& d : hp.sheet.dimensions) {
+            if (d.viewId != f->id) continue;
+            if (d.role == DimensionRole::HoleSpacing) {
+                (d.direction == DimensionDirection::Horizontal ? hDims : vDims).push_back(d.value);
+                (d.direction == DimensionDirection::Horizontal ? hOff : vOff) = d.offset;
+                check(nearTo(d.measured(), d.value, 1e-6) && d.source == plate, "H: zincir olcusu yeniden olcumle esit, kaynak = plaka");
+            }
+            if (d.role == DimensionRole::OverallWidth) ovOff = d.offset;
+        }
+        std::sort(hDims.begin(), hDims.end());
+        std::sort(vDims.begin(), vDims.end());
+        check(hDims.size() == 3 && nearTo(hDims[0], 50) && nearTo(hDims[1], 50) && nearTo(hDims[2], 200),
+              "H: yatay zincir 50 (kenar-delik) / 200 (delik-delik) / 50 (delik-kenar)");
+        check(vDims.size() == 3 && nearTo(vDims[0], 40) && nearTo(vDims[1], 40) && nearTo(vDims[2], 120),
+              "H: dusey zincir 40 / 120 / 40");
+        check(hOff > 0 && ovOff > hOff, "H: delik zinciri genel olcunun ICINDE (daha yakin satir)");
+        double sum = 0;
+        for (double v : hDims) sum += v;
+        check(nearTo(sum, 300), "H: zincir toplami = plaka genisligi");
+
+        // hiddenLines: Top'ta delik kenarlari kesik cizgi, tekrarsiz (2 farkli x * 2 kenar = 4).
+        DrawingOptions hid;
+        hid.hiddenLines = true;
+        MarkRegistry rh;
+        const BuildResult hh = buildSheet(dp, rh, plate, hid);
+        const DrawingView* th = hh.sheet.viewOfKind(ViewKind::Top);
+        const auto hiddenCount = std::count_if(th->segments.begin(), th->segments.end(),
+                                               [](const Segment2& s) { return s.style == LineStyle::Hidden; });
+        check(hiddenCount == 4, "H: hiddenLines -> Top'ta 4 tekrarsiz kesik delik cizgisi");
+
+        // JSON gidis-donus: daire, yeni roller, textLevel.
+        DrawingDocument dd;
+        dd.addSheet(hp.sheet);
+        const std::string js = dd.serialize();
+        DrawingDocument back;
+        std::string err;
+        check(DrawingDocument::deserialize(js, back, err) && back.serialize() == js &&
+                  back.sheets()[0].views[0].circles.size() + back.sheets()[0].views[1].circles.size() +
+                          back.sheets()[0].views[2].circles.size() == 4,
+              "H: daireler ve delik olculeri JSON gidis-donusunde korunur");
+    }
+    {
+        // Assembly: kiris + iki uc levhasi -> uye konum zinciri.
+        Document da;
+        const EntityId b = add(da, makeBox({0, 0, 0}, {4000, 120, 240}, "IPE240", "Ana"));
+        const EntityId p1 = add(da, makeBox({0, -10, 0}, {12, 130, 240}, "PL12", "Levha"));
+        const EntityId p2 = add(da, makeBox({3988, -10, 0}, {4000, 130, 240}, "PL12", "Levha"));
+        da.addWeld(weldOf(b, p1));
+        da.addWeld(weldOf(b, p2));
+        MarkRegistry ra;
+        const BuildResult as = buildSheet(da, ra, da.assemblies()[0].id);
+        const DrawingView* f = as.sheet.viewOfKind(ViewKind::Front);
+        std::vector<double> pos;
+        int shortWithLevel = 0, wideWithLevel = 0;
+        for (const Dimension2D& d : as.sheet.dimensions)
+            if (d.viewId == f->id && d.role == DimensionRole::PartPosition && d.direction == DimensionDirection::Horizontal) {
+                pos.push_back(d.value);
+                if (d.value * as.sheet.scale < 5.0) shortWithLevel += d.textLevel > 0;
+                else wideWithLevel += d.textLevel > 0;
+            }
+        std::sort(pos.begin(), pos.end());
+        check(pos.size() == 3 && nearTo(pos[0], 12) && nearTo(pos[1], 12) && nearTo(pos[2], 3976),
+              "H: assembly Front uye konum zinciri 12 / 3976 / 12 (plaka-kiris-plaka)");
+        check(shortWithLevel == 2 && wideWithLevel == 0,
+              "H: kagitta cok dar (12 mm @ olcek) olculerin metni kademelendirilir, genis olan degil");
+        double sum = 0;
+        for (double v : pos) sum += v;
+        check(nearTo(sum, f->bounds.width()), "H: konum zinciri toplami = gorunus genisligi");
+    }
+
     std::printf(failures ? "FAILURES: %d\n" : "ALL PASS\n", failures);
     return failures ? 1 : 0;
 }

@@ -15,6 +15,10 @@
 //     ile olculdu (setView + project): Front'ta +Z ekranda ASAGI gidiyor, Right'ta +Z ekranda
 //     YATAY (sola). Bu elevation cizimi icin ters/yatik olurdu. 3B goruntu kamerasina
 //     DOKUNULMADI (kapsam disi); asil kamera davranisinin kasitli olup olmadigi ayrica sorulmali.
+//   * Delikler (CutKind::Hole): eksen gorunuse DIK -> daire (+ "N x Ø" etiketi) ve parca basina
+//     delik zinciri (kenar-delik-delik-kenar); eksen gorunus duzleminde -> yalniz hiddenLines
+//     acikken kesik cizgi. Sinirli derinlik/yuvali delik dikkate alinmaz (tam boy, yuvarlak).
+//   * Assembly'de uye kenar konumlari zinciri (PartPosition).
 //   * Yalniz eksen-uyumlu uye boyu olculenir (properties'te eksen varsa ve gorunusle
 //     ayni duzlemdeyse); aksi halde yalniz genel sinir olculeri.
 
@@ -32,7 +36,7 @@ struct DrawingOptions {
     ProjectionMethod projection{ProjectionMethod::ThirdAngle};
     std::vector<ViewKind> views{ViewKind::Front, ViewKind::Top, ViewKind::Side};
     bool hiddenLines{false};
-    double viewGap{35.0};     // gorunusler arasi kagit mm (olcu/etiket payi)
+    double viewGap{45.0};     // gorunusler arasi kagit mm (olcu zincirleri/etiket payi)
     double padding{20.0};     // cizim alani ic payi (kagit mm)
     std::string project;
     std::string drawnBy;

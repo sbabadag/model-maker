@@ -72,9 +72,10 @@ void tick(QPainter& p, const QPointF& at) {
 void drawTitleBlock(QPainter& p, const DrawingSheet& s) {
     const SheetFormat& f = s.format;
     const QRectF box(f.width - f.margin - f.titleWidth, f.margin, f.titleWidth, f.titleHeight);
-    p.setPen(QPen(Qt::black, 0.5));
+    p.setPen(QPen(Qt::black, lineWeightMm::titleOuter));
     p.setBrush(Qt::NoBrush);
     p.drawRect(box);
+    p.setPen(QPen(Qt::black, lineWeightMm::titleInner));
     const double rowH = box.height() / 4.0;
     for (int i = 1; i < 4; ++i)
         p.drawLine(QPointF(box.left(), box.top() + rowH * i), QPointF(box.right(), box.top() + rowH * i));
@@ -108,7 +109,7 @@ void drawDimension(QPainter& p, const DrawingSheet& s, const Dimension2D& d) {
     if (!v) return;
     const QPointF a = pt(v->toPaper(d.p1)), b = pt(v->toPaper(d.p2));
     const Bounds2 pb = v->paperBounds();
-    p.setPen(QPen(QColor(0, 90, 160), 0.18));
+    p.setPen(QPen(QColor(0, 90, 160), lineWeightMm::dimension));
     const QString label = valueText(d.value);
     constexpr double kText = 3.2;
     if (d.direction == DimensionDirection::Horizontal) {
@@ -118,7 +119,9 @@ void drawDimension(QPainter& p, const DrawingSheet& s, const Dimension2D& d) {
         p.drawLine(QPointF(a.x(), y), QPointF(b.x(), y));
         tick(p, QPointF(a.x(), y));
         tick(p, QPointF(b.x(), y));
-        drawText(p, QPointF((a.x() + b.x()) / 2, y + 0.8), label, kText, Qt::AlignHCenter | Qt::AlignBottom);
+        const double ty = y + 0.8 + d.textLevel * 3.4;
+        if (d.textLevel > 0) p.drawLine(QPointF((a.x() + b.x()) / 2, y), QPointF((a.x() + b.x()) / 2, ty));
+        drawText(p, QPointF((a.x() + b.x()) / 2, ty), label, kText, Qt::AlignHCenter | Qt::AlignBottom);
     } else if (d.direction == DimensionDirection::Vertical) {
         const double x = pb.max.x + d.offset;
         p.drawLine(QPointF(a.x(), a.y()), QPointF(x + 1.5, a.y()));
@@ -126,7 +129,13 @@ void drawDimension(QPainter& p, const DrawingSheet& s, const Dimension2D& d) {
         p.drawLine(QPointF(x, a.y()), QPointF(x, b.y()));
         tick(p, QPointF(x, a.y()));
         tick(p, QPointF(x, b.y()));
-        drawText(p, QPointF(x - 2.2, (a.y() + b.y()) / 2), label, kText, Qt::AlignCenter, 90.0);
+        if (d.textLevel > 0) {
+            const double lx = x + d.textLevel * 3.0;
+            p.drawLine(QPointF(x, (a.y() + b.y()) / 2), QPointF(lx, (a.y() + b.y()) / 2));
+            drawText(p, QPointF(lx + 2.0, (a.y() + b.y()) / 2), label, kText, Qt::AlignCenter, 90.0);
+        } else {
+            drawText(p, QPointF(x - 2.2, (a.y() + b.y()) / 2), label, kText, Qt::AlignCenter, 90.0);
+        }
     } else {
         const double dx = b.x() - a.x(), dy = b.y() - a.y();
         const double len = std::hypot(dx, dy);
@@ -158,12 +167,12 @@ void drawMark(QPainter& p, const DrawingSheet& s, const MarkAnnotation& m) {
     const QRectF box(m.labelPos.x, m.labelPos.y, std::max(w, h + 3.0), h + 2.0);
     const QPointF anchor = pt(v->toPaper(m.anchor));
     const QColor col = m.isAssembly ? QColor(170, 40, 40) : QColor(30, 110, 50);
-    p.setPen(QPen(col, 0.18));
+    p.setPen(QPen(col, lineWeightMm::mark));
     p.drawLine(anchor, box.center());
     p.setBrush(col);
     p.drawEllipse(anchor, 0.7, 0.7);
     p.setBrush(Qt::white);
-    p.setPen(QPen(col, m.isAssembly ? 0.45 : 0.3));
+    p.setPen(QPen(col, m.isAssembly ? lineWeightMm::markAssembly : lineWeightMm::mark));
     p.drawRoundedRect(box, 1.0, 1.0);
     drawText(p, box.center(), label, h, Qt::AlignCenter, 0.0, m.isAssembly);
 }
@@ -181,7 +190,7 @@ void paintSheet(QPainter& painter, const DrawingSheet& sheet, const QRectF& targ
     painter.scale(s, -s);
 
     painter.fillRect(QRectF(0, 0, f.width, f.height), Qt::white);
-    painter.setPen(QPen(Qt::black, 0.7));
+    painter.setPen(QPen(Qt::black, lineWeightMm::frame));
     painter.setBrush(Qt::NoBrush);
     painter.drawRect(QRectF(f.margin, f.margin, f.width - 2 * f.margin, f.height - 2 * f.margin));
     drawTitleBlock(painter, sheet);
@@ -189,13 +198,30 @@ void paintSheet(QPainter& painter, const DrawingSheet& sheet, const QRectF& targ
     for (const DrawingView& v : sheet.views) {
         for (const Segment2& seg : v.segments) {
             if (seg.style == LineStyle::Visible) {
-                painter.setPen(QPen(Qt::black, 0.35, Qt::SolidLine, Qt::RoundCap));
+                painter.setPen(QPen(Qt::black, lineWeightMm::visible, Qt::SolidLine, Qt::RoundCap));
             } else {
-                QPen pen(QColor(110, 110, 110), 0.18, Qt::DashLine);
-                pen.setDashPattern({6.0, 4.0});
+                QPen pen(QColor(110, 110, 110), lineWeightMm::hidden, Qt::DashLine);
+                pen.setDashPattern({10.0, 6.0});
                 painter.setPen(pen);
             }
             painter.drawLine(pt(v.toPaper(seg.a)), pt(v.toPaper(seg.b)));
+        }
+        for (const Circle2& c : v.circles) {
+            const QPointF ctr = pt(v.toPaper(c.center));
+            const double rp = c.radius * v.scale;
+            const double arm = std::max(rp, 0.4) + 1.2;
+            painter.setPen(QPen(QColor(120, 120, 120), lineWeightMm::centre, Qt::DashDotLine));
+            painter.drawLine(QPointF(ctr.x() - arm, ctr.y()), QPointF(ctr.x() + arm, ctr.y()));
+            painter.drawLine(QPointF(ctr.x(), ctr.y() - arm), QPointF(ctr.x(), ctr.y() + arm));
+            painter.setPen(QPen(c.style == LineStyle::Visible ? QColor(Qt::black) : QColor(110, 110, 110),
+                                lineWeightMm::circle));
+            painter.setBrush(Qt::NoBrush);
+            painter.drawEllipse(ctr, rp, rp);
+            if (!c.label.empty()) {
+                painter.setPen(QPen(QColor(60, 60, 60), 0.1));
+                drawText(painter, QPointF(ctr.x() + arm, ctr.y() + arm), qs(c.label), 2.6,
+                         Qt::AlignLeft | Qt::AlignBottom);
+            }
         }
         const Bounds2 pb = v.paperBounds();
         painter.setPen(QPen(Qt::black, 0.1));

@@ -89,6 +89,32 @@ std::set<std::pair<std::size_t, std::size_t>> hiddenEdges(const WireframeModel& 
     return hidden;
 }
 
+Vec3 viewNormal(ViewKind k) {
+    switch (k) {
+    case ViewKind::Front: return {0, 1, 0};
+    case ViewKind::Top: return {0, 0, 1};
+    case ViewKind::Side: return {1, 0, 0};
+    }
+    return {0, 1, 0};
+}
+
+std::string fmtNum(double v) {
+    char buf[32];
+    const double r = std::round(v);
+    if (std::fabs(v - r) < 0.05) std::snprintf(buf, sizeof(buf), "%.0f", r);
+    else std::snprintf(buf, sizeof(buf), "%.1f", v);
+    return buf;
+}
+
+// Sirali, `tol` icinde birlesen benzersiz degerler (kume basinin degeri).
+std::vector<double> uniqueSorted(std::vector<double> xs, double tol) {
+    std::sort(xs.begin(), xs.end());
+    std::vector<double> out;
+    for (const double x : xs)
+        if (out.empty() || x - out.back() > tol) out.push_back(x);
+    return out;
+}
+
 std::string deriveName(const WireframeModel& m) {
     const EntityProperties& p = m.properties();
     if (!p.name.empty()) return p.name;
@@ -243,6 +269,67 @@ DrawingView generateView(const Document& doc, const std::vector<EntityId>& parts
         vm.bounds.include(local(mb.min));
         vm.bounds.include(local(mb.max));
         view.members.push_back(vm);
+    }
+
+    // --- delikler (CutKind::Hole): eksen gorunuse dik -> daire; eksen gorunus duzleminde ve
+    //     hiddenLines acik -> kesik cizgi (deligin parca icindeki iki kenari). Egik eksen atlanir.
+    //     Delik boyu = parcanin delik ekseni boyunca uzanimi (sinirli derinlik/yuva dikkate alinmaz).
+    {
+        const Vec3 n = viewNormal(kind);
+        struct Group { EntityId owner; double dia; std::size_t first; int count; };
+        std::set<Key> holeSeen;
+        std::vector<Group> groups;
+        for (const EntityId id : parts) {
+            const auto pidx = doc.indexOfEntity(id);
+            if (!pidx) continue;
+            const WireframeModel& pm = doc.models()[*pidx];
+            for (const std::size_t mi : doc.cutModifiersForTarget(id)) {
+                const CutModifier& hm = doc.cutModifiers()[mi];
+                if (hm.kind != CutKind::Hole || !hm.enabled || hm.diameter <= 0.0) continue;
+                const double al = std::sqrt(hm.planeNormal.x * hm.planeNormal.x + hm.planeNormal.y * hm.planeNormal.y +
+                                            hm.planeNormal.z * hm.planeNormal.z);
+                if (al < 1e-9) continue;
+                const Vec3 ax{hm.planeNormal.x / al, hm.planeNormal.y / al, hm.planeNormal.z / al};
+                const double d = std::fabs(ax.x * n.x + ax.y * n.y + ax.z * n.z);
+                const Vec2 c = local(projectToView(hm.planeOrigin, kind));
+                if (d >= 0.999) {
+                    Circle2 ci;
+                    ci.center = c;
+                    ci.radius = hm.diameter / 2.0;
+                    ci.owner = id;
+                    bool found = false;
+                    for (Group& g : groups)
+                        if (g.owner == id && std::fabs(g.dia - hm.diameter) < 1e-6) { ++g.count; found = true; break; }
+                    if (!found) groups.push_back({id, hm.diameter, view.circles.size(), 1});
+                    view.circles.push_back(std::move(ci));
+                } else if (d <= 0.001 && hiddenLines && !pm.vertices().empty()) {
+                    double tmin = 1e300, tmax = -1e300;
+                    for (const Vec3& vtx : pm.vertices()) {
+                        const double t = (vtx.x - hm.planeOrigin.x) * ax.x + (vtx.y - hm.planeOrigin.y) * ax.y +
+                                         (vtx.z - hm.planeOrigin.z) * ax.z;
+                        tmin = std::min(tmin, t);
+                        tmax = std::max(tmax, t);
+                    }
+                    const auto at = [&](double t) {
+                        return local(projectToView({hm.planeOrigin.x + ax.x * t, hm.planeOrigin.y + ax.y * t,
+                                                    hm.planeOrigin.z + ax.z * t}, kind));
+                    };
+                    const Vec2 a = at(tmin), b = at(tmax);
+                    const double len = std::hypot(b.x - a.x, b.y - a.y);
+                    if (len < 1e-6) continue;
+                    const double r = hm.diameter / 2.0;
+                    const Vec2 pp{-(b.y - a.y) / len * r, (b.x - a.x) / len * r};
+                    const Vec2 s1a{a.x + pp.x, a.y + pp.y}, s1b{b.x + pp.x, b.y + pp.y};
+                    const Vec2 s2a{a.x - pp.x, a.y - pp.y}, s2b{b.x - pp.x, b.y - pp.y};
+                    for (const auto& sg : {std::pair{s1a, s1b}, std::pair{s2a, s2b}})
+                        if (holeSeen.insert(keyOf(sg.first, sg.second)).second)  // ayni izdusum tek kez
+                            view.segments.push_back({sg.first, sg.second, LineStyle::Hidden});
+                }
+            }
+        }
+        for (const Group& g : groups)
+            view.circles[g.first].label =
+                (g.count > 1 ? std::to_string(g.count) + " x " : std::string()) + "\xC3\x98" + fmtNum(g.dia);
     }
     return view;
 }
@@ -437,59 +524,162 @@ BuildResult buildSheet(const Document& doc, MarkRegistry& reg, EntityId subject,
 
         // --- olculer: gercek geometriye bagli ---
         const Vec2 rawMin = v.projectionOffset; // yerel = projectToView(P) - projectionOffset
+        struct Pending { Dimension2D d; int group; };
+        std::vector<Pending> pend;
+        const auto newDim = [&](DimensionRole role, DimensionDirection dir, Vec2 p1, Vec2 p2, double value,
+                                EntityId src, int group, double offset = 0.0) {
+            Dimension2D d;
+            d.id = sheet.allocateId();
+            d.viewId = v.id;
+            d.role = role;
+            d.direction = dir;
+            d.p1 = p1;
+            d.p2 = p2;
+            d.value = value;
+            d.offset = offset;
+            d.source = src;
+            pend.push_back({d, group});
+        };
+        constexpr double kMinGap = 0.5;
+        constexpr int kLengthGroup = 100, kOverallGroup = 101;
+
+        // (1) Montaj uyelerinin kenar konumlari zinciri (yalniz assembly, >1 uye).
+        if (sheet.kind == DrawingKind::Assembly && v.members.size() > 1) {
+            std::vector<double> xs{v.bounds.min.x, v.bounds.max.x}, ys{v.bounds.min.y, v.bounds.max.y};
+            for (const ViewMember& vm : v.members) {
+                xs.push_back(vm.bounds.min.x); xs.push_back(vm.bounds.max.x);
+                ys.push_back(vm.bounds.min.y); ys.push_back(vm.bounds.max.y);
+            }
+            xs = uniqueSorted(xs, kMinGap);
+            ys = uniqueSorted(ys, kMinGap);
+            if (xs.size() > 2)
+                for (std::size_t i = 0; i + 1 < xs.size(); ++i)
+                    newDim(DimensionRole::PartPosition, DimensionDirection::Horizontal, {xs[i], v.bounds.min.y},
+                           {xs[i + 1], v.bounds.min.y}, xs[i + 1] - xs[i], subject, 0);
+            if (ys.size() > 2)
+                for (std::size_t i = 0; i + 1 < ys.size(); ++i)
+                    newDim(DimensionRole::PartPosition, DimensionDirection::Vertical, {v.bounds.max.x, ys[i]},
+                           {v.bounds.max.x, ys[i + 1]}, ys[i + 1] - ys[i], subject, 0);
+        }
+
+        // (2) Delik zincirleri (parca basina): kenar -> delik -> delik -> kenar, merkezler arasi.
+        {
+            std::vector<EntityId> owners;
+            for (const Circle2& c : v.circles)
+                if (std::find(owners.begin(), owners.end(), c.owner) == owners.end()) owners.push_back(c.owner);
+            int group = 1;
+            for (const EntityId owner : owners) {
+                const ViewMember* pm = nullptr;
+                for (const ViewMember& vm : v.members)
+                    if (vm.entity == owner) pm = &vm;
+                if (!pm) continue;
+                std::vector<Vec2> centres;
+                for (const Circle2& c : v.circles)
+                    if (c.owner == owner) centres.push_back(c.center);
+                std::vector<double> cx, cy;
+                for (const Vec2& c : centres) { cx.push_back(c.x); cy.push_back(c.y); }
+                cx = uniqueSorted(cx, 0.05);
+                cy = uniqueSorted(cy, 0.05);
+                const Bounds2& pb = pm->bounds;
+                // Nokta + bagli oldugu ikinci koordinat (uzatma cizgisi nereden baslar).
+                std::vector<std::pair<double, double>> hx, hy;
+                hx.push_back({pb.min.x, pb.min.y});
+                for (const double x : cx) {
+                    double y = 1e300;
+                    for (const Vec2& c : centres) if (std::fabs(c.x - x) <= 0.05) y = std::min(y, c.y);
+                    hx.push_back({x, y});
+                }
+                hx.push_back({pb.max.x, pb.min.y});
+                hy.push_back({pb.min.y, pb.max.x});
+                for (const double y : cy) {
+                    double x = -1e300;
+                    for (const Vec2& c : centres) if (std::fabs(c.y - y) <= 0.05) x = std::max(x, c.x);
+                    hy.push_back({y, x});
+                }
+                hy.push_back({pb.max.y, pb.max.x});
+                for (std::size_t i = 0; i + 1 < hx.size(); ++i) {
+                    const double gap = hx[i + 1].first - hx[i].first;
+                    if (gap >= kMinGap)
+                        newDim(DimensionRole::HoleSpacing, DimensionDirection::Horizontal, {hx[i].first, hx[i].second},
+                               {hx[i + 1].first, hx[i + 1].second}, gap, owner, group);
+                }
+                for (std::size_t i = 0; i + 1 < hy.size(); ++i) {
+                    const double gap = hy[i + 1].first - hy[i].first;
+                    if (gap >= kMinGap)
+                        newDim(DimensionRole::HoleSpacing, DimensionDirection::Vertical, {hy[i].second, hy[i].first},
+                               {hy[i + 1].second, hy[i + 1].first}, gap, owner, group);
+                }
+                ++group;
+            }
+        }
+
+        // (3) Uye boyu (ana parca ekseni, gorunus duzleminde ise) + genel olculer.
         bool haveLength = false;
         DimensionDirection lengthDir = DimensionDirection::Horizontal;
         if (hasAxis) {
             const Vec2 pa = projectToView(axA, v.kind), pb2 = projectToView(axB, v.kind);
             const double projLen = std::hypot(pb2.x - pa.x, pb2.y - pa.y);
             if (projLen >= axisLen * 0.999) { // eksen gorunus duzleminde: gercek boy olculur
-                Dimension2D d;
-                d.id = sheet.allocateId();
-                d.viewId = v.id;
-                d.role = DimensionRole::MemberLength;
                 const double adx = std::fabs(pb2.x - pa.x), ady = std::fabs(pb2.y - pa.y);
-                d.direction = ady < projLen * 1e-3   ? DimensionDirection::Horizontal
-                              : adx < projLen * 1e-3 ? DimensionDirection::Vertical
-                                                     : DimensionDirection::Aligned;
-                d.p1 = {pa.x - rawMin.x, pa.y - rawMin.y};
-                d.p2 = {pb2.x - rawMin.x, pb2.y - rawMin.y};
-                d.value = axisLen;
-                d.offset = 24.0;
-                d.source = mainPart;
-                lengthDir = d.direction;
+                lengthDir = ady < projLen * 1e-3   ? DimensionDirection::Horizontal
+                            : adx < projLen * 1e-3 ? DimensionDirection::Vertical
+                                                   : DimensionDirection::Aligned;
+                newDim(DimensionRole::MemberLength, lengthDir, {pa.x - rawMin.x, pa.y - rawMin.y},
+                       {pb2.x - rawMin.x, pb2.y - rawMin.y}, axisLen, mainPart, kLengthGroup);
                 haveLength = true;
-                sheet.dimensions.push_back(std::move(d));
             }
         }
         const auto sameAsLength = [&](DimensionDirection dir, double value) {
             return haveLength && lengthDir == dir && std::fabs(value - axisLen) < 0.5;
         };
         const double w = v.bounds.width(), h = v.bounds.height();
-        if (w >= 0.5 && !sameAsLength(DimensionDirection::Horizontal, w)) {
-            Dimension2D d;
-            d.id = sheet.allocateId();
-            d.viewId = v.id;
-            d.role = DimensionRole::OverallWidth;
-            d.direction = DimensionDirection::Horizontal;
-            d.p1 = {v.bounds.min.x, v.bounds.min.y};
-            d.p2 = {v.bounds.max.x, v.bounds.min.y};
-            d.value = w;
-            d.offset = 12.0;
-            d.source = subject;
-            sheet.dimensions.push_back(std::move(d));
-        }
-        if (h >= 0.5 && !sameAsLength(DimensionDirection::Vertical, h)) {
-            Dimension2D d;
-            d.id = sheet.allocateId();
-            d.viewId = v.id;
-            d.role = DimensionRole::OverallHeight;
-            d.direction = DimensionDirection::Vertical;
-            d.p1 = {v.bounds.max.x, v.bounds.min.y};
-            d.p2 = {v.bounds.max.x, v.bounds.max.y};
-            d.value = h;
-            d.offset = 12.0;
-            d.source = subject;
-            sheet.dimensions.push_back(std::move(d));
+        if (w >= 0.5 && !sameAsLength(DimensionDirection::Horizontal, w))
+            newDim(DimensionRole::OverallWidth, DimensionDirection::Horizontal, {v.bounds.min.x, v.bounds.min.y},
+                   {v.bounds.max.x, v.bounds.min.y}, w, subject, kOverallGroup);
+        if (h >= 0.5 && !sameAsLength(DimensionDirection::Vertical, h))
+            newDim(DimensionRole::OverallHeight, DimensionDirection::Vertical, {v.bounds.max.x, v.bounds.min.y},
+                   {v.bounds.max.x, v.bounds.max.y}, h, subject, kOverallGroup);
+
+        // (4) Satir (offset) atamasi: ayni yondeki gruplar yakindan uzaga; metin kademesi.
+        {
+            int rowsH = 0, rowsV = 0;
+            for (const auto dir : {DimensionDirection::Horizontal, DimensionDirection::Vertical}) {
+                std::vector<int> groups;
+                for (const Pending& p : pend)
+                    if (p.d.direction == dir) groups.push_back(p.group);
+                std::sort(groups.begin(), groups.end());
+                groups.erase(std::unique(groups.begin(), groups.end()), groups.end());
+                (dir == DimensionDirection::Horizontal ? rowsH : rowsV) = static_cast<int>(groups.size());
+                for (Pending& p : pend)
+                    if (p.d.direction == dir) {
+                        const auto row = std::find(groups.begin(), groups.end(), p.group) - groups.begin();
+                        p.d.offset = 10.0 + 8.0 * static_cast<double>(row);
+                    }
+                // Dar aralikli zincir parcalarinda metni kademeli kaydir (ust uste binmesin).
+                for (const int g : groups) {
+                    std::vector<Pending*> chain;
+                    for (Pending& p : pend)
+                        if (p.d.direction == dir && p.group == g &&
+                            (p.d.role == DimensionRole::HoleSpacing || p.d.role == DimensionRole::PartPosition))
+                            chain.push_back(&p);
+                    std::sort(chain.begin(), chain.end(), [&](const Pending* a, const Pending* b) {
+                        return dir == DimensionDirection::Horizontal ? a->d.p1.x < b->d.p1.x : a->d.p1.y < b->d.p1.y;
+                    });
+                    int k = 0;
+                    for (Pending* p : chain) {
+                        const double textW = 2.0 * static_cast<double>(fmtNum(p->d.value).size()) + 1.5;
+                        if (p->d.value * sheet.scale < textW) p->d.textLevel = 1 + (k++ % 2);
+                        else k = 0;
+                    }
+                }
+            }
+            for (Pending& p : pend)
+                if (p.d.direction == DimensionDirection::Aligned)
+                    p.d.offset = 10.0 + 8.0 * static_cast<double>(std::max(rowsH, rowsV));
+            std::stable_sort(pend.begin(), pend.end(), [](const Pending& a, const Pending& b) {
+                return a.group < b.group;
+            });
+            for (Pending& p : pend) sheet.dimensions.push_back(std::move(p.d));
         }
     }
 

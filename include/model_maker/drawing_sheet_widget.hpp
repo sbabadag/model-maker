@@ -20,6 +20,20 @@ class QLabel;
 
 namespace mm::drawing {
 
+// Cizgi kalinliklari (kagit mm; PDF'de gercek mm). Ince tutulur: ayrintili cizimde okunabilirlik.
+namespace lineWeightMm {
+inline constexpr double visible = 0.18;
+inline constexpr double hidden = 0.10;
+inline constexpr double circle = 0.18;
+inline constexpr double centre = 0.08;
+inline constexpr double dimension = 0.10;
+inline constexpr double mark = 0.12;
+inline constexpr double markAssembly = 0.20;
+inline constexpr double frame = 0.35;
+inline constexpr double titleOuter = 0.25;
+inline constexpr double titleInner = 0.10;
+} // namespace lineWeightMm
+
 // Sayfayi `target` dikdortgenine (en-boy korunarak, ortalanmis) cizer. Birim: sayfa mm.
 void paintSheet(QPainter& painter, const DrawingSheet& sheet, const QRectF& target);
 
