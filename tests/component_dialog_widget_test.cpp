@@ -1006,6 +1006,12 @@ int main(int argc, char** argv) {
                       statusOf(w).contains(QStringLiteral("Uzerine")) && persistCalls == 2,
                   "Presets: Save secili seti uzerine yazar");
 
+            // Listeden secmek degerleri HEMEN getirir (Load'a basmadan).
+            w.setParams({{lenSpec->name, mm::CompParamValue{v1}}});
+            comboOf(w)->setCurrentText(QStringLiteral("Muhendis A"));
+            QMetaObject::invokeMethod(comboOf(w), "activated", Q_ARG(int, comboOf(w)->currentIndex()));
+            CHECK(std::fabs(numeric(w.resultParams(), lenSpec->name.c_str()) - v2) < 1e-9,
+                  "Presets: listeden secmek kayitli degerleri Load'a basmadan getirir");
             comboOf(w)->setCurrentText(QStringLiteral("standard"));
             btn(w, "presetLoad")->click();
             {
@@ -1089,11 +1095,12 @@ int main(int argc, char** argv) {
                           main3d->previewPlan().plateKeys.size() == 4,
                       "Presets/Haunch: varsayilana donunce onizleme 450 mm, berkitmesiz");
                 comboOf(h40)->setCurrentText(QStringLiteral("Uzun berkitmeli"));
-                btn(h40, "presetLoad")->click();
+                QMetaObject::invokeMethod(comboOf(h40), "activated",
+                                          Q_ARG(int, comboOf(h40)->currentIndex()));
                 QApplication::processEvents();
                 CHECK(std::fabs(main3d->previewPlan().plates[1].width - 650.0) < 1e-6 &&
                           main3d->previewPlan().plateKeys.size() == 6,
-                      "Presets/Haunch: Load canli onizlemeyi 650 mm + berkitmeye geri getirir");
+                      "Presets/Haunch: listeden secmek canli onizlemeyi 650 mm + berkitmeye geri getirir");
             }
         }
     }

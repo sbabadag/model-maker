@@ -1070,6 +1070,11 @@ QWidget* ComponentDialogWidget::buildHeaderBar() {
                      [this](const QString& t) {
                          if (presetName_ && !t.isEmpty()) presetName_->setText(t);
                      });
+    // Listeden KULLANICI secince degerler hemen gelir (activated yalniz kullanici
+    // etkilesiminde yayilir; refreshPresetCombo gibi programatik degisimde yayilmaz).
+    // Load dugmesi ayni islemi elle tekrarlar.
+    QObject::connect(presetCombo_, QOverload<int>::of(&QComboBox::activated), this,
+                     [this](int) { onPresetLoad(); });
     auto* help = new QPushButton(QStringLiteral("Help..."), host);
     help->setEnabled(def_.typeId == L"tekla_shear_plate_146");
     QObject::connect(help, &QPushButton::clicked, this, []() {
