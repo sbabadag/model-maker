@@ -56,7 +56,8 @@ bool exportDrawingSetPdf(const DrawingDocument& document, const QString& path, Q
 class DrawingSheetWidget : public QWidget {
     Q_OBJECT
 public:
-    enum class EditTool { Select, Line, Circle, Centerline };
+    // P2: Move = secimi snap'li olarak tasima (taban tik + hedef tik).
+    enum class EditTool { Select, Move, Line, Circle, Centerline };
     explicit DrawingSheetWidget(QWidget* parent = nullptr);
     void setSheet(const DrawingSheet* sheet); // sahiplik cagirandadir; nullptr = bos
     void fitToWindow();
@@ -65,9 +66,13 @@ public:
     // --- P2B: paftada duzenleme (sec/tasi/2B sekil). history sahipligi cagirandadir. ---
     void setEditor(PaperEditHistory* history);
     bool hasEditor() const noexcept { return history_ != nullptr; }
-    void setTool(EditTool tool) noexcept { tool_ = tool; }
+    void setTool(EditTool tool) noexcept;
     EditTool tool() const noexcept { return tool_; }
-    PaperHit selection() const noexcept { return selection_; }
+    PaperHit selection() const noexcept { return selection_; }              // birincil (ilk) secim
+    const std::vector<PaperHit>& selectionAll() const noexcept { return selectionAll_; }
+    void clearSelection();
+    // P2: secili TUM elemanlari tek deltayla tasir -> tek geri-al adimi. true: en az biri tasindi.
+    bool moveSelection(Vec2 deltaMm);
     void undoEdit();
     void redoEdit();
     bool hideSelection();     // secili zorunlu olcu/notu gizler -> cizim INCOMPLETE olabilir
@@ -85,6 +90,11 @@ protected:
 private:
     QRectF targetRect() const;
     Vec2 paperAt(const QPointF& pos) const;
+    QPointF widgetAt(Vec2 paperMm) const;
+    double mmPerPixel() const;
+    void setSelection(std::vector<PaperHit> hits);
+    void commitShape(Vec2 end);
+    void paintEditOverlay(QPainter& p);
     const DrawingSheet* sheet_{};
     double zoom_{1.0};
     QPointF pan_{};
@@ -92,11 +102,20 @@ private:
     bool fitted_{true};
     PaperEditHistory* history_{};
     PaperHit selection_{};
+    std::vector<PaperHit> selectionAll_{};
     EditTool tool_{EditTool::Select};
     bool dragging_{false};
     bool drawing_{false};
     Vec2 lastPaper_{};
     Vec2 drawStart_{};
+    // --- P2: bant secimi / snap'li tasima / onizleme durumu ---
+    bool banding_{false};
+    Vec2 bandStart_{};
+    Vec2 bandEnd_{};
+    bool moveBaseSet_{false};
+    Vec2 moveBase_{};
+    Vec2 cursorPaper_{};
+    PaperSnap snap_{};
 };
 
 struct SubjectChoice {

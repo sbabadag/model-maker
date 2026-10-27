@@ -375,8 +375,198 @@ std::size_t appendPaperShapes(DrawingSheet& s, const std::vector<PaperShape>& sh
     return added;
 }
 
+// ---------------------------------------------------------------------------------------
+// P2 — bant secimi + snap'li grup tasima
+// ---------------------------------------------------------------------------------------
+namespace {
+
+bool boundsOverlap(const Bounds2& a, const Bounds2& b) noexcept {
+    if (a.empty || b.empty) return false;
+    return a.min.x <= b.max.x && b.min.x <= a.max.x && a.min.y <= b.max.y && b.min.y <= a.max.y;
+}
+
+bool boundsInside(const Bounds2& outer, const Bounds2& inner) noexcept {
+    if (outer.empty || inner.empty) return false;
+    return inner.min.x >= outer.min.x && inner.max.x <= outer.max.x && inner.min.y >= outer.min.y &&
+           inner.max.y <= outer.max.y;
+}
+
+Bounds2 boundsOfSegment(const Vec2& a, const Vec2& b) {
+    Bounds2 r;
+    r.include(a);
+    r.include(b);
+    return r;
+}
+
+// Snap adayi: nokta + etiket. Sirayla eklenir; esit mesafede ONCE eklenen kazanir.
+struct SnapCandidate {
+    Vec2 point;
+    const char* what;
+};
+
+void addSnap(std::vector<SnapCandidate>& out, Vec2 p, const char* what) { out.push_back({p, what}); }
+
+} // namespace
+
+PaperBandMode paperBandMode(Vec2 down, Vec2 up, double minDragMm) {
+    if (std::hypot(up.x - down.x, up.y - down.y) <= std::max(0.0, minDragMm)) return PaperBandMode::None;
+    return (up.x - down.x) >= 0.0 ? PaperBandMode::Window : PaperBandMode::Crossing;
+}
+
+Bounds2 paperBandBounds(Vec2 a, Vec2 b) { return boundsOfSegment(a, b); }
+
+Bounds2 paperElementBounds(const DrawingSheet& s, const PaperHit& hit) {
+    Bounds2 r;
+    switch (hit.kind) {
+    case PaperHitKind::View:
+        for (const DrawingView& v : s.views)
+            if (v.id == hit.id) return v.paperBounds();
+        return r;
+    case PaperHitKind::Dimension:
+        for (const Dimension2D& d : s.dimensions) {
+            if (d.id != hit.id) continue;
+            const DimensionGeometry g = resolveDimension(s, d);
+            if (!g.valid) return r;
+            const Bounds2 tb = g.textBox.aabb();
+            r.include(tb.min);
+            r.include(tb.max);
+            for (const LineSeg& l : g.lines) {
+                r.include(l.a);
+                r.include(l.b);
+            }
+            return r;
+        }
+        return r;
+    case PaperHitKind::Mark:
+        for (const MarkAnnotation& m : s.marks)
+            if (m.id == hit.id) return markBox(m);
+        return r;
+    case PaperHitKind::Text:
+        for (const TextAnnotation& t : s.texts)
+            if (t.id == hit.id) return resolveText(s, t).box.aabb();
+        return r;
+    case PaperHitKind::Shape:
+        for (const PaperShape& sh : s.shapes) {
+            if (sh.id != hit.id) continue;
+            if (sh.kind == ShapeKind::Circle) {
+                r.include({sh.center.x - sh.radius, sh.center.y - sh.radius});
+                r.include({sh.center.x + sh.radius, sh.center.y + sh.radius});
+                return r;
+            }
+            return boundsOfSegment(sh.a, sh.b);
+        }
+        return r;
+    case PaperHitKind::None:
+        return r;
+    }
+    return r;
+}
+
+bool PaperSelection::contains(PaperHitKind kind, ElementId id) const noexcept {
+    for (const PaperHit& h : hits)
+        if (h.kind == kind && h.id == id) return true;
+    return false;
+}
+
+PaperSelection selectPaperElements(const DrawingSheet& s, Bounds2 band, PaperBandMode mode) {
+    PaperSelection out;
+    if (band.empty || mode == PaperBandMode::None) return out;
+    const Vec2 anchor = band.centre();
+    const auto take = [&](PaperHitKind kind, ElementId id) {
+        const PaperHit probe{kind, id, anchor};
+        const Bounds2 b = paperElementBounds(s, probe);
+        if (b.empty) return;
+        const bool ok = mode == PaperBandMode::Window ? boundsInside(band, b) : boundsOverlap(band, b);
+        if (ok) out.hits.push_back(probe);
+    };
+    // Z-sirasi ile ayni oncelik: sekiller, metinler, marklar, olculer. Gorunusler HARIC.
+    for (const PaperShape& sh : s.shapes)
+        if (sh.visible) take(PaperHitKind::Shape, sh.id);
+    for (const TextAnnotation& t : s.texts)
+        if (t.visible) take(PaperHitKind::Text, t.id);
+    for (const MarkAnnotation& m : s.marks)
+        if (m.visible) take(PaperHitKind::Mark, m.id);
+    for (const Dimension2D& d : s.dimensions)
+        if (d.visible) take(PaperHitKind::Dimension, d.id);
+    return out;
+}
+
+std::size_t movePaperElements(DrawingSheet& s, const PaperSelection& selection, Vec2 deltaMm) {
+    std::size_t moved = 0;
+    for (const PaperHit& h : selection.hits)
+        if (movePaperElement(s, h, deltaMm)) ++moved;
+    return moved;
+}
+
+PaperSnap snapPaperPoint(const DrawingSheet& s, Vec2 p, double tolMm) {
+    std::vector<SnapCandidate> c;
+    c.reserve(16 + s.shapes.size() * 4 + s.views.size() * 5 + s.texts.size() + s.marks.size());
+    for (const PaperShape& sh : s.shapes) {
+        if (!sh.visible) continue;
+        if (sh.kind == ShapeKind::Circle) {
+            addSnap(c, sh.center, "sekil merkezi");
+            addSnap(c, {sh.center.x + sh.radius, sh.center.y}, "sekil kadrani");
+            addSnap(c, {sh.center.x - sh.radius, sh.center.y}, "sekil kadrani");
+            addSnap(c, {sh.center.x, sh.center.y + sh.radius}, "sekil kadrani");
+            addSnap(c, {sh.center.x, sh.center.y - sh.radius}, "sekil kadrani");
+        } else {
+            addSnap(c, sh.a, "sekil ucu");
+            addSnap(c, sh.b, "sekil ucu");
+            addSnap(c, {(sh.a.x + sh.b.x) / 2.0, (sh.a.y + sh.b.y) / 2.0}, "sekil orta noktasi");
+        }
+    }
+    for (const DrawingView& v : s.views) {
+        addSnap(c, v.origin, "gorunus");
+        const Bounds2 b = v.paperBounds();
+        if (!b.empty) {
+            addSnap(c, b.min, "gorunus kose");
+            addSnap(c, {b.max.x, b.min.y}, "gorunus kose");
+            addSnap(c, b.max, "gorunus kose");
+            addSnap(c, {b.min.x, b.max.y}, "gorunus kose");
+        }
+    }
+    for (const TextAnnotation& t : s.texts)
+        if (t.visible) addSnap(c, t.pos, "metin");
+    for (const MarkAnnotation& m : s.marks)
+        if (m.visible) addSnap(c, m.labelPos, "mark");
+    const SheetFormat& f = s.format;
+    addSnap(c, {0.0, 0.0}, "cerceve");
+    addSnap(c, {f.width, 0.0}, "cerceve");
+    addSnap(c, {0.0, f.height}, "cerceve");
+    addSnap(c, {f.width, f.height}, "cerceve");
+    addSnap(c, {f.width / 2.0, f.height / 2.0}, "cerceve");
+    const Bounds2 area = s.drawingArea();
+    if (!area.empty) {
+        addSnap(c, area.min, "cizim alani");
+        addSnap(c, {area.max.x, area.min.y}, "cizim alani");
+        addSnap(c, area.max, "cizim alani");
+        addSnap(c, {area.min.x, area.max.y}, "cizim alani");
+    }
+
+    PaperSnap best;
+    double bestDist = tolMm > 0.0 ? tolMm : 1e-9;
+    for (const SnapCandidate& cand : c) {
+        const double d = std::hypot(cand.point.x - p.x, cand.point.y - p.y);
+        if (d < bestDist - 1e-9) {
+            bestDist = d;
+            best.point = cand.point;
+            best.snapped = true;
+            best.what = cand.what;
+        }
+    }
+    if (!best.snapped) best.point = p;
+    return best;
+}
+
 PaperEditHistory::PaperEditHistory(DrawingSheet initial, std::size_t limit)
     : sheet_(std::move(initial)), limit_(limit ? limit : 1) {}
+
+bool PaperEditHistory::cancel() {
+    if (!open_) return false;
+    sheet_ = std::move(pending_);
+    open_ = false;
+    return true;
+}
 
 void PaperEditHistory::begin() {
     pending_ = sheet_;

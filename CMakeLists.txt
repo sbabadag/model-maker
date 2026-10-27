@@ -565,6 +565,13 @@ if(BUILD_TESTING)
     target_compile_options(model_maker_p2d_holes_test PRIVATE -Wall -Wextra -Wpedantic)
     add_test(NAME model_maker_p2d_holes_test COMMAND model_maker_p2d_holes_test)
 
+    # DRAWING P2D/P2: pencere-kesisme secimi + snap'li grup tasima cekirdegi (Qt'siz).
+    add_executable(model_maker_drawing_p2d_select_test tests/drawing_p2d_select_move_test.cpp)
+    target_include_directories(model_maker_drawing_p2d_select_test PRIVATE tests)
+    target_link_libraries(model_maker_drawing_p2d_select_test PRIVATE model_maker_core)
+    target_compile_options(model_maker_drawing_p2d_select_test PRIVATE -Wall -Wextra -Wpedantic)
+    add_test(NAME model_maker_drawing_p2d_select_test COMMAND model_maker_drawing_p2d_select_test)
+
     # DRAWING P2B: paper-space 2B duzenleme cekirdegi (hit-test, tasima, sekil, undo/redo, kalicilik).
     add_executable(model_maker_paper_editing_test tests/paper_editing_test.cpp)
     target_include_directories(model_maker_paper_editing_test PRIVATE tests)
@@ -1232,7 +1239,20 @@ if(BUILD_TESTING)
         target_include_directories(model_maker_drawing_p2d_gui_test PRIVATE include tests)
         target_link_libraries(model_maker_drawing_p2d_gui_test PRIVATE model_maker_core Qt6::Widgets)
         add_test(NAME model_maker_drawing_p2d_gui_test COMMAND model_maker_drawing_p2d_gui_test)
-        set_tests_properties(model_maker_component_dialog_widget_test PROPERTIES
+
+        # DRAWING GUI (P2): pencere-kesisme secimi, snap'li iki-tik tasima, tik-tik cizim, Esc iptali.
+        add_executable(model_maker_drawing_p2d_select_gui_test
+            tests/drawing_p2d_select_move_gui_test.cpp
+            src/drawing_sheet_widget.cpp
+            include/model_maker/drawing_sheet_widget.hpp)
+        target_include_directories(model_maker_drawing_p2d_select_gui_test PRIVATE include tests)
+        target_link_libraries(model_maker_drawing_p2d_select_gui_test PRIVATE model_maker_core Qt6::Widgets)
+        add_test(NAME model_maker_drawing_p2d_select_gui_test COMMAND model_maker_drawing_p2d_select_gui_test)
+
+        # Offscreen platform: her iki cizim GUI testi icin ENVIRONMENT dogru testlere uygulanir
+        # (onceden yanlis hedefe yaziliydi; testler qputenv ile de korunuyor).
+        set_tests_properties(model_maker_drawing_p2d_gui_test model_maker_drawing_p2d_select_gui_test
+            model_maker_component_dialog_widget_test PROPERTIES
             ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
     endif()
 

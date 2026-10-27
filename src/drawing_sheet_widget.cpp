@@ -34,6 +34,22 @@ namespace {
 
 constexpr double kPi = 3.14159265358979323846;
 
+// P2: arac kutusu indeksi -> arac (indeksler geriye donuk UYUMLU: 1=Cizgi, 2=Daire, 3=Merkez, 4=Tasi).
+DrawingSheetWidget::EditTool toolFromIndex(int i) {
+    switch (i) {
+    case 1:
+        return DrawingSheetWidget::EditTool::Line;
+    case 2:
+        return DrawingSheetWidget::EditTool::Circle;
+    case 3:
+        return DrawingSheetWidget::EditTool::Centerline;
+    case 4:
+        return DrawingSheetWidget::EditTool::Move;
+    default:
+        return DrawingSheetWidget::EditTool::Select;
+    }
+}
+
 QString qs(const std::string& s) { return QString::fromStdWString(text::fromUtf8(s)); }
 
 QPointF pt(const Vec2& v) { return QPointF(v.x, v.y); }
@@ -337,10 +353,92 @@ void DrawingSheetWidget::setSheet(const DrawingSheet* sheet) {
 void DrawingSheetWidget::setEditor(PaperEditHistory* history) {
     history_ = history;
     sheet_ = history ? &history->sheet() : nullptr;
+    selectionAll_.clear();
     selection_ = PaperHit{};
     dragging_ = false;
     drawing_ = false;
+    banding_ = false;
+    moveBaseSet_ = false;
+    snap_ = PaperSnap{};
     update();
+}
+
+void DrawingSheetWidget::setTool(EditTool tool) noexcept {
+    tool_ = tool;
+    banding_ = false;
+    drawing_ = false;
+    moveBaseSet_ = false;
+    snap_ = PaperSnap{};
+}
+
+void DrawingSheetWidget::clearSelection() { setSelection({}); }
+
+void DrawingSheetWidget::setSelection(std::vector<PaperHit> hits) {
+    selectionAll_ = std::move(hits);
+    selection_ = selectionAll_.empty() ? PaperHit{} : selectionAll_.front();
+    update();
+}
+
+double DrawingSheetWidget::mmPerPixel() const {
+    if (!sheet_) return 1.0;
+    const QRectF t = targetRect();
+    const SheetFormat& f = sheet_->format;
+    const double ppm = std::min(t.width() / f.width, t.height() / f.height);
+    return ppm > 1e-9 ? 1.0 / ppm : 1.0;
+}
+
+QPointF DrawingSheetWidget::widgetAt(Vec2 p) const {
+    if (!sheet_) return {};
+    const QRectF t = targetRect();
+    const SheetFormat& f = sheet_->format;
+    const double s = std::min(t.width() / f.width, t.height() / f.height);
+    if (s <= 1e-9) return {};
+    const double ox = t.center().x() - f.width * s / 2.0;
+    const double oy = t.center().y() + f.height * s / 2.0;
+    return {ox + p.x * s, oy - p.y * s};
+}
+
+bool DrawingSheetWidget::moveSelection(Vec2 deltaMm) {
+    if (!history_ || selectionAll_.empty()) return false;
+    if (std::fabs(deltaMm.x) < 1e-9 && std::fabs(deltaMm.y) < 1e-9) return false;
+    history_->begin();
+    PaperSelection sel;
+    sel.hits = selectionAll_;
+    const std::size_t moved = movePaperElements(history_->sheet(), sel, deltaMm);
+    if (moved == 0) {
+        history_->abort();
+        return false;
+    }
+    history_->commit();
+    update();
+    return true;
+}
+
+void DrawingSheetWidget::undoEdit() {
+    if (history_ && history_->undo()) {
+        selectionAll_.clear();
+        selection_ = PaperHit{};
+        update();
+    }
+}
+
+void DrawingSheetWidget::redoEdit() {
+    if (history_ && history_->redo()) {
+        selectionAll_.clear();
+        selection_ = PaperHit{};
+        update();
+    }
+}
+
+bool DrawingSheetWidget::hideSelection() {
+    if (!history_ || selectionAll_.empty()) return false;
+    history_->begin();
+    bool any = false;
+    for (const PaperHit& h : selectionAll_) any = setPaperElementVisible(history_->sheet(), h, false) || any;
+    if (any) evaluateAnnotationStatus(history_->sheet());
+    history_->commit();
+    clearSelection();
+    return any;
 }
 
 Vec2 DrawingSheetWidget::paperAt(const QPointF& pos) const {
@@ -352,31 +450,6 @@ Vec2 DrawingSheetWidget::paperAt(const QPointF& pos) const {
     const double ox = t.center().x() - f.width * s / 2.0;
     const double oy = t.center().y() + f.height * s / 2.0;
     return {(pos.x() - ox) / s, (oy - pos.y()) / s};
-}
-
-void DrawingSheetWidget::undoEdit() {
-    if (history_ && history_->undo()) {
-        selection_ = PaperHit{};
-        update();
-    }
-}
-
-void DrawingSheetWidget::redoEdit() {
-    if (history_ && history_->redo()) {
-        selection_ = PaperHit{};
-        update();
-    }
-}
-
-bool DrawingSheetWidget::hideSelection() {
-    if (!history_ || !selection_.valid()) return false;
-    history_->begin();
-    const bool ok = setPaperElementVisible(history_->sheet(), selection_, false);
-    if (ok) evaluateAnnotationStatus(history_->sheet());
-    history_->commit();
-    selection_ = PaperHit{};
-    update();
-    return ok;
 }
 
 void DrawingSheetWidget::fitToWindow() {
@@ -401,6 +474,71 @@ void DrawingSheetWidget::paintEvent(QPaintEvent*) {
         return;
     }
     paintSheet(p, *sheet_, targetRect());
+    paintEditOverlay(p);
+}
+
+// P2: secim cerceveleri, pencere/kesisme banti, lastik-bant onizleme, snap isaretcisi.
+// Cizimin kendisi (`paintSheet`) DEGISMEZ: bu katman yalniz duzenleme geri bildirimidir,
+// ekran/PDF cikti paritesi bozulmaz (PDF `paintSheet` kullanir).
+void DrawingSheetWidget::paintEditOverlay(QPainter& p) {
+    if (!history_ || !sheet_) return;
+    p.save();
+    p.setRenderHint(QPainter::Antialiasing, true);
+    p.setBrush(Qt::NoBrush);
+
+    if (!selectionAll_.empty()) {
+        p.setPen(QPen(QColor(235, 145, 35), 1.4, Qt::DashLine));
+        for (const PaperHit& h : selectionAll_) {
+            const Bounds2 b = paperElementBounds(*sheet_, h);
+            if (b.empty) continue;
+            const QRectF r = QRectF(widgetAt(b.min), widgetAt(b.max)).normalized().adjusted(-3, -3, 3, 3);
+            p.drawRect(r);
+        }
+    }
+
+    if (banding_) {
+        const PaperBandMode mode = paperBandMode(bandStart_, bandEnd_);
+        const QColor col = mode == PaperBandMode::Crossing ? QColor(40, 160, 80) : QColor(40, 110, 220);
+        QColor fill = col;
+        fill.setAlpha(34);
+        p.setPen(QPen(col, 1.2, Qt::DashLine));
+        p.setBrush(fill);
+        p.drawRect(QRectF(widgetAt(bandStart_), widgetAt(bandEnd_)).normalized());
+        p.setBrush(Qt::NoBrush);
+    }
+
+    if (drawing_) {
+        p.setPen(QPen(QColor(120, 120, 132), 1.1, Qt::DashLine));
+        const Vec2 end = snap_.snapped ? snap_.point : cursorPaper_;
+        if (tool_ == EditTool::Circle) {
+            const double r = std::hypot(end.x - drawStart_.x, end.y - drawStart_.y);
+            const QPointF c = widgetAt(drawStart_);
+            const double rp = std::fabs(widgetAt({drawStart_.x + r, drawStart_.y}).x() - c.x());
+            p.drawEllipse(c, rp, rp);
+        } else {
+            p.drawLine(widgetAt(drawStart_), widgetAt(end));
+        }
+    }
+
+    if (moveBaseSet_) {
+        p.setPen(QPen(QColor(200, 85, 40), 1.1, Qt::DashLine));
+        const Vec2 to = snap_.snapped ? snap_.point : cursorPaper_;
+        p.drawLine(widgetAt(moveBase_), widgetAt(to));
+        p.setBrush(QColor(200, 85, 40));
+        p.drawEllipse(widgetAt(moveBase_), 2.5, 2.5);
+        p.setBrush(Qt::NoBrush);
+    }
+
+    if (snap_.snapped) {
+        const QPointF q = widgetAt(snap_.point);
+        p.setPen(QPen(QColor(25, 140, 70), 1.3));
+        p.drawRect(QRectF(q.x() - 4.0, q.y() - 4.0, 8.0, 8.0));
+        if (!snap_.what.empty()) {
+            p.setPen(QColor(25, 140, 70));
+            p.drawText(QPointF(q.x() + 7.0, q.y() - 6.0), QString::fromUtf8(snap_.what.c_str()));
+        }
+    }
+    p.restore();
 }
 
 void DrawingSheetWidget::wheelEvent(QWheelEvent* e) {
@@ -419,23 +557,85 @@ void DrawingSheetWidget::wheelEvent(QWheelEvent* e) {
 
 void DrawingSheetWidget::mousePressEvent(QMouseEvent* e) {
     lastPos_ = e->pos();
-    if (!history_ || e->button() != Qt::LeftButton) return;
-    const Vec2 p = paperAt(e->pos());
+    if (!history_ || !sheet_ || e->button() != Qt::LeftButton) return;
+    const Vec2 raw = paperAt(e->pos());
+    const double tolMm = 6.0 * mmPerPixel();
+    cursorPaper_ = raw;
+
     if (tool_ == EditTool::Select) {
-        const QRectF t = targetRect();
-        const double ppm = std::min(t.width() / sheet_->format.width, t.height() / sheet_->format.height);
-        const double tolMm = ppm > 1e-9 ? 6.0 / ppm : 1.5;
-        selection_ = hitTestPaper(*sheet_, p, tolMm);
-        if (selection_.valid()) {
+        const PaperHit hit = hitTestPaper(*sheet_, raw, tolMm);
+        if (hit.valid()) {
+            setSelection({hit});
             history_->begin();
             dragging_ = true;
-            lastPaper_ = p;
+            lastPaper_ = raw;
+        } else {
+            // bos alan: pencere/kesisme banti baslar (yon birakma aninda belirlenir)
+            banding_ = true;
+            bandStart_ = raw;
+            bandEnd_ = raw;
+            clearSelection();
         }
         update();
         return;
     }
-    drawing_ = true;
-    drawStart_ = p;
+
+    if (tool_ == EditTool::Move) {
+        if (selectionAll_.empty()) {
+            const PaperHit hit = hitTestPaper(*sheet_, raw, tolMm);   // once eleman sec
+            if (hit.valid()) setSelection({hit});
+            update();
+            return;
+        }
+        snap_ = snapPaperPoint(*sheet_, raw, tolMm);
+        const Vec2 q = snap_.snapped ? snap_.point : raw;
+        if (!moveBaseSet_) {
+            moveBase_ = q;
+            moveBaseSet_ = true;
+            cursorPaper_ = q;
+            update();
+            return;
+        }
+        const Vec2 delta{q.x - moveBase_.x, q.y - moveBase_.y};
+        moveBaseSet_ = false;
+        if (std::hypot(delta.x, delta.y) >= 1e-9) moveSelection(delta);
+        update();
+        return;
+    }
+
+    // Cizgi / daire / merkez cizgisi: 1. tik baslangic, 2. tik bitis (surukleme de calisir).
+    snap_ = snapPaperPoint(*sheet_, raw, tolMm);
+    const Vec2 p = snap_.snapped ? snap_.point : raw;
+    if (!drawing_) {
+        drawing_ = true;
+        drawStart_ = p;
+        cursorPaper_ = p;
+        update();
+        return;
+    }
+    commitShape(p);
+}
+
+// Cizimi (cizgi/daire/merkez cizgisi) tamamlar. 1 mm'den kisa hareket cizim uretmez.
+void DrawingSheetWidget::commitShape(Vec2 end) {
+    const double dist = std::hypot(end.x - drawStart_.x, end.y - drawStart_.y);
+    drawing_ = false;
+    snap_ = PaperSnap{};
+    if (!history_ || dist < 1.0) {
+        update();
+        return;
+    }
+    history_->begin();
+    const ShapeKind kind = tool_ == EditTool::Circle ? ShapeKind::Circle
+                            : (tool_ == EditTool::Centerline ? ShapeKind::Centerline : ShapeKind::Line);
+    const ElementId id =
+        addPaperShape(history_->sheet(), kind, drawStart_, end, tool_ == EditTool::Circle ? dist : 0.0);
+    history_->commit();
+    PaperHit hit;
+    hit.kind = PaperHitKind::Shape;
+    hit.id = id;
+    setSelection({hit});
+    update();
 }
 
 void DrawingSheetWidget::mouseDoubleClickEvent(QMouseEvent*) { fitToWindow(); }
@@ -443,13 +643,23 @@ void DrawingSheetWidget::mouseDoubleClickEvent(QMouseEvent*) { fitToWindow(); }
 void DrawingSheetWidget::mouseMoveEvent(QMouseEvent* e) {
     if (history_ && dragging_) {
         const Vec2 p = paperAt(e->pos());
-        if (movePaperElement(history_->sheet(), selection_, {p.x - lastPaper_.x, p.y - lastPaper_.y})) {
+        PaperSelection sel;
+        sel.hits = selectionAll_;
+        const Vec2 delta{p.x - lastPaper_.x, p.y - lastPaper_.y};
+        if (movePaperElements(history_->sheet(), sel, delta) > 0) {
             lastPaper_ = p;
             update();
         }
         return;
     }
-    if (history_ && drawing_) {
+    if (history_ && banding_) {
+        bandEnd_ = paperAt(e->pos());
+        update();
+        return;
+    }
+    if (history_ && sheet_ && (drawing_ || moveBaseSet_)) {
+        cursorPaper_ = paperAt(e->pos());
+        snap_ = snapPaperPoint(*sheet_, cursorPaper_, 6.0 * mmPerPixel());
         update();
         return;
     }
@@ -469,23 +679,40 @@ void DrawingSheetWidget::mouseReleaseEvent(QMouseEvent* e) {
         update();
         return;
     }
+    if (banding_) {
+        bandEnd_ = paperAt(e->pos());
+        const PaperBandMode mode = paperBandMode(bandStart_, bandEnd_, 2.0 * mmPerPixel());
+        banding_ = false;
+        if (mode == PaperBandMode::None) {
+            clearSelection();
+        } else {
+            const PaperSelection sel = selectPaperElements(*sheet_, paperBandBounds(bandStart_, bandEnd_), mode);
+            setSelection(sel.hits);
+        }
+        update();
+        return;
+    }
     if (drawing_) {
         const Vec2 end = paperAt(e->pos());
-        const double dx = end.x - drawStart_.x, dy = end.y - drawStart_.y;
-        const double dist = std::hypot(dx, dy);
-        drawing_ = false;
-        if (dist >= 1.0) {
-            history_->begin();
-            const ShapeKind kind = tool_ == EditTool::Circle ? ShapeKind::Circle
-                                    : (tool_ == EditTool::Centerline ? ShapeKind::Centerline : ShapeKind::Line);
-            addPaperShape(history_->sheet(), kind, drawStart_, end, tool_ == EditTool::Circle ? dist : 0.0);
-            history_->commit();
-            update();
-        }
+        // Surukleyerek cizim (eski davranis): birakinca tamamla. Tik-tik modunda bekle.
+        if (std::hypot(end.x - drawStart_.x, end.y - drawStart_.y) >= 1.0) commitShape(end);
+        update();
     }
 }
 
 void DrawingSheetWidget::keyPressEvent(QKeyEvent* e) {
+    if (e->key() == Qt::Key_Escape) {
+        if (dragging_) {
+            dragging_ = false;
+            if (history_) history_->cancel();   // surukleme geri alinir
+        }
+        banding_ = false;
+        drawing_ = false;
+        moveBaseSet_ = false;
+        snap_ = PaperSnap{};
+        update();
+        return;
+    }
     if (history_ && (e->key() == Qt::Key_Delete || e->key() == Qt::Key_Backspace)) {
         hideSelection();
         return;
@@ -551,7 +778,7 @@ DrawingPreviewDialog::DrawingPreviewDialog(std::vector<SubjectChoice> subjects, 
         toolCombo_ = new QComboBox(this);
         toolCombo_->setObjectName(QStringLiteral("drawingTool"));
         toolCombo_->addItems({QStringLiteral("Sec"), QStringLiteral("Cizgi"), QStringLiteral("Daire"),
-                              QStringLiteral("Merkez cizgisi")});
+                              QStringLiteral("Merkez cizgisi"), QStringLiteral("Ta\u015f\u0131")});
         opts->addWidget(toolCombo_);
     }
     opts->addWidget(projectionCombo_);
@@ -614,10 +841,7 @@ DrawingPreviewDialog::DrawingPreviewDialog(std::vector<SubjectChoice> subjects, 
         connect(multiSheetCheck_, &QCheckBox::toggled, this, changed);
         connect(sheetCombo_, &QComboBox::currentIndexChanged, this, [this](int i) { showSheet(i); });
         connect(toolCombo_, &QComboBox::currentIndexChanged, this, [this](int i) {
-            view_->setTool(i == 1 ? DrawingSheetWidget::EditTool::Line
-                                  : (i == 2 ? DrawingSheetWidget::EditTool::Circle
-                                            : (i == 3 ? DrawingSheetWidget::EditTool::Centerline
-                                                      : DrawingSheetWidget::EditTool::Select)));
+            view_->setTool(toolFromIndex(i));
         });
     }
     rebuild();
@@ -840,10 +1064,7 @@ void DrawingPreviewDialog::showSheet(int index) {
     view_->setFocusPolicy(Qt::StrongFocus);
     if (toolCombo_) {
         const int t = toolCombo_->currentIndex();
-        view_->setTool(t == 1 ? DrawingSheetWidget::EditTool::Line
-                              : (t == 2 ? DrawingSheetWidget::EditTool::Circle
-                                        : (t == 3 ? DrawingSheetWidget::EditTool::Centerline
-                                                  : DrawingSheetWidget::EditTool::Select)));
+        view_->setTool(toolFromIndex(t));
     }
     view_->fitToWindow();
     if (sheetCombo_ && sheetCombo_->currentIndex() != index) {

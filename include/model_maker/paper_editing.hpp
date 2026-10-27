@@ -67,6 +67,53 @@ PaperEditMerge mergePaperEdits(const std::vector<DrawingSheet>& edited, DrawingS
 // Kullanici 2B sekillerini paftaya ekler: ayni geometri tek kez, ElementId cakismasi yeniden atanir.
 std::size_t appendPaperShapes(DrawingSheet& sheet, const std::vector<PaperShape>& shapes);
 
+// ---------------------------------------------------------------------------------------
+// P2 — COKLU SECIM (Window/Crossing) + SNAP'LI GRUP TASIMA (Qt'siz cekirdek)
+//
+// Kural: bant secimi de yalniz YERLESIM alanlarini tasir; muhendislik verisi (olcu `value`,
+// `p1/p2`) degismez. Secim kumesi deterministiktir (tur onceligi + vektor sirasi).
+// ---------------------------------------------------------------------------------------
+
+enum class PaperBandMode { None, Window, Crossing };
+
+// Kapali alanda basilan nokta `down`, birakilan nokta `up` (kagit mm):
+//   * soldan saga (dx >= 0) -> Window: BANT ICINE TAMAMEN giren elemanlar,
+//   * sagdan sola (dx < 0)  -> Crossing: bantla KESISEN (veya icinde kalan) elemanlar.
+// `minDragMm` altindaki hareket tik sayilir -> None (kazara secim yok).
+PaperBandMode paperBandMode(Vec2 down, Vec2 up, double minDragMm = 0.0);
+
+// Iki kose -> normalize edilmis sinirlar (surukleme yonu ne olursa olsun).
+Bounds2 paperBandBounds(Vec2 a, Vec2 b);
+
+// Elemanin kagit mm sinirlari (gorunus/olcu/mark/metin/sekil); gecersizse `empty`.
+Bounds2 paperElementBounds(const DrawingSheet& sheet, const PaperHit& hit);
+
+struct PaperSelection {
+    std::vector<PaperHit> hits;
+    bool empty() const noexcept { return hits.empty(); }
+    std::size_t size() const noexcept { return hits.size(); }
+    bool contains(PaperHitKind kind, ElementId id) const noexcept;
+};
+
+// Bant secimi. GORUNUSLER (View) bantla SECILMEZ: buyuk bir gorunus Crossing modunda her
+// seferinde secilir ve yanlislikla tasinir; gorunus tiklayarak secilir/tasinir.
+PaperSelection selectPaperElements(const DrawingSheet& sheet, Bounds2 band, PaperBandMode mode);
+
+// Secili elemanlarin TUMUNU ayni delta ile tasir (tek cagri = tek geri-al adimi icin).
+// Donus: tasinan eleman sayisi (0 = hicbir sey degismedi).
+std::size_t movePaperElements(DrawingSheet& sheet, const PaperSelection& selection, Vec2 deltaMm);
+
+// Pikselden bagimsiz snap (cagiran toleransi verir; GUI'de 6 px -> mm).
+// Adaylar: sekil uclari/orta noktasi/merkezi, gorunus origin+koseleri, mark/metin konumu,
+// cerceve + cizim alani koseleri. En yakin aday kazanir (esitlikte once eklenen).
+struct PaperSnap {
+    Vec2 point{};
+    bool snapped{false};
+    std::string what;   // "sekil ucu", "sekil merkezi", "gorunus", "metin", "cerceve"
+};
+PaperSnap snapPaperPoint(const DrawingSheet& sheet, Vec2 p, double tolMm);
+
+
 // Snapshot tabanli geri al/yinele (deterministik; sinirli gecmis).
 class PaperEditHistory {
 public:
@@ -78,6 +125,8 @@ public:
     void begin();    // degisiklik oncesi anlik goruntu
     void commit();   // degisiklik yoksa at; varsa geri al yiginina koy
     void abort();    // anlik goruntuyu at (degisiklik yok)
+    // P2: acik snapshot'tan GERI DON (surukleme iptali / Esc). Yigin degismez.
+    bool cancel();
 
     bool undo();
     bool redo();
