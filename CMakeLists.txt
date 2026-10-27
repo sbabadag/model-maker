@@ -68,6 +68,7 @@ add_library(model_maker_core
     src/drawing.cpp
     src/drawing_layout.cpp
     src/drawing_set.cpp
+    src/paper_editing.cpp
     src/drawing_builder.cpp)
 target_include_directories(model_maker_core PUBLIC include third_party)
 target_compile_options(model_maker_core PRIVATE -Wall -Wextra -Wpedantic)
@@ -549,6 +550,13 @@ if(BUILD_TESTING)
     target_link_libraries(model_maker_drawing_set_test PRIVATE model_maker_core)
     target_compile_options(model_maker_drawing_set_test PRIVATE -Wall -Wextra -Wpedantic)
     add_test(NAME model_maker_drawing_set_test COMMAND model_maker_drawing_set_test)
+
+    # DRAWING P2B: paper-space 2B duzenleme cekirdegi (hit-test, tasima, sekil, undo/redo, kalicilik).
+    add_executable(model_maker_paper_editing_test tests/paper_editing_test.cpp)
+    target_include_directories(model_maker_paper_editing_test PRIVATE tests)
+    target_link_libraries(model_maker_paper_editing_test PRIVATE model_maker_core)
+    target_compile_options(model_maker_paper_editing_test PRIVATE -Wall -Wextra -Wpedantic)
+    add_test(NAME model_maker_paper_editing_test COMMAND model_maker_paper_editing_test)
 
     # DRAWING FOUNDATION (P1): Document -> mark -> Front/Top/Side -> A3 yerlesim -> mark/olcu -> JSON.
     add_executable(model_maker_drawing_test tests/drawing_test.cpp)
@@ -1191,6 +1199,15 @@ if(BUILD_TESTING)
         target_include_directories(model_maker_drawing_set_gui_test PRIVATE include tests)
         target_link_libraries(model_maker_drawing_set_gui_test PRIVATE model_maker_core Qt6::Widgets)
         add_test(NAME model_maker_drawing_set_gui_test COMMAND model_maker_drawing_set_gui_test)
+
+        # DRAWING GUI (P2B): paftada fare ile sec/tasi, 2B cizgi/daire ekleme, geri al, PDF paritesi.
+        add_executable(model_maker_paper_editing_gui_test
+            tests/paper_editing_gui_test.cpp
+            src/drawing_sheet_widget.cpp
+            include/model_maker/drawing_sheet_widget.hpp)
+        target_include_directories(model_maker_paper_editing_gui_test PRIVATE include tests)
+        target_link_libraries(model_maker_paper_editing_gui_test PRIVATE model_maker_core Qt6::Widgets)
+        add_test(NAME model_maker_paper_editing_gui_test COMMAND model_maker_paper_editing_gui_test)
         set_tests_properties(model_maker_component_dialog_widget_test PROPERTIES
             ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
     endif()

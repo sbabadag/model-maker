@@ -21,6 +21,7 @@
 #include <QPushButton>
 #include <QSaveFile>
 #include <QSignalBlocker>
+#include <QKeyEvent>
 #include <QVBoxLayout>
 #include <QWheelEvent>
 
@@ -213,9 +214,41 @@ void paintSheet(QPainter& painter, const DrawingSheet& sheet, const QRectF& targ
             }
         }
     }
-    for (const Dimension2D& d : sheet.dimensions) drawDimension(painter, sheet, d);
-    for (const MarkAnnotation& m : sheet.marks) drawMark(painter, sheet, m);
-    for (const TextAnnotation& t : sheet.texts) drawTextAnnotation(painter, sheet, t);
+    for (const Dimension2D& d : sheet.dimensions) {
+        if (!d.visible) continue;
+        drawDimension(painter, sheet, d);
+    }
+    for (const MarkAnnotation& m : sheet.marks) {
+        if (!m.visible) continue;
+        drawMark(painter, sheet, m);
+    }
+    for (const TextAnnotation& t : sheet.texts) {
+        if (!t.visible) continue;
+        drawTextAnnotation(painter, sheet, t);
+    }
+    // P2B: kullanici 2B cizimleri (ayni plan PDF ve ekranda; vektor).
+    for (const PaperShape& sh : sheet.shapes) {
+        if (!sh.visible) continue;
+        if (sh.kind == ShapeKind::Circle) {
+            const QPointF c = pt(sh.center);
+            painter.setPen(QPen(QColor(120, 120, 120), lineWeightMm::centre, Qt::DashDotLine));
+            painter.drawLine(QPointF(c.x() - sh.radius - 1.2, c.y()), QPointF(c.x() + sh.radius + 1.2, c.y()));
+            painter.drawLine(QPointF(c.x(), c.y() - sh.radius - 1.2), QPointF(c.x(), c.y() + sh.radius + 1.2));
+            painter.setPen(QPen(Qt::black, lineWeightMm::circle));
+            painter.setBrush(Qt::NoBrush);
+            painter.drawEllipse(c, sh.radius, sh.radius);
+        } else {
+            QPen pen(Qt::black, sh.kind == ShapeKind::Centerline ? lineWeightMm::centre : lineWeightMm::visible);
+            if (sh.kind == ShapeKind::Centerline) pen.setStyle(Qt::DashDotLine);
+            if (sh.style == LineStyle::Hidden) {
+                pen.setColor(QColor(110, 110, 110));
+                pen.setStyle(Qt::DashLine);
+            }
+            painter.setPen(pen);
+            painter.setBrush(Qt::NoBrush);
+            painter.drawLine(pt(sh.a), pt(sh.b));
+        }
+    }
     painter.restore();
 }
 
@@ -301,6 +334,51 @@ void DrawingSheetWidget::setSheet(const DrawingSheet* sheet) {
     update();
 }
 
+void DrawingSheetWidget::setEditor(PaperEditHistory* history) {
+    history_ = history;
+    sheet_ = history ? &history->sheet() : nullptr;
+    selection_ = PaperHit{};
+    dragging_ = false;
+    drawing_ = false;
+    update();
+}
+
+Vec2 DrawingSheetWidget::paperAt(const QPointF& pos) const {
+    if (!sheet_) return {};
+    const QRectF t = targetRect();
+    const SheetFormat& f = sheet_->format;
+    const double s = std::min(t.width() / f.width, t.height() / f.height);
+    if (s <= 1e-9) return {};
+    const double ox = t.center().x() - f.width * s / 2.0;
+    const double oy = t.center().y() + f.height * s / 2.0;
+    return {(pos.x() - ox) / s, (oy - pos.y()) / s};
+}
+
+void DrawingSheetWidget::undoEdit() {
+    if (history_ && history_->undo()) {
+        selection_ = PaperHit{};
+        update();
+    }
+}
+
+void DrawingSheetWidget::redoEdit() {
+    if (history_ && history_->redo()) {
+        selection_ = PaperHit{};
+        update();
+    }
+}
+
+bool DrawingSheetWidget::hideSelection() {
+    if (!history_ || !selection_.valid()) return false;
+    history_->begin();
+    const bool ok = setPaperElementVisible(history_->sheet(), selection_, false);
+    if (ok) evaluateAnnotationStatus(history_->sheet());
+    history_->commit();
+    selection_ = PaperHit{};
+    update();
+    return ok;
+}
+
 void DrawingSheetWidget::fitToWindow() {
     zoom_ = 1.0;
     pan_ = {};
@@ -339,17 +417,80 @@ void DrawingSheetWidget::wheelEvent(QWheelEvent* e) {
     update();
 }
 
-void DrawingSheetWidget::mousePressEvent(QMouseEvent* e) { lastPos_ = e->pos(); }
+void DrawingSheetWidget::mousePressEvent(QMouseEvent* e) {
+    lastPos_ = e->pos();
+    if (!history_ || e->button() != Qt::LeftButton) return;
+    const Vec2 p = paperAt(e->pos());
+    if (tool_ == EditTool::Select) {
+        const QRectF t = targetRect();
+        const double ppm = std::min(t.width() / sheet_->format.width, t.height() / sheet_->format.height);
+        const double tolMm = ppm > 1e-9 ? 6.0 / ppm : 1.5;
+        selection_ = hitTestPaper(*sheet_, p, tolMm);
+        if (selection_.valid()) {
+            history_->begin();
+            dragging_ = true;
+            lastPaper_ = p;
+        }
+        update();
+        return;
+    }
+    drawing_ = true;
+    drawStart_ = p;
+}
 
 void DrawingSheetWidget::mouseDoubleClickEvent(QMouseEvent*) { fitToWindow(); }
 
 void DrawingSheetWidget::mouseMoveEvent(QMouseEvent* e) {
+    if (history_ && dragging_) {
+        const Vec2 p = paperAt(e->pos());
+        if (movePaperElement(history_->sheet(), selection_, {p.x - lastPaper_.x, p.y - lastPaper_.y})) {
+            lastPaper_ = p;
+            update();
+        }
+        return;
+    }
+    if (history_ && drawing_) {
+        update();
+        return;
+    }
     if (e->buttons() & (Qt::LeftButton | Qt::MiddleButton)) {
         pan_ += QPointF(e->pos() - lastPos_);
         lastPos_ = e->pos();
         fitted_ = false;
         update();
     }
+}
+
+void DrawingSheetWidget::mouseReleaseEvent(QMouseEvent* e) {
+    if (!history_) return;
+    if (dragging_) {
+        history_->commit();
+        dragging_ = false;
+        update();
+        return;
+    }
+    if (drawing_) {
+        const Vec2 end = paperAt(e->pos());
+        const double dx = end.x - drawStart_.x, dy = end.y - drawStart_.y;
+        const double dist = std::hypot(dx, dy);
+        drawing_ = false;
+        if (dist >= 1.0) {
+            history_->begin();
+            const ShapeKind kind = tool_ == EditTool::Circle ? ShapeKind::Circle
+                                    : (tool_ == EditTool::Centerline ? ShapeKind::Centerline : ShapeKind::Line);
+            addPaperShape(history_->sheet(), kind, drawStart_, end, tool_ == EditTool::Circle ? dist : 0.0);
+            history_->commit();
+            update();
+        }
+    }
+}
+
+void DrawingSheetWidget::keyPressEvent(QKeyEvent* e) {
+    if (history_ && (e->key() == Qt::Key_Delete || e->key() == Qt::Key_Backspace)) {
+        hideSelection();
+        return;
+    }
+    QWidget::keyPressEvent(e);
 }
 
 void DrawingSheetWidget::resizeEvent(QResizeEvent*) { update(); }
@@ -407,6 +548,11 @@ DrawingPreviewDialog::DrawingPreviewDialog(std::vector<SubjectChoice> subjects, 
         sheetCombo_->setObjectName(QStringLiteral("drawingSheetPage"));
         sheetCombo_->setMinimumWidth(180);
         opts->addWidget(sheetCombo_);
+        toolCombo_ = new QComboBox(this);
+        toolCombo_->setObjectName(QStringLiteral("drawingTool"));
+        toolCombo_->addItems({QStringLiteral("Sec"), QStringLiteral("Cizgi"), QStringLiteral("Daire"),
+                              QStringLiteral("Merkez cizgisi")});
+        opts->addWidget(toolCombo_);
     }
     opts->addWidget(projectionCombo_);
     opts->addWidget(frontCheck_);
@@ -430,6 +576,20 @@ DrawingPreviewDialog::DrawingPreviewDialog(std::vector<SubjectChoice> subjects, 
     json->setObjectName(QStringLiteral("drawingJson"));
     auto* close = new QPushButton(QStringLiteral("Kapat"), this);
     buttons->addWidget(fit);
+    if (setBuilder_) {
+        auto* undoBtn = new QPushButton(QStringLiteral("Geri al"), this);
+        undoBtn->setObjectName(QStringLiteral("drawingUndo"));
+        auto* redoBtn = new QPushButton(QStringLiteral("Yinele"), this);
+        redoBtn->setObjectName(QStringLiteral("drawingRedo"));
+        auto* hideBtn = new QPushButton(QStringLiteral("Gizle"), this);
+        hideBtn->setObjectName(QStringLiteral("drawingHide"));
+        buttons->addWidget(undoBtn);
+        buttons->addWidget(redoBtn);
+        buttons->addWidget(hideBtn);
+        connect(undoBtn, &QPushButton::clicked, this, [this]() { view_->undoEdit(); });
+        connect(redoBtn, &QPushButton::clicked, this, [this]() { view_->redoEdit(); });
+        connect(hideBtn, &QPushButton::clicked, this, [this]() { view_->hideSelection(); });
+    }
     buttons->addStretch(1);
     buttons->addWidget(pdf);
     buttons->addWidget(json);
@@ -453,6 +613,12 @@ DrawingPreviewDialog::DrawingPreviewDialog(std::vector<SubjectChoice> subjects, 
         });
         connect(multiSheetCheck_, &QCheckBox::toggled, this, changed);
         connect(sheetCombo_, &QComboBox::currentIndexChanged, this, [this](int i) { showSheet(i); });
+        connect(toolCombo_, &QComboBox::currentIndexChanged, this, [this](int i) {
+            view_->setTool(i == 1 ? DrawingSheetWidget::EditTool::Line
+                                  : (i == 2 ? DrawingSheetWidget::EditTool::Circle
+                                            : (i == 3 ? DrawingSheetWidget::EditTool::Centerline
+                                                      : DrawingSheetWidget::EditTool::Select)));
+        });
     }
     rebuild();
 }
@@ -461,6 +627,8 @@ void DrawingPreviewDialog::rebuild() {
     haveSheet_ = false;
     haveDoc_ = false;
     currentSheet_ = 0;
+    edit_.reset();
+    view_->setEditor(nullptr);
     view_->setSheet(nullptr);
     if (sheetCombo_) {
         const QSignalBlocker block(sheetCombo_);
@@ -548,6 +716,7 @@ void DrawingPreviewDialog::rebuild() {
 }
 
 const DrawingSheet* DrawingPreviewDialog::currentSheet() const noexcept {
+    if (edit_) return &edit_->sheet();
     if (haveDoc_ && currentSheet_ >= 0 && currentSheet_ < static_cast<int>(doc_.sheets().size()))
         return &doc_.sheets()[static_cast<std::size_t>(currentSheet_)];
     return haveSheet_ ? &sheet_ : nullptr;
@@ -555,9 +724,19 @@ const DrawingSheet* DrawingPreviewDialog::currentSheet() const noexcept {
 
 void DrawingPreviewDialog::showSheet(int index) {
     if (!haveDoc_ || index < 0 || index >= static_cast<int>(doc_.sheets().size())) return;
+    syncEditedSheet(currentSheet_);
     currentSheet_ = index;
     const DrawingSheet& s = doc_.sheets()[static_cast<std::size_t>(index)];
-    view_->setSheet(&s);
+    edit_ = std::make_unique<PaperEditHistory>(s);
+    view_->setEditor(edit_.get());
+    view_->setFocusPolicy(Qt::StrongFocus);
+    if (toolCombo_) {
+        const int t = toolCombo_->currentIndex();
+        view_->setTool(t == 1 ? DrawingSheetWidget::EditTool::Line
+                              : (t == 2 ? DrawingSheetWidget::EditTool::Circle
+                                        : (t == 3 ? DrawingSheetWidget::EditTool::Centerline
+                                                  : DrawingSheetWidget::EditTool::Select)));
+    }
     view_->fitToWindow();
     if (sheetCombo_ && sheetCombo_->currentIndex() != index) {
         const QSignalBlocker block(sheetCombo_);
@@ -573,7 +752,14 @@ void DrawingPreviewDialog::showSheet(int index) {
                          .arg(s.layout.ok ? QStringLiteral("yerle\u015fti") : QStringLiteral("NO_FIT")));
 }
 
+void DrawingPreviewDialog::syncEditedSheet(int index) {
+    if (!edit_ || !haveDoc_) return;
+    if (index >= 0 && index < static_cast<int>(doc_.sheets().size()))
+        doc_.sheets()[static_cast<std::size_t>(index)] = edit_->sheet();
+}
+
 void DrawingPreviewDialog::onExportPdf() {
+    syncEditedSheet(currentSheet_);
     if (haveDoc_) {
         const QString path = QFileDialog::getSaveFileName(this, QStringLiteral("PDF'e aktar (t\u00fcm paftalar)"),
                                                           qs(doc_.sheets().front().sheetNumber) + QStringLiteral(".pdf"),
@@ -598,6 +784,7 @@ void DrawingPreviewDialog::onExportPdf() {
 }
 
 void DrawingPreviewDialog::onSaveJson() {
+    syncEditedSheet(currentSheet_);
     if (!haveDoc_ && !haveSheet_) return;
     const QString path = QFileDialog::getSaveFileName(this, QStringLiteral("\u00c7izimi JSON olarak kaydet"),
                                                       qs(haveDoc_ ? doc_.sheets().front().sheetNumber : sheet_.name) +

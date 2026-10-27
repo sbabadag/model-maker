@@ -438,7 +438,8 @@ void placeViewDimensions(Ctx& cx, Scene& sc, ElementId viewId) {
     DrawingSheet& s = *cx.s;
     std::map<ElementId, std::vector<std::size_t>> chains;   // chain id -> boyutlar
     for (std::size_t i = 0; i < s.dimensions.size(); ++i)
-        if (s.dimensions[i].viewId == viewId) chains[s.dimensions[i].chain != 0 ? s.dimensions[i].chain : 1000000 + s.dimensions[i].id].push_back(i);
+        if (s.dimensions[i].viewId == viewId && s.dimensions[i].visible)
+            chains[s.dimensions[i].chain != 0 ? s.dimensions[i].chain : 1000000 + s.dimensions[i].id].push_back(i);
     // Zincir ici: cizgi boyunca soldan saga/alttan uste (deterministik).
     const DrawingView* v = s.findView(viewId);
     std::map<std::pair<int, int>, int> rows;   // (yon sinifi, taraf) -> sonraki satir
@@ -887,21 +888,21 @@ Attempt tryLayout(const DrawingSheet& in, SheetSize size, double den) {
         for (const DrawingView& v : s.views) placeViewDimensions(cx, sc, v.id);
         // 2) mark etiketleri
         for (MarkAnnotation& m : s.marks)
-            if (!placeMark(cx, sc, m))
+            if (m.visible && !placeMark(cx, sc, m))
                 cx.issues.push_back({"ELEMENT_UNPLACEABLE", "mark etiketi cakismasiz yerlestirilemedi: " + m.text, m.id});
         // 3) callout'lar (anchor'li)
         for (TextAnnotation& t : s.texts)
-            if (t.kind != TextKind::ViewTitle && t.hasAnchor && t.viewId != 0)
+            if (t.visible && t.kind != TextKind::ViewTitle && t.hasAnchor && t.viewId != 0)
                 if (!placeAnchoredText(cx, sc, t))
                     cx.issues.push_back({"ELEMENT_UNPLACEABLE", "callout/not cakismasiz yerlestirilemedi", t.id});
         // 4) gorunum basliklari
         for (TextAnnotation& t : s.texts)
-            if (t.kind == TextKind::ViewTitle)
+            if (t.visible && t.kind == TextKind::ViewTitle)
                 if (!placeViewTitle(cx, sc, t))
                     cx.issues.push_back({"ELEMENT_UNPLACEABLE", "gorunum basligi yerlestirilemedi", t.id});
         // 5) sayfa duzeyi notlar (damga, legend, checklist)
         for (TextAnnotation& t : s.texts)
-            if (t.kind != TextKind::ViewTitle && !(t.hasAnchor && t.viewId != 0))
+            if (t.visible && t.kind != TextKind::ViewTitle && !(t.hasAnchor && t.viewId != 0))
                 if (!placeFreeText(cx, sc, t, s.notesArea()))
                     cx.issues.push_back({"ELEMENT_UNPLACEABLE", "sayfa notu cakismasiz yerlestirilemedi", t.id});
         at.issues = cx.issues;
@@ -924,6 +925,7 @@ OverlapReport measureOverlaps(const DrawingSheet& s) {
     std::vector<Tagged> lines;
     std::vector<std::string> lineWhat;
     for (const Dimension2D& d : s.dimensions) {
+        if (!d.visible) continue;
         const DimensionGeometry g = resolveDimension(s, d);
         if (!g.valid) continue;
         texts.push_back({g.textBox, static_cast<int>(d.id), "dim#" + std::to_string(d.id) + "[" + g.text + "]"});
@@ -934,6 +936,7 @@ OverlapReport measureOverlaps(const DrawingSheet& s) {
         }
     }
     for (const TextAnnotation& t : s.texts) {
+        if (!t.visible) continue;
         const TextGeometry g = resolveText(s, t);
         const int owner = 500000 + static_cast<int>(t.id);
         texts.push_back({g.box, owner, "text#" + std::to_string(t.id)});
@@ -944,6 +947,7 @@ OverlapReport measureOverlaps(const DrawingSheet& s) {
         }
     }
     for (const MarkAnnotation& m : s.marks) {
+        if (!m.visible) continue;
         const DrawingView* v = s.findView(m.viewId);
         const int owner = 700000 + static_cast<int>(m.id);
         const Bounds2 bb = markBox(m);

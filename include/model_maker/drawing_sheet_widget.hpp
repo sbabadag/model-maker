@@ -6,6 +6,7 @@
 
 #include "model_maker/drawing_builder.hpp"
 #include "model_maker/drawing_set.hpp"
+#include "model_maker/paper_editing.hpp"
 
 #include <QDialog>
 #include <QImage>
@@ -13,6 +14,7 @@
 #include <QWidget>
 
 #include <functional>
+#include <memory>
 #include <vector>
 
 class QCheckBox;
@@ -53,26 +55,47 @@ bool exportDrawingSetPdf(const DrawingDocument& document, const QString& path, Q
 class DrawingSheetWidget : public QWidget {
     Q_OBJECT
 public:
+    enum class EditTool { Select, Line, Circle, Centerline };
     explicit DrawingSheetWidget(QWidget* parent = nullptr);
     void setSheet(const DrawingSheet* sheet); // sahiplik cagirandadir; nullptr = bos
     void fitToWindow();
     double zoom() const noexcept { return zoom_; }
+
+    // --- P2B: paftada duzenleme (sec/tasi/2B sekil). history sahipligi cagirandadir. ---
+    void setEditor(PaperEditHistory* history);
+    bool hasEditor() const noexcept { return history_ != nullptr; }
+    void setTool(EditTool tool) noexcept { tool_ = tool; }
+    EditTool tool() const noexcept { return tool_; }
+    PaperHit selection() const noexcept { return selection_; }
+    void undoEdit();
+    void redoEdit();
+    bool hideSelection();     // secili zorunlu olcu/notu gizler -> cizim INCOMPLETE olabilir
 
 protected:
     void paintEvent(QPaintEvent*) override;
     void wheelEvent(QWheelEvent*) override;
     void mousePressEvent(QMouseEvent*) override;
     void mouseMoveEvent(QMouseEvent*) override;
+    void mouseReleaseEvent(QMouseEvent*) override;
+    void keyPressEvent(QKeyEvent*) override;
     void mouseDoubleClickEvent(QMouseEvent*) override;
     void resizeEvent(QResizeEvent*) override;
 
 private:
     QRectF targetRect() const;
+    Vec2 paperAt(const QPointF& pos) const;
     const DrawingSheet* sheet_{};
     double zoom_{1.0};
     QPointF pan_{};
-    QPoint lastPos_;
+    QPoint lastPos_{};
     bool fitted_{true};
+    PaperEditHistory* history_{};
+    PaperHit selection_{};
+    EditTool tool_{EditTool::Select};
+    bool dragging_{false};
+    bool drawing_{false};
+    Vec2 lastPaper_{};
+    Vec2 drawStart_{};
 };
 
 struct SubjectChoice {
@@ -101,6 +124,7 @@ private:
     void onExportPdf();
     void onSaveJson();
     void showSheet(int index);
+    void syncEditedSheet(int index);
 
     std::vector<SubjectChoice> subjects_;
     Builder builder_;
@@ -112,9 +136,11 @@ private:
     DrawingPreferences prefs_{};
     int currentSheet_{0};
     DrawingSheetWidget* view_{};
+    std::unique_ptr<PaperEditHistory> edit_;
     QComboBox* subjectCombo_{};
     QComboBox* sizeCombo_{};
     QComboBox* sheetCombo_{};
+    QComboBox* toolCombo_{};
     QCheckBox* autoSizeCheck_{};
     QCheckBox* multiSheetCheck_{};
     QComboBox* projectionCombo_{};

@@ -133,6 +133,7 @@ struct MarkAnnotation {
     bool isAssembly{false};
     Vec2 anchor{};                        // view-yerel
     Vec2 labelPos{};                      // kagit
+    bool visible{true};                   // P2B: kullanici gizledi
 };
 
 // 2B olcu. p1/p2: view-yerel (model mm) — geometriden turetilir; value: GERCEK model
@@ -158,6 +159,7 @@ struct Dimension2D {
     std::string featureKey;        // fab::featureKey (bos: P1 geometri olcusu)
     std::string basis;             // insan okur: "plate-local u pitch col1-col2"
     std::uint64_t documentRevision{0};
+    bool visible{true};            // P2B: kullanici gizledi (imalat olcusu gizlenirse cizim INCOMPLETE)
     // p1-p2'den yeniden olculen uzunluk (yon'e gore).
     double measured() const noexcept;
 };
@@ -178,6 +180,22 @@ struct TextAnnotation {
     bool bold{false};
     EntityId source{kInvalidEntityId};
     std::string featureKey;
+    bool visible{true};            // P2B: kullanici gizledi
+};
+
+// P2B: kullanici tarafindan kagida eklenen 2B cizim (muhendislik geometrisi DEGIL; model olcusu degismez).
+enum class ShapeKind { Line, Circle, Centerline };
+struct PaperShape {
+    ElementId id{0};
+    ShapeKind kind{ShapeKind::Line};
+    Vec2 a{};                       // Line/Centerline baslangic
+    Vec2 b{};                       // Line/Centerline bitis
+    Vec2 center{};                  // Circle merkez
+    double radius{0.0};
+    LineStyle style{LineStyle::Visible};
+    bool visible{true};
+    EntityId source{kInvalidEntityId};   // ilgili model elemani (varsa)
+    std::string featureKey;              // provenance: "user:line" vb.
 };
 
 enum class ChecklistState { Satisfied, Unresolved, NotApplicable };
@@ -319,6 +337,7 @@ struct DrawingSheet {
     std::vector<MarkAnnotation> marks;
     std::vector<Dimension2D> dimensions;
     std::vector<TextAnnotation> texts;
+    std::vector<PaperShape> shapes;      // P2B: kullanici 2B cizimleri (kagit mm)
     FabricationStatus fabrication;
     LayoutConfig layoutConfig;
     LayoutReport layout;

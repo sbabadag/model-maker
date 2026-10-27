@@ -88,6 +88,19 @@ bool parseMode(const std::string& s, DrawingMode& o) {
     if (s == "single") { o = DrawingMode::Single; return true; }
     return false;
 }
+const char* name(ShapeKind k) {
+    switch (k) {
+    case ShapeKind::Line: return "line";
+    case ShapeKind::Circle: return "circle";
+    case ShapeKind::Centerline: return "centerline";
+    }
+    return "line";
+}
+bool parseShape(const std::string& s, ShapeKind& o) {
+    for (ShapeKind k : {ShapeKind::Line, ShapeKind::Circle, ShapeKind::Centerline})
+        if (s == name(k)) { o = k; return true; }
+    return false;
+}
 bool parse(const std::string& s, ProjectionMethod& o) {
     if (s == "thirdAngle") { o = ProjectionMethod::ThirdAngle; return true; }
     if (s == "firstAngle") { o = ProjectionMethod::FirstAngle; return true; }
@@ -359,7 +372,7 @@ std::string DrawingDocument::serialize() const {
         for (const MarkAnnotation& m : s.marks)
             marks.push_back({{"id", m.id}, {"viewId", m.viewId}, {"target", m.target},
                              {"text", m.text}, {"isAssembly", m.isAssembly},
-                             {"anchor", v2(m.anchor)}, {"labelPos", v2(m.labelPos)}});
+                             {"anchor", v2(m.anchor)}, {"labelPos", v2(m.labelPos)}, {"visible", m.visible}});
         json dims = json::array();
         for (const Dimension2D& d : s.dimensions)
             dims.push_back({{"id", d.id}, {"viewId", d.viewId}, {"role", name(d.role)},
@@ -367,7 +380,7 @@ std::string DrawingDocument::serialize() const {
                             {"value", d.value}, {"offset", d.offset}, {"textLevel", d.textLevel},
                             {"side", d.side}, {"textT", d.textT}, {"textSide", d.textSide},
                             {"chain", d.chain}, {"source", d.source}, {"featureKey", d.featureKey},
-                            {"basis", d.basis}, {"documentRevision", d.documentRevision}});
+                            {"basis", d.basis}, {"documentRevision", d.documentRevision}, {"visible", d.visible}});
         json views = json::array();
         for (const DrawingView& v : s.views) views.push_back(viewJson(v));
         json texts = json::array();
@@ -375,7 +388,12 @@ std::string DrawingDocument::serialize() const {
             texts.push_back({{"id", t.id}, {"viewId", t.viewId}, {"kind", name(t.kind)}, {"lines", t.lines},
                              {"height", t.height}, {"hasAnchor", t.hasAnchor}, {"anchor", v2(t.anchor)},
                              {"pos", v2(t.pos)}, {"leader", t.leader}, {"bold", t.bold},
-                             {"source", t.source}, {"featureKey", t.featureKey}});
+                             {"source", t.source}, {"featureKey", t.featureKey}, {"visible", t.visible}});
+        json shapes = json::array();
+        for (const PaperShape& sh : s.shapes)
+            shapes.push_back({{"id", sh.id}, {"kind", name(sh.kind)}, {"a", v2(sh.a)}, {"b", v2(sh.b)},
+                              {"center", v2(sh.center)}, {"radius", sh.radius}, {"style", name(sh.style)},
+                              {"visible", sh.visible}, {"source", sh.source}, {"featureKey", sh.featureKey}});
         json checklist = json::array();
         for (const ChecklistItem& c : s.fabrication.checklist)
             checklist.push_back({{"key", c.key}, {"label", c.label}, {"state", name(c.state)},
@@ -405,7 +423,7 @@ std::string DrawingDocument::serialize() const {
              {"margin", s.format.margin}, {"kind", name(s.kind)},
              {"projection", name(s.projection)}, {"subject", s.subject}, {"scale", s.scale},
              {"scaleIsStandard", s.scaleIsStandard}, {"titleBlock", titleJson(s.titleBlock)},
-             {"views", views}, {"marks", marks}, {"dimensions", dims}, {"texts", texts},
+             {"views", views}, {"marks", marks}, {"dimensions", dims}, {"texts", texts}, {"shapes", shapes},
              {"fabrication", fab}, {"layoutConfig", lcj}, {"layoutReport", lay},
              {"documentRevision", s.documentRevision}, {"nextId", s.nextId},
              {"role", name(s.role)}, {"parentSheetId", s.parentSheetId},
@@ -522,6 +540,7 @@ bool DrawingDocument::deserialize(const std::string& text, DrawingDocument& out,
                 m.isAssembly = jm.at("isAssembly").get<bool>();
                 m.anchor = v2From(jm.at("anchor"));
                 m.labelPos = v2From(jm.at("labelPos"));
+                m.visible = jm.value("visible", true);
                 s.marks.push_back(std::move(m));
             }
             for (const json& jd : js.at("dimensions")) {
@@ -546,6 +565,7 @@ bool DrawingDocument::deserialize(const std::string& text, DrawingDocument& out,
                 d.featureKey = jd.value("featureKey", std::string{});
                 d.basis = jd.value("basis", std::string{});
                 d.documentRevision = jd.value("documentRevision", std::uint64_t{0});
+                d.visible = jd.value("visible", true);
                 s.dimensions.push_back(std::move(d));
             }
             if (js.contains("texts"))
@@ -566,7 +586,29 @@ bool DrawingDocument::deserialize(const std::string& text, DrawingDocument& out,
                     t.bold = jt.at("bold").get<bool>();
                     t.source = jt.at("source").get<EntityId>();
                     t.featureKey = jt.at("featureKey").get<std::string>();
+                    t.visible = jt.value("visible", true);
                     s.texts.push_back(std::move(t));
+                }
+            if (js.contains("shapes"))
+                for (const json& jsh : js.at("shapes")) {
+                    PaperShape sh;
+                    sh.id = jsh.at("id").get<ElementId>();
+                    if (!parseShape(jsh.at("kind").get<std::string>(), sh.kind)) {
+                        error = "cizim kaydi: bilinmeyen 2B sekil turu";
+                        return false;
+                    }
+                    sh.a = v2From(jsh.at("a"));
+                    sh.b = v2From(jsh.at("b"));
+                    sh.center = v2From(jsh.at("center"));
+                    sh.radius = jsh.value("radius", 0.0);
+                    if (!parse(jsh.value("style", std::string("visible")), sh.style)) {
+                        error = "cizim kaydi: bilinmeyen cizgi stili";
+                        return false;
+                    }
+                    sh.visible = jsh.value("visible", true);
+                    sh.source = jsh.value("source", kInvalidEntityId);
+                    sh.featureKey = jsh.value("featureKey", std::string{});
+                    s.shapes.push_back(std::move(sh));
                 }
             if (js.contains("fabrication")) {
                 const json& jf = js.at("fabrication");
