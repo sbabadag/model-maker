@@ -56,6 +56,10 @@ struct BuildResult {
 //   Side  : bakis -X yonunde (goz +X)  -> (y, z)   ("Right" gorunusu)
 Vec2 projectToView(const Vec3& p, ViewKind kind) noexcept;
 
+// Mark etiketinin KAGIT uzayindaki tahmini kutusu (GUI cizimi ile tutarli, hafif muhafazakar):
+// yerlesim cakisma kontrolunde ve testlerde kullanilir.
+Bounds2 markLabelBox(const MarkAnnotation& mark) noexcept;
+
 // Cizime konu olabilecek parca mi? (nokta/konstruksiyon/kenarsiz modeller degil.)
 bool isDrawablePart(const WireframeModel& model) noexcept;
 

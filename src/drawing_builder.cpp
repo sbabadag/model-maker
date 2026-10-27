@@ -107,6 +107,15 @@ Vec2 projectToView(const Vec3& p, ViewKind kind) noexcept {
     return {p.x, p.z};
 }
 
+Bounds2 markLabelBox(const MarkAnnotation& m) noexcept {
+    const double h = m.isAssembly ? 5.0 : 3.5;
+    const double w = 3.0 + h * 0.75 * static_cast<double>(std::max<std::size_t>(m.text.size(), 2));
+    Bounds2 b;
+    b.include(m.labelPos);
+    b.include({m.labelPos.x + w, m.labelPos.y + h + 2.0});
+    return b;
+}
+
 bool isDrawablePart(const WireframeModel& m) noexcept {
     return !m.isPointEntity() && m.constructionKind() == ConstructionKind::None &&
            !m.edges().empty() && m.vertices().size() >= 2;
@@ -402,6 +411,27 @@ BuildResult buildSheet(const Document& doc, MarkRegistry& reg, EntityId subject,
                 const Vec2 tr = v.toPaper(vm.bounds.max);
                 m.labelPos = {tr.x + 4.0, tr.y + 4.0};
                 sheet.marks.push_back(std::move(m));
+            }
+        }
+
+        // Etiketler birbirine binmesin: sirayla, cakisan etiketi yukari kaydir (deterministik).
+        {
+            std::vector<std::size_t> mine;
+            for (std::size_t i = 0; i < sheet.marks.size(); ++i)
+                if (sheet.marks[i].viewId == v.id) mine.push_back(i);
+            for (std::size_t k = 1; k < mine.size(); ++k) {
+                MarkAnnotation& cur = sheet.marks[mine[k]];
+                for (int guard = 0; guard < 50; ++guard) {
+                    const Bounds2 cb = markLabelBox(cur);
+                    bool hit = false;
+                    for (std::size_t j = 0; j < k && !hit; ++j) {
+                        const Bounds2 ob = markLabelBox(sheet.marks[mine[j]]);
+                        hit = cb.min.x < ob.max.x + 1.0 && ob.min.x < cb.max.x + 1.0 &&
+                              cb.min.y < ob.max.y + 1.0 && ob.min.y < cb.max.y + 1.0;
+                    }
+                    if (!hit) break;
+                    cur.labelPos.y += 3.0;
+                }
             }
         }
 

@@ -9,7 +9,12 @@ Durum: ilk calisan cekirdek (OCCT'siz, Qt'siz, Linux ctest'te kosar). GUI yok.
 | `include/model_maker/marking.hpp`, `src/marking.cpp` | Part/Assembly **mark** (P1.., A1..). EntityId'den ayri, imza ile gruplama, JSON kalicilik |
 | `include/model_maker/drawing.hpp`, `src/drawing.cpp` | `mm::drawing` veri modeli: DrawingDocument / DrawingSheet / DrawingView / MarkAnnotation / Dimension2D / TitleBlock + JSON |
 | `include/model_maker/drawing_builder.hpp`, `src/drawing_builder.cpp` | Document -> mark -> Front/Top/Side -> A3 yerlesim -> etiket + olcu |
+| `include/model_maker/drawing_sheet_widget.hpp`, `src/drawing_sheet_widget.cpp` | GUI: `paintSheet` (QPainter; ekran/PDF/PNG tek yol), `DrawingSheetWidget` (zoom/pan), `DrawingPreviewDialog`, `exportSheetPdf`, `showDrawingDialog` |
 | `include/model_maker/utf8.hpp` | wstring<->UTF-8 (component_presets, marking ortak) |
+
+## GUI kullanimi
+
+`Dosya > Secimden Cizim...` — secili parca (ya da assembly) icin diyalog acar. Konu (Parca / bagli oldugu Assembly), kagit (A4..A0), projeksiyon (3./1. aci), On/Ust/Yan secimi, gizli cizgi (deneysel); her degisimde cizim yeniden uretilir. Tekerlek = yakinlastir, surukle = kaydir, cift tik / `Sigdir` = sigdir. `PDF'e aktar` ve `JSON kaydet` dugmeleri. Mark numaralari diyalog her acildiginda model sirasindan deterministik uretilir (kalici saklama MMW8 entegrasyonuyla yapilacak).
 
 ## Sozlesmeler
 

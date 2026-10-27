@@ -288,6 +288,22 @@ int main() {
             if (m.viewId == fv->id) { texts.insert(m.text); asmLabels += m.isAssembly; }
         check(texts == std::set<std::string>({"A1", "P1", "P2"}) && countMarks(ra.sheet, fv->id) == 3 && asmLabels == 1,
               "C: Front'ta A1 + P1 + P2 (ayni levha tek etiket)");
+        {
+            // Etiket kutulari birbirine binmez ve sayfa cercevesinin icinde kalir.
+            bool clear = true, inside = true;
+            for (const DrawingView& v : ra.sheet.views) {
+                std::vector<Bounds2> boxes;
+                for (const auto& m : ra.sheet.marks)
+                    if (m.viewId == v.id) boxes.push_back(markLabelBox(m));
+                for (std::size_t i = 0; i < boxes.size(); ++i) {
+                    inside &= boxes[i].min.x >= ra.sheet.format.margin && boxes[i].max.x <= ra.sheet.format.width - ra.sheet.format.margin &&
+                              boxes[i].max.y <= ra.sheet.format.height - ra.sheet.format.margin;
+                    for (std::size_t j = i + 1; j < boxes.size(); ++j) clear &= !overlaps(boxes[i], boxes[j], 0);
+                }
+            }
+            check(clear, "C: ayni gorunumdeki etiket kutulari birbirine binmez");
+            check(inside, "C: etiket kutulari sayfa cercevesi icinde");
+        }
         const Dimension2D* len = findDim(ra.sheet, fv->id, DimensionRole::MemberLength);
         check(len && nearTo(len->value, 4000) && len->source == docA.assemblies()[0].mainPart,
               "C: assembly boyu ana parcanin ekseninden (4000)");

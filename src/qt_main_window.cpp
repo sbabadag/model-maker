@@ -67,6 +67,7 @@
 #include <QCoreApplication>
 #include <filesystem>
 #include "model_maker/component_presets.hpp"
+#include "model_maker/drawing_sheet_widget.hpp"
 
 namespace {
 // Component ayar setleri (Tekla Save / Save as / Load): exe'nin yanindaki
@@ -773,6 +774,15 @@ std::vector<QtMainWindow::CommandCategory> QtMainWindow::commandCategories() {
               [this]() { app_.importDxf(); }),
         uiCmd(QStringLiteral("DXF D&ışa Aktar..."), QStringLiteral("DXF Ver"), QStringLiteral("DXF dışa aktar"), ToolGlyph::Export,
               [this]() { app_.exportDxf(); }),
+        uiSep(),
+        uiCmd(QStringLiteral("Seçimden Ç&izim..."), QStringLiteral("Çizim"),
+              QStringLiteral("Seçili parça/assembly için Ön-Üst-Yan görünüşlü A3 çizim üret (PDF/JSON)"),
+              ToolGlyph::Export,
+              [this]() {
+                  mm::drawing::showDrawingDialog(
+                      this, app_.document(), app_.selectedModelIndices(),
+                      app_.selectionMode() == mm::Application::SelectionMode::Assembly);
+              }),
         uiSep(),
         uiCmd(QStringLiteral("Çı&kış"), QStringLiteral("Çıkış"), QStringLiteral("Uygulamadan çık"), ToolGlyph::Delete,
               []() { QApplication::quit(); }),
