@@ -775,15 +775,6 @@ std::vector<QtMainWindow::CommandCategory> QtMainWindow::commandCategories() {
         uiCmd(QStringLiteral("DXF D&ışa Aktar..."), QStringLiteral("DXF Ver"), QStringLiteral("DXF dışa aktar"), ToolGlyph::Export,
               [this]() { app_.exportDxf(); }),
         uiSep(),
-        uiCmd(QStringLiteral("Seçimden Ç&izim..."), QStringLiteral("Çizim"),
-              QStringLiteral("Seçili parça/assembly için Ön-Üst-Yan görünüşlü A3 çizim üret (PDF/JSON)"),
-              ToolGlyph::Export,
-              [this]() {
-                  mm::drawing::showDrawingDialog(
-                      this, app_.document(), app_.selectedModelIndices(),
-                      app_.selectionMode() == mm::Application::SelectionMode::Assembly);
-              }),
-        uiSep(),
         uiCmd(QStringLiteral("Çı&kış"), QStringLiteral("Çıkış"), QStringLiteral("Uygulamadan çık"), ToolGlyph::Delete,
               []() { QApplication::quit(); }),
     }});
@@ -803,6 +794,16 @@ std::vector<QtMainWindow::CommandCategory> QtMainWindow::commandCategories() {
         uiSep(),
         uiKey(uiCmd(QStringLiteral("Böl (&Divide)"), QStringLiteral("Böl"), QStringLiteral("İki nokta arasını eşit böl (D)"), ToolGlyph::LinearArray,
               [this]() { app_.activateDivide(); }), QStringLiteral("D"), false),
+        uiSep(),
+        // Paper-space çizim: seçili parça/assembly -> Ön/Üst/Yan görünüşlü A3 sayfa (PDF/JSON).
+        uiCmd(QStringLiteral("&Paper Çizim (Seçimden)..."), QStringLiteral("Paper Çizim"),
+              QStringLiteral("Seçili parça/assembly için Ön-Üst-Yan görünüşlü A3 çizim üret (PDF/JSON)"),
+              ToolGlyph::Export,
+              [this]() {
+                  mm::drawing::showDrawingDialog(
+                      this, app_.document(), app_.selectedModelIndices(),
+                      app_.selectionMode() == mm::Application::SelectionMode::Assembly);
+              }),
     }});
 
     // ---- DÜZENLE ----

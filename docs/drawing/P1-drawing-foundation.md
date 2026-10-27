@@ -14,7 +14,7 @@ Durum: ilk calisan cekirdek (OCCT'siz, Qt'siz, Linux ctest'te kosar). GUI yok.
 
 ## GUI kullanimi
 
-`Dosya > Secimden Cizim...` — secili parca (ya da assembly) icin diyalog acar. Konu (Parca / bagli oldugu Assembly), kagit (A4..A0), projeksiyon (3./1. aci), On/Ust/Yan secimi, gizli cizgi (deneysel); her degisimde cizim yeniden uretilir. Tekerlek = yakinlastir, surukle = kaydir, cift tik / `Sigdir` = sigdir. `PDF'e aktar` ve `JSON kaydet` dugmeleri. Mark numaralari diyalog her acildiginda model sirasindan deterministik uretilir (kalici saklama MMW8 entegrasyonuyla yapilacak).
+`Cizim > Paper Cizim (Secimden)...` — secili parca (ya da assembly) icin diyalog acar. Konu (Parca / bagli oldugu Assembly), kagit (A4..A0), projeksiyon (3./1. aci), On/Ust/Yan secimi, gizli cizgi (deneysel); her degisimde cizim yeniden uretilir. Tekerlek = yakinlastir, surukle = kaydir, cift tik / `Sigdir` = sigdir. `PDF'e aktar` ve `JSON kaydet` dugmeleri. Mark numaralari diyalog her acildiginda model sirasindan deterministik uretilir (kalici saklama MMW8 entegrasyonuyla yapilacak).
 
 ## Sozlesmeler
 
