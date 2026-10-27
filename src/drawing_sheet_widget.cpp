@@ -1,5 +1,7 @@
 #include "model_maker/drawing_sheet_widget.hpp"
 
+#include "model_maker/drawing_builder.hpp"
+#include "model_maker/drawing_layout.hpp"
 #include "model_maker/utf8.hpp"
 
 #include <QCheckBox>
@@ -34,13 +36,17 @@ QString qs(const std::string& s) { return QString::fromStdWString(text::fromUtf8
 
 QPointF pt(const Vec2& v) { return QPointF(v.x, v.y); }
 
-// Metin: konum (sayfa mm, y yukari), yukseklik mm, hizalama, aci (derece, saat yonu tersi).
+// Metin: konum (sayfa mm, y yukari), BUYUK HARF/RAKAM YUKSEKLIGI mm (heightMm), hizalama, aci (derece, saat yonu tersi).
+// em = capHeight / 0.70 (tipik govde orani): yerlesim motorunun metin kutusu (textWidthEstimate) ayni varsayimla hesaplanir.
+constexpr double kCapRatio = 0.70;
+
 void drawText(QPainter& p, const QPointF& at, const QString& t, double heightMm, Qt::Alignment al,
               double angleDeg = 0.0, bool bold = false) {
     p.save();
     p.translate(at);
     if (angleDeg != 0.0) p.rotate(angleDeg);
-    p.scale(heightMm / 40.0, -heightMm / 40.0);
+    const double em = heightMm / kCapRatio;
+    p.scale(em / 40.0, -em / 40.0);
     QFont f = p.font();
     f.setPixelSize(40);
     f.setBold(bold);
@@ -52,18 +58,19 @@ void drawText(QPainter& p, const QPointF& at, const QString& t, double heightMm,
     p.restore();
 }
 
-double textWidthMm(const QString& t, double heightMm, bool bold = false) {
+}  // namespace
+
+// Gercek Qt metin genisligi (kagit mm) -- yerlesim tahmininin muhafazakarligini dogrulayan test icin disa acik.
+double measureTextWidthMm(const QString& t, double capHeightMm, bool bold) {
     QFont f;
     f.setPixelSize(40);
     f.setBold(bold);
-    return QFontMetricsF(f).horizontalAdvance(t) * heightMm / 40.0;
+    return QFontMetricsF(f).horizontalAdvance(t) * (capHeightMm / kCapRatio) / 40.0;
 }
 
-QString valueText(double v) {
-    const double r = std::round(v);
-    return std::fabs(v - r) < 0.05 ? QString::number(static_cast<long long>(r))
-                                   : QString::number(v, 'f', 1);
-}
+namespace {
+
+QString valueText(double v) { return QString::fromStdString(dimensionText(v)); }
 
 void tick(QPainter& p, const QPointF& at) {
     p.drawLine(QPointF(at.x() - 1.2, at.y() - 1.2), QPointF(at.x() + 1.2, at.y() + 1.2));
@@ -105,57 +112,14 @@ void drawTitleBlock(QPainter& p, const DrawingSheet& s) {
 }
 
 void drawDimension(QPainter& p, const DrawingSheet& s, const Dimension2D& d) {
-    const DrawingView* v = s.findView(d.viewId);
-    if (!v) return;
-    const QPointF a = pt(v->toPaper(d.p1)), b = pt(v->toPaper(d.p2));
-    const Bounds2 pb = v->paperBounds();
+    // Geometri + metin kutusu yerlesim motorunun ORTAK cozumleyicisinden: onizleme == PDF == olculen plan.
+    const DimensionGeometry g = resolveDimension(s, d);
+    if (!g.valid) return;
     p.setPen(QPen(QColor(0, 90, 160), lineWeightMm::dimension));
-    const QString label = valueText(d.value);
-    constexpr double kText = 3.2;
-    if (d.direction == DimensionDirection::Horizontal) {
-        const double y = pb.min.y - d.offset;
-        p.drawLine(QPointF(a.x(), a.y()), QPointF(a.x(), y - 1.5));
-        p.drawLine(QPointF(b.x(), b.y()), QPointF(b.x(), y - 1.5));
-        p.drawLine(QPointF(a.x(), y), QPointF(b.x(), y));
-        tick(p, QPointF(a.x(), y));
-        tick(p, QPointF(b.x(), y));
-        const double ty = y + 0.8 + d.textLevel * 3.4;
-        if (d.textLevel > 0) p.drawLine(QPointF((a.x() + b.x()) / 2, y), QPointF((a.x() + b.x()) / 2, ty));
-        drawText(p, QPointF((a.x() + b.x()) / 2, ty), label, kText, Qt::AlignHCenter | Qt::AlignBottom);
-    } else if (d.direction == DimensionDirection::Vertical) {
-        const double x = pb.max.x + d.offset;
-        p.drawLine(QPointF(a.x(), a.y()), QPointF(x + 1.5, a.y()));
-        p.drawLine(QPointF(b.x(), b.y()), QPointF(x + 1.5, b.y()));
-        p.drawLine(QPointF(x, a.y()), QPointF(x, b.y()));
-        tick(p, QPointF(x, a.y()));
-        tick(p, QPointF(x, b.y()));
-        if (d.textLevel > 0) {
-            const double lx = x + d.textLevel * 3.0;
-            p.drawLine(QPointF(x, (a.y() + b.y()) / 2), QPointF(lx, (a.y() + b.y()) / 2));
-            drawText(p, QPointF(lx + 2.0, (a.y() + b.y()) / 2), label, kText, Qt::AlignCenter, 90.0);
-        } else {
-            drawText(p, QPointF(x - 2.2, (a.y() + b.y()) / 2), label, kText, Qt::AlignCenter, 90.0);
-        }
-    } else {
-        const double dx = b.x() - a.x(), dy = b.y() - a.y();
-        const double len = std::hypot(dx, dy);
-        if (len < 1e-9) return;
-        double nx = -dy / len, ny = dx / len;
-        const Vec2 c = pb.centre();
-        if (nx * ((a.x() + b.x()) / 2 - c.x) + ny * ((a.y() + b.y()) / 2 - c.y) < 0) { nx = -nx; ny = -ny; }
-        const QPointF a2(a.x() + nx * d.offset, a.y() + ny * d.offset);
-        const QPointF b2(b.x() + nx * d.offset, b.y() + ny * d.offset);
-        p.drawLine(a, QPointF(a2.x() + nx * 1.5, a2.y() + ny * 1.5));
-        p.drawLine(b, QPointF(b2.x() + nx * 1.5, b2.y() + ny * 1.5));
-        p.drawLine(a2, b2);
-        tick(p, a2);
-        tick(p, b2);
-        double ang = std::atan2(dy, dx) * 180.0 / kPi;
-        if (ang > 90.0) ang -= 180.0;
-        if (ang <= -90.0) ang += 180.0;
-        drawText(p, QPointF((a2.x() + b2.x()) / 2 + nx * 2.2, (a2.y() + b2.y()) / 2 + ny * 2.2), label, kText,
-                 Qt::AlignCenter, ang);
-    }
+    for (const LineSeg& l : g.lines) p.drawLine(pt(l.a), pt(l.b));
+    p.drawLine(pt(g.tick1.a), pt(g.tick1.b));
+    p.drawLine(pt(g.tick2.a), pt(g.tick2.b));
+    drawText(p, pt(g.textCentre), valueText(d.value), g.textHeight, Qt::AlignCenter, g.textAngleDeg);
 }
 
 void drawMark(QPainter& p, const DrawingSheet& s, const MarkAnnotation& m) {
@@ -163,8 +127,8 @@ void drawMark(QPainter& p, const DrawingSheet& s, const MarkAnnotation& m) {
     if (!v) return;
     const QString label = qs(m.text);
     const double h = m.isAssembly ? 5.0 : 3.5;
-    const double w = textWidthMm(label, h, m.isAssembly) + 3.0;
-    const QRectF box(m.labelPos.x, m.labelPos.y, std::max(w, h + 3.0), h + 2.0);
+    const Bounds2 bb = markBox(m);   // yerlesim motoruyla AYNI kutu
+    const QRectF box(bb.min.x, bb.min.y, bb.width(), bb.height());
     const QPointF anchor = pt(v->toPaper(m.anchor));
     const QColor col = m.isAssembly ? QColor(170, 40, 40) : QColor(30, 110, 50);
     p.setPen(QPen(col, lineWeightMm::mark));
@@ -175,6 +139,30 @@ void drawMark(QPainter& p, const DrawingSheet& s, const MarkAnnotation& m) {
     p.setPen(QPen(col, m.isAssembly ? lineWeightMm::markAssembly : lineWeightMm::mark));
     p.drawRoundedRect(box, 1.0, 1.0);
     drawText(p, box.center(), label, h, Qt::AlignCenter, 0.0, m.isAssembly);
+}
+
+void drawTextAnnotation(QPainter& p, const DrawingSheet& s, const TextAnnotation& t) {
+    const TextGeometry g = resolveText(s, t);
+    QColor col = QColor(40, 40, 40);
+    if (t.kind == TextKind::StatusStamp) col = s.fabrication.draft ? QColor(190, 20, 20) : QColor(30, 110, 50);
+    else if (t.kind == TextKind::HoleCallout) col = QColor(120, 60, 0);
+    else if (t.kind == TextKind::ViewTitle) col = Qt::black;
+    if (g.hasLeader) {
+        p.setPen(QPen(col, lineWeightMm::mark));
+        p.drawLine(pt(g.leader.a), pt(g.leader.b));
+        p.setBrush(col);
+        p.drawEllipse(pt(g.leader.a), 0.5, 0.5);
+    }
+    if (t.kind == TextKind::StatusStamp && s.fabrication.draft) {
+        p.setPen(QPen(col, lineWeightMm::markAssembly));
+        p.setBrush(Qt::NoBrush);
+        const Bounds2 ab = g.box.aabb();
+        p.drawRect(QRectF(ab.min.x, ab.min.y, ab.width(), ab.height()));
+    }
+    p.setPen(QPen(col, 0.1));
+    for (std::size_t i = 0; i < t.lines.size() && i < g.lineCentres.size(); ++i)
+        drawText(p, pt(g.lineCentres[i]), qs(t.lines[i]), t.height, Qt::AlignLeft | Qt::AlignVCenter, 0.0,
+                 t.bold || t.kind == TextKind::ViewTitle);
 }
 
 } // namespace
@@ -223,14 +211,10 @@ void paintSheet(QPainter& painter, const DrawingSheet& sheet, const QRectF& targ
                          Qt::AlignLeft | Qt::AlignBottom);
             }
         }
-        const Bounds2 pb = v.paperBounds();
-        painter.setPen(QPen(Qt::black, 0.1));
-        drawText(painter, QPointF(pb.max.x, pb.max.y + 3.0),
-                 qs(v.label) + QStringLiteral("  ") + qs(sheet.titleBlock.scaleText), 3.0,
-                 Qt::AlignRight | Qt::AlignBottom);
     }
     for (const Dimension2D& d : sheet.dimensions) drawDimension(painter, sheet, d);
     for (const MarkAnnotation& m : sheet.marks) drawMark(painter, sheet, m);
+    for (const TextAnnotation& t : sheet.texts) drawTextAnnotation(painter, sheet, t);
     painter.restore();
 }
 

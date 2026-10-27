@@ -37,6 +37,10 @@ inline constexpr double titleInner = 0.10;
 // Sayfayi `target` dikdortgenine (en-boy korunarak, ortalanmis) cizer. Birim: sayfa mm.
 void paintSheet(QPainter& painter, const DrawingSheet& sheet, const QRectF& target);
 
+// Gercek Qt metin genisligi (kagit mm, buyuk harf yuksekligi `capHeightMm`). Yerlesim motorunun
+// `textWidthEstimate` degerinin bunu ASMADIGI GUI testinde dogrulanir.
+double measureTextWidthMm(const QString& text, double capHeightMm, bool bold = false);
+
 QImage renderSheetImage(const DrawingSheet& sheet, int widthPixels);
 
 // A-serisi yatay PDF (kagit boyutu = sheet.format). Basarisizlikta false + error.

@@ -1166,6 +1166,14 @@ if(BUILD_TESTING)
         target_link_libraries(model_maker_drawing_gui_test PRIVATE model_maker_core Qt6::Widgets)
         add_test(NAME model_maker_drawing_gui_test COMMAND model_maker_drawing_gui_test)
 
+        # DRAWING GUI (P2A): ayni nihai plan onizleme+PDF, Qt metin genisligi <= yerlesim tahmini, vektor PDF, ekran goruntusu.
+        add_executable(model_maker_drawing_fab_gui_test
+            tests/drawing_fab_gui_test.cpp
+            src/drawing_sheet_widget.cpp
+            include/model_maker/drawing_sheet_widget.hpp)
+        target_include_directories(model_maker_drawing_fab_gui_test PRIVATE include tests)
+        target_link_libraries(model_maker_drawing_fab_gui_test PRIVATE model_maker_core Qt6::Widgets)
+        add_test(NAME model_maker_drawing_fab_gui_test COMMAND model_maker_drawing_fab_gui_test)
         set_tests_properties(model_maker_component_dialog_widget_test PROPERTIES
             ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
     endif()
