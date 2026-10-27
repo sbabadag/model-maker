@@ -131,13 +131,13 @@ int main() {
 
     // --- 4) Ayrik parcalar -> guvenli fallback (kati uretilmez) --------------
     {
-        TopoDS_Shape far = BRepPrimAPI_MakeBox(gp_Pnt(1000, 1000, 1000), 50, 50, 50).Solid();
-        auto juncts = findWeldJunctions(far, col, 0.5);
+        TopoDS_Shape farShape = BRepPrimAPI_MakeBox(gp_Pnt(1000, 1000, 1000), 50, 50, 50).Solid();
+        auto juncts = findWeldJunctions(farShape, col, 0.5);
         check(juncts.empty(), "ayrik parcalar: temas kenari yok");
         Weld w;
         w.type = WeldType::Fillet;
         std::string reason;
-        auto solids = buildWeldSolids(w, col, far, 5.0, reason);
+        auto solids = buildWeldSolids(w, col, farShape, 5.0, reason);
         check(solids.empty(), "ayrik parcalar: kati uretilmez");
         check(!reason.empty(), "ayrik parcalar: neden raporlanir");
         std::printf("  ayrik neden='%s'\n", reason.c_str());

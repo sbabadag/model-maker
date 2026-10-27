@@ -60,15 +60,15 @@ int main() {
     {
         ComponentRegistry reg;
         registerBuiltInComponents(reg);
-        check(reg.typeCount() == 3, "3 yerlesik component (end plate + fin plate + 146)");
+        check(reg.typeCount() == 4, "4 yerlesik component (end plate + fin plate + 146 + haunch 40)");
 
         const ComponentType* t = reg.findType(L"tekla_shear_plate_146");
         check(t != nullptr, "146 tipi bulundu");
         if (t) {
             check(t->displayName == L"Shear Plate Simple (146)", "146 displayName");
             check(t->schemaVersion == 1, "146 schemaVersion 1");
-            check(t->params.size() == 56,
-                  "146 semasi 56 parametre (Bolts sekmesi alanlari artik motor parametresi)");
+            check(t->params.size() == 58,
+                  "146 semasi 58 parametre (Bolts sekmesi alanlari artik motor parametresi)");
         }
     }
 
@@ -273,7 +273,7 @@ int main() {
         std::size_t engineSpecs = 0;
         for (const auto& s : def.specs)
             if (!s.documentedOnly) ++engineSpecs;
-        check(engineSpecs == 56, "146 dialog motor specs = 56 parametre");
+        check(engineSpecs == 58, "146 dialog motor specs = 58 parametre");
         check(def.specs.size() > engineSpecs, "146 dialog gri Tekla alanlari var");
 
         const auto hit = hitTestDiagramHotspot(def.schema, DiagramPoint{46.0, 120.0});
