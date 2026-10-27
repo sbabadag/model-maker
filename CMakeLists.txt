@@ -62,7 +62,10 @@ add_library(model_maker_core
     src/bridge_native_bind.cpp
     src/bridge_nc146.cpp
     src/user_catalog.cpp
-    src/component_presets.cpp)
+    src/component_presets.cpp
+    src/marking.cpp
+    src/drawing.cpp
+    src/drawing_builder.cpp)
 target_include_directories(model_maker_core PUBLIC include third_party)
 target_compile_options(model_maker_core PRIVATE -Wall -Wextra -Wpedantic)
 
@@ -514,6 +517,18 @@ if(BUILD_TESTING)
     target_link_libraries(model_maker_component_presets_test PRIVATE model_maker_core)
     target_compile_options(model_maker_component_presets_test PRIVATE -Wall -Wextra -Wpedantic)
     add_test(NAME model_maker_component_presets_test COMMAND model_maker_component_presets_test)
+
+    # NUMBERING / MARKING CORE (P1): P1/P2.. A1/A2.. kullaniciya gorunen mark, EntityId'den ayri.
+    add_executable(model_maker_marking_test tests/marking_test.cpp)
+    target_link_libraries(model_maker_marking_test PRIVATE model_maker_core)
+    target_compile_options(model_maker_marking_test PRIVATE -Wall -Wextra -Wpedantic)
+    add_test(NAME model_maker_marking_test COMMAND model_maker_marking_test)
+
+    # DRAWING FOUNDATION (P1): Document -> mark -> Front/Top/Side -> A3 yerlesim -> mark/olcu -> JSON.
+    add_executable(model_maker_drawing_test tests/drawing_test.cpp)
+    target_link_libraries(model_maker_drawing_test PRIVATE model_maker_core)
+    target_compile_options(model_maker_drawing_test PRIVATE -Wall -Wextra -Wpedantic)
+    add_test(NAME model_maker_drawing_test COMMAND model_maker_drawing_test)
 
     # KARARLI VARLIK KIMLIGI (EntityId): vektor indeksi kalici kimlik DEGIL;
     # kimlik ekleme/silme/degistirme/undo/redo boyunca DOGRU varlikla eslesir,

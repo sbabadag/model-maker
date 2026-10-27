@@ -1,0 +1,33 @@
+# P1 — Drawing Foundation, Numbering, Minimal View-to-Sheet Pipeline
+
+Durum: ilk calisan cekirdek (OCCT'siz, Qt'siz, Linux ctest'te kosar). GUI yok.
+
+## Katmanlar
+
+| Dosya | Rol |
+|---|---|
+| `include/model_maker/marking.hpp`, `src/marking.cpp` | Part/Assembly **mark** (P1.., A1..). EntityId'den ayri, imza ile gruplama, JSON kalicilik |
+| `include/model_maker/drawing.hpp`, `src/drawing.cpp` | `mm::drawing` veri modeli: DrawingDocument / DrawingSheet / DrawingView / MarkAnnotation / Dimension2D / TitleBlock + JSON |
+| `include/model_maker/drawing_builder.hpp`, `src/drawing_builder.cpp` | Document -> mark -> Front/Top/Side -> A3 yerlesim -> etiket + olcu |
+| `include/model_maker/utf8.hpp` | wstring<->UTF-8 (component_presets, marking ortak) |
+
+## Sozlesmeler
+
+- **Mark != EntityId.** Mark bir *imzaya* kalici baglidir; imza = profil/malzeme/ad/yuzey islemi/uzunluk + sirali kenar-uzunluk parmak izi (donusumden bagimsiz). Ayni imza ayni numara; numara baska imzaya hic verilmez. Assembly imzasi = ana parca mark + uye mark coklu kumesi + uyeler arasi mesafe dagilimi.
+- **Iki uzay.** View-yerel koordinat (model mm, olceksiz, min=(0,0)) geometriye bagli her seyi tutar (segment, olcu noktasi, mark ankraji). Kagit koordinati = `origin + scale * yerel`. Modelin dunya konumu yalniz `projectionOffset`'te kalir; modeli otelemek kagit uzayi sonucunu degistirmez (test B).
+- **Projeksiyon** `projectToView`: Front (x,z), Top (x,y), Side (y,z); Z her elevation'da yukari. `Camera::standardViewRotation` kullanilmadi (bkz. asagi).
+- **Yerlesim.** Standart olcek listesi (1:1..1:1000); A3 cizim alani = cerceve - title block seridi - padding. 3. aci (varsayilan) veya 1. aci. Sigmazsa standart olmayan olcek (`scaleIsStandard=false`).
+- **Olculer** gercek geometriden: `MemberLength` = ana parcanin properties ekseni (gorunus duzleminde ise), `OverallWidth/Height` = gorunusun sinir kutusu. `Dimension2D::measured()` noktalardan yeniden olcer; testler `value == measured()` ve modelden bagimsiz hesapla karsilastirir.
+
+## Genisleme noktalari
+
+`DrawingKind` (tek parca / montaj), `ViewKind` (Section/Detail/Iso eklenir), `LineStyle` (hidden-line iyilesir), `DimensionRole` (bolt/weld/BOM), `TitleBlock::revisions`, JSON `version`.
+
+## Bilinen sinirlar
+
+- Hidden line **deneysel**: yalniz arka-yuz testi, oklüzyon yok; I profilde hatali olabilir. Varsayilan kapali.
+- Girdi WireframeModel kenarlaridir (OCC B-Rep'ten HLR yok). Bolt/weld/BOM/section/detail yok.
+- Drawable = nokta/konstruksiyon olmayan, kenarli model; bolt gibi gorunum modelleri de parca sayilir (ayirt etme kurali henuz yok).
+- Uye boyu yalniz properties'te eksen varsa ve eksen gorunus duzlemindeyse olculur.
+- Document'a kaydetme (MMW8) ve GUI (Paper Space penceresi, PDF/DXF cikti) yok; `DrawingDocument::serialize()` ayri JSON verir.
+- **Camera bulgusu:** `Camera::setView(Front)` +Z'yi ekranda *asagi*, `Right` +Z'yi *yatay* gosteriyor (`Camera::project` ile olculdu). Eski `orthoProject` (assembly.hpp) ayni rotasyondan beslendigi icin elevation cizimi icin kullanilamaz. 3B kameraya dokunulmadi; kasitli mi, hata mi ayrica bakilmali.
