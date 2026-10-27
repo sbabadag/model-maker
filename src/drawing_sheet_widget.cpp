@@ -20,6 +20,7 @@
 #include <QPdfWriter>
 #include <QPushButton>
 #include <QSaveFile>
+#include <QSignalBlocker>
 #include <QVBoxLayout>
 #include <QWheelEvent>
 
@@ -249,6 +250,41 @@ bool exportSheetPdf(const DrawingSheet& sheet, const QString& path, QString* err
     return true;
 }
 
+bool exportDrawingSetPdf(const DrawingDocument& document, const QString& path, QString* error) {
+    if (document.sheets().empty()) {
+        if (error) *error = QStringLiteral("Cizim seti bos");
+        return false;
+    }
+    QPdfWriter pdf(path);
+    pdf.setResolution(300);
+    pdf.setCreator(QStringLiteral("Model Maker"));
+    pdf.setTitle(qs(document.sheets().front().name));
+    QPainter p;
+    bool begun = false;
+    for (std::size_t i = 0; i < document.sheets().size(); ++i) {
+        const DrawingSheet& sheet = document.sheets()[i];
+        const double w = sheet.format.width;
+        const double h = sheet.format.height;
+        const QPageLayout layout(
+            QPageSize(QSizeF(std::min(w, h), std::max(w, h)), QPageSize::Millimeter),
+            QPageLayout::Landscape, QMarginsF(0, 0, 0, 0));
+        if (i > 0) {
+            pdf.setPageLayout(layout);
+            pdf.newPage();
+        } else {
+            pdf.setPageLayout(layout);
+            if (!p.begin(&pdf)) {
+                if (error) *error = QStringLiteral("PDF dosyasi acilamadi: ") + path;
+                return false;
+            }
+            begun = true;
+        }
+        paintSheet(p, sheet, QRectF(0, 0, pdf.width(), pdf.height()));
+    }
+    if (begun) p.end();
+    return true;
+}
+
 // ---------------------------------------------------------------------------------------
 
 DrawingSheetWidget::DrawingSheetWidget(QWidget* parent) : QWidget(parent) {
@@ -321,8 +357,8 @@ void DrawingSheetWidget::resizeEvent(QResizeEvent*) { update(); }
 // ---------------------------------------------------------------------------------------
 
 DrawingPreviewDialog::DrawingPreviewDialog(std::vector<SubjectChoice> subjects, int defaultSubject,
-                                           Builder builder, QWidget* parent)
-    : QDialog(parent), subjects_(std::move(subjects)), builder_(std::move(builder)) {
+                                           Builder builder, QWidget* parent, SetBuilder setBuilder)
+    : QDialog(parent), subjects_(std::move(subjects)), builder_(std::move(builder)), setBuilder_(std::move(setBuilder)) {
     setWindowTitle(QStringLiteral("Se\u00e7imden \u00c7izim"));
     setObjectName(QStringLiteral("drawingPreviewDialog"));
     resize(1100, 780);
@@ -337,6 +373,16 @@ DrawingPreviewDialog::DrawingPreviewDialog(std::vector<SubjectChoice> subjects, 
     sizeCombo_->setObjectName(QStringLiteral("drawingSize"));
     for (const char* n : {"A4", "A3", "A2", "A1", "A0"}) sizeCombo_->addItem(QString::fromLatin1(n));
     sizeCombo_->setCurrentText(QStringLiteral("A3"));
+    if (setBuilder_) {
+        // P2C varsayilanlari: otomatik kagit + sigmazsa bagli coklu pafta.
+        autoSizeCheck_ = new QCheckBox(QStringLiteral("Otomatik kagit (A3-A0)"), this);
+        autoSizeCheck_->setObjectName(QStringLiteral("drawingAutoSize"));
+        autoSizeCheck_->setChecked(true);
+        sizeCombo_->setEnabled(false);
+        multiSheetCheck_ = new QCheckBox(QStringLiteral("Sigmazsa bagli paftalar"), this);
+        multiSheetCheck_->setObjectName(QStringLiteral("drawingMultiSheet"));
+        multiSheetCheck_->setChecked(true);
+    }
     projectionCombo_ = new QComboBox(this);
     projectionCombo_->setObjectName(QStringLiteral("drawingProjection"));
     projectionCombo_->addItem(QStringLiteral("3. a\u00e7\u0131 (\u00dcst \u00fcstte, Yan sa\u011fda)"));
@@ -354,6 +400,14 @@ DrawingPreviewDialog::DrawingPreviewDialog(std::vector<SubjectChoice> subjects, 
     opts->addWidget(subjectCombo_, 1);
     opts->addWidget(new QLabel(QStringLiteral("Ka\u011f\u0131t:"), this));
     opts->addWidget(sizeCombo_);
+    if (setBuilder_) {
+        opts->addWidget(autoSizeCheck_);
+        opts->addWidget(multiSheetCheck_);
+        sheetCombo_ = new QComboBox(this);
+        sheetCombo_->setObjectName(QStringLiteral("drawingSheetPage"));
+        sheetCombo_->setMinimumWidth(180);
+        opts->addWidget(sheetCombo_);
+    }
     opts->addWidget(projectionCombo_);
     opts->addWidget(frontCheck_);
     opts->addWidget(topCheck_);
@@ -392,12 +446,26 @@ DrawingPreviewDialog::DrawingPreviewDialog(std::vector<SubjectChoice> subjects, 
     connect(projectionCombo_, &QComboBox::currentIndexChanged, this, changed);
     for (QCheckBox* c : {frontCheck_, topCheck_, sideCheck_, hiddenCheck_})
         connect(c, &QCheckBox::toggled, this, changed);
+    if (setBuilder_) {
+        connect(autoSizeCheck_, &QCheckBox::toggled, this, [this](bool on) {
+            sizeCombo_->setEnabled(!on);
+            rebuild();
+        });
+        connect(multiSheetCheck_, &QCheckBox::toggled, this, changed);
+        connect(sheetCombo_, &QComboBox::currentIndexChanged, this, [this](int i) { showSheet(i); });
+    }
     rebuild();
 }
 
 void DrawingPreviewDialog::rebuild() {
     haveSheet_ = false;
+    haveDoc_ = false;
+    currentSheet_ = 0;
     view_->setSheet(nullptr);
+    if (sheetCombo_) {
+        const QSignalBlocker block(sheetCombo_);
+        sheetCombo_->clear();
+    }
     status_->setStyleSheet(QStringLiteral("color:#a73c3c"));
     const int idx = subjectCombo_->currentIndex();
     if (idx < 0 || idx >= static_cast<int>(subjects_.size())) {
@@ -418,6 +486,49 @@ void DrawingPreviewDialog::rebuild() {
         status_->setText(QStringLiteral("En az bir g\u00f6r\u00fcn\u00fc\u015f se\u00e7in"));
         return;
     }
+    if (setBuilder_) {
+        DrawingPreferences p = prefs_;
+        p.autoSheetSize = autoSizeCheck_ ? autoSizeCheck_->isChecked() : true;
+        if (!p.autoSheetSize) p.sheetSize = o.sheet;
+        p.autoMultiSheetFallback = multiSheetCheck_ ? multiSheetCheck_->isChecked() : true;
+        p.autoFirst = SheetSize::A3;
+        p.autoMax = SheetSize::A0;
+        prefs_ = p;
+        const DrawingSetResult r = setBuilder_(subjects_[static_cast<std::size_t>(idx)].id, o, p);
+        if (!r.ok) {
+            status_->setStyleSheet(QStringLiteral("color:#a73c3c"));
+            QString msg = QStringLiteral("\u00c7izim \u00fcretilemedi: ") + qs(r.error);
+            if (!r.issues.empty()) msg += QStringLiteral(" (%1 sorun)").arg(r.issues.size());
+            status_->setText(msg);
+            return;
+        }
+        doc_ = r.document;
+        haveDoc_ = true;
+        {
+            const QSignalBlocker block(sheetCombo_);
+            for (std::size_t i = 0; i < doc_.sheets().size(); ++i) {
+                const DrawingSheet& s = doc_.sheets()[i];
+                sheetCombo_->addItem(QStringLiteral("%1/%2  %3  %4")
+                                         .arg(i + 1)
+                                         .arg(doc_.sheets().size())
+                                         .arg(qs(s.sheetNumber))
+                                         .arg(QString::fromLatin1(sheetSizeName(s.format.size))));
+            }
+            sheetCombo_->setCurrentIndex(0);
+        }
+        showSheet(0);
+        status_->setStyleSheet(r.ready ? QStringLiteral("color:#3f7a4f")
+                                       : (r.layoutValid ? QStringLiteral("color:#8a6b2a")
+                                                        : QStringLiteral("color:#a73c3c")));
+        QString text = r.ready ? QStringLiteral("HAZIR")
+                               : (r.layoutValid ? QStringLiteral("TASLAK / EKSIK IMALAT VERISI")
+                                                : QStringLiteral("NO_FIT"));
+        text += QStringLiteral(" \u2014 %1 pafta (%2)").arg(doc_.sheets().size()).arg(
+            r.singleSheet ? QStringLiteral("tek pafta") : QStringLiteral("bagli coklu pafta"));
+        if (!r.issues.empty()) text += QStringLiteral(" \u2014 %1 sorun").arg(r.issues.size());
+        status_->setText(text);
+        return;
+    }
     const BuildResult r = builder_(subjects_[static_cast<std::size_t>(idx)].id, o);
     if (!r.ok) {
         status_->setText(QStringLiteral("\u00c7izim \u00fcretilemedi: ") + qs(r.error));
@@ -436,7 +547,46 @@ void DrawingPreviewDialog::rebuild() {
                          .arg(sheet_.dimensions.size()));
 }
 
+const DrawingSheet* DrawingPreviewDialog::currentSheet() const noexcept {
+    if (haveDoc_ && currentSheet_ >= 0 && currentSheet_ < static_cast<int>(doc_.sheets().size()))
+        return &doc_.sheets()[static_cast<std::size_t>(currentSheet_)];
+    return haveSheet_ ? &sheet_ : nullptr;
+}
+
+void DrawingPreviewDialog::showSheet(int index) {
+    if (!haveDoc_ || index < 0 || index >= static_cast<int>(doc_.sheets().size())) return;
+    currentSheet_ = index;
+    const DrawingSheet& s = doc_.sheets()[static_cast<std::size_t>(index)];
+    view_->setSheet(&s);
+    view_->fitToWindow();
+    if (sheetCombo_ && sheetCombo_->currentIndex() != index) {
+        const QSignalBlocker block(sheetCombo_);
+        sheetCombo_->setCurrentIndex(index);
+    }
+    status_->setText(QStringLiteral("Pafta %1/%2  %3  %4  \u2014 %5 g\u00f6r\u00fcn\u00fc\u015f, %6 \u00f6l\u00e7\u00fc, %7")
+                         .arg(index + 1)
+                         .arg(doc_.sheets().size())
+                         .arg(qs(s.sheetNumber))
+                         .arg(QString::fromLatin1(sheetSizeName(s.format.size)))
+                         .arg(s.views.size())
+                         .arg(s.dimensions.size())
+                         .arg(s.layout.ok ? QStringLiteral("yerle\u015fti") : QStringLiteral("NO_FIT")));
+}
+
 void DrawingPreviewDialog::onExportPdf() {
+    if (haveDoc_) {
+        const QString path = QFileDialog::getSaveFileName(this, QStringLiteral("PDF'e aktar (t\u00fcm paftalar)"),
+                                                          qs(doc_.sheets().front().sheetNumber) + QStringLiteral(".pdf"),
+                                                          QStringLiteral("PDF (*.pdf)"));
+        if (path.isEmpty()) return;
+        QString err;
+        if (!exportDrawingSetPdf(doc_, path, &err)) {
+            QMessageBox::warning(this, QStringLiteral("PDF"), err);
+            return;
+        }
+        status_->setText(QStringLiteral("PDF yaz\u0131ld\u0131 (%1 pafta): ").arg(doc_.sheets().size()) + path);
+        return;
+    }
     if (!haveSheet_) return;
     const QString path = QFileDialog::getSaveFileName(this, QStringLiteral("PDF'e aktar"),
                                                       qs(sheet_.name) + QStringLiteral(".pdf"),
@@ -448,15 +598,20 @@ void DrawingPreviewDialog::onExportPdf() {
 }
 
 void DrawingPreviewDialog::onSaveJson() {
-    if (!haveSheet_) return;
+    if (!haveDoc_ && !haveSheet_) return;
     const QString path = QFileDialog::getSaveFileName(this, QStringLiteral("\u00c7izimi JSON olarak kaydet"),
-                                                      qs(sheet_.name) + QStringLiteral(".drawing.json"),
+                                                      qs(haveDoc_ ? doc_.sheets().front().sheetNumber : sheet_.name) +
+                                                          QStringLiteral(".drawing.json"),
                                                       QStringLiteral("JSON (*.json)"));
     if (path.isEmpty()) return;
-    DrawingDocument doc;
-    doc.addSheet(sheet_);
+    const std::string payload = [this]() {
+        if (haveDoc_) return doc_.serialize();
+        DrawingDocument doc;
+        doc.addSheet(sheet_);
+        return doc.serialize();
+    }();
     QSaveFile file(path);
-    if (!file.open(QIODevice::WriteOnly) || file.write(doc.serialize().c_str()) < 0 || !file.commit()) {
+    if (!file.open(QIODevice::WriteOnly) || file.write(payload.c_str()) < 0 || !file.commit()) {
         QMessageBox::warning(this, QStringLiteral("JSON"), QStringLiteral("Yaz\u0131lamad\u0131: ") + path);
         return;
     }
@@ -499,7 +654,10 @@ bool showDrawingDialog(QWidget* parent, const Document& doc, const std::vector<s
     DrawingPreviewDialog dlg(
         std::move(subjects), def,
         [&doc, registry](EntityId subject, const DrawingOptions& o) { return buildSheet(doc, *registry, subject, o); },
-        parent);
+        parent,
+        [&doc, registry](EntityId subject, const DrawingOptions& o, const DrawingPreferences& p) {
+            return buildDrawingSet(doc, *registry, subject, o, p);
+        });
     dlg.exec();
     return true;
 }

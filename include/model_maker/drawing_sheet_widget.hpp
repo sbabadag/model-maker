@@ -5,6 +5,7 @@
 // Qt Widgets/Gui yeterli (OCCT yok) -> Linux offscreen testinde render edilip dogrulanir.
 
 #include "model_maker/drawing_builder.hpp"
+#include "model_maker/drawing_set.hpp"
 
 #include <QDialog>
 #include <QImage>
@@ -46,6 +47,9 @@ QImage renderSheetImage(const DrawingSheet& sheet, int widthPixels);
 // A-serisi yatay PDF (kagit boyutu = sheet.format). Basarisizlikta false + error.
 bool exportSheetPdf(const DrawingSheet& sheet, const QString& path, QString* error = nullptr);
 
+// P2C: TUM paftalari tek vektor PDF'e yazar (her pafta kendi boyutunda bir sayfa).
+bool exportDrawingSetPdf(const DrawingDocument& document, const QString& path, QString* error = nullptr);
+
 class DrawingSheetWidget : public QWidget {
     Q_OBJECT
 public:
@@ -82,23 +86,37 @@ class DrawingPreviewDialog : public QDialog {
     Q_OBJECT
 public:
     using Builder = std::function<BuildResult(EntityId subject, const DrawingOptions&)>;
+    // P2C: akilli pafta yoneticisi (tek pafta -> gerekirse bagli coklu pafta + tercihler).
+    using SetBuilder = std::function<DrawingSetResult(EntityId subject, const DrawingOptions&,
+                                                      const DrawingPreferences&)>;
     DrawingPreviewDialog(std::vector<SubjectChoice> subjects, int defaultSubject, Builder builder,
-                         QWidget* parent = nullptr);
-    // Son basarili cizim; yoksa nullptr.
-    const DrawingSheet* currentSheet() const noexcept { return haveSheet_ ? &sheet_ : nullptr; }
+                         QWidget* parent = nullptr, SetBuilder setBuilder = {});
+    // Son basarili cizim; yoksa nullptr. (Set modunda: o an gosterilen pafta.)
+    const DrawingSheet* currentSheet() const noexcept;
+    // Set modunda tum paftalar; yoksa nullptr.
+    const DrawingDocument* currentDocument() const noexcept { return haveDoc_ ? &doc_ : nullptr; }
 
 private:
     void rebuild();
     void onExportPdf();
     void onSaveJson();
+    void showSheet(int index);
 
     std::vector<SubjectChoice> subjects_;
     Builder builder_;
+    SetBuilder setBuilder_;
     DrawingSheet sheet_;
     bool haveSheet_{false};
+    DrawingDocument doc_;
+    bool haveDoc_{false};
+    DrawingPreferences prefs_{};
+    int currentSheet_{0};
     DrawingSheetWidget* view_{};
     QComboBox* subjectCombo_{};
     QComboBox* sizeCombo_{};
+    QComboBox* sheetCombo_{};
+    QCheckBox* autoSizeCheck_{};
+    QCheckBox* multiSheetCheck_{};
     QComboBox* projectionCombo_{};
     QCheckBox* frontCheck_{};
     QCheckBox* topCheck_{};

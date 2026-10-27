@@ -10,7 +10,7 @@ namespace mm::drawing {
 namespace {
 
 using json = nlohmann::json;
-constexpr int kSchemaVersion = 2;   // v1 (P1) okunabilir: yeni alanlar varsayilan
+constexpr int kSchemaVersion = 3;   // v3: P2C coklu pafta seti + kullanici tercihleri; v1/v2 okunabilir
 
 // --- enum <-> string (kalici ad; sayisal deger degil => yeniden siralamaya dayanikli) ---
 const char* name(DrawingKind k) { return k == DrawingKind::Assembly ? "assembly" : "singlePart"; }
@@ -68,6 +68,24 @@ bool parse(const std::string& s, ViewKind& o) {
 bool parse(const std::string& s, LineStyle& o) {
     if (s == "visible") { o = LineStyle::Visible; return true; }
     if (s == "hidden") { o = LineStyle::Hidden; return true; }
+    return false;
+}
+const char* name(SheetRole r) {
+    switch (r) {
+    case SheetRole::Primary: return "primary";
+    case SheetRole::Continuation: return "continuation";
+    case SheetRole::DetailSheet: return "detail";
+    }
+    return "primary";
+}
+bool parseRole(const std::string& s, SheetRole& o) {
+    for (SheetRole r : {SheetRole::Primary, SheetRole::Continuation, SheetRole::DetailSheet})
+        if (s == name(r)) { o = r; return true; }
+    return false;
+}
+const char* name(DrawingMode m) { return m == DrawingMode::Single ? "single" : "single"; }
+bool parseMode(const std::string& s, DrawingMode& o) {
+    if (s == "single") { o = DrawingMode::Single; return true; }
     return false;
 }
 bool parse(const std::string& s, ProjectionMethod& o) {
@@ -327,6 +345,13 @@ DrawingSheet& DrawingDocument::addSheet(DrawingSheet sheet) {
     return sheets_.back();
 }
 
+const DrawingSheet* DrawingDocument::primarySheet() const noexcept {
+    if (setInfo_.present && setInfo_.primarySheetId != 0)
+        for (const DrawingSheet& s : sheets_)
+            if (s.id == setInfo_.primarySheetId) return &s;
+    return sheets_.empty() ? nullptr : &sheets_.front();
+}
+
 std::string DrawingDocument::serialize() const {
     json sheets = json::array();
     for (const DrawingSheet& s : sheets_) {
@@ -371,6 +396,10 @@ std::string DrawingDocument::serialize() const {
                     {"finalSheet", sheetSizeName(s.layout.finalSheet)},
                     {"scaleDenominator", s.layout.scaleDenominator}, {"attempts", s.layout.attempts},
                     {"escalations", s.layout.escalations}, {"issues", issues}};
+        json refs = json::array();
+        for (const SheetReference& r : s.references)
+            refs.push_back({{"targetSheetId", r.targetSheetId}, {"targetViewId", r.targetViewId},
+                            {"targetNumber", r.targetNumber}, {"label", r.label}, {"sourceEntity", r.sourceEntity}});
         sheets.push_back(
             {{"id", s.id}, {"name", s.name}, {"size", sheetSizeName(s.format.size)},
              {"margin", s.format.margin}, {"kind", name(s.kind)},
@@ -378,9 +407,25 @@ std::string DrawingDocument::serialize() const {
              {"scaleIsStandard", s.scaleIsStandard}, {"titleBlock", titleJson(s.titleBlock)},
              {"views", views}, {"marks", marks}, {"dimensions", dims}, {"texts", texts},
              {"fabrication", fab}, {"layoutConfig", lcj}, {"layoutReport", lay},
-             {"documentRevision", s.documentRevision}, {"nextId", s.nextId}});
+             {"documentRevision", s.documentRevision}, {"nextId", s.nextId},
+             {"role", name(s.role)}, {"parentSheetId", s.parentSheetId},
+             {"sheetNumber", s.sheetNumber}, {"sheetIndex", s.sheetIndex}, {"references", refs}});
     }
-    json root = {{"version", kSchemaVersion}, {"nextSheetId", nextSheetId_}, {"sheets", sheets}};
+    const DrawingPreferences& pr = preferences_;
+    json prefs = {{"sheetSize", pr.autoSheetSize ? "auto" : sheetSizeName(pr.sheetSize)},
+                  {"drawingMode", name(pr.mode)},
+                  {"autoMultiSheetFallback", pr.autoMultiSheetFallback},
+                  {"autoFirst", sheetSizeName(pr.autoFirst)},
+                  {"autoMax", sheetSizeName(pr.autoMax)}};
+    json index = json::array();
+    for (const SheetIndexEntry& e : setInfo_.index)
+        index.push_back({{"sheetId", e.sheetId}, {"number", e.number}, {"title", e.title}, {"role", name(e.role)}});
+    json set = {{"present", setInfo_.present}, {"id", setInfo_.id},
+                {"primarySheetId", setInfo_.primarySheetId}, {"multiSheet", setInfo_.multiSheet},
+                {"layoutValid", setInfo_.layoutValid}, {"ready", setInfo_.ready},
+                {"issues", setInfo_.issues}, {"index", index}};
+    json root = {{"version", kSchemaVersion}, {"nextSheetId", nextSheetId_},
+                 {"preferences", prefs}, {"drawingSet", set}, {"sheets", sheets}};
     return root.dump(2);
 }
 
@@ -389,12 +434,57 @@ bool DrawingDocument::deserialize(const std::string& text, DrawingDocument& out,
     try {
         const json root = json::parse(text);
         const int ver = root.is_object() ? root.value("version", 0) : 0;
-        if (ver != 1 && ver != kSchemaVersion) {
+        if (ver < 1 || ver > kSchemaVersion) {
             error = "cizim kaydi: surum tanimsiz/desteklenmiyor";
             return false;
         }
         DrawingDocument doc;
         doc.nextSheetId_ = root.at("nextSheetId").get<ElementId>();
+        if (root.contains("preferences")) {
+            const json& jp = root.at("preferences");
+            DrawingPreferences& p = doc.preferences_;
+            const std::string sz = jp.value("sheetSize", std::string("auto"));
+            if (sz == "auto") p.autoSheetSize = true;
+            else {
+                p.autoSheetSize = false;
+                if (!parseSize(sz, p.sheetSize)) {
+                    error = "cizim kaydi: bilinmeyen tercih kagit boyutu";
+                    return false;
+                }
+            }
+            if (!parseMode(jp.value("drawingMode", std::string("single")), p.mode)) {
+                error = "cizim kaydi: bilinmeyen cizim modu";
+                return false;
+            }
+            p.autoMultiSheetFallback = jp.value("autoMultiSheetFallback", true);
+            if (!parseSize(jp.value("autoFirst", std::string("A3")), p.autoFirst) ||
+                !parseSize(jp.value("autoMax", std::string("A0")), p.autoMax)) {
+                error = "cizim kaydi: bilinmeyen otomatik kagit araligi";
+                return false;
+            }
+        }
+        if (root.contains("drawingSet")) {
+            const json& js = root.at("drawingSet");
+            DrawingSetInfo& si = doc.setInfo_;
+            si.present = js.value("present", false);
+            si.id = js.value("id", std::string{});
+            si.primarySheetId = js.value("primarySheetId", ElementId{0});
+            si.multiSheet = js.value("multiSheet", false);
+            si.layoutValid = js.value("layoutValid", false);
+            si.ready = js.value("ready", false);
+            si.issues = js.value("issues", std::vector<std::string>{});
+            for (const json& je : js.value("index", json::array())) {
+                SheetIndexEntry e;
+                e.sheetId = je.at("sheetId").get<ElementId>();
+                e.number = je.at("number").get<std::string>();
+                e.title = je.at("title").get<std::string>();
+                if (!parseRole(je.value("role", std::string("continuation")), e.role)) {
+                    error = "cizim kaydi: bilinmeyen pafta rolu";
+                    return false;
+                }
+                si.index.push_back(std::move(e));
+            }
+        }
         for (const json& js : root.at("sheets")) {
             DrawingSheet s;
             s.id = js.at("id").get<ElementId>();
@@ -533,6 +623,24 @@ bool DrawingDocument::deserialize(const std::string& text, DrawingDocument& out,
             }
             s.documentRevision = js.value("documentRevision", std::uint64_t{0});
             s.nextId = js.at("nextId").get<ElementId>();
+            if (js.contains("role")) {
+                if (!parseRole(js.at("role").get<std::string>(), s.role)) {
+                    error = "cizim kaydi: bilinmeyen pafta rolu";
+                    return false;
+                }
+                s.parentSheetId = js.value("parentSheetId", ElementId{0});
+                s.sheetNumber = js.value("sheetNumber", std::string{});
+                s.sheetIndex = js.value("sheetIndex", 1);
+                for (const json& jr : js.value("references", json::array())) {
+                    SheetReference r;
+                    r.targetSheetId = jr.at("targetSheetId").get<ElementId>();
+                    r.targetViewId = jr.value("targetViewId", ElementId{0});
+                    r.targetNumber = jr.value("targetNumber", std::string{});
+                    r.label = jr.value("label", std::string{});
+                    r.sourceEntity = jr.value("sourceEntity", kInvalidEntityId);
+                    s.references.push_back(std::move(r));
+                }
+            }
             doc.sheets_.push_back(std::move(s));
         }
         out = std::move(doc);

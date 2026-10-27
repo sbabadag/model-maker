@@ -39,6 +39,8 @@ enum class ViewKind { Front, Top, Side, Detail };   // Detail: levha yuzu detay 
 enum class LineStyle { Visible, Hidden };
 enum class ProjectionMethod { ThirdAngle, FirstAngle };
 enum class SheetSize { A4, A3, A2, A1, A0 };
+enum class SheetRole { Primary, Continuation, DetailSheet };   // P2C: coklu pafta seti
+enum class DrawingMode { Single };                              // P2C: varsayilan tek pafta modu
 enum class DimensionDirection { Horizontal, Vertical, Aligned };
 enum class DimensionRole {
     MemberLength,   // ana parca ekseni boyu (gercek 3B uzunluk)
@@ -259,6 +261,50 @@ struct SheetFormat {
 SheetFormat sheetFormat(SheetSize size);          // landscape olculer
 const char* sheetSizeName(SheetSize size) noexcept;
 
+// --- P2C: kullanici tercihleri (cizimle birlikte JSON'a yazilir) -------------------------
+// Varsayilanlar kabul edilen urun gereksinimi: sheetSize=auto, drawingMode=single,
+// autoMultiSheetFallback=true. autoFirst -> autoMax arasi A-serisi yatay kagitlar denenir.
+struct DrawingPreferences {
+    bool autoSheetSize{true};                          // sheetSize = auto
+    SheetSize sheetSize{SheetSize::A3};                // autoSheetSize == false ise tek boyut
+    DrawingMode mode{DrawingMode::Single};
+    bool autoMultiSheetFallback{true};
+    SheetSize autoFirst{SheetSize::A3};
+    SheetSize autoMax{SheetSize::A0};
+    bool operator==(const DrawingPreferences&) const = default;
+};
+
+// Bagli paftaya / gorunuse capraz referans (cift yonlu: hedef de ana paftayi gosterir).
+struct SheetReference {
+    ElementId targetSheetId{0};
+    ElementId targetViewId{0};                    // 0: pafta duzeyi
+    std::string targetNumber;                     // hedef pafta numarasi ("A100-01")
+    std::string label;                            // insan okur: "DETAY P12 -> A100-01"
+    EntityId sourceEntity{kInvalidEntityId};      // ilgili model elemani (varsa)
+    bool operator==(const SheetReference&) const = default;
+};
+
+// Ana paftadaki pafta indeksi satiri.
+struct SheetIndexEntry {
+    ElementId sheetId{0};
+    std::string number;
+    std::string title;
+    SheetRole role{SheetRole::Continuation};
+    bool operator==(const SheetIndexEntry&) const = default;
+};
+
+// DrawingSet kimligi + kalite durumu (ayri bir drawing modeli DEGIL: DrawingDocument'un ust bilgisi).
+struct DrawingSetInfo {
+    bool present{false};
+    std::string id;                    // kalici set kimligi (deterministik)
+    ElementId primarySheetId{0};
+    bool multiSheet{false};
+    bool layoutValid{false};           // tum paftalar yerlesti, olculen cakisma 0
+    bool ready{false};                 // layoutValid && imalat verisi tam (draft degil)
+    std::vector<std::string> issues;   // set duzeyi cozulmemis sorunlar
+    std::vector<SheetIndexEntry> index;
+};
+
 struct DrawingSheet {
     ElementId id{0};
     std::string name;
@@ -278,6 +324,12 @@ struct DrawingSheet {
     LayoutReport layout;
     std::uint64_t documentRevision{0};   // cizimin uretildigi Document surumu
     ElementId nextId{1};
+    // --- P2C: coklu pafta seti baglantilari (tek sayfada da anlamli) ---
+    SheetRole role{SheetRole::Primary};
+    ElementId parentSheetId{0};          // Primary: 0; bagli pafta: ana pafta
+    std::string sheetNumber;             // "A100", "A100-01"
+    int sheetIndex{1};                   // set icinde 1 tabanli sira
+    std::vector<SheetReference> references;
 
     ElementId allocateId() noexcept { return nextId++; }
     const DrawingView* findView(ElementId id) const noexcept;
@@ -296,11 +348,20 @@ public:
     std::vector<DrawingSheet>& sheets() noexcept { return sheets_; }
     ElementId allocateSheetId() noexcept { return nextSheetId_++; }
 
+    // --- P2C ---
+    const DrawingPreferences& preferences() const noexcept { return preferences_; }
+    void setPreferences(const DrawingPreferences& p) noexcept { preferences_ = p; }
+    const DrawingSetInfo& setInfo() const noexcept { return setInfo_; }
+    DrawingSetInfo& setInfo() noexcept { return setInfo_; }
+    const DrawingSheet* primarySheet() const noexcept;
+
     std::string serialize() const;
     static bool deserialize(const std::string& json, DrawingDocument& out, std::string& error);
 
 private:
     std::vector<DrawingSheet> sheets_;
+    DrawingPreferences preferences_{};
+    DrawingSetInfo setInfo_{};
     ElementId nextSheetId_{1};
 };
 
