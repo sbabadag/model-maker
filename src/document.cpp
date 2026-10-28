@@ -322,8 +322,11 @@ void Document::copyModels(const std::vector<std::size_t>& indices, const Vec3& d
     copies.reserve(indices.size());
     std::vector<EntityId> copyIds; // kopyalara atanan YENI kimlikler (models_ ile hizali)
     copyIds.reserve(indices.size());
+    std::unordered_map<EntityId, EntityId> copiedIds;   // eski kimlik -> kopya kimligi
+    copiedIds.reserve(indices.size());
     for (const auto index : indices) {
         if (index < models_.size()) {
+            const EntityId originalId = modelIds_[index];
             copies.push_back(models_[index]);
             copies.back().translate(displacement);
             {
@@ -349,6 +352,7 @@ void Document::copyModels(const std::vector<std::size_t>& indices, const Vec3& d
             op.afterIds.push_back(id);
             recordUndoOp(std::move(op));
             copyIds.push_back(id);
+            copiedIds[originalId] = id;
         }
     }
     const std::size_t firstCopy = models_.size();
@@ -369,6 +373,141 @@ void Document::copyModels(const std::vector<std::size_t>& indices, const Vec3& d
     }
     spatialIndexDirty_ = true;
     documentBounds_.reset();
+    // KOPYA BAGIMLILIKLARI (C3): bulon gruplari + component instance'lari.
+    // Kullanici geri bildirimi: "elemanlar kopyalaniyor ama component olarak
+    // kopyalanmiyor" — kopya geometri serbest model yigini olarak kaliyordu.
+    cloneDependentsForCopies(copiedIds, displacement);
+}
+
+std::size_t Document::addBoltGroupAdoptingDisplay(BoltGroup bolt, EntityId displayEntityId) {
+    ++revision_;
+    opaqueBrepsStale_ = true;
+    if (bolt.id == kInvalidEntityId) bolt.id = allocateEntityIdRequired();
+    bolt.displayEntityId = displayEntityId;
+    // Delikler KOPYA parcalara delinir (bolt.parts cagiranda yeniden eslenmistir);
+    // owner = yeni bulon kimligi. Undo: BoltAdd (display modeli kopyanin kendi
+    // Add op'una aittir, burada yeniden eklenmez).
+    for (auto mod : boltGroupHoleModifiers(bolt)) {
+        mod.owner = bolt.id;
+        addCutModifier(std::move(mod));
+    }
+    UndoOp op;
+    op.kind = UndoOp::Kind::BoltAdd;
+    op.boltIndex = boltGroups_.size();
+    op.boltAfter = bolt;
+    recordUndoOp(std::move(op));
+    boltGroups_.push_back(std::move(bolt));
+    return boltGroups_.size() - 1;
+}
+
+void Document::cloneDependentsForCopies(const std::unordered_map<EntityId, EntityId>& copiedIds,
+                                        const Vec3& displacement) {
+    if (copiedIds.empty()) return;
+    // Birlesik esleme: model kimlikleri + kopyalanan bulon gruplarinin YENI
+    // kimlikleri. Component'in child tablosu ikisini karisik tutar.
+    std::unordered_map<EntityId, EntityId> remap = copiedIds;
+    const auto remapOne = [&remap](EntityId& id) {
+        const auto it = remap.find(id);
+        if (it != remap.end()) id = it->second;
+    };
+
+    // (1) BULON GRUPLARI: gorsel modeli kopyalandiysa grup da kopyadir.
+    {
+        const std::size_t boltCount = boltGroups_.size();
+        for (std::size_t i = 0; i < boltCount; ++i) {
+            const BoltGroup src = boltGroups_[i];
+            if (src.displayEntityId == kInvalidEntityId) continue;
+            const auto hit = copiedIds.find(src.displayEntityId);
+            if (hit == copiedIds.end()) continue;
+            BoltGroup clone = src;
+            clone.id = kInvalidEntityId;
+            clone.displayEntityId = hit->second;
+            clone.origin = clone.origin + displacement;
+            for (EntityId& p : clone.parts) remapOne(p);
+            const std::size_t ni = addBoltGroupAdoptingDisplay(std::move(clone), hit->second);
+            remap[src.id] = boltGroups_[ni].id;
+        }
+    }
+
+    // (2) COMPONENT INSTANCE'LARI: sahip olunan TUM canli alt nesneler kopyalandiysa
+    // yeni instance acilir. Aksi halde (yarim kopya) yeni instance ACILMAZ —
+    // ayni levha/bulon iki component tarafindan sahiplenilemez.
+    std::vector<ComponentInstanceRecord> clones;
+    const std::size_t instCount = componentInstances_.size();
+    for (std::size_t i = 0; i < instCount; ++i) {
+        const ComponentInstanceRecord src = componentInstances_[i];
+        bool any = false, complete = true;
+        const auto ownCheck = [&](EntityId id, bool live) {
+            if (id == kInvalidEntityId || !live) return;   // materialize degil / silinmis
+            any = true;
+            if (!remap.count(id)) complete = false;
+        };
+        for (const EntityId id : src.ownedPlateIds) ownCheck(id, indexOfEntity(id).has_value());
+        if (complete)
+            for (const EntityId id : src.ownedBoltGroupIds) ownCheck(id, indexOfBoltGroup(id).has_value());
+        if (complete)
+            for (const ComponentChildRecord& c : src.children)
+                ownCheck(c.entityId, indexOfEntity(c.entityId).has_value() ||
+                                         indexOfBoltGroup(c.entityId).has_value());
+        if (!any || !complete) continue;
+        // Ana parca kopyalanmadiysa bu baska bir component'in serbest alt
+        // nesnelerinin kopyasidir: yeni instance acmak cift baglanti olurdu.
+        if (src.mainPart != kInvalidEntityId && !remap.count(src.mainPart)) continue;
+
+        ComponentInstanceRecord clone = src;
+        clone.id = kInvalidEntityId;          // yeni kimlik addComponentInstance'ta
+        remapOne(clone.mainPart);
+        for (EntityId& id : clone.secondaryParts) remapOne(id);
+        for (EntityId& id : clone.ownedPlateIds) remapOne(id);
+        for (EntityId& id : clone.ownedBoltGroupIds) remapOne(id);
+        for (ComponentChildRecord& c : clone.children) {
+            remapOne(c.entityId);
+            if (c.cut) {
+                remapOne(c.cut->target);
+                remapOne(c.cut->tool);
+                remapOne(c.cut->source);
+            }
+            if (c.weld) {
+                remapOne(c.weld->partA);
+                remapOne(c.weld->partB);
+            }
+        }
+        for (CompParam& p : clone.params)
+            if (auto* e = std::get_if<EntityId>(&p.value)) remapOne(*e);
+        clone.origin = clone.origin + displacement;
+        clone.frame.frame.origin = clone.frame.frame.origin + displacement;
+        clones.push_back(std::move(clone));
+    }
+    for (ComponentInstanceRecord& c : clones) addComponentInstance(std::move(c));
+
+    // (3) LEGACY ALIN LEVHASI BAGLANTILARI: ayni kural — levha + bulon grubu
+    // kopyalandiysa baglanti da kopyadir (eski komutla olusturulan baglantilar).
+    std::vector<EndPlateConnection> epClones;
+    const std::size_t epCount = endPlateConnections_.size();
+    for (std::size_t i = 0; i < epCount; ++i) {
+        const EndPlateConnection src = endPlateConnections_[i];
+        if (src.plateEntityId == kInvalidEntityId || !remap.count(src.plateEntityId)) continue;
+        if (src.mainPart != kInvalidEntityId && !remap.count(src.mainPart)) continue;
+        if (src.bolts.id != kInvalidEntityId && !remap.count(src.bolts.id)) continue;
+        EndPlateConnection clone = src;
+        clone.id = kInvalidEntityId;
+        remapOne(clone.mainPart);
+        remapOne(clone.secondaryPart);
+        remapOne(clone.plateEntityId);
+        remapOne(clone.bolts.id);
+        remapOne(clone.bolts.displayEntityId);
+        for (EntityId& p : clone.bolts.parts) remapOne(p);
+        epClones.push_back(std::move(clone));
+    }
+    for (EndPlateConnection& c : epClones) {
+        if (c.id == kInvalidEntityId) c.id = allocateEntityIdRequired();
+        UndoOp op;
+        op.kind = UndoOp::Kind::EndPlateAdd;
+        op.endPlateIndex = endPlateConnections_.size();
+        op.endPlateAfter = c;
+        recordUndoOp(std::move(op));
+        endPlateConnections_.push_back(std::move(c));
+    }
 }
 
 std::size_t Document::setModelLayer(const std::vector<std::size_t>& indices, const std::string& layer) {

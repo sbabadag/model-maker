@@ -551,6 +551,12 @@ if(BUILD_TESTING)
     target_compile_options(model_maker_drawing_sheet_fit_test PRIVATE -Wall -Wextra -Wpedantic)
     add_test(NAME model_maker_drawing_sheet_fit_test COMMAND model_maker_drawing_sheet_fit_test)
 
+    # COMPONENT KOPYA (C3): kopyalanan elemanlar component/bulon olarak da kopyalanir.
+    add_executable(model_maker_component_copy_test tests/component_copy_test.cpp)
+    target_link_libraries(model_maker_component_copy_test PRIVATE model_maker_core)
+    target_compile_options(model_maker_component_copy_test PRIVATE -Wall -Wextra -Wpedantic)
+    add_test(NAME model_maker_component_copy_test COMMAND model_maker_component_copy_test)
+
     # DRAWING P2C: smart sheet manager (tek pafta kalite kapisi + bagli coklu pafta seti, JSON, referans).
     add_executable(model_maker_drawing_set_test tests/drawing_set_test.cpp)
     target_include_directories(model_maker_drawing_set_test PRIVATE tests)

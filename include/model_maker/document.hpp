@@ -452,6 +452,18 @@ private:
     // std::runtime_error firlatir. Yeni varlik ekleyen tum yollar bunu kullanir —
     // KONTROLLU basarisizlik, kismi ekleme veya kimlik-0 model birakilmaz.
     EntityId allocateEntityIdRequired();
+    // KOPYA BAGIMLILIKLARI (C3): copyModels ile kopyalanan modellerin ardindan
+    // kalici kayitlari klonlar. `copiedIds` eski model kimligi -> kopya kimligi.
+    // Once bulon gruplari (gorsel modeli kopyalananlar; kendi EntityId'leri yeni
+    // uretilir, delikleri KOPYA parcalara delinir), sonra component instance'lari
+    // (yalniz sahip oldugu TUM alt nesneler kopyalandiysa; aksi halde cift
+    // sahiplik olurdu — yarim kopya component ACILMAZ).
+    void cloneDependentsForCopies(const std::unordered_map<EntityId, EntityId>& copiedIds,
+                                  const Vec3& displacement);
+    // Var olan (kopyalanmis) gorsel modeli SAHIPLENEN bulon grubu kaydi ekler:
+    // addBoltGroup'un display modeli yeniden eklemeyen bicimi (kopyada gorsel
+    // model zaten kopyalanmistir; ikinci kez eklemek cift montaj olurdu).
+    std::size_t addBoltGroupAdoptingDisplay(BoltGroup bolt, EntityId displayEntityId);
     // Assembly'leri shop-weld grafinden YENIDEN TURET (deterministik). Mevcut
     // assembly kimlik/name/mainPart bilgisi mumkun oldugunca korunur (ayni parca
     // kumesinin tek kök grubu eski assembly'yi devralir). Site weld'ler
