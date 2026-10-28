@@ -5764,6 +5764,8 @@ void Application::recomputeComponentInstancesFor(const std::vector<EntityId>& ch
 #endif
 }
 
+#endif  // MM_HAS_OCC — ARA KAPATMA: asagidaki rebind fonksiyonu OCC KAPALI derlemede
+        // de gereklidir (kopya yolu OCC'den bagimsiz). Blok, fonksiyondan sonra yeniden acilir.
 std::size_t Application::rebindCopiedComponents(std::size_t firstNewInstance,
                                                const std::vector<EntityId>& copiedModels) {
     // TEKLA DAVRANISI (kullanici istegi 2026-10-28): "component tek basina bile
@@ -5865,6 +5867,8 @@ std::size_t Application::rebindCopiedComponents(std::size_t firstNewInstance,
 #endif
     return rebound;
 }
+
+#ifdef MM_HAS_OCC   // ara kapatmanin devami (bkz. yukaridaki #endif)
 
 
 #ifdef MM_HAS_OCC
