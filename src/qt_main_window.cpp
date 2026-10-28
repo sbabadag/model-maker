@@ -68,6 +68,7 @@
 #include <filesystem>
 #include "model_maker/component_presets.hpp"
 #include "model_maker/drawing_sheet_widget.hpp"
+#include "model_maker/progress_overlay.hpp"
 
 namespace {
 // Component ayar setleri (Tekla Save / Save as / Load): exe'nin yanindaki
@@ -432,6 +433,22 @@ QtMainWindow::QtMainWindow(QWidget* parent)
     app_.setStatusCallback([this](const std::wstring& text) {
         statusBar()->showMessage(QString::fromStdWString(text));
     });
+
+    // DOSYA ILERLEMESI: dosya ac/kaydet sirasinda ekranin ORTASINDA ilerleme penceresi.
+    // Application yalniz bildirir (asama + adim); pencere burada sahiplenilir.
+    // Kisa islemlerde pencere bir an gorunup kapanabilir — kabul edilen davranis.
+    auto progress = std::make_shared<mm::ui::ProgressOverlay>(this);
+    {
+        Application::IoProgressSink sink;
+        sink.begin = [progress](const std::string& title, int total) {
+            progress->begin(QString::fromStdString(title), total);
+        };
+        sink.update = [progress](int done, int total, const std::string& detail) {
+            progress->report(done, total, QString::fromStdString(detail));
+        };
+        sink.end = [progress]() { progress->finish(); };
+        app_.setIoProgressSink(std::move(sink));
+    }
 }
 
 QtMainWindow::~QtMainWindow() {

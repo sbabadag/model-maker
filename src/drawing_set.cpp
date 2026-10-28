@@ -359,9 +359,16 @@ void finish(DrawingSetResult& res, std::vector<Part> parts, const DrawingPrefere
 } // namespace
 
 DrawingSetResult buildDrawingSet(const Document& document, MarkRegistry& registry, EntityId subject,
-                                 const DrawingOptions& options, const DrawingPreferences& preferences) {
+                                 const DrawingOptions& options, const DrawingPreferences& preferences,
+                                 const ProgressCallback& progress) {
     DrawingSetResult res;
     res.preferences = preferences;
+
+    // Ilerleme: 4 GERCEK asama (gorunus uretimi -> tek pafta karari -> paketleme -> hazir).
+    constexpr int kStages = 4;
+    auto step = [&progress](int done, const char* stage) {
+        reportProgress(progress, stage, done, kStages);
+    };
 
     DrawingOptions opt = options;
     opt.autoLayout = true;   // akilli yerlesim bu modulun varlik nedenidir
@@ -371,6 +378,7 @@ DrawingSetResult buildDrawingSet(const Document& document, MarkRegistry& registr
     opt.layout.minSheet = first;
     opt.layout.maxSheet = (last < first) ? first : last;
 
+    step(0, "Görünüşler ve imalat ölçüleri üretiliyor");
     BuildResult base = buildSheet(document, registry, subject, opt);
     if (!base.ok) {
         res.error = base.error.empty() ? std::string("cizim uretilemedi") : base.error;
@@ -378,6 +386,7 @@ DrawingSetResult buildDrawingSet(const Document& document, MarkRegistry& registr
     }
     res.inventory = base.inventory;
     DrawingSheet sheet = std::move(base.sheet);
+    step(1, "Görünüşler hazır, kâğıt/ölçek deneniyor");
     const bool single = sheet.layout.ok && measureOverlaps(sheet).total() == 0;
 
     std::vector<std::string> issues;
@@ -403,16 +412,21 @@ DrawingSetResult buildDrawingSet(const Document& document, MarkRegistry& registr
     }
 
     if (single) {
+        step(2, "Tek paftada yerleşim doğrulandı");
         std::string reason = paperReason(sheet) + ", tek pafta";
         std::vector<Part> one;
         one.push_back({std::move(sheet), "ANA PAFTA", std::move(reason)});
         finish(res, std::move(one), preferences, std::move(issues));
+        step(kStages, "Çizim hazır");
         return res;
     }
 
+    step(2, "Çoklu pafta paketleniyor");
     Assembly as = packSheets(sheet, preferences);
     for (std::string& i : as.issues) issues.push_back("MULTI " + i);
     finish(res, std::move(as.parts), preferences, std::move(issues));
+    step(3, "Paftalar yerleştirildi");
+    step(kStages, "Çizim hazır");
     return res;
 }
 

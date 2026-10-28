@@ -731,6 +731,8 @@ DrawingPreviewDialog::DrawingPreviewDialog(std::vector<SubjectChoice> subjects, 
     setObjectName(QStringLiteral("drawingPreviewDialog"));
     resize(1100, 780);
     auto* root = new QVBoxLayout(this);
+    // Uretim / PDF / JSON sirasinda ekranin ortasinda gosterilen ilerleme penceresi.
+    progress_ = std::make_unique<ui::ProgressOverlay>(this);
 
     auto* opts = new QHBoxLayout;
     subjectCombo_ = new QComboBox(this);
@@ -969,7 +971,12 @@ void DrawingPreviewDialog::rebuild() {
         p.autoFirst = SheetSize::A3;
         p.autoMax = SheetSize::A0;
         prefs_ = p;
-        DrawingSetResult r = setBuilder_(subjects_[static_cast<std::size_t>(idx)].id, o, p);
+        progress_->begin(QStringLiteral("Çizim üretiliyor"), 0);
+        DrawingSetResult r = setBuilder_(subjects_[static_cast<std::size_t>(idx)].id, o, p,
+                                         [this](const ProgressReport& report) {
+                                             progress_->report(report.done, report.total, qs(report.stage));
+                                         });
+        progress_->finish();
         if (!r.ok) {
             status_->setStyleSheet(QStringLiteral("color:#a73c3c"));
             QString msg = QStringLiteral("\u00c7izim \u00fcretilemedi: ") + qs(r.error);
@@ -1029,7 +1036,9 @@ void DrawingPreviewDialog::rebuild() {
         status_->setText(text);
         return;
     }
+    progress_->begin(QStringLiteral("Çizim üretiliyor"), 0);
     const BuildResult r = builder_(subjects_[static_cast<std::size_t>(idx)].id, o);
+    progress_->finish();
     if (!r.ok) {
         status_->setText(QStringLiteral("\u00c7izim \u00fcretilemedi: ") + qs(r.error));
         return;
@@ -1095,7 +1104,10 @@ void DrawingPreviewDialog::onExportPdf() {
                                                           QStringLiteral("PDF (*.pdf)"));
         if (path.isEmpty()) return;
         QString err;
-        if (!exportDrawingSetPdf(doc_, path, &err)) {
+        progress_->begin(QStringLiteral("PDF yazılıyor"), 0);
+        const bool pdfOk = exportDrawingSetPdf(doc_, path, &err);
+        progress_->finish();
+        if (!pdfOk) {
             QMessageBox::warning(this, QStringLiteral("PDF"), err);
             return;
         }
@@ -1108,7 +1120,10 @@ void DrawingPreviewDialog::onExportPdf() {
                                                       QStringLiteral("PDF (*.pdf)"));
     if (path.isEmpty()) return;
     QString err;
-    if (!exportSheetPdf(sheet_, path, &err)) QMessageBox::warning(this, QStringLiteral("PDF"), err);
+    progress_->begin(QStringLiteral("PDF yazılıyor"), 0);
+    const bool pdfOk = exportSheetPdf(sheet_, path, &err);
+    progress_->finish();
+    if (!pdfOk) QMessageBox::warning(this, QStringLiteral("PDF"), err);
     else status_->setText(QStringLiteral("PDF yaz\u0131ld\u0131: ") + path);
 }
 
@@ -1120,6 +1135,7 @@ void DrawingPreviewDialog::onSaveJson() {
                                                           QStringLiteral(".drawing.json"),
                                                       QStringLiteral("JSON (*.json)"));
     if (path.isEmpty()) return;
+    progress_->begin(QStringLiteral("JSON yazılıyor"), 0);
     const std::string payload = [this]() {
         if (haveDoc_) return doc_.serialize();
         DrawingDocument doc;
@@ -1127,7 +1143,9 @@ void DrawingPreviewDialog::onSaveJson() {
         return doc.serialize();
     }();
     QSaveFile file(path);
-    if (!file.open(QIODevice::WriteOnly) || file.write(payload.c_str()) < 0 || !file.commit()) {
+    const bool written = file.open(QIODevice::WriteOnly) && file.write(payload.c_str()) >= 0 && file.commit();
+    progress_->finish();
+    if (!written) {
         QMessageBox::warning(this, QStringLiteral("JSON"), QStringLiteral("Yaz\u0131lamad\u0131: ") + path);
         return;
     }
@@ -1171,8 +1189,9 @@ bool showDrawingDialog(QWidget* parent, const Document& doc, const std::vector<s
         std::move(subjects), def,
         [&doc, registry](EntityId subject, const DrawingOptions& o) { return buildSheet(doc, *registry, subject, o); },
         parent,
-        [&doc, registry](EntityId subject, const DrawingOptions& o, const DrawingPreferences& p) {
-            return buildDrawingSet(doc, *registry, subject, o, p);
+        [&doc, registry](EntityId subject, const DrawingOptions& o, const DrawingPreferences& p,
+                         const ProgressCallback& progress) {
+            return buildDrawingSet(doc, *registry, subject, o, p, progress);
         });
     dlg.exec();
     return true;

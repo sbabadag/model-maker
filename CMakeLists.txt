@@ -572,6 +572,13 @@ if(BUILD_TESTING)
     target_compile_options(model_maker_drawing_p2d_select_test PRIVATE -Wall -Wextra -Wpedantic)
     add_test(NAME model_maker_drawing_p2d_select_test COMMAND model_maker_drawing_p2d_select_test)
 
+    # ILERLEME: assembly cizimi uretiminin GERCEK asamalarini bildirir; sonucu degistirmez (Qt'siz).
+    add_executable(model_maker_drawing_set_progress_test tests/drawing_set_progress_test.cpp)
+    target_include_directories(model_maker_drawing_set_progress_test PRIVATE tests)
+    target_link_libraries(model_maker_drawing_set_progress_test PRIVATE model_maker_core)
+    target_compile_options(model_maker_drawing_set_progress_test PRIVATE -Wall -Wextra -Wpedantic)
+    add_test(NAME model_maker_drawing_set_progress_test COMMAND model_maker_drawing_set_progress_test)
+
     # DRAWING P2B: paper-space 2B duzenleme cekirdegi (hit-test, tasima, sekil, undo/redo, kalicilik).
     add_executable(model_maker_paper_editing_test tests/paper_editing_test.cpp)
     target_include_directories(model_maker_paper_editing_test PRIVATE tests)
@@ -1249,9 +1256,16 @@ if(BUILD_TESTING)
         target_link_libraries(model_maker_drawing_p2d_select_gui_test PRIVATE model_maker_core Qt6::Widgets)
         add_test(NAME model_maker_drawing_p2d_select_gui_test COMMAND model_maker_drawing_p2d_select_gui_test)
 
+        # ILERLEME PENCERESI (Qt): ekranin ortasinda panel, belirli/belirsiz cubuk, Esc ile kapanmama.
+        add_executable(model_maker_progress_overlay_test tests/progress_overlay_test.cpp)
+        target_include_directories(model_maker_progress_overlay_test PRIVATE include)
+        target_link_libraries(model_maker_progress_overlay_test PRIVATE model_maker_core Qt6::Widgets)
+        add_test(NAME model_maker_progress_overlay_test COMMAND model_maker_progress_overlay_test)
+
         # Offscreen platform: her iki cizim GUI testi icin ENVIRONMENT dogru testlere uygulanir
         # (onceden yanlis hedefe yaziliydi; testler qputenv ile de korunuyor).
         set_tests_properties(model_maker_drawing_p2d_gui_test model_maker_drawing_p2d_select_gui_test
+            model_maker_progress_overlay_test
             model_maker_component_dialog_widget_test PROPERTIES
             ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
     endif()

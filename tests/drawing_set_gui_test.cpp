@@ -194,7 +194,8 @@ int main(int argc, char** argv) {
             subjects, 0,
             [&f, &dlgReg](EntityId s, const DrawingOptions& opt) { return buildSheet(f.doc, dlgReg, s, opt); },
             nullptr,
-            [&f, &dlgReg](EntityId s, const DrawingOptions& opt, const DrawingPreferences& prefs) {
+            [&f, &dlgReg](EntityId s, const DrawingOptions& opt, const DrawingPreferences& prefs,
+                          const ProgressCallback&) {
                 // Test: kullanici olcegi sabitledi + kagit siniri A2 (diyalogda sabit olcek yok; API ile verilir).
                 DrawingOptions o2 = opt;
                 o2.layout.fixedScaleDen = 5.0;

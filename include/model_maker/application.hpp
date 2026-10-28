@@ -277,6 +277,18 @@ public:
     void setStatusCallback(std::function<void(const std::wstring&)> callback) {
         statusCallback_ = std::move(callback);
     }
+    // DOSYA ILERLEMESI (ac/kaydet): uzun suren yukleme/kaydetme adimlarini bildirir.
+    // Qt shell ekranin ortasindaki ilerleme penceresini (progress_overlay.hpp) baglar; bos
+    // birakilirsa hicbir sey gosterilmez (davranis degismez).
+    //   begin(title, total): islem basi; total <= 0 -> belirsiz cubuk
+    //   update(done, total, detail): tamamlanan adim + kisa aciklama (total > 0 -> belirli cubuk)
+    //   end():                islem sonu (her cikis yolunda cagrilir)
+    struct IoProgressSink {
+        std::function<void(const std::string& title, int total)> begin;
+        std::function<void(int done, int total, const std::string& detail)> update;
+        std::function<void()> end;
+    };
+    void setIoProgressSink(IoProgressSink sink) { ioProgress_ = std::move(sink); }
     // Durum cubuguna tek seferlik metin yayinla (Qt menü komutlarindan da
     // cagrilir — P1 named views kayit onayi gibi).
     void publishStatus(const std::wstring& text);
@@ -1006,6 +1018,7 @@ private:
     void clearStartupGpuGuard();
     bool backendInitTried_ = false;
     std::function<void(const std::wstring&)> statusCallback_;
+    IoProgressSink ioProgress_;   // dosya ac/kaydet ilerleme bildirimi (Qt shell baglar)
     std::function<void()> profilePickerCallback_;
     EditMode mode_{EditMode::Draw2D};
     DrawTool tool_{DrawTool::Line};

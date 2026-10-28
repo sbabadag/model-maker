@@ -7,6 +7,8 @@
 #include "model_maker/drawing_builder.hpp"
 #include "model_maker/drawing_set.hpp"
 #include "model_maker/paper_editing.hpp"
+#include "model_maker/progress_overlay.hpp"
+#include "model_maker/progress_report.hpp"
 
 #include <QDialog>
 #include <QImage>
@@ -130,8 +132,10 @@ class DrawingPreviewDialog : public QDialog {
 public:
     using Builder = std::function<BuildResult(EntityId subject, const DrawingOptions&)>;
     // P2C: akilli pafta yoneticisi (tek pafta -> gerekirse bagli coklu pafta + tercihler).
+    // 4. parametre: uretim asamalari (ekranin ortasindaki ilerleme penceresi bunu gosterir).
     using SetBuilder = std::function<DrawingSetResult(EntityId subject, const DrawingOptions&,
-                                                      const DrawingPreferences&)>;
+                                                      const DrawingPreferences&,
+                                                      const ProgressCallback&)>;
     DrawingPreviewDialog(std::vector<SubjectChoice> subjects, int defaultSubject, Builder builder,
                          QWidget* parent = nullptr, SetBuilder setBuilder = {});
     // Son basarili cizim; yoksa nullptr. (Set modunda: o an gosterilen pafta.)
@@ -167,6 +171,8 @@ private:
     std::function<bool(const QString&)> confirmDiscard_;
     bool rebuilding_{false};
     DrawingSheetWidget* view_{};
+    // Uretim/PDF/JSON sirasinda ekranin ortasinda gosterilen ilerleme penceresi (sahibi: bu diyalog).
+    std::unique_ptr<ui::ProgressOverlay> progress_;
     std::unique_ptr<PaperEditHistory> edit_;
     QComboBox* subjectCombo_{};
     QComboBox* sizeCombo_{};

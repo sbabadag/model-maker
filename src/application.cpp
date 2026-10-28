@@ -11105,12 +11105,30 @@ void Application::newDocument() {
     invalidateCanvas();
 }
 
+namespace {
+// Dosya ac/kaydet boyunca ilerleme penceresini acik tutar; HER cikis yolunda (istisna dahil)
+// kapatir. Sink bos ise hicbir sey yapmaz -> Qt shell baglamadiysa davranis degismez.
+struct IoProgressGuard {
+    Application::IoProgressSink* sink;
+    IoProgressGuard(Application::IoProgressSink* s, const char* title) : sink(s) {
+        if (sink->begin) sink->begin(title, 0);
+    }
+    void report(int done, int total, const char* detail) {
+        if (sink->update) sink->update(done, total, detail);
+    }
+    ~IoProgressGuard() {
+        if (sink->end) sink->end();
+    }
+};
+} // namespace
+
 void Application::saveDocument() {
-    // Kayitli/açik dosya uzerine kaydet (AutoCAD davranisi); yeni belge
+    // Kayitli/acik dosya uzerine kaydet (AutoCAD davranisi); yeni belge
     // veya Save As -> dosya diyalogu. currentFilePath_ save/open'ta hatirlanir.
     std::optional<std::filesystem::path> path = currentFilePath_;
     if (!path) path = chooseFile(true);
     if (!path) return;
+    IoProgressGuard progress(&ioProgress_, "Kaydediliyor");
     try {
         document_.save(*path);
         currentFilePath_ = *path;
@@ -11119,6 +11137,7 @@ void Application::saveDocument() {
 
 void Application::saveDocumentAs() {
     const auto path = chooseFile(true); if (!path) return;
+    IoProgressGuard progress(&ioProgress_, "Kaydediliyor");
     try {
         document_.save(*path);
         currentFilePath_ = *path;
@@ -11128,6 +11147,9 @@ void Application::saveDocumentAs() {
 void Application::openDocument() {
     const auto path = chooseFile(false); if (!path) return;
     cancelPendingComponentCommand();
+    // Ilerleme penceresi: dosya okuma + acilis sonrasi agir yeniden uretim boyunca acik;
+    // guard HER cikis yolunda kapatir (istisna dahil).
+    IoProgressGuard progress(&ioProgress_, "Dosya açılıyor");
     try {
         document_.load(*path);
         // Yukleme belge icerigini TAMAMEN degistirir; Document-sahipli B-Rep
@@ -11142,10 +11164,16 @@ void Application::openDocument() {
         // radiuslu gelir; bolt/kesme delikleri de yeniden B-Rep'te acilir.
         // recomputeCutTarget: ensureCutSolid + rebuildCutBaseSolid + kesme
         // zinciri + mesh tazeleme — profilin TAMAMINI guncel koddan kurar.
+        // Ilerleme: asama sayisi GERCEK is adedidir (profil katilari + uc levhalar + bilesen partisi).
+        // Kullaniciya "dondu" izlenimi vermemek icin pencere bu dongu boyunca acik kalir.
+        const int totalSteps = static_cast<int>(document_.models().size()) +
+                               static_cast<int>(document_.endPlateConnections().size()) + 1;
+        int completedSteps = 0;
+        progress.report(0, totalSteps, "Profil katıları yeniden üretiliyor");
         ensureProfileCatalog();
         for (std::size_t i = 0; i < document_.models().size(); ++i) {
-            if (document_.models()[i].properties().profileName.empty()) continue;
-            recomputeCutTarget(document_.modelId(i));
+            if (!document_.models()[i].properties().profileName.empty()) recomputeCutTarget(document_.modelId(i));
+            progress.report(++completedSteps, totalSteps, "Profil katıları yeniden üretiliyor");
         }
         // AÇILIS SONRASI END PLATE YENIDEN COZUMU (operation record semantigi):
         // baglanti KAYDI parametreleri tasir; pisirilmis levha/bulon geometrisi
@@ -11155,8 +11183,9 @@ void Application::openDocument() {
         // bu mutasyonlar geri alinmaz (dogru: dosya acmayi Ctrl+Z geri alamaz).
         for (std::size_t i = 0; i < document_.endPlateConnections().size(); ++i) {
             const auto prepared = prepareEndPlateConnection(i, nullptr);
-            if (!prepared) continue;  // parca kayboldu/cozulemedi: pisirilmis hal korunur
-            commitEndPlateConnection(i, *prepared);
+            // parca kayboldu/cozulemedi: pisirilmis hal korunur
+            if (prepared) commitEndPlateConnection(i, *prepared);
+            progress.report(++completedSteps, totalSteps, "Uç levha bağlantıları yeniden çözülüyor");
         }
         // P1: AÇILIS SONRASI PARAMETRIK COMPONENT RECOMPUTE (Fin Plate vb.).
         // ComponentInstanceRecord parametreleri tasir; acilista yeniden uretilir
@@ -11179,6 +11208,7 @@ void Application::openDocument() {
                 recomputeComponentInstancesFor(allParts);
                 document_.clearHistory();
             }
+            progress.report(++completedSteps, totalSteps, "Bileşen geometrisi yeniden üretiliyor");
         }
 #endif
         // KULLANICI KATALOGU ORPHAN TESHISI: proje, registry'de kayitli olmayan

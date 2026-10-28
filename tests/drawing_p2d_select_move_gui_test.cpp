@@ -100,8 +100,9 @@ int main(int argc, char** argv) {
     DrawingPreviewDialog dlg(
         subjects, 0,
         [&f, &reg](EntityId s, const DrawingOptions& o) { return buildSheet(f.doc, reg, s, o); }, nullptr,
-        [&f, &reg](EntityId s, const DrawingOptions& o, const DrawingPreferences& p) {
-            return buildDrawingSet(f.doc, reg, s, o, p);
+        [&f, &reg](EntityId s, const DrawingOptions& o, const DrawingPreferences& p,
+                   const ProgressCallback& progress) {
+            return buildDrawingSet(f.doc, reg, s, o, p, progress);
         });
     dlg.resize(1100, 780);
     dlg.show();

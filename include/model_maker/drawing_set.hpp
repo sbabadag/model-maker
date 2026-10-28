@@ -16,6 +16,7 @@
 // Model (Document) DEGISMEZ: bu modul yalniz DrawingSheet/DrawingDocument yazar.
 
 #include "model_maker/drawing_builder.hpp"
+#include "model_maker/progress_report.hpp"
 
 #include <string>
 #include <vector>
@@ -54,9 +55,12 @@ std::string statusText(const DrawingSetResult& result);
 bool refreshSheetQuality(DrawingSheet& sheet);
 
 // Tek pafta dener; gerekirse (ve izinliyse) bagli coklu pafta seti uretir. Deterministik.
+// `progress` bos olabilir: doluysa uretimin GERCEK asamalari bildirilir (4 asama, done 0..4);
+// sahte yuzde uretilmez, cizim sonucu (geometri/olcu) bu parametreden ETKILENMEZ.
 DrawingSetResult buildDrawingSet(const Document& document, MarkRegistry& registry, EntityId subject,
                                  const DrawingOptions& options = {},
-                                 const DrawingPreferences& preferences = {});
+                                 const DrawingPreferences& preferences = {},
+                                 const ProgressCallback& progress = {});
 
 // Set butunlugu: pafta kimlikleri, numaralandirma, antet/revizyon tutarliligi, cift yonlu
 // referanslar, ana pafta indeksi, her paftanin yerlesimi ve bagimsiz cakisma olcumu.
