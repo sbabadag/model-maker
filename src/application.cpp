@@ -6830,6 +6830,7 @@ void Application::cancelTransformCommand() {
     transformCommand_ = TransformCommand::None;
     transformPhase_ = TransformPhase::Selecting;
     linearPickMode_ = false;   // iki-nokta modu yalniz aktif komut boyunca
+    linearDeltaFromPick_ = false;
     trimSolidPhase_ = 0;
     trimSolidIndex_ = 0;
     selectedModels_.clear();
@@ -7315,7 +7316,8 @@ bool Application::requestLinearDeltaPanel() {
     if (selectedModels_.empty()) return false;
     Vec3 delta = lastLinearDelta_;
     bool pick = false;
-    if (!linearDeltaRequest_(delta, pick)) {           // Iptal
+    if (!linearDeltaRequest_(delta, pick, linearDeltaFromPick_)) {  // Iptal
+        linearDeltaFromPick_ = false;
         cancelTransformCommand();
         SetCursor(currentCanvasCursor());
         updateControls();
@@ -7323,8 +7325,9 @@ bool Application::requestLinearDeltaPanel() {
         invalidateCanvas();
         return false;
     }
+    linearDeltaFromPick_ = false;
     if (pick) {
-        // Delta iki tiklamayla: 1. nokta taban, 2. nokta = taban + delta.
+        // Delta iki tiklamayla OLCULUR; olcum panele yazilir, islem Uygula'da.
         linearPickMode_ = true;
         transformBase_.reset();
         transformPhase_ = TransformPhase::BasePoint;
@@ -7464,6 +7467,20 @@ void Application::commitTransformPoint(const Vec3& point) {
         return;
     }
     const Vec3 displacement = point - *transformBase_;
+    // IKI NOKTA SECIMI SADECE OLCUDUR (kullanici talebi): "iki nokta secmek
+    // sadece diyalog kutusuna delta olculerini getirir, sonra Uygula deyince
+    // kopyalama/tasima yapilir". Bu yuzden burada islem YAPILMAZ; olculen delta
+    // panele yazilir ve panel yeniden acilir (Uygula -> applyLinearDelta).
+    if (linearPickMode_ && (transformCommand_ == TransformCommand::CopyLinear ||
+                            transformCommand_ == TransformCommand::MoveLinear)) {
+        lastLinearDelta_ = displacement;
+        linearPickMode_ = false;
+        linearDeltaFromPick_ = true;
+        transformBase_.reset();
+        transformPhase_ = TransformPhase::Selecting;
+        requestLinearDeltaPanel();
+        return;
+    }
     if (transformCommand_ == TransformCommand::LinearArray) {
         std::vector<WireframeModel> copies;
         for (const auto index : selectedModels_) {
@@ -7553,10 +7570,6 @@ void Application::commitTransformPoint(const Vec3& point) {
             }
             publishStatus(std::move(msg));
         }
-        // IKI-NOKTA MODU (panelden "Iki Nokta Sec"): delta bir kez uygulanir ve
-        // komut biter; coklu kopya yalniz klasik Copy aracinda kalir.
-        if (linearPickMode_ && transformCommand_ == TransformCommand::CopyLinear)
-            cancelTransformCommand();
         // Taban SABIT kalir (AutoCAD): kopya = kaynak + (tiklanan - taban).
         // Tabani tıklamaya güncellemek deltayı bozuyordu: ikinci kopya
         // kaynağın üstüne biniyor, toplu rotasyonda nesneler "yer

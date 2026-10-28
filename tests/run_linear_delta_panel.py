@@ -39,6 +39,14 @@ start_fn = re.search(r"^void Application::startTransformCommand\(.*?^}\n", app, 
 assert start_fn, "startTransformCommand bulunamadi"
 if "requestLinearDeltaPanel()" not in start_fn.group():
     sys.exit("KILIT: startTransformCommand paneli acmiyor")
+commit_fn = re.search(r"^void Application::commitTransformPoint\(.*?^}\n", app, re.M | re.S)
+if not commit_fn:
+    sys.exit("KILIT: commitTransformPoint bulunamadi")
+commit_body = commit_fn.group()
+if "linearDeltaFromPick_ = true;" not in commit_body or "requestLinearDeltaPanel();" not in commit_body:
+    sys.exit("KILIT: iki nokta OLCUSU panele tasinmiyor (olcum islem yapmamali)")
+if app.count("requestLinearDeltaPanel();") < 3:
+    sys.exit("KILIT: panel cagri yerleri eksik (baslangic + secim + olcu)")
 if app.count("requestLinearDeltaPanel();") < 2:
     sys.exit("KILIT: secim-Enter dalinda panel cagrisi yok")
 
@@ -69,8 +77,9 @@ constexpr int MB_ICONWARNING = 0;
 
 struct Application {
     std::vector<std::size_t> selectedModels_;
-    std::function<bool(Vec3&, bool&)> linearDeltaRequest_;
+    std::function<bool(Vec3&, bool&, bool)> linearDeltaRequest_;
     bool linearPickMode_{false};
+    bool linearDeltaFromPick_{false};
     Vec3 lastLinearDelta_{0.0, 0.0, 0.0};
     TransformCommand transformCommand_{TransformCommand::None};
     TransformPhase transformPhase_{TransformPhase::Selecting};
@@ -90,6 +99,7 @@ struct Application {
         transformCommand_ = TransformCommand::None;
         transformPhase_ = TransformPhase::Selecting;
         linearPickMode_ = false;
+        linearDeltaFromPick_ = false;
         selectedModels_.clear();
     }
     void SetCursor(int) {}
@@ -126,7 +136,7 @@ int main() {
     {
         Application a = make(TransformCommand::CopyLinear, 2);
         bool asked = false;
-        a.linearDeltaRequest_ = [&](Vec3& d, bool& pick) {
+        a.linearDeltaRequest_ = [&](Vec3& d, bool& pick, bool) {
             asked = true;
             pick = false;
             d = Vec3{1000.0, -250.0, 400.0};
@@ -144,7 +154,7 @@ int main() {
     // 2) Panel "Iki Nokta Sec": commit YOK, iki-tiklama modu + taban fazi.
     {
         Application a = make(TransformCommand::MoveLinear);
-        a.linearDeltaRequest_ = [](Vec3&, bool& pick) { pick = true; return true; };
+        a.linearDeltaRequest_ = [](Vec3&, bool& pick, bool) { pick = true; return true; };
         const bool ok = a.requestLinearDeltaPanel();
         check(ok, "B: iki nokta -> true");
         check(a.committed.empty(), "B: iki nokta modunda hemen islem yapilmaz");
@@ -156,7 +166,7 @@ int main() {
     // 3) Iptal: komut kapanir, hicbir sey uygulanmaz.
     {
         Application a = make(TransformCommand::CopyLinear);
-        a.linearDeltaRequest_ = [](Vec3&, bool&) { return false; };
+        a.linearDeltaRequest_ = [](Vec3&, bool&, bool) { return false; };
         const bool ok = a.requestLinearDeltaPanel();
         check(!ok, "C: iptal -> false");
         check(a.committed.empty(), "C: iptalde islem yok");
@@ -165,7 +175,7 @@ int main() {
     // 4) Sifir delta: sessiz kopya yigini yok.
     {
         Application a = make(TransformCommand::CopyLinear);
-        a.linearDeltaRequest_ = [](Vec3& d, bool& pick) { pick = false; d = Vec3{}; return true; };
+        a.linearDeltaRequest_ = [](Vec3& d, bool& pick, bool) { pick = false; d = Vec3{}; return true; };
         a.requestLinearDeltaPanel();
         check(a.committed.empty(), "D: 0,0,0 delta -> islem yok");
         check(a.transformCommand_ == TransformCommand::None, "D: komut bitti");
@@ -173,7 +183,7 @@ int main() {
     // 5) MoveLinear ayni yoldan gecer.
     {
         Application a = make(TransformCommand::MoveLinear, 3);
-        a.linearDeltaRequest_ = [](Vec3& d, bool&) { d = Vec3{0.0, 0.0, -1500.0}; return true; };
+        a.linearDeltaRequest_ = [](Vec3& d, bool&, bool) { d = Vec3{0.0, 0.0, -1500.0}; return true; };
         a.requestLinearDeltaPanel();
         check(a.committed.size() == 1, "E: tasima tek cagri");
         check(a.committed.size() == 1 && a.committed.front() == Vec3{0.0, 0.0, -1500.0},
@@ -184,7 +194,7 @@ int main() {
     {
         Application a = make(TransformCommand::CopyLinear, 0);
         bool asked = false;
-        a.linearDeltaRequest_ = [&](Vec3&, bool&) { asked = true; return true; };
+        a.linearDeltaRequest_ = [&](Vec3&, bool&, bool) { asked = true; return true; };
         const bool ok = a.requestLinearDeltaPanel();
         check(!ok && !asked, "F: secim yoksa panel istenmez");
         check(a.committed.empty(), "F: secim yoksa islem yok");
@@ -193,10 +203,46 @@ int main() {
     {
         Application a = make(TransformCommand::CopyLinear);
         a.transformBase_ = Vec3{500.0, 500.0, 0.0};   // eski taban
-        a.linearDeltaRequest_ = [](Vec3& d, bool&) { d = Vec3{100.0, 0.0, 0.0}; return true; };
+        a.linearDeltaRequest_ = [](Vec3& d, bool&, bool) { d = Vec3{100.0, 0.0, 0.0}; return true; };
         a.requestLinearDeltaPanel();
         check(a.committed.size() == 1 && a.committed.front() == Vec3{100.0, 0.0, 0.0},
               "G: panel deltasi tabandan bagimsiz (X=100)");
+    }
+    // 8) OLCU MODU: "Iki Nokta Sec" islem YAPMAZ; iki nokta beklenir.
+    {
+        Application a = make(TransformCommand::CopyLinear);
+        a.linearDeltaRequest_ = [](Vec3&, bool& pick, bool) { pick = true; return true; };
+        a.requestLinearDeltaPanel();
+        check(a.committed.empty() && a.linearPickMode_, "H: olcu modu islem yapmaz, nokta bekler");
+        check(a.lastLinearDelta_ == Vec3{}, "H: olcuden once delta degismez");
+    }
+    // 9) OLCU SONRASI: panel olculen delta ile yeniden acilir (fromPicked=true).
+    {
+        Application a = make(TransformCommand::CopyLinear);
+        a.committed.clear();
+        bool sawFromPicked = false;
+        int calls = 0;
+        a.linearDeltaRequest_ = [&](Vec3& d, bool& pick, bool fromPicked) {
+            ++calls;
+            if (calls == 1) { pick = true; return true; }         // once olcu iste
+            sawFromPicked = fromPicked;                            // ikinci acilis
+            pick = false;
+            d = a.lastLinearDelta_;                                // panel olcuyu gosterir
+            return true;                                           // Uygula
+        };
+        a.lastLinearDelta_ = Vec3{};                               // temiz basla
+        a.requestLinearDeltaPanel();                               // 1) panel -> olcu
+        check(a.linearPickMode_, "I: olcu modu acildi");
+        // Uygulama ici: commitTransformPoint olcum dalini calistirir (asagida taklit).
+        a.lastLinearDelta_ = Vec3{1200.0, 0.0, -800.0};            // 2. nokta - 1. nokta
+        a.linearPickMode_ = false;
+        a.linearDeltaFromPick_ = true;
+        a.transformPhase_ = TransformPhase::Selecting;
+        a.requestLinearDeltaPanel();                               // 2) panel Uygula
+        check(calls == 2, "I: panel ikinci kez acildi");
+        check(sawFromPicked, "I: ikinci acilis 'olculen delta' bayragiyla");
+        check(a.committed.size() == 1 && a.committed.front() == Vec3{1200.0, 0.0, -800.0},
+              "I: Uygula -> olculen delta uygulandi");
     }
     std::printf(failures == 0 ? "TUM KONTROLLER GECTI\n" : "%d KONTROL KALDI\n", failures);
     return failures == 0 ? 0 : 1;

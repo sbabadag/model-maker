@@ -5,7 +5,7 @@ Extracts `promptLinearDeltaDialog` from the real source (no copy/reimplementatio
 and runs it against real Qt Widgets (offscreen) to prove:
   1) the panel builds without crashing,
   2) X/Y/Z spin values are pre-filled from the Application's last delta,
-  3) "Tamam" returns the typed delta,
+  3) "Uygula" returns the typed delta,
   4) "İki Nokta Seç" returns pickTwoPoints=true and leaves delta untouched,
   5) "İptal" returns false (Application then cancels the command).
 
@@ -105,11 +105,11 @@ int main(int argc, char** argv) {
         r.x = 1250.0; r.y = -500.0; r.z = 300.0;
         QTimer::singleShot(0, [&r]() { respond(&r); });
         Vec3 delta{10.0, 20.0, 30.0};
-        bool pick = true;   // panel Tamam derse false'a cekilmeli
-        const bool ok = promptLinearDeltaDialog(nullptr, delta, pick);
-        check(ok, "A: Tamam -> true dondu");
+        bool pick = true;   // panel Uygula derse false'a cekilmeli
+        const bool ok = promptLinearDeltaDialog(nullptr, delta, pick, false);
+        check(ok, "A: Uygula -> true dondu");
         check(r.sawDialog, "A: panel gercekten acildi");
-        check(!pick, "A: Tamam secildiginde pick=false");
+        check(!pick, "A: Uygula secildiginde pick=false");
         check(delta == Vec3{1250.0, -500.0, 300.0}, "A: X/Y/Z alanlarindan okunan delta");
     }
     {
@@ -119,7 +119,7 @@ int main(int argc, char** argv) {
         r.button = "\xc4\xb0ki Nokta Se\xc3\xa7";   // "İki Nokta Seç" (UTF-8)
         QTimer::singleShot(0, [&r]() { respond(&r); });
         // Karsilastirma QString::fromStdString ile yapilir -> UTF-8 ayni olmali.
-        const bool ok = promptLinearDeltaDialog(nullptr, delta, pick);
+        const bool ok = promptLinearDeltaDialog(nullptr, delta, pick, false);
         check(ok, "B: Iki Nokta Sec -> true dondu");
         check(pick, "B: pickTwoPoints=true");
         check(delta == Vec3{7.0, 8.0, 9.0}, "B: delta degismedi (iki nokta modunda)");
@@ -130,7 +130,7 @@ int main(int argc, char** argv) {
         AutoResponder r;
         r.button = "\xc4\xb0ptal";                  // "İptal"
         QTimer::singleShot(0, [&r]() { respond(&r); });
-        const bool ok = promptLinearDeltaDialog(nullptr, delta, pick);
+        const bool ok = promptLinearDeltaDialog(nullptr, delta, pick, false);
         check(!ok, "C: Iptal -> false dondu");
         check(delta == Vec3{1.0, 2.0, 3.0}, "C: iptalde delta korunur");
     }
@@ -140,9 +140,22 @@ int main(int argc, char** argv) {
         bool pick = false;
         AutoResponder r;
         QTimer::singleShot(0, [&r]() { respond(&r); });
-        const bool ok = promptLinearDeltaDialog(nullptr, delta, pick);
-        check(ok, "D: on-doldurma ile Tamam -> true");
+        const bool ok = promptLinearDeltaDialog(nullptr, delta, pick, false);
+        check(ok, "D: on-doldurma ile Uygula -> true");
         check(delta == Vec3{-40.0, 0.0, 15.0}, "D: on-doldurulan deger geri okundu");
+    }
+    {
+        // E: OLCU SONRASI panel (fromPickedPoints=true): degerler OLÇULEN delta
+        // olmali ve Uygula'ya basilmadan islem yapilmaz (Application tarafi
+        // applyLinearDelta'yi yalniz true donunce cagirir).
+        Vec3 delta{2500.0, -750.0, 500.0};
+        bool pick = false;
+        AutoResponder r;
+        QTimer::singleShot(0, [&r]() { respond(&r); });
+        const bool ok = promptLinearDeltaDialog(nullptr, delta, pick, true);
+        check(ok, "E: olcu sonrasi panel Uygula -> true");
+        check(!pick, "E: olcu sonrasi panelde pick=false");
+        check(delta == Vec3{2500.0, -750.0, 500.0}, "E: olculen delta Uygula ile aynen dondu");
     }
     std::printf(failures == 0 ? "TUM KONTROLLER GECTI\n" : "%d KONTROL KALDI\n", failures);
     return failures == 0 ? 0 : 1;

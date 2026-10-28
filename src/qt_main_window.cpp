@@ -300,17 +300,22 @@ std::string comboProfileName(const QComboBox* combo) {
 }
 
 // DOGRUSAL KOPYA/TASIMA DELTA PANELI (kullanici talebi): X / Y / Z alanlari +
-// "Iki Nokta Sec" dugmesi. Kullanici degerleri yazar ve Tamam der; kopyalama/
-// tasima tam o kadar oteye yapilir. "Iki Nokta Sec" secilirse panel kapanir ve
-// delta ekranda iki tiklamayla (2. nokta - 1. nokta) belirlenir.
-bool promptLinearDeltaDialog(QWidget* parent, Vec3& delta, bool& pickTwoPoints) {
+// "Iki Nokta Sec" dugmesi. "Iki Nokta Sec" YALNIZ OLCU alir: panel kapanir,
+// kullanici iki nokta tiklar, olculen delta panele yazilir ve panel yeniden
+// acilir; islem ancak "Uygula" deyince yapilir (olcum tek basina kopyalamaz).
+bool promptLinearDeltaDialog(QWidget* parent, Vec3& delta, bool& pickTwoPoints,
+                             bool fromPickedPoints) {
     QDialog dialog(parent);
     dialog.setWindowTitle(QStringLiteral("Doğrusal Kopyala / Taşı — Delta"));
     auto* layout = new QVBoxLayout(&dialog);
 
     auto* info = new QLabel(
-        QStringLiteral("X / Y / Z offsetini girin (mm). İşlem bu kadar öteye yapılır.\n"
-                       "\"İki Nokta Seç\" ile delta ekranda iki tıklamayla belirlenir."),
+        fromPickedPoints
+            ? QStringLiteral("İki noktadan ölçülen delta aşağıda yazılı. Gerekirse düzeltip "
+                             "\"Uygula\"ya basın; işlem bu kadar öteye yapılır.")
+            : QStringLiteral("X / Y / Z offsetini girin (mm). \"Uygula\" işlemi bu kadar öteye "
+                             "yapar.\n\"İki Nokta Seç\" yalnız ölçü alır: delta ekranda iki "
+                             "tıklamayla ölçülüp buraya yazılır."),
         &dialog);
     info->setWordWrap(true);
     layout->addWidget(info);
@@ -336,7 +341,7 @@ bool promptLinearDeltaDialog(QWidget* parent, Vec3& delta, bool& pickTwoPoints) 
     auto* buttons = new QHBoxLayout();
     auto* pickButton = new QPushButton(QStringLiteral("İki Nokta Seç"), &dialog);
     auto* cancelButton = new QPushButton(QStringLiteral("İptal"), &dialog);
-    auto* okButton = new QPushButton(QStringLiteral("Tamam"), &dialog);
+    auto* okButton = new QPushButton(QStringLiteral("Uygula"), &dialog);
     okButton->setDefault(true);
     buttons->addWidget(pickButton);
     buttons->addStretch(1);
@@ -410,10 +415,11 @@ QtMainWindow::QtMainWindow(QWidget* parent)
         return true;
     });
     // DOGRUSAL KOPYA/TASIMA: komut baslayinca X/Y/Z delta paneli acilir
-    // (kullanici talebi). Panel "Iki Nokta Sec" derse Application iki-tiklama
-    // moduna gecer ve delta 2. nokta - 1. nokta olarak uygulanir.
-    app_.setLinearDeltaRequest([this](Vec3& delta, bool& pickTwoPoints) {
-        return promptLinearDeltaDialog(this, delta, pickTwoPoints);
+    // (kullanici talebi). Panel "Iki Nokta Sec" derse Application once OLCU
+    // moduna gecer; iki nokta olculunce panel degerlerle yeniden acilir ve
+    // islem "Uygula" ile yapilir.
+    app_.setLinearDeltaRequest([this](Vec3& delta, bool& pickTwoPoints, bool fromPickedPoints) {
+        return promptLinearDeltaDialog(this, delta, pickTwoPoints, fromPickedPoints);
     });
     // Bolt tool penceresi (Phase B1): bolt display'ine cift tik -> diyalog.
     app_.setBoltEditRequest([this](const mm::BoltGroup& bolt) {

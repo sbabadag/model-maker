@@ -624,8 +624,10 @@ public:
     // DOGRUSAL KOPYA/TASIMA DELTA PANELI: Qt tarafi X/Y/Z alanlari + "Iki Nokta
     // Sec" dugmesi olan paneli acar. delta = giris/cikis degeri (son kullanilan
     // delta ile on-doldurulur), pickTwoPoints = true ise kullanici deltayi iki
-    // tiklamayla belirlemeyi secti. false = iptal.
-    void setLinearDeltaRequest(std::function<bool(Vec3& delta, bool& pickTwoPoints)> callback) {
+    // tiklamayla OLCUP panele yazdirmak istedi (islem YAPILMAZ), fromPickedPoints
+    // = panel ikinci kez, iki noktadan gelen olcuyle aciliyor. false = iptal.
+    void setLinearDeltaRequest(std::function<bool(Vec3& delta, bool& pickTwoPoints,
+                                                  bool fromPickedPoints)> callback) {
         linearDeltaRequest_ = std::move(callback);
     }
     // Bolt tool penceresi istegi (Phase B1): bir BOLT display modeline cift
@@ -1053,8 +1055,9 @@ private:
     std::function<bool(const std::wstring&, const std::wstring&, std::wstring&)> parameterRequest_;
     // DOGRUSAL KOPYA/TASIMA: panel callback'i + son kullanilan delta + panelde
     // "Iki Nokta Sec" secildiginde aktif olan iki-tiklama modu.
-    std::function<bool(Vec3&, bool&)> linearDeltaRequest_;
-    bool linearPickMode_{false};              // delta iki tiklamayla secilecek
+    std::function<bool(Vec3&, bool&, bool)> linearDeltaRequest_;
+    bool linearPickMode_{false};              // delta iki tiklamayla olculecek
+    bool linearDeltaFromPick_{false};         // panel, olculen delta ile aciliyor
     Vec3 lastLinearDelta_{0.0, 0.0, 0.0};     // panel on-doldurma degeri
     std::optional<double> requestDoubleParameter(const std::wstring& prompt,
                                                  const std::wstring& initial);
