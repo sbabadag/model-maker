@@ -1120,10 +1120,20 @@ BuildResult buildSheet(const Document& doc, MarkRegistry& reg, EntityId subject,
                 lengthDir = ady < projLen * 1e-3   ? DimensionDirection::Horizontal
                             : adx < projLen * 1e-3 ? DimensionDirection::Vertical
                                                    : DimensionDirection::Aligned;
-                newDim(DimensionRole::MemberLength, lengthDir, {pa.x - v.projectionOffset.x, pa.y - v.projectionOffset.y},
-                       {pb2.x - v.projectionOffset.x, pb2.y - v.projectionOffset.y}, axisLen, mainPart, kLengthGroup,
-                       inv.datum.valid ? inv.datum.id : std::string(), "member axis length (true 3D axis, axis in view plane)");
-                haveLength = true;
+                // KULLANICI GERI BILDIRIMI (2026-10-28): "5000 olcusu hangi uzunluga ait belli degil".
+                // Eksen boyu CIZILEN govdenin uzunlugundan farkliysa (or. eksen uclari kolon yuzunde,
+                // govde 95 mm iceride) olcu, gorunen parcanin disina tasar ve neyi olctugu anlasilmaz.
+                // KURAL: eksen olcusu YALNIZ eksen uclari gorunen govde uclariyla cakisiyorsa yazilir;
+                // aksi halde cizilen govde (bounding box) olculur.
+                const double drawnLen = lengthDir == DimensionDirection::Horizontal ? v.bounds.width()
+                                        : lengthDir == DimensionDirection::Vertical ? v.bounds.height()
+                                                                                   : axisLen;
+                if (std::fabs(drawnLen - axisLen) <= 0.5) {
+                    newDim(DimensionRole::MemberLength, lengthDir, {pa.x - v.projectionOffset.x, pa.y - v.projectionOffset.y},
+                           {pb2.x - v.projectionOffset.x, pb2.y - v.projectionOffset.y}, axisLen, mainPart, kLengthGroup,
+                           inv.datum.valid ? inv.datum.id : std::string(), "member axis length (true 3D axis, axis in view plane)");
+                    haveLength = true;
+                }
             }
         }
         // KULLANICI GERI BILDIRIMI (2026-10-28): "dis tan disa 5000 olcusu alakasiz" —

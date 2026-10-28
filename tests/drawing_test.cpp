@@ -584,6 +584,33 @@ int main() {
         check(nearTo(sum, f->bounds.width()), "H: konum zinciri toplami = gorunus genisligi");
     }
 
+    // =========================================================================
+    // E) EKSEN > GOVDE: eksen uclari gorunen govde ile cakismiyorsa eksen boyu YAZILMAZ
+    //    (kullanici geri bildirimi: "5000 olcusu hangi uzunluga ait oldugu belli degil")
+    // =========================================================================
+    {
+        Document dx;
+        WireframeModel m = makeBox({0, 0, 0}, {4810, 150, 300}, "IPE300", "Kiris", false);
+        EntityProperties pp = m.properties();
+        pp.axisFromX = -95.0;                       // eksen 5000, gorunen govde 4810
+        pp.axisToX = 4905.0;
+        pp.axisFromY = pp.axisToY = 75.0;
+        pp.axisFromZ = pp.axisToZ = 150.0;
+        m.setProperties(pp);
+        const EntityId idAxis = add(dx, m);
+        MarkRegistry regAxis;
+        const BuildResult rb = buildSheet(dx, regAxis, idAxis);
+        const DrawingView* fv = rb.sheet.viewOfKind(ViewKind::Front);
+        check(rb.ok && fv != nullptr, "E: eksen/govde uyusmazliginda cizim uretildi");
+        if (fv) {
+            check(findDim(rb.sheet, fv->id, DimensionRole::MemberLength) == nullptr,
+                  "E: eksen uclari govde ile cakismiyor -> eksen boyu olcusu YAZILMAZ (havada olcu yok)");
+            const Dimension2D* ow = findDim(rb.sheet, fv->id, DimensionRole::OverallWidth);
+            check(ow && nearTo(ow->value, 4810) && nearTo(ow->measured(), 4810),
+                  "E: onun yerine CIZILEN govde uzunlugu (4810) olculur");
+        }
+    }
+
     std::printf(failures ? "FAILURES: %d\n" : "ALL PASS\n", failures);
     return failures ? 1 : 0;
 }
