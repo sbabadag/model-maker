@@ -7291,7 +7291,23 @@ void Application::commitTransformPoint(const Vec3& point) {
         //     (AutoCAD "Multiple" davranisi — ayni delta degil, imlec
         //     nereye giderse oraya).
         pushUndoSnapshot();
+        const std::size_t instBefore = document_.componentInstances().size();
+        const std::size_t boltBefore = document_.boltGroups().size();
         document_.copyModels(selectedModels_, displacement);
+        // KOPYA TESHISI (2026-10-28): "component olarak kopyalanmiyor" geri
+        // bildirimi icin gorunur kanit — kopyanin component/bulon uretip
+        // uretmedigini durum cubugunda yaz (sessiz basarisizlik kalmasin).
+        {
+            const std::size_t instAdded = document_.componentInstances().size() - instBefore;
+            const std::size_t boltAdded = document_.boltGroups().size() - boltBefore;
+            std::wstring msg = L"Kopya: " + std::to_wstring(selectedModels_.size()) + L" eleman";
+            if (instAdded > 0)
+                msg += L", " + std::to_wstring(instAdded) + L" component, " +
+                       std::to_wstring(boltAdded) + L" bulon grubu";
+            else
+                msg += L" (component kopyalanmadi: secimde bilesenin TUM levha+bulon nesneleri yok)";
+            publishStatus(std::move(msg));
+        }
         // Taban SABIT kalir (AutoCAD): kopya = kaynak + (tiklanan - taban).
         // Tabani tıklamaya güncellemek deltayı bozuyordu: ikinci kopya
         // kaynağın üstüne biniyor, toplu rotasyonda nesneler "yer

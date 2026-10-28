@@ -450,9 +450,10 @@ void Document::cloneDependentsForCopies(const std::unordered_map<EntityId, Entit
                 ownCheck(c.entityId, indexOfEntity(c.entityId).has_value() ||
                                          indexOfBoltGroup(c.entityId).has_value());
         if (!any || !complete) continue;
-        // Ana parca kopyalanmadiysa bu baska bir component'in serbest alt
-        // nesnelerinin kopyasidir: yeni instance acmak cift baglanti olurdu.
-        if (src.mainPart != kInvalidEntityId && !remap.count(src.mainPart)) continue;
+        // NOT: ana/ikincil parca kopyalanmadiysa referans ORIJINALDE kalir. Kullanici
+        // componenti kendi nesneleriyle (levha + bulon) kopyalayip yeni yere tasiyabilir;
+        // cerceve/yerlesim otelemeyle tasindigi icin geometri dogru yerde kalir.
+        // (Once ana parca sarti vardi — "component secilip kopyalaninca" kopya olusmuyordu.)
 
         ComponentInstanceRecord clone = src;
         clone.id = kInvalidEntityId;          // yeni kimlik addComponentInstance'ta
@@ -487,7 +488,6 @@ void Document::cloneDependentsForCopies(const std::unordered_map<EntityId, Entit
     for (std::size_t i = 0; i < epCount; ++i) {
         const EndPlateConnection src = endPlateConnections_[i];
         if (src.plateEntityId == kInvalidEntityId || !remap.count(src.plateEntityId)) continue;
-        if (src.mainPart != kInvalidEntityId && !remap.count(src.mainPart)) continue;
         if (src.bolts.id != kInvalidEntityId && !remap.count(src.bolts.id)) continue;
         EndPlateConnection clone = src;
         clone.id = kInvalidEntityId;

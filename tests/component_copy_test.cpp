@@ -163,6 +163,29 @@ int main() {
         check(!ownsCopy, "B: kopya levha orijinal component'in sahipligi ALTINA girmadi");
     }
 
+    std::printf("== C: component KENDI nesneleriyle kopyalanir (ana parca secilmedi) ==\n");
+    {
+        Document empty;
+        Fixture f = makeJoint(empty);
+        Document& doc = f.doc;
+        const std::size_t instBefore = doc.componentInstances().size();
+        const EntityId beam = f.beam;
+        // Levha + bulon montaji (component'in SAHIP oldugu nesneler) kopyalanir.
+        const std::size_t plateIndex = *doc.indexOfEntity(f.plate);
+        const std::size_t boltIndex = *doc.indexOfEntity(f.boltDisplay);
+        doc.pushSnapshot();
+        doc.copyModels({plateIndex, boltIndex}, Vec3{3000, 0, 0});
+        check(doc.componentInstances().size() == instBefore + 1,
+              "C: component kopyalandi (ana parca secilmese de instance acilir)");
+        const ComponentInstanceRecord& clone = doc.componentInstances().back();
+        check(clone.ownedBoltGroupIds.size() == 1 &&
+                  clone.ownedBoltGroupIds[0] == doc.boltGroups().back().id,
+              "C: kopya KOPYA bulon grubunu sahiplenir");
+        check(clone.mainPart == beam, "C: kopyalanmayan ana parca referansi orijinalde kalir");
+        check(std::fabs(clone.frame.frame.origin.x - 3100.0) < 1e-9,
+              "C: kopya cercevesi yeni konuma tasindi");
+    }
+
     if (failures) std::printf("%d FAIL\n", failures);
     else std::printf("ALL PASS\n");
     return failures == 0 ? 0 : 1;
