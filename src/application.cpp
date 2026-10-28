@@ -28,6 +28,7 @@
 #endif
 #include "model_maker/view_cube.hpp"
 #include "model_maker/contact_resolver.hpp"
+#include "model_maker/component_rebind.hpp"
 #include "model_maker/component_glyph.hpp"
 #include "model_maker/component_dialog.hpp"
 
@@ -5763,6 +5764,108 @@ void Application::recomputeComponentInstancesFor(const std::vector<EntityId>& ch
 #endif
 }
 
+std::size_t Application::rebindCopiedComponents(std::size_t firstNewInstance,
+                                               const std::vector<EntityId>& copiedModels) {
+    // TEKLA DAVRANISI (kullanici istegi 2026-10-28): "component tek basina bile
+    // kopyalansa, kopyalandigi koordinatta ana ve ara objeler varsa kendisi
+    // otomatik baglantiyi kurmali". Kopya instance'in parca referansi kopya
+    // degilse (parcalar secilmemis) yeni konumdaki uyeler aranip baglanir.
+    if (firstNewInstance >= document_.componentInstances().size()) return 0;
+    ensureProfileCatalog();
+
+    std::unordered_set<EntityId> copied(copiedModels.begin(), copiedModels.end());
+    // Sahip olunan alt nesneler aday olamaz (component kendi levhasina baglanmasin).
+    std::unordered_set<EntityId> owned;
+    for (const ComponentInstanceRecord& r : document_.componentInstances()) {
+        for (const EntityId id : r.ownedPlateIds) owned.insert(id);
+        for (const EntityId id : r.ownedBoltGroupIds) owned.insert(id);
+        for (const ComponentChildRecord& c : r.children)
+            if (c.entityId != kInvalidEntityId) owned.insert(c.entityId);
+    }
+    std::vector<RebindCandidate> candidates;
+    for (std::size_t i = 0; i < document_.models().size(); ++i) {
+        const WireframeModel& m = document_.models()[i];
+        if (m.constructionKind() != ConstructionKind::None) continue;
+        const auto& p = m.properties();
+        if (p.profileName.empty()) continue;   // yalniz yapisal uyeler
+        const EntityId id = document_.modelId(i);
+        if (owned.count(id)) continue;
+        const MemberGeometry g = memberGeometryFor(document_, profileCatalog_, i);
+        RebindCandidate c;
+        c.id = id;
+        c.axisFrom = {p.axisFromX, p.axisFromY, p.axisFromZ};
+        c.axisTo = {p.axisToX, p.axisToY, p.axisToZ};
+        c.secWidth = g.secWidth;
+        c.secHeight = g.secHeight;
+        candidates.push_back(c);
+    }
+    if (candidates.empty()) return 0;
+
+    const auto axisDirOf = [&](EntityId partId) -> Vec3 {
+        const auto idx = document_.indexOfEntity(partId);
+        if (!idx) return Vec3{};
+        const auto& p = document_.models()[*idx].properties();
+        const Vec3 d{p.axisToX - p.axisFromX, p.axisToY - p.axisFromY, p.axisToZ - p.axisFromZ};
+        const double len = std::sqrt(d.x * d.x + d.y * d.y + d.z * d.z);
+        if (len <= 1e-12) return Vec3{};
+        return {d.x / len, d.y / len, d.z / len};
+    };
+
+    std::size_t rebound = 0;
+    std::vector<EntityId> recomputeParts;
+    const std::size_t instCount = document_.componentInstances().size();
+    for (std::size_t idx = firstNewInstance; idx < instCount; ++idx) {
+        ComponentInstanceRecord rec = document_.componentInstances()[idx];
+        // Parcalar kopya olarak geldiyse baglanti zaten dogru — rebind YAPILMAZ.
+        if (rec.mainPart != kInvalidEntityId && copied.count(rec.mainPart)) continue;
+        // CAPA: sahip olunan levhalarin sinir kutusu merkezi (yoksa cerceve origin).
+        Vec3 anchor = rec.frame.frame.origin;
+        {
+            const std::vector<Bounds3>& mb = document_.modelBounds();
+            Bounds3 acc{};
+            bool any = false;
+            for (const EntityId pid : rec.ownedPlateIds) {
+                const auto pi = document_.indexOfEntity(pid);
+                if (!pi || *pi >= mb.size()) continue;
+                const Bounds3& b = mb[*pi];
+                if (!any) { acc = b; any = true; continue; }
+                acc.minimum = {std::min(acc.minimum.x, b.minimum.x), std::min(acc.minimum.y, b.minimum.y),
+                               std::min(acc.minimum.z, b.minimum.z)};
+                acc.maximum = {std::max(acc.maximum.x, b.maximum.x), std::max(acc.maximum.y, b.maximum.y),
+                               std::max(acc.maximum.z, b.maximum.z)};
+            }
+            if (any)
+                anchor = {(acc.minimum.x + acc.maximum.x) * 0.5, (acc.minimum.y + acc.maximum.y) * 0.5,
+                          (acc.minimum.z + acc.maximum.z) * 0.5};
+        }
+        // Rol ipuclari ORIJINAL parcalardan (kopyalanmadigi icin hala duruyorlar).
+        const Vec3 mainHint = axisDirOf(rec.mainPart);
+        std::vector<Vec3> secHints;
+        for (const EntityId sid : rec.secondaryParts) secHints.push_back(axisDirOf(sid));
+        const std::size_t needSecondary = rec.secondaryParts.empty() ? 1 : rec.secondaryParts.size();
+        // 750 mm: birlesim bolgesi yaricapi (levha bunun icinde kalir); kesit
+        // yaricapi findRebindParts icinde aday basina eklenir.
+        const RebindResult res = findRebindParts(candidates, anchor, mainHint, secHints, needSecondary, 750.0);
+        if (!res.ok || res.secondary.size() < needSecondary) continue;
+        if (res.main == rec.mainPart && res.secondary == rec.secondaryParts) continue;
+        rec.mainPart = res.main;
+        rec.secondaryParts = res.secondary;
+        rec.dirty = true;
+        if (!document_.setComponentInstance(idx, rec)) continue;
+        ++rebound;
+        recomputeParts.push_back(res.main);
+        for (const EntityId sid : res.secondary) recomputeParts.push_back(sid);
+    }
+#ifdef MM_HAS_OCC
+    // Yeni parcalara gore levha/bulon geometrisini yeniden uret (aynı kimlikler
+    // roleKey ile korunur; basarisizlikta atomik rollback).
+    if (!recomputeParts.empty()) recomputeComponentInstancesFor(recomputeParts);
+#else
+    (void)recomputeParts;
+#endif
+    return rebound;
+}
+
 
 #ifdef MM_HAS_OCC
 bool Application::setSelectedEndPlateConnection(EntityId connId, const EndPlateParams& newParams) {
@@ -7291,9 +7394,16 @@ void Application::commitTransformPoint(const Vec3& point) {
         //     (AutoCAD "Multiple" davranisi — ayni delta degil, imlec
         //     nereye giderse oraya).
         pushUndoSnapshot();
+        const std::size_t modelsBefore = document_.models().size();
         const std::size_t instBefore = document_.componentInstances().size();
         const std::size_t boltBefore = document_.boltGroups().size();
         document_.copyModels(selectedModels_, displacement);
+        // TEKLA DAVRANISI: component tek basina kopyalandiysa yeni konumdaki
+        // ana/ara parcalara OTOMATIK baglanir (bkz. rebindCopiedComponents).
+        std::vector<EntityId> copiedModels;
+        for (std::size_t k = modelsBefore; k < document_.models().size(); ++k)
+            copiedModels.push_back(document_.modelId(k));
+        const std::size_t rebound = rebindCopiedComponents(instBefore, copiedModels);
         // KOPYA TESHISI (2026-10-28): "component olarak kopyalanmiyor" geri
         // bildirimi icin gorunur kanit — kopyanin component/bulon uretip
         // uretmedigini durum cubugunda yaz (sessiz basarisizlik kalmasin).
@@ -7301,11 +7411,16 @@ void Application::commitTransformPoint(const Vec3& point) {
             const std::size_t instAdded = document_.componentInstances().size() - instBefore;
             const std::size_t boltAdded = document_.boltGroups().size() - boltBefore;
             std::wstring msg = L"Kopya: " + std::to_wstring(selectedModels_.size()) + L" eleman";
-            if (instAdded > 0)
+            if (instAdded > 0) {
                 msg += L", " + std::to_wstring(instAdded) + L" component, " +
                        std::to_wstring(boltAdded) + L" bulon grubu";
-            else
+                if (rebound > 0)
+                    msg += L", " + std::to_wstring(rebound) + L" yeni konumdaki parcalara baglandi";
+                else
+                    msg += L" (yeni konumda uygun parca bulunamadi — baglanti orijinal parcalarda)";
+            } else {
                 msg += L" (component kopyalanmadi: secimde bilesenin TUM levha+bulon nesneleri yok)";
+            }
             publishStatus(std::move(msg));
         }
         // Taban SABIT kalir (AutoCAD): kopya = kaynak + (tiklanan - taban).

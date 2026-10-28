@@ -413,6 +413,14 @@ public:
     // baglantilari AYRI kalir (mevcut production yolu). Deterministik kayit
     // sirasi; basarisizlikta atomik rollback (eski model bozulmaz).
     void recomputeComponentInstancesFor(const std::vector<EntityId>& changedParts);
+    // COMPONENT REBIND (C4): kopyalanan component'in ana/ara parcalari kopya
+    // olarak gelmediyse (component tek basina kopyalandi) YENI KONUMDAKI
+    // yapisal uyeleri bulur ve baglantiyi onlara kurar (Tekla davranisi).
+    // `firstNewInstance`: kopyadan sonra acilan ilk instance indeksi.
+    // `copiedModels`: kopya kimlikleri (bu kimliklere bagli instance'lar zaten
+    // dogru bagli — rebind YAPILMAZ). Donus: yeniden baglanan instance sayisi.
+    std::size_t rebindCopiedComponents(std::size_t firstNewInstance,
+                                       const std::vector<EntityId>& copiedModels);
     // Secili model bir component instance'inin SAHIP OLDUGU alt nesne (levha/
     // bulon display) ise kaydini dondurur; degilse false.
     bool selectedComponentInstance(ComponentInstanceRecord& out) const;
