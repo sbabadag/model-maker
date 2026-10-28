@@ -197,6 +197,42 @@ int main(int argc, char** argv) {
                 ++split;
             }
         if (split > 8) std::printf("  ... toplam %d boyle imza\n", split);
+        // (c) AYNI OLCU ama FARKLI DELIK IMZASI: kopyada kesme kaydi var mi?
+        {
+            std::map<std::string, std::vector<EntityId>> byGeom;
+            for (std::size_t i = 0; i < doc.models().size(); ++i) {
+                if (!isDrawablePart(doc.models()[i])) continue;
+                const EntityId id = doc.modelId(i);
+                const auto bb = vbox(id);
+                const EntityProperties& pr = doc.models()[i].properties();
+                char key[256];
+                std::snprintf(key, sizeof(key), "%s|%s|%.0fx%.0fx%.0f", pr.profileName.c_str(),
+                              pr.name.c_str(), bb.maximum.x - bb.minimum.x,
+                              bb.maximum.y - bb.minimum.y, bb.maximum.z - bb.minimum.z);
+                byGeom[key].push_back(id);
+            }
+            int reported = 0;
+            for (const auto& [key, ids] : byGeom) {
+                std::set<unsigned long long> drills;
+                for (const EntityId id : ids)
+                    drills.insert(static_cast<unsigned long long>(fab::drillingFingerprint(doc, id)));
+                if (ids.size() > 1 && drills.size() > 1 && reported < 6) {
+                    ++reported;
+                    std::printf("  [DELIK FARKI] %s -> %zu parca, %zu farkli delik imzasi\n", key.c_str(),
+                                ids.size(), drills.size());
+                    for (const EntityId id : ids) {
+                        int cuts = 0;
+                        for (const CutModifier& m : doc.cutModifiers())
+                            if (m.target == id && m.kind == CutKind::Hole) ++cuts;
+                        std::printf("      parca %llu: delik=%llu  hole-cut=%d  mark=P%d\n",
+                                    (unsigned long long)id,
+                                    (unsigned long long)fab::drillingFingerprint(doc, id), cuts,
+                                    reg.markOf(id) ? reg.markOf(id)->number : -1);
+                    }
+                }
+            }
+        }
+
         // Ornek dokum: mark -> ad/olcu
         int shown = 0;
         for (const auto& [num, ids] : byMark) {

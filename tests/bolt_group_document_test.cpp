@@ -9,6 +9,8 @@
 // uretir; deleteModels bagli parca silinince bulonu da kaldirir.
 
 #include "model_maker/document.hpp"
+#include <cmath>
+#include "model_maker/fabrication.hpp"
 
 #include <cstdio>
 #include <filesystem>
@@ -213,9 +215,11 @@ int main() {
               "display-kaskad: parcalar yeniden hesap icin donuldu");
     }
 
-    // KOPYA (boltsuz): parca kopyalaninca kopya DELIKSIZ kalir — delik
-    // modifier'lari kopyalanmaz (yalniz model kopyalanir), yeni kimlik hicbir
-    // deligin hedefi degildir.
+    // KOPYA: parca kopyalaninca DELIKLERI de kopyalanir (2026-10-28 davranis
+    // degisikligi). Eskiden kesme modifier'lari kopyalanmiyordu; kullanici geri
+    // bildirimi: "kopyaladigim levha ayni ama farkli pozlar aliyor" — delik
+    // parmak izi (drillingFingerprint) kopyada 0 kaldigi icin ayni geometri
+    // farkli part poz aliyordu; ayrica kopyanin 3B katisinda delik yoktu.
     {
         Document doc4;
         doc4.pushSnapshot();
@@ -234,12 +238,23 @@ int main() {
         const std::size_t paIndex = *doc4.indexOfEntity(pa);
         doc4.pushSnapshot();
         doc4.copyModels({paIndex}, Vec3{200, 0, 0});
-        check(doc4.cutModifiers().size() == 2, "kopya: delik sayisi degismedi");
+        check(doc4.cutModifiers().size() == 3, "kopya: delikler de KOPYALANDI (2 -> 3; yalniz kopyalanan parcanin deligi)");
         const EntityId copyId = doc4.modelIds().back();
-        bool copyIsHoleTarget = false;
+        int copyHoles = 0, originalHoles = 0;
+        for (const auto& m : doc4.cutModifiers()) {
+            if (m.target == copyId) ++copyHoles;
+            if (m.target == pa) ++originalHoles;
+        }
+        check(copyHoles == 1, "kopya: kopyanin kendi delik hedefi var (1)");
+        check(originalHoles == 1, "kopya: orijinalin deligi yerinde (1)");
+        // Delik merkezleri otelemeyle tasinmis olmali (+200 mm X).
+        bool shifted = true;
         for (const auto& m : doc4.cutModifiers())
-            if (m.target == copyId) copyIsHoleTarget = true;
-        check(!copyIsHoleTarget, "kopya: kopya delik hedefi degil (deliksiz)");
+            if (m.target == copyId && std::fabs(m.planeOrigin.x - 250.0) > 1e-6) shifted = false;
+        check(shifted, "kopya: delik merkezleri otelemeyle tasindi (x=250)");
+        // Poz kimligi: ayni geometri + ayni delik -> AYNI delik parmak izi.
+        check(fab::drillingFingerprint(doc4, copyId) == fab::drillingFingerprint(doc4, pa),
+              "kopya: delik parmak izi orijinalle AYNI (ayni poz beklenir)");
     }
 
     if (g_failures) {

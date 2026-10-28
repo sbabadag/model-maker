@@ -547,6 +547,43 @@ void Document::cloneDependentsForCopies(const std::unordered_map<EntityId, Entit
         }
     }
 
+    // (2c) KESME MODIFIER'LARI: HEDEFI kopyalanan kayit KOPYADIR.
+    // KULLANICI BUG RAPORU (2026-10-28): "kopyaladigim levha ayni ama farkli pozlar
+    // aliyor". Olculen neden: kopya levhanin DELIK kayitlari (CutModifier/Hole)
+    // kopyalanmiyordu -> delik parmak izi (drillingFingerprint) kopyada 0,
+    // orijinalde dolu -> ayni geometri farkli poz; ayrica kopyanin 3B katisinda
+    // delik yok. Bu adim hedefi kopya olan TUM kesmeleri klonlar.
+    {
+        const std::size_t cutCount = cutModifiers_.size();
+        std::vector<CutModifier> cutClones;
+        for (std::size_t i = 0; i < cutCount; ++i) {
+            const CutModifier src = cutModifiers_[i];
+            if (src.target == kInvalidEntityId || !remap.count(src.target)) continue;
+            // Boolean kesme: ARAC parcasi da kopya degilse klonlanmaz (orijinal
+            // aracla kopyayi kesmek yanlis geometri uretirdi).
+            if (src.kind == CutKind::BooleanCut &&
+                (src.tool == kInvalidEntityId || !remap.count(src.tool)))
+                continue;
+            CutModifier clone = src;
+            clone.target = remap[src.target];
+            clone.planeOrigin = clone.planeOrigin + displacement;
+            for (Vec3& p : clone.polygon) p = {p.x + displacement.x, p.y + displacement.y,
+                                              p.z + displacement.z};
+            if (clone.tool != kInvalidEntityId && remap.count(clone.tool)) clone.tool = remap[clone.tool];
+            // KAYNAK varlik kopyalanmadiysa geometri SABIT kalir (kopyanin kendi
+            // otelenmis duzlemi kullanilir) — orijinal kaynaga baglanip yanlis
+            // konumdan kesmesin.
+            if (clone.source != kInvalidEntityId)
+                clone.source = remap.count(clone.source) ? remap[clone.source] : kInvalidEntityId;
+            // Bulon sahipligi kopyalanmadiysa sahipsiz (bagimsiz delik) olur:
+            // orijinal bulon silinince kopyanin deligi kaskad silinmesin.
+            if (clone.owner != kInvalidEntityId)
+                clone.owner = remap.count(clone.owner) ? remap[clone.owner] : kInvalidEntityId;
+            cutClones.push_back(clone);
+        }
+        for (CutModifier& c : cutClones) addCutModifier(std::move(c));
+    }
+
     // (3) COMPONENT INSTANCE'LARI: sahip olunan TUM canli alt nesneler kopyalandiysa
     // yeni instance acilir. Aksi halde (yarim kopya) yeni instance ACILMAZ —
     // ayni levha/bulon iki component tarafindan sahiplenilemez.
