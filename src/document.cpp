@@ -429,7 +429,7 @@ void Document::cloneDependentsForCopies(const std::unordered_map<EntityId, Entit
         }
     }
 
-    // (2) KAYNAKLAR (WELD): iki parcasi da kopyalanan kayit KOPYADIR.
+    // (2) KAYNAKLAR (WELD): kopyalanan kayit KOPYADIR.
     // KULLANICI BUG RAPORU (2026-10-28): "kopyalanan componentlar assembly
     // olusturmuyor" — assembly'ler SHOP weld grafindan turetilir
     // (reassembleFromWelds), weld kayitlari klonlanmadigi icin kopya parcalar
@@ -438,17 +438,81 @@ void Document::cloneDependentsForCopies(const std::unordered_map<EntityId, Entit
     // kopyanin parcalarina baglayabiliyordu (kaynak "calinmasi").
     // Bu blok component instance'larindan ONCE calisir: remap'in weld eslemesi
     // hazir olmali.
+    //
+    // KURAL (2. kullanici raporu: "kaynakla beraber levhayi kopyaladigimda
+    // assembly olusturmadi"): uc kosuldan biri saglanirsa kaynak kopyalanir —
+    //   a) IKI ucu da kopya (tam kopya): her iki uc kopyaya eslenir,
+    //   b) TEK ucu kopya + KAYNAGIN KENDISI (gorsel modeli) secimde: kopyalanan
+    //      uc kopyaya, kopyalanmayan uc ORIJINAL parcaya baglanir — levha +
+    //      kaynak kopyalandiginda kaynak yeni levhayi mevcut kirise/kolona
+    //      baglar ve assembly olusur,
+    //   c) aksi halde kopyalanmaz (tek uclu kopyada kaynak kendiliginden
+    //      uretilmez; yalniz acikca secildiginde).
     {
         const std::size_t weldCount = welds_.size();
         std::vector<std::pair<EntityId, Weld>> pending;   // kaynak kimlik, kopya kaydi
+        // Iki parca arasindaki eksen-hizali kutu bosluğu (mm); bilinmeyen
+        // varlikta 0 (engelleme yok — mevcut davranis korunur).
+        const auto boxGap = [this](EntityId a, EntityId b) -> double {
+            const auto ia = indexOfEntity(a);
+            const auto ib = indexOfEntity(b);
+            if (!ia || !ib) return 0.0;
+            const std::vector<Bounds3>& mb = modelBounds();
+            if (*ia >= mb.size() || *ib >= mb.size()) return 0.0;
+            const Bounds3& A = mb[*ia];
+            const Bounds3& B = mb[*ib];
+            const double dx = std::max({B.minimum.x - A.maximum.x, A.minimum.x - B.maximum.x, 0.0});
+            const double dy = std::max({B.minimum.y - A.maximum.y, A.minimum.y - B.maximum.y, 0.0});
+            const double dz = std::max({B.minimum.z - A.maximum.z, A.minimum.z - B.maximum.z, 0.0});
+            return std::sqrt(dx * dx + dy * dy + dz * dz);
+        };
+        // Tek uclu kopyada kaynak ortagi: ORIJINAL partner hala TEMAS
+        // BOLGESINDEYSE o; degilse kopyanin yeni konumundaki en yakin YAPISAL
+        // uye (profilli model). Bulunamazsa kaynak kopyalanmaz — metrelerce
+        // otede uydurma kaynak kaydi uretmeyiz.
+        constexpr double kWeldCopyTolerance = 400.0;
+        const auto nearestMember = [this](EntityId copiedPart) -> EntityId {
+            EntityId best = kInvalidEntityId;
+            double bestGap = kWeldCopyTolerance;
+            const std::vector<Bounds3>& mb = modelBounds();
+            for (std::size_t i = 0; i < models_.size(); ++i) {
+                const EntityId id = modelIds_[i];
+                if (id == copiedPart) continue;
+                if (models_[i].properties().profileName.empty()) continue;   // yalniz yapisal uyeler
+                if (i >= mb.size()) continue;
+                const std::size_t ci = *indexOfEntity(copiedPart);
+                if (ci >= mb.size()) continue;
+                const Bounds3& A = mb[ci];
+                const Bounds3& B = mb[i];
+                const double dx = std::max({B.minimum.x - A.maximum.x, A.minimum.x - B.maximum.x, 0.0});
+                const double dy = std::max({B.minimum.y - A.maximum.y, A.minimum.y - B.maximum.y, 0.0});
+                const double dz = std::max({B.minimum.z - A.maximum.z, A.minimum.z - B.maximum.z, 0.0});
+                const double gap = std::sqrt(dx * dx + dy * dy + dz * dz);
+                if (gap <= bestGap) { bestGap = gap; best = id; }
+            }
+            return best;
+        };
         for (std::size_t i = 0; i < weldCount; ++i) {
             const Weld src = welds_[i];
-            if (src.mainPart == kInvalidEntityId || !remap.count(src.mainPart)) continue;
-            if (src.secondaryPart == kInvalidEntityId || !remap.count(src.secondaryPart)) continue;
+            const bool mainCopied =
+                src.mainPart != kInvalidEntityId && remap.count(src.mainPart) != 0;
+            const bool secCopied =
+                src.secondaryPart != kInvalidEntityId && remap.count(src.secondaryPart) != 0;
+            if (!mainCopied && !secCopied) continue;                     // iki uc da yerinde
             Weld clone = src;
             clone.id = kInvalidEntityId;
-            remapOne(clone.mainPart);
-            remapOne(clone.secondaryPart);
+            if (mainCopied) remapOne(clone.mainPart);
+            if (secCopied) remapOne(clone.secondaryPart);
+            if (!(mainCopied && secCopied)) {
+                // TEK UCLU KOPYA: kopyalanan uc KOPYA, diger uc AYNI KONUMDAKI
+                // uyeye baglanir (once orijinal partner, sonra en yakin uye).
+                const EntityId copiedPart = mainCopied ? clone.mainPart : clone.secondaryPart;
+                EntityId& partner = mainCopied ? clone.secondaryPart : clone.mainPart;
+                const EntityId originalPartner = mainCopied ? src.secondaryPart : src.mainPart;
+                if (boxGap(copiedPart, originalPartner) > kWeldCopyTolerance)
+                    partner = nearestMember(copiedPart);
+                if (partner == kInvalidEntityId) continue;   // temas eden uye yok -> kaynak yok
+            }
             clone.origin = clone.origin + displacement;
             // GORSEL: secimde kaynak kopyasi varsa onu kullan; yoksa gorsel
             // modeli OTELEYEREK kopyala (kopya kaynak yeni konumda gorunur).

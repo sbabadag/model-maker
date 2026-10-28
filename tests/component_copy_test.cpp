@@ -293,6 +293,108 @@ int main() {
         check(doc.welds().size() == weldsBefore, "E: yarim kopyada weld KLONLANMAZ");
     }
 
+    std::printf("== F: LEVHA + KAYNAK kopyalanir -> yeni konumdaki uyeye baglanir ==\n");
+    {
+        // KULLANICI RAPORU (2026-10-28): "kaynakla beraber levhayi kopyaladigimda
+        // assembly olusturmadi". Kural: tek ucu kopya ise kaynak KLONLANIR;
+        // kopyalanan uc kopyaya, diger uc ayni konumdaki uyeye baglanir (orijinal
+        // partner hala temasta ise o, degilse en yakin yapisal uye).
+        Document doc;
+        auto addMember = [&doc](double x0, double y0, double x1, double y1) {
+            doc.pushSnapshot();
+            WireframeModel m = WireframeModel::rectangle({x0, y0, 0.0}, {x1, y1, 0.0});
+            EntityProperties props = m.properties();
+            props.profileName = "IPE200";
+            props.axisFromX = x0; props.axisFromY = y0; props.axisFromZ = 0.0;
+            props.axisToX = x1; props.axisToY = y1; props.axisToZ = 0.0;
+            m.setProperties(std::move(props));
+            doc.addModel(std::move(m));
+            return doc.modelIds().back();
+        };
+        const EntityId beam1 = addMember(0, 0, 100, 100);
+        const EntityId beam2 = addMember(1500, 0, 1600, 100);
+        doc.pushSnapshot();
+        doc.addModel(rect(50, 100, 0));      // levha: 50..150, 100..200
+        const EntityId plate = doc.modelIds().back();
+
+        doc.pushSnapshot();
+        Weld weld;
+        weld.mainPart = beam1;
+        weld.secondaryPart = plate;
+        weld.weldClass = WeldClass::Shop;
+        weld.origin = {60.0, 100.0, 0.0};
+        const std::size_t wi =
+            doc.addWeld(weld, WireframeModel::rectangle({50, 100, 0}, {70, 120, 0}));
+        const EntityId weldId = doc.welds()[wi].id;
+        const EntityId weldDisplay = doc.welds()[wi].displayEntityId;
+        check(weldDisplay != kInvalidEntityId, "F: kaynak gorsel modeli var");
+        check(doc.assemblies().size() == 1, "F: baslangic 1 assembly (beam1 + levha)");
+
+        const std::size_t weldsBefore = doc.welds().size();
+        // Secim: LEVHA + KAYNAK -> beam2'nin yanina (1500 mm).
+        const std::size_t plateIdx = *doc.indexOfEntity(plate);
+        const std::size_t weldIdx = *doc.indexOfEntity(weldDisplay);
+        doc.pushSnapshot();
+        doc.copyModels({plateIdx, weldIdx}, Vec3{1500, 0, 0});
+        const EntityId plateCopy = doc.modelIds()[doc.models().size() - 2];
+        const EntityId weldDisplayCopy = doc.modelIds()[doc.models().size() - 1];
+
+        check(doc.welds().size() == weldsBefore + 1,
+              "F: kaynak KLONLANDI (tek uclu kopyada da)");
+        if (doc.welds().size() == weldsBefore + 1) {
+            const Weld& clone = doc.welds().back();
+            check(clone.id != weldId, "F: kopya kaynak yeni kimlik");
+            check(clone.secondaryPart == plateCopy, "F: kopya kaynak KOPYA levhaya bagli");
+            check(clone.mainPart == beam2,
+                  "F: kopya kaynak YENI KONUMDAKI uyeye baglandi (beam2)");
+            check(clone.mainPart != beam1, "F: kopya kaynak uzaktaki orijinal uyeye baglanmadi");
+            check(clone.displayEntityId == weldDisplayCopy,
+                  "F: kopya kaynak secilen gorsel modeli kullanir");
+            check(std::fabs(clone.origin.x - (weld.origin.x + 1500.0)) < 1e-9,
+                  "F: kaynak konumu otelemeyle tasindi");
+        }
+        const Weld& originalWeld = doc.welds().front();
+        check(originalWeld.id == weldId && originalWeld.secondaryPart == plate &&
+                  originalWeld.mainPart == beam1,
+              "F: ORIJINAL kaynak yerinde");
+        const auto asmBeam2 = doc.assemblyIdContaining(beam2);
+        check(asmBeam2.has_value() && doc.assemblyIdContaining(plateCopy) == asmBeam2,
+              "F: KOPYA LEVHA artik bir ASSEMBLY uyesi (beam2 ile)");
+        check(doc.assemblyIdContaining(beam1) != asmBeam2,
+              "F: orijinal assembly kopyadan ayri");
+
+        check(doc.undo(), "F: undo calisti");
+        check(doc.welds().size() == weldsBefore, "F: undo -> kopya kaynak kalkti");
+        check(doc.assemblyIdContaining(plate) != std::nullopt, "F: undo -> orijinal levha assembly'de");
+    }
+
+    std::printf("== G: temas eden uye yoksa kaynak klonlanmaz (uydurma kayit yok) ==\n");
+    {
+        Document doc;
+        doc.pushSnapshot();
+        WireframeModel m = WireframeModel::rectangle({0, 0, 0}, {100, 100, 0});
+        EntityProperties props = m.properties();
+        props.profileName = "IPE200";
+        m.setProperties(std::move(props));
+        doc.addModel(std::move(m));
+        const EntityId beam = doc.modelIds().back();
+        doc.pushSnapshot();
+        doc.addModel(rect(50, 100, 0));
+        const EntityId plate = doc.modelIds().back();
+        doc.pushSnapshot();
+        Weld weld;
+        weld.mainPart = beam;
+        weld.secondaryPart = plate;
+        weld.weldClass = WeldClass::Shop;
+        doc.addWeld(weld);
+        const std::size_t weldsBefore = doc.welds().size();
+        // Bos alana kopyala: 3000 mm otede hicbir uye yok.
+        doc.pushSnapshot();
+        doc.copyModels({*doc.indexOfEntity(plate)}, Vec3{3000, 0, 0});
+        check(doc.welds().size() == weldsBefore,
+              "G: temas eden uye yok -> kaynak KLONLANMAZ (metrelerce otede kayit yok)");
+    }
+
     if (failures) std::printf("%d FAIL\n", failures);
     else std::printf("ALL PASS\n");
     return failures == 0 ? 0 : 1;
