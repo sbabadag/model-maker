@@ -1,4 +1,5 @@
 #include "model_maker/application.hpp"
+#include "model_maker/linear_delta.hpp"
 #include "model_maker/dxf.hpp"
 #include "model_maker/bridge_package.hpp"
 #include "model_maker/bridge_native_mapper.hpp"
@@ -7314,9 +7315,12 @@ void Application::completeTrimExtendTargetSelection(int x, int y) {
 bool Application::requestLinearDeltaPanel() {
     if (!linearDeltaRequest_) return false;
     if (selectedModels_.empty()) return false;
-    Vec3 delta = lastLinearDelta_;
-    bool pick = false;
-    if (!linearDeltaRequest_(delta, pick, linearDeltaFromPick_)) {  // Iptal
+    LinearDeltaInput input;
+    input.delta = lastLinearDelta_;
+    input.count = lastLinearCount_;
+    input.fromPickedPoints = linearDeltaFromPick_;
+    input.allowCount = transformCommand_ == TransformCommand::CopyLinear;
+    if (!linearDeltaRequest_(input)) {                              // Iptal
         linearDeltaFromPick_ = false;
         cancelTransformCommand();
         SetCursor(currentCanvasCursor());
@@ -7326,7 +7330,7 @@ bool Application::requestLinearDeltaPanel() {
         return false;
     }
     linearDeltaFromPick_ = false;
-    if (pick) {
+    if (input.pickTwoPoints) {
         // Delta iki tiklamayla OLCULUR; olcum panele yazilir, islem Uygula'da.
         linearPickMode_ = true;
         transformBase_.reset();
@@ -7337,11 +7341,11 @@ bool Application::requestLinearDeltaPanel() {
         invalidateCanvas();
         return true;
     }
-    applyLinearDelta(delta);
+    applyLinearDelta(input.delta, input.count);
     return true;
 }
 
-void Application::applyLinearDelta(const Vec3& delta) {
+void Application::applyLinearDelta(const Vec3& delta, int count) {
     if (transformCommand_ != TransformCommand::CopyLinear &&
         transformCommand_ != TransformCommand::MoveLinear)
         return;
@@ -7351,6 +7355,12 @@ void Application::applyLinearDelta(const Vec3& delta) {
         return;
     }
     lastLinearDelta_ = delta;
+    const bool copying = transformCommand_ == TransformCommand::CopyLinear;
+    int copies = 1;
+    if (copying) {
+        copies = count < 1 ? 1 : (count > mm::kLinearCopyMaxCount ? mm::kLinearCopyMaxCount : count);
+    }
+    lastLinearCount_ = copies;
     if (delta.x == 0.0 && delta.y == 0.0 && delta.z == 0.0) {
         // Sifir delta: sessiz kopya yigini uretme, komutu bitir.
         MessageBeep(MB_ICONWARNING);
@@ -7361,12 +7371,27 @@ void Application::applyLinearDelta(const Vec3& delta) {
         invalidateCanvas();
         return;
     }
-    // TEK UYGULAMA YOLU: mevcut hedef fazi kullanilir (displacement = nokta -
-    // taban). Taban orijin alinip nokta = delta verilir; boylece kopya/tasima
-    // govdesi (component rebind, kesme/bulon senkronu) ikinci kez yazilmaz.
-    transformBase_ = Vec3{0.0, 0.0, 0.0};
-    transformPhase_ = TransformPhase::Destination;
-    commitTransformPoint(delta);
+    if (copying) {
+        // ADET: kopyalar delta, 2*delta, ... N*delta ofsetleriyle uretilir
+        // (AutoCAD "Array" mantigi; tek undo adimi).
+        const auto offsets = mm::linearCopyOffsets(delta, copies);
+        pushUndoSnapshot();
+        CopyStepInfo total;
+        for (const Vec3& offset : offsets) {
+            const CopyStepInfo step = copySelectionBy(offset);
+            total.models += step.models;
+            total.instances += step.instances;
+            total.bolts += step.bolts;
+            total.rebound += step.rebound;
+        }
+        publishCopyStatus(total, copies);
+    } else {
+        // TASIMA: adet yok; mevcut hedef fazi (displacement = nokta - taban)
+        // kullanilir — govde tek kaynakta kalir.
+        transformBase_ = Vec3{0.0, 0.0, 0.0};
+        transformPhase_ = TransformPhase::Destination;
+        commitTransformPoint(delta);
+    }
     // Panel tek seferliktir: kopya coklu modda acik kalsa da komut biter
     // (cancelTransformCommand secimi uretilen kopyalara gecirir).
     if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
@@ -7374,6 +7399,48 @@ void Application::applyLinearDelta(const Vec3& delta) {
     updateControls();
     updateStatus();
     invalidateCanvas();
+}
+
+// TEK KOPYA ADIMI: geometri + component/bulon klonu + rebind. Undo kaydi
+// cagiranda acilir (adet>1'de N adim tek undo olur).
+Application::CopyStepInfo Application::copySelectionBy(const Vec3& displacement) {
+    CopyStepInfo info;
+    const std::size_t modelsBefore = document_.models().size();
+    const std::size_t instBefore = document_.componentInstances().size();
+    const std::size_t boltBefore = document_.boltGroups().size();
+    document_.copyModels(selectedModels_, displacement);
+    // Kopya komutu bitince bu indeksler secilecek (kaynak yesil kalmasin).
+    pendingCopySelection_.clear();
+    for (std::size_t k = modelsBefore; k < document_.models().size(); ++k)
+        pendingCopySelection_.push_back(k);
+    // TEKLA DAVRANISI: component tek basina kopyalandiysa yeni konumdaki
+    // ana/ara parcalara OTOMATIK baglanir (bkz. rebindCopiedComponents).
+    std::vector<EntityId> copiedModels;
+    for (std::size_t k = modelsBefore; k < document_.models().size(); ++k)
+        copiedModels.push_back(document_.modelId(k));
+    info.models = document_.models().size() - modelsBefore;
+    info.instances = document_.componentInstances().size() - instBefore;
+    info.bolts = document_.boltGroups().size() - boltBefore;
+    info.rebound = rebindCopiedComponents(instBefore, copiedModels);
+    return info;
+}
+
+// KOPYA TESHISI: "component olarak kopyalanmiyor" geri bildirimi icin gorunur
+// kanit — sessiz basarisizlik kalmasin.
+void Application::publishCopyStatus(const CopyStepInfo& info, int copies) {
+    std::wstring msg = L"Kopya: " + std::to_wstring(selectedModels_.size()) + L" eleman";
+    if (copies > 1) msg += L" × " + std::to_wstring(copies) + L" adet";
+    if (info.instances > 0) {
+        msg += L", " + std::to_wstring(info.instances) + L" component, " +
+               std::to_wstring(info.bolts) + L" bulon grubu";
+        if (info.rebound > 0)
+            msg += L", " + std::to_wstring(info.rebound) + L" yeni konumdaki parcalara baglandi";
+        else
+            msg += L" (yeni konumda uygun parca bulunamadi — baglanti orijinal parcalarda)";
+    } else {
+        msg += L" (component kopyalanmadi: secimde bilesenin TUM levha+bulon nesneleri yok)";
+    }
+    publishStatus(std::move(msg));
 }
 
 void Application::commitTransformPoint(const Vec3& point) {
@@ -7537,39 +7604,8 @@ void Application::commitTransformPoint(const Vec3& point) {
         //     (AutoCAD "Multiple" davranisi — ayni delta degil, imlec
         //     nereye giderse oraya).
         pushUndoSnapshot();
-        const std::size_t modelsBefore = document_.models().size();
-        const std::size_t instBefore = document_.componentInstances().size();
-        const std::size_t boltBefore = document_.boltGroups().size();
-        document_.copyModels(selectedModels_, displacement);
-        // Kopya komutu bitince bu indeksler secilecek (kaynak yesil kalmasin).
-        pendingCopySelection_.clear();
-        for (std::size_t k = modelsBefore; k < document_.models().size(); ++k)
-            pendingCopySelection_.push_back(k);
-        // TEKLA DAVRANISI: component tek basina kopyalandiysa yeni konumdaki
-        // ana/ara parcalara OTOMATIK baglanir (bkz. rebindCopiedComponents).
-        std::vector<EntityId> copiedModels;
-        for (std::size_t k = modelsBefore; k < document_.models().size(); ++k)
-            copiedModels.push_back(document_.modelId(k));
-        const std::size_t rebound = rebindCopiedComponents(instBefore, copiedModels);
-        // KOPYA TESHISI (2026-10-28): "component olarak kopyalanmiyor" geri
-        // bildirimi icin gorunur kanit — kopyanin component/bulon uretip
-        // uretmedigini durum cubugunda yaz (sessiz basarisizlik kalmasin).
-        {
-            const std::size_t instAdded = document_.componentInstances().size() - instBefore;
-            const std::size_t boltAdded = document_.boltGroups().size() - boltBefore;
-            std::wstring msg = L"Kopya: " + std::to_wstring(selectedModels_.size()) + L" eleman";
-            if (instAdded > 0) {
-                msg += L", " + std::to_wstring(instAdded) + L" component, " +
-                       std::to_wstring(boltAdded) + L" bulon grubu";
-                if (rebound > 0)
-                    msg += L", " + std::to_wstring(rebound) + L" yeni konumdaki parcalara baglandi";
-                else
-                    msg += L" (yeni konumda uygun parca bulunamadi — baglanti orijinal parcalarda)";
-            } else {
-                msg += L" (component kopyalanmadi: secimde bilesenin TUM levha+bulon nesneleri yok)";
-            }
-            publishStatus(std::move(msg));
-        }
+        const CopyStepInfo info = copySelectionBy(displacement);
+        publishCopyStatus(info, 1);
         // Taban SABIT kalir (AutoCAD): kopya = kaynak + (tiklanan - taban).
         // Tabani tıklamaya güncellemek deltayı bozuyordu: ikinci kopya
         // kaynağın üstüne biniyor, toplu rotasyonda nesneler "yer

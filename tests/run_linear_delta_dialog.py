@@ -4,10 +4,12 @@
 Extracts `promptLinearDeltaDialog` from the real source (no copy/reimplementation)
 and runs it against real Qt Widgets (offscreen) to prove:
   1) the panel builds without crashing,
-  2) X/Y/Z spin values are pre-filled from the Application's last delta,
-  3) "Uygula" returns the typed delta,
-  4) "İki Nokta Seç" returns pickTwoPoints=true and leaves delta untouched,
-  5) "İptal" returns false (Application then cancels the command).
+  2) X/Y/Z (ve Adet) alanlari Application'in son degerleriyle on-dolu gelir,
+  3) "Uygula" yazilan delta + adet degerini dondurur,
+  4) "İki Nokta Seç" pickTwoPoints=true dondurur, delta'ya dokunmaz,
+  5) "İptal" false dondurur (Application komutu iptal eder),
+  6) TASIMADA "Adet" satiri gizlenir (allowCount=false) ve adet degismez,
+  7) olcu sonrasi acilis (fromPickedPoints=true) olculen delta'yi aynen tasir.
 
 This does NOT prove Windows rendering; it proves the widget code compiles and
 its return contract is exactly what Application expects.
@@ -33,6 +35,7 @@ probe = r'''
 #include <QApplication>
 #include <QDialog>
 #include <QDoubleSpinBox>
+#include <QSpinBox>
 #include <QLabel>
 #include <QPushButton>
 #include <QTimer>
@@ -49,6 +52,18 @@ struct Vec3 {
     bool operator==(const Vec3&) const noexcept = default;
 };
 
+namespace mm {
+struct LinearDeltaInput {
+    Vec3 delta{};
+    int count{1};
+    bool pickTwoPoints{false};
+    bool fromPickedPoints{false};
+    bool allowCount{true};
+};
+constexpr int kLinearCopyMaxCount = 1000;
+} // namespace mm
+using mm::LinearDeltaInput;
+
 __BODY__
 
 static int failures = 0;
@@ -61,8 +76,10 @@ static void check(bool ok, const char* what) {
 struct AutoResponder {
     std::string button;      // QPushButton metni ("" -> dogrudan accept)
     double x{}, y{}, z{};
+    int count = 0;           // 0 -> adet alanina dokunma
     bool setValues = false;
     bool sawDialog = false;
+    bool countVisible = true;
 };
 
 static void respond(AutoResponder* r) {
@@ -82,6 +99,15 @@ static void respond(AutoResponder* r) {
                 ++failures;
             }
         }
+        const auto counts = dlg->findChildren<QSpinBox*>();
+        if (counts.size() == 1) {
+            r->countVisible = counts.front()->isVisible();
+            if (r->count > 0) counts.front()->setValue(r->count);
+        } else {
+            std::printf("KALDI  panelde tek 'Adet' spin yok (%lld)\n",
+                        static_cast<long long>(counts.size()));
+            ++failures;
+        }
         if (!r->button.empty()) {
             bool clicked = false;
             for (QPushButton* b : dlg->findChildren<QPushButton*>()) {
@@ -99,63 +125,89 @@ static void respond(AutoResponder* r) {
 
 int main(int argc, char** argv) {
     QApplication app(argc, argv);
+    // A) Kopya: Uygula -> delta + adet okunur, Adet satiri gorunur.
     {
         AutoResponder r;
         r.setValues = true;
         r.x = 1250.0; r.y = -500.0; r.z = 300.0;
+        r.count = 4;
         QTimer::singleShot(0, [&r]() { respond(&r); });
-        Vec3 delta{10.0, 20.0, 30.0};
-        bool pick = true;   // panel Uygula derse false'a cekilmeli
-        const bool ok = promptLinearDeltaDialog(nullptr, delta, pick, false);
+        LinearDeltaInput in;
+        in.delta = Vec3{10.0, 20.0, 30.0};
+        in.count = 2;
+        in.allowCount = true;
+        in.pickTwoPoints = true;   // Uygula secilirse false'a cekilmeli
+        const bool ok = promptLinearDeltaDialog(nullptr, in);
         check(ok, "A: Uygula -> true dondu");
         check(r.sawDialog, "A: panel gercekten acildi");
-        check(!pick, "A: Uygula secildiginde pick=false");
-        check(delta == Vec3{1250.0, -500.0, 300.0}, "A: X/Y/Z alanlarindan okunan delta");
+        check(!in.pickTwoPoints, "A: Uygula secildiginde pick=false");
+        check(in.delta == Vec3{1250.0, -500.0, 300.0}, "A: X/Y/Z alanlarindan okunan delta");
+        check(in.count == 4, "A: Adet alanindan okunan kopya sayisi");
+        check(r.countVisible, "A: kopyada Adet satiri gorunur");
     }
+    // B) Iki Nokta Sec: pick=true, degerler korunur.
     {
-        Vec3 delta{7.0, 8.0, 9.0};
-        bool pick = false;
         AutoResponder r;
         r.button = "\xc4\xb0ki Nokta Se\xc3\xa7";   // "İki Nokta Seç" (UTF-8)
         QTimer::singleShot(0, [&r]() { respond(&r); });
-        // Karsilastirma QString::fromStdString ile yapilir -> UTF-8 ayni olmali.
-        const bool ok = promptLinearDeltaDialog(nullptr, delta, pick, false);
+        LinearDeltaInput in;
+        in.delta = Vec3{7.0, 8.0, 9.0};
+        in.count = 3;
+        const bool ok = promptLinearDeltaDialog(nullptr, in);
         check(ok, "B: Iki Nokta Sec -> true dondu");
-        check(pick, "B: pickTwoPoints=true");
-        check(delta == Vec3{7.0, 8.0, 9.0}, "B: delta degismedi (iki nokta modunda)");
+        check(in.pickTwoPoints, "B: pickTwoPoints=true");
+        check(in.delta == Vec3{7.0, 8.0, 9.0}, "B: delta degismedi (olcu modunda)");
+        check(in.count == 3, "B: adet degismedi");
     }
+    // C) Iptal.
     {
-        Vec3 delta{1.0, 2.0, 3.0};
-        bool pick = false;
         AutoResponder r;
         r.button = "\xc4\xb0ptal";                  // "İptal"
         QTimer::singleShot(0, [&r]() { respond(&r); });
-        const bool ok = promptLinearDeltaDialog(nullptr, delta, pick, false);
+        LinearDeltaInput in;
+        in.delta = Vec3{1.0, 2.0, 3.0};
+        const bool ok = promptLinearDeltaDialog(nullptr, in);
         check(!ok, "C: Iptal -> false dondu");
-        check(delta == Vec3{1.0, 2.0, 3.0}, "C: iptalde delta korunur");
+        check(in.delta == Vec3{1.0, 2.0, 3.0}, "C: iptalde delta korunur");
     }
+    // D) On-doldurma: onceki delta + adet panele yazilir.
     {
-        // On-doldurma: panel onceki deltayi gostermeli (kullanici tekrar yazmasin).
-        Vec3 delta{-40.0, 0.0, 15.0};
-        bool pick = false;
         AutoResponder r;
         QTimer::singleShot(0, [&r]() { respond(&r); });
-        const bool ok = promptLinearDeltaDialog(nullptr, delta, pick, false);
+        LinearDeltaInput in;
+        in.delta = Vec3{-40.0, 0.0, 15.0};
+        in.count = 6;
+        const bool ok = promptLinearDeltaDialog(nullptr, in);
         check(ok, "D: on-doldurma ile Uygula -> true");
-        check(delta == Vec3{-40.0, 0.0, 15.0}, "D: on-doldurulan deger geri okundu");
+        check(in.delta == Vec3{-40.0, 0.0, 15.0}, "D: on-doldurulan delta geri okundu");
+        check(in.count == 6, "D: on-doldurulan adet geri okundu");
     }
+    // E) Olcu sonrasi acilis: olculen delta aynen doner.
     {
-        // E: OLCU SONRASI panel (fromPickedPoints=true): degerler OLÇULEN delta
-        // olmali ve Uygula'ya basilmadan islem yapilmaz (Application tarafi
-        // applyLinearDelta'yi yalniz true donunce cagirir).
-        Vec3 delta{2500.0, -750.0, 500.0};
-        bool pick = false;
         AutoResponder r;
         QTimer::singleShot(0, [&r]() { respond(&r); });
-        const bool ok = promptLinearDeltaDialog(nullptr, delta, pick, true);
+        LinearDeltaInput in;
+        in.delta = Vec3{2500.0, -750.0, 500.0};
+        in.fromPickedPoints = true;
+        const bool ok = promptLinearDeltaDialog(nullptr, in);
         check(ok, "E: olcu sonrasi panel Uygula -> true");
-        check(!pick, "E: olcu sonrasi panelde pick=false");
-        check(delta == Vec3{2500.0, -750.0, 500.0}, "E: olculen delta Uygula ile aynen dondu");
+        check(!in.pickTwoPoints, "E: olcu sonrasi panelde pick=false");
+        check(in.delta == Vec3{2500.0, -750.0, 500.0}, "E: olculen delta Uygula ile aynen dondu");
+    }
+    // F) TASIMA: Adet satiri gizli, adet degismez.
+    {
+        AutoResponder r;
+        r.count = 9;              // gorunmese de yazilir;Application yok sayar
+        QTimer::singleShot(0, [&r]() { respond(&r); });
+        LinearDeltaInput in;
+        in.delta = Vec3{0.0, 0.0, -1500.0};
+        in.count = 1;
+        in.allowCount = false;
+        const bool ok = promptLinearDeltaDialog(nullptr, in);
+        check(ok, "F: tasima paneli -> true");
+        check(!r.countVisible, "F: tasimada Adet satiri gizli");
+        check(in.count == 1, "F: tasimada adet degismez");
+        check(in.delta == Vec3{0.0, 0.0, -1500.0}, "F: tasima deltasi okundu");
     }
     std::printf(failures == 0 ? "TUM KONTROLLER GECTI\n" : "%d KONTROL KALDI\n", failures);
     return failures == 0 ? 0 : 1;

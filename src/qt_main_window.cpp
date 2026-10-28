@@ -3,6 +3,7 @@
 #include "model_maker/two_point_view.hpp"
 #include "model_maker/component_dialog_widget.hpp"
 #include "model_maker/component_catalog.hpp"
+#include "model_maker/linear_delta.hpp"
 
 #include <QApplication>
 #include <QMdiArea>
@@ -35,6 +36,7 @@
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QDoubleSpinBox>
+#include <QSpinBox>
 #include <QFormLayout>
 #include <QMenu>
 #include <QListWidget>
@@ -303,14 +305,13 @@ std::string comboProfileName(const QComboBox* combo) {
 // "Iki Nokta Sec" dugmesi. "Iki Nokta Sec" YALNIZ OLCU alir: panel kapanir,
 // kullanici iki nokta tiklar, olculen delta panele yazilir ve panel yeniden
 // acilir; islem ancak "Uygula" deyince yapilir (olcum tek basina kopyalamaz).
-bool promptLinearDeltaDialog(QWidget* parent, Vec3& delta, bool& pickTwoPoints,
-                             bool fromPickedPoints) {
+bool promptLinearDeltaDialog(QWidget* parent, LinearDeltaInput& input) {
     QDialog dialog(parent);
     dialog.setWindowTitle(QStringLiteral("Doğrusal Kopyala / Taşı — Delta"));
     auto* layout = new QVBoxLayout(&dialog);
 
     auto* info = new QLabel(
-        fromPickedPoints
+        input.fromPickedPoints
             ? QStringLiteral("İki noktadan ölçülen delta aşağıda yazılı. Gerekirse düzeltip "
                              "\"Uygula\"ya basın; işlem bu kadar öteye yapılır.")
             : QStringLiteral("X / Y / Z offsetini girin (mm). \"Uygula\" işlemi bu kadar öteye "
@@ -333,9 +334,19 @@ bool promptLinearDeltaDialog(QWidget* parent, Vec3& delta, bool& pickTwoPoints,
         spin->setValue(value);
         form->addRow(name, spin);
     };
-    addRow(QStringLiteral("X"), spinX, delta.x);
-    addRow(QStringLiteral("Y"), spinY, delta.y);
-    addRow(QStringLiteral("Z"), spinZ, delta.z);
+    addRow(QStringLiteral("X"), spinX, input.delta.x);
+    addRow(QStringLiteral("Y"), spinY, input.delta.y);
+    addRow(QStringLiteral("Z"), spinZ, input.delta.z);
+    // ADET: yalniz kopyada (tasimada anlamsiz -> satir gizlenir).
+    auto* countSpin = new QSpinBox(&dialog);
+    countSpin->setRange(1, mm::kLinearCopyMaxCount);
+    countSpin->setValue(input.count < 1 ? 1 : input.count);
+    countSpin->setSuffix(QStringLiteral(" adet"));
+    countSpin->setMinimumWidth(170);
+    countSpin->setToolTip(QStringLiteral("Kopya sayisi: ofsetler delta, 2*delta, ... N*delta"));
+    form->addRow(QStringLiteral("Adet"), countSpin);
+    countSpin->setVisible(input.allowCount);
+    if (auto* label = form->labelForField(countSpin)) label->setVisible(input.allowCount);
     layout->addLayout(form);
 
     auto* buttons = new QHBoxLayout();
@@ -360,8 +371,11 @@ bool promptLinearDeltaDialog(QWidget* parent, Vec3& delta, bool& pickTwoPoints,
     spinX->setFocus();
     spinX->selectAll();
     if (dialog.exec() != QDialog::Accepted) return false;
-    pickTwoPoints = pick;
-    if (!pick) delta = Vec3{spinX->value(), spinY->value(), spinZ->value()};
+    input.pickTwoPoints = pick;
+    if (!pick) {
+        input.delta = Vec3{spinX->value(), spinY->value(), spinZ->value()};
+        if (input.allowCount) input.count = countSpin->value();
+    }
     return true;
 }
 
@@ -418,8 +432,8 @@ QtMainWindow::QtMainWindow(QWidget* parent)
     // (kullanici talebi). Panel "Iki Nokta Sec" derse Application once OLCU
     // moduna gecer; iki nokta olculunce panel degerlerle yeniden acilir ve
     // islem "Uygula" ile yapilir.
-    app_.setLinearDeltaRequest([this](Vec3& delta, bool& pickTwoPoints, bool fromPickedPoints) {
-        return promptLinearDeltaDialog(this, delta, pickTwoPoints, fromPickedPoints);
+    app_.setLinearDeltaRequest([this](LinearDeltaInput& input) {
+        return promptLinearDeltaDialog(this, input);
     });
     // Bolt tool penceresi (Phase B1): bolt display'ine cift tik -> diyalog.
     app_.setBoltEditRequest([this](const mm::BoltGroup& bolt) {

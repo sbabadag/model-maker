@@ -18,6 +18,7 @@
 #endif
 
 #include "model_maker/camera.hpp"
+#include "model_maker/linear_delta.hpp"
 #include "model_maker/component_engine.hpp"
 #include "model_maker/document.hpp"
 #include "model_maker/drafting.hpp"
@@ -621,13 +622,11 @@ public:
                                                 std::wstring& out)> callback) {
         parameterRequest_ = std::move(callback);
     }
-    // DOGRUSAL KOPYA/TASIMA DELTA PANELI: Qt tarafi X/Y/Z alanlari + "Iki Nokta
-    // Sec" dugmesi olan paneli acar. delta = giris/cikis degeri (son kullanilan
-    // delta ile on-doldurulur), pickTwoPoints = true ise kullanici deltayi iki
-    // tiklamayla OLCUP panele yazdirmak istedi (islem YAPILMAZ), fromPickedPoints
-    // = panel ikinci kez, iki noktadan gelen olcuyle aciliyor. false = iptal.
-    void setLinearDeltaRequest(std::function<bool(Vec3& delta, bool& pickTwoPoints,
-                                                  bool fromPickedPoints)> callback) {
+    // DOGRUSAL KOPYA/TASIMA DELTA PANELI: Qt tarafi X/Y/Z + "Adet" alanlari ve
+    // "Iki Nokta Sec"/"Uygula"/"Iptal" dugmeleri olan paneli acar (girdi/cikti
+    // LinearDeltaInput). "Iki Nokta Sec" yalniz OLCU alir (islem YAPILMAZ) ve
+    // panel olculen delta ile yeniden acilir; kopyalama/tasima "Uygula" ile.
+    void setLinearDeltaRequest(std::function<bool(LinearDeltaInput& input)> callback) {
         linearDeltaRequest_ = std::move(callback);
     }
     // Bolt tool penceresi istegi (Phase B1): bir BOLT display modeline cift
@@ -749,7 +748,17 @@ private:
     // "Iki Nokta Sec" dugmesi deltayi iki tiklamayla belirler. Panel yoksa
     // (callback baglanmamis) eski akis — taban + hedef noktasi — gecerlidir.
     bool requestLinearDeltaPanel();
-    void applyLinearDelta(const Vec3& delta);
+    void applyLinearDelta(const Vec3& delta, int count);
+    // Tek kopya adimi (undo YOK — cagiran pushUndoSnapshot yapar). Adet>1 icin
+    // dongude cagrilir; component rebind ve durum sayaclari birikir.
+    struct CopyStepInfo {
+        std::size_t models{};
+        std::size_t instances{};
+        std::size_t bolts{};
+        std::size_t rebound{};
+    };
+    CopyStepInfo copySelectionBy(const Vec3& displacement);
+    void publishCopyStatus(const CopyStepInfo& info, int copies);
     void cancelZoomWindow2D();
     void completeZoomWindow2D(int x, int y);
     void commitTransformPoint(const Vec3& point);
@@ -1055,10 +1064,11 @@ private:
     std::function<bool(const std::wstring&, const std::wstring&, std::wstring&)> parameterRequest_;
     // DOGRUSAL KOPYA/TASIMA: panel callback'i + son kullanilan delta + panelde
     // "Iki Nokta Sec" secildiginde aktif olan iki-tiklama modu.
-    std::function<bool(Vec3&, bool&, bool)> linearDeltaRequest_;
+    std::function<bool(LinearDeltaInput&)> linearDeltaRequest_;
     bool linearPickMode_{false};              // delta iki tiklamayla olculecek
     bool linearDeltaFromPick_{false};         // panel, olculen delta ile aciliyor
     Vec3 lastLinearDelta_{0.0, 0.0, 0.0};     // panel on-doldurma degeri
+    int lastLinearCount_{1};                  // panel on-doldurma: kopya adedi
     std::optional<double> requestDoubleParameter(const std::wstring& prompt,
                                                  const std::wstring& initial);
     std::optional<std::size_t> requestCountParameter(const std::wstring& prompt,
