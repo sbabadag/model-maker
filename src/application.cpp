@@ -3209,6 +3209,7 @@ void Application::startTransformCommand(TransformCommand command) {
 
     lastTransformCommand_ = command;
     transformCommand_ = command;
+    pendingCopySelection_.clear();   // yeni komut: onceki kopya secimi gecersiz
     if (command == TransformCommand::Trim || command == TransformCommand::Extend) {
         if (!selectedModels_.empty()) {
             // Seçili modeller sınır (kesici) olur; doğrudan hedef seçimine geç.
@@ -6811,11 +6812,21 @@ void Application::commitWorkPlanePoint(const Vec3& point) {
 }
 
 void Application::cancelTransformCommand() {
+    const bool wasCopy = isCopyTransform(transformCommand_);
     transformCommand_ = TransformCommand::None;
     transformPhase_ = TransformPhase::Selecting;
     trimSolidPhase_ = 0;
     trimSolidIndex_ = 0;
     selectedModels_.clear();
+    // KOPYADAN SONRA SECIM KOPYALARA GECER (kullanici geri bildirimi: "kopyalama
+    // yapildiginda kopya kaynagi elemanlar yesil kaliyor"). Kaynak yesil kalmak
+    // yerine uretilen kopyalar secili olur; boylece devam eden islem kopyalar
+    // uzerinde calisir ve hangi nesnelerin yeni oldugu gorunur.
+    if (wasCopy && !pendingCopySelection_.empty()) {
+        for (const std::size_t index : pendingCopySelection_)
+            if (index < document_.models().size()) selectedModels_.push_back(index);
+    }
+    pendingCopySelection_.clear();
     selectionFirstCorner_.reset();
     transformBase_.reset();
     offsetDistance_.reset();
@@ -7429,6 +7440,10 @@ void Application::commitTransformPoint(const Vec3& point) {
         const std::size_t instBefore = document_.componentInstances().size();
         const std::size_t boltBefore = document_.boltGroups().size();
         document_.copyModels(selectedModels_, displacement);
+        // Kopya komutu bitince bu indeksler secilecek (kaynak yesil kalmasin).
+        pendingCopySelection_.clear();
+        for (std::size_t k = modelsBefore; k < document_.models().size(); ++k)
+            pendingCopySelection_.push_back(k);
         // TEKLA DAVRANISI: component tek basina kopyalandiysa yeni konumdaki
         // ana/ara parcalara OTOMATIK baglanir (bkz. rebindCopiedComponents).
         std::vector<EntityId> copiedModels;

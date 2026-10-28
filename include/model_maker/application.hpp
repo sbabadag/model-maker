@@ -1181,6 +1181,8 @@ private:
     TransformCommand lastTransformCommand_{TransformCommand::None};
     TransformPhase transformPhase_{TransformPhase::Selecting};
     std::vector<std::size_t> selectedModels_;
+    // Kopya komutu bitince secilecek KOPYA indeksleri (kaynak yesil kalmasin).
+    std::vector<std::size_t> pendingCopySelection_;
     SelectionMode selectionMode_{SelectionMode::Part};
     std::optional<POINT> selectionFirstCorner_;
     // KAYNAK KOMUTU (verb-noun, Phase W2): pendingWeld_ aktifken parca secilir;

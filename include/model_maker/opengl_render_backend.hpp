@@ -106,7 +106,8 @@ public:
         const std::vector<GpuModelRef>& models,
         const Camera& camera, int width, int height, void* targetHdc,
         bool useProjection2D = false, std::uint64_t contentRevision = 0,
-        std::uint8_t faceAlpha = 0, bool hiddenLineStyle = false);
+        std::uint8_t faceAlpha = 0, bool hiddenLineStyle = false,
+        std::uint64_t selectionTag = 0);
 
     // Dolu/yarisaydam yuz gecisleri (faceAlpha > 0 ise): modellerin
     // faces() ucgenleri GL_TRIANGLES olarak derinlik testiyle cizilir;
@@ -122,7 +123,7 @@ public:
 private:
     bool compileShaders();
     void ensureBatch(const std::vector<GpuModelRef>& models,
-                     std::uint64_t contentRevision = 0);
+                     std::uint64_t contentRevision = 0, std::uint64_t selectionTag = 0);
     void uploadBatch(GpuLineBatch& batch);
     void renderContourLines(const std::vector<GpuModelRef>& models,
                             const Camera& camera, int width, int height, bool useProjection2D,
@@ -130,7 +131,7 @@ private:
     void renderBatch(const GpuLineBatch& batch, const Camera& camera,
                      int width, int height, bool useProjection2D = false);
     void ensureFaceBatch(const std::vector<GpuModelRef>& models,
-                         std::uint64_t contentRevision = 0);
+                         std::uint64_t contentRevision = 0, std::uint64_t selectionTag = 0);
     void renderFaceBatch(const GpuLineBatch& batch, const Camera& camera,
                          int width, int height, bool useProjection2D, std::uint8_t faceAlpha);
     void ensureFbo(int width, int height);

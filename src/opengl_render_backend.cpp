@@ -712,7 +712,7 @@ bool OpenGLRenderBackend::renderBatchToDc(
     const std::vector<GpuModelRef>& models,
     const Camera& camera, int width, int height, void* targetHdc,
     bool useProjection2D, std::uint64_t contentRevision,
-    std::uint8_t faceAlpha, bool hiddenLineStyle) {
+    std::uint8_t faceAlpha, bool hiddenLineStyle, std::uint64_t selectionTag) {
     if (!initialized_ || models.empty()) return false;
     if (width <= 0 || height <= 0) return false; // simge durumu / 0x0 canvas: GDI yolu
     const auto glDiag = [this](const char* step) {
@@ -741,7 +741,7 @@ bool OpenGLRenderBackend::renderBatchToDc(
     glClearColor(198.0f / 255.0f, 224.0f / 255.0f, 246.0f / 255.0f, 1.0f); // gradient ustu
     glClear(GLConst::COLOR_BUFFER_BIT);
 
-    ensureBatch(models, contentRevision);
+    ensureBatch(models, contentRevision, selectionTag);
     glDiag("BATCH-OK");
     faceAlpha_ = faceAlpha;
     hiddenLineStyle_ = hiddenLineStyle;
@@ -749,7 +749,7 @@ bool OpenGLRenderBackend::renderBatchToDc(
     if (faceAlpha != 0) {
         // Yuzler once, derinlik testiyle: opak dolgu + dogru ortme;
         // tel kafes cizgileri ustte kalir (depth yazilmaz/yok sayilir).
-        ensureFaceBatch(models, contentRevision);
+        ensureFaceBatch(models, contentRevision, selectionTag);
         renderFaceBatch(faceBatch_, camera, width, height, useProjection2D, faceAlpha);
         renderedTriangles_ = faceBatch_.indexCount / 3;
         // DERINLIK TEMIZLENMEZ: renderContourLines artik gercek kenarlari
@@ -887,15 +887,18 @@ void OpenGLRenderBackend::renderWireframeBatch(
 
 void OpenGLRenderBackend::ensureBatch(
     const std::vector<GpuModelRef>& models,
-    std::uint64_t contentRevision) {
+    std::uint64_t contentRevision, std::uint64_t selectionTag) {
     std::size_t totalEdges = 0;
     for (const auto& item : models) totalEdges += item.model->edges().size();
     // F5: icerik surumu birincil etiket — pozisyon degistiren komutlar
     // (move/trim) boyut ayni kalsa da batch'i yeniler (eski tag bayat
     // geometri birakiyordu). Surum yoksa boyut bazli eski davranis.
+    // Secim imi de anahtara girer: secim degisince renkler (vurgu) yeniden
+    // yuklenmeli; yalniz belge revizyonuna bakmak secim vurgusunu gizliyordu.
+    const std::uint64_t selMix = selectionTag * 0x9E3779B97F4A7C15ull;
     std::size_t tag = contentRevision
-        ? static_cast<std::size_t>(contentRevision)
-        : (models.size() ^ (totalEdges << 16));
+        ? static_cast<std::size_t>(contentRevision ^ selMix)
+        : (models.size() ^ (totalEdges << 16) ^ static_cast<std::size_t>(selMix >> 7));
     if (tag == lineBatch_.versionTag && !lineBatch_.dirty) return;
 
     lineBatch_.versionTag = tag;
@@ -942,12 +945,13 @@ void OpenGLRenderBackend::ensureBatch(
 
 void OpenGLRenderBackend::ensureFaceBatch(
     const std::vector<GpuModelRef>& models,
-    std::uint64_t contentRevision) {
+    std::uint64_t contentRevision, std::uint64_t selectionTag) {
     std::size_t totalFaces = 0;
     for (const auto& item : models) totalFaces += item.model->faces().size();
+    const std::uint64_t selMix = selectionTag * 0x9E3779B97F4A7C15ull;
     std::size_t tag = contentRevision
-        ? static_cast<std::size_t>(contentRevision)
-        : (models.size() ^ (totalFaces << 16));
+        ? static_cast<std::size_t>(contentRevision ^ selMix)
+        : (models.size() ^ (totalFaces << 16) ^ static_cast<std::size_t>(selMix >> 7));
     if (tag == faceBatch_.versionTag && !faceBatch_.dirty) return;
 
     faceBatch_.versionTag = tag;

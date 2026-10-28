@@ -1757,11 +1757,16 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
     // kumesi veya model sayisi degistiginde yeniden kurulur. Culling yok:
     // off-screen cizgileri GPU klipsler (zaten GPU yolunun ana kazanimi).
     const std::vector<GpuModelRef>* gpuBatchPtr = nullptr;
+    // SECIM IMI: batch'in GPU'ya YENIDEN YUKLENMESI icin gerekli. Eskiden yalniz
+    // belge revizyonu anahtar idi; secim degisince CPU batch'i yesil renkle
+    // yeniden kuruluyor ama arka uc ayni revizyonu gorup yuklemeyi atliyordu
+    // (secim vurgusu gorunmuyordu, ancak bir islem revizyonu artirinca yesil
+    // cikiyordu — kullanici geri bildirimi).
+    std::size_t selectionSig = draft.selectedModels.size();
+    for (const auto index : draft.selectedModels) {
+        selectionSig ^= index * 2654435761u;
+    }
     if (!draft.snapOnly && useGpuLines) {
-        std::size_t selectionSig = draft.selectedModels.size();
-        for (const auto index : draft.selectedModels) {
-            selectionSig ^= index * 2654435761u;
-        }
         const std::uint64_t revision = document.revision();
         const std::size_t modelCount = document.models().size();
         const mm::WireframeModel* const dataPtr =
@@ -1912,7 +1917,7 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         glBackend->renderBatchToDc(
             gpuBatchPtr ? *gpuBatchPtr : emptyGpuBatch_, camera, width, height, dc,
             mode == EditMode::Draw2D, document.revision(), faceAlpha,
-            draft.visualStyle == VisualStyle::HiddenLine);
+            draft.visualStyle == VisualStyle::HiddenLine, selectionSig);
         performance.drawCalls += glBackend->drawCallsPerFrame();
         // GL modunda grid + eksenler referans katmani olarak kompozitin
         // USTUNE cizilir. SOLID istisnasi: Tekla model gorunumunde grid
