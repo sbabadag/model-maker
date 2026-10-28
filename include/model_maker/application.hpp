@@ -621,6 +621,13 @@ public:
                                                 std::wstring& out)> callback) {
         parameterRequest_ = std::move(callback);
     }
+    // DOGRUSAL KOPYA/TASIMA DELTA PANELI: Qt tarafi X/Y/Z alanlari + "Iki Nokta
+    // Sec" dugmesi olan paneli acar. delta = giris/cikis degeri (son kullanilan
+    // delta ile on-doldurulur), pickTwoPoints = true ise kullanici deltayi iki
+    // tiklamayla belirlemeyi secti. false = iptal.
+    void setLinearDeltaRequest(std::function<bool(Vec3& delta, bool& pickTwoPoints)> callback) {
+        linearDeltaRequest_ = std::move(callback);
+    }
     // Bolt tool penceresi istegi (Phase B1): bir BOLT display modeline cift
     // tiklaninca cagrilir. Qt tarafi BoltPropertiesDialog acar; OK olursa
     // setSelectedBoltGroup ile geri yazar.
@@ -735,6 +742,12 @@ private:
     void onCharacter(wchar_t character);
     void executeCommand(int id);
     void cancelTransformCommand();
+    // DOGRUSAL KOPYA/TASIMA GIRDI PANELI (kullanici talebi): komut baslayinca
+    // (secim hazir olunca) ekranda X/Y/Z delta alanlari olan panel acilir;
+    // "Iki Nokta Sec" dugmesi deltayi iki tiklamayla belirler. Panel yoksa
+    // (callback baglanmamis) eski akis — taban + hedef noktasi — gecerlidir.
+    bool requestLinearDeltaPanel();
+    void applyLinearDelta(const Vec3& delta);
     void cancelZoomWindow2D();
     void completeZoomWindow2D(int x, int y);
     void commitTransformPoint(const Vec3& point);
@@ -1038,6 +1051,11 @@ private:
     std::string columnMaterial_;     // kolon malzemesi (props paneli)
     std::size_t divideCount_{2};     // Divide: esit parca sayisi (varsayilan 2 = orta nokta)
     std::function<bool(const std::wstring&, const std::wstring&, std::wstring&)> parameterRequest_;
+    // DOGRUSAL KOPYA/TASIMA: panel callback'i + son kullanilan delta + panelde
+    // "Iki Nokta Sec" secildiginde aktif olan iki-tiklama modu.
+    std::function<bool(Vec3&, bool&)> linearDeltaRequest_;
+    bool linearPickMode_{false};              // delta iki tiklamayla secilecek
+    Vec3 lastLinearDelta_{0.0, 0.0, 0.0};     // panel on-doldurma degeri
     std::optional<double> requestDoubleParameter(const std::wstring& prompt,
                                                  const std::wstring& initial);
     std::optional<std::size_t> requestCountParameter(const std::wstring& prompt,

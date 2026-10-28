@@ -289,6 +289,14 @@ if(BUILD_TESTING)
             add_test(NAME model_maker_gumball_interaction
                 COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_gumball_interaction.py
                     ${CMAKE_CURRENT_BINARY_DIR})
+            # Dogrusal kopya/tasima delta paneli: Application durum makinesi
+            # (gercek govdeler) + Qt panel sozlesmesi (offscreen).
+            add_test(NAME model_maker_linear_delta_panel
+                COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_linear_delta_panel.py
+                    ${CMAKE_CURRENT_BINARY_DIR})
+            add_test(NAME model_maker_linear_delta_dialog
+                COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_linear_delta_dialog.py
+                    ${CMAKE_CURRENT_BINARY_DIR})
             add_test(NAME model_maker_two_point_view
                 COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_two_point_view.py
                     ${CMAKE_CURRENT_BINARY_DIR})

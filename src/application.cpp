@@ -2904,6 +2904,11 @@ void Application::onCharacter(wchar_t character) {
                     transformPhase_ = TransformPhase::Destination;
                 } else if (transformCommand_ == TransformCommand::Offset && offsetDistance_) {
                     transformPhase_ = TransformPhase::Destination;
+                } else if ((transformCommand_ == TransformCommand::CopyLinear ||
+                            transformCommand_ == TransformCommand::MoveLinear) && linearDeltaRequest_) {
+                    // DOGRUSAL KOPYA/TASIMA: secim tamamlandi -> taban noktasi
+                    // yerine delta paneli (X/Y/Z) ya da iki-nokta modu.
+                    requestLinearDeltaPanel();
                 } else transformPhase_ = TransformPhase::BasePoint;
             }
             else MessageBeep(MB_ICONWARNING);
@@ -3210,6 +3215,7 @@ void Application::startTransformCommand(TransformCommand command) {
     lastTransformCommand_ = command;
     transformCommand_ = command;
     pendingCopySelection_.clear();   // yeni komut: onceki kopya secimi gecersiz
+    linearPickMode_ = false;         // yeni komut: iki-nokta modu kapali
     if (command == TransformCommand::Trim || command == TransformCommand::Extend) {
         if (!selectedModels_.empty()) {
             // Seçili modeller sınır (kesici) olur; doğrudan hedef seçimine geç.
@@ -3244,6 +3250,14 @@ void Application::startTransformCommand(TransformCommand command) {
     updateControls();
     updateStatus();
     invalidateCanvas();
+    // DOGRUSAL KOPYA/TASIMA GIRDI PANELI (kullanici talebi): secim hazirsa
+    // (onceden secilmis ya da noun-verb) taban noktasi tiklamasi ISTEME, once
+    // X/Y/Z delta panelini ac. Panelde "Iki Nokta Sec" secilirse delta iki
+    // tiklamayla belirlenir. Callback bagli degilse (portable testler) eski
+    // akis — taban + hedef noktasi — aynen gecerlidir.
+    if ((command == TransformCommand::CopyLinear || command == TransformCommand::MoveLinear) &&
+        !selectedModels_.empty() && linearDeltaRequest_)
+        requestLinearDeltaPanel();
     trimExtendLog(L"APP BASLADI build=" __DATE__ " " __TIME__);
 }
 
@@ -6815,6 +6829,7 @@ void Application::cancelTransformCommand() {
     const bool wasCopy = isCopyTransform(transformCommand_);
     transformCommand_ = TransformCommand::None;
     transformPhase_ = TransformPhase::Selecting;
+    linearPickMode_ = false;   // iki-nokta modu yalniz aktif komut boyunca
     trimSolidPhase_ = 0;
     trimSolidIndex_ = 0;
     selectedModels_.clear();
@@ -7289,6 +7304,75 @@ void Application::completeTrimExtendTargetSelection(int x, int y) {
     if (!changed) MessageBeep(MB_ICONWARNING);
 }
 
+// DOGRUSAL KOPYA/TASIMA GIRDI PANELI ----------------------------------------
+// Kullanici geri bildirimi: "serbest obje secildikten sonra ya da onceden
+// secilip bu komutlara basildiginda ekranda X/Y/Z offsetleri gorunecek,
+// kullanici yazacak ve o kadar oteye kopyalama/tasima yapilacak; bir de
+// iki tiklamayla delta secen dugme olacak". Eski akis (taban noktasi + hedef)
+// korunur, ama artik yalniz "Iki Nokta Sec" secildiginde calisir.
+bool Application::requestLinearDeltaPanel() {
+    if (!linearDeltaRequest_) return false;
+    if (selectedModels_.empty()) return false;
+    Vec3 delta = lastLinearDelta_;
+    bool pick = false;
+    if (!linearDeltaRequest_(delta, pick)) {           // Iptal
+        cancelTransformCommand();
+        SetCursor(currentCanvasCursor());
+        updateControls();
+        updateStatus();
+        invalidateCanvas();
+        return false;
+    }
+    if (pick) {
+        // Delta iki tiklamayla: 1. nokta taban, 2. nokta = taban + delta.
+        linearPickMode_ = true;
+        transformBase_.reset();
+        transformPhase_ = TransformPhase::BasePoint;
+        SetCursor(currentCanvasCursor());
+        updateControls();
+        updateStatus();
+        invalidateCanvas();
+        return true;
+    }
+    applyLinearDelta(delta);
+    return true;
+}
+
+void Application::applyLinearDelta(const Vec3& delta) {
+    if (transformCommand_ != TransformCommand::CopyLinear &&
+        transformCommand_ != TransformCommand::MoveLinear)
+        return;
+    if (selectedModels_.empty()) return;
+    if (!std::isfinite(delta.x) || !std::isfinite(delta.y) || !std::isfinite(delta.z)) {
+        MessageBeep(MB_ICONWARNING);
+        return;
+    }
+    lastLinearDelta_ = delta;
+    if (delta.x == 0.0 && delta.y == 0.0 && delta.z == 0.0) {
+        // Sifir delta: sessiz kopya yigini uretme, komutu bitir.
+        MessageBeep(MB_ICONWARNING);
+        cancelTransformCommand();
+        SetCursor(currentCanvasCursor());
+        updateControls();
+        updateStatus();
+        invalidateCanvas();
+        return;
+    }
+    // TEK UYGULAMA YOLU: mevcut hedef fazi kullanilir (displacement = nokta -
+    // taban). Taban orijin alinip nokta = delta verilir; boylece kopya/tasima
+    // govdesi (component rebind, kesme/bulon senkronu) ikinci kez yazilmaz.
+    transformBase_ = Vec3{0.0, 0.0, 0.0};
+    transformPhase_ = TransformPhase::Destination;
+    commitTransformPoint(delta);
+    // Panel tek seferliktir: kopya coklu modda acik kalsa da komut biter
+    // (cancelTransformCommand secimi uretilen kopyalara gecirir).
+    if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
+    SetCursor(currentCanvasCursor());
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
+}
+
 void Application::commitTransformPoint(const Vec3& point) {
     if (transformCommand_ == TransformCommand::Trim ||
         transformCommand_ == TransformCommand::Extend) {
@@ -7469,6 +7553,10 @@ void Application::commitTransformPoint(const Vec3& point) {
             }
             publishStatus(std::move(msg));
         }
+        // IKI-NOKTA MODU (panelden "Iki Nokta Sec"): delta bir kez uygulanir ve
+        // komut biter; coklu kopya yalniz klasik Copy aracinda kalir.
+        if (linearPickMode_ && transformCommand_ == TransformCommand::CopyLinear)
+            cancelTransformCommand();
         // Taban SABIT kalir (AutoCAD): kopya = kaynak + (tiklanan - taban).
         // Tabani tıklamaya güncellemek deltayı bozuyordu: ikinci kopya
         // kaynağın üstüne biniyor, toplu rotasyonda nesneler "yer
@@ -8242,6 +8330,9 @@ void Application::updateStatus() {
                 text += L"Öğe sayısını yazın (2-1000), Enter";
             else if (transformCommand_ == TransformCommand::PolarArray) text += L"Merkez noktasını belirtin";
             else if (transformCommand_ == TransformCommand::Mirror) text += L"Ayna ekseninin ilk noktasını belirtin";
+            else if (transformCommand_ == TransformCommand::CopyLinear ||
+                     transformCommand_ == TransformCommand::MoveLinear)
+                text += L"Delta için 1. noktayı belirtin (2. nokta farkı uygulanır)";
             else text += L"Baz noktayı belirtin";
         } else if (transformCommand_ == TransformCommand::Offset) {
             text += L"Ofset tarafını belirtin";
@@ -8253,6 +8344,9 @@ void Application::updateStatus() {
             text += L"Kesilecek çizgi bölümünü tıklayın veya crossing pencere çizin; Enter ile bitir";
         } else if (transformCommand_ == TransformCommand::Extend) {
             text += L"Uzatılacak çizginin uçlarını tıklayın veya crossing pencere çizin; Enter ile bitir";
+        } else if (transformCommand_ == TransformCommand::CopyLinear ||
+                   transformCommand_ == TransformCommand::MoveLinear) {
+            text += L"Delta için 2. noktayı belirtin";
         } else text += L"İkinci noktayı belirtin";
         if (!lastTrimExtendStatus_.empty()) {
             text += L"  |  ";

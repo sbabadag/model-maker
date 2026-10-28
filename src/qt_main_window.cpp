@@ -34,6 +34,8 @@
 #include <QKeySequence>
 #include <QDialog>
 #include <QDialogButtonBox>
+#include <QDoubleSpinBox>
+#include <QFormLayout>
 #include <QMenu>
 #include <QListWidget>
 #include <QTreeWidget>
@@ -297,6 +299,67 @@ std::string comboProfileName(const QComboBox* combo) {
     return combo->currentText().trimmed().toStdString(); // elle yazilan ad
 }
 
+// DOGRUSAL KOPYA/TASIMA DELTA PANELI (kullanici talebi): X / Y / Z alanlari +
+// "Iki Nokta Sec" dugmesi. Kullanici degerleri yazar ve Tamam der; kopyalama/
+// tasima tam o kadar oteye yapilir. "Iki Nokta Sec" secilirse panel kapanir ve
+// delta ekranda iki tiklamayla (2. nokta - 1. nokta) belirlenir.
+bool promptLinearDeltaDialog(QWidget* parent, Vec3& delta, bool& pickTwoPoints) {
+    QDialog dialog(parent);
+    dialog.setWindowTitle(QStringLiteral("Doğrusal Kopyala / Taşı — Delta"));
+    auto* layout = new QVBoxLayout(&dialog);
+
+    auto* info = new QLabel(
+        QStringLiteral("X / Y / Z offsetini girin (mm). İşlem bu kadar öteye yapılır.\n"
+                       "\"İki Nokta Seç\" ile delta ekranda iki tıklamayla belirlenir."),
+        &dialog);
+    info->setWordWrap(true);
+    layout->addWidget(info);
+
+    auto* form = new QFormLayout();
+    auto* spinX = new QDoubleSpinBox(&dialog);
+    auto* spinY = new QDoubleSpinBox(&dialog);
+    auto* spinZ = new QDoubleSpinBox(&dialog);
+    auto addRow = [&](const QString& name, QDoubleSpinBox* spin, double value) {
+        spin->setRange(-1.0e6, 1.0e6);
+        spin->setDecimals(2);
+        spin->setSingleStep(10.0);
+        spin->setSuffix(QStringLiteral(" mm"));
+        spin->setMinimumWidth(170);
+        spin->setValue(value);
+        form->addRow(name, spin);
+    };
+    addRow(QStringLiteral("X"), spinX, delta.x);
+    addRow(QStringLiteral("Y"), spinY, delta.y);
+    addRow(QStringLiteral("Z"), spinZ, delta.z);
+    layout->addLayout(form);
+
+    auto* buttons = new QHBoxLayout();
+    auto* pickButton = new QPushButton(QStringLiteral("İki Nokta Seç"), &dialog);
+    auto* cancelButton = new QPushButton(QStringLiteral("İptal"), &dialog);
+    auto* okButton = new QPushButton(QStringLiteral("Tamam"), &dialog);
+    okButton->setDefault(true);
+    buttons->addWidget(pickButton);
+    buttons->addStretch(1);
+    buttons->addWidget(cancelButton);
+    buttons->addWidget(okButton);
+    layout->addLayout(buttons);
+
+    bool pick = false;
+    QObject::connect(okButton, &QPushButton::clicked, &dialog, &QDialog::accept);
+    QObject::connect(cancelButton, &QPushButton::clicked, &dialog, &QDialog::reject);
+    QObject::connect(pickButton, &QPushButton::clicked, &dialog, [&dialog, &pick]() {
+        pick = true;
+        dialog.accept();
+    });
+
+    spinX->setFocus();
+    spinX->selectAll();
+    if (dialog.exec() != QDialog::Accepted) return false;
+    pickTwoPoints = pick;
+    if (!pick) delta = Vec3{spinX->value(), spinY->value(), spinZ->value()};
+    return true;
+}
+
 } // namespace
 
 QtMainWindow::QtMainWindow(QWidget* parent)
@@ -345,6 +408,12 @@ QtMainWindow::QtMainWindow(QWidget* parent)
         if (!ok) return false;
         out = text.toStdWString();
         return true;
+    });
+    // DOGRUSAL KOPYA/TASIMA: komut baslayinca X/Y/Z delta paneli acilir
+    // (kullanici talebi). Panel "Iki Nokta Sec" derse Application iki-tiklama
+    // moduna gecer ve delta 2. nokta - 1. nokta olarak uygulanir.
+    app_.setLinearDeltaRequest([this](Vec3& delta, bool& pickTwoPoints) {
+        return promptLinearDeltaDialog(this, delta, pickTwoPoints);
     });
     // Bolt tool penceresi (Phase B1): bolt display'ine cift tik -> diyalog.
     app_.setBoltEditRequest([this](const mm::BoltGroup& bolt) {
