@@ -45,12 +45,30 @@ static const char* kindName(ViewKind k) {
     return "?";
 }
 
+// Hizali projeksiyon gorunusleri (FRONT/TOP/SIDE) TEK olcekte olmali; yalniz DETAY ayri olcek alabilir.
+static bool mainViewsShareScale(const DrawingSheet& s, double* den) {
+    bool any = false;
+    double first = 0.0;
+    for (const DrawingView& v : s.views) {
+        if (v.kind == ViewKind::Detail || v.scale <= 0.0) continue;
+        const double d = 1.0 / v.scale;
+        if (!any) { first = d; any = true; continue; }
+        if (std::fabs(d - first) > 1e-6) return false;
+    }
+    if (den) *den = first;
+    return any;
+}
+
 int main() {
     // A: 5000 mm kiriş + levhalar, A3..A2 aralığı (kullanıcının ayarı) → TEK pafta.
     {
         const DrawingSetResult r = buildRot(5000.0, SheetSize::A2, false, "A kisa kiris");
         check(r.ok && r.singleSheet && r.document.sheets().size() == 1, "A: 5000 mm kiriş A2'ye TEK paftada sigar");
         check(r.layoutValid && r.issues.empty(), "A: tek pafta cakismasiz (issues bos)");
+        double den = 0.0;
+        check(mainViewsShareScale(r.document.sheets().front(), &den),
+              "A: FRONT/TOP/SIDE AYNI olcekte (hizali projeksiyon)");
+        std::printf("   ana olcek 1:%.0f, pafta olcegi 1:%.0f\n", den, 1.0 / r.document.sheets().front().scale);
         for (const DrawingView& v : r.document.sheets().front().views)
             std::printf("   %-6s 1:%.0f kagit=%.0fx%.0f\n", kindName(v.kind), 1.0 / v.scale,
                         v.bounds.width() * v.scale, v.bounds.height() * v.scale);
@@ -67,7 +85,9 @@ int main() {
             biggest = std::max(biggest, v.bounds.height() * v.scale);
             worst = std::max(worst, v.scale / s.scale);   // gorunus olcegi / pafta olcegi
         }
-        check(worst <= 10.0 + 1e-9, "B: kucuk gorunus en fazla 10 kat buyutulur (1:2'ye kacis yok)");
+        check(worst <= 1.0 + 1e-9, "B: ana gorunusler pafta olceginden buyuk degil (tek olcek)");
+        double den = 0.0;
+        check(mainViewsShareScale(s, &den), "B: FRONT/TOP/SIDE AYNI olcekte (tek olcek)");
         const Bounds2 area = s.drawingArea();
         check(biggest <= area.width() + 1e-6 && biggest <= area.height() + 1e-6,
               "B: hicbir gorunus kagit alanindan buyuk degil");
