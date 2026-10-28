@@ -370,13 +370,17 @@ public:
     }
     mutable FrameIndexStampSet selectedIndexSet_{};
     // F8: GL batch onbellegi — kameradan bagimsiz (GPU klipsler); yalniz
-    // document revizyonu / secim kumesi / model sayisi degisince yeniden kurulur.
-    mutable std::vector<std::pair<std::size_t, WireframeModel>> cachedGpuBatch_{};
+    // document revizyonu / secim kumesi / model sayisi / model vektoru adresi
+    // degisince yeniden kurulur. Girdiler MODEL KOPYASI TUTMAZ (GpuModelRef:
+    // isaretci + etkin renk) — eskiden her revizyonda tum geometri kopyalaniyor,
+    // her islem ve secim degisimi bu maliyeti tekrarliyordu.
+    mutable std::vector<GpuModelRef> cachedGpuBatch_{};
     mutable std::uint64_t cachedGpuRevision_{0};
     mutable std::size_t cachedGpuSelectionSig_{0};
     mutable std::size_t cachedGpuModelCount_{0};
+    mutable const WireframeModel* cachedGpuData_{nullptr};
     mutable bool cachedGpuBatchValid_{false};
-    mutable std::vector<std::pair<std::size_t, WireframeModel>> emptyGpuBatch_{};
+    mutable std::vector<GpuModelRef> emptyGpuBatch_{};
     mutable std::function<void()> guiOverlay_{};
     mutable std::chrono::steady_clock::time_point previousFrameTime_{};
     mutable bool hasPreviousFrameTime_{};

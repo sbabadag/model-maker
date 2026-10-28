@@ -29,7 +29,7 @@
 
 namespace {
 
-using Models = std::vector<std::pair<std::size_t, mm::WireframeModel>>;
+using Models = std::vector<mm::GpuModelRef>;
 
 mm::WireframeModel makeProfileSolid(double x0, double y0, double z0, double length) {
     const double h = 200.0, b = 100.0, tw = 7.1, tf = 11.2;
@@ -72,10 +72,9 @@ ReferenceResult contourReference(const Models& models, const mm::Camera& camera,
                                  int width, int height) {
     std::vector<std::pair<std::array<mm::Vec3, 2>, std::uint32_t>> segments;
     ReferenceResult out;
-    for (const auto& [index, model] : models) {
-        (void)index;
-        const auto& vertices = model.vertices();
-        const auto& faces = model.faces();
+    for (const auto& item : models) {
+        const auto& vertices = item.model->vertices();
+        const auto& faces = item.model->faces();
         if (vertices.empty() || faces.empty()) continue;
         std::map<std::pair<std::size_t, std::size_t>, int> frontCount, backCount;
         for (const auto& face : faces) {
@@ -104,7 +103,7 @@ ReferenceResult contourReference(const Models& models, const mm::Camera& camera,
                 ++out.silhouette;
             }
         }
-        for (const auto& edge : model.edges()) {
+        for (const auto& edge : item.model->edges()) {
             if (edge.from >= vertices.size() || edge.to >= vertices.size()) continue;
             segments.push_back({std::array<mm::Vec3, 2>{vertices[edge.from], vertices[edge.to]},
                                 0xFF282828u});
@@ -170,7 +169,7 @@ int main(int argc, char** argv) {
     }
     Models models;
     models.reserve(modelCount);
-    for (std::size_t i = 0; i < modelCount; ++i) models.emplace_back(i, storage[i]);
+    for (std::size_t i = 0; i < modelCount; ++i) models.push_back(mm::GpuModelRef{i, &storage[i], storage[i].properties().effectiveColor});
 
     constexpr int width = 1600, height = 1000;
     mm::Camera camera;
@@ -222,9 +221,8 @@ int main(int argc, char** argv) {
     const bool basisChangesOnRotate = basisRotated != basisAfter;
 
     std::size_t totalEdges = 0;
-    for (const auto& [index, model] : models) {
-        (void)index;
-        totalEdges += model.edges().size();
+    for (const auto& item : models) {
+        totalEdges += item.model->edges().size();
     }
 
     std::printf("modeller=%zu kenar=%zu\n", modelCount, totalEdges);

@@ -36,7 +36,7 @@ int failures = 0;
         }                                                                          \
     } while (false)
 
-using Models = std::vector<std::pair<std::size_t, mm::WireframeModel>>;
+using Models = std::vector<mm::GpuModelRef>;
 
 mm::WireframeModel makeProfileSolid(double x0, double y0, double z0, double length) {
     const double h = 200.0, b = 100.0, tw = 7.1, tf = 11.2;
@@ -75,10 +75,9 @@ std::vector<std::pair<std::size_t, std::size_t>> referenceSilhouette(
     std::size_t* segmentCount) {
     std::vector<std::pair<std::size_t, std::size_t>> silhouette;
     std::size_t segments = 0;
-    for (const auto& [index, model] : models) {
-        (void)index;
-        const auto& vertices = model.vertices();
-        const auto& faces = model.faces();
+    for (const auto& item : models) {
+        const auto& vertices = item.model->vertices();
+        const auto& faces = item.model->faces();
         if (vertices.empty() || faces.empty()) continue;
         std::map<std::pair<std::size_t, std::size_t>, int> frontCount, backCount;
         for (const auto& face : faces) {
@@ -107,7 +106,7 @@ std::vector<std::pair<std::size_t, std::size_t>> referenceSilhouette(
                 ++segments;
             }
         }
-        segments += model.edges().size();
+        segments += item.model->edges().size();
     }
     std::sort(silhouette.begin(), silhouette.end());
     if (segmentCount) *segmentCount = segments;
@@ -154,14 +153,14 @@ int main() {
     // Saf cizgi modeli (yuzu yok) — yalniz kenarlariyla katilmali.
     storage.push_back(mm::WireframeModel::line({0.0, 0.0, 0.0}, {6000.0, 0.0, 0.0}));
     Models models;
-    for (std::size_t i = 0; i < storage.size(); ++i) models.emplace_back(i, storage[i]);
+    for (std::size_t i = 0; i < storage.size(); ++i) models.push_back(mm::GpuModelRef{i, &storage[i], storage[i].properties().effectiveColor});
 
     const std::array<mm::StandardView, 4> views = {
         mm::StandardView::Isometric, mm::StandardView::Top,
         mm::StandardView::Front, mm::StandardView::Right};
 
     std::size_t totalEdges = 0;
-    for (const auto& [index, model] : models) { (void)index; totalEdges += model.edges().size(); }
+    for (const auto& item : models) totalEdges += item.model->edges().size();
 
     // ── 1 + 2: duzen ve referans esdegerligi (4 gorunus) ──
     for (const auto view : views) {
@@ -273,7 +272,7 @@ int main() {
         std::vector<mm::WireframeModel> lineOnly;
         lineOnly.push_back(mm::WireframeModel::line({0.0, 0.0, 0.0}, {1000.0, 0.0, 0.0}));
         Models onlyLines;
-        onlyLines.emplace_back(0, lineOnly[0]);
+        onlyLines.push_back(mm::GpuModelRef{0, &lineOnly[0], lineOnly[0].properties().effectiveColor});
         mm::Camera camera;
         camera.setView(mm::StandardView::Front);
         mm::ContourWorkspace workspace;

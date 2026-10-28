@@ -22,6 +22,7 @@
 
 #include "model_maker/camera.hpp"
 #include "model_maker/geometry.hpp"
+#include "model_maker/render_backend.hpp"
 
 #include <algorithm>
 #include <cstddef>
@@ -123,7 +124,7 @@ struct ContourBatchView {
 // Not: `faces` bos olan modeller (saf cizgi/nokta) atlanir — eskisi gibi.
 template <typename Vertex>
 std::size_t buildContourBatch(
-    const std::vector<std::pair<std::size_t, WireframeModel>>& models,
+    const std::vector<GpuModelRef>& models,
     const Camera& camera, int width, int height, std::uint32_t color,
     std::vector<Vertex>& vertices, std::vector<std::uint32_t>& indices,
     ContourWorkspace& workspace, std::size_t* silhouetteSegmentsOut = nullptr) {
@@ -131,10 +132,9 @@ std::size_t buildContourBatch(
     indices.clear();
     std::size_t totalEdges = 0;
     std::size_t maxEdgesPerModel = 0;
-    for (const auto& [index, model] : models) {
-        (void)index;
-        totalEdges += model.edges().size();
-        maxEdgesPerModel = std::max(maxEdgesPerModel, model.edges().size());
+    for (const auto& item : models) {
+        totalEdges += item.model->edges().size();
+        maxEdgesPerModel = std::max(maxEdgesPerModel, item.model->edges().size());
     }
     workspace.reset(maxEdgesPerModel);
     // Siluet tahmini ~ gercek kenarin yarisi; kapasite bir kez buyur, sonra
@@ -160,10 +160,9 @@ std::size_t buildContourBatch(
     };
 
     std::size_t silhouetteSegments = 0;
-    for (const auto& [index, model] : models) {
-        (void)index;
-        const auto& modelVertices = model.vertices();
-        const auto& faces = model.faces();
+    for (const auto& item : models) {
+        const auto& modelVertices = item.model->vertices();
+        const auto& faces = item.model->faces();
         if (modelVertices.empty() || faces.empty()) continue;
         workspace.beginModel();
         for (const auto& face : faces) {
@@ -197,7 +196,7 @@ std::size_t buildContourBatch(
         });
         // GERCEK KENARLAR: kirisma filtreli tel kafes — derinlik testi arka
         // kenarlari yuz dolgusunun altinda gizler.
-        for (const auto& edge : model.edges()) {
+        for (const auto& edge : item.model->edges()) {
             if (edge.from >= modelVertices.size() || edge.to >= modelVertices.size()) continue;
             emit(modelVertices[edge.from], modelVertices[edge.to]);
         }

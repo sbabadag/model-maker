@@ -87,7 +87,7 @@ public:
     // World→screen transform handled in vertex shader via uniform.
     // Buffer only re-uploaded when model data changes (dirty detection).
     void renderWireframeBatch(
-        const std::vector<std::pair<std::size_t, WireframeModel>>& models,
+        const std::vector<GpuModelRef>& models,
         const Camera& camera);
 
     // ── FBO → GDI compositing ────────────────────────────────────
@@ -103,7 +103,7 @@ public:
     void resetDiagnostics();
 
     bool renderBatchToDc(
-        const std::vector<std::pair<std::size_t, WireframeModel>>& models,
+        const std::vector<GpuModelRef>& models,
         const Camera& camera, int width, int height, void* targetHdc,
         bool useProjection2D = false, std::uint64_t contentRevision = 0,
         std::uint8_t faceAlpha = 0, bool hiddenLineStyle = false);
@@ -121,15 +121,15 @@ public:
 
 private:
     bool compileShaders();
-    void ensureBatch(const std::vector<std::pair<std::size_t, WireframeModel>>& models,
+    void ensureBatch(const std::vector<GpuModelRef>& models,
                      std::uint64_t contentRevision = 0);
     void uploadBatch(GpuLineBatch& batch);
-    void renderContourLines(const std::vector<std::pair<std::size_t, WireframeModel>>& models,
+    void renderContourLines(const std::vector<GpuModelRef>& models,
                             const Camera& camera, int width, int height, bool useProjection2D,
                             std::uint64_t contentRevision);
     void renderBatch(const GpuLineBatch& batch, const Camera& camera,
                      int width, int height, bool useProjection2D = false);
-    void ensureFaceBatch(const std::vector<std::pair<std::size_t, WireframeModel>>& models,
+    void ensureFaceBatch(const std::vector<GpuModelRef>& models,
                          std::uint64_t contentRevision = 0);
     void renderFaceBatch(const GpuLineBatch& batch, const Camera& camera,
                          int width, int height, bool useProjection2D, std::uint8_t faceAlpha);

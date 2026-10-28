@@ -709,7 +709,7 @@ bool OpenGLRenderBackend::blitToDC(void* target, int width, int height) {
 }
 
 bool OpenGLRenderBackend::renderBatchToDc(
-    const std::vector<std::pair<std::size_t, WireframeModel>>& models,
+    const std::vector<GpuModelRef>& models,
     const Camera& camera, int width, int height, void* targetHdc,
     bool useProjection2D, std::uint64_t contentRevision,
     std::uint8_t faceAlpha, bool hiddenLineStyle) {
@@ -874,7 +874,7 @@ bool OpenGLRenderBackend::compileShaders() {
 
 // ── GPU batch rendering ──────────────────────────────────────────
 void OpenGLRenderBackend::renderWireframeBatch(
-    const std::vector<std::pair<std::size_t, WireframeModel>>& models,
+    const std::vector<GpuModelRef>& models,
     const Camera& camera) {
     if (!initialized_ || models.empty()) return;
     ensureBatch(models, 0);
@@ -886,10 +886,10 @@ void OpenGLRenderBackend::renderWireframeBatch(
 }
 
 void OpenGLRenderBackend::ensureBatch(
-    const std::vector<std::pair<std::size_t, WireframeModel>>& models,
+    const std::vector<GpuModelRef>& models,
     std::uint64_t contentRevision) {
     std::size_t totalEdges = 0;
-    for (const auto& [idx, model] : models) totalEdges += model.edges().size();
+    for (const auto& item : models) totalEdges += item.model->edges().size();
     // F5: icerik surumu birincil etiket — pozisyon degistiren komutlar
     // (move/trim) boyut ayni kalsa da batch'i yeniler (eski tag bayat
     // geometri birakiyordu). Surum yoksa boyut bazli eski davranis.
@@ -903,10 +903,10 @@ void OpenGLRenderBackend::ensureBatch(
     lineBatch_.modelCount = models.size();
 
     std::size_t totalVertices = 0, totalIndices = 0;
-    for (const auto& [idx, model] : models) {
-        if (model.edges().empty()) continue;
-        totalVertices += model.vertices().size();
-        totalIndices += model.edges().size() * 2;
+    for (const auto& item : models) {
+        if (item.model->edges().empty()) continue;
+        totalVertices += item.model->vertices().size();
+        totalIndices += item.model->edges().size() * 2;
     }
 
     lineBatch_.vertices.clear();
@@ -915,12 +915,13 @@ void OpenGLRenderBackend::ensureBatch(
     lineBatch_.indices.reserve(totalIndices);
 
     std::size_t vertexBase = 0;
-    for (const auto& [modelIdx, model] : models) {
-        const auto& vertices = model.vertices();
-        const auto& edges = model.edges();
+    for (const auto& item : models) {
+        const auto& vertices = item.model->vertices();
+        const auto& edges = item.model->edges();
         if (vertices.empty() || edges.empty()) continue;
-        const auto props = model.properties();
-        const std::uint32_t rgba = toRGBA8(props.effectiveColor);
+        // Etkin renk renderer'dan gelir (ByLayer cozulmus + secim vurgusu);
+        // model kopyasi tutulmadigi icin props.model'da degil, item'dadir.
+        const std::uint32_t rgba = toRGBA8(item.color);
         for (const auto& v : vertices) {
             GpuLineVertex gv;
             gv.x = static_cast<float>(v.x);
@@ -940,10 +941,10 @@ void OpenGLRenderBackend::ensureBatch(
 }
 
 void OpenGLRenderBackend::ensureFaceBatch(
-    const std::vector<std::pair<std::size_t, WireframeModel>>& models,
+    const std::vector<GpuModelRef>& models,
     std::uint64_t contentRevision) {
     std::size_t totalFaces = 0;
-    for (const auto& [idx, model] : models) totalFaces += model.faces().size();
+    for (const auto& item : models) totalFaces += item.model->faces().size();
     std::size_t tag = contentRevision
         ? static_cast<std::size_t>(contentRevision)
         : (models.size() ^ (totalFaces << 16));
@@ -956,9 +957,9 @@ void OpenGLRenderBackend::ensureFaceBatch(
     // Isikli golgelendirme: renk ucgen basina sabit (flat) oldugundan her
     // ucgen kendi 3 kosesini tasir — paylasimli koseler 3'e katlanir.
     std::size_t totalVertices = 0, totalIndices = 0;
-    for (const auto& [idx, model] : models) {
-        if (model.faces().empty()) continue;
-        for (const auto& face : model.faces())
+    for (const auto& item : models) {
+        if (item.model->faces().empty()) continue;
+        for (const auto& face : item.model->faces())
             if (face.size() >= 3) {
                 totalVertices += (face.size() - 2) * 3;
                 totalIndices += (face.size() - 2) * 3;
@@ -980,12 +981,11 @@ void OpenGLRenderBackend::ensureFaceBatch(
     // normal ayrilir (flanş-gövde 90° kavsagi keskin kalir, radius tegetligi
     // yumusar). Renk ucu basina interpolasyonla tasinir — shader degismez.
     const double creaseCos = std::cos(40.0 * 3.14159265358979323846 / 180.0);
-    for (const auto& [modelIdx, model] : models) {
-        const auto& vertices = model.vertices();
-        const auto& faces = model.faces();
+    for (const auto& item : models) {
+        const auto& vertices = item.model->vertices();
+        const auto& faces = item.model->faces();
         if (vertices.empty() || faces.empty()) continue;
-        const auto props = model.properties();
-        const std::uint32_t baseColor = props.effectiveColor;
+        const std::uint32_t baseColor = item.color;
         const double baseR = static_cast<double>((baseColor >> 16) & 0xFFu);
         const double baseG = static_cast<double>((baseColor >> 8) & 0xFFu);
         const double baseB = static_cast<double>(baseColor & 0xFFu);
@@ -1120,7 +1120,7 @@ void OpenGLRenderBackend::renderFaceBatch(const GpuLineBatch& batch, const Camer
 }
 
 void OpenGLRenderBackend::renderContourLines(
-    const std::vector<std::pair<std::size_t, WireframeModel>>& models,
+    const std::vector<GpuModelRef>& models,
     const Camera& camera, int width, int height, bool useProjection2D,
     std::uint64_t contentRevision) {
     // KONTUR (siluet + gercek kenarlar) — ONBELLEKLI.
@@ -1138,9 +1138,8 @@ void OpenGLRenderBackend::renderContourLines(
     if (models.empty()) return;
 
     std::size_t totalEdges = 0;
-    for (const auto& [index, model] : models) {
-        (void)index;
-        totalEdges += model.edges().size();
+    for (const auto& item : models) {
+        totalEdges += item.model->edges().size();
     }
     const std::size_t contentTag = contentRevision
         ? static_cast<std::size_t>(contentRevision)

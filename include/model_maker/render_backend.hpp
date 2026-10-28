@@ -11,6 +11,21 @@
 
 namespace mm {
 
+// ── GL batch girdisi (performans) ─────────────────────────────────────
+// KRITIK: burada MODEL KOPYASI tutulmaz. Eskiden batch her revizyon
+// degisiminde tum modellerin derin kopyasini aliyordu (auto copy = model;
+// setProperties) — her islem (kopyala/tasi/sil) tum geometriyi bir kez daha
+// kopyaliyor, secim degisimi de ayni maliyeti tekrarliyordu. Artik yalniz
+// isaretci + ETKIN renk tasinir; geometri Document'tan okunur.
+// YASAM SURESI: batch ayni kare icinde kurulup tuketilir; Document model
+// vektoru yeniden tahsis edilirse renderer data() adresini de anahtara katar
+// ve batch'i yeniden kurar (bayat isaretci kalmaz).
+struct GpuModelRef {
+    std::size_t index{0};
+    const WireframeModel* model{nullptr};
+    std::uint32_t color{0};   // etkin renk (ByLayer cozulmus + secim vurgusu)
+};
+
 // Platform-agnostic point for render backend
 struct RenderPoint {
     int x{};

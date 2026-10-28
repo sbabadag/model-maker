@@ -14,6 +14,8 @@
 
 namespace mm {
 namespace {
+// GL secim vurgusu (0xRRGGBB) — GDI secim kalemiyle ayni yesil.
+constexpr std::uint32_t kGpuSelectionHighlight = 0x5AFF91u;
 // Track/guide renkleri tuval fonuna gore ZIT (color_contrast.hpp).
 COLORREF rgbToColorRef(std::uint32_t rgb) noexcept {
     return RGB((rgb >> 16) & 0xFFu, (rgb >> 8) & 0xFFu, rgb & 0xFFu);
@@ -1134,11 +1136,15 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
             // Statik secim hover'inda secili objeler tabana gomuludur — yeniden
             // cizme. Yalnizca: transform (hayalet), secim penceresi suruklemesi
             // ve tam/nav kareleri (tabanda gomulu olmayan) cizer.
-            if (!draft.selectedModels.empty() &&
+            if (!draft.selectedModels.empty() && !useGpuLines &&
                 (draft.transformCommand != TransformCommand::None ||
                  draft.selectionFirstCorner || !draft.snapPreviewActive ||
                  draft.rotating || draft.panning ||
                  draft.wheelNavigating || draft.viewCubeActive)) {
+                // NOT (performans): GL modunda secim vurgusu GPU batch'inde renk
+                // olarak tasinir; burada HER HAREKET KARESINDE tum secili
+                // geometriyi 3px kalemle bastan cizmek orbit/pan/zoom'u ~5 kat
+                // yavaslatiyordu. Bu pass yalniz saf-GDI modunda gerekli.
                 HPEN selectedPen = CreatePen(PS_SOLID, 3, RGB(90, 255, 145));
                 SelectObject(dc, selectedPen);
                 for (const auto index : draft.selectedModels) {
@@ -1750,7 +1756,7 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
     // CPU O(n) model dolasimi YAPMAZ; yalniz document revizyonu, secim
     // kumesi veya model sayisi degistiginde yeniden kurulur. Culling yok:
     // off-screen cizgileri GPU klipsler (zaten GPU yolunun ana kazanimi).
-    const std::vector<std::pair<std::size_t, mm::WireframeModel>>* gpuBatchPtr = nullptr;
+    const std::vector<GpuModelRef>* gpuBatchPtr = nullptr;
     if (!draft.snapOnly && useGpuLines) {
         std::size_t selectionSig = draft.selectedModels.size();
         for (const auto index : draft.selectedModels) {
@@ -1758,8 +1764,11 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         }
         const std::uint64_t revision = document.revision();
         const std::size_t modelCount = document.models().size();
+        const mm::WireframeModel* const dataPtr =
+            modelCount ? document.models().data() : nullptr;
         if (!cachedGpuBatchValid_ || revision != cachedGpuRevision_ ||
-            selectionSig != cachedGpuSelectionSig_ || modelCount != cachedGpuModelCount_) {
+            selectionSig != cachedGpuSelectionSig_ || modelCount != cachedGpuModelCount_ ||
+            dataPtr != cachedGpuData_) {
             // PROFILLI KAYNAK CIZGILERI GIZLE: ayni eksende bir kati varsa
             // cizgi artik cizilmez (kati kendi eksenini tasir; cizgi yalniz
             // giris aracidir — eski dosyalardan kalan sarI "extra cizgiler").
@@ -1803,13 +1812,18 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
                 // vurgusu GDI tarafinda uste cizilmeye devam eder.
                 const auto properties = document.effectiveProperties(index);
                 if (!properties.visible) continue;
-                auto modelCopy = model;
-                modelCopy.setProperties(properties);
-                cachedGpuBatch_.emplace_back(index, std::move(modelCopy));
+                // SECIM VURGUSU GPU'da: secili modelin ETKIN rengi vurgu rengine
+                // cevrilir. Eskiden her karede GDI ustune 3px kalin kalemle TUM
+                // geometri yeniden ciziliyordu (secim varken cizim ~5 kat
+                // yavasliyordu); artik GPU batch'i tasiyor, per-frame CPU maliyeti yok.
+                const std::uint32_t batchColor =
+                    isSelected(index) ? kGpuSelectionHighlight : properties.effectiveColor;
+                cachedGpuBatch_.push_back(GpuModelRef{index, &model, batchColor});
             }
             cachedGpuRevision_ = revision;
             cachedGpuSelectionSig_ = selectionSig;
             cachedGpuModelCount_ = modelCount;
+            cachedGpuData_ = dataPtr;
             cachedGpuBatchValid_ = true;
         }
         gpuBatchPtr = &cachedGpuBatch_;
@@ -2067,7 +2081,11 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
     }
 
     if (!draft.interactiveNavigation) {
-        if (!draft.selectedModels.empty()) {
+        if (!draft.selectedModels.empty() && !useGpuLines) {
+            // NOT (performans): GL modunda secim vurgusu GPU batch'inde RENK
+            // olarak tasinir (kGpuSelectionHighlight). Bu GDI pass'i yalniz saf
+            // GDI yolunda calisir — eskiden her karede secili geometri 3px
+            // kalemle bastan ciziliyor, secim varken cizim ~5 kat yavasliyordu.
             // Secili profilli kaynak cizgileri gizle: ayni eksende kati varsa
             // yesil tel kafes "extra cizgi" olarak gorunmez.
             std::vector<std::pair<Vec3, Vec3>> selSolidAxes;
