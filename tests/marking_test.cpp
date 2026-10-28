@@ -88,8 +88,10 @@ int main() {
         const auto m = *reg.markOf(EntityId{10});
         const auto members = reg.membersOf(m);
         check(members.size() == 2 && members[0] == 10 && members[1] == 11, "P1 uyeleri: 10, 11");
-        check(reg.partSignatureFor(m) != nullptr && reg.partSignatureFor(m)->length == 60000,
-              "P1 imzasi: uzunluk 6000 mm (0.1 mm biriminde 60000)");
+        // 2026-10-28: uzunluk artik 1 mm biriminde (0.1 mm yuvarlamasi ayni
+        // olculu parcalari farkli mark'a dusuruyordu — gercek modelde olculdu).
+        check(reg.partSignatureFor(m) != nullptr && reg.partSignatureFor(m)->length == 6000,
+              "P1 imzasi: uzunluk 6000 mm (1 mm biriminde 6000)");
         check(reg.assemblySignatureFor(m) == nullptr, "part mark'in assembly imzasi yok");
     }
 
@@ -192,6 +194,51 @@ int main() {
         if (pos != std::string::npos) tampered.replace(pos, 11, "\"number\": 7");
         check(!MarkRegistry::deserialize(tampered, untouched, err) && untouched.serialize() == before,
               "tutarsiz numara (sayac disi / atama kopuk) reddedilir");
+    }
+
+    // --- POZ KIMLIGI REGRESYONU (2026-10-28, gercek modelde olculen iki hata) ---
+    {
+        // (a) AYNI olcu + kayan nokta gurultusu -> AYNI mark (eskiden 0.1 mm
+        //     yuvarlamasi hash'i bozup ayni parcaya iki poz veriyordu: P8/P9).
+        WireframeModel a = makeBox({0, 0, 0}, {6000, 150, 300});
+        WireframeModel b = makeBox({0, 0, 0}, {6000.018, 150.021, 299.983});
+        MarkRegistry r;
+        const auto ma = r.markPart(1001, partSignatureOf(a));
+        const auto mb = r.markPart(1002, partSignatureOf(b));
+        check(ma.mark.number == mb.mark.number,
+              "POZ: ayni olcu + 0.02 mm gurultu -> AYNI mark (gurultuye dayanikli)");
+
+        // (b) 10 mm farkli olcu -> FARKLI mark (eskiden mozaik kenar hash'i
+        //     yuzunden ayni poz veriliyordu: P19/P28).
+        WireframeModel c = makeBox({0, 0, 0}, {6000, 160, 300});
+        const auto mc = r.markPart(1003, partSignatureOf(c));
+        check(mc.mark.number != ma.mark.number, "POZ: 10 mm farkli olcu -> FARKLI mark");
+
+        // (c) Yogun mozaikli (cok kenarli) levhalar da olcuyle ayrilir.
+        WireframeModel d = makeBox({0, 0, 0}, {58.8, 112.0, 152.0}, "");
+        WireframeModel e = makeBox({0, 0, 0}, {58.8, 122.0, 152.0}, "");
+        std::vector<Vec3> verts = d.vertices();
+        std::vector<Edge> edges = d.edges();
+        for (int k = 0; k < 200; ++k) {   // tessellation benzeri ek kenarlar
+            const std::size_t i0 = static_cast<std::size_t>(k) % verts.size();
+            const std::size_t i1 = (i0 + 3) % verts.size();
+            edges.push_back({i0, i1});
+        }
+        WireframeModel d2(verts, edges);
+        d2.setProperties(d.properties());
+        std::vector<Vec3> verts2 = e.vertices();
+        std::vector<Edge> edges2 = e.edges();
+        for (int k = 0; k < 200; ++k) {
+            const std::size_t i0 = static_cast<std::size_t>(k) % verts2.size();
+            const std::size_t i1 = (i0 + 3) % verts2.size();
+            edges2.push_back({i0, i1});
+        }
+        WireframeModel e2(verts2, edges2);
+        e2.setProperties(e.properties());
+        const auto md = r.markPart(1004, partSignatureOf(d2));
+        const auto me = r.markPart(1005, partSignatureOf(e2));
+        check(md.mark.number != me.mark.number,
+              "POZ: mozaikli levhada 10 mm fark -> FARKLI mark (kenar hash'i cozumu degil)");
     }
 
     std::printf(failures ? "FAILURES: %d\n" : "ALL PASS\n", failures);

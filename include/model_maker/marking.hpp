@@ -59,7 +59,7 @@ struct PartSignature {
     std::wstring material;
     std::wstring name;
     std::wstring finish;
-    std::int64_t length{0};        // 0.1 mm birimiyle yuvarlanmis uzunluk
+    std::int64_t length{0};        // 1 mm birimiyle yuvarlanmis uzunluk (gurultuye dayanikli)
     std::uint64_t shapeHash{0};    // sirali kenar-uzunluk dagiliminin FNV-1a'si
     int faceCount{0};
     int vertexCount{0};

@@ -5,6 +5,7 @@
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <tuple>
 
@@ -55,24 +56,45 @@ PartSignature partSignatureOf(const WireframeModel& model) {
     sig.vertexCount = static_cast<int>(model.vertices().size());
 
     const auto& v = model.vertices();
-    std::vector<std::int64_t> lens;
-    lens.reserve(model.edges().size());
     double longest = 0.0;
+    Vec3 mn{}, mx{};
+    bool first = true;
+    for (const Vec3& p : v) {
+        if (first) {
+            mn = mx = p;
+            first = false;
+            continue;
+        }
+        mn = {std::min(mn.x, p.x), std::min(mn.y, p.y), std::min(mn.z, p.z)};
+        mx = {std::max(mx.x, p.x), std::max(mx.y, p.y), std::max(mx.z, p.z)};
+    }
     for (const Edge& e : model.edges()) {
         if (e.from >= v.size() || e.to >= v.size()) continue;
-        const double l = dist(v[e.from], v[e.to]);
-        longest = std::max(longest, l);
-        lens.push_back(quant(l));
+        longest = std::max(longest, dist(v[e.from], v[e.to]));
     }
-    std::sort(lens.begin(), lens.end());
+
+    // POZ KIMLIGI (2026-10-28 duzeltmesi): eskiden `shapeHash` KENAR UZUNLUGU
+    // dagilimindan turetiliyordu. Iki hata birden cikti (gercek modelde olculdu):
+    //  (a) ayni mark altinda FARKLI olculu parcalar: mozaik (tessellation)
+    //      kenarlari baskin oldugu icin 10 mm fark hash'te kayboluyordu,
+    //  (b) ayni olculu parcalar FARKLI mark: kayan nokta gurultusu 0.1 mm
+    //      yuvarlamasini degistirip hash'i bozuyordu.
+    // Cozum: kimlik SIRALI, 1 mm yuvarlanmis ZARF OLCULERINDEN turetilir
+    // (gurultuye dayanikli, 1 mm'lik gercek farki yakalar).
+    std::array<std::int64_t, 3> ext{
+        static_cast<std::int64_t>(std::llround(mx.x - mn.x)),
+        static_cast<std::int64_t>(std::llround(mx.y - mn.y)),
+        static_cast<std::int64_t>(std::llround(mx.z - mn.z))};
+    std::sort(ext.begin(), ext.end());
     std::uint64_t h = fnvInit();
-    for (const std::int64_t q : lens) fnvMix(h, static_cast<std::uint64_t>(q));
+    for (const std::int64_t q : ext) fnvMix(h, static_cast<std::uint64_t>(q));
     sig.shapeHash = h;
 
     const Vec3 a{pr.axisFromX, pr.axisFromY, pr.axisFromZ};
     const Vec3 b{pr.axisToX, pr.axisToY, pr.axisToZ};
     const double axisLen = dist(a, b);
-    sig.length = quant(axisLen > 1e-6 ? axisLen : longest);
+    // Uzunluk da 1 mm: 0.1 mm yuvarlamasi esit parcalari ayiriyordu.
+    sig.length = static_cast<std::int64_t>(std::llround(axisLen > 1e-6 ? axisLen : longest));
     return sig;
 }
 

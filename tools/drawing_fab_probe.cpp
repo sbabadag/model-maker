@@ -17,6 +17,9 @@
 #include <cstdio>
 #include <cstdlib>
 #include <algorithm>
+#include "model_maker/marking.hpp"
+#include "model_maker/drawing_builder.hpp"
+#include "model_maker/marking.hpp"
 #include <map>
 #include <set>
 #include <string>
@@ -94,6 +97,120 @@ int main(int argc, char** argv) {
                     plateChildren, platePayload, plateLive, plateInParts);
     }
 
+    // --- PART POZ (mark) TESHISI -------------------------------------------
+    // Kural: AYNI mark -> ayni imza (profil/ad/uzunluk/geometri/delik).
+    // Burada iki anomali aranir: (a) ayni mark altinda FARKLI olcu, (b) ayni
+    // (profil, ad, olcu, delik) icin FARKLI mark.
+    {
+        // Bayat cache'e guvenme: bbox dogrudan vertexlerden.
+        const auto vbox = [&doc](EntityId id) {
+            Bounds3 b{};
+            const auto idx = doc.indexOfEntity(id);
+            if (!idx) return b;
+            const auto& vs = doc.models()[*idx].vertices();
+            if (vs.empty()) return b;
+            b.minimum = b.maximum = vs.front();
+            for (const Vec3& v : vs) {
+                b.minimum = {std::min(b.minimum.x, v.x), std::min(b.minimum.y, v.y), std::min(b.minimum.z, v.z)};
+                b.maximum = {std::max(b.maximum.x, v.x), std::max(b.maximum.y, v.y), std::max(b.maximum.z, v.z)};
+            }
+            return b;
+        };
+        MarkRegistry reg;
+        const DocumentMarkSummary summary = markDocument(doc, reg);
+        std::map<int, std::vector<EntityId>> byMark;
+        std::map<std::string, std::set<int>> byShape;
+        for (std::size_t i = 0; i < doc.models().size(); ++i) {
+            if (!isDrawablePart(doc.models()[i])) continue;
+            const EntityId id = doc.modelId(i);
+            const auto mk = reg.markOf(id);
+            if (!mk) continue;
+            byMark[mk->number].push_back(id);
+            const EntityProperties& pr = doc.models()[i].properties();
+            char key[256];
+            const auto bb = vbox(id);
+            std::snprintf(key, sizeof(key), "%s|%s|%d|%d|%llu|%.0fx%.0fx%.0f",
+                          pr.profileName.empty() ? pr.name.c_str() : pr.profileName.c_str(),
+                          pr.name.c_str(), static_cast<int>(doc.models()[i].vertices().size()),
+                          static_cast<int>(doc.models()[i].faces().size()),
+                          static_cast<unsigned long long>(fab::drillingFingerprint(doc, id)),
+                          bb.maximum.x - bb.minimum.x, bb.maximum.y - bb.minimum.y,
+                          bb.maximum.z - bb.minimum.z);
+            byShape[key].insert(mk->number);
+        }
+        std::printf("  MARK: %zu parca, %zu farkli mark, %zu assembly mark\n", summary.parts,
+                    byMark.size(), summary.assemblies);
+        // (a) ayni mark, farkli hacim/olcu
+        for (const auto& [num, ids] : byMark) {
+            if (ids.size() < 2) continue;
+            std::set<std::string> dims;
+            for (const EntityId id : ids) {
+                const auto idx = doc.indexOfEntity(id);
+                if (!idx) continue;
+                const auto b = vbox(id);
+                char d[128];
+                std::snprintf(d, sizeof(d), "%.1fx%.1fx%.1f", b.maximum.x - b.minimum.x,
+                              b.maximum.y - b.minimum.y, b.maximum.z - b.minimum.z);
+                dims.insert(d);
+            }
+            if (dims.size() > 1) {
+                std::printf("  [MARK ANOMALI] P%d: %zu parca ama %zu FARKLI olcu:", num, ids.size(),
+                            dims.size());
+                for (const auto& d : dims) std::printf(" %s", d.c_str());
+                std::printf("\n");
+                // Ayni mark altinda imza alanlari: hangi alan AYNI kaliyor?
+                for (const EntityId id : ids) {
+                    const auto idx = doc.indexOfEntity(id);
+                    if (!idx) continue;
+                    const auto bb = vbox(id);
+                    std::printf("      parca %llu: %.1fx%.1fx%.1f  profil='%s' ad='%s' v=%zu f=%zu uzunluk=%lld hash=%llu delik=%llu\n",
+                                (unsigned long long)id, bb.maximum.x - bb.minimum.x,
+                                bb.maximum.y - bb.minimum.y, bb.maximum.z - bb.minimum.z,
+                                doc.models()[*idx].properties().profileName.c_str(),
+                                doc.models()[*idx].properties().name.c_str(),
+                                doc.models()[*idx].vertices().size(), doc.models()[*idx].faces().size(),
+                                (long long)(partSignatureOf(doc.models()[*idx]).length),
+                                (unsigned long long)(partSignatureOf(doc.models()[*idx]).shapeHash),
+                                (unsigned long long)(fab::drillingFingerprint(doc, id)));
+                }
+            }
+        }
+        // (b) ayni sekil+delik, farkli mark
+        int split = 0;
+        for (const auto& [key, marks] : byShape)
+            if (marks.size() > 1) {
+                if (split < 8) {
+                    std::printf("  [MARK ANOMALI] ayni imza %d FARKLI mark aldi:", static_cast<int>(marks.size()));
+                    for (const int m : marks) std::printf(" P%d", m);
+                    std::printf("  (%s)\n", key.c_str());
+                    for (const auto& [mnum, mids] : byMark) {
+                        if (!marks.count(mnum) || mids.empty()) continue;
+                        const auto idx = doc.indexOfEntity(mids.front());
+                        if (!idx) continue;
+                        const auto sg = partSignatureOf(doc.models()[*idx]);
+                        std::printf("      P%d ornek: v=%d f=%d uzunluk=%lld hash=%llu delik=%llu mat='%s'\n",
+                                    mnum, sg.vertexCount, sg.faceCount, (long long)sg.length,
+                                    (unsigned long long)sg.shapeHash, (unsigned long long)sg.drillHash,
+                                    std::string(sg.material.begin(), sg.material.end()).c_str());
+                    }
+                }
+                ++split;
+            }
+        if (split > 8) std::printf("  ... toplam %d boyle imza\n", split);
+        // Ornek dokum: mark -> ad/olcu
+        int shown = 0;
+        for (const auto& [num, ids] : byMark) {
+            if (shown++ >= 12) break;
+            const auto idx = doc.indexOfEntity(ids.front());
+            if (!idx) continue;
+            const auto b = vbox(ids.front());
+            const EntityProperties& pr = doc.models()[*idx].properties();
+            std::printf("    P%-3d adet=%zu  %-10s %-10s %.0fx%.0fx%.0f\n", num, ids.size(),
+                        pr.profileName.empty() ? "-" : pr.profileName.c_str(), pr.name.c_str(),
+                        b.maximum.x - b.minimum.x, b.maximum.y - b.minimum.y, b.maximum.z - b.minimum.z);
+        }
+    }
+
     // Kaynakli birlesimler (assembly) uzerinde dolas.
     std::size_t asmNo = 0;
     for (const AssemblyRecord& a : doc.assemblies()) {
@@ -126,6 +243,20 @@ int main(int argc, char** argv) {
             std::printf("    [UNRESOLVED] %s: %s\n", u.code.c_str(), u.detail.c_str());
 
         // Cizim seti: uygulamanin kullandigi varsayilanlarla.
+        // Bayat cache'e guvenme: bbox dogrudan vertexlerden.
+        const auto vbox = [&doc](EntityId id) {
+            Bounds3 b{};
+            const auto idx = doc.indexOfEntity(id);
+            if (!idx) return b;
+            const auto& vs = doc.models()[*idx].vertices();
+            if (vs.empty()) return b;
+            b.minimum = b.maximum = vs.front();
+            for (const Vec3& v : vs) {
+                b.minimum = {std::min(b.minimum.x, v.x), std::min(b.minimum.y, v.y), std::min(b.minimum.z, v.z)};
+                b.maximum = {std::max(b.maximum.x, v.x), std::max(b.maximum.y, v.y), std::max(b.maximum.z, v.z)};
+            }
+            return b;
+        };
         MarkRegistry reg;
         drawing::DrawingOptions opt;
         drawing::DrawingPreferences pref;
