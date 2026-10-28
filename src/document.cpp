@@ -429,7 +429,61 @@ void Document::cloneDependentsForCopies(const std::unordered_map<EntityId, Entit
         }
     }
 
-    // (2) COMPONENT INSTANCE'LARI: sahip olunan TUM canli alt nesneler kopyalandiysa
+    // (2) KAYNAKLAR (WELD): iki parcasi da kopyalanan kayit KOPYADIR.
+    // KULLANICI BUG RAPORU (2026-10-28): "kopyalanan componentlar assembly
+    // olusturmuyor" — assembly'ler SHOP weld grafindan turetilir
+    // (reassembleFromWelds), weld kayitlari klonlanmadigi icin kopya parcalar
+    // assembly grafigine hic girmiyordu. Ayrica component child tablosundaki
+    // weld EntityId eslenmedigi icin bir sonraki recompute ORIJINAL kaynagi
+    // kopyanin parcalarina baglayabiliyordu (kaynak "calinmasi").
+    // Bu blok component instance'larindan ONCE calisir: remap'in weld eslemesi
+    // hazir olmali.
+    {
+        const std::size_t weldCount = welds_.size();
+        std::vector<std::pair<EntityId, Weld>> pending;   // kaynak kimlik, kopya kaydi
+        for (std::size_t i = 0; i < weldCount; ++i) {
+            const Weld src = welds_[i];
+            if (src.mainPart == kInvalidEntityId || !remap.count(src.mainPart)) continue;
+            if (src.secondaryPart == kInvalidEntityId || !remap.count(src.secondaryPart)) continue;
+            Weld clone = src;
+            clone.id = kInvalidEntityId;
+            remapOne(clone.mainPart);
+            remapOne(clone.secondaryPart);
+            clone.origin = clone.origin + displacement;
+            // GORSEL: secimde kaynak kopyasi varsa onu kullan; yoksa gorsel
+            // modeli OTELEYEREK kopyala (kopya kaynak yeni konumda gorunur).
+            EntityId newDisplay = kInvalidEntityId;
+            if (src.displayEntityId != kInvalidEntityId) {
+                const auto hit = remap.find(src.displayEntityId);
+                if (hit != remap.end()) {
+                    newDisplay = hit->second;
+                } else if (const auto di = indexOfEntity(src.displayEntityId)) {
+                    WireframeModel display = models_[*di];
+                    display.translate(displacement);
+                    auto props = display.properties();
+                    if (!props.profileName.empty()) {
+                        props.axisFromX += displacement.x;
+                        props.axisFromY += displacement.y;
+                        props.axisFromZ += displacement.z;
+                        props.axisToX += displacement.x;
+                        props.axisToY += displacement.y;
+                        props.axisToZ += displacement.z;
+                        display.setProperties(std::move(props));
+                    }
+                    addModel(std::move(display));
+                    newDisplay = modelId(models_.size() - 1);
+                }
+            }
+            clone.displayEntityId = newDisplay;
+            pending.emplace_back(src.id, std::move(clone));
+        }
+        for (auto& [srcId, clone] : pending) {
+            const std::size_t ni = addWeld(std::move(clone));
+            remap[srcId] = welds_[ni].id;   // child tablosu bu eslemeyi kullanir
+        }
+    }
+
+    // (3) COMPONENT INSTANCE'LARI: sahip olunan TUM canli alt nesneler kopyalandiysa
     // yeni instance acilir. Aksi halde (yarim kopya) yeni instance ACILMAZ —
     // ayni levha/bulon iki component tarafindan sahiplenilemez.
     std::vector<ComponentInstanceRecord> clones;
@@ -481,7 +535,7 @@ void Document::cloneDependentsForCopies(const std::unordered_map<EntityId, Entit
     }
     for (ComponentInstanceRecord& c : clones) addComponentInstance(std::move(c));
 
-    // (3) LEGACY ALIN LEVHASI BAGLANTILARI: ayni kural — levha + bulon grubu
+    // (4) LEGACY ALIN LEVHASI BAGLANTILARI: ayni kural — levha + bulon grubu
     // kopyalandiysa baglanti da kopyadir (eski komutla olusturulan baglantilar).
     std::vector<EndPlateConnection> epClones;
     const std::size_t epCount = endPlateConnections_.size();

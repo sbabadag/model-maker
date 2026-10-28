@@ -6,6 +6,7 @@
 // tek undo adimi; YARIM kopyada (ana parca kopyalanmadiysa) instance ACILMAZ.
 #include "model_maker/document.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 
@@ -184,6 +185,112 @@ int main() {
         check(clone.mainPart == beam, "C: kopyalanmayan ana parca referansi orijinalde kalir");
         check(std::fabs(clone.frame.frame.origin.x - 3100.0) < 1e-9,
               "C: kopya cercevesi yeni konuma tasindi");
+    }
+
+    std::printf("== D: kopyalanan component ASSEMBLY olusturur (weld klonu) ==\n");
+    {
+        // BUG (2026-10-28): assembly'ler SHOP weld grafindan turetilir; kopyada
+        // weld kayitlari klonlanmadigi icin kopya parcalar assembly'ye girmiyordu.
+        Document empty;
+        Fixture f = makeJoint(empty);
+        Document& doc = f.doc;
+        doc.pushSnapshot();
+        Weld weld;
+        weld.mainPart = f.beam;
+        weld.secondaryPart = f.column;
+        weld.type = WeldType::Fillet;
+        weld.size = 6.0;
+        weld.weldClass = WeldClass::Shop;
+        weld.origin = {50.0, 100.0, 0.0};
+        const std::size_t wi = doc.addWeld(weld);
+        const EntityId weldId = doc.welds()[wi].id;
+        // Component child tablosuna kaynak kaydi (recompute bu kimligi kullanir).
+        ComponentInstanceRecord rec = doc.componentInstances().front();
+        ComponentChildRecord weldChild;
+        weldChild.roleKey = "weld";
+        weldChild.kind = ComponentObjectKind::Weld;
+        weldChild.entityId = weldId;
+        WeldSpec spec;
+        spec.partA = f.beam;
+        spec.partB = f.column;
+        spec.size = 6.0;
+        weldChild.weld = spec;
+        rec.children.push_back(weldChild);
+        doc.pushSnapshot();
+        check(doc.setComponentInstance(0, rec), "D: component kaydina weld child eklendi");
+
+        const std::size_t modelsBefore = doc.models().size();
+        const std::size_t weldsBefore = doc.welds().size();
+        const std::size_t asmBefore = doc.assemblies().size();
+        check(weldsBefore == 1 && asmBefore == 1, "D: baslangic 1 kaynak + 1 assembly");
+
+        std::vector<std::size_t> all;
+        for (std::size_t i = 0; i < modelsBefore; ++i) all.push_back(i);
+        doc.pushSnapshot();
+        doc.copyModels(all, Vec3{2000, 0, 0});
+
+        const EntityId beamCopy = doc.modelIds()[modelsBefore + 0];
+        const EntityId columnCopy = doc.modelIds()[modelsBefore + 1];
+
+        check(doc.welds().size() == weldsBefore + 1, "D: kaynak kaydi KOPYALANDI");
+        const Weld& original = doc.welds().front();
+        check(original.id == weldId && original.mainPart == f.beam && original.secondaryPart == f.column,
+              "D: ORIJINAL kaynak yerinde (kopya onu isgal etmez)");
+        const Weld& cloneWeld = doc.welds().back();
+        check(cloneWeld.id != weldId, "D: kopya kaynak YENI kimlik aldi");
+        check(cloneWeld.mainPart == beamCopy && cloneWeld.secondaryPart == columnCopy,
+              "D: kopya kaynak KOPYA parcalara baglandi");
+        check(std::fabs(cloneWeld.origin.x - (weld.origin.x + 2000.0)) < 1e-9,
+              "D: kaynak konumu otelemeyle tasindi");
+
+        check(doc.assemblies().size() == asmBefore + 1, "D: KOPYA da assembly olusturdu");
+        const auto copyAsm = doc.assemblyIdContaining(beamCopy);
+        check(copyAsm.has_value(), "D: kopya kiris bir assembly'de");
+        if (copyAsm) {
+            const auto* asmRec = [&]() -> const AssemblyRecord* {
+                const auto idx = doc.indexOfAssembly(*copyAsm);
+                return idx ? &doc.assemblies()[*idx] : nullptr;
+            }();
+            bool hasBoth = false;
+            if (asmRec) {
+                const bool hasBeam = std::find(asmRec->parts.begin(), asmRec->parts.end(), beamCopy) != asmRec->parts.end();
+                const bool hasColumn = std::find(asmRec->parts.begin(), asmRec->parts.end(), columnCopy) != asmRec->parts.end();
+                hasBoth = hasBeam && hasColumn;
+            }
+            check(hasBoth, "D: kopya assembly kopya kiris + kolonu icerir");
+        }
+        const auto originalAsm = doc.assemblyIdContaining(f.beam);
+        check(originalAsm.has_value() && originalAsm != copyAsm,
+              "D: orijinal assembly kopyadan ayri");
+        // Child tablosu: kopya component'in weld child'i KOPYA kaynagi gosterir.
+        bool childWeldRemapped = false;
+        for (const ComponentChildRecord& c : doc.componentInstances().back().children)
+            if (c.roleKey == "weld") childWeldRemapped = c.entityId == cloneWeld.id;
+        check(childWeldRemapped, "D: child tablosundaki weld KOPYA kaynaga eslendi");
+
+        check(doc.undo(), "D: undo calisti");
+        check(doc.welds().size() == weldsBefore, "D: undo -> kopya kaynak kalkti");
+        check(doc.assemblies().size() == asmBefore, "D: undo -> kopya assembly kalkti");
+        check(doc.welds().front().id == weldId, "D: undo -> orijinal kaynak korundu");
+    }
+
+    std::printf("== E: yarim kopyada kaynak klonlanmaz (dangling weld yok) ==\n");
+    {
+        Document empty;
+        Fixture f = makeJoint(empty);
+        Document& doc = f.doc;
+        doc.pushSnapshot();
+        Weld weld;
+        weld.mainPart = f.beam;
+        weld.secondaryPart = f.column;
+        weld.weldClass = WeldClass::Shop;
+        doc.addWeld(weld);
+        const std::size_t weldsBefore = doc.welds().size();
+        // Yalniz levha kopyalanir: kaynagin iki parcasi da kopya degil.
+        const std::size_t plateIndex = *doc.indexOfEntity(f.plate);
+        doc.pushSnapshot();
+        doc.copyModels({plateIndex}, Vec3{2000, 0, 0});
+        check(doc.welds().size() == weldsBefore, "E: yarim kopyada weld KLONLANMAZ");
     }
 
     if (failures) std::printf("%d FAIL\n", failures);
