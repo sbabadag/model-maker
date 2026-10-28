@@ -900,6 +900,8 @@ private:
     HWND neutralButton_{};
     HWND moveButton_{};
     HWND copyButton_{};
+    HWND copyLinearButton_{};
+    HWND moveLinearButton_{};
     HWND offsetButton_{};
     HWND mirrorButton_{};
     HWND deleteButton_{};

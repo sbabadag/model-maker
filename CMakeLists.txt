@@ -51,6 +51,7 @@ add_library(model_maker_core
     src/magnetic_frame.cpp
     src/component_recompute.cpp
     src/component_rebind.cpp
+    src/axis_delta.cpp
     src/component_framework.cpp
     src/component_glyph.cpp
     src/component_dialog.cpp
@@ -563,6 +564,12 @@ if(BUILD_TESTING)
     target_link_libraries(model_maker_component_rebind_test PRIVATE model_maker_core)
     target_compile_options(model_maker_component_rebind_test PRIVATE -Wall -Wextra -Wpedantic)
     add_test(NAME model_maker_component_rebind_test COMMAND model_maker_component_rebind_test)
+
+    # DOGRUSAL KOPYA/TASIMA: "dx,dy,dz" oteleme cozumleyici (X/Y/Z mesafeli komutlar).
+    add_executable(model_maker_axis_delta_test tests/axis_delta_test.cpp)
+    target_link_libraries(model_maker_axis_delta_test PRIVATE model_maker_core)
+    target_compile_options(model_maker_axis_delta_test PRIVATE -Wall -Wextra -Wpedantic)
+    add_test(NAME model_maker_axis_delta_test COMMAND model_maker_axis_delta_test)
 
     # DRAWING P2C: smart sheet manager (tek pafta kalite kapisi + bagli coklu pafta seti, JSON, referans).
     add_executable(model_maker_drawing_set_test tests/drawing_set_test.cpp)

@@ -29,6 +29,7 @@
 #include "model_maker/view_cube.hpp"
 #include "model_maker/contact_resolver.hpp"
 #include "model_maker/component_rebind.hpp"
+#include "model_maker/axis_delta.hpp"
 #include "model_maker/component_glyph.hpp"
 #include "model_maker/component_dialog.hpp"
 
@@ -73,7 +74,7 @@ enum CommandId {
     CmdViewFront = 320, CmdViewBack, CmdViewLeft, CmdViewRight, CmdViewIsometric,
     CmdViewTop, CmdViewBottom,
     CmdOsnap = 400, CmdGridSnap, CmdDynamicInput, CmdSnapSettings, CmdPolarTracking,
-    CmdMove = 500, CmdCopy, CmdOffset, CmdMirror, CmdDelete, CmdLinearArray, CmdPolarArray,
+    CmdMove = 500, CmdCopy, CmdCopyLinear, CmdMoveLinear, CmdOffset, CmdMirror, CmdDelete, CmdLinearArray, CmdPolarArray,
     CmdTrim, CmdExtend, CmdNeutral, CmdFillet,
     CmdTabFile = 600, CmdTabDrawing, CmdTabModify, CmdTabView, CmdTabAids,
     CmdDxfProgress = 700, CmdSnapTypeFirst = 720,
@@ -352,6 +353,8 @@ void Application::createControlPanel() {
     neutralButton_ = addCommand(L"↖", CmdNeutral, BS_AUTOCHECKBOX | BS_PUSHLIKE);
     moveButton_ = addCommand(L"↔", CmdMove, BS_AUTOCHECKBOX | BS_PUSHLIKE);
     copyButton_ = addCommand(L"⧉", CmdCopy, BS_AUTOCHECKBOX | BS_PUSHLIKE);
+    copyLinearButton_ = addCommand(L"⧉Δ", CmdCopyLinear, BS_AUTOCHECKBOX | BS_PUSHLIKE);
+    moveLinearButton_ = addCommand(L"⇥Δ", CmdMoveLinear, BS_AUTOCHECKBOX | BS_PUSHLIKE);
     offsetButton_ = addCommand(L"⇶", CmdOffset, BS_AUTOCHECKBOX | BS_PUSHLIKE);
     mirrorButton_ = addCommand(L"◁│▷", CmdMirror, BS_AUTOCHECKBOX | BS_PUSHLIKE);
     deleteButton_ = addCommand(L"✕", CmdDelete, BS_AUTOCHECKBOX | BS_PUSHLIKE);
@@ -410,6 +413,8 @@ void Application::createControlPanel() {
         regTT(GetDlgItem(window_, CmdNeutral), L"Pasif");
         regTT(GetDlgItem(window_, CmdMove), L"Taşı");
         regTT(GetDlgItem(window_, CmdCopy), L"Kopyala");
+        regTT(GetDlgItem(window_, CmdCopyLinear), L"Doğrusal kopyala: secim + iki nokta; hedef adiminda \"dx,dy,dz\" yazilirsa X/Y/Z mesafesiyle kopyalar (coklu)");
+        regTT(GetDlgItem(window_, CmdMoveLinear), L"Doğrusal taşı: secim + iki nokta; hedef adiminda \"dx,dy,dz\" yazilirsa X/Y/Z mesafesiyle taşır");
         regTT(GetDlgItem(window_, CmdOffset), L"Ofset");
         regTT(GetDlgItem(window_, CmdMirror), L"Ayna");
         regTT(GetDlgItem(window_, CmdDelete), L"Sil");
@@ -1033,6 +1038,7 @@ void Application::drawOwnerButton(const DRAWITEMSTRUCT& item) {
         DrawFocusRect(item.hDC, &focus);
     }
 }
+
 
 static void trimExtendLog(const std::wstring& message) noexcept {
     try {
@@ -1718,7 +1724,7 @@ LRESULT Application::handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lPa
         }
         if (zoomWindowActive_) cancelZoomWindow2D();
         else if (workPlanePicking_) cancelWorkPlaneCommand();
-        else if (transformCommand_ == TransformCommand::Copy) {
+        else if (isCopyTransform(transformCommand_)) {
             if (transformPhase_ == TransformPhase::Selecting && !selectedModels_.empty())
                 onCharacter(L'\r');      // seçim bitti -> baz noktasına geç
             else
@@ -2928,10 +2934,27 @@ void Application::onCharacter(wchar_t character) {
                 MessageBeep(MB_ICONWARNING);
             }
         } else if (transforming && transformPhase_ == TransformPhase::Destination && input_.empty() &&
-                   (transformCommand_ == TransformCommand::Copy ||
+                   (isCopyTransform(transformCommand_) ||
                     transformCommand_ == TransformCommand::Trim ||
                     transformCommand_ == TransformCommand::Extend)) {
             cancelTransformCommand();
+        } else if (transforming && transformPhase_ == TransformPhase::Destination && !input_.empty() &&
+                   (transformCommand_ == TransformCommand::CopyLinear ||
+                    transformCommand_ == TransformCommand::MoveLinear) &&
+                   transformBase_) {
+            // DOGRUSAL KOPYA/TASIMA: hedef adiminda "dx,dy,dz" (veya "dx,dy", ya da
+            // tek sayi = baz noktasindan imlec yonunde mesafe) X/Y/Z RELATIF
+            // oteleme olarak uygulanir. Nokta tiklamak da ayni sonucu verir.
+            const auto delta = mm::parseAxisDeltaText(input_,
+                transformBase_ ? std::optional<Vec3>{*transformBase_} : std::nullopt,
+                hover_ ? std::optional<Vec3>{hover_->point} : std::nullopt);
+            if (!delta) {
+                MessageBeep(MB_ICONWARNING);
+            } else {
+                input_.clear();
+                clearTemporaryTracking();
+                commitTransformPoint(*transformBase_ + *delta);   // KOPYA aktif kalir
+            }
         } else
         if (!input_.empty()) {
             const auto origin = workPlanePicking_ && !workPlanePoints_.empty()
@@ -4842,6 +4865,10 @@ void Application::applyEndPlateFromParts(const std::vector<std::size_t>& parts) 
 
 // Bir model indeksinden generator icin MemberGeometry kurar (axis + kesit bbox).
 // Profil katalogundan secWidth/secHeight; yoksa varsayilan 200x300 mm.
+// DOGRUSAL KOPYA/TASIMA (X/Y/Z mesafeli) icin sayisal oteleme cozumleyici.
+// Kabul: "dx,dy,dz" | "dx,dy" | "d". Ayirici: virgul, noktali virgul veya bosluk.
+// Tek sayi = baz noktasindan imleç yonunde mesafe; yon yoksa +X.
+// Gecersiz/bos girdi -> nullopt (cagiran uyari verir, komut devam eder).
 static mm::MemberGeometry memberGeometryFor(const mm::Document& doc,
                                             const std::vector<mm::SteelProfile>& catalog,
                                             std::size_t index) {
@@ -7359,7 +7386,7 @@ void Application::commitTransformPoint(const Vec3& point) {
         cancelTransformCommand();
         return;
     }
-    if (transformCommand_ == TransformCommand::Move) {
+    if (isMoveTransform(transformCommand_)) {
         pushUndoSnapshot();
         // P9: kesme hedefi tasinirsa kaynak duzlem/cizgi/3DFACE onunla birlikte
         // tasinir; bagli kaynaklar secime eklenip tek hamlede donusturulur.
@@ -7387,7 +7414,7 @@ void Application::commitTransformPoint(const Vec3& point) {
         }
 #endif
         cancelTransformCommand();
-    } else if (transformCommand_ == TransformCommand::Copy) {
+    } else if (isCopyTransform(transformCommand_)) {
         // AUTOCAD AKISI: komut Destination fazinda AKTIF kalir; her hedef
         // tiklamasi bir kopya daha uretir. Kritik duzeltmeler:
         //  1) KAYNAK hep orijinaller: secim degismez — eskiden secim
@@ -7785,6 +7812,8 @@ void Application::executeCommand(int id) {
     case CmdNeutral: deactivateAllCommands(); break;
     case CmdMove: startTransformCommand(TransformCommand::Move); break;
     case CmdCopy: startTransformCommand(TransformCommand::Copy); break;
+    case CmdCopyLinear: startTransformCommand(TransformCommand::CopyLinear); break;
+    case CmdMoveLinear: startTransformCommand(TransformCommand::MoveLinear); break;
     case CmdOffset: startTransformCommand(TransformCommand::Offset); break;
     case CmdMirror: startTransformCommand(TransformCommand::Mirror); break;
     case CmdDelete: startTransformCommand(TransformCommand::Delete); break;
@@ -7849,6 +7878,8 @@ void Application::updateControls() {
                           !workPlanePicking_ && !zoomWindowActive_);
     check(moveButton_, transformCommand_ == TransformCommand::Move);
     check(copyButton_, transformCommand_ == TransformCommand::Copy);
+    check(copyLinearButton_, transformCommand_ == TransformCommand::CopyLinear);
+    check(moveLinearButton_, transformCommand_ == TransformCommand::MoveLinear);
     check(offsetButton_, transformCommand_ == TransformCommand::Offset);
     check(mirrorButton_, transformCommand_ == TransformCommand::Mirror);
     check(deleteButton_, transformCommand_ == TransformCommand::Delete);
@@ -8163,7 +8194,9 @@ void Application::updateStatus() {
     } else if (transformCommand_ != TransformCommand::None) {
         text += L"  |  Komut: ";
         if (transformCommand_ == TransformCommand::Move) text += L"MOVE";
+        else if (transformCommand_ == TransformCommand::MoveLinear) text += L"MOVE ΔX/ΔY/ΔZ";
         else if (transformCommand_ == TransformCommand::Copy) text += L"COPY";
+        else if (transformCommand_ == TransformCommand::CopyLinear) text += L"COPY ΔX/ΔY/ΔZ";
         else if (transformCommand_ == TransformCommand::Offset) text += L"OFFSET";
         else if (transformCommand_ == TransformCommand::Mirror) text += L"MIRROR";
         else if (transformCommand_ == TransformCommand::Delete) text += L"DELETE";

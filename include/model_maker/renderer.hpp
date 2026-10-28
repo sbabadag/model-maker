@@ -61,9 +61,19 @@ inline constexpr bool kWorkPlaneGhostDefaultVisible = false;
 
 enum class EditMode { Draw2D, View3D };
 enum class TransformCommand {
-    None, Move, Copy, Offset, Mirror, Delete, LinearArray, PolarArray, Trim, Extend, Fillet, Rotate, Rotate3D
+    None, Move, Copy, Offset, Mirror, Delete, LinearArray, PolarArray, Trim, Extend, Fillet, Rotate, Rotate3D,
+    // DOGRUSAL (X/Y/Z mesafeli) kopya/tasima: secim + iki nokta; hedef adiminda
+    // "dx,dy,dz" yazilirsa RELATIF oteleme olarak uygulanir (kullanici istegi).
+    CopyLinear, MoveLinear
 };
 enum class TransformPhase { Selecting, BasePoint, RotateAxis, Destination };
+// Kopya/tasima ailesi (dogrusal varyantlar dahil) — ayni faz akisini paylasir.
+constexpr bool isCopyTransform(TransformCommand c) noexcept {
+    return c == TransformCommand::Copy || c == TransformCommand::CopyLinear;
+}
+constexpr bool isMoveTransform(TransformCommand c) noexcept {
+    return c == TransformCommand::Move || c == TransformCommand::MoveLinear;
+}
 enum class ModifierPreselectionAction {
     SelectEntities, BasePoint, DeleteEntities, PickTargets, PickSecondFilletEntity
 };
@@ -88,6 +98,8 @@ constexpr ModifierPreselectionAction modifierPreselectionAction(
                                   : ModifierPreselectionAction::SelectEntities;
     case TransformCommand::Move:
     case TransformCommand::Copy:
+    case TransformCommand::MoveLinear:
+    case TransformCommand::CopyLinear:
     case TransformCommand::Mirror:
     case TransformCommand::LinearArray:
     case TransformCommand::PolarArray:
