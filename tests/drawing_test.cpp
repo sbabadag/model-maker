@@ -374,8 +374,19 @@ int main() {
               "E: hiddenLines kapali -> Hidden segment yok");
         check(count(b.sheet.views[0], LineStyle::Hidden) >= 1 && count(b.sheet.views[0], LineStyle::Visible) >= 4,
               "E: hiddenLines acik -> en az 1 Hidden + Visible kenarlar");
-        check(a.sheet.views[0].segments.size() == b.sheet.views[0].segments.size(),
-              "E: hidden-line yalniz stil degistirir, geometriyi degistirmez");
+        const auto viewLength = [](const DrawingView& v) {
+            double sum = 0.0;
+            for (const Segment2& seg : v.segments) sum += std::hypot(seg.b.x - seg.a.x, seg.b.y - seg.a.y);
+            return sum;
+        };
+        // Gizli cizgi geometri UYDURMAZ: ayni cizgiye dusen arka kenarlar kirpildigi icin toplam
+        // cizgi uzunlugu kapali hali ASAMAZ; ayrica 0.05 mm altinda kil parca uretilmez.
+        bool noSlivers = true;
+        for (const Segment2& seg : b.sheet.views[0].segments)
+            noSlivers &= std::hypot(seg.b.x - seg.a.x, seg.b.y - seg.a.y) >= 0.05;
+        check(noSlivers, "E: gizli cizgi kil (sliver) parca uretmez (>= 0.05 mm)");
+        check(viewLength(b.sheet.views[0]) <= viewLength(a.sheet.views[0]) + 1.0,
+              "E: gizli cizgi cakisan arka kenari ikinci kez cizmez (toplam uzunluk artmaz)");
     }
 
     // =========================================================================
@@ -608,6 +619,72 @@ int main() {
             const Dimension2D* ow = findDim(rb.sheet, fv->id, DimensionRole::OverallWidth);
             check(ow && nearTo(ow->value, 4810) && nearTo(ow->measured(), 4810),
                   "E: onun yerine CIZILEN govde uzunlugu (4810) olculur");
+        }
+    }
+
+    // =========================================================================
+    // J) GIZLI CIZGI — GERCEK OKKLUZYON: onunde duran levha, arkadaki kiris kenarini
+    //    KISMI olarak gizler (eski arka-yuz testi bunu goremiyordu).
+    // =========================================================================
+    {
+        Document docO;
+        const EntityId beamO = add(docO, makeBox({0, 0, 0}, {4000, 120, 240}, "IPE240", "Kiris"));
+        // Front gorunumu -Y'den bakar: y KUCUK olan izleyiciye yakindir -> levha kirisin onunde.
+        const EntityId plateO = add(docO, makeBox({1500, -200, -50}, {2500, -100, 290}, "PL10", "On levha"));
+        docO.addWeld(weldOf(beamO, plateO));
+        const EntityId asmO = docO.assemblies()[0].id;
+
+        DrawingOptions offO, onO;
+        offO.views = {ViewKind::Front};
+        onO.views = {ViewKind::Front};
+        onO.hiddenLines = true;
+        MarkRegistry regOff, regOn;
+        const BuildResult bOff = buildSheet(docO, regOff, asmO, offO);
+        const BuildResult bOn = buildSheet(docO, regOn, asmO, onO);
+        check(bOff.ok && bOn.ok && bOn.sheet.views.size() == 1, "J: okkluzyon cizimi uretildi");
+        if (bOff.ok && bOn.ok) {
+            const DrawingView& vOff = bOff.sheet.views[0];
+            const DrawingView& vOn = bOn.sheet.views[0];
+            const auto count = [](const DrawingView& v, LineStyle s) {
+                return static_cast<int>(std::count_if(v.segments.begin(), v.segments.end(),
+                                                      [&](const Segment2& x) { return x.style == s; }));
+            };
+            check(count(vOff, LineStyle::Hidden) == 0, "J: gizli cizgi kapali -> Hidden segment yok");
+            check(count(vOn, LineStyle::Hidden) >= 2, "J: gizli cizgi acik -> arkadaki kenarlar kesik");
+            check(count(vOn, LineStyle::Visible) >= 4, "J: on yuz kenarlari hala duz (gorunur)");
+
+            // KISMI ortulme: ayni yatay kenarda hem gorunur hem gizli parca var.
+            const auto horizontalAt = [&](const DrawingView& v, double y, LineStyle s) {
+                for (const Segment2& seg : v.segments)
+                    if (seg.style == s && std::fabs(seg.a.y - y) < 1e-6 && std::fabs(seg.b.y - y) < 1e-6) return true;
+                return false;
+            };
+            bool splitFound = false;
+            for (const Segment2& hid : vOn.segments) {
+                if (hid.style != LineStyle::Hidden) continue;
+                if (std::fabs(hid.a.y - hid.b.y) > 1e-6) continue;   // yatay gizli parca
+                if (horizontalAt(vOn, hid.a.y, LineStyle::Visible)) splitFound = true;
+            }
+            check(splitFound, "J: kismi ortulme -> ayni kenarda gorunur + gizli parcalar (kenar bolundu)");
+
+            // Gizli parcalar levhanin x araligina yerlesir: kenar tamamen gizlenmez (arka kenar
+            // on kenarla ayni cizgiye dusuyorsa gorunur parca kazanir ve gizli parca kirpilir).
+            double hidLenBottom = 0.0;
+            for (const Segment2& seg : vOn.segments)
+                if (seg.style == LineStyle::Hidden && std::fabs(seg.a.y - seg.b.y) < 1e-6)
+                    hidLenBottom += std::hypot(seg.b.x - seg.a.x, seg.b.y - seg.a.y);
+            check(hidLenBottom > 0.0 && hidLenBottom <= 2200.0,
+                  "J: gizli kesikler yalniz levha bolgesinde (toplam ~2 x 1000 mm, 4000 degil)");
+
+            // Geometri korunur: gizli/acik toplam cizgi uzunlugu ayni kalir.
+            const auto totalLength = [](const DrawingView& v) {
+                double sum = 0.0;
+                for (const Segment2& seg : v.segments) sum += std::hypot(seg.b.x - seg.a.x, seg.b.y - seg.a.y);
+                return sum;
+            };
+            const double lOff = totalLength(vOff), lOn = totalLength(vOn);
+            check(std::fabs(lOn - lOff) <= lOff * 0.02,
+                  "J: gizli cizgi geometriyi degistirmez (toplam uzunluk ~ayni)");
         }
     }
 

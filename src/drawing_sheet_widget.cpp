@@ -771,7 +771,7 @@ DrawingPreviewDialog::DrawingPreviewDialog(std::vector<SubjectChoice> subjects, 
     frontCheck_->setObjectName(QStringLiteral("drawingFront"));
     topCheck_->setObjectName(QStringLiteral("drawingTop"));
     sideCheck_->setObjectName(QStringLiteral("drawingSide"));
-    hiddenCheck_ = new QCheckBox(QStringLiteral("Gizli \u00e7izgiler (deneysel)"), this);
+    hiddenCheck_ = new QCheckBox(QStringLiteral("Gizli çizgiler"), this);
     hiddenCheck_->setObjectName(QStringLiteral("drawingHidden"));
     opts->addWidget(new QLabel(QStringLiteral("Konu:"), this));
     opts->addWidget(subjectCombo_, 1);

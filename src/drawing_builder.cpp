@@ -7,6 +7,7 @@
 #include <array>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <map>
 #include <initializer_list>
 #include <set>
@@ -47,45 +48,116 @@ bool axisOf(const WireframeModel& m, Vec3& a, Vec3& b) {
     return dist3(a, b) > 1e-6;
 }
 
-// --- hidden-line (deneysel: arka-yuz testi, oklüzyon yok) ---
-Vec3 faceNormal(const std::vector<Vec3>& v, const Face& f) {
-    Vec3 n{};
-    for (std::size_t i = 0; i < f.size(); ++i) {
-        const Vec3& a = v[f[i]];
-        const Vec3& b = v[f[(i + 1) % f.size()]];
-        n.x += (a.y - b.y) * (a.z + b.z);
-        n.y += (a.z - b.z) * (a.x + b.x);
-        n.z += (a.x - b.x) * (a.y + b.y);
-    }
-    const double l = std::sqrt(n.x * n.x + n.y * n.y + n.z * n.z);
-    if (l < 1e-12) return {};
-    return {n.x / l, n.y / l, n.z / l};
+// --- GIZLI CIZGI: GERCEK OKKLUZYON (view-space derinlik testi) ---
+// Onceki surum yalniz "arka yuz" testiydi: bir parcanin kendi arka kenarlarini gizli sayiyor,
+// ONUNDE duran baska bir parcayi (assembly'de levha/kiris) hic dikkate almiyor ve KISMI ortulmeyi
+// (kenarin bir bolumu kapali) ifade edemiyordu. Yeni yontem:
+//   * gorunuse giren TUM parcalarin yuzleri izdusurulur (2B ucgen + derinlik),
+//   * kenar boyunca orneklenir; nokta KENDISINDEN DAHA YAKIN bir ucgenle ortuluyorsa gizli,
+//   * gorunur<->gizli gecisleri ikili aramayla hassaslastirilir,
+//   * kenar gorunur/gizli PARCALARA bolunur -> kismi gizli kenar dogru cizilir (kesik + duz).
+namespace {
+constexpr double kDepthEps = 0.05;   // mm: ayni yuzeydeki (ortak) kenar kendini ortmez
+
+struct ViewTri {
+    Vec2 a{}, b{}, c{};
+    double da{0}, db{0}, dc{0};   // dot(p, normal): BUYUK = izleyiciye daha yakin
+    Bounds2 box{};
+};
+
+// Barycentric ic testi + duzlem derinligi (ortak kenarlarda esit cikar -> eps ile elenir).
+inline bool triContains(const ViewTri& t, Vec2 p, double& depth) {
+    const double den = (t.b.y - t.c.y) * (t.a.x - t.c.x) + (t.c.x - t.b.x) * (t.a.y - t.c.y);
+    if (std::fabs(den) < 1e-12) return false;
+    const double w1 = ((t.b.y - t.c.y) * (p.x - t.c.x) + (t.c.x - t.b.x) * (p.y - t.c.y)) / den;
+    const double w2 = ((t.c.y - t.a.y) * (p.x - t.c.x) + (t.a.x - t.c.x) * (p.y - t.c.y)) / den;
+    const double w3 = 1.0 - w1 - w2;
+    constexpr double edgeEps = -1e-9;
+    if (w1 < edgeEps || w2 < edgeEps || w3 < edgeEps) return false;
+    depth = w1 * t.da + w2 * t.db + w3 * t.dc;
+    return true;
 }
 
-std::set<std::pair<std::size_t, std::size_t>> hiddenEdges(const WireframeModel& m, const Vec3& toViewer) {
-    std::set<std::pair<std::size_t, std::size_t>> hidden;
-    const auto& v = m.vertices();
-    if (m.faces().empty() || v.empty()) return hidden;
-    const Vec3 c = bboxCentre(m);
-    std::map<std::pair<std::size_t, std::size_t>, std::vector<double>> dots;
+void collectViewTriangles(const WireframeModel& m, const ViewFrame& fr, std::vector<ViewTri>& out) {
+    const auto& verts = m.vertices();
+    if (verts.empty()) return;
     for (const Face& f : m.faces()) {
         if (f.size() < 3) continue;
-        Vec3 n = faceNormal(v, f);
-        Vec3 fc{};
-        for (std::size_t i : f) fc = {fc.x + v[i].x, fc.y + v[i].y, fc.z + v[i].z};
-        fc = {fc.x / f.size(), fc.y / f.size(), fc.z / f.size()};
-        if (n.x * (fc.x - c.x) + n.y * (fc.y - c.y) + n.z * (fc.z - c.z) < 0) n = {-n.x, -n.y, -n.z};
-        const double d = n.x * toViewer.x + n.y * toViewer.y + n.z * toViewer.z;
-        for (std::size_t i = 0; i < f.size(); ++i) {
-            std::size_t a = f[i], b = f[(i + 1) % f.size()];
-            if (a > b) std::swap(a, b);
-            dots[{a, b}].push_back(d);
+        for (std::size_t i = 1; i + 1 < f.size(); ++i) {
+            if (f[0] >= verts.size() || f[i] >= verts.size() || f[i + 1] >= verts.size()) continue;
+            const Vec3& p0 = verts[f[0]];
+            const Vec3& p1 = verts[f[i]];
+            const Vec3& p2 = verts[f[i + 1]];
+            ViewTri t;
+            t.a = fr.project(p0);
+            t.b = fr.project(p1);
+            t.c = fr.project(p2);
+            const double area = (t.b.x - t.a.x) * (t.c.y - t.a.y) - (t.c.x - t.a.x) * (t.b.y - t.a.y);
+            if (std::fabs(area) < 1e-9) continue;   // gorunuse dik yuz: izdusumde cizgi
+            t.da = p0.x * fr.normal.x + p0.y * fr.normal.y + p0.z * fr.normal.z;
+            t.db = p1.x * fr.normal.x + p1.y * fr.normal.y + p1.z * fr.normal.z;
+            t.dc = p2.x * fr.normal.x + p2.y * fr.normal.y + p2.z * fr.normal.z;
+            t.box.include(t.a);
+            t.box.include(t.b);
+            t.box.include(t.c);
+            out.push_back(t);
         }
     }
-    for (const auto& [edge, ds] : dots)
-        if (std::all_of(ds.begin(), ds.end(), [](double d) { return d < -1e-6; })) hidden.insert(edge);
-    return hidden;
 }
+
+struct HiddenRun {
+    double t0{0.0}, t1{1.0};
+    bool hidden{false};
+};
+
+// q noktasi, verilen duzlem derinliginden DAHA YAKIN bir yuzeyle ortuluyor mu?
+inline bool pointOccluded(const std::vector<ViewTri>& tris, Vec2 q, double depth) {
+    for (const ViewTri& tr : tris) {
+        if (q.x < tr.box.min.x || q.x > tr.box.max.x || q.y < tr.box.min.y || q.y > tr.box.max.y) continue;
+        double td = 0.0;
+        if (!triContains(tr, q, td)) continue;
+        if (td > depth + kDepthEps) return true;   // daha yakin yuzey: bu nokta kapali
+    }
+    return false;
+}
+
+// 3B kenar p0->p1 icin gorunurluk parcalari (t: 0..1 kenar parametresi).
+std::vector<HiddenRun> classifyHiddenRuns(const std::vector<ViewTri>& tris, const ViewFrame& fr,
+                                         const Vec3& p0, const Vec3& p1) {
+    std::vector<HiddenRun> runs;
+    const Vec2 q0 = fr.project(p0), q1 = fr.project(p1);
+    const double len = std::hypot(q1.x - q0.x, q1.y - q0.y);
+    if (len < 1e-6) return runs;
+    const double d0 = p0.x * fr.normal.x + p0.y * fr.normal.y + p0.z * fr.normal.z;
+    const double d1 = p1.x * fr.normal.x + p1.y * fr.normal.y + p1.z * fr.normal.z;
+    const auto hiddenAt = [&](double t) {
+        const Vec2 q{q0.x + (q1.x - q0.x) * t, q0.y + (q1.y - q0.y) * t};
+        return pointOccluded(tris, q, d0 + (d1 - d0) * t);
+    };
+    const int samples = std::clamp(static_cast<int>(std::ceil(len / 2.0)), 8, 256);   // ~2 mm
+    bool prevHidden = hiddenAt(0.0);
+    double runStart = 0.0;
+    for (int i = 1; i <= samples; ++i) {
+        const double t = static_cast<double>(i) / samples;
+        const bool h = hiddenAt(t);
+        if (h == prevHidden) continue;
+        // Gecis: [onceki, t] araliginda ikili arama ile sinir (8 adim ~ %0.4 hassasiyet)
+        double lo = static_cast<double>(i - 1) / samples, hi = t;
+        for (int k = 0; k < 8; ++k) {
+            const double mid = 0.5 * (lo + hi);
+            if (hiddenAt(mid) == prevHidden) lo = mid;
+            else hi = mid;
+        }
+        const double cut = 0.5 * (lo + hi);
+        runs.push_back({runStart, cut, prevHidden});
+        runStart = cut;
+        prevHidden = h;
+    }
+    runs.push_back({runStart, 1.0, prevHidden});
+    return runs;
+}
+} // namespace
+
 
 std::string fmtNum(double v) {
     // MM HASSASIYETI (kullanici kurali): olcu metni YALNIZ tam mm yazar (3591.3 -> 3591).
@@ -230,13 +302,19 @@ DrawingView generateView(const Document& doc, const std::vector<EntityId>& parts
     std::vector<std::pair<EntityId, Bounds2>> memberRaw;
     Bounds2 rawBounds;
 
+    // Gizli cizgi: gorunuse giren TUM parcalarin yuzleri (assembly'de parcalar birbirini orter).
+    std::vector<ViewTri> tris;
+    if (hiddenLines)
+        for (const EntityId id : parts) {
+            const auto idx = doc.indexOfEntity(id);
+            if (idx) collectViewTriangles(doc.models()[*idx], fr, tris);
+        }
+
     for (const EntityId id : parts) {
         const auto idx = doc.indexOfEntity(id);
         if (!idx) continue;
         const WireframeModel& m = doc.models()[*idx];
         const auto& v = m.vertices();
-        std::set<std::pair<std::size_t, std::size_t>> hid;
-        if (hiddenLines) hid = hiddenEdges(m, fr.normal);
         Bounds2 mb;
         for (const Vec3& p : v) mb.include(proj(p));
         for (const Edge& e : m.edges()) {
@@ -244,11 +322,22 @@ DrawingView generateView(const Document& doc, const std::vector<EntityId>& parts
             const Vec2 a = proj(v[e.from]);
             const Vec2 b = proj(v[e.to]);
             if (std::hypot(b.x - a.x, b.y - a.y) < 1e-6) continue; // goruntude nokta
-            const auto key = std::minmax(e.from, e.to);
-            raw.push_back({a, b, hid.count({key.first, key.second}) ? LineStyle::Hidden
-                                                                       : LineStyle::Visible});
-            rawBounds.include(a);
-            rawBounds.include(b);
+            if (!hiddenLines || tris.empty()) {
+                raw.push_back({a, b, LineStyle::Visible});
+                rawBounds.include(a);
+                rawBounds.include(b);
+                continue;
+            }
+            // Kismi ortulme: kenar gorunur/gizli parcalara bolunur.
+            for (const HiddenRun& run : classifyHiddenRuns(tris, fr, v[e.from], v[e.to])) {
+                if (run.t1 - run.t0 < 1e-9) continue;
+                const Vec2 ra{a.x + (b.x - a.x) * run.t0, a.y + (b.y - a.y) * run.t0};
+                const Vec2 rb{a.x + (b.x - a.x) * run.t1, a.y + (b.y - a.y) * run.t1};
+                if (std::hypot(rb.x - ra.x, rb.y - ra.y) < 1e-6) continue;
+                raw.push_back({ra, rb, run.hidden ? LineStyle::Hidden : LineStyle::Visible});
+                rawBounds.include(ra);
+                rawBounds.include(rb);
+            }
         }
         if (!mb.empty) memberRaw.emplace_back(id, mb);
     }
@@ -275,10 +364,65 @@ DrawingView generateView(const Document& doc, const std::vector<EntityId>& parts
         }
     }
 
+    // AYNI IZDUSUM CIZGISI UZERINDE GORUNUR PARCA GIZLIYI EZER.
+    // Arka kenar (gizli) ile on kenar (gorunur) ayni cizgiye dusebilir; ikisini birden cizmek
+    // cizgiyi kesik+girift yapar ve toplam uzunlugu sisirir. Kural: gizli parcalar, ayni cizgi
+    // uzerindeki GORUNUR parcalarin kapladigi araliklardan CIKARILIR; kalan araliklar kesik cizilir.
+    if (hiddenLines) {
+        std::vector<Raw> resolved;
+        resolved.reserve(unique.size());
+        for (const Raw& r : unique)
+            if (r.style == LineStyle::Visible) resolved.push_back(r);
+        for (const Raw& r : unique) {
+            if (r.style != LineStyle::Hidden) continue;
+            double dx = r.b.x - r.a.x, dy = r.b.y - r.a.y;
+            const double len = std::hypot(dx, dy);
+            if (len < 1e-9) continue;
+            dx /= len;
+            dy /= len;
+            std::vector<std::pair<double, double>> cuts;   // ayni cizgideki gorunur araliklar
+            for (const Raw& v : unique) {
+                if (v.style != LineStyle::Visible) continue;
+                const double crossAngle = dx * (v.b.y - v.a.y) - dy * (v.b.x - v.a.x);
+                if (std::fabs(crossAngle) > 0.02 * len) continue;   // yon farkli: ayni cizgi degil
+                const double off1 = -dy * (v.a.x - r.a.x) + dx * (v.a.y - r.a.y);
+                const double off2 = -dy * (v.b.x - r.a.x) + dx * (v.b.y - r.a.y);
+                if (std::fabs(off1) > 0.05 || std::fabs(off2) > 0.05) continue;   // ayri paralel cizgi
+                double t0 = dx * (v.a.x - r.a.x) + dy * (v.a.y - r.a.y);
+                double t1 = dx * (v.b.x - r.a.x) + dy * (v.b.y - r.a.y);
+                if (t0 > t1) std::swap(t0, t1);
+                cuts.push_back({t0, t1});
+            }
+            std::sort(cuts.begin(), cuts.end());
+            const auto emit = [&](double s, double e) {
+                if (e - s <= 0.05) return;
+                resolved.push_back({{r.a.x + dx * s, r.a.y + dy * s}, {r.a.x + dx * e, r.a.y + dy * e},
+                                    LineStyle::Hidden});
+            };
+            double cursor = 0.0;
+            for (const auto& [s, e] : cuts) {
+                if (cursor >= len) break;
+                if (s > cursor) emit(cursor, std::min(s, len));
+                cursor = std::max(cursor, e);
+            }
+            if (cursor < len) emit(cursor, len);
+        }
+        // Cikarma sonrasi birebir ayni kesik parcalar tekrarlanmasin.
+        std::map<Key, std::size_t> seenHidden;
+        std::vector<Raw> compact;
+        for (const Raw& r : resolved) {
+            const Key k = keyOf(r.a, r.b);
+            if (seenHidden.emplace(k, compact.size()).second) compact.push_back(r);
+        }
+        unique = std::move(compact);
+    }
+
     const Vec2 lo = rawBounds.min;
     view.projectionOffset = lo;
     const auto local = [&](const Vec2& p) { return Vec2{p.x - lo.x, p.y - lo.y}; };
     for (const Raw& r : unique) {
+        // 0.05 mm altindaki kil (sliver) parcalar cizime girmez: kesme/bisection artiklari.
+        if (std::hypot(r.b.x - r.a.x, r.b.y - r.a.y) < 0.05) continue;
         view.segments.push_back({local(r.a), local(r.b), r.style});
         view.bounds.include(local(r.a));
         view.bounds.include(local(r.b));
@@ -317,6 +461,19 @@ DrawingView generateView(const Document& doc, const std::vector<EntityId>& parts
                     ci.center = c;
                     ci.radius = hm.diameter / 2.0;
                     ci.owner = id;
+                    // Kapali (arka) yuzdeki delik KESIK daire: merkez + 4 kadran orneklenir;
+                    // hepsi daha yakin bir yuzeyle ortuluyorsa gizli.
+                    if (!tris.empty()) {
+                        const Vec2 cg = proj(hm.planeOrigin);
+                        const double depth = hm.planeOrigin.x * n.x + hm.planeOrigin.y * n.y + hm.planeOrigin.z * n.z;
+                        const double r = ci.radius;
+                        int occluded = 0, probes = 0;
+                        for (const Vec2 off : {Vec2{0.0, 0.0}, Vec2{r, 0.0}, Vec2{-r, 0.0}, Vec2{0.0, r}, Vec2{0.0, -r}}) {
+                            ++probes;
+                            if (pointOccluded(tris, {cg.x + off.x, cg.y + off.y}, depth)) ++occluded;
+                        }
+                        if (occluded == probes) ci.style = LineStyle::Hidden;
+                    }
                     bool found = false;
                     for (Group& g : groups)
                         if (g.owner == id && std::fabs(g.dia - hm.diameter) < 1e-6) { ++g.count; found = true; break; }
