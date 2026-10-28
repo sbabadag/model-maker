@@ -272,6 +272,86 @@ int main() {
         check(!hist.cancel(), "I: acik snapshot yokken cancel false");
     }
 
+    // =====================================================================
+    // J) AYNI OLCU CIZGISI = TEK OBJE: zincir segmenti secilince tum zincir
+    // =====================================================================
+    {
+        DrawingSheet s2 = base;
+        // Ayni (viewId, chain) zincirinde en az iki segment ara (gercek imalat olculeri).
+        ElementId chainId = 0, viewId = 0, firstId = 0;
+        std::size_t chainSize = 0;
+        for (const Dimension2D& d : s2.dimensions) {
+            std::size_t n = 0;
+            for (const Dimension2D& e : s2.dimensions)
+                if (e.visible && e.viewId == d.viewId && e.chain == d.chain) ++n;
+            if (n >= 2) {
+                chainId = d.chain;
+                viewId = d.viewId;
+                firstId = d.id;
+                chainSize = n;
+                break;
+            }
+        }
+        check(chainId != 0 && chainSize >= 2, "J: ayni cizgi uzerinde en az iki olcu segmenti var");
+
+        PaperSelection one;
+        one.hits.push_back({PaperHitKind::Dimension, firstId, {0.0, 0.0}});
+        const PaperSelection full = expandPaperSelection(s2, one);
+        check(full.size() == chainSize, "J: bir segment secilince zincirin TUM segmentleri secilir");
+        bool sameChain = true;
+        for (const PaperHit& h : full.hits) {
+            const Dimension2D* d = nullptr;
+            for (const Dimension2D& e : s2.dimensions)
+                if (e.id == h.id) { d = &e; break; }
+            if (!d || d->viewId != viewId || d->chain != chainId) sameChain = false;
+        }
+        check(sameChain, "J: genisletme yalniz ayni zinciri kapsar (baska zincir karismaz)");
+
+        // Baska zincirdeki bir olcu genisletmeye dahil olmaz.
+        ElementId otherDim = 0;
+        for (const Dimension2D& d : s2.dimensions)
+            if (d.chain != chainId || d.viewId != viewId) { otherDim = d.id; break; }
+        check(otherDim == 0 || !full.contains(PaperHitKind::Dimension, otherDim),
+              "J: farkli zincirdeki olcu secilmedi");
+
+        // Grup tasima: tek cagri tum zinciri tasir, olcu CIZGISI ayni kalir (offset'ler esit artar),
+        // muhendislik verisi (value/p1/p2) degismez.
+        const std::vector<std::string> sigBefore = dimSignature(s2);
+        PaperEditHistory hist(s2, 8);
+        hist.begin();
+        const std::size_t moved = movePaperElements(hist.sheet(), full, {0.0, 12.0});
+        hist.commit();
+        check(moved == full.size(), "J: zincirdeki HER segment tasindi (kismi tasima yok)");
+        check(dimSignature(hist.sheet()) == sigBefore, "J: tasima muhendislik verisini DEGISTIRMEDI");
+        bool sameRow = true;
+        double firstOffset = -1e300;
+        for (const Dimension2D& d : hist.sheet().dimensions) {
+            if (!d.visible || d.viewId != viewId || d.chain != chainId) continue;
+            if (firstOffset < -1e299) firstOffset = d.offset;
+            else if (!nearTo(d.offset, firstOffset)) sameRow = false;
+        }
+        check(sameRow, "J: zincir segmentleri AYNI olcu cizgisinde kaldi");
+        check(hist.undoDepth() == 1 && hist.undo(), "J: zincir tasimasi TEK geri-al adimi");
+    }
+
+    // =====================================================================
+    // K) OLCU HASSASIYETI: yalniz mm (ondalik basamak yok)
+    // =====================================================================
+    {
+        bool integerOnly = true;
+        int checked = 0;
+        for (const Dimension2D& d : base.dimensions) {
+            const std::string t = dimensionText(d.value);
+            ++checked;
+            if (t.find('.') != std::string::npos || t.find(',') != std::string::npos) integerOnly = false;
+        }
+        check(checked > 0, "K: olcu metinleri uretildi");
+        check(integerOnly, "K: TUM olcu metinleri tam mm (3591.3 / 429.2 gibi ondalik YOK)");
+        check(dimensionText(3591.3) == "3591" && dimensionText(429.2) == "429" &&
+                  dimensionText(3.3) == "3" && dimensionText(14.6) == "15",
+              "K: yuvarlama tam mm'e (3591.3->3591, 429.2->429, 3.3->3, 14.6->15)");
+    }
+
     std::printf("\n%d/%d checks passed\n", checks - failures, checks);
     return failures == 0 ? 0 : 1;
 }

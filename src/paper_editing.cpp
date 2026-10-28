@@ -488,6 +488,26 @@ PaperSelection selectPaperElements(const DrawingSheet& s, Bounds2 band, PaperBan
         if (m.visible) take(PaperHitKind::Mark, m.id);
     for (const Dimension2D& d : s.dimensions)
         if (d.visible) take(PaperHitKind::Dimension, d.id);
+    return expandPaperSelection(s, std::move(out));
+}
+
+PaperSelection expandPaperSelection(const DrawingSheet& s, PaperSelection selection) {
+    PaperSelection out;
+    out.hits = std::move(selection.hits);
+    const std::vector<PaperHit> original = out.hits;   // ekleme sirasinda vektor buyur
+    for (const PaperHit& h : original) {
+        if (h.kind != PaperHitKind::Dimension) continue;
+        const Dimension2D* hit = nullptr;
+        for (const Dimension2D& d : s.dimensions)
+            if (d.id == h.id) { hit = &d; break; }
+        if (!hit || hit->chain == 0) continue;   // zincirsiz olcu: tek basina obje
+        for (const Dimension2D& d : s.dimensions) {
+            if (!d.visible) continue;
+            if (d.viewId != hit->viewId || d.chain != hit->chain) continue;
+            if (out.contains(PaperHitKind::Dimension, d.id)) continue;
+            out.hits.push_back({PaperHitKind::Dimension, d.id, h.paper});
+        }
+    }
     return out;
 }
 

@@ -191,6 +191,23 @@ int main() {
         check(findDim(sheet, side->id, DimensionRole::MemberLength) == nullptr,
               "A: eksen gorunuse dik -> Side'da uye boyu olculmez");
         check(sw && nearTo(sw->value, 150) && sh && nearTo(sh->value, 300), "A: Side 150 x 300");
+        // L) UZUN OLCU TEKRARI YOK (kullanici geri bildirimi 2026-10-28: "dis tan disa 5000 alakasiz"):
+        // uye boyu olcusu olan gorunuste AYNI yonde genel (bounding box) olcu eklenmez — iki uzun
+        // olcu ust uste binince hangisinin ne oldugu anlasilmiyor.
+        {
+            bool longDup = false;
+            int memberLenDims = 0;
+            for (const Dimension2D& d : sheet.dimensions) {
+                if (d.role != DimensionRole::MemberLength) continue;
+                ++memberLenDims;
+                for (const Dimension2D& e : sheet.dimensions)
+                    if (e.viewId == d.viewId && e.direction == d.direction &&
+                        (e.role == DimensionRole::OverallWidth || e.role == DimensionRole::OverallHeight))
+                        longDup = true;
+            }
+            check(memberLenDims >= 2 && !longDup,
+                  "A: uye boyu varken ayni yonde ikinci uzun (bbox) olcu YOK (5000 / 4810 tekrari)");
+        }
         bool tied = true;
         for (const Dimension2D& d : sheet.dimensions) {
             const DrawingView* v = sheet.findView(d.viewId);

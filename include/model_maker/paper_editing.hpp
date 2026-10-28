@@ -96,8 +96,16 @@ struct PaperSelection {
 };
 
 // Bant secimi. GORUNUSLER (View) bantla SECILMEZ: buyuk bir gorunus Crossing modunda her
-// seferinde secilir ve yanlislikla tasinir; gorunus tiklayarak secilir/tasinir.
+// seferinde secilir ve yanlislikla tasinir; gorunus tiklayarak secilir/tasinilir.
+// AYNI OLCU CIZGISI = TEK OBJE: bir zincirin (viewId+chain) herhangi bir segmenti secildiginde
+// zincirin TUM segmentleri secime eklenir (bkz. `expandPaperSelection`).
 PaperSelection selectPaperElements(const DrawingSheet& sheet, Bounds2 band, PaperBandMode mode);
+
+// AYNI OLCU CIZGISI = TEK OBJE (kullanici kurali): 565 + 3591 + 565 gibi zincir segmentleri ayri
+// ayri tasinirsa olcu cizgisi bolunur/kayar. Bu yuzden bir olcu hit'i, ayni (viewId, chain)
+// zincirindeki tum gorunur segmentlere GENISLETILIR. Olcu disi hit'ler aynen korunur; sonuc
+// deterministik (once gelen hit'ler, sonra zincir segmentleri id sirasinda).
+PaperSelection expandPaperSelection(const DrawingSheet& sheet, PaperSelection selection);
 
 // Secili elemanlarin TUMUNU ayni delta ile tasir (tek cagri = tek geri-al adimi icin).
 // Donus: tasinan eleman sayisi (0 = hicbir sey degismedi).

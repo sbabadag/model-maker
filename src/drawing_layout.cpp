@@ -144,10 +144,9 @@ double textWidthEstimate(const std::string& s, double h, bool bold) {
 double textBoxHeight(double h) noexcept { return 1.5 * h; }
 
 std::string dimensionText(double v) {
+    // MM HASSASIYETI (kullanici kurali): olcu metni YALNIZ tam mm (429.2 -> 429, 3591.3 -> 3591).
     char buf[32];
-    const double r = std::round(v);
-    if (std::fabs(v - r) < 0.05) std::snprintf(buf, sizeof(buf), "%.0f", r);
-    else std::snprintf(buf, sizeof(buf), "%.1f", v);
+    std::snprintf(buf, sizeof(buf), "%.0f", std::round(v));
     return buf;
 }
 

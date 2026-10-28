@@ -88,10 +88,10 @@ std::set<std::pair<std::size_t, std::size_t>> hiddenEdges(const WireframeModel& 
 }
 
 std::string fmtNum(double v) {
+    // MM HASSASIYETI (kullanici kurali): olcu metni YALNIZ tam mm yazar (3591.3 -> 3591).
+    // Alt-mm basamak gosterilmez; deger yuvarlanarak yazilir (tek yerde kural).
     char buf[32];
-    const double r = std::round(v);
-    if (std::fabs(v - r) < 0.05) std::snprintf(buf, sizeof(buf), "%.0f", r);
-    else std::snprintf(buf, sizeof(buf), "%.1f", v);
+    std::snprintf(buf, sizeof(buf), "%.0f", std::round(v));
     return buf;
 }
 
@@ -1126,14 +1126,17 @@ BuildResult buildSheet(const Document& doc, MarkRegistry& reg, EntityId subject,
                 haveLength = true;
             }
         }
-        const auto sameAsLength = [&](DimensionDirection dir, double value) {
-            return haveLength && lengthDir == dir && std::fabs(value - axisLen) < 0.5;
-        };
+        // KULLANICI GERI BILDIRIMI (2026-10-28): "dis tan disa 5000 olcusu alakasiz" —
+        // uye boyu olcusu (4810) varken AYNI yonde genel/bounding-box olcusu (5000) eklenince iki
+        // uzun olcu ust uste biniyor ve hangisinin ne oldugu anlasilmiyor. Kural: ayni yonde uye
+        // boyu olcusu varsa genel (bbox) olcu EKLENMEZ; dis-tan-disa toplam imalat olcu zincirinden
+        // (565 + ... + 565) zaten okunur.
+        const auto hasLengthIn = [&](DimensionDirection dir) { return haveLength && lengthDir == dir; };
         const double w = v.bounds.width(), h = v.bounds.height();
-        if (!isDetail && w >= 0.5 && !sameAsLength(DimensionDirection::Horizontal, w))
+        if (!isDetail && w >= 0.5 && !hasLengthIn(DimensionDirection::Horizontal))
             newDim(DimensionRole::OverallWidth, DimensionDirection::Horizontal, {v.bounds.min.x, v.bounds.min.y},
                    {v.bounds.max.x, v.bounds.min.y}, w, subject, kOverallGroup, {}, "view bounding box width");
-        if (!isDetail && h >= 0.5 && !sameAsLength(DimensionDirection::Vertical, h))
+        if (!isDetail && h >= 0.5 && !hasLengthIn(DimensionDirection::Vertical))
             newDim(DimensionRole::OverallHeight, DimensionDirection::Vertical, {v.bounds.max.x, v.bounds.min.y},
                    {v.bounds.max.x, v.bounds.max.y}, h, subject, kOverallGroup, {}, "view bounding box height");
 

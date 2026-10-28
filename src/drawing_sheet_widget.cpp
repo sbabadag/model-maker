@@ -565,7 +565,10 @@ void DrawingSheetWidget::mousePressEvent(QMouseEvent* e) {
     if (tool_ == EditTool::Select) {
         const PaperHit hit = hitTestPaper(*sheet_, raw, tolMm);
         if (hit.valid()) {
-            setSelection({hit});
+            // Ayni olcu cizgisindeki segmentler TEK OBJE: zincirin tamami secilir.
+            PaperSelection one;
+            one.hits.push_back(hit);
+            setSelection(expandPaperSelection(*sheet_, std::move(one)).hits);
             history_->begin();
             dragging_ = true;
             lastPaper_ = raw;
@@ -583,7 +586,11 @@ void DrawingSheetWidget::mousePressEvent(QMouseEvent* e) {
     if (tool_ == EditTool::Move) {
         if (selectionAll_.empty()) {
             const PaperHit hit = hitTestPaper(*sheet_, raw, tolMm);   // once eleman sec
-            if (hit.valid()) setSelection({hit});
+            if (hit.valid()) {
+                PaperSelection one;
+                one.hits.push_back(hit);
+                setSelection(expandPaperSelection(*sheet_, std::move(one)).hits);
+            }
             update();
             return;
         }
