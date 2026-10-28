@@ -764,6 +764,13 @@ if(BUILD_TESTING)
         add_executable(model_maker_occ_smoke tests/occ_smoke.cpp src/occ_bridge.cpp)
         target_link_libraries(model_maker_occ_smoke PRIVATE model_maker_occ)
         add_test(NAME model_maker_occ_smoke COMMAND model_maker_occ_smoke)
+        # KOPYA + B-REP: kopya parcanin magazada B-Rep'i yok (parametre
+        # degisikliginin birlesimi degistirmemesinin kok nedeni) + kopyanin
+        # kalici profil ozelliklerinden yeniden uretilebilirligi.
+        add_executable(model_maker_occ_copy_brep_gap_test tests/occ_copy_brep_gap_test.cpp)
+        target_link_libraries(model_maker_occ_copy_brep_gap_test PRIVATE model_maker_occ)
+        add_test(NAME model_maker_occ_copy_brep_gap_test
+                 COMMAND model_maker_occ_copy_brep_gap_test)
         if(UNIX)
             # ctest ortaminda OCCT paylasimli kutuphaneleri bul (Windows'ta
             # DLL'ler exe yaninda/ PATH'te olur — bu blok yalniz Linux).

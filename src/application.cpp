@@ -6143,6 +6143,16 @@ bool Application::setSelectedComponentParams(EntityId compId,
     }
     input.params = updated.params;
 
+    // KOPYA / ACILMIS BELGE B-REP GARANTISI (kullanici bug raporu 2026-10-28:
+    // "kopyalanan componentlarda dialog parametreleri degistirildiginde
+    // birlestirmede degisiklik yapmiyor"). Kopya parcalarin OCC magazasinda
+    // katisi YOKTUR; materializer'in kaynak adimi store_->find(part) null
+    // donunce "Weld parcasi B-Rep yok" diyip TUM degisikligi atomik geri alir
+    // (parametre uygulanmis gorunur, birlesim ayni kalir). Kalici profilden
+    // lazy uret (P7/P11 kurali) — uretilemeyen ilkel katilarda no-op.
+    ensureCutSolid(updated.mainPart);
+    for (const EntityId sid : updated.secondaryParts) ensureCutSolid(sid);
+
     const GenerationPlan gp = ComponentRegistry::instance().generate(updated.typeId, input);
     if (!gp.ok) return false;
     const ComponentPlan plan = componentPlanFromGenerationPlan(gp);
@@ -6156,7 +6166,16 @@ bool Application::setSelectedComponentParams(EntityId compId,
     // Materializer.recompute kendi undo kaydini acar ve basarisizlikta kendini
     // geri alir — burada pushUndoSnapshot ACILMAZ (cift kayit olur).
     const auto res = mat.recompute(prep, document_.componentInstances()[*idx], updated);
-    if (!res.ok) return false;
+    if (!res.ok) {
+        // SESSIZ BASARISIZLIK YOK: nedenini durum cubuguna yaz. Kullanici aksi
+        // halde "degerleri girdim, Uygula'ya bastim, birlesim degismedi" der ve
+        // sebebi hicbir yerde goremez.
+        solidStatusMessage_ = type->displayName + L" — UYGULANAMADI" +
+            (res.error.empty() ? std::wstring() : (L": " + res.error));
+        updateStatus();
+        invalidateCanvas();
+        return false;
+    }
 
     // KAYNAK TESHISI (diyalog OK yolu): kaynak kati uretilmediyse NEDENINI
     // durum cubuguna yaz. Aksi halde kullanici "weld atmiyor" der ama sebep
@@ -7422,6 +7441,17 @@ Application::CopyStepInfo Application::copySelectionBy(const Vec3& displacement)
     info.instances = document_.componentInstances().size() - instBefore;
     info.bolts = document_.boltGroups().size() - boltBefore;
     info.rebound = rebindCopiedComponents(instBefore, copiedModels);
+#ifdef MM_HAS_OCC
+    // KOPYA B-REP (kok neden): kopya modeller yalniz WIREFRAME olarak gelir;
+    // OCC magazasinda katilari yoktur. Bu yuzden kopya component uzerinde
+    // yapilan her parametre degisikligi materializer'da "B-Rep yok" ile
+    // atomik geri aliniyordu. Kopyanin katisi KALICI profil ozelliklerinden
+    // yeniden uretilir (rebuildCutBaseSolid: etkin + taban surum; profilsiz
+    // ilkel katilarda no-op) — boylece kesme/kaynak ve parametre duzenlemesi
+    // dogru B-Rep ile calisir.
+    for (std::size_t k = modelsBefore; k < document_.models().size(); ++k)
+        rebuildCutBaseSolid(document_.modelId(k));
+#endif
     return info;
 }
 

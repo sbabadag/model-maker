@@ -1,0 +1,7 @@
+{
+	"InstallScripts" : 
+	[
+		"/home/ubuntu/model-maker-p2d/build-occ-hermes/cmake_install.cmake"
+	],
+	"Parallel" : false
+}
