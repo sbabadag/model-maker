@@ -544,6 +544,13 @@ if(BUILD_TESTING)
     target_compile_options(model_maker_drawing_fab_test PRIVATE -Wall -Wextra -Wpedantic)
     add_test(NAME model_maker_drawing_fab_test COMMAND model_maker_drawing_fab_test)
 
+    # DRAWING P2D: gorunus basina olcek + en az buyutme (tek pafta sigdirma kullanici vakasi).
+    add_executable(model_maker_drawing_sheet_fit_test tests/drawing_sheet_fit_test.cpp)
+    target_include_directories(model_maker_drawing_sheet_fit_test PRIVATE tests)
+    target_link_libraries(model_maker_drawing_sheet_fit_test PRIVATE model_maker_core)
+    target_compile_options(model_maker_drawing_sheet_fit_test PRIVATE -Wall -Wextra -Wpedantic)
+    add_test(NAME model_maker_drawing_sheet_fit_test COMMAND model_maker_drawing_sheet_fit_test)
+
     # DRAWING P2C: smart sheet manager (tek pafta kalite kapisi + bagli coklu pafta seti, JSON, referans).
     add_executable(model_maker_drawing_set_test tests/drawing_set_test.cpp)
     target_include_directories(model_maker_drawing_set_test PRIVATE tests)

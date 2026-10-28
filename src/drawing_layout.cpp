@@ -840,7 +840,7 @@ Attempt tryLayout(const DrawingSheet& in, SheetSize size, double den) {
     s.titleBlock.scaleText = buf;
     for (DrawingView& v : s.views) v.scale = s.scale;
     // DETAY gorunumleri: ana olcekten ayni veya BUYUK olcek (daha kucuk payda); en buyuk makul olcek,
-    // annotation'lari izole yerlesimde SORUNSUZ olan ilk standart olcek.
+    // annotation'lari izole yerlesimde SORUNSUZ olan ilk standart olcek (detay = buyutme amacli).
     {
         const Bounds2 area = s.drawingArea();
         const double maxPaper = std::min(130.0, 0.6 * std::min(area.width(), area.height()));
@@ -858,6 +858,50 @@ Attempt tryLayout(const DrawingSheet& in, SheetSize size, double den) {
                 bool clean = false;
                 isolatedMargins(s, i, &clean);
                 if (clean) { chosen = dd; break; }
+            }
+            v.scale = 1.0 / chosen;
+        }
+    }
+    resetAnnotationDefaults(s);
+
+    // ANA GORUNUSLER: pafta TEK olcekte olmak zorunda DEGIL (Tekla'da da olcek gorunus basinadir).
+    // Gercek vaka (kullanici geri bildirimi 2026-10-28): 5000 mm'lik kiris 1:2'de kagida sigmaz,
+    // 190 mm'lik levha 1:25'te 8 mm'ye duser ve olculeri ust uste biner. Ikisi TEK olcekte bir arada
+    // duramadigi icin cizim gereksiz yere paftalara BOLUNUYORDU ve buyuk kagit (A0) seciliyordu.
+    // Kural: her ana gorunus icin pafta olceginden BUYUK (daha kucuk payda), annotation'lari TEMIZ
+    // yerlestiren en buyuk standart olcek secilir; gorunus kagit alaninin makul bolumunu asmaz.
+    {
+        const Bounds2 area = s.drawingArea();
+        const double budget = 0.45 * std::min(area.width(), area.height());
+        for (std::size_t i = 0; i < s.views.size(); ++i) {
+            DrawingView& v = s.views[i];
+            if (v.kind == ViewKind::Detail) continue;
+            if (v.bounds.width() <= 1e-9 && v.bounds.height() <= 1e-9) continue;
+            const double extent = std::max(v.bounds.width(), v.bounds.height());
+            double chosen = den;
+            // Pafta olcegi bu gorunus icin ZATEN temizse olcek degistirilmez (gereksiz karisiklik yok);
+            // yalniz sigmayan/olculeri ust uste binen gorunus icin daha buyuk olcek aranir.
+            v.scale = 1.0 / den;
+            resetAnnotationDefaults(s);
+            bool cleanAtSheet = false;
+            isolatedMargins(s, i, &cleanAtSheet);
+            if (!cleanAtSheet && s.layoutConfig.fixedScaleDen <= 0.0) {
+                // EN AZ BUYUTME once: pafta olcegine EN YAKIN (paydasi en BUYUK) adaydan basla.
+                // Ters sira (en kucuk payda once) kucuk gorunusu 1:2'ye kadar buyutuyor, kagidi
+                // doldurup paftayi boluyordu (kullanici: "A0'lik cizim A1'e de sigar").
+                // ZORLANMIS olcek (fixedScaleDen > 0) kullanici kararidir: gorunus olcegi DEGISTIRILMEZ.
+                std::vector<double> cands;
+                for (const double dd : standardScaleDenominators())
+                    if (dd >= 2.0 && dd < den - 1e-9 && extent / dd <= budget) cands.push_back(dd);
+                for (auto it = cands.rbegin(); it != cands.rend(); ++it) {
+                    const double dd = *it;
+                    v.scale = 1.0 / dd;
+                    v.origin = {2000.0, 2000.0};
+                    resetAnnotationDefaults(s);
+                    bool clean = false;
+                    isolatedMargins(s, i, &clean);
+                    if (clean) { chosen = dd; break; }
+                }
             }
             v.scale = 1.0 / chosen;
         }
