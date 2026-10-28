@@ -9,6 +9,7 @@
 #include <QApplication>
 #include <QByteArray>
 #include <QCheckBox>
+#include <QPushButton>
 #include <QComboBox>
 #include <QDir>
 #include <QFile>
@@ -203,6 +204,13 @@ int main(int argc, char** argv) {
                 p2.autoMax = SheetSize::A2;
                 return buildDrawingSet(f.doc, dlgReg, s, o2, p2);
             });
+        // 2026-10-28: diyalogda "Tum gorunusler ayni olcek" varsayilan ACIK; bu
+        // testin referansi (pages) varsayilan (detayli) modla uretildi -> eslestir.
+        if (auto* uniform = dlg.findChild<QCheckBox*>(QStringLiteral("drawingUniformScale"))) {
+            uniform->setChecked(false);
+            if (auto* applyBtn = dlg.findChild<QPushButton*>(QStringLiteral("drawingApply"))) applyBtn->click();
+            QApplication::processEvents();
+        }
         const DrawingDocument* shownDoc = dlg.currentDocument();
         check(shownDoc && shownDoc->sheets().size() == pages, "GUI: diyalog DrawingDocument setini tasiyor");
         auto* combo = dlg.findChild<QComboBox*>(QStringLiteral("drawingSheetPage"));

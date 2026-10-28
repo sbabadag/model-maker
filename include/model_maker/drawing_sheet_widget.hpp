@@ -180,6 +180,10 @@ private:
     QComboBox* toolCombo_{};
     QCheckBox* autoSizeCheck_{};
     QCheckBox* multiSheetCheck_{};
+    // Tek olcek: tum gorunusler pafta olceginde (detay gorunumleri uretilmez).
+    QCheckBox* uniformScaleCheck_{};
+    // "Uygula": onay kutulari/alanlar isaretlenir, islem ancak bu dugme ile yapilir.
+    QPushButton* applyButton_{};
     QComboBox* projectionCombo_{};
     QCheckBox* frontCheck_{};
     QCheckBox* topCheck_{};

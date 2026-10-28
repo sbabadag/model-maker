@@ -7,6 +7,7 @@
 
 #include <QApplication>
 #include <QCheckBox>
+#include <QPushButton>
 #include <QComboBox>
 #include <QFile>
 #include <QImage>
@@ -179,6 +180,12 @@ int main(int argc, char** argv) {
         auto* sideCheck = dlg.findChild<QCheckBox*>(QStringLiteral("drawingSide"));
         auto* frontCheck = dlg.findChild<QCheckBox*>(QStringLiteral("drawingFront"));
         auto* status = dlg.findChild<QLabel*>(QStringLiteral("drawingStatus"));
+        // 2026-10-28: onay kutulari aninda uretmez; islem "Uygula" ile yapilir.
+        auto* applyBtn = dlg.findChild<QPushButton*>(QStringLiteral("drawingApply"));
+        const auto applyNow = [&]() {
+            if (applyBtn) applyBtn->click();
+            QApplication::processEvents();
+        };
         check(subjectCombo && sizeCombo && projCombo && hidden && topCheck && sideCheck && frontCheck && status,
               "C: denetimler bulundu");
         if (!(subjectCombo && sizeCombo && projCombo && hidden && topCheck && sideCheck && frontCheck && status))
@@ -198,17 +205,22 @@ int main(int argc, char** argv) {
                   dlg.currentSheet()->projection == ProjectionMethod::FirstAngle,
               "C: 1. aci");
         hidden->setChecked(true);
-        check(last.hiddenLines, "C: gizli cizgi secenegi builder'a gecti");
+        check(applyBtn && applyBtn->isEnabled(), "C: onay kutusu isaretlendi -> Uygula etkin (aninda uretim yok)");
+        applyNow();
+        check(last.hiddenLines, "C: gizli cizgi secenegi Uygula ile builder'a gecti");
         topCheck->setChecked(false);
         sideCheck->setChecked(false);
+        applyNow();
         check(dlg.currentSheet() && dlg.currentSheet()->views.size() == 1 && last.views.size() == 1 &&
                   last.views[0] == ViewKind::Front,
               "C: yalniz Front");
         const int before = calls;
         frontCheck->setChecked(false);
+        applyNow();
         check(dlg.currentSheet() == nullptr && calls == before && status->text().contains(QStringLiteral("En az")),
               "C: hic gorunus secili degil -> cizim yok, builder cagrilmaz, hata metni");
         frontCheck->setChecked(true);
+        applyNow();
         check(dlg.currentSheet() != nullptr, "C: gorunus geri secilince cizim geri gelir");
 
         // Builder hatasi: durum satirinda gorunur, eski cizim kalmaz.

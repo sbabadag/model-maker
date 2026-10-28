@@ -759,6 +759,12 @@ DrawingPreviewDialog::DrawingPreviewDialog(std::vector<SubjectChoice> subjects, 
         multiSheetCheck_ = new QCheckBox(QStringLiteral("Sigmazsa bagli paftalar"), this);
         multiSheetCheck_->setObjectName(QStringLiteral("drawingMultiSheet"));
         multiSheetCheck_->setChecked(true);
+        // Kullanici istegi (2026-10-28): "tum kesitler ayni olcekte olsun, A3'ten
+        // basla A0'a kadar dene, tek kagida sigdirmaya calis". Tek olcek acikken
+        // levha detay gorunumleri (kendi buyuk olcekleri) uretilmez.
+        uniformScaleCheck_ = new QCheckBox(QStringLiteral("Tum gorunusler ayni olcek"), this);
+        uniformScaleCheck_->setObjectName(QStringLiteral("drawingUniformScale"));
+        uniformScaleCheck_->setChecked(true);
     }
     projectionCombo_ = new QComboBox(this);
     projectionCombo_->setObjectName(QStringLiteral("drawingProjection"));
@@ -780,6 +786,7 @@ DrawingPreviewDialog::DrawingPreviewDialog(std::vector<SubjectChoice> subjects, 
     if (setBuilder_) {
         opts->addWidget(autoSizeCheck_);
         opts->addWidget(multiSheetCheck_);
+        opts->addWidget(uniformScaleCheck_);
         sheetCombo_ = new QComboBox(this);
         sheetCombo_->setObjectName(QStringLiteral("drawingSheetPage"));
         sheetCombo_->setMinimumWidth(180);
@@ -832,6 +839,18 @@ DrawingPreviewDialog::DrawingPreviewDialog(std::vector<SubjectChoice> subjects, 
     buttons->addWidget(close);
     root->addLayout(buttons);
 
+    // KULLANICI ISTEGI (2026-10-28): "tick'ler isaretlendikten sonra Uygula
+    // deyince islemler yapilsin". Onay kutulari/gorunus secimleri artik cizimi
+    // ANINDA yeniden uretmez; yalniz "degisiklik var" isaretlenir ve Uygula
+    // basilinca rebuild() calisir. (Konu/olcek gibi acik secimler aninda.)
+    applyButton_ = new QPushButton(QStringLiteral("Uygula"), this);
+    applyButton_->setObjectName(QStringLiteral("drawingApply"));
+    applyButton_->setEnabled(false);
+    buttons->insertWidget(0, applyButton_);
+    connect(applyButton_, &QPushButton::clicked, this, [this]() {
+        applyButton_->setEnabled(false);
+        rebuild();
+    });
     connect(fit, &QPushButton::clicked, view_, &DrawingSheetWidget::fitToWindow);
     connect(pdf, &QPushButton::clicked, this, [this]() { onExportPdf(); });
     connect(json, &QPushButton::clicked, this, [this]() { onSaveJson(); });
@@ -840,14 +859,23 @@ DrawingPreviewDialog::DrawingPreviewDialog(std::vector<SubjectChoice> subjects, 
     connect(subjectCombo_, &QComboBox::currentIndexChanged, this, changed);
     connect(sizeCombo_, &QComboBox::currentIndexChanged, this, changed);
     connect(projectionCombo_, &QComboBox::currentIndexChanged, this, changed);
+    // ONAY KUTULARI: aninda uretim YOK -> yalniz "bekleyen degisiklik" isareti.
+    const auto pending = [this]() {
+        if (applyButton_) applyButton_->setEnabled(true);
+        if (status_) {
+            status_->setStyleSheet(QStringLiteral("color:#b8860b"));
+            status_->setText(QStringLiteral("Ayarlar degisti \u2014 Uygula'ya basin"));
+        }
+    };
     for (QCheckBox* c : {frontCheck_, topCheck_, sideCheck_, hiddenCheck_})
-        connect(c, &QCheckBox::toggled, this, changed);
+        connect(c, &QCheckBox::toggled, this, pending);
     if (setBuilder_) {
-        connect(autoSizeCheck_, &QCheckBox::toggled, this, [this](bool on) {
+        connect(autoSizeCheck_, &QCheckBox::toggled, this, [this, pending](bool on) {
             sizeCombo_->setEnabled(!on);
-            rebuild();
+            pending();
         });
-        connect(multiSheetCheck_, &QCheckBox::toggled, this, changed);
+        connect(multiSheetCheck_, &QCheckBox::toggled, this, pending);
+        connect(uniformScaleCheck_, &QCheckBox::toggled, this, pending);
         connect(sheetCombo_, &QComboBox::currentIndexChanged, this, [this](int i) { showSheet(i); });
         connect(toolCombo_, &QComboBox::currentIndexChanged, this, [this](int i) {
             view_->setTool(toolFromIndex(i));
@@ -975,6 +1003,7 @@ void DrawingPreviewDialog::rebuild() {
         p.autoSheetSize = autoSizeCheck_ ? autoSizeCheck_->isChecked() : true;
         if (!p.autoSheetSize) p.sheetSize = o.sheet;
         p.autoMultiSheetFallback = multiSheetCheck_ ? multiSheetCheck_->isChecked() : true;
+        p.uniformViewScale = uniformScaleCheck_ ? uniformScaleCheck_->isChecked() : false;
         p.autoFirst = SheetSize::A3;
         p.autoMax = SheetSize::A0;
         prefs_ = p;

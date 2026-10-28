@@ -121,9 +121,12 @@ std::string paperReason(const DrawingSheet& s) {
 
 // Verilen gorunus kumesini tek paftada dener; `out` her durumda o kumenin paftasidir.
 bool tryPack(const DrawingSheet& base, const std::vector<ElementId>& ids, SheetRole role,
-             const DrawingPreferences& prefs, DrawingSheet& out) {
+             const DrawingPreferences& prefs, DrawingSheet& out, double forcedDen = 0.0) {
     out = subsetOf(base, ids, role);
     applyPreferences(out, prefs);
+    // TEK OLCEK (uniformViewScale): ana paftanin olcegi diger paftalara ZORLANIR
+    // (kullanici istegi 2026-10-28: "tum kesitler ayni olcekte olsun").
+    if (forcedDen > 0.0) out.layoutConfig.fixedScaleDen = forcedDen;
     return layoutOk(out);
 }
 
@@ -186,6 +189,8 @@ Assembly packSheets(const DrawingSheet& base, const DrawingPreferences& prefs) {
             }
         }
     }
+    // TEK OLCEK: ana paftanin paydasi tum paftalara uygulanir.
+    const double uniformDen = prefs.uniformViewScale && primary.scale > 0.0 ? 1.0 / primary.scale : 0.0;
     std::string primaryReason = paperReason(primary);
     if (addedToPrimary > 0)
         primaryReason += ", " + std::to_string(addedToPrimary) + " ek gorunus ayni paftada";
@@ -204,12 +209,12 @@ Assembly packSheets(const DrawingSheet& base, const DrawingPreferences& prefs) {
         };
         SheetRole role = roleOf();
         DrawingSheet sheet;
-        bool ok = tryPack(base, ids, role, prefs, sheet);
+        bool ok = tryPack(base, ids, role, prefs, sheet, uniformDen);
         for (auto it = remaining.begin(); it != remaining.end();) {
             ids.push_back(*it);
             const SheetRole r2 = roleOf();
             DrawingSheet trial;
-            if (tryPack(base, ids, r2, prefs, trial)) {
+            if (tryPack(base, ids, r2, prefs, trial, uniformDen)) {
                 sheet = std::move(trial);
                 role = r2;
                 it = remaining.erase(it);
@@ -372,6 +377,9 @@ DrawingSetResult buildDrawingSet(const Document& document, MarkRegistry& registr
 
     DrawingOptions opt = options;
     opt.autoLayout = true;   // akilli yerlesim bu modulun varlik nedenidir
+    // TEK OLCEK: detay gorunumleri (kendi buyuk olcekleri) kapatilir; boylece
+    // paftadaki TUM kesitler pafta olceginde olur.
+    if (preferences.uniformViewScale) opt.detailViews = false;
     const SheetSize first = preferences.autoSheetSize ? preferences.autoFirst : preferences.sheetSize;
     const SheetSize last = preferences.autoSheetSize ? preferences.autoMax : preferences.sheetSize;
     opt.sheet = first;

@@ -9,6 +9,7 @@
 
 #include <QApplication>
 #include <QCheckBox>
+#include <QPushButton>
 #include <QComboBox>
 #include <QDir>
 #include <QFile>
@@ -184,7 +185,13 @@ int main(int argc, char** argv) {
     const double editedValue = movedDim ? movedDim->value : 0.0;
 
     // 3) Kagit/secenek degisikligi: otomatik kagit kapat -> A3; duzenlemeler KORUNUR.
+    // 2026-10-28: onay kutulari aninda uretmez; islem "Uygula" ile yapilir.
+    auto* applyBtn = dlg.findChild<QPushButton*>(QStringLiteral("drawingApply"));
+    check(applyBtn != nullptr, "GUI: Uygula dugmesi var");
     autoSize->setChecked(false);
+    QApplication::processEvents();
+    check(applyBtn && applyBtn->isEnabled(), "GUI: onay kutusu -> Uygula etkin (aninda uretim yok)");
+    if (applyBtn) applyBtn->click();
     QApplication::processEvents();
     check(dlg.currentDocument() != nullptr && dlg.currentSheet() != nullptr, "GUI: secenek degisikligi yeniden uretti");
     check(dlg.currentSheet()->format.size == SheetSize::A3, "GUI: sabit A3 secildi (yeniden hesaplandi)");

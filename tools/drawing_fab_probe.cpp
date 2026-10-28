@@ -15,6 +15,7 @@
 #include "model_maker/occ_solid_store.hpp"
 
 #include <cstdio>
+#include <cstdlib>
 #include <algorithm>
 #include <map>
 #include <set>
@@ -128,6 +129,9 @@ int main(int argc, char** argv) {
         MarkRegistry reg;
         drawing::DrawingOptions opt;
         drawing::DrawingPreferences pref;
+        // MM_UNIFORM_SCALE=1: tek olcek modu (tum gorunusler pafta olceginde,
+        // detay gorunumu yok) — kullanici istegi.
+        if (std::getenv("MM_UNIFORM_SCALE") != nullptr) pref.uniformViewScale = true;
         const drawing::DrawingSetResult res = drawing::buildDrawingSet(doc, reg, a.id, opt, pref);
         std::printf("  cizim: ok=%d  hata='%s'  layoutValid=%d  ready=%d  pafta=%zu\n", res.ok ? 1 : 0,
                     res.error.c_str(), res.layoutValid ? 1 : 0, res.ready ? 1 : 0,

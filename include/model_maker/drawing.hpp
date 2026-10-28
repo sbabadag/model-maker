@@ -291,6 +291,11 @@ struct DrawingPreferences {
     bool autoMultiSheetFallback{true};
     SheetSize autoFirst{SheetSize::A3};
     SheetSize autoMax{SheetSize::A0};
+    // TEK OLCEK (kullanici istegi 2026-10-28): tum gorunusler PAfta olceginde
+    // cizilir; levha DETAY gorunumleri (kendi buyuk olcekleri) uretilmez.
+    // Boylece paftada butun kesitler ayni olcektedir. false = mevcut davranis
+    // (delikli levhalar icin kendi olcekli detay gorunumleri).
+    bool uniformViewScale{false};
     bool operator==(const DrawingPreferences&) const = default;
 };
 
