@@ -102,6 +102,8 @@ set(__QT_DEPLOY_TARGET_model_maker_occ_smoke_FILE /home/ubuntu/model-maker-p2d/b
 set(__QT_DEPLOY_TARGET_model_maker_occ_smoke_TYPE EXECUTABLE)
 set(__QT_DEPLOY_TARGET_model_maker_occ_copy_brep_gap_test_FILE /home/ubuntu/model-maker-p2d/build-occ-hermes/model_maker_occ_copy_brep_gap_test)
 set(__QT_DEPLOY_TARGET_model_maker_occ_copy_brep_gap_test_TYPE EXECUTABLE)
+set(__QT_DEPLOY_TARGET_model_maker_drawing_fab_probe_FILE /home/ubuntu/model-maker-p2d/build-occ-hermes/model_maker_drawing_fab_probe)
+set(__QT_DEPLOY_TARGET_model_maker_drawing_fab_probe_TYPE EXECUTABLE)
 set(__QT_DEPLOY_TARGET_model_maker_occ_brep_serialize_test_FILE /home/ubuntu/model-maker-p2d/build-occ-hermes/model_maker_occ_brep_serialize_test)
 set(__QT_DEPLOY_TARGET_model_maker_occ_brep_serialize_test_TYPE EXECUTABLE)
 set(__QT_DEPLOY_TARGET_model_maker_occ_cut_probe_FILE /home/ubuntu/model-maker-p2d/build-occ-hermes/model_maker_occ_cut_probe)

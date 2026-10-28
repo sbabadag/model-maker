@@ -1103,7 +1103,11 @@ BuildResult buildSheet(const Document& doc, MarkRegistry& reg, EntityId subject,
                     return a->rowV.front() > b->rowV.front();   // ustten alta
                 });
                 for (const fab::HoleGroupFeature* g : ordered) {
-                    if (g->shape != fab::HoleShape::Round) continue;
+                    // YUVALI DELIK (slot) de olculendirilir: imalatta slot MERKEZININ
+                    // konumu ayni sekilde olculur (kontur cizimi ayri is — SLOT_NOT_DRAWN).
+                    // Kullanici geri bildirimi (2026-10-28): "paper drawing delik
+                    // yerlerine olcu vermedi" — Tekla'da bulon deligi yuva olarak
+                    // modellendiginde TUM delik olculeri kayboluyordu.
                     if (!g->regular) {
                         // P2D: duzensiz (kademeli/silinmis bulon ya da elle acilmis karisik) dizilim.
                         // Uydurma periyodik adim URETILMEZ; her deligin levha kenarindan GERCEK
@@ -1146,7 +1150,7 @@ BuildResult buildSheet(const Document& doc, MarkRegistry& reg, EntityId subject,
                 {
                     std::vector<const fab::HoleGroupFeature*> vg;
                     for (const fab::HoleGroupFeature* g : ordered)
-                        if (g->regular && g->shape == fab::HoleShape::Round) vg.push_back(g);
+                        if (g->regular) vg.push_back(g);   // slot gruplari da zincire girer
                     if (!vg.empty()) {
                         const int grp = 10 + chainNo++;
                         // temsilci sutun: v ekseni dikeyse gorunumde en sag; yataysa en alt

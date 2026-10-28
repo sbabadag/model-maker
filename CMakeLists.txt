@@ -771,6 +771,10 @@ if(BUILD_TESTING)
         target_link_libraries(model_maker_occ_copy_brep_gap_test PRIVATE model_maker_occ)
         add_test(NAME model_maker_occ_copy_brep_gap_test
                  COMMAND model_maker_occ_copy_brep_gap_test)
+        # TESHIS ARACI (test degil): kaydedilmis .mmw icin imalat/olcu raporu.
+        # Kullanim: model_maker_drawing_fab_probe <model.mmw>
+        add_executable(model_maker_drawing_fab_probe tools/drawing_fab_probe.cpp)
+        target_link_libraries(model_maker_drawing_fab_probe PRIVATE model_maker_occ)
         if(UNIX)
             # ctest ortaminda OCCT paylasimli kutuphaneleri bul (Windows'ta
             # DLL'ler exe yaninda/ PATH'te olur — bu blok yalniz Linux).

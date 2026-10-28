@@ -78,6 +78,7 @@
 /home/ubuntu/model-maker-p2d/build-occ-hermes/CMakeFiles/model_maker_zoom_deep_cost_probe.dir
 /home/ubuntu/model-maker-p2d/build-occ-hermes/CMakeFiles/model_maker_occ_smoke.dir
 /home/ubuntu/model-maker-p2d/build-occ-hermes/CMakeFiles/model_maker_occ_copy_brep_gap_test.dir
+/home/ubuntu/model-maker-p2d/build-occ-hermes/CMakeFiles/model_maker_drawing_fab_probe.dir
 /home/ubuntu/model-maker-p2d/build-occ-hermes/CMakeFiles/model_maker_occ_brep_serialize_test.dir
 /home/ubuntu/model-maker-p2d/build-occ-hermes/CMakeFiles/model_maker_occ_cut_probe.dir
 /home/ubuntu/model-maker-p2d/build-occ-hermes/CMakeFiles/model_maker_occ_fitting_acceptance.dir
@@ -254,6 +255,8 @@
 /home/ubuntu/model-maker-p2d/build-occ-hermes/CMakeFiles/model_maker_occ_smoke_autogen.dir
 /home/ubuntu/model-maker-p2d/build-occ-hermes/CMakeFiles/model_maker_occ_copy_brep_gap_test_autogen_timestamp_deps.dir
 /home/ubuntu/model-maker-p2d/build-occ-hermes/CMakeFiles/model_maker_occ_copy_brep_gap_test_autogen.dir
+/home/ubuntu/model-maker-p2d/build-occ-hermes/CMakeFiles/model_maker_drawing_fab_probe_autogen_timestamp_deps.dir
+/home/ubuntu/model-maker-p2d/build-occ-hermes/CMakeFiles/model_maker_drawing_fab_probe_autogen.dir
 /home/ubuntu/model-maker-p2d/build-occ-hermes/CMakeFiles/model_maker_occ_brep_serialize_test_autogen_timestamp_deps.dir
 /home/ubuntu/model-maker-p2d/build-occ-hermes/CMakeFiles/model_maker_occ_brep_serialize_test_autogen.dir
 /home/ubuntu/model-maker-p2d/build-occ-hermes/CMakeFiles/model_maker_occ_cut_probe_autogen_timestamp_deps.dir

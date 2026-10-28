@@ -457,10 +457,20 @@ int main() {
         const EntityId bare = fx::addFramedPlate(g, {2500, 80, 0}, {1, 0, 0}, {0, 0, 1}, {0, 1, 0}, 200, 100, 8, "cercevesiz", false);
         fx::addBolts(g, bare, {2450, 80, 20}, {0, 1, 0}, {1, 0, 0}, 2, 1, 100, 0, 20);
         const BuildResult br = build(g, bare);
-        check(br.ok && br.sheet.fabrication.draft && hasItem(br.sheet, "HOLES_UNRESOLVED", ChecklistState::Unresolved),
-              "F: PlateSpec'siz levha -> TASLAK + HOLES_UNRESOLVED (delik olcusu uydurulmadi)");
-        check(dimsOf(br.sheet, DimensionRole::HolePitch).empty() && dimsOf(br.sheet, DimensionRole::HoleEdge).empty(),
-              "F: cercevesiz levhada imalat delik olcusu YOK");
+        // 2026-10-28 DAVRANIS DEGISIKLIGI: kalici PlateSpec yoksa cerceve GERCEK
+        // GEOMETRIDEN turetilir (dikdortgen levha); delik konum olculeri uretilir.
+        // Olcu uydurulmaz — gercek geometriden olculur.
+        check(br.ok && !hasItem(br.sheet, "HOLES_UNRESOLVED", ChecklistState::Unresolved),
+              "F: cercevesiz DIKDORTGEN levha -> geometriden turetilen cerceve (HOLES_UNRESOLVED yok)");
+        check(!dimsOf(br.sheet, DimensionRole::HolePitch).empty() &&
+                  !dimsOf(br.sheet, DimensionRole::HoleEdge).empty(),
+              "F: cercevesiz levhada delik adimi + net kenar olculeri URETILIR");
+        bool trueValue = true;
+        for (const Dimension2D* d : dimsOf(br.sheet, DimensionRole::HolePitch))
+            if (std::fabs(d->measured() - d->value) > 1e-6) trueValue = false;
+        for (const Dimension2D* d : dimsOf(br.sheet, DimensionRole::HoleEdge))
+            if (std::fabs(d->measured() - d->value) > 1e-6) trueValue = false;
+        check(trueValue, "F: turetilen delik olculeri yeniden olcumle AYNI (uydurma yok)");
     }
 
     // =========================================================================

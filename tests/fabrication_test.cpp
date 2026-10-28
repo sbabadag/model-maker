@@ -188,8 +188,22 @@ int main() {
         const EntityId bare = fx::addFramedPlate(g, {2500, 80, 0}, {1, 0, 0}, {0, 0, 1}, {0, 1, 0}, 200, 100, 8, "cercevesiz", false);
         fx::addBolts(g, bare, {2450, 80, 20}, {0, 1, 0}, {1, 0, 0}, 2, 1, 100, 0, 20);
         const FabricationInventory i = extractFabrication(g.doc, {g.beam, g.endPlate, g.finPlate, bare}, g.beam);
-        check(i.hasCode("HOLE_FRAME_UNAVAILABLE"), "C1: PlateSpec'siz levhadaki delik -> HOLE_FRAME_UNAVAILABLE (uydurulmadi)");
-        check(i.plateOf(bare) == nullptr && i.holes.size() == 16, "C1: cercevesiz levha PlateFeature DEGIL, delikleri envantere GIRMEZ");
+        // 2026-10-28 DAVRANIS DEGISIKLIGI: kalici PlateSpec yoksa cerceve artik
+        // GERCEK GEOMETRIDEN turetilir (dikdortgen levha) — kaydedilip yeniden
+        // acilan modelde child payload'lari MMW8'e yazilmadigi icin delik
+        // konum olculeri tamamen kayboluyordu ("paper drawing delik yerlerine
+        // olcu vermedi"). Olcu UYDURULMAZ: gercek geometriden olculur.
+        check(!i.hasCode("HOLE_FRAME_UNAVAILABLE"), "C1: geometriden turetilen cerceve -> HOLE_FRAME_UNAVAILABLE YOK");
+        const PlateFeature* bareF = i.plateOf(bare);
+        check(bareF != nullptr, "C1: cercevesiz DIKDORTGEN levha geometriden turetildi (PlateFeature VAR)");
+        check(i.holes.size() == 16 + 2, "C1: cercevesiz levhanin delikleri de envantere GIRER (16 + 2)");
+        if (bareF) {
+            const double w = bareF->width, h = bareF->height;
+            const bool dimsOk = (std::fabs(w - 200.0) < 0.6 && std::fabs(h - 100.0) < 0.6) ||
+                                (std::fabs(w - 100.0) < 0.6 && std::fabs(h - 200.0) < 0.6);
+            check(dimsOk && std::fabs(bareF->thickness - 8.0) < 0.6,
+                  "C1: turetilen cerceve gercek geometriyle ayni (200x100x8)");
+        }
     }
     {
         // C2: sahipsiz delik
@@ -234,7 +248,11 @@ int main() {
         fx::Fixture g = fx::make({}, 4000, false);
         mutatePlateSpec(g.doc, g.finPlate, [](PlateSpec& p) { p.center.x += 400; });   // kayit baska yerde
         const FabricationInventory i = extractAll(g);
-        check(i.hasCode("PLATE_FRAME_STALE") && i.plateOf(g.finPlate) == nullptr, "C5: bayat PlateSpec cercevesi -> PLATE_FRAME_STALE, levha ozelligi uretilmez");
+        // 2026-10-28: bayat cerceve RAPORLANIR (TASLAK) ama olculendirme icin
+        // geometriden turetilen cerceve kullanilir — aksi halde kullanici yine
+        // hicbir delik olcusu gormuyordu.
+        check(i.hasCode("PLATE_FRAME_STALE"), "C5: bayat PlateSpec cercevesi -> PLATE_FRAME_STALE raporlanir");
+        check(i.plateOf(g.finPlate) != nullptr, "C5: olculendirme icin geometriden turetilen cerceve kullanilir");
     }
     {
         // C6: duzgun olmayan dizilim (silinen bulon) ve yuvali delik

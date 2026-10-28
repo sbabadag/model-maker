@@ -158,6 +158,148 @@ bool FabricationInventory::hasCode(const std::string& code) const noexcept {
     return false;
 }
 
+// GEOMETRIK LEVHA CERCEVESI (YEDEK YOL): kalici PlateSpec payload'i olmayan
+// levhalar icin cerceveyi GERCEK GEOMETRIDEN turet.
+//
+// NEDEN: MMW8 'N' blogu ComponentChildRecord'un URETIM PAYLOAD'ini (PlateSpec,
+// BoltGroup, CutModifier, WeldSpec) yazmaz — tasarim karari "generator'dan
+// yeniden uretilir". Ancak yukleme sonrasi hicbir sey generator'u calistirmiyor;
+// bu yuzden kaydedilmis modelde levha cercevesi bos kaliyor ve delik konum
+// olculeri (P2A) HIC uretilmiyordu (kullanici: "paper drawing delik yerlerine
+// olcu vermedi"). Bu yol yalniz cerceveyi turetir; geometri/olcu UYDURMAZ.
+// Outline dikdortgen ZARF olarak alinir (outlineExact=false -> levha en/boy
+// olculeri uretilmez, delik konumlari zarf kenarindan olculur).
+std::optional<PlateFeature> derivePlateFromGeometry(const Document& doc, EntityId part) {
+    const auto mi = doc.indexOfEntity(part);
+    if (!mi) return std::nullopt;
+    const std::vector<Vec3>& vs = doc.models()[*mi].vertices();
+    if (vs.size() < 4) return std::nullopt;
+    const auto extent = [&vs](const Vec3& d) {
+        double mn = 1e300, mx = -1e300;
+        for (const Vec3& p : vs) {
+            const double t = dot(p, d);
+            mn = std::min(mn, t);
+            mx = std::max(mx, t);
+        }
+        return mx - mn;
+    };
+    // Aday yonler: eksenler + uc capraz carpimlari (levha duzlemi normali icin).
+    std::vector<Vec3> cands{{1, 0, 0}, {0, 1, 0}, {0, 0, 1}};
+    for (std::size_t i = 1; i < vs.size() && cands.size() < 40; ++i) {
+        const Vec3 a = sub(vs[i], vs[0]);
+        if (len(a) < 1e-6) continue;
+        for (std::size_t j = i + 1; j < vs.size() && cands.size() < 40; ++j) {
+            const Vec3 b = sub(vs[j], vs[0]);
+            const Vec3 c = cross(a, b);
+            if (len(c) > 1e-6) cands.push_back(unit(c));
+        }
+    }
+    // En ince yon = levha normali.
+    double bestT = 1e300;
+    Vec3 n{};
+    for (const Vec3& c : cands) {
+        const Vec3 d = unit(c);
+        if (len(d) < 0.5) continue;
+        const double t = extent(d);
+        if (t > 1e-6 && t < bestT) {
+            bestT = t;
+            n = d;
+        }
+    }
+    if (bestT > 1e299 || bestT <= 1e-6) return std::nullopt;
+    // u: MINIMUM ALANLI cevreleyen dikdortgen yonu (kenarlara hizali).
+    // Neden: levha modellerinde yuz ucgenlerinin KOSEGEN kenarlari da vardir;
+    // "en buyuk yayilim" kosegeni (200x200 levhada 282.8) secer ve delik izgarasi
+    // duzensiz gorunurdu. Min-alan taramasi gercek kenar yonunu bulur.
+    Vec3 u{};
+    Vec3 v{};
+    {
+        const Vec3 ref = std::fabs(n.z) < 0.9 ? Vec3{0, 0, 1} : Vec3{1, 0, 0};
+        const Vec3 e1 = unit(cross(n, ref));
+        const Vec3 e2 = unit(cross(n, e1));
+        if (len(e1) < 0.5 || len(e2) < 0.5) return std::nullopt;
+        double bestArea = 1e300;
+        double bestAngle = 0.0;
+        const auto tryAngle = [&](double deg) {
+            const double a = deg * 3.14159265358979323846 / 180.0;
+            const Vec3 du = unit(madd(madd(e1, e1, std::cos(a) - 1.0), e2, std::sin(a)));
+            const Vec3 dv = unit(cross(n, du));
+            const double w = extent(du), h = extent(dv);
+            const double area = w * h;
+            if (area < bestArea) {
+                bestArea = area;
+                bestAngle = deg;
+            }
+        };
+        for (double deg = 0.0; deg < 90.0; deg += 1.0) tryAngle(deg);
+        const double coarse = bestAngle;
+        for (double d = -1.0; d <= 1.0; d += 0.1) tryAngle(coarse + d);
+        const double a = bestAngle * 3.14159265358979323846 / 180.0;
+        u = unit(madd(madd(e1, e1, std::cos(a) - 1.0), e2, std::sin(a)));
+        v = unit(cross(n, u));
+    }
+    if (len(u) < 0.5 || len(v) < 0.5) return std::nullopt;
+    const double bestU = extent(u);
+    // En kucuk ekseni normal yaptigimiz icin (u,v) duzlemi levha yuzudur.
+    const double width = bestU;
+    const double height = extent(v);
+    const double thickness = bestT;
+    if (width <= 1e-6 || height <= 1e-6) return std::nullopt;
+    // Levha orani: kalinlik en/boydan belirgin kucuk olmali (kiris/kolon degil).
+    if (thickness > 0.35 * std::min(width, height)) return std::nullopt;
+
+    PlateFeature pf;
+    pf.plate = part;
+    pf.id = featureKey(FeatureKind::Plate, part);
+    // Zarf merkezi (dunya): (u,v,n) ortonormal taban.
+    const auto proj = [&](const Vec3& d) {
+        double mn = 1e300, mx = -1e300;
+        for (const Vec3& p : vs) {
+            const double t = dot(p, d);
+            mn = std::min(mn, t);
+            mx = std::max(mx, t);
+        }
+        return std::pair<double, double>{mn, mx};
+    };
+    const auto [minU, maxU] = proj(u);
+    const auto [minV, maxV] = proj(v);
+    const auto [minN, maxN] = proj(n);
+    const double cu = (minU + maxU) / 2.0, cv = (minV + maxV) / 2.0, cn = (minN + maxN) / 2.0;
+    pf.origin = {u.x * cu + v.x * cv + n.x * cn, u.y * cu + v.y * cv + n.y * cn,
+                 u.z * cu + v.z * cv + n.z * cn};
+    pf.u = u;
+    pf.v = v;
+    pf.n = n;
+    pf.width = width;
+    pf.height = height;
+    pf.thickness = thickness;
+    pf.outlineExact = false;   // zarf dikdortgeni: en/boy olculeri uretilmez
+    pf.tapered = false;
+    pf.envMinU = -width / 2.0;
+    pf.envMaxU = width / 2.0;
+    pf.envMinV = -height / 2.0;
+    pf.envMaxV = height / 2.0;
+    pf.outline = {{-width / 2.0, -height / 2.0}, {width / 2.0, -height / 2.0},
+                  {width / 2.0, height / 2.0}, {-width / 2.0, height / 2.0}};
+    // DIKDORTGEN KONTROL: tum koseler zarfin 4 kosesine oturuyorsa kontur
+    // GERCEK dikdortendir -> outlineExact=true (levha en/boy olculeri de uretilir).
+    {
+        constexpr double tol = 0.5;
+        bool rectangle = true;
+        for (const Vec3& p : vs) {
+            const Vec3 d = sub(p, pf.origin);
+            const double pu = std::fabs(dot(d, u)), pv = std::fabs(dot(d, v));
+            if (std::fabs(pu - width / 2.0) > tol || std::fabs(pv - height / 2.0) > tol) {
+                rectangle = false;
+                break;
+            }
+        }
+        pf.outlineExact = rectangle;
+        pf.tapered = false;
+    }
+    return pf;
+}
+
 FabricationInventory extractFabrication(const Document& doc, const std::vector<EntityId>& parts,
                                         EntityId mainPart) {
     FabricationInventory inv;
@@ -268,6 +410,51 @@ FabricationInventory extractFabrication(const Document& doc, const std::vector<E
             pf.localCentre = inv.datum.toLocal(pf.origin);
         }
         inv.plates.push_back(std::move(pf));
+    }
+
+    // --- (2b) YEDEK: kalici PlateSpec yoksa geometriden cerceve turet ---
+    // Yalniz DELIK HEDEFI olan parcalar icin (deliksiz parca olculendirilmez) ve
+    // kalici cercevesi bulunmayanlar icin. Boylece kaydedilip yeniden acilmis
+    // modelde (child payload'lari MMW8'e yazilmaz) delik konum olculeri uretilir.
+    {
+        std::set<EntityId> holeTargets;
+        for (const CutModifier& m : doc.cutModifiers()) {
+            if (!m.enabled || m.kind != CutKind::Hole || m.diameter <= 0.0) continue;
+            if (partSet.count(m.target)) holeTargets.insert(m.target);
+        }
+        for (const EntityId part : holeTargets) {
+            if (inv.plateOf(part)) continue;                    // kalici cerceve var
+            const auto derived = derivePlateFromGeometry(doc, part);
+            if (!derived) {
+                unresolved("HOLE_FRAME_UNAVAILABLE",
+                           "parcada delik var ama levha cercevesi (PlateSpec) yok ve geometriden "
+                           "de turetilemedi (duzlemsel ince levha degil)",
+                           part);
+                continue;
+            }
+            PlateFeature pf = *derived;
+            pf.documentRevision = inv.documentRevision;
+            if (inv.datum.valid) {
+                bool first = true;
+                for (const Vec2& o : pf.outline)
+                    for (const double sgn : {-1.0, 1.0}) {
+                        const Vec3 w = madd(madd(madd(pf.origin, pf.u, o.x), pf.v, o.y), pf.n,
+                                            sgn * pf.thickness / 2.0);
+                        const Vec3 l = inv.datum.toLocal(w);
+                        if (first) {
+                            pf.localMin = pf.localMax = l;
+                            first = false;
+                        } else {
+                            pf.localMin = {std::min(pf.localMin.x, l.x), std::min(pf.localMin.y, l.y),
+                                           std::min(pf.localMin.z, l.z)};
+                            pf.localMax = {std::max(pf.localMax.x, l.x), std::max(pf.localMax.y, l.y),
+                                           std::max(pf.localMax.z, l.z)};
+                        }
+                    }
+                pf.localCentre = inv.datum.toLocal(pf.origin);
+            }
+            inv.plates.push_back(std::move(pf));
+        }
     }
 
     // Uye ekseni YALNIZ ana parcadan farkli bir levha varsa gereklidir (levha ofseti baslangictan olculur).

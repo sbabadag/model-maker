@@ -512,36 +512,50 @@ int main() {
             geomOk &= match && nearTo(c.radius, 11) && c.owner == plate;
         }
         check(geomOk, "H: daire merkezleri/yaricap modeldeki Hole kayitlariyla birebir (x,z)=(50|250,40|160), r=11");
-        int labelled = 0;
-        std::string label;
-        for (const Circle2& c : f->circles) if (!c.label.empty()) { ++labelled; label = c.label; }
-        check(labelled == 1 && label == std::string("4 x \xC3\x98") + "22", "H: tek etiket '4 x Ø22'");
+        // 2026-10-28: levha cercevesi GEOMETRIDEN turetildigi icin delik etiketi
+        // P1 daire etiketi degil P2A callout'udur (tek adet, "4 x Ø22").
+        int callouts = 0;
+        std::string calloutText;
+        for (const TextAnnotation& t : hp.sheet.texts)
+            if (t.kind == TextKind::HoleCallout && !t.lines.empty()) {
+                ++callouts;
+                calloutText = t.lines.front();
+            }
+        check(callouts == 1 && calloutText == std::string("4 x \xC3\x98") + "22",
+              "H: tek delik callout'u '4 x Ø22'");
         check(t->circles.empty() && std::none_of(t->segments.begin(), t->segments.end(),
                                                  [](const Segment2& s) { return s.style == LineStyle::Hidden; }),
               "H: Top'ta (eksen gorunus duzleminde) hiddenLines kapaliyken delik cizilmez");
 
         // Zincir: kenar-delik-delik-kenar. Beklenen degerler MODEL kayitlarindan bagimsiz hesaplanir.
+        // 2026-10-28: levha cercevesi geometriden turetildigi icin delik zinciri
+        // P2A semantigindedir: NET KENAR (delik dis kenari -> levha kenari) +
+        // merkez adimi. Eski P1 yedek zinciri merkez->kenar (50) veriyordu.
         std::vector<double> hDims, vDims;
         double hOff = -1, vOff = -1, ovOff = -1;
         for (const Dimension2D& d : hp.sheet.dimensions) {
             if (d.viewId != f->id) continue;
-            if (d.role == DimensionRole::HoleSpacing) {
+            const bool holeDim = d.role == DimensionRole::HolePitch || d.role == DimensionRole::HoleEdge;
+            if (holeDim) {
                 (d.direction == DimensionDirection::Horizontal ? hDims : vDims).push_back(d.value);
-                (d.direction == DimensionDirection::Horizontal ? hOff : vOff) = d.offset;
-                check(nearTo(d.measured(), d.value, 1e-6) && d.source == plate, "H: zincir olcusu yeniden olcumle esit, kaynak = plaka");
+                if (d.direction == DimensionDirection::Horizontal) hOff = d.offset;
+                else vOff = d.offset;
+                check(nearTo(d.measured(), d.value, 1e-6) && d.source == plate,
+                      "H: zincir olcusu yeniden olcumle esit, kaynak = plaka");
             }
             if (d.role == DimensionRole::OverallWidth) ovOff = d.offset;
         }
         std::sort(hDims.begin(), hDims.end());
         std::sort(vDims.begin(), vDims.end());
-        check(hDims.size() == 3 && nearTo(hDims[0], 50) && nearTo(hDims[1], 50) && nearTo(hDims[2], 200),
-              "H: yatay zincir 50 (kenar-delik) / 200 (delik-delik) / 50 (delik-kenar)");
-        check(vDims.size() == 3 && nearTo(vDims[0], 40) && nearTo(vDims[1], 40) && nearTo(vDims[2], 120),
-              "H: dusey zincir 40 / 120 / 40");
+        // Ø22 -> r=11: net kenar = 50-11 = 39; adim = 200 (yatay), 120 (dusey).
+        check(hDims.size() == 3 && nearTo(hDims[0], 39) && nearTo(hDims[1], 39) && nearTo(hDims[2], 200),
+              "H: yatay zincir 39 (net kenar) / 200 (adim) / 39 (net kenar)");
+        check(vDims.size() == 3 && nearTo(vDims[0], 29) && nearTo(vDims[1], 29) && nearTo(vDims[2], 120),
+              "H: dusey zincir 29 / 120 / 29");
         check(hOff > 0 && ovOff > hOff, "H: delik zinciri genel olcunun ICINDE (daha yakin satir)");
         double sum = 0;
         for (double v : hDims) sum += v;
-        check(nearTo(sum, 300), "H: zincir toplami = plaka genisligi");
+        check(nearTo(sum, 278), "H: zincir toplami = plaka genisligi - 2r (300 - 22)");
 
         // hiddenLines: Top'ta delik kenarlari kesik cizgi, tekrarsiz (2 farkli x * 2 kenar = 4).
         DrawingOptions hid;

@@ -253,13 +253,20 @@ int main() {
                                                  "cercevesiz", false);
         f.doc.addCutModifier(manualHole(bare, {2450, 0, 20}, {0, 1, 0}, 20));
         const fab::FabricationInventory i = inv(f, bare);
-        check(i.hasCode("HOLE_FRAME_UNAVAILABLE") && i.holes.empty(),
-              "F: PlateSpec yok -> HOLE_FRAME_UNAVAILABLE (uydurulmadi, sessizce yutulmadi)");
+        // 2026-10-28 DAVRANIS DEGISIKLIGI: kalici PlateSpec yoksa cerceve GERCEK
+        // GEOMETRIDEN turetilir (dikdortgen levha) — kaydedilmis modelde child
+        // payload'lari MMW8'e yazilmadigi icin delik olculeri tamamen
+        // kayboluyordu. Olcu uydurulmaz: geometriden olculur.
+        check(!i.hasCode("HOLE_FRAME_UNAVAILABLE") && i.holes.size() == 1,
+              "F: PlateSpec yok -> cerceve geometriden turetildi, delik envanterde");
         MarkRegistry reg;
         const BuildResult b = buildSheet(f.doc, reg, bare, {});
-        check(b.ok && b.sheet.fabrication.draft, "F: cizim TASLAK (sahte READY yok)");
-        check(hasItem(b.sheet, "HOLES_UNRESOLVED", ChecklistState::Unresolved),
-              "F: kontrol listesinde HOLES_UNRESOLVED");
+        check(b.ok && !hasItem(b.sheet, "HOLES_UNRESOLVED", ChecklistState::Unresolved),
+              "F: delik olcusu uretildi -> HOLES_UNRESOLVED yok (sahte READY yok)");
+        const bool dims = !dimsOf(b.sheet, DimensionRole::HolePitch).empty() ||
+                          !dimsOf(b.sheet, DimensionRole::HoleEdge).empty() ||
+                          !dimsOf(b.sheet, DimensionRole::HoleOrdinate).empty();
+        check(dims, "F: cercevesiz levhada delik konum olcusu VAR (tek delik -> kenar/ordinat)");
     }
 
     // =========================================================================

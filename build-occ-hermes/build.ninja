@@ -3223,6 +3223,56 @@ build model_maker_occ_copy_brep_gap_test: CXX_EXECUTABLE_LINKER__model_maker_occ
   TARGET_SUPPORT_DIR = CMakeFiles/model_maker_occ_copy_brep_gap_test.dir
 
 # =============================================================================
+# Object build statements for EXECUTABLE target model_maker_drawing_fab_probe
+
+
+#############################################
+# Order-only phony target for model_maker_drawing_fab_probe
+
+build cmake_object_order_depends_target_model_maker_drawing_fab_probe: phony || cmake_object_order_depends_target_model_maker_core cmake_object_order_depends_target_model_maker_occ model_maker_drawing_fab_probe_autogen model_maker_drawing_fab_probe_autogen/mocs_compilation.cpp model_maker_drawing_fab_probe_autogen/timestamp model_maker_drawing_fab_probe_autogen_timestamp_deps
+
+build CMakeFiles/model_maker_drawing_fab_probe.dir/model_maker_drawing_fab_probe_autogen/mocs_compilation.cpp.o: CXX_COMPILER__model_maker_drawing_fab_probe_unscanned_Release /home/ubuntu/model-maker-p2d/build-occ-hermes/model_maker_drawing_fab_probe_autogen/mocs_compilation.cpp || cmake_object_order_depends_target_model_maker_drawing_fab_probe
+  CONFIG = Release
+  DEFINES = -DMM_HAS_OCC
+  DEP_FILE = CMakeFiles/model_maker_drawing_fab_probe.dir/model_maker_drawing_fab_probe_autogen/mocs_compilation.cpp.o.d
+  FLAGS = -O3 -DNDEBUG -std=c++20
+  INCLUDES = -I/home/ubuntu/model-maker-p2d/build-occ-hermes/model_maker_drawing_fab_probe_autogen/include -I/home/ubuntu/model-maker-p2d/include -I/usr/include/opencascade -I/home/ubuntu/model-maker-p2d/third_party
+  OBJECT_DIR = CMakeFiles/model_maker_drawing_fab_probe.dir
+  OBJECT_FILE_DIR = CMakeFiles/model_maker_drawing_fab_probe.dir/model_maker_drawing_fab_probe_autogen
+  TARGET_SUPPORT_DIR = CMakeFiles/model_maker_drawing_fab_probe.dir
+
+build CMakeFiles/model_maker_drawing_fab_probe.dir/tools/drawing_fab_probe.cpp.o: CXX_COMPILER__model_maker_drawing_fab_probe_unscanned_Release /home/ubuntu/model-maker-p2d/tools/drawing_fab_probe.cpp || cmake_object_order_depends_target_model_maker_drawing_fab_probe
+  CONFIG = Release
+  DEFINES = -DMM_HAS_OCC
+  DEP_FILE = CMakeFiles/model_maker_drawing_fab_probe.dir/tools/drawing_fab_probe.cpp.o.d
+  FLAGS = -O3 -DNDEBUG -std=c++20
+  INCLUDES = -I/home/ubuntu/model-maker-p2d/build-occ-hermes/model_maker_drawing_fab_probe_autogen/include -I/home/ubuntu/model-maker-p2d/include -I/usr/include/opencascade -I/home/ubuntu/model-maker-p2d/third_party
+  OBJECT_DIR = CMakeFiles/model_maker_drawing_fab_probe.dir
+  OBJECT_FILE_DIR = CMakeFiles/model_maker_drawing_fab_probe.dir/tools
+  TARGET_SUPPORT_DIR = CMakeFiles/model_maker_drawing_fab_probe.dir
+
+
+# =============================================================================
+# Link build statements for EXECUTABLE target model_maker_drawing_fab_probe
+
+
+#############################################
+# Link the executable model_maker_drawing_fab_probe
+
+build model_maker_drawing_fab_probe: CXX_EXECUTABLE_LINKER__model_maker_drawing_fab_probe_Release CMakeFiles/model_maker_drawing_fab_probe.dir/model_maker_drawing_fab_probe_autogen/mocs_compilation.cpp.o CMakeFiles/model_maker_drawing_fab_probe.dir/tools/drawing_fab_probe.cpp.o | libmodel_maker_occ.a libmodel_maker_core.a || libmodel_maker_core.a libmodel_maker_occ.a model_maker_drawing_fab_probe_autogen model_maker_drawing_fab_probe_autogen_timestamp_deps
+  CONFIG = Release
+  DEP_FILE = CMakeFiles/model_maker_drawing_fab_probe.dir/link.d
+  FLAGS = -O3 -DNDEBUG
+  LINK_FLAGS = -Wl,--dependency-file=CMakeFiles/model_maker_drawing_fab_probe.dir/link.d
+  LINK_LIBRARIES = libmodel_maker_occ.a  libmodel_maker_core.a  -lTKernel  -lTKMath  -lTKG2d  -lTKG3d  -lTKGeomBase  -lTKBRep  -lTKGeomAlgo  -lTKTopAlgo  -lTKPrim  -lTKBO  -lTKBool  -lTKShHealing  -lTKMesh  -lTKXSBase  -lTKDESTEP
+  OBJECT_DIR = CMakeFiles/model_maker_drawing_fab_probe.dir
+  POST_BUILD = :
+  PRE_LINK = :
+  TARGET_FILE = model_maker_drawing_fab_probe
+  TARGET_PDB = model_maker_drawing_fab_probe.dbg
+  TARGET_SUPPORT_DIR = CMakeFiles/model_maker_drawing_fab_probe.dir
+
+# =============================================================================
 # Object build statements for EXECUTABLE target model_maker_occ_brep_serialize_test
 
 
@@ -7363,6 +7413,18 @@ build model_maker_occ_copy_brep_gap_test_autogen: phony CMakeFiles/model_maker_o
 
 
 #############################################
+# Utility command for model_maker_drawing_fab_probe_autogen_timestamp_deps
+
+build model_maker_drawing_fab_probe_autogen_timestamp_deps: phony libmodel_maker_occ.a
+
+
+#############################################
+# Utility command for model_maker_drawing_fab_probe_autogen
+
+build model_maker_drawing_fab_probe_autogen: phony CMakeFiles/model_maker_drawing_fab_probe_autogen model_maker_drawing_fab_probe_autogen/timestamp model_maker_drawing_fab_probe_autogen/mocs_compilation.cpp model_maker_drawing_fab_probe_autogen_timestamp_deps
+
+
+#############################################
 # Utility command for model_maker_occ_brep_serialize_test_autogen_timestamp_deps
 
 build model_maker_occ_brep_serialize_test_autogen_timestamp_deps: phony libmodel_maker_occ.a
@@ -8987,6 +9049,17 @@ build model_maker_occ_copy_brep_gap_test_autogen/timestamp model_maker_occ_copy_
 
 
 #############################################
+# Custom command for model_maker_drawing_fab_probe_autogen/timestamp
+
+build model_maker_drawing_fab_probe_autogen/timestamp model_maker_drawing_fab_probe_autogen/mocs_compilation.cpp | ${cmake_ninja_workdir}model_maker_drawing_fab_probe_autogen/timestamp ${cmake_ninja_workdir}model_maker_drawing_fab_probe_autogen/mocs_compilation.cpp: CUSTOM_COMMAND /usr/lib/qt6/libexec/moc /usr/lib/qt6/libexec/uic || libmodel_maker_core.a libmodel_maker_occ.a model_maker_core_autogen model_maker_core_autogen_timestamp_deps model_maker_drawing_fab_probe_autogen_timestamp_deps model_maker_occ_autogen model_maker_occ_autogen_timestamp_deps
+  COMMAND = cd /home/ubuntu/model-maker-p2d/build-occ-hermes && /usr/bin/cmake -E cmake_autogen /home/ubuntu/model-maker-p2d/build-occ-hermes/CMakeFiles/model_maker_drawing_fab_probe_autogen.dir/AutogenInfo.json Release && /usr/bin/cmake -E touch /home/ubuntu/model-maker-p2d/build-occ-hermes/model_maker_drawing_fab_probe_autogen/timestamp && /usr/bin/cmake -E cmake_transform_depfile Ninja gccdepfile /home/ubuntu/model-maker-p2d /home/ubuntu/model-maker-p2d /home/ubuntu/model-maker-p2d/build-occ-hermes /home/ubuntu/model-maker-p2d/build-occ-hermes /home/ubuntu/model-maker-p2d/build-occ-hermes/model_maker_drawing_fab_probe_autogen/deps /home/ubuntu/model-maker-p2d/build-occ-hermes/CMakeFiles/d/06f0dce2e5a15c8e0080ee5b0ba098653a7382c8aa3bba9f7cb3a19446182fad.d
+  DESC = Automatic MOC and UIC for target model_maker_drawing_fab_probe
+  depfile = CMakeFiles/d/06f0dce2e5a15c8e0080ee5b0ba098653a7382c8aa3bba9f7cb3a19446182fad.d
+  deps = gcc
+  restat = 1
+
+
+#############################################
 # Custom command for model_maker_occ_brep_serialize_test_autogen/timestamp
 
 build model_maker_occ_brep_serialize_test_autogen/timestamp model_maker_occ_brep_serialize_test_autogen/mocs_compilation.cpp | ${cmake_ninja_workdir}model_maker_occ_brep_serialize_test_autogen/timestamp ${cmake_ninja_workdir}model_maker_occ_brep_serialize_test_autogen/mocs_compilation.cpp: CUSTOM_COMMAND /usr/lib/qt6/libexec/moc /usr/lib/qt6/libexec/uic || libmodel_maker_core.a libmodel_maker_occ.a model_maker_core_autogen model_maker_core_autogen_timestamp_deps model_maker_occ_autogen model_maker_occ_autogen_timestamp_deps model_maker_occ_brep_serialize_test_autogen_timestamp_deps
@@ -10067,6 +10140,12 @@ build CMakeFiles/model_maker_occ_copy_brep_gap_test_autogen | ${cmake_ninja_work
 
 
 #############################################
+# Phony custom command for CMakeFiles/model_maker_drawing_fab_probe_autogen
+
+build CMakeFiles/model_maker_drawing_fab_probe_autogen | ${cmake_ninja_workdir}CMakeFiles/model_maker_drawing_fab_probe_autogen: phony model_maker_drawing_fab_probe_autogen/timestamp || libmodel_maker_core.a libmodel_maker_occ.a model_maker_core_autogen model_maker_core_autogen_timestamp_deps model_maker_drawing_fab_probe_autogen_timestamp_deps model_maker_occ_autogen model_maker_occ_autogen_timestamp_deps
+
+
+#############################################
 # Phony custom command for CMakeFiles/model_maker_occ_brep_serialize_test_autogen
 
 build CMakeFiles/model_maker_occ_brep_serialize_test_autogen | ${cmake_ninja_workdir}CMakeFiles/model_maker_occ_brep_serialize_test_autogen: phony model_maker_occ_brep_serialize_test_autogen/timestamp || libmodel_maker_core.a libmodel_maker_occ.a model_maker_core_autogen model_maker_core_autogen_timestamp_deps model_maker_occ_autogen model_maker_occ_autogen_timestamp_deps model_maker_occ_brep_serialize_test_autogen_timestamp_deps
@@ -10494,7 +10573,7 @@ build model_maker_occ: phony libmodel_maker_occ.a
 #############################################
 # Folder: /home/ubuntu/model-maker-p2d/build-occ-hermes
 
-build all: phony libmodel_maker_core.a libmodel_maker_occ.a model_maker_view_definition_test model_maker_color_contrast_test model_maker_profile_test model_maker_section_frame_test model_maker_section_normal_test model_maker_perpendicular_tracking_test model_maker_orbit_pivot_test model_maker_turntable_orbit_test model_maker_ortho_snap_core_test model_maker_view_workplane_move_test model_maker_grid_test model_maker_bridge_package_reader_test model_maker_bridge_v31_package_test model_maker_bridge_auto_drill_policy_test model_maker_bridge_nc146_test model_maker_bridge_native_mapper_test model_maker_bridge_native_bind_test model_maker_user_catalog_test model_maker_component_presets_test model_maker_marking_test model_maker_fabrication_test model_maker_drawing_fab_test model_maker_drawing_sheet_fit_test model_maker_component_copy_test model_maker_component_rebind_test model_maker_axis_delta_test model_maker_linear_delta_offsets_test model_maker_drawing_set_test model_maker_drawing_p2d_sheet_test model_maker_p2d_holes_test model_maker_drawing_p2d_select_test model_maker_drawing_set_progress_test model_maker_paper_editing_test model_maker_drawing_test model_maker_entity_id_test model_maker_beam_load_id_test model_maker_occ_store_test model_maker_mmw8_codec_test model_maker_mmw8_document_test model_maker_contour_builder_test model_maker_zoom_cost_probe model_maker_snap_depth_pick_test model_maker_grid_snap_types_test model_maker_profile_center_snap_test model_maker_view_cube_targets_test model_maker_grid_snap_view_plane_probe model_maker_reference_layer_test model_maker_zoom_deep_cost_probe model_maker_occ_smoke model_maker_occ_copy_brep_gap_test model_maker_occ_brep_serialize_test model_maker_occ_cut_probe model_maker_occ_fitting_acceptance model_maker_occ_isection_acceptance model_maker_occ_contact_resolver_test model_maker_occ_store_roundtrip model_maker_occ_document_roundtrip model_maker_occ_bolt_group_roundtrip model_maker_occ_end_plate_roundtrip model_maker_occ_end_plate_placement model_maker_occ_end_plate_144_geometry model_maker_occ_weld_geometry_test model_maker_occ_weld_document_roundtrip model_maker_occ_weld_profile_beam_test model_maker_occ_weld_corner_placement_test model_maker_occ_point_solid_state_test model_maker_component_materializer_test model_maker_occ_fin_plate_e2e model_maker_occ_bridge_146_import_test model_maker_occ_bridge_v3_import_test model_maker_occ_bridge_native_convert_test model_maker_occ_haunch40_native_e2e_test model_maker_occ_shear_plate_146_end_to_end_test model_maker_occ_shear_plate_146_bolts_test model_maker_occ_shear_plate_146_stiffener_test model_maker_occ_end_plate_regression_vs_runtime model_maker_render_prep_benchmark model_maker_spatial_query_benchmark model_maker_camera_navlib_tests model_maker_camera_default_orientation_tests model_maker_projection_viewport_contract_test model_maker_ucs_test model_maker_construction_objects_test model_maker_construction_plane_frame_test model_maker_cut_modifier_test model_maker_cut_modifier_pick_test model_maker_cut_modifier_source_test model_maker_bolt_test model_maker_bolt_group_document_test model_maker_end_plate_test model_maker_component_test model_maker_component_engine_test model_maker_component_framework_test model_maker_component_glyph_test model_maker_component_cascade_delete_test model_maker_component_dialog_test model_maker_shear_plate_146_test model_maker_shear_plate_146_bolts_test model_maker_shear_plate_146_stiffener_test model_maker_component_catalog_test model_maker_component_dialog_widget_test model_maker_drawing_gui_test model_maker_drawing_fab_gui_test model_maker_drawing_set_gui_test model_maker_paper_editing_gui_test model_maker_drawing_p2d_gui_test model_maker_drawing_p2d_select_gui_test model_maker_progress_overlay_test model_maker_component_serialize_test model_maker_end_plate_contact_test model_maker_constraint_solver_test model_maker_contact_resolver_test model_maker_geometry_reference_resolver_test model_maker_component_recompute_test model_maker_component_recompute_atomic_test model_maker_document_transaction_test model_maker_section_anchor_test model_maker_assembly_test model_maker_weld_assembly_test
+build all: phony libmodel_maker_core.a libmodel_maker_occ.a model_maker_view_definition_test model_maker_color_contrast_test model_maker_profile_test model_maker_section_frame_test model_maker_section_normal_test model_maker_perpendicular_tracking_test model_maker_orbit_pivot_test model_maker_turntable_orbit_test model_maker_ortho_snap_core_test model_maker_view_workplane_move_test model_maker_grid_test model_maker_bridge_package_reader_test model_maker_bridge_v31_package_test model_maker_bridge_auto_drill_policy_test model_maker_bridge_nc146_test model_maker_bridge_native_mapper_test model_maker_bridge_native_bind_test model_maker_user_catalog_test model_maker_component_presets_test model_maker_marking_test model_maker_fabrication_test model_maker_drawing_fab_test model_maker_drawing_sheet_fit_test model_maker_component_copy_test model_maker_component_rebind_test model_maker_axis_delta_test model_maker_linear_delta_offsets_test model_maker_drawing_set_test model_maker_drawing_p2d_sheet_test model_maker_p2d_holes_test model_maker_drawing_p2d_select_test model_maker_drawing_set_progress_test model_maker_paper_editing_test model_maker_drawing_test model_maker_entity_id_test model_maker_beam_load_id_test model_maker_occ_store_test model_maker_mmw8_codec_test model_maker_mmw8_document_test model_maker_contour_builder_test model_maker_zoom_cost_probe model_maker_snap_depth_pick_test model_maker_grid_snap_types_test model_maker_profile_center_snap_test model_maker_view_cube_targets_test model_maker_grid_snap_view_plane_probe model_maker_reference_layer_test model_maker_zoom_deep_cost_probe model_maker_occ_smoke model_maker_occ_copy_brep_gap_test model_maker_drawing_fab_probe model_maker_occ_brep_serialize_test model_maker_occ_cut_probe model_maker_occ_fitting_acceptance model_maker_occ_isection_acceptance model_maker_occ_contact_resolver_test model_maker_occ_store_roundtrip model_maker_occ_document_roundtrip model_maker_occ_bolt_group_roundtrip model_maker_occ_end_plate_roundtrip model_maker_occ_end_plate_placement model_maker_occ_end_plate_144_geometry model_maker_occ_weld_geometry_test model_maker_occ_weld_document_roundtrip model_maker_occ_weld_profile_beam_test model_maker_occ_weld_corner_placement_test model_maker_occ_point_solid_state_test model_maker_component_materializer_test model_maker_occ_fin_plate_e2e model_maker_occ_bridge_146_import_test model_maker_occ_bridge_v3_import_test model_maker_occ_bridge_native_convert_test model_maker_occ_haunch40_native_e2e_test model_maker_occ_shear_plate_146_end_to_end_test model_maker_occ_shear_plate_146_bolts_test model_maker_occ_shear_plate_146_stiffener_test model_maker_occ_end_plate_regression_vs_runtime model_maker_render_prep_benchmark model_maker_spatial_query_benchmark model_maker_camera_navlib_tests model_maker_camera_default_orientation_tests model_maker_projection_viewport_contract_test model_maker_ucs_test model_maker_construction_objects_test model_maker_construction_plane_frame_test model_maker_cut_modifier_test model_maker_cut_modifier_pick_test model_maker_cut_modifier_source_test model_maker_bolt_test model_maker_bolt_group_document_test model_maker_end_plate_test model_maker_component_test model_maker_component_engine_test model_maker_component_framework_test model_maker_component_glyph_test model_maker_component_cascade_delete_test model_maker_component_dialog_test model_maker_shear_plate_146_test model_maker_shear_plate_146_bolts_test model_maker_shear_plate_146_stiffener_test model_maker_component_catalog_test model_maker_component_dialog_widget_test model_maker_drawing_gui_test model_maker_drawing_fab_gui_test model_maker_drawing_set_gui_test model_maker_paper_editing_gui_test model_maker_drawing_p2d_gui_test model_maker_drawing_p2d_select_gui_test model_maker_progress_overlay_test model_maker_component_serialize_test model_maker_end_plate_contact_test model_maker_constraint_solver_test model_maker_contact_resolver_test model_maker_geometry_reference_resolver_test model_maker_component_recompute_test model_maker_component_recompute_atomic_test model_maker_document_transaction_test model_maker_section_anchor_test model_maker_assembly_test model_maker_weld_assembly_test
 
 # =============================================================================
 # Built-in targets
