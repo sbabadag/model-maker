@@ -24,6 +24,7 @@
 
 using namespace mm;
 using namespace mm::drawing;
+#include "legacy_drawing_fixture.hpp"
 
 static int failures = 0;
 static int checks = 0;
@@ -86,7 +87,7 @@ int main(int argc, char** argv) {
     p.autoMultiSheetFallback = true;
     p.allowOverflow = false;
 
-    const DrawingSetResult r = buildDrawingSet(f.doc, reg, subject, o, p);
+    const DrawingSetResult r = legacyBuildDrawingSet(f.doc, reg, subject, o, p);
     check(r.ok && r.document.sheets().size() > 1 && r.layoutValid,
           "GUI: coklu pafta seti uretildi ve TUM paftalar gecerli");
     const DrawingDocument& doc = r.document;
@@ -196,7 +197,7 @@ int main(int argc, char** argv) {
         std::vector<SubjectChoice> subjects{{QStringLiteral("Assembly"), subject}};
         DrawingPreviewDialog dlg(
             subjects, 0,
-            [&f, &dlgReg](EntityId s, const DrawingOptions& opt) { return buildSheet(f.doc, dlgReg, s, opt); },
+            [&f, &dlgReg](EntityId s, const DrawingOptions& opt) { return legacyBuildSheet(f.doc, dlgReg, s, opt); },
             nullptr,
             [&f, &dlgReg](EntityId s, const DrawingOptions& opt, const DrawingPreferences& prefs,
                           const ProgressCallback&) {
@@ -208,7 +209,7 @@ int main(int argc, char** argv) {
                 // 2026-10-29: bolme varsayilan DEGIL; bu test bagli-coklu-pafta setini dogrular.
                 p2.autoMultiSheetFallback = true;
                 p2.allowOverflow = false;
-                return buildDrawingSet(f.doc, dlgReg, s, o2, p2);
+                return legacyBuildDrawingSet(f.doc, dlgReg, s, o2, p2);
             });
         // 2026-10-28: diyalogda "Tum gorunusler ayni olcek" varsayilan ACIK; bu
         // testin referansi (pages) varsayilan (detayli) modla uretildi -> eslestir.

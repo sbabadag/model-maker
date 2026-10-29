@@ -14,6 +14,7 @@
 
 using namespace mm;
 using namespace mm::drawing;
+#include "legacy_drawing_fixture.hpp"
 
 static int failures = 0;
 static int checks = 0;
@@ -26,7 +27,7 @@ static bool nearTo(double a, double b, double tol = 1e-6) { return std::fabs(a -
 
 static DrawingSheet singleSheet(fx::Fixture& f) {
     MarkRegistry reg;
-    DrawingSetResult r = buildDrawingSet(f.doc, reg, f.finPlate, {}, DrawingPreferences{});
+    DrawingSetResult r = legacyBuildDrawingSet(f.doc, reg, f.finPlate, {}, DrawingPreferences{});
     return r.document.sheets().front();
 }
 
@@ -286,7 +287,7 @@ int main() {
         const ElementId shapeId = addPaperShape(edited, ShapeKind::Line, {20, 20}, {60, 20});
 
         MarkRegistry reg;
-        DrawingSetResult rr = buildDrawingSet(f.doc, reg, f.finPlate, {}, DrawingPreferences{});
+        DrawingSetResult rr = legacyBuildDrawingSet(f.doc, reg, f.finPlate, {}, DrawingPreferences{});
         DrawingSheet regenerated = rr.document.sheets().front();
         preservePaperEdits(edited, regenerated);
         check(nearTo(regenerated.dimensions.front().offset, editedOffset), "F: olcu yerlesimi yeniden uretimde korundu");

@@ -22,6 +22,19 @@
 using namespace mm;
 using namespace mm::drawing;
 
+static DrawingSetResult legacyBuildDrawingSet(const Document& d, MarkRegistry& r, EntityId id,
+                                              DrawingOptions o = {}, DrawingPreferences p = {},
+                                              const ProgressCallback& progress = {}) {
+    // 2026-10-29: existing packing expectations describe the pre-section fixture.
+    o.sectionViews = false;
+    return buildDrawingSet(d,r,id,o,p,progress);
+}
+
+static BuildResult legacyBuildSheet(const Document& d, MarkRegistry& r, EntityId id, DrawingOptions o = {}) {
+    o.sectionViews = false;
+    return buildSheet(d,r,id,o);
+}
+
 static int failures = 0;
 static int checks = 0;
 static void check(bool ok, const std::string& label) {
@@ -97,7 +110,7 @@ int main() {
 
         fx::Fixture f = makeAssembly(1800.0, 0);
         MarkRegistry reg;
-        DrawingSetResult r = buildDrawingSet(f.doc, reg, firstAssembly(f), {}, defaults);
+        DrawingSetResult r = legacyBuildDrawingSet(f.doc, reg, firstAssembly(f), {}, defaults);
         check(r.ok && r.singleSheet && r.document.sheets().size() == 1, "A: varsayilanlarla tek pafta");
 
         const std::string json = r.document.serialize();
@@ -136,7 +149,7 @@ int main() {
         const std::uint64_t revBefore = g.doc.revision();
         const std::size_t modelsBefore = g.doc.models().size();
         MarkRegistry reg;
-        DrawingSetResult r = buildDrawingSet(g.doc, reg, g.finPlate, {}, DrawingPreferences{});
+        DrawingSetResult r = legacyBuildDrawingSet(g.doc, reg, g.finPlate, {}, DrawingPreferences{});
         check(r.ok && r.singleSheet && r.document.sheets().size() == 1, "B: tek levha -> tek pafta (coklu sayfa YOK)");
         const DrawingSheet& s = r.document.sheets().front();
         check(s.role == SheetRole::Primary && s.parentSheetId == 0 && !s.sheetNumber.empty(),
@@ -160,7 +173,7 @@ int main() {
     {
         fx::Fixture f = makeAssembly(1800.0, 0);
         MarkRegistry reg;
-        DrawingSetResult r = buildDrawingSet(f.doc, reg, firstAssembly(f), {}, DrawingPreferences{});
+        DrawingSetResult r = legacyBuildDrawingSet(f.doc, reg, firstAssembly(f), {}, DrawingPreferences{});
         const DrawingSheet& s = r.document.sheets().front();
         check(r.ok && r.singleSheet && r.document.sheets().size() == 1, "C: orta montaj tek paftada cozuldu");
         check(s.layout.ok && measureOverlaps(s).total() == 0 && s.format.size >= SheetSize::A2,
@@ -188,7 +201,7 @@ int main() {
         p.autoMax = SheetSize::A2;      // izinli ust sinir
         p.autoMultiSheetFallback = true;   // ESKI davranis: acikca istenirse bolme yapilir
         p.allowOverflow = false;           // bolme yolu eski kalite kapisiyla calisir
-        DrawingSetResult r = buildDrawingSet(f.doc, reg, firstAssembly(f), o, p);
+        DrawingSetResult r = legacyBuildDrawingSet(f.doc, reg, firstAssembly(f), o, p);
         std::size_t detailTotal = 0, maxDetails = 0;
         for (const DrawingSheet& s : r.document.sheets()) {
             std::size_t d = 0;
@@ -266,7 +279,7 @@ int main() {
         baseOpt.layout.maxSheet = SheetSize::A2;
         baseOpt.autoLayout = true;
         MarkRegistry regBase;
-        const BuildResult base = buildSheet(f.doc, regBase, firstAssembly(f), baseOpt);
+        const BuildResult base = legacyBuildSheet(f.doc, regBase, firstAssembly(f), baseOpt);
         check(base.ok && setSignature(doc) == dimSignature(base.sheet) && dimSignature(base.sheet).size() > 40,
               "D: setteki olcu kumesi tek-pafta uretimiyle AYNI (eksik/fazla olcu yok)");
         bool measured = true;
@@ -279,7 +292,7 @@ int main() {
 
         // Determinizm + JSON turu.
         MarkRegistry reg2;
-        DrawingSetResult again = buildDrawingSet(f.doc, reg2, firstAssembly(f), o, p);
+        DrawingSetResult again = legacyBuildDrawingSet(f.doc, reg2, firstAssembly(f), o, p);
         check(again.document.serialize() == doc.serialize(), "D: tekrar uretim birebir ayni (deterministik)");
         const std::string json = doc.serialize();
         DrawingDocument back;
@@ -304,7 +317,7 @@ int main() {
         p.autoMax = SheetSize::A2;
         p.autoMultiSheetFallback = false;   // bolme yok
         p.allowOverflow = false;            // tasma modu kapali: eski kati kalite kapisi
-        DrawingSetResult r = buildDrawingSet(f.doc, reg, firstAssembly(f), o, p);
+        DrawingSetResult r = legacyBuildDrawingSet(f.doc, reg, firstAssembly(f), o, p);
         check(r.ok && r.singleSheet && r.document.sheets().size() == 1,
               "E: bolme+tasma kapali -> TEK pafta, coklu sayfa YOK, cizim yine uretilir");
         check(!r.layoutValid && !r.ready, "E: eksik yerlesim READY ilan EDILMEDI");
@@ -325,7 +338,7 @@ int main() {
         o.layout.fixedScaleDen = 5.0;
         DrawingPreferences p;
         p.autoMax = SheetSize::A2;
-        DrawingSetResult r = buildDrawingSet(f.doc, reg, firstAssembly(f), o, p);
+        DrawingSetResult r = legacyBuildDrawingSet(f.doc, reg, firstAssembly(f), o, p);
         check(r.ok && r.singleSheet && r.document.sheets().size() == 1,
               "E2: tasma modu acik -> ayni montaj TEK paftada cozuldu (bolunmedi)");
         const DrawingSheet& s = r.document.sheets().front();
@@ -345,7 +358,7 @@ int main() {
         p.autoMax = SheetSize::A3;   // dar sinir: bazi paftalar sigmaz
         p.autoMultiSheetFallback = true;   // bolme acikca istendi
         p.allowOverflow = false;           // bolme yolu eski kalite kapisiyla calisir
-        DrawingSetResult r = buildDrawingSet(f.doc, reg, firstAssembly(f), o, p);
+        DrawingSetResult r = legacyBuildDrawingSet(f.doc, reg, firstAssembly(f), o, p);
         check(r.ok && r.document.sheets().size() > 1, "F: dar kagit sinirinda coklu pafta uretildi");
         check(!r.layoutValid && !r.ready, "F: yerlesmeyen pafta varsa set READY DEGIL");
         check(hasIssue(r.issues, "SHEET "), "F: cozulmemis pafta/sorun kodu acikca listelendi");
@@ -367,13 +380,13 @@ int main() {
         DrawingPreferences p;
         p.autoSheetSize = false;
         p.sheetSize = SheetSize::A2;
-        DrawingSetResult r = buildDrawingSet(f.doc, reg, firstAssembly(f), {}, p);
+        DrawingSetResult r = legacyBuildDrawingSet(f.doc, reg, firstAssembly(f), {}, p);
         check(r.ok && r.singleSheet, "G: sabit A2 tercihi -> tek pafta");
         bool sizes = true;
         for (const DrawingSheet& s : r.document.sheets())
             sizes = sizes && s.format.size == SheetSize::A2 && s.layout.requestedSheet == SheetSize::A2;
         check(sizes, "G: secilen A2 siniri asilmadi (A1/A0 denemedi)");
-        DrawingSetResult again = buildDrawingSet(f.doc, reg, firstAssembly(f), {}, p);
+        DrawingSetResult again = legacyBuildDrawingSet(f.doc, reg, firstAssembly(f), {}, p);
         check(again.document.serialize() == r.document.serialize(), "G: sabit kagit tercihi deterministik");
     }
 
@@ -387,14 +400,14 @@ int main() {
         p.autoSheetSize = false;
         p.sheetSize = SheetSize::A4;
         p.autoMultiSheetFallback = false;
-        DrawingSetResult r = buildDrawingSet(f.doc, reg, firstAssembly(f), {}, p);
+        DrawingSetResult r = legacyBuildDrawingSet(f.doc, reg, firstAssembly(f), {}, p);
         check(r.ok && r.singleSheet && r.document.sheets().size() == 1,
               "H: A4 + bolme kapali -> tek pafta (kirpilmaz, bolunmez)");
         const DrawingSheet& s = r.document.sheets().front();
         check(!s.views.empty() && s.format.size == SheetSize::A4 && s.layout.requestedSheet == SheetSize::A4,
               "H: secilen kagit korunur, gorunusler silinmez");
         MarkRegistry regBase;
-        const BuildResult base = buildSheet(f.doc, regBase, firstAssembly(f), {});
+        const BuildResult base = legacyBuildSheet(f.doc, regBase, firstAssembly(f), {});
         check(base.ok && s.dimensions.size() == base.sheet.dimensions.size(),
               "H: tasma/tek-pafta modu olcu EKLEMEZ/SILMEZ");
         check(s.layout.ran && (s.layout.ok || !s.layout.issues.empty()),

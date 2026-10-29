@@ -1,4 +1,5 @@
 #include "model_maker/drawing_builder.hpp"
+#include "model_maker/sections.hpp"
 
 #include "model_maker/drawing_layout.hpp"
 #include "model_maker/utf8.hpp"
@@ -22,6 +23,7 @@ const char* labelOf(ViewKind k) {
     case ViewKind::Top: return "TOP";
     case ViewKind::Side: return "SIDE";
     case ViewKind::Detail: return "DETAIL";
+    case ViewKind::Section: return "SECTION";
     }
     return "";
 }
@@ -191,6 +193,7 @@ Vec2 projectToView(const Vec3& p, ViewKind kind) noexcept {
     case ViewKind::Top: return {p.x, p.y};
     case ViewKind::Side: return {p.y, p.z};
     case ViewKind::Detail: return {p.x, p.y};   // detay kendi cercevesini tasir; dunya yedegi
+    case ViewKind::Section: return {p.y, p.z};  // gercek kesit uye cercevesini tasir
     }
     return {p.x, p.z};
 }
@@ -239,6 +242,12 @@ ViewFrame frameFor(ViewKind kind, const fab::MemberDatum* datum, bool memberAlig
     case ViewKind::Top: f.right = x; f.up = y; f.normal = z; break;
     case ViewKind::Side: f.right = y; f.up = z; f.normal = x; break;
     case ViewKind::Detail: f.right = x; f.up = y; f.normal = z; break;   // yedek; gercek detay cercevesi cagirandan gelir
+    case ViewKind::Section:
+        f.right = datum && datum->valid ? datum->y : y;
+        f.up = datum && datum->valid ? datum->z : z;
+        f.normal = datum && datum->valid ? datum->x : x;
+        f.memberAligned = datum && datum->valid;
+        break;
     }
     return f;
 }
@@ -539,6 +548,7 @@ bool placeViews(DrawingSheet& sheet, const DrawingOptions& opt) {
         case ViewKind::Top: return third ? std::pair{0, 1} : std::pair{1, 0};
         case ViewKind::Side: return third ? std::pair{1, 0} : std::pair{0, 1};
         case ViewKind::Detail: return std::pair{2, 0};
+        case ViewKind::Section: return std::pair{3, 0};
         }
         return {0, 0};
     };
@@ -603,7 +613,7 @@ bool placeViews(DrawingSheet& sheet, const DrawingOptions& opt) {
     for (DrawingView& v : sheet.views) {
         const auto [c, r] = cell(v.kind);
         const int ci = rank(cols, c), ri = rank(rows, r);
-        v.scale = scale;
+        v.scale = v.kind == ViewKind::Section ? 1.0 : scale;
         // Hucre icinde ortala (Front/Top ayni X, Front/Side ayni Z genisligi paylasir).
         v.origin = {colX[ci] + (colW[ci] - v.bounds.width()) * 0.5 * scale,
                     rowY[ri] + (rowH[ri] - v.bounds.height()) * 0.5 * scale};
@@ -858,6 +868,7 @@ BuildResult buildSheet(const Document& doc, MarkRegistry& reg, EntityId subject,
     fab::FabricationInventory inv = fab::extractFabrication(doc, parts, mainPart);
 
     for (const ViewKind k : opt.views) {
+        if (k == ViewKind::Section) continue; // only changePoints may create a real, clipped cross-section
         const ViewFrame fr = frameFor(k, &inv.datum, opt.memberAlignedViews);
         DrawingView v = generateView(doc, parts, subject, k, opt.hiddenLines, &fr);
         if (v.bounds.empty) continue;
@@ -889,6 +900,23 @@ BuildResult buildSheet(const Document& doc, MarkRegistry& reg, EntityId subject,
             sheet.views.push_back(std::move(dv));
         }
     }
+    if (opt.sectionViews) {
+        std::map<std::string, std::size_t> seen;
+        for (const SectionRequest& request : changePoints(doc, parts, inv)) {
+            DrawingView section = generateSectionView(doc, parts, request, inv.datum);
+            if (section.bounds.empty || section.segments.empty()) continue;
+            const std::string signature = sectionSignature(section);
+            const auto duplicate = seen.find(signature);
+            if (duplicate != seen.end()) {
+                ++sheet.views[duplicate->second].sectionPoints;
+                continue;
+            }
+            section.id = sheet.allocateId();
+            section.label = sectionLabel(seen.size());
+            seen.emplace(signature, sheet.views.size());
+            sheet.views.push_back(std::move(section));
+        }
+    }
     if (!placeViews(sheet, opt)) {
         res.error = "gorunusler kagit alanina yerlestirilemedi";
         return res;
@@ -917,7 +945,9 @@ BuildResult buildSheet(const Document& doc, MarkRegistry& reg, EntityId subject,
         const Bounds2 pb = v.paperBounds();
 
         // --- mark etiketleri ---
-        if (v.kind == ViewKind::Detail) {
+        if (v.kind == ViewKind::Section) {
+            // Kesitlere ana montaj mark'i tekrar yazilmaz (her kesitte yigin olusur).
+        } else if (v.kind == ViewKind::Detail) {
             if (const auto pm = reg.markOf(v.detailPlate)) {
                 MarkAnnotation m;
                 m.id = sheet.allocateId();
@@ -940,7 +970,7 @@ BuildResult buildSheet(const Document& doc, MarkRegistry& reg, EntityId subject,
             m.labelPos = {pb.min.x, pb.max.y + 8.0};
             sheet.marks.push_back(std::move(m));
         }
-        if (sheet.kind == DrawingKind::Assembly && v.kind != ViewKind::Detail) {
+        if (sheet.kind == DrawingKind::Assembly && v.kind != ViewKind::Detail && v.kind != ViewKind::Section) {
             std::set<int> doneParts;
             for (const ViewMember& vm : v.members) {
                 const auto pm = reg.markOf(vm.entity);
@@ -1015,6 +1045,17 @@ BuildResult buildSheet(const Document& doc, MarkRegistry& reg, EntityId subject,
         };
         constexpr int kLengthGroup = 100, kOverallGroup = 101, kPlateGroup = 60, kOffsetGroup = 70;
 
+        if (v.kind == ViewKind::Section) {
+            if (v.bounds.width() >= 0.5)
+                newDim(DimensionRole::OverallWidth, DimensionDirection::Horizontal,
+                       {v.bounds.min.x,v.bounds.min.y},{v.bounds.max.x,v.bounds.min.y},
+                       v.bounds.width(),v.sectionMember,101,{},"section actual width");
+            if (v.bounds.height() >= 0.5)
+                newDim(DimensionRole::OverallHeight, DimensionDirection::Vertical,
+                       {v.bounds.max.x,v.bounds.min.y},{v.bounds.max.x,v.bounds.max.y},
+                       v.bounds.height(),v.sectionMember,101,{},"section actual height");
+            continue; // section plane is perpendicular: longitudinal chains never apply
+        }
         const bool isDetail = v.kind == ViewKind::Detail;
         // (1) Montaj uyelerinin kenar konumlari zinciri (yalniz assembly, >1 uye).
         if (!isDetail && sheet.kind == DrawingKind::Assembly && v.members.size() > 1) {

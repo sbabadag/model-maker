@@ -19,6 +19,7 @@
 
 using namespace mm;
 using namespace mm::drawing;
+#include "legacy_drawing_fixture.hpp"
 
 static int failures = 0;
 static int checks = 0;
@@ -42,7 +43,7 @@ static fx::Fixture makeAssembly(double len, int extraPlates) {
 static std::vector<ProgressReport> collect(const fx::Fixture& f, EntityId subject, const DrawingPreferences& p) {
     std::vector<ProgressReport> events;
     MarkRegistry reg;
-    (void)buildDrawingSet(f.doc, reg, subject, DrawingOptions{}, p,
+    (void)legacyBuildDrawingSet(f.doc, reg, subject, DrawingOptions{}, p,
                           [&events](const ProgressReport& report) { events.push_back(report); });
     return events;
 }
@@ -68,7 +69,7 @@ int main() {
 
     std::vector<ProgressReport> events;
     const DrawingSetResult withCallback =
-        buildDrawingSet(single.doc, reg, singleSubject, DrawingOptions{}, prefsSingle,
+        legacyBuildDrawingSet(single.doc, reg, singleSubject, DrawingOptions{}, prefsSingle,
                         [&events](const ProgressReport& report) { events.push_back(report); });
 
     check(withCallback.ok, "tek pafta: cizim uretildi");
@@ -89,7 +90,7 @@ int main() {
     // Sonuc bagimsizligi: callback'li ve callback'siz uretim birebir ayni JSON
     MarkRegistry regPlain;
     const DrawingSetResult withoutCallback =
-        buildDrawingSet(single.doc, regPlain, singleSubject, DrawingOptions{}, prefsSingle);
+        legacyBuildDrawingSet(single.doc, regPlain, singleSubject, DrawingOptions{}, prefsSingle);
     check(withoutCallback.ok && withoutCallback.document.serialize() == withCallback.document.serialize(),
           "ilerleme callback'i cizim ciktisini DEGISTIRMEZ (JSON birebir)");
 
@@ -101,7 +102,7 @@ int main() {
     prefsMulti.autoMultiSheetFallback = true;
     std::vector<ProgressReport> multiEvents;
     MarkRegistry regMulti;
-    const DrawingSetResult multi = buildDrawingSet(assembly.doc, regMulti, asmId, DrawingOptions{}, prefsMulti,
+    const DrawingSetResult multi = legacyBuildDrawingSet(assembly.doc, regMulti, asmId, DrawingOptions{}, prefsMulti,
                                                   [&multiEvents](const ProgressReport& report) {
                                                       multiEvents.push_back(report);
                                                   });
@@ -113,7 +114,7 @@ int main() {
     // Hata yolu: konu cizilemezse ilerleme yine de tutarli (0..4, artan) kalir.
     std::vector<ProgressReport> badEvents;
     MarkRegistry regBad;
-    const DrawingSetResult bad = buildDrawingSet(single.doc, regBad, 999999, DrawingOptions{}, prefsSingle,
+    const DrawingSetResult bad = legacyBuildDrawingSet(single.doc, regBad, 999999, DrawingOptions{}, prefsSingle,
                                                  [&badEvents](const ProgressReport& report) {
                                                      badEvents.push_back(report);
                                                  });

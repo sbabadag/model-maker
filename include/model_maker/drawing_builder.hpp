@@ -47,6 +47,7 @@ struct DrawingOptions {
     bool autoLayout{true};       // akilli yerlesim motoru (kapali: P1 dogrusal yerlesim)
     bool memberAlignedViews{true};   // uye dunya eksenine hizali degilse gorunumleri uye eksenine hizala
     bool detailViews{true};          // assembly'de delikli levhalar icin kendi olcekli levha-yuzu DETAY gorunumu
+    bool sectionViews{true};         // her gercek degisim noktasindan 1:1 dik kesit
     LayoutConfig layout;
 };
 

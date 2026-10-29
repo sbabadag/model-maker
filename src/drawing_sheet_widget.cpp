@@ -784,6 +784,9 @@ DrawingPreviewDialog::DrawingPreviewDialog(std::vector<SubjectChoice> subjects, 
     topCheck_->setObjectName(QStringLiteral("drawingTop"));
     sideCheck_->setObjectName(QStringLiteral("drawingSide"));
     hiddenCheck_ = new QCheckBox(QStringLiteral("Gizli çizgiler"), this);
+    sectionCheck_ = new QCheckBox(QStringLiteral("Her değişim noktasından kesit (1:1)"), this);
+    sectionCheck_->setObjectName(QStringLiteral("drawingSectionViews"));
+    sectionCheck_->setChecked(true);
     hiddenCheck_->setObjectName(QStringLiteral("drawingHidden"));
     opts->addWidget(new QLabel(QStringLiteral("Konu:"), this));
     opts->addWidget(subjectCombo_, 1);
@@ -808,6 +811,7 @@ DrawingPreviewDialog::DrawingPreviewDialog(std::vector<SubjectChoice> subjects, 
     opts->addWidget(topCheck_);
     opts->addWidget(sideCheck_);
     opts->addWidget(hiddenCheck_);
+    opts->addWidget(sectionCheck_);
     root->addLayout(opts);
 
     status_ = new QLabel(this);
@@ -873,7 +877,7 @@ DrawingPreviewDialog::DrawingPreviewDialog(std::vector<SubjectChoice> subjects, 
             status_->setText(QStringLiteral("Ayarlar degisti \u2014 Uygula'ya basin"));
         }
     };
-    for (QCheckBox* c : {frontCheck_, topCheck_, sideCheck_, hiddenCheck_})
+    for (QCheckBox* c : {frontCheck_, topCheck_, sideCheck_, hiddenCheck_, sectionCheck_})
         connect(c, &QCheckBox::toggled, this, pending);
     if (setBuilder_) {
         connect(autoSizeCheck_, &QCheckBox::toggled, this, [this, pending](bool on) {
@@ -999,6 +1003,7 @@ void DrawingPreviewDialog::rebuild() {
     if (topCheck_->isChecked()) o.views.push_back(ViewKind::Top);
     if (sideCheck_->isChecked()) o.views.push_back(ViewKind::Side);
     o.hiddenLines = hiddenCheck_->isChecked();
+    o.sectionViews = sectionCheck_->isChecked();
     o.date = QDate::currentDate().toString(Qt::ISODate).toStdString();
     if (o.views.empty()) {
         status_->setText(QStringLiteral("En az bir g\u00f6r\u00fcn\u00fc\u015f se\u00e7in"));

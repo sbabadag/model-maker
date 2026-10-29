@@ -71,6 +71,7 @@ add_library(model_maker_core
     src/drawing.cpp
     src/drawing_layout.cpp
     src/drawing_set.cpp
+    src/sections.cpp
     src/paper_editing.cpp
     src/drawing_builder.cpp)
 target_include_directories(model_maker_core PUBLIC include third_party)
@@ -633,6 +634,10 @@ if(BUILD_TESTING)
     target_link_libraries(model_maker_drawing_test PRIVATE model_maker_core)
     target_compile_options(model_maker_drawing_test PRIVATE -Wall -Wextra -Wpedantic)
     add_test(NAME model_maker_drawing_test COMMAND model_maker_drawing_test)
+    add_executable(model_maker_sections_test tests/sections_test.cpp)
+    target_link_libraries(model_maker_sections_test PRIVATE model_maker_core)
+    target_compile_options(model_maker_sections_test PRIVATE -Wall -Wextra -Wpedantic)
+    add_test(NAME model_maker_sections_test COMMAND model_maker_sections_test)
 
     # KARARLI VARLIK KIMLIGI (EntityId): vektor indeksi kalici kimlik DEGIL;
     # kimlik ekleme/silme/degistirme/undo/redo boyunca DOGRU varlikla eslesir,

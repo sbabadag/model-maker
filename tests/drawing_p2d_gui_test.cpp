@@ -27,6 +27,7 @@
 
 using namespace mm;
 using namespace mm::drawing;
+#include "legacy_drawing_fixture.hpp"
 
 static int failures = 0;
 static int checks = 0;
@@ -110,10 +111,10 @@ int main(int argc, char** argv) {
     std::vector<SubjectChoice> subjects{{QStringLiteral("Levha"), f.finPlate}, {QStringLiteral("Assembly"), asmId}};
     DrawingPreviewDialog dlg(
         subjects, 1,
-        [&f, &reg](EntityId s, const DrawingOptions& o) { return buildSheet(f.doc, reg, s, o); }, nullptr,
+        [&f, &reg](EntityId s, const DrawingOptions& o) { return legacyBuildSheet(f.doc, reg, s, o); }, nullptr,
         [&f, &reg](EntityId s, const DrawingOptions& o, const DrawingPreferences& p,
                    const ProgressCallback& progress) {
-            return buildDrawingSet(f.doc, reg, s, o, p, progress);
+            return legacyBuildDrawingSet(f.doc, reg, s, o, p, progress);
         });
     bool confirmAnswer = false;
     int confirmCalls = 0;
@@ -239,9 +240,9 @@ int main(int argc, char** argv) {
     DrawingPreferences p2;
     p2.autoSheetSize = false;
     p2.sheetSize = SheetSize::A2;
-    const DrawingSetResult r1 = buildDrawingSet(f.doc, reg2, asmId, o2, p2);
+    const DrawingSetResult r1 = legacyBuildDrawingSet(f.doc, reg2, asmId, o2, p2);
     MarkRegistry reg3;
-    const DrawingSetResult r2 = buildDrawingSet(f.doc, reg3, asmId, o2, p2);
+    const DrawingSetResult r2 = legacyBuildDrawingSet(f.doc, reg3, asmId, o2, p2);
     check(r1.document.serialize() == r2.document.serialize(), "GUI/JSON: iki uretim birebir ayni JSON");
     DrawingDocument back;
     std::string err;

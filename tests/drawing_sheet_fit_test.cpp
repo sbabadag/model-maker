@@ -28,6 +28,7 @@ static DrawingSetResult buildRot(double len, SheetSize maxSheet, bool fixedFive,
     prefs.autoFirst = SheetSize::A3;
     prefs.autoMax = maxSheet;
     DrawingOptions o;
+    o.sectionViews = false; // 2026-10-29: legacy fit contract without 1:1 sections (sections_test covers them).
     if (fixedFive) o.layout.fixedScaleDen = 5.0;
     DrawingSetResult r = buildDrawingSet(f.doc, reg, subj, o, prefs);
     std::printf("-- %s (len=%.0f, max=%s): pafta=%zu tek=%d ok=%d\n", tag, len, sheetSizeName(maxSheet),
@@ -41,6 +42,7 @@ static const char* kindName(ViewKind k) {
     case ViewKind::Top: return "TOP";
     case ViewKind::Side: return "SIDE";
     case ViewKind::Detail: return "DETAY";
+    case ViewKind::Section: return "KESIT";
     }
     return "?";
 }

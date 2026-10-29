@@ -14,6 +14,13 @@
 using namespace mm;
 using namespace mm::drawing;
 
+static BuildResult legacyBuildSheet(const Document& d, MarkRegistry& r, EntityId id, DrawingOptions o = {}) {
+    // 2026-10-29: P1 geometry/layout invariants predate the default-on section views.
+    // Section-on assertions live in sections_test.cpp; keep these baseline projections unchanged.
+    o.sectionViews = false;
+    return buildSheet(d,r,id,o);
+}
+
 static int failures = 0;
 static void check(bool ok, const char* label) {
     std::printf("%s %s\n", ok ? "PASS" : "FAIL", label);
@@ -66,6 +73,7 @@ static Ext extentOf(const WireframeModel& m, ViewKind k) {
         case ViewKind::Front: a = p.x; b = p.z; break;   // X yatay, Z dikey
         case ViewKind::Top: a = p.x; b = p.y; break;     // X yatay, Y dikey
         case ViewKind::Side: a = p.y; b = p.z; break;    // Y, Z (yatay isaretten bagimsiz)
+        case ViewKind::Detail: case ViewKind::Section: a = p.y; b = p.z; break; // not used in P1 fixture
         }
         lo[0] = std::min(lo[0], a); hi[0] = std::max(hi[0], a);
         lo[1] = std::min(lo[1], b); hi[1] = std::max(hi[1], b);
@@ -105,7 +113,7 @@ int main() {
     const auto beamModel = makeBox({0, 0, 0}, {6000, 150, 300}, "IPE300", "Kiri\u015f");
     const EntityId beam = add(doc, beamModel);
     MarkRegistry reg;
-    const BuildResult r = buildSheet(doc, reg, beam);
+    const BuildResult r = legacyBuildSheet(doc, reg, beam);
     check(r.ok && r.error.empty(), "A: buildSheet basarili");
     const DrawingSheet& sheet = r.sheet;
     check(sheet.kind == DrawingKind::SinglePart && sheet.subject == beam, "A: tek parca cizimi, konu = parca");
@@ -221,7 +229,7 @@ int main() {
         Document doc2;
         const EntityId beam2 = add(doc2, makeBox({0, 0, 0}, {7250, 150, 300}, "IPE300"));
         MarkRegistry reg2;
-        const BuildResult r2 = buildSheet(doc2, reg2, beam2);
+        const BuildResult r2 = legacyBuildSheet(doc2, reg2, beam2);
         const Dimension2D* len2 = r2.ok ? findDim(r2.sheet, r2.sheet.viewOfKind(ViewKind::Front)->id,
                                                    DimensionRole::MemberLength)
                                         : nullptr;
@@ -258,7 +266,7 @@ int main() {
         Document docMoved;
         const EntityId bm = add(docMoved, makeBox({100000, -50000, 20}, {106000, -49850, 320}, "IPE300", "Kiri\u015f"));
         MarkRegistry regM;
-        const BuildResult rm = buildSheet(docMoved, regM, bm);
+        const BuildResult rm = legacyBuildSheet(docMoved, regM, bm);
         bool same = rm.ok && rm.sheet.views.size() == sheet.views.size();
         for (std::size_t i = 0; same && i < sheet.views.size(); ++i) {
             const DrawingView& a = sheet.views[i];
@@ -292,7 +300,7 @@ int main() {
         if (docA.assemblies().size() != 1) return 1;
         const EntityId asmId = docA.assemblies()[0].id;
         MarkRegistry regA;
-        const BuildResult ra = buildSheet(docA, regA, asmId);
+        const BuildResult ra = legacyBuildSheet(docA, regA, asmId);
         check(ra.ok && ra.sheet.kind == DrawingKind::Assembly && ra.sheet.name == "A1", "C: assembly cizimi A1");
         if (!ra.ok) return 1;
         check(regA.markOf(b)->text() == L"P1" && regA.markOf(pl1)->text() == L"P2" &&
@@ -331,7 +339,7 @@ int main() {
 
         // Yeni kayit defteriyle ayni dokuman: ayni mark (deterministik).
         MarkRegistry regB;
-        const BuildResult ra1 = buildSheet(docA, regB, asmId);
+        const BuildResult ra1 = legacyBuildSheet(docA, regB, asmId);
         check(ra1.ok && ra1.sheet.name == "A1", "C: ayni dokuman yeniden -> yine A1 (deterministik)");
     }
 
@@ -340,15 +348,15 @@ int main() {
     // =========================================================================
     {
         MarkRegistry r2;
-        check(!buildSheet(doc, r2, EntityId{987654}).ok, "D: olmayan eleman reddedilir");
+        check(!legacyBuildSheet(doc, r2, EntityId{987654}).ok, "D: olmayan eleman reddedilir");
         Document d3;
         WireframeModel construction = makeBox({0, 0, 0}, {10, 10, 10});
         construction.setConstructionKind(ConstructionKind::Line);
         const EntityId c = add(d3, construction);
         MarkRegistry r3;
-        const BuildResult bad = buildSheet(d3, r3, c);
+        const BuildResult bad = legacyBuildSheet(d3, r3, c);
         check(!bad.ok && !bad.error.empty(), "D: konstruksiyon nesnesi cizilmez, acik hata");
-        const BuildResult none = buildSheet(doc, r3, kInvalidEntityId);
+        const BuildResult none = legacyBuildSheet(doc, r3, kInvalidEntityId);
         check(!none.ok, "D: gecersiz EntityId reddedilir");
     }
 
@@ -365,8 +373,8 @@ int main() {
         on.hiddenLines = true;
         on.views = {ViewKind::Front};
         off.views = {ViewKind::Front};
-        const BuildResult a = buildSheet(dh, rr, rh, off);
-        const BuildResult b = buildSheet(dh, rr, rh, on);
+        const BuildResult a = legacyBuildSheet(dh, rr, rh, off);
+        const BuildResult b = legacyBuildSheet(dh, rr, rh, on);
         auto count = [](const DrawingView& v, LineStyle s) {
             return std::count_if(v.segments.begin(), v.segments.end(), [&](const Segment2& x) { return x.style == s; });
         };
@@ -396,7 +404,7 @@ int main() {
         Document dh;
         const EntityId huge = add(dh, makeBox({0, 0, 0}, {1000000, 1000, 2000}, "X"));
         MarkRegistry rr;
-        const BuildResult big = buildSheet(dh, rr, huge);
+        const BuildResult big = legacyBuildSheet(dh, rr, huge);
         check(big.ok && !big.sheet.scaleIsStandard && big.sheet.scale < 1.0 / 1000.0 &&
                   big.sheet.titleBlock.scaleText.rfind("1:", 0) == 0,
               "F: 1000 m boyunda parca -> standart olmayan olcek, yine de sigar");
@@ -411,7 +419,7 @@ int main() {
         DrawingOptions first;
         first.projection = ProjectionMethod::FirstAngle;
         MarkRegistry r1;
-        const BuildResult fa = buildSheet(doc, r1, beam, first);
+        const BuildResult fa = legacyBuildSheet(doc, r1, beam, first);
         const DrawingView* f = fa.sheet.viewOfKind(ViewKind::Front);
         const DrawingView* t = fa.sheet.viewOfKind(ViewKind::Top);
         const DrawingView* s = fa.sheet.viewOfKind(ViewKind::Side);
@@ -423,10 +431,10 @@ int main() {
         a4.sheet = SheetSize::A4;
         a4.views = {ViewKind::Front};
         MarkRegistry r4;
-        const BuildResult sm = buildSheet(doc, r4, beam, a4);
+        const BuildResult sm = legacyBuildSheet(doc, r4, beam, a4);
         check(sm.ok && nearTo(sm.sheet.format.width, 297) && sm.sheet.views.size() == 1 && sm.sheet.scale <= 1.0 / 20.0,
               "F: A4 + yalniz Front");
-        check(!buildSheet(doc, r4, beam, [] { DrawingOptions o; o.views = {}; return o; }()).ok,
+        check(!legacyBuildSheet(doc, r4, beam, [] { DrawingOptions o; o.views = {}; return o; }()).ok,
               "F: gorunum listesi bos -> acik hata");
     }
 
@@ -470,7 +478,7 @@ int main() {
               "G: bilinmeyen gorunus turu reddedilir");
         // Deterministik uretim.
         MarkRegistry rx;
-        const BuildResult again = buildSheet(doc, rx, beam);
+        const BuildResult again = legacyBuildSheet(doc, rx, beam);
         DrawingDocument d1, d2;
         d1.addSheet(sheet);
         d2.addSheet(again.sheet);
@@ -498,7 +506,7 @@ int main() {
         MarkRegistry rp;
         DrawingOptions p1opt;
         p1opt.autoLayout = false;   // P1 dogrusal satir yerlesimi (bu bolum P1 zincir iliskisini dogrular; P2A motoru ayri testte)
-        const BuildResult hp = buildSheet(dp, rp, plate, p1opt);
+        const BuildResult hp = legacyBuildSheet(dp, rp, plate, p1opt);
         check(hp.ok, "H: delikli plaka cizimi uretildi");
         const DrawingView* f = hp.sheet.viewOfKind(ViewKind::Front);
         const DrawingView* t = hp.sheet.viewOfKind(ViewKind::Top);
@@ -561,7 +569,7 @@ int main() {
         DrawingOptions hid;
         hid.hiddenLines = true;
         MarkRegistry rh;
-        const BuildResult hh = buildSheet(dp, rh, plate, hid);
+        const BuildResult hh = legacyBuildSheet(dp, rh, plate, hid);
         const DrawingView* th = hh.sheet.viewOfKind(ViewKind::Top);
         const auto hiddenCount = std::count_if(th->segments.begin(), th->segments.end(),
                                                [](const Segment2& s) { return s.style == LineStyle::Hidden; });
@@ -587,7 +595,7 @@ int main() {
         da.addWeld(weldOf(b, p1));
         da.addWeld(weldOf(b, p2));
         MarkRegistry ra;
-        const BuildResult as = buildSheet(da, ra, da.assemblies()[0].id);
+        const BuildResult as = legacyBuildSheet(da, ra, da.assemblies()[0].id);
         const DrawingView* f = as.sheet.viewOfKind(ViewKind::Front);
         std::vector<double> pos;
         int shortWithLevel = 0, wideWithLevel = 0;
@@ -624,7 +632,7 @@ int main() {
         m.setProperties(pp);
         const EntityId idAxis = add(dx, m);
         MarkRegistry regAxis;
-        const BuildResult rb = buildSheet(dx, regAxis, idAxis);
+        const BuildResult rb = legacyBuildSheet(dx, regAxis, idAxis);
         const DrawingView* fv = rb.sheet.viewOfKind(ViewKind::Front);
         check(rb.ok && fv != nullptr, "E: eksen/govde uyusmazliginda cizim uretildi");
         if (fv) {
@@ -653,8 +661,8 @@ int main() {
         onO.views = {ViewKind::Front};
         onO.hiddenLines = true;
         MarkRegistry regOff, regOn;
-        const BuildResult bOff = buildSheet(docO, regOff, asmO, offO);
-        const BuildResult bOn = buildSheet(docO, regOn, asmO, onO);
+        const BuildResult bOff = legacyBuildSheet(docO, regOff, asmO, offO);
+        const BuildResult bOn = legacyBuildSheet(docO, regOn, asmO, onO);
         check(bOff.ok && bOn.ok && bOn.sheet.views.size() == 1, "J: okkluzyon cizimi uretildi");
         if (bOff.ok && bOn.ok) {
             const DrawingView& vOff = bOff.sheet.views[0];

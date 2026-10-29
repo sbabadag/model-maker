@@ -20,6 +20,7 @@
 
 using namespace mm;
 using namespace mm::drawing;
+#include "legacy_drawing_fixture.hpp"
 
 static int failures = 0;
 static int checks = 0;
@@ -94,7 +95,7 @@ int main() {
         // 2026-10-29: pafta BOLME artik varsayilan degil; bu test bolme makinesini dogrular.
         p.autoMultiSheetFallback = true;
         p.allowOverflow = false;
-        const DrawingSetResult r = buildDrawingSet(f.doc, reg, assemblyOf(f), o, p);
+        const DrawingSetResult r = legacyBuildDrawingSet(f.doc, reg, assemblyOf(f), o, p);
         check(r.ok && r.document.sheets().size() >= 2, "A: sigmayan montaj -> bagli coklu pafta seti");
         bool fixedPaper = true, requested = true;
         for (const DrawingSheet& s : r.document.sheets()) {
@@ -138,7 +139,7 @@ int main() {
         baseOpt.layout.minSheet = SheetSize::A2;
         baseOpt.layout.maxSheet = SheetSize::A2;
         baseOpt.autoLayout = true;
-        const BuildResult base = buildSheet(f.doc, regBase, assemblyOf(f), baseOpt);
+        const BuildResult base = legacyBuildSheet(f.doc, regBase, assemblyOf(f), baseOpt);
         check(base.ok && setSignature(r.document) == dimSignature(base.sheet) && dimSignature(base.sheet).size() > 40,
               "A: setteki olcu kumesi tek-pafta uretimiyle AYNI (eksik/fazla olcu yok)");
         bool measured = true;
@@ -148,7 +149,7 @@ int main() {
 
         // Determinizm + JSON.
         MarkRegistry reg2;
-        const DrawingSetResult again = buildDrawingSet(f.doc, reg2, assemblyOf(f), o, p);
+        const DrawingSetResult again = legacyBuildDrawingSet(f.doc, reg2, assemblyOf(f), o, p);
         check(again.document.serialize() == r.document.serialize(), "A: tekrar uretim birebir ayni (deterministik)");
         bool planSame = again.plan.size() == r.plan.size();
         for (std::size_t i = 0; planSame && i < r.plan.size(); ++i)
@@ -173,7 +174,7 @@ int main() {
         DrawingPreferences p;
         p.autoSheetSize = false;
         p.sheetSize = SheetSize::A2;
-        const DrawingSetResult r = buildDrawingSet(f.doc, reg, assemblyOf(f), o, p);
+        const DrawingSetResult r = legacyBuildDrawingSet(f.doc, reg, assemblyOf(f), o, p);
         check(r.ok && r.singleSheet && r.document.sheets().size() == 1,
               "B: ana + detay gorunusleri ayni paftada sigdiginda TEK okunakli pafta");
         const DrawingSheet& s = r.document.sheets().front();
@@ -190,7 +191,7 @@ int main() {
     {
         fx::Fixture f = makeAssembly(2400.0, 2);
         MarkRegistry reg;
-        const DrawingSetResult r = buildDrawingSet(f.doc, reg, assemblyOf(f), {}, DrawingPreferences{});
+        const DrawingSetResult r = legacyBuildDrawingSet(f.doc, reg, assemblyOf(f), {}, DrawingPreferences{});
         check(r.ok && r.singleSheet && r.document.sheets().size() == 1, "C: otomatik modda tek pafta");
         const DrawingSheet& s = r.document.sheets().front();
         check(s.format.size >= SheetSize::A2 && s.layout.requestedSheet == SheetSize::A3 &&
@@ -212,7 +213,7 @@ int main() {
         MarkRegistry reg;
         DrawingOptions o;
         o.layout.fixedScaleDen = 4.0;   // 2400/4 = 600 mm: A2'ye sigmaz, A1'e sigar
-        const DrawingSetResult r = buildDrawingSet(f.doc, reg, assemblyOf(f), o, DrawingPreferences{});
+        const DrawingSetResult r = legacyBuildDrawingSet(f.doc, reg, assemblyOf(f), o, DrawingPreferences{});
         check(r.ok && r.singleSheet, "D: sabit 1:4 olcekte tek pafta");
         const DrawingSheet& s = r.document.sheets().front();
         check(s.format.size == SheetSize::A1 && s.layout.requestedSheet == SheetSize::A3,
@@ -236,7 +237,7 @@ int main() {
         p.sheetSize = SheetSize::A3;
         p.autoMultiSheetFallback = true;   // bolme makinesi testi (2026-10-29: varsayilan kapali)
         p.allowOverflow = false;
-        const DrawingSetResult r = buildDrawingSet(f.doc, reg, assemblyOf(f), o, p);
+        const DrawingSetResult r = legacyBuildDrawingSet(f.doc, reg, assemblyOf(f), o, p);
         check(r.ok && r.document.sheets().size() > 1, "E: dar kagit -> coklu pafta");
         int maxDetails = 0;
         bool anyNoFit = false;
@@ -270,13 +271,13 @@ int main() {
         p.sheetSize = SheetSize::A2;
         p.autoMultiSheetFallback = true;   // bolme makinesi testi
         p.allowOverflow = false;
-        const DrawingSetResult r = buildDrawingSet(f.doc, reg, assemblyOf(f), o, p);
+        const DrawingSetResult r = legacyBuildDrawingSet(f.doc, reg, assemblyOf(f), o, p);
         MarkRegistry regBase;
         DrawingOptions baseOpt = o;
         baseOpt.layout.minSheet = SheetSize::A2;
         baseOpt.layout.maxSheet = SheetSize::A2;
         baseOpt.autoLayout = true;
-        const BuildResult base = buildSheet(f.doc, regBase, assemblyOf(f), baseOpt);
+        const BuildResult base = legacyBuildSheet(f.doc, regBase, assemblyOf(f), baseOpt);
         std::multiset<int> setKinds;
         for (const DrawingSheet& s : r.document.sheets())
             for (const DrawingView& v : s.views) setKinds.insert(static_cast<int>(v.kind));

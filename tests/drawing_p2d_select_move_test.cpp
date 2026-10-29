@@ -21,6 +21,7 @@
 
 using namespace mm;
 using namespace mm::drawing;
+#include "legacy_drawing_fixture.hpp"
 
 static int failures = 0;
 static int checks = 0;
@@ -33,7 +34,7 @@ static bool nearTo(double a, double b, double tol = 1e-6) { return std::fabs(a -
 
 static DrawingSheet sheetOf(fx::Fixture& f) {
     MarkRegistry reg;
-    DrawingSetResult r = buildDrawingSet(f.doc, reg, f.finPlate, {}, DrawingPreferences{});
+    DrawingSetResult r = legacyBuildDrawingSet(f.doc, reg, f.finPlate, {}, DrawingPreferences{});
     return r.document.sheets().front();
 }
 

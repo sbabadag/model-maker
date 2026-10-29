@@ -21,6 +21,7 @@
 
 using namespace mm;
 using namespace mm::drawing;
+#include "legacy_drawing_fixture.hpp"
 
 static int failures = 0;
 static int checks = 0;
@@ -94,11 +95,11 @@ int main(int argc, char** argv) {
     std::vector<SubjectChoice> subjects{{QStringLiteral("Levha"), f.finPlate}};
     DrawingPreviewDialog dlg(
         subjects, 0,
-        [&f, &reg](EntityId s, const DrawingOptions& o) { return buildSheet(f.doc, reg, s, o); },
+        [&f, &reg](EntityId s, const DrawingOptions& o) { return legacyBuildSheet(f.doc, reg, s, o); },
         nullptr,
         [&f, &reg](EntityId s, const DrawingOptions& o, const DrawingPreferences& p,
                    const ProgressCallback& progress) {
-            return buildDrawingSet(f.doc, reg, s, o, p, progress);
+            return legacyBuildDrawingSet(f.doc, reg, s, o, p, progress);
         });
     dlg.resize(1100, 780);
     dlg.show();

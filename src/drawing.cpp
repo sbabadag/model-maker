@@ -20,6 +20,7 @@ const char* name(ViewKind k) {
     case ViewKind::Top: return "top";
     case ViewKind::Side: return "side";
     case ViewKind::Detail: return "detail";
+    case ViewKind::Section: return "section";
     }
     return "front";
 }
@@ -64,6 +65,7 @@ bool parse(const std::string& s, ViewKind& o) {
     if (s == "top") { o = ViewKind::Top; return true; }
     if (s == "side") { o = ViewKind::Side; return true; }
     if (s == "detail") { o = ViewKind::Detail; return true; }
+    if (s == "section") { o = ViewKind::Section; return true; }
     return false;
 }
 bool parse(const std::string& s, LineStyle& o) {
@@ -223,6 +225,9 @@ json viewJson(const DrawingView& v) {
             {"origin", v2(v.origin)}, {"projectionOffset", v2(v.projectionOffset)},
             {"segments", segs}, {"bounds", boundsJson(v.bounds)},
             {"members", mem}, {"label", v.label}, {"circles", circles}, {"detailPlate", v.detailPlate},
+            {"sectionMember", v.sectionMember}, {"sectionT", v.sectionT},
+            {"sectionSource", v.sectionSource}, {"sectionReason", v.sectionReason},
+            {"sectionPoints", v.sectionPoints},
             {"frame", {{"right", v3(v.frame.right)}, {"up", v3(v.frame.up)}, {"normal", v3(v.frame.normal)},
                        {"memberAligned", v.frame.memberAligned}}}};
 }
@@ -255,6 +260,11 @@ bool viewFrom(const json& j, DrawingView& v) {
         v.members.push_back({m.at("entity").get<EntityId>(), boundsFrom(m.at("bounds"))});
     v.label = j.at("label").get<std::string>();
     v.detailPlate = j.value("detailPlate", EntityId{0});
+    v.sectionMember = j.value("sectionMember", EntityId{0});
+    v.sectionT = j.value("sectionT", 0.0);
+    v.sectionSource = j.value("sectionSource", EntityId{0});
+    v.sectionReason = j.value("sectionReason", std::string{});
+    v.sectionPoints = j.value("sectionPoints", 1);
     if (j.contains("frame")) {  // v1 kayitlarinda yok: dunya cercevesi (varsayilan)
         const json& f = j.at("frame");
         v.frame.right = v3From(f.at("right"));

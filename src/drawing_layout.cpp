@@ -689,6 +689,12 @@ std::string viewTitleText(const DrawingSheet& s, const DrawingView& v) {
     char buf[32];
     const double den = v.scale > 0.0 ? 1.0 / v.scale : 0.0;
     std::snprintf(buf, sizeof(buf), "1:%.0f", den);
+    if (v.kind == ViewKind::Section) {
+        char offset[64];
+        std::snprintf(offset, sizeof(offset), "  uye basindan %.0f mm", v.sectionT);
+        return v.label + "  " + buf + offset +
+               (v.sectionPoints > 1 ? " (" + std::to_string(v.sectionPoints) + " nokta)" : std::string());
+    }
     return v.label + "  " + buf;
 }
 
@@ -723,13 +729,13 @@ BlockLayout layoutMainBlock(const DrawingSheet& s, const std::vector<Margins>& m
     std::vector<std::pair<int, int>> cellOf;
     for (std::size_t i = 0; i < s.views.size(); ++i) {
         const ViewKind k = s.views[i].kind;
-        if (k == ViewKind::Detail) continue;
+        if (k == ViewKind::Detail || k == ViewKind::Section) continue;
         idx.push_back(i);
         switch (k) {
         case ViewKind::Front: cellOf.push_back(third ? std::pair{0, 0} : std::pair{1, 1}); break;
         case ViewKind::Top: cellOf.push_back(third ? std::pair{0, 1} : std::pair{1, 0}); break;
         case ViewKind::Side: cellOf.push_back(third ? std::pair{1, 0} : std::pair{0, 1}); break;
-        case ViewKind::Detail: break;
+        case ViewKind::Detail: case ViewKind::Section: break;
         }
     }
     if (idx.empty()) return bl;
@@ -774,12 +780,23 @@ BlockLayout layoutDetailBlock(const DrawingSheet& s, const std::vector<Margins>&
     double x = 0, rowY = 0, rowH = 0, maxW = 0;
     std::vector<std::size_t> idx;
     for (std::size_t i = 0; i < s.views.size(); ++i)
-        if (s.views[i].kind == ViewKind::Detail) idx.push_back(i);
+        if (s.views[i].kind == ViewKind::Detail || s.views[i].kind == ViewKind::Section) idx.push_back(i);
+    bool sectionsStarted = false;
     for (const std::size_t i : idx) {
+        if (s.views[i].kind == ViewKind::Section && !sectionsStarted) {
+            sectionsStarted = true;
+            if (x > 0) { maxW = std::max(maxW, x); rowY += rowH; rowH = 0; x = 0; }
+        }
         const DrawingView& v = s.views[i];
         const Margins& m = mg[i];
         const double iw = v.bounds.width() * v.scale, ih = v.bounds.height() * v.scale;
-        const double colW = m.l + extra + iw + m.r + extra;
+        // A narrow section's title includes its real t offset and may be wider than
+        // the contour. Reserve its full text width so adjacent 1:1 sections do not
+        // steal the same label slot when wrapping at the paper width.
+        const double titleW = v.kind == ViewKind::Section
+            ? textWidthEstimate(viewTitleText(s, v), s.layoutConfig.noteTextHeight, false) + 2 * s.layoutConfig.clearance
+            : 0.0;
+        const double colW = m.l + extra + std::max(iw, titleW) + m.r + extra;
         const double colH = m.b + extra + ih + m.t + extra;
         if (maxWidth > 0.0 && x > 0.0 && x + colW > maxWidth + 1e-9) {   // yeni satir
             maxW = std::max(maxW, x);
@@ -926,7 +943,7 @@ Attempt tryLayout(const DrawingSheet& in, SheetSize size, double den, bool allow
     // DETAY gorunumleri: ana olcekten ayni veya BUYUK olcek (detay = buyutme amacli).
     // `atPageScale == true`: detaylar da pafta olceginde cizilir (buyutulmus hali kagida sigmiyorsa).
     const auto applyDetailScales = [&](DrawingSheet& sh, bool atPageScale) {
-        for (DrawingView& v : sh.views) v.scale = sh.scale;
+        for (DrawingView& v : sh.views) v.scale = v.kind == ViewKind::Section ? 1.0 : sh.scale;
         if (atPageScale) return;
         const Bounds2 area = sh.drawingArea();
         const double maxPaper = std::min(130.0, 0.6 * std::min(area.width(), area.height()));

@@ -24,6 +24,7 @@
 
 using namespace mm;
 using namespace mm::drawing;
+#include "legacy_drawing_fixture.hpp"
 
 static int failures = 0;
 static int checks = 0;
@@ -112,7 +113,7 @@ int main() {
               "A: delik gercek Hole modifier'a bagli (izdusum/uydurma degil)");
 
         MarkRegistry reg;
-        const BuildResult b = buildSheet(f.doc, reg, p, {});
+        const BuildResult b = legacyBuildSheet(f.doc, reg, p, {});
         check(b.ok, "A: cizim uretildi");
         const DrawingSheet& s = b.sheet;
         const auto callouts = [&]() {
@@ -148,7 +149,7 @@ int main() {
               "B: dizilim duzensiz olarak TESPIT edildi (sessizce duzgun sayilmadi)");
 
         MarkRegistry reg;
-        const BuildResult b = buildSheet(f.doc, reg, p, {});
+        const BuildResult b = legacyBuildSheet(f.doc, reg, p, {});
         check(b.ok, "B: cizim uretildi");
         const DrawingSheet& s = b.sheet;
         const std::string fk = i.groups[0].id;
@@ -213,7 +214,7 @@ int main() {
             if (g.plate == f.finPlate && g.diameter > 15.0 && g.boltGroup != f.groupFin) fk = g.id;
         check(!fk.empty(), "D: donuk levhanin bagimsiz delik grubu bulundu");
         MarkRegistry reg;
-        const BuildResult b = buildSheet(f.doc, reg, f.doc.assemblies()[0].id, {});
+        const BuildResult b = legacyBuildSheet(f.doc, reg, f.doc.assemblies()[0].id, {});
         check(b.ok, "D: donuk levha cizimi uretildi");
         const auto ord = dimsOf(b.sheet, DimensionRole::HoleOrdinate, fk);
         check(ord.size() == 6 && nearValue(ord, 40.0) && nearValue(ord, 170.0) && nearValue(ord, 210.0) &&
@@ -260,7 +261,7 @@ int main() {
         check(!i.hasCode("HOLE_FRAME_UNAVAILABLE") && i.holes.size() == 1,
               "F: PlateSpec yok -> cerceve geometriden turetildi, delik envanterde");
         MarkRegistry reg;
-        const BuildResult b = buildSheet(f.doc, reg, bare, {});
+        const BuildResult b = legacyBuildSheet(f.doc, reg, bare, {});
         check(b.ok && !hasItem(b.sheet, "HOLES_UNRESOLVED", ChecklistState::Unresolved),
               "F: delik olcusu uretildi -> HOLES_UNRESOLVED yok (sahte READY yok)");
         const bool dims = !dimsOf(b.sheet, DimensionRole::HolePitch).empty() ||
@@ -281,7 +282,7 @@ int main() {
         check(i.hasCode("HOLE_NOT_NORMAL_TO_PLATE") && i.hasCode("HOLE_PARTIAL_DEPTH"),
               "G: egik eksen + kismi derinlik acikca raporlandi");
         MarkRegistry reg;
-        const BuildResult b = buildSheet(f.doc, reg, p, {});
+        const BuildResult b = legacyBuildSheet(f.doc, reg, p, {});
         check(b.ok && b.sheet.fabrication.draft, "G: cozulemeyen delik -> TASLAK");
     }
 

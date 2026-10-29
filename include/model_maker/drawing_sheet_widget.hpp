@@ -189,6 +189,7 @@ private:
     QCheckBox* topCheck_{};
     QCheckBox* sideCheck_{};
     QCheckBox* hiddenCheck_{};
+    QCheckBox* sectionCheck_{};
     QLabel* status_{};
 };
 

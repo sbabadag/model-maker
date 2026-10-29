@@ -35,7 +35,7 @@ namespace mm::drawing {
 using ElementId = std::uint64_t; // cizim ici kimlik (EntityId ile KARISMAZ); 0 = gecersiz
 
 enum class DrawingKind { SinglePart, Assembly };
-enum class ViewKind { Front, Top, Side, Detail };   // Detail: levha yuzu detay gorunumu (kendi olcegi)
+enum class ViewKind { Front, Top, Side, Detail, Section };   // Detail: levha yuzu detay gorunumu (kendi olcegi)
 enum class LineStyle { Visible, Hidden };
 enum class ProjectionMethod { ThirdAngle, FirstAngle };
 enum class SheetSize { A4, A3, A2, A1, A0 };
@@ -119,6 +119,11 @@ struct DrawingView {
     std::string label;                    // "FRONT", "TOP"... (UTF-8)
     ViewFrame frame;                      // P2A: 3B -> 2B cerceve (gercek uzunluk kurali bunu kullanir)
     EntityId detailPlate{kInvalidEntityId};   // kind == Detail: gosterilen levha (Document EntityId)
+    EntityId sectionMember{kInvalidEntityId}; // kind == Section: axis owner
+    double sectionT{0.0};               // member axis start -> cutting plane [mm]
+    EntityId sectionSource{kInvalidEntityId}; // first change's plate/bolt/weld/member
+    std::string sectionReason;
+    int sectionPoints{1};               // number of equivalent change points represented
 
     Vec2 toPaper(const Vec2& local) const noexcept {
         return {origin.x + local.x * scale, origin.y + local.y * scale};

@@ -21,6 +21,7 @@
 
 using namespace mm;
 using namespace mm::drawing;
+#include "legacy_drawing_fixture.hpp"
 
 static int failures = 0;
 static void check(bool ok, const char* label) {
@@ -84,7 +85,7 @@ int main(int argc, char** argv) {
     const EntityId asmId = doc.assemblies()[0].id;
 
     MarkRegistry reg;
-    const BuildResult built = buildSheet(doc, reg, asmId);
+    const BuildResult built = legacyBuildSheet(doc, reg, asmId);
     check(built.ok, "assembly cizimi uretildi");
     if (!built.ok) return 1;
     const DrawingSheet& sheet = built.sheet;
@@ -163,7 +164,7 @@ int main(int argc, char** argv) {
             ++calls;
             last = o;
             lastSubject = subject;
-            return buildSheet(doc, dlgReg, subject, o);
+            return legacyBuildSheet(doc, dlgReg, subject, o);
         };
         std::vector<SubjectChoice> subjects{{QStringLiteral("Assembly A1"), asmId},
                                             {QStringLiteral("Par\u00e7a: Tek"), lone}};
@@ -176,6 +177,7 @@ int main(int argc, char** argv) {
         auto* sizeCombo = dlg.findChild<QComboBox*>(QStringLiteral("drawingSize"));
         auto* projCombo = dlg.findChild<QComboBox*>(QStringLiteral("drawingProjection"));
         auto* hidden = dlg.findChild<QCheckBox*>(QStringLiteral("drawingHidden"));
+        auto* sectionCheck = dlg.findChild<QCheckBox*>(QStringLiteral("drawingSectionViews"));
         auto* topCheck = dlg.findChild<QCheckBox*>(QStringLiteral("drawingTop"));
         auto* sideCheck = dlg.findChild<QCheckBox*>(QStringLiteral("drawingSide"));
         auto* frontCheck = dlg.findChild<QCheckBox*>(QStringLiteral("drawingFront"));
@@ -193,6 +195,19 @@ int main(int argc, char** argv) {
         check(status->text().contains(QStringLiteral("A1")) && status->text().contains(QStringLiteral("3 g\u00f6r\u00fcn\u00fc\u015f")),
               "C: durum satiri A1 ve 3 gorunus");
 
+        check(sectionCheck && sectionCheck->isChecked() && last.sectionViews,
+              "C: kesit kutusu varsayilan acik ve builder'a iletildi");
+        if (sectionCheck) {
+            const int beforeToggle = calls;
+            sectionCheck->setChecked(false);
+            check(calls == beforeToggle && applyBtn && applyBtn->isEnabled(),
+                  "C: kesit kapatildi, Uygula bekleniyor");
+            applyNow();
+            check(!last.sectionViews, "C: kesit kapatma builder'a iletildi");
+            sectionCheck->setChecked(true);
+            applyNow();
+            check(last.sectionViews, "C: kesit yeniden acildi");
+        }
         subjectCombo->setCurrentIndex(1);
         check(dlg.currentSheet() && dlg.currentSheet()->kind == DrawingKind::SinglePart &&
                   lastSubject == lone && dlg.currentSheet()->name == "P3",
@@ -252,7 +267,7 @@ int main(int argc, char** argv) {
                 dp.addCutModifier(h);
             }
         MarkRegistry rp;
-        const BuildResult hp = buildSheet(dp, rp, plate);
+        const BuildResult hp = legacyBuildSheet(dp, rp, plate);
         check(hp.ok, "E: delikli plaka cizimi");
         if (hp.ok) {
             const QImage himg = renderSheetImage(hp.sheet, 2100);

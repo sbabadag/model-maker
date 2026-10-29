@@ -18,6 +18,7 @@
 
 using namespace mm;
 using namespace mm::drawing;
+#include "legacy_drawing_fixture.hpp"
 
 static int failures = 0;
 static int checks = 0;
@@ -33,7 +34,7 @@ int main(int argc, char** argv) {
 
     const fx::Fixture f = fx::make();
     MarkRegistry reg;
-    const BuildResult r = buildSheet(f.doc, reg, f.doc.assemblies()[0].id);
+    const BuildResult r = legacyBuildSheet(f.doc, reg, f.doc.assemblies()[0].id);
     check(r.ok && r.sheet.layout.ok, "GUI: fixture cizimi + yerlesim basarili");
     const DrawingSheet& s = r.sheet;
 

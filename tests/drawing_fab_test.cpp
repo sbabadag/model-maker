@@ -66,6 +66,9 @@ static std::vector<std::string> dimSignature(const DrawingSheet& s) {
 }
 
 static BuildResult build(const fx::Fixture& f, EntityId subject, DrawingOptions o = {}) {
+    // 2026-10-29: legacy fabrication assertions target the pre-section view set;
+    // sections/default-on behavior is covered separately by sections_test.cpp.
+    o.sectionViews = false;
     MarkRegistry reg;
     return buildSheet(f.doc, reg, subject, o);
 }
