@@ -573,7 +573,7 @@ struct ShearTabPlacement {
 ProfileSectionFrame rotateSectionFrame(const ProfileSectionFrame& f,
                                        double rotationDeg) noexcept {
     if (std::fabs(rotationDeg) < 1e-9) return f;
-    const double rad = rotationDeg * M_PI / 180.0;
+    const double rad = rotationDeg * 3.14159265358979323846 / 180.0;
     const double c = std::cos(rad), s = std::sin(rad);
     ProfileSectionFrame r = f;
     r.width = Vec3{f.width.x * c + f.height.x * s,
