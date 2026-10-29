@@ -756,9 +756,15 @@ DrawingPreviewDialog::DrawingPreviewDialog(std::vector<SubjectChoice> subjects, 
         autoSizeCheck_->setObjectName(QStringLiteral("drawingAutoSize"));
         autoSizeCheck_->setChecked(true);
         sizeCombo_->setEnabled(false);
-        multiSheetCheck_ = new QCheckBox(QStringLiteral("Sigmazsa bagli paftalar"), this);
+        // KULLANICI ISTEGI (2026-10-29): "tek paftaya sigacak cizim yine bolunuyor; otomatik
+        // yerlegirmeyi iptal edelim, kagittan tassa da cizim tek yerde duzenli dursun".
+        // Bu yuzden pafta bolme VARSAYILAN KAPALI; acilirsa eski bagli-coklu-pafta davranisi.
+        multiSheetCheck_ = new QCheckBox(QStringLiteral("Sigmazsa bol (bagli paftalar)"), this);
         multiSheetCheck_->setObjectName(QStringLiteral("drawingMultiSheet"));
-        multiSheetCheck_->setChecked(true);
+        multiSheetCheck_->setChecked(false);
+        multiSheetCheck_->setToolTip(QStringLiteral(
+            "Kapali: cizim kagida sigmasa da TEK paftada, cerceveyi asarak durur (kirpilmaz).\n"
+            "Acik: sigmayan gorunusler bagli ayri paftalara bolunur."));
         // Kullanici istegi (2026-10-28): "tum kesitler ayni olcekte olsun, A3'ten
         // basla A0'a kadar dene, tek kagida sigdirmaya calis". Tek olcek acikken
         // levha detay gorunumleri (kendi buyuk olcekleri) uretilmez.

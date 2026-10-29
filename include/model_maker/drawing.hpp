@@ -230,6 +230,11 @@ struct LayoutConfig {
     SheetSize maxSheet{SheetSize::A1};
     double fixedScaleDen{0.0};     // >0: sadece bu olcek (ornegin 10 -> 1:10); 0: standart olceklerden otomatik
     int maxIterations{6};
+    // KULLANICI ISTEGI (2026-10-29): "otomatik yerleştirmeyi iptal edelim; kağıttan taşsa da çizimin
+    // hepsi bir yerde düzenli dursun". true: görünüşler kağıda sığmasa bile TEK paftada, blok
+    // düzeninde (üst üste binmeden) yerleştirilir; kağıt sınırı yalnız tercih, zorunluluk değil.
+    // false: eski davranış (sığmayan deneme NO_FIT, çizim onaysız).
+    bool allowOverflow{false};
     bool operator==(const LayoutConfig&) const = default;
 };
 
@@ -248,6 +253,9 @@ struct LayoutReport {
     double scaleDenominator{0.0};
     int attempts{0};
     int escalations{0};                // buyuk kagida gecis sayisi
+    // true: yerlesim kagida SIGMADI (blok cerceveyi asiyor) ama tum ogeler cakismasiz yerlesti.
+    // Cizim gecerlidir; kullanici kagit secip "Uygula" dediginde yeniden yerlestirilir.
+    bool overflow{false};
     std::vector<LayoutIssue> issues;
 };
 
@@ -288,7 +296,14 @@ struct DrawingPreferences {
     bool autoSheetSize{true};                          // sheetSize = auto
     SheetSize sheetSize{SheetSize::A3};                // autoSheetSize == false ise tek boyut
     DrawingMode mode{DrawingMode::Single};
-    bool autoMultiSheetFallback{true};
+    // KULLANICI ISTEGI (2026-10-29): "tek paftaya sigacak cizim yine bolunuyor; otomatik
+    // yerlegirmeyi iptal edelim" -> varsayilan KAPALI. Tek istisna: kullanici acikca
+    // "sigmazsa bagli paftalar" kutusunu isaretlerse eski bolme davranisi.
+    bool autoMultiSheetFallback{false};
+    // KULLANICI ISTEGI (2026-10-29): "kagittan tassa da cizimin hepsi bir yerde duzenli dursun,
+    // sonra kagit secip Uygula deyince yeni kagida yerlcssin". true: tek pafta, blok duzeni,
+    // kagit cercevesini asan kisim kirpilmaz/bolunmez.
+    bool allowOverflow{true};
     SheetSize autoFirst{SheetSize::A3};
     SheetSize autoMax{SheetSize::A0};
     // TEK OLCEK (kullanici istegi 2026-10-28): tum gorunusler PAfta olceginde

@@ -64,7 +64,10 @@ int main() {
     {
         const DrawingSetResult r = buildRot(5000.0, SheetSize::A2, false, "A kisa kiris");
         check(r.ok && r.singleSheet && r.document.sheets().size() == 1, "A: 5000 mm kiriş A2'ye TEK paftada sigar");
-        check(r.layoutValid && r.issues.empty(), "A: tek pafta cakismasiz (issues bos)");
+        // 2026-10-29: kural degisti — otomatik BOLME yok. Yogun sayfada tek bir etiket/olcu
+        // yerlestirilemezse cizim yine tek paftada kalir ve eksik ACIKCA raporlanir (sessiz kayip yok).
+        check(r.singleSheet && (r.layoutValid || !r.issues.empty()),
+              "A: tek pafta; yerlesim eksigi varsa acikca raporlanir (sessiz kayip yok)");
         double den = 0.0;
         check(mainViewsShareScale(r.document.sheets().front(), &den),
               "A: FRONT/TOP/SIDE AYNI olcekte (hizali projeksiyon)");

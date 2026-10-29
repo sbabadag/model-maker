@@ -82,6 +82,9 @@ int main(int argc, char** argv) {
     o.layout.fixedScaleDen = 5.0;
     DrawingPreferences p;
     p.autoMax = SheetSize::A2;
+    // 2026-10-29: pafta bolme varsayilan DEGIL; bu test bolme makinesini dogrular.
+    p.autoMultiSheetFallback = true;
+    p.allowOverflow = false;
 
     const DrawingSetResult r = buildDrawingSet(f.doc, reg, subject, o, p);
     check(r.ok && r.document.sheets().size() > 1 && r.layoutValid,
@@ -202,6 +205,9 @@ int main(int argc, char** argv) {
                 o2.layout.fixedScaleDen = 5.0;
                 DrawingPreferences p2 = prefs;
                 p2.autoMax = SheetSize::A2;
+                // 2026-10-29: bolme varsayilan DEGIL; bu test bagli-coklu-pafta setini dogrular.
+                p2.autoMultiSheetFallback = true;
+                p2.allowOverflow = false;
                 return buildDrawingSet(f.doc, dlgReg, s, o2, p2);
             });
         // 2026-10-28: diyalogda "Tum gorunusler ayni olcek" varsayilan ACIK; bu

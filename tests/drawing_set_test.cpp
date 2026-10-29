@@ -88,8 +88,10 @@ int main() {
     // =========================================================================
     {
         const DrawingPreferences defaults{};
-        check(defaults.autoSheetSize && defaults.mode == DrawingMode::Single && defaults.autoMultiSheetFallback,
-              "A: varsayilanlar auto / single / true");
+        // 2026-10-29 kullanici istegi: otomatik pafta bolme VARSAYILAN KAPALI, tek pafta tasma modu ACIK.
+        check(defaults.autoSheetSize && defaults.mode == DrawingMode::Single && !defaults.autoMultiSheetFallback &&
+                  defaults.allowOverflow,
+              "A: varsayilanlar auto / single / bolme kapali / tasma modu acik");
         check(defaults.autoFirst == SheetSize::A3 && defaults.autoMax == SheetSize::A0,
               "A: otomatik kagit araligi A3 -> A0 (yapilandirilabilir)");
 
@@ -184,6 +186,8 @@ int main() {
         o.layout.fixedScaleDen = 5.0;   // kullanici olcegi sabitledi: kucultme yasak
         DrawingPreferences p;
         p.autoMax = SheetSize::A2;      // izinli ust sinir
+        p.autoMultiSheetFallback = true;   // ESKI davranis: acikca istenirse bolme yapilir
+        p.allowOverflow = false;           // bolme yolu eski kalite kapisiyla calisir
         DrawingSetResult r = buildDrawingSet(f.doc, reg, firstAssembly(f), o, p);
         std::size_t detailTotal = 0, maxDetails = 0;
         for (const DrawingSheet& s : r.document.sheets()) {
@@ -289,7 +293,7 @@ int main() {
     }
 
     // =========================================================================
-    // E) Yedek KAPALI: tek pafta saglanamiyorsa acik hata, sahte READY yok
+    // E) Bolme kapali + tasma modu kapali: tek pafta, kalite eksik acikca raporlanir
     // =========================================================================
     {
         fx::Fixture f = makeAssembly(2400.0, 2);
@@ -298,17 +302,35 @@ int main() {
         o.layout.fixedScaleDen = 5.0;
         DrawingPreferences p;
         p.autoMax = SheetSize::A2;
-        p.autoMultiSheetFallback = false;
+        p.autoMultiSheetFallback = false;   // bolme yok
+        p.allowOverflow = false;            // tasma modu kapali: eski kati kalite kapisi
         DrawingSetResult r = buildDrawingSet(f.doc, reg, firstAssembly(f), o, p);
-        check(!r.ok && r.singleSheet && r.document.sheets().size() == 1,
-              "E: yedek kapali -> tek pafta denemesi, coklu sayfa YOK");
-        check(!r.layoutValid && !r.ready && !r.error.empty(), "E: basarisiz cizim READY ilan EDILMEDI");
-        check(hasIssue(r.issues, "SINGLE_SHEET_NOT_VALID") && hasIssue(r.issues, "MULTI_SHEET_DISABLED"),
-              "E: NO_FIT + coklu pafta kapali acikca raporlandi");
+        check(r.ok && r.singleSheet && r.document.sheets().size() == 1,
+              "E: bolme+tasma kapali -> TEK pafta, coklu sayfa YOK, cizim yine uretilir");
+        check(!r.layoutValid && !r.ready, "E: eksik yerlesim READY ilan EDILMEDI");
+        check(hasIssue(r.issues, "SINGLE_SHEET_NOT_VALID"), "E: tek pafta nedeni acikca raporlandi");
         bool layoutItem = false;
         for (const ChecklistItem& c : r.document.sheets().front().fabrication.checklist)
             if (c.key == "LAYOUT" && c.state == ChecklistState::Unresolved) layoutItem = true;
         check(layoutItem, "E: kontrol listesinde LAYOUT unresolved (TASLAK)");
+    }
+
+    // =========================================================================
+    // E2) Ayni montaj, VARSAYILAN (tasma modu acik): tek pafta cozulur, bolunmez
+    // =========================================================================
+    {
+        fx::Fixture f = makeAssembly(2400.0, 2);
+        MarkRegistry reg;
+        DrawingOptions o;
+        o.layout.fixedScaleDen = 5.0;
+        DrawingPreferences p;
+        p.autoMax = SheetSize::A2;
+        DrawingSetResult r = buildDrawingSet(f.doc, reg, firstAssembly(f), o, p);
+        check(r.ok && r.singleSheet && r.document.sheets().size() == 1,
+              "E2: tasma modu acik -> ayni montaj TEK paftada cozuldu (bolunmedi)");
+        const DrawingSheet& s = r.document.sheets().front();
+        check(s.layout.ok, "E2: tek pafta yerlesimi gecerli (tasma olsa da kirpilmadi)");
+        if (s.layout.overflow) check(r.document.setInfo().multiSheet == false, "E2: tasma -> coklu pafta ACILMADI");
     }
 
     // =========================================================================
@@ -321,6 +343,8 @@ int main() {
         o.layout.fixedScaleDen = 5.0;
         DrawingPreferences p;
         p.autoMax = SheetSize::A3;   // dar sinir: bazi paftalar sigmaz
+        p.autoMultiSheetFallback = true;   // bolme acikca istendi
+        p.allowOverflow = false;           // bolme yolu eski kalite kapisiyla calisir
         DrawingSetResult r = buildDrawingSet(f.doc, reg, firstAssembly(f), o, p);
         check(r.ok && r.document.sheets().size() > 1, "F: dar kagit sinirinda coklu pafta uretildi");
         check(!r.layoutValid && !r.ready, "F: yerlesmeyen pafta varsa set READY DEGIL");
@@ -351,6 +375,30 @@ int main() {
         check(sizes, "G: secilen A2 siniri asilmadi (A1/A0 denemedi)");
         DrawingSetResult again = buildDrawingSet(f.doc, reg, firstAssembly(f), {}, p);
         check(again.document.serialize() == r.document.serialize(), "G: sabit kagit tercihi deterministik");
+    }
+
+    // =========================================================================
+    // H) Kucuk kagit (A4) + bolme kapali: TEK pafta, hicbir gorunus/olcu DUSMEZ
+    // =========================================================================
+    {
+        fx::Fixture f = makeAssembly(1800.0, 0);
+        MarkRegistry reg;
+        DrawingPreferences p;
+        p.autoSheetSize = false;
+        p.sheetSize = SheetSize::A4;
+        p.autoMultiSheetFallback = false;
+        DrawingSetResult r = buildDrawingSet(f.doc, reg, firstAssembly(f), {}, p);
+        check(r.ok && r.singleSheet && r.document.sheets().size() == 1,
+              "H: A4 + bolme kapali -> tek pafta (kirpilmaz, bolunmez)");
+        const DrawingSheet& s = r.document.sheets().front();
+        check(!s.views.empty() && s.format.size == SheetSize::A4 && s.layout.requestedSheet == SheetSize::A4,
+              "H: secilen kagit korunur, gorunusler silinmez");
+        MarkRegistry regBase;
+        const BuildResult base = buildSheet(f.doc, regBase, firstAssembly(f), {});
+        check(base.ok && s.dimensions.size() == base.sheet.dimensions.size(),
+              "H: tasma/tek-pafta modu olcu EKLEMEZ/SILMEZ");
+        check(s.layout.ran && (s.layout.ok || !s.layout.issues.empty()),
+              "H: yerlesim raporu tutarli (ok ise tasma da bildirilir, degilse issue dolu)");
     }
 
     std::printf("\n%d/%d checks passed\n", checks - failures, checks);

@@ -24,13 +24,23 @@ void applyPreferences(DrawingSheet& s, const DrawingPreferences& p) {
     const SheetSize last = p.autoSheetSize ? p.autoMax : p.sheetSize;
     s.layoutConfig.minSheet = first;
     s.layoutConfig.maxSheet = (last < first) ? first : last;
+    // KULLANICI ISTEGI (2026-10-29): tek pafta, kagit disina tasabilir (bolme yok).
+    s.layoutConfig.allowOverflow = p.allowOverflow;
     s.format = sheetFormat(first);
     s.format.margin = sheetFormat(first).margin;
 }
 
+// Yerlesimi BLOKE eden cakisma sayisi: kagit tasmasi (cerceve disi) tek-pafta tasma modunda
+// kabul edilir, diger cakismalar (metin/metin, metin/cizgi, olcu ust uste) asla.
+int blockingOverlaps(const DrawingSheet& s) {
+    const OverlapReport m = measureOverlaps(s);
+    const int allowed = (s.layout.overflow && s.layout.ok) ? m.outsideBorder : 0;
+    return m.total() - allowed;
+}
+
 bool layoutOk(DrawingSheet& s) {
     const bool placed = layoutSheet(s);
-    return placed && measureOverlaps(s).total() == 0;
+    return placed && blockingOverlaps(s) == 0;
 }
 
 // Yerlesim sonucunu imalat kontrol listesine isler: LAYOUT maddesi ve TASLAK durumu.
@@ -113,6 +123,9 @@ struct Assembly {
 
 std::string paperReason(const DrawingSheet& s) {
     if (!s.layout.ran) return "yerlesim calistirilmadi";
+    if (s.layout.overflow)
+        return std::string("kagit ") + sheetSizeName(s.layout.finalSheet) +
+               " cercevesini asiyor (tek pafta, kirpilmadi; kagit secip Uygula)";
     if (s.layout.finalSheet > s.layout.requestedSheet)
         return std::string("kagit buyutuldu ") + sheetSizeName(s.layout.requestedSheet) + "->" +
                sheetSizeName(s.layout.finalSheet) + " (yazi/olcu kucultulmedi)";
@@ -385,6 +398,8 @@ DrawingSetResult buildDrawingSet(const Document& document, MarkRegistry& registr
     opt.sheet = first;
     opt.layout.minSheet = first;
     opt.layout.maxSheet = (last < first) ? first : last;
+    // Tek pafta / tasma modu (kullanici istegi 2026-10-29): bolme yok, cerceveyi asmak serbest.
+    opt.layout.allowOverflow = preferences.allowOverflow;
 
     step(0, "Görünüşler ve imalat ölçüleri üretiliyor");
     BuildResult base = buildSheet(document, registry, subject, opt);
@@ -395,7 +410,7 @@ DrawingSetResult buildDrawingSet(const Document& document, MarkRegistry& registr
     res.inventory = base.inventory;
     DrawingSheet sheet = std::move(base.sheet);
     step(1, "Görünüşler hazır, kâğıt/ölçek deneniyor");
-    const bool single = sheet.layout.ok && measureOverlaps(sheet).total() == 0;
+    const bool single = sheet.layout.ok && blockingOverlaps(sheet) == 0;
 
     std::vector<std::string> issues;
     if (!single) {
@@ -406,22 +421,16 @@ DrawingSetResult buildDrawingSet(const Document& document, MarkRegistry& registr
             reported = true;
         }
         if (!reported) issues.push_back("SINGLE NO_FIT: tek pafta kalite kosullarini saglamadi");
-        if (!preferences.autoMultiSheetFallback) {
-            issues.push_back("MULTI_SHEET_DISABLED");
-            std::vector<Part> one;
-            one.push_back({std::move(sheet), "ANA PAFTA", "tek pafta kaliteyi saglamadi (coklu pafta yedegi kapali)"});
-            finish(res, std::move(one), preferences, std::move(issues));
-            res.ok = false;
-            res.layoutValid = false;
-            res.ready = false;
-            res.error = "tek pafta kalite kosullarini saglamadi (coklu pafta yedegi kapali)";
-            return res;
-        }
+        if (preferences.autoMultiSheetFallback) issues.push_back("MULTI_SHEET_ENABLED");
     }
 
-    if (single) {
-        step(2, "Tek paftada yerleşim doğrulandı");
-        std::string reason = paperReason(sheet) + ", tek pafta";
+    // KULLANICI ISTEGI (2026-10-29): "otomatik yerlegirmeyi iptal edelim; tek paftaya sigacak
+    // cizim bolunmesin; kagittan tassa da cizimin hepsi bir yerde duzenli dursun, sonra kagit
+    // secip Uygula deyince yeni kagida yerlcssin". Bu yuzden varsayilan yol TEK PAFTA'dir:
+    // kalite eksik olsa bile cizim uretilir, sorunlar raporlanir (sessiz kayip yok).
+    if (single || !preferences.autoMultiSheetFallback) {
+        step(2, single ? "Tek paftada yerleşim doğrulandı" : "Tek pafta: yerleşim eksikleri raporlandı");
+        std::string reason = paperReason(sheet) + (single ? ", tek pafta" : ", tek pafta (yerlesim eksik)");
         std::vector<Part> one;
         one.push_back({std::move(sheet), "ANA PAFTA", std::move(reason)});
         finish(res, std::move(one), preferences, std::move(issues));
@@ -482,7 +491,9 @@ bool validateDrawingSet(const DrawingDocument& document, std::vector<std::string
             if (s.role == SheetRole::Primary) issues.push_back("EXTRA_PRIMARY: " + s.sheetNumber);
             (void)roleName;
         }
-        const bool placed = s.layout.ok && measureOverlaps(s).total() == 0;
+        const OverlapReport om = measureOverlaps(s);
+        const int allowed = (s.layout.overflow && s.layout.ok) ? om.outsideBorder : 0;
+        const bool placed = s.layout.ok && (om.total() - allowed) == 0;
         if (!placed) issues.push_back("SHEET_LAYOUT_INVALID: " + s.sheetNumber);
         bool layoutItemOk = true;
         bool hasLayoutItem = false;
@@ -535,7 +546,9 @@ bool validateDrawingSet(const DrawingDocument& document, std::vector<std::string
 
 bool refreshSheetQuality(DrawingSheet& sheet) {
     const OverlapReport m = measureOverlaps(sheet);
-    const bool ok = sheet.layout.ok && m.total() == 0;
+    // Tasma modunda yalniz "cerceve disi" cakismalari kabul edilir (bolme/kirpma yok kurali).
+    const int allowed = (sheet.layout.overflow && sheet.layout.ok) ? m.outsideBorder : 0;
+    const bool ok = sheet.layout.ok && (m.total() - allowed) == 0;
     if (!ok) {
         bool reported = false;
         for (const LayoutIssue& i : sheet.layout.issues)
@@ -551,9 +564,12 @@ bool refreshSheetQuality(DrawingSheet& sheet) {
 
 std::string statusText(const DrawingSetResult& r) {
     if (!r.ok) return "CIZIM YOK: " + (r.error.empty() ? std::string("bilinmeyen hata") : r.error);
-    std::string t = r.ready ? "HAZIR" : (r.layoutValid ? "TASLAK / EKSIK IMALAT VERISI" : "NO_FIT");
+    std::string t = r.ready ? "HAZIR" : (r.layoutValid ? "TASLAK / EKSIK IMALAT VERISI" : "YERLESIM EKSIK (cizim var)");
     t += " - " + std::to_string(r.document.sheets().size()) + " pafta (" +
          (r.singleSheet ? "tek pafta" : "bagli coklu pafta") + ")";
+    bool overflow = false;
+    for (const DrawingSheet& s : r.document.sheets()) overflow = overflow || s.layout.overflow;
+    if (overflow) t += " | KAGIT TASMASI: cizim tek paftada duruyor, kagit secip Uygula";
     for (const SheetPlanEntry& p : r.plan) {
         t += " | " + p.number + ": " + sheetSizeName(p.size) + " " + (p.scale.empty() ? "-" : p.scale);
         if (!p.reason.empty()) t += " (" + p.reason + ")";

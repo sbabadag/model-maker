@@ -273,6 +273,9 @@ struct Scene {
     Bounds2 border;      // izinli ic dikdortgen
     Bounds2 title;       // bos olabilir
     bool useTitle{true};
+    // true: cerceve disina cikmak SERBEST (kagit tasmasi kabul edilen tek-pafta modu).
+    // Yerlesim yine cakismasiz olmali; yalniz "kagit icinde kal" kosulu kalkar.
+    bool allowOutside{false};
     std::vector<TaggedText> texts;
     std::vector<Tagged> lines;
 };
@@ -301,7 +304,7 @@ Scene buildViewScene(const DrawingSheet& s, int onlyView = -1) {
 
 bool textFits(const Obb& t, const Scene& sc, double clr, int owner) {
     const Bounds2 ab = t.aabb();
-    if (!within(ab, inflateB(sc.border, -clr))) return false;
+    if (!sc.allowOutside && !within(ab, inflateB(sc.border, -clr))) return false;
     const Obb ti = t.inflated(clr);
     if (sc.useTitle && !sc.title.empty && intersects(ti, obbOfRect(inflateB(sc.title, 0.0)))) return false;
     for (const ViewObs& v : sc.views)
@@ -317,7 +320,7 @@ bool lineFits(const LineSeg& l, const Scene& sc, double clr, int owner) {
     Bounds2 lb;
     lb.include(l.a);
     lb.include(l.b);
-    if (!within(lb, inflateB(sc.border, 0.0))) return false;
+    if (!sc.allowOutside && !within(lb, inflateB(sc.border, 0.0))) return false;
     if (sc.useTitle && !sc.title.empty) {
         if (intersects(l, obbOfRect(sc.title))) return false;
     }
@@ -469,7 +472,9 @@ void placeViewDimensions(Ctx& cx, Scene& sc, ElementId viewId) {
         const int dirClass = static_cast<int>(s.dimensions[idx.front()].direction);
         const int firstSide = s.dimensions[idx.front()].side >= 0 ? 1 : -1;
         bool done = false;
-        for (int extra = 0; extra < 3 && !done; ++extra)
+        // Daha fazla satir denemesi (2026-10-29: yogun montajlarda zincir 3 ek satirla
+        // yerlestirilemiyordu -> DIMENSION_UNPLACEABLE -> tek pafta bolunuyordu).
+        for (int extra = 0; extra < 8 && !done; ++extra)
             for (const int sd : {firstSide, -firstSide}) {
                 int& rowRef = rows[{dirClass, sd}];
                 if (placeChain(cx, sc, idx, sd, rowRef + extra)) {
@@ -606,7 +611,18 @@ bool placeViewTitle(Ctx& cx, Scene& sc, TextAnnotation& t) {
     return false;
 }
 
-bool placeMark(Ctx& cx, Scene& sc, MarkAnnotation& m) {
+// Mark metninden poz numarasi ("P11/PL10*100" -> 11, "A1/IPE240" -> 1). 0: numara yok.
+int markNumber(const std::string& text) {
+    int n = 0;
+    bool seen = false;
+    for (const char c : text) {
+        if (c >= '0' && c <= '9') { n = n * 10 + (c - '0'); seen = true; }
+        else if (seen) break;
+    }
+    return seen ? n : 0;
+}
+
+bool placeMark(Ctx& cx, Scene& sc, MarkAnnotation& m, int slot = 0, bool useSlots = true) {
     DrawingSheet& s = *cx.s;
     const DrawingView* v = s.findView(m.viewId);
     if (!v) return false;
@@ -617,32 +633,46 @@ bool placeMark(Ctx& cx, Scene& sc, MarkAnnotation& m) {
     tmp.labelPos = {0, 0};
     const Bounds2 b0 = markBox(tmp);
     const double W = b0.width(), H = b0.height();
-    // Adaylar: halka + gorunum kenarlari boyunca (yukari/asagi/sol/sag, kaydirmali). Maliyet: kilavuz uzunlugu + kesisim.
-    std::vector<Vec2> cands;
-    for (const Vec2& r : ringOffsets()) cands.push_back({ap.x + r.x - W / 2.0, ap.y + r.y - H / 2.0});
+    // ADAY SIRASI (2026-10-29 kullanici geri bildirimi: "part mark'lar daginik geliyor"):
+    //   1) DUZENLI SLOTLAR — ayni gorunusun mark'lari numara sirasina gore SAG KOLONA alt alta,
+    //      sigmazsa SOL KOLONA alt alta, sonra UST/ALT SATIRA yan yana. Boylece etiketler
+    //      gorunumun yaninda bir blok halinde durur, sayfaya dagilmaz.
+    //   2) Yedek: halka + kenar taramasi (eski davranis; kucuk ek ceza ile, slotlar tercih edilir).
+    struct Cand { Vec2 p; double penalty; };
+    std::vector<Cand> cands;
+    const double pitch = textBoxHeight(cx.cfg.noteTextHeight) + 1.5;
+    const double rowStep = W + 3.0;
+    if (useSlots) {
+        cands.push_back({{vb.max.x + 4.0, vb.max.y - (slot + 1) * pitch}, 0.0});              // sag kolon
+        cands.push_back({{vb.min.x - 4.0 - W, vb.max.y - (slot + 1) * pitch}, 0.0});          // sol kolon
+        cands.push_back({{vb.min.x + slot * rowStep, vb.max.y + 4.0}, 0.0});                  // ust satir
+        cands.push_back({{vb.min.x + slot * rowStep, vb.min.y - 4.0 - H}, 0.0});              // alt satir
+    }
+    for (const Vec2& r : ringOffsets()) cands.push_back({{ap.x + r.x - W / 2.0, ap.y + r.y - H / 2.0}, 12.0});
     static const double lifts[] = {2, 5, 8, 12, 16, 22, 30, 40, 55, 75};
     static const double shifts[] = {0, 8, -8, 16, -16, 24, -24, 40, -40, 60, -60, 90, -90, 130, -130};
     for (const double lift : lifts)
         for (const double sh : shifts) {
-            cands.push_back({ap.x - W / 2.0 + sh, vb.max.x >= vb.min.x ? vb.max.y + lift : 0});
-            cands.push_back({ap.x - W / 2.0 + sh, vb.min.y - lift - H});
-            cands.push_back({vb.min.x - lift - W, ap.y - H / 2.0 + sh});
-            cands.push_back({vb.max.x + lift, ap.y - H / 2.0 + sh});
+            cands.push_back({{ap.x - W / 2.0 + sh, vb.max.x >= vb.min.x ? vb.max.y + lift : 0}, 12.0});
+            cands.push_back({{ap.x - W / 2.0 + sh, vb.min.y - lift - H}, 12.0});
+            cands.push_back({{vb.min.x - lift - W, ap.y - H / 2.0 + sh}, 12.0});
+            cands.push_back({{vb.max.x + lift, ap.y - H / 2.0 + sh}, 12.0});
         }
     double bestCost = 1e300;
     Vec2 best{};
     bool found = false;
-    for (const Vec2& c : cands) {
-        tmp.labelPos = c;
+    for (const Cand& c : cands) {
+        tmp.labelPos = c.p;
         const Bounds2 bb = markBox(tmp);
         const Obb box = obbOfRect(bb);
         if (!textFits(box, sc, cx.cfg.clearance, owner)) continue;
         const LineSeg lead{ap, bb.centre()};
         if (!lineFits(lead, sc, cx.cfg.clearance, owner)) continue;
-        const double cost = std::hypot(lead.b.x - lead.a.x, lead.b.y - lead.a.y) + 6.0 * crossings(lead, sc, owner);
+        const double cost = std::hypot(lead.b.x - lead.a.x, lead.b.y - lead.a.y) + 6.0 * crossings(lead, sc, owner) +
+                            c.penalty;
         if (cost < bestCost - 1e-9) {
             bestCost = cost;
-            best = c;
+            best = c.p;
             found = true;
         }
     }
@@ -735,9 +765,13 @@ BlockLayout layoutMainBlock(const DrawingSheet& s, const std::vector<Margins>& m
     return bl;
 }
 
-BlockLayout layoutDetailBlock(const DrawingSheet& s, const std::vector<Margins>& mg, double extra) {
+// DETAY blogu: yan yana tek satir. `maxWidth > 0` ise satirlara SARILIR (2026-10-29):
+// 4 detay 1:2'de tek satirda A3'e sigmiyordu -> NO_FIT -> tek pafta bolunuyordu. Sarma ile
+// ayni detaylar sayfaya sigar ve pafta bolunmez.
+BlockLayout layoutDetailBlock(const DrawingSheet& s, const std::vector<Margins>& mg, double extra,
+                              double maxWidth = 0.0) {
     BlockLayout bl;
-    double x = 0, hmax = 0;
+    double x = 0, rowY = 0, rowH = 0, maxW = 0;
     std::vector<std::size_t> idx;
     for (std::size_t i = 0; i < s.views.size(); ++i)
         if (s.views[i].kind == ViewKind::Detail) idx.push_back(i);
@@ -746,31 +780,55 @@ BlockLayout layoutDetailBlock(const DrawingSheet& s, const std::vector<Margins>&
         const Margins& m = mg[i];
         const double iw = v.bounds.width() * v.scale, ih = v.bounds.height() * v.scale;
         const double colW = m.l + extra + iw + m.r + extra;
-        hmax = std::max(hmax, m.b + extra + ih + m.t + extra);
-        bl.originRel.push_back({i, Vec2{x + m.l + extra, m.b + extra}});
+        const double colH = m.b + extra + ih + m.t + extra;
+        if (maxWidth > 0.0 && x > 0.0 && x + colW > maxWidth + 1e-9) {   // yeni satir
+            maxW = std::max(maxW, x);
+            rowY += rowH;
+            rowH = 0;
+            x = 0;
+        }
+        bl.originRel.push_back({i, Vec2{x + m.l + extra, rowY + m.b + extra}});
+        rowH = std::max(rowH, colH);
         x += colW;
     }
-    bl.W = x;
-    bl.H = hmax;
+    maxW = std::max(maxW, x);
+    bl.W = maxW;
+    bl.H = rowY + rowH;
     return bl;
 }
 
-bool placeViewsWithMargins(DrawingSheet& s, const std::vector<Margins>& mg, double extra) {
+bool placeViewsWithMargins(DrawingSheet& s, const std::vector<Margins>& mg, double extra,
+                           bool allowOverflow = false, bool* overflowed = nullptr,
+                           double* excess = nullptr) {
+    if (overflowed) *overflowed = false;
+    if (excess) *excess = 0.0;
     const Bounds2 area = s.drawingArea();
     const double pad = s.layoutConfig.clearance * 2.0;
     const double availW = area.width() - 2 * pad, availH = area.height() - 2 * pad;
     if (availW <= 0 || availH <= 0 || s.views.empty()) return false;
     const BlockLayout main = layoutMainBlock(s, mg, extra);
-    const BlockLayout det = layoutDetailBlock(s, mg, extra);
+    // Detaylar sayfa genisligine gore SARILIR (tek satir tasmasi NO_FIT'e yol aciyordu).
+    const BlockLayout det = layoutDetailBlock(s, mg, extra, availW);
     const bool hasDet = !det.originRel.empty();
     const double x0 = area.min.x + pad, y0 = area.min.y + pad;
+    const auto ratio = [&](double w, double h) { return std::max(w / availW, h / availH); };
     const auto apply = [&](const BlockLayout& bl, double ox, double oy) {
         for (const auto& [i, o] : bl.originRel) s.views[i].origin = {ox + o.x, oy + o.y};
     };
     // (A) yan yana
     const double wA = main.W + det.W, hA = std::max(main.H, det.H);
     if (!hasDet) {
-        if (main.W > availW + 1e-9 || main.H > availH + 1e-9) return false;
+        if (main.W > availW + 1e-9 || main.H > availH + 1e-9) {
+            // KULLANICI ISTEGI (2026-10-29): "kagittan tassa da cizim tek yerde, duzenli dursun".
+            // Blok sigmiyorsa KUCULTULMEZ/BOLUNMEZ: sol-alt koseden baslar, sag/ust yone tasar.
+            if (!allowOverflow) return false;
+            const double ox = x0 + std::max(0.0, (availW - main.W) / 2.0);
+            const double oy = y0 + std::max(0.0, (availH - main.H) / 2.0);
+            apply(main, ox, oy);
+            if (overflowed) *overflowed = true;
+            if (excess) *excess = ratio(main.W, main.H);
+            return true;
+        }
         apply(main, x0 + (availW - main.W) / 2.0, y0 + (availH - main.H) / 2.0);
         return true;
     }
@@ -788,7 +846,27 @@ bool placeViewsWithMargins(DrawingSheet& s, const std::vector<Margins>& mg, doub
         apply(det, ox + (wB - det.W) / 2.0, oy + main.H);
         return true;
     }
-    return false;
+    if (!allowOverflow) {
+        if (std::getenv("MM_LAYOUT_DEBUG"))
+            std::fprintf(stderr,
+                         "[layout] NOFIT avail=%.1fx%.1f main=%.1fx%.1f det=%.1fx%.1f side=%.1fx%.1f stack=%.1fx%.1f\n",
+                         availW, availH, main.W, main.H, det.W, det.H, wA, hA, wB, hB);
+        return false;
+    }
+    // Tasma modu: hangi dizilim DAHA DAR ise onu kullan (blok cerceveyi asar, kirpilmaz).
+    const double ox = x0 + std::max(0.0, (availW - std::min(wA, wB)) / 2.0);
+    const double oy = y0 + std::max(0.0, (availH - std::min(hA, hB)) / 2.0);
+    if (wB <= wA) {   // ustuste daha dar
+        apply(main, ox + (std::max(main.W, det.W) - main.W) / 2.0, oy);
+        apply(det, ox + (std::max(main.W, det.W) - det.W) / 2.0, oy + main.H);
+        if (excess) *excess = ratio(wB, hB);
+    } else {
+        apply(main, ox, oy);
+        apply(det, ox + main.W, oy);
+        if (excess) *excess = ratio(wA, hA);
+    }
+    if (overflowed) *overflowed = true;
+    return true;
 }
 
 // Sadece olcu/mark/baslik: bir gorunumun kendi basina annotation zarfi (komsu engelsiz).
@@ -824,9 +902,11 @@ struct Attempt {
     DrawingSheet sheet;
     std::vector<LayoutIssue> issues;
     bool ok{false};
+    bool overflow{false};   // blok kagidi asti ama ogeler cakismasiz yerlesti
+    double excess{0.0};     // tasma orani: max(blok/alan) — 1'den buyukse tasmis
 };
 
-Attempt tryLayout(const DrawingSheet& in, SheetSize size, double den) {
+Attempt tryLayout(const DrawingSheet& in, SheetSize size, double den, bool allowOverflow = false) {
     Attempt at;
     at.sheet = in;
     DrawingSheet& s = at.sheet;
@@ -838,14 +918,20 @@ Attempt tryLayout(const DrawingSheet& in, SheetSize size, double den) {
     char buf[32];
     std::snprintf(buf, sizeof(buf), "1:%.0f", den);
     s.titleBlock.scaleText = buf;
-    for (DrawingView& v : s.views) v.scale = s.scale;
-    // DETAY gorunumleri: ana olcekten ayni veya BUYUK olcek (daha kucuk payda); en buyuk makul olcek,
-    // annotation'lari izole yerlesimde SORUNSUZ olan ilk standart olcek (detay = buyutme amacli).
-    {
-        const Bounds2 area = s.drawingArea();
+    const DrawingSheet prepared = s;
+
+    bool hasDetail = false;
+    for (const DrawingView& v : prepared.views) hasDetail = hasDetail || v.kind == ViewKind::Detail;
+
+    // DETAY gorunumleri: ana olcekten ayni veya BUYUK olcek (detay = buyutme amacli).
+    // `atPageScale == true`: detaylar da pafta olceginde cizilir (buyutulmus hali kagida sigmiyorsa).
+    const auto applyDetailScales = [&](DrawingSheet& sh, bool atPageScale) {
+        for (DrawingView& v : sh.views) v.scale = sh.scale;
+        if (atPageScale) return;
+        const Bounds2 area = sh.drawingArea();
         const double maxPaper = std::min(130.0, 0.6 * std::min(area.width(), area.height()));
-        for (std::size_t i = 0; i < s.views.size(); ++i) {
-            DrawingView& v = s.views[i];
+        for (std::size_t i = 0; i < sh.views.size(); ++i) {
+            DrawingView& v = sh.views[i];
             if (v.kind != ViewKind::Detail) continue;
             double chosen = den;
             for (const double dd : standardScaleDenominators()) {
@@ -854,74 +940,146 @@ Attempt tryLayout(const DrawingSheet& in, SheetSize size, double den) {
                 if (std::max(v.bounds.width(), v.bounds.height()) / dd > maxPaper) continue;
                 v.scale = 1.0 / dd;
                 v.origin = {2000.0, 2000.0};
-                resetAnnotationDefaults(s);
+                resetAnnotationDefaults(sh);
                 bool clean = false;
-                isolatedMargins(s, i, &clean);
+                isolatedMargins(sh, i, &clean);
                 if (clean) { chosen = dd; break; }
             }
             v.scale = 1.0 / chosen;
         }
-    }
-    resetAnnotationDefaults(s);
+    };
 
-    // ANA GORUNUSLER (Front/Top/Side) TEK OLCEKTE cizilir: pafta olcegi (s.scale) hepsine uygulanir.
+    // ANA GORUNUSLER (Front/Top/Side) TEK OLCEKTE cizilir: pafta olcegi (sh.scale) hepsine uygulanir.
     // Kullanici geri bildirimi 2026-10-28: "paftaya sigiyor ama kesitlerin olcegi ayni degil, o yuzden
-    // cok buyuk cikiyor". Onceki surum her ana gorunuse ayri olcek verebiliyordu; 200x400'lik FRONT
-    // 1:2'de, 5000 mm'lik TOP/SIDE 1:25'te basiliyordu. Hizali projeksiyon gorunusleri (on/ust/yan
-    // ayni cismin izdusumleri) AYNI olcekte olmak ZORUNDA; aksi halde olcu ve geometri karsilastirilamaz.
-    // Cozum: pafta olcegi tek, catismalar pafta olcegi aramasinda cozulur (layoutSheet den dongusu
-    // sigdiran EN BUYUK olcegi secer; ayni kagit icin den buyudukce cizim kuculur).
-    // Yalniz DETAY gorunumleri kendi (daha buyuk) olcegini alabilir — yukarida secildi.
-    resetAnnotationDefaults(s);
+    // cok buyuk cikiyor". Hizali projeksiyon gorunusleri AYNI olcekte olmak ZORUNDA; catismalar pafta
+    // olcegi aramasinda cozulur. Yalniz DETAY gorunumleri kendi (daha buyuk) olcegini alabilir.
+    const auto run = [&](bool atPageScale) -> Attempt {
+        Attempt a;
+        a.sheet = prepared;
+        DrawingSheet& sh = a.sheet;
+        applyDetailScales(sh, atPageScale);
+        resetAnnotationDefaults(sh);
+        std::vector<Margins> mg;
+        for (std::size_t i = 0; i < sh.views.size(); ++i) {
+            sh.views[i].origin = {2000.0, 2000.0};
+            bool clean = true;
+            mg.push_back(isolatedMargins(sh, i, &clean));
+        }
+        const int maxIt = std::max(1, sh.layoutConfig.maxIterations);
+        for (int it = 0; it < maxIt; ++it) {
+            a.issues.clear();
+            bool blockOverflow = false;
+            double blockExcess = 0.0;
+            if (!placeViewsWithMargins(sh, mg, 6.0 * it, allowOverflow, &blockOverflow, &blockExcess)) {
+                a.issues.push_back({"NO_FIT", "gorunumler + annotation payi secili kagit/olcege sigmiyor", 0});
+                return a;
+            }
+            a.overflow = blockOverflow;
+            a.excess = blockExcess;
+            Ctx cx{&sh, sh.layoutConfig, {}};
+            Scene sc = buildViewScene(sh);
+            // Tasma modunda ve YALNIZ blok kagidi astiysa annotation'lar da cerceve disina cikabilir.
+            // Blok kagida sigiyorsa eski kati kural gecerli: her sey cerceve icinde ve cakismasiz.
+            sc.allowOutside = allowOverflow && blockOverflow;
+            sc.border.include({sh.format.margin, sh.format.margin});
+            sc.border.include({sh.format.width - sh.format.margin, sh.format.height - sh.format.margin});
+            sc.title = sh.titleBlockRect();
+            for (Dimension2D& d : sh.dimensions) { d.textT = 0.5; d.textSide = -1; d.textLevel = 0; }
+            // 1) olculer (gorunum sirasiyla)
+            for (const DrawingView& v : sh.views) placeViewDimensions(cx, sc, v.id);
+            // 2) mark etiketleri — DETERMINISTIK VE DUZENLI: ayni gorunusun mark'lari poz numarasina
+            //    gore siralanip SABIT SLOTLARA yerlestirilir (sag kolon -> sol kolon -> ust/alt satir).
+            //    Boylece etiketler sayfaya dagilmaz. Sirali yerlestirme bir etiketi yerlestiremezse
+            //    (yogun sayfa) ESKI (depolama) sirasiyla bir kez daha denenir: sirasi yuzunden
+            //    kaybedilen etiket olmaz.
+            std::vector<std::size_t> markSorted;
+            for (std::size_t i = 0; i < sh.marks.size(); ++i) markSorted.push_back(i);
+            std::stable_sort(markSorted.begin(), markSorted.end(), [&](std::size_t x, std::size_t y) {
+                const MarkAnnotation& ma = sh.marks[x];
+                const MarkAnnotation& mb = sh.marks[y];
+                if (ma.viewId != mb.viewId) return ma.viewId < mb.viewId;
+                if (ma.isAssembly != mb.isAssembly) return ma.isAssembly;   // ana mark her zaman ilk slot
+                const int na = markNumber(ma.text), nb = markNumber(mb.text);
+                if (na != nb) return na < nb;
+                return ma.id < mb.id;
+            });
+            const std::size_t markTextStart = sc.texts.size(), markLineStart = sc.lines.size();
+            const auto placeMarks = [&](const std::vector<std::size_t>& order, bool useSlots,
+                                        std::vector<std::string>& fails) {
+                std::map<ElementId, int> slotOf;
+                for (const std::size_t i : order) {
+                    MarkAnnotation& m = sh.marks[i];
+                    const int slot = slotOf[m.viewId]++;
+                    if (m.visible && !placeMark(cx, sc, m, slot, useSlots))
+                        fails.push_back("mark etiketi cakismasiz yerlestirilemedi: " + m.text);
+                }
+            };
+            std::vector<std::string> markFails;
+            placeMarks(markSorted, true, markFails);
+            if (!markFails.empty() && markSorted.size() > 1) {
+                // (2) Sirali duzen bu sayfada sigmadi -> depolama sirasiyla tekrar.
+                sc.texts.resize(markTextStart);
+                sc.lines.resize(markLineStart);
+                std::vector<std::size_t> plain;
+                for (std::size_t i = 0; i < sh.marks.size(); ++i) plain.push_back(i);
+                std::vector<std::string> plainFails;
+                placeMarks(plain, true, plainFails);
+                markFails = std::move(plainFails);
+            }
+            if (!markFails.empty() && markSorted.size() > 1) {
+                // (3) Son care: slot duzeni KAPALI, eski serbest arama (etiket kaybi olmasin).
+                sc.texts.resize(markTextStart);
+                sc.lines.resize(markLineStart);
+                std::vector<std::size_t> plain;
+                for (std::size_t i = 0; i < sh.marks.size(); ++i) plain.push_back(i);
+                std::vector<std::string> plainFails;
+                placeMarks(plain, false, plainFails);
+                markFails = std::move(plainFails);
+            }
+            for (const std::string& f : markFails) cx.issues.push_back({"ELEMENT_UNPLACEABLE", f, 0});
+            // 3) callout'lar (anchor'li)
+            for (TextAnnotation& t : sh.texts)
+                if (t.visible && t.kind != TextKind::ViewTitle && t.hasAnchor && t.viewId != 0)
+                    if (!placeAnchoredText(cx, sc, t))
+                        cx.issues.push_back({"ELEMENT_UNPLACEABLE", "callout/not cakismasiz yerlestirilemedi", t.id});
+            // 4) gorunum basliklari
+            for (TextAnnotation& t : sh.texts)
+                if (t.visible && t.kind == TextKind::ViewTitle)
+                    if (!placeViewTitle(cx, sc, t))
+                        cx.issues.push_back({"ELEMENT_UNPLACEABLE", "gorunum basligi yerlestirilemedi", t.id});
+            // 5) sayfa duzeyi notlar (damga, legend, checklist)
+            for (TextAnnotation& t : sh.texts)
+                if (t.visible && t.kind != TextKind::ViewTitle && !(t.hasAnchor && t.viewId != 0))
+                    if (!placeFreeText(cx, sc, t, sh.notesArea()))
+                        cx.issues.push_back({"ELEMENT_UNPLACEABLE", "sayfa notu cakismasiz yerlestirilemedi", t.id});
+            a.issues = cx.issues;
+            if (a.issues.empty()) {
+                a.ok = true;
+                return a;
+            }
+            // Daha genis gorunum payi ile tekrar (gorunumler arasi bosluk buyur).
+        }
+        return a;
+    };
 
-    std::vector<Margins> mg;
-    for (std::size_t i = 0; i < s.views.size(); ++i) {
-        s.views[i].origin = {2000.0, 2000.0};
-        bool clean = true;
-        mg.push_back(isolatedMargins(s, i, &clean));
+    const auto scoreOf = [](const Attempt& a) {
+        double sc2 = static_cast<double>(a.issues.size());
+        if (!a.ok) sc2 += 1000.0;
+        if (a.overflow) sc2 += 500.0;
+        return sc2;
+    };
+    Attempt best = run(false);
+    // (2026-10-29) Buyutulmus detaylar yuzunden blok kagida sigmiyorsa detaylari pafta olcegine
+    // indirip yeniden dene: ayni cizim tek paftaya sigar (bolme gerekmez).
+    if (hasDetail && (best.overflow || !best.ok)) {
+        Attempt small = run(true);
+        if (std::getenv("MM_LAYOUT_DEBUG"))
+            std::fprintf(stderr, "   [try] %s 1:%.0f big(ok=%d ovf=%d n=%zu) small(ok=%d ovf=%d n=%zu)\n",
+                         sheetSizeName(size), den, (int)best.ok, (int)best.overflow, best.issues.size(),
+                         (int)small.ok, (int)small.overflow, small.issues.size());
+        if (scoreOf(small) <= scoreOf(best)) best = std::move(small);
     }
-    const int maxIt = std::max(1, s.layoutConfig.maxIterations);
-    for (int it = 0; it < maxIt; ++it) {
-        at.issues.clear();
-        if (!placeViewsWithMargins(s, mg, 6.0 * it)) {
-            at.issues.push_back({"NO_FIT", "gorunumler + annotation payi secili kagit/olcege sigmiyor", 0});
-            return at;
-        }
-        Ctx cx{&s, s.layoutConfig, {}};
-        Scene sc = buildViewScene(s);
-        sc.border.include({s.format.margin, s.format.margin});
-        sc.border.include({s.format.width - s.format.margin, s.format.height - s.format.margin});
-        sc.title = s.titleBlockRect();
-        for (Dimension2D& d : s.dimensions) { d.textT = 0.5; d.textSide = -1; d.textLevel = 0; }
-        // 1) olculer (gorunum sirasiyla)
-        for (const DrawingView& v : s.views) placeViewDimensions(cx, sc, v.id);
-        // 2) mark etiketleri
-        for (MarkAnnotation& m : s.marks)
-            if (m.visible && !placeMark(cx, sc, m))
-                cx.issues.push_back({"ELEMENT_UNPLACEABLE", "mark etiketi cakismasiz yerlestirilemedi: " + m.text, m.id});
-        // 3) callout'lar (anchor'li)
-        for (TextAnnotation& t : s.texts)
-            if (t.visible && t.kind != TextKind::ViewTitle && t.hasAnchor && t.viewId != 0)
-                if (!placeAnchoredText(cx, sc, t))
-                    cx.issues.push_back({"ELEMENT_UNPLACEABLE", "callout/not cakismasiz yerlestirilemedi", t.id});
-        // 4) gorunum basliklari
-        for (TextAnnotation& t : s.texts)
-            if (t.visible && t.kind == TextKind::ViewTitle)
-                if (!placeViewTitle(cx, sc, t))
-                    cx.issues.push_back({"ELEMENT_UNPLACEABLE", "gorunum basligi yerlestirilemedi", t.id});
-        // 5) sayfa duzeyi notlar (damga, legend, checklist)
-        for (TextAnnotation& t : s.texts)
-            if (t.visible && t.kind != TextKind::ViewTitle && !(t.hasAnchor && t.viewId != 0))
-                if (!placeFreeText(cx, sc, t, s.notesArea()))
-                    cx.issues.push_back({"ELEMENT_UNPLACEABLE", "sayfa notu cakismasiz yerlestirilemedi", t.id});
-        at.issues = cx.issues;
-        if (at.issues.empty()) {
-            at.ok = true;
-            return at;
-        }
-        // Daha genis gorunum payi ile tekrar (gorunumler arasi bosluk buyur).
-    }
-    return at;
+    return best;
 }
 
 } // namespace
@@ -1031,12 +1189,24 @@ bool layoutSheet(DrawingSheet& s) {
 
     Attempt best;
     bool haveBest = false;
+    // Tasma modu (cfg.allowOverflow): ogeler cakismasiz yerlesti ama blok kagidi asti.
+    // Bunlardan TASMASI EN AZ olani secilir (kagit sinirina en yakin durum).
+    Attempt soft;
+    bool haveSoft = false;
+    double softExcess = 1e300;
     int attempts = 0;
     int escal = 0;
     for (const SheetSize z : sizes) {
         for (const double den : dens) {
             ++attempts;
-            Attempt at = tryLayout(s, z, den);
+            Attempt at = tryLayout(s, z, den, cfg.allowOverflow);
+            const bool dbg = std::getenv("MM_LAYOUT_DEBUG") != nullptr;
+            if (dbg) {
+                std::fprintf(stderr, "[att] %s 1:%.0f ok=%d ovf=%d exc=%.3f issues=%zu %s|%s\n", sheetSizeName(z), den,
+                             (int)at.ok, (int)at.overflow, at.excess, at.issues.size(),
+                             at.issues.empty() ? "-" : at.issues.front().code.c_str(),
+                             at.issues.empty() ? "" : at.issues.front().detail.c_str());
+            }
             if (at.ok) {
                 const OverlapReport m = measureOverlaps(at.sheet);
                 if (m.total() == 0) {
@@ -1049,12 +1219,26 @@ bool layoutSheet(DrawingSheet& s) {
                     s = std::move(at.sheet);
                     return true;
                 }
+                // Yalniz "cerceve disina tasma" kaldıysa bu deneme kullanilabilir (kagit tasmasi
+                // kabul edilen tek-pafta modu). Ic ice girmeler (metin/metin, metin/cizgi) varsa
+                // deneme yine reddedilir: kagit tasmasi serbest, CAKISMA degil.
+                if (cfg.allowOverflow && m.total() == m.outsideBorder && at.ok) {
+                    if (at.excess < softExcess - 1e-9) {
+                        soft = at;   // kopya: sonra en iyi deneme olarak kullanilacak
+                        haveSoft = true;
+                        softExcess = at.excess;
+                    }
+                }
                 for (const std::string& d : m.details) at.issues.push_back({"MEASURED_OVERLAP", d, 0});
                 at.ok = false;
             }
-            const auto score = [](const Attempt& a) {
-                std::size_t n = a.issues.size();
+            const auto score = [&cfg](const Attempt& a) {
+                double n = static_cast<double>(a.issues.size());
                 for (const LayoutIssue& i : a.issues) if (i.code == "NO_FIT") n += 100000;   // yerlestirilemeyen deneme son tercih
+                // Tasma modunda kagida SIGAN deneme, tasan denemeden HER ZAMAN iyidir (okunabilir olcek);
+                // tasan denemeler arasinda %5'e kadar tasma ESIT sayilir, boylece gereksiz yere
+                // kucultulmez (ilk/esasli olcek tercih edilir), daha fazla tasma cezalandirilir.
+                if (cfg.allowOverflow && a.overflow) n += 500.0 + 10.0 * std::max(0.0, a.excess - 1.05);
                 return n;
             };
             if (!haveBest || score(at) < score(best)) {
@@ -1068,12 +1252,51 @@ bool layoutSheet(DrawingSheet& s) {
     }
     rep.attempts = attempts;
     rep.escalations = std::max(0, escal - 1);
+    // ---- (2026-10-29) TEK PAFTA KABUL SIRASI (kullanici istegi) -------------------------------
+    // 1) kagida tam sigan + cakismasiz deneme: yukarida aninda kabul edildi.
+    // 2) kenardan AZ tasan (<= %15) ama CAKISMASIZ deneme: cizim tek paftada, kirpilmadan durur.
+    // 3) kagida SIGAN ama bazi olcu/etiket yerlestirilemeyen deneme: okunabilir olcek korunur,
+    //    eksikler raporlanir (cizim yine uretilir, bolunmez).
+    // 4) her yonden tasan ama cakismasiz deneme.
+    const bool nearFit = haveSoft && softExcess <= 1.15;
+    if (cfg.allowOverflow && (nearFit || (!haveBest || best.overflow))) {
+        if (haveSoft && (nearFit || !haveBest || best.overflow)) {
+            rep.ok = true;
+            rep.overflow = true;
+            rep.finalSheet = soft.sheet.format.size;
+            rep.scaleDenominator = soft.sheet.scale > 0.0 ? 1.0 / soft.sheet.scale : 0.0;
+            rep.issues.clear();
+            rep.issues.push_back({"PAPER_OVERFLOW",
+                                  "cizim kagit cercevesini asiyor (tek pafta, kirpilmadi); kagit secip Uygula ile yerlestirin",
+                                  0});
+            soft.sheet.layout = rep;
+            s = std::move(soft.sheet);
+            return true;
+        }
+    }
+    if (cfg.allowOverflow && haveBest && !best.overflow) {
+        // Kagida sigdi: olcek okunabilir. Yerlesim eksikleri (yerlestirilemeyen olcu zinciri vb.)
+        // cizimi ENGELLEMEZ; sorun listesi dolu kalir, kalite kapisi durustce "eksik" der.
+        rep.ok = false;
+        rep.overflow = false;
+        rep.finalSheet = best.sheet.format.size;
+        rep.scaleDenominator = best.sheet.scale > 0.0 ? 1.0 / best.sheet.scale : 0.0;
+        rep.issues = best.issues;
+        if (rep.issues.empty()) rep.issues.push_back({"LAYOUT_INCOMPLETE", "yerlesim tamamlanmadi", 0});
+        best.sheet.layout = rep;
+        s = std::move(best.sheet);
+        return false;
+    }
     rep.ok = false;
     const DrawingSheet original = s;
     if (haveBest) rep.issues = best.issues;
     if (rep.issues.empty()) rep.issues.push_back({"NO_FIT", "yerlesim basarisiz", 0});
     const bool noFitOnly = std::all_of(rep.issues.begin(), rep.issues.end(), [](const LayoutIssue& i) { return i.code == "NO_FIT"; });
     if (haveBest && !noFitOnly) {
+        rep.overflow = best.overflow;   // kagit tasmasi kabul edilen mod: dis cerceve cakismalari bloke etmez
+        rep.finalSheet = best.sheet.format.size;
+        rep.scaleDenominator = best.sheet.scale > 0.0 ? 1.0 / best.sheet.scale : 0.0;
+        best.sheet.layout = rep;
         s = std::move(best.sheet);
     } else {
         // Hicbir kagit/olcege sigmadi: P1 dogrusal yerlesimi onizleme icin koru (CIZIM ONAYSIZ kalir).

@@ -91,6 +91,9 @@ int main() {
         DrawingPreferences p;
         p.autoSheetSize = false;
         p.sheetSize = SheetSize::A2;
+        // 2026-10-29: pafta BOLME artik varsayilan degil; bu test bolme makinesini dogrular.
+        p.autoMultiSheetFallback = true;
+        p.allowOverflow = false;
         const DrawingSetResult r = buildDrawingSet(f.doc, reg, assemblyOf(f), o, p);
         check(r.ok && r.document.sheets().size() >= 2, "A: sigmayan montaj -> bagli coklu pafta seti");
         bool fixedPaper = true, requested = true;
@@ -231,6 +234,8 @@ int main() {
         DrawingPreferences p;
         p.autoSheetSize = false;
         p.sheetSize = SheetSize::A3;
+        p.autoMultiSheetFallback = true;   // bolme makinesi testi (2026-10-29: varsayilan kapali)
+        p.allowOverflow = false;
         const DrawingSetResult r = buildDrawingSet(f.doc, reg, assemblyOf(f), o, p);
         check(r.ok && r.document.sheets().size() > 1, "E: dar kagit -> coklu pafta");
         int maxDetails = 0;
@@ -263,6 +268,8 @@ int main() {
         DrawingPreferences p;
         p.autoSheetSize = false;
         p.sheetSize = SheetSize::A2;
+        p.autoMultiSheetFallback = true;   // bolme makinesi testi
+        p.allowOverflow = false;
         const DrawingSetResult r = buildDrawingSet(f.doc, reg, assemblyOf(f), o, p);
         MarkRegistry regBase;
         DrawingOptions baseOpt = o;
