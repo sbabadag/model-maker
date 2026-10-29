@@ -638,6 +638,12 @@ if(BUILD_TESTING)
     target_link_libraries(model_maker_sections_test PRIVATE model_maker_core)
     target_compile_options(model_maker_sections_test PRIVATE -Wall -Wextra -Wpedantic)
     add_test(NAME model_maker_sections_test COMMAND model_maker_sections_test)
+    # EĞİK KİRİŞTE HAUNCH 40: düşey alın levhası (kolona oturur), düşey kesim,
+    # düşey ön kenarlı gövde. Yatay kiriş regresyonu aynı testte.
+    add_executable(model_maker_haunch_inclined_test tests/haunch_inclined_test.cpp)
+    target_link_libraries(model_maker_haunch_inclined_test PRIVATE model_maker_core)
+    target_compile_options(model_maker_haunch_inclined_test PRIVATE -Wall -Wextra -Wpedantic)
+    add_test(NAME model_maker_haunch_inclined_test COMMAND model_maker_haunch_inclined_test)
 
     # KARARLI VARLIK KIMLIGI (EntityId): vektor indeksi kalici kimlik DEGIL;
     # kimlik ekleme/silme/degistirme/undo/redo boyunca DOGRU varlikla eslesir,

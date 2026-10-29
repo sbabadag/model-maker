@@ -48,6 +48,7 @@
 
 #include <optional>
 #include <string>
+#include <utility>
 #include <variant>
 #include <vector>
 
@@ -226,6 +227,11 @@ struct PlateSpec {
         bool operator==(const Chamfer&) const = default;
     };
     std::vector<Chamfer> chamfers;
+    // SERBEST KONTUR (opsiyonel): levha MERKEZINE gore yerel (u,v) noktalari,
+    // saat yonunun tersi. Dolu ise width/height yalniz sinir kutusudur ve
+    // dikdortgen+pah yolu YERINE bu cokgen kullanilir. Egik kiris haunch
+    // govdesi (dusey on kenar + kiris alt basligina paralel ust kenar) icin.
+    std::vector<std::pair<double, double>> outline;
 };
 
 // Kaynak spec'i (plan asamasinda; ileriki fazlarda Weld modeli).

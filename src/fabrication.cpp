@@ -71,6 +71,15 @@ PlateRef findPlateSpec(const Document& doc, EntityId part) {
 std::vector<Vec2> plateOutline(const PlateSpec& p, bool& exact, bool& tapered) {
     exact = true;
     tapered = false;
+    // Serbest kontur (eğik kiriş haunch gövdesi): noktalar levha merkezine
+    // göre (u,v), CCW. Pah/dikdörtgen yolunu atla.
+    if (!p.outline.empty()) {
+        tapered = true;
+        std::vector<Vec2> o;
+        o.reserve(p.outline.size());
+        for (const auto& q : p.outline) o.push_back({q.first, q.second});
+        return o;
+    }
     const double hw = p.width / 2.0, hh = p.height / 2.0;
     struct Cut { double h{0}, v{0}; };
     Cut cut[4];

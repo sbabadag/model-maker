@@ -42,6 +42,17 @@ struct Poly {
 };
 
 std::vector<Vec3> plateOutline(const PlateSpec& p, double side) {
+    // Serbest kontur (eğik kiriş haunch gövdesi): noktalar levha merkezine
+    // göre (u,v); dikdörtgen+pah yolunu ATLA (model ile aynı görünsün).
+    if (!p.outline.empty()) {
+        std::vector<Vec3> out;
+        out.reserve(p.outline.size());
+        for (const auto& q : p.outline)
+            out.push_back(sum(p.center, mul(p.u, q.first),
+                              plus(mul(p.v, q.second),
+                                   mul(p.axis, side*p.thickness*0.5))));
+        return out;
+    }
     // Corner order BL BR TR TL and corresponding rectangular chamfers.
     const double u=p.width*0.5,v=p.height*0.5;
     const std::array<QPointF,4> c{QPointF(-u,-v),QPointF(u,-v),

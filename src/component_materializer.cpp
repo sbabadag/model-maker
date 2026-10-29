@@ -120,6 +120,19 @@ TopoDS_Shape ComponentMaterializer::buildPlateSolid(const PlateSpec& p) {
         return base.Translated(gp_Vec(uu) * lu + gp_Vec(vv) * lv);
     };
 
+    // SERBEST KONTUR (egik kiris haunch govdesi): noktalar levha merkezine
+    // gore (u,v). Dikdortgen+pah yolu atlanir; tel -> yuzey -> prizma.
+    if (!p.outline.empty()) {
+        if (p.outline.size() < 3) return TopoDS_Shape();
+        BRepBuilderAPI_MakePolygon poly;
+        for (const auto& q : p.outline) poly.Add(pt(q.first, q.second));
+        poly.Close();
+        if (!poly.IsDone()) return TopoDS_Shape();
+        BRepBuilderAPI_MakeFace face(poly.Wire());
+        if (!face.IsDone()) return TopoDS_Shape();
+        return BRepPrimAPI_MakePrism(face.Face(), gp_Vec(z) * p.thickness).Shape();
+    }
+
     // Pahsiz levha: eski dogrudan poligon yolu (davranis degismez).
     if (p.chamfers.empty()) {
         BRepBuilderAPI_MakePolygon poly;
