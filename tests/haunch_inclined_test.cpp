@@ -177,6 +177,54 @@ int main()
         }
     }
 
+    std::printf("=== EAVES: kolon ustu = kiris ekseni (3000) — alin levhasi TASMAMALI ===\n");
+    {
+        ComponentInput in = makeInput(0.0);
+        // Kiriş kolon tepesinde (katlı_yapı2 deseni).
+        in.secondary[0].axisFrom = {0, 1200, 3000};
+        in.secondary[0].axisTo   = {0, 60, 3000};
+        GenerationPlan gp = ComponentRegistry::instance().generate(L"tekla_haunch_40", in);
+        check(gp.ok, "eaves: plan uretildi");
+        const PlateSpec* end = findPlate(gp, "haunch_end_plate");
+        const PlateSpec* cap = findPlate(gp, "haunch_top_plate");
+        check(end && cap, "eaves: alin levhasi ve kapak var");
+        if (end) {
+            const double top = end->center.z + end->height * 0.5;
+            check(top <= 3000.01, "eaves: alin levhasi kolon tepesini ASMIYOR");
+            check(end->height > 100.0, "eaves: levha hala gecerli yukseklikte");
+        }
+        if (cap) {
+            check(std::fabs(cap->center.z - 3005.0) < 0.01,
+                  "eaves: kapak kolon tepesinde (z=3605 degil 3005)");
+            check(std::fabs(cap->axis.z - 1.0) < 1e-9,
+                  "eaves: kapak normali yukari");
+        }
+        for (const auto& bg : gp.boltGroups) {
+            // En üst bulon sırası kolon tepesinin altında kalmalı.
+            const double topBoltZ = bg.origin.z + bg.spacingY * (bg.countY - 1);
+            check(topBoltZ <= 3000.01, "eaves: bulonlar kolon tepesinin altinda");
+        }
+    }
+
+    std::printf("=== 5 derece EGIK KOLON: kapak kolon eksenine DIK ===\n");
+    {
+        ComponentInput in = makeInput(10.0);
+        const double a = 5.0 * M_PI / 180.0;
+        in.main.axisFrom = {0, 0, 0};
+        in.main.axisTo   = {0, 3000.0*std::sin(a), 3000.0*std::cos(a)};
+        GenerationPlan gp = ComponentRegistry::instance().generate(L"tekla_haunch_40", in);
+        check(gp.ok, "egik kolon: plan uretildi");
+        const PlateSpec* cap = findPlate(gp, "haunch_top_plate");
+        check(cap != nullptr, "egik kolon: kapak var");
+        if (cap) {
+            const double len = std::sqrt(3000.0*std::sin(a)*3000.0*std::sin(a) +
+                                         3000.0*std::cos(a)*3000.0*std::cos(a));
+            const Vec3 colDir{0, 3000.0*std::sin(a)/len, 3000.0*std::cos(a)/len};
+            check(std::fabs(dotv(cap->axis, colDir) - 1.0) < 1e-6,
+                  "egik kolon: kapak eksene DIK (yamuk oturmuyor)");
+        }
+    }
+
     std::printf("\n%s (%d hata)\n", bad ? "BASARISIZ" : "TUM TESTLER GECTI", bad);
     return bad ? 1 : 0;
 }

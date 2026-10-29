@@ -1893,14 +1893,35 @@ GenerationPlan generateHaunch40(const ComponentInput& input) noexcept {
     PlateSpec end;
     // Plate origin is independent of bolt edge controls. Previous coupling
     // moved the plate itself whenever eT/eB were edited.
-    const double plateCenterV=-D*0.5;
-    const double plateCentreZ = facePoint.z + (gap+endT*0.5)*tanT -
-                                cosT*(D*0.5);
+    const double zAxisAtPlate = facePoint.z + (gap+endT*0.5)*tanT;
+    double plateCentreZ = zAxisAtPlate - cosT*(D*0.5);
+    double actualHUse = actualH;
+    // EAVES / ÜST BAĞLANTI: alın levhası kolon tepesinden YUKARI TAŞMAZ.
+    // Taşan kısmın arkasında kolon flanşı yoktur; üst bulonlar boşluğa düşer
+    // ve kapak levhası kesilmiş görünür ("kafa plakası kolon flanşına
+    // oturmamış"). Üstü kolon tepesine kırp, ALT kenar sabit kalsın.
+    {
+        const Vec3 colDelta{p.col.axisTo.x-p.col.axisFrom.x,
+                            p.col.axisTo.y-p.col.axisFrom.y,
+                            p.col.axisTo.z-p.col.axisFrom.z};
+        const double colLen=length(colDelta);
+        if (colLen>1.0 && std::fabs(vdot(vnorm(colDelta),worldUp))>0.95) {
+            const Vec3 columnTop=p.col.axisTo.z>=p.col.axisFrom.z
+                                     ? p.col.axisTo : p.col.axisFrom;
+            const double plateTop=plateCentreZ+actualHUse*0.5;
+            const double plateBottom=plateCentreZ-actualHUse*0.5;
+            if (plateTop>columnTop.z+1e-6 && columnTop.z>plateBottom+1.0) {
+                plateCentreZ=(columnTop.z+plateBottom)*0.5;
+                actualHUse=columnTop.z-plateBottom;
+            }
+        }
+    }
+    const double plateCenterV=plateCentreZ - zAxisAtPlate;
     end.center = Vec3{facePoint.x + ax.x*(gap+endT*0.5),
                       facePoint.y + ax.y*(gap+endT*0.5),
                       plateCentreZ};
     end.u=W; end.v=worldUp; end.axis=ax;
-    end.width=actualW;end.height=actualH;end.thickness=endT;
+    end.width=actualW;end.height=actualHUse;end.thickness=endT;
     end.name=L"40 - End Plate";
     pushPlate(end,"haunch_end_plate");
 
@@ -1987,46 +2008,45 @@ GenerationPlan generateHaunch40(const ComponentInput& input) noexcept {
     // Keep existing editable parameter keys for MMW8/recompute compatibility.
     const double topT=paramAsDouble(input.params,L"topPlateThickness",10.0);
     if(topT>0.0) {
-        const Vec3 up{0.0,0.0,1.0};
         const Vec3 colDelta{
             p.col.axisTo.x-p.col.axisFrom.x,
             p.col.axisTo.y-p.col.axisFrom.y,
             p.col.axisTo.z-p.col.axisFrom.z
         };
         const double colLength=length(colDelta);
-        if(colLength<1.0 || std::fabs(vdot(vnorm(colDelta),up))<0.95) {
+        if(colLength<1.0 || std::fabs(vdot(vnorm(colDelta),worldUp))<0.5) {
             plan.ok=false;
             plan.error=L"Haunch 40: cap levhasi icin duseye yakin kolon gerekli";
             return plan;
         }
+        const Vec3 colDir=vnorm(colDelta);
         // Top is the physically higher endpoint regardless of axis order.
         const Vec3 columnTop=p.col.axisTo.z>=p.col.axisFrom.z
                                  ? p.col.axisTo : p.col.axisFrom;
+        // Uç yüzün DIŞ normali (kolonun üst ucu yönünde).
+        const Vec3 outDir=p.col.axisTo.z>=p.col.axisFrom.z
+                              ? colDir : scale(colDir,-1.0);
         // For non-centred section anchors the steel section is displaced
         // transversely from the member axis (e.g. SectionAnchor::Top).
         const Vec3 columnSectionTop=add(
             columnTop,scale(p.colSec.height,p.col.sectionCenterOffset));
-        // Dimension cap in the COLUMN'S OWN section frame, not the beam
-        // direction. Previous use of a projected beam-aligned bounding box
-        // plus 20-mm margins enlarged/misrotated the cap.
-        const Vec3 projectedWidth{
-            p.colSec.width.x,p.colSec.width.y,0.0
-        };
-        if(length(projectedWidth)<1e-8) {
+        // Kapak KOLON EKSENİNE DİK olmalı (uç yüzüne oturur); hafif eğik
+        // kolonda dünya-YUKARI kullanmak levhayı yamuk bırakıyordu.
+        const Vec3 capU=vnorm(p.colSec.width);
+        if(length(capU)<0.5) {
             plan.ok=false;plan.error=L"Haunch 40: kolon kesit genislik yonu tanimsiz";
             return plan;
         }
-        const Vec3 capU=vnorm(projectedWidth);
-        const Vec3 capV=vnorm(cross(up,capU)); // right-handed, XY plane
+        const Vec3 capV=vnorm(cross(outDir,capU));
         PlateSpec cap;
-        cap.axis=up;cap.u=capU;cap.v=capV;
+        cap.axis=outDir;cap.u=capU;cap.v=capV;
         // EXACT target profile bbox b x h; no allowance, no beam-based
         // projection, and no overriding old topPlateLength dimension.
         cap.width=p.col.secWidth;
         cap.height=p.col.secHeight;
         cap.thickness=topT;
         // The cap's lower surface is exactly the COLUMN TOP plane.
-        cap.center=add(columnSectionTop,scale(up,topT*0.5));
+        cap.center=add(columnSectionTop,scale(outDir,topT*0.5));
         cap.name=L"40 - Column Cap Plate";
         pushPlate(cap,"haunch_top_plate"); // stable role id for old records
     }
@@ -2189,8 +2209,8 @@ GenerationPlan generateHaunch40(const ComponentInput& input) noexcept {
     // Changing eT shifts ONLY the upper bolt group; changing eB shifts
     // ONLY the lower group. The end plate remains unchanged in both auto
     // and manual sizing modes. Legacy eT=eB=legacyEdge+20 retains old rows.
-    const double upperCenter=plateCenterV+actualH*0.5-edgeT-upper.spanY*0.5;
-    const double lowerCenter=plateCenterV-actualH*0.5+edgeB+lower.spanY*0.5;
+    const double upperCenter=plateCenterV+actualHUse*0.5-edgeT-upper.spanY*0.5;
+    const double lowerCenter=plateCenterV-actualHUse*0.5+edgeB+lower.spanY*0.5;
     if(upperCenter-lowerCenter <=
        (upper.spanY+lower.spanY)*0.5+
        (upper.hole+lower.hole)*0.5+0.1) {
