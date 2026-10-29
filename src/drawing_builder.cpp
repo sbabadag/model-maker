@@ -205,6 +205,20 @@ Bounds2 markLabelBox(const MarkAnnotation& m) noexcept {
     return b;
 }
 
+// Poz numarasi etiketi: "P11/PL10*100" (mark / profil). Part mark'inda parcanin
+// KENDI profili, assembly mark'inda ana parcanin profili kullanilir. Profil yoksa
+// yalniz mark yazilir (eski davranis korunur).
+std::string markLabelText(const MarkRegistry& reg, const Mark& mark, const std::wstring& mainPartProfile) {
+    std::wstring profile;
+    if (mark.kind == MarkKind::Part) {
+        if (const PartSignature* sig = reg.partSignatureFor(mark)) profile = sig->profile;
+    } else {
+        profile = mainPartProfile;
+    }
+    if (profile.empty()) return text::toUtf8(mark.text());
+    return text::toUtf8(mark.text() + L"/" + profile);
+}
+
 ViewFrame frameFor(ViewKind kind, const fab::MemberDatum* datum, bool memberAligned) noexcept {
     ViewFrame f;   // dunya: Front (x,z), Top (x,y), Side (y,z)
     const Vec3 X{1, 0, 0}, Y{0, 1, 0}, Z{0, 0, 1};
@@ -835,6 +849,7 @@ BuildResult buildSheet(const Document& doc, MarkRegistry& reg, EntityId subject,
         if (std::find(parts.begin(), parts.end(), mp) != parts.end()) mainPart = mp;
     }
     const WireframeModel& mainModel = doc.models()[*doc.indexOfEntity(mainPart)];
+    const std::wstring mainPartProfile = text::fromUtf8(mainModel.properties().profileName);
     Vec3 axA{}, axB{};
     const bool hasAxis = axisOf(mainModel, axA, axB);
     const double axisLen = hasAxis ? dist3(axA, axB) : 0.0;
@@ -908,7 +923,7 @@ BuildResult buildSheet(const Document& doc, MarkRegistry& reg, EntityId subject,
                 m.id = sheet.allocateId();
                 m.viewId = v.id;
                 m.target = v.detailPlate;
-                m.text = text::toUtf8(pm->text());
+                m.text = markLabelText(reg, *pm, mainPartProfile);
                 m.isAssembly = false;
                 m.anchor = v.bounds.centre();
                 m.labelPos = {pb.min.x, pb.max.y + 8.0};
@@ -919,7 +934,7 @@ BuildResult buildSheet(const Document& doc, MarkRegistry& reg, EntityId subject,
             m.id = sheet.allocateId();
             m.viewId = v.id;
             m.target = subject;
-            m.text = text::toUtf8(subjectMark->text());
+            m.text = markLabelText(reg, *subjectMark, mainPartProfile);
             m.isAssembly = subjectMark->kind == MarkKind::Assembly;
             m.anchor = v.bounds.centre();
             m.labelPos = {pb.min.x, pb.max.y + 8.0};
@@ -934,7 +949,7 @@ BuildResult buildSheet(const Document& doc, MarkRegistry& reg, EntityId subject,
                 m.id = sheet.allocateId();
                 m.viewId = v.id;
                 m.target = vm.entity;
-                m.text = text::toUtf8(pm->text());
+                m.text = markLabelText(reg, *pm, mainPartProfile);
                 m.isAssembly = false;
                 m.anchor = vm.bounds.centre();
                 const Vec2 tr = v.toPaper(vm.bounds.max);

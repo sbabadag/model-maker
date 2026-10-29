@@ -235,7 +235,7 @@ int main() {
             ok &= countMarks(sheet, v.id) == 1;
             for (const auto& m : sheet.marks)
                 if (m.viewId == v.id)
-                    ok &= m.text == "P1" && !m.isAssembly && m.target == beam &&
+                    ok &= m.text == "P1/IPE300" && !m.isAssembly && m.target == beam &&
                           m.anchor.x >= v.bounds.min.x && m.anchor.x <= v.bounds.max.x &&
                           m.anchor.y >= v.bounds.min.y && m.anchor.y <= v.bounds.max.y;
         }
@@ -303,8 +303,8 @@ int main() {
         int asmLabels = 0;
         for (const auto& m : ra.sheet.marks)
             if (m.viewId == fv->id) { texts.insert(m.text); asmLabels += m.isAssembly; }
-        check(texts == std::set<std::string>({"A1", "P1", "P2"}) && countMarks(ra.sheet, fv->id) == 3 && asmLabels == 1,
-              "C: Front'ta A1 + P1 + P2 (ayni levha tek etiket)");
+        check(texts == std::set<std::string>({"A1/IPE240", "P1/IPE240", "P2/PL12"}) && countMarks(ra.sheet, fv->id) == 3 && asmLabels == 1,
+              "C: Front'ta A1/IPE240 + P1/IPE240 + P2/PL12 (ayni levha tek etiket, profil ekli)");
         {
             // Etiket kutulari birbirine binmez ve sayfa cercevesinin icinde kalir.
             bool clear = true, inside = true;
