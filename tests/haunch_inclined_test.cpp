@@ -225,6 +225,78 @@ int main()
         }
     }
 
+    std::printf("=== 90 DERECE DONUK KOLON + EGIK KIRIS (portal_1.mmw deseni) ===\n");
+    {
+        // Gercek model: kolon HEA240 90° donuk (genislik 240 → Y, yukseklik 230
+        // → X), eksen kesitin SOL kenarinda (Top anchor → offset -h/2), kiris
+        // IPE400 egik yukari, kolon tepesinde (eaves). Eski kod donusuyu yok
+        // sayip alin levhasini kolon yuzunden ~110 mm iceri atiyordu.
+        ComponentInput in;
+        in.main.id = 45;
+        in.main.axisFrom = {-115.0, 12000.0, 0.0};
+        in.main.axisTo   = {-115.0, 12000.0, 5000.0};
+        in.main.refNormal = {0, 0, 1};
+        in.main.secWidth = 240.0;
+        in.main.secHeight = 230.0;
+        in.main.secWebThickness = 7.5;
+        in.main.secFlangeThickness = 12.0;
+        in.main.sectionCenterOffset = -115.0;   // Top anchor
+        in.main.profileRotation = 90.0;
+        MemberGeometry beam;
+        beam.id = 47;
+        beam.axisFrom = {0.0, 12000.0, 5000.0};
+        beam.axisTo   = {5997.780613671378, 12000.0, 5986.683682028266};
+        beam.refNormal = {0, 0, 1};
+        beam.secWidth = 180.0;
+        beam.secHeight = 400.0;
+        beam.secWebThickness = 8.6;
+        beam.secFlangeThickness = 13.5;
+        beam.sectionCenterOffset = 0.0;
+        beam.profileRotation = 0.0;
+        in.secondary = {beam};
+
+        GenerationPlan gp = ComponentRegistry::instance().generate(L"tekla_haunch_40", in);
+        check(gp.ok, "donuk kolon: plan uretildi");
+        if (!gp.ok) { std::printf("  hata: %ls\n", gp.error.c_str()); }
+        const PlateSpec* end = findPlate(gp, "haunch_end_plate");
+        const PlateSpec* cap = findPlate(gp, "haunch_top_plate");
+        if (end) {
+            // Alin levhasinin kolona YAKIN yuzu kolon yuzunde (x=+115) olmali;
+            // donus goz ardi edilirse x≈5'e (110 mm iceri) duser.
+            double minX = 1e9, maxX = -1e9, minZ = 1e9, maxZ = -1e9;
+            for (int au=-1; au<=1; au+=2)
+                for (int av=-1; av<=1; av+=2)
+                    for (int at=-1; at<=1; at+=2) {
+                        Vec3 q = addv(addv(end->center, mulv(end->u, au*end->width*0.5)),
+                                      addv(mulv(end->v, av*end->height*0.5),
+                                           mulv(end->axis, at*end->thickness*0.5)));
+                        minX = std::min(minX, q.x); maxX = std::max(maxX, q.x);
+                        minZ = std::min(minZ, q.z); maxZ = std::max(maxZ, q.z);
+                    }
+            check(std::fabs(minX - 115.0) < 0.5,
+                  "donuk kolon: alin levhasi kolon yuzune OTURUYOR (x=115)");
+            check(maxX < 140.0,
+                  "donuk kolon: alin levhasi kolon yuzunden makul disari tasiyor");
+            check(std::fabs(maxZ - 5000.0) < 0.5,
+                  "donuk kolon: alin levhasi kolon tepesini ASMIYOR (z=5000)");
+        }
+        if (cap) {
+            // Kapak kolon KESITINI birebir ortmeli (x=-115..115, y=11880..12120).
+            double minX = 1e9, maxX = -1e9, minY = 1e9, maxY = -1e9;
+            for (int au=-1; au<=1; au+=2)
+                for (int av=-1; av<=1; av+=2) {
+                    Vec3 q = addv(cap->center, addv(mulv(cap->u, au*cap->width*0.5),
+                                                     mulv(cap->v, av*cap->height*0.5)));
+                    minX = std::min(minX, q.x); maxX = std::max(maxX, q.x);
+                    minY = std::min(minY, q.y); maxY = std::max(maxY, q.y);
+                }
+            check(std::fabs(minX - (-115.0)) < 0.5 && std::fabs(maxX - 115.0) < 0.5,
+                  "donuk kolon: kapak kesit X kapsamini orter (-115..115)");
+            check(std::fabs(minY - 11880.0) < 0.5 && std::fabs(maxY - 12120.0) < 0.5,
+                  "donuk kolon: kapak kesit Y kapsamini orter (11880..12120)");
+        }
+    }
+
     std::printf("\n%s (%d hata)\n", bad ? "BASARISIZ" : "TUM TESTLER GECTI", bad);
     return bad ? 1 : 0;
 }

@@ -70,6 +70,7 @@ MemberGeometry bridgeMemberGeometry(const Document& doc, EntityId id,
     g.secWidth = 200.0;
     g.secHeight = 300.0;
     g.sectionCenterOffset = 0.0;
+    g.profileRotation = p.profileRotation;
     if (const SteelProfile* prof = findProfile(catalog, p.profileName)) {
         g.secWidth = prof->width;
         g.secHeight = prof->height;

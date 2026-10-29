@@ -191,6 +191,11 @@ struct MemberGeometry {
     // asagida), Center -> 0, Bottom -> +h/2. Levha/bulon GOVDE MERKEZINE
     // oturmali; yoksa ust basliga kayar ve delikler web'e denk gelmez.
     double sectionCenterOffset{0.0};
+    // Profil DONUSU (derece; 0/90/180/270 tipik). Kesit cercevesi (genislik/
+    // yukseklik yonu) uye ekseni etrafinda bu acikadar dondurulur. 90°'de I-profil
+    // genislik <-> yukseklik yer degistirir; DONUSU yok saymak (eski davranis)
+    // donuk kolonda alin levhasini kolon yuzunden 100+ mm iceri/gosterisiz atar.
+    double profileRotation{0.0};
 };
 
 // Generator girdisi: main (kolon) + secondary (kiris listesi) + parametreler.

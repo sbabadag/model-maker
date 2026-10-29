@@ -4897,6 +4897,7 @@ static mm::MemberGeometry memberGeometryFor(const mm::Document& doc,
     g.secWidth = 200.0;
     g.secHeight = 300.0;
     g.sectionCenterOffset = 0.0;
+    g.profileRotation = p.profileRotation;
     if (const mm::SteelProfile* prof = mm::findProfile(catalog, p.profileName)) {
         g.secWidth = prof->width;
         g.secHeight = prof->height;

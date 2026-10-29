@@ -565,6 +565,30 @@ struct ShearTabPlacement {
     std::wstring error;
 };
 
+// Profil DONUSUNU kesit cercevesine uygular: genislik/yukseklik yonleri uye
+// ekseni (frame.axis) etrafinda `rotationDeg` kadar dondurulur. 90°'de genislik
+// <-> yukseklik yer degistirir (I-profil flanslari dusey, govde yatay olur).
+// secWidth/secHeight ve sectionCenterOffset yonleriyle birlikte ayni cercevede
+// kaldigi icin boyut/ofset yalnizca yonuyle tasinir, yeniden olculmez.
+ProfileSectionFrame rotateSectionFrame(const ProfileSectionFrame& f,
+                                       double rotationDeg) noexcept {
+    if (std::fabs(rotationDeg) < 1e-9) return f;
+    const double rad = rotationDeg * M_PI / 180.0;
+    const double c = std::cos(rad), s = std::sin(rad);
+    ProfileSectionFrame r = f;
+    r.width = Vec3{f.width.x * c + f.height.x * s,
+                   f.width.y * c + f.height.y * s,
+                   f.width.z * c + f.height.z * s};
+    r.height = Vec3{f.height.x * c - f.width.x * s,
+                    f.height.y * c - f.width.y * s,
+                    f.height.z * c - f.width.z * s};
+    // Sayisal sifir temizligi (cok kucuk artiklar sonraki vdot testlerini bozmasin).
+    auto snap = [](double v) { return std::fabs(v) < 1e-12 ? 0.0 : v; };
+    r.width = {snap(r.width.x), snap(r.width.y), snap(r.width.z)};
+    r.height = {snap(r.height.x), snap(r.height.y), snap(r.height.z)};
+    return r;
+}
+
 ShearTabPlacement resolveShearTabPlacement(const ComponentInput& input) noexcept {
     ShearTabPlacement p;
     if (input.secondary.empty()) {
@@ -615,6 +639,9 @@ ShearTabPlacement resolveShearTabPlacement(const ComponentInput& input) noexcept
     p.sec = profileSectionFrame(p.lenDir, worldUp);
     if (std::fabs(vdot(p.lenDir, worldUp)) > 0.999)
         p.sec = profileSectionFrame(p.lenDir, p.beam.refNormal);
+    // Profil donusunu kesit cercevesine uygula (donuk profil I-kiris/kolonda
+    // genislik <-> yukseklik yonu degisir; yoksa levha/kolon yuzu yanlis olculur).
+    p.sec = rotateSectionFrame(p.sec, p.beam.profileRotation);
 
     // Kolon temas yuzu: kolon kesitinin lenDir yonundeki yari kapsami (destek
     // fonksiyonu; SectionAnchor ofseti dahil).
@@ -624,6 +651,8 @@ ShearTabPlacement resolveShearTabPlacement(const ComponentInput& input) noexcept
     const double colLen = std::sqrt(colAxis.x * colAxis.x + colAxis.y * colAxis.y +
                                     colAxis.z * colAxis.z);
     if (colLen > 1e-6) p.colSec = profileSectionFrame(vnorm(colAxis), p.col.refNormal);
+    // Kolon kesit cercevesine profil donusunu uygula (ornek: 90° donuk HEA240).
+    p.colSec = rotateSectionFrame(p.colSec, p.col.profileRotation);
     p.aW = vdot(p.lenDir, p.colSec.width);
     p.aH = vdot(p.lenDir, p.colSec.height);
     p.halfExtent = std::fabs(p.aW) * p.col.secWidth * 0.5 +
