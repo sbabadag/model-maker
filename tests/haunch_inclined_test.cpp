@@ -297,6 +297,57 @@ int main()
         }
     }
 
+    std::printf("=== TOP-ANKRAJ EGIK KIRIS (portal_1.mmw gercel kiris ofseti -200) ===\n");
+    {
+        // Gercel modelde kiris IPE400 Top-ankrajli: sectionCenterOffset = -h/2
+        // = -200. Eski kod bu ofseti kesişimden SONRA ekliyordu; egik kiriste
+        // sec.height'in ax bileseni (-0.162) sifir olmadigi icin levhayi kolon
+        // yuzunden ~32 mm ITIYORDU (facePoint.x ≈ 147.5 yerine 115). Test,
+        // levhanin kolona yakin yuzunun kolon yuzunde (x=115) kaldigini kilitler.
+        ComponentInput in;
+        in.main.id = 45;
+        in.main.axisFrom = {-115.0, 12000.0, 0.0};
+        in.main.axisTo   = {-115.0, 12000.0, 5000.0};
+        in.main.refNormal = {0, 0, 1};
+        in.main.secWidth = 240.0;
+        in.main.secHeight = 230.0;
+        in.main.secWebThickness = 7.5;
+        in.main.secFlangeThickness = 12.0;
+        in.main.sectionCenterOffset = -115.0;   // Top anchor
+        in.main.profileRotation = 90.0;
+        MemberGeometry beam;
+        beam.id = 47;
+        beam.axisFrom = {0.0, 12000.0, 5000.0};
+        beam.axisTo   = {5997.780613671378, 12000.0, 5986.683682028266};
+        beam.refNormal = {0, 0, 1};
+        beam.secWidth = 180.0;
+        beam.secHeight = 400.0;
+        beam.secWebThickness = 8.6;
+        beam.secFlangeThickness = 13.5;
+        beam.sectionCenterOffset = -200.0;      // Top anchor (IPE400)
+        beam.profileRotation = 0.0;
+        in.secondary = {beam};
+
+        GenerationPlan gp = ComponentRegistry::instance().generate(L"tekla_haunch_40", in);
+        check(gp.ok, "top-ankraj: plan uretildi");
+        const PlateSpec* end = findPlate(gp, "haunch_end_plate");
+        if (end) {
+            double minX = 1e9, maxX = -1e9;
+            for (int au=-1; au<=1; au+=2)
+                for (int av=-1; av<=1; av+=2)
+                    for (int at=-1; at<=1; at+=2) {
+                        Vec3 q = addv(addv(end->center, mulv(end->u, au*end->width*0.5)),
+                                      addv(mulv(end->v, av*end->height*0.5),
+                                           mulv(end->axis, at*end->thickness*0.5)));
+                        minX = std::min(minX, q.x); maxX = std::max(maxX, q.x);
+                    }
+            check(std::fabs(minX - 115.0) < 0.5,
+                  "top-ankraj: alin levhasi kolon yuzune OTURUYOR (x=115)");
+            check(maxX < 140.0,
+                  "top-ankraj: alin levhasi kolon yuzunden makul disari tasiyor");
+        }
+    }
+
     std::printf("\n%s (%d hata)\n", bad ? "BASARISIZ" : "TUM TESTLER GECTI", bad);
     return bad ? 1 : 0;
 }

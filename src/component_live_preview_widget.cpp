@@ -137,11 +137,20 @@ void addMember(std::vector<Poly>& polys,const MemberGeometry& m,
                const std::vector<CutModifier>& cuts,
                QColor col,const std::string& role) {
     Vec3 axis=unit(minus(m.axisTo,m.axisFrom));
-    Vec3 h=minus(m.refNormal,mul(axis,dot(m.refNormal,axis)));
-    if(length(h)<0.01)h=minus(Vec3{0,0,1},mul(axis,axis.z));
-    if(length(h)<0.01)h=Vec3{0,1,0};
-    h=unit(h);
-    const Vec3 w=unit(cross(axis,h));
+    // Kesit çerçevesini ÜRETİCİYLE AYNI kaynaktan kur: profileSectionFrame +
+    // profil dönüşü (rotateSectionFrame ile aynı formül). Eski elle kurulan
+    // çerçeve (w=cross(axis,h)) profil dönüşünü YOK sayıyordu → 90° dönük
+    // kolon önizlemede dönmemiş çiziliyor, alın levhası kolon flanşına
+    // oturmamış görünüyordu (mock 3D görüntü yanlış).
+    ProfileSectionFrame sf=profileSectionFrame(axis,m.refNormal);
+    Vec3 w=sf.width, h=sf.height;
+    const double rot=m.profileRotation*kPi/180.0;
+    if(std::fabs(rot)>1e-9) {
+        const double cr=std::cos(rot), sr=std::sin(rot);
+        const Vec3 wn=plus(mul(w,cr),mul(h,sr));   // w*c + h*s
+        const Vec3 hn=minus(mul(h,cr),mul(w,sr));  // h*c - w*s
+        w=wn; h=hn;
+    }
     const double total=length(minus(m.axisTo,m.axisFrom));
     if(total<1)return;
     // P5: keep the entire parent steel context spanning ALL attached child

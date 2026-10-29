@@ -1875,15 +1875,19 @@ GenerationPlan generateHaunch40(const ComponentInput& input) noexcept {
         if (std::fabs(den) > 1e-9) {
             const Vec3 rel{p.connEnd.x-p.colMid.x, p.connEnd.y-p.colMid.y,
                            p.connEnd.z-p.colMid.z};
-            const double t = (faceDist - vdot(rel, ax)) / den;
-            facePoint = Vec3{p.connEnd.x + p.beamDir.x*t,
-                             p.connEnd.y + p.beamDir.y*t,
-                             p.connEnd.z + p.beamDir.z*t};
-            if (std::fabs(p.beam.sectionCenterOffset) > 1e-9) {
-                facePoint.x += p.sec.height.x*p.beam.sectionCenterOffset;
-                facePoint.y += p.sec.height.y*p.beam.sectionCenterOffset;
-                facePoint.z += p.sec.height.z*p.beam.sectionCenterOffset;
-            }
+            // Kiriş KESİT MERKEZİ çizgisi = eksen + sec.height*offset. Temas
+            // noktası bu çizginin kolon yüzünü KESTİĞİ yer olmalı. Eski kod
+            // offset'i kesişimden SONRA eklediği için Top-ankrajlı eğik kirişte
+            // (sec.height'in ax bileşeni sıfır değil) levhayı kolon yüzünden
+            // ~32 mm uzağa itiyordu ("alın levhası kolon yüzüne oturmuyor").
+            // offAx terimi kesişimi kesit-merkezi çizgisine göre çözer; off'in
+            // ax bileşeni levhayı kaydırmaz, yalnız düşey kotu düzeltir.
+            const double off = p.beam.sectionCenterOffset;
+            const double offAx = off * vdot(p.sec.height, ax);
+            const double t = (faceDist - vdot(rel, ax) - offAx) / den;
+            facePoint = Vec3{p.connEnd.x + p.beamDir.x*t + p.sec.height.x*off,
+                             p.connEnd.y + p.beamDir.y*t + p.sec.height.y*off,
+                             p.connEnd.z + p.beamDir.z*t + p.sec.height.z*off};
         }
     }
     // The actual welded beam end must stop at the OUTER face of the
