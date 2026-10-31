@@ -3,6 +3,7 @@
 #include "model_maker/camera.hpp"
 #include "model_maker/document.hpp"
 #include "model_maker/drafting.hpp"
+#include "model_maker/grip_selection.hpp"
 #include "model_maker/performance.hpp"
 #include "model_maker/render_backend.hpp"
 #include "model_maker/view_definition.hpp"
@@ -259,6 +260,11 @@ struct DraftView {
     // tutamagin vurgusunu tasir.
     std::optional<std::size_t> activeGripSolid; // aktif (secili) tutamagin katisi
     bool activeGripEndIsTo{false};              // false=from(sari), true=to(mor)
+    // COKLU KONTROL NOKTASI SECIMI: isaretli tutamaklar YESIL halka ile cizilir.
+    std::vector<GripRef> selectedGrips;
+    // Alt + surukleme ile acilan kontrol noktasi pencere secimi (canli lastik
+    // dikdortgen); model secim penceresinden (selectionFirstCorner) AYRIDIR.
+    std::optional<POINT> gripSelectionFirstCorner;
     // Move modunda baz -> imlec track line (baslangic-bitis).
     bool gripMoveActive{false};
     Vec3 gripTrackFrom{};

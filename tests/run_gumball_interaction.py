@@ -34,6 +34,7 @@ shell = r'''
 #include "model_maker/document.hpp"
 #include "model_maker/camera.hpp"
 #include "model_maker/view_cube.hpp"
+#include "model_maker/grip_selection.hpp"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -83,6 +84,13 @@ public:
     std::vector<std::size_t> selectedModels_{0};
     // KESME NESNELERI SECIMI (P5): onLeftButtonUp secim-temizleme dalinda kullanilir.
     std::vector<std::size_t> selectedCutModifiers_;
+    // KONTROL NOKTASI COKLU SECIMI (2026-10-31): onLeftButtonUp pencere
+    // tamamlama diliminde kullanilir; sahte sinirda kume bos, secim no-op.
+    std::vector<GripRef> selectedGrips_;
+    std::optional<POINT> gripSelectionFirstCorner_;
+    bool gripSelectionAdditive_{}, gripSelectionDragging_{};
+    void completeGripWindowSelection(POINT, POINT, bool) {}
+    void clearSelectedGrips() { selectedGrips_.clear(); }
     std::wstring input_;
     std::function<bool(const std::wstring&, const std::wstring&, std::wstring&)> parameterRequest_;
     void pushUndoSnapshot() { document_.pushSnapshot(); }

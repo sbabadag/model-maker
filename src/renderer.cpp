@@ -2180,10 +2180,16 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
                 const POINT pt = projectPoint(mm::memberEndCenter(gm, true));
                 const bool isActive =
                     draft.activeGripSolid && *draft.activeGripSolid == gi;
-                drawGripMarker(dc, pf.x, pf.y, RGB(255, 206, 84),
-                               isActive && !draft.activeGripEndIsTo);
-                drawGripMarker(dc, pt.x, pt.y, RGB(170, 90, 220),
-                               isActive && draft.activeGripEndIsTo);
+                // COKLU SECIM: secili noktalar YESIL ve buyuk cizilir; hangi
+                // noktalarin toplu tasinacagi bir bakista gorunur.
+                const bool fromSelected = gripIsSelected(draft.selectedGrips, GripRef{gi, false});
+                const bool toSelected = gripIsSelected(draft.selectedGrips, GripRef{gi, true});
+                drawGripMarker(dc, pf.x, pf.y,
+                               fromSelected ? RGB(60, 220, 110) : RGB(255, 206, 84),
+                               (isActive && !draft.activeGripEndIsTo) || fromSelected);
+                drawGripMarker(dc, pt.x, pt.y,
+                               toSelected ? RGB(60, 220, 110) : RGB(170, 90, 220),
+                               (isActive && draft.activeGripEndIsTo) || toSelected);
             }
         }
 
@@ -2241,6 +2247,24 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         DeleteObject(border);
         drawText(dc, selection.left + 3, std::max(3L, selection.top - 19),
                  crossing ? L"CROSSING" : L"WINDOW", color);
+    }
+
+    // KONTROL NOKTASI PENCERE SECIMI (Alt+surukleme): model secim penceresinden
+    // ayri renk (yesil) — kullanici nokta secimi mi nesne secimi mi yaptigini
+    // karistirmasin.
+    if (draft.gripSelectionFirstCorner) {
+        const POINT first = *draft.gripSelectionFirstCorner;
+        const POINT second = draft.cursorScreen;
+        RECT sel{std::min(first.x, second.x), std::min(first.y, second.y),
+                 std::max(first.x, second.x), std::max(first.y, second.y)};
+        HPEN border = CreatePen(PS_DASH, 1, RGB(40, 200, 100));
+        HGDIOBJ oldPen = SelectObject(dc, border);
+        HGDIOBJ oldBrush = SelectObject(dc, GetStockObject(NULL_BRUSH));
+        Rectangle(dc, sel.left, sel.top, sel.right, sel.bottom);
+        SelectObject(dc, oldPen); SelectObject(dc, oldBrush);
+        DeleteObject(border);
+        drawText(dc, sel.left + 3, std::max(3L, sel.top - 19), L"KONTROL NOKTASI",
+                 RGB(40, 200, 100));
     }
 
     // Draw node window selection rectangle

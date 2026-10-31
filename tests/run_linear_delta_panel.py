@@ -124,6 +124,12 @@ struct Document {
 // (is duzlemi eksenleri) dunya vektorune cevirir. Harness'ta geometri
 // cekirdegi yok; ayni sozlesmeyi burada taklit ediyoruz.
 namespace mm {
+// KONTROL NOKTASI kimligi (gercek tanim grip_selection.hpp'de; harness'ta
+// ayni alan adlariyla minimal kopya — applyLinearDelta yalniz sayar/kullanir).
+struct GripRef {
+    std::size_t solidIndex{};
+    bool endIsTo{};
+};
 struct WorkPlane {
     ::Vec3 u{1.0, 0.0, 0.0};
     ::Vec3 v{0.0, 1.0, 0.0};
@@ -145,6 +151,9 @@ struct Application {
     mm::WorkPlane workPlane_;
     Document document_;
     std::vector<std::size_t> selectedModels_;
+    // KONTROL NOKTASI KUMESI (2026-10-31): applyLinearDelta nokta seciliyken
+    // modelleri degil noktalari tasir; fake sinirda kume bos + tasima no-op.
+    std::vector<mm::GripRef> selectedGrips_;
     std::vector<std::size_t> pendingCopySelection_;
     std::function<bool(LinearDeltaInput&)> linearDeltaRequest_;
     bool linearPickMode_{false};
@@ -180,6 +189,8 @@ struct Application {
     void updateStatus() {}
     void invalidateCanvas() {}
     void MessageBeep(int) { ++beeps; }
+    // Nokta kumesi tasima (gercek govde OCC'li; burada sinir no-op).
+    void moveSelectedGripsBy(const Vec3&) {}
 
     bool requestLinearDeltaPanel();
     void applyLinearDelta(const Vec3& delta, int count);

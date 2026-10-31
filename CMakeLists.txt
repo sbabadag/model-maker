@@ -370,6 +370,11 @@ if(BUILD_TESTING)
             # katiyla saklanir + gumball saklanani kullanir) sekil kontrolu.
             add_test(NAME model_maker_profile_section_reference
                 COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_profile_section_reference.py)
+            # KONTROL NOKTASI COKLU SECIMI: Alt pencere / Shift+Alt pencere,
+            # move + move-delta'nin kumeyi tasimasi, yalniz secili profillerin
+            # noktalarinin secilebilmesi (uygulama baglantisi sekil testi).
+            add_test(NAME model_maker_grip_selection_wiring
+                COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_grip_selection_wiring.py)
             # Props paneli = TEK profil kaynagi (ribbon profil cubugu kaldirildi):
             # secim yokken aktif profil cizimi belirler, secim varken secime atar;
             # satirda ENTER (returnPressed/editingFinished) dogrudan uygular.
@@ -705,6 +710,14 @@ if(BUILD_TESTING)
     target_link_libraries(model_maker_snap_override_mask_test PRIVATE model_maker_core)
     target_compile_options(model_maker_snap_override_mask_test PRIVATE -Wall -Wextra -Wpedantic)
     add_test(NAME model_maker_snap_override_mask_test COMMAND model_maker_snap_override_mask_test)
+
+    # KONTROL NOKTASI COKLU SECIMI: Alt pencere (eskileri birak) / Shift+Alt
+    # pencere (eskileri koru, yenileri ekle) + yalniz secili profillerin
+    # noktalarinin secilebilmesi. Gercek kamera projeksiyonuyla olculur.
+    add_executable(model_maker_grip_selection_test tests/grip_selection_test.cpp)
+    target_link_libraries(model_maker_grip_selection_test PRIVATE model_maker_core)
+    target_compile_options(model_maker_grip_selection_test PRIVATE -Wall -Wextra -Wpedantic)
+    add_test(NAME model_maker_grip_selection_test COMMAND model_maker_grip_selection_test)
 
     # KARARLI VARLIK KIMLIGI (EntityId): vektor indeksi kalici kimlik DEGIL;
     # kimlik ekleme/silme/degistirme/undo/redo boyunca DOGRU varlikla eslesir,

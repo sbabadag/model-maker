@@ -75,10 +75,16 @@ check("solidProps.sectionNormalZ = info.sectionNormal[2];" in regen,
 check("info.sectionNormal[0], info.sectionNormal[1], info.sectionNormal[2]" in regen,
       "yeniden uretim: extrude SAKLANAN referansla yapilir (aktif duzlem DEGIL)")
 
-grip = body(app, "void Application::reExtrudeProfileGrip")
+# Profil ucu tasima cekirdegi (2026-10-31'de reExtrudeProfileGripCore'a
+# ayrildi: toplu tasimada N nokta tek undo'da islenir; sarmalayici yalniz
+# undo + recompute + durum ekler).
+grip = body(app, "int Application::reExtrudeProfileGripCore")
 check("props.sectionNormalX, props.sectionNormalY," in grip and
       "props.sectionNormalZ" in grip,
       "profil ucu tasima: SAKLANAN referans normal korunur")
+grip_wrapper = body(app, "void Application::reExtrudeProfileGrip(")
+check("reExtrudeProfileGripCore(solidIndex, endIsTo, newPoint" in grip_wrapper,
+      "profil ucu tasima sarmalayicisi cekirdege delege eder (tek geometri yolu)")
 
 # --- 4) Gumball yerel cercevesi saklanan referanstan ------------------------
 frame = body(app, "void Application::gumballUpdateFrame()")

@@ -22,6 +22,7 @@
 #include "model_maker/component_engine.hpp"
 #include "model_maker/document.hpp"
 #include "model_maker/drafting.hpp"
+#include "model_maker/grip_selection.hpp"
 #include "model_maker/profile_database.hpp"
 #include "model_maker/render_backend.hpp"
 #include <functional>
@@ -1020,8 +1021,25 @@ private:
         Vec3 basePoint{};         // birinci tik (tasima baslangici)
         Vec3 trackFrom{};         // track line baslangici (moving end -> baz secilince)
         Vec3 cursorPoint{};       // canli imlec noktasi (track line bitisi)
+        // COKLU SECIM: tutamak secili kumeye aitse delta TUM secili noktalara
+        // uygulanir (tek uc degil). Tek tutamakta false kalir.
+        bool deltaMovesSelection{};
     };
     std::optional<ProfileGrip> profileGrip_;
+    // KONTROL NOKTASI COKLU SECIMI (Selahattin 2026-10-31):
+    //  * Alt + pencere  -> onceki secim BIRAKILIR, pencere icindeki noktalar secilir
+    //  * Shift + Alt + pencere -> eskiler korunur, yeniler eklenir
+    //  * Yalniz SECILI profilli katilarin tutamaklari gecerli
+    //  * Move / Move Delta komutlari secili noktalari TOPLU tasir
+    std::vector<mm::GripRef> selectedGrips_;
+    std::optional<POINT> gripSelectionFirstCorner_;
+    bool gripSelectionAdditive_{};
+    bool gripSelectionDragging_{};
+    void clearSelectedGrips();
+    void pruneSelectedGrips();
+    void completeGripWindowSelection(POINT first, POINT second, bool additive);
+    std::vector<mm::GripCandidate> gripCandidates() const;
+    void moveSelectedGripsBy(const Vec3& displacement);
     void performSolidTrimByLine(std::size_t lineIndex);
     Vec3 trimPlanePoint_{};
     Vec3 trimPlaneNormal_{};
@@ -1038,6 +1056,10 @@ private:
     std::optional<Vec3> gripReferencePoint() const;
 #ifdef MM_HAS_OCC
     void reExtrudeProfileGrip(std::size_t solidIndex, bool endIsTo, const Vec3& newPoint);
+    // Toplu tasima icin CEKIRDEK (undo/recompute yok): 1 = degisti, 0 = atlandi,
+    // -1 = hata (mesaj yazildi).
+    int reExtrudeProfileGripCore(std::size_t solidIndex, bool endIsTo,
+                                 const Vec3& newPoint, bool registerUndo);
 #endif
     bool profileCatalogTried_{};
     bool profileAssignmentActive_{};

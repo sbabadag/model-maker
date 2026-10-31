@@ -1895,6 +1895,12 @@ LRESULT Application::handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lPa
             else if (pendingFinPlate_) cancelPendingFinPlateCommand();
             else if (pendingWeld_) cancelPendingWeldCommand();
             else if (!selectedWelds_.empty()) { clearWeldSelection(); invalidateCanvas(); }
+            // KONTROL NOKTASI SECIMI: aktif komut yokken Esc kumeyi birakir.
+            else if (!selectedGrips_.empty()) {
+                clearSelectedGrips();
+                updateStatus();
+                invalidateCanvas();
+            }
             else if (componentCommandActive()) cancelPendingComponentCommand();
             else if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
             else cancelDrawing();
@@ -2290,12 +2296,26 @@ void Application::onLeftButtonDown(int x, int y) {
         }
     }
     if (altDown && mode_ == EditMode::View3D) {
+        const bool shiftDown = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
         if (const auto grip = profileGripAt(x, y)) {
+            const mm::GripRef ref{grip->first, grip->second};
+            // COKLU SECIM: tutamaga Alt+tik noktayi secime ekler (Shift ile
+            // eskiler korunur). Kume 1'den fazla nokta iceriyorsa 1. tik baz,
+            // 2. tik hedef olur ve delta TUM secili noktalara uygulanir.
+            if (!mm::gripIsSelected(selectedGrips_, ref)) {
+                if (!shiftDown) selectedGrips_.clear();
+                selectedGrips_.push_back(ref);
+            }
             profileGrip_ = ProfileGrip{};
             profileGrip_->solidIndex = grip->first;
             profileGrip_->endIsTo = grip->second;
             profileGrip_->basePicked = false;
-            selectedModels_.assign(1, grip->first);
+            profileGrip_->deltaMovesSelection = selectedGrips_.size() > 1;
+            // Diger secili profiller KORUNUR: kume icindeki noktalar gorunur
+            // kalsin (eskiden assign(1,..) diger profillerin secimini siliyordu).
+            if (std::find(selectedModels_.begin(), selectedModels_.end(), grip->first) ==
+                selectedModels_.end())
+                selectedModels_.push_back(grip->first);
             const auto& m = document_.models()[grip->first];
             const Vec3 from{m.properties().axisFromX, m.properties().axisFromY,
                             m.properties().axisFromZ};
@@ -2309,9 +2329,30 @@ void Application::onLeftButtonDown(int x, int y) {
             // kavrar; ardindan 1. tik BASLANGIC, 2. tik BITIS noktasidir.
             profileGrip_->basePicked = false;
             clearTemporaryTracking();
-            publishStatus(L"Ucu tasima: baslangic noktasini secin (1. tik)");
+            if (profileGrip_->deltaMovesSelection) {
+                publishStatus(L"Kontrol noktası (" + std::to_wstring(selectedGrips_.size()) +
+                              L" seçili): başlangıç noktasını seçin (1. tık) — delta tümüne uygulanır");
+            } else {
+                publishStatus(L"Ucu tasima: baslangic noktasini secin (1. tik)");
+            }
         } else {
             profileGrip_.reset();
+            // ALT + SURUKLEME = KONTROL NOKTASI PENCERE SECIMI (Selahattin
+            // 2026-10-31): "alt a basiliyken window selection demek onceki
+            // secili kontrol point varsa birak, window icinde kalan noktalari
+            // sec; shift + window selection eskileri koru yenilerini ekle".
+            // Yalniz SECILI profillerin tutamaklari aday oldugu icin secim
+            // yoksa pencere baslatilmaz.
+            if (!selectedModels_.empty()) {
+                gripSelectionFirstCorner_ = POINT{x, y};
+                gripSelectionAdditive_ = shiftDown;
+                gripSelectionDragging_ = false;
+                lastMouse_ = {x, y};
+                SetCapture(canvas_);
+                publishStatus(shiftDown
+                    ? L"Kontrol noktası: pencere içindekiler MEVCUT seçime eklenecek (Shift+Alt)"
+                    : L"Kontrol noktası: pencere içindekiler seçilecek (önceki seçim bırakılır)");
+            }
         }
         updateControls(); updateStatus(); invalidateCanvas();
         return;
@@ -2639,6 +2680,29 @@ void Application::onLeftButtonDown(int x, int y) {
 }
 
 void Application::onLeftButtonUp(int x, int y) {
+    // KONTROL NOKTASI PENCERE SECIMI tamamlama (Alt basiliyken baslayan
+    // surukleme): surukleme -> pencere secimi, tik -> secimi birak.
+    if (gripSelectionFirstCorner_) {
+        const POINT first = *gripSelectionFirstCorner_;
+        const bool dragged = std::max(std::abs(x - first.x), std::abs(y - first.y)) >= 4;
+        const bool additive = gripSelectionAdditive_;
+        gripSelectionFirstCorner_.reset();
+        gripSelectionAdditive_ = false;
+        gripSelectionDragging_ = false;
+        ReleaseCapture();
+        if (dragged) {
+            completeGripWindowSelection(first, POINT{x, y}, additive);
+        } else if (!additive && !selectedGrips_.empty()) {
+            // Alt+tik (bos alan): nokta secimini birak; NESNE secimi korunur.
+            clearSelectedGrips();
+            publishStatus(L"Kontrol noktası seçimi temizlendi");
+            updateControls();
+            updateStatus();
+        }
+        updateHover(x, y);
+        invalidateCanvas();
+        return;
+    }
     if (gumballDrag_ != GumballHandle::None) {
         if (gumballNumericActive_) return;
         gumballDragMove(x, y); // include final pointer position before release
@@ -2689,6 +2753,16 @@ void Application::onLeftButtonUp(int x, int y) {
 void Application::onMouseMove(int x, int y, WPARAM buttons) {
     cursorScreen_ = {x, y};
     trimExtendPreviewSuppressed_ = false;
+    // KONTROL NOKTASI PENCERE SECIMI (Alt+surukleme): canli lastik dikdortgen.
+    // Esik asildiginda surukleme sayilir; birakmada tamamlanir.
+    if (gripSelectionFirstCorner_) {
+        if (!gripSelectionDragging_ &&
+            std::abs(x - gripSelectionFirstCorner_->x) +
+                    std::abs(y - gripSelectionFirstCorner_->y) > 3)
+            gripSelectionDragging_ = true;
+        invalidateCanvas();
+        return;
+    }
     if (gumballDrag_ != GumballHandle::None) {
         gumballDragMove(x, y);
         return;
@@ -3286,6 +3360,11 @@ void Application::startTransformCommand(TransformCommand command) {
     if ((command == TransformCommand::CopyLinear || command == TransformCommand::MoveLinear) &&
         !selectedModels_.empty() && linearDeltaRequest_)
         requestLinearDeltaPanel();
+    // KONTROL NOKTASI KUMESI: noktalar seciliyken tasima komutu NOKTALARI
+    // tasir (model degil); kullanici hangi kumeyi tasidigini bilsin.
+    if (isMoveTransform(command) && !selectedGrips_.empty())
+        publishStatus(L"Kontrol noktası taşıma: " + std::to_wstring(selectedGrips_.size()) +
+                      L" nokta seçili — delta tümüne uygulanacak");
     trimExtendLog(L"APP BASLADI build=" __DATE__ " " __TIME__);
 }
 
@@ -7509,6 +7588,21 @@ void Application::applyLinearDelta(const Vec3& delta, int count) {
         invalidateCanvas();
         return;
     }
+    // KONTROL NOKTASI KUMESI (Selahattin 2026-10-31): "noktalar secildikten
+    // sonra move delta komutu noktalari tasimak icin ayrica calissin". Nokta
+    // seciliyken MOVE DELTA modeli degil secili noktalari tasir; panelin
+    // X/Y/Z'si is duzlemi bilesenleridir (dunya vektorune cevrilir).
+    if (!copying && !selectedGrips_.empty()) {
+        const auto keptModels = selectedModels_;
+        moveSelectedGripsBy(worldDelta);
+        cancelTransformCommand();
+        selectedModels_ = keptModels;
+        SetCursor(currentCanvasCursor());
+        updateControls();
+        updateStatus();
+        invalidateCanvas();
+        return;
+    }
     if (copying) {
         // ADET: kopyalar delta, 2*delta, ... N*delta ofsetleriyle uretilir
         // (AutoCAD "Array" mantigi; tek undo adimi).
@@ -7716,6 +7810,20 @@ void Application::commitTransformPoint(const Vec3& point) {
         return;
     }
     if (isMoveTransform(transformCommand_)) {
+        // KONTROL NOKTASI KUMESI (Selahattin 2026-10-31): noktalar seciliyken
+        // Move / Move Delta modeli degil SECILI NOKTALARI tasir. Delta her
+        // noktaya ayni uygulanir (toplu yer degistirme); secim korunur ki
+        // tutamaklar gorunur kalsin.
+        if (!selectedGrips_.empty()) {
+            const auto keptModels = selectedModels_;
+            moveSelectedGripsBy(displacement);
+            cancelTransformCommand();
+            selectedModels_ = keptModels;
+            updateControls();
+            updateStatus();
+            invalidateCanvas();
+            return;
+        }
         pushUndoSnapshot();
         // P9: kesme hedefi tasinirsa kaynak duzlem/cizgi/3DFACE onunla birlikte
         // tasinir; bagli kaynaklar secime eklenip tek hamlede donusturulur.
@@ -8190,6 +8298,9 @@ void Application::deactivateAllCommands() {
 }
 
 void Application::updateControls() {
+    // Kontrol noktasi secimi yalniz SECILI profillere baglidir: kati secimden
+    // cikarsa noktalari da duser (her kontrol tazelemesinde dogrulanir).
+    pruneSelectedGrips();
     const auto check = [](HWND control, bool value) {
         if (control) SendMessageW(control, BM_SETCHECK, value ? BST_CHECKED : BST_UNCHECKED, 0);
     };
@@ -10594,24 +10705,39 @@ void Application::profileGripClick(int x, int y) {
         profileGrip_->basePoint = snappedPoint;
         profileGrip_->trackFrom = snappedPoint;
         profileGrip_->cursorPoint = snappedPoint;
-        publishStatus(L"Hedef noktayi secin (2. tik) — profil o vektorle tasinacak");
+        publishStatus(grip.deltaMovesSelection && selectedGrips_.size() > 1
+                          ? L"Hedef noktayı seçin (2. tık) — delta TÜM seçili kontrol noktalarına uygulanacak"
+                          : L"Hedef noktayi secin (2. tik) — profil o vektorle tasinacak");
         updateStatus();
         invalidateCanvas();
         return;
     }
     // 2. tik: destinasyon. displacement = hedef - baz.
-    const auto& m = document_.models()[grip.solidIndex];
-    const Vec3 from{m.properties().axisFromX, m.properties().axisFromY,
-                    m.properties().axisFromZ};
-    const Vec3 to{m.properties().axisToX, m.properties().axisToY,
-                  m.properties().axisToZ};
-    const Vec3 movingEnd = grip.endIsTo ? to : from;
     const Vec3 displacement = snappedPoint - grip.basePoint;
-    const Vec3 newMovingEnd = movingEnd + displacement;
+    const bool multi = grip.deltaMovesSelection && selectedGrips_.size() > 1;
+    Vec3 newMovingEnd{};
+    if (!multi) {
+        const auto& m = document_.models()[grip.solidIndex];
+        const Vec3 from{m.properties().axisFromX, m.properties().axisFromY,
+                        m.properties().axisFromZ};
+        const Vec3 to{m.properties().axisToX, m.properties().axisToY,
+                      m.properties().axisToZ};
+        newMovingEnd = (grip.endIsTo ? to : from) + displacement;
+    }
     profileGrip_.reset();
     hover_.reset();
     clearTemporaryTracking();
 #ifdef MM_HAS_OCC
+    if (multi) {
+        // KUME TASIMA: delta TUM secili kontrol noktalarina uygulanir (tek undo).
+        const auto keptModels = selectedModels_;
+        moveSelectedGripsBy(displacement);
+        selectedModels_ = keptModels;
+        updateControls();
+        updateStatus();
+        invalidateCanvas();
+        return;
+    }
     reExtrudeProfileGrip(grip.solidIndex, grip.endIsTo, newMovingEnd);
 #else
     publishStatus(L"Profil ucunu tasimak icin OpenCASCADE gerekli (OCC kapali).");
@@ -10626,40 +10752,162 @@ void Application::cancelProfileGrip() {
     invalidateCanvas();
 }
 
+// --- KONTROL NOKTASI COKLU SECIMI (Selahattin 2026-10-31) -------------------
+// Secilebilir tutamak listesi: YALNIZ secili profilli katilar (renderer'in
+// cizdigi kume ile ayni kural; gorunus penceresinde dilim disi katilar yok).
+std::vector<mm::GripCandidate> Application::gripCandidates() const {
+    std::vector<mm::GripCandidate> out;
+    RECT client{};
+    GetClientRect(canvas_, &client);
+    const int width = std::max(1L, client.right);
+    const int height = std::max(1L, client.bottom);
+    const auto& bounds = document_.modelBounds();
+    for (const std::size_t index : selectedModels_) {
+        if (index >= document_.models().size()) continue;
+        const auto& m = document_.models()[index];
+        if (m.faces().empty() || m.properties().profileName.empty()) continue;
+        if (viewDef_ && (index >= bounds.size() ||
+                         !boundsInViewSlab(bounds[index], *viewDef_)))
+            continue;
+        for (const bool toEnd : {false, true}) {
+            const Vec2 px = camera_.project(mm::memberEndCenter(m, toEnd), width, height);
+            out.push_back(mm::GripCandidate{mm::GripRef{index, toEnd},
+                                            mm::GripScreenPoint{px.x, px.y}});
+        }
+    }
+    return out;
+}
+
+void Application::completeGripWindowSelection(POINT first, POINT second, bool additive) {
+    const auto picked = mm::gripsInWindow(
+        gripCandidates(),
+        mm::GripScreenPoint{static_cast<double>(first.x), static_cast<double>(first.y)},
+        mm::GripScreenPoint{static_cast<double>(second.x), static_cast<double>(second.y)});
+    selectedGrips_ = mm::mergeGripSelection(selectedGrips_, picked, additive);
+    if (selectedGrips_.empty()) {
+        publishStatus(L"Kontrol noktası: pencere içinde nokta yok — seçim boş");
+    } else {
+        std::wstring message = L"Kontrol noktası: " +
+                               std::to_wstring(selectedGrips_.size()) + L" seçili";
+        if (additive) message += L" (Shift: eskiler korundu)";
+        message += L" — Move / Move Delta ile toplu taşıyın";
+        publishStatus(std::move(message));
+    }
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
+}
+
+void Application::clearSelectedGrips() {
+    if (selectedGrips_.empty()) return;
+    selectedGrips_.clear();
+    invalidateCanvas();
+}
+
+// Secim gecerliligi: kati secimden ciktiysa (ya da indeks dustuyse) noktalari
+// da secimden duser — "yalniz secili profillerin kontrol noktalari" kurali.
+void Application::pruneSelectedGrips() {
+    const auto pruned = mm::pruneGripSelection(selectedGrips_, selectedModels_);
+    if (pruned.size() != selectedGrips_.size()) selectedGrips_ = pruned;
+}
+
+// TOPLU TASIMA: secili TUM kontrol noktalari ayni delta ile oynar. TEK undo
+// kaydi + her parca icin TEK recompute turu (N nokta -> N undo degil).
+void Application::moveSelectedGripsBy(const Vec3& displacement) {
+    if (selectedGrips_.empty()) return;
+    if (displacement.x == 0.0 && displacement.y == 0.0 && displacement.z == 0.0) return;
 #ifdef MM_HAS_OCC
-void Application::reExtrudeProfileGrip(std::size_t solidIndex, bool endIsTo,
-                                       const Vec3& newPoint) {
-    if (solidIndex >= document_.models().size()) return;
+    // En az bir nokta gercekten tasinabilir mi? (Basarisizlikta bos undo adimi
+    // birakmamak icin once kontrol.)
+    bool movable = false;
+    for (const auto& grip : selectedGrips_) {
+        if (grip.solidIndex >= document_.models().size()) continue;
+        if (document_.models()[grip.solidIndex].properties().profileName.empty()) continue;
+        movable = true;
+        break;
+    }
+    if (!movable) return;
+    pushUndoSnapshot();
+    int moved = 0;
+    std::vector<EntityId> changedParts;
+    for (const auto& grip : selectedGrips_) {
+        if (grip.solidIndex >= document_.models().size()) continue;
+        const auto& props = document_.models()[grip.solidIndex].properties();
+        if (props.profileName.empty()) continue;
+        const Vec3 end = grip.endIsTo
+            ? Vec3{props.axisToX, props.axisToY, props.axisToZ}
+            : Vec3{props.axisFromX, props.axisFromY, props.axisFromZ};
+        const EntityId partId = document_.modelId(grip.solidIndex);
+        if (reExtrudeProfileGripCore(grip.solidIndex, grip.endIsTo, end + displacement,
+                                     /*registerUndo=*/false) <= 0)
+            continue;
+        ++moved;
+        if (std::find(changedParts.begin(), changedParts.end(), partId) == changedParts.end())
+            changedParts.push_back(partId);
+    }
+    if (moved == 0) return;
+    for (const EntityId id : changedParts) recomputeTargetsUsingTool(id);
+    if (recomputeEndPlateConnectionsFor(changedParts))
+        recomputeComponentInstancesFor(changedParts);
+    wchar_t message[192];
+    swprintf(message, 192, L"Kontrol noktası taşındı: %d nokta  (Δ %.1f, %.1f, %.1f)",
+             moved, displacement.x, displacement.y, displacement.z);
+    publishStatus(message);
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
+#else
+    (void)displacement;
+    publishStatus(L"Kontrol noktası taşımak için OpenCASCADE gerekli (OCC kapalı).");
+#endif
+}
+
+#ifdef MM_HAS_OCC
+// CEKIRDEK: profil ucunu yeniden ekstrude eder — undo kaydi ACMAZ, bagli
+// component/kesme hedeflerini YENIDEN HESAPLAMAZ, durum yazmaz. Toplu kontrol
+// noktasi tasimasinda N nokta TEK undo adiminda ve TEK recompute turunda
+// islenir; tek tutamak akisi alttaki sarmalayiciyi kullanir.
+int Application::reExtrudeProfileGripCore(std::size_t solidIndex, bool endIsTo,
+                                          const Vec3& newPoint, bool registerUndo) {
+    if (solidIndex >= document_.models().size()) return 0;
     const auto& solid = document_.models()[solidIndex];
     const auto& props = solid.properties();
-    if (props.profileName.empty() || solid.faces().empty()) return;
+    if (props.profileName.empty() || solid.faces().empty()) return 0;
     ensureProfileCatalog();
     const auto* profile = mm::findProfile(profileCatalog_, props.profileName);
     if (!profile) {
         publishStatus(L"Profil bulunamadi: " + utf8ToWide(props.profileName));
-        return;
+        return -1;
     }
     Vec3 from{props.axisFromX, props.axisFromY, props.axisFromZ};
     Vec3 to{props.axisToX, props.axisToY, props.axisToZ};
     if (endIsTo) to = newPoint; else from = newPoint;
     if (from == to) {
         publishStatus(L"Profil uzunlugu sifir olamaz.");
-        return;
+        return -1;
     }
     const TopoDS_Shape shape =
         mm::extrudeProfileSolid(*profile, from, to, props.profileRotation,
                                 Vec3{props.sectionNormalX, props.sectionNormalY,
                                      props.sectionNormalZ});
-    if (shape.IsNull()) return;
+    if (shape.IsNull()) return 0;
     auto solidModel = mm::shapeToWireframeWithFaces(shape, 0.15);
     // Mevcut stil/kimlik ozelliklerini koru; yalniz eksen degisti.
     auto newProps = props;
     newProps.axisFromX = from.x; newProps.axisFromY = from.y; newProps.axisFromZ = from.z;
     newProps.axisToX = to.x; newProps.axisToY = to.y; newProps.axisToZ = to.z;
     solidModel.setProperties(std::move(newProps));
-    pushUndoSnapshot();
+    if (registerUndo) pushUndoSnapshot();
     document_.replaceModel(solidIndex, {std::move(solidModel)});
     putOccSolid(solidIndex, shape);
+    return 1;
+}
+
+void Application::reExtrudeProfileGrip(std::size_t solidIndex, bool endIsTo,
+                                       const Vec3& newPoint) {
+    const int changed = reExtrudeProfileGripCore(solidIndex, endIsTo, newPoint,
+                                                 /*registerUndo=*/true);
+    if (changed <= 0) return;
     // Kesici parca olarak kullaniliyorsa bagli hedefleri yeniden hesapla
     // (canli Part Cut: profil ucu tasinininca kesilen hedef guncellenir).
     recomputeTargetsUsingTool(document_.modelId(solidIndex));
@@ -11462,6 +11710,9 @@ DraftView Application::draftView() const {
         view.gripTrackFrom = profileGrip_->trackFrom;
         view.gripTrackTo = profileGrip_->cursorPoint;
     }
+    // KONTROL NOKTASI COKLU SECIMI: isaretli noktalar + canli pencere.
+    view.selectedGrips = selectedGrips_;
+    view.gripSelectionFirstCorner = gripSelectionFirstCorner_;
     // RHINO TARZI GUMBALL
     view.gumballVisible = gumballVisible_;
     view.gumball3D = (mode_ == EditMode::View3D);
