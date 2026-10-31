@@ -120,7 +120,29 @@ struct Document {
     }
 };
 
+// UCS DELTA DONUSUMU (2026-10-31): applyLinearDelta artik panel deltasini
+// (is duzlemi eksenleri) dunya vektorune cevirir. Harness'ta geometri
+// cekirdegi yok; ayni sozlesmeyi burada taklit ediyoruz.
+namespace mm {
+struct WorkPlane {
+    ::Vec3 u{1.0, 0.0, 0.0};
+    ::Vec3 v{0.0, 1.0, 0.0};
+    ::Vec3 normal{0.0, 0.0, 1.0};
+};
+inline Vec3 workPlaneDeltaToWorld(const WorkPlane& p, const Vec3& d) noexcept {
+    return Vec3{p.u.x * d.x + p.v.x * d.y + p.normal.x * d.z,
+                p.u.y * d.x + p.v.y * d.y + p.normal.y * d.z,
+                p.u.z * d.x + p.v.z * d.y + p.normal.z * d.z};
+}
+inline Vec3 worldDeltaToWorkPlane(const WorkPlane& p, const Vec3& d) noexcept {
+    return Vec3{p.u.x * d.x + p.u.y * d.y + p.u.z * d.z,
+                p.v.x * d.x + p.v.y * d.y + p.v.z * d.z,
+                p.normal.x * d.x + p.normal.y * d.y + p.normal.z * d.z};
+}
+} // namespace mm
+
 struct Application {
+    mm::WorkPlane workPlane_;
     Document document_;
     std::vector<std::size_t> selectedModels_;
     std::vector<std::size_t> pendingCopySelection_;

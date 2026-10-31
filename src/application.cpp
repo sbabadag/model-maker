@@ -2959,7 +2959,9 @@ void Application::onCharacter(wchar_t character) {
             } else {
                 input_.clear();
                 clearTemporaryTracking();
-                commitTransformPoint(*transformBase_ + *delta);   // KOPYA aktif kalir
+                // Panel/klavye deltalari IS DUZLEMI eksenlerindedir -> dunyaya cevir.
+                const Vec3 wd = mm::workPlaneDeltaToWorld(workPlane_, *delta);
+                commitTransformPoint(*transformBase_ + wd);   // KOPYA aktif kalir
             }
         } else
         if (!input_.empty()) {
@@ -7388,14 +7390,19 @@ void Application::applyLinearDelta(const Vec3& delta, int count) {
         MessageBeep(MB_ICONWARNING);
         return;
     }
+    // IS-DUZLEMI (UCS) DELTASI (Selahattin 2026-10-31): panelin X/Y/Z alanlari
+    // IS DUZLEMI eksenleridir; kopyalama/tasima hep global eksende calisiyordu
+    // ("copy/move calisma duzlemi uzerinde calismiyor"). Panel degeri UCS'te
+    // tutulur, uygulama icin dunya vektorune cevrilir.
     lastLinearDelta_ = delta;
+    const Vec3 worldDelta = mm::workPlaneDeltaToWorld(workPlane_, delta);
     const bool copying = transformCommand_ == TransformCommand::CopyLinear;
     int copies = 1;
     if (copying) {
         copies = count < 1 ? 1 : (count > mm::kLinearCopyMaxCount ? mm::kLinearCopyMaxCount : count);
     }
     lastLinearCount_ = copies;
-    if (delta.x == 0.0 && delta.y == 0.0 && delta.z == 0.0) {
+    if (worldDelta.x == 0.0 && worldDelta.y == 0.0 && worldDelta.z == 0.0) {
         // Sifir delta: sessiz kopya yigini uretme, komutu bitir.
         MessageBeep(MB_ICONWARNING);
         cancelTransformCommand();
@@ -7408,7 +7415,7 @@ void Application::applyLinearDelta(const Vec3& delta, int count) {
     if (copying) {
         // ADET: kopyalar delta, 2*delta, ... N*delta ofsetleriyle uretilir
         // (AutoCAD "Array" mantigi; tek undo adimi).
-        const auto offsets = mm::linearCopyOffsets(delta, copies);
+        const auto offsets = mm::linearCopyOffsets(worldDelta, copies);
         pushUndoSnapshot();
         CopyStepInfo total;
         for (const Vec3& offset : offsets) {
@@ -7424,7 +7431,7 @@ void Application::applyLinearDelta(const Vec3& delta, int count) {
         // kullanilir — govde tek kaynakta kalir.
         transformBase_ = Vec3{0.0, 0.0, 0.0};
         transformPhase_ = TransformPhase::Destination;
-        commitTransformPoint(delta);
+        commitTransformPoint(worldDelta);
     }
     // Panel tek seferliktir: kopya coklu modda acik kalsa da komut biter
     // (cancelTransformCommand secimi uretilen kopyalara gecirir).
@@ -7585,7 +7592,8 @@ void Application::commitTransformPoint(const Vec3& point) {
     // panele yazilir ve panel yeniden acilir (Uygula -> applyLinearDelta).
     if (linearPickMode_ && (transformCommand_ == TransformCommand::CopyLinear ||
                             transformCommand_ == TransformCommand::MoveLinear)) {
-        lastLinearDelta_ = displacement;
+        // Panelde IS DUZLEMI bilesenleri gosterilir (uygulama tersini yapar).
+        lastLinearDelta_ = mm::worldDeltaToWorkPlane(workPlane_, displacement);
         linearPickMode_ = false;
         linearDeltaFromPick_ = true;
         transformBase_.reset();

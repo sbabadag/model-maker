@@ -674,6 +674,13 @@ if(BUILD_TESTING)
     target_compile_options(model_maker_side_view_snap_test PRIVATE -Wall -Wextra -Wpedantic)
     add_test(NAME model_maker_side_view_snap_test COMMAND model_maker_side_view_snap_test)
 
+    # UCS DELTA: kopyala/tasima paneli ve "dx,dy,dz" girdisi is duzlemi
+    # eksenlerinde; dunya donusumu tek kaynak (round-trip).
+    add_executable(model_maker_workplane_delta_test tests/workplane_delta_test.cpp)
+    target_link_libraries(model_maker_workplane_delta_test PRIVATE model_maker_core)
+    target_compile_options(model_maker_workplane_delta_test PRIVATE -Wall -Wextra -Wpedantic)
+    add_test(NAME model_maker_workplane_delta_test COMMAND model_maker_workplane_delta_test)
+
     # KARARLI VARLIK KIMLIGI (EntityId): vektor indeksi kalici kimlik DEGIL;
     # kimlik ekleme/silme/degistirme/undo/redo boyunca DOGRU varlikla eslesir,
     # tekil ve monoton artar. 1:1 replace kimligi korur, kopya yeni kimlik alir,

@@ -52,6 +52,18 @@ ProfileSectionFrame profileSectionFrame(const Vec3& axisDirection,
     return frame;
 }
 
+Vec3 workPlaneDeltaToWorld(const WorkPlane& plane, const Vec3& delta) noexcept {
+    return Vec3{plane.u.x * delta.x + plane.v.x * delta.y + plane.normal.x * delta.z,
+                plane.u.y * delta.x + plane.v.y * delta.y + plane.normal.y * delta.z,
+                plane.u.z * delta.x + plane.v.z * delta.y + plane.normal.z * delta.z};
+}
+
+Vec3 worldDeltaToWorkPlane(const WorkPlane& plane, const Vec3& delta) noexcept {
+    return Vec3{plane.u.x * delta.x + plane.u.y * delta.y + plane.u.z * delta.z,
+                plane.v.x * delta.x + plane.v.y * delta.y + plane.v.z * delta.z,
+                plane.normal.x * delta.x + plane.normal.y * delta.y + plane.normal.z * delta.z};
+}
+
 std::optional<WorkPlane> WorkPlane::fromThreePoints(Vec3 first, Vec3 second, Vec3 third) noexcept {
     const auto uAxis = normalized(second - first);
     if (!uAxis) return std::nullopt;

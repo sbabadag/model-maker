@@ -77,6 +77,14 @@ struct WorkPlane {
     // secilen noktalari is duzlemine oturtmak icin (bkz. application.cpp).
     Vec3 projectPoint(Vec3 point) const noexcept;
 };
+// IS-DUZLEMI (UCS) DELTA DONUSUMU — tek kaynak.
+// Dolgusal kopyala/tasima paneli ve "dx,dy,dz" girdisi IS DUZLEMI
+// eksenlerindedir; geometri dunya koordinatindadir. Bu iki fonksiyon
+// arasindaki donusumu TEK yerde tutar (round-trip birebir).
+Vec3 workPlaneDeltaToWorld(const WorkPlane& plane, const Vec3& delta) noexcept;
+Vec3 worldDeltaToWorkPlane(const WorkPlane& plane, const Vec3& delta) noexcept;
+
+
 
 struct Edge {
     std::size_t from{};
