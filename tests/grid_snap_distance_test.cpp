@@ -81,7 +81,29 @@ int main() {
         check(approx(r.point.x, 3050.0) && approx(r.point.y, 2500.0), "uc noktaya oturur");
     }
 
-    // (5) 3B: ayni kural — tolerans disinda kesisme snap'i YOK
+    // (5b) GRID AKS UCU vs YAKIN KOPYALANMIS OBJE UCU (Selahattin 2026-10-31:
+    // "endpoint grid uclarinda tutmuyor, ozellikle kopyalanan objelerin oldugu
+    // gridde"). Imlec grid ucunun TAM uzerinde (7 mm), kopyalanmis obje ucu
+    // 49 mm otede -> grid ucu kazanmali. Eski kod obje snap'i bulunca hemen
+    // dondugu icin 49 mm otedeki obje ucuna kaciyordu.
+    {
+        Document d2;
+        d2.addGrid(makeGrid());            // x=0 aksi (0,-1000)->(0,6000)
+        d2.addModel(WireframeModel::line({40.0, -960.0, 0.0}, {300.0, -960.0, 0.0}));
+        const SnapResult atGrid = engine.snap({5.0, -995.0, 0.0}, d2, kTol, true, true);
+        std::printf("  grid ucu: tip=%d nokta=(%.1f %.1f)\n", (int)atGrid.type,
+                    atGrid.point.x, atGrid.point.y);
+        check(approx(atGrid.point.x, 0.0) && approx(atGrid.point.y, -1000.0),
+              "grid aks ucu, yakin kopya obje ucunu EZER (en yakin kazanir)");
+        // Obje ucu daha yakinsa obje kazanir.
+        const SnapResult atObj = engine.snap({32.0, -972.0, 0.0}, d2, kTol, true, true);
+        std::printf("  obje ucu: tip=%d nokta=(%.1f %.1f)\n", (int)atObj.type,
+                    atObj.point.x, atObj.point.y);
+        check(approx(atObj.point.x, 40.0) && approx(atObj.point.y, -960.0),
+              "obje ucu daha yakinsa obje ucu kazanir");
+    }
+
+    // (6) 3B: ayni kural — tolerans disinda kesisme snap'i YOK
     {
         Document doc3;
         GridDefinition g = makeGrid();

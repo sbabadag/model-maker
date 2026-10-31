@@ -576,33 +576,38 @@ SnapResult SnapEngine::snap(const Vec3& cursor, const Document& document,
                             bool objectSnapEnabled, bool gridSnapEnabled,
                             std::optional<Vec3> referencePoint,
                             const SnapTypeMask* enabledTypes) {
+    // TEK LISTE KURALI (Selahattin 2026-10-31): obje snap'i ile grid adaylari
+    // AYNI listeye toplanip TEK `choose` ile secilir. Eski kod obje snap'i
+    // bulduysa HEMEN donuyordu; bu yuzden tolerans icindeki uzak bir obje
+    // noktasi (or. kopyalanmis obje ucu 40 mm otede) tam uzerinde durdugun
+    // grid aks UCUNU (0 mm) ezip "grid ucunda endpoint tutmuyor" hatasini
+    // veriyordu. Artik en yakin + oncelik kurali ikisi arasinda da gecerli.
+    const auto pointMetric = [&](const Vec3& point) { return distance2D(cursor, point); };
+    std::vector<Candidate> candidates;
     if (objectSnapEnabled) {
         const auto nearby = document.query2D({cursor.x - objectTolerance, cursor.y - objectTolerance, cursor.z},
                                              {cursor.x + objectTolerance, cursor.y + objectTolerance, cursor.z});
-        auto result = choose(objectCandidates(cursor, document, objectTolerance,
-            [&](const Vec3& point) { return distance2D(cursor, point); }, referencePoint, &nearby),
-            cursor, enabledTypes);
-        if (result.type == SnapType::None && nearby.size() != document.models().size()) {
+        candidates = objectCandidates(cursor, document, objectTolerance, pointMetric,
+                                      referencePoint, &nearby);
+        // Genis izleme gecisi YALNIZ obje adayi hic yoksa (eski davranis korunur).
+        if (candidates.empty() && nearby.size() != document.models().size()) {
             const double trackingRange = std::max(1.0, objectTolerance * 64.0);
             const auto tracked = document.query2D({cursor.x - trackingRange, cursor.y - trackingRange, cursor.z},
                                                   {cursor.x + trackingRange, cursor.y + trackingRange, cursor.z});
-            result = choose(objectCandidates(cursor, document, objectTolerance,
-                [&](const Vec3& point) { return distance2D(cursor, point); }, referencePoint, &tracked),
-                cursor, enabledTypes);
+            candidates = objectCandidates(cursor, document, objectTolerance, pointMetric,
+                                          referencePoint, &tracked);
         }
-        if (result.type != SnapType::None) return result;
     }
     // YAPI GRIDI (2B): aks cizgileri de TUM snap turleri icin cizilebilir
-    // geometridir (kullanici sarti: "grid'e tum snaplar yapismali"). Obje
-    // snap'i kazanamadiysa grid akslarindan aday uretilir; her turun kapisi
-    // enabledSnapTypes_ maskesidir (uc/orta/en yakin/dikme + kesisim).
+    // geometridir (kullanici sarti: "grid'e tum snaplar yapismali"); her turun
+    // kapisi enabledSnapTypes_ maskesidir (uc/orta/en yakin/dikme + kesisim).
     if (gridSnapEnabled) {
-        std::vector<Candidate> gridCandidates;
-        addGridLineCandidates(gridCandidates, document, cursor, objectTolerance,
-                              [&](const Vec3& point) { return distance2D(cursor, point); },
+        addGridLineCandidates(candidates, document, cursor, objectTolerance, pointMetric,
                               referencePoint, nullptr);
-        auto gridResult = choose(std::move(gridCandidates), cursor, enabledTypes);
-        if (gridResult.type != SnapType::None) return gridResult;
+    }
+    if (!candidates.empty()) {
+        const auto result = choose(std::move(candidates), cursor, enabledTypes);
+        if (result.type != SnapType::None) return result;
     }
     // Grid snap ARTIK SADECE CUSTOM YAPI AKS KESISIM NOKTALARINA gider
     // (near yok). X-akslari (horizontal=false) ve Y-akslari (horizontal=true)
@@ -675,17 +680,22 @@ SnapResult SnapEngine::snap3D(const Vec2& screenCursor, const Document& document
     // yalnizca taban (XY) noktalarina kilitlenir. Duzlem kameranin KILITLI
     // gorunus yonunden gelir (rotasyon kilidi degistirmez; cizimle tutarli).
     const GridViewPlane gridPlane = gridViewPlaneForDirection(camera.gridViewDirection());
+    // TEK LISTE KURALI (3B, Selahattin 2026-10-31): obje + grid adaylari AYNI
+    // listede; en yakin + oncelik kazanir. Eski kod obje snap'i bulunca hemen
+    // donuyordu → yakin bir obje ucu, tam uzerinde durulan grid aks ucunu /
+    // kesisimini eziyordu ("grid ucunda endpoint tutmuyor").
+    const auto metric = [&](const Vec3& point) {
+        const Vec2 projected = camera.project(point, viewportWidth, viewportHeight);
+        return std::hypot(screenCursor.x - projected.x, screenCursor.y - projected.y);
+    };
+    std::vector<Candidate> candidates;
     if (objectSnapEnabled) {
-        const auto metric = [&](const Vec3& point) {
-            const Vec2 projected = camera.project(point, viewportWidth, viewportHeight);
-            return std::hypot(screenCursor.x - projected.x, screenCursor.y - projected.y);
-        };
         const auto nearby = projectedCandidates(screenCursor, document, camera, viewportWidth,
                                                 viewportHeight, objectTolerancePixels);
         const ScreenSpaceNearest screenNearest{&camera, viewportWidth, viewportHeight, screenCursor,
                                                visibleEdgesOnly};
-        auto candidates = objectCandidates(*raw, document, objectTolerancePixels, metric,
-                                           referencePoint, &nearby, &screenNearest);
+        candidates = objectCandidates(*raw, document, objectTolerancePixels, metric,
+                                      referencePoint, &nearby, &screenNearest);
         struct ProjectedEdge { Vec3 a; Vec3 b; Vec2 pa; Vec2 pb; };
         std::vector<ProjectedEdge> edges;
         constexpr std::size_t apparentIntersectionEdgeLimit = 512;
@@ -759,25 +769,17 @@ SnapResult SnapEngine::snap3D(const Vec2& screenCursor, const Document& document
         }
         // Derinlik tercihi icin kamera verilir: esit ekran mesafesinde
         // izleyiciye YAKIN aday kazanir (gizli kenara snap'i onler).
-        auto result = choose(std::move(candidates), *raw, enabledTypes, &camera);
-        if (result.type != SnapType::None) return result;
     }
     // YAPI GRIDI (3B): aks cizgileri de TUM snap turleri icin cizilebilir
-    // geometridir (kullanici sarti: "grid'e tum snaplar yapismali"). Obje
-    // snap'i kazanamadiysa grid akslarindan aday uretilir; en yakin nokta
-    // EKRAN uzayinda cozulur (model kenarlarindaki NEAREST ile ayni kalip).
-    // Her turun kapisi enabledSnapTypes_ maskesidir.
+    // geometridir; adaylar AYNI listede toplanir (tek `choose`).
     if (gridSnapEnabled) {
-        const auto gridMetric = [&](const Vec3& point) {
-            const Vec2 projected = camera.project(point, viewportWidth, viewportHeight);
-            return std::hypot(screenCursor.x - projected.x, screenCursor.y - projected.y);
-        };
         const ScreenSpaceNearest gridNearest{&camera, viewportWidth, viewportHeight, screenCursor, false};
-        std::vector<Candidate> gridCandidates;
-        addGridLineCandidates(gridCandidates, document, *raw, objectTolerancePixels, gridMetric,
+        addGridLineCandidates(candidates, document, *raw, objectTolerancePixels, metric,
                               referencePoint, &gridNearest, gridPlane);
-        auto gridResult = choose(std::move(gridCandidates), *raw, enabledTypes, &camera);
-        if (gridResult.type != SnapType::None) return gridResult;
+    }
+    if (!candidates.empty()) {
+        const auto result = choose(std::move(candidates), *raw, enabledTypes, &camera);
+        if (result.type != SnapType::None) return result;
     }
     // Grid snap ARTIK SADECE CUSTOM YAPI AKS KESISIM NOKTALARINA gider
     // (near yok). Ekran-uzayi projeksiyon mesafesiyle en yakin kesisim.
