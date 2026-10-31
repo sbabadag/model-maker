@@ -5753,7 +5753,13 @@ void Application::recomputeComponentInstancesFor(const std::vector<EntityId>& ch
     ComponentDependencyGraph graph;
     graph.build(document_.componentInstances());
     const std::vector<EntityId> affected = graph.dependentsOf(changedParts);
-    if (affected.empty()) return;
+    if (affected.empty()) {
+        // TESHIS (Selahattin 2026-10-31: "bagli eleman hareket edince component
+        // kendini yenilemiyor"): neden yenilenmedigini durum cubugunda goster.
+        solidStatusMessage_ = L"Component etkilenmedi: bu parcaya bagli component yok";
+        updateStatus();
+        return;
+    }
 
     // Etkilenen ana parcalarin B-Rep tabanini BIR KEZ tazele (tasima/donme/profil
     // degisimi sonrasi findOccSolid bayat kalmasin). End Plate recompute'taki
@@ -5811,6 +5817,13 @@ void Application::recomputeComponentInstancesFor(const std::vector<EntityId>& ch
     };
 
     const auto res = atomicRecompute<ComponentMaterializer::Prepared>(affected, prepare, commit);
+    if (res.allPrepared && !res.commitFailed) {
+        // Basari: durum cubugunda gorunur geri bildirim + tuval tazeleme.
+        solidStatusMessage_ = L"Component otomatik yenilendi (" +
+                              std::to_wstring(affected.size()) + L" baglanti)";
+        updateStatus();
+        invalidateCanvas();
+    }
     if (!res.allPrepared || res.commitFailed) {
         const bool rolled = document_.rollbackOpenRecord();
         std::wstring msg = L"Component recompute basarisiz";
