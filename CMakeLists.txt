@@ -693,6 +693,13 @@ if(BUILD_TESTING)
     target_compile_options(model_maker_member_end_center_test PRIVATE -Wall -Wextra -Wpedantic)
     add_test(NAME model_maker_member_end_center_test COMMAND model_maker_member_end_center_test)
 
+    # GORUNUS PENCERESI SNAP IZDUSUMU (plan/yan gorunuste nokta gorunus
+    # duzleminde kalmali; is duzlemine izdusum ekranda kaydiriyordu)
+    add_executable(model_maker_view_plane_snap_projection_test tests/view_plane_snap_projection_test.cpp)
+    target_link_libraries(model_maker_view_plane_snap_projection_test PRIVATE model_maker_core)
+    target_compile_options(model_maker_view_plane_snap_projection_test PRIVATE -Wall -Wextra -Wpedantic)
+    add_test(NAME model_maker_view_plane_snap_projection_test COMMAND model_maker_view_plane_snap_projection_test)
+
     # KARARLI VARLIK KIMLIGI (EntityId): vektor indeksi kalici kimlik DEGIL;
     # kimlik ekleme/silme/degistirme/undo/redo boyunca DOGRU varlikla eslesir,
     # tekil ve monoton artar. 1:1 replace kimligi korur, kopya yeni kimlik alir,

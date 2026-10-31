@@ -7746,7 +7746,16 @@ void Application::updateHover(int x, int y) {
         const int height = std::max(1L, client.bottom);
         const auto reference = profileGrip_ ? gripReferencePoint()
             : (transformPhase_ == TransformPhase::Destination ? transformBase_ : anchor_);
-        WorkPlane activePlane = workPlane_;
+        // GORUNUS PENCERESI (viewDef_): snap ve nihai nokta HER ZAMAN gorunus
+        // duzleminde kalmali (Tekla davranisi). Onceki kod calisma duzlemini
+        // (workPlane_) kullaniyordu; aktif UCS baska bir duzlemdeyse (orn. YZ
+        // yan duzlem) nokta o duzleme iz dusuruluyor ve EKRANDA kayiyordu —
+        // kullanici bunu "plan goruntusunde snap tutmuyor" olarak goruyor.
+        std::optional<WorkPlane> viewPlane;
+        if (viewDef_) {
+            viewPlane = WorkPlane{viewDef_->origin, viewDef_->right, viewDef_->up, viewDef_->normal};
+        }
+        WorkPlane activePlane = viewPlane ? *viewPlane : workPlane_;
         if (reference && !workPlanePicking_) activePlane.origin = *reference;
         // YAN/ON GORUNUS SNAP (Selahattin 2026-10-31): "view manipulator ile
         // yan gorunuse gectim, oradan snap almadi hicbir yerden". Is-duzlemi
@@ -7778,7 +7787,12 @@ void Application::updateHover(int x, int y) {
     // halde ornegin baz bir derinlikteki ucdan, hedef baska derinlikteki
     // noktadan secilince nesne derinlige kayip gorunusten (derinlik dilimi)
     // CIKABILIYOR. Tek kaynak: WorkPlane::projectPoint.
-    if (viewDef_ && hover_) hover_->point = workPlane_.projectPoint(hover_->point);
+    if (viewDef_ && hover_) {
+        // Gorunus duzlemine iz dusur (workPlane_ DEGIL): aktif UCS baska
+        // duzlemdeyse nokta ekranda kayiyordu.
+        const WorkPlane viewPlane{viewDef_->origin, viewDef_->right, viewDef_->up, viewDef_->normal};
+        hover_->point = viewPlane.projectPoint(hover_->point);
+    }
     const SnapResult rawSnap = *hover_;
     // TP adayi: TAB ile kaydedilecek HAM snap noktasi. Eskiden burada 450 ms
     // BEKLEME (dwell) zamanlayicisi kurulup nokta OTOMATIK kaydediliyordu;
