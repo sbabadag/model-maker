@@ -10562,6 +10562,16 @@ void Application::reExtrudeProfileGrip(std::size_t solidIndex, bool endIsTo,
     // Kesici parca olarak kullaniliyorsa bagli hedefleri yeniden hesapla
     // (canli Part Cut: profil ucu tasinininca kesilen hedef guncellenir).
     recomputeTargetsUsingTool(document_.modelId(solidIndex));
+    // COMPONENT OTOMATIK GUNCELLEME (Selahattin 2026-10-31): "kirisi uc
+    // noktasiyla cekince component kendini toparlamadi". Profil ucu
+    // tasindiginda/uzatildiginda bu parçaya BAGLI component'ler (kolon-kiris
+    // birlestirmeleri) yenilenmeliydi; eskiden yalniz kesme HEDEFLERI
+    // hesaplaniyordu. Ayni undo kaydinin icinde kalir (pushUndoSnapshot ustte).
+    {
+        const EntityId changedPart = document_.modelId(solidIndex);
+        if (recomputeEndPlateConnectionsFor({changedPart}))
+            recomputeComponentInstancesFor({changedPart});
+    }
     publishStatus(endIsTo ? L"Profil ust ucu uzatildi" : L"Profil alt ucu uzatildi");
     updateControls();
     updateStatus();
