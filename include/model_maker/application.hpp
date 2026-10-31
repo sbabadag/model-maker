@@ -166,8 +166,12 @@ public:
     void assignProfileToSelection(const std::string& profileName);
     // PROFIL CIZIM MODU: dogrudan cizilen cizgiyi secili profille kirişe
     // donusturur (cizgi eklenir -> secilir -> atama akisi -> secim biter).
+    // sectionReference: yeni uyenin kesit referans normali (verilmezse aktif
+    // is-duzlemi normali). Egik duzlemde kolon gibi ekseni duzleme DIK olan
+    // uyelerde duzlem-ici bir vektor (workPlane_.u) gecirilmelidir.
     void assignProfileToLine(const Vec3& from, const Vec3& to,
-                             const std::string& profileName);
+                             const std::string& profileName,
+                             std::optional<Vec3> sectionReference = std::nullopt);
     // Qt profil secici: bos = normal cizim; dolu = cizim profillidir.
     void setPendingProfileName(std::string name) { pendingProfileName_ = std::move(name); }
     const std::string& pendingProfileName() const noexcept { return pendingProfileName_; }

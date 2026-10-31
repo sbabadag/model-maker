@@ -3018,7 +3018,21 @@ void Application::commitPoint(const Vec3& point) {
                 // yok, Tekla tarzi dogrudan cizim.
                 assignProfileToLine(start, point, pendingProfileName_);
             } else {
-                addStyledModel(WireframeModel::line(start, point));
+                // IS-DUZLEMI referansi: sonradan profil atandiginda kesit
+                // egik duzleme oturur (world UCS'ine donmez).
+                WireframeModel line = WireframeModel::line(start, point);
+                auto lineProps = line.properties();
+                const Vec3 planeN = workPlane_.normal;
+                if (std::isfinite(planeN.x) && std::isfinite(planeN.y) &&
+                    std::isfinite(planeN.z) &&
+                    (std::fabs(planeN.x) > 1e-9 || std::fabs(planeN.y) > 1e-9 ||
+                     std::fabs(planeN.z) > 1e-9)) {
+                    lineProps.sectionNormalX = planeN.x;
+                    lineProps.sectionNormalY = planeN.y;
+                    lineProps.sectionNormalZ = planeN.z;
+                    line.setProperties(std::move(lineProps));
+                }
+                addStyledModel(std::move(line));
             }
         }
         anchor_.reset();
@@ -8194,6 +8208,12 @@ void Application::addStyledModel(WireframeModel model) {
     styled.axisToX = kept.axisToX; styled.axisToY = kept.axisToY;
     styled.axisToZ = kept.axisToZ;
     styled.material = kept.material;
+    // KESIT REFERANS NORMALI korunur: egik is-duzleminde cizilen uyenin
+    // referansi cagiranda kurulur; burada (0,0,1) ile ezmek profili WORLD
+    // UCS'ine dondurur (Selahattin 2026-10-31 regresyonu).
+    styled.sectionNormalX = kept.sectionNormalX;
+    styled.sectionNormalY = kept.sectionNormalY;
+    styled.sectionNormalZ = kept.sectionNormalZ;
     model.setProperties(std::move(styled));
     document_.addModel(std::move(model));
 }
@@ -10009,7 +10029,8 @@ void Application::executeSolidTrim(bool keepPositive) {
 #endif
 
 void Application::assignProfileToLine(const Vec3& from, const Vec3& to,
-                                       const std::string& profileName) {
+                                       const std::string& profileName,
+                                       std::optional<Vec3> sectionReference) {
     ensureProfileCatalog();
     const auto* profile = mm::findProfile(profileCatalog_, profileName);
     if (!profile) {
@@ -10021,6 +10042,23 @@ void Application::assignProfileToLine(const Vec3& from, const Vec3& to,
     // Snapshot atama akisinin icindeki addStyledModel/delete zincirinde
     // alinir — burada ek bir snapshot Ctrl+Z'de cift adim yapar.
     document_.addModel(WireframeModel::line(from, to));
+    // IS-DUZLEMI (UCS) YONELIMI (Selahattin 2026-10-31): 3 noktayla kurulan
+    // egik is-duzleminde atilan profiller WORLD UCS'inde kaliyordu, cunku yeni
+    // cizginin kesit referans normali varsayilan (0,0,1) idi. Kesit duzlemi
+    // IS-DUZLEMI olmali: referans normal = workPlane_.normal. Boylece kesit
+    // duzlem icinde kalir, uye egik duzleme oturur.
+    if (!document_.models().empty()) {
+        auto& line = document_.mutableModels().back();
+        auto props = line.properties();
+        const Vec3 n = sectionReference ? *sectionReference : workPlane_.normal;
+        if (std::isfinite(n.x) && std::isfinite(n.y) && std::isfinite(n.z) &&
+            (std::fabs(n.x) > 1e-9 || std::fabs(n.y) > 1e-9 || std::fabs(n.z) > 1e-9)) {
+            props.sectionNormalX = n.x;
+            props.sectionNormalY = n.y;
+            props.sectionNormalZ = n.z;
+            line.setProperties(std::move(props));
+        }
+    }
     selectedModels_.assign(1, document_.models().size() - 1);
     assignProfileToSelection(profile->name);
     selectedModels_.clear();
@@ -10044,13 +10082,32 @@ void Application::placeColumn(const Vec3& point) {
         publishStatus(L"Kolon icin profil seçin (profil listesinden).");
         return;
     }
-    const Vec3 from{point.x, point.y, columnBottomZ_};
-    const Vec3 to{point.x, point.y, columnTopZ_};
-    if (to.z <= from.z) {
+    // IS-DUZLEMI (UCS) (Selahattin 2026-10-31): 3 noktayla kurulan egik
+    // is-duzleminde kolon WORLD Z boyunca cikariliyordu ("yeni atilan profiller
+    // world ucs sinde atiliyor"). Egik duzlemde kolon duzleme DIK olmali:
+    // eksen = is-duzlemi NORMALI, uzunluk = alt/ust kot farki.
+    const Vec3 planeNormal = workPlane_.normal;
+    const bool tiltedPlane = std::fabs(planeNormal.z) < 0.999;
+    Vec3 from{point.x, point.y, columnBottomZ_};
+    Vec3 to{point.x, point.y, columnTopZ_};
+    if (tiltedPlane) {
+        const double length = columnTopZ_ - columnBottomZ_;
+        if (length <= 0.0) {
+            publishStatus(L"Kolon üst kotu alt kottan büyük olmalı.");
+            return;
+        }
+        from = point;
+        to = Vec3{point.x + planeNormal.x * length,
+                  point.y + planeNormal.y * length,
+                  point.z + planeNormal.z * length};
+    } else if (to.z <= from.z) {
         publishStatus(L"Kolon üst kotu alt kottan büyük olmalı.");
         return;
     }
-    assignProfileToLine(from, to, profileName);
+    // Egik duzlemde kolon ekseni duzleme DIKTIR; kesit referansi duzlem-ici
+    // eksen (workPlane_.u) olmali, yoksa cerceve dejenere olur.
+    assignProfileToLine(from, to, profileName,
+                        tiltedPlane ? std::optional<Vec3>(workPlane_.u) : std::nullopt);
     // Malzeme atanmis ise katiya isle.
     if (!columnMaterial_.empty()) {
         document_.setModelMaterial({document_.models().size() - 1}, columnMaterial_);
