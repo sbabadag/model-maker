@@ -79,8 +79,10 @@ int main() {
         const SnapTypeMask noNearest = maskExcept({SnapType::Nearest});
         const SnapResult r = SnapEngine::snap({30.0, 1000.0, 0.0}, doc, tol, true, true,
                                               std::nullopt, &noNearest);
-        check(r.type == SnapType::Grid, "2a Nearest kapali: o tur uretilmez, eski kesisim kalir");
-        check(approx(r.point.x, 0.0) && approx(r.point.y, 0.0), "2b Nearest kapali: en yakin kesisim (0,0)");
+        // TOLERANS KAPISI (2026-10-31): kavsak (0,0) 1000 mm uzakta -> snap YOK.
+        check(r.type == SnapType::None, "2a Nearest kapali: tolerans disi kavsaga snap YOK");
+        check(approx(r.point.x, 30.0) && approx(r.point.y, 1000.0),
+              "2b Nearest kapali: imlec ham noktada kalir");
     }
 
     // --- 3) KESISIM: yapi gridi caprazi SnapType::Grid olarak kalir ---
@@ -130,13 +132,14 @@ int main() {
         check(r.type == SnapType::None, "7a gorunmez grid: snap YOK");
     }
 
-    // --- 8) ESKI DAVRANIS KORUNUR: tolerans disinda kesisime yapisir ---
+    // --- 8) TOLERANS DISI: kavsaga YAPISMAZ (2026-10-31 kullanici hatasi) ---
     {
         Document doc; doc.addGrid(makeGrid());
         const SnapResult r = SnapEngine::snap({700.0, 700.0, 0.0}, doc, tol, true, true,
                                               std::nullopt, &allOn);
-        check(r.type == SnapType::Grid, "8a tolerans disi: eski kesisim davranisi korunur");
-        check(approx(r.point.x, 0.0) && approx(r.point.y, 0.0), "8b tolerans disi: en yakin kesisim (0,0)");
+        check(r.type == SnapType::None, "8a tolerans disi: kavsaga snap YOK");
+        check(approx(r.point.x, 700.0) && approx(r.point.y, 700.0),
+              "8b tolerans disi: imlec ham noktada kalir");
     }
 
     // --- 9) OBJE SNAP'I GRID'I EZER (obje yolu once calisir) ---
@@ -176,7 +179,9 @@ int main() {
         const SnapTypeMask noNearest = maskExcept({SnapType::Nearest});
         const SnapResult r = SnapEngine::snap3D(s, doc, topCam, W, H, 30.0, WorkPlane::world(),
                                                 true, true, std::nullopt, &noNearest, false);
-        check(r.type == SnapType::Grid, "11a 3B Nearest kapali: o tur uretilmez");
+        // TOLERANS KAPISI (2026-10-31): kavsak ekranda ~100 px uzakta, tolerans
+        // 30 px -> snap YOK. (Nearest acikken ayni nokta case 10'da Nearest verir.)
+        check(r.type == SnapType::None, "11a 3B Nearest kapali + tolerans disi: snap YOK");
     }
 
     // ================= 2 NOKTALI ELEVASYON (XZ/YZ) GRID SNAP =================
@@ -257,14 +262,16 @@ int main() {
         Camera cam = xzCamera();
         Document doc; doc.addGrid(makeLevelGrid());
         const SnapTypeMask noNearest = maskExcept({SnapType::Nearest});
-        const Vec2 s = cam.project({60.0, 0.0, 5000.0}, W, H);
+        // TOLERANS KAPISI (2026-10-31): kavsak tolerans ICINDE olmali; imlec
+        // (0,0,3600) kavsaginin 20 mm yaninda, tolerans 5 px.
+        const Vec2 s = cam.project({12000.0, 0.0, 7200.0}, W, H);
         const WorkPlane wp = WorkPlane::fromViewDirection(Vec3{0, 0, 0}, cam.gridViewDirection());
         const SnapResult r = SnapEngine::snap3D(s, doc, cam, W, H, 5.0, wp, true, true,
                                                 std::nullopt, &noNearest, false);
         check(r.type == SnapType::Grid,
-              "16a XZ tolerans disi + Nearest kapali: gorunus duzlemindeki kavsaga gider");
-        check(approx(r.point.z, 3600.0),
-              "16b XZ: en yakin kavsak z=3600 (eski kod z=0 tabanina cekerdi)");
+              "16a XZ: tolerans icindeki gorunus-duzlemi kavsagina Grid");
+        check(approx(r.point.z, 7200.0),
+              "16b XZ: kavsak z=7200 (eski kod z=0 tabanina cekerdi)");
     }
 
     // --- 17) TABAN hala erisilebilir: kot 0 dogru cozulur ---

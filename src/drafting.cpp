@@ -637,7 +637,12 @@ SnapResult SnapEngine::snap(const Vec3& cursor, const Document& document,
                     if (!found || d < bestDist) { best = intersection; bestDist = d; found = true; }
                 }
             }
-            if (found) return {best, SnapType::Grid, bestDist};
+            // TOLERANS KAPISI (Selahattin 2026-10-31): eski kod burada tolerans
+            // bakmadan EN YAKIN kavsaga yapisiyordu — imlec metrelerce uzakta
+            // olsa bile "grid kesismine snap" aliniyor ve diger snapleri
+            // eziyordu. Artik kavsak yalniz objectTolerance icindeyse snap olur.
+            if (found && bestDist <= objectTolerance)
+                return {best, SnapType::Grid, bestDist};
         }
     }
     return {cursor, SnapType::None, 0.0};
@@ -801,7 +806,10 @@ SnapResult SnapEngine::snap3D(const Vec2& screenCursor, const Document& document
                     if (!found || d < bestPx) { best = intersection; bestPx = d; found = true; }
                 }
             }
-            if (found) return {best, SnapType::Grid, bestPx};
+            // TOLERANS KAPISI (3B): ayni kural — kavsak objectTolerancePixels
+            // (EKRAN px) icinde degilse snap YOK.
+            if (found && bestPx <= objectTolerancePixels)
+                return {best, SnapType::Grid, bestPx};
         }
     }
     return {*raw, SnapType::None, 0.0};

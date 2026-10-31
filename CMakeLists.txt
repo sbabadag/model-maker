@@ -653,6 +653,13 @@ if(BUILD_TESTING)
     target_compile_options(model_maker_haunch_portal_face_test PRIVATE -Wall -Wextra -Wpedantic)
     add_test(NAME model_maker_haunch_portal_face_test COMMAND model_maker_haunch_portal_face_test)
 
+    # GRID KESISIM SNAP TOLERANSI: tolerans disindaki aks kesisimine snap YOK,
+    # obje snap'i grid'i ezer (Selahattin 2026-10-31).
+    add_executable(model_maker_grid_snap_distance_test tests/grid_snap_distance_test.cpp)
+    target_link_libraries(model_maker_grid_snap_distance_test PRIVATE model_maker_core)
+    target_compile_options(model_maker_grid_snap_distance_test PRIVATE -Wall -Wextra -Wpedantic)
+    add_test(NAME model_maker_grid_snap_distance_test COMMAND model_maker_grid_snap_distance_test)
+
     # KARARLI VARLIK KIMLIGI (EntityId): vektor indeksi kalici kimlik DEGIL;
     # kimlik ekleme/silme/degistirme/undo/redo boyunca DOGRU varlikla eslesir,
     # tekil ve monoton artar. 1:1 replace kimligi korur, kopya yeni kimlik alir,
