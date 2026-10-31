@@ -233,7 +233,12 @@ void ViewCubeRenderer::draw(HDC target, const RECT& client, const POINT& cursor,
                 const auto& b = face.points[(point + 1) % face.points.size()];
                 twiceArea += static_cast<long long>(a.x) * b.y - static_cast<long long>(b.x) * a.y;
             }
-            if (std::abs(twiceArea) < 900) continue; // yandan bakilan yuz: yazi okunmaz
+            // BOS YUZ TUZAGI (Selahattin 2026-10-31: "bos cizilen yuzleri var"):
+            // eski esik 900 px^2 idi; panel/kup olcegi kuculdugunde (veya kenar
+            // gorunusunde) gorunur yuzun alani esigin altinda kalip ETIKETSIZ
+            // ciziliyordu. Artik yalniz GERCEKTEN dejenere (cizgiye cokmus)
+            // yuzler atlanir; gorunur her yuz etiketini alir.
+            if (std::abs(twiceArea) < 60) continue; // ~30 px^2: yuz cizgiye cokmus
             int centerX = 0;
             int centerY = 0;
             for (const auto& point : face.points) {

@@ -681,6 +681,12 @@ if(BUILD_TESTING)
     target_compile_options(model_maker_workplane_delta_test PRIVATE -Wall -Wextra -Wpedantic)
     add_test(NAME model_maker_workplane_delta_test COMMAND model_maker_workplane_delta_test)
 
+    # VIEWCUBE: yuz hedefleri + ISO yerlesimi (bos yuz / yanlis gorunus regresyonu).
+    add_executable(model_maker_viewcube_layout_test tests/viewcube_layout_test.cpp)
+    target_link_libraries(model_maker_viewcube_layout_test PRIVATE model_maker_core)
+    target_compile_options(model_maker_viewcube_layout_test PRIVATE -Wall -Wextra -Wpedantic)
+    add_test(NAME model_maker_viewcube_layout_test COMMAND model_maker_viewcube_layout_test)
+
     # KARARLI VARLIK KIMLIGI (EntityId): vektor indeksi kalici kimlik DEGIL;
     # kimlik ekleme/silme/degistirme/undo/redo boyunca DOGRU varlikla eslesir,
     # tekil ve monoton artar. 1:1 replace kimligi korur, kopya yeni kimlik alir,
