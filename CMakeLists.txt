@@ -700,6 +700,12 @@ if(BUILD_TESTING)
     target_compile_options(model_maker_view_plane_snap_projection_test PRIVATE -Wall -Wextra -Wpedantic)
     add_test(NAME model_maker_view_plane_snap_projection_test COMMAND model_maker_view_plane_snap_projection_test)
 
+    # SNAP OVERRIDE MASKESI (komut icinde sag-tik popup ile tur ac/kapat)
+    add_executable(model_maker_snap_override_mask_test tests/snap_override_mask_test.cpp)
+    target_link_libraries(model_maker_snap_override_mask_test PRIVATE model_maker_core)
+    target_compile_options(model_maker_snap_override_mask_test PRIVATE -Wall -Wextra -Wpedantic)
+    add_test(NAME model_maker_snap_override_mask_test COMMAND model_maker_snap_override_mask_test)
+
     # KARARLI VARLIK KIMLIGI (EntityId): vektor indeksi kalici kimlik DEGIL;
     # kimlik ekleme/silme/degistirme/undo/redo boyunca DOGRU varlikla eslesir,
     # tekil ve monoton artar. 1:1 replace kimligi korur, kopya yeni kimlik alir,

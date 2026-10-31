@@ -55,18 +55,28 @@ if app.count(".projectPoint(") != 1:
                     f"(bulunan: {app.count('.projectPoint(')}) — tek kaynak, kopya mantik yok")
 
 hover = block_for(app, "void Application::updateHover")
-if "workPlane_.projectPoint(hover_->point)" not in hover:
-    failures.append("updateHover secilen noktayi workPlane_.projectPoint ile iz dusurmuyor")
+# GORUNUS PENCERESINDE IZ DUSUM DUZLEMI = GORUNUS DUZLEMI (2026-10-31).
+# Eskiden workPlane_ kullaniliyordu; aktif UCS baska duzlemdeyse nokta ekranda
+# kayiyor, kullanici "plan goruntusunde snap tutmuyor" goruyordu.
 if "if (viewDef_ && hover_)" not in hover:
     failures.append("iz dusum viewDef_ (iki noktali gorunus) ile korunmuyor")
 else:
     # Sira: snap cozumunden SONRA olmali (TP adayi da duzlemde toplansin).
     snap_at = hover.find("SnapEngine::snap3D")
-    proj_at = hover.find("workPlane_.projectPoint")
+    proj_at = hover.find(".projectPoint(hover_->point)")
     if snap_at < 0:
         failures.append("updateHover'da snap3D cagrisi bulunamadi")
+    elif proj_at < 0:
+        failures.append("updateHover secilen noktayi iz dusurmuyor (projectPoint yok)")
     elif proj_at < snap_at:
         failures.append("iz dusum snap'ten ONCE yapiliyor — TP adayi duzlem disi kalir")
+    # Duzlem viewDef_'ten kurulmus olmali (workPlane_ DEGIL).
+    proj_block = hover[max(0, proj_at - 400):proj_at]
+    if "viewDef_->normal" not in proj_block:
+        failures.append("iz dusum duzlemi viewDef_->normal'den kurulmuyor "
+                        "(gorunus duzlemi sart)")
+if "WorkPlane{viewDef_->origin, viewDef_->right, viewDef_->up, viewDef_->normal}" not in hover:
+    failures.append("snap/unproject duzlemi gorunus duzleminden kurulmuyor")
 
 # ------------------------------------------------------------ 2) davranis
 lib = None

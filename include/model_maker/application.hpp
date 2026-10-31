@@ -482,6 +482,12 @@ public:
     // menu acar (Ortala X / Ortala Y). Donus true = menu gosterildi (olay
     // tuketildi). Bulon degilse false (normal sag-tik akisina duser).
     bool showBoltContextMenu(int x, int y);
+    // KOMUT ICINDE SAG-TIK SNAP OVERRIDE MENUSU (Selahattin 2026-10-31):
+    // tasima/kopyalama/cizim sirasinda nokta secilirken sag tik popup acar;
+    // her snap turu isaretli/isaretsiz gelir ve aninda acilip kapanir.
+    // Komut IPTAL EDILMEZ — menu kapaninca ayni adimda kalinir.
+    bool snapOverrideAvailable() const;
+    void showSnapOverrideMenu(int x, int y);
     // Secili bulon grubunu, bagli parcalarinin birlesik sinir kutusu merkezine
     // yerel x ve/veya y ekseninde ortalar (centerX/centerY). Delikler + display
     // + undo yeniden hesaplanir. Secim bir bulon degilse no-op.

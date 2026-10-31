@@ -1715,6 +1715,13 @@ LRESULT Application::handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lPa
             executePendingComponentCommand();
             updateControls(); invalidateCanvas(); return 0;
         }
+        // SNAP OVERRIDE POPUP (Selahattin 2026-10-31): tasima/kopyalama/cizim
+        // komutunda nokta secilirken sag tik snap turlerini acip kapatir;
+        // komut iptal edilmez, ayni adimda kalinir.
+        if (snapOverrideAvailable()) {
+            showSnapOverrideMenu(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
+            updateControls(); invalidateCanvas(); return 0;
+        }
         // BOLT SAG-TIK MENUSU: bos modda bir BOLT display'i uzerinde sag tik
         // -> Ortala X / Ortala Y popup menusu. Bulon degilse false doner ve
         // asagidaki normal sag-tik akisina dusulur.
@@ -6347,6 +6354,79 @@ bool Application::showBoltContextMenu(int x, int y) {
     if (cmd == kCtxBoltCenterX) centerSelectedBolt(true, false);
     else if (cmd == kCtxBoltCenterY) centerSelectedBolt(false, true);
     return true;
+}
+
+bool Application::snapOverrideAvailable() const {
+    // Nokta secimi (snap) asamasinda miyiz? Tasima/kopyalama ara noktasi,
+    // profil ucu tasima, is duzlemi/olcum secimi ve cizim komutlari.
+    if (profileGrip_) return true;
+    if (workPlanePicking_) return true;
+    if (drawingActive_) return true;
+    return transformCommand_ != TransformCommand::None &&
+           transformPhase_ != TransformPhase::Selecting;
+}
+
+void Application::showSnapOverrideMenu(int x, int y) {
+    HMENU menu = CreatePopupMenu();
+    if (!menu) return;
+    constexpr UINT kBase = 0x9200;
+    constexpr UINT kSnapOn = kBase + 100;
+    constexpr UINT kGridOn = kBase + 101;
+    constexpr UINT kAllOn = kBase + 102;
+    constexpr UINT kAllOff = kBase + 103;
+    constexpr UINT kContinue = kBase + 104;
+
+    AppendMenuW(menu, MF_STRING | MF_GRAYED, 0, L"Snap override (tikla: ac/kapat)");
+    AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+    for (std::size_t i = 0; i < snapChoices.size(); ++i) {
+        const auto idx = static_cast<std::size_t>(snapChoices[i].type);
+        const bool on = idx < enabledSnapTypes_.size() && enabledSnapTypes_[idx];
+        AppendMenuW(menu, MF_STRING | (on ? MF_CHECKED : 0),
+                    kBase + static_cast<UINT>(i), snapChoices[i].label);
+    }
+    AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+    AppendMenuW(menu, MF_STRING | (snapEnabled_ ? MF_CHECKED : 0), kSnapOn,
+                L"Obje snap (F3)");
+    AppendMenuW(menu, MF_STRING | (gridSnapEnabled_ ? MF_CHECKED : 0), kGridOn,
+                L"Grid snap (F9)");
+    AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+    AppendMenuW(menu, MF_STRING, kAllOn, L"Tumunu ac");
+    AppendMenuW(menu, MF_STRING, kAllOff, L"Tumunu kapat");
+    AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+    AppendMenuW(menu, MF_STRING, kContinue, L"Devam (Enter)");
+
+    POINT pt{x, y};
+    ClientToScreen(canvas_, &pt);
+    const UINT selected = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_NONOTIFY | TPM_RIGHTBUTTON,
+                                         pt.x, pt.y, 0, canvas_, nullptr);
+    DestroyMenu(menu);
+    if (selected == 0) return;   // menu kapandi: komut aynen devam
+
+    if (selected == kSnapOn) {
+        snapEnabled_ = !snapEnabled_;
+    } else if (selected == kGridOn) {
+        gridSnapEnabled_ = !gridSnapEnabled_;
+    } else if (selected == kAllOn) {
+        enabledSnapTypes_.fill(true);
+        snapEnabled_ = true;
+        gridSnapEnabled_ = true;
+    } else if (selected == kAllOff) {
+        enabledSnapTypes_.fill(false);
+        snapEnabled_ = false;
+    } else if (selected == kContinue) {
+        onCharacter(L'\r');
+        updateControls();
+        invalidateCanvas();
+        return;
+    } else if (selected >= kBase && selected < kBase + snapChoices.size()) {
+        toggleSnapType(snapChoices[selected - kBase].type);
+    }
+
+    // Ayni adimda kal: imlec altindaki snap'i yeni maskeyle yeniden coz.
+    updateHover(cursorScreen_.x, cursorScreen_.y);
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
 }
 
 void Application::centerSelectedBolt(bool centerX, bool centerY) {
