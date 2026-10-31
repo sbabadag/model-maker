@@ -1730,6 +1730,10 @@ LRESULT Application::handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lPa
             !drawingActive_ && !zoomWindowActive_ && !workPlanePicking_ && !profileGrip_) {
             if (showBoltContextMenu(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)))
                 return 0;
+            // HIZLI SECIM: komut yok + tek profil seciliyken sag tik
+            // -> "Ayni profilleri sec" popup. Profil degilse false, akis devam.
+            if (showProfileContextMenu(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)))
+                return 0;
         }
         if (zoomWindowActive_) cancelZoomWindow2D();
         else if (workPlanePicking_) cancelWorkPlaneCommand();
@@ -6433,6 +6437,36 @@ bool Application::showBoltContextMenu(int x, int y) {
     DestroyMenu(menu);
     if (cmd == kCtxBoltCenterX) centerSelectedBolt(true, false);
     else if (cmd == kCtxBoltCenterY) centerSelectedBolt(false, true);
+    return true;
+}
+
+bool Application::showProfileContextMenu(int x, int y) {
+    // Tek profil secili olmali (komut yok garantisi cagirandadir).
+    if (selectedModels_.size() != 1) return false;
+    const std::size_t sel = selectedModels_.front();
+    if (sel >= document_.models().size()) return false;
+    const std::string profile = document_.models()[sel].properties().profileName;
+    if (profile.empty()) return false;   // profilsiz (cizgi/nokta/3D face)
+
+    const std::vector<std::size_t> matches = document_.modelsWithSameProfile(sel);
+    if (matches.empty()) return false;
+
+    constexpr UINT kSelectSame = 1;
+    HMENU menu = CreatePopupMenu();
+    if (!menu) return true;
+    const std::wstring header = L"Profil: " + utf8ToWide(profile);
+    AppendMenuW(menu, MF_STRING | MF_GRAYED, 0, header.c_str());
+    AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+    const std::wstring label =
+        L"Aynı profilleri seç (" + std::to_wstring(matches.size()) + L")";
+    AppendMenuW(menu, MF_STRING, kSelectSame, label.c_str());
+
+    POINT pt{x, y};
+    ClientToScreen(canvas_, &pt);
+    const UINT cmd = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_NONOTIFY,
+                                    pt.x, pt.y, 0, canvas_, nullptr);
+    DestroyMenu(menu);
+    if (cmd == kSelectSame) selectModels(matches);
     return true;
 }
 

@@ -1597,6 +1597,18 @@ std::optional<std::size_t> Document::indexOfEntity(EntityId id) const noexcept {
         if (modelIds_[i] == id) return i;
     return std::nullopt;
 }
+
+std::vector<std::size_t> Document::modelsWithSameProfile(std::size_t index) const {
+    if (index >= models_.size()) return {};
+    const std::string target = lowerAscii(models_[index].properties().profileName);
+    if (target.empty()) return {};   // profilsiz (cizgi/nokta/3D face) secimde menu yok
+    std::vector<std::size_t> result;
+    result.reserve(models_.size());
+    for (std::size_t i = 0; i < models_.size(); ++i)
+        if (lowerAscii(models_[i].properties().profileName) == target)
+            result.push_back(i);
+    return result;   // indeksler dogal olarak artan sirada
+}
 void Document::setLayerProperties(EntityProperties properties) {
     if (properties.layer.empty()) return;
     layers_[properties.layer] = std::move(properties);

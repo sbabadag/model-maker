@@ -228,6 +228,12 @@ public:
     EntityId modelId(std::size_t index) const noexcept;
     // EntityId -> guncel indeks (kimlik tektir). Yoksa nullopt.
     std::optional<std::size_t> indexOfEntity(EntityId id) const noexcept;
+    // HIZLI SECIM ("ayni profilleri sec"): verilen indeksteki modelin
+    // profilAdi (buyuk/kucuk harf duyarsiz) ile ayni profilAd'li TUM modellerin
+    // indekslerini (referans DAHIL, artan sirada) dondurur. Referans indeks
+    // gecersiz VEYA profilAdi BOS ise bos dondurur (profilsiz cizgi/nokta
+    // uzerinde secim menuyu gostermez).
+    std::vector<std::size_t> modelsWithSameProfile(std::size_t index) const;
     const std::vector<EntityId>& modelIds() const noexcept { return modelIds_; }
     void setLayerProperties(EntityProperties properties);
     const std::unordered_map<std::string, EntityProperties>& layers() const noexcept;

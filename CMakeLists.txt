@@ -442,6 +442,13 @@ if(BUILD_TESTING)
     target_link_libraries(model_maker_section_normal_test PRIVATE model_maker_core)
     add_test(NAME model_maker_section_normal_test COMMAND model_maker_section_normal_test)
 
+    # HIZLI SECIM ("ayni profilleri sec"): Document::modelsWithSameProfile —
+    # ayni profilAd'li (buyuk/kucuk harf duyarsiz) tum modellerin indeksleri.
+    # OCC'siz, Linux'ta kosar.
+    add_executable(model_maker_select_same_profile_test tests/select_same_profile_test.cpp)
+    target_link_libraries(model_maker_select_same_profile_test PRIVATE model_maker_core)
+    add_test(NAME model_maker_select_same_profile_test COMMAND model_maker_select_same_profile_test)
+
     # Dikme (perpendicular) izleme kurali: iki izleme noktasina dik ayak
     # gorunur + snap noktasi olur — OCC'siz de kosar.
     add_executable(model_maker_perpendicular_tracking_test tests/perpendicular_tracking_test.cpp)
