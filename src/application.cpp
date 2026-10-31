@@ -2297,15 +2297,12 @@ void Application::onLeftButtonDown(int x, int y) {
             profileGrip_->fixedPoint = grip->second ? from : to;
             profileGrip_->trackFrom = grip->second ? to : from;
             profileGrip_->cursorPoint = profileGrip_->trackFrom;
-            // ALT+TIK = BAZ NOKTASI (Selahattin 2026-10-31): "alt+tik ile tasimada
-            // sadece baslangic ve nihai nokta olsun". Tutamaga Alt+tik baslangici
-            // secer; geriye TEK tik (hedef) kalir.
-            profileGrip_->basePicked = true;
-            profileGrip_->basePoint = mm::memberEndCenter(m, grip->second);
-            profileGrip_->trackFrom = profileGrip_->basePoint;
-            profileGrip_->cursorPoint = profileGrip_->basePoint;
+            // ALT+TIK = MOD BASLATMA (Selahattin 2026-10-31): "alt+tik tan sonra
+            // baslangic ve bitis noktasi belirleyecegiz". Alt+tik sadece ucu
+            // kavrar; ardindan 1. tik BASLANGIC, 2. tik BITIS noktasidir.
+            profileGrip_->basePicked = false;
             clearTemporaryTracking();
-            publishStatus(L"Ucu tasima: hedef noktayi secin (tek tik)");
+            publishStatus(L"Ucu tasima: baslangic noktasini secin (1. tik)");
         } else {
             profileGrip_.reset();
         }
