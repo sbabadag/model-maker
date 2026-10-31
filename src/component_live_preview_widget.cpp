@@ -168,17 +168,25 @@ void addMember(std::vector<Poly>& polys,const MemberGeometry& m,
     // P6: visually mirror persistent generated PlaneCut. A source beam
     // overlapping the support must appear TRIMMED at the current end-plate
     // face, not through the cap/column.
+    // FITTING (Tekla): the beam end is cut by a PLANE, so the end face must lie
+    // IN that plane. A plain perpendicular section leaves a wedge gap against a
+    // DÜŞEY (vertical) end plate on an inclined member — the corner pokes past
+    // the plate on one side and pulls back on the other, which reads as
+    // "kiriş ucu kesilmemiş, arası açık". Remember which plane trimmed each end
+    // so the cap can be sheared onto the plane below.
+    const CutModifier* lowerPlane=nullptr;
+    const CutModifier* upperPlane=nullptr;
     for(const auto& c:cuts) {
         if(c.target!=m.id || c.kind!=CutKind::PlaneCut)continue;
         const double den=dot(c.planeNormal,axis);
         if(std::fabs(den)<1e-9)continue;
         const double t=dot(minus(c.planeOrigin,m.axisFrom),c.planeNormal)/den;
         if(c.keepPositive) {
-            if(den>0) lower=std::max(lower,t);
-            else upper=std::min(upper,t);
+            if(den>0) { if(t>lower){lower=t;lowerPlane=&c;} }
+            else { if(t<upper){upper=t;upperPlane=&c;} }
         } else {
-            if(den>0)upper=std::min(upper,t);
-            else lower=std::max(lower,t);
+            if(den>0){ if(t<upper){upper=t;upperPlane=&c;} }
+            else { if(t>lower){lower=t;lowerPlane=&c;} }
         }
     }
     lower=std::clamp(lower,0.0,total);
@@ -191,7 +199,22 @@ void addMember(std::vector<Poly>& polys,const MemberGeometry& m,
                         m.secWebThickness>0?m.secWebThickness:8.0,
                         m.secFlangeThickness>0?m.secFlangeThickness:12.0);
     };
-    addPrism(polys,sectionAt(upper),sectionAt(lower),col,role);
+    // Kesim düzlemi kesite DİK değilse (eğik kirişte düşey alın levhası gibi)
+    // kesit köşelerini kiriş ekseni boyunca düzlem ÜZERİNE kaydır: uç yüzeyi
+    // gerçek fitting yüzeyi olur, levha ile arasında kama boşluğu kalmaz.
+    const auto shearOntoPlane=[&](std::vector<Vec3> pts,const CutModifier* plane){
+        if(!plane)return pts;
+        const double den=dot(plane->planeNormal,axis);
+        if(std::fabs(den)<1e-9)return pts;
+        if(std::fabs(den)>0.9995)return pts;   // zaten dik: kaydırma gerekmez
+        for(auto& p:pts) {
+            const double d=dot(minus(p,plane->planeOrigin),plane->planeNormal)/den;
+            p=minus(p,mul(axis,d));
+        }
+        return pts;
+    };
+    addPrism(polys,shearOntoPlane(sectionAt(upper),upperPlane),
+             shearOntoPlane(sectionAt(lower),lowerPlane),col,role);
 }
 
 double numericParam(const std::vector<CompParam>& values,
