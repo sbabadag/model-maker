@@ -200,6 +200,14 @@ private:
     EntityProperties properties_;
     ConstructionKind constructionKind_{ConstructionKind::None};
 };
+// UYE UC MERKEZI (grip tutamagi): eksen ucunun yerine KESITIN orta noktasi.
+// Top/Bottom ankrajli profilde eksen kesitin ust/alt basligindan gecer; tutamak
+// orada durunca kullanici "uc nokta kaymis" goruyordu. Bu fonksiyon eksen ucuna
+// en yakin kesit kokelerinin ortalamasini doner (X ve Y'de tam orta).
+// Kesit kokesi bulunamazsa eksen ucuna duser (guvenli geri donus).
+Vec3 memberEndCenter(const WireframeModel& model, bool toEnd) noexcept;
+
+
 
 // KONSTRUKSIYON DUZLEM CERCEVESI: ConstructionPlane modelinin yerel
 // koordinat sistemini 4 koseden yeniden kurar. Koseler duzlem uzayinda

@@ -2297,8 +2297,15 @@ void Application::onLeftButtonDown(int x, int y) {
             profileGrip_->fixedPoint = grip->second ? from : to;
             profileGrip_->trackFrom = grip->second ? to : from;
             profileGrip_->cursorPoint = profileGrip_->trackFrom;
+            // ALT+TIK = BAZ NOKTASI (Selahattin 2026-10-31): "alt+tik ile tasimada
+            // sadece baslangic ve nihai nokta olsun". Tutamaga Alt+tik baslangici
+            // secer; geriye TEK tik (hedef) kalir.
+            profileGrip_->basePicked = true;
+            profileGrip_->basePoint = mm::memberEndCenter(m, grip->second);
+            profileGrip_->trackFrom = profileGrip_->basePoint;
+            profileGrip_->cursorPoint = profileGrip_->basePoint;
             clearTemporaryTracking();
-            publishStatus(L"Move modu aktif — tasima baslangic noktasini secin (1. tik)");
+            publishStatus(L"Ucu tasima: hedef noktayi secin (tek tik)");
         } else {
             profileGrip_.reset();
         }
@@ -10448,8 +10455,11 @@ std::optional<std::pair<std::size_t, bool>> Application::profileGripAt(int x, in
                         m.properties().axisFromZ};
         const Vec3 to{m.properties().axisToX, m.properties().axisToY,
                       m.properties().axisToZ};
-        const Vec2 sf = camera_.project(from, w, h);
-        const Vec2 st = camera_.project(to, w, h);
+        // TUTAMAK KESIT MERKEZINDE (Selahattin 2026-10-31): eksen ucu Top/Bottom
+        // ankrajli profilde basligin ustunde kaliyordu; tutamak artik kesitin
+        // X/Y orta noktasinda (memberEndCenter).
+        const Vec2 sf = camera_.project(mm::memberEndCenter(m, false), w, h);
+        const Vec2 st = camera_.project(mm::memberEndCenter(m, true), w, h);
         const double df = std::hypot(sf.x - static_cast<double>(x),
                                      sf.y - static_cast<double>(y));
         const double dt = std::hypot(st.x - static_cast<double>(x),

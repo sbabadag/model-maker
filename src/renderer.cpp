@@ -2174,8 +2174,10 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
                                   gm.properties().axisFromZ};
                 const Vec3 gto{gm.properties().axisToX, gm.properties().axisToY,
                                gm.properties().axisToZ};
-                const POINT pf = projectPoint(gfrom);
-                const POINT pt = projectPoint(gto);
+                // Tutamaklar KESIT MERKEZINDE (eksen ucu degil): Top/Bottom
+                // ankrajli profilde eksen basligin ustunde kalir.
+                const POINT pf = projectPoint(mm::memberEndCenter(gm, false));
+                const POINT pt = projectPoint(mm::memberEndCenter(gm, true));
                 const bool isActive =
                     draft.activeGripSolid && *draft.activeGripSolid == gi;
                 drawGripMarker(dc, pf.x, pf.y, RGB(255, 206, 84),

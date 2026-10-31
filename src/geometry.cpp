@@ -52,6 +52,29 @@ ProfileSectionFrame profileSectionFrame(const Vec3& axisDirection,
     return frame;
 }
 
+Vec3 memberEndCenter(const WireframeModel& model, bool toEnd) noexcept {
+    const auto& p = model.properties();
+    const Vec3 from{p.axisFromX, p.axisFromY, p.axisFromZ};
+    const Vec3 to{p.axisToX, p.axisToY, p.axisToZ};
+    const Vec3 axisVec{to.x - from.x, to.y - from.y, to.z - from.z};
+    const double len = std::sqrt(axisVec.x * axisVec.x + axisVec.y * axisVec.y +
+                                 axisVec.z * axisVec.z);
+    if (len <= 1e-9) return toEnd ? to : from;
+    const Vec3 axis{axisVec.x / len, axisVec.y / len, axisVec.z / len};
+    const double target = toEnd ? len : 0.0;
+    double sx = 0.0, sy = 0.0, sz = 0.0;
+    std::size_t count = 0;
+    for (const Vec3& v : model.vertices()) {
+        const double t = (v.x - from.x) * axis.x + (v.y - from.y) * axis.y +
+                         (v.z - from.z) * axis.z;
+        if (std::fabs(t - target) > 0.75) continue;   // uc duzleminden uzak
+        sx += v.x; sy += v.y; sz += v.z; ++count;
+    }
+    if (count < 3) return toEnd ? to : from;
+    return Vec3{sx / static_cast<double>(count), sy / static_cast<double>(count),
+                sz / static_cast<double>(count)};
+}
+
 Vec3 workPlaneDeltaToWorld(const WorkPlane& plane, const Vec3& delta) noexcept {
     return Vec3{plane.u.x * delta.x + plane.v.x * delta.y + plane.normal.x * delta.z,
                 plane.u.y * delta.x + plane.v.y * delta.y + plane.normal.y * delta.z,
