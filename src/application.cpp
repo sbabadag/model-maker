@@ -6367,30 +6367,33 @@ bool Application::snapOverrideAvailable() const {
 }
 
 void Application::showSnapOverrideMenu(int x, int y) {
-    // SADE LISTE (Selahattin 2026-10-31): "listede tum snap cesitleri gorunsun,
-    // birine basinca SADECE o snap aktif olsun". Toggle/isaret kaldirildi;
-    // secim TEK snap turunu birakir.
     HMENU menu = CreatePopupMenu();
     if (!menu) return;
     constexpr UINT kBase = 0x9200;
-    constexpr UINT kAll = kBase + 100;
+    constexpr UINT kSnapOn = kBase + 100;
+    constexpr UINT kGridOn = kBase + 101;
+    constexpr UINT kAllOn = kBase + 102;
+    constexpr UINT kAllOff = kBase + 103;
+    constexpr UINT kContinue = kBase + 104;
 
-    // Tek bir tur aktifse onu isaretle (radio gorunumu).
-    int exclusive = -1;
+    AppendMenuW(menu, MF_STRING | MF_GRAYED, 0, L"Snap override (tikla: ac/kapat)");
+    AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
     for (std::size_t i = 0; i < snapChoices.size(); ++i) {
         const auto idx = static_cast<std::size_t>(snapChoices[i].type);
-        if (idx < enabledSnapTypes_.size() && enabledSnapTypes_[idx]) {
-            if (exclusive >= 0) { exclusive = -2; break; }   // birden fazla acik
-            exclusive = static_cast<int>(i);
-        }
-    }
-    for (std::size_t i = 0; i < snapChoices.size(); ++i) {
-        const bool marked = exclusive >= 0 && exclusive == static_cast<int>(i);
-        AppendMenuW(menu, MF_STRING | (marked ? MF_CHECKED : 0),
+        const bool on = idx < enabledSnapTypes_.size() && enabledSnapTypes_[idx];
+        AppendMenuW(menu, MF_STRING | (on ? MF_CHECKED : 0),
                     kBase + static_cast<UINT>(i), snapChoices[i].label);
     }
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
-    AppendMenuW(menu, MF_STRING, kAll, L"Tum snap turleri");
+    AppendMenuW(menu, MF_STRING | (snapEnabled_ ? MF_CHECKED : 0), kSnapOn,
+                L"Obje snap (F3)");
+    AppendMenuW(menu, MF_STRING | (gridSnapEnabled_ ? MF_CHECKED : 0), kGridOn,
+                L"Grid snap (F9)");
+    AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+    AppendMenuW(menu, MF_STRING, kAllOn, L"Tumunu ac");
+    AppendMenuW(menu, MF_STRING, kAllOff, L"Tumunu kapat");
+    AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+    AppendMenuW(menu, MF_STRING, kContinue, L"Devam (Enter)");
 
     POINT pt{x, y};
     ClientToScreen(canvas_, &pt);
@@ -6399,21 +6402,24 @@ void Application::showSnapOverrideMenu(int x, int y) {
     DestroyMenu(menu);
     if (selected == 0) return;   // menu kapandi: komut aynen devam
 
-    if (selected == kAll) {
+    if (selected == kSnapOn) {
+        snapEnabled_ = !snapEnabled_;
+    } else if (selected == kGridOn) {
+        gridSnapEnabled_ = !gridSnapEnabled_;
+    } else if (selected == kAllOn) {
         enabledSnapTypes_.fill(true);
         snapEnabled_ = true;
         gridSnapEnabled_ = true;
-        publishStatus(L"Snap: tum turler acik");
-    } else if (selected >= kBase && selected < kBase + snapChoices.size()) {
-        // YALNIZ secilen tur: digerleri kapanir, grid snap de kapanir
-        // (aksi halde grid noktalari "baska snap" gibi yapisirdi).
+    } else if (selected == kAllOff) {
         enabledSnapTypes_.fill(false);
-        enabledSnapTypes_[static_cast<std::size_t>(snapChoices[selected - kBase].type)] = true;
-        snapEnabled_ = true;
-        gridSnapEnabled_ = false;
-        publishStatus(std::wstring(L"Snap override: yalniz ") + snapChoices[selected - kBase].label);
-    } else {
+        snapEnabled_ = false;
+    } else if (selected == kContinue) {
+        onCharacter(L'\r');
+        updateControls();
+        invalidateCanvas();
         return;
+    } else if (selected >= kBase && selected < kBase + snapChoices.size()) {
+        toggleSnapType(snapChoices[selected - kBase].type);
     }
 
     // Ayni adimda kal: imlec altindaki snap'i yeni maskeyle yeniden coz.
