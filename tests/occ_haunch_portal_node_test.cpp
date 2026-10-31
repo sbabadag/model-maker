@@ -19,6 +19,7 @@
 #include <BRepBndLib.hxx>
 #include <Bnd_Box.hxx>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 
@@ -41,8 +42,8 @@ Box3 bboxOf(const TopoDS_Shape& s) {
 }
 } // namespace
 
-int main() {
-    registerBuiltInComponents(ComponentRegistry::instance());
+void runCase(const char* label, const std::vector<CompParam>& extra) {
+    std::printf("--- %s\n", label);
 
     // portal_1.mmw: HEA240 kolon (90° dönük, eksen kesitin -x yüzünde) +
     // IPE400 eğik mahya kirişi (Top ankraj).
@@ -102,27 +103,28 @@ int main() {
     g.secWebThickness = 8.6; g.secFlangeThickness = 13.5;
     g.sectionCenterOffset = -200.0;
     in.secondary = {g};
+    in.params = extra;
 
     const GenerationPlan plan = ComponentRegistry::instance().generate(L"tekla_haunch_40", in);
     ck(plan.ok, "portal: plan uretildi");
-    if (!plan.ok) { std::printf("  error=%ls\n", plan.error.c_str()); return 1; }
+    if (!plan.ok) { std::printf("  error=%ls\n", plan.error.c_str()); return; }
 
     // Mock'un gösterdiği alın levhası ölçüleri
     std::size_t ep = plan.plates.size();
     for (std::size_t i = 0; i < plan.plateKeys.size(); ++i)
         if (plan.plateKeys[i] == "haunch_end_plate") ep = i;
     ck(ep < plan.plates.size(), "portal: alin levhasi planda var");
-    if (ep >= plan.plates.size()) return 1;
+    if (ep >= plan.plates.size()) return;
     const PlateSpec mockPlate = plan.plates[ep];
 
     // Ana modeldeki (OCC) aynı düğüm
     const ComponentPlan cp = componentPlanFromGenerationPlan(plan);
     ck(cp.ok, "portal: ComponentPlan gecerli");
-    if (!cp.ok) return 1;
+    if (!cp.ok) return;
     ComponentMaterializer mat(doc);
     auto prep = mat.prepare(cp, colId, {beamId});
     ck(prep.ok, "portal: OCC hazirlik");
-    if (!prep.ok) { std::printf("  prepare=%ls\n", prep.error.c_str()); return 1; }
+    if (!prep.ok) { std::printf("  prepare=%ls\n", prep.error.c_str()); return; }
     ComponentInstanceRecord rec;
     rec.typeId = L"tekla_haunch_40";
     rec.schemaVersion = 1;
@@ -132,7 +134,7 @@ int main() {
     rec.params = alignParamsToSpecs(type->params, in.params);
     auto result = mat.commit(prep, rec);
     ck(result.ok, "portal: düğüm commit edildi");
-    if (!result.ok) { std::printf("  commit=%ls\n", result.error.c_str()); return 1; }
+    if (!result.ok) { std::printf("  commit=%ls\n", result.error.c_str()); return; }
 
     const auto plateIt = result.roleToEntity.find("haunch_end_plate");
     ck(plateIt != result.roleToEntity.end(), "portal: levha EntityId atandi");
@@ -168,6 +170,50 @@ int main() {
         }
     }
 
+    // BULON KONUMLARI: mock (plan) ile modeldeki (Document) bulon grubu ayni
+    // origin/spacing'i kullanmali. Kullanici "mock'ta civatalari kirisin altina
+    // yaklastirdim, apply'dan sonra altta daha cok mesafe var" dedi — bu blok
+    // iki tarafin bulon yerlesimini mm cinsinden karsilastirir.
+    ck(plan.boltGroups.size() == doc.boltGroups().size(),
+       "portal: plandaki bulon grubu sayisi modelle ayni");
+    // Plan ve Document gruplari ayni SIRADA olmak zorunda degil (commit sirasi
+    // farkli); gruplari en alt bulonun z'sine gore eslestir.
+    {
+        struct Grp { std::size_t idx; double minZ, maxZ; std::size_t n; };
+        auto collect = [](const std::vector<BoltGroup>& groups) {
+            std::vector<Grp> out;
+            for (std::size_t i = 0; i < groups.size(); ++i) {
+                const auto pts = boltGroupBoltOrigins(groups[i]);
+                double lo = 1e18, hi = -1e18;
+                for (const auto& p : pts) { lo = std::min(lo, p.z); hi = std::max(hi, p.z); }
+                out.push_back({i, lo, hi, pts.size()});
+            }
+            std::sort(out.begin(), out.end(),
+                      [](const Grp& a, const Grp& b) { return a.minZ < b.minZ; });
+            return out;
+        };
+        const auto planGroups = collect(plan.boltGroups);
+        const auto docGroups = collect(doc.boltGroups());
+        for (std::size_t k = 0; k < planGroups.size() && k < docGroups.size(); ++k) {
+            const auto& pg = planGroups[k];
+            const auto& dg = docGroups[k];
+            std::printf("       bulon grubu[%zu] plan z[%.2f %.2f] (%zu bulon) | model z[%.2f %.2f] (%zu bulon)\n",
+                        k, pg.minZ, pg.maxZ, pg.n, dg.minZ, dg.maxZ, dg.n);
+            ck(pg.n == dg.n, "bulon grubu: ayni bulon sayisi");
+            ck(near(pg.minZ, dg.minZ, 0.5) && near(pg.maxZ, dg.maxZ, 0.5),
+               "bulon grubu: mock ve model ayni yukseklikte (z)");
+        }
+    }
+
+}
+
+int main() {
+    registerBuiltInComponents(ComponentRegistry::instance());
+    runCase("varsayilan parametreler", {});
+    runCase("duzenlenmis: alt kenar net bosluk 8 mm",
+            {{L"lowerBoltEdgeClear", CompParamValue{8.0}}});
+    runCase("duzenlenmis: alt kenar net bosluk 60 mm",
+            {{L"lowerBoltEdgeClear", CompParamValue{60.0}}});
     std::printf(failures == 0 ? "ALL PASS\n" : "%d FAIL\n", failures);
     return failures == 0 ? 0 : 1;
 }
