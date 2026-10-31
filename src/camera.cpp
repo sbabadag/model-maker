@@ -358,8 +358,25 @@ void Camera::setView(StandardView view) noexcept {
     lockGridViewDirection();
 }
 
+// TABANDAN ROTASYON — satirlar = [sag; yukari; izleyiciye-bakan].
+// "Izleyiciye bakan" = up x right (Front ornegiyle dogrulandi: right=+X,
+// up=+Z -> toward=+Y = on yuz normali; derinlik isareti +1).
+static std::array<double, 9> rotationFromBasis(const Vec3& rightIn, const Vec3& upIn) noexcept {
+    const auto unitOf = [](Vec3 v) {
+        const double n = std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
+        return n > 1e-12 ? Vec3{v.x / n, v.y / n, v.z / n} : Vec3{1.0, 0.0, 0.0};
+    };
+    const Vec3 right = unitOf(rightIn);
+    Vec3 up = unitOf(upIn);
+    const double d = right.x * up.x + right.y * up.y + right.z * up.z;
+    up = unitOf(Vec3{up.x - right.x * d, up.y - right.y * d, up.z - right.z * d});
+    const Vec3 toward{up.y * right.z - up.z * right.y,
+                      up.z * right.x - up.x * right.z,
+                      up.x * right.y - up.y * right.x};
+    return {right.x, right.y, right.z, up.x, up.y, up.z, toward.x, toward.y, toward.z};
+}
+
 std::array<double, 9> Camera::standardViewRotation(StandardView view) noexcept {
-    constexpr double halfPi = 1.57079632679489661923;
     constexpr double pi = 3.14159265358979323846;
     switch (view) {
     case StandardView::Isometric:
@@ -370,10 +387,16 @@ std::array<double, 9> Camera::standardViewRotation(StandardView view) noexcept {
         return buildRotation(kIsoYaw, kIsoPitch, kIsoRoll);
     case StandardView::Top: return buildRotation(0.0, 0.0, 0.0);
     case StandardView::Bottom: return buildRotation(pi, 0.0, 0.0);
-    case StandardView::Front: return buildRotation(0.0, halfPi, 0.0);
-    case StandardView::Back: return buildRotation(0.0, -halfPi, 0.0);
-    case StandardView::Left: return buildRotation(halfPi, 0.0, 0.0);
-    case StandardView::Right: return buildRotation(-halfPi, 0.0, 0.0);
+    // ON/ARKA/SOL/SAG — DUNYA EKSENLERINE GORE ACIK TABAN (Selahattin
+    // 2026-10-31: "on arka sag sol yanlis kamera acilarina cevriliyor;
+    // ON = XZ, SAG = YZ olmali"). Eski Euler tablosu yan gorunuslerde up=+Y
+    // (goruntu 90 derece yan yatmis), arka gorunuste up=-Z (ters) veriyordu.
+    // Artik her yon icin sag/yukari DUNYA eksenlerinde verilir; Z her zaman
+    // yukari kalir: ON/ARKA = XZ duzlemi, SOL/SAG = YZ duzlemi.
+    case StandardView::Front: return rotationFromBasis({1, 0, 0}, {0, 0, 1});
+    case StandardView::Back:  return rotationFromBasis({-1, 0, 0}, {0, 0, 1});
+    case StandardView::Left:  return rotationFromBasis({0, 1, 0}, {0, 0, 1});
+    case StandardView::Right: return rotationFromBasis({0, -1, 0}, {0, 0, 1});
     }
     return buildRotation(0.0, 0.0, 0.0);
 }
