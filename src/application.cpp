@@ -7723,6 +7723,20 @@ void Application::updateHover(int x, int y) {
             : (transformPhase_ == TransformPhase::Destination ? transformBase_ : anchor_);
         WorkPlane activePlane = workPlane_;
         if (reference && !workPlanePicking_) activePlane.origin = *reference;
+        // YAN/ON GORUNUS SNAP (Selahattin 2026-10-31): "view manipulator ile
+        // yan gorunuse gectim, oradan snap almadi hicbir yerden". Is-duzlemi
+        // bakis isinina PARALEL kalirsa snap3D'nin unprojectToPlane kesismesi
+        // olmaz ve snap TAMAMEN olur. Duzlem bakisa dik degilse, bakisa DIK
+        // bir duzlem kullan (ayni origin).
+        {
+            const Vec3 viewDir = camera_.gridViewDirection();
+            const double alignment =
+                std::fabs(activePlane.normal.x * viewDir.x +
+                          activePlane.normal.y * viewDir.y +
+                          activePlane.normal.z * viewDir.z);
+            if (alignment < 0.05)
+                activePlane = WorkPlane::fromViewDirection(activePlane.origin, viewDir);
+        }
         // 3B grid snap: CUSTOM yapi akslarina (milimetrik adaptif yok).
         // SOLID stil: snap yalniz gorunur (kameraya donuk) kenarlarda —
         // arka yuzler dolguyla ortuludur, arkadaki kenarlara snap kafa

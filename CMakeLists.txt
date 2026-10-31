@@ -667,6 +667,13 @@ if(BUILD_TESTING)
     target_compile_options(model_maker_workplane_member_orientation_test PRIVATE -Wall -Wextra -Wpedantic)
     add_test(NAME model_maker_workplane_member_orientation_test COMMAND model_maker_workplane_member_orientation_test)
 
+    # YAN/ON GORUNUSTE SNAP: is duzlemi bakisa paralel kalirsa snap tamamen
+    # olur; bakisa DIK duzlem (fromViewDirection) sart.
+    add_executable(model_maker_side_view_snap_test tests/side_view_snap_test.cpp)
+    target_link_libraries(model_maker_side_view_snap_test PRIVATE model_maker_core)
+    target_compile_options(model_maker_side_view_snap_test PRIVATE -Wall -Wextra -Wpedantic)
+    add_test(NAME model_maker_side_view_snap_test COMMAND model_maker_side_view_snap_test)
+
     # KARARLI VARLIK KIMLIGI (EntityId): vektor indeksi kalici kimlik DEGIL;
     # kimlik ekleme/silme/degistirme/undo/redo boyunca DOGRU varlikla eslesir,
     # tekil ve monoton artar. 1:1 replace kimligi korur, kopya yeni kimlik alir,
