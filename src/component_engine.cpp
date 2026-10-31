@@ -1929,11 +1929,15 @@ GenerationPlan generateHaunch40(const ComponentInput& input) noexcept {
     const double zAxisAtPlate = facePoint.z + (gap+endT*0.5)*tanT;
     double plateCentreZ = zAxisAtPlate - cosT*(D*0.5);
     double actualHUse = actualH;
-    // EAVES / ÜST BAĞLANTI: alın levhası kolon tepesinden YUKARI TAŞMAZ.
-    // Taşan kısmın arkasında kolon flanşı yoktur; üst bulonlar boşluğa düşer
-    // ve kapak levhası kesilmiş görünür ("kafa plakası kolon flanşına
-    // oturmamış"). Üstü kolon tepesine kırp, ALT kenar sabit kalsın.
-    {
+    // EAVES / ÜST BAĞLANTI: OTOMATİK boydaki alın levhası kolon tepesinden
+    // YUKARI TAŞMAZ. Taşan kısmın arkasında kolon flanşı yoktur; üst bulonlar
+    // boşluğa düşer ve kapak levhası kesilmiş görünür ("kafa plakası kolon
+    // flanşına oturmamış"). Üstü kolon tepesine kırp, ALT kenar sabit kalsın.
+    // KULLANICI AÇIK YÜKSEKLİK VERDİYSE (endPlateHeight > 0) KIRPMA YOK:
+    // Selahattin 2026-10-31 — "mock view'da alın levhası kolondan yukarı
+    // çıkmıyor, sınırlanıyor". Elle verilen ölçü harfiyen uygulanır; kullanıcı
+    // levhanın kolon ucundan taşmasını bilerek isteyebilir.
+    if (givenH <= 0.0) {
         const Vec3 colDelta{p.col.axisTo.x-p.col.axisFrom.x,
                             p.col.axisTo.y-p.col.axisFrom.y,
                             p.col.axisTo.z-p.col.axisFrom.z};

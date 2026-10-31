@@ -106,6 +106,30 @@ int main() {
         check(plan.cuts.front().planeOrigin.x > columnFace + 1.0,
               "portal: kiris kolonun icine girmez");
 
+    // Kullanıcı ELLE yükseklik verdiyse kolon tepesine KIRPILMAZ
+    // (Selahattin 2026-10-31: "mock view'da alın levhası kolondan yukarı
+    // çıkmıyor, sınırlanıyor").
+    {
+        ComponentInput manual = in;
+        manual.params = {{L"endPlateHeight", CompParamValue{760.0}}};
+        const GenerationPlan p2 =
+            ComponentRegistry::instance().generate(L"tekla_haunch_40", manual);
+        check(p2.ok, "portal: elle yukseklikle plan uretildi");
+        if (p2.ok) {
+            std::size_t i = p2.plates.size();
+            for (std::size_t k = 0; k < p2.plateKeys.size(); ++k)
+                if (p2.plateKeys[k] == "haunch_end_plate") i = k;
+            if (i < p2.plates.size()) {
+                const PlateSpec& p = p2.plates[i];
+                std::printf("       elle yukseklik: h=%.1f top=%.2f\n", p.height,
+                            p.center.z + p.height * 0.5);
+                check(near(p.height, 760.0), "portal: elle verilen levha yuksekligi aynen uygulanir");
+                check(p.center.z + p.height * 0.5 > 5000.0 + 1.0,
+                      "portal: elle yukseklikte levha kolon tepesinin UZERINE cikabilir");
+            }
+        }
+    }
+
     std::printf(bad == 0 ? "ALL PASS\n" : "%d FAIL\n", bad);
     return bad == 0 ? 0 : 1;
 }
