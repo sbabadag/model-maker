@@ -985,6 +985,13 @@ if(BUILD_TESTING)
         target_link_libraries(model_maker_occ_haunch40_native_e2e_test PRIVATE model_maker_occ)
         add_test(NAME model_maker_occ_haunch40_native_e2e_test
             COMMAND model_maker_occ_haunch40_native_e2e_test)
+        # MOCK <> DÜĞÜM TUTARLILIĞI (portal_1.mmw): alın levhası ve kiriş kesimi
+        # planda (mock) ve OCC düğümünde AYNI ölçüde olmalı. GERCEK OCCT.
+        add_executable(model_maker_occ_haunch_portal_node_test
+            tests/occ_haunch_portal_node_test.cpp)
+        target_link_libraries(model_maker_occ_haunch_portal_node_test PRIVATE model_maker_occ)
+        add_test(NAME model_maker_occ_haunch_portal_node_test
+            COMMAND model_maker_occ_haunch_portal_node_test)
         # TEKLA 146 UCTAN UCA (cok kolonlu bulon + hacim + recompute). GERCEK OCCT.
         # PART E: 2x3 6xM20 delikli levha hacmi + kalinlik 10->12 recompute.
         add_executable(model_maker_occ_shear_plate_146_end_to_end_test tests/occ_shear_plate_146_end_to_end_test.cpp)
