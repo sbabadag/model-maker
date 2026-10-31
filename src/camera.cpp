@@ -370,9 +370,14 @@ static std::array<double, 9> rotationFromBasis(const Vec3& rightIn, const Vec3& 
     Vec3 up = unitOf(upIn);
     const double d = right.x * up.x + right.y * up.y + right.z * up.z;
     up = unitOf(Vec3{up.x - right.x * d, up.y - right.y * d, up.z - right.z * d});
-    const Vec3 toward{up.y * right.z - up.z * right.y,
-                      up.z * right.x - up.x * right.z,
-                      up.x * right.y - up.y * right.x};
+    // SATIR2 = right x up (kamera eksenleri SOZLESMESI: satir2 = izleyiciye
+    // dogru = backward). ONCEKI surum up x right kullaniyordu -> det = -1:
+    // yan gorunusler AYNALI cikiyordu (model sag-sol ters; view_cube_targets
+    // testi "hedef rotasyonu ortonormal ve det=+1 DEGIL" ile yakaladi).
+    // orthonormalize() da satir2'yi r0 x r1 ile kurar (tek sozlesme).
+    const Vec3 toward{right.y * up.z - right.z * up.y,
+                      right.z * up.x - right.x * up.z,
+                      right.x * up.y - right.y * up.x};
     return {right.x, right.y, right.z, up.x, up.y, up.z, toward.x, toward.y, toward.z};
 }
 
@@ -393,10 +398,16 @@ std::array<double, 9> Camera::standardViewRotation(StandardView view) noexcept {
     // (goruntu 90 derece yan yatmis), arka gorunuste up=-Z (ters) veriyordu.
     // Artik her yon icin sag/yukari DUNYA eksenlerinde verilir; Z her zaman
     // yukari kalir: ON/ARKA = XZ duzlemi, SOL/SAG = YZ duzlemi.
-    case StandardView::Front: return rotationFromBasis({1, 0, 0}, {0, 0, 1});
-    case StandardView::Back:  return rotationFromBasis({-1, 0, 0}, {0, 0, 1});
-    case StandardView::Left:  return rotationFromBasis({0, 1, 0}, {0, 0, 1});
-    case StandardView::Right: return rotationFromBasis({0, -1, 0}, {0, 0, 1});
+    //
+    // ISARETLER (2026-10-31 duzeltmesi): ekran-sag vektoru, bakis yonu
+    // (ViewCube yuz normali) KORUNARAK secilir: sag = yukari x (izleyiciye
+    // dogru). Bakis yonu +Y ise (ON yuzu +Y) sag = Z x Y = -X olur; onceki
+    // tablo +X veriyordu ve satir2 = yukari x sag ile birlikte det = -1
+    // (AYNALI gorunus) uretiyordu — view_cube_targets testi bunu yakaladi.
+    case StandardView::Front: return rotationFromBasis({-1, 0, 0}, {0, 0, 1});
+    case StandardView::Back:  return rotationFromBasis({1, 0, 0}, {0, 0, 1});
+    case StandardView::Left:  return rotationFromBasis({0, -1, 0}, {0, 0, 1});
+    case StandardView::Right: return rotationFromBasis({0, 1, 0}, {0, 0, 1});
     }
     return buildRotation(0.0, 0.0, 0.0);
 }
