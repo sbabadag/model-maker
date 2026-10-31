@@ -645,6 +645,14 @@ if(BUILD_TESTING)
     target_compile_options(model_maker_haunch_inclined_test PRIVATE -Wall -Wextra -Wpedantic)
     add_test(NAME model_maker_haunch_inclined_test COMMAND model_maker_haunch_inclined_test)
 
+    # PORTAL / EAVES (gerçek kullanıcı modeli): dönük kolon + Top ankrajlı eğik
+    # kirişte alın levhası kolon yüzüne oturur ve kiriş levhanın arka yüzünde
+    # kesilir. Önizleme ile modelin aynı yeri göstermesini kilitler.
+    add_executable(model_maker_haunch_portal_face_test tests/haunch_portal_face_test.cpp)
+    target_link_libraries(model_maker_haunch_portal_face_test PRIVATE model_maker_core)
+    target_compile_options(model_maker_haunch_portal_face_test PRIVATE -Wall -Wextra -Wpedantic)
+    add_test(NAME model_maker_haunch_portal_face_test COMMAND model_maker_haunch_portal_face_test)
+
     # KARARLI VARLIK KIMLIGI (EntityId): vektor indeksi kalici kimlik DEGIL;
     # kimlik ekleme/silme/degistirme/undo/redo boyunca DOGRU varlikla eslesir,
     # tekil ve monoton artar. 1:1 replace kimligi korur, kopya yeni kimlik alir,
