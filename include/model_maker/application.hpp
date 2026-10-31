@@ -483,9 +483,10 @@ public:
     // tuketildi). Bulon degilse false (normal sag-tik akisina duser).
     bool showBoltContextMenu(int x, int y);
     // KOMUT ICINDE SAG-TIK SNAP OVERRIDE MENUSU (Selahattin 2026-10-31):
-    // tasima/kopyalama/cizim sirasinda nokta secilirken sag tik popup acar;
-    // her snap turu isaretli/isaretsiz gelir ve aninda acilip kapanir.
-    // Komut IPTAL EDILMEZ — menu kapaninca ayni adimda kalinir.
+    // tasima/kopyalama/cizim sirasinda nokta secilirken sag tik SADE bir
+    // liste acar: tum snap turleri listelenir, birine basinca YALNIZ o tur
+    // aktif olur (grid snap de kapanir). "Tum snap turleri" satiri varsayilana
+    // doner. Komut IPTAL EDILMEZ — menu kapaninca ayni adimda kalinir.
     bool snapOverrideAvailable() const;
     void showSnapOverrideMenu(int x, int y);
     // Secili bulon grubunu, bagli parcalarinin birlesik sinir kutusu merkezine
