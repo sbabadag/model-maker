@@ -1,5 +1,6 @@
 #include "model_maker/renderer.hpp"
 #include "model_maker/color_contrast.hpp"
+#include "model_maker/component_glyph.hpp"
 #include "model_maker/opengl_render_backend.hpp"
 #include "model_maker/reference_layer.hpp"
 #include <algorithm>
@@ -956,11 +957,21 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
     };
 
     // COMPONENT SIMGELERI: End Plate gibi component'lerin levha merkezinde
-    // buyuk, ekran-olcekli tiklama isareti. Hover'da buyur; secili ise sari.
+    // ekran-olcekli 3B KURE. Renk component TIPINE gore degisir (farkli tipler
+    // farkli renk); secili ise sari.
     const auto drawComponentGlyphs = [&]() {
         if (draft.componentGlyphs.empty()) return;
-        constexpr COLORREF kGlyphRgb = RGB(0, 168, 196);       // turkuaz
-        constexpr COLORREF kGlyphSel = RGB(255, 206, 84);      // sari (secili)
+        constexpr COLORREF kGlyphSel = RGB(255, 206, 84); // sari (secili)
+        // 0xRRGGBB (core) -> COLORREF (0x00BBGGRR).
+        const auto typeRgb = [](const std::wstring& typeId) -> COLORREF {
+            const std::uint32_t c = componentTypeColor(typeId);
+            return RGB((c >> 16) & 0xFFu, (c >> 8) & 0xFFu, c & 0xFFu);
+        };
+        // Kanal bazinda aydinlatma (+delta) / koyulastirma (-delta).
+        const auto shade = [](COLORREF c, int delta) -> COLORREF {
+            const auto ch = [&](int v) { return std::max(0, std::min(255, v + delta)); };
+            return RGB(ch(GetRValue(c)), ch(GetGValue(c)), ch(GetBValue(c)));
+        };
         for (std::size_t gi = 0; gi < draft.componentGlyphs.size(); ++gi) {
             const POINT c = projectPoint(draft.componentGlyphs[gi]);
             bool sel = false;
@@ -969,18 +980,32 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
                     sel = std::find(draft.selectedModels.begin(), draft.selectedModels.end(),
                                     *idx) != draft.selectedModels.end();
             }
-            const COLORREF rgb = sel ? kGlyphSel : kGlyphRgb;
+            std::wstring typeId;
+            if (gi < draft.componentGlyphTypes.size()) typeId = draft.componentGlyphTypes[gi];
+            const COLORREF rgb = sel ? kGlyphSel : typeRgb(typeId);
             const int r = sel ? 13 : 11;
-            HPEN pen = CreatePen(PS_SOLID, 2, rgb);
-            HGDIOBJ oldPen = SelectObject(dc, pen);
-            HGDIOBJ oldBr = SelectObject(dc, GetStockObject(NULL_BRUSH));
-            // Elmas (kare 45°) — levhayi ayirt eder, gumball'dan farklidir.
-            const POINT d[4] = {{c.x, c.y - r}, {c.x + r, c.y},
-                                {c.x, c.y + r}, {c.x - r, c.y}};
-            Polygon(dc, d, 4);
-            SelectObject(dc, oldBr);
+            // 3B KURE: dolu daire (taban) + sol-ust vurgu + ince koyu kenar.
+            HBRUSH ball = CreateSolidBrush(rgb);
+            const HGDIOBJ oldBr = SelectObject(dc, ball);
+            const HGDIOBJ oldPen = SelectObject(dc, GetStockObject(NULL_PEN));
+            Ellipse(dc, c.x - r, c.y - r, c.x + r + 1, c.y + r + 1);
+            // Vurgu: sol-ustte kucuk, aydinlatilmis daire (kure parlakligi).
+            const int hr = std::max(2, static_cast<int>(r * 0.45));
+            const int hx = c.x - static_cast<int>(r * 0.35);
+            const int hy = c.y - static_cast<int>(r * 0.35);
+            HBRUSH hi = CreateSolidBrush(shade(rgb, 70));
+            SelectObject(dc, hi);
+            Ellipse(dc, hx - hr, hy - hr, hx + hr + 1, hy + hr + 1);
+            DeleteObject(hi);
+            // Kenar: 1px koyu cerceve (kureyi model/fondan ayirir).
+            HPEN rim = CreatePen(PS_SOLID, 1, shade(rgb, -60));
+            SelectObject(dc, rim);
+            SelectObject(dc, GetStockObject(NULL_BRUSH));
+            Ellipse(dc, c.x - r, c.y - r, c.x + r, c.y + r);
+            DeleteObject(rim);
             SelectObject(dc, oldPen);
-            DeleteObject(pen);
+            SelectObject(dc, oldBr);
+            DeleteObject(ball);
             ++performance.renderedEntities;
         }
     };

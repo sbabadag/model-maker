@@ -11719,9 +11719,11 @@ DraftView Application::draftView() const {
     // componentGlyphModelAt AYNI listeyi (collectComponentGlyphs) kullanir.
     view.componentGlyphs.clear();
     view.componentGlyphEntities.clear();
+    view.componentGlyphTypes.clear();
     for (const ComponentGlyph& glyph : collectComponentGlyphs(document_)) {
         view.componentGlyphs.push_back(glyph.anchor);
         view.componentGlyphEntities.push_back(glyph.entityId);
+        view.componentGlyphTypes.push_back(glyph.typeId);
     }
     // KAYNAK SIMGELERI: secili kaynak indeksleri (renderer glifi vurgular).
     view.selectedWelds = selectedWelds_;

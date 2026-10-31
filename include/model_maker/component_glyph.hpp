@@ -16,18 +16,23 @@
 #include "model_maker/document.hpp"
 #include "model_maker/geometry.hpp"
 
+#include <cstdint>
+#include <string>
 #include <vector>
 
 namespace mm {
 
 // Bir component sembolunun dunya-uzayi ankraj noktasi ve tiklanacak model
-// EntityId'si. Renderer ekran-olcekli elmas cizer; hit-test ayni noktayi
-// kullanir (projeksiyon farki olusmaz).
+// EntityId'si. Renderer ekran-olcekli 3B KURE cizer (tipe gore renk); hit-test
+// ayni noktayi kullanir (projeksiyon farki olusmaz).
 struct ComponentGlyph {
     Vec3 anchor{};                          // sembolun cizildigi dunya noktasi
     EntityId entityId{kInvalidEntityId};    // tiklanacak model (levha/bulon display)
     EntityId componentId{kInvalidEntityId}; // parent component / baglanti kimligi
     bool universal{false};                  // true: ComponentInstanceRecord
+    // Component TIPI (renk kaynagi): universal -> rec.typeId; End Plate ->
+    // L"beam_to_column_end_plate". Bos = bilinmiyor (varsayilan renk).
+    std::wstring typeId;
 };
 
 // Belgedeki TUM component sembollerini toplar.
@@ -37,5 +42,12 @@ struct ComponentGlyph {
 //     entityId bazinda tekillesir — cift sembol cizilmez.
 //   - Levhasi olmayan universal component'te bulon display merkezi kullanilir.
 std::vector<ComponentGlyph> collectComponentGlyphs(const Document& document);
+
+// Component TIPINE gore deterministik renk (0xRRGGBB — COLORREF DEGIL).
+//   - Bilinen yerlesik tipler icin sabit, ayirt edici palet renkleri.
+//   - Bilinmeyen/ozel tipler icin typeId hash'inden turetilen ton (ayni tip
+//     her zaman ayni renk, farkli tipler genelde farkli).
+//   - Bos typeId -> turkuaz (eski glif rengi).
+std::uint32_t componentTypeColor(const std::wstring& typeId) noexcept;
 
 } // namespace mm

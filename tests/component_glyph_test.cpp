@@ -81,6 +81,8 @@ int main() {
             check(ep->entityId == storedConn.plateEntityId, "end plate sembolu levha EntityId'sine bagli");
             check(ep->componentId == storedConn.id, "end plate sembolu baglanti kimligini tasir");
             check(!ep->universal, "end plate sembolu universal degil");
+            check(ep->typeId == L"beam_to_column_end_plate",
+                  "end plate sembolu tipini tasir (beam_to_column_end_plate)");
         }
         if (fp) {
             check(nearD(fp->anchor.x, 120.0, 1e-6) && nearD(fp->anchor.y, 10.0, 1e-6) &&
@@ -89,6 +91,7 @@ int main() {
             check(fp->entityId == finPlateId, "fin plate sembolu sahip olunan levhaya bagli");
             check(fp->componentId == storedFin.id, "fin plate sembolu parent component kimligini tasir");
             check(fp->universal, "fin plate sembolu universal");
+            check(fp->typeId == L"fin_plate", "fin plate sembolu tipini tasir (fin_plate)");
         }
     }
 
@@ -136,6 +139,34 @@ int main() {
         document.addComponentInstance(invalid);
         const auto glyphs = collectComponentGlyphs(document);
         check(glyphs.size() == 2, "gecersiz EntityId sembol uretmez");
+    }
+
+    // --- 7) TIP RENGI: deterministik + bilinen tipler ayirt edici -----------
+    {
+        const std::uint32_t cEndPlate = componentTypeColor(L"beam_to_column_end_plate");
+        const std::uint32_t cFin = componentTypeColor(L"fin_plate");
+        const std::uint32_t cShear = componentTypeColor(L"tekla_shear_plate_146");
+        const std::uint32_t cHaunch = componentTypeColor(L"tekla_haunch_40");
+        // Bilinen tipler icin sabit palet renkleri.
+        check(cEndPlate == 0x4285F4u, "end plate rengi sabit (mavi)");
+        check(cFin == 0x34A853u, "fin plate rengi sabit (yesil)");
+        check(cShear == 0xF4A000u, "shear plate 146 rengi sabit (turuncu)");
+        check(cHaunch == 0xAB47BCu, "haunch 40 rengi sabit (mor)");
+        // Farkli tipler -> farkli renkler.
+        const bool distinct = cEndPlate != cFin && cEndPlate != cShear &&
+                              cEndPlate != cHaunch && cFin != cShear &&
+                              cFin != cHaunch && cShear != cHaunch;
+        check(distinct, "bilinen 4 tip icin renkler birebir farkli");
+        // Deterministik: ayni tip her zaman ayni renk; bos tip varsayilan.
+        check(componentTypeColor(L"fin_plate") == cFin, "ayni tip ayni rengi verir");
+        check(componentTypeColor(L"") == 0x00A8C4u, "bos tip turkuaz varsayilan");
+        // Bilinmeyen tip deterministik ve 0xRRGGBB biciminde (kanallar 0..255).
+        const std::uint32_t cCustom = componentTypeColor(L"ozel_birlestirme");
+        check(cCustom == componentTypeColor(L"ozel_birlestirme"),
+              "bilinmeyen tip deterministik renk verir");
+        check(((cCustom >> 16) & 0xFFu) <= 0xFFu && ((cCustom >> 8) & 0xFFu) <= 0xFFu &&
+                  (cCustom & 0xFFu) <= 0xFFu,
+              "renk kanallari gecerli aralikta");
     }
 
     std::printf("%s\n", failures == 0 ? "ALL PASS" : "SOME FAILED");
