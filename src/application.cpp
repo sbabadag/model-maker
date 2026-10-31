@@ -1,4 +1,5 @@
 #include "model_maker/application.hpp"
+#include "model_maker/reload_mesh_guard.hpp"
 #include "model_maker/linear_delta.hpp"
 #include "model_maker/dxf.hpp"
 #include "model_maker/bridge_package.hpp"
@@ -9024,8 +9025,11 @@ bool Application::ensureCutSolid(EntityId target) {
         std::abs(to.z - from.z) < 1e-9) return false;
     const Vec3 sectionReference{props.sectionNormalX, props.sectionNormalY,
                                 props.sectionNormalZ};
+    // KESIT YERLESIMI KAYITTAN: acilista yeniden uretim ANCHOR'i da kullanmali,
+    // yoksa Top'a zorlanan kesit Center/Bottom secilmis uyeyi yarim kesit boyu
+    // kaydirir (kayit/ac sonrasi "eleman yeri degisti" belirtisi).
     const TopoDS_Shape solid = mm::extrudeProfileSolid(
-        *profile, from, to, props.profileRotation, sectionReference);
+        *profile, from, to, props.profileRotation, sectionReference, props.sectionAnchor);
     if (solid.IsNull()) return false;
     putOccSolid(index, solid);
     return true;
@@ -9052,7 +9056,7 @@ void Application::rebuildCutBaseSolid(EntityId target) {
     const Vec3 sectionReference{props.sectionNormalX, props.sectionNormalY,
                                 props.sectionNormalZ};
     const TopoDS_Shape solid = mm::extrudeProfileSolid(
-        *profile, from, to, props.profileRotation, sectionReference);
+        *profile, from, to, props.profileRotation, sectionReference, props.sectionAnchor);
     if (solid.IsNull()) return;
     // Taban surum degisimini undo/redo'ya DAHIL ET (Slice 2d-2c): putOccSolid
     // etkin surum deltasini kaydeder; taban deltasi da AYRI kaydedilir — yoksa
@@ -10618,7 +10622,8 @@ void Application::assignProfileToSelection(const std::string& profileName) {
             const Vec3 ref{m.properties().sectionNormalX, m.properties().sectionNormalY,
                            m.properties().sectionNormalZ};
             const double rot = m.properties().profileRotation;
-            const TopoDS_Shape solid = mm::extrudeProfileSolid(*profile, from, to, rot, ref);
+            const TopoDS_Shape solid = mm::extrudeProfileSolid(
+                *profile, from, to, rot, ref, m.properties().sectionAnchor);
             if (solid.IsNull()) continue;
             auto solidModel = mm::shapeToWireframeWithFaces(solid, 0.15);
             auto props = m.properties();  // kalici alanlar (malzeme/renk/eksen) korunur
@@ -10889,7 +10894,8 @@ int Application::reExtrudeProfileGripCore(std::size_t solidIndex, bool endIsTo,
     const TopoDS_Shape shape =
         mm::extrudeProfileSolid(*profile, from, to, props.profileRotation,
                                 Vec3{props.sectionNormalX, props.sectionNormalY,
-                                     props.sectionNormalZ});
+                                     props.sectionNormalZ},
+                                props.sectionAnchor);
     if (shape.IsNull()) return 0;
     auto solidModel = mm::shapeToWireframeWithFaces(shape, 0.15);
     // Mevcut stil/kimlik ozelliklerini koru; yalniz eksen degisti.
@@ -11982,9 +11988,51 @@ void Application::openDocument() {
         int completedSteps = 0;
         progress.report(0, totalSteps, "Profil katıları yeniden üretiliyor");
         ensureProfileCatalog();
+        int preservedMeshes = 0;
+        std::string preservedIds;
         for (std::size_t i = 0; i < document_.models().size(); ++i) {
-            if (!document_.models()[i].properties().profileName.empty()) recomputeCutTarget(document_.modelId(i));
+            if (!document_.models()[i].properties().profileName.empty()) {
+                // KAYIT/OKUMA GUARD (Selahattin 2026-10-31: "sonradan attigim
+                // capraz elemanlar yuklendiginde farkli yerlerde cikti"):
+                // MMW8 hem mesh'i hem profilin PARAMETRELERINI saklar; burada
+                // mesh parametrelerden YENIDEN uretilip YERINE yazilir. Kayit
+                // aninda mesh ile parametreler ayrisMissA (mesh bir trim/kesme
+                // sonucu, parametre ham eksen) eleman acilista KAYIYORDU.
+                // Kural: yeniden uretim kaydedilmis bbox'i toleransin uzerinde
+                // oynatiyorsa KAYDEDILEN geometri korunur — B-Rep yine guncel
+                // parametrelerden yazilir, kesme/bulon calismaya devam eder.
+                const mm::WireframeModel savedModel = document_.models()[i];
+                const mm::EntityId savedModelId = document_.modelId(i);
+                const mm::MeshExtent savedExtent = mm::meshExtent(savedModel.vertices());
+                recomputeCutTarget(savedModelId);
+                if (const auto idxOpt = document_.indexOfEntity(savedModelId)) {
+                    const auto& regenerated = document_.models()[*idxOpt];
+                    if (mm::reloadKeepsSavedMesh(savedExtent,
+                                                 mm::meshExtent(regenerated.vertices()))) {
+                        mm::WireframeModel restored = savedModel;
+                        auto props = regenerated.properties();
+                        restored.setProperties(std::move(props));
+                        restored.setConstructionKind(regenerated.constructionKind());
+                        document_.replaceModel(*idxOpt, {std::move(restored)});
+                        ++preservedMeshes;
+                        if (!preservedIds.empty()) preservedIds += ',';
+                        preservedIds += std::to_string(static_cast<unsigned long long>(savedModelId));
+                    }
+                }
+            }
             progress.report(++completedSteps, totalSteps, "Profil katıları yeniden üretiliyor");
+        }
+        if (preservedMeshes > 0) {
+            // Kalici teshis: yeniden uretim kaydedilmis geometriyi kaydiriyordu,
+            // KAYIT korundu (kullanici "ne kaydettiysem onu gorurum").
+            solidStatusMessage_ = L"Kaydedilmiş geometri korundu: " +
+                                  std::to_wstring(preservedMeshes) +
+                                  L" profil (yeniden üretim elemanı kaydırıyordu).";
+            if (FILE* diag = fopen("model-maker-render.log", "a")) {
+                std::fprintf(diag, "LOAD-KEEP-SAVED-MESH count=%d ids=%s\n", preservedMeshes,
+                             preservedIds.c_str());
+                std::fclose(diag);
+            }
         }
         // AÇILIS SONRASI END PLATE YENIDEN COZUMU (operation record semantigi):
         // baglanti KAYDI parametreleri tasir; pisirilmis levha/bulon geometrisi

@@ -375,6 +375,11 @@ if(BUILD_TESTING)
             # noktalarinin secilebilmesi (uygulama baglantisi sekil testi).
             add_test(NAME model_maker_grip_selection_wiring
                 COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_grip_selection_wiring.py)
+            # KAYIT/OKUMA GUARD kablolamasi: acilista kaydedilmis mesh dogrulanir,
+            # yeniden uretim elemani kaydiriyorsa KAYIT korunur; parametrelerden
+            # ureten yollar kesit anchor'ini da gecirir.
+            add_test(NAME model_maker_reload_mesh_guard_wiring
+                COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_reload_mesh_guard_wiring.py)
             # Props paneli = TEK profil kaynagi (ribbon profil cubugu kaldirildi):
             # secim yokken aktif profil cizimi belirler, secim varken secime atar;
             # satirda ENTER (returnPressed/editingFinished) dogrudan uygular.
@@ -718,6 +723,14 @@ if(BUILD_TESTING)
     target_link_libraries(model_maker_grip_selection_test PRIVATE model_maker_core)
     target_compile_options(model_maker_grip_selection_test PRIVATE -Wall -Wextra -Wpedantic)
     add_test(NAME model_maker_grip_selection_test COMMAND model_maker_grip_selection_test)
+
+    # KAYIT/OKUMA GUARD: acilista parametrelerden yeniden uretim kaydedilmis
+    # mesh'i toleransin uzerinde oynatiyorsa KAYIT korunur (eleman kaymaz).
+    # "sonradan attigim capraz elemanlar yuklendiginde farkli yerlerde cikti".
+    add_executable(model_maker_reload_mesh_guard_test tests/reload_mesh_guard_test.cpp)
+    target_link_libraries(model_maker_reload_mesh_guard_test PRIVATE model_maker_core)
+    target_compile_options(model_maker_reload_mesh_guard_test PRIVATE -Wall -Wextra -Wpedantic)
+    add_test(NAME model_maker_reload_mesh_guard_test COMMAND model_maker_reload_mesh_guard_test)
 
     # KARARLI VARLIK KIMLIGI (EntityId): vektor indeksi kalici kimlik DEGIL;
     # kimlik ekleme/silme/degistirme/undo/redo boyunca DOGRU varlikla eslesir,
