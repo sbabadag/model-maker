@@ -1,20 +1,25 @@
-// MM-3b — End plate paketi ES-DEGERLIK testi.
+// MM-3b — End plate paketi ES-DEGERLIK testi + GOLDEN dogrulama (Task 0).
 //
 // Degismez kural: uyum YALNIZCA digest esitligi ile olculur.
 //   5 sabit girdi icin:  generationPlanDigest(generateEndPlate(in))
 //                        == generationPlanDigest(runRecipe(recipe, specs, in))
+//                        == tests/golden/end_plate_digests.json degeri.
 // recipe = packages/end_plate/recipe.json'in bellekteki karsiligi (tek
-// endplate.placement adimi). Golden dosyasi YENIDEN URETILMEZ; fark raporlanir.
+// endplate.placement adimi). Golden dosyasi DAVRANIS DEGISTIREN her commit'te
+// gerekce yazilarak AYRI commit'te guncellenir; bu test asla yeniden uretmez.
 #include "model_maker/component_codec.hpp"
 #include "model_maker/component_engine.hpp"
 #include "model_maker/geometry.hpp"
 #include "model_maker/recipe.hpp"
 
 #include <cstdio>
+#include <fstream>
+#include <sstream>
 #include <string>
 #include <vector>
 
 using namespace mm;
+using json = nlohmann::json;
 
 static int failures = 0;
 #define CHECK(cond, msg) do { if (!(cond)) { std::printf("FAIL: %s\n", msg); ++failures; } } while (0)
@@ -89,12 +94,22 @@ static ComponentInput makeCase(int kind) {
     return in;
 }
 
+static std::string readText(const std::string& path) {
+    std::ifstream in(path);
+    if (!in.good()) return {};
+    std::ostringstream ss;
+    ss << in.rdbuf();
+    return ss.str();
+}
+
 int main() {
     registerBuiltInComponents(ComponentRegistry::instance());
     const std::vector<CompParamSpec> specs = endPlateComponentType().params;
     const Recipe recipe = endPlateRecipe();
-    const char* names[5] = {"beam +X", "beam -X", "beam +Y", "90deg profil", "farkli bulon"};
+    const char* names[5] = {"endplate_beam_px", "endplate_beam_nx", "endplate_beam_py",
+                            "endplate_rotated_90", "endplate_diff_bolts"};
 
+    json golden = json::object();
     for (int k = 0; k < 5; ++k) {
         const ComponentInput in = makeCase(k);
         const GenerationPlan gen = generateEndPlate(in);
@@ -103,8 +118,37 @@ int main() {
         CHECK(rec.ok, "runRecipe ok");
         const std::string dGen = generationPlanDigest(gen);
         const std::string dRec = generationPlanDigest(rec);
-        std::printf("  %-16s gen=%s rec=%s\n", names[k], dGen.c_str(), dRec.c_str());
+        std::printf("  %-20s gen=%s rec=%s\n", names[k], dGen.c_str(), dRec.c_str());
         CHECK(dGen == dRec, "digest(runRecipe) == digest(generateEndPlate)");
+        golden[names[k]] = dGen;
+    }
+
+    // GOLDEN dogrulama: dosya varsa birebir karsilastir (asla yeniden uretme);
+    // yoksa uret (ilk baseline kurulumu — Task 0).
+    std::printf("=== golden dosyasi ===\n");
+    const std::string goldenPath =
+        std::string(MM_CONTRACT_GOLDEN_DIR) + "/end_plate_digests.json";
+    {
+        std::ifstream in(goldenPath);
+        if (in.good()) {
+            json onDisk;
+            in >> onDisk;
+            in.close();
+            CHECK(onDisk.is_object() && onDisk.size() == 5, "golden: 5 girdi mevcut");
+            for (const auto& n : names) {
+                if (onDisk.contains(n)) {
+                    CHECK(onDisk[n].get<std::string>() == golden[n].get<std::string>(),
+                          "golden digest birebir eslesiyor");
+                } else {
+                    CHECK(false, "golden girdisi eksik");
+                }
+            }
+        } else {
+            std::ofstream out(goldenPath);
+            out << golden.dump(2) << "\n";
+            out.close();
+            std::printf("  golden uretildi: %s\n", goldenPath.c_str());
+        }
     }
 
     std::printf("end plate esdegerlik: %s (%d hata)\n", failures ? "BASARISIZ" : "OK", failures);
