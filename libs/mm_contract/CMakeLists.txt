@@ -1,0 +1,63 @@
+cmake_minimum_required(VERSION 3.20)
+
+# ============================================================================
+# mm_component_contract — BAGIMSIZ derleme (Studio sparse-checkout icin).
+#
+# Bu CMakeLists.txt libs/mm_contract/ altindadir; KAYNAKLAR repo kokunde
+# src/ ve include/model_maker/ icinde kalir (sifir kaynak degisikligi).
+# Qt ve OCCT YOKTUR; yalniz C++20 + std gerekir.
+#
+# Studio bunu iki zincirde derler:
+#   Linux GCC  : cmake -S libs/mm_contract -B build-contract && cmake --build build-contract && ctest --test-dir build-contract
+#   Win UCRT64 : cmake -S libs/mm_contract -B build-contract -G Ninja && cmake --build build-contract && ctest --test-dir build-contract
+# ============================================================================
+project(mm_component_contract VERSION 1.0.0 LANGUAGES CXX)
+
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+
+if(NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE Release)
+endif()
+
+# Repo koku (bu dosyanin iki ustu: libs/mm_contract -> libs -> kok).
+get_filename_component(MM_ROOT "${CMAKE_CURRENT_LIST_DIR}/../.." ABSOLUTE)
+
+# --- mm_foundation: yaprak saf tipler ---
+add_library(mm_foundation
+    ${MM_ROOT}/src/geometry.cpp
+    ${MM_ROOT}/src/reference_geometry.cpp
+    ${MM_ROOT}/src/contact_resolver.cpp
+)
+target_include_directories(mm_foundation PUBLIC ${MM_ROOT}/include)
+
+# --- mm_component_contract: component veri modeli + generator'lar ---
+add_library(mm_component_contract
+    ${MM_ROOT}/src/cut_modifier.cpp
+    ${MM_ROOT}/src/bolt.cpp
+    ${MM_ROOT}/src/constraint_system.cpp
+    ${MM_ROOT}/src/magnetic_frame.cpp
+    ${MM_ROOT}/src/end_plate.cpp
+    ${MM_ROOT}/src/component_engine.cpp
+    ${MM_ROOT}/src/component_dialog.cpp
+    ${MM_ROOT}/src/component_dialog_146_canvas.cpp
+    ${MM_ROOT}/src/component_framework.cpp
+    ${MM_ROOT}/src/component_catalog.cpp
+)
+target_include_directories(mm_component_contract PUBLIC ${MM_ROOT}/include)
+target_link_libraries(mm_component_contract PUBLIC mm_foundation)
+
+# --- contractVersion basligi (bu alt klasorde, self-contained) ---
+add_library(mm_contract_version INTERFACE)
+target_include_directories(mm_contract_version INTERFACE ${CMAKE_CURRENT_LIST_DIR}/include)
+target_link_libraries(mm_contract_version INTERFACE mm_component_contract)
+
+# --- Bagimsiz testler ---
+option(MM_CONTRACT_BUILD_TESTS "Build contract standalone tests" ON)
+if(MM_CONTRACT_BUILD_TESTS)
+    enable_testing()
+    add_executable(mm_contract_smoke_test ${CMAKE_CURRENT_LIST_DIR}/tests/contract_smoke_test.cpp)
+    target_link_libraries(mm_contract_smoke_test PRIVATE mm_component_contract mm_contract_version)
+    add_test(NAME mm_contract_smoke_test COMMAND mm_contract_smoke_test)
+endif()
