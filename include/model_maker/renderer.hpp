@@ -11,8 +11,10 @@
 #include <windows.h>
 #include <chrono>
 #include <functional>
+#include <map>
 #include <optional>
 #include <string>
+#include <tuple>
 #include <unordered_set>
 #include <vector>
 
@@ -408,6 +410,13 @@ private:
     mutable int lastMotionPath_{-1}; // 0=FAST 1=FALLBACK — gecis logu icin
     mutable int fallbackSequence_{};
     mutable FramePerformanceTracker performanceTracker_{};
+    // I5: GDI nesne onbellegi — kalem ve font kare basina CreatePen/CreateFontW
+    // + DeleteObject yerine Renderer omru boyunca tutulur (yikicida silinir).
+    // PenKey = (renk, kalinlik, cizgi tipi, olcek*1000); ayni stil ayni kalemi
+    // paylasir, kare sonunda DeleteObject edilmez.
+    using PenKey = std::tuple<std::uint32_t, int, std::string, int>;
+    mutable std::map<PenKey, HPEN> cachedEntityPens_{};
+    mutable HFONT cachedFont_{};
 public:
     // Otomatik benchmark icin: kare sayaci (paint tamamlanma tespiti) ve
     // son ornek (frame ms / FPS).

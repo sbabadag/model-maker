@@ -1270,9 +1270,11 @@ void Application::paintPassiveViewport(std::size_t index) {
         view.viewSlab = slot.viewDef ? &*slot.viewDef : nullptr;
         view.workPlane = slot.workPlane;
         // Ana gorunus pasifken de GL ile cizilir (gorunum stili degismesin);
-        // GL baglami gizli pencerede, tuvalden bagimsiz.
-        IRenderBackend* backend = (index == 0 && renderBackend_ && gpuLinesEnabled_ &&
-                                   slot.mode == EditMode::View3D) ? renderBackend_.get() : nullptr;
+        // GL baglami gizli pencerede, tuvalden bagimsiz. 2B'de de GL aktiftir
+        // (I1 perf iyilestirmesi): opak FBO zemini eski AlphaBlend flicker'ini
+        // giderdiginden 2B cizimler de GPU hattina girer.
+        IRenderBackend* backend = (index == 0 && renderBackend_ && gpuLinesEnabled_)
+                                      ? renderBackend_.get() : nullptr;
         try {
             slot.renderer->draw(dc, client, document_, slot.camera, slot.mode, view, backend);
         } catch (...) {
@@ -1762,6 +1764,7 @@ LRESULT Application::handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lPa
             orbitGesturePivot_ = resolveOrbitPivot(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
         } else {
             panning2D_ = true;
+            pan2DPreviewOffset_ = {}; // I4: yeni pan jesti -> ofset sifirla
         }
         lastMouse_ = {GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
         SetCapture(canvas_);
@@ -1770,6 +1773,7 @@ LRESULT Application::handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lPa
     case WM_MBUTTONUP:
         rotating_ = false;
         panning2D_ = false;
+        pan2DPreviewOffset_ = {}; // I4: pan bitti -> tam kare
         orbitGesturePivot_.reset();
         ReleaseCapture();
         updateHover(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
@@ -1778,6 +1782,7 @@ LRESULT Application::handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lPa
     case WM_CAPTURECHANGED:
         rotating_ = false;
         panning2D_ = false;
+        pan2DPreviewOffset_ = {}; // I4: yakalama kaybi -> tam kare
         orbitGesturePivot_.reset();
         ctrlRotatePending_ = false;
         if (reinterpret_cast<HWND>(lParam) != canvas_) {
@@ -2048,13 +2053,15 @@ void Application::onCanvasPaint() {
     // F1: GPU hatti — backend YALNIZ F9 ile GL acilinca uretilir; GDI
     // varsayilanda canvas'a hicbir GL dokunmaz (ilk boyamada init edilen GL
     // context'i GDI cizimini bozup "cizgiler kayboldu" hatasi uretiyordu).
-    // 2B'de GL overlay kapali: FBO+AlphaBlend kompoziti DWM tarafinda arka
-    // planda "gradient" flicker uretiyordu (drawing/koordinatlar saglikliydi).
-    // 3B modunda GL acik kalir; F5 (kalici VBO + GPU kompozit) 2B'ye geri doner.
+    // 2B'de GL artik AKTIF (I1 perf iyilestirmesi): eskiden FBO+AlphaBlend
+    // kompoziti DWM tarafinda "gradient" flicker uretiyordu; opak FBO zemini
+    // (glClearColor alpha=1.0) bu flicker'i giderdi. Buyuk paftalarda GPU
+    // hatti GDI'nin per-line maliyetini ortadan kaldirir. Not: GL zemini duz
+    // acik-mavi oldugundan 2B'de gradient yerine duz zemin gorunur.
     // Ikincil gorunusler (viewDef_) GL kullanmaz: tek GL baglami ana
     // gorunusun FBO boyutuna bagli; saf GDI ile surucu riski de yok.
     IRenderBackend* activeBackend =
-        (renderBackend_ && gpuLinesEnabled_ && mode_ == EditMode::View3D && !viewDef_)
+        (renderBackend_ && gpuLinesEnabled_ && !viewDef_)
             ? renderBackend_.get() : nullptr;
     {
         // Kosulsuz oturum isareti: log yolunun calistigini ve bu build'in
@@ -2865,6 +2872,10 @@ void Application::onMouseMove(int x, int y, WPARAM buttons) {
     } else if (panning2D_ && (buttons & MK_MBUTTON)) {
         if (mode_ == EditMode::Draw2D) {
             camera_.pan2DByPixels(x - lastMouse_.x, y - lastMouse_.y);
+            // I4: 2B pan raster onizlemesi — son tam kareyi biriken piksel
+            // otelemesiyle kaydir (renderer StretchBlt); fare birakilinca tam kare.
+            pan2DPreviewOffset_.x += (x - lastMouse_.x);
+            pan2DPreviewOffset_.y += (y - lastMouse_.y);
         } else {
             camera_.pan3DByPixels(x - lastMouse_.x, y - lastMouse_.y);
         }
@@ -12156,10 +12167,15 @@ DraftView Application::draftView() const {
     // fallback kareler uretiyordu (modellerin ~%75'i kaybolup geri geliyordu
     // = zoom sirasinda nabiz/flicker). Raster preview son tam kareyi esnetir —
     // zoom suresince hic seyrek cizim yapilmaz.
-    view.rasterZoomPreview = document_.models().size() > 8'000 && wheelNavigating_ &&
-                             std::abs(wheelPreviewFactor_ - 1.0) > 1e-12;
-    view.rasterZoomFactor = wheelPreviewFactor_;
-    view.rasterZoomOffset = wheelPreviewOffset_;
+    // Raster onizleme: (a) tekerlek zoom (buyuk modellerde, esitik 8000) ve
+    // (b) I4 2B pan. 2B pan'da factor=1.0 (saf kaydirma), offset biriken piksel
+    // otelemesidir; renderer son tam kareyi StretchBlt ile kaydirir.
+    const bool pan2DPreview = panning2D_ && mode_ == EditMode::Draw2D;
+    view.rasterZoomPreview = pan2DPreview ||
+                             (document_.models().size() > 8'000 && wheelNavigating_ &&
+                              std::abs(wheelPreviewFactor_ - 1.0) > 1e-12);
+    view.rasterZoomFactor = pan2DPreview ? 1.0 : wheelPreviewFactor_;
+    view.rasterZoomOffset = pan2DPreview ? pan2DPreviewOffset_ : wheelPreviewOffset_;
     // Profil uc tutamagi (grip edit) vurgusu + move track line.
     if (profileGrip_) {
         view.activeGripSolid = profileGrip_->solidIndex;

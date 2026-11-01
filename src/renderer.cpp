@@ -209,6 +209,14 @@ Renderer::~Renderer() {
         }
         DeleteDC(motionBaseDc_);
     }
+    // I5: onbelleklenmis GDI kalemleri + font burada silinir (kare icinde
+    // silinmezler — Renderer omru boyunca yeniden kullanilirlar).
+    for (const auto& [key, pen] : cachedEntityPens_) {
+        (void)key;
+        DeleteObject(pen);
+    }
+    cachedEntityPens_.clear();
+    if (cachedFont_) { DeleteObject(cachedFont_); cachedFont_ = nullptr; }
 }
 
 void Renderer::ensureMotionBase(HDC target, int width, int height) const {
@@ -325,9 +333,14 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
     GRADIENT_RECT gradientRect{0, 1};
     GradientFill(dc, gradientVertices, 2, &gradientRect, 1, GRADIENT_FILL_RECT_V);
     }
-    HFONT font = CreateFontW(-15, 0, 0, 0, FW_SEMIBOLD, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
-                             OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
-                             DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
+    // I5: font Renderer omru boyunca onbelleklenir — kare basina CreateFontW
+    // + DeleteObject yapilmaz (cachedFont_).
+    if (!cachedFont_) {
+        cachedFont_ = CreateFontW(-15, 0, 0, 0, FW_SEMIBOLD, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
+                                  OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
+                                  DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
+    }
+    HFONT font = cachedFont_;
     HGDIOBJ oldFont = SelectObject(dc, font);
     const RECT canvas = canvasRect(client);
     const auto projectPoint = [&](const Vec3& point) {
@@ -722,13 +735,26 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
             }
             return;
         }
+        // ZINCIR OLMAYAN MODELLER TEK PolyPolyline: kenar basina MoveToEx+LineTo
+        // (2 GDI cagrisi) yerine N kenar tek PolyPolyline cagrisi. Buyuk 2B
+        // cizimlerde GDI syscall sayisini ~2N'den ~N/4096'ya indirir (I2 perf).
+        std::vector<POINT> edgePoints;
+        std::vector<DWORD> edgeCounts;
+        edgePoints.reserve(edges.size() * 2);
+        edgeCounts.reserve(edges.size());
         for (std::size_t edgeIndex = 0; edgeIndex < edges.size(); edgeIndex += stride) {
             const auto& edge = edges[edgeIndex];
-            const POINT from = projectPoint(vertices[edge.from] + offset);
-            const POINT to = projectPoint(vertices[edge.to] + offset);
-            line(dc, from.x, from.y, to.x, to.y);
+            edgePoints.push_back(projectPoint(vertices[edge.from] + offset));
+            edgePoints.push_back(projectPoint(vertices[edge.to] + offset));
+            edgeCounts.push_back(2);
+        }
+        constexpr std::size_t chunkPolys = 4096; // 8192 nokta (Polyline chunk guvenligi)
+        for (std::size_t begin = 0; begin < edgeCounts.size(); begin += chunkPolys) {
+            const std::size_t count = std::min(chunkPolys, edgeCounts.size() - begin);
+            PolyPolyline(dc, edgePoints.data() + begin * 2, edgeCounts.data() + begin,
+                         static_cast<DWORD>(count));
             ++performance.drawCalls;
-            performance.projectedVertices += 2;
+            performance.projectedVertices += count * 2;
         }
     };
     if (selectedIndexSet_.assign(document.models().size(), draft.selectedModels))
@@ -750,6 +776,28 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
     // modelin USTUNE cizilir (referans overlay), dogru z-sirasi yoktur.
     const auto drawConstruction = [&]() {
         const COLORREF kConstructionRgb = RGB(0, 190, 220);
+        // I3: duzlem dolgusu icin tekrar kullanilabilir scratch (yuz dolgusu ile
+        // ayni desen) — duzlem basina DC/bitmap tahsis etmek yerine tek tahsis,
+        // yalniz daha buyuk duzlem gelince yeniden boyutlanir.
+        HDC planeScratchDc = nullptr;
+        HBITMAP planeScratchBmp = nullptr;
+        HGDIOBJ planeScratchOldBmp = nullptr;
+        int planeScratchW = 0, planeScratchH = 0;
+        const auto ensurePlaneScratch = [&](int w, int h) -> HDC {
+            if (planeScratchDc && w <= planeScratchW && h <= planeScratchH)
+                return planeScratchDc;
+            if (planeScratchDc) {
+                SelectObject(planeScratchDc, planeScratchOldBmp);
+                DeleteObject(planeScratchBmp);
+                DeleteDC(planeScratchDc);
+            }
+            planeScratchW = std::max(planeScratchW, w);
+            planeScratchH = std::max(planeScratchH, h);
+            planeScratchDc = CreateCompatibleDC(dc);
+            planeScratchBmp = CreateCompatibleBitmap(dc, planeScratchW, planeScratchH);
+            planeScratchOldBmp = SelectObject(planeScratchDc, planeScratchBmp);
+            return planeScratchDc;
+        };
         for (std::size_t index = 0; index < document.models().size(); ++index) {
             const auto& model = document.models()[index];
             const auto kind = model.constructionKind();
@@ -794,9 +842,7 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
                     const int fillWidth = fillRight - fillLeft;
                     const int fillHeight = fillBottom - fillTop;
                     if (fillWidth > 0 && fillHeight > 0) {
-                        HDC fillDc = CreateCompatibleDC(dc);
-                        HBITMAP fillBmp = CreateCompatibleBitmap(dc, fillWidth, fillHeight);
-                        HGDIOBJ oldFillBmp = SelectObject(fillDc, fillBmp);
+                        HDC fillDc = ensurePlaneScratch(fillWidth, fillHeight);
                         BitBlt(fillDc, 0, 0, fillWidth, fillHeight, dc, fillLeft, fillTop, SRCCOPY);
                         std::vector<POINT> local = {quad[0], quad[1], quad[2], quad[3]};
                         for (auto& p : local) { p.x -= fillLeft; p.y -= fillTop; }
@@ -809,10 +855,7 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
                         BLENDFUNCTION fillBlend{AC_SRC_OVER, 0, 72, 0};
                         AlphaBlend(dc, fillLeft, fillTop, fillWidth, fillHeight,
                                    fillDc, 0, 0, fillWidth, fillHeight, fillBlend);
-                        SelectObject(fillDc, oldFillBmp);
                         DeleteObject(fillBrush);
-                        DeleteObject(fillBmp);
-                        DeleteDC(fillDc);
                     }
                 }
                 // Sinir (4 kenar) — duzlem sinirlari.
@@ -864,6 +907,11 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
                 DeleteObject(pen);
                 ++performance.renderedEntities;
             }
+        }
+        if (planeScratchDc) {
+            SelectObject(planeScratchDc, planeScratchOldBmp);
+            DeleteObject(planeScratchBmp);
+            DeleteDC(planeScratchDc);
         }
     };
 
@@ -1590,7 +1638,6 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         // CreatePen NULL donup grid + cizgiler default SIYAH pen ile ciziliyordu
         // ("belli bir cizimden sonra kararma"). Font'u birak + sil.
         SelectObject(dc, oldFont);
-        DeleteObject(font);
         finishPerformanceSample(false);
         return;
     }
@@ -1713,6 +1760,30 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
                              return left.depth < right.depth;
                          });
         HGDIOBJ oldPen = SelectObject(dc, GetStockObject(NULL_PEN));
+        // I3: TEKRAR KULLANILABILIR SCRATCH — saydam yuz dolgusunda yuz basina
+        // CreateCompatibleDC + CreateCompatibleBitmap + DeleteDC + DeleteObject
+        // yerine kare basina TEK tahsis; yalniz daha buyuk yuz gelince yeniden
+        // boyutlanir. BitBlt her yuzde guncel zemini kopyaladigindan bayat
+        // icerik AlphaBlend'e girmez.
+        HDC alphaScratchDc = nullptr;
+        HBITMAP alphaScratchBmp = nullptr;
+        HGDIOBJ alphaScratchOldBmp = nullptr;
+        int alphaScratchW = 0, alphaScratchH = 0;
+        const auto ensureAlphaScratch = [&](int w, int h) -> HDC {
+            if (alphaScratchDc && w <= alphaScratchW && h <= alphaScratchH)
+                return alphaScratchDc;
+            if (alphaScratchDc) {
+                SelectObject(alphaScratchDc, alphaScratchOldBmp);
+                DeleteObject(alphaScratchBmp);
+                DeleteDC(alphaScratchDc);
+            }
+            alphaScratchW = std::max(alphaScratchW, w);
+            alphaScratchH = std::max(alphaScratchH, h);
+            alphaScratchDc = CreateCompatibleDC(dc);
+            alphaScratchBmp = CreateCompatibleBitmap(dc, alphaScratchW, alphaScratchH);
+            alphaScratchOldBmp = SelectObject(alphaScratchDc, alphaScratchBmp);
+            return alphaScratchDc;
+        };
         for (const auto& face : projectedFaces) {
             if (face.points.size() < 3) continue;
             if (faceAlpha == 255) {
@@ -1743,9 +1814,7 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
             const int faceWidth = right - left;
             const int faceHeight = bottom - top;
             if (faceWidth <= 0 || faceHeight <= 0) continue;
-            HDC overlayDc = CreateCompatibleDC(dc);
-            HBITMAP overlayBitmap = CreateCompatibleBitmap(dc, faceWidth, faceHeight);
-            HGDIOBJ oldBitmap = SelectObject(overlayDc, overlayBitmap);
+            HDC overlayDc = ensureAlphaScratch(faceWidth, faceHeight);
             BitBlt(overlayDc, 0, 0, faceWidth, faceHeight, dc, left, top, SRCCOPY);
             std::vector<POINT> localPoints = face.points;
             for (auto& point : localPoints) { point.x -= left; point.y -= top; }
@@ -1760,10 +1829,12 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
             BLENDFUNCTION blend{AC_SRC_OVER, 0, faceAlpha, 0};
             AlphaBlend(dc, left, top, faceWidth, faceHeight,
                        overlayDc, 0, 0, faceWidth, faceHeight, blend);
-            SelectObject(overlayDc, oldBitmap);
             DeleteObject(brush);
-            DeleteObject(overlayBitmap);
-            DeleteDC(overlayDc);
+        }
+        if (alphaScratchDc) {
+            SelectObject(alphaScratchDc, alphaScratchOldBmp);
+            DeleteObject(alphaScratchBmp);
+            DeleteDC(alphaScratchDc);
         }
         SelectObject(dc, oldPen);
         // GDI SOLID KONTUR: GL'deki renderContourLines'in birebir GDA
@@ -1909,15 +1980,16 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         gpuBatchPtr = &cachedGpuBatch_;
     }
 
-    using PenKey = std::tuple<std::uint32_t, int, std::string, int>;
-    std::map<PenKey, HPEN> entityPens;
+    // I5: kalemler Renderer omru boyunca onbelleklenir (cachedEntityPens_) —
+    // kare basina yeniden CreatePen/DeleteObject yapilmaz.
     const auto entityPen = [&](const EntityProperties& properties) {
         const PenKey key{properties.effectiveColor, properties.effectiveLineWeight,
                          properties.effectiveLineType,
                          static_cast<int>(std::round(properties.lineTypeScale * 1000.0))};
-        if (const auto found = entityPens.find(key); found != entityPens.end()) return found->second;
+        if (const auto found = cachedEntityPens_.find(key); found != cachedEntityPens_.end())
+            return found->second;
         HPEN pen = createEntityPen(properties);
-        entityPens.emplace(key, pen);
+        cachedEntityPens_.emplace(key, pen);
         return pen;
     };
     if (!draft.snapOnly) {
@@ -1978,10 +2050,6 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         ++performance.renderedEntities;
     }
     SelectObject(dc, stockPen);
-    for (const auto& [key, pen] : entityPens) {
-        (void)key;
-        DeleteObject(pen);
-    }
     } // !draft.snapOnly
 
     // GL blend'i model gecisinin hemen sonrasina tasindi: buradan itibaren
@@ -3205,7 +3273,6 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
     }
 
     SelectObject(dc, oldFont);
-    DeleteObject(font);
 
     // GPU cizgileri offscreen FBO'da cizer, sonucu GDI AlphaBlend ile
     // BACKBUFFER'a kompozite eder — pencereye TEK BitBlt gider. Iki-fazli

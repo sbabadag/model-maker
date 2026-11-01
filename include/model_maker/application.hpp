@@ -1451,6 +1451,10 @@ private:
     Vec2 zoomAnimCursor_{};
     bool zoomAnimActive_{false};
     Vec2 wheelPreviewOffset_{};
+    // I4: 2B PAN RASTER ONIZLEMESI — orta tus ile 2B pan surerken biriken piksel
+    // otelemesi. draftView() bunu rasterZoomOffset olarak sunar (factor=1.0);
+    // renderer son tam kareyi bu ofsetle StretchBlt eder, fare birakilinca tam kare.
+    Vec2 pan2DPreviewOffset_{};
     bool snapPreviewActive_{};
     bool snapPreviewTimerArmed_{};
     int paintSequence_{};
