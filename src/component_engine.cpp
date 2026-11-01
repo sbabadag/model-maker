@@ -1740,610 +1740,585 @@ ComponentType haunch40ComponentType() noexcept {
     return t;
 }
 
-GenerationPlan generateHaunch40(const ComponentInput& input) noexcept {
-    GenerationPlan plan;
-    // Share the production 146 contact placement: actual selected member
-    // axes/sections, automatic column vs beam role recognition, local frame.
-    const ShearTabPlacement p = resolveShearTabPlacement(input);
-    if (!p.ok) { plan.ok = false; plan.error = p.error; return plan; }
-    if (p.beam.secHeight < 80.0 || p.beam.secWidth < 60.0 ||
-        p.col.secHeight < 80.0 || p.col.secWidth < 60.0 ||
-        p.col.id == p.beam.id || p.col.id == kInvalidEntityId ||
-        p.beam.id == kInvalidEntityId) {
+// --- MM-3c C1: generateHaunch40'ın saf hesapları adlandırılmış fonksiyonlara
+// ayrıldı. Aritmetik ve üretim sırası BİREBİR korunur; planDigest değişmez. ---
+namespace {
+
+Vec3 vadd(const Vec3& a, const Vec3& b) noexcept {
+    return Vec3{a.x + b.x, a.y + b.y, a.z + b.z};
+}
+Vec3 vscale(const Vec3& a, double k) noexcept {
+    return Vec3{a.x * k, a.y * k, a.z * k};
+}
+Vec3 vcross(const Vec3& a, const Vec3& b) noexcept {
+    return Vec3{a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x};
+}
+double vlen(const Vec3& a) noexcept {
+    return std::sqrt(a.x * a.x + a.y * a.y + a.z * a.z);
+}
+
+struct Haunch40Group {
+    int nx{2}, ny{2};
+    double pitchX{120.0}, pitchY{80.0};
+    double diameter{20.0}, hole{22.0}, clear{44.0};
+    double spanX{120.0}, spanY{80.0};
+};
+
+// Haunch 40 geometri baglami: adimlar arasinda paylasilan tum ara degerler.
+struct Haunch40Ctx {
+    ShearTabPlacement p;
+    double L{0}, D{0}, tip{0}, webT{0}, flangeT{0}, endT{0}, gap{0}, edgeL{0}, edgeR{0};
+    Haunch40Group upper, lower;
+    double edgeT{0}, edgeB{0}, maxSpanX{0}, maxHoleSpanX{0};
+    double hBeam{0}, wBeam{0}, legacyEdge{0};
+    double plateW{0}, plateH{0}, givenW{0}, givenH{0}, actualW{0}, actualH{0}, flW{0};
+    double minimumPlateH{0};
+    Vec3 dir{}, W{}, H{};
+    bool inclined{false};
+    Vec3 ax{};
+    double tanT{0}, cosT{1};
+    Vec3 facePoint{}, start{}, O{};
+    std::wstring plateMaterial{L"S235JR"};
+    double plateCenterV{0};
+    double actualHUse{0};
+    PlateSpec end;
+};
+
+void pushPlateWithMaterial(GenerationPlan& plan, PlateSpec plate, const char* role,
+                           const std::wstring& material) {
+    plate.material = material;
+    plan.plates.push_back(std::move(plate));
+    plan.plateKeys.push_back(role);
+}
+
+bool validHaunch40Group(const Haunch40Group& g) {
+    return g.nx >= 1 && g.nx <= 4 && g.ny >= 1 && g.ny <= 4 &&
+           g.hole >= g.diameter && g.hole > 0.0 &&
+           g.pitchX > g.hole && g.pitchY > g.hole &&
+           g.clear > 0.0;
+}
+
+// Adim 1-6: temas + egik cerceve + levha boyutlandirma + baslangic cercevesi.
+bool resolveHaunch40Geom(const ComponentInput& input, Haunch40Ctx& g,
+                         GenerationPlan& plan) {
+    g.p = resolveShearTabPlacement(input);
+    if (!g.p.ok) { plan.ok = false; plan.error = g.p.error; return false; }
+    if (g.p.beam.secHeight < 80.0 || g.p.beam.secWidth < 60.0 ||
+        g.p.col.secHeight < 80.0 || g.p.col.secWidth < 60.0 ||
+        g.p.col.id == g.p.beam.id || g.p.col.id == kInvalidEntityId ||
+        g.p.beam.id == kInvalidEntityId) {
         plan.ok = false;
         plan.error = L"Haunch 40: farkli ve gercek kolon/kiris kesitleri gerekli";
-        return plan;
+        return false;
     }
-    if (std::fabs(vdot(p.lenDir, Vec3{0,0,1})) > 0.65) {
+    if (std::fabs(vdot(g.p.lenDir, Vec3{0,0,1})) > 0.65) {
         plan.ok = false;
         plan.error = L"Haunch 40: bu surum duseye yakin kiris desteklemiyor";
-        return plan;
+        return false;
     }
 
-    const double L = paramAsDouble(input.params,L"haunchLength",450.0);
-    const double D = paramAsDouble(input.params,L"haunchDepth",240.0);
-    const double tip = paramAsDouble(input.params,L"haunchTipDepth",25.0);
-    const double webT = paramAsDouble(input.params,L"haunchWebThickness",10.0);
-    const double flangeT = paramAsDouble(input.params,L"haunchFlangeThickness",10.0);
-    const double endT = paramAsDouble(input.params,L"endPlateThickness",20.0);
-    const double gap = paramAsDouble(input.params,L"gap",0.0);
-    const double edgeL=paramAsDouble(input.params,L"boltEdgeLeft",35.0);
-    const double edgeR=paramAsDouble(input.params,L"boltEdgeRight",35.0);
-    struct BoltRowGroup {
-        int nx{2}, ny{2};
-        double pitchX{120.0}, pitchY{80.0};
-        double diameter{20.0}, hole{22.0}, clear{44.0};
-        double spanX{120.0}, spanY{80.0};
-    };
-    const auto readGroup=[&](const wchar_t* which,double fallbackClear) {
+    g.L = paramAsDouble(input.params, L"haunchLength", 450.0);
+    g.D = paramAsDouble(input.params, L"haunchDepth", 240.0);
+    g.tip = paramAsDouble(input.params, L"haunchTipDepth", 25.0);
+    g.webT = paramAsDouble(input.params, L"haunchWebThickness", 10.0);
+    g.flangeT = paramAsDouble(input.params, L"haunchFlangeThickness", 10.0);
+    g.endT = paramAsDouble(input.params, L"endPlateThickness", 20.0);
+    g.gap = paramAsDouble(input.params, L"gap", 0.0);
+    g.edgeL = paramAsDouble(input.params, L"boltEdgeLeft", 35.0);
+    g.edgeR = paramAsDouble(input.params, L"boltEdgeRight", 35.0);
+    const auto readGroup = [&](const wchar_t* which, double fallbackClear) {
         const std::wstring prefix(which);
-        BoltRowGroup g;
-        g.nx=paramAsInt(input.params,prefix+L"BoltCountX",2);
-        g.ny=paramAsInt(input.params,prefix+L"BoltCountY",2);
-        g.pitchX=paramAsDouble(input.params,prefix+L"BoltPitchX",120.0);
-        g.pitchY=paramAsDouble(input.params,prefix+L"BoltPitchY",80.0);
-        g.diameter=paramAsDouble(input.params,prefix+L"BoltDiameter",20.0);
-        g.hole=paramAsDouble(input.params,prefix+L"HoleDiameter",22.0);
-        g.clear=paramAsDouble(input.params,prefix+L"BoltEdgeClear",fallbackClear);
-        g.spanX=(g.nx-1)*g.pitchX;
-        g.spanY=(g.ny-1)*g.pitchY;
-        return g;
+        Haunch40Group gr;
+        gr.nx = paramAsInt(input.params, prefix + L"BoltCountX", 2);
+        gr.ny = paramAsInt(input.params, prefix + L"BoltCountY", 2);
+        gr.pitchX = paramAsDouble(input.params, prefix + L"BoltPitchX", 120.0);
+        gr.pitchY = paramAsDouble(input.params, prefix + L"BoltPitchY", 80.0);
+        gr.diameter = paramAsDouble(input.params, prefix + L"BoltDiameter", 20.0);
+        gr.hole = paramAsDouble(input.params, prefix + L"HoleDiameter", 22.0);
+        gr.clear = paramAsDouble(input.params, prefix + L"BoltEdgeClear", fallbackClear);
+        gr.spanX = (gr.nx - 1) * gr.pitchX;
+        gr.spanY = (gr.ny - 1) * gr.pitchY;
+        return gr;
     };
-    const BoltRowGroup upper=readGroup(L"upper",44.0);
-    const BoltRowGroup lower=readGroup(L"lower",44.0);
-    const double edgeT=upper.clear+upper.hole*0.5;
-    const double edgeB=lower.clear+lower.hole*0.5;
-    const double maxSpanX=std::max(upper.spanX,lower.spanX);
-    const double maxHoleSpanX=std::max(upper.spanX+upper.hole,
-                                        lower.spanX+lower.hole);
-    const double hBeam=p.beam.secHeight, wBeam=p.beam.secWidth;
-    const double legacyEdge=paramAsDouble(input.params,L"boltEdge",35.0);
-    // End-plate size and centre depend ONLY on the plate dimensions and
-    // original structural auto-sizing policy, not on either bolt offset.
-    const double plateW=std::max({wBeam+20.0,
-                                  maxSpanX+edgeL+edgeR,
-                                  maxHoleSpanX+15.0});
-    const double plateH=hBeam+D+2.0*legacyEdge;
-    const double givenW=paramAsDouble(input.params,L"endPlateWidth",0.0);
-    const double givenH=paramAsDouble(input.params,L"endPlateHeight",0.0);
-    const double actualW=givenW>0.0?givenW:plateW;
-    const double actualH=givenH>0.0?givenH:plateH;
-    const double flWparam=paramAsDouble(input.params,L"haunchFlangeWidth",0.0);
-    const double flW=flWparam>0.0?flWparam:wBeam;
-    const auto validGroup=[](const BoltRowGroup& g) {
-        return g.nx>=1 && g.nx<=4 && g.ny>=1 && g.ny<=4 &&
-               g.hole>=g.diameter && g.hole>0.0 &&
-               g.pitchX>g.hole && g.pitchY>g.hole &&
-               g.clear>0.0;
-    };
-    const double minimumPlateH=edgeT+edgeB+upper.spanY+lower.spanY+
-                               (upper.hole+lower.hole)*0.5+0.2;
-    if(!(L>80.0 && D>tip+25.0 && tip>5.0 && webT>0.0 &&
-         flangeT>0.0 && endT>0.0 && flW>=webT &&
-         validGroup(upper) && validGroup(lower) &&
-         edgeL>std::max(upper.hole,lower.hole)*0.5 &&
-         edgeR>std::max(upper.hole,lower.hole)*0.5 &&
-         actualW+1e-6>=maxSpanX+edgeL+edgeR &&
-         actualW>=maxHoleSpanX+15.0 &&
-         actualH+1e-6>=minimumPlateH)) {
-        plan.ok=false;
-        plan.error=L"Haunch 40: bagimsiz ust/alt bulon veya levha olculeri tutarsiz";
-        return plan;
+    g.upper = readGroup(L"upper", 44.0);
+    g.lower = readGroup(L"lower", 44.0);
+    g.edgeT = g.upper.clear + g.upper.hole * 0.5;
+    g.edgeB = g.lower.clear + g.lower.hole * 0.5;
+    g.maxSpanX = std::max(g.upper.spanX, g.lower.spanX);
+    g.maxHoleSpanX = std::max(g.upper.spanX + g.upper.hole,
+                              g.lower.spanX + g.lower.hole);
+    g.hBeam = g.p.beam.secHeight;
+    g.wBeam = g.p.beam.secWidth;
+    g.legacyEdge = paramAsDouble(input.params, L"boltEdge", 35.0);
+    g.plateW = std::max({g.wBeam + 20.0, g.maxSpanX + g.edgeL + g.edgeR,
+                         g.maxHoleSpanX + 15.0});
+    g.plateH = g.hBeam + g.D + 2.0 * g.legacyEdge;
+    g.givenW = paramAsDouble(input.params, L"endPlateWidth", 0.0);
+    g.givenH = paramAsDouble(input.params, L"endPlateHeight", 0.0);
+    g.actualW = g.givenW > 0.0 ? g.givenW : g.plateW;
+    g.actualH = g.givenH > 0.0 ? g.givenH : g.plateH;
+    const double flWparam = paramAsDouble(input.params, L"haunchFlangeWidth", 0.0);
+    g.flW = flWparam > 0.0 ? flWparam : g.wBeam;
+    g.minimumPlateH = g.edgeT + g.edgeB + g.upper.spanY + g.lower.spanY +
+                      (g.upper.hole + g.lower.hole) * 0.5 + 0.2;
+    if (!(g.L > 80.0 && g.D > g.tip + 25.0 && g.tip > 5.0 && g.webT > 0.0 &&
+          g.flangeT > 0.0 && g.endT > 0.0 && g.flW >= g.webT &&
+          validHaunch40Group(g.upper) && validHaunch40Group(g.lower) &&
+          g.edgeL > std::max(g.upper.hole, g.lower.hole) * 0.5 &&
+          g.edgeR > std::max(g.upper.hole, g.lower.hole) * 0.5 &&
+          g.actualW + 1e-6 >= g.maxSpanX + g.edgeL + g.edgeR &&
+          g.actualW >= g.maxHoleSpanX + 15.0 &&
+          g.actualH + 1e-6 >= g.minimumPlateH)) {
+        plan.ok = false;
+        plan.error = L"Haunch 40: bagimsiz ust/alt bulon veya levha olculeri tutarsiz";
+        return false;
     }
-    const auto add=[](Vec3 a,Vec3 b) {
-        return Vec3{a.x+b.x,a.y+b.y,a.z+b.z};
-    };
-    const auto scale=[](Vec3 a,double k) {
-        return Vec3{a.x*k,a.y*k,a.z*k};
-    };
-    const auto cross=[](Vec3 a,Vec3 b) {
-        return Vec3{a.y*b.z-a.z*b.y,a.z*b.x-a.x*b.z,a.x*b.y-a.y*b.x};
-    };
-    const auto length=[](Vec3 a) {
-        return std::sqrt(a.x*a.x+a.y*a.y+a.z*a.z);
-    };
-    const Vec3 dir=p.lenDir, W=p.sec.width, H=p.sec.height;
-    const Vec3 worldUp{0.0,0.0,1.0};
-    // EĞİK KİRİŞ (Selahattin 2026-10-29): alın levhası kolon yüzüne
-    // OTURMALI. Bu yüzden bağlantı çerçevesi kiriş eksenine DİK değil, kolon
-    // yüzü normali yönündeki YATAY ax ekseniyle kurulur; kiriş eğimi (tanT)
-    // yalnız kotları kaydırır. Yatay kirişte ax == dir, tanT == 0, cosT == 1
-    // → eski davranış birebir korunur.
-    const bool inclined = std::fabs(dir.z) > 1e-4;
-    Vec3 ax = dir;
-    double tanT = 0.0;
-    double cosT = 1.0;
-    Vec3 facePoint = p.facePoint;
-    if (inclined) {
-        const double hlen = std::sqrt(dir.x*dir.x + dir.y*dir.y);
+    g.dir = g.p.lenDir;
+    g.W = g.p.sec.width;
+    g.H = g.p.sec.height;
+    g.inclined = std::fabs(g.dir.z) > 1e-4;
+    g.ax = g.dir;
+    g.tanT = 0.0;
+    g.cosT = 1.0;
+    g.facePoint = g.p.facePoint;
+    if (g.inclined) {
+        const double hlen = std::sqrt(g.dir.x * g.dir.x + g.dir.y * g.dir.y);
         if (hlen < 1e-6) {
-            plan.ok=false;
-            plan.error=L"Haunch 40: bu surum duseye yakin kiris desteklemiyor";
-            return plan;
+            plan.ok = false;
+            plan.error = L"Haunch 40: bu surum duseye yakin kiris desteklemiyor";
+            return false;
         }
-        ax = Vec3{dir.x/hlen, dir.y/hlen, 0.0};
-        tanT = dir.z / hlen;
-        cosT = hlen;
-        // KOLON YÜZÜ DÜŞEYDİR. resolveShearTabPlacement temas noktasını
-        // kirişe DİK düzlemle bulduğu için eğik kirişte 2-3 mm kayıyordu;
-        // burada kolon yüzü DÜŞEY düzlemi (normal ax) ile kesiştirilir.
+        g.ax = Vec3{g.dir.x / hlen, g.dir.y / hlen, 0.0};
+        g.tanT = g.dir.z / hlen;
+        g.cosT = hlen;
         const double faceDist =
-            std::fabs(vdot(ax, p.colSec.width))*p.col.secWidth*0.5 +
-            std::fabs(vdot(ax, p.colSec.height))*p.col.secHeight*0.5 +
-            p.col.sectionCenterOffset*vdot(ax, p.colSec.height);
-        const double den = vdot(p.beamDir, ax);
+            std::fabs(vdot(g.ax, g.p.colSec.width)) * g.p.col.secWidth * 0.5 +
+            std::fabs(vdot(g.ax, g.p.colSec.height)) * g.p.col.secHeight * 0.5 +
+            g.p.col.sectionCenterOffset * vdot(g.ax, g.p.colSec.height);
+        const double den = vdot(g.p.beamDir, g.ax);
         if (std::fabs(den) > 1e-9) {
-            const Vec3 rel{p.connEnd.x-p.colMid.x, p.connEnd.y-p.colMid.y,
-                           p.connEnd.z-p.colMid.z};
-            // Kiriş KESİT MERKEZİ çizgisi = eksen + sec.height*offset. Temas
-            // noktası bu çizginin kolon yüzünü KESTİĞİ yer olmalı. Eski kod
-            // offset'i kesişimden SONRA eklediği için Top-ankrajlı eğik kirişte
-            // (sec.height'in ax bileşeni sıfır değil) levhayı kolon yüzünden
-            // ~32 mm uzağa itiyordu ("alın levhası kolon yüzüne oturmuyor").
-            // offAx terimi kesişimi kesit-merkezi çizgisine göre çözer; off'in
-            // ax bileşeni levhayı kaydırmaz, yalnız düşey kotu düzeltir.
-            const double off = p.beam.sectionCenterOffset;
-            const double offAx = off * vdot(p.sec.height, ax);
-            const double t = (faceDist - vdot(rel, ax) - offAx) / den;
-            facePoint = Vec3{p.connEnd.x + p.beamDir.x*t + p.sec.height.x*off,
-                             p.connEnd.y + p.beamDir.y*t + p.sec.height.y*off,
-                             p.connEnd.z + p.beamDir.z*t + p.sec.height.z*off};
+            const Vec3 rel{g.p.connEnd.x - g.p.colMid.x, g.p.connEnd.y - g.p.colMid.y,
+                           g.p.connEnd.z - g.p.colMid.z};
+            const double off = g.p.beam.sectionCenterOffset;
+            const double offAx = off * vdot(g.p.sec.height, g.ax);
+            const double t = (faceDist - vdot(rel, g.ax) - offAx) / den;
+            g.facePoint = Vec3{g.p.connEnd.x + g.p.beamDir.x * t + g.p.sec.height.x * off,
+                               g.p.connEnd.y + g.p.beamDir.y * t + g.p.sec.height.y * off,
+                               g.p.connEnd.z + g.p.beamDir.z * t + g.p.sec.height.z * off};
         }
     }
-    // The actual welded beam end must stop at the OUTER face of the
-    // bolted end plate. Column face = p.facePoint; the plate occupies
-    // [facePoint+gap, facePoint+gap+endT]. For an inclined beam both the end
-    // plate and the beam cut are PLUMB (vertical), so only the horizontal
-    // ax coordinate of the plane matters.
-    const Vec3 start=add(facePoint,scale(ax,gap+endT));
+    g.start = vadd(g.facePoint, vscale(g.ax, g.gap + g.endT));
     {
         CutModifier cut;
-        cut.kind=CutKind::PlaneCut;
-        cut.target=p.beam.id;
-        cut.planeOrigin=start;
-        cut.planeNormal=ax;
-        cut.keepPositive=true;  // keep the beam's outward/remote side
-        cut.hidden=true;
-        cut.name="Haunch 40 - Beam End at Column Face + Plate";
+        cut.kind = CutKind::PlaneCut;
+        cut.target = g.p.beam.id;
+        cut.planeOrigin = g.start;
+        cut.planeNormal = g.ax;
+        cut.keepPositive = true;
+        cut.hidden = true;
+        cut.name = "Haunch 40 - Beam End at Column Face + Plate";
         plan.cuts.push_back(cut);
         plan.cutKeys.push_back("haunch_beam_end_cut");
     }
-    // Ortak başlangıç: alın levhasının KİRİŞ TARAFI yüzü, kiriş EKSENİ
-    // kotunda (eğik kirişte eksen bu noktada yükselir).
-    const Vec3 O{facePoint.x + ax.x*(gap+endT),
-                 facePoint.y + ax.y*(gap+endT),
-                 facePoint.z + (gap+endT)*tanT};
+    g.O = Vec3{g.facePoint.x + g.ax.x * (g.gap + g.endT),
+               g.facePoint.y + g.ax.y * (g.gap + g.endT),
+               g.facePoint.z + (g.gap + g.endT) * g.tanT};
+    g.plateMaterial = paramAsString(input.params, L"plateMaterial", L"S235JR");
+    return true;
+}
 
-    std::wstring plateMaterial=paramAsString(input.params,L"plateMaterial",L"S235JR");
-    const auto pushPlate=[&](PlateSpec plate,const char* role) {
-        plate.material=plateMaterial;
-        plan.plates.push_back(std::move(plate));
-        plan.plateKeys.push_back(role);
-    };
-    // 1) Bolted end plate. DÜŞEY: kolon yüzüne PARALEL, delik ekseni ax.
-    // Eski sürüm levhayı kirişe dik bıraktığı için eğik kirişte alt kenarı
-    // kolonun ~16 mm içine giriyor, üst kenarı 72 mm açıkta kalıyordu.
+// Adim 7: alin levhasi (kolon tepesi kirpmasiyla). Basarisizsa plan.ok=false.
+bool haunch40EndPlate(Haunch40Ctx& g, GenerationPlan& plan) {
     PlateSpec end;
-    // Plate origin is independent of bolt edge controls. Previous coupling
-    // moved the plate itself whenever eT/eB were edited.
-    const double zAxisAtPlate = facePoint.z + (gap+endT*0.5)*tanT;
-    double plateCentreZ = zAxisAtPlate - cosT*(D*0.5);
-    double actualHUse = actualH;
-    // EAVES / ÜST BAĞLANTI: OTOMATİK boydaki alın levhası kolon tepesinden
-    // YUKARI TAŞMAZ. Taşan kısmın arkasında kolon flanşı yoktur; üst bulonlar
-    // boşluğa düşer ve kapak levhası kesilmiş görünür ("kafa plakası kolon
-    // flanşına oturmamış"). Üstü kolon tepesine kırp, ALT kenar sabit kalsın.
-    // KULLANICI AÇIK YÜKSEKLİK VERDİYSE (endPlateHeight > 0) KIRPMA YOK:
-    // Selahattin 2026-10-31 — "mock view'da alın levhası kolondan yukarı
-    // çıkmıyor, sınırlanıyor". Elle verilen ölçü harfiyen uygulanır; kullanıcı
-    // levhanın kolon ucundan taşmasını bilerek isteyebilir.
-    if (givenH <= 0.0) {
-        const Vec3 colDelta{p.col.axisTo.x-p.col.axisFrom.x,
-                            p.col.axisTo.y-p.col.axisFrom.y,
-                            p.col.axisTo.z-p.col.axisFrom.z};
-        const double colLen=length(colDelta);
-        if (colLen>1.0 && std::fabs(vdot(vnorm(colDelta),worldUp))>0.95) {
-            const Vec3 columnTop=p.col.axisTo.z>=p.col.axisFrom.z
-                                     ? p.col.axisTo : p.col.axisFrom;
-            const double plateTop=plateCentreZ+actualHUse*0.5;
-            const double plateBottom=plateCentreZ-actualHUse*0.5;
-            if (plateTop>columnTop.z+1e-6 && columnTop.z>plateBottom+1.0) {
-                plateCentreZ=(columnTop.z+plateBottom)*0.5;
-                actualHUse=columnTop.z-plateBottom;
+    const double zAxisAtPlate = g.facePoint.z + (g.gap + g.endT * 0.5) * g.tanT;
+    double plateCentreZ = zAxisAtPlate - g.cosT * (g.D * 0.5);
+    double actualHUse = g.actualH;
+    if (g.givenH <= 0.0) {
+        const Vec3 colDelta{g.p.col.axisTo.x - g.p.col.axisFrom.x,
+                            g.p.col.axisTo.y - g.p.col.axisFrom.y,
+                            g.p.col.axisTo.z - g.p.col.axisFrom.z};
+        const double colLen = vlen(colDelta);
+        const Vec3 worldUp{0.0, 0.0, 1.0};
+        if (colLen > 1.0 && std::fabs(vdot(vnorm(colDelta), worldUp)) > 0.95) {
+            const Vec3 columnTop = g.p.col.axisTo.z >= g.p.col.axisFrom.z
+                                       ? g.p.col.axisTo : g.p.col.axisFrom;
+            const double plateTop = plateCentreZ + actualHUse * 0.5;
+            const double plateBottom = plateCentreZ - actualHUse * 0.5;
+            if (plateTop > columnTop.z + 1e-6 && columnTop.z > plateBottom + 1.0) {
+                plateCentreZ = (columnTop.z + plateBottom) * 0.5;
+                actualHUse = columnTop.z - plateBottom;
             }
         }
     }
-    const double plateCenterV=plateCentreZ - zAxisAtPlate;
-    end.center = Vec3{facePoint.x + ax.x*(gap+endT*0.5),
-                      facePoint.y + ax.y*(gap+endT*0.5),
+    g.plateCenterV = plateCentreZ - zAxisAtPlate;
+    end.center = Vec3{g.facePoint.x + g.ax.x * (g.gap + g.endT * 0.5),
+                      g.facePoint.y + g.ax.y * (g.gap + g.endT * 0.5),
                       plateCentreZ};
-    end.u=W; end.v=worldUp; end.axis=ax;
-    end.width=actualW;end.height=actualHUse;end.thickness=endT;
-    end.name=L"40 - End Plate";
-    pushPlate(end,"haunch_end_plate");
+    const Vec3 worldUp{0.0, 0.0, 1.0};
+    end.u = g.W; end.v = worldUp; end.axis = g.ax;
+    end.width = g.actualW; end.height = actualHUse; end.thickness = g.endT;
+    end.name = L"40 - End Plate";
+    g.actualHUse = actualHUse;
+    g.end = end;
+    pushPlateWithMaterial(plan, end, "haunch_end_plate", g.plateMaterial);
+    return true;
+}
 
-    // 2) Haunch web. Yatay kirişte eski dikdörtgen+pah yolu BİREBİR korunur.
-    // Eğik kirişte levha DÜŞEY ön kenarlı gerçek dörtgen olur: ön kenar alın
-    // levhasına oturur, üst kenar kiriş alt başlığına paralel, alt kenar
-    // basınç flanşına. Serbest kontur (PlateSpec::outline).
+// Adim 8: haunch govde (taper web). Basarisiz olmaz (yalniz uretir).
+void haunch40Web(const Haunch40Ctx& g, GenerationPlan& plan) {
     PlateSpec web;
-    if (!inclined) {
-        web.center=add(start,add(scale(dir,L*0.5),
-                                  scale(H,-hBeam*0.5-D*0.5)));
-        web.u=dir; web.v=H; web.axis=W;
-        web.width=L;web.height=D;web.thickness=webT;
-        web.chamfers.push_back(PlateSpec::Chamfer{1,1,L-25.0,D-tip});
+    const Vec3 worldUp{0.0, 0.0, 1.0};
+    if (!g.inclined) {
+        web.center = vadd(g.start, vadd(vscale(g.dir, g.L * 0.5),
+                                        vscale(g.H, -g.hBeam * 0.5 - g.D * 0.5)));
+        web.u = g.dir; web.v = g.H; web.axis = g.W;
+        web.width = g.L; web.height = g.D; web.thickness = g.webT;
+        web.chamfers.push_back(PlateSpec::Chamfer{1, 1, g.L - 25.0, g.D - g.tip});
     } else {
-        const double hh = hBeam*0.5*cosT;
-        const double bNear = -hh - D*cosT;             // u=0, alt
-        const double tNear = -hh;                      // u=0, üst
-        const double tFar  = -hh + L*tanT;             // u=L, üst
-        const double bFar  = -hh + L*tanT - tip*cosT;  // u=L, alt
+        const double hh = g.hBeam * 0.5 * g.cosT;
+        const double bNear = -hh - g.D * g.cosT;
+        const double tNear = -hh;
+        const double tFar = -hh + g.L * g.tanT;
+        const double bFar = -hh + g.L * g.tanT - g.tip * g.cosT;
         const double vmin = std::min(bNear, bFar);
         const double vmax = std::max(tNear, tFar);
-        const double vc = (vmin+vmax)*0.5;
-        web.u=ax; web.v=worldUp; web.axis=W;
-        web.width=L; web.height=vmax-vmin; web.thickness=webT;
-        web.center = Vec3{O.x + ax.x*(L*0.5),
-                          O.y + ax.y*(L*0.5),
-                          O.z + vc};
-        // Saat yönünün TERSİ (dikdörtgen yoluyla aynı yön).
+        const double vc = (vmin + vmax) * 0.5;
+        web.u = g.ax; web.v = worldUp; web.axis = g.W;
+        web.width = g.L; web.height = vmax - vmin; web.thickness = g.webT;
+        web.center = Vec3{g.O.x + g.ax.x * (g.L * 0.5),
+                          g.O.y + g.ax.y * (g.L * 0.5),
+                          g.O.z + vc};
         web.outline = {
-            {0.0 - L*0.5, bNear - vc},
-            {L   - L*0.5, bFar  - vc},
-            {L   - L*0.5, tFar  - vc},
-            {0.0 - L*0.5, tNear - vc},
+            {0.0 - g.L * 0.5, bNear - vc},
+            {g.L - g.L * 0.5, bFar - vc},
+            {g.L - g.L * 0.5, tFar - vc},
+            {0.0 - g.L * 0.5, tNear - vc},
         };
     }
-    web.name=L"40 - Tapered Haunch Web";
-    pushPlate(web,"haunch_web");
+    web.name = L"40 - Tapered Haunch Web";
+    pushPlateWithMaterial(plan, web, "haunch_web", g.plateMaterial);
+}
 
-    // 3) Inclined compression flange: gövdenin ALT kenarını izler.
-    // Yatay kirişte eski chamfer uç noktaları (25 mm pay) birebir korunur;
-    // eğik kirişte dörtgen konturun alt kenarı (ön kenardan uç noktaya).
+// Adim 9: egimli alt baslik (kompresyon flansi). Basarisizsa plan.ok=false.
+bool haunch40Flange(const Haunch40Ctx& g, GenerationPlan& plan) {
     Vec3 lowerNear, lowerFar;
-    if (!inclined) {
-        const double webChamferStart=L-web.chamfers.front().h; // = 25 mm
-        const double webChamferEndHeight=web.chamfers.front().v; // = D-tip
-        lowerNear=add(add(start,scale(dir,webChamferStart)),
-                       scale(H,-hBeam*0.5-D));
-        lowerFar=add(add(start,scale(dir,L)),
-                      scale(H,-hBeam*0.5-D+webChamferEndHeight));
+    if (!g.inclined) {
+        const double webChamferStart = g.L - (g.L - 25.0);  // = 25 mm
+        const double webChamferEndHeight = g.D - g.tip;      // = D - tip
+        lowerNear = vadd(vadd(g.start, vscale(g.dir, webChamferStart)),
+                         vscale(g.H, -g.hBeam * 0.5 - g.D));
+        lowerFar = vadd(vadd(g.start, vscale(g.dir, g.L)),
+                        vscale(g.H, -g.hBeam * 0.5 - g.D + webChamferEndHeight));
     } else {
-        const double hh = hBeam*0.5*cosT;
-        lowerNear = Vec3{O.x, O.y, O.z - hh - D*cosT};
-        lowerFar  = Vec3{O.x + ax.x*L, O.y + ax.y*L,
-                         O.z - hh + L*tanT - tip*cosT};
+        const double hh = g.hBeam * 0.5 * g.cosT;
+        lowerNear = Vec3{g.O.x, g.O.y, g.O.z - hh - g.D * g.cosT};
+        lowerFar = Vec3{g.O.x + g.ax.x * g.L, g.O.y + g.ax.y * g.L,
+                        g.O.z - hh + g.L * g.tanT - g.tip * g.cosT};
     }
-    const Vec3 slant{lowerFar.x-lowerNear.x,lowerFar.y-lowerNear.y,
-                     lowerFar.z-lowerNear.z};
-    const double slantL=length(slant);
-    if(slantL<=1.0) {
-        plan.ok=false;plan.error=L"Haunch 40: egimli flans boyu sifir";
-        return plan;
+    const Vec3 slant{lowerFar.x - lowerNear.x, lowerFar.y - lowerNear.y,
+                     lowerFar.z - lowerNear.z};
+    const double slantL = vlen(slant);
+    if (slantL <= 1.0) {
+        plan.ok = false; plan.error = L"Haunch 40: egimli flans boyu sifir";
+        return false;
     }
-    const Vec3 slope=scale(slant,1.0/slantL);
-    // W x slope faces OUT of the web (below the haunch); shift half the
-    // thickness so the INNER FLANGE FACE, not its mid-surface, contacts
-    // the exact chamfer edge at both ends. Eğik kirişte normalin aşağı
-    // (gövdenin dışına) baktığından emin ol.
-    Vec3 outward=vnorm(cross(W,slope));
-    if(length(outward)<0.99) {
-        plan.ok=false;plan.error=L"Haunch 40: egimli flans normal ekseni bozuk";
-        return plan;
+    const Vec3 slope = vscale(slant, 1.0 / slantL);
+    Vec3 outward = vnorm(vcross(g.W, slope));
+    if (vlen(outward) < 0.99) {
+        plan.ok = false; plan.error = L"Haunch 40: egimli flans normal ekseni bozuk";
+        return false;
     }
-    if (inclined && outward.z > 0.0) outward = scale(outward,-1.0);
+    if (g.inclined && outward.z > 0.0) outward = vscale(outward, -1.0);
     PlateSpec flange;
-    flange.center=add(scale(add(lowerNear,lowerFar),0.5),
-                      scale(outward,flangeT*0.5));
-    flange.u=W;flange.v=slope;flange.axis=outward;
-    flange.width=flW;flange.height=slantL;flange.thickness=flangeT;
-    flange.name=L"40 - Inclined Lower Flange";
-    pushPlate(flange,"haunch_lower_flange");
+    flange.center = vadd(vscale(vadd(lowerNear, lowerFar), 0.5),
+                         vscale(outward, g.flangeT * 0.5));
+    flange.u = g.W; flange.v = slope; flange.axis = outward;
+    flange.width = g.flW; flange.height = slantL; flange.thickness = g.flangeT;
+    flange.name = L"40 - Inclined Lower Flange";
+    pushPlateWithMaterial(plan, flange, "haunch_lower_flange", g.plateMaterial);
+    return true;
+}
 
-    // 4) CAP PLATE belongs on the ACTUAL COLUMN TOP, never the beam top.
-    // Keep existing editable parameter keys for MMW8/recompute compatibility.
-    const double topT=paramAsDouble(input.params,L"topPlateThickness",10.0);
-    if(topT>0.0) {
-        const Vec3 colDelta{
-            p.col.axisTo.x-p.col.axisFrom.x,
-            p.col.axisTo.y-p.col.axisFrom.y,
-            p.col.axisTo.z-p.col.axisFrom.z
-        };
-        const double colLength=length(colDelta);
-        if(colLength<1.0 || std::fabs(vdot(vnorm(colDelta),worldUp))<0.5) {
-            plan.ok=false;
-            plan.error=L"Haunch 40: cap levhasi icin duseye yakin kolon gerekli";
-            return plan;
+// Adim 10-12: kapak + enine kiriş berkitmesi + kolon berkitmeleri.
+bool haunch40CapAndStiffeners(const Haunch40Ctx& g, const ComponentInput& input,
+                              GenerationPlan& plan) {
+    const Vec3 worldUp{0.0, 0.0, 1.0};
+    const double topT = paramAsDouble(input.params, L"topPlateThickness", 10.0);
+    if (topT > 0.0) {
+        const Vec3 colDelta{g.p.col.axisTo.x - g.p.col.axisFrom.x,
+                            g.p.col.axisTo.y - g.p.col.axisFrom.y,
+                            g.p.col.axisTo.z - g.p.col.axisFrom.z};
+        const double colLength = vlen(colDelta);
+        if (colLength < 1.0 || std::fabs(vdot(vnorm(colDelta), worldUp)) < 0.5) {
+            plan.ok = false;
+            plan.error = L"Haunch 40: cap levhasi icin duseye yakin kolon gerekli";
+            return false;
         }
-        const Vec3 colDir=vnorm(colDelta);
-        // Top is the physically higher endpoint regardless of axis order.
-        const Vec3 columnTop=p.col.axisTo.z>=p.col.axisFrom.z
-                                 ? p.col.axisTo : p.col.axisFrom;
-        // Uç yüzün DIŞ normali (kolonun üst ucu yönünde).
-        const Vec3 outDir=p.col.axisTo.z>=p.col.axisFrom.z
-                              ? colDir : scale(colDir,-1.0);
-        // For non-centred section anchors the steel section is displaced
-        // transversely from the member axis (e.g. SectionAnchor::Top).
-        const Vec3 columnSectionTop=add(
-            columnTop,scale(p.colSec.height,p.col.sectionCenterOffset));
-        // Kapak KOLON EKSENİNE DİK olmalı (uç yüzüne oturur); hafif eğik
-        // kolonda dünya-YUKARI kullanmak levhayı yamuk bırakıyordu.
-        const Vec3 capU=vnorm(p.colSec.width);
-        if(length(capU)<0.5) {
-            plan.ok=false;plan.error=L"Haunch 40: kolon kesit genislik yonu tanimsiz";
-            return plan;
+        const Vec3 colDir = vnorm(colDelta);
+        const Vec3 columnTop = g.p.col.axisTo.z >= g.p.col.axisFrom.z
+                                   ? g.p.col.axisTo : g.p.col.axisFrom;
+        const Vec3 outDir = g.p.col.axisTo.z >= g.p.col.axisFrom.z
+                                ? colDir : vscale(colDir, -1.0);
+        const Vec3 columnSectionTop = vadd(
+            columnTop, vscale(g.p.colSec.height, g.p.col.sectionCenterOffset));
+        const Vec3 capU = vnorm(g.p.colSec.width);
+        if (vlen(capU) < 0.5) {
+            plan.ok = false;
+            plan.error = L"Haunch 40: kolon kesit genislik yonu tanimsiz";
+            return false;
         }
-        const Vec3 capV=vnorm(cross(outDir,capU));
+        const Vec3 capV = vnorm(vcross(outDir, capU));
         PlateSpec cap;
-        cap.axis=outDir;cap.u=capU;cap.v=capV;
-        // EXACT target profile bbox b x h; no allowance, no beam-based
-        // projection, and no overriding old topPlateLength dimension.
-        cap.width=p.col.secWidth;
-        cap.height=p.col.secHeight;
-        cap.thickness=topT;
-        // The cap's lower surface is exactly the COLUMN TOP plane.
-        cap.center=add(columnSectionTop,scale(outDir,topT*0.5));
-        cap.name=L"40 - Column Cap Plate";
-        pushPlate(cap,"haunch_top_plate"); // stable role id for old records
+        cap.axis = outDir; cap.u = capU; cap.v = capV;
+        cap.width = g.p.col.secWidth;
+        cap.height = g.p.col.secHeight;
+        cap.thickness = topT;
+        cap.center = vadd(columnSectionTop, vscale(outDir, topT * 0.5));
+        cap.name = L"40 - Column Cap Plate";
+        pushPlateWithMaterial(plan, cap, "haunch_top_plate", g.plateMaterial);
     }
 
-    // Weld-zone clip shared by every stiffener (corner cut at the web/flange
-    // root). 0 = none; a clip >= half the smaller plate side is rejected.
-    const double clip=std::max(0.0,paramAsDouble(input.params,L"stiffenerClipSize",15.0));
-    const auto clipFits=[&](double a,double b) { return clip<=0.0 || clip<0.5*std::min(a,b); };
+    const double clip = std::max(0.0, paramAsDouble(input.params, L"stiffenerClipSize", 15.0));
+    const auto clipFits = [&](double a, double b) { return clip <= 0.0 || clip < 0.5 * std::min(a, b); };
 
-    // 5) Optional transverse web stiffener at the far haunch termination.
-    if(paramAsBool(input.params,L"createBeamStiffener",false)) {
-        const double st=paramAsDouble(input.params,L"stiffenerThickness",10.0);
-        if(p.beam.secWebThickness<=0.0 || p.beam.secFlangeThickness<=0.0) {
-            plan.ok=false;
-            plan.error=L"Haunch 40: kiriș berkitmesi icin flans/govde et kalinliklari gerekli";
-            return plan;
+    if (paramAsBool(input.params, L"createBeamStiffener", false)) {
+        const double st = paramAsDouble(input.params, L"stiffenerThickness", 10.0);
+        if (g.p.beam.secWebThickness <= 0.0 || g.p.beam.secFlangeThickness <= 0.0) {
+            plan.ok = false;
+            plan.error = L"Haunch 40: kiriș berkitmesi icin flans/govde et kalinliklari gerekli";
+            return false;
         }
-        // TWO plates, one on each side of the beam web (a single plate cannot
-        // pass through the web). Each runs from the web face to the flange tip
-        // and from flange to flange, with the web/flange-root corners clipped
-        // so the continuous fillet weld along web and flanges stays open.
-        const double tw=p.beam.secWebThickness;
-        const double ribW=(wBeam-tw)*0.5;
-        const double ribH=hBeam-2.0*p.beam.secFlangeThickness;
-        if(!(st>0.0 && ribW>st && ribH>st)) {
-            plan.ok=false;plan.error=L"Haunch 40: berkitme kesite sigmiyor";
-            return plan;
+        const double tw = g.p.beam.secWebThickness;
+        const double ribW = (g.wBeam - tw) * 0.5;
+        const double ribH = g.hBeam - 2.0 * g.p.beam.secFlangeThickness;
+        if (!(st > 0.0 && ribW > st && ribH > st)) {
+            plan.ok = false; plan.error = L"Haunch 40: berkitme kesite sigmiyor";
+            return false;
         }
-        if(!clipFits(ribW,ribH)) {
-            plan.ok=false;
-            plan.error=L"Haunch 40: berkitme kaynak kesigi berkitme boyutuna gore cok buyuk";
-            return plan;
+        if (!clipFits(ribW, ribH)) {
+            plan.ok = false;
+            plan.error = L"Haunch 40: berkitme kaynak kesigi berkitme boyutuna gore cok buyuk";
+            return false;
         }
-        const Vec3 ribCentre=add(start,scale(dir,L));
-        for(int n=0;n<2;++n) {
-            const double side=n==0?1.0:-1.0;
-            const Vec3 Os=scale(W,side);   // local -u always faces the web
+        const Vec3 ribCentre = vadd(g.start, vscale(g.dir, g.L));
+        for (int n = 0; n < 2; ++n) {
+            const double side = n == 0 ? 1.0 : -1.0;
+            const Vec3 Os = vscale(g.W, side);
             PlateSpec rib;
-            rib.center=add(ribCentre,scale(Os,tw*0.5+ribW*0.5));
-            rib.u=Os;rib.v=H;rib.axis=dir;
-            rib.width=ribW;rib.height=ribH;
-            rib.thickness=st;rib.name=L"40 - Beam Stiffener";
-            if(clip>0.0) {
-                rib.chamfers.push_back(PlateSpec::Chamfer{0,1,clip,clip});
-                rib.chamfers.push_back(PlateSpec::Chamfer{3,1,clip,clip});
+            rib.center = vadd(ribCentre, vscale(Os, tw * 0.5 + ribW * 0.5));
+            rib.u = Os; rib.v = g.H; rib.axis = g.dir;
+            rib.width = ribW; rib.height = ribH;
+            rib.thickness = st; rib.name = L"40 - Beam Stiffener";
+            if (clip > 0.0) {
+                rib.chamfers.push_back(PlateSpec::Chamfer{0, 1, clip, clip});
+                rib.chamfers.push_back(PlateSpec::Chamfer{3, 1, clip, clip});
             }
-            pushPlate(rib,n==0?"haunch_beam_stiffener":"haunch_beam_stiffener_2");
+            pushPlateWithMaterial(plan, rib,
+                                  n == 0 ? "haunch_beam_stiffener" : "haunch_beam_stiffener_2",
+                                  g.plateMaterial);
         }
     }
 
-    // 5b) Tekla Haunch (40) column stiffeners (Parameters tab). Horizontal
-    // pocket plates sit INSIDE the column between the flanges beside the web,
-    // like the 146 continuity plates. Levels are measured from the beam axis
-    // at the column face. APPROXIMATION from the Tekla help text only.
     {
-        const Vec3 worldUp{0.0,0.0,1.0};
-        const Vec3 Wd=p.colSec.width, Hd=p.colSec.height;
-        const double colW=std::max(1.0,p.col.secWidth);
-        const double colHt=std::max(1.0,p.col.secHeight);
-        const double tw=p.col.secWebThickness>0.0?p.col.secWebThickness:0.04*colW;
-        const double tf=p.col.secFlangeThickness>0.0?p.col.secFlangeThickness:0.06*colHt;
-        const double bf=p.beam.secFlangeThickness>0.0
-                            ?p.beam.secFlangeThickness:0.05*hBeam;
-        const bool caseB=std::fabs(p.aW)>std::fabs(p.aH);
-        const double sigma=caseB?((p.aW>=0.0)?-1.0:1.0):1.0;
-        const std::vector<double> sides=caseB?std::vector<double>{sigma}
-                                              :std::vector<double>{1.0,-1.0};
-        const double bOut=std::max(0.0,colW*0.5-tw*0.5);
-        const double hBetween=std::max(0.0,colHt-2.0*tf);
-        const Vec3 colC{p.colMid.x+Hd.x*p.col.sectionCenterOffset,
-                        p.colMid.y+Hd.y*p.col.sectionCenterOffset,
-                        p.colMid.z+Hd.z*p.col.sectionCenterOffset};
-        const double zAdd=hBeam*0.5-bf*0.5;
-        const double zRafter=-hBeam*0.5+bf*0.5;
-        const double zCompr=-hBeam*0.5-D-flangeT*0.5;
-        const double zMorris=0.5*(zRafter+zCompr);
-        // Pocket plate corners that meet the web/flange root get the shared
-        // corner clip (local corners 0 and 3 are the web side, -u).
-        const auto pocket=[&](const wchar_t* flag,const wchar_t* thickParam,
-                              const char* role,double level) -> bool {
-            if(!paramAsBool(input.params,flag,false))return true;
-            const double t=paramAsDouble(input.params,thickParam,10.0);
-            if(!(t>0.0 && bOut>t && hBetween>t)) {
-                plan.ok=false;
-                plan.error=L"Haunch 40: kolon berkitmesi kolon kesitine sigmiyor";
+        const Vec3 Wd = g.p.colSec.width, Hd = g.p.colSec.height;
+        const double colW = std::max(1.0, g.p.col.secWidth);
+        const double colHt = std::max(1.0, g.p.col.secHeight);
+        const double tw = g.p.col.secWebThickness > 0.0 ? g.p.col.secWebThickness : 0.04 * colW;
+        const double tf = g.p.col.secFlangeThickness > 0.0 ? g.p.col.secFlangeThickness : 0.06 * colHt;
+        const double bf = g.p.beam.secFlangeThickness > 0.0
+                              ? g.p.beam.secFlangeThickness : 0.05 * g.hBeam;
+        const bool caseB = std::fabs(g.p.aW) > std::fabs(g.p.aH);
+        const double sigma = caseB ? ((g.p.aW >= 0.0) ? -1.0 : 1.0) : 1.0;
+        const std::vector<double> sides = caseB ? std::vector<double>{sigma}
+                                                : std::vector<double>{1.0, -1.0};
+        const double bOut = std::max(0.0, colW * 0.5 - tw * 0.5);
+        const double hBetween = std::max(0.0, colHt - 2.0 * tf);
+        const Vec3 colC{g.p.colMid.x + Hd.x * g.p.col.sectionCenterOffset,
+                        g.p.colMid.y + Hd.y * g.p.col.sectionCenterOffset,
+                        g.p.colMid.z + Hd.z * g.p.col.sectionCenterOffset};
+        const double zAdd = g.hBeam * 0.5 - bf * 0.5;
+        const double zRafter = -g.hBeam * 0.5 + bf * 0.5;
+        const double zCompr = -g.hBeam * 0.5 - g.D - g.flangeT * 0.5;
+        const double zMorris = 0.5 * (zRafter + zCompr);
+        const auto pocket = [&](const wchar_t* flag, const wchar_t* thickParam,
+                                const char* role, double level) -> bool {
+            if (!paramAsBool(input.params, flag, false)) return true;
+            const double t = paramAsDouble(input.params, thickParam, 10.0);
+            if (!(t > 0.0 && bOut > t && hBetween > t)) {
+                plan.ok = false;
+                plan.error = L"Haunch 40: kolon berkitmesi kolon kesitine sigmiyor";
                 return false;
             }
-            if(!clipFits(bOut,hBetween)) {
-                plan.ok=false;
-                plan.error=L"Haunch 40: berkitme kaynak kesigi berkitme boyutuna gore cok buyuk";
+            if (!clipFits(bOut, hBetween)) {
+                plan.ok = false;
+                plan.error = L"Haunch 40: berkitme kaynak kesigi berkitme boyutuna gore cok buyuk";
                 return false;
             }
-            int n=0;
-            for(const double side:sides) {
-                const Vec3 Os=scale(Wd,side);
+            int n = 0;
+            for (const double side : sides) {
+                const Vec3 Os = vscale(Wd, side);
                 PlateSpec stf;
-                stf.thickness=t;stf.axis=worldUp;stf.u=Os;stf.v=Hd;
-                stf.width=bOut;stf.height=hBetween;
-                stf.center=Vec3{colC.x+Os.x*(tw*0.5+bOut*0.5),
-                                colC.y+Os.y*(tw*0.5+bOut*0.5),
-                                facePoint.z+level};
-                stf.name=L"40 - Column Stiffener";
-                if(clip>0.0) {
-                    stf.chamfers.push_back(PlateSpec::Chamfer{0,1,clip,clip});
-                    stf.chamfers.push_back(PlateSpec::Chamfer{3,1,clip,clip});
+                stf.thickness = t; stf.axis = worldUp; stf.u = Os; stf.v = Hd;
+                stf.width = bOut; stf.height = hBetween;
+                stf.center = Vec3{colC.x + Os.x * (tw * 0.5 + bOut * 0.5),
+                                  colC.y + Os.y * (tw * 0.5 + bOut * 0.5),
+                                  g.facePoint.z + level};
+                stf.name = L"40 - Column Stiffener";
+                if (clip > 0.0) {
+                    stf.chamfers.push_back(PlateSpec::Chamfer{0, 1, clip, clip});
+                    stf.chamfers.push_back(PlateSpec::Chamfer{3, 1, clip, clip});
                 }
-                pushPlate(stf,n==0?role:(std::string(role)+"_2").c_str());
+                pushPlateWithMaterial(plan, stf,
+                                      n == 0 ? role : (std::string(role) + "_2").c_str(),
+                                      g.plateMaterial);
                 ++n;
             }
             return true;
         };
-        if(!pocket(L"createAddStiffener",L"addStiffenerThickness",
-                   "haunch_stiff_additional",zAdd))return plan;
-        if(!pocket(L"createRafterBottomStiffener",L"rafterBottomStiffenerThickness",
-                   "haunch_stiff_rafter_bottom",zRafter))return plan;
-        if(!pocket(L"createComprStiffener",L"comprStiffenerThickness",
-                   "haunch_stiff_compression",zCompr))return plan;
-        if(!pocket(L"createMorrisStiffener",L"morrisStiffenerThickness",
-                   "haunch_stiff_morris",zMorris))return plan;
-        if(paramAsBool(input.params,L"createDiagStiffener",false)) {
-            const double t=paramAsDouble(input.params,L"diagStiffenerThickness",10.0);
-            const double w=paramAsDouble(input.params,L"diagStiffenerWidth",80.0);
-            const double dz=zAdd-zCompr, dh=hBetween;
-            const double len=std::sqrt(dz*dz+dh*dh);
-            if(!(t>0.0 && w>0.0 && len>w && hBetween>0.0)) {
-                plan.ok=false;
-                plan.error=L"Haunch 40: capraz berkitme kolon kesitine sigmiyor";
-                return plan;
+        if (!pocket(L"createAddStiffener", L"addStiffenerThickness",
+                    "haunch_stiff_additional", zAdd)) return false;
+        if (!pocket(L"createRafterBottomStiffener", L"rafterBottomStiffenerThickness",
+                    "haunch_stiff_rafter_bottom", zRafter)) return false;
+        if (!pocket(L"createComprStiffener", L"comprStiffenerThickness",
+                    "haunch_stiff_compression", zCompr)) return false;
+        if (!pocket(L"createMorrisStiffener", L"morrisStiffenerThickness",
+                    "haunch_stiff_morris", zMorris)) return false;
+        if (paramAsBool(input.params, L"createDiagStiffener", false)) {
+            const double t = paramAsDouble(input.params, L"diagStiffenerThickness", 10.0);
+            const double w = paramAsDouble(input.params, L"diagStiffenerWidth", 80.0);
+            const double dz = zAdd - zCompr, dh = hBetween;
+            const double len = std::sqrt(dz * dz + dh * dh);
+            if (!(t > 0.0 && w > 0.0 && len > w && hBetween > 0.0)) {
+                plan.ok = false;
+                plan.error = L"Haunch 40: capraz berkitme kolon kesitine sigmiyor";
+                return false;
             }
-            if(!clipFits(len,w)) {
-                plan.ok=false;
-                plan.error=L"Haunch 40: berkitme kaynak kesigi berkitme boyutuna gore cok buyuk";
-                return plan;
+            if (!clipFits(len, w)) {
+                plan.ok = false;
+                plan.error = L"Haunch 40: berkitme kaynak kesigi berkitme boyutuna gore cok buyuk";
+                return false;
             }
-            int n=0;
-            for(const double side:sides) {
-                const Vec3 Os=scale(Wd,side);
-                // Diagonal inside the web-parallel plane (Hd x worldUp), from the
-                // compression level at one flange to the additional level at the other.
-                const Vec3 diag=vnorm(add(scale(Hd,dh),scale(worldUp,dz)));
+            int n = 0;
+            for (const double side : sides) {
+                const Vec3 Os = vscale(Wd, side);
+                const Vec3 diag = vnorm(vadd(vscale(Hd, dh), vscale(worldUp, dz)));
                 PlateSpec stf;
-                stf.thickness=t;stf.axis=Os;stf.u=diag;
-                stf.v=vnorm(cross(Os,diag));
-                stf.width=len;stf.height=w;
-                stf.center=Vec3{colC.x+Os.x*(tw*0.5+t*0.5),
-                                colC.y+Os.y*(tw*0.5+t*0.5),
-                                facePoint.z+0.5*(zAdd+zCompr)};
-                stf.name=L"40 - Diagonal Stiffener";
-                // Both ends land on a flange/web root: clip all four corners.
-                if(clip>0.0)
-                    for(int corner=0;corner<4;++corner)
-                        stf.chamfers.push_back(PlateSpec::Chamfer{corner,1,clip,clip});
-                pushPlate(stf,n==0?"haunch_stiff_diagonal":"haunch_stiff_diagonal_2");
+                stf.thickness = t; stf.axis = Os; stf.u = diag;
+                stf.v = vnorm(vcross(Os, diag));
+                stf.width = len; stf.height = w;
+                stf.center = Vec3{colC.x + Os.x * (tw * 0.5 + t * 0.5),
+                                  colC.y + Os.y * (tw * 0.5 + t * 0.5),
+                                  g.facePoint.z + 0.5 * (zAdd + zCompr)};
+                stf.name = L"40 - Diagonal Stiffener";
+                if (clip > 0.0)
+                    for (int corner = 0; corner < 4; ++corner)
+                        stf.chamfers.push_back(PlateSpec::Chamfer{corner, 1, clip, clip});
+                pushPlateWithMaterial(plan, stf,
+                                      n == 0 ? "haunch_stiff_diagonal" : "haunch_stiff_diagonal_2",
+                                      g.plateMaterial);
                 ++n;
             }
         }
     }
+    return true;
+}
 
-    // Anchor outermost bolt centres to the ACTUAL end-plate edges.
-    // Changing eT shifts ONLY the upper bolt group; changing eB shifts
-    // ONLY the lower group. The end plate remains unchanged in both auto
-    // and manual sizing modes. Legacy eT=eB=legacyEdge+20 retains old rows.
-    const double upperCenter=plateCenterV+actualHUse*0.5-edgeT-upper.spanY*0.5;
-    const double lowerCenter=plateCenterV-actualHUse*0.5+edgeB+lower.spanY*0.5;
-    if(upperCenter-lowerCenter <=
-       (upper.spanY+lower.spanY)*0.5+
-       (upper.hole+lower.hole)*0.5+0.1) {
-        plan.ok=false;
-        plan.error=L"Haunch 40: iki bulon grubu alin levhasina sigmiyor";
-        return plan;
+// Adim 13: iki bulon grubu (alin levhasina ankrajli). Basarisizsa plan.ok=false.
+bool haunch40Bolts(const Haunch40Ctx& g, const ComponentInput& input,
+                   GenerationPlan& plan) {
+    const double upperCenter = g.plateCenterV + g.actualHUse * 0.5 - g.edgeT - g.upper.spanY * 0.5;
+    const double lowerCenter = g.plateCenterV - g.actualHUse * 0.5 + g.edgeB + g.lower.spanY * 0.5;
+    if (upperCenter - lowerCenter <=
+        (g.upper.spanY + g.lower.spanY) * 0.5 +
+        (g.upper.hole + g.lower.hole) * 0.5 + 0.1) {
+        plan.ok = false;
+        plan.error = L"Haunch 40: iki bulon grubu alin levhasina sigmiyor";
+        return false;
     }
-    // Real bolt stack: end plate + physical supporting column FLANGE,
-    // not the entire HEB/HEA 300-mm bounding box or every haunch plate.
-    // Auto-grip from all owned solids caused the enormous shanks which
-    // appeared on both sides of the connection in the first Windows preview.
-    if (!(p.col.secFlangeThickness > 0.0)) {
-        plan.ok=false;
-        plan.error=L"Haunch 40: secili kolonun gercek flans kalinligi bilinmiyor";
-        return plan;
+    if (!(g.p.col.secFlangeThickness > 0.0)) {
+        plan.ok = false;
+        plan.error = L"Haunch 40: secili kolonun gercek flans kalinligi bilinmiyor";
+        return false;
     }
-    const double gripLength=endT+gap+p.col.secFlangeThickness;
-    const std::wstring gradeW=paramAsString(input.params,L"grade",L"8.8");
-    const std::string grade(gradeW.begin(),gradeW.end());
-    const auto pushBolts=[&](const char* role,double offset,const BoltRowGroup& g) {
+    const double gripLength = g.endT + g.gap + g.p.col.secFlangeThickness;
+    const std::wstring gradeW = paramAsString(input.params, L"grade", L"8.8");
+    const std::string grade(gradeW.begin(), gradeW.end());
+    const auto pushBolts = [&](const char* role, double offset, const Haunch40Group& gr) {
         BoltGroup bg;
-        // Use the SAME measured plate frame for both groups. BoltFrame's
-        // second in-plane vector is axis CROSS xDir = end.v (right-handed).
-        // The origin is the first (lower-left) point of countX x countY
-        // rectangular pattern, NOT the centre of that group.
-        // These are the absolute vertical positions of the two bolt-grid
-        // centres in the actual connection section frame. When a user
-        // resizes the plate, groups follow its selected eT/eB clearances,
-        // while legacy automatic plate sizing reproduces old positions.
-        // Eğik kirişte levha çerçevesi DÜŞEY olduğu için merkez, levha
-        // merkezinden end.v (=worldUp) boyunca ölçülür.
-        const Vec3 groupCentre=add(end.center,
-                                   scale(end.v,offset-plateCenterV));
-        // Each group is anchored to the SAME stable member/column frame,
-        // NOT to the auto-sized plate's left edge. If upper count/pitch
-        // enlarges the auto plate, the lower group's world-space origin
-        // must NOT shift. Shared eL/eR determine only the common alignment
-        // offset; per-group span centres differ independently.
-        const double offsetX=givenW>0.0 ? 0.0 : (edgeL-edgeR)*0.5;
-        const double startX=offsetX-g.spanX*0.5;
-        bg.origin=add(add(groupCentre,scale(end.u,startX)),
-                      scale(end.v,-g.spanY*0.5));
-        // The shank centre is in the real plate+column-flange grip stack,
-        // not at the end plate midplane or column section centreline.
-        bg.origin=add(bg.origin,
-                      scale(end.axis,-0.5*(gap+p.col.secFlangeThickness)));
-        bg.axis=end.axis;
-        bg.xDir=end.u;
-        bg.countX=g.nx;bg.countY=g.ny;
-        bg.spacingX=g.pitchX;bg.spacingY=g.pitchY;
-        bg.params.nominalDiameter=g.diameter;
-        bg.params.holeDiameter=g.hole;
-        bg.params.grade=grade;
-        bg.params.hasHead=true;
-        bg.params.hasNut=true;
-        bg.params.hasWasher=true;
-        // Head sits on the accessible beam/end-plate side (+end.axis);
-        // nut sits behind the column flange (-end.axis).
-        bg.params.direction=2;
-        bg.gripLength=gripLength;
-        bg.holeDepth=gripLength+2.0; // 1 mm clearance at each end
-        bg.targetOwnedPlateRole="haunch_end_plate";
-        bg.parts={p.col.id};
+        const Vec3 groupCentre = vadd(g.end.center,
+                                      vscale(g.end.v, offset - g.plateCenterV));
+        const double offsetX = g.givenW > 0.0 ? 0.0 : (g.edgeL - g.edgeR) * 0.5;
+        const double startX = offsetX - gr.spanX * 0.5;
+        bg.origin = vadd(vadd(groupCentre, vscale(g.end.u, startX)),
+                         vscale(g.end.v, -gr.spanY * 0.5));
+        bg.origin = vadd(bg.origin,
+                         vscale(g.end.axis, -0.5 * (g.gap + g.p.col.secFlangeThickness)));
+        bg.axis = g.end.axis;
+        bg.xDir = g.end.u;
+        bg.countX = gr.nx; bg.countY = gr.ny;
+        bg.spacingX = gr.pitchX; bg.spacingY = gr.pitchY;
+        bg.params.nominalDiameter = gr.diameter;
+        bg.params.holeDiameter = gr.hole;
+        bg.params.grade = grade;
+        bg.params.hasHead = true;
+        bg.params.hasNut = true;
+        bg.params.hasWasher = true;
+        bg.params.direction = 2;
+        bg.gripLength = gripLength;
+        bg.holeDepth = gripLength + 2.0;
+        bg.targetOwnedPlateRole = "haunch_end_plate";
+        bg.parts = {g.p.col.id};
         plan.boltGroups.push_back(std::move(bg));
         plan.boltGroupKeys.push_back(role);
     };
-    pushBolts("haunch_bolts_upper",upperCenter,upper);
-    pushBolts("haunch_bolts_lower",lowerCenter,lower);
+    pushBolts("haunch_bolts_upper", upperCenter, g.upper);
+    pushBolts("haunch_bolts_lower", lowerCenter, g.lower);
+    return true;
+}
 
-    // Identified semantic weld relationships. No automatic weld-to-column
-    // for the bolted end plate; it is welded to the secondary beam.
-    if(paramAsBool(input.params,L"createWelds",true)) {
-        const double size=paramAsDouble(input.params,L"weldSize",6.0);
-        const auto weld=[&](const char* role,const char* plateRole) {
+// Adim 14: kaynaklar.
+void haunch40Welds(const Haunch40Ctx& g, const ComponentInput& input,
+                   GenerationPlan& plan) {
+    const double topT = paramAsDouble(input.params, L"topPlateThickness", 10.0);
+    if (paramAsBool(input.params, L"createWelds", true)) {
+        const double size = paramAsDouble(input.params, L"weldSize", 6.0);
+        const auto weld = [&](const char* role, const char* plateRole) {
             WeldSpec w;
-            w.partA=p.beam.id;
-            w.partBRole=plateRole;
-            w.size=size;
-            w.name=L"40 - Haunch Weld";
+            w.partA = g.p.beam.id;
+            w.partBRole = plateRole;
+            w.size = size;
+            w.name = L"40 - Haunch Weld";
             plan.welds.push_back(w);
             plan.weldKeys.push_back(role);
         };
-        weld("weld_haunch_end_plate","haunch_end_plate");
-        weld("weld_haunch_web","haunch_web");
-        weld("weld_haunch_lower_flange","haunch_lower_flange");
-        if(topT>0.0) {
+        weld("weld_haunch_end_plate", "haunch_end_plate");
+        weld("weld_haunch_web", "haunch_web");
+        weld("weld_haunch_lower_flange", "haunch_lower_flange");
+        if (topT > 0.0) {
             WeldSpec capWeld;
-            capWeld.partA=p.col.id;
-            capWeld.partBRole="haunch_top_plate";
-            capWeld.size=size;
-            capWeld.name=L"40 - Column Cap Weld";
+            capWeld.partA = g.p.col.id;
+            capWeld.partBRole = "haunch_top_plate";
+            capWeld.size = size;
+            capWeld.name = L"40 - Column Cap Weld";
             plan.welds.push_back(capWeld);
-            plan.weldKeys.push_back("weld_haunch_top_plate"); // stable id
+            plan.weldKeys.push_back("weld_haunch_top_plate");
         }
     }
-    plan.ok=true;
+}
+
+} // namespace
+
+GenerationPlan generateHaunch40(const ComponentInput& input) noexcept {
+    GenerationPlan plan;
+    Haunch40Ctx g;
+    if (!resolveHaunch40Geom(input, g, plan)) return plan;
+    if (!haunch40EndPlate(g, plan)) return plan;
+    haunch40Web(g, plan);
+    if (!haunch40Flange(g, plan)) return plan;
+    if (!haunch40CapAndStiffeners(g, input, plan)) return plan;
+    if (!haunch40Bolts(g, input, plan)) return plan;
+    haunch40Welds(g, input, plan);
+    plan.ok = true;
     return plan;
 }
 
