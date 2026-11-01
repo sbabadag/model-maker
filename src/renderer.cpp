@@ -408,15 +408,16 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         const double glyphLen = referenceGlyphWorldLength(glyphPx, 120.0);
         const auto axisGlyph = workPlaneAxisGlyph(draft.workPlane, glyphLen);
         const POINT axisOrigin = projectPoint(axisGlyph.origin);
-        const auto drawAxisArrow = [&](const Vec3& worldEnd, COLORREF color, const wchar_t* label) {
+        const auto drawAxisArrow = [&](const POINT& originPx, const Vec3& worldEnd, COLORREF color,
+                                       const wchar_t* label) {
             const POINT end = projectPoint(worldEnd);
-            const double dx = static_cast<double>(end.x - axisOrigin.x);
-            const double dy = static_cast<double>(end.y - axisOrigin.y);
+            const double dx = static_cast<double>(end.x - originPx.x);
+            const double dy = static_cast<double>(end.y - originPx.y);
             const double length = std::hypot(dx, dy);
             HPEN pen = CreatePen(PS_SOLID, 2, color);
             SelectObject(targetDc, pen);
             if (length >= 7.0) {
-                line(targetDc, axisOrigin.x, axisOrigin.y, end.x, end.y);
+                line(targetDc, originPx.x, originPx.y, end.x, end.y);
                 const double ux = dx / length;
                 const double uy = dy / length;
                 const POINT headA{static_cast<LONG>(std::lround(end.x - ux * 8.0 - uy * 4.0)),
@@ -429,18 +430,18 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
                          end.y + static_cast<int>(std::lround(uy * 5.0)) - 8, label, color);
             } else {
                 HGDIOBJ oldBrush = SelectObject(targetDc, GetStockObject(NULL_BRUSH));
-                Ellipse(targetDc, axisOrigin.x - 5, axisOrigin.y - 5,
-                        axisOrigin.x + 6, axisOrigin.y + 6);
+                Ellipse(targetDc, originPx.x - 5, originPx.y - 5,
+                        originPx.x + 6, originPx.y + 6);
                 SelectObject(targetDc, oldBrush);
-                SetPixel(targetDc, axisOrigin.x, axisOrigin.y, color);
-                drawText(targetDc, axisOrigin.x + 7, axisOrigin.y - 10, label, color);
+                SetPixel(targetDc, originPx.x, originPx.y, color);
+                drawText(targetDc, originPx.x + 7, originPx.y - 10, label, color);
             }
             SelectObject(targetDc, stockPen);
             DeleteObject(pen);
         };
-        drawAxisArrow(axisGlyph.x, RGB(235, 82, 96), L"X");
-        drawAxisArrow(axisGlyph.y, RGB(72, 211, 121), L"Y");
-        drawAxisArrow(axisGlyph.z, RGB(78, 148, 255), L"Z");
+        drawAxisArrow(axisOrigin, axisGlyph.x, RGB(235, 82, 96), L"X");
+        drawAxisArrow(axisOrigin, axisGlyph.y, RGB(72, 211, 121), L"Y");
+        drawAxisArrow(axisOrigin, axisGlyph.z, RGB(78, 148, 255), L"Z");
 
         HPEN basePointPen = CreatePen(PS_SOLID, 1, RGB(190, 194, 202));
         SelectObject(targetDc, basePointPen);
@@ -648,6 +649,16 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
             }
             SelectObject(targetDc, stockPen);
             DeleteObject(border);
+            // DINAMIK EKSEN OKLARI (kullanici istegi): aday duzlemin X (kirmizi),
+            // Y (yesil) ve Z/normal (mavi) yonleri hover'da CANLI gosterilir;
+            // uzunluk aktif UCS glifiyle ayni EKRAN olceginde (zoom'dan bagimsiz).
+            // Yonler tiklama ile set edilir (Application::commitWorkPlanePoint).
+            const double pvGlyphLen = referenceGlyphWorldLength(ppu, 120.0);
+            const auto pvGlyph = workPlaneAxisGlyph(wp, pvGlyphLen);
+            const POINT pvOriginPx = projectPoint(pvGlyph.origin);
+            drawAxisArrow(pvOriginPx, pvGlyph.x, RGB(235, 82, 96), L"X");
+            drawAxisArrow(pvOriginPx, pvGlyph.y, RGB(72, 211, 121), L"Y");
+            drawAxisArrow(pvOriginPx, pvGlyph.z, RGB(78, 148, 255), L"Z");
         }
         // DONDURME MERKEZI (R tusu) isareti: ekran-olcekli capraz + halka.
         // Pivot donuslerde bu noktada SABIT kalir (Camera::rotateAbout), yani

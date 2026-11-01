@@ -8123,6 +8123,16 @@ void Application::updateHover(int x, int y) {
     gumballHover_ = gumballVisible_ ? gumballHitTest(x, y) : GumballHandle::None;
     polarTrackingLocked_ = false;
     temporaryTrackingLocked_ = false;
+    // YUZ ARACI (calisma duzlemi): nokta snap'i yerine imlecin altindaki YUZ
+    // onizlenir. Aday duzlem (yesil hayalet) + X/Y/Z eksen oklari HER harekette
+    // dinamik tazelenir (refreshHoverCandidate -> WorkPlaneFace dali). Erken
+    // cikis sart: workPlanePicking_ snapCommandActive yapar ve asagidaki snap
+    // yolunda refreshHoverCandidate CAGRILMAZ.
+    if (workPlanePicking_ && pointPickPurpose_ == PointPickPurpose::WorkPlaneFace) {
+        refreshHoverCandidate(x, y);
+        hover_.reset();
+        return;
+    }
     const bool snapCommandActive = workPlanePicking_ || profileGrip_.has_value() ||
         commandAllowsSnapping(drawingActive_, transformCommand_, transformPhase_,
                               arrayItemCount_.has_value(), offsetDistance_.has_value());
