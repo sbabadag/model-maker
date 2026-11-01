@@ -1559,12 +1559,12 @@ LRESULT Application::handleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
             return 0;
         }
         if (wParam == 8) {
-            // Sönümlemeli zoom karesi: kalan hedefin ~%28'i uygulanır
-            // (üstel yakınlama; ~5 karede (~75ms) tamamlanır — ani değil,
-            // algılanabilir yumuşaklık). Çarpan 1'e yaklaştığında biter.
+            // Sönümlemeli zoom karesi: kalan hedefin ~%50'si uygulanır
+            // (üstel yakınlama; ~3 karede (~30ms) tamamlanır — akıcı ama
+            // gecikmesiz). Çarpan 1'e yaklaştığında biter.
             if (!zoomAnimActive_) { KillTimer(window_, 8); return 0; }
             RECT wc{}; GetClientRect(canvas_, &wc);
-            const double step = 1.0 + (zoomAnimTarget_ - 1.0) * 0.28;
+            const double step = 1.0 + (zoomAnimTarget_ - 1.0) * 0.50;
             const bool done = std::abs(zoomAnimTarget_ - 1.0) < 0.004;
             const double apply = done ? zoomAnimTarget_ : step;
             if (mode_ == EditMode::Draw2D)
@@ -1831,7 +1831,7 @@ LRESULT Application::handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lPa
         (void)wheelPendingFactor_; (void)lastWheelApplyMs_;
         zoomAnimTarget_ *= factor;
         zoomAnimCursor_ = {static_cast<double>(zoomCursor.x), static_cast<double>(zoomCursor.y)};
-        if (!zoomAnimActive_) { zoomAnimActive_ = true; SetTimer(window_, 8, 15, nullptr); }
+        if (!zoomAnimActive_) { zoomAnimActive_ = true; SetTimer(window_, 8, 10, nullptr); }
         wheelNavigating_ = true;
         if (mode_ == EditMode::Draw2D || drawingActive_ || workPlanePicking_ ||
             (transformCommand_ != TransformCommand::None && transformPhase_ != TransformPhase::Selecting))
