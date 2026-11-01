@@ -2176,6 +2176,18 @@ void Application::onLeftButtonDown(int x, int y) {
                 // normalde guvenli dunya cercevesine duser.
                 workPlane_ = Ucs::fromPlaneAndNormal(faceHit->hit.point, faceHit->hit.normal)
                                  .toWorkPlane();
+                // TESHIY (kullanici: "ucs aleti ucs'yi set etmiyor sanki"): yuz
+                // aracinin SONUC temelini durum cubuguna yaz — U/V/N yuzle ayni mi
+                // (yoksa world mu kaldi) tek bakista gorunur.
+                {
+                    auto fv = [](const Vec3& v) {
+                        wchar_t b[96]{};
+                        std::swprintf(b, std::size(b), L"(%.2f %.2f %.2f)", v.x, v.y, v.z);
+                        return std::wstring(b);
+                    };
+                    publishStatus(L"Çalışma düzlemi — U" + fv(workPlane_.u) + L"  V" +
+                                  fv(workPlane_.v) + L"  N" + fv(workPlane_.normal));
+                }
                 cancelWorkPlaneCommand();
             } else {
                 MessageBeep(MB_ICONWARNING);
