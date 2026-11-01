@@ -36,6 +36,7 @@ bağımlı değildir.
 | `component_dialog.hpp` | diyalog şeması + doğrulama (aşağıda) |
 | `component_codec.hpp` | JSON codec + kanonik + digest (aşağıda) |
 | `recipe.hpp` | recipe yorumlayıcısı (aşağıda) |
+| `haunch40.hpp` | Haunch 40 taşları + `HaunchParams` (aşağıda) |
 | `component_framework.hpp` | component çatı tipleri |
 | `component_catalog.hpp` | katalog tipleri |
 
@@ -107,6 +108,21 @@ kayıpsız; digest 1e-6'ya yuvarlanmış kanonik JSON üzerinden hesaplanır.
 - İfade dili: `+ - * / ^`, `min max abs sqrt sin cos tan atan2 clamp if`,
   karşılaştırma, `and/or/not`, `param.*`, `main.*`, `secondary_N.*` (h,b,tw,tf,length).
   Şema/semantik: `libs/mm_contract/RECIPE.md`.
+
+### Haunch 40 taşları (`haunch40.hpp`) — MM-3c
+- `struct HaunchParams` — generateHaunch40'ın input.params'tan okuduğu TÜM
+  parametreler (açık alanlar; gizli okuma yok).
+- `struct Haunch40Group` — tek bulon grubunun ham parametreleri.
+- `haunchParamsFromInput(input)` — `HaunchParams`ı input.params'tan doldurur
+  (generator davranışı birebir).
+- `runHaunch40Block(block, params, input, state&, plan)` — 8 blok:
+  `frame.contact`, `frame.plumb_face`, `haunch.end_plate`, `haunch.web`,
+  `haunch.flange`, `haunch.stiffeners`, `bolts.haunch_groups`, `haunch.welds`.
+  `state` opaktır (`std::shared_ptr<void>`), adımlar arasında taşınır.
+  Parametreler `HaunchParams` üzerinden gelir; aritmetik generateHaunch40 ile
+  birebir, `planDigest` değişmez.
+- Paket: `libs/mm_contract/packages/haunch40/recipe.json` (5 golden girdide
+  `digest(runRecipe) == digest(generateHaunch40) == golden`).
 
 ## Sürüm denetimi DIŞINDA olanlar (serbest)
 

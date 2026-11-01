@@ -3,6 +3,7 @@
 #include "model_maker/component_codec.hpp"  // utf8FromWide / wideFromUtf8 (param adi esleme + hata)
 #include "model_maker/geometry.hpp"        // ProfileSectionFrame, WorkPlane, Vec3
 #include "model_maker/end_plate.hpp"       // computeEndPlatePlacement (endplate.placement tasi)
+#include "model_maker/haunch40.hpp"        // Haunch 40 taslari (C2)
 
 #include <cmath>
 #include <cctype>
@@ -74,6 +75,9 @@ struct EvalCtx {
     std::set<std::string> letEval;                    // dongu tespiti (devam eden)
     std::map<std::string, MemberLocalFrame> frames;   // step id -> cerceve
     int totalBolts{0};                                // §5.5 toplam bulon siniri
+    HaunchParams haunchPrm;                           // C2: frame.contact args'tan
+    std::shared_ptr<void> haunchState;                // C2: adimlar arasi opak durum
+    bool haunchPrmReady{false};
     std::wstring error;
 };
 
@@ -722,6 +726,103 @@ static bool blockEndPlatePlacement(EvalCtx& ctx, const RecipeStep& st, Generatio
     return true;
 }
 
+// --- Haunch 40 taşları (C2) -------------------------------------------------
+// frame.contact tüm parametreleri ARGS'tan okur ve HaunchParams'a yazar;
+// diğer taşlar bu parametreleri paylaşır. Parametre input.params'tan gizlice
+// okunmaz (args -> HaunchParams -> geçici input enjeksiyonu).
+static bool blockHaunchContact(EvalCtx& ctx, const RecipeStep& st, GenerationPlan& plan) {
+    HaunchParams& p = ctx.haunchPrm;
+    auto gd = [&](const char* k, double d, double& o) { return numArg(ctx, st, k, d, o); };
+    if (!gd("haunchLength", 450.0, p.haunchLength)) return false;
+    if (!gd("haunchDepth", 240.0, p.haunchDepth)) return false;
+    if (!gd("haunchTipDepth", 25.0, p.haunchTipDepth)) return false;
+    if (!gd("haunchWebThickness", 10.0, p.haunchWebThickness)) return false;
+    if (!gd("haunchFlangeThickness", 10.0, p.haunchFlangeThickness)) return false;
+    if (!gd("endPlateThickness", 20.0, p.endPlateThickness)) return false;
+    if (!gd("gap", 0.0, p.gap)) return false;
+    if (!gd("boltEdgeLeft", 35.0, p.boltEdgeLeft)) return false;
+    if (!gd("boltEdgeRight", 35.0, p.boltEdgeRight)) return false;
+    if (!gd("boltEdge", 35.0, p.boltEdge)) return false;
+    if (!gd("endPlateWidth", 0.0, p.endPlateWidth)) return false;
+    if (!gd("endPlateHeight", 0.0, p.endPlateHeight)) return false;
+    if (!gd("haunchFlangeWidth", 0.0, p.haunchFlangeWidth)) return false;
+    if (!gd("topPlateThickness", 10.0, p.topPlateThickness)) return false;
+    if (!gd("stiffenerClipSize", 15.0, p.stiffenerClipSize)) return false;
+    if (!gd("stiffenerThickness", 10.0, p.stiffenerThickness)) return false;
+    if (!gd("addStiffenerThickness", 10.0, p.addStiffenerThickness)) return false;
+    if (!gd("rafterBottomStiffenerThickness", 10.0, p.rafterBottomStiffenerThickness)) return false;
+    if (!gd("comprStiffenerThickness", 10.0, p.comprStiffenerThickness)) return false;
+    if (!gd("morrisStiffenerThickness", 10.0, p.morrisStiffenerThickness)) return false;
+    if (!gd("diagStiffenerThickness", 10.0, p.diagStiffenerThickness)) return false;
+    if (!gd("diagStiffenerWidth", 80.0, p.diagStiffenerWidth)) return false;
+    if (!gd("weldSize", 6.0, p.weldSize)) return false;
+    if (!boolArg(ctx, st, "createBeamStiffener", false, p.createBeamStiffener)) return false;
+    if (!boolArg(ctx, st, "createAddStiffener", false, p.createAddStiffener)) return false;
+    if (!boolArg(ctx, st, "createRafterBottomStiffener", false, p.createRafterBottomStiffener)) return false;
+    if (!boolArg(ctx, st, "createComprStiffener", false, p.createComprStiffener)) return false;
+    if (!boolArg(ctx, st, "createMorrisStiffener", false, p.createMorrisStiffener)) return false;
+    if (!boolArg(ctx, st, "createDiagStiffener", false, p.createDiagStiffener)) return false;
+    if (!boolArg(ctx, st, "createWelds", true, p.createWelds)) return false;
+    std::string s;
+    strArg(st, "plateMaterial", "S235JR", s); p.plateMaterial = wideFromUtf8(s);
+    strArg(st, "grade", "8.8", s); p.grade = wideFromUtf8(s);
+    const auto grp = [&](const std::string& pre, Haunch40Group& gr) -> bool {
+        double nx = 2.0, ny = 2.0;
+        if (!numArg(ctx, st, (pre + "BoltCountX").c_str(), 2.0, nx)) return false;
+        if (!numArg(ctx, st, (pre + "BoltCountY").c_str(), 2.0, ny)) return false;
+        gr.nx = static_cast<int>(std::lround(nx));
+        gr.ny = static_cast<int>(std::lround(ny));
+        if (!numArg(ctx, st, (pre + "BoltPitchX").c_str(), 120.0, gr.pitchX)) return false;
+        if (!numArg(ctx, st, (pre + "BoltPitchY").c_str(), 80.0, gr.pitchY)) return false;
+        if (!numArg(ctx, st, (pre + "BoltDiameter").c_str(), 20.0, gr.diameter)) return false;
+        if (!numArg(ctx, st, (pre + "HoleDiameter").c_str(), 22.0, gr.hole)) return false;
+        if (!numArg(ctx, st, (pre + "BoltEdgeClear").c_str(), 44.0, gr.clear)) return false;
+        gr.spanX = (gr.nx - 1) * gr.pitchX;
+        gr.spanY = (gr.ny - 1) * gr.pitchY;
+        return true;
+    };
+    if (!grp("upper", p.upper)) return false;
+    if (!grp("lower", p.lower)) return false;
+    ctx.haunchPrmReady = true;
+    if (!runHaunch40Block("frame.contact", p, ctx.input, ctx.haunchState, plan)) {
+        ctx.error = plan.error; return false;
+    }
+    return true;
+}
+
+static bool haunchBlockNoArgs(EvalCtx& ctx, const char* name, GenerationPlan& plan) {
+    if (!ctx.haunchPrmReady) {
+        ctx.error = wideFromUtf8(std::string("Haunch 40: once frame.contact calismali: ") + name);
+        return false;
+    }
+    if (!runHaunch40Block(name, ctx.haunchPrm, ctx.input, ctx.haunchState, plan)) {
+        ctx.error = plan.error; return false;
+    }
+    return true;
+}
+
+static bool blockHaunchPlumbFace(EvalCtx& ctx, const RecipeStep&, GenerationPlan& plan) {
+    return haunchBlockNoArgs(ctx, "frame.plumb_face", plan);
+}
+static bool blockHaunchEndPlate(EvalCtx& ctx, const RecipeStep&, GenerationPlan& plan) {
+    return haunchBlockNoArgs(ctx, "haunch.end_plate", plan);
+}
+static bool blockHaunchWeb(EvalCtx& ctx, const RecipeStep&, GenerationPlan& plan) {
+    return haunchBlockNoArgs(ctx, "haunch.web", plan);
+}
+static bool blockHaunchFlange(EvalCtx& ctx, const RecipeStep&, GenerationPlan& plan) {
+    return haunchBlockNoArgs(ctx, "haunch.flange", plan);
+}
+static bool blockHaunchStiffeners(EvalCtx& ctx, const RecipeStep&, GenerationPlan& plan) {
+    return haunchBlockNoArgs(ctx, "haunch.stiffeners", plan);
+}
+static bool blockHaunchBolts(EvalCtx& ctx, const RecipeStep&, GenerationPlan& plan) {
+    return haunchBlockNoArgs(ctx, "bolts.haunch_groups", plan);
+}
+static bool blockHaunchWelds(EvalCtx& ctx, const RecipeStep&, GenerationPlan& plan) {
+    return haunchBlockNoArgs(ctx, "haunch.welds", plan);
+}
+
 // --- Blok kayit defteri -----------------------------------------------------
 using BlockFn = bool (*)(EvalCtx&, const RecipeStep&, GenerationPlan&);
 
@@ -742,6 +843,30 @@ static const std::vector<BlockDecl>& blockRegistry() {
         {"weld.fillet", {"size"}, {"roleA", "roleB", "double", "doubleSided"}, {}, &blockWeldFillet},
         {"cut.plane", {}, {"target", "frame", "keep"}, {}, &blockCutPlane},
         {"endplate.placement", {}, {"main", "beam", "rolePlate", "roleBolts"}, {}, &blockEndPlatePlacement},
+        {"frame.contact",
+         {"haunchLength", "haunchDepth", "haunchTipDepth", "haunchWebThickness",
+          "haunchFlangeThickness", "endPlateThickness", "gap", "boltEdgeLeft",
+          "boltEdgeRight", "boltEdge", "endPlateWidth", "endPlateHeight",
+          "haunchFlangeWidth", "topPlateThickness", "stiffenerClipSize",
+          "stiffenerThickness", "addStiffenerThickness",
+          "rafterBottomStiffenerThickness", "comprStiffenerThickness",
+          "morrisStiffenerThickness", "diagStiffenerThickness",
+          "diagStiffenerWidth", "weldSize", "createBeamStiffener",
+          "createAddStiffener", "createRafterBottomStiffener",
+          "createComprStiffener", "createMorrisStiffener", "createDiagStiffener",
+          "createWelds", "upperBoltCountX", "upperBoltCountY", "upperBoltPitchX",
+          "upperBoltPitchY", "upperBoltDiameter", "upperHoleDiameter",
+          "upperBoltEdgeClear", "lowerBoltCountX", "lowerBoltCountY",
+          "lowerBoltPitchX", "lowerBoltPitchY", "lowerBoltDiameter",
+          "lowerHoleDiameter", "lowerBoltEdgeClear"},
+         {"plateMaterial", "grade"}, {}, &blockHaunchContact},
+        {"frame.plumb_face", {}, {}, {}, &blockHaunchPlumbFace},
+        {"haunch.end_plate", {}, {}, {}, &blockHaunchEndPlate},
+        {"haunch.web", {}, {}, {}, &blockHaunchWeb},
+        {"haunch.flange", {}, {}, {}, &blockHaunchFlange},
+        {"haunch.stiffeners", {}, {}, {}, &blockHaunchStiffeners},
+        {"bolts.haunch_groups", {}, {}, {}, &blockHaunchBolts},
+        {"haunch.welds", {}, {}, {}, &blockHaunchWelds},
     };
     return reg;
 }

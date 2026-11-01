@@ -19,7 +19,7 @@ inline constexpr int kContractVersionMinor = 2;
 inline constexpr int kContractVersionPatch = 0;
 
 // Tek string semver: "1.2.0".
-inline constexpr const char* kContractVersion = "1.2.0";
+inline constexpr const char* kContractVersion = "1.3.0";
 
 // Istenen min surum mevcut kontrat tarafindan karsilaniyor mu?
 // (minMajor.minMinor >= kContractVersionMajor.Minor ise true).

@@ -1,4 +1,5 @@
 #include "model_maker/component_engine.hpp"
+#include "model_maker/haunch40.hpp"
 
 #include "model_maker/end_plate.hpp"
 
@@ -1782,6 +1783,7 @@ struct Haunch40Ctx {
     double plateCenterV{0};
     double actualHUse{0};
     PlateSpec end;
+    bool ready{false};
 };
 
 void pushPlateWithMaterial(GenerationPlan& plan, PlateSpec plate, const char* role,
@@ -1924,6 +1926,7 @@ bool resolveHaunch40Geom(const ComponentInput& input, Haunch40Ctx& g,
                g.facePoint.y + g.ax.y * (g.gap + g.endT),
                g.facePoint.z + (g.gap + g.endT) * g.tanT};
     g.plateMaterial = paramAsString(input.params, L"plateMaterial", L"S235JR");
+    g.ready = true;
     return true;
 }
 
@@ -2307,6 +2310,151 @@ void haunch40Welds(const Haunch40Ctx& g, const ComponentInput& input,
 }
 
 } // namespace
+
+// --- MM-3c C2 köprüsü: HaunchParams -> ComponentInput.params enjeksiyonu ----
+// C1 fonksiyonları input.params okur; burada recipe argümanlarından gelen
+// HaunchParams geçici bir girdiye yazılır. Böylece parametreler AÇIKÇA
+// args'tan gelir (gizli input.params okuması yok), aritmetik değişmez.
+namespace {
+
+void setParamV(std::vector<CompParam>& ps, const std::wstring& name, CompParamValue v) {
+    for (auto& p : ps) {
+        if (p.name == name) { p.value = std::move(v); return; }
+    }
+    ps.push_back(CompParam{name, std::move(v)});
+}
+
+void applyHaunchGroup(std::vector<CompParam>& ps, const std::wstring& pre,
+                      const mm::Haunch40Group& gr) {
+    setParamV(ps, pre + L"BoltCountX", gr.nx);
+    setParamV(ps, pre + L"BoltCountY", gr.ny);
+    setParamV(ps, pre + L"BoltPitchX", gr.pitchX);
+    setParamV(ps, pre + L"BoltPitchY", gr.pitchY);
+    setParamV(ps, pre + L"BoltDiameter", gr.diameter);
+    setParamV(ps, pre + L"HoleDiameter", gr.hole);
+    setParamV(ps, pre + L"BoltEdgeClear", gr.clear);
+}
+
+void applyHaunchParams(ComponentInput& in, const HaunchParams& prm) {
+    setParamV(in.params, L"haunchLength", prm.haunchLength);
+    setParamV(in.params, L"haunchDepth", prm.haunchDepth);
+    setParamV(in.params, L"haunchTipDepth", prm.haunchTipDepth);
+    setParamV(in.params, L"haunchWebThickness", prm.haunchWebThickness);
+    setParamV(in.params, L"haunchFlangeThickness", prm.haunchFlangeThickness);
+    setParamV(in.params, L"endPlateThickness", prm.endPlateThickness);
+    setParamV(in.params, L"gap", prm.gap);
+    setParamV(in.params, L"boltEdgeLeft", prm.boltEdgeLeft);
+    setParamV(in.params, L"boltEdgeRight", prm.boltEdgeRight);
+    setParamV(in.params, L"boltEdge", prm.boltEdge);
+    setParamV(in.params, L"endPlateWidth", prm.endPlateWidth);
+    setParamV(in.params, L"endPlateHeight", prm.endPlateHeight);
+    setParamV(in.params, L"haunchFlangeWidth", prm.haunchFlangeWidth);
+    setParamV(in.params, L"plateMaterial", prm.plateMaterial);
+    setParamV(in.params, L"topPlateThickness", prm.topPlateThickness);
+    setParamV(in.params, L"stiffenerClipSize", prm.stiffenerClipSize);
+    setParamV(in.params, L"createBeamStiffener", prm.createBeamStiffener);
+    setParamV(in.params, L"stiffenerThickness", prm.stiffenerThickness);
+    setParamV(in.params, L"createAddStiffener", prm.createAddStiffener);
+    setParamV(in.params, L"addStiffenerThickness", prm.addStiffenerThickness);
+    setParamV(in.params, L"createRafterBottomStiffener", prm.createRafterBottomStiffener);
+    setParamV(in.params, L"rafterBottomStiffenerThickness", prm.rafterBottomStiffenerThickness);
+    setParamV(in.params, L"createComprStiffener", prm.createComprStiffener);
+    setParamV(in.params, L"comprStiffenerThickness", prm.comprStiffenerThickness);
+    setParamV(in.params, L"createMorrisStiffener", prm.createMorrisStiffener);
+    setParamV(in.params, L"morrisStiffenerThickness", prm.morrisStiffenerThickness);
+    setParamV(in.params, L"createDiagStiffener", prm.createDiagStiffener);
+    setParamV(in.params, L"diagStiffenerThickness", prm.diagStiffenerThickness);
+    setParamV(in.params, L"diagStiffenerWidth", prm.diagStiffenerWidth);
+    setParamV(in.params, L"grade", prm.grade);
+    setParamV(in.params, L"createWelds", prm.createWelds);
+    setParamV(in.params, L"weldSize", prm.weldSize);
+    applyHaunchGroup(in.params, L"upper", prm.upper);
+    applyHaunchGroup(in.params, L"lower", prm.lower);
+}
+
+mm::Haunch40Group readHaunchGroupFromInput(const ComponentInput& input, const wchar_t* which,
+                                       double fallbackClear) {
+    const std::wstring pre(which);
+    mm::Haunch40Group gr;
+    gr.nx = paramAsInt(input.params, pre + L"BoltCountX", 2);
+    gr.ny = paramAsInt(input.params, pre + L"BoltCountY", 2);
+    gr.pitchX = paramAsDouble(input.params, pre + L"BoltPitchX", 120.0);
+    gr.pitchY = paramAsDouble(input.params, pre + L"BoltPitchY", 80.0);
+    gr.diameter = paramAsDouble(input.params, pre + L"BoltDiameter", 20.0);
+    gr.hole = paramAsDouble(input.params, pre + L"HoleDiameter", 22.0);
+    gr.clear = paramAsDouble(input.params, pre + L"BoltEdgeClear", fallbackClear);
+    gr.spanX = (gr.nx - 1) * gr.pitchX;
+    gr.spanY = (gr.ny - 1) * gr.pitchY;
+    return gr;
+}
+
+} // namespace
+
+HaunchParams haunchParamsFromInput(const ComponentInput& input) {
+    HaunchParams prm;
+    prm.haunchLength = paramAsDouble(input.params, L"haunchLength", 450.0);
+    prm.haunchDepth = paramAsDouble(input.params, L"haunchDepth", 240.0);
+    prm.haunchTipDepth = paramAsDouble(input.params, L"haunchTipDepth", 25.0);
+    prm.haunchWebThickness = paramAsDouble(input.params, L"haunchWebThickness", 10.0);
+    prm.haunchFlangeThickness = paramAsDouble(input.params, L"haunchFlangeThickness", 10.0);
+    prm.endPlateThickness = paramAsDouble(input.params, L"endPlateThickness", 20.0);
+    prm.gap = paramAsDouble(input.params, L"gap", 0.0);
+    prm.boltEdgeLeft = paramAsDouble(input.params, L"boltEdgeLeft", 35.0);
+    prm.boltEdgeRight = paramAsDouble(input.params, L"boltEdgeRight", 35.0);
+    prm.boltEdge = paramAsDouble(input.params, L"boltEdge", 35.0);
+    prm.endPlateWidth = paramAsDouble(input.params, L"endPlateWidth", 0.0);
+    prm.endPlateHeight = paramAsDouble(input.params, L"endPlateHeight", 0.0);
+    prm.haunchFlangeWidth = paramAsDouble(input.params, L"haunchFlangeWidth", 0.0);
+    prm.plateMaterial = paramAsString(input.params, L"plateMaterial", L"S235JR");
+    prm.topPlateThickness = paramAsDouble(input.params, L"topPlateThickness", 10.0);
+    prm.stiffenerClipSize = paramAsDouble(input.params, L"stiffenerClipSize", 15.0);
+    prm.createBeamStiffener = paramAsBool(input.params, L"createBeamStiffener", false);
+    prm.stiffenerThickness = paramAsDouble(input.params, L"stiffenerThickness", 10.0);
+    prm.createAddStiffener = paramAsBool(input.params, L"createAddStiffener", false);
+    prm.addStiffenerThickness = paramAsDouble(input.params, L"addStiffenerThickness", 10.0);
+    prm.createRafterBottomStiffener = paramAsBool(input.params, L"createRafterBottomStiffener", false);
+    prm.rafterBottomStiffenerThickness = paramAsDouble(input.params, L"rafterBottomStiffenerThickness", 10.0);
+    prm.createComprStiffener = paramAsBool(input.params, L"createComprStiffener", false);
+    prm.comprStiffenerThickness = paramAsDouble(input.params, L"comprStiffenerThickness", 10.0);
+    prm.createMorrisStiffener = paramAsBool(input.params, L"createMorrisStiffener", false);
+    prm.morrisStiffenerThickness = paramAsDouble(input.params, L"morrisStiffenerThickness", 10.0);
+    prm.createDiagStiffener = paramAsBool(input.params, L"createDiagStiffener", false);
+    prm.diagStiffenerThickness = paramAsDouble(input.params, L"diagStiffenerThickness", 10.0);
+    prm.diagStiffenerWidth = paramAsDouble(input.params, L"diagStiffenerWidth", 80.0);
+    prm.grade = paramAsString(input.params, L"grade", L"8.8");
+    prm.createWelds = paramAsBool(input.params, L"createWelds", true);
+    prm.weldSize = paramAsDouble(input.params, L"weldSize", 6.0);
+    prm.upper = readHaunchGroupFromInput(input, L"upper", 44.0);
+    prm.lower = readHaunchGroupFromInput(input, L"lower", 44.0);
+    return prm;
+}
+
+bool runHaunch40Block(const std::string& block, const HaunchParams& prm,
+                      const ComponentInput& input, std::shared_ptr<void>& state,
+                      GenerationPlan& plan) {
+    ComponentInput tin = input;
+    applyHaunchParams(tin, prm);
+    if (!state) state = std::make_shared<Haunch40Ctx>();
+    Haunch40Ctx& g = *std::static_pointer_cast<Haunch40Ctx>(state);
+    if (block == "frame.contact") {
+        return resolveHaunch40Geom(tin, g, plan);
+    }
+    if (!g.ready) {
+        plan.ok = false;
+        plan.error = L"Haunch 40: frame.contact bloğu önce çalışmalı";
+        return false;
+    }
+    if (block == "frame.plumb_face") return true;  // contact ile birlikte hazır
+    if (block == "haunch.end_plate") return haunch40EndPlate(g, plan);
+    if (block == "haunch.web") { haunch40Web(g, plan); return true; }
+    if (block == "haunch.flange") return haunch40Flange(g, plan);
+    if (block == "haunch.stiffeners") return haunch40CapAndStiffeners(g, tin, plan);
+    if (block == "bolts.haunch_groups") return haunch40Bolts(g, tin, plan);
+    if (block == "haunch.welds") { haunch40Welds(g, tin, plan); return true; }
+    plan.ok = false;
+    plan.error = L"Haunch 40: bilinmeyen blok adı";
+    return false;
+}
 
 GenerationPlan generateHaunch40(const ComponentInput& input) noexcept {
     GenerationPlan plan;

@@ -99,3 +99,32 @@ Herhangi bir adım başarısız olursa `runRecipe` `GenerationPlan{ok=false,
 error=<Türkçe mesaj>}` döndürür; çağıran belgeyi değiştirmez. Yorumlayıcı
 Studio ile Model Maker arasında aynı commit'ten derlenir ve aynı girdi + aynı
 recipe için birebir aynı plan (dolayısıyla aynı `planDigest`) üretir.
+
+## Haunch 40 blokları (MM-3c)
+
+`packages/haunch40/recipe.json` 8 adım kullanır. Tüm parametreler
+`frame.contact` argümanlarında AÇIKÇA listelenir (input.params'a gizli okuma
+yok); adımlar opak bir durum (`state`) paylaşır:
+
+| Blok | Görev |
+|---|---|
+| `frame.contact` | temas çerçevesi + eğik çerçeve + levha boyutu + başlangıç |
+| `frame.plumb_face` | düşey yüz doğrulaması (contact ile hazır) |
+| `haunch.end_plate` | alın levhası (+ kolon tepesi kırpma) |
+| `haunch.web` | konik gövde konturu |
+| `haunch.flange` | basınç flanşı |
+| `haunch.stiffeners` | kapak + kiriş/kolon berkitmeleri |
+| `bolts.haunch_groups` | iki bulon grubu |
+| `haunch.welds` | kaynaklar |
+
+`frame.contact` argümanları: `haunchLength, haunchDepth, haunchTipDepth,
+haunchWebThickness, haunchFlangeThickness, endPlateThickness, gap,
+boltEdgeLeft, boltEdgeRight, boltEdge, endPlateWidth, endPlateHeight,
+haunchFlangeWidth, topPlateThickness, stiffenerClipSize, stiffenerThickness,
+addStiffenerThickness, rafterBottomStiffenerThickness, comprStiffenerThickness,
+morrisStiffenerThickness, diagStiffenerThickness, diagStiffenerWidth, weldSize,
+createBeamStiffener, createAddStiffener, createRafterBottomStiffener,
+createComprStiffener, createMorrisStiffener, createDiagStiffener, createWelds,
+upperBolt*, lowerBolt* (CountX/CountY/PitchX/PitchY/Diameter/HoleDiameter/
+EdgeClear)`, metin: `plateMaterial, grade`. Aritmetik `generateHaunch40` ile
+birebir; 5 golden girdide `digest(runRecipe) == golden`.

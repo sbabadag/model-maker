@@ -18,7 +18,7 @@ static int failures = 0;
 
 int main() {
     // 1) Surum.
-    CHECK(std::string(kContractVersion) == "1.2.0", "contract surumu 1.2.0");
+    CHECK(std::string(kContractVersion) == "1.3.0", "contract surumu 1.3.0");
     CHECK(contractSupports(1, 1), "contract 1.1 desteklenir");
     CHECK(contractSupports(1, 2), "contract 1.2 desteklenir");
     CHECK(contractSupports(1, 0), "contract 1.0 desteklenir");
