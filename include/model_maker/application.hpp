@@ -1439,7 +1439,6 @@ private:
     bool ctrlRotatePending_{};
     POINT ctrlRotateStart_{};
     bool wheelNavigating_{};
-    double wheelPreviewFactor_{1.0};
     // Momentum tekerlek hiz sinirlayici: patlama halindeki detentler
     // biriktirilir, 120ms'de en fazla bir zoom uygulanir (free-spin
     // tekerlek tek dokunusta 3-4 adim zoom yapiyordu — gorunum kayiyordu).
@@ -1450,7 +1449,6 @@ private:
     double zoomAnimTarget_{1.0};   // kalan toplam çarpan (1 = bitti)
     Vec2 zoomAnimCursor_{};
     bool zoomAnimActive_{false};
-    Vec2 wheelPreviewOffset_{};
     // I4: 2B PAN RASTER ONIZLEMESI — orta tus ile 2B pan surerken biriken piksel
     // otelemesi. draftView() bunu rasterZoomOffset olarak sunar (factor=1.0);
     // renderer son tam kareyi bu ofsetle StretchBlt eder, fare birakilinca tam kare.

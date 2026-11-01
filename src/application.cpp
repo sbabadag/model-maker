@@ -1138,7 +1138,7 @@ void Application::activateViewport(std::size_t index) {
     viewCubeAnimTarget_.reset();
     viewCubeHoverValid_ = false;
     KillTimer(window_, 9);
-    wheelNavigating_ = false; wheelPreviewFactor_ = 1.0; wheelPreviewOffset_ = {};
+    wheelNavigating_ = false;
     snapPreviewActive_ = false;
     hover_.reset();
     if (gumballDrag_ != GumballHandle::None) gumballCancelDrag();
@@ -1574,14 +1574,6 @@ LRESULT Application::handleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
                 camera_.zoom3DAt(zoomAnimCursor_, apply,
                                  std::max(1L, wc.right), std::max(1L, wc.bottom));
             zoomAnimTarget_ /= apply;
-            // RASTER ONIZLEME: son TAM (kati) kareyi biriken zoom carpaniyla
-            // esnet — zoom suresince GDI wireframe'e dusmeden (interactiveNavigation
-            // yuz dolgusunu atliyor) ve kare basina tam redraw yapmadan akici.
-            // Esik yok: her boyutta ve 2B/3B'de gecerli. offset = (1-factor)*imlec
-            // — zoom imlecin altindaki noktaya kilitlenir (zoom2DAt/zoom3DAt ile ayni capa).
-            wheelPreviewFactor_ *= apply;
-            wheelPreviewOffset_ = { (1.0 - wheelPreviewFactor_) * zoomAnimCursor_.x,
-                                    (1.0 - wheelPreviewFactor_) * zoomAnimCursor_.y };
             if (done || std::abs(zoomAnimTarget_ - 1.0) < 0.004) {
                 zoomAnimTarget_ = 1.0;
                 zoomAnimActive_ = false;
@@ -1610,8 +1602,6 @@ LRESULT Application::handleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
                     camera_.zoom3DAt({static_cast<double>(cursorScreen_.x), static_cast<double>(cursorScreen_.y)},
                                      applied, std::max(1L, wc.right), std::max(1L, wc.bottom));
             }
-            wheelPreviewFactor_ = 1.0;
-            wheelPreviewOffset_ = {};
             updateHover(cursorScreen_.x, cursorScreen_.y);
             invalidateCanvas();
             return 0;
@@ -1827,7 +1817,6 @@ LRESULT Application::handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lPa
             return 0;
         RECT zoomClient{}; GetClientRect(canvas_, &zoomClient);
         const double factor = wheelDelta > 0 ? 1.12 : 1.0 / 1.12;
-        if (!wheelNavigating_) { wheelPreviewFactor_ = 1.0; wheelPreviewOffset_ = {}; }
         // HIZ SINIRLAYICI: free-spin tekerlek tek dokunusta 3-4 detent
         // (31-47ms arayla) uretiyor — her biri %12 zoom = gorunum kac kez
         // atliyor, tiklamalar "yanlis yere" dusuyor ve redraw'lar flicker
@@ -12165,21 +12154,20 @@ DraftView Application::draftView() const {
     view.trimExtendPreviewSuppressed = trimExtendPreviewSuppressed_;
     view.zoomWindowActive = zoomWindowActive_; view.zoomWindowFirstCorner = zoomWindowFirstCorner_;
     view.interactiveNavigation = rotating_ || panning2D_ || viewCubeManipulating_ ||
-                                 wheelNavigating_ || snapPreviewActive_;
+                                 snapPreviewActive_;
     view.motionOverlay = snapPreviewActive_ && !rotating_ && !panning2D_ &&
                          !viewCubeManipulating_ && !wheelNavigating_;
     view.snapPreviewActive = snapPreviewActive_;
     view.wheelNavigating = wheelNavigating_; view.rotating = rotating_;
     view.panning = panning2D_; view.viewCubeActive = viewCubeManipulating_ || viewCubeAnimActive_;
-    // RASTER ONIZLEME: (a) 2B pan (I4) ve (b) tekerlek zoom. Zoom artik son
-    // TAM kati kareyi biriken carpanla esnetir — GDI'da wireframe'e dusme
-    // olmaz (interactiveNavigation yuz dolgusunu atladigi icin eskiden zoom
-    // sirasinda katilar tel kafese donuyor, bitince geri geliyordu). Esik
-    // kaldirildi: her boyutta tekerlek zoom'u raster onizleme kullanir.
+    // RASTER ONIZLEME: yalniz 2B pan (I4) — son kareyi offset ile kaydirir
+    // (carpan 1.0 = olcek yok = bulaniklik yok). Tekerlek zoom FULL REDRAW
+    // yapar: interactiveNavigation'a wheelNavigating_ DAHIL EDILMEZ, boylece
+    // zoom sirasinda yuzler keskin cizilir (wireframe'e dusme / bulanik esnetme yok).
     const bool pan2DPreview = panning2D_ && mode_ == EditMode::Draw2D;
-    view.rasterZoomPreview = pan2DPreview || wheelNavigating_;
-    view.rasterZoomFactor = pan2DPreview ? 1.0 : wheelPreviewFactor_;
-    view.rasterZoomOffset = pan2DPreview ? pan2DPreviewOffset_ : wheelPreviewOffset_;
+    view.rasterZoomPreview = pan2DPreview;
+    view.rasterZoomFactor = 1.0;
+    view.rasterZoomOffset = pan2DPreview ? pan2DPreviewOffset_ : Vec2{};
     // Profil uc tutamagi (grip edit) vurgusu + move track line.
     if (profileGrip_) {
         view.activeGripSolid = profileGrip_->solidIndex;
