@@ -1132,7 +1132,6 @@ void Application::activateViewport(std::size_t index) {
     viewCubePressedView_.reset();
     selectionFirstCorner_.reset();
     zoomWindowFirstCorner_.reset();
-    zoomAnimActive_ = false; zoomAnimTarget_ = 1.0;
     // ViewCube gecis animasyonu da pencereye ozgu: takasda iptal.
     viewCubeAnimActive_ = false;
     viewCubeAnimTarget_.reset();
@@ -1558,33 +1557,6 @@ LRESULT Application::handleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
             }
             return 0;
         }
-        if (wParam == 8) {
-            // Sönümlemeli zoom karesi: kalan hedefin ~%50'si uygulanır
-            // (üstel yakınlama; ~3 karede (~30ms) tamamlanır — akıcı ama
-            // gecikmesiz). Çarpan 1'e yaklaştığında biter.
-            if (!zoomAnimActive_) { KillTimer(window_, 8); return 0; }
-            RECT wc{}; GetClientRect(canvas_, &wc);
-            const double step = 1.0 + (zoomAnimTarget_ - 1.0) * 0.50;
-            const bool done = std::abs(zoomAnimTarget_ - 1.0) < 0.004;
-            const double apply = done ? zoomAnimTarget_ : step;
-            if (mode_ == EditMode::Draw2D)
-                camera_.zoom2DAt(zoomAnimCursor_, apply,
-                                 std::max(1L, wc.right), std::max(1L, wc.bottom));
-            else
-                camera_.zoom3DAt(zoomAnimCursor_, apply,
-                                 std::max(1L, wc.right), std::max(1L, wc.bottom));
-            zoomAnimTarget_ /= apply;
-            if (done || std::abs(zoomAnimTarget_ - 1.0) < 0.004) {
-                zoomAnimTarget_ = 1.0;
-                zoomAnimActive_ = false;
-                KillTimer(window_, 8);
-                // Animasyon bitti: tekerlek ~120ms sessiz kalirsa navigasyon
-                // kapanir (timer 2 mevcut akis — hover/snap geri gelir).
-                SetTimer(window_, 2, 120, nullptr);
-            }
-            invalidateCanvas();
-            return 0;
-        }
         if (wParam == 2) {
             KillTimer(window_, 2);
             wheelNavigating_ = false;
@@ -1817,22 +1789,20 @@ LRESULT Application::handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lPa
             return 0;
         RECT zoomClient{}; GetClientRect(canvas_, &zoomClient);
         const double factor = wheelDelta > 0 ? 1.12 : 1.0 / 1.12;
-        // HIZ SINIRLAYICI: free-spin tekerlek tek dokunusta 3-4 detent
-        // (31-47ms arayla) uretiyor — her biri %12 zoom = gorunum kac kez
-        // atliyor, tiklamalar "yanlis yere" dusuyor ve redraw'lar flicker
-        // uretiyor. Detentler BIRIKTIRILIR; 64ms'de en fazla BIR zoom
-        // uygulanir, artan zamanlayiciya birakilir (case 2 flush).
-        // SÖNÜMLEMELİ ZOOM: tekerlek hedefi biriktirir; uygulama animasyon
-        // karelerinde (timer 8, ~15ms) küçük adımlarla yapılır. İmleç
-        // çapası sabit — her adım zoomXAt ile imleç altındaki noktaya
-        // kilitli, böylece toplam etki eski anlık %12 sıçramasıyla aynı
-        // fakat akıcı (Tekla/OCC viewer hissi). Hız sınırlayıcı kalktı:
-        // artık kayıp yok, her detent hedefe eklenir.
-        (void)wheelPendingFactor_; (void)lastWheelApplyMs_;
-        zoomAnimTarget_ *= factor;
-        zoomAnimCursor_ = {static_cast<double>(zoomCursor.x), static_cast<double>(zoomCursor.y)};
-        if (!zoomAnimActive_) { zoomAnimActive_ = true; SetTimer(window_, 8, 10, nullptr); }
+        // ANİ ZOOM: sönümlemeli animasyon kaldirildi — tekerlek dogrudan,
+        // tek seferde uygulanir (her detent %12, gecikme yok). Imleç capasi
+        // sabit: zoomXAt imlec altindaki noktaya kilitli.
+        const Vec2 anchor{static_cast<double>(zoomCursor.x), static_cast<double>(zoomCursor.y)};
+        if (mode_ == EditMode::Draw2D)
+            camera_.zoom2DAt(anchor, factor,
+                             std::max(1L, zoomClient.right), std::max(1L, zoomClient.bottom));
+        else
+            camera_.zoom3DAt(anchor, factor,
+                             std::max(1L, zoomClient.right), std::max(1L, zoomClient.bottom));
         wheelNavigating_ = true;
+        // ~120ms sessizlik sonrasi navigasyon kapanir (hover/snap geri gelir).
+        KillTimer(window_, 2);
+        SetTimer(window_, 2, 120, nullptr);
         if (mode_ == EditMode::Draw2D || drawingActive_ || workPlanePicking_ ||
             (transformCommand_ != TransformCommand::None && transformPhase_ != TransformPhase::Selecting))
             updateHover(cursorScreen_.x, cursorScreen_.y);
