@@ -391,6 +391,7 @@ private:
     HDC ensureBackBuffer(HDC target, int width, int height) const;
     void ensureMotionBase(HDC target, int width, int height) const;
     bool presentRasterZoom(HDC target, int width, int height, Vec2 offset, double factor) const;
+    HDC ensureRasterZoomScratch(HDC target, int width, int height) const;
     static RECT canvasRect(const RECT& client) noexcept;
     static void drawText(HDC dc, int x, int y, const wchar_t* text, COLORREF color);
 
@@ -405,6 +406,11 @@ private:
     mutable int motionBaseWidth_{};
     mutable int motionBaseHeight_{};
     mutable bool motionBaseValid_{};
+    mutable HDC rasterZoomScratchDc_{};
+    mutable HBITMAP rasterZoomScratchBitmap_{};
+    mutable HGDIOBJ rasterZoomScratchDefaultBitmap_{};
+    mutable int rasterZoomScratchWidth_{};
+    mutable int rasterZoomScratchHeight_{};
     mutable POINT motionBaseProbe_[4]{}; // taban cekildigindeki kamera parmak izi
     mutable int fastPathSequence_{};
     mutable int lastMotionPath_{-1}; // 0=FAST 1=FALLBACK — gecis logu icin

@@ -209,6 +209,13 @@ Renderer::~Renderer() {
         }
         DeleteDC(motionBaseDc_);
     }
+    if (rasterZoomScratchDc_) {
+        if (rasterZoomScratchBitmap_) {
+            SelectObject(rasterZoomScratchDc_, rasterZoomScratchDefaultBitmap_);
+            DeleteObject(rasterZoomScratchBitmap_);
+        }
+        DeleteDC(rasterZoomScratchDc_);
+    }
     // I5: onbelleklenmis GDI kalemleri + font burada silinir (kare icinde
     // silinmezler — Renderer omru boyunca yeniden kullanilirlar).
     for (const auto& [key, pen] : cachedEntityPens_) {
@@ -255,30 +262,59 @@ HDC Renderer::ensureBackBuffer(HDC target, int width, int height) const {
     return backBufferDc_;
 }
 
+HDC Renderer::ensureRasterZoomScratch(HDC target, int width, int height) const {
+    if (rasterZoomScratchDc_ && rasterZoomScratchWidth_ == width && rasterZoomScratchHeight_ == height)
+        return rasterZoomScratchDc_;
+    if (rasterZoomScratchDc_) {
+        if (rasterZoomScratchBitmap_) {
+            SelectObject(rasterZoomScratchDc_, rasterZoomScratchDefaultBitmap_);
+            DeleteObject(rasterZoomScratchBitmap_);
+        }
+        DeleteDC(rasterZoomScratchDc_);
+        rasterZoomScratchDc_ = nullptr;
+        rasterZoomScratchBitmap_ = nullptr;
+        rasterZoomScratchDefaultBitmap_ = nullptr;
+    }
+    rasterZoomScratchDc_ = CreateCompatibleDC(target);
+    if (!rasterZoomScratchDc_) return nullptr;
+    rasterZoomScratchBitmap_ = CreateCompatibleBitmap(target, width, height);
+    if (!rasterZoomScratchBitmap_) {
+        DeleteDC(rasterZoomScratchDc_);
+        rasterZoomScratchDc_ = nullptr;
+        return nullptr;
+    }
+    rasterZoomScratchDefaultBitmap_ = SelectObject(rasterZoomScratchDc_, rasterZoomScratchBitmap_);
+    rasterZoomScratchWidth_ = width;
+    rasterZoomScratchHeight_ = height;
+    return rasterZoomScratchDc_;
+}
+
 bool Renderer::presentRasterZoom(HDC target, int width, int height, Vec2 offset, double factor) const {
     if (!backBufferBitmap_ || backBufferWidth_ != width || backBufferHeight_ != height || factor <= 0.0)
         return false;
+    // YIRTILMA onlemi: esneme dogrudan pencere DC'sine yazilmiyor (eski yol 4
+    // FillRect + StretchBlt'i dogrudan hedefe yapiyor, ara kareler gorunup
+    // yirtilma uretiyordu). Simdi full-size scratch DC'de toplanip TEK BitBlt
+    // ile sunuluyor — normal akisin atomik sunumuyla ayni.
+    // COZUNURLUK onlemi: COLORONCOLOR (en yakin komsu) buyuk zoom carpanlarinda
+    // piksel bloklari uretiyordu; HALFTONE yumusak interpolasyon yapar (zoom
+    // onizlemesinde CAD uygulamalarinin standart davranisi). SetBrushOrgEx
+    // HALFTONE icin sart (kenarlarda siyah cerceve olusmasin).
+    HDC scratch = ensureRasterZoomScratch(target, width, height);
+    if (!scratch) return false;
     const int destinationX = static_cast<int>(std::lround(offset.x));
     const int destinationY = static_cast<int>(std::lround(offset.y));
     const int destinationWidth = std::max(1, static_cast<int>(std::lround(width * factor)));
     const int destinationHeight = std::max(1, static_cast<int>(std::lround(height * factor)));
     HBRUSH background = CreateSolidBrush(canvasBackgroundColor());
-    if (destinationX > 0) {
-        RECT border{0, 0, std::min(width, destinationX), height}; FillRect(target, &border, background);
-    }
-    if (destinationY > 0) {
-        RECT border{0, 0, width, std::min(height, destinationY)}; FillRect(target, &border, background);
-    }
-    if (destinationX + destinationWidth < width) {
-        RECT border{std::max(0, destinationX + destinationWidth), 0, width, height}; FillRect(target, &border, background);
-    }
-    if (destinationY + destinationHeight < height) {
-        RECT border{0, std::max(0, destinationY + destinationHeight), width, height}; FillRect(target, &border, background);
-    }
+    RECT full{0, 0, width, height};
+    FillRect(scratch, &full, background);
     DeleteObject(background);
-    SetStretchBltMode(target, COLORONCOLOR);
-    StretchBlt(target, destinationX, destinationY, destinationWidth, destinationHeight,
+    SetStretchBltMode(scratch, HALFTONE);
+    SetBrushOrgEx(scratch, 0, 0, nullptr);
+    StretchBlt(scratch, destinationX, destinationY, destinationWidth, destinationHeight,
                backBufferDc_, 0, 0, width, height, SRCCOPY);
+    BitBlt(target, 0, 0, width, height, scratch, 0, 0, SRCCOPY);
     return true;
 }
 
