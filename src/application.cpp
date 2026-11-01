@@ -4630,8 +4630,56 @@ std::optional<Application::PendingFaceHit> Application::pickSceneFaceAt(int x, i
                       c.y + R[1] * camX + R[4] * camY + R[7] * big,
                       c.z + R[2] * camX + R[5] * camY + R[8] * big};
     const Vec3 direction{-R[6], -R[7], -R[8]};
+    // HIZLI AABB ELENIMI: isin delmedigi sinir kutusunu atla. Yuz aleti her fare
+    // hareketinde TUM modelleri tarayinca yavasti (kullanici: "cok yavas");
+    // kutu testi model basina O(1) olup buyuk modellerde yuzlerce kat hizlandirir.
+    // Yon birimdir (rotasyon matrisi sutunu). Kucuk guvenlik payi: bayat/sikisik
+    // kutu kenardaki yuzeyi atlamasin diye kutuyu %0.01 genisletir.
+    const auto rayHitsBox = [](const Vec3& o, const Vec3& d, Vec3 mn, Vec3 mx) {
+        const double diag = std::sqrt((mx.x - mn.x) * (mx.x - mn.x) +
+                                      (mx.y - mn.y) * (mx.y - mn.y) +
+                                      (mx.z - mn.z) * (mx.z - mn.z));
+        const double eps = 1e-4 * std::max(diag, 1.0);
+        mn.x -= eps; mn.y -= eps; mn.z -= eps;
+        mx.x += eps; mx.y += eps; mx.z += eps;
+        double t0 = 0.0, t1 = 1e100;
+        if (std::abs(d.x) < 1e-12) {
+            if (o.x < mn.x || o.x > mx.x) return false;
+        } else {
+            double a = (mn.x - o.x) / d.x, b = (mx.x - o.x) / d.x;
+            if (a > b) std::swap(a, b);
+            t0 = std::max(t0, a);
+            t1 = std::min(t1, b);
+            if (t0 > t1) return false;
+        }
+        if (std::abs(d.y) < 1e-12) {
+            if (o.y < mn.y || o.y > mx.y) return false;
+        } else {
+            double a = (mn.y - o.y) / d.y, b = (mx.y - o.y) / d.y;
+            if (a > b) std::swap(a, b);
+            t0 = std::max(t0, a);
+            t1 = std::min(t1, b);
+            if (t0 > t1) return false;
+        }
+        if (std::abs(d.z) < 1e-12) {
+            if (o.z < mn.z || o.z > mx.z) return false;
+        } else {
+            double a = (mn.z - o.z) / d.z, b = (mx.z - o.z) / d.z;
+            if (a > b) std::swap(a, b);
+            t0 = std::max(t0, a);
+            t1 = std::min(t1, b);
+            if (t0 > t1) return false;
+        }
+        return t1 >= 0.0;
+    };
     std::optional<PendingFaceHit> best;
     for (std::size_t p = 0; p < document_.models().size(); ++p) {
+        // Kutu testi: isin kutuyu delmiyorsa kati da delmez -> mesh + B-Rep
+        // isabetini birden atla (OCC fallback'i de cagirmadan).
+        if (p < document_.modelBounds().size()) {
+            const auto& b = document_.modelBounds()[p];
+            if (!rayHitsBox(origin, direction, b.minimum, b.maximum)) continue;
+        }
         // 1) Goruntu mesh'i (faceIndex ile vurgu da calisir).
         if (const auto h = raycastMesh(document_.models()[p], origin, direction)) {
             if (!best || h->distance < best->hit.distance) best = PendingFaceHit{p, *h};

@@ -865,10 +865,32 @@ bool raycastBrepFace(const TopoDS_Shape& shape, const Vec3& rayOrigin,
     const gp_Lin line(o, d);
 
     // BRepClass_FaceClassifier'in yuz ici testi ucgenlemeyi kullanir; boolean
-    // (kesme/delik) sonrasi uretilen sekillerde tesselasyon olmayabilir. Bu
-    // yuzden once hafif bir IncrementalMesh — zaten varsa ve daha inceyse
-    // dokunmaz (yalnizca eksikse doldurur).
-    BRepMesh_IncrementalMesh mesher(shape, 0.1);
+    // (kesme/delik) sonrasi uretilen sekillerde tesselasyon olmayabilir. SABIT
+    // 0.1 mm deflection BUYUK yapilarda (metre mertebesi) asiri ince mesh uretip
+    // her fare hareketinde yeniden mesleme (remesh) tetikleyebilir -> cok yavas.
+    // Bu yuzden: tesselasyon VARSA dokunma; EKSIKSE kaba, boyuta gore olceklenmis
+    // bir deflection'la mesle (siniflandirma icin ince mesh gerekmez).
+    bool needMesh = false;
+    for (TopExp_Explorer exf(shape, TopAbs_FACE); exf.More(); exf.Next()) {
+        TopLoc_Location loc;
+        if (BRep_Tool::Triangulation(TopoDS::Face(exf.Current()), loc).IsNull()) {
+            needMesh = true;
+            break;
+        }
+    }
+    if (needMesh) {
+        double diag = 1.0;
+        Bnd_Box box;
+        BRepBndLib::Add(shape, box);
+        if (!box.IsVoid()) {
+            double x0 = 0, y0 = 0, z0 = 0, x1 = 0, y1 = 0, z1 = 0;
+            box.Get(x0, y0, z0, x1, y1, z1);
+            diag = std::sqrt((x1 - x0) * (x1 - x0) + (y1 - y0) * (y1 - y0) +
+                             (z1 - z0) * (z1 - z0));
+        }
+        const double defl = std::max(0.5, diag * 0.005);
+        BRepMesh_IncrementalMesh mesher(shape, defl);
+    }
 
     const Handle(Geom_Line) gline = new Geom_Line(line);
 
@@ -889,8 +911,11 @@ bool raycastBrepFace(const TopoDS_Shape& shape, const Vec3& rayOrigin,
             if (w < 1e-9) continue;  // gerideki isabetleri ele (isin onunde kal)
             // Yuzun KESILMIS sinirlari icinde mi? (sonsuz yuzeydeki kesisim
             // yuz disinda kalabilir — orn. ici bos kutu profilin govdesi.)
+            // Siniflandirma toleransi parametrik uzayda; 1e-7 cok siki kalip
+            // kenar/kose yakinindaki GECERLI isabetleri OUT gosterebilir
+            // (kullanici: "her yuzeyi yakalamiyor"). 1e-4 daha toleransli.
             BRepClass_FaceClassifier classifier;
-            classifier.Perform(face, gp_Pnt2d(u, v), 1e-7);
+            classifier.Perform(face, gp_Pnt2d(u, v), 1e-4);
             const TopAbs_State state = classifier.State();
             if (state != TopAbs_IN && state != TopAbs_ON) continue;
 
