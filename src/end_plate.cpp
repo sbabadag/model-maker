@@ -210,6 +210,60 @@ EndPlatePlacement computeEndPlatePlacement(const Vec3& beamEnd, const Vec3& beam
     return out;
 }
 
+EndPlatePlacement computeEndPlatePlacementRotated(const Vec3& beamEnd, const Vec3& beamAxis,
+                                                  double secWidth, double secHeight,
+                                                  double profileRotation,
+                                                  const EndPlateParams& params) noexcept {
+    // Donus yoksa eski davranis BIREBIR (dikey kiris dahil hicbir sonuc degismez).
+    if (std::fabs(profileRotation) < 1e-9) {
+        return computeEndPlatePlacement(beamEnd, beamAxis, secWidth, secHeight, params);
+    }
+    // Kesit cercevesini kur (dunya-Z referansi, eski davranisla ayni) ve profil
+    // donusunu uye ekseni etrafinda uygula. Boylece 90° donuk I-profilde genislik
+    // <-> yukseklik yonu yer degistirir; levha u/v'si GERCEK kesit yonune oturur.
+    const Vec3 axis = unitOr(beamAxis, Vec3{0.0, 0.0, 1.0});
+    ProfileSectionFrame sec = profileSectionFrame(beamAxis, Vec3{0.0, 0.0, 1.0});
+    const double rad = profileRotation * 3.14159265358979323846 / 180.0;
+    const double c = std::cos(rad), s = std::sin(rad);
+    Vec3 w{sec.width.x * c + sec.height.x * s,
+           sec.width.y * c + sec.height.y * s,
+           sec.width.z * c + sec.height.z * s};
+    Vec3 h{sec.height.x * c - sec.width.x * s,
+           sec.height.y * c - sec.width.y * s,
+           sec.height.z * c - sec.width.z * s};
+    auto snap = [](double v) { return std::fabs(v) < 1e-12 ? 0.0 : v; };
+    w = {snap(w.x), snap(w.y), snap(w.z)};
+    h = {snap(h.x), snap(h.y), snap(h.z)};
+
+    EndPlatePlacement out;
+    out.u = unitOr(w, Vec3{1.0, 0.0, 0.0});
+    out.v = unitOr(h, Vec3{0.0, 1.0, 0.0});
+    out.axis = axis;
+    double upperD, lowerD;
+    effectiveEdgeDistances(params, upperD, lowerD);
+    out.plateWidth = (params.plateWidthOverride > 0.0)
+                         ? params.plateWidthOverride
+                         : (secWidth + 2.0 * params.plateExtra);
+    out.plateHeight = (params.plateHeightOverride > 0.0)
+                          ? params.plateHeightOverride
+                          : (secHeight - upperD - lowerD);
+    out.plateThickness = params.plateThickness;
+    out.secWidth = secWidth;
+    if (out.plateWidth < 1.0) out.plateWidth = 1.0;
+    if (out.plateHeight < 1.0) out.plateHeight = 1.0;
+    const double halfT = params.plateThickness * 0.5;
+    out.plateCenter = Vec3{beamEnd.x + axis.x * halfT, beamEnd.y + axis.y * halfT,
+                           beamEnd.z + axis.z * halfT};
+    const double vShift = 0.5 * (lowerD - upperD);
+    if (std::abs(vShift) > 1e-12) {
+        out.plateCenter.x += out.v.x * vShift;
+        out.plateCenter.y += out.v.y * vShift;
+        out.plateCenter.z += out.v.z * vShift;
+    }
+    out.bolts = makeEndPlateBolts(out, params);
+    return out;
+}
+
 EndPlatePlacement computeEndPlatePlacementOnFace(const ReferencePlane& face, double gap,
                                                  double secWidth, double secHeight,
                                                  const EndPlateParams& params,

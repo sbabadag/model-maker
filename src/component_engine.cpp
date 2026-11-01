@@ -482,8 +482,8 @@ GenerationPlan generateEndPlate(const ComponentInput& input) noexcept {
     const Vec3 beamAxis{beam.axisTo.x - beam.axisFrom.x, beam.axisTo.y - beam.axisFrom.y,
                         beam.axisTo.z - beam.axisFrom.z};
 
-    const EndPlatePlacement placement =
-        computeEndPlatePlacement(beam.axisTo, beamAxis, beam.secWidth, beam.secHeight, ep);
+    const EndPlatePlacement placement = computeEndPlatePlacementRotated(
+        beam.axisTo, beamAxis, beam.secWidth, beam.secHeight, beam.profileRotation, ep);
 
     PlateSpec plate;
     plate.center = placement.plateCenter;

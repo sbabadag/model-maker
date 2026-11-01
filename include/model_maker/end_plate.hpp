@@ -189,6 +189,16 @@ EndPlatePlacement computeEndPlatePlacement(const Vec3& beamEnd, const Vec3& beam
                                            double secWidth, double secHeight,
                                            const EndPlateParams& params) noexcept;
 
+// ALIN LEVHASI YERLESIMI — profil DONUSU bilen (MM-BUG-01). profileRotation=0
+// iken eski computeEndPlatePlacement ile BIREBIR aynidir (dikey kiris dahil,
+// eski davranis korunur). profileRotation != 0 iken kesit cercevesi uye ekseni
+// etrafinda dondurulur; levha u/v'si GERCEK kesit yonune oturur (donus yok
+// sayilmaz — 90° donuk I-profilde genislik <-> yukseklik yonu yer degistirir).
+EndPlatePlacement computeEndPlatePlacementRotated(const Vec3& beamEnd, const Vec3& beamAxis,
+                                                  double secWidth, double secHeight,
+                                                  double profileRotation,
+                                                  const EndPlateParams& params) noexcept;
+
 // ALIN LEVHASI YERLESIMI — kolonun GERCEK temas yuzeyine gore (Phase R1).
 // `face`: kolonun kirise bakan sinir duzlemi (normal, kolondan DISARI/kirise
 // dogru bakar). Levhanin kolon tarafindaki yuzu `face.origin + gap * face.normal`

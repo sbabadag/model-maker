@@ -670,6 +670,8 @@ static bool blockCutPlane(EvalCtx& ctx, const RecipeStep& st, GenerationPlan& pl
 // endplate.placement: mevcut computeEndPlatePlacement mantigini SARAR (yeniden
 // yazmaz). Parametreleri generateEndPlate ile BIREBIR ayni sekilde input.params'tan
 // okur; boylece plan ciktisi (ve planDigest) generateEndPlate ile ozdes kalir.
+// MM-BUG-01: profil DONUSU (profileRotation) artik computeEndPlatePlacementRotated
+// uzerinden uygulanir — 90° donuk kiriste levha u/v'si gercek kesit yonune oturur.
 // Iki nesne uretir: levha (rolePlate, varsayilan end_plate) + bulon grubu
 // (roleBolts, varsayilan beam_bolts).
 static bool blockEndPlatePlacement(EvalCtx& ctx, const RecipeStep& st, GenerationPlan& plan) {
@@ -704,8 +706,8 @@ static bool blockEndPlatePlacement(EvalCtx& ctx, const RecipeStep& st, Generatio
     const Vec3 beamAxis{beam->axisTo.x - beam->axisFrom.x,
                         beam->axisTo.y - beam->axisFrom.y,
                         beam->axisTo.z - beam->axisFrom.z};
-    const EndPlatePlacement placement =
-        computeEndPlatePlacement(beam->axisTo, beamAxis, beam->secWidth, beam->secHeight, ep);
+    const EndPlatePlacement placement = computeEndPlatePlacementRotated(
+        beam->axisTo, beamAxis, beam->secWidth, beam->secHeight, beam->profileRotation, ep);
 
     PlateSpec plate;
     plate.center = placement.plateCenter;
