@@ -692,7 +692,7 @@ static bool blockEndPlatePlacement(EvalCtx& ctx, const RecipeStep& st, Generatio
     ep.boltDiameter = paramAsDouble(ctx.input.params, L"boltDiameter", 20.0);
     ep.holeDiameter = paramAsDouble(ctx.input.params, L"holeDiameter", 22.0);
     ep.boltCountX = paramAsInt(ctx.input.params, L"boltCountX", 2);
-    ep.boltCountY = paramAsInt(ctx.input.params, L"boltCountY", 4);
+    ep.boltCountY = paramAsInt(ctx.input.params, L"boltCountY", 2);
     ep.boltEdge = paramAsDouble(ctx.input.params, L"boltEdge", 30.0);
     {
         const std::wstring g = paramAsString(ctx.input.params, L"grade", L"8.8");

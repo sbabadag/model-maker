@@ -435,7 +435,7 @@ ComponentType endPlateComponentType() noexcept {
         lengthParam(L"boltDiameter", L"mm", 20.0, 12.0, 30.0, L"bulon capi"),
         lengthParam(L"holeDiameter", L"mm", 22.0, 12.0, 34.0, L"delik capi"),
         intParam(L"boltCountX", 2, 1, 8, L"genislik yonunde bulon adedi"),
-        intParam(L"boltCountY", 4, 1, 8, L"yukseklik yonunde bulon adedi"),
+        intParam(L"boltCountY", 2, 1, 8, L"yukseklik yonunde bulon adedi"),
         lengthParam(L"boltEdge", L"mm", 30.0, 10.0, 200.0, L"kenar mesafesi"),
         enumParam(L"grade", L"8.8", {L"8.8", L"10.9"}, L"bulon sinifi"),
         boolParam(L"hasHead", true, L"bas"),
@@ -467,7 +467,7 @@ GenerationPlan generateEndPlate(const ComponentInput& input) noexcept {
     ep.boltDiameter = paramAsDouble(input.params, L"boltDiameter", 20.0);
     ep.holeDiameter = paramAsDouble(input.params, L"holeDiameter", 22.0);
     ep.boltCountX = paramAsInt(input.params, L"boltCountX", 2);
-    ep.boltCountY = paramAsInt(input.params, L"boltCountY", 4);
+    ep.boltCountY = paramAsInt(input.params, L"boltCountY", 2);
     ep.boltEdge = paramAsDouble(input.params, L"boltEdge", 30.0);
     {
         std::wstring g = paramAsString(input.params, L"grade", L"8.8");
