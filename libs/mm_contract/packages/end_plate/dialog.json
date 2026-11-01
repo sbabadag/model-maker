@@ -1,0 +1,448 @@
+{
+  "formatVersion": "1.0.0",
+  "groups": [
+    {
+      "asTab": false,
+      "background": "",
+      "canvasHeight": 0,
+      "canvasWidth": 0,
+      "emptyNote": "",
+      "figures": [],
+      "id": "plates",
+      "keepIfEmpty": false,
+      "layout": "",
+      "paramNames": [
+        "plateThickness",
+        "plateExtra",
+        "topExtra",
+        "bottomExtra",
+        "upperEdgeDistance",
+        "lowerEdgeDistance",
+        "plateWidthOverride",
+        "plateHeightOverride",
+        "plateMaterial",
+        "plateName",
+        "plateFinish",
+        "gap"
+      ],
+      "partRows": [],
+      "placed": [],
+      "prefix": "",
+      "title": "Levha"
+    },
+    {
+      "asTab": false,
+      "background": "",
+      "canvasHeight": 0,
+      "canvasWidth": 0,
+      "emptyNote": "",
+      "figures": [],
+      "id": "bolts",
+      "keepIfEmpty": false,
+      "layout": "",
+      "paramNames": [
+        "boltDiameter",
+        "holeDiameter",
+        "grade",
+        "boltCountX",
+        "boltCountY",
+        "boltEdge",
+        "boltAlignH",
+        "boltAlignV",
+        "boltOffsetH",
+        "boltOffsetV",
+        "boltSpacingX",
+        "boltSpacingY",
+        "hasHead",
+        "hasNut",
+        "hasWasher"
+      ],
+      "partRows": [],
+      "placed": [],
+      "prefix": "",
+      "title": "Bulonlar"
+    }
+  ],
+  "hotspots": [
+    {
+      "id": "hs_thickness",
+      "label": "1",
+      "paramName": "plateThickness",
+      "position": {
+        "x": 74.0,
+        "y": 224.0
+      },
+      "radius": 8.0
+    },
+    {
+      "id": "hs_gap",
+      "label": "2",
+      "paramName": "gap",
+      "position": {
+        "x": 54.0,
+        "y": 224.0
+      },
+      "radius": 8.0
+    },
+    {
+      "id": "hs_upper",
+      "label": "3",
+      "paramName": "upperEdgeDistance",
+      "position": {
+        "x": 120.0,
+        "y": 184.0
+      },
+      "radius": 8.0
+    },
+    {
+      "id": "hs_lower",
+      "label": "4",
+      "paramName": "lowerEdgeDistance",
+      "position": {
+        "x": 120.0,
+        "y": 76.0
+      },
+      "radius": 8.0
+    },
+    {
+      "id": "hs_bolt_edge",
+      "label": "5",
+      "paramName": "boltEdge",
+      "position": {
+        "x": 44.0,
+        "y": 130.0
+      },
+      "radius": 8.0
+    },
+    {
+      "id": "hs_bolt_count_v",
+      "label": "6",
+      "paramName": "boltCountY",
+      "position": {
+        "x": 74.0,
+        "y": 130.0
+      },
+      "radius": 8.0
+    },
+    {
+      "id": "hs_bolt_count_h",
+      "label": "7",
+      "paramName": "boltCountX",
+      "position": {
+        "x": 108.0,
+        "y": 130.0
+      },
+      "radius": 8.0
+    },
+    {
+      "id": "hs_bolt_align_v",
+      "label": "8",
+      "paramName": "boltAlignV",
+      "position": {
+        "x": 74.0,
+        "y": 30.0
+      },
+      "radius": 8.0
+    }
+  ],
+  "items": [
+    {
+      "id": "column",
+      "primitives": [
+        {
+          "a": {
+            "x": 20.0,
+            "y": 20.0
+          },
+          "b": {
+            "x": 48.0,
+            "y": 220.0
+          },
+          "closed": false,
+          "dashed": false,
+          "filled": true,
+          "kind": "Rect",
+          "pts": [],
+          "r": 0.0,
+          "text": ""
+        }
+      ]
+    },
+    {
+      "id": "plate",
+      "primitives": [
+        {
+          "a": {
+            "x": 60.0,
+            "y": 48.0
+          },
+          "b": {
+            "x": 88.0,
+            "y": 212.0
+          },
+          "closed": false,
+          "dashed": false,
+          "filled": true,
+          "kind": "Rect",
+          "pts": [],
+          "r": 0.0,
+          "text": ""
+        }
+      ]
+    },
+    {
+      "id": "beam",
+      "primitives": [
+        {
+          "a": {
+            "x": 88.0,
+            "y": 104.0
+          },
+          "b": {
+            "x": 340.0,
+            "y": 156.0
+          },
+          "closed": false,
+          "dashed": false,
+          "filled": true,
+          "kind": "Rect",
+          "pts": [],
+          "r": 0.0,
+          "text": ""
+        }
+      ]
+    },
+    {
+      "id": "bolts",
+      "primitives": [
+        {
+          "a": {
+            "x": 67.0,
+            "y": 70.0
+          },
+          "b": {
+            "x": 0.0,
+            "y": 0.0
+          },
+          "closed": false,
+          "dashed": false,
+          "filled": false,
+          "kind": "Circle",
+          "pts": [],
+          "r": 4.0,
+          "text": ""
+        },
+        {
+          "a": {
+            "x": 81.0,
+            "y": 70.0
+          },
+          "b": {
+            "x": 0.0,
+            "y": 0.0
+          },
+          "closed": false,
+          "dashed": false,
+          "filled": false,
+          "kind": "Circle",
+          "pts": [],
+          "r": 4.0,
+          "text": ""
+        },
+        {
+          "a": {
+            "x": 67.0,
+            "y": 190.0
+          },
+          "b": {
+            "x": 0.0,
+            "y": 0.0
+          },
+          "closed": false,
+          "dashed": false,
+          "filled": false,
+          "kind": "Circle",
+          "pts": [],
+          "r": 4.0,
+          "text": ""
+        },
+        {
+          "a": {
+            "x": 81.0,
+            "y": 190.0
+          },
+          "b": {
+            "x": 0.0,
+            "y": 0.0
+          },
+          "closed": false,
+          "dashed": false,
+          "filled": false,
+          "kind": "Circle",
+          "pts": [],
+          "r": 4.0,
+          "text": ""
+        }
+      ]
+    },
+    {
+      "id": "dim_thickness",
+      "primitives": [
+        {
+          "a": {
+            "x": 60.0,
+            "y": 224.0
+          },
+          "b": {
+            "x": 88.0,
+            "y": 224.0
+          },
+          "closed": false,
+          "dashed": true,
+          "filled": false,
+          "kind": "Line",
+          "pts": [],
+          "r": 0.0,
+          "text": ""
+        },
+        {
+          "a": {
+            "x": 70.0,
+            "y": 228.0
+          },
+          "b": {
+            "x": 0.0,
+            "y": 0.0
+          },
+          "closed": false,
+          "dashed": false,
+          "filled": false,
+          "kind": "Text",
+          "pts": [],
+          "r": 0.0,
+          "text": "t"
+        }
+      ]
+    },
+    {
+      "id": "dim_gap",
+      "primitives": [
+        {
+          "a": {
+            "x": 48.0,
+            "y": 224.0
+          },
+          "b": {
+            "x": 60.0,
+            "y": 224.0
+          },
+          "closed": false,
+          "dashed": true,
+          "filled": false,
+          "kind": "Line",
+          "pts": [],
+          "r": 0.0,
+          "text": ""
+        },
+        {
+          "a": {
+            "x": 49.0,
+            "y": 228.0
+          },
+          "b": {
+            "x": 0.0,
+            "y": 0.0
+          },
+          "closed": false,
+          "dashed": false,
+          "filled": false,
+          "kind": "Text",
+          "pts": [],
+          "r": 0.0,
+          "text": "gap"
+        }
+      ]
+    },
+    {
+      "id": "dim_upper",
+      "primitives": [
+        {
+          "a": {
+            "x": 110.0,
+            "y": 156.0
+          },
+          "b": {
+            "x": 110.0,
+            "y": 212.0
+          },
+          "closed": false,
+          "dashed": true,
+          "filled": false,
+          "kind": "Line",
+          "pts": [],
+          "r": 0.0,
+          "text": ""
+        },
+        {
+          "a": {
+            "x": 114.0,
+            "y": 184.0
+          },
+          "b": {
+            "x": 0.0,
+            "y": 0.0
+          },
+          "closed": false,
+          "dashed": false,
+          "filled": false,
+          "kind": "Text",
+          "pts": [],
+          "r": 0.0,
+          "text": "up"
+        }
+      ]
+    },
+    {
+      "id": "dim_lower",
+      "primitives": [
+        {
+          "a": {
+            "x": 110.0,
+            "y": 104.0
+          },
+          "b": {
+            "x": 110.0,
+            "y": 48.0
+          },
+          "closed": false,
+          "dashed": true,
+          "filled": false,
+          "kind": "Line",
+          "pts": [],
+          "r": 0.0,
+          "text": ""
+        },
+        {
+          "a": {
+            "x": 114.0,
+            "y": 72.0
+          },
+          "b": {
+            "x": 0.0,
+            "y": 0.0
+          },
+          "closed": false,
+          "dashed": false,
+          "filled": false,
+          "kind": "Text",
+          "pts": [],
+          "r": 0.0,
+          "text": "dn"
+        }
+      ]
+    }
+  ],
+  "typeId": "beam_to_column_end_plate",
+  "useTabs": false,
+  "weldRows": []
+}

@@ -73,4 +73,19 @@ if(MM_CONTRACT_BUILD_TESTS)
     add_executable(mm_contract_recipe_test ${CMAKE_CURRENT_LIST_DIR}/tests/recipe_test.cpp)
     target_link_libraries(mm_contract_recipe_test PRIVATE mm_component_contract mm_contract_version)
     add_test(NAME mm_contract_recipe_test COMMAND mm_contract_recipe_test)
+
+    add_executable(mm_contract_end_plate_equiv_test ${CMAKE_CURRENT_LIST_DIR}/tests/end_plate_equivalence_test.cpp)
+    target_link_libraries(mm_contract_end_plate_equiv_test PRIVATE mm_component_contract mm_contract_version)
+    add_test(NAME mm_contract_end_plate_equiv_test COMMAND mm_contract_end_plate_equiv_test)
+
+    # Paket uretici (parameters/dialog/manifest) — test degil, arac.
+    add_executable(mm_gen_end_plate_package ${CMAKE_CURRENT_LIST_DIR}/tools/gen_end_plate_package.cpp)
+    target_link_libraries(mm_gen_end_plate_package PRIVATE mm_component_contract mm_contract_version)
+
+    # Uretim hedefi: parameters/dialog/manifest'i mevcut tanimlardan yeniden uretir.
+    add_custom_target(mm_generate_end_plate_package_pkg
+        COMMAND mm_gen_end_plate_package ${CMAKE_CURRENT_LIST_DIR}/packages/end_plate
+        DEPENDS mm_gen_end_plate_package
+        COMMENT "end plate paketi (parameters/dialog/manifest) uretiliyor"
+        VERBATIM)
 endif()

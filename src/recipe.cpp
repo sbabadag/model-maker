@@ -2,6 +2,7 @@
 
 #include "model_maker/component_codec.hpp"  // utf8FromWide / wideFromUtf8 (param adi esleme + hata)
 #include "model_maker/geometry.hpp"        // ProfileSectionFrame, WorkPlane, Vec3
+#include "model_maker/end_plate.hpp"       // computeEndPlatePlacement (endplate.placement tasi)
 
 #include <cmath>
 #include <cctype>
@@ -662,6 +663,65 @@ static bool blockCutPlane(EvalCtx& ctx, const RecipeStep& st, GenerationPlan& pl
     return true;
 }
 
+// endplate.placement: mevcut computeEndPlatePlacement mantigini SARAR (yeniden
+// yazmaz). Parametreleri generateEndPlate ile BIREBIR ayni sekilde input.params'tan
+// okur; boylece plan ciktisi (ve planDigest) generateEndPlate ile ozdes kalir.
+// Iki nesne uretir: levha (rolePlate, varsayilan end_plate) + bulon grubu
+// (roleBolts, varsayilan beam_bolts).
+static bool blockEndPlatePlacement(EvalCtx& ctx, const RecipeStep& st, GenerationPlan& plan) {
+    std::string mainRole, beamRole, rolePlate, roleBolts;
+    strArg(st, "main", "main", mainRole);
+    strArg(st, "beam", "secondary_0", beamRole);
+    strArg(st, "rolePlate", "end_plate", rolePlate);
+    strArg(st, "roleBolts", "beam_bolts", roleBolts);
+    const MemberGeometry* col = memberByRole(ctx.input, mainRole);
+    const MemberGeometry* beam = memberByRole(ctx.input, beamRole);
+    if (!col) { ctx.error = wideFromUtf8("endplate.placement: bilinmeyen ana uye '" + mainRole + "'"); return false; }
+    if (!beam) { ctx.error = wideFromUtf8("endplate.placement: bilinmeyen kiris uyesi '" + beamRole + "'"); return false; }
+
+    EndPlateParams ep;
+    ep.plateThickness = paramAsDouble(ctx.input.params, L"plateThickness", 12.0);
+    ep.plateExtra = paramAsDouble(ctx.input.params, L"plateExtra", 20.0);
+    ep.boltDiameter = paramAsDouble(ctx.input.params, L"boltDiameter", 20.0);
+    ep.holeDiameter = paramAsDouble(ctx.input.params, L"holeDiameter", 22.0);
+    ep.boltCountX = paramAsInt(ctx.input.params, L"boltCountX", 2);
+    ep.boltCountY = paramAsInt(ctx.input.params, L"boltCountY", 4);
+    ep.boltEdge = paramAsDouble(ctx.input.params, L"boltEdge", 30.0);
+    {
+        const std::wstring g = paramAsString(ctx.input.params, L"grade", L"8.8");
+        std::string narrow;
+        narrow.assign(g.begin(), g.end());
+        ep.boltGrade = narrow;
+    }
+    ep.hasHead = paramAsBool(ctx.input.params, L"hasHead", true);
+    ep.hasNut = paramAsBool(ctx.input.params, L"hasNut", true);
+    ep.hasWasher = paramAsBool(ctx.input.params, L"hasWasher", true);
+
+    const Vec3 beamAxis{beam->axisTo.x - beam->axisFrom.x,
+                        beam->axisTo.y - beam->axisFrom.y,
+                        beam->axisTo.z - beam->axisFrom.z};
+    const EndPlatePlacement placement =
+        computeEndPlatePlacement(beam->axisTo, beamAxis, beam->secWidth, beam->secHeight, ep);
+
+    PlateSpec plate;
+    plate.center = placement.plateCenter;
+    plate.u = placement.u;
+    plate.v = placement.v;
+    plate.axis = placement.axis;
+    plate.width = placement.plateWidth;
+    plate.height = placement.plateHeight;
+    plate.thickness = placement.plateThickness;
+    plate.name = L"Alin Levhasi";
+    plan.plates.push_back(plate);
+    plan.plateKeys.push_back(rolePlate);
+
+    BoltGroup bolts = placement.bolts;
+    bolts.parts = {col->id};
+    plan.boltGroups.push_back(bolts);
+    plan.boltGroupKeys.push_back(roleBolts);
+    return true;
+}
+
 // --- Blok kayit defteri -----------------------------------------------------
 using BlockFn = bool (*)(EvalCtx&, const RecipeStep&, GenerationPlan&);
 
@@ -681,6 +741,7 @@ static const std::vector<BlockDecl>& blockRegistry() {
         {"bolts.grid", {"nx", "ny", "px", "py", "d", "hole"}, {"frame", "grade"}, {"through"}, &blockBoltsGrid},
         {"weld.fillet", {"size"}, {"roleA", "roleB", "double", "doubleSided"}, {}, &blockWeldFillet},
         {"cut.plane", {}, {"target", "frame", "keep"}, {}, &blockCutPlane},
+        {"endplate.placement", {}, {"main", "beam", "rolePlate", "roleBolts"}, {}, &blockEndPlatePlacement},
     };
     return reg;
 }
@@ -709,6 +770,35 @@ static bool validRoleKey(const std::string& role) {
     if (role.empty()) return false;
     for (const char c : role)
         if (!(std::isalnum(static_cast<unsigned char>(c)) || c == '_')) return false;
+    return true;
+}
+
+// roleKey formati + rezerve + tekillik + tur tutarliligi denetimi.
+static bool checkRoleKey(const std::string& role, const std::string& kind,
+                         std::map<std::string, std::string>& roleKind, RecipeValidation& r) {
+    if (role.empty()) return true;
+    if (!validRoleKey(role)) {
+        r.ok = false;
+        r.message = L"gecersiz roleKey: " + wideFromUtf8(role);
+        return false;
+    }
+    if (role == "main" || role.rfind("secondary_", 0) == 0) {
+        r.ok = false;
+        r.message = L"rezerve roleKey kullanilamaz: " + wideFromUtf8(role);
+        return false;
+    }
+    const auto ex = roleKind.find(role);
+    if (ex != roleKind.end()) {
+        if (ex->second != kind) {
+            r.ok = false;
+            r.message = L"roleKey farkli ture baglandi: " + wideFromUtf8(role);
+        } else {
+            r.ok = false;
+            r.message = L"yinelenen roleKey: " + wideFromUtf8(role);
+        }
+        return false;
+    }
+    roleKind[role] = kind;
     return true;
 }
 
@@ -856,28 +946,16 @@ RecipeValidation validateRecipe(const Recipe& recipe,
         }
         const std::string kind = kindForBlock(st.use);
         if (!st.role.empty() && !kind.empty()) {
-            if (!validRoleKey(st.role)) {
-                r.ok = false;
-                r.message = L"gecersiz roleKey: " + wideFromUtf8(st.role);
-                return r;
-            }
-            if (st.role == "main" || st.role.rfind("secondary_", 0) == 0) {
-                r.ok = false;
-                r.message = L"rezerve roleKey kullanilamaz: " + wideFromUtf8(st.role);
-                return r;
-            }
-            const auto ex = roleKind.find(st.role);
-            if (ex != roleKind.end()) {
-                if (ex->second != kind) {
-                    r.ok = false;
-                    r.message = L"roleKey farkli ture baglandi: " + wideFromUtf8(st.role);
-                } else {
-                    r.ok = false;
-                    r.message = L"yinelenen roleKey: " + wideFromUtf8(st.role);
-                }
-                return r;
-            }
-            roleKind[st.role] = kind;
+            if (!checkRoleKey(st.role, kind, roleKind, r)) return r;
+        }
+        if (st.use == "endplate.placement") {
+            std::string rp = "end_plate", rb = "beam_bolts";
+            const auto ip = st.args.find("rolePlate");
+            if (ip != st.args.end() && !ip->second.text.empty()) rp = ip->second.text;
+            const auto ib = st.args.find("roleBolts");
+            if (ib != st.args.end() && !ib->second.text.empty()) rb = ib->second.text;
+            if (!checkRoleKey(rp, "plate", roleKind, r)) return r;
+            if (!checkRoleKey(rb, "bolt", roleKind, r)) return r;
         }
     }
     // let ifadelerini tara (tanimsiz let / bilinmeyen parametre) + dongu.

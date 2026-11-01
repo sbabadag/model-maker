@@ -103,7 +103,7 @@ kayıpsız; digest 1e-6'ya yuvarlanmış kanonik JSON üzerinden hesaplanır.
 - `runRecipe(recipe, specs, input)` — recipe → `GenerationPlan`; fail-closed
   (hata → `ok=false` + Türkçe mesaj)
 - v0 taşları: `frame.member_end`, `frame.offset`, `plate.rect`, `bolts.grid`,
-  `weld.fillet`, `cut.plane`, `check`
+  `weld.fillet`, `cut.plane`, `endplate.placement`, `check`
 - İfade dili: `+ - * / ^`, `min max abs sqrt sin cos tan atan2 clamp if`,
   karşılaştırma, `and/or/not`, `param.*`, `main.*`, `secondary_N.*` (h,b,tw,tf,length).
   Şema/semantik: `libs/mm_contract/RECIPE.md`.

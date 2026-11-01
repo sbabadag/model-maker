@@ -76,6 +76,7 @@ Bir çerçeve `MemberLocalFrame`'tir: `origin` + ortonormal `u`/`v`/`w`. Bloklar
 | `bolts.grid` | `frame`, `nx`, `ny`, `px`, `py`, `d`, `hole`, `grade`, `through[]` | `BoltGroup` (axis=frame.w, xDir=frame.u; through = üye rolleri → parts) |
 | `weld.fillet` | `roleA`, `roleB`, `size`, `double` | `WeldSpec` (üye rolü → part EntityId; levha roleKey'i → partARole/partBRole) |
 | `cut.plane` | `target` (üye rolü), `frame`, `keep` (positive/negative) | `CutModifier::PlaneCut` (hidden=true, component iç elemanı) |
+| `endplate.placement` | `main`, `beam`, `rolePlate`, `roleBolts` | mevcut `computeEndPlatePlacement`'ı SARAR; bir `PlateSpec` (rolePlate) + bir `BoltGroup` (roleBolts) üretir. Parametreleri `generateEndPlate` ile birebir aynı şekilde `input.params`'tan okur → planDigest `generateEndPlate` ile özdeş |
 
 Not: `bolts.grid`'in `through` listesi yalnız üye rolleri (main/secondary_N)
 içerir; levhalar materialization'da parts listesinin başına eklenir (mevcut

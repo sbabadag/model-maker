@@ -1,0 +1,16 @@
+{
+  "recipeVersion": "1.0.0",
+  "let": {},
+  "steps": [
+    {
+      "id": "ep",
+      "use": "endplate.placement",
+      "args": {
+        "main": "main",
+        "beam": "secondary_0",
+        "rolePlate": "end_plate",
+        "roleBolts": "beam_bolts"
+      }
+    }
+  ]
+}
