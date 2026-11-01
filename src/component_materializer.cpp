@@ -11,6 +11,8 @@
 #include <BRepBuilderAPI_MakePolygon.hxx>
 #include <BRepBuilderAPI_MakeWire.hxx>
 #include <BRepBuilderAPI_MakeEdge.hxx>
+#include <Bnd_Box.hxx>
+#include <BRepBndLib.hxx>
 #include <GC_MakeArcOfCircle.hxx>
 #include <BRepPrimAPI_MakePrism.hxx>
 #include <gp_Dir.hxx>
@@ -67,6 +69,31 @@ void applyColor(WireframeModel& model, std::uint32_t color) noexcept {
 // Bir weld kaydi icin (main/sec B-Rep'ten) fillet kati + display modeli uretir.
 // Basariliysa solidOut/wfOut doldurulur ve w.geometrySupported=true; degilse
 // w.unsupportedReason'a neden yazilir ve false doner (SESSIZ yanlis kati YOK).
+// KAYNAK GLIF KONUMU: iki B-Rep'in AABB'lerinden TEMAS bolgesi turetilir.
+// Onceki hesap iki bbox MERKEZININ ortasiydi; uzun kiris/kolon ciftlerinde bu
+// nokta parcalarin arasindaki BOSLUGA ("aciga") dusuyordu. Burada her kutunun
+// digerine EN YAKIN noktasi alinir: kesisim varsa iki nokta da temas bolgesinin
+// icinde kalir (orta = temas merkezi), kesisim yoksa ciftin ortasi iki kutu
+// arasindaki en yakin nokta olur.
+bool contactOriginFromShapes(const TopoDS_Shape& a, const TopoDS_Shape& b, Vec3& out) {
+    if (a.IsNull() || b.IsNull()) return false;
+    Bnd_Box ba, bb;
+    BRepBndLib::Add(a, ba);
+    BRepBndLib::Add(b, bb);
+    if (ba.IsVoid() || bb.IsVoid()) return false;
+    double a0x = 0, a0y = 0, a0z = 0, a1x = 0, a1y = 0, a1z = 0;
+    double b0x = 0, b0y = 0, b0z = 0, b1x = 0, b1y = 0, b1z = 0;
+    ba.Get(a0x, a0y, a0z, a1x, a1y, a1z);
+    bb.Get(b0x, b0y, b0z, b1x, b1y, b1z);
+    // Tolerans: kutular komsuysa kesisim merkezine yaklas.
+    const double tol = 1e-6;
+    a0x -= tol; a0y -= tol; a0z -= tol; a1x += tol; a1y += tol; a1z += tol;
+    b0x -= tol; b0y -= tol; b0z -= tol; b1x += tol; b1y += tol; b1z += tol;
+    out = weldContactOrigin(Vec3{a0x, a0y, a0z}, Vec3{a1x, a1y, a1z},
+                            Vec3{b0x, b0y, b0z}, Vec3{b1x, b1y, b1z});
+    return true;
+}
+
 bool buildWeldGeometry(Weld& w, const TopoDS_Shape& mainShape,
                        const TopoDS_Shape& secShape, TopoDS_Shape& solidOut,
                        WireframeModel& wfOut) {
@@ -77,6 +104,10 @@ bool buildWeldGeometry(Weld& w, const TopoDS_Shape& mainShape,
     if (seam > 0.0) w.length = seam;
     if (solids.empty()) {
         w.unsupportedReason = reason.empty() ? "kaynak kati uretilemedi" : reason;
+        // KATI YOK: glif konumu yine de parcalarin TEMAS bolgesinde olsun
+        // (varsayilan 0,0,0 kalirsa renderer glifi hic cizmez).
+        Vec3 contact;
+        if (contactOriginFromShapes(mainShape, secShape, contact)) w.origin = contact;
         return false;
     }
     // Fuse YOK: dikis katilari compound'da toplanir (Windows OCCT 7.9.3-3 Fuse
@@ -84,6 +115,8 @@ bool buildWeldGeometry(Weld& w, const TopoDS_Shape& mainShape,
     const TopoDS_Shape fused = compoundOfShapes(solids);
     if (fused.IsNull()) {
         w.unsupportedReason = "kaynak kati birlestirilemedi";
+        Vec3 contact;
+        if (contactOriginFromShapes(mainShape, secShape, contact)) w.origin = contact;
         return false;
     }
     const WeldJunction j = findBestWeldJunction(mainShape, secShape, 0.5);
@@ -92,6 +125,9 @@ bool buildWeldGeometry(Weld& w, const TopoDS_Shape& mainShape,
         w.direction = j.direction;
         w.mainNormal = j.mainNormal;
         w.secNormal = j.secNormal;
+    } else {
+        Vec3 contact;
+        if (contactOriginFromShapes(mainShape, secShape, contact)) w.origin = contact;
     }
     w.geometrySupported = true;
     w.unsupportedReason.clear();

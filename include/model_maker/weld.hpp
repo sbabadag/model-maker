@@ -28,6 +28,24 @@ enum class WeldType { Fillet, Butt };
 // Atolye / santiye kaynagi.
 enum class WeldClass { Shop, Site };
 
+// Iki parcanin AABB'lerinden kaynak referans (TEMAS) noktasi. Glif konumu icin:
+// her eksende iki araligin ORTAK bolgesinin merkezi alinir (kesisim varsa temas
+// yuzeyi/bolgesi merkezi); araliklar ayriksa aradaki boslugun orta noktasi.
+// Eski hesap bbox MERKEZLERININ ortasiydi — uzun kiris/kolon ciftlerinde bu
+// nokta parcalarin arasindaki bosluga ("aciga") dusuyordu.
+inline Vec3 weldContactOrigin(const Vec3& aMin, const Vec3& aMax,
+                              const Vec3& bMin, const Vec3& bMax) noexcept {
+    const auto axis = [](double aLo, double aHi, double bLo, double bHi) {
+        const double lo = aLo > bLo ? aLo : bLo;
+        const double hi = aHi < bHi ? aHi : bHi;
+        if (lo <= hi) return (lo + hi) * 0.5;                 // ortak bolge merkezi
+        return aHi < bLo ? (aHi + bLo) * 0.5 : (bHi + aLo) * 0.5;  // bosluk ortasi
+    };
+    return Vec3{axis(aMin.x, aMax.x, bMin.x, bMax.x),
+                axis(aMin.y, aMax.y, bMin.y, bMax.y),
+                axis(aMin.z, aMax.z, bMin.z, bMax.z)};
+}
+
 // Bir kaynagin kalici kaydi. mainPart = ana parca (kullanici tarafindan
 // belirlenebilir), secondaryPart = ikincil parca. Her ikisi de MEWCUT EntityId
 // olarak tutulur (baglanti silinse de parcalar KORUNUR).

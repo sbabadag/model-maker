@@ -7,6 +7,7 @@
 #include "model_maker/document.hpp"
 #include "model_maker/weld.hpp"
 
+#include <cmath>
 #include <cstdio>
 #include <filesystem>
 #include <set>
@@ -229,6 +230,49 @@ int main() {
         const EntityId pLone = addPart(doc, 500.0);
         const auto lone = doc.assemblyMembers(pLone);
         check(lone.size() == 1 && lone[0] == pLone, "members: yalniz parca kendisi");
+    }
+
+    // KAYNAK GLIF KONUMU (weldContactOrigin): kati uretilemeyen kaynaklar da
+    // parcalarin TEMAS bolgesinde temsil edilmeli; bbox merkezlerinin ortasi
+    // uzun parcalarda bosluga "aciga" dusuyordu.
+    {
+        const auto near = [](const Vec3& p, const Vec3& q, double tol = 1e-9) {
+            return std::abs(p.x - q.x) <= tol && std::abs(p.y - q.y) <= tol &&
+                   std::abs(p.z - q.z) <= tol;
+        };
+        // 1) Kesisen kutular: sonuc kesisim bolgesinin icinde olmali.
+        {
+            const Vec3 o = weldContactOrigin(Vec3{0, 0, 0}, Vec3{100, 100, 100},
+                                             Vec3{90, 40, 40}, Vec3{300, 60, 60});
+            check(o.x >= 90.0 && o.x <= 100.0 && o.y >= 40.0 && o.y <= 60.0 &&
+                      o.z >= 40.0 && o.z <= 60.0,
+                  "glif: kesisim merkezi temas bolgesinde");
+        }
+        // 2) Temas eden kutular (ortak yuz x=100): sonuc tam o yuzde.
+        {
+            const Vec3 o = weldContactOrigin(Vec3{0, 0, 0}, Vec3{100, 100, 100},
+                                             Vec3{100, 0, 0}, Vec3{200, 100, 100});
+            check(std::abs(o.x - 100.0) < 1e-9, "glif: temas eden yuzde");
+        }
+        // 3) Ayrik kutular: her eksende boslugun ortasi.
+        {
+            const Vec3 o = weldContactOrigin(Vec3{0, 0, 0}, Vec3{10, 10, 10},
+                                             Vec3{30, 0, 0}, Vec3{40, 10, 10});
+            check(near(o, Vec3{20, 5, 5}), "glif: ayrik kutularda bosluk ortasi");
+        }
+        // 4) Uzun kiris + kisa kolon (gercek "aciga cizilme" senaryosu):
+        // kiris X boyunca 0..6000, kolon kirisin ORTASINA oturmus.
+        {
+            const Vec3 beamMin{0, -100, 0}, beamMax{6000, 100, 200};
+            const Vec3 colMin{2950, -150, 200}, colMax{3050, 150, 3200};
+            const Vec3 oldMid{(beamMin.x + beamMax.x + colMin.x + colMax.x) / 4.0,
+                              (beamMin.y + beamMax.y + colMin.y + colMax.y) / 4.0,
+                              (beamMin.z + beamMax.z + colMin.z + colMax.z) / 4.0};
+            const Vec3 neu = weldContactOrigin(beamMin, beamMax, colMin, colMax);
+            check(near(neu, Vec3{3000, 0, 200}), "glif: uzun kiris + kolon temas yuzunde");
+            check(std::abs(oldMid.z - 900.0) < 1e-6,
+                  "glif: eski merkez-ortasi havada kaliyordu (regresyon kaniti)");
+        }
     }
 
     std::printf("%s\n", failures == 0 ? "ALL PASS" : "SOME FAILED");

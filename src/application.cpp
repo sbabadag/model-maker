@@ -9728,8 +9728,10 @@ bool Application::weldSelectedParts(WeldType type, double size, double length, W
     const EntityId b = document_.modelId(i1);
     if (a == kInvalidEntityId || b == kInvalidEntityId || a == b) return false;
     if (size <= 0.0) return false;  // gecersiz kaynak olcusu
-    // Origin / direction / length: iki parcanin bbox merkezinden turetilir
-    // (kaynak KONUM simgesi — gercek OCC katisi uretilmez; metadata korunur).
+    // Origin / direction / length: GLIF KONUMU iki parcanin TEMAS bolgesinden
+    // turetilir (bbox merkezlerinin ortasi degil — uzun parcalarda o nokta
+    // bosluga "aciga" dusuyordu). Gercek OCC katisi uretilirse origin zaten
+    // findBestWeldJunction ile dikis baslangicina cekilir.
     Vec3 origin{0.0, 0.0, 0.0};
     Vec3 direction{1.0, 0.0, 0.0};
     double autoLength = length;
@@ -9741,7 +9743,8 @@ bool Application::weldSelectedParts(WeldType type, double size, double length, W
         const Vec3 c1{(bounds[i1].minimum.x + bounds[i1].maximum.x) / 2.0,
                       (bounds[i1].minimum.y + bounds[i1].maximum.y) / 2.0,
                       (bounds[i1].minimum.z + bounds[i1].maximum.z) / 2.0};
-        origin = Vec3{(c0.x + c1.x) / 2.0, (c0.y + c1.y) / 2.0, (c0.z + c1.z) / 2.0};
+        origin = weldContactOrigin(bounds[i0].minimum, bounds[i0].maximum,
+                                   bounds[i1].minimum, bounds[i1].maximum);
         const double dx = c1.x - c0.x, dy = c1.y - c0.y, dz = c1.z - c0.z;
         const double len = std::sqrt(dx * dx + dy * dy + dz * dz);
         if (len > 1e-9) direction = Vec3{dx / len, dy / len, dz / len};
@@ -9972,18 +9975,27 @@ void Application::clearWeldSelection() {
 
 bool Application::toggleWeldSelectionAt(int x, int y) {
     // Kaynak glifi hit-test: her weld.origin ekrana izdusurulur, 12px yaricap.
+    // Origin yazilmamissa (eski dosya / kati uretilemeyen kaynak) renderer ile
+    // AYNI kural: parca AABB'lerinden TEMAS noktasi (tek kaynak: weldContactOrigin).
     const auto& welds = document_.welds();
     if (welds.empty()) return false;
     for (std::size_t wi = 0; wi < welds.size(); ++wi) {
         const auto& w = welds[wi];
+        Vec3 weldOrigin = w.origin;
         if (w.origin.x == 0.0 && w.origin.y == 0.0 && w.origin.z == 0.0 &&
-            w.direction.x == 1.0 && w.direction.y == 0.0 && w.direction.z == 0.0)
-            continue;
+            w.direction.x == 1.0 && w.direction.y == 0.0 && w.direction.z == 0.0) {
+            const auto ia = document_.indexOfEntity(w.mainPart);
+            const auto ib = document_.indexOfEntity(w.secondaryPart);
+            const auto& bounds = document_.modelBounds();
+            if (!ia || !ib || *ia >= bounds.size() || *ib >= bounds.size()) continue;
+            weldOrigin = weldContactOrigin(bounds[*ia].minimum, bounds[*ia].maximum,
+                                           bounds[*ib].minimum, bounds[*ib].maximum);
+        }
         RECT client{}; GetClientRect(canvas_, &client);
         const Vec2 px = mode_ == EditMode::Draw2D
-            ? camera_.project2D(w.origin, std::max(1L, client.right),
+            ? camera_.project2D(weldOrigin, std::max(1L, client.right),
                                 std::max(1L, client.bottom))
-            : camera_.project(w.origin, std::max(1L, client.right),
+            : camera_.project(weldOrigin, std::max(1L, client.right),
                               std::max(1L, client.bottom));
         const double dx = px.x - static_cast<double>(x);
         const double dy = px.y - static_cast<double>(y);

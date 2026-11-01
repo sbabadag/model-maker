@@ -1151,13 +1151,25 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         constexpr COLORREF kSelRgb    = RGB(255, 206, 84);  // sari (secili)
         for (std::size_t wi = 0; wi < welds.size(); ++wi) {
             const auto& w = welds[wi];
+            // Konum: kayitli origin; HIC yazilmamissa (eski dosya / kati
+            // uretilemeyen kaynak) parcalarin AABB'lerinden TEMAS noktasi
+            // turetilir — boylece glif bosluga degil, kaynagin gercekten
+            // bulundugu bolgeye cizilir.
+            Vec3 weldOrigin = w.origin;
             if (w.origin.x == 0.0 && w.origin.y == 0.0 && w.origin.z == 0.0 &&
-                w.direction.x == 1.0 && w.direction.y == 0.0 && w.direction.z == 0.0)
-                continue; // konum hesaplanmamis (varsayilan) -> cizme
+                w.direction.x == 1.0 && w.direction.y == 0.0 && w.direction.z == 0.0) {
+                const auto ia = document.indexOfEntity(w.mainPart);
+                const auto ib = document.indexOfEntity(w.secondaryPart);
+                const auto& bounds = document.modelBounds();
+                if (!ia || !ib || *ia >= bounds.size() || *ib >= bounds.size())
+                    continue;  // parcalar yok -> konumlandirilamaz
+                weldOrigin = weldContactOrigin(bounds[*ia].minimum, bounds[*ia].maximum,
+                                               bounds[*ib].minimum, bounds[*ib].maximum);
+            }
             // Gercek OCC katisi olan kaynaklar kati olarak gorunur; glif
             // yalnizca geometry unsupported kaynaklarda kalir (cift cizim yok).
             if (w.geometrySupported && w.displayEntityId != kInvalidEntityId) continue;
-            const POINT c = projectPoint(w.origin);
+            const POINT c = projectPoint(weldOrigin);
             const bool sel = std::find(draft.selectedWelds.begin(),
                                        draft.selectedWelds.end(), wi) !=
                              draft.selectedWelds.end();
