@@ -69,6 +69,13 @@ struct Ucs {
     // secilir (normal dunya Z'ye yakinsa ref=Y, degilse ref=Z; X = ref x normal).
     static Ucs fromPlaneAndNormal(Vec3 origin, Vec3 normal) noexcept;
 
+    // YUZ ARACI UCS (Tekla "work plane using part face"): origin + zAxis = yuzey
+    // normali, X = UYE EKSENININ yuz duzlemine izdusumu (kirisin boyu boyunca),
+    // Y = Z x X. Uye ekseni normale paralelse (uc yuzu) X yatay duser.
+    // Boylece kopya/tasima deltasi "X kiris boyunca, Y yuzde, Z normalde" gider —
+    // dunya eksenlerine hizali KALMAZ (fromPlaneAndNormal'in eksigi buydu).
+    static Ucs fromFaceAndMemberAxis(Vec3 origin, Vec3 normal, Vec3 memberAxis) noexcept;
+
     // PARCA KOORDINAT SISTEMINDEN UCS: origin + uye ekseni (yerel Z) + referans
     // normali (basliklarin PARALEL oldugu duzlem — profileSectionFrame kurali).
     // X/Y, profileSectionFrame(width, height, axis) ile ayni sekilde kurulur.

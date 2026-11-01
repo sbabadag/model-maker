@@ -2174,7 +2174,16 @@ void Application::onLeftButtonDown(int x, int y) {
             if (faceHit) {
                 // fromPlaneAndNormal normali iceride normalize eder + dejenere
                 // normalde guvenli dunya cercevesine duser.
-                workPlane_ = Ucs::fromPlaneAndNormal(faceHit->hit.point, faceHit->hit.normal)
+                // UYE EKSENI: X'i kiris boyunca hizala (dunya eksenine degil).
+                Vec3 memberAxis{1.0, 0.0, 0.0};
+                if (faceHit->model < document_.models().size()) {
+                    const auto& props = document_.models()[faceHit->model].properties();
+                    memberAxis = Vec3{props.axisToX - props.axisFromX,
+                                      props.axisToY - props.axisFromY,
+                                      props.axisToZ - props.axisFromZ};
+                }
+                workPlane_ = Ucs::fromFaceAndMemberAxis(faceHit->hit.point,
+                                                         faceHit->hit.normal, memberAxis)
                                  .toWorkPlane();
                 // TESHIY (kullanici: "ucs aleti ucs'yi set etmiyor sanki"): yuz
                 // aracinin SONUC temelini durum cubuguna yaz — U/V/N yuzle ayni mi
@@ -7498,8 +7507,15 @@ void Application::refreshHoverCandidate(int x, int y) {
             if (faceHit->hit.faceIndex != std::size_t(-1))
                 hoverFaceIndices_ = planarFaceTriangleGroup(
                     document_.models()[faceHit->model], faceHit->hit.faceIndex);
-            workPlanePreview_ =
-                Ucs::fromPlaneAndNormal(faceHit->hit.point, faceHit->hit.normal).toWorkPlane();
+            Vec3 memberAxis{1.0, 0.0, 0.0};
+            if (faceHit->model < document_.models().size()) {
+                const auto& props = document_.models()[faceHit->model].properties();
+                memberAxis = Vec3{props.axisToX - props.axisFromX,
+                                  props.axisToY - props.axisFromY,
+                                  props.axisToZ - props.axisFromZ};
+            }
+            workPlanePreview_ = Ucs::fromFaceAndMemberAxis(
+                faceHit->hit.point, faceHit->hit.normal, memberAxis).toWorkPlane();
         } else {
             workPlanePreview_.reset();
         }

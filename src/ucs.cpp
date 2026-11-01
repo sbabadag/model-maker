@@ -120,6 +120,27 @@ Ucs Ucs::fromPlaneAndNormal(Vec3 origin, Vec3 normal) noexcept {
     return Ucs{origin, *xa, *ya, *za};
 }
 
+Ucs Ucs::fromFaceAndMemberAxis(Vec3 origin, Vec3 normal, Vec3 memberAxis) noexcept {
+    const auto za = normalized(normal);
+    if (!za) return Ucs{origin, {1, 0, 0}, {0, 1, 0}, {0, 0, 1}};
+    // Uye ekseninin yuz duzlemine izdusumu = X yonu (kiris boyunca).
+    const double alongN = dot3(memberAxis, *za);
+    Vec3 ax{memberAxis.x - alongN * za->x,
+            memberAxis.y - alongN * za->y,
+            memberAxis.z - alongN * za->z};
+    auto xa = normalized(ax);
+    if (!xa) {
+        // Uc yuzu (eksen normale paralel): X'i yatay dusur (dunya Z referansli).
+        const Vec3 horiz = cross3(Vec3{0, 0, 1}, *za);
+        xa = normalized(horiz);
+        if (!xa) xa = normalized(cross3(Vec3{0, 1, 0}, *za));
+        if (!xa) xa = Vec3{1, 0, 0};
+    }
+    const auto ya = normalized(cross3(*za, *xa));
+    if (!ya) return Ucs{origin, *xa, {0, 1, 0}, *za};
+    return Ucs{origin, *xa, *ya, *za};
+}
+
 Ucs Ucs::fromPartFrame(Vec3 origin, Vec3 axis, Vec3 referenceNormal) noexcept {
     const auto za = normalized(axis);
     if (!za) return Ucs{origin, {1, 0, 0}, {0, 1, 0}, {0, 0, 1}};

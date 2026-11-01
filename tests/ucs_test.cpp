@@ -129,6 +129,32 @@ int main() {
               "yuzey UCS: egitik normal normalize edilir");
     }
 
+    // 6b) YUZ ARACI UCS — uye eksenine hizali (Tekla work plane using part face).
+    {
+        // Kiris +X boyunca, yuzey normali +Y (web yuzu). X ekseni KIRIS BOYUNCA
+        // (+X) olmali; dunya eksenine (fromPlaneAndNormal'in verdigi -X/+Z)
+        // DEGIL. Bu, kopya deltasi "X = kiris boyunca" gider demektir.
+        const Ucs u = Ucs::fromFaceAndMemberAxis({0, 0, 0}, {0, 1, 0}, {1, 0, 0});
+        check(near3(u.zAxis, {0, 1, 0}), "yuz aracı UCS: zAxis = normal (+Y)");
+        check(near3(u.xAxis, {1, 0, 0}), "yuz aracı UCS: X = uye ekseni (+X kiris boyunca)");
+        check(near3(u.yAxis, cross(u.zAxis, u.xAxis)), "yuz aracı UCS: Y = Z x X (sag-el)");
+        check(u.isValid(), "yuz aracı UCS gecerli");
+
+        // Uc yuzu: eksen normale paralel (+X normal, +X eksen) -> X yatay duser.
+        const Ucs e = Ucs::fromFaceAndMemberAxis({0, 0, 0}, {1, 0, 0}, {1, 0, 0});
+        check(near3(e.zAxis, {1, 0, 0}), "uc yuzu UCS: zAxis = normal (+X)");
+        check(std::abs(e.xAxis.x) < 1e-9 && std::abs(e.xAxis.z) < 1e-9,
+              "uc yuzu UCS: X yatay duser (izdusum dejenere)");
+        check(e.isValid(), "uc yuzu UCS gecerli");
+
+        // Egitik kiris: +X + +Z ekseni, normal +Z (ust yuz). X, eksenin yuz
+        // duzlemine izdusumu = +X olmali (normal bilesen atilir).
+        const Ucs s = Ucs::fromFaceAndMemberAxis({0, 0, 0}, {0, 0, 1}, {1, 0, 1});
+        check(near3(s.xAxis, {1, 0, 0}), "egitik kiris ust yuzu: X = eksenin yatay izdusumu (+X)");
+        check(near3(s.zAxis, {0, 0, 1}), "egitik kiris ust yuzu: zAxis = +Z");
+        check(s.isValid(), "egitik kiris ust yuzu UCS gecerli");
+    }
+
     // 7) Parca koordinat sisteminden UCS (eksen + referans normali).
     {
         // Yatay uye (+X ekseni), baslik dunya XY'ye paralel (normal +Z).
