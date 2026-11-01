@@ -94,4 +94,14 @@ if(MM_CONTRACT_BUILD_TESTS)
         DEPENDS mm_gen_end_plate_package
         COMMENT "end plate paketi (parameters/dialog/manifest) uretiliyor"
         VERBATIM)
+
+    # Haunch 40 paket uretici (MM-3c 1-C) — ayni desen.
+    add_executable(mm_gen_haunch40_package ${CMAKE_CURRENT_LIST_DIR}/tools/gen_haunch40_package.cpp)
+    target_link_libraries(mm_gen_haunch40_package PRIVATE mm_component_contract mm_contract_version)
+
+    add_custom_target(mm_generate_haunch40_package_pkg
+        COMMAND mm_gen_haunch40_package ${CMAKE_CURRENT_LIST_DIR}/packages/haunch40
+        DEPENDS mm_gen_haunch40_package
+        COMMENT "haunch40 paketi (parameters/dialog/manifest) uretiliyor"
+        VERBATIM)
 endif()

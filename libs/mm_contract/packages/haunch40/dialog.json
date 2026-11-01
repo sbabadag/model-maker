@@ -1,0 +1,435 @@
+{
+  "formatVersion": "1.0.0",
+  "groups": [
+    {
+      "asTab": true,
+      "background": "",
+      "canvasHeight": 0,
+      "canvasWidth": 0,
+      "emptyNote": "",
+      "figures": [],
+      "id": "picture",
+      "keepIfEmpty": false,
+      "layout": "",
+      "paramNames": [
+        "haunchLength",
+        "haunchDepth",
+        "haunchTipDepth",
+        "gap"
+      ],
+      "partRows": [],
+      "placed": [],
+      "prefix": "",
+      "title": "Olculer"
+    },
+    {
+      "asTab": true,
+      "background": "",
+      "canvasHeight": 0,
+      "canvasWidth": 0,
+      "emptyNote": "",
+      "figures": [],
+      "id": "haunch",
+      "keepIfEmpty": false,
+      "layout": "",
+      "paramNames": [
+        "haunchWebThickness",
+        "haunchFlangeThickness",
+        "haunchFlangeWidth",
+        "plateMaterial"
+      ],
+      "partRows": [],
+      "placed": [],
+      "prefix": "",
+      "title": "Haunch"
+    },
+    {
+      "asTab": true,
+      "background": "",
+      "canvasHeight": 0,
+      "canvasWidth": 0,
+      "emptyNote": "",
+      "figures": [],
+      "id": "cap",
+      "keepIfEmpty": false,
+      "layout": "",
+      "paramNames": [
+        "topPlateThickness"
+      ],
+      "partRows": [],
+      "placed": [],
+      "prefix": "",
+      "title": "Kolon Cap"
+    },
+    {
+      "asTab": true,
+      "background": "",
+      "canvasHeight": 0,
+      "canvasWidth": 0,
+      "emptyNote": "",
+      "figures": [],
+      "id": "endplate",
+      "keepIfEmpty": false,
+      "layout": "",
+      "paramNames": [
+        "endPlateThickness",
+        "endPlateWidth",
+        "endPlateHeight"
+      ],
+      "partRows": [],
+      "placed": [],
+      "prefix": "",
+      "title": "Alin levhasi"
+    },
+    {
+      "asTab": true,
+      "background": "",
+      "canvasHeight": 0,
+      "canvasWidth": 0,
+      "emptyNote": "",
+      "figures": [],
+      "id": "stiffeners",
+      "keepIfEmpty": false,
+      "layout": "",
+      "paramNames": [
+        "createBeamStiffener",
+        "stiffenerThickness",
+        "createAddStiffener",
+        "addStiffenerThickness",
+        "createRafterBottomStiffener",
+        "rafterBottomStiffenerThickness",
+        "createComprStiffener",
+        "comprStiffenerThickness",
+        "createMorrisStiffener",
+        "morrisStiffenerThickness",
+        "createDiagStiffener",
+        "diagStiffenerThickness",
+        "diagStiffenerWidth",
+        "stiffenerClipSize"
+      ],
+      "partRows": [],
+      "placed": [],
+      "prefix": "",
+      "title": "Berkitmeler"
+    },
+    {
+      "asTab": true,
+      "background": "",
+      "canvasHeight": 0,
+      "canvasWidth": 0,
+      "emptyNote": "",
+      "figures": [],
+      "id": "upperbolts",
+      "keepIfEmpty": false,
+      "layout": "",
+      "paramNames": [
+        "upperBoltCountX",
+        "upperBoltCountY",
+        "upperBoltPitchX",
+        "upperBoltPitchY",
+        "upperBoltDiameter",
+        "upperHoleDiameter",
+        "upperBoltEdgeClear"
+      ],
+      "partRows": [],
+      "placed": [],
+      "prefix": "",
+      "title": "Ust civata grubu"
+    },
+    {
+      "asTab": true,
+      "background": "",
+      "canvasHeight": 0,
+      "canvasWidth": 0,
+      "emptyNote": "",
+      "figures": [],
+      "id": "lowerbolts",
+      "keepIfEmpty": false,
+      "layout": "",
+      "paramNames": [
+        "lowerBoltCountX",
+        "lowerBoltCountY",
+        "lowerBoltPitchX",
+        "lowerBoltPitchY",
+        "lowerBoltDiameter",
+        "lowerHoleDiameter",
+        "lowerBoltEdgeClear"
+      ],
+      "partRows": [],
+      "placed": [],
+      "prefix": "",
+      "title": "Alt civata grubu"
+    },
+    {
+      "asTab": true,
+      "background": "",
+      "canvasHeight": 0,
+      "canvasWidth": 0,
+      "emptyNote": "",
+      "figures": [],
+      "id": "boltshared",
+      "keepIfEmpty": false,
+      "layout": "",
+      "paramNames": [
+        "boltEdgeLeft",
+        "boltEdgeRight",
+        "grade"
+      ],
+      "partRows": [],
+      "placed": [],
+      "prefix": "",
+      "title": "Bulon ortak"
+    },
+    {
+      "asTab": true,
+      "background": "",
+      "canvasHeight": 0,
+      "canvasWidth": 0,
+      "emptyNote": "",
+      "figures": [],
+      "id": "welds",
+      "keepIfEmpty": false,
+      "layout": "",
+      "paramNames": [
+        "createWelds",
+        "weldSize"
+      ],
+      "partRows": [],
+      "placed": [],
+      "prefix": "",
+      "title": "Kaynaklar"
+    }
+  ],
+  "hotspots": [
+    {
+      "id": "hs_hlen",
+      "label": "L",
+      "paramName": "haunchLength",
+      "position": {
+        "x": 192.0,
+        "y": 147.0
+      },
+      "radius": 10.0
+    },
+    {
+      "id": "hs_hdepth",
+      "label": "H",
+      "paramName": "haunchDepth",
+      "position": {
+        "x": 95.0,
+        "y": 114.0
+      },
+      "radius": 10.0
+    },
+    {
+      "id": "hs_endplate",
+      "label": "t",
+      "paramName": "endPlateThickness",
+      "position": {
+        "x": 76.0,
+        "y": 212.0
+      },
+      "radius": 10.0
+    }
+  ],
+  "items": [
+    {
+      "id": "column",
+      "primitives": [
+        {
+          "a": {
+            "x": 22.0,
+            "y": 24.0
+          },
+          "b": {
+            "x": 68.0,
+            "y": 230.0
+          },
+          "closed": false,
+          "dashed": false,
+          "filled": true,
+          "kind": "Rect",
+          "pts": [],
+          "r": 0.0,
+          "text": ""
+        }
+      ]
+    },
+    {
+      "id": "beam",
+      "primitives": [
+        {
+          "a": {
+            "x": 87.0,
+            "y": 150.0
+          },
+          "b": {
+            "x": 348.0,
+            "y": 178.0
+          },
+          "closed": false,
+          "dashed": false,
+          "filled": true,
+          "kind": "Rect",
+          "pts": [],
+          "r": 0.0,
+          "text": ""
+        }
+      ]
+    },
+    {
+      "id": "end_plate",
+      "primitives": [
+        {
+          "a": {
+            "x": 68.0,
+            "y": 104.0
+          },
+          "b": {
+            "x": 87.0,
+            "y": 210.0
+          },
+          "closed": false,
+          "dashed": false,
+          "filled": true,
+          "kind": "Rect",
+          "pts": [],
+          "r": 0.0,
+          "text": ""
+        }
+      ]
+    },
+    {
+      "id": "haunch_web",
+      "primitives": [
+        {
+          "a": {
+            "x": 87.0,
+            "y": 150.0
+          },
+          "b": {
+            "x": 87.0,
+            "y": 103.0
+          },
+          "closed": false,
+          "dashed": false,
+          "filled": false,
+          "kind": "Line",
+          "pts": [],
+          "r": 0.0,
+          "text": ""
+        },
+        {
+          "a": {
+            "x": 87.0,
+            "y": 103.0
+          },
+          "b": {
+            "x": 290.0,
+            "y": 150.0
+          },
+          "closed": false,
+          "dashed": false,
+          "filled": false,
+          "kind": "Line",
+          "pts": [],
+          "r": 0.0,
+          "text": ""
+        },
+        {
+          "a": {
+            "x": 87.0,
+            "y": 150.0
+          },
+          "b": {
+            "x": 290.0,
+            "y": 150.0
+          },
+          "closed": false,
+          "dashed": false,
+          "filled": false,
+          "kind": "Line",
+          "pts": [],
+          "r": 0.0,
+          "text": ""
+        }
+      ]
+    },
+    {
+      "id": "bolts",
+      "primitives": [
+        {
+          "a": {
+            "x": 77.0,
+            "y": 119.0
+          },
+          "b": {
+            "x": 0.0,
+            "y": 0.0
+          },
+          "closed": false,
+          "dashed": false,
+          "filled": false,
+          "kind": "Circle",
+          "pts": [],
+          "r": 3.5,
+          "text": ""
+        },
+        {
+          "a": {
+            "x": 77.0,
+            "y": 139.0
+          },
+          "b": {
+            "x": 0.0,
+            "y": 0.0
+          },
+          "closed": false,
+          "dashed": false,
+          "filled": false,
+          "kind": "Circle",
+          "pts": [],
+          "r": 3.5,
+          "text": ""
+        },
+        {
+          "a": {
+            "x": 77.0,
+            "y": 178.0
+          },
+          "b": {
+            "x": 0.0,
+            "y": 0.0
+          },
+          "closed": false,
+          "dashed": false,
+          "filled": false,
+          "kind": "Circle",
+          "pts": [],
+          "r": 3.5,
+          "text": ""
+        },
+        {
+          "a": {
+            "x": 77.0,
+            "y": 198.0
+          },
+          "b": {
+            "x": 0.0,
+            "y": 0.0
+          },
+          "closed": false,
+          "dashed": false,
+          "filled": false,
+          "kind": "Circle",
+          "pts": [],
+          "r": 3.5,
+          "text": ""
+        }
+      ]
+    }
+  ],
+  "typeId": "tekla_haunch_40",
+  "useTabs": true,
+  "weldRows": []
+}
