@@ -711,6 +711,10 @@ public:
     static constexpr std::size_t kSnapChoiceCount = 15;
 
 private:
+    // DIVIDE 1-NOKTA MODU: secili modeller arasinda TAM iki adet point
+    // entity varsa bunlarin ortasini doner; aksi halde nullopt. Divide
+    // komutu iki point seciliyken tek nokta verilince bu ortaya nokta koyar.
+    std::optional<Vec3> selectedTwoPointMidpoint() const;
     static LRESULT CALLBACK windowProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
     static LRESULT CALLBACK canvasProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
     static LRESULT CALLBACK propsWndProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam);

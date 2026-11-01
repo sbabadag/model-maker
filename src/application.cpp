@@ -3089,6 +3089,23 @@ void Application::onCharacter(wchar_t character) {
 }
 
 void Application::commitPoint(const Vec3& point) {
+    // DIVIDE 1-NOKTA MODU: iki point objesi seciliyken ilk tik, verilen noktayi
+    // degil secili iki noktanin ORTASINA tek nokta yerlestirir (komut 2 nokta
+    // yerine 1 nokta kabul eder). Klasik 2-tik bolme yalniz 2 point secili
+    // degilken calisir.
+    if (tool_ == DrawTool::Divide && !anchor_) {
+        if (const auto mid = selectedTwoPointMidpoint()) {
+            pushUndoSnapshot();
+            auto pt = WireframeModel::point(*mid);
+            EntityProperties props = currentEntityProperties();
+            props.trueColor = 0xFF0000u;     // kirmizi
+            props.effectiveColor = 0xFF0000u;
+            pt.setProperties(props);
+            document_.addModel(std::move(pt));
+            publishStatus(L"Bölme: seçili iki noktanın ortasına 1 nokta yerleştirildi");
+            return;
+        }
+    }
     // KOLON: tek tıkla tıklanan noktaya dik kolon (props profil+malzeme+top/bottom).
     if (tool_ == DrawTool::Column) {
         placeColumn(point);
@@ -7142,11 +7159,32 @@ std::optional<double> Application::requestLevelParameter(const std::wstring& pro
 }
 
 void Application::activateDivide() {
-    const auto count = requestCountParameter(L"Nokta sayısı (2-1000)",
-                                             std::to_wstring(divideCount_));
-    if (!count) return; // iptal
-    divideCount_ = *count;
+    // 1-NOKTA MODU: iki point objesi seciliyse nokta sayisi sormadan araca gec;
+    // tek tik secili iki noktanin ortasina nokta koyar (commitPoint 1-nokta modu).
+    // Degilse klasik 2-tik bolme icin sayi sor.
+    if (!selectedTwoPointMidpoint()) {
+        const auto count = requestCountParameter(L"Nokta sayısı (2-1000)",
+                                                 std::to_wstring(divideCount_));
+        if (!count) return; // iptal
+        divideCount_ = *count;
+    }
     selectTool(DrawTool::Divide);
+}
+
+std::optional<Vec3> Application::selectedTwoPointMidpoint() const {
+    std::vector<Vec3> pts;
+    pts.reserve(2);
+    for (const std::size_t i : selectedModels_) {
+        if (i >= document_.models().size()) continue;
+        const auto& m = document_.models()[i];
+        if (!m.isPointEntity() || m.vertices().empty()) continue;
+        pts.push_back(m.vertices()[0]);
+        if (pts.size() > 2) return std::nullopt; // ikiden fazla nokta secili
+    }
+    if (pts.size() != 2) return std::nullopt;
+    return Vec3{(pts[0].x + pts[1].x) * 0.5,
+                (pts[0].y + pts[1].y) * 0.5,
+                (pts[0].z + pts[1].z) * 0.5};
 }
 
 void Application::commitWorkPlanePoint(const Vec3& point) {
