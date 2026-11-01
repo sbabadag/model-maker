@@ -78,6 +78,12 @@ if(MM_CONTRACT_BUILD_TESTS)
     target_link_libraries(mm_contract_end_plate_equiv_test PRIVATE mm_component_contract mm_contract_version)
     add_test(NAME mm_contract_end_plate_equiv_test COMMAND mm_contract_end_plate_equiv_test)
 
+    add_executable(mm_contract_haunch40_equiv_test ${CMAKE_CURRENT_LIST_DIR}/tests/haunch40_equivalence_test.cpp)
+    target_link_libraries(mm_contract_haunch40_equiv_test PRIVATE mm_component_contract mm_contract_version)
+    target_compile_definitions(mm_contract_haunch40_equiv_test PRIVATE
+        MM_CONTRACT_GOLDEN_DIR="${MM_ROOT}/tests/golden")
+    add_test(NAME mm_contract_haunch40_equiv_test COMMAND mm_contract_haunch40_equiv_test)
+
     # Paket uretici (parameters/dialog/manifest) — test degil, arac.
     add_executable(mm_gen_end_plate_package ${CMAKE_CURRENT_LIST_DIR}/tools/gen_end_plate_package.cpp)
     target_link_libraries(mm_gen_end_plate_package PRIVATE mm_component_contract mm_contract_version)
