@@ -459,7 +459,6 @@ GenerationPlan generateEndPlate(const ComponentInput& input) noexcept {
         plan.error = L"ikincil parca (kiris) secilmeli";
         return plan;
     }
-    const MemberGeometry& beam = input.secondary[0];
 
     EndPlateParams ep;
     ep.plateThickness = paramAsDouble(input.params, L"plateThickness", 12.0);
@@ -479,11 +478,14 @@ GenerationPlan generateEndPlate(const ComponentInput& input) noexcept {
     ep.hasNut = paramAsBool(input.params, L"hasNut", true);
     ep.hasWasher = paramAsBool(input.params, L"hasWasher", true);
 
-    const Vec3 beamAxis{beam.axisTo.x - beam.axisFrom.x, beam.axisTo.y - beam.axisFrom.y,
-                        beam.axisTo.z - beam.axisFrom.z};
-
-    const EndPlatePlacement placement = computeEndPlatePlacementRotated(
-        beam.axisTo, beamAxis, beam.secWidth, beam.secHeight, beam.profileRotation, ep);
+    EndPlatePlacement placement;
+    EntityId mainPartId = input.main.id;
+    std::wstring perr;
+    if (!endPlatePlacementFromInput(input, ep, placement, mainPartId, perr)) {
+        plan.ok = false;
+        plan.error = perr;
+        return plan;
+    }
 
     PlateSpec plate;
     plate.center = placement.plateCenter;
@@ -498,9 +500,9 @@ GenerationPlan generateEndPlate(const ComponentInput& input) noexcept {
     plan.plateKeys.push_back("end_plate");
 
     BoltGroup bolts = placement.bolts;
-    // Generator yalniz KULLANICI parcasini bilir (kolon). Levha materializasyonda
-    // parts basina eklenir ({levha, kolon}).
-    bolts.parts = {input.main.id};
+    // Generator yalniz KULLANICI parcasini bilir (rol cozumlu kolon). Levha
+    // materializasyonda parts basina eklenir ({levha, kolon}).
+    bolts.parts = {mainPartId};
     plan.boltGroups.push_back(bolts);
     plan.boltGroupKeys.push_back("beam_bolts");
 
@@ -706,6 +708,42 @@ ProfileSectionFrame memberSectionFrame(const MemberGeometry& m) noexcept {
                      m.axisTo.z - m.axisFrom.z};
     ProfileSectionFrame sec = profileSectionFrame(axis, m.refNormal);
     return rotateSectionFrame(sec, m.profileRotation);
+}
+
+bool endPlatePlacementFromInput(const ComponentInput& input, const EndPlateParams& params,
+                                EndPlatePlacement& out, EntityId& mainPartId,
+                                std::wstring& error) noexcept {
+    const ShearTabPlacement pl = resolveShearTabPlacement(input);
+    if (!pl.ok) {
+        error = pl.error;
+        return false;
+    }
+    mainPartId = pl.col.id;  // rol cozumlu kolon (bulonlar bunu deler)
+    // Kiris kesit cercevesi: refNormal + profileRotation (dunya Z DEGIL).
+    const ProfileSectionFrame beamSec = memberSectionFrame(pl.beam);
+    // Kolon yuzu: kiris ekseninin kolon DIS yuz duzlemiyle kesisimi (beam
+    // sectionCenterOffset YOK — o, asagida anchorOffset olarak OnFace'e gider,
+    // beamSec.height yonunde).
+    ReferencePlane face;
+    face.origin = Vec3{pl.connEnd.x + pl.beamDir.x * pl.t,
+                       pl.connEnd.y + pl.beamDir.y * pl.t,
+                       pl.connEnd.z + pl.beamDir.z * pl.t};
+    // Kolon dis normali: kolon kesit yonlerinden kirise (lenDir) en hizali olani;
+    // isareti kirise dogru.
+    face.normal = Vec3{0.0, 0.0, 1.0};
+    const double dw = vdot(pl.lenDir, pl.colSec.width);
+    const double dh = vdot(pl.lenDir, pl.colSec.height);
+    if (std::fabs(dw) >= std::fabs(dh)) {
+        face.normal = pl.colSec.width;
+        if (dw < 0.0) face.normal = Vec3{-face.normal.x, -face.normal.y, -face.normal.z};
+    } else {
+        face.normal = pl.colSec.height;
+        if (dh < 0.0) face.normal = Vec3{-face.normal.x, -face.normal.y, -face.normal.z};
+    }
+    out = computeEndPlatePlacementOnFace(face, params.gap, pl.beam.secWidth, pl.beam.secHeight,
+                                         params, beamSec.height, pl.beam.sectionCenterOffset,
+                                         beamSec.width);
+    return true;
 }
 
 GenerationPlan generateFinPlate(const ComponentInput& input) noexcept {

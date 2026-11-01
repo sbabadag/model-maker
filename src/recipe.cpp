@@ -704,11 +704,13 @@ static bool blockEndPlatePlacement(EvalCtx& ctx, const RecipeStep& st, Generatio
     ep.hasNut = paramAsBool(ctx.input.params, L"hasNut", true);
     ep.hasWasher = paramAsBool(ctx.input.params, L"hasWasher", true);
 
-    const Vec3 beamAxis{beam->axisTo.x - beam->axisFrom.x,
-                        beam->axisTo.y - beam->axisFrom.y,
-                        beam->axisTo.z - beam->axisFrom.z};
-    const EndPlatePlacement placement = computeEndPlatePlacementRotated(
-        beam->axisTo, beamAxis, beam->secWidth, beam->secHeight, beam->profileRotation, ep);
+    EndPlatePlacement placement;
+    EntityId mainPartId = kInvalidEntityId;
+    std::wstring perr;
+    if (!endPlatePlacementFromInput(ctx.input, ep, placement, mainPartId, perr)) {
+        ctx.error = perr;
+        return false;
+    }
 
     PlateSpec plate;
     plate.center = placement.plateCenter;
@@ -723,7 +725,7 @@ static bool blockEndPlatePlacement(EvalCtx& ctx, const RecipeStep& st, Generatio
     plan.plateKeys.push_back(rolePlate);
 
     BoltGroup bolts = placement.bolts;
-    bolts.parts = {col->id};
+    bolts.parts = {mainPartId};
     plan.boltGroups.push_back(bolts);
     plan.boltGroupKeys.push_back(roleBolts);
     return true;

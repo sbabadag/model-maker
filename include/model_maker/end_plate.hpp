@@ -219,4 +219,15 @@ EndPlatePlacement computeEndPlatePlacementOnFace(
     const EndPlateParams& params, const Vec3& sectionHeightDir = Vec3{0.0, 0.0, 1.0},
     double anchorOffset = 0.0, const Vec3& sectionWidthDir = Vec3{0.0, 0.0, 0.0}) noexcept;
 
+// ALIN LEVHASI YERLESIMI — ComponentInput'dan, OCCT'siz (MM issue #1).
+// Kolonun GERCEK temas yuzu (resolveShearTabPlacement'in facePoint'i + kolon kesit
+// yonunden dis normal), kiris kesit cercevesi (refNormal + profileRotation) ve
+// sectionCenterOffset kullanir. generateEndPlate ve endplate.placement recipe tasi
+// AYNI fonksiyonu cagirir (gen == rec yapisal garanti). Tanim component_engine.cpp'de
+// (resolveShearTabPlacement'a erisim icin).
+struct ComponentInput;
+bool endPlatePlacementFromInput(const ComponentInput& input, const EndPlateParams& params,
+                                EndPlatePlacement& out, EntityId& mainPartId,
+                                std::wstring& error) noexcept;
+
 } // namespace mm
