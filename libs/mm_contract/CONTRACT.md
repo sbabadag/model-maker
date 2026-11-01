@@ -35,6 +35,7 @@ bağımlı değildir.
 | `component_engine.hpp` | parametre/üretim sözleşmesi (aşağıda) |
 | `component_dialog.hpp` | diyalog şeması + doğrulama (aşağıda) |
 | `component_codec.hpp` | JSON codec + kanonik + digest (aşağıda) |
+| `recipe.hpp` | recipe yorumlayıcısı (aşağıda) |
 | `component_framework.hpp` | component çatı tipleri |
 | `component_catalog.hpp` | katalog tipleri |
 
@@ -93,6 +94,19 @@ Ayrıca `libs/mm_contract/include/mm_contract/contract_version.hpp`:
 
 Codec kuralları: enum'lar string; bilinmeyen alanlar hata vermez; wstring ↔ UTF-8
 kayıpsız; digest 1e-6'ya yuvarlanmış kanonik JSON üzerinden hesaplanır.
+
+### Recipe yorumlayıcısı (`recipe.hpp`) — MM-3
+- `struct Recipe`, `struct RecipeStep`, `struct RecipeArg` — bildirimsel üretim
+  tarifi (let bağlamaları + blok/check adımları)
+- `validateRecipe(recipe, specs)` — statik analiz (bilinmeyen blok/parametre/let,
+  döngüsel let, roleKey tekilliği + tür tutarlılığı, üst sınırlar)
+- `runRecipe(recipe, specs, input)` — recipe → `GenerationPlan`; fail-closed
+  (hata → `ok=false` + Türkçe mesaj)
+- v0 taşları: `frame.member_end`, `frame.offset`, `plate.rect`, `bolts.grid`,
+  `weld.fillet`, `cut.plane`, `check`
+- İfade dili: `+ - * / ^`, `min max abs sqrt sin cos tan atan2 clamp if`,
+  karşılaştırma, `and/or/not`, `param.*`, `main.*`, `secondary_N.*` (h,b,tw,tf,length).
+  Şema/semantik: `libs/mm_contract/RECIPE.md`.
 
 ## Sürüm denetimi DIŞINDA olanlar (serbest)
 

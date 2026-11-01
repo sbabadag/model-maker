@@ -54,6 +54,7 @@ add_library(mm_component_contract
     src/component_framework.cpp
     src/component_catalog.cpp
     src/component_codec.cpp
+    src/recipe.cpp
 )
 target_include_directories(mm_component_contract PUBLIC include third_party)
 target_link_libraries(mm_component_contract PUBLIC mm_foundation)

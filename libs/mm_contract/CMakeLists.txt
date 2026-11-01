@@ -46,6 +46,7 @@ add_library(mm_component_contract
     ${MM_ROOT}/src/component_framework.cpp
     ${MM_ROOT}/src/component_catalog.cpp
     ${MM_ROOT}/src/component_codec.cpp
+    ${MM_ROOT}/src/recipe.cpp
 )
 target_include_directories(mm_component_contract PUBLIC ${MM_ROOT}/include ${MM_ROOT}/third_party)
 target_link_libraries(mm_component_contract PUBLIC mm_foundation)
@@ -68,4 +69,8 @@ if(MM_CONTRACT_BUILD_TESTS)
     target_compile_definitions(mm_contract_codec_test PRIVATE
         MM_CONTRACT_GOLDEN_DIR="${MM_ROOT}/tests/golden")
     add_test(NAME mm_contract_codec_test COMMAND mm_contract_codec_test)
+
+    add_executable(mm_contract_recipe_test ${CMAKE_CURRENT_LIST_DIR}/tests/recipe_test.cpp)
+    target_link_libraries(mm_contract_recipe_test PRIVATE mm_component_contract mm_contract_version)
+    add_test(NAME mm_contract_recipe_test COMMAND mm_contract_recipe_test)
 endif()
