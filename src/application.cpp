@@ -2860,6 +2860,13 @@ void Application::onMouseMove(int x, int y, WPARAM buttons) {
         lastMouse_ = {x, y};
         updateHover(x, y);
         redraw = true;
+    } else if (workPlanePicking_ && pointPickPurpose_ == PointPickPurpose::WorkPlaneFace) {
+        // YUZ ARACI HOVER: imlecin altindaki yuzu vurgula + aday calisma duzlemini
+        // yesil hayalet + X/Y/Z oklariyla CANLI onizle. Bu modda snap hatti
+        // (updateHover) DEGIL yuz raycast'i (refreshHoverCandidate) calisir; aksi
+        // halde ne onizleme duzlemi ne de yuz vurgusu gorunur.
+        refreshHoverCandidate(x, y);
+        redraw = true;
     } else if (pendingCutKind_ || pendingBolt_ || pendingFinPlate_ || componentCommandActive()) {
         // Verb-noun kesme/bolt/fin-plate bekleme modunda imlecin altindaki
         // secilebilir profil/duzlem/parcayi vurgula (hover highlight). Idle moddaki
@@ -3935,7 +3942,9 @@ void Application::startWorkPlaneFaceToolCommand() {
     hoverFaceModel_.reset();
     hoverFaceIndices_.clear();
     hover_.reset();
-    updateHover(cursorScreen_.x, cursorScreen_.y);
+    // Yuz araci baslar baslamaz imlecin altindaki yuzu + aday duzlemi onizle
+    // (snap hatti degil yuz raycast'i; fare ilk kez hareket etmeden de gorunur).
+    refreshHoverCandidate(cursorScreen_.x, cursorScreen_.y);
     updateControls();
     updateStatus();
     invalidateCanvas();
