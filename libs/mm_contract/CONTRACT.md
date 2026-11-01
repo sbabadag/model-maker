@@ -59,6 +59,9 @@ Ayrıca `libs/mm_contract/include/mm_contract/contract_version.hpp`:
 ### Üretim girdi/çıktısı
 - `struct MemberGeometry` — eksen, kesit bbox, gövde/flanş kalınlıkları,
   `sectionCenterOffset`, `profileRotation`
+- `memberSectionFrame(const MemberGeometry&)` — üyenin kesit çerçevesi
+  (eksen + `refNormal` + `profileRotation`; dönüş uygulanır). MM-4'te public
+  yapıldı (önceden TU-ici `rotateSectionFrame`).
 - `struct ComponentInput` — `{main, secondary[], params[]}`
 - `struct PlateSpec` — poligon `outline`, pahlar, kalınlık, malzeme
 - `struct GenerationPlan` — `{ok, message, plates[], bolts[], cuts[], welds[],

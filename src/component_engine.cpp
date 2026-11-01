@@ -701,6 +701,13 @@ std::vector<int> parseSpaceInts(const std::wstring& s) noexcept {
 
 } // namespace
 
+ProfileSectionFrame memberSectionFrame(const MemberGeometry& m) noexcept {
+    const Vec3 axis{m.axisTo.x - m.axisFrom.x, m.axisTo.y - m.axisFrom.y,
+                     m.axisTo.z - m.axisFrom.z};
+    ProfileSectionFrame sec = profileSectionFrame(axis, m.refNormal);
+    return rotateSectionFrame(sec, m.profileRotation);
+}
+
 GenerationPlan generateFinPlate(const ComponentInput& input) noexcept {
     GenerationPlan plan;
     const ShearTabPlacement pl = resolveShearTabPlacement(input);

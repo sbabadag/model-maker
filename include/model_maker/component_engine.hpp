@@ -198,6 +198,14 @@ struct MemberGeometry {
     double profileRotation{0.0};
 };
 
+// Kesit CERCEVESI (public, MM-4 / issue #4): bir uyenin kesit genislik/yukseklik
+// yonlerini uye ekseni + refNormal + profileRotation ile kurar. profileRotation
+// != 0 iken cerceve uye ekseni etrafinda dondurulur (90°'de genislik <-> yukseklik
+// yer degistirir). Daha once TU-ici (anonymous namespace) olan rotateSectionFrame
+// mantiginin public yuzudur; contract kullanicilari (Studio dahil) donmus kesit
+// cercevesini yeniden hesaplamadan elde edebilir.
+ProfileSectionFrame memberSectionFrame(const MemberGeometry& m) noexcept;
+
 // Generator girdisi: main (kolon) + secondary (kiris listesi) + parametreler.
 struct ComponentInput {
     MemberGeometry main;
