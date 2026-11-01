@@ -29,8 +29,9 @@ add_library(mm_foundation
     ${MM_ROOT}/src/geometry.cpp
     ${MM_ROOT}/src/reference_geometry.cpp
     ${MM_ROOT}/src/contact_resolver.cpp
+    ${MM_ROOT}/src/sha256.cpp
 )
-target_include_directories(mm_foundation PUBLIC ${MM_ROOT}/include)
+target_include_directories(mm_foundation PUBLIC ${MM_ROOT}/include ${MM_ROOT}/third_party)
 
 # --- mm_component_contract: component veri modeli + generator'lar ---
 add_library(mm_component_contract
@@ -44,8 +45,9 @@ add_library(mm_component_contract
     ${MM_ROOT}/src/component_dialog_146_canvas.cpp
     ${MM_ROOT}/src/component_framework.cpp
     ${MM_ROOT}/src/component_catalog.cpp
+    ${MM_ROOT}/src/component_codec.cpp
 )
-target_include_directories(mm_component_contract PUBLIC ${MM_ROOT}/include)
+target_include_directories(mm_component_contract PUBLIC ${MM_ROOT}/include ${MM_ROOT}/third_party)
 target_link_libraries(mm_component_contract PUBLIC mm_foundation)
 
 # --- contractVersion basligi (bu alt klasorde, self-contained) ---
@@ -60,4 +62,10 @@ if(MM_CONTRACT_BUILD_TESTS)
     add_executable(mm_contract_smoke_test ${CMAKE_CURRENT_LIST_DIR}/tests/contract_smoke_test.cpp)
     target_link_libraries(mm_contract_smoke_test PRIVATE mm_component_contract mm_contract_version)
     add_test(NAME mm_contract_smoke_test COMMAND mm_contract_smoke_test)
+
+    add_executable(mm_contract_codec_test ${CMAKE_CURRENT_LIST_DIR}/tests/component_codec_test.cpp)
+    target_link_libraries(mm_contract_codec_test PRIVATE mm_component_contract mm_contract_version)
+    target_compile_definitions(mm_contract_codec_test PRIVATE
+        MM_CONTRACT_GOLDEN_DIR="${MM_ROOT}/tests/golden")
+    add_test(NAME mm_contract_codec_test COMMAND mm_contract_codec_test)
 endif()

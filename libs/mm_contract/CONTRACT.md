@@ -34,6 +34,7 @@ bağımlı değildir.
 | `end_plate.hpp` | `EndPlateParams`, `EndPlateConnection` |
 | `component_engine.hpp` | parametre/üretim sözleşmesi (aşağıda) |
 | `component_dialog.hpp` | diyalog şeması + doğrulama (aşağıda) |
+| `component_codec.hpp` | JSON codec + kanonik + digest (aşağıda) |
 | `component_framework.hpp` | component çatı tipleri |
 | `component_catalog.hpp` | katalog tipleri |
 
@@ -76,6 +77,22 @@ Ayrıca `libs/mm_contract/include/mm_contract/contract_version.hpp`:
   gruplar, sekmeler, weld satırları
 - `struct DialogSchemaValidation` — `{bool ok, ...}`
 - `validateDialogSchema(schema, specs)`, `hitTestDiagramHotspot(schema, p)`
+
+### JSON codec (`component_codec.hpp`) — MM-2
+- `kCodecFormatVersion` — codec format sürümü ("formatVersion" olarak yazılır)
+- `utf8FromWide`, `wideFromUtf8` — wstring ↔ UTF-8 (16/32-bit wchar_t portable)
+- `compParamSpecToJson/FromJson`, `compParamToJson/FromJson` — parametre şeması/değer
+- `componentCatalogMetaToJson/FromJson`, `componentTypeToJson/FromJson`
+- `componentDialogSchemaToJson/FromJson` — items/primitives, hotspots, groups,
+  weldRows, canvas alanları
+- `generationPlanToJson/FromJson` — PlateSpec (outline/chamfer), BoltGroup,
+  CutModifier, WeldSpec, roleKey dizileri
+- `canonicalJsonString` — sıralı anahtar, 1e-6 yuvarlama, sabit biçim, -0→0, UTF-8
+- `generationPlanCanonicalJson`, `generationPlanDigest` — kanonik metin + SHA-256
+  hex (planDigest); Linux GCC == Windows mingw (deterministik)
+
+Codec kuralları: enum'lar string; bilinmeyen alanlar hata vermez; wstring ↔ UTF-8
+kayıpsız; digest 1e-6'ya yuvarlanmış kanonik JSON üzerinden hesaplanır.
 
 ## Sürüm denetimi DIŞINDA olanlar (serbest)
 

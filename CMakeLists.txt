@@ -32,8 +32,9 @@ add_library(mm_foundation
     src/geometry.cpp
     src/reference_geometry.cpp
     src/contact_resolver.cpp
+    src/sha256.cpp
 )
-target_include_directories(mm_foundation PUBLIC include)
+target_include_directories(mm_foundation PUBLIC include third_party)
 target_compile_options(mm_foundation PRIVATE -Wall -Wextra -Wpedantic)
 
 # ============================================================================
@@ -52,8 +53,9 @@ add_library(mm_component_contract
     src/component_dialog_146_canvas.cpp
     src/component_framework.cpp
     src/component_catalog.cpp
+    src/component_codec.cpp
 )
-target_include_directories(mm_component_contract PUBLIC include)
+target_include_directories(mm_component_contract PUBLIC include third_party)
 target_link_libraries(mm_component_contract PUBLIC mm_foundation)
 target_compile_options(mm_component_contract PRIVATE -Wall -Wextra -Wpedantic)
 
@@ -68,7 +70,6 @@ add_library(model_maker_core
     src/drafting.cpp
     src/profile_database.cpp
     src/occ_store_null.cpp
-    src/sha256.cpp
     src/mmw8_codec.cpp
     src/ucs.cpp
     src/component.cpp
