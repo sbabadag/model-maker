@@ -36,6 +36,27 @@ add_library(mm_foundation
 target_include_directories(mm_foundation PUBLIC include)
 target_compile_options(mm_foundation PRIVATE -Wall -Wextra -Wpedantic)
 
+# ============================================================================
+# mm_component_contract — component veri modeli + generator'lar (saf; OCC/Qt/Document'siz).
+# CompParamSpec, GenerationPlan, ComponentRegistry, ComponentDialogSchema,
+# generateEndPlate/generateFinPlate/generateHaunch40 vb. generator'lar burada.
+# ============================================================================
+add_library(mm_component_contract
+    src/cut_modifier.cpp
+    src/bolt.cpp
+    src/constraint_system.cpp
+    src/magnetic_frame.cpp
+    src/end_plate.cpp
+    src/component_engine.cpp
+    src/component_dialog.cpp
+    src/component_dialog_146_canvas.cpp
+    src/component_framework.cpp
+    src/component_catalog.cpp
+)
+target_include_directories(mm_component_contract PUBLIC include)
+target_link_libraries(mm_component_contract PUBLIC mm_foundation)
+target_compile_options(mm_component_contract PRIVATE -Wall -Wextra -Wpedantic)
+
 add_library(model_maker_core
     src/grid.cpp
     src/camera.cpp
@@ -50,23 +71,13 @@ add_library(model_maker_core
     src/sha256.cpp
     src/mmw8_codec.cpp
     src/ucs.cpp
-    src/cut_modifier.cpp
     src/component.cpp
-    src/component_engine.cpp
-    src/bolt.cpp
-    src/end_plate.cpp
-    src/constraint_system.cpp
     src/geometry_reference_resolver.cpp
-    src/magnetic_frame.cpp
     src/component_recompute.cpp
     src/component_rebind.cpp
     src/axis_delta.cpp
     src/linear_delta.cpp
-    src/component_framework.cpp
     src/component_glyph.cpp
-    src/component_dialog.cpp
-    src/component_dialog_146_canvas.cpp
-    src/component_catalog.cpp
     src/assembly.cpp
     src/bridge_package.cpp
     src/bridge_component_mapper.cpp
@@ -84,7 +95,7 @@ add_library(model_maker_core
     src/paper_editing.cpp
     src/drawing_builder.cpp)
 target_include_directories(model_maker_core PUBLIC include third_party)
-target_link_libraries(model_maker_core PUBLIC mm_foundation)
+target_link_libraries(model_maker_core PUBLIC mm_foundation mm_component_contract)
 target_compile_options(model_maker_core PRIVATE -Wall -Wextra -Wpedantic)
 
 set(MODELMAKER_QT_SOURCES

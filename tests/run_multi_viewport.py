@@ -411,5 +411,5 @@ generated.write_text(shell, encoding="utf-8")
 subprocess.run([os.environ.get("CXX", "g++"), "-std=c++20", "-O0", "-g", "-Wall", "-Wextra",
                 "-Wno-unused-parameter", "-fsanitize=address,undefined",
                 "-I", str(root / "include"), str(generated), str(build / "libmodel_maker_core.a"),
-                str(build / "libmm_foundation.a"), "-o", str(binary)], check=True)
+                str(build / "libmm_component_contract.a"), str(build / "libmm_foundation.a"), "-o", str(binary)], check=True)
 raise SystemExit(subprocess.run([str(binary)]).returncode)
