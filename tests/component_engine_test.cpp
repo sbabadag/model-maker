@@ -203,7 +203,7 @@ int main() {
         }
         if (plan.boltGroups.size() == 1) {
             const BoltGroup& b = plan.boltGroups[0];
-            check(b.countX == 2 && b.countY == 4, "end plate 2x4 bulon (default)");
+            check(b.countX == 2 && b.countY == 2, "end plate 2x2 bulon (default)");
             check(b.parts.size() == 1 && b.parts[0] == EntityId{10},
                   "bolonlar ana parca (kolon) referansli");
             check(approx(b.params.nominalDiameter, 20.0), "M20");

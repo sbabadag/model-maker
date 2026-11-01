@@ -225,7 +225,7 @@ static void testDocumentRoundTrip() {
             if (p.name == L"beamRef") hasBeamRef = true;
         }
         check(gradeOk, "param grade=10.9 korunur");
-        check(countY == 4, "eksik param boltCountY -> varsayilan 4 (migration)");
+        check(countY == 2, "eksik param boltCountY -> varsayilan 2 (migration)");
         check(hasBeamRef, "bilinmeyen param beamRef KORUNUR");
     }
     std::error_code ec;

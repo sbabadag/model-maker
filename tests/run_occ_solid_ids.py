@@ -65,6 +65,7 @@ CORE_SOURCES = [
     # parametre migration icin registry/semaya bagimli; end_plate.cpp ayni motora
     # ait (computeEndPlatePlacement/endPlateFrame).
     "src/component_engine.cpp", "src/end_plate.cpp",
+    "src/component_dialog.cpp", "src/component_dialog_146_canvas.cpp",
 ]
 
 OCC_LIBS = ["TKernel", "TKMath", "TKG2d", "TKG3d", "TKGeomBase", "TKBRep",
