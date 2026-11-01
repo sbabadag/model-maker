@@ -1029,7 +1029,8 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
             std::wstring typeId;
             if (gi < draft.componentGlyphTypes.size()) typeId = draft.componentGlyphTypes[gi];
             const COLORREF rgb = sel ? kGlyphSel : typeRgb(typeId);
-            const int r = sel ? 13 : 11;
+            // EKRAN-SABIT cap (zoom'dan bagimsiz standart, bkz. renderer.hpp).
+            const int r = sel ? kComponentGlyphSelectedRadiusPx : kComponentGlyphRadiusPx;
             // 3B KURE: dolu daire (taban) + sol-ust vurgu + ince koyu kenar.
             HBRUSH ball = CreateSolidBrush(rgb);
             const HGDIOBJ oldBr = SelectObject(dc, ball);

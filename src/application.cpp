@@ -4238,9 +4238,10 @@ std::optional<std::size_t> Application::modelIndexAt(int x, int y) const {
 std::optional<std::size_t> Application::componentGlyphModelAt(int x, int y) const {
     // ALL COMPONENT SEMBOLLERI (End Plate + universal parametrik Fin Plate vb.)
     // icin ortak liste: renderer ile AYNI kaynak (collectComponentGlyphs).
-    // Ekran-olcekli yaricap (~18 px) kullanilir — simge gercek levhadan buyuktur.
+    // Ekran-olcekli yaricap kullanilir — simge gercek levhadan buyuktur.
+    // Cap, cizim standardiyla AYNI kaynaktan turer (renderer.hpp).
     // Birden fazla sembol yaricap icine duserse EN YAKIN olan secilir.
-    constexpr double kGlyphRadiusPx = 18.0;
+    const double kGlyphRadiusPx = static_cast<double>(kComponentGlyphHitRadiusPx);
     RECT client{};
     GetClientRect(canvas_, &client);
     const int vw = std::max(1L, client.right);

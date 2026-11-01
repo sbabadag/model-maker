@@ -37,6 +37,14 @@ inline constexpr int kComponentGumballOffsetX = 22;  // glyph anchor'dan saga (e
 inline constexpr int kComponentGumballOffsetY = -22; // ve yukari
 inline constexpr int kComponentGumballRadiusPx = 10; // cizim yaricapi
 inline constexpr int kComponentGumballHitPx = 13;    // hit-test yaricapi
+
+// COMPONENT KURE SEMBOL BOYUT STANDARDI — EKRAN-SABIT, zoom'dan BAGIMSIZ.
+// Sembol dunya uzayinda buyumez; her zoom seviyesinde bu piksel capini korur
+// (boyut cizimde ve tik hedefinde AYNI standarttan turer). Bu, "zoom
+// buyuyunce sembol de buyumesin" sartinin tek kaynagidir.
+inline constexpr int kComponentGlyphRadiusPx = 11;          // secili degil (cizim)
+inline constexpr int kComponentGlyphSelectedRadiusPx = 13;  // secili (cizim)
+inline constexpr int kComponentGlyphHitRadiusPx = 18;       // tik hedefi (hit-test)
 inline COLORREF canvasBackgroundColor() noexcept { return static_cast<COLORREF>(kCanvasBgRgb); }
 inline double niceGridStep(double pixelsPerUnit) noexcept {
     if (pixelsPerUnit <= 1e-9) return kMinGridStepMm;
