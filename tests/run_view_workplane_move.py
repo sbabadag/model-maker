@@ -162,7 +162,8 @@ int main() {
     exe = build / "view_workplane_move_generated"
     src.write_text(harness, encoding="utf-8")
     compile_cmd = [os.environ.get("CXX", "g++"), "-std=c++20", "-O1", "-I",
-                   str(root / "include"), str(src), str(lib), "-o", str(exe)]
+                   str(root / "include"), str(src), str(lib),
+                   str(build / "libmm_foundation.a"), "-o", str(exe)]
     comp = subprocess.run(compile_cmd, capture_output=True, text=True)
     if comp.returncode != 0:
         failures.append("davranis harness'i derlenemedi:\n" + comp.stderr[-1500:])

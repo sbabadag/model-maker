@@ -24,8 +24,19 @@ set(CMAKE_AUTOUIC ON)
 list(PREPEND CMAKE_PREFIX_PATH "${QT_ROOT}")
 find_package(Qt6 QUIET COMPONENTS Widgets Core Gui)
 
-add_library(model_maker_core
+# ============================================================================
+# mm_foundation — yaprak saf tipler (OCCT'siz, Qt'siz, Document'siz).
+# entity_id.hpp header-only'dir. Studio bunu Qt/OCCT cekmeden derleyebilir.
+# ============================================================================
+add_library(mm_foundation
     src/geometry.cpp
+    src/reference_geometry.cpp
+    src/contact_resolver.cpp
+)
+target_include_directories(mm_foundation PUBLIC include)
+target_compile_options(mm_foundation PRIVATE -Wall -Wextra -Wpedantic)
+
+add_library(model_maker_core
     src/grid.cpp
     src/camera.cpp
     src/view_cube.cpp
@@ -44,9 +55,7 @@ add_library(model_maker_core
     src/component_engine.cpp
     src/bolt.cpp
     src/end_plate.cpp
-    src/reference_geometry.cpp
     src/constraint_system.cpp
-    src/contact_resolver.cpp
     src/geometry_reference_resolver.cpp
     src/magnetic_frame.cpp
     src/component_recompute.cpp
@@ -75,6 +84,7 @@ add_library(model_maker_core
     src/paper_editing.cpp
     src/drawing_builder.cpp)
 target_include_directories(model_maker_core PUBLIC include third_party)
+target_link_libraries(model_maker_core PUBLIC mm_foundation)
 target_compile_options(model_maker_core PRIVATE -Wall -Wextra -Wpedantic)
 
 set(MODELMAKER_QT_SOURCES

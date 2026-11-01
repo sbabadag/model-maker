@@ -19,6 +19,10 @@ header = (root / "include/model_maker/application.hpp").read_text(encoding="utf-
 renderer = (root / "include/model_maker/renderer.hpp").read_text(encoding="utf-8")
 fields = header[header.index("    bool gumballVisible_"):header.index("    std::optional<Vec3> anchor_")]
 handles = renderer[renderer.index("enum class GumballHandle"):renderer.index("struct DraftView")]
+# Component gumball sabitleri (kComponentGumball*, kComponentGlyph*) verbatim
+# cikarilir — method govdeleri (openComponentDialogForSelected vb.) bunlari
+# kullanir; sabitler renderer.hpp'de GumballHandle enum'unun USTUNDEDIR.
+consts = renderer[renderer.index("inline constexpr int kComponentGumballOffsetX"):renderer.index("inline COLORREF canvasBackgroundColor")]
 methods = app[app.index("Vec2 Application::gumballProject"):app.index("DraftView Application::draftView")]
 release_match = re.search(r"^void Application::onLeftButtonUp\(.*?^}", app, re.M | re.S)
 assert release_match, "onLeftButtonUp extraction marker not found"
@@ -35,6 +39,9 @@ shell = r'''
 #include "model_maker/camera.hpp"
 #include "model_maker/view_cube.hpp"
 #include "model_maker/grip_selection.hpp"
+#include "model_maker/component_glyph.hpp"
+#include "model_maker/component_engine.hpp"
+#include "model_maker/end_plate.hpp"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -66,7 +73,7 @@ namespace mm {
 enum class EditMode { Draw2D, View3D };
 enum class TransformCommand { None };
 '''
-shell += handles
+shell += consts + handles
 shell += r'''
 class Application {
 public:
@@ -106,11 +113,16 @@ public:
     std::vector<std::size_t> transformIndicesWithAttachedCutSources(
         const std::vector<std::size_t>&) const;
 '''
-shell += fields + "};\n" + methods + attached + release + "\n}\n"
+shell += fields + r'''
+    // COMPONENT GUMBALL: duzenleme istegi callback'leri (application.hpp'den
+    // verbatim; method govdeleri openComponentDialogForSelected bunlari cagirir).
+    std::function<void(const EndPlateConnection&)> endPlateEditRequest_;
+    std::function<void(const ComponentInstanceRecord&)> componentEditRequest_;
+''' + "};\n" + methods + attached + release + "\n}\n"
 shell += (root / "tests/gumball_interaction_cases.cpp").read_text(encoding="utf-8")
 build.mkdir(parents=True, exist_ok=True)
 generated = build / "gumball_interaction_generated.cpp"
 binary = build / "gumball_interaction_test"
 generated.write_text(shell, encoding="utf-8")
-subprocess.run([os.environ.get("CXX", "g++"), "-std=c++20", "-O0", "-g", "-Wall", "-Wextra", "-I", str(root / "include"), str(generated), str(build / "libmodel_maker_core.a"), "-o", str(binary)], check=True)
+subprocess.run([os.environ.get("CXX", "g++"), "-std=c++20", "-O0", "-g", "-Wall", "-Wextra", "-I", str(root / "include"), str(generated), str(build / "libmodel_maker_core.a"), str(build / "libmm_foundation.a"), "-o", str(binary)], check=True)
 subprocess.run([str(binary)], check=True)

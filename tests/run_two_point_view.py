@@ -265,5 +265,5 @@ binary = build / "two_point_view_test"
 generated.write_text(shell, encoding="utf-8")
 subprocess.run([os.environ.get("CXX", "g++"), "-std=c++20", "-O0", "-g", "-Wall", "-Wextra",
                 "-I", str(root / "include"), str(generated), str(build / "libmodel_maker_core.a"),
-                "-o", str(binary)], check=True)
+                str(build / "libmm_foundation.a"), "-o", str(binary)], check=True)
 raise SystemExit(subprocess.run([str(binary)]).returncode)
