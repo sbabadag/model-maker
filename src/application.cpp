@@ -1574,6 +1574,14 @@ LRESULT Application::handleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
                 camera_.zoom3DAt(zoomAnimCursor_, apply,
                                  std::max(1L, wc.right), std::max(1L, wc.bottom));
             zoomAnimTarget_ /= apply;
+            // RASTER ONIZLEME: son TAM (kati) kareyi biriken zoom carpaniyla
+            // esnet — zoom suresince GDI wireframe'e dusmeden (interactiveNavigation
+            // yuz dolgusunu atliyor) ve kare basina tam redraw yapmadan akici.
+            // Esik yok: her boyutta ve 2B/3B'de gecerli. offset = (1-factor)*imlec
+            // — zoom imlecin altindaki noktaya kilitlenir (zoom2DAt/zoom3DAt ile ayni capa).
+            wheelPreviewFactor_ *= apply;
+            wheelPreviewOffset_ = { (1.0 - wheelPreviewFactor_) * zoomAnimCursor_.x,
+                                    (1.0 - wheelPreviewFactor_) * zoomAnimCursor_.y };
             if (done || std::abs(zoomAnimTarget_ - 1.0) < 0.004) {
                 zoomAnimTarget_ = 1.0;
                 zoomAnimActive_ = false;
@@ -12163,17 +12171,13 @@ DraftView Application::draftView() const {
     view.snapPreviewActive = snapPreviewActive_;
     view.wheelNavigating = wheelNavigating_; view.rotating = rotating_;
     view.panning = panning2D_; view.viewCubeActive = viewCubeManipulating_ || viewCubeAnimActive_;
-    // Esik 8'000'e indirildi: 18k'lik cizimde tekerlek zoom'u stride-4 seyrek
-    // fallback kareler uretiyordu (modellerin ~%75'i kaybolup geri geliyordu
-    // = zoom sirasinda nabiz/flicker). Raster preview son tam kareyi esnetir —
-    // zoom suresince hic seyrek cizim yapilmaz.
-    // Raster onizleme: (a) tekerlek zoom (buyuk modellerde, esitik 8000) ve
-    // (b) I4 2B pan. 2B pan'da factor=1.0 (saf kaydirma), offset biriken piksel
-    // otelemesidir; renderer son tam kareyi StretchBlt ile kaydirir.
+    // RASTER ONIZLEME: (a) 2B pan (I4) ve (b) tekerlek zoom. Zoom artik son
+    // TAM kati kareyi biriken carpanla esnetir — GDI'da wireframe'e dusme
+    // olmaz (interactiveNavigation yuz dolgusunu atladigi icin eskiden zoom
+    // sirasinda katilar tel kafese donuyor, bitince geri geliyordu). Esik
+    // kaldirildi: her boyutta tekerlek zoom'u raster onizleme kullanir.
     const bool pan2DPreview = panning2D_ && mode_ == EditMode::Draw2D;
-    view.rasterZoomPreview = pan2DPreview ||
-                             (document_.models().size() > 8'000 && wheelNavigating_ &&
-                              std::abs(wheelPreviewFactor_ - 1.0) > 1e-12);
+    view.rasterZoomPreview = pan2DPreview || wheelNavigating_;
     view.rasterZoomFactor = pan2DPreview ? 1.0 : wheelPreviewFactor_;
     view.rasterZoomOffset = pan2DPreview ? pan2DPreviewOffset_ : wheelPreviewOffset_;
     // Profil uc tutamagi (grip edit) vurgusu + move track line.
