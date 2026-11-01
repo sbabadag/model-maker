@@ -686,23 +686,7 @@ static bool blockEndPlatePlacement(EvalCtx& ctx, const RecipeStep& st, Generatio
     if (!col) { ctx.error = wideFromUtf8("endplate.placement: bilinmeyen ana uye '" + mainRole + "'"); return false; }
     if (!beam) { ctx.error = wideFromUtf8("endplate.placement: bilinmeyen kiris uyesi '" + beamRole + "'"); return false; }
 
-    EndPlateParams ep;
-    ep.plateThickness = paramAsDouble(ctx.input.params, L"plateThickness", 12.0);
-    ep.plateExtra = paramAsDouble(ctx.input.params, L"plateExtra", 20.0);
-    ep.boltDiameter = paramAsDouble(ctx.input.params, L"boltDiameter", 20.0);
-    ep.holeDiameter = paramAsDouble(ctx.input.params, L"holeDiameter", 22.0);
-    ep.boltCountX = paramAsInt(ctx.input.params, L"boltCountX", 2);
-    ep.boltCountY = paramAsInt(ctx.input.params, L"boltCountY", 2);
-    ep.boltEdge = paramAsDouble(ctx.input.params, L"boltEdge", 30.0);
-    {
-        const std::wstring g = paramAsString(ctx.input.params, L"grade", L"8.8");
-        std::string narrow;
-        narrow.assign(g.begin(), g.end());
-        ep.boltGrade = narrow;
-    }
-    ep.hasHead = paramAsBool(ctx.input.params, L"hasHead", true);
-    ep.hasNut = paramAsBool(ctx.input.params, L"hasNut", true);
-    ep.hasWasher = paramAsBool(ctx.input.params, L"hasWasher", true);
+    EndPlateParams ep = endPlateFromParams(ctx.input.params);
 
     EndPlatePlacement placement;
     EntityId mainPartId = kInvalidEntityId;
@@ -721,6 +705,9 @@ static bool blockEndPlatePlacement(EvalCtx& ctx, const RecipeStep& st, Generatio
     plate.height = placement.plateHeight;
     plate.thickness = placement.plateThickness;
     plate.name = L"Alin Levhasi";
+    if (!ep.plateMaterial.empty()) plate.material.assign(ep.plateMaterial.begin(), ep.plateMaterial.end());
+    if (!ep.plateName.empty()) plate.name.assign(ep.plateName.begin(), ep.plateName.end());
+    if (!ep.plateFinish.empty()) plate.finish.assign(ep.plateFinish.begin(), ep.plateFinish.end());
     plan.plates.push_back(plate);
     plan.plateKeys.push_back(rolePlate);
 

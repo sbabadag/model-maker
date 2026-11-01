@@ -2,6 +2,7 @@
 #include "model_maker/haunch40.hpp"
 
 #include "model_maker/end_plate.hpp"
+#include "model_maker/component_dialog.hpp"  // endPlateFromParams (27 alan tek kaynagi)
 
 #include <algorithm>
 #include <cmath>
@@ -460,23 +461,7 @@ GenerationPlan generateEndPlate(const ComponentInput& input) noexcept {
         return plan;
     }
 
-    EndPlateParams ep;
-    ep.plateThickness = paramAsDouble(input.params, L"plateThickness", 12.0);
-    ep.plateExtra = paramAsDouble(input.params, L"plateExtra", 20.0);
-    ep.boltDiameter = paramAsDouble(input.params, L"boltDiameter", 20.0);
-    ep.holeDiameter = paramAsDouble(input.params, L"holeDiameter", 22.0);
-    ep.boltCountX = paramAsInt(input.params, L"boltCountX", 2);
-    ep.boltCountY = paramAsInt(input.params, L"boltCountY", 2);
-    ep.boltEdge = paramAsDouble(input.params, L"boltEdge", 30.0);
-    {
-        std::wstring g = paramAsString(input.params, L"grade", L"8.8");
-        std::string narrow;
-        narrow.assign(g.begin(), g.end());
-        ep.boltGrade = narrow;
-    }
-    ep.hasHead = paramAsBool(input.params, L"hasHead", true);
-    ep.hasNut = paramAsBool(input.params, L"hasNut", true);
-    ep.hasWasher = paramAsBool(input.params, L"hasWasher", true);
+    EndPlateParams ep = endPlateFromParams(input.params);
 
     EndPlatePlacement placement;
     EntityId mainPartId = input.main.id;
@@ -496,6 +481,10 @@ GenerationPlan generateEndPlate(const ComponentInput& input) noexcept {
     plate.height = placement.plateHeight;
     plate.thickness = placement.plateThickness;
     plate.name = L"Alin Levhasi";
+    // Tekla Plates tab: material/name/finish -> PlateSpec (bos = varsayilan).
+    if (!ep.plateMaterial.empty()) plate.material.assign(ep.plateMaterial.begin(), ep.plateMaterial.end());
+    if (!ep.plateName.empty()) plate.name.assign(ep.plateName.begin(), ep.plateName.end());
+    if (!ep.plateFinish.empty()) plate.finish.assign(ep.plateFinish.begin(), ep.plateFinish.end());
     plan.plates.push_back(plate);
     plan.plateKeys.push_back("end_plate");
 
