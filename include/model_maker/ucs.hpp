@@ -52,6 +52,14 @@ struct Ucs {
     // paralelse (dejenere) gecersiz doner. Y = Z x X.
     static std::optional<Ucs> fromOriginAndX(Vec3 origin, Vec3 xPoint) noexcept;
 
+    // 2 NOKTADAN UCS — ONCEKI Y KORUNUR (Tekla \"work plane using two points\"):
+    // ilk nokta origin, ikincisi X yonunu belirler; Y yonu ONCEKI calisma
+    // duzleminin Y'si kalir (X'e yeniden diklestirilir), Z = X x Y. Onceki Y
+    // yeni X'e paralelse (dejenere) dunya Z'ye dusulur; o da paralelse dunya
+    // Y'ye. Boylece tek tikta duzlemin yatay/dusey yonelim kaymasi korunur.
+    static std::optional<Ucs> fromOriginAndXKeepY(Vec3 origin, Vec3 xPoint,
+                                                  Vec3 previousY) noexcept;
+
     // 3 NOKTADAN UCS: origin + X noktasi + XY duzlemini (Y tarafini) belirleyen
     // nokta. X = normalize(xPoint-origin); Z = normalize(X x (yPoint-origin));
     // Y = Z x X. Cakisan noktalarda gecersiz.

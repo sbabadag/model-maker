@@ -38,8 +38,12 @@ start = source.index(marker)
 # tests/run_rotate_center.py). Ayrica pivot isareti hayalet duzlemden SONRA
 # cizilir (uzerinde kalsin) — bu yuzden ayri blok.
 pivot_marker = "        // DONDURME MERKEZI (R tusu) isareti"
-end = (source.index(pivot_marker, start) if pivot_marker in source[start:]
-       else source.index("\n    }; // drawGridAndAxes", start))
+# Hayalet blogundan SONRA eklenen yuz-araci ADAY ONIZLEMESI ayri bir ozelliktir
+# (kendi alani + yesil ton); hayalet testi yalniz gercek hayalet blogunu kapsar.
+preview_marker = "        // CALISMA DUZLEMI ADAY ONIZLEMESI (yuz araci)"
+end = (source.index(preview_marker, start) if preview_marker in source[start:]
+       else (source.index(pivot_marker, start) if pivot_marker in source[start:]
+             else source.index("\n    }; // drawGridAndAxes", start)))
 block = source[start:end]
 check(source.index("const auto drawGridAndAxes = [&](HDC targetDc) {") < start,
       "ghost plane block lives inside drawGridAndAxes")

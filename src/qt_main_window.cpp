@@ -1090,25 +1090,45 @@ std::vector<QtMainWindow::CommandCategory> QtMainWindow::commandCategories() {
               }),
     }});
 
-    // ---- ÇALIŞMA DÜZLEMİ & UCS + adlandırılmış görünümler ----
+    // ---- ÇALIŞMA DÜZLEMİ: Tekla'nın TÜM work plane modları + UCS + named views ----
+    // Her Tekla modu AYRI ribbon komutudur (kullanıcı talebi).
     {
         UiEntry ghost = uiKey(uiCmd(QStringLiteral("Çalışma Düzlemi &Hayaleti"), QStringLiteral("Hayalet"), QStringLiteral("Çalışma düzlemi hayaleti (F7)"), ToolGlyph::Toggle3D,
                                     [this]() { app_.toggleWorkPlaneGhost(); }), QStringLiteral("F7"), false);
         ghost.cmd.checked = [this]() { return app_.workPlaneGhostVisible(); };
         cats.push_back({QStringLiteral("Çalışma &Düzlemi"), QStringLiteral("Çalışma Düzlemi"), {
-            uiCmd(QStringLiteral("Çalışma &Düzlemi (3 Nokta)"), QStringLiteral("Düzlem"), QStringLiteral("Çalışma düzlemi (3 nokta)"), ToolGlyph::Plane,
-                  [this]() { app_.startWorkPlaneCommand(); }),
-            uiCmd(QStringLiteral("Düzlemi &Sıfırla (Dünya)"), QStringLiteral("Düz. Sıfır"), QStringLiteral("Düzlemi sıfırla (dünya)"), ToolGlyph::Reset,
-                  [this]() { app_.resetWorkPlane(); }),
+            // 1) Work plane tool — parça yüzüne tıkla (hover önizleme).
+            uiCmd(QStringLiteral("Çalışma Düzlemi &Aracı (Parça Yüzü)"), QStringLiteral("Yüz Aracı"),
+                  QStringLiteral("İmlecin altındaki parça yüzüne tıklayarak çalışma düzlemini o yüze taşı"),
+                  ToolGlyph::Plane, [this]() { app_.startWorkPlaneFaceToolCommand(); }),
+            // 2) Parallel to XYZ plane (düzlem + derinlik).
+            uiCmd(QStringLiteral("&XYZ Düzlemine Paralel..."), QStringLiteral("XYZ+D"),
+                  QStringLiteral("Çalışma düzlemini XY/XZ/YZ düzlemlerinden birine, belirtilen derinlikte kur"),
+                  ToolGlyph::Plane, [this]() { promptWorkPlaneParallelXYZ(); }),
+            // 3) Using one point.
+            uiCmd(QStringLiteral("1 &Noktada"), QStringLiteral("1 Nokta"),
+                  QStringLiteral("Çalışma düzlemini yönünü koruyarak tıklanan noktaya taşı"),
+                  ToolGlyph::Plane, [this]() { app_.startWorkPlaneOnePointCommand(); }),
+            // 4) Using two points.
+            uiCmd(QStringLiteral("&2 Noktada"), QStringLiteral("2 Nokta"),
+                  QStringLiteral("Çalışma düzlemi: ilk nokta orijin, ikincisi X yönü (Y yönü korunur)"),
+                  ToolGlyph::Plane, [this]() { app_.startWorkPlaneTwoPointCommand(); }),
+            // 5) Using three points.
+            uiCmd(QStringLiteral("&3 Noktada"), QStringLiteral("3 Nokta"),
+                  QStringLiteral("Çalışma düzlemi: orijin + X + Y noktası (Z sağ-el kuralı)"),
+                  ToolGlyph::Plane, [this]() { app_.startWorkPlaneCommand(); }),
+            // 6) Parallel to view plane.
+            uiCmd(QStringLiteral("&Görünüş Düzlemine Paralel"), QStringLiteral("Görünüşe ∥"),
+                  QStringLiteral("Çalışma düzlemini mevcut kameranın görüş düzlemine paralel yap"),
+                  ToolGlyph::Plane, [this]() { app_.setWorkPlaneToViewCommand(); }),
+            // 7) Restore default (world XY, depth 0).
+            uiCmd(QStringLiteral("Düzlemi &Sıfırla (Dünya)"), QStringLiteral("Düz. Sıfır"),
+                  QStringLiteral("Çalışma düzlemini varsayılana döndür (dünya XY, Z=0)"),
+                  ToolGlyph::Reset, [this]() { app_.resetWorkPlane(); }),
             ghost,
             uiSep(),
             uiCmd(QStringLiteral("UCS'ye &Dik Görünüş"), QStringLiteral("UCS Dik"), QStringLiteral("UCS'ye dik görünüş"), ToolGlyph::Plane,
                   [this]() { app_.setViewToWorkPlane(); }),
-            uiGroup(QStringLiteral("Çalışma Düzlemi (&Global)"), QStringLiteral("Global"), QStringLiteral("Çalışma düzlemi (global)"), ToolGlyph::Plane, {
-                uiCmd(QStringLiteral("&XY (Üstten)"), QString(), QString(), ToolGlyph::Plane, [this]() { app_.setGlobalWorkPlane(0); }),
-                uiCmd(QStringLiteral("X&Z (Önden)"),  QString(), QString(), ToolGlyph::Plane, [this]() { app_.setGlobalWorkPlane(1); }),
-                uiCmd(QStringLiteral("&YZ (Sağdan)"), QString(), QString(), ToolGlyph::Plane, [this]() { app_.setGlobalWorkPlane(2); }),
-            }),
             uiSep(),
             uiCmd(QStringLiteral("Görünümü &Adlandır..."), QStringLiteral("Adlandır"), QStringLiteral("Görünümü adlandır..."), ToolGlyph::Save,
                   [this]() { promptSaveNamedView(); }),
@@ -2103,6 +2123,35 @@ void QtMainWindow::promptDeleteNamedView() {
     const QString pick = QInputDialog::getItem(this, QStringLiteral("Görünümü Sil"),
         QStringLiteral("Görünüm:"), items, 0, false, &ok);
     if (ok && !pick.isEmpty()) app_.removeNamedView(pick.toStdWString());
+}
+
+void QtMainWindow::promptWorkPlaneParallelXYZ() {
+    // TEKLA "Parallel to XY(Z) plane": duzlem listesi + derinlik koordinati.
+    // Derinlik = calisma duzleminin global orijinden, duzleme dik ucuncu eksen
+    // boyunca mesafesi (negatif olabilir).
+    QDialog dialog(this);
+    dialog.setWindowTitle(QStringLiteral("Çalışma Düzlemi — XYZ Düzlemine Paralel"));
+    QVBoxLayout* layout = new QVBoxLayout(&dialog);
+    QComboBox* planeBox = new QComboBox(&dialog);
+    planeBox->addItem(QStringLiteral("XY (üstten, normal +Z)"), 0);
+    planeBox->addItem(QStringLiteral("XZ (önden, normal -Y)"), 1);
+    planeBox->addItem(QStringLiteral("YZ (sağdan, normal +X)"), 2);
+    layout->addWidget(new QLabel(QStringLiteral("Düzlem:"), &dialog));
+    layout->addWidget(planeBox);
+    layout->addWidget(new QLabel(QStringLiteral("Derinlik (mm, global orijinden):"), &dialog));
+    QDoubleSpinBox* depthBox = new QDoubleSpinBox(&dialog);
+    depthBox->setRange(-1.0e9, 1.0e9);
+    depthBox->setDecimals(1);
+    depthBox->setValue(0.0);
+    depthBox->setSuffix(QStringLiteral(" mm"));
+    layout->addWidget(depthBox);
+    QDialogButtonBox* buttons = new QDialogButtonBox(
+        QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog);
+    QObject::connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+    QObject::connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    layout->addWidget(buttons);
+    if (dialog.exec() != QDialog::Accepted) return;
+    app_.setWorkPlaneParallelXYZ(planeBox->currentData().toInt(), depthBox->value());
 }
 
 void QtMainWindow::promptCreateGrid() {

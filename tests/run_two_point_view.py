@@ -55,7 +55,7 @@ struct FakeDocument {
 };
 class Application {
 public:
-    enum class PointPickPurpose { WorkPlane, TwoPointView, TwoPointViewDirection, ThreePointView, RotateCenter, ConstructionPlane };
+    enum class PointPickPurpose { WorkPlane, TwoPointView, TwoPointViewDirection, ThreePointView, RotateCenter, ConstructionPlane, WorkPlaneOnePoint, WorkPlaneTwoPoints, WorkPlaneFace };
     PointPickPurpose pointPickPurpose_{PointPickPurpose::WorkPlane};
     // Donus merkezi (R) yolu bu dosyada test EDILMEZ: commitWorkPlanePoint'in
     // RotateCenter dali camera_.setOrbitPivot cagirir. Sahte kamera yeter.
@@ -63,6 +63,11 @@ public:
     std::function<void(const ViewDefinition&)> twoPointViewCallback_;
     bool workPlanePicking_{false};
     std::vector<Vec3> workPlanePoints_;
+    // Yuz-araci / calisma-duzlemi modlari icin sahte uyeler (cancelWorkPlaneCommand
+    // bunlari temizler; gercek davranis uygulamada — burada yalnizca derlenme).
+    std::optional<WorkPlane> workPlanePreview_;
+    std::optional<std::size_t> hoverFaceModel_;
+    std::vector<std::size_t> hoverFaceIndices_;
     // Yon secim asamasinda secilen bakis yonu (birim). updateHover burada no-op
     // oldugu icin varsayilan -Y kalir; yon dali testte dogrudan yazilarak
     // egzersiz edilir.

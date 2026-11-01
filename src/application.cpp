@@ -2183,6 +2183,21 @@ void Application::onLeftButtonDown(int x, int y) {
         }
     }
     if (workPlanePicking_) {
+        if (pointPickPurpose_ == PointPickPurpose::WorkPlaneFace) {
+            // YUZ ARACI: nokta snap'i DEGIL, imlec altindaki YUZ isabeti.
+            const auto faceHit = pickSceneFaceAt(x, y);
+            if (faceHit) {
+                // fromPlaneAndNormal normali iceride normalize eder + dejenere
+                // normalde guvenli dunya cercevesine duser.
+                workPlane_ = Ucs::fromPlaneAndNormal(faceHit->hit.point, faceHit->hit.normal)
+                                 .toWorkPlane();
+                cancelWorkPlaneCommand();
+            } else {
+                MessageBeep(MB_ICONWARNING);
+                publishStatus(L"Çalışma düzlemi aracı: imlecin altında yüz yok — parça yüzüne tıklayın");
+            }
+            updateControls(); invalidateCanvas(); return;
+        }
         updateHover(x, y);
         if (hover_) {
             const Vec3 point = hover_->point;
@@ -3887,6 +3902,86 @@ void Application::startWorkPlaneCommand() {
     invalidateCanvas();
 }
 
+void Application::startWorkPlaneOnePointCommand() {
+    // TEKLA "work plane using one point": duzlem yonelimini (u/v/normal)
+    // KORUR, yalniz origin tiklanan noktaya tasinir.
+    startWorkPlaneCommand(); // ayni secim akisi: snap + track + onizleme
+    pointPickPurpose_ = PointPickPurpose::WorkPlaneOnePoint;
+    updateStatus();
+}
+
+void Application::startWorkPlaneTwoPointCommand() {
+    // TEKLA "work plane using two points": ilk nokta origin, ikincisi X yonu;
+    // Y yonu ONCEKI calisma duzleminin Y'si kalir (Ucs::fromOriginAndXKeepY).
+    startWorkPlaneCommand();
+    pointPickPurpose_ = PointPickPurpose::WorkPlaneTwoPoints;
+    updateStatus();
+}
+
+void Application::startWorkPlaneFaceToolCommand() {
+    // TEKLA "work plane tool" (set to any part plane): imlecin altindaki parca
+    // yuzune tiklama -> o yuzun duzlemi calisma duzlemi olur. Hover'da aday
+    // duzlem yesil hayalet olarak onizlenir + yuz vurgulanir.
+    cancelPendingComponentCommand();
+    cancelZoomWindow2D();
+    if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
+    cancelDrawing();
+    mode_ = EditMode::View3D;
+    drawingActive_ = false;
+    workPlanePicking_ = true;
+    workPlanePoints_.clear();
+    workPlanePreview_.reset();
+    pointPickPurpose_ = PointPickPurpose::WorkPlaneFace;
+    hoverFaceModel_.reset();
+    hoverFaceIndices_.clear();
+    hover_.reset();
+    updateHover(cursorScreen_.x, cursorScreen_.y);
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
+}
+
+void Application::setWorkPlaneToViewCommand() {
+    // TEKLA "parallel to view plane": calisma duzlemi mevcut kameranin gorus
+    // duzlemine paralel yapilir; origin kameranin merkezine oturtulur.
+    cancelZoomWindow2D();
+    if (workPlanePicking_) cancelWorkPlaneCommand();
+    if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
+    cancelDrawing();
+    profileGrip_.reset();
+    hover_.reset();
+    const Vec3 viewDir = camera_.gridViewDirection();
+    const std::array<double, 9> R = camera_.rotationMatrix();
+    const Vec3 viewUp{R[3], R[4], R[5]};
+    workPlane_ = WorkPlane::fromCurrentView(camera_.center3D(), viewDir, viewUp);
+    updateHover(cursorScreen_.x, cursorScreen_.y);
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
+}
+
+void Application::setWorkPlaneParallelXYZ(int which, double depth) {
+    // TEKLA "parallel to XYZ plane": global XY/XZ/YZ duzlemlerinden biri,
+    // global orijinden 'depth' (ucuncu eksen) mesafesinde. Orjin GLOBAL orijin
+    // uzerine kurulur (eski setGlobalWorkPlane mevcut orjini korurdu — bu
+    // modun Tekla semantigi derinlikle yeni orjin kurar).
+    cancelZoomWindow2D();
+    if (workPlanePicking_) cancelWorkPlaneCommand();
+    if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
+    cancelDrawing();
+    profileGrip_.reset();
+    hover_.reset();
+    switch (which) {
+    case 1: workPlane_ = Ucs::planeXZ({0.0, depth, 0.0}).toWorkPlane(); break;
+    case 2: workPlane_ = Ucs::planeYZ({depth, 0.0, 0.0}).toWorkPlane(); break;
+    default: workPlane_ = Ucs::planeXY({0.0, 0.0, depth}).toWorkPlane(); break;
+    }
+    updateHover(cursorScreen_.x, cursorScreen_.y);
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
+}
+
 void Application::startConstructionPlaneCommand() {
     // KONSTRUKSIYON DUZLEMI (P0, Tekla construction plane): ayni 3-nokta
     // secim akisini (snap + track + kesik onizleme + Esc/sag tik iptal)
@@ -4488,6 +4583,59 @@ std::optional<Application::PendingFaceHit> Application::pendingBoltFaceHit(int x
                 const MeshRayHit brepHit{hitPoint, hitNormal, dist, std::size_t(-1)};
                 if (!best || dist < best->hit.distance)
                     best = PendingFaceHit{p, brepHit};
+            }
+        }
+#endif
+    }
+    return best;
+}
+
+std::optional<Application::PendingFaceHit> Application::pickSceneFaceAt(int x, int y) const {
+    RECT client{};
+    GetClientRect(canvas_, &client);
+    if (client.right <= 0 || client.bottom <= 0 || camera_.zoom() <= 0.0) return std::nullopt;
+    const double scale = camera_.pixelsPerUnit() * camera_.zoom();
+    const double camX = (x - client.right * 0.5) / scale;
+    const double camY = (client.bottom * 0.5 - y) / scale;
+    const std::array<double, 9> R = camera_.rotationMatrix();
+    const Vec3 c = camera_.center3D();
+    // Orto projeksiyonda isin kokenini izleyici tarafina koy (bkz.
+    // pendingBoltFaceHit yorumu); D = sahnenin merkeze en uzak kose mesafesi.
+    Vec3 lo{1e100, 1e100, 1e100}, hi{-1e100, -1e100, -1e100};
+    for (const auto& b : document_.modelBounds()) {
+        lo.x = std::min(lo.x, b.minimum.x); lo.y = std::min(lo.y, b.minimum.y);
+        lo.z = std::min(lo.z, b.minimum.z);
+        hi.x = std::max(hi.x, b.maximum.x); hi.y = std::max(hi.y, b.maximum.y);
+        hi.z = std::max(hi.z, b.maximum.z);
+    }
+    double D = 1.0;
+    for (int k = 0; k < 8; ++k) {
+        const double px = (k & 1) ? hi.x : lo.x;
+        const double py = (k & 2) ? hi.y : lo.y;
+        const double pz = (k & 4) ? hi.z : lo.z;
+        const double dx = px - c.x, dy = py - c.y, dz = pz - c.z;
+        D = std::max(D, std::sqrt(dx * dx + dy * dy + dz * dz));
+    }
+    const double big = D + 1.0;
+    const Vec3 origin{c.x + R[0] * camX + R[3] * camY + R[6] * big,
+                      c.y + R[1] * camX + R[4] * camY + R[7] * big,
+                      c.z + R[2] * camX + R[5] * camY + R[8] * big};
+    const Vec3 direction{-R[6], -R[7], -R[8]};
+    std::optional<PendingFaceHit> best;
+    for (std::size_t p = 0; p < document_.models().size(); ++p) {
+        // 1) Goruntu mesh'i (faceIndex ile vurgu da calisir).
+        if (const auto h = raycastMesh(document_.models()[p], origin, direction)) {
+            if (!best || h->distance < best->hit.distance) best = PendingFaceHit{p, *h};
+            continue;
+        }
+#ifdef MM_HAS_OCC
+        // 2) GERCEK B-Rep yuzey isabeti (mesh yok/bos olsa bile).
+        if (const TopoDS_Shape* solid = findOccSolid(p)) {
+            Vec3 hitPoint, hitNormal;
+            double dist = 0.0;
+            if (raycastBrepFace(*solid, origin, direction, hitPoint, hitNormal, dist)) {
+                const MeshRayHit brepHit{hitPoint, hitNormal, dist, std::size_t(-1)};
+                if (!best || dist < best->hit.distance) best = PendingFaceHit{p, brepHit};
             }
         }
 #endif
@@ -6780,6 +6928,9 @@ void Application::cancelWorkPlaneCommand() {
     workPlanePicking_ = false;
     pointPickPurpose_ = PointPickPurpose::WorkPlane;
     workPlanePoints_.clear();
+    workPlanePreview_.reset();
+    hoverFaceModel_.reset();
+    hoverFaceIndices_.clear();
     hover_.reset();
     clearTemporaryTracking();
 }
@@ -7061,6 +7212,44 @@ void Application::commitWorkPlanePoint(const Vec3& point) {
         invalidateCanvas();
         return;
     }
+    if (pointPickPurpose_ == PointPickPurpose::WorkPlaneOnePoint) {
+        // TEKLA "1 nokta": duzlem yonelimini korur, origin tiklanan noktaya.
+        if (!std::isfinite(point.x) || !std::isfinite(point.y) || !std::isfinite(point.z)) {
+            MessageBeep(MB_ICONWARNING);
+            return;
+        }
+        workPlane_.origin = point;
+        cancelWorkPlaneCommand();
+        updateHover(cursorScreen_.x, cursorScreen_.y);
+        updateControls();
+        updateStatus();
+        invalidateCanvas();
+        return;
+    }
+    if (pointPickPurpose_ == PointPickPurpose::WorkPlaneTwoPoints) {
+        // TEKLA "2 nokta": origin + X yonu; Y onceki duzlemin Y'si kalir.
+        if (!std::isfinite(point.x) || !std::isfinite(point.y) || !std::isfinite(point.z)) {
+            MessageBeep(MB_ICONWARNING);
+            return;
+        }
+        workPlanePoints_.push_back(point);
+        if (workPlanePoints_.size() < 2) return;
+        const auto ucs = Ucs::fromOriginAndXKeepY(workPlanePoints_[0], workPlanePoints_[1],
+                                                  workPlane_.v);
+        if (!ucs) {
+            workPlanePoints_.pop_back();
+            MessageBeep(MB_ICONWARNING);
+            publishStatus(L"Çalışma düzlemi (2 nokta): noktalar çakışık — 2. noktayı yeniden seçin");
+            return;
+        }
+        workPlane_ = ucs->toWorkPlane();
+        cancelWorkPlaneCommand();
+        updateHover(cursorScreen_.x, cursorScreen_.y);
+        updateControls();
+        updateStatus();
+        invalidateCanvas();
+        return;
+    }
     workPlanePoints_.push_back(point);
     if (workPlanePoints_.size() < 3) return;
     if (const auto plane = WorkPlane::fromThreePoints(workPlanePoints_[0], workPlanePoints_[1],
@@ -7165,6 +7354,23 @@ void Application::refreshHoverCandidate(int x, int y) {
     hoverCutModifier_.reset();
     hoverFaceModel_.reset();
     hoverFaceIndices_.clear();
+    // WORK PLANE YUZ ARACI: imlecin altindaki yuzu vurgula + aday duzlemi
+    // yesil hayalet olarak onizle (Tekla "work plane tool" hover onizlemesi).
+    if (workPlanePicking_ && pointPickPurpose_ == PointPickPurpose::WorkPlaneFace) {
+        const auto faceHit = pickSceneFaceAt(x, y);
+        if (faceHit) {
+            hoverFaceModel_ = faceHit->model;
+            if (faceHit->hit.faceIndex != std::size_t(-1))
+                hoverFaceIndices_ = planarFaceTriangleGroup(
+                    document_.models()[faceHit->model], faceHit->hit.faceIndex);
+            workPlanePreview_ =
+                Ucs::fromPlaneAndNormal(faceHit->hit.point, faceHit->hit.normal).toWorkPlane();
+        } else {
+            workPlanePreview_.reset();
+        }
+        return;
+    }
+    workPlanePreview_.reset();
     if (!pendingCutKind_ && !pendingBolt_ && !pendingFinPlate_ && !componentCommandActive()) return;
     // VERB-NOUN BOLT beklemede: yalnizca normal parcalar (konstrüksiyon
     // olmayan) vurgulanir. Tam 2 parca seciliyse YUZ secim adimidir: imlecin
@@ -8612,6 +8818,13 @@ void Application::updateStatus() {
         if (workPlanePoints_.empty()) text += L"1. noktayı belirtin";
         else if (workPlanePoints_.size() == 1) text += L"2. noktayı belirtin (U ekseni)";
         else text += L"3. noktayı belirtin (düzlem yönü)";
+    } else if (workPlanePicking_ && pointPickPurpose_ == PointPickPurpose::WorkPlaneOnePoint) {
+        text += L"  |  ÇALIŞMA DÜZLEMİ (1 NOKTADA) — düzlemin yeni konumunu belirtin";
+    } else if (workPlanePicking_ && pointPickPurpose_ == PointPickPurpose::WorkPlaneTwoPoints) {
+        text += L"  |  ÇALIŞMA DÜZLEMİ (2 NOKTADA) — ";
+        text += workPlanePoints_.empty() ? L"orijini belirtin" : L"X yönünü belirtin";
+    } else if (workPlanePicking_ && pointPickPurpose_ == PointPickPurpose::WorkPlaneFace) {
+        text += L"  |  ÇALIŞMA DÜZLEMİ ARACI — parça yüzüne tıklayın (hover: önizleme)";
     } else if (workPlanePicking_) {
         text += L"  |  WORK PLANE — ";
         if (workPlanePoints_.empty()) text += L"1. noktayı belirtin";
@@ -11698,6 +11911,7 @@ DraftView Application::draftView() const {
         workPlanePicking_ && pointPickPurpose_ == PointPickPurpose::TwoPointViewDirection;
     view.twoPointViewDirection = twoPointViewNormal_;
     view.workPlaneGhostVisible = workPlaneGhostVisible_;
+    view.workPlanePreview = workPlanePreview_;
     // Donus merkezi (R) isareti: aktif pencerenin kamerasi. Renderer dunya
     // noktasini kendi kamerasiyla projekte eder (pasif pencerede slot.camera).
     view.orbitPivotVisible = camera_.hasOrbitPivot();

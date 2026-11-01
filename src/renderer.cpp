@@ -614,6 +614,41 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
             SelectObject(targetDc, stockPen);
             DeleteObject(ghostBorderPen);
         }
+        // CALISMA DUZLEMI ADAY ONIZLEMESI (yuz araci): aktif duzlem DEGISMEDEN
+        // imlecin altindaki aday duzlem YESIL hayalet olarak gosterilir (Tekla
+        // "work plane tool" hover onizlemesi). Cizim disi — secilemez/snap'lenemez.
+        if (draft.workPlanePreview) {
+            const WorkPlane& wp = *draft.workPlanePreview;
+            const Vec2 pOrigin = projectPointPrecise(wp.origin);
+            const Vec2 pUnit = projectPointPrecise(wp.fromPlane({1.0, 0.0}));
+            const double ppu = std::hypot(pUnit.x - pOrigin.x, pUnit.y - pOrigin.y);
+            const double span = static_cast<double>(std::min(canvas.right - canvas.left,
+                                                             canvas.bottom - canvas.top));
+            const double half = ppu > 1e-9 ? std::clamp(0.30 * span / ppu, 1e-3, 1e7) : 1.0;
+            const auto corner = [&](double su, double sv) {
+                return projectPoint(wp.fromPlane({su * half, sv * half}));
+            };
+            const POINT quad[4] = {corner(-1.0, -1.0), corner(1.0, -1.0),
+                                   corner(1.0, 1.0), corner(-1.0, 1.0)};
+            HBRUSH fill = CreateHatchBrush(HS_FDIAGONAL, RGB(80, 176, 96));
+            HGDIOBJ oldBrush = SelectObject(targetDc, fill);
+            HGDIOBJ oldPen = SelectObject(targetDc, GetStockObject(NULL_PEN));
+            const int oldBk = SetBkMode(targetDc, TRANSPARENT);
+            Polygon(targetDc, quad, 4);
+            SetBkMode(targetDc, oldBk);
+            SelectObject(targetDc, oldPen);
+            SelectObject(targetDc, oldBrush);
+            DeleteObject(fill);
+            HPEN border = CreatePen(PS_SOLID, 2, RGB(44, 140, 64));
+            SelectObject(targetDc, border);
+            for (int i = 0; i < 4; ++i) {
+                const POINT& a = quad[i];
+                const POINT& b = quad[(i + 1) % 4];
+                line(targetDc, a.x, a.y, b.x, b.y);
+            }
+            SelectObject(targetDc, stockPen);
+            DeleteObject(border);
+        }
         // DONDURME MERKEZI (R tusu) isareti: ekran-olcekli capraz + halka.
         // Pivot donuslerde bu noktada SABIT kalir (Camera::rotateAbout), yani
         // isaret donme sirasinda kaymaz. Secilemez/snap'lenemez: hicbir belge

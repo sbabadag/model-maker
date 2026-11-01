@@ -62,6 +62,9 @@ private:
     void promptSaveNamedView();
     void promptGotoNamedView();
     void promptDeleteNamedView();
+    // TEKLA "work plane parallel to XYZ plane": duzlem (XY/XZ/YZ) + derinlik
+    // sorar; OK -> app_.setWorkPlaneParallelXYZ(plane, depth).
+    void promptWorkPlaneParallelXYZ();
     // Bolt tool penceresi (Phase B1): bir bulon display'ine cift tiklaninca
     // acilir. Cap/kalite/delik/bas/somun/pul + adet (countX/countY) + mesafe
     // (spacingX/spacingY) duzenlenir; OK -> app_.setSelectedBoltGroup.

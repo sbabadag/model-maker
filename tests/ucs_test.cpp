@@ -75,6 +75,35 @@ int main() {
         check(!Ucs::fromOriginAndX({0, 0, 0}, {0, 0, 0}).has_value(), "2-pt: cakisan gecersiz");
     }
 
+    // 4b) 2 noktadan UCS — onceki Y korunur (Tekla "work plane using two points").
+    {
+        // Onceki Y = dunya Z; X = +X. Y korunur -> Y=+Z, Z = X x Y = -Y.
+        const auto u = Ucs::fromOriginAndXKeepY({1, 1, 1}, {2, 1, 1}, {0, 0, 1});
+        check(u.has_value(), "2-pt-keepY: gecerli");
+        if (u) {
+            check(near3(u->origin, {1, 1, 1}), "2-pt-keepY origin");
+            check(near3(u->xAxis, {1, 0, 0}), "2-pt-keepY X = verilen yon");
+            check(near3(u->yAxis, {0, 0, 1}), "2-pt-keepY Y = onceki Y (korunur)");
+            check(near3(u->zAxis, {0, -1, 0}), "2-pt-keepY Z = X x Y");
+            check(u->isValid(), "2-pt-keepY ortonormal sag-el");
+        }
+        // Onceki Y yeni X'e PARALEL -> dejenere, fallback: X=+Z icin ref=+Y,
+        // Y = ref x X = +Y x +Z = +X, Z = X x Y = +Z x +X = +Y (sag-el).
+        {
+            const auto d = Ucs::fromOriginAndXKeepY({0, 0, 0}, {0, 0, 5}, {0, 0, 1});
+            check(d.has_value(), "2-pt-keepY: paralel Y fallback gecerli");
+            if (d) {
+                check(near3(d->xAxis, {0, 0, 1}), "2-pt-keepY (dejenere) X = +Z");
+                check(near3(d->yAxis, {1, 0, 0}), "2-pt-keepY (dejenere) Y = +X (fallback)");
+                check(near3(d->zAxis, {0, 1, 0}), "2-pt-keepY (dejenere) Z = +Y");
+                check(d->isValid(), "2-pt-keepY (dejenere) ortonormal");
+            }
+        }
+        // Cakisan noktalar gecersiz.
+        check(!Ucs::fromOriginAndXKeepY({0, 0, 0}, {0, 0, 0}, {0, 0, 1}).has_value(),
+              "2-pt-keepY: cakisan gecersiz");
+    }
+
     // 5) 3 noktadan UCS.
     {
         const auto u = Ucs::fromThreePoints({1, 2, 3}, {4, 2, 3}, {1, 2, 6}); // X=+X, Y=+Z

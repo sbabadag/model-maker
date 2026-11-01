@@ -230,6 +230,10 @@ struct DraftView {
     // snap'lenemez, hicbir belge nesnesi/olayi uretmez.
     // Varsayilan kWorkPlaneGhostDefaultVisible (su an: KAPALI).
     bool workPlaneGhostVisible{kWorkPlaneGhostDefaultVisible};
+    // YUZ ARACI ADAY DUZLEM ONIZLEMESI: work plane yuz aracinda imlecin
+    // altindaki aday duzlem (tiklaninca aktif olur). Yesil tonla cizilir;
+    // aktif duzlem (workPlane) DEGISMEDEN yalnizca onizleme olarak gosterilir.
+    std::optional<WorkPlane> workPlanePreview;
     // DONDURME MERKEZI (R tusu) isareti: pivot dunya noktasi. Renderer
     // gecerli kamerasiyla projekte eder (pasif pencerede KENDI kamerasi),
     // ekran-olcekli capraz + halka cizer; secilemez/snap'lenemez.

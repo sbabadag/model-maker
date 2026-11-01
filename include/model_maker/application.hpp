@@ -301,6 +301,17 @@ public:
     IRenderBackend* activeRenderBackend() noexcept { return renderBackend_.get(); }
 
     void startWorkPlaneCommand();
+    // TEKLA WORK PLANE MODLARI (kullanici talebi: hepsi ayri ribbon komutu).
+    //   1 nokta : duzlem mevcut yonelimini korur, origin tiklanan noktaya tasinir
+    //   2 nokta : origin + X yonu; Y yonu ONCEKI duzlemin Y'si kalir
+    //   yuz arac: imlec altindaki parca yuzu -> o yuzun duzlemi (hover onizleme)
+    //   view    : mevcut kameranin gorus duzlemine paralel (Tekla \"parallel to view plane\")
+    //   XYZ+depth: global XY/XZ/YZ duzlemlerinden biri, global orijinden derinlik
+    void startWorkPlaneOnePointCommand();
+    void startWorkPlaneTwoPointCommand();
+    void startWorkPlaneFaceToolCommand();
+    void setWorkPlaneToViewCommand();
+    void setWorkPlaneParallelXYZ(int which, double depth);
     // KONSTRUKSIYON DUZLEMI (Tekla construction plane, P0): uc nokta
     // (snap/track aktif) -> WorkPlane::fromThreePoints -> Document'e
     // ConstructionPlane modeli eklenir. Calisma duzleminden (work plane)
@@ -344,6 +355,11 @@ public:
     // ayni fonksiyonu kullanir -> vurgulanan yuz = tiklaninca secilen yuz.
     struct PendingFaceHit { std::size_t model{}; MeshRayHit hit; };
     std::optional<PendingFaceHit> pendingBoltFaceHit(int x, int y) const;
+    // GENEL SAHNE YUZ ISABETI (work plane yuz araci): imlec isininin TUM
+    // modeller uzerindeki en yakin yuz isabeti (mesh + OCC B-Rep fallback).
+    // pendingBoltFaceHit ile ayni raycast cekirdegi, ama secili parcayla
+    // sinirlanmaz — sahnenin tamami taranir.
+    std::optional<PendingFaceHit> pickSceneFaceAt(int x, int y) const;
 
     // --- ALIN LEVHASI BAGLANTISI (Phase C1 GUI) -------------------------------
     // Verb-noun End Plate: once MAIN (kolon), sonra SECONDARY (kiris) secilir;
@@ -1330,6 +1346,10 @@ private:
     WorkPlane workPlane_{};
     bool workPlanePicking_{};
     std::vector<Vec3> workPlanePoints_;
+    // YUZ ARACI ONIZLEME: work plane yuz aracinda imlecin altindaki aday duzlem
+    // (tiklaninca aktif duzlem olur). Hayalet cizimde yesil tonla gosterilir;
+    // workPlane_ DEGISMEZ (onizleme yalnizca goruntudur).
+    std::optional<WorkPlane> workPlanePreview_;
     // Iki noktali gorunum YON secim asamasinda: secilen bakis yonu (birim,
     // izleyiciye dogru). Imlecin P1-P2 cizgisinin hangi tarafinda olduguna
     // gore guncellenir; ok onizlemesi bu vektoru gosterir.
@@ -1382,7 +1402,7 @@ private:
     //   ThreePointView       : 3 nokta -> yeni gorunus penceresi (origin+X+Y)
     //   RotateCenter         : 1 nokta -> ekran donus merkezi (R tusu; Ctrl+sol
     //                          tus ile ekran bu merkez etrafinda doner)
-    enum class PointPickPurpose { WorkPlane, TwoPointView, TwoPointViewDirection, ThreePointView, RotateCenter, ConstructionPlane };
+    enum class PointPickPurpose { WorkPlane, TwoPointView, TwoPointViewDirection, ThreePointView, RotateCenter, ConstructionPlane, WorkPlaneOnePoint, WorkPlaneTwoPoints, WorkPlaneFace };
     PointPickPurpose pointPickPurpose_{PointPickPurpose::WorkPlane};
     // Ctrl+sol tus: bu esikten fazla hareket rotasyona terfi eder; esik
     // asilmazsa Ctrl+tik secimi yapilir (tek karar noktasi).

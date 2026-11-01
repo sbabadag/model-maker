@@ -72,6 +72,30 @@ std::optional<Ucs> Ucs::fromOriginAndX(Vec3 origin, Vec3 xPoint) noexcept {
     return Ucs{origin, *xa, *ya, za};
 }
 
+std::optional<Ucs> Ucs::fromOriginAndXKeepY(Vec3 origin, Vec3 xPoint, Vec3 previousY) noexcept {
+    const auto xa = normalized(xPoint - origin);
+    if (!xa) return std::nullopt;
+    // Onceki Y'yi yeni X'e diklestir (Tekla: Y yonu onceki duzlemin Y'si kalir).
+    const auto prevY = normalized(previousY);
+    Vec3 ya{};
+    if (prevY) {
+        const Vec3 rej = *prevY - (*xa) * dot3(*prevY, *xa);
+        const auto yaOpt = normalized(rej);
+        if (yaOpt) ya = *yaOpt;
+    }
+    if (!(std::fabs(ya.x) + std::fabs(ya.y) + std::fabs(ya.z) > 1e-12)) {
+        // Dejenere: onceki Y yeni X'e paralel. Dunya Z'ye dus; o da paralelse
+        // dunya Y'ye (fromOriginAndX'in dejenere kuraliyla ayni ruh).
+        Vec3 ref{0.0, 0.0, 1.0};
+        if (std::abs(dot3(ref, *xa)) > 0.999) ref = {0.0, 1.0, 0.0};
+        const auto yaOpt = normalized(cross3(ref, *xa));
+        if (!yaOpt) return std::nullopt;
+        ya = *yaOpt;
+    }
+    const Vec3 za = cross3(*xa, ya);
+    return Ucs{origin, *xa, ya, za};
+}
+
 std::optional<Ucs> Ucs::fromThreePoints(Vec3 origin, Vec3 xPoint, Vec3 yPoint) noexcept {
     const auto xa = normalized(xPoint - origin);
     if (!xa) return std::nullopt;
