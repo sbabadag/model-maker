@@ -192,6 +192,11 @@ private:
     int fboWidth_{};
     int fboHeight_{};
     bool fboDirty_{true};
+    // MSAA resolve: multisample FBO'ya cizilir, tek-ornekli fbo'ya cozulur,
+    // readback oradan yapilir (glReadPixels multisample FBO'yu okuyamaz).
+    std::uint32_t resolveFbo_{};
+    std::uint32_t resolveColor_{};
+    bool msaaSupported_{true};
     std::vector<std::uint8_t> blitBuffer_;
     void* blitDib_{};
 

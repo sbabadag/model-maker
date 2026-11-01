@@ -59,6 +59,9 @@ namespace GLConst {
     constexpr GLenum FRAMEBUFFER_COMPLETE = 0x8CD5;
     constexpr GLenum RGBA = 0x1908;
     constexpr GLenum BGRA_EXT = 0x80E1;  // GL_BGRA
+    constexpr GLenum READ_FRAMEBUFFER = 0x8CA8;
+    constexpr GLenum DRAW_FRAMEBUFFER = 0x8CA9;
+    constexpr GLenum NEAREST = 0x2600;
 } // namespace GLConst
 
 // ── OpenGL function types ─────────────────────────────────────────
@@ -117,6 +120,8 @@ using PFNGLDELETEFRAMEBUFFERSPROC = void (APIENTRY *)(GLsizei, const GLuint*);
 using PFNGLDELETERENDERBUFFERSPROC = void (APIENTRY *)(GLsizei, const GLuint*);
 using PFNGLREADPIXELSPROC = void (APIENTRY *)(GLint, GLint, GLsizei, GLsizei, GLenum, GLenum, void*);
 using PFNGLREADBUFFERPROC = void (APIENTRY *)(GLenum);
+using PFNGLRENDERBUFFERSTORAGEMULTISAMPLEPROC = void (APIENTRY *)(GLenum, GLsizei, GLenum, GLsizei, GLsizei);
+using PFNGLBLITFRAMEBUFFERPROC = void (APIENTRY *)(GLint, GLint, GLint, GLint, GLint, GLint, GLint, GLint, GLbitfield, GLenum);
 
 // ── Dynamically loaded function pointers ──────────────────────────
 namespace {
@@ -184,6 +189,8 @@ PFNGLDELETEFRAMEBUFFERSPROC glDeleteFramebuffers = nullptr;
 PFNGLDELETERENDERBUFFERSPROC glDeleteRenderbuffers = nullptr;
 PFNGLREADPIXELSPROC glReadPixels = nullptr;
 PFNGLREADBUFFERPROC glReadBuffer = nullptr;
+PFNGLRENDERBUFFERSTORAGEMULTISAMPLEPROC glRenderbufferStorageMultisample = nullptr;
+PFNGLBLITFRAMEBUFFERPROC glBlitFramebuffer = nullptr;
 
 HMODULE openglModule = nullptr;
 bool hasWindowsGL = false;
@@ -332,6 +339,8 @@ bool loadWglExtensions(HDC hdc) {
     LOAD_GL(glDeleteRenderbuffers);
     LOAD_GL(glReadPixels);
     LOAD_GL(glReadBuffer);
+    LOAD_GL(glRenderbufferStorageMultisample);
+    LOAD_GL(glBlitFramebuffer);
     #undef LOAD_GL
 
     wglMakeCurrent(nullptr, nullptr);
@@ -582,30 +591,97 @@ void OpenGLRenderBackend::ensureFbo(int width, int height) {
     if (fbo_ != 0) { glDeleteFramebuffers(1, &fbo_); fbo_ = 0; }
     if (fboColor_ != 0) { glDeleteRenderbuffers(1, &fboColor_); fboColor_ = 0; }
     if (fboDepth_ != 0) { glDeleteRenderbuffers(1, &fboDepth_); fboDepth_ = 0; }
+    if (resolveFbo_ != 0) { glDeleteFramebuffers(1, &resolveFbo_); resolveFbo_ = 0; }
+    if (resolveColor_ != 0) { glDeleteRenderbuffers(1, &resolveColor_); resolveColor_ = 0; }
+
+    // MSAA 4x: kucuk nesneler zoom-out'ta alt-piksel olup tek ornekte
+    // rasterlastirilamayinca kayboluyordu (kenar/kose/ince cizgi). 4x
+    // ornekleme bu kaybi buyuk olcude giderir. Destek yoksa tek-ornekliye
+    // dusulur (glReadPixels dogrudan fbo_'dan okunur).
+    constexpr int kMsaaSamples = 4;
+    bool msaa = msaaSupported_ && glRenderbufferStorageMultisample != nullptr &&
+                glBlitFramebuffer != nullptr;
+
+    // Resolve (tek-ornekli) FBO ONCE kurulur ve dogrulanir: glReadPixels
+    // multisample FBO'yu okuyamaz, readback hedefi ayri bir tek-ornekli
+    // FBO olmali. Once kurarak, asagida multisample fbo_ basarisiz olursa
+    // guvenle tek-ornekli fallback yapilir (eskiden resolve basarisiz olunca
+    // fbo_ multisample kaliyor, readback glReadPixels ile bozuluyordu).
+    if (msaa) {
+        glGenFramebuffers(1, &resolveFbo_);
+        glBindFramebuffer(GLConst::FRAMEBUFFER, resolveFbo_);
+        glGenRenderbuffers(1, &resolveColor_);
+        glBindRenderbuffer(GLConst::RENDERBUFFER, resolveColor_);
+        glRenderbufferStorage(GLConst::RENDERBUFFER, GLConst::RGBA, width, height);
+        glFramebufferRenderbuffer(GLConst::FRAMEBUFFER, GLConst::COLOR_ATTACHMENT0,
+                                  GLConst::RENDERBUFFER, resolveColor_);
+        if (glCheckFramebufferStatus(GLConst::FRAMEBUFFER) != GLConst::FRAMEBUFFER_COMPLETE) {
+            glDeleteFramebuffers(1, &resolveFbo_); resolveFbo_ = 0;
+            glDeleteRenderbuffers(1, &resolveColor_); resolveColor_ = 0;
+            msaa = false;
+            msaaSupported_ = false;
+        }
+    }
 
     glGenFramebuffers(1, &fbo_);
     glBindFramebuffer(GLConst::FRAMEBUFFER, fbo_);
 
-    // Color attachment
+    // Color attachment (multisample veya tek-ornekli)
     glGenRenderbuffers(1, &fboColor_);
     glBindRenderbuffer(GLConst::RENDERBUFFER, fboColor_);
-    glRenderbufferStorage(GLConst::RENDERBUFFER, GLConst::RGBA, width, height);
+    if (msaa) {
+        glRenderbufferStorageMultisample(GLConst::RENDERBUFFER, kMsaaSamples,
+                                         GLConst::RGBA, width, height);
+    } else {
+        glRenderbufferStorage(GLConst::RENDERBUFFER, GLConst::RGBA, width, height);
+    }
     glFramebufferRenderbuffer(GLConst::FRAMEBUFFER, GLConst::COLOR_ATTACHMENT0,
                               GLConst::RENDERBUFFER, fboColor_);
 
-    // Depth attachment
+    // Depth attachment (multisample ile eslesmeli)
     glGenRenderbuffers(1, &fboDepth_);
     glBindRenderbuffer(GLConst::RENDERBUFFER, fboDepth_);
-    glRenderbufferStorage(GLConst::RENDERBUFFER,
-                          0x81A6 /*GL_DEPTH_COMPONENT24*/, width, height);
+    if (msaa) {
+        glRenderbufferStorageMultisample(GLConst::RENDERBUFFER, kMsaaSamples,
+                                         0x81A6 /*GL_DEPTH_COMPONENT24*/, width, height);
+    } else {
+        glRenderbufferStorage(GLConst::RENDERBUFFER,
+                              0x81A6 /*GL_DEPTH_COMPONENT24*/, width, height);
+    }
     glFramebufferRenderbuffer(GLConst::FRAMEBUFFER, 0x8D00 /*GL_DEPTH_ATTACHMENT*/,
                               GLConst::RENDERBUFFER, fboDepth_);
 
     GLenum status = glCheckFramebufferStatus(GLConst::FRAMEBUFFER);
     if (status != GLConst::FRAMEBUFFER_COMPLETE) {
+        // Surucu multisample renderbuffer'u reddetti: fbo_ dahil her seyi
+        // birakip tek-ornekli kur. Resolve da birakilir (kullanilmayacak).
         glDeleteFramebuffers(1, &fbo_); fbo_ = 0;
         glDeleteRenderbuffers(1, &fboColor_); fboColor_ = 0;
         glDeleteRenderbuffers(1, &fboDepth_); fboDepth_ = 0;
+        if (resolveFbo_ != 0) { glDeleteFramebuffers(1, &resolveFbo_); resolveFbo_ = 0; }
+        if (resolveColor_ != 0) { glDeleteRenderbuffers(1, &resolveColor_); resolveColor_ = 0; }
+        msaaSupported_ = false;
+
+        glGenFramebuffers(1, &fbo_);
+        glBindFramebuffer(GLConst::FRAMEBUFFER, fbo_);
+        glGenRenderbuffers(1, &fboColor_);
+        glBindRenderbuffer(GLConst::RENDERBUFFER, fboColor_);
+        glRenderbufferStorage(GLConst::RENDERBUFFER, GLConst::RGBA, width, height);
+        glFramebufferRenderbuffer(GLConst::FRAMEBUFFER, GLConst::COLOR_ATTACHMENT0,
+                                  GLConst::RENDERBUFFER, fboColor_);
+        glGenRenderbuffers(1, &fboDepth_);
+        glBindRenderbuffer(GLConst::RENDERBUFFER, fboDepth_);
+        glRenderbufferStorage(GLConst::RENDERBUFFER, 0x81A6 /*GL_DEPTH_COMPONENT24*/,
+                              width, height);
+        glFramebufferRenderbuffer(GLConst::FRAMEBUFFER, 0x8D00 /*GL_DEPTH_ATTACHMENT*/,
+                                  GLConst::RENDERBUFFER, fboDepth_);
+        if (glCheckFramebufferStatus(GLConst::FRAMEBUFFER) != GLConst::FRAMEBUFFER_COMPLETE) {
+            glDeleteFramebuffers(1, &fbo_); fbo_ = 0;
+            glDeleteRenderbuffers(1, &fboColor_); fboColor_ = 0;
+            glDeleteRenderbuffers(1, &fboDepth_); fboDepth_ = 0;
+            glBindFramebuffer(GLConst::FRAMEBUFFER, 0);
+            return;
+        }
     }
 
     glBindFramebuffer(GLConst::FRAMEBUFFER, 0);
@@ -796,8 +872,20 @@ bool OpenGLRenderBackend::renderBatchToDc(
     // PBO asenkron denemesi (d409420) geri alindi: glMapBuffer bu makinede
     // yine de bekliyordu ve zoom 80-90 FPS'ten 30-50'ye dustu. Senkron
     // readback kanitli: kare basina ~3ms, GDI paritesine yakin.
+    // MSAA: multisample fbo_ tek-ornekli resolveFbo_'ya cozulur; glReadPixels
+    // multisample FBO'dan okuyamaz. Resolve yoksa dogrudan fbo_ okunur.
+    if (resolveFbo_ != 0) {
+        glBindFramebuffer(GLConst::READ_FRAMEBUFFER, fbo_);
+        glBindFramebuffer(GLConst::DRAW_FRAMEBUFFER, resolveFbo_);
+        glBlitFramebuffer(0, 0, width, height, 0, 0, width, height,
+                          GLConst::COLOR_BUFFER_BIT, GLConst::NEAREST);
+        glBindFramebuffer(GLConst::READ_FRAMEBUFFER, resolveFbo_);
+    } else {
+        glBindFramebuffer(GLConst::READ_FRAMEBUFFER, fbo_);
+    }
     glReadPixels(0, 0, width, height, GLConst::BGRA_EXT, GLConst::UNSIGNED_BYTE_TYPE,
                  blitBuffer_.data());
+    glBindFramebuffer(GLConst::READ_FRAMEBUFFER, 0);
     // Readback taramasi: TUM tampon + ilk opak pikselin satiri + beklenen
     // cizgi bolgesinden 3x3 ornek (eski 20k taramasi ust satirlari kapsiyordu
     // ve asagi cizilen cizgiyi kaciriyordu).
@@ -1339,6 +1427,8 @@ void OpenGLRenderBackend::cleanupGL() {
     if (fbo_) { glDeleteFramebuffers(1, &fbo_); fbo_ = 0; }
     if (fboColor_) { glDeleteRenderbuffers(1, &fboColor_); fboColor_ = 0; }
     if (fboDepth_) { glDeleteRenderbuffers(1, &fboDepth_); fboDepth_ = 0; }
+    if (resolveFbo_) { glDeleteFramebuffers(1, &resolveFbo_); resolveFbo_ = 0; }
+    if (resolveColor_) { glDeleteRenderbuffers(1, &resolveColor_); resolveColor_ = 0; }
     fboWidth_ = fboHeight_ = 0;
 }
 
