@@ -1314,11 +1314,14 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
                 SelectObject(dc, stockPen);
                 DeleteObject(pickPen);
                 // IKI NOKTALI GORUNUM YON SECIMI: iki noktanin ucunda, secilen
-                // bakis yonunu gosteren ok (imlecin tarafina gore cevrilir).
+                // bakis yonunu gosteren ok. twoPointViewDirection = normal
+                // (izleyiciye DOGRU); bakis yonu = -normal. Ok, gorunumun
+                // BAKTIGI yonu gostermeli -> -normal cizilir.
                 if (draft.twoPointViewDirectionActive && draft.workPlanePoints.size() >= 2) {
                     for (std::size_t i = 0; i < 2; ++i)
                         drawViewDirectionArrow(draft.workPlanePoints[i],
-                                               draft.twoPointViewDirection, RGB(80, 200, 255));
+                                               draft.twoPointViewDirection * -1.0,
+                                               RGB(80, 200, 255));
                 }
             }
             if ((draft.transformCommand == TransformCommand::Trim ||
@@ -2670,7 +2673,8 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         if (draft.twoPointViewDirectionActive && draft.workPlanePoints.size() >= 2) {
             for (std::size_t i = 0; i < 2; ++i)
                 drawViewDirectionArrow(draft.workPlanePoints[i],
-                                       draft.twoPointViewDirection, RGB(80, 200, 255));
+                                       draft.twoPointViewDirection * -1.0,
+                                       RGB(80, 200, 255));
         }
         for (std::size_t index = 0; index < draft.workPlanePoints.size(); ++index) {
             const POINT point = projectPoint(draft.workPlanePoints[index]);
