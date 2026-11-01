@@ -1,14 +1,14 @@
-// MM-3c C3 — Haunch 40 paketi EŞ-DEĞERLİK testi.
+// MM-3c C3 + MM-3d — Haunch 40 paketi ES-DEGERLIK + tas bagimsizligi testi.
 //
-// Değişmez kural: uyum YALNIZCA digest eşitliği ile ölçülür.
-//   5 golden girdi için: generationPlanDigest(runRecipe(haunch40 recipe))
+// Degismez kural: uyum YALNIZCA digest esitligi ile olculur.
+//   5 golden girdi icin: generationPlanDigest(runRecipe(haunch40 recipe))
 //                        == generationPlanDigest(generateHaunch40(in))
-//                        == tests/golden/haunch40_digests.json değeri.
-// Golden dosyası YENİDEN ÜRETİLMEZ; fark raporlanır.
+//                        == tests/golden/haunch40_digests.json degeri.
+// Golden dosyasi YENIDEN URETILMEZ; fark raporlanir.
 //
-// recipe = packages/haunch40/recipe.json'un bellekteki karşılığı (8 adım:
-// frame.contact, frame.plumb_face, haunch.end_plate, haunch.web,
-// haunch.flange, haunch.stiffeners, bolts.haunch_groups, haunch.welds).
+// MM-3d: her tas kendi parametrelerini args'ta alir, frame ADIYLA gecirilir,
+// role uretilen roleKey'i gosterir. Ayrica haunch.web tasi frame.plumb_face
+// ciktisiyla TEK BASINA cagrilip plan uretebilmeli.
 #include "model_maker/component_codec.hpp"
 #include "model_maker/component_engine.hpp"
 #include "model_maker/geometry.hpp"
@@ -31,7 +31,7 @@ static constexpr double kPi = 3.14159265358979323846;
 
 static RecipeArg S(const std::string& t) { RecipeArg a; a.text = t; return a; }
 
-// --- 5 golden girdi (component_codec_test.cpp ile aynı) ----------------------
+// --- 5 golden girdi (component_codec_test.cpp ile ayni) ----------------------
 
 static ComponentInput makeInput(double slopeDeg) {
     ComponentInput in;
@@ -96,77 +96,122 @@ static ComponentInput makeInputManualEndPlateHeight() {
 }
 
 // --- packages/haunch40/recipe.json ile BIREBIR ayni recipe ------------------
+// MM-3d: her tas kendi parametrelerini alir; "frame" adiyla cerceve; "role".
 static Recipe haunch40Recipe() {
     Recipe r;
     r.recipeVersion = "1.0.0";
-    RecipeStep s;
-    s.id = "contact";
-    s.use = "frame.contact";
-    auto N = [&](const char* k, const char* v) { s.args[k] = S(v); };
-    N("haunchLength", "450");
-    N("haunchDepth", "240");
-    N("haunchTipDepth", "25");
-    N("haunchWebThickness", "10");
-    N("haunchFlangeThickness", "10");
-    N("endPlateThickness", "20");
-    N("gap", "0");
-    N("boltEdgeLeft", "35");
-    N("boltEdgeRight", "35");
-    N("boltEdge", "35");
-    N("endPlateWidth", "0");
-    N("endPlateHeight", "param.endPlateHeight");
-    N("haunchFlangeWidth", "0");
-    N("topPlateThickness", "10");
-    N("stiffenerClipSize", "15");
-    N("stiffenerThickness", "10");
-    N("addStiffenerThickness", "10");
-    N("rafterBottomStiffenerThickness", "10");
-    N("comprStiffenerThickness", "10");
-    N("morrisStiffenerThickness", "10");
-    N("diagStiffenerThickness", "10");
-    N("diagStiffenerWidth", "80");
-    N("weldSize", "6");
-    N("createBeamStiffener", "0");
-    N("createAddStiffener", "0");
-    N("createRafterBottomStiffener", "0");
-    N("createComprStiffener", "0");
-    N("createMorrisStiffener", "0");
-    N("createDiagStiffener", "0");
-    N("createWelds", "1");
-    N("upperBoltCountX", "2");
-    N("upperBoltCountY", "2");
-    N("upperBoltPitchX", "120");
-    N("upperBoltPitchY", "80");
-    N("upperBoltDiameter", "20");
-    N("upperHoleDiameter", "22");
-    N("upperBoltEdgeClear", "44");
-    N("lowerBoltCountX", "2");
-    N("lowerBoltCountY", "2");
-    N("lowerBoltPitchX", "120");
-    N("lowerBoltPitchY", "80");
-    N("lowerBoltDiameter", "20");
-    N("lowerHoleDiameter", "22");
-    N("lowerBoltEdgeClear", "44");
-    N("plateMaterial", "S235JR");
-    N("grade", "8.8");
-    r.steps.push_back(s);
-
-    const struct { const char* id; const char* use; } rest[] = {
-        {"plumb", "frame.plumb_face"}, {"ep", "haunch.end_plate"},
-        {"web", "haunch.web"}, {"flange", "haunch.flange"},
-        {"stiff", "haunch.stiffeners"}, {"bolts", "bolts.haunch_groups"},
-        {"welds", "haunch.welds"},
-    };
-    for (const auto& e : rest) {
+    auto add = [&](const char* id, const char* use) -> RecipeStep& {
         RecipeStep t;
-        t.id = e.id;
-        t.use = e.use;
+        t.id = id;
+        t.use = use;
         r.steps.push_back(t);
+        return r.steps.back();
+    };
+
+    add("c", "frame.contact");
+
+    {
+        RecipeStep& p = add("p", "frame.plumb_face");
+        p.args["frame"] = S("c");
+        p.args["gap"] = S("0");
+        p.args["endPlateThickness"] = S("20");
+        p.args["plateMaterial"] = S("S235JR");
+    }
+    {
+        RecipeStep& e = add("ep", "haunch.end_plate");
+        e.role = "haunch_end_plate";
+        auto N = [&](const char* k, const char* v) { e.args[k] = S(v); };
+        N("frame", "p");
+        N("haunchLength", "450"); N("haunchDepth", "240"); N("haunchTipDepth", "25");
+        N("haunchWebThickness", "10"); N("haunchFlangeThickness", "10");
+        N("endPlateThickness", "20"); N("gap", "0");
+        N("boltEdgeLeft", "35"); N("boltEdgeRight", "35"); N("boltEdge", "35");
+        N("endPlateWidth", "0"); N("endPlateHeight", "param.endPlateHeight");
+        N("haunchFlangeWidth", "0");
+        N("upperBoltCountX", "2"); N("upperBoltCountY", "2");
+        N("upperBoltPitchX", "120"); N("upperBoltPitchY", "80");
+        N("upperBoltDiameter", "20"); N("upperHoleDiameter", "22");
+        N("upperBoltEdgeClear", "44");
+        N("lowerBoltCountX", "2"); N("lowerBoltCountY", "2");
+        N("lowerBoltPitchX", "120"); N("lowerBoltPitchY", "80");
+        N("lowerBoltDiameter", "20"); N("lowerHoleDiameter", "22");
+        N("lowerBoltEdgeClear", "44");
+        N("plateMaterial", "S235JR");
+    }
+    {
+        RecipeStep& w = add("web", "haunch.web");
+        w.role = "haunch_web";
+        auto N = [&](const char* k, const char* v) { w.args[k] = S(v); };
+        N("frame", "p");
+        N("haunchLength", "450"); N("haunchDepth", "240");
+        N("haunchTipDepth", "25"); N("haunchWebThickness", "10");
+    }
+    {
+        RecipeStep& f = add("flange", "haunch.flange");
+        f.role = "haunch_lower_flange";
+        auto N = [&](const char* k, const char* v) { f.args[k] = S(v); };
+        N("frame", "p");
+        N("haunchLength", "450"); N("haunchDepth", "240"); N("haunchTipDepth", "25");
+        N("haunchFlangeThickness", "10"); N("haunchFlangeWidth", "0");
+    }
+    {
+        RecipeStep& st = add("stiff", "haunch.stiffeners");
+        auto N = [&](const char* k, const char* v) { st.args[k] = S(v); };
+        N("frame", "ep");
+        N("haunchLength", "450"); N("haunchDepth", "240"); N("haunchFlangeThickness", "10");
+        N("topPlateThickness", "10"); N("stiffenerClipSize", "15");
+        N("stiffenerThickness", "10"); N("addStiffenerThickness", "10");
+        N("rafterBottomStiffenerThickness", "10"); N("comprStiffenerThickness", "10");
+        N("morrisStiffenerThickness", "10"); N("diagStiffenerThickness", "10");
+        N("diagStiffenerWidth", "80");
+        N("createBeamStiffener", "0"); N("createAddStiffener", "0");
+        N("createRafterBottomStiffener", "0"); N("createComprStiffener", "0");
+        N("createMorrisStiffener", "0"); N("createDiagStiffener", "0");
+        N("plateMaterial", "S235JR");
+    }
+    {
+        RecipeStep& b = add("bolts", "bolts.haunch_groups");
+        b.role = "haunch_bolts";
+        auto N = [&](const char* k, const char* v) { b.args[k] = S(v); };
+        N("frame", "ep");
+        N("upperBoltCountX", "2"); N("upperBoltCountY", "2");
+        N("upperBoltPitchX", "120"); N("upperBoltPitchY", "80");
+        N("upperBoltDiameter", "20"); N("upperHoleDiameter", "22");
+        N("upperBoltEdgeClear", "44");
+        N("lowerBoltCountX", "2"); N("lowerBoltCountY", "2");
+        N("lowerBoltPitchX", "120"); N("lowerBoltPitchY", "80");
+        N("lowerBoltDiameter", "20"); N("lowerHoleDiameter", "22");
+        N("lowerBoltEdgeClear", "44");
+        N("endPlateThickness", "20"); N("gap", "0");
+        N("boltEdgeLeft", "35"); N("boltEdgeRight", "35");
+        N("grade", "8.8");
+    }
+    {
+        RecipeStep& wd = add("welds", "haunch.welds");
+        auto N = [&](const char* k, const char* v) { wd.args[k] = S(v); };
+        N("frame", "ep");
+        N("weldSize", "6"); N("topPlateThickness", "10"); N("createWelds", "1");
     }
     return r;
 }
 
-// golden dosyasından digest oku (basit ayrıştırma; JSON kütüphanesi yok).
+// MM-3d kabul: haunch.web'i YALNIZ frame.plumb_face ciktisi + kendi args'iyla calistir.
+static Recipe webOnlyRecipe() {
+    Recipe r;
+    r.recipeVersion = "1.0.0";
+    RecipeStep c; c.id = "c"; c.use = "frame.contact"; r.steps.push_back(c);
+    RecipeStep p; p.id = "p"; p.use = "frame.plumb_face";
+    p.args["frame"] = S("c"); p.args["gap"] = S("0");
+    p.args["endPlateThickness"] = S("20"); p.args["plateMaterial"] = S("S235JR");
+    r.steps.push_back(p);
+    RecipeStep w; w.id = "web"; w.use = "haunch.web"; w.role = "haunch_web";
+    w.args["frame"] = S("p");
+    w.args["haunchLength"] = S("450"); w.args["haunchDepth"] = S("240");
+    w.args["haunchTipDepth"] = S("25"); w.args["haunchWebThickness"] = S("10");
+    r.steps.push_back(w);
+    return r;
+}
+
 static std::string readText(const std::string& path) {
     std::ifstream in(path);
     if (!in.good()) return {};
@@ -223,6 +268,22 @@ int main() {
         if (!dgold.empty()) CHECK(dg == dgold, "generateHaunch40 == golden");
         else CHECK(false, "golden girdisi bulunamadi");
         CHECK(dg == dr, "digest(runRecipe) == digest(generateHaunch40)");
+    }
+
+    // MM-3d kabul testi: haunch.web TEK BASINA (frame.plumb_face ciktisiyla).
+    std::printf("=== MM-3d: haunch.web tek basina (plumb_face ciktisi) ===\n");
+    {
+        const Recipe wr = webOnlyRecipe();
+        const RecipeValidation wv = validateRecipe(wr, specs);
+        CHECK(wv.ok, "web-only recipe gecerli");
+        const GenerationPlan wp = runRecipe(wr, specs, makeInput(0.0));
+        CHECK(wp.ok, "web-only runRecipe ok");
+        if (!wp.ok) std::printf("  web-only error: %ls\n", wp.error.c_str());
+        CHECK(wp.plates.size() == 1, "web-only: tam 1 levha");
+        CHECK(wp.plateKeys.size() == 1 && wp.plateKeys[0] == "haunch_web",
+              "web-only: role 'haunch_web'");
+        std::printf("  web-only plates=%zu keys=%s\n", wp.plates.size(),
+                    wp.plateKeys.empty() ? "(yok)" : wp.plateKeys[0].c_str());
     }
 
     std::printf("haunch40 esdegerlik: %s (%d hata)\n", failures ? "BASARISIZ" : "OK", failures);

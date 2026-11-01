@@ -72,19 +72,22 @@ struct HaunchParams {
 // davranış birebir).
 HaunchParams haunchParamsFromInput(const ComponentInput& input);
 
-// Desteklenen blok adları:
-//   "frame.contact"        — temas çerçevesi + eğik çerçeve + levha boyutu + start
-//   "frame.plumb_face"      — düşey yüz doğrulaması (contact ile birlikte hazır)
-//   "haunch.end_plate"      — alın levhası (+ kolon tepesi kırpma)
-//   "haunch.web"            — konik gövde konturu
-//   "haunch.flange"         — basınç flanşı
-//   "haunch.stiffeners"     — kapak + kiriş/kolon berkitmeleri
-//   "bolts.haunch_groups"   — iki bulon grubu
-//   "haunch.welds"          — kaynaklar
-// state: nullptr ise oluşturulur; adımlar aynı state'i paylaşır.
-// Başarısızlıkta plan.ok=false + Türkçe error; false döner.
-bool runHaunch40Block(const std::string& block, const HaunchParams& prm,
-                      const ComponentInput& input, std::shared_ptr<void>& state,
-                      GenerationPlan& plan);
+// Desteklenen blok adları (MM-3d — frame ADIYLA, parametreler per-taş):
+//   "frame.contact"        — temas + eğik çerçeve geometrisi (PARAMETRESİZ)
+//   "frame.plumb_face"     — düşey yüz başlangıcı (gap, endPlateThickness)
+//   "haunch.end_plate"     — alın levhası + boyutlandırma
+//   "haunch.web"           — konik gövde (L,D,tip,webT)
+//   "haunch.flange"        — basınç flanşı (L,D,tip,flangeT,flangeWidth)
+//   "haunch.stiffeners"    — kapak + kiriş/kolon berkitmeleri
+//   "bolts.haunch_groups"  — iki bulon grubu
+//   "haunch.welds"         — kaynaklar
+// inFrame: recipe'de adı geçen önceki taşın çıktısı (opak; frame.contact hariç
+// zorunlu). outFrame: bu taşın opak çıktısı (sonraki taşlar "frame" ile okur).
+// role: tek-çıktılı taşlarda üretilen roleKey; boşsa sabit anahtar korunur.
+bool runHaunch40Tas(const std::string& block, const HaunchParams& prm,
+                    const ComponentInput& input,
+                    const std::shared_ptr<void>& inFrame,
+                    std::shared_ptr<void>& outFrame,
+                    const std::string& role, GenerationPlan& plan);
 
 } // namespace mm

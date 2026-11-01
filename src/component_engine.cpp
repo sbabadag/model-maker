@@ -1758,13 +1758,6 @@ double vlen(const Vec3& a) noexcept {
     return std::sqrt(a.x * a.x + a.y * a.y + a.z * a.z);
 }
 
-struct Haunch40Group {
-    int nx{2}, ny{2};
-    double pitchX{120.0}, pitchY{80.0};
-    double diameter{20.0}, hole{22.0}, clear{44.0};
-    double spanX{120.0}, spanY{80.0};
-};
-
 // Haunch 40 geometri baglami: adimlar arasinda paylasilan tum ara degerler.
 struct Haunch40Ctx {
     ShearTabPlacement p;
@@ -1800,9 +1793,10 @@ bool validHaunch40Group(const Haunch40Group& g) {
            g.clear > 0.0;
 }
 
-// Adim 1-6: temas + egik cerceve + levha boyutlandirma + baslangic cercevesi.
-bool resolveHaunch40Geom(const ComponentInput& input, Haunch40Ctx& g,
-                         GenerationPlan& plan) {
+// Adim 1-2: temas noktasi + rol/kesit dogrulamasi (PARAMETRESIZ geometri).
+// frame.contact bunu cagirir; hBeam/wBeam downstream icin burada sabitlenir.
+bool haunchContactPlacement(const ComponentInput& input, Haunch40Ctx& g,
+                            GenerationPlan& plan) {
     g.p = resolveShearTabPlacement(input);
     if (!g.p.ok) { plan.ok = false; plan.error = g.p.error; return false; }
     if (g.p.beam.secHeight < 80.0 || g.p.beam.secWidth < 60.0 ||
@@ -1818,63 +1812,13 @@ bool resolveHaunch40Geom(const ComponentInput& input, Haunch40Ctx& g,
         plan.error = L"Haunch 40: bu surum duseye yakin kiris desteklemiyor";
         return false;
     }
-
-    g.L = paramAsDouble(input.params, L"haunchLength", 450.0);
-    g.D = paramAsDouble(input.params, L"haunchDepth", 240.0);
-    g.tip = paramAsDouble(input.params, L"haunchTipDepth", 25.0);
-    g.webT = paramAsDouble(input.params, L"haunchWebThickness", 10.0);
-    g.flangeT = paramAsDouble(input.params, L"haunchFlangeThickness", 10.0);
-    g.endT = paramAsDouble(input.params, L"endPlateThickness", 20.0);
-    g.gap = paramAsDouble(input.params, L"gap", 0.0);
-    g.edgeL = paramAsDouble(input.params, L"boltEdgeLeft", 35.0);
-    g.edgeR = paramAsDouble(input.params, L"boltEdgeRight", 35.0);
-    const auto readGroup = [&](const wchar_t* which, double fallbackClear) {
-        const std::wstring prefix(which);
-        Haunch40Group gr;
-        gr.nx = paramAsInt(input.params, prefix + L"BoltCountX", 2);
-        gr.ny = paramAsInt(input.params, prefix + L"BoltCountY", 2);
-        gr.pitchX = paramAsDouble(input.params, prefix + L"BoltPitchX", 120.0);
-        gr.pitchY = paramAsDouble(input.params, prefix + L"BoltPitchY", 80.0);
-        gr.diameter = paramAsDouble(input.params, prefix + L"BoltDiameter", 20.0);
-        gr.hole = paramAsDouble(input.params, prefix + L"HoleDiameter", 22.0);
-        gr.clear = paramAsDouble(input.params, prefix + L"BoltEdgeClear", fallbackClear);
-        gr.spanX = (gr.nx - 1) * gr.pitchX;
-        gr.spanY = (gr.ny - 1) * gr.pitchY;
-        return gr;
-    };
-    g.upper = readGroup(L"upper", 44.0);
-    g.lower = readGroup(L"lower", 44.0);
-    g.edgeT = g.upper.clear + g.upper.hole * 0.5;
-    g.edgeB = g.lower.clear + g.lower.hole * 0.5;
-    g.maxSpanX = std::max(g.upper.spanX, g.lower.spanX);
-    g.maxHoleSpanX = std::max(g.upper.spanX + g.upper.hole,
-                              g.lower.spanX + g.lower.hole);
     g.hBeam = g.p.beam.secHeight;
     g.wBeam = g.p.beam.secWidth;
-    g.legacyEdge = paramAsDouble(input.params, L"boltEdge", 35.0);
-    g.plateW = std::max({g.wBeam + 20.0, g.maxSpanX + g.edgeL + g.edgeR,
-                         g.maxHoleSpanX + 15.0});
-    g.plateH = g.hBeam + g.D + 2.0 * g.legacyEdge;
-    g.givenW = paramAsDouble(input.params, L"endPlateWidth", 0.0);
-    g.givenH = paramAsDouble(input.params, L"endPlateHeight", 0.0);
-    g.actualW = g.givenW > 0.0 ? g.givenW : g.plateW;
-    g.actualH = g.givenH > 0.0 ? g.givenH : g.plateH;
-    const double flWparam = paramAsDouble(input.params, L"haunchFlangeWidth", 0.0);
-    g.flW = flWparam > 0.0 ? flWparam : g.wBeam;
-    g.minimumPlateH = g.edgeT + g.edgeB + g.upper.spanY + g.lower.spanY +
-                      (g.upper.hole + g.lower.hole) * 0.5 + 0.2;
-    if (!(g.L > 80.0 && g.D > g.tip + 25.0 && g.tip > 5.0 && g.webT > 0.0 &&
-          g.flangeT > 0.0 && g.endT > 0.0 && g.flW >= g.webT &&
-          validHaunch40Group(g.upper) && validHaunch40Group(g.lower) &&
-          g.edgeL > std::max(g.upper.hole, g.lower.hole) * 0.5 &&
-          g.edgeR > std::max(g.upper.hole, g.lower.hole) * 0.5 &&
-          g.actualW + 1e-6 >= g.maxSpanX + g.edgeL + g.edgeR &&
-          g.actualW >= g.maxHoleSpanX + 15.0 &&
-          g.actualH + 1e-6 >= g.minimumPlateH)) {
-        plan.ok = false;
-        plan.error = L"Haunch 40: bagimsiz ust/alt bulon veya levha olculeri tutarsiz";
-        return false;
-    }
+    return true;
+}
+
+// Adim 7: egik cerceve analizi (dir/W/H/ax/tanT/cosT/facePoint). Parametresiz.
+bool haunchFrameAnalysis(Haunch40Ctx& g, GenerationPlan& plan) {
     g.dir = g.p.lenDir;
     g.W = g.p.sec.width;
     g.H = g.p.sec.height;
@@ -1909,6 +1853,59 @@ bool resolveHaunch40Geom(const ComponentInput& input, Haunch40Ctx& g,
                                g.p.connEnd.z + g.p.beamDir.z * t + g.p.sec.height.z * off};
         }
     }
+    return true;
+}
+
+// Adim 3-6: parametre + levha boyutlandirma + dogrulama. PARAMETRELER prm'den
+// ACIKCA gelir (input.params'a gizli okuma yok). C1 ile aritmetik birebir.
+bool haunchSizing(Haunch40Ctx& g, const HaunchParams& prm, GenerationPlan& plan) {
+    g.L = prm.haunchLength;
+    g.D = prm.haunchDepth;
+    g.tip = prm.haunchTipDepth;
+    g.webT = prm.haunchWebThickness;
+    g.flangeT = prm.haunchFlangeThickness;
+    g.endT = prm.endPlateThickness;
+    g.gap = prm.gap;
+    g.edgeL = prm.boltEdgeLeft;
+    g.edgeR = prm.boltEdgeRight;
+    g.upper = prm.upper;
+    g.lower = prm.lower;
+    g.edgeT = g.upper.clear + g.upper.hole * 0.5;
+    g.edgeB = g.lower.clear + g.lower.hole * 0.5;
+    g.maxSpanX = std::max(g.upper.spanX, g.lower.spanX);
+    g.maxHoleSpanX = std::max(g.upper.spanX + g.upper.hole,
+                              g.lower.spanX + g.lower.hole);
+    g.legacyEdge = prm.boltEdge;
+    g.plateW = std::max({g.wBeam + 20.0, g.maxSpanX + g.edgeL + g.edgeR,
+                         g.maxHoleSpanX + 15.0});
+    g.plateH = g.hBeam + g.D + 2.0 * g.legacyEdge;
+    g.givenW = prm.endPlateWidth;
+    g.givenH = prm.endPlateHeight;
+    g.actualW = g.givenW > 0.0 ? g.givenW : g.plateW;
+    g.actualH = g.givenH > 0.0 ? g.givenH : g.plateH;
+    g.flW = prm.haunchFlangeWidth > 0.0 ? prm.haunchFlangeWidth : g.wBeam;
+    g.minimumPlateH = g.edgeT + g.edgeB + g.upper.spanY + g.lower.spanY +
+                      (g.upper.hole + g.lower.hole) * 0.5 + 0.2;
+    if (!(g.L > 80.0 && g.D > g.tip + 25.0 && g.tip > 5.0 && g.webT > 0.0 &&
+          g.flangeT > 0.0 && g.endT > 0.0 && g.flW >= g.webT &&
+          validHaunch40Group(g.upper) && validHaunch40Group(g.lower) &&
+          g.edgeL > std::max(g.upper.hole, g.lower.hole) * 0.5 &&
+          g.edgeR > std::max(g.upper.hole, g.lower.hole) * 0.5 &&
+          g.actualW + 1e-6 >= g.maxSpanX + g.edgeL + g.edgeR &&
+          g.actualW >= g.maxHoleSpanX + 15.0 &&
+          g.actualH + 1e-6 >= g.minimumPlateH)) {
+        plan.ok = false;
+        plan.error = L"Haunch 40: bagimsiz ust/alt bulon veya levha olculeri tutarsiz";
+        return false;
+    }
+    return true;
+}
+
+// Adim 8: baslangic cercevesi + kiris uc kesimi + malzeme.
+void haunchPlumbStart(Haunch40Ctx& g, const HaunchParams& prm, GenerationPlan& plan) {
+    g.gap = prm.gap;
+    g.endT = prm.endPlateThickness;
+    g.plateMaterial = prm.plateMaterial;
     g.start = vadd(g.facePoint, vscale(g.ax, g.gap + g.endT));
     {
         CutModifier cut;
@@ -1925,7 +1922,16 @@ bool resolveHaunch40Geom(const ComponentInput& input, Haunch40Ctx& g,
     g.O = Vec3{g.facePoint.x + g.ax.x * (g.gap + g.endT),
                g.facePoint.y + g.ax.y * (g.gap + g.endT),
                g.facePoint.z + (g.gap + g.endT) * g.tanT};
-    g.plateMaterial = paramAsString(input.params, L"plateMaterial", L"S235JR");
+}
+
+// Tum adimlar sirali (generateHaunch40 icin). Parcalar saf; aritmetik birebir.
+bool resolveHaunch40Geom(const ComponentInput& input, Haunch40Ctx& g,
+                         GenerationPlan& plan) {
+    if (!haunchContactPlacement(input, g, plan)) return false;
+    const HaunchParams prm = haunchParamsFromInput(input);
+    if (!haunchSizing(g, prm, plan)) return false;
+    if (!haunchFrameAnalysis(g, plan)) return false;
+    haunchPlumbStart(g, prm, plan);
     g.ready = true;
     return true;
 }
@@ -2429,31 +2435,86 @@ HaunchParams haunchParamsFromInput(const ComponentInput& input) {
     return prm;
 }
 
-bool runHaunch40Block(const std::string& block, const HaunchParams& prm,
-                      const ComponentInput& input, std::shared_ptr<void>& state,
-                      GenerationPlan& plan) {
-    ComponentInput tin = input;
-    applyHaunchParams(tin, prm);
-    if (!state) state = std::make_shared<Haunch40Ctx>();
-    Haunch40Ctx& g = *std::static_pointer_cast<Haunch40Ctx>(state);
+// --- MM-3d: taş köprüsü — frame ADIYLA, parametreler per-taş -----------------
+// Her taş: kendi HaunchParams'ı (yalnız ihtiyaç duyduklarını) + recipe'de adı
+// geçen bir frame'i (inFrame) okur, kendi çıktısını outFrame olarak bırakır.
+// Gizli ortak durum YOK: bir taş yalnız verdiği frame'i + kendi args'ını okur.
+bool runHaunch40Tas(const std::string& block, const HaunchParams& prm,
+                    const ComponentInput& input,
+                    const std::shared_ptr<void>& inFrame,
+                    std::shared_ptr<void>& outFrame,
+                    const std::string& role, GenerationPlan& plan) {
     if (block == "frame.contact") {
-        return resolveHaunch40Geom(tin, g, plan);
+        // PARAMETRESIZ: temas + egik cerceve geometrisi.
+        auto g = std::make_shared<Haunch40Ctx>();
+        if (!haunchContactPlacement(input, *g, plan)) return false;
+        if (!haunchFrameAnalysis(*g, plan)) return false;
+        outFrame = g;
+        return true;
     }
-    if (!g.ready) {
+    if (!inFrame) {
         plan.ok = false;
-        plan.error = L"Haunch 40: frame.contact bloğu önce çalışmalı";
+        plan.error = L"Haunch 40: '" + std::wstring(block.begin(), block.end()) +
+                     L"' taşı için frame argümanı gerekli";
         return false;
     }
-    if (block == "frame.plumb_face") return true;  // contact ile birlikte hazır
-    if (block == "haunch.end_plate") return haunch40EndPlate(g, plan);
-    if (block == "haunch.web") { haunch40Web(g, plan); return true; }
-    if (block == "haunch.flange") return haunch40Flange(g, plan);
-    if (block == "haunch.stiffeners") return haunch40CapAndStiffeners(g, tin, plan);
-    if (block == "bolts.haunch_groups") return haunch40Bolts(g, tin, plan);
-    if (block == "haunch.welds") { haunch40Welds(g, tin, plan); return true; }
-    plan.ok = false;
-    plan.error = L"Haunch 40: bilinmeyen blok adı";
-    return false;
+    auto g = std::make_shared<Haunch40Ctx>(*std::static_pointer_cast<Haunch40Ctx>(inFrame));
+    const size_t p0 = plan.plates.size();
+    const size_t b0 = plan.boltGroups.size();
+    const size_t w0 = plan.welds.size();
+
+    if (block == "frame.plumb_face") {
+        haunchPlumbStart(*g, prm, plan);
+        outFrame = g;
+        return true;
+    }
+    if (block == "haunch.end_plate") {
+        if (!haunchSizing(*g, prm, plan)) return false;
+        if (!haunch40EndPlate(*g, plan)) return false;
+        outFrame = g;
+    } else if (block == "haunch.web") {
+        g->L = prm.haunchLength; g->D = prm.haunchDepth; g->tip = prm.haunchTipDepth;
+        g->webT = prm.haunchWebThickness;
+        haunch40Web(*g, plan);
+        outFrame = g;
+    } else if (block == "haunch.flange") {
+        g->L = prm.haunchLength; g->D = prm.haunchDepth; g->tip = prm.haunchTipDepth;
+        g->flangeT = prm.haunchFlangeThickness;
+        g->flW = prm.haunchFlangeWidth > 0.0 ? prm.haunchFlangeWidth : g->wBeam;
+        if (!haunch40Flange(*g, plan)) return false;
+        outFrame = g;
+    } else if (block == "haunch.stiffeners") {
+        g->L = prm.haunchLength; g->D = prm.haunchDepth; g->flangeT = prm.haunchFlangeThickness;
+        ComponentInput tin = input; applyHaunchParams(tin, prm);
+        if (!haunch40CapAndStiffeners(*g, tin, plan)) return false;
+        outFrame = g;
+    } else if (block == "bolts.haunch_groups") {
+        ComponentInput tin = input; applyHaunchParams(tin, prm);
+        if (!haunch40Bolts(*g, tin, plan)) return false;
+        outFrame = g;
+    } else if (block == "haunch.welds") {
+        ComponentInput tin = input; applyHaunchParams(tin, prm);
+        haunch40Welds(*g, tin, plan);
+        outFrame = g;
+    } else {
+        plan.ok = false;
+        plan.error = L"Haunch 40: bilinmeyen blok adı";
+        return false;
+    }
+
+    // role: tek-çıktılı taşlarda üretilen roleKey'i recipe'de GÖRÜNÜR kılar.
+    // (Boşsa mevcut sabit anahtar korunur → golden digest değişmez.)
+    if (!role.empty()) {
+        if ((block == "haunch.end_plate" || block == "haunch.web" ||
+             block == "haunch.flange") && plan.plates.size() == p0 + 1) {
+            plan.plateKeys[p0] = role;
+        } else if (block == "bolts.haunch_groups" && plan.boltGroups.size() == b0 + 2) {
+            plan.boltGroupKeys[b0] = role + "_upper";
+            plan.boltGroupKeys[b0 + 1] = role + "_lower";
+        }
+    }
+    (void)w0;
+    return true;
 }
 
 GenerationPlan generateHaunch40(const ComponentInput& input) noexcept {
