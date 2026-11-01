@@ -28,6 +28,15 @@ constexpr double kMinGridStepMm = 10.0;
 // KREM arka plan (kullanici talebi — Tekla model-view zemin tonu).
 // Tek kaynak: GDI dolgulari, GL clear, ViewCube, saf-GDI backend.
 constexpr unsigned long kCanvasBgRgb = 246u * 65536u + 224u * 256u + 198u; // ust acik mavi (198,224,246)
+
+// COMPONENT GUMBALL (duzenle butonu): secili component sembolunde transform
+// gumball YERINE cizilen tek buton; tik -> component parametre diyalogu.
+// Buton, glyph anchor'inin EKRAN-SABIT piksel offsetiyle sag-ustune cizilir;
+// hit-test ve cizim AYNI sabitleri kullanir (application.cpp + renderer.cpp).
+inline constexpr int kComponentGumballOffsetX = 22;  // glyph anchor'dan saga (ekran px)
+inline constexpr int kComponentGumballOffsetY = -22; // ve yukari
+inline constexpr int kComponentGumballRadiusPx = 10; // cizim yaricapi
+inline constexpr int kComponentGumballHitPx = 13;    // hit-test yaricapi
 inline COLORREF canvasBackgroundColor() noexcept { return static_cast<COLORREF>(kCanvasBgRgb); }
 inline double niceGridStep(double pixelsPerUnit) noexcept {
     if (pixelsPerUnit <= 1e-9) return kMinGridStepMm;
@@ -330,6 +339,11 @@ struct DraftView {
     Vec3 gumballAxisX{1, 0, 0};
     Vec3 gumballAxisY{0, 1, 0};
     Vec3 gumballAxisZ{0, 0, 1};
+    // COMPONENT GUMBALL: secili component sembolunde transform gumball yerine
+    // tek "duzenle" butonu (parametre diyalogu acar). Origin = glyph anchor.
+    bool componentGumballVisible{false};
+    Vec3 componentGumballOrigin{};
+    bool componentGumballHover{false};
     // IKI NOKTALI GORUNUS penceresi: yalniz bu derinlik dilimindeki modeller
     // cizilir (nullptr = filtre yok — ana gorunus).
     const ViewDefinition* viewSlab{nullptr};

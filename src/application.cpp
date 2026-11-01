@@ -2182,6 +2182,17 @@ void Application::onLeftButtonDown(int x, int y) {
             return;
         }
     }
+    // COMPONENT GUMBALL: secili component sembolunde tek "duzenle" butonu.
+    // Tik -> parametre diyalogu (tasima/donme/olcekleme YOKTUR).
+    if (componentGumball_ && componentGumballHitTest(x, y)) {
+        if (openComponentDialogForSelected())
+            publishStatus(L"Bileşen düzenleme diyaloğu açıldı");
+        else
+            MessageBeep(MB_ICONWARNING);
+        updateControls();
+        invalidateCanvas();
+        return;
+    }
     if (workPlanePicking_) {
         if (pointPickPurpose_ == PointPickPurpose::WorkPlaneFace) {
             // YUZ ARACI: nokta snap'i DEGIL, imlec altindaki YUZ isabeti.
@@ -8178,6 +8189,7 @@ void Application::updateHover(int x, int y) {
     // RHINO TARZI GUMBALL: gorunurluk + vurgulu tutamac.
     updateGumball();
     gumballHover_ = gumballVisible_ ? gumballHitTest(x, y) : GumballHandle::None;
+    componentGumballHover_ = componentGumballHitTest(x, y);
     polarTrackingLocked_ = false;
     temporaryTrackingLocked_ = false;
     // YUZ ARACI (calisma duzlemi): nokta snap'i yerine imlecin altindaki YUZ
@@ -11443,11 +11455,92 @@ void Application::updateGumball() {
     if (!show || !any) {
         gumballVisible_ = false;
         gumballHover_ = GumballHandle::None;
+        componentGumball_ = false;
+        componentGumballAnchor_ = {};
         return;
     }
+    // COMPONENT SEMBOLU: tek model secili ve o model bir component parcasiysa
+    // transform gumball YERINE tek "duzenle" butonu gosterilir (tasima/donme/
+    // olcekleme YOKTUR — buton yalniz parametre diyalogunu acar).
+    if (selectedModels_.size() == 1 && isComponentSymbolModel(selectedModels_.front())) {
+        gumballVisible_ = false;
+        gumballHover_ = GumballHandle::None;
+        const auto anchor = componentSymbolAnchor(selectedModels_.front());
+        componentGumball_ = anchor.has_value();
+        componentGumballAnchor_ = anchor.value_or(Vec3{});
+        return;
+    }
+    componentGumball_ = false;
     gumballVisible_ = true;
     gumballUpdateFrame();   // yerel (object-local) eksenler
     gumballOrigin_ = (lo + hi) * 0.5;
+}
+
+bool Application::isComponentSymbolModel(std::size_t index) const {
+    if (index >= document_.models().size()) return false;
+    const EntityId id = document_.modelId(index);
+    for (const auto& c : document_.endPlateConnections())
+        if (c.plateEntityId == id || c.bolts.displayEntityId == id) return true;
+    for (const auto& rec : document_.componentInstances()) {
+        if (std::find(rec.ownedPlateIds.begin(), rec.ownedPlateIds.end(), id) !=
+            rec.ownedPlateIds.end())
+            return true;
+        for (const EntityId bg : rec.ownedBoltGroupIds) {
+            const auto bi = document_.indexOfBoltGroup(bg);
+            if (bi && document_.boltGroups()[*bi].displayEntityId == id) return true;
+        }
+    }
+    return false;
+}
+
+std::optional<Vec3> Application::componentSymbolAnchor(std::size_t index) const {
+    if (index >= document_.models().size()) return std::nullopt;
+    const EntityId id = document_.modelId(index);
+    for (const ComponentGlyph& g : collectComponentGlyphs(document_))
+        if (g.entityId == id) return g.anchor;
+    return std::nullopt;
+}
+
+bool Application::componentGumballHitTest(int x, int y) const {
+    if (!componentGumball_ || !canvas_) return false;
+    RECT client{};
+    GetClientRect(canvas_, &client);
+    const int vw = std::max(1L, client.right);
+    const int vh = std::max(1L, client.bottom);
+    const Vec2 s = (mode_ == EditMode::Draw2D) ? camera_.project2D(componentGumballAnchor_, vw, vh)
+                                               : camera_.project(componentGumballAnchor_, vw, vh);
+    const double dx = s.x + kComponentGumballOffsetX - static_cast<double>(x);
+    const double dy = s.y + kComponentGumballOffsetY - static_cast<double>(y);
+    return (dx * dx + dy * dy) <=
+           static_cast<double>(kComponentGumballHitPx * kComponentGumballHitPx);
+}
+
+bool Application::openComponentDialogForSelected() {
+    if (selectedModels_.empty() || selectedModels_.front() >= document_.models().size())
+        return false;
+    const EntityId id = document_.modelId(selectedModels_.front());
+    for (const auto& c : document_.endPlateConnections())
+        if (c.plateEntityId == id || c.bolts.displayEntityId == id) {
+            if (endPlateEditRequest_) endPlateEditRequest_(c);
+            return true;
+        }
+    for (const auto& rec : document_.componentInstances()) {
+        bool owned = std::find(rec.ownedPlateIds.begin(), rec.ownedPlateIds.end(), id) !=
+                     rec.ownedPlateIds.end();
+        if (!owned) {
+            for (const EntityId bg : rec.ownedBoltGroupIds) {
+                const auto bi = document_.indexOfBoltGroup(bg);
+                if (bi && document_.boltGroups()[*bi].displayEntityId == id) {
+                    owned = true;
+                    break;
+                }
+            }
+        }
+        if (!owned) continue;
+        if (componentEditRequest_) componentEditRequest_(rec);
+        return true;
+    }
+    return false;
 }
 
 GumballHandle Application::gumballHitTest(int x, int y) const {
@@ -12046,6 +12139,9 @@ DraftView Application::draftView() const {
     view.gumballAxisX = gumballFrame_[0];
     view.gumballAxisY = gumballFrame_[1];
     view.gumballAxisZ = gumballFrame_[2];
+    view.componentGumballVisible = componentGumball_;
+    view.componentGumballOrigin = componentGumballAnchor_;
+    view.componentGumballHover = componentGumballHover_;
     view.viewSlab = viewDef_ ? &*viewDef_ : nullptr; // ikincil gorunus: derinlik dilimi
     return view;
 }

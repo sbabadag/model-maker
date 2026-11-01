@@ -1187,6 +1187,17 @@ private:
     void gumballEndDrag();
     void gumballCancelDrag();
     void applyGumballNumeric(double value);
+    // COMPONENT GUMBALL: secili model bir component sembolu oldugunda transform
+    // gumball YERINE tek "duzenle" butonu cizilir; tik -> parametre diyalogu.
+    // (Component sembolu = End Plate levhasi/bulon display'i veya universal
+    // component'in sahip oldugu levha/bulon display'i.)
+    bool componentGumball_{false};
+    bool componentGumballHover_{false};
+    Vec3 componentGumballAnchor_{};
+    bool isComponentSymbolModel(std::size_t index) const;
+    std::optional<Vec3> componentSymbolAnchor(std::size_t index) const;
+    bool openComponentDialogForSelected();
+    bool componentGumballHitTest(int x, int y) const;
     std::optional<Vec3> anchor_;
     std::vector<Vec3> facePoints_;
     std::optional<SnapResult> hover_;

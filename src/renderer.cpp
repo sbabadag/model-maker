@@ -2156,6 +2156,40 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
         ++performance.drawCalls;
     }
 
+    // COMPONENT GUMBALL: secili component sembolunde transform gumball YERINE
+    // tek "duzenle" butonu (component parametre diyalogu acar). Glyph anchor'inin
+    // sag-ustunde ekran-sabit offsetle cizilir; hover'da parlar.
+    if (draft.componentGumballVisible && !draft.interactiveNavigation) {
+        const POINT g0 = projectPoint(draft.componentGumballOrigin);
+        const POINT c{g0.x + kComponentGumballOffsetX, g0.y + kComponentGumballOffsetY};
+        const bool hot = draft.componentGumballHover;
+        const int r = kComponentGumballRadiusPx;
+        const COLORREF fill = hot ? RGB(255, 176, 48) : RGB(232, 140, 30);
+        const COLORREF rimC = hot ? RGB(70, 44, 6) : RGB(120, 78, 12);
+        HPEN border = CreatePen(PS_SOLID, hot ? 4 : 3, rimC);
+        HBRUSH body = CreateSolidBrush(fill);
+        const HGDIOBJ oldB = SelectObject(dc, body);
+        const HGDIOBJ oldP = SelectObject(dc, border);
+        Ellipse(dc, c.x - r, c.y - r, c.x + r + 1, c.y + r + 1);
+        // Iç "dişli" işareti: beyaz göbek + 4 diş (tanınabilir "özellikler" butonu).
+        HBRUSH hub = CreateSolidBrush(RGB(255, 255, 255));
+        SelectObject(dc, hub);
+        SelectObject(dc, GetStockObject(NULL_PEN));
+        const int ir = std::max(3, r - 6);
+        Ellipse(dc, c.x - ir, c.y - ir, c.x + ir + 1, c.y + ir + 1);
+        const int ts = 3;
+        Rectangle(dc, c.x - 1, c.y - r - 1, c.x + 2, c.y - r + ts); // üst diş
+        Rectangle(dc, c.x - 1, c.y + r - ts, c.x + 2, c.y + r + 1); // alt diş
+        Rectangle(dc, c.x - r - 1, c.y - 1, c.x - r + ts, c.y + 2); // sol diş
+        Rectangle(dc, c.x + r - ts, c.y - 1, c.x + r + 1, c.y + 2); // sağ diş
+        DeleteObject(hub);
+        SelectObject(dc, oldP);
+        SelectObject(dc, oldB);
+        DeleteObject(border);
+        DeleteObject(body);
+        ++performance.drawCalls;
+    }
+
     if (!draft.interactiveNavigation) {
         if (!draft.selectedModels.empty() && !useGpuLines) {
             // NOT (performans): GL modunda secim vurgusu GPU batch'inde RENK
