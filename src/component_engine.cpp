@@ -732,6 +732,13 @@ bool endPlatePlacementFromInput(const ComponentInput& input, const EndPlateParam
     out = computeEndPlatePlacementOnFace(face, params.gap, pl.beam.secWidth, pl.beam.secHeight,
                                          params, beamSec.height, pl.beam.sectionCenterOffset,
                                          beamSec.width);
+    // Item 5: bulon kavrama (grip) + delik derinligi. Grip = levha + kolon flansi;
+    // delik = grip + 2 mm (tam delme payi). Profilsiz uyede (flans kalinligi 0)
+    // legacy bbox fallback korunur (alanlar 0 kalir).
+    if (pl.col.secFlangeThickness > 0.0) {
+        out.bolts.gripLength = params.plateThickness + pl.col.secFlangeThickness;
+        out.bolts.holeDepth = out.bolts.gripLength + 2.0;
+    }
     return true;
 }
 
