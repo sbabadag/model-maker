@@ -21,8 +21,22 @@ int main() {
     CHECK(std::string(kContractVersion) == "1.3.0", "contract surumu 1.3.0");
     CHECK(contractSupports(1, 1), "contract 1.1 desteklenir");
     CHECK(contractSupports(1, 2), "contract 1.2 desteklenir");
+    CHECK(contractSupports(1, 3), "contract 1.3 desteklenir");
     CHECK(contractSupports(1, 0), "contract 1.0 desteklenir");
-    CHECK(!contractSupports(2, 0), "contract 2.0 desteklenmez");
+    CHECK(!contractSupports(2, 0), "contract 2.0 desteklenmez (ust major)");
+    CHECK(!contractSupports(0, 9), "contract 0.9 desteklenmez (alt major)");
+    CHECK(!contractSupports(1, 4), "contract 1.4 desteklenmez (ust minor)");
+
+    // 1b) Sabitler metinle eslesiyor mu (tutarlilik regresyonu)?
+    // "major.minor.patch" string'ini ayrismayip dogrudan sayilarla karsilastir.
+    {
+        int ma = 0, mi = 0, pa = 0;
+        const int n = std::sscanf(kContractVersion, "%d.%d.%d", &ma, &mi, &pa);
+        CHECK(n == 3, "semver 3 parcadan olusur");
+        CHECK(ma == kContractVersionMajor, "major sabiti metinle eslesir");
+        CHECK(mi == kContractVersionMinor, "minor sabiti metinle eslesir");
+        CHECK(pa == kContractVersionPatch, "patch sabiti metinle eslesir");
+    }
 
     // 2) Foundation: Vec3 + WorkPlane.
     const Vec3 a{1.0, 2.0, 3.0};

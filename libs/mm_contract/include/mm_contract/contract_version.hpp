@@ -15,17 +15,17 @@
 namespace mm {
 
 inline constexpr int kContractVersionMajor = 1;
-inline constexpr int kContractVersionMinor = 2;
+inline constexpr int kContractVersionMinor = 3;
 inline constexpr int kContractVersionPatch = 0;
 
-// Tek string semver: "1.2.0".
+// Tek string semver: "1.3.0".
 inline constexpr const char* kContractVersion = "1.3.0";
 
 // Istenen min surum mevcut kontrat tarafindan karsilaniyor mu?
-// (minMajor.minMinor >= kContractVersionMajor.Minor ise true).
+// Semver: major FARKLIYSA desteklenmez (ne ust ne alt); ayni majorda
+// kontrat minor'u istenen min minor'dan kucuk degilse desteklenir.
 inline constexpr bool contractSupports(int minMajor, int minMinor) noexcept {
-    return kContractVersionMajor > minMajor ||
-           (kContractVersionMajor == minMajor && kContractVersionMinor >= minMinor);
+    return kContractVersionMajor == minMajor && kContractVersionMinor >= minMinor;
 }
 
 } // namespace mm
