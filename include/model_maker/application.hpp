@@ -318,6 +318,11 @@ public:
     // AYRI bir kavramdir — work plane kamera/is-duzlemi, construction plane
     // ise secilebilir/kalici bir model nesnesidir. Esc/sag tik iptal.
     void startConstructionPlaneCommand();
+    // KONSTRUKSIYON DUZLEMI (2 NOKTA, P0): iki nokta secilir; ucuncu nokta
+    // CALISMA DUZLEMININ Z EKSENI kabul edilir (dik/\"dusey\" duzlem — normal
+    // cizgiye VE is-duzlemi Z'sine dik olur, yani duzlem is-duzlemine dik durur).
+    // 3 noktali komutun ayni snap/track/iptal akisini paylasir.
+    void startConstructionPlaneTwoPointCommand();
     // KONSTRUKSIYON NESNELERI GIZLE/GOSTER: tum ConstructionKind nesnelerinin
     // gorunurlugunu tek bayrakla degistirir (Document::setConstructionVisible).
     void toggleConstructionVisibility();
@@ -1413,7 +1418,7 @@ private:
     //   ThreePointView       : 3 nokta -> yeni gorunus penceresi (origin+X+Y)
     //   RotateCenter         : 1 nokta -> ekran donus merkezi (R tusu; Ctrl+sol
     //                          tus ile ekran bu merkez etrafinda doner)
-    enum class PointPickPurpose { WorkPlane, TwoPointView, TwoPointViewDirection, ThreePointView, RotateCenter, ConstructionPlane, WorkPlaneOnePoint, WorkPlaneTwoPoints, WorkPlaneFace };
+    enum class PointPickPurpose { WorkPlane, TwoPointView, TwoPointViewDirection, ThreePointView, RotateCenter, ConstructionPlane, ConstructionPlaneTwoPoints, WorkPlaneOnePoint, WorkPlaneTwoPoints, WorkPlaneFace };
     PointPickPurpose pointPickPurpose_{PointPickPurpose::WorkPlane};
     // Ctrl+sol tus: bu esikten fazla hareket rotasyona terfi eder; esik
     // asilmazsa Ctrl+tik secimi yapilir (tek karar noktasi).

@@ -1022,6 +1022,8 @@ std::vector<QtMainWindow::CommandCategory> QtMainWindow::commandCategories() {
     cats.push_back({QStringLiteral("K&onstrüksiyon"), QStringLiteral("Konstrüksiyon"), {
         uiCmd(QStringLiteral("Konstrüksiyon &Düzlemi (3 Nokta)"), QStringLiteral("K. Düzlem"), QStringLiteral("Konstrüksiyon düzlemi (3 nokta)"), ToolGlyph::Plane,
               [this]() { app_.startConstructionPlaneCommand(); }),
+        uiCmd(QStringLiteral("Konstrüksiyon Düzlemi (&2 Nokta)"), QStringLiteral("K. Düzlem 2N"), QStringLiteral("Konstrüksiyon düzlemi (2 nokta, çalışma düzleminin Z'sine dik)"), ToolGlyph::Plane,
+              [this]() { app_.startConstructionPlaneTwoPointCommand(); }),
         uiCmd(QStringLiteral("Konstrüksiyon &Nesnelerini Göster/Gizle"), QStringLiteral("Gizle/Göster"), QStringLiteral("Konstrüksiyon nesnelerini göster/gizle"), ToolGlyph::Toggle3D,
               [this]() { app_.toggleConstructionVisibility(); }),
         uiSep(),

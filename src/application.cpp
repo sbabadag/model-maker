@@ -4012,6 +4012,16 @@ void Application::startConstructionPlaneCommand() {
     updateStatus();
 }
 
+void Application::startConstructionPlaneTwoPointCommand() {
+    // KONSTRUKSIYON DUZLEMI (2 NOKTA): iki nokta secilir, ucuncu nokta
+    // CALISMA DUZLEMININ Z EKSENI olur. Sonuc: iki noktadan gecen, is
+    // duzlemine DIK (\"dusey\") bir konstrüksiyon duzlemi. Klasik kesit/kestirme
+    // duzlemi — ustten (XY) bakista iki nokta tikla -> dik duzlem.
+    startWorkPlaneCommand();
+    pointPickPurpose_ = PointPickPurpose::ConstructionPlaneTwoPoints;
+    updateStatus();
+}
+
 void Application::toggleConstructionVisibility() {
     // Tek kaynak: menu. Tum ConstructionKind nesnelerinin gorunurlugunu
     // tek bayrakla degistirir. Undo KAPSAMINDA DEGIL (setModelColor/setModelLayer
@@ -7281,6 +7291,34 @@ void Application::commitWorkPlanePoint(const Vec3& point) {
         invalidateCanvas();
         return;
     }
+    if (pointPickPurpose_ == PointPickPurpose::ConstructionPlaneTwoPoints) {
+        // 2 nokta + ucuncu nokta = CALISMA DUZLEMININ Z EKSENI. Sonuc duzlem
+        // iki noktadan gecer ve is-duzlemine DIK durur (normal = u x workPlaneZ).
+        if (!std::isfinite(point.x) || !std::isfinite(point.y) || !std::isfinite(point.z)) {
+            MessageBeep(MB_ICONWARNING);
+            return;
+        }
+        workPlanePoints_.push_back(point);
+        if (workPlanePoints_.size() < 2) return;
+        const Vec3 third = workPlanePoints_[0] + workPlane_.normal;
+        const auto plane = WorkPlane::fromThreePoints(workPlanePoints_[0], workPlanePoints_[1],
+                                                      third);
+        if (!plane) {
+            workPlanePoints_.pop_back();
+            MessageBeep(MB_ICONWARNING);
+            publishStatus(L"Konstrüksiyon düzlemi (2 nokta): noktalar çakışık veya çizgi çalışma düzleminin Z'sine paralel — 2. noktayı yeniden seçin");
+            return;
+        }
+        // Tek undo adimi: duzlem eklenir; is-duzlemi (workPlane_) DEGISMEZ.
+        pushUndoSnapshot();
+        document_.addConstructionPlane(*plane, kDefaultConstructionPlaneSize);
+        cancelWorkPlaneCommand();
+        updateHover(cursorScreen_.x, cursorScreen_.y);
+        updateControls();
+        updateStatus();
+        invalidateCanvas();
+        return;
+    }
     if (pointPickPurpose_ == PointPickPurpose::WorkPlaneOnePoint) {
         // TEKLA "1 nokta": duzlem yonelimini korur, origin tiklanan noktaya.
         if (!std::isfinite(point.x) || !std::isfinite(point.y) || !std::isfinite(point.z)) {
@@ -8898,6 +8936,9 @@ void Application::updateStatus() {
         if (workPlanePoints_.empty()) text += L"1. noktayı belirtin";
         else if (workPlanePoints_.size() == 1) text += L"2. noktayı belirtin (U ekseni)";
         else text += L"3. noktayı belirtin (düzlem yönü)";
+    } else if (workPlanePicking_ && pointPickPurpose_ == PointPickPurpose::ConstructionPlaneTwoPoints) {
+        text += L"  |  KONSTRÜKSİYON DÜZLEMİ (2 NOKTADA) — ";
+        text += workPlanePoints_.empty() ? L"orijini belirtin" : L"2. noktayı belirtin (düzlem çalışma düzleminin Z'sine dik)";
     } else if (workPlanePicking_ && pointPickPurpose_ == PointPickPurpose::WorkPlaneOnePoint) {
         text += L"  |  ÇALIŞMA DÜZLEMİ (1 NOKTADA) — düzlemin yeni konumunu belirtin";
     } else if (workPlanePicking_ && pointPickPurpose_ == PointPickPurpose::WorkPlaneTwoPoints) {

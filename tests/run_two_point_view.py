@@ -50,12 +50,13 @@ struct Camera {
 // tests/construction_objects_test.cpp'de ayri dogrulanir).
 struct FakeDocument {
     int constructionPlanes = 0;
+    Vec3 lastPlaneNormal{0, 0, 0};
     void pushSnapshot() {}
-    std::size_t addConstructionPlane(const WorkPlane&, double) { ++constructionPlanes; return 0; }
+    std::size_t addConstructionPlane(const WorkPlane& p, double) { ++constructionPlanes; lastPlaneNormal = p.normal; return 0; }
 };
 class Application {
 public:
-    enum class PointPickPurpose { WorkPlane, TwoPointView, TwoPointViewDirection, ThreePointView, RotateCenter, ConstructionPlane, WorkPlaneOnePoint, WorkPlaneTwoPoints, WorkPlaneFace };
+    enum class PointPickPurpose { WorkPlane, TwoPointView, TwoPointViewDirection, ThreePointView, RotateCenter, ConstructionPlane, ConstructionPlaneTwoPoints, WorkPlaneOnePoint, WorkPlaneTwoPoints, WorkPlaneFace };
     PointPickPurpose pointPickPurpose_{PointPickPurpose::WorkPlane};
     // Donus merkezi (R) yolu bu dosyada test EDILMEZ: commitWorkPlanePoint'in
     // RotateCenter dali camera_.setOrbitPivot cagirir. Sahte kamera yeter.
@@ -228,6 +229,31 @@ int main() {
         b.commitWorkPlanePoint({1000, 0, 0});
         b.commitWorkPlanePoint({2000, 0, 0});
         check(b.document_.constructionPlanes == 0 && b.workPlanePicking_, "CP: dogrusal noktalar reddedilir");
+    }
+    { // 8) KONSTRUKSIYON DUZLEMI (2 NOKTA): ucuncu nokta calisma duzleminin
+      // Z'si. Iki nokta -> duzlem eklenir, is-duzlemi DEGISMEZ, duzlem normali
+      // is-duzlemi Z'sine DIK olur (dusey duzlem). Z'ye paralel cizgi reddedilir.
+        Application a;
+        a.pointPickPurpose_ = Application::PointPickPurpose::ConstructionPlaneTwoPoints;
+        a.workPlanePicking_ = true;
+        a.commitWorkPlanePoint({0, 0, 0});
+        check(a.document_.constructionPlanes == 0 && a.workPlanePicking_, "CP2: 1 nokta, henuz duzlem yok");
+        a.commitWorkPlanePoint({1000, 0, 0});
+        check(a.document_.constructionPlanes == 1, "CP2: 2. nokta duzlem ekler");
+        check(!a.workPlanePicking_, "CP2: komut bitti");
+        check(a.pointPickPurpose_ == Application::PointPickPurpose::WorkPlane, "CP2: amac sifirlanir");
+        check(a.workPlane_.normal.z == 1.0, "CP2: is-duzlemi DEGISMEZ");
+        const double dot = a.document_.lastPlaneNormal.x * a.workPlane_.normal.x +
+                           a.document_.lastPlaneNormal.y * a.workPlane_.normal.y +
+                           a.document_.lastPlaneNormal.z * a.workPlane_.normal.z;
+        check(std::abs(dot) < 1e-9, "CP2: duzlem normali is-duzlemi Z'sine dik");
+        // Cizgi is-duzlemi Z'sine paralelse dejenere -> reddedilir.
+        Application b;
+        b.pointPickPurpose_ = Application::PointPickPurpose::ConstructionPlaneTwoPoints;
+        b.workPlanePicking_ = true;
+        b.commitWorkPlanePoint({0, 0, 0});
+        b.commitWorkPlanePoint({0, 0, 1000}); // world normal +Z'ye paralel
+        check(b.document_.constructionPlanes == 0 && b.workPlanePicking_, "CP2: Z'ye paralel cizgi reddedilir");
     }
     std::cout << checks << " checks, " << failures << " failures\n";
     return failures == 0 ? 0 : 1;
