@@ -728,6 +728,32 @@ ProfileSectionFrame memberSectionFrame(const MemberGeometry& m) noexcept {
     return rotateSectionFrame(sec, m.profileRotation);
 }
 
+void applyEndPlateBoltStack(const EndPlateParams& params, const Vec3& boltAxis,
+                            double colFlangeThickness,
+                            EndPlatePlacement& placement) noexcept {
+    if (!(colFlangeThickness > 0.0)) return;  // profilsiz: legacy bbox fallback
+    placement.colFlangeThickness = colFlangeThickness;
+    // Tekla CUT LENGTH: 0 = tek flans (kolonun kirise bakan flansi), 1 = cift flans.
+    const double flangeDepth =
+        (params.boltCutLengthMode == 1) ? 2.0 * colFlangeThickness : colFlangeThickness;
+    // Grip yigini: levha + gap + flans(lar) + bolt length increase.
+    placement.boltGripLength = placement.plateThickness + params.gap + flangeDepth +
+                               params.boltLengthIncrease;
+    placement.bolts.gripLength = placement.boltGripLength;
+    // Delik derinligi: tek flansta levha + gap + on flans; cift flansta through-cut.
+    placement.bolts.holeDepth = (params.boltCutLengthMode == 1)
+                                    ? 0.0
+                                    : (placement.plateThickness + params.gap + colFlangeThickness);
+    // Item 2: saft origin'ini yigin MERKEZINE kaydir — bas kolon flansinin ic
+    // yuzunde, somun levhanin kiris yuzunde. Kayma = 0.5*(gap + flans - boy artisi).
+    // Delik through-cut ise bu kayma delik geometrisini DEGISTIRMEZ; tek flans
+    // modunda sinirli delik zaten origin'de ortalanir.
+    const double gripShift = 0.5 * (params.gap + flangeDepth - params.boltLengthIncrease);
+    placement.bolts.origin.x -= boltAxis.x * gripShift;
+    placement.bolts.origin.y -= boltAxis.y * gripShift;
+    placement.bolts.origin.z -= boltAxis.z * gripShift;
+}
+
 bool endPlatePlacementFromInput(const ComponentInput& input, const EndPlateParams& params,
                                 EndPlatePlacement& out, EntityId& mainPartId,
                                 std::wstring& error) noexcept {
@@ -761,13 +787,10 @@ bool endPlatePlacementFromInput(const ComponentInput& input, const EndPlateParam
     out = computeEndPlatePlacementOnFace(face, params.gap, pl.beam.secWidth, pl.beam.secHeight,
                                          params, beamSec.height, pl.beam.sectionCenterOffset,
                                          beamSec.width);
-    // Item 5: bulon kavrama (grip) + delik derinligi. Grip = levha + kolon flansi;
-    // delik = grip + 2 mm (tam delme payi). Profilsiz uyede (flans kalinligi 0)
-    // legacy bbox fallback korunur (alanlar 0 kalir).
-    if (pl.col.secFlangeThickness > 0.0) {
-        out.bolts.gripLength = params.plateThickness + pl.col.secFlangeThickness;
-        out.bolts.holeDepth = out.bolts.gripLength + 2.0;
-    }
+    // Item 3: bulon kavrama (grip) + delik derinligi TEK KAYNAKTAN.
+    // Grip = levha + gap + kolon flansi + boltLengthIncrease; delik derinligi
+    // boltCutLengthMode'a bagli. Profilsiz uyede legacy bbox fallback korunur.
+    applyEndPlateBoltStack(params, out.axis, pl.col.secFlangeThickness, out);
     return true;
 }
 

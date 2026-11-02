@@ -230,4 +230,13 @@ bool endPlatePlacementFromInput(const ComponentInput& input, const EndPlateParam
                                 EndPlatePlacement& out, EntityId& mainPartId,
                                 std::wstring& error) noexcept;
 
+// ALIN LEVHASI BULON KAVRAMA YIGINI (tek kaynak: generator + GUI).
+// Grip = levha + gap + kolon flans(lar)i + boltLengthIncrease (Tekla "bolt length
+// increase" somun tarafina eklenir). Delik derinligi boltCutLengthMode'a bagli:
+// 0 = tek flans (levha+gap+on flans), 1 = cift flans = through-cut (0).
+// Profilsiz uyede (colFlangeThickness <= 0) DOKUNMAZ: legacy bbox fallback korunur.
+void applyEndPlateBoltStack(const EndPlateParams& params, const Vec3& boltAxis,
+                            double colFlangeThickness,
+                            EndPlatePlacement& placement) noexcept;
+
 } // namespace mm

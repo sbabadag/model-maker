@@ -5839,30 +5839,10 @@ bool Application::resolveEndPlatePlacement(std::size_t mainIdx, std::size_t secI
     // doldurur; saft simetri merkezi yigin merkezine cekilir (plateCenter,
     // yigin merkezine gore -(gap+tf)/2 kayik). Delik through-cut oldugundan
     // origin'in eksen yonundeki bu kaymasi delik geometrisini DEGISTIRMEZ.
-    placement.colFlangeThickness = colFlangeThickness;
-    // CUT LENGTH (Tekla): 0 = tek flans (kolonun kirise bakan flansi), 1 = cift
-    // flans (bulon kolon boyunca gecer). Grip buna gore derinlesir.
-    const double flangeDepth = (params.boltCutLengthMode == 1)
-                                   ? 2.0 * colFlangeThickness
-                                   : colFlangeThickness;
-    // BOLT LENGTH INCREASE: boy artisi yalniz somun tarafina (kiris tarafina)
-    // eklenir; bas tarafi kolon flansinin uzak (ic) yuzunde sabit kalir.
-    placement.boltGripLength = placement.plateThickness + params.gap + flangeDepth +
-                               params.boltLengthIncrease;
-    const double gripShift = 0.5 * (params.gap + flangeDepth - params.boltLengthIncrease);
-    placement.bolts.origin.x -= placement.axis.x * gripShift;
-    placement.bolts.origin.y -= placement.axis.y * gripShift;
-    placement.bolts.origin.z -= placement.axis.z * gripShift;
-
-    // DELIK DERINLIGI: tek flans modunda delik yalniz levha + gap + kolon ON
-    // flansini deler (arka flansa ulasmaz). Cift flans modunda 0 (through-cut):
-    // bulon kolon boyunca gecer, delik de oyle. Sinirli delik origin'de
-    // (kavrama merkezi) ortalanir; boylece [flans ic yuz .. levha kiris yuzu]
-    // araligini birebir kaplar.
-    placement.bolts.holeDepth =
-        (params.boltCutLengthMode == 1)
-            ? 0.0
-            : (params.plateThickness + params.gap + colFlangeThickness);
+    // BULON KAVRAMA + YUZ YERI: TEK KAYNAK — generator ile AYNI fonksiyon
+    // (applyEndPlateBoltStack). Grip = levha + gap + flans(lar) + boy artisi;
+    // saft origin'i yigin merkezine kayar; delik derinligi cut-length moduna bagli.
+    applyEndPlateBoltStack(params, placement.axis, colFlangeThickness, placement);
 
     // TESHIS (kisa yontem): Windows'ta `set MM_ENDPLATE_DIAG=1` sonra uygulamayi
     // calistirip End Plate olusturunca exe yanindaki
