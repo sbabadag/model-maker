@@ -4,6 +4,7 @@
 // Bu test anchor cozumunun GenerationPlan + MemberGeometry uzerinden DOGRU 3B
 // noktalari ve dogru olculeri urettigini olcer (cizim Qt katmaninda).
 #include "model_maker/component_codec.hpp"
+#include "model_maker/component_dialog.hpp"
 #include "model_maker/component_engine.hpp"
 #include "model_maker/component_preview.hpp"
 #include "model_maker/geometry.hpp"
@@ -198,6 +199,54 @@ int main() {
         empty.typeId = L"mm_empty";
         const nlohmann::json je = componentDialogSchemaToJson(empty);
         check(!je.contains("preview"), "7 bos preview yazilmaz (geriye uyum)");
+    }
+
+    // 8) MM-6(d): Haunch 40 berkitme toggle'lari VERIDEN tanimlanir; rolePrefix
+    // kumesi kStiffeners ile birebir ve her biri gercek plan levhasina denk gelir.
+    {
+        const ComponentDialogDefinition h40 = haunch40DialogDefinition();
+        check(h40.schema.preview.toggles.size() == 6, "8 Haunch 40 6 berkitme toggle tanimli");
+        const std::wstring expected[6] = {
+            L"haunch_beam_stiffener", L"haunch_stiff_additional",
+            L"haunch_stiff_rafter_bottom", L"haunch_stiff_compression",
+            L"haunch_stiff_morris", L"haunch_stiff_diagonal"};
+        bool allMatch = h40.schema.preview.toggles.size() == 6;
+        for (std::size_t i = 0; i < h40.schema.preview.toggles.size() && i < 6; ++i)
+            if (h40.schema.preview.toggles[i].rolePrefix != expected[i]) allMatch = false;
+        check(allMatch, "8 toggle rolePrefix'leri kStiffeners ile birebir");
+
+        ComponentInput in;
+        in.main.id = 1;
+        in.main.axisFrom = {0, 0, 0};
+        in.main.axisTo = {0, 0, 3000};
+        in.main.refNormal = {0, 1, 0};
+        in.main.secHeight = 300;
+        in.main.secWidth = 300;
+        in.main.secWebThickness = 11;
+        in.main.secFlangeThickness = 19;
+        MemberGeometry beam;
+        beam.id = 2;
+        const double tt = std::tan(10.0 * 3.14159265358979323846 / 180.0);
+        beam.axisFrom = {0, 1200, 1500 + 1140 * tt};
+        beam.axisTo = {0, 60, 1500};
+        beam.refNormal = {0, 0, 1};
+        beam.secHeight = 200;
+        beam.secWidth = 100;
+        beam.secWebThickness = 5.6;
+        beam.secFlangeThickness = 8.5;
+        in.secondary = {beam};
+        bool allResolve = true;
+        for (const auto& tg : h40.schema.preview.toggles) {
+            ComponentInput probe = in;
+            bool found = false;
+            for (auto& p : probe.params)
+                if (p.name == tg.param) { p.value = CompParamValue{true}; found = true; }
+            if (!found) probe.params.push_back(CompParam{tg.param, CompParamValue{true}});
+            const GenerationPlan plan = generateHaunch40(probe);
+            if (!plan.ok) { allResolve = false; continue; }
+            if (previewToggleRoles(plan, tg).empty()) allResolve = false;
+        }
+        check(allResolve, "8 her toggle rolePrefix'i gercek levha rolune denk gelir");
     }
 
     std::printf("\n%d/%d checks gecti\n", checks - failures, checks);

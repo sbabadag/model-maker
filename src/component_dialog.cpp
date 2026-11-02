@@ -644,6 +644,16 @@ ComponentDialogDefinition haunch40DialogDefinition() noexcept {
         tab(L"welds",L"Kaynaklar",
             {L"createWelds",L"weldSize"})
     };
+    // MM-6(d): Haunch 40 berkitme toggle'lari VERIDEN tanimlanir. Widget bu listeyi
+    // (kStiffeners tablosu yerine) kullanir; ghost + Alt+tik davranisi birebir ayni.
+    def.schema.preview.toggles = {
+        {L"createBeamStiffener", L"haunch_beam_stiffener"},
+        {L"createAddStiffener", L"haunch_stiff_additional"},
+        {L"createRafterBottomStiffener", L"haunch_stiff_rafter_bottom"},
+        {L"createComprStiffener", L"haunch_stiff_compression"},
+        {L"createMorrisStiffener", L"haunch_stiff_morris"},
+        {L"createDiagStiffener", L"haunch_stiff_diagonal"},
+    };
     return def;
 }
 
