@@ -265,6 +265,19 @@ struct WeldSpec {
     std::wstring name;
 };
 
+// MM-7 — raporlanabilir geometrik kontrol sonucu. `value` olculen deger (mm),
+// `limit` gerekli sinir (mm); `message` yalniz ihlalde doldurulur (hangi bulon,
+// hangi uye, kac mm). Studio'nun salt okunur OCCT incelemesi AYNI kurali bu
+// alan uzerinden bagimsiz dogrulayabilir. Kontrollerin uretimi
+// `component_checks.hpp` icindeki `runComponentChecks`'tadir (OCCT'siz).
+struct ComponentCheck {
+    std::string id;
+    bool pass{true};
+    double value{0.0};
+    double limit{0.0};
+    std::wstring message;
+};
+
 // Uretim plani: generatorun CIKTISI. Sahip olunacak alt nesnelerin specleri +
 // kullanici parcalarina uygulanacak kesmeler. ok=false ise error dolu ve plan
 // kullanilmamali (belge KISMEN degistirilmez).
@@ -285,6 +298,7 @@ struct GenerationPlan {
     std::vector<std::string> boltGroupKeys;  // boltGroups[i] -> semantic roleKey
     std::vector<std::string> cutKeys;        // cuts[i] -> semantic roleKey
     std::vector<std::string> weldKeys;       // welds[i] -> semantic roleKey
+    std::vector<ComponentCheck> checks;      // MM-7: geometrik kontrol sonuclari (raporlama)
     bool ok{true};
     std::wstring error;
 };

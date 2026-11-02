@@ -27,6 +27,8 @@ build-occ/
 build-occ-linux/
 build-hermes/
 build-debug/
+build-contract/
+build-mm5/
 # Tekla Bridge extractor (dotnet) artifacts
 tools/model-maker-bridge/tekla-extractor/**/bin/
 tools/model-maker-bridge/tekla-extractor/**/obj/

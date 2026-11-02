@@ -1076,6 +1076,22 @@ json generationPlanToJsonImpl(const GenerationPlan& p) {
     j["boltGroupKeys"] = p.boltGroupKeys;
     j["cutKeys"] = p.cutKeys;
     j["weldKeys"] = p.weldKeys;
+    // MM-7: kontrol sonuclari raporlama alani. BOS ise yazilmaz (eski paketlerin
+    // baytlari/digest'i degismesin). Digest'e GIRMEZ (asagida canonicalJson'dan
+    // cikarilir): digest yalniz GEOMETRI esdegerligini olcer.
+    if (!p.checks.empty()) {
+        json chk = json::array();
+        for (const auto& c : p.checks) {
+            json cj;
+            cj["id"] = c.id;
+            cj["pass"] = c.pass;
+            cj["value"] = c.value;
+            cj["limit"] = c.limit;
+            cj["message"] = utf8FromWide(c.message);
+            chk.push_back(std::move(cj));
+        }
+        j["checks"] = std::move(chk);
+    }
     j["ok"] = p.ok;
     j["error"] = utf8FromWide(p.error);
     return j;
@@ -1106,6 +1122,18 @@ GenerationPlan generationPlanFromJsonImpl(const json& j) {
     }
     if (j.contains("weldKeys") && j["weldKeys"].is_array()) {
         for (const auto& k : j["weldKeys"]) p.weldKeys.push_back(k.get<std::string>());
+    }
+    // MM-7: kontrol sonuclari (opsiyonel; yoksa bos).
+    if (j.contains("checks") && j["checks"].is_array()) {
+        for (const auto& cj : j["checks"]) {
+            ComponentCheck c;
+            c.id = cj.value("id", std::string());
+            c.pass = cj.value("pass", true);
+            c.value = cj.value("value", 0.0);
+            c.limit = cj.value("limit", 0.0);
+            c.message = wideFromUtf8(cj.value("message", std::string()));
+            p.checks.push_back(std::move(c));
+        }
     }
     p.ok = j.value("ok", true);
     p.error = wideFromUtf8(j.value("error", std::string()));
@@ -1316,7 +1344,11 @@ std::string canonicalJsonString(const nlohmann::json& j) {
 }
 
 std::string generationPlanCanonicalJson(const GenerationPlan& p) {
-    return canonicalJsonString(generationPlanToJsonImpl(p));
+    json j = generationPlanToJsonImpl(p);
+    // MM-7: kontrol sonuclari RAPORLAMA alanidir; digest yalniz GEOMETRI
+    // esdegerligini olcmeli (checks mesajlarindaki degisiklik digest'i kaydirmamali).
+    j.erase("checks");
+    return canonicalJsonString(j);
 }
 
 std::string generationPlanDigest(const GenerationPlan& p) {
