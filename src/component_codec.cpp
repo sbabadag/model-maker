@@ -1075,6 +1075,112 @@ GenerationPlan generationPlanFromJson(const nlohmann::json& j) {
 }
 
 // ============================================================================
+// RECIPE (MM-5) — recipe.json <-> Recipe
+// ============================================================================
+
+namespace {
+
+std::string recipeStr(const json& j, const char* key) {
+    if (!j.contains(key)) return {};
+    const json& v = j[key];
+    if (v.is_string()) return v.get<std::string>();
+    return {};
+}
+
+// Skaler arguman metni: sayi ise ifade olarak yazilir (2 -> "2", 2.5 -> "2.5").
+std::string recipeScalarText(const json& v) {
+    if (v.is_string()) return v.get<std::string>();
+    if (v.is_boolean()) return v.get<bool>() ? "1" : "0";
+    if (v.is_number_integer()) return std::to_string(v.get<long long>());
+    if (v.is_number_unsigned()) return std::to_string(v.get<unsigned long long>());
+    if (v.is_number_float()) {
+        char buf[64];
+        std::snprintf(buf, sizeof(buf), "%.17g", v.get<double>());
+        return std::string(buf);
+    }
+    return v.dump();  // beklenmeyen tur: metin olarak tasi, sema yakalar
+}
+
+RecipeArg recipeArgFromJson(const json& v) {
+    RecipeArg a;
+    if (v.is_array()) {
+        a.isList = true;
+        for (const auto& item : v) a.items.push_back(recipeArgFromJson(item));
+        return a;
+    }
+    a.text = recipeScalarText(v);
+    return a;
+}
+
+json recipeArgToJson(const RecipeArg& a) {
+    if (a.isList) {
+        json arr = json::array();
+        for (const auto& item : a.items) arr.push_back(recipeArgToJson(item));
+        return arr;
+    }
+    return a.text;
+}
+
+}  // namespace
+
+nlohmann::json recipeToJson(const Recipe& r) {
+    json j;
+    j["formatVersion"] = kCodecFormatVersion;
+    j["recipeVersion"] = r.recipeVersion;
+    json lets = json::object();
+    for (const auto& kv : r.lets) lets[kv.first] = kv.second;
+    j["let"] = lets;
+    json steps = json::array();
+    for (const auto& s : r.steps) {
+        json o;
+        if (!s.id.empty()) o["id"] = s.id;
+        if (!s.use.empty()) o["use"] = s.use;
+        if (!s.check.empty()) o["check"] = s.check;
+        if (!s.message.empty()) o["message"] = s.message;
+        if (!s.role.empty()) o["role"] = s.role;
+        if (!s.when.empty()) o["when"] = s.when;
+        if (!s.args.empty()) {
+            json args = json::object();
+            for (const auto& kv : s.args) args[kv.first] = recipeArgToJson(kv.second);
+            o["args"] = args;
+        }
+        steps.push_back(o);
+    }
+    j["steps"] = steps;
+    return j;
+}
+
+Recipe recipeFromJson(const nlohmann::json& j) {
+    Recipe r;
+    if (j.contains("recipeVersion") && j["recipeVersion"].is_string())
+        r.recipeVersion = j["recipeVersion"].get<std::string>();
+    if (j.contains("let") && j["let"].is_object()) {
+        for (auto it = j["let"].begin(); it != j["let"].end(); ++it) {
+            if (it.value().is_string())
+                r.lets.emplace_back(it.key(), it.value().get<std::string>());
+        }
+    }
+    if (j.contains("steps") && j["steps"].is_array()) {
+        for (const auto& s : j["steps"]) {
+            if (!s.is_object()) continue;
+            RecipeStep step;
+            step.id = recipeStr(s, "id");
+            step.use = recipeStr(s, "use");
+            step.role = recipeStr(s, "role");
+            step.when = recipeStr(s, "when");
+            step.check = recipeStr(s, "check");
+            step.message = recipeStr(s, "message");
+            if (s.contains("args") && s["args"].is_object()) {
+                for (auto it = s["args"].begin(); it != s["args"].end(); ++it)
+                    step.args[it.key()] = recipeArgFromJson(it.value());
+            }
+            r.steps.push_back(std::move(step));
+        }
+    }
+    return r;
+}
+
+// ============================================================================
 // Kanonik JSON + digest
 // ============================================================================
 

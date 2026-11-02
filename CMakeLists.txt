@@ -65,9 +65,10 @@ add_library(mm_component_contract
     src/component_framework.cpp
     src/component_catalog.cpp
     src/component_codec.cpp
+    src/component_package.cpp
     src/recipe.cpp
 )
-target_include_directories(mm_component_contract PUBLIC include third_party)
+target_include_directories(mm_component_contract PUBLIC include third_party ${CMAKE_CURRENT_SOURCE_DIR}/libs/mm_contract/include)
 target_link_libraries(mm_component_contract PUBLIC mm_foundation)
 target_compile_options(mm_component_contract PRIVATE -Wall -Wextra -Wpedantic)
 
@@ -468,6 +469,15 @@ if(BUILD_TESTING)
     add_executable(model_maker_section_frame_test tests/section_frame_test.cpp)
     target_link_libraries(model_maker_section_frame_test PRIVATE model_maker_core)
     add_test(NAME model_maker_section_frame_test COMMAND model_maker_section_frame_test)
+
+    # MM-5 adim 1: ComponentGenerator type-erased cagrilabilir. Fonksiyon
+    # isaretcisi kayitlari AYNEN calisir; paket yukleyici recipe'yi capture eden
+    # lambda kaydedebilir; bos/istisna firlatan uretec sessiz basari URETMEZ.
+    add_executable(model_maker_component_generator_type_test
+        tests/component_generator_type_test.cpp)
+    target_link_libraries(model_maker_component_generator_type_test PRIVATE model_maker_core)
+    add_test(NAME model_maker_component_generator_type_test
+             COMMAND model_maker_component_generator_type_test)
 
     # Kesit referans normali: "profil ust basligi workplane ile paralel".
     # Secim (UCS vs otomatik gorunus duzlemi) + MMW6 kalicilik + eski dosya

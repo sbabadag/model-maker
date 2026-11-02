@@ -19,6 +19,7 @@
 
 #include "model_maker/component_dialog.hpp"
 #include "model_maker/component_engine.hpp"
+#include "model_maker/recipe.hpp"
 
 #include <nlohmann/json.hpp>
 #include <string>
@@ -57,6 +58,13 @@ ComponentDialogSchema componentDialogSchemaFromJson(const nlohmann::json& j);
 // --- GenerationPlan ----------------------------------------------------------
 nlohmann::json generationPlanToJson(const GenerationPlan& p);
 GenerationPlan generationPlanFromJson(const nlohmann::json& j);
+
+// --- Recipe (MM-5 paket yukleyici) ------------------------------------------
+// recipe.json <-> Recipe kayipsiz gidis-donus. Bilinmeyen alanlar yok sayilir;
+// zorunlu alanlar (steps[].use|check, args) eksikse bos birakilir ve
+// validateRecipe yakalar (fail-closed tek noktada).
+nlohmann::json recipeToJson(const Recipe& r);
+Recipe recipeFromJson(const nlohmann::json& j);
 
 // --- Kanonik JSON + digest ---------------------------------------------------
 // Bir json agacini kanonik metne cevirir: nesne anahtarlari SIRALI, sayilar

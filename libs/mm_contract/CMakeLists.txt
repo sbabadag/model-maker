@@ -46,9 +46,10 @@ add_library(mm_component_contract
     ${MM_ROOT}/src/component_framework.cpp
     ${MM_ROOT}/src/component_catalog.cpp
     ${MM_ROOT}/src/component_codec.cpp
+    ${MM_ROOT}/src/component_package.cpp
     ${MM_ROOT}/src/recipe.cpp
 )
-target_include_directories(mm_component_contract PUBLIC ${MM_ROOT}/include ${MM_ROOT}/third_party)
+target_include_directories(mm_component_contract PUBLIC ${MM_ROOT}/include ${MM_ROOT}/third_party ${CMAKE_CURRENT_LIST_DIR}/include)
 target_link_libraries(mm_component_contract PUBLIC mm_foundation)
 
 # --- contractVersion basligi (bu alt klasorde, self-contained) ---
@@ -85,6 +86,15 @@ if(MM_CONTRACT_BUILD_TESTS)
     target_compile_definitions(mm_contract_haunch40_equiv_test PRIVATE
         MM_CONTRACT_GOLDEN_DIR="${MM_ROOT}/tests/golden")
     add_test(NAME mm_contract_haunch40_equiv_test COMMAND mm_contract_haunch40_equiv_test)
+
+    # MM-5 — paket yukleyici testi: yerlesik typeId cakismasi, mm_end_plate_pkg
+    # olarak yukleme, bozuk paket reddi, proje klasoru golgelemesi.
+    add_executable(mm_contract_package_test
+        ${CMAKE_CURRENT_LIST_DIR}/tests/component_package_test.cpp)
+    target_link_libraries(mm_contract_package_test PRIVATE mm_component_contract mm_contract_version)
+    target_compile_definitions(mm_contract_package_test PRIVATE
+        MM_PACKAGES_DIR="${CMAKE_CURRENT_LIST_DIR}/packages")
+    add_test(NAME mm_contract_package_test COMMAND mm_contract_package_test)
 
     # Paket uretici (parameters/dialog/manifest) — test degil, arac.
     add_executable(mm_gen_end_plate_package ${CMAKE_CURRENT_LIST_DIR}/tools/gen_end_plate_package.cpp)
