@@ -91,10 +91,11 @@ struct EndPlateParams {
     std::string boltGrade{"8.8"};  // bulon sinifi (etiket)
     int boltCountX{2};             // levha genislik yonunde bulon adedi (genelde 2)
     int boltCountY{2};             // levha yukseklik yonunde bulon adedi (2 veya 4)
-    double boltEdge{30.0};         // levha kenarindan bulon merkezine (mm)
+    double boltEdge{35.0};         // levha kenarindan bulon merkezine (mm)
     // --- Tekla "Bolt group dimensions" (Bulonlar sekmesi) -------------------
-    // Default'lar mevcut davranisi korur: yatay ortalanmis (Orta, offset 0,
-    // aralik otomatik flans/2), dikey alt kenardan boltEdge (Alt, offset<0).
+    // MM-7: dikey konum/aralik KESITE (kiris) gore (yatay gauge secWidth'ten
+    // turedigi gibi); tasan levhada bulonlar basliga oturmaz. Default: yatay
+    // ortalanmis (Orta), dikey kesit alt kenarindan boltEdge (Alt, offset<0).
     int boltAlignH{1};             // yatay olcum: 0=Sol, 1=Orta, 2=Sag
     int boltAlignV{2};             // dikey olcum: 0=Ust, 1=Orta, 2=Alt
     double boltOffsetH{0.0};       // yatay konum olcusu (mm; Sol/Sag'da <0 = boltEdge)
@@ -135,6 +136,7 @@ struct EndPlatePlacement {
     double plateWidth{0.0};
     double plateHeight{0.0};
     double secWidth{0.0};          // kiris kesit genisligi (bulon flans gauge'i)
+    double secHeight{0.0};         // kiris kesit yuksekligi (bulon dikey gauge'i)
     double plateThickness{0.0};
     double colFlangeThickness{0.0}; // kolon flans kalinligi (bulon kavrama hesabi)
     double boltGripLength{0.0};     // bolon saft kavrama uzunlugu (levha+gap+flans)

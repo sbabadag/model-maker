@@ -44,4 +44,10 @@ bool allChecksPass(const std::vector<ComponentCheck>& checks) noexcept;
 // Basarisiz kontrollerin toplu Turkce mesaji (tek satirda birlestirilir).
 std::wstring failingChecksMessage(const std::vector<ComponentCheck>& checks) noexcept;
 
+// Plani denetler: checks[]'i doldurur, ihlalde plan.ok=false + plan.error mesaji
+// ayarlar. Gecerse plan.ok'a dokunmaz. Generator ve recipe tasi AYNI fonksiyonu
+// cagirir (gen == rec icin yapisal garanti).
+void applyChecksToPlan(GenerationPlan& plan, const ComponentInput& input,
+                       const ComponentCheckOptions& opts = {}) noexcept;
+
 }  // namespace mm

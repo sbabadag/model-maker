@@ -243,4 +243,13 @@ std::wstring failingChecksMessage(const std::vector<ComponentCheck>& checks) noe
     return msg;
 }
 
+void applyChecksToPlan(GenerationPlan& plan, const ComponentInput& input,
+                       const ComponentCheckOptions& opts) noexcept {
+    plan.checks = runComponentChecks(plan, input, opts);
+    if (!allChecksPass(plan.checks)) {
+        plan.ok = false;
+        plan.error = failingChecksMessage(plan.checks);
+    }
+}
+
 }  // namespace mm

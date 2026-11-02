@@ -86,6 +86,9 @@ static ComponentInput makeCase(int kind) {
             in.params.push_back(CompParam{L"boltCountY", CompParamValue{2}});
             in.params.push_back(CompParam{L"boltDiameter", CompParamValue{24.0}});
             in.params.push_back(CompParam{L"holeDiameter", CompParamValue{26.0}});
+            // MM-7: 26 mm delik + 10 mm kaynak payi icin kenar >= 1.2*d0 (=31.2)
+            // ve basliktan net mesafe >= 13+10=23 mm; boltEdge=40 ile gecerli.
+            in.params.push_back(CompParam{L"boltEdge", CompParamValue{40.0}});
             break;
         default:
             break;

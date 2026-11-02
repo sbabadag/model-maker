@@ -381,10 +381,10 @@
     {
       "choices": [],
       "defBool": false,
-      "defDouble": 30.0,
+      "defDouble": 35.0,
       "defInt": 0,
       "defString": "",
-      "description": "kenar mesafesi",
+      "description": "bulon kenar mesafesi (kesit kenarindan)",
       "documentedOnly": false,
       "formatVersion": "1.0.0",
       "hasMaxDouble": true,

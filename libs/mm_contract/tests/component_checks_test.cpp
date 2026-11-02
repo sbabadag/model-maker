@@ -56,22 +56,21 @@ static ComponentInput withEdge(ComponentInput in, double edge) {
 int main() {
     registerBuiltInComponents(ComponentRegistry::instance());
 
-    // 1) CAKISMA: kucuk boltEdge -> bulonlar basliga girer -> kontrol pass=false.
+    // 1) CAKISMA: kucuk boltEdge -> bulonlar basliga girer -> ureteci FAIL-CLOSED
+    //    (plan.ok=false + checks[] dolu + Turkce mesaj).
     {
         const ComponentInput in = withEdge(makeInput(), 25.0);
         const GenerationPlan plan = generateEndPlate(in);
-        check(plan.ok, "1 plan ok (cakisma kontrolu generator icinde DEGIL, burada)");
-        const std::vector<ComponentCheck> cs = runComponentChecks(plan, in);
+        check(!plan.ok, "1 plan fail-closed (cakisma -> ok=false)");
+        check(!plan.error.empty(), "1 plan.error Turkce mesaj dolu");
         bool foundClash = false;
-        for (const auto& c : cs)
+        for (const auto& c : plan.checks)
             if (!c.pass && (c.id == "bolt_flange_clash" || c.id == "bolt_web_clash")) {
                 foundClash = true;
                 check(!c.message.empty(), "1 ihlal mesaji Turkce dolu");
                 check(c.value < c.limit, "1 value < limit (net mesafe yetersiz)");
             }
         check(foundClash, "1 baslik/govde cakismasi tespit edildi");
-        check(!allChecksPass(cs), "1 allChecksPass=false");
-        check(!failingChecksMessage(cs).empty(), "1 failingChecksMessage dolu");
     }
 
     // 2) GECERLI: buyuk boltEdge -> bulonlar baslik disinda -> tum kontroller gecer.
@@ -93,20 +92,40 @@ int main() {
         check(p2, "2 p2 (yatay aralik) kontrolu var");
     }
 
-    // 3) KENAR + ARALIK ihlali: cok kucuk levha (override) + sik bulon.
+    // 3) KENAR + ARALIK ihlali: elle kurulan plan (kucuk levha + sik bulon),
+    //    ikincil uye YOK (yalniz kenar/aralik kontrolleri kosar).
     {
-        ComponentInput in = makeInput();
-        in.params.push_back(CompParam{L"boltEdge", CompParamValue{8.0}});       // 8 < 1.2*22
-        in.params.push_back(CompParam{L"boltSpacingY", CompParamValue{30.0}});  // 30 < 2.2*22
-        const GenerationPlan plan = generateEndPlate(in);
-        const std::vector<ComponentCheck> cs = runComponentChecks(plan, in);
-        bool edgeFail = false, p1Fail = false;
+        GenerationPlan p;
+        PlateSpec plate;
+        plate.center = {0, 0, 0};
+        plate.u = {1, 0, 0};
+        plate.v = {0, 1, 0};
+        plate.axis = {0, 0, 1};
+        plate.width = 100.0;
+        plate.height = 100.0;
+        plate.thickness = 10.0;
+        p.plates.push_back(plate);
+        p.plateKeys.push_back("end_plate");
+        BoltGroup b;
+        b.origin = {0, -45, 0};  // alt bulon -v kenarina yakin (kenar ~5 mm)
+        b.axis = {0, 0, 1};
+        b.xDir = {1, 0, 0};
+        b.countX = 2;
+        b.countY = 1;
+        b.spacingX = 10.0;   // p2 = 10 < 2.4*22 = 52.8
+        b.spacingY = 0.0;
+        b.params.holeDiameter = 22.0;
+        p.boltGroups.push_back(b);
+        p.boltGroupKeys.push_back("beam_bolts");
+        ComponentInput empty;  // ikincil yok -> cakisma kontrolu uretilmez
+        const std::vector<ComponentCheck> cs = runComponentChecks(p, empty);
+        bool edgeFail = false, p2Fail = false;
         for (const auto& c : cs) {
             if (c.id == "edge_distance" && !c.pass) edgeFail = true;
-            if (c.id == "pitch_p1" && !c.pass) p1Fail = true;
+            if (c.id == "pitch_p2" && !c.pass) p2Fail = true;
         }
-        check(edgeFail, "3 kenar mesafesi ihlali yakalandi (8 < 1.2*d0)");
-        check(p1Fail, "3 p1 ihlali yakalandi (30 < 2.2*d0)");
+        check(edgeFail, "3 kenar mesafesi ihlali yakalandi (5 < 1.2*d0)");
+        check(p2Fail, "3 p2 ihlali yakalandi (10 < 2.4*d0)");
     }
 
     // 4) KESIT BILINMEYEN: tf/tw = 0 -> cakisma kontrolu atlanir (yanlis ret yok).

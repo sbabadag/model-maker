@@ -78,8 +78,12 @@ static BoltGroup makeEndPlateBolts(const EndPlatePlacement& out,
         sX = 0.0;
     }
     double sY = params.boltSpacingY;
+    // MM-7 (item 2): dikey aralik KESIT yuksekliginden turer (yatay gauge
+    // secWidth'ten turedigi gibi). Levha yuksekliginden turetmek, tasan levhada
+    // (plateExtra>0) bulonlari basligin icine iter (asil cakisma hatasi).
+    const double refH = (out.secHeight > 0.0) ? out.secHeight : out.plateHeight;
     if (ny > 1 && sY <= 0.0) {
-        sY = (out.plateHeight - 2.0 * params.boltEdge) / static_cast<double>(ny - 1);
+        sY = (refH - 2.0 * params.boltEdge) / static_cast<double>(ny - 1);
     } else if (ny <= 1) {
         sY = 0.0;
     }
@@ -119,28 +123,32 @@ static BoltGroup makeEndPlateBolts(const EndPlatePlacement& out,
             leftX = (out.plateWidth - gw) * 0.5 + params.boltOffsetH;
             break;
     }
-    // Dikey hizalama: en alt bulonun levha alt kenarindan v-yonlu uzakligi.
-    double botY;
+    // Dikey hizalama: en alt bulonun KESIT MERKEZINE (levha merkezine) gore
+    // v-koordinati (isaretli). MM-7 (item 2): bulonlar levha kenarina degil
+    // KESITE (kiris) gore konumlanir; boylece tasan levhada (plateExtra>0)
+    // bulonlar basligin DISINDA/ICINDE dogru yere oturur.
+    double botV;
     switch (params.boltAlignV) {
-        case 0:  // Ust: en ust bulon ust kenardan offsetV iceride
-            botY = out.plateHeight - gh -
+        case 0:  // Ust: en ust bulon kesit ust kenarindan offsetV iceride
+            botV = refH * 0.5 - gh -
                    ((params.boltOffsetV >= 0.0) ? params.boltOffsetV : params.boltEdge);
             break;
-        case 1:  // Orta: grup merkezi levha merkezinde + offsetV
-            botY = (out.plateHeight - gh) * 0.5 + params.boltOffsetV;
+        case 1:  // Orta: grup merkezi kesit merkezinde + offsetV
+            botV = -gh * 0.5 + params.boltOffsetV;
             break;
-        default:  // Alt: en alt bulon alt kenardan offsetV iceride
-            botY = (params.boltOffsetV >= 0.0) ? params.boltOffsetV : params.boltEdge;
+        default:  // Alt: en alt bulon kesit alt kenarindan offsetV iceride
+            botV = -refH * 0.5 +
+                   ((params.boltOffsetV >= 0.0) ? params.boltOffsetV : params.boltEdge);
             break;
     }
 
-    // Origin = levha SOL-ALT kosesinden + u*leftX + v*botY.
-    const double ox = out.plateCenter.x - out.u.x * (out.plateWidth * 0.5 - leftX) -
-                      out.v.x * (out.plateHeight * 0.5 - botY);
-    const double oy = out.plateCenter.y - out.u.y * (out.plateWidth * 0.5 - leftX) -
-                      out.v.y * (out.plateHeight * 0.5 - botY);
-    const double oz = out.plateCenter.z - out.u.z * (out.plateWidth * 0.5 - leftX) -
-                      out.v.z * (out.plateHeight * 0.5 - botY);
+    // Origin = levha merkezi + u*(-(w/2 - leftX)) + v*botV (botV merkeze gore).
+    const double ox = out.plateCenter.x - out.u.x * (out.plateWidth * 0.5 - leftX) +
+                      out.v.x * botV;
+    const double oy = out.plateCenter.y - out.u.y * (out.plateWidth * 0.5 - leftX) +
+                      out.v.y * botV;
+    const double oz = out.plateCenter.z - out.u.z * (out.plateWidth * 0.5 - leftX) +
+                      out.v.z * botV;
 
     BoltGroup b;
     b.origin = Vec3{ox, oy, oz};
@@ -187,6 +195,7 @@ EndPlatePlacement computeEndPlatePlacement(const Vec3& beamEnd, const Vec3& beam
                           : (secHeight - upperD - lowerD);
     out.plateThickness = params.plateThickness;
     out.secWidth = secWidth;
+    out.secHeight = secHeight;
     if (out.plateWidth < 1.0) out.plateWidth = 1.0;
     if (out.plateHeight < 1.0) out.plateHeight = 1.0;
 
@@ -249,6 +258,7 @@ EndPlatePlacement computeEndPlatePlacementRotated(const Vec3& beamEnd, const Vec
                           : (secHeight - upperD - lowerD);
     out.plateThickness = params.plateThickness;
     out.secWidth = secWidth;
+    out.secHeight = secHeight;
     if (out.plateWidth < 1.0) out.plateWidth = 1.0;
     if (out.plateHeight < 1.0) out.plateHeight = 1.0;
     const double halfT = params.plateThickness * 0.5;
@@ -318,6 +328,7 @@ EndPlatePlacement computeEndPlatePlacementOnFace(const ReferencePlane& face, dou
                           : (secHeight - upperD - lowerD);
     out.plateThickness = params.plateThickness;
     out.secWidth = secWidth;
+    out.secHeight = secHeight;
     if (out.plateWidth < 1.0) out.plateWidth = 1.0;
     if (out.plateHeight < 1.0) out.plateHeight = 1.0;
 

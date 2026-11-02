@@ -1,6 +1,7 @@
 #include "model_maker/component_engine.hpp"
 #include "model_maker/haunch40.hpp"
 
+#include "model_maker/component_checks.hpp"
 #include "model_maker/end_plate.hpp"
 #include "model_maker/component_dialog.hpp"  // endPlateFromParams (27 alan tek kaynagi)
 
@@ -466,7 +467,7 @@ ComponentType endPlateComponentType() noexcept {
         lengthParam(L"holeDiameter", L"mm", 22.0, 12.0, 34.0, L"delik capi"),
         intParam(L"boltCountX", 2, 1, 8, L"genislik yonunde bulon adedi"),
         intParam(L"boltCountY", 2, 1, 8, L"yukseklik yonunde bulon adedi"),
-        lengthParam(L"boltEdge", L"mm", 30.0, 10.0, 200.0, L"kenar mesafesi"),
+        lengthParam(L"boltEdge", L"mm", 35.0, 10.0, 200.0, L"bulon kenar mesafesi (kesit kenarindan)"),
         enumParam(L"grade", L"8.8", {L"8.8", L"10.9"}, L"bulon sinifi"),
         boolParam(L"hasHead", true, L"bas"),
         boolParam(L"hasNut", true, L"somun"),
@@ -531,7 +532,9 @@ GenerationPlan generateEndPlate(const ComponentInput& input) noexcept {
     plan.cuts.push_back(beamCut);
     plan.cutKeys.push_back("cut_beam_end");
 
-    plan.ok = true;
+    // MM-7 (item 1): bulon/uye cakisma + EC3 min kenar/aralik kontrolu.
+    // Ihlal -> plan.ok=false + Turkce mesaj (hangi bulon, hangi uye, kac mm).
+    applyChecksToPlan(plan, input);
     return plan;
 }
 

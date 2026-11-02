@@ -1,6 +1,7 @@
 #include "model_maker/recipe.hpp"
 
 #include "model_maker/component_codec.hpp"  // utf8FromWide / wideFromUtf8 (param adi esleme + hata)
+#include "model_maker/component_checks.hpp" // applyChecksToPlan (endplate.placement kontrolu)
 #include "model_maker/geometry.hpp"        // ProfileSectionFrame, WorkPlane, Vec3
 #include "model_maker/end_plate.hpp"       // computeEndPlatePlacement (endplate.placement tasi)
 #include "model_maker/haunch40.hpp"        // Haunch 40 taslari (C2)
@@ -756,6 +757,14 @@ static bool blockEndPlatePlacement(EvalCtx& ctx, const RecipeStep& st, Generatio
     endPlateBeamCut(placement, beam->id, beamCut);
     plan.cuts.push_back(beamCut);
     plan.cutKeys.push_back("cut_beam_end");
+
+    // MM-7 (item 1): generator ile AYNI kontrol (gen == rec). Ihlalde ctx.error
+    // kurulur; runRecipe plan.ok=false yapar.
+    applyChecksToPlan(plan, ctx.input);
+    if (!plan.ok) {
+        ctx.error = plan.error;
+        return false;
+    }
     return true;
 }
 
