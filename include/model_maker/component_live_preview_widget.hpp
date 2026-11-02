@@ -7,6 +7,7 @@
 // P3: interactive orbit/zoom/pan and Iso/Front/Side/Top camera presets.
 
 #include "model_maker/component_engine.hpp"
+#include "model_maker/component_preview.hpp"
 #include <QWidget>
 #include <QPointF>
 #include <QPolygonF>
@@ -34,6 +35,10 @@ public:
     // tip icin kurulur; diger tiplerde genel levha/bulon onizlemesi cizilir.
     void setTypeId(std::wstring typeId);
     const std::wstring& typeId() const noexcept { return typeId_; }
+    // MM-6: VERIYLE TANIMLANAN ONIZLEME. Tanim paketin dialog.json'undan gelir
+    // (ComponentDialogSchema::preview); bos ise yerlesik Haunch 40 tablosu kullanilir.
+    void setPreviewDefinition(PreviewDefinition def);
+    const PreviewDefinition& previewDefinition() const noexcept { return previewDef_; }
     void setParams(const std::vector<CompParam>& params);
     void setHighlightedParam(const std::wstring& name);
     void setOnEdit(std::function<void(const std::wstring&,double)> cb);
@@ -93,6 +98,16 @@ private:
     ComponentInput input_;
     // MM-5: onizleme tipi (yerlesik varsayilan; paket tipleri setTypeId ile).
     std::wstring typeId_{L"tekla_haunch_40"};
+    // MM-6: veriyle tanimlanan onizleme (bos = yerlesik Haunch tablosu).
+    PreviewDefinition previewDef_;
+    // Olculen (from,to) 3B noktalari — cizim icin recompute'ta tazelenir.
+    struct PreviewDimState {
+        Vec3 from{}, to{};
+        double value{0.0};
+        QString label;
+        bool ok{false};
+    };
+    std::vector<PreviewDimState> previewDims_;
     GenerationPlan plan_;
     std::wstring previewWarning_; // invalid draft: show last valid geometry with a warning
     std::vector<CompParam> params_;

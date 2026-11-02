@@ -1,6 +1,7 @@
 #include "model_maker/component_live_preview_widget.hpp"
 #include "model_maker/bolt.hpp"
 #include "model_maker/component_engine.hpp"
+#include "model_maker/component_preview.hpp"
 
 #include <QDoubleSpinBox>
 #include <QPainter>
@@ -326,6 +327,51 @@ void ComponentLivePreviewWidget::setTypeId(std::wstring typeId) {
     recompute();
     update();
 }
+// MM-6: veriyle tanimlanan onizleme. Tanim geldiginde callout'lar TIPTEN
+// bagimsiz olarak olcu tanimlarindan uretilir (parametre + iki anchor).
+void ComponentLivePreviewWidget::setPreviewDefinition(PreviewDefinition def) {
+    const bool hasDims = !def.dimensions.empty();
+    previewDef_ = std::move(def);
+    // Tanim BOS ise yerlesik (Haunch 40) callout tablosu KORUNUR — paket
+    // tanimi gelmemis tip, eski gorunumunu aynen surdurur.
+    if (!hasDims) return;
+    // Eski callout'lar (yerlesik tablo) kapatilir; spin'ler silinmez, yeniden
+    // kullanilir: tanim degisince liste bastan kurulur.
+    for(auto& c:callouts_) if(c.spin) c.spin->hide();
+    callouts_.clear();
+    if(!previewDef_.dimensions.empty()) {
+        for(const auto& dim:previewDef_.dimensions) {
+            Callout a;
+            a.name = dim.param;
+            a.shortLabel = dim.label.empty() ? dim.param : dim.label;
+            // from ifadesinin rol kismi ("end_plate.edge_v_max" -> "end_plate").
+            const std::wstring& f = dim.from;
+            const std::size_t dotPos = f.rfind(L'.');
+            const std::wstring roleW = dotPos == std::wstring::npos ? std::wstring() : f.substr(0, dotPos);
+            a.targetRole.assign(roleW.begin(), roleW.end());
+            a.shift = QPointF(0, 0);
+            a.spin = new QDoubleSpinBox(this);
+            a.spin->setDecimals(1);
+            a.spin->setRange(-10000.0, 10000.0);
+            a.spin->setSingleStep(1.0);
+            a.spin->setSuffix(QStringLiteral(" mm"));
+            a.spin->setFixedWidth(84);
+            a.spin->setToolTip(QString::fromStdWString(dim.param));
+            const std::wstring key = dim.param;
+            QObject::connect(a.spin, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
+                             this, [this,key](double val) {
+                for(auto& p:params_) if(p.name==key) { p.value=val; break; }
+                if(!findParam(params_,key)) params_.push_back(CompParam{key,val});
+                highlight_ = key;
+                if(onEdit_) onEdit_(key,val); else recompute();
+            });
+            callouts_.push_back(std::move(a));
+        }
+    }
+    syncEditors();
+    recompute();
+    update();
+}
 // P4: role selection drives only the current child element's editors.
 void ComponentLivePreviewWidget::selectRole(const std::string& role) {
     if(compact_)return;
@@ -555,6 +601,19 @@ void ComponentLivePreviewWidget::recompute() {
         for(const auto& plate:plan_.plates)c=plus(c,plate.center);
         worldCenter_=mul(c,1.0/static_cast<double>(plan_.plates.size()));
     }
+    // MM-6: olcu tanimlarini guncel plan uzerinde olc (cizim icin 3B uclar).
+    previewDims_.clear();
+    for(const auto& dim:previewDef_.dimensions) {
+        const PreviewMeasurement m=measurePreviewDimension(plan_,input_,dim);
+        PreviewDimState st;
+        st.ok=m.ok;
+        st.from=m.from;
+        st.to=m.to;
+        st.value=m.value;
+        st.label=dim.label.empty()?QString::fromStdWString(dim.param)
+                                  :QString::fromStdWString(dim.label);
+        previewDims_.push_back(std::move(st));
+    }
     positionEditors();update();
 }
 QPointF ComponentLivePreviewWidget::project(Vec3 p) const {
@@ -638,6 +697,25 @@ ComponentLivePreviewWidget::boltOverlayMetrics(const std::string& role) const {
 void ComponentLivePreviewWidget::positionEditors() {
     if(!plan_.ok) {
         for(auto& c:callouts_)c.spin->hide();
+        return;
+    }
+    // MM-6: VERIYLE TANIMLANAN OLCU EDITORLERI. Spin, iki anchor'in ekran
+    // izdusumunun ortasina yerlestirilir; kalin/leader cizimi paintEvent'te.
+    if(!previewDef_.dimensions.empty()) {
+        for(std::size_t i=0;i<callouts_.size();++i) {
+            auto& c=callouts_[i];
+            if(compact_ || i>=previewDims_.size() || !previewDims_[i].ok) { c.spin->hide(); continue; }
+            const QPointF a=project(previewDims_[i].from);
+            const QPointF b=project(previewDims_[i].to);
+            QPointF mid=(a+b)*0.5;
+            mid+=QPointF(0,-18);
+            const double w=c.spin->width(),h=c.spin->height();
+            mid.setX(std::clamp(mid.x(),2.0,std::max(2.0,double(width())-w-2.0)));
+            mid.setY(std::clamp(mid.y(),2.0,std::max(2.0,double(height())-h-2.0)));
+            c.spin->move(mid.toPoint());
+            c.spin->show();
+            c.spin->raise();
+        }
         return;
     }
     // Fit true generator output, not a generic fixed illustration. Column cap
@@ -773,6 +851,35 @@ void ComponentLivePreviewWidget::paintEvent(QPaintEvent*) {
         ?QStringLiteral("Olcu icin bir parca veya civata grubu sec")
         :QStringLiteral("Secili: %1").arg(QString::fromStdString(activeRole_));
     painter.drawText(QPoint(16,48),partName);
+    // MM-6: VERIYLE TANIMLANAN OLCU CIZGILERI — iki anchor arasinda olcu cizgisi,
+    // uclarda tik, ortada deger etiketi. Ayni tanim spin editörleri de besler.
+    if (!previewDef_.dimensions.empty()) {
+        QFont dimFont = painter.font();
+        dimFont.setPointSizeF(7.5);
+        dimFont.setBold(true);
+        painter.setFont(dimFont);
+        for (std::size_t i = 0; i < previewDims_.size() && i < callouts_.size(); ++i) {
+            const auto& d = previewDims_[i];
+            if (!d.ok) continue;
+            const QPointF a = project(d.from), b = project(d.to);
+            const bool hot = highlight_ == callouts_[i].name;
+            painter.setPen(QPen(hot ? QColor("#d47b2c") : QColor("#25647c"), hot ? 2.0 : 1.25));
+            painter.setBrush(Qt::NoBrush);
+            painter.drawLine(a, b);
+            const double dist = std::hypot(b.x() - a.x(), b.y() - a.y());
+            if (dist > 10.0) {
+                const QPointF dir = (b - a) / dist;
+                const QPointF nrm(-dir.y(), dir.x());
+                painter.drawLine(a - nrm * 4.0, a + nrm * 4.0);
+                painter.drawLine(b - nrm * 4.0, b + nrm * 4.0);
+            }
+            const QPointF mid = (a + b) * 0.5 + QPointF(4.0, -4.0);
+            painter.setPen(QColor("#16324a"));
+            painter.drawText(mid, QStringLiteral("%1 = %2")
+                                      .arg(d.label)
+                                      .arg(d.value, 0, 'f', 1));
+        }
+    }
     for(const auto& c:callouts_) {
         if(!c.spin->isVisible())continue;
         const std::string anchorRole=(activeRole_=="haunch_bolts_lower" &&

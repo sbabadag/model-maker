@@ -2,6 +2,18 @@
 #include "model_maker/component_live_preview_widget.hpp"
 #include "model_maker/component_option_icons.hpp"
 
+namespace {
+// MM-6 (f): opsiyonel parametrelerde SENTINEL degerler ("otomatik" = -1,
+// "tanimsiz" <= -1e8) kullaniciya GOSTERILMEZ; kutu isaretsiz + sema
+// varsayilani gosterilir. Motor zaten varsayilani uygular (davranis ayni).
+bool isSentinelOptionValue(const mm::CompParamSpec& spec, const mm::CompParamValue& v) {
+    if (!spec.optional) return false;
+    if (const auto* d = std::get_if<double>(&v)) return *d == -1.0 || *d <= -1e8;
+    if (const auto* i = std::get_if<int>(&v)) return *i == -1 || *i <= -100000000;
+    return false;
+}
+}  // namespace
+
 #include <QAbstractItemView>
 #include <QCheckBox>
 #include <QComboBox>
@@ -325,6 +337,8 @@ ComponentDialogWidget::ComponentDialogWidget(const ComponentDialogDefinition& de
         // MM-5 (§8.2): onizleme tipi dialog tanimindan gelir; paketten yuklenen
         // tipler Haunch 40'a sabit kalmaz.
         nativePreview_->setTypeId(def_.typeId);
+        // MM-6: olcu cagrilari + toggle'lar PAKETTEN (dialog.json "preview").
+        nativePreview_->setPreviewDefinition(def_.schema.preview);
         nativePreview_->setOnEdit([this](const std::wstring& name,double value) {
             updateFormFromPreview(name,value);
         });
@@ -1684,14 +1698,21 @@ void ComponentDialogWidget::setParams(const std::vector<CompParam>& p) {
         const auto it = editors_.find(spec.name);
         if (it == editors_.end() || spec.documentedOnly) continue;
         const CompParam* stored = findParam(current_, spec.name);
+        // MM-6 (f): SENTINEL degerler ekranda GORUNMEZ. Opsiyonel bir parametre
+        // -1 ("otomatik", or. plateExtra) veya <= -1e8 ("tanimsiz") tasiyorsa
+        // kutu ISARETSIZ gosterilir ve editor sema varsayilanini gosterir; motor
+        // zaten varsayilani uygular (davranis/digest DEGISMEZ — yalniz sunum).
+        const bool sentinel = stored != nullptr && isSentinelOptionValue(spec, stored->value);
         {
             QSignalBlocker guard(it->second);
-            setEditorValue(it->second, spec, stored ? stored->value : paramDefaultValue(spec));
+            setEditorValue(it->second, spec,
+                           (stored != nullptr && !sentinel) ? stored->value
+                                                            : paramDefaultValue(spec));
         }
         const auto oc = optionalChecks_.find(spec.name);
         if (oc != optionalChecks_.end() && oc->second->isEnabled()) {
             QSignalBlocker guard(oc->second);
-            oc->second->setChecked(stored != nullptr);
+            oc->second->setChecked(stored != nullptr && !sentinel);
         }
     }
     updatePreviewFromForm();
