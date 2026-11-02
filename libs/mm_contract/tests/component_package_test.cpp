@@ -183,6 +183,16 @@ int main() {
               "2 iki tip bir arada yasar (biri digerini ezmez)");
     }
 
+    // 2b) DEPODA GONDERILEN fixture (Windows kabulu: %APPDATA%'ya kopyala-yukle).
+    {
+        ComponentRegistry reg;
+        registerBuiltInComponents(reg);
+        const ComponentPackageLoad r = loadComponentPackage(kPackages / "end_plate_pkg", reg);
+        check(r.ok && r.typeId == L"mm_end_plate_pkg", "2b depodaki fixture paketi yuklenir");
+        check(r.ok && r.type.catalog.catalogVisible,
+              "2b fixture katalogda gorunur (generic komut tipi secer)");
+    }
+
     // 3) Bozuk paketler YUKLENMEZ ve registry'de iz birakmaz.
     auto expectReject = [](const fs::path& dir, const wchar_t* needle, const char* label) {
         ComponentRegistry reg;
