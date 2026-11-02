@@ -304,6 +304,12 @@ public:
     // Durum cubuguna tek seferlik metin yayinla (Qt menü komutlarindan da
     // cagrilir — P1 named views kayit onayi gibi).
     void publishStatus(const std::wstring& text);
+    // MM-5 (Windows bulgusu): ctor'da (window_ == nullptr) yuklenen paketlerin
+    // mesaji KAYBOLMASIN. Mesaj saklanir, pencere hazir olunca gosterilir ve
+    // her durumda model-maker-startup.log'a yazilir.
+    void flushStartupMessage();
+    void appendStartupLog(const std::wstring& text);
+    std::wstring pendingStartupMessage_;
     IRenderBackend* activeRenderBackend() noexcept { return renderBackend_.get(); }
 
     void startWorkPlaneCommand();

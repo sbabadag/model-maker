@@ -34,6 +34,7 @@
 #include "model_maker/axis_delta.hpp"
 #include "model_maker/component_glyph.hpp"
 #include "model_maker/component_dialog.hpp"
+#include "model_maker/component_codec.hpp"
 #include "model_maker/component_package.hpp"
 
 #include <QComboBox>
@@ -291,6 +292,8 @@ void Application::createMainWindow(int showCommand) {
     updateControls();
     ShowWindow(window_, showCommand);
     UpdateWindow(window_);
+    // MM-5: ctor'da biriken paket mesajini pencere hazir olunca goster.
+    flushStartupMessage();
     SetFocus(canvas_);
 }
 
@@ -9150,6 +9153,20 @@ void Application::publishStatus(const std::wstring& text) {
     if (status_) SetWindowTextW(status_, text.c_str());
 }
 
+// MM-5 (Windows bulgusu): acilista (window_ == nullptr) yuklenen paketlerin
+// sonucu kaybolmasin — dosyaya yaz, pencere hazir olunca durum cubuguna ver.
+void Application::appendStartupLog(const std::wstring& text) {
+    std::ofstream log("model-maker-startup.log", std::ios::app);
+    if (!log) return;
+    log << utf8FromWide(text) << "\n";
+}
+
+void Application::flushStartupMessage() {
+    if (pendingStartupMessage_.empty() || window_ == nullptr) return;
+    publishStatus(pendingStartupMessage_);
+    pendingStartupMessage_.clear();
+}
+
 void Application::invalidateCanvas() { if (canvas_) InvalidateRect(canvas_, nullptr, FALSE); }
 
 #ifdef _WIN32
@@ -12883,7 +12900,16 @@ void Application::loadComponentPackagesFrom(const std::filesystem::path& root) {
         msg += L"REDDEDİLDİ ";
         msg += e;
     }
-    if (window_ != nullptr) publishStatus(msg);
+    appendStartupLog(L"[paket] " + msg);
+    if (window_ != nullptr) {
+        publishStatus(msg);
+    } else {
+        // ctor: durum cubugu henuz yok — mesaji sakla, pencere acilinca goster.
+        pendingStartupMessage_ = pendingStartupMessage_.empty()
+                                     ? msg
+                                     : pendingStartupMessage_ + L" | " + msg;
+    }
+    for (const auto& w : report.warnings) appendStartupLog(L"[paket-uyari] " + w);
 }
 
 bool Application::saveUserCatalog() {
