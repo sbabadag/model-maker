@@ -62,6 +62,14 @@ bool readJsonFile(const fs::path& p, json& out, std::wstring& err) {
         err = L"dosya okunamadi: " + pathText(p);
         return false;
     }
+    // MM-5 (Windows bulgusu): paketler BYTE-ayni olmali; CRLF donusumu
+    // checksums.json'u bozar ve paket sessizce reddedilir. Sebebi ACIKCA yaz.
+    if (text.find("\r\n") != std::string::npos) {
+        err = L"dosya CRLF satir sonu iceriyor (Windows core.autocrlf): " +
+              pathText(p.filename()) +
+              L" — .gitattributes 'libs/mm_contract/packages/** -text' gerekli";
+        return false;
+    }
     try {
         out = json::parse(text);
     } catch (const std::exception& ex) {

@@ -3,3 +3,8 @@
 # LF -> CRLF cevirip butunluk dogrulamasini (checksums.json) bozuyor. -text ile
 # bu dosyalarda satir sonu donusumu tamamen kapatilir; her platformda byte-ayni.
 tools/model-maker-bridge/fixtures/** -text
+
+# MM-5: KOMPONENT PAKETLERI de byte-ayni kalmali — checksums.json SHA-256 ham
+# baytlar uzerinden dogrulanir. Windows core.autocrlf=true bu dosyalari CRLF
+# yapinca butun paketler sessizce reddediliyordu (ZBook'da yasandi).
+libs/mm_contract/packages/** -text

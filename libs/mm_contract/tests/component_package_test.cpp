@@ -276,6 +276,27 @@ int main() {
         check(warned, "3f uyari raporlanir");
     }
 
+    // 3g) CRLF satir sonu (Windows autocrlf) -> ACIK ret mesaji.
+    {
+        const fs::path d = root / "crlf_paket";
+        makePackageCopy(endPlatePkg, d, "mm_broken_pkg");
+        std::string mj = readAll(d / "manifest.json");
+        std::string crlf;
+        for (char c : mj) {
+            if (c == '\n') crlf += "\r\n";
+            else crlf.push_back(c);
+        }
+        writeAll(d / "manifest.json", crlf);
+        writeChecksums(d);  // checksums CRLF'li baytlarla hesaplanir (tutar)
+        ComponentRegistry reg;
+        registerBuiltInComponents(reg);
+        const ComponentPackageLoad r = loadComponentPackage(d, reg);
+        check(!r.ok, "3g CRLF'li paket REDDEDILIR");
+        check(r.message.find(L"CRLF") != std::wstring::npos &&
+                  r.message.find(L".gitattributes") != std::wstring::npos,
+              "3g ret mesaji CRLF + .gitattributes -text onerir");
+    }
+
     // 4) Proje klasoru kullanici klasorunu GOLGELER (ayni typeId).
     {
         const fs::path projectRoot = root / "shadow" / "proje" / "components";
