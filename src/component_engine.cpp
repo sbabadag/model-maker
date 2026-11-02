@@ -301,8 +301,18 @@ ComponentRegistry& ComponentRegistry::instance() noexcept {
     return reg;
 }
 
+GenerationPlan ComponentGenerator::operator()(const ComponentInput& input) const {
+    if (!fn_) {
+        GenerationPlan plan;
+        plan.ok = false;
+        plan.error = L"component ureteci bos";
+        return plan;
+    }
+    return fn_(input);
+}
+
 bool ComponentRegistry::registerType(ComponentType type, ComponentGenerator generator) noexcept {
-    if (type.typeId.empty() || generator == nullptr) return false;
+    if (type.typeId.empty() || generator.empty()) return false;
     for (const auto& e : entries_)
         if (e.type.typeId == type.typeId) return false;  // tekil
     Entry entry;
@@ -351,7 +361,26 @@ GenerationPlan ComponentRegistry::generate(const std::wstring& typeId,
     aligned.params = alignParamsToSpecs(type->params,
         typeId==L"tekla_haunch_40" ? migrateHaunch40Edges(input.params)
                                    : input.params);
-    plan = (*gen)(aligned);
+    // Type-erased generator (std::function) tahsis edebilir; bu fonksiyon
+    // noexcept oldugu icin istisna burada plana cevrilir (terminate YOK).
+    try {
+        plan = (*gen)(aligned);
+    } catch (const std::exception& ex) {
+        plan = GenerationPlan{};
+        plan.ok = false;
+        plan.error = L"component ureteci istisna firlatti";
+        // codec katmanina bagimli olmamak icin bayt->wchar genisletme (ASCII guvenli).
+        if (const char* what = ex.what(); what && *what) {
+            std::wstring detail;
+            for (const char* p = what; *p; ++p)
+                detail.push_back(static_cast<wchar_t>(static_cast<unsigned char>(*p)));
+            plan.error += L": " + detail;
+        }
+    } catch (...) {
+        plan = GenerationPlan{};
+        plan.ok = false;
+        plan.error = L"component ureteci bilinmeyen istisna firlatti";
+    }
     return plan;
 }
 

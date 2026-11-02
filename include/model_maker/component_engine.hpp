@@ -46,8 +46,11 @@
 #include "model_maker/geometry.hpp"
 #include "model_maker/magnetic_frame.hpp"
 
+#include <cstddef>
+#include <functional>
 #include <optional>
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -311,8 +314,41 @@ struct ComponentType {
     ComponentCatalogMeta catalog;  // C7: katalog/generic UI metadatasi (bos = gizli)
 };
 
-// Generator fonksiyon imzasi: girdi -> uretim plani.
-using ComponentGenerator = GenerationPlan (*)(const ComponentInput&);
+// Generator cagrilabilir tipi (MM-5): TYPE-ERASED.
+//
+// Once yalniz `GenerationPlan (*)(const ComponentInput&)` fonksiyon isaretcisiydi;
+// paket yukleyici recipe'yi CAPTURE eden bir lambda kaydetmek zorunda oldugu icin
+// std::function tabanli bir sarmalayiciya genisletildi. Geriye donuk uyum:
+// fonksiyon isaretcisi VEREN mevcut kayitlar (`registerType(t, generateEndPlate)`)
+// AYNEN derlenir — fonksiyon isaretcisi bu tipe orten donusumle girer.
+class ComponentGenerator {
+public:
+    using Function = std::function<GenerationPlan(const ComponentInput&)>;
+
+    ComponentGenerator() = default;
+    ComponentGenerator(std::nullptr_t) noexcept {}          // "uretec yok"
+    // Herhangi bir cagrilabilir: fonksiyon isaretcisi (mevcut yerlesik
+    // generatorlar) VEYA capture eden lambda (paket recipe ureteci).
+    // TEK sablon kurucu kullanilir: ayri bir `GenerationPlan(*)(...)` kurucusu
+    // capture'siz lambdalarda std::function donusumuyle BELIRSIZLIK yaratir.
+    template <typename Fn,
+              typename = std::enable_if_t<
+                  std::is_invocable_r_v<GenerationPlan, const Fn&, const ComponentInput&> &&
+                  !std::is_same_v<std::decay_t<Fn>, ComponentGenerator>>>
+    ComponentGenerator(Fn&& fn) : fn_(std::forward<Fn>(fn)) {}
+
+    // Ureteci cagirir. Bos uretec -> ok=false plan (sessiz varsayilan YOK).
+    GenerationPlan operator()(const ComponentInput& input) const;
+    // Cagrilabilir mi (eski `generator == nullptr` kontrolunun karsiligi).
+    explicit operator bool() const noexcept { return static_cast<bool>(fn_); }
+    bool empty() const noexcept { return !fn_; }
+
+private:
+    Function fn_;
+};
+
+static_assert(std::is_copy_constructible_v<ComponentGenerator>,
+              "registry generatoru kopyalanabilir olmali (registerType by value)");
 
 // Statik registry/factory. Varsayilan kurulabilir (testler yerel registry
 // kullanir); instance() uygulama-genel tek ornegi verir. Yeni component
