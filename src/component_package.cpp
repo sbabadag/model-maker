@@ -280,6 +280,30 @@ ComponentPackageLoad loadComponentPackage(const fs::path& dir,
             for (const auto& p : v.problems) msg += L"; " + p;
             return fail(out, msg);
         }
+        // MM-6: onizleme tanimi da FAIL-CLOSED dogrulanir — olcu parametresi semada
+        // yoksa ya da axis/rol bicimi bozuksa tip kaydedilmez.
+        for (const auto& dim : schema.preview.dimensions) {
+            bool known = false;
+            for (const auto& spec : specs)
+                if (spec.name == dim.param) { known = true; break; }
+            if (!known)
+                return fail(out, L"preview: bilinmeyen parametre: " + dim.param);
+            if (dim.axis != L'u' && dim.axis != L'v' && dim.axis != L'w')
+                return fail(out, L"preview: axis u|v|w olmali (" + dim.param + L")");
+            if (dim.from.find(L'.') == std::wstring::npos ||
+                dim.to.find(L'.') == std::wstring::npos)
+                return fail(out, L"preview: from/to '<rol>.<anchor>' biciminde olmali (" +
+                                      dim.param + L")");
+        }
+        for (const auto& tg : schema.preview.toggles) {
+            const CompParamSpec* spec = nullptr;
+            for (const auto& s : specs)
+                if (s.name == tg.param) { spec = &s; break; }
+            if (!spec)
+                return fail(out, L"preview toggle: bilinmeyen parametre: " + tg.param);
+            if (spec->type != CompParamType::Boolean)
+                return fail(out, L"preview toggle: parametre Boolean olmali: " + tg.param);
+        }
         out.dialog.typeId = out.typeId;
         out.dialog.specs = specs;
         out.dialog.schema = std::move(schema);

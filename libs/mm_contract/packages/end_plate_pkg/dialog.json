@@ -442,6 +442,81 @@
       ]
     }
   ],
+  "preview": {
+    "dimensions": [
+      {
+        "axis": "w",
+        "from": "end_plate.face_near",
+        "label": "t",
+        "param": "plateThickness",
+        "to": "end_plate.face_far"
+      },
+      {
+        "axis": "v",
+        "from": "secondary_0.face_top",
+        "label": "ust tasma",
+        "param": "topExtra",
+        "to": "end_plate.edge_v_max"
+      },
+      {
+        "axis": "v",
+        "from": "end_plate.edge_v_min",
+        "label": "alt tasma",
+        "param": "bottomExtra",
+        "to": "secondary_0.face_bottom"
+      },
+      {
+        "axis": "u",
+        "from": "secondary_0.face_right",
+        "label": "sag tasma",
+        "param": "plateExtra",
+        "to": "end_plate.edge_u_max"
+      },
+      {
+        "axis": "u",
+        "from": "end_plate.edge_u_min",
+        "label": "sol tasma",
+        "param": "plateExtra",
+        "to": "secondary_0.face_left"
+      },
+      {
+        "axis": "u",
+        "from": "beam_bolts.col_first",
+        "label": "a",
+        "param": "boltSpacingX",
+        "to": "beam_bolts.col_last"
+      },
+      {
+        "axis": "v",
+        "from": "beam_bolts.row_first",
+        "label": "b",
+        "param": "boltSpacingY",
+        "to": "beam_bolts.row_last"
+      },
+      {
+        "axis": "v",
+        "from": "beam_bolts.row_last",
+        "label": "e3",
+        "param": "upperEdgeDistance",
+        "to": "end_plate.edge_v_max"
+      },
+      {
+        "axis": "v",
+        "from": "end_plate.edge_v_min",
+        "label": "e4",
+        "param": "lowerEdgeDistance",
+        "to": "beam_bolts.row_first"
+      },
+      {
+        "axis": "u",
+        "from": "beam_bolts.col_last",
+        "label": "e2",
+        "param": "boltEdge",
+        "to": "end_plate.edge_u_max"
+      }
+    ],
+    "toggles": []
+  },
   "typeId": "mm_end_plate_pkg",
   "useTabs": false,
   "weldRows": []

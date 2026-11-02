@@ -191,6 +191,11 @@ int main() {
         check(r.ok && r.typeId == L"mm_end_plate_pkg", "2b depodaki fixture paketi yuklenir");
         check(r.ok && r.type.catalog.catalogVisible,
               "2b fixture katalogda gorunur (generic komut tipi secer)");
+        check(r.ok && r.dialog.schema.preview.dimensions.size() == 10,
+              "2b fixture 10 olcu tanimi tasir (MM-6)");
+        check(r.ok && !r.dialog.schema.preview.dimensions.empty() &&
+                  r.dialog.schema.preview.dimensions[0].param == L"plateThickness",
+              "2b ilk olcu plateThickness (kalinlik)");
     }
 
     // 3) Bozuk paketler YUKLENMEZ ve registry'de iz birakmaz.
