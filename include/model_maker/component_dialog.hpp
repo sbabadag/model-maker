@@ -34,6 +34,7 @@
 //   ComponentDialogRegistry               : typeId -> dialog tanimi
 
 #include "model_maker/component_engine.hpp"
+#include "model_maker/component_preview.hpp"
 #include "model_maker/end_plate.hpp"
 
 #include <optional>
@@ -207,6 +208,11 @@ struct ComponentDialogSchema {
     // Kaynak tablosu (Tekla "Welds"): bos degilse diyalog bir "Welds" sekmesi
     // acar; satirlar semadaki numarali cagrilardan secilebilir.
     std::vector<WeldTableRow> weldRows;
+    // MM-6: VERIYLE TANIMLANAN ONIZLEME (olcu cagrilari + Boolean toggle'lar).
+    // Bos ise onizleme yalniz genel levha/bulon cizimi yapar (komponente ozel
+    // callout YOK). Tanim paketin dialog.json'undan gelir; widget tipId'ye gore
+    // kod YAZMAZ.
+    PreviewDefinition preview;
 };
 
 // --- DOGRULAMA ---------------------------------------------------------------

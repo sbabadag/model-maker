@@ -66,6 +66,7 @@ add_library(mm_component_contract
     src/component_catalog.cpp
     src/component_codec.cpp
     src/component_package.cpp
+    src/component_preview.cpp
     src/recipe.cpp
 )
 target_include_directories(mm_component_contract PUBLIC include third_party ${CMAKE_CURRENT_SOURCE_DIR}/libs/mm_contract/include)

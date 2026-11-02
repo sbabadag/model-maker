@@ -715,6 +715,30 @@ json dialogSchemaToJsonImpl(const ComponentDialogSchema& s) {
     json rows = json::array();
     for (const auto& r : s.weldRows) rows.push_back(weldRowToJson(r));
     j["weldRows"] = std::move(rows);
+    // MM-6: preview (dimensions + toggles) — bos ise yazilmaz (eski paketler ayni).
+    if (!s.preview.empty()) {
+        json preview = json::object();
+        json dims = json::array();
+        for (const auto& d : s.preview.dimensions) {
+            json o;
+            o["param"] = utf8FromWide(d.param);
+            o["from"] = utf8FromWide(d.from);
+            o["to"] = utf8FromWide(d.to);
+            o["axis"] = std::string(1, static_cast<char>(d.axis));
+            if (!d.label.empty()) o["label"] = utf8FromWide(d.label);
+            dims.push_back(std::move(o));
+        }
+        preview["dimensions"] = std::move(dims);
+        json toggles = json::array();
+        for (const auto& t : s.preview.toggles) {
+            json o;
+            o["param"] = utf8FromWide(t.param);
+            o["rolePrefix"] = utf8FromWide(t.rolePrefix);
+            toggles.push_back(std::move(o));
+        }
+        preview["toggles"] = std::move(toggles);
+        j["preview"] = std::move(preview);
+    }
     return j;
 }
 
@@ -733,6 +757,32 @@ ComponentDialogSchema dialogSchemaFromJsonImpl(const json& j) {
     s.useTabs = j.value("useTabs", false);
     if (j.contains("weldRows") && j["weldRows"].is_array()) {
         for (const auto& r : j["weldRows"]) s.weldRows.push_back(weldRowFromJson(r));
+    }
+    // MM-6: preview (dimensions + toggles). Eksikse bos kalir (geriye uyumlu).
+    if (j.contains("preview") && j["preview"].is_object()) {
+        const json& pv = j["preview"];
+        if (pv.contains("dimensions") && pv["dimensions"].is_array()) {
+            for (const auto& d : pv["dimensions"]) {
+                if (!d.is_object()) continue;
+                PreviewDimension dim;
+                dim.param = wideFromUtf8(d.value("param", std::string()));
+                dim.from = wideFromUtf8(d.value("from", std::string()));
+                dim.to = wideFromUtf8(d.value("to", std::string()));
+                const std::string ax = d.value("axis", std::string("u"));
+                dim.axis = ax.empty() ? L'u' : static_cast<wchar_t>(ax.front());
+                dim.label = wideFromUtf8(d.value("label", std::string()));
+                s.preview.dimensions.push_back(std::move(dim));
+            }
+        }
+        if (pv.contains("toggles") && pv["toggles"].is_array()) {
+            for (const auto& t : pv["toggles"]) {
+                if (!t.is_object()) continue;
+                PreviewToggle tg;
+                tg.param = wideFromUtf8(t.value("param", std::string()));
+                tg.rolePrefix = wideFromUtf8(t.value("rolePrefix", std::string()));
+                s.preview.toggles.push_back(std::move(tg));
+            }
+        }
     }
     return s;
 }

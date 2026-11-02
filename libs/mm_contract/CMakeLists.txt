@@ -47,6 +47,7 @@ add_library(mm_component_contract
     ${MM_ROOT}/src/component_catalog.cpp
     ${MM_ROOT}/src/component_codec.cpp
     ${MM_ROOT}/src/component_package.cpp
+    ${MM_ROOT}/src/component_preview.cpp
     ${MM_ROOT}/src/recipe.cpp
 )
 target_include_directories(mm_component_contract PUBLIC ${MM_ROOT}/include ${MM_ROOT}/third_party ${CMAKE_CURRENT_LIST_DIR}/include)
@@ -105,6 +106,12 @@ if(MM_CONTRACT_BUILD_TESTS)
     target_compile_definitions(mm_contract_package_test PRIVATE
         MM_PACKAGES_DIR="${CMAKE_CURRENT_LIST_DIR}/packages")
     add_test(NAME mm_contract_package_test COMMAND mm_contract_package_test)
+
+    # MM-6 — veriyle tanimlanan onizleme: anchor cozucu + olcu hesabi.
+    add_executable(mm_contract_component_preview_test
+        ${CMAKE_CURRENT_LIST_DIR}/tests/component_preview_test.cpp)
+    target_link_libraries(mm_contract_component_preview_test PRIVATE mm_component_contract mm_contract_version)
+    add_test(NAME mm_contract_component_preview_test COMMAND mm_contract_component_preview_test)
 
     # Paket uretici (parameters/dialog/manifest) — test degil, arac.
     add_executable(mm_gen_end_plate_package ${CMAKE_CURRENT_LIST_DIR}/tools/gen_end_plate_package.cpp)
