@@ -18,7 +18,18 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
-set(CMAKE_AUTOUIC ON)
+# AUTOUIC yalniz .ui dosyasi varsa anlamli. Repo'da .ui yok; buna ragmen
+# AUTOUIC acikken CMake, uic'i configure sirasinda test eder ve bozuk/kismi
+# Qt kurulumlarinda (orn. Qt6Core.dll prefix karisikligi -> 0xc0000139)
+# configure'u tamamen kirar. Bu yuzden .ui bulunmadikca kapali tutulur.
+file(GLOB_RECURSE MODELMAKER_UI_FILES CONFIGURE_DEPENDS
+     "${CMAKE_CURRENT_SOURCE_DIR}/src/*.ui"
+     "${CMAKE_CURRENT_SOURCE_DIR}/resources/*.ui")
+if(MODELMAKER_UI_FILES)
+    set(CMAKE_AUTOUIC ON)
+else()
+    set(CMAKE_AUTOUIC OFF)
+endif()
 
 # Qt6 (optional for the ribbon UI). Override with -DQT_ROOT=<path>.
 list(PREPEND CMAKE_PREFIX_PATH "${QT_ROOT}")
