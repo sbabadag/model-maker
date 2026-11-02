@@ -45,7 +45,7 @@ int main(int argc, char** argv) {
     manifest["typeId"] = utf8FromWide(type.typeId);
     manifest["displayName"] = utf8FromWide(type.displayName);
     manifest["schemaVersion"] = type.schemaVersion;
-    manifest["contractVersion"] = kContractVersion;
+    manifest["minContractVersion"] = kContractVersion;
 
     bool ok = writeJson(dir + "/parameters.json", parameters);
     ok = writeJson(dir + "/dialog.json", dialog) && ok;

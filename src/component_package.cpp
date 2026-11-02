@@ -212,15 +212,17 @@ ComponentPackageLoad loadComponentPackage(const fs::path& dir,
             out.type.catalog = componentCatalogMetaFromJson(mj["catalog"]);
     }
 
-    // (3) CONTRACT SURUMU
+    // (3) CONTRACT SURUMU — TEK ALAN: minContractVersion (CONTRACT.md §4.1).
+    // Eski "contractVersion" anahtari KABUL EDILMEZ: iki ad kafa karisikligi
+    // uretiyordu (biri yaziyor, digeri okuyor). Paketler minContractVersion yazar.
     {
         std::string ver;
+        if (mj.contains("contractVersion"))
+            return fail(out, L"manifest 'contractVersion' kullanmis; alan adi 'minContractVersion' olmali");
         if (mj.contains("minContractVersion") && mj["minContractVersion"].is_string())
             ver = mj["minContractVersion"].get<std::string>();
-        else if (mj.contains("contractVersion") && mj["contractVersion"].is_string())
-            ver = mj["contractVersion"].get<std::string>();  // eski paket bicimi
         else
-            return fail(out, L"manifest surum bildirmiyor (minContractVersion)");
+            return fail(out, L"manifest minContractVersion bildirmiyor");
         int a = 0, b = 0, c = 0;
         if (!parseSemver(ver, a, b, c))
             return fail(out, L"manifest surumu semver degil: " + wideAscii(ver));
