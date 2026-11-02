@@ -249,6 +249,12 @@ public:
                                      const std::wstring& templateName);
     // Katalog dosyasini acilista yukler + registry/dialog'e kaydeder.
     void loadUserCatalog();
+    // MM-5: .mmcpkg paketlerini tarar ve registry/dialog'e kaydeder. Kullanici
+    // klasoru (%APPDATA%\ModelMaker\components) acilista; PROJE klasoru
+    // (<proje>/components) belge yuklenmeden ONCE (Document::load bilinmeyen
+    // typeId'yi orphan isaretler, paket tipleri hazir olmali). Fail-closed:
+    // bozuk paket atlanir, hata durum cubuguna yazilir; belge degismez.
+    void loadComponentPackagesFrom(const std::filesystem::path& root);
     // Katalog dosyasini diske yazar (mevcut registry'deki derived tipleri etkilemez).
     bool saveUserCatalog();
     // Calisma anindaki kullanici katalogu (salt-okunur erisim).

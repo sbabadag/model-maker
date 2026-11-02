@@ -34,6 +34,7 @@
 #include "model_maker/axis_delta.hpp"
 #include "model_maker/component_glyph.hpp"
 #include "model_maker/component_dialog.hpp"
+#include "model_maker/component_package.hpp"
 
 #include <QComboBox>
 
@@ -196,6 +197,10 @@ Application::Application(HINSTANCE instance, HWND /*parentCanvas*/) : instance_(
     // registry/dialog'e kaydeder. Bu, built-in katalogdan SONRA olmali ki
     // family generator'lar (sourceTypeId) cozumlenebilsin.
     loadUserCatalog();
+    // MM-5: KULLANICI KOMPONENT PAKETLERI (%APPDATA%\ModelMaker\components).
+    // Yerlesik + kullanici katalogundan SONRA yuklenir: paket, kayitli bir
+    // typeId ile cakisirsa REDDEDILIR (yerlesik tip paketle EZILMEZ).
+    loadComponentPackagesFrom(mm::defaultUserComponentPackagesDir());
 #ifdef MM_HAS_OCC
     // BELGE-SAHIPLI B-Rep magazasi: OCC-acik derlemede GERCEK OCCT store'unu
     // Document'a ENJEKTE eder (constructor injection). Saglayici secimi LINK
@@ -12479,6 +12484,12 @@ void Application::openDocument() {
     // guard HER cikis yolunda kapatir (istisna dahil).
     IoProgressGuard progress(&ioProgress_, "Dosya açılıyor");
     try {
+        // MM-5: PROJE KOMPONENT PAKETLERI — belge yuklenmeden ONCE. Document::load
+        // bilinmeyen typeId'yi `orphan` isaretler; paket tipleri o an registry'de
+        // hazir olmazsa geometri korunur ama recompute edilmez (veri kaybi yok,
+        // islev kaybi var). Proje klasoru ayni typeId'yi kullanici klasorune gore
+        // GOLGELER (bkz. component_package.hpp).
+        loadComponentPackagesFrom(mm::projectComponentPackagesDir(*path));
         document_.load(*path);
         // Yukleme belge icerigini TAMAMEN degistirir; Document-sahipli B-Rep
         // magazasini da Document::load() KENDISI sifirlar (MMW1..7 B-Rep
@@ -12870,6 +12881,29 @@ void Application::loadUserCatalog() {
         }
         publishStatus(msg);
     }
+}
+
+// MM-5: komponent paketlerini (klasor taramasi) registry/dialog'e kaydeder.
+// Fail-closed: bozuk paket atlanir + durum cubuguna yazilir; belge degismez.
+void Application::loadComponentPackagesFrom(const std::filesystem::path& root) {
+    if (root.empty()) return;
+    const mm::ComponentPackageScan report = mm::loadComponentPackages(
+        mm::ComponentRegistry::instance(), mm::ComponentDialogRegistry::instance(), {root});
+    if (report.registered.empty() && report.errors.empty()) return;
+    std::wstring msg;
+    if (!report.registered.empty()) {
+        msg = L"Komponent paketi yüklendi: ";
+        for (std::size_t i = 0; i < report.registered.size(); ++i) {
+            if (i) msg += L", ";
+            msg += report.registered[i];
+        }
+    }
+    for (const auto& e : report.errors) {
+        if (!msg.empty()) msg += L" | ";
+        msg += L"REDDEDİLDİ ";
+        msg += e;
+    }
+    if (window_ != nullptr) publishStatus(msg);
 }
 
 bool Application::saveUserCatalog() {
