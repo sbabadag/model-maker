@@ -53,9 +53,9 @@ int main() {
         check(approx(pl.v.z, 1.0) || approx(pl.v.z, -1.0), "v yukseklik yonu Z ekseninde");
         check(pl.bolts.countX == 2 && pl.bolts.countY == 2, "2x2 bulon");
         // Genislik yonu: flans/2 = 200/2 = 100 (Tekla gauge cizgisi). Yukseklik
-        // yonu levha boyutundan kalir: 340 - 2*30 = 280.
+        // yonu KESIT yuksekliginden kalir (MM-7): (300 - 2*30) = 240.
         check(approx(pl.bolts.spacingX, 100.0), "spacingX 100 (flans/2)");
-        check(approx(pl.bolts.spacingY, 280.0), "spacingY 280");
+        check(approx(pl.bolts.spacingY, 240.0), "spacingY 240");
         const std::vector<Vec3> origins = boltGroupBoltOrigins(pl.bolts);
         check(origins.size() == 4, "4 bulon merkezi");
         check(approx(pl.bolts.params.nominalDiameter, 20.0), "M20");
@@ -154,9 +154,10 @@ int main() {
         check(approx(pl.bolts.spacingX, 100.0), "elle yatay aralik 100");
         check(approx(pl.bolts.spacingY, 120.0), "elle dikey aralik 120");
 
-        // Sol+Alt hizalama (offset<0 -> boltEdge=30): en sol-alt bulon levha
-        // sol-alt kosesinden 30'ar mm iceride. u=+Y, v=+Z; levha 240x340,
-        // merkez (6,0,0). origin = center - u*(120-30) - v*(170-30) = (6,-90,-140).
+        // Sol+Alt hizalama (offset<0 -> boltEdge=35): en sol-alt bulon levha
+        // sol-alt kosesinden 35'er mm iceride; dikey konum KESIT alt kenarindan
+        // (MM-7) 35 mm. u=+Y, v=+Z; levha 240x340, merkez (6,0,0).
+        // origin.y = -(120-35) = -85; origin.z = -(300/2-35) = -115.
         EndPlateParams a;
         a.plateThickness = 12.0;
         a.plateExtra = 20.0;
@@ -166,8 +167,8 @@ int main() {
         a.boltOffsetV = -1.0;  // -> boltEdge
         const EndPlatePlacement plA =
             computeEndPlatePlacement({0, 0, 0}, {1, 0, 0}, 200.0, 300.0, a);
-        check(approx(plA.bolts.origin.y, -90.0), "sol hizalama origin.y -90");
-        check(approx(plA.bolts.origin.z, -140.0), "alt hizalama origin.z -140");
+        check(approx(plA.bolts.origin.y, -85.0), "sol hizalama origin.y -85");
+        check(approx(plA.bolts.origin.z, -115.0), "alt hizalama origin.z -115");
 
         // Silinen bulonlar: 2 bulondan 2 numara silinince 1 bulon kalir.
         BoltGroup g;
