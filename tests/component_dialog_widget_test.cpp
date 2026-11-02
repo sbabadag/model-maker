@@ -511,6 +511,45 @@ int main(int argc, char** argv) {
                       "Stiffeners: second Alt+click switches the stiffener OFF again");
             }
         }
+        // MM-6(c): toggle'lar VERIDEN tanimlanir — Haunch 40 tipinde bile bir
+        // data toggle tanimi gelirse ghost kumesi O tanimdan gelir (kStiffeners
+        // tablosu degil); Alt+tik ayni ac/kapat davranisini surdurur.
+        if(left) {
+            mm::PreviewDefinition dataDef;
+            dataDef.toggles.push_back(
+                mm::PreviewToggle{L"createBeamStiffener",L"haunch_beam_stiffener"});
+            dataDef.toggles.push_back(
+                mm::PreviewToggle{L"createDiagStiffener",L"haunch_stiff_diagonal"});
+            left->setPreviewDefinition(std::move(dataDef));
+            QApplication::processEvents();
+            const auto dataGhosts=left->ghostStiffenerRoles();
+            const auto hasPrefix=[&](const char* p){
+                return std::any_of(dataGhosts.begin(),dataGhosts.end(),
+                                   [&](const std::string& r){
+                                       return r.compare(0,std::strlen(p),p)==0;});
+            };
+            CHECK(hasPrefix("haunch_beam_stiffener") &&
+                  hasPrefix("haunch_stiff_diagonal") &&
+                  !hasPrefix("haunch_stiff_morris") &&
+                  !hasPrefix("haunch_stiff_additional") &&
+                  !hasPrefix("haunch_stiff_rafter_bottom") &&
+                  !hasPrefix("haunch_stiff_compression"),
+                  "MM-6c: data toggle tanimi ghost kumesini belirler (yalniz tanimli berkitmeler)");
+            const QPointF dataAt=left->ghostScreenAnchor("haunch_beam_stiffener");
+            const std::string dataHit=left->stiffenerRoleAt(dataAt.toPoint());
+            if(!dataHit.empty()) {
+                QMouseEvent dDown(QEvent::MouseButtonPress,dataAt,Qt::LeftButton,
+                                  Qt::LeftButton,Qt::AltModifier);
+                QMouseEvent dUp(QEvent::MouseButtonRelease,dataAt,Qt::LeftButton,
+                                Qt::NoButton,Qt::AltModifier);
+                QApplication::sendEvent(left,&dDown);
+                QApplication::sendEvent(left,&dUp);
+                QApplication::processEvents();
+                const auto& dataKeys=left->previewPlan().plateKeys;
+                CHECK(std::find(dataKeys.begin(),dataKeys.end(),dataHit)!=dataKeys.end(),
+                      "MM-6c: Alt+tik veriyle tanimli ghost'u acar (gercek berkitme eklenir)");
+            }
+        }
         if(left) {
             CHECK(left->activeRole().empty() &&
                   left->visibleOverlayParams().empty(),

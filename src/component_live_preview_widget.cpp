@@ -93,17 +93,40 @@ const std::array<std::pair<const char*,const wchar_t*>,6> kStiffeners{{
     {"haunch_stiff_compression",L"createComprStiffener"},
     {"haunch_stiff_morris",L"createMorrisStiffener"},
     {"haunch_stiff_diagonal",L"createDiagStiffener"}}};
-const wchar_t* stiffenerFlagFor(const std::string& role) {
-    for(const auto& [prefix,flag]:kStiffeners)
-        if(role.compare(0,std::strlen(prefix),prefix)==0)return flag;
+// MM-6(c): toggle'lar VERIYLE tanimlanir (previewDef_.toggles). rolePrefix ASCII
+// varsayilir; daraltma yeterli. Haunch 40 icin veri yoksa kStiffeners fallback'i
+// (geriye donuk davranis birebir).
+struct EffToggle { std::string prefix; std::wstring param; };
+std::string toNarrow(const std::wstring& s) {
+    std::string out;
+    out.reserve(s.size());
+    for (wchar_t c : s) out.push_back(c <= 0x7F ? static_cast<char>(c) : '?');
+    return out;
+}
+std::vector<EffToggle> effectiveToggles(const PreviewDefinition& def,
+                                        const std::wstring& typeId) {
+    std::vector<EffToggle> out;
+    if (!def.toggles.empty()) {
+        for (const auto& t : def.toggles)
+            out.push_back({toNarrow(t.rolePrefix), t.param});
+        return out;
+    }
+    if (typeId != L"tekla_haunch_40") return out;
+    for (const auto& [prefix, flag] : kStiffeners) out.push_back({prefix, flag});
+    return out;
+}
+const std::wstring* toggleParamFor(const std::string& role,
+                                   const std::vector<EffToggle>& toggles) {
+    for (const auto& t : toggles)
+        if (role.compare(0, t.prefix.size(), t.prefix) == 0) return &t.param;
     return nullptr;
 }
-QColor plateColor(const std::string& role) {
-    if(stiffenerFlagFor(role))return QColor("#7fc48f");
-    if(role.find("end_plate")!=std::string::npos)return QColor("#7ea7c7");
-    if(role.find("web")!=std::string::npos)return QColor("#b8a1d6");
-    if(role.find("flange")!=std::string::npos)return QColor("#e5a461");
-    if(role.find("top_plate")!=std::string::npos)return QColor("#73b6a8");
+QColor plateColor(const std::string& role, const std::vector<EffToggle>& toggles) {
+    if (toggleParamFor(role, toggles)) return QColor("#7fc48f");
+    if (role.find("end_plate") != std::string::npos) return QColor("#7ea7c7");
+    if (role.find("web") != std::string::npos) return QColor("#b8a1d6");
+    if (role.find("flange") != std::string::npos) return QColor("#e5a461");
+    if (role.find("top_plate") != std::string::npos) return QColor("#73b6a8");
     return QColor("#a5b5cb");
 }
 void addPrism(std::vector<Poly>& polys,
@@ -333,13 +356,14 @@ void ComponentLivePreviewWidget::setPreviewDefinition(PreviewDefinition def) {
     const bool hasDims = !def.dimensions.empty();
     previewDef_ = std::move(def);
     // Tanim BOS ise yerlesik (Haunch 40) callout tablosu KORUNUR — paket
-    // tanimi gelmemis tip, eski gorunumunu aynen surdurur.
-    if (!hasDims) return;
-    // Eski callout'lar (yerlesik tablo) kapatilir; spin'ler silinmez, yeniden
-    // kullanilir: tanim degisince liste bastan kurulur.
-    for(auto& c:callouts_) if(c.spin) c.spin->hide();
-    callouts_.clear();
-    if(!previewDef_.dimensions.empty()) {
+    // tanimi gelmemis tip, eski gorunumunu aynen surdurur. Boyut tanimi yoksa
+    // callout'lar kurulmaz ama TOGGLE'lar yine de tazelenir (asagidaki kosulsuz
+    // recompute ghosts'u veriden yeniden uretir).
+    if (hasDims) {
+        // Eski callout'lar (yerlesik tablo) kapatilir; spin'ler silinmez, yeniden
+        // kullanilir: tanim degisince liste bastan kurulur.
+        for(auto& c:callouts_) if(c.spin) c.spin->hide();
+        callouts_.clear();
         for(const auto& dim:previewDef_.dimensions) {
             Callout a;
             a.name = dim.param;
@@ -512,17 +536,18 @@ std::string ComponentLivePreviewWidget::stiffenerRoleAt(QPoint pos) const {
 }
 bool ComponentLivePreviewWidget::toggleStiffenerAt(QPoint pos) {
     const std::string role=stiffenerRoleAt(pos);
-    const wchar_t* flag=role.empty()?nullptr:stiffenerFlagFor(role);
+    const auto toggles=effectiveToggles(previewDef_,typeId_);
+    const std::wstring* flag=role.empty()?nullptr:toggleParamFor(role,toggles);
     if(!flag)return false;
-    const bool next=!paramAsBool(params_,flag,false);
+    const bool next=!paramAsBool(params_,*flag,false);
     if(onToggle_) {
         // The owning dialog flips the real checkbox, which re-broadcasts the
         // normalized parameter set to every view (including this one).
-        onToggle_(flag,next);
+        onToggle_(*flag,next);
     } else {
         bool found=false;
-        for(auto& param:params_)if(param.name==flag){param.value=next;found=true;}
-        if(!found)params_.push_back(CompParam{flag,CompParamValue{next}});
+        for(auto& param:params_)if(param.name==*flag){param.value=next;found=true;}
+        if(!found)params_.push_back(CompParam{*flag,CompParamValue{next}});
         recompute();
     }
     return true;
@@ -566,21 +591,24 @@ void ComponentLivePreviewWidget::recompute() {
     }
     // Stiffeners that are OFF: generate each flag alone with the SAME draft
     // parameters so the grey ghost is the exact geometry Alt+click would add.
+    // MM-6(c): toggle listesi VERIDEN gelir (previewDef_.toggles); Haunch 40
+    // veri yoksa kStiffeners fallback'ini kullanir (davranis ayni).
     ghosts_.clear();
-    if(plan_.ok && previewWarning_.empty() && typeId_==L"tekla_haunch_40") {
-        for(const auto& [prefix,flag]:kStiffeners) {
-            if(paramAsBool(params_,flag,false))continue;
+    if(plan_.ok && previewWarning_.empty()) {
+        const auto toggles=effectiveToggles(previewDef_,typeId_);
+        for(const auto& t:toggles) {
+            if(paramAsBool(params_,t.param,false))continue;
             ComponentInput probe=input_;
             probe.params=params_;
             bool found=false;
             for(auto& param:probe.params)
-                if(param.name==flag){param.value=true;found=true;}
-            if(!found)probe.params.push_back(CompParam{flag,CompParamValue{true}});
+                if(param.name==t.param){param.value=true;found=true;}
+            if(!found)probe.params.push_back(CompParam{t.param,CompParamValue{true}});
             const GenerationPlan g=ComponentRegistry::instance().generate(
                 typeId_,probe);
             if(!g.ok)continue;
             for(std::size_t i=0;i<g.plates.size()&&i<g.plateKeys.size();++i)
-                if(g.plateKeys[i].compare(0,std::strlen(prefix),prefix)==0)
+                if(g.plateKeys[i].compare(0,t.prefix.size(),t.prefix)==0)
                     ghosts_.push_back({g.plates[i],g.plateKeys[i]});
         }
     }
@@ -1015,6 +1043,7 @@ void ComponentLivePreviewWidget::drawModel(QPainter& p) {
     hits_.clear();
     boltHits_.clear();
     stiffHits_.clear();
+    const auto toggles=effectiveToggles(previewDef_,typeId_);
     std::vector<Poly> faces;
     if(!plan_.plates.empty()) {
         std::vector<Vec3> anchors;
@@ -1047,7 +1076,7 @@ void ComponentLivePreviewWidget::drawModel(QPainter& p) {
         const auto& plate=plan_.plates[i];
         const std::string role=i<plan_.plateKeys.size()?plan_.plateKeys[i]:"plate";
         addPrism(faces,plateOutline(plate,+1.0),plateOutline(plate,-1.0),
-                 plateColor(role),role);
+                 plateColor(role,toggles),role);
     }
     for(const auto& g:ghosts_)
         addPrism(faces,plateOutline(g.plate,+1.0),plateOutline(g.plate,-1.0),
@@ -1106,7 +1135,7 @@ void ComponentLivePreviewWidget::drawModel(QPainter& p) {
         p.drawPolygon(polygon);
         if(!compact_) {
             hits_.push_back({polygon,face.role});
-            if(stiffenerFlagFor(face.role))stiffHits_.push_back({polygon,face.role});
+            if(toggleParamFor(face.role,toggles))stiffHits_.push_back({polygon,face.role});
         }
     }
     // Individual bolt groups: preserve exact generator positions, and make
