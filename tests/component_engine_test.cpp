@@ -193,7 +193,10 @@ int main() {
         check(plan.ok, "end plate uretildi");
         check(plan.plates.size() == 1, "1 levha");
         check(plan.boltGroups.size() == 1, "1 bulon grubu");
-        check(plan.cuts.empty(), "end plate kesme yok (bu dilim)");
+        // MM-5 fix (item 4): kiris ucu levhanin kiris yuzune kesilir (PlaneCut).
+        check(plan.cuts.size() == 1, "1 kiris kesimi (cut_beam_end)");
+        check(plan.cutKeys.size() == 1 && plan.cutKeys[0] == "cut_beam_end",
+              "kesme roleKey = cut_beam_end");
 
         if (plan.plates.size() == 1) {
             const PlateSpec& p = plan.plates[0];
