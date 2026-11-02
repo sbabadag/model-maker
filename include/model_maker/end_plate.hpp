@@ -239,4 +239,11 @@ void applyEndPlateBoltStack(const EndPlateParams& params, const Vec3& boltAxis,
                             double colFlangeThickness,
                             EndPlatePlacement& placement) noexcept;
 
+// ALIN LEVHASI KIRIS KESIMI (item 4) — tek kaynak: generator + recipe tasi.
+// Kiris ucu LEVHANIN KIRIS YUZUNE kesilir (Haunch 40 fitting deseni): duzlem
+// plateCenter + axis*t/2, normal = axis (kolondan kirise), korunan taraf kiris
+// govdesi. Levha ile kiris arasindaki gap'ten kaynaklanan aciklik olusmaz.
+void endPlateBeamCut(const EndPlatePlacement& placement, EntityId beamId,
+                     CutModifier& out) noexcept;
+
 } // namespace mm

@@ -524,6 +524,13 @@ GenerationPlan generateEndPlate(const ComponentInput& input) noexcept {
     plan.boltGroups.push_back(bolts);
     plan.boltGroupKeys.push_back("beam_bolts");
 
+    // Item 4: kiris ucunu levhanin KIRIS yuzune kes (Haunch 40 fitting deseni).
+    // Kesme yoksa levha kalinligi kadar aciklik kalir (Studio fixture: 3 mm).
+    CutModifier beamCut;
+    endPlateBeamCut(placement, input.secondary.front().id, beamCut);
+    plan.cuts.push_back(beamCut);
+    plan.cutKeys.push_back("cut_beam_end");
+
     plan.ok = true;
     return plan;
 }
@@ -752,6 +759,22 @@ void applyEndPlateBoltStack(const EndPlateParams& params, const Vec3& boltAxis,
     placement.bolts.origin.x -= boltAxis.x * gripShift;
     placement.bolts.origin.y -= boltAxis.y * gripShift;
     placement.bolts.origin.z -= boltAxis.z * gripShift;
+}
+
+void endPlateBeamCut(const EndPlatePlacement& placement, EntityId beamId,
+                     CutModifier& out) noexcept {
+    const Vec3 axis = placement.axis;
+    const double half = placement.plateThickness * 0.5;
+    out = CutModifier{};
+    out.kind = CutKind::PlaneCut;
+    out.target = beamId;
+    out.planeOrigin = Vec3{placement.plateCenter.x + axis.x * half,
+                           placement.plateCenter.y + axis.y * half,
+                           placement.plateCenter.z + axis.z * half};
+    out.planeNormal = axis;
+    out.keepPositive = true;  // korunan taraf = kiris govdesi
+    out.hidden = true;        // component ic motor elemani — cizilmez/secilemez
+    out.name = "Beam end cut (end plate)";
 }
 
 bool endPlatePlacementFromInput(const ComponentInput& input, const EndPlateParams& params,

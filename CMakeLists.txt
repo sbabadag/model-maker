@@ -479,6 +479,11 @@ if(BUILD_TESTING)
     add_test(NAME model_maker_component_generator_type_test
              COMMAND model_maker_component_generator_type_test)
 
+    # MM-5 fix (item 4): alin levhasi kiris kesimi (PlaneCut, levhanin kiris yuzu).
+    add_executable(model_maker_end_plate_cut_test tests/end_plate_cut_test.cpp)
+    target_link_libraries(model_maker_end_plate_cut_test PRIVATE model_maker_core)
+    add_test(NAME model_maker_end_plate_cut_test COMMAND model_maker_end_plate_cut_test)
+
     # Kesit referans normali: "profil ust basligi workplane ile paralel".
     # Secim (UCS vs otomatik gorunus duzlemi) + MMW6 kalicilik + eski dosya
     # uyumlulugu + donusumlerde normalin donmesi. OCC'siz, Linux'ta kosar.

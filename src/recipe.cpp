@@ -750,6 +750,12 @@ static bool blockEndPlatePlacement(EvalCtx& ctx, const RecipeStep& st, Generatio
     bolts.parts = {mainPartId};
     plan.boltGroups.push_back(bolts);
     plan.boltGroupKeys.push_back(roleBolts);
+
+    // Item 4: kiris kesimi generator ile AYNI kaynaktan (endPlateBeamCut).
+    CutModifier beamCut;
+    endPlateBeamCut(placement, beam->id, beamCut);
+    plan.cuts.push_back(beamCut);
+    plan.cutKeys.push_back("cut_beam_end");
     return true;
 }
 
