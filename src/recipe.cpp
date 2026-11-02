@@ -492,12 +492,47 @@ static bool strArg(const RecipeStep& st, const char* key, const std::string& def
     out = it->second.text;
     return true;
 }
+
+// MM-5 fix (item 1): STRING arguman da `param.<ad>` ifadesi kabul eder.
+// Metin/durum parametreleri (plateMaterial, grade) sayisal `param.*` gibi
+// evaluateExpr'den GECMEZ; burada input.params icinden okunur. Literal metin
+// eskisi gibi aynen gecerli (geriye donuk uyum).
+static bool strParamArg(const EvalCtx& ctx, const RecipeStep& st, const char* key,
+                        const std::string& def, std::string& out) {
+    const auto it = st.args.find(key);
+    if (it == st.args.end()) { out = def; return true; }
+    const std::string& text = it->second.text;
+    static const std::string kPrefix = "param.";
+    if (text.rfind(kPrefix, 0) != 0) { out = text; return true; }
+    const std::wstring name = wideFromUtf8(text.substr(kPrefix.size()));
+    for (const auto& p : ctx.input.params) {
+        if (p.name != name) continue;
+        if (const auto* s = std::get_if<std::wstring>(&p.value)) { out = utf8FromWide(*s); return true; }
+        return false;  // parametre metin degil
+    }
+    // Girdi parametresi YOKSA sema VARSAYILANI (golden girdiler parametresiz
+    // gelir; generator da ayni varsayilani kullanir).
+    for (const auto& spec : ctx.specs) {
+        if (spec.name != name) continue;
+        if (!spec.defString.empty()) { out = utf8FromWide(spec.defString); return true; }
+        if (!spec.choices.empty()) { out = utf8FromWide(spec.choices.front()); return true; }
+        return false;
+    }
+    return false;      // tanimsiz parametre
+}
 static bool boolArg(EvalCtx& ctx, const RecipeStep& st, const char* key, bool def, bool& out) {
     const auto it = st.args.find(key);
     if (it == st.args.end()) { out = def; return true; }
     const std::string& s = it->second.text;
     if (s == "true" || s == "1" || s == "yes" || s == "on") { out = true; return true; }
     if (s == "false" || s == "0" || s == "no" || s == "off") { out = false; return true; }
+    // MM-5 fix (item 1): `param.<ad>` ifadesi (Boolean/Sayisal parametre) kabul edilir.
+    if (s.rfind("param.", 0) == 0) {
+        double v = 0.0;
+        if (!evaluateExpr(ctx, s, v)) return false;
+        out = (v != 0.0);
+        return true;
+    }
     ctx.error = wideFromUtf8(std::string("arguman mantiksal olmali: ") + key);
     return false;
 }
@@ -595,7 +630,7 @@ static bool blockBoltsGrid(EvalCtx& ctx, const RecipeStep& st, GenerationPlan& p
     std::vector<std::string> through;
     if (!strListArg(ctx, st, "through", through)) return false;
     std::string grade;
-    strArg(st, "grade", "", grade);
+    if (!strParamArg(ctx, st, "grade", "", grade)) return false;
     const int cx = static_cast<int>(nx);
     const int cy = static_cast<int>(ny);
     if (cx < 1 || cy < 1) { ctx.error = L"bolts.grid: nx/ny en az 1 olmali"; return false; }
@@ -771,8 +806,22 @@ static bool runTas(EvalCtx& ctx, const RecipeStep& st, const char* name,
     return true;
 }
 
-// frame.contact: PARAMETRESIZ geometri (temas + egik cerceve).
+// frame.contact: parametresiz GEOMETRI; roller ARGS'tan gelir (MM-5 fix item 1).
+// Bugun motor tek mertek destekliyor: main=main, secondary=secondary_0.
+// Farkli bir rol istenirse ACIK hata (sessizce ilk uyeyi kullanma YOK).
 static bool blockHaunchContact(EvalCtx& ctx, const RecipeStep& st, GenerationPlan& plan) {
+    std::string mainRole, secRole;
+    strArg(st, "main", "main", mainRole);
+    strArg(st, "secondary", "secondary_0", secRole);
+    if (mainRole != "main") {
+        ctx.error = wideFromUtf8("frame.contact: main rolu 'main' olmali, verilen '" + mainRole + "'");
+        return false;
+    }
+    if (secRole != "secondary_0") {
+        ctx.error = wideFromUtf8(
+            "frame.contact: yalniz 'secondary_0' destekleniyor, verilen '" + secRole + "'");
+        return false;
+    }
     return runTas(ctx, st, "frame.contact", HaunchParams{}, "", false, plan);
 }
 
@@ -782,7 +831,7 @@ static bool blockHaunchPlumbFace(EvalCtx& ctx, const RecipeStep& st, GenerationP
     if (!numArg(ctx, st, "gap", prm.gap, prm.gap)) return false;
     if (!numArg(ctx, st, "endPlateThickness", prm.endPlateThickness, prm.endPlateThickness)) return false;
     std::string mat;
-    strArg(st, "plateMaterial", "S235JR", mat);
+    if (!strParamArg(ctx, st, "plateMaterial", "S235JR", mat)) return false;
     prm.plateMaterial = wideFromUtf8(mat);
     return runTas(ctx, st, "frame.plumb_face", prm, "frame", true, plan);
 }
@@ -806,7 +855,7 @@ static bool blockHaunchEndPlate(EvalCtx& ctx, const RecipeStep& st, GenerationPl
     if (!readGroupArgs(ctx, st, "upper", prm.upper)) return false;
     if (!readGroupArgs(ctx, st, "lower", prm.lower)) return false;
     std::string mat;
-    strArg(st, "plateMaterial", "S235JR", mat);
+    if (!strParamArg(ctx, st, "plateMaterial", "S235JR", mat)) return false;
     prm.plateMaterial = wideFromUtf8(mat);
     return runTas(ctx, st, "haunch.end_plate", prm, "frame", true, plan);
 }
@@ -854,7 +903,7 @@ static bool blockHaunchStiffeners(EvalCtx& ctx, const RecipeStep& st, Generation
     if (!boolArg(ctx, st, "createMorrisStiffener", prm.createMorrisStiffener, prm.createMorrisStiffener)) return false;
     if (!boolArg(ctx, st, "createDiagStiffener", prm.createDiagStiffener, prm.createDiagStiffener)) return false;
     std::string mat;
-    strArg(st, "plateMaterial", "S235JR", mat);
+    if (!strParamArg(ctx, st, "plateMaterial", "S235JR", mat)) return false;
     prm.plateMaterial = wideFromUtf8(mat);
     return runTas(ctx, st, "haunch.stiffeners", prm, "frame", true, plan);
 }
@@ -869,7 +918,7 @@ static bool blockHaunchBolts(EvalCtx& ctx, const RecipeStep& st, GenerationPlan&
     if (!numArg(ctx, st, "boltEdgeLeft", prm.boltEdgeLeft, prm.boltEdgeLeft)) return false;
     if (!numArg(ctx, st, "boltEdgeRight", prm.boltEdgeRight, prm.boltEdgeRight)) return false;
     std::string gr;
-    strArg(st, "grade", "8.8", gr);
+    if (!strParamArg(ctx, st, "grade", "8.8", gr)) return false;
     prm.grade = wideFromUtf8(gr);
     return runTas(ctx, st, "bolts.haunch_groups", prm, "frame", true, plan);
 }
@@ -905,7 +954,7 @@ static const std::vector<BlockDecl>& blockRegistry() {
         {"endplate.placement", {}, {"main", "beam", "rolePlate", "roleBolts"}, {}, &blockEndPlatePlacement},
         // MM-3d: her taş kendi parametrelerini alır; "frame" adıyla çerçeve,
         // "role" üretilen roleKey. frame.contact PARAMETRESİZ.
-        {"frame.contact", {}, {"role"}, {}, &blockHaunchContact},
+        {"frame.contact", {}, {"main", "secondary", "role"}, {}, &blockHaunchContact},
         {"frame.plumb_face", {"gap", "endPlateThickness"},
          {"frame", "plateMaterial", "role"}, {}, &blockHaunchPlumbFace},
         {"haunch.end_plate",
@@ -1177,8 +1226,15 @@ GenerationPlan runRecipe(const Recipe& recipe,
     }
     EvalCtx ctx{input, recipe, specs, {}, {}, {}, {}, {}, 0, {}};
     const std::vector<CompParam> aligned = alignParamsToSpecs(specs, input.params);
-    for (const auto& spec : specs)
-        ctx.params[utf8FromWide(spec.name)] = paramAsDouble(aligned, spec.name, spec.defDouble);
+    for (const auto& spec : specs) {
+        // Boolean parametreler 1/0 olarak yayinlanir: defDouble'a dusmek
+        // (or. createWelds=true varsayilani) sessizce FALSE uretirdi.
+        if (spec.type == CompParamType::Boolean)
+            ctx.params[utf8FromWide(spec.name)] =
+                paramAsBool(aligned, spec.name, spec.defBool) ? 1.0 : 0.0;
+        else
+            ctx.params[utf8FromWide(spec.name)] = paramAsDouble(aligned, spec.name, spec.defDouble);
+    }
     for (const auto& l : recipe.lets) ctx.lets[l.first] = l.second;
 
     for (const auto& st : recipe.steps) {

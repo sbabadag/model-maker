@@ -5,16 +5,19 @@
     {
       "id": "c",
       "use": "frame.contact",
-      "args": {}
+      "args": {
+        "main": "main",
+        "secondary": "secondary_0"
+      }
     },
     {
       "id": "p",
       "use": "frame.plumb_face",
       "args": {
         "frame": "c",
-        "gap": "0",
-        "endPlateThickness": "20",
-        "plateMaterial": "S235JR"
+        "gap": "param.gap",
+        "endPlateThickness": "param.endPlateThickness",
+        "plateMaterial": "param.plateMaterial"
       }
     },
     {
@@ -23,34 +26,34 @@
       "role": "haunch_end_plate",
       "args": {
         "frame": "p",
-        "haunchLength": "450",
-        "haunchDepth": "240",
-        "haunchTipDepth": "25",
-        "haunchWebThickness": "10",
-        "haunchFlangeThickness": "10",
-        "endPlateThickness": "20",
-        "gap": "0",
-        "boltEdgeLeft": "35",
-        "boltEdgeRight": "35",
-        "boltEdge": "35",
-        "endPlateWidth": "0",
+        "haunchLength": "param.haunchLength",
+        "haunchDepth": "param.haunchDepth",
+        "haunchTipDepth": "param.haunchTipDepth",
+        "haunchWebThickness": "param.haunchWebThickness",
+        "haunchFlangeThickness": "param.haunchFlangeThickness",
+        "endPlateThickness": "param.endPlateThickness",
+        "gap": "param.gap",
+        "boltEdgeLeft": "param.boltEdgeLeft",
+        "boltEdgeRight": "param.boltEdgeRight",
+        "boltEdge": "param.boltEdge",
+        "endPlateWidth": "param.endPlateWidth",
         "endPlateHeight": "param.endPlateHeight",
-        "haunchFlangeWidth": "0",
-        "upperBoltCountX": "2",
-        "upperBoltCountY": "2",
-        "upperBoltPitchX": "120",
-        "upperBoltPitchY": "80",
-        "upperBoltDiameter": "20",
-        "upperHoleDiameter": "22",
-        "upperBoltEdgeClear": "44",
-        "lowerBoltCountX": "2",
-        "lowerBoltCountY": "2",
-        "lowerBoltPitchX": "120",
-        "lowerBoltPitchY": "80",
-        "lowerBoltDiameter": "20",
-        "lowerHoleDiameter": "22",
-        "lowerBoltEdgeClear": "44",
-        "plateMaterial": "S235JR"
+        "haunchFlangeWidth": "param.haunchFlangeWidth",
+        "upperBoltCountX": "param.upperBoltCountX",
+        "upperBoltCountY": "param.upperBoltCountY",
+        "upperBoltPitchX": "param.upperBoltPitchX",
+        "upperBoltPitchY": "param.upperBoltPitchY",
+        "upperBoltDiameter": "param.upperBoltDiameter",
+        "upperHoleDiameter": "param.upperHoleDiameter",
+        "upperBoltEdgeClear": "param.upperBoltEdgeClear",
+        "lowerBoltCountX": "param.lowerBoltCountX",
+        "lowerBoltCountY": "param.lowerBoltCountY",
+        "lowerBoltPitchX": "param.lowerBoltPitchX",
+        "lowerBoltPitchY": "param.lowerBoltPitchY",
+        "lowerBoltDiameter": "param.lowerBoltDiameter",
+        "lowerHoleDiameter": "param.lowerHoleDiameter",
+        "lowerBoltEdgeClear": "param.lowerBoltEdgeClear",
+        "plateMaterial": "param.plateMaterial"
       }
     },
     {
@@ -59,10 +62,10 @@
       "role": "haunch_web",
       "args": {
         "frame": "p",
-        "haunchLength": "450",
-        "haunchDepth": "240",
-        "haunchTipDepth": "25",
-        "haunchWebThickness": "10"
+        "haunchLength": "param.haunchLength",
+        "haunchDepth": "param.haunchDepth",
+        "haunchTipDepth": "param.haunchTipDepth",
+        "haunchWebThickness": "param.haunchWebThickness"
       }
     },
     {
@@ -71,11 +74,11 @@
       "role": "haunch_lower_flange",
       "args": {
         "frame": "p",
-        "haunchLength": "450",
-        "haunchDepth": "240",
-        "haunchTipDepth": "25",
-        "haunchFlangeThickness": "10",
-        "haunchFlangeWidth": "0"
+        "haunchLength": "param.haunchLength",
+        "haunchDepth": "param.haunchDepth",
+        "haunchTipDepth": "param.haunchTipDepth",
+        "haunchFlangeThickness": "param.haunchFlangeThickness",
+        "haunchFlangeWidth": "param.haunchFlangeWidth"
       }
     },
     {
@@ -83,25 +86,25 @@
       "use": "haunch.stiffeners",
       "args": {
         "frame": "ep",
-        "haunchLength": "450",
-        "haunchDepth": "240",
-        "haunchFlangeThickness": "10",
-        "topPlateThickness": "10",
-        "stiffenerClipSize": "15",
-        "stiffenerThickness": "10",
-        "addStiffenerThickness": "10",
-        "rafterBottomStiffenerThickness": "10",
-        "comprStiffenerThickness": "10",
-        "morrisStiffenerThickness": "10",
-        "diagStiffenerThickness": "10",
-        "diagStiffenerWidth": "80",
-        "createBeamStiffener": "0",
-        "createAddStiffener": "0",
-        "createRafterBottomStiffener": "0",
-        "createComprStiffener": "0",
-        "createMorrisStiffener": "0",
-        "createDiagStiffener": "0",
-        "plateMaterial": "S235JR"
+        "haunchLength": "param.haunchLength",
+        "haunchDepth": "param.haunchDepth",
+        "haunchFlangeThickness": "param.haunchFlangeThickness",
+        "topPlateThickness": "param.topPlateThickness",
+        "stiffenerClipSize": "param.stiffenerClipSize",
+        "stiffenerThickness": "param.stiffenerThickness",
+        "addStiffenerThickness": "param.addStiffenerThickness",
+        "rafterBottomStiffenerThickness": "param.rafterBottomStiffenerThickness",
+        "comprStiffenerThickness": "param.comprStiffenerThickness",
+        "morrisStiffenerThickness": "param.morrisStiffenerThickness",
+        "diagStiffenerThickness": "param.diagStiffenerThickness",
+        "diagStiffenerWidth": "param.diagStiffenerWidth",
+        "createBeamStiffener": "param.createBeamStiffener",
+        "createAddStiffener": "param.createAddStiffener",
+        "createRafterBottomStiffener": "param.createRafterBottomStiffener",
+        "createComprStiffener": "param.createComprStiffener",
+        "createMorrisStiffener": "param.createMorrisStiffener",
+        "createDiagStiffener": "param.createDiagStiffener",
+        "plateMaterial": "param.plateMaterial"
       }
     },
     {
@@ -110,25 +113,25 @@
       "role": "haunch_bolts",
       "args": {
         "frame": "ep",
-        "upperBoltCountX": "2",
-        "upperBoltCountY": "2",
-        "upperBoltPitchX": "120",
-        "upperBoltPitchY": "80",
-        "upperBoltDiameter": "20",
-        "upperHoleDiameter": "22",
-        "upperBoltEdgeClear": "44",
-        "lowerBoltCountX": "2",
-        "lowerBoltCountY": "2",
-        "lowerBoltPitchX": "120",
-        "lowerBoltPitchY": "80",
-        "lowerBoltDiameter": "20",
-        "lowerHoleDiameter": "22",
-        "lowerBoltEdgeClear": "44",
-        "endPlateThickness": "20",
-        "gap": "0",
-        "boltEdgeLeft": "35",
-        "boltEdgeRight": "35",
-        "grade": "8.8"
+        "upperBoltCountX": "param.upperBoltCountX",
+        "upperBoltCountY": "param.upperBoltCountY",
+        "upperBoltPitchX": "param.upperBoltPitchX",
+        "upperBoltPitchY": "param.upperBoltPitchY",
+        "upperBoltDiameter": "param.upperBoltDiameter",
+        "upperHoleDiameter": "param.upperHoleDiameter",
+        "upperBoltEdgeClear": "param.upperBoltEdgeClear",
+        "lowerBoltCountX": "param.lowerBoltCountX",
+        "lowerBoltCountY": "param.lowerBoltCountY",
+        "lowerBoltPitchX": "param.lowerBoltPitchX",
+        "lowerBoltPitchY": "param.lowerBoltPitchY",
+        "lowerBoltDiameter": "param.lowerBoltDiameter",
+        "lowerHoleDiameter": "param.lowerHoleDiameter",
+        "lowerBoltEdgeClear": "param.lowerBoltEdgeClear",
+        "endPlateThickness": "param.endPlateThickness",
+        "gap": "param.gap",
+        "boltEdgeLeft": "param.boltEdgeLeft",
+        "boltEdgeRight": "param.boltEdgeRight",
+        "grade": "param.grade"
       }
     },
     {
@@ -136,9 +139,9 @@
       "use": "haunch.welds",
       "args": {
         "frame": "ep",
-        "weldSize": "6",
-        "topPlateThickness": "10",
-        "createWelds": "1"
+        "weldSize": "param.weldSize",
+        "topPlateThickness": "param.topPlateThickness",
+        "createWelds": "param.createWelds"
       }
     }
   ]

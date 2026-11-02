@@ -87,6 +87,16 @@ if(MM_CONTRACT_BUILD_TESTS)
         MM_CONTRACT_GOLDEN_DIR="${MM_ROOT}/tests/golden")
     add_test(NAME mm_contract_haunch40_equiv_test COMMAND mm_contract_haunch40_equiv_test)
 
+    # MM-5 fix (item 1): PAKET recipe.json'undan parametre akisi. Golden digest'ler
+    # DEGISMEDEN, >=5 parametre degistirildiginde recipe == generateHaunch40.
+    add_executable(mm_contract_haunch40_param_flow_test
+        ${CMAKE_CURRENT_LIST_DIR}/tests/haunch40_param_flow_test.cpp)
+    target_link_libraries(mm_contract_haunch40_param_flow_test PRIVATE mm_component_contract mm_contract_version)
+    target_compile_definitions(mm_contract_haunch40_param_flow_test PRIVATE
+        MM_CONTRACT_GOLDEN_DIR="${MM_ROOT}/tests/golden"
+        MM_PACKAGES_DIR="${CMAKE_CURRENT_LIST_DIR}/packages")
+    add_test(NAME mm_contract_haunch40_param_flow_test COMMAND mm_contract_haunch40_param_flow_test)
+
     # MM-5 — paket yukleyici testi: yerlesik typeId cakismasi, mm_end_plate_pkg
     # olarak yukleme, bozuk paket reddi, proje klasoru golgelemesi.
     add_executable(mm_contract_package_test
