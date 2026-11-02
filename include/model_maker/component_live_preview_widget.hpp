@@ -28,6 +28,12 @@ public:
     explicit ComponentLivePreviewWidget(QWidget* parent=nullptr);
 
     void setInput(ComponentInput input);
+    // MM-5 (§8.2): onizlemenin tipini belirler. Varsayilan yerlesik
+    // `tekla_haunch_40`; paketten yuklenen tipler bu setter ile baglanir.
+    // Haunch'a ozgu kaplama (callout editörleri + berkitme ghost'lari) yalniz o
+    // tip icin kurulur; diger tiplerde genel levha/bulon onizlemesi cizilir.
+    void setTypeId(std::wstring typeId);
+    const std::wstring& typeId() const noexcept { return typeId_; }
     void setParams(const std::vector<CompParam>& params);
     void setHighlightedParam(const std::wstring& name);
     void setOnEdit(std::function<void(const std::wstring&,double)> cb);
@@ -85,6 +91,8 @@ private:
         QDoubleSpinBox* spin{};
     };
     ComponentInput input_;
+    // MM-5: onizleme tipi (yerlesik varsayilan; paket tipleri setTypeId ile).
+    std::wstring typeId_{L"tekla_haunch_40"};
     GenerationPlan plan_;
     std::wstring previewWarning_; // invalid draft: show last valid geometry with a warning
     std::vector<CompParam> params_;

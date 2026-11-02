@@ -303,7 +303,28 @@ ComponentLivePreviewWidget::ComponentLivePreviewWidget(QWidget* parent)
         });
         callouts_.push_back(std::move(a));
     }
+    // MM-5 (§8.2): kaplama (callout editorleri) HAUNCH 40 semasina baglidir.
+    // Baska bir tip (paketten yuklenen komponent) icin genel onizleme cizilir:
+    // dogru plan, dogru levha/bulon, ama Haunch'a ozgu etiket/spin yok.
+    if (typeId_ != L"tekla_haunch_40") callouts_.clear();
     syncEditors();
+}
+// MM-5 (§8.2): onizleme artik tek bir typeId'ye sabit DEGIL. Haunch 40
+// varsayilan kalir (geriye donuk uyum); paket tipleri bu setter ile baglanir.
+void ComponentLivePreviewWidget::setTypeId(std::wstring typeId) {
+    if(typeId.empty() || typeId==typeId_)return;
+    typeId_=std::move(typeId);
+    if(typeId_!=L"tekla_haunch_40") {
+        // Haunch'a ozgu kaplama/ghost'lar baska tip icin anlamsiz: kapat.
+        for(auto& c:callouts_)if(c.spin)c.spin->hide();
+        callouts_.clear();
+        ghosts_.clear();
+        stiffHits_.clear();
+        activeRole_.clear();
+        highlight_.clear();
+    }
+    recompute();
+    update();
 }
 // P4: role selection drives only the current child element's editors.
 void ComponentLivePreviewWidget::selectRole(const std::string& role) {
@@ -461,7 +482,7 @@ bool ComponentLivePreviewWidget::toggleStiffenerAt(QPoint pos) {
     return true;
 }
 void ComponentLivePreviewWidget::syncEditors() {
-    const ComponentType* type=ComponentRegistry::instance().findType(L"tekla_haunch_40");
+    const ComponentType* type=ComponentRegistry::instance().findType(typeId_);
     for(auto& c:callouts_) {
         const CompParamSpec* spec=type?findParamSpec(type->params,c.name):nullptr;
         const bool integer=spec && spec->type==CompParamType::Integer;
@@ -485,7 +506,7 @@ void ComponentLivePreviewWidget::recompute() {
         update();return;
     }
     input_.params=params_;
-    GenerationPlan next=ComponentRegistry::instance().generate(L"tekla_haunch_40",input_);
+    GenerationPlan next=ComponentRegistry::instance().generate(typeId_,input_);
     if(next.ok) {
         plan_=std::move(next);
         previewWarning_.clear();
@@ -500,7 +521,7 @@ void ComponentLivePreviewWidget::recompute() {
     // Stiffeners that are OFF: generate each flag alone with the SAME draft
     // parameters so the grey ghost is the exact geometry Alt+click would add.
     ghosts_.clear();
-    if(plan_.ok && previewWarning_.empty()) {
+    if(plan_.ok && previewWarning_.empty() && typeId_==L"tekla_haunch_40") {
         for(const auto& [prefix,flag]:kStiffeners) {
             if(paramAsBool(params_,flag,false))continue;
             ComponentInput probe=input_;
@@ -510,7 +531,7 @@ void ComponentLivePreviewWidget::recompute() {
                 if(param.name==flag){param.value=true;found=true;}
             if(!found)probe.params.push_back(CompParam{flag,CompParamValue{true}});
             const GenerationPlan g=ComponentRegistry::instance().generate(
-                L"tekla_haunch_40",probe);
+                typeId_,probe);
             if(!g.ok)continue;
             for(std::size_t i=0;i<g.plates.size()&&i<g.plateKeys.size();++i)
                 if(g.plateKeys[i].compare(0,std::strlen(prefix),prefix)==0)

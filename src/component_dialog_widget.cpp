@@ -322,6 +322,9 @@ ComponentDialogWidget::ComponentDialogWidget(const ComponentDialogDefinition& de
         }
         vertical->addLayout(views);
         nativePreview_=new ComponentLivePreviewWidget(left);
+        // MM-5 (§8.2): onizleme tipi dialog tanimindan gelir; paketten yuklenen
+        // tipler Haunch 40'a sabit kalmaz.
+        nativePreview_->setTypeId(def_.typeId);
         nativePreview_->setOnEdit([this](const std::wstring& name,double value) {
             updateFormFromPreview(name,value);
         });
@@ -342,6 +345,7 @@ ComponentDialogWidget::ComponentDialogWidget(const ComponentDialogDefinition& de
               {"side","Yan"},{"top","Ust"}}) {
             auto* small=new ComponentLivePreviewWidget(left);
             small->setCompact(true);
+            small->setTypeId(def_.typeId);
             small->setFixedHeight(100);
             small->setView(view.first);
             small->setParams(current_);
