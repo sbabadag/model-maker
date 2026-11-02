@@ -1,7 +1,7 @@
 {
-  "endplate_beam_nx": "8c4fdf4e39190ee0899ca23e4c3fb573553c94fcf5866b884bd5c7ed0f707278",
-  "endplate_beam_px": "394675658cd0bd8d223d7ce54c5ceca9f0fdd28ee308fbe4f3a647b1e018bfa2",
-  "endplate_beam_py": "c81de6f0186371a3d3907078f599c49b087384d13a79c4e6a838f96ab459e99d",
-  "endplate_diff_bolts": "be56bd5c8b97e6c425771437cd10540b0dceb15e8677f2b8cde7929f55faee66",
-  "endplate_rotated_90": "f1f64d50e169341f8511e3e30c01eacb387ebc39827eb88a357050ade80e9693"
+  "endplate_beam_nx": "2efec47957e8c4c510a5da4255c9cd880922b721c3a9f0f9d2d9db4954abfedd",
+  "endplate_beam_px": "0540df88bd72d33a32639192e5c1bd096ae315992b6d9853ea877035c94d262b",
+  "endplate_beam_py": "beb88b6c1575ea464a70c1b9a9ff41675bd7d7334cbae14b299191295cea77a8",
+  "endplate_diff_bolts": "7a65b7b40dfc21646792159582ec734d3d6930bf4d61bacfe84133f3e45025f8",
+  "endplate_rotated_90": "df7c718e204a2a6c9f7fba913398fa9149a9358c65756dd4a0882f0864ffec99"
 }
