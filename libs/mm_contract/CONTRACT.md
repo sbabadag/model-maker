@@ -105,7 +105,7 @@ renklerini korur.
 
 ### Registry ve kayıt
 - `struct ComponentCatalogMeta`, `struct ComponentType`
-- `class ComponentRegistry` — tip + generator kaydı
+- `class ComponentRegistry` — tip + generator kaydı + `unregisterType` (1.7.0: paket yükleyicinin "kısmi kayıt yok" geri alması)
 - `struct ComponentChildRecord`, `struct ComponentInstanceRecord`
 - Generator'lar: `endPlateComponentType()`, `generateEndPlate()`,
   `finPlateComponentType()`, `generateFinPlate()`,
@@ -142,8 +142,11 @@ kayıpsız; digest 1e-6'ya yuvarlanmış kanonik JSON üzerinden hesaplanır.
   döngüsel let, roleKey tekilliği + tür tutarlılığı, üst sınırlar)
 - `runRecipe(recipe, specs, input)` — recipe → `GenerationPlan`; fail-closed
   (hata → `ok=false` + Türkçe mesaj)
-- v0 taşları: `frame.member_end`, `frame.offset`, `plate.rect`, `bolts.grid`,
-  `weld.fillet`, `cut.plane`, `endplate.placement`, `check`
+- v0 taşları: `frame.member_end`, `frame.offset`, `frame.rotate`, `plate.rect`,
+  `plate.polygon`, `bolts.grid`, `weld.fillet`, `cut.plane`, `endplate.placement`,
+  `check`. (`frame.rotate`, `plate.polygon`, `plate.rect.chamfers`,
+  `bolts.grid.grip/holeDepth` 1.7.0'da eklendi; gerekçe: taban levhası
+  rijitleştiricileri ve ankraj bulonları.)
 - İfade dili: `+ - * / ^`, `min max abs sqrt sin cos tan atan2 clamp if`,
   karşılaştırma, `and/or/not`, `param.*`, `main.*`, `secondary_N.*` (h,b,tw,tf,length).
   Şema/semantik: `libs/mm_contract/RECIPE.md`.

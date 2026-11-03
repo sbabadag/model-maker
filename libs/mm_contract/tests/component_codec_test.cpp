@@ -105,7 +105,7 @@ int main() {
     registerBuiltInComponents(ComponentRegistry::instance());
 
     std::printf("=== contract sürümü ===\n");
-    check(std::string(kContractVersion) == "1.6.0", "contract sürümü 1.6.0");
+    check(std::string(kContractVersion) == "1.7.0", "contract sürümü 1.7.0");
 
     std::printf("=== UTF-8 roundtrip ===\n");
     {

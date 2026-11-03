@@ -26,8 +26,8 @@ int main() {
     check(mm::kPlateGreyRgb != 0x808080u,
           "eski 0x808080 sabiti kullanilmiyor (tek deger)");
     // Sabit 1.6.0'dan itibaren public sozlesmede.
-    check(mm::kContractVersionMajor == 1 && mm::kContractVersionMinor >= 6,
-          "contract >= 1.6.0 (gorsel sabit public)");
+    check(mm::kContractVersionMajor == 1 && mm::kContractVersionMinor >= 7,
+          "contract >= 1.7.0 (gorsel sabit public)");
 
     if (failures) {
         std::printf("%d FAIL\n", failures);

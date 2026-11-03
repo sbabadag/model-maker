@@ -4,6 +4,7 @@
 // tekilligi/tur tutarliligi/rezerve, adim siniri), (4) v0 taslarinin plan
 // uretimi, (5) fail-closed check, (6) frame.offset geometrisi.
 #include "model_maker/recipe.hpp"
+#include "model_maker/component_codec.hpp"
 #include "model_maker/component_engine.hpp"
 #include "model_maker/geometry.hpp"
 #include "mm_contract/contract_version.hpp"
@@ -299,9 +300,24 @@ static void testPlateStringParams() {
     in.params.push_back(CompParam{L"plateFinish", CompParamValue{std::wstring(L"Galvaniz")}});
     in.params.push_back(CompParam{L"posNo", CompParamValue{std::wstring(L"P-101")}});
 
-    const auto runPlate = [](const ComponentInput& input, const std::string& name,
-                             const std::string& material, const std::string& finish,
-                             const std::string& posNo, std::vector<CompParamSpec> specs = {}) {
+    // Parametre SEMASI: strParamArg kullanan metin argumanlari icin parametreler
+    // semada BULUNMAK ZORUNDA (HR-7 statik denetimi). Bu, paketlerin gercek
+    // kullanimidir (parameters.json -> specs).
+    const auto textSpec = [](const wchar_t* name, const wchar_t* def) {
+        CompParamSpec s;
+        s.name = name;
+        s.type = CompParamType::String;
+        s.defString = def;
+        return s;
+    };
+    std::vector<CompParamSpec> specs{textSpec(L"plateMaterial", L"S235JR"),
+                                     textSpec(L"plateName", L""),
+                                     textSpec(L"plateFinish", L""),
+                                     textSpec(L"posNo", L"")};
+
+    const auto runPlate = [&specs](const ComponentInput& input, const std::string& name,
+                                   const std::string& material, const std::string& finish,
+                                   const std::string& posNo) {
         Recipe r;
         RecipeStep f; f.id = "f"; f.use = "frame.member_end"; f.args["member"] = S("main");
         RecipeStep p; p.id = "p"; p.use = "plate.rect"; p.role = "base_plate";
@@ -320,6 +336,7 @@ static void testPlateStringParams() {
         const GenerationPlan plan = runPlate(in, "param.plateName", "param.plateMaterial",
                                              "param.plateFinish", "param.posNo");
         CHECK(plan.ok, "plate.rect param.* : plan ok");
+        if (!plan.ok) std::printf("   hata: %ls\n", plan.error.c_str());
         CHECK(!plan.plates.empty(), "plate.rect param.* : levha uretildi");
         if (!plan.plates.empty()) {
             CHECK(plan.plates[0].name == L"Taban levhasi", "plate.rect name = param.plateName");
@@ -343,25 +360,19 @@ static void testPlateStringParams() {
 
     // 3) Girdi parametresi yoksa SEMA varsayilani kullanilir.
     {
-        std::vector<CompParamSpec> specs;
-        CompParamSpec s;
-        s.name = L"plateMaterial";
-        s.type = CompParamType::String;
-        s.defString = L"S275JR";
-        specs.push_back(s);
         ComponentInput emptyParams = in;
         emptyParams.params.clear();
-        const GenerationPlan plan = runPlate(emptyParams, "", "param.plateMaterial", "", "", specs);
+        const GenerationPlan plan = runPlate(emptyParams, "", "param.plateMaterial", "", "");
         CHECK(plan.ok, "plate.rect sema varsayilani: plan ok");
         if (!plan.plates.empty())
-            CHECK(plan.plates[0].material == L"S275JR", "plate.rect material = sema varsayilani");
+            CHECK(plan.plates[0].material == L"S235JR", "plate.rect material = sema varsayilani");
     }
 
-    // 4) Tanimsiz metin parametresi -> FAIL-CLOSED (sessiz literal yok).
+    // 4) Tanimsiz metin parametresi -> FAIL-CLOSED + DOLU mesaj (HR-7).
     {
         const GenerationPlan plan = runPlate(in, "param.yokBoyleParametre", "", "", "");
         CHECK(!plan.ok, "plate.rect tanimsiz param -> plan.ok=false");
-        CHECK(!plan.error.empty(), "plate.rect tanimsiz param -> Turkce mesaj");
+        CHECK(!plan.error.empty(), "plate.rect tanimsiz param -> Turkce mesaj DOLU");
     }
 }
 
@@ -403,6 +414,254 @@ static void testFrameRotation() {
     CHECK(same(a.axis, b.axis, 1.0), "donus: axis (kalinlik yonu) degismez");
 }
 
+// ST-4 (HR-1/3/4): frame.rotate, plate.rect pah, plate.polygon, ankraj grip/holeDepth.
+static void testSt4Stones() {
+    ComponentInput in = makeInput();
+
+    // --- HR-1 frame.rotate ---------------------------------------------------
+    const auto plateFrame = [&in](const std::string& use, const std::string& about,
+                                  const std::string& deg, int extraRotations = 0) {
+        Recipe r;
+        RecipeStep base; base.id = "base"; base.use = "frame.member_end";
+        base.args["member"] = S("main");
+        r.steps.push_back(base);
+        std::string prev = "base";
+        int idx = 0;
+        const int rotations = extraRotations > 0 ? extraRotations : 1;
+        for (int i = 0; i < rotations; ++i) {
+            RecipeStep rot;
+            rot.id = "rot" + std::to_string(idx++);
+            rot.use = use;
+            rot.args["frame"] = S(prev);
+            if (!about.empty()) rot.args["about"] = S(about);
+            if (!deg.empty()) rot.args["deg"] = S(deg);
+            r.steps.push_back(rot);
+            prev = rot.id;
+        }
+        RecipeStep p; p.id = "p"; p.use = "plate.rect"; p.role = "base_plate";
+        p.args["frame"] = S(prev);
+        p.args["w"] = S("100"); p.args["h"] = S("200"); p.args["t"] = S("12");
+        r.steps.push_back(p);
+        return runRecipe(r, {}, in);
+    };
+    {
+        const GenerationPlan flat = plateFrame("frame.rotate", "w", "0");
+        const GenerationPlan plain = plateFrame("frame.rotate", "w", "0", 0);
+        CHECK(flat.ok, "frame.rotate 0°: plan ok");
+        CHECK(!flat.plates.empty(), "frame.rotate 0°: levha uretildi");
+        CHECK(generationPlanDigest(flat) == generationPlanDigest(plain),
+              "frame.rotate 0°: kimlik donusu (digest ayni)");
+    }
+    {
+        const GenerationPlan r90 = plateFrame("frame.rotate", "w", "90");
+        CHECK(r90.ok, "frame.rotate 90° w: plan ok");
+        if (!r90.plates.empty() && !plateFrame("frame.rotate", "w", "0").plates.empty()) {
+            const PlateSpec& a = plateFrame("frame.rotate", "w", "0").plates[0];
+            const PlateSpec& b = r90.plates[0];
+            const auto near3 = [](const Vec3& x, const Vec3& y, double s = 1.0) {
+                return near(x.x, y.x * s, 1e-9) && near(x.y, y.y * s, 1e-9) &&
+                       near(x.z, y.z * s, 1e-9);
+            };
+            CHECK(near3(b.u, a.v), "frame.rotate 90° w: u' = v");
+            CHECK(near3(b.v, a.u, -1.0), "frame.rotate 90° w: v' = -u");
+            CHECK(near3(b.axis, a.axis), "frame.rotate 90° w: w (normal) degismez");
+        }
+    }
+    {
+        // 4 x 90° = 360° -> baslangica doner (1e-9).
+        const GenerationPlan rot4 = plateFrame("frame.rotate", "u", "90", 4);
+        const GenerationPlan flat = plateFrame("frame.rotate", "u", "0");
+        CHECK(rot4.ok && flat.ok, "frame.rotate 4x90° u: iki plan da ok");
+        if (!rot4.plates.empty() && !flat.plates.empty()) {
+            const PlateSpec& a = flat.plates[0];
+            const PlateSpec& b = rot4.plates[0];
+            const auto near3 = [](const Vec3& x, const Vec3& y) {
+                return near(x.x, y.x, 1e-9) && near(x.y, y.y, 1e-9) && near(x.z, y.z, 1e-9);
+            };
+            CHECK(near3(a.u, b.u) && near3(a.v, b.v) && near3(a.axis, b.axis),
+                  "frame.rotate 4x90° u: kimlige doner (1e-9)");
+        }
+    }
+    {
+        // Ortonormal + el yonu korunur: cross(u,v) hala w (ya da -w) ile ayni yonde.
+        const GenerationPlan r = plateFrame("frame.rotate", "w", "37");
+        CHECK(r.ok, "frame.rotate 37°: plan ok");
+        if (!r.plates.empty()) {
+            const PlateSpec& p = r.plates[0];
+            const double dotUV = p.u.x * p.v.x + p.u.y * p.v.y + p.u.z * p.v.z;
+            const double lenU = std::sqrt(p.u.x * p.u.x + p.u.y * p.u.y + p.u.z * p.u.z);
+            CHECK(std::fabs(dotUV) < 1e-9, "frame.rotate: u/v dik (ortonormal)");
+            CHECK(std::fabs(lenU - 1.0) < 1e-9, "frame.rotate: u birim");
+        }
+    }
+    {
+        Recipe r;
+        RecipeStep base; base.id = "base"; base.use = "frame.member_end";
+        base.args["member"] = S("main");
+        RecipeStep bad; bad.id = "bad"; bad.use = "frame.rotate";
+        bad.args["frame"] = S("base"); bad.args["about"] = S("x"); bad.args["deg"] = S("90");
+        r.steps = {base, bad};
+        const GenerationPlan plan = runRecipe(r, {}, in);
+        CHECK(!plan.ok && !plan.error.empty(), "frame.rotate: about 'x' -> fail-closed + mesaj");
+    }
+
+    // --- HR-3 plate.rect pah -------------------------------------------------
+    const auto chamferPlan = [&in](std::vector<std::string> chamfers) {
+        Recipe r;
+        RecipeStep f; f.id = "f"; f.use = "frame.member_end"; f.args["member"] = S("main");
+        RecipeStep p; p.id = "p"; p.use = "plate.rect"; p.role = "base_plate";
+        p.args["frame"] = S("f");
+        p.args["w"] = S("400"); p.args["h"] = S("400"); p.args["t"] = S("20");
+        if (!chamfers.empty()) p.args["chamfers"] = L(chamfers);
+        r.steps = {f, p};
+        return runRecipe(r, {}, in);
+    };
+    {
+        const GenerationPlan plan = chamferPlan({"2:1:30:40"});
+        CHECK(plan.ok, "plate.rect pah: plan ok");
+        if (!plan.plates.empty()) {
+            CHECK(plan.plates[0].chamfers.size() == 1, "plate.rect pah: 1 pah");
+            if (plan.plates[0].chamfers.size() == 1) {
+                const auto& ch = plan.plates[0].chamfers[0];
+                CHECK(ch.corner == 2 && ch.type == 1, "plate.rect pah: corner 2, type 1");
+                CHECK(near(ch.h, 30.0) && near(ch.v, 40.0), "plate.rect pah: h/v bacaklari");
+            }
+        }
+    }
+    {
+        const GenerationPlan plan = chamferPlan({"1:1:20+20:25"});  // ifade: h = 40
+        CHECK(plan.ok, "plate.rect pah: ifade bacagi plan ok");
+        if (!plan.plates.empty() && plan.plates[0].chamfers.size() == 1)
+            CHECK(near(plan.plates[0].chamfers[0].h, 40.0),
+                  "plate.rect pah: ifade bacagi degerlendirildi (20+20=40)");
+    }
+    {
+        const GenerationPlan plan = chamferPlan({"2:1:500:40"});  // w=400 -> sigmaz
+        CHECK(!plan.ok, "plate.rect pah: kenari asan bacak REDDEDILIR");
+        CHECK(plan.error.find(L"asiyor") != std::wstring::npos,
+              "plate.rect pah: mesaj 'asiyor' icerir (kirpma yok)");
+    }
+    {
+        const GenerationPlan plan = chamferPlan({"0:1:250:20", "1:1:250:20"});  // 500 > 400
+        CHECK(!plan.ok, "plate.rect pah: komsu pahlar cakisirsa REDDEDILIR");
+    }
+    {
+        const GenerationPlan plan = chamferPlan({"2:1:30:40", "2:1:20:20"});
+        CHECK(!plan.ok, "plate.rect pah: ayni koseye iki pah REDDEDILIR");
+    }
+    {
+        const GenerationPlan plan = chamferPlan({"2-1-30-40"});
+        CHECK(!plan.ok, "plate.rect pah: bozuk bicim REDDEDILIR");
+    }
+
+    // --- HR-3 plate.polygon --------------------------------------------------
+    const auto polygonPlan = [&in](std::vector<std::string> pts, const std::string& t = "12") {
+        Recipe r;
+        RecipeStep f; f.id = "f"; f.use = "frame.member_end"; f.args["member"] = S("main");
+        RecipeStep p; p.id = "p"; p.use = "plate.polygon"; p.role = "stiffener";
+        p.args["frame"] = S("f"); p.args["t"] = S(t);
+        p.args["outline"] = L(pts);
+        r.steps = {f, p};
+        return runRecipe(r, {}, in);
+    };
+    {
+        const GenerationPlan plan = polygonPlan({"0,0", "main.b,0", "0,main.h"});
+        CHECK(plan.ok, "plate.polygon: ucgen plan ok");
+        if (!plan.plates.empty()) {
+            const auto& pl = plan.plates[0];
+            CHECK(pl.outline.size() == 3, "plate.polygon: 3 nokta");
+            CHECK(near(pl.outline[1].first, 300.0) && near(pl.outline[2].second, 300.0),
+                  "plate.polygon: ifade noktalari cozuldu");
+            CHECK(near(pl.thickness, 12.0), "plate.polygon: kalinlik");
+        }
+    }
+    {
+        const GenerationPlan plan = polygonPlan({"0,0", "100,0"});
+        CHECK(!plan.ok, "plate.polygon: 2 nokta REDDEDILIR");
+        CHECK(plan.error.find(L"en az 3") != std::wstring::npos,
+              "plate.polygon: 'en az 3' mesaji");
+    }
+    {
+        // Icbukey (L bicimi) -> RED.
+        const GenerationPlan plan = polygonPlan({"0,0", "100,0", "100,40", "40,40", "40,100", "0,100"});
+        CHECK(!plan.ok, "plate.polygon: icbukey kontur REDDEDILIR");
+    }
+    {
+        // Kendini kesen (papyon) -> RED.
+        const GenerationPlan plan = polygonPlan({"0,0", "100,100", "100,0", "0,100"});
+        CHECK(!plan.ok, "plate.polygon: kendini kesen kontur REDDEDILIR");
+    }
+    {
+        const GenerationPlan plan = polygonPlan({"0,0", "100,0"}, "0");
+        CHECK(!plan.ok, "plate.polygon: kalinlik 0 REDDEDILIR");
+    }
+
+    // --- HR-4 bolts.grid grip / holeDepth -----------------------------------
+    const auto boltPlan = [&in](const char* grip, const char* depth) {
+        Recipe r;
+        RecipeStep f; f.id = "f"; f.use = "frame.member_end"; f.args["member"] = S("main");
+        RecipeStep b; b.id = "b"; b.use = "bolts.grid"; b.role = "anchors";
+        b.args["frame"] = S("f");
+        b.args["nx"] = S("2"); b.args["ny"] = S("2");
+        b.args["px"] = S("150"); b.args["py"] = S("150");
+        if (grip) b.args["grip"] = S(grip);
+        if (depth) b.args["holeDepth"] = S(depth);
+        r.steps = {f, b};
+        return runRecipe(r, {}, in);
+    };
+    {
+        const GenerationPlan plan = boltPlan("300", "120");
+        CHECK(plan.ok && plan.boltGroups.size() == 1, "bolts.grid grip: plan ok");
+        if (!plan.boltGroups.empty()) {
+            CHECK(near(plan.boltGroups[0].gripLength, 300.0), "bolts.grid grip: gripLength plana girdi");
+            CHECK(near(plan.boltGroups[0].holeDepth, 120.0), "bolts.grid grip: holeDepth plana girdi");
+        }
+        const GenerationPlan plain = boltPlan(nullptr, nullptr);
+        CHECK(plain.ok && !plain.boltGroups.empty(), "bolts.grid grip: argumansiz plan ok");
+        if (!plain.boltGroups.empty()) {
+            CHECK(near(plain.boltGroups[0].gripLength, 0.0) && near(plain.boltGroups[0].holeDepth, 0.0),
+                  "bolts.grid grip: argumansiz -> 0 (mevcut davranis)");
+        }
+        CHECK(generationPlanDigest(plan) != generationPlanDigest(plain),
+              "bolts.grid grip: grip/holeDepth digest'e girer");
+    }
+    {
+        const GenerationPlan plan = boltPlan("-5", nullptr);
+        CHECK(!plan.ok, "bolts.grid grip: negatif REDDEDILIR");
+    }
+
+    // --- HR-7 statik denetim -------------------------------------------------
+    {
+        CompParamSpec g;
+        g.name = L"grade";
+        g.type = CompParamType::String;
+        g.defString = L"8.8";
+        CompParamSpec len;
+        len.name = L"boltDia";
+        len.type = CompParamType::Length;
+        len.defDouble = 20.0;
+        std::vector<CompParamSpec> specs{g, len};
+        const auto validate = [&](const char* gradeArg) {
+            Recipe r;
+            RecipeStep f; f.id = "f"; f.use = "frame.member_end"; f.args["member"] = S("main");
+            RecipeStep b; b.id = "b"; b.use = "bolts.grid"; b.role = "grp";
+            b.args["frame"] = S("f"); b.args["grade"] = S(gradeArg);
+            r.steps = {f, b};
+            return validateRecipe(r, specs);
+        };
+        const RecipeValidation unknown = validate("param.yok");
+        CHECK(!unknown.ok, "HR-7: bilinmeyen metin parametresi validate'te REDDEDILIR");
+        CHECK(unknown.message.find(L"bilinmeyen parametre") != std::wstring::npos,
+              "HR-7: 'bilinmeyen parametre' mesaji");
+        const RecipeValidation notText = validate("param.boltDia");
+        CHECK(!notText.ok, "HR-7: metin olmayan parametre REDDEDILIR");
+        CHECK(notText.message.find(L"metin parametresi degil") != std::wstring::npos,
+              "HR-7: 'metin parametresi degil' mesaji");
+        CHECK(validate("param.grade").ok, "HR-7: semadaki metin parametresi kabul");
+        CHECK(validate("8.8").ok, "HR-7: literal metin kabul (geriye uyum)");
+    }
+}
+
 static void testWhenSkips() {
     const ComponentInput in = makeInput();
     Recipe r;
@@ -416,7 +675,7 @@ static void testWhenSkips() {
 }
 
 int main() {
-    CHECK(std::string(kContractVersion) == "1.6.0", "contract surumu 1.6.0");
+    CHECK(std::string(kContractVersion) == "1.7.0", "contract surumu 1.7.0");
     testExpressionEvaluator();
     testParamAccess();
     testStaticAnalysis();
@@ -425,6 +684,7 @@ int main() {
     testFrameOffset();
     testPlateStringParams();
     testFrameRotation();
+    testSt4Stones();
     testWhenSkips();
     std::printf("recipe test: %s (%d hata)\n", failures ? "HATALI" : "OK", failures);
     return failures ? 1 : 0;

@@ -70,13 +70,19 @@ Bir çerçeve `MemberLocalFrame`'tir: `origin` + ortonormal `u`/`v`/`w`. Bloklar
 
 | Taş | Argümanlar | Çıktı |
 |---|---|---|
-| `frame.member_end` | `member` (main/secondary_N), `end` (start/end) | üye uç/baş çerçevesi (origin uçta, w üye ekseni, u/v kesit genişlik/yükseklik) |
-| `frame.offset` | `frame`, `du`, `dv`, `dw` | yerel eksenlerde ötelenmiş çerçeve |
-| `plate.rect` | `frame`, `w`, `h`, `t`, `name`, `material`, `finish`, `posNo` | `PlateSpec` (center=origin, u/v/axis=frame, genişlik/yükseklik/kalınlık) |
-| `bolts.grid` | `frame`, `nx`, `ny`, `px`, `py`, `d`, `hole`, `grade`, `through[]` | `BoltGroup` (axis=frame.w, xDir=frame.u; through = üye rolleri → parts) |
+| `frame.member_end` | `member` (main/secondary_N), `end` (start/end) | üye uç/baş çerçevesi (origin uçta, w üye ekseni, u/v kesit genişlik/yükseklik — `profileRotation` DAHİL, `memberSectionFrame`) |
+| `frame.offset` | `frame`, `du`, `dv`, `dw` | yerel eksenlerde ötelenmiş çerçeve (eksenler değişmez) |
+| `frame.rotate` | `frame`, `about` (`u`/`v`/`w`, varsayılan `w`), `deg` | çerçeveyi kendi ekseni etrafında döndürür. `u/v/w` ortonormal kalır, el yönü KORUNUR (sol elli çerçeve sağa çevrilmez). `deg=0` kimliktir (digest değişmez). |
+| `plate.rect` | `frame`, `w`, `h`, `t`, `name`, `material`, `finish`, `posNo`, `chamfers[]` | `PlateSpec` (center=origin, u/v/axis=frame, genişlik/yükseklik/kalınlık). `chamfers` = `"corner:type:h:v"` listesi (sayısal alanlar İFADE olabilir; corner 0..3, type 1..3). Bacaklar KIRPILMAZ: kenarı aşan ya da komşusuyla çakışan pah REDDEDİLİR. |
+| `plate.polygon` | `frame`, `t`, `outline[]`, `name`, `material`, `finish`, `posNo` | serbest kontur levhası: `outline` = `"u,v"` listesi (ifade olabilir), levha MERKEZİNE göre yerel koordinat. En az 3 nokta; içbükey ya da kendini kesen kontur REDDEDİLİR (yalnız dışbükey ve basit). |
+| `bolts.grid` | `frame`, `nx`, `ny`, `px`, `py`, `d`, `hole`, `grip`, `holeDepth`, `grade`, `through[]` | `BoltGroup` (axis=frame.w, xDir=frame.u; through = üye rolleri → parts). `grip`/`holeDepth` verilmezse 0 kalır = mevcut davranış (materializer bbox'tan türetir); verilirse plana ve digest'e girer (ankraj bulonu). |
 | `weld.fillet` | `roleA`, `roleB`, `size`, `double` | `WeldSpec` (üye rolü → part EntityId; levha roleKey'i → partARole/partBRole) |
 | `cut.plane` | `target` (üye rolü), `frame`, `keep` (positive/negative) | `CutModifier::PlaneCut` (hidden=true, component iç elemanı) |
 | `endplate.placement` | `main`, `beam`, `rolePlate`, `roleBolts` | mevcut `computeEndPlatePlacement`'ı SARAR; bir `PlateSpec` (rolePlate) + bir `BoltGroup` (roleBolts) üretir. Parametreleri `generateEndPlate` ile birebir aynı şekilde `input.params`'tan okur → planDigest `generateEndPlate` ile özdeş |
+
+Metin argümanları (`name`, `material`, `finish`, `posNo`, `grade`,
+Haunch `plateMaterial`): değer `param.<ad>` ise girdi parametresinden (yoksa
+şema varsayılanından) çözülür; `param.` öneki yoksa LİTERAL metindir.
 
 Not: `bolts.grid`'in `through` listesi yalnız üye rolleri (main/secondary_N)
 içerir; levhalar materialization'da parts listesinin başına eklenir (mevcut
@@ -86,7 +92,10 @@ sahiplik kuralı). `cut.plane` hedefi de yalnız üye rolü kabul eder (v0).
 
 `validateRecipe` aşağıdakileri denetler; ihlalde Türkçe hata döner:
 - Bilinmeyen blok / bilinmeyen fonksiyon.
-- Bilinmeyen parametre (`param.X` şemada yok).
+- Bilinmeyen parametre (`param.X` şemada yok) — sayısal argümanlarda ve
+  metin argümanlarında (`name`, `material`, `finish`, `posNo`, `grade`,
+  `plateMaterial`). Metin argümanı metin olmayan bir parametreye bağlanırsa
+  "metin parametresi degil" hatası verilir (HR-7).
 - Tanımsız let / döngüsel let.
 - roleKey formatı + tekilliği + tür tutarlılığı (aynı roleKey farklı türe
   bağlanamaz) + rezerve role reddi.

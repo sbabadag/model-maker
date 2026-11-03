@@ -600,6 +600,88 @@ static bool blockFrameOffset(EvalCtx& ctx, const RecipeStep& st, GenerationPlan&
     return true;
 }
 
+// HR-1 — DONDUREN TAŞ: cerceveyi kendi u/v/w ekseni etrafinda `deg` (derece) kadar
+// dondurur. u/v/w ORTONORMAL kalir; el yonu KORUNUR (sol elli cercevede u x v = -w
+// iliskisi aynen kalir — w'yi u x v'den YENIDEN HESAPLAMAYIZ).
+static bool blockFrameRotate(EvalCtx& ctx, const RecipeStep& st, GenerationPlan&) {
+    MemberLocalFrame* f = frameArg(ctx, st, "frame");
+    if (!f) return false;
+    std::string about;
+    strArg(st, "about", "w", about);
+    double deg = 0.0;
+    if (!numArg(ctx, st, "deg", 0.0, deg)) return false;
+    if (about != "u" && about != "v" && about != "w") {
+        ctx.error = wideFromUtf8("frame.rotate: about 'u', 'v' veya 'w' olmali (verilen: " +
+                                 about + ")");
+        return false;
+    }
+    const double rad = deg * kDegToRad;
+    const double c = std::cos(rad), s = std::sin(rad);
+    MemberLocalFrame out = *f;
+    if (about == "u") {
+        out.v = f->v * c + f->w * s;
+        out.w = f->w * c - f->v * s;
+    } else if (about == "v") {
+        out.w = f->w * c + f->u * s;
+        out.u = f->u * c - f->w * s;
+    } else {
+        out.u = f->u * c + f->v * s;
+        out.v = f->v * c - f->u * s;
+    }
+    // Sayisal ortonormalizasyon: u birim, v u'ya dik, w u ve v'ye dik. Handedness'e
+    // DOKUNMAYIZ: w'yi carpimla yeniden uretmek sol elli cerceveyi saga cevirirdi.
+    const auto normalizeInPlace = [](Vec3& v) {
+        const double len = std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
+        if (len > 1e-12) { v.x /= len; v.y /= len; v.z /= len; }
+    };
+    normalizeInPlace(out.u);
+    const double vu = out.v.x * out.u.x + out.v.y * out.u.y + out.v.z * out.u.z;
+    out.v = out.v - out.u * vu;
+    normalizeInPlace(out.v);
+    const double wu = out.w.x * out.u.x + out.w.y * out.u.y + out.w.z * out.u.z;
+    const double wv = out.w.x * out.v.x + out.w.y * out.v.y + out.w.z * out.v.z;
+    out.w = out.w - out.u * wu - out.v * wv;
+    normalizeInPlace(out.w);
+    ctx.frames[st.id] = out;
+    return true;
+}
+
+// KONTUR TESTLERI (plate.polygon icin): ic ice kesisme (self-intersection) ve disbukeylik.
+// Studio karari (ST-3e): icbukey ya da kendini kesen kontur REDDEDILIR.
+namespace {
+struct P2 { double u, v; };
+double cross2(const P2& a, const P2& b, const P2& c) {
+    return (b.u - a.u) * (c.v - a.v) - (b.v - a.v) * (c.u - a.u);
+}
+bool segmentsIntersect(const P2& a, const P2& b, const P2& c, const P2& d) {
+    const double d1 = cross2(c, d, a), d2 = cross2(c, d, b);
+    const double d3 = cross2(a, b, c), d4 = cross2(a, b, d);
+    return ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) &&
+           ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0));
+}
+bool isSimpleConvexPolygon(const std::vector<P2>& pts) {
+    const std::size_t n = pts.size();
+    if (n < 3) return false;
+    int sign = 0;
+    for (std::size_t i = 0; i < n; ++i) {
+        const double cr = cross2(pts[i], pts[(i + 1) % n], pts[(i + 2) % n]);
+        if (std::fabs(cr) <= 1e-9) continue;  // collinear: yok say
+        const int s = cr > 0 ? 1 : -1;
+        if (sign == 0) sign = s;
+        else if (s != sign) return false;     // icbukey
+    }
+    if (sign == 0) return false;              // dejenere (alan yok)
+    // Komsu olmayan kenarlar kesisiyor mu?
+    for (std::size_t i = 0; i < n; ++i)
+        for (std::size_t j = i + 2; j < n; ++j) {
+            if (i == 0 && j == n - 1) continue;  // komsu kenarlar
+            if (segmentsIntersect(pts[i], pts[(i + 1) % n], pts[j], pts[(j + 1) % n]))
+                return false;
+        }
+    return true;
+}
+}  // namespace
+
 static bool blockPlateRect(EvalCtx& ctx, const RecipeStep& st, GenerationPlan& plan) {
     MemberLocalFrame* f = frameArg(ctx, st, "frame");
     if (!f) return false;
@@ -615,6 +697,87 @@ static bool blockPlateRect(EvalCtx& ctx, const RecipeStep& st, GenerationPlan& p
     if (!strParamArg(ctx, st, "material", "", material)) return false;
     if (!strParamArg(ctx, st, "finish", "", finish)) return false;
     if (!strParamArg(ctx, st, "posNo", "", posNo)) return false;
+    // HR-3 — KOSE PAHLARI: `chamfers` listesi, her oge "corner:type:h:v"
+    // (sayisal alanlar IFADE olabilir, or. "2:1:t*2:30"). Bacaklar KIRPILMAZ:
+    // kenari asan pah ACIK Turkce hatayla REDDEDILIR (Studio ST-3e karari).
+    std::vector<std::string> chamferSpecs;
+    if (!strListArg(ctx, st, "chamfers", chamferSpecs)) return false;
+    std::vector<PlateSpec::Chamfer> chamfers;
+    if (!chamferSpecs.empty()) {
+        if (w <= 0.0 || h <= 0.0) {
+            ctx.error = L"plate.rect: pah icin w/h pozitif olmali";
+            return false;
+        }
+        std::vector<int> cornerLegH(4, -1), cornerLegV(4, -1);
+        for (const auto& item : chamferSpecs) {
+            std::vector<std::string> parts;
+            std::size_t start = 0;
+            while (true) {
+                const std::size_t pos = item.find(':', start);
+                parts.push_back(item.substr(start, pos == std::string::npos ? pos : pos - start));
+                if (pos == std::string::npos) break;
+                start = pos + 1;
+            }
+            if (parts.size() != 4) {
+                ctx.error = wideFromUtf8("plate.rect: pah bicimi 'corner:type:h:v' olmali: " + item);
+                return false;
+            }
+            double cv = 0.0;
+            if (!evaluateExpr(ctx, parts[0], cv)) return false;
+            const int corner = static_cast<int>(std::llround(cv));
+            if (corner < 0 || corner > 3) {
+                ctx.error = wideFromUtf8("plate.rect: pah corner 0..3 olmali: " + item);
+                return false;
+            }
+            double tv = 0.0;
+            if (!evaluateExpr(ctx, parts[1], tv)) return false;
+            const int type = static_cast<int>(std::llround(tv));
+            if (type < 1 || type > 3) {
+                ctx.error = wideFromUtf8("plate.rect: pah type 1..3 olmali: " + item);
+                return false;
+            }
+            double legH = 0.0, legV = 0.0;
+            if (!evaluateExpr(ctx, parts[2], legH)) return false;
+            if (!evaluateExpr(ctx, parts[3], legV)) return false;
+            if (!(legH > 0.0) || !(legV > 0.0)) {
+                ctx.error = wideFromUtf8("plate.rect: pah bacaklari pozitif olmali: " + item);
+                return false;
+            }
+            if (cornerLegH[corner] >= 0) {
+                ctx.error = wideFromUtf8("plate.rect: ayni koseye iki pah: " + item);
+                return false;
+            }
+            if (legH >= w - 1e-9 || legV >= h - 1e-9) {
+                std::wstring msg = L"plate.rect: pah kenari asiyor (kose " +
+                                   std::to_wstring(corner) + L", h=" + std::to_wstring(legH) +
+                                   L" w=" + std::to_wstring(w) + L", v=" + std::to_wstring(legV) +
+                                   L" h=" + std::to_wstring(h) + L"); bacaklar kirpilmaz.";
+                ctx.error = msg;
+                return false;
+            }
+            cornerLegH[corner] = static_cast<int>(std::llround(legH * 1000.0));
+            cornerLegV[corner] = static_cast<int>(std::llround(legV * 1000.0));
+            PlateSpec::Chamfer ch;
+            ch.corner = corner;
+            ch.type = type;
+            ch.h = legH;
+            ch.v = legV;
+            chamfers.push_back(ch);
+        }
+        // Ayni kenari paylasan komsu pahlar cakismamali (0-1 alt u kenari,
+        // 2-3 ust u kenari, 0-3 sol v kenari, 1-2 sag v kenari).
+        const auto sumExceeds = [](int a, int b, double limit) {
+            if (a < 0 || b < 0) return false;
+            return (static_cast<double>(a) + static_cast<double>(b)) / 1000.0 > limit - 1e-9;
+        };
+        if (sumExceeds(cornerLegH[0], cornerLegH[1], w) ||
+            sumExceeds(cornerLegH[3], cornerLegH[2], w) ||
+            sumExceeds(cornerLegV[0], cornerLegV[3], h) ||
+            sumExceeds(cornerLegV[1], cornerLegV[2], h)) {
+            ctx.error = L"plate.rect: komsu pahlarin bacaklari ayni kenarda cakisiyor";
+            return false;
+        }
+    }
     PlateSpec p;
     p.center = f->origin;
     p.u = f->u;
@@ -623,6 +786,66 @@ static bool blockPlateRect(EvalCtx& ctx, const RecipeStep& st, GenerationPlan& p
     p.width = w;
     p.height = h;
     p.thickness = t;
+    p.name = wideFromUtf8(name);
+    p.material = wideFromUtf8(material);
+    p.finish = wideFromUtf8(finish);
+    p.posNo = wideFromUtf8(posNo);
+    p.chamfers = std::move(chamfers);
+    plan.plates.push_back(p);
+    plan.plateKeys.push_back(st.role);
+    return true;
+}
+
+// HR-3 — PLATE.POLYGON: serbest kontur levhasi (ucgen/kirpik kose rijitlestirici).
+// `outline`: "u,v" ikilileri listesi, IFADE olabilir (or. ["0,0","w,0","0,h"]).
+// Kontur levha MERKEZINE gore yerel (u,v) koordinatidir. En az 3 nokta; icbukey ya da
+// kendini kesen kontur REDDEDILIR (Studio ST-3e karari).
+static bool blockPlatePolygon(EvalCtx& ctx, const RecipeStep& st, GenerationPlan& plan) {
+    MemberLocalFrame* f = frameArg(ctx, st, "frame");
+    if (!f) return false;
+    double t = 0.0;
+    if (!numArg(ctx, st, "t", 0.0, t)) return false;
+    if (!(t > 0.0)) {
+        ctx.error = L"plate.polygon: kalinlik (t) pozitif olmali";
+        return false;
+    }
+    std::string name, material, finish, posNo;
+    if (!strParamArg(ctx, st, "name", "", name)) return false;
+    if (!strParamArg(ctx, st, "material", "", material)) return false;
+    if (!strParamArg(ctx, st, "finish", "", finish)) return false;
+    if (!strParamArg(ctx, st, "posNo", "", posNo)) return false;
+    std::vector<std::string> points;
+    if (!strListArg(ctx, st, "outline", points)) return false;
+    if (points.size() < 3) {
+        ctx.error = L"plate.polygon: kontur en az 3 nokta olmali";
+        return false;
+    }
+    std::vector<P2> pts;
+    pts.reserve(points.size());
+    for (const auto& item : points) {
+        const std::size_t comma = item.find(',');
+        if (comma == std::string::npos) {
+            ctx.error = wideFromUtf8("plate.polygon: nokta bicimi 'u,v' olmali: " + item);
+            return false;
+        }
+        double pu = 0.0, pv = 0.0;
+        if (!evaluateExpr(ctx, item.substr(0, comma), pu)) return false;
+        if (!evaluateExpr(ctx, item.substr(comma + 1), pv)) return false;
+        pts.push_back({pu, pv});
+    }
+    if (!isSimpleConvexPolygon(pts)) {
+        ctx.error = L"plate.polygon: kontur icbukey ya da kendini kesiyor (disbukey ve basit olmali)";
+        return false;
+    }
+    PlateSpec p;
+    p.center = f->origin;
+    p.u = f->u;
+    p.v = f->v;
+    p.axis = f->w;
+    p.thickness = t;
+    p.outline.clear();
+    p.outline.reserve(pts.size());
+    for (const auto& q : pts) p.outline.emplace_back(q.u, q.v);
     p.name = wideFromUtf8(name);
     p.material = wideFromUtf8(material);
     p.finish = wideFromUtf8(finish);
@@ -642,6 +865,15 @@ static bool blockBoltsGrid(EvalCtx& ctx, const RecipeStep& st, GenerationPlan& p
     if (!numArg(ctx, st, "py", 0.0, py)) return false;
     if (!numArg(ctx, st, "d", 20.0, d)) return false;
     if (!numArg(ctx, st, "hole", 22.0, hole)) return false;
+    // HR-4 — ANKRAJ / GRIP: gripLength ve holeDepth recipe'den verilebilir.
+    // 0 = "verilmedi" -> mevcut davranis (materializer bbox'tan turetir).
+    double grip = 0.0, holeDepth = 0.0;
+    if (!numArg(ctx, st, "grip", 0.0, grip)) return false;
+    if (!numArg(ctx, st, "holeDepth", 0.0, holeDepth)) return false;
+    if (grip < 0.0 || holeDepth < 0.0) {
+        ctx.error = L"bolts.grid: grip/holeDepth negatif olamaz";
+        return false;
+    }
     std::vector<std::string> through;
     if (!strListArg(ctx, st, "through", through)) return false;
     std::string grade;
@@ -661,6 +893,8 @@ static bool blockBoltsGrid(EvalCtx& ctx, const RecipeStep& st, GenerationPlan& p
     b.spacingY = py;
     b.params.nominalDiameter = d;
     b.params.holeDiameter = hole;
+    b.gripLength = grip;
+    b.holeDepth = holeDepth;
     if (!grade.empty()) b.params.grade = grade;
     for (const auto& r : through) {
         const MemberGeometry* m = memberByRole(ctx.input, r);
@@ -970,14 +1204,26 @@ struct BlockDecl {
     std::vector<const char*> strArgs;   // sabit metin argumanlari
     std::vector<const char*> listArgs;  // liste argumanlari
     BlockFn fn;
+    // `param.<ad>` kabul eden METIN argumanlari (strParamArg). validateRecipe bunlari
+    // semaya karsi denetler (HR-7): parametre var olmali ve String/Material/Enum olmali.
+    std::vector<const char*> strParamArgs;
 };
 
 static const std::vector<BlockDecl>& blockRegistry() {
     static const std::vector<BlockDecl> reg = {
         {"frame.member_end", {}, {"member", "end"}, {}, &blockFrameMemberEnd},
         {"frame.offset", {"du", "dv", "dw"}, {"frame"}, {}, &blockFrameOffset},
-        {"plate.rect", {"w", "h", "t"}, {"frame", "name", "material", "finish", "posNo"}, {}, &blockPlateRect},
-        {"bolts.grid", {"nx", "ny", "px", "py", "d", "hole"}, {"frame", "grade"}, {"through"}, &blockBoltsGrid},
+        // HR-1: cerceveyi kendi ekseni etrafinda dondurur (u/v/w ortonormal kalir).
+        {"frame.rotate", {"deg"}, {"frame", "about"}, {}, &blockFrameRotate},
+        // HR-3: `chamfers` listesi ("corner:type:h:v") + metin alanlari param.* kabul eder.
+        {"plate.rect", {"w", "h", "t"}, {"frame", "name", "material", "finish", "posNo"},
+         {"chamfers"}, &blockPlateRect, {"name", "material", "finish", "posNo"}},
+        // HR-3: serbest kontur levhasi (disbukey + basit kontur sart).
+        {"plate.polygon", {"t"}, {"frame", "name", "material", "finish", "posNo"},
+         {"outline"}, &blockPlatePolygon, {"name", "material", "finish", "posNo"}},
+        // HR-4: `grip` ve `holeDepth` ankraj/grip boyunu recipe'den verir.
+        {"bolts.grid", {"nx", "ny", "px", "py", "d", "hole", "grip", "holeDepth"},
+         {"frame", "grade"}, {"through"}, &blockBoltsGrid, {"grade"}},
         {"weld.fillet", {"size"}, {"roleA", "roleB", "double", "doubleSided"}, {}, &blockWeldFillet},
         {"cut.plane", {}, {"target", "frame", "keep"}, {}, &blockCutPlane},
         {"endplate.placement", {}, {"main", "beam", "rolePlate", "roleBolts"}, {}, &blockEndPlatePlacement},
@@ -985,7 +1231,7 @@ static const std::vector<BlockDecl>& blockRegistry() {
         // "role" üretilen roleKey. frame.contact PARAMETRESİZ.
         {"frame.contact", {}, {"main", "secondary", "role"}, {}, &blockHaunchContact},
         {"frame.plumb_face", {"gap", "endPlateThickness"},
-         {"frame", "plateMaterial", "role"}, {}, &blockHaunchPlumbFace},
+         {"frame", "plateMaterial", "role"}, {}, &blockHaunchPlumbFace, {"plateMaterial"}},
         {"haunch.end_plate",
          {"haunchLength", "haunchDepth", "haunchTipDepth", "haunchWebThickness",
           "haunchFlangeThickness", "endPlateThickness", "gap", "boltEdgeLeft",
@@ -995,7 +1241,7 @@ static const std::vector<BlockDecl>& blockRegistry() {
           "upperBoltEdgeClear", "lowerBoltCountX", "lowerBoltCountY",
           "lowerBoltPitchX", "lowerBoltPitchY", "lowerBoltDiameter",
           "lowerHoleDiameter", "lowerBoltEdgeClear"},
-         {"frame", "plateMaterial", "role"}, {}, &blockHaunchEndPlate},
+         {"frame", "plateMaterial", "role"}, {}, &blockHaunchEndPlate, {"plateMaterial"}},
         {"haunch.web", {"haunchLength", "haunchDepth", "haunchTipDepth", "haunchWebThickness"},
          {"frame", "role"}, {}, &blockHaunchWeb},
         {"haunch.flange", {"haunchLength", "haunchDepth", "haunchTipDepth",
@@ -1008,14 +1254,14 @@ static const std::vector<BlockDecl>& blockRegistry() {
           "morrisStiffenerThickness", "diagStiffenerThickness", "diagStiffenerWidth",
           "createBeamStiffener", "createAddStiffener", "createRafterBottomStiffener",
           "createComprStiffener", "createMorrisStiffener", "createDiagStiffener"},
-         {"frame", "plateMaterial", "role"}, {}, &blockHaunchStiffeners},
+         {"frame", "plateMaterial", "role"}, {}, &blockHaunchStiffeners, {"plateMaterial"}},
         {"bolts.haunch_groups",
          {"upperBoltCountX", "upperBoltCountY", "upperBoltPitchX", "upperBoltPitchY",
           "upperBoltDiameter", "upperHoleDiameter", "upperBoltEdgeClear",
           "lowerBoltCountX", "lowerBoltCountY", "lowerBoltPitchX", "lowerBoltPitchY",
           "lowerBoltDiameter", "lowerHoleDiameter", "lowerBoltEdgeClear",
           "endPlateThickness", "gap", "boltEdgeLeft", "boltEdgeRight"},
-         {"frame", "grade", "role"}, {}, &blockHaunchBolts},
+         {"frame", "grade", "role"}, {}, &blockHaunchBolts, {"grade"}},
         {"haunch.welds", {"weldSize", "topPlateThickness", "createWelds"},
          {"frame", "role"}, {}, &blockHaunchWelds},
     };
@@ -1215,6 +1461,35 @@ RecipeValidation validateRecipe(const Recipe& recipe,
             const auto it = st.args.find(key);
             if (it != st.args.end() && !it->second.isList) {
                 if (!scanExpr(specs, letNames, it->second.text, r)) return r;
+            }
+        }
+        // HR-7: `param.<ad>` METIN argumanlari STATIK denetlenir — parametre semada
+        // olmali ve metin tipinde olmali. Onceden "param.yok" dogrulamadan geciyor,
+        // calisma aninda ise bos mesajli ok=false uretiyordu.
+        for (const char* key : decl->strParamArgs) {
+            const auto it = st.args.find(key);
+            if (it == st.args.end() || it->second.isList) continue;
+            static const std::string kParamPrefix = "param.";
+            if (it->second.text.rfind(kParamPrefix, 0) != 0) continue;  // literal
+            const std::wstring pname = wideFromUtf8(it->second.text.substr(kParamPrefix.size()));
+            const CompParamSpec* spec = nullptr;
+            for (const auto& s : specs)
+                if (s.name == pname) { spec = &s; break; }
+            if (!spec) {
+                r.ok = false;
+                r.message = L"recipe: " + wideFromUtf8(st.use) + L"." + wideFromUtf8(key) +
+                            L" -> bilinmeyen parametre: " + pname;
+                return r;
+            }
+            const bool isText = spec->type == CompParamType::String ||
+                                spec->type == CompParamType::Material ||
+                                spec->type == CompParamType::Enum ||
+                                spec->type == CompParamType::Profile;
+            if (!isText) {
+                r.ok = false;
+                r.message = L"recipe: " + wideFromUtf8(st.use) + L"." + wideFromUtf8(key) +
+                            L" metin parametresi degil (metin olmayan parametre): " + pname;
+                return r;
             }
         }
         if (!st.when.empty()) {
