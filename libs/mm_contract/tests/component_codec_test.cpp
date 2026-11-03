@@ -114,6 +114,51 @@ int main() {
         check(wideFromUtf8(utf8) == turkce, "wstring -> UTF-8 -> wstring birebir");
     }
 
+    std::printf("=== ComponentInput / MemberGeometry roundtrip (ST-4/3) ===\n");
+    {
+        ComponentInput in;
+        in.main.id = 7;
+        in.main.axisFrom = {1.0, 2.0, 3.0};
+        in.main.axisTo = {1.0, 2.0, 3003.0};
+        in.main.refNormal = {0.0, 0.0, 1.0};
+        in.main.secWidth = 200.0;
+        in.main.secHeight = 400.0;
+        in.main.secWebThickness = 8.6;
+        in.main.secFlangeThickness = 13.5;
+        in.main.sectionCenterOffset = -200.0;
+        in.main.profileRotation = 90.0;
+        MemberGeometry beam = in.main;
+        beam.id = 8;
+        beam.axisFrom = {1.0, 2.0, 3003.0};
+        beam.axisTo = {2003.0, 2.0, 3003.0};
+        beam.profileRotation = 0.0;
+        in.secondary.push_back(beam);
+        in.params.push_back(CompParam{L"plateMaterial", CompParamValue{std::wstring(L"S355JR")}});
+        in.params.push_back(CompParam{L"boltCountX", CompParamValue{3}});
+
+        const nlohmann::json j = componentInputToJson(in);
+        const ComponentInput back = componentInputFromJson(j);
+        check(back.main.id == in.main.id, "input codec: main.id");
+        check(back.main.axisFrom.x == 1.0 && back.main.axisFrom.y == 2.0 &&
+                  back.main.axisTo.z == 3003.0,
+              "input codec: eksen noktalari");
+        check(back.main.secWidth == 200.0 && back.main.secHeight == 400.0,
+              "input codec: kesit b/boy");
+        check(back.main.secWebThickness == 8.6 && back.main.secFlangeThickness == 13.5,
+              "input codec: tw/tf");
+        check(back.main.sectionCenterOffset == -200.0, "input codec: sectionCenterOffset");
+        check(back.main.profileRotation == 90.0, "input codec: profileRotation");
+        check(back.secondary.size() == 1 && back.secondary[0].id == 8,
+              "input codec: secondary lisde");
+        check(back.params.size() == 2, "input codec: params sayisi");
+        if (back.params.size() == 2) {
+            check(back.params[0].name == L"plateMaterial" &&
+                      std::get<std::wstring>(back.params[0].value) == L"S355JR",
+                  "input codec: string parametre");
+            check(std::get<int>(back.params[1].value) == 3, "input codec: int parametre");
+        }
+    }
+
     std::printf("=== CompParamSpec roundtrip ===\n");
     {
         std::vector<CompParamSpec> specs;

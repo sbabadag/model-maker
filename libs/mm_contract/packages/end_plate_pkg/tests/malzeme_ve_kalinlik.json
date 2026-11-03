@@ -1,0 +1,39 @@
+{
+  "name": "malzeme_ve_kalinlik",
+  "description": "plateThickness 16 + plateMaterial S355JR: parametre -> levha alanlari (malzeme metni literal 'param.x' OLMAMALI).",
+  "input": {
+    "main": {
+      "id": 1,
+      "axisFrom": [0.0, 0.0, 0.0],
+      "axisTo": [0.0, 0.0, 3000.0],
+      "refNormal": [0.0, 0.0, 1.0],
+      "secWidth": 300.0,
+      "secHeight": 300.0,
+      "secWebThickness": 11.0,
+      "secFlangeThickness": 19.0,
+      "sectionCenterOffset": 0.0,
+      "profileRotation": 0.0
+    },
+    "secondary": [
+      {
+        "id": 2,
+        "axisFrom": [0.0, 0.0, 3000.0],
+        "axisTo": [2000.0, 0.0, 3000.0],
+        "refNormal": [0.0, 0.0, 1.0],
+        "secWidth": 200.0,
+        "secHeight": 400.0,
+        "secWebThickness": 8.6,
+        "secFlangeThickness": 13.5,
+        "sectionCenterOffset": 0.0,
+        "profileRotation": 0.0
+      }
+    ],
+    "params": [
+      { "name": "plateThickness", "value": { "type": "double", "value": 16.0 } },
+      { "name": "plateMaterial", "value": { "type": "string", "value": "S355JR" } }
+    ]
+  },
+  "expect": {
+    "planDigest": "e18ec85f899535427876058cc7a79a3ae251fe9898934c34a799e057589a6205"
+  }
+}

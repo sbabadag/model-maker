@@ -1153,6 +1153,64 @@ GenerationPlan generationPlanFromJson(const nlohmann::json& j) {
 }
 
 // ============================================================================
+// MemberGeometry / ComponentInput — paket altin test GIRDISI
+// ============================================================================
+
+nlohmann::json memberGeometryToJson(const MemberGeometry& m) {
+    json j;
+    j["id"] = static_cast<std::uint64_t>(m.id);
+    j["axisFrom"] = vec3ToJson(m.axisFrom);
+    j["axisTo"] = vec3ToJson(m.axisTo);
+    j["refNormal"] = vec3ToJson(m.refNormal);
+    j["secWidth"] = m.secWidth;
+    j["secHeight"] = m.secHeight;
+    j["secWebThickness"] = m.secWebThickness;
+    j["secFlangeThickness"] = m.secFlangeThickness;
+    j["sectionCenterOffset"] = m.sectionCenterOffset;
+    j["profileRotation"] = m.profileRotation;
+    return j;
+}
+
+MemberGeometry memberGeometryFromJson(const nlohmann::json& j) {
+    MemberGeometry m;
+    if (!j.is_object()) return m;
+    m.id = entityFromJson(j.value("id", json()), kInvalidEntityId);
+    m.axisFrom = vec3FromJson(j.value("axisFrom", json::array()));
+    m.axisTo = vec3FromJson(j.value("axisTo", json::array()));
+    m.refNormal = vec3FromJson(j.value("refNormal", json::array()), Vec3{0.0, 0.0, 1.0});
+    m.secWidth = j.value("secWidth", 0.0);
+    m.secHeight = j.value("secHeight", 0.0);
+    m.secWebThickness = j.value("secWebThickness", 0.0);
+    m.secFlangeThickness = j.value("secFlangeThickness", 0.0);
+    m.sectionCenterOffset = j.value("sectionCenterOffset", 0.0);
+    m.profileRotation = j.value("profileRotation", 0.0);
+    return m;
+}
+
+nlohmann::json componentInputToJson(const ComponentInput& in) {
+    json j;
+    j["main"] = memberGeometryToJson(in.main);
+    json sec = json::array();
+    for (const auto& m : in.secondary) sec.push_back(memberGeometryToJson(m));
+    j["secondary"] = std::move(sec);
+    json params = json::array();
+    for (const auto& p : in.params) params.push_back(compParamToJsonImpl(p));
+    j["params"] = std::move(params);
+    return j;
+}
+
+ComponentInput componentInputFromJson(const nlohmann::json& j) {
+    ComponentInput in;
+    if (!j.is_object()) return in;
+    in.main = memberGeometryFromJson(j.value("main", json::object()));
+    if (j.contains("secondary") && j["secondary"].is_array())
+        for (const auto& m : j["secondary"]) in.secondary.push_back(memberGeometryFromJson(m));
+    if (j.contains("params") && j["params"].is_array())
+        for (const auto& p : j["params"]) in.params.push_back(compParamFromJsonImpl(p));
+    return in;
+}
+
+// ============================================================================
 // RECIPE (MM-5) — recipe.json <-> Recipe
 // ============================================================================
 

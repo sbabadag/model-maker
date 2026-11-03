@@ -66,6 +66,17 @@ GenerationPlan generationPlanFromJson(const nlohmann::json& j);
 nlohmann::json recipeToJson(const Recipe& r);
 Recipe recipeFromJson(const nlohmann::json& j);
 
+// --- MemberGeometry / ComponentInput (paket altin test girdisi) --------------
+// Paket icindeki tests/*.json "input" alanini tasir: uye geometrisi + parametre
+// degerleri. Yukleyici bu girdiyle recipe'yi kosup planDigest'i karsilastirir
+// (golden replay). Alan adlari ComponentInput/MemberGeometry alanlariyla ayni;
+// eksik alanlar varsayilanina duser (fail-closed dogrulama recipe/validate'de).
+nlohmann::json memberGeometryToJson(const MemberGeometry& m);
+MemberGeometry memberGeometryFromJson(const nlohmann::json& j);
+
+nlohmann::json componentInputToJson(const ComponentInput& in);
+ComponentInput componentInputFromJson(const nlohmann::json& j);
+
 // --- Kanonik JSON + digest ---------------------------------------------------
 // Bir json agacini kanonik metne cevirir: nesne anahtarlari SIRALI, sayilar
 // 1e-6'ya yuvarlanmis ve sabit bicimde (%.6f), -0 -> 0, UTF-8, LF yok (tek

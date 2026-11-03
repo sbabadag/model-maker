@@ -198,6 +198,41 @@ int main() {
               "2b ilk olcu plateThickness (kalinlik)");
     }
 
+    // 2c) ALTIN TEST DIGEST REPLAY (ST-4/3): paketteki tests/*.json "input"
+    //     alanlariyla recipe kosulur ve beklenen planDigest karsilastirilir.
+    {
+        ComponentRegistry reg;
+        registerBuiltInComponents(reg);
+        const ComponentPackageLoad r = loadComponentPackage(kPackages / "end_plate_pkg", reg);
+        bool replay = false;
+        for (const auto& w : r.warnings)
+            if (w.find(L"girdi replay edildi") != std::wstring::npos) replay = true;
+        check(r.ok && replay, "2c altin testler girdi replay edildi (planDigest eslesti)");
+    }
+
+    // 2d) BOZUK planDigest -> paket REDDEDILIR (fail-closed, sessiz gecis yok).
+    {
+        const fs::path d = root / "mm_golden_broken";
+        fs::remove_all(d, ec);
+        fs::copy(kPackages / "end_plate_pkg", d, fs::copy_options::recursive, ec);
+        check(!ec, "2d paket kopyalandi (tests dahil)");
+        json mj = json::parse(readAll(d / "manifest.json"));
+        mj["typeId"] = "mm_golden_broken";
+        writeAll(d / "manifest.json", mj.dump(2));
+        json dj = json::parse(readAll(d / "dialog.json"));
+        dj["typeId"] = "mm_golden_broken";
+        writeAll(d / "dialog.json", dj.dump(2));
+        writeChecksums(d);
+        json tj = json::parse(readAll(d / "tests" / "varsayilan.json"));
+        tj["expect"]["planDigest"] = std::string(64, 'a');
+        writeAll(d / "tests" / "varsayilan.json", tj.dump(2));
+        ComponentRegistry reg;
+        registerBuiltInComponents(reg);
+        const ComponentPackageLoad r = loadComponentPackage(d, reg);
+        check(!r.ok && r.message.find(L"digest TUTMADI") != std::wstring::npos,
+              "2d bozuk planDigest REDDEDILIR (digest TUTMADI)");
+    }
+
     // 3) Bozuk paketler YUKLENMEZ ve registry'de iz birakmaz.
     auto expectReject = [](const fs::path& dir, const wchar_t* needle, const char* label) {
         ComponentRegistry reg;

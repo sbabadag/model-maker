@@ -321,10 +321,17 @@ ComponentPackageLoad loadComponentPackage(const fs::path& dir,
         if (!rv.ok) return fail(out, L"recipe gecersiz: " + rv.message);
     }
 
-    // (7) ALTIN TESTLER — yapisal dogrulama (dosya varsa).
+    // (7) ALTIN TESTLER — yapisal dogrulama + DIGEST REPLAY.
+    //
+    // Test dosyasi bicimi (tests/<ad>.json):
+    //   { "name": "...", "input": <ComponentInput JSON>,
+    //     "expect": { "planDigest": "<sha256 hex>" } }
+    // "input" varsa recipe BU girdiyle kosulur ve planDigest karsilastirilir
+    // (golden replay). Girdi yoksa yalniz yapisal dogrulama yapilir.
     {
         const fs::path td = dir / kPackageTestsDir;
         if (fs::is_directory(td, ec)) {
+            std::size_t replayed = 0, structuralOnly = 0;
             for (const auto& e : fs::directory_iterator(td, ec)) {
                 if (!e.is_regular_file()) continue;
                 if (e.path().extension() != ".json") continue;
@@ -343,11 +350,36 @@ ComponentPackageLoad loadComponentPackage(const fs::path& dir,
                         return fail(out, L"altin test planDigest string degil: " +
                                               pathText(e.path().filename()));
                 }
+                if (!tj.contains("input")) {
+                    ++structuralOnly;
+                    continue;
+                }
+                if (!tj["input"].is_object())
+                    return fail(out, L"altin test 'input' nesne degil: " +
+                                          pathText(e.path().filename()));
+                const json& ex = tj.contains("expect") ? tj["expect"] : json::object();
+                if (!ex.contains("planDigest") || !ex["planDigest"].is_string())
+                    return fail(out, L"altin test girdi tasiyor ama planDigest yok: " +
+                                          pathText(e.path().filename()));
+                const ComponentInput in = componentInputFromJson(tj["input"]);
+                const GenerationPlan plan = runRecipe(out.recipe, specs, in);
+                if (!plan.ok)
+                    return fail(out, L"altin test kosulamadi (" +
+                                          pathText(e.path().filename()) + L"): " + plan.error);
+                const std::string want = ex["planDigest"].get<std::string>();
+                const std::string got = generationPlanDigest(plan);
+                if (want != got)
+                    return fail(out, L"altin test digest TUTMADI (" +
+                                          pathText(e.path().filename()) + L"): beklenen " +
+                                          pathText(want) + L", uretilen " + pathText(got));
+                ++replayed;
             }
-            // DIGEST REPLAY: girdi geometrisi (profil katalogu) bu katmanda yok;
-            // tam kosum Studio CI'inda ve MM-6 GUI kabulunde yapilir.
-            out.warnings.push_back(
-                L"altin testler yapisal dogrulandi (digest replay: Studio CI / MM-6)");
+            if (replayed > 0)
+                out.warnings.push_back(L"altin testler: " + std::to_wstring(replayed) +
+                                       L" girdi replay edildi (planDigest eslesti)");
+            if (structuralOnly > 0)
+                out.warnings.push_back(L"altin testler: " + std::to_wstring(structuralOnly) +
+                                       L" dosya yalniz yapisal dogrulandi (input yok)");
         }
     }
 
