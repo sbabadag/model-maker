@@ -40,8 +40,9 @@ bağımlı değildir.
 | `component_framework.hpp` | component çatı tipleri |
 | `component_catalog.hpp` | katalog tipleri |
 
-Ayrıca `libs/mm_contract/include/mm_contract/contract_version.hpp`:
-`kContractVersion*`, `mm::contractSupports()`.
+Ayrıca `libs/mm_contract/include/mm_contract/`:
+`contract_version.hpp` (`kContractVersion*`, `mm::contractSupports()`) ve
+`component_visual.hpp` (levha görünüm kuralı: `kPlateGreyRgb`).
 
 ## Anahtar PUBLIC tipler ve fonksiyonlar
 
@@ -65,7 +66,42 @@ Ayrıca `libs/mm_contract/include/mm_contract/contract_version.hpp`:
 - `struct ComponentInput` — `{main, secondary[], params[]}`
 - `struct PlateSpec` — poligon `outline`, pahlar, kalınlık, malzeme
 - `struct GenerationPlan` — `{ok, message, plates[], bolts[], cuts[], welds[],
-  roleKey'ler (plateKeys, boltKeys, ...)}`; `ok == false` ise belge değişmez
+  roleKey'ler (plateKeys, boltKeys, ...)}`; `ok == false` ise belge değişmez.
+  `checks[]` (MM-7) salt raporlama alanıdır: `{id, pass, value, limit, message}`;
+  digest'e **girmez** (digest yalnız geometri), JSON'a boşsa yazılmaz.
+
+### PlateSpec çerçevesi — el yönü ve köşe numaralama (`component_engine.hpp`)
+
+Bir levhanın çerçevesi `{center, u, v, axis}` ile verilir. Kural (bağlayıcı):
+
+1. **Genişlik `u` boyunca, yükseklik `v` boyunca** ölçülür (`width` × `height`).
+2. **Kalınlık `axis` boyunca simetriktir**: levha `center` etrafında `±t/2`
+   aralığını kaplar (extrüzyon yönü `+axis`). El yönü bu aralığı değiştirmez;
+   iki elde de aynı hacim ve aynı dünya köşe noktaları çıkar.
+3. **Köşe numaraları materializer nokta sırasına göredir**: kontur
+   `0 = (−u,−v) → 1 = (+u,−v) → 2 = (+u,+v) → 3 = (−u,+v)` sırasında, saat
+   yönünün tersi. `PlateSpec::Chamfer::corner` bu numaralandırmayı kullanır;
+   `h` bacağı `u` boyunca, `v` bacağı `v` boyunca ölçülür.
+4. **El yönü serbesttir**: `u × v = +axis` (sağ elli) zorunlu değildir; sol elli
+   çerçeve (`u × v = −axis`) de aynı formülle yorumlanır. Materializer çerçeveyi
+   "düzeltmez" (eksen takas etmez, `v` işaretini çevirmez) — yukarıdaki üç kural
+   her iki elde de aynen geçerlidir.
+
+Studio (mmcs) bu kuralı şöyle uygular: sol elli çerçevede sağ elli yerel ekseni
+`x = u`, `y = −v`, `z = axis` alınır ve pah köşesi `3 − corner` olarak yeniden
+numaralandırılır (0↔3, 1↔2). Dünya köşe noktaları Model Maker formülüyle aynıdır
+(sapma < 1e-9 mm); `generationPlanDigest` iki tarafta da aynı çıkar.
+
+Doğrulama testi: `tests/plate_frame_handedness_test.cpp` (sağ ve sol elli levha;
+köşe noktaları, kalınlık yönü ve pah köşesi).
+
+### Levha görünüm kuralı (`mm_contract/component_visual.hpp`)
+
+Levhalar (Plate) **her zaman gridir**: `kPlateGreyRgb = RGB(170,170,170)`
+(`0xAAAAAA`). Tek kaynak budur; Studio aynı sabite bağlanır. Komponent
+önizlemesi, canlı mock view ve modelde geçerlidir; seçim/hover vurgusu bu rengin
+**üstüne** çizilir (levha rengini değiştirmez). Profiller ve bulonlar mevcut
+renklerini korur.
 
 ### Registry ve kayıt
 - `struct ComponentCatalogMeta`, `struct ComponentType`
