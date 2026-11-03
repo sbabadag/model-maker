@@ -22,6 +22,7 @@
 // component_dialog_widget_test.cpp ile doğrulanır).
 
 #include "model_maker/component_dialog.hpp"
+#include "model_maker/component_preview.hpp"
 #include "model_maker/component_presets.hpp"
 
 #include <QWidget>
@@ -179,6 +180,10 @@ private:
     // kez istenirse nullptr.
     QWidget* makeBareEditor(const std::wstring& pn, QWidget* parent,
                             std::vector<std::wstring>& ungrouped);
+    // MM-6b: preview tanimi bossa duyarlilik analiziyle uretir (bir kez).
+    void ensureAutoPreviewDefinition(const ComponentInput& input);
+    // ST-4 GUI-2: "Default" kutusu isaretsizken alan gri + etikette "otomatik".
+    void applyAutoVisual(const std::wstring& name);
 
     ComponentDialogDefinition def_;       // kopya — registry ömründen bağımsız
     std::vector<CompParam> current_;
@@ -195,6 +200,13 @@ private:
     std::map<std::wstring, std::vector<std::wstring>> paramToHotspots_;
     std::map<std::wstring, int> paramTabIndex_;     // paramName -> sekme indeksi
     std::map<std::wstring, QCheckBox*> optionalChecks_;  // "Default" onay kutulari
+    // ST-4 (GUI-1): 3B onizleme duzeni artik HER tip icin; 2B sematik dugmeyle.
+    QWidget* previewPane_{};                        // 3B onizleme + ortografikler
+    QWidget* schematicHost_{};                      // sematik sarmalayici (toggle)
+    // MM-6b: semada hazir olcu tanimi yoksa otomatik uretilen tanim (onbellekli).
+    bool autoPreviewTried_{false};
+    bool autoPreviewOk_{false};
+    PreviewDefinition autoPreviewDef_;
     QTableWidget* weldTable_{};                     // kaynak tablosu (varsa)
     QDialog* weldDialog_{};                         // "Welds..." dugmesinin actigi pencere
     QCheckBox* weldsCheck_{};                       // ust cubuk: kaynaklar acik/kapali

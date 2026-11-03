@@ -9,6 +9,7 @@
 #include "model_maker/component_dialog_widget.hpp"
 #include "model_maker/component_live_preview_widget.hpp"
 #include "model_maker/component_engine.hpp"
+#include "model_maker/component_package.hpp"
 #include <QDoubleSpinBox>
 #include <QSpinBox>
 #include <QMouseEvent>
@@ -18,6 +19,7 @@
 
 #include <QAbstractSpinBox>
 #include <QApplication>
+#include <QScreen>
 #include <QImage>
 #include <QStyle>
 #include <QCheckBox>
@@ -32,6 +34,7 @@
 #include <QTableWidget>
 
 #include <cstdio>
+#include <filesystem>
 #include <cstdlib>
 
 static int failures = 0;
@@ -241,9 +244,15 @@ int main(int argc, char** argv) {
                 std::printf("  popup (%d,%d %dx%d) combo-alti (%d,%d)\n", g.x(), g.y(), g.width(), g.height(),
                             belowLeft.x(), belowLeft.y());
                 // Ekrana siginca altta; sigmazsa ustte (alt kenar = combo ustu): ikisi de "hizali".
+                // EKRAN SAGINA SIGMAYINCA x, ekranin sagina gore KIRPILIR (PopupAligner):
+                // beklenen x = min(combo x, ekran sagi - popup genisligi).
                 const QPoint topLeft = cb->mapToGlobal(QPoint(0, 0));
-                const bool below = std::abs(g.x() - belowLeft.x()) <= 2 && std::abs(g.y() - belowLeft.y()) <= 2;
-                const bool above = std::abs(g.x() - topLeft.x()) <= 2 && std::abs(g.bottom() + 1 - topLeft.y()) <= 2;
+                QScreen* scr = cb->screen() ? cb->screen() : QGuiApplication::primaryScreen();
+                const QRect avail = scr ? scr->availableGeometry() : QRect(0, 0, 1920, 1080);
+                const int xBelow = std::min(belowLeft.x(), avail.right() - g.width());
+                const int xAbove = std::min(topLeft.x(), avail.right() - g.width());
+                const bool below = std::abs(g.x() - xBelow) <= 2 && std::abs(g.y() - belowLeft.y()) <= 2;
+                const bool above = std::abs(g.x() - xAbove) <= 2 && std::abs(g.bottom() + 1 - topLeft.y()) <= 2;
                 ok = (below || above) && g.width() >= cb->width();
                 cb->hidePopup();
             }
@@ -1141,6 +1150,56 @@ int main(int argc, char** argv) {
                           main3d->previewPlan().plateKeys.size() == 6,
                       "Presets/Haunch: listeden secmek canli onizlemeyi 650 mm + berkitmeye geri getirir");
             }
+        }
+    }
+
+
+    // ST-4 (GUI-1 + GUI-2): PAKET tipi diyalogu (katalogdan acilan her tip).
+    //  (1) 3B canli onizleme + 3 ortografik gorunum VARSAYILAN (eski 2B sematik
+    //      form degil),
+    //  (2) sentinel degerler ("-1000000000", "-1 otomatik") EKRANDA GORUNMEZ;
+    //      varsayilani sentinel olan parametrede "Default" kutusu isaretsiz,
+    //      alan gri ve etikette "otomatik".
+    {
+        mm::ComponentRegistry reg;
+        mm::registerBuiltInComponents(reg);
+        const auto pkg = mm::loadComponentPackage(
+            std::filesystem::path(MM_PACKAGES_DIR) / "end_plate_pkg", reg);
+        CHECK(pkg.ok, "PKG: end_plate_pkg yuklendi (katalog tipi)");
+        if (pkg.ok) {
+            const std::vector<mm::CompParam> empty;
+            std::printf("--- ST-4 GUI: paket diyalogu (%ls) ---\n", pkg.typeId.c_str());
+            mm::ComponentDialogWidget w(pkg.dialog, empty);
+            w.resize(1100, 720);
+            w.show();
+            QApplication::processEvents();
+
+            const auto previews = w.findChildren<mm::ComponentLivePreviewWidget*>();
+            CHECK(!previews.empty(), "GUI-1: paket diyalogunda 3B canli onizleme VAR");
+            int thumbnails = 0;
+            for (auto* pv : previews)
+                if (pv->isCompact()) ++thumbnails;
+            CHECK(thumbnails == 3, "GUI-1: 3 ortografik onizleme (On/Yan/Ust) VAR");
+            auto* sch = w.findChild<mm::ComponentSchematicView*>();
+            CHECK(sch && sch->isHidden(), "GUI-1: 2B sematik varsayilan GIZLI");
+
+            // Sentinel metni hicbir yerde gorunmemeli.
+            QString allText;
+            for (auto* l : w.findChildren<QLabel*>()) allText += l->text() + QLatin1Char('\n');
+            for (auto* e : w.findChildren<QLineEdit*>()) allText += e->text() + QLatin1Char('\n');
+            for (auto* sp : w.findChildren<QAbstractSpinBox*>()) allText += sp->text() + QLatin1Char('\n');
+            CHECK(!allText.contains(QStringLiteral("1000000000")),
+                  "GUI-2: sentinel -1e9 diyalogda GOSTERILMIYOR");
+            auto* edge = w.findChild<QWidget*>(QStringLiteral("upperEdgeDistance"));
+            CHECK(edge != nullptr, "GUI-2: upperEdgeDistance editoru var");
+            CHECK(edge && !edge->isEnabled(), "GUI-2: isaretsiz Default -> alan GRI");
+            bool autoLabel = false;
+            for (auto* l : w.findChildren<QLabel*>())
+                if (l->text().contains(QStringLiteral("otomatik"))) autoLabel = true;
+            CHECK(autoLabel, "GUI-2: isaretsiz alan etiketi 'otomatik' yazar");
+            // Upper edge editoru 0 gostermeli (sentinel yerine notr deger).
+            if (auto* sp = qobject_cast<QDoubleSpinBox*>(edge))
+                CHECK(std::fabs(sp->value()) < 1e-9, "GUI-2: otomatik alanda sayi 0 (sentinel degil)");
         }
     }
 

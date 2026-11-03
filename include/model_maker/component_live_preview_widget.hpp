@@ -44,6 +44,7 @@ public:
     void setOnEdit(std::function<void(const std::wstring&,double)> cb);
     void setView(const std::string& view);  // iso/front/side/top
     void setCompact(bool compact);  // thumbnail: same plan, no editor overlay
+    bool isCompact() const { return compact_; }
     void setOnPick(std::function<void()> cb);
     // Alt+click on any stiffener (grey ghost = off, coloured = on) flips its
     // create flag. The owner mirrors it into the real form editor.

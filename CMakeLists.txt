@@ -68,6 +68,7 @@ add_library(mm_component_contract
     src/component_package.cpp
     src/component_preview.cpp
     src/component_checks.cpp
+    src/component_preview_auto.cpp
     src/recipe.cpp
 )
 target_include_directories(mm_component_contract PUBLIC include third_party ${CMAKE_CURRENT_SOURCE_DIR}/libs/mm_contract/include)
@@ -1093,6 +1094,13 @@ if(BUILD_TESTING)
         add_test(NAME model_maker_component_materializer_test COMMAND model_maker_component_materializer_test)
         # LEVHA CERCEVESI EL YONU (CONTRACT.md kurali): sag + sol elli levha,
         # kalinlik +axis, kose numaralari materializer nokta sirasina gore.
+        # ST-4 (GUI-3): modeldeki TUM Plate varliklari kPlateGreyRgb olmali
+        # (Haunch 40 govde levhasi + paket levhasi dahil). Gercek OCCT yolu.
+        add_executable(model_maker_component_plate_color_test tests/component_plate_color_test.cpp)
+        target_link_libraries(model_maker_component_plate_color_test PRIVATE model_maker_occ)
+        target_compile_definitions(model_maker_component_plate_color_test PRIVATE
+            MM_PACKAGES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/libs/mm_contract/packages")
+        add_test(NAME model_maker_component_plate_color_test COMMAND model_maker_component_plate_color_test)
         add_executable(model_maker_plate_frame_handedness_test tests/plate_frame_handedness_test.cpp)
         target_link_libraries(model_maker_plate_frame_handedness_test PRIVATE model_maker_occ)
         add_test(NAME model_maker_plate_frame_handedness_test COMMAND model_maker_plate_frame_handedness_test)
@@ -1423,8 +1431,12 @@ if(BUILD_TESTING)
             include/model_maker/component_dialog_widget.hpp
             resources/tekla146.qrc)
         target_include_directories(model_maker_component_dialog_widget_test PRIVATE include)
+        # mm_component_contract: MM-6b autoPreviewDefinition (duyarlilik analizi)
+        # widget'ta dogrudan cagriliyor; test kutuphanesi de linklemeli.
         target_link_libraries(model_maker_component_dialog_widget_test PRIVATE
-            model_maker_core Qt6::Widgets)
+            model_maker_core mm_component_contract Qt6::Widgets)
+        target_compile_definitions(model_maker_component_dialog_widget_test PRIVATE
+            MM_PACKAGES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/libs/mm_contract/packages")
         add_test(NAME model_maker_component_dialog_widget_test
                  COMMAND model_maker_component_dialog_widget_test)
 

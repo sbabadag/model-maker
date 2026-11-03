@@ -1824,11 +1824,12 @@ bool QtMainWindow::openComponentParamsDialog(const mm::ComponentInstanceRecord& 
             auto* root = new QVBoxLayout(dlg);
             auto* widget = new mm::ComponentDialogWidget(*def, rec.params, dlg);
             widget->setPresetStore(&componentPresetStore(), persistComponentPresets);
-            if(rec.typeId==L"tekla_haunch_40") {
-                if(auto source=app_.componentPreviewInput(rec.id))
-                    widget->setPreviewInput(*source);
-                dlg->resize(1140,720);
-            }
+            // ST-4 (GUI-1): 3B onizleme girdisi HER TIP icin (paket tipleri dahil).
+            // Onceden yalniz tekla_haunch_40 dalinda veriliyordu; paketten yuklenen
+            // tipler onizlemesiz/eski 2B formla aciliyordu.
+            if(auto source=app_.componentPreviewInput(rec.id))
+                widget->setPreviewInput(*source);
+            dlg->resize(1140,720);
             root->addWidget(widget);
             const QString baseTitle = QString::fromStdWString(type->displayName);
             auto curId = std::make_shared<mm::EntityId>(rec.id);
@@ -1878,10 +1879,8 @@ bool QtMainWindow::openComponentParamsDialog(const mm::ComponentInstanceRecord& 
                     return;
                 }
                 widget->setParams(targets.front().params);
-                if(targets.front().typeId==L"tekla_haunch_40") {
-                    if(auto source=app_.componentPreviewInput(targets.front().id))
-                        widget->setPreviewInput(*source);
-                }
+                if(auto source=app_.componentPreviewInput(targets.front().id))
+                    widget->setPreviewInput(*source);
                 *curId = targets.front().id;
                 retitle();
                 say(QStringLiteral("Get: bağlantı #%1 değerleri alındı")
@@ -1902,10 +1901,8 @@ bool QtMainWindow::openComponentParamsDialog(const mm::ComponentInstanceRecord& 
                 QPointer<QDialog>(dlg),
                 [this, widget, curId, retitle](const mm::ComponentInstanceRecord& r) {
                     widget->setParams(r.params);
-                    if(r.typeId==L"tekla_haunch_40") {
-                        if(auto source=app_.componentPreviewInput(r.id))
-                            widget->setPreviewInput(*source);
-                    }
+                    if(auto source=app_.componentPreviewInput(r.id))
+                        widget->setPreviewInput(*source);
                     *curId = r.id;
                     retitle();
                 }};

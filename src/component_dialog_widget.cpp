@@ -1,15 +1,27 @@
 #include "model_maker/component_dialog_widget.hpp"
 #include "model_maker/component_live_preview_widget.hpp"
 #include "model_maker/component_option_icons.hpp"
+#include "model_maker/component_preview_auto.hpp"
+#include "model_maker/component_engine.hpp"
 
 namespace {
 // MM-6 (f): opsiyonel parametrelerde SENTINEL degerler ("otomatik" = -1,
 // "tanimsiz" <= -1e8) kullaniciya GOSTERILMEZ; kutu isaretsiz + sema
 // varsayilani gosterilir. Motor zaten varsayilani uygular (davranis ayni).
-bool isSentinelOptionValue(const mm::CompParamSpec& spec, const mm::CompParamValue& v) {
-    if (!spec.optional) return false;
+bool isSentinelOptionValue(const mm::CompParamSpec& /*spec*/, const mm::CompParamValue& v) {
     if (const auto* d = std::get_if<double>(&v)) return *d == -1.0 || *d <= -1e8;
     if (const auto* i = std::get_if<int>(&v)) return *i == -1 || *i <= -100000000;
+    return false;
+}
+
+// VARSAYILANI sentinel olan parametre ("otomatik" = -1, "tanimsiz" <= -1e8):
+// semada optional isaretlenmemis olsa bile "Default" kutusu gosterilir — yoksa
+// diyalogda "-1000000000" gibi anlamsiz degerler gorunur (ST-4 GUI-2).
+bool hasSentinelDefault(const mm::CompParamSpec& spec) {
+    if (spec.type == mm::CompParamType::Length || spec.type == mm::CompParamType::Angle)
+        return spec.defDouble == -1.0 || spec.defDouble <= -1e8;
+    if (spec.type == mm::CompParamType::Integer)
+        return spec.defInt == -1 || spec.defInt <= -100000000;
     return false;
 }
 }  // namespace
@@ -310,9 +322,12 @@ ComponentDialogWidget::ComponentDialogWidget(const ComponentDialogDefinition& de
 
     schematic_ = new ComponentSchematicView(def_.schema, this);
     schematic_->setMinimumWidth(300);
-    if (def_.typeId == L"tekla_haunch_40") {
-        // Native 40's new own 3D preview is the MAIN PAGE. The standard
-        // schema-driven property editors remain authoritative on the right.
+    // ST-4 (GUI-1): 3B canli onizleme + 3 ORTOGRAFIK gorunum + olcu duzenleyicileri
+    // artik HER TIP icin VARSAYILAN. Onceden bu blok yalniz
+    // def_.typeId == "tekla_haunch_40" iken kuruluyordu; bu yuzden paketten
+    // yuklenen tipler (or. mm_end_plate_pkg) eski 2B sematik forma dusuyordu.
+    // 2B sematik varsa "Sematik" dugmesiyle acilir (cekilen tipler icin korunur).
+    {
         auto* left = new QWidget(this);
         auto* vertical = new QVBoxLayout(left);
         vertical->setContentsMargins(0,0,0,0);
@@ -360,6 +375,7 @@ ComponentDialogWidget::ComponentDialogWidget(const ComponentDialogDefinition& de
             auto* small=new ComponentLivePreviewWidget(left);
             small->setCompact(true);
             small->setTypeId(def_.typeId);
+            small->setPreviewDefinition(def_.schema.preview);
             small->setFixedHeight(100);
             small->setView(view.first);
             small->setParams(current_);
@@ -371,10 +387,32 @@ ComponentDialogWidget::ComponentDialogWidget(const ComponentDialogDefinition& de
             orthos->addWidget(small,1);
         }
         vertical->addLayout(orthos);
+        previewPane_ = left;
         root->addWidget(left, /*stretch*/ 5);
-        schematic_->hide();
-    } else {
+        // Sematik root yerlesiminde durur ama VARSAYILAN GIZLI: 3B onizleme
+        // ana sayfadir. Toggle ile gorunur/gizli olur (layout'ta oldugu icin
+        // acildiginda dogru yere oturur).
         root->addWidget(schematic_, /*stretch*/ 3);
+        schematic_->hide();
+        // 2B sematik varsa dugme: 3B onizleme <-> sematik gecisi.
+        if (!def_.schema.items.empty()) {
+            auto* schToggle = new QPushButton(QStringLiteral("Sematik"), left);
+            schToggle->setCheckable(true);
+            schToggle->setFixedWidth(70);
+            schToggle->setToolTip(QStringLiteral("2B sematik cizimi goster/gizle"));
+            views->addWidget(schToggle);
+            QObject::connect(schToggle, &QPushButton::toggled, this,
+                             [this](bool on) {
+                if (!schematic_) return;
+                if (on) {
+                    if (previewPane_) previewPane_->setVisible(false);
+                    schematic_->setVisible(true);
+                } else {
+                    schematic_->setVisible(false);
+                    if (previewPane_) previewPane_->setVisible(true);
+                }
+            });
+        }
     }
 
     scroll_ = new QScrollArea(this);
@@ -573,6 +611,10 @@ ComponentDialogWidget::ComponentDialogWidget(const ComponentDialogDefinition& de
         }
     }
     if(nativePreview_) enforceHaunchInputLimits();
+    // ST-4 GUI-2: editörler kurulduktan SONRA degerleri sema/current ile hizala.
+    // Onceden constructor setParams cagirmiyordu: taze diyalogda sentinel
+    // varsayilanlar (-1e9) editorde HAM sayi olarak gorunuyordu.
+    setParams(current_);
 }
 
 // Tek parametre satiri: [Default onay kutusu] etiket | editor.
@@ -602,12 +644,19 @@ void ComponentDialogWidget::addParamRow(QFormLayout* form, QWidget* box,
     auto* labelRow = new QHBoxLayout(labelHost);
     labelRow->setContentsMargins(0, 0, 0, 0);
     labelRow->setSpacing(4);
-    if (spec->optional) {
+    if (spec->optional || hasSentinelDefault(*spec)) {
         // Isaretli = deger kullanilir; bos = Default (motor varsayilani).
+        // ST-4 GUI-2: varsayilani sentinel olan parametrelerde (-1 "otomatik",
+        // <= -1e8 "tanimsiz") kutu OTOMATIK eklenir; isaretsizken alan gri ve
+        // etikette "otomatik" yazar — sentinel sayi KULLANICIYA GOSTERILMEZ.
         auto* cb = new QCheckBox(labelHost);
-        cb->setChecked(true);  // Tekla varsayilani: isaretli
+        // Tekla varsayilani isaretli; ancak varsayilani sentinel olan parametre
+        // ("otomatik"/"tanimsiz") ISARETSIZ baslar (ST-4 GUI-2).
+        cb->setChecked(!hasSentinelDefault(*spec));
         cb->setToolTip(QStringLiteral("Isaretsiz = Default (motor varsayilani)"));
         optionalChecks_[pn] = cb;
+        QObject::connect(cb, &QCheckBox::toggled, this,
+                         [this, pn](bool) { applyAutoVisual(pn); });
         labelRow->addWidget(cb);
         if (spec->documentedOnly) cb->setEnabled(false);  // gri alanin kutusu da gri
     }
@@ -644,6 +693,9 @@ void ComponentDialogWidget::addParamRow(QFormLayout* form, QWidget* box,
     editors_[pn] = editor;
     rows_[pn] = lbl;
     editor->installEventFilter(this);
+    // ST-4 GUI-2: baslangic gorunumu de kurala uysun (sentinel varsayilan ->
+    // alan gri + etikette "otomatik").
+    applyAutoVisual(pn);
 }
 
 // Tek parametre icin satirsiz/etiketsiz editor (parca satirlari kullanir).
@@ -1444,6 +1496,10 @@ void ComponentDialogWidget::setPreviewInput(const ComponentInput& input) {
                                     input.secondary.front().secWidth;
         }
         enforceHaunchInputLimits();
+        // MM-6b (ST-4 GUI-1): dialog.json'da hazir olcu tanimi YOKSA duyarlilik
+        // analiziyle otomatik uret (tek sefer, onbellekli). Boylece paketten
+        // yuklenen tipler de "otomatik olculer" ile acilir.
+        ensureAutoPreviewDefinition(input);
         nativePreview_->setInput(input);
         const auto params=resultParams();
         nativePreview_->setParams(params);
@@ -1453,6 +1509,58 @@ void ComponentDialogWidget::setPreviewInput(const ComponentInput& input) {
         }
     }
 }
+void ComponentDialogWidget::applyAutoVisual(const std::wstring& name) {
+    const auto it = editors_.find(name);
+    if (it == editors_.end() || !it->second) return;
+    const CompParamSpec* spec = specByName(def_.specs, name);
+    if (!spec) return;
+    const auto oc = optionalChecks_.find(name);
+    const bool autoOn = (oc != optionalChecks_.end()) && !oc->second->isChecked();
+    if (autoOn) {
+        it->second->setEnabled(false);
+        it->second->setToolTip(QStringLiteral("Otomatik: motor varsayilanini uygular"));
+    } else if (!spec->documentedOnly) {
+        it->second->setEnabled(true);
+        it->second->setToolTip(QString());
+    }
+    const auto rl = rows_.find(name);
+    if (rl != rows_.end()) {
+        if (auto* lbl = qobject_cast<QLabel*>(rl->second)) {
+            const QString base = QString::fromStdWString(
+                spec->description.empty() ? spec->name : spec->description);
+            lbl->setText(autoOn ? base + QStringLiteral(" \u2014 otomatik") : base);
+            lbl->setEnabled(!autoOn);
+        }
+    }
+}
+
+void ComponentDialogWidget::ensureAutoPreviewDefinition(const ComponentInput& input) {
+    if (!nativePreview_) return;
+    // Elle yazilmis tanim (dialog.json "preview": olcu veya toggle) varsa
+    // DOKUNMA — elle tanim otomatigi ezer (MM-6b sozlesmesi). Otomatik tanim
+    // YALNIZ hic preview tanimi olmayan tiplerde devreye girer.
+    if (!def_.schema.preview.dimensions.empty() || !def_.schema.preview.toggles.empty())
+        return;
+    if (autoPreviewTried_) {
+        if (autoPreviewOk_) {
+            nativePreview_->setPreviewDefinition(autoPreviewDef_);
+            for (auto* v : thumbnailViews_) v->setPreviewDefinition(autoPreviewDef_);
+        }
+        return;
+    }
+    autoPreviewTried_ = true;
+    autoPreviewOk_ = false;
+    const ComponentGenerator* gen = ComponentRegistry::instance().generator(def_.typeId);
+    if (!gen || gen->empty()) return;
+    const AutoPreviewResult r = autoPreviewDefinition(
+        [gen](const ComponentInput& in) { return (*gen)(in); }, input, def_.specs);
+    if (!r.ok) return;
+    autoPreviewDef_ = r.definition;
+    autoPreviewOk_ = true;
+    nativePreview_->setPreviewDefinition(autoPreviewDef_);
+    for (auto* v : thumbnailViews_) v->setPreviewDefinition(autoPreviewDef_);
+}
+
 void ComponentDialogWidget::releaseFixedPlateSizeOnEdgeEdit(
     const std::wstring& name) {
     if(def_.typeId!=L"tekla_haunch_40")return;
@@ -1702,18 +1810,33 @@ void ComponentDialogWidget::setParams(const std::vector<CompParam>& p) {
         // -1 ("otomatik", or. plateExtra) veya <= -1e8 ("tanimsiz") tasiyorsa
         // kutu ISARETSIZ gosterilir ve editor sema varsayilanini gosterir; motor
         // zaten varsayilani uygular (davranis/digest DEGISMEZ — yalniz sunum).
-        const bool sentinel = stored != nullptr && isSentinelOptionValue(spec, stored->value);
+        // ST-4 GUI-2: deger HIC yoksa (taze diyalog) ve sema varsayilani
+        // sentinel ise (-1 "otomatik", <= -1e8 "tanimsiz") alan OTOMATIK modda
+        // acilir: kutu isaretsiz, alan gri, etikette "otomatik". Boylece
+        // "-1000000000" gibi degerler kullaniciya HIC gosterilmez.
+        const bool sentinel = stored != nullptr
+                                  ? isSentinelOptionValue(spec, stored->value)
+                                  : hasSentinelDefault(spec);
         {
             QSignalBlocker guard(it->second);
-            setEditorValue(it->second, spec,
-                           (stored != nullptr && !sentinel) ? stored->value
-                                                            : paramDefaultValue(spec));
+            CompParamValue shown = (stored != nullptr && !sentinel)
+                                       ? stored->value
+                                       : paramDefaultValue(spec);
+            if (sentinel) {
+                // Otomatik modda anlamsiz sayiyi gosterme: notr deger.
+                if (spec.type == CompParamType::Length || spec.type == CompParamType::Angle)
+                    shown = CompParamValue{0.0};
+                else if (spec.type == CompParamType::Integer)
+                    shown = CompParamValue{0};
+            }
+            setEditorValue(it->second, spec, shown);
         }
         const auto oc = optionalChecks_.find(spec.name);
         if (oc != optionalChecks_.end() && oc->second->isEnabled()) {
             QSignalBlocker guard(oc->second);
-            oc->second->setChecked(stored != nullptr && !sentinel);
+            oc->second->setChecked(!sentinel);
         }
+        applyAutoVisual(spec.name);
     }
     updatePreviewFromForm();
 }
