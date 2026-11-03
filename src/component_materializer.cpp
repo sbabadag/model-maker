@@ -6,6 +6,8 @@
 #include "model_maker/cut_modifier.hpp"
 #include "model_maker/weld.hpp"
 #include "model_maker/weld_geometry.hpp"
+// Levha grisi TEK KAYNAK (contract): kPlateGreyRgb.
+#include "mm_contract/component_visual.hpp"
 
 #include <BRepBuilderAPI_MakeFace.hxx>
 #include <BRepBuilderAPI_MakePolygon.hxx>
@@ -38,7 +40,9 @@ bool axisDir(const Vec3& a, gp_Dir& out) noexcept {
 
 // Renk konvansiyonu (Tekla tarzi): levha gri, civata (bolon) kahverengi,
 // kaynak kati parlak yesil (W7: 4m kolonda 5mm kaynak uzaktan gorunur olsun).
-constexpr std::uint32_t kPlateColor = 0x808080u;  // gri
+// LEVHA GRISI ARTIK CONTRACT SABITI (tek kaynak, Studio ayni degeri kullanir):
+// kPlateGreyRgb = RGB(170,170,170). Bkz. component_visual.hpp.
+constexpr std::uint32_t kPlateColor = kPlateGreyRgb;  // gri (contract sabiti)
 constexpr std::uint32_t kBoltColor = 0x8B592Au;   // kahverengi (RGB 139,89,42)
 constexpr std::uint32_t kWeldColor = 0x00C853u;   // parlak yesil
 

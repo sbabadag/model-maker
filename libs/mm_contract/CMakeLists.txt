@@ -127,6 +127,12 @@ if(MM_CONTRACT_BUILD_TESTS)
     target_link_libraries(mm_contract_component_preview_auto_test PRIVATE mm_component_contract mm_contract_version)
     add_test(NAME mm_contract_component_preview_auto_test COMMAND mm_contract_component_preview_auto_test)
 
+    # Levha gorunum kurali (gri sabit, tek kaynak) — MM-7/ST-3 notu.
+    add_executable(mm_contract_component_visual_test
+        ${CMAKE_CURRENT_LIST_DIR}/tests/component_visual_test.cpp)
+    target_link_libraries(mm_contract_component_visual_test PRIVATE mm_component_contract mm_contract_version)
+    add_test(NAME mm_contract_component_visual_test COMMAND mm_contract_component_visual_test)
+
     # Paket uretici (parameters/dialog/manifest) — test degil, arac.
     add_executable(mm_gen_end_plate_package ${CMAKE_CURRENT_LIST_DIR}/tools/gen_end_plate_package.cpp)
     target_link_libraries(mm_gen_end_plate_package PRIVATE mm_component_contract mm_contract_version)

@@ -2,6 +2,8 @@
 #include "model_maker/bolt.hpp"
 #include "model_maker/component_engine.hpp"
 #include "model_maker/component_preview.hpp"
+// Levha grisi TEK KAYNAK (contract): kPlateGreyRgb.
+#include "mm_contract/component_visual.hpp"
 
 #include <QDoubleSpinBox>
 #include <QPainter>
@@ -122,12 +124,14 @@ const std::wstring* toggleParamFor(const std::string& role,
     return nullptr;
 }
 QColor plateColor(const std::string& role, const std::vector<EffToggle>& toggles) {
-    if (toggleParamFor(role, toggles)) return QColor("#7fc48f");
-    if (role.find("end_plate") != std::string::npos) return QColor("#7ea7c7");
-    if (role.find("web") != std::string::npos) return QColor("#b8a1d6");
-    if (role.find("flange") != std::string::npos) return QColor("#e5a461");
-    if (role.find("top_plate") != std::string::npos) return QColor("#73b6a8");
-    return QColor("#a5b5cb");
+    // LEVHA GORUNUM KURALI (kalici): levhalar HER ZAMAN gri — rol/renk ayrimi
+    // yok. Deger contract sabitinden gelir (kPlateGreyRgb = RGB 170,170,170);
+    // Studio ayni sabite bagli. Secim/hover vurgusu bu rengin USTUNE cizilir.
+    (void)role;
+    (void)toggles;
+    return QColor(static_cast<int>(mm::kPlateGreyR),
+                  static_cast<int>(mm::kPlateGreyG),
+                  static_cast<int>(mm::kPlateGreyB));
 }
 void addPrism(std::vector<Poly>& polys,
               const std::vector<Vec3>& front,const std::vector<Vec3>& back,
