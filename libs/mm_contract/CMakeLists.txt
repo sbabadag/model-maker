@@ -49,6 +49,7 @@ add_library(mm_component_contract
     ${MM_ROOT}/src/component_package.cpp
     ${MM_ROOT}/src/component_preview.cpp
     ${MM_ROOT}/src/component_checks.cpp
+    ${MM_ROOT}/src/component_preview_auto.cpp
     ${MM_ROOT}/src/recipe.cpp
 )
 target_include_directories(mm_component_contract PUBLIC ${MM_ROOT}/include ${MM_ROOT}/third_party ${CMAKE_CURRENT_LIST_DIR}/include)
@@ -119,6 +120,12 @@ if(MM_CONTRACT_BUILD_TESTS)
         ${CMAKE_CURRENT_LIST_DIR}/tests/component_checks_test.cpp)
     target_link_libraries(mm_contract_component_checks_test PRIVATE mm_component_contract mm_contract_version)
     add_test(NAME mm_contract_component_checks_test COMMAND mm_contract_component_checks_test)
+
+    # MM-6b — otomatik onizleme tanimi (duyarlilik analizi).
+    add_executable(mm_contract_component_preview_auto_test
+        ${CMAKE_CURRENT_LIST_DIR}/tests/component_preview_auto_test.cpp)
+    target_link_libraries(mm_contract_component_preview_auto_test PRIVATE mm_component_contract mm_contract_version)
+    add_test(NAME mm_contract_component_preview_auto_test COMMAND mm_contract_component_preview_auto_test)
 
     # Paket uretici (parameters/dialog/manifest) — test degil, arac.
     add_executable(mm_gen_end_plate_package ${CMAKE_CURRENT_LIST_DIR}/tools/gen_end_plate_package.cpp)
