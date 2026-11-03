@@ -323,6 +323,18 @@ bool ComponentRegistry::registerType(ComponentType type, ComponentGenerator gene
     return true;
 }
 
+// Kayit GERI ALMA (HR-10): paket yukleyici "kismi kayit yok" kuralini uygulayabilmek
+// icin tip kaydini geri alabilmeli (dialog kaydi reddedilirse). Bilinmeyen tipId -> false.
+bool ComponentRegistry::unregisterType(const std::wstring& typeId) noexcept {
+    for (auto it = entries_.begin(); it != entries_.end(); ++it) {
+        if (it->type.typeId == typeId) {
+            entries_.erase(it);
+            return true;
+        }
+    }
+    return false;
+}
+
 const ComponentType* ComponentRegistry::findType(const std::wstring& typeId) const noexcept {
     for (const auto& e : entries_)
         if (e.type.typeId == typeId) return &e.type;

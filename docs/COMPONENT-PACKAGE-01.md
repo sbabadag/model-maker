@@ -91,7 +91,19 @@ Paylaşım yöntemi:
 
 ## 4. Paket formatı (`.mmcpkg`)
 
-Klasör veya ZIP. Tüm metin dosyaları UTF-8 (BOM'suz), LF.
+Klasör biçimi (`.mmcpkg/`) NORMATİFTİR; Model Maker yükleyicisi klasör okur.
+ZIP, ambalaj olarak PLANLANMIŞTIR (HR-9) — bu sürümde uygulanmadı:
+- Tek dosya `.mmcpkg`, içinde aynı klasör düzeni (dosya baytları birebir).
+- `checksums.json` ZIP içinde de dosya baytlarını doğrular (aynı semantik).
+- Bayt-deterministik arşiv kuralı (uygulandığında): sabit sıra (manifest,
+  parameters, dialog, recipe, checksums, tests/* artan ad), sabit zaman damgası
+  (1980-01-01 00:00), sabit sıkıştırma (deflate seviye 9, ya da store), giriş
+  yollarında `../` ve mutlak yol REDDİ (zip-slip). C++ tarafı için tek dosyalık
+  `miniz` değerlendiriliyor.
+- ZIP açılana kadar yükleyici `.mmcpkg` bir DOSYA ise "paket klasoru yok" ile
+  reddeder (sessiz kabul yok).
+
+Tüm metin dosyaları UTF-8 (BOM'suz), LF.
 
 ```text
 haunch40.mmcpkg/
@@ -160,6 +172,16 @@ haunch40.mmcpkg/
 ### 4.4 Yükleme ve doğrulama (fail-closed)
 
 Sıra: checksums → manifest → contract sürümü → parameters → dialog (`validateDialogSchema`) → recipe (statik analiz, §5.5) → altın testler. **Tek bir adım başarısızsa tip kaydedilmez**; Model Maker'daki mevcut örnekler `orphan` olarak işaretlenir (mevcut davranış), veri kaybolmaz.
+
+- **`checksums.json` İSTEĞE BAĞLIDIR (HR-11 kararı):** varsa dört zorunlu dosyayı
+  kapsamak ve tutmak ZORUNDADIR (uyuşmazlık → ret); yoksa yükleme sürer ve
+  "butunluk dogrulamasi atlandi" uyarısı raporlanır. Studio her durumda yazar.
+- **Tip kaydı geri alınır (HR-10):** dialog kaydı reddedilirse `registerType` geri
+  alınır (`ComponentRegistry::unregisterType`) — "kısmi kayıt yok" kuralı geçerlidir.
+- **Checksum uyuşmazlığında teşhis:** dosyada CR baytı varsa mesaj CRLF dönüşümünü
+  (git `core.autocrlf` / `.gitattributes` kuralı) ayrıca bildirir.
+- **Altın testler (HR-8):** `tests/*.json` içinde `input` varsa recipe koşulur ve
+  `expect.planDigest` karşılaştırılır (uyuşmazlık → ret); bkz. §7.
 
 ---
 
@@ -255,27 +277,40 @@ AI recipe yazmaz; **mevcut taşlardan seçer ve parametre doldurur.** Studio'dak
 
 ## 7. Altın testler (uyum kanıtı)
 
-`tests/<ad>.json`:
+`tests/<ad>.json` — **uygulanan biçim** (Model Maker yükleyicisi bunu çalıştırır):
 
 ```json
 {
   "name": "inclined_10deg_auto_height",
-  "inputs": {
-    "main":        { "axisFrom": [0,0,0], "axisTo": [0,0,6000], "section": "HEA300", "profileRotation": 0 },
-    "secondary_0": { "axisFrom": [150,0,5800], "axisTo": [6150,0,6858], "section": "IPE300" }
+  "input": {
+    "main": {
+      "id": 1,
+      "axisFrom": [0, 0, 0], "axisTo": [0, 0, 6000],
+      "refNormal": [0, 0, 1],
+      "secWidth": 300, "secHeight": 290,
+      "secWebThickness": 8.5, "secFlangeThickness": 14,
+      "sectionCenterOffset": 0, "profileRotation": 0
+    },
+    "secondary": [ { "id": 2, "axisFrom": [150,0,5800], "axisTo": [6150,0,6858], "refNormal": [0,0,1],
+                     "secWidth": 150, "secHeight": 300, "secWebThickness": 7.1,
+                     "secFlangeThickness": 10.7, "sectionCenterOffset": 0, "profileRotation": 0 } ],
+    "params": [ { "name": "haunchLength", "value": { "type": "double", "value": 450 } } ]
   },
-  "params": { "haunchLength": 450 },
-  "expect": {
-    "ok": true,
-    "planDigest": "sha256:…",
-    "plates": { "haunch_end_plate": { "width": "<generateHaunch40 çıktısından>", "thickness": 20.0 } },
-    "tolerance_mm": 1e-6
-  }
+  "expect": { "planDigest": "0540df88bd72d33a32639192e5c1bd096ae315992b6d9853ea877035c94d262b" }
 }
 ```
 
-- `planDigest`: `GenerationPlan`'ın kanonik JSON'unun SHA-256'sı (sayılar 1e-6'ya yuvarlanmış). Studio ve Model Maker **aynı digest'i** üretmeli.
-- Model Maker yükleyicisi paketi kaydetmeden önce testleri çalıştırır; başarısızsa ret.
+- `input`: `ComponentInput`'in birebir JSON karşılığı (`componentInputToJson/FromJson`).
+  Çözülmüş kesit ölçülerini taşır; **profil kataloğu gerekmez** (deterministik).
+- `expect.planDigest`: `GenerationPlan` kanonik JSON'unun SHA-256'sı (sayılar 1e-6'ya
+  yuvarlanmış). Studio ve Model Maker **aynı digest'i** üretmeli.
+- Yükleyici `input` varsa recipe'yi bu girdiyle KOŞAR ve digest'i karşılaştırır;
+  uyuşmazlıkta paket REDDEDİLİR (`digest TUTMADI`). `input` yoksa yalnız yapısal
+  doğrulama yapılır ve bu durum uyarı olarak raporlanır.
+- Bilinmeyen ek anahtarlar yok sayılır (ör. `x-mmcs-member`), ama **oynatma için
+  `input` zorunludur**; Studio çözülmüş geometriyi `input` içine yazmalıdır.
+- Eski `inputs: {<rol>: {section: "HEA300"}}` biçimi yükleyicide ÇALIŞTIRILMAZ
+  (katalog contract'ta yok); kullanımdan kaldırılmıştır.
 
 **Haunch 40 eşdeğerlik testi (kabul kriteri):** En az şu girdilerde paket çıktısı = `generateHaunch40` çıktısı (1e-6 mm, roleKey'ler dahil):
 yatay; 5° ve 10° eğik; 90° döndürülmüş kolon; `endPlateHeight` elle verilmiş ve kolon tepesini aşan; üst/alt bulon grupları farklı.

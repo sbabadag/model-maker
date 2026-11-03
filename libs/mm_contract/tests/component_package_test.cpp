@@ -233,6 +233,75 @@ int main() {
               "2d bozuk planDigest REDDEDILIR (digest TUTMADI)");
     }
 
+    // 2e) HR-10: dialog kaydi reddedilirse TIP GERI ALINIR (kismi kayit yok).
+    {
+        const fs::path d = root / "mm_rollback_pkg";
+        fs::remove_all(d, ec);
+        fs::copy(kPackages / "end_plate_pkg", d, fs::copy_options::recursive, ec);
+        json mj = json::parse(readAll(d / "manifest.json"));
+        mj["typeId"] = "mm_rollback_pkg";
+        writeAll(d / "manifest.json", mj.dump(2));
+        json dj = json::parse(readAll(d / "dialog.json"));
+        dj["typeId"] = "mm_rollback_pkg";
+        writeAll(d / "dialog.json", dj.dump(2));
+        writeChecksums(d);
+
+        ComponentRegistry reg;
+        registerBuiltInComponents(reg);
+        ComponentDialogRegistry dialogs;
+        // Gecerli dialog tanimini once paketten al, SONRA ayni typeId icin onceden
+        // kaydet -> paketin dialog kaydi REDDEDILIR (rollback yolu).
+        {
+            ComponentRegistry scratch;
+            registerBuiltInComponents(scratch);
+            const ComponentPackageLoad pre = loadComponentPackage(d, scratch);
+            check(pre.ok, "2e on yukleme (dialog tanimi alindi)");
+            dialogs.registerDialog(pre.dialog);
+        }
+
+        const fs::path rootDir = root / "mm_rollback_root";
+        fs::remove_all(rootDir, ec);
+        fs::create_directories(rootDir, ec);
+        fs::copy(d, rootDir / "mm_rollback_pkg", fs::copy_options::recursive, ec);
+        const ComponentPackageScan scan = loadComponentPackages(reg, dialogs, {rootDir});
+        check(!scan.errors.empty(), "2e dialog cakismasi hata olarak raporlanir");
+        bool rollbackMsg = false;
+        for (const auto& e : scan.errors)
+            if (e.find(L"tip geri alindi") != std::wstring::npos) rollbackMsg = true;
+        check(rollbackMsg, "2e mesaj 'tip geri alindi' der");
+        check(reg.findType(L"mm_rollback_pkg") == nullptr,
+              "2e HR-10: dialog reddedilince TIP GERI ALINDI (registry temiz)");
+    }
+
+    // 2f) HR-11: checksum uyusmazliginda dosyada CR varsa CRLF nedeni de yazilir.
+    {
+        const fs::path d = root / "mm_crlf_pkg";
+        fs::remove_all(d, ec);
+        fs::copy(kPackages / "end_plate_pkg", d, fs::copy_options::recursive, ec);
+        json mj = json::parse(readAll(d / "manifest.json"));
+        mj["typeId"] = "mm_crlf_pkg";
+        writeAll(d / "manifest.json", mj.dump(2));
+        json dj = json::parse(readAll(d / "dialog.json"));
+        dj["typeId"] = "mm_crlf_pkg";
+        writeAll(d / "dialog.json", dj.dump(2));
+        writeChecksums(d);
+        // recipe.json'i CRLF'e cevir (checksums BAYAT kalir -> uyusmazlik + CR bayti).
+        std::string recipeText = readAll(d / "recipe.json");
+        std::string crlf;
+        for (char ch : recipeText) {
+            if (ch == '\n') crlf.push_back('\r');
+            crlf.push_back(ch);
+        }
+        writeAll(d / "recipe.json", crlf);
+        ComponentRegistry reg;
+        registerBuiltInComponents(reg);
+        const ComponentPackageLoad r = loadComponentPackage(d, reg);
+        check(!r.ok && r.message.find(L"checksum UYUSMUYOR") != std::wstring::npos,
+              "2f CRLF: checksum uyusmazligi reddedilir");
+        check(r.message.find(L"CR bayti") != std::wstring::npos,
+              "2f HR-11: mesaj CRLF nedenini de soyler");
+    }
+
     // 3) Bozuk paketler YUKLENMEZ ve registry'de iz birakmaz.
     auto expectReject = [](const fs::path& dir, const wchar_t* needle, const char* label) {
         ComponentRegistry reg;

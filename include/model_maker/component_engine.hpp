@@ -377,6 +377,8 @@ public:
     // Ayni typeId varsa REDDEDER (false); yoksa kaydeder (true). Generator
     // null olamaz.
     bool registerType(ComponentType type, ComponentGenerator generator) noexcept;
+    // Kaydi geri alir (HR-10: paket yukleyici "kismi kayit yok" kurali). Tip yoksa false.
+    bool unregisterType(const std::wstring& typeId) noexcept;
     const ComponentType* findType(const std::wstring& typeId) const noexcept;
     const ComponentGenerator* generator(const std::wstring& typeId) const noexcept;
     std::vector<std::wstring> typeIds() const noexcept;

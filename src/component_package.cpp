@@ -179,10 +179,17 @@ ComponentPackageLoad loadComponentPackage(const fs::path& dir,
                 std::string expected = it.value().get<std::string>();
                 std::transform(expected.begin(), expected.end(), expected.begin(),
                                [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-                if (actual != expected)
-                    return fail(out, L"checksum UYUSMUYOR: " + wideAscii(key) +
-                                          L" (beklenen " + wideAscii(expected.substr(0, 12)) +
-                                          L"..., gercek " + wideAscii(actual.substr(0, 12)) + L")");
+                if (actual != expected) {
+                    std::wstring msg = L"checksum UYUSMUYOR: " + wideAscii(key) +
+                                       L" (beklenen " + wideAscii(expected.substr(0, 12)) +
+                                       L"..., gercek " + wideAscii(actual.substr(0, 12)) + L")";
+                    // HR-11: en sik neden CRLF donusumu; ham "checksum uyusmuyor" mesaji
+                    // teshisi zorlastiriyordu. Dosyada CR bayti varsa NEDENI de yaz.
+                    if (bytes.find('\r') != std::string::npos)
+                        msg += L" — dosyada CR bayti var: satir sonlari CRLF'e donusmus "
+                               L"(git core.autocrlf / .gitattributes 'libs/mm_contract/packages/** -text')";
+                    return fail(out, msg);
+                }
                 covered.insert(key);
             }
             for (const auto& r : required) {
@@ -447,6 +454,9 @@ ComponentPackageScan loadComponentPackages(ComponentRegistry& registry,
                 continue;
             }
             if (!dialogs.registerDialog(std::move(res.dialog))) {
+                // "Kismi kayit yok" (component_package.hpp basligi): tip kaydi GERI
+                // ALINIR, yoksa mesaj yalan soyler ve yarim kayit kalirdi (HR-10).
+                registry.unregisterType(res.typeId);
                 report.errors.push_back(pathText(dir) +
                                         L": dialog kaydi reddedildi, tip geri alindi (" +
                                         res.typeId + L")");
