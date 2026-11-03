@@ -1091,6 +1091,11 @@ if(BUILD_TESTING)
         add_executable(model_maker_component_materializer_test tests/component_materializer_test.cpp)
         target_link_libraries(model_maker_component_materializer_test PRIVATE model_maker_occ)
         add_test(NAME model_maker_component_materializer_test COMMAND model_maker_component_materializer_test)
+        # LEVHA CERCEVESI EL YONU (CONTRACT.md kurali): sag + sol elli levha,
+        # kalinlik +axis, kose numaralari materializer nokta sirasina gore.
+        add_executable(model_maker_plate_frame_handedness_test tests/plate_frame_handedness_test.cpp)
+        target_link_libraries(model_maker_plate_frame_handedness_test PRIVATE model_maker_occ)
+        add_test(NAME model_maker_plate_frame_handedness_test COMMAND model_maker_plate_frame_handedness_test)
         # FIN PLATE UCTAN UCA (C5): registry (generateFinPlate) -> ComponentPlan
         # -> ComponentMaterializer -> Document/OCCT; recompute + undo/redo + MMW8
         # kayit/ac sonrasi roleKey->EntityId korunur. GERCEK OCCT.
