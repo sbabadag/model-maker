@@ -5848,12 +5848,69 @@ bool Application::resolveEndPlatePlacement(std::size_t mainIdx, std::size_t secI
                     trim->fixedEnd = fixedEnd;
                 }
             } else {
-                // Acik hata: paralel eksen / yuz disi / belirsiz — RASTGELE yerlestirme YOK.
-                err = contact.status == ResolutionStatus::ParallelAxis
-                          ? L"Kiris ekseni kolon yuzeyine paralel; temas cozulemedi."
-                      : contact.status == ResolutionStatus::OutsideFace
-                          ? L"Temas noktasi kolonun sonlu yuzeyinin disinda."
-                          : L"Temas yuzeyi belirsiz/gecersiz; component yerlestirilmedi.";
+                // ACIK HATA (fail-closed): RASTGELE yerlestirme YOK. Mesaj nedeni
+                // SOYLER: hangi kiris ucu, kolondaki aday yuzler + uzakliklari,
+                // en yakin yuz ve somut oneri. Turkce karakterler dogru yazilir.
+                const auto mm1 = [](double v) {
+                    return std::to_wstring(static_cast<long long>(std::llround(v)));
+                };
+                std::wstring why;
+                switch (contact.status) {
+                    case ResolutionStatus::ParallelAxis:
+                        why = L"kiriş ekseni kolon yüzeyine paralel (temas yönü yok)";
+                        break;
+                    case ResolutionStatus::OutsideFace:
+                        why = L"temas noktası kolonun sonlu yüzeyinin dışında";
+                        break;
+                    case ResolutionStatus::NoContact:
+                        why = L"kiriş ucu kolon yüzeyine değmiyor";
+                        break;
+                    case ResolutionStatus::AmbiguousFace:
+                        why = L"temas yüzeyi belirsiz (birden çok yüz eşit uzaklıkta)";
+                        break;
+                    default:
+                        why = L"temas yüzeyi çözülemedi (geometri eksik ya da dejenere)";
+                        break;
+                }
+                std::wstring msg = L"End Plate yerleştirilemedi: " + why + L".";
+                msg += L"\nKiriş ucu: (" + mm1(beamTo.x) + L", " + mm1(beamTo.y) + L", " +
+                       mm1(beamTo.z) + L") mm";
+                if (mainIdx < document_.modelBounds().size()) {
+                    const auto& cb = document_.modelBounds()[mainIdx];
+                    // 6 yuz: aday yuzun adi + kiris ucundan uzakligi (mm).
+                    struct Cand { const wchar_t* name; double d; bool vertical; };
+                    const auto gap = [](double v) { return std::max(0.0, v); };
+                    const Cand cands[6] = {
+                        {L"X−", gap(beamTo.x - cb.minimum.x), false},
+                        {L"X+", gap(cb.maximum.x - beamTo.x), false},
+                        {L"Y−", gap(beamTo.y - cb.minimum.y), false},
+                        {L"Y+", gap(cb.maximum.y - beamTo.y), false},
+                        {L"Z−", gap(beamTo.z - cb.minimum.z), true},
+                        {L"Z+", gap(cb.maximum.z - beamTo.z), true},
+                    };
+                    std::wstring candLine = L"\nKolondaki aday yüzler (uzaklık): ";
+                    int best = 0;
+                    for (int i = 0; i < 6; ++i) {
+                        if (i) candLine += L" | ";
+                        candLine += std::wstring(cands[i].name) + L" " + mm1(cands[i].d) + L" mm";
+                        if (cands[i].d < cands[best].d) best = i;
+                    }
+                    msg += candLine;
+                    msg += L"\nEn yakın yüz: " + std::wstring(cands[best].name) + L" (" +
+                           mm1(cands[best].d) + L" mm)";
+                    if (cands[best].vertical) {
+                        msg += (best == 5)
+                                   ? L" — kiriş ucu kolonun TEPESİNE oturuyor; "
+                                     L"yan başlığa temas yok."
+                                   : L" — kiriş ucu kolonun ALTINA oturuyor; "
+                                     L"yan başlığa temas yok.";
+                        msg += L"\nÖneri: köşe düğümü için Haunch (40) kullanın.";
+                    } else {
+                        msg += L"\nÖneri: kiriş ucunu kolonun yan başlığına değecek şekilde "
+                               L"taşıyın; bağlantı yine kurulamazsa Haunch (40) deneyin.";
+                    }
+                }
+                err = msg;
                 return false;
             }
         }
