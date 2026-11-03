@@ -245,6 +245,45 @@ int main() {
         check(g2.size() == 1, "facegroup: paralel ama baglantisiz ucgen ayri");
     }
 
+    // 9b) KAYNAKLI OLMAYAN (unwelded soup) mesh: ucgenler kose noktalarini
+    // AYRI kopyalar. Komsuluk KOSE KOORDINATINDAN kurulmali; indeksle
+    // kurulunca vurgu tek ucgende kaliyordu ("yuzu ucgenlere boluyor").
+    {
+        // Ayni quad, 6 ayri kose (hicbir indeks paylasilmiyor).
+        const WireframeModel soup(
+            {Vec3{0, 0, 0}, Vec3{10, 0, 0}, Vec3{10, 10, 0},
+             Vec3{0, 0, 0}, Vec3{10, 10, 0}, Vec3{0, 10, 0}},
+            {}, {Face{0, 1, 2}, Face{3, 4, 5}});
+        check(planarFaceTriangleGroup(soup, 0).size() == 2,
+              "facegroup: soup quad tek yuz olarak birlesti");
+    }
+    {
+        // Soup kutu: 6 yuz x 2 ucgen, tum koseler kopya. Bir yuz = 2 ucgen
+        // (6 degil: farkli duzlemdeki yuzler birlesmemeli).
+        const Vec3 c[8] = {{0, 0, 0}, {10, 0, 0}, {10, 10, 0}, {0, 10, 0},
+                           {0, 0, 10}, {10, 0, 10}, {10, 10, 10}, {0, 10, 10}};
+        const int quads[6][4] = {{0, 3, 2, 1}, {4, 5, 6, 7}, {0, 1, 5, 4},
+                                 {1, 2, 6, 5}, {2, 3, 7, 6}, {3, 0, 4, 7}};
+        std::vector<Vec3> verts;
+        std::vector<Face> faces;
+        for (const auto& q : quads) {
+            for (int tri = 0; tri < 2; ++tri) {
+                Face f;
+                const int idx[3] = {q[0], q[tri + 1], q[tri + 2]};
+                for (int k = 0; k < 3; ++k) {
+                    verts.push_back(c[idx[k]]);
+                    f.push_back(verts.size() - 1);
+                }
+                faces.push_back(f);
+            }
+        }
+        const WireframeModel box(std::move(verts), {}, std::move(faces));
+        check(planarFaceTriangleGroup(box, 0).size() == 2,
+              "facegroup: soup kutuda tek yuz (2 ucgen), komsu yuz sizmaz");
+        check(planarFaceTriangleGroup(box, 11).size() == 2,
+              "facegroup: soup kutunun son yuzu de birlesti");
+    }
+
     if (failures) {
         std::printf("%d FAIL\n", failures);
         return 1;

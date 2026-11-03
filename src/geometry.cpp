@@ -5,6 +5,7 @@
 #include <map>
 #include <numbers>
 #include <stdexcept>
+#include <tuple>
 #include <utility>
 
 namespace mm {
@@ -473,15 +474,34 @@ std::vector<std::size_t> planarFaceTriangleGroup(const WireframeModel& model,
         result.push_back(startTriangle);
         return result;
     }
-    // Kenar (siralanmis iki kose) -> ucgen listesi komsuluk haritasi.
-    std::map<std::pair<std::size_t, std::size_t>, std::vector<std::size_t>> edgeMap;
+    // Kenar anahtari = KOSE KOORDINATI (vertex indeksi DEGIL). Bazi uretici
+    // yollar (ice aktarma, kopru, onizleme mesh'leri) her ucgenin koselerini
+    // AYRI kopyalar (unwelded "triangle soup"); indeks komsulugu o zaman hic
+    // tutmaz ve vurgu tek ucgende kalir — kullanici bunu "yuzu ucgenlere
+    // boluyor" diye gorur. Koordinat anahtari kopyalari ayni kenara indirger.
+    using QuantKey = std::tuple<long long, long long, long long>;
+    const auto quantize = [](const Vec3& v) -> QuantKey {
+        return {std::llround(v.x * 1e5), std::llround(v.y * 1e5), std::llround(v.z * 1e5)};
+    };
+    using EdgeKey = std::pair<QuantKey, QuantKey>;
+    const auto edgeKey = [&](std::size_t a, std::size_t b) -> EdgeKey {
+        QuantKey ka = quantize(verts[a]);
+        QuantKey kb = quantize(verts[b]);
+        if (kb < ka) std::swap(ka, kb);
+        return {ka, kb};
+    };
+    // Kenar -> ucgen listesi komsuluk haritasi.
+    std::map<EdgeKey, std::vector<std::size_t>> edgeMap;
     for (std::size_t fi = 0; fi < faces.size(); ++fi) {
         const auto& f = faces[fi];
         if (f.size() < 3) continue;
+        bool valid = true;
+        for (const std::size_t vi : f)
+            if (vi >= verts.size()) { valid = false; break; }
+        if (!valid) continue;
         for (std::size_t k = 0; k < f.size(); ++k) {
-            std::size_t a = f[k], b = f[(k + 1) % f.size()];
-            if (a > b) std::swap(a, b);
-            edgeMap[{a, b}].push_back(fi);
+            const std::size_t a = f[k], b = f[(k + 1) % f.size()];
+            edgeMap[edgeKey(a, b)].push_back(fi);
         }
     }
     // Es-duzlemsel baglantili yayilim.
@@ -494,9 +514,8 @@ std::vector<std::size_t> planarFaceTriangleGroup(const WireframeModel& model,
         result.push_back(fi);
         const auto& f = faces[fi];
         for (std::size_t k = 0; k < f.size(); ++k) {
-            std::size_t a = f[k], b = f[(k + 1) % f.size()];
-            if (a > b) std::swap(a, b);
-            const auto it = edgeMap.find({a, b});
+            const std::size_t a = f[k], b = f[(k + 1) % f.size()];
+            const auto it = edgeMap.find(edgeKey(a, b));
             if (it == edgeMap.end()) continue;
             for (const std::size_t nb : it->second) {
                 if (nb == fi || visited[nb]) continue;
