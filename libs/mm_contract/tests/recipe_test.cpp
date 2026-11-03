@@ -365,6 +365,44 @@ static void testPlateStringParams() {
     }
 }
 
+// ST-4 (2): frame.member_end, uyenin kesit cercevesini profileRotation ile kurar
+// (memberSectionFrame). Donuk kolonda genislik <-> yukseklik yer degistirir;
+// eski kod profileSectionFrame kullanip donusu YOK SAYIYORDU.
+static void testFrameRotation() {
+    const auto plateOf = [](double rotationDeg) {
+        ComponentInput in = makeInput();
+        in.main.profileRotation = rotationDeg;
+        Recipe r;
+        RecipeStep f; f.id = "f"; f.use = "frame.member_end"; f.args["member"] = S("main");
+        RecipeStep p; p.id = "p"; p.use = "plate.rect"; p.role = "base_plate";
+        p.args["frame"] = S("f");
+        p.args["w"] = S("100"); p.args["h"] = S("200"); p.args["t"] = S("12");
+        r.steps = {f, p};
+        return runRecipe(r, {}, in);
+    };
+
+    const GenerationPlan flat = plateOf(0.0);
+    const GenerationPlan rot90 = plateOf(90.0);
+    CHECK(flat.ok && rot90.ok, "donuk uye: iki plan da ok");
+    CHECK(!flat.plates.empty() && !rot90.plates.empty(), "donuk uye: levha uretildi");
+    if (flat.plates.empty() || rot90.plates.empty()) return;
+
+    // 90°: u' = v, v' = -u (rotateSectionFrame semantigi).
+    const PlateSpec& a = flat.plates[0];
+    const PlateSpec& b = rot90.plates[0];
+    const auto same = [](const Vec3& x, const Vec3& y, double sign) {
+        return near(x.x, y.x * sign) && near(x.y, y.y * sign) && near(x.z, y.z * sign);
+    };
+    CHECK(same(b.u, a.v, 1.0), "90°: genislik yonu eski yukseklik yonune dondu");
+    CHECK(same(b.v, a.u, -1.0), "90°: yukseklik yonu eski genislik yonunun tersi");
+    CHECK(!same(b.u, a.u, 1.0), "90°: cerceve gercekten dondu (u ayni kalmadi)");
+    // Olcu yer degistirmez: w=100 h=200 her iki planda da ayni (donus yalniz yon).
+    CHECK(near(a.width, 100.0) && near(b.width, 100.0), "donus: width degismez");
+    CHECK(near(a.height, 200.0) && near(b.height, 200.0), "donus: height degismez");
+    // Eksen (w) ayni kalmali.
+    CHECK(same(a.axis, b.axis, 1.0), "donus: axis (kalinlik yonu) degismez");
+}
+
 static void testWhenSkips() {
     const ComponentInput in = makeInput();
     Recipe r;
@@ -386,6 +424,7 @@ int main() {
     testCheckFailClosed();
     testFrameOffset();
     testPlateStringParams();
+    testFrameRotation();
     testWhenSkips();
     std::printf("recipe test: %s (%d hata)\n", failures ? "HATALI" : "OK", failures);
     return failures ? 1 : 0;

@@ -575,8 +575,11 @@ static bool blockFrameMemberEnd(EvalCtx& ctx, const RecipeStep& st, GenerationPl
     const bool atStart = (end == "start" || end == "from");
     MemberLocalFrame f;
     f.origin = atStart ? m->axisFrom : m->axisTo;
-    // CERCEVE = uyenin KESIT cercevesi (u=genislik, v=yukseklik, w=eksen).
-    const ProfileSectionFrame pf = profileSectionFrame(dir, m->refNormal);
+    // CERCEVE = uyenin KESIT cercevesi: profileSectionFrame(donus YOK) yerine
+    // memberSectionFrame (refNormal + profileRotation). Donuk kolonda (or. 90°)
+    // genislik/yukseklik yer degistirir; eski kod donusu yok sayip taban
+    // levhasini/bulonlari yanlis yone koyuyordu.
+    const ProfileSectionFrame pf = memberSectionFrame(*m);
     f.u = pf.width;
     f.v = pf.height;
     f.w = pf.axis;
