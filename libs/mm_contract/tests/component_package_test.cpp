@@ -436,6 +436,66 @@ int main() {
               "4 kazanann proje kopyasi");
     }
 
+    // 5) ST-3g FAIL-CLOSED: okuyucunun gevsek kaldigi UC durum.
+    {
+        // (a) manifest.displayName YOK -> paket reddedilir (typeId'ye dusmez).
+        const fs::path pA = root / "fail_displayname" / "end_plate_pkg";
+        makePackageCopy(endPlatePkg, pA, "mm_fail_dn");
+        {
+            json mj = json::parse(readAll(pA / "manifest.json"));
+            mj.erase("displayName");
+            writeAll(pA / "manifest.json", mj.dump(2));
+        }
+        writeChecksums(pA);
+        ComponentRegistry reg;
+        registerBuiltInComponents(reg);
+        const ComponentPackageLoad r = loadComponentPackage(pA, reg);
+        check(!r.ok, "5a displayName yok -> RED");
+        check(r.message.find(L"displayName") != std::wstring::npos,
+              "5a ret mesaji displayName'i adlandirir");
+        if (!r.ok) std::printf("   5a mesaj: %ls\n", r.message.c_str());
+
+        // (b) recipe.json argumani BOOLEAN -> RED ("1" metnine cevirmez).
+        const fs::path pB = root / "fail_boolarg" / "end_plate_pkg";
+        makePackageCopy(endPlatePkg, pB, "mm_fail_bool");
+        {
+            json rj = json::parse(readAll(pB / "recipe.json"));
+            for (auto& step : rj["steps"]) {
+                if (step.contains("args")) {
+                    step["args"]["autoFlip"] = true;   // boolean arguman
+                    break;
+                }
+            }
+            writeAll(pB / "recipe.json", rj.dump(2));
+        }
+        writeChecksums(pB);
+        ComponentRegistry regB;
+        registerBuiltInComponents(regB);
+        const ComponentPackageLoad rb = loadComponentPackage(pB, regB);
+        check(!rb.ok, "5b boolean recipe argumani -> RED");
+        check(rb.message.find(L"BOOLEAN") != std::wstring::npos ||
+                  rb.message.find(L"boolean") != std::wstring::npos,
+              "5b ret mesaji turu adlandirir");
+        if (!rb.ok) std::printf("   5b mesaj: %ls\n", rb.message.c_str());
+
+        // (c) recipeVersion 2.0.0 -> RED (yalniz 1.x okunur).
+        const fs::path pC = root / "fail_recver" / "end_plate_pkg";
+        makePackageCopy(endPlatePkg, pC, "mm_fail_recver");
+        {
+            json rj = json::parse(readAll(pC / "recipe.json"));
+            rj["recipeVersion"] = "2.0.0";
+            writeAll(pC / "recipe.json", rj.dump(2));
+        }
+        writeChecksums(pC);
+        ComponentRegistry regC;
+        registerBuiltInComponents(regC);
+        const ComponentPackageLoad rc = loadComponentPackage(pC, regC);
+        check(!rc.ok, "5c recipeVersion 2.0.0 -> RED");
+        check(rc.message.find(L"recipeVersion") != std::wstring::npos,
+              "5c ret mesaji recipeVersion'i adlandirir");
+        if (!rc.ok) std::printf("   5c mesaj: %ls\n", rc.message.c_str());
+    }
+
     fs::remove_all(root, ec);
     std::printf("\n%d/%d checks gecti\n", checks - failures, checks);
     return failures == 0 ? 0 : 1;

@@ -16,6 +16,7 @@
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
+#include <functional>
 #include <optional>
 #include <cctype>
 #include <cstdio>
@@ -77,6 +78,70 @@ bool readJsonFile(const fs::path& p, json& out, std::wstring& err) {
         err = L"JSON ayristirilamadi (" + pathText(p.filename()) + L"): " +
               wideAscii(ex.what());
         return false;
+    }
+    return true;
+}
+
+bool parseSemver(const std::string& s, int& maj, int& min, int& patch);  // asagida
+
+// ST-3g FAIL-CLOSED: recipe.json basligi ve arguman TURLERI.
+//  - recipeVersion zorunlu, semver, major 1 olmali (2.0.0 REDDEDILIR);
+//  - arguman degeri JSON boolean olamaz: metin ifade ("2*e") ya da sayi
+//    beklenir. Onceden boolean "1" metnine cevrilip sessizce gecerdi.
+bool validateRecipeJsonHeader(const json& rj, std::wstring& err) {
+    if (!rj.is_object()) { err = L"recipe.json nesne degil"; return false; }
+    if (!rj.contains("recipeVersion") || !rj["recipeVersion"].is_string()) {
+        err = L"recipe.json recipeVersion eksik (string semver beklenir)";
+        return false;
+    }
+    const std::string ver = rj["recipeVersion"].get<std::string>();
+    int maj = 0, mnr = 0, pat = 0;
+    if (!parseSemver(ver, maj, mnr, pat)) {
+        err = L"recipe.json recipeVersion semver degil: " + wideAscii(ver);
+        return false;
+    }
+    if (maj != 1) {
+        err = L"recipe.json recipeVersion desteklenmiyor: " + wideAscii(ver) +
+              L" (bu surum yalniz 1.x recipe bicimini okur)";
+        return false;
+    }
+    if (!rj.contains("steps")) { err = L"recipe.json steps eksik"; return false; }
+    if (!rj["steps"].is_array()) { err = L"recipe.json steps dizi degil"; return false; }
+    std::size_t index = 0;
+    for (const auto& step : rj["steps"]) {
+        if (!step.is_object()) {
+            err = L"recipe.json adim " + std::to_wstring(index) + L" nesne degil";
+            return false;
+        }
+        if (step.contains("args")) {
+            if (!step["args"].is_object()) {
+                err = L"recipe.json adim " + std::to_wstring(index) + L": args nesne degil";
+                return false;
+            }
+            const std::string use = step.contains("use") && step["use"].is_string()
+                                        ? step["use"].get<std::string>() : std::string("?");
+            for (auto it = step["args"].begin(); it != step["args"].end(); ++it) {
+                // Dizi icindeki boolean'lar da ayni kurala tabidir.
+                std::function<bool(const json&, std::string&)> bad =
+                    [&](const json& v, std::string& why) -> bool {
+                    if (v.is_boolean()) { why = "boolean"; return true; }
+                    if (v.is_array())
+                        for (const auto& e : v) if (bad(e, why)) return true;
+                    if (v.is_object())
+                        for (auto i2 = v.begin(); i2 != v.end(); ++i2) if (bad(i2.value(), why)) return true;
+                    return false;
+                };
+                std::string why;
+                if (bad(it.value(), why)) {
+                    err = L"recipe.json adim " + std::to_wstring(index) + L" (" +
+                          wideAscii(use) + L") argumani '" + wideAscii(it.key()) +
+                          L"' BOOLEAN; metin ifade veya sayi beklenir "
+                          L"(true/false sessizce \"1\"/\"0\" yapilmaz)";
+                    return false;
+                }
+            }
+        }
+        ++index;
     }
     return true;
 }
@@ -219,8 +284,14 @@ ComponentPackageLoad loadComponentPackage(const fs::path& dir,
         if (mj.contains("formatVersion") && (!mj["formatVersion"].is_string() ||
                                               mj["formatVersion"].get<std::string>() != "1.0.0"))
             return fail(out, L"desteklenmeyen manifest formatVersion (beklenen 1.0.0)");
-        out.displayName = displayNameFromJson(mj.value("displayName", json()));
-        if (out.displayName.empty()) out.displayName = out.typeId;
+        // FAIL-CLOSED (ST-3g): displayName ZORUNLU. Onceden yoksa typeId'ye
+        // dusuyordu; Studio ve katalog arayuzu bos/teknik ad gosteriyordu.
+        if (!mj.contains("displayName"))
+            return fail(out, L"manifest.displayName eksik (gorunen ad zorunlu)");
+        out.displayName = displayNameFromJson(mj["displayName"]);
+        if (out.displayName.empty())
+            return fail(out, L"manifest.displayName bos ya da gecersiz "
+                             L"(string veya {\"tr\":\"...\"} beklenir)");
         out.type.typeId = out.typeId;
         out.type.displayName = out.displayName;
         out.type.schemaVersion = mj.value("schemaVersion", 1);
@@ -329,6 +400,12 @@ ComponentPackageLoad loadComponentPackage(const fs::path& dir,
         json rj;
         std::wstring err;
         if (!readJsonFile(dir / kPackageRecipeFile, rj, err)) return fail(out, err);
+        // FAIL-CLOSED (ST-3g): (1) recipeVersion 1.x olmali, (2) argumanlar
+        // metin/sayi ifade olmali — JSON boolean "1"/"0" metnine CEVİRİLMEZ.
+        {
+            std::wstring rerr;
+            if (!validateRecipeJsonHeader(rj, rerr)) return fail(out, rerr);
+        }
         out.recipe = recipeFromJson(rj);
         if (out.recipe.steps.empty())
             return fail(out, L"recipe.json: adim yok");

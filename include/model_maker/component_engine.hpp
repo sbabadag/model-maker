@@ -468,6 +468,44 @@ struct ComponentInstanceRecord {
 // --- YERLESIK BILESEN KATALOGU ----------------------------------------------
 
 ComponentType endPlateComponentType() noexcept;
+// ============================================================================
+// KANONIK UYE GEOMETRISI (contract 1.8 / ST-3g)
+//
+// Ayni FIZIKSEL uye, cagiranin hangi ucdan basladigina bakilmaksizin AYNI
+// MemberGeometry'yi uretmeli; yoksa plan geometrisi birebir ayni olsa da u/v
+// ve bulon xDir ters donuyor ve planDigest farkli cikiyordu (Studio ST-3g).
+//
+// KURALLAR (CONTRACT.md "Uye geometrisi" bolumu ile ayni):
+//  1. EKSEN YONU / BAGLANTI UCU: axisTo DAIMA baglanti ucudur, axisFrom uzak
+//     uctur. Cagiran hangi ucun baglanti oldugunu `connectionAtA` ile bildirir
+//     (A = ilk arguman). Boylece (A,B,true) ve (B,A,false) ayni sonucu verir.
+//  2. refNormal: eksene DIKILESTIRILIR (n - (n.a)a), normalize edilir; dejenere
+//     ise dunya Z, o da dejenere ise dunya X kullanilir. Sonra ISARET kanonik
+//     hale getirilir: ilk sifirdan farkli bileseni POZITIF olacak sekilde
+//     cevrilir. Boylece ayni fiziksel normal, uctan bagimsiz ayni kesit
+//     cercevesini verir (u/v ters donmez).
+//  3. profileRotation [0,360) araligina indirgenir ve KANONIK eksene gore
+//     yorumlanir (180° donuk girdi ayni fiziksel yonu 0° olarak ifade eder).
+//  4. Kesit olculeri ve sectionCenterOffset oldugu gibi tasinir; dogrulama
+//     cagiranin isidir (bkz. memberGeometryUsable).
+// ============================================================================
+struct MemberSectionSpec {
+    double width{0.0};            // kesit bbox genisligi (mm)
+    double height{0.0};           // kesit bbox yuksekligi (mm)
+    double webThickness{0.0};     // govde kalinligi (mm), 0 = bilinmiyor
+    double flangeThickness{0.0};  // flans kalinligi (mm), 0 = bilinmiyor
+    double centerOffset{0.0};     // SectionAnchor kaymasi (mm, height yonu)
+};
+
+MemberGeometry memberGeometryFromProfile(const Vec3& endA, const Vec3& endB,
+                                         bool connectionAtA,
+                                         const Vec3& refNormal,
+                                         double profileRotationDeg,
+                                         const MemberSectionSpec& section) noexcept;
+
+// Eksen sifir uzunlukta mi / kesit bilinmiyor mu? (fail-closed on kontrolu)
+bool memberGeometryUsable(const MemberGeometry& g) noexcept;
+
 GenerationPlan generateEndPlate(const ComponentInput& input) noexcept;
 
 ComponentType finPlateComponentType() noexcept;

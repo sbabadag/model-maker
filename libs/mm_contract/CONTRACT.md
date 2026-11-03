@@ -95,6 +95,37 @@ numaralandırılır (0↔3, 1↔2). Dünya köşe noktaları Model Maker formül
 Doğrulama testi: `tests/plate_frame_handedness_test.cpp` (sağ ve sol elli levha;
 köşe noktaları, kalınlık yönü ve pah köşesi).
 
+### Üye geometrisi — kanonik fonksiyon (1.8.0)
+
+`memberGeometryFromProfile(endA, endB, connectionAtA, refNormal, profileRotationDeg, MemberSectionSpec)`
+aynı fiziksel üyeyi, çağıranın hangi uçtan başladığından bağımsız **tek** bir
+`MemberGeometry`'ye çevirir. Model Maker (`componentPreviewInput`) ve Studio
+adaptörü bu fonksiyonu kullanır; ikinci bir dönüşüm yazılmaz.
+
+Kurallar:
+
+1. **Eksen yönü ve bağlantı ucu.** `axisTo` **daima bağlantı ucu**, `axisFrom`
+   **daima uzak uç**tur. Çağıran hangi ucun bağlantı olduğunu `connectionAtA`
+   ile bildirir (A = ilk argüman). `(A,B,true)` ile `(B,A,false)` **birebir aynı**
+   `MemberGeometry`'yi verir; üye ters yazıldı diye plan digest'i değişmez.
+2. **`refNormal`.** Eksene dikleştirilir (`n − (n·a)a`), normalleştirilir;
+   dejenere ise dünya Z, o da dejenere ise dünya X kullanılır. Ardından
+   **işareti kanonikleştirilir**: ilk sıfırdan farklı bileşeni pozitif olacak
+   şekilde çevrilir. Böylece `n` ve `−n` aynı kesit çerçevesini verir (u/v
+   ters dönmez, bulon `xDir` ters dönmez).
+3. **`profileRotation`.** `[0,360)` aralığına indirgenir ve **kanonik eksene**
+   göre yorumlanır. Fiziksel yönü aynı olan 180° dönük girdi, kanonik eksende
+   0° olarak ifade edilir; digest bu yüzden yön duyarlı değildir.
+4. **Kesit.** `width/height/webThickness/flangeThickness/centerOffset` olduğu
+   gibi taşınır. Sıfır uzunluk ya da eksik kesit çağıranın reddedeceği bir
+   girdidir: `memberGeometryUsable(g)` bunu söyler (fail-closed).
+5. **Digest gevşetilmez.** Kanonikleştirme sadece aynı fiziksel üyenin tek
+   gösterimini üretir; `generationPlanDigest` hesabı değişmez.
+
+Kabul testi: `mm_contract_member_geometry_canonical_test` — aynı üye iki farklı
+uç sırasıyla verildiğinde aynı `MemberGeometry` **ve** aynı `planDigest`;
+`n`/`−n`, eğik `n`, 180°/−90°/360° dönüş, `n ∥ axis` ve sıfır uzunluk durumları.
+
 ### Levha görünüm kuralı (`mm_contract/component_visual.hpp`)
 
 Levhalar (Plate) **her zaman gridir**: `kPlateGreyRgb = RGB(170,170,170)`

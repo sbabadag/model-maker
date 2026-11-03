@@ -495,6 +495,85 @@ ComponentType endPlateComponentType() noexcept {
     return t;
 }
 
+// ============================================================================
+// KANONIK UYE GEOMETRISI (ST-3g) — bkz. component_engine.hpp kural listesi.
+// ============================================================================
+bool memberGeometryUsable(const MemberGeometry& g) noexcept {
+    const double dx = g.axisTo.x - g.axisFrom.x;
+    const double dy = g.axisTo.y - g.axisFrom.y;
+    const double dz = g.axisTo.z - g.axisFrom.z;
+    const double len2 = dx * dx + dy * dy + dz * dz;
+    if (!(len2 > 1e-12)) return false;                 // sifir uzunluk
+    if (!(g.secWidth > 0.0) || !(g.secHeight > 0.0)) return false;
+    return true;
+}
+
+MemberGeometry memberGeometryFromProfile(const Vec3& endA, const Vec3& endB,
+                                         bool connectionAtA,
+                                         const Vec3& refNormal,
+                                         double profileRotationDeg,
+                                         const MemberSectionSpec& section) noexcept {
+    MemberGeometry g;
+    // (1) Merkez ve yari-vektor: AYNI fiziksel uye, iki farkli uctan yazilmis.
+    const Vec3 mid{(endA.x + endB.x) * 0.5, (endA.y + endB.y) * 0.5,
+                   (endA.z + endB.z) * 0.5};
+    const Vec3 half{(endB.x - endA.x) * 0.5, (endB.y - endA.y) * 0.5,
+                    (endB.z - endA.z) * 0.5};
+    const double halfLen = std::sqrt(half.x * half.x + half.y * half.y + half.z * half.z);
+    // (2) BAGLANTI UCU: axisTo = baglanti ucu, axisFrom = uzak uc.
+    //     connectionAtA, A ucunun baglanti oldugunu soyler; iki cagirimda da
+    //     ayni fiziksel uc secildiginde sonuc BIREBIR ayni olur.
+    const Vec3 conn = connectionAtA ? endA : endB;
+    const Vec3 far = connectionAtA ? endB : endA;
+    g.axisFrom = far;
+    g.axisTo = conn;
+    // Sifir uzunluk: yon yok; kesit/offset tasinir, cagiran memberGeometryUsable
+    // ile reddeder. (mid/halfLen asagida kullanilmaz.)
+    (void)mid;
+    if (halfLen > 1e-12) {
+        // (3) Kanonik eksen: baglanti ucundan uzak uca (axis = to - from).
+        const double ax = (conn.x - far.x) / (2.0 * halfLen);
+        const double ay = (conn.y - far.y) / (2.0 * halfLen);
+        const double az = (conn.z - far.z) / (2.0 * halfLen);
+        // (4) refNormal: eksene diklestir + isaret kanoniklestir.
+        double nx = refNormal.x, ny = refNormal.y, nz = refNormal.z;
+        const double nlen = std::sqrt(nx * nx + ny * ny + nz * nz);
+        if (nlen > 1e-12) {
+            nx /= nlen; ny /= nlen; nz /= nlen;
+            const double d = nx * ax + ny * ay + nz * az;
+            nx -= d * ax; ny -= d * ay; nz -= d * az;   // a eksenine dik
+        } else {
+            nx = 0.0; ny = 0.0; nz = 1.0;
+        }
+        double perp = std::sqrt(nx * nx + ny * ny + nz * nz);
+        if (perp <= 1e-9) {                            // n ∥ axis: dunya Z dene
+            nx = 0.0 - az * 0.0; ny = 0.0; nz = 1.0;
+            const double d2 = nz * az;
+            nx = -d2 * ax; ny = -d2 * ay; nz = 1.0 - d2 * az;
+            perp = std::sqrt(nx * nx + ny * ny + nz * nz);
+        }
+        if (perp <= 1e-9) { nx = 1.0; ny = 0.0; nz = 0.0; }  // dusey uye: dunya X
+        else { nx /= perp; ny /= perp; nz /= perp; }
+        // Isaret: ilk sifirdan farkli bilesen POZITIF (uctan bagimsiz).
+        const double first = (std::fabs(nx) > 1e-9) ? nx : ((std::fabs(ny) > 1e-9) ? ny : nz);
+        if (first < 0.0) { nx = -nx; ny = -ny; nz = -nz; }
+        g.refNormal = {nx, ny, nz};
+    } else {
+        g.refNormal = refNormal;
+    }
+    g.secWidth = section.width;
+    g.secHeight = section.height;
+    g.secWebThickness = section.webThickness;
+    g.secFlangeThickness = section.flangeThickness;
+    g.sectionCenterOffset = section.centerOffset;
+    // (5) Donus [0,360): kanonik eksene gore.
+    double rot = std::fmod(profileRotationDeg, 360.0);
+    if (rot < 0.0) rot += 360.0;
+    if (std::fabs(rot - 360.0) < 1e-9) rot = 0.0;
+    g.profileRotation = rot;
+    return g;
+}
+
 GenerationPlan generateEndPlate(const ComponentInput& input) noexcept {
     GenerationPlan plan;
     if (input.secondary.empty()) {

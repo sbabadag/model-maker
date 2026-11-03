@@ -5306,31 +5306,36 @@ void Application::applyEndPlateFromParts(const std::vector<std::size_t>& parts) 
 static mm::MemberGeometry memberGeometryFor(const mm::Document& doc,
                                             const std::vector<mm::SteelProfile>& catalog,
                                             std::size_t index) {
-    mm::MemberGeometry g;
-    g.id = doc.modelId(index);
     const auto& p = doc.models()[index].properties();
-    g.axisFrom = {p.axisFromX, p.axisFromY, p.axisFromZ};
-    g.axisTo = {p.axisToX, p.axisToY, p.axisToZ};
-    g.refNormal = {p.sectionNormalX, p.sectionNormalY, p.sectionNormalZ};
-    g.secWidth = 200.0;
-    g.secHeight = 300.0;
-    g.sectionCenterOffset = 0.0;
-    g.profileRotation = p.profileRotation;
+    mm::MemberSectionSpec spec;
+    spec.width = 200.0;
+    spec.height = 300.0;
     if (const mm::SteelProfile* prof = mm::findProfile(catalog, p.profileName)) {
-        g.secWidth = prof->width;
-        g.secHeight = prof->height;
-        g.secWebThickness = prof->plateThickness;
-        g.secFlangeThickness = prof->flangeThickness;
+        spec.width = prof->width;
+        spec.height = prof->height;
+        spec.webThickness = prof->plateThickness;
+        spec.flangeThickness = prof->flangeThickness;
         // SectionAnchor: eksen kesitin ustunden gecebilir (varsayilan Top).
         // Levha/bulon govde merkezine otursun diye kesit merkez ofsetini gecir.
-        g.sectionCenterOffset = mm::profileSectionAnchorOffset(*prof, p.sectionAnchor);
+        spec.centerOffset = mm::profileSectionAnchorOffset(*prof, p.sectionAnchor);
     } else {
         switch (p.sectionAnchor) {
-        case SectionAnchor::Top: g.sectionCenterOffset = -0.5 * g.secHeight; break;
-        case SectionAnchor::Bottom: g.sectionCenterOffset = 0.5 * g.secHeight; break;
-        case SectionAnchor::Center: g.sectionCenterOffset = 0.0; break;
+        case SectionAnchor::Top: spec.centerOffset = -0.5 * spec.height; break;
+        case SectionAnchor::Bottom: spec.centerOffset = 0.5 * spec.height; break;
+        case SectionAnchor::Center: spec.centerOffset = 0.0; break;
         }
     }
+    // ST-3g: TEK KAYNAK — kanonik fonksiyon. axisTo = baglanti ucu (modelde
+    // oldugu gibi), axisFrom = uzak uc; refNormal eksene diklestirilir ve
+    // isareti kanoniklestirilir. Boylece ayni fiziksel uye Studio'dan hangi
+    // uctan gelirse gelsin AYNI MemberGeometry ve AYNI planDigest uretilir.
+    mm::MemberGeometry g = mm::memberGeometryFromProfile(
+        {p.axisToX, p.axisToY, p.axisToZ},      // endA = baglanti ucu
+        {p.axisFromX, p.axisFromY, p.axisFromZ},// endB = uzak uc
+        /*connectionAtA=*/true,
+        {p.sectionNormalX, p.sectionNormalY, p.sectionNormalZ},
+        p.profileRotation, spec);
+    g.id = doc.modelId(index);
     return g;
 }
 

@@ -128,6 +128,12 @@ if(MM_CONTRACT_BUILD_TESTS)
     add_test(NAME mm_contract_component_preview_auto_test COMMAND mm_contract_component_preview_auto_test)
 
     # Levha gorunum kurali (gri sabit, tek kaynak) — MM-7/ST-3 notu.
+    # ST-3g: kanonik uye geometrisi (uctan bagimsiz MemberGeometry + digest)
+    add_executable(mm_contract_member_geometry_canonical_test
+        ${CMAKE_CURRENT_LIST_DIR}/tests/member_geometry_canonical_test.cpp)
+    target_link_libraries(mm_contract_member_geometry_canonical_test PRIVATE mm_component_contract mm_contract_version)
+    add_test(NAME mm_contract_member_geometry_canonical_test COMMAND mm_contract_member_geometry_canonical_test)
+
     add_executable(mm_contract_component_visual_test
         ${CMAKE_CURRENT_LIST_DIR}/tests/component_visual_test.cpp)
     target_link_libraries(mm_contract_component_visual_test PRIVATE mm_component_contract mm_contract_version)

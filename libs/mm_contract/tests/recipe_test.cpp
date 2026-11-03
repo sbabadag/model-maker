@@ -675,7 +675,7 @@ static void testWhenSkips() {
 }
 
 int main() {
-    CHECK(std::string(kContractVersion) == "1.7.0", "contract surumu 1.7.0");
+    CHECK(std::string(kContractVersion) == "1.8.0", "contract surumu 1.7.0");
     testExpressionEvaluator();
     testParamAccess();
     testStaticAnalysis();
