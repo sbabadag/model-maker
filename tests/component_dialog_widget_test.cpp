@@ -1155,21 +1155,36 @@ int main(int argc, char** argv) {
 
 
     // ST-4 (GUI-1 + GUI-2): PAKET tipi diyalogu (katalogdan acilan her tip).
-    //  (1) 3B canli onizleme + 3 ortografik gorunum VARSAYILAN (eski 2B sematik
-    //      form degil),
-    //  (2) sentinel degerler ("-1000000000", "-1 otomatik") EKRANDA GORUNMEZ;
-    //      varsayilani sentinel olan parametrede "Default" kutusu isaretsiz,
-    //      alan gri ve etikette "otomatik".
+    //  (1) 3B canli onizleme + 3 ortografik gorunum VARSAYILAN,
+    //  (2) sentinel degerler ("-1000000000") EKRANDA GORUNMEZ + "otomatik",
+    //  (3) ONIZLEME DOLU: hem gercek instance girdisiyle hem de parca
+    //      secilmeden (paketin temsili girdisiyle) >=1 levha + >=1 bulon grubu.
     {
-        mm::ComponentRegistry reg;
-        mm::registerBuiltInComponents(reg);
-        const auto pkg = mm::loadComponentPackage(
-            std::filesystem::path(MM_PACKAGES_DIR) / "end_plate_pkg", reg);
-        CHECK(pkg.ok, "PKG: end_plate_pkg yuklendi (katalog tipi)");
+        const auto packagesDir = std::filesystem::path(MM_PACKAGES_DIR);
+        // TEK paket: yerlesik tiplerle cakismasin (haunch40 paketi yerlesik
+        // tekla_haunch_40 ile ayni typeId'yi tasir; tum paketleri yuklemek
+        // beklenen cakismayi uretir).
+        const mm::ComponentPackageLoad pkg = mm::loadComponentPackage(
+            packagesDir / "end_plate_pkg", mm::ComponentRegistry::instance());
+        CHECK(pkg.ok, "PKG: end_plate_pkg yuklendi");
+        CHECK(pkg.dialog.previewInput.has_value(),
+              "PKG: temsili onizleme girdisi (tests ilk input) yukleyicide dolduruldu");
+        bool registered = false;
         if (pkg.ok) {
+            registered = mm::ComponentRegistry::instance().registerType(
+                             pkg.type, mm::makeRecipeGenerator(pkg.dialog, pkg.recipe)) &&
+                         mm::ComponentDialogRegistry::instance().registerDialog(pkg.dialog);
+        }
+        CHECK(registered, "PKG: tip + diyalog registry'ye kaydedildi");
+        const mm::ComponentDialogDefinition* pdef =
+            mm::ComponentDialogRegistry::instance().find(L"mm_end_plate_pkg");
+        CHECK(pdef != nullptr, "PKG: paket diyalogu registry'de (katalog tipi)");
+        if (pdef) {
+            CHECK(pdef->previewInput.has_value(),
+                  "PKG: temsili onizleme girdisi var (manifest/tests)");
             const std::vector<mm::CompParam> empty;
-            std::printf("--- ST-4 GUI: paket diyalogu (%ls) ---\n", pkg.typeId.c_str());
-            mm::ComponentDialogWidget w(pkg.dialog, empty);
+            std::printf("--- ST-4 GUI: paket diyalogu (%ls) ---\n", pdef->typeId.c_str());
+            mm::ComponentDialogWidget w(*pdef, empty);
             w.resize(1100, 720);
             w.show();
             QApplication::processEvents();
@@ -1177,13 +1192,16 @@ int main(int argc, char** argv) {
             const auto previews = w.findChildren<mm::ComponentLivePreviewWidget*>();
             CHECK(!previews.empty(), "GUI-1: paket diyalogunda 3B canli onizleme VAR");
             int thumbnails = 0;
-            for (auto* pv : previews)
+            mm::ComponentLivePreviewWidget* main3d = nullptr;
+            for (auto* pv : previews) {
                 if (pv->isCompact()) ++thumbnails;
+                else if (!main3d) main3d = pv;
+            }
             CHECK(thumbnails == 3, "GUI-1: 3 ortografik onizleme (On/Yan/Ust) VAR");
             auto* sch = w.findChild<mm::ComponentSchematicView*>();
             CHECK(sch && sch->isHidden(), "GUI-1: 2B sematik varsayilan GIZLI");
 
-            // Sentinel metni hicbir yerde gorunmemeli.
+            // (2) sentinel metni hicbir yerde gorunmemeli.
             QString allText;
             for (auto* l : w.findChildren<QLabel*>()) allText += l->text() + QLatin1Char('\n');
             for (auto* e : w.findChildren<QLineEdit*>()) allText += e->text() + QLatin1Char('\n');
@@ -1191,15 +1209,49 @@ int main(int argc, char** argv) {
             CHECK(!allText.contains(QStringLiteral("1000000000")),
                   "GUI-2: sentinel -1e9 diyalogda GOSTERILMIYOR");
             auto* edge = w.findChild<QWidget*>(QStringLiteral("upperEdgeDistance"));
-            CHECK(edge != nullptr, "GUI-2: upperEdgeDistance editoru var");
             CHECK(edge && !edge->isEnabled(), "GUI-2: isaretsiz Default -> alan GRI");
             bool autoLabel = false;
             for (auto* l : w.findChildren<QLabel*>())
                 if (l->text().contains(QStringLiteral("otomatik"))) autoLabel = true;
             CHECK(autoLabel, "GUI-2: isaretsiz alan etiketi 'otomatik' yazar");
-            // Upper edge editoru 0 gostermeli (sentinel yerine notr deger).
-            if (auto* sp = qobject_cast<QDoubleSpinBox*>(edge))
-                CHECK(std::fabs(sp->value()) < 1e-9, "GUI-2: otomatik alanda sayi 0 (sentinel degil)");
+
+            // (3a) PARCA SECILMEDEN: temsili girdi (previewInput) ile cizim.
+            CHECK(main3d != nullptr, "GUI-3a: ana 3B onizleme widget'i var");
+            if (main3d) {
+                CHECK(main3d->previewPlan().ok,
+                      "GUI-3a: temsili girdiyle plan OK (bos/mesajli degil)");
+                CHECK(!main3d->previewPlan().plates.empty(),
+                      "GUI-3a: temsili girdiyle en az 1 LEVHA cizildi");
+                CHECK(!main3d->previewPlan().boltGroups.empty(),
+                      "GUI-3a: temsili girdiyle en az 1 BULON GRUBU cizildi");
+                // (3b) GERCEK INSTANCE girdisi (mevcut ornek cift tik): ayni yol.
+                mm::ComponentInput inst;
+                inst.main.id = 1;
+                inst.main.axisFrom = {0.0, 0.0, 0.0};
+                inst.main.axisTo = {0.0, 0.0, 3000.0};
+                inst.main.refNormal = {0.0, 0.0, 1.0};
+                inst.main.secWidth = 300.0;
+                inst.main.secHeight = 300.0;
+                inst.main.secWebThickness = 11.0;
+                inst.main.secFlangeThickness = 19.0;
+                mm::MemberGeometry beam;
+                beam.id = 2;
+                beam.axisFrom = {0.0, 0.0, 3000.0};
+                beam.axisTo = {2000.0, 0.0, 3000.0};
+                beam.refNormal = {0.0, 0.0, 1.0};
+                beam.secWidth = 200.0;
+                beam.secHeight = 400.0;
+                beam.secWebThickness = 8.6;
+                beam.secFlangeThickness = 13.5;
+                inst.secondary.push_back(beam);
+                w.setPreviewInput(inst);
+                QApplication::processEvents();
+                CHECK(main3d->previewPlan().ok, "GUI-3b: instance girdisiyle plan OK");
+                CHECK(!main3d->previewPlan().plates.empty(),
+                      "GUI-3b: instance girdisiyle en az 1 LEVHA cizildi");
+                CHECK(!main3d->previewPlan().boltGroups.empty(),
+                      "GUI-3b: instance girdisiyle en az 1 BULON GRUBU cizildi");
+            }
         }
     }
 

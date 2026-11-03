@@ -204,6 +204,7 @@ private:
     QWidget* previewPane_{};                        // 3B onizleme + ortografikler
     QWidget* schematicHost_{};                      // sematik sarmalayici (toggle)
     // MM-6b: semada hazir olcu tanimi yoksa otomatik uretilen tanim (onbellekli).
+    bool previewInputGiven_{false};   // gercek instance girdisi verildi mi?
     bool autoPreviewTried_{false};
     bool autoPreviewOk_{false};
     PreviewDefinition autoPreviewDef_;

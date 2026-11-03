@@ -16,6 +16,7 @@
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
+#include <optional>
 #include <cctype>
 #include <cstdio>
 #include <cstdlib>
@@ -244,6 +245,13 @@ ComponentPackageLoad loadComponentPackage(const fs::path& dir,
         if (!contractSupports(a, b))
             return fail(out, L"paket daha yeni bir sozlesme istiyor: " + wideAscii(ver) +
                                   L" (mevcut " + wideAscii(kContractVersion) + L")");
+        // manifest.previewInput (OPSIYONEL): parca secilmeden acilan diyalogda
+        // temsili 3B onizleme girdisi (CP-01 8.2). Yoksa tests/*.json ilk input.
+        if (mj.contains("previewInput")) {
+            if (!mj["previewInput"].is_object())
+                return fail(out, L"manifest.previewInput nesne degil");
+            out.dialog.previewInput = componentInputFromJson(mj["previewInput"]);
+        }
     }
 
     // (4) PARAMETERS
@@ -339,6 +347,7 @@ ComponentPackageLoad loadComponentPackage(const fs::path& dir,
         const fs::path td = dir / kPackageTestsDir;
         if (fs::is_directory(td, ec)) {
             std::size_t replayed = 0, structuralOnly = 0;
+            std::optional<ComponentInput> representativeInput;
             for (const auto& e : fs::directory_iterator(td, ec)) {
                 if (!e.is_regular_file()) continue;
                 if (e.path().extension() != ".json") continue;
@@ -360,6 +369,13 @@ ComponentPackageLoad loadComponentPackage(const fs::path& dir,
                 if (!tj.contains("input")) {
                     ++structuralOnly;
                     continue;
+                }
+                // TEMSILI ONIZLEME GIRDISI: ilk testin girdisi (dosya adi sirali
+                // oldugu icin deterministik) — parca secilmeden acilan diyalog
+                // 3B onizlemeyi bununla cizer (CP-01 8.2 / ST-4 GUI).
+                if (!representativeInput.has_value()) {
+                    const ComponentInput in = componentInputFromJson(tj["input"]);
+                    representativeInput = in;
                 }
                 if (!tj["input"].is_object())
                     return fail(out, L"altin test 'input' nesne degil: " +
@@ -387,6 +403,9 @@ ComponentPackageLoad loadComponentPackage(const fs::path& dir,
             if (structuralOnly > 0)
                 out.warnings.push_back(L"altin testler: " + std::to_wstring(structuralOnly) +
                                        L" dosya yalniz yapisal dogrulandi (input yok)");
+            // ONCELIK: manifest.previewInput > tests/*.json ilk input.
+            if (!out.dialog.previewInput.has_value() && representativeInput.has_value())
+                out.dialog.previewInput = *representativeInput;
         }
     }
 

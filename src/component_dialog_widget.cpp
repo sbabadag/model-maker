@@ -332,15 +332,24 @@ ComponentDialogWidget::ComponentDialogWidget(const ComponentDialogDefinition& de
         auto* vertical = new QVBoxLayout(left);
         vertical->setContentsMargins(0,0,0,0);
         vertical->setSpacing(5);
-        auto* views = new QHBoxLayout;
+        // ST-4 GUI (4): baslik ve gorunum dugmeleri AYRI satirlarda. Onceden tek
+        // satirda title stretch=1 ile duruyorlardi; dar pencerede "3D"/"On"
+        // dugmeleri kirpiliyordu. Dugmeler artik kendi satirinda, sabit ve tam.
+        auto* titleRow = new QHBoxLayout;
         auto* title = new QLabel(QStringLiteral("3D Canli Onizleme"),left);
         title->setStyleSheet(QStringLiteral("font-weight:700;font-size:14px;color:#314760"));
-        views->addWidget(title,1);
+        title->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+        title->setMinimumWidth(80);
+        titleRow->addWidget(title,1);
+        vertical->addLayout(titleRow);
+        auto* views = new QHBoxLayout;
+        views->setSpacing(4);
         for(const auto& view: {
                 std::pair<const char*,const char*>{"iso","3D"},
                 {"front","On"},{"side","Yan"},{"top","Ust"}}) {
             auto* button=new QPushButton(QString::fromUtf8(view.second),left);
-            button->setFixedWidth(52);
+            button->setMinimumWidth(52);
+            button->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Fixed);
             QObject::connect(button,&QPushButton::clicked,this,
                 [this,key=std::string(view.first)]() {
                     if(nativePreview_)nativePreview_->setView(key);
@@ -398,7 +407,8 @@ ComponentDialogWidget::ComponentDialogWidget(const ComponentDialogDefinition& de
         if (!def_.schema.items.empty()) {
             auto* schToggle = new QPushButton(QStringLiteral("Sematik"), left);
             schToggle->setCheckable(true);
-            schToggle->setFixedWidth(70);
+            schToggle->setMinimumWidth(76);
+            schToggle->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Fixed);
             schToggle->setToolTip(QStringLiteral("2B sematik cizimi goster/gizle"));
             views->addWidget(schToggle);
             QObject::connect(schToggle, &QPushButton::toggled, this,
@@ -611,6 +621,11 @@ ComponentDialogWidget::ComponentDialogWidget(const ComponentDialogDefinition& de
         }
     }
     if(nativePreview_) enforceHaunchInputLimits();
+    // ST-4 GUI (2): pencereye GERCEK instance girdisi verilmediyse (parca
+    // secilmeden katalogdan acilis) paketin TEMSILI girdisiyle onizleme cizilir;
+    // o da yoksa "bagli kolon ve kiris bulunamadi" mesaji gorunur.
+    if(nativePreview_ && !previewInputGiven_ && def_.previewInput.has_value())
+        setPreviewInput(*def_.previewInput);
     // ST-4 GUI-2: editörler kurulduktan SONRA degerleri sema/current ile hizala.
     // Onceden constructor setParams cagirmiyordu: taze diyalogda sentinel
     // varsayilanlar (-1e9) editorde HAM sayi olarak gorunuyordu.
@@ -1479,6 +1494,7 @@ void ComponentDialogWidget::setEditorValue(QWidget* editor, const CompParamSpec&
 }
 
 void ComponentDialogWidget::setPreviewInput(const ComponentInput& input) {
+    previewInputGiven_ = true;
     if(nativePreview_) {
         haunchBeamHeight_=0.0;
         haunchBeamWidth_=0.0;

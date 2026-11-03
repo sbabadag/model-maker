@@ -575,7 +575,7 @@ void ComponentLivePreviewWidget::syncEditors() {
 }
 void ComponentLivePreviewWidget::recompute() {
     if(!haveInput_) {
-        plan_.ok=false;plan_.error=L"Modelde bagli kolon ve kiris bulunamadi";
+        plan_.ok=false;plan_.error=L"Modelde bağlı kolon ve kiriş bulunamadı";
         previewWarning_.clear();
         for(auto& c:callouts_)c.spin->hide();
         update();return;

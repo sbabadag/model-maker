@@ -5341,21 +5341,26 @@ std::optional<ComponentInput> Application::componentPreviewInput(EntityId compId
     const ComponentInstanceRecord& rec=document_.componentInstances()[*i];
     const auto mainIndex=document_.indexOfEntity(rec.mainPart);
     if(!mainIndex)return std::nullopt;
-    // Preview must NOT reuse memberGeometryFor's legacy 200x300 fallback
-    // if a section is missing: that would misrepresent the native connection.
-    const auto hasProfile=[&](std::size_t idx) {
-        return findProfile(profileCatalog_,
-                           document_.models()[idx].properties().profileName)!=nullptr;
+    // ST-4 GUI (1): onizleme girdisi ComponentInstanceRecord'un mainPart /
+    // secondaryParts'indan MemberGeometry olarak kurulur. KATALOGDA OLMAYAN
+    // (ozel) profiller artik onizlemeyi BOS BIRAKMAZ: modelde kayitli kesit
+    // olculeri (secWidth/secHeight) varsa da kurulur; hicbiri yoksa nullopt.
+    const auto hasSection=[&](std::size_t idx) {
+        if (findProfile(profileCatalog_, document_.models()[idx].properties().profileName) != nullptr)
+            return true;
+        return document_.models()[idx].properties().secWidth > 0.0 &&
+               document_.models()[idx].properties().secHeight > 0.0;
     };
-    if(!hasProfile(*mainIndex))return std::nullopt;
+    if(!hasSection(*mainIndex))return std::nullopt;
     ComponentInput in;
     in.main=memberGeometryFor(document_,profileCatalog_,*mainIndex);
     for(EntityId sid:rec.secondaryParts) {
         const auto memberIndex=document_.indexOfEntity(sid);
-        if(!memberIndex || !hasProfile(*memberIndex))return std::nullopt;
+        if(!memberIndex || !hasSection(*memberIndex))continue;
         in.secondary.push_back(memberGeometryFor(document_,profileCatalog_,*memberIndex));
     }
-    if(in.secondary.empty())return std::nullopt;
+    // Ikincil uye ZORUNLU DEGIL: taban levhasi gibi tek parcali tipler de
+    // onizleme cizebilsin (eksik ikincil -> generatorun kendi hatasi gosterilir).
     in.params=rec.params;
     return in;
 }

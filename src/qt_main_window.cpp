@@ -2,6 +2,7 @@
 #include "model_maker/drafting.hpp"
 #include "model_maker/two_point_view.hpp"
 #include "model_maker/component_dialog_widget.hpp"
+#include "model_maker/component_live_preview_widget.hpp"
 #include "model_maker/component_catalog.hpp"
 #include "model_maker/linear_delta.hpp"
 
@@ -1955,6 +1956,22 @@ bool QtMainWindow::openComponentParamsDialog(const mm::ComponentInstanceRecord& 
     dlg.setMinimumWidth(420);
 
     auto* root = new QVBoxLayout(&dlg);
+    // ST-4 GUI (1/2): sekmeli olmayan (groups tabanli) diyaloglarda da 3B canli
+    // onizleme gosterilir. Girdi: modeldeki gercek instance; yoksa paketin
+    // temsili girdisi (manifest.previewInput / tests ilk input).
+    mm::ComponentLivePreviewWidget* legacyPreview = nullptr;
+    {
+        legacyPreview = new mm::ComponentLivePreviewWidget(&dlg);
+        legacyPreview->setTypeId(rec.typeId);
+        legacyPreview->setPreviewDefinition(def->schema.preview);
+        std::optional<mm::ComponentInput> src = app_.componentPreviewInput(rec.id);
+        if (!src.has_value() && def->previewInput.has_value()) src = def->previewInput;
+        if (src.has_value()) legacyPreview->setInput(*src);
+        legacyPreview->setParams(mm::alignParamsToSpecs(type->params, rec.params));
+        legacyPreview->setMinimumHeight(240);
+        root->addWidget(legacyPreview, 1);
+        dlg.resize(900, 620);
+    }
     auto* form = new QFormLayout;
     form->setLabelAlignment(Qt::AlignLeft);
 

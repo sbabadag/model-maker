@@ -268,6 +268,13 @@ struct ComponentDialogDefinition {
     std::wstring typeId;
     std::vector<CompParamSpec> specs;
     ComponentDialogSchema schema;
+    // TEMSILI ONIZLEME GIRDISI (CP-01 8.2 / ST-4 GUI): parca secilmeden
+    // (katalogdan) acilan diyalogda 3B onizleme bos kalmasin diye paketin
+    // kendi ornek girdisi. Paket yukleyicisi doldurur: manifest.previewInput
+    // varsa o, yoksa tests/*.json icindeki ILK input. Modelde bagli bir
+    // component varsa pencere GERCEK instance girdisini kullanir (bu alan
+    // yalnizca yedektir).
+    std::optional<ComponentInput> previewInput;
 };
 
 // Statik dialog registry/factory (ComponentRegistry ile ayni felsefe). Uygulama
