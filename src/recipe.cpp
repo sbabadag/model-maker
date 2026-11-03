@@ -498,7 +498,7 @@ static bool strArg(const RecipeStep& st, const char* key, const std::string& def
 // Metin/durum parametreleri (plateMaterial, grade) sayisal `param.*` gibi
 // evaluateExpr'den GECMEZ; burada input.params icinden okunur. Literal metin
 // eskisi gibi aynen gecerli (geriye donuk uyum).
-static bool strParamArg(const EvalCtx& ctx, const RecipeStep& st, const char* key,
+static bool strParamArg(EvalCtx& ctx, const RecipeStep& st, const char* key,
                         const std::string& def, std::string& out) {
     const auto it = st.args.find(key);
     if (it == st.args.end()) { out = def; return true; }
@@ -509,7 +509,10 @@ static bool strParamArg(const EvalCtx& ctx, const RecipeStep& st, const char* ke
     for (const auto& p : ctx.input.params) {
         if (p.name != name) continue;
         if (const auto* s = std::get_if<std::wstring>(&p.value)) { out = utf8FromWide(*s); return true; }
-        return false;  // parametre metin degil
+        // Sessiz yanlis yok: parametre metin degilse ACIK hata.
+        ctx.error = std::wstring(L"arguman metin parametresi metin degil: ") + name +
+                    L" (arguman: " + wideFromUtf8(key) + L")";
+        return false;
     }
     // Girdi parametresi YOKSA sema VARSAYILANI (golden girdiler parametresiz
     // gelir; generator da ayni varsayilani kullanir).
@@ -517,9 +520,13 @@ static bool strParamArg(const EvalCtx& ctx, const RecipeStep& st, const char* ke
         if (spec.name != name) continue;
         if (!spec.defString.empty()) { out = utf8FromWide(spec.defString); return true; }
         if (!spec.choices.empty()) { out = utf8FromWide(spec.choices.front()); return true; }
+        ctx.error = std::wstring(L"metin parametresinin varsayilani yok: ") + name +
+                    L" (arguman: " + wideFromUtf8(key) + L")";
         return false;
     }
-    return false;      // tanimsiz parametre
+    ctx.error = std::wstring(L"tanimsiz metin parametresi: ") + name +
+                L" (arguman: " + wideFromUtf8(key) + L")";
+    return false;
 }
 static bool boolArg(EvalCtx& ctx, const RecipeStep& st, const char* key, bool def, bool& out) {
     const auto it = st.args.find(key);
@@ -568,6 +575,7 @@ static bool blockFrameMemberEnd(EvalCtx& ctx, const RecipeStep& st, GenerationPl
     const bool atStart = (end == "start" || end == "from");
     MemberLocalFrame f;
     f.origin = atStart ? m->axisFrom : m->axisTo;
+    // CERCEVE = uyenin KESIT cercevesi (u=genislik, v=yukseklik, w=eksen).
     const ProfileSectionFrame pf = profileSectionFrame(dir, m->refNormal);
     f.u = pf.width;
     f.v = pf.height;
@@ -597,10 +605,13 @@ static bool blockPlateRect(EvalCtx& ctx, const RecipeStep& st, GenerationPlan& p
     if (!numArg(ctx, st, "h", 0.0, h)) return false;
     if (!numArg(ctx, st, "t", 0.0, t)) return false;
     std::string name, material, finish, posNo;
-    strArg(st, "name", "", name);
-    strArg(st, "material", "", material);
-    strArg(st, "finish", "", finish);
-    strArg(st, "posNo", "", posNo);
+    // STRING alanlar da `param.<ad>` kabul eder (MM-5 strParamArg). eskiden
+    // strArg ile okunuyordu: recipe'de "param.plateMaterial" YAZILDIYSA levha
+    // malzemesi literal "param.plateMaterial" oluyordu — sessiz yanlis.
+    if (!strParamArg(ctx, st, "name", "", name)) return false;
+    if (!strParamArg(ctx, st, "material", "", material)) return false;
+    if (!strParamArg(ctx, st, "finish", "", finish)) return false;
+    if (!strParamArg(ctx, st, "posNo", "", posNo)) return false;
     PlateSpec p;
     p.center = f->origin;
     p.u = f->u;

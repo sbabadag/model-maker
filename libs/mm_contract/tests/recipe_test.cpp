@@ -289,6 +289,82 @@ static void testFrameOffset() {
     }
 }
 
+// ST-4 (1): plate.rect'in STRING alanlari (name/material/finish/posNo) `param.<ad>`
+// kabul eder. Eskiden strArg ile okunuyordu: recipe'de "param.plateMaterial"
+// yazildiysa levha malzemesi literal "param.plateMaterial" oluyordu.
+static void testPlateStringParams() {
+    ComponentInput in = makeInput();
+    in.params.push_back(CompParam{L"plateMaterial", CompParamValue{std::wstring(L"S355JR")}});
+    in.params.push_back(CompParam{L"plateName", CompParamValue{std::wstring(L"Taban levhasi")}});
+    in.params.push_back(CompParam{L"plateFinish", CompParamValue{std::wstring(L"Galvaniz")}});
+    in.params.push_back(CompParam{L"posNo", CompParamValue{std::wstring(L"P-101")}});
+
+    const auto runPlate = [](const ComponentInput& input, const std::string& name,
+                             const std::string& material, const std::string& finish,
+                             const std::string& posNo, std::vector<CompParamSpec> specs = {}) {
+        Recipe r;
+        RecipeStep f; f.id = "f"; f.use = "frame.member_end"; f.args["member"] = S("main");
+        RecipeStep p; p.id = "p"; p.use = "plate.rect"; p.role = "base_plate";
+        p.args["frame"] = S("f");
+        p.args["w"] = S("100"); p.args["h"] = S("200"); p.args["t"] = S("12");
+        if (!name.empty()) p.args["name"] = S(name);
+        if (!material.empty()) p.args["material"] = S(material);
+        if (!finish.empty()) p.args["finish"] = S(finish);
+        if (!posNo.empty()) p.args["posNo"] = S(posNo);
+        r.steps = {f, p};
+        return runRecipe(r, specs, input);
+    };
+
+    // 1) param.<ad> -> parametre degeri (literal metin DEGIL).
+    {
+        const GenerationPlan plan = runPlate(in, "param.plateName", "param.plateMaterial",
+                                             "param.plateFinish", "param.posNo");
+        CHECK(plan.ok, "plate.rect param.* : plan ok");
+        CHECK(!plan.plates.empty(), "plate.rect param.* : levha uretildi");
+        if (!plan.plates.empty()) {
+            CHECK(plan.plates[0].name == L"Taban levhasi", "plate.rect name = param.plateName");
+            CHECK(plan.plates[0].material == L"S355JR", "plate.rect material = param.plateMaterial");
+            CHECK(plan.plates[0].finish == L"Galvaniz", "plate.rect finish = param.plateFinish");
+            CHECK(plan.plates[0].posNo == L"P-101", "plate.rect posNo = param.posNo");
+            CHECK(plan.plates[0].material != L"param.plateMaterial",
+                  "plate.rect material literal 'param.plateMaterial' DEGIL");
+        }
+    }
+
+    // 2) Literal metin eskisi gibi aynen gecer (geriye donuk uyum).
+    {
+        const GenerationPlan plan = runPlate(in, "", "S235JR", "", "P-2");
+        CHECK(plan.ok, "plate.rect literal: plan ok");
+        if (!plan.plates.empty()) {
+            CHECK(plan.plates[0].material == L"S235JR", "plate.rect literal material aynen");
+            CHECK(plan.plates[0].posNo == L"P-2", "plate.rect literal posNo aynen");
+        }
+    }
+
+    // 3) Girdi parametresi yoksa SEMA varsayilani kullanilir.
+    {
+        std::vector<CompParamSpec> specs;
+        CompParamSpec s;
+        s.name = L"plateMaterial";
+        s.type = CompParamType::String;
+        s.defString = L"S275JR";
+        specs.push_back(s);
+        ComponentInput emptyParams = in;
+        emptyParams.params.clear();
+        const GenerationPlan plan = runPlate(emptyParams, "", "param.plateMaterial", "", "", specs);
+        CHECK(plan.ok, "plate.rect sema varsayilani: plan ok");
+        if (!plan.plates.empty())
+            CHECK(plan.plates[0].material == L"S275JR", "plate.rect material = sema varsayilani");
+    }
+
+    // 4) Tanimsiz metin parametresi -> FAIL-CLOSED (sessiz literal yok).
+    {
+        const GenerationPlan plan = runPlate(in, "param.yokBoyleParametre", "", "", "");
+        CHECK(!plan.ok, "plate.rect tanimsiz param -> plan.ok=false");
+        CHECK(!plan.error.empty(), "plate.rect tanimsiz param -> Turkce mesaj");
+    }
+}
+
 static void testWhenSkips() {
     const ComponentInput in = makeInput();
     Recipe r;
@@ -309,6 +385,7 @@ int main() {
     testBlocksProducePlan();
     testCheckFailClosed();
     testFrameOffset();
+    testPlateStringParams();
     testWhenSkips();
     std::printf("recipe test: %s (%d hata)\n", failures ? "HATALI" : "OK", failures);
     return failures ? 1 : 0;
