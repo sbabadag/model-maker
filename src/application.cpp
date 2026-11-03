@@ -2176,6 +2176,33 @@ void Application::onLeftButtonDown(int x, int y) {
         return;
     }
     if (workPlanePicking_) {
+        if (pointPickPurpose_ == PointPickPurpose::ViewToSurface) {
+            // YUZ -> GORUNUS: tiklanan yuzun duzlemine dik yeni gorunus acilir.
+            const auto faceHit = pickSceneFaceAt(x, y);
+            if (faceHit) {
+                Vec3 memberAxis{1.0, 0.0, 0.0};
+                if (faceHit->model < document_.models().size()) {
+                    const auto& props = document_.models()[faceHit->model].properties();
+                    memberAxis = Vec3{props.axisToX - props.axisFromX,
+                                      props.axisToY - props.axisFromY,
+                                      props.axisToZ - props.axisFromZ};
+                }
+                const ViewDefinition def = viewFromFace(faceHit->hit.point,
+                                                        faceHit->hit.normal, memberAxis);
+                cancelWorkPlaneCommand();
+                if (!twoPointViewCallback_) {
+                    MessageBeep(MB_ICONWARNING);
+                    publishStatus(L"Yüzeye göre görünüş: görünüş penceresi açılamadı (MDI bağlı değil)");
+                } else {
+                    twoPointViewCallback_(def);
+                    publishStatus(L"Yüzeye göre görünüş oluşturuldu — derinlik 100/100 mm");
+                }
+            } else {
+                MessageBeep(MB_ICONWARNING);
+                publishStatus(L"Yüzeye göre görünüş: imlecin altında yüz yok — parça yüzüne tıklayın");
+            }
+            updateControls(); invalidateCanvas(); return;
+        }
         if (pointPickPurpose_ == PointPickPurpose::WorkPlaneFace) {
             // YUZ ARACI: nokta snap'i DEGIL, imlec altindaki YUZ isabeti.
             const auto faceHit = pickSceneFaceAt(x, y);
@@ -2878,11 +2905,13 @@ void Application::onMouseMove(int x, int y, WPARAM buttons) {
         lastMouse_ = {x, y};
         updateHover(x, y);
         redraw = true;
-    } else if (workPlanePicking_ && pointPickPurpose_ == PointPickPurpose::WorkPlaneFace) {
+    } else if (workPlanePicking_ && (pointPickPurpose_ == PointPickPurpose::WorkPlaneFace ||
+                                     pointPickPurpose_ == PointPickPurpose::ViewToSurface)) {
         // YUZ ARACI HOVER: imlecin altindaki yuzu vurgula + aday calisma duzlemini
         // yesil hayalet + X/Y/Z oklariyla CANLI onizle. Bu modda snap hatti
         // (updateHover) DEGIL yuz raycast'i (refreshHoverCandidate) calisir; aksi
         // halde ne onizleme duzlemi ne de yuz vurgusu gorunur.
+        // YUZEYE GORE GORUNUS ayni vurguyu kullanir (hayalet duzlem cizilmez).
         refreshHoverCandidate(x, y);
         redraw = true;
     } else if (pendingCutKind_ || pendingBolt_ || pendingFinPlate_ || componentCommandActive()) {
@@ -3958,6 +3987,33 @@ void Application::startWorkPlaneTwoPointCommand() {
     startWorkPlaneCommand();
     pointPickPurpose_ = PointPickPurpose::WorkPlaneTwoPoints;
     updateStatus();
+}
+
+void Application::startViewToSurfaceCommand() {
+    // TEKLA "view to surface": imlecin altindaki parca yuzu vurgulanir (hover),
+    // tiklama o yuzun duzlemine DIK yeni bir gorunus acar. Calisma duzlemi
+    // aracindan fark: UCS DEGISMEZ, ViewDefinition uretilip MDI'ya eklenir.
+    // Derinlik varsayilani 100/100 mm (viewFromFace -> kDefaultFaceViewDepth).
+    cancelPendingComponentCommand();
+    cancelZoomWindow2D();
+    if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
+    if (workPlanePicking_) cancelWorkPlaneCommand();
+    cancelDrawing();
+    mode_ = EditMode::View3D;
+    drawingActive_ = false;
+    workPlanePicking_ = true;
+    workPlanePoints_.clear();
+    workPlanePreview_.reset();
+    pointPickPurpose_ = PointPickPurpose::ViewToSurface;
+    hoverFaceModel_.reset();
+    hoverFaceIndices_.clear();
+    hover_.reset();
+    // Araç başlar başlamaz imlecin altındaki yüzü vurgula (fare hareket etmeden de).
+    refreshHoverCandidate(cursorScreen_.x, cursorScreen_.y);
+    publishStatus(L"Yüzeye göre görünüş: bir parça yüzüne tıklayın (derinlik 100/100 mm)");
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
 }
 
 void Application::startWorkPlaneFaceToolCommand() {
@@ -7509,6 +7565,17 @@ void Application::refreshHoverCandidate(int x, int y) {
         }
         return;
     }
+    // YUZEYE GORE GORUNUS: ayni yuz vurgusu, farkli sonuc (UCS degil, gorunus).
+    if (workPlanePicking_ && pointPickPurpose_ == PointPickPurpose::ViewToSurface) {
+        const auto faceHit = pickSceneFaceAt(x, y);
+        if (faceHit) {
+            hoverFaceModel_ = faceHit->model;
+            if (faceHit->hit.faceIndex != std::size_t(-1))
+                hoverFaceIndices_ = planarFaceTriangleGroup(
+                    document_.models()[faceHit->model], faceHit->hit.faceIndex);
+        }
+        return;
+    }
     workPlanePreview_.reset();
     if (!pendingCutKind_ && !pendingBolt_ && !pendingFinPlate_ && !componentCommandActive()) return;
     // VERB-NOUN BOLT beklemede: yalnizca normal parcalar (konstrüksiyon
@@ -8268,7 +8335,8 @@ void Application::updateHover(int x, int y) {
     // dinamik tazelenir (refreshHoverCandidate -> WorkPlaneFace dali). Erken
     // cikis sart: workPlanePicking_ snapCommandActive yapar ve asagidaki snap
     // yolunda refreshHoverCandidate CAGRILMAZ.
-    if (workPlanePicking_ && pointPickPurpose_ == PointPickPurpose::WorkPlaneFace) {
+    if (workPlanePicking_ && (pointPickPurpose_ == PointPickPurpose::WorkPlaneFace ||
+                              pointPickPurpose_ == PointPickPurpose::ViewToSurface)) {
         refreshHoverCandidate(x, y);
         hover_.reset();
         return;
@@ -8978,6 +9046,8 @@ void Application::updateStatus() {
         text += workPlanePoints_.empty() ? L"orijini belirtin" : L"X yönünü belirtin";
     } else if (workPlanePicking_ && pointPickPurpose_ == PointPickPurpose::WorkPlaneFace) {
         text += L"  |  ÇALIŞMA DÜZLEMİ ARACI — parça yüzüne tıklayın (hover: önizleme)";
+    } else if (workPlanePicking_ && pointPickPurpose_ == PointPickPurpose::ViewToSurface) {
+        text += L"  |  YÜZEYE GÖRE GÖRÜNÜŞ — parça yüzüne tıklayın (derinlik 100/100 mm)";
     } else if (workPlanePicking_) {
         text += L"  |  WORK PLANE — ";
         if (workPlanePoints_.empty()) text += L"1. noktayı belirtin";

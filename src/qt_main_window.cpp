@@ -584,7 +584,12 @@ void QtMainWindow::openTwoPointView(const ViewDefinition& definition) {
     // gorunusun Z kotu yazilir; elevasyonda eski baslik korunur.
     sub->setWindowTitle(QString::fromStdWString(view.name) +
                         (plan ? QStringLiteral("  —  plan, Z = %1 mm").arg(std::lround(view.origin.z))
-                              : QStringLiteral("  —  %1 mm, XY'ye dik").arg(std::lround(view.length))));
+                              : (view.length > 0.0
+                                     ? QStringLiteral("  —  %1 mm, XY'ye dik").arg(std::lround(view.length))
+                                     // Yüzey görünüşü: P1-P2 hattı yok; başlıkta derinlik yazılır.
+                                     : QStringLiteral("  —  yüzey görünüşü, derinlik %1/%2 mm")
+                                           .arg(std::lround(view.depthFront))
+                                           .arg(std::lround(view.depthBack)))));
     // Gorunus penceresi tum MDI alanini kaplasin (Tekla gibi tek gorunus).
     // MDI'da ayni anda tek pencere buyutulmus olabilir; bu, varsa buyutulmus
     // ana gorunusu otomatik normale dondurur.
@@ -1049,6 +1054,13 @@ std::vector<QtMainWindow::CommandCategory> QtMainWindow::commandCategories() {
               [this]() { app_.startZoomWindow2D(); }),
         uiKey(uiCmd(QStringLiteral("Görünümü &Sıfırla"), QStringLiteral("Sıfırla"), QStringLiteral("Görünümü sıfırla (Ctrl+R)"), ToolGlyph::Reset,
               [this]() { app_.resetView(); }), QStringLiteral("Ctrl+R"), true),
+        uiSep(),
+        // Tekla view-to-surface: yüz üzerinde hover vurgusu + tık ile o yüze
+        // dik yeni görünüş (derinlik 100/100 mm). Çalışma düzlemi aracının
+        // (parça yüzü) görünüş üreten eşi.
+        uiCmd(QStringLiteral("Yüzeye Göre &Görünüş"), QStringLiteral("Yüzden Gör."),
+              QStringLiteral("Parça yüzüne tıklayarak o yüze dik yeni görünüş aç (derinlik 100/100 mm)"),
+              ToolGlyph::Plane, [this]() { app_.startViewToSurfaceCommand(); }),
         uiSep(),
         uiGroup(QStringLiteral("Görü&nüş Yönü"), QStringLiteral("Görünüş"), QStringLiteral("Standart görünüş yönleri (Ctrl+1..7)"), ToolGlyph::Extents, {
             uiKey(uiCmd(QStringLiteral("Ön&den"), QString(), QString(), ToolGlyph::Extents,

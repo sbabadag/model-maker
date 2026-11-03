@@ -68,6 +68,7 @@ add_library(mm_component_contract
     src/component_package.cpp
     src/component_preview.cpp
     src/component_checks.cpp
+    src/component_preview_auto.cpp
     src/recipe.cpp
 )
 target_include_directories(mm_component_contract PUBLIC include third_party ${CMAKE_CURRENT_SOURCE_DIR}/libs/mm_contract/include)
@@ -471,6 +472,12 @@ if(BUILD_TESTING)
     add_executable(model_maker_section_frame_test tests/section_frame_test.cpp)
     target_link_libraries(model_maker_section_frame_test PRIVATE model_maker_core)
     add_test(NAME model_maker_section_frame_test COMMAND model_maker_section_frame_test)
+
+    # Yüzeye göre görünüş (Tekla "view to surface"): yüz çerçevesi + 100/100 mm
+    # varsayılan derinlik. Çekirdek (OCC'siz) — komutun kanıtı burada.
+    add_executable(model_maker_view_face_test tests/view_face_test.cpp)
+    target_link_libraries(model_maker_view_face_test PRIVATE model_maker_core)
+    add_test(NAME model_maker_view_face_test COMMAND model_maker_view_face_test)
 
     # MM-5 adim 1: ComponentGenerator type-erased cagrilabilir. Fonksiyon
     # isaretcisi kayitlari AYNEN calisir; paket yukleyici recipe'yi capture eden

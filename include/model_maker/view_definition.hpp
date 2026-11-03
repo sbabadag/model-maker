@@ -32,6 +32,33 @@ struct ViewDefinition {
 
 inline constexpr double kDefaultViewDepth = 1000.0; // mm
 
+// YUZEYE GORE GORUNUS (Tekla "view to surface"): bir parca yuzune tiklaninca o
+// yuzun duzlemine DIK yeni bir gorunus acilir (UCS'nin yuz kuraliyla ayni
+// cerceve: X = uye ekseninin yuz duzlemine izdusumu, Y = N x X, izleyici
+// tarafi = N disa bakan yuz normali). Derinlik varsayilani 100/100 mm:
+// yuzun ONUNDE 100, ARKASINDA 100 (kullanici sarti; iki noktali gorunusun
+// 1000 mm varsayilanindan AYRI).
+inline constexpr double kDefaultFaceViewDepth = 100.0; // mm
+
+inline ViewDefinition viewFromFace(const Vec3& point, const Vec3& faceNormal,
+                                   const Vec3& memberAxis = Vec3{1.0, 0.0, 0.0},
+                                   double depthFront = kDefaultFaceViewDepth,
+                                   double depthBack = kDefaultFaceViewDepth) noexcept {
+    const Ucs frame = Ucs::fromFaceAndMemberAxis(point, faceNormal, memberAxis);
+    const auto sane = [](double d) {
+        return std::isfinite(d) && d >= 0.0 ? d : kDefaultFaceViewDepth;
+    };
+    ViewDefinition v;
+    v.origin = frame.origin;
+    v.right = frame.xAxis;   // yuz duzleminde, uye ekseni boyunca
+    v.up = frame.yAxis;      // N x X
+    v.normal = frame.zAxis;  // yuz normali = izleyici tarafi (right x up)
+    v.length = 0.0;          // yuz gorunusunde P1-P2 hatti yok
+    v.depthFront = sane(depthFront);
+    v.depthBack = sane(depthBack);
+    return v;
+}
+
 inline std::optional<ViewDefinition> viewFromTwoPoints(const Vec3& p1, const Vec3& p2,
                                                        double depthFront = kDefaultViewDepth,
                                                        double depthBack = kDefaultViewDepth) {

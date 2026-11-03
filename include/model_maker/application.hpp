@@ -322,6 +322,11 @@ public:
     void startWorkPlaneOnePointCommand();
     void startWorkPlaneTwoPointCommand();
     void startWorkPlaneFaceToolCommand();
+    // TEKLA "view to surface": imlecin altindaki PARCA YUZUNE tiklama -> o yuzun
+    // duzlemine DIK yeni gorunus acilir (derinlik varsayilani 100/100 mm).
+    // Calisma duzlemi araciyla AYNI hover vurgusunu kullanir; farkli sonuc uretir
+    // (UCS degil, ViewDefinition).
+    void startViewToSurfaceCommand();
     void setWorkPlaneToViewCommand();
     void setWorkPlaneParallelXYZ(int which, double depth);
     // KONSTRUKSIYON DUZLEMI (Tekla construction plane, P0): uc nokta
@@ -1434,7 +1439,7 @@ private:
     //   ThreePointView       : 3 nokta -> yeni gorunus penceresi (origin+X+Y)
     //   RotateCenter         : 1 nokta -> ekran donus merkezi (R tusu; Ctrl+sol
     //                          tus ile ekran bu merkez etrafinda doner)
-    enum class PointPickPurpose { WorkPlane, TwoPointView, TwoPointViewDirection, ThreePointView, RotateCenter, ConstructionPlane, ConstructionPlaneTwoPoints, WorkPlaneOnePoint, WorkPlaneTwoPoints, WorkPlaneFace };
+    enum class PointPickPurpose { WorkPlane, TwoPointView, TwoPointViewDirection, ThreePointView, RotateCenter, ConstructionPlane, ConstructionPlaneTwoPoints, WorkPlaneOnePoint, WorkPlaneTwoPoints, WorkPlaneFace, ViewToSurface };
     PointPickPurpose pointPickPurpose_{PointPickPurpose::WorkPlane};
     // Ctrl+sol tus: bu esikten fazla hareket rotasyona terfi eder; esik
     // asilmazsa Ctrl+tik secimi yapilir (tek karar noktasi).
