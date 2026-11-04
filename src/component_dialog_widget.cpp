@@ -1826,6 +1826,7 @@ void ComponentDialogWidget::refreshChecks() {
     std::string firstFailRole;
     checksTable_->setRowCount(static_cast<int>(plan.checks.size()));
     const QColor okFg(0x1a, 0x6e, 0x1a), okBg(0xee, 0xf6, 0xee);
+    const QColor warnFg(0x9a, 0x6a, 0x00), warnBg(0xff, 0xf6, 0xe0);  // MM-7 duzeltme: uyari (sari)
     const QColor badFg(0xa8, 0x12, 0x12), badBg(0xfb, 0xe9, 0xe9);
     for (std::size_t i = 0; i < plan.checks.size(); ++i) {
         const ComponentCheck& c = plan.checks[i];
@@ -1833,8 +1834,9 @@ void ComponentDialogWidget::refreshChecks() {
             anyFail = true;
             if (firstFailRole.empty()) firstFailRole = c.targetRole;  // MM-7 item 3
         }
-        const QColor& fg = c.pass ? okFg : badFg;
-        const QColor& bg = c.pass ? okBg : badBg;
+        const bool warn = c.pass && c.warning;
+        const QColor& fg = !c.pass ? badFg : (warn ? warnFg : okFg);
+        const QColor& bg = !c.pass ? badBg : (warn ? warnBg : okBg);
         auto make = [&](const QString& t) {
             auto* it = new QTableWidgetItem(t);
             it->setForeground(QBrush(fg));

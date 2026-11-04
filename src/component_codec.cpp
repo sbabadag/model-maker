@@ -1096,6 +1096,7 @@ json generationPlanToJsonImpl(const GenerationPlan& p) {
             cj["value"] = c.value;
             cj["limit"] = c.limit;
             cj["message"] = utf8FromWide(c.message);
+            if (c.warning) cj["warning"] = true;
             chk.push_back(std::move(cj));
         }
         j["checks"] = std::move(chk);
@@ -1140,6 +1141,7 @@ GenerationPlan generationPlanFromJsonImpl(const json& j) {
             c.value = cj.value("value", 0.0);
             c.limit = cj.value("limit", 0.0);
             c.message = wideFromUtf8(cj.value("message", std::string()));
+            c.warning = cj.value("warning", false);
             p.checks.push_back(std::move(c));
         }
     }

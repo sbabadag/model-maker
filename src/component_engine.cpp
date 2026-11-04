@@ -490,7 +490,7 @@ ComponentType endPlateComponentType() noexcept {
         lengthParam(L"boltDiameter", L"mm", 20.0, 12.0, 30.0, L"bulon capi"),
         lengthParam(L"holeDiameter", L"mm", 22.0, 12.0, 34.0, L"delik capi"),
         intParam(L"boltCountX", 2, 1, 8, L"genislik yonunde bulon adedi"),
-        intParam(L"boltCountY", 2, 1, 8, L"yukseklik yonunde bulon adedi"),
+        intParam(L"boltCountY", 0, 0, 8, L"yukseklik yonunde bulon adedi (0 = otomatik, gerekirse azaltilir)"),
         lengthParam(L"boltEdge", L"mm", 35.0, 10.0, 200.0, L"bulon kenar mesafesi (kesit kenarindan)"),
         enumParam(L"grade", L"8.8", {L"8.8", L"10.9"}, L"bulon sinifi"),
         boolParam(L"hasHead", true, L"bas"),
@@ -668,6 +668,21 @@ GenerationPlan generateEndPlate(const ComponentInput& input) noexcept {
     // MM-7 (item 1): bulon/uye cakisma + EC3 min kenar/aralik kontrolu.
     // Ihlal -> plan.ok=false + Turkce mesaj (hangi bulon, hangi uye, kac mm).
     applyChecksToPlan(plan, input);
+
+    // MM-7 duzeltme: varsayilan (otomatik) yerlesim satir sayisini azalttiginda
+    // bilgi/uyari check'i (SARI, OK acik). Digest'e girmez (checks[] cikarilir).
+    if (placement.boltRowsReduced) {
+        ComponentCheck c;
+        c.id = "bolt_rows_reduced";
+        c.pass = true;
+        c.warning = true;
+        c.value = static_cast<double>(placement.boltRowsActual);
+        c.limit = static_cast<double>(placement.boltRowsRequested);
+        c.message = L"Bulon satiri " + std::to_wstring(placement.boltRowsRequested) +
+                    L" -> " + std::to_wstring(placement.boltRowsActual) +
+                    L" (kesit yuksekligi yetersiz)";
+        plan.checks.push_back(c);
+    }
     return plan;
 }
 

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <string>
 
 namespace mm {
 
@@ -107,7 +108,7 @@ EndPlateFrame endPlateFrame(const Vec3& beamAxis, const Vec3& referenceNormal) n
 static void makeEndPlateBolts(EndPlatePlacement& out,
                               const EndPlateParams& params) noexcept {
     int nx = params.boltCountX > 0 ? params.boltCountX : 1;
-    int ny = params.boltCountY > 0 ? params.boltCountY : 1;
+    int ny = params.boltCountY > 0 ? params.boltCountY : 2;
 
     // Yatay aralik: elle girilmediyse VARSAYILAN gauge (MM-7 item 1):
     // max(flans/2, 2.4*d0, tw + 2*kaynak + d0), 5 mm'ye yukari yuvarlanmis.
@@ -153,6 +154,7 @@ static void makeEndPlateBolts(EndPlatePlacement& out,
     // ("bu kesit icin varsayilan yerlesim yok"). Kullanici ACIK deger verirse
     // (boltOffsetV >= 0 veya boltSpacingY > 0) dokunulmaz — ihlali checks
     // fail-closed reddeder.
+    const bool rowsAuto = (params.boltCountY <= 0);
     const bool autoPlace = (params.boltOffsetV < 0.0 && params.boltSpacingY <= 0.0);
     if (autoPlace) {
         const double minPitch1 = kMinPitch1Ratio * d0;
@@ -162,6 +164,20 @@ static void makeEndPlateBolts(EndPlatePlacement& out,
             return sp > 0.0 && sp >= minPitch1;
         };
         if (!fits(ny)) {
+            // MM-7 duzeltme: kullanici ACIK satir sayisi verdiyse (boltCountY > 0)
+            // azaltma YAPILMAZ — fail-closed ret. Yalniz otomatik (boltCountY <= 0)
+            // yerlesim satir sayisini kendiligi azaltabilir; bu durum UYARI ile
+            // isaretlenir (generator bolt_rows_reduced check'i ekler).
+            if (!rowsAuto) {
+                out.boltPlacementOk = false;
+                out.boltPlacementError =
+                    L"acik bulon satiri (" + std::to_wstring(ny) +
+                    L") bu kesite sigmiyor: govde acikligi (basliklar arasi) "
+                    L"delik capi + kaynak payini karsilamiyor; satir sayisini "
+                    L"azaltin veya dikey yerlesimi elle verin";
+                out.bolts = BoltGroup{};
+                return;
+            }
             int reduced = 0;
             for (int n = ny - 1; n >= 1; --n) {
                 if (fits(n)) { reduced = n; break; }
@@ -174,7 +190,10 @@ static void makeEndPlateBolts(EndPlatePlacement& out,
                 out.bolts = BoltGroup{};
                 return;
             }
+            out.boltRowsReduced = true;
+            out.boltRowsRequested = ny;
             ny = reduced;
+            out.boltRowsActual = ny;
         }
     }
 

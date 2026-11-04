@@ -90,7 +90,10 @@ struct EndPlateParams {
     double holeDiameter{22.0};     // delik capi (M20 -> 22)
     std::string boltGrade{"8.8"};  // bulon sinifi (etiket)
     int boltCountX{2};             // levha genislik yonunde bulon adedi (genelde 2)
-    int boltCountY{2};             // levha yukseklik yonunde bulon adedi (2 veya 4)
+    int boltCountY{0};             // levha yukseklik yonunde bulon adedi
+                                   // (0 = otomatik: 2 satir, kucuk kesitte 1'e
+                                   // azaltilir + UYARI; >0 = ACIK, azaltma yok,
+                                   // sigmazsa fail-closed)
     double boltEdge{35.0};         // levha kenarindan bulon merkezine (mm)
     // --- Tekla "Bolt group dimensions" (Bulonlar sekmesi) -------------------
     // MM-7: dikey konum/aralik KESITE (kiris) gore (yatay gauge secWidth'ten
@@ -143,6 +146,11 @@ struct EndPlatePlacement {
                                     // baslik ic yuzu acikligi; 0 = bilinmiyor -> legacy)
     bool boltPlacementOk{true};     // varsayilan bulon yerlesimi kurulabildi mi
     std::wstring boltPlacementError; // reddetme nedeni (boltPlacementOk=false iken)
+    // MM-7 duzeltme: varsayilan (otomatik) yerlesim satir sayisini azalttiginda
+    // generator bolt_rows_reduced UYARI check'i eklesin diye tasinir.
+    bool boltRowsReduced{false};
+    int boltRowsRequested{0};       // istenen satir sayisi (azaltma oncesi)
+    int boltRowsActual{0};          // uygulanan satir sayisi (azaltma sonrasi)
     double plateThickness{0.0};
     double colFlangeThickness{0.0}; // kolon flans kalinligi (bulon kavrama hesabi)
     double boltGripLength{0.0};     // bolon saft kavrama uzunlugu (levha+gap+flans)

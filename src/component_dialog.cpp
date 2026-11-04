@@ -326,7 +326,7 @@ std::vector<CompParamSpec> endPlateDialogSpecs() noexcept {
         lengthParam(L"holeDiameter", L"mm", 22.0, 12.0, 34.0, L"delik capi"),
         enumParam(L"grade", L"8.8", {L"8.8", L"10.9"}, L"bulon sinifi"),
         intParam(L"boltCountX", 2, 1, 8, L"genislik yonunde bulon adedi"),
-        intParam(L"boltCountY", 2, 1, 8, L"yukseklik yonunde bulon adedi"),
+        intParam(L"boltCountY", 0, 0, 8, L"yukseklik yonunde bulon adedi (0 = otomatik, gerekirse azaltilir)"),
         lengthParam(L"boltEdge", L"mm", 35.0, 10.0, 200.0, L"bulon kenar mesafesi (kesit kenarindan)"),
         enumParam(L"boltAlignH", L"Orta", {L"Sol", L"Orta", L"Sag"}, L"yatay hiza"),
         enumParam(L"boltAlignV", L"Alt", {L"Ust", L"Orta", L"Alt"}, L"dikey hiza"),

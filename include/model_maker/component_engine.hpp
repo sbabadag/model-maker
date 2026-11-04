@@ -282,6 +282,9 @@ struct ComponentCheck {
     double value{0.0};
     double limit{0.0};
     std::wstring message;
+    // MM-7 duzeltme: pass=true + warning=true = bilgi/uyari (diyalogda SARI satir,
+    // OK ACIK kalir). pass=false = ihlal (KIRMIZI). UI ipucudur, digest'e girmez.
+    bool warning{false};
     // MM-7 item 3: ihlal eden OGEYI isaretler (onizlemede kirmizi vurgu + satira
     // tiklayinca secim). targetRole = ihlalin bagli oldugu bulon grubu roleKey'i
     // (plan.boltGroupKeys[i]); bos = belirsiz. boltRow/boltCol = en kotu bulonun

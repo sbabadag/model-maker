@@ -1013,6 +1013,22 @@ static bool blockEndPlatePlacement(EvalCtx& ctx, const RecipeStep& st, Generatio
     // MM-7 (item 1): generator ile AYNI kontrol (gen == rec). Ihlalde ctx.error
     // kurulur; runRecipe plan.ok=false yapar.
     applyChecksToPlan(plan, ctx.input);
+
+    // MM-7 duzeltme: varsayilan (otomatik) yerlesim satir sayisini azalttiginda
+    // bilgi/uyari check'i (generator ile AYNI — gen == rec, digest'e girmez).
+    if (placement.boltRowsReduced) {
+        ComponentCheck c;
+        c.id = "bolt_rows_reduced";
+        c.pass = true;
+        c.warning = true;
+        c.value = static_cast<double>(placement.boltRowsActual);
+        c.limit = static_cast<double>(placement.boltRowsRequested);
+        c.message = L"Bulon satiri " + std::to_wstring(placement.boltRowsRequested) +
+                    L" -> " + std::to_wstring(placement.boltRowsActual) +
+                    L" (kesit yuksekligi yetersiz)";
+        plan.checks.push_back(c);
+    }
+
     if (!plan.ok) {
         ctx.error = plan.error;
         return false;

@@ -517,6 +517,15 @@ if(BUILD_TESTING)
     add_test(NAME model_maker_component_endplate_coverage_test
              COMMAND model_maker_component_endplate_coverage_test)
 
+    # MM-7 duzeltme: bolt_rows_reduced UYARI check'i + ACIK satir fail-closed.
+    add_executable(model_maker_component_bolt_rows_reduced_test
+        tests/component_bolt_rows_reduced_test.cpp)
+    target_link_libraries(model_maker_component_bolt_rows_reduced_test PRIVATE model_maker_core)
+    target_compile_definitions(model_maker_component_bolt_rows_reduced_test PRIVATE
+        MM_PROFILES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/profiles")
+    add_test(NAME model_maker_component_bolt_rows_reduced_test
+             COMMAND model_maker_component_bolt_rows_reduced_test)
+
     # Kesit referans normali: "profil ust basligi workplane ile paralel".
     # Secim (UCS vs otomatik gorunus duzlemi) + MMW6 kalicilik + eski dosya
     # uyumlulugu + donusumlerde normalin donmesi. OCC'siz, Linux'ta kosar.
