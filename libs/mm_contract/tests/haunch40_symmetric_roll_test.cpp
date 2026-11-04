@@ -18,6 +18,9 @@
 //      asimetrik kesitte 180 korunur (ayna goruntusu uyedir).
 //   B. GENERATOR: her golden girdi icin roll-180 varyanti (profileRotation=180)
 //      ile roll-0 AYNI plani verir (GEOMETRIK 1e-9 + digest esitligi).
+//   C. GENERATOR (asimetrik): sectionCenterOffset != 0 kesitte roll-180 bir
+//      AYNA goruntusu uyedir (ayni plan DEGIL) ama haunch yercekimine gore
+//      yine ALTA kalmalidir — USTE kacmamalidir (MM-4b/D garantisi).
 // ============================================================================
 #include "model_maker/component_codec.hpp"
 #include "model_maker/component_engine.hpp"
@@ -233,6 +236,52 @@ static void testCanonicalRoll() {
     CHECK(!sameGeometry(a0, a180), "asimetrik: 0° ve 180° farkli uye");
 }
 
+// --- (C) GENERATOR (asimetrik): haunch yercekimine gore ALTTA kalir ---------
+
+// Asimetrik kesit: sectionCenterOffset != 0. Roll-180 bir AYNA goruntusu uyedir
+// (kanonik katman rotation'i [0,360) tutar), yani planlar ayni OLMAZ; garanti
+// edilen sey haunch'in (govde + alt flans) yercekimine gore ALTTA kalmasidir,
+// USTE kacmamasidir (MM-4b/D).
+
+static double plateCenterZByKey(const GenerationPlan& p, const std::string& key) {
+    for (std::size_t i = 0; i < p.plates.size() && i < p.plateKeys.size(); ++i) {
+        if (p.plateKeys[i] == key) return p.plates[i].center.z;
+    }
+    return 0.0;
+}
+
+static void testAsymmetricRollBelow() {
+    // Yatay asimetrik mertek: eksen z = 1500 (makeInput(0.0)); kesit merkezi
+    // +60 mm yukari kayik (Top-ankraj benzeri). Roll 0 ve roll 180'de haunch
+    // levhalari (govde + alt flans) kiris ekseninin ALTINDA kalmalidir.
+    for (const double offset : {60.0, -60.0}) {
+        ComponentInput base = makeInput(0.0);
+        base.secondary[0].sectionCenterOffset = offset;
+
+        ComponentInput rolled = base;
+        rolled.secondary[0].profileRotation = 180.0;
+
+        const GenerationPlan p0 = generateHaunch40(base);
+        const GenerationPlan p180 = generateHaunch40(rolled);
+        const std::string tag = "asimetrik offset=" + std::to_string(offset);
+
+        CHECK(p0.ok, (tag + ": roll-0 ok").c_str());
+        CHECK(p180.ok, (tag + ": roll-180 ok").c_str());
+        if (!p0.ok || !p180.ok) continue;
+
+        const double beamZ = base.secondary[0].axisTo.z;  // 1500 (yatay)
+        const double web0 = plateCenterZByKey(p0, "haunch_web");
+        const double web180 = plateCenterZByKey(p180, "haunch_web");
+        const double fl0 = plateCenterZByKey(p0, "haunch_lower_flange");
+        const double fl180 = plateCenterZByKey(p180, "haunch_lower_flange");
+
+        CHECK(web0 < beamZ, (tag + ": roll-0 haunch_web ALTTA").c_str());
+        CHECK(web180 < beamZ, (tag + ": roll-180 haunch_web ALTTA (USTE kacmadi)").c_str());
+        CHECK(fl0 < beamZ, (tag + ": roll-0 haunch_lower_flange ALTTA").c_str());
+        CHECK(fl180 < beamZ, (tag + ": roll-180 haunch_lower_flange ALTTA (USTE kacmadi)").c_str());
+    }
+}
+
 // --- main -------------------------------------------------------------------
 
 int main() {
@@ -270,6 +319,9 @@ int main() {
                     c.name, base.plates.size(), base.boltGroups.size(),
                     base.cuts.size(), base.welds.size());
     }
+
+    std::printf("=== C. GENERATOR (asimetrik): haunch ALTTA kalir (roll 0 ve 180) ===\n");
+    testAsymmetricRollBelow();
 
     std::printf("haunch40 simetrik roll: %s (%d hata)\n",
                 failures ? "BASARISIZ" : "OK", failures);
