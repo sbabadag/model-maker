@@ -2077,6 +2077,20 @@ bool haunchFrameAnalysis(Haunch40Ctx& g, GenerationPlan& plan) {
     g.dir = g.p.lenDir;
     g.W = g.p.sec.width;
     g.H = g.p.sec.height;
+    // YERCEKIMI (MM-4b / D): haunch her zaman kirisin ALTINA konur; "alt taraf"
+    // dunya-up'a (yercekimi) gore belirlenir, kesit cercevesinin isaretine veya
+    // profileRotation'a gore DEGIL. p.sec (resolveShearTabPlacement) worldUp +
+    // profileRotation'dan kurulur; simetrik kiriste 180° roll yukseklik yonunu
+    // (g.H) ters cevirir ve haunch USTE kayardi. g.H asagi bakiyorsa cerceveyi
+    // cevir ki "-g.H" hep asagi (yercekimi) olsun: roll 180 ile roll 0 ayni
+    // plani verir, asimetrik kesitte de haunch yerçekimine gore altta kalir.
+    // facePoint asagida g.p.sec.height uzerinden hesaplanir (etkilenmez); bu
+    // yalniz yerlesim yonunu duzeltir, kati geometriyi degistirmez.
+    const Vec3 worldUp{0.0, 0.0, 1.0};
+    if (vdot(g.H, worldUp) < 0.0) {
+        g.W = vscale(g.W, -1.0);
+        g.H = vscale(g.H, -1.0);
+    }
     g.inclined = std::fabs(g.dir.z) > 1e-4;
     g.ax = g.dir;
     g.tanT = 0.0;

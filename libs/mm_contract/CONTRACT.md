@@ -216,6 +216,13 @@ kayıpsız; digest 1e-6'ya yuvarlanmış kanonik JSON üzerinden hesaplanır.
   birebir, `planDigest` değişmez.
 - Paket: `libs/mm_contract/packages/haunch40/recipe.json` (5 golden girdide
   `digest(runRecipe) == digest(generateHaunch40) == golden`).
+- **Haunch'ın "alt tarafı" yerçekimine bağlıdır (MM-4b).** `generateHaunch40`
+  haunch'ı (gövde/alt flanş) ve üst/alt bulon gruplarını kesit çerçevesinin
+  işaretine veya `profileRotation`'a göre DEĞİL, dünya-yukarı (`worldUp`)
+  vektörüne göre yerleştirir; kesit çerçevesinin yükseklik yönü aşağı bakarsa
+  çerçeve (genişlik+yükseklik) ters çevrilir ki `−height` hep aşağıyı göstersin.
+  Böylece simetrik kirişin 180° roll'ü planı değiştirmez; asimetrik kesitte de
+  haunch yerçekimine göre altta kalır.
 
 ## Sürüm denetimi DIŞINDA olanlar (serbest)
 
