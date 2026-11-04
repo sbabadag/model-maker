@@ -1113,6 +1113,14 @@ if(BUILD_TESTING)
         target_compile_definitions(model_maker_component_plate_color_test PRIVATE
             MM_PACKAGES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/libs/mm_contract/packages")
         add_test(NAME model_maker_component_plate_color_test COMMAND model_maker_component_plate_color_test)
+        # KATALOG KOMUT YOLU (MM-REGRESYON): Document -> componentInputFromDocument
+        # -> runRecipe(mm_end_plate_pkg) -> materializer -> instance. Uyumlu profil
+        # instance olusturur; dar flans/egik kiris ACIK reddedilir (sessiz yok).
+        add_executable(model_maker_component_command_path_test tests/component_command_path_test.cpp)
+        target_link_libraries(model_maker_component_command_path_test PRIVATE model_maker_occ)
+        target_compile_definitions(model_maker_component_command_path_test PRIVATE
+            MM_PACKAGES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/libs/mm_contract/packages")
+        add_test(NAME model_maker_component_command_path_test COMMAND model_maker_component_command_path_test)
         add_executable(model_maker_plate_frame_handedness_test tests/plate_frame_handedness_test.cpp)
         target_link_libraries(model_maker_plate_frame_handedness_test PRIVATE model_maker_occ)
         add_test(NAME model_maker_plate_frame_handedness_test COMMAND model_maker_plate_frame_handedness_test)
