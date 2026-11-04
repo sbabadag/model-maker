@@ -496,6 +496,93 @@ int main() {
         if (!rc.ok) std::printf("   5c mesaj: %ls\n", rc.message.c_str());
     }
 
+    // 6) G FAIL-CLOSED: recipe.json 'let' bolumu + yalniz CR bayti.
+    {
+        // (a) let bir NESNE degil -> RED.
+        {
+            const fs::path d = root / "fail_let_notobj" / "end_plate_pkg";
+            makePackageCopy(endPlatePkg, d, "mm_fail_let_notobj");
+            json rj = json::parse(readAll(d / "recipe.json"));
+            rj["let"] = "metin";   // nesne degil
+            writeAll(d / "recipe.json", rj.dump(2));
+            writeChecksums(d);
+            ComponentRegistry reg;
+            registerBuiltInComponents(reg);
+            const ComponentPackageLoad r = loadComponentPackage(d, reg);
+            check(!r.ok, "6a let nesne degil -> RED");
+            check(r.message.find(L"let") != std::wstring::npos,
+                  "6a ret mesaji 'let' alanini adlandirir");
+            if (!r.ok) std::printf("   6a mesaj: %ls\n", r.message.c_str());
+        }
+        // (b) let degeri BOOLEAN -> RED.
+        {
+            const fs::path d = root / "fail_let_bool" / "end_plate_pkg";
+            makePackageCopy(endPlatePkg, d, "mm_fail_let_bool");
+            json rj = json::parse(readAll(d / "recipe.json"));
+            rj["let"] = {{"x", true}};
+            writeAll(d / "recipe.json", rj.dump(2));
+            writeChecksums(d);
+            ComponentRegistry reg;
+            registerBuiltInComponents(reg);
+            const ComponentPackageLoad r = loadComponentPackage(d, reg);
+            check(!r.ok, "6b let degeri boolean -> RED");
+            check(r.message.find(L"x") != std::wstring::npos &&
+                      r.message.find(L"boolean") != std::wstring::npos,
+                  "6b ret mesaji alan adini + turu adlandirir");
+            if (!r.ok) std::printf("   6b mesaj: %ls\n", r.message.c_str());
+        }
+        // (c) let degeri LISTE -> RED.
+        {
+            const fs::path d = root / "fail_let_list" / "end_plate_pkg";
+            makePackageCopy(endPlatePkg, d, "mm_fail_let_list");
+            json rj = json::parse(readAll(d / "recipe.json"));
+            rj["let"] = {{"x", json::array({1, 2})}};
+            writeAll(d / "recipe.json", rj.dump(2));
+            writeChecksums(d);
+            ComponentRegistry reg;
+            registerBuiltInComponents(reg);
+            const ComponentPackageLoad r = loadComponentPackage(d, reg);
+            check(!r.ok, "6c let degeri liste -> RED");
+            check(r.message.find(L"liste") != std::wstring::npos,
+                  "6c ret mesaji 'liste' turunu adlandirir");
+            if (!r.ok) std::printf("   6c mesaj: %ls\n", r.message.c_str());
+        }
+        // (d) let degeri SAYI -> RED.
+        {
+            const fs::path d = root / "fail_let_num" / "end_plate_pkg";
+            makePackageCopy(endPlatePkg, d, "mm_fail_let_num");
+            json rj = json::parse(readAll(d / "recipe.json"));
+            rj["let"] = {{"x", 42}};
+            writeAll(d / "recipe.json", rj.dump(2));
+            writeChecksums(d);
+            ComponentRegistry reg;
+            registerBuiltInComponents(reg);
+            const ComponentPackageLoad r = loadComponentPackage(d, reg);
+            check(!r.ok, "6d let degeri sayi -> RED");
+            check(r.message.find(L"sayi") != std::wstring::npos,
+                  "6d ret mesaji 'sayi' turunu adlandirir");
+            if (!r.ok) std::printf("   6d mesaj: %ls\n", r.message.c_str());
+        }
+        // (e) manifest'te YALNIZ CR bayti (CRLF degil) -> RED.
+        {
+            const fs::path d = root / "fail_lone_cr" / "end_plate_pkg";
+            makePackageCopy(endPlatePkg, d, "mm_fail_lone_cr");
+            std::string mj = readAll(d / "manifest.json");
+            // Ilk satir sonuna tek basina '\r' sok (CRLF degil).
+            const std::size_t nl = mj.find('\n');
+            if (nl != std::string::npos) mj.insert(nl, "\r");
+            writeAll(d / "manifest.json", mj);
+            writeChecksums(d);   // checksums CR'li baytlarla hesaplanir (tutar)
+            ComponentRegistry reg;
+            registerBuiltInComponents(reg);
+            const ComponentPackageLoad r = loadComponentPackage(d, reg);
+            check(!r.ok, "6e yalniz CR baytli manifest -> RED");
+            check(r.message.find(L"CR") != std::wstring::npos,
+                  "6e ret mesaji CR baytini adlandirir");
+            if (!r.ok) std::printf("   6e mesaj: %ls\n", r.message.c_str());
+        }
+    }
+
     fs::remove_all(root, ec);
     std::printf("\n%d/%d checks gecti\n", checks - failures, checks);
     return failures == 0 ? 0 : 1;

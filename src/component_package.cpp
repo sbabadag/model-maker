@@ -66,8 +66,10 @@ bool readJsonFile(const fs::path& p, json& out, std::wstring& err) {
     }
     // MM-5 (Windows bulgusu): paketler BYTE-ayni olmali; CRLF donusumu
     // checksums.json'u bozar ve paket sessizce reddedilir. Sebebi ACIKCA yaz.
-    if (text.find("\r\n") != std::string::npos) {
-        err = L"dosya CRLF satir sonu iceriyor (Windows core.autocrlf): " +
+    // G: YALNIZ CRLF degil, TEK BASINA CR bayti da REDDEDILIR (Studio ayni
+    // kurali uygular; core.autocrlf veya elle CR sokulmasi paketi bozar).
+    if (text.find('\r') != std::string::npos) {
+        err = L"dosya CR bayti iceriyor (CRLF veya yalniz CR; Windows core.autocrlf): " +
               pathText(p.filename()) +
               L" — .gitattributes 'libs/mm_contract/packages/** -text' gerekli";
         return false;
@@ -104,6 +106,27 @@ bool validateRecipeJsonHeader(const json& rj, std::wstring& err) {
         err = L"recipe.json recipeVersion desteklenmiyor: " + wideAscii(ver) +
               L" (bu surum yalniz 1.x recipe bicimini okur)";
         return false;
+    }
+    // G: let bolumu — RECIPE.md: "let: ad -> ifade". let bir NESNE olmali ve her
+    // degeri IFADE METNI (string) olmali. Boolean / liste / sayi / nesne olmayan
+    // degerler sessizce atlanmaz, alan adiyla ACIK reddedilir (fail-closed).
+    if (rj.contains("let")) {
+        if (!rj["let"].is_object()) {
+            err = L"recipe.json 'let' nesne degil (let: ad -> ifade beklenir)";
+            return false;
+        }
+        for (auto it = rj["let"].begin(); it != rj["let"].end(); ++it) {
+            if (!it.value().is_string()) {
+                const char* kind = it.value().is_boolean()  ? "boolean"
+                                   : it.value().is_array()  ? "liste"
+                                   : it.value().is_number() ? "sayi"
+                                                            : "nesne/gecersiz";
+                err = L"recipe.json let '" + wideAscii(it.key()) +
+                      L"' ifade metni degil (" + wideAscii(kind) +
+                      L"); ad -> ifade (string) beklenir";
+                return false;
+            }
+        }
     }
     if (!rj.contains("steps")) { err = L"recipe.json steps eksik"; return false; }
     if (!rj["steps"].is_array()) { err = L"recipe.json steps dizi degil"; return false; }
