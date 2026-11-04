@@ -113,6 +113,71 @@ int main() {
               "EntityRef tip uyusmaz -> gecersiz");
     }
 
+    // --- 2b) K: tek tarafli sinir (yalniz min / yalniz max) -----------------
+    // Regression: hasMinDouble varken maxDouble=0 kalirsa [min,0]'a kirpilir;
+    // min>0 icin std::clamp lo>hi tanimsiz davranis. Her sinir bagimsiz uygulanmali.
+    {
+        CompParamSpec onlyMin;
+        onlyMin.name = L"onlyMin";
+        onlyMin.type = CompParamType::Length;
+        onlyMin.defDouble = 50.0;
+        onlyMin.hasMinDouble = true;
+        onlyMin.minDouble = 20.0;
+        check(std::get<double>(validateParamValue(onlyMin, CompParamValue{5.0})) == 20.0,
+              "Length yalniz-min alt sinir uygulanir");
+        check(std::get<double>(validateParamValue(onlyMin, CompParamValue{500.0})) == 500.0,
+              "Length yalniz-min UST sinir yoktur (500 korunur, 0'a kirpilmaz)");
+        check(std::get<double>(validateParamValue(onlyMin, CompParamValue{50.0})) == 50.0,
+              "Length yalniz-min ic sinir degeri korunur");
+
+        CompParamSpec onlyMax;
+        onlyMax.name = L"onlyMax";
+        onlyMax.type = CompParamType::Length;
+        onlyMax.defDouble = 12.0;
+        onlyMax.hasMaxDouble = true;
+        onlyMax.maxDouble = 100.0;
+        check(std::get<double>(validateParamValue(onlyMax, CompParamValue{500.0})) == 100.0,
+              "Length yalniz-max ust sinir uygulanir");
+        check(std::get<double>(validateParamValue(onlyMax, CompParamValue{5.0})) == 5.0,
+              "Length yalniz-max ALT sinir yoktur (5 korunur)");
+
+        CompParamSpec onlyMinI;
+        onlyMinI.name = L"onlyMinI";
+        onlyMinI.type = CompParamType::Integer;
+        onlyMinI.defInt = 4;
+        onlyMinI.hasMinInt = true;
+        onlyMinI.minInt = 2;
+        check(std::get<int>(validateParamValue(onlyMinI, CompParamValue{1})) == 2,
+              "Integer yalniz-min alt sinir uygulanir");
+        check(std::get<int>(validateParamValue(onlyMinI, CompParamValue{99})) == 99,
+              "Integer yalniz-min UST sinir yoktur (99 korunur, 0'a kirpilmaz)");
+
+        CompParamSpec onlyMaxI;
+        onlyMaxI.name = L"onlyMaxI";
+        onlyMaxI.type = CompParamType::Integer;
+        onlyMaxI.defInt = 2;
+        onlyMaxI.hasMaxInt = true;
+        onlyMaxI.maxInt = 8;
+        check(std::get<int>(validateParamValue(onlyMaxI, CompParamValue{99})) == 8,
+              "Integer yalniz-max ust sinir uygulanir");
+        check(std::get<int>(validateParamValue(onlyMaxI, CompParamValue{-3})) == -3,
+              "Integer yalniz-max ALT sinir yoktur (-3 korunur)");
+
+        CompParamSpec neither;
+        neither.name = L"neither";
+        neither.type = CompParamType::Length;
+        neither.defDouble = 7.0;
+        check(std::get<double>(validateParamValue(neither, CompParamValue{12345.0})) == 12345.0,
+              "Length hic sinirsiz: deger korunur");
+
+        CompParamSpec neitherI;
+        neitherI.name = L"neitherI";
+        neitherI.type = CompParamType::Integer;
+        neitherI.defInt = 2;
+        check(std::get<int>(validateParamValue(neitherI, CompParamValue{77})) == 77,
+              "Integer hic sinirsiz: deger korunur");
+    }
+
     // --- 3) alignParamsToSpecs: eksik + bilinmeyen + zorlama -----------------
     {
         std::vector<CompParamSpec> specs;

@@ -51,18 +51,6 @@ std::string inputRoleFor(const ComponentInput& input, EntityId id) {
 
 namespace {
 
-double clampD(double v, double lo, double hi) noexcept {
-    if (v < lo) return lo;
-    if (v > hi) return hi;
-    return v;
-}
-
-int clampI(int v, int lo, int hi) noexcept {
-    if (v < lo) return lo;
-    if (v > hi) return hi;
-    return v;
-}
-
 // Bir double degeri coerce et (double yoksa int/bool'dan; yoksa nullopt).
 std::optional<double> toDouble(const CompParamValue& v) noexcept {
     if (const auto* d = std::get_if<double>(&v)) return *d;
@@ -113,15 +101,18 @@ CompParamValue validateParamValue(const CompParamSpec& spec,
         case CompParamType::Angle: {
             auto d = toDouble(value);
             if (!d) return paramDefaultValue(spec);
-            if (spec.hasMinDouble) d = clampD(*d, spec.minDouble, spec.maxDouble);
-            if (spec.hasMaxDouble) d = clampD(*d, spec.minDouble, spec.maxDouble);
+            // K — her sinir yalnizca verilmisse uygulanir; tek tarafli sinir
+            // (yalniz min ya da yalniz max) digerini 0 varsayip [min,0]'a
+            // kirmamali (std::clamp icin lo>hi tanimsiz davranistir).
+            if (spec.hasMinDouble) d = std::max(*d, spec.minDouble);
+            if (spec.hasMaxDouble) d = std::min(*d, spec.maxDouble);
             return CompParamValue{*d};
         }
         case CompParamType::Integer: {
             auto i = toInt(value);
             if (!i) return paramDefaultValue(spec);
-            if (spec.hasMinInt) i = clampI(*i, spec.minInt, spec.maxInt);
-            if (spec.hasMaxInt) i = clampI(*i, spec.minInt, spec.maxInt);
+            if (spec.hasMinInt) i = std::max(*i, spec.minInt);
+            if (spec.hasMaxInt) i = std::min(*i, spec.maxInt);
             return CompParamValue{*i};
         }
         case CompParamType::Boolean: {
