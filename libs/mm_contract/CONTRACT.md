@@ -67,8 +67,12 @@ Ayrıca `libs/mm_contract/include/mm_contract/`:
 - `struct PlateSpec` — poligon `outline`, pahlar, kalınlık, malzeme
 - `struct GenerationPlan` — `{ok, message, plates[], bolts[], cuts[], welds[],
   roleKey'ler (plateKeys, boltKeys, ...)}`; `ok == false` ise belge değişmez.
-  `checks[]` (MM-7) salt raporlama alanıdır: `{id, pass, value, limit, message}`;
-  digest'e **girmez** (digest yalnız geometri), JSON'a boşsa yazılmaz.
+  `checks[]` (MM-7) **bağlayıcıdır (fail-closed)**: `{id, pass, value, limit,
+  message}`; herhangi bir kontrol `pass == false` ise üretim reddedilir
+  (`ok == false`, belge değişmez) ve ret nedeni `checks[]` ile raporlanır —
+  kullanıcıya önizleme panelindeki checks tablosunda kırmızı satır, durum
+  çubuğu ve log olarak görünür; OK ancak tüm kontroller geçince açılır.
+  `checks[]` digest'e **girmez** (digest yalnız geometri), JSON'a boşsa yazılmaz.
 
 ### PlateSpec çerçevesi — el yönü ve köşe numaralama (`component_engine.hpp`)
 
