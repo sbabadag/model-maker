@@ -137,6 +137,8 @@ struct EndPlatePlacement {
     double plateHeight{0.0};
     double secWidth{0.0};          // kiris kesit genisligi (bulon flans gauge'i)
     double secHeight{0.0};         // kiris kesit yuksekligi (bulon dikey gauge'i)
+    double secWebThickness{0.0};   // kiris govde kalinligi (varsayilan gauge govde
+                                   // acikligi terimi; 0 = bilinmiyor -> terim atlanir)
     double plateThickness{0.0};
     double colFlangeThickness{0.0}; // kolon flans kalinligi (bulon kavrama hesabi)
     double boltGripLength{0.0};     // bolon saft kavrama uzunlugu (levha+gap+flans)
@@ -219,7 +221,8 @@ EndPlatePlacement computeEndPlatePlacementRotated(const Vec3& beamEnd, const Vec
 EndPlatePlacement computeEndPlatePlacementOnFace(
     const ReferencePlane& face, double gap, double secWidth, double secHeight,
     const EndPlateParams& params, const Vec3& sectionHeightDir = Vec3{0.0, 0.0, 1.0},
-    double anchorOffset = 0.0, const Vec3& sectionWidthDir = Vec3{0.0, 0.0, 0.0}) noexcept;
+    double anchorOffset = 0.0, const Vec3& sectionWidthDir = Vec3{0.0, 0.0, 0.0},
+    double secWebThickness = 0.0) noexcept;
 
 // ALIN LEVHASI YERLESIMI — ComponentInput'dan, OCCT'siz (MM issue #1).
 // Kolonun GERCEK temas yuzu (resolveShearTabPlacement'in facePoint'i + kolon kesit

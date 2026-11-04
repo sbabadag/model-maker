@@ -1,5 +1,6 @@
 #include "model_maker/end_plate.hpp"
 
+#include <algorithm>
 #include <cmath>
 
 namespace mm {
@@ -14,6 +15,51 @@ static Vec3 cross(const Vec3& a, const Vec3& b) noexcept {
     return Vec3{a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z,
                 a.x * b.y - a.y * b.x};
 }
+
+// MM-7 (item 1): EC3 minimumlari + kaynak payi. component_checks.hpp'teki
+// ComponentCheckOptions varsayilanlariyla BIREBIR (minEdgeRatio 1.2,
+// minPitch2Ratio 2.4, weldAllowance 10 mm) — varsayilan gauge'in urettigi plan
+// bu kontrolleri AYNEN gecmelidir.
+namespace {
+constexpr double kWeldAllowance = 10.0;    // kaynak payi (delik kenarindan celige net)
+constexpr double kMinEdgeRatio = 1.2;      // e1/e2 >= 1.2*d0
+constexpr double kMinPitch2Ratio = 2.4;    // p2 >= 2.4*d0 (kuvvete dik / yatay kolon)
+
+double effectiveHoleD(const EndPlateParams& p) noexcept {
+    if (p.holeDiameter > 0.0) return p.holeDiameter;
+    return standardBoltHoleDiameter(p.boltDiameter);
+}
+
+// Varsayilan yatay bulon gauge'i (boltSpacingX otomatik iken):
+//   max(flans/2, 2.4*d0, tw + 2*kaynakPayi + d0), 5 mm'ye YUKARI yuvarlanmis.
+// - flans/2: kullanıcı şartı "profil başlık / 2" gauge cizgisi (2 kolon
+//   civataları ±flans/4'te).
+// - 2.4*d0: EC3 p2 (kuvvete dik aralik). Dar flansli GERCEK profillerde (IPE200
+//   b=100, M20 d0=22) flans/2=50 < 52.8; otomatik gauge 55'e cikar ki plan
+//   gecerli kurulsun (kullanıcı ACIK deger verirse dokunulmaz, kontrol reddeder).
+// - tw + 2*kaynak + d0: govde acikligi (delik govde izdusumuyle cakismasin).
+double defaultEndPlateGauge(double secWidth, double secWebThickness,
+                            double d0) noexcept {
+    const double flangeHalf = (secWidth > 0.0) ? secWidth * 0.5 : 0.0;
+    const double minP2 = kMinPitch2Ratio * d0;
+    double webClear = 0.0;
+    if (secWebThickness > 0.0)
+        webClear = secWebThickness + 2.0 * kWeldAllowance + d0;
+    const double gauge = std::max({flangeHalf, minP2, webClear});
+    return std::ceil(gauge / 5.0) * 5.0;  // 5 mm'ye yukari yuvarla
+}
+
+// Varsayilan levha GENISLIGI: en az gauge + 2*(1.2*d0) (kenar mesafesi e1/e2 >=
+// 1.2*d0). Kesit bilinmiyorsa (secWidth <= 0) dokunulmaz (legacy davranis).
+double defaultEndPlateWidth(double secWidth, double plateExtra,
+                            double secWebThickness, double d0) noexcept {
+    const double base = secWidth + 2.0 * plateExtra;
+    if (secWidth <= 0.0) return base;
+    const double gauge = defaultEndPlateGauge(secWidth, secWebThickness, d0);
+    const double minW = gauge + 2.0 * kMinEdgeRatio * d0;
+    return std::max(base, minW);
+}
+}  // namespace
 
 // Tekla 144 isaret sozlesmesiyle etkin kenar mesafelerini uretir (Milestone 2).
 // upperD/lowerD: levha kenari - kesit kenari (POZITIF = levhayi kucult).
@@ -62,18 +108,25 @@ static BoltGroup makeEndPlateBolts(const EndPlatePlacement& out,
     const int nx = params.boltCountX > 0 ? params.boltCountX : 1;
     const int ny = params.boltCountY > 0 ? params.boltCountY : 1;
 
-    // Yatay aralik: elle girilmediyse flans/2 gauge (kullanıcı şartı: "profil
-    // başlık / 2"). Dikey aralik: elle girilmediyse levha - 2*boltEdge.
+    // Yatay aralik: elle girilmediyse VARSAYILAN gauge (MM-7 item 1):
+    // max(flans/2, 2.4*d0, tw + 2*kaynak + d0), 5 mm'ye yukari yuvarlanmis.
+    // Kullanici ACIK deger verdiyse (boltSpacingX > 0) dokunulmaz — ihlalde
+    // applyChecksToPlan plani fail-closed reddeder. Dikey aralik: elle
+    // girilmediyse kesit yuksekliginden (levha - 2*boltEdge gibi).
     double sX = params.boltSpacingX;
     if (nx > 1 && sX <= 0.0) {
-        // Flans gauge'i KIRIS KESIT genisliginden gelir (secWidth), levha
-        // boyutundan DEGIL — genislik override'i bulon acikligini bozmamali.
-        const double flangeW = (out.secWidth > 0.0)
-                                   ? out.secWidth
-                                   : (out.plateWidth - 2.0 * params.plateExtra);
-        const double total = (flangeW > 0.0) ? 0.5 * flangeW
-                                             : (out.plateWidth - 2.0 * params.boltEdge);
-        sX = total / static_cast<double>(nx - 1);
+        if (out.secWidth > 0.0) {
+            // Gauge KIRIS KESIT genisliginden (secWidth) + govde kalinligindan
+            // (secWebThickness) gelir, levha boyutundan DEGIL — genislik
+            // override'i bulon acikligini bozmamali.
+            const double d0 = effectiveHoleD(params);
+            sX = defaultEndPlateGauge(out.secWidth, out.secWebThickness, d0);
+        } else {
+            // Profilsiz uye: legacy levha-bazli fallback korunur (spacing =
+            // (W-2e)/(nx-1)).
+            const double total = out.plateWidth - 2.0 * params.boltEdge;
+            sX = (total > 0.0) ? total / static_cast<double>(nx - 1) : 0.0;
+        }
     } else if (nx <= 1) {
         sX = 0.0;
     }
@@ -189,7 +242,8 @@ EndPlatePlacement computeEndPlatePlacement(const Vec3& beamEnd, const Vec3& beam
     effectiveEdgeDistances(params, upperD, lowerD);
     out.plateWidth = (params.plateWidthOverride > 0.0)
                          ? params.plateWidthOverride
-                         : (secWidth + 2.0 * params.plateExtra);
+                         : defaultEndPlateWidth(secWidth, params.plateExtra,
+                                                out.secWebThickness, effectiveHoleD(params));
     out.plateHeight = (params.plateHeightOverride > 0.0)
                           ? params.plateHeightOverride
                           : (secHeight - upperD - lowerD);
@@ -252,7 +306,8 @@ EndPlatePlacement computeEndPlatePlacementRotated(const Vec3& beamEnd, const Vec
     effectiveEdgeDistances(params, upperD, lowerD);
     out.plateWidth = (params.plateWidthOverride > 0.0)
                          ? params.plateWidthOverride
-                         : (secWidth + 2.0 * params.plateExtra);
+                         : defaultEndPlateWidth(secWidth, params.plateExtra,
+                                                out.secWebThickness, effectiveHoleD(params));
     out.plateHeight = (params.plateHeightOverride > 0.0)
                           ? params.plateHeightOverride
                           : (secHeight - upperD - lowerD);
@@ -279,7 +334,8 @@ EndPlatePlacement computeEndPlatePlacementOnFace(const ReferencePlane& face, dou
                                                  const EndPlateParams& params,
                                                  const Vec3& sectionHeightDir,
                                                  double anchorOffset,
-                                                 const Vec3& sectionWidthDir) noexcept {
+                                                 const Vec3& sectionWidthDir,
+                                                 double secWebThickness) noexcept {
     EndPlatePlacement out;
     // Levha normali = kolon yuzey normali (kolondan DISARI, kirise dogru).
     const Vec3 axis = unitOr(face.normal, Vec3{0.0, 0.0, 1.0});
@@ -318,11 +374,13 @@ EndPlatePlacement computeEndPlatePlacementOnFace(const ReferencePlane& face, dou
     out.u = uu;
     out.v = vv;
     out.axis = axis;
+    out.secWebThickness = secWebThickness;  // MM-7 item 1: govde acikligi terimi
     double upperD, lowerD;
     effectiveEdgeDistances(params, upperD, lowerD);
     out.plateWidth = (params.plateWidthOverride > 0.0)
                          ? params.plateWidthOverride
-                         : (secWidth + 2.0 * params.plateExtra);
+                         : defaultEndPlateWidth(secWidth, params.plateExtra,
+                                                out.secWebThickness, effectiveHoleD(params));
     out.plateHeight = (params.plateHeightOverride > 0.0)
                           ? params.plateHeightOverride
                           : (secHeight - upperD - lowerD);

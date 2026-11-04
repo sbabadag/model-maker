@@ -5722,6 +5722,7 @@ bool Application::resolveEndPlatePlacement(std::size_t mainIdx, std::size_t secI
     }
     // Kesit bbox: profil katalogundan (yoksa 200x300 mm varsayilan).
     double secWidth = 200.0, secHeight = 300.0;
+    double secWebThickness = 0.0;  // govde kalinligi (varsayilan gauge govde acikligi)
     // SectionAnchor kaymasi: kesit MERKEZININ kiris eksenine gore isaretli
     // ofseti (Top -> -h/2, Center -> 0, Bottom -> +h/2). Profil bilinmiyorsa
     // I-kesit kurali ±h/2 kullanilir (secHeight zaten varsayilan dolu).
@@ -5729,6 +5730,7 @@ bool Application::resolveEndPlatePlacement(std::size_t mainIdx, std::size_t secI
     if (const SteelProfile* prof = findProfile(profileCatalog_, sp.profileName)) {
         secWidth = prof->width;
         secHeight = prof->height;
+        secWebThickness = prof->plateThickness;
         anchorOffset = profileSectionAnchorOffset(*prof, sp.sectionAnchor);
     } else {
         switch (sp.sectionAnchor) {
@@ -5952,7 +5954,8 @@ bool Application::resolveEndPlatePlacement(std::size_t mainIdx, std::size_t secI
         }
     }
     placement = computeEndPlatePlacementOnFace(face, params.gap, secWidth, secHeight, params,
-                                               sectionHeightDir, anchorOffset, sectionWidthDir);
+                                               sectionHeightDir, anchorOffset, sectionWidthDir,
+                                               secWebThickness);
 
     // BULON DELIGI FLANS KENARINA TAKILMASIN: levha kiris kesitine gore
     // (plateExtra ile) buyutuldugu icin, dar kolonlarda (ornegin HEB260 kolon +

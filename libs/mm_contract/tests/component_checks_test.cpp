@@ -53,6 +53,34 @@ static ComponentInput withEdge(ComponentInput in, double edge) {
     return in;
 }
 
+// MM-7 item 1: GERCEK dar-flans profil IPE200 (b=100, h=200, tw=5.6, tf=8.5).
+// setSpacing=true ise ACIK boltSpacingX verilir (0 = otomatik).
+static ComponentInput makeRealIpe200(double spacingX = 0.0, bool setSpacing = false) {
+    ComponentInput in;
+    in.main.id = 1;
+    in.main.axisFrom = {0, 0, 0};
+    in.main.axisTo = {0, 0, 3000};
+    in.main.refNormal = {0, 0, 1};
+    in.main.secWidth = 300;
+    in.main.secHeight = 300;
+    in.main.secWebThickness = 11;
+    in.main.secFlangeThickness = 19;
+
+    MemberGeometry b;
+    b.id = 2;
+    b.axisFrom = {0, 0, 3000};
+    b.axisTo = {2000, 0, 3000};
+    b.refNormal = {0, 0, 1};
+    b.secWidth = 100;    // IPE200 flans genisligi
+    b.secHeight = 200;   // IPE200 kesit yuksekligi
+    b.secWebThickness = 5.6;
+    b.secFlangeThickness = 8.5;
+    in.secondary.push_back(b);
+    if (setSpacing)
+        in.params.push_back(CompParam{L"boltSpacingX", CompParamValue{spacingX}});
+    return in;
+}
+
 int main() {
     registerBuiltInComponents(ComponentRegistry::instance());
 
@@ -139,6 +167,27 @@ int main() {
         for (const auto& c : cs)
             if (c.id == "bolt_flange_clash" || c.id == "bolt_web_clash") clashEmitted = true;
         check(!clashEmitted, "4 kesit bilinmiyorsa cakisma kontrolu atlanir");
+    }
+
+    // 4b) MM-7 item 1: GERCEK IPE200 (100x200) + M20 -> varsayilan gauge otomatik
+    //     55 mm; plan GECERLI kurulur. ACIK kucuk boltSpacingX yine reddedilir.
+    {
+        const ComponentInput in = makeRealIpe200();
+        const GenerationPlan plan = generateEndPlate(in);
+        check(plan.ok, "4b1 IPE200 varsayilan plan GECERLI (gauge otomatik buyur)");
+        if (plan.ok && plan.boltGroups.size() == 1) {
+            check(std::fabs(plan.boltGroups[0].spacingX - 55.0) < 1e-9,
+                  "4b1 spacingX == 55 (max(flans/2,2.4*d0) 5mm yuvarla)");
+            check(plan.boltGroups[0].spacingX >= 2.4 * 22.0,
+                  "4b1 spacingX >= 2.4*d0");
+        }
+        const ComponentInput in2 = makeRealIpe200(40.0, true);
+        const GenerationPlan plan2 = generateEndPlate(in2);
+        check(!plan2.ok, "4b2 ACIK kucuk boltSpacingX -> fail-closed");
+        bool p2Fail = false;
+        for (const auto& c : plan2.checks)
+            if (c.id == "pitch_p2" && !c.pass) p2Fail = true;
+        check(p2Fail, "4b2 pitch_p2 ihlali kaydi dolu");
     }
 
     // 5) CODEX round-trip: checks JSON'a yazilir (dolu) / bosken yazilmaz.

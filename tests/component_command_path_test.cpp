@@ -6,10 +6,12 @@
 // check (19352a1) recipe'ye fail-closed baglandi; dar flansli IPE kiriste
 // "flans/2" gauge 50mm < EC3 p2 52.8mm -> plan.ok=false ve komut sessizce dustu.
 //
-// Bu test GERCEK komut yolunu kurar ve uc seyi dogrular:
+// Bu test GERCEK komut yolunu kurar ve su seyleri dogrular:
 //   1. UYUMLU profil (200x400) -> plan.ok + instance OLUSUR (komut yolu calisir).
-//   2. DAR flans (IPE200 100x200) -> plan.ok=false + ACIK MM-7 hatasi (sessiz yok).
+//   2. DAR flans (IPE200 100x200) -> varsayilan gauge OTOMATIK buyur (MM-7 item 1:
+//      max(flans/2, 2.4*d0, tw+2*kaynak+d0) -> 55 mm); plan GECERLI kurulur.
 //   3. EGIK kiris (30°) -> plan.ok=false + "egik kiris" ACIK ret.
+//   4. ACIK kucuk boltSpacingX (40) -> kontrol yine fail-closed reddeder (pitch_p2).
 //
 // Document -> componentInputFromDocument (GUI ile AYNI kanonik yol) ->
 // runRecipe(mm_end_plate_pkg) -> ComponentMaterializer (prepare+commit).
@@ -160,7 +162,9 @@ int main() {
         }
     }
 
-    // --- 2. DAR FLANS (IPE200 100x200): ACIK MM-7 hatasi (sessiz yok) --------
+    // --- 2. DAR FLANS (IPE200 100x200): varsayilan gauge OTOMATIK buyur ------
+    //        (MM-7 item 1: max(flans/2, 2.4*d0, tw+2*kaynak+d0) -> 55 mm);
+    //        plan GECERLI kurulur (eskiden fail-closed'du).
     {
         Document doc;
         doc.setOccStore(makeOccSolidStore());
@@ -173,13 +177,36 @@ int main() {
         check(in.has_value(), "dar: modelden girdi kuruldu");
         if (in) {
             const GenerationPlan plan = runRecipe(pkg.recipe, pkg.type.params, *in);
-            check(!plan.ok, "dar: plan reddedildi (fail-closed, sessiz degil)");
-            check(!plan.error.empty(), "dar: hata mesaji dolu (ACIK)");
-            if (!plan.error.empty())
-                std::printf("  dar flans hatasi: %ls\n", plan.error.c_str());
-            bool hasCheck = false;
-            for (const auto& c : plan.checks) if (!c.pass) hasCheck = true;
-            check(hasCheck, "dar: checks[] ihlal kaydi dolu (rapor)");
+            check(plan.ok, "dar: varsayilan gauge otomatik -> plan GECERLI");
+            if (plan.ok && plan.boltGroups.size() == 1) {
+                check(std::fabs(plan.boltGroups[0].spacingX - 55.0) < 1e-9,
+                      "dar: spacingX == 55 (2.4*d0 karsilanir)");
+                check(plan.boltGroups[0].spacingX >= 2.4 * 22.0,
+                      "dar: spacingX >= 2.4*d0");
+            }
+        }
+    }
+
+    // --- 4. ACIK KUCUK boltSpacingX (IPE200): kontrol fail-closed reddeder ----
+    {
+        Document doc;
+        doc.setOccStore(makeOccSolidStore());
+        OccSolidStore* store = asSolidStore(&doc.occStore());
+        const auto [colId, beamId] = addNode(doc, store,
+            makeProfile("HEB300", 300, 300, 11, 19),
+            makeProfile("IPE200", 200, 100, 5.6, 8.5), 2000.0, 0.0, 3000.0);
+
+        auto in = componentInputFromDocument(doc, cat, colId, {beamId});
+        check(in.has_value(), "acik: modelden girdi kuruldu");
+        if (in) {
+            in->params.push_back(CompParam{L"boltSpacingX", CompParamValue{40.0}});
+            const GenerationPlan plan = runRecipe(pkg.recipe, pkg.type.params, *in);
+            check(!plan.ok, "acik: ACIK kucuk boltSpacingX -> fail-closed");
+            check(!plan.error.empty(), "acik: hata mesaji dolu (ACIK)");
+            bool p2Fail = false;
+            for (const auto& c : plan.checks)
+                if (c.id == "pitch_p2" && !c.pass) p2Fail = true;
+            check(p2Fail, "acik: pitch_p2 ihlali kaydi dolu");
         }
     }
 
