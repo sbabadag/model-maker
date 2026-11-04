@@ -1295,6 +1295,16 @@ static const BlockDecl* findBlock(const std::string& use) {
     return nullptr;
 }
 
+// Bir tasin bildirdigi TUM arguman adlari (sayisal + metin + liste + metin-param).
+static std::set<std::string> declaredArgsFor(const BlockDecl& d) {
+    std::set<std::string> s;
+    for (const char* k : d.numArgs) s.insert(k);
+    for (const char* k : d.strArgs) s.insert(k);
+    for (const char* k : d.listArgs) s.insert(k);
+    for (const char* k : d.strParamArgs) s.insert(k);
+    return s;
+}
+
 static std::string kindForBlock(const std::string& use) {
     if (use == "plate.rect") return "plate";
     if (use == "bolts.grid") return "bolt";
@@ -1503,6 +1513,20 @@ RecipeValidation validateRecipe(const Recipe& recipe,
             r.ok = false;
             r.message = L"blok adimi id gerektirir: " + wideFromUtf8(st.use);
             return r;
+        }
+        // J: bildirilmemis arguman -> adim indeksiyle fail-closed. Onceden
+        // (or. plate.rect'e 'origin' ya da 'width') sessizce yok sayiliyordu.
+        {
+            const std::set<std::string> declared = declaredArgsFor(*decl);
+            for (const auto& kv : st.args) {
+                if (!declared.count(kv.first)) {
+                    r.ok = false;
+                    r.message = L"recipe adim " + std::to_wstring(stepIndex) + L" (" +
+                                wideFromUtf8(st.use) + L"): bilinmeyen arguman: " +
+                                wideFromUtf8(st.use) + L"." + wideFromUtf8(kv.first);
+                    return r;
+                }
+            }
         }
         for (const char* key : decl->numArgs) {
             const auto it = st.args.find(key);

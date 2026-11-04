@@ -726,6 +726,39 @@ static void testWhenSkips() {
     CHECK(plan.plates.empty(), "when=0 -> levha uretilmez");
 }
 
+// J: bildirilmemis arguman fail-closed — 17 tasin her biri icin bir bilinmeyen.
+static void testUnknownArgRejected() {
+    const char* blocks[] = {
+        "frame.member_end", "frame.offset", "frame.rotate",
+        "plate.rect", "plate.polygon", "bolts.grid", "weld.fillet", "cut.plane",
+        "endplate.placement", "frame.contact", "frame.plumb_face",
+        "haunch.end_plate", "haunch.web", "haunch.flange",
+        "haunch.stiffeners", "bolts.haunch_groups", "haunch.welds",
+    };
+    int n = 0;
+    for (const char* use : blocks) {
+        Recipe r;
+        RecipeStep s;
+        s.id = "x";
+        s.use = use;
+        // Tasin bildirmedigi bir arguman (or. 'origin' yazim hatasi).
+        s.args["origin"] = S("1000; 2000; 0");
+        r.steps = {s};
+        const auto v = validateRecipe(r, {});
+        const bool rejected = !v.ok &&
+            v.message.find(L"bilinmeyen arguman") != std::wstring::npos &&
+            v.message.find(wideFromUtf8(use)) != std::wstring::npos;
+        if (!rejected) {
+            std::printf("FAIL: J bilinmeyen arguman reddedilmedi: %s (%ls)\n",
+                        use, v.message.c_str());
+            ++failures;
+        } else {
+            ++n;
+        }
+    }
+    std::printf("J: %d/%d tas bilinmeyen argumani reddetti\n", n, (int)(sizeof(blocks)/sizeof(blocks[0])));
+}
+
 int main() {
     CHECK(std::string(kContractVersion) == "1.10.0", "contract surumu 1.7.0");
     testExpressionEvaluator();
@@ -738,6 +771,7 @@ int main() {
     testFrameRotation();
     testSt4Stones();
     testWhenSkips();
+    testUnknownArgRejected();
     std::printf("recipe test: %s (%d hata)\n", failures ? "HATALI" : "OK", failures);
     return failures ? 1 : 0;
 }
