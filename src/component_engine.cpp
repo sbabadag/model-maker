@@ -598,10 +598,18 @@ MemberGeometry memberGeometryFromProfile(const Vec3& endA, const Vec3& endB,
     // bir tam yukseklik kadar yanlis tarafa kayar. (Dejenere n || axis dalinda isaret
     // kanoniklestirme YOK; orada ofset aynen kalir — cerceve zaten ham ile birebir.)
     g.sectionCenterOffset = flippedNormal ? -section.centerOffset : section.centerOffset;
-    // (5) Donus [0,360): kanonik eksene gore.
-    double rot = std::fmod(profileRotationDeg, 360.0);
-    if (rot < 0.0) rot += 360.0;
-    if (std::fabs(rot - 360.0) < 1e-9) rot = 0.0;
+    // (5) Donus indirgeme. Cift-simetrik kesitte (I/H, eksen kesit merkezinden
+    //     gecer -> section.centerOffset == 0) eksen etrafinda 180° roll AYNI
+    //     fiziksel uyedir; bu yuzden [0,180) araligina indirgenir (180 -> 0,
+    //     270 -> 90). Asimetrik kesitte (centerOffset != 0) 180° roll ayna
+    //     goruntusu uyedir; [0,360) kalir. Boylece ayni fiziksel uye, iki
+    //     uygulamada farkli roll ile yazilsa da ayni MemberGeometry'yi ve
+    //     planDigest'i verir (digest gevsetilmez; girdi kanoniklestirilir).
+    const bool doublySymmetric = std::fabs(section.centerOffset) < 1e-9;
+    const double rotMod = doublySymmetric ? 180.0 : 360.0;
+    double rot = std::fmod(profileRotationDeg, rotMod);
+    if (rot < 0.0) rot += rotMod;
+    if (std::fabs(rot - rotMod) < 1e-9) rot = 0.0;
     g.profileRotation = rot;
     return g;
 }

@@ -114,8 +114,12 @@ Kurallar:
    şekilde çevrilir. Böylece `n` ve `−n` aynı kesit çerçevesini verir (u/v
    ters dönmez, bulon `xDir` ters dönmez).
 3. **`profileRotation`.** `[0,360)` aralığına indirgenir ve **kanonik eksene**
-   göre yorumlanır. Fiziksel yönü aynı olan 180° dönük girdi, kanonik eksende
-   0° olarak ifade edilir; digest bu yüzden yön duyarlı değildir.
+   göre yorumlanır. **Çift-simetrik kesitte** (I/H, `centerOffset == 0`) eksen
+   etrafında 180° roll aynı fiziksel üyedir; dönüş `[0,180)` aralığına
+   indirgenir (180 → 0, 270 → 90). **Asimetrik kesitte** (`centerOffset != 0`)
+   180° roll ayna görüntüsü üyedir; `[0,360)` kalır. Böylece aynı fiziksel üye
+   iki uygulamada farklı roll ile yazılsa da aynı `MemberGeometry` ve aynı
+   digest'i verir; digest yön duyarlı değildir.
 4. **Kesit.** `width/height/webThickness/flangeThickness` olduğu gibi taşınır.
    `centerOffset` ise refNormal isaret-kanoniklestirmesine bagli tasinir: isaret
    kanoniklestirme `n → −n` cevirdiginde kesit cercevesinin genislik VE yukseklik

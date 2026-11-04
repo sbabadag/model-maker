@@ -491,7 +491,10 @@ ComponentType endPlateComponentType() noexcept;
 //     cevrilir. Boylece ayni fiziksel normal, uctan bagimsiz ayni kesit
 //     cercevesini verir (u/v ters donmez).
 //  3. profileRotation [0,360) araligina indirgenir ve KANONIK eksene gore
-//     yorumlanir (180° donuk girdi ayni fiziksel yonu 0° olarak ifade eder).
+//     yorumlanir. Cift-simetrik kesitte (centerOffset == 0, I/H) 180° roll
+//     ayni fiziksel uyedir -> [0,180) indirgenir (180 -> 0, 270 -> 90).
+//     Asimetrik kesitte (centerOffset != 0) 180° ayna goruntusudur -> [0,360)
+//     kalir.
 //  4. Kesit olculeri ve sectionCenterOffset oldugu gibi tasinir; dogrulama
 //     cagiranin isidir (bkz. memberGeometryUsable).
 // ============================================================================
