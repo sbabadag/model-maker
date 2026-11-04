@@ -985,6 +985,66 @@ static void testExprListStatic() {
     }
 }
 
+// L: blockDeclarations() salt okunur API — 17 tas, tur ve sekil bilgisi.
+static void testBlockDeclarations() {
+    const std::vector<BlockDeclInfo> decls = blockDeclarations();
+    CHECK(decls.size() == 17, "L: 17 tas bildirilir");
+    const auto find = [&](const std::string& use) -> const BlockDeclInfo* {
+        for (const auto& d : decls)
+            if (d.use == use) return &d;
+        return nullptr;
+    };
+    const auto argKind = [&](const std::string& use, const std::string& name,
+                             RecipeArgKind& kind, bool& isList, bool& exprItems) -> bool {
+        const BlockDeclInfo* d = find(use);
+        if (!d) return false;
+        for (const auto& a : d->args)
+            if (a.name == name) { kind = a.kind; isList = a.isList; exprItems = a.exprItems; return true; }
+        return false;
+    };
+    RecipeArgKind k; bool l = false, e = false;
+    // frame.member_end: member = MemberRole (skaler).
+    CHECK(argKind("frame.member_end", "member", k, l, e) && k == RecipeArgKind::MemberRole && !l,
+          "L: frame.member_end.member = MemberRole skaler");
+    // plate.rect: w = Expression; chamfers = List + exprItems.
+    CHECK(argKind("plate.rect", "w", k, l, e) && k == RecipeArgKind::Expression,
+          "L: plate.rect.w = Expression");
+    CHECK(argKind("plate.rect", "chamfers", k, l, e) && k == RecipeArgKind::List && l && e,
+          "L: plate.rect.chamfers = List + exprItems");
+    CHECK(argKind("plate.rect", "material", k, l, e) && k == RecipeArgKind::TextParam,
+          "L: plate.rect.material = TextParam");
+    // plate.polygon: outline = List + exprItems.
+    CHECK(argKind("plate.polygon", "outline", k, l, e) && k == RecipeArgKind::List && l && e,
+          "L: plate.polygon.outline = List + exprItems");
+    // bolts.grid: through = MemberRole + isList.
+    CHECK(argKind("bolts.grid", "through", k, l, e) && k == RecipeArgKind::MemberRole && l,
+          "L: bolts.grid.through = MemberRole liste");
+    // weld.fillet: double = Logical.
+    CHECK(argKind("weld.fillet", "double", k, l, e) && k == RecipeArgKind::Logical,
+          "L: weld.fillet.double = Logical");
+    // cut.plane: target = MemberRole.
+    CHECK(argKind("cut.plane", "target", k, l, e) && k == RecipeArgKind::MemberRole,
+          "L: cut.plane.target = MemberRole");
+    // endplate.placement: main/beam = Text (rol, girdi rolu DENETIMI M2'de degil).
+    CHECK(argKind("endplate.placement", "beam", k, l, e) && k == RecipeArgKind::Text,
+          "L: endplate.placement.beam = Text");
+    // haunch.end_plate: haunchLength = Expression; plateMaterial = TextParam.
+    CHECK(argKind("haunch.end_plate", "haunchLength", k, l, e) && k == RecipeArgKind::Expression,
+          "L: haunch.end_plate.haunchLength = Expression");
+    CHECK(argKind("haunch.end_plate", "plateMaterial", k, l, e) && k == RecipeArgKind::TextParam,
+          "L: haunch.end_plate.plateMaterial = TextParam");
+    // Argumanlar ada gore alfabetik sirali (deterministik ayna).
+    const BlockDeclInfo* hg = find("bolts.haunch_groups");
+    CHECK(hg != nullptr, "L: bolts.haunch_groups var");
+    if (hg) {
+        bool sorted = true;
+        for (std::size_t i = 1; i < hg->args.size(); ++i)
+            if (!(hg->args[i - 1].name < hg->args[i].name)) sorted = false;
+        CHECK(sorted, "L: argumanlar alfabetik sirali");
+    }
+    std::printf("L: %zu tas bildirimi dogrulandi\n", decls.size());
+}
+
 int main() {
     CHECK(std::string(kContractVersion) == "1.10.0", "contract surumu 1.7.0");
     testExpressionEvaluator();
@@ -1001,6 +1061,7 @@ int main() {
     testBoolParamArgStatic();
     testMemberArgStatic();
     testExprListStatic();
+    testBlockDeclarations();
     std::printf("recipe test: %s (%d hata)\n", failures ? "HATALI" : "OK", failures);
     return failures ? 1 : 0;
 }

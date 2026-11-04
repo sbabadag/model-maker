@@ -77,6 +77,34 @@ struct RecipeValidation {
 RecipeValidation validateRecipe(const Recipe& recipe,
                                 const std::vector<CompParamSpec>& specs) noexcept;
 
+// --- TAS BILDIRIMLERI (L, salt okunur API) -----------------------------------
+// Studio'nun blockRegistry aynasi yerine kullanacagi tek kaynak. Her tasin
+// arguman adi + turu + sekli (liste/ifade-liste) disa acilir. J (bilinmeyen
+// arguman) ve M (bool-param / uye rolu / liste-ifade) denetimleri de bu
+// tablodan beslenir.
+enum class RecipeArgKind {
+    Expression,   // sayisal ifade (numArg)
+    Text,         // sabit metin (strArg)
+    TextParam,    // param.<ad> kabul eden metin (strParamArg)
+    Logical,      // mantiksal (boolArg; param.* Boolean olmali)
+    List,         // liste (strListArg)
+    MemberRole,   // uye rolu (main / secondary_N)
+};
+
+struct BlockArgDecl {
+    std::string name;
+    RecipeArgKind kind{RecipeArgKind::Text};
+    bool isList{false};        // liste formu (through/chamfers/outline)
+    bool exprItems{false};     // liste ogeleri ifade (chamfers ':' / outline ',')
+};
+
+struct BlockDeclInfo {
+    std::string use;                       // tas adi ("plate.rect", ...)
+    std::vector<BlockArgDecl> args;        // ada gore alfabetik sirali
+};
+
+std::vector<BlockDeclInfo> blockDeclarations();
+
 // --- YORUMCULAR --------------------------------------------------------------
 
 // recipe -> GenerationPlan. specs = component tipinin parametre semasi (param.*

@@ -1338,14 +1338,12 @@ static const BlockDecl* findBlock(const std::string& use) {
     return nullptr;
 }
 
-// Bir tasin bildirdigi TUM arguman adlari (sayisal + metin + liste + metin-param).
-static std::set<std::string> declaredArgsFor(const BlockDecl& d) {
-    std::set<std::string> s;
-    for (const char* k : d.numArgs) s.insert(k);
-    for (const char* k : d.strArgs) s.insert(k);
-    for (const char* k : d.listArgs) s.insert(k);
-    for (const char* k : d.strParamArgs) s.insert(k);
-    return s;
+// L: public bildirim tablosundan isimle arama (J/M denetimleri bu tablodan beslenir).
+static const BlockDeclInfo* findBlockInfo(const std::string& use) {
+    static const std::vector<BlockDeclInfo> decls = blockDeclarations();
+    for (const auto& d : decls)
+        if (d.use == use) return &d;
+    return nullptr;
 }
 
 static std::string kindForBlock(const std::string& use) {
@@ -1533,6 +1531,39 @@ static bool frameArgReadsHaunch(const std::string& use) {
            use == "bolts.haunch_groups" || use == "haunch.welds";
 }
 
+// --- L: tas bildirimleri (salt okunur API) -----------------------------------
+// blockRegistry()'nin disa acik aynasi. Argumanlar ada gore alfabetik sirali;
+// bir argumanin turu en ozgul kategoriden secilir (member > logical > text-param
+// > list > expression > text).
+std::vector<BlockDeclInfo> blockDeclarations() {
+    std::vector<BlockDeclInfo> out;
+    out.reserve(blockRegistry().size());
+    for (const BlockDecl& d : blockRegistry()) {
+        BlockDeclInfo info;
+        info.use = d.name;
+        std::map<std::string, BlockArgDecl> byName;
+        for (const char* k : d.numArgs)
+            byName[k] = BlockArgDecl{k, RecipeArgKind::Expression, false, false};
+        for (const char* k : d.strArgs)
+            if (!byName.count(k)) byName[k] = BlockArgDecl{k, RecipeArgKind::Text, false, false};
+        for (const char* k : d.listArgs) {
+            byName[k].name = k;
+            byName[k].isList = true;
+            if (byName[k].kind == RecipeArgKind::Text) byName[k].kind = RecipeArgKind::List;
+        }
+        for (const char* k : d.strParamArgs) byName[k].kind = RecipeArgKind::TextParam;
+        for (const char* k : d.boolParamArgs) byName[k].kind = RecipeArgKind::Logical;
+        for (const char* k : d.memberArgs) byName[k].kind = RecipeArgKind::MemberRole;
+        for (const char* k : d.exprListArgs) byName[k].exprItems = true;
+        for (const auto& kv : byName) info.args.push_back(kv.second);
+        // ada gore alfabetik (map zaten sirali; yine de garanti).
+        std::sort(info.args.begin(), info.args.end(),
+                  [](const BlockArgDecl& a, const BlockArgDecl& b) { return a.name < b.name; });
+        out.push_back(std::move(info));
+    }
+    return out;
+}
+
 // --- DOGRULAMA (statik analiz) ----------------------------------------------
 RecipeValidation validateRecipe(const Recipe& recipe,
                                 const std::vector<CompParamSpec>& specs) noexcept {
@@ -1563,6 +1594,7 @@ RecipeValidation validateRecipe(const Recipe& recipe,
             r.message = L"bilinmeyen blok: " + wideFromUtf8(st.use);
             return r;
         }
+        const BlockDeclInfo* info = findBlockInfo(st.use);
         if (st.id.empty()) {
             r.ok = false;
             r.message = L"blok adimi id gerektirir: " + wideFromUtf8(st.use);
@@ -1570,8 +1602,10 @@ RecipeValidation validateRecipe(const Recipe& recipe,
         }
         // J: bildirilmemis arguman -> adim indeksiyle fail-closed. Onceden
         // (or. plate.rect'e 'origin' ya da 'width') sessizce yok sayiliyordu.
+        // L: denetim public bildirim tablosundan beslenir.
         {
-            const std::set<std::string> declared = declaredArgsFor(*decl);
+            std::set<std::string> declared;
+            if (info) for (const auto& a : info->args) declared.insert(a.name);
             for (const auto& kv : st.args) {
                 if (!declared.count(kv.first)) {
                     r.ok = false;
@@ -1622,7 +1656,10 @@ RecipeValidation validateRecipe(const Recipe& recipe,
         }
         // M1: mantiksal argumanlar (boolArg) `param.<ad>` kabul eder; parametre
         // semada olmali ve Boolean olmali (literal true/false/1/0 atlanir).
-        for (const char* key : decl->boolParamArgs) {
+        // L: tur bilgisi public bildirim tablosundan (kind==Logical) gelir.
+        for (const auto& arg : (info ? info->args : std::vector<BlockArgDecl>{})) {
+            if (arg.kind != RecipeArgKind::Logical) continue;
+            const std::string key = arg.name;
             const auto it = st.args.find(key);
             if (it == st.args.end() || it->second.isList) continue;
             const std::string& text = it->second.text;
@@ -1649,7 +1686,10 @@ RecipeValidation validateRecipe(const Recipe& recipe,
         }
         // M2: uye argumanlari (member/target/through oge.../main/beam/...) girdi
         // rolu olmali (main veya secondary_N); baska metin reddedilir.
-        for (const char* key : decl->memberArgs) {
+        // L: tur bilgisi public bildirim tablosundan (kind==MemberRole) gelir.
+        for (const auto& arg : (info ? info->args : std::vector<BlockArgDecl>{})) {
+            if (arg.kind != RecipeArgKind::MemberRole) continue;
+            const std::string key = arg.name;
             const auto it = st.args.find(key);
             if (it == st.args.end()) continue;
             const auto reject = [&](const std::string& val, const std::wstring& roleName) {
@@ -1676,10 +1716,13 @@ RecipeValidation validateRecipe(const Recipe& recipe,
         }
         // M3: liste ogeleri ifade olan argumanlar (chamfers ':', outline ',')
         // statik taranir (bilinmeyen parametre/let/uye alani).
-        for (const char* key : decl->exprListArgs) {
+        // L: tur bilgisi public bildirim tablosundan (kind==List && exprItems) gelir.
+        for (const auto& arg : (info ? info->args : std::vector<BlockArgDecl>{})) {
+            if (arg.kind != RecipeArgKind::List || !arg.exprItems) continue;
+            const std::string key = arg.name;
             const auto it = st.args.find(key);
             if (it == st.args.end() || !it->second.isList) continue;
-            const char sep = (std::string(key) == "chamfers") ? ':' : ',';
+            const char sep = (key == "chamfers") ? ':' : ',';
             for (const auto& item : it->second.items) {
                 if (item.isList) continue;
                 std::vector<std::string> parts;
