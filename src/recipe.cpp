@@ -866,11 +866,16 @@ static bool blockBoltsGrid(EvalCtx& ctx, const RecipeStep& st, GenerationPlan& p
     if (!numArg(ctx, st, "py", 0.0, py)) return false;
     if (!numArg(ctx, st, "d", 20.0, d)) return false;
     if (!numArg(ctx, st, "hole", 22.0, hole)) return false;
-    // HR-4 — ANKRAJ / GRIP: gripLength ve holeDepth recipe'den verilebilir.
-    // 0 = "verilmedi" -> mevcut davranis (materializer bbox'tan turetir).
+    // HR-4 / I — ANKRAJ / GRIP: gripLength ve holeDepth recipe'den verilebilir.
+    // Verilmezse varsayilan grip = through uyelerinin delinen kalinliklari toplami
+    // (bulon ekseni kesit YUKSEKLIGINE hizaliysa flans tf, GENISLIGINE hizaliysa
+    // govde tw); holeDepth varsayilani = grip + 2 (end plate kurali). Studio grip
+    // TURETMEZ — deger her zaman plandan gelir.
+    const bool hasGrip = st.args.count("grip") != 0;
+    const bool hasHoleDepth = st.args.count("holeDepth") != 0;
     double grip = 0.0, holeDepth = 0.0;
-    if (!numArg(ctx, st, "grip", 0.0, grip)) return false;
-    if (!numArg(ctx, st, "holeDepth", 0.0, holeDepth)) return false;
+    if (hasGrip && !numArg(ctx, st, "grip", 0.0, grip)) return false;
+    if (hasHoleDepth && !numArg(ctx, st, "holeDepth", 0.0, holeDepth)) return false;
     if (grip < 0.0 || holeDepth < 0.0) {
         ctx.error = L"bolts.grid: grip/holeDepth negatif olamaz";
         return false;
@@ -894,15 +899,30 @@ static bool blockBoltsGrid(EvalCtx& ctx, const RecipeStep& st, GenerationPlan& p
     b.spacingY = py;
     b.params.nominalDiameter = d;
     b.params.holeDiameter = hole;
-    b.gripLength = grip;
-    b.holeDepth = holeDepth;
     if (!grade.empty()) b.params.grade = grade;
+    double derivedGrip = 0.0;
     for (const auto& r : through) {
         const MemberGeometry* m = memberByRole(ctx.input, r);
         if (!m) { ctx.error = wideFromUtf8("bolts.grid: bilinmeyen uye rolu '" + r + "'"); return false; }
         b.parts.push_back(m->id);
         b.partRoles.push_back(r);  // MM-2b: rol anahtari (digest kimlik-bagimsiz)
+        if (!hasGrip) {
+            // Delinen kalinlik: bulon ekseninin kesit cercevesine izdusumu.
+            // YUKSEKLIK (v) -> flans tf; GENISLIK (u) -> govde tw.
+            const ProfileSectionFrame pf = memberSectionFrame(*m);
+            const double aU = std::fabs(f->w.x * pf.width.x + f->w.y * pf.width.y +
+                                        f->w.z * pf.width.z);
+            const double aV = std::fabs(f->w.x * pf.height.x + f->w.y * pf.height.y +
+                                        f->w.z * pf.height.z);
+            derivedGrip += (aV >= aU) ? m->secFlangeThickness : m->secWebThickness;
+        }
     }
+    if (!hasGrip) grip = derivedGrip;
+    // Varsayilan holeDepth = grip + 2 (end plate kurali); grip turetilmediyse
+    // (bos through / profilsiz uye) sentinel 0 korunur -> materializer bbox'a duser.
+    if (!hasHoleDepth) holeDepth = (grip > 0.0) ? grip + 2.0 : 0.0;
+    b.gripLength = grip;
+    b.holeDepth = holeDepth;
     ctx.totalBolts += cx * cy;
     plan.boltGroups.push_back(b);
     plan.boltGroupKeys.push_back(st.role);

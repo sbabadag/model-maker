@@ -682,6 +682,66 @@ static void testSt4Stones() {
         CHECK(!plan.ok, "bolts.grid grip: negatif REDDEDILIR");
     }
 
+    // --- I: bolts.grid VARSAYILAN grip (through uyelerinden tf/tw) -----------
+    {
+        const ComponentInput bi = makeInput();  // main tf=19, tw=11; beam tf=10.7, tw=7.1
+        const auto defaultGrip = [&bi](const std::string& member, const char* dblGrip) {
+            Recipe r;
+            RecipeStep f; f.id = "f"; f.use = "frame.member_end"; f.args["member"] = S(member);
+            RecipeStep b; b.id = "b"; b.use = "bolts.grid";
+            b.args["frame"] = S("f");
+            b.args["nx"] = S("1"); b.args["ny"] = S("1");
+            b.args["d"] = S("20"); b.args["hole"] = S("22");
+            b.args["through"] = L({member});
+            if (dblGrip) b.args["grip"] = S(dblGrip);
+            r.steps = {f, b};
+            return runRecipe(r, {}, bi);
+        };
+        // main: bolon ekseni uye eksenine paralel (frame.member_end w = uye ekseni)
+        // -> aU/aV ikisi de ~0; tie-break aV>=aU secilir (tf).
+        // Kisit: gercek dunyada bolon ekseni uyeye DIK olur (contact frame);
+        // burada frame.member_end bolon eksenini uye ekseni yapar, bu yuzden
+        // izdusumlar 0'dir. Yine de sonuc deterministik ve pozitif olmali.
+        {
+            const GenerationPlan p = defaultGrip("main", nullptr);
+            CHECK(p.ok && p.boltGroups.size() == 1, "I: varsayilan grip plan ok");
+            if (!p.boltGroups.empty()) {
+                CHECK(p.boltGroups[0].gripLength > 0.0,
+                      "I: varsayilan grip turetilir (>0)");
+                CHECK(near(p.boltGroups[0].holeDepth, p.boltGroups[0].gripLength + 2.0),
+                      "I: varsayilan holeDepth = grip + 2");
+            }
+        }
+        // Acik grip verilirse dokunulmaz, holeDepth yine grip+2.
+        {
+            const GenerationPlan p = defaultGrip("main", "300");
+            CHECK(p.ok && !p.boltGroups.empty(), "I: acik grip plan ok");
+            if (!p.boltGroups.empty()) {
+                CHECK(near(p.boltGroups[0].gripLength, 300.0), "I: acik grip korunur");
+                CHECK(near(p.boltGroups[0].holeDepth, 302.0), "I: acik grip -> holeDepth=302");
+            }
+        }
+        // Acik grip + acik holeDepth: ikisi de korunur.
+        {
+            Recipe r;
+            RecipeStep f; f.id = "f"; f.use = "frame.member_end"; f.args["member"] = S("main");
+            RecipeStep b; b.id = "b"; b.use = "bolts.grid";
+            b.args["frame"] = S("f");
+            b.args["nx"] = S("1"); b.args["ny"] = S("1");
+            b.args["through"] = L({"main"});
+            b.args["grip"] = S("300");
+            b.args["holeDepth"] = S("120");
+            r.steps = {f, b};
+            const GenerationPlan p = runRecipe(r, {}, bi);
+            CHECK(p.ok && !p.boltGroups.empty(), "I: acik grip+holeDepth plan ok");
+            if (!p.boltGroups.empty()) {
+                CHECK(near(p.boltGroups[0].gripLength, 300.0) &&
+                      near(p.boltGroups[0].holeDepth, 120.0),
+                      "I: acik grip+holeDepth korunur");
+            }
+        }
+    }
+
     // --- HR-7 statik denetim -------------------------------------------------
     {
         CompParamSpec g;
