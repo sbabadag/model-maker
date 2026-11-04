@@ -98,6 +98,31 @@ int main() {
                        parallel.refNormal.z * 1.0;
     CHECK(std::fabs(dot) < 1e-9, "n ∥ axis: refNormal eksene dik");
 
+    // ---- 4b) REGRESYON (42f61ee): n ∥ axis dusey uyede kesit cercevesi
+    // profileSectionFrame'in ham fallback'iyle AYNI kalmalidir. d8e10b6'nin
+    // 'dunya X' fallback'i dusey kolonun cercevesini 90° ceviriyordu
+    // (Haunch 40 cap/alin levhasi kaymasi). Kanonik fonksiyon ciktilari,
+    // memberSectionFrame ile ham profileSectionFrame(axis, rawN) esit olmali.
+    {
+        const Vec3 axis{0.0, 0.0, 1.0};  // dusey kolon ekseni
+        const ProfileSectionFrame expect = profileSectionFrame(axis, Vec3{0.0, 0.0, 1.0});
+        const ProfileSectionFrame got = memberSectionFrame(parallel);
+        CHECK(sameVec(got.width, expect.width), "n∥axis: canonical width == raw width");
+        CHECK(sameVec(got.height, expect.height), "n∥axis: canonical height == raw height");
+
+        // 90° donuk kolonda da (regresyon senaryosu) cerceve AYNI sekilde doner.
+        const MemberGeometry parallel90 =
+            memberGeometryFromProfile(top, bottom, true, Vec3{0.0, 0.0, 1.0}, 90.0, hea240);
+        const ProfileSectionFrame got90 = memberSectionFrame(parallel90);
+        // rotateSectionFrame(f, 90°): w' = h, h' = -w (c=0, s=1).
+        const ProfileSectionFrame expect90{
+            expect.height,
+            Vec3{-expect.width.x, -expect.width.y, -expect.width.z},
+            expect.axis};
+        CHECK(sameVec(got90.width, expect90.width), "n∥axis+90°: width ayni doner");
+        CHECK(sameVec(got90.height, expect90.height), "n∥axis+90°: height ayni doner");
+    }
+
     // ---- 5) SIFIR UZUNLUK FAIL-CLOSED ---------------------------------------
     const MemberGeometry degen =
         memberGeometryFromProfile(top, top, true, Vec3{1.0, 0.0, 0.0}, 0.0, hea240);

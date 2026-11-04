@@ -552,11 +552,24 @@ MemberGeometry memberGeometryFromProfile(const Vec3& endA, const Vec3& endB,
             nx = -d2 * ax; ny = -d2 * ay; nz = 1.0 - d2 * az;
             perp = std::sqrt(nx * nx + ny * ny + nz * nz);
         }
-        if (perp <= 1e-9) { nx = 1.0; ny = 0.0; nz = 0.0; }  // dusey uye: dunya X
-        else { nx /= perp; ny /= perp; nz /= perp; }
-        // Isaret: ilk sifirdan farkli bilesen POZITIF (uctan bagimsiz).
-        const double first = (std::fabs(nx) > 1e-9) ? nx : ((std::fabs(ny) > 1e-9) ? ny : nz);
-        if (first < 0.0) { nx = -nx; ny = -ny; nz = -nz; }
+        if (perp <= 1e-9) {
+            // Dusey uye (axis ≈ ±Z): profileSectionFrame'in kendi fallback
+            // cercevesini BIREBIR yeniden uret. profileSectionFrame(axis, rawN)
+            // n ∥ axis iken cross(n,axis)=0 → cross(worldUp,axis)=0 →
+            // width={1,0,0}. Bunu refNormal uzerinden vermek icin
+            // cross(refNormal, axis) = {1,0,0} → refNormal = {0, az, 0}
+            // (az=±1; cross({0,az,0},{0,0,az}) = {az²,0,0} = {1,0,0}).
+            // Isaret kanoniklestirme UYGULANMAZ (cerceve zaten kanonik; aksi
+            // halde az<0 iken genislik ters donerdi). d8e10b6'nin 'dunya X'
+            // fallback'i buraya {1,0,0} koyup dusey kolonun kesit cercevesini
+            // 90° ceviriyordu (Haunch 40 cap/alin levhasi regresyonu).
+            nx = 0.0; ny = az; nz = 0.0;
+        } else {
+            nx /= perp; ny /= perp; nz /= perp;
+            // Isaret: ilk sifirdan farkli bilesen POZITIF (uctan bagimsiz).
+            const double first = (std::fabs(nx) > 1e-9) ? nx : ((std::fabs(ny) > 1e-9) ? ny : nz);
+            if (first < 0.0) { nx = -nx; ny = -ny; nz = -nz; }
+        }
         g.refNormal = {nx, ny, nz};
     } else {
         g.refNormal = refNormal;
