@@ -143,6 +143,12 @@ if(MM_CONTRACT_BUILD_TESTS)
     target_link_libraries(mm_contract_member_geometry_canonical_test PRIVATE mm_component_contract mm_contract_version)
     add_test(NAME mm_contract_member_geometry_canonical_test COMMAND mm_contract_member_geometry_canonical_test)
 
+    # MM-4b (D): simetrik mertek 180° roll duyarsizligi (kanonik + generator).
+    add_executable(mm_contract_haunch40_symmetric_roll_test
+        ${CMAKE_CURRENT_LIST_DIR}/tests/haunch40_symmetric_roll_test.cpp)
+    target_link_libraries(mm_contract_haunch40_symmetric_roll_test PRIVATE mm_component_contract mm_contract_version)
+    add_test(NAME mm_contract_haunch40_symmetric_roll_test COMMAND mm_contract_haunch40_symmetric_roll_test)
+
     add_executable(mm_contract_component_visual_test
         ${CMAKE_CURRENT_LIST_DIR}/tests/component_visual_test.cpp)
     target_link_libraries(mm_contract_component_visual_test PRIVATE mm_component_contract mm_contract_version)
