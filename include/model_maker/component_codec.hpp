@@ -66,6 +66,25 @@ GenerationPlan generationPlanFromJson(const nlohmann::json& j);
 nlohmann::json recipeToJson(const Recipe& r);
 Recipe recipeFromJson(const nlohmann::json& j);
 
+// --- Kanonik recipe/paket metin yazicisi (F) ---------------------------------
+// recipeCanonicalText: recipe.json dosya bicimi. recipeToJson'dan farki:
+//   - formatVersion YOK (recipe dosyasi codec surumu tasimaz);
+//   - anahtar sirasi RECIPE.md'ye gore: kok = recipeVersion, let, steps;
+//     adim = id, use, role, when, check, message, args;
+//   - args ADA GORE ALFABETIK (RecipeStep::args std::map zaten sirali);
+//   - dump(2) + sonda TEK '\n', YALNIZ LF (CR yok).
+// Studio da AYNI fonksiyonu kullanir; iki taraf bayt-ayni dosya yazar.
+std::string recipeCanonicalText(const Recipe& r);
+
+// packageJsonText: paket JSON dosyalari (manifest/parameters/dialog) icin ortak
+// metin bicimi — dump(2) + sonda TEK '\n', YALNIZ LF.
+std::string packageJsonText(const nlohmann::json& j);
+
+// CR bayti iceren metni REDDEDEN dosya yazici (LF-only garantisi). Windows'ta
+// metin modunda '\n' -> '\r\n' cevirilmesin diye BINARY modda yazar. '\r' iceren
+// metin yazilmaz (hata + false). Basariliysa true.
+bool writePackageJsonFile(const std::string& path, const std::string& text);
+
 // --- MemberGeometry / ComponentInput (paket altin test girdisi) --------------
 // Paket icindeki tests/*.json "input" alanini tasir: uye geometrisi + parametre
 // degerleri. Yukleyici bu girdiyle recipe'yi kosup planDigest'i karsilastirir

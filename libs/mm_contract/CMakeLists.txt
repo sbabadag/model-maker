@@ -78,6 +78,14 @@ if(MM_CONTRACT_BUILD_TESTS)
     target_link_libraries(mm_contract_recipe_test PRIVATE mm_component_contract mm_contract_version)
     add_test(NAME mm_contract_recipe_test COMMAND mm_contract_recipe_test)
 
+    # F — kanonik recipe/paket metin yazicisi (recipeCanonicalText / packageJsonText
+    # / writePackageJsonFile): anahtar sirasi, alfabetik args, formatVersion yok,
+    # LF-only, CR reddi, round-trip + idempotence.
+    add_executable(mm_contract_recipe_canonical_text_test
+        ${CMAKE_CURRENT_LIST_DIR}/tests/recipe_canonical_text_test.cpp)
+    target_link_libraries(mm_contract_recipe_canonical_text_test PRIVATE mm_component_contract mm_contract_version)
+    add_test(NAME mm_contract_recipe_canonical_text_test COMMAND mm_contract_recipe_canonical_text_test)
+
     add_executable(mm_contract_end_plate_equiv_test ${CMAKE_CURRENT_LIST_DIR}/tests/end_plate_equivalence_test.cpp)
     target_link_libraries(mm_contract_end_plate_equiv_test PRIVATE mm_component_contract mm_contract_version)
     target_compile_definitions(mm_contract_end_plate_equiv_test PRIVATE

@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <fstream>
 #include <string>
 
 namespace mm {
@@ -1324,6 +1325,58 @@ Recipe recipeFromJson(const nlohmann::json& j) {
         }
     }
     return r;
+}
+
+// ============================================================================
+// Kanonik recipe/paket metin yazicisi (F)
+// ============================================================================
+
+std::string recipeCanonicalText(const Recipe& r) {
+    nlohmann::ordered_json j;
+    j["recipeVersion"] = r.recipeVersion;
+    nlohmann::ordered_json lets = nlohmann::ordered_json::object();
+    for (const auto& kv : r.lets) lets[kv.first] = kv.second;
+    j["let"] = std::move(lets);
+    nlohmann::ordered_json steps = nlohmann::ordered_json::array();
+    for (const auto& s : r.steps) {
+        nlohmann::ordered_json o;
+        if (!s.id.empty()) o["id"] = s.id;
+        if (!s.use.empty()) o["use"] = s.use;
+        if (!s.role.empty()) o["role"] = s.role;
+        if (!s.when.empty()) o["when"] = s.when;
+        if (!s.check.empty()) o["check"] = s.check;
+        if (!s.message.empty()) o["message"] = s.message;
+        if (!s.args.empty()) {
+            // args: nlohmann::json (std::map) -> ADA GORE ALFABETIK; std::map
+            // uzerinden yineleme sirali oldugu icin ordered_json'a da sirali girer.
+            json args = json::object();
+            for (const auto& kv : s.args) args[kv.first] = recipeArgToJson(kv.second);
+            o["args"] = args;
+        }
+        steps.push_back(std::move(o));
+    }
+    j["steps"] = std::move(steps);
+    return j.dump(2) + "\n";
+}
+
+std::string packageJsonText(const nlohmann::json& j) {
+    return j.dump(2) + "\n";
+}
+
+bool writePackageJsonFile(const std::string& path, const std::string& text) {
+    if (text.find('\r') != std::string::npos) {
+        std::fprintf(stderr, "HATA: CR bayti iceren metin reddedildi: %s\n", path.c_str());
+        return false;
+    }
+    // BINARY mod: Windows metin modunda '\n' -> '\r\n' cevirip LF-only garantisini
+    // bozmasin. Iki platformda da bayt-ayni dosya yazilir.
+    std::ofstream out(path, std::ios::binary);
+    if (!out.good()) {
+        std::fprintf(stderr, "HATA: yazilamadi: %s\n", path.c_str());
+        return false;
+    }
+    out.write(text.data(), static_cast<std::streamsize>(text.size()));
+    return out.good();
 }
 
 // ============================================================================
