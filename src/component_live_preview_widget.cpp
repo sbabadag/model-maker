@@ -416,6 +416,13 @@ void ComponentLivePreviewWidget::selectRole(const std::string& role) {
     positionEditors();
     update();
 }
+// MM-7 item 3: checks ihlalini isaret eden bulon grubunu kirmizi vurgula (ayri
+// secim değil; OK kapisiyla ayni plan.checks kaynagindan gelir).
+void ComponentLivePreviewWidget::setViolationRole(const std::string& role) {
+    if(violationRole_==role)return;
+    violationRole_=role;
+    update();
+}
 std::vector<std::wstring> ComponentLivePreviewWidget::visibleOverlayParams() const {
     std::vector<std::wstring> names;
     for(const auto& c:callouts_)
@@ -585,6 +592,12 @@ void ComponentLivePreviewWidget::recompute() {
     if(next.ok) {
         plan_=std::move(next);
         previewWarning_.clear();
+    } else if(!next.plates.empty()) {
+        // MM-7 item 3: checks reddetti ama geometri VAR — ciz (ihlal eden oge
+        // kirmizi vurgulanir). Kullanicinin gorecegi plan reddedilen plandir,
+        // "son gecerli geometri" degil.
+        plan_=std::move(next);
+        previewWarning_=plan_.error;
     } else if(plan_.ok && !plan_.plates.empty()) {
         // Preserve the last *valid* geometry while indicating clearly that
         // unsaved draft dimensions were NOT applied. Document is untouched.
@@ -628,7 +641,7 @@ void ComponentLivePreviewWidget::recompute() {
     }
     // Incompatible values may make generation invalid. Show error, never
     // invent fallback geometry or silently mutate the real Document.
-    if(plan_.ok && !plan_.plates.empty()) {
+    if(!plan_.plates.empty()) {
         Vec3 c{};
         for(const auto& plate:plan_.plates)c=plus(c,plate.center);
         worldCenter_=mul(c,1.0/static_cast<double>(plan_.plates.size()));
@@ -836,22 +849,31 @@ void ComponentLivePreviewWidget::paintEvent(QPaintEvent*) {
     bg.setColorAt(1,QColor("#dce5f1"));
     painter.fillRect(rect(),QBrush(bg));
     if(!plan_.ok) {
-        painter.setPen(QColor("#a73c3c"));
-        painter.drawText(rect().adjusted(24,40,-24,-30),
-                         Qt::AlignCenter|Qt::TextWordWrap,
-                         plan_.error.empty()?QStringLiteral("3D preview kullanilamiyor"):
-                                             QString::fromStdWString(plan_.error));
-        return;
+        if(plan_.plates.empty()) {
+            // Placement/geometry tamamen yok: yalniz hata metni.
+            painter.setPen(QColor("#a73c3c"));
+            painter.drawText(rect().adjusted(24,40,-24,-30),
+                             Qt::AlignCenter|Qt::TextWordWrap,
+                             plan_.error.empty()?QStringLiteral("3D preview kullanilamiyor"):
+                                                 QString::fromStdWString(plan_.error));
+            return;
+        }
+        // MM-7 item 3: checks reddetti ama geometri VAR — ciz, ihlal eden oge
+        // kirmizi vurgulanir (violationRole_), ret sebebi afiste gorunur.
     }
     drawModel(painter);
-    if(!previewWarning_.empty()) {
+    const bool rejectedGeometry = !plan_.ok;
+    if(rejectedGeometry || !previewWarning_.empty()) {
         painter.setPen(QColor("#92400e"));
-        painter.setBrush(QColor("#fff2db"));
+        painter.setBrush(QColor(rejectedGeometry?QColor("#fbe4e4"):QColor("#fff2db")));
         const QRect warningRect(10,height()-(compact_?36:72),
                                 width()-20,compact_?28:48);
         painter.drawRoundedRect(warningRect,5.0,5.0);
-        const QString label=QStringLiteral("Son gecerli geometri (yeni olculer uygulanmadi): ")
-                             +QString::fromStdWString(previewWarning_);
+        const QString label = rejectedGeometry
+            ? QStringLiteral("Plan reddedildi (ihlal eden oge kirmizi): ")
+                  + QString::fromStdWString(plan_.error)
+            : QStringLiteral("Son gecerli geometri (yeni olculer uygulanmadi): ")
+                  + QString::fromStdWString(previewWarning_);
         painter.drawText(warningRect.adjusted(7,2,-7,-2),
                          Qt::AlignCenter|Qt::TextWordWrap,label);
     }
@@ -1109,6 +1131,8 @@ void ComponentLivePreviewWidget::drawModel(QPainter& p) {
             continue;
         }
         QColor fill=face.face;
+        const bool violation = !violationRole_.empty() && face.role==violationRole_;
+        if(violation) fill=QColor("#d43a3a");  // MM-7 item 3: ihlal eden oge kirmizi
         const bool isSupport=face.role=="column"||face.role=="beam";
         if(!activeRole_.empty() && activeRole_!="column" &&
            activeRole_!="beam") {
@@ -1134,8 +1158,11 @@ void ComponentLivePreviewWidget::drawModel(QPainter& p) {
         }
         p.setBrush(fill);
         const bool selected=face.role==activeRole_;
-        p.setPen(QPen(selected?QColor("#b86911"):QColor("#455469"),
-                      selected?2.2:0.8));
+        if(violation)
+            p.setPen(QPen(QColor("#a82020"),2.2));  // MM-7 item 3: kirmizi cerceve
+        else
+            p.setPen(QPen(selected?QColor("#b86911"):QColor("#455469"),
+                          selected?2.2:0.8));
         p.drawPolygon(polygon);
         if(!compact_) {
             hits_.push_back({polygon,face.role});
@@ -1149,16 +1176,17 @@ void ComponentLivePreviewWidget::drawModel(QPainter& p) {
         const std::string role=gi<plan_.boltGroupKeys.size()
                                    ?plan_.boltGroupKeys[gi]:"bolts";
         const bool selected=role==activeRole_;
-        QColor shaft=selected?QColor("#b86911"):QColor("#574f47");
-        if(!activeRole_.empty()&&!selected)shaft.setAlpha(145);
-        p.setPen(QPen(shaft,selected?3.0:2.0));
+        const bool violation=!violationRole_.empty()&&role==violationRole_;
+        QColor shaft=violation?QColor("#d43a3a"):(selected?QColor("#b86911"):QColor("#574f47"));
+        if(!activeRole_.empty()&&!selected&&!violation)shaft.setAlpha(145);
+        p.setPen(QPen(shaft,(selected||violation)?3.0:2.0));
         for(const Vec3 pt:boltGroupBoltOrigins(group)) {
             const Vec3 a=plus(pt,mul(group.axis,-0.5*group.gripLength));
             const Vec3 b=plus(pt,mul(group.axis,+0.5*group.gripLength));
             p.drawLine(project(a),project(b));
-            p.setBrush(selected?QColor("#f6a642"):QColor("#f4c65d"));
-            p.drawEllipse(project(b),selected?6.0:4.0,selected?6.0:4.0);
-            p.setBrush(QColor("#a77a47"));
+            p.setBrush(violation?QColor("#e05a5a"):(selected?QColor("#f6a642"):QColor("#f4c65d")));
+            p.drawEllipse(project(b),(selected||violation)?6.0:4.0,(selected||violation)?6.0:4.0);
+            p.setBrush(violation?QColor("#b04343"):QColor("#a77a47"));
             p.drawEllipse(project(a),3.0,3.0);
             if(!compact_){
                 boltHits_.push_back({project(b),role});

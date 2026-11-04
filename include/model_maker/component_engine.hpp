@@ -282,6 +282,13 @@ struct ComponentCheck {
     double value{0.0};
     double limit{0.0};
     std::wstring message;
+    // MM-7 item 3: ihlal eden OGEYI isaretler (onizlemede kirmizi vurgu + satira
+    // tiklayinca secim). targetRole = ihlalin bagli oldugu bulon grubu roleKey'i
+    // (plan.boltGroupKeys[i]); bos = belirsiz. boltRow/boltCol = en kotu bulonun
+    // 1-based (satir, kolon) konumu; -1 = yok. UI ipucudur, digest'e girmez.
+    std::string targetRole;
+    int boltRow{-1};
+    int boltCol{-1};
 };
 
 // Uretim plani: generatorun CIKTISI. Sahip olunacak alt nesnelerin specleri +

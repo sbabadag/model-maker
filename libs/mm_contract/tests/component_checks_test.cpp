@@ -109,6 +109,13 @@ int main() {
                 check(c.value < c.limit, "1 value < limit (net mesafe yetersiz)");
             }
         check(foundClash, "1 baslik/govde cakismasi tespit edildi");
+        // MM-7 item 3: ihlal eden bulon grubu + en kotu bulon isaretlenir.
+        bool hasTarget = false;
+        for (const auto& c : plan.checks)
+            if (!c.pass && (c.id == "bolt_flange_clash" || c.id == "bolt_web_clash"))
+                if (!c.targetRole.empty() && c.boltRow >= 1 && c.boltCol >= 1)
+                    hasTarget = true;
+        check(hasTarget, "1 ihlal eden oge isaretlendi (targetRole + boltRow/Col)");
     }
 
     // 2) GECERLI: buyuk boltEdge -> bulonlar baslik disinda -> tum kontroller gecer.

@@ -413,8 +413,20 @@ ComponentDialogWidget::ComponentDialogWidget(const ComponentDialogDefinition& de
                           << QStringLiteral("Limit") << QStringLiteral("Mesaj"));
         checksTable_->verticalHeader()->setVisible(false);
         checksTable_->setEditTriggers(QAbstractItemView::NoEditTriggers);
-        checksTable_->setSelectionMode(QAbstractItemView::NoSelection);
+        // MM-7 item 3: satira tiklayinca ihlal eden oge onizlemede secilir.
+        checksTable_->setSelectionBehavior(QAbstractItemView::SelectRows);
+        checksTable_->setSelectionMode(QAbstractItemView::SingleSelection);
         checksTable_->setMinimumHeight(72);
+        connect(checksTable_, &QTableWidget::cellClicked, this,
+                [this](int row, int) {
+                    if (!nativePreview_) return;
+                    auto* item = checksTable_ ? checksTable_->item(row, 0) : nullptr;
+                    if (!item) return;
+                    const QString role = item->data(Qt::UserRole).toString();
+                    if (role.isEmpty()) return;
+                    nativePreview_->selectRole(role.toStdString());
+                    nativePreview_->setViolationRole(role.toStdString());
+                });
         vertical->addWidget(checksTable_);
         previewPane_ = left;
         root->addWidget(left, /*stretch*/ 5);
@@ -1811,28 +1823,37 @@ void ComponentDialogWidget::refreshChecks() {
     const GenerationPlan plan = nativePreview_ ? nativePreview_->previewPlan()
                                                : GenerationPlan{};
     bool anyFail = false;
+    std::string firstFailRole;
     checksTable_->setRowCount(static_cast<int>(plan.checks.size()));
     const QColor okFg(0x1a, 0x6e, 0x1a), okBg(0xee, 0xf6, 0xee);
     const QColor badFg(0xa8, 0x12, 0x12), badBg(0xfb, 0xe9, 0xe9);
     for (std::size_t i = 0; i < plan.checks.size(); ++i) {
         const ComponentCheck& c = plan.checks[i];
-        if (!c.pass) anyFail = true;
+        if (!c.pass) {
+            anyFail = true;
+            if (firstFailRole.empty()) firstFailRole = c.targetRole;  // MM-7 item 3
+        }
         const QColor& fg = c.pass ? okFg : badFg;
         const QColor& bg = c.pass ? okBg : badBg;
         auto make = [&](const QString& t) {
             auto* it = new QTableWidgetItem(t);
             it->setForeground(QBrush(fg));
             it->setBackground(QBrush(bg));
-            it->setFlags(Qt::ItemIsEnabled);
+            it->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable);
             return it;
         };
-        checksTable_->setItem(static_cast<int>(i), 0, make(QString::fromStdString(c.id)));
+        auto* idItem = make(QString::fromStdString(c.id));
+        // MM-7 item 3: satira tiklayinca ihlal eden oge secilsin.
+        idItem->setData(Qt::UserRole, QString::fromStdString(c.targetRole));
+        checksTable_->setItem(static_cast<int>(i), 0, idItem);
         checksTable_->setItem(static_cast<int>(i), 1, make(QString::number(c.value, 'f', 1)));
         checksTable_->setItem(static_cast<int>(i), 2, make(QString::number(c.limit, 'f', 1)));
         checksTable_->setItem(static_cast<int>(i), 3, make(QString::fromStdWString(c.message)));
     }
     checksTable_->resizeColumnsToContents();
     if (okButton_) okButton_->setEnabled(!anyFail);
+    // MM-7 item 3: onizlemede ihlal eden bulon grubunu kirmizi vurgula.
+    if (nativePreview_) nativePreview_->setViolationRole(firstFailRole);
 }
 
 bool ComponentDialogWidget::hasFailingChecks() const {

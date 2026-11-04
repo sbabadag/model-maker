@@ -58,10 +58,12 @@ std::string memberRoleName(std::size_t idx) noexcept {
     return "secondary_" + std::to_string(idx);
 }
 
-// Bir (bulon grubu x ikincil uye) cakisma kontrolu ekler.
+// Bir (bulon grubu x ikincil uye) cakisma kontrolu ekler. `role` = bulon grubunun
+// semantic roleKey'i (MM-7 item 3: ihlal eden ogeyi isaretler).
 void checkBoltMemberClash(const BoltGroup& b, const std::vector<Vec3>& origins,
                           const MemberGeometry& m, std::size_t memberIdx,
-                          double weldAllowance, std::vector<ComponentCheck>& out) {
+                          double weldAllowance, const std::string& role,
+                          std::vector<ComponentCheck>& out) {
     const double tf = m.secFlangeThickness;
     const double tw = m.secWebThickness;
     const double bW = m.secWidth;
@@ -110,10 +112,13 @@ void checkBoltMemberClash(const BoltGroup& b, const std::vector<Vec3>& origins,
         c.pass = !clash;
         c.value = worstClear;
         c.limit = R;
+        c.targetRole = role;          // MM-7 item 3: ihlal eden bulon grubu
+        c.boltRow = worstJ + 1;       // 1-based satir
+        c.boltCol = worstI + 1;       // 1-based kolon
         if (!c.pass) {
-            const std::wstring role = narrow(memberRoleName(memberIdx));
+            const std::wstring memberRole = narrow(memberRoleName(memberIdx));
             c.message = L"bulon (" + std::to_wstring(worstJ + 1) + L"," +
-                        std::to_wstring(worstI + 1) + L") " + role + L" " + region +
+                        std::to_wstring(worstI + 1) + L") " + memberRole + L" " + region +
                         L" izdusumuyle cakisiyor: net mesafe " +
                         std::to_wstring(static_cast<int>(std::round(worstClear))) + L" mm < " +
                         std::to_wstring(static_cast<int>(std::round(R))) + L" mm";
@@ -122,9 +127,10 @@ void checkBoltMemberClash(const BoltGroup& b, const std::vector<Vec3>& origins,
     }
 }
 
-// Bir bulon grubu icin kenar + aralik kontrolu.
+// Bir bulon grubu icin kenar + aralik kontrolu. `role` = bulon grubunun roleKey'i.
 void checkBoltEdgeAndPitch(const BoltGroup& b, const GenerationPlan& plan,
                            const ComponentCheckOptions& opts,
+                           const std::string& role,
                            std::vector<ComponentCheck>& out) {
     const double d0 = effectiveHoleDiameter(b);
     const int nx = std::max(1, b.countX);
@@ -152,6 +158,7 @@ void checkBoltEdgeAndPitch(const BoltGroup& b, const GenerationPlan& plan,
             c.pass = e >= lim;
             c.value = e;
             c.limit = lim;
+            c.targetRole = role;  // MM-7 item 3
             if (!c.pass) {
                 c.message = L"kenar mesafesi " + std::to_wstring(static_cast<int>(std::round(e))) +
                             L" mm < " + std::to_wstring(static_cast<int>(std::round(lim))) +
@@ -176,6 +183,7 @@ void checkBoltEdgeAndPitch(const BoltGroup& b, const GenerationPlan& plan,
             c.pass = p1 >= lim;
             c.value = p1;
             c.limit = lim;
+            c.targetRole = role;  // MM-7 item 3
             if (!c.pass) {
                 c.message = L"bulon sira araligi (p1) " +
                             std::to_wstring(static_cast<int>(std::round(p1))) + L" mm < " +
@@ -198,6 +206,7 @@ void checkBoltEdgeAndPitch(const BoltGroup& b, const GenerationPlan& plan,
             c.pass = p2 >= lim;
             c.value = p2;
             c.limit = lim;
+            c.targetRole = role;  // MM-7 item 3
             if (!c.pass) {
                 c.message = L"bulon kolon araligi (p2) " +
                             std::to_wstring(static_cast<int>(std::round(p2))) + L" mm < " +
@@ -218,11 +227,15 @@ std::vector<ComponentCheck> runComponentChecks(const GenerationPlan& plan,
         const BoltGroup& b = plan.boltGroups[gi];
         const std::vector<Vec3> origins = boltGroupBoltOrigins(b);
         if (origins.empty()) continue;
+        // MM-7 item 3: bulon grubunun roleKey'i (ihlal eden ogeyi isaretlemek icin).
+        const std::string role =
+            gi < plan.boltGroupKeys.size() ? plan.boltGroupKeys[gi] : std::string{};
         // Cakisma: her ikincil uyeye karsi.
         for (std::size_t si = 0; si < input.secondary.size(); ++si)
-            checkBoltMemberClash(b, origins, input.secondary[si], si, opts.weldAllowance, out);
+            checkBoltMemberClash(b, origins, input.secondary[si], si, opts.weldAllowance,
+                                 role, out);
         // Kenar + aralik.
-        checkBoltEdgeAndPitch(b, plan, opts, out);
+        checkBoltEdgeAndPitch(b, plan, opts, role, out);
     }
     return out;
 }

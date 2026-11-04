@@ -61,6 +61,10 @@ public:
     // P4: hit-selected component role; empty means no overlay.
     std::string activeRole() const { return activeRole_; }
     void selectRole(const std::string& role);  // GUI + automated tests
+    // MM-7 item 3: checks ihlalini isaret eden bulon grubu roleKey'i. Bos = yok.
+    // Bu role sahip bulon/levha onizlemede KIRMIZI vurgulanir.
+    void setViolationRole(const std::string& role);
+    std::string violationRole() const { return violationRole_; }
     std::vector<std::wstring> visibleOverlayParams() const;
     // P4B: measured from actual generated bolt origins in the selected
     // end-plate local frame (edge distances are centre-to-plate-edge, mm).
@@ -115,6 +119,7 @@ private:
     std::vector<Callout> callouts_;
     std::wstring highlight_;
     std::string activeRole_;
+    std::string violationRole_;  // MM-7 item 3: checks ihlalini isaret eden role
     struct HitRegion { QPolygonF polygon; std::string role; };
     std::vector<HitRegion> hits_;
     std::vector<std::pair<QPointF,std::string>> boltHits_;
