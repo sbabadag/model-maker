@@ -1228,31 +1228,51 @@ struct BlockDecl {
     // `param.<ad>` kabul eden METIN argumanlari (strParamArg). validateRecipe bunlari
     // semaya karsi denetler (HR-7): parametre var olmali ve String/Material/Enum olmali.
     std::vector<const char*> strParamArgs;
+    // M1: mantiksal argumanlar (boolArg) `param.<ad>` kabul eder; parametre semada
+    // olmali ve Boolean olmali (or. weld.fillet double/doubleSided).
+    std::vector<const char*> boolParamArgs;
+    // M2: uye rolune baglanan argumanlar (main / secondary_N); baska metin reddedilir.
+    // Listede de olabilir (or. bolts.grid through).
+    std::vector<const char*> memberArgs;
+    // M3: liste ogeleri IFADE olan argumanlar (plate.rect chamfers ':', plate.polygon
+    // outline ','). Her oge parcasi validateRecipe'te scanExpr'den gecer.
+    std::vector<const char*> exprListArgs;
 };
 
 static const std::vector<BlockDecl>& blockRegistry() {
     static const std::vector<BlockDecl> reg = {
-        {"frame.member_end", {}, {"member", "end"}, {}, &blockFrameMemberEnd},
-        {"frame.offset", {"du", "dv", "dw"}, {"frame"}, {}, &blockFrameOffset},
+        {"frame.member_end", {}, {"member", "end"}, {}, &blockFrameMemberEnd,
+         {}, {}, {"member"}, {}},
+        {"frame.offset", {"du", "dv", "dw"}, {"frame"}, {}, &blockFrameOffset,
+         {}, {}, {}, {}},
         // HR-1: cerceveyi kendi ekseni etrafinda dondurur (u/v/w ortonormal kalir).
-        {"frame.rotate", {"deg"}, {"frame", "about"}, {}, &blockFrameRotate},
+        {"frame.rotate", {"deg"}, {"frame", "about"}, {}, &blockFrameRotate,
+         {}, {}, {}, {}},
         // HR-3: `chamfers` listesi ("corner:type:h:v") + metin alanlari param.* kabul eder.
         {"plate.rect", {"w", "h", "t"}, {"frame", "name", "material", "finish", "posNo"},
-         {"chamfers"}, &blockPlateRect, {"name", "material", "finish", "posNo"}},
+         {"chamfers"}, &blockPlateRect, {"name", "material", "finish", "posNo"},
+         {}, {}, {"chamfers"}},
         // HR-3: serbest kontur levhasi (disbukey + basit kontur sart).
         {"plate.polygon", {"t"}, {"frame", "name", "material", "finish", "posNo"},
-         {"outline"}, &blockPlatePolygon, {"name", "material", "finish", "posNo"}},
+         {"outline"}, &blockPlatePolygon, {"name", "material", "finish", "posNo"},
+         {}, {}, {"outline"}},
         // HR-4: `grip` ve `holeDepth` ankraj/grip boyunu recipe'den verir.
         {"bolts.grid", {"nx", "ny", "px", "py", "d", "hole", "grip", "holeDepth"},
-         {"frame", "grade"}, {"through"}, &blockBoltsGrid, {"grade"}},
-        {"weld.fillet", {"size"}, {"roleA", "roleB", "double", "doubleSided"}, {}, &blockWeldFillet},
-        {"cut.plane", {}, {"target", "frame", "keep"}, {}, &blockCutPlane},
-        {"endplate.placement", {}, {"main", "beam", "rolePlate", "roleBolts"}, {}, &blockEndPlatePlacement},
+         {"frame", "grade"}, {"through"}, &blockBoltsGrid, {"grade"},
+         {}, {"through"}, {}},
+        {"weld.fillet", {"size"}, {"roleA", "roleB", "double", "doubleSided"}, {},
+         &blockWeldFillet, {}, {"double", "doubleSided"}, {}, {}},
+        {"cut.plane", {}, {"target", "frame", "keep"}, {}, &blockCutPlane,
+         {}, {}, {"target"}, {}},
+        {"endplate.placement", {}, {"main", "beam", "rolePlate", "roleBolts"}, {},
+         &blockEndPlatePlacement, {}, {}, {}, {}},
         // MM-3d: her taş kendi parametrelerini alır; "frame" adıyla çerçeve,
         // "role" üretilen roleKey. frame.contact PARAMETRESİZ.
-        {"frame.contact", {}, {"main", "secondary", "role"}, {}, &blockHaunchContact},
+        {"frame.contact", {}, {"main", "secondary", "role"}, {}, &blockHaunchContact,
+         {}, {}, {}, {}},
         {"frame.plumb_face", {"gap", "endPlateThickness"},
-         {"frame", "plateMaterial", "role"}, {}, &blockHaunchPlumbFace, {"plateMaterial"}},
+         {"frame", "plateMaterial", "role"}, {}, &blockHaunchPlumbFace, {"plateMaterial"},
+         {}, {}, {}},
         {"haunch.end_plate",
          {"haunchLength", "haunchDepth", "haunchTipDepth", "haunchWebThickness",
           "haunchFlangeThickness", "endPlateThickness", "gap", "boltEdgeLeft",
@@ -1262,12 +1282,13 @@ static const std::vector<BlockDecl>& blockRegistry() {
           "upperBoltEdgeClear", "lowerBoltCountX", "lowerBoltCountY",
           "lowerBoltPitchX", "lowerBoltPitchY", "lowerBoltDiameter",
           "lowerHoleDiameter", "lowerBoltEdgeClear"},
-         {"frame", "plateMaterial", "role"}, {}, &blockHaunchEndPlate, {"plateMaterial"}},
+         {"frame", "plateMaterial", "role"}, {}, &blockHaunchEndPlate, {"plateMaterial"},
+         {}, {}, {}},
         {"haunch.web", {"haunchLength", "haunchDepth", "haunchTipDepth", "haunchWebThickness"},
-         {"frame", "role"}, {}, &blockHaunchWeb},
+         {"frame", "role"}, {}, &blockHaunchWeb, {}, {}, {}, {}},
         {"haunch.flange", {"haunchLength", "haunchDepth", "haunchTipDepth",
                            "haunchFlangeThickness", "haunchFlangeWidth"},
-         {"frame", "role"}, {}, &blockHaunchFlange},
+         {"frame", "role"}, {}, &blockHaunchFlange, {}, {}, {}, {}},
         {"haunch.stiffeners",
          {"haunchLength", "haunchDepth", "haunchFlangeThickness", "topPlateThickness",
           "stiffenerClipSize", "stiffenerThickness", "addStiffenerThickness",
@@ -1275,16 +1296,18 @@ static const std::vector<BlockDecl>& blockRegistry() {
           "morrisStiffenerThickness", "diagStiffenerThickness", "diagStiffenerWidth",
           "createBeamStiffener", "createAddStiffener", "createRafterBottomStiffener",
           "createComprStiffener", "createMorrisStiffener", "createDiagStiffener"},
-         {"frame", "plateMaterial", "role"}, {}, &blockHaunchStiffeners, {"plateMaterial"}},
+         {"frame", "plateMaterial", "role"}, {}, &blockHaunchStiffeners, {"plateMaterial"},
+         {}, {}, {}},
         {"bolts.haunch_groups",
          {"upperBoltCountX", "upperBoltCountY", "upperBoltPitchX", "upperBoltPitchY",
           "upperBoltDiameter", "upperHoleDiameter", "upperBoltEdgeClear",
           "lowerBoltCountX", "lowerBoltCountY", "lowerBoltPitchX", "lowerBoltPitchY",
           "lowerBoltDiameter", "lowerHoleDiameter", "lowerBoltEdgeClear",
           "endPlateThickness", "gap", "boltEdgeLeft", "boltEdgeRight"},
-         {"frame", "grade", "role"}, {}, &blockHaunchBolts, {"grade"}},
+         {"frame", "grade", "role"}, {}, &blockHaunchBolts, {"grade"},
+         {}, {}, {}},
         {"haunch.welds", {"weldSize", "topPlateThickness", "createWelds"},
-         {"frame", "role"}, {}, &blockHaunchWelds},
+         {"frame", "role"}, {}, &blockHaunchWelds, {}, {}, {}, {}},
     };
     return reg;
 }
@@ -1323,6 +1346,17 @@ static bool validRoleKey(const std::string& role) {
     if (role.empty()) return false;
     for (const char c : role)
         if (!(std::isalnum(static_cast<unsigned char>(c)) || c == '_')) return false;
+    return true;
+}
+
+// M2: girdi rolu = "main" ya da "secondary_" + rakamlar.
+static bool isInputRole(const std::string& s) {
+    if (s == "main") return true;
+    if (s.rfind("secondary_", 0) != 0) return false;
+    const std::string n = s.substr(std::string("secondary_").size());
+    if (n.empty()) return false;
+    for (const char c : n)
+        if (!std::isdigit(static_cast<unsigned char>(c))) return false;
     return true;
 }
 
@@ -1565,6 +1599,86 @@ RecipeValidation validateRecipe(const Recipe& recipe,
         }
         if (!st.when.empty()) {
             if (!scanExpr(specs, letNames, st.when, r)) return r;
+        }
+        // M1: mantiksal argumanlar (boolArg) `param.<ad>` kabul eder; parametre
+        // semada olmali ve Boolean olmali (literal true/false/1/0 atlanir).
+        for (const char* key : decl->boolParamArgs) {
+            const auto it = st.args.find(key);
+            if (it == st.args.end() || it->second.isList) continue;
+            const std::string& text = it->second.text;
+            static const std::string kPfx = "param.";
+            if (text.rfind(kPfx, 0) != 0) continue;  // literal mantiksal
+            const std::wstring pname = wideFromUtf8(text.substr(kPfx.size()));
+            const CompParamSpec* bspec = nullptr;
+            for (const auto& s : specs)
+                if (s.name == pname) { bspec = &s; break; }
+            if (!bspec) {
+                r.ok = false;
+                r.message = L"recipe adim " + std::to_wstring(stepIndex) + L" (" +
+                            wideFromUtf8(st.use) + L"): " + wideFromUtf8(key) +
+                            L" -> bilinmeyen parametre: " + pname;
+                return r;
+            }
+            if (bspec->type != CompParamType::Boolean) {
+                r.ok = false;
+                r.message = L"recipe adim " + std::to_wstring(stepIndex) + L" (" +
+                            wideFromUtf8(st.use) + L"): " + wideFromUtf8(key) +
+                            L" Boolean parametre degil: " + pname;
+                return r;
+            }
+        }
+        // M2: uye argumanlari (member/target/through oge.../main/beam/...) girdi
+        // rolu olmali (main veya secondary_N); baska metin reddedilir.
+        for (const char* key : decl->memberArgs) {
+            const auto it = st.args.find(key);
+            if (it == st.args.end()) continue;
+            const auto reject = [&](const std::string& val, const std::wstring& roleName) {
+                r.ok = false;
+                r.message = L"recipe adim " + std::to_wstring(stepIndex) + L" (" +
+                            wideFromUtf8(st.use) + L"): uye argumani '" + roleName +
+                            L"' girdi rolu olmali (main veya secondary_N): " +
+                            wideFromUtf8(val);
+            };
+            if (it->second.isList) {
+                for (const auto& item : it->second.items) {
+                    if (item.isList || !isInputRole(item.text)) {
+                        reject(item.text, wideFromUtf8(key));
+                        return r;
+                    }
+                }
+            } else {
+                const std::string& v = it->second.text;
+                if (!v.empty() && !isInputRole(v)) {
+                    reject(v, wideFromUtf8(key));
+                    return r;
+                }
+            }
+        }
+        // M3: liste ogeleri ifade olan argumanlar (chamfers ':', outline ',')
+        // statik taranir (bilinmeyen parametre/let/uye alani).
+        for (const char* key : decl->exprListArgs) {
+            const auto it = st.args.find(key);
+            if (it == st.args.end() || !it->second.isList) continue;
+            const char sep = (std::string(key) == "chamfers") ? ':' : ',';
+            for (const auto& item : it->second.items) {
+                if (item.isList) continue;
+                std::vector<std::string> parts;
+                std::size_t start = 0;
+                while (true) {
+                    const std::size_t pos = item.text.find(sep, start);
+                    parts.push_back(item.text.substr(start, pos == std::string::npos ? std::string::npos : pos - start));
+                    if (pos == std::string::npos) break;
+                    start = pos + 1;
+                }
+                for (const auto& part : parts) {
+                    if (!scanExpr(specs, letNames, part, r)) {
+                        r.message = L"recipe adim " + std::to_wstring(stepIndex) + L" (" +
+                                    wideFromUtf8(st.use) + L"): liste ogesi '" +
+                                    wideFromUtf8(key) + L"': " + r.message;
+                        return r;
+                    }
+                }
+            }
         }
         const std::string kind = kindForBlock(st.use);
         if (!st.role.empty() && !kind.empty()) {

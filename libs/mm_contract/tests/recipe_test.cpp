@@ -759,6 +759,172 @@ static void testUnknownArgRejected() {
     std::printf("J: %d/%d tas bilinmeyen argumani reddetti\n", n, (int)(sizeof(blocks)/sizeof(blocks[0])));
 }
 
+// M1: weld.fillet double/doubleSided = param.* -> semada olmali ve Boolean.
+static void testBoolParamArgStatic() {
+    const auto hasBool = [](const std::string& name) {
+        std::vector<CompParamSpec> specs;
+        CompParamSpec b;
+        b.name = wideFromUtf8(name);
+        b.type = CompParamType::Boolean;
+        b.defBool = false;
+        specs.push_back(b);
+        return specs;
+    };
+    const auto hasLen = []() {
+        std::vector<CompParamSpec> specs;
+        CompParamSpec l;
+        l.name = L"plateThickness";
+        l.type = CompParamType::Length;
+        l.defDouble = 12.0;
+        specs.push_back(l);
+        return specs;
+    };
+    auto weld = [](const std::string& dbl) {
+        Recipe r;
+        RecipeStep f; f.id = "f"; f.use = "frame.member_end"; f.args["member"] = S("main");
+        RecipeStep w; w.id = "w"; w.use = "weld.fillet";
+        w.args["roleA"] = S("main"); w.args["double"] = S(dbl);
+        r.steps = {f, w};
+        return r;
+    };
+    // Gecerli: Boolean param.
+    {
+        Recipe r = weld("param.createWelds");
+        CHECK(validateRecipe(r, hasBool("createWelds")).ok,
+              "M1: double=param.Boolean kabul edilir");
+    }
+    // Bilinmeyen param.
+    {
+        Recipe r = weld("param.olmayan");
+        const auto v = validateRecipe(r, hasBool("createWelds"));
+        CHECK(!v.ok, "M1: double=param.bilinmeyen reddedilir");
+        CHECK(v.message.find(L"bilinmeyen parametre") != std::wstring::npos,
+              "M1: mesaj 'bilinmeyen parametre' der");
+    }
+    // Boolean olmayan param (Length).
+    {
+        Recipe r = weld("param.plateThickness");
+        const auto v = validateRecipe(r, hasLen());
+        CHECK(!v.ok, "M1: double=param.Length reddedilir");
+        CHECK(v.message.find(L"Boolean parametre degil") != std::wstring::npos,
+              "M1: mesaj 'Boolean parametre degil' der");
+    }
+    // Literal true gecerli (tarama yok).
+    {
+        Recipe r = weld("true");
+        CHECK(validateRecipe(r, {}).ok, "M1: double=true literal kabul edilir");
+    }
+}
+
+// M2: uye argumanlari (member/target/through) girdi rolu olmali.
+static void testMemberArgStatic() {
+    auto frameMain = []() {
+        RecipeStep f; f.id = "f"; f.use = "frame.member_end"; f.args["member"] = S("main");
+        return f;
+    };
+    // member: 'secondary_2' gecerli.
+    {
+        Recipe r;
+        RecipeStep f; f.id = "f"; f.use = "frame.member_end"; f.args["member"] = S("secondary_2");
+        r.steps = {f};
+        CHECK(validateRecipe(r, {}).ok, "M2: member=secondary_2 kabul edilir");
+    }
+    // member: keyfi metin reddedilir.
+    {
+        Recipe r;
+        RecipeStep f; f.id = "f"; f.use = "frame.member_end"; f.args["member"] = S("beam_A");
+        r.steps = {f};
+        const auto v = validateRecipe(r, {});
+        CHECK(!v.ok, "M2: member=beam_A reddedilir");
+        CHECK(v.message.find(L"girdi rolu") != std::wstring::npos, "M2: mesaj 'girdi rolu' der");
+    }
+    // member: 'secondary_x' (rakam degil) reddedilir.
+    {
+        Recipe r;
+        RecipeStep f; f.id = "f"; f.use = "frame.member_end"; f.args["member"] = S("secondary_x");
+        r.steps = {f};
+        CHECK(!validateRecipe(r, {}).ok, "M2: member=secondary_x reddedilir");
+    }
+    // bolts.grid through: gecersiz oge reddedilir.
+    {
+        Recipe r;
+        RecipeStep f = frameMain();
+        RecipeStep b; b.id = "b"; b.use = "bolts.grid";
+        b.args["frame"] = S("f"); b.args["through"] = L({"main", "bogus"});
+        r.steps = {f, b};
+        const auto v = validateRecipe(r, {});
+        CHECK(!v.ok, "M2: through gecersiz oge reddedilir");
+        CHECK(v.message.find(L"girdi rolu") != std::wstring::npos, "M2: through mesaji 'girdi rolu' der");
+    }
+    // bolts.grid through: gecerli roller kabul edilir.
+    {
+        Recipe r;
+        RecipeStep f = frameMain();
+        RecipeStep b; b.id = "b"; b.use = "bolts.grid";
+        b.args["frame"] = S("f"); b.args["through"] = L({"main", "secondary_0"});
+        r.steps = {f, b};
+        CHECK(validateRecipe(r, {}).ok, "M2: through gecerli roller kabul edilir");
+    }
+    // cut.plane target: gecersiz reddedilir.
+    {
+        Recipe r;
+        RecipeStep f = frameMain();
+        RecipeStep c; c.id = "c"; c.use = "cut.plane";
+        c.args["target"] = S("bogus"); c.args["frame"] = S("f");
+        r.steps = {f, c};
+        CHECK(!validateRecipe(r, {}).ok, "M2: cut.plane target=bogus reddedilir");
+    }
+}
+
+// M3: chamfers/outline liste ogeleri statik taranir (bilinmeyen param/let).
+static void testExprListStatic() {
+    // chamfers: '3:1:t*2:30' -> 't' tanimsiz let olur (let yoksa).
+    {
+        Recipe r;
+        RecipeStep f; f.id = "f"; f.use = "frame.member_end"; f.args["member"] = S("main");
+        RecipeStep p; p.id = "p"; p.use = "plate.rect";
+        p.args["frame"] = S("f"); p.args["w"] = S("100"); p.args["h"] = S("200");
+        p.args["t"] = S("10");
+        p.args["chamfers"] = L({"3:1:param.olmayan:30"});
+        r.steps = {f, p};
+        const auto v = validateRecipe(r, {});
+        CHECK(!v.ok, "M3: chamfers bilinmeyen param reddedilir");
+        CHECK(v.message.find(L"liste ogesi") != std::wstring::npos, "M3: mesaj 'liste ogesi' der");
+    }
+    // chamfers: gecerli ifadeler kabul edilir.
+    {
+        Recipe r;
+        RecipeStep f; f.id = "f"; f.use = "frame.member_end"; f.args["member"] = S("main");
+        RecipeStep p; p.id = "p"; p.use = "plate.rect";
+        p.args["frame"] = S("f"); p.args["w"] = S("100"); p.args["h"] = S("200");
+        p.args["t"] = S("10");
+        p.args["chamfers"] = L({"0:1:20:20"});
+        r.steps = {f, p};
+        CHECK(validateRecipe(r, {}).ok, "M3: chamfers gecerli ifade kabul edilir");
+    }
+    // outline: 'param.olmayan,20' reddedilir.
+    {
+        Recipe r;
+        RecipeStep f; f.id = "f"; f.use = "frame.member_end"; f.args["member"] = S("main");
+        RecipeStep p; p.id = "p"; p.use = "plate.polygon";
+        p.args["frame"] = S("f"); p.args["t"] = S("10");
+        p.args["outline"] = L({"0,0", "param.olmayan,20", "0,40"});
+        r.steps = {f, p};
+        const auto v = validateRecipe(r, {});
+        CHECK(!v.ok, "M3: outline bilinmeyen param reddedilir");
+    }
+    // outline: gecerli ifade kabul edilir.
+    {
+        Recipe r;
+        RecipeStep f; f.id = "f"; f.use = "frame.member_end"; f.args["member"] = S("main");
+        RecipeStep p; p.id = "p"; p.use = "plate.polygon";
+        p.args["frame"] = S("f"); p.args["t"] = S("10");
+        p.args["outline"] = L({"0,0", "100,0", "0,40"});
+        r.steps = {f, p};
+        CHECK(validateRecipe(r, {}).ok, "M3: outline gecerli ifade kabul edilir");
+    }
+}
+
 int main() {
     CHECK(std::string(kContractVersion) == "1.10.0", "contract surumu 1.7.0");
     testExpressionEvaluator();
@@ -772,6 +938,9 @@ int main() {
     testSt4Stones();
     testWhenSkips();
     testUnknownArgRejected();
+    testBoolParamArgStatic();
+    testMemberArgStatic();
+    testExprListStatic();
     std::printf("recipe test: %s (%d hata)\n", failures ? "HATALI" : "OK", failures);
     return failures ? 1 : 0;
 }
