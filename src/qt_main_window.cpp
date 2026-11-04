@@ -1961,11 +1961,17 @@ bool QtMainWindow::openComponentParamsDialog(const mm::ComponentInstanceRecord& 
     // temsili girdisi (manifest.previewInput / tests ilk input).
     mm::ComponentLivePreviewWidget* legacyPreview = nullptr;
     {
+        // NOT: bu dal, diyalog tanimi OLMAYAN tipler icin de calisir; `def`
+        // yukaridaki if-blok kapsamindadir ve burada YOKTUR. Tanimi burada
+        // yeniden ara ve NULL kontrolu yap (ST-4 derleme duzeltmesi).
+        const mm::ComponentDialogDefinition* legacyDef =
+            mm::ComponentDialogRegistry::instance().find(rec.typeId);
         legacyPreview = new mm::ComponentLivePreviewWidget(&dlg);
         legacyPreview->setTypeId(rec.typeId);
-        legacyPreview->setPreviewDefinition(def->schema.preview);
+        if (legacyDef) legacyPreview->setPreviewDefinition(legacyDef->schema.preview);
         std::optional<mm::ComponentInput> src = app_.componentPreviewInput(rec.id);
-        if (!src.has_value() && def->previewInput.has_value()) src = def->previewInput;
+        if (!src.has_value() && legacyDef && legacyDef->previewInput.has_value())
+            src = legacyDef->previewInput;
         if (src.has_value()) legacyPreview->setInput(*src);
         legacyPreview->setParams(mm::alignParamsToSpecs(type->params, rec.params));
         legacyPreview->setMinimumHeight(240);
