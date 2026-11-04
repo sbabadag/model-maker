@@ -458,6 +458,15 @@ QtMainWindow::QtMainWindow(QWidget* parent)
             openComponentParamsDialog(rec);
         });
     });
+    // MM-7 item 2: generic uretim CHECK ihlaliyle reddedildi -> diyalog ac (checks
+    // tablosu kirmizi, OK kapali; deger duzeltilince OK acilir).
+    app_.setComponentRejectDialogRequest(
+        [this](const std::wstring& typeId, const std::vector<std::size_t>& parts,
+               const std::vector<mm::CompParam>& params) {
+            QTimer::singleShot(0, this, [this, typeId, parts, params]() {
+                openRejectedComponentDialog(typeId, parts, params);
+            });
+        });
     // Iki noktali gorunus: Application iki noktayi secince yeni MDI penceresi.
     // Kuyruklanir: secim fare olayi isleyicisinin icinden donmeden pencere
     // olusturulmasin (yeniden giris / odak sorunlari olmasin).
@@ -1789,6 +1798,43 @@ bool QtMainWindow::openEndPlateParamsDialog(const mm::EndPlateParams& current,
 // Parametre semasi registry'den gelir (tip-agnostik): yeni bir component tipi
 // eklemek icin burada degisiklik GEREKMEZ. OK -> setSelectedComponentParams,
 // yani mevcut ComponentMaterializer::recompute yolu (undo'lu, tek kayit).
+// MM-7 item 2: generic uretim CHECK ihlaliyle reddedildiginde acilan diyalog.
+// Amac: ret SESSIZ kalmasin — ayni checks[] tablosu kirmizi satirlarla gorunur,
+// OK kapali kalir; kullanici degeri duzeltince onizleme yesile doner ve OK acilir.
+// Geometri komut yolu ile AYNI kanonik girdiden (componentInputForParts) kurulur.
+bool QtMainWindow::openRejectedComponentDialog(const std::wstring& typeId,
+                                               const std::vector<std::size_t>& parts,
+                                               const std::vector<mm::CompParam>& params) {
+    const mm::ComponentType* type = mm::ComponentRegistry::instance().findType(typeId);
+    if (!type) return false;
+    const auto* def = mm::ComponentDialogRegistry::instance().find(typeId);
+    if (!def) return false;  // diyalog tanimi yok: yalniz uyari kaldi (yine fail-loud)
+    auto input = app_.componentInputForParts(parts);
+    if (!input) return false;
+
+    QDialog dlg(this);
+    dlg.setWindowTitle(QStringLiteral("Kontrol ihlali — ") +
+                       QString::fromStdWString(type->displayName));
+    dlg.setMinimumSize(900, 620);
+    auto* root = new QVBoxLayout(&dlg);
+    auto* widget = new mm::ComponentDialogWidget(*def, params, &dlg);
+    widget->setPreviewInput(*input);
+    root->addWidget(widget);
+    root->addWidget(widget->createButtonBar(&dlg));
+    if (dlg.exec() != QDialog::Accepted) return false;
+
+    auto out = widget->resultParams();
+    // Kaynak tablosu ekstralari (varsa) — applyComponentFromParts ile ayni sozlesme.
+    bool anyWeld = false;
+    double weldSize = 5.0;
+    for (const auto& r : widget->resultWeldRows())
+        if (r.enabled) { anyWeld = true; weldSize = r.size; break; }
+    out.push_back(mm::CompParam{L"createWelds", anyWeld});
+    out.push_back(mm::CompParam{L"weldSize", weldSize});
+    app_.applyComponentFromParts(typeId, parts, out);
+    return true;
+}
+
 bool QtMainWindow::openComponentParamsDialog(const mm::ComponentInstanceRecord& rec) {
     const mm::ComponentType* type = mm::ComponentRegistry::instance().findType(rec.typeId);
     if (!type) return false;

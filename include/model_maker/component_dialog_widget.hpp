@@ -140,6 +140,10 @@ public:
     // Preview never changes Document; generation is an in-memory dry run.
     void setPreviewInput(const ComponentInput& input);
 
+    // MM-7 item 2: onizleme planindaki checks[] ihlallerini bildirir (OK kapisi).
+    // true = en az bir kontrol gecmedi (diyalog OK devre disi olmali).
+    bool hasFailingChecks() const;
+
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
 
@@ -154,6 +158,7 @@ private:
                                const CompParamValue& value);
     void highlightParamRow(const std::wstring& paramName);
     void updatePreviewFromForm(const std::wstring& changed = {});
+    void refreshChecks();
     void enforceHaunchInputLimits(const std::wstring& changed = {});
     void releaseFixedPlateSizeOnEdgeEdit(const std::wstring& name);
     void updateFormFromPreview(const std::wstring& name,double value);
@@ -211,6 +216,8 @@ private:
     QTableWidget* weldTable_{};                     // kaynak tablosu (varsa)
     QDialog* weldDialog_{};                         // "Welds..." dugmesinin actigi pencere
     QCheckBox* weldsCheck_{};                       // ust cubuk: kaynaklar acik/kapali
+    QTableWidget* checksTable_{};                   // MM-7 item 2: checks[] tablosu (kirmizi/yesil)
+    QPushButton* okButton_{};                       // OK dugmesi (checks ihlalinde kapali)
     ComponentPresetStore* presetStore_{};           // adlandirilmis parametre setleri
     std::function<bool(std::string&)> presetPersist_;
     QPushButton* presetSaveBtn_{};

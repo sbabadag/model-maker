@@ -498,6 +498,21 @@ public:
     void applyComponentFromParts(const std::wstring& typeId,
                                  const std::vector<std::size_t>& parts,
                                  const std::vector<CompParam>& params);
+    // MM-7 item 2: Generic uretim plani CHECK ihlaliyle reddedildiginde (yani
+    // parametreyle duzeltilebilir fail-closed) Qt katmanina diyalog acma istegi
+    // iletir. Atanmazsa eski davranis (yalniz uyari) korunur. QtMainWindow bu
+    // callback'i kurar; acilan diyalog checks[] tablosunu kirmizi gosterir ve OK
+    // yalniz tum kontroller gecince acilir.
+    void setComponentRejectDialogRequest(
+        std::function<void(const std::wstring&, const std::vector<std::size_t>&,
+                           const std::vector<CompParam>&)> cb) {
+        componentRejectDialogRequest_ = std::move(cb);
+    }
+    // Secli parca indekslerinden ComponentInput kurar (generic komut yolu ile
+    // AYNI kanonik yol — diyalog onizlemesi icin; MM_HAS_OCC gerekir).
+    // Basarisizlikta nullopt (uyari ayrıca publishStatus'a yazilir).
+    std::optional<ComponentInput> componentInputForParts(
+        const std::vector<std::size_t>& parts);
     void setPendingComponentParams(const std::vector<CompParam>& p) { pendingComponentParams_ = p; }
     const std::vector<CompParam>& pendingComponentParams() const { return pendingComponentParams_; }
     const std::wstring& pendingComponentTypeId() const { return pendingComponentType_; }
@@ -1356,6 +1371,10 @@ private:
     // Universal parametrik component alt nesnesine (levha/bulon display) çift
     // tık -> parametre diyaloğu isteği callback'i (Fin Plate vb.).
     std::function<void(const ComponentInstanceRecord&)> componentEditRequest_;
+    // MM-7 item 2: CHECK ihlaliyle reddedilen generic uretim -> diyalog acma
+    // istegi (typeId, parts, params). QtMainWindow kurar.
+    std::function<void(const std::wstring&, const std::vector<std::size_t>&,
+                       const std::vector<CompParam>&)> componentRejectDialogRequest_;
     // BOLT TOOL PENCERESI (Phase B1): bolt display'ine cift tik -> duzenleme
     // istegi callback'i. Cift tik tespiti icin son sol tik zamani + konumu.
     std::function<void(const BoltGroup&)> boltEditRequest_;

@@ -383,7 +383,7 @@ int main(int argc, char** argv) {
         }
 
         // 7) KAYNAK TABLOSU (Tekla "Welds"): 10 satir x 12 sutun, cagri eslesmesi.
-        auto* table = w146.findChild<QTableWidget*>();
+        auto* table = w146.findChild<QTableWidget*>(QStringLiteral("weldTable"));
         CHECK(table != nullptr, "146: kaynak tablosu kuruldu");
         if (table) {
             CHECK(table->rowCount() == 10, "146: 10 kaynak satiri");
@@ -1251,6 +1251,61 @@ int main(int argc, char** argv) {
                       "GUI-3b: instance girdisiyle en az 1 LEVHA cizildi");
                 CHECK(!main3d->previewPlan().boltGroups.empty(),
                       "GUI-3b: instance girdisiyle en az 1 BULON GRUBU cizildi");
+            }
+
+            // (4) MM-7 item 2: checks[] tablosu + OK kapisi. ACIK kucuk
+            //     boltSpacingX (40) dar flansli IPE200'de p2 ihlali uretir ->
+            //     tablo kirmizi satirli, OK KAPALI. Deger 55'e duzeltilince
+            //     yesil + OK ACIK.
+            {
+                mm::ComponentInput rej;
+                rej.main.id = 1;
+                rej.main.axisFrom = {0.0, 0.0, 0.0};
+                rej.main.axisTo = {0.0, 0.0, 3000.0};
+                rej.main.refNormal = {0.0, 0.0, 1.0};
+                rej.main.secWidth = 300.0; rej.main.secHeight = 300.0;
+                rej.main.secWebThickness = 11.0; rej.main.secFlangeThickness = 19.0;
+                mm::MemberGeometry b;
+                b.id = 2;
+                b.axisFrom = {0.0, 0.0, 3000.0};
+                b.axisTo = {2000.0, 0.0, 3000.0};
+                b.refNormal = {0.0, 0.0, 1.0};
+                b.secWidth = 100.0; b.secHeight = 200.0;   // IPE200 (dar flans)
+                b.secWebThickness = 5.6; b.secFlangeThickness = 8.5;
+                rej.secondary.push_back(b);
+
+                std::vector<mm::CompParam> bad;
+                bad.push_back(mm::CompParam{L"boltSpacingX", mm::CompParamValue{40.0}});
+                mm::ComponentDialogWidget wchk(*pdef, bad);
+                wchk.resize(1100, 720);
+                wchk.show();
+                wchk.setPreviewInput(rej);
+                QApplication::processEvents();
+
+                CHECK(wchk.hasFailingChecks(),
+                      "MM-7: ACIK kucuk boltSpacingX -> ihlal var");
+
+                QDialog dlgChk;
+                QWidget* bar = wchk.createButtonBar(&dlgChk);
+                QPushButton* okBtn = nullptr;
+                for (auto* bb : bar->findChildren<QPushButton*>())
+                    if (bb->text() == QStringLiteral("OK")) okBtn = bb;
+                CHECK(okBtn != nullptr, "MM-7: OK dugmesi var");
+                if (okBtn)
+                    CHECK(!okBtn->isEnabled(), "MM-7: ihlal varken OK KAPALI");
+
+                auto* chkTbl = wchk.findChild<QTableWidget*>(QStringLiteral("checksTable"));
+                CHECK(chkTbl != nullptr, "MM-7: checks tablosu var");
+                if (chkTbl)
+                    CHECK(chkTbl->rowCount() > 0, "MM-7: checks tablosunda satir var");
+
+                std::vector<mm::CompParam> good;
+                good.push_back(mm::CompParam{L"boltSpacingX", mm::CompParamValue{55.0}});
+                wchk.setParams(good);
+                QApplication::processEvents();
+                CHECK(!wchk.hasFailingChecks(), "MM-7: duzeltilince ihlal yok");
+                if (okBtn)
+                    CHECK(okBtn->isEnabled(), "MM-7: duzeltilince OK ACIK");
             }
         }
     }

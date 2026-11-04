@@ -56,6 +56,9 @@ bool hasSentinelDefault(const mm::CompParamSpec& spec) {
 #include <QSpinBox>
 #include <QTabWidget>
 #include <QTableWidget>
+#include <QHeaderView>
+#include <QColor>
+#include <QBrush>
 #include <QUrl>
 #include <QVBoxLayout>
 
@@ -396,6 +399,23 @@ ComponentDialogWidget::ComponentDialogWidget(const ComponentDialogDefinition& de
             orthos->addWidget(small,1);
         }
         vertical->addLayout(orthos);
+        // MM-7 item 2: checks[] tablosu onizleme panelinin altinda. Ihlal olan
+        // kontrol KIRMIZI satirla, gecen YESIL satirla gosterilir; tablo ayni
+        // zamanda OK kapisini besler (refreshChecks). objectName, testlerin
+        // kaynak tablosunu (weldTable) ayirt edebilmesi icin ZORUNLU — aksi
+        // halde findChild<QTableWidget*>() ilk tabloyu (checks) secer.
+        checksTable_ = new QTableWidget(left);
+        checksTable_->setObjectName(QStringLiteral("checksTable"));
+        checksTable_->setColumnCount(4);
+        checksTable_->setRowCount(0);
+        checksTable_->setHorizontalHeaderLabels(
+            QStringList() << QStringLiteral("Kontrol") << QStringLiteral("Değer")
+                          << QStringLiteral("Limit") << QStringLiteral("Mesaj"));
+        checksTable_->verticalHeader()->setVisible(false);
+        checksTable_->setEditTriggers(QAbstractItemView::NoEditTriggers);
+        checksTable_->setSelectionMode(QAbstractItemView::NoSelection);
+        checksTable_->setMinimumHeight(72);
+        vertical->addWidget(checksTable_);
         previewPane_ = left;
         root->addWidget(left, /*stretch*/ 5);
         // Sematik root yerlesiminde durur ama VARSAYILAN GIZLI: 3B onizleme
@@ -1199,6 +1219,7 @@ QWidget* ComponentDialogWidget::createButtonBar(QDialog* dlg, const ButtonAction
     l->setContentsMargins(0, 4, 0, 0);
     auto* ok = new QPushButton(QStringLiteral("OK"), host);
     ok->setDefault(true);
+    okButton_ = ok;  // MM-7 item 2: checks ihlalinde kapali tutulur
     QObject::connect(ok, &QPushButton::clicked, dlg, &QDialog::accept);
     l->addWidget(ok);
     const struct { const wchar_t* name; const std::function<void()>* fn; const char* tip; } tekla[] = {
@@ -1239,6 +1260,7 @@ QWidget* ComponentDialogWidget::createButtonBar(QDialog* dlg, const ButtonAction
         create->setEnabled(false);
     }
     l->addWidget(create);
+    refreshChecks();  // ilk durum: onizleme planina gore OK acik/kapali
     return host;
 }
 
@@ -1253,6 +1275,7 @@ void ComponentDialogWidget::buildWeldTable() {
     weldDialog_->resize(900, 360);
     auto* weldLay = new QVBoxLayout(weldDialog_);
     weldTable_ = new QTableWidget(n, 12, weldDialog_);
+    weldTable_->setObjectName(QStringLiteral("weldTable"));
     weldLay->addWidget(weldTable_);
     auto* closeBtn = new QPushButton(QStringLiteral("Kapat"), weldDialog_);
     QObject::connect(closeBtn, &QPushButton::clicked, weldDialog_, &QDialog::hide);
@@ -1524,6 +1547,7 @@ void ComponentDialogWidget::setPreviewInput(const ComponentInput& input) {
             view->setParams(params);
         }
     }
+    refreshChecks();
 }
 void ComponentDialogWidget::applyAutoVisual(const std::wstring& name) {
     const auto it = editors_.find(name);
@@ -1776,6 +1800,46 @@ void ComponentDialogWidget::updatePreviewFromForm(const std::wstring& changed) {
         nativePreview_->setParams(params);
         for(auto* view:thumbnailViews_)view->setParams(params);
     }
+    refreshChecks();
+}
+
+// MM-7 item 2: onizleme planindaki checks[]'i tabloya yazar (kirmizi/yesil) ve
+// OK dugmesini ihlale gore acar/kapatir. checks yoksa (kontrolsuz tip) OK acik
+// kalir (davranis degismez).
+void ComponentDialogWidget::refreshChecks() {
+    if (!checksTable_) return;
+    const GenerationPlan plan = nativePreview_ ? nativePreview_->previewPlan()
+                                               : GenerationPlan{};
+    bool anyFail = false;
+    checksTable_->setRowCount(static_cast<int>(plan.checks.size()));
+    const QColor okFg(0x1a, 0x6e, 0x1a), okBg(0xee, 0xf6, 0xee);
+    const QColor badFg(0xa8, 0x12, 0x12), badBg(0xfb, 0xe9, 0xe9);
+    for (std::size_t i = 0; i < plan.checks.size(); ++i) {
+        const ComponentCheck& c = plan.checks[i];
+        if (!c.pass) anyFail = true;
+        const QColor& fg = c.pass ? okFg : badFg;
+        const QColor& bg = c.pass ? okBg : badBg;
+        auto make = [&](const QString& t) {
+            auto* it = new QTableWidgetItem(t);
+            it->setForeground(QBrush(fg));
+            it->setBackground(QBrush(bg));
+            it->setFlags(Qt::ItemIsEnabled);
+            return it;
+        };
+        checksTable_->setItem(static_cast<int>(i), 0, make(QString::fromStdString(c.id)));
+        checksTable_->setItem(static_cast<int>(i), 1, make(QString::number(c.value, 'f', 1)));
+        checksTable_->setItem(static_cast<int>(i), 2, make(QString::number(c.limit, 'f', 1)));
+        checksTable_->setItem(static_cast<int>(i), 3, make(QString::fromStdWString(c.message)));
+    }
+    checksTable_->resizeColumnsToContents();
+    if (okButton_) okButton_->setEnabled(!anyFail);
+}
+
+bool ComponentDialogWidget::hasFailingChecks() const {
+    if (!nativePreview_) return false;
+    for (const auto& c : nativePreview_->previewPlan().checks)
+        if (!c.pass) return true;
+    return false;
 }
 void ComponentDialogWidget::updateFormFromPreview(const std::wstring& name,
                                                    double value) {

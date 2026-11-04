@@ -5363,6 +5363,28 @@ void componentCommandInfo(Application& app, const std::wstring& msg) {
 }
 } // namespace
 
+std::optional<mm::ComponentInput> Application::componentInputForParts(
+    const std::vector<std::size_t>& parts) {
+#ifndef MM_HAS_OCC
+    (void)parts;
+    return std::nullopt;
+#else
+    ensureProfileCatalog();
+    if (parts.empty()) return std::nullopt;
+    mm::ComponentInput input;
+    input.main = memberGeometryFor(document_, profileCatalog_, parts[0]);
+    input.secondary.reserve(parts.size() - 1);
+    for (std::size_t i = 1; i < parts.size(); ++i) {
+        input.secondary.push_back(memberGeometryFor(document_, profileCatalog_, parts[i]));
+    }
+    // Dejenere eksen / eksik kesit -> nullopt (cagiran uyariyi verir).
+    if (!mm::memberGeometryUsable(input.main)) return std::nullopt;
+    for (const auto& s : input.secondary)
+        if (!mm::memberGeometryUsable(s)) return std::nullopt;
+    return input;
+#endif
+}
+
 void Application::applyComponentFromParts(const std::wstring& typeId,
                                           const std::vector<std::size_t>& parts,
                                           const std::vector<CompParam>& params) {
@@ -5425,8 +5447,19 @@ void Application::applyComponentFromParts(const std::wstring& typeId,
     // 2. Registry -> generator -> GenerationPlan.
     const mm::GenerationPlan gp = mm::ComponentRegistry::instance().generate(typeId, input);
     if (!gp.ok) {
+        // Durum cubugu + log (fail-loud) HER redde yazilir (sessiz yok).
         componentCommandWarn(*this, display + L" uretilemedi: " +
                              (gp.error.empty() ? L"gecersiz girdi" : gp.error));
+        // MM-7 item 2: red bir CHECK ihlaliyse (parametreyle duzeltilebilir)
+        // diyalog acilir; kullanici degeri duzeltince onizleme yesil + OK acilir.
+        // Geometrik redler (egik kiris, parca hatasi) diyalogla duzeltilemez —
+        // yalniz uyari kalir.
+        bool hasFailingCheck = false;
+        for (const auto& c : gp.checks)
+            if (!c.pass) { hasFailingCheck = true; break; }
+        if (hasFailingCheck && componentRejectDialogRequest_) {
+            componentRejectDialogRequest_(typeId, parts, params);
+        }
         return;
     }
 
