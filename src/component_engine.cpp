@@ -922,6 +922,24 @@ bool endPlatePlacementFromInput(const ComponentInput& input, const EndPlateParam
         return false;
     }
     mainPartId = pl.col.id;  // rol cozumlu kolon (bulonlar bunu deler)
+    // EGIK/SKEW KIRIS REDDI (item 4): alin levhasi kirisin kolon yuzune DIK
+    // gelmesini varsayar. Kare baglantida lenDir yuz normaline (pl.colSec.width
+    // veya height) hizali, diger iki bilesen ~0 olur. Egik/donuk kiriste yerlesim
+    // yaniltici olur; desteklenmeyen durum ACIK mesajla reddedilir (sessiz yanlis
+    // plan yok). Bu kontrol YALNIZ alin levhasina ozgudur — Haunch 40 egik kirisi
+    // ayri yoldan (haunchContactPlacement) destekler, buraya girmez.
+    {
+        const Vec3 colAxisDir = vnorm(Vec3{pl.col.axisTo.x - pl.col.axisFrom.x,
+                                           pl.col.axisTo.y - pl.col.axisFrom.y,
+                                           pl.col.axisTo.z - pl.col.axisFrom.z});
+        const double tangential = std::min(std::fabs(pl.aW), std::fabs(pl.aH));
+        const double alongCol = std::fabs(vdot(pl.lenDir, colAxisDir));
+        const double skewTol = 0.087;  // sin(5°) — kucuk secim/tolerans payi
+        if (tangential > skewTol || alongCol > skewTol) {
+            error = L"egik kiris desteklenmiyor: alin levhasi kirisin kolon yuzune DIK gelmesini gerektirir (kirisi kolona dik getirin)";
+            return false;
+        }
+    }
     // Kiris kesit cercevesi: refNormal + profileRotation (dunya Z DEGIL).
     const ProfileSectionFrame beamSec = memberSectionFrame(pl.beam);
     // Kolon yuzu: kiris ekseninin kolon DIS yuz duzlemiyle kesisimi (beam
