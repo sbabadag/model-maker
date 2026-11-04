@@ -963,7 +963,16 @@ bool endPlatePlacementFromInput(const ComponentInput& input, const EndPlateParam
     }
     out = computeEndPlatePlacementOnFace(face, params.gap, pl.beam.secWidth, pl.beam.secHeight,
                                          params, beamSec.height, pl.beam.sectionCenterOffset,
-                                         beamSec.width, pl.beam.secWebThickness);
+                                         beamSec.width, pl.beam.secWebThickness,
+                                         pl.beam.secFlangeThickness);
+    // MM-7 item 1 devam: varsayilan bulon yerlesimi kurulamadiysa (govde acikligi
+    // yetersiz) ACIK ret — sessiz bos/yanlis plan yok.
+    if (!out.boltPlacementOk) {
+        error = out.boltPlacementError.empty()
+                    ? std::wstring(L"bu kesit icin varsayilan bulon yerlesimi yok")
+                    : out.boltPlacementError;
+        return false;
+    }
     // Item 3: bulon kavrama (grip) + delik derinligi TEK KAYNAKTAN.
     // Grip = levha + gap + kolon flansi + boltLengthIncrease; delik derinligi
     // boltCutLengthMode'a bagli. Profilsiz uyede legacy bbox fallback korunur.

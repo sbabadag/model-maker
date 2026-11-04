@@ -53,6 +53,14 @@ static ComponentInput withEdge(ComponentInput in, double edge) {
     return in;
 }
 
+// MM-7 item 1 (dikey): ACIK dikey ofset (boltOffsetV >= 0) flans acikligini
+// ihlal ederse dokunulmaz ve fail-closed reddedilir (varsayilan ofset <0 iken
+// flans bilincli `edge` otomatik buyurur; ACIK ofset o yolu KULLANMAZ).
+static ComponentInput withExplicitOffsetV(ComponentInput in, double offset) {
+    in.params.push_back(CompParam{L"boltOffsetV", CompParamValue{offset}});
+    return in;
+}
+
 // MM-7 item 1: GERCEK dar-flans profil IPE200 (b=100, h=200, tw=5.6, tf=8.5).
 // setSpacing=true ise ACIK boltSpacingX verilir (0 = otomatik).
 static ComponentInput makeRealIpe200(double spacingX = 0.0, bool setSpacing = false) {
@@ -84,10 +92,12 @@ static ComponentInput makeRealIpe200(double spacingX = 0.0, bool setSpacing = fa
 int main() {
     registerBuiltInComponents(ComponentRegistry::instance());
 
-    // 1) CAKISMA: kucuk boltEdge -> bulonlar basliga girer -> ureteci FAIL-CLOSED
-    //    (plan.ok=false + checks[] dolu + Turkce mesaj).
+    // 1) CAKISMA: ACIK kucuk dikey ofset (boltOffsetV) -> bulonlar basliga girer
+    //    -> ureteci FAIL-CLOSED (plan.ok=false + checks[] dolu + Turkce mesaj).
+    //    (Varsayilan ofset <0 flans acikligini otomatik saglar; ACIK deger buraya
+    //    girmez, kontrol reddeder.)
     {
-        const ComponentInput in = withEdge(makeInput(), 25.0);
+        const ComponentInput in = withExplicitOffsetV(makeInput(), 25.0);
         const GenerationPlan plan = generateEndPlate(in);
         check(!plan.ok, "1 plan fail-closed (cakisma -> ok=false)");
         check(!plan.error.empty(), "1 plan.error Turkce mesaj dolu");

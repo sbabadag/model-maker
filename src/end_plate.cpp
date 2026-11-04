@@ -23,6 +23,7 @@ static Vec3 cross(const Vec3& a, const Vec3& b) noexcept {
 namespace {
 constexpr double kWeldAllowance = 10.0;    // kaynak payi (delik kenarindan celige net)
 constexpr double kMinEdgeRatio = 1.2;      // e1/e2 >= 1.2*d0
+constexpr double kMinPitch1Ratio = 2.2;    // p1 >= 2.2*d0 (kuvvet yonu / dikey sira)
 constexpr double kMinPitch2Ratio = 2.4;    // p2 >= 2.4*d0 (kuvvete dik / yatay kolon)
 
 double effectiveHoleD(const EndPlateParams& p) noexcept {
@@ -102,17 +103,16 @@ EndPlateFrame endPlateFrame(const Vec3& beamAxis, const Vec3& referenceNormal) n
 // ortak kullanir — tek dogruluk kaynagi). Genislik yonundeki civata acikligi
 // KIRIS FLANSINA dayanir (kullanıcı şartı: "profil başlık / 2" gauge cizgisi):
 // toplam aciklik = flans/2, yani 2 kolon icin civatalar ±flans/4'te. Yukseklik
-// yonu levha boyutundan kalir (params.boltEdge kenar payi).
-static BoltGroup makeEndPlateBolts(const EndPlatePlacement& out,
-                                   const EndPlateParams& params) noexcept {
-    const int nx = params.boltCountX > 0 ? params.boltCountX : 1;
-    const int ny = params.boltCountY > 0 ? params.boltCountY : 1;
+// yonu kesit yuksekliginden kalir (MM-7: baslik ic yuzu acikligi bilincli).
+static void makeEndPlateBolts(EndPlatePlacement& out,
+                              const EndPlateParams& params) noexcept {
+    int nx = params.boltCountX > 0 ? params.boltCountX : 1;
+    int ny = params.boltCountY > 0 ? params.boltCountY : 1;
 
     // Yatay aralik: elle girilmediyse VARSAYILAN gauge (MM-7 item 1):
     // max(flans/2, 2.4*d0, tw + 2*kaynak + d0), 5 mm'ye yukari yuvarlanmis.
     // Kullanici ACIK deger verdiyse (boltSpacingX > 0) dokunulmaz — ihlalde
-    // applyChecksToPlan plani fail-closed reddeder. Dikey aralik: elle
-    // girilmediyse kesit yuksekliginden (levha - 2*boltEdge gibi).
+    // applyChecksToPlan plani fail-closed reddeder.
     double sX = params.boltSpacingX;
     if (nx > 1 && sX <= 0.0) {
         if (out.secWidth > 0.0) {
@@ -130,13 +130,57 @@ static BoltGroup makeEndPlateBolts(const EndPlatePlacement& out,
     } else if (nx <= 1) {
         sX = 0.0;
     }
-    double sY = params.boltSpacingY;
-    // MM-7 (item 2): dikey aralik KESIT yuksekliginden turer (yatay gauge
-    // secWidth'ten turedigi gibi). Levha yuksekliginden turetmek, tasan levhada
-    // (plateExtra>0) bulonlari basligin icine iter (asil cakisma hatasi).
+
+    // --- Dikey yerlesim (MM-7 item 1 devami) ---------------------------------
+    // Varsayilan dikey yerlesim BASLIK IC YUZU acikligini (d0/2 + kaynak payi)
+    // HER kesitte saglar. Ic sira, baslik ic yuzunden en az R = d0/2 + kaynak
+    // uzakta olmali => baslik DIS yuzunden tf + R. Flans kalinligi bilinmiyorsa
+    // (tf <= 0, profilsiz uye) legacy boltEdge korunur (davranis degismez).
     const double refH = (out.secHeight > 0.0) ? out.secHeight : out.plateHeight;
+    const double d0 = effectiveHoleD(params);
+    const double R = d0 * 0.5 + kWeldAllowance;  // baslik ic yuzunden min net mesafe
+    const double tf = out.secFlangeThickness;
+    double edge = params.boltEdge;
+    if (tf > 0.0) {
+        const double minEdge = tf + R;   // baslik dis yuzunden ic siraya min mesafe
+        // 5 mm'ye YUKARI yuvarla (yatay gauge ile tutarli) ki fp sinirinda
+        // "net mesafe < R" ihlali yasanmasin.
+        edge = std::max(params.boltEdge, std::ceil(minEdge / 5.0) * 5.0);
+    }
+
+    // OTOMATIK yerlesim (ofset VE aralik auto) govdeye R acikligi + min p1
+    // (2.2*d0) ile sigmazsa SATIR SAYISI azaltilir; hicbiri olmuyorsa ACIK ret
+    // ("bu kesit icin varsayilan yerlesim yok"). Kullanici ACIK deger verirse
+    // (boltOffsetV >= 0 veya boltSpacingY > 0) dokunulmaz — ihlali checks
+    // fail-closed reddeder.
+    const bool autoPlace = (params.boltOffsetV < 0.0 && params.boltSpacingY <= 0.0);
+    if (autoPlace) {
+        const double minPitch1 = kMinPitch1Ratio * d0;
+        auto fits = [&](int n) {
+            if (n <= 1) return (tf <= 0.0) || (refH - 2.0 * tf >= 2.0 * R);
+            const double sp = (refH - 2.0 * edge) / static_cast<double>(n - 1);
+            return sp > 0.0 && sp >= minPitch1;
+        };
+        if (!fits(ny)) {
+            int reduced = 0;
+            for (int n = ny - 1; n >= 1; --n) {
+                if (fits(n)) { reduced = n; break; }
+            }
+            if (reduced == 0) {
+                out.boltPlacementOk = false;
+                out.boltPlacementError =
+                    L"bu kesit icin varsayilan bulon yerlesimi yok: govde acikligi "
+                    L"(basliklar arasi) delik capi + kaynak payini karsilamiyor";
+                out.bolts = BoltGroup{};
+                return;
+            }
+            ny = reduced;
+        }
+    }
+
+    double sY = params.boltSpacingY;
     if (ny > 1 && sY <= 0.0) {
-        sY = (refH - 2.0 * params.boltEdge) / static_cast<double>(ny - 1);
+        sY = (refH - 2.0 * edge) / static_cast<double>(ny - 1);
     } else if (ny <= 1) {
         sY = 0.0;
     }
@@ -177,21 +221,20 @@ static BoltGroup makeEndPlateBolts(const EndPlatePlacement& out,
             break;
     }
     // Dikey hizalama: en alt bulonun KESIT MERKEZINE (levha merkezine) gore
-    // v-koordinati (isaretli). MM-7 (item 2): bulonlar levha kenarina degil
-    // KESITE (kiris) gore konumlanir; boylece tasan levhada (plateExtra>0)
-    // bulonlar basligin DISINDA/ICINDE dogru yere oturur.
+    // v-koordinati (isaretli). MM-7: bulonlar levha kenarina degil KESITE (kiris)
+    // gore konumlanir; otomatik ofsette baslik-acikligi bilincli `edge` kullanilir.
     double botV;
     switch (params.boltAlignV) {
         case 0:  // Ust: en ust bulon kesit ust kenarindan offsetV iceride
             botV = refH * 0.5 - gh -
-                   ((params.boltOffsetV >= 0.0) ? params.boltOffsetV : params.boltEdge);
+                   ((params.boltOffsetV >= 0.0) ? params.boltOffsetV : edge);
             break;
         case 1:  // Orta: grup merkezi kesit merkezinde + offsetV
             botV = -gh * 0.5 + params.boltOffsetV;
             break;
         default:  // Alt: en alt bulon kesit alt kenarindan offsetV iceride
             botV = -refH * 0.5 +
-                   ((params.boltOffsetV >= 0.0) ? params.boltOffsetV : params.boltEdge);
+                   ((params.boltOffsetV >= 0.0) ? params.boltOffsetV : edge);
             break;
     }
 
@@ -227,7 +270,9 @@ static BoltGroup makeEndPlateBolts(const EndPlatePlacement& out,
     b.params.lengthIncrease = params.boltLengthIncrease;
     b.params.direction = params.boltDirection;
     b.params.comment = params.boltComment;
-    return b;
+    out.bolts = b;
+    out.boltPlacementOk = true;
+    out.boltPlacementError.clear();
 }
 
 EndPlatePlacement computeEndPlatePlacement(const Vec3& beamEnd, const Vec3& beamAxis,
@@ -269,7 +314,7 @@ EndPlatePlacement computeEndPlatePlacement(const Vec3& beamEnd, const Vec3& beam
         out.plateCenter.z += f.v.z * vShift;
     }
 
-    out.bolts = makeEndPlateBolts(out, params);
+    makeEndPlateBolts(out, params);
     return out;
 }
 
@@ -325,7 +370,7 @@ EndPlatePlacement computeEndPlatePlacementRotated(const Vec3& beamEnd, const Vec
         out.plateCenter.y += out.v.y * vShift;
         out.plateCenter.z += out.v.z * vShift;
     }
-    out.bolts = makeEndPlateBolts(out, params);
+    makeEndPlateBolts(out, params);
     return out;
 }
 
@@ -335,7 +380,8 @@ EndPlatePlacement computeEndPlatePlacementOnFace(const ReferencePlane& face, dou
                                                  const Vec3& sectionHeightDir,
                                                  double anchorOffset,
                                                  const Vec3& sectionWidthDir,
-                                                 double secWebThickness) noexcept {
+                                                 double secWebThickness,
+                                                 double secFlangeThickness) noexcept {
     EndPlatePlacement out;
     // Levha normali = kolon yuzey normali (kolondan DISARI, kirise dogru).
     const Vec3 axis = unitOr(face.normal, Vec3{0.0, 0.0, 1.0});
@@ -375,6 +421,7 @@ EndPlatePlacement computeEndPlatePlacementOnFace(const ReferencePlane& face, dou
     out.v = vv;
     out.axis = axis;
     out.secWebThickness = secWebThickness;  // MM-7 item 1: govde acikligi terimi
+    out.secFlangeThickness = secFlangeThickness;  // MM-7 item 1 devam: baslik acikligi
     double upperD, lowerD;
     effectiveEdgeDistances(params, upperD, lowerD);
     out.plateWidth = (params.plateWidthOverride > 0.0)
@@ -399,7 +446,7 @@ EndPlatePlacement computeEndPlatePlacementOnFace(const ReferencePlane& face, dou
                            face.origin.y + axis.y * (gap + halfT) + vv.y * inPlaneShift,
                            face.origin.z + axis.z * (gap + halfT) + vv.z * inPlaneShift};
 
-    out.bolts = makeEndPlateBolts(out, params);
+    makeEndPlateBolts(out, params);
     return out;
 }
 
