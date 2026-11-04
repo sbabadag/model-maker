@@ -53,16 +53,16 @@ static std::string goldenDigest(const std::string& json, const std::string& key)
     return json.substr(q1 + 1, q2 - q1 - 1);
 }
 
+// KATALOG: GERCEK Avrupa profilleri `profiles/european.lis`'ten yuklenir
+// (item 4: golden kor noktasi — eski testler sahte 200x400 "IPE200" olcusuyla
+// kosuyordu, hicbir katalogda olmayan bir kesit). ESKI 200x400 profil, eski
+// golden (endplate_rotated_90) ona bagli oldugu icin digest churn'unu onlemek
+// adina KORUNUR ama artik DURUST adla: "TESTPROFIL-400x200" (gercek IPE200
+// 100x200 yeni katalog matrisinde ayrica test edilir).
 static std::vector<SteelProfile> catalog() {
-    std::vector<SteelProfile> cat;
+    std::vector<SteelProfile> cat = loadProfileCatalog(MM_PROFILES_DIR);
     SteelProfile p;
-    p.name = "HEA240"; p.height = 230; p.width = 240;
-    p.plateThickness = 7.5; p.flangeThickness = 12; cat.push_back(p);
-    p.name = "IPE400"; p.height = 400; p.width = 180;
-    p.plateThickness = 8.6; p.flangeThickness = 13.5; cat.push_back(p);
-    p.name = "HEB300"; p.height = 300; p.width = 300;
-    p.plateThickness = 11; p.flangeThickness = 19; cat.push_back(p);
-    p.name = "IPE200"; p.height = 400; p.width = 200;
+    p.name = "TESTPROFIL-400x200"; p.height = 400; p.width = 200;
     p.plateThickness = 8.6; p.flangeThickness = 13.5; cat.push_back(p);
     return cat;
 }
@@ -120,7 +120,7 @@ int main() {
         Document doc;
         const EntityId col = addMember(doc, "HEB300",
             0.0, 0.0, 0.0, 0.0, 0.0, 3000.0, 0.0, 0.0, 1.0, 0.0, SectionAnchor::Center);
-        const EntityId beam = addMember(doc, "IPE200",
+        const EntityId beam = addMember(doc, "TESTPROFIL-400x200",
             0.0, 0.0, 3000.0, 2000.0, 0.0, 3000.0, 0.0, 0.0, 1.0, 90.0, SectionAnchor::Center);
         auto in = componentInputFromDocument(doc, cat, col, {beam});
         CHECK(in.has_value(), "endplate: modelden girdi kuruldu");
@@ -178,6 +178,60 @@ int main() {
                 CHECK(dg1 == dg2, "kimlik: farkli EntityId -> ayni digest");
                 if (dg1 != dg2)
                     std::printf("  d1=%s\n  d2=%s\n", dg1.c_str(), dg2.c_str());
+            }
+        }
+    }
+
+    // ---- GERCEK KATALOG MATRISI (item 4: golden kor noktasi) --------------
+    // Kolonlar {HEA300, HEB300} x kirisler {IPE200 100x200, IPE300, IPE400}
+    // x bulon {M16, M20}. Tum olculer profiles/european.lis'ten GERCEK
+    // katalog kesitleridir. Her vakada End Plate reddedilmemeli (checks
+    // gecmeli; item 1 varsayilan gauge EC3'e uygun) ve digest golden ile
+    // birebir olmali. Golden yoksa digest'ler GENDIGEST satiriyla basilir.
+    {
+        const char* cols[] = {"HEA300", "HEB300"};
+        const char* beams[] = {"IPE200", "IPE300", "IPE400"};
+        const double diams[] = {16.0, 20.0};  // M16, M20
+        const std::string gpath = goldenDir + "/end_plate_catalog_digests.json";
+        const std::string gj = readText(gpath);
+        CHECK(!gj.empty(), "katalog: golden dosyasi okundu");
+        for (const char* cn : cols) {
+            for (const char* bn : beams) {
+                for (double dia : diams) {
+                    Document doc;
+                    const EntityId col = addMember(doc, cn,
+                        0.0, 0.0, 0.0, 0.0, 0.0, 3000.0, 0.0, 0.0, 1.0, 0.0,
+                        SectionAnchor::Center);
+                    const EntityId beam = addMember(doc, bn,
+                        0.0, 0.0, 3000.0, 2000.0, 0.0, 3000.0, 0.0, 0.0, 1.0, 90.0,
+                        SectionAnchor::Center);
+                    auto in = componentInputFromDocument(doc, cat, col, {beam});
+                    char key[96];
+                    std::snprintf(key, sizeof key, "ep_%s_%s_M%d", cn, bn, (int)dia);
+                    if (!in) {
+                        std::printf("FAIL: %s girdi kurulamadi\n", key);
+                        ++failures;
+                        continue;
+                    }
+                    in->params.push_back(CompParam{L"boltDiameter", CompParamValue{dia}});
+                    const GenerationPlan plan = generateEndPlate(*in);
+                    if (!plan.ok) {
+                        std::printf("FAIL: %s reddedildi (checks/geo): %ls\n", key,
+                                    plan.error.c_str());
+                        ++failures;
+                        continue;
+                    }
+                    const std::string dg = generationPlanDigest(plan);
+                    const std::string dgold = goldenDigest(gj, key);
+                    if (dgold.empty()) {
+                        std::printf("GENDIGEST %s=%s\n", key, dg.c_str());
+                        ++failures;
+                    } else if (dg != dgold) {
+                        std::printf("FAIL: %s\n  model=%s\n  golden=%s\n",
+                                    key, dg.c_str(), dgold.c_str());
+                        ++failures;
+                    }
+                }
             }
         }
     }

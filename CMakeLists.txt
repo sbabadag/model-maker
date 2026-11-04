@@ -501,7 +501,8 @@ if(BUILD_TESTING)
         tests/component_model_input_golden_test.cpp)
     target_link_libraries(model_maker_component_model_input_golden_test PRIVATE model_maker_core)
     target_compile_definitions(model_maker_component_model_input_golden_test PRIVATE
-        MM_CONTRACT_GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/golden")
+        MM_CONTRACT_GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/golden"
+        MM_PROFILES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/profiles")
     add_test(NAME model_maker_component_model_input_golden_test
              COMMAND model_maker_component_model_input_golden_test)
 
