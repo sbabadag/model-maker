@@ -90,6 +90,15 @@ if(MM_CONTRACT_BUILD_TESTS)
         MM_CONTRACT_GOLDEN_DIR="${MM_ROOT}/tests/golden")
     add_test(NAME mm_contract_haunch40_equiv_test COMMAND mm_contract_haunch40_equiv_test)
 
+    # MM-2b kanit testi: digest kimlik-bagimsizligina gecerken GEOMETRI DEGISMEDI.
+    # Golden'dan BAGIMSIZ; golden yeniden uretiminden ONCE yesil olmali.
+    add_executable(mm_contract_digest_identity_proof_test
+        ${CMAKE_CURRENT_LIST_DIR}/tests/digest_identity_proof_test.cpp)
+    target_link_libraries(mm_contract_digest_identity_proof_test PRIVATE mm_component_contract mm_contract_version)
+    target_compile_definitions(mm_contract_digest_identity_proof_test PRIVATE
+        MM_PACKAGES_DIR="${CMAKE_CURRENT_LIST_DIR}/packages")
+    add_test(NAME mm_contract_digest_identity_proof_test COMMAND mm_contract_digest_identity_proof_test)
+
     # MM-5 fix (item 1): PAKET recipe.json'undan parametre akisi. Golden digest'ler
     # DEGISMEDEN, >=5 parametre degistirildiginde recipe == generateHaunch40.
     add_executable(mm_contract_haunch40_param_flow_test

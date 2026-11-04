@@ -904,6 +904,9 @@ json boltGroupToJson(const BoltGroup& b) {
     json parts = json::array();
     for (const auto& id : b.parts) parts.push_back(entityToJson(id));
     j["parts"] = std::move(parts);
+    json roles = json::array();
+    for (const auto& r : b.partRoles) roles.push_back(r);
+    j["partRoles"] = std::move(roles);
     j["targetOwnedPlateRole"] = b.targetOwnedPlateRole;
     j["origin"] = vec3ToJson(b.origin);
     j["axis"] = vec3ToJson(b.axis);
@@ -946,6 +949,9 @@ BoltGroup boltGroupFromJson(const json& j) {
     if (j.contains("parts") && j["parts"].is_array()) {
         for (const auto& id : j["parts"]) b.parts.push_back(entityFromJson(id));
     }
+    if (j.contains("partRoles") && j["partRoles"].is_array()) {
+        for (const auto& r : j["partRoles"]) b.partRoles.push_back(r.get<std::string>());
+    }
     b.targetOwnedPlateRole = j.value("targetOwnedPlateRole", std::string());
     b.origin = vec3FromJson(j.value("origin", json::array()));
     b.axis = vec3FromJson(j.value("axis", json::array()), {0.0, 0.0, 1.0});
@@ -986,6 +992,7 @@ json cutModifierToJson(const CutModifier& c) {
     json j;
     j["kind"] = cutKindName(c.kind);
     j["target"] = entityToJson(c.target);
+    j["targetRole"] = c.targetRole;
     j["planeOrigin"] = vec3ToJson(c.planeOrigin);
     j["planeNormal"] = vec3ToJson(c.planeNormal);
     j["keepPositive"] = c.keepPositive;
@@ -1011,6 +1018,7 @@ CutModifier cutModifierFromJson(const json& j) {
     CutModifier c;
     c.kind = cutKindFromName(j.value("kind", std::string("PlaneCut")));
     c.target = entityFromJson(j.value("target", json(0)));
+    c.targetRole = j.value("targetRole", std::string());
     c.planeOrigin = vec3FromJson(j.value("planeOrigin", json::array()));
     c.planeNormal = vec3FromJson(j.value("planeNormal", json::array()), {0.0, 0.0, 1.0});
     c.keepPositive = j.value("keepPositive", true);
@@ -1406,6 +1414,50 @@ std::string generationPlanCanonicalJson(const GenerationPlan& p) {
     // MM-7: kontrol sonuclari RAPORLAMA alanidir; digest yalniz GEOMETRI
     // esdegerligini olcmeli (checks mesajlarindaki degisiklik digest'i kaydirmamali).
     j.erase("checks");
+    // MM-2b: digest KIMLIK-BAGIMSIZ olmalidir. Uye referanslari EntityId yerine
+    // SEMANTIK rol anahtariyla hash'lenir ("main", "secondary_0", plateKey):
+    // ayni fiziksel girdi, Studio'da ve Model Maker'da farkli EntityId ile de
+    // ayni planDigest'i verir. Malzemelesme-zamani kimlikler (bolt id, display,
+    // shapeParts, tool/source/owner) digest'e HIC girmez.
+    if (j.contains("boltGroups") && j["boltGroups"].is_array()) {
+        for (auto& b : j["boltGroups"]) {
+            const json parts = b.value("parts", json::array());
+            const json saved = b.value("partRoles", json::array());
+            json roles = json::array();
+            for (std::size_t k = 0; k < parts.size(); ++k) {
+                std::string role =
+                    (k < saved.size() && !saved[k].get<std::string>().empty())
+                        ? saved[k].get<std::string>()
+                        : ("part_" + std::to_string(k));
+                roles.push_back(std::move(role));
+            }
+            b["parts"] = std::move(roles);
+            b.erase("partRoles");
+            b.erase("id");
+            b.erase("displayEntityId");
+            b.erase("shapeParts");
+        }
+    }
+    if (j.contains("welds") && j["welds"].is_array()) {
+        for (auto& w : j["welds"]) {
+            const std::string aRole = w.value("partARole", std::string());
+            const std::string bRole = w.value("partBRole", std::string());
+            w["partA"] = aRole.empty() ? "partA" : aRole;
+            w["partB"] = bRole.empty() ? "partB" : bRole;
+            w.erase("partARole");
+            w.erase("partBRole");
+        }
+    }
+    if (j.contains("cuts") && j["cuts"].is_array()) {
+        for (auto& c : j["cuts"]) {
+            const std::string role = c.value("targetRole", std::string());
+            c["target"] = role.empty() ? "target" : role;
+            c.erase("targetRole");
+            c.erase("tool");
+            c.erase("source");
+            c.erase("owner");
+        }
+    }
     return canonicalJsonString(j);
 }
 

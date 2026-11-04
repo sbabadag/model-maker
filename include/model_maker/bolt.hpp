@@ -60,6 +60,12 @@ BoltDimensions boltDimensions(double nominalDiameter) noexcept;
 struct BoltGroup {
     EntityId id{kInvalidEntityId};              // bulon grubunun kendi kimligi
     std::vector<EntityId> parts;                // bagli parcalar (ilk = main)
+    // parts[i] icin SEMANTIK rol anahtari ("main", "secondary_0", ...). Digest
+    // EntityId'den bagimsiz oldugu icin (MM-2b) parts EntityId'leri yerine bu
+    // anahtarlar hash'lenir: ayni fiziksel girdi, Studio'da ve Model Maker'da
+    // farkli EntityId ile de ayni planDigest'i verir. Bos = geriye uyumlu
+    // (malzemelesme yalniz parts'a bakar; bu alan yalniz digest/rol icindir).
+    std::vector<std::string> partRoles;
     // Optional source-generator role of the ONLY component-owned plate to drill.
     // Empty = backward-compatible all-owned-plates policy. Haunch 40 uses
     // "haunch_end_plate": it must not drill the web, flange or stiffeners.

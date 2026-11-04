@@ -242,14 +242,19 @@ static void testBlocksProducePlan() {
         CHECK(plan.boltGroups[0].countX == 2 && plan.boltGroups[0].countY == 2, "bulon 2x2");
         CHECK(plan.boltGroups[0].parts.size() == 1 && plan.boltGroups[0].parts[0] == 2,
               "bulon secondary_0'yi deler");
+        CHECK(plan.boltGroups[0].partRoles.size() == 1 &&
+                  plan.boltGroups[0].partRoles[0] == "secondary_0",
+              "bulon partRoles = secondary_0 (MM-2b)");
         CHECK(near(plan.boltGroups[0].params.nominalDiameter, 20.0), "bulon capi");
     }
     if (plan.welds.size() == 1) {
         CHECK(plan.welds[0].partA == 1, "kaynak partA = main");
+        CHECK(plan.welds[0].partARole == "main", "kaynak partARole = main (MM-2b)");
         CHECK(plan.welds[0].partBRole == "end_plate", "kaynak partB = levha roleKey");
     }
     if (plan.cuts.size() == 1) {
         CHECK(plan.cuts[0].target == 2, "kesim hedefi secondary_0");
+        CHECK(plan.cuts[0].targetRole == "secondary_0", "kesim targetRole = secondary_0 (MM-2b)");
         CHECK(plan.cuts[0].kind == CutKind::PlaneCut, "kesim turu PlaneCut");
         CHECK(plan.cuts[0].hidden, "component kesimi gizli");
     }
@@ -675,7 +680,7 @@ static void testWhenSkips() {
 }
 
 int main() {
-    CHECK(std::string(kContractVersion) == "1.8.0", "contract surumu 1.7.0");
+    CHECK(std::string(kContractVersion) == "1.9.0", "contract surumu 1.7.0");
     testExpressionEvaluator();
     testParamAccess();
     testStaticAnalysis();

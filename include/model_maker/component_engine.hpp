@@ -216,6 +216,12 @@ struct ComponentInput {
     std::vector<CompParam> params;
 };
 
+// Giris slotu rol anahtari ("main", "secondary_0", ...): EntityId'yi input.main /
+// input.secondary[N] ile eslestirir. MM-2b (1.9.0): planDigest EntityId'den
+// bagimsizdir; generator VE recipe bu anahtarla uye referanslarini isaretler.
+// Eslesme yoksa bos (owned levha — bunlar partBRole/plateKey ile tasinir).
+std::string inputRoleFor(const ComponentInput& input, EntityId id);
+
 // Levha spec'i (plan asamasinda; EntityId yok — materializasyonda atanir).
 struct PlateSpec {
     Vec3 center{};

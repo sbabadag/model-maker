@@ -169,6 +169,16 @@ renklerini korur.
 - `generationPlanCanonicalJson`, `generationPlanDigest` — kanonik metin + SHA-256
   hex (planDigest); Linux GCC == Windows mingw (deterministik)
 
+**Digest kimlik-bağımsızdır (MM-2b, 1.9.0).** `generationPlanDigest` yalnız
+GEOMETRİ eşdeğerliğini ölçer: plandaki üye referansları EntityId yerine
+**semantik rol anahtarı** ile hash'lenir — `WeldSpec.partA/partB` → `partARole/
+partBRole` ("main"/"secondary_N"/plateKey), `BoltGroup.parts` → `partRoles`,
+`CutModifier.target` → `targetRole`. Malzemeleşme-zamanı kimlikleri (bolt `id`,
+`displayEntityId`, `shapeParts`, cut `tool/source/owner`) digest'e hiç girmez.
+Böylece aynı fiziksel girdi, Studio'da ve Model Maker'da farklı EntityId ile de
+aynı `planDigest`'i verir. (Yeni alanlar: `BoltGroup.partRoles`,
+`CutModifier.targetRole` — geriye uyumlu ekleme.)
+
 Codec kuralları: enum'lar string; bilinmeyen alanlar hata vermez; wstring ↔ UTF-8
 kayıpsız; digest 1e-6'ya yuvarlanmış kanonik JSON üzerinden hesaplanır.
 

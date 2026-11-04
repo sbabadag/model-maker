@@ -10,9 +10,9 @@
 // generatora verir ve ayni fiziksel senaryonun elde-kurulan golden'iyle
 // BIREBIR ayni digest'i urettigini dogrular (kör nokta kapandi).
 //
-// Id normalizasyonu: digest, kaynaklarin partA EntityId'sini tasir (main.id);
-// Document id'leri insersiyon sirasina gore atadigi icin, elde-kurulan
-// golden'in id'leriyle (haunch 45/47, end plate 1/2) esitleyerek karsilastiririz.
+// Id normalizasyonu YOK (MM-2b): digest EntityId'den bagimsizdir; Document
+// id'leri insersiyon sirasina gore atansa da (haunch 45/47, end plate 1/2)
+// digest ayni kalir. Asagidaki kimlik-bagimsizlik blogu bunu ayrica dogrular.
 // ============================================================================
 #include "model_maker/component_codec.hpp"
 #include "model_maker/component_engine.hpp"
@@ -102,9 +102,6 @@ int main() {
         auto in = componentInputFromDocument(doc, cat, col, {beam});
         CHECK(in.has_value(), "haunch: modelden girdi kuruldu");
         if (!in) return 1;
-        // Id normalizasyonu: elde-kurulan golden (makeInputRotatedColumn) 45/47.
-        in->main.id = 45;
-        in->secondary[0].id = 47;
         const GenerationPlan plan = generateHaunch40(*in);
         CHECK(plan.ok, "haunch: generateHaunch40 ok");
         if (!plan.ok) std::printf("  error=%ls\n", plan.error.c_str());
@@ -128,8 +125,6 @@ int main() {
         auto in = componentInputFromDocument(doc, cat, col, {beam});
         CHECK(in.has_value(), "endplate: modelden girdi kuruldu");
         if (!in) return 1;
-        in->main.id = 1;
-        in->secondary[0].id = 2;
         const GenerationPlan plan = generateEndPlate(*in);
         CHECK(plan.ok, "endplate: generateEndPlate ok");
         if (!plan.ok) std::printf("  error=%ls\n", plan.error.c_str());
@@ -141,6 +136,50 @@ int main() {
         CHECK(dg == dgold, "endplate: modelden kurulan digest == golden");
         if (dg != dgold)
             std::printf("  model=%s\n  golden=%s\n", dg.c_str(), dgold.c_str());
+    }
+
+    // ---- KIMLIK BAGIMSIZLIK (MM-2b): ayni fiziksel girdi, farkli EntityId ---
+    // Ayni haunch senaryosu iki Document'te farkli insersiyon sirasiyla kurulur;
+    // EntityId'ler farkli olur ama digest AYNI kalmali (digest kimlik-bagimsiz).
+    {
+        const auto buildDoc = [&](EntityId& col, EntityId& beam, bool beamFirst) {
+            Document doc;
+            if (beamFirst) {
+                beam = addMember(doc, "IPE400",
+                    0.0, 12000.0, 5000.0, 5997.780613671378, 12000.0, 5986.683682028266,
+                    0.0, 0.0, 1.0, 0.0, SectionAnchor::Center);
+                col = addMember(doc, "HEA240",
+                    -115.0, 12000.0, 0.0, -115.0, 12000.0, 5000.0,
+                    0.0, 0.0, 1.0, 90.0, SectionAnchor::Top);
+            } else {
+                col = addMember(doc, "HEA240",
+                    -115.0, 12000.0, 0.0, -115.0, 12000.0, 5000.0,
+                    0.0, 0.0, 1.0, 90.0, SectionAnchor::Top);
+                beam = addMember(doc, "IPE400",
+                    0.0, 12000.0, 5000.0, 5997.780613671378, 12000.0, 5986.683682028266,
+                    0.0, 0.0, 1.0, 0.0, SectionAnchor::Center);
+            }
+            return doc;
+        };
+        EntityId c1, b1, c2, b2;
+        Document d1 = buildDoc(c1, b1, false);
+        Document d2 = buildDoc(c2, b2, true);
+        CHECK(c1 != c2 && b1 != b2, "kimlik: EntityId'ler farkli (on kosul)");
+        auto in1 = componentInputFromDocument(d1, cat, c1, {b1});
+        auto in2 = componentInputFromDocument(d2, cat, c2, {b2});
+        CHECK(in1.has_value() && in2.has_value(), "kimlik: girdiler kuruldu");
+        if (in1 && in2) {
+            const GenerationPlan p1 = generateHaunch40(*in1);
+            const GenerationPlan p2 = generateHaunch40(*in2);
+            CHECK(p1.ok && p2.ok, "kimlik: planlar ok");
+            if (p1.ok && p2.ok) {
+                const std::string dg1 = generationPlanDigest(p1);
+                const std::string dg2 = generationPlanDigest(p2);
+                CHECK(dg1 == dg2, "kimlik: farkli EntityId -> ayni digest");
+                if (dg1 != dg2)
+                    std::printf("  d1=%s\n  d2=%s\n", dg1.c_str(), dg2.c_str());
+            }
+        }
     }
 
     std::printf("modelden kurulan girdi altin testi: %s (%d hata)\n",

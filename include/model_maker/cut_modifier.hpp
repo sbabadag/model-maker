@@ -28,6 +28,10 @@ enum class CutKind { PlaneCut, Fitting, PolygonCut, BooleanCut, LineCut, Hole };
 struct CutModifier {
     CutKind kind{CutKind::PlaneCut};
     EntityId target{kInvalidEntityId};   // kesilen parca (kimlik KORUNUR)
+    // Hedef parcanin SEMANTIK rol anahtari ("main", "secondary_0", ...). Digest
+    // EntityId'den bagimsiz oldugu icin `target` EntityId'si yerine bu anahtar
+    // hash'lenir. Bos = geriye uyumlu (kesme yalniz target'a bakar).
+    std::string targetRole;
     Vec3 planeOrigin{};                  // PlaneCut/Fitting: duzlem origin
     Vec3 planeNormal{0.0, 0.0, 1.0};     // PlaneCut/Fitting: duzlem normali;
                                          // LineCut: cizginin cizildigi duzlemin

@@ -37,6 +37,18 @@ CompParamValue paramDefaultValue(const CompParamSpec& spec) noexcept {
     return CompParamValue{spec.defDouble};
 }
 
+// Giris slotu rol anahtari: EntityId'yi input.main / input.secondary[N] ile
+// eslestirir ("main", "secondary_0", ...). MM-2b: digest EntityId'den bagimsiz
+// oldugu icin plandaki UYE referanslari bu rol anahtariyla isaretlenir. Eslesme
+// yoksa bos (owned levha gibi — bunlar partBRole/plateKey ile tasinir).
+std::string inputRoleFor(const ComponentInput& input, EntityId id) {
+    if (id != kInvalidEntityId && id == input.main.id) return "main";
+    for (std::size_t i = 0; i < input.secondary.size(); ++i)
+        if (id != kInvalidEntityId && id == input.secondary[i].id)
+            return "secondary_" + std::to_string(i);
+    return {};
+}
+
 namespace {
 
 double clampD(double v, double lo, double hi) noexcept {
@@ -633,6 +645,7 @@ GenerationPlan generateEndPlate(const ComponentInput& input) noexcept {
     // Generator yalniz KULLANICI parcasini bilir (rol cozumlu kolon). Levha
     // materializasyonda parts basina eklenir ({levha, kolon}).
     bolts.parts = {mainPartId};
+    bolts.partRoles = {inputRoleFor(input, mainPartId)};
     plan.boltGroups.push_back(bolts);
     plan.boltGroupKeys.push_back("beam_bolts");
 
@@ -640,6 +653,7 @@ GenerationPlan generateEndPlate(const ComponentInput& input) noexcept {
     // Kesme yoksa levha kalinligi kadar aciklik kalir (Studio fixture: 3 mm).
     CutModifier beamCut;
     endPlateBeamCut(placement, input.secondary.front().id, beamCut);
+    beamCut.targetRole = "secondary_0";
     plan.cuts.push_back(beamCut);
     plan.cutKeys.push_back("cut_beam_end");
 
@@ -996,6 +1010,7 @@ GenerationPlan generateFinPlate(const ComponentInput& input) noexcept {
     b.params.hasNut = true;
     b.params.hasWasher = true;
     b.parts = {beam.id};
+    b.partRoles = {inputRoleFor(input, beam.id)};
     plan.boltGroups.push_back(b);
     plan.boltGroupKeys.push_back("beam_bolts");
 
@@ -1372,6 +1387,7 @@ GenerationPlan generateShearPlateSimple146(const ComponentInput& input) noexcept
         const auto addPlateWeld = [&](const char* weldKey, const char* plateRole) {
             WeldSpec w;
             w.partA = input.main.id;   // kolon (ana parca)
+            w.partARole = "main";
             w.partBRole = plateRole;   // levha roleKey'i (commit'te EntityId)
             w.size = weldSize;
             w.doubleSided = weldDoubleSided;
@@ -1583,8 +1599,8 @@ GenerationPlan generateShearPlateSimple146(const ComponentInput& input) noexcept
             b.shapeHoleDiameter = boltD;          // disli delik = nominal cap
         }
     }
-    if (beamDrilled) b.parts = {beam.id};
-    else b.parts.clear();
+    if (beamDrilled) { b.parts = {beam.id}; b.partRoles = {inputRoleFor(input, beam.id)}; }
+    else { b.parts.clear(); b.partRoles.clear(); }
     plan.boltGroups.push_back(b);
     plan.boltGroupKeys.push_back("beam_bolts");
 
@@ -1593,6 +1609,7 @@ GenerationPlan generateShearPlateSimple146(const ComponentInput& input) noexcept
         CutModifier cut;
         cut.kind = CutKind::PlaneCut;
         cut.target = beam.id;
+        cut.targetRole = inputRoleFor(input, beam.id);
         cut.planeOrigin = Vec3{facePoint.x + lenDir.x * beamGap,
                                facePoint.y + lenDir.y * beamGap,
                                facePoint.z + lenDir.z * beamGap};
@@ -2141,6 +2158,7 @@ void haunchPlumbStart(Haunch40Ctx& g, const HaunchParams& prm, GenerationPlan& p
         CutModifier cut;
         cut.kind = CutKind::PlaneCut;
         cut.target = g.p.beam.id;
+        cut.targetRole = g.p.rolesSwapped ? "main" : "secondary_0";
         cut.planeOrigin = g.start;
         cut.planeNormal = g.ax;
         cut.keepPositive = true;
@@ -2507,6 +2525,7 @@ bool haunch40Bolts(const Haunch40Ctx& g, const ComponentInput& input,
         bg.holeDepth = gripLength + 2.0;
         bg.targetOwnedPlateRole = "haunch_end_plate";
         bg.parts = {g.p.col.id};
+        bg.partRoles = {g.p.rolesSwapped ? "secondary_0" : "main"};
         plan.boltGroups.push_back(std::move(bg));
         plan.boltGroupKeys.push_back(role);
     };
@@ -2524,6 +2543,7 @@ void haunch40Welds(const Haunch40Ctx& g, const ComponentInput& input,
         const auto weld = [&](const char* role, const char* plateRole) {
             WeldSpec w;
             w.partA = g.p.beam.id;
+            w.partARole = g.p.rolesSwapped ? "main" : "secondary_0";
             w.partBRole = plateRole;
             w.size = size;
             w.name = L"40 - Haunch Weld";
@@ -2536,6 +2556,7 @@ void haunch40Welds(const Haunch40Ctx& g, const ComponentInput& input,
         if (topT > 0.0) {
             WeldSpec capWeld;
             capWeld.partA = g.p.col.id;
+            capWeld.partARole = g.p.rolesSwapped ? "secondary_0" : "main";
             capWeld.partBRole = "haunch_top_plate";
             capWeld.size = size;
             capWeld.name = L"40 - Column Cap Weld";

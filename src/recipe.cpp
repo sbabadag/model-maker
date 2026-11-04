@@ -900,6 +900,7 @@ static bool blockBoltsGrid(EvalCtx& ctx, const RecipeStep& st, GenerationPlan& p
         const MemberGeometry* m = memberByRole(ctx.input, r);
         if (!m) { ctx.error = wideFromUtf8("bolts.grid: bilinmeyen uye rolu '" + r + "'"); return false; }
         b.parts.push_back(m->id);
+        b.partRoles.push_back(r);  // MM-2b: rol anahtari (digest kimlik-bagimsiz)
     }
     ctx.totalBolts += cx * cy;
     plan.boltGroups.push_back(b);
@@ -921,10 +922,10 @@ static bool blockWeldFillet(EvalCtx& ctx, const RecipeStep& st, GenerationPlan& 
     WeldSpec w;
     const MemberGeometry* ma = memberByRole(ctx.input, a);
     if (ma) w.partA = ma->id;
-    else w.partARole = a;
+    w.partARole = a;  // MM-2b: rol anahtari HER ZAMAN isaretlenir (digest kimlik-bagimsiz)
     const MemberGeometry* mb = memberByRole(ctx.input, b);
     if (mb) w.partB = mb->id;
-    else w.partBRole = b;
+    w.partBRole = b;
     w.size = size;
     w.doubleSided = dbl;
     plan.welds.push_back(w);
@@ -943,6 +944,7 @@ static bool blockCutPlane(EvalCtx& ctx, const RecipeStep& st, GenerationPlan& pl
     CutModifier c;
     c.kind = CutKind::PlaneCut;
     c.target = m->id;
+    c.targetRole = target;  // MM-2b: rol anahtari (digest kimlik-bagimsiz)
     c.planeOrigin = f->origin;
     c.planeNormal = f->w;
     c.keepPositive = (keep == "positive" || keep == "1" || keep == "true");
@@ -997,12 +999,14 @@ static bool blockEndPlatePlacement(EvalCtx& ctx, const RecipeStep& st, Generatio
 
     BoltGroup bolts = placement.bolts;
     bolts.parts = {mainPartId};
+    bolts.partRoles = {inputRoleFor(ctx.input, mainPartId)};
     plan.boltGroups.push_back(bolts);
     plan.boltGroupKeys.push_back(roleBolts);
 
     // Item 4: kiris kesimi generator ile AYNI kaynaktan (endPlateBeamCut).
     CutModifier beamCut;
     endPlateBeamCut(placement, beam->id, beamCut);
+    beamCut.targetRole = inputRoleFor(ctx.input, beam->id);
     plan.cuts.push_back(beamCut);
     plan.cutKeys.push_back("cut_beam_end");
 
