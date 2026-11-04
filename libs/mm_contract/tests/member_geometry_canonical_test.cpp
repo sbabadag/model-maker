@@ -41,6 +41,18 @@ static bool sameGeometry(const MemberGeometry& a, const MemberGeometry& b) {
            std::fabs(a.profileRotation - b.profileRotation) < 1e-12;
 }
 
+// Kesit MERKEZININ dunya koordinatindaki fiziksel noktasi: eksen ortasi +
+// sectionCenterOffset * kesit yukseklik yonu (memberSectionFrame ile).
+static Vec3 sectionCentroid(const MemberGeometry& g) {
+    const ProfileSectionFrame f = memberSectionFrame(g);
+    const Vec3 mid{(g.axisFrom.x + g.axisTo.x) * 0.5,
+                   (g.axisFrom.y + g.axisTo.y) * 0.5,
+                   (g.axisFrom.z + g.axisTo.z) * 0.5};
+    return Vec3{mid.x + f.height.x * g.sectionCenterOffset,
+                mid.y + f.height.y * g.sectionCenterOffset,
+                mid.z + f.height.z * g.sectionCenterOffset};
+}
+
 int main() {
     const MemberSectionSpec hea240{240.0, 230.0, 7.5, 12.0, -115.0};  // Top anchor
     // Kolon: 0,0,0 -> 0,0,3000 ; baglanti ucu UST (0,0,3000)
@@ -61,13 +73,22 @@ int main() {
     CHECK(memberGeometryUsable(forward), "geometri kullanilabilir");
 
     // ---- 2) refNormal ISARETI -------------------------------------------------
-    // Ayni fiziksel normal n ve -n olarak verilebilir; kesit cercevesi ayni.
+    // n ve -n ayni KANONIK refNormal ve ayni cerceveyi verir (isaret kanoniklestirme).
+    // AMA kesit merkez ofseti refNormal isaretine GORE isaretlidir: n -> -n cercevenin
+    // yukseklik yonunu ters cevirir; fiziksel yerlesim korunacaksa ofset de negatiflenir.
+    // (n ve -n ofset != 0 iken ayna goruntusu uyelerdir — ayni MemberGeometry DEGIL.)
     const MemberGeometry nPlus =
         memberGeometryFromProfile(top, bottom, true, Vec3{1.0, 0.0, 0.0}, 0.0, hea240);
     const MemberGeometry nMinus =
         memberGeometryFromProfile(top, bottom, true, Vec3{-1.0, 0.0, 0.0}, 0.0, hea240);
-    CHECK(sameGeometry(nPlus, nMinus), "refNormal isareti sonucu degistirmez");
+    CHECK(sameVec(nPlus.refNormal, nMinus.refNormal), "n/-n ayni kanonik refNormal");
     CHECK(nPlus.refNormal.x > 0.0, "refNormal isareti kanonik (ilk bilesen +)");
+    CHECK(sameVec(memberSectionFrame(nPlus).width, memberSectionFrame(nMinus).width),
+          "n/-n ayni kesit cercevesi (width)");
+    CHECK(sameVec(memberSectionFrame(nPlus).height, memberSectionFrame(nMinus).height),
+          "n/-n ayni kesit cercevesi (height)");
+    CHECK(std::fabs(nPlus.sectionCenterOffset + nMinus.sectionCenterOffset) < 1e-12,
+          "n/-n: ofset negatiflenir (fiziksel yerlesim korunur)");
 
     // Egik normal de diklestirilir: (1,0,0.5) ile (1,0,0) ayni duzlemi verir.
     const MemberGeometry tilted =
@@ -170,6 +191,48 @@ int main() {
         } else {
             std::printf("  p1.ok=%d error=%ls\n", p1.ok ? 1 : 0, p1.error.c_str());
             std::printf("  p2.ok=%d error=%ls\n", p2.ok ? 1 : 0, p2.error.c_str());
+        }
+    }
+
+    // ---- 7) ISARET-KANONIKLESTIRME + sectionCenterOffset (regresyon) ---------
+    // Egik kiriste refNormal isaret-kanoniklestirmesi kesit cercevesinin genislik
+    // VE yukseklik yonunu ters cevirir; sectionCenterOffset ayni anda negatiflenmezse
+    // kesit bir tam yukseklik kadar yanlis tarafa kayar. Top/Bottom ankrajli
+    // yatay + egik kiris, iki uc sirasiyla: fiziksel kesit merkezi HAM
+    // profileSectionFrame(axis, rawN) + offset ile BIREBIR ayni kalmali.
+    {
+        const auto rawCentroid = [](const Vec3& from, const Vec3& to, const Vec3& rawN,
+                                    double offset) {
+            const ProfileSectionFrame f = profileSectionFrame(
+                Vec3{to.x - from.x, to.y - from.y, to.z - from.z}, rawN);
+            const Vec3 mid{(from.x + to.x) * 0.5, (from.y + to.y) * 0.5,
+                           (from.z + to.z) * 0.5};
+            return Vec3{mid.x + f.height.x * offset, mid.y + f.height.y * offset,
+                        mid.z + f.height.z * offset};
+        };
+        const struct { Vec3 a, b; } cases[] = {
+            {{0.0, 0.0, 0.0}, {6000.0, 0.0, 0.0}},     // yatay
+            {{0.0, 0.0, 0.0}, {6000.0, 0.0, 1200.0}},  // egik (5.7°)
+        };
+        const MemberSectionSpec topSec{180.0, 400.0, 8.6, 13.5, -200.0};  // Top
+        const MemberSectionSpec botSec{180.0, 400.0, 8.6, 13.5, 200.0};   // Bottom
+        for (const auto& c : cases) {
+            for (const MemberSectionSpec* spec : {&topSec, &botSec}) {
+                const MemberGeometry fwd = memberGeometryFromProfile(
+                    c.a, c.b, /*connectionAtA=*/true, Vec3{0.0, 0.0, 1.0}, 0.0, *spec);
+                const MemberGeometry rev = memberGeometryFromProfile(
+                    c.b, c.a, /*connectionAtA=*/false, Vec3{0.0, 0.0, 1.0}, 0.0, *spec);
+                CHECK(sameGeometry(fwd, rev), "offset: uc sirasi ayni MemberGeometry");
+                const Vec3 cRaw = rawCentroid(c.a, c.b, Vec3{0.0, 0.0, 1.0},
+                                              spec->centerOffset);
+                const Vec3 cFwd = sectionCentroid(fwd);
+                CHECK(sameVec(cRaw, cFwd, 1e-6),
+                      "offset: fiziksel kesit merkezi ham cerceve ile ayni (isaret-kanonik + offset)");
+                if (!sameVec(cRaw, cFwd, 1e-6))
+                    std::printf("  spec=%s raw=(%.3f,%.3f,%.3f) canon=(%.3f,%.3f,%.3f)\n",
+                                spec == &topSec ? "Top" : "Bottom",
+                                cRaw.x, cRaw.y, cRaw.z, cFwd.x, cFwd.y, cFwd.z);
+            }
         }
     }
 

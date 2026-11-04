@@ -116,9 +116,15 @@ Kurallar:
 3. **`profileRotation`.** `[0,360)` aralığına indirgenir ve **kanonik eksene**
    göre yorumlanır. Fiziksel yönü aynı olan 180° dönük girdi, kanonik eksende
    0° olarak ifade edilir; digest bu yüzden yön duyarlı değildir.
-4. **Kesit.** `width/height/webThickness/flangeThickness/centerOffset` olduğu
-   gibi taşınır. Sıfır uzunluk ya da eksik kesit çağıranın reddedeceği bir
-   girdidir: `memberGeometryUsable(g)` bunu söyler (fail-closed).
+4. **Kesit.** `width/height/webThickness/flangeThickness` olduğu gibi taşınır.
+   `centerOffset` ise refNormal isaret-kanoniklestirmesine bagli tasinir: isaret
+   kanoniklestirme `n → −n` cevirdiginde kesit cercevesinin genislik VE yukseklik
+   yonu ters doner (`height = axis × (n × axis)`); kesitin FIZIKSEL yerlesimini
+   korumak icin `centerOffset` da negatiflenir. Bu olmadan egik kiriste (Top/Bottom
+   ankraj) kesit bir tam yukseklik kadar yanlis tarafa kayar. (Dejenere `n ∥ axis`
+   dalinda isaret kanoniklestirme YOK — cerceve zaten ham ile birebir, ofset aynen
+   kalir.) Sıfır uzunluk ya da eksik kesit çağıranın reddedeceği bir girdidir:
+   `memberGeometryUsable(g)` bunu söyler (fail-closed).
 5. **Digest gevşetilmez.** Kanonikleştirme sadece aynı fiziksel üyenin tek
    gösterimini üretir; `generationPlanDigest` hesabı değişmez.
 

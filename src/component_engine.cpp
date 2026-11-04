@@ -514,6 +514,7 @@ MemberGeometry memberGeometryFromProfile(const Vec3& endA, const Vec3& endB,
                                          double profileRotationDeg,
                                          const MemberSectionSpec& section) noexcept {
     MemberGeometry g;
+    bool flippedNormal = false;
     // (1) Merkez ve yari-vektor: AYNI fiziksel uye, iki farkli uctan yazilmis.
     const Vec3 mid{(endA.x + endB.x) * 0.5, (endA.y + endB.y) * 0.5,
                    (endA.z + endB.z) * 0.5};
@@ -568,7 +569,7 @@ MemberGeometry memberGeometryFromProfile(const Vec3& endA, const Vec3& endB,
             nx /= perp; ny /= perp; nz /= perp;
             // Isaret: ilk sifirdan farkli bilesen POZITIF (uctan bagimsiz).
             const double first = (std::fabs(nx) > 1e-9) ? nx : ((std::fabs(ny) > 1e-9) ? ny : nz);
-            if (first < 0.0) { nx = -nx; ny = -ny; nz = -nz; }
+            if (first < 0.0) { nx = -nx; ny = -ny; nz = -nz; flippedNormal = true; }
         }
         g.refNormal = {nx, ny, nz};
     } else {
@@ -578,7 +579,13 @@ MemberGeometry memberGeometryFromProfile(const Vec3& endA, const Vec3& endB,
     g.secHeight = section.height;
     g.secWebThickness = section.webThickness;
     g.secFlangeThickness = section.flangeThickness;
-    g.sectionCenterOffset = section.centerOffset;
+    // Kesit MERKEZ ofseti kesit YUKSEKLIK yonu boyunca isaretli tasinir. refNormal
+    // isaret-kanoniklestirilirken (n -> -n) cercevenin genislik VE yukseklik yonu
+    // ters doner (height = axis x (n x axis)); ofsetin FIZIKSEL yonunu korumak icin
+    // ofset de negatiflenmelidir. Aksi halde egik kiriste (Top/Bottom ankraj) kesit
+    // bir tam yukseklik kadar yanlis tarafa kayar. (Dejenere n || axis dalinda isaret
+    // kanoniklestirme YOK; orada ofset aynen kalir — cerceve zaten ham ile birebir.)
+    g.sectionCenterOffset = flippedNormal ? -section.centerOffset : section.centerOffset;
     // (5) Donus [0,360): kanonik eksene gore.
     double rot = std::fmod(profileRotationDeg, 360.0);
     if (rot < 0.0) rot += 360.0;
