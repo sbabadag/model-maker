@@ -1,0 +1,149 @@
+// ============================================================================
+// MODELDEN KURULAN GIRDI ALTIN TESTI — Document -> componentInputFromDocument
+// -> generator -> digest (golden'a karsi).
+//
+// NEDEN (42f61ee regresyonu): altin testler MemberGeometry'yi C++'ta ELDE
+// kuruyordu; GERCEK GUI yolu (application.cpp memberGeometryFor -> kanonik
+// memberGeometryFromProfile) altin testlerden GECMIYORDU. d8e10b6 kanonik
+// fonksiyonu dusey kolonda (n ∥ axis) kesit cercevesini 90° cevirince model
+// bozuldu ama 163 test yesil kaldi. Bu test, Document'ten kurulan girdiyi
+// generatora verir ve ayni fiziksel senaryonun elde-kurulan golden'iyle
+// BIREBIR ayni digest'i urettigini dogrular (kör nokta kapandi).
+//
+// Id normalizasyonu: digest, kaynaklarin partA EntityId'sini tasir (main.id);
+// Document id'leri insersiyon sirasina gore atadigi icin, elde-kurulan
+// golden'in id'leriyle (haunch 45/47, end plate 1/2) esitleyerek karsilastiririz.
+// ============================================================================
+#include "model_maker/component_codec.hpp"
+#include "model_maker/component_engine.hpp"
+#include "model_maker/component_input_builder.hpp"
+#include "model_maker/document.hpp"
+#include "model_maker/geometry.hpp"
+#include "model_maker/profile_database.hpp"
+
+#include <cstdio>
+#include <fstream>
+#include <sstream>
+#include <string>
+#include <vector>
+
+using namespace mm;
+
+static int failures = 0;
+#define CHECK(cond, msg) do { if (!(cond)) { std::printf("FAIL: %s\n", msg); ++failures; } } while (0)
+
+static std::string readText(const std::string& path) {
+    std::ifstream in(path);
+    if (!in.good()) return {};
+    std::ostringstream ss;
+    ss << in.rdbuf();
+    return ss.str();
+}
+
+static std::string goldenDigest(const std::string& json, const std::string& key) {
+    const std::string needle = "\"" + key + "\"";
+    std::size_t p = json.find(needle);
+    if (p == std::string::npos) return {};
+    p = json.find(':', p);
+    if (p == std::string::npos) return {};
+    const std::size_t q1 = json.find('"', p);
+    if (q1 == std::string::npos) return {};
+    const std::size_t q2 = json.find('"', q1 + 1);
+    if (q2 == std::string::npos) return {};
+    return json.substr(q1 + 1, q2 - q1 - 1);
+}
+
+static std::vector<SteelProfile> catalog() {
+    std::vector<SteelProfile> cat;
+    SteelProfile p;
+    p.name = "HEA240"; p.height = 230; p.width = 240;
+    p.plateThickness = 7.5; p.flangeThickness = 12; cat.push_back(p);
+    p.name = "IPE400"; p.height = 400; p.width = 180;
+    p.plateThickness = 8.6; p.flangeThickness = 13.5; cat.push_back(p);
+    p.name = "HEB300"; p.height = 300; p.width = 300;
+    p.plateThickness = 11; p.flangeThickness = 19; cat.push_back(p);
+    p.name = "IPE200"; p.height = 400; p.width = 200;
+    p.plateThickness = 8.6; p.flangeThickness = 13.5; cat.push_back(p);
+    return cat;
+}
+
+static EntityId addMember(Document& doc, const char* name,
+                          double fx, double fy, double fz,
+                          double tx, double ty, double tz,
+                          double nx, double ny, double nz,
+                          double rotation, SectionAnchor anchor) {
+    WireframeModel m = WireframeModel::line({fx, fy, fz}, {tx, ty, tz});
+    EntityProperties p = m.properties();
+    p.profileName = name;
+    p.axisFromX = fx; p.axisFromY = fy; p.axisFromZ = fz;
+    p.axisToX = tx; p.axisToY = ty; p.axisToZ = tz;
+    p.sectionNormalX = nx; p.sectionNormalY = ny; p.sectionNormalZ = nz;
+    p.profileRotation = rotation;
+    p.sectionAnchor = anchor;
+    m.setProperties(std::move(p));
+    doc.addModel(std::move(m));
+    return doc.modelId(doc.models().size() - 1);
+}
+
+int main() {
+    registerBuiltInComponents(ComponentRegistry::instance());
+    const auto cat = catalog();
+    const std::string goldenDir = MM_CONTRACT_GOLDEN_DIR;
+
+    // ---- HAUNCH 40: donuk kolon (n ∥ axis) + egik kiris — regresyon senaryosu.
+    {
+        Document doc;
+        const EntityId col = addMember(doc, "HEA240",
+            -115.0, 12000.0, 0.0, -115.0, 12000.0, 5000.0,
+            0.0, 0.0, 1.0, 90.0, SectionAnchor::Top);
+        const EntityId beam = addMember(doc, "IPE400",
+            0.0, 12000.0, 5000.0, 5997.780613671378, 12000.0, 5986.683682028266,
+            0.0, 0.0, 1.0, 0.0, SectionAnchor::Center);
+        auto in = componentInputFromDocument(doc, cat, col, {beam});
+        CHECK(in.has_value(), "haunch: modelden girdi kuruldu");
+        if (!in) return 1;
+        // Id normalizasyonu: elde-kurulan golden (makeInputRotatedColumn) 45/47.
+        in->main.id = 45;
+        in->secondary[0].id = 47;
+        const GenerationPlan plan = generateHaunch40(*in);
+        CHECK(plan.ok, "haunch: generateHaunch40 ok");
+        if (!plan.ok) std::printf("  error=%ls\n", plan.error.c_str());
+        const std::string dg = generationPlanDigest(plan);
+        const std::string dgold =
+            goldenDigest(readText(goldenDir + "/haunch40_digests.json"),
+                         "haunch40_rotated_column_90");
+        CHECK(!dgold.empty(), "haunch: golden okundu");
+        CHECK(dg == dgold, "haunch: modelden kurulan digest == golden (kör nokta kapandi)");
+        if (dg != dgold)
+            std::printf("  model=%s\n  golden=%s\n", dg.c_str(), dgold.c_str());
+    }
+
+    // ---- END PLATE: kiriş 90° dönük (endplate_rotated_90 senaryosu).
+    {
+        Document doc;
+        const EntityId col = addMember(doc, "HEB300",
+            0.0, 0.0, 0.0, 0.0, 0.0, 3000.0, 0.0, 0.0, 1.0, 0.0, SectionAnchor::Center);
+        const EntityId beam = addMember(doc, "IPE200",
+            0.0, 0.0, 3000.0, 2000.0, 0.0, 3000.0, 0.0, 0.0, 1.0, 90.0, SectionAnchor::Center);
+        auto in = componentInputFromDocument(doc, cat, col, {beam});
+        CHECK(in.has_value(), "endplate: modelden girdi kuruldu");
+        if (!in) return 1;
+        in->main.id = 1;
+        in->secondary[0].id = 2;
+        const GenerationPlan plan = generateEndPlate(*in);
+        CHECK(plan.ok, "endplate: generateEndPlate ok");
+        if (!plan.ok) std::printf("  error=%ls\n", plan.error.c_str());
+        const std::string dg = generationPlanDigest(plan);
+        const std::string dgold =
+            goldenDigest(readText(goldenDir + "/end_plate_digests.json"),
+                         "endplate_rotated_90");
+        CHECK(!dgold.empty(), "endplate: golden okundu");
+        CHECK(dg == dgold, "endplate: modelden kurulan digest == golden");
+        if (dg != dgold)
+            std::printf("  model=%s\n  golden=%s\n", dg.c_str(), dgold.c_str());
+    }
+
+    std::printf("modelden kurulan girdi altin testi: %s (%d hata)\n",
+                failures ? "BASARISIZ" : "OK", failures);
+    return failures ? 1 : 0;
+}

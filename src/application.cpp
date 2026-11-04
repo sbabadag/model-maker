@@ -1,4 +1,5 @@
 #include "model_maker/application.hpp"
+#include "model_maker/component_input_builder.hpp"
 #include "model_maker/reload_mesh_guard.hpp"
 #include "model_maker/linear_delta.hpp"
 #include "model_maker/dxf.hpp"
@@ -5306,35 +5307,11 @@ void Application::applyEndPlateFromParts(const std::vector<std::size_t>& parts) 
 static mm::MemberGeometry memberGeometryFor(const mm::Document& doc,
                                             const std::vector<mm::SteelProfile>& catalog,
                                             std::size_t index) {
-    const auto& p = doc.models()[index].properties();
-    mm::MemberSectionSpec spec;
-    spec.width = 200.0;
-    spec.height = 300.0;
-    if (const mm::SteelProfile* prof = mm::findProfile(catalog, p.profileName)) {
-        spec.width = prof->width;
-        spec.height = prof->height;
-        spec.webThickness = prof->plateThickness;
-        spec.flangeThickness = prof->flangeThickness;
-        // SectionAnchor: eksen kesitin ustunden gecebilir (varsayilan Top).
-        // Levha/bulon govde merkezine otursun diye kesit merkez ofsetini gecir.
-        spec.centerOffset = mm::profileSectionAnchorOffset(*prof, p.sectionAnchor);
-    } else {
-        switch (p.sectionAnchor) {
-        case SectionAnchor::Top: spec.centerOffset = -0.5 * spec.height; break;
-        case SectionAnchor::Bottom: spec.centerOffset = 0.5 * spec.height; break;
-        case SectionAnchor::Center: spec.centerOffset = 0.0; break;
-        }
-    }
-    // ST-3g: TEK KAYNAK — kanonik fonksiyon. axisTo = baglanti ucu (modelde
-    // oldugu gibi), axisFrom = uzak uc; refNormal eksene diklestirilir ve
-    // isareti kanoniklestirilir. Boylece ayni fiziksel uye Studio'dan hangi
-    // uctan gelirse gelsin AYNI MemberGeometry ve AYNI planDigest uretilir.
-    mm::MemberGeometry g = mm::memberGeometryFromProfile(
-        {p.axisToX, p.axisToY, p.axisToZ},      // endA = baglanti ucu
-        {p.axisFromX, p.axisFromY, p.axisFromZ},// endB = uzak uc
-        /*connectionAtA=*/true,
-        {p.sectionNormalX, p.sectionNormalY, p.sectionNormalZ},
-        p.profileRotation, spec);
+    // TEK KAYNAK (component_input_builder.hpp): GUI ve "modelden kurulan" altin
+    // testleri AYNI yolu kullanir. Burada yalniz Document id'si atanir; kesit
+    // katalogu/ankraj/kanonik cerceve mantigi tasinabilir cekirdekte.
+    mm::MemberGeometry g = mm::memberGeometryFromEntityProperties(
+        doc.models()[index].properties(), catalog);
     g.id = doc.modelId(index);
     return g;
 }

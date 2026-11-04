@@ -95,6 +95,7 @@ add_library(model_maker_core
     src/axis_delta.cpp
     src/linear_delta.cpp
     src/component_glyph.cpp
+    src/component_input_builder.cpp
     src/assembly.cpp
     src/bridge_package.cpp
     src/bridge_component_mapper.cpp
@@ -492,6 +493,17 @@ if(BUILD_TESTING)
     add_executable(model_maker_end_plate_cut_test tests/end_plate_cut_test.cpp)
     target_link_libraries(model_maker_end_plate_cut_test PRIVATE model_maker_core)
     add_test(NAME model_maker_end_plate_cut_test COMMAND model_maker_end_plate_cut_test)
+
+    # MODELDEN KURULAN GIRDI ALTIN TESTI: Document -> componentInputFromDocument
+    # -> generateHaunch40/generateEndPlate -> digest. Altin testlerin kor noktasi
+    # (elde kurulan girdi) kapandi; GUI'nin kullandigi yolun birebir aynisi kosar.
+    add_executable(model_maker_component_model_input_golden_test
+        tests/component_model_input_golden_test.cpp)
+    target_link_libraries(model_maker_component_model_input_golden_test PRIVATE model_maker_core)
+    target_compile_definitions(model_maker_component_model_input_golden_test PRIVATE
+        MM_CONTRACT_GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/golden")
+    add_test(NAME model_maker_component_model_input_golden_test
+             COMMAND model_maker_component_model_input_golden_test)
 
     # Kesit referans normali: "profil ust basligi workplane ile paralel".
     # Secim (UCS vs otomatik gorunus duzlemi) + MMW6 kalicilik + eski dosya
