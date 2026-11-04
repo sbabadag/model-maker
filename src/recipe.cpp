@@ -6,6 +6,7 @@
 #include "model_maker/end_plate.hpp"       // computeEndPlatePlacement (endplate.placement tasi)
 #include "model_maker/haunch40.hpp"        // Haunch 40 taslari (C2)
 
+#include <algorithm>
 #include <cmath>
 #include <cctype>
 #include <functional>
@@ -1447,6 +1448,27 @@ static bool cyclicLetCheck(const Recipe& recipe, RecipeValidation& r) {
 
 } // namespace
 
+// --- H: cerceve ad uzayi siniflandirmasi -------------------------------------
+// Generic bloklar frameArg ile ctx.frames'i okur/yazar; haunch bloklari
+// haunchFrameArg ile ctx.haunchFrames'i. Bir 'frame' argumani YALNIZ kendi ad
+// uzayindaki ONCEKI bir adimin urettigi frame id'sini gosterebilir. Bu siniflar
+// blockRegistry() ile birebir paraleldir; yeni tas eklerken IKISINI de guncelle.
+static bool producesGenericFrame(const std::string& use) {
+    return use == "frame.member_end" || use == "frame.offset" || use == "frame.rotate";
+}
+static bool producesHaunchFrame(const std::string& use) {
+    return use == "frame.contact" || use == "frame.plumb_face" ||
+           use == "haunch.end_plate" || use == "haunch.web" || use == "haunch.flange" ||
+           use == "haunch.stiffeners" || use == "bolts.haunch_groups" ||
+           use == "haunch.welds";
+}
+// 'frame' argumani HANGI ad uzaydan okur? (yalniz strArgs'inde "frame" olan bloklar)
+static bool frameArgReadsHaunch(const std::string& use) {
+    return use == "frame.plumb_face" || use == "haunch.end_plate" ||
+           use == "haunch.web" || use == "haunch.flange" || use == "haunch.stiffeners" ||
+           use == "bolts.haunch_groups" || use == "haunch.welds";
+}
+
 // --- DOGRULAMA (statik analiz) ----------------------------------------------
 RecipeValidation validateRecipe(const Recipe& recipe,
                                 const std::vector<CompParamSpec>& specs) noexcept {
@@ -1461,7 +1483,12 @@ RecipeValidation validateRecipe(const Recipe& recipe,
     for (const auto& l : recipe.lets) letNames.insert(l.first);
 
     std::map<std::string, std::string> roleKind;
-    for (const auto& st : recipe.steps) {
+    // H: cerceve ad uzaylari — bir 'frame' argumani yalniz kendi ad uzayinda
+    // ONCEKI bir adimin urettigi frame id'sini gosterebilir (tanimsiz cerceve
+    // statik yakalanir; runRecipe calisma anina kadar beklenmez).
+    std::set<std::string> genericFrames, haunchFrames;
+    for (std::size_t stepIndex = 0; stepIndex < recipe.steps.size(); ++stepIndex) {
+        const RecipeStep& st = recipe.steps[stepIndex];
         if (!st.check.empty()) {
             if (!scanExpr(specs, letNames, st.check, r)) return r;
             continue;
@@ -1528,6 +1555,29 @@ RecipeValidation validateRecipe(const Recipe& recipe,
             if (!checkRoleKey(rp, "plate", roleKind, r)) return r;
             if (!checkRoleKey(rb, "bolt", roleKind, r)) return r;
         }
+        // H: 'frame' argumani (varsa) kendi ad uzayinda ONCEKI bir adimin frame
+        // id'sini gostermeli; degilse ACIK ret (adim indeksiyle). frame.offset /
+        // frame.rotate gibi hem tuketip hem ureten bloklar da ayni kurala girer.
+        if (std::find(decl->strArgs.begin(), decl->strArgs.end(), std::string("frame")) !=
+            decl->strArgs.end()) {
+            const auto fit = st.args.find("frame");
+            if (fit != st.args.end() && !fit->second.isList && !fit->second.text.empty()) {
+                const std::string& fid = fit->second.text;
+                const bool known = frameArgReadsHaunch(st.use)
+                                       ? haunchFrames.count(fid) != 0
+                                       : genericFrames.count(fid) != 0;
+                if (!known) {
+                    r.ok = false;
+                    r.message = L"recipe adim " + std::to_wstring(stepIndex) + L" (" +
+                                wideFromUtf8(st.use) + L"): tanimsiz cerceve: " +
+                                wideFromUtf8(fid);
+                    return r;
+                }
+            }
+        }
+        // Bu adim kendi ad uzayina bir frame uretiyorsa kaydet.
+        if (producesGenericFrame(st.use)) genericFrames.insert(st.id);
+        else if (producesHaunchFrame(st.use)) haunchFrames.insert(st.id);
     }
     // let ifadelerini tara (tanimsiz let / bilinmeyen parametre) + dongu.
     for (const auto& l : recipe.lets)

@@ -208,6 +208,53 @@ static void testStaticAnalysis() {
         const auto v = validateRecipe(r, {});
         CHECK(!v.ok, "adim siniri 256");
     }
+    // H: tanimsiz cerceve basvurusu (plate.rect frame -> onceden tanimli id degil).
+    {
+        Recipe r;
+        RecipeStep p; p.id = "p"; p.use = "plate.rect";
+        p.args["frame"] = S("zz"); p.args["w"] = S("1"); p.args["h"] = S("1"); p.args["t"] = S("1");
+        r.steps = {p};
+        const auto v = validateRecipe(r, {});
+        CHECK(!v.ok, "H: tanimsiz cerceve reddedilir");
+        CHECK(v.message.find(L"tanimsiz cerceve") != std::wstring::npos,
+              "H: mesaj 'tanimsiz cerceve' der");
+        CHECK(v.message.find(L"adim 0") != std::wstring::npos,
+              "H: mesaj adim indeksini soyler");
+        if (!v.ok) std::printf("   H mesaj: %ls\n", v.message.c_str());
+    }
+    // H: frame.offset'in giris cercevesi de tanimli olmali (hem tuketir hem uretir).
+    {
+        Recipe r;
+        RecipeStep o; o.id = "o"; o.use = "frame.offset"; o.args["frame"] = S("zz");
+        r.steps = {o};
+        const auto v = validateRecipe(r, {});
+        CHECK(!v.ok, "H: frame.offset tanimsiz giris cercevesi reddedilir");
+        CHECK(v.message.find(L"tanimsiz cerceve") != std::wstring::npos,
+              "H: mesaj 'tanimsiz cerceve' der");
+    }
+    // H: ileri referans (henuz uretilmemis adimin id'si) reddedilir.
+    {
+        Recipe r;
+        RecipeStep p; p.id = "p"; p.use = "plate.rect";
+        p.args["frame"] = S("f"); p.args["w"] = S("1"); p.args["h"] = S("1"); p.args["t"] = S("1");
+        RecipeStep f; f.id = "f"; f.use = "frame.member_end"; f.args["member"] = S("main");
+        r.steps = {p, f};   // p, f'den ONCE -> tanimsiz
+        const auto v = validateRecipe(r, {});
+        CHECK(!v.ok, "H: ileri frame referansi reddedilir");
+        CHECK(v.message.find(L"adim 0") != std::wstring::npos,
+              "H: ileri referans mesaji adim indeksini soyler");
+    }
+    // H: gecerli frame zinciri (once uret, sonra kullan) kabul edilir.
+    {
+        Recipe r;
+        RecipeStep f; f.id = "f"; f.use = "frame.member_end"; f.args["member"] = S("main");
+        RecipeStep o; o.id = "o"; o.use = "frame.offset"; o.args["frame"] = S("f");
+        RecipeStep p; p.id = "p"; p.use = "plate.rect";
+        p.args["frame"] = S("o"); p.args["w"] = S("1"); p.args["h"] = S("1"); p.args["t"] = S("1");
+        r.steps = {f, o, p};
+        const auto v = validateRecipe(r, {});
+        CHECK(v.ok, "H: gecerli frame zinciri kabul edilir");
+    }
 }
 
 static void testBlocksProducePlan() {
