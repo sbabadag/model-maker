@@ -1,6 +1,7 @@
 // MODEL MAKER BRIDGE — native component uye baglama (uygulama).
 
 #include "model_maker/bridge_native_bind.hpp"
+#include "model_maker/component_input_builder.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -59,31 +60,16 @@ bool bridgeMemberCompatible(const Document& doc, EntityId id,
 
 MemberGeometry bridgeMemberGeometry(const Document& doc, EntityId id,
                                     const std::vector<SteelProfile>& catalog) noexcept {
+    // TEK MemberGeometry ureteci (component_input_builder): kanonik
+    // memberGeometryFromProfile (uctan bagimsiz + isaret-kanonik refNormal)
+    // application.cpp memberGeometryFor ile AYNI yoldan gecer. id alani burada
+    // atanir (memberGeometryFromEntityProperties id'ye dokunmaz).
     MemberGeometry g;
     g.id = id;
     const auto idx = doc.indexOfEntity(id);
     if (!idx) return g;
-    const auto& p = doc.models()[*idx].properties();
-    g.axisFrom = {p.axisFromX, p.axisFromY, p.axisFromZ};
-    g.axisTo = {p.axisToX, p.axisToY, p.axisToZ};
-    g.refNormal = {p.sectionNormalX, p.sectionNormalY, p.sectionNormalZ};
-    g.secWidth = 200.0;
-    g.secHeight = 300.0;
-    g.sectionCenterOffset = 0.0;
-    g.profileRotation = p.profileRotation;
-    if (const SteelProfile* prof = findProfile(catalog, p.profileName)) {
-        g.secWidth = prof->width;
-        g.secHeight = prof->height;
-        g.secWebThickness = prof->plateThickness;
-        g.secFlangeThickness = prof->flangeThickness;
-        g.sectionCenterOffset = profileSectionAnchorOffset(*prof, p.sectionAnchor);
-    } else {
-        switch (p.sectionAnchor) {
-        case SectionAnchor::Top: g.sectionCenterOffset = -0.5 * g.secHeight; break;
-        case SectionAnchor::Bottom: g.sectionCenterOffset = 0.5 * g.secHeight; break;
-        case SectionAnchor::Center: g.sectionCenterOffset = 0.0; break;
-        }
-    }
+    g = memberGeometryFromEntityProperties(doc.models()[*idx].properties(), catalog);
+    g.id = id;
     return g;
 }
 
