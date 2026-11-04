@@ -506,6 +506,17 @@ if(BUILD_TESTING)
     add_test(NAME model_maker_component_model_input_golden_test
              COMMAND model_maker_component_model_input_golden_test)
 
+    # MM-7 item 2: VARSAYILAN End Plate kapsam testi — tum IPE/HEA/HEB kiris
+    # kesitleri x {M16,M20,M24} x {HEA300,HEB300}: varsayilan plan ya checks'ten
+    # gecer ya da ACIK "desteklenmiyor" verir (sessiz/beklenmeyen ret yasak).
+    add_executable(model_maker_component_endplate_coverage_test
+        tests/component_endplate_coverage_test.cpp)
+    target_link_libraries(model_maker_component_endplate_coverage_test PRIVATE model_maker_core)
+    target_compile_definitions(model_maker_component_endplate_coverage_test PRIVATE
+        MM_PROFILES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/profiles")
+    add_test(NAME model_maker_component_endplate_coverage_test
+             COMMAND model_maker_component_endplate_coverage_test)
+
     # Kesit referans normali: "profil ust basligi workplane ile paralel".
     # Secim (UCS vs otomatik gorunus duzlemi) + MMW6 kalicilik + eski dosya
     # uyumlulugu + donusumlerde normalin donmesi. OCC'siz, Linux'ta kosar.

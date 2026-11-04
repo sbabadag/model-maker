@@ -190,8 +190,12 @@ int main() {
     // birebir olmali. Golden yoksa digest'ler GENDIGEST satiriyla basilir.
     {
         const char* cols[] = {"HEA300", "HEB300"};
-        const char* beams[] = {"IPE200", "IPE300", "IPE400"};
-        const double diams[] = {16.0, 20.0};  // M16, M20
+        // MM-7 item 2: "sinirda" kesitler eklendi (IPE220/240/270, HEA240, HEB260).
+        // HEB260 tf=17.5 M20/M24'te varsayilan dikey edge'i 40/45'e buyutur (baslik
+        // acikligi); digerleri edge=35'te kalir. M24 ile edge-buyutme yolu kilitlenir.
+        const char* beams[] = {"IPE200", "IPE300", "IPE400", "IPE220", "IPE240",
+                               "IPE270", "HEA240", "HEB260"};
+        const double diams[] = {16.0, 20.0, 24.0};  // M16, M20, M24
         const std::string gpath = goldenDir + "/end_plate_catalog_digests.json";
         const std::string gj = readText(gpath);
         CHECK(!gj.empty(), "katalog: golden dosyasi okundu");
