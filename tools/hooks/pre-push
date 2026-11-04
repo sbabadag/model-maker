@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# pre-push: WIN32 sozdizimi kapisi (ST-4 surec kurali).
+# Push'tan once tools/win_syntax_check.sh calistirilir; kapi KIRMIZI ise push
+# ENGELLENIR. GUI/Win32 degisikliklerinin Linux 163 testinde yakalanmamasi
+# (kapsam/decl hatasinin Windows'ta patlamasi) bu kapiyi zorunlu kilar.
+#
+# KURULUM (bir kez, her klonda):  bash tools/install_git_hooks.sh
+# veya elle:  cp tools/hooks/pre-push .git/hooks/pre-push && chmod 755 .git/hooks/pre-push
+#
+# NOT: Kapi betigi bu dalda YOKSA (or. gate'i icermeyen eski dallar) kontrol
+# atlanir ve push engellenmez — aksi halde butun dallarda push kilitlenirdi.
+set -u
+
+ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+
+if [ ! -f "$ROOT/tools/win_syntax_check.sh" ]; then
+    echo ">> pre-push: tools/win_syntax_check.sh bu dalda yok — WIN32 kapisi ATLANDI."
+    exit 0
+fi
+
+if [ ! -x "$ROOT/tools/win_syntax_check.sh" ]; then
+    chmod 755 "$ROOT/tools/win_syntax_check.sh" 2>/dev/null || true
+fi
+
+echo ">> pre-push: WIN32 sozdizimi kapisi calisiyor (tools/win_syntax_check.sh)"
+if ! bash "$ROOT/tools/win_syntax_check.sh"; then
+    echo ">> pre-push: KAPI KIRMIZI — push engellendi." >&2
+    echo ">> pre-push: WIN32-only dosyalardaki sozdizimi/kapsam hatasini duzeltin," >&2
+    echo ">> pre-push: sonra tekrar push edin (bkz. tools/win_syntax_check.sh)." >&2
+    exit 1
+fi
+echo ">> pre-push: WIN32 sozdizimi kapisi YESIL."
+exit 0
