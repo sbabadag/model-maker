@@ -6,10 +6,10 @@
       "id": "ep",
       "use": "endplate.placement",
       "args": {
-        "main": "main",
         "beam": "secondary_0",
-        "rolePlate": "end_plate",
-        "roleBolts": "beam_bolts"
+        "main": "main",
+        "roleBolts": "beam_bolts",
+        "rolePlate": "end_plate"
       }
     }
   ]

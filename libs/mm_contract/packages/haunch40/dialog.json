@@ -429,6 +429,35 @@
       ]
     }
   ],
+  "preview": {
+    "dimensions": [],
+    "toggles": [
+      {
+        "param": "createBeamStiffener",
+        "rolePrefix": "haunch_beam_stiffener"
+      },
+      {
+        "param": "createAddStiffener",
+        "rolePrefix": "haunch_stiff_additional"
+      },
+      {
+        "param": "createRafterBottomStiffener",
+        "rolePrefix": "haunch_stiff_rafter_bottom"
+      },
+      {
+        "param": "createComprStiffener",
+        "rolePrefix": "haunch_stiff_compression"
+      },
+      {
+        "param": "createMorrisStiffener",
+        "rolePrefix": "haunch_stiff_morris"
+      },
+      {
+        "param": "createDiagStiffener",
+        "rolePrefix": "haunch_stiff_diagonal"
+      }
+    ]
+  },
   "typeId": "tekla_haunch_40",
   "useTabs": true,
   "weldRows": []
