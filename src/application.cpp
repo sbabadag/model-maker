@@ -5346,6 +5346,23 @@ std::optional<ComponentInput> Application::componentPreviewInput(EntityId compId
     return in;
 }
 
+namespace {
+// MM-REGRESYON (End Plate paketi sessiz basarisizligi): bilesen komut yolundaki
+// (katalog -> sec -> sag tik) HER basarisiz dal kullaniciya GORUNUR olmali ve
+// model-maker-startup.log'a satir yazmali. Eskiden plan.ok=false gibi bir hata
+// durum cubuguna dusuyor ama beep/log yoktu — kullanici "paket hicbir sey
+// yapmiyor" diyordu. Bu yardimcilar her dali tek cagriyla gurultulu yapar.
+void componentCommandWarn(Application& app, const std::wstring& msg) {
+    app.appendStartupLog(L"[component] " + msg);
+    MessageBeep(MB_ICONWARNING);
+    app.publishStatus(msg);
+}
+void componentCommandInfo(Application& app, const std::wstring& msg) {
+    app.appendStartupLog(L"[component] " + msg);
+    app.publishStatus(msg);
+}
+} // namespace
+
 void Application::applyComponentFromParts(const std::wstring& typeId,
                                           const std::vector<std::size_t>& parts,
                                           const std::vector<CompParam>& params) {
@@ -5356,20 +5373,20 @@ void Application::applyComponentFromParts(const std::wstring& typeId,
     const int pickCount = (type && type->catalog.pickCount > 0) ? type->catalog.pickCount : 2;
 
     if (parts.size() != static_cast<std::size_t>(pickCount)) {
-        MessageBeep(MB_ICONWARNING);
-        publishStatus(display + L": tam " + std::to_wstring(pickCount) +
-                      L" parca secin (su an " + std::to_wstring(parts.size()) + L" secili)");
+        componentCommandWarn(*this, display + L": tam " + std::to_wstring(pickCount) +
+                             L" parca secin (su an " + std::to_wstring(parts.size()) + L" secili)");
         return;
     }
     const std::size_t mainIdx = parts[0];
     for (const std::size_t p : parts) {
         if (p >= document_.models().size()) {
-            MessageBeep(MB_ICONWARNING);
+            componentCommandWarn(*this, display + L": parca indeksi gecersiz (" +
+                                 std::to_wstring(p) + L" >= " +
+                                 std::to_wstring(document_.models().size()) + L")");
             return;
         }
         if (document_.models()[p].constructionKind() != ConstructionKind::None) {
-            MessageBeep(MB_ICONWARNING);
-            publishStatus(display + L": parcalar normal model olmali (konstruksiyon degil)");
+            componentCommandWarn(*this, display + L": parcalar normal model olmali (konstruksiyon degil)");
             return;
         }
     }
@@ -5388,6 +5405,18 @@ void Application::applyComponentFromParts(const std::wstring& typeId,
         input.secondary.push_back(memberGeometryFor(document_, profileCatalog_, parts[i]));
         secondaryIds.push_back(input.secondary.back().id);
     }
+    // GIRDI DOGRULAMA (fail-loud): dejenere eksen / eksik kesit girdi kurulumu
+    // sirasinda yakalanir — hangi parca, neden yazilir (sessiz gecis yok).
+    if (!mm::memberGeometryUsable(input.main)) {
+        componentCommandWarn(*this, display + L": ana parcanin ekseni/kestiti gecersiz (sifir uzunluk veya eksik kesit)");
+        return;
+    }
+    for (const auto& s : input.secondary) {
+        if (!mm::memberGeometryUsable(s)) {
+            componentCommandWarn(*this, display + L": ikincil parcanin ekseni/kestiti gecersiz (sifir uzunluk veya eksik kesit)");
+            return;
+        }
+    }
     // New Haunch40 instances must persist complete editable defaults at the
     // first commit, not only once the Properties panel is opened.
     input.params = (typeId == L"tekla_haunch_40" && type)
@@ -5396,14 +5425,15 @@ void Application::applyComponentFromParts(const std::wstring& typeId,
     // 2. Registry -> generator -> GenerationPlan.
     const mm::GenerationPlan gp = mm::ComponentRegistry::instance().generate(typeId, input);
     if (!gp.ok) {
-        publishStatus(display + L" uretilemedi: " + (gp.error.empty() ? L"gecersiz girdi" : gp.error));
+        componentCommandWarn(*this, display + L" uretilemedi: " +
+                             (gp.error.empty() ? L"gecersiz girdi" : gp.error));
         return;
     }
 
     // 3. GenerationPlan -> roleKey koruyan ComponentPlan.
     const mm::ComponentPlan plan = mm::componentPlanFromGenerationPlan(gp);
     if (!plan.ok) {
-        publishStatus(display + L" plani olusturulamadi: " + plan.error);
+        componentCommandWarn(*this, display + L" plani olusturulamadi: " + plan.error);
         return;
     }
 
@@ -5412,7 +5442,7 @@ void Application::applyComponentFromParts(const std::wstring& typeId,
     const mm::ComponentMaterializer::Prepared prep =
         mat.prepare(plan, input.main.id, secondaryIds);
     if (!prep.ok) {
-        publishStatus(display + L" hazirlanamadi: " + prep.error);
+        componentCommandWarn(*this, display + L" hazirlanamadi: " + prep.error);
         return;
     }
     mm::ComponentInstanceRecord rec;
@@ -5423,7 +5453,7 @@ void Application::applyComponentFromParts(const std::wstring& typeId,
     rec.params = input.params;
     const mm::ComponentMaterializer::CommitResult res = mat.commit(prep, rec);
     if (!res.ok) {
-        publishStatus(display + L" uygulanamadi: " + res.error);
+        componentCommandWarn(*this, display + L" uygulanamadi: " + res.error);
         return;
     }
     // KAYNAK TESHIS: bilesenin urettigi weld kayitlarini ozetle. Kaynak kati
@@ -5454,10 +5484,14 @@ void Application::applyComponentFromParts(const std::wstring& typeId,
         solidStatusMessage_ = display + L" olusturuldu — kaynak specleri yok"
                               L" (createWelds kapali?)";
     }
+    // BASARI LOGU: komut yolu calisti ve instance commit edildi (startup log'da
+    // gorunur; kaynak ozetiyle birlikte).
+    componentCommandInfo(*this, display + L" olusturuldu — " +
+                         std::to_wstring(res.roleToEntity.size()) + L" varlik");
 #else
     (void)mainIdx;
     (void)params;
-    publishStatus(display + L": OCC devre disi — gercek geometri uretilemedi");
+    componentCommandWarn(*this, display + L": OCC devre disi — gercek geometri uretilemedi");
 #endif
     selectedModels_.clear();
     selectionFirstCorner_.reset();
@@ -5495,11 +5529,19 @@ void Application::startComponentCommand(const std::wstring& typeId) {
 
     const mm::ComponentType* type = mm::ComponentRegistry::instance().findType(typeId);
     const std::wstring display = type ? type->displayName : typeId;
+    if (!type) {
+        componentCommandWarn(*this, display + L": bilinmeyen component tipi, katalogdan cikti ama registry'de yok");
+        cancelPendingComponentCommand();
+        return;
+    }
     std::wstring hint = L"once MAIN, sonra SECONDARY secin — sag tik uygular";
-    if (type && !type->catalog.primaryMemberType.empty() && !type->catalog.secondaryMemberType.empty()) {
+    if (!type->catalog.primaryMemberType.empty() && !type->catalog.secondaryMemberType.empty()) {
         hint = L"once " + type->catalog.primaryMemberType + L" (main), sonra " +
                type->catalog.secondaryMemberType + L" (secondary) secin — sag tik uygular";
     }
+    componentCommandInfo(*this, display + L": komut basladi (pickCount=" +
+                         std::to_wstring(type->catalog.pickCount > 0 ? type->catalog.pickCount : 2) +
+                         L") — " + hint);
     publishStatus(display + L": " + hint);
     updateControls();
     updateStatus();
@@ -5527,9 +5569,8 @@ void Application::executePendingComponentCommand() {
     const std::wstring display = type ? type->displayName : pendingComponentType_;
     const int pickCount = (type && type->catalog.pickCount > 0) ? type->catalog.pickCount : 2;
     if (pendingComponentParts_.size() != static_cast<std::size_t>(pickCount)) {
-        MessageBeep(MB_ICONWARNING);
-        publishStatus(display + L": tam " + std::to_wstring(pickCount) +
-                      L" parca secin (su an " + std::to_wstring(pendingComponentParts_.size()) + L" secili)");
+        componentCommandWarn(*this, display + L": tam " + std::to_wstring(pickCount) +
+                             L" parca secin (su an " + std::to_wstring(pendingComponentParts_.size()) + L" secili)");
         return;
     }
     const std::vector<std::size_t> parts = pendingComponentParts_;
