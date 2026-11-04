@@ -19,7 +19,7 @@ static int failures = 0;
 
 int main() {
     // 1) Surum.
-    CHECK(std::string(kContractVersion) == "1.9.0", "contract surumu 1.7.0");
+    CHECK(std::string(kContractVersion) == "1.10.0", "contract surumu 1.7.0");
     CHECK(contractSupports(1, 1), "contract 1.1 desteklenir");
     CHECK(contractSupports(1, 2), "contract 1.2 desteklenir");
     CHECK(contractSupports(1, 3), "contract 1.3 desteklenir");
@@ -29,7 +29,8 @@ int main() {
     CHECK(!contractSupports(2, 0), "contract 2.0 desteklenmez (ust major)");
     CHECK(!contractSupports(0, 9), "contract 0.9 desteklenmez (alt major)");
     CHECK(contractSupports(1, 9), "contract 1.9 desteklenir (mevcut minor)");
-    CHECK(!contractSupports(1, 10), "contract 1.10 desteklenmez (ust minor)");
+    CHECK(contractSupports(1, 10), "contract 1.10 desteklenir (mevcut minor)");
+    CHECK(!contractSupports(1, 11), "contract 1.11 desteklenmez (ust minor)");
 
     // 1b) Sabitler metinle eslesiyor mu (tutarlilik regresyonu)?
     // "major.minor.patch" string'ini ayrismayip dogrudan sayilarla karsilastir.

@@ -236,6 +236,117 @@ int main() {
         }
     }
 
+    // ---- 8) E KANITI: endplate_rotated_90 GOLDEN GIRDISI KANONIK DEGILDI -----
+    // Eski golden, kirisi elde alan atamasiyla kuruyordu (axisFrom = baglanti ucu,
+    // axisTo = uzak uc — kanonik kuralin tersi). Kanoniklestirme (memberGeometry
+    // FromProfile) ayni FIZIKSEL uyeyi yeniden kurar; DIGEST degisir ama DUNYA
+    // GEOMETRISI ayni kalir: levha kose noktalari, bulon merkezleri, kesim
+    // duzlemi birebir (1e-6), yalniz cerceve isaretleri (u/v, xDir) ters.
+    {
+        const MemberSectionSpec beamSec{200.0, 400.0, 8.6, 13.5, 0.0};
+        // ESKI (kanonik OLMAYAN): axisFrom = baglanti ucu {0,0,3000}.
+        MemberGeometry oldBeam;
+        oldBeam.id = 2;
+        oldBeam.axisFrom = Vec3{0.0, 0.0, 3000.0};
+        oldBeam.axisTo = Vec3{2000.0, 0.0, 3000.0};
+        oldBeam.refNormal = Vec3{0.0, 0.0, 1.0};
+        oldBeam.secWidth = 200.0; oldBeam.secHeight = 400.0;
+        oldBeam.secWebThickness = 8.6; oldBeam.secFlangeThickness = 13.5;
+        oldBeam.profileRotation = 90.0;
+        // YENI (kanonik): memberGeometryFromProfile, baglanti ucu axisTo'da.
+        MemberGeometry newBeam = memberGeometryFromProfile(
+            Vec3{0.0, 0.0, 3000.0}, Vec3{2000.0, 0.0, 3000.0},
+            /*connectionAtA=*/true, Vec3{0.0, 0.0, 1.0}, 90.0, beamSec);
+        newBeam.id = 2;
+        // Kok neden: ESKI girdi baglanti ucunu (kolon tepesi {0,0,3000}) axisFrom'a
+        // koyuyor; kanonik kural axisTo = baglanti ucu der. isCanonicalMemberGeometry
+        // bunu YAKALAYAMAZ (MemberGeometry baglanti-ucu bilgisini tasimaz; yalniz
+        // refNormal/donus idempotence'ini olcer). Ekseni YON olarak karsilastir.
+        const Vec3 connPoint{0.0, 0.0, 3000.0};  // kolon tepesi = baglanti ucu
+        CHECK(oldBeam.axisFrom == connPoint && oldBeam.axisTo != connPoint,
+              "eski kiris: baglanti ucu axisFrom'da (KONVANSIYONA AYKIRI)");
+        CHECK(newBeam.axisTo == connPoint && newBeam.axisFrom != connPoint,
+              "yeni kiris: baglanti ucu axisTo'da (kanonik)");
+
+        const auto epInput = [](const MemberGeometry& beam) {
+            ComponentInput in;
+            const MemberSectionSpec colSec{300.0, 300.0, 11.0, 19.0, 0.0};
+            in.main = memberGeometryFromProfile(Vec3{0.0, 0.0, 0.0},
+                                                Vec3{0.0, 0.0, 3000.0},
+                                                /*connectionAtA=*/false,
+                                                Vec3{0.0, 0.0, 1.0}, 0.0, colSec);
+            in.main.id = 1;
+            in.secondary.push_back(beam);
+            return in;
+        };
+        const GenerationPlan po = generateEndPlate(epInput(oldBeam));
+        const GenerationPlan pn = generateEndPlate(epInput(newBeam));
+        CHECK(po.ok && pn.ok, "E kaniti: iki plan da ok");
+        if (po.ok && pn.ok) {
+            // Levha DUNYA kose noktalari (outline yerel u/v + center/u/v).
+            const auto worldCorners = [](const PlateSpec& p) {
+                std::vector<Vec3> cs;
+                for (const auto& o : p.outline) {
+                    cs.push_back(Vec3{p.center.x + p.u.x * o.first + p.v.x * o.second,
+                                      p.center.y + p.u.y * o.first + p.v.y * o.second,
+                                      p.center.z + p.u.z * o.first + p.v.z * o.second});
+                }
+                return cs;
+            };
+            CHECK(po.plates.size() == 1 && pn.plates.size() == 1, "E kaniti: tek levha");
+            if (po.plates.size() == 1 && pn.plates.size() == 1) {
+                const auto co = worldCorners(po.plates[0]);
+                const auto cn = worldCorners(pn.plates[0]);
+                CHECK(co.size() == cn.size(), "E kaniti: kose sayisi ayni");
+                bool allMatch = co.size() == cn.size();
+                for (const auto& q : co) {
+                    bool found = false;
+                    for (const auto& r : cn)
+                        if (sameVec(q, r, 1e-6)) { found = true; break; }
+                    if (!found) allMatch = false;
+                }
+                CHECK(allMatch, "E kaniti: levha dunya kose noktalari AYNI (1e-6)");
+                if (!allMatch) {
+                    std::printf("  eski kose:\n");
+                    for (const auto& q : co) std::printf("    (%.4f,%.4f,%.4f)\n", q.x, q.y, q.z);
+                    std::printf("  yeni kose:\n");
+                    for (const auto& q : cn) std::printf("    (%.4f,%.4f,%.4f)\n", q.x, q.y, q.z);
+                }
+            }
+            // Bulon merkezleri (dunya) kume olarak AYNI.
+            CHECK(po.boltGroups.size() == pn.boltGroups.size(), "E kaniti: bulon grubu sayisi");
+            if (po.boltGroups.size() == pn.boltGroups.size() &&
+                !po.boltGroups.empty() && !pn.boltGroups.empty()) {
+                const auto bo = boltGroupBoltOrigins(po.boltGroups[0]);
+                const auto bn = boltGroupBoltOrigins(pn.boltGroups[0]);
+                bool boltMatch = bo.size() == bn.size();
+                for (const auto& q : bo) {
+                    bool found = false;
+                    for (const auto& r : bn)
+                        if (sameVec(q, r, 1e-6)) { found = true; break; }
+                    if (!found) boltMatch = false;
+                }
+                CHECK(boltMatch, "E kaniti: bulon merkezleri AYNI (1e-6)");
+            }
+            // Kesim duzlemi AYNI (planeOrigin + planeNormal; keepPositive ile isaret).
+            CHECK(po.cuts.size() == pn.cuts.size(), "E kaniti: kesim sayisi");
+            if (po.cuts.size() == pn.cuts.size() && !po.cuts.empty() && !pn.cuts.empty()) {
+                const auto& co2 = po.cuts[0]; const auto& cn2 = pn.cuts[0];
+                const bool samePos = po.cuts[0].keepPositive == pn.cuts[0].keepPositive;
+                const Vec3 no = co2.planeNormal, nn = cn2.planeNormal;
+                const bool normSame = samePos ? sameVec(no, nn, 1e-6)
+                                              : sameVec(no, Vec3{-nn.x, -nn.y, -nn.z}, 1e-6);
+                CHECK(sameVec(co2.planeOrigin, cn2.planeOrigin, 1e-6) && normSame,
+                      "E kaniti: kesim duzlemi AYNI");
+            }
+            // DIGEST farkli (beklenen: kanoniklestirme cerceve isaretini degistirdi).
+            const std::string do2 = generationPlanDigest(po);
+            const std::string dn2 = generationPlanDigest(pn);
+            CHECK(do2 != dn2, "E kaniti: digest degisti (cerceve isaret farki)");
+            std::printf("  eski digest=%s\n  yeni digest=%s\n", do2.c_str(), dn2.c_str());
+        }
+    }
+
     if (failures) {
         std::printf("%d kontrol basarisiz\n", failures);
         return 1;

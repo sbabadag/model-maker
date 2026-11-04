@@ -462,6 +462,20 @@ ComponentPackageLoad loadComponentPackage(const fs::path& dir,
                     return fail(out, L"altin test girdi tasiyor ama planDigest yok: " +
                                           pathText(e.path().filename()));
                 const ComponentInput in = componentInputFromJson(tj["input"]);
+                // E (b): kanoniklik denetimi — elde kurulan (memberGeometryFromProfile'tan
+                // gecmeyen) girdi acik mesajla REDDEDILIR; sessizce kanoniklestirilmez.
+                {
+                    std::wstring who;
+                    if (!isCanonicalMemberGeometry(in.main))
+                        who = L"main";
+                    else if (in.secondary.empty() ||
+                             !isCanonicalMemberGeometry(in.secondary.front()))
+                        who = L"secondary";
+                    if (!who.empty())
+                        return fail(out, L"altin test girdisi KANONIK DEGIL (" + who +
+                                          L"): " + pathText(e.path().filename()) +
+                                          L" — memberGeometryFromProfile ile kurulmali");
+                }
                 const GenerationPlan plan = runRecipe(out.recipe, specs, in);
                 if (!plan.ok)
                     return fail(out, L"altin test kosulamadi (" +

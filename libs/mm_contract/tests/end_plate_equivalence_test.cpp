@@ -42,46 +42,36 @@ static Recipe endPlateRecipe() {
 }
 
 // 5 sabit girdi: (0) +X, (1) -X, (2) +Y, (3) 90° donuk profil, (4) farkli bulon.
+// E: girdiler memberGeometryFromProfile ile KURULUR (kanonik). Elle alan atamasi
+// yoktur; eksen yonu (axisTo = baglanti ucu) ve refNormal kanoniklestirilir.
 static ComponentInput makeCase(int kind) {
     ComponentInput in;
+    const MemberSectionSpec colSec{300.0, 300.0, 11.0, 19.0, 0.0};
+    in.main = memberGeometryFromProfile(Vec3{0.0, 0.0, 0.0}, Vec3{0.0, 0.0, 3000.0},
+                                        /*connectionAtA=*/false, Vec3{0.0, 0.0, 1.0},
+                                        0.0, colSec);
     in.main.id = 1;
-    in.main.axisFrom = Vec3{0.0, 0.0, 0.0};
-    in.main.axisTo = Vec3{0.0, 0.0, 3000.0};
-    in.main.refNormal = Vec3{0.0, 0.0, 1.0};
-    in.main.secWidth = 300.0;
-    in.main.secHeight = 300.0;
-    in.main.secWebThickness = 11.0;
-    in.main.secFlangeThickness = 19.0;
 
-    MemberGeometry b;
-    b.id = 2;
-    b.refNormal = Vec3{0.0, 0.0, 1.0};
-    b.secWidth = 200.0;
-    b.secHeight = 400.0;
-    b.secWebThickness = 8.6;
-    b.secFlangeThickness = 13.5;
-
+    const MemberSectionSpec beamSec{200.0, 400.0, 8.6, 13.5, 0.0};
+    // Baglanti ucu = kolon tepesi {0,0,3000}; uzak uc case'e gore.
+    Vec3 far{2000.0, 0.0, 3000.0};
+    double rot = 0.0;
     switch (kind) {
         case 0:
-            b.axisFrom = Vec3{0.0, 0.0, 3000.0};
-            b.axisTo = Vec3{2000.0, 0.0, 3000.0};
+            far = Vec3{2000.0, 0.0, 3000.0};
             break;
         case 1:
-            b.axisFrom = Vec3{0.0, 0.0, 3000.0};
-            b.axisTo = Vec3{-2000.0, 0.0, 3000.0};
+            far = Vec3{-2000.0, 0.0, 3000.0};
             break;
         case 2:
-            b.axisFrom = Vec3{0.0, 0.0, 3000.0};
-            b.axisTo = Vec3{0.0, 2000.0, 3000.0};
+            far = Vec3{0.0, 2000.0, 3000.0};
             break;
         case 3:
-            b.axisFrom = Vec3{0.0, 0.0, 3000.0};
-            b.axisTo = Vec3{2000.0, 0.0, 3000.0};
-            b.profileRotation = 90.0;
+            far = Vec3{2000.0, 0.0, 3000.0};
+            rot = 90.0;
             break;
         case 4:
-            b.axisFrom = Vec3{0.0, 0.0, 3000.0};
-            b.axisTo = Vec3{2000.0, 0.0, 3000.0};
+            far = Vec3{2000.0, 0.0, 3000.0};
             in.params.push_back(CompParam{L"boltCountX", CompParamValue{2}});
             in.params.push_back(CompParam{L"boltCountY", CompParamValue{2}});
             in.params.push_back(CompParam{L"boltDiameter", CompParamValue{24.0}});
@@ -93,6 +83,10 @@ static ComponentInput makeCase(int kind) {
         default:
             break;
     }
+    MemberGeometry b = memberGeometryFromProfile(Vec3{0.0, 0.0, 3000.0}, far,
+                                                 /*connectionAtA=*/true,
+                                                 Vec3{0.0, 0.0, 1.0}, rot, beamSec);
+    b.id = 2;
     in.secondary.push_back(b);
     return in;
 }
@@ -115,6 +109,10 @@ int main() {
     json golden = json::object();
     for (int k = 0; k < 5; ++k) {
         const ComponentInput in = makeCase(k);
+        // E: kanoniklik denetimi — elde kurulan (memberGeometryFromProfile'tan
+        // gecmeyen) girdi acik mesajla reddedilir.
+        CHECK(isCanonicalMemberGeometry(in.main), "main kanonik");
+        CHECK(isCanonicalMemberGeometry(in.secondary.front()), "secondary kanonik");
         const GenerationPlan gen = generateEndPlate(in);
         const GenerationPlan rec = runRecipe(recipe, specs, in);
         CHECK(gen.ok, "generateEndPlate ok");

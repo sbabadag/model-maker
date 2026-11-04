@@ -614,6 +614,35 @@ MemberGeometry memberGeometryFromProfile(const Vec3& endA, const Vec3& endB,
     return g;
 }
 
+// --- KANONIKLIK DENETIMI (E) -------------------------------------------------
+// Bir MemberGeometry, memberGeometryFromProfile'un AYNI girdiyle yeniden
+// kurdugu sonucun birebir aynisiyse kanoniktir. Girisi DEGISTIRMEZ; yalniz
+// denetler (fail-closed: kanonik degilse false).
+bool isCanonicalMemberGeometry(const MemberGeometry& g) noexcept {
+    if (!memberGeometryUsable(g)) return false;
+    // axisTo = baglanti ucu kurali geregi yeniden kurulumda baglanti ucu
+    // endB = g.axisTo'dur (connectionAtA=false).
+    const MemberSectionSpec section{g.secWidth, g.secHeight, g.secWebThickness,
+                                    g.secFlangeThickness, g.sectionCenterOffset};
+    const MemberGeometry r = memberGeometryFromProfile(
+        g.axisFrom, g.axisTo, /*connectionAtA=*/false, g.refNormal,
+        g.profileRotation, section);
+    const auto sameV = [](const Vec3& a, const Vec3& b) {
+        return std::fabs(a.x - b.x) <= 1e-9 && std::fabs(a.y - b.y) <= 1e-9 &&
+               std::fabs(a.z - b.z) <= 1e-9;
+    };
+    const auto sameD = [](double a, double b) { return std::fabs(a - b) <= 1e-9; };
+    // id (EntityId) kanoniklik kosulu DEGILDIR: malzeme-zamani kimligi
+    // uyeden uyeye degisir, fiziksel/geometrik kanonikligi etkilemez.
+    return sameV(r.axisFrom, g.axisFrom) && sameV(r.axisTo, g.axisTo) &&
+           sameV(r.refNormal, g.refNormal) && sameD(r.secWidth, g.secWidth) &&
+           sameD(r.secHeight, g.secHeight) &&
+           sameD(r.secWebThickness, g.secWebThickness) &&
+           sameD(r.secFlangeThickness, g.secFlangeThickness) &&
+           sameD(r.sectionCenterOffset, g.sectionCenterOffset) &&
+           sameD(r.profileRotation, g.profileRotation);
+}
+
 GenerationPlan generateEndPlate(const ComponentInput& input) noexcept {
     GenerationPlan plan;
     if (input.secondary.empty()) {

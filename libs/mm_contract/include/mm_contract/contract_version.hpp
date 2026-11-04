@@ -15,11 +15,11 @@
 namespace mm {
 
 inline constexpr int kContractVersionMajor = 1;
-inline constexpr int kContractVersionMinor = 9;
+inline constexpr int kContractVersionMinor = 10;
 inline constexpr int kContractVersionPatch = 0;
 
-// Tek string semver: "1.9.0".
-inline constexpr const char* kContractVersion = "1.9.0";
+// Tek string semver: "1.10.0".
+inline constexpr const char* kContractVersion = "1.10.0";
 
 // Istenen min surum mevcut kontrat tarafindan karsilaniyor mu?
 // Semver: major FARKLIYSA desteklenmez (ne ust ne alt); ayni majorda

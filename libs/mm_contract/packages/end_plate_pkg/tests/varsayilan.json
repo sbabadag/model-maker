@@ -1,12 +1,12 @@
 {
   "name": "varsayilan",
-  "description": "Kolon 300x300 (S235), kiris 200x400, tum parametreler varsayilan.",
+  "description": "Kolon 300x300 (S235), kiris 200x400, tum parametreler varsayilan. E: girdi kanonik (memberGeometryFromProfile).",
   "input": {
     "main": {
       "id": 1,
       "axisFrom": [0.0, 0.0, 0.0],
       "axisTo": [0.0, 0.0, 3000.0],
-      "refNormal": [0.0, 0.0, 1.0],
+      "refNormal": [0.0, 1.0, 0.0],
       "secWidth": 300.0,
       "secHeight": 300.0,
       "secWebThickness": 11.0,
@@ -17,8 +17,8 @@
     "secondary": [
       {
         "id": 2,
-        "axisFrom": [0.0, 0.0, 3000.0],
-        "axisTo": [2000.0, 0.0, 3000.0],
+        "axisFrom": [2000.0, 0.0, 3000.0],
+        "axisTo": [0.0, 0.0, 3000.0],
         "refNormal": [0.0, 0.0, 1.0],
         "secWidth": 200.0,
         "secHeight": 400.0,

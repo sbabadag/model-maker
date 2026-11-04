@@ -35,62 +35,52 @@ static RecipeArg S(const std::string& t) { RecipeArg a; a.text = t; return a; }
 
 static ComponentInput makeInput(double slopeDeg) {
     ComponentInput in;
+    // E: main (kolon) kanonik kurulur — axisTo = baglanti ucu (tepe).
+    const MemberSectionSpec colSec{300.0, 300.0, 11.0, 19.0, 0.0};
+    in.main = memberGeometryFromProfile(Vec3{0.0, 0.0, 0.0}, Vec3{0.0, 0.0, 3000.0},
+                                        /*connectionAtA=*/false, Vec3{0.0, 1.0, 0.0},
+                                        0.0, colSec);
     in.main.id = 1;
-    in.main.axisFrom = {0, 0, 0};
-    in.main.axisTo = {0, 0, 3000};
-    in.main.refNormal = {0, 1, 0};
-    in.main.secHeight = 300;
-    in.main.secWidth = 300;
-    in.main.secWebThickness = 11;
-    in.main.secFlangeThickness = 19;
-    in.main.sectionCenterOffset = 0.0;
 
-    MemberGeometry beam;
-    beam.id = 2;
+    // E: kiris kanonik kurulur — axisTo = baglanti ucu ({0,60,1500}).
+    const MemberSectionSpec beamSec{100.0, 200.0, 5.6, 8.5, 0.0};
     const double t = std::tan(slopeDeg * kPi / 180.0);
-    beam.axisFrom = {0, 1200, 1500 + 1140 * t};
-    beam.axisTo = {0, 60, 1500};
-    beam.refNormal = {0, 0, 1};
-    beam.secHeight = 200;
-    beam.secWidth = 100;
-    beam.secWebThickness = 5.6;
-    beam.secFlangeThickness = 8.5;
-    beam.sectionCenterOffset = 0.0;
+    MemberGeometry beam = memberGeometryFromProfile(
+        Vec3{0.0, 1200.0, 1500.0 + 1140.0 * t}, Vec3{0.0, 60.0, 1500.0},
+        /*connectionAtA=*/false, Vec3{0.0, 0.0, 1.0}, 0.0, beamSec);
+    beam.id = 2;
     in.secondary = {beam};
     return in;
 }
 
 static ComponentInput makeInputRotatedColumn() {
     ComponentInput in;
+    // E: main kolon (Top ankraj, asimetrik) kanonik kurulur.
+    const MemberSectionSpec colSec{240.0, 230.0, 7.5, 12.0, -115.0};
+    in.main = memberGeometryFromProfile(Vec3{-115.0, 12000.0, 0.0},
+                                        Vec3{-115.0, 12000.0, 5000.0},
+                                        /*connectionAtA=*/false, Vec3{0.0, 0.0, 1.0},
+                                        90.0, colSec);
     in.main.id = 45;
-    in.main.axisFrom = {-115.0, 12000.0, 0.0};
-    in.main.axisTo = {-115.0, 12000.0, 5000.0};
-    in.main.refNormal = {0, 0, 1};
-    in.main.secWidth = 240.0;
-    in.main.secHeight = 230.0;
-    in.main.secWebThickness = 7.5;
-    in.main.secFlangeThickness = 12.0;
-    in.main.sectionCenterOffset = -115.0;
-    in.main.profileRotation = 90.0;
-    MemberGeometry beam;
+    // E: kiris kanonik kurulur — baglanti ucu {0,12000,5000} (kolon tepesi).
+    const MemberSectionSpec beamSec{180.0, 400.0, 8.6, 13.5, 0.0};
+    MemberGeometry beam = memberGeometryFromProfile(
+        Vec3{0.0, 12000.0, 5000.0}, Vec3{5997.780613671378, 12000.0, 5986.683682028266},
+        /*connectionAtA=*/true, Vec3{0.0, 0.0, 1.0}, 0.0, beamSec);
     beam.id = 47;
-    beam.axisFrom = {0.0, 12000.0, 5000.0};
-    beam.axisTo = {5997.780613671378, 12000.0, 5986.683682028266};
-    beam.refNormal = {0, 0, 1};
-    beam.secWidth = 180.0;
-    beam.secHeight = 400.0;
-    beam.secWebThickness = 8.6;
-    beam.secFlangeThickness = 13.5;
-    beam.sectionCenterOffset = 0.0;
-    beam.profileRotation = 0.0;
     in.secondary = {beam};
     return in;
 }
 
 static ComponentInput makeInputManualEndPlateHeight() {
     ComponentInput in = makeInput(0.0);
-    in.secondary[0].axisFrom = {0, 1200, 3000};
-    in.secondary[0].axisTo = {0, 60, 3000};
+    // E: ayni kiris, baglanti ucunu koruyarak yeniden kanonik kurulur.
+    const MemberSectionSpec beamSec{100.0, 200.0, 5.6, 8.5, 0.0};
+    MemberGeometry beam = memberGeometryFromProfile(
+        Vec3{0.0, 1200.0, 3000.0}, Vec3{0.0, 60.0, 3000.0},
+        /*connectionAtA=*/false, Vec3{0.0, 0.0, 1.0}, 0.0, beamSec);
+    beam.id = 2;
+    in.secondary[0] = beam;
     in.params = {CompParam{L"endPlateHeight", 600.0}};
     return in;
 }
@@ -256,6 +246,9 @@ int main() {
     CHECK(!goldenJson.empty(), "golden dosyasi okundu");
 
     for (const auto& c : cases) {
+        // E: kanoniklik denetimi.
+        CHECK(isCanonicalMemberGeometry(c.in.main), "main kanonik");
+        CHECK(isCanonicalMemberGeometry(c.in.secondary.front()), "secondary kanonik");
         const GenerationPlan gen = generateHaunch40(c.in);
         const GenerationPlan rec = runRecipe(recipe, specs, c.in);
         CHECK(gen.ok, "generateHaunch40 ok");

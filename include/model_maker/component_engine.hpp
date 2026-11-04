@@ -525,6 +525,16 @@ MemberGeometry memberGeometryFromProfile(const Vec3& endA, const Vec3& endB,
 // Eksen sifir uzunlukta mi / kesit bilinmiyor mu? (fail-closed on kontrolu)
 bool memberGeometryUsable(const MemberGeometry& g) noexcept;
 
+// KANONIKLIK DENETIMI (E). Bir MemberGeometry, ancak ve ancak
+// memberGeometryFromProfile'un ayni girdiyle yeniden kurdugu sonucun birebir
+// aynisiyse KANONIKTIR. Golden ve paket test girdileri kanonik OLMAK
+// ZORUNDADIR: elde alan atamasiyla kurulan (memberGeometryFromProfile'dan
+// gecmeyen) girdi, eksen yonu ters / refNormal dejenere / rotation aralik
+// disinda kalabildigi icin ayni fiziksel uye icin farkli MemberGeometry ve
+// farkli planDigest uretir. Bu denetim, girdiyi DEGISTIRMEZ; yalniz kanonik
+// olup olmadigini soyler (fail-closed on kontrolu: ok=false -> reddedilir).
+bool isCanonicalMemberGeometry(const MemberGeometry& g) noexcept;
+
 GenerationPlan generateEndPlate(const ComponentInput& input) noexcept;
 
 ComponentType finPlateComponentType() noexcept;

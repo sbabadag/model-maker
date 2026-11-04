@@ -1,12 +1,12 @@
 {
   "name": "donuk_kolon_90",
-  "description": "Kolon 200x400, profileRotation 90 (kesit cercevesi doner). frame/contact yolu donusu yok saymamali.",
+  "description": "Kolon 200x400, profileRotation 90 (kesit cercevesi doner). frame/contact yolu donusu yok saymamali. E: girdi kanonik.",
   "input": {
     "main": {
       "id": 1,
       "axisFrom": [0.0, 0.0, 0.0],
       "axisTo": [0.0, 0.0, 3000.0],
-      "refNormal": [0.0, 0.0, 1.0],
+      "refNormal": [0.0, 1.0, 0.0],
       "secWidth": 200.0,
       "secHeight": 400.0,
       "secWebThickness": 8.6,
@@ -17,8 +17,8 @@
     "secondary": [
       {
         "id": 2,
-        "axisFrom": [0.0, 0.0, 3000.0],
-        "axisTo": [2000.0, 0.0, 3000.0],
+        "axisFrom": [2000.0, 0.0, 3000.0],
+        "axisTo": [0.0, 0.0, 3000.0],
         "refNormal": [0.0, 0.0, 1.0],
         "secWidth": 200.0,
         "secHeight": 400.0,

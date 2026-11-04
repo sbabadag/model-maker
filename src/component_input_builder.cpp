@@ -1,10 +1,15 @@
 #include "model_maker/component_input_builder.hpp"
 #include "model_maker/document.hpp"
 
+#include <cmath>
+
 namespace mm {
 
-MemberGeometry memberGeometryFromEntityProperties(
-    const EntityProperties& p, const std::vector<SteelProfile>& catalog) noexcept {
+namespace {
+
+// Bir EntityProperties + profil katalogundan kesit spec'i kurar (tek kaynak).
+MemberSectionSpec sectionSpecFromProperties(
+    const EntityProperties& p, const std::vector<SteelProfile>& catalog) {
     MemberSectionSpec spec;
     spec.width = 200.0;
     spec.height = 300.0;
@@ -23,22 +28,76 @@ MemberGeometry memberGeometryFromEntityProperties(
         case SectionAnchor::Center: spec.centerOffset = 0.0; break;
         }
     }
-    // Kanonik fonksiyon: axisTo = baglanti ucu (modelde oldugu gibi), axisFrom
-    // = uzak uc; refNormal eksene diklestirilir ve isareti kanoniklestirilir.
-    // (Dusey kolonda n ∥ axis -> profileSectionFrame fallback cercevesi birebir
-    // korunur; bkz. memberGeometryFromProfile.)
+    return spec;
+}
+
+// Noktadan dogru parcasina (segment) olan uzaklik (mm). main uyenin eksen
+// dogrusu icin kullanilir: kirisin hangi ucunun kolona daha yakin oldugunu
+// olcer (E / secenek C). Kesit sinir kutusu yerine eksen dogrusu yeterlidir —
+// baglanti ucu eksene (kolon gövdesine) yaklasir, uzak uc bariz sekilde uzak
+// kalir; Studio OCCT olcumu de ayni eksen-kesit kuralini uygular.
+double pointSegmentDistance(const Vec3& q, const Vec3& a, const Vec3& b) {
+    const double abx = b.x - a.x, aby = b.y - a.y, abz = b.z - a.z;
+    const double apx = q.x - a.x, apy = q.y - a.y, apz = q.z - a.z;
+    const double ab2 = abx * abx + aby * aby + abz * abz;
+    double t = 0.0;
+    if (ab2 > 1e-12) {
+        t = (apx * abx + apy * aby + apz * abz) / ab2;
+        if (t < 0.0) t = 0.0;
+        else if (t > 1.0) t = 1.0;
+    }
+    const double cx = a.x + t * abx, cy = a.y + t * aby, cz = a.z + t * abz;
+    const double dx = q.x - cx, dy = q.y - cy, dz = q.z - cz;
+    return std::sqrt(dx * dx + dy * dy + dz * dz);
+}
+
+} // namespace
+
+MemberGeometry memberGeometryFromEntityProperties(
+    const EntityProperties& p, const std::vector<SteelProfile>& catalog) noexcept {
+    // MAIN (ve tek basina kullanim): EKSEN YONU KURALI — axisTo = baglanti ucu.
+    // Modelde kolon alttan uste cizilir; axisTo = tepe = baglanti ucu. Bu kural
+    // ikincil uyenin cizim yonunden BAGIMSIZDIR (yalniz kendi eksenine bakar).
     return memberGeometryFromProfile(
         {p.axisToX, p.axisToY, p.axisToZ},       // endA = baglanti ucu
         {p.axisFromX, p.axisFromY, p.axisFromZ}, // endB = uzak uc
         /*connectionAtA=*/true,
         {p.sectionNormalX, p.sectionNormalY, p.sectionNormalZ},
-        p.profileRotation, spec);
+        p.profileRotation, sectionSpecFromProperties(p, catalog));
+}
+
+std::optional<MemberGeometry> memberGeometryFromEntityPropertiesAsSecondary(
+    const EntityProperties& p, const std::vector<SteelProfile>& catalog,
+    const MemberGeometry& main, std::wstring* error) noexcept {
+    const MemberSectionSpec spec = sectionSpecFromProperties(p, catalog);
+    const Vec3 sf{p.axisFromX, p.axisFromY, p.axisFromZ};
+    const Vec3 st{p.axisToX, p.axisToY, p.axisToZ};
+    const Vec3 n{p.sectionNormalX, p.sectionNormalY, p.sectionNormalZ};
+    // Belirsizlik toleransi (mm): iki uc bu esik icinde esit uzaksa ret.
+    constexpr double kAmbiguityTol = 1.0;
+    const double dFrom = pointSegmentDistance(sf, main.axisFrom, main.axisTo);
+    const double dTo = pointSegmentDistance(st, main.axisFrom, main.axisTo);
+    if (dFrom < dTo - kAmbiguityTol) {
+        // axisFrom = baglanti ucu.
+        return memberGeometryFromProfile(sf, st, /*connectionAtA=*/true, n,
+                                         p.profileRotation, spec);
+    }
+    if (dTo < dFrom - kAmbiguityTol) {
+        // axisTo = baglanti ucu.
+        return memberGeometryFromProfile(sf, st, /*connectionAtA=*/false, n,
+                                         p.profileRotation, spec);
+    }
+    // Belirsiz: iki uc esit uzaklikta (kiriş kolonun tam ortasindan geciyor
+    // gibi). Tahmin YOK — acik ret.
+    if (error)
+        *error = L"baglanti ucu belirsiz: kirisin iki ucu kolona esit uzaklikta (cizim yonunu degistirip tekrar deneyin)";
+    return std::nullopt;
 }
 
 std::optional<ComponentInput> componentInputFromDocument(
     const Document& doc, const std::vector<SteelProfile>& catalog,
     EntityId mainPart, const std::vector<EntityId>& secondaryParts,
-    const std::vector<CompParam>& params) {
+    const std::vector<CompParam>& params, std::wstring* error) {
     const auto mainIndex = doc.indexOfEntity(mainPart);
     if (!mainIndex) return std::nullopt;
     const auto hasSection = [&](std::size_t idx) {
@@ -50,13 +109,21 @@ std::optional<ComponentInput> componentInputFromDocument(
     in.main = memberGeometryFromEntityProperties(doc.models()[*mainIndex].properties(),
                                                  catalog);
     in.main.id = doc.modelId(*mainIndex);
+    // Ikincil uye baglanti ucu: GEOMETRIDEN (E / secenek C). Cizim yonu
+    // (axisFrom/axisTo yer degistirmis) sonucu DEGISTIRMEZ. Iki uc tolerans
+    // icinde esit uzaksa ACIK ret (tahmin yok).
     for (EntityId sid : secondaryParts) {
         const auto memberIndex = doc.indexOfEntity(sid);
         if (!memberIndex || !hasSection(*memberIndex)) continue;
-        MemberGeometry g = memberGeometryFromEntityProperties(
-            doc.models()[*memberIndex].properties(), catalog);
-        g.id = doc.modelId(*memberIndex);
-        in.secondary.push_back(g);
+        std::wstring e2;
+        std::optional<MemberGeometry> g = memberGeometryFromEntityPropertiesAsSecondary(
+            doc.models()[*memberIndex].properties(), catalog, in.main, &e2);
+        if (!g) {
+            if (error) *error = e2;
+            return std::nullopt;
+        }
+        g->id = doc.modelId(*memberIndex);
+        in.secondary.push_back(*g);
     }
     // Ikincil uye ZORUNLU DEGIL (taban levhasi gibi tek parcali tipler).
     in.params = params;

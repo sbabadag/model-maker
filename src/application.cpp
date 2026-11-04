@@ -5338,7 +5338,14 @@ std::optional<ComponentInput> Application::componentPreviewInput(EntityId compId
     for(EntityId sid:rec.secondaryParts) {
         const auto memberIndex=document_.indexOfEntity(sid);
         if(!memberIndex || !hasSection(*memberIndex))continue;
-        in.secondary.push_back(memberGeometryFor(document_,profileCatalog_,*memberIndex));
+        // E / secenek C: baglanti ucu GEOMETRIDEN (Studio OCCT ile ayni kural).
+        // Belirsizse (iki uc esit uzaklik) onizlemede ATLA (yikici degil).
+        std::wstring e2;
+        auto g=mm::memberGeometryFromEntityPropertiesAsSecondary(
+            document_.models()[*memberIndex].properties(),profileCatalog_,in.main,&e2);
+        if(!g)continue;
+        g->id=document_.modelId(*memberIndex);
+        in.secondary.push_back(*g);
     }
     // Ikincil uye ZORUNLU DEGIL: taban levhasi gibi tek parcali tipler de
     // onizleme cizebilsin (eksik ikincil -> generatorun kendi hatasi gosterilir).
@@ -5375,7 +5382,17 @@ std::optional<mm::ComponentInput> Application::componentInputForParts(
     input.main = memberGeometryFor(document_, profileCatalog_, parts[0]);
     input.secondary.reserve(parts.size() - 1);
     for (std::size_t i = 1; i < parts.size(); ++i) {
-        input.secondary.push_back(memberGeometryFor(document_, profileCatalog_, parts[i]));
+        // E / secenek C: baglanti ucu GEOMETRIDEN (Studio OCCT ile ayni kural).
+        // Belirsizse (iki uc esit uzaklik) ACIK ret — tahmin yok.
+        std::wstring e2;
+        auto g = mm::memberGeometryFromEntityPropertiesAsSecondary(
+            document_.models()[parts[i]].properties(), profileCatalog_, input.main, &e2);
+        if (!g) {
+            componentCommandWarn(*this, L"baglanti ucu belirsiz: " + e2);
+            return std::nullopt;
+        }
+        g->id = document_.modelId(parts[i]);
+        input.secondary.push_back(*g);
     }
     // Dejenere eksen / eksik kesit -> nullopt (cagiran uyariyi verir).
     if (!mm::memberGeometryUsable(input.main)) return std::nullopt;

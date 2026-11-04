@@ -135,6 +135,26 @@ Kurallar:
    `memberGeometryUsable(g)` bunu söyler (fail-closed).
 5. **Digest gevşetilmez.** Kanonikleştirme sadece aynı fiziksel üyenin tek
    gösterimini üretir; `generationPlanDigest` hesabı değişmez.
+6. **Golden ve paket test girdileri kanonik olmak zorundadır (1.10.0).**
+   Golden/test girdileri `MemberGeometry` alan atamasıyla DEĞİL,
+   `memberGeometryFromProfile` üzerinden kurulur; aksi halde aynı fiziksel üye
+   iki gösterimde farklı `MemberGeometry` (ve farklı digest) üretir. Denetim
+   `isCanonicalMemberGeometry(g)` ile yapılır: `g`, `memberGeometryFromProfile`
+   tarafından aynı girdiyle birebir yeniden kurulabilirse kanoniktir (id alanı
+   denetim dışıdır). Golden testleri ve paket yükleyicinin test girdisi replay'i
+   kanonik olmayan girdiyi açık mesajla REDDEDER (sessizce kanonikleştirmez).
+   Kanonik kural özeti: `axisTo` bağlantı ucu, `axisFrom` uzak uç; dönüş çift
+   simetrikte `[0,180)`, asimetrikte `[0,360)`.
+7. **Document'ten kurulan girdide bağlantı ucu geometriden (E / secenek C).**
+   `componentInputFromDocument` **ikincil** üyenin bağlantı ucunu çizim
+   yönünden değil **geometriden** belirler: iki uçtan `main` üyenin eksen
+   doğrusuna (kesit sınır kutusuna) **daha yakın olan uç** bağlantı ucudur
+   (`connectionAtA` buna göre kurulur). Böylece aynı kiriş iki çizim yönüyle
+   (axisFrom/axisTo yer değiştirmiş) aynı `MemberGeometry` ve aynı digest'i
+   verir; Studio OCCT ölçümüyle aynı kuraldır. İki uç tolerans içinde eşit
+   uzaksa (belirsiz) **açık ret** (`nullopt` + hata mesajı) — tahmin yok.
+   **main** (kolon) için eksen yönü kuralı korunur: `axisTo` bağlantı ucu
+   (ikincil üyenin çizim yönünden bağımsız).
 
 Kabul testi: `mm_contract_member_geometry_canonical_test` — aynı üye iki farklı
 uç sırasıyla verildiğinde aynı `MemberGeometry` **ve** aynı `planDigest`;
