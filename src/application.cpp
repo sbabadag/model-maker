@@ -5348,13 +5348,12 @@ std::optional<ComponentInput> Application::componentPreviewInput(EntityId compId
     if(!mainIndex)return std::nullopt;
     // ST-4 GUI (1): onizleme girdisi ComponentInstanceRecord'un mainPart /
     // secondaryParts'indan MemberGeometry olarak kurulur. KATALOGDA OLMAYAN
-    // (ozel) profiller artik onizlemeyi BOS BIRAKMAZ: modelde kayitli kesit
-    // olculeri (secWidth/secHeight) varsa da kurulur; hicbiri yoksa nullopt.
+    // profiller onizlemeyi BOS BIRAKIR (uydurma 200x300 kesit gostermemek
+    // icin — f3bc942). NOT: "modelde kayitli kesit olcusu" yolu henuz yok;
+    // EntityProperties secWidth/secHeight tasimiyor (d83fb3a bu yarim kalmis
+    // erisimi eklemisti, derlemeyi kiriyordu).
     const auto hasSection=[&](std::size_t idx) {
-        if (findProfile(profileCatalog_, document_.models()[idx].properties().profileName) != nullptr)
-            return true;
-        return document_.models()[idx].properties().secWidth > 0.0 &&
-               document_.models()[idx].properties().secHeight > 0.0;
+        return findProfile(profileCatalog_, document_.models()[idx].properties().profileName) != nullptr;
     };
     if(!hasSection(*mainIndex))return std::nullopt;
     ComponentInput in;
