@@ -66,6 +66,11 @@ main.<alan> / secondary_N.<alan>  üye alanı: h, b, tw, tf, length
 Bir çerçeve `MemberLocalFrame`'tir: `origin` + ortonormal `u`/`v`/`w`. Bloklar
 çerçeve üretir ve tüketir; levha/bulon/kesim hep bir çerçeveye göre yerleşir.
 
+Salt okunur erişim: `runRecipeFrames(recipe, specs, input)` generic çerçeve
+üreten her adımın çerçevesini `adım id → {origin, u, v, w}` olarak döndürür
+(`recipe.hpp`); plan ve digest DEĞİŞMEZ (runRecipe ile aynı çekirdek). Haunch
+opak çerçeveleri (frame.plumb_face, haunch.*) bu API'de YER ALMAZ.
+
 ## v0 taşları (blok kataloğu)
 
 | Taş | Argümanlar | Çıktı |

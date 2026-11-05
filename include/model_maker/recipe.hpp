@@ -107,6 +107,27 @@ std::vector<BlockDeclInfo> blockDeclarations();
 
 // --- YORUMCULAR --------------------------------------------------------------
 
+// N — salt okunur cerceve API'si: bir recipe'yi yorumlayip GENERIC cerceve ureten
+// her adimin (frame.member_end/offset/rotate/member_face, sonra frame.contact)
+// cercevesini adim id'sine esler. Studio'nun cerceveyi okumak icin 1x1x1
+// plate.rect "hilesini" kullanmasina gerek kalmaz. Plan/digest DEGISMEZ:
+// runRecipe ile AYNI cekirdegi calistirir, plan disari atilir. Haunch opak
+// cerceveleri (frame.plumb_face, haunch.*) disarida VERILMEZ — yalniz generic
+// ad uzayi (ctx.frames).
+struct RecipeFrame {
+    Vec3 origin{};
+    Vec3 u{1.0, 0.0, 0.0};
+    Vec3 v{0.0, 1.0, 0.0};
+    Vec3 w{0.0, 0.0, 1.0};
+};
+
+// Basarisiz recipe'de bos harita doner (ok=false davranisiyla tutarli);
+// yorumlama hatasini ayri bildirmez (bunun icin runRecipe kullanin).
+std::map<std::string, RecipeFrame> runRecipeFrames(
+    const Recipe& recipe,
+    const std::vector<CompParamSpec>& specs,
+    const ComponentInput& input) noexcept;
+
 // recipe -> GenerationPlan. specs = component tipinin parametre semasi (param.*
 // erisimi ve hizalama icin); input = main/secondary geometri + parametre
 // degerleri. Basarisizlikta GenerationPlan.ok=false ve error Turkce doludur;

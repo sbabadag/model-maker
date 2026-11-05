@@ -1167,6 +1167,40 @@ static void testMemberFace() {
     }
 }
 
+// N: runRecipeFrames — generic cerceveler salt okunur disari verilir.
+static void testRunRecipeFrames() {
+    const ComponentInput in = makeInput();
+    Recipe r;
+    RecipeStep c; c.id = "c"; c.use = "frame.member_end";
+    c.args["member"] = S("main"); c.args["end"] = S("end");
+    RecipeStep o; o.id = "o"; o.use = "frame.offset";
+    o.args["frame"] = S("c"); o.args["dw"] = S("10");
+    r.steps = {c, o};
+
+    const auto frames = runRecipeFrames(r, {}, in);
+    CHECK(frames.size() == 2, "runRecipeFrames: 2 generic cerceve doner");
+    const auto fc = frames.find("c");
+    CHECK(fc != frames.end() && near3(fc->second.origin, {0.0, 0.0, 3000.0}),
+          "runRecipeFrames: frame.member_end origin");
+    if (fc != frames.end())
+        CHECK(near3(fc->second.w, {0.0, 0.0, 1.0}), "runRecipeFrames: member_end w = eksen");
+    const auto fo = frames.find("o");
+    CHECK(fo != frames.end() && near3(fo->second.origin, {0.0, 0.0, 3010.0}),
+          "runRecipeFrames: frame.offset origin kaydi");
+
+    // runRecipe ile plan ayni kalir (digest degismez): ayni recipe + ayni girdi.
+    const GenerationPlan plan = runRecipe(r, {}, in);
+    CHECK(plan.ok, "runRecipeFrames: runRecipe hala ok (plan degismedi)");
+
+    // Basarisiz recipe -> bos harita.
+    Recipe bad;
+    RecipeStep b; b.id = "x"; b.use = "frame.offset";
+    b.args["frame"] = S("yok");   // tanimsiz cerceve -> statik ret
+    bad.steps = {b};
+    const auto emptyFrames = runRecipeFrames(bad, {}, in);
+    CHECK(emptyFrames.empty(), "runRecipeFrames: basarisiz recipe -> bos harita");
+}
+
 int main() {
     CHECK(std::string(kContractVersion) == "1.11.0", "contract surumu 1.7.0");
     testExpressionEvaluator();
@@ -1185,6 +1219,7 @@ int main() {
     testExprListStatic();
     testBlockDeclarations();
     testMemberFace();
+    testRunRecipeFrames();
     std::printf("recipe test: %s (%d hata)\n", failures ? "HATALI" : "OK", failures);
     return failures ? 1 : 0;
 }

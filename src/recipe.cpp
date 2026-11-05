@@ -1896,16 +1896,19 @@ RecipeValidation validateRecipe(const Recipe& recipe,
 }
 
 // --- YORUMCU ----------------------------------------------------------------
-GenerationPlan runRecipe(const Recipe& recipe,
-                         const std::vector<CompParamSpec>& specs,
-                         const ComponentInput& input) noexcept {
-    GenerationPlan plan;
+// Ortak cekirdek: runRecipe ve runRecipeFrames AYNI koddan gecer (plan/digest
+// birebir). framesOut != nullptr ise generic cerceve ureten her adimin
+// (producesGenericFrame) cercevesi adim id'siyle kaydedilir.
+static void runRecipeCore(const Recipe& recipe,
+                          const std::vector<CompParamSpec>& specs,
+                          const ComponentInput& input, GenerationPlan& plan,
+                          std::map<std::string, MemberLocalFrame>* framesOut) {
     plan.ok = true;
     const RecipeValidation v = validateRecipe(recipe, specs);
     if (!v.ok) {
         plan.ok = false;
         plan.error = v.message;
-        return plan;
+        return;
     }
     EvalCtx ctx{input, recipe, specs, {}, {}, {}, {}, {}, 0, {}};
     const std::vector<CompParam> aligned = alignParamsToSpecs(specs, input.params);
@@ -1923,24 +1926,55 @@ GenerationPlan runRecipe(const Recipe& recipe,
     for (const auto& st : recipe.steps) {
         if (!st.check.empty()) {
             double cv = 0.0;
-            if (!evaluateExpr(ctx, st.check, cv)) { plan.ok = false; plan.error = ctx.error; return plan; }
+            if (!evaluateExpr(ctx, st.check, cv)) { plan.ok = false; plan.error = ctx.error; return; }
             if (cv == 0.0) {
                 plan.ok = false;
                 plan.error = st.message.empty() ? L"check basarisiz" : wideFromUtf8(st.message);
-                return plan;
+                return;
             }
             continue;
         }
         if (!st.when.empty()) {
             double wv = 0.0;
-            if (!evaluateExpr(ctx, st.when, wv)) { plan.ok = false; plan.error = ctx.error; return plan; }
+            if (!evaluateExpr(ctx, st.when, wv)) { plan.ok = false; plan.error = ctx.error; return; }
             if (wv == 0.0) continue;  // kosul saglanmadi -> atla
         }
         const BlockDecl* decl = findBlock(st.use);
-        if (!decl) { plan.ok = false; plan.error = L"bilinmeyen blok: " + wideFromUtf8(st.use); return plan; }
-        if (!decl->fn(ctx, st, plan)) { plan.ok = false; plan.error = ctx.error; return plan; }
+        if (!decl) { plan.ok = false; plan.error = L"bilinmeyen blok: " + wideFromUtf8(st.use); return; }
+        if (!decl->fn(ctx, st, plan)) { plan.ok = false; plan.error = ctx.error; return; }
+        // Generic cerceve urettiyse (ve uretildiyse) disari kaydet.
+        if (framesOut && producesGenericFrame(st.use)) {
+            const auto it = ctx.frames.find(st.id);
+            if (it != ctx.frames.end()) (*framesOut)[st.id] = it->second;
+        }
     }
+}
+
+GenerationPlan runRecipe(const Recipe& recipe,
+                         const std::vector<CompParamSpec>& specs,
+                         const ComponentInput& input) noexcept {
+    GenerationPlan plan;
+    runRecipeCore(recipe, specs, input, plan, nullptr);
     return plan;
+}
+
+// N — salt okunur cerceve API'si (Studio'nun plate.rect hilesi yerine).
+std::map<std::string, RecipeFrame> runRecipeFrames(
+    const Recipe& recipe, const std::vector<CompParamSpec>& specs,
+    const ComponentInput& input) noexcept {
+    GenerationPlan plan;
+    std::map<std::string, MemberLocalFrame> frames;
+    runRecipeCore(recipe, specs, input, plan, &frames);
+    std::map<std::string, RecipeFrame> out;
+    for (const auto& kv : frames) {
+        RecipeFrame f;
+        f.origin = kv.second.origin;
+        f.u = kv.second.u;
+        f.v = kv.second.v;
+        f.w = kv.second.w;
+        out[kv.first] = f;
+    }
+    return out;
 }
 
 } // namespace mm
