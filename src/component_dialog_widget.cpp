@@ -273,7 +273,11 @@ void ComponentSchematicView::paintEvent(QPaintEvent*) {
         for (const auto& pr : autoDrawing_.prims) {
             const bool hot = !hp.empty() && pr.role == hp;
             const bool effDim = pr.detail == "dim" || pr.detail == "dimlabel";
-            const QColor hotColor(0xD0, 0x30, 0x30);
+            // MM-8b duzeltme: odak/hover vurgusu KIRMIZI OLAMAZ (kirmizi kontrol
+            // ihlaline ayrilmis). Tek kaynak: kParamHighlightRgb (turuncu).
+            const QColor hotColor(static_cast<int>(kParamHighlightR),
+                                  static_cast<int>(kParamHighlightG),
+                                  static_cast<int>(kParamHighlightB));
             const QColor dimColor = pr.dashed ? QColor(0x9A, 0x9A, 0x9A)
                                               : QColor(0x40, 0x40, 0x50);
             switch (pr.kind) {

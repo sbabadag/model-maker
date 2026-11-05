@@ -28,6 +28,13 @@ int main() {
     // Sabit 1.6.0'dan itibaren public sozlesmede.
     check(mm::kContractVersionMajor == 1 && mm::kContractVersionMinor >= 7,
           "contract >= 1.7.0 (gorsel sabit public)");
+    // MM-8b duzeltme: odak/hover vurgu rengi kirmizi DEGIL (turuncu), tek kaynak.
+    check(mm::kParamHighlightRgb == 0xD47B2Cu, "vurgu turuncu 0xD47B2C");
+    check(mm::kParamHighlightR == 212u && mm::kParamHighlightG == 123u &&
+              mm::kParamHighlightB == 44u,
+          "vurgu kanallari RGB(212,123,44)");
+    check(mm::kParamHighlightRgb != 0xD43A3Au && mm::kParamHighlightRgb != 0xD03030u,
+          "vurgu ihlal kirmizisindan ayri (0xD43A3A/0xD03030)");
 
     if (failures) {
         std::printf("%d FAIL\n", failures);

@@ -26,4 +26,23 @@ inline constexpr unsigned kPlateGreyB = kPlateGreyRgb & 0xFFu;
 static_assert(kPlateGreyR == 170u && kPlateGreyG == 170u && kPlateGreyB == 170u,
               "levha grisi RGB(170,170,170) olmali (Studio ile ortak sabit)");
 
+// ============================================================================
+// PARAMETRE VURGU RENGI (odak/hover) — KALICI, TEK KAYNAK.
+//
+// Kural (kullanici karari, MM-8b sonrasi duzeltme): odak/hover olcu vurgusu
+// KIRMIZI OLAMAZ — kirmizi, kontrol ihlali (failed check) icin ayrilmistir.
+// Vurgu turuncudur. Bu sabit hem 2B sematikte hem 3B onizlemede kullanilir;
+// iki tarafta ayri sabit tutmak renk kaymasinin klasik kaynagidir.
+// ============================================================================
+
+inline constexpr std::uint32_t kParamHighlightRgb = 0xD47B2Cu;  // RGB(212,123,44)
+
+inline constexpr unsigned kParamHighlightR = (kParamHighlightRgb >> 16) & 0xFFu;
+inline constexpr unsigned kParamHighlightG = (kParamHighlightRgb >> 8) & 0xFFu;
+inline constexpr unsigned kParamHighlightB = kParamHighlightRgb & 0xFFu;
+
+static_assert(kParamHighlightR == 212u && kParamHighlightG == 123u &&
+                  kParamHighlightB == 44u,
+              "vurgu turuncu RGB(212,123,44) olmali (ihlal kirmizisindan ayri)");
+
 }  // namespace mm

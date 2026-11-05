@@ -948,7 +948,10 @@ void ComponentLivePreviewWidget::paintEvent(QPaintEvent*) {
         for (std::size_t k = 0; k < lineA.size(); ++k) {
             const QPointF a = lineA[k], b = lineB[k];
             const bool hot = highlight_ == callouts_[dimIdx[k]].name;
-            painter.setPen(QPen(hot ? QColor("#d47b2c") : QColor("#25647c"), hot ? 2.0 : 1.25));
+            painter.setPen(QPen(hot ? QColor(static_cast<int>(mm::kParamHighlightR),
+                                             static_cast<int>(mm::kParamHighlightG),
+                                             static_cast<int>(mm::kParamHighlightB))
+                                    : QColor("#25647c"), hot ? 2.0 : 1.25));
             painter.setBrush(Qt::NoBrush);
             painter.drawLine(a, b);
             const double dist = std::hypot(b.x() - a.x(), b.y() - a.y());
@@ -983,10 +986,16 @@ void ComponentLivePreviewWidget::paintEvent(QPaintEvent*) {
         if(!boltInspector) {
             const QPointF target=project(roleAnchor(anchorRole));
             const QPointF end=c.spin->geometry().center();
-            painter.setPen(QPen(highlight_==c.name?QColor("#d47b2c"):QColor("#8295a8"),
+            painter.setPen(QPen(highlight_==c.name?QColor(static_cast<int>(mm::kParamHighlightR),
+                                                          static_cast<int>(mm::kParamHighlightG),
+                                                          static_cast<int>(mm::kParamHighlightB))
+                                                :QColor("#8295a8"),
                                 highlight_==c.name?2.2:1.3));
             painter.drawLine(target,end);
-            painter.setBrush(QColor(highlight_==c.name?"#e38b32":"#ffffff"));
+            painter.setBrush(QColor(highlight_==c.name?QColor(static_cast<int>(mm::kParamHighlightR),
+                                                              static_cast<int>(mm::kParamHighlightG),
+                                                              static_cast<int>(mm::kParamHighlightB))
+                                                     :QColor("#ffffff")));
             painter.drawEllipse(target,3.8,3.8);
         }
         // In bolt inspector mode the dimension lines already point to
