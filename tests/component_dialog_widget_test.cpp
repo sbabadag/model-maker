@@ -446,7 +446,7 @@ int main(int argc, char** argv) {
         h40.show();
         QApplication::processEvents();
         const auto previews=h40.findChildren<mm::ComponentLivePreviewWidget*>();
-        CHECK(previews.size()==4,"Haunch 40: main 3D + 3 live orthographic previews");
+        CHECK(previews.size()==1,"MM-8a/2: tek ana 3B onizleme (alt serit kaldirildi)");
         auto* left = previews.empty()?nullptr:previews.first();
         CHECK(left!=nullptr,"Haunch 40: real 3D preview widget exists");
         // Stiffeners: every optional one is drawn as a grey ghost while OFF;
@@ -769,7 +769,7 @@ int main(int argc, char** argv) {
                   "P4: wedge depth remains strictly above tip + 25 mm");
             if(left)for(auto* p:previews)
                 CHECK(p->previewPlan().ok,
-                      "P4: main 3D and all 3 orthographic plans stay valid");
+                      "P4: main 3D plan stays valid");
             // Loading a different component's saved parameters must clear
             // limits inherited from the previously edited connection.
             h40.setParams({
@@ -799,7 +799,7 @@ int main(int argc, char** argv) {
                   "P4: existing M25/22 dialog loads as valid M25/27 draft");
             for(auto* p:previews)
                 CHECK(p->previewPlan().ok,
-                      "P4: loaded saved dimensions keep 3D/orthographic previews");
+                      "P4: loaded saved dimensions keep 3D preview valid");
 
             // Independent upper and lower CLEAR EDGE offsets. Geometry
             // must move only the selected bolt group, not the end plate.
@@ -1197,7 +1197,7 @@ int main(int argc, char** argv) {
                 if (pv->isCompact()) ++thumbnails;
                 else if (!main3d) main3d = pv;
             }
-            CHECK(thumbnails == 3, "GUI-1: 3 ortografik onizleme (On/Yan/Ust) VAR");
+            CHECK(thumbnails == 0, "MM-8a/2: alt ortografik serit KALDIRILDI (0 kucuk onizleme)");
             auto* sch = w.findChild<mm::ComponentSchematicView*>();
             CHECK(sch && sch->isHidden(), "GUI-1: 2B sematik varsayilan GIZLI");
 

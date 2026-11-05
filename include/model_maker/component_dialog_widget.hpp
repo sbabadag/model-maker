@@ -195,7 +195,6 @@ private:
 
     ComponentSchematicView* schematic_{};
     ComponentLivePreviewWidget* nativePreview_{};
-    std::vector<ComponentLivePreviewWidget*> thumbnailViews_;
     QScrollArea* scroll_{};
     QWidget* paramBody_{};
     QVBoxLayout* paramLayout_{};

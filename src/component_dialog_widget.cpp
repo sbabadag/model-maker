@@ -378,27 +378,10 @@ ComponentDialogWidget::ComponentDialogWidget(const ComponentDialogDefinition& de
         });
         nativePreview_->setParams(current_);
         vertical->addWidget(nativePreview_,1);
-        // Three REAL orthographic projections of the SAME native generator
-        // plan, not separate static/embedded images.
-        auto* orthos=new QHBoxLayout;
-        for(const auto& view : {
-              std::pair<const char*,const char*>{"front","On"},
-              {"side","Yan"},{"top","Ust"}}) {
-            auto* small=new ComponentLivePreviewWidget(left);
-            small->setCompact(true);
-            small->setTypeId(def_.typeId);
-            small->setPreviewDefinition(def_.schema.preview);
-            small->setFixedHeight(100);
-            small->setView(view.first);
-            small->setParams(current_);
-            const std::string key=view.first;
-            small->setOnPick([this,key]() {
-                if(nativePreview_)nativePreview_->setView(key);
-            });
-            thumbnailViews_.push_back(small);
-            orthos->addWidget(small,1);
-        }
-        vertical->addLayout(orthos);
+        // MM-8a/2: ALTTAN 4 (bu kodda 3) kucuk ortografik onizleme seridi
+        // KALDIRILDI. Ustteki 3D/On/Yan/Ust dugmeleri gorunum secimini zaten
+        // yapiyor; bu serit gereksiz yer kapliyordu. Bosalan alan ana 3B
+        // onizlemeye (stretch 1) kalir.
         // MM-7 item 2: checks[] tablosu onizleme panelinin altinda. Ihlal olan
         // kontrol KIRMIZI satirla, gecen YESIL satirla gosterilir; tablo ayni
         // zamanda OK kapisini besler (refreshChecks). objectName, testlerin
@@ -1554,10 +1537,6 @@ void ComponentDialogWidget::setPreviewInput(const ComponentInput& input) {
         nativePreview_->setInput(input);
         const auto params=resultParams();
         nativePreview_->setParams(params);
-        for(auto* view:thumbnailViews_) {
-            view->setInput(input);
-            view->setParams(params);
-        }
     }
     refreshChecks();
 }
@@ -1596,7 +1575,6 @@ void ComponentDialogWidget::ensureAutoPreviewDefinition(const ComponentInput& in
     if (autoPreviewTried_) {
         if (autoPreviewOk_) {
             nativePreview_->setPreviewDefinition(autoPreviewDef_);
-            for (auto* v : thumbnailViews_) v->setPreviewDefinition(autoPreviewDef_);
         }
         return;
     }
@@ -1610,7 +1588,6 @@ void ComponentDialogWidget::ensureAutoPreviewDefinition(const ComponentInput& in
     autoPreviewDef_ = r.definition;
     autoPreviewOk_ = true;
     nativePreview_->setPreviewDefinition(autoPreviewDef_);
-    for (auto* v : thumbnailViews_) v->setPreviewDefinition(autoPreviewDef_);
 }
 
 void ComponentDialogWidget::releaseFixedPlateSizeOnEdgeEdit(
@@ -1810,7 +1787,6 @@ void ComponentDialogWidget::updatePreviewFromForm(const std::wstring& changed) {
         enforceHaunchInputLimits(changed);
         const auto params=resultParams();
         nativePreview_->setParams(params);
-        for(auto* view:thumbnailViews_)view->setParams(params);
     }
     refreshChecks();
 }
