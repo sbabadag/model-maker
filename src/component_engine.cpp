@@ -473,7 +473,10 @@ CompParamSpec stringParam(const std::wstring& name, const std::wstring& def,
 ComponentType endPlateComponentType() noexcept {
     ComponentType t;
     t.typeId = L"beam_to_column_end_plate";
-    t.schemaVersion = 1;
+    // v2: boltCountY varsayilani 2 -> 0 (otomatik) oldu (429f1f5). Eski dosyalar
+    // (v1) boltCountY yazmamis olabilir; v1 -> v2 migration o durumda 2'ye
+    // sabitler ki eski geometri korunsun (bkz. document.cpp yukleme yolu).
+    t.schemaVersion = 2;
     t.displayName = L"Beam to Column End Plate";
     t.params = {
         lengthParam(L"plateThickness", L"mm", 12.0, 4.0, 100.0, L"levha kalinligi"),

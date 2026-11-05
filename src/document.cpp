@@ -2127,6 +2127,17 @@ void Document::commitFromMmw8(Mmw8Document&& mdoc) {
             continue;
         }
         rec.orphan = false;
+        // Surumlu migration (End Plate v1 -> v2): boltCountY varsayilani 2'den
+        // 0'a (otomatik) degisti. Eski dosyada (schemaVersion < 2) boltCountY
+        // yazilmamis olabilir; o durumda eski geometriyi KORUMAK icin 2'ye
+        // sabitle. Yeni dosyalarda eksik -> 0 (otomatik) kalir.
+        if (type->typeId == L"beam_to_column_end_plate" && rec.schemaVersion < 2) {
+            bool hasBoltCountY = false;
+            for (const auto& p : rec.params)
+                if (p.name == L"boltCountY") { hasBoltCountY = true; break; }
+            if (!hasBoltCountY)
+                rec.params.push_back({L"boltCountY", CompParamValue{2}});
+        }
         rec.params = alignParamsToSpecs(type->params, rec.params);
         rec.schemaVersion = type->schemaVersion;
     }

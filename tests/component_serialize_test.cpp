@@ -213,7 +213,7 @@ static void testDocumentRoundTrip() {
         check(!got.orphan, "bilinen tip orphan degil");
         check(got.dirty, "yuklenen kayit kirli");
         check(got.enabled, "enabled korunur");
-        check(got.schemaVersion == 1, "schemaVersion korunur");
+        check(got.schemaVersion == 2, "schemaVersion 1 -> 2 (migration)");
         bool gradeOk = false;
         int countY = -1;
         bool hasBeamRef = false;
@@ -230,6 +230,32 @@ static void testDocumentRoundTrip() {
     }
     std::error_code ec;
     std::filesystem::remove(path, ec);
+}
+
+// 2b) Yeni surum (v2) kaydinda boltCountY eksikse yeni varsayilan 0 (otomatik)
+//     kalir; eski (v1) kaydinda eksikse migration 2'ye sabitler (geometri korunur).
+static void testBoltCountYVersionedDefault() {
+    std::printf("Test 2b: boltCountY surumlu varsayilan (v1 -> 2, v2 -> 0)\n");
+    const auto loadAndGetCountY = [](int schemaVersion) -> int {
+        const auto path = tempPath("mmw8_bolty_version.mmw");
+        ComponentInstanceRecord rec = buildRichRecord(kInvalidEntityId);
+        rec.schemaVersion = schemaVersion;
+        Document doc;
+        doc.addComponentInstance(rec);
+        doc.save(path);
+        Document loaded;
+        loaded.load(path);
+        int countY = -1;
+        if (!loaded.componentInstances().empty())
+            for (const auto& p : loaded.componentInstances()[0].params)
+                if (p.name == L"boltCountY")
+                    if (const auto* i = std::get_if<int>(&p.value)) countY = *i;
+        std::error_code ec;
+        std::filesystem::remove(path, ec);
+        return countY;
+    };
+    check(loadAndGetCountY(1) == 2, "v1: eksik boltCountY -> 2 (eski geometri korunur)");
+    check(loadAndGetCountY(2) == 0, "v2: eksik boltCountY -> 0 (otomatik)");
 }
 
 // 3) Bilinmeyen typeId -> orphan (COKME YOK), parametreler kaybolmaz.
@@ -467,6 +493,7 @@ int main() {
     registerBuiltInComponents(ComponentRegistry::instance());
     testCodecRoundTrip();
     testDocumentRoundTrip();
+    testBoltCountYVersionedDefault();
     testUnknownTypeOrphan();
     testUndoRedo();
     testSectionAnchorRoundTrip();
