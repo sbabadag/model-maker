@@ -95,6 +95,24 @@ int main() {
               "(2) acik ret mesaji aciklayici (sigmiyor)");
     }
 
+    // --- (3) ACIK boltCountY=4, IPE200 (200 mm): 4 sira M20 sigmaz -> fail-closed
+    //     (eski OCC kabul testlerinin 2x4 M20 / 200 mm senaryosunun karsiligi).
+    {
+        Document doc;
+        EntityId col = addMember(doc, "HEA300", 0.0, 0.0, 0.0, 0.0, 0.0, 3000.0,
+                                 0.0, 0.0, 1.0, 0.0, SectionAnchor::Center);
+        EntityId beam = addMember(doc, "IPE200", 0.0, 0.0, 3000.0, 2000.0, 0.0, 3000.0,
+                                  0.0, 0.0, 1.0, 90.0, SectionAnchor::Center);
+        auto in = componentInputFromDocument(doc, cat, col, {beam});
+        CHECK(in.has_value(), "(3) girdi kuruldu");
+        in->params.push_back(CompParam{L"boltDiameter", CompParamValue{20.0}});
+        in->params.push_back(CompParam{L"boltCountY", CompParamValue{4}});  // ACIK 4 satir
+        const GenerationPlan plan = generateEndPlate(*in);
+        CHECK(!plan.ok, "(3) acik 4 satir (IPE200, 200 mm) fail-closed");
+        CHECK(plan.error.find(L"sigmiyor") != std::wstring::npos,
+              "(3) acik ret mesaji aciklayici (sigmiyor)");
+    }
+
     std::printf("bolt rows reduced test: %s (%d hata)\n", failures ? "BASARISIZ" : "OK",
                 failures);
     return failures ? 1 : 0;

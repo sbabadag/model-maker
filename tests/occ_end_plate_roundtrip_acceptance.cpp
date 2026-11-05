@@ -5,7 +5,7 @@
 // degisiminde levha, bulon ve delikleri YENIDEN HESAPLAYABILMESI.
 //
 // Senaryo:
-//   HEB300 kolon + IPE200 kiris + End Plate + 2x4 M20 BoltGroup kur -> MMW8
+//   HEB300 kolon + IPE300 kiris + End Plate + 2x4 M20 BoltGroup kur -> MMW8
 //   kaydet -> kapat/yukle -> kimlikleri karsilastir -> kolonu HEB400'e
 //   degistir -> levha/bulon/delik yeniden hesaplanir -> tekrar kaydet/ac ->
 //   parametrik duzenlenebilir kalir.
@@ -70,7 +70,7 @@ int main() {
     // --- Profiller ---
     const SteelProfile heb300 = makeProfile("HEB300", 300.0, 300.0, 11.0, 19.0);
     const SteelProfile heb400 = makeProfile("HEB400", 400.0, 400.0, 13.5, 24.0);
-    const SteelProfile ipe200 = makeProfile("IPE200", 200.0, 100.0, 5.6, 8.5);
+    const SteelProfile ipe300 = makeProfile("IPE300", 300.0, 150.0, 7.1, 10.7);
     const SectionDims dims300{300.0, 300.0, 11.0, 19.0};
     const SectionDims dims400{400.0, 400.0, 13.5, 24.0};
 
@@ -94,9 +94,12 @@ int main() {
     ReferencePlane face;
     face.origin = contact.contactPoint;
     face.normal = contact.outwardNormal;
+    // Kesit yuksekligi 300 mm (IPE300 sinifi): 4 dikey sira M20 EC3 p1>=2.2*d0
+    // (48.4 mm) ile sigar (sp=(300-2*35)/3=76.7 >= 48.4). IPE200 (200 mm) 4
+    // siraya sigmadigi icin (sp=43.3 < 48.4) 8 bulon kabulu burada gecerli.
     EndPlatePlacement placement =
         computeEndPlatePlacementOnFace(face, params.gap, /*secWidth*/ 100.0,
-                                       /*secHeight*/ 200.0, params);
+                                       /*secHeight*/ 300.0, params);
     check(boltGroupBoltOrigins(placement.bolts).size() == 8, "2x4 = 8 bulon");
     check(approx(placement.plateCenter.y, 6.0), "levha merkezi Y=+6 (gap=0, t=12)");
 
@@ -121,13 +124,13 @@ int main() {
     store->set(colId, colSolid);
     store->setBaseVersion(colId, store->activeVersion(colId));
 
-    // Kiris modeli + kati (IPE200, -Y boyunca).
-    const TopoDS_Shape beamSolid = extrudeProfileSolid(ipe200, {0, 1000, 1500}, {0, 60, 1500},
+    // Kiris modeli + kati (IPE300, -Y boyunca).
+    const TopoDS_Shape beamSolid = extrudeProfileSolid(ipe300, {0, 1000, 1500}, {0, 60, 1500},
                                                        0.0, {0, 0, 1});
     WireframeModel beamModel = shapeToWireframeWithFaces(beamSolid, 0.15);
     {
         EntityProperties p = beamModel.properties();
-        p.profileName = "IPE200";
+        p.profileName = "IPE300";
         p.axisFromX = 0; p.axisFromY = 1000; p.axisFromZ = 1500;
         p.axisToX = 0; p.axisToY = 60; p.axisToZ = 1500;
         beamModel.setProperties(std::move(p));
@@ -232,7 +235,7 @@ int main() {
         ReferencePlane f2;
         f2.origin = c2.contactPoint;
         f2.normal = c2.outwardNormal;
-        EndPlatePlacement p2 = computeEndPlatePlacementOnFace(f2, params.gap, 100.0, 200.0,
+        EndPlatePlacement p2 = computeEndPlatePlacementOnFace(f2, params.gap, 100.0, 300.0,
                                                               params);
         check(approx(p2.plateCenter.y, 6.0), "HEB400: levha Y=+6 (ust yuzey sabit)");
         check(boltGroupBoltOrigins(p2.bolts).size() == 8, "HEB400: hala 8 bulon");

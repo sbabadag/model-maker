@@ -95,8 +95,10 @@ int main() {
     ReferencePlane face;
     face.origin = contact.contactPoint;
     face.normal = contact.outwardNormal;
+    // Kesit yuksekligi 300 mm: 4 dikey sira M20 EC3 p1>=2.2*d0 (48.4 mm) sigar
+    // (sp=(300-2*35)/3=76.7); IPE200 (200 mm) 4 siraya sigmaz (sp=43.3).
     EndPlatePlacement placement =
-        computeEndPlatePlacementOnFace(face, params.gap, 100.0, 200.0, params);
+        computeEndPlatePlacementOnFace(face, params.gap, 100.0, 300.0, params);
     check(boltGroupBoltOrigins(placement.bolts).size() == 8, "2x4 = 8 bulon");
 
     // ================== (A) MEVCUT PRODUCTION HATTI ===========================

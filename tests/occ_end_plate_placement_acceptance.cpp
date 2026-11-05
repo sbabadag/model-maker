@@ -103,10 +103,14 @@ int main() {
     const SteelProfile ipe200 = prof("IPE200", 200.0, 100.0, 5.6, 8.5);
     const SectionDims dims300{300.0, 300.0, 11.0, 19.0};
 
-    EndPlateParams params;  // M20/22, 12mm levha, 2x4 bulon, gap=0
+    EndPlateParams params;  // M20/22, 12mm levha, 2x2 bulon, gap=0
+    // NOT: 2x4 (8 bulon) kabulu IPE200 (200 mm) kesitte EC3'e SIGMAZ — 4 dikey
+    // sira M20 p1>=2.2*d0 (48.4 mm) ister, sp=(200-2*35)/3=43.3 < 48.4. 8 bulon
+    // kabulu occ_end_plate_roundtrip / regression testlerinde 300 mm kesitle
+    // yapilir. Burada anchor hizalamasi icin 2 sira (2x2=4 bulon) kullanilir.
     params.gap = 0.0;
     params.boltCountX = 2;
-    params.boltCountY = 4;
+    params.boltCountY = 2;
 
     // Dik kolon: axis +Z, ref normal +Y. Top anchor -> ust flans dis yuzu Y=0.
     const auto colFrame = [](const Vec3& from) {
@@ -150,7 +154,7 @@ int main() {
 
         // Bulonlar yeni levha icinde (origin/pattern levha merkezinden turetildi).
         const auto origins = boltGroupBoltOrigins(r.placement.bolts);
-        check(origins.size() == 8, "A: 2x4 = 8 bulon");
+        check(origins.size() == 4, "A: 2x2 = 4 bulon");
         for (const auto& o : origins) {
             if (o.z < pz0 - 1e-3 || o.z > pz1 + 1e-3) { check(false, "A: bulon Z levha icinde"); break; }
         }
