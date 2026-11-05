@@ -1698,6 +1698,17 @@ std::vector<BlockDeclInfo> blockDeclarations() {
     return out;
 }
 
+// O (migration): yeniden adlandirilan argumanlar icin eski ad -> yeni ad ipucu.
+// Bilinmeyen arguman bu listedeyse fail-closed mesaji YENI adi soyler; aksi halde
+// genel "bilinmeyen arguman" mesaji doner.
+static const char* renamedArgHint(const std::string& use, const std::string& arg) {
+    if (use == "frame.contact") {
+        if (arg == "main") return "target";
+        if (arg == "secondary") return "member";
+    }
+    return nullptr;
+}
+
 // --- DOGRULAMA (statik analiz) ----------------------------------------------
 RecipeValidation validateRecipe(const Recipe& recipe,
                                 const std::vector<CompParamSpec>& specs) noexcept {
@@ -1743,9 +1754,16 @@ RecipeValidation validateRecipe(const Recipe& recipe,
             for (const auto& kv : st.args) {
                 if (!declared.count(kv.first)) {
                     r.ok = false;
-                    r.message = L"recipe adim " + std::to_wstring(stepIndex) + L" (" +
-                                wideFromUtf8(st.use) + L"): bilinmeyen arguman: " +
-                                wideFromUtf8(st.use) + L"." + wideFromUtf8(kv.first);
+                    if (const char* nw = renamedArgHint(st.use, kv.first)) {
+                        r.message = L"recipe adim " + std::to_wstring(stepIndex) + L" (" +
+                                    wideFromUtf8(st.use) + L"): '" + wideFromUtf8(kv.first) +
+                                    L"' argumani '" + wideFromUtf8(nw) +
+                                    L"' olarak yeniden adlandirildi; bu adi kullanin";
+                    } else {
+                        r.message = L"recipe adim " + std::to_wstring(stepIndex) + L" (" +
+                                    wideFromUtf8(st.use) + L"): bilinmeyen arguman: " +
+                                    wideFromUtf8(st.use) + L"." + wideFromUtf8(kv.first);
+                    }
                     return r;
                 }
             }

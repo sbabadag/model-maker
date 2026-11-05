@@ -255,6 +255,18 @@ static void testStaticAnalysis() {
         const auto v = validateRecipe(r, {});
         CHECK(v.ok, "H: gecerli frame zinciri kabul edilir");
     }
+    // O (migration): frame.contact eski adlari YENI adi soyleyerek reddedilir.
+    {
+        Recipe r;
+        RecipeStep c; c.id = "c"; c.use = "frame.contact"; c.args["main"] = S("main");
+        c.args["secondary"] = S("secondary_0");
+        r.steps = {c};
+        const auto v = validateRecipe(r, {});
+        CHECK(!v.ok, "O: frame.contact eski adi reddedilir");
+        CHECK(v.message.find(L"yeniden adlandirildi") != std::wstring::npos,
+              "O: mesaj yeniden adlandirmayi soyler");
+        if (!v.ok) std::printf("   O mesaj: %ls\n", v.message.c_str());
+    }
 }
 
 static void testBlocksProducePlan() {
