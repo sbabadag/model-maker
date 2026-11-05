@@ -1381,6 +1381,34 @@ int main(int argc, char** argv) {
         }
     }
 
+    // MM-8b duzeltme 2: KATALOGDAN ACILIS (parca secilmeden) — otomatik resim
+    // VAR; elle sematige donus yok. Yerlesik tip + bos parametre listesi.
+    {
+        std::printf("--- MM-8b duzeltme 2: katalogdan acilista otomatik resim ---\n");
+        const mm::ComponentDialogDefinition epDef = mm::endPlateDialogDefinition();
+        CHECK(epDef.previewInput.has_value(), "MM-8b/2: end plate kanonik ornek girdisi var");
+        const std::vector<mm::CompParam> empty;
+        mm::ComponentDialogWidget wCat(epDef, empty);
+        wCat.resize(900, 640);
+        wCat.show();
+        QApplication::processEvents();
+        auto* sch = wCat.findChild<mm::ComponentSchematicView*>();
+        CHECK(sch != nullptr, "MM-8b/2: sematik view var");
+        // Sematik toggle kapali (3B mod) olabilir; otomatik cizim yine de kurulur.
+        if (sch) {
+            CHECK(sch->hasAutoDrawing(), "MM-8b/2: katalog acilisinda OTOMATIK resim var");
+        }
+        // Haunch 40 da ayni yoldan (kanonik ornek: kolon + egik mertek).
+        const mm::ComponentDialogDefinition hDef = mm::haunch40DialogDefinition();
+        CHECK(hDef.previewInput.has_value(), "MM-8b/2: haunch40 kanonik ornek girdisi var");
+        mm::ComponentDialogWidget wCatH(hDef, empty);
+        wCatH.resize(900, 640);
+        wCatH.show();
+        QApplication::processEvents();
+        auto* schH = wCatH.findChild<mm::ComponentSchematicView*>();
+        if (schH) CHECK(schH->hasAutoDrawing(), "MM-8b/2: haunch40 katalog acilisinda otomatik resim var");
+    }
+
     if (failures) {
         std::printf("%d kontrol basarisiz\n", failures);
         return 1;

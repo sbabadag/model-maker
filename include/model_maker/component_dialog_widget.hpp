@@ -68,6 +68,9 @@ public:
     // sematige (override) geri don.
     void setAutoDrawing(SchematicDrawing drawing);
     bool hasAutoDrawing() const { return autoOk_; }
+    // MM-8b duzeltme 2: autoSchematic tipte plan uretilemediyse (ornek girdi de
+    // basarisizsa) elle sematige DONME, bu uyariyi goster.
+    void setAutoWarning(std::wstring warning);
 
 signals:
     // Bir hotspot tıklandı; bağlı parametre adı (bağsız/dekoratif ise boş).
@@ -94,6 +97,8 @@ private:
     // MM-8b/3: otomatik sematik cizimi (gercek mm). autoOk_ = gecerli cizim var.
     SchematicDrawing autoDrawing_;
     bool autoOk_{false};
+    // MM-8b duzeltme 2: autoSchematic tipte plan yoksa gosterilen uyari metni.
+    std::wstring autoWarning_;
 };
 
 // Diyalog gövdesi: solda sematik, sağda gruplanmış parametre editörleri.

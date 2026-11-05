@@ -356,6 +356,20 @@ void ComponentSchematicView::paintEvent(QPaintEvent*) {
         return;
     }
 
+    // MM-8b duzeltme 2: autoSchematic tipte plan uretilemedi (ornek girdi de
+    // basarisiz). Elle items'a DONME — bunun yerine acik uyari goster.
+    if (!autoWarning_.empty()) {
+        QFont f = p.font();
+        f.setPointSizeF(9.0);
+        p.setFont(f);
+        p.setPen(QColor(0x9A, 0x6A, 0x00));  // uyari sari/kahve
+        const QString msg = QString::fromStdWString(autoWarning_);
+        const QRectF box = p.fontMetrics().boundingRect(msg);
+        p.drawText(QPointF((width() - box.width()) / 2.0,
+                           (height() - box.height()) / 2.0), msg);
+        return;
+    }
+
     // Çizim ögeleri (items).
     for (const auto& item : schema_.items) {
         for (const auto& pr : item.primitives) {
@@ -460,12 +474,21 @@ void ComponentSchematicView::setHighlightedWeldRow(int row) {
 void ComponentSchematicView::setAutoDrawing(SchematicDrawing drawing) {
     autoDrawing_ = std::move(drawing);
     autoOk_ = autoDrawing_.ok;
+    autoWarning_.clear();  // gecerli cizim geldi -> uyari kalkar
     if (autoOk_) {
         minX_ = autoDrawing_.minX;
         minY_ = autoDrawing_.minY;
         maxX_ = autoDrawing_.maxX;
         maxY_ = autoDrawing_.maxY;
     }
+    update();
+}
+
+// MM-8b duzeltme 2: autoSchematic tipte plan uretilemediyse (ornek girdi de
+// basarisizsa) elle sematige DONME — kullanicinin gorecegi acik uyari metni.
+void ComponentSchematicView::setAutoWarning(std::wstring warning) {
+    autoOk_ = false;
+    autoWarning_ = std::move(warning);
     update();
 }
 
@@ -2008,23 +2031,45 @@ void ComponentDialogWidget::updatePreviewFromForm(const std::wstring& changed) {
 }
 
 // MM-8b/3: autoSchematic tiplerde GenerationPlan'dan 2B sematigi yeniden uret.
-// Plan/input yoksa (katalog acilisi) elle override'a (items) geri donulur.
+// MM-8b duzeltme 2: Plan yoksa (katalog acilisi) TEMSILI ORNEK girdiyle
+// (def_.previewInput) plan uretilir; elle override'a DONUS YOK. Ornek girdi de
+// plan uretemezse acik uyari gosterilir.
 void ComponentDialogWidget::refreshSchematic() {
     if (!schematic_ || !def_.schema.autoSchematic) return;
-    if (!nativePreview_ || !previewInputGiven_) {
-        schematic_->setAutoDrawing(SchematicDrawing{});
+
+    // Plan/input yok: kanonik ornek girdiyle (exampleInput) uret.
+    ComponentInput effective = previewInput_;
+    bool haveInput = previewInputGiven_;
+    if (!haveInput && def_.previewInput.has_value()) {
+        effective = *def_.previewInput;
+        haveInput = true;
+    }
+    if (!haveInput) {
+        schematic_->setAutoWarning(
+            L"Plan uretilemedi: parca secilmedi ve kanonik ornek girdi yok");
         return;
     }
-    const GenerationPlan& plan = nativePreview_->previewPlan();
+
+    // Girdi parametreleri diyalogun GUNCEL degerleri olsun (ornek girdi
+    // yalnizca uye geometrisini tasir; parametreler formdan alinir).
+    effective.params = resultParams();
+    GenerationPlan plan;
+    if (nativePreview_ && previewInputGiven_) {
+        plan = nativePreview_->previewPlan();
+    } else {
+        plan = ComponentRegistry::instance().generate(def_.typeId, effective);
+    }
     if (!plan.ok || plan.plates.empty()) {
-        schematic_->setAutoDrawing(SchematicDrawing{});
+        std::wstring w = L"Ornek girdi plan uretemedi";
+        if (!plan.error.empty()) { w += L": "; w += plan.error; }
+        schematic_->setAutoWarning(w);
         return;
     }
     const std::vector<PreviewDimension>& dims =
         !def_.schema.preview.dimensions.empty() ? def_.schema.preview.dimensions
                                                 : autoPreviewDef_.dimensions;
     schematic_->setAutoDrawing(buildComponentSchematic(
-        plan, previewInput_, schematicView_, dims, &autoPreviewIneffective_));
+        plan, effective, schematicView_, dims, &autoPreviewIneffective_));
     applyIneffectiveMarks();
     refreshGroupFigures();
 }

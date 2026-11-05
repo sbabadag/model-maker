@@ -170,6 +170,56 @@ int clampI(int v, int lo, int hi) noexcept {
     return v;
 }
 
+// MM-8b duzeltme 2: KANONIK ORNEK GIRDI (exampleInput). Katalogdan acilista
+// (parca secilmeden) plan yoksa bu girdiyle plan uretilir — elle sematige
+// DONUS YOK. Her yerlesik tipin sabit, kanonik bir ornegi vardir.
+ComponentInput canonicalExampleInput(const std::wstring& typeId) noexcept {
+    ComponentInput in;
+    in.main.id = EntityId{1};
+    in.main.refNormal = {0.0, 0.0, 1.0};
+    in.main.secWebThickness = 10.0;
+    in.main.secFlangeThickness = 17.5;
+    in.main.secWidth = 260.0;   // HEB260
+    in.main.secHeight = 260.0;
+    in.main.axisFrom = {0.0, 0.0, 0.0};
+
+    MemberGeometry beam;
+    beam.id = EntityId{2};
+    beam.refNormal = {0.0, 0.0, 1.0};
+    beam.secWidth = 150.0;   // IPE300
+    beam.secHeight = 300.0;
+    beam.secWebThickness = 7.1;
+    beam.secFlangeThickness = 10.7;
+
+    if (typeId == L"tekla_haunch_40") {
+        // Kolon + EĞIK mertek (kullanici ornegi).
+        in.main.axisTo = {0.0, 0.0, 5000.0};
+        in.main.secWidth = 240.0;
+        in.main.secHeight = 230.0;
+        in.main.secWebThickness = 7.5;
+        in.main.secFlangeThickness = 12.0;
+        beam.axisFrom = {0.0, 1200.0, 5000.0};
+        beam.axisTo = {0.0, 4000.0, 5200.0};
+        beam.secWidth = 220.0;
+        beam.secHeight = 450.0;
+        beam.secWebThickness = 9.4;
+        beam.secFlangeThickness = 14.0;
+    } else {
+        in.main.axisTo = {0.0, 0.0, 3000.0};
+        if (typeId == L"beam_to_column_end_plate") {
+            // Kiris kolona DOGRU (ucu kolon yuzunde).
+            beam.axisFrom = {0.0, 0.0, 3000.0};
+            beam.axisTo = {0.0, 4000.0, 3000.0};
+        } else {
+            // fin_plate / shear_plate_146: kiris kolona yaklasir.
+            beam.axisFrom = {2000.0, 0.0, 3000.0};
+            beam.axisTo = {0.0, 0.0, 3000.0};
+        }
+    }
+    in.secondary.push_back(beam);
+    return in;
+}
+
 } // namespace
 
 // --- Dogrulama --------------------------------------------------------------
@@ -517,6 +567,8 @@ ComponentDialogDefinition endPlateDialogDefinition() noexcept {
                          L"hasHead", L"hasNut", L"hasWasher"};
 
     def.schema.groups = {gPlates, gBolts};
+    // MM-8b duzeltme 2: katalogdan acilista otomatik resim icin kanonik ornek girdi.
+    def.previewInput = canonicalExampleInput(def.typeId);
     return def;
 }
 
@@ -567,6 +619,7 @@ ComponentDialogDefinition finPlateDialogDefinition() noexcept {
     gBolts.paramNames = {L"boltDiameter", L"holeDiameter", L"boltCount", L"boltEdge", L"grade"};
 
     def.schema.groups = {gPlate, gBolts};
+    def.previewInput = canonicalExampleInput(def.typeId);
     return def;
 }
 
@@ -657,6 +710,7 @@ ComponentDialogDefinition haunch40DialogDefinition() noexcept {
         {L"createMorrisStiffener", L"haunch_stiff_morris"},
         {L"createDiagStiffener", L"haunch_stiff_diagonal"},
     };
+    def.previewInput = canonicalExampleInput(def.typeId);
     return def;
 }
 
@@ -1318,6 +1372,8 @@ ComponentDialogDefinition shearPlate146DialogDefinition() noexcept {
     // Sekmeler Tekla ekran goruntulerinin BIREBIR kopyasi: arka plan resmi +
     // ayni piksel konumunda kontroller (src/component_dialog_146_canvas.cpp).
     applyShearPlate146Canvas(def);
+    // MM-8b duzeltme 2: katalogdan acilista otomatik resim icin kanonik ornek girdi.
+    def.previewInput = canonicalExampleInput(def.typeId);
     return def;
 }
 
