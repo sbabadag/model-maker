@@ -215,7 +215,7 @@ int main() {
 
         const ComponentType* ep = reg.findType(L"beam_to_column_end_plate");
         check(ep != nullptr, "end plate tipi bulundu");
-        check(ep != nullptr && ep->schemaVersion == 1, "end plate schemaVersion 1");
+        check(ep != nullptr && ep->schemaVersion == 2, "end plate schemaVersion 2");
         check(reg.findType(L"fin_plate") != nullptr, "fin plate tipi bulundu");
         check(reg.findType(L"olmayan") == nullptr, "bilinmeyen tip -> null");
         check(reg.generator(L"fin_plate") != nullptr, "fin plate generator bulundu");
