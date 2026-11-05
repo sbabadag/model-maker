@@ -319,6 +319,12 @@ ComponentDialogWidget::ComponentDialogWidget(const ComponentDialogDefinition& de
     outer->setContentsMargins(8, 8, 8, 8);
     outer->setSpacing(6);
     if (def_.schema.useTabs) outer->addWidget(buildHeaderBar());
+    // MM-8a/4: KALICI mod cubugu. "Sematik / 3B" gecisi burada durur; onizleme
+    // paneli gizlense de gorunur kalir (eski hata: dugme previewPane_ icindeydi,
+    // sematige gecince kendisi de gizleniyor, geri donus imkansizdi).
+    auto* modeBar = new QHBoxLayout;
+    modeBar->setSpacing(6);
+    outer->addLayout(modeBar);
     auto* root = new QHBoxLayout;
     root->setSpacing(8);
     outer->addLayout(root, 1);
@@ -410,7 +416,9 @@ ComponentDialogWidget::ComponentDialogWidget(const ComponentDialogDefinition& de
                     nativePreview_->selectRole(role.toStdString());
                     nativePreview_->setViolationRole(role.toStdString());
                 });
-        vertical->addWidget(checksTable_);
+        // MM-8a/4: checks tablosu KALICI (outer) — sematik modda da gorunur,
+        // boylece kontrol ihlali her iki modda vurgulanir.
+        outer->addWidget(checksTable_);
         previewPane_ = left;
         root->addWidget(left, /*stretch*/ 5);
         // Sematik root yerlesiminde durur ama VARSAYILAN GIZLI: 3B onizleme
@@ -418,25 +426,35 @@ ComponentDialogWidget::ComponentDialogWidget(const ComponentDialogDefinition& de
         // acildiginda dogru yere oturur).
         root->addWidget(schematic_, /*stretch*/ 3);
         schematic_->hide();
-        // 2B sematik varsa dugme: 3B onizleme <-> sematik gecisi.
+        // MM-8a/4: sematik <-> 3B gecisi KALICI cubukta (modeBar); secilen mod
+        // oturum boyunca hatirlanir (dosya-static). 2B sematik tanimi yoksa
+        // dugme cizilmez, ana 3B onizleme gosterilir.
+        static bool sSchematicMode = false;
         if (!def_.schema.items.empty()) {
-            auto* schToggle = new QPushButton(QStringLiteral("Sematik"), left);
+            auto* schToggle = new QPushButton(
+                sSchematicMode ? QStringLiteral("3B") : QStringLiteral("Sematik"), this);
             schToggle->setCheckable(true);
+            schToggle->setChecked(sSchematicMode);
+            schToggle->setObjectName(QStringLiteral("schematicToggle"));
             schToggle->setMinimumWidth(76);
             schToggle->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Fixed);
-            schToggle->setToolTip(QStringLiteral("2B sematik cizimi goster/gizle"));
-            views->addWidget(schToggle);
+            schToggle->setToolTip(
+                QStringLiteral("2B sematik cizim ile 3B canli onizleme arasinda gecis"));
+            modeBar->addWidget(schToggle);
+            modeBar->addStretch(1);
+            const auto applyMode = [this](bool schematicOn) {
+                if (schematic_) schematic_->setVisible(schematicOn);
+                if (previewPane_) previewPane_->setVisible(!schematicOn);
+            };
+            applyMode(sSchematicMode);
             QObject::connect(schToggle, &QPushButton::toggled, this,
-                             [this](bool on) {
-                if (!schematic_) return;
-                if (on) {
-                    if (previewPane_) previewPane_->setVisible(false);
-                    schematic_->setVisible(true);
-                } else {
-                    schematic_->setVisible(false);
-                    if (previewPane_) previewPane_->setVisible(true);
-                }
+                             [applyMode](bool on) {
+                sSchematicMode = on;  // function-local static: capture gerekmez
+                applyMode(on);
             });
+        } else {
+            // Sematik tanimi yok: 3B her zaman gorunur.
+            if (previewPane_) previewPane_->setVisible(true);
         }
     }
 

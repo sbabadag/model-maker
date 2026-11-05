@@ -1215,6 +1215,24 @@ int main(int argc, char** argv) {
                 if (l->text().contains(QStringLiteral("otomatik"))) autoLabel = true;
             CHECK(autoLabel, "GUI-2: isaretsiz alan etiketi 'otomatik' yazar");
 
+            // MM-8a/4: Sematik <-> 3B gecisi KALICI (dugme gizlenmez) ve checks
+            // tablosu her iki modda gorunur.
+            if (auto* toggle = w.findChild<QPushButton*>(QStringLiteral("schematicToggle"))) {
+                auto* chkTbl = w.findChild<QTableWidget*>(QStringLiteral("checksTable"));
+                toggle->setChecked(true);
+                QApplication::processEvents();
+                CHECK(sch && sch->isVisibleTo(&w), "MM-8a/4: sematik modda 2B cizim gorunur");
+                CHECK(toggle->isVisibleTo(&w),
+                      "MM-8a/4: sematige gecince gecis dugmesi GORUNUR kalir");
+                CHECK(chkTbl && chkTbl->isVisibleTo(&w),
+                      "MM-8a/4: checks tablosu sematik modda da gorunur");
+                toggle->setChecked(false);
+                QApplication::processEvents();
+                CHECK(sch && !sch->isVisibleTo(&w), "MM-8a/4: 3B moda donunce sematik gizlenir");
+            } else {
+                CHECK(false, "MM-8a/4: sematik gecis dugmesi var");
+            }
+
             // (3a) PARCA SECILMEDEN: temsili girdi (previewInput) ile cizim.
             CHECK(main3d != nullptr, "GUI-3a: ana 3B onizleme widget'i var");
             if (main3d) {
