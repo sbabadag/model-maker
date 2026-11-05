@@ -7,12 +7,15 @@
 
 #include "model_maker/component_engine.hpp"
 #include "model_maker/component_schematic.hpp"
+#include "model_maker/component_preview_auto.hpp"
+#include "model_maker/component_dialog.hpp"
 #include "model_maker/bolt.hpp"
 
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <limits>
+#include <string>
 
 using namespace mm;
 
@@ -172,6 +175,73 @@ int main() {
         check(hasPlate && hasBolt, "haunch 40 sematikte levha + bulon var");
     } else {
         std::printf("SKIP haunch 40 (plan reddedildi: %ls)\n", hPlan.error.c_str());
+    }
+
+    // --- MM-8b/5: her Length/Angle parametresi icin OLCU (resim) uretiliyor ve
+    //     dogru ozellige bagli mi? (MM-6b: plan farki uretmeyen = etkisiz). ----
+    {
+        const auto checkType = [&](const ComponentDialogDefinition& def,
+                                   const std::wstring& typeId,
+                                   const ComponentInput& baseIn,
+                                   const char* label) {
+            const ComponentGenerator* gen =
+                ComponentRegistry::instance().generator(typeId);
+            check(gen != nullptr && !gen->empty(), label);
+            if (!gen || gen->empty()) return;
+            const GenerationPlan pl =
+                ComponentRegistry::instance().generate(typeId, baseIn);
+            if (!pl.ok) { std::printf("SKIP %s (plan reddedildi)\n", label); return; }
+            const AutoPreviewResult ap = autoPreviewDefinition(
+                [gen](const ComponentInput& i) { return (*gen)(i); }, baseIn, def.specs);
+            if (!ap.ok) { std::printf("SKIP %s (auto preview reddedildi)\n", label); return; }
+            const SchematicDrawing d = buildComponentSchematic(
+                pl, baseIn, SchematicViewDir::Front, ap.definition.dimensions,
+                &ap.ineffective);
+            // Bir parametrenin olcusu, ekseni ekrana dik olan gorunumde (Front)
+            // sifir uzunluga duser; bu yuzden UC kanonik gorunumde de ara.
+            std::vector<SchematicDrawing> views;
+            for (SchematicViewDir v : {SchematicViewDir::Front, SchematicViewDir::Side,
+                                       SchematicViewDir::Top})
+                views.push_back(buildComponentSchematic(
+                    pl, baseIn, v, ap.definition.dimensions, &ap.ineffective));
+            bool allOk = d.ok;
+            int dimParams = 0, missing = 0;
+            for (const auto& sp : def.specs) {
+                if (sp.type != CompParamType::Length && sp.type != CompParamType::Angle)
+                    continue;
+                const std::string want(sp.name.begin(), sp.name.end());
+                const bool ineffective =
+                    std::find(ap.ineffective.begin(), ap.ineffective.end(), sp.name) !=
+                    ap.ineffective.end();
+                bool hasDim = false, bound = false;
+                for (const auto& dv : views) {
+                    for (const auto& pr : dv.prims) {
+                        if (pr.kind != SchematicPrimKind::Text || pr.role != want) continue;
+                        hasDim = true;
+                    }
+                }
+                // Dogru ozellige bagli mi: etiketin dayandigi iki anchor cozuluyor.
+                for (const auto& pd : ap.definition.dimensions) {
+                    if (pd.param != sp.name) continue;
+                    if (resolvePreviewAnchor(pl, baseIn, pd.from).ok &&
+                        resolvePreviewAnchor(pl, baseIn, pd.to).ok)
+                        bound = true;
+                }
+                if (hasDim && bound) ++dimParams;
+                // Her Length/Angle: ya olcusu var (ve bagli), ya da etkisiz listesinde.
+                else if (!ineffective) {
+                    ++missing;
+                    std::printf("  eksik olcu: %ls\n", sp.name.c_str());
+                }
+            }
+            check(dimParams > 0, label);
+            check(missing == 0 && allOk, label);
+        };
+        checkType(endPlateDialogDefinition(), L"beam_to_column_end_plate", in,
+                  "end plate: her Length/Angle olcusu bagli");
+        if (hPlan.ok)
+            checkType(haunch40DialogDefinition(), L"tekla_haunch_40", hIn,
+                      "haunch40: her Length/Angle olcusu bagli");
     }
 
     if (failures) {

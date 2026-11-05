@@ -1,6 +1,7 @@
 #include "model_maker/component_schematic.hpp"
 
 #include "model_maker/bolt.hpp"
+#include "model_maker/component_preview.hpp"
 
 #include <algorithm>
 #include <array>
@@ -101,7 +102,9 @@ std::vector<Vec2> convexHull(std::vector<Vec2> pts) {
 
 SchematicDrawing buildComponentSchematic(const GenerationPlan& plan,
                                          const ComponentInput& input,
-                                         SchematicViewDir view) noexcept {
+                                         SchematicViewDir view,
+                                         const std::vector<PreviewDimension>& dims,
+                                         const std::vector<std::wstring>* ineffective) noexcept {
     SchematicDrawing out;
     if (!plan.ok) {
         out.error = plan.error;
@@ -295,6 +298,75 @@ SchematicDrawing buildComponentSchematic(const GenerationPlan& plan,
         }
     }
 
+    // 3b) MM-8b/5: OLCU KATMANI. PreviewDimension'lari ayni izdusumle ciz:
+    //     uzatma cizgileri + olcu cizgisi + etiket. prim.role = parametre adi
+    //     (odak/hover vurgusu rol eslesmesiyle). Etkisiz parametre KESIKLI.
+    {
+        double px0 = 1e18, py0 = 1e18, px1 = -1e18, py1 = -1e18;
+        for (const auto& pr : out.prims) {
+            if (pr.kind == SchematicPrimKind::Circle ||
+                pr.kind == SchematicPrimKind::Annulus) {
+                px0 = std::min(px0, pr.cx - pr.r);
+                py0 = std::min(py0, pr.cy - pr.r);
+                px1 = std::max(px1, pr.cx + pr.r);
+                py1 = std::max(py1, pr.cy + pr.r);
+            } else {
+                for (const auto& q : pr.pts) {
+                    px0 = std::min(px0, q.x);
+                    py0 = std::min(py0, q.y);
+                    px1 = std::max(px1, q.x);
+                    py1 = std::max(py1, q.y);
+                }
+            }
+        }
+        const double span = std::max({1.0, px1 - px0, py1 - py0});
+        const double off = std::max(18.0, span * 0.10);
+        const Vec2 centre{(px0 + px1) * 0.5, (py0 + py1) * 0.5};
+        for (const auto& d : dims) {
+            const PreviewAnchor a = resolvePreviewAnchor(plan, input, d.from);
+            const PreviewAnchor b = resolvePreviewAnchor(plan, input, d.to);
+            if (!a.ok || !b.ok) continue;
+            const Vec2 pa = project(a.point);
+            const Vec2 pb = project(b.point);
+            Vec2 dir{pb.x - pa.x, pb.y - pa.y};
+            const double dl = std::hypot(dir.x, dir.y);
+            if (dl < 1e-6) continue;
+            dir = {dir.x / dl, dir.y / dl};
+            Vec2 nrm{-dir.y, dir.x};
+            const Vec2 mid{(pa.x + pb.x) * 0.5, (pa.y + pb.y) * 0.5};
+            // Normal bbox merkezinden DISARI baksin (olcu disari cizilir).
+            if ((mid.x - centre.x) * nrm.x + (mid.y - centre.y) * nrm.y < 0.0)
+                nrm = {-nrm.x, -nrm.y};
+            const Vec2 oa{pa.x + nrm.x * off, pa.y + nrm.y * off};
+            const Vec2 ob{pb.x + nrm.x * off, pb.y + nrm.y * off};
+            const bool bad = ineffective &&
+                             std::find(ineffective->begin(), ineffective->end(),
+                                       d.param) != ineffective->end();
+            const std::string role(d.param.begin(), d.param.end());
+            const auto line = [&](Vec2 s, Vec2 e) {
+                SchematicPrim pr;
+                pr.kind = SchematicPrimKind::Line;
+                pr.pts = {s, e};
+                pr.role = role;
+                pr.detail = bad ? "dim_ineffective" : "dim";
+                pr.dashed = bad;
+                out.prims.push_back(std::move(pr));
+            };
+            line(pa, oa);
+            line(pb, ob);
+            line(oa, ob);
+            SchematicPrim t;
+            t.kind = SchematicPrimKind::Text;
+            t.cx = (oa.x + ob.x) * 0.5;
+            t.cy = (oa.y + ob.y) * 0.5 + (nrm.y >= 0.0 ? off * 0.22 : -off * 0.22);
+            t.role = role;
+            t.detail = bad ? "dimlabel_ineffective" : "dimlabel";
+            t.text = d.label.empty() ? d.param : d.label;
+            t.dashed = bad;
+            out.prims.push_back(std::move(t));
+        }
+    }
+
     // 4) Sinir kutusu.
     out.minX = out.minY = std::numeric_limits<double>::max();
     out.maxX = out.maxY = std::numeric_limits<double>::lowest();
@@ -316,6 +388,9 @@ SchematicDrawing buildComponentSchematic(const GenerationPlan& plan,
                 incl(pr.cx - pr.r, pr.cy - pr.r);
                 incl(pr.cx + pr.r, pr.cy + pr.r);
                 break;
+            case SchematicPrimKind::Text:
+                incl(pr.cx, pr.cy);
+                break;
         }
     }
     if (out.maxX < out.minX) {
@@ -324,6 +399,12 @@ SchematicDrawing buildComponentSchematic(const GenerationPlan& plan,
     }
     out.ok = true;
     return out;
+}
+
+SchematicDrawing buildComponentSchematic(const GenerationPlan& plan,
+                                         const ComponentInput& input,
+                                         SchematicViewDir view) noexcept {
+    return buildComponentSchematic(plan, input, view, {}, nullptr);
 }
 
 }  // namespace mm

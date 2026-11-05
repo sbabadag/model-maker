@@ -171,6 +171,11 @@ private:
     // MM-8b/3: autoSchematic tiplerde GenerationPlan'dan 2B sematigi yeniden
     // uretip schematic_ gorunumune besler.
     void refreshSchematic();
+    // MM-8b/5: MM-6b "etkisiz" parametreleri gri + uyari ile isaretle.
+    void applyIneffectiveMarks();
+    // MM-8b/5: her parametre grubunun basina o grubun olculerini gosteren
+    // kucuk otomatik resim yerlestir (ayni sematik motoru, sabit on gorunum).
+    void refreshGroupFigures();
     void refreshChecks();
     void enforceHaunchInputLimits(const std::wstring& changed = {});
     void releaseFixedPlateSizeOnEdgeEdit(const std::wstring& name);
@@ -227,6 +232,8 @@ private:
     bool autoPreviewTried_{false};
     bool autoPreviewOk_{false};
     PreviewDefinition autoPreviewDef_;
+    std::vector<std::wstring> autoPreviewIneffective_;  // MM-8b/5: plan farki uretmeyen parametreler
+    std::map<std::wstring, class QLabel*> groupFigures_;  // MM-8b/5: grup basi otomatik resim
     QTableWidget* weldTable_{};                     // kaynak tablosu (varsa)
     QDialog* weldDialog_{};                         // "Welds..." dugmesinin actigi pencere
     QCheckBox* weldsCheck_{};                       // ust cubuk: kaynaklar acik/kapali

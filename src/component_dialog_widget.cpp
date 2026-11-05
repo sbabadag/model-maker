@@ -118,6 +118,68 @@ QWidget* wrapWithFigures(QWidget* form, const ComponentDialogGroup& g) {
     return outer;
 }
 
+// MM-8b/5: grup basi kucuk otomatik resim. Ayni sematik cizimini (o grubun
+// olcu katmaniyla) kucuk pixmap'e basar; levhalar gri, olculer kirmizi.
+QPixmap renderSchematicThumb(const SchematicDrawing& d, int w, int h) {
+    QPixmap pm(w, h);
+    pm.fill(QColor(0xFA, 0xFA, 0xFC));
+    if (!d.ok) return pm;
+    QPainter p(&pm);
+    p.setRenderHint(QPainter::Antialiasing, true);
+    const double pad = 6.0;
+    const double ww = std::max(1e-9, d.maxX - d.minX);
+    const double wh = std::max(1e-9, d.maxY - d.minY);
+    const double sc = std::min((w - 2 * pad) / ww, (h - 2 * pad) / wh);
+    const double ox = (w - ww * sc) / 2.0;
+    const double oy = (h - wh * sc) / 2.0;
+    const auto S = [&](double x, double y) {
+        return QPointF(ox + (x - d.minX) * sc, oy + (d.maxY - y) * sc);
+    };
+    for (const auto& pr : d.prims) {
+        switch (pr.kind) {
+            case SchematicPrimKind::Polygon: {
+                QPolygonF poly;
+                for (const auto& q : pr.pts) poly << S(q.x, q.y);
+                p.setPen(QPen(QColor(0x50, 0x50, 0x58), 0.8));
+                p.setBrush(pr.isPlate ? QColor(170, 170, 170) : QColor(0xD0, 0xD8, 0xE8));
+                p.drawPolygon(poly);
+                break;
+            }
+            case SchematicPrimKind::Line: {
+                if (pr.pts.size() < 2) break;
+                QPen pen(pr.dashed ? QColor(0xAA, 0xAA, 0xAA) : QColor(0xB0, 0x30, 0x30), 0.9);
+                if (pr.dashed) pen.setStyle(Qt::DashLine);
+                p.setPen(pen);
+                p.drawLine(S(pr.pts[0].x, pr.pts[0].y), S(pr.pts[1].x, pr.pts[1].y));
+                break;
+            }
+            case SchematicPrimKind::Circle:
+            case SchematicPrimKind::Annulus: {
+                const QPointF c = S(pr.cx, pr.cy);
+                p.setPen(QPen(QColor(0x40, 0x40, 0x48), 0.7));
+                p.setBrush(QColor(0x57, 0x4F, 0x47));
+                p.drawEllipse(c, pr.r * sc, pr.r * sc);
+                break;
+            }
+            case SchematicPrimKind::Text: {
+                if (pr.text.empty()) break;
+                QFont f = p.font();
+                f.setPointSizeF(6.0);
+                p.setFont(f);
+                p.setPen(pr.dashed ? QColor(0x9A, 0x9A, 0x9A) : QColor(0xB0, 0x30, 0x30));
+                const QPointF at = S(pr.cx, pr.cy);
+                const QString txt = QString::fromStdWString(pr.text);
+                const QRectF box = p.fontMetrics().boundingRect(txt);
+                p.drawText(QPointF(at.x() - box.width() / 2.0, at.y()), txt);
+                break;
+            }
+            case SchematicPrimKind::Polyline:
+                break;
+        }
+    }
+    return pm;
+}
+
 } // namespace
 
 // --- ComponentSchematicView ---------------------------------------------------
@@ -206,7 +268,14 @@ void ComponentSchematicView::paintEvent(QPaintEvent*) {
     // MM-8b/3: OTOMATIK SEMATIK — GenerationPlan'dan gercek mm cizim, tek olcek.
     if (autoOk_) {
         const auto S = [&](const Vec2& v) { return toScreen(DiagramPoint{v.x, v.y}); };
+        // MM-8b/5: odak/hover vurgusu — olcu primleri role = parametre adi tasir.
+        const std::string hp(highlightedParam_.begin(), highlightedParam_.end());
         for (const auto& pr : autoDrawing_.prims) {
+            const bool hot = !hp.empty() && pr.role == hp;
+            const bool effDim = pr.detail == "dim" || pr.detail == "dimlabel";
+            const QColor hotColor(0xD0, 0x30, 0x30);
+            const QColor dimColor = pr.dashed ? QColor(0x9A, 0x9A, 0x9A)
+                                              : QColor(0x40, 0x40, 0x50);
             switch (pr.kind) {
                 case SchematicPrimKind::Polygon: {
                     QPolygonF poly;
@@ -216,7 +285,7 @@ void ComponentSchematicView::paintEvent(QPaintEvent*) {
                         ? QColor(static_cast<int>(kPlateGreyR), static_cast<int>(kPlateGreyG),
                                  static_cast<int>(kPlateGreyB))
                         : QColor(0xD0, 0xD8, 0xE8);
-                    p.setPen(QPen(QColor(0x40, 0x40, 0x50), 1.4));
+                    p.setPen(QPen(hot ? hotColor : QColor(0x40, 0x40, 0x50), hot ? 2.4 : 1.4));
                     p.setBrush(fill);
                     p.drawPolygon(poly);
                     break;
@@ -224,14 +293,14 @@ void ComponentSchematicView::paintEvent(QPaintEvent*) {
                 case SchematicPrimKind::Polyline: {
                     QPolygonF poly;
                     for (const auto& q : pr.pts) poly << S(q);
-                    p.setPen(QPen(QColor(0x40, 0x40, 0x50), 1.4));
+                    p.setPen(QPen(hot ? hotColor : QColor(0x40, 0x40, 0x50), hot ? 2.4 : 1.4));
                     p.setBrush(Qt::NoBrush);
                     p.drawPolyline(poly);
                     break;
                 }
                 case SchematicPrimKind::Line: {
                     if (pr.pts.size() < 2) break;
-                    QPen pen(QColor(0x40, 0x40, 0x50), 1.4);
+                    QPen pen(hot ? hotColor : dimColor, hot ? 2.4 : (effDim ? 1.2 : 1.4));
                     if (pr.dashed) pen.setStyle(Qt::DashLine);
                     p.setPen(pen);
                     p.drawLine(S(pr.pts[0]), S(pr.pts[1]));
@@ -240,7 +309,7 @@ void ComponentSchematicView::paintEvent(QPaintEvent*) {
                 case SchematicPrimKind::Circle: {
                     const QPointF c = S(Vec2{pr.cx, pr.cy});
                     const double rr = pr.r * scale_;
-                    QPen pen(QColor(0x30, 0x30, 0x40), 1.4);
+                    QPen pen(hot ? hotColor : QColor(0x30, 0x30, 0x40), hot ? 2.0 : 1.4);
                     if (pr.dashed) pen.setStyle(Qt::DashLine);
                     p.setPen(pen);
                     p.setBrush(pr.filled ? QBrush(QColor(0x57, 0x4F, 0x47)) : QBrush(Qt::NoBrush));
@@ -256,6 +325,26 @@ void ComponentSchematicView::paintEvent(QPaintEvent*) {
                     p.drawEllipse(c, ro, ro);
                     p.setBrush(QBrush(QColor(0xFA, 0xFA, 0xFC)));  // ic delik (arka plan)
                     p.drawEllipse(c, ri, ri);
+                    break;
+                }
+                case SchematicPrimKind::Text: {
+                    if (pr.text.empty()) break;
+                    QFont f = p.font();
+                    f.setPointSizeF(7.5);
+                    f.setBold(hot);
+                    p.setFont(f);
+                    p.setPen(hot ? hotColor : dimColor);
+                    p.setBrush(Qt::NoBrush);
+                    // Etiket olcu cizgisinin UZERINDE ortalanir (arka planla okunur).
+                    const QPointF at = S(Vec2{pr.cx, pr.cy});
+                    const QString txt = QString::fromStdWString(pr.text);
+                    const QRectF box = p.fontMetrics().boundingRect(txt);
+                    p.fillRect(QRectF(at.x() - box.width() / 2.0 - 2.0,
+                                      at.y() - box.height() / 2.0,
+                                      box.width() + 4.0, box.height()),
+                               QColor(0xFA, 0xFA, 0xFC, 220));
+                    p.drawText(QPointF(at.x() - box.width() / 2.0,
+                                       at.y() + box.height() / 2.0 - 1.0), txt);
                     break;
                 }
             }
@@ -610,6 +699,16 @@ ComponentDialogWidget::ComponentDialogWidget(const ComponentDialogDefinition& de
             } else {
                 for (const auto& pn : g.paramNames) addParamRow(form, formHost, pn, ungrouped);
             }
+            // MM-8b/5: grup basi otomatik resim (plan gelince doldurulur).
+            if (form->rowCount() > 0) {
+                auto* thumb = new QLabel(formHost);
+                thumb->setObjectName(QStringLiteral("groupFigure"));
+                thumb->setMinimumHeight(120);
+                thumb->setAlignment(Qt::AlignCenter);
+                thumb->setVisible(false);
+                form->insertRow(0, thumb);
+                groupFigures_[g.id] = thumb;
+            }
             const bool hasContent = parts || custom || form->rowCount() > 0;
             if (!hasContent && !g.keepIfEmpty) {  // bos sekme acma
                 delete page;
@@ -690,6 +789,16 @@ ComponentDialogWidget::ComponentDialogWidget(const ComponentDialogDefinition& de
             form->setLabelAlignment(Qt::AlignLeft);
             form->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
             for (const auto& pn : g.paramNames) addParamRow(form, box, pn, ungrouped);
+            // MM-8b/5: grup basi otomatik resim (plan gelince doldurulur).
+            {
+                auto* thumb = new QLabel(box);
+                thumb->setObjectName(QStringLiteral("groupFigure"));
+                thumb->setMinimumHeight(120);
+                thumb->setAlignment(Qt::AlignCenter);
+                thumb->setVisible(false);
+                form->insertRow(0, thumb);
+                groupFigures_[g.id] = thumb;
+            }
             paramLayout_->addWidget(box);
         }
 
@@ -1687,6 +1796,7 @@ void ComponentDialogWidget::ensureAutoPreviewDefinition(const ComponentInput& in
         [gen](const ComponentInput& in) { return (*gen)(in); }, input, def_.specs);
     if (!r.ok) return;
     autoPreviewDef_ = r.definition;
+    autoPreviewIneffective_ = r.ineffective;
     autoPreviewOk_ = true;
     nativePreview_->setPreviewDefinition(autoPreviewDef_);
 }
@@ -1906,8 +2016,66 @@ void ComponentDialogWidget::refreshSchematic() {
         schematic_->setAutoDrawing(SchematicDrawing{});
         return;
     }
-    schematic_->setAutoDrawing(
-        buildComponentSchematic(plan, previewInput_, schematicView_));
+    const std::vector<PreviewDimension>& dims =
+        !def_.schema.preview.dimensions.empty() ? def_.schema.preview.dimensions
+                                                : autoPreviewDef_.dimensions;
+    schematic_->setAutoDrawing(buildComponentSchematic(
+        plan, previewInput_, schematicView_, dims, &autoPreviewIneffective_));
+    applyIneffectiveMarks();
+    refreshGroupFigures();
+}
+
+// MM-8b/5: plan farki uretmeyen (etkisiz) parametreleri gri + uyari ile isaretle.
+// Editor DEVRE DISI birakilir (motor degeri okumaz) ve satir etiketi soluk olur.
+void ComponentDialogWidget::applyIneffectiveMarks() {
+    for (const auto& name : autoPreviewIneffective_) {
+        const auto eit = editors_.find(name);
+        if (eit != editors_.end() && eit->second) {
+            eit->second->setEnabled(false);
+            eit->second->setToolTip(
+                QStringLiteral("Etkisiz: bu parametre plan farki uretmiyor (MM-6b)"));
+        }
+        const auto rl = rows_.find(name);
+        if (rl != rows_.end()) {
+            if (auto* lbl = qobject_cast<QLabel*>(rl->second)) {
+                const QString suffix = QStringLiteral(" \u2014 etkisiz");
+                if (!lbl->text().endsWith(suffix)) lbl->setText(lbl->text() + suffix);
+                lbl->setStyleSheet(QStringLiteral("color: #9A9A9A;"));
+            }
+        }
+    }
+}
+
+// MM-8b/5: her parametre grubunun basindaki kucuk resmi, o grubun olcu
+// katmaniyla (ayni sematik motoru, sabit on gorunum) doldurur.
+void ComponentDialogWidget::refreshGroupFigures() {
+    if (groupFigures_.empty()) return;
+    if (!nativePreview_ || !previewInputGiven_) return;
+    const GenerationPlan& plan = nativePreview_->previewPlan();
+    if (!plan.ok) return;
+    const std::vector<PreviewDimension>& all =
+        !def_.schema.preview.dimensions.empty() ? def_.schema.preview.dimensions
+                                                : autoPreviewDef_.dimensions;
+    for (const auto& g : def_.schema.groups) {
+        const auto it = groupFigures_.find(g.id);
+        if (it == groupFigures_.end() || !it->second) continue;
+        std::vector<PreviewDimension> mine;
+        for (const auto& d : all) {
+            for (const auto& entry : g.paramNames) {
+                const auto bar = entry.find(L'|');
+                const std::wstring a = bar == std::wstring::npos ? entry : entry.substr(0, bar);
+                const std::wstring b = bar == std::wstring::npos ? std::wstring{} : entry.substr(bar + 1);
+                if (d.param == a || d.param == b) { mine.push_back(d); break; }
+            }
+        }
+        if (mine.empty()) continue;
+        const SchematicDrawing dr = buildComponentSchematic(
+            plan, previewInput_, SchematicViewDir::Front, mine, &autoPreviewIneffective_);
+        if (!dr.ok) continue;
+        it->second->setPixmap(renderSchematicThumb(dr, 260, 120));
+        it->second->setVisible(true);
+        it->second->setToolTip(QStringLiteral("Bu grubun olculeri (otomatik sematik)"));
+    }
 }
 
 // MM-7 item 2: onizleme planindaki checks[]'i tabloya yazar (kirmizi/yesil) ve
@@ -2115,7 +2283,9 @@ void ComponentDialogWidget::onHotspotClicked(const QString& paramName) {
 }
 
 bool ComponentDialogWidget::eventFilter(QObject* watched, QEvent* event) {
-    if (event->type() == QEvent::FocusIn || event->type() == QEvent::MouseButtonPress) {
+    // MM-8b/5: odak VEYA fare uzerine gelme (hover) -> olcu vurgusu.
+    if (event->type() == QEvent::FocusIn || event->type() == QEvent::MouseButtonPress ||
+        event->type() == QEvent::Enter) {
         for (const auto& [name, editor] : editors_) {
             if (editor == watched) {
                 // Odaklanan metin alaninin YAZISI secili (vurgulu) olur.
@@ -2132,6 +2302,17 @@ bool ComponentDialogWidget::eventFilter(QObject* watched, QEvent* event) {
                 }
                 highlightParamRow(name);
                 schematic_->setHighlightedParam(name);
+                break;
+            }
+        }
+    } else if (event->type() == QEvent::Leave) {
+        // Hover bitince, alan odakli DEGILSE vurguyu kaldir.
+        for (const auto& [name, editor] : editors_) {
+            if (editor == watched) {
+                if (!editor->hasFocus()) {
+                    highlightParamRow(std::wstring{});
+                    schematic_->setHighlightedParam(std::wstring{});
+                }
                 break;
             }
         }

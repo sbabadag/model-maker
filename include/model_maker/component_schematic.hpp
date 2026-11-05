@@ -18,6 +18,7 @@
 // ayni cizim (Linux == mingw): saf double matematik, platform bagimliligi yok.
 
 #include "model_maker/component_engine.hpp"
+#include "model_maker/component_preview.hpp"
 #include "model_maker/geometry.hpp"
 
 #include <string>
@@ -27,17 +28,18 @@ namespace mm {
 
 enum class SchematicViewDir { Front, Side, Top };
 
-enum class SchematicPrimKind { Polygon, Polyline, Circle, Annulus, Line };
+enum class SchematicPrimKind { Polygon, Polyline, Circle, Annulus, Line, Text };
 
 // Tek cizim ilkeli (GERCEK mm koordinatlarinda; x saga, y yukari).
 struct SchematicPrim {
     SchematicPrimKind kind{SchematicPrimKind::Line};
     std::vector<Vec2> pts;       // Polygon (kapali, saat yonu) / Polyline
-    double cx{0.0}, cy{0.0};     // Circle / Annulus merkezi
+    double cx{0.0}, cy{0.0};     // Circle / Annulus merkezi; Text konumu
     double r{0.0};               // Circle yaricapi / Annulus dis yaricap
     double rInner{0.0};          // Annulus ic yaricap (0 = dolu daire)
-    std::string role;            // semantik etiket: plateKey | "column" | "beam" | "bolt"
-    std::string detail;          // "bolt" icin: head | nut | shank | hole | washer
+    std::string role;            // semantik etiket: plateKey | "column" | "beam" | "bolt" | parametre adi (olcu)
+    std::string detail;          // "bolt" icin: head | nut | shank | hole | washer; olcu icin: dim | dimlabel
+    std::wstring text;           // Text priminin icerigi (olcu etiketi)
     bool dashed{false};
     bool filled{false};
     bool isPlate{false};         // levha -> renderer gri (kPlateGreyRgb) cizer
@@ -56,5 +58,15 @@ struct SchematicDrawing {
 SchematicDrawing buildComponentSchematic(const GenerationPlan& plan,
                                          const ComponentInput& input,
                                          SchematicViewDir view) noexcept;
+
+// MM-8b/5: olcu katmani. Verilen PreviewDimension'lari ayni izdusumle cizer:
+// uzatma cizgileri + olcu oku + etiket; prim.role = parametre adi oldugundan
+// diyalogda odak/hover vurgusu rol eslesmesiyle calisir. `ineffective`
+// icindeki parametreler KESIKLI (gri) cizilir (MM-6b kurali).
+SchematicDrawing buildComponentSchematic(const GenerationPlan& plan,
+                                         const ComponentInput& input,
+                                         SchematicViewDir view,
+                                         const std::vector<PreviewDimension>& dims,
+                                         const std::vector<std::wstring>* ineffective) noexcept;
 
 }  // namespace mm
