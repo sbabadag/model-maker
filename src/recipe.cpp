@@ -647,6 +647,109 @@ static bool blockFrameRotate(EvalCtx& ctx, const RecipeStep& st, GenerationPlan&
     return true;
 }
 
+// P — YUZ CERCEVESI (frame.member_face): `member` uyesinin `toward` uyesine
+// BAKAN yuzunun cercevesini uretir. Kanonik MemberGeometry ve digest
+// kurallarina DOKUNMAZ; yalniz YENI bir cercevedir.
+//   w  = yuzun DIS normali (toward uyesine bakan); u/v kesit genislik/yukseklik
+//        + uye ekseninden deterministik.
+//   origin = secilen YUZ duzleminde: kesit merkez ofseti (sectionCenterOffset)
+//            + yuz ofseti (flans dis yuzu h/2, govde yuzu tw/2), toward ucunun
+//            eksene izdusumu hizasinda (mid-height baglantilar dahil).
+// Yuz kumesi YALNIZ baglanti yuzleridir: flans dis yuzu (±height @ h/2) ve
+// govde yuzu (±width @ tw/2). Flans KENARI (b/2) bir baglanti yuzu degildir.
+// `toward` eksenle ayni dogrultuda (izdusum sifir) veya iki yuze esit (~45°)
+// ise ACIK ret (fail-closed).
+static bool computeMemberFace(EvalCtx& ctx, const std::string& memberRole,
+                              const std::string& towardRole, MemberLocalFrame& out) {
+    if (memberRole == towardRole) {
+        ctx.error = wideFromUtf8("frame.member_face: member ve toward ayni rol: " + memberRole);
+        return false;
+    }
+    const MemberGeometry* m = memberByRole(ctx.input, memberRole);
+    if (!m) {
+        ctx.error = wideFromUtf8("frame.member_face: bilinmeyen uye rolu '" + memberRole + "'");
+        return false;
+    }
+    const MemberGeometry* t = memberByRole(ctx.input, towardRole);
+    if (!t) {
+        ctx.error = wideFromUtf8("frame.member_face: bilinmeyen toward rolu '" + towardRole + "'");
+        return false;
+    }
+    if (!memberGeometryUsable(*m)) {
+        ctx.error = wideFromUtf8("frame.member_face: uye geometrisi gecersiz '" + memberRole + "'");
+        return false;
+    }
+    const Vec3 axisRaw = m->axisTo - m->axisFrom;
+    const Vec3 axis = vecNorm(axisRaw);
+    if (vecLen(axisRaw) <= 1e-9) {
+        ctx.error = wideFromUtf8("frame.member_face: uzunlugu sifir uye '" + memberRole + "'");
+        return false;
+    }
+    // "toward" yonu: baglanti ucundan (axisTo) uyenin GOVDESINE (axisFrom) dogru;
+    // eksene dik bileseni hangi yuzun bakacagini soyler.
+    const Vec3 towardRaw = t->axisFrom - t->axisTo;
+    const Vec3 towardDir = vecNorm(towardRaw);
+    if (vecLen(towardRaw) <= 1e-9) {
+        ctx.error = wideFromUtf8("frame.member_face: uzunlugu sifir toward uyesi '" + towardRole + "'");
+        return false;
+    }
+    const double tAlong = towardDir.x * axis.x + towardDir.y * axis.y + towardDir.z * axis.z;
+    Vec3 d = towardDir - axis * tAlong;   // eksene dik
+    const double dLen = vecLen(d);
+    if (dLen <= 1e-9) {
+        ctx.error = wideFromUtf8("frame.member_face: toward uyesi '" + towardRole +
+                                 "' uye ekseniyle ayni dogrultuda, yuz secilemez");
+        return false;
+    }
+    d = d * (1.0 / dLen);
+    const ProfileSectionFrame sf = memberSectionFrame(*m);
+    const double dotU = d.x * sf.width.x + d.y * sf.width.y + d.z * sf.width.z;
+    const double dotV = d.x * sf.height.x + d.y * sf.height.y + d.z * sf.height.z;
+    const double au = std::fabs(dotU), av = std::fabs(dotV);
+    const double dom = std::max(au, av);
+    if (dom <= 1e-9) {
+        ctx.error = wideFromUtf8("frame.member_face: toward yonu belirsiz");
+        return false;
+    }
+    if ((dom - std::min(au, av)) <= 1e-6 * dom) {
+        ctx.error = wideFromUtf8("frame.member_face: toward yonu iki yuze esit (belirsiz)");
+        return false;
+    }
+    Vec3 normal;
+    double offset = 0.0;
+    if (au > av) {
+        // GOVDE yuzu: normal ±genislik, ofset tw/2. u = yukseklik, v = eksen.
+        normal = sf.width * (dotU >= 0.0 ? 1.0 : -1.0);
+        offset = m->secWebThickness * 0.5;
+        out.u = sf.height;
+        out.v = axis;
+    } else {
+        // FLANS (baslik) yuzu: normal ±yukseklik, ofset h/2. u = genislik, v = eksen.
+        normal = sf.height * (dotV >= 0.0 ? 1.0 : -1.0);
+        offset = m->secHeight * 0.5;
+        out.u = sf.width;
+        out.v = axis;
+    }
+    out.w = normal;
+    // origin: toward ucunun eksene izdusumu + kesit merkez ofseti + yuz ofseti.
+    const Vec3 rel = t->axisTo - m->axisFrom;
+    const double along = rel.x * axis.x + rel.y * axis.y + rel.z * axis.z;
+    const Vec3 axialPoint = m->axisFrom + axis * along;
+    const Vec3 center = axialPoint + sf.height * m->sectionCenterOffset;
+    out.origin = center + normal * offset;
+    return true;
+}
+
+static bool blockFrameMemberFace(EvalCtx& ctx, const RecipeStep& st, GenerationPlan&) {
+    std::string memberRole, towardRole;
+    strArg(st, "member", "main", memberRole);
+    strArg(st, "toward", "secondary_0", towardRole);
+    MemberLocalFrame f;
+    if (!computeMemberFace(ctx, memberRole, towardRole, f)) return false;
+    ctx.frames[st.id] = f;
+    return true;
+}
+
 // KONTUR TESTLERI (plate.polygon icin): ic ice kesisme (self-intersection) ve disbukeylik.
 // Studio karari (ST-3e): icbukey ya da kendini kesen kontur REDDEDILIR.
 namespace {
@@ -1268,6 +1371,10 @@ static const std::vector<BlockDecl>& blockRegistry() {
         // HR-1: cerceveyi kendi ekseni etrafinda dondurur (u/v/w ortonormal kalir).
         {"frame.rotate", {"deg"}, {"frame", "about"}, {}, &blockFrameRotate,
          {}, {}, {}, {}},
+        // P: uyenin `toward` uyesine BAKAN yuzunun cercevesi (baglantiya gore
+        // yonlenir; dunyaya degil). member/toward = girdi rolu (main/secondary_N).
+        {"frame.member_face", {}, {"member", "toward"}, {}, &blockFrameMemberFace,
+         {}, {}, {"member", "toward"}, {}},
         // HR-3: `chamfers` listesi ("corner:type:h:v") + metin alanlari param.* kabul eder.
         {"plate.rect", {"w", "h", "t"}, {"frame", "name", "material", "finish", "posNo"},
          {"chamfers"}, &blockPlateRect, {"name", "material", "finish", "posNo"},
@@ -1516,7 +1623,8 @@ static bool cyclicLetCheck(const Recipe& recipe, RecipeValidation& r) {
 // uzayindaki ONCEKI bir adimin urettigi frame id'sini gosterebilir. Bu siniflar
 // blockRegistry() ile birebir paraleldir; yeni tas eklerken IKISINI de guncelle.
 static bool producesGenericFrame(const std::string& use) {
-    return use == "frame.member_end" || use == "frame.offset" || use == "frame.rotate";
+    return use == "frame.member_end" || use == "frame.offset" || use == "frame.rotate" ||
+           use == "frame.member_face";
 }
 static bool producesHaunchFrame(const std::string& use) {
     return use == "frame.contact" || use == "frame.plumb_face" ||

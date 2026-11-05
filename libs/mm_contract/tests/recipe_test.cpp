@@ -786,10 +786,10 @@ static void testWhenSkips() {
     CHECK(plan.plates.empty(), "when=0 -> levha uretilmez");
 }
 
-// J: bildirilmemis arguman fail-closed — 17 tasin her biri icin bir bilinmeyen.
+// J: bildirilmemis arguman fail-closed — 18 tasin her biri icin bir bilinmeyen.
 static void testUnknownArgRejected() {
     const char* blocks[] = {
-        "frame.member_end", "frame.offset", "frame.rotate",
+        "frame.member_end", "frame.offset", "frame.rotate", "frame.member_face",
         "plate.rect", "plate.polygon", "bolts.grid", "weld.fillet", "cut.plane",
         "endplate.placement", "frame.contact", "frame.plumb_face",
         "haunch.end_plate", "haunch.web", "haunch.flange",
@@ -985,10 +985,10 @@ static void testExprListStatic() {
     }
 }
 
-// L: blockDeclarations() salt okunur API — 17 tas, tur ve sekil bilgisi.
+// L: blockDeclarations() salt okunur API — 18 tas, tur ve sekil bilgisi.
 static void testBlockDeclarations() {
     const std::vector<BlockDeclInfo> decls = blockDeclarations();
-    CHECK(decls.size() == 17, "L: 17 tas bildirilir");
+    CHECK(decls.size() == 18, "L: 18 tas bildirilir");
     const auto find = [&](const std::string& use) -> const BlockDeclInfo* {
         for (const auto& d : decls)
             if (d.use == use) return &d;
@@ -1006,6 +1006,11 @@ static void testBlockDeclarations() {
     // frame.member_end: member = MemberRole (skaler).
     CHECK(argKind("frame.member_end", "member", k, l, e) && k == RecipeArgKind::MemberRole && !l,
           "L: frame.member_end.member = MemberRole skaler");
+    // frame.member_face: member/toward = MemberRole (skaler).
+    CHECK(argKind("frame.member_face", "member", k, l, e) && k == RecipeArgKind::MemberRole && !l,
+          "L: frame.member_face.member = MemberRole skaler");
+    CHECK(argKind("frame.member_face", "toward", k, l, e) && k == RecipeArgKind::MemberRole && !l,
+          "L: frame.member_face.toward = MemberRole skaler");
     // plate.rect: w = Expression; chamfers = List + exprItems.
     CHECK(argKind("plate.rect", "w", k, l, e) && k == RecipeArgKind::Expression,
           "L: plate.rect.w = Expression");
@@ -1045,8 +1050,125 @@ static void testBlockDeclarations() {
     std::printf("L: %zu tas bildirimi dogrulandi\n", decls.size());
 }
 
+// P: frame.member_face — baglantiya gore yonlenen yuz cercevesi.
+// Kanonik girdiyle (memberGeometryFromProfile) kurulur; sahne Z'de 4 yon x kiris
+// iki cizim yonu -> ayni recipe ayni FIZIKSEL yuze oturur. Kolon dusey (kesit
+// cercevesi dunya-bagli: width=+X, height=+Y), kiris yatay.
+static bool near3(const Vec3& a, const Vec3& b, double tol = 1e-6) {
+    return std::fabs(a.x - b.x) <= tol && std::fabs(a.y - b.y) <= tol &&
+           std::fabs(a.z - b.z) <= tol;
+}
+
+static void testMemberFace() {
+    const MemberSectionSpec colSec{300.0, 300.0, 11.0, 19.0, 0.0};
+    const MemberSectionSpec beamSec{150.0, 300.0, 7.1, 10.7, 0.0};
+    const Vec3 colBase{0.0, 0.0, 0.0}, colTop{0.0, 0.0, 3000.0};
+
+    // Cerceveyi uret ve plate.rect ile oku (1x1x1 levha -> center=origin,
+    // u/v/axis = frame u/v/w).
+    auto faceFrame = [&](const Vec3& beamDir, bool connAtA) -> MemberLocalFrame {
+        const Vec3 farEnd = colTop + beamDir;
+        ComponentInput in;
+        in.main = memberGeometryFromProfile(colBase, colTop, /*connectionAtA=*/false,
+                                            Vec3{0.0, 0.0, 1.0}, 0.0, colSec);
+        in.main.id = 1;
+        MemberGeometry beam = memberGeometryFromProfile(
+            connAtA ? colTop : farEnd, connAtA ? farEnd : colTop, connAtA,
+            Vec3{0.0, 0.0, 1.0}, 0.0, beamSec);
+        beam.id = 2;
+        in.secondary.push_back(beam);
+        Recipe r;
+        RecipeStep c; c.id = "c"; c.use = "frame.member_face";
+        c.args["member"] = S("main"); c.args["toward"] = S("secondary_0");
+        RecipeStep p; p.id = "p"; p.use = "plate.rect";
+        p.args["frame"] = S("c"); p.args["w"] = S("1"); p.args["h"] = S("1"); p.args["t"] = S("1");
+        r.steps = {c, p};
+        const GenerationPlan plan = runRecipe(r, {}, in);
+        MemberLocalFrame out;
+        if (!plan.ok || plan.plates.empty()) { out.origin = Vec3{1e9, 1e9, 1e9}; return out; }
+        out.origin = plan.plates[0].center;
+        out.u = plan.plates[0].u;
+        out.v = plan.plates[0].v;
+        out.w = plan.plates[0].axis;
+        return out;
+    };
+
+    // 4 yon (sahne Z donusu 0/90/180/270) x govde(±X)/flans(±Y).
+    struct Case { Vec3 dir; Vec3 w; Vec3 origin; };
+    const Case cases[] = {
+        {{6000.0, 0.0, 0.0}, {1.0, 0.0, 0.0}, {5.5, 0.0, 3000.0}},        // +X govde
+        {{-6000.0, 0.0, 0.0}, {-1.0, 0.0, 0.0}, {-5.5, 0.0, 3000.0}},     // -X govde
+        {{0.0, 6000.0, 0.0}, {0.0, 1.0, 0.0}, {0.0, 150.0, 3000.0}},      // +Y flans
+        {{0.0, -6000.0, 0.0}, {0.0, -1.0, 0.0}, {0.0, -150.0, 3000.0}},   // -Y flans
+    };
+    for (const auto& cs : cases) {
+        for (const bool connAtA : {true, false}) {   // kiris iki cizim yonu
+            const MemberLocalFrame f = faceFrame(cs.dir, connAtA);
+            CHECK(near3(f.w, cs.w), "member_face: w toward'a bakar (yuz normali)");
+            CHECK(near3(f.origin, cs.origin), "member_face: origin dogru yuz duzleminde");
+            // w yonu eksenle dik olmali (yuz normali), u/v ortonormal-ish.
+            const double wAxisDot = std::fabs(f.w.x * 0.0 + f.w.y * 0.0 + f.w.z * 1.0);
+            CHECK(wAxisDot <= 1e-6, "member_face: yuz normali kolon eksenine dik");
+        }
+    }
+
+    // Govde baglantisinda u = yukseklik (+Y), flans baglantisinda u = genislik (+X).
+    {
+        const MemberLocalFrame web = faceFrame({6000.0, 0.0, 0.0}, true);
+        CHECK(near3(web.u, {0.0, 1.0, 0.0}), "member_face: govde u = yukseklik");
+        const MemberLocalFrame fl = faceFrame({0.0, 6000.0, 0.0}, true);
+        CHECK(near3(fl.u, {1.0, 0.0, 0.0}), "member_face: flans u = genislik");
+    }
+
+    // Fail-closed: member == toward.
+    {
+        ComponentInput in;
+        in.main = memberGeometryFromProfile(colBase, colTop, false, Vec3{0,0,1}, 0.0, colSec);
+        in.main.id = 1;
+        in.secondary.push_back(in.main); in.secondary[0].id = 2;
+        Recipe r;
+        RecipeStep c; c.id = "c"; c.use = "frame.member_face";
+        c.args["member"] = S("main"); c.args["toward"] = S("main");
+        r.steps = {c};
+        const GenerationPlan plan = runRecipe(r, {}, in);
+        CHECK(!plan.ok, "member_face: member==toward reddedilir");
+    }
+    // Fail-closed: toward eksenle ayni dogrultuda (dusey kiris).
+    {
+        ComponentInput in;
+        in.main = memberGeometryFromProfile(colBase, colTop, false, Vec3{0,0,1}, 0.0, colSec);
+        in.main.id = 1;
+        MemberGeometry beam = memberGeometryFromProfile(colTop, Vec3{0,0,6000}, true,
+                                                        Vec3{0,0,1}, 0.0, beamSec);
+        beam.id = 2;
+        in.secondary.push_back(beam);
+        Recipe r;
+        RecipeStep c; c.id = "c"; c.use = "frame.member_face";
+        c.args["member"] = S("main"); c.args["toward"] = S("secondary_0");
+        r.steps = {c};
+        const GenerationPlan plan = runRecipe(r, {}, in);
+        CHECK(!plan.ok, "member_face: toward eksenle ayni dogrultuda reddedilir");
+    }
+    // Fail-closed: toward 45° (iki yuze esit).
+    {
+        ComponentInput in;
+        in.main = memberGeometryFromProfile(colBase, colTop, false, Vec3{0,0,1}, 0.0, colSec);
+        in.main.id = 1;
+        MemberGeometry beam = memberGeometryFromProfile(colTop, colTop + Vec3{6000.0, 6000.0, 0.0},
+                                                        true, Vec3{0,0,1}, 0.0, beamSec);
+        beam.id = 2;
+        in.secondary.push_back(beam);
+        Recipe r;
+        RecipeStep c; c.id = "c"; c.use = "frame.member_face";
+        c.args["member"] = S("main"); c.args["toward"] = S("secondary_0");
+        r.steps = {c};
+        const GenerationPlan plan = runRecipe(r, {}, in);
+        CHECK(!plan.ok, "member_face: toward 45° (iki yuze esit) reddedilir");
+    }
+}
+
 int main() {
-    CHECK(std::string(kContractVersion) == "1.10.0", "contract surumu 1.7.0");
+    CHECK(std::string(kContractVersion) == "1.11.0", "contract surumu 1.7.0");
     testExpressionEvaluator();
     testParamAccess();
     testStaticAnalysis();
@@ -1062,6 +1184,7 @@ int main() {
     testMemberArgStatic();
     testExprListStatic();
     testBlockDeclarations();
+    testMemberFace();
     std::printf("recipe test: %s (%d hata)\n", failures ? "HATALI" : "OK", failures);
     return failures ? 1 : 0;
 }
