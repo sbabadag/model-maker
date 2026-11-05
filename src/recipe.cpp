@@ -1214,22 +1214,48 @@ static bool runTas(EvalCtx& ctx, const RecipeStep& st, const char* name,
 }
 
 // frame.contact: parametresiz GEOMETRI; roller ARGS'tan gelir (MM-5 fix item 1).
-// Bugun motor tek mertek destekliyor: main=main, secondary=secondary_0.
-// Farkli bir rol istenirse ACIK hata (sessizce ilk uyeyi kullanma YOK).
+// O: argumanlar main/secondary yerine target/member — `target` = ana (kolon,
+// main), `member` = ikincil (kiris, secondary_N). Hem opak haunch cercevesini
+// (haunch taslari; digest DEGISMEZ) hem de P'nin yuz cercevesi mantigiyla
+// GENERIC bir cerceve uretir (genel taslar plate.rect/bolts.grid/frame.offset
+// bunu `frame` olarak kullanabilir). Opak cerceve her zaman input.secondary[0]'i
+// kullanir (haunch tek kiris destekler); generic cerceve `member` rolunu dogru
+// kullanir. Generic cerceve yalniz true-dejenerelikte (eksenle ayni dogrultu /
+// iki yuze esit) uretilmez — haunch cercevesi ve digest bundan ETKILENMEZ.
 static bool blockHaunchContact(EvalCtx& ctx, const RecipeStep& st, GenerationPlan& plan) {
-    std::string mainRole, secRole;
-    strArg(st, "main", "main", mainRole);
-    strArg(st, "secondary", "secondary_0", secRole);
-    if (mainRole != "main") {
-        ctx.error = wideFromUtf8("frame.contact: main rolu 'main' olmali, verilen '" + mainRole + "'");
+    std::string targetRole, memberRole;
+    strArg(st, "target", "main", targetRole);
+    strArg(st, "member", "secondary_0", memberRole);
+    if (targetRole != "main") {
+        ctx.error = wideFromUtf8("frame.contact: target rolu 'main' olmali, verilen '" + targetRole + "'");
         return false;
     }
-    if (secRole != "secondary_0") {
-        ctx.error = wideFromUtf8(
-            "frame.contact: yalniz 'secondary_0' destekleniyor, verilen '" + secRole + "'");
+    if (memberRole.rfind("secondary_", 0) != 0) {
+        ctx.error = wideFromUtf8("frame.contact: member rolu secondary_N olmali, verilen '" + memberRole + "'");
         return false;
     }
-    return runTas(ctx, st, "frame.contact", HaunchParams{}, "", false, plan);
+    if (!memberByRole(ctx.input, memberRole)) {
+        ctx.error = wideFromUtf8("frame.contact: bilinmeyen member rolu '" + memberRole + "'");
+        return false;
+    }
+    // Opak haunch cercevesi (haunch taslari icin; member=secondary_0 -> digest
+    // DEGISMEZ, onceki davranisla birebir).
+    std::shared_ptr<void> outFrame;
+    if (!runHaunch40Tas("frame.contact", HaunchParams{}, ctx.input, nullptr,
+                        outFrame, "", plan)) {
+        ctx.error = plan.error;
+        return false;
+    }
+    ctx.haunchFrames[st.id] = outFrame;
+    // Generic yuz cercevesi (P mantigi): target'in (kolon) member'a (kiris)
+    // bakan yuzu. Genel taslar icin; dejenerelikte best-effort (atlanir).
+    MemberLocalFrame gf;
+    if (computeMemberFace(ctx, targetRole, memberRole, gf)) {
+        ctx.frames[st.id] = gf;
+    } else {
+        ctx.error.clear();  // best-effort: haunch cercevesi/digest etkilenmez
+    }
+    return true;
 }
 
 // frame.plumb_face: yalniz gap + endPlateThickness + malzeme.
@@ -1394,9 +1420,9 @@ static const std::vector<BlockDecl>& blockRegistry() {
         {"endplate.placement", {}, {"main", "beam", "rolePlate", "roleBolts"}, {},
          &blockEndPlatePlacement, {}, {}, {}, {}},
         // MM-3d: her taş kendi parametrelerini alır; "frame" adıyla çerçeve,
-        // "role" üretilen roleKey. frame.contact PARAMETRESİZ.
-        {"frame.contact", {}, {"main", "secondary", "role"}, {}, &blockHaunchContact,
-         {}, {}, {}, {}},
+        // "role" üretilen roleKey. frame.contact PARAMETRESİZ (roller args'tan).
+        {"frame.contact", {}, {"member", "target", "role"}, {}, &blockHaunchContact,
+         {}, {}, {"member", "target"}, {}},
         {"frame.plumb_face", {"gap", "endPlateThickness"},
          {"frame", "plateMaterial", "role"}, {}, &blockHaunchPlumbFace, {"plateMaterial"},
          {}, {}, {}},
@@ -1624,7 +1650,7 @@ static bool cyclicLetCheck(const Recipe& recipe, RecipeValidation& r) {
 // blockRegistry() ile birebir paraleldir; yeni tas eklerken IKISINI de guncelle.
 static bool producesGenericFrame(const std::string& use) {
     return use == "frame.member_end" || use == "frame.offset" || use == "frame.rotate" ||
-           use == "frame.member_face";
+           use == "frame.member_face" || use == "frame.contact";
 }
 static bool producesHaunchFrame(const std::string& use) {
     return use == "frame.contact" || use == "frame.plumb_face" ||
@@ -1884,9 +1910,10 @@ RecipeValidation validateRecipe(const Recipe& recipe,
                 }
             }
         }
-        // Bu adim kendi ad uzayina bir frame uretiyorsa kaydet.
+        // Bu adim kendi ad uzayina bir frame uretiyorsa kaydet. frame.contact
+        // (O) IKISINI de uretir: opak haunch cercevesi + generic yuz cercevesi.
         if (producesGenericFrame(st.use)) genericFrames.insert(st.id);
-        else if (producesHaunchFrame(st.use)) haunchFrames.insert(st.id);
+        if (producesHaunchFrame(st.use)) haunchFrames.insert(st.id);
     }
     // let ifadelerini tara (tanimsiz let / bilinmeyen parametre) + dongu.
     for (const auto& l : recipe.lets)

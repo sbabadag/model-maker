@@ -117,13 +117,12 @@ recipe için birebir aynı plan (dolayısıyla aynı `planDigest`) üretir.
 
 ## Haunch 40 blokları (MM-3c)
 
-`packages/haunch40/recipe.json` 8 adım kullanır. Tüm parametreler
-`frame.contact` argümanlarında AÇIKÇA listelenir (input.params'a gizli okuma
-yok); adımlar opak bir durum (`state`) paylaşır:
+`packages/haunch40/recipe.json` 8 adım kullanır. Her taş KENDİ parametrelerini
+alır (input.params'a gizli okuma yok); adımlar opak bir durum (`state`) paylaşır:
 
 | Blok | Görev |
 |---|---|
-| `frame.contact` | temas çerçevesi + eğik çerçeve + levha boyutu + başlangıç |
+| `frame.contact` | temas çerçevesi + eğik çerçeve (PARAMETRESİZ; roller args'tan) |
 | `frame.plumb_face` | düşey yüz doğrulaması (contact ile hazır) |
 | `haunch.end_plate` | alın levhası (+ kolon tepesi kırpma) |
 | `haunch.web` | konik gövde konturu |
@@ -132,14 +131,9 @@ yok); adımlar opak bir durum (`state`) paylaşır:
 | `bolts.haunch_groups` | iki bulon grubu |
 | `haunch.welds` | kaynaklar |
 
-`frame.contact` argümanları: `haunchLength, haunchDepth, haunchTipDepth,
-haunchWebThickness, haunchFlangeThickness, endPlateThickness, gap,
-boltEdgeLeft, boltEdgeRight, boltEdge, endPlateWidth, endPlateHeight,
-haunchFlangeWidth, topPlateThickness, stiffenerClipSize, stiffenerThickness,
-addStiffenerThickness, rafterBottomStiffenerThickness, comprStiffenerThickness,
-morrisStiffenerThickness, diagStiffenerThickness, diagStiffenerWidth, weldSize,
-createBeamStiffener, createAddStiffener, createRafterBottomStiffener,
-createComprStiffener, createMorrisStiffener, createDiagStiffener, createWelds,
-upperBolt*, lowerBolt* (CountX/CountY/PitchX/PitchY/Diameter/HoleDiameter/
-EdgeClear)`, metin: `plateMaterial, grade`. Aritmetik `generateHaunch40` ile
-birebir; 5 golden girdide `digest(runRecipe) == golden`.
+`frame.contact` argümanları: `target` (ana/kolon, varsayılan `main`),
+`member` (ikincil/kiriş, `secondary_N`, varsayılan `secondary_0`). İKİ çerçeve
+üretir: (1) haunch taşlarının kullandığı OPAK çerçeve (digest `generateHaunch40`
+ile birebir) ve (2) genel taşların (`plate.rect`/`bolts.grid`/`frame.offset`)
+`frame` olarak kullanabileceği GENERIC yüz çerçevesi (= `frame.member_face`
+mantığı: `target`'in `member`'a bakan yüzü). Haunch digest'i DEĞİŞMEZ.

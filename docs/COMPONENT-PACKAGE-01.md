@@ -238,7 +238,7 @@ Taşlar C++'ta, çekirdekte, testli ve sürümlüdür. Mevcut generator'lardaki 
     "upperSpanX": "(param.upperBoltCountX - 1) * param.upperBoltPitchX"
   },
   "steps": [
-    { "id": "c",   "use": "frame.contact",    "args": { "main": "main", "secondary": "secondary_0" } },
+    { "id": "c",   "use": "frame.contact",    "args": { "member": "secondary_0", "target": "main" } },
     { "id": "f",   "use": "frame.plumb_face", "args": { "contact": "c", "gap": "param.gap" } },
     { "check": "param.haunchDepth > param.haunchTipDepth + 25",
       "message": "Haunch derinliği uç derinliğinden en az 25 mm büyük olmalı" },

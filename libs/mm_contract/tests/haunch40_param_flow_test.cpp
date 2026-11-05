@@ -151,7 +151,7 @@ int main() {
                 const std::string& key = kv.first;
                 const std::string& val = kv.second.text;
                 if (key == "frame" || key == "plateMaterial" || key == "grade" ||
-                    key == "role" || key == "main" || key == "secondary")
+                    key == "role" || key == "member" || key == "target")
                     continue;
                 if (val.rfind("param.", 0) == 0) ++paramArgs;
                 else ++literalNumeric;

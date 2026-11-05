@@ -6,8 +6,8 @@
       "id": "c",
       "use": "frame.contact",
       "args": {
-        "main": "main",
-        "secondary": "secondary_0"
+        "member": "secondary_0",
+        "target": "main"
       }
     },
     {

@@ -1201,6 +1201,78 @@ static void testRunRecipeFrames() {
     CHECK(emptyFrames.empty(), "runRecipeFrames: basarisiz recipe -> bos harita");
 }
 
+// O: frame.contact generic yuz cercevesi uretir (genel taslarca kullanilabilir).
+static void testFrameContactGeneric() {
+    const MemberSectionSpec colSec{300.0, 300.0, 11.0, 19.0, 0.0};
+    const MemberSectionSpec beamSec{150.0, 300.0, 7.1, 10.7, 0.0};
+    const Vec3 colBase{0.0, 0.0, 0.0}, colTop{0.0, 0.0, 3000.0};
+    ComponentInput in;
+    in.main = memberGeometryFromProfile(colBase, colTop, false, Vec3{0, 0, 1}, 0.0, colSec);
+    in.main.id = 1;
+    MemberGeometry beam = memberGeometryFromProfile(colTop, colTop + Vec3{6000.0, 0.0, 0.0},
+                                                    true, Vec3{0, 0, 1}, 0.0, beamSec);
+    beam.id = 2;
+    in.secondary.push_back(beam);
+
+    auto contactFrames = [&](const ComponentInput& input) {
+        Recipe r;
+        RecipeStep c; c.id = "c"; c.use = "frame.contact";
+        c.args["member"] = S("secondary_0"); c.args["target"] = S("main");
+        r.steps = {c};
+        return runRecipeFrames(r, {}, input);
+    };
+    auto faceFrames = [&](const ComponentInput& input) {
+        Recipe r;
+        RecipeStep c; c.id = "c"; c.use = "frame.member_face";
+        c.args["member"] = S("main"); c.args["toward"] = S("secondary_0");
+        r.steps = {c};
+        return runRecipeFrames(r, {}, input);
+    };
+
+    // frame.contact generic cercevesi == frame.member_face(main, secondary_0).
+    const auto cf = contactFrames(in);
+    const auto ff = faceFrames(in);
+    CHECK(cf.count("c") && ff.count("c"), "frame.contact: generic cerceve uretilir");
+    if (cf.count("c") && ff.count("c")) {
+        CHECK(near3(cf.at("c").origin, ff.at("c").origin), "frame.contact: origin == member_face");
+        CHECK(near3(cf.at("c").w, ff.at("c").w), "frame.contact: w == member_face");
+        CHECK(near3(cf.at("c").w, {1.0, 0.0, 0.0}), "frame.contact: kolon govdesi +X");
+    }
+
+    // Genel tas (plate.rect) frame.contact ciktisini `frame` olarak kullanir.
+    {
+        Recipe r;
+        RecipeStep c; c.id = "c"; c.use = "frame.contact";
+        c.args["member"] = S("secondary_0"); c.args["target"] = S("main");
+        RecipeStep p; p.id = "p"; p.use = "plate.rect";
+        p.args["frame"] = S("c"); p.args["w"] = S("1"); p.args["h"] = S("1"); p.args["t"] = S("1");
+        r.steps = {c, p};
+        const GenerationPlan plan = runRecipe(r, {}, in);
+        CHECK(plan.ok && plan.plates.size() == 1, "frame.contact: plate.rect genel tasi kullanir");
+        if (plan.ok && !plan.plates.empty())
+            CHECK(near3(plan.plates[0].center, {5.5, 0.0, 3000.0}),
+                  "frame.contact: levha kolon yuzunde (govde +X, tw/2)");
+    }
+
+    // member=secondary_1 genellemesi: ikinci kiris -Y (flans yuzu).
+    {
+        ComponentInput in2 = in;
+        MemberGeometry beam2 = memberGeometryFromProfile(colTop, colTop + Vec3{0.0, -6000.0, 0.0},
+                                                         true, Vec3{0, 0, 1}, 0.0, beamSec);
+        beam2.id = 3;
+        in2.secondary.push_back(beam2);
+        Recipe r;
+        RecipeStep c; c.id = "c"; c.use = "frame.contact";
+        c.args["member"] = S("secondary_1"); c.args["target"] = S("main");
+        r.steps = {c};
+        const auto f2 = runRecipeFrames(r, {}, in2);
+        CHECK(f2.count("c"), "frame.contact: member=secondary_1 cozulur");
+        if (f2.count("c"))
+            CHECK(near3(f2.at("c").w, {0.0, -1.0, 0.0}),
+                  "frame.contact: secondary_1 yuzu -Y (flans)");
+    }
+}
+
 int main() {
     CHECK(std::string(kContractVersion) == "1.11.0", "contract surumu 1.7.0");
     testExpressionEvaluator();
@@ -1220,6 +1292,7 @@ int main() {
     testBlockDeclarations();
     testMemberFace();
     testRunRecipeFrames();
+    testFrameContactGeneric();
     std::printf("recipe test: %s (%d hata)\n", failures ? "HATALI" : "OK", failures);
     return failures ? 1 : 0;
 }
