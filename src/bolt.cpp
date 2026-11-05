@@ -1,5 +1,10 @@
 #include "model_maker/bolt.hpp"
 
+// BULON BOYUT TABLOSU (MM-8b/3): ISO 4014/4032/7089 degerleri CONTRACT'ta
+// tek yerde (mm_contract/bolt_dimensions.hpp). Standart capta tablo, tabloda
+// olmayan capta formul yedegi kullanilir.
+#include "mm_contract/bolt_dimensions.hpp"
+
 #include <algorithm>
 #include <cmath>
 
@@ -8,12 +13,23 @@ namespace mm {
 BoltDimensions boltDimensions(double nominalDiameter) noexcept {
     BoltDimensions d;
     const double kd = nominalDiameter > 0.0 ? nominalDiameter : 1.0;
-    d.headAcrossFlats = 1.5 * kd;
-    d.headHeight = 0.7 * kd;
-    d.nutAcrossFlats = 1.5 * kd;
-    d.nutHeight = 0.8 * kd;
-    d.washerOuterDiameter = 2.0 * kd;
-    d.washerThickness = 0.15 * kd;
+    if (const BoltIsoDimension* iso = boltIsoTableDimension(kd)) {
+        // ISO tablosu: bas ve somun ayni "across flats" (s) degerini kullanir.
+        d.headAcrossFlats = iso->acrossFlats;
+        d.headHeight = iso->headHeight;
+        d.nutAcrossFlats = iso->acrossFlats;
+        d.nutHeight = iso->nutHeight;
+        d.washerOuterDiameter = iso->washerDiameter;
+        d.washerThickness = iso->washerThickness;
+    } else {
+        // Formul yedegi: yalniz tabloda olmayan cap icin (0/negatif -> 1mm taban).
+        d.headAcrossFlats = 1.5 * kd;
+        d.headHeight = 0.7 * kd;
+        d.nutAcrossFlats = 1.5 * kd;
+        d.nutHeight = 0.8 * kd;
+        d.washerOuterDiameter = 2.0 * kd;
+        d.washerThickness = 0.15 * kd;
+    }
     return d;
 }
 
@@ -236,7 +252,8 @@ bool isBoltAxisValid(const Vec3& axis) noexcept {
 }
 
 const std::vector<double>& standardBoltDiameters() noexcept {
-    static const std::vector<double> kDiameters{12.0, 16.0, 20.0, 24.0, 27.0, 30.0};
+    // MM-8b/3: M36 eklenir (ISO 4014/4032/7089 tablosuyla ayni kapsam).
+    static const std::vector<double> kDiameters{12.0, 16.0, 20.0, 24.0, 27.0, 30.0, 36.0};
     return kDiameters;
 }
 
@@ -249,6 +266,7 @@ double standardBoltHoleDiameter(double nominalDiameter) noexcept {
     if (std::abs(d - 24.0) < 1e-9) return 26.0;
     if (std::abs(d - 27.0) < 1e-9) return 30.0;
     if (std::abs(d - 30.0) < 1e-9) return 33.0;
+    if (std::abs(d - 36.0) < 1e-9) return 39.0;
     return d + 2.0;  // katalog disi: nominal + 2 mm
 }
 

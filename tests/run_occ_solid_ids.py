@@ -1294,7 +1294,9 @@ def main(argv):
             fh.write(build_cpp(bodies))
 
         cmd = [cxx, "-std=c++20", "-O1", "-DMM_HAS_OCC", "-D_USE_MATH_DEFINES",
-               "-I" + os.path.join(ROOT, "include"), "-I" + inc, gen]
+               "-I" + os.path.join(ROOT, "include"),
+               "-I" + os.path.join(ROOT, "libs", "mm_contract", "include"),
+               "-I" + inc, gen]
         cmd += [os.path.join(ROOT, s) for s in CORE_SOURCES]
         cmd += ["-o", exe, "-L" + libdir]
         cmd += ["-Wl,--start-group"] + ["-l" + lib for lib in OCC_LIBS] + ["-Wl,--end-group"]

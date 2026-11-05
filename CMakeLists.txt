@@ -69,6 +69,7 @@ add_library(mm_component_contract
     src/component_preview.cpp
     src/component_checks.cpp
     src/component_preview_auto.cpp
+    src/component_schematic.cpp
     src/recipe.cpp
 )
 target_include_directories(mm_component_contract PUBLIC include third_party ${CMAKE_CURRENT_SOURCE_DIR}/libs/mm_contract/include)
@@ -1468,6 +1469,14 @@ if(BUILD_TESTING)
     target_link_options(model_maker_component_catalog_test PRIVATE -static -static-libgcc -static-libstdc++)
     target_compile_options(model_maker_component_catalog_test PRIVATE -Wall -Wextra -Wpedantic)
     add_test(NAME model_maker_component_catalog_test COMMAND model_maker_component_catalog_test)
+
+    # MM-8b/3: OTOMATIK SEMATIK (ortografik izdusum, gercek mm) — Qt/OCCT'siz.
+    # Bas genisligi / levha kalinligi orani + determinizm dogrulanir.
+    add_executable(model_maker_component_schematic_test tests/component_schematic_test.cpp)
+    target_link_libraries(model_maker_component_schematic_test PRIVATE model_maker_core)
+    target_link_options(model_maker_component_schematic_test PRIVATE -static -static-libgcc -static-libstdc++)
+    target_compile_options(model_maker_component_schematic_test PRIVATE -Wall -Wextra -Wpedantic)
+    add_test(NAME model_maker_component_schematic_test COMMAND model_maker_component_schematic_test)
 
     # UNIVERSAL COMPONENT DIALOG Qt OFFScreen testi: widget'in gercek davranisi
     # (round-trip, sentinel koruma, bilinmeyen parametre) bassiz dogrulanir.

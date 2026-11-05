@@ -208,6 +208,12 @@ struct ComponentDialogSchema {
     // Kaynak tablosu (Tekla "Welds"): bos degilse diyalog bir "Welds" sekmesi
     // acar; satirlar semadaki numarali cagrilardan secilebilir.
     std::vector<WeldTableRow> weldRows;
+    // MM-8b/3: OTOMATIK SEMATIK. true ise 2B sematik elle (items) CIZILMEZ;
+    // GenerationPlan + MemberGeometry'den ortografik izdusumle OTOMATIK uretilir
+    // (component_schematic.hpp). items/hotspots bu tiplerde "istege bagli
+    // override" olarak KALIR (yalniz plan yoksa geriye donus). false = eski
+    // elle sematik (geriye uyumlu).
+    bool autoSchematic{false};
     // MM-6: VERIYLE TANIMLANAN ONIZLEME (olcu cagrilari + Boolean toggle'lar).
     // Bos ise onizleme yalniz genel levha/bulon cizimi yapar (komponente ozel
     // callout YOK). Tanim paketin dialog.json'undan gelir; widget tipId'ye gore

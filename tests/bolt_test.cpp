@@ -23,16 +23,24 @@ static bool approx(double a, double b, double tol = 1e-9) {
 }
 
 int main() {
-    // 1) Standard bulon boyutlari.
+    // 1) Standart bulon boyutlari (MM-8b/3: ISO 4014/4032/7089 tablosu).
     const BoltDimensions d = boltDimensions(20.0);
-    check(approx(d.headAcrossFlats, 30.0), "bas kosegen s=1.5*d");
-    check(approx(d.headHeight, 14.0), "bas yuksekligi k=0.7*d");
-    check(approx(d.nutAcrossFlats, 30.0), "somun kosegen s=1.5*d");
-    check(approx(d.nutHeight, 16.0), "somun yuksekligi m=0.8*d");
-    check(approx(d.washerOuterDiameter, 40.0), "pul dis cap D=2*d");
-    check(approx(d.washerThickness, 3.0), "pul kalinligi t=0.15*d");
-    // Sifir/negatif cap -> 1mm taban (degenereden kac).
-    check(approx(boltDimensions(0.0).headAcrossFlats, 1.5), "0 cap -> 1mm taban");
+    check(approx(d.headAcrossFlats, 30.0), "M20 bas anahtar agzi s=30 (ISO 4014)");
+    check(approx(d.headHeight, 12.5), "M20 bas yuksekligi k=12.5 (ISO 4014)");
+    check(approx(d.nutAcrossFlats, 30.0), "M20 somun anahtar agzi s=30 (ISO 4032)");
+    check(approx(d.nutHeight, 18.0), "M20 somun yuksekligi m=18 (ISO 4032)");
+    check(approx(d.washerOuterDiameter, 37.0), "M20 pul dis cap D=37 (ISO 7089)");
+    check(approx(d.washerThickness, 3.0), "M20 pul kalinligi t=3 (ISO 7089)");
+    // M36 (tabloya yeni eklenen): s=55, k=22.5, m=31, D=66, t=5.
+    const BoltDimensions d36 = boltDimensions(36.0);
+    check(approx(d36.headAcrossFlats, 55.0) && approx(d36.nutHeight, 31.0) &&
+              approx(d36.washerOuterDiameter, 66.0),
+          "M36 ISO tablosu (s=55, m=31, D=66)");
+    // Sifir/negatif cap -> formul yedegi + 1mm taban (tabloda yok).
+    check(approx(boltDimensions(0.0).headAcrossFlats, 1.5), "0 cap -> formul 1mm taban");
+    // Tabloda OLMAYAN cap -> formul yedegi (M22 gibi ara cap).
+    check(approx(boltDimensions(22.0).headHeight, 0.7 * 22.0),
+          "tablo disi cap -> formul k=0.7d");
 
     // 2) makeHoleCutModifier.
     const CutModifier m = makeHoleCutModifier(7, {10, 20, 30}, {0, 0, 2}, 22.0);
@@ -155,9 +163,10 @@ int main() {
     check(!isBoltAxisValid({0, 0, 0}), "sifir eksen gecersiz");
 
     // 6) Standart boyut katalogu + kalite.
-    check(standardBoltDiameters().size() == 6, "6 standart cap");
+    check(standardBoltDiameters().size() == 7, "7 standart cap (M12..M36)");
     check(approx(standardBoltHoleDiameter(20.0), 22.0), "M20 -> 22 delik");
     check(approx(standardBoltHoleDiameter(30.0), 33.0), "M30 -> 33 delik");
+    check(approx(standardBoltHoleDiameter(36.0), 39.0), "M36 -> 39 delik");
     check(approx(standardBoltHoleDiameter(9.0), 11.0), "katalog disi -> +2");
     check(isBoltGradeValid("8.8") && isBoltGradeValid("10.9") &&
               !isBoltGradeValid("5.6") && isBoltGradeValid(""),

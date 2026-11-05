@@ -3,6 +3,8 @@
 #include "model_maker/component_option_icons.hpp"
 #include "model_maker/component_preview_auto.hpp"
 #include "model_maker/component_engine.hpp"
+// Levha grisi TEK KAYNAK (contract): kPlateGreyRgb (MM-8b/3 otomatik sematik).
+#include "mm_contract/component_visual.hpp"
 
 namespace {
 // MM-6 (f): opsiyonel parametrelerde SENTINEL degerler ("otomatik" = -1,
@@ -201,6 +203,66 @@ void ComponentSchematicView::paintEvent(QPaintEvent*) {
     p.setRenderHint(QPainter::Antialiasing, true);
     p.fillRect(rect(), QColor(0xFA, 0xFA, 0xFC));
 
+    // MM-8b/3: OTOMATIK SEMATIK — GenerationPlan'dan gercek mm cizim, tek olcek.
+    if (autoOk_) {
+        const auto S = [&](const Vec2& v) { return toScreen(DiagramPoint{v.x, v.y}); };
+        for (const auto& pr : autoDrawing_.prims) {
+            switch (pr.kind) {
+                case SchematicPrimKind::Polygon: {
+                    QPolygonF poly;
+                    for (const auto& q : pr.pts) poly << S(q);
+                    // Levhalar HER ZAMAN gri (kPlateGreyRgb); uyeler acik celik mavisi.
+                    const QColor fill = pr.isPlate
+                        ? QColor(static_cast<int>(kPlateGreyR), static_cast<int>(kPlateGreyG),
+                                 static_cast<int>(kPlateGreyB))
+                        : QColor(0xD0, 0xD8, 0xE8);
+                    p.setPen(QPen(QColor(0x40, 0x40, 0x50), 1.4));
+                    p.setBrush(fill);
+                    p.drawPolygon(poly);
+                    break;
+                }
+                case SchematicPrimKind::Polyline: {
+                    QPolygonF poly;
+                    for (const auto& q : pr.pts) poly << S(q);
+                    p.setPen(QPen(QColor(0x40, 0x40, 0x50), 1.4));
+                    p.setBrush(Qt::NoBrush);
+                    p.drawPolyline(poly);
+                    break;
+                }
+                case SchematicPrimKind::Line: {
+                    if (pr.pts.size() < 2) break;
+                    QPen pen(QColor(0x40, 0x40, 0x50), 1.4);
+                    if (pr.dashed) pen.setStyle(Qt::DashLine);
+                    p.setPen(pen);
+                    p.drawLine(S(pr.pts[0]), S(pr.pts[1]));
+                    break;
+                }
+                case SchematicPrimKind::Circle: {
+                    const QPointF c = S(Vec2{pr.cx, pr.cy});
+                    const double rr = pr.r * scale_;
+                    QPen pen(QColor(0x30, 0x30, 0x40), 1.4);
+                    if (pr.dashed) pen.setStyle(Qt::DashLine);
+                    p.setPen(pen);
+                    p.setBrush(pr.filled ? QBrush(QColor(0x57, 0x4F, 0x47)) : QBrush(Qt::NoBrush));
+                    p.drawEllipse(c, rr, rr);
+                    break;
+                }
+                case SchematicPrimKind::Annulus: {
+                    const QPointF c = S(Vec2{pr.cx, pr.cy});
+                    const double ro = pr.r * scale_;
+                    const double ri = pr.rInner * scale_;
+                    p.setPen(QPen(QColor(0x50, 0x50, 0x58), 1.0));
+                    p.setBrush(QBrush(QColor(0xE8, 0xE8, 0xE8)));
+                    p.drawEllipse(c, ro, ro);
+                    p.setBrush(QBrush(QColor(0xFA, 0xFA, 0xFC)));  // ic delik (arka plan)
+                    p.drawEllipse(c, ri, ri);
+                    break;
+                }
+            }
+        }
+        return;
+    }
+
     // Çizim ögeleri (items).
     for (const auto& item : schema_.items) {
         for (const auto& pr : item.primitives) {
@@ -274,7 +336,7 @@ void ComponentSchematicView::paintEvent(QPaintEvent*) {
 }
 
 void ComponentSchematicView::mousePressEvent(QMouseEvent* e) {
-    if (e->button() == Qt::LeftButton) {
+    if (e->button() == Qt::LeftButton && !autoOk_) {
         const DiagramPoint w = toWorld(e->position());
         const auto id = hitTestDiagramHotspot(schema_, w);
         if (id) {
@@ -297,6 +359,20 @@ void ComponentSchematicView::mousePressEvent(QMouseEvent* e) {
 void ComponentSchematicView::setHighlightedWeldRow(int row) {
     if (highlightedWeldRow_ == row) return;
     highlightedWeldRow_ = row;
+    update();
+}
+
+// MM-8b/3: OTOMATIK SEMATIK. Cizim mm cinsinden; sinir kutusunu sema
+// koordinatlari gibi kullanarak TEK olcekle (gercek mm/px) eslenir.
+void ComponentSchematicView::setAutoDrawing(SchematicDrawing drawing) {
+    autoDrawing_ = std::move(drawing);
+    autoOk_ = autoDrawing_.ok;
+    if (autoOk_) {
+        minX_ = autoDrawing_.minX;
+        minY_ = autoDrawing_.minY;
+        maxX_ = autoDrawing_.maxX;
+        maxY_ = autoDrawing_.maxY;
+    }
     update();
 }
 
@@ -362,6 +438,11 @@ ComponentDialogWidget::ComponentDialogWidget(const ComponentDialogDefinition& de
             QObject::connect(button,&QPushButton::clicked,this,
                 [this,key=std::string(view.first)]() {
                     if(nativePreview_)nativePreview_->setView(key);
+                    // MM-8b/3: 2B sematik yonu 3B gorunum dugmesiyle birlikte gider.
+                    if(key=="side") schematicView_=SchematicViewDir::Side;
+                    else if(key=="top") schematicView_=SchematicViewDir::Top;
+                    else schematicView_=SchematicViewDir::Front;
+                    refreshSchematic();
                 });
             views->addWidget(button);
         }
@@ -430,7 +511,7 @@ ComponentDialogWidget::ComponentDialogWidget(const ComponentDialogDefinition& de
         // oturum boyunca hatirlanir (dosya-static). 2B sematik tanimi yoksa
         // dugme cizilmez, ana 3B onizleme gosterilir.
         static bool sSchematicMode = false;
-        if (!def_.schema.items.empty()) {
+        if (def_.schema.autoSchematic || !def_.schema.items.empty()) {
             auto* schToggle = new QPushButton(
                 sSchematicMode ? QStringLiteral("3B") : QStringLiteral("Sematik"), this);
             schToggle->setCheckable(true);
@@ -1531,6 +1612,7 @@ void ComponentDialogWidget::setEditorValue(QWidget* editor, const CompParamSpec&
 
 void ComponentDialogWidget::setPreviewInput(const ComponentInput& input) {
     previewInputGiven_ = true;
+    previewInput_ = input;  // MM-8b/3: otomatik sematik icin saklanir
     if(nativePreview_) {
         haunchBeamHeight_=0.0;
         haunchBeamWidth_=0.0;
@@ -1557,6 +1639,7 @@ void ComponentDialogWidget::setPreviewInput(const ComponentInput& input) {
         nativePreview_->setParams(params);
     }
     refreshChecks();
+    refreshSchematic();
 }
 void ComponentDialogWidget::applyAutoVisual(const std::wstring& name) {
     const auto it = editors_.find(name);
@@ -1807,6 +1890,24 @@ void ComponentDialogWidget::updatePreviewFromForm(const std::wstring& changed) {
         nativePreview_->setParams(params);
     }
     refreshChecks();
+    refreshSchematic();
+}
+
+// MM-8b/3: autoSchematic tiplerde GenerationPlan'dan 2B sematigi yeniden uret.
+// Plan/input yoksa (katalog acilisi) elle override'a (items) geri donulur.
+void ComponentDialogWidget::refreshSchematic() {
+    if (!schematic_ || !def_.schema.autoSchematic) return;
+    if (!nativePreview_ || !previewInputGiven_) {
+        schematic_->setAutoDrawing(SchematicDrawing{});
+        return;
+    }
+    const GenerationPlan& plan = nativePreview_->previewPlan();
+    if (!plan.ok || plan.plates.empty()) {
+        schematic_->setAutoDrawing(SchematicDrawing{});
+        return;
+    }
+    schematic_->setAutoDrawing(
+        buildComponentSchematic(plan, previewInput_, schematicView_));
 }
 
 // MM-7 item 2: onizleme planindaki checks[]'i tabloya yazar (kirmizi/yesil) ve

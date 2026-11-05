@@ -445,6 +445,7 @@ ComponentDialogDefinition endPlateDialogDefinition() noexcept {
     def.typeId = L"beam_to_column_end_plate";
     def.schema.typeId = def.typeId;
     def.specs = endPlateDialogSpecs();
+    def.schema.autoSchematic = true;  // MM-8b/3: elle sematik yerine otomatik izdusum
 
     // Sematik (yan gorunus): kolon solda, kiris sagda, alin levhasi arada.
     ComponentDiagramItem column;
@@ -525,6 +526,7 @@ ComponentDialogDefinition finPlateDialogDefinition() noexcept {
     def.schema.typeId = def.typeId;
     // Engine semasi TEK KAYNAK (finPlateComponentType) — dialog ondan turer.
     def.specs = finPlateComponentType().params;
+    def.schema.autoSchematic = true;  // MM-8b/3: elle sematik yerine otomatik izdusum
 
     ComponentDiagramItem column;
     column.id = L"column";
@@ -576,6 +578,7 @@ ComponentDialogDefinition haunch40DialogDefinition() noexcept {
     def.schema.typeId=def.typeId;
     def.specs=haunch40ComponentType().params;
     def.schema.useTabs=true;
+    def.schema.autoSchematic=true;  // MM-8b/3: elle sematik yerine otomatik izdusum
 
     ComponentDiagramItem column;
     column.id=L"column";

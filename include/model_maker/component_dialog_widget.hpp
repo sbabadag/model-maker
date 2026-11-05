@@ -24,6 +24,7 @@
 #include "model_maker/component_dialog.hpp"
 #include "model_maker/component_preview.hpp"
 #include "model_maker/component_presets.hpp"
+#include "model_maker/component_schematic.hpp"
 
 #include <QWidget>
 #include <functional>
@@ -62,6 +63,12 @@ public:
     void setHighlightedWeldRow(int row);
     int highlightedWeldRow() const { return highlightedWeldRow_; }
 
+    // MM-8b/3: OTOMATIK SEMATIK. Auto cizim verilince elle items/hotspot'lar
+    // yerine bu cizim (gercek mm, tek olcek) cizilir. Bos/ok=false = elle
+    // sematige (override) geri don.
+    void setAutoDrawing(SchematicDrawing drawing);
+    bool hasAutoDrawing() const { return autoOk_; }
+
 signals:
     // Bir hotspot tıklandı; bağlı parametre adı (bağsız/dekoratif ise boş).
     void hotspotClicked(const QString& paramName);
@@ -84,6 +91,9 @@ private:
     double offsetX_{0.0};
     double offsetY_{0.0};
     double minX_{0.0}, minY_{0.0}, maxX_{0.0}, maxY_{0.0};
+    // MM-8b/3: otomatik sematik cizimi (gercek mm). autoOk_ = gecerli cizim var.
+    SchematicDrawing autoDrawing_;
+    bool autoOk_{false};
 };
 
 // Diyalog gövdesi: solda sematik, sağda gruplanmış parametre editörleri.
@@ -158,6 +168,9 @@ private:
                                const CompParamValue& value);
     void highlightParamRow(const std::wstring& paramName);
     void updatePreviewFromForm(const std::wstring& changed = {});
+    // MM-8b/3: autoSchematic tiplerde GenerationPlan'dan 2B sematigi yeniden
+    // uretip schematic_ gorunumune besler.
+    void refreshSchematic();
     void refreshChecks();
     void enforceHaunchInputLimits(const std::wstring& changed = {});
     void releaseFixedPlateSizeOnEdgeEdit(const std::wstring& name);
@@ -209,6 +222,8 @@ private:
     QWidget* schematicHost_{};                      // sematik sarmalayici (toggle)
     // MM-6b: semada hazir olcu tanimi yoksa otomatik uretilen tanim (onbellekli).
     bool previewInputGiven_{false};   // gercek instance girdisi verildi mi?
+    ComponentInput previewInput_{};   // MM-8b/3: sematik icin saklanan girdi
+    SchematicViewDir schematicView_{SchematicViewDir::Front};  // MM-8b/3: sematik yonu
     bool autoPreviewTried_{false};
     bool autoPreviewOk_{false};
     PreviewDefinition autoPreviewDef_;
