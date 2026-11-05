@@ -2,6 +2,7 @@
 #include "model_maker/bolt.hpp"
 #include "model_maker/component_engine.hpp"
 #include "model_maker/component_preview.hpp"
+#include "model_maker/label_layout.hpp"
 // Levha grisi TEK KAYNAK (contract): kPlateGreyRgb.
 #include "mm_contract/component_visual.hpp"
 
@@ -907,16 +908,46 @@ void ComponentLivePreviewWidget::paintEvent(QPaintEvent*) {
     painter.drawText(QPoint(16,48),partName);
     // MM-6: VERIYLE TANIMLANAN OLCU CIZGILERI — iki anchor arasinda olcu cizgisi,
     // uclarda tik, ortada deger etiketi. Ayni tanim spin editörleri de besler.
+    // MM-8a/1: etiketler CAKISMASIZ deterministik yerlestirilir (label_layout.hpp;
+    // platformdan bagimsiz sabit metrik). Kaydirilan etikete kilavuz cizgisi.
+    lastLabelRects_.clear();
     if (!previewDef_.dimensions.empty()) {
         QFont dimFont = painter.font();
         dimFont.setPointSizeF(7.5);
         dimFont.setBold(true);
         painter.setFont(dimFont);
+        std::vector<mm::LabelRequest> reqs;
+        std::vector<mm::LabelObstacle> obstacles;
+        std::vector<QPointF> lineA, lineB;
+        std::vector<QString> texts;
+        std::vector<std::size_t> dimIdx;
         for (std::size_t i = 0; i < previewDims_.size() && i < callouts_.size(); ++i) {
             const auto& d = previewDims_[i];
             if (!d.ok) continue;
             const QPointF a = project(d.from), b = project(d.to);
-            const bool hot = highlight_ == callouts_[i].name;
+            const QString text = QStringLiteral("%1 = %2")
+                                     .arg(d.label)
+                                     .arg(d.value, 0, 'f', 1);
+            mm::LabelRequest r;
+            r.text = text.toStdString();
+            r.anchorX = (a.x() + b.x()) * 0.5;
+            r.anchorY = (a.y() + b.y()) * 0.5;
+            r.priority = static_cast<int>(i);
+            reqs.push_back(r);
+            obstacles.push_back(mm::LabelObstacle{a.x(), a.y(), b.x(), b.y()});
+            lineA.push_back(a);
+            lineB.push_back(b);
+            texts.push_back(text);
+            dimIdx.push_back(i);
+        }
+        const auto places = mm::layoutLabels(reqs, obstacles,
+                                             static_cast<double>(width()),
+                                             static_cast<double>(height()),
+                                             devicePixelRatioF());
+        // Once olcu cizgileri + tiklar (etiketlerin altinda kalsin).
+        for (std::size_t k = 0; k < lineA.size(); ++k) {
+            const QPointF a = lineA[k], b = lineB[k];
+            const bool hot = highlight_ == callouts_[dimIdx[k]].name;
             painter.setPen(QPen(hot ? QColor("#d47b2c") : QColor("#25647c"), hot ? 2.0 : 1.25));
             painter.setBrush(Qt::NoBrush);
             painter.drawLine(a, b);
@@ -927,11 +958,19 @@ void ComponentLivePreviewWidget::paintEvent(QPaintEvent*) {
                 painter.drawLine(a - nrm * 4.0, a + nrm * 4.0);
                 painter.drawLine(b - nrm * 4.0, b + nrm * 4.0);
             }
-            const QPointF mid = (a + b) * 0.5 + QPointF(4.0, -4.0);
+        }
+        // Sonra etiketler (yerlestirilmis kutularda) + kilavuz cizgileri.
+        for (std::size_t k = 0; k < places.size(); ++k) {
+            const auto& pl = places[k];
+            if (pl.shifted) {
+                painter.setPen(QPen(QColor("#8295a8"), 1.0, Qt::DotLine));
+                painter.drawLine(QPointF(pl.anchorX, pl.anchorY),
+                                 QPointF(pl.box.x + pl.box.w * 0.5, pl.box.y + pl.box.h * 0.5));
+            }
             painter.setPen(QColor("#16324a"));
-            painter.drawText(mid, QStringLiteral("%1 = %2")
-                                      .arg(d.label)
-                                      .arg(d.value, 0, 'f', 1));
+            const QRectF r(pl.box.x, pl.box.y, pl.box.w, pl.box.h);
+            painter.drawText(r, Qt::AlignCenter, texts[k]);
+            lastLabelRects_.push_back(r);
         }
     }
     for(const auto& c:callouts_) {

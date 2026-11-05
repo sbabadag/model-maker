@@ -10,6 +10,7 @@
 #include "model_maker/component_live_preview_widget.hpp"
 #include "model_maker/component_engine.hpp"
 #include "model_maker/component_package.hpp"
+#include "model_maker/label_layout.hpp"
 #include <QDoubleSpinBox>
 #include <QSpinBox>
 #include <QMouseEvent>
@@ -48,6 +49,30 @@ static int failures = 0;
 
 int main(int argc, char** argv) {
     QApplication app(argc, argv);
+
+    // MM-8a/1: etiket yerlesimi — 3 DPI'da cakisma yok + deterministik.
+    {
+        std::vector<mm::LabelRequest> reqs = {
+            {"h = 550.0", 200, 120, 0}, {"b = 200.0", 202, 121, 1},
+            {"t = 12.0", 201, 119, 2},  {"d = 20.0", 200, 140, 3},
+            {"e = 35.0", 260, 120, 4},  {"nx = 2", 260, 121, 5},
+        };
+        const std::vector<mm::LabelObstacle> obs = {{100, 120, 320, 120}, {200, 60, 200, 180}};
+        for (double dpi : {1.0, 1.5, 2.0}) {
+            const auto a = mm::layoutLabels(reqs, obs, 640, 480, dpi);
+            const auto b = mm::layoutLabels(reqs, obs, 640, 480, dpi);
+            CHECK(a.size() == reqs.size(), "MM-8a/1: her etiket yerlestirilir");
+            bool noOverlap = true;
+            for (std::size_t i = 0; i < a.size(); ++i)
+                for (std::size_t j = i + 1; j < a.size(); ++j)
+                    if (mm::labelBoxesOverlap(a[i].box, a[j].box, 0.0)) noOverlap = false;
+            CHECK(noOverlap, "MM-8a/1: 3 DPI'da etiket kutulari kesismiyor");
+            bool det = a.size() == b.size();
+            for (std::size_t i = 0; det && i < a.size(); ++i)
+                if (a[i].box.x != b[i].box.x || a[i].box.y != b[i].box.y) det = false;
+            CHECK(det, "MM-8a/1: ayni girdi -> ayni yerlesim (deterministik)");
+        }
+    }
 
     // 1) End plate şeması kurulur + round-trip sentinel'leri korur.
     const mm::ComponentDialogDefinition ep = mm::endPlateDialogDefinition();
@@ -449,6 +474,19 @@ int main(int argc, char** argv) {
         CHECK(previews.size()==1,"MM-8a/2: tek ana 3B onizleme (alt serit kaldirildi)");
         auto* left = previews.empty()?nullptr:previews.first();
         CHECK(left!=nullptr,"Haunch 40: real 3D preview widget exists");
+        // MM-8a/1: Haunch 40 varsayilan parametrelerle etiketler cakismasin.
+        if (left) {
+            for (const char* view : {"iso","front","side","top"}) {
+                left->setView(view);
+                left->grab();
+                const auto& rects = left->lastLabelRects();
+                bool ok = true;
+                for (std::size_t i = 0; i < rects.size(); ++i)
+                    for (std::size_t j = i + 1; j < rects.size(); ++j)
+                        if (rects[i].intersects(rects[j])) ok = false;
+                CHECK(ok, "MM-8a/1: Haunch 40 etiket kutulari kesismiyor");
+            }
+        }
         // Stiffeners: every optional one is drawn as a grey ghost while OFF;
         // Alt+click toggles it (on, then off again) without selecting or orbiting.
         if(left) {
@@ -1231,6 +1269,21 @@ int main(int argc, char** argv) {
                 CHECK(sch && !sch->isVisibleTo(&w), "MM-8a/4: 3B moda donunce sematik gizlenir");
             } else {
                 CHECK(false, "MM-8a/4: sematik gecis dugmesi var");
+            }
+
+            // MM-8a/1: her gorunum yonunde olcu etiket kutulari cakismasin
+            // (gercek End Plate varsayilan parametreleri).
+            if (main3d) {
+                for (const char* view : {"iso", "front", "side", "top"}) {
+                    main3d->setView(view);
+                    main3d->grab();  // paintEvent'i zorla
+                    const auto& rects = main3d->lastLabelRects();
+                    bool ok = true;
+                    for (std::size_t i = 0; i < rects.size(); ++i)
+                        for (std::size_t j = i + 1; j < rects.size(); ++j)
+                            if (rects[i].intersects(rects[j])) ok = false;
+                    CHECK(ok, "MM-8a/1: gercek veride etiket kutulari kesismiyor");
+                }
             }
 
             // (3a) PARCA SECILMEDEN: temsili girdi (previewInput) ile cizim.

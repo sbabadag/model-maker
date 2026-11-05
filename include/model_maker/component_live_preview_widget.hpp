@@ -11,6 +11,7 @@
 #include <QWidget>
 #include <QPointF>
 #include <QPolygonF>
+#include <QRectF>
 #include <functional>
 #include <map>
 #include <string>
@@ -84,6 +85,9 @@ public:
     QPointF roleScreenAnchor(const std::string& role) const;
     // P6 diagnostics: all child geometry is recomputed from ONE generator plan.
     const GenerationPlan& previewPlan() const { return plan_; }
+    // MM-8a/1: son cizimde yerlestirilen olcu etiketi kutulari (ekran px).
+    // Test, aralarinda kesisim olmadigini dogrular.
+    const std::vector<QRectF>& lastLabelRects() const { return lastLabelRects_; }
 
 protected:
     void paintEvent(QPaintEvent*) override;
@@ -113,6 +117,8 @@ private:
         bool ok{false};
     };
     std::vector<PreviewDimState> previewDims_;
+    // MM-8a/1: son cizimde yerlestirilen olcu etiket kutulari (ekran px).
+    std::vector<QRectF> lastLabelRects_;
     GenerationPlan plan_;
     std::wstring previewWarning_; // invalid draft: show last valid geometry with a warning
     std::vector<CompParam> params_;
