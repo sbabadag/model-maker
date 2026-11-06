@@ -3361,35 +3361,48 @@ void QtMainWindow::createDockPanels() {
                 if (!text.isEmpty())
                     app_.setSelectedEntityMaterial(text.toStdString());
             });
-    // Rotasyon: satirda ENTER (veya odak cikisi) UYGULA gibi dogrudan uygular;
-    // UYGULA butonu da korunur (ayni yolu kullanir).
-    const auto applyRotationField = [this, propsRotation]() {
+    // Rotasyon: yalniz UYGULA uygular. Odak-cikisi/editingFinished YOK — odak
+    // kaybi secim degistikten SONRA tetiklenip degeri YANLIS nesneye yaziyordu
+    // ("aci sonradan degisiyor" veri bozulmasi). valueChanged yalniz alani
+    // "kirli" isaretler; refresh (doldurma) QSignalBlocker altinda oldugu icin
+    // kirli bayragini TETIKLEMEZ. Coklu secimde degistirilmeyen alan yazilmaz.
+    auto rotationDirty = std::make_shared<bool>(false);
+    QObject::connect(propsRotation, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this,
+        [rotationDirty](double) { *rotationDirty = true; });
+    const auto applyRotationField = [this, propsRotation, rotationDirty]() {
+        if (!*rotationDirty) return;   // kullanici rotasyonu degistirmedi
+        *rotationDirty = false;
         if (app_.hasSelection())
             app_.setSelectedEntityProfileRotation(propsRotation->value());
     };
-    QObject::connect(propsRotation, &QDoubleSpinBox::editingFinished, this,
-                     applyRotationField);
     // Kolon ust/alt kot: satirda ENTER (editingFinished) degeri SONRAKI kolon
     // yerlesimi icin saklar VE secili kolona dogrudan uygular — tek yol
-    // app_.applyColumnLevels(). valueChanged yalniz "bekleyen" degeri tutar.
+    // app_.applyColumnLevels(). valueChanged "bekleyen" degeri tutar ve alani
+    // KIRLI isaretler; UYGULA (ve ENTER) yalniz kirli alani uygular, boylece
+    // coklu secimde degistirilmeyen kolon kotu diger nesnelere yazilmaz.
+    auto columnDirty = std::make_shared<bool>(false);
     QObject::connect(propsColumnTop, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this,
-        [this, propsMaterial](double v) {
+        [this, propsMaterial, columnDirty](double v) {
+            *columnDirty = true;
             app_.setColumnProps(v, app_.columnBottomZ(),
                                 propsMaterial->currentText().toStdString());
         });
     QObject::connect(propsColumnBottom, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this,
-        [this, propsMaterial](double v) {
+        [this, propsMaterial, columnDirty](double v) {
+            *columnDirty = true;
             app_.setColumnProps(app_.columnTopZ(), v,
                                 propsMaterial->currentText().toStdString());
         });
-    const auto applyColumnFields = [this, propsColumnTop, propsColumnBottom]() {
+    const auto applyColumnFields = [this, propsColumnTop, propsColumnBottom, columnDirty]() {
+        if (!*columnDirty) return;   // kolon kotlari degistirilmedi
+        *columnDirty = false;
         app_.applyColumnLevels(propsColumnTop->value(), propsColumnBottom->value());
     };
     QObject::connect(propsColumnTop, &QDoubleSpinBox::editingFinished, this, applyColumnFields);
     QObject::connect(propsColumnBottom, &QDoubleSpinBox::editingFinished, this, applyColumnFields);
     // UYGULA: panelde dogrudan uygulanabilir satirlarin TAMAMI (rotasyon +
-    // kolon kotlari). Profil/katman/renk/cizgi tipi/malzeme secimde aninda
-    // uygulanir; kolon kotlari ve rotasyon UYGULA/ENTER ile uygulanir.
+    // kolon kotlari), YALNIZ kullanici o satiri degistirdiyse. Profil/katman/
+    // renk/cizgi tipi/malzeme secimde aninda uygulanir.
     QObject::connect(propsApply, &QPushButton::clicked, this,
         [applyRotationField, applyColumnFields]() {
             applyRotationField();

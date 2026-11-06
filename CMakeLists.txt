@@ -451,6 +451,13 @@ if(BUILD_TESTING)
             add_test(NAME model_maker_props_column_levels
                 COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_props_column_levels.py
                     ${CMAKE_CURRENT_BINARY_DIR})
+            # A (veri butunlugu): props paneli YALNIZ UYGULA'da yazar — rotasyon
+            # odak-cikisi (editingFinished) ile DEGIL, kirli bayragi (valueChanged)
+            # + UYGULA ile uygulanir; coklu secimde degistirilmeyen alan (rotasyon/
+            # kolon kotu) yazilmaz. Doldurma tum alanlarda QSignalBlocker.
+            add_test(NAME model_maker_props_panel_apply_only
+                COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_props_panel_apply_only.py
+                    ${CMAKE_CURRENT_BINARY_DIR})
             # Gorunum komutlari TEK menude + TEK ribbon sekmesinde toplanir ve
             # gorunus ekleme akisi PLAN gorunusu (XY'ye PARALEL, verilen Z
             # kotunda) uretir; kot 0/negatif olabilir (requestLevelParameter).
@@ -534,6 +541,15 @@ if(BUILD_TESTING)
         MM_PROFILES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/profiles")
     add_test(NAME model_maker_component_connection_end_test
              COMMAND model_maker_component_connection_end_test)
+
+    # A (veri butunlugu): profileRotation belgede HAM saklanir (270 -> 270);
+    # kanoniklestirme (cift-simetrik 270->90) YALNIZ komponent girdisi/digest
+    # icindir — belgeye/panele/kayda kanonik deger GERI YAZILMAZ.
+    add_executable(model_maker_rotation_no_writeback_test
+        tests/rotation_no_writeback_test.cpp)
+    target_link_libraries(model_maker_rotation_no_writeback_test PRIVATE model_maker_core)
+    add_test(NAME model_maker_rotation_no_writeback_test
+             COMMAND model_maker_rotation_no_writeback_test)
 
     # MM-7 item 2: VARSAYILAN End Plate kapsam testi — tum IPE/HEA/HEB kiris
     # kesitleri x {M16,M20,M24} x {HEA300,HEB300}: varsayilan plan ya checks'ten

@@ -32,10 +32,9 @@ MUTATIONS = [
     ("M5 profileSelector_ Props'a baglanmiyor",
      'profileSelector_ = propsProfile;',
      'profileSelector_ = nullptr;'),
-    ("M6 rotasyon ENTER ile uygulamiyor",
-     'QObject::connect(propsRotation, &QDoubleSpinBox::editingFinished, this,\n'
-     '                     applyRotationField);',
-     '/* rotasyon ENTER yok */;'),
+    ("M6 rotasyon valueChanged kirli bayragini isaretlemiyor",
+     '[rotationDirty](double) { *rotationDirty = true; }',
+     '[rotationDirty](double) { /* kirli isaretlenmiyor */ }'),
     ("M7 comboProfileName metni degil adi okumali (davranis)",
      'const QVariant data = combo->currentData();\n'
      '    if (data.isValid()) return data.toString().trimmed().toStdString();\n'
