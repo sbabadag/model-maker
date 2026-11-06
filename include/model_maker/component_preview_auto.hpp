@@ -19,8 +19,9 @@
 namespace mm {
 
 struct AutoPreviewResult {
-    PreviewDefinition definition;          // otomatik uretilen olcu + toggle tanimi
+    PreviewDefinition definition;          // otomatik uretilen olcu + toggle + etiket tanimi
     std::vector<std::wstring> ineffective; // Length/Angle olup da plan farki URETMEYEN parametreler
+    std::vector<std::wstring> ineffectiveReasons;  // ineffective[i] icin Turkce sebep (ayni sira)
     bool ok{true};
     std::wstring error;
 };

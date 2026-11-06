@@ -213,7 +213,7 @@ int main() {
                 const bool ineffective =
                     std::find(ap.ineffective.begin(), ap.ineffective.end(), sp.name) !=
                     ap.ineffective.end();
-                bool hasDim = false, bound = false;
+                bool hasDim = false, bound = false, labeled = false;
                 for (const auto& dv : views) {
                     for (const auto& pr : dv.prims) {
                         if (pr.kind != SchematicPrimKind::Text || pr.role != want) continue;
@@ -227,9 +227,12 @@ int main() {
                         resolvePreviewAnchor(pl, baseIn, pd.to).ok)
                         bound = true;
                 }
+                // MM-6b: olcu degil ETIKET (ayrik deger, or. bulon/delik capi).
+                for (const auto& lb : ap.definition.labels)
+                    if (lb.param == sp.name) labeled = true;
                 if (hasDim && bound) ++dimParams;
-                // Her Length/Angle: ya olcusu var (ve bagli), ya da etkisiz listesinde.
-                else if (!ineffective) {
+                // Her Length/Angle: olcusu var (bagli) YA etiketi var YA etkisiz.
+                else if (!labeled && !ineffective) {
                     ++missing;
                     std::printf("  eksik olcu: %ls\n", sp.name.c_str());
                 }

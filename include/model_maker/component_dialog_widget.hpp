@@ -238,6 +238,7 @@ private:
     bool autoPreviewOk_{false};
     PreviewDefinition autoPreviewDef_;
     std::vector<std::wstring> autoPreviewIneffective_;  // MM-8b/5: plan farki uretmeyen parametreler
+    std::vector<std::wstring> autoPreviewIneffectiveReasons_;  // MM-6b: ineffective[i] icin sebep
     std::map<std::wstring, class QLabel*> groupFigures_;  // MM-8b/5: grup basi otomatik resim
     QTableWidget* weldTable_{};                     // kaynak tablosu (varsa)
     QDialog* weldDialog_{};                         // "Welds..." dugmesinin actigi pencere

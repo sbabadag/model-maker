@@ -62,11 +62,14 @@ SchematicDrawing buildComponentSchematic(const GenerationPlan& plan,
 // MM-8b/5: olcu katmani. Verilen PreviewDimension'lari ayni izdusumle cizer:
 // uzatma cizgileri + olcu oku + etiket; prim.role = parametre adi oldugundan
 // diyalogda odak/hover vurgusu rol eslesmesiyle calisir. `ineffective`
-// icindeki parametreler KESIKLI (gri) cizilir (MM-6b kurali).
+// icindeki parametreler KESIKLI (gri) cizilir (MM-6b kurali). `labels` MM-6b
+// ETIKETLERI (bulon/delik capi gibi ayrik degerler): ilgili bulon grubunun
+// yaninda kisa metin olarak cizilir.
 SchematicDrawing buildComponentSchematic(const GenerationPlan& plan,
                                          const ComponentInput& input,
                                          SchematicViewDir view,
                                          const std::vector<PreviewDimension>& dims,
-                                         const std::vector<std::wstring>* ineffective) noexcept;
+                                         const std::vector<std::wstring>* ineffective,
+                                         const std::vector<PreviewLabel>* labels = nullptr) noexcept;
 
 }  // namespace mm

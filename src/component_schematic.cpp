@@ -104,7 +104,8 @@ SchematicDrawing buildComponentSchematic(const GenerationPlan& plan,
                                          const ComponentInput& input,
                                          SchematicViewDir view,
                                          const std::vector<PreviewDimension>& dims,
-                                         const std::vector<std::wstring>* ineffective) noexcept {
+                                         const std::vector<std::wstring>* ineffective,
+                                         const std::vector<PreviewLabel>* labels) noexcept {
     SchematicDrawing out;
     if (!plan.ok) {
         out.error = plan.error;
@@ -365,6 +366,41 @@ SchematicDrawing buildComponentSchematic(const GenerationPlan& plan,
             t.dashed = bad;
             out.prims.push_back(std::move(t));
         }
+
+        // 3c) MM-6b ETIKET KATMANI: olcu olmayan (ayrik degerli, or. bulon/delik
+        //     capi) parametreler ilgili bulon grubunun yaninda kisa metin olarak
+        //     cizilir. prim.role = parametre adi (odak/hover vurgusu).
+        if (labels) {
+            for (const auto& lbl : *labels) {
+                const std::string lrole(lbl.role.begin(), lbl.role.end());
+                const BoltGroup* g = nullptr;
+                for (std::size_t i = 0; i < plan.boltGroups.size(); ++i) {
+                    const std::string r = i < plan.boltGroupKeys.size()
+                                              ? plan.boltGroupKeys[i]
+                                              : "bolts";
+                    if (r == lrole) { g = &plan.boltGroups[i]; break; }
+                }
+                if (!g && !plan.boltGroups.empty()) g = &plan.boltGroups[0];
+                if (!g) continue;
+                Vec2 top{0.0, 0.0};
+                bool first = true;
+                for (const Vec3 o : boltGroupBoltOrigins(*g)) {
+                    const Vec2 c = project(o);
+                    if (first || c.y > top.y) { top = c; first = false; }
+                }
+                if (!first) {
+                    const Vec2 dir{0.0, top.y < centre.y ? -1.0 : 1.0};
+                    SchematicPrim t;
+                    t.kind = SchematicPrimKind::Text;
+                    t.cx = top.x;
+                    t.cy = top.y + dir.y * off * 0.5;
+                    t.role = std::string(lbl.param.begin(), lbl.param.end());
+                    t.detail = "dimlabel";
+                    t.text = lbl.text;
+                    out.prims.push_back(std::move(t));
+                }
+            }
+        }
     }
 
     // 4) Sinir kutusu.
@@ -404,7 +440,7 @@ SchematicDrawing buildComponentSchematic(const GenerationPlan& plan,
 SchematicDrawing buildComponentSchematic(const GenerationPlan& plan,
                                          const ComponentInput& input,
                                          SchematicViewDir view) noexcept {
-    return buildComponentSchematic(plan, input, view, {}, nullptr);
+    return buildComponentSchematic(plan, input, view, {}, nullptr, nullptr);
 }
 
 }  // namespace mm

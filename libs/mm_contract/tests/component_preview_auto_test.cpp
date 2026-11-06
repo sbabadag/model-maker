@@ -72,6 +72,19 @@ static bool inList(const std::vector<std::wstring>& v, const std::wstring& s) {
     return false;
 }
 
+static bool hasLabel(const PreviewDefinition& def, const std::wstring& param) {
+    for (const auto& l : def.labels)
+        if (l.param == param) return true;
+    return false;
+}
+
+static std::wstring reasonFor(const AutoPreviewResult& r, const std::wstring& name) {
+    for (std::size_t i = 0; i < r.ineffective.size(); ++i)
+        if (r.ineffective[i] == name)
+            return i < r.ineffectiveReasons.size() ? r.ineffectiveReasons[i] : std::wstring{};
+    return std::wstring{};
+}
+
 int main() {
     registerBuiltInComponents(ComponentRegistry::instance());
     const std::vector<CompParamSpec> specs = endPlateDialogSpecs();
@@ -140,14 +153,38 @@ int main() {
         check(allValid, "4 tum olcu anchor cozucuyle gecerli + deger >= 0");
     }
 
-    // 5) Etkisiz parametreler raporlanir (plan farki uretmeyen Length).
+    // 5) MM-6b: bulon/delik capi ETKILI (etkisiz DEGIL); kenar mesafeleri
+    //    (sentinelli "tanimsiz" varsayilan) bu modda ETKISIZ + sebep.
     {
-        // gap sadece eksen boyunca oteler; mevcut diff kalinlik/genislik/yukseklik
-        // degisimini izledigi icin "etkisiz" raporlanir — bu KASITLI degil, bilinen
-        // bir kisittir (test bunu yakalar ki sürpriz degisim gorulsun).
         std::printf("   etkisiz parametreler: %zu\n", r.ineffective.size());
-        for (const auto& s : r.ineffective) std::printf("     - %ls\n", s.c_str());
-        check(true, "5 etkisiz raporu donduruldu (bos olabilir)");
+        for (std::size_t i = 0; i < r.ineffective.size(); ++i)
+            std::printf("     - %ls  [%ls]\n", r.ineffective[i].c_str(),
+                        i < r.ineffectiveReasons.size() ? r.ineffectiveReasons[i].c_str() : L"");
+        // Cap parametreleri etkisiz DEGIL (plan farki uretir: bulon grubu capi).
+        check(!inList(r.ineffective, L"boltDiameter"), "5 boltDiameter etkisiz DEGIL (etkili)");
+        check(!inList(r.ineffective, L"holeDiameter"), "5 holeDiameter etkisiz DEGIL (etkili)");
+        // Cap parametreleri bulon grubunda ETIKET uretir (olcu degil).
+        check(hasLabel(r.definition, L"boltDiameter"), "5 boltDiameter etiketi uretildi");
+        check(hasLabel(r.definition, L"holeDiameter"), "5 holeDiameter etiketi uretildi");
+        // Kenar mesafeleri sentinelli varsayilan -> bu modda etkisiz + sebep.
+        check(inList(r.ineffective, L"upperEdgeDistance"), "5 upperEdgeDistance etkisiz");
+        check(inList(r.ineffective, L"lowerEdgeDistance"), "5 lowerEdgeDistance etkisiz");
+        const std::wstring ur = reasonFor(r, L"upperEdgeDistance");
+        check(!ur.empty() && ur.find(L"tanimsiz") != std::wstring::npos,
+              "5 upperEdgeDistance sebebi 'tanimsiz' iceriyor");
+    }
+
+    // 5b) MM-6b mod bagimliligi: sentinelli kenar mesafesi TANIMLI (acik) verilince
+    //     etkili olur — etkisiz listesinden duser (mod degisince normal).
+    {
+        ComponentInput defined = makeInput();
+        defined.params.push_back(CompParam{L"upperEdgeDistance", CompParamValue{-30.0}});
+        defined.params.push_back(CompParam{L"lowerEdgeDistance", CompParamValue{-30.0}});
+        const AutoPreviewResult rd = autoPreviewDefinition(gen, defined, specs);
+        check(rd.ok && !inList(rd.ineffective, L"upperEdgeDistance"),
+              "5b tanimli upperEdgeDistance etkili (etkisiz DEGIL)");
+        check(rd.ok && !inList(rd.ineffective, L"lowerEdgeDistance"),
+              "5b tanimli lowerEdgeDistance etkili (etkisiz DEGIL)");
     }
 
     // 6) Onbellek anahtari deterministik.

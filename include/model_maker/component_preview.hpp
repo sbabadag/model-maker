@@ -50,10 +50,22 @@ struct PreviewToggle {
     std::wstring rolePrefix;  // roleKey oneki (kapali iken ghost cizilir)
 };
 
+// MM-6b: OLKU DEGIL ETIKET (ayrik/standart degerli parametre, or. bulon/delik
+// capi). Olcu iki anchor arasi MESAFEDIR; cap ise bir BOYUTTUR ve parcaya
+// (bulon grubuna) yapisik kisa bir etiketle gosterilir (Integer/Enum kurali).
+struct PreviewLabel {
+    std::wstring param;   // parametre adi (odak/hover vurgusu icin)
+    std::wstring role;    // bulon grubu roleKey (etiketin yapistigi parca)
+    std::wstring text;    // kisa etiket (or. "M20", "d0 22")
+};
+
 struct PreviewDefinition {
     std::vector<PreviewDimension> dimensions;
     std::vector<PreviewToggle> toggles;
-    bool empty() const noexcept { return dimensions.empty() && toggles.empty(); }
+    std::vector<PreviewLabel> labels;
+    bool empty() const noexcept {
+        return dimensions.empty() && toggles.empty() && labels.empty();
+    }
 };
 
 struct PreviewAnchor {

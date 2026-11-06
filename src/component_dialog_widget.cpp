@@ -921,7 +921,7 @@ void ComponentDialogWidget::addParamRow(QFormLayout* form, QWidget* box,
         cb->setToolTip(QStringLiteral("Isaretsiz = Default (motor varsayilani)"));
         optionalChecks_[pn] = cb;
         QObject::connect(cb, &QCheckBox::toggled, this,
-                         [this, pn](bool) { applyAutoVisual(pn); });
+                         [this, pn](bool) { applyAutoVisual(pn); applyIneffectiveMarks(); });
         labelRow->addWidget(cb);
         if (spec->documentedOnly) cb->setEnabled(false);  // gri alanin kutusu da gri
     }
@@ -1824,6 +1824,7 @@ void ComponentDialogWidget::ensureAutoPreviewDefinition(const ComponentInput& in
     if (!r.ok) return;
     autoPreviewDef_ = r.definition;
     autoPreviewIneffective_ = r.ineffective;
+    autoPreviewIneffectiveReasons_ = r.ineffectiveReasons;
     autoPreviewOk_ = true;
     nativePreview_->setPreviewDefinition(autoPreviewDef_);
 }
@@ -2069,20 +2070,42 @@ void ComponentDialogWidget::refreshSchematic() {
         !def_.schema.preview.dimensions.empty() ? def_.schema.preview.dimensions
                                                 : autoPreviewDef_.dimensions;
     schematic_->setAutoDrawing(buildComponentSchematic(
-        plan, effective, schematicView_, dims, &autoPreviewIneffective_));
+        plan, effective, schematicView_, dims, &autoPreviewIneffective_,
+        &autoPreviewDef_.labels));
     applyIneffectiveMarks();
     refreshGroupFigures();
 }
 
-// MM-8b/5: plan farki uretmeyen (etkisiz) parametreleri gri + uyari ile isaretle.
-// Editor DEVRE DISI birakilir (motor degeri okumaz) ve satir etiketi soluk olur.
+// MM-8b/5 + MM-6b: plan farki uretmeyen (etkisiz) parametreleri gri + sebep ile
+// isaretle. Sentinelli (otomatik/tanimsiz varsayilan) parametrelerde "bu modda
+// etkisiz" == otomatik mod: editor/enable durumu applyAutoVisual (Default
+// kutusu) yonetir, burada yalniz GEREKCE tooltip'i verilir; kutu isaretlenince
+// (manuel mod) parametre etkili olur ve isaret kalkar.
 void ComponentDialogWidget::applyIneffectiveMarks() {
-    for (const auto& name : autoPreviewIneffective_) {
+    const std::size_t n = autoPreviewIneffective_.size();
+    for (std::size_t i = 0; i < n; ++i) {
+        const std::wstring& name = autoPreviewIneffective_[i];
+        const std::wstring reason =
+            i < autoPreviewIneffectiveReasons_.size()
+                ? autoPreviewIneffectiveReasons_[i]
+                : std::wstring(L"bu parametre plan farki uretmiyor");
+        const QString hint = QStringLiteral("Bu modda etkisiz: ") +
+                             QString::fromStdWString(reason);
+        const CompParamSpec* spec = specByName(def_.specs, name);
+        const bool sentinel = spec && hasSentinelDefault(*spec);
+        if (sentinel) {
+            // Otomatik (kutu isaretsiz) ise gerekce tooltip'i; manuel ise etkili.
+            const auto oc = optionalChecks_.find(name);
+            const bool autoOn = (oc != optionalChecks_.end()) && !oc->second->isChecked();
+            if (!autoOn) continue;
+            const auto eit = editors_.find(name);
+            if (eit != editors_.end() && eit->second) eit->second->setToolTip(hint);
+            continue;
+        }
         const auto eit = editors_.find(name);
         if (eit != editors_.end() && eit->second) {
             eit->second->setEnabled(false);
-            eit->second->setToolTip(
-                QStringLiteral("Etkisiz: bu parametre plan farki uretmiyor (MM-6b)"));
+            eit->second->setToolTip(hint);
         }
         const auto rl = rows_.find(name);
         if (rl != rows_.end()) {
@@ -2119,7 +2142,8 @@ void ComponentDialogWidget::refreshGroupFigures() {
         }
         if (mine.empty()) continue;
         const SchematicDrawing dr = buildComponentSchematic(
-            plan, previewInput_, SchematicViewDir::Front, mine, &autoPreviewIneffective_);
+            plan, previewInput_, SchematicViewDir::Front, mine, &autoPreviewIneffective_,
+            &autoPreviewDef_.labels);
         if (!dr.ok) continue;
         it->second->setPixmap(renderSchematicThumb(dr, 260, 120));
         it->second->setVisible(true);

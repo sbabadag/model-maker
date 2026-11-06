@@ -5,9 +5,12 @@
 
 #include "model_maker/component_preview_auto.hpp"
 
+#include "model_maker/bolt.hpp"
+
 #include <algorithm>
 #include <cmath>
 #include <functional>
+#include <optional>
 #include <string>
 
 namespace mm {
@@ -40,6 +43,61 @@ std::string roleAt(const std::vector<std::string>& keys, std::size_t i,
                    const char* positional) {
     if (i < keys.size() && !keys[i].empty()) return keys[i];
     return std::string(positional);
+}
+
+std::wstring intLabel(double v) {
+    return std::to_wstring(static_cast<long long>(std::llround(v)));
+}
+
+// AYRIK/STANDART degerli parametre (bulon/delik capi): δ=1 mm analizi yaniltir
+// (M20 -> 21 gecersiz, standart disi deger uretir ve plan degismemis gorunur).
+// Komsu STANDART degeri dondurur (M20 -> M24, d0 22 -> 26); ust sinirdaysa bir
+// onceki. Baska parametre icin nullopt (surekli δ=1 mm yolu kullanilir).
+std::optional<double> standardNeighbor(const std::wstring& name, double value) {
+    if (name == L"boltDiameter") {
+        const auto& ds = standardBoltDiameters();  // {12,16,20,24,27,30,36}
+        for (std::size_t i = 0; i < ds.size(); ++i) {
+            if (std::fabs(ds[i] - value) < 1e-9) {
+                if (i + 1 < ds.size()) return ds[i + 1];
+                return ds[i - 1];
+            }
+        }
+        return std::nullopt;
+    }
+    if (name == L"holeDiameter") {
+        const auto& ds = standardBoltDiameters();
+        std::vector<double> hs;
+        hs.reserve(ds.size());
+        for (const double d : ds) hs.push_back(standardBoltHoleDiameter(d));
+        for (std::size_t i = 0; i < hs.size(); ++i) {
+            if (std::fabs(hs[i] - value) < 1e-9) {
+                if (i + 1 < hs.size()) return hs[i + 1];
+                return hs[i - 1];
+            }
+        }
+        return std::nullopt;
+    }
+    return std::nullopt;
+}
+
+// SENTINEL (otomatik/tanimsiz) varsayilanli parametre icin Turkce sebep; degilse
+// bos. "Bu modda etkisiz" gerekcesinin ozel hali: parametre GERCEKTEN oluyor,
+// ama yalniz tanimli (acik) deger verilince — varsayilan sentinel oldugu icin
+// δ perturbasyonu sentinel'i asamaz ve plan degismez gorunur.
+std::wstring sentinelReason(const CompParamSpec& spec) {
+    if (spec.type == CompParamType::Length || spec.type == CompParamType::Angle) {
+        if (spec.defDouble <= -1e8)
+            return L"tanimsiz (varsayilan deger); tanimli deger verince etkili olur";
+        if (spec.defDouble == -1.0)
+            return L"otomatik (varsayilan deger); acik deger verince etkili olur";
+    }
+    if (spec.type == CompParamType::Integer) {
+        if (spec.defInt <= -100000000)
+            return L"tanimsiz (varsayilan deger); tanimli deger verince etkili olur";
+        if (spec.defInt == -1)
+            return L"otomatik (varsayilan deger); acik deger verince etkili olur";
+    }
+    return std::wstring{};
 }
 
 // Uyenin ekseni plate.axis'e paralel olan uye + rol adi. Bulunamazsa null.
@@ -93,6 +151,12 @@ AutoPreviewResult autoPreviewDefinition(
         return res;
     }
 
+    auto pushIneffective = [&res](const CompParamSpec& s, const std::wstring& generic) {
+        res.ineffective.push_back(s.name);
+        const std::wstring sent = sentinelReason(s);
+        res.ineffectiveReasons.push_back(sent.empty() ? generic : sent);
+    };
+
     for (const auto& spec : specs) {
         // UZUNLUK/ACI/ADET: geometriyi hareket ettirebilen sayisal parametreler.
         // MM-7 sonrasi ADET de onemli: boltCountX/Y bulon izgarasinin uclarini
@@ -100,42 +164,91 @@ AutoPreviewResult autoPreviewDefinition(
         const bool isCount = spec.type == CompParamType::Integer;
         if (spec.type != CompParamType::Length && spec.type != CompParamType::Angle && !isCount)
             continue;
+
         // δ ve yon: aralik ust sinirindaysa -δ (kenara carpma). Adette adim 1.
-        double value = isCount ? static_cast<double>(paramAsInt(aligned, spec.name, spec.defInt))
-                               : paramAsDouble(aligned, spec.name, spec.defDouble);
-        double delta = 1.0;
-        if (isCount) {
-            if (spec.hasMaxInt && static_cast<int>(value) >= spec.maxInt) delta = -1.0;
-        } else if (spec.hasMaxDouble && value >= spec.maxDouble - 1e-9) {
-            delta = -1.0;
+        const double value = isCount ? static_cast<double>(paramAsInt(aligned, spec.name, spec.defInt))
+                                     : paramAsDouble(aligned, spec.name, spec.defDouble);
+
+        // STANDART/ayrik degerli parametre (bulon/delik capi) icin komsu standart
+        // deger; degilse δ=1 mm (adette 1). Ust sinirdaysa -δ (ya da kucuk komsu).
+        const std::optional<double> neighbor = standardNeighbor(spec.name, value);
+        double newValue;
+        if (neighbor.has_value()) {
+            newValue = *neighbor;
+        } else {
+            double delta = 1.0;
+            if (isCount) {
+                if (spec.hasMaxInt && static_cast<int>(value) >= spec.maxInt) delta = -1.0;
+            } else if (spec.hasMaxDouble && value >= spec.maxDouble - 1e-9) {
+                delta = -1.0;
+            }
+            newValue = value + delta;
         }
 
         std::vector<CompParam> pert = aligned;
         bool found = false;
         for (auto& q : pert) {
             if (q.name == spec.name) {
-                q.value = isCount ? CompParamValue{static_cast<int>(value + delta)}
-                                  : CompParamValue{value + delta};
+                q.value = isCount ? CompParamValue{static_cast<int>(newValue)}
+                                  : CompParamValue{newValue};
                 found = true;
                 break;
             }
         }
         if (!found)
             pert.push_back(CompParam{spec.name,
-                                     isCount ? CompParamValue{static_cast<int>(value + delta)}
-                                             : CompParamValue{value + delta}});
+                                     isCount ? CompParamValue{static_cast<int>(newValue)}
+                                             : CompParamValue{newValue}});
 
         ComponentInput pin = baseInput;
         pin.params = pert;
         const GenerationPlan pertPlan = generate(pin);
-        // MM-7 notu: perturbasyon kontrolden gecemeyebilir (or. boltSpacingX
-        // varsayilani 0 = "kesitten otomatik"; 1 mm'ye cekilince EC3 aralik
-        // sarti FAIL eder ve plan.ok=false olur). Duyarlilik analizi URETIM
-        // icin degil, "hangi parametre hangi ozelligi oynatiyor" icin: plan
-        // reddedilse bile GEOMETRI uretildiyse karsilastirilir. Geometri hic
-        // yoksa (erken donus) parametre etkisiz sayilir.
+        // MM-7 notu: perturbasyon kontrolden gecemeyebilir. Duyarlilik analizi
+        // URETIM icin degil, "hangi parametre hangi ozelligi oynatiyor" icin:
+        // plan reddedilse bile GEOMETRI uretildiyse karsilastirilir. Geometri
+        // hic yoksa (erken donus) parametre etkisiz sayilir.
         if (!pertPlan.ok && pertPlan.plates.empty() && pertPlan.boltGroups.empty()) {
-            res.ineffective.push_back(spec.name);
+            pushIneffective(spec, L"plan uretilemedi (kontrolden gecemedi)");
+            continue;
+        }
+
+        // --- STANDART/ayrik parametre (bulon/delik capi): olcu degil ETIKET. ---
+        // Cap degisimi plani etkilediyse (bulon grubunun nominal/hole capi degisti)
+        // parametre ETKILIDIR ve bulon grubunun yaninda etiketlenir (MM-6b
+        // Integer/Enum kurali). Hicbir cap degisimi uretmiyorsa bu bir HATADIR:
+        // cagi hangi kod yok saydiysa bul ve raporla.
+        if (neighbor.has_value()) {
+            bool diamChanged = false;
+            std::string role;
+            std::wstring text;
+            const std::size_t nb =
+                std::min(basePlan.boltGroups.size(), pertPlan.boltGroups.size());
+            for (std::size_t i = 0; i < nb; ++i) {
+                const BoltGroup& bb = basePlan.boltGroups[i];
+                const BoltGroup& pb = pertPlan.boltGroups[i];
+                const bool nominalChanged =
+                    std::fabs(bb.params.nominalDiameter - pb.params.nominalDiameter) > kEps;
+                const bool holeChanged =
+                    std::fabs(bb.params.holeDiameter - pb.params.holeDiameter) > kEps;
+                if (nominalChanged || holeChanged) {
+                    diamChanged = true;
+                    role = roleAt(basePlan.boltGroupKeys, i, ("bolt_group_" + std::to_string(i)).c_str());
+                    text = (spec.name == L"boltDiameter")
+                               ? L"M" + intLabel(bb.params.nominalDiameter)
+                               : L"d0 " + intLabel(bb.params.holeDiameter);
+                    break;
+                }
+            }
+            if (diamChanged) {
+                PreviewLabel lbl;
+                lbl.param = spec.name;
+                lbl.role = wide(role);
+                lbl.text = text;
+                res.definition.labels.push_back(std::move(lbl));
+            } else {
+                pushIneffective(spec,
+                                L"cap degisimi plani etkilemiyor — capi yok sayan kod var (hata)");
+            }
             continue;
         }
 
@@ -157,8 +270,6 @@ AutoPreviewResult autoPreviewDefinition(
             std::string mrole;
             const MemberGeometry* m = wrappedMember(pp, baseInput, mrole);
             if (wChanged && m && m->secWidth > 0.0) {
-                // u yonunde tasma: uye yuzunden levha kenarina (iki taraf).
-                // Isaret: uye width yonu levha u'suyla hizali (dot > 0 ise ayni).
                 const ProfileSectionFrame mf = memberSectionFrame(*m);
                 const double align = dot3(norm3(mf.width), norm3(pp.u));
                 if (align >= 0.0) {
@@ -184,8 +295,8 @@ AutoPreviewResult autoPreviewDefinition(
             }
         }
         // --- Bulon farki ---
-        const std::size_t nb = std::min(basePlan.boltGroups.size(), pertPlan.boltGroups.size());
-        for (std::size_t i = 0; i < nb; ++i) {
+        const std::size_t nbg = std::min(basePlan.boltGroups.size(), pertPlan.boltGroups.size());
+        for (std::size_t i = 0; i < nbg; ++i) {
             const BoltGroup& bb = basePlan.boltGroups[i];
             const BoltGroup& pb = pertPlan.boltGroups[i];
             const std::string role =
@@ -198,11 +309,9 @@ AutoPreviewResult autoPreviewDefinition(
                 dims.push_back(makeDim(spec.name, role, "col_first", role, "col_last", L'u'));
             if (syChanged)
                 dims.push_back(makeDim(spec.name, role, "row_first", role, "row_last", L'v'));
-            // Origin kaydi (kenar/offset): bulon'dan levha kenarina. Levha u/v
-            // yonlerinde en buyuk yer degistirme ekseni secilir.
+            // Origin kaydi (kenar/offset): bulon'dan levha kenarina.
             const Vec3 od = sub3(pb.origin, bb.origin);
             if (!sxChanged && !syChanged && len3(od) > kEps) {
-                // Levhanin eksenlerine izdusur; en buyuk bileşen yonu belirler.
                 const PlateSpec* pl = nullptr;
                 for (std::size_t k = 0; k < basePlan.plates.size(); ++k)
                     if (std::fabs(dot3(norm3(basePlan.plates[k].axis), norm3(bb.axis))) > 0.9) {
@@ -213,8 +322,7 @@ AutoPreviewResult autoPreviewDefinition(
                     const Vec3 u = norm3(pl->u), v = norm3(pl->v);
                     const double du = std::fabs(dot3(od, u));
                     const double dv = std::fabs(dot3(od, v));
-                    const std::string prole =
-                        roleAt(basePlan.plateKeys, 0, "plate_0");
+                    const std::string prole = roleAt(basePlan.plateKeys, 0, "plate_0");
                     if (du >= dv)
                         dims.push_back(makeDim(spec.name, role, "col_last", prole, "edge_u_max", L'u'));
                     else
@@ -224,7 +332,7 @@ AutoPreviewResult autoPreviewDefinition(
         }
 
         if (dims.empty()) {
-            res.ineffective.push_back(spec.name);
+            pushIneffective(spec, L"bu parametre plan farki uretmiyor");
         } else {
             for (auto& d : dims) res.definition.dimensions.push_back(std::move(d));
         }
@@ -248,7 +356,6 @@ AutoPreviewResult autoPreviewDefinition(
         const GenerationPlan planOn = generate(inOn);
         const GenerationPlan planOff = generate(inOff);
         if (planOn.ok && planOff.ok) {
-            // true planinda var olup false'da olmayan roleKey on ekleri.
             std::vector<std::string> onlyOn;
             for (const auto& k : planOn.plateKeys)
                 if (std::find(planOff.plateKeys.begin(), planOff.plateKeys.end(), k) ==
@@ -259,7 +366,6 @@ AutoPreviewResult autoPreviewDefinition(
                     planOff.boltGroupKeys.end())
                     onlyOn.push_back(k);
             if (!onlyOn.empty()) {
-                // En uzun ortak onek -> rolePrefix.
                 std::string prefix = onlyOn.front();
                 for (const auto& k : onlyOn)
                     while (prefix.size() && k.rfind(prefix, 0) != 0) prefix.pop_back();
@@ -280,7 +386,6 @@ AutoPreviewResult autoPreviewDefinition(
 std::string autoPreviewCacheKey(const std::wstring& typeId,
                                 const std::vector<CompParamSpec>& specs) noexcept {
     // typeId + parametre semasinin (ad,tur,min,max,default) kararli ozeti.
-    // Deterministik; gercek SHA cekirdek katmaninda yoksa bile siralama sabittir.
     std::string key = narrow(typeId);
     key += "|";
     for (const auto& s : specs) {
