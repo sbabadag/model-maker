@@ -52,7 +52,7 @@ status=0
 for f in "${FILES[@]}"; do
     echo "== shim modu: $f"
     if ! g++ -fsyntax-only -std=c++20 -fPIC -DMM_HAS_OCC \
-         -Itools/winshim "${INC[@]}" "$f"; then
+         -Werror=return-type -Itools/winshim "${INC[@]}" "$f"; then
         status=1
     fi
 done
@@ -64,6 +64,7 @@ if command -v x86_64-w64-mingw32-g++ >/dev/null 2>&1 && [ -n "$MINGW_QT" ] && [ 
         echo "== mingw modu: $f"
         if ! x86_64-w64-mingw32-g++ -fsyntax-only -std=c++20 \
              -D_WIN32 -DWIN32 -DUNICODE -D_UNICODE -DMM_HAS_OCC \
+             -Werror=return-type \
              -Iinclude -Ithird_party -Ilibs/mm_contract/include \
              -I"$MINGW_QT/include" -I"$MINGW_QT/include/QtCore" \
              -I"$MINGW_QT/include/QtGui" -I"$MINGW_QT/include/QtWidgets" \

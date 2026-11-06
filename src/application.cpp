@@ -1839,7 +1839,10 @@ LRESULT Application::handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lPa
         // Bilerek DefWindowProc'a BIRAKILMAZ: F10 menuyu acmasin, polar
         // takip acilsin (AutoCAD davranisi).
         if (wParam == VK_F10) { togglePolarTracking(); return 0; }
-        break;
+        // Alt+harf vb. diger sistem tuslari (menu hizlandiricilari, Alt+Tab)
+        // DefWindowProc'a birakilir; aksi halde bu dal switch'ten cikip fonksiyon
+        // sonuna duserdi ve LRESULT dondurmeden biterdi (-Wreturn-type).
+        return DefWindowProcW(canvas_, message, wParam, lParam);
     }
     case WM_KEYDOWN:
         if (wParam == VK_ESCAPE) {
@@ -3284,6 +3287,10 @@ void Application::commitPoint(const Vec3& point) {
         anchor_.reset();
         break;
     }
+    default:
+        // DrawTool::Column buraya gelmez: yukarida erken doner (placeColumn).
+        // default -Wswitch uyarisini bilincli olarak susturur.
+        break;
     }
 }
 
@@ -9351,6 +9358,7 @@ void Application::updateStatus() {
     case VisualStyle::Wireframe: text += L"Wireframe"; break;
     case VisualStyle::Solid: text += L"Solid"; break;
     case VisualStyle::Transparent: text += L"Saydam"; break;
+    case VisualStyle::HiddenLine: text += L"Gizli Çizgi"; break;
     }
     if (!solidStatusMessage_.empty())
         text += L"  |  " + solidStatusMessage_;
