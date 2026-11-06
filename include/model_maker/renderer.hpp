@@ -374,6 +374,13 @@ struct DraftView {
     // cizer; bu listedeki indeksler vurgulanir. (Gercek OCC weld katisi yok —
     // yalniz konum simgesi; entity + metadata Document'ta kalicidir.)
     std::vector<std::size_t> selectedWelds;
+    // SNAP MARKER GORUNURLUK AYARLARI (UI-6a): Application, SnapSettings'ten
+    // DPI olcekli DEGERLERI buraya yazar; renderer yalniz bunlari okur (tek
+    // kaynak). markerScale = geometri carpani (taban yaricap 7 px),
+    // markerPenWidth = kalem kalinligi (px). Varsayilanlar SnapSettings ile
+    // ayni (markerScale=3, pen=3).
+    int snapMarkerScale{3};
+    int snapMarkerPenWidth{3};
 };
 
 class Renderer {

@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Mutasyon kosucusu: run_snap_marker_scale.py "iki kati buyutme" kuralini
+"""Mutasyon kosucusu: run_snap_marker_scale.py "olcekli marker" kuralini
 GERCEKTEN yakaliyor mu?
 
-Kullanici sarti: "snap markerlar in buyuklugunu iki katina buyutelim".
-Her mutasyon src/renderer.cpp'yi bozar, testin DUSMESINI bekler, sonra dosyayi
-BAYT-BIREBIR geri yazar. Sonda disk == orijinal dogrulanir.
+UI-6a: marker olcegi artık derleme-zamani sabit degil; cizim fonksiyonu
+`int scale` parametresi alir ve SnapSettings.markerPenWidth kalem kalinligini
+besler. Her mutasyon src/renderer.cpp'yi bozar, testin DUSMESINI bekler, sonra
+dosyayi BAYT-BIREBIR geri yazar. Sonda disk == orijinal dogrulanir.
 
 Kullanim: python3 tests/mutate_snap_marker_scale.py [build-directory]
 """
@@ -18,23 +19,27 @@ build = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else root / "build"
 TARGET = root / "src/renderer.cpp"
 ORIG = TARGET.read_text(encoding="utf-8")
 
-CALL = "drawSnapMarkerShape(dc, p, snapMarkerSymbol(draft.snapType));"
+CALL = "drawSnapMarkerShape(dc, p, snapMarkerSymbol(draft.snapType), draft.snapMarkerScale);"
 # Motion overlay cagri yeri 12 bosluk girintili; normal yol 8. Bu yuzden bu
 # baglam TEK ve istenen dal bozulabiliyor.
 OVERLAY_CALL = "            HGDIOBJ oldBrush = SelectObject(dc, GetStockObject(NULL_BRUSH));\n" \
     + "            " + CALL
 
 MUTATIONS = [
-    ("M1 olcek sabiti 1 (kucultme regresyonu)", "constexpr int kSnapMarkerScale = 2;",
-     "constexpr int kSnapMarkerScale = 1;"),
-    ("M2 olcekleme etkisiz (sm = kimlik)", "constexpr int sm(int v) noexcept { return v * kSnapMarkerScale; }",
-     "constexpr int sm(int v) noexcept { return v; }"),
-    ("M3 bir cizim yolu artik yardimciyi cagirmiyor", OVERLAY_CALL,
+    ("M1 olcekleme etkisiz (sm = kimlik)",
+     "const auto sm = [scale](int v) { return v * scale; };",
+     "const auto sm = [scale](int v) { return v; };"),
+    ("M2 bir cizim yolu artik yardimciyi cagirmiyor", OVERLAY_CALL,
      "            HGDIOBJ oldBrush = SelectObject(dc, GetStockObject(NULL_BRUSH));\n"
      "            switch (snapMarkerSymbol(draft.snapType)) { default: break; }"),
-    ("M4 etiket ofseti olceksiz kaldi",
-     "            drawText(dc, p.x + sm(10), p.y + sm(8), snapTypeLabel(draft.snapType)",
-     "            drawText(dc, p.x + 10, p.y + 8, snapTypeLabel(draft.snapType)"),
+    ("M3 etiket ofseti olceksiz kaldi",
+     "drawText(dc, p.x + 10 * draft.snapMarkerScale, p.y + 8 * draft.snapMarkerScale,\n"
+     "                     snapTypeLabel(draft.snapType), RGB(90, 255, 145));",
+     "drawText(dc, p.x + 10, p.y + 8,\n"
+     "                     snapTypeLabel(draft.snapType), RGB(90, 255, 145));"),
+    ("M4 kalem kalinligi sabitlendi (ayar yok sayildi)",
+     "CreatePen(PS_SOLID, draft.snapMarkerPenWidth,",
+     "CreatePen(PS_SOLID, 2,"),
 ]
 
 
@@ -45,8 +50,8 @@ def run_test():
 
 caught = 0
 for label, old, new in MUTATIONS:
-    if ORIG.count(old) != 1:
-        print(f"SETUP HATASI: parca bulunamadi/coklu -> {label}")
+    if ORIG.count(old) < 1:
+        print(f"SETUP HATASI: parca bulunamadi -> {label}")
         TARGET.write_text(ORIG, encoding="utf-8")
         raise SystemExit(1)
     try:

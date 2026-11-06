@@ -204,6 +204,9 @@ Application::Application(HINSTANCE instance, HWND /*parentCanvas*/) : instance_(
     // Yerlesik + kullanici katalogundan SONRA yuklenir: paket, kayitli bir
     // typeId ile cakisirsa REDDEDILIR (yerlesik tip paketle EZILMEZ).
     loadComponentPackagesFrom(mm::defaultUserComponentPackagesDir());
+    // UI-6a: snap ayarlarini yukle (marker olcegi, kalem, tutma suresi,
+    // tolerans carpani). Dosya yoksa varsayilanlar korunur.
+    loadOptions();
 #ifdef MM_HAS_OCC
     // BELGE-SAHIPLI B-Rep magazasi: OCC-acik derlemede GERCEK OCCT store'unu
     // Document'a ENJEKTE eder (constructor injection). Saglayici secimi LINK
@@ -1619,6 +1622,7 @@ LRESULT Application::handleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
     case WM_DESTROY:
         if (renderBackend_) { renderBackend_->shutdown(); renderBackend_.reset(); }
         if (dxfImportThread_.joinable()) dxfImportThread_.request_stop();
+        saveOptions();  // UI-6a: snap ayarlarini oturumlar arasi kalici yap
         PostQuitMessage(0);
         return 0;
     default:
@@ -8396,6 +8400,7 @@ void Application::updateHover(int x, int y) {
     if (!snapCommandActive) {
         clearTemporaryTracking();
         hover_.reset();
+        heldSnap_.reset();  // UI-6a: komut pasifken tutulan snap de birakilir
         // Bos modda imlecin altindaki secilebilir nesneyi vurgula (navigasyon
         // sirasinda gereksiz yuk olmasin).
         if (!rotating_ && !panning2D_ && !wheelNavigating_ && !viewCubeManipulating_)
@@ -8411,6 +8416,7 @@ void Application::updateHover(int x, int y) {
         temporaryDerivedPoints_.clear();
         temporaryPerpendicularPoints_.clear();
         hover_.reset();
+        heldSnap_.reset();  // UI-6a: snapping degerlendirilmezken tutulan snap birakilir
         return;
     }
     if (transformCommand_ == TransformCommand::Offset &&
@@ -8434,7 +8440,8 @@ void Application::updateHover(int x, int y) {
         const auto reference = transformPhase_ == TransformPhase::Destination ? transformBase_ : anchor_;
         // Grid snap artik CUSTOM yapi akslarina gider (milimetrik adaptif
         // grid kaldirildi) — SnapEngine document.grids() uzerinden yapar.
-        hover_ = SnapEngine::snap(screenTo2D(x, y), document_, 10.0 / (60.0 * camera_.zoom()),
+        hover_ = SnapEngine::snap(screenTo2D(x, y), document_,
+                                  kSnapApertureBasePx * snapSettings_.apertureScale / (60.0 * camera_.zoom()),
                                   snapEnabled_, gridSnapEnabled_, reference, &enabledSnapTypes_);
     } else {
         RECT client{}; GetClientRect(canvas_, &client);
@@ -8472,7 +8479,7 @@ void Application::updateHover(int x, int y) {
         // arka yuzler dolguyla ortuludur, arkadaki kenarlara snap kafa
         // karistirir. Wireframe/saydam/hidden'da tum kenarlar.
         hover_ = SnapEngine::snap3D({static_cast<double>(x), static_cast<double>(y)}, document_, camera_,
-                                    width, height, 10.0, activePlane,
+                                    width, height, kSnapApertureBasePx * snapSettings_.apertureScale, activePlane,
                                     snapEnabled_, gridSnapEnabled_, reference, &enabledSnapTypes_,
                                     visualStyle_ == VisualStyle::Solid);
     }
@@ -8490,6 +8497,28 @@ void Application::updateHover(int x, int y) {
         hover_->point = viewPlane.projectPoint(hover_->point);
     }
     const SnapResult rawSnap = *hover_;
+    // UI-6a TUTMA SURESI + HIZTEREZIS: imlec snap noktasindan uzaklasinca marker
+    // hemen kaybolmaz; holdTimeMs boyunca VE/VEYA kucuk histerezis mesafesi
+    // icinde son snap korunur. Yeni (daha yakin) bir snap bulunursa hemen ona
+    // gecilir (snap motoru en yakini verir; foundSnap dali dogrudan gunceller).
+    if (hover_->type != SnapType::None) {
+        heldSnap_ = hover_;
+        heldSnapAt_ = std::chrono::steady_clock::now();
+        heldSnapScreen_ = POINT{x, y};
+    } else if (heldSnap_) {
+        const auto now = std::chrono::steady_clock::now();
+        const double elapsedMs =
+            std::chrono::duration<double, std::milli>(now - heldSnapAt_).count();
+        const double hystPx = kSnapApertureBasePx * snapSettings_.apertureScale;
+        const double dx = static_cast<double>(x - heldSnapScreen_.x);
+        const double dy = static_cast<double>(y - heldSnapScreen_.y);
+        const double distPx = std::sqrt(dx * dx + dy * dy);
+        if (elapsedMs <= snapSettings_.holdTimeMs || distPx <= hystPx) {
+            hover_ = heldSnap_;  // ayni snap'te kal
+        } else {
+            heldSnap_.reset();
+        }
+    }
     // TP adayi: TAB ile kaydedilecek HAM snap noktasi. Eskiden burada 450 ms
     // BEKLEME (dwell) zamanlayicisi kurulup nokta OTOMATIK kaydediliyordu;
     // kullanici sarti: "TP noktalarini tab tusu ile koyalim, esc tp leri
@@ -12294,6 +12323,12 @@ DraftView Application::draftView() const {
     view.temporaryTrackingGuides = temporaryTrackingGuides_;
     view.temporaryDerivedPoints = temporaryDerivedPoints_;
     view.temporaryPerpendicularPoints = temporaryPerpendicularPoints_;
+    // UI-6a: marker olcegi + kalem kalinligi (SnapSettings'ten, DPI olcekli).
+    const double dpi = dpiScale();
+    view.snapMarkerScale =
+        std::max(1, static_cast<int>(std::lround(snapSettings_.markerScale * dpi)));
+    view.snapMarkerPenWidth =
+        std::max(1, static_cast<int>(std::lround(snapSettings_.markerPenWidth * dpi)));
     view.workPlaneZ = workPlane_.origin.z; view.workPlane = workPlane_;
     view.workPlanePicking = workPlanePicking_; view.workPlanePoints = workPlanePoints_;
     view.twoPointViewDirectionActive =
@@ -13018,6 +13053,47 @@ std::filesystem::path userCatalogPath() {
     return std::filesystem::path(buffer).parent_path() / L"user_catalog.json";
 }
 } // namespace
+
+// --- UI-6a SNAP AYARLARI KALICILIGI --------------------------------------
+// options.ini exe yaninda saklanir (user_catalog.json ile ayni duzen). Dort
+// deger (markerScale, markerPenWidth, holdTimeMs, apertureScale) key=value
+// olarak yazilir; parseSnapSettings/clamp tasinabilir cekirdekten gelir.
+static std::filesystem::path optionsFilePath() {
+    wchar_t buffer[MAX_PATH]{};
+    const DWORD length = GetModuleFileNameW(nullptr, buffer, MAX_PATH);
+    if (length == 0 || length >= MAX_PATH) return L"options.ini";
+    return std::filesystem::path(buffer).parent_path() / L"options.ini";
+}
+
+void Application::loadOptions() {
+    optionsPath_ = optionsFilePath();
+    std::ifstream in(optionsPath_, std::ios::binary);
+    if (!in) return;  // dosya yok -> varsayilanlar korunur
+    std::ostringstream ss;
+    ss << in.rdbuf();
+    if (const auto parsed = mm::parseSnapSettings(ss.str())) snapSettings_ = *parsed;
+}
+
+void Application::saveOptions() {
+    const std::filesystem::path path = optionsPath_.empty() ? optionsFilePath() : optionsPath_;
+    const std::string text = mm::serializeSnapSettings(snapSettings_);
+    std::ofstream out(path, std::ios::binary);
+    if (out) out << text;
+}
+
+double Application::dpiScale() const noexcept {
+    // GetDeviceCaps(LOGPIXELSX) evrenseldir (MinGW-w64 DPI sembol tuzagindan
+    // kacinir); 96 DPI tabanina gore carpan doner. Tuvalsiz: 1.0.
+    if (canvas_ && IsWindow(canvas_)) {
+        HDC hdc = GetDC(canvas_);
+        if (hdc) {
+            const int dpi = GetDeviceCaps(hdc, LOGPIXELSX);
+            ReleaseDC(canvas_, hdc);
+            if (dpi > 0) return static_cast<double>(dpi) / 96.0;
+        }
+    }
+    return 1.0;
+}
 
 void Application::loadUserCatalog() {
     const std::filesystem::path path = userCatalogPath();

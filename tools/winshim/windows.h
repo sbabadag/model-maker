@@ -450,6 +450,9 @@ int SetStretchBltMode(HDC, int);
 BOOL GetTextExtentPoint32W(HDC, const WCHAR*, int, LPSIZE);
 BOOL SetRect(LPRECT, int, int, int, int);
 int GetDeviceCaps(HDC, int);
+// GDI bilgi dizinleri (wingdi.h): LOGPIXELSX/Y — gercek degerler 88/90.
+constexpr int LOGPIXELSX = 88;
+constexpr int LOGPIXELSY = 90;
 HGDIOBJ GetCurrentObject(HDC, UINT);
 int GetObjectW(HGDIOBJ, int, void*);
 UINT GetDpiForWindow(HWND);

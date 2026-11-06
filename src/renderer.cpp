@@ -36,11 +36,11 @@ void line(HDC dc, int x1, int y1, int x2, int y2) {
 }
 
 // Snap isaretcisi cizimi: TEK kaynak. Motion overlay ve normal drafting yolu ayni
-// fonksiyonu cagirir; boyut kSnapMarkerScale ile olceklenir (taban yaricap 7 px).
-constexpr int kSnapMarkerScale = 2;
-constexpr int sm(int v) noexcept { return v * kSnapMarkerScale; }
-
-void drawSnapMarkerShape(HDC dc, const POINT& p, SnapMarkerSymbol symbol) {
+// fonksiyonu cagirir; boyut `scale` carpaniyla olceklenir (taban yaricap 7 px).
+// `scale` Application'in SnapSettings'inden (DPI olcekli) gelir — UI-6a'da
+// derleme-zamani sabit (kSnapMarkerScale=2) kaldirildi, ayarlardan degistirilebilir.
+void drawSnapMarkerShape(HDC dc, const POINT& p, SnapMarkerSymbol symbol, int scale) {
+    const auto sm = [scale](int v) { return v * scale; };
     switch (symbol) {
     case SnapMarkerSymbol::Triangle: {
         POINT triangle[4]{{p.x, p.y - sm(7)}, {p.x - sm(7), p.y + sm(6)},
@@ -1590,15 +1590,16 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
             const POINT p = projectPoint(*draft.cursor);
             // Snap turune ozel renk: tek yesil marker ayirt edilmiyordu.
             const unsigned long rgb = snapMarkerColorRgb(draft.snapType);
-            HPEN snapPen = CreatePen(PS_SOLID, 2,
+            HPEN snapPen = CreatePen(PS_SOLID, draft.snapMarkerPenWidth,
                 RGB((rgb) & 0xFF, (rgb >> 8) & 0xFF, (rgb >> 16) & 0xFF));
             SelectObject(dc, snapPen);
             HGDIOBJ oldBrush = SelectObject(dc, GetStockObject(NULL_BRUSH));
-            drawSnapMarkerShape(dc, p, snapMarkerSymbol(draft.snapType));
+            drawSnapMarkerShape(dc, p, snapMarkerSymbol(draft.snapType), draft.snapMarkerScale);
             SelectObject(dc, oldBrush);
             SelectObject(dc, stockPen);
             DeleteObject(snapPen);
-            drawText(dc, p.x + sm(10), p.y + sm(8), snapTypeLabel(draft.snapType), RGB(90, 255, 145));
+            drawText(dc, p.x + 10 * draft.snapMarkerScale, p.y + 8 * draft.snapMarkerScale,
+                     snapTypeLabel(draft.snapType), RGB(90, 255, 145));
         }
         if (motionDrafting && draft.dynamicInputEnabled && draft.cursor &&
             !(draft.transformCommand != TransformCommand::None &&
@@ -2982,14 +2983,15 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
 
     if (drafting && draft.cursor && draft.snapType != SnapType::None) {
         const POINT p = projectPoint(*draft.cursor);
-        HPEN snapPen = CreatePen(PS_SOLID, 2, RGB(90, 255, 145));
+        HPEN snapPen = CreatePen(PS_SOLID, draft.snapMarkerPenWidth, RGB(90, 255, 145));
         SelectObject(dc, snapPen);
         HGDIOBJ oldBrush = SelectObject(dc, GetStockObject(NULL_BRUSH));
-        drawSnapMarkerShape(dc, p, snapMarkerSymbol(draft.snapType));
+        drawSnapMarkerShape(dc, p, snapMarkerSymbol(draft.snapType), draft.snapMarkerScale);
         SelectObject(dc, oldBrush);
         SelectObject(dc, stockPen);
         DeleteObject(snapPen);
-        drawText(dc, p.x + sm(10), p.y + sm(8), snapTypeLabel(draft.snapType), RGB(90, 255, 145));
+        drawText(dc, p.x + 10 * draft.snapMarkerScale, p.y + 8 * draft.snapMarkerScale,
+                 snapTypeLabel(draft.snapType), RGB(90, 255, 145));
     }
 
     if (!draft.snapOnly) {

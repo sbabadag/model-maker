@@ -29,6 +29,7 @@
 #include "model_maker/render_backend.hpp"
 #include "model_maker/renderer.hpp"
 #include "model_maker/ribbon_layout.hpp"
+#include "model_maker/snap_settings.hpp"
 #include "model_maker/ucs.hpp"
 #include "model_maker/user_catalog.hpp"
 #include "model_maker/view_definition.hpp"
@@ -127,6 +128,10 @@ public:
     void setOrthoEnabled(bool enabled) noexcept { orthoEnabled_ = enabled; }
     bool gridSnapEnabled() const noexcept { return gridSnapEnabled_; }
     void setGridSnapEnabled(bool enabled) noexcept { gridSnapEnabled_ = enabled; }
+    // UI-6a: snap gorunurluk/kapma ayarlari (marker olcegi, kalem kalinligi,
+    // tutma suresi, tolerans carpani). Kalici — saveOptions/loadOptions.
+    const SnapSettings& snapSettings() const noexcept { return snapSettings_; }
+    void setSnapSettings(const SnapSettings& s) noexcept { snapSettings_ = s; }
     const SnapTypeMask& enabledSnapTypes() const noexcept { return enabledSnapTypes_; }
     void toggleSnapType(SnapType type) noexcept;
     std::string currentLayer() const noexcept { return currentLayer_; }
@@ -966,6 +971,9 @@ private:
     Vec3 screenTo2D(int x, int y) const noexcept;
     HCURSOR currentCanvasCursor() const noexcept;
     DraftView draftView() const;
+    // UI-6a: aktif tuvalin DPI olcegi (96 DPI tabanina gore carpan). Marker
+    // boyutu ve kalem kalinligi bu carpanla olceklenir (tuvalsiz: 1.0).
+    double dpiScale() const noexcept;
 
     HINSTANCE instance_{};
     HWND window_{};
@@ -1270,6 +1278,14 @@ private:
     std::optional<SnapResult> hover_;
     bool snapEnabled_{true};
     SnapTypeMask enabledSnapTypes_{};
+    // UI-6a: snap gorunurluk/kapma ayarlari (kalici; saveOptions/loadOptions).
+    SnapSettings snapSettings_;
+    // TUTMA SURESI (UI-6a): son dogrulanan snap + dogrulanma ani + ekran
+    // konumu. Imlec snap noktasindan uzaklasinca marker holdTimeMs/histerezis
+    // boyunca korunur; yeni (daha yakin) snap bulununca hemen ona gecilir.
+    std::optional<SnapResult> heldSnap_;
+    std::chrono::steady_clock::time_point heldSnapAt_{};
+    POINT heldSnapScreen_{};
     bool snapPanelOpen_{};
     bool layerManagerOpen_{true};
     bool showUsedLayersOnly_{};

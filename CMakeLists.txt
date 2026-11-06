@@ -951,6 +951,14 @@ if(BUILD_TESTING)
     target_link_libraries(model_maker_snap_depth_pick_test PRIVATE model_maker_core)
     add_test(NAME model_maker_snap_depth_pick_test COMMAND model_maker_snap_depth_pick_test)
 
+    # SNAP AYARLARI (UI-6a): tasinabilir serilestirme + varsayilan degerler.
+    # Dort deger (marker olcegi, kalem kalinligi, tutma suresi, tolerans carpani)
+    # kullanicidan degistirilebilir ve oturumlar arasi hatirlanir. Header-only;
+    # serialize/parse gidis-donusu + clamp davranisi kilitlenir.
+    add_executable(model_maker_snap_settings_test tests/snap_settings_test.cpp)
+    target_include_directories(model_maker_snap_settings_test PRIVATE include)
+    add_test(NAME model_maker_snap_settings_test COMMAND model_maker_snap_settings_test)
+
     # YAPI GRIDI TUM SNAP TURLERINE YAPISMALI (kullanici sarti): aks cizgileri
     # uc/orta/en yakin/dikme adaylari uretir; her turun kapisi snap maskesi;
     # kesisimler SnapType::Grid kalir; obje snap'i grid'i ezer; eski toleranssiz

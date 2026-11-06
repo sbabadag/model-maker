@@ -1,7 +1,11 @@
 // Template for run_snap_marker_scale.py: production code replaces the @ markers.
 // Snapshot of the HISTORICAL (1x) marker geometry is hardcoded here as literals;
-// the test derives the expected 2x geometry from it, so the scale claim is
-// verified structurally rather than by trusting the production helper.
+// the test derives the expected scale*x geometry from it, so the scale claim is
+// verified structurally rather than by trusting the production helper. UI-6a:
+// the scale is no longer a compile-time constant (kSnapMarkerScale=2) but a
+// runtime `int scale` parameter fed from Application::SnapSettings (default 3 =
+// 1.5x of the old 2x). The behaviour test now proves EVERY integer scale draws
+// exactly scale*x the 1x base, for every symbol.
 #include "model_maker/drafting.hpp"
 #include <algorithm>
 #include <cmath>
@@ -121,37 +125,40 @@ std::string render(const std::vector<Call>& calls) {
     return text;
 }
 
-std::vector<Call> capture(SnapMarkerSymbol symbol) {
+std::vector<Call> capture(SnapMarkerSymbol symbol, int scale) {
     DC dc{};
-    drawSnapMarkerShape(&dc, POINT{0, 0}, symbol);
+    drawSnapMarkerShape(&dc, POINT{0, 0}, symbol, scale);
     return dc.calls;
 }
 
-// Every symbol must draw the SAME SHAPE as before, exactly twice as large.
-void everySymbolIsDoubled() {
+// Every symbol must draw the SAME SHAPE as before, scaled by `scale` (any int).
+void everySymbolScalesBy(int scale) {
     for (SnapMarkerSymbol symbol : kAllSymbols) {
-        const std::vector<Call> actual = capture(symbol);
-        const std::vector<Call> expected = scaledGeometry(symbol, 2);
+        const std::vector<Call> actual = capture(symbol, scale);
+        const std::vector<Call> expected = scaledGeometry(symbol, scale);
         require(actual.size() == expected.size(),
                 "call count changed for " + render(expected) + " -> " + render(actual));
         for (std::size_t i = 0; i < actual.size(); ++i) {
             require(actual[i].kind == expected[i].kind, "primitive changed: " + render(actual));
             require(actual[i].points == expected[i].points,
-                    "geometry is not exactly 2x: expected " + render({expected[i]}) + " got " +
-                        render({actual[i]}));
+                    "geometry is not exactly " + std::to_string(scale) + "x: expected " +
+                        render({expected[i]}) + " got " + render({actual[i]}));
         }
     }
 }
 
-// The historical size must be measurably smaller: a scale regression cannot pass.
-void baseSizeWouldFailTheDoubledExpectation() {
-    const std::vector<Call> actual = capture(SnapMarkerSymbol::Square);
-    require(actual == scaledGeometry(SnapMarkerSymbol::Square, 2), "square must be doubled");
-    require(!(actual == scaledGeometry(SnapMarkerSymbol::Square, 1)),
-            "1x geometry must NOT satisfy the doubled expectation (test would be vacuous)");
+// The scale parameter must measurably change geometry: a scale-ignoring
+// regression (always drawing 1x) cannot pass.
+void scaleChangeIsObservable() {
+    require(capture(SnapMarkerSymbol::Square, 2) == scaledGeometry(SnapMarkerSymbol::Square, 2),
+            "scale=2 must match the doubled expectation");
+    require(!(capture(SnapMarkerSymbol::Square, 2) == scaledGeometry(SnapMarkerSymbol::Square, 1)),
+            "1x geometry must NOT satisfy the scale=2 expectation (test would be vacuous)");
+    require(!(capture(SnapMarkerSymbol::Square, 3) == scaledGeometry(SnapMarkerSymbol::Square, 2)),
+            "scale=3 must differ from scale=2 (test would be vacuous)");
 }
 
-// Each marker's bounding span must be EXACTLY doubled (independent of the
+// Each marker's bounding span must be EXACTLY scale*x (independent of the
 // per-symbol glyph asymmetry: a right-angle marker is not drawn centred).
 std::pair<long, long> span(const std::vector<Call>& calls) {
     long minX = 0, maxX = 0, minY = 0, maxY = 0;
@@ -167,39 +174,48 @@ std::pair<long, long> span(const std::vector<Call>& calls) {
     return {maxX - minX, maxY - minY};
 }
 
-void everySpanIsExactlyDoubled() {
+void everySpanScalesBy(int scale) {
     bool grew = false;
     for (SnapMarkerSymbol symbol : kAllSymbols) {
         const auto base = span(baseGeometry(symbol));
-        const auto actual = span(capture(symbol));
-        require(actual.first == 2 * base.first && actual.second == 2 * base.second,
-                "span is not exactly doubled: base " + std::to_string(base.first) + "x" +
-                    std::to_string(base.second) + " -> " + std::to_string(actual.first) + "x" +
-                    std::to_string(actual.second));
+        const auto actual = span(capture(symbol, scale));
+        require(actual.first == scale * base.first && actual.second == scale * base.second,
+                "span is not exactly " + std::to_string(scale) + "x: base " +
+                    std::to_string(base.first) + "x" + std::to_string(base.second) + " -> " +
+                    std::to_string(actual.first) + "x" + std::to_string(actual.second));
         if (base.first > 0 || base.second > 0) grew = true;
     }
     require(grew, "no symbol had a measurable span (test would be vacuous)");
 }
 
-// The doubled marker is still a small decoration, not a screen-filling glyph.
-void staysASmallDecoration() {
+// At the default scale (3), the marker is still a small decoration — the
+// largest base offset is 10 (ExtensionLine), so 10*3 = 30 px is the budget.
+void staysASmallDecorationAtDefaultScale() {
+    constexpr int kDefaultScale = 3;
     for (SnapMarkerSymbol symbol : kAllSymbols) {
-        for (const Call& call : capture(symbol))
+        for (const Call& call : capture(symbol, kDefaultScale))
             for (const POINT& point : call.points)
-                require(std::labs(point.x) <= 20 && std::labs(point.y) <= 20,
-                        "marker offset out of the 2x budget");
+                require(std::labs(point.x) <= 10 * kDefaultScale &&
+                            std::labs(point.y) <= 10 * kDefaultScale,
+                        "marker offset out of the 3x budget");
     }
-    require(kSnapMarkerScale == 2, "scale constant must be 2");
 }
 
 int main() {
     int passed = 0, failed = 0;
     const std::vector<std::pair<std::string, std::function<void()>>> tests = {
-        {"every snap symbol draws its shape exactly twice as large", everySymbolIsDoubled},
-        {"the historical 1x size would fail the doubled expectation",
-         baseSizeWouldFailTheDoubledExpectation},
-        {"every marker span is exactly doubled", everySpanIsExactlyDoubled},
-        {"markers stay a small decoration (2x budget)", staysASmallDecoration},
+        {"scale=1 draws every symbol at the historical 1x size",
+         [] { everySymbolScalesBy(1); }},
+        {"scale=2 draws every symbol exactly twice as large", [] { everySymbolScalesBy(2); }},
+        {"scale=3 (UI-6a default) draws every symbol exactly 3x", [] { everySymbolScalesBy(3); }},
+        {"scale=4 draws every symbol exactly 4x", [] { everySymbolScalesBy(4); }},
+        {"scale change is observable (1x / 2x / 3x all differ)",
+         scaleChangeIsObservable},
+        {"every marker span scales exactly (1x..4x)", [] {
+             everySpanScalesBy(1); everySpanScalesBy(2); everySpanScalesBy(3); everySpanScalesBy(4);
+         }},
+        {"markers stay a small decoration at the default 3x scale",
+         staysASmallDecorationAtDefaultScale},
     };
     for (const auto& [name, test] : tests) {
         try { test(); ++passed; std::cout << "PASS " << name << '\n'; }
