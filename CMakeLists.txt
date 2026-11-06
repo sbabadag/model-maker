@@ -81,6 +81,7 @@ add_library(model_maker_core
     src/camera.cpp
     src/view_cube.cpp
     src/ribbon_layout.cpp
+    src/command_registry.cpp
     src/performance.cpp
     src/dxf.cpp
     src/document.cpp
@@ -592,6 +593,14 @@ if(BUILD_TESTING)
     # Z mutlak), X/Y/Z etiketleri, Left/Below - Right/Above uzantilari, origin
     # offset, spesifikasyondan turetim, MMW7 kalicilik + MMW5/6 geriye donuk
     # uyumluluk ve grid ekle/degistir/sil undo'su. OCC'siz/platformdan bagimsiz.
+    # KOMUT KAYDI (UI-2): tek komut tablosu — id/ad/ipucu/ikon/kisayol/tur/
+    # etkinlik + serit ve menu planlari. Qt'siz/windows.h'siz: 'G' cakismasi
+    # gibi hatalar burada TESTLE yakalanir.
+    add_executable(model_maker_command_registry_test tests/command_registry_test.cpp)
+    target_link_libraries(model_maker_command_registry_test PRIVATE model_maker_core)
+    target_compile_options(model_maker_command_registry_test PRIVATE -Wall -Wextra -Wpedantic)
+    add_test(NAME model_maker_command_registry_test COMMAND model_maker_command_registry_test)
+
     add_executable(model_maker_grid_test tests/grid_test.cpp)
     target_link_libraries(model_maker_grid_test PRIVATE model_maker_core)
     add_test(NAME model_maker_grid_test COMMAND model_maker_grid_test)
@@ -1557,6 +1566,7 @@ if(BUILD_TESTING)
         add_test(NAME model_maker_drawing_p2d_select_gui_test COMMAND model_maker_drawing_p2d_select_gui_test)
 
         # ILERLEME PENCERESI (Qt): ekranin ortasinda panel, belirli/belirsiz cubuk, Esc ile kapanmama.
+
         add_executable(model_maker_progress_overlay_test tests/progress_overlay_test.cpp)
         target_include_directories(model_maker_progress_overlay_test PRIVATE include)
         target_link_libraries(model_maker_progress_overlay_test PRIVATE model_maker_core Qt6::Widgets)
@@ -1566,6 +1576,7 @@ if(BUILD_TESTING)
         # (onceden yanlis hedefe yaziliydi; testler qputenv ile de korunuyor).
         set_tests_properties(model_maker_drawing_p2d_gui_test model_maker_drawing_p2d_select_gui_test
             model_maker_progress_overlay_test
+
             model_maker_component_dialog_widget_test PROPERTIES
             ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
     endif()
