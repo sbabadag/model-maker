@@ -27,6 +27,7 @@ if [ ${#FILES[@]} -eq 0 ]; then
            src/two_point_view.cpp
            src/opengl_render_backend.cpp
            src/component_dialog_widget.cpp
+           src/ribbon_widget.cpp
            src/component_live_preview_widget.cpp
            src/component_option_icons.cpp
            src/drawing_sheet_widget.cpp

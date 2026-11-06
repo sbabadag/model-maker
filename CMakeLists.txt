@@ -1574,6 +1574,16 @@ if(BUILD_TESTING)
         add_test(NAME model_maker_drawing_p2d_select_gui_test COMMAND model_maker_drawing_p2d_select_gui_test)
 
         # ILERLEME PENCERESI (Qt): ekranin ortasinda panel, belirli/belirsiz cubuk, Esc ile kapanmama.
+        # SERIT (UI-2): platformdan bagimsiz Qt widget'i — offscreen.
+        # Her komut bir kez, tikla->dogru komut, arama, DPI etiketleri, PNG.
+        add_executable(model_maker_ribbon_widget_test
+            tests/ribbon_widget_test.cpp
+            src/ribbon_widget.cpp
+            include/model_maker/ribbon_widget.hpp)
+        target_include_directories(model_maker_ribbon_widget_test PRIVATE include)
+        target_link_libraries(model_maker_ribbon_widget_test PRIVATE
+            model_maker_core Qt6::Widgets)
+        add_test(NAME model_maker_ribbon_widget_test COMMAND model_maker_ribbon_widget_test)
 
         add_executable(model_maker_progress_overlay_test tests/progress_overlay_test.cpp)
         target_include_directories(model_maker_progress_overlay_test PRIVATE include)
@@ -1584,7 +1594,7 @@ if(BUILD_TESTING)
         # (onceden yanlis hedefe yaziliydi; testler qputenv ile de korunuyor).
         set_tests_properties(model_maker_drawing_p2d_gui_test model_maker_drawing_p2d_select_gui_test
             model_maker_progress_overlay_test
-
+            model_maker_ribbon_widget_test
             model_maker_component_dialog_widget_test PROPERTIES
             ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
     endif()
