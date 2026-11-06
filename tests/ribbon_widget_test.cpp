@@ -15,9 +15,13 @@
 #include <QDir>
 #include <QEvent>
 #include <QFont>
+#include <QKeyEvent>
+#include <QLineEdit>
 #include <QMenu>
+#include <QShortcut>
 #include <QTabWidget>
 #include <QToolButton>
+#include <QVBoxLayout>
 
 #include <algorithm>
 #include <cstdio>
@@ -210,7 +214,55 @@ int main(int argc, char** argv) {
         QApplication::processEvents();
     }
 
-    // ---- 7) Ekran goruntuleri ------------------------------------------
+    // ---- 7) Metin alani odaktayken tek harf kisayollari TETIKLENMEZ ------
+    // Kullanici sarti: profil alanina "HEA300" yazmak komut baslatmasin.
+    {
+        // (i) Mimari kural: tek harf kisayollari (G, L, Q, S...) YALNIZ tuval
+        // teslimli olmali. Qt kisayolu (Host) olarak baglanirlarsa metin
+        // alanina yazarken komut baslar.
+        int canvasLetters = 0;
+        int hostLetters = 0;
+        for (const mm::CommandDef& def : catalog.registry.commands()) {
+            if (def.shortcut.empty()) continue;
+            const auto chord = mm::parseShortcut(def.shortcut);
+            if (!chord || chord->key.size() != 1) continue;            // harf/rakam
+            if (chord->ctrl || chord->alt || chord->shift) continue;   // degistiricili
+            if (def.delivery == mm::ShortcutDelivery::Canvas) ++canvasLetters;
+            else ++hostLetters;
+        }
+        check(canvasLetters > 0, "tek harf kisayollari kayitta var (G, L, Q, S...)");
+        check(hostLetters == 0, "tek harf kisayolu Qt (Host) kisayolu OLMAMALI");
+
+        // (ii) Gercek Qt davranisi: QLineEdit ShortcutOverride'i kabul eder,
+        // bu yuzden pencere kisayolu (G) metin yazarken ATESLENMEZ.
+        QWidget hostWindow;
+        auto* column = new QVBoxLayout(&hostWindow);
+        auto* edit = new QLineEdit(&hostWindow);
+        column->addWidget(edit);
+        hostWindow.resize(420, 120);
+        hostWindow.show();
+        edit->setFocus();
+        QApplication::processEvents();
+
+        bool shortcutFired = false;
+        auto* guardShortcut = new QShortcut(QKeySequence(QStringLiteral("G")), &hostWindow);
+        QObject::connect(guardShortcut, &QShortcut::activated,
+                         [&shortcutFired]() { shortcutFired = true; });
+
+        host.run.clear();
+        for (const QChar ch : QStringLiteral("HEA300")) {
+            QKeyEvent press(QEvent::KeyPress, ch.unicode(), Qt::NoModifier, QString(ch));
+            QApplication::sendEvent(edit, &press);
+        }
+        QApplication::processEvents();
+
+        check(edit->text() == QStringLiteral("HEA300"),
+              "profil alanina 'HEA300' yazilmali");
+        check(!shortcutFired, "'G' kisayolu metin alaninda ATESLENMEMELI");
+        check(host.run.empty(), "profil alanina yazmak HICBIR komut baslatmamali");
+    }
+
+    // ---- 8) Ekran goruntuleri ------------------------------------------
     {
         const QString dir = QStringLiteral("/home/ubuntu/ui-shots");
         ribbon.resize(1500, 210);

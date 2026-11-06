@@ -90,31 +90,6 @@ enum CommandId {
     CmdFilterPopup = 824, CmdFilterFind = 825, CmdFilterSelect = 826,
 };
 
-// UI-2: Win32 tus kodu -> komut kaydinin tus dili ("S", "F7", "DELETE", ...).
-std::string keyNameForVirtualKey(unsigned int vk) {
-    if (vk >= 'A' && vk <= 'Z') return std::string(1, static_cast<char>(vk));
-    if (vk >= '0' && vk <= '9') return std::string(1, static_cast<char>(vk));
-    if (vk >= VK_F1 && vk <= VK_F24) return "F" + std::to_string(vk - VK_F1 + 1);
-    switch (vk) {
-    case VK_DELETE: return "DELETE";
-    case VK_ESCAPE: return "ESC";
-    case VK_TAB: return "TAB";
-    case VK_RETURN: return "ENTER";
-    case VK_SPACE: return "SPACE";
-    case VK_HOME: return "HOME";
-    case VK_END: return "END";
-    case VK_PRIOR: return "PGUP";
-    case VK_NEXT: return "PGDN";
-    case VK_INSERT: return "INSERT";
-    case VK_BACK: return "BACKSPACE";
-    case VK_LEFT: return "LEFT";
-    case VK_RIGHT: return "RIGHT";
-    case VK_UP: return "UP";
-    case VK_DOWN: return "DOWN";
-    default: return {};
-    }
-}
-
 struct SnapChoice { SnapType type; const wchar_t* label; };
 constexpr std::array<SnapChoice, 15> snapChoices{{
     {SnapType::Endpoint, L"Endpoint"}, {SnapType::Midpoint, L"Midpoint"},
@@ -12483,7 +12458,7 @@ bool Application::dispatchKeyChord(unsigned int virtualKey) {
     // ESC ve TAB yerel girdi temizligi/odak davranisi icin canvas'ta kalir
     // (asagidaki ozel dallar). Diger TUM tuslar komut KAYDINDAN cozulur.
     if (virtualKey == VK_ESCAPE || virtualKey == VK_TAB) return false;
-    const std::string key = keyNameForVirtualKey(virtualKey);
+    const std::string key = mm::keyNameFromVirtualKey(virtualKey);
     if (key.empty()) return false;
     if (!commandDispatcher_) return false;   // bagli degilse tus yutulmaz
 

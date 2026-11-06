@@ -281,6 +281,31 @@ int main() {
         check(menuOnly.occurrences("two") == 1, "menu ici komut occurrences'a girer");
     }
 
+    // ---- 6) TÜRKÇE Q KLAVYE: fiziksel tuş (VK) çözümü --------------------
+    // 'I' tuşu Türkçe Q düzeninde 'ı' üretir; 'i' ayrı bir tuş DEĞİLDİR.
+    // Kısayol KARAKTERE göre çözülürse Ayna (I) kaybolurdu → VK ile çözülür.
+    {
+        check(mm::keyNameFromVirtualKey(0x49) == "I", "VK_I -> 'I' (Ayna tuşu)");
+        check(mm::keyNameFromVirtualKey(0x4C) == "L", "VK_L -> 'L'");
+        check(mm::keyNameFromVirtualKey(0x47) == "G", "VK_G -> 'G' (Kolon)");
+        check(mm::keyNameFromVirtualKey(0x51) == "Q", "VK_Q -> 'Q' (Fillet)");
+        check(mm::keyNameFromVirtualKey(0x53) == "S", "VK_S -> 'S' (Silindir)");
+        check(mm::keyNameFromVirtualKey(0x31) == "1", "VK_1 -> '1'");
+        check(mm::keyNameFromVirtualKey(0x70) == "F1", "VK_F1 -> F1");
+        check(mm::keyNameFromVirtualKey(0x79) == "F10", "VK_F10 -> F10");
+        check(mm::keyNameFromVirtualKey(0x2E) == "DELETE", "VK_DELETE -> DELETE");
+        check(mm::keyNameFromVirtualKey(0x1B) == "ESC", "VK_ESCAPE -> ESC");
+        check(mm::keyNameFromVirtualKey(0x0D) == "ENTER", "VK_RETURN -> ENTER");
+        check(mm::keyNameFromVirtualKey(0x28) == "DOWN", "VK_DOWN -> DOWN");
+        check(mm::keyNameFromVirtualKey(0x10).empty(),
+              "VK_SHIFT gibi değiştirici tuşlar komut tuşu değildir");
+
+        // Karaktere göre çözüm ile VK çözümü AYNI olmalı: 'ı' karakteri
+        // Türkçe klavyede VK_I'dan gelir; kayıt 'I' bekler.
+        check(mm::shortcutKey(mm::keyNameFromVirtualKey(0x49)) == "i",
+              "VK_I kanonik anahtarı 'i'");
+    }
+
     if (failures == 0) {
         std::printf("command_registry_test: TUM KONTROLLER GECTI\n");
         return 0;

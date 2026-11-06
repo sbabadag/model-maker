@@ -763,6 +763,26 @@ void QtMainWindow::buildCommandHandlers() {
     h["draw.circle"] = [this]() { app_.selectTool(DrawTool::Circle); };
     h["draw.face3d"] = [this]() { app_.selectTool(DrawTool::Face3D); };
     h["draw.column"] = [this]() { app_.selectTool(DrawTool::Column); };
+    // KIRIS (UI-2b): Kolon'un YATAY karsiligi. Iki nokta + ZORUNLU profil;
+    // yeni geometri yolu YOK — profilli cizgi zaten uye uretir. Profil yoksa
+    // komut baslamaz, kullaniciya soylenir ve profil alani odaga alinir.
+    h["draw.beam"] = [this]() {
+        const std::string profile = app_.pendingProfileName();
+        if (profile.empty()) {
+            statusBar()->showMessage(
+                QStringLiteral("Kiriş için profil zorunlu: Özellikler panelindeki "
+                               "profil alanından seçin"), 6000);
+            if (profileSelector_) {
+                profileSelector_->setFocus(Qt::ShortcutFocusReason);
+                profileSelector_->showPopup();
+            }
+            return;
+        }
+        app_.selectTool(DrawTool::Line);
+        statusBar()->showMessage(
+            QStringLiteral("Kiriş: iki nokta seçin (profil: %1)")
+                .arg(QString::fromStdString(profile)), 5000);
+    };
     h["draw.cube"] = [this]() { app_.addCube(); };
     h["draw.pyramid"] = [this]() { app_.addPyramid(); };
     h["draw.cylinder"] = [this]() { app_.addCylinder(); };

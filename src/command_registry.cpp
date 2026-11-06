@@ -178,6 +178,38 @@ std::string shortcutKey(std::string_view text) {
     return out;
 }
 
+std::string keyNameFromVirtualKey(unsigned int virtualKey) {
+    // Harfler: sanal tus kodu FIZIKSEL tastir (US yerlesimi), uretilen karakter
+    // degil. Turkce Q'da 'I' tusu 'ı' uretir ama VK_I = 0x49 ayni kalir.
+    if (virtualKey >= 0x41u && virtualKey <= 0x5Au) {
+        return std::string(1, static_cast<char>(virtualKey));
+    }
+    if (virtualKey >= 0x30u && virtualKey <= 0x39u) {
+        return std::string(1, static_cast<char>(virtualKey));
+    }
+    if (virtualKey >= 0x70u && virtualKey <= 0x87u) {  // VK_F1..VK_F24
+        return "F" + std::to_string(virtualKey - 0x70u + 1u);
+    }
+    switch (virtualKey) {
+    case 0x08u: return "BACKSPACE";  // VK_BACK
+    case 0x09u: return "TAB";        // VK_TAB
+    case 0x0Du: return "ENTER";      // VK_RETURN
+    case 0x1Bu: return "ESC";        // VK_ESCAPE
+    case 0x20u: return "SPACE";      // VK_SPACE
+    case 0x21u: return "PGUP";       // VK_PRIOR
+    case 0x22u: return "PGDN";       // VK_NEXT
+    case 0x23u: return "END";        // VK_END
+    case 0x24u: return "HOME";       // VK_HOME
+    case 0x25u: return "LEFT";       // VK_LEFT
+    case 0x26u: return "UP";         // VK_UP
+    case 0x27u: return "RIGHT";      // VK_RIGHT
+    case 0x28u: return "DOWN";       // VK_DOWN
+    case 0x2Du: return "INSERT";     // VK_INSERT
+    case 0x2Eu: return "DELETE";     // VK_DELETE
+    default: return {};
+    }
+}
+
 // ---------------------------------------------------------------------------
 // ValidationIssue
 // ---------------------------------------------------------------------------

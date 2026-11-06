@@ -70,6 +70,18 @@ std::string formatShortcut(const KeyChord& chord);
 // ("ctrl+s", "f7", "s"). Gecersiz metinde bos string.
 std::string shortcutKey(std::string_view text);
 
+// TURKCE Q KLAVYE KURALI (kalici): Win32 sanal tus kodu -> kayit dili.
+// KARAKTERE gore degil FIZIKSEL TUSA gore cozulur: Turkce Q duzeninde 'I'
+// tusu 'i'/'ı' uretir, 'i' ayri bir tus degildir; ama VK_I (0x49) her iki
+// duzende de ayni fiziksel tastir. Bu yuzden tus -> komut eslemesi WM_CHAR
+// karakteriyle DEGIL, sanal tus koduyla yapilir; aksi halde Ayna (I) Turkce
+// duzende kaybolurdu.
+// Desteklenen: harfler (0x41..0x5A), rakamlar (0x30..0x39), F1..F24
+// (0x70..0x87), DELETE/ESC/TAB/ENTER/SPACE/HOME/END/PGUP/PGDN/INSERT/
+// BACKSPACE/yon tuslari. Digerleri bos string.
+// (Sayilar windows.h'dan bagimsizdir; VK sabitleri ABI geregi degismez.)
+std::string keyNameFromVirtualKey(unsigned int virtualKey);
+
 // ---------------------------------------------------------------------------
 // Komut tanimi
 // ---------------------------------------------------------------------------

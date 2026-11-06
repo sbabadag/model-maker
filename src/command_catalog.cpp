@@ -153,6 +153,12 @@ void addDrawCommands(CommandRegistry& r) {
               .key("H").keys("3dface yuzey face"));
     r.add(Cmd("draw.column", "Kolon", "column", "Düşey üye: iki nokta (G)")
               .key("G").keys("kolon column dusey"));
+    // KIRIS = KOLON'UN YATAY KARSILIGI (UI-2b): iki nokta, profil ZORUNLU
+    // (Ozellikler panelindeki profil alanindan). YENI geometri kodu yok —
+    // mevcut "profilli cizgi = uye" yolu kullanilir.
+    r.add(Cmd("draw.beam", "Kiriş", "beam",
+              "Yatay üye: iki nokta; profil Özellikler panelinden zorunlu")
+              .keys("kiris beam kiris"));
     r.add(Cmd("draw.cube", "Küp", "cube", "Küp ekle (B)")
               .key("B").keys("kup cube"));
     r.add(Cmd("draw.pyramid", "Piramit", "pyramid", "Piramit ekle (Y)")
@@ -448,7 +454,7 @@ UiPlan buildRibbonPlan() {
     UiPlan plan;
 
     plan.addTab(tab("Çelik", {
-        group("Üyeler", {item("draw.column")}),
+        group("Üyeler", {item("draw.beam"), item("draw.column")}),
         group("Bağlantı", {item("steel.bolt"), item("steel.weld"),
                            item("steel.endPlate"), item("steel.finPlate")}),
         group("Katalog", {item("steel.catalog"),
@@ -552,7 +558,7 @@ UiPlan buildMenuPlan() {
         item("draw.line"), item("draw.polyline"), item("draw.rectangle"),
         item("draw.circle"), item("draw.face3d"),
         separator(),
-        item("draw.column"), item("draw.cube"), item("draw.pyramid"),
+        item("draw.beam"), item("draw.column"), item("draw.cube"), item("draw.pyramid"),
         item("draw.cylinder"),
         separator(), item("draw.divide"),
         separator(), item("panel.focusProfile"),

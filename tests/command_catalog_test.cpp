@@ -184,6 +184,44 @@ int main() {
         check(foundFillet, "'q' aramasi Fillet'i de getirmeli (kisayol/anahtar)");
     }
 
+    // ---- 7) KİRİŞ (UI-2b) + Türkçe klavye uçtan uca ----------------------
+    {
+        const mm::CommandDef* beam = catalog.registry.find("draw.beam");
+        check(beam != nullptr, "draw.beam (Kiriş) kayitta olmali");
+        if (beam) {
+            check(beam->title == "Kiriş", "Kiriş komutunun adi 'Kiriş'");
+            check(beam->surface == mm::CommandSurface::Ribbon,
+                  "Kiriş serit komutu (Celik > Uyeler)");
+            check(beam->shortcut.empty(), "Kiriş'in kendi kisayolu yok (profil zorunlu)");
+        }
+        check(catalog.ribbon.occurrences("draw.beam") == 1,
+              "Kiriş seritte TAM BIR kez gorunmeli");
+
+        // 'Kiriş' takma adi ARTIK bu komuta bagli (eski: Cizgi'ye gidiyordu).
+        auto hits = catalog.registry.search("kiris");
+        check(!hits.empty() && hits.front()->id == "draw.beam",
+              "diyakritiksiz 'kiris' aramasi Kiriş komutunu ilk sirada bulmali");
+        hits = catalog.registry.search("KİRİŞ");
+        check(!hits.empty() && hits.front()->id == "draw.beam",
+              "'KİRİŞ' aramasi da Kiriş komutunu bulmali");
+        const mm::CommandDef* line = catalog.registry.find("draw.line");
+        check(line != nullptr && line->keywords.find("kiris") == std::string::npos,
+              "Cizgi komutu 'kiris' takma adini TASIMAMALI (tek sahip)");
+
+        // TÜRKÇE Q KLAVYE: fiziksel tuş → komut. VK_I (0x49) 'ı' üretse de
+        // Ayna'ya gitmeli; 'i' karakteri üzerinden çözüm Ayna'yi kaybederdi.
+        const std::string key = mm::keyNameFromVirtualKey(0x49);
+        const mm::CommandDef* mirror = catalog.registry.commandForShortcut(key);
+        check(mirror != nullptr && mirror->id == "edit.mirror",
+              "VK_I -> 'I' -> edit.mirror (Ayna) uçtan uca");
+        check(catalog.registry.commandForShortcut(mm::keyNameFromVirtualKey(0x47))->id ==
+                  "draw.column",
+              "VK_G -> Kolon");
+        check(catalog.registry.commandForShortcut(mm::keyNameFromVirtualKey(0x51))->id ==
+                  "edit.fillet",
+              "VK_Q -> Fillet");
+    }
+
     if (failures == 0) {
         std::printf("command_catalog_test: TUM KONTROLLER GECTI (%zu komut)\n",
                     catalog.registry.size());
