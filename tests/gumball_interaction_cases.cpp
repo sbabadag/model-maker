@@ -86,6 +86,24 @@ int main() {
             check(std::abs(std::hypot(p.x-c.x,p.y-c.y)-82.0)<1e-7, "compact gumball remains 82px when zoom changes");
         }
     }
+    // B3: secim BOYUTUNDAN bagimsizlik — 1 nesne ve 10 nesne ayni ekran boyutu.
+    for (auto mode : {EditMode::Draw2D, EditMode::View3D}) {
+        Application a; seed(a); a.mode_ = mode;
+        auto gumballPx = [&]() {
+            const auto c = a.gumballProject(a.gumballOrigin_);
+            const auto p = a.gumballProject(a.gumballOrigin_ + Vec3{a.gumballWorldLength(),0,0});
+            return std::hypot(p.x-c.x, p.y-c.y);
+        };
+        const double single = gumballPx();
+        for (int i = 1; i < 10; ++i)
+            a.document_.addModel(WireframeModel::line({i*1000.0,0,0}, {i*1000.0+3,4,0}));
+        a.selectedModels_.clear();
+        for (std::size_t i = 0; i < 10; ++i) a.selectedModels_.push_back(i);
+        a.updateGumball();
+        const double multi = gumballPx();
+        check(std::abs(single - 82.0) < 1e-6 && std::abs(multi - 82.0) < 1e-6,
+              "gumball screen size independent of selection size (1 vs 10 objects)");
+    }
     for (int axis=0; axis<3; ++axis) {
         Application a; seed(a);
         Vec3 expected = a.gumballFrame_[axis] * -2.5;
