@@ -108,6 +108,8 @@ private:
     void resizeEmbeddedCanvas();
     void openTwoPointView(const ViewDefinition& view);
     void closeAllTwoPointViews();
+    // Ctrl+Tab / Ctrl+Shift+Tab: olusturma sirasina gore alt pencere gecisi.
+    void cycleViewWindow(int direction);
 
     Application app_;
     QWidget* canvasContainer_{};

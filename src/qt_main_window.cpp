@@ -619,6 +619,22 @@ void QtMainWindow::closeAllTwoPointViews() {
     if (modelSubWindow_) modelSubWindow_->showMaximized();
 }
 
+void QtMainWindow::cycleViewWindow(int direction) {
+    // Ctrl+Tab / Ctrl+Shift+Tab: olusturma sirasina gore dongusel gecis.
+    // Tek alt pencere varsa islem yapilmaz (bos gecis gurultusu yok).
+    if (!mdiArea_) return;
+    const QList<QMdiSubWindow*> subs = mdiArea_->subWindowList(QMdiArea::CreationOrder);
+    const int n = subs.size();
+    if (n < 2) return;
+    const int current = subs.indexOf(mdiArea_->activeSubWindow());
+    const int base = current < 0 ? 0 : current;
+    // direction +1 (sonraki) / -1 (onceki); negatif modul sarmasi icin +n.
+    const int next = ((base + direction) % n + n) % n;
+    QMdiSubWindow* target = subs[next];
+    if (target->isMinimized()) target->showNormal();
+    mdiArea_->setActiveSubWindow(target);
+}
+
 void QtMainWindow::resizeEvent(QResizeEvent* event) {
     QMainWindow::resizeEvent(event);
     // QResizeEvent native HWND boyutu guncellenmeden ONCE gelebilir; o anda
@@ -922,6 +938,8 @@ void QtMainWindow::buildCommandHandlers() {
         }
     };
     h["window.closeViews"] = [this]() { closeAllTwoPointViews(); };
+    h["view.next"] = [this]() { cycleViewWindow(+1); };
+    h["view.previous"] = [this]() { cycleViewWindow(-1); };
 
     // ---- Yardimcilar / alt cubuk (UI-6a'ya kadar kayitli) ----
     h["assist.snap"] = [this]() { app_.setSnapEnabled(!app_.snapEnabled()); };

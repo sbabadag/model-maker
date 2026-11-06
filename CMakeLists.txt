@@ -398,6 +398,12 @@ if(BUILD_TESTING)
             add_test(NAME model_maker_snap_marker_scale
                 COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_snap_marker_scale.py
                     ${CMAKE_CURRENT_BINARY_DIR})
+            # Ctrl+Tab / Ctrl+Shift+Tab gorunus gecisi: tek yol komut kaydi
+            # (view.next/view.previous). Win32/Qt iki yonlendirici kaynak sekli
+            # ile kilitli (TAB erken reddi kaldirildi, WM_KEYDOWN Ctrl-gate'li).
+            add_test(NAME model_maker_view_tab_cycle
+                COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_view_tab_cycle.py
+                    ${CMAKE_CURRENT_SOURCE_DIR})
             # Ekran donus merkezi (R tusu + Ctrl+sol tus): R merkez secer,
             # Ctrl+sol surukleme o merkez etrafinda dondurur, Ctrl+TIK
             # secimi bozulmaz. Sekil + gercek clearRotateCenter/resetView

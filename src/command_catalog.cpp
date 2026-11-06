@@ -336,6 +336,16 @@ void addViewCommands(CommandRegistry& r) {
               "Seçime odaklan / yakınlaş (F)")
               .key("F").keys("odaklan focus zoom secim")
               .surface(CommandSurface::MenuOnly));
+    // Gorunus pencereleri arasi gecis (Ctrl+Tab / Ctrl+Shift+Tab). Host teslimli:
+    // tuval, metin alani ve dock odaktayken de calisir (QShortcut + Win32 WM_KEYDOWN
+    // ikisi de AYNI kayittan cozer). QMdiArea/QTabWidget'in kendi Ctrl+Tab'i YOK —
+    // tek yol bu kayittir.
+    r.add(Cmd("view.next", "Sonraki Görünüş", "window",
+              "Sonraki görünüş penceresi (Ctrl+Tab)")
+              .key("Ctrl+Tab", SD::Host).keys("sonraki gorunus pencere next"));
+    r.add(Cmd("view.previous", "Önceki Görünüş", "window",
+              "Önceki görünüş penceresi (Ctrl+Shift+Tab)")
+              .key("Ctrl+Shift+Tab", SD::Host).keys("onceki gorunus pencere previous"));
 }
 
 void addWorkPlaneCommands(CommandRegistry& r) {
@@ -549,6 +559,7 @@ UiPlan buildRibbonPlan() {
                                             "plane")}),
         group("Teşhis", {small("view.benchmark"), small("view.gpuLines"),
                          small("view.perfOverlay")}),
+        group("Pencereler", {small("view.previous"), small("view.next")}),
     }));
 
     plan.addTab(tab("Çizimler ve Raporlar", {
@@ -668,7 +679,8 @@ UiPlan buildMenuPlan() {
     })}));
 
     plan.addTab(tab("&Pencere", {group("Pencere", {
-        item("window.tile"), item("window.cascade"), item("window.maximizeModel"),
+        item("view.next"), item("view.previous"),
+        separator(), item("window.tile"), item("window.cascade"), item("window.maximizeModel"),
         separator(), item("window.closeViews"),
         separator(), item("panel.modelTree"),
     })}));

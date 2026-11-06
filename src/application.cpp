@@ -1608,7 +1608,12 @@ LRESULT Application::handleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
     case WM_KEYDOWN:
         // UI-2: tus -> komut cozumlemesi TEK KAYNAKTAN (komut kaydi).
         // Canvas odakli degilken (or. serit dugmesi aktif) tus buraya duser.
-        if (wParam == VK_TAB) { acquireTemporaryTrackingPoint(); return 0; }
+        // TAB tek basina TP kaydi; Ctrl+Tab/Ctrl+Shift+Tab ise view.next/
+        // view.previous (dispatchKeyChord kayittan cozer).
+        if (wParam == VK_TAB && !(GetKeyState(VK_CONTROL) & 0x8000)) {
+            acquireTemporaryTrackingPoint();
+            return 0;
+        }
         dispatchKeyChord(static_cast<unsigned int>(wParam));
         return 0;
     case WM_SYSKEYDOWN:
@@ -1884,13 +1889,13 @@ LRESULT Application::handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lPa
             else if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
             else cancelDrawing();
             if (mode_ == EditMode::View3D) drawingActive_ = false;
-        } else if (wParam == VK_TAB) {
+        } else if (wParam == VK_TAB && !(GetKeyState(VK_CONTROL) & 0x8000)) {
             // TAB = gecici izleme noktasi (TP) kaydet (polar tracking).
             acquireTemporaryTrackingPoint();
             return 0;  // Tab odak degistirmesin; WM_CHAR'\t' de yok sayilir.
         } else {
-            // UI-2: TUM komut tuslari (harf, F-tusu, Ctrl+Shift+...) TEK
-            // KAYNAKTAN cozulur. Eski 30+ dalli if/else zinciri KALDIRILDI:
+            // UI-2: TUM komut tuslari (harf, F-tusu, Ctrl+Shift+..., Ctrl+Tab)
+            // TEK KAYNAKTAN cozulur. Eski 30+ dalli if/else zinciri KALDIRILDI:
             // 'G' hem Kolon hem Fillet'e bagliydi ve Fillet dali OLU kaliyordu.
             dispatchKeyChord(static_cast<unsigned int>(wParam));
         }
@@ -12499,9 +12504,11 @@ void Application::runRenderBenchmark() {
 }
 
 bool Application::dispatchKeyChord(unsigned int virtualKey) {
-    // ESC ve TAB yerel girdi temizligi/odak davranisi icin canvas'ta kalir
-    // (asagidaki ozel dallar). Diger TUM tuslar komut KAYDINDAN cozulur.
-    if (virtualKey == VK_ESCAPE || virtualKey == VK_TAB) return false;
+    // ESC yerel girdi temizligi icin canvas'ta kalir (asagidaki ozel dallar).
+    // TAB tek basina da TP kaydi icin ozel dalda tutulur; ama Ctrl+Tab /
+    // Ctrl+Shift+Tab buraya iner ve komut KAYDINDAN (view.next/view.previous)
+    // cozulur — QMdiArea/QTabWidget'in kendi Ctrl+Tab'i yok, tek yol kayit.
+    if (virtualKey == VK_ESCAPE) return false;
     const std::string key = mm::keyNameFromVirtualKey(virtualKey);
     if (key.empty()) return false;
     if (!commandDispatcher_) return false;   // bagli degilse tus yutulmaz

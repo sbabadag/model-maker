@@ -238,6 +238,31 @@ int main() {
               "VK_Q -> Fillet");
     }
 
+    // ---- 8) Ctrl+Tab gorunus gecisi (C/UI-6a) ---------------------------
+    {
+        const mm::CommandDef* next = catalog.registry.commandForShortcut("Ctrl+Tab");
+        check(next != nullptr && next->id == "view.next",
+              "Ctrl+Tab = view.next (Sonraki Görünüş)");
+        check(next && next->delivery == mm::ShortcutDelivery::Host,
+              "Ctrl+Tab pencere kisayolu (tuval/metin/dock odaktayken de calisir)");
+        check(next && next->surface == mm::CommandSurface::Ribbon,
+              "view.next serit komutu (Gorunum > Pencereler)");
+
+        const mm::CommandDef* prev = catalog.registry.commandForShortcut("Ctrl+Shift+Tab");
+        check(prev != nullptr && prev->id == "view.previous",
+              "Ctrl+Shift+Tab = view.previous (Önceki Görünüş)");
+
+        const mm::PlanTab* view = findTab(catalog.ribbon, "Görünüm");
+        check(view != nullptr && hasGroup(*view, "Pencereler"),
+              "Gorunum sekmesinde Pencereler grubu var");
+        check(catalog.ribbon.occurrences("view.next") == 1 &&
+                  catalog.ribbon.occurrences("view.previous") == 1,
+              "view.next/view.previous seritte TAM BIR kez");
+        check(catalog.menu.occurrences("view.next") == 1 &&
+                  catalog.menu.occurrences("view.previous") == 1,
+              "view.next/view.previous ≡ menude (Pencere) mevcut");
+    }
+
     if (failures == 0) {
         std::printf("command_catalog_test: TUM KONTROLLER GECTI (%zu komut)\n",
                     catalog.registry.size());
