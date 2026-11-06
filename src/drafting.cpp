@@ -467,7 +467,35 @@ void addGridLineCandidates(std::vector<Candidate>& candidates, const Document& d
             if (lengthSquared <= epsilon) continue;
             addCandidate(candidates, a, SnapType::Endpoint, tolerance, metric);
             addCandidate(candidates, b, SnapType::Endpoint, tolerance, metric);
-            addCandidate(candidates, (a + b) * 0.5, SnapType::Midpoint, tolerance, metric);
+            // --- MIDPOINT PARCALAMA (B4): aks diger aile akslariyla kesistigi
+            // noktalarda PARCALARA bolunur; HER parcanin orta noktasi Midpoint
+            // adayi olur (kullanici sarti: "aks ortasi kesismelere gore
+            // bolunmeli"). Tam aks boyunun ortasi AYRICA korunur (eski davranis);
+            // bir parca ortasina eps'ten yakinsa ayri aday uretilmez. Oncelik:
+            // tumu SnapType::Midpoint (4); ayni oncelikte choose() imlece en yakini
+            // secer — parcalar arasinda ayrim yoktur.
+            std::vector<double> cutT{0.0, 1.0};
+            for (const auto& other : viewAxes) {
+                if (other.horizontal == axis.horizontal) continue;  // ayni aile paralel, kesismez
+                Vec3 intersection{};
+                if (!lineCrossing(axis, other, intersection)) continue;
+                const double t = dot3(intersection - a, direction) / lengthSquared;
+                if (t <= epsilon || t >= 1.0 - epsilon) continue;  // ucta kesisim = endpoint zaten var
+                cutT.push_back(t);
+            }
+            std::sort(cutT.begin(), cutT.end());
+            cutT.erase(std::unique(cutT.begin(), cutT.end()), cutT.end());
+            for (std::size_t i = 0; i + 1 < cutT.size(); ++i)
+                addCandidate(candidates, a + direction * (0.5 * (cutT[i] + cutT[i + 1])),
+                             SnapType::Midpoint, tolerance, metric);
+            // Tam aks boyunun ortasi (eski davranis): parca ortalarindan ayrissa korunur.
+            {
+                bool hasFullMid = false;
+                for (std::size_t i = 0; i + 1 < cutT.size(); ++i)
+                    if (std::abs(0.5 * (cutT[i] + cutT[i + 1]) - 0.5) <= epsilon) { hasFullMid = true; break; }
+                if (!hasFullMid)
+                    addCandidate(candidates, a + direction * 0.5, SnapType::Midpoint, tolerance, metric);
+            }
             double rawT;
             if (screenSpace) {
                 const Vec2 pa = screenSpace->camera->project(a, screenSpace->width, screenSpace->height);

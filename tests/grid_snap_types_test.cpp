@@ -112,6 +112,40 @@ int main() {
         check(approx(r.point.x, 0.0) && approx(r.point.y, 2500.0), "5b aks ortasinda: nokta (0,2500)");
     }
 
+    // --- 5c/d/e) MIDPOINT PARCALAMA (B4): aks kesişimlerde PARCALARA bolunur,
+    // HER parcanin ortasi ayri Midpoint adayidir (kullanici sarti: "aks ortasi
+    // kesismelere gore bolunmeli"). Dikey aks x=0: (0,-1000)->(0,6000), yatay
+    // akslarla y=0 ve y=5000'de kesisir -> parcalar [-1000,0],[0,5000],
+    // [5000,6000]; ortalar (0,-500),(0,2500),(0,5500). Yatay aks y=0:
+    // (-1000,0)->(13000,0), dikey akslarla x=0/6000/12000'de kesisir ->
+    // parcalar [-1000,0],[0,6000],[6000,12000],[12000,13000]; ortalar
+    // (-500,0),(3000,0),(9000,0),(12500,0). Eski kod YALNIZ tam aks ortasini
+    // uretirdi; bu bloklar fix ONCESI kirmizidir.
+    {
+        Document doc; doc.addGrid(makeGrid());
+        const SnapResult r = SnapEngine::snap({40.0, -500.0, 0.0}, doc, tol, true, true,
+                                              std::nullopt, &allOn);
+        check(r.type == SnapType::Midpoint, "5c alt parca ortasi: Midpoint snap'i");
+        check(approx(r.point.x, 0.0) && approx(r.point.y, -500.0),
+              "5d alt parca ortasi: nokta (0,-500)");
+    }
+    {
+        Document doc; doc.addGrid(makeGrid());
+        const SnapResult r = SnapEngine::snap({40.0, 5500.0, 0.0}, doc, tol, true, true,
+                                              std::nullopt, &allOn);
+        check(r.type == SnapType::Midpoint, "5e ust parca ortasi: Midpoint snap'i");
+        check(approx(r.point.x, 0.0) && approx(r.point.y, 5500.0),
+              "5f ust parca ortasi: nokta (0,5500)");
+    }
+    {
+        Document doc; doc.addGrid(makeGrid());
+        const SnapResult r = SnapEngine::snap({3000.0, 40.0, 0.0}, doc, tol, true, true,
+                                              std::nullopt, &allOn);
+        check(r.type == SnapType::Midpoint, "5g yatay aks parca ortasi: Midpoint snap'i");
+        check(approx(r.point.x, 3000.0) && approx(r.point.y, 0.0),
+              "5h yatay aks parca ortasi: nokta (3000,0)");
+    }
+
     // --- 6) DIKME: referans noktasindan aksa dikme ayagi ---
     {
         Document doc; doc.addGrid(makeGrid());
