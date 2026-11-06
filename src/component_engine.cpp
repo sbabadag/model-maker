@@ -497,7 +497,8 @@ ComponentType endPlateComponentType() noexcept {
     t.catalog.secondaryMemberType = L"kiris";
     t.catalog.supportedFeatures = {L"alin levhasi", L"bulon grubu"};
     t.catalog.coverageStatus = L"PRODUCTION_READY";
-    t.catalog.catalogVisible = false;  // End Plate kendi zengin komut/uretim yolunu kullanir
+    t.catalog.catalogVisible = true;  // Katalog acilirinda gorunur (kullanici kurali:
+                                      // yerlesik 4 tipin hepsi katalogda listelenmeli)
     return t;
 }
 

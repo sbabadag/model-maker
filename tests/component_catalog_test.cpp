@@ -60,13 +60,13 @@ int main() {
     check(reg.typeCount() == 4, "4 yerlesik tip kayitli (end plate + fin plate + 146 + 40)");
 
     const std::vector<CatalogEntry> catalog = buildComponentCatalog(reg, dialogs);
-    check(catalog.size() == 3, "katalogda 3 gorunur giris (fin plate + 146 + 40)");
+    check(catalog.size() == 4, "katalogda 4 gorunur giris (end plate + fin plate + 146 + 40)");
 
-    // --- 2) End Plate gizli (kendi zengin komut yolu) ------------------------
-    check(findCatalogEntry(catalog, L"beam_to_column_end_plate") == nullptr,
-          "end plate katalogda YOK (catalogVisible=false)");
+    // --- 2) End Plate GORUNUR (kullanici kurali: yerlesik 4 tipin hepsi katalogda)
+    check(findCatalogEntry(catalog, L"beam_to_column_end_plate") != nullptr,
+          "end plate katalogda (catalogVisible=true)");
     const ComponentType* ep = reg.findType(L"beam_to_column_end_plate");
-    check(ep != nullptr && !ep->catalog.catalogVisible, "end plate tipi var ama catalogVisible=false");
+    check(ep != nullptr && ep->catalog.catalogVisible, "end plate tipi var ve catalogVisible=true");
 
     // --- 3) 146 metadata'sı registry'den taşınır -----------------------------
     const CatalogEntry* e146 = findCatalogEntry(catalog, L"tekla_shear_plate_146");
@@ -103,8 +103,10 @@ int main() {
     }
 
     // --- 5) Deterministik sıralama: category artan; ayni kategoride number ---
-    check(!catalog.empty() && catalog[0].typeId == L"tekla_haunch_40",
-          "katalog kategoriye gore siralanmis (Moment / Haunch once)");
+    // End Plate kategorisi "Beam to Column" -> lexicographic ilk; Haunch 40
+    // ("Moment connection / Haunch") ikinci; "Shear connection" son.
+    check(!catalog.empty() && catalog[0].typeId == L"beam_to_column_end_plate",
+          "katalog kategoriye gore siralanmis (Beam to Column once)");
 
     // --- 6) Generic üretim zinciri (katalog komutunun beslediği yol) ---------
     {

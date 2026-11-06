@@ -182,6 +182,22 @@ int main() {
         for (const mm::CommandDef* def : hits)
             if (def->id == "edit.fillet") foundFillet = true;
         check(foundFillet, "'q' aramasi Fillet'i de getirmeli (kisayol/anahtar)");
+
+        // B1: component katalogu adlari da aramada bulunur ("haunch" -> Haunch (40)).
+        hits = catalog.registry.search("haunch");
+        check(!hits.empty() && hits.front()->id == "component:tekla_haunch_40",
+              "'haunch' aramasi Haunch (40) component'ini ilk sirada bulmali");
+        hits = catalog.registry.search("end plate");
+        bool foundEndPlate = false;
+        for (const mm::CommandDef* def : hits)
+            if (def->id == "component:beam_to_column_end_plate") foundEndPlate = true;
+        check(foundEndPlate, "'end plate' aramasi End Plate component'ini de getirmeli");
+        hits = catalog.registry.search("alin levhasi");
+        bool foundAlin = false;
+        for (const mm::CommandDef* def : hits)
+            if (def->id == "component:beam_to_column_end_plate" ||
+                def->id == "steel.endPlate") foundAlin = true;
+        check(foundAlin, "'alin levhasi' aramasi End Plate'i bulmali");
     }
 
     // ---- 7) KİRİŞ (UI-2b) + Türkçe klavye uçtan uca ----------------------

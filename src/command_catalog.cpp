@@ -221,6 +221,27 @@ void addSteelCommands(CommandRegistry& r) {
     // (plan cocuklari bos birakilir; host dynamicMenu() ile uretir).
     r.add(Cmd("steel.catalog", "Katalog", "catalog", "Component kataloğu (registry'den)")
               .dropdown().keys("katalog component bilesen"));
+    // HIZLI ARAMA (B1): component katalogundaki yerlesik tipler aramada da
+    // bulunabilmeli ("haunch", "end plate", "alın levhası"...). Id "component:<typeId>"
+    // — host runCommandById bunu dogrudan component komutuna cevirir. StatusBar
+    // surface: seritte/menude gorunmez (katalog acilirinda zaten var), yalniz
+    // arama indeksine girer.
+    r.add(Cmd("component:beam_to_column_end_plate", "End Plate (Alın Levhası)", "plate",
+              "Alın levhası bağlantısı (component 144)")
+              .surface(CommandSurface::StatusBar)
+              .keys("end plate alin levhasi 144"));
+    r.add(Cmd("component:fin_plate", "Fin Plate (Kayma Levhası)", "plate",
+              "Kayma levhası bağlantısı (component)")
+              .surface(CommandSurface::StatusBar)
+              .keys("fin plate kayma levhasi shear tab"));
+    r.add(Cmd("component:tekla_shear_plate_146", "Shear Plate Simple (146)", "plate",
+              "Tekla 146 shear plate bağlantısı")
+              .surface(CommandSurface::StatusBar)
+              .keys("146 shear plate kayma levhasi"));
+    r.add(Cmd("component:tekla_haunch_40", "Haunch (40)", "plate",
+              "Haunch bağlantısı (component 40)")
+              .surface(CommandSurface::StatusBar)
+              .keys("haunch 40 moment connection"));
     r.add(Cmd("steel.bridge.import", "İçe Aktar...", "import", "Bridge paketini içe aktar")
               .keys("bridge ice aktar import"));
     r.add(Cmd("steel.bridge.native", "Native Component'e Dönüştür...", "import",
