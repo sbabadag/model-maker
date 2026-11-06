@@ -82,6 +82,7 @@ add_library(model_maker_core
     src/view_cube.cpp
     src/ribbon_layout.cpp
     src/command_registry.cpp
+    src/command_catalog.cpp
     src/performance.cpp
     src/dxf.cpp
     src/document.cpp
@@ -600,6 +601,13 @@ if(BUILD_TESTING)
     target_link_libraries(model_maker_command_registry_test PRIVATE model_maker_core)
     target_compile_options(model_maker_command_registry_test PRIVATE -Wall -Wextra -Wpedantic)
     add_test(NAME model_maker_command_registry_test COMMAND model_maker_command_registry_test)
+
+    # KOMUT KATALOĞU (UI-2): gercek komut tablosu + serit/menu plani
+    # sozlesmeleri ('G' hatasi, sekme duzeni, menu tam envanteri).
+    add_executable(model_maker_command_catalog_test tests/command_catalog_test.cpp)
+    target_link_libraries(model_maker_command_catalog_test PRIVATE model_maker_core)
+    target_compile_options(model_maker_command_catalog_test PRIVATE -Wall -Wextra -Wpedantic)
+    add_test(NAME model_maker_command_catalog_test COMMAND model_maker_command_catalog_test)
 
     add_executable(model_maker_grid_test tests/grid_test.cpp)
     target_link_libraries(model_maker_grid_test PRIVATE model_maker_core)
