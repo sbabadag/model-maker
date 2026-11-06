@@ -82,138 +82,77 @@ if "value <= 0.0" in level_body or "value < 0.0" in level_body:
     failures.append("requestLevelParameter kotu 0/negatif diye REDDEDIYOR "
                     "(kot 0 veya negatif olabilir)")
 
-# --- 1b) TEK KAYNAK komut tablosu: her kategori kendi menusu + AYNI ribbon sekmesi ---
-# KULLANICI SARTI (2026-10-23): "Menüler çok karıştı hepsini kendi ilgili ribbon
-# ve menülerine taşır mısın". Menu ve ribbon commandCategories() tablosundan
-# uretilir; bir komut yalniz bir kategoride, bir kez tanimlanir.
-table = top_level(qt, "std::vector<QtMainWindow::CommandCategory> QtMainWindow::commandCategories")
+# --- 1b) TEK KAYNAK: komut kaydi (UI-2) ---
+# KULLANICI KARARI (UI-2): komutlar artik Qt dosyasindaki bir tabloda DEGIL,
+# platformdan bagimsiz command_catalog.cpp'de tanimlidir; menu, serit ve
+# klavye AYNI kayittan beslenir. Bu bolum o sozlesmeyi kaynak seviyesinde
+# kilitler (davranissal kontrol tests/command_catalog_test.cpp'de).
+catalog = (root / "src/command_catalog.cpp").read_text(encoding="utf-8")
+header_catalog = (root / "include/model_maker/command_catalog.hpp").read_text(encoding="utf-8")
+registry_hpp = (root / "include/model_maker/command_registry.hpp").read_text(encoding="utf-8")
 
-cat_markers = [
-    ("Dosya", "    // ---- DOSYA", '{QStringLiteral("&Dosya"), QString(),'),
-    ("Çizim", "    // ---- ÇİZİM", '{QStringLiteral("Çi&zim"), QStringLiteral("Çizim"),'),
-    ("Düzenle", "    // ---- DÜZENLE", '{QStringLiteral("Dü&zenle"), QStringLiteral("Düzenle"),'),
-    ("Çelik", "    // ---- ÇELİK", '{QStringLiteral("Çe&lik"), QStringLiteral("Çelik"),'),
-    ("Konstrüksiyon", "    // ---- KONSTRÜKSİYON", '{QStringLiteral("K&onstrüksiyon"), QStringLiteral("Konstrüksiyon"),'),
-    ("Görünüm", "    // ---- GÖRÜNÜM:", '{QStringLiteral("G&örünüm"), QStringLiteral("Görünüm"),'),
-    ("Çalışma Düzlemi", "    // ---- ÇALIŞMA DÜZLEMİ", '{QStringLiteral("Çalışma &Düzlemi"), QStringLiteral("Çalışma Düzlemi"),'),
-    ("Görünüşler", "    // ---- GÖRÜNÜŞLER", '{QStringLiteral("Görünüş&ler"), QStringLiteral("Görünüşler"),'),
-    ("Grid", "    // ---- GRID", '{QStringLiteral("&Grid"), QStringLiteral("Grid"),'),
-    ("Pencere", "    // ---- PENCERE", '{QStringLiteral("&Pencere"), QString(),'),
-]
-positions = []
-for name, marker, _ in cat_markers:
-    p = table.find(marker)
-    if p < 0:
-        failures.append(f"komut tablosunda kategori yok: {name}")
-    positions.append(p)
-if positions != sorted(positions):
-    failures.append("komut tablosu kategori sirasi bozuk")
-blocks = {}
-for i, (name, _, push) in enumerate(cat_markers):
-    p = positions[i]
-    nxt = next((positions[j] for j in range(i + 1, len(cat_markers)) if positions[j] >= 0), None)
-    blocks[name] = table[p:nxt] if (p >= 0 and nxt is not None) else (table[p:] if p >= 0 else "")
-    if push not in blocks[name]:
-        failures.append(f"{name} kategorisi kendi menu/sekme basligiyla push edilmiyor")
+if "CommandCatalog buildCommandCatalog()" not in header_catalog:
+    failures.append("command_catalog.hpp buildCommandCatalog bildirmiyor")
+if "CommandCatalog buildCommandCatalog()" not in catalog:
+    failures.append("command_catalog.cpp buildCommandCatalog tanimlamiyor")
+if "class CommandRegistry" not in registry_hpp or "class UiPlan" not in registry_hpp:
+    failures.append("command_registry.hpp komut kaydi + plan tiplerini tanimlamiyor")
 
-for needle, block, why in [
-    ("app_.selectTool(DrawTool::Line)", "Çizim", "Çizgi Çizim'de değil"),
-    ("app_.activateDivide()", "Çizim", "Böl (Divide) Çizim'de değil"),
-    ("app_.undo()", "Düzenle", "Geri Al Düzenle'de değil"),
-    ("app_.redo()", "Düzenle", "Yinele Düzenle'de değil"),
-    ("TransformCommand::Move", "Düzenle", "Taşı Düzenle'de değil"),
-    ("TransformCommand::Fillet", "Düzenle", "Fillet Düzenle'de değil"),
-    ("app_.startBoltCommand()", "Çelik", "Bolt Çelik'te değil"),
-    ("startWeldCommand()", "Çelik", "Kaynak Çelik'te değil"),
-    ("app_.startEndPlateCommand()", "Çelik", "End Plate Çelik'te değil"),
-    ("app_.startFinPlateCommand()", "Çelik", "Fin Plate Çelik'te değil"),
-    ("buildComponentCatalog", "Çelik", "Component kataloğu Çelik'te değil"),
-    ("importTeklaBridge()", "Çelik", "Tekla Bridge Çelik'te değil"),
-    ("saveTeklaBridgeTemplate()", "Çelik", "Kataloğa şablon Çelik'te değil"),
-    ("app_.startConstructionPlaneCommand()", "Konstrüksiyon", "konstrüksiyon düzlemi kendi menüsünde değil"),
-    ("app_.toggleConstructionVisibility()", "Konstrüksiyon", "konstrüksiyon göster/gizle kendi menüsünde değil"),
-    ("app_.startFittingCommand()", "Konstrüksiyon", "Fitting kendi menüsünde değil"),
-    ("app_.startPlaneCutCommand()", "Konstrüksiyon", "Plane Cut kendi menüsünde değil"),
-    ("app_.startLineCutCommand()", "Konstrüksiyon", "Line Cut kendi menüsünde değil"),
-    ("app_.startPolygonCutCommand()", "Konstrüksiyon", "Polygon Cut kendi menüsünde değil"),
-    ("app_.startPartCutCommand()", "Konstrüksiyon", "Part Cut kendi menüsünde değil"),
-    ("app_.zoomExtents2D()", "Görünüm", "Zoom Extents Görünüm menüsünde değil"),
-    ("app_.startZoomWindow2D()", "Görünüm", "Zoom Window Görünüm menüsünde değil"),
-    ("app_.toggle3DView()", "Görünüm", "2B/3B Görünüm menüsünde değil"),
-    ("StandardView::Front", "Görünüm", "standart görünüş (Ön) Görünüm menüsünde değil"),
-    ("StandardView::Isometric", "Görünüm", "standart görünüş (ISO) Görünüm menüsünde değil"),
-    ("app_.resetView()", "Görünüm", "Görünümü Sıfırla Görünüm menüsünde değil"),
-    ("app_.startRotateCenterCommand()", "Görünüm", "dönüş merkezi Görünüm menüsünde değil"),
-    ("app_.clearRotateCenter()", "Görünüm", "dönüş merkezini temizle Görünüm menüsünde değil"),
-    ("VisualStyle::Solid", "Görünüm", "görsel stil Görünüm menüsünde değil"),
-    ("app_.startWorkPlaneCommand()", "Çalışma Düzlemi", "çalışma düzlemi kendi menüsünde değil"),
-    ("app_.resetWorkPlane()", "Çalışma Düzlemi", "düzlemi sıfırla kendi menüsünde değil"),
-    ("app_.toggleWorkPlaneGhost()", "Çalışma Düzlemi", "hayalet düzlem kendi menüsünde değil"),
-    ("app_.setViewToWorkPlane()", "Çalışma Düzlemi", "UCS'ye dik görünüş kendi menüsünde değil"),
-    ("app_.startWorkPlaneFaceToolCommand()", "Çalışma Düzlemi", "düzlem aracı (yüz) kendi menüsünde değil"),
-    ("promptWorkPlaneParallelXYZ()", "Çalışma Düzlemi", "XYZ'ye paralel düzlem kendi menüsünde değil"),
-    ("app_.startWorkPlaneOnePointCommand()", "Çalışma Düzlemi", "1 noktalı düzlem kendi menüsünde değil"),
-    ("app_.startWorkPlaneTwoPointCommand()", "Çalışma Düzlemi", "2 noktalı düzlem kendi menüsünde değil"),
-    ("app_.setWorkPlaneToViewCommand()", "Çalışma Düzlemi", "görünüşe paralel düzlem kendi menüsünde değil"),
-    ("promptSaveNamedView()", "Çalışma Düzlemi", "görünümü adlandır kendi menüsünde değil"),
-    ("app_.startTwoPointViewCommand()", "Görünüşler", "2 noktalı görünüş kendi menüsünde değil"),
-    ("app_.startPlanViewCommand()", "Görünüşler", "plan görünüşü kendi menüsünde değil"),
-    ("app_.startThreePointViewCommand()", "Görünüşler", "3 noktalı görünüş kendi menüsünde değil"),
-    ("app_.startPartPlaneViewCommand", "Görünüşler", "parça düzlemi görünüşleri kendi menüsünde değil"),
-    ("promptCreateGrid()", "Grid", "grid oluştur kendi menüsünde değil"),
-    ("promptGridManager()", "Grid", "grid yöneticisi kendi menüsünde değil"),
-    ("closeAllTwoPointViews()", "Pencere", "tüm görünüşleri kapat Pencere'de değil"),
-]:
-    if needle not in blocks[block]:
-        failures.append(why)
+# Komutlar katalogta TANIMLI olmali (eski tablodaki govde yerine id).
+for cid in ["file.save", "draw.line", "draw.column", "edit.fillet", "steel.bolt",
+            "steel.weld", "steel.endPlate", "steel.finPlate", "construct.fitting",
+            "construct.planeCut", "construct.lineCut", "construct.polygonCut",
+            "construct.partCut", "wp.ghost", "wp.threePoint", "views.plan",
+            "views.twoPoint", "grid.create", "grid.manager", "view.toggle3d",
+            "view.zoomExtents", "edit.move", "edit.undo", "edit.redo"]:
+    if f'"{cid}"' not in catalog:
+        failures.append(f"komut katalogda yok: {cid}")
 
-# Her komut tabloda TEK KEZ (iki kategoriye dagilmis kopya yok).
-for needle in ["app_.startBoltCommand()", "startWeldCommand()", "app_.startEndPlateCommand()",
-               "app_.startFinPlateCommand()", "app_.startFittingCommand()", "app_.startPlaneCutCommand()",
-               "app_.startPlanViewCommand()", "app_.startTwoPointViewCommand()", "promptCreateGrid()",
-               "promptGridManager()", "app_.startWorkPlaneCommand()", "app_.toggle3DView()",
-               "app_.activateDivide()", "buildComponentCatalog"]:
-    n = table.count(needle)
-    if n != 1:
-        failures.append(f"komut tabloda {n} kez: {needle} (tam 1 olmali)")
+# 'G' = Kolon, Fillet = Q: ayni tus iki komuta baglanamaz (eski hata).
+if '.key("G")' not in catalog or '.key("Q")' not in catalog:
+    failures.append("Kolon G / Fillet Q kisayol eslemesi katalogta yok")
 
-# Sinif disina tasma olmamali.
-for needle, block, why in [
-    ("app_.startBoltCommand()", "Konstrüksiyon", "Bolt Konstrüksiyon'a karışmış"),
-    ("app_.startEndPlateCommand()", "Konstrüksiyon", "End Plate Konstrüksiyon'a karışmış"),
-    ("buildComponentCatalog", "Konstrüksiyon", "katalog Konstrüksiyon'a karışmış"),
-    ("importTeklaBridge", "Dosya", "Tekla Bridge Dosya'ya karışmış"),
-    ("app_.startWorkPlaneCommand()", "Görünüm", "çalışma düzlemi Görünüm menüsünde (kendi menüsüne ayrılmalı)"),
-    ("app_.startTwoPointViewCommand()", "Görünüm", "görünüş penceresi Görünüm menüsünde (kendi menüsüne ayrılmalı)"),
-    ("promptCreateGrid()", "Görünüm", "grid Görünüm menüsünde (kendi menüsüne ayrılmalı)"),
-    ("app_.startConstructionPlaneCommand()", "Görünüm", "konstrüksiyon Görünüm menüsünde (kendi menüsüne ayrılmalı)"),
-]:
-    if needle in blocks[block]:
-        failures.append(why)
+# Plan VERISI katalogta: serit sekmeleri ve menu plani.
+for tab in ['tab("Çelik"', 'tab("Çizim"', 'tab("Düzenle"', 'tab("Görünüm"',
+            'tab("Çizimler ve Raporlar"', 'tab("Yönet"']:
+    if tab not in catalog:
+        failures.append(f"serit planinda sekme yok: {tab}")
+if "buildRibbonPlan()" not in catalog or "buildMenuPlan()" not in catalog:
+    failures.append("serit/menu plani katalogta uretilmiyor")
+if 'group("Çalışma Düzlemi"' not in catalog:
+    failures.append("Calisma Duzlemi, Gorunum sekmesinde GRUP olarak yok")
 
-# --- 1c) Menu ve ribbon AYNI tablodan uretilir; elle komut eklenmez ---
+# --- 1c) Menu ve serit AYNI kayittan uretilir; elle komut eklenmez ---
+if "commandCategories" in qt:
+    failures.append("qt_main_window.cpp'de ikinci komut tablosu (commandCategories) kalmis")
+
 menus_body = top_level(qt, "void QtMainWindow::createMenus")
-if "commandCategories()" not in menus_body or "fillUiMenu(" not in menus_body:
-    failures.append("createMenus menüyü komut tablosundan üretmiyor")
+if "commandCatalog_.menu" not in menus_body:
+    failures.append("createMenus menüyü katalog planindan üretmiyor")
 if "addAction(" in menus_body:
-    failures.append("createMenus'ta elle eklenmiş menü komutu var (tabloya taşınmalı)")
+    failures.append("createMenus'ta elle eklenmis menu komutu var (kayda tasinmali)")
+
+fill_body = top_level(qt, "void QtMainWindow::fillMenu")
+if "commandCatalog_.registry.find" not in fill_body:
+    failures.append("fillMenu komutu kayittan cozmuyor")
+if "runCommandById" not in fill_body:
+    failures.append("fillMenu eylemi komut kimligiyle calistirmiyor")
 
 toolbar_body = top_level(qt, "void QtMainWindow::createToolbar")
-tabs_part = toolbar_body[:toolbar_body.find("ribbon->addWidget(tabs);")]
-if "commandCategories()" not in tabs_part:
-    failures.append("ribbon sekmeleri komut tablosundan üretilmiyor")
-if "if (cat.tabTitle.isEmpty()) continue;" not in tabs_part:
-    failures.append("ribbon yalnız-menü kategorileri ayırt etmiyor")
-if tabs_part.count("tabTitle") != 2:  # isEmpty kontrolu + addTab basligi
-    failures.append("ribbon bir kategoriyi ayrıca filtreliyor (menü ile ribbon ayrışır)")
-for hand in ["addTab(drawTab", "addTab(modTab", "beginTab(", "app_.start", "promptCreateGrid()"]:
-    if hand in tabs_part:
-        failures.append(f"ribbon'da elle kurulmuş sekme/düğme var: {hand}")
-if "fillUiMenu(" not in tabs_part:
-    failures.append("ribbon açılır düğmeleri menüyle aynı doldurucuyu kullanmıyor")
-if "collectQuickCommands" not in toolbar_body:
-    failures.append("Komut ara listesi tablodan üretilmiyor")
+if "RibbonWidget" not in toolbar_body:
+    failures.append("createToolbar serit widget'ini kullanmiyor")
+if "setCatalog(commandCatalog_)" not in toolbar_body:
+    failures.append("serit katalogdan beslenmiyor")
+for hand in ["addTab(drawTab", "addTab(modTab", "beginTab(", "collectQuickCommands"]:
+    if hand in toolbar_body:
+        failures.append(f"seritte elle kurulmus/eski dugme kodu var: {hand}")
 
+# Klavye: eski WM_KEYDOWN zinciri KALKTI; tus kayittan cozulur.
+if "dispatchKeyChord" not in app:
+    failures.append("application.cpp tusu komut kaydindan cozmuyor")
+for stale in ["wParam == 'L'", "wParam == 'M'", "wParam == 'G'", "wParam == VK_F3"]:
+    if stale in app:
+        failures.append(f"application.cpp'de eski tus zinciri kalmis: {stale}")
 # --- 1d) Plan gorunusu baslik/etiket ayrimi ---
 open_body = top_level(qt, "void QtMainWindow::openTwoPointView")
 if "isPlanView" not in open_body:

@@ -46,13 +46,16 @@ elif not (sys_i < key_i):
     failures.append("WM_SYSKEYDOWN, WM_KEYDOWN'dan SONRA (sirada hata)")
 else:
     syskey_block = canvas[sys_i:key_i]
-    if "VK_F10" not in syskey_block:
-        failures.append("WM_SYSKEYDOWN icinde VK_F10 isleyicisi YOK "
-                        "(F10 sistem tusudur, WM_KEYDOWN'a hic dusmez)")
-    if "togglePolarTracking" not in syskey_block:
-        failures.append("WM_SYSKEYDOWN VK_F10 dali togglePolarTracking() cagirmali")
+    # UI-2: tus dali KALKTI; F10 komut KAYDINDAN cozulur (tek kaynak).
+    if "dispatchKeyChord" not in syskey_block:
+        failures.append("WM_SYSKEYDOWN F10'u komut kaydindan cozmuyor "
+                        "(F10 sistem tusudur, tus dali elle yazilmaz)")
     if "case WM_KEYDOWN:" not in canvas:
         failures.append("handleCanvasMessage icinde WM_KEYDOWN yok")
+
+catalog = (root / "src/command_catalog.cpp").read_text(encoding="utf-8")
+if '.key("F10").toggle("polar")' not in catalog:
+    failures.append("komut kaydinda F10 -> assist.polar eslemesi yok")
 
 outer = top_level("LRESULT Application::handleMessage")
 if "WM_SYSKEYDOWN" not in outer:

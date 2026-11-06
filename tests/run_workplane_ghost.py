@@ -68,7 +68,12 @@ check("workPlaneGhostVisible{true}" not in header and
       "no stale '{true}' default remains for the ghost flag")
 check("void toggleWorkPlaneGhost();" in app_header, "toggle declared in the Application API")
 check("void Application::toggleWorkPlaneGhost()" in app_source, "toggle implemented once for key and menu")
-check(app_source.count("VK_F7") == 2, "F7 handled in both the canvas and the outer window proc")
+# UI-2: F7 artik tus dalina GOMULMEZ; komut kaydindan cozulur (tek kaynak).
+check("VK_F7" not in app_source,
+      "F7 must not be hard-wired in a key branch anymore (resolved from the command registry)")
+catalog_source = (root / "src/command_catalog.cpp").read_text(encoding="utf-8")
+check('.key("F7").toggle("workPlaneGhost")' in catalog_source,
+      "F7 is registered on wp.ghost in the single command catalog")
 
 # --- Referans katmani flicker korumasi (zoom/pan'da sabit ogeler) -------------
 # (1) Ekran-olcekli turetmeler tamsayiya oturtulmus projeksiyondan BESLENMEMELI:

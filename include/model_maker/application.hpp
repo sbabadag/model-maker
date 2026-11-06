@@ -266,6 +266,13 @@ public:
     // Polar tracking (F10) tek kaynaktan acilip kapanir: tuş yolu, kurdele
     // dugmesi ve dis pencere proc'u ayni yerden gecsin diye ayri metot.
     void togglePolarTracking();
+    bool polarTrackingEnabled() const noexcept { return polarTrackingEnabled_; }
+    // Dinamik girdi (F12) ve performans katmani (F11): serit/alt cubuk ac-kapa
+    // dugmeleri ayni durumu okur (UI-2 komut kaydi).
+    bool dynamicInputEnabled() const noexcept { return dynamicInputEnabled_; }
+    void toggleDynamicInput();
+    bool performanceOverlayEnabled() const noexcept { return performanceOverlayEnabled_; }
+    void togglePerformanceOverlay();
     // Calisma duzlemi hayaleti (F7) tek kaynaktan acilip kapanir: tus yolu,
     // kurdele/menu ve dis pencere proc'u ayni yerden gecsin diye ayri metot.
     void toggleWorkPlaneGhost();
@@ -283,7 +290,30 @@ public:
     // F5: GDI ve GL arkaplanlarini script'li orbit/zoom/pan ile otomatik
     // olculer; sonuclar BENCH-RESULT satirlariyla render.log'a yazilir.
     void runRenderBenchmark();
+#ifdef MM_HAS_OCC
+    // Boolean komutlari (UI-2): menu/serit/klavye ayni kayittan cagirir.
+    // Tanimlar alt taraftaki private blokta; burada YALNIZ erisim acilir.
+    void addBooleanFuse();
+    void addBooleanCommon();
+    void addBooleanCut();
+#endif
+    // UI-2: komut kaydindan cagrilan govdeler (tanimlar private blokta).
+    void addCube();
+    void addPyramid();
+    void addCylinder();
+    void acquireTemporaryTrackingPoint();
     bool gpuLinesEnabled() const noexcept { return gpuLinesEnabled_; }
+    // KOMUT YONLENDIRICISI (UI-2): tus -> komut cozumlemesi komut KAYDINDAN
+    // yapilir (mm::buildCommandCatalog); govde platform katmanindadir. Qt
+    // kabugu bunu QtMainWindow::runCommand ile baglar. Bagli degilse tus
+    // komutu yutulmaz (eski harf zinciri KALDIRILDI).
+    void setCommandDispatcher(std::function<bool(const std::string&)> dispatcher) {
+        commandDispatcher_ = std::move(dispatcher);
+    }
+    // WM_KEYDOWN/WM_SYSKEYDOWN tusunu kayittaki komuta cozer ve calistirir.
+    // Donus: true = tus bir komuta cozuldu ve islendi.
+    bool dispatchKeyChord(unsigned int virtualKey);
+
     // Qt durum cubuguna canli metin akisi (GDI status_ STATIC'i Qt penceresinde
     // gorunmuyor — updateStatus metni bu callback ile Qt'ye tasinir).
     void setStatusCallback(std::function<void(const std::wstring&)> callback) {
@@ -858,10 +888,8 @@ private:
     void commitPoint(const Vec3& point);
     void cancelDrawing();
     void clearTemporaryTracking();
-    // Gecici izleme noktasi (TP) kaydi: TAB tusu. Imlecin altindaki HAM snap
-    // noktasini alir (polar/ortho kisitiyla oynamis hover_ DEGIL), 8 taneye
-    // kadar birikir; Esc hepsini sifirlar.
-    void acquireTemporaryTrackingPoint();
+    // acquireTemporaryTrackingPoint(): UI-2'de komut kaydindan cagrildigi
+    // icin yukarida (public) bildirilmistir.
     void updateHover(int x, int y);
     // F8 Ortho kisiti: obje snap'lari ortho'yu EZER (serbest imlec eksene
     // kilitlenir). Tek kaynak — hem 2B hem 3B yollari burada.
@@ -886,9 +914,8 @@ private:
     void updateStatus();
     void invalidateCanvas();
     void activate3DNavigation();
-    void addCube();
-    void addPyramid();
-    void addCylinder();
+    // addCube/addPyramid/addCylinder + acquireTemporaryTrackingPoint: UI-2'de
+    // komut kaydindan cagrildigi icin yukarida (public) bildirilmistir.
     // P9: kesme HEDEFI tasinir/dondurulurse, onu kesen kaynak (duzlem/cizgi/
     // 3DFACE) varliklar da ayni rijit donusumu alir (Tekla: kesme parçaya
     // baglidir). Verilen model indeks kumesine bu bagli kaynak indekslerini
@@ -897,9 +924,8 @@ private:
     std::vector<std::size_t> transformIndicesWithAttachedCutSources(
         const std::vector<std::size_t>& indices) const;
 #ifdef MM_HAS_OCC
-    void addBooleanFuse();
-    void addBooleanCommon();
-    void addBooleanCut();
+    // addBooleanFuse/Common/Cut: UI-2'de komut kaydindan cagrildigi icin
+    // yukarida (public) bildirilmistir.
     // P7 (ACILAN DOSYA KATILARI): hedefin magazada B-Rep'i yoksa, varligin
     // kalici ozelliklerinden (profil + eksen + referans normal + rotasyon)
     // yeniden uretip putOccSolid ile yazar. Store'da sekil zaten varsa veya
@@ -1293,6 +1319,8 @@ private:
     std::optional<SnapResult> temporaryAcquireCandidate_;
     bool dynamicInputEnabled_{true};
     bool performanceOverlayEnabled_{false}; // F11 performans overlayi
+    // UI-2: tus -> komut yonlendiricisi (Qt kabugu baglar).
+    std::function<bool(const std::string&)> commandDispatcher_;
     bool nodeConstraintVisible_{};
     std::unordered_set<std::string> selectedNodeConstraints_;
     std::optional<POINT> nodeSelectionFirstCorner_;

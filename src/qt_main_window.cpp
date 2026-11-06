@@ -1,4 +1,6 @@
 #include "model_maker/qt_main_window.hpp"
+#include "model_maker/command_catalog.hpp"
+#include "model_maker/ribbon_widget.hpp"
 #include "model_maker/drafting.hpp"
 #include "model_maker/two_point_view.hpp"
 #include "model_maker/component_dialog_widget.hpp"
@@ -397,25 +399,13 @@ QtMainWindow::QtMainWindow(QWidget* parent)
     createToolbar();
     createDockPanels();
 
-    auto* undoShortcut = new QShortcut(QKeySequence::Undo, this);
-    QObject::connect(undoShortcut, &QShortcut::activated, this, [this]() { app_.undo(); });
-    auto* redoShortcut = new QShortcut(QKeySequence::Redo, this);
-    QObject::connect(redoShortcut, &QShortcut::activated, this, [this]() { app_.redo(); });
-    auto* newShortcut = new QShortcut(QKeySequence::New, this);
-    QObject::connect(newShortcut, &QShortcut::activated, this, [this]() { app_.newDocument(); });
-    // Alt+1..4: 3B gorsel stiller (wireframe / yarim-saydam / hidden / solid)
-    auto* wireframeShortcut = new QShortcut(QKeySequence(QStringLiteral("Alt+1")), this);
-    QObject::connect(wireframeShortcut, &QShortcut::activated, this, [this]() { app_.setVisualStyle(mm::VisualStyle::Wireframe); });
-    auto* transparentShortcut = new QShortcut(QKeySequence(QStringLiteral("Alt+2")), this);
-    QObject::connect(transparentShortcut, &QShortcut::activated, this, [this]() { app_.setVisualStyle(mm::VisualStyle::Transparent); });
-    auto* hiddenShortcut = new QShortcut(QKeySequence(QStringLiteral("Alt+3")), this);
-    QObject::connect(hiddenShortcut, &QShortcut::activated, this, [this]() { app_.setVisualStyle(mm::VisualStyle::HiddenLine); });
-    auto* solidShortcut = new QShortcut(QKeySequence(QStringLiteral("Alt+4")), this);
-    QObject::connect(solidShortcut, &QShortcut::activated, this, [this]() { app_.setVisualStyle(mm::VisualStyle::Solid); });
-    auto* openShortcut = new QShortcut(QKeySequence::Open, this);
-    QObject::connect(openShortcut, &QShortcut::activated, this, [this]() { app_.openDocument(); });
-    auto* saveShortcut = new QShortcut(QKeySequence::Save, this);
-    QObject::connect(saveShortcut, &QShortcut::activated, this, [this]() { app_.saveDocument(); });
+    // UI-2: TUM kisayollar komut KAYDINDAN baglanir (tek kaynak). Tek tek
+    // QShortcut tanimlanmaz; "Host" teslimli olanlar burada, "Canvas"
+    // teslimliler tuvalde ayni kayittan cozulur.
+    bindRegistryShortcuts();
+    // Tus -> komut yonlendiricisi: tuval (Win32) tusu kayittan cozup buraya
+    // devreder. Boylece uygulamanin TEK komut yolu kalir.
+    app_.setCommandDispatcher([this](const std::string& id) { return runCommandById(id); });
 
     // Parametre istegi: Qt edit box (QInputDialog) — parametreli komutlar
     // (Offset/Fillet/Dizi/Divide) sayisal degeri buradan alir.
@@ -745,495 +735,342 @@ void QtMainWindow::resizeEmbeddedCanvas() {
 }
 
 // ===========================================================================
-// TEK KAYNAK KOMUT TABLOSU (menü == ribbon)
+// KOMUT ISLEYICILERI (UI-2)
 // ---------------------------------------------------------------------------
-// Her komut kategorisi (Çizim, Düzenle, Çelik, ...) BURADA bir kez tanımlanır.
-// createMenus() aynı tablodan "☰ Menü" altındaki menüyü, createToolbar() aynı
-// tablodan ribbon sekmesini ve Quick Launch listesini üretir. Böylece bir komut
-// menüde olup ribbon'da olmayamaz, yanlış kategoriye düşemez. YENİ KOMUT
-// EKLERKEN yalnız commandCategories() içine, doğru kategoriye ekle.
-//   - tabTitle boş kategori yalnız menüde görünür (Dosya, Pencere).
-//   - uiGroup: menüde alt menü, ribbon'da açılır (InstantPopup) düğme.
-//   - uiSep: menüde ayırıcı, ribbon'da ince dikey çizgi.
+// Komut TANIMLARI ve serit/menu plani artik command_catalog.cpp'de: TEK
+// KAYNAK (Qt'siz, Linux'ta test edilir). Bu dosyada yalnizca id -> GOVDE
+// eslemesi ve Qt cizimi var. Menu de, serit de, klavye de ayni kayittan
+// beslenir; bu yuzden bir komut iki yerde ayri kodlanamaz.
 // ===========================================================================
-namespace {
 
-struct UiCommand {
-    QString menuText;    // menüdeki ad (& = mnemonik)
-    QString ribbonText;  // ribbon düğmesinin kısa adı
-    QString tip;         // ribbon araç ipucu
-    ToolGlyph glyph{ToolGlyph::Extents};
-    std::function<void()> run;
-    QString shortcut;               // gösterilen kısayol
-    bool bindShortcut{false};       // true: menü eylemine QKeySequence bağlanır
-    std::function<bool()> checked;  // doluysa menüde onay işaretli eylem
-};
+void QtMainWindow::buildCommandHandlers() {
+    auto& h = commandHandlers_;
+    h.clear();
 
-struct UiEntry {
-    enum class Kind { Command, Separator, Group };
-    Kind kind{Kind::Command};
-    UiCommand cmd;                  // Command: komutun kendisi; Group: başlık
-    std::vector<UiEntry> children;  // Group: alt menü / açılır düğme içeriği
-};
+    // ---- Dosya ----
+    h["file.new"] = [this]() { app_.newDocument(); };
+    h["file.open"] = [this]() { app_.openDocument(); };
+    h["file.save"] = [this]() { app_.saveDocument(); };
+    h["file.saveAs"] = [this]() { app_.saveDocumentAs(); };
+    h["file.importDxf"] = [this]() { app_.importDxf(); };
+    h["file.exportDxf"] = [this]() { app_.exportDxf(); };
+    h["file.exit"] = []() { QApplication::quit(); };
 
-UiEntry uiCmd(const QString& menu, const QString& ribbon, const QString& tip,
-              ToolGlyph glyph, std::function<void()> run) {
-    UiEntry e;
-    e.cmd.menuText = menu;
-    e.cmd.ribbonText = ribbon;
-    e.cmd.tip = tip;
-    e.cmd.glyph = glyph;
-    e.cmd.run = std::move(run);
-    return e;
+    // ---- Cizim ----
+    h["draw.line"] = [this]() { app_.selectTool(DrawTool::Line); };
+    h["draw.polyline"] = [this]() { app_.selectTool(DrawTool::Polyline); };
+    h["draw.rectangle"] = [this]() { app_.selectTool(DrawTool::Rectangle); };
+    h["draw.circle"] = [this]() { app_.selectTool(DrawTool::Circle); };
+    h["draw.face3d"] = [this]() { app_.selectTool(DrawTool::Face3D); };
+    h["draw.column"] = [this]() { app_.selectTool(DrawTool::Column); };
+    h["draw.cube"] = [this]() { app_.addCube(); };
+    h["draw.pyramid"] = [this]() { app_.addPyramid(); };
+    h["draw.cylinder"] = [this]() { app_.addCylinder(); };
+    h["draw.divide"] = [this]() { app_.activateDivide(); };
+    h["draw.paper"] = [this]() {
+        mm::drawing::showDrawingDialog(
+            this, app_.document(), app_.selectedModelIndices(),
+            app_.selectionMode() == mm::Application::SelectionMode::Assembly);
+    };
+
+    // ---- Duzenle ----
+    h["edit.undo"] = [this]() { app_.undo(); };
+    h["edit.redo"] = [this]() { app_.redo(); };
+    h["edit.cancel"] = [this]() { app_.deactivateAllCommands(); };
+    h["edit.move"] = [this]() { app_.startTransformCommand(TransformCommand::Move); };
+    h["edit.copy"] = [this]() { app_.startTransformCommand(TransformCommand::Copy); };
+    h["edit.moveLinear"] = [this]() { app_.startTransformCommand(TransformCommand::MoveLinear); };
+    h["edit.copyLinear"] = [this]() { app_.startTransformCommand(TransformCommand::CopyLinear); };
+    h["edit.offset"] = [this]() { app_.startTransformCommand(TransformCommand::Offset); };
+    h["edit.mirror"] = [this]() { app_.startTransformCommand(TransformCommand::Mirror); };
+    h["edit.delete"] = [this]() { app_.startTransformCommand(TransformCommand::Delete); };
+    h["edit.arrayLinear"] = [this]() { app_.startTransformCommand(TransformCommand::LinearArray); };
+    h["edit.arrayPolar"] = [this]() { app_.startTransformCommand(TransformCommand::PolarArray); };
+    h["edit.trim"] = [this]() { app_.startTransformCommand(TransformCommand::Trim); };
+    h["edit.extend"] = [this]() { app_.startTransformCommand(TransformCommand::Extend); };
+    h["edit.fillet"] = [this]() { app_.startTransformCommand(TransformCommand::Fillet); };
+
+    // ---- Celik ----
+    h["steel.bolt"] = [this]() { app_.startBoltCommand(); };
+    h["steel.weld"] = [this]() { startWeldCommand(); };
+    h["steel.endPlate"] = [this]() {
+        mm::EndPlateParams p = app_.pendingEndPlateParams();
+        if (!openEndPlateParamsDialog(p, p)) return;
+        app_.setPendingEndPlateParams(p);
+        app_.startEndPlateCommand();
+    };
+    h["steel.finPlate"] = [this]() {
+        app_.setPendingFinPlateParams({});
+        app_.startFinPlateCommand();
+    };
+    // steel.catalog: acilir icerik CALISMA ANINDA dynamicMenu() ile uretilir.
+    h["steel.catalog"] = []() {};
+    h["steel.bridge.import"] = [this]() { importTeklaBridge(); };
+    h["steel.bridge.native"] = [this]() { importTeklaBridgeNative(); };
+    h["steel.bridge.template"] = [this]() { saveTeklaBridgeTemplate(); };
+    h["sel.part"] = [this]() {
+        app_.setSelectionMode(mm::Application::SelectionMode::Part);
+    };
+    h["sel.assembly"] = [this]() {
+        app_.setSelectionMode(mm::Application::SelectionMode::Assembly);
+    };
+
+    // ---- Konstruksiyon / kesme ----
+    h["construct.plane3"] = [this]() { app_.startConstructionPlaneCommand(); };
+    h["construct.plane2"] = [this]() { app_.startConstructionPlaneTwoPointCommand(); };
+    h["construct.toggle"] = [this]() { app_.toggleConstructionVisibility(); };
+    h["construct.fitting"] = [this]() { app_.startFittingCommand(); };
+    h["construct.planeCut"] = [this]() { app_.startPlaneCutCommand(); };
+    h["construct.lineCut"] = [this]() { app_.startLineCutCommand(); };
+    h["construct.polygonCut"] = [this]() { app_.startPolygonCutCommand(); };
+    h["construct.partCut"] = [this]() { app_.startPartCutCommand(); };
+
+    // ---- Gorunum ----
+    h["view.toggle3d"] = [this]() { app_.toggle3DView(); };
+    h["view.zoomExtents"] = [this]() { app_.zoomExtents2D(); };
+    h["view.zoomWindow"] = [this]() { app_.startZoomWindow2D(); };
+    h["view.reset"] = [this]() { app_.resetView(); };
+    h["view.toSurface"] = [this]() { app_.startViewToSurfaceCommand(); };
+    h["view.dir.front"] = [this]() { app_.setStandardView(StandardView::Front); };
+    h["view.dir.back"] = [this]() { app_.setStandardView(StandardView::Back); };
+    h["view.dir.left"] = [this]() { app_.setStandardView(StandardView::Left); };
+    h["view.dir.right"] = [this]() { app_.setStandardView(StandardView::Right); };
+    h["view.dir.top"] = [this]() { app_.setStandardView(StandardView::Top); };
+    h["view.dir.bottom"] = [this]() { app_.setStandardView(StandardView::Bottom); };
+    h["view.dir.iso"] = [this]() { app_.setStandardView(StandardView::Isometric); };
+    h["view.style.wireframe"] = [this]() { app_.setVisualStyle(mm::VisualStyle::Wireframe); };
+    h["view.style.transparent"] = [this]() { app_.setVisualStyle(mm::VisualStyle::Transparent); };
+    h["view.style.hidden"] = [this]() { app_.setVisualStyle(mm::VisualStyle::HiddenLine); };
+    h["view.style.solid"] = [this]() { app_.setVisualStyle(mm::VisualStyle::Solid); };
+    h["view.styleCycle"] = [this]() {
+        const mm::VisualStyle current = app_.visualStyle();
+        const mm::VisualStyle next = current == mm::VisualStyle::Wireframe
+                                         ? mm::VisualStyle::Solid
+                                         : current == mm::VisualStyle::Solid
+                                               ? mm::VisualStyle::Transparent
+                                               : current == mm::VisualStyle::Transparent
+                                                     ? mm::VisualStyle::HiddenLine
+                                                     : mm::VisualStyle::Wireframe;
+        app_.setVisualStyle(next);
+    };
+    h["view.rotateCenter"] = [this]() { app_.startRotateCenterCommand(); };
+    h["view.clearRotateCenter"] = [this]() { app_.clearRotateCenter(); };
+    h["view.benchmark"] = [this]() { app_.runRenderBenchmark(); };
+    h["view.gpuLines"] = [this]() { app_.toggleGpuLines(); };
+    h["view.perfOverlay"] = [this]() { app_.togglePerformanceOverlay(); };
+    h["view.focus"] = [this]() { app_.focusOnSelection(); };
+
+    // ---- Calisma duzlemi ----
+    h["wp.faceTool"] = [this]() { app_.startWorkPlaneFaceToolCommand(); };
+    h["wp.parallelXyz"] = [this]() { promptWorkPlaneParallelXYZ(); };
+    h["wp.onePoint"] = [this]() { app_.startWorkPlaneOnePointCommand(); };
+    h["wp.twoPoint"] = [this]() { app_.startWorkPlaneTwoPointCommand(); };
+    h["wp.threePoint"] = [this]() { app_.startWorkPlaneCommand(); };
+    h["wp.viewParallel"] = [this]() { app_.setWorkPlaneToViewCommand(); };
+    h["wp.reset"] = [this]() { app_.resetWorkPlane(); };
+    h["wp.ghost"] = [this]() { app_.toggleWorkPlaneGhost(); };
+    h["wp.ucsPerp"] = [this]() { app_.setViewToWorkPlane(); };
+    h["wp.named.save"] = [this]() { promptSaveNamedView(); };
+    h["wp.named.goto"] = [this]() { promptGotoNamedView(); };
+    h["wp.named.delete"] = [this]() { promptDeleteNamedView(); };
+
+    // ---- Gorunusler (MDI) ----
+    h["views.twoPoint"] = [this]() { app_.startTwoPointViewCommand(); };
+    h["views.plan"] = [this]() { app_.startPlanViewCommand(); };
+    h["views.threePoint"] = [this]() { app_.startThreePointViewCommand(); };
+    h["views.onWorkPlane"] = [this]() { app_.startViewOnWorkPlaneCommand(); };
+    h["views.part.front"] = [this]() { app_.startPartPlaneViewCommand(PartPlane::Front); };
+    h["views.part.top"] = [this]() { app_.startPartPlaneViewCommand(PartPlane::Top); };
+    h["views.part.end"] = [this]() { app_.startPartPlaneViewCommand(PartPlane::End); };
+    h["views.part.back"] = [this]() { app_.startPartPlaneViewCommand(PartPlane::Back); };
+    h["views.part.bottom"] = [this]() { app_.startPartPlaneViewCommand(PartPlane::Bottom); };
+    h["views.part.defaults"] = [this]() { app_.startPartDefaultViewsCommand(); };
+    h["views.part3d"] = [this]() { app_.startPart3DViewCommand(); };
+    h["views.gridLines"] = [this]() { app_.startGridViewsCommand(); };
+
+    // ---- Grid ----
+    h["grid.create"] = [this]() { promptCreateGrid(); };
+    h["grid.manager"] = [this]() { promptGridManager(); };
+
+    // ---- Pencere ----
+    h["window.tile"] = [this]() { if (mdiArea_) mdiArea_->tileSubWindows(); };
+    h["window.cascade"] = [this]() { if (mdiArea_) mdiArea_->cascadeSubWindows(); };
+    h["window.maximizeModel"] = [this]() {
+        if (modelSubWindow_) {
+            modelSubWindow_->showMaximized();
+            if (mdiArea_) mdiArea_->setActiveSubWindow(modelSubWindow_);
+        }
+    };
+    h["window.closeViews"] = [this]() { closeAllTwoPointViews(); };
+
+    // ---- Yardimcilar / alt cubuk (UI-6a'ya kadar kayitli) ----
+    h["assist.snap"] = [this]() { app_.setSnapEnabled(!app_.snapEnabled()); };
+    h["assist.gridSnap"] = [this]() { app_.setGridSnapEnabled(!app_.gridSnapEnabled()); };
+    h["assist.ortho"] = [this]() { app_.setOrthoEnabled(!app_.orthoEnabled()); };
+    h["assist.polar"] = [this]() { app_.togglePolarTracking(); };
+    h["assist.dynamicInput"] = [this]() { app_.toggleDynamicInput(); };
+    h["assist.tempPoint"] = [this]() { app_.acquireTemporaryTrackingPoint(); };
+    h["panel.focusProfile"] = [this]() {
+        if (!profileSelector_) return;
+        profileSelector_->setFocus(Qt::ShortcutFocusReason);
+        profileSelector_->showPopup();
+    };
+    h["panel.modelTree"] = [this]() {
+        if (modelTreeDock_) modelTreeDock_->setVisible(!modelTreeDock_->isVisible());
+    };
+
+    // ---- Boolean (OCC) ----
+    // Govdeler OCC acikken derlenir; OCC kapali yapida menu ogesi pasiftir
+    // (isEnabled("occ") = false) ve cagrilirsa bos govde calisir.
+#ifdef MM_HAS_OCC
+    h["bool.fuse"] = [this]() { app_.addBooleanFuse(); };
+    h["bool.cut"] = [this]() { app_.addBooleanCut(); };
+    h["bool.common"] = [this]() { app_.addBooleanCommon(); };
+#else
+    h["bool.fuse"] = []() {};
+    h["bool.cut"] = []() {};
+    h["bool.common"] = []() {};
+#endif
 }
 
-UiEntry uiKey(UiEntry e, const QString& shortcut, bool bind) {
-    e.cmd.shortcut = shortcut;
-    e.cmd.bindShortcut = bind;
-    return e;
-}
-
-UiEntry uiSep() {
-    UiEntry e;
-    e.kind = UiEntry::Kind::Separator;
-    return e;
-}
-
-UiEntry uiGroup(const QString& menu, const QString& ribbon, const QString& tip,
-                ToolGlyph glyph, std::vector<UiEntry> children) {
-    UiEntry e;
-    e.kind = UiEntry::Kind::Group;
-    e.cmd.menuText = menu;
-    e.cmd.ribbonText = ribbon;
-    e.cmd.tip = tip;
-    e.cmd.glyph = glyph;
-    e.children = std::move(children);
-    return e;
-}
-
-// "&Taşı\tCtrl+X" -> "Taşı" (Quick Launch ve araç ipucu için düz ad).
-QString plainCommandLabel(QString s) {
-    const int tab = s.indexOf(QLatin1Char('\t'));
-    if (tab >= 0) s.truncate(tab);
-    s.replace(QStringLiteral("&&"), QStringLiteral("\x01"));
-    s.remove(QLatin1Char('&'));
-    s.replace(QStringLiteral("\x01"), QStringLiteral("&"));
-    if (s.endsWith(QStringLiteral("..."))) s.chop(3);
-    return s.trimmed();
-}
-
-// Menü eylemi: metin + kısayol + ikon + onay durumu tek yerde.
-QAction* addUiAction(QMenu* menu, QObject* ctx, const UiCommand& c, bool withIcon) {
-    QString text = c.menuText;
-    if (!c.shortcut.isEmpty() && !c.bindShortcut) text += QStringLiteral("\t") + c.shortcut;
-    QAction* act = menu->addAction(text, ctx, c.run);
-    if (withIcon) act->setIcon(makeToolIcon(c.glyph));
-    if (c.bindShortcut && !c.shortcut.isEmpty()) act->setShortcut(QKeySequence(c.shortcut));
-    if (!c.tip.isEmpty()) act->setToolTip(c.tip);
-    if (c.checked) {
-        act->setCheckable(true);
-        act->setChecked(c.checked());
-        // F7 vb. ile menü dışından değişebilir: menü her açılışta yeniden okur.
-        QObject::connect(menu, &QMenu::aboutToShow, act,
-                         [act, get = c.checked]() { act->setChecked(get()); });
+bool QtMainWindow::runCommandById(const std::string& id) {
+    // Dinamik katalog komutlari: "component:<typeId>" (serit katalog aciliri).
+    if (id.rfind("component:", 0) == 0) {
+        const std::string typeId = id.substr(std::string("component:").size());
+        const std::wstring wide(typeId.begin(), typeId.end());
+        app_.setPendingComponentParams(standardComponentParams(wide));
+        app_.startComponentCommand(wide);
+        return true;
     }
-    return act;
+    const auto it = commandHandlers_.find(id);
+    if (it == commandHandlers_.end()) {
+        // Kayitta olup govdesi baglanmamis komut sessiz gecilmez: durum yazilir.
+        statusBar()->showMessage(
+            QStringLiteral("Komut henüz bağlı değil: %1").arg(QString::fromStdString(id)), 4000);
+        return false;
+    }
+    it->second();
+    return true;
 }
 
-void fillUiMenu(QMenu* menu, QObject* ctx, const std::vector<UiEntry>& entries, bool withIcons) {
-    for (const UiEntry& e : entries) {
-        switch (e.kind) {
-        case UiEntry::Kind::Separator:
+void QtMainWindow::runCommand(const std::string& id) {
+    runCommandById(id);
+    if (ribbon_) ribbon_->refresh();
+}
+
+bool QtMainWindow::isEnabled(const std::string& key) const {
+    if (key == "occ") {
+#ifdef MM_HAS_OCC
+        return true;
+#else
+        return false;
+#endif
+    }
+    return true;
+}
+
+bool QtMainWindow::toggleState(const std::string& key) const {
+    if (key == "snap") return app_.snapEnabled();
+    if (key == "gridSnap") return app_.gridSnapEnabled();
+    if (key == "ortho") return app_.orthoEnabled();
+    if (key == "polar") return app_.polarTrackingEnabled();
+    if (key == "dynamicInput") return app_.dynamicInputEnabled();
+    if (key == "workPlaneGhost") return app_.workPlaneGhostVisible();
+    if (key == "gpuLines") return app_.gpuLinesEnabled();
+    if (key == "perfOverlay") return app_.performanceOverlayEnabled();
+    if (key == "selection.part")
+        return app_.selectionMode() == mm::Application::SelectionMode::Part;
+    if (key == "selection.assembly")
+        return app_.selectionMode() == mm::Application::SelectionMode::Assembly;
+    if (key == "dock.modelTree") return modelTreeDock_ && modelTreeDock_->isVisible();
+    return false;
+}
+
+std::vector<DynamicMenuItem> QtMainWindow::dynamicMenu(const std::string& id) const {
+    // Component katalogu CALISMA ANINDA registry'den uretilir; serit/menu
+    // planinda tek bir "Katalog" dugmesi vardir, komutlar burada dogar.
+    std::vector<DynamicMenuItem> out;
+    if (id != "steel.catalog") return out;
+    const auto catalog = mm::buildComponentCatalog(
+        mm::ComponentRegistry::instance(), mm::ComponentDialogRegistry::instance());
+    for (const mm::CatalogEntry& entry : catalog) {
+        std::string typeId(entry.typeId.begin(), entry.typeId.end());
+        std::string label(entry.displayName.begin(), entry.displayName.end());
+        if (!entry.sourceComponentNumber.empty()) {
+            std::string number(entry.sourceComponentNumber.begin(),
+                               entry.sourceComponentNumber.end());
+            if (label.find("(" + number + ")") == std::string::npos)
+                label += " (" + number + ")";
+        }
+        out.push_back({"component:" + typeId, label, "plate"});
+    }
+    return out;
+}
+
+// Menu cizimi: plan VERISI -> QMenu (komut govdesi yok, yalniz baglama).
+void QtMainWindow::fillMenu(QMenu* menu, const std::vector<PlanItem>& items) {
+    for (const PlanItem& item : items) {
+        if (!menu) return;
+        if (item.kind == PlanItem::Kind::Separator) {
             menu->addSeparator();
-            break;
-        case UiEntry::Kind::Command:
-            addUiAction(menu, ctx, e.cmd, withIcons);
-            break;
-        case UiEntry::Kind::Group: {
-            QMenu* sub = menu->addMenu(e.cmd.menuText);
-            if (withIcons) sub->setIcon(makeToolIcon(e.cmd.glyph));
-            fillUiMenu(sub, ctx, e.children, false);
-            break;
+            continue;
         }
+        if (item.kind == PlanItem::Kind::Menu) {
+            const QString label = item.label.empty()
+                                      ? QString::fromStdString(item.id)
+                                      : QString::fromUtf8(item.label.c_str());
+            QMenu* sub = menu->addMenu(label);
+            fillMenu(sub, item.children);
+            continue;
         }
-    }
-}
-
-void collectQuickCommands(const std::vector<UiEntry>& entries,
-                          std::vector<std::pair<QString, std::function<void()>>>& out) {
-    for (const UiEntry& e : entries) {
-        if (e.kind == UiEntry::Kind::Command && e.cmd.run)
-            out.emplace_back(plainCommandLabel(e.cmd.menuText), e.cmd.run);
-        else if (e.kind == UiEntry::Kind::Group)
-            collectQuickCommands(e.children, out);
-    }
-}
-
-} // namespace
-
-struct QtMainWindow::CommandCategory {
-    QString menuTitle;   // "☰ Menü" altındaki başlık (& = mnemonik)
-    QString tabTitle;    // ribbon sekmesi; boş = yalnız menü
-    std::vector<UiEntry> entries;
-};
-
-std::vector<QtMainWindow::CommandCategory> QtMainWindow::commandCategories() {
-    std::vector<CommandCategory> cats;
-
-    // ---- DOSYA (yalnız menü) ----
-    cats.push_back({QStringLiteral("&Dosya"), QString(), {
-        uiKey(uiCmd(QStringLiteral("&Yeni"), QStringLiteral("Yeni"), QStringLiteral("Yeni belge"), ToolGlyph::New,
-              [this]() { app_.newDocument(); }), QStringLiteral("Ctrl+N"), false),
-        uiKey(uiCmd(QStringLiteral("&Aç..."), QStringLiteral("Aç"), QStringLiteral("Belge aç"), ToolGlyph::Open,
-              [this]() { app_.openDocument(); }), QStringLiteral("Ctrl+O"), false),
-        uiKey(uiCmd(QStringLiteral("&Kaydet"), QStringLiteral("Kaydet"), QStringLiteral("Belgeyi kaydet"), ToolGlyph::Save,
-              [this]() { app_.saveDocument(); }), QStringLiteral("Ctrl+S"), false),
-        uiCmd(QStringLiteral("Farklı Kay&det..."), QStringLiteral("Farklı Kaydet"), QStringLiteral("Farklı kaydet"), ToolGlyph::Save,
-              [this]() { app_.saveDocumentAs(); }),
-        uiSep(),
-        uiCmd(QStringLiteral("DXF &İçe Aktar..."), QStringLiteral("DXF Al"), QStringLiteral("DXF içe aktar"), ToolGlyph::Import,
-              [this]() { app_.importDxf(); }),
-        uiCmd(QStringLiteral("DXF D&ışa Aktar..."), QStringLiteral("DXF Ver"), QStringLiteral("DXF dışa aktar"), ToolGlyph::Export,
-              [this]() { app_.exportDxf(); }),
-        uiSep(),
-        uiCmd(QStringLiteral("Çı&kış"), QStringLiteral("Çıkış"), QStringLiteral("Uygulamadan çık"), ToolGlyph::Delete,
-              []() { QApplication::quit(); }),
-    }});
-
-    // ---- ÇİZİM ----
-    cats.push_back({QStringLiteral("Çi&zim"), QStringLiteral("Çizim"), {
-        uiCmd(QStringLiteral("Çiz&gi"), QStringLiteral("Çizgi"), QStringLiteral("Çizgi"), ToolGlyph::Line,
-              [this]() { app_.selectTool(DrawTool::Line); }),
-        uiCmd(QStringLiteral("&Polyline"), QStringLiteral("Polyline"), QStringLiteral("Polyline"), ToolGlyph::Polyline,
-              [this]() { app_.selectTool(DrawTool::Polyline); }),
-        uiCmd(QStringLiteral("Dikdört&gen"), QStringLiteral("Dikdörtgen"), QStringLiteral("Dikdörtgen"), ToolGlyph::Rect,
-              [this]() { app_.selectTool(DrawTool::Rectangle); }),
-        uiCmd(QStringLiteral("Dai&re"), QStringLiteral("Daire"), QStringLiteral("Daire"), ToolGlyph::Circle,
-              [this]() { app_.selectTool(DrawTool::Circle); }),
-        uiCmd(QStringLiteral("&3DFACE"), QStringLiteral("3DFACE"), QStringLiteral("3B yüzey (3DFACE)"), ToolGlyph::Face3D,
-              [this]() { app_.selectTool(DrawTool::Face3D); }),
-        uiSep(),
-        uiKey(uiCmd(QStringLiteral("Böl (&Divide)"), QStringLiteral("Böl"), QStringLiteral("İki nokta arasını eşit böl (D)"), ToolGlyph::LinearArray,
-              [this]() { app_.activateDivide(); }), QStringLiteral("D"), false),
-        uiSep(),
-        // Paper-space çizim: seçili parça/assembly -> Ön/Üst/Yan görünüşlü A3 sayfa (PDF/JSON).
-        uiCmd(QStringLiteral("&Paper Çizim (Seçimden)..."), QStringLiteral("Paper Çizim"),
-              QStringLiteral("Seçili parça/assembly için Ön-Üst-Yan görünüşlü A3 çizim üret (PDF/JSON)"),
-              ToolGlyph::Export,
-              [this]() {
-                  mm::drawing::showDrawingDialog(
-                      this, app_.document(), app_.selectedModelIndices(),
-                      app_.selectionMode() == mm::Application::SelectionMode::Assembly);
-              }),
-    }});
-
-    // ---- DÜZENLE ----
-    cats.push_back({QStringLiteral("Dü&zenle"), QStringLiteral("Düzenle"), {
-        uiKey(uiCmd(QStringLiteral("&Geri Al"), QStringLiteral("Geri"), QStringLiteral("Geri al (Ctrl+Z)"), ToolGlyph::Undo,
-              [this]() { app_.undo(); }), QStringLiteral("Ctrl+Z"), false),
-        uiKey(uiCmd(QStringLiteral("&Yinele"), QStringLiteral("İleri"), QStringLiteral("Yinele (Ctrl+Y)"), ToolGlyph::Redo,
-              [this]() { app_.redo(); }), QStringLiteral("Ctrl+Y"), false),
-        uiCmd(QStringLiteral("&Pasif"), QStringLiteral("Pasif"), QStringLiteral("Tüm komutları bırak"), ToolGlyph::Pan,
-              [this]() { app_.deactivateAllCommands(); }),
-        uiSep(),
-        uiCmd(QStringLiteral("&Taşı"), QStringLiteral("Taşı"), QStringLiteral("Taşı"), ToolGlyph::Move,
-              [this]() { app_.startTransformCommand(TransformCommand::Move); }),
-        uiCmd(QStringLiteral("&Kopyala"), QStringLiteral("Kopyala"), QStringLiteral("Kopyala"), ToolGlyph::Copy,
-              [this]() { app_.startTransformCommand(TransformCommand::Copy); }),
-        uiCmd(QStringLiteral("Doğrusal &Kopyala (ΔX/ΔY/ΔZ)"), QStringLiteral("Kopyala-Δ"),
-              QStringLiteral("Doğrusal kopyala: seçim + iki nokta; hedefte \"dx,dy,dz\" yazılırsa X/Y/Z mesafesiyle kopyalar (çoklu)"),
-              ToolGlyph::Copy,
-              [this]() { app_.startTransformCommand(TransformCommand::CopyLinear); }),
-        uiCmd(QStringLiteral("Doğrusal &Taşı (ΔX/ΔY/ΔZ)"), QStringLiteral("Taşı-Δ"),
-              QStringLiteral("Doğrusal taşı: seçim + iki nokta; hedefte \"dx,dy,dz\" yazılırsa X/Y/Z mesafesiyle taşır"),
-              ToolGlyph::Move,
-              [this]() { app_.startTransformCommand(TransformCommand::MoveLinear); }),
-        uiCmd(QStringLiteral("&Ofset"), QStringLiteral("Ofset"), QStringLiteral("Ofset"), ToolGlyph::Offset,
-              [this]() { app_.startTransformCommand(TransformCommand::Offset); }),
-        uiCmd(QStringLiteral("A&yna"), QStringLiteral("Ayna"), QStringLiteral("Ayna"), ToolGlyph::Mirror,
-              [this]() { app_.startTransformCommand(TransformCommand::Mirror); }),
-        uiCmd(QStringLiteral("&Sil"), QStringLiteral("Sil"), QStringLiteral("Sil"), ToolGlyph::Delete,
-              [this]() { app_.startTransformCommand(TransformCommand::Delete); }),
-        uiSep(),
-        uiCmd(QStringLiteral("Doğrusal &Dizi"), QStringLiteral("Dizi"), QStringLiteral("Doğrusal dizi"), ToolGlyph::LinearArray,
-              [this]() { app_.startTransformCommand(TransformCommand::LinearArray); }),
-        uiCmd(QStringLiteral("Dairesel Di&zi"), QStringLiteral("D.Dizi"), QStringLiteral("Dairesel dizi"), ToolGlyph::PolarArray,
-              [this]() { app_.startTransformCommand(TransformCommand::PolarArray); }),
-        uiSep(),
-        uiCmd(QStringLiteral("T&rim"), QStringLiteral("Trim"), QStringLiteral("Trim"), ToolGlyph::Trim,
-              [this]() { app_.startTransformCommand(TransformCommand::Trim); }),
-        uiCmd(QStringLiteral("E&xtend"), QStringLiteral("Extend"), QStringLiteral("Extend"), ToolGlyph::Extend,
-              [this]() { app_.startTransformCommand(TransformCommand::Extend); }),
-        uiCmd(QStringLiteral("&Fillet"), QStringLiteral("Fillet"), QStringLiteral("Fillet"), ToolGlyph::Fillet,
-              [this]() { app_.startTransformCommand(TransformCommand::Fillet); }),
-    }});
-
-    // ---- ÇELİK: bağlantılar (bulon, kaynak, levhalar) + component kataloğu
-    //      + Tekla Component Bridge ----
-    {
-        std::vector<UiEntry> steel = {
-            uiCmd(QStringLiteral("&Bolt (Bulon)"), QStringLiteral("Bolt"), QStringLiteral("İki parçayı bulonla birleştir"), ToolGlyph::Bolt,
-                  [this]() { app_.startBoltCommand(); }),
-            uiCmd(QStringLiteral("&Kaynak (Weld)..."), QStringLiteral("Kaynak"), QStringLiteral("İki parça arasına kaynak"), ToolGlyph::Fillet,
-                  [this]() { startWeldCommand(); }),
-            uiSep(),
-            uiCmd(QStringLiteral("&End Plate (Alın Levhası)"), QStringLiteral("End Plate"), QStringLiteral("Alın levhası bağlantısı (kolon+kiriş)"), ToolGlyph::Plate,
-                  [this]() {
-                      mm::EndPlateParams p = app_.pendingEndPlateParams();
-                      if (!openEndPlateParamsDialog(p, p)) return;
-                      app_.setPendingEndPlateParams(p);
-                      app_.startEndPlateCommand();
-                  }),
-            uiCmd(QStringLiteral("&Fin Plate (Kayma Levhası)"), QStringLiteral("Fin Plate"), QStringLiteral("Kayma levhası bağlantısı (kolon+kiriş)"), ToolGlyph::Plate,
-                  [this]() {
-                      // Parametrik component: varsayılan şema parametreleriyle başla.
-                      app_.setPendingFinPlateParams({});
-                      app_.startFinPlateCommand();
-                  }),
-        };
-
-        // GENEL COMPONENT KATALOĞU (C7): registry + dialog kayıtlarından ÜRETİLİR;
-        // yeni component için buraya kod eklenmez. End Plate catalogVisible=false.
-        const auto catalog = mm::buildComponentCatalog(
-            mm::ComponentRegistry::instance(), mm::ComponentDialogRegistry::instance());
-        if (!catalog.empty()) {
-            std::vector<UiEntry> items;
-            for (const mm::CatalogEntry& ce : catalog) {
-                QString label = QString::fromStdWString(ce.displayName);
-                if (!ce.sourceComponentNumber.empty()) {
-                    const QString suffix = QStringLiteral(" (") +
-                        QString::fromStdWString(ce.sourceComponentNumber) +
-                        QStringLiteral(")");
-                    if (!label.endsWith(suffix)) label += suffix;
-                }
-                QString tip = QString::fromStdWString(ce.category);
-                if (!ce.coverageStatus.empty())
-                    tip += QStringLiteral(" — ") + QString::fromStdWString(ce.coverageStatus);
-                items.push_back(uiCmd(label, label, tip, ToolGlyph::Plate,
-                    [this, typeId = ce.typeId]() {
-                        app_.setPendingComponentParams(standardComponentParams(typeId));
-                        app_.startComponentCommand(typeId);
-                    }));
+        const CommandDef* def = commandCatalog_.registry.find(item.id);
+        if (!def) continue;  // plan-kayit uyumsuzlugu testte yakalanir
+        QString text = QString::fromUtf8(def->title.c_str());
+        if (!def->shortcut.empty())
+            text += QStringLiteral("\t") + QString::fromStdString(def->shortcut);
+        QAction* action = menu->addAction(text, this, [this, id = def->id]() {
+            runCommandById(id);
+        });
+        action->setIcon(commandIcon(def->icon));
+        if (!def->tooltip.empty()) action->setToolTip(QString::fromUtf8(def->tooltip.c_str()));
+        if (def->kind == CommandKind::Toggle || def->kind == CommandKind::Dropdown) {
+            // Ac-kapa ise menude isaret gosterilir; acilir komut ise pasif
+            // gorunmez (icerik dugmeden acilir).
+            if (def->kind == CommandKind::Toggle && !def->toggleKey.empty()) {
+                action->setCheckable(true);
+                QObject::connect(menu, &QMenu::aboutToShow, action,
+                                 [this, action, key = def->toggleKey]() {
+                                     action->setChecked(toggleState(key));
+                                 });
             }
-            steel.push_back(uiGroup(QStringLiteral("Component &Kataloğu"), QStringLiteral("Katalog"),
-                                    QStringLiteral("Component kataloğu"), ToolGlyph::Plate, std::move(items)));
         }
-
-        steel.push_back(uiSep());
-        steel.push_back(uiGroup(QStringLiteral("&Tekla Component Bridge"), QStringLiteral("Tekla Bridge"),
-            QStringLiteral("Tekla'dan .mmbridge paketi içe aktar / dönüştür / kataloğa kaydet"), ToolGlyph::Import, {
-            uiCmd(QStringLiteral("&İçe Aktar..."), QStringLiteral("İçe Aktar"), QStringLiteral("Tekla Component Bridge içe aktar"), ToolGlyph::Import,
-                  [this]() { importTeklaBridge(); }),
-            uiCmd(QStringLiteral("&Native Component'e Dönüştür..."), QStringLiteral("Native"), QStringLiteral("Bridge paketini native component'e dönüştür"), ToolGlyph::Import,
-                  [this]() { importTeklaBridgeNative(); }),
-            uiCmd(QStringLiteral("&Kataloğa Şablon Kaydet..."), QStringLiteral("Şablon"), QStringLiteral("Bridge paketini katalog şablonu olarak kaydet"), ToolGlyph::Import,
-                  [this]() { saveTeklaBridgeTemplate(); }),
-        }));
-
-        cats.push_back({QStringLiteral("Çe&lik"), QStringLiteral("Çelik"), std::move(steel)});
     }
-
-    // ---- KONSTRÜKSİYON & KESME ----
-    cats.push_back({QStringLiteral("K&onstrüksiyon"), QStringLiteral("Konstrüksiyon"), {
-        uiCmd(QStringLiteral("Konstrüksiyon &Düzlemi (3 Nokta)"), QStringLiteral("K. Düzlem"), QStringLiteral("Konstrüksiyon düzlemi (3 nokta)"), ToolGlyph::Plane,
-              [this]() { app_.startConstructionPlaneCommand(); }),
-        uiCmd(QStringLiteral("Konstrüksiyon Düzlemi (&2 Nokta)"), QStringLiteral("K. Düzlem 2N"), QStringLiteral("Konstrüksiyon düzlemi (2 nokta, çalışma düzleminin Z'sine dik)"), ToolGlyph::Plane,
-              [this]() { app_.startConstructionPlaneTwoPointCommand(); }),
-        uiCmd(QStringLiteral("Konstrüksiyon &Nesnelerini Göster/Gizle"), QStringLiteral("Gizle/Göster"), QStringLiteral("Konstrüksiyon nesnelerini göster/gizle"), ToolGlyph::Toggle3D,
-              [this]() { app_.toggleConstructionVisibility(); }),
-        uiSep(),
-        uiCmd(QStringLiteral("&Fitting (Uç Kesme)"), QStringLiteral("Fitting"), QStringLiteral("Fitting (uç kesme)"), ToolGlyph::Trim,
-              [this]() { app_.startFittingCommand(); }),
-        uiCmd(QStringLiteral("&Plane Cut"), QStringLiteral("Plane Cut"), QStringLiteral("Düzlemle kesme"), ToolGlyph::Plane,
-              [this]() { app_.startPlaneCutCommand(); }),
-        uiCmd(QStringLiteral("&Line Cut (Çizgi)"), QStringLiteral("Line Cut"), QStringLiteral("Çizgiyle kesme"), ToolGlyph::Line,
-              [this]() { app_.startLineCutCommand(); }),
-        uiCmd(QStringLiteral("P&olygon Cut (3DFACE)"), QStringLiteral("Polygon Cut"), QStringLiteral("3DFACE ile kesme"), ToolGlyph::Face3D,
-              [this]() { app_.startPolygonCutCommand(); }),
-        uiCmd(QStringLiteral("P&art Cut (Parça)"), QStringLiteral("Part Cut"), QStringLiteral("Parça ile kesme"), ToolGlyph::Delete,
-              [this]() { app_.startPartCutCommand(); }),
-    }});
-
-    // ---- GÖRÜNÜM: kamera/navigasyon + standart yönler ----
-    cats.push_back({QStringLiteral("G&örünüm"), QStringLiteral("Görünüm"), {
-        uiCmd(QStringLiteral("2&B / 3B"), QStringLiteral("2B/3B"), QStringLiteral("2B / 3B görünüm"), ToolGlyph::Toggle3D,
-              [this]() { app_.toggle3DView(); }),
-        uiCmd(QStringLiteral("&Zoom Extents"), QStringLiteral("Extents"), QStringLiteral("Zoom Extents"), ToolGlyph::Extents,
-              [this]() { app_.zoomExtents2D(); }),
-        uiCmd(QStringLiteral("Zoom &Window"), QStringLiteral("Zoom Penc."), QStringLiteral("Zoom Window"), ToolGlyph::Extents,
-              [this]() { app_.startZoomWindow2D(); }),
-        uiKey(uiCmd(QStringLiteral("Görünümü &Sıfırla"), QStringLiteral("Sıfırla"), QStringLiteral("Görünümü sıfırla (Ctrl+R)"), ToolGlyph::Reset,
-              [this]() { app_.resetView(); }), QStringLiteral("Ctrl+R"), true),
-        uiSep(),
-        // Tekla view-to-surface: yüz üzerinde hover vurgusu + tık ile o yüze
-        // dik yeni görünüş (derinlik 100/100 mm). Çalışma düzlemi aracının
-        // (parça yüzü) görünüş üreten eşi.
-        uiCmd(QStringLiteral("Yüzeye Göre &Görünüş"), QStringLiteral("Yüzden Gör."),
-              QStringLiteral("Parça yüzüne tıklayarak o yüze dik yeni görünüş aç (derinlik 100/100 mm)"),
-              ToolGlyph::Plane, [this]() { app_.startViewToSurfaceCommand(); }),
-        uiSep(),
-        uiGroup(QStringLiteral("Görü&nüş Yönü"), QStringLiteral("Görünüş"), QStringLiteral("Standart görünüş yönleri (Ctrl+1..7)"), ToolGlyph::Extents, {
-            uiKey(uiCmd(QStringLiteral("Ön&den"), QString(), QString(), ToolGlyph::Extents,
-                  [this]() { app_.setStandardView(StandardView::Front); }), QStringLiteral("Ctrl+1"), true),
-            uiKey(uiCmd(QStringLiteral("Ar&kadan"), QString(), QString(), ToolGlyph::Extents,
-                  [this]() { app_.setStandardView(StandardView::Back); }), QStringLiteral("Ctrl+2"), true),
-            uiKey(uiCmd(QStringLiteral("&Soldan"), QString(), QString(), ToolGlyph::Extents,
-                  [this]() { app_.setStandardView(StandardView::Left); }), QStringLiteral("Ctrl+3"), true),
-            uiKey(uiCmd(QStringLiteral("S&ağdan"), QString(), QString(), ToolGlyph::Extents,
-                  [this]() { app_.setStandardView(StandardView::Right); }), QStringLiteral("Ctrl+4"), true),
-            uiSep(),
-            uiKey(uiCmd(QStringLiteral("Üs&tten"), QString(), QString(), ToolGlyph::Extents,
-                  [this]() { app_.setStandardView(StandardView::Top); }), QStringLiteral("Ctrl+5"), true),
-            uiKey(uiCmd(QStringLiteral("A&lttan"), QString(), QString(), ToolGlyph::Extents,
-                  [this]() { app_.setStandardView(StandardView::Bottom); }), QStringLiteral("Ctrl+6"), true),
-            uiSep(),
-            uiKey(uiCmd(QStringLiteral("&İzometrik"), QString(), QString(), ToolGlyph::Extents,
-                  [this]() { app_.setStandardView(StandardView::Isometric); }), QStringLiteral("Ctrl+7"), true),
-        }),
-        uiGroup(QStringLiteral("Görsel &Stil"), QStringLiteral("Stil"), QStringLiteral("3B görsel stil (Alt+1..4)"), ToolGlyph::Toggle3D, {
-            uiKey(uiCmd(QStringLiteral("&Wireframe"), QString(), QString(), ToolGlyph::Toggle3D,
-                  [this]() { app_.setVisualStyle(mm::VisualStyle::Wireframe); }), QStringLiteral("Alt+1"), false),
-            uiKey(uiCmd(QStringLiteral("&Yarı Saydam"), QString(), QString(), ToolGlyph::Toggle3D,
-                  [this]() { app_.setVisualStyle(mm::VisualStyle::Transparent); }), QStringLiteral("Alt+2"), false),
-            uiKey(uiCmd(QStringLiteral("&Gizli Çizgi"), QString(), QString(), ToolGlyph::Toggle3D,
-                  [this]() { app_.setVisualStyle(mm::VisualStyle::HiddenLine); }), QStringLiteral("Alt+3"), false),
-            uiKey(uiCmd(QStringLiteral("&Solid"), QString(), QString(), ToolGlyph::Toggle3D,
-                  [this]() { app_.setVisualStyle(mm::VisualStyle::Solid); }), QStringLiteral("Alt+4"), false),
-        }),
-        uiSep(),
-        uiKey(uiCmd(QStringLiteral("&Döndürme Merkezi"), QStringLiteral("Dön. Mrk."), QStringLiteral("Döndürme merkezi seç (R)"), ToolGlyph::Toggle3D,
-              [this]() { app_.startRotateCenterCommand(); }), QStringLiteral("R"), false),
-        uiCmd(QStringLiteral("Döndürme Merkezini &Temizle"), QStringLiteral("Mrk. Sil"), QStringLiteral("Döndürme merkezini temizle"), ToolGlyph::Reset,
-              [this]() { app_.clearRotateCenter(); }),
-        uiSep(),
-        uiCmd(QStringLiteral("&Benchmark (GDI vs GL)"), QStringLiteral("Benchmark"), QStringLiteral("GDI vs GL render benchmark"), ToolGlyph::Extents,
-              [this]() {
-                  FILE* diag = fopen("model-maker-render.log", "a");
-                  if (diag) { fprintf(diag, "MENU-BENCH-CLICKED\n"); fclose(diag); }
-                  app_.runRenderBenchmark();
-              }),
-    }});
-
-    // ---- ÇALIŞMA DÜZLEMİ: Tekla'nın TÜM work plane modları + UCS + named views ----
-    // Her Tekla modu AYRI ribbon komutudur (kullanıcı talebi).
-    {
-        UiEntry ghost = uiKey(uiCmd(QStringLiteral("Çalışma Düzlemi &Hayaleti"), QStringLiteral("Hayalet"), QStringLiteral("Çalışma düzlemi hayaleti (F7)"), ToolGlyph::Toggle3D,
-                                    [this]() { app_.toggleWorkPlaneGhost(); }), QStringLiteral("F7"), false);
-        ghost.cmd.checked = [this]() { return app_.workPlaneGhostVisible(); };
-        cats.push_back({QStringLiteral("Çalışma &Düzlemi"), QStringLiteral("Çalışma Düzlemi"), {
-            // 1) Work plane tool — parça yüzüne tıkla (hover önizleme).
-            uiCmd(QStringLiteral("Çalışma Düzlemi &Aracı (Parça Yüzü)"), QStringLiteral("Yüz Aracı"),
-                  QStringLiteral("İmlecin altındaki parça yüzüne tıklayarak çalışma düzlemini o yüze taşı"),
-                  ToolGlyph::Plane, [this]() { app_.startWorkPlaneFaceToolCommand(); }),
-            // 2) Parallel to XYZ plane (düzlem + derinlik).
-            uiCmd(QStringLiteral("&XYZ Düzlemine Paralel..."), QStringLiteral("XYZ+D"),
-                  QStringLiteral("Çalışma düzlemini XY/XZ/YZ düzlemlerinden birine, belirtilen derinlikte kur"),
-                  ToolGlyph::Plane, [this]() { promptWorkPlaneParallelXYZ(); }),
-            // 3) Using one point.
-            uiCmd(QStringLiteral("1 &Noktada"), QStringLiteral("1 Nokta"),
-                  QStringLiteral("Çalışma düzlemini yönünü koruyarak tıklanan noktaya taşı"),
-                  ToolGlyph::Plane, [this]() { app_.startWorkPlaneOnePointCommand(); }),
-            // 4) Using two points.
-            uiCmd(QStringLiteral("&2 Noktada"), QStringLiteral("2 Nokta"),
-                  QStringLiteral("Çalışma düzlemi: ilk nokta orijin, ikincisi X yönü (Y yönü korunur)"),
-                  ToolGlyph::Plane, [this]() { app_.startWorkPlaneTwoPointCommand(); }),
-            // 5) Using three points.
-            uiCmd(QStringLiteral("&3 Noktada"), QStringLiteral("3 Nokta"),
-                  QStringLiteral("Çalışma düzlemi: orijin + X + Y noktası (Z sağ-el kuralı)"),
-                  ToolGlyph::Plane, [this]() { app_.startWorkPlaneCommand(); }),
-            // 6) Parallel to view plane.
-            uiCmd(QStringLiteral("&Görünüş Düzlemine Paralel"), QStringLiteral("Görünüşe ∥"),
-                  QStringLiteral("Çalışma düzlemini mevcut kameranın görüş düzlemine paralel yap"),
-                  ToolGlyph::Plane, [this]() { app_.setWorkPlaneToViewCommand(); }),
-            // 7) Restore default (world XY, depth 0).
-            uiCmd(QStringLiteral("Düzlemi &Sıfırla (Dünya)"), QStringLiteral("Düz. Sıfır"),
-                  QStringLiteral("Çalışma düzlemini varsayılana döndür (dünya XY, Z=0)"),
-                  ToolGlyph::Reset, [this]() { app_.resetWorkPlane(); }),
-            ghost,
-            uiSep(),
-            uiCmd(QStringLiteral("UCS'ye &Dik Görünüş"), QStringLiteral("UCS Dik"), QStringLiteral("UCS'ye dik görünüş"), ToolGlyph::Plane,
-                  [this]() { app_.setViewToWorkPlane(); }),
-            uiSep(),
-            uiCmd(QStringLiteral("Görünümü &Adlandır..."), QStringLiteral("Adlandır"), QStringLiteral("Görünümü adlandır..."), ToolGlyph::Save,
-                  [this]() { promptSaveNamedView(); }),
-            uiCmd(QStringLiteral("Adlandırılmış &Görünüme Git..."), QStringLiteral("Gör. Git"), QStringLiteral("Adlandırılmış görünüme git..."), ToolGlyph::Open,
-                  [this]() { promptGotoNamedView(); }),
-            uiCmd(QStringLiteral("Adlandırılmış Görünümü S&il..."), QStringLiteral("Gör. Sil"), QStringLiteral("Adlandırılmış görünümü sil..."), ToolGlyph::Delete,
-                  [this]() { promptDeleteNamedView(); }),
-        }});
-    }
-
-    // ---- GÖRÜNÜŞLER: yeni görünüş pencereleri (MDI) ----
-    cats.push_back({QStringLiteral("Görünüş&ler"), QStringLiteral("Görünüşler"), {
-        uiKey(uiCmd(QStringLiteral("&2 Noktalı Görünüş (XY'ye dik)"), QStringLiteral("2N Gör."), QStringLiteral("2 noktalı görünüş — XY'ye dik (Ctrl+Shift+V)"), ToolGlyph::Plane,
-              [this]() { app_.startTwoPointViewCommand(); }), QStringLiteral("Ctrl+Shift+V"), true),
-        uiKey(uiCmd(QStringLiteral("&Plan Görünüşü (Z kotu...)"), QStringLiteral("Plan Gör."), QStringLiteral("Plan görünüşü — Z kotu ile (Ctrl+Shift+P)"), ToolGlyph::Extents,
-              [this]() { app_.startPlanViewCommand(); }), QStringLiteral("Ctrl+Shift+P"), true),
-        uiGroup(QStringLiteral("&Yeni Görünüş"), QStringLiteral("Yeni Görünüş"), QStringLiteral("Tekla tarzı yeni görünüş komutları"), ToolGlyph::Plane, {
-            uiCmd(QStringLiteral("&3 Noktalı Görünüş"), QString(), QString(), ToolGlyph::Plane,
-                  [this]() { app_.startThreePointViewCommand(); }),
-            uiCmd(QStringLiteral("&Çalışma Düzleminde Görünüş"), QString(), QString(), ToolGlyph::Plane,
-                  [this]() { app_.startViewOnWorkPlaneCommand(); }),
-            uiSep(),
-            uiCmd(QStringLiteral("Parça &Ön Düzlemi"), QString(), QString(), ToolGlyph::Plane,
-                  [this]() { app_.startPartPlaneViewCommand(PartPlane::Front); }),
-            uiCmd(QStringLiteral("Parça Ü&st Düzlemi"), QString(), QString(), ToolGlyph::Plane,
-                  [this]() { app_.startPartPlaneViewCommand(PartPlane::Top); }),
-            uiCmd(QStringLiteral("Parça &Uç Düzlemi"), QString(), QString(), ToolGlyph::Plane,
-                  [this]() { app_.startPartPlaneViewCommand(PartPlane::End); }),
-            uiCmd(QStringLiteral("Parça &Arka Düzlemi"), QString(), QString(), ToolGlyph::Plane,
-                  [this]() { app_.startPartPlaneViewCommand(PartPlane::Back); }),
-            uiCmd(QStringLiteral("Parça A&lt Düzlemi"), QString(), QString(), ToolGlyph::Plane,
-                  [this]() { app_.startPartPlaneViewCommand(PartPlane::Bottom); }),
-            uiSep(),
-            uiCmd(QStringLiteral("Parçanın &Varsayılan Görünüşleri (Ön/Üst/Uç)"), QString(), QString(), ToolGlyph::Plane,
-                  [this]() { app_.startPartDefaultViewsCommand(); }),
-            uiCmd(QStringLiteral("Parçanın 3&B Görünüşü"), QString(), QString(), ToolGlyph::Toggle3D,
-                  [this]() { app_.startPart3DViewCommand(); }),
-            uiSep(),
-            uiCmd(QStringLiteral("&Grid Çizgileri Boyunca Görünüşler"), QString(), QString(), ToolGlyph::Extents,
-                  [this]() { app_.startGridViewsCommand(); }),
-        }),
-    }});
-
-    // ---- GRID ----
-    cats.push_back({QStringLiteral("&Grid"), QStringLiteral("Grid"), {
-        uiCmd(QStringLiteral("&Yapı Gridi Oluştur..."), QStringLiteral("Grid Oluştur"), QStringLiteral("Yapı gridi oluştur..."), ToolGlyph::Extents,
-              [this]() { promptCreateGrid(); }),
-        uiCmd(QStringLiteral("Yapı &Gridleri..."), QStringLiteral("Gridler"), QStringLiteral("Yapı gridleri..."), ToolGlyph::Extents,
-              [this]() { promptGridManager(); }),
-    }});
-
-    // ---- PENCERE (yalnız menü) ----
-    cats.push_back({QStringLiteral("&Pencere"), QString(), {
-        uiCmd(QStringLiteral("&Döşe"), QString(), QString(), ToolGlyph::Extents,
-              [this]() { if (mdiArea_) mdiArea_->tileSubWindows(); }),
-        uiCmd(QStringLiteral("&Basamakla"), QString(), QString(), ToolGlyph::Extents,
-              [this]() { if (mdiArea_) mdiArea_->cascadeSubWindows(); }),
-        uiCmd(QStringLiteral("&Model görünüşünü büyüt"), QString(), QString(), ToolGlyph::Extents,
-              [this]() {
-                  if (modelSubWindow_) { modelSubWindow_->showMaximized(); mdiArea_->setActiveSubWindow(modelSubWindow_); }
-              }),
-        uiSep(),
-        uiCmd(QStringLiteral("Tüm görünüşleri &kapat"), QString(), QString(), ToolGlyph::Delete,
-              [this]() { closeAllTwoPointViews(); }),
-    }});
-
-    return cats;
 }
 
 void QtMainWindow::createMenus() {
-    // Tekla tarzi: ust menubar yerine sol ust kosedeki TEK "Menu" dugmesi.
-    // Tum menuler bu tek kok menuye (appMenu_) baglanir; dugme createToolbar'da
-    // ribbon'un en soluna InstantPopup olarak eklenir. Menubar gizlenir.
-    // Icerik TEK KAYNAK commandCategories() tablosundan uretilir (ribbon ile ayni).
+    // Tekla tarzi: menubar yerine sol ust kosedeki TEK "Menu" dugmesi.
+    // Icerik TEK KAYNAKTAN (command_catalog menu plani) uretilir.
     menuBar()->setVisible(false);
     appMenu_ = new QMenu(this);
     appMenu_->setTitle(QStringLiteral("Menü"));
+    commandCatalog_ = buildCommandCatalog();
+    buildCommandHandlers();
 
-    for (const CommandCategory& cat : commandCategories()) {
-        QMenu* menu = appMenu_->addMenu(cat.menuTitle);
-        fillUiMenu(menu, this, cat.entries, true);
+    for (const PlanTab& tab : commandCatalog_.menu.tabs()) {
+        QMenu* menu = appMenu_->addMenu(QString::fromUtf8(tab.title.c_str()));
+        for (const PlanGroup& group : tab.groups) fillMenu(menu, group.items);
+    }
+}
+
+void QtMainWindow::bindRegistryShortcuts() {
+    // Yalnizca "Host" teslimli kisayollar QShortcut olur (odak panelde/dialogda
+    // olsa da calissin). "Canvas" teslimliler tuvalde Win32 yonlendiricisinde
+    // cozulur; ikisi de AYNI kayittan gelir -> cift tanim yok.
+    for (const CommandDef& def : commandCatalog_.registry.commands()) {
+        if (def.shortcut.empty() || def.delivery != ShortcutDelivery::Host) continue;
+        auto* sc = new QShortcut(QKeySequence(QString::fromStdString(def.shortcut)), this);
+        QObject::connect(sc, &QShortcut::activated, this,
+                         [this, id = def.id]() { runCommandById(id); });
     }
 }
 
@@ -2505,126 +2342,24 @@ void QtMainWindow::createToolbar() {
         "QTabBar::tab { background: #1E1E24; color: #B8B8C0; padding: 4px 12px; }"
         "QTabBar::tab:selected { background: #2B2B30; color: #FFFFFF; }");
 
-    // Tekla tarzi sol ust kose MENU dugmesi: tum uygulama menuleri buradan
-    // acilir (menubar gizli). appMenu_ createMenus'ta kuruldu.
-    if (appMenu_) {
-        QToolButton* menuBtn = new QToolButton(ribbon);
-        menuBtn->setText(QStringLiteral("☰"));
-        menuBtn->setToolTip(QStringLiteral("Menü"));
-        menuBtn->setPopupMode(QToolButton::InstantPopup);
-        menuBtn->setMenu(appMenu_);
-        menuBtn->setStyleSheet(
-            "QToolButton { font-size: 12pt; color: #E8E8E8; border: none; "
-            "border-radius: 3px; padding: 2px 10px; background: transparent; }"
-            "QToolButton:hover { background: #3C3C44; }"
-            "QToolButton::menu-indicator { image: none; }");
-        ribbon->addWidget(menuBtn);
-    }
-
-    QTabWidget* tabs = new QTabWidget(ribbon);
-    tabs->setDocumentMode(true);
-    tabs->setTabPosition(QTabWidget::North);
-
-    // ---- Ribbon sekmeleri: createMenus ile AYNI tablodan (commandCategories) ----
-    // Her menü kategorisi = bir ribbon sekmesi, aynı sıra ve aynı içerik.
-    // Grup = açılır düğme, ayırıcı = ince dikey çizgi. Yalnız-menü kategoriler
-    // (Dosya, Pencere) sekme açmaz.
-    const QString tabBtnStyle = QStringLiteral(
-        "QToolButton { font-size: 7.5pt; color: #E8E8E8; border: none; border-radius: 3px; background: transparent; }"
-        "QToolButton:hover { background: #3C3C44; }"
-        "QToolButton:pressed { background: #23232B; }"
-        "QToolButton::menu-indicator { image: none; }");
-    for (const CommandCategory& cat : commandCategories()) {
-        if (cat.tabTitle.isEmpty()) continue;
-        QWidget* page = new QWidget();
-        QHBoxLayout* lay = new QHBoxLayout(page);
-        lay->setContentsMargins(4, 2, 4, 2);
-        lay->setSpacing(2);
-        for (const UiEntry& e : cat.entries) {
-            if (e.kind == UiEntry::Kind::Separator) {
-                QFrame* line = new QFrame();
-                line->setFrameShape(QFrame::VLine);
-                line->setFrameShadow(QFrame::Plain);
-                line->setStyleSheet(QStringLiteral("color: #3C3C44;"));
-                lay->addWidget(line);
-                continue;
-            }
-            QToolButton* btn = new QToolButton();
-            btn->setIcon(makeToolIcon(e.cmd.glyph));
-            btn->setIconSize(QSize(22, 22));
-            btn->setText(e.cmd.ribbonText.isEmpty() ? plainCommandLabel(e.cmd.menuText) : e.cmd.ribbonText);
-            btn->setToolButtonStyle(Qt::ToolButtonTextUnderIcon);
-            btn->setFixedSize(58, 48);
-            btn->setToolTip(e.cmd.tip.isEmpty() ? plainCommandLabel(e.cmd.menuText) : e.cmd.tip);
-            btn->setStyleSheet(tabBtnStyle);
-            if (e.kind == UiEntry::Kind::Group) {
-                btn->setPopupMode(QToolButton::InstantPopup);
-                QMenu* menu = new QMenu(btn);
-                // Kısayollar yalnız ana menüye bağlanır; açılır listede metin
-                // olarak gösterilir (aynı tuşa iki eylem = belirsiz kısayol).
-                std::vector<UiEntry> shown = e.children;
-                for (UiEntry& c : shown) c.cmd.bindShortcut = false;
-                fillUiMenu(menu, this, shown, false);
-                btn->setMenu(menu);
-            } else {
-                QObject::connect(btn, &QToolButton::clicked, this, e.cmd.run);
-            }
-            lay->addWidget(btn);
-        }
-        lay->addStretch();
-        tabs->addTab(page, cat.tabTitle);
-    }
-
-    ribbon->addWidget(tabs);
-
-    // ---- Persistent controls (right side, always visible) ----
-    // Spacer to push everything right
-    QWidget* spacer = new QWidget(ribbon);
-    spacer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
-    ribbon->addWidget(spacer);
-
-    // Quick Launch (Tekla tarzi): komut adi yaz -> Enter calistir.
-    QLineEdit* quick = new QLineEdit(ribbon);
-    quick->setPlaceholderText(QStringLiteral("Komut ara..."));
-    quick->setFixedWidth(160);
-    quick->setClearButtonEnabled(true);
-    quick->setStyleSheet(
-        "QLineEdit { background: #1E1E24; color: #E8E8E8; border: 1px solid #3C3C44; "
-        "border-radius: 3px; padding: 3px 6px; }");
-    // Komut listesi menü/ribbon tablosundan üretilir (her komut aranabilir) +
-    // birkaç Tekla takma adı.
-    struct QuickCmd { QString label; std::function<void()> run; };
-    std::vector<QuickCmd> cmds = {
-        {QStringLiteral("Kiriş"),          [this]() { app_.selectTool(DrawTool::Line); }},
-        {QStringLiteral("Yapı Gridi"),     [this]() { promptCreateGrid(); }},
-        {QStringLiteral("Ön Görünüş"),     [this]() { app_.setStandardView(StandardView::Front); }},
-        {QStringLiteral("Odaklan"),        [this]() { app_.focusOnSelection(); }},
-    };
+    // ---- SERIT (UI-2): platformdan bagimsiz RibbonWidget -------------------
+    // Sekmeler/gruplar/dugmeler ve hizli arama TEK KAYNAKTAN (komut katalogu)
+    // cizilir. Eski QTabWidget + elle dugme dongusu ve Quick Launch listesi
+    // KALDIRILDI: komut artik yalniz kayitta tanimli.
+    ribbon_ = new RibbonWidget(ribbon);
+    ribbon_->setMenu(appMenu_);
+    ribbon_->setQuickAccess({"file.save", "edit.undo", "edit.redo"});
+    ribbon_->setCatalog(commandCatalog_);
+    ribbon_->setHost(this);
     {
-        std::vector<std::pair<QString, std::function<void()>>> fromTable;
-        for (const CommandCategory& cat : commandCategories())
-            collectQuickCommands(cat.entries, fromTable);
-        for (auto& [label, run] : fromTable) {
-            if (label.isEmpty()) continue;
-            const bool dup = std::any_of(cmds.begin(), cmds.end(), [&](const QuickCmd& q) {
-                return q.label.compare(label, Qt::CaseInsensitive) == 0; });
-            if (!dup) cmds.push_back({label, run});
-        }
+        QWidget* holder = new QWidget(ribbon);
+        auto* holderLayout = new QVBoxLayout(holder);
+        holderLayout->setContentsMargins(0, 0, 0, 0);
+        holderLayout->setSpacing(0);
+        holderLayout->addWidget(ribbon_);
+        holder->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+        ribbon->addWidget(holder);
     }
-    QStringList cmdNames;
-    for (const auto& c : cmds) cmdNames << c.label;
-    QCompleter* quickCompleter = new QCompleter(cmdNames, quick);
-    quickCompleter->setCaseSensitivity(Qt::CaseInsensitive);
-    quickCompleter->setFilterMode(Qt::MatchContains);
-    quick->setCompleter(quickCompleter);
-    QObject::connect(quick, &QLineEdit::returnPressed, this, [this, quick, cmds]() {
-        const QString t = quick->text().trimmed();
-        for (const auto& c : cmds)
-            if (c.label.compare(t, Qt::CaseInsensitive) == 0) { c.run(); break; }
-        quick->clear();
-        if (HWND canvas = app_.activeCanvasHandle()) SetFocus(canvas);
-    });
-    ribbon->addWidget(quick);
 
     // Snap toggle with right-click context menu for snap modes
     QPushButton* snapBtn = new QPushButton("\xF0\x9F\x94\xB2 Snap", ribbon);
@@ -3062,7 +2797,10 @@ void QtMainWindow::createToolbar() {
         b->setToolTip(tip);
         b->setToolButtonStyle(Qt::ToolButtonTextUnderIcon);
         b->setFixedSize(46, 46);
-        b->setStyleSheet(tabBtnStyle);
+        b->setStyleSheet(QStringLiteral(
+            "QToolButton { font-size: 7.5pt; color: #E8E8E8; border: none;"
+            " border-radius: 3px; background: transparent; }"
+            "QToolButton:hover { background: #3C3C44; }"));
         QObject::connect(b, &QToolButton::clicked, this, action);
         sideBar->addWidget(b);
     };
@@ -3238,6 +2976,7 @@ void QtMainWindow::createDockPanels() {
     // ---- MODEL AGACI (Tekla model organizer esdegeri) ----
     QDockWidget* treeDock = new QDockWidget(QStringLiteral("Model Ağacı"), this);
     treeDock->setObjectName("modelTreeDock");
+    modelTreeDock_ = treeDock;  // panel.modelTree komutu bu dock'u acar/kapatir
     QWidget* treeWidget = new QWidget(treeDock);
     QVBoxLayout* treeLayout = new QVBoxLayout(treeWidget);
     treeLayout->setContentsMargins(4, 4, 4, 4);

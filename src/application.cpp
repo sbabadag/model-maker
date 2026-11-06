@@ -1,4 +1,5 @@
 #include "model_maker/application.hpp"
+#include "model_maker/command_catalog.hpp"
 #include "model_maker/component_input_builder.hpp"
 #include "model_maker/reload_mesh_guard.hpp"
 #include "model_maker/linear_delta.hpp"
@@ -88,6 +89,31 @@ enum CommandId {
     CmdProperties = 820, CmdPropsSearch = 821, CmdPropsList = 822, CmdPropsFilter = 823,
     CmdFilterPopup = 824, CmdFilterFind = 825, CmdFilterSelect = 826,
 };
+
+// UI-2: Win32 tus kodu -> komut kaydinin tus dili ("S", "F7", "DELETE", ...).
+std::string keyNameForVirtualKey(unsigned int vk) {
+    if (vk >= 'A' && vk <= 'Z') return std::string(1, static_cast<char>(vk));
+    if (vk >= '0' && vk <= '9') return std::string(1, static_cast<char>(vk));
+    if (vk >= VK_F1 && vk <= VK_F24) return "F" + std::to_string(vk - VK_F1 + 1);
+    switch (vk) {
+    case VK_DELETE: return "DELETE";
+    case VK_ESCAPE: return "ESC";
+    case VK_TAB: return "TAB";
+    case VK_RETURN: return "ENTER";
+    case VK_SPACE: return "SPACE";
+    case VK_HOME: return "HOME";
+    case VK_END: return "END";
+    case VK_PRIOR: return "PGUP";
+    case VK_NEXT: return "PGDN";
+    case VK_INSERT: return "INSERT";
+    case VK_BACK: return "BACKSPACE";
+    case VK_LEFT: return "LEFT";
+    case VK_RIGHT: return "RIGHT";
+    case VK_UP: return "UP";
+    case VK_DOWN: return "DOWN";
+    default: return {};
+    }
+}
 
 struct SnapChoice { SnapType type; const wchar_t* label; };
 constexpr std::array<SnapChoice, 15> snapChoices{{
@@ -1602,20 +1628,16 @@ LRESULT Application::handleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
         if (canvas_) SetFocus(canvas_);
         return 0;
     case WM_KEYDOWN:
-        // Canvas odagi yokken F10 dis pencereye duser — toggle'i burada da
-        // yakala (canvas odakliyken canvasProc halledince buraya gelmez).
-        if (wParam == VK_F6) { toggleGpuLines(); return 0; }
-        if (wParam == VK_F7) { toggleWorkPlaneGhost(); return 0; }
-        if (wParam == VK_F5) { runRenderBenchmark(); return 0; }
-        // TAB = TP kaydi; odak canvas'ta degilse (or. kurdele dugmesi aktif)
-        // tus buraya duser, kayit yine calissin.
+        // UI-2: tus -> komut cozumlemesi TEK KAYNAKTAN (komut kaydi).
+        // Canvas odakli degilken (or. serit dugmesi aktif) tus buraya duser.
         if (wParam == VK_TAB) { acquireTemporaryTrackingPoint(); return 0; }
+        dispatchKeyChord(static_cast<unsigned int>(wParam));
         return 0;
     case WM_SYSKEYDOWN:
         // F10 SISTEM TUSU: odak dis pencerede olsa da WM_SYSKEYDOWN gelir.
         // Polar tracking'in kayitli tusu F10 — menuye kaptirmadan yakala.
         if (wParam == VK_F10 && (GetKeyState(VK_MENU) & 0x8000) == 0) {
-            togglePolarTracking();
+            dispatchKeyChord(static_cast<unsigned int>(wParam));
             return 0;
         }
         return DefWindowProcW(window_, message, wParam, lParam);
@@ -1824,21 +1846,10 @@ LRESULT Application::handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lPa
         // TAB'i biz isleriz (TP kaydi) — odak degistirme zincirine birakma.
         return DLGC_WANTTAB;
     case WM_SYSKEYDOWN: {
-        // Alt+1..4: 3B gorsel stiller (AutoCAD VPMONITOR tarzi)
-        const bool altDown = (GetKeyState(VK_MENU) & 0x8000) != 0;
-        if (altDown) {
-            if (wParam == '1') { setVisualStyle(VisualStyle::Wireframe); return 0; }
-            if (wParam == '2') { setVisualStyle(VisualStyle::Transparent); return 0; }
-            if (wParam == '3') { setVisualStyle(VisualStyle::HiddenLine); return 0; }
-            if (wParam == '4') { setVisualStyle(VisualStyle::Solid); return 0; }
-        }
-        // F10 ve Alt+<tus> SISTEM TUSLARIDIR (MSDN: "the function keys other
-        // than F10" tek istisna) — Windows bunlari WM_KEYDOWN ile GONDERMEZ.
-        // Polar tracking F10'u WM_KEYDOWN'da bekliyordu; o dal hic
-        // calismiyordu, F10 kayitlarin arasinda sessizce kayboluyordu.
-        // Bilerek DefWindowProc'a BIRAKILMAZ: F10 menuyu acmasin, polar
-        // takip acilsin (AutoCAD davranisi).
-        if (wParam == VK_F10) { togglePolarTracking(); return 0; }
+        // Alt+1..4 (gorsel stil) ve F10 (polar) SISTEM TUSLARIDIR: Windows
+        // bunlari WM_KEYDOWN ile GONDERMEZ. Hepsi komut KAYDINDA tanimli —
+        // burada ikinci bir tus tablosu YOK (tek kaynak).
+        if (dispatchKeyChord(static_cast<unsigned int>(wParam))) return 0;
         // Alt+harf vb. diger sistem tuslari (menu hizlandiricilari, Alt+Tab)
         // DefWindowProc'a birakilir; aksi halde bu dal switch'ten cikip fonksiyon
         // sonuna duserdi ve LRESULT dondurmeden biterdi (-Wreturn-type).
@@ -1898,103 +1909,12 @@ LRESULT Application::handleCanvasMessage(UINT message, WPARAM wParam, LPARAM lPa
             // TAB = gecici izleme noktasi (TP) kaydet (polar tracking).
             acquireTemporaryTrackingPoint();
             return 0;  // Tab odak degistirmesin; WM_CHAR'\t' de yok sayilir.
-        } else if (wParam == VK_F3) snapEnabled_ = !snapEnabled_;
-        else if (wParam == VK_F8) {
-            orthoEnabled_ = !orthoEnabled_;
-            if (orthoEnabled_) {
-                polarTrackingEnabled_ = false;
-                clearTemporaryTracking();
-            }
+        } else {
+            // UI-2: TUM komut tuslari (harf, F-tusu, Ctrl+Shift+...) TEK
+            // KAYNAKTAN cozulur. Eski 30+ dalli if/else zinciri KALDIRILDI:
+            // 'G' hem Kolon hem Fillet'e bagliydi ve Fillet dali OLU kaliyordu.
+            dispatchKeyChord(static_cast<unsigned int>(wParam));
         }
-        else if (wParam == VK_F6) toggleGpuLines();
-        else if (wParam == VK_F7) toggleWorkPlaneGhost();
-        else if (wParam == VK_F9) gridSnapEnabled_ = !gridSnapEnabled_;
-        // VK_F10 buraya NORMALDE HIC DUSMEZ (yukaridaki WM_SYSKEYDOWN'a gelir).
-        // Bazi tus esleyiciler/sanat sanal ortamlar yine de KEYDOWN uretebiliyor:
-        // yedek dal, polar yine de acilir.
-        else if (wParam == VK_F10) togglePolarTracking();
-        else if (wParam == VK_F12) dynamicInputEnabled_ = !dynamicInputEnabled_;
-        else if (wParam == VK_F2) {
-            // Gorsel stil dongusu: Wireframe -> Solid -> Transparent
-            visualStyle_ = visualStyle_ == VisualStyle::Wireframe ? VisualStyle::Solid
-                         : visualStyle_ == VisualStyle::Solid ? VisualStyle::Transparent
-                         : visualStyle_ == VisualStyle::Transparent ? VisualStyle::HiddenLine
-                         : VisualStyle::Wireframe;
-            updateControls(); invalidateCanvas();
-        }
-        else if (wParam == VK_F11) { performanceOverlayEnabled_ = !performanceOverlayEnabled_; invalidateCanvas(); }
-        else if (wParam == VK_F5) runRenderBenchmark();
-        else if (wParam == 'Z' && (GetKeyState(VK_CONTROL) & 0x8000)) undo();
-        else if (wParam == 'Y' && (GetKeyState(VK_CONTROL) & 0x8000)) redo();
-        else if (wParam == 'N' && (GetKeyState(VK_CONTROL) & 0x8000)) newDocument();
-        else if (wParam == 'O' && (GetKeyState(VK_CONTROL) & 0x8000)) openDocument();
-        else if (wParam == 'S' && (GetKeyState(VK_CONTROL) & 0x8000)) saveDocument();
-        // STANDART GORUNUSLER: Ctrl+1..7 = On/Arka/Sol/Sag/Ust/Alt/ISO.
-        else if (wParam == '1' && (GetKeyState(VK_CONTROL) & 0x8000))
-            setStandardView(StandardView::Front);
-        else if (wParam == '2' && (GetKeyState(VK_CONTROL) & 0x8000))
-            setStandardView(StandardView::Back);
-        else if (wParam == '3' && (GetKeyState(VK_CONTROL) & 0x8000))
-            setStandardView(StandardView::Left);
-        else if (wParam == '4' && (GetKeyState(VK_CONTROL) & 0x8000))
-            setStandardView(StandardView::Right);
-        else if (wParam == '5' && (GetKeyState(VK_CONTROL) & 0x8000))
-            setStandardView(StandardView::Top);
-        else if (wParam == '6' && (GetKeyState(VK_CONTROL) & 0x8000))
-            setStandardView(StandardView::Bottom);
-        else if (wParam == '7' && (GetKeyState(VK_CONTROL) & 0x8000))
-            setStandardView(StandardView::Isometric);
-        else if (wParam == 'L') selectTool(DrawTool::Line);
-        else if (wParam == 'P') selectTool(DrawTool::Polyline);
-        else if (wParam == 'A') selectTool(DrawTool::Rectangle);
-        else if (wParam == 'C') selectTool(DrawTool::Circle);
-        else if (wParam == 'D') activateDivide();
-        else if (wParam == 'F') focusOnSelection();
-        else if (wParam == 'H') selectTool(DrawTool::Face3D);
-        else if (wParam == 'G') selectTool(DrawTool::Column);
-        else if (wParam == 'M') startTransformCommand(TransformCommand::Move);
-        else if (wParam == 'K') startTransformCommand(TransformCommand::Copy);
-        else if (wParam == 'O' && !(GetKeyState(VK_CONTROL) & 0x8000))
-            startTransformCommand(TransformCommand::Offset);
-        else if (wParam == 'I') startTransformCommand(TransformCommand::Mirror);
-        else if (wParam == 'T') startTransformCommand(TransformCommand::Trim);
-        else if (wParam == 'E') startTransformCommand(TransformCommand::Extend);
-        else if (wParam == 'G') startTransformCommand(TransformCommand::Fillet);
-        else if (wParam == 'V') toggle3DView();
-        else if (wParam == 'W') startWorkPlaneCommand();
-        else if (wParam == 'B') addCube();
-        else if (wParam == 'Y') addPyramid();
-        else if (wParam == 'S') addCylinder();
-        else if (wParam == 'X') {
-            // In the Qt shell X opens the actual visible QComboBox. Retain
-            // the Win32 popup only as a standalone Application fallback.
-            if (profilePickerCallback_) profilePickerCallback_();
-            else toggleProfilePopup();
-        }
-#ifdef MM_HAS_OCC
-        else if (wParam == 'J') {
-            if (GetKeyState(VK_CONTROL) < 0) addBooleanCommon();
-            else if (GetKeyState(VK_SHIFT) < 0) addBooleanCut();
-            else addBooleanFuse();
-        }
-#endif
-        else if (wParam == 'R' && mode_ == EditMode::View3D) {
-            if (GetKeyState(VK_CONTROL) & 0x8000) {
-                // Ctrl+R: gorunumu sifirla (eski R davranisi).
-                resetView();
-            } else if (viewRotationLocked()) {
-                // Gorunus penceresi: yon sabit -> "yeniden sigdir" (redraw view).
-                resetView();
-            } else {
-                // R: EKRAN DONUS MERKEZI sec (Tekla benzeri). Secilen nokta
-                // kullanici yeni merkez secene kadar Ctrl+sol tus suruklemenin
-                // pivotu olur.
-                startRotateCenterCommand();
-            }
-        }
-        else if (wParam == VK_DELETE) startTransformCommand(TransformCommand::Delete);
-        else if (wParam == 'S' && (GetKeyState(VK_CONTROL) & 0x8000)) saveDocument();
-        else if (wParam == 'O' && (GetKeyState(VK_CONTROL) & 0x8000)) openDocument();
         updateHover(cursorScreen_.x, cursorScreen_.y); updateControls(); invalidateCanvas();
         return 0;
     case WM_SIZE:
@@ -7180,10 +7100,11 @@ void Application::startGridViewsCommand() {
 }
 
 void Application::startRotateCenterCommand() {
-    // Gorunus penceresinde yon sabit (kilitli) — donus merkezi anlamsiz.
+    // Gorunus penceresinde yon sabit (kilitli): R = YENIDEN SIGDIR (eski tus
+    // dalinin davranisi; UI-2'de tus dali kalktigi icin komut govdesine
+    // tasindi — davranis degismedi).
     if (viewRotationLocked()) {
-        MessageBeep(MB_ICONWARNING);
-        publishStatus(L"Bu pencerede görünüş yönü sabit — döndürme merkezi kullanılamaz");
+        resetView();
         return;
     }
     // Nokta secme akisini paylas (snap + track + Esc/sag tik iptal aynen
@@ -12555,6 +12476,37 @@ void Application::runRenderBenchmark() {
     mode_ = originalMode;
     if (statusCallback_) statusCallback_(L"Benchmark tamamlandı — render.log'a bakın");
     updateStatus();
+    invalidateCanvas();
+}
+
+bool Application::dispatchKeyChord(unsigned int virtualKey) {
+    // ESC ve TAB yerel girdi temizligi/odak davranisi icin canvas'ta kalir
+    // (asagidaki ozel dallar). Diger TUM tuslar komut KAYDINDAN cozulur.
+    if (virtualKey == VK_ESCAPE || virtualKey == VK_TAB) return false;
+    const std::string key = keyNameForVirtualKey(virtualKey);
+    if (key.empty()) return false;
+    if (!commandDispatcher_) return false;   // bagli degilse tus yutulmaz
+
+    static const mm::CommandCatalog catalog = mm::buildCommandCatalog();
+    std::string chord;
+    if (GetKeyState(VK_CONTROL) & 0x8000) chord += "Ctrl+";
+    if (GetKeyState(VK_MENU) & 0x8000) chord += "Alt+";
+    if (GetKeyState(VK_SHIFT) & 0x8000) chord += "Shift+";
+    chord += key;
+
+    const mm::CommandDef* def = catalog.registry.commandForShortcut(chord);
+    if (!def) return false;
+    return commandDispatcher_(def->id);
+}
+
+void Application::toggleDynamicInput() {
+    dynamicInputEnabled_ = !dynamicInputEnabled_;
+    updateControls();
+    invalidateCanvas();
+}
+
+void Application::togglePerformanceOverlay() {
+    performanceOverlayEnabled_ = !performanceOverlayEnabled_;
     invalidateCanvas();
 }
 

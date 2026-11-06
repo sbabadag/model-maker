@@ -68,22 +68,20 @@ for fn in ("void Camera::reset", "void Camera::setView", "void Camera::setViewBa
     if "orbitPivot_.reset()" not in top_level(camera_cpp, fn):
         failures.append(f"{fn}: gorunus degisiminde pivot temizlenmiyor")
 
-# ------------------------------------------------------- 2) R tusu dali
+# ------------------------------------------------------- 2) R komutu
+# UI-2: R tusu artik tus dalinda DEGIL, komut kaydinda (view.rotateCenter) ve
+# kilitli gorunus pencere davranisi komut GOVDESINDE yasar.
+catalog = (root / "src/command_catalog.cpp").read_text(encoding="utf-8")
 canvas = top_level(app, "LRESULT Application::handleCanvasMessage")
-m = re.search(r"wParam == 'R' && mode_ == EditMode::View3D\)\s*\{(.*?)\n        \}", canvas, re.S)
-if not m:
-    failures.append("R tusu dali (WM_KEYDOWN) bulunamadi")
-else:
-    branch = m.group(1)
-    if "startRotateCenterCommand()" not in branch:
-        failures.append("R tusu donus merkezi secmeye gitmiyor")
-    if "resetView()" not in branch:
-        failures.append("Ctrl+R / kilitli pencere icin resetView() yok "
-                        "(eski 'gorunumu sifirla' kaybolur)")
-    if "VK_CONTROL" not in branch:
-        failures.append("R dali Ctrl'i ayirt etmiyor (Ctrl+R = sifirla)")
-    if "viewRotationLocked" not in branch:
-        failures.append("R dali kilitli (gorunus) pencereyi ayirt etmiyor")
+if '.key("R")' not in catalog:
+    failures.append("komut kaydinda R -> view.rotateCenter eslemesi yok")
+if '.key("Ctrl+R", SD::Host)' not in catalog:
+    failures.append("komut kaydinda Ctrl+R -> view.reset eslemesi yok (eski 'sifirla' kaybolur)")
+rotate_body = top_level(app, "void Application::startRotateCenterCommand")
+if "startWorkPlaneCommand()" not in rotate_body:
+    failures.append("R komutu donus merkezi secmeye gitmiyor")
+if "viewRotationLocked" not in rotate_body or "resetView()" not in rotate_body:
+    failures.append("kilitli (gorunus) pencerede R = yeniden sigdir davranisi yok")
 
 # ------------------------------------------------- 3) Ctrl+sol tus jesti
 down = top_level(app, "void Application::onLeftButtonDown")
@@ -167,8 +165,9 @@ if "clearRotateCenter" not in qt:
     failures.append("menu: 'Donus Merkezini Temizle' baglantisi yok")
 if "resetView" not in qt:
     failures.append("menu: 'Gorunumu Sifirla (Ctrl+R)' baglantisi yok")
-if 'Ctrl+R' not in qt:
-    failures.append("menu: Ctrl+R kisayolu tanimli degil")
+# UI-2: kisayol metni artik kayitta; Qt tarafi kayittan baglar (tek kaynak).
+if 'Ctrl+R' not in catalog:
+    failures.append("komut kaydinda Ctrl+R kisayolu tanimli degil")
 
 # ------------------------------------------------------- 7) davranis (govde)
 bodies = (top_level(app, "void Application::clearRotateCenter") + "\n" +
