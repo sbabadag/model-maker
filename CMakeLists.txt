@@ -133,7 +133,9 @@ set(MODELMAKER_QT_SOURCES
     include/model_maker/component_option_icons.hpp
     include/model_maker/component_dialog_widget.hpp
     src/drawing_sheet_widget.cpp
-    include/model_maker/drawing_sheet_widget.hpp)
+    include/model_maker/drawing_sheet_widget.hpp
+    src/ribbon_widget.cpp
+    include/model_maker/ribbon_widget.hpp)
 set(MODELMAKER_QT_MISSING "")
 foreach(qt_file ${MODELMAKER_QT_SOURCES})
     if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/${qt_file}")
@@ -325,6 +327,19 @@ endif()
 
 include(CTest)
 if(BUILD_TESTING)
+    # Qt exe kaynak kapısı: kabuk kaynaklarının kullandığı widget .cpp'si exe
+    # hedefinde (MODELMAKER_QT_SOURCES) ya da bir kütüphanede olmalı. Aksi halde
+    # Windows exe linki tanımsız sembol verir (ribbon_widget yalnız test hedefine
+    # eklenmişti). Hata Linux'ta görünmez (exe WIN32-only) — burada yakalanır.
+    get_target_property(_mmf_srcs mm_foundation SOURCES)
+    get_target_property(_mmc_srcs mm_component_contract SOURCES)
+    get_target_property(_core_srcs model_maker_core SOURCES)
+    add_test(NAME model_maker_qt_exe_sources_ok
+        COMMAND ${CMAKE_COMMAND}
+            -DSRC_DIR=${CMAKE_CURRENT_SOURCE_DIR}
+            "-DQT_SOURCES=${MODELMAKER_QT_SOURCES}"
+            "-DLIB_SOURCES=${_mmf_srcs};${_mmc_srcs};${_core_srcs}"
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/check_qt_exe_sources.cmake)
     # Portable harness compiles actual Win32 gumball method bodies with only
     # the UI boundary substituted. Native Qt/Win32 visual smoke is separate.
     if(UNIX AND NOT CMAKE_CROSSCOMPILING)
