@@ -142,5 +142,23 @@ for dead in ("onViewCubePaint", "invalidateViewCube", "viewCubeProc", "handleVie
              "HWND viewCube_{}"):
     check(dead not in apph, f"olu bildirim kaldirildi: {dead}")
 
+# --- 10) B5: view cube tiklamasi SECIM ve AKTIF KOMUTU bozmaz -------------
+# Kural (Selahattin): kup yuz/kenar/kose/ISO tiklamayi kendisi tuketir;
+# secim ve aktif komut DEGISMEZ. applyViewCubeTarget yalniz KAMERA degistirmeli,
+# cancelTransformCommand/cancelDrawing (ikisi de selectedModels_.clear yapar)
+# ve drawingActive_=false (aktif cizimi kapatir) burada OLMAMALI.
+vc_target = slice_between(app, "void Application::applyViewCubeTarget(",
+                          "void Application::finishViewCubeAnimation(")
+check("cancelTransformCommand()" not in vc_target,
+      "applyViewCubeTarget aktif transform komutunu IPTAL ETMEZ (B5)")
+check("cancelDrawing()" not in vc_target,
+      "applyViewCubeTarget cizimi iptal edip SECIMI SILMEZ (B5)")
+check("cancelWorkPlaneCommand()" not in vc_target,
+      "applyViewCubeTarget calisma duzlemi secimini IPTAL ETMEZ (B5)")
+check("profileGrip_.reset()" not in vc_target,
+      "applyViewCubeTarget profil uc tutamagini IPTAL ETMEZ (B5)")
+check("drawingActive_ = false" not in vc_target,
+      "applyViewCubeTarget aktif cizim durumunu KAPATMAZ (B5)")
+
 print(f"\n{checks} kontrol, {failures} hata")
 sys.exit(1 if failures else 0)

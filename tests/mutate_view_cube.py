@@ -64,6 +64,9 @@ MUTATIONS = [
     ("S3 Front yuzu eski (normal ile uyumsuz) kumeye doner", VC,
      "{StandardView::Front,  {3, 2, 6, 7}, {0.0,  1.0, 0.0}}",
      "{StandardView::Front,  {4, 7, 6, 5}, {0.0,  1.0, 0.0}}", "shape"),
+    ("S4 kup secimi siler (applyViewCubeTarget'a cancelDrawing eklenir)", APP,
+     "    viewCubeAnimTarget_ = target;",
+     "    cancelDrawing(); viewCubeAnimTarget_ = target;", "shape"),
 ]
 
 

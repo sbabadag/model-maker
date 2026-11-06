@@ -3666,10 +3666,11 @@ void Application::applyViewCubeTarget(const ViewCubeTarget& target) {
         return;
     }
     cancelZoomWindow2D();
-    if (workPlanePicking_) cancelWorkPlaneCommand();
-    if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
-    cancelDrawing();
-    profileGrip_.reset();
+    // B5: kup tiklamasi yalniz KAMERA degistirir — secim ve aktif komut
+    // KORUNUR. cancelTransformCommand/cancelDrawing (selectedModels_.clear)
+    // ve drawingActive_=false burada OLMAMALI; aksi halde komut ortasinda
+    // (or. Tasi, ilk nokta alindi) kupa tiklamak komutu iptal edip secimi
+    // silerdi. Gecis animasyonu yalniz rotasyonu yazar.
     hover_.reset();
 
     viewCubeAnimTarget_ = target;
@@ -3678,7 +3679,6 @@ void Application::applyViewCubeTarget(const ViewCubeTarget& target) {
     viewCubeAnimT_ = 0.0;
     viewCubeAnimActive_ = true;
     mode_ = EditMode::View3D;
-    drawingActive_ = false;
     ensureSpaceMouseStarted();
     // 16 ms kare: ~0.09 adim -> ~11 kare ~180 ms yumusak gecis.
     SetTimer(window_, 9, 16, nullptr);
