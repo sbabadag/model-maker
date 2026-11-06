@@ -90,7 +90,6 @@ enum CommandId {
     CmdFilterPopup = 824, CmdFilterFind = 825, CmdFilterSelect = 826,
 };
 
-struct SnapChoice { SnapType type; const wchar_t* label; };
 constexpr std::array<SnapChoice, 15> snapChoices{{
     {SnapType::Endpoint, L"Endpoint"}, {SnapType::Midpoint, L"Midpoint"},
     {SnapType::Center, L"Center"}, {SnapType::GeometricCenter, L"Geometric Center"},
@@ -185,6 +184,14 @@ bool forceGdiRequested() {
     return length > 0 && length < 8 && value[0] != L'0';
 }
 } // namespace
+
+// UI-6a: Qt snap menusu ve Win32 paneli ayni listeden beslenir (tek kaynak).
+// Anonim namespace DISINDA tanimlanmali: uye fonksiyonu anonim namespace icinde
+// tanimlamak "not in namespace enclosing Application" hatasi verir.
+const std::array<SnapChoice, Application::kSnapChoiceCount>&
+Application::snapTypeChoices() noexcept {
+    return snapChoices;
+}
 
 Application::Application(HINSTANCE instance, HWND /*parentCanvas*/) : instance_(instance) {
     enabledSnapTypes_.fill(true);

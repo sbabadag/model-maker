@@ -78,9 +78,10 @@ MUTATIONS = [
      "using SnapTypeMask = std::array<bool, static_cast<std::size_t>(SnapType::ProfileCenter) + 1>;",
      "using SnapTypeMask = std::array<bool, static_cast<std::size_t>(SnapType::Parallel) + 1>;"),
 
-    ("M7 Qt kurdele menusunden madde kaldirildi (kapatilamaz)",
+    ("M7 Qt kurdele menusu tek kaynak listeden koptu (madde uretmiyor)",
      "py", QT_CPP,
-     '        addSnapItem("⊙ Profile Center",  SnapType::ProfileCenter);\n',
+     "        for (const SnapChoice& choice : app_.snapTypeChoices())\n"
+     "            addSnapItem(QString::fromWCharArray(choice.label), choice.type);\n",
      ""),
 
     ("M8 Win32 OSNAP listesindeki tur etiketi degistirildi",

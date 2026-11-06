@@ -80,11 +80,13 @@ check("static constexpr std::size_t kSnapChoiceCount = 15;" in app_header,
 check("std::array<HWND, kSnapChoiceCount> snapTypeCheckboxes_{};" in app_header,
       "dizi sabiti kullanir (ciplak sayi kalmadi)")
 
-# --- 5) Qt kurdele menusu ----------------------------------------------------
-check('addSnapItem("⊙ Profile Center",  SnapType::ProfileCenter);' in qt_source,
-      "Qt kurdele snap menusunde madde var (ac/kapa)")
-check(qt_source.count("SnapType::ProfileCenter") == 1,
-      "Qt tarafinda tam olarak BIR kez bagli")
+# --- 5) Qt kurdele menusu (UI-6a: tek kaynak liste) --------------------------
+check("for (const SnapChoice& choice : app_.snapTypeChoices())" in qt_source,
+      "Qt snap menusu TEK KAYNAK listeden beslenir (Win32 paneliyle ayni 15 tur)")
+check("addSnapItem(QString::fromWCharArray(choice.label), choice.type);" in qt_source,
+      "Qt menude her tur kendi etiketinden eklenir (ikinci elle liste YOK)")
+check('addSnapItem("⊙ Profile Center"' not in qt_source,
+      "Qt menude ELLE tur listesi kalmadi (tek kaynak; kopya liste olmaz)")
 
 print()
 if failures:

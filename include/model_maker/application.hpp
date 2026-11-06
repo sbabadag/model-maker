@@ -88,6 +88,11 @@ class SpaceMouseNav;
 // SIZMAZ (guard'li TopoDS_Shape.hxx disinda).
 class OccSolidStore;
 
+// UI-6a SNAP TEKILLESTIRME: tek kaynak tur listesi. Win32 onay kutusu paneli
+// (snapTypeCheckboxes_) ve Qt snap menusu AYNI listeden beslenir — bir tarafa
+// tur eklenip digeri unutulursa liste farklilasir (17 tipin tamami tek durum).
+struct SnapChoice { SnapType type; const wchar_t* label; };
+
 class Application {
 public:
     explicit Application(HINSTANCE instance, HWND parentCanvas = nullptr);
@@ -776,6 +781,8 @@ public:
     // icindeki `snapChoices` listesi bu sabitle DERLEME ZAMANINDA karsilastirilir
     // (static_assert) — bir tarafa tur eklenip digeri unutulursa derleme durur.
     static constexpr std::size_t kSnapChoiceCount = 15;
+    // UI-6a: snap tur listesine TEK KAYNAKTAN erisim (Win32 paneli + Qt menusu).
+    static const std::array<SnapChoice, kSnapChoiceCount>& snapTypeChoices() noexcept;
 
 private:
     // DIVIDE 1-NOKTA MODU: secili modeller arasinda TAM iki adet point

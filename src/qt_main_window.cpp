@@ -2426,16 +2426,10 @@ void QtMainWindow::createToolbar() {
             act->setChecked(idx < mask.size() && mask[idx]);
             QObject::connect(act, &QAction::triggered, this, [this, type]() { app_.toggleSnapType(type); });
         };
-        addSnapItem("🔷 Endpoint",       SnapType::Endpoint);
-        addSnapItem("🔶 Midpoint",       SnapType::Midpoint);
-        addSnapItem("⏺  Center",         SnapType::Center);
-        addSnapItem("⊞ Intersection",    SnapType::Intersection);
-        addSnapItem("⫡ Nearest",         SnapType::Nearest);
-        addSnapItem("⫡ Perpendicular",   SnapType::Perpendicular);
-        addSnapItem("∠ Tangent",         SnapType::Tangent);
-        addSnapItem("● Node",            SnapType::Node);
-        addSnapItem("∥ Parallel",        SnapType::Parallel);
-        addSnapItem("⊙ Profile Center",  SnapType::ProfileCenter);
+        // UI-6a SNAP TEKILLESTIRME: tek kaynak listeden beslenir — Qt menusu ile
+        // Win32 onay kutusu paneli AYNI 15 turu gosterir (17 tipin tamami tek durum).
+        for (const SnapChoice& choice : app_.snapTypeChoices())
+            addSnapItem(QString::fromWCharArray(choice.label), choice.type);
         menu.exec(snapBtn->mapToGlobal(pos));
     });
     ribbon->addWidget(snapBtn);
