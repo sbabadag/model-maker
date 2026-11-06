@@ -9287,7 +9287,16 @@ void Application::flushStartupMessage() {
     pendingStartupMessage_.clear();
 }
 
-void Application::invalidateCanvas() { if (canvas_) InvalidateRect(canvas_, nullptr, FALSE); }
+void Application::invalidateCanvas() {
+    if (canvas_) InvalidateRect(canvas_, nullptr, FALSE);
+    // TEK YER (B2): belge/secim degisti -> diger ACIK gorunumler de tazelenir.
+    // Qt komut yonlendiricisi (ribbon, Ctrl+Z/Y vb. Host kisayollari) belgeyi
+    // canvas mesaj dongusunden GECMEDEN degistirir; routeCanvasMessage'in
+    // syncPassiveViewports cagrisi o yola HIC ulasmaz. Bu yuzden gecici/suresiz
+    // bayat gorunum kalirdi ("cizgi komut bitince bazi gorunumlerde cizilmiyor").
+    // Imza-gecti ucuz: views_.size()<2 veya imza degismediyse aninda doner.
+    syncPassiveViewports();
+}
 
 #ifdef _WIN32
 void Application::ensureOccBridge() {

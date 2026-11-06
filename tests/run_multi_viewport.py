@@ -38,6 +38,7 @@ methods = [
     "LRESULT Application::routeCanvasMessage",
     "void Application::syncPassiveViewports",
     "void Application::invalidateOtherViewports",
+    "void Application::invalidateCanvas",
     "HWND Application::createViewport",
     "void Application::removeViewport",
     "void Application::destroyViewport",
@@ -173,7 +174,7 @@ public:
     void paintPassiveViewport(std::size_t index) { painted.push_back(index); }
     void gumballCancelDrag() { ++gumballCancels; gumballDrag_ = GumballHandle::None; }
     void updateControls() { ++controls; }
-    void invalidateCanvas() { if (canvas_) ++g_invalidated[canvas_]; }
+    void invalidateCanvas();
     // Yon kilidi ve komut yan etkileri (gercek govdeler bunlari cagirir).
     bool viewRotationLocked() const noexcept { return viewDef_.has_value(); }
     void cancelZoomWindow2D() {}
@@ -289,6 +290,16 @@ int main() {
     a.selectedModels_ = {0};
     a.syncPassiveViewports(); // Qt kisayolu (Ctrl+Z vb.) yolu
     check(g_invalidated[mainCanvas] == 1, "selection change (from Qt shortcut path) repaints other views");
+
+    // 6b) TEK YER (B2): invalidateCanvas — belge degisti -> diger acik gorunum
+    // de tazelenir. Qt/Host kisayol yolu (ribbon komutu, Ctrl+Z/Y) belgeyi canvas
+    // mesaj dongusunden GECMEDEN degistirir; invalidateCanvas syncPassiveViewports
+    // cagirmazsa diger gorunum bayat kalir ("cizgi bazi gorunumlerde cizilmiyor").
+    a.routeCanvasMessage(vc, WM_LBUTTONDOWN, 0, 0);  // vc aktif, imza oturur
+    g_invalidated.clear();
+    a.document_.addModel(WireframeModel::line({0, 0, 0}, {2, 0, 0}));  // belge rev artti
+    a.invalidateCanvas();  // Qt yolu: yalniz invalidateCanvas (routeCanvasMessage YOK)
+    check(g_invalidated[mainCanvas] >= 1, "invalidateCanvas (Host kisayol yolu) diger gorunumu tazeler");
 
     // 7) Derinlik: aktif gorunuste filtre aninda guncellenir.
     a.setViewportDepth(vc, 1000, 6000);
