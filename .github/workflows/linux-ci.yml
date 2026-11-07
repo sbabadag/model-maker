@@ -1,0 +1,32 @@
+name: Linux CI
+
+on:
+  push:
+    branches: [feature/component-contract, main]
+  pull_request:
+    branches: [feature/component-contract, main]
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake ninja-build g++ qt6-base-dev libopencascade-dev \
+            python3 libgl1-mesa-dev libegl1 libxkbcommon0
+
+      - name: Configure
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Test
+        env:
+          QT_QPA_PLATFORM: offscreen
+          QT_OPENGL: software
+        run: ctest --test-dir build --output-on-failure
