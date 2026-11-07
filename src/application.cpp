@@ -10294,7 +10294,7 @@ void Application::applyColumnLevels(double top, double bottom) {
 
 #ifdef MM_HAS_OCC
 
-void Application::setSelectedEntityProfileRotation(double degrees) {
+void Application::setSelectedEntityProfileRotation(double degrees, bool openUndo) {
     // TOPLU ROTASYON: secimdeki TUM profilli uyelere ayni aci uygulanir
     // (override). Her kati kendi ekseninde yeniden uretilir; eksen
     // koordinatlari katinin uzerinde tasindigindan indeks kaymalari ve
@@ -10378,7 +10378,7 @@ void Application::setSelectedEntityProfileRotation(double degrees) {
     }
 
     // 3) Her hedefi kendi ekseninde yeniden uret ve YERINE koy.
-    pushUndoSnapshot();
+    if (openUndo) pushUndoSnapshot();
     std::size_t applied = 0;
     for (std::size_t k = 0; k < targets.size(); ++k) {
         const auto& info = infos[k];
@@ -10469,7 +10469,7 @@ void Application::setSelectedEntityProfileRotation(double degrees) {
     invalidateCanvas();
 }
 
-void Application::setSelectedEntityColumnLevels(double top, double bottom) {
+void Application::setSelectedEntityColumnLevels(double top, double bottom, bool openUndo) {
     // KULLANICI: "props taki ozellikler secili elemana saglikli uygulanmiyor,
     // ozellikle KOLON BOYUNU degistirmiyor". Props panelindeki Kolon Us
     // Alt kutulari eskiden YALNIZCA sonraki kolon yerlesimi icin saklaniyordu
@@ -10520,7 +10520,7 @@ void Application::setSelectedEntityColumnLevels(double top, double bottom) {
         return;
     }
 
-    pushUndoSnapshot();
+    if (openUndo) pushUndoSnapshot();
     std::size_t applied = 0;
     for (const auto& target : targets) {
         // Stil alanlari replaceModel'DEN ONCE kopyalanir.
@@ -10575,12 +10575,12 @@ void Application::setSelectedEntityColumnLevels(double top, double bottom) {
 
 #else // !MM_HAS_OCC - kati (BRep) profil rotasyonu yok
 
-void Application::setSelectedEntityProfileRotation(double) {
+void Application::setSelectedEntityProfileRotation(double, bool) {
     // OCC kapali (vcpkg/OCCT yok): kati yeniden uretilemez, komut etkisiz.
     publishStatus(L"Kati profil rotasyonu icin OpenCASCADE gerekli (OCC kapali)");
 }
 
-void Application::setSelectedEntityColumnLevels(double, double) {
+void Application::setSelectedEntityColumnLevels(double, double, bool) {
     publishStatus(L"Kolon kotu degisikligi icin OpenCASCADE gerekli (OCC kapali)");
 }
 
@@ -10600,6 +10600,42 @@ std::string Application::selectedEntityMaterial() const {
     return document_.models()[selectedModels_.front()].properties().material;
 }
 
+std::string Application::selectedEntityName() const {
+    if (selectedModels_.empty()) return {};
+    const auto& models = document_.models();
+    std::string name;
+    bool first = true;
+    for (const auto index : selectedModels_) {
+        if (index >= models.size()) continue;
+        const auto current = models[index].properties().name;
+        if (first) {
+            name = current;
+            first = false;
+        } else if (current != name) {
+            return {}; // coklu secimde farkli deger -> bos
+        }
+    }
+    return name;
+}
+
+std::string Application::selectedEntityFinish() const {
+    if (selectedModels_.empty()) return {};
+    const auto& models = document_.models();
+    std::string finish;
+    bool first = true;
+    for (const auto index : selectedModels_) {
+        if (index >= models.size()) continue;
+        const auto current = models[index].properties().finish;
+        if (first) {
+            finish = current;
+            first = false;
+        } else if (current != finish) {
+            return {}; // coklu secimde farkli deger -> bos
+        }
+    }
+    return finish;
+}
+
 void Application::setSelectedEntityLineType(const std::string& lineType) {
     if (selectedModels_.empty()) return;
     document_.setModelLineType(selectedModels_, lineType);
@@ -10609,7 +10645,65 @@ void Application::setSelectedEntityLineType(const std::string& lineType) {
 
 void Application::setSelectedEntityMaterial(const std::string& material) {
     if (selectedModels_.empty()) return;
+    pushUndoSnapshot();
     document_.setModelMaterial(selectedModels_, material);
+    updateControls();
+    invalidateCanvas();
+}
+
+void Application::setSelectedEntityName(const std::string& name) {
+    if (selectedModels_.empty()) return;
+    pushUndoSnapshot();
+    document_.setModelName(selectedModels_, name);
+    updateControls();
+    invalidateCanvas();
+}
+
+void Application::setSelectedEntityFinish(const std::string& finish) {
+    if (selectedModels_.empty()) return;
+    pushUndoSnapshot();
+    document_.setModelFinish(selectedModels_, finish);
+    updateControls();
+    invalidateCanvas();
+}
+
+void Application::applySelectedEntityBatch(const std::string* name, const std::string* finish,
+                                           const double* rotationDeg,
+                                           const double* columnTop, const double* columnBottom) {
+    if (selectedModels_.empty()) return;
+
+    // ON KONTROL: hicbir alan gercekten degismiyorsa bos undo kaydi OLUSMAZ
+    // (header sozlesmesi). skip-if-same document katmaninda da var; bu kontrol
+    // yalnizca anlamsiz pushSnapshot()'i engeller.
+    bool any = false;
+    if (name && *name != selectedEntityName()) any = true;
+    if (finish && *finish != selectedEntityFinish()) any = true;
+    if (rotationDeg &&
+        std::fabs(*rotationDeg - selectedEntityProfileRotation()) > 1e-9)
+        any = true;
+    if (columnTop || columnBottom) {
+        double top = 0.0, bottom = 0.0;
+        if (selectedEntityColumnLevels(top, bottom)) {
+            if (columnTop && std::fabs(*columnTop - top) > 1e-9) any = true;
+            if (columnBottom && std::fabs(*columnBottom - bottom) > 1e-9) any = true;
+        }
+    }
+    if (!any) return;
+
+    // TEK geri alma kaydi: tum alanlar birlikte uygulanir, tek Ctrl+Z.
+    pushUndoSnapshot();
+
+    if (name) document_.setModelName(selectedModels_, *name);
+    if (finish) document_.setModelFinish(selectedModels_, *finish);
+    if (rotationDeg)
+        setSelectedEntityProfileRotation(*rotationDeg, /*openUndo=*/false);
+    if (columnTop || columnBottom) {
+        double top = 0.0, bottom = 0.0;
+        selectedEntityColumnLevels(top, bottom);  // kismi guncellemede digerini koru
+        if (columnTop) top = *columnTop;
+        if (columnBottom) bottom = *columnBottom;
+        setSelectedEntityColumnLevels(top, bottom, /*openUndo=*/false);
+    }
     updateControls();
     invalidateCanvas();
 }

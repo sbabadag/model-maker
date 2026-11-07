@@ -738,6 +738,60 @@ std::size_t Document::setModelProfile(const std::vector<std::size_t>& indices,
     return changed;
 }
 
+std::size_t Document::setModelName(const std::vector<std::size_t>& indices,
+                                   const std::string& name) {
+    ++revision_;
+    std::size_t changed{};
+    for (const auto index : uniqueIndices(indices)) {
+        if (!modelIsEditable(index)) continue;
+        auto properties = models_[index].properties();
+        if (properties.name == name) continue;
+        const EntityProperties before = properties;
+        properties.name = name;
+        models_[index].setProperties(properties);
+        ++changed;
+        UndoOp op;
+        op.kind = UndoOp::Kind::PropertyReplace;
+        op.index = index;
+        op.propertyBefore = before;
+        op.propertyAfter = properties;
+        recordUndoOp(std::move(op));
+    }
+    if (effectiveCache_.size() == models_.size()) {
+        for (const auto index : uniqueIndices(indices)) {
+            if (index < models_.size()) effectiveCache_[index] = resolveEffectiveProperties(index);
+        }
+    }
+    return changed;
+}
+
+std::size_t Document::setModelFinish(const std::vector<std::size_t>& indices,
+                                     const std::string& finish) {
+    ++revision_;
+    std::size_t changed{};
+    for (const auto index : uniqueIndices(indices)) {
+        if (!modelIsEditable(index)) continue;
+        auto properties = models_[index].properties();
+        if (properties.finish == finish) continue;
+        const EntityProperties before = properties;
+        properties.finish = finish;
+        models_[index].setProperties(properties);
+        ++changed;
+        UndoOp op;
+        op.kind = UndoOp::Kind::PropertyReplace;
+        op.index = index;
+        op.propertyBefore = before;
+        op.propertyAfter = properties;
+        recordUndoOp(std::move(op));
+    }
+    if (effectiveCache_.size() == models_.size()) {
+        for (const auto index : uniqueIndices(indices)) {
+            if (index < models_.size()) effectiveCache_[index] = resolveEffectiveProperties(index);
+        }
+    }
+    return changed;
+}
+
 std::size_t Document::setModelMaterial(const std::vector<std::size_t>& indices,
                                        const std::string& material) {
     ++revision_;
@@ -745,9 +799,22 @@ std::size_t Document::setModelMaterial(const std::vector<std::size_t>& indices,
     for (const auto index : uniqueIndices(indices)) {
         if (!modelIsEditable(index)) continue;
         auto properties = models_[index].properties();
+        if (properties.material == material) continue;
+        const EntityProperties before = properties;
         properties.material = material;
-        models_[index].setProperties(std::move(properties));
+        models_[index].setProperties(properties);
         ++changed;
+        UndoOp op;
+        op.kind = UndoOp::Kind::PropertyReplace;
+        op.index = index;
+        op.propertyBefore = before;
+        op.propertyAfter = properties;
+        recordUndoOp(std::move(op));
+    }
+    if (effectiveCache_.size() == models_.size()) {
+        for (const auto index : uniqueIndices(indices)) {
+            if (index < models_.size()) effectiveCache_[index] = resolveEffectiveProperties(index);
+        }
     }
     return changed;
 }
@@ -1403,6 +1470,12 @@ void Document::applyUndoOp(const UndoOp& op, bool forward) {
             props.profileName = forward ? op.profileAfter : op.profileBefore;
             models_[op.index].setProperties(std::move(props));
             effectiveCacheDirty_ = true;  // profil degisti -> efektif ozellikler bayat
+        }
+        break;
+    case UndoOp::Kind::PropertyReplace:
+        if (op.index < models_.size()) {
+            models_[op.index].setProperties(forward ? op.propertyAfter : op.propertyBefore);
+            effectiveCacheDirty_ = true;
         }
         break;
     }

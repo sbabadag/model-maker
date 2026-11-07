@@ -1708,6 +1708,11 @@ if(BUILD_TESTING)
     target_link_options(model_maker_document_transaction_test PRIVATE -static -static-libgcc -static-libstdc++)
     target_compile_options(model_maker_document_transaction_test PRIVATE -Wall -Wextra -Wpedantic)
     add_test(NAME model_maker_document_transaction_test COMMAND model_maker_document_transaction_test)
+    add_executable(model_maker_document_property_edit_test tests/document_property_edit_test.cpp)
+    target_link_libraries(model_maker_document_property_edit_test PRIVATE model_maker_core)
+    target_link_options(model_maker_document_property_edit_test PRIVATE -static -static-libgcc -static-libstdc++)
+    target_compile_options(model_maker_document_property_edit_test PRIVATE -Wall -Wextra -Wpedantic)
+    add_test(NAME model_maker_document_property_edit_test COMMAND model_maker_document_property_edit_test)
 
     # SLICE 2d-2c: SectionAnchor ofsetleri (Top/Center/Bottom, default Top).
     add_executable(model_maker_section_anchor_test tests/section_anchor_test.cpp)

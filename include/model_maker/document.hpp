@@ -37,7 +37,7 @@ struct UndoOp {
                       EndPlateAdd, EndPlateRemove, EndPlateReplace,
                       ComponentAdd, ComponentRemove, ComponentReplace,
                       WeldAdd, WeldRemove, WeldReplace, AssemblyReplace,
-                      ProfileReplace };
+                      ProfileReplace, PropertyReplace };
     Kind kind{Kind::Add};
     std::size_t index{};
     std::vector<WireframeModel> beforeModels; // delete: silinenler; replace: eski model
@@ -91,6 +91,12 @@ struct UndoOp {
     // HEB400). index = model indeksi; profileBefore/After = eski/yeni profil adi.
     std::string profileBefore;
     std::string profileAfter;
+    // PropertyReplace: EntityProperties alan degisimi (Ad / Yuzey islemi /
+    // Malzeme / ...). index = model indeksi; propertyBefore/After = TAM
+    // ozellik kopyasi — eski/yeni durum (tek adimda birden cok alan
+    // degisebilir; kopyalar toplu geri alma icin atomiktir).
+    EntityProperties propertyBefore;
+    EntityProperties propertyAfter;
 };
 struct UndoRecord {
     std::vector<UndoOp> ops;
@@ -170,6 +176,8 @@ public:
                                 const std::string& profileName);
     std::size_t setModelLineType(const std::vector<std::size_t>& indices, const std::string& lineType);
     std::size_t setModelMaterial(const std::vector<std::size_t>& indices, const std::string& material);
+    std::size_t setModelName(const std::vector<std::size_t>& indices, const std::string& name);
+    std::size_t setModelFinish(const std::vector<std::size_t>& indices, const std::string& finish);
     // Modelleri siler. KESME KASKADI (P6): silinen varligi source/target/tool
     // olarak kullanan kesme modifier'lari da kaldirilir (CutRemove undo kaydi
     // dahil). Donus: kaldirilan modifier'larin HEDEFLERI (silinmemis kalan

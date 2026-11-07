@@ -161,18 +161,30 @@ public:
     std::string selectedEntityTypeLabel() const;
     std::string selectedEntityLineType() const;
     std::string selectedEntityMaterial() const;
+    // Ad / Yuzey islemi: secim boyunca TEKTIP degilse bos doner ("") —
+    // panel coklu secimde farkli degerleri bos gosterir.
+    std::string selectedEntityName() const;
+    std::string selectedEntityFinish() const;
     double selectedEntityProfileRotation() const;
-    void setSelectedEntityProfileRotation(double degrees);
+    void setSelectedEntityProfileRotation(double degrees, bool openUndo = true);
     void setSelectedEntityLineType(const std::string& lineType);
     void setSelectedEntityMaterial(const std::string& material);
+    void setSelectedEntityName(const std::string& name);
+    void setSelectedEntityFinish(const std::string& finish);
     // KOLON KOTLARI (props paneli): secili profilli DUSEY elemanin ust/alt
     // kotunu okur. Duseysel profilli eleman yoksa false (spin kutulari
     // guncellenmez). Uygulama yolu tek: applyColumnLevels().
     bool selectedEntityColumnLevels(double& top, double& bottom) const;
-    void setSelectedEntityColumnLevels(double top, double bottom);
+    void setSelectedEntityColumnLevels(double top, double bottom, bool openUndo = true);
     // Props satiri: secim VARKEN secime uygular, her durumda sonraki kolon
     // yerlesimi icin de saklar (tek kaynak; ENTER ve UYGULA ayni yolu kullanir).
     void applyColumnLevels(double top, double bottom);
+    // UYGULA (props paneli): isaretlenen alanlari TEK geri alma adiminda
+    // uygular. nullptr olmayan alanlar degisir; hicbiri yoksa hicbir sey
+    // yapmaz (bos kayit olusmaz). Toplu yol: pushUndoSnapshot + openUndo=false.
+    void applySelectedEntityBatch(const std::string* name, const std::string* finish,
+                                  const double* rotationDeg,
+                                  const double* columnTop, const double* columnBottom);
     std::string selectedEntityLengthLabel() const;
     void assignProfileToSelection(const std::string& profileName);
     // PROFIL CIZIM MODU: dogrudan cizilen cizgiyi secili profille kirişe
