@@ -9,6 +9,7 @@
 #include "model_maker/component_engine.hpp"
 #include <cmath>
 #include <cstdio>
+#include <numbers>
 
 using namespace mm;
 
@@ -37,7 +38,7 @@ static ComponentInput makeInput(double slopeDeg)
 
     MemberGeometry beam;
     beam.id = 2;
-    const double t = std::tan(slopeDeg * M_PI / 180.0);
+    const double t = std::tan(slopeDeg * std::numbers::pi / 180.0);
     beam.axisFrom = {0, 1200, 1500 + 1140*t};
     beam.axisTo   = {0, 60, 1500};
     beam.refNormal = {0,0,1};
@@ -114,7 +115,7 @@ static void checkInclined(double slopeDeg, bool expectInclined)
         check(std::fabs(web->outline[1].first - web->outline[2].first) < 1e-9,
               "govde: arka kenar dusey (ayni u)");
         // Üst kenar = kiriş alt başlığı eğimi (tanT).
-        const double tanT = std::tan(slopeDeg * M_PI / 180.0);
+        const double tanT = std::tan(slopeDeg * std::numbers::pi / 180.0);
         const double dz = web->outline[2].second - web->outline[3].second;
         const double du = web->outline[2].first  - web->outline[3].first;
         check(std::fabs(du) > 1.0 && std::fabs(dz/du - tanT) < 1e-6,
@@ -209,7 +210,7 @@ int main()
     std::printf("=== 5 derece EGIK KOLON: kapak kolon eksenine DIK ===\n");
     {
         ComponentInput in = makeInput(10.0);
-        const double a = 5.0 * M_PI / 180.0;
+        const double a = 5.0 * std::numbers::pi / 180.0;
         in.main.axisFrom = {0, 0, 0};
         in.main.axisTo   = {0, 3000.0*std::sin(a), 3000.0*std::cos(a)};
         GenerationPlan gp = ComponentRegistry::instance().generate(L"tekla_haunch_40", in);
