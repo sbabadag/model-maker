@@ -19,7 +19,8 @@ jobs:
             cmake ninja-build g++ qt6-base-dev \
             libocct-foundation-dev libocct-modeling-data-dev \
             libocct-modeling-algorithms-dev libocct-data-exchange-dev \
-            python3 libgl1-mesa-dev libegl1 libxkbcommon0
+            python3 libgl1-mesa-dev libegl1 libxkbcommon0 \
+            poppler-utils
 
       - name: Configure
         run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release

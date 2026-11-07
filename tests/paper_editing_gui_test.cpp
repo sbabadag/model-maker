@@ -209,7 +209,9 @@ int main(int argc, char** argv) {
         };
         const QImage i0 = raster(pdf0, "p0");
         const QImage i1 = raster(pdf1, "p1");
-        check(inkCount(i0) > 0 && inkCount(i1) > 0 && diffCount(i0, i1) > 400,
+        check(inkCount(i0) > 0, "GUI: taban PDF rasteri olusmali (pdftoppm)");
+        check(inkCount(i1) > 0, "GUI: duzenlenmis PDF rasteri olusmali (pdftoppm)");
+        check(diffCount(i0, i1) > 400,
               "GUI: PDF rasterinda eklenen cizgi baskiya donusuyor (parite)");
     }
 
