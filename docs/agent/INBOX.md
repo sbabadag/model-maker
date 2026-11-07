@@ -43,6 +43,18 @@ Döngü (her oturum):
    push et, Durum'a "takıldı: <neden>" yaz, sonraki maddeye geç.
 6. Oturum sonunda STATE.md + INBOX Durum satırları güncel, push.
 
+Kayıp önleme (bilgisayar kapanabilir/uyuyabilir):
+- Her hata kapanınca (H-xx ya da 0–6 maddesi yeşil) HEMEN push et;
+  biriktirme. Push öncesi kapı: ilgili hedefler derlendi + o hatanın
+  testi/senaryosu + tam ctest yeşil. (Tam ctest bu makinede ~6 dk.)
+- Yarım iş: en geç her 20 dakikada bir `wip/hermes` dalına commit + push
+  (kapıdan geçmesi gerekmez; mesajda "WIP"), STATE.md'ye "nerede kaldım"
+  satırı ile.
+- Her push'ta INBOX Durum satırı ve STATE.md güncel olsun; yeni oturum
+  kapanmadan önceki yerden devam edebilsin.
+- Oturum açılışında: wip/hermes, hermes/work'ten ileride mi? İleride ise
+  önce oradan devam et (git log ile kontrol).
+
 Gece YASAK: main'e merge; pacman/MSYS2 paket değişikliği; IgnorePkg
 değişikliği; C:\work\model-maker-p2d ve kullanıcı dosyalarına dokunma;
 Studio reposu; test gevşetme / golden'ı test geçsin diye yeniden üretme;
