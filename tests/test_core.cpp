@@ -202,7 +202,8 @@ void test_camera_standard_view_presets() {
     require(std::abs(camera.pitch()) < 0.001, "Bottom view pitch mismatch");
 
     camera.setView(mm::StandardView::Front);
-    require(std::abs(camera.yaw()) < 0.001, "Front view yaw mismatch");
+    // Dunya-tabani ON (71cd5fe): right=-X, up=+Z, toward=+Y -> Euler yaw=+pi.
+    require(std::abs(camera.yaw() - 3.141592653589793) < 0.001, "Front view yaw mismatch");
     require(std::abs(camera.pitch() - 1.5707963267948966) < 0.001, "Front view pitch mismatch");
 
     camera.setView(mm::StandardView::Back);
