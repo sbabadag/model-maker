@@ -44,6 +44,17 @@
 - Windows: tam derleme (model-maker.exe dahil, link dahil) + tam ctest.
 - Linux: GitHub Actions CI (ubuntu, Qt6 + OCCT, tam ctest, offscreen).
 
+## Bilinen dış hatalar (Windows)
+
+- Testler gevşetilmez; ctest etiketi/WILL_FAIL kullanılmaz.
+- Ayrı liste: `docs/agent/known-failures.md` — #78 (occ_brep_serialize),
+  #96 (component_plate_color).
+- Kök neden: MSYS2 OCCT 7.9.3-3 + GCC 16 `-O3` →
+  `BRepClass3d_SClassifier::Perform` → `Extrema_ExtCC` SIGSEGV.
+  Referanslar: OCCT #1637, GCC #127917.
+- Aynı yollar UYGULAMA komutlarını da (Trim/boolean, kaynak mesafe
+  kontrolleri) etkiler; OCCT sürüm kararı kullanıcıda (bkz. DUR).
+
 ## Durum (2026-11-07)
 
 - [x] İçe aktarma (skill + hafıza, Linux yolları Windows'a çevrildi)
