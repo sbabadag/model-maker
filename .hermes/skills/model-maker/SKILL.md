@@ -34,8 +34,8 @@ description: Model Maker (C++20/Qt6/OpenCASCADE) steel detailing implementation,
 ## Safety, regression and diagnostics
 - Test at least: legacy 2x2+2x2; independent upper 3x2 + lower 2x2; independent diameters; upper-only and lower-only translations; shorter explicit plates; no collisions/hole overhang; exact legacy migration; 3D selection and right-editor synchronization; no Document writes until Apply/Modify.
 - Qt offscreen `propagateSizeHints` / `raise` warnings are not themselves failing tests; capture the actual `FAIL:` message.
-- Windows project example: `C:\\work\\model-maker-bridge-v31`, MSYS2 UCRT64 toolchain, `build-v31-occ`. Build GUI/engine/widget tests and run `ctest --output-on-failure` before declaring verified.
+- Windows build (this worktree): dir `C:\\work\\mm-hermes\\build-hermes` (Release, Ninja, UCRT64 g++). Shell: Git Bash with `export PATH=/c/msys64/ucrt64/bin:$PATH` and `export QT_PLUGIN_PATH=/c/msys64/ucrt64/share/qt6/plugins`; configure: `cmake -S . -B build-hermes -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=C:/msys64/ucrt64/bin/g++.exe -DQT_ROOT=C:/msys64/ucrt64 -DOCC_ROOT=C:/msys64/ucrt64 -DMM_OCC_LINK_DIRECT=ON`. User acceptance build: `C:\\work\\model-maker-p2d\\build-occ` (PowerShell) — do not touch. Build GUI/engine/widget tests and run `ctest --output-on-failure` before declaring verified.
 - Keep role IDs, persistent cuts and weld ownership stable across recompute.
 
-## Important limitation
-This tracked file documents skill behaviour in the GitHub working branch. Hermes on AWS will only use it once its skill loader is configured to read this path or this file is copied/installed into the Hermes skills directory. Never claim remote skill installation without checking there.
+## Skill deployment
+This repo is trusted (`hermes skills trust C:/work/mm-hermes`), so this file loads in sessions started inside the repo and takes precedence over same-named profile skills. The master copy of all Model Maker skills lives in `docs/agent/skills/`; at session start copy it into the local Hermes skills folder.

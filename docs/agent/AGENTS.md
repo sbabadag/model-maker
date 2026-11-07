@@ -7,7 +7,8 @@ Rules for AI coding agents (Hermes, Claude Code, Codex, etc.) working in this re
 Model Maker — Tekla-like native steel modelling/detailing.
 
 - Stack: C++20, Qt6, Win32/OpenGL, optional OpenCASCADE (OCCT).
-- Linux: headless tests. Windows: GUI/build via MSYS2 UCRT64 (see `docs/WINDOWS_BUILD_TR.md`).
+- Linux: headless tests (CI: GitHub Actions). Windows: GUI/build via MSYS2 UCRT64,
+  Git Bash shell (see `docs/WINDOWS_BUILD_TR.md`, `docs/agent/STATE.md`).
 - Develop on the explicitly supplied feature branch; never silently edit `main`.
 
 ## Git workflow (worktree clones)
@@ -23,8 +24,22 @@ use a local branch alias:
 
 ## Build and test
 
-- Windows: MSYS2 UCRT64 toolchain; build then run `ctest --output-on-failure`.
+- Windows (Git Bash): `export PATH=/c/msys64/ucrt64/bin:$PATH` and
+  `export QT_PLUGIN_PATH=/c/msys64/ucrt64/share/qt6/plugins` before every build
+  command; build dir `build-hermes` (Release, Ninja, UCRT64 g++ — full config
+  in `docs/agent/STATE.md`); then `ctest --output-on-failure`.
+- Linux: GitHub Actions CI (Qt6 + OCCT, offscreen, full ctest).
 - Never claim a build/test pass from code edits alone; report real `FAIL:` diagnostics.
+
+## Session protocol
+
+- Session start: `git pull --ff-only origin feature/component-contract`, read
+  `docs/agent/STATE.md`, copy `docs/agent/skills/*` into the local Hermes skills
+  folder.
+- Session end ("devir" or work finished): update `docs/agent/STATE.md`, commit,
+  push.
+- UI roadmap: `docs/agent/ROADMAP-UI.md`; the user keeps long message texts in
+  files (e.g. `C:\work\HERMES-*.md`).
 
 ## Repo-local agent skill
 
