@@ -14,6 +14,7 @@
 #include "model_maker/document.hpp"
 #include "model_maker/entity_id.hpp"
 
+#include <chrono>
 #include <cstdio>
 #include <filesystem>
 #include <set>
@@ -178,8 +179,15 @@ int main() {
 
     // 7) MMW kaydet/yukle: taze belgede kimlikler deterministik 1..N, tekil.
     {
-        const std::filesystem::path path =
-            std::filesystem::temp_directory_path() / "mm_entity_id_roundtrip.mmw";
+        // Paralel ctest altinda sabit dosya adi ReplaceFileW yarisina (Win32
+        // hata 1175) yakalanabiliyor: hedef dosya bir onceki calistirmadan
+        // kalmis ve kilitlenmis olabilir. Her surec benzersiz ad uretir.
+        static const std::filesystem::path path = [] {
+            const auto ns =
+                std::chrono::steady_clock::now().time_since_epoch().count();
+            return std::filesystem::temp_directory_path() /
+                   ("mm_entity_id_roundtrip_" + std::to_string(ns) + ".mmw");
+        }();
         {
             Document doc;
             doc.addLine({0.0, 0.0, 0.0}, {1.0, 0.0, 0.0});
