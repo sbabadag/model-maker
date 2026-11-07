@@ -18,6 +18,40 @@ Ortak kurallar (her maddede geçerli):
 
 ---
 
+## GECE MODU (2026-11-08 gecesi, sabaha kadar) — kullanıcı uyuyor
+
+Kullanıcı yok; kimseyi bekleme. Bip gerekmez. Amaç: Model Maker'ı bir Tekla
+modelleme kullanıcısı gibi canlı test etmek ve bulunan hataları düzeltmek.
+
+Kurulum (ilk tur, bir kez):
+- Hermes cron'u ile her 40 dakikada bir yeni oturum başlatan bir iş kur:
+  "cd C:\work\mm-hermes; git pull --ff-only origin feature/component-contract;
+  docs/agent/STATE.md + docs/agent/INBOX.md oku; GECE MODU kurallarıyla bir
+  sonraki açık maddeyi yap". Aynı anda iki oturum çalışmasın (kilit dosyası:
+  C:\work\mm-hermes-gece.lock; varsa ve 60 dk'dan yeniyse çık).
+- Sabah 09:00'da cron işini durdur (kendi kendini silsin).
+
+Döngü (her oturum):
+1. pull; INBOX'u oku (planlayıcı gece boyunca yeni madde ekleyebilir).
+2. Sıradaki açık madde: önce 0–6, sonra "8. Tekla test planı" senaryoları.
+3. Senaryoyu ekranda canlı uygula (Computer Use; exe arka planda;
+   ekran görüntüleri C:\work\mm-hermes-shots\<tarih>\).
+4. Hata bulursan: INBOX sonuna "## H-<no> — <başlık>" ekle (adımlar,
+   beklenen, görülen, ekran görüntüsü yolu), sonra düzelt (kırmızı test →
+   düzeltme → yeşil → ekranda tekrar), ayrı commit.
+5. Push kapısı yeşilse push. Kırmızı kalıyorsa yarım işi wip/hermes'e
+   push et, Durum'a "takıldı: <neden>" yaz, sonraki maddeye geç.
+6. Oturum sonunda STATE.md + INBOX Durum satırları güncel, push.
+
+Gece YASAK: main'e merge; pacman/MSYS2 paket değişikliği; IgnorePkg
+değişikliği; C:\work\model-maker-p2d ve kullanıcı dosyalarına dokunma;
+Studio reposu; test gevşetme / golden'ı test geçsin diye yeniden üretme;
+force push. Bunlardan biri gerekirse Durum'a yaz ve geç.
+Geri alınamaz ya da ürün kararı gerektiren konu: varsayım yapma, "karar
+bekliyor" diye yaz, geç.
+
+---
+
 ## 0. Süreç düzeltmeleri (ÖNCE)
 
 ### 0a. Etkin limitler
@@ -34,7 +68,8 @@ Bir oturumda 68 sıkıştırma görüldü; kabul edilemez.
 2. Boş oturum taban token maliyetini ölç (sistem + araç tanımları +
    skill indeksi).
 3. Bu proje için gereksiz araçları kapat: image_generate, text_to_speech,
-   video, cron, connections. **Computer Use ve vision AÇIK kalsın.**
+   video, connections. **Computer Use, vision ve cron AÇIK kalsın** (gece
+   modu cron'la çalışır).
    İlgisiz skill'leri (sağlık, e-posta, akıllı ev, medya, sosyal, web
    sitesi vb.) arşivle — silme; liste ver.
 4. Önce/sonra sayıları Durum'a yaz.
@@ -122,6 +157,45 @@ Durum: —
   146 canvas dönüşümü.
 
 Durum: —
+
+
+## 8. Tekla test planı (canlı, ekrandan; her senaryo ayrı)
+
+Her senaryoda Tekla'daki beklenen davranış referans. Sonuç satırı:
+`T-<no>: GEÇTİ | HATA H-<no> | ATLANDI (<neden>)` — bu bölümün altına yaz.
+
+T-1 Aks: 6×5 aks (A–F, 1–5, 6000 mm), kotlar 0/7000/8500. Etiketler,
+    kesişim ve orta nokta snap'i (B4), aks seçimi/silme/geri al.
+T-2 Kolon: aks kesişimlerine HEB240 kolon (G kısayolu ve şerit); profil
+    adı elle "heb240" → HEB240; olmayan profil → kırmızı + uygulanmaz.
+    Dönüş 0/90/180/270; kaydet-aç sonrası aynı (A kuralı).
+T-3 Kiriş: kolon tepeleri arası IPE300 kiriş; uç ofsetleri; eğik mertek
+    (iki farklı kot); Kiriş komutu profilsiz çalışmasın.
+T-4 Yardımcı çizgi: Çizgi/Polyline/Daire yalnız yardımcı obje (B6);
+    GDI ve GPU'da görünür (B2/B7); Model Ağacı "Profiller"e girmez.
+T-5 Seçim: tek/çoklu/kutu seçim, Parça/Montaj modu, view cube tıklaması
+    seçimi bozmaz (B5), gimbal ekran-sabit (B3), Ctrl+Tab görünüm geçişi.
+T-6 Özellikler paneli: renk/açı değiştir → UYGULA → seçim değiştir:
+    başka nesne değişmez (A); çoklu seçimde yalnız değişen alan yazılır.
+T-7 Düzenle: Taşı, Kopyala, Taşı-Δ/Kopyala-Δ, Doğrusal/Dairesel dizi,
+    Ayna, Sil; her biri tek geri alma adımı; diyalog açıkken ana pencere
+    kullanılabiliyor mu (K1 — henüz yoksa "ATLANDI: UI-3").
+T-8 Kesimler: Plane Cut, Line Cut, Polygon Cut, Part Cut, Fitting; kesim
+    kopyala (B8); kesim + geri al; OCCT çökmesi yok.
+T-9 Bağlantılar: End Plate (kolon başlığına kiriş; HEB260+IPE300),
+    Fin Plate, Haunch (40) (kolon + eğik mertek), 146. Katalogdan ve hızlı
+    aramadan erişim (B1); diyalog mock view; parametre değiştir → güncelle;
+    ihlal → kırmızı check; levhalar gri; geri al.
+T-10 Bulon/kaynak: bulon grubu ve kaynak ekle/sil/kopyala; görünürlük.
+T-11 Görünümler: plan görünüşü, 3B, yüzeye göre görünüş, çalışma düzlemi
+    (3 nokta, sıfırla), görsel stiller (Alt+1..4), GPU/GDI geçişi (F6).
+T-12 Kayıt: hepsini içeren modeli kaydet → kapat → aç; geometri, bağlantı,
+    renk, dönüş birebir; eski bir model dosyası (repo örneği) açılıyor.
+T-13 Kısayollar: G L Q M K O I T E D Del Esc, Ctrl+S/Z/Y, F3/F7/F8/F9,
+    Ctrl+Tab; Türkçe klavye; metin alanı odaktayken tek harf tetiklemez.
+T-14 Çizim: Paper Çizim açılır, temel görünüm üretilir (varsa).
+
+Sonuçlar:
 
 ## Açık soru (yanıtla, Durum'a yaz)
 - 893e770 "feat(document): çoklu seçim özellik düzenleme + tek geri alma
