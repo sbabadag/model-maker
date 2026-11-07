@@ -53,7 +53,9 @@ public:
     std::vector<mm::DynamicMenuItem> dynamicMenu(const std::string& id) const override {
         if (id == "steel.catalog") {
             return {{"component:end_plate", "Alın Levhası", "plate"},
-                    {"component:fin_plate", "Kayma Levhası", "plate"}};
+                    {"component:fin_plate", "Kayma Levhası", "plate"},
+                    {"component:haunch_40", "Haunch (40)", "plate"},
+                    {"component:pkg_test", "Test Paket Parçası", "plate"}};
         }
         return {};
     }
@@ -142,6 +144,60 @@ int main(int argc, char** argv) {
 
         const QStringList suggestions = ribbon.searchSuggestions(QStringLiteral("kir"), 5);
         check(suggestions.size() <= 5, "oneri listesi limitli");
+
+        // B1: hizli arama yerlesik component'i kayit indeksinden bulur
+        // (kullanici terimi "haunch" -> registry'deki search-index komutu).
+        host.run.clear();
+        const std::string comp = ribbon.runSearch(QStringLiteral("haunch"));
+        check(comp == "component:tekla_haunch_40",
+              "arama 'haunch' -> component:tekla_haunch_40");
+        check(host.run.size() == 1 && host.run[0] == "component:tekla_haunch_40",
+              "yerlesik bilesen aramasi komutu CALISTIRIR");
+        const QStringList sug2 = ribbon.searchSuggestions(QStringLiteral("haunch"), 5);
+        check(sug2.contains(QStringLiteral("Haunch (40)")),
+              "oneriler bilesen etiketlerini icerir");
+        // Dinamik katalog (host dynamicMenu) fallback'i: yalnizca host'ta olan
+        // bir paket bileseni de aramadan bulunup calistirilabilmeli.
+        host.run.clear();
+        const std::string pkg = ribbon.runSearch(QStringLiteral("Test Paket"));
+        check(pkg == "component:pkg_test",
+              "arama paket bilesenini dynamicMenu fallback'inden bulur");
+        check(host.run.size() == 1 && host.run[0] == "component:pkg_test",
+              "paket bileseni aramasi komutu CALISTIRIR");
+    }
+
+    // ---- 3b) Katalog dropdown: dinamik menu host'tan dolar (B1) -------
+    {
+        QToolButton* katalog = nullptr;
+        for (QToolButton* b : ribbon.findChildren<QToolButton*>()) {
+            if (b->property("commandId").toString() == QStringLiteral("steel.catalog")) {
+                katalog = b;
+                break;
+            }
+        }
+        check(katalog != nullptr, "Katalog dugmesi seritte var");
+        if (katalog && katalog->menu()) {
+            QMenu* m = katalog->menu();
+            // host setCatalog'tan SONRA kurulmus olsa bile aboutToShow
+            // dinamik icerigi host'tan yeniden doldurmali.
+            QMetaObject::invokeMethod(m, "aboutToShow", Qt::DirectConnection);
+            QApplication::processEvents();
+            QStringList labels;
+            for (QAction* a : m->actions()) labels << a->text();
+            check(labels.contains(QStringLiteral("Haunch (40)")) &&
+                      labels.contains(QStringLiteral("Alın Levhası")) &&
+                      labels.contains(QStringLiteral("Kayma Levhası")),
+                  "Katalog menusu registry bilesenlerini listeler");
+            host.run.clear();
+            for (QAction* a : m->actions()) {
+                if (a->text() == QStringLiteral("Haunch (40)")) {
+                    a->trigger();
+                    break;
+                }
+            }
+            check(host.run.size() == 1 && host.run[0] == "component:haunch_40",
+                  "menu ogesi component komutunu calistirir");
+        }
     }
 
     // ---- 4) Kisayollar degismedi --------------------------------------

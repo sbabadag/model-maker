@@ -58,7 +58,15 @@
 - [x] İçe aktarma (skill + hafıza, Linux yolları Windows'a çevrildi)
 - [x] `hermes skills trust C:/work/mm-hermes`
 - [x] docs/agent/ kurulumu: AGENTS.md, STATE.md, ROADMAP-UI.md, skills/
-- [ ] Windows ilk temiz derleme (build-hermes) + tam ctest raporu
+- [x] Windows temiz derleme (build-hermes) + tam ctest: 153/153
+- [x] Bağlam optimizasyonu: context_length 1048576 (deepseek-v4-pro 1M),
+      boş oturum tabanı 16.012 → 11.989 token; gereksiz araçlar kapalı,
+      83+20 skill arşivli (INBOX 0a/0b/0c)
+- [x] Gece modu cron'u: `gece-mm` (40dk, kilit dosyalı, 09:00 self-delete)
+- [x] B1 (Katalog + hızlı arama): kök neden setHost→setCatalog sırası +
+      arama indeksi; düzeltildi, ribbon testi kırmızı→yeşil, ekranda
+      doğrulandı (INBOX 1. madde)
+- [ ] INBOX 2-6: B6, B2/B7, B8, B5, GT-1
 - [ ] Linux CI iş akışı (GitHub Actions)
 - [ ] UI-3 → DURAK 1 (rapor + Windows doğrulaması beklenir)
 

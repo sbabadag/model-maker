@@ -135,7 +135,20 @@ Yama `wip/hermes` (e1ca5f0, ribbon_widget.cpp: Dropdown → menü düğmesi).
   dizini component registry dolmadan mı kuruluyor? Ekranda doğrula.
 - Yeşilse wip'teki commit'i `hermes/work`'e al, push; `wip/hermes`'i sıfırla.
 
-Durum: —
+Durum: BİTTİ — kök neden (tek cümle): `setHost()` `setCatalog()`'tan SONRA
+çağrıldığı için Katalog dinamik menüsü host null iken BOŞ kuruluyordu ve bir
+daha dolmuyordu; hızlı arama da yalnız komut kaydını indeksliyordu. Düzeltme:
+(1) qt_main_window.cpp sıra değişti, (2) ribbon_widget.cpp dinamik menü
+aboutToShow'da host'tan yeniden dolar + runSearch/searchSuggestions/completer
+bileşen katalogunu da arar (dynamicMenu fallback) + etiket tekilleştirme.
+Test: model_maker_ribbon_widget_test 4 yeni kontrol (önce KIRMIZI, sonra
+YEŞİL); tam ctest 153/153. Ekran doğrulaması (gece, kullanıcı yokken):
+Katalog menüsü AÇILDI ve 4 yerleşik bileşen listelendi (Beam to Column End
+Plate (144), Haunch (40), Shear Plate Simple (146), Fin Plate (Shear Tab));
+quickSearch "haunch" → tamamlayıcı "Haunch (40)" → Enter → komut başladı
+(StatusBar: "Haunch (40) - parça seçin... sağ tık uygular"). Kanıt:
+C:\work\mm-hermes-shots\2026-11-08\ (b1-kanit.txt + png). Commit'ler
+hermes/work'te; wip/hermes sıfırlandı.
 
 ## 2. B6 — Çizgi komutu profil çiziyor
 Çizgi, Polyline, Dikdörtgen, Daire, 3DFACE panelde aktif profili (ör.

@@ -2387,8 +2387,8 @@ void QtMainWindow::createToolbar() {
     ribbon_ = new RibbonWidget(ribbon);
     ribbon_->setMenu(appMenu_);
     ribbon_->setQuickAccess({"file.save", "edit.undo", "edit.redo"});
+    ribbon_->setHost(this);  // setCatalog'tan ONCE: dinamik menuler (Katalog) dolar
     ribbon_->setCatalog(commandCatalog_);
-    ribbon_->setHost(this);
     {
         QWidget* holder = new QWidget(ribbon);
         auto* holderLayout = new QVBoxLayout(holder);

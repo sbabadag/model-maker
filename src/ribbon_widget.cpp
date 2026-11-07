@@ -496,14 +496,23 @@ QToolButton* RibbonWidget::makeMenuButton(const PlanItem& node, bool large) {
     auto* menu = new QMenu(btn);
     if (node.children.empty()) {
         // Dinamik icerik (ornek: component katalogu) — host'tan alinir.
-        const std::vector<DynamicMenuItem> dynamicItems =
-            host_ ? host_->dynamicMenu(node.id) : std::vector<DynamicMenuItem>{};
-        for (const DynamicMenuItem& child : dynamicItems) {
-            QAction* act = menu->addAction(toQ(child.label));
-            if (!child.icon.empty()) act->setIcon(commandIcon(child.icon));
-            QObject::connect(act, &QAction::triggered, this,
-                             [this, id = child.id]() { performCommand(id); });
-        }
+        // Host setCatalog'tan sonra da kurulabilir; ayrica katalog calisma
+        // aninda degisebilir (paket yukleme). Bu yuzden dolum kurulusta VE
+        // her acilista (aboutToShow) yapilir.
+        auto refill = [this, menu, id = node.id]() {
+            const auto current = menu->actions();
+            for (QAction* a : current) menu->removeAction(a);
+            const std::vector<DynamicMenuItem> dynamicItems =
+                host_ ? host_->dynamicMenu(id) : std::vector<DynamicMenuItem>{};
+            for (const DynamicMenuItem& child : dynamicItems) {
+                QAction* act = menu->addAction(toQ(child.label));
+                if (!child.icon.empty()) act->setIcon(commandIcon(child.icon));
+                QObject::connect(act, &QAction::triggered, this,
+                                 [this, cid = child.id]() { performCommand(cid); });
+            }
+        };
+        QObject::connect(menu, &QMenu::aboutToShow, menu, refill);
+        refill();
     }
     for (const PlanItem& child : node.children) {
         if (child.kind == PlanItem::Kind::Separator) {
@@ -671,6 +680,12 @@ void RibbonWidget::buildUi() {
     search_->setClearButtonEnabled(true);
     QStringList names;
     for (const CommandDef& def : catalog_.registry.commands()) names << toQ(def.title);
+    // B1: bilesen katalogu etiketleri de tamamlayicida ("Haunch (40)" vs.).
+    if (host_) {
+        for (const DynamicMenuItem& item : host_->dynamicMenu("steel.catalog"))
+            names << toQ(item.label);
+    }
+    names.removeDuplicates();
     completer_ = new QCompleter(names, search_);
     completer_->setCaseSensitivity(Qt::CaseInsensitive);
     completer_->setFilterMode(Qt::MatchContains);
@@ -766,14 +781,36 @@ QStringList RibbonWidget::searchSuggestions(const QString& text, int limit) cons
                                                          static_cast<std::size_t>(limit))) {
         out << toQ(def->title);
     }
+    // B1: bilesen katalogu da onerilerde (ornek: "haunch" -> "Haunch (40)").
+    if (host_ && out.size() < limit) {
+        const QString needle = text.trimmed();
+        for (const DynamicMenuItem& item : host_->dynamicMenu("steel.catalog")) {
+            if (out.size() >= limit) break;
+            if (toQ(item.label).contains(needle, Qt::CaseInsensitive))
+                out << toQ(item.label);
+        }
+    }
     return out;
 }
 
 std::string RibbonWidget::runSearch(const QString& text) {
     const auto hits = catalog_.registry.search(text.toStdString(), 1);
-    if (hits.empty()) return {};
-    performCommand(hits.front()->id);
-    return hits.front()->id;
+    if (!hits.empty()) {
+        performCommand(hits.front()->id);
+        return hits.front()->id;
+    }
+    // B1: komut kaydinda yoksa bilesen katalogu (etiket ya da typeId).
+    if (host_) {
+        const QString needle = text.trimmed();
+        for (const DynamicMenuItem& item : host_->dynamicMenu("steel.catalog")) {
+            if (toQ(item.label).contains(needle, Qt::CaseInsensitive) ||
+                toQ(item.id).contains(needle, Qt::CaseInsensitive)) {
+                performCommand(item.id);
+                return item.id;
+            }
+        }
+    }
+    return {};
 }
 
 int RibbonWidget::clippedLabelCount() const {
