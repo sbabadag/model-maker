@@ -31,6 +31,12 @@ Kurulum (ilk tur, bir kez):
   C:\work\mm-hermes-gece.lock; varsa ve 60 dk'dan yeniyse çık).
 - Sabah 09:00'da cron işini durdur (kendi kendini silsin).
 
+Durum: BİTTİ (kurulum) — cron işi `gece-mm` kuruldu (40dk, --repeat 14,
+workdir C:\work\mm-hermes, kilit dosyası C:\work\mm-hermes-gece.lock
+kuralı prompt'a gömülü, 09:00 sonrası kendini siler; ilk çalışma
+2026-11-08 01:03). Aktif oturum kilit dosyasını 5 dk'da bir tazeliyor
+(arka plan döngüsü); oturum bitince döngü ölür ve gece oturumları başlar.
+
 Döngü (her oturum):
 1. pull; INBOX'u oku (planlayıcı gece boyunca yeni madde ekleyebilir).
 2. Sıradaki açık madde: önce 0–6, sonra "8. Tekla test planı" senaryoları.
@@ -72,6 +78,9 @@ bekliyor" diye yaz, geç.
 uygulanmıyor demektir: doğru anahtarı bul, gateway'i yeniden başlat,
 doğrula. Sonucu Durum'a yaz.
 
+Durum: BİTTİ — max_turns=150, gateway_timeout=3600 (config doğrulandı
+2026-11-08; oturumda 60/60 limiti YOK; anahtar adları doğru).
+
 ### 0b. Bağlam optimizasyonu (önce ölç → değiştir → tekrar ölç)
 Bir oturumda 68 sıkıştırma görüldü; kabul edilemez.
 1. deepseek-v4-pro'nun gerçek bağlam penceresini doğrula. 65.5K "pinned"
@@ -86,13 +95,34 @@ Bir oturumda 68 sıkıştırma görüldü; kabul edilemez.
    sitesi vb.) arşivle — silme; liste ver.
 4. Önce/sonra sayıları Durum'a yaz.
 
+Durum: BİTTİ — (1) deepseek-v4-pro gerçek pencere 1.048.576 token
+(DeepSeek API docs + sağlayıcı kataloğu, iki kaynak). Sabahki 68
+sıkıştırmanın nedeni: context_length 65.536'ya pin'liydi (agent.log
+02:09). Pin 900.000 → 1048576'ya çıkarıldı (`hermes config set`; log'un
+önerdiği gibi kaldırılmadı, kullanıcı "doğru değere çıkar" dedi —
+varsayım: %90 yerine tam pencere). (2) Boş oturum tabanı: 16.012 → 11.972
+(2026-11-07) → 11.989 (2026-11-08 ölçüldü). (3) image_generate/tts/video/
+connections/kanban/x_search/yuanbao/a2a CLI toolset'inde KAPALI;
+computer_use + vision AÇIK; cron scheduler (gateway) ÇALIŞIYOR — gece işi
+kuruldu (üstte). Arşivlenen skill'ler (silinmedi): 83 skills-archived/
+(apple, creative, email, media, mlops, note-taking, productivity,
+research, social-media, yuanbao, hermes-desktop-plugins, hermes-themes,
+companion-clis, devops, runpod*, smart-home, supabase-migrations,
+data-science, deployed-web-change-verification, live-website-section-
+change vb.) + 20 skills/.archive/ (eski model-maker/gpu sağlık vb.) —
+~51 yüklenebilir skill kaldı. (4) Taban token değişmediği doğrulandı:
+11.972 → 11.989 (pin değişimi tabanı etkilemez).
+
 ### 0c. GUI'yi arka planda başlat
 Ön planda açılan `model-maker.exe` terminali pencere kapanana kadar
 kilitler. Kural (skill'e yazılı olmalı): `./model-maker.exe &` ya da process
 aracı, PID not al, Computer Use ile çalış, bitince PID ile kapat. Her
-uzun komutta `timeout` kullan.
+her uzun komutta `timeout` kullan.
 
-Durum: —
+Durum: BİTTİ — kural model-maker-build-verify skill'ine yazıldı (v1.1.0,
+"GUI Launch Rule" + ekran-test mekanikleri: minimize/foreground/ALT-hack,
+UIA fiziksel koordinat, InstantPopup press-hold, vision yoksa pencere
+enumeration ile doğrulama); repo + yerel kopya senkron.
 
 ---
 
@@ -213,3 +243,11 @@ Sonuçlar:
 - 893e770 "feat(document): çoklu seçim özellik düzenleme + tek geri alma
   adımı" istenmemişti. Ne yapıyor, hangi maddeye ait, testi var mı?
   (Geri alma yok, yalnız açıklama.)
+
+Durum: YANIT — 893e770 kullanıcının KENDİ commit'i (Selahattin Babadağ,
+2026-11-07 20:02). Çoklu seçimde özellik düzenleme: applySelectedEntityBatch
+ad/yüzey işlemi/rotasyon/kolon kotlarını tek UndoOp::PropertyReplace ile
+uygular (tek geri alma adımı = tek snapshot); seçim tektip değilse panel boş
+gösterilir. Testi var: model_maker_document_property_edit_test (ctest 150.).
+Ait olduğu madde: T-6 (çoklu seçimde yalnız değişen alan yazılır) / UI-3.
+İptal gerekmiyor.
