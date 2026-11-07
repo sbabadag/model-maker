@@ -61,6 +61,13 @@ Kayıp önleme (bilgisayar kapanabilir/uyuyabilir):
 - Oturum açılışında: wip/hermes, hermes/work'ten ileride mi? İleride ise
   önce oradan devam et (git log ile kontrol).
 
+Commit kimliği (planlayıcı notu, 02:00): Bu makinedeki commit'lerin yazarı
+kullanıcının git kimliği görünüyor; bu yüzden 893e770'nin "kullanıcının kendi
+commit'i" olduğu sonucu güvenilir değil (Hermes'in önceki oturumu da aynı
+kimlikle commit atıyor). Kural: C:\work\mm-hermes worktree'sinde yerel
+`git config user.name "Hermes (Asus)"` ve `user.email "hermes-asus@local"`;
+ZBook'ta "Hermes (ZBook)". Yalnız bu worktree, global ayara dokunma.
+
 Gece YASAK: main'e merge; pacman/MSYS2 paket değişikliği; IgnorePkg
 değişikliği; C:\work\model-maker-p2d ve kullanıcı dosyalarına dokunma;
 Studio reposu; test gevşetme / golden'ı test geçsin diye yeniden üretme;
