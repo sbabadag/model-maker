@@ -41,6 +41,19 @@ use a local branch alias:
 - UI roadmap: `docs/agent/ROADMAP-UI.md`; the user keeps long message texts in
   files (e.g. `C:\work\HERMES-*.md`).
 
+## Sound alert (user notification)
+
+- When a task finishes, a DURAK point is reached, or you wait for the user's
+  answer/approval, beep as the LAST step of the turn (Git Bash):
+
+      powershell.exe -NoProfile -Command "[console]::beep(880,250);[console]::beep(1320,350)"
+
+- When stopping after an error/failure, use the distinct error beep:
+
+      powershell.exe -NoProfile -Command "[console]::beep(400,600)"
+
+- No beeps in the middle of long-running work; only at finish / wait / error.
+
 ## Repo-local agent skill
 
 - `.hermes/skills/model-maker/SKILL.md` — verified implementation conventions

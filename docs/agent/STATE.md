@@ -48,12 +48,10 @@
 
 - Testler gevşetilmez; ctest etiketi/WILL_FAIL kullanılmaz.
 - Ayrı liste: `docs/agent/known-failures.md` — #78 (occ_brep_serialize),
-  #96 (component_plate_color).
-- Kök neden: MSYS2 OCCT 7.9.3-3 + GCC 16 `-O3` →
-  `BRepClass3d_SClassifier::Perform` → `Extrema_ExtCC` SIGSEGV.
-  Referanslar: OCCT #1637, GCC #127917.
-- Aynı yollar UYGULAMA komutlarını da (Trim/boolean, kaynak mesafe
-  kontrolleri) etkiler; OCCT sürüm kararı kullanıcıda (bkz. DUR).
+  #96 (component_plate_color), #60 (entity_id) → üçü ÇÖZÜLDÜ.
+- Çözüm (2026-11-07): pacman-yönetimli paket sabitleme —
+  `docs/agent/msys2-paket-sabitleme.md` (opencascade 7.9.2-2 + ffmpeg
+  8.0-5 zinciri + IgnorePkg). ZBook kurulumunda aynısı uygulanacak.
 
 ## Durum (2026-11-07)
 
