@@ -67,3 +67,8 @@ use a local branch alias:
 - `resultParams()` returns a vector **by value** — bind it to a local variable
   before taking element pointers.
 - Keep role IDs, persistent cuts and weld ownership stable across recompute.
+
+## Planlayıcı görevleri
+
+Oturum başında `docs/agent/STATE.md` ile birlikte `docs/agent/INBOX.md`
+okunur; görev sırası ve durumları oradadır.
