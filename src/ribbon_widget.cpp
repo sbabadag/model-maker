@@ -425,6 +425,16 @@ QToolButton* RibbonWidget::makeButton(const std::string& id, bool large) {
     const CommandDef* def = catalog_.registry.find(id);
     if (!def) return nullptr;
 
+    if (def->kind == CommandKind::Dropdown) {
+        // Dropdown komutlar acilir menulu dugme olur; icerik host dynamicMenu()
+        // ile doldurulur (plan cocuklari bos). Dugme tiklamasi performCommand'a
+        // degil menuye gider.
+        PlanItem node;
+        node.kind = PlanItem::Kind::Menu;
+        node.id = id;
+        return makeMenuButton(node, large);
+    }
+
     auto* btn = new QToolButton();
     btn->setProperty("commandId", QString::fromStdString(id));
     btn->setIcon(commandIcon(def->icon));
@@ -463,6 +473,9 @@ QToolButton* RibbonWidget::makeMenuButton(const PlanItem& node, bool large) {
     if (iconId.empty() && !node.children.empty()) {
         if (const CommandDef* first = catalog_.registry.find(node.children.front().id))
             iconId = first->icon;
+    }
+    if (iconId.empty()) {
+        if (const CommandDef* def = catalog_.registry.find(node.id)) iconId = def->icon;
     }
     btn->setIcon(commandIcon(iconId));
     btn->setIconSize(QSize(large ? 24 : kIconPx, large ? 24 : kIconPx));
