@@ -18,6 +18,21 @@ Ortak kurallar (her maddede geçerli):
 
 ---
 
+## ÇALIŞMA MODU: MANUEL (2026-11-08 23:12 — kullanıcı kararı; SÜREKLİ MOD askıda)
+
+Cron ile otomatik başlatma YOK (`surekli-mm` duraklatılır/silinir). Kullanıcı
+Hermes'e "başla" der; Hermes:
+1. pull → STATE.md + INBOX.md oku.
+2. Sıradaki açık maddeden başlayıp maddeleri SIRAYLA yapar (aşağıdaki
+   "Sıra" satırı geçerli). Her madde bitince commit + push + kabul paketi
+   + INBOX Durum + STATE "Son tur" + bip, sonra bir sonraki maddeye geçer.
+3. Durur: kullanıcı "dur" derse, KARAR BEKLİYOR çıkarsa, kapı kırmızı
+   kalırsa ya da oturum çok uzarsa (bu durumda STATE yaz, "yeni oturum
+   öneriyorum" de).
+Diğer bütün kurallar (45 dk / 20 dk WIP, kayıp önleme, git yasakları,
+kabul paketi, GUI yalnız kullanıcı boştayken, regresyon senaryoları) aynen.
+Planlayıcı (Claude) görevleri yalnız bu dosyaya yazar.
+
 ## KABUL PAKETİ (kalıcı kural, 2026-11-08) — kullanıcı artık kendisi derlemez
 
 Kullanıcıya görünen bir düzeltme/özellik push kapısından geçince (Windows
@@ -45,7 +60,7 @@ Hermes kullanıcının deneyeceği çalışır exe'yi hazırlar:
 - STATE.md "Son tur" satırına paket adını ekle: `kabul: <klasör>`.
 Paket yalnız kapı yeşilken; kırmızıysa paket yok.
 
-## SÜREKLİ MOD (2026-11-08'den itibaren; gece modunun yerine)
+## SÜREKLİ MOD (ASKIDA — yerine ÇALIŞMA MODU: MANUEL)
 
 Amaç: kullanıcı beklemeden kesintisiz geliştirme. Döngü:
 Hermes (cron) iş yapar → push → planlayıcı (Claude) düzenli aralıklarla
