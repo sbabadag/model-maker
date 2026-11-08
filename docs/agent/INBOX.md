@@ -68,6 +68,12 @@ kimlikle commit atıyor). Kural: C:\work\mm-hermes worktree'sinde yerel
 `git config user.name "Hermes (Asus)"` ve `user.email "hermes-asus@local"`;
 ZBook'ta "Hermes (ZBook)". Yalnız bu worktree, global ayara dokunma.
 
+GIT YASAKLARI (kalıcı, kullanıcı kuralı 2026-11-08 — skill'de de yazılı):
+uzak dal silme (`git push origin :dal`) ve force push HİÇ yapılmaz (onay
+ister, gece modu kilitlenir). wip/hermes SIFIRLANMAZ: yeni yarım iş
+üstüne normal commit olarak eklenir; feature dalına alınmış eski WIP
+commit'leri orada kalır, zararı yok.
+
 Uyanık kalma ve dayanıklılık (planlayıcı notu, 2026-11-08 sabah):
 - KÖK NEDEN (gece 1): Asus "Modern Standby" (S0 Low Power Idle) kullanıyor.
   01:44'teki cron çalışması ekran kapanınca dondu, 10:04'te uyanınca

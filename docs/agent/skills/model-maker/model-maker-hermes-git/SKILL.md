@@ -1,7 +1,7 @@
 ---
 name: model-maker-hermes-git
 description: "Use for mm-hermes repo: branch/pull/push workflow rules."
-version: 1.0.0
+version: 1.1.0
 author: Hermes Agent
 license: MIT
 platforms: [windows, linux, darwin]
@@ -32,3 +32,15 @@ Doğrulama:
 - Push öncesi dry-run: `git push --dry-run origin hermes/work:feature/component-contract` (bu makineden doğrulandı, auth sorunu yok).
 - Uzak durum: `git ls-remote origin`.
 - Pull yalnızca ff-only; rebase/merge commit oluşturma.
+- Push kapısı: push'tan önce Windows TAM derleme + TAM ctest yeşil olmalı.
+
+## Uzak dal silme / force push YASAK (kalıcı, 2026-11-08 — kullanıcı kuralı)
+
+- Uzak dal silme (`git push origin :wip/hermes`) ve force push HİÇ yapılmaz:
+  onay ister, gece modu buna takılıp kilitlenir. wip/hermes'i sıfırlamak
+  YOK: yeni yarım işi wip/hermes'in ÜSTÜNE normal commit olarak ekle
+  (`git checkout wip/hermes` → çalış → commit). Feature dalına alınmış eski
+  WIP commit'leri orada kalabilir, zararı yok.
+- Commit kimliği: bu worktree'de `git config user.name "Hermes (Asus)"` ve
+  `user.email "hermes-asus@local"` (yerel, --global DEĞİL). Oturum başında
+  doğrula: `git config user.name` bu makine kimliğini göstermeli.
