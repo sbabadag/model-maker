@@ -174,6 +174,32 @@ For rendering changes, record at least:
 
 Do not claim a performance improvement without before/after measurements.
 
+## GT-1 GUI test mode (--test-script)
+
+- Tekrarlanabilir senaryolar icin Computer Use YERINE bunu kullan:
+  `timeout 120 build-hermes/model-maker.exe --test-script tests/gt1/<senaryo>.json
+  --out <klasor>` (PATH + QT_PLUGIN_PATH export sart). Pencere masaustunde acilip
+  KENDILIGINDEN kapanir; exit 0/1, kanit <out>/result.json {ok, steps, error} +
+  step_%03d.png/json.
+- Adimlar: cmd (kayit id), click/drag (tuval istemci koordinati), key, type,
+  wait, open (senaryo klasorune goreli yol), profile, expect. Girdi GERCEK WndProc
+  yolundan gider: SendMessage -> canvasHandle() HWND; key/type GetFocus()'a
+  (Qt widget odaktaysa tuvale degil).
+- Backend zorlamasi (gdi/gpu/auto) ILK pump(120ms)'tan SONRA yapilir: showEvent
+  startup GL varsayilanini o pump'ta uygular; erken toggle ezilir. GDI+GL kompoziti
+  AYNI pencere DC'sine yazilir (FBO AlphaBlend) — tek BitBlt yakalama iki backend'i
+  de kapsar; kapali/ortulu pencere icin PrintWindow yedegi.
+- GUI senaryolari ctest'e YALNIZ `-DMM_GUI_TESTS=ON` ile kayitli olur (LABELS gui;
+  `ctest -L gui`). Varsayilan configure'da YOK — duz `ctest` asla pencere acmaz.
+  Is bitince ayni build dizinini MM_GUI_TESTS=OFF ile yeniden configure et.
+- expect alanlari: models (SAYI ya da NESNE {count, profiled, plain, face3d,
+  point, construction, visible}), selection, viewports, activeTool, backend,
+  visibleCount.
+- Durum JSON erisimcileri: Application::activeTool/camera/gpuLinesEnabled,
+  openDocumentPath (diyalogsuz acma; run_occ_solid_ids kaynak-sekil kontrolu
+  delegasyonu kilitler), QtMainWindow::quickSearchText/quickSearchSuggestions/
+  viewportCount, RibbonWidget::searchText.
+
 ## Pitfalls
 
 - MSYS2 package version numbers do not map linearly to library ABI sonames — list a
