@@ -341,6 +341,23 @@ vision: kiriş çizgi ucundan 200 px uzakta başlıyor. ctest -L gui 6/6,
 tam ctest 160/160. SÜREKLİ MOD kuruldu (surekli-mm cron, 30dk; gece-mm
 silindi) — bu tur ilk turdu.
 
+## H-7 — 3B görünümde çizgi çizilmiyor / görünmüyor (B2/B7 HÂLÂ AÇIK)  [kullanıcı, 2026-11-08 17:30, kabul paketi 20261108-1716-cb9506f]
+Kullanıcı kabul paketinde: 3B görünümde Çizgi komutu → çizgi yok/görünmüyor.
+GT-1 `b2b7_line_visible` YEŞİL ama yanlış koşulu ölçüyor: varsayılan
+(2B/plan) görünümde ve GDI'da koşuyor olmalı. Senaryoyu düzelt (önce KIRMIZI):
+- `view.toggle3d` (ya da İzometrik) → 3B görünüm; backend hem `gdi` hem `gl`
+  (durum çubuğu "GPU: GL" — kullanıcı GL'de).
+- Çizgi: iki tık + Esc. Expect: model/yardımcı obje sayısı +1 VE görünür
+  çizim listesinde çizgi VE capture PNG'de çizgi (vision).
+Ayrıca ayır: (a) çizgi hiç oluşmuyor mu (3B'de tıklama çalışma düzlemine
+izdüşmüyor / nokta alınmıyor), (b) oluşuyor ama çizilmiyor mu (3B/GL
+renderer yardımcı objeleri — B6 sonrası "profilsiz = yardımcı" — atlıyor
+olabilir), (c) çiziliyor ama kamera/kırpma dışında mı. Kök nedeni bir
+cümleyle yaz. Birim test ve önceki senaryo neden yakalamadı, bir cümle.
+ÖNCELİK: en üst (kullanıcının temel çizim akışı). H-5'ten önce.
+
+Durum: —
+
 ## H-6 — holdTimeMs artık hiçbir şey yapmıyor (H-4 yan etkisi)  [planlayıcı incelemesi, cb9506f]
 H-4 doğru: tıklama artık süreye bağlı değil. Ama `snapSettings_.holdTimeMs`
 kodda hiç okunmuyor (yalnız ayar dosyası). Kullanıcının istediği "marker
