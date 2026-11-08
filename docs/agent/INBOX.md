@@ -18,7 +18,39 @@ Ortak kurallar (her maddede geçerli):
 
 ---
 
-## GECE MODU (2026-11-08 gecesi, sabaha kadar) — kullanıcı uyuyor
+## SÜREKLİ MOD (2026-11-08'den itibaren; gece modunun yerine)
+
+Amaç: kullanıcı beklemeden kesintisiz geliştirme. Döngü:
+Hermes (cron) iş yapar → push → planlayıcı (Claude) düzenli aralıklarla
+repoyu okur, inceler, INBOX'a yeni iş/hata/öncelik yazar → Hermes'in bir
+sonraki turu onu alır. Kullanıcı yalnız hata bildirir ve son görsel
+kontrolü yapar.
+
+Hermes kurulumu (bir kez; eski `gece-mm` işini sil, yenisini kur):
+- cron `surekli-mm`: her 30 dakikada bir, süresiz (repeat yok), workdir
+  C:\work\mm-hermes, YENİ oturum. Prompt: "git pull --ff-only origin
+  feature/component-contract; docs/agent/STATE.md + INBOX.md oku; SÜREKLİ
+  MOD kurallarıyla sıradaki açık maddeyi yap."
+- Kilit dosyası C:\work\mm-hermes-surekli.lock (60 dk'dan yeniyse çık;
+  kullanıcının elle açtığı oturum da kilidi tutar).
+- Gece modu kuralları (uyanık kal, API yeniden deneme, kayıp önleme,
+  yasaklar, git yasakları) aynen geçerli.
+
+Tur kuralları:
+- Bir turda EN FAZLA bir INBOX maddesi (ya da onun bir parçası); bitince
+  Durum satırı + STATE.md + push. Uzun madde: parçala, her parça push.
+- GUI/ekran testi yalnız kullanıcı 2 dk boşta iken (GetLastInputInfo);
+  değilse GUI'siz kısımları yap (kod, birim test), GUI doğrulamasını
+  Durum'a "GUI doğrulaması bekliyor" diye yaz, sonraki turda dene.
+- Açık madde kalmadıysa: "8. Tekla test planı"ndan sıradaki senaryoyu
+  (GUI test modu ile, kullanıcı boştaysa) çalıştır; hata bulursan H-xx aç.
+- Planlayıcıya sinyal: her tur sonunda STATE.md başına
+  `Son tur: <tarih saat> — <madde> — <BİTTİ|DEVAM|TAKILDI> — <hash>`
+  satırını güncelle. Planlayıcı bu satırı okuyarak ilerlemeyi izler.
+- Karar gerektiren konu: Durum'a "KARAR BEKLİYOR: <soru>" yaz, sonraki
+  maddeye geç. Planlayıcı INBOX'ta cevaplar.
+
+## GECE MODU (arşiv — SÜREKLİ MOD ile değiştirildi) (2026-11-08 gecesi, sabaha kadar) — kullanıcı uyuyor
 
 Kullanıcı yok; kimseyi bekleme. Bip gerekmez. Amaç: Model Maker'ı bir Tekla
 modelleme kullanıcısı gibi canlı test etmek ve bulunan hataları düzeltmek.
