@@ -1,11 +1,13 @@
 #include "model_maker/application.hpp"
 #include "model_maker/qt_main_window.hpp"
 #include "model_maker/force_diagram.hpp"
+#include "model_maker/gui_test_runner.hpp"
 
 #include <QApplication>
 #include <windows.h>
 
 #include <cstdio>
+#include <cstring>
 
 static void milestone(const char* message) {
     FILE* log = fopen("model-maker-startup.log", "a");
@@ -78,6 +80,25 @@ int main(int argc, char* argv[]) {
         milestone("window-created");
         window.show();
         milestone("window-shown");
+
+        // GT-1 (INBOX 6): GUI test modu — `--test-script <senaryo.json>
+        // --out <klasor>`. Senaryo verilirse normal olay dongusu yerine
+        // kosucu calisir; bitince surec kendiliginden kapanir (0/1).
+        QString testScript;
+        QString testOut;
+        for (int i = 1; i < argc; ++i) {
+            if (std::strcmp(argv[i], "--test-script") == 0 && i + 1 < argc)
+                testScript = QString::fromLocal8Bit(argv[++i]);
+            else if (std::strcmp(argv[i], "--out") == 0 && i + 1 < argc)
+                testOut = QString::fromLocal8Bit(argv[++i]);
+        }
+        if (!testScript.isEmpty()) {
+            milestone("gt1-start");
+            const int result = mm::runGuiTestScript(window, testScript, testOut);
+            milestone("gt1-exit");
+            return result;
+        }
+
         const int result = app.exec();
         milestone("exec-exit");
         return result;

@@ -41,6 +41,8 @@ public:
     // ---- GT-1 (GUI test modu): hizli arama durumu (durum JSON'u) ----
     QString quickSearchText() const;
     QStringList quickSearchSuggestions(const QString& text, int limit = 12) const;
+    // GT-1: acik gorunus (alt pencere) sayisi — durum JSON'u.
+    int viewportCount() const;
 
 protected:
     void resizeEvent(QResizeEvent* event) override;

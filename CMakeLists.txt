@@ -151,6 +151,7 @@ if(WIN32 AND Qt6_FOUND AND MODELMAKER_QT_MISSING STREQUAL "") # GUI Win32+GDI: y
         src/view_cube_renderer.cpp
         src/gdi_render_backend.cpp
         src/force_diagram.cpp
+        src/gui_test_runner.cpp
         resources/tekla146.qrc
     )
     target_include_directories(model-maker PRIVATE include)

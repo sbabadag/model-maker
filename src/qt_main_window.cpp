@@ -1055,6 +1055,11 @@ QStringList QtMainWindow::quickSearchSuggestions(const QString& text, int limit)
     return ribbon_ ? ribbon_->searchSuggestions(text, limit) : QStringList();
 }
 
+// GT-1: acik gorunus (MDI alt pencere) sayisi — durum JSON'u.
+int QtMainWindow::viewportCount() const {
+    return mdiArea_ ? mdiArea_->subWindowList().size() : 0;
+}
+
 // Menu cizimi: plan VERISI -> QMenu (komut govdesi yok, yalniz baglama).
 void QtMainWindow::fillMenu(QMenu* menu, const std::vector<PlanItem>& items) {
     for (const PlanItem& item : items) {
