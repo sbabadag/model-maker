@@ -3,7 +3,7 @@
 - Aktif makine: Asus (ev). ZBook (iş) pasif. Senkron yalnız GitHub üzerinden;
   aynı anda tek makinede çalışılır.
 - Son güncelleme: 2026-11-07 (oturum başlangıç kurulumu)
-- Son tur: 2026-11-08 19:55 — H-7 3B GL Solid çizgi görünmezliği — BİTTİ — 15a41fb — kabul: C:\work\mm-kabul\20261108-1956-15a41fb
+- Son tur: 2026-11-08 21:52 — UI-34 kesit 1 (UI-3a PropertiesPanel iskeleti) — BİTTİ — 29cc028 — Windows kapısı: tam derleme + ctest 155/155; 3 props Python testi yeni panele uyarlandı (mutasyon 9/9 + 10/10); GUI doğrulaması bekliyor (kullanıcı boşta değildi). Sıradaki: UI-4 "..." profil seçim penceresi.
 
 ## Git düzeni
 

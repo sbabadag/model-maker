@@ -410,7 +410,16 @@ kabul paketi:
 Kalan UI-3 parçaları (levha/bulon/kaynak/komponent bölümleri, K1 modsuz
 pencereler, K2 Temizle, yardımcı obje görünümü + migration) bundan sonra.
 
-Durum: —
+Durum: KESIT 1 BİTTİ (29cc028) — UI-3a panel iskeleti: PropertiesPanel sınıfı
+(sağ dock; Genel: Ad/Profil/Malzeme/Sınıf/Yüzey işlemi, Konum: Dönüş,
+Görünüm: Katman/Çizgi Tipi, Kolon: Üst/Alt kot+Uzunluk; UYGULA+KOLON
+YERLESTİR). Ribbon profil combo KALKTI; tek profil alanı paneldeki QLineEdit
+(ENTER doğrudan uygular, katalog 1 kez, harf duyarsız, katalog dışı ad
+kırmızı+uygulanmaz). A kuralı: yalnız UYGULA yazar (dirty flags + tek undo).
+3 Python testi yeni sözleşmeye uyarlandı (mutasyon 9/9 + 10/10 yakalıyor);
+C++ offscreen properties_panel_test eklendi. Windows kapısı: tam derleme +
+ctest 155/155. Kalan: UI-4 ("..." penceresi) + GT-1 senaryoları + GUI
+doğrulaması bekliyor (kullanıcı boşta değildi).
 
 ## H-6 — holdTimeMs artık hiçbir şey yapmıyor (H-4 yan etkisi)  [planlayıcı incelemesi, cb9506f]
 H-4 doğru: tıklama artık süreye bağlı değil. Ama `snapSettings_.holdTimeMs`
