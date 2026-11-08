@@ -83,8 +83,12 @@ PropertiesPanel::PropertiesPanel(QWidget* parent) : QWidget(parent) {
     profileButton_->setObjectName(QStringLiteral("propsProfileButton"));
     profileButton_->setText(QStringLiteral("…"));
     profileButton_->setToolTip(QStringLiteral(
-        "Profil seçim penceresi (UI-4) — şimdilik pasif."));
-    profileButton_->setEnabled(false);  // UI-4 etkinleştirecek
+        "Profil seçim penceresi (UI-4): aile ağacı, filtre, kesit resmi."));
+    profileButton_->setEnabled(true);
+    connect(profileButton_, &QToolButton::clicked, this, [this]() {
+        if (!onProfileBrowse) return;
+        applyProfileFromPicker(onProfileBrowse());
+    });
     profileRowLayout->addWidget(profileButton_);
     fieldRow(genel, QStringLiteral("Profil"), profileRow);
 
@@ -107,8 +111,12 @@ PropertiesPanel::PropertiesPanel(QWidget* parent) : QWidget(parent) {
     materialButton_->setObjectName(QStringLiteral("propsMaterialButton"));
     materialButton_->setText(QStringLiteral("…"));
     materialButton_->setToolTip(QStringLiteral(
-        "Malzeme seçim penceresi (UI-4) — şimdilik pasif."));
-    materialButton_->setEnabled(false);  // UI-4 etkinleştirecek
+        "Malzeme seçim penceresi (UI-4): filtre + liste."));
+    materialButton_->setEnabled(true);
+    connect(materialButton_, &QToolButton::clicked, this, [this]() {
+        if (!onMaterialBrowse) return;
+        applyMaterialFromPicker(onMaterialBrowse());
+    });
     materialRowLayout->addWidget(materialButton_);
     fieldRow(genel, QStringLiteral("Malzeme"), materialRow);
 
@@ -354,6 +362,7 @@ void PropertiesPanel::setProfile(const QString& text) {
 }
 
 void PropertiesPanel::setProfileValid(bool valid) {
+    profileValid_ = valid;
     profileEdit_->setStyleSheet(valid
         ? QString()
         : QStringLiteral("QLineEdit { border: 1px solid #C0392B; }"));
@@ -454,6 +463,20 @@ void PropertiesPanel::focusProfileEdit() {
 
 QString PropertiesPanel::profileText() const {
     return profileEdit_->text().trimmed();
+}
+
+void PropertiesPanel::applyProfileFromPicker(const QString& canonicalName) {
+    if (canonicalName.isEmpty()) return;
+    profileEdit_->setText(canonicalName);
+    markProfileDirty();
+    setProfileValid(!validateProfile || validateProfile(canonicalName));
+}
+
+void PropertiesPanel::applyMaterialFromPicker(const QString& canonicalName) {
+    if (canonicalName.isEmpty()) return;
+    materialEdit_->setText(canonicalName);
+    markMaterialDirty();
+    setMaterialValid(!validateMaterial || validateMaterial(canonicalName));
 }
 
 QString PropertiesPanel::materialText() const {

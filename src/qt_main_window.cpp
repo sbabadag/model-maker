@@ -2888,6 +2888,20 @@ void QtMainWindow::createDockPanels() {
     for (const auto& name : app_.profileNames())
         profileCatalog << QString::fromStdString(name);
     propsPanel_->setProfileCatalog(profileCatalog);
+
+    // ---- UI-4: profil/malzeme secim pencereleri ("..." dugmeleri) ----
+    // Katalog + boyutlar Application'dan; dialog platformdan bagimsiz,
+    // Application'a dokunmaz. Uygula dugmesi pencereyi kapatmaz, panele
+    // yazar (kullanici panelde UYGULA'ya basar).
+    profilePickerDialog_ = new ProfilePickerDialog(this);
+    profilePickerDialog_->setProfiles(app_.profiles());
+    propsPanel_->onProfileBrowse = [this]() {
+        profilePickerDialog_->setInitialName(propsPanel_->profileText());
+        if (profilePickerDialog_->exec() != QDialog::Accepted) return QString();
+        return profilePickerDialog_->selectedProfile();
+    };
+    connect(profilePickerDialog_, &ProfilePickerDialog::profileApplied,
+            propsPanel_, &PropertiesPanel::applyProfileFromPicker);
     propsPanel_->validateProfile =
         [profileCatalog, canonicalName](const QString& text) {
             const QString t = text.trimmed();
@@ -2903,6 +2917,16 @@ void QtMainWindow::createDockPanels() {
                                          QStringLiteral("BETON"),
                                          QStringLiteral("DİĞER")};
     propsPanel_->setMaterialChoices(materialCatalog);
+    materialPickerDialog_ = new MaterialPickerDialog(this);
+    materialPickerDialog_->setMaterials(materialCatalog);
+    propsPanel_->onMaterialBrowse = [this]() {
+        materialPickerDialog_->setInitialName(propsPanel_->materialText());
+        if (materialPickerDialog_->exec() != QDialog::Accepted)
+            return QString();
+        return materialPickerDialog_->selectedMaterial();
+    };
+    connect(materialPickerDialog_, &MaterialPickerDialog::materialApplied,
+            propsPanel_, &PropertiesPanel::applyMaterialFromPicker);
     propsPanel_->validateMaterial =
         [materialCatalog, canonicalName](const QString& text) {
             const QString t = text.trimmed();
@@ -3276,9 +3300,13 @@ void QtMainWindow::createDockPanels() {
         // Profil: katalog BIR KEZ kuruldu (completer). Burada yalniz
         // gosterilecek deger secilir — secim varsa nesnenin profili, yoksa
         // AKTIF (bekleyen) profil; boylece kullanicinin sectigi deger kaybolmaz.
-        if (!profile.isEmpty()) propsPanel_->setProfile(profile);
-        else propsPanel_->setProfile(
-            QString::fromStdString(app_.pendingProfileName()));
+        // KIRLI (kullanici duzenleme) iken alan EZILMEZ — 500 ms refresh'in
+        // kullanicinin yazmakta oldugu metni silmesi engellenir (GT-1 t10).
+        if (!propsPanel_->isProfileDirty()) {
+            if (!profile.isEmpty()) propsPanel_->setProfile(profile);
+            else propsPanel_->setProfile(
+                QString::fromStdString(app_.pendingProfileName()));
+        }
 
         // Katmanlar
         QStringList layers;
@@ -3300,9 +3328,10 @@ void QtMainWindow::createDockPanels() {
         propsPanel_->setClassIndex(colorIndex);
 
         // Malzeme / Ad / Yuzey islemi: coklu secimde bos gosterilir
-        // (Application o durumda bos doner).
-        propsPanel_->setMaterial(
-            QString::fromStdString(app_.selectedEntityMaterial()));
+        // (Application o durumda bos doner). Kirli iken ezilmez (profil gibi).
+        if (!propsPanel_->isMaterialDirty())
+            propsPanel_->setMaterial(
+                QString::fromStdString(app_.selectedEntityMaterial()));
         propsPanel_->setName(QString::fromStdString(app_.selectedEntityName()));
         propsPanel_->setFinish(
             QString::fromStdString(app_.selectedEntityFinish()));

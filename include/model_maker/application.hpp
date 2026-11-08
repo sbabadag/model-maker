@@ -169,6 +169,9 @@ public:
     // The visible application shell is Qt; expose the profile catalog and
     // assignment action so its native toolbar can own the real picker.
     std::vector<std::string> profileNames();
+    // UI-4 profil secim penceresi: TAM katalog (boyutlarla; ensureProfileCatalog
+    // cagirir). Dialog kopyasini alir; Application'a dokunmaz.
+    const std::vector<SteelProfile>& profiles();
     // Ozellikler kutusu icin: secili nesnenin degerleri (secim yoksa -1/bos)
     int selectedModelIndex() const;
     std::string selectedEntityProfile() const;

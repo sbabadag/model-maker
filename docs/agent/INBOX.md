@@ -490,6 +490,22 @@ ribbon'da eski combo yok, hata yok. Kabul paketi:
 C:\work\mm-kabul\20261108-2224-29cc028. Kalan: UI-4 ("..." penceresi) + GT-1
 senaryoları.
 
+Durum: KESIT 2 BİTTİ (bu commit) — UI-4 profil seçim penceresi: solda aile
+ağacı (katalog aileleri), üstte Filtre (`*` joker), profil adı alanı (ağaçla
+senkron, çift tık seçer); sağda tip/alt tip, kesit alanı, kendi şematik
+motorumuzla kesit resmi (h b tw tf r ölçü harfleri), Özellik/Sembol/Değer/
+Birim tablosu; altta Tamam/Uygula/İptal (Uygula alana yazar, pencere açık).
+Paneldeki Profil ve Malzeme "..." butonları etkinleştirildi (eskiden pasif).
+Refresh timer dirty koruması: kullanıcı panelde yazarken 500 ms refresh
+alanı EZMEZ (isProfileDirty kapısı; GT-1 t10'da yakalandı). GT-1
+t10_panel_profile_picker: heb240 yaz → HEB240, Uygula → model HEB240, tek
+geri alma → IPE360; "..." → filtre IPE3* → IPE300 → Tamam → alan IPE300
+(25/25). Offscreen C++ test profile_picker_dialog_test eklendi (filtre,
+showAll, senkron, kanonik ad). ctest 156/156; t9 ikisi de yeşil; 3 Python
+props testi yeşil. Kalan (ayrı kesit): Uç ofseti (Dx Dy Dz) ve Konum
+düzlemde/derinlik bölümleri — modelde alan yoksa rapor edilir; levha/bulon/
+kaynak/komponent bölümleri, K1 modsuz pencereler, K2 Temizle.
+
 ## H-6 — holdTimeMs artık hiçbir şey yapmıyor (H-4 yan etkisi)  [planlayıcı incelemesi, cb9506f]
 H-4 doğru: tıklama artık süreye bağlı değil. Ama `snapSettings_.holdTimeMs`
 kodda hiç okunmuyor (yalnız ayar dosyası). Kullanıcının istediği "marker

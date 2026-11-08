@@ -34,8 +34,9 @@ namespace mm {
 // - Eski "Profil (aktif)" acilir listesi ve "Profilsiz (duz cizgi)"
 //   secenegi KALKTI (B6: Cizgi zaten profili yok sayar; Kolon/Kiris profil
 //   zorunlu).
-// - "..." dugmeleri simdilik pasif: UI-4 (profil/malzeme secim penceresi)
-//   onlari etkinlestirecek.
+// - "..." dugmeleri (UI-4): profil/malzeme secim penceresi — katalog
+//   disaridan (Application); panel onProfileBrowse/onMaterialBrowse
+//   callback'iyle acar, donen canonical adi alana yazar.
 class PropertiesPanel : public QWidget {
     Q_OBJECT
 public:
@@ -51,6 +52,8 @@ public:
     void setMaterialChoices(const QStringList& items);// bir kez (completer)
     void setMaterial(const QString& text);
     void setMaterialValid(bool valid);
+    // GT-1: profil alaninin kirmizi (gecersiz) durumu.
+    bool isProfileValid() const noexcept { return profileValid_; }
     void setName(const QString& text);                // coklu secimde bos
     void setFinishChoices(const QStringList& items);  // bir kez
     void setFinish(const QString& text);              // coklu secimde bos
@@ -104,6 +107,16 @@ public:
     // yok — kontrol disarida.
     std::function<bool(const QString&)> validateProfile;
     std::function<bool(const QString&)> validateMaterial;
+    // UI-4: "..." dugmesi. Secim penceresini acan taraf DISARIDIR (panel
+    // katalog bilmez); callback canonical adi dondurur (Iptal = bos), panel
+    // alana yazar + kirli isaretler + dogrulama calistirir.
+    std::function<QString()> onProfileBrowse;
+    std::function<QString()> onMaterialBrowse;
+
+    // UI-4 secim penceresinin UYGULA dugmesi (pencere acik kalir): alana
+    // yazar + kirli isaretler; kullanici panelde UYGULA'ya basar.
+    void applyProfileFromPicker(const QString& canonicalName);
+    void applyMaterialFromPicker(const QString& canonicalName);
 
 private:
     QWidget* addSection(const QString& title, const QString& objectName);
@@ -134,6 +147,7 @@ private:
 
     bool profileDirty_{};
     bool materialDirty_{};
+    bool profileValid_{true};
     bool nameDirty_{};
     bool finishDirty_{};
     bool classDirty_{};

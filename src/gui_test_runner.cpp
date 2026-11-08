@@ -20,6 +20,8 @@
 #include "model_maker/drafting.hpp"
 #include "model_maker/geometry.hpp"
 #include "model_maker/qt_main_window.hpp"
+#include "model_maker/properties_panel.hpp"
+#include "model_maker/profile_picker_dialog.hpp"
 
 #include <QApplication>
 #include <QColor>
@@ -33,7 +35,11 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QKeyEvent>
+#include <QLineEdit>
+#include <QPushButton>
 #include <QStatusBar>
+#include <QTreeWidget>
 
 #include <windows.h>
 
@@ -643,6 +649,42 @@ struct Runner {
                                     .arg(actual, spec[QStringLiteral("name")].toString());
             }
         }
+        // UI-4: ozellikler paneli profil alani (ham metin + kirmizi durum).
+        if (expect.contains(QStringLiteral("panelProfile"))) {
+            const QJsonObject spec = expect[QStringLiteral("panelProfile")].toObject();
+            PropertiesPanel* panel = window.propertiesPanel();
+            if (!panel)
+                problems << QStringLiteral("panelProfile: panel yok");
+            else if (spec.contains(QStringLiteral("text"))) {
+                const QString actual = panel->profileText();
+                if (actual != spec[QStringLiteral("text")].toString())
+                    problems << QStringLiteral("panelProfile=\"%1\" (beklenen \"%2\")")
+                                    .arg(actual,
+                                         spec[QStringLiteral("text")].toString());
+            }
+        }
+        if (expect.contains(QStringLiteral("panelProfileValid"))) {
+            const bool expected = expect[QStringLiteral("panelProfileValid")].toObject()
+                                      [QStringLiteral("valid")].toBool();
+            PropertiesPanel* panel = window.propertiesPanel();
+            if (!panel)
+                problems << QStringLiteral("panelProfileValid: panel yok");
+            else if (panel->isProfileValid() != expected)
+                problems << QStringLiteral("panelProfileValid=%1 (beklenen %2)")
+                                .arg(panel->isProfileValid())
+                                .arg(expected);
+        }
+        // UI-4: secim penceresinin secili profili.
+        if (expect.contains(QStringLiteral("pickerProfile"))) {
+            const QString expected = expect[QStringLiteral("pickerProfile")].toObject()
+                                         [QStringLiteral("name")].toString();
+            ProfilePickerDialog* dialog = window.profilePickerDialog();
+            if (!dialog)
+                problems << QStringLiteral("pickerProfile: pencere yok");
+            else if (dialog->selectedProfile() != expected)
+                problems << QStringLiteral("pickerProfile=\"%1\" (beklenen \"%2\")")
+                                .arg(dialog->selectedProfile(), expected);
+        }
         // H-8: tip eslesen component instance sayisi (haunch/end plate kuruldu mu).
         if (expect.contains(QStringLiteral("componentCount"))) {
             const QJsonObject spec = expect[QStringLiteral("componentCount")].toObject();
@@ -1025,6 +1067,92 @@ struct Runner {
                 spec[QStringLiteral("profile")].toString().toStdString());
             pump(120);
             return writeStep(step, QStringLiteral("assignProfile"));
+        }
+        // ---- UI-4 GT-1: panel + profil secim penceresi (Qt tarafi) ----
+        if (step.contains(QStringLiteral("panelType"))) {
+            const QString text = step[QStringLiteral("panelType")].toObject()
+                                     [QStringLiteral("text")].toString();
+            PropertiesPanel* panel = window.propertiesPanel();
+            if (!panel) return fail(QStringLiteral("panelType: panel yok"));
+            QLineEdit* edit = panel->profileEdit();
+            if (!edit) return fail(QStringLiteral("panelType: profil alani yok"));
+            edit->setFocus();
+            edit->clear();
+            for (const QChar c : text) {
+                QKeyEvent press(QEvent::KeyPress, 0, Qt::NoModifier, QString(c));
+                QApplication::sendEvent(edit, &press);
+                QKeyEvent release(QEvent::KeyRelease, 0, Qt::NoModifier,
+                                  QString(c));
+                QApplication::sendEvent(edit, &release);
+            }
+            pump(80);
+            return writeStep(step, QStringLiteral("panelType"));
+        }
+        if (step.contains(QStringLiteral("panelApply"))) {
+            PropertiesPanel* panel = window.propertiesPanel();
+            if (!panel) return fail(QStringLiteral("panelApply: panel yok"));
+            QPushButton* apply =
+                panel->findChild<QPushButton*>(QStringLiteral("propsApply"));
+            if (!apply) return fail(QStringLiteral("panelApply: UYGULA yok"));
+            apply->click();
+            pump(120);
+            return writeStep(step, QStringLiteral("panelApply"));
+        }
+        if (step.contains(QStringLiteral("pickerOpen"))) {
+            ProfilePickerDialog* dialog = window.profilePickerDialog();
+            if (!dialog) return fail(QStringLiteral("pickerOpen: pencere yok"));
+            dialog->show();
+            dialog->raise();
+            pump(80);
+            return writeStep(step, QStringLiteral("pickerOpen"));
+        }
+        if (step.contains(QStringLiteral("pickerFilter"))) {
+            ProfilePickerDialog* dialog = window.profilePickerDialog();
+            if (!dialog) return fail(QStringLiteral("pickerFilter: pencere yok"));
+            QLineEdit* filter = dialog->findChild<QLineEdit*>(
+                QStringLiteral("profileFilter"));
+            if (!filter) return fail(QStringLiteral("pickerFilter: filtre yok"));
+            filter->setFocus();
+            filter->setText(
+                step[QStringLiteral("pickerFilter")].toObject()
+                    [QStringLiteral("text")].toString());
+            pump(80);
+            return writeStep(step, QStringLiteral("pickerFilter"));
+        }
+        if (step.contains(QStringLiteral("pickerSelect"))) {
+            ProfilePickerDialog* dialog = window.profilePickerDialog();
+            if (!dialog) return fail(QStringLiteral("pickerSelect: pencere yok"));
+            const QString name = step[QStringLiteral("pickerSelect")].toObject()
+                                     [QStringLiteral("name")].toString();
+            QTreeWidget* tree =
+                dialog->findChild<QTreeWidget*>(QStringLiteral("profileTree"));
+            if (!tree) return fail(QStringLiteral("pickerSelect: agac yok"));
+            bool found = false;
+            for (int i = 0; i < tree->topLevelItemCount() && !found; ++i) {
+                QTreeWidgetItem* familyItem = tree->topLevelItem(i);
+                for (int j = 0; j < familyItem->childCount(); ++j) {
+                    QTreeWidgetItem* child = familyItem->child(j);
+                    if (child->data(0, Qt::UserRole).toString() == name) {
+                        tree->setCurrentItem(child);
+                        found = true;
+                        break;
+                    }
+                }
+            }
+            if (!found)
+                return fail(QStringLiteral("pickerSelect: %1 agacta yok").arg(name));
+            pump(80);
+            return writeStep(step, QStringLiteral("pickerSelect"));
+        }
+        if (step.contains(QStringLiteral("pickerOk"))) {
+            ProfilePickerDialog* dialog = window.profilePickerDialog();
+            if (!dialog) return fail(QStringLiteral("pickerOk: pencere yok"));
+            QPushButton* ok = dialog->findChild<QPushButton*>(
+                QStringLiteral("profileOkButton"));
+            if (!ok) return fail(QStringLiteral("pickerOk: Tamam yok"));
+            ok->click();
+            pump(80);
+            return writeStep(step, QStringLiteral("pickerOk"));
         }
         if (step.contains(QStringLiteral("appComponent"))) {
             const QJsonObject spec = step[QStringLiteral("appComponent")].toObject();

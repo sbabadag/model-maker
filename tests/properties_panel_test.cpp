@@ -179,11 +179,32 @@ int main(int argc, char** argv) {
     check(levelEdits == 0 && !levelEnter,
           "setColumnLevels (refresh) callback TETIKLEMEZ");
 
-    // 8) "..." dugmeleri UI-4'e kadar pasif.
+    // 8) "..." dugmeleri UI-4 ile aktif: browse callback cagrilir, donen
+    //    canonical ad alana yazilir + kirli isaretlenir; bos donus (Iptal)
+    //    alani degistirmez.
     QToolButton* profileButton =
         panel.findChild<QToolButton*>(QStringLiteral("propsProfileButton"));
-    check(profileButton && !profileButton->isEnabled(),
-          "profil \"...\" dugmesi UI-4'e kadar pasif");
+    check(profileButton && profileButton->isEnabled(),
+          "profil \"...\" dugmesi UI-4 ile aktif");
+    QString browsed;
+    panel.onProfileBrowse = [&]() { return browsed; };
+    browsed = QStringLiteral("IPE300");
+    profileButton->click();
+    check(panel.profileText() == QStringLiteral("IPE300") &&
+              panel.isProfileDirty(),
+          "browse secimi alana yazilir + kirli isaretlenir");
+    browsed = QString();
+    profileButton->click();
+    check(panel.profileText() == QStringLiteral("IPE300"),
+          "Iptal (bos donus) alani degistirmez");
+    panel.clearDirtyFlags();
+    panel.applyProfileFromPicker(QStringLiteral("HEB240"));
+    check(panel.profileText() == QStringLiteral("HEB240") &&
+              panel.isProfileDirty(),
+          "picker UYGULA panele yazar + kirli (A kurali akisi)");
+    panel.applyProfileFromPicker(QString());
+    check(panel.profileText() == QStringLiteral("HEB240"),
+          "bos picker uygulamasi alani degistirmez");
 
     if (failures == 0)
         std::printf("OK: properties_panel_test — hepsi gecti\n");

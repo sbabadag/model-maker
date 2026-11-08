@@ -1,0 +1,147 @@
+{
+  "backend": "gdi",
+  "timeoutMs": 120000,
+  "steps": [
+    {
+      "assignLine": {
+        "x1": 0,
+        "y1": 0,
+        "z1": 4000,
+        "x2": 5000,
+        "y2": 0,
+        "z2": 4000,
+        "profile": "IPE360"
+      }
+    },
+    {
+      "expect": {
+        "models": {
+          "count": 1,
+          "profiled": 1
+        }
+      }
+    },
+    {
+      "select": [
+        0
+      ]
+    },
+    {
+      "panelType": {
+        "text": "heb240"
+      }
+    },
+    {
+      "expect": {
+        "panelProfile": {
+          "text": "heb240"
+        }
+      }
+    },
+    {
+      "panelApply": {}
+    },
+    {
+      "expect": {
+        "modelProfile": {
+          "model": 0,
+          "name": "HEB240"
+        }
+      }
+    },
+    {
+      "cmd": "edit.undo"
+    },
+    {
+      "expect": {
+        "modelProfile": {
+          "model": 0,
+          "name": "IPE360"
+        }
+      }
+    },
+    {
+      "pickerOpen": {}
+    },
+    {
+      "pickerFilter": {
+        "text": "IPE3*"
+      }
+    },
+    {
+      "pickerSelect": {
+        "name": "IPE300"
+      }
+    },
+    {
+      "expect": {
+        "pickerProfile": {
+          "name": "IPE300"
+        }
+      }
+    },
+    {
+      "pickerOk": {}
+    },
+    {
+      "expect": {
+        "panelProfile": {
+          "text": "IPE300"
+        }
+      }
+    },
+    {
+      "select": [
+        0
+      ]
+    },
+    {
+      "panelApply": {}
+    },
+    {
+      "expect": {
+        "modelProfile": {
+          "model": 0,
+          "name": "IPE300"
+        }
+      }
+    },
+    {
+      "panelType": {
+        "text": "XXX999"
+      }
+    },
+    {
+      "expect": {
+        "panelProfileValid": {
+          "valid": false
+        }
+      }
+    },
+    {
+      "select": [
+        0
+      ]
+    },
+    {
+      "panelApply": {}
+    },
+    {
+      "expect": {
+        "modelProfile": {
+          "model": 0,
+          "name": "IPE300"
+        }
+      }
+    },
+    {
+      "capture": {
+        "name": "t10-panel-profile-picker",
+        "target": "window"
+      }
+    },
+    {
+      "wait": 150
+    }
+  ]
+}

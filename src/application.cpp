@@ -10988,6 +10988,11 @@ std::vector<std::string> Application::profileNames() {
     return names;
 }
 
+const std::vector<SteelProfile>& Application::profiles() {
+    ensureProfileCatalog();
+    return profileCatalog_;
+}
+
 void Application::startProfileAssignment() {
     if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
     ensureProfileCatalog();

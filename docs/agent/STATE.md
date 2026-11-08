@@ -3,14 +3,19 @@
 - Aktif makine: Asus (ev). ZBook (iş) pasif. Senkron yalnız GitHub üzerinden;
   aynı anda tek makinede çalışılır.
 - Son güncelleme: 2026-11-09
-- Son tur: 2026-11-09 — H-8 (Haunch kolon/mertek ayrıklığı) — BİTTİ — panel kot
+- Son tur: 2026-11-09 — UI-34 BİTTİ — profil seçim penceresi (UI-4): aile ağacı,
+  filtre (`*` joker), kendi şematik motorumuzla kesit resmi (h b tw tf r), özellik
+  tablosu, Tamam/Uygula/İptal; paneldeki Profil/Malzeme "..." butonları etkin;
+  refresh timer dirty koruması (yazarken alan ezilmez). GT-1 t10_panel_profile_picker
+  25/25; offscreen picker testi; ctest 156/156; t9'lar yeşil.
+- Önceki tur: 2026-11-09 — H-8 (Haunch kolon/mertek ayrıklığı) — BİTTİ — panel kot
   uygulaması artık bağlı üye uçlarını yeni kota sabitliyor (reanchorSecondaryMembers,
   diğer ucu sabit — Tekla davranışı) + End Plate/Haunch aynı undo kaydında yeniden
   üretiliyor; başarısızlıkta tam rollback. Aynı turda assignProfileToSelection da
   uç bileşenlerini yeniden üretmeye başladı (profil değişimi de aynı sınıf açıktı).
   GT-1 kalkanı: t9_haunch40_e2e (34 adım) + t9_endplate_e2e (35 adım — profil
   değişim kalkanı eklendi), ikisi yeşil; ctest 155/155; python props testi OK.
-  H-7 INBOX'ta BİTTİ (15a41fb). Sıradaki: UI-34 → H-6 → H-5 → H-2 → B8 → B5 →
+  H-7 INBOX'ta BİTTİ (15a41fb). Sıradaki: H-6 →
   T-planı (INBOX Sıra).
 
 ## Git düzeni
@@ -98,7 +103,10 @@
       deneyecek, tekrarlarsa trim log kök nedeni gösterecek
 - [ ] INBOX 2-6: B6, B2/B7, B8, B5, GT-1
 - [ ] Linux CI iş akışı (GitHub Actions)
-- [ ] UI-3 → DURAK 1 (rapor + Windows doğrulaması beklenir)
+- [x] UI-3 + UI-4 (UI-34): Özellikler paneli iskeleti (29cc028) + profil
+      seçim penceresi + GT-1 t10 (bu commit); ctest 156/156. Uç ofseti ve
+      Konum düzlemde/derinlik bölümleri, levha/bulon/kaynak bölümleri ve
+      K1/K2 ayrı kesit olarak kaldı.
 
 ## Notlar
 

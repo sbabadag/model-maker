@@ -14,6 +14,7 @@
 
 #include "model_maker/application.hpp"
 #include "model_maker/command_registry.hpp"
+#include "model_maker/profile_picker_dialog.hpp"
 #include "model_maker/ribbon_widget.hpp"
 
 class QComboBox;
@@ -48,6 +49,15 @@ public:
     void setQuickSearchText(const QString& text);
     // GT-1: acik gorunus (alt pencere) sayisi — durum JSON'u.
     int viewportCount() const;
+
+    // ---- GT-1 erisimcileri (UI-4): panel + secim pencereleri ----
+    PropertiesPanel* propertiesPanel() const { return propsPanel_; }
+    ProfilePickerDialog* profilePickerDialog() const {
+        return profilePickerDialog_;
+    }
+    MaterialPickerDialog* materialPickerDialog() const {
+        return materialPickerDialog_;
+    }
 
 protected:
     void resizeEvent(QResizeEvent* event) override;
@@ -129,6 +139,8 @@ private:
     int twoPointViewCounter_{};
     QLineEdit* profileSelector_{};  // ozellikler panelindeki profil alani
     PropertiesPanel* propsPanel_{}; // UI-3a ozellikler paneli
+    ProfilePickerDialog* profilePickerDialog_{};   // UI-4 profil secim penceresi
+    MaterialPickerDialog* materialPickerDialog_{}; // UI-4 malzeme secim penceresi
     bool profileUiLogged_{};
     bool startupDefaultsApplied_{}; // GL + 3B + Solid bir kez, ilk show'da
     QMenu* appMenu_{}; // Tekla tarzi: tek kok menu (menubar yerine sol ust dugme)
