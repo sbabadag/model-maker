@@ -18,6 +18,33 @@ Ortak kurallar (her maddede geçerli):
 
 ---
 
+## KABUL PAKETİ (kalıcı kural, 2026-11-08) — kullanıcı artık kendisi derlemez
+
+Kullanıcıya görünen bir düzeltme/özellik push kapısından geçince (Windows
+tam derleme + tam ctest yeşil + kullanıcı boştaysa `ctest -L gui` yeşil),
+Hermes kullanıcının deneyeceği çalışır exe'yi hazırlar:
+- Klasör: `C:\work\mm-kabul\<YYYYMMDD-HHMM>-<kısa hash>\` içine
+  build-hermes'ten `model-maker.exe` + exe'nin yanında gereken her şey
+  (profiles/ vb. — build'in exe dizinine kopyaladıkları).
+- Aynı klasöre `calistir.cmd`: PATH'e `C:\msys64\ucrt64\bin` ve
+  `QT_PLUGIN_PATH=C:\msys64\ucrt64\share\qt6\plugins` ekleyip exe'yi
+  başlatır (çalışma dizini = paket klasörü).
+- Aynı klasöre `NELER-YENI.txt` (Türkçe, kısa): hangi commit'ler, kullanıcının
+  ekranda kontrol etmesi gereken maddeler (adım adım: ne yap → ne görmelisin),
+  bilinen eksikler.
+- Masaüstüne tek kısayol: `Model Maker (son kabul).lnk` → en yeni paketin
+  `calistir.cmd`'si (her yeni pakette güncellenir).
+- Kalıcı bir yol daha: `C:\work\mm-kabul\son\` = en yeni paketin kopyası
+  (ya da junction).
+- Paketi oluşturduktan sonra `calistir.cmd`'yi bir kez başlatıp pencerenin
+  açıldığını doğrula (kullanıcı boştaysa), sonra kapat.
+- En fazla son 5 paketi tut; eskileri silmek yerine `C:\work\mm-kabul\_eski\`
+  altına taşı (silme yetkisi istemez).
+- Kullanıcının kabul klasörü `C:\work\model-maker-p2d` ve build-occ'ye
+  DOKUNMA.
+- STATE.md "Son tur" satırına paket adını ekle: `kabul: <klasör>`.
+Paket yalnız kapı yeşilken; kırmızıysa paket yok.
+
 ## SÜREKLİ MOD (2026-11-08'den itibaren; gece modunun yerine)
 
 Amaç: kullanıcı beklemeden kesintisiz geliştirme. Döngü:
