@@ -1,0 +1,20 @@
+{
+  "backend": "gdi",
+  "timeoutMs": 120000,
+  "steps": [
+    {"profile": "HEB240"},
+    {"cmd": "draw.line"},
+    {"click": [250, 300]},
+    {"click": [450, 300]},
+    {"key": "esc"},
+    {"expect": {"models": {"count": 1, "plain": 1, "profiled": 0}}},
+    {"cmd": "draw.beam"},
+    {"moveClick": [[450, 300], [650, 300]]},
+    {"click": [850, 300]},
+    {"key": "esc"},
+    {"expect": {"models": {"count": 2, "plain": 1, "profiled": 1}}},
+    {"expect": {"axisScreen": {"model": 1, "x": 650, "y": 300, "tol": 10}}},
+    {"capture": {"name": "h4-final", "target": "window"}},
+    {"wait": 150}
+  ]
+}

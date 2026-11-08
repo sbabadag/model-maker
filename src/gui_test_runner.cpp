@@ -472,6 +472,30 @@ struct Runner {
                                     .arg(needle).arg(items.size());
             }
         }
+        // "axisScreen": {model, x, y, tol} — modelin eksen baslangicinin
+        // (axisFrom, kullanici tiklamasi) tuval izdusumu beklenen noktaya tol
+        // piksel icinde mi. H-4 kaniti: tutulan snap tiklamayi uzak noktaya
+        // kacirdiysa kiris ekseni beklenen konumda OLMAZ.
+        if (expect.contains(QStringLiteral("axisScreen"))) {
+            const QJsonObject expected = expect[QStringLiteral("axisScreen")].toObject();
+            const int model = expected[QStringLiteral("model")].toInt(-1);
+            const int x = expected[QStringLiteral("x")].toInt(0);
+            const int y = expected[QStringLiteral("y")].toInt(0);
+            const int tol = expected[QStringLiteral("tol")].toInt(8);
+            if (model < 0 ||
+                static_cast<std::size_t>(model) >= app.document().models().size())
+                problems << QStringLiteral("axisScreen: model %1 yok").arg(model);
+            else {
+                const auto& props = app.document().models()[model].properties();
+                POINT p{};
+                if (!app.projectWorldPointToScreen(
+                        {props.axisFromX, props.axisFromY, props.axisFromZ}, p))
+                    problems << QStringLiteral("axisScreen: model %1 ekseni tuval disinda").arg(model);
+                else if (std::abs(p.x - x) > tol || std::abs(p.y - y) > tol)
+                    problems << QStringLiteral("axisScreen: (%1,%2) beklenen (%3,%4) tol %5")
+                                    .arg(p.x).arg(p.y).arg(x).arg(y).arg(tol);
+            }
+        }
         if (!problems.isEmpty())
             return fail(QStringLiteral("expect başarısız: ") + problems.join(QStringLiteral("; ")));
         return true;
@@ -492,6 +516,36 @@ struct Runner {
             if (point.size() < 2) return fail(QStringLiteral("click: [x, y] bekleniyor"));
             execClick(point[0].toInt(), point[1].toInt());
             return writeStep(step, QStringLiteral("click"));
+        }
+        if (step.contains(QStringLiteral("move"))) {
+            // H-4: tiklamasiz imlec hareketi (WM_MOUSEMOVE) — snap tutma/histerezis
+            // davranisini adim adim surmek icin.
+            const QJsonArray point = step[QStringLiteral("move")].toArray();
+            if (point.size() < 2) return fail(QStringLiteral("move: [x, y] bekleniyor"));
+            sendMouse(WM_MOUSEMOVE, 0, point[0].toInt(), point[1].toInt());
+            pump(40);
+            return writeStep(step, QStringLiteral("move"));
+        }
+        if (step.contains(QStringLiteral("moveClick"))) {
+            // H-4: [[x1,y1],[x2,y2]] — tek adimda once ilk noktaya HAREKET
+            // (snap yakalanir), sonra ikinci noktaya hareket + tikla. Adimlar
+            // arasi writeStep/PNG gideri tutma suresi (holdTimeMs ~300 ms)
+            // icindeki senaryoyu belirsiz yapmasin diye uc olay tek adimda.
+            const QJsonArray seq = step[QStringLiteral("moveClick")].toArray();
+            if (seq.size() < 2)
+                return fail(QStringLiteral("moveClick: [[x,y],[x2,y2]] bekleniyor"));
+            const QJsonArray from = seq[0].toArray();
+            const QJsonArray to = seq[1].toArray();
+            if (from.size() < 2 || to.size() < 2)
+                return fail(QStringLiteral("moveClick: [[x,y],[x2,y2]] bekleniyor"));
+            sendMouse(WM_MOUSEMOVE, 0, from[0].toInt(), from[1].toInt());
+            pump(20);
+            sendMouse(WM_MOUSEMOVE, 0, to[0].toInt(), to[1].toInt());
+            pump(20);
+            sendMouse(WM_LBUTTONDOWN, MK_LBUTTON, to[0].toInt(), to[1].toInt());
+            sendMouse(WM_LBUTTONUP, 0, to[0].toInt(), to[1].toInt());
+            pump(40);
+            return writeStep(step, QStringLiteral("moveClick"));
         }
         if (step.contains(QStringLiteral("drag"))) {
             const QJsonArray rect = step[QStringLiteral("drag")].toArray();

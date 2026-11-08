@@ -37,3 +37,7 @@ dist/
 
 # Yerel dogrulama ciktilari (commit'lenmez)
 p2a_fixture_sheet.*
+
+# GT-1 GUI test kosu ciktilari
+model-maker-resize.log
+gt1-out/

@@ -8530,25 +8530,25 @@ void Application::updateHover(int x, int y) {
     }
     const SnapResult rawSnap = *hover_;
     // UI-6a TUTMA SURESI + HIZTEREZIS: imlec snap noktasindan uzaklasinca marker
-    // hemen kaybolmaz; holdTimeMs boyunca VE/VEYA kucuk histerezis mesafesi
-    // icinde son snap korunur. Yeni (daha yakin) bir snap bulunursa hemen ona
-    // gecilir (snap motoru en yakini verir; foundSnap dali dogrudan gunceller).
+    // hemen kaybolmaz; histerezis yaricapi icinde son snap korunur. H-4 KURALI:
+    // tutma SUREYE bagli degildir — imlec tutulan noktadan histerezis yaricapini
+    // asacak kadar uzaksa snap hemen gecersizdir; boylece hizli uzaklasip
+    // (holdTimeMs dolmadan) tiklanirsa tiklama imlecin anki konumunda cozulur,
+    // eski snap noktasina kacmaz. Tutma suresi yalniz gorsel marker icindir.
+    // Yeni (daha yakin) bir snap bulunursa hemen ona gecilir (snap motoru en
+    // yakini verir; foundSnap dali dogrudan gunceller).
     if (hover_->type != SnapType::None) {
         heldSnap_ = hover_;
         heldSnapAt_ = std::chrono::steady_clock::now();
         heldSnapScreen_ = POINT{x, y};
     } else if (heldSnap_) {
-        const auto now = std::chrono::steady_clock::now();
-        const double elapsedMs =
-            std::chrono::duration<double, std::milli>(now - heldSnapAt_).count();
         const double hystPx = kSnapApertureBasePx * snapSettings_.apertureScale;
         const double dx = static_cast<double>(x - heldSnapScreen_.x);
         const double dy = static_cast<double>(y - heldSnapScreen_.y);
-        const double distPx = std::sqrt(dx * dx + dy * dy);
-        if (elapsedMs <= snapSettings_.holdTimeMs || distPx <= hystPx) {
-            hover_ = heldSnap_;  // ayni snap'te kal
+        if (dx * dx + dy * dy <= hystPx * hystPx) {
+            hover_ = heldSnap_;  // histerezis icinde: snap korunur
         } else {
-            heldSnap_.reset();
+            heldSnap_.reset();  // uzak: sureye bakmaksizin gecersiz
         }
     }
     // TP adayi: TAB ile kaydedilecek HAM snap noktasi. Eskiden burada 450 ms
