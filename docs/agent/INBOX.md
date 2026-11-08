@@ -53,6 +53,16 @@ repoyu okur, inceler, INBOX'a yeni iş/hata/öncelik yazar → Hermes'in bir
 sonraki turu onu alır. Kullanıcı yalnız hata bildirir ve son görsel
 kontrolü yapar.
 
+Tur süresi ve öncelik (planlayıcı, 2026-11-08 18:32):
+- Bir tur EN FAZLA 45 dakika. 45. dakikada nerede olursan ol: kapıdan
+  geçmiş iş → push; geçmemiş iş → wip/hermes'e commit + push; STATE "Son tur"
+  satırına "DEVAM" yaz ve turu bitir. Sonraki tur devralır.
+- 20 dakikalık WIP push zorunlu (17:27 turu 60+ dk push'suz kaldı).
+- Kullanıcı boşta değilse GUI/ekran testini BEKLEME; GUI'siz kısmı yap,
+  Durum'a "GUI doğrulaması bekliyor" yaz, turu bitir.
+- Sıra (bu satır INBOX'taki madde sırasını EZER): H-7 → UI-34 → H-6 → H-5 →
+  H-2 → B8 → B5 → T-planı. Yarım kalan madde varsa önce onu bitir.
+
 Hermes kurulumu (bir kez; eski `gece-mm` işini sil, yenisini kur):
 - cron `surekli-mm`: her 30 dakikada bir, süresiz (repeat yok), workdir
   C:\work\mm-hermes, YENİ oturum. Prompt: "git pull --ff-only origin
