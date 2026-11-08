@@ -273,7 +273,21 @@ HEB240) YOK SAYSIN; yalnız profilsiz yardımcı obje üretsin. Profilli üye
 yalnız Kolon/Kiriş'ten. (Yardımcı obje görünümü/migration UI-3'te.)
 Senaryo: aktif profil HEB240 → Çizgi → profilsiz; Kiriş → HEB240.
 
-Durum: —
+Durum: BİTTİ (wip 7ca487e'den alındı; commit ctest sonrası) — Kök neden:
+commitPoint'in Line dalı pendingProfileName_ boşsa düz çizgi, doluysa
+profilli üye üretiyordu; Kiriş de Line aracını kullanıyordu. Düzeltme:
+(1) Line dalı HER ZAMAN düz çizgi üretir (profil yalnız Kolon/Kiriş'te),
+(2) yeni DrawTool::Beam aracı (profil zorunlu, profilsiz kullanım uyarır,
+geometri üretmez), (3) draw.beam handler Beam aracını seçer. Test:
+tests/run_line_beam_tool.py (gerçek commitPoint gövdesi; 14 kontrol:
+Çizgi/Polyline/Dikdörtgen/Daire profili yok sayar, Kiriş uygular,
+Kiriş profilsiz üretmez, Kolon akışı korunur) — Windows'ta elle YEŞİL;
+mutasyonla doğrulandı (eski Line dalına dönüşte KIRMIZI: 1 hata). Ekran:
+aktif HEB240 → Çizgi → "Profil: atanmamış" + Model Ağacı "Çizgiler →
+Çizgi 0"; Kiriş → "Profil: HEB240, A=10600mm²" + "Profiller → HEB240".
+Kanıt: C:\work\mm-hermes-shots\2026-11-08\b6\
+(b6-cizgi-profilsiz-kiris-heb240.png). Not: test CMake'te UNIX bloğunda
+(harness deseni); Windows'ta elle koşuldu, Linux CI'da kayıtlı.
 
 ## 3. B2/B7 — Çizgi komut bitince görünmüyor (GPU'da da)
 Kullanıcı 68c5879'da (temiz derleme) çizgi çizince ekranda görmüyor.
