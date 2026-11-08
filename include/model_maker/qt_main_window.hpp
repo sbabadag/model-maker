@@ -17,12 +17,15 @@
 #include "model_maker/ribbon_widget.hpp"
 
 class QComboBox;
+class QLineEdit;
 class RibbonWidget;
 class QMdiArea;
 class QMdiSubWindow;
 class QMenu;
 
 namespace mm {
+
+class PropertiesPanel;
 
 class QtMainWindow : public QMainWindow, public ICommandHost {
     Q_OBJECT
@@ -124,7 +127,8 @@ private:
     QMdiArea* mdiArea_{};
     QMdiSubWindow* modelSubWindow_{}; // ana model gorunusu (kapatilamaz)
     int twoPointViewCounter_{};
-    QComboBox* profileSelector_{};
+    QLineEdit* profileSelector_{};  // ozellikler panelindeki profil alani
+    PropertiesPanel* propsPanel_{}; // UI-3a ozellikler paneli
     bool profileUiLogged_{};
     bool startupDefaultsApplied_{}; // GL + 3B + Solid bir kez, ilk show'da
     QMenu* appMenu_{}; // Tekla tarzi: tek kok menu (menubar yerine sol ust dugme)

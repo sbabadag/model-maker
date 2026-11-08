@@ -1,28 +1,35 @@
 #!/usr/bin/env python3
-"""Props paneli = TEK profil kaynagi + satirda ENTER ile dogrudan uygulama.
+"""Props paneli = TEK profil kaynagi (UI-3a QLineEdit) + ENTER dogrudan uygulama.
 
-KULLANICI SARTI (uc parca):
+KULLANICI SARTI (uc parca; UI-34 kesit 1 yeni sozlesme):
   1) "sol ust ribbon daki profil secimi kaldirilsin"
   2) "sagdaki props ta hangi ozellikler varsa ona gore profil cizilsin direk"
-  3) "secim yapip props penceresinden de degisiklik yapilan satirda entera
-      basinca da direk ozelligi degissin"
+  3) "secim yapip props penceresinden degisiklik yapilan satirda entera
+     basinca da direk ozelligi degissin"
+
+UI-3a sozlesmesi (eski combo yerine):
+  - Ribbon'da ayri profil cubugu YOK (profileBar, profileToolbar,
+    addToolBarBreak, profileSelectorHint, "profileSelector" objectName,
+    createToolbar icinde app_.profileNames() yok).
+  - Tek profil alani OZELLIKLER PANELINDEKI QLineEdit
+    (`profileSelector_ = propsPanel_->profileEdit();`).
+  - X tusu yolu: createDockPanels icinde setProfilePickerCallback panele
+    odaklanir; "panel.focusProfile" handler'i propsPanel_->focusProfileEdit().
+  - Profil katalogu BIR KEZ kurulur (setProfileCatalog); refresh listeyi
+    YENIDEN KURMAZ (kullanicinin sectigi deger kaybolmaz).
+  - Normalizasyon buyuk/kucuk harf duyarsiz: canonicalName lambda'si
+    QString::compare(..., Qt::CaseInsensitive) kullanir.
+  - Uygulama tek yol (applyProfileNow): setPendingProfileName + secim varsa
+    assignProfileToSelection; katalogda olmayan ad REDDEDILIR (setProfileValid
+    false + durum mesaji); odak tuvale doner.
+  - ENTER/tamamlama panel icinde (properties_panel.cpp, returnPressed ->
+    onProfileEnter) — dogrudan uygular.
 
 Iki katman:
-  1) KAYNAK SEKLI (qt_main_window.cpp):
-     - Ribbon'da ayri profil cubugu KALMAMALI (`profileBar`, `profileToolbar`,
-       `addToolBarBreak`, `profileSelectorHint`, `"profileSelector"` objectName,
-       createToolbar icinde `app_.profileNames()` yok).
-     - Bu secim Props paneline tasinmali: `profileSelector_ = propsProfile;`,
-       `setProfilePickerCallback` createDockPanels icinde.
-     - Liste BIR KEZ kurulur (yer tutucu + katalog, UserRole = ad); refresh
-       `propsProfile->clear()` ILE YENIDEN KURMAMALI (kullanicinin sectigi
-       deger kaybolmasin) ve secim yokken AKTIF profili gostermeli.
-     - Profil uygulama yolu HEM aktif profili (pending) HEM secimi ayarlar ve
-       liste secimi (`textActivated`) ile ENTER (`returnPressed`) ayni yolu
-       kullanir. Rotasyon satiri `editingFinished` (ENTER) ile uygular.
-  2) DAVRANIS: gercek `comboProfileName()` govdesi VERBATIM cikarilip sahte
-     QString/QVariant/QComboBox sinirinda derlenir; yer tutucu (veri = bos)
-     profilsiz, oge verisi profil adi, elle yazilan ad metinden okunur.
+  1) KAYNAK SEKLI (qt_main_window.cpp + properties_panel.cpp).
+  2) DAVRANIS: canonicalName lambda govdesi VERBATIM cikarilip sahte
+     QString/QStringList sinirinda derlenir: harf duyarsiz eslesme, bos
+     katalog, bos sonuc.
 
 Kullanim: python3 tests/run_props_profile_panel.py [build-directory]
 """
@@ -35,18 +42,19 @@ import sys
 root = Path(__file__).resolve().parents[1]
 build = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else root / "build"
 qt = (root / "src/qt_main_window.cpp").read_text(encoding="utf-8")
+panel = (root / "src/properties_panel.cpp").read_text(encoding="utf-8")
 
 failures = []
 
 
-def block_for(sig):
-    m = re.search(r"^" + re.escape(sig) + r"\(.*?^\}", qt, re.M | re.S)
+def block_for(text, sig):
+    m = re.search(r"^" + re.escape(sig) + r"\(.*?^\}", text, re.M | re.S)
     assert m, f"{sig} bulunamadi"
     return m.group()
 
 
-toolbar = block_for("void QtMainWindow::createToolbar")
-panels = block_for("void QtMainWindow::createDockPanels")
+toolbar = block_for(qt, "void QtMainWindow::createToolbar")
+panels = block_for(qt, "void QtMainWindow::createDockPanels")
 
 # ------------------------------------------------- 1) ribbon profil cubugu gitti
 for gone in ["profileBar", "profileToolbar", "profileSelectorHint",
@@ -60,92 +68,94 @@ if "addToolBarBreak" in qt:
 if "profileNames()" in toolbar:
     failures.append("createToolbar hala app_.profileNames() cagiriyor — profil UI ribbon'da kalmis")
 
-# ------------------------------------------------- 2) secim Props paneline tasindi
-if "profileSelector_ = propsProfile;" not in panels:
-    failures.append("profileSelector_ propsProfile'a baglanmamis (X tusu/odak Props'a gitmez)")
+# ------------------------------------------ 2) tek alan ozellikler panelindeki QLineEdit
+if "profileSelector_ = propsPanel_->profileEdit();" not in panels:
+    failures.append("profileSelector_ paneldeki QLineEdit'e baglanmamis "
+                    "(X tusu/odak Props'a gitmez)")
 
 if "setProfilePickerCallback" not in panels:
-    failures.append("setProfilePickerCallback createDockPanels icinde kurulmamis")
+    failures.append("setProfilePickerCallback createDockPanels icinde kurulmamis "
+                    "(Application'in kendi CmdProfileButton yolu panele gitmez)")
 
-# Liste bir kez kurulur: yer tutucu (UserRole bos) + katalog adlari (UserRole ad)
-if "propsProfile->addItem(profileNoneLabel(), QString());" not in panels:
-    failures.append("profil combo'suna 'profilsiz' yer tutucusu eklenmemis")
-if not re.search(r"propsProfile->addItem\(QString::fromStdString\(name\),\s*"
-                 r"QString::fromStdString\(name\)\)", panels):
-    failures.append("profil adlari oge verisiyle (Qt::UserRole) eklenmemis")
+if "propsPanel_->focusProfileEdit()" not in qt:
+    failures.append("panel.focusProfile / X tusu focusProfileEdit() kullanmiyor")
 
-if "propsProfile->clear()" in qt:
-    failures.append("refresh hala propsProfile->clear() ile listeyi yeniden kuruyor "
-                    "(kullanicinin sectigi aktif profil kaybolur)")
+# Katalog bir kez kurulur: refresh setProfileCatalog'i YENIDEN CAGIRMAZ.
+if qt.count("setProfileCatalog(") != 1:
+    failures.append(f"setProfileCatalog beklenen 1 kez kurulmuyor "
+                    f"(adet={qt.count('setProfileCatalog(')}) — refresh katalogu "
+                    "yeniden kurarsa kullanicinin degeri kaybolur)")
 
-if "pendingProfileName()" not in panels:
-    failures.append("refresh secim yokken AKTIF (pending) profili gostermiyor")
+if "propsPanel_->validateProfile" not in panels:
+    failures.append("profil validasyon callback'i kurulmamis (katalog disi ad reddedilmez)")
 
-# ------------------------------------------------- 3) ENTER = dogrudan uygula
+# Normalizasyon: buyuk/kucuk harf duyarsiz.
+if "QString::compare(item, text, Qt::CaseInsensitive)" not in panels:
+    failures.append("canonicalName harf duyarsiz karsilastirma yapmiyor "
+                    "('heb240' -> 'HEB240' calismaz)")
+
+# ------------------------------------------------- 3) ENTER = dogrudan uygula (tek yol)
 if "app_.setPendingProfileName(name);" not in panels:
     failures.append("profil alani cizim icin aktif profili (pending) ayarlamiyor")
 if "app_.assignProfileToSelection(name);" not in panels:
     failures.append("profil alani secime profil atamiyor")
 if "app_.hasSelection()" not in panels:
     failures.append("profil alani secim var/yok ayrimi yapmiyor")
+if "propsPanel_->setProfileValid(false);" not in panels:
+    failures.append("katalogda olmayan profil REDDEDILMIYOR (sessizce yanlis profil)")
 
-if "QLineEdit* profileEdit = propsProfile->lineEdit()" not in panels:
-    failures.append("profil satirinin line edit'i alinmiyor")
-if "QObject::connect(profileEdit, &QLineEdit::returnPressed, this, applyProfileField)" not in panels:
+# ENTER baglantisi panel icinde (properties_panel.cpp): returnPressed -> onProfileEnter.
+if not re.search(r"connect\(profileEdit_,\s*&QLineEdit::returnPressed", panel):
     failures.append("profil satirinda ENTER (returnPressed) baglantisi yok — "
                     "satirda Enter profili uygulamiyor")
-if "applyProfileField" not in panels:
-    failures.append("profil icin tek uygulama yolu (applyProfileField) yok")
-
-if "&QDoubleSpinBox::editingFinished" not in panels:
-    failures.append("rotasyon satiri ENTER (editingFinished) ile uygulamiyor")
-
-if "comboProfileName(propsProfile)" not in panels:
-    failures.append("kolon butonu profil adini comboProfileName ile okumuyor")
 
 if "if (HWND canvas = app_.activeCanvasHandle()) SetFocus(canvas);" not in panels:
     failures.append("profil seciminden sonra odak tuvale donmuyor "
                     "(cizim kisayollari L/M/D calismaz)")
 
 # ------------------------------------------------------------ 2) DAVRANIS
-m = re.search(r"^std::string comboProfileName\(const QComboBox\* combo\) \{.*?^\}",
-              qt, re.M | re.S)
-assert m, "comboProfileName govdesi cikarilamadi"
+m = re.search(r"const auto canonicalName = \[\]\(const QStringList& catalog,.*?"
+              r"return QString\(\);\s*\};", panels, re.S)
+assert m, "canonicalName lambda govdesi cikarilamadi"
 body = m.group()
 
 shell = r'''
+#include <cctype>
 #include <cstdio>
 #include <string>
+#include <vector>
 
-// Sahte Qt siniri: comboProfileName yalniz currentData()/isValid()/toString()/
-// currentText()/trimmed()/toStdString() kullanir.
+namespace Qt {
+enum CaseSensitivity { CaseSensitive, CaseInsensitive };
+}
+
 struct QString {
     std::string s;
     QString() = default;
     explicit QString(std::string v) : s(std::move(v)) {}
-    static QString fromUtf8(const char* p) { return QString(p ? p : ""); }
     QString trimmed() const {
         const std::size_t b = s.find_first_not_of(" \t\n\r");
         if (b == std::string::npos) return QString();
         const std::size_t e = s.find_last_not_of(" \t\n\r");
         return QString(s.substr(b, e - b + 1));
     }
-    std::string toStdString() const { return s; }
+    static int compare(const QString& a, const QString& b, Qt::CaseSensitivity cs) {
+        if (cs == Qt::CaseSensitive) {
+            return a.s == b.s ? 0 : (a.s < b.s ? -1 : 1);
+        }
+        std::string x = a.s, y = b.s;
+        for (char& c : x) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        for (char& c : y) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        return x == y ? 0 : (x < y ? -1 : 1);
+    }
     bool isEmpty() const { return s.empty(); }
+    bool operator==(const QString& o) const { return s == o.s; }
 };
-struct QVariant {
-    bool valid = false;
-    QString v;
-    QVariant() = default;
-    explicit QVariant(QString x) : valid(true), v(std::move(x)) {}
-    bool isValid() const { return valid; }
-    QString toString() const { return v; }
-};
-struct QComboBox {
-    QVariant data{};
-    QString text{};
-    QVariant currentData() const { return data; }
-    QString currentText() const { return text; }
+
+struct QStringList {
+    std::vector<QString> items;
+    std::vector<QString>::const_iterator begin() const { return items.begin(); }
+    std::vector<QString>::const_iterator end() const { return items.end(); }
 };
 
 namespace {
@@ -156,39 +166,34 @@ static int failures = 0;
 #define CHECK(cond, msg) do { if (!(cond)) { std::printf("FAIL: %s\n", msg); ++failures; } } while (0)
 
 int main() {
-    // Yer tutucu: oge verisi GECERLI ama bos -> profilsiz.
+    // Kucuk harfle yazilan ad katalogdaki gercek yazima normalleşir.
     {
-        QComboBox c;
-        c.data = QVariant(QString(""));
-        c.text = QString("— Profilsiz (d\u00fcz \u00e7izgi) —");
-        CHECK(comboProfileName(&c) == "", "yer tutucu profilsiz olmali ('' donmeli)");
+        QStringList catalog;
+        catalog.items = {QString("HEB240"), QString("IPE300")};
+        CHECK(canonicalName(catalog, QString("heb240")) == QString("HEB240"),
+              "'heb240' -> 'HEB240' (harf duyarsiz)");
     }
-    // Katalog ogesi: veri = profil adi.
+    // Buyuk/kucuk karisik de calisir.
     {
-        QComboBox c;
-        c.data = QVariant(QString("IPE200"));
-        c.text = QString("IPE200");
-        CHECK(comboProfileName(&c) == "IPE200", "katalog ogesi adi veriden okunmali");
+        QStringList catalog;
+        catalog.items = {QString("S355J2"), QString("S450")};
+        CHECK(canonicalName(catalog, QString("s355j2")) == QString("S355J2"),
+              "'s355j2' -> 'S355J2'");
     }
-    // Elle yazilan ad: veri YOK -> metinden okunur ve kirpilir.
+    // Katalogda yok: bos doner -> alan kirmizi, uygulanmaz.
     {
-        QComboBox c;
-        c.text = QString("  HEA160  ");
-        CHECK(comboProfileName(&c) == "HEA160", "elle yazilan ad kirpilarak okunmali");
+        QStringList catalog;
+        catalog.items = {QString("HEB240")};
+        CHECK(canonicalName(catalog, QString("XXX999")) == QString(""),
+              "katalogda olmayan ad bos donmeli");
     }
-    // Elle yazilan ama bos/bosluk: profilsiz.
+    // Bos katalog guvenli.
     {
-        QComboBox c;
-        c.text = QString("   ");
-        CHECK(comboProfileName(&c) == "", "bosluk metin profilsiz sayilmali");
+        QStringList catalog;
+        CHECK(canonicalName(catalog, QString("HEB240")) == QString(""),
+              "bos katalogda bos donmeli");
     }
-    // Bos combo (guvenli).
-    {
-        QComboBox c;
-        CHECK(comboProfileName(&c) == "", "veri yok + metin bos -> '' (cokme yok)");
-    }
-    CHECK(comboProfileName(nullptr) == "", "null combo guvenli olmali");
-    std::printf("comboProfileName davranisi: %s\n", failures ? "HATALI" : "OK");
+    std::printf("canonicalName davranisi: %s\n", failures ? "HATALI" : "OK");
     return failures ? 1 : 0;
 }
 '''
@@ -201,7 +206,7 @@ subprocess.run([os.environ.get("CXX", "g++"), "-std=c++20", "-O0", "-g", "-Wall"
                 "-Werror", str(generated), "-o", str(binary)], check=True)
 rc = subprocess.run([str(binary)]).returncode
 if rc != 0:
-    failures.append("comboProfileName davranis testi dustu")
+    failures.append("canonicalName davranis testi dustu")
 
 print("props profil paneli sekil kontrolu: " + ("OK" if not failures else "HATALI"))
 for f in failures:

@@ -1,6 +1,7 @@
 #include "model_maker/qt_main_window.hpp"
 #include "model_maker/command_catalog.hpp"
 #include "model_maker/ribbon_widget.hpp"
+#include "model_maker/properties_panel.hpp"
 #include "model_maker/drafting.hpp"
 #include "model_maker/two_point_view.hpp"
 #include "model_maker/component_dialog_widget.hpp"
@@ -293,17 +294,6 @@ namespace mm {
 namespace {
 
 // Props panelindeki profil combo'sunun "profilsiz" yer tutucusu.
-QString profileNoneLabel() { return QString::fromUtf8("— Profilsiz (düz çizgi) —"); }
-
-// Combo'dan secili profil adini okur. Yer tutucu (UserRole bos) ise ve kullanici
-// elle bir ad yazmadiysa bos string doner -> profilsiz cizim.
-std::string comboProfileName(const QComboBox* combo) {
-    if (!combo) return {};
-    const QVariant data = combo->currentData();
-    if (data.isValid()) return data.toString().trimmed().toStdString();
-    return combo->currentText().trimmed().toStdString(); // elle yazilan ad
-}
-
 // DOGRUSAL KOPYA/TASIMA DELTA PANELI (kullanici talebi): X / Y / Z alanlari +
 // "Iki Nokta Sec" dugmesi. "Iki Nokta Sec" YALNIZ OLCU alir: panel kapanir,
 // kullanici iki nokta tiklar, olculen delta panele yazilir ve panel yeniden
@@ -678,7 +668,7 @@ void QtMainWindow::showEvent(QShowEvent* event) {
         QTimer::singleShot(0, this, [this]() {
             if (!profileSelector_) return;
             const QPoint topLeft = profileSelector_->mapToGlobal(QPoint(0, 0));
-            const QByteArray current = profileSelector_->currentText().toUtf8();
+            const QByteArray current = profileSelector_->text().toUtf8();
             FILE* diag = fopen("model-maker-render.log", "a");
             if (diag) {
                 fprintf(diag,
@@ -686,7 +676,8 @@ void QtMainWindow::showEvent(QShowEvent* event) {
                         "rect=(%d,%d)-(%d,%d) current=%s\n",
                         profileSelector_->isVisibleTo(this) ? 1 : 0,
                         profileSelector_->isEnabled() ? 1 : 0,
-                        profileSelector_->count(), topLeft.x(), topLeft.y(),
+                        0, // UI-3a: QLineEdit + completer; eski combo sayisi yok
+                        topLeft.x(), topLeft.y(),
                         topLeft.x() + profileSelector_->width(),
                         topLeft.y() + profileSelector_->height(), current.constData());
                 fclose(diag);
@@ -789,10 +780,7 @@ void QtMainWindow::buildCommandHandlers() {
             statusBar()->showMessage(
                 QStringLiteral("Kiriş için profil zorunlu: Özellikler panelindeki "
                                "profil alanından seçin"), 6000);
-            if (profileSelector_) {
-                profileSelector_->setFocus(Qt::ShortcutFocusReason);
-                profileSelector_->showPopup();
-            }
+            if (propsPanel_) propsPanel_->focusProfileEdit();
             return;
         }
         app_.selectTool(DrawTool::Beam);
@@ -950,9 +938,7 @@ void QtMainWindow::buildCommandHandlers() {
     h["assist.dynamicInput"] = [this]() { app_.toggleDynamicInput(); };
     h["assist.tempPoint"] = [this]() { app_.acquireTemporaryTrackingPoint(); };
     h["panel.focusProfile"] = [this]() {
-        if (!profileSelector_) return;
-        profileSelector_->setFocus(Qt::ShortcutFocusReason);
-        profileSelector_->showPopup();
+        if (propsPanel_) propsPanel_->focusProfileEdit();
     };
     h["panel.modelTree"] = [this]() {
         if (modelTreeDock_) modelTreeDock_->setVisible(!modelTreeDock_->isVisible());
@@ -2871,159 +2857,164 @@ void QtMainWindow::createToolbar() {
 }
 
 void QtMainWindow::createDockPanels() {
+    // ---- OZELLIKLER PANELI (UI-3a; Tekla tarzi, daraltilabilir bolumler) ----
+    // Panel kendi dosyasinda (properties_panel.cpp), platformdan bagimsiz;
+    // burada yalnizca Application ile ince baglanti + 500 ms refresh var.
     QDockWidget* propsDock = new QDockWidget("Özellikler", this);
-    QWidget* propsWidget = new QWidget(propsDock);
-    QVBoxLayout* propsLayout = new QVBoxLayout(propsWidget);
-    propsLayout->setContentsMargins(8, 8, 8, 8);
-    propsLayout->setSpacing(6);
-
-    // Tip (salt okunur)
-    QLabel* typeLabel = new QLabel("-", propsWidget);
-    typeLabel->setObjectName("propsType");
-    typeLabel->setStyleSheet("color: #9FA6B2; font-size: 9pt;");
-    propsLayout->addWidget(typeLabel);
-
-    // KAYNAK / ASSEMBLY bilgisi (salt okunur): weld veya assembly secildiginde
-    // burada detay gosterilir (Phase W2). Model seciminde bos kalir.
-    QLabel* weldAsmInfo = new QLabel(QString(), propsWidget);
-    weldAsmInfo->setObjectName("propsWeldAsm");
-    weldAsmInfo->setWordWrap(true);
-    weldAsmInfo->setStyleSheet("color: #D0B37E; font-size: 8.5pt;");
-    propsLayout->addWidget(weldAsmInfo);
-
-    // Profil (AKTIF): secili nesnenin profilini gosterir/yazar; secim yokken
-    // buradaki deger CIZILECEK kirisin profilidir. (Ust ribbon'daki ayri
-    // profil cubugu kaldirildi — tek yer burasidir.)
-    QLabel* profileCaption = new QLabel("Profil (aktif)", propsWidget);
-    profileCaption->setStyleSheet("color: #C8CCD4; font-size: 8pt;");
-    propsLayout->addWidget(profileCaption);
-    QComboBox* propsProfile = new QComboBox(propsWidget);
-    propsProfile->setObjectName("propsProfile");
-    propsProfile->setEditable(true);
-    propsProfile->setInsertPolicy(QComboBox::NoInsert);
-    propsProfile->setMinimumContentsLength(18);
-    propsProfile->setMaxVisibleItems(22);
-    propsProfile->setToolTip(
-        "Secim YOKKEN: buradaki profil cizilecek kirisi belirler (profilsiz = "
-        "duz cizgi).\nSecim VARKEN: profili secime atar.\nX tusu bu alana odaklanir.");
-    // Oge verisi (Qt::UserRole) = profil adi; yer tutucuda bos string.
-    // Elle yazilan ad icin veri yoktur, metin okunur.
-    propsProfile->addItem(profileNoneLabel(), QString());
-    for (const auto& name : app_.profileNames())
-        propsProfile->addItem(QString::fromStdString(name),
-                              QString::fromStdString(name));
-    if (QCompleter* completer = propsProfile->completer()) {
-        completer->setCaseSensitivity(Qt::CaseInsensitive);
-        completer->setFilterMode(Qt::MatchContains);
-    }
-    propsLayout->addWidget(propsProfile);
-    // X tusu / CmdProfileButton: eski ribbon combo'su yerine bu alana odaklan.
-    profileSelector_ = propsProfile;
-    app_.setProfilePickerCallback([this]() {
-        if (!profileSelector_ || !profileSelector_->isEnabled()) return;
-        QTimer::singleShot(0, profileSelector_, [this]() {
-            if (!profileSelector_) return;
-            profileSelector_->setFocus(Qt::ShortcutFocusReason);
-            profileSelector_->showPopup();
-        });
-    });
-
-    // Katman
-    QLabel* layerCaption = new QLabel("Katman", propsWidget);
-    layerCaption->setStyleSheet("color: #C8CCD4; font-size: 8pt;");
-    propsLayout->addWidget(layerCaption);
-    QComboBox* propsLayer = new QComboBox(propsWidget);
-    propsLayer->setObjectName("propsLayer");
-    propsLayout->addWidget(propsLayer);
-
-    // Renk
-    QLabel* colorCaption = new QLabel("Renk", propsWidget);
-    colorCaption->setStyleSheet("color: #C8CCD4; font-size: 8pt;");
-    propsLayout->addWidget(colorCaption);
-    QComboBox* propsColor = new QComboBox(propsWidget);
-    propsColor->setObjectName("propsColor");
-    propsLayout->addWidget(propsColor);
-
-    // Çizgi Tipi
-    QLabel* lineTypeCaption = new QLabel("Çizgi Tipi", propsWidget);
-    lineTypeCaption->setStyleSheet("color: #C8CCD4; font-size: 8pt;");
-    propsLayout->addWidget(lineTypeCaption);
-    QComboBox* propsLineType = new QComboBox(propsWidget);
-    propsLineType->setObjectName("propsLineType");
-    propsLayout->addWidget(propsLineType);
-
-    // Malzeme
-    QLabel* materialCaption = new QLabel("Malzeme", propsWidget);
-    materialCaption->setStyleSheet("color: #C8CCD4; font-size: 8pt;");
-    propsLayout->addWidget(materialCaption);
-    QComboBox* propsMaterial = new QComboBox(propsWidget);
-    propsMaterial->setObjectName("propsMaterial");
-    propsMaterial->setEditable(true);
-    propsMaterial->setInsertPolicy(QComboBox::NoInsert);
-    propsLayout->addWidget(propsMaterial);
-
-    // Profil rotasyonu (derece)
-    QLabel* rotationCaption = new QLabel("Rotasyon (°)", propsWidget);
-    rotationCaption->setStyleSheet("color: #C8CCD4; font-size: 8pt;");
-    propsLayout->addWidget(rotationCaption);
-    QDoubleSpinBox* propsRotation = new QDoubleSpinBox(propsWidget);
-    propsRotation->setObjectName("propsRotation");
-    propsRotation->setRange(0.0, 360.0);
-    propsRotation->setDecimals(1);
-    propsRotation->setSingleStep(5.0);
-    propsRotation->setSuffix("°");
-    propsLayout->addWidget(propsRotation);
-
-    // Kolon ust/alt kot (mm) — kolon butonu icin.
-    QLabel* topCaption = new QLabel("Kolon Üst (mm)", propsWidget);
-    topCaption->setStyleSheet("color: #C8CCD4; font-size: 8pt;");
-    propsLayout->addWidget(topCaption);
-    QDoubleSpinBox* propsColumnTop = new QDoubleSpinBox(propsWidget);
-    propsColumnTop->setObjectName("propsColumnTop");
-    propsColumnTop->setRange(-100000.0, 100000.0);
-    propsColumnTop->setDecimals(0);
-    propsColumnTop->setValue(8500.0);
-    propsLayout->addWidget(propsColumnTop);
-
-    QLabel* bottomCaption = new QLabel("Kolon Alt (mm)", propsWidget);
-    bottomCaption->setStyleSheet("color: #C8CCD4; font-size: 8pt;");
-    propsLayout->addWidget(bottomCaption);
-    QDoubleSpinBox* propsColumnBottom = new QDoubleSpinBox(propsWidget);
-    propsColumnBottom->setObjectName("propsColumnBottom");
-    propsColumnBottom->setRange(-100000.0, 100000.0);
-    propsColumnBottom->setDecimals(0);
-    propsColumnBottom->setValue(0.0);
-    propsLayout->addWidget(propsColumnBottom);
-
-    // Uzunluk (salt okunur)
-    QLabel* lengthCaption = new QLabel("Uzunluk", propsWidget);
-    lengthCaption->setStyleSheet("color: #C8CCD4; font-size: 8pt;");
-    propsLayout->addWidget(lengthCaption);
-    QLabel* lengthValue = new QLabel("-", propsWidget);
-    lengthValue->setObjectName("propsLength");
-    lengthValue->setStyleSheet("color: #F0F0F4; font-size: 9pt;");
-    propsLayout->addWidget(lengthValue);
-
-    QPushButton* propsApply = new QPushButton("UYGULA", propsWidget);
-    propsApply->setObjectName("propsApply");
-    propsApply->setStyleSheet(
-        "QPushButton { background: #2E6B4F; color: #F0F0F4; font-weight: 700; "
-        "padding: 6px; border-radius: 3px; }"
-        "QPushButton:hover { background: #37805F; }");
-    propsLayout->addWidget(propsApply);
-
-    QPushButton* propsColumnBtn = new QPushButton("KOLON YERLEŞTİR", propsWidget);
-    propsColumnBtn->setObjectName("propsColumnBtn");
-    propsColumnBtn->setStyleSheet(
-        "QPushButton { background: #3A5A8C; color: #F0F0F4; font-weight: 700; "
-        "padding: 6px; border-radius: 3px; }"
-        "QPushButton:hover { background: #486FAB; }");
-    propsLayout->addWidget(propsColumnBtn);
-
-    propsLayout->addStretch(1);
-    propsDock->setWidget(propsWidget);
+    propsPanel_ = new PropertiesPanel(propsDock);
+    propsDock->setWidget(propsPanel_);
     propsDock->setMinimumWidth(250);
     addDockWidget(Qt::RightDockWidgetArea, propsDock);
+    // X tusu / CmdProfileButton: profil alanina odaklan (eski ribbon combo'su
+    // kalkti; tek profil alani paneldeki QLineEdit). Application'in kendi
+    // Win32 CmdProfileButton yolu da ayni panele yonlendirilir.
+    profileSelector_ = propsPanel_->profileEdit();
+    app_.setProfilePickerCallback([this]() {
+        if (propsPanel_) propsPanel_->focusProfileEdit();
+    });
+
+    // Profil/malzeme katalog normalizasyonu (buyuk/kucuk harf duyarsiz):
+    // "heb240" -> "HEB240". Katalogda yoksa bos doner -> alan kirmizi,
+    // uygulanmaz. Bos girdi gecerlidir (B6: Kolon/Kiris yine de profil ister,
+    // Cizgi profili yok sayar).
+    const auto canonicalName = [](const QStringList& catalog,
+                                  const QString& text) {
+        for (const QString& item : catalog)
+            if (QString::compare(item, text, Qt::CaseInsensitive) == 0)
+                return item;
+        return QString();
+    };
+    QStringList profileCatalog;
+    for (const auto& name : app_.profileNames())
+        profileCatalog << QString::fromStdString(name);
+    propsPanel_->setProfileCatalog(profileCatalog);
+    propsPanel_->validateProfile =
+        [profileCatalog, canonicalName](const QString& text) {
+            const QString t = text.trimmed();
+            return t.isEmpty() || !canonicalName(profileCatalog, t).isEmpty();
+        };
+    // Malzeme katalogu (UI-4 penceresi bu listeyi yonetecek; simdilik panel
+    // listesi). Buyuk/kucuk harf duyarsiz; listede yoksa uygulanmaz.
+    const QStringList materialCatalog = {QStringLiteral("S235JR"),
+                                         QStringLiteral("S275JR"),
+                                         QStringLiteral("S355J2"),
+                                         QStringLiteral("S450"),
+                                         QStringLiteral("S690QL"),
+                                         QStringLiteral("BETON"),
+                                         QStringLiteral("DİĞER")};
+    propsPanel_->setMaterialChoices(materialCatalog);
+    propsPanel_->validateMaterial =
+        [materialCatalog, canonicalName](const QString& text) {
+            const QString t = text.trimmed();
+            return t.isEmpty() || !canonicalName(materialCatalog, t).isEmpty();
+        };
+    // Yuzey islemi: serbest metin + yaygin secenekler (modelde katalog yok).
+    propsPanel_->setFinishChoices({QString(), QStringLiteral("Genel"),
+                                   QStringLiteral("Boyalı"),
+                                   QStringLiteral("Sıcak daldırma"),
+                                   QStringLiteral("Atölye astarı")});
+    // Sinif (renk kutulu acilir liste): Application renk paleti. Secim
+    // aninda uygulanir (eski "Renk" satiriyla ayni yol).
+    QStringList classLabels;
+    QList<QColor> classColors;
+    for (const auto& entry : Application::colorPalette()) {
+        classLabels << (QString::fromWCharArray(entry.first) +
+                        (entry.second ? QString()
+                                      : QStringLiteral(" (ByLayer)")));
+        classColors << (entry.second ? QColor(QRgb(*entry.second))
+                                     : QColor(QStringLiteral("#5A6270")));
+    }
+    propsPanel_->setClassChoices(classLabels, classColors);
+
+    // ---- Profil uygulama yolu (ENTER / tamamlama secimi / UYGULA) ----
+    const auto applyProfileNow = [this, canonicalName, profileCatalog](
+                                     const QString& text) {
+        const QString norm = canonicalName(profileCatalog, text.trimmed());
+        if (!text.trimmed().isEmpty() && norm.isEmpty()) {
+            propsPanel_->setProfileValid(false);
+            statusBar()->showMessage(
+                QStringLiteral("Profil katalogda yok — uygulanmadı"), 5000);
+            return;
+        }
+        propsPanel_->setProfileValid(true);
+        const std::string name = norm.toStdString();
+        app_.setPendingProfileName(name);  // cizilecek kirisin profili
+        if (app_.hasSelection()) app_.assignProfileToSelection(name);
+        QTimer::singleShot(0, this, [this]() {
+            if (HWND canvas = app_.activeCanvasHandle()) SetFocus(canvas);
+        });
+    };
+    propsPanel_->onProfileEnter = applyProfileNow;
+    const auto applyMaterialNow = [this, canonicalName, materialCatalog](
+                                      const QString& text) {
+        const QString norm = canonicalName(materialCatalog, text.trimmed());
+        if (!text.trimmed().isEmpty() && norm.isEmpty()) {
+            propsPanel_->setMaterialValid(false);
+            statusBar()->showMessage(
+                QStringLiteral("Malzeme listede yok — uygulanmadı"), 5000);
+            return;
+        }
+        propsPanel_->setMaterialValid(true);
+        if (!norm.isEmpty())
+            app_.setSelectedEntityMaterial(norm.toStdString());
+    };
+    propsPanel_->onMaterialEnter = applyMaterialNow;
+    propsPanel_->onClassPicked = [this](int index) {
+        app_.setCurrentColorChoice(index);
+    };
+    propsPanel_->onLayerPicked = [this](const QString& text) {
+        app_.setCurrentLayer(text.toStdString());
+    };
+    propsPanel_->onLineTypePicked = [this](int index) {
+        app_.setCurrentLineTypeChoice(index);
+    };
+    // Kolon kotlari: yazilirken SONRAKI kolon yerlesimi icin saklanir
+    // (setColumnProps); ENTER secili kolona uygular (eski editingFinished
+    // davranisi korunur).
+    propsPanel_->onColumnLevelsEdit = [this](double top, double bottom) {
+        app_.setColumnProps(top, bottom,
+                            propsPanel_->materialText().toStdString());
+    };
+    propsPanel_->onColumnLevelsEnter = [this]() {
+        app_.applyColumnLevels(propsPanel_->columnTop(),
+                               propsPanel_->columnBottom());
+    };
+    // UYGULA (A kurali): YALNIZ degisen alanlar uygulanir; ad/yuzey islemi/
+    // rotasyon/kolon kotlari TEK geri alma adiminda (applySelectedEntityBatch);
+    // profil/malzeme kirli kaldiysa (Enter'a basilmadı) ayni yoldan uygulanir.
+    propsPanel_->onApplyClicked = [this, applyProfileNow, applyMaterialNow]() {
+        if (propsPanel_->isProfileDirty())
+            applyProfileNow(propsPanel_->profileText());
+        if (propsPanel_->isMaterialDirty())
+            applyMaterialNow(propsPanel_->materialText());
+        const std::string name = propsPanel_->isNameDirty()
+                                     ? propsPanel_->name().toStdString()
+                                     : std::string();
+        const std::string finish = propsPanel_->isFinishDirty()
+                                       ? propsPanel_->finish().toStdString()
+                                       : std::string();
+        const double rotation = propsPanel_->rotation();
+        const double top = propsPanel_->columnTop();
+        const double bottom = propsPanel_->columnBottom();
+        app_.applySelectedEntityBatch(
+            propsPanel_->isNameDirty() ? &name : nullptr,
+            propsPanel_->isFinishDirty() ? &finish : nullptr,
+            propsPanel_->isRotationDirty() ? &rotation : nullptr,
+            propsPanel_->isColumnDirty() ? &top : nullptr,
+            propsPanel_->isColumnDirty() ? &bottom : nullptr);
+        propsPanel_->clearDirtyFlags();
+        QTimer::singleShot(0, this, [this]() {
+            if (HWND canvas = app_.activeCanvasHandle()) SetFocus(canvas);
+        });
+    };
+    // Kolon yerlestir: buton kolon modunu etkinlestirir; profil/malzeme
+    // panelden okunur.
+    propsPanel_->onColumnPlaceClicked = [this]() {
+        app_.setPendingProfileName(propsPanel_->profileText().toStdString());
+        app_.setColumnProps(app_.columnTopZ(), app_.columnBottomZ(),
+                            propsPanel_->materialText().toStdString());
+        app_.selectTool(DrawTool::Column);
+    };
 
     // ---- MODEL AGACI (Tekla model organizer esdegeri) ----
     QDockWidget* treeDock = new QDockWidget(QStringLiteral("Model Ağacı"), this);
@@ -3043,6 +3034,7 @@ void QtMainWindow::createDockPanels() {
     treeDock->setWidget(treeWidget);
     treeDock->setMinimumWidth(220);
     addDockWidget(Qt::RightDockWidgetArea, treeDock);
+
 
     // Agac icerigi 500ms'de bir tazelenir (Application QObject degil, sinyal
     // yok). Yalniz sayi/filtre degisince yeniden kurulur; secim kalinligi her
@@ -3201,36 +3193,39 @@ void QtMainWindow::createDockPanels() {
         });
 
     // Secim degisince ozellikleri tazele (500ms yoklama — Application
-    // QObject degil, sinyal altyapisi yok).
+    // QObject degil, sinyal altyapisi yok). Panel setter'lari QSignalBlocker
+    // altindadir ve secim/veri degismedikce refresh hicbir sey yapmaz; odak
+    // paneldeyken kullanicinin yazdigi alanlar ezilmez.
     QTimer* refreshTimer = new QTimer(this);
     refreshTimer->setInterval(500);
-    QObject::connect(refreshTimer, &QTimer::timeout, this, [this, propsProfile, propsLayer,
-                                                           propsColor, propsLineType, propsMaterial,
-                                                           propsRotation, propsColumnTop,
-                                                           propsColumnBottom,
-                                                           typeLabel, lengthValue, weldAsmInfo]() {
+    QObject::connect(refreshTimer, &QTimer::timeout, this, [this]() {
         static int lastIndex = -2;
         static QString lastProfile;
         static std::optional<std::size_t> lastWeld;
         static std::size_t lastSelSize = 0;
         const int index = app_.selectedModelIndex();
-        const QString profile = QString::fromStdString(app_.selectedEntityProfile());
+        const QString profile =
+            QString::fromStdString(app_.selectedEntityProfile());
         const std::optional<std::size_t> weldIdx = app_.selectedWeldIndex();
         const std::size_t selSize = app_.selectedModelIndices().size();
         if (index == lastIndex && profile == lastProfile &&
-            weldIdx == lastWeld && selSize == lastSelSize) return;
+            weldIdx == lastWeld && selSize == lastSelSize)
+            return;
         lastIndex = index;
         lastProfile = profile;
         lastWeld = weldIdx;
         lastSelSize = selSize;
 
         const bool hasSelection = index >= 0;
-        typeLabel->setText(hasSelection
-            ? QString::fromStdString(app_.selectedEntityTypeLabel())
-            : "Seçili obje yok");
-        lengthValue->setText(hasSelection
+        propsPanel_->setTitle(hasSelection
+            ? QStringLiteral("%1 (%2 seçili)")
+                  .arg(QString::fromStdString(app_.selectedEntityTypeLabel()))
+                  .arg(static_cast<qulonglong>(selSize))
+            : QStringLiteral("— (%1 seçili)")
+                  .arg(static_cast<qulonglong>(selSize)));
+        propsPanel_->setLengthLabel(hasSelection
             ? QString::fromStdString(app_.selectedEntityLengthLabel())
-            : "-");
+            : QStringLiteral("-"));
 
         // KAYNAK / ASSEMBLY bilgisi (Phase W2).
         QString asmInfo;
@@ -3256,7 +3251,8 @@ void QtMainWindow::createDockPanels() {
                 bool hit = false;
                 for (const std::size_t idx : sel) {
                     if (idx >= app_.document().models().size()) continue;
-                    const auto c = app_.document().assemblyIdContaining(app_.document().modelId(idx));
+                    const auto c =
+                        app_.document().assemblyIdContaining(app_.document().modelId(idx));
                     if (c && *c == a.id) { hit = true; break; }
                 }
                 if (!hit) continue;
@@ -3275,181 +3271,53 @@ void QtMainWindow::createDockPanels() {
                 break;
             }
         }
-        weldAsmInfo->setText(asmInfo);
-        weldAsmInfo->setVisible(!asmInfo.isEmpty());
+        propsPanel_->setInfo(asmInfo);
 
-        // Profil: liste BIR KEZ kuruldu (yer tutucu + katalog). Burada yalniz
+        // Profil: katalog BIR KEZ kuruldu (completer). Burada yalniz
         // gosterilecek deger secilir — secim varsa nesnenin profili, yoksa
         // AKTIF (bekleyen) profil; boylece kullanicinin sectigi deger kaybolmaz.
-        QSignalBlocker profileBlocker(propsProfile);
-        if (!profile.isEmpty()) {
-            propsProfile->setCurrentText(profile);
-        } else {
-            const QString pending = QString::fromStdString(app_.pendingProfileName());
-            if (pending.isEmpty()) propsProfile->setCurrentIndex(0); // profilsiz
-            else propsProfile->setCurrentText(pending);
-        }
-        profileBlocker.unblock();
+        if (!profile.isEmpty()) propsPanel_->setProfile(profile);
+        else propsPanel_->setProfile(
+            QString::fromStdString(app_.pendingProfileName()));
 
         // Katmanlar
-        QSignalBlocker layerBlocker(propsLayer);
-        propsLayer->clear();
-        const auto layers = app_.layerNames();
-        for (const auto& layer : layers)
-            propsLayer->addItem(QString::fromStdString(layer));
-        propsLayer->setCurrentText(QString::fromStdString(app_.selectedEntityLayer()));
-        layerBlocker.unblock();
-
-        // Renkler
-        QSignalBlocker colorBlocker(propsColor);
-        propsColor->clear();
-        const auto& palette = Application::colorPalette();
-        for (const auto& entry : palette) {
-            const QString label = QString::fromWCharArray(entry.first);
-            if (entry.second)
-                propsColor->addItem(label);
-            else
-                propsColor->addItem(label + " (ByLayer)");
-        }
-        const int colorIndex = app_.selectedEntityColorIndex();
-        if (colorIndex >= 0 && colorIndex < propsColor->count())
-            propsColor->setCurrentIndex(colorIndex);
-        colorBlocker.unblock();
+        QStringList layers;
+        for (const auto& layer : app_.layerNames())
+            layers << QString::fromStdString(layer);
+        propsPanel_->setLayerChoices(layers);
+        propsPanel_->setLayer(QString::fromStdString(app_.selectedEntityLayer()));
 
         // Cizgi tipleri
-        QSignalBlocker lineTypeBlocker(propsLineType);
-        propsLineType->clear();
+        QStringList lineTypes;
         for (const auto& choice : Application::lineTypePalette())
-            propsLineType->addItem(QString::fromStdString(choice));
-        const QString currentLineType =
-            QString::fromStdString(app_.selectedEntityLineType());
-        if (!currentLineType.isEmpty()) propsLineType->setCurrentText(currentLineType);
-        lineTypeBlocker.unblock();
+            lineTypes << QString::fromStdString(choice);
+        propsPanel_->setLineTypeChoices(lineTypes);
+        propsPanel_->setLineType(
+            QString::fromStdString(app_.selectedEntityLineType()));
 
-        // Malzeme
-        QSignalBlocker materialBlocker(propsMaterial);
-        const QString currentMaterial =
-            QString::fromStdString(app_.selectedEntityMaterial());
-        const QStringList materials = {"S235JR", "S275JR", "S355J2", "S450",
-                                       "S690QL", "BETON", "DİĞER"};
-        if (propsMaterial->count() == 0) propsMaterial->addItems(materials);
-        if (!currentMaterial.isEmpty()) propsMaterial->setCurrentText(currentMaterial);
-        materialBlocker.unblock();
+        // Sinif = renk paleti secimi (eski "Renk" satirinin yerine).
+        const int colorIndex = app_.selectedEntityColorIndex();
+        propsPanel_->setClassIndex(colorIndex);
+
+        // Malzeme / Ad / Yuzey islemi: coklu secimde bos gosterilir
+        // (Application o durumda bos doner).
+        propsPanel_->setMaterial(
+            QString::fromStdString(app_.selectedEntityMaterial()));
+        propsPanel_->setName(QString::fromStdString(app_.selectedEntityName()));
+        propsPanel_->setFinish(
+            QString::fromStdString(app_.selectedEntityFinish()));
 
         // Rotasyon
-        QSignalBlocker rotationBlocker(propsRotation);
-        propsRotation->setValue(app_.selectedEntityProfileRotation());
-        rotationBlocker.unblock();
+        propsPanel_->setRotation(app_.selectedEntityProfileRotation());
 
         // Kolon kotlari: secili DUSEY profilli elemanin GERCEK ust/alt kotunu
-        // goster. Eskiden bu iki satir secimden hic okunmuyordu (hep 8500/0
-        // kaliyordu) — "kolon boyunu degistirmiyor" sikayetinin bir parcasi.
-        // Secili eleman kolon degilse (kiris vb.) mevcut deger korunur: bu
-        // kutular ayni zamanda SONRAKI kolon yerlesiminin varsayilanidir.
+        // goster. Secili eleman kolon degilse mevcut deger korunur: bu kutular
+        // ayni zamanda SONRAKI kolon yerlesiminin varsayilanidir.
         double selectionTop = 0.0, selectionBottom = 0.0;
-        if (app_.selectedEntityColumnLevels(selectionTop, selectionBottom)) {
-            QSignalBlocker columnTopBlocker(propsColumnTop);
-            QSignalBlocker columnBottomBlocker(propsColumnBottom);
-            propsColumnTop->setValue(selectionTop);
-            propsColumnBottom->setValue(selectionBottom);
-        }
+        if (app_.selectedEntityColumnLevels(selectionTop, selectionBottom))
+            propsPanel_->setColumnLevels(selectionTop, selectionBottom);
     });
     refreshTimer->start();
-
-    // Profil alani: secim YOKKEN cizilecek kirisin profilini belirler, secim
-    // VARKEN profili secime atar. Liste secimi (textActivated) ve elle yazip
-    // ENTER (returnPressed) AYNI yolu kullanir → satirda Enter = dogrudan uygula.
-    const auto applyProfileField = [this, propsProfile]() {
-        const std::string name = comboProfileName(propsProfile);
-        app_.setPendingProfileName(name);            // cizilecek kirisin profili
-        if (app_.hasSelection()) app_.assignProfileToSelection(name);
-        // Odagi tuvale geri ver (eski ribbon combo'su da yapardi): yoksa
-        // cizim kisayollari (L/M/D...) panele gider ve calismaz. Kuyruklanir ki
-        // popup kapanisi ile cakismasin.
-        QTimer::singleShot(0, this, [this]() {
-            if (HWND canvas = app_.activeCanvasHandle()) SetFocus(canvas);
-        });
-    };
-    QObject::connect(propsProfile, &QComboBox::textActivated, this,
-        [applyProfileField](const QString&) { applyProfileField(); });
-    if (QLineEdit* profileEdit = propsProfile->lineEdit())
-        QObject::connect(profileEdit, &QLineEdit::returnPressed, this, applyProfileField);
-    QObject::connect(propsLayer, &QComboBox::textActivated, this,
-        [this](const QString& text) { app_.setCurrentLayer(text.toStdString()); });
-    QObject::connect(propsColor, QOverload<int>::of(&QComboBox::activated), this,
-        [this](int index) { app_.setCurrentColorChoice(index); });
-    QObject::connect(propsLineType, QOverload<int>::of(&QComboBox::activated), this,
-        [this](int index) { app_.setCurrentLineTypeChoice(index); });
-    QObject::connect(propsMaterial, &QComboBox::textActivated, this,
-        [this](const QString& text) {
-            if (!text.trimmed().isEmpty())
-                app_.setSelectedEntityMaterial(text.trimmed().toStdString());
-        });
-    // Malzeme: elle yazip ENTER -> ayni sekilde dogrudan uygulanir.
-    if (QLineEdit* materialEdit = propsMaterial->lineEdit())
-        QObject::connect(materialEdit, &QLineEdit::returnPressed, this,
-            [this, propsMaterial]() {
-                const QString text = propsMaterial->currentText().trimmed();
-                if (!text.isEmpty())
-                    app_.setSelectedEntityMaterial(text.toStdString());
-            });
-    // Rotasyon: yalniz UYGULA uygular. Odak-cikisi/editingFinished YOK — odak
-    // kaybi secim degistikten SONRA tetiklenip degeri YANLIS nesneye yaziyordu
-    // ("aci sonradan degisiyor" veri bozulmasi). valueChanged yalniz alani
-    // "kirli" isaretler; refresh (doldurma) QSignalBlocker altinda oldugu icin
-    // kirli bayragini TETIKLEMEZ. Coklu secimde degistirilmeyen alan yazilmaz.
-    auto rotationDirty = std::make_shared<bool>(false);
-    QObject::connect(propsRotation, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this,
-        [rotationDirty](double) { *rotationDirty = true; });
-    const auto applyRotationField = [this, propsRotation, rotationDirty]() {
-        if (!*rotationDirty) return;   // kullanici rotasyonu degistirmedi
-        *rotationDirty = false;
-        if (app_.hasSelection())
-            app_.setSelectedEntityProfileRotation(propsRotation->value());
-    };
-    // Kolon ust/alt kot: satirda ENTER (editingFinished) degeri SONRAKI kolon
-    // yerlesimi icin saklar VE secili kolona dogrudan uygular — tek yol
-    // app_.applyColumnLevels(). valueChanged "bekleyen" degeri tutar ve alani
-    // KIRLI isaretler; UYGULA (ve ENTER) yalniz kirli alani uygular, boylece
-    // coklu secimde degistirilmeyen kolon kotu diger nesnelere yazilmaz.
-    auto columnDirty = std::make_shared<bool>(false);
-    QObject::connect(propsColumnTop, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this,
-        [this, propsMaterial, columnDirty](double v) {
-            *columnDirty = true;
-            app_.setColumnProps(v, app_.columnBottomZ(),
-                                propsMaterial->currentText().toStdString());
-        });
-    QObject::connect(propsColumnBottom, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this,
-        [this, propsMaterial, columnDirty](double v) {
-            *columnDirty = true;
-            app_.setColumnProps(app_.columnTopZ(), v,
-                                propsMaterial->currentText().toStdString());
-        });
-    const auto applyColumnFields = [this, propsColumnTop, propsColumnBottom, columnDirty]() {
-        if (!*columnDirty) return;   // kolon kotlari degistirilmedi
-        *columnDirty = false;
-        app_.applyColumnLevels(propsColumnTop->value(), propsColumnBottom->value());
-    };
-    QObject::connect(propsColumnTop, &QDoubleSpinBox::editingFinished, this, applyColumnFields);
-    QObject::connect(propsColumnBottom, &QDoubleSpinBox::editingFinished, this, applyColumnFields);
-    // UYGULA: panelde dogrudan uygulanabilir satirlarin TAMAMI (rotasyon +
-    // kolon kotlari), YALNIZ kullanici o satiri degistirdiyse. Profil/katman/
-    // renk/cizgi tipi/malzeme secimde aninda uygulanir.
-    QObject::connect(propsApply, &QPushButton::clicked, this,
-        [applyRotationField, applyColumnFields]() {
-            applyRotationField();
-            applyColumnFields();
-        });
-    // Kolon yerlestir: profesyonel bir sekilde — buton kolon modunu etkinlestirir
-    // (tek tik ile kanvasa kolon koymak icin). Profil col-inbox'tan okunur.
-    QObject::connect(propsColumnBtn, &QPushButton::clicked, this,
-        [this, propsProfile, propsMaterial]() {
-            const std::string profile = comboProfileName(propsProfile);
-            app_.setPendingProfileName(profile); // bos = profilsiz kolon
-            app_.setColumnProps(app_.columnTopZ(), app_.columnBottomZ(),
-                                propsMaterial->currentText().toStdString());
-            app_.selectTool(DrawTool::Column);
-        });
 
     // ---- ALT SECIM CUBUGU (Tekla tarzi): secili nesne sayisi + snap/ortho ----
     QLabel* selCount = new QLabel(QStringLiteral("0 nesne seçildi"), this);

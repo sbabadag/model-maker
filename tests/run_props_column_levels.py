@@ -4,28 +4,26 @@
 KULLANICI: "props taki ozellikler secili elemana saglikli uygulanmiyor ozellikle
 kolon boyunu degistirmiyor hepsini kontrol et".
 
-Olculen kusurlar (gercek regresyon):
+Gecmis kusurlar (gercek regresyonlar; UI-3a'da korunmali):
   1) Kolon Us / Kolon Alt kutulari YALNIZCA sonraki kolon yerlesimi icin
      saklaniyordu (setColumnProps); secili kolona hic dokunmuyordu ve secim
      degisince secimden de OKUNMUYORDU (hep 8500/0 kaliyordu).
-  2) Renk satirinda "ByLayer" secmek hicbir sey yapmiyordu: setCurrentColorChoice
-     ByLayer'da erken return ediyordu, secili eleman onceki override renginde
-     kaliyordu. Ayrica selectedEntityColorIndex ByLayer icin -1 donuyordu, yani
-     panel secili elemanin rengini YANSITMIYORDU.
+  2) Renk satirinda "ByLayer" secmek hicbir sey yapmiyordu.
   3) UYGULA butonu yalnizca rotasyonu uyguluyordu; kolon kotlari uygulanmiyordu.
 
-Uc katman:
-  1) KAYNAK SEKLI (qt_main_window.cpp): refresh kolon kotlarini secimden okur;
-     ENTER (editingFinished) ve UYGULA ayni tek yolu (applyColumnLevels) kullanir;
-     panelin her satiri SECIME uygulanan bir Application API'sine baglidir.
-  2) KAYNAK SEKLI (application.cpp): applyColumnLevels tek yol; setSelectedEntity
-     ColumnLevels OCC'li VE OCC'siz (stub) tanimli; tek pushUndoSnapshot; stil
-     replaceModel'DEN ONCE kopyalanir; occShapes guncellenir; duseysel olmayan
-     eleman atlanir.
-  3) DAVRANIS: gercek `applyColumnLevels` + `selectedEntityColumnLevels` govdeleri
-     VERBATIM cikarilip sahte Application/Document sinirinda derlenir (dusey
-     kurali, ust>alt sirasi, secim yokken yalniz bekleyen degerin saklanmasi).
-     Ayrica gercek `selectedEntityColorIndex` govdesi ByLayer icin 0 dondurmeli.
+UI-3a sozlesmesi (panel PropertiesPanel'e tasindi):
+  1) KAYNAK SEKLI (qt_main_window.cpp + properties_panel.cpp): refresh kolon
+     kotlarini secimden okur (selectedEntityColumnLevels -> setColumnLevels);
+     kolon kot spin kutulari panelde (propsColumnTop/propsColumnBottom);
+     panelin editingFinished'i onColumnLevelsEnter -> app_.applyColumnLevels
+     (ENTER) kullanir; UYGULA kirli bayraklariyla (isColumnDirty) ayni yolu
+     applySelectedEntityBatch uzerinden kullanir; her satir SECIME uygulanan
+     bir Application API'sine baglidir.
+  2) KAYNAK SEKLI (application.cpp): applyColumnLevels tek yol; OCC'li VE
+     OCC'siz tanimli; tek pushUndoSnapshot; duseysel olmayan eleman atlanir.
+  3) DAVRANIS: gercek `applyColumnLevels` + `selectedEntityColumnLevels` +
+     `selectedEntityColorIndex` govdeleri VERBATIM cikarilip sahte
+     Application/Document sinirinda derlenir.
 
 Kullanim: python3 tests/run_props_column_levels.py [build-directory]
 """
@@ -38,6 +36,7 @@ import sys
 root = Path(__file__).resolve().parents[1]
 build = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else root / "build"
 qt = (root / "src/qt_main_window.cpp").read_text(encoding="utf-8")
+panel = (root / "src/properties_panel.cpp").read_text(encoding="utf-8")
 app = (root / "src/application.cpp").read_text(encoding="utf-8")
 header = (root / "include/model_maker/application.hpp").read_text(encoding="utf-8")
 
@@ -57,35 +56,43 @@ panels = block_for(qt, "void QtMainWindow::createDockPanels")
 if "propsColumnTop" not in header and "columnTopZ" not in header:
     failures.append("application.hpp kolon kot API'si yok")
 
+# Kolon kot spin kutulari panel icinde (properties_panel.cpp).
 for captured in ["propsColumnTop", "propsColumnBottom"]:
-    if captured not in panels:
-        failures.append(f"props panelinde {captured} yok — kolon kot satiri kaldirilmis")
+    if captured not in panel:
+        failures.append(f"panelde {captured} yok — kolon kot satiri kaldirilmis")
 
 # Refresh secimden OKUMALI (eskiden hic okunmuyordu).
 if "app_.selectedEntityColumnLevels(" not in panels:
     failures.append("refresh secili elemanin kolon kotunu OKUMUYOR "
                     "(selectedEntityColumnLevels cagrisi yok)")
+if "propsPanel_->setColumnLevels(" not in panels:
+    failures.append("refresh okunan kolon kotunu PANELE YAZMIYOR (setColumnLevels yok)")
 
-# ENTER ve UYGULA ayni tek yolu kullanmali.
+# ENTER ve UYGULA ayni tek yolu kullanmali (applyColumnLevels).
 if "app_.applyColumnLevels(" not in panels:
     failures.append("props satiri applyColumnLevels() kullanmiyor — "
                     "kolon kotu secime uygulanmaz")
-if not re.search(r"connect\(propsColumnTop,\s*&QDoubleSpinBox::editingFinished", panels):
+
+# Panel icindeki editingFinished -> onColumnLevelsEnter baglantisi.
+if not re.search(r"connect\(profileEdit_,\s*&QLineEdit::returnPressed", panel):
+    failures.append("profil satirinda ENTER (returnPressed) baglantisi yok")
+if not re.search(r"connect\(columnTopSpin_,\s*&QDoubleSpinBox::editingFinished",
+                 panel):
     failures.append("Kolon Ust satirinda ENTER (editingFinished) baglantisi yok")
-if not re.search(r"connect\(propsColumnBottom,\s*&QDoubleSpinBox::editingFinished", panels):
+if not re.search(r"connect\(columnBottomSpin_,\s*&QDoubleSpinBox::editingFinished",
+                 panel):
     failures.append("Kolon Alt satirinda ENTER (editingFinished) baglantisi yok")
 
-# UYGULA kolon kotlarini da uygulamali (eskiden yalniz rotasyon).
-apply_conn = re.search(r"connect\(propsApply,\s*&QPushButton::clicked.*?\}\);", panels, re.S)
-if not apply_conn:
-    failures.append("UYGULA butonu baglantisi bulunamadi")
-else:
-    seg = apply_conn.group()
-    # CAGRI olmali (yakalama listesinde gecmesi yetmez: [.., applyColumnFields]).
-    if "applyColumnFields();" not in seg:
-        failures.append("UYGULA kolon kotlarini uygulamiyor (applyColumnFields cagrisi yok)")
-    if "applyRotationField();" not in seg:
-        failures.append("UYGULA rotasyonu uygulamiyor (applyRotationField cagrisi yok)")
+# UYGULA kolon kotlarini da uygulamali: kirli bayrak + applySelectedEntityBatch.
+if "propsPanel_->isColumnDirty() ? &top : nullptr" not in panels:
+    failures.append("UYGULA kolon UST kotu kirli bayragini kontrol etmiyor "
+                    "(degistirilmeyen kot baska nesnelere yazilir)")
+if "propsPanel_->isColumnDirty() ? &bottom : nullptr" not in panels:
+    failures.append("UYGULA kolon ALT kotu kirli bayragini kontrol etmiyor "
+                    "(degistirilmeyen kot baska nesnelere yazilir)")
+if "applySelectedEntityBatch(" not in panels:
+    failures.append("UYGULA applySelectedEntityBatch kullanmiyor "
+                    "(tek geri alma adimi kurali — 893e770)")
 
 # Her satir SECIME uygulanan bir Application API'sine bagli olmali ("hepsini kontrol et").
 PANEL_ROUTES = {
@@ -94,7 +101,7 @@ PANEL_ROUTES = {
     "renk": "setCurrentColorChoice",
     "cizgi tipi": "setCurrentLineTypeChoice",
     "malzeme": "setSelectedEntityMaterial",
-    "rotasyon": "setSelectedEntityProfileRotation",
+    "rotasyon": "applySelectedEntityBatch",
     "kolon kotu": "applyColumnLevels",
 }
 for label, api in PANEL_ROUTES.items():
@@ -109,7 +116,7 @@ for need in ["bool Application::selectedEntityColumnLevels(",
         failures.append(f"application.cpp {need.strip()} tanimlamiyor")
 
 for need in ["selectedEntityColumnLevels(double& top, double& bottom) const;",
-             "void setSelectedEntityColumnLevels(double top, double bottom);",
+             "void setSelectedEntityColumnLevels(double top, double bottom, bool openUndo = true);",
              "void applyColumnLevels(double top, double bottom);"]:
     if need not in header:
         failures.append(f"application.hpp '{need}' bildirmiyor")

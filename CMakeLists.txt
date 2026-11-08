@@ -135,7 +135,9 @@ set(MODELMAKER_QT_SOURCES
     src/drawing_sheet_widget.cpp
     include/model_maker/drawing_sheet_widget.hpp
     src/ribbon_widget.cpp
-    include/model_maker/ribbon_widget.hpp)
+    include/model_maker/ribbon_widget.hpp
+    src/properties_panel.cpp
+    include/model_maker/properties_panel.hpp)
 set(MODELMAKER_QT_MISSING "")
 foreach(qt_file ${MODELMAKER_QT_SOURCES})
     if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/${qt_file}")
@@ -1668,6 +1670,17 @@ if(BUILD_TESTING)
             model_maker_core Qt6::Widgets)
         add_test(NAME model_maker_ribbon_widget_test COMMAND model_maker_ribbon_widget_test)
 
+        # OZELLIKLER PANELI (UI-3a): platformdan bagimsiz Qt widget'i — offscreen.
+        # Baslik/bolumler, katalog-bir-kez sozlesmesi, kirli bayraklari,
+        # validasyon, UYGULA kurali.
+        add_executable(model_maker_properties_panel_test
+            tests/properties_panel_test.cpp
+            src/properties_panel.cpp
+            include/model_maker/properties_panel.hpp)
+        target_include_directories(model_maker_properties_panel_test PRIVATE include)
+        target_link_libraries(model_maker_properties_panel_test PRIVATE Qt6::Widgets)
+        add_test(NAME model_maker_properties_panel_test COMMAND model_maker_properties_panel_test)
+
         add_executable(model_maker_progress_overlay_test tests/progress_overlay_test.cpp)
         target_include_directories(model_maker_progress_overlay_test PRIVATE include)
         target_link_libraries(model_maker_progress_overlay_test PRIVATE model_maker_core Qt6::Widgets)
@@ -1678,6 +1691,7 @@ if(BUILD_TESTING)
         set_tests_properties(model_maker_drawing_p2d_gui_test model_maker_drawing_p2d_select_gui_test
             model_maker_progress_overlay_test
             model_maker_ribbon_widget_test
+            model_maker_properties_panel_test
             model_maker_component_dialog_widget_test PROPERTIES
             ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
     endif()

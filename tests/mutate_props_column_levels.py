@@ -4,7 +4,7 @@
 Kullanici: "props taki ozellikler secili elemana saglikli uygulanmiyor ozellikle
 kolon boyunu degistirmiyor hepsini kontrol et". Her mutasyon bir regresyonu
 (eski hatayi) taklit eder; test DUSMELI. Sonda dosyalar BAYT-BIREBIR geri
-yazilir (icerik bellekte tutulur — `replace("", orig)` tuzagina dusulmez).
+yazilir (icerik bellekte tutulur).
 
 Kullanim: python3 tests/mutate_props_column_levels.py [build-directory]
 """
@@ -45,17 +45,12 @@ MUTATIONS = [
      "        if (colorChoices[i].color && *colorChoices[i].color == color)"),
     # M3: refresh kolon kotunu secimden okumaz (eski hata: hep 8500/0)
     ("M3 refresh secimden kolon kotu okumaz", "qt_main_window.cpp",
-     "        if (app_.selectedEntityColumnLevels(selectionTop, selectionBottom)) {",
-     "        if (columnLevelsReadDisabled(selectionTop, selectionBottom)) {  // MUTASYON"),
+     "        if (app_.selectedEntityColumnLevels(selectionTop, selectionBottom))",
+     "        if (app_.selectedEntityColumnLevelsX(selectionTop, selectionBottom))"),
     # M4: UYGULA kolon kotlarini uygulamaz (eski hata)
     ("M4 UYGULA kolon kotlarini uygulamaz", "qt_main_window.cpp",
-     "        [applyRotationField, applyColumnFields]() {\n"
-     "            applyRotationField();\n"
-     "            applyColumnFields();\n"
-     "        });",
-     "        [applyRotationField, applyColumnFields]() {\n"
-     "            applyRotationField();  // MUTASYON\n"
-     "        });"),
+     "            propsPanel_->isColumnDirty() ? &top : nullptr,",
+     "            nullptr,  // MUTASYON: kot uygulanmaz"),
     # M5: ust/alt kot ters okunur (kolon boyu yanlis)
     ("M5 ust/alt kot ters okunur", "application.cpp",
      "    bottom = props.axisFromZ < props.axisToZ ? props.axisFromZ : props.axisToZ;\n"
@@ -79,17 +74,29 @@ MUTATIONS = [
      "        if (std::abs(currentTop - top) <= eps && std::abs(currentBottom - bottom) <= eps)",
      "        if (false && std::abs(currentTop - top) <= eps && "
      "std::abs(currentBottom - bottom) <= eps)  // MUTASYON"),
-    # M8: kolon ust satirinda ENTER baglantisi yok
+    # M8: kolon ust satirinda ENTER yolu (onColumnLevelsEnter) bosaltildi
     ("M8 Kolon Ust satirinda ENTER yok", "qt_main_window.cpp",
-     "    QObject::connect(propsColumnTop, &QDoubleSpinBox::editingFinished, this, applyColumnFields);",
-     "    // MUTASYON"),
+     "    propsPanel_->onColumnLevelsEnter = [this]() {\n"
+     "        app_.applyColumnLevels(propsPanel_->columnTop(),\n"
+     "                               propsPanel_->columnBottom());\n"
+     "    };",
+     "    propsPanel_->onColumnLevelsEnter = [this]() {\n"
+     "        /* MUTASYON: ENTER yolu bos */\n"
+     "    };"),
     # M9: undo kaydi acilmaz (Ctrl+Z calismaz)
     ("M9 kolon kotu undo kaydi yok", "application.cpp",
-     "    pushUndoSnapshot();\n"
-     "    std::size_t applied = 0;\n"
-     "    for (const auto& target : targets) {",
-     "    std::size_t applied = 0;  // MUTASYON\n"
-     "    for (const auto& target : targets) {"),
+     "    if (targets.empty()) {\n"
+     "        publishStatus(L\"Kolon kotlari icin dusey profilli bir eleman secin \"\n"
+     "                      L\"(yatay kirise uygulanmaz).\");\n"
+     "        return;\n"
+     "    }\n\n"
+     "    if (openUndo) pushUndoSnapshot();",
+     "    if (targets.empty()) {\n"
+     "        publishStatus(L\"Kolon kotlari icin dusey profilli bir eleman secin \"\n"
+     "                      L\"(yatay kirise uygulanmaz).\");\n"
+     "        return;\n"
+     "    }\n"
+     "    // MUTASYON: undo yok"),
 ]
 
 
