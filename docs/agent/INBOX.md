@@ -355,9 +355,14 @@ silindi) — bu tur ilk turdu.
 Kullanıcı ekran görüntüsü (kabul paketi 20261108-2224-29cc028): mertek ucu
 haunch levhalarıyla duruyor, KOLON ise belirgin aşağıda ve ayrık (kolon
 tepesi mertek ucunun çok altında). Kullanıcı: "bir yeri yaparken diğer yeri
-bozuyoruz". Kullanıcı: model YENİ kuruldu (eski dosya değil). Panelden değişiklik yapıp
-yapmadığı henüz belli değil; her iki yolu da dene (panel dokunmadan ve
-panel UYGULA sonrası). Beklemeden yeniden üret.
+bozuyoruz". Kullanıcı: model YENİ kuruldu (eski dosya değil) ve kolonun ALT ve ÜST
+kotunu PANELDEN girdi ("Kolon Alt/Üst (mm)" alanları). Şüphe güçlendi:
+29cc028 panelinde kolon kotlarının uygulanması (ENTER ile doğrudan
+uygulama, hangi nesneye yazıldığı, birim/bağıl-mutlak yorumu, uygulama
+sonrası bağlı Haunch'ın yeniden üretilmesi). Senaryo: kolon kur → panelden
+Alt=0, Üst=7000 gir (ENTER ve UYGULA ayrı ayrı) → mertek kur → Haunch (40).
+Ayrıca: Haunch kurulduktan SONRA kolon kotu panelden değiştirilirse
+Haunch yeniden üretilmeli ve kolon/mertek bağlantısı korunmalı (Tekla gibi).
 Şüpheliler (kontrat golden'ları yeşil → büyük olasılıkla UYGULAMA katmanı):
 - 29cc028 yeni PropertiesPanel: "Kolon Üst/Alt (mm)" ENTER ile doğrudan
   uygulanıyor; seçim değişince / çoklu seçimde / mertek seçiliyken kolon
