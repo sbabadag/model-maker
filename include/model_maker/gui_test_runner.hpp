@@ -37,6 +37,36 @@
 //   {"expect": {"catalog": {"minCount": 4, "has": "Haunch (40)"}}}
 //                                 Katalog acilir icerigi (B1; "has" alt dizge)
 //
+// H-8 (kot -> bagli bilesen zinciri) uygulama-katmani op'lari — panel ENTER/
+// UYGULA'nin cagirdigi AYNI public API'ler (kablolama Python testlerinde):
+//   {"appColumnLevels": {"top": 7200, "bottom": 0}}
+//                                 applyColumnLevels (secili kolona uygular,
+//                                 secim yoksa sonraki yerlesim icin saklar)
+//   {"placeColumn": {"x": 0, "y": 0, "z": 0}}  bekleyen profil+dotlarla kolon
+//   {"assignLine": {"x1":..,"y1":..,"z1":..,"x2":..,"y2":..,"z2":..,
+//                   "profile": "IPE300"}}      egik uye (assignProfileToLine)
+//   {"select": [0, 1]}           programatik secim (indeksler)
+//   {"assignProfile": {"model": 1, "profile": "IPE400"}}
+//                                 secili uyenin profilini degistir (UYGULA
+//                                 profil satiri; bagli component recompute dahil)
+//   {"appComponent": {"typeId": "tekla_haunch_40", "parts": [0, 1]}}
+//                                 generic uretim yoluyla component kur
+//   {"save": "t9.mmd"}           outDir'e kaydet (diyalog yok)
+// H-8 expect'leri:
+//   {"expect": {"modelAxis": {"model": 0, "fromZ": 0, "toZ": 7200, "tol": 5}}}
+//                                 eksen uc noktalari (verilen alanlar kontrol)
+//   {"expect": {"modelProfile": {"model": 1, "name": "IPE400"}}}
+//   {"expect": {"componentCount": {"typeId": "tekla_haunch_40", "count": 1}}}
+//   {"expect": {"componentAttached": {"typeId": "tekla_haunch_40",
+//                                     "maxGap": 500}}}
+//                                 main/secondary eksen uclari boslugu < maxGap
+//                                 ("kolon mertekten ayrik" kalkani)
+//   {"expect": {"componentDigest": {"typeId": "tekla_haunch_40",
+//                                   "key": "h1", "remember": true}}}
+//                                 geometri digest'i hafizala; sonra "equals"
+//                                 (kaydet-ac korunur) ya da "notEquals"
+//                                 (recompute gercekten calisti) ile karsilastir
+//
 // HER adimdan sonra: <out>/step_%03d.png (tuval ekran goruntusu) +
 // <out>/step_%03d.json (durum: secim sayisi/tipi, aktif komut, nesne
 // sayilari/tipleri, gorunur cizim listesi, hizli arama sonuclari, katalog

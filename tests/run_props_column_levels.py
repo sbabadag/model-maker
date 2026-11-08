@@ -110,23 +110,23 @@ for label, api in PANEL_ROUTES.items():
 
 # --------------------------------------------------------- 2) application sekli
 for need in ["bool Application::selectedEntityColumnLevels(",
-             "void Application::setSelectedEntityColumnLevels(",
-             "void Application::applyColumnLevels("]:
+             "bool Application::setSelectedEntityColumnLevels(",
+             "bool Application::applyColumnLevels("]:
     if need not in app:
         failures.append(f"application.cpp {need.strip()} tanimlamiyor")
 
 for need in ["selectedEntityColumnLevels(double& top, double& bottom) const;",
-             "void setSelectedEntityColumnLevels(double top, double bottom, bool openUndo = true);",
-             "void applyColumnLevels(double top, double bottom);"]:
+             "bool setSelectedEntityColumnLevels(double top, double bottom, bool openUndo = true);",
+             "bool applyColumnLevels(double top, double bottom);"]:
     if need not in header:
         failures.append(f"application.hpp '{need}' bildirmiyor")
 
 # OCC kapaliyken de tanimli olmali (linker hatasi olmasin).
-if app.count("void Application::setSelectedEntityColumnLevels(") < 2:
+if app.count("bool Application::setSelectedEntityColumnLevels(") < 2:
     failures.append("setSelectedEntityColumnLevels yalniz tek (OCC) dala tanimli — "
                     "OCC kapali derlemede linker hatasi verir")
 
-column_fn = block_for(app, "void Application::setSelectedEntityColumnLevels")
+column_fn = block_for(app, "bool Application::setSelectedEntityColumnLevels")
 if "pushUndoSnapshot()" not in column_fn:
     failures.append("setSelectedEntityColumnLevels undo kaydi acmiyor (Ctrl+Z calismaz)")
 if column_fn.count("document_.replaceModel(") < 1:
@@ -143,7 +143,25 @@ if copy_pos < 0 or replace_pos < 0 or copy_pos > replace_pos:
 if "extrudeProfileSolid" not in column_fn:
     failures.append("setSelectedEntityColumnLevels katiyi yeniden uretmiyor")
 
-apply_fn = block_for(app, "void Application::applyColumnLevels")
+# H-8 (kolon kotu degisince bagli bilesenler izler): kot yolu ikincil uyeleri
+# yeni kota sabitlemeli ve bagli bilesenleri AYNI undo kaydinda yeniden
+# uretmeli; basarisizlikta false + geri alma (bool donus).
+for need in ["reanchorSecondaryMembers(levelChanges)",
+             "recomputeEndPlateConnectionsFor(changedIds)",
+             "recomputeComponentInstancesFor(changedIds)"]:
+    if need not in column_fn:
+        failures.append(f"H-8: kolon kotu yolu {need} zincirini calistirmiyor "
+                        "(bagli bilesen eski konumda kalir)")
+reanchor_fn = block_for(app,
+                        "std::vector<EntityId> Application::reanchorSecondaryMembers")
+if "document_.endPlateConnections()" not in reanchor_fn:
+    failures.append("H-8: reanchor End Plate kayitlarini taramiyor")
+if "document_.componentInstances()" not in reanchor_fn:
+    failures.append("H-8: reanchor component kayitlarini taramiyor")
+if "recomputeCutTarget(" not in reanchor_fn:
+    failures.append("H-8: reanchor kesme zincirini (fitting) yeniden uygulamiyor")
+
+apply_fn = block_for(app, "bool Application::applyColumnLevels")
 if "setColumnProps(" not in apply_fn:
     failures.append("applyColumnLevels sonraki yerlesim icin degeri saklamiyor")
 if "hasSelection()" not in apply_fn:
@@ -160,7 +178,7 @@ if erken:
 
 # --------------------------------------------------------------- 3) davranis
 body_levels = block_for(app, "bool Application::selectedEntityColumnLevels")
-body_apply = block_for(app, "void Application::applyColumnLevels")
+body_apply = block_for(app, "bool Application::applyColumnLevels")
 body_color = block_for(app, "int Application::selectedEntityColorIndex")
 
 shell = r'''
@@ -219,11 +237,12 @@ struct Application {
         ++pendingStored;
     }
     bool hasSelection() const { return !selectedModels_.empty(); }
-    void setSelectedEntityColumnLevels(double top, double bottom) {
+    bool setSelectedEntityColumnLevels(double top, double bottom) {
         lastAppliedTop = top; lastAppliedBottom = bottom; ++appliedCount;
+        return true;
     }
     bool selectedEntityColumnLevels(double& top, double& bottom) const;
-    void applyColumnLevels(double top, double bottom);
+    bool applyColumnLevels(double top, double bottom);
     int selectedEntityColorIndex() const;
 };
 

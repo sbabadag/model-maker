@@ -15,6 +15,7 @@
 
 #include "model_maker/application.hpp"
 #include "model_maker/camera.hpp"
+#include "model_maker/component_engine.hpp"
 #include "model_maker/document.hpp"
 #include "model_maker/drafting.hpp"
 #include "model_maker/geometry.hpp"
@@ -27,6 +28,7 @@
 #include <QEventLoop>
 #include <QFile>
 #include <QFileInfo>
+#include <QHash>
 #include <QImage>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -65,6 +67,49 @@ std::string modelKind(const WireframeModel& model) {
     if (model.isPointEntity()) return "point";
     if (model.constructionKind() != ConstructionKind::None) return "construction";
     return "plain";
+}
+
+// H-8: component instance'inin GEOMETRIK digest'i — roleKey + bagli uye
+// eksenleri + parca modellerinin koseleri (FNV-1a 64). EntityId'den
+// bagimsizdir (MM-2b): kaydet-ac ve yeniden uretim sonrasi yalnizca
+// GERCEK geometri degisirse digest degisir. Deterministik kayit sirasi.
+QString componentGeometricDigest(Application& app, const ComponentInstanceRecord& rec) {
+    std::uint64_t fnv = 14695981039346656037ULL;
+    const auto feedBytes = [&](const void* data, std::size_t n) {
+        const auto* b = static_cast<const unsigned char*>(data);
+        for (std::size_t i = 0; i < n; ++i) {
+            fnv ^= b[i];
+            fnv *= 1099511628211ULL;
+        }
+    };
+    const auto feedD = [&](double v) { feedBytes(&v, sizeof v); };
+    const auto feedS = [&](const std::string& s) { feedBytes(s.data(), s.size()); };
+    const auto feedModel = [&](EntityId eid) {
+        const auto mi = app.document().indexOfEntity(eid);
+        if (!mi || *mi >= app.document().models().size()) return;
+        const auto& m = app.document().models()[*mi];
+        for (const Vec3& v : m.vertices()) {
+            feedD(v.x); feedD(v.y); feedD(v.z);
+        }
+        const auto& p = m.properties();
+        feedD(p.axisFromX); feedD(p.axisFromY); feedD(p.axisFromZ);
+        feedD(p.axisToX); feedD(p.axisToY); feedD(p.axisToZ);
+    };
+    feedS("main");
+    feedModel(rec.mainPart);
+    feedS("sec");
+    for (const EntityId sid : rec.secondaryParts) feedModel(sid);
+    feedS("children");
+    for (const ComponentChildRecord& c : rec.children) {
+        feedS(c.roleKey);
+        feedBytes(&c.kind, sizeof c.kind);
+        feedModel(c.entityId);
+    }
+    feedS("plates");
+    for (const EntityId pid : rec.ownedPlateIds) feedModel(pid);
+    char buf[24];
+    std::snprintf(buf, sizeof buf, "%016llx", static_cast<unsigned long long>(fnv));
+    return QString::fromLatin1(buf);
 }
 
 // Olay dongusu calismiyorken (app.exec() cagrilmadan) bekleyen isleri bosalt.
@@ -212,6 +257,8 @@ struct Runner {
     bool ok = true;
     QString error;
     int stepIndex = 0;
+    // H-8: component geometric digest hafizasi (remember/equals/notEquals).
+    QHash<QString, QString> digestMemory_;
 
     Runner(QtMainWindow& w, QString dir) : window(w), outDir(std::move(dir)) {}
 
@@ -552,6 +599,138 @@ struct Runner {
                                     .arg(needle).arg(items.size());
             }
         }
+        // H-8: modelin eksen uc noktalari (dunya koordinati) — "kolon tepesi
+        // 7000'de mi", "mertek ucu kolon basliginda mi" kanitlari. Yalnizca
+        // senaryoda VERILEN alanlar kontrol edilir.
+        if (expect.contains(QStringLiteral("modelAxis"))) {
+            const QJsonObject spec = expect[QStringLiteral("modelAxis")].toObject();
+            const int model = spec[QStringLiteral("model")].toInt(-1);
+            const double tol = spec[QStringLiteral("tol")].toDouble(1.0);
+            if (model < 0 ||
+                static_cast<std::size_t>(model) >= app.document().models().size())
+                problems << QStringLiteral("modelAxis: model %1 yok").arg(model);
+            else {
+                const auto& p = app.document().models()[model].properties();
+                const auto check = [&](const char* field, double actual) {
+                    if (spec.contains(QString::fromLatin1(field)) &&
+                        std::abs(actual - spec[QString::fromLatin1(field)].toDouble()) > tol)
+                        problems << QStringLiteral("modelAxis.%1=%2 (beklenen ±%3)")
+                                        .arg(QString::fromLatin1(field))
+                                        .arg(actual, 0, 'f', 2)
+                                        .arg(tol);
+                };
+                check("fromX", p.axisFromX);
+                check("fromY", p.axisFromY);
+                check("fromZ", p.axisFromZ);
+                check("toX", p.axisToX);
+                check("toY", p.axisToY);
+                check("toZ", p.axisToZ);
+            }
+        }
+        // H-8: modelin profil adi (mertek profili degisti mi / kolon degismedi mi).
+        if (expect.contains(QStringLiteral("modelProfile"))) {
+            const QJsonObject spec = expect[QStringLiteral("modelProfile")].toObject();
+            const int model = spec[QStringLiteral("model")].toInt(-1);
+            if (model < 0 ||
+                static_cast<std::size_t>(model) >= app.document().models().size())
+                problems << QStringLiteral("modelProfile: model %1 yok").arg(model);
+            else {
+                const QString actual = QString::fromStdString(
+                    app.document().models()[model].properties().profileName);
+                if (actual != spec[QStringLiteral("name")].toString())
+                    problems << QStringLiteral("modelProfile[%1]=\"%2\" (beklenen \"%3\")")
+                                    .arg(model)
+                                    .arg(actual, spec[QStringLiteral("name")].toString());
+            }
+        }
+        // H-8: tip eslesen component instance sayisi (haunch/end plate kuruldu mu).
+        if (expect.contains(QStringLiteral("componentCount"))) {
+            const QJsonObject spec = expect[QStringLiteral("componentCount")].toObject();
+            const QString typeId = spec[QStringLiteral("typeId")].toString();
+            int n = 0;
+            for (const ComponentInstanceRecord& r : app.document().componentInstances())
+                if (QString::fromStdWString(r.typeId) == typeId) ++n;
+            if (n != spec[QStringLiteral("count")].toInt(-1))
+                problems << QStringLiteral("componentCount[%1]=%2 (beklenen %3)")
+                                .arg(typeId).arg(n).arg(spec[QStringLiteral("count")].toInt(-1));
+        }
+        // H-8: BAGLILIK — main/secondary uye eksen uclari arasindaki EN KISA
+        // mesafe maxGap'i asmamali ("kolon mertekten ayrik" regresyonunu
+        // dogrudan yakalar; kopuklukta bosluk metrelerce olur).
+        if (expect.contains(QStringLiteral("componentAttached"))) {
+            const QJsonObject spec = expect[QStringLiteral("componentAttached")].toObject();
+            const QString typeId = spec[QStringLiteral("typeId")].toString();
+            const double maxGap = spec[QStringLiteral("maxGap")].toDouble(500.0);
+            int checked = 0;
+            const auto gapMm = [&](const auto& mp, const auto& sp) {
+                const auto d2 = [](double ax, double ay, double az,
+                                   double bx, double by, double bz) {
+                    const double dx = ax - bx, dy = ay - by, dz = az - bz;
+                    return dx * dx + dy * dy + dz * dz;
+                };
+                const double g2 = std::min(
+                    std::min(d2(sp.axisFromX, sp.axisFromY, sp.axisFromZ,
+                                mp.axisFromX, mp.axisFromY, mp.axisFromZ),
+                             d2(sp.axisFromX, sp.axisFromY, sp.axisFromZ,
+                                mp.axisToX, mp.axisToY, mp.axisToZ)),
+                    std::min(d2(sp.axisToX, sp.axisToY, sp.axisToZ,
+                                mp.axisFromX, mp.axisFromY, mp.axisFromZ),
+                             d2(sp.axisToX, sp.axisToY, sp.axisToZ,
+                                mp.axisToX, mp.axisToY, mp.axisToZ)));
+                return std::sqrt(g2);
+            };
+            for (const ComponentInstanceRecord& r : app.document().componentInstances()) {
+                if (QString::fromStdWString(r.typeId) != typeId) continue;
+                const auto mainIdx = app.document().indexOfEntity(r.mainPart);
+                if (!mainIdx || *mainIdx >= app.document().models().size()) continue;
+                const auto& mp = app.document().models()[*mainIdx].properties();
+                for (const EntityId sid : r.secondaryParts) {
+                    const auto si = app.document().indexOfEntity(sid);
+                    if (!si || *si >= app.document().models().size()) continue;
+                    const auto& sp = app.document().models()[*si].properties();
+                    const double gap = gapMm(mp, sp);
+                    ++checked;
+                    if (gap > maxGap)
+                        problems << QStringLiteral(
+                                        "componentAttached[%1]: uyeler kopuk "
+                                        "(bosluk %2 mm > %3)")
+                                        .arg(typeId).arg(gap, 0, 'f', 1).arg(maxGap);
+                }
+            }
+            if (checked == 0)
+                problems << QStringLiteral("componentAttached: %1 instance yok").arg(typeId);
+        }
+        // H-8: component GEOMETRIK DIGEST kalkanı — {typeId, key, remember} |
+        // {equals} | {notEquals}. remember kaydeder (sonraki expect'ler icin);
+        // equals/notEquals ayni senaryo icindeki onceki digest ile karsilastirir.
+        // Kaydet-ac + yeniden uretim sonrasi digest DEGISMEMELI (geometry
+        // stabil); profil degisimi sonrasi DEGISMELI (recompute calisti).
+        if (expect.contains(QStringLiteral("componentDigest"))) {
+            const QJsonObject spec = expect[QStringLiteral("componentDigest")].toObject();
+            const QString typeId = spec[QStringLiteral("typeId")].toString();
+            const QString key = spec[QStringLiteral("key")].toString();
+            QString actual;
+            for (const ComponentInstanceRecord& r : app.document().componentInstances())
+                if (QString::fromStdWString(r.typeId) == typeId)
+                    actual += componentGeometricDigest(app, r);
+            if (actual.isEmpty()) {
+                problems << QStringLiteral("componentDigest: %1 instance yok").arg(typeId);
+            } else if (spec.contains(QStringLiteral("remember"))) {
+                digestMemory_.insert(key, actual);
+                log(QStringLiteral("componentDigest[%1] = %2")
+                        .arg(key, actual));
+            } else if (spec.contains(QStringLiteral("equals"))) {
+                if (!digestMemory_.contains(key))
+                    problems << QStringLiteral("componentDigest: %1 once remember edilmedi").arg(key);
+                else if (digestMemory_.value(key) != actual)
+                    problems << QStringLiteral("componentDigest[%1] DEGISTI: %2 -> %3")
+                                    .arg(key, digestMemory_.value(key), actual);
+            } else if (spec.contains(QStringLiteral("notEquals"))) {
+                if (digestMemory_.contains(key) && digestMemory_.value(key) == actual)
+                    problems << QStringLiteral("componentDigest[%1] DEGISMEDI (beklenen degisim)")
+                                    .arg(key);
+            }
+        }
         // "axisScreen": {model, x, y, tol} — modelin eksen baslangicinin
         // (axisFrom, kullanici tiklamasi) tuval izdusumu beklenen noktaya tol
         // piksel icinde mi. H-4 kaniti: tutulan snap tiklamayi uzak noktaya
@@ -774,9 +953,12 @@ struct Runner {
             QString path = step[QStringLiteral("open")].toString();
             const QFileInfo info(path);
             if (info.isRelative()) {
-                // Senaryo dosyasinin klasorune gore cozulur.
+                // Once CIKTI klasoru (aynı senaryonun "save" adimi), yoksa
+                // senaryo dosyasinin klasoru (sabit test belgeleri).
+                const QString inOut = outDir + QStringLiteral("/") + path;
                 const QFileInfo scriptDir(scriptDirPath_);
-                path = scriptDir.dir().filePath(path);
+                path = QFileInfo(inOut).exists() ? inOut
+                                                 : scriptDir.dir().filePath(path);
             }
             Application& app = window.application();
             if (!app.openDocumentPath(path.toStdWString()))
@@ -789,6 +971,101 @@ struct Runner {
                 step[QStringLiteral("profile")].toString().toStdString());
             pump(40);
             return writeStep(step, QStringLiteral("profile:") + step[QStringLiteral("profile")].toString());
+        }
+        // ---- H-8: uygulama-katmani e2e op'lari (kot degisimi -> bagli
+        // bilesen zinciri). Panel ENTER/UYGULA akisinin cagirdigi AYNI public
+        // API'ler kullanilir (panel kablolamasi Python testlerinde dogrulanir);
+        // burada asil sozlesme BELGE uzerindeki zincirdir.
+        if (step.contains(QStringLiteral("appColumnLevels"))) {
+            const QJsonObject spec = step[QStringLiteral("appColumnLevels")].toObject();
+            window.application().applyColumnLevels(
+                spec[QStringLiteral("top")].toDouble(),
+                spec[QStringLiteral("bottom")].toDouble());
+            pump(100);
+            return writeStep(step, QStringLiteral("appColumnLevels"));
+        }
+        if (step.contains(QStringLiteral("placeColumn"))) {
+            const QJsonObject spec = step[QStringLiteral("placeColumn")].toObject();
+            window.application().placeColumn(
+                {spec[QStringLiteral("x")].toDouble(),
+                 spec[QStringLiteral("y")].toDouble(),
+                 spec[QStringLiteral("z")].toDouble()});
+            pump(100);
+            return writeStep(step, QStringLiteral("placeColumn"));
+        }
+        if (step.contains(QStringLiteral("assignLine"))) {
+            const QJsonObject spec = step[QStringLiteral("assignLine")].toObject();
+            window.application().assignProfileToLine(
+                {spec[QStringLiteral("x1")].toDouble(),
+                 spec[QStringLiteral("y1")].toDouble(),
+                 spec[QStringLiteral("z1")].toDouble()},
+                {spec[QStringLiteral("x2")].toDouble(),
+                 spec[QStringLiteral("y2")].toDouble(),
+                 spec[QStringLiteral("z2")].toDouble()},
+                spec[QStringLiteral("profile")].toString().toStdString());
+            pump(100);
+            return writeStep(step, QStringLiteral("assignLine"));
+        }
+        if (step.contains(QStringLiteral("select"))) {
+            const QJsonArray arr = step[QStringLiteral("select")].toArray();
+            std::vector<std::size_t> idx;
+            idx.reserve(static_cast<std::size_t>(arr.size()));
+            for (const QJsonValue v : arr)
+                idx.push_back(static_cast<std::size_t>(v.toInt()));
+            window.application().selectModels(idx);
+            pump(60);
+            return writeStep(step, QStringLiteral("select"));
+        }
+        if (step.contains(QStringLiteral("assignProfile"))) {
+            const QJsonObject spec = step[QStringLiteral("assignProfile")].toObject();
+            const int model = spec[QStringLiteral("model")].toInt(-1);
+            if (model < 0) return fail(QStringLiteral("assignProfile: model eksik"));
+            window.application().selectModels({static_cast<std::size_t>(model)});
+            window.application().assignProfileToSelection(
+                spec[QStringLiteral("profile")].toString().toStdString());
+            pump(120);
+            return writeStep(step, QStringLiteral("assignProfile"));
+        }
+        if (step.contains(QStringLiteral("appComponent"))) {
+            const QJsonObject spec = step[QStringLiteral("appComponent")].toObject();
+            const QJsonArray arr = spec[QStringLiteral("parts")].toArray();
+            std::vector<std::size_t> parts;
+            parts.reserve(static_cast<std::size_t>(arr.size()));
+            for (const QJsonValue v : arr)
+                parts.push_back(static_cast<std::size_t>(v.toInt()));
+            // Istege bagli params: {"ad": deger, ...} — sayilar double,
+            // true/false bool, metin wstring olarak CompParam'a cevrilir.
+            std::vector<mm::CompParam> params;
+            if (spec.contains(QStringLiteral("params"))) {
+                const QJsonObject po = spec[QStringLiteral("params")].toObject();
+                for (auto it = po.begin(); it != po.end(); ++it) {
+                    mm::CompParam p;
+                    p.name = it.key().toStdWString();
+                    const QJsonValue v = it.value();
+                    if (v.isBool()) p.value = v.toBool();
+                    else if (v.isString()) p.value = v.toString().toStdWString();
+                    else p.value = v.toDouble();
+                    params.push_back(std::move(p));
+                }
+            }
+            window.application().applyComponentFromParts(
+                spec[QStringLiteral("typeId")].toString().toStdWString(),
+                parts, params);
+            pump(160);
+            return writeStep(step, QStringLiteral("appComponent"));
+        }
+        if (step.contains(QStringLiteral("save"))) {
+            QString path = step[QStringLiteral("save")].toString();
+            const QFileInfo info(path);
+            if (info.isRelative()) {
+                // Cikti klasorune (outDir) yazilir — kaydet-ac cifti ayni
+                // klasorde kalir, repo/senaryo klasoru kirlenmez.
+                path = QFileInfo(outDir + QStringLiteral("/") + path).absoluteFilePath();
+            }
+            if (!window.application().saveDocumentPath(path.toStdWString()))
+                return fail(QStringLiteral("belge kaydedilemedi: %1").arg(path));
+            pump(120);
+            return writeStep(step, QStringLiteral("save:") + path);
         }
         if (step.contains(QStringLiteral("search"))) {
             // B1: arama kutusuna metin KOY (deterministik; completer ayni

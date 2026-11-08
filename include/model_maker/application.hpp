@@ -191,10 +191,14 @@ public:
     // kotunu okur. Duseysel profilli eleman yoksa false (spin kutulari
     // guncellenmez). Uygulama yolu tek: applyColumnLevels().
     bool selectedEntityColumnLevels(double& top, double& bottom) const;
-    void setSelectedEntityColumnLevels(double top, double bottom, bool openUndo = true);
+    // H-8: kolon kotu degisince bagli bilesenler (End Plate/Haunch vb.) ayni
+    // tek geri-alma kaydinda yeniden uretilir; baglanti ucu kolon tepesinde
+    // olan ikincil uyeler (kiris/mertek) yeni kota yeniden sabitlenir.
+    // Basarisizlikta islem GERİ ALINIR ve false doner.
+    bool setSelectedEntityColumnLevels(double top, double bottom, bool openUndo = true);
     // Props satiri: secim VARKEN secime uygular, her durumda sonraki kolon
     // yerlesimi icin de saklar (tek kaynak; ENTER ve UYGULA ayni yolu kullanir).
-    void applyColumnLevels(double top, double bottom);
+    bool applyColumnLevels(double top, double bottom);
     // UYGULA (props paneli): isaretlenen alanlari TEK geri alma adiminda
     // uygular. nullptr olmayan alanlar degisir; hicbiri yoksa hicbir sey
     // yapmaz (bos kayit olusmaz). Toplu yol: pushUndoSnapshot + openUndo=false.
@@ -255,6 +259,8 @@ public:
     void openDocument();
     // GT-1: dosya secim diyalogu olmadan dogrudan belge yukler (test modu).
     bool openDocumentPath(const std::wstring& path);
+    // GT-1: dosya secim diyalogu olmadan dogrudan belge kaydeder (test modu).
+    bool saveDocumentPath(const std::wstring& path);
     // Kayitli/açik belge yolu: Ctrl+S uzerine kaydeder (Save As istisnasi).
     std::optional<std::filesystem::path> currentFilePath_;
     void importDxf();
@@ -510,6 +516,19 @@ public:
     // etkilenen baglanti yok); false = recompute basarisiz + transaction
     // rollback edildi (cagiran component recompute'una DEVAM ETMEMELI).
     bool recomputeEndPlateConnectionsFor(const std::vector<EntityId>& changedParts);
+    // Kot degistiren kolon kaydi (H-8): reanchorSecondaryMembers girdisi.
+    struct ColumnLevelChange {
+        EntityId id{kInvalidEntityId};
+        double x{0.0}, y{0.0};
+        double oldTop{0.0}, oldBottom{0.0}, newTop{0.0}, newBottom{0.0};
+    };
+    // H-8: kotu degisen kolona BAGLI ikincil uyelerin baglanti ucunu (eski
+    // kolon tepesinde/dibinde oturan uc) yeni kota sabitler; uye katisini
+    // (profil/rotasyon/referans normal/stil korunur) yeniden uretir ve kendi
+    // kesme zincirini uygular. Yeniden uretilen uyelerin EntityId listesi
+    // doner (bilesen recompute'u bunlari da girdi alir).
+    std::vector<EntityId> reanchorSecondaryMembers(
+        const std::vector<ColumnLevelChange>& changes);
 
     // --- UNIVERSAL COMPONENT (Phase P1): Fin Plate production entegrasyonu -----
     // Verb-noun Fin Plate: once MAIN (kolon), sonra SECONDARY (kiris) secilir;
@@ -526,7 +545,7 @@ public:
     // instance'larini (ComponentInstanceRecord) yeniden uretir. End Plate
     // baglantilari AYRI kalir (mevcut production yolu). Deterministik kayit
     // sirasi; basarisizlikta atomik rollback (eski model bozulmaz).
-    void recomputeComponentInstancesFor(const std::vector<EntityId>& changedParts);
+    bool recomputeComponentInstancesFor(const std::vector<EntityId>& changedParts);
     // COMPONENT REBIND (C4): kopyalanan component'in ana/ara parcalari kopya
     // olarak gelmediyse (component tek basina kopyalandi) YENI KONUMDAKI
     // yapisal uyeleri bulur ve baglantiyi onlara kurar (Tekla davranisi).

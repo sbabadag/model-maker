@@ -398,7 +398,16 @@ Haunch yeniden üretilmeli ve kolon/mertek bağlantısı korunmalı (Tekla gibi)
    koşamıyorsa push'u bir sonraki boş ana ertele, wip'e it).
 4. Kök neden + hangi commit bozdu + neden testler yakalamadı (bir cümle).
 
-Durum: —
+Durum: TAMAM (2026-11-09). Kök neden: panel kot uygulaması (setSelectedEntityColumnLevels)
+yalnız kolon katısını yeniden üretiyordu; kolon tepesine oturan ikincil üye uçları eski
+kotta kalıyor (mertek/kolon ayrıklığı) ve bağlı bileşenler (End Plate/Haunch) yeniden
+hesaplanmıyordu. Regresyon değil, eksik zincir (15a41fb'de de aynıydı). Düzeltme:
+reanchorSecondaryMembers (bağlı üye ucunu yeni kota sabitler, diğer ucu sabit — Tekla
+davranışı) + recomputeEndPlateConnectionsFor + recomputeComponentInstancesFor tek undo
+kaydında; başarısızlıkta tam rollback + false. Testlerin yakalamama nedeni: kolon yeniden
+üretimini doğrulayan tek test (run_props_column_levels.py) bağlı üye/bileşen zincirini
+ölçmüyordu. Kalkan: GT-1 t9_haunch40_e2e (34 adım) + t9_endplate_e2e (28 adım) eklendi,
+ikisi yeşil; ctest 155/155; python props testi OK.
 
 ## H-7 — 3B görünümde çizgi çizilmiyor / görünmüyor (B2/B7 HÂLÂ AÇIK)  [kullanıcı, 2026-11-08 17:30, kabul paketi 20261108-1716-cb9506f]
 Kullanıcı kabul paketinde: 3B görünümde Çizgi komutu → çizgi yok/görünmüyor.

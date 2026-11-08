@@ -2,8 +2,13 @@
 
 - Aktif makine: Asus (ev). ZBook (iş) pasif. Senkron yalnız GitHub üzerinden;
   aynı anda tek makinede çalışılır.
-- Son güncelleme: 2026-11-07 (oturum başlangıç kurulumu)
-- Son tur: 2026-11-08 22:28 — UI-34 kesit 1 (UI-3a PropertiesPanel iskeleti) — BİTTİ — 29cc028 — Windows kapısı: tam derleme + ctest 155/155; 3 props Python testi yeni panele uyarlandı (mutasyon 9/9 + 10/10); GUI doğrulandı (panel görünür, eski combo yok). Kabul: C:\work\mm-kabul\20261108-2224-29cc028. Sıradaki: UI-4 "..." profil seçim penceresi.
+- Son güncelleme: 2026-11-09
+- Son tur: 2026-11-09 — H-8 (Haunch kolon/mertek ayrıklığı) — BİTTİ — panel kot
+  uygulaması artık bağlı üye uçlarını yeni kota sabitliyor (reanchorSecondaryMembers,
+  diğer ucu sabit — Tekla davranışı) + End Plate/Haunch aynı undo kaydında yeniden
+  üretiliyor; başarısızlıkta tam rollback. GT-1 kalkanı: t9_haunch40_e2e (34 adım) +
+  t9_endplate_e2e (28 adım), ikisi yeşil; ctest 155/155; python props testi OK.
+  Sıradaki: H-7 → UI-34 → H-6 → H-5 → H-2 → B8 → B5 → T-planı (INBOX Sıra).
 
 ## Git düzeni
 

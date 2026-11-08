@@ -6218,8 +6218,8 @@ bool Application::selectedEndPlateConnection(EndPlateConnection& out) const {
 }
 
 
-void Application::recomputeComponentInstancesFor(const std::vector<EntityId>& changedParts) {
-    if (changedParts.empty()) return;
+bool Application::recomputeComponentInstancesFor(const std::vector<EntityId>& changedParts) {
+    if (changedParts.empty()) return true;
 #ifdef MM_HAS_OCC
     // End Plate baglantilari AYRI kalir (mevcut production yolu). Bu fonksiyon
     // yalnizca parametrik ComponentInstanceRecord'larini (Fin Plate vb.) yeniden
@@ -6233,7 +6233,7 @@ void Application::recomputeComponentInstancesFor(const std::vector<EntityId>& ch
         // kendini yenilemiyor"): neden yenilenmedigini durum cubugunda goster.
         solidStatusMessage_ = L"Component etkilenmedi: bu parcaya bagli component yok";
         updateStatus();
-        return;
+        return true;
     }
 
     // Etkilenen ana parcalarin B-Rep tabanini BIR KEZ tazele (tasima/donme/profil
@@ -6298,17 +6298,20 @@ void Application::recomputeComponentInstancesFor(const std::vector<EntityId>& ch
                               std::to_wstring(affected.size()) + L" baglanti)";
         updateStatus();
         invalidateCanvas();
+        return true;
     }
-    if (!res.allPrepared || res.commitFailed) {
-        const bool rolled = document_.rollbackOpenRecord();
-        std::wstring msg = L"Component recompute basarisiz";
-        if (!res.error.empty()) { msg += L": "; msg += res.error; }
-        msg += rolled ? L" — islem geri alindi."
-                      : L" — rollback BASARISIZ (belge tutarsiz olabilir)";
-        publishStatus(msg);
-    }
+    // Basarisizlik: acik geri-alma kaydini (move/reprofile/kot degisimi kendi
+    // pushUndoSnapshot'i ile ACTI) geri al — TUM islem atomik geri doner.
+    const bool rolled = document_.rollbackOpenRecord();
+    std::wstring msg = L"Component recompute basarisiz";
+    if (!res.error.empty()) { msg += L": "; msg += res.error; }
+    msg += rolled ? L" — islem geri alindi."
+                  : L" — rollback BASARISIZ (belge tutarsiz olabilir)";
+    publishStatus(msg);
+    return false;
 #else
     (void)changedParts;
+    return true;
 #endif
 }
 
@@ -6509,18 +6512,19 @@ bool Application::recomputeEndPlateConnectionsFor(const std::vector<EntityId>& c
 
     const auto res = atomicRecompute<PreparedEndPlate>(affected, prepare, commit);
     if (!res.allPrepared || res.commitFailed) {
-        // GERCEK ROLLBACK (P0): basarisiz islem belgeyi tutarsiz birakamaz.
-        // Tabani/aktif surumleri/op'lari/redo gecmisini geri getirir.
-        const bool rolled = document_.rollbackOpenRecord();
-        std::wstring msg = L"Component recompute basarisiz";
-        if (!res.error.empty()) {
-            msg += L": ";
-            msg += res.error;
-        }
-        msg += rolled ? L" — islem geri alindi."
-                      : L" — rollback BASARISIZ (belge tutarsiz olabilir)";
-        publishStatus(msg);
-        return false;
+    // GERCEK ROLLBACK (P0): basarisiz islem belgeyi tutarsiz birakamaz.
+    // Tabani/aktif surumleri/op'lari/redo gecmisini geri getirir.
+    const bool rolled = document_.rollbackOpenRecord();
+    std::wstring msg = L"Component recompute basarisiz";
+    if (!res.error.empty()) {
+        msg += L": ";
+        msg += res.error;
+    }
+    msg += rolled ? L" — islem geri alindi."
+                  : L" — rollback BASARISIZ (belge tutarsiz olabilir)";
+    publishStatus(msg);
+    appendStartupLog(L"[H-8] " + msg);
+    return false;
     }
     return true;
 }
@@ -10319,11 +10323,11 @@ bool Application::selectedEntityColumnLevels(double& top, double& bottom) const 
     return true;
 }
 
-void Application::applyColumnLevels(double top, double bottom) {
+bool Application::applyColumnLevels(double top, double bottom) {
     // TEK YOL: deger her durumda sonraki kolon yerlesimi icin saklanir;
     // secim varsa secili kolona da uygulanir (ENTER ve UYGULA ayni yol).
     setColumnProps(top, bottom, columnMaterial_);
-    if (!hasSelection()) return;
+    if (!hasSelection()) return true;
     // NO-OP KORUMASI: secili kolonun kotu zaten budur (ornek: kullanici spin
     // kutusuna tiklayip baska yere tiklar → editingFinished ayni degerle
     // gelir). O durumda yeniden uretime ve BOS geri-alma kaydina gerek yok;
@@ -10333,9 +10337,9 @@ void Application::applyColumnLevels(double top, double bottom) {
     if (selectedEntityColumnLevels(currentTop, currentBottom)) {
         const double eps = 1e-6;
         if (std::abs(currentTop - top) <= eps && std::abs(currentBottom - bottom) <= eps)
-            return;
+            return true;
     }
-    setSelectedEntityColumnLevels(top, bottom);
+    return setSelectedEntityColumnLevels(top, bottom);
 }
 
 #ifdef MM_HAS_OCC
@@ -10515,7 +10519,106 @@ void Application::setSelectedEntityProfileRotation(double degrees, bool openUndo
     invalidateCanvas();
 }
 
-void Application::setSelectedEntityColumnLevels(double top, double bottom, bool openUndo) {
+std::vector<EntityId> Application::reanchorSecondaryMembers(
+    const std::vector<ColumnLevelChange>& changes) {
+    // H-8: kotu degisen kolona BAGLI ikincil uyelerin (kiris/mertek) baglanti
+    // ucu, eski kolon TEPESINE ya da DIBINE oturuyorsa yeni kota sabitlenir
+    // (Tekla dugum davranisi). Orta-kot baglantilari (Fin Plate gibi) DEGIL,
+    // yalnizca bilesen recompute'u ile yenilenir.
+    std::vector<EntityId> reanchored;
+    if (changes.empty()) return reanchored;
+    ensureProfileCatalog();
+
+    const auto isChangedColumn = [&](EntityId id) {
+        for (const auto& c : changes)
+            if (c.id == id) return true;
+        return false;
+    };
+    const auto anchorFor = [](const ColumnLevelChange& c,
+                              const Vec3& conn) -> std::optional<Vec3> {
+        constexpr double tol = 20.0;  // mm — tıklama/snap yuvarlama payi
+        const auto nearPoint = [&](const Vec3& q) {
+            return std::abs(conn.x - q.x) <= tol && std::abs(conn.y - q.y) <= tol &&
+                   std::abs(conn.z - q.z) <= tol;
+        };
+        if (nearPoint(Vec3{c.x, c.y, c.oldTop})) return Vec3{c.x, c.y, c.newTop};
+        if (nearPoint(Vec3{c.x, c.y, c.oldBottom})) return Vec3{c.x, c.y, c.newBottom};
+        return std::nullopt;
+    };
+    const auto reanchorMember = [&](EntityId memberId) {
+        if (memberId == kInvalidEntityId) return;
+        if (std::find(reanchored.begin(), reanchored.end(), memberId) !=
+            reanchored.end())
+            return;
+        const auto mi = document_.indexOfEntity(memberId);
+        if (!mi || *mi >= document_.models().size()) return;
+        const auto& m = document_.models()[*mi];
+        const auto& p = m.properties();
+        if (m.faces().empty() || p.profileName.empty()) return;
+        Vec3 from{p.axisFromX, p.axisFromY, p.axisFromZ};
+        Vec3 to{p.axisToX, p.axisToY, p.axisToZ};
+        // Baglanti ucu: degisen kolonun ESKI orta noktasina en yakin ucu al;
+        // yalnizca o uc kolonun eski uc noktasindaysa yeni kota sabitle.
+        bool moved = false;
+        for (const auto& c : changes) {
+            const Vec3 mid{c.x, c.y, (c.oldTop + c.oldBottom) * 0.5};
+            const auto d2 = [](const Vec3& a, const Vec3& b) {
+                const double dx = a.x - b.x, dy = a.y - b.y, dz = a.z - b.z;
+                return dx * dx + dy * dy + dz * dz;
+            };
+            const bool fromNear = d2(from, mid) <= d2(to, mid);
+            const Vec3 conn = fromNear ? from : to;
+            if (const auto anchor = anchorFor(c, conn)) {
+                if (fromNear) from = *anchor; else to = *anchor;
+                moved = true;
+                break;
+            }
+        }
+        if (!moved) return;
+        // Katiyi yeni eksenden yeniden uret (profil/rotasyon/referans normal/
+        // stil/AD korunur; kimlik 1:1 korunur).
+        const auto* profile = mm::findProfile(profileCatalog_, p.profileName);
+        if (!profile) return;
+        const TopoDS_Shape solid = mm::extrudeProfileSolid(
+            *profile, from, to, p.profileRotation,
+            Vec3{p.sectionNormalX, p.sectionNormalY, p.sectionNormalZ});
+        if (solid.IsNull()) return;
+        auto solidModel = mm::shapeToWireframeWithFaces(solid, 0.15);
+        auto sp = solidModel.properties();
+        sp.profileName = p.profileName;
+        sp.profileRotation = p.profileRotation;
+        sp.profileSourceLine = p.profileSourceLine;
+        sp.axisFromX = from.x; sp.axisFromY = from.y; sp.axisFromZ = from.z;
+        sp.axisToX = to.x; sp.axisToY = to.y; sp.axisToZ = to.z;
+        sp.sectionNormalX = p.sectionNormalX;
+        sp.sectionNormalY = p.sectionNormalY;
+        sp.sectionNormalZ = p.sectionNormalZ;
+        sp.material = p.material;
+        sp.trueColor = p.trueColor;
+        sp.colorIndex = p.colorIndex;
+        sp.lineType = p.lineType;
+        sp.layer = p.layer;
+        sp.name = p.name;
+        sp.finish = p.finish;
+        solidModel.setProperties(std::move(sp));
+        document_.replaceModel(*mi, {std::move(solidModel)});
+        putOccSolid(*mi, solid);
+        // Kendi kesme zinciri (fitting/bolton kesmeleri) yeni tabana uygulanir.
+        recomputeCutTarget(memberId);
+        reanchored.push_back(memberId);
+    };
+
+    for (const auto& epc : document_.endPlateConnections())
+        if (isChangedColumn(epc.mainPart)) reanchorMember(epc.secondaryPart);
+    for (const auto& rec : document_.componentInstances()) {
+        if (rec.orphan) continue;
+        if (isChangedColumn(rec.mainPart))
+            for (const EntityId sid : rec.secondaryParts) reanchorMember(sid);
+    }
+    return reanchored;
+}
+
+bool Application::setSelectedEntityColumnLevels(double top, double bottom, bool openUndo) {
     // KULLANICI: "props taki ozellikler secili elemana saglikli uygulanmiyor,
     // ozellikle KOLON BOYUNU degistirmiyor". Props panelindeki Kolon Us
     // Alt kutulari eskiden YALNIZCA sonraki kolon yerlesimi icin saklaniyordu
@@ -10523,10 +10626,13 @@ void Application::setSelectedEntityColumnLevels(double top, double bottom, bool 
     // DUSEY profilli elemanin iki ucunun Z kotunu bottom/top yapip katiyi
     // yeniden uretir; profil, rotasyon, kesit referans normali ve stil
     // (malzeme/renk/katman/cizgi tipi) KORUNUR. TEK undo adimi.
-    if (selectedModels_.empty()) return;
+    // H-8: kot degisince bagli bilesenler (End Plate/Haunch) AYNI kayitta
+    // yeniden uretilir; kolon tepesine oturan ikincil uye uclari yeni kota
+    // sabitlenir (Tekla gibi). Basarisizlikta islem geri alinir, false doner.
+    if (selectedModels_.empty()) return true;
     if (!(top > bottom)) {
         publishStatus(L"Kolon ust kotu alt kottan buyuk olmali.");
-        return;
+        return false;
     }
     ensureProfileCatalog();
 
@@ -10563,11 +10669,13 @@ void Application::setSelectedEntityColumnLevels(double top, double bottom, bool 
     if (targets.empty()) {
         publishStatus(L"Kolon kotlari icin dusey profilli bir eleman secin "
                       L"(yatay kirise uygulanmaz).");
-        return;
+        return false;
     }
 
     if (openUndo) pushUndoSnapshot();
     std::size_t applied = 0;
+    std::vector<EntityId> changedIds;             // H-8: bilesen recompute girdisi
+    std::vector<ColumnLevelChange> levelChanges;  // H-8: reanchor girdisi
     for (const auto& target : targets) {
         // Stil alanlari replaceModel'DEN ONCE kopyalanir.
         const auto& props = document_.models()[target.index].properties();
@@ -10575,10 +10683,16 @@ void Application::setSelectedEntityColumnLevels(double top, double bottom, bool 
         const std::string material = props.material;
         const std::string lineType = props.lineType;
         const std::string layer = props.layer;
+        const std::string name = props.name;
+        const std::string finish = props.finish;
         const std::optional<std::uint32_t> trueColor = props.trueColor;
         const int colorIndex = props.colorIndex;
         const std::int64_t profileSourceLine = props.profileSourceLine;
         const double rotation = props.profileRotation;
+        // H-8: ESKI uc kotlari reanchor icin SIMDI yakala (yeniden uretim
+        // oncesi; yoksa eski konum bilinemez).
+        const double oldTop = std::max(props.axisFromZ, props.axisToZ);
+        const double oldBottom = std::min(props.axisFromZ, props.axisToZ);
 
         const auto* profile = mm::findProfile(profileCatalog_, profileName);
         if (!profile) continue;
@@ -10605,18 +10719,46 @@ void Application::setSelectedEntityColumnLevels(double top, double bottom, bool 
         solidProps.colorIndex = colorIndex;
         solidProps.lineType = lineType;
         solidProps.layer = layer;
+        solidProps.name = name;      // H-8: ad/yuzey islemi kot degisiminde korunur
+        solidProps.finish = finish;
         solidModel.setProperties(std::move(solidProps));
         document_.replaceModel(target.index, {std::move(solidModel)});
         putOccSolid(target.index, solid);
+        changedIds.push_back(document_.modelId(target.index));
+        ColumnLevelChange change;
+        change.id = document_.modelId(target.index);
+        change.x = target.x;
+        change.y = target.y;
+        change.oldTop = oldTop;
+        change.oldBottom = oldBottom;
+        change.newTop = top;
+        change.newBottom = bottom;
+        levelChanges.push_back(change);
         ++applied;
     }
     if (applied == 0) {
         publishStatus(L"Kolon kotlari uygulanmadi (profil/BRep bulunamadi).");
-    } else {
-        publishStatus(L"Kolon kotlari guncellendi");
+        return true;
     }
+    // H-8: bagli bilesenler kolonu izler — ikincil uye uclari yeni kota
+    // sabitlenir, End Plate + parametrik bilesenler AYNI TEK geri-alma
+    // kaydinda yeniden uretilir. Basarisizlikta tum islem geri alinir.
+    const std::vector<EntityId> reanchored = reanchorSecondaryMembers(levelChanges);
+    changedIds.insert(changedIds.end(), reanchored.begin(), reanchored.end());
+    appendStartupLog(L"[H-8] kolon koti degisti: " + std::to_wstring(applied) +
+                     L" kolon, " + std::to_wstring(reanchored.size()) +
+                     L" bagli uye yeniden sabitlendi");
+    if (!recomputeEndPlateConnectionsFor(changedIds)) {
+        // Callee acik kaydi geri aldi + durum mesaji verdi.
+        return false;
+    }
+    if (!recomputeComponentInstancesFor(changedIds)) {
+        return false;
+    }
+    publishStatus(L"Kolon kotlari guncellendi");
     updateControls();
     invalidateCanvas();
+    return true;
 }
 
 #else // !MM_HAS_OCC - kati (BRep) profil rotasyonu yok
@@ -10626,8 +10768,9 @@ void Application::setSelectedEntityProfileRotation(double, bool) {
     publishStatus(L"Kati profil rotasyonu icin OpenCASCADE gerekli (OCC kapali)");
 }
 
-void Application::setSelectedEntityColumnLevels(double, double, bool) {
+bool Application::setSelectedEntityColumnLevels(double, double, bool) {
     publishStatus(L"Kolon kotu degisikligi icin OpenCASCADE gerekli (OCC kapali)");
+    return false;
 }
 
 // onLeftButtonDown icindeki kati-trim akisi bu metodu korumasiz cagirir;
@@ -10748,6 +10891,9 @@ void Application::applySelectedEntityBatch(const std::string* name, const std::s
         selectedEntityColumnLevels(top, bottom);  // kismi guncellemede digerini koru
         if (columnTop) top = *columnTop;
         if (columnBottom) bottom = *columnBottom;
+        // H-8: basarisizlikta callee ACIK kaydi geri aldi (ad/yuzey/rotasyon
+        // dahil tum UYGULA atomik geri doner) ve mesaji verdi; panel asagidaki
+        // updateControls ile geri alinmis degerlere doner.
         setSelectedEntityColumnLevels(top, bottom, /*openUndo=*/false);
     }
     updateControls();
@@ -12886,6 +13032,20 @@ void Application::saveDocumentAs() {
         document_.save(*path);
         currentFilePath_ = *path;
     } catch (const std::exception& error) { showError(L"Kaydetme başarısız", error); }
+}
+
+bool Application::saveDocumentPath(const std::wstring& path) {
+    // GT-1: dosya secim diyalogu olmadan dogrudan belge kaydet (test modu).
+    if (path.empty()) return false;
+    IoProgressGuard progress(&ioProgress_, "Kaydediliyor");
+    try {
+        document_.save(path);
+        currentFilePath_ = path;
+        return true;
+    } catch (const std::exception& error) {
+        showError(L"Kaydetme başarısız", error);
+        return false;
+    }
 }
 
 void Application::openDocument() {
