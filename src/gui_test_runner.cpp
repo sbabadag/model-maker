@@ -23,13 +23,14 @@
 #include <QApplication>
 #include <QDir>
 #include <QElapsedTimer>
+#include <QEventLoop>
 #include <QFile>
 #include <QFileInfo>
 #include <QImage>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
-#include <QEventLoop>
+#include <QStatusBar>
 
 #include <windows.h>
 
@@ -71,7 +72,9 @@ void pump(int ms) {
 
 // Tuval HWND'sini goruntuye alir: WM_PAINT zorla, pencere yuzeyinden BitBlt;
 // basarisizsa (ortulu pencere vb.) PrintWindow yedegi.
-bool captureHwnd(HWND hwnd, QImage& out) {
+// forcePrintWindow=true: BitBlt atlanir, dogrudan PrintWindow (DWM yedek
+// yuzeyinden CIZILI COCUKLARI DA alir — ornegin MDI alt pencereleri).
+bool captureHwnd(HWND hwnd, QImage& out, bool forcePrintWindow = false) {
     if (!hwnd || !IsWindow(hwnd)) return false;
     RECT rc{};
     if (!GetClientRect(hwnd, &rc)) return false;
@@ -93,7 +96,8 @@ bool captureHwnd(HWND hwnd, QImage& out) {
         return false;
     }
     HGDIOBJ oldBmp = SelectObject(mem, bmp);
-    if (!BitBlt(mem, 0, 0, w, h, winDc, 0, 0, SRCCOPY)) {
+    if (forcePrintWindow ||
+        !BitBlt(mem, 0, 0, w, h, winDc, 0, 0, SRCCOPY)) {
         // DWM kompozit yedegi: pencere kismen kapali/ortuluyken bile icerik alir.
         SelectObject(mem, oldBmp);
         DeleteObject(bmp);
@@ -197,6 +201,11 @@ struct Runner {
         out[QStringLiteral("selection")] = selection;
 
         out[QStringLiteral("activeTool")] = toolName(app.activeTool());
+        // Kullaniciya gorunen durum cubugu metni (publishStatus yolu) — tanida
+        // adim adim ne oldu/olmadigini soyler.
+        out[QStringLiteral("status")] = window.statusBar() && window.statusBar()->currentMessage().size()
+                                             ? window.statusBar()->currentMessage()
+                                             : QStringLiteral("Hazır");
 
         int profiled = 0, plain = 0, face3d = 0, point = 0, construction = 0;
         QJsonArray visible;
@@ -339,12 +348,50 @@ struct Runner {
     bool execExpect(const QJsonObject& expect) {
         Application& app = window.application();
         QStringList problems;
-        if (expect.contains(QStringLiteral("models")) &&
-            app.document().models().size() !=
-                static_cast<std::size_t>(expect[QStringLiteral("models")].toInt(-1)))
-            problems << QStringLiteral("models=%1 (beklenen %2)")
-                            .arg(app.document().models().size())
-                            .arg(expect[QStringLiteral("models")].toInt(-1));
+        int profiled = 0, plain = 0, face3d = 0, point = 0, construction = 0,
+            visibleCount = 0;
+        for (const WireframeModel& model : app.document().models()) {
+            const std::string kind = modelKind(model);
+            if (kind == "profiled") ++profiled;
+            else if (kind == "face3d") ++face3d;
+            else if (kind == "point") ++point;
+            else if (kind == "construction") ++construction;
+            else ++plain;
+            if (model.properties().visible && !model.properties().frozen)
+                ++visibleCount;
+        }
+        // "models": sayi (geriye uyumlu) ya da nesne {count, profiled, plain,
+        // face3d, point, construction, visible} — alt tip kontrolu icin.
+        const QJsonValue modelsValue = expect[QStringLiteral("models")];
+        if (modelsValue.isDouble()) {
+            if (app.document().models().size() !=
+                static_cast<std::size_t>(modelsValue.toInt(-1)))
+                problems << QStringLiteral("models=%1 (beklenen %2)")
+                                .arg(app.document().models().size())
+                                .arg(modelsValue.toInt(-1));
+        } else if (modelsValue.isObject()) {
+            const QJsonObject expected = modelsValue.toObject();
+            const auto checkField = [&](const char* field, int actual) {
+                if (expected.contains(QString::fromLatin1(field)) &&
+                    actual != expected[QString::fromLatin1(field)].toInt(-1))
+                    problems << QStringLiteral("models.%1=%2 (beklenen %3)")
+                                    .arg(QString::fromLatin1(field))
+                                    .arg(actual)
+                                    .arg(expected[QString::fromLatin1(field)].toInt(-1));
+            };
+            checkField("count", static_cast<int>(app.document().models().size()));
+            checkField("profiled", profiled);
+            checkField("plain", plain);
+            checkField("face3d", face3d);
+            checkField("point", point);
+            checkField("construction", construction);
+            checkField("visible", visibleCount);
+        }
+        if (expect.contains(QStringLiteral("visibleCount")) &&
+            visibleCount != expect[QStringLiteral("visibleCount")].toInt(-1))
+            problems << QStringLiteral("visibleCount=%1 (beklenen %2)")
+                            .arg(visibleCount)
+                            .arg(expect[QStringLiteral("visibleCount")].toInt(-1));
         if (expect.contains(QStringLiteral("selection")) &&
             app.selectedModelIndices().size() !=
                 static_cast<std::size_t>(expect[QStringLiteral("selection")].toInt(-1)))
@@ -368,6 +415,63 @@ struct Runner {
                             .arg(app.gpuLinesEnabled() ? QStringLiteral("gpu")
                                                        : QStringLiteral("gdi"),
                                  expect[QStringLiteral("backend")].toString());
+        // "status": {contains: "..."} — durum cubugu metninin ALT DIZGE icermesi
+        // (publishStatus/updateStatus yolu; H-1 "açıldı" kaniti gibi).
+        if (expect.contains(QStringLiteral("status"))) {
+            const QJsonObject expected = expect[QStringLiteral("status")].toObject();
+            const QString current = window.statusBar() &&
+                                            window.statusBar()->currentMessage().size()
+                                        ? window.statusBar()->currentMessage()
+                                        : QStringLiteral("Hazır");
+            if (expected.contains(QStringLiteral("contains")) &&
+                !current.contains(expected[QStringLiteral("contains")].toString()))
+                problems << QStringLiteral("status=\"%1\" (\"%2\" icermiyor)")
+                                .arg(current, expected[QStringLiteral("contains")].toString());
+        }
+        // "quickSearch": {text, has} — B1 sozlesmesi: arama kutusu metni ve
+        // oneri listesi (searchSuggestions — completer'in kullandigi yol).
+        if (expect.contains(QStringLiteral("quickSearch"))) {
+            const QJsonObject expected = expect[QStringLiteral("quickSearch")].toObject();
+            if (expected.contains(QStringLiteral("text")) &&
+                window.quickSearchText() != expected[QStringLiteral("text")].toString())
+                problems << QStringLiteral("quickSearch.text=\"%1\" (beklenen \"%2\")")
+                                .arg(window.quickSearchText(),
+                                     expected[QStringLiteral("text")].toString());
+            if (expected.contains(QStringLiteral("has"))) {
+                const QString needle = expected[QStringLiteral("has")].toString();
+                const QStringList suggestions =
+                    window.quickSearchSuggestions(window.quickSearchText());
+                if (!suggestions.contains(needle))
+                    problems << QStringLiteral("quickSearch onerilerinde \"%1\" yok: %2")
+                                    .arg(needle, suggestions.join(QStringLiteral(" | ")));
+            }
+        }
+        // "catalog": {count, minCount, has} — B1 sozlesmesi: Katalog acilir
+        // icerigi (dynamicMenu("steel.catalog")); "has" etiket ALT DIZGESI arar.
+        if (expect.contains(QStringLiteral("catalog"))) {
+            const QJsonObject expected = expect[QStringLiteral("catalog")].toObject();
+            const std::vector<DynamicMenuItem> items =
+                window.dynamicMenu(QStringLiteral("steel.catalog").toStdString());
+            if (expected.contains(QStringLiteral("count")) &&
+                static_cast<int>(items.size()) != expected[QStringLiteral("count")].toInt(-1))
+                problems << QStringLiteral("catalog=%1 oge (beklenen %2)")
+                                .arg(items.size())
+                                .arg(expected[QStringLiteral("count")].toInt(-1));
+            if (expected.contains(QStringLiteral("minCount")) &&
+                static_cast<int>(items.size()) < expected[QStringLiteral("minCount")].toInt(-1))
+                problems << QStringLiteral("catalog=%1 oge (en az %2)")
+                                .arg(items.size())
+                                .arg(expected[QStringLiteral("minCount")].toInt(-1));
+            if (expected.contains(QStringLiteral("has"))) {
+                const QString needle = expected[QStringLiteral("has")].toString();
+                bool found = false;
+                for (const DynamicMenuItem& item : items)
+                    if (QString::fromUtf8(item.label.c_str()).contains(needle)) found = true;
+                if (!found)
+                    problems << QStringLiteral("katalogda \"%1\" yok (%2 oge)")
+                                    .arg(needle).arg(items.size());
+            }
+        }
         if (!problems.isEmpty())
             return fail(QStringLiteral("expect başarısız: ") + problems.join(QStringLiteral("; ")));
         return true;
@@ -426,6 +530,141 @@ struct Runner {
                 step[QStringLiteral("profile")].toString().toStdString());
             pump(40);
             return writeStep(step, QStringLiteral("profile:") + step[QStringLiteral("profile")].toString());
+        }
+        if (step.contains(QStringLiteral("search"))) {
+            // B1: arama kutusuna metin KOY (deterministik; completer ayni
+            // searchSuggestions yolundan beslenir) — asil sozlesme "expect
+            // quickSearch" adiminda kilitlenir.
+            const QString text = step[QStringLiteral("search")].toString();
+            window.setQuickSearchText(text);
+            pump(60);
+            return writeStep(step, QStringLiteral("search:") + text);
+        }
+        if (step.contains(QStringLiteral("clickModel"))) {
+            // H-1: modelin izdusumu UZERINDEN deterministik yuz tiklamasi
+            // (vision'siz). {"model": N} -> tum koselerin ekran agirlik
+            // merkezi; {"model": N, "vertex": i} -> tek kose; {"vertex": [i,j]}
+            // -> iki kosenin orta noktasi. Nokta tuval icindeyse oraya tiklar.
+            const QJsonObject spec = step[QStringLiteral("clickModel")].toObject();
+            Application& app = window.application();
+            const int model = spec[QStringLiteral("model")].toInt(-1);
+            if (model < 0 ||
+                static_cast<std::size_t>(model) >= app.document().models().size())
+                return fail(QStringLiteral("clickModel: model %1 yok").arg(model));
+            const auto& vertices = app.document().models()[model].vertices();
+            if (vertices.empty()) return fail(QStringLiteral("clickModel: model %1 koseleri bos").arg(model));
+            auto project = [&](std::size_t vertexIndex, POINT& out) {
+                return app.projectModelVertexToScreen(
+                    static_cast<std::size_t>(model), vertexIndex, out);
+            };
+            POINT target{};
+            bool have = false;
+            const QJsonValue vertexValue = spec[QStringLiteral("vertex")];
+            if (vertexValue.isArray() && vertexValue.toArray().size() == 2) {
+                POINT a{}, b{};
+                if (project(static_cast<std::size_t>(vertexValue.toArray()[0].toInt()), a) &&
+                    project(static_cast<std::size_t>(vertexValue.toArray()[1].toInt()), b)) {
+                    target = {a.x + (b.x - a.x) / 2, a.y + (b.y - a.y) / 2};
+                    have = true;
+                }
+            } else if (vertexValue.isDouble()) {
+                have = project(static_cast<std::size_t>(vertexValue.toInt()), target);
+            } else {
+                // Varsayilan: modelin EKSEN orta noktasi (axisFrom/axisTo).
+                // Profil kesiti kucuk zoom'da tuval disina tasabildigi icin
+                // mesh koseleri yerine kullanici tiklamalarindan gelen eksen
+                // uclari daima tuval icindedir; eksendeki isin kirisin
+                // govdesine carpar (H-1 yuz tiklamasi icin ideal).
+                const auto& props = app.document().models()[model].properties();
+                POINT a{}, b{};
+                if (app.projectWorldPointToScreen(
+                        {props.axisFromX, props.axisFromY, props.axisFromZ}, a) &&
+                    app.projectWorldPointToScreen(
+                        {props.axisToX, props.axisToY, props.axisToZ}, b)) {
+                    target = {a.x + (b.x - a.x) / 2, a.y + (b.y - a.y) / 2};
+                    have = true;
+                } else {
+                    // Eksen yoksa tum koselerin agirlik merkezi (kiris silueti).
+                    long sumX = 0, sumY = 0;
+                    std::size_t count = 0;
+                    for (std::size_t i = 0; i < vertices.size(); ++i) {
+                        POINT p{};
+                        if (project(i, p)) { sumX += p.x; sumY += p.y; ++count; }
+                    }
+                    if (count) {
+                        target = {sumX / static_cast<long>(count),
+                                  sumY / static_cast<long>(count)};
+                        have = true;
+                    }
+                }
+            }
+            if (!have) {
+                // Tanida yardimci: tuval boyutu + ilk kosenin dunya/ekran degeri.
+                RECT rc{};
+                QString diag = QStringLiteral(" rect=0x0");
+                if (GetClientRect(reinterpret_cast<HWND>(window.winId()), &rc))
+                    diag = QStringLiteral(" rect=%1x%2").arg(rc.right).arg(rc.bottom);
+                QString first = QStringLiteral("-");
+                if (!vertices.empty()) {
+                    POINT p{};
+                    const bool ok = app.projectModelVertexToScreen(
+                        static_cast<std::size_t>(model), 0, p);
+                    first = QStringLiteral("v0=(%1,%2,%3)->(%4,%5) ok=%6")
+                                .arg(vertices[0].x, 0, 'f', 2)
+                                .arg(vertices[0].y, 0, 'f', 2)
+                                .arg(vertices[0].z, 0, 'f', 2)
+                                .arg(p.x).arg(p.y)
+                                .arg(ok ? 1 : 0);
+                }
+                return fail(QStringLiteral("clickModel: model %1 izdusumu tuval disinda (%2 kose;%3; %4)")
+                                .arg(model).arg(vertices.size()).arg(diag, first));
+            }
+            execClick(target.x, target.y);
+            return writeStep(step, QStringLiteral("clickModel:%1@(%2,%3)")
+                                       .arg(model).arg(target.x).arg(target.y));
+        }
+        if (step.contains(QStringLiteral("capture"))) {
+            // Ek kanit: EN USTTEKI ModelMakerCanvas (yeni acilan gorunum pencere
+            // tuvali olabilir) ya da tum ana pencere. <out>/<ad>.png.
+            // String form: {"capture": "ad"} -> tuval. Object form:
+            // {"capture": {"name": "ad", "target": "window"}} -> ana pencere
+            // (MDI cercevesi + alt pencereler + ribbon; PrintWindow ile).
+            QString name = QStringLiteral("extra");
+            QString target = QStringLiteral("canvas");
+            if (step[QStringLiteral("capture")].isObject()) {
+                const QJsonObject cap = step[QStringLiteral("capture")].toObject();
+                name = cap[QStringLiteral("name")].toString(QStringLiteral("extra"));
+                target = cap[QStringLiteral("target")].toString(QStringLiteral("canvas"));
+            } else {
+                name = step[QStringLiteral("capture")].toString(QStringLiteral("extra"));
+            }
+            QImage image;
+            HWND root = reinterpret_cast<HWND>(window.winId());
+            if (target == QStringLiteral("window") && root && IsWindow(root)) {
+                if (!captureHwnd(root, image, /*forcePrintWindow=*/true))
+                    image = QImage();
+            } else {
+                HWND top = nullptr;
+                struct Ctx { const wchar_t* klass; HWND found; } ctx{L"ModelMakerCanvas", nullptr};
+                if (root && IsWindow(root)) {
+                    EnumChildWindows(root,
+                        [](HWND child, LPARAM param) -> BOOL {
+                            auto* c = reinterpret_cast<Ctx*>(param);
+                            wchar_t buffer[64]{};
+                            GetClassNameW(child, buffer, 63);
+                            if (wcscmp(buffer, c->klass) == 0) { c->found = child; return FALSE; }
+                            return TRUE;
+                        },
+                        reinterpret_cast<LPARAM>(&ctx));
+                    top = ctx.found;
+                }
+                if (top && !captureHwnd(top, image)) image = QImage();
+            }
+            if (image.isNull()) image = window.grab().toImage();
+            if (image.isNull())
+                return fail(QStringLiteral("capture: ekran görüntüsü alınamadı"));
+            image.save(outDir + QStringLiteral("/") + name + QStringLiteral(".png"));
+            return writeStep(step, QStringLiteral("capture:") + name);
         }
         if (step.contains(QStringLiteral("expect"))) {
             if (!execExpect(step[QStringLiteral("expect")].toObject())) return false;

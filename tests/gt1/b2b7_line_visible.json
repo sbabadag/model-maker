@@ -1,0 +1,12 @@
+{
+  "backend": "gdi",
+  "timeoutMs": 120000,
+  "steps": [
+    {"cmd": "draw.line"},
+    {"click": [500, 350]},
+    {"click": [700, 350]},
+    {"key": "esc"},
+    {"expect": {"models": {"count": 1, "plain": 1}, "visibleCount": 1}},
+    {"wait": 150}
+  ]
+}

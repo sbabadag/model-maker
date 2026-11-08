@@ -101,6 +101,13 @@ public:
 
     // ANA tuval (aktif viewport degil) — Qt kabugu boyutlandirma/odak icin.
     HWND canvasHandle() const { return mainCanvas(); }
+    // GT-1: modelIndex/vertexIndex'in tuval istemci koordinatindaki izdusumu
+    // (WM_APP+10 probu ile ayni yol). Takim yildizi disindaysa false — senaryo
+    // klik hedefini deterministik secsin ("clickModel" adimi).
+    bool projectModelVertexToScreen(std::size_t modelIndex, std::size_t vertexIndex,
+                                    POINT& out) const noexcept;
+    // GT-1: dunya noktasinin tuval izdusumu (clickModel "axis" hedefi icin).
+    bool projectWorldPointToScreen(const Vec3& point, POINT& out) const noexcept;
     // Su an komut alan (aktif) tuval — odagi geri vermek icin.
     HWND activeCanvasHandle() const { return canvas_; }
     HWND windowHandle() const { return window_; }

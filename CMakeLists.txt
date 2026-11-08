@@ -200,6 +200,23 @@ else()
                     "benchmarks still build.")
 endif()
 
+# GT-1 (INBOX 6): masaustunde PENCERE ACAN tekrarlanabilir GUI senaryolari.
+# Varsayilan kosuda YOKLAR (spec: "varsayılan koşuda değil"); yalniz
+# MM_GUI_TESTS=ON ile configure edilince kayitli olurlar ve `ctest -L gui`
+# ile kosarlar (kullanici izni / DURAK). Is bitince ayni build dizinini
+# MM_GUI_TESTS=OFF ile yeniden configure et (gece modu pencere acmasin).
+option(MM_GUI_TESTS "Masaustu GUI test senaryolarini kaydet (gt1)" OFF)
+if(MM_GUI_TESTS AND WIN32 AND TARGET model-maker)
+    foreach(scenario smoke_line b6_line_ignores_profile b2b7_line_visible
+                     b1_catalog_search h1_view_to_surface)
+        add_test(NAME model_maker_gt1_${scenario}
+            COMMAND model-maker
+                --test-script ${CMAKE_CURRENT_SOURCE_DIR}/tests/gt1/${scenario}.json
+                --out ${CMAKE_CURRENT_BINARY_DIR}/gt1-out/${scenario})
+        set_tests_properties(model_maker_gt1_${scenario} PROPERTIES LABELS gui)
+    endforeach()
+endif()
+
 # --- OpenCASCADE (OCC) — 3B kati modelleme (istege bagli) ---
 # Uc yol:
 # 1) vcpkg (ONERILEN, Windows): configure'i vcpkg toolchain dosyasiyla

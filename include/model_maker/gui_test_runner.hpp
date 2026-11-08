@@ -14,8 +14,28 @@
 //   {"wait": 500}                 ms bekle
 //   {"open": "model.mmd"}         belge ac
 //   {"profile": "HEB240"}         panel aktif profilini ayarla (test kestirmesi)
-//   {"expect": {"models": 2, "selection": 1, "viewports": 1}}
+//   {"search": "haunch"}          arama kutusuna metin koy (deterministik)
+//   {"clickModel": {"model": 0}}  modelin koselerinin ekran agirlik merkezine
+//                                 tiklar (izdusum uzerinden, vision'siz);
+//                                 "vertex": i -> tek kose, "vertex": [i,j] ->
+//                                 orta nokta
+//   {"capture": "final"}          <out>/final.png: en ustteki ModelMakerCanvas
+//                                 (yeni gorunum tuvalleri dahil) tam kare
+//   {"capture": {"name": "final", "target": "window"}}
+//                                 tum ana pencere (MDI cercevesi + alt
+//                                 pencereler + ribbon; PrintWindow ile)
+//   {"expect": {"models": 2, "selection": 1, "viewports": 1,
+//               "activeTool": "draw.line", "backend": "gdi"}}
 //                                 beklenti; tutmazsa cikis kodu 1
+//                                 "models" SAYI (toplam) ya da NESNE olabilir:
+//                                 {count, profiled, plain, face3d, point,
+//                                  construction, visible} (alt tip sayilari)
+//   {"expect": {"visibleCount": 1}}  gorunur model sayisi
+//   {"expect": {"status": {"contains": "açıldı"}}}  durum cubugu alt dizgesi
+//   {"expect": {"quickSearch": {"text": "haunch", "has": "Haunch (40)"}}}
+//                                 arama kutusu metni + oneri listesi (B1)
+//   {"expect": {"catalog": {"minCount": 4, "has": "Haunch (40)"}}}
+//                                 Katalog acilir icerigi (B1; "has" alt dizge)
 //
 // HER adimdan sonra: <out>/step_%03d.png (tuval ekran goruntusu) +
 // <out>/step_%03d.json (durum: secim sayisi/tipi, aktif komut, nesne

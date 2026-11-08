@@ -8844,7 +8844,13 @@ void Application::selectTool(DrawTool tool) {
     if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
     profileGrip_.reset();
     tool_ = tool; cancelDrawing(); drawingActive_ = true;
-    updateHover(cursorScreen_.x, cursorScreen_.y); updateControls(); invalidateCanvas();
+    updateHover(cursorScreen_.x, cursorScreen_.y);
+    // GT1-B6: yeni arac ESKI komutun "tutulan snap"ini devralmaz. selectTool
+    // updateHover'i ESKI imlec konumunda cagirdigi icin (imlec eski cizimin tam
+    // ucundaysa) heldSnap_ oradaki endpoint'i yakalar ve holdTimeMs (300 ms)
+    // penceresi sonraki aracin UZAKTAKI ilk tiklamasini o uca kacirir.
+    heldSnap_.reset();
+    updateControls(); invalidateCanvas();
 }
 
 void Application::deactivateAllCommands() {
@@ -11648,6 +11654,41 @@ Vec3 Application::screenTo2D(int x, int y) const noexcept {
     RECT client{}; GetClientRect(canvas_, &client);
     return camera_.unproject2D({static_cast<double>(x), static_cast<double>(y)},
                                client.right, client.bottom);
+}
+
+bool Application::projectModelVertexToScreen(std::size_t modelIndex,
+                                             std::size_t vertexIndex,
+                                             POINT& out) const noexcept {
+    // WM_APP+10 probu ile AYNI yol — GT-1 "clickModel" adimi icin process-ici.
+    if (modelIndex >= document_.models().size()) return false;
+    const auto& vertices = document_.models()[modelIndex].vertices();
+    if (vertexIndex >= vertices.size()) return false;
+    RECT rect{};
+    if (!canvas_ || !GetClientRect(canvas_, &rect)) return false;
+    if (rect.right <= 0 || rect.bottom <= 0) return false;
+    const Vec3 point3D = vertices[vertexIndex];
+    const Vec2 point = mode_ == EditMode::Draw2D
+                           ? camera_.project2D(point3D, rect.right, rect.bottom)
+                           : camera_.project(point3D, rect.right, rect.bottom);
+    out.x = static_cast<LONG>(std::lround(point.x));
+    out.y = static_cast<LONG>(std::lround(point.y));
+    return out.x >= 0 && out.y >= 0 && out.x <= rect.right && out.y <= rect.bottom;
+}
+
+bool Application::projectWorldPointToScreen(const Vec3& point3D,
+                                            POINT& out) const noexcept {
+    // GT-1: clickModel icin keyfi dunya noktasi -> tuval. Modelin mesh koseleri
+    // kucuk zoom'da (profil kesiti ekran disi) tuvali tasabiliyor; eksen uclari
+    // (kullanici tiklamalari) ise daima tuval icindedir.
+    RECT rect{};
+    if (!canvas_ || !GetClientRect(canvas_, &rect)) return false;
+    if (rect.right <= 0 || rect.bottom <= 0) return false;
+    const Vec2 point = mode_ == EditMode::Draw2D
+                           ? camera_.project2D(point3D, rect.right, rect.bottom)
+                           : camera_.project(point3D, rect.right, rect.bottom);
+    out.x = static_cast<LONG>(std::lround(point.x));
+    out.y = static_cast<LONG>(std::lround(point.y));
+    return out.x >= 0 && out.y >= 0 && out.x <= rect.right && out.y <= rect.bottom;
 }
 
 HCURSOR Application::currentCanvasCursor() const noexcept {

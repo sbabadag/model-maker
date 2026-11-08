@@ -1051,6 +1051,11 @@ QString QtMainWindow::quickSearchText() const {
     return ribbon_ ? ribbon_->searchText() : QString();
 }
 
+// GT-1: arama kutusuna metin koyar ("search" adimi; deterministik).
+void QtMainWindow::setQuickSearchText(const QString& text) {
+    if (ribbon_) ribbon_->setSearchText(text);
+}
+
 QStringList QtMainWindow::quickSearchSuggestions(const QString& text, int limit) const {
     return ribbon_ ? ribbon_->searchSuggestions(text, limit) : QStringList();
 }

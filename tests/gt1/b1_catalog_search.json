@@ -1,0 +1,13 @@
+{
+  "backend": "gdi",
+  "timeoutMs": 120000,
+  "steps": [
+    {"expect": {"catalog": {"minCount": 4, "has": "Haunch (40)"}}},
+    {"search": "haunch"},
+    {"expect": {"quickSearch": {"text": "haunch", "has": "Haunch (40)"}}},
+    {"search": "Haunch (40)"},
+    {"expect": {"quickSearch": {"text": "Haunch (40)", "has": "Haunch (40)"}}},
+    {"capture": {"name": "final", "target": "window"}},
+    {"wait": 100}
+  ]
+}

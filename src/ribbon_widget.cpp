@@ -779,6 +779,11 @@ QString RibbonWidget::searchText() const {
     return search_ ? search_->text() : QString();
 }
 
+void RibbonWidget::setSearchText(const QString& text) {
+    if (!search_) return;
+    search_->setText(text);  // textChanged -> QCompleter kendi popup'ini tazeler
+}
+
 QStringList RibbonWidget::searchSuggestions(const QString& text, int limit) const {
     QStringList out;
     for (const CommandDef* def : catalog_.registry.search(text.toStdString(),

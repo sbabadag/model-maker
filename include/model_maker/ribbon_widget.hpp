@@ -104,6 +104,8 @@ public:
     QStringList searchSuggestions(const QString& text, int limit = 12) const;
     // GT-1: arama kutusunun GUNCEL metni (durum JSON'u).
     QString searchText() const;
+    // GT-1: arama kutusuna metin KOYAR (senaryo "search" adimi; deterministik).
+    void setSearchText(const QString& text);
     // Etiketi kutusuna sigmayan dugme sayisi (DPI testi: 1.0/1.5/2.0).
     int clippedLabelCount() const;
     // Ekran goruntuleri (rapor): sekmeler + daraltilmis + arama.
