@@ -355,7 +355,9 @@ silindi) — bu tur ilk turdu.
 Kullanıcı ekran görüntüsü (kabul paketi 20261108-2224-29cc028): mertek ucu
 haunch levhalarıyla duruyor, KOLON ise belirgin aşağıda ve ayrık (kolon
 tepesi mertek ucunun çok altında). Kullanıcı: "bir yeri yaparken diğer yeri
-bozuyoruz". Adımlar: <kullanıcıdan bekleniyor>; beklemeden yeniden üret.
+bozuyoruz". Kullanıcı: model YENİ kuruldu (eski dosya değil). Panelden değişiklik yapıp
+yapmadığı henüz belli değil; her iki yolu da dene (panel dokunmadan ve
+panel UYGULA sonrası). Beklemeden yeniden üret.
 Şüpheliler (kontrat golden'ları yeşil → büyük olasılıkla UYGULAMA katmanı):
 - 29cc028 yeni PropertiesPanel: "Kolon Üst/Alt (mm)" ENTER ile doğrudan
   uygulanıyor; seçim değişince / çoklu seçimde / mertek seçiliyken kolon
