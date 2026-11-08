@@ -358,6 +358,36 @@ cümleyle yaz. Birim test ve önceki senaryo neden yakalamadı, bir cümle.
 
 Durum: —
 
+## UI-34 — Özellikler paneli (Tekla gibi) + "..." profil seçim penceresi  [kullanıcı isteği, 2026-11-08 17:33 — H-7'den hemen sonra]
+Tam tarif: `docs/agent/ROADMAP-UI.md` → UI-3 ve UI-4 (+ K1, K2, profilsiz
+çizgi kuralı). Bu turda şu kesit, sırayla, her parça ayrı commit + push +
+kabul paketi:
+1. **UI-3a — panel iskeleti:** sağ dock'ta "<tip> (N seçili)" başlıklı,
+   daraltılabilir bölümler. Kiriş/kolon için Genel (Ad, **Profil [metin +
+   "..."]**, **Malzeme [metin + "..."]**, Sınıf, Yüzey işlemi), Konum
+   (düzlemde / dönüş / derinlik — mevcut alanlarla eşleşen neyse), Uç ofseti
+   (başlangıç/bitiş Dx Dy Dz). Alt çubukta Uygula/Değiştir (A kuralı: yalnız
+   Uygula yazar; çoklu seçimde yalnız değişen alan). Profil elle yazılır,
+   büyük/küçük harf duyarsız (`heb240` → `HEB240`), otomatik tamamlama;
+   katalogda yoksa kırmızı + uygulanmaz. Eski "Profil (aktif)" açılır
+   listesi ve "Profilsiz (düz çizgi)" seçeneği KALKAR. Aktif profil
+   (yeni Kolon/Kiriş için) aynı alandan.
+2. **UI-4 — profil seçim penceresi ("..."):** solda aileye göre ağaç (HEA,
+   HEB, HEM, IPE, UPN, kutu, boru… katalogda ne varsa), üstte Filtre (`*`
+   joker, ör. `HE*3*`), profil adı alanı (ağaçla senkron); sağda tip/alt
+   tip, kesit alanı, **kesit resmi kendi şematik motorumuzla** (ölçü harfleri
+   h b tw tf r), özellik tablosu (Özellik / Sembol / Değer / Birim);
+   altta Tamam / Uygula / İptal (Uygula alana yazar, pencere açık kalır).
+   Malzeme "..." için aynı yapıda basit liste. Tekla ikon/resim/marka YOK.
+3. GT-1 senaryoları: (a) profil alanına `heb240` yaz → HEB240, Uygula →
+   seçili kirişin profili değişir, tek geri alma; (b) "..." → filtre `IPE3*`
+   → IPE300 seç → Tamam → alan IPE300; (c) geçersiz ad → kırmızı, uygulanmaz.
+   PNG'ler vision ile; panelin ve pencerenin ekran görüntüsü NELER-YENI'de.
+Kalan UI-3 parçaları (levha/bulon/kaynak/komponent bölümleri, K1 modsuz
+pencereler, K2 Temizle, yardımcı obje görünümü + migration) bundan sonra.
+
+Durum: —
+
 ## H-6 — holdTimeMs artık hiçbir şey yapmıyor (H-4 yan etkisi)  [planlayıcı incelemesi, cb9506f]
 H-4 doğru: tıklama artık süreye bağlı değil. Ama `snapSettings_.holdTimeMs`
 kodda hiç okunmuyor (yalnız ayar dosyası). Kullanıcının istediği "marker
