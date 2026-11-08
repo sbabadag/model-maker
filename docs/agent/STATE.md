@@ -3,7 +3,7 @@
 - Aktif makine: Asus (ev). ZBook (iş) pasif. Senkron yalnız GitHub üzerinden;
   aynı anda tek makinede çalışılır.
 - Son güncelleme: 2026-11-07 (oturum başlangıç kurulumu)
-- Son tur: 2026-11-08 17:24 — H-4 tutulan snap mesafe kuralı — BİTTİ — cb9506f — kabul: C:\work\mm-kabul\20261108-1716-cb9506f
+- Son tur: 2026-11-08 18:46 — H-6 soluk snap izi (holdTimeMs görsel) — BİTTİ — 133fe71 — kabul: C:\work\mm-kabul\20261108-1846-133fe71
 
 ## Git düzeni
 
@@ -71,6 +71,11 @@
       histerezise bağlandı (tutma süresi yalnız görsel marker); GT-1
       h4_held_snap_release_distance kırmızı→yeşil; ctest -L gui 6/6 +
       tam ctest 160/160; kabul paketi yayınlandı (cb9506f)
+- [x] H-6 (soluk snap izi): holdTimeMs yeniden çalışıyor — histerezis
+      dışında snap hemen geçersiz ama marker holdTimeMs boyunca soluk
+      çiziliyor (yalnız görsel; tıklama/hover değişmez); GT-1 h6 senaryosu
+      kırmızı→yeşil + captureLive görsel kanıt; ctest -L gui 7/7 + tam
+      ctest 161/161; kabul paketi yayınlandı (133fe71)
 - [x] B1 (Katalog + hızlı arama): kök neden setHost→setCatalog sırası +
       arama indeksi; düzeltildi, ribbon testi kırmızı→yeşil, ekranda
       doğrulandı (INBOX 1. madde)

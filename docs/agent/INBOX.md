@@ -407,7 +407,15 @@ olarak (soluk) çizilmeye devam etsin; tıklama/hover sonucu değişmez
 (H-4 kuralı korunur). GT-1: uzaklaşınca 100 ms'de marker görünür ama
 tıklama imleç konumunda; 400 ms'de marker yok.
 
-Durum: —
+Durum: BİTTİ (133fe71) — histerezis dışına çıkınca heldSnap_ hemen reset
+(H-4 korunur); marker fadingSnap_ olarak holdTimeMs boyunca YALNIZ GÖRSEL
+soluk çizilir (timer 8 + draftView; tıklama/hover sonucu DEĞİŞMEZ). GT-1
+h6_held_snap_visual_hold: held→fading→gone zamanlama + tıklama çözünürlüğü
+(vertexScreen 650,300 — tıklama eski snap noktasına kaçmıyor) + captureLive
+görsel kanıt (soluk kare eski snap noktasında @~452,302 var; 600 ms sonra
+yok). ctest -L gui 7/7, tam ctest 161/161. Not (bulgu): düz çizgilerde
+axisFrom doldurulmuyor (h4'te beam profil ataması dolduruyordu) → GT-1'e
+vertexScreen beklentisi eklendi.
 
 ## H-5 — H-1 senaryosu doğru şeyi mi ölçüyor? (planlayıcı incelemesi)
 GT-1 raporu: kirişin üst yüzüne tıklayınca "Plan Görünüşü 1 — plan, Z=0"
