@@ -348,6 +348,14 @@ if(BUILD_TESTING)
             add_test(NAME model_maker_gumball_interaction
                 COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_gumball_interaction.py
                     ${CMAKE_CURRENT_BINARY_DIR})
+            # B6: Cizgi/Polyline/Dikdortgen/Daire aktif profili YOK SAYAR;
+            # profilli uye yalniz Kolon (placeColumn) ve Kiris (DrawTool::Beam
+            # -> assignProfileToLine) araclarindan gelir. Gercek
+            # Application::commitPoint govdesi sahte Win32 sinirinda derlenir
+            # (gumball deseni); OCC atama yolu kayit stub'iyla dogrulanir.
+            add_test(NAME model_maker_line_beam_tool
+                COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_line_beam_tool.py
+                    ${CMAKE_CURRENT_BINARY_DIR})
             # Dogrusal kopya/tasima delta paneli: Application durum makinesi
             # (gercek govdeler) + Qt panel sozlesmesi (offscreen).
             add_test(NAME model_maker_linear_delta_panel

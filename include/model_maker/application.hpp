@@ -1203,7 +1203,7 @@ private:
     std::function<void()> profilePickerCallback_;
     EditMode mode_{EditMode::Draw2D};
     DrawTool tool_{DrawTool::Line};
-    std::string pendingProfileName_; // profil-cizim modu aktif profili
+    std::string pendingProfileName_; // panel aktif profili (Kolon/Kiris kullanir; Cizgi YOK SAYAR - B6)
     double columnTopZ_{8500.0};      // kolon ust kotu (mm) — props paneli
     double columnBottomZ_{0.0};      // kolon alt kotu (mm)
     std::string columnMaterial_;     // kolon malzemesi (props paneli)
