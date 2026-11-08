@@ -341,6 +341,17 @@ vision: kiriş çizgi ucundan 200 px uzakta başlıyor. ctest -L gui 6/6,
 tam ctest 160/160. SÜREKLİ MOD kuruldu (surekli-mm cron, 30dk; gece-mm
 silindi) — bu tur ilk turdu.
 
+## H-6 — holdTimeMs artık hiçbir şey yapmıyor (H-4 yan etkisi)  [planlayıcı incelemesi, cb9506f]
+H-4 doğru: tıklama artık süreye bağlı değil. Ama `snapSettings_.holdTimeMs`
+kodda hiç okunmuyor (yalnız ayar dosyası). Kullanıcının istediği "marker
+snap noktasında bir süre dursun" davranışı kayboldu. İstenen: imleç
+histerezis dışına çıkınca son marker holdTimeMs boyunca YALNIZ GÖRSEL
+olarak (soluk) çizilmeye devam etsin; tıklama/hover sonucu değişmez
+(H-4 kuralı korunur). GT-1: uzaklaşınca 100 ms'de marker görünür ama
+tıklama imleç konumunda; 400 ms'de marker yok.
+
+Durum: —
+
 ## H-5 — H-1 senaryosu doğru şeyi mi ölçüyor? (planlayıcı incelemesi)
 GT-1 raporu: kirişin üst yüzüne tıklayınca "Plan Görünüşü 1 — plan, Z=0"
 açıldı. Şüpheli: yüzey görünüşü yüzün kendi düzleminde olmalı (kiriş üst
