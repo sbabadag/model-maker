@@ -68,6 +68,22 @@ kimlikle commit atıyor). Kural: C:\work\mm-hermes worktree'sinde yerel
 `git config user.name "Hermes (Asus)"` ve `user.email "hermes-asus@local"`;
 ZBook'ta "Hermes (ZBook)". Yalnız bu worktree, global ayara dokunma.
 
+Uyanık kalma ve dayanıklılık (planlayıcı notu, 2026-11-08 sabah):
+- KÖK NEDEN (gece 1): Asus "Modern Standby" (S0 Low Power Idle) kullanıyor.
+  01:44'teki cron çalışması ekran kapanınca dondu, 10:04'te uyanınca
+  APIConnectionError ile düştü; 01:44–10:05 arası hiç tur yok.
+- Gece modu oturumu başlarken Windows'a "uyanık kal" isteği ver ve oturum
+  boyunca tut: arka planda bir PowerShell süreci
+  SetThreadExecutionState(ES_CONTINUOUS|ES_SYSTEM_REQUIRED|ES_DISPLAY_REQUIRED)
+  (0x80000003) çağırıp beklesin; oturum bitince süreci kapat. Kullanıcı
+  ayrıca powercfg ile AC'de ekran/uyku zaman aşımını 0 yaptı.
+- Ağ/API hatası (APIConnectionError, timeout): oturumu düşürme; 1, 2, 4
+  dakika arayla 3 kez yeniden dene; yine olmazsa STATE.md'ye yaz, çık
+  (bir sonraki cron turu devralır).
+- Görüntü analizi: vision yardımcı modeli artık openai-codex · gpt-6.1-sol
+  (low). Ekran testlerinde PNG + vision kullan; UIA metin dökümü ek kanıt.
+  Kota hatası alırsan vision'sız (UIA) devam et ve Durum'a yaz.
+
 Gece YASAK: main'e merge; pacman/MSYS2 paket değişikliği; IgnorePkg
 değişikliği; C:\work\model-maker-p2d ve kullanıcı dosyalarına dokunma;
 Studio reposu; test gevşetme / golden'ı test geçsin diye yeniden üretme;
