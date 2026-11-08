@@ -369,7 +369,7 @@ Durum: —
 (1–5'i yaparken GT-1 yoksa Computer Use ile ekrandan doğrula; GT-1
 bitince o hataların senaryolarını ekle.)
 
-Durum: BİTTİ (eae2122) — ctest "gui" etiketi 5 senaryo (smoke_line,
+Durum: BİTTİ (09d277e) — ctest "gui" etiketi 5 senaryo (smoke_line,
 b6_line_ignores_profile, b2b7_line_visible, b1_catalog_search,
 h1_view_to_surface) Windows'ta yeşil (ctest -L gui 5/5, ~11 sn).
 Koşucuya search/clickModel/capture(target=window)/expect quickSearch/
