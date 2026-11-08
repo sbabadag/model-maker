@@ -418,8 +418,11 @@ YERLESTİR). Ribbon profil combo KALKTI; tek profil alanı paneldeki QLineEdit
 kırmızı+uygulanmaz). A kuralı: yalnız UYGULA yazar (dirty flags + tek undo).
 3 Python testi yeni sözleşmeye uyarlandı (mutasyon 9/9 + 10/10 yakalıyor);
 C++ offscreen properties_panel_test eklendi. Windows kapısı: tam derleme +
-ctest 155/155. Kalan: UI-4 ("..." penceresi) + GT-1 senaryoları + GUI
-doğrulaması bekliyor (kullanıcı boşta değildi).
+ctest 155/155. GUI doğrulaması YAPILDI (kullanıcı boşta): pencere açıldı,
+panel görünür (Genel/Konum/Görünüm/Kolon, profil HEB240, kolon üst 8500),
+ribbon'da eski combo yok, hata yok. Kabul paketi:
+C:\work\mm-kabul\20261108-2224-29cc028. Kalan: UI-4 ("..." penceresi) + GT-1
+senaryoları.
 
 ## H-6 — holdTimeMs artık hiçbir şey yapmıyor (H-4 yan etkisi)  [planlayıcı incelemesi, cb9506f]
 H-4 doğru: tıklama artık süreye bağlı değil. Ama `snapSettings_.holdTimeMs`
