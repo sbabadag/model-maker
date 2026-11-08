@@ -149,6 +149,13 @@ enumeration ile doğrulama); repo + yerel kopya senkron.
 
 ---
 
+
+Öncelik notu (planlayıcı, 2026-11-08 öğle): Ekran otomasyonu (Computer Use /
+ön plan / gerçek tık) Windows ön plan kilidi yüzünden çok adım yiyor (H-1'de
+150 adımın çoğu). GT-1 (uygulama içi --test-script modu) B6'dan hemen sonra
+yapılacak; ondan sonra ekran testleri yalnız son kontrol. Sıra: B6 (wip'te
+yarım, 7ca487e) → GT-1 → H-2 → B2/B7 → B8 → B5 → T-planı.
+
 ## 1. B1 — Haunch (40) katalogda/aramada yok — yamayı doğrula
 Yama `wip/hermes` (e1ca5f0, ribbon_widget.cpp: Dropdown → menü düğmesi).
 - Derle, ctest, ekranda: Çelik → Katalog tıkla → menüde yerleşik 4 tip
@@ -213,6 +220,18 @@ C:\work\mm-hermes-shots\2026-11-08\h1\ (h1-yuzey-gorunus-1.png,
 h1-plan-gorunus-2.png, h1-plan-diyalog.png, h1-trim-kanit.txt).
 SONRAKİ: kullanıcı kendi build'ini yenileyip deneyecek; hâlâ bozuksa
 model-maker-trim.log'daki VIEW-TO-SURFACE satırlarıyla devam.
+
+## H-2 — End Plate ters rol sırasında levhayı uzağa koyuyor  [Hermes bulgusu, H-1 sırasında]
+Kullanıcı ana/ikincil üyeyi ters seçerse (önce kiriş, sonra kolon) End
+Plate levhayı bağlantıdan uzağa yerleştiriyor. Kabul edilemez: sessizce
+yanlış geometri. Kural (fail-closed): roller geometriyle tutarsızsa
+(ikincilin ucu ana üyeye temas etmiyor / ana üye kirişin ucunda değil)
+açık mesajla reddet ("önce kolonu (ana), sonra kirişi (ikincil) seçin")
+ya da rolleri geometriden kesin olarak belirleyebiliyorsan düzelt —
+hangisini seçtiğini gerekçele. Haunch (40) ve Fin Plate için de aynı
+kontrol. Kırmızı test (ters sıra) → düzeltme → yeşil; ekranda kanıt.
+
+Durum: —
 
 ## 2. B6 — Çizgi komutu profil çiziyor
 Çizgi, Polyline, Dikdörtgen, Daire, 3DFACE panelde aktif profili (ör.
