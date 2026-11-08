@@ -207,7 +207,8 @@ def assert_source_shape(bodies, text):
                     "(magaza artik Document-sahipli)")
     for fn_sig, name, needle in (
             ("void Application::newDocument()", "newDocument", "document_.clear()"),
-            ("void Application::openDocument()", "openDocument", "document_.load(")):
+            ("bool Application::openDocumentPath(const std::wstring& path)",
+             "openDocumentPath", "document_.load(")):
         try:
             i, k = find_span(text, fn_sig, name)
         except HarnessError as exc:
@@ -216,6 +217,18 @@ def assert_source_shape(bodies, text):
         if needle not in text[i:k]:
             errs.append(f"{name}: belge yasam dongusu cagrisi YOK ({needle!r}) "
                         "(magaza temizligi Document'a devredildi)")
+    # openDocument (GT-1 sonrasi) openDocumentPath'e delege eder; yasam dongusu
+    # cagrisi openDocumentPath'te YUKARIDA kilitlenir. Delegasyon kopmussa
+    # (ornegin dogrudan baska bir yol) kirmizi olur.
+    try:
+        oi, ok_ = find_span(text, "void Application::openDocument()", "openDocument")
+    except HarnessError as exc:
+        errs.append(str(exc))
+    else:
+        seg = text[oi:ok_]
+        if "document_.load(" not in seg and "openDocumentPath(" not in seg:
+            errs.append("openDocument: belge yasam dongusu cagrisi YOK "
+                        "(document_.load( veya openDocumentPath( delegasyonu)")
     # Phase 2d-2b: profil atamasi ATOMIK undo kaydi ACAR (profil ProfileReplace +
     # kati yeniden uretimi + bagli End Plate recompute TEK adimda geri alinir).
     # Snapshot, existingSolid dali icinde DEGIL, setModelProfile'ten ONCE acilir
