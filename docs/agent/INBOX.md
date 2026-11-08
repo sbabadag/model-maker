@@ -173,6 +173,24 @@ quickSearch "haunch" → tamamlayıcı "Haunch (40)" → Enter → komut başlad
 C:\work\mm-hermes-shots\2026-11-08\ (b1-kanit.txt + png). Commit'ler
 hermes/work'te; wip/hermes sıfırlandı.
 
+## H-1 — "Yüzeye Göre Görünüş" (view.toSurface) bozuk  [kullanıcı, 2026-11-08 sabah]
+Kullanıcı: "yüzeye göre yeni görüntü alma bozulmuş". Komut: Görünüm →
+Yüzeye Göre Görünüş (`view.toSurface` → `Application::startViewToSurfaceCommand`),
+"parça yüzüne tıklayarak o yüze dik görünüş aç".
+Belirti ayrıntısı: <kullanıcıdan bekleniyor — hiçbir şey olmuyor mu, yanlış
+yön mü, çökme mi>. Beklemeden kendin yeniden üret:
+- HEB240 kolon + IPE300 kiriş; komutu şeritten başlat; kirişin üst başlık
+  yüzüne, gövde yüzüne ve levha yüzüne tıkla → her biri için o yüze dik
+  yeni görünüş açılmalı (görünüş adı, yön, çalışma düzlemi doğru).
+- Şüpheliler: UI-2 komut yönlendirici (tuval tıklaması komuta mı gidiyor?),
+  B5 view cube tıklama tüketimi, B3 gumball, OCCT 7.9.2 indirgemesi (yüz
+  seçimi OCCT ile mi?). 9e548f3 (UI-2 öncesi) ile karşılaştır; gerekirse
+  ikiye bölme (bisect) — her adımda yalnız model-maker hedefini derle.
+- Kırmızı test/senaryo → düzeltme → ekranda (vision) doğrula → push.
+Öncelik: B6'dan ÖNCE (kullanıcının günlük kullandığı komut).
+
+Durum: —
+
 ## 2. B6 — Çizgi komutu profil çiziyor
 Çizgi, Polyline, Dikdörtgen, Daire, 3DFACE panelde aktif profili (ör.
 HEB240) YOK SAYSIN; yalnız profilsiz yardımcı obje üretsin. Profilli üye
