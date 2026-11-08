@@ -66,6 +66,10 @@
 - [x] B1 (Katalog + hızlı arama): kök neden setHost→setCatalog sırası +
       arama indeksi; düzeltildi, ribbon testi kırmızı→yeşil, ekranda
       doğrulandı (INBOX 1. madde)
+- [x] H-1 (Yüzeye Göre Görünüş): HEAD'de üretilemedi (tik yolu 9e548f3'ten
+      beri değişmemiş; ekranda gerçek tıkla 3 komut doğrulandı); tanı logu +
+      sözleşme testi eklendi (82be6d7) — kullanıcı build'i yenileyip
+      deneyecek, tekrarlarsa trim log kök nedeni gösterecek
 - [ ] INBOX 2-6: B6, B2/B7, B8, B5, GT-1
 - [ ] Linux CI iş akışı (GitHub Actions)
 - [ ] UI-3 → DURAK 1 (rapor + Windows doğrulaması beklenir)
