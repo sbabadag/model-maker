@@ -3,7 +3,7 @@
 - Aktif makine: Asus (ev). ZBook (iş) pasif. Senkron yalnız GitHub üzerinden;
   aynı anda tek makinede çalışılır.
 - Son güncelleme: 2026-11-07 (oturum başlangıç kurulumu)
-- Son tur: 2026-11-08 19:55 — H-7 3B GL Solid çizgi görünmezliği — BİTTİ — 15a41fb — kabul: C:\work\mm-kabul\son
+- Son tur: 2026-11-08 19:55 — H-7 3B GL Solid çizgi görünmezliği — BİTTİ — 15a41fb — kabul: C:\work\mm-kabul\20261108-1956-15a41fb
 
 ## Git düzeni
 
