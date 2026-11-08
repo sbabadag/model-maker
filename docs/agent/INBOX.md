@@ -153,7 +153,7 @@ enumeration ile doğrulama); repo + yerel kopya senkron.
 Öncelik notu (planlayıcı, 2026-11-08 öğle): Ekran otomasyonu (Computer Use /
 ön plan / gerçek tık) Windows ön plan kilidi yüzünden çok adım yiyor (H-1'de
 150 adımın çoğu). GT-1 (uygulama içi --test-script modu) B6'dan hemen sonra
-yapılacak; ondan sonra ekran testleri yalnız son kontrol. Sıra: B6 (wip'te
+yapılacak; ondan sonra ekran testleri yalnız son kontrol. Sıra: H-3 → B6 (wip'te
 yarım, 7ca487e) → GT-1 → H-2 → B2/B7 → B8 → B5 → T-planı.
 
 ## 1. B1 — Haunch (40) katalogda/aramada yok — yamayı doğrula
@@ -220,6 +220,22 @@ C:\work\mm-hermes-shots\2026-11-08\h1\ (h1-yuzey-gorunus-1.png,
 h1-plan-gorunus-2.png, h1-plan-diyalog.png, h1-trim-kanit.txt).
 SONRAKİ: kullanıcı kendi build'ini yenileyip deneyecek; hâlâ bozuksa
 model-maker-trim.log'daki VIEW-TO-SURFACE satırlarıyla devam.
+
+## H-3 — "Yüzeye Göre Görünüş" yanlış grupta; kullanıcı bulamıyor  [kullanıcı, 2026-11-08]
+H-1'in gerçek nedeni bu çıktı: kullanıcı yeni görünüşü "Görünümler" grubunda
+/ "Yeni Görünüş" açılırında arıyor; komut orada yok (src/command_catalog.cpp
+~527: "Görünüm" grubunda, zoom/sıfırla yanında; ~540 "Görünümler" grubunda
+ve ~667 ≡ menü "Görünüşler" altında YOK). Yanlış düğmeye bastı.
+- `view.toSurface`'ı şeritte "Görünüm" grubundan ÇIKAR, "Görünümler" grubuna
+  büyük düğme olarak taşı (2 Noktalı ve Plan'ın yanına), adı
+  "Yüzey Görünüşü" (ipucu: "Parça yüzüne tıkla; o yüze dik yeni görünüş").
+  Şeritte tek yer kuralı korunur.
+- ≡ menüde "Görünüşler → Yeni Görünüş" altına da ekle.
+- command_catalog_test: tüm "yeni görünüş açan" komutlar (views.* +
+  view.toSurface) aynı grupta/menüde olsun diye kontrol ekle.
+- Küçük iş: B6'dan önce yap, ayrı commit, push.
+
+Durum: —
 
 ## H-2 — End Plate ters rol sırasında levhayı uzağa koyuyor  [Hermes bulgusu, H-1 sırasında]
 Kullanıcı ana/ikincil üyeyi ters seçerse (önce kiriş, sonra kolon) End
