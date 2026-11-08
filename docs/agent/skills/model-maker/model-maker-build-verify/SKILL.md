@@ -115,6 +115,24 @@ Only use names confirmed in the repository.
 - Verification target list: B1 (haunch search/catalog), B2/B7 (line visibility), B6 (line
   must not draw profile). Capture the bug on screen BEFORE the fix, then again AFTER.
 
+### FOREGROUND DOĞRULAMASI + GÜVENLİ METİN GİRİŞİ (kalıcı, 2026-11-08 — kullanıcı düzeltmesi)
+
+- Her yazma/tıklama ÖNCESİ ön plandaki pencereyi doğrula: `GetForegroundWindow()` +
+  `GetWindowThreadProcessId` → PID, KENDİ başlattığın model-maker PID'si olmalı. Değilse
+  YAZMA/TIKLAMA; önce uygulamayı öne getir (ShowWindow SW_RESTORE + SetForegroundWindow;
+  gerekirse örten pencereleri minimize et), TEKRAR doğrula; yine değilse DUR ve kullanıcıya
+  raporla. Kaza (2026-11-08): GetFocus() başka uygulamaya (Chrome/Claude sohbeti) dönüp
+  WM_CHAR oraya yazdı ("aEB240" kullanıcının sohbetine gitti) — GetFocus()'a YAZMA,
+  hedef uygulamanın KENDİ üst penceresinin HWND'sine gönder.
+- Metin girişinde klavye simülasyonu SON ÇARE. Önce UIA ile doğrudan hedef kontrole yaz:
+  ValuePattern.SetValue (Qt combo çoğu kez readonly olur — SetValue sonrası GERİ OKUYUP
+  doğrula) veya WM_SETTEXT (native HWND'li kontrole). Klavye şartsa: (1) UIA SetFocus ile
+  hedef kontrolü odakla, (2) WM_CHAR'ları uygulamanın ÜST penceresinin HWND'sine PostMessage
+  et, (3) modifier'lı kombinasyonlar (Ctrl+A) PostMessage ile ÇALIŞMAZ (GetKeyState sahte
+  durumu görmez) — select-all yerine N kez VK_BACK gönder.
+- Kullanıcı bilgisayarı aktifken (GetLastInputInfo < 120 sn) ekran testine BAŞLAMA; kullanıcı
+  açıkça "başla" dediyse bile başlamadan hemen önce tekrar ölç, < 120 sn ise DUR ve raporla.
+
 ### Screen-test mechanics (hard-won, 2026-11-07/08)
 
 - No vision endpoint (deepseek-v4-pro has no image input; vision_analyze 404s): verify
