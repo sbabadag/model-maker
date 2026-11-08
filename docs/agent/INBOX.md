@@ -369,7 +369,15 @@ Durum: —
 (1–5'i yaparken GT-1 yoksa Computer Use ile ekrandan doğrula; GT-1
 bitince o hataların senaryolarını ekle.)
 
-Durum: —
+Durum: BİTTİ (eae2122) — ctest "gui" etiketi 5 senaryo (smoke_line,
+b6_line_ignores_profile, b2b7_line_visible, b1_catalog_search,
+h1_view_to_surface) Windows'ta yeşil (ctest -L gui 5/5, ~11 sn).
+Koşucuya search/clickModel/capture(target=window)/expect quickSearch/
+catalog/status adımları eklendi. B6 düzeltmesi: selectTool yeni aracta
+heldSnap_ temizler (eski komutun tutulan snap'i sonraki ilk tiklamayi
+kacirmiyordu). PNG'ler vision ile incelendi: B1 arama kutusunda
+"Haunch (40)" gorunuyor; H-1 "Plan Görünüşü 1 — plan, Z=0" penceresi
+aciliyor (kiriş üst yüzü Z-normal). Build MM_GUI_TESTS=OFF'a döndürüldü.
 
 ## 7. Sonra
 - Windows'ta kayıtlı olmayan 24 test (Linux 177 / Windows 153): listele,
