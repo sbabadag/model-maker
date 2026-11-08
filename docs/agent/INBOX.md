@@ -60,7 +60,7 @@ Tur süresi ve öncelik (planlayıcı, 2026-11-08 18:32):
 - 20 dakikalık WIP push zorunlu (17:27 turu 60+ dk push'suz kaldı).
 - Kullanıcı boşta değilse GUI/ekran testini BEKLEME; GUI'siz kısmı yap,
   Durum'a "GUI doğrulaması bekliyor" yaz, turu bitir.
-- Sıra (bu satır INBOX'taki madde sırasını EZER): H-7 → UI-34 → H-6 → H-5 →
+- Sıra (bu satır INBOX'taki madde sırasını EZER): H-8 → H-7 → UI-34 → H-6 → H-5 →
   H-2 → B8 → B5 → T-planı. Yarım kalan madde varsa önce onu bitir.
 
 Hermes kurulumu (bir kez; eski `gece-mm` işini sil, yenisini kur):
@@ -350,6 +350,33 @@ yalnız histerezis yarıçapına bağlı; uzaksa süreye bakmaksızın geçersiz
 vision: kiriş çizgi ucundan 200 px uzakta başlıyor. ctest -L gui 6/6,
 tam ctest 160/160. SÜREKLİ MOD kuruldu (surekli-mm cron, 30dk; gece-mm
 silindi) — bu tur ilk turdu.
+
+## H-8 — Haunch (40) yine bozuk görünüyor: kolon mertekten ayrık  [kullanıcı, 2026-11-08 23:08 — ÖNCELİK 1]
+Kullanıcı ekran görüntüsü (kabul paketi 20261108-2224-29cc028): mertek ucu
+haunch levhalarıyla duruyor, KOLON ise belirgin aşağıda ve ayrık (kolon
+tepesi mertek ucunun çok altında). Kullanıcı: "bir yeri yaparken diğer yeri
+bozuyoruz". Adımlar: <kullanıcıdan bekleniyor>; beklemeden yeniden üret.
+Şüpheliler (kontrat golden'ları yeşil → büyük olasılıkla UYGULAMA katmanı):
+- 29cc028 yeni PropertiesPanel: "Kolon Üst/Alt (mm)" ENTER ile doğrudan
+  uygulanıyor; seçim değişince / çoklu seçimde / mertek seçiliyken kolon
+  kotları yanlış nesneye yazılıyor olabilir (A sınıfı veri hatası).
+- 893e770 çoklu seçim özellik düzenleme (document.cpp) — istenmemiş commit.
+- Haunch otomatik yeniden üretimi (recompute) kolonun eski/yeni geometrisini
+  karıştırıyor olabilir.
+İstenen:
+1. Kök nedeni bisect ile bul (15a41fb ↔ 29cc028 arası ve 893e770).
+2. **Regresyon kalkanı (kalıcı):** GT-1 `t9_haunch40_e2e`: kolon (HEB240,
+   0→7000) + eğik mertek (IPE300) kur → Haunch (40) uygula → expect: kolon
+   tepesi = 7000, mertek ucu kolon başlığında, haunch plan digest'i
+   kontrat golden'ıyla aynı; sonra panelden mertekte profil değiştir +
+   UYGULA → kolon kotları DEĞİŞMEMİŞ, haunch yeniden üretilmiş ve tutarlı;
+   kaydet-aç → aynı. Aynısı End Plate için (`t9_endplate_e2e`).
+3. Bu iki senaryo bundan sonra HER push kapısında koşar (kullanıcı boşta
+   değilse de: `--test-script` gizli/arka plan modunda koşabiliyorsa öyle;
+   koşamıyorsa push'u bir sonraki boş ana ertele, wip'e it).
+4. Kök neden + hangi commit bozdu + neden testler yakalamadı (bir cümle).
+
+Durum: —
 
 ## H-7 — 3B görünümde çizgi çizilmiyor / görünmüyor (B2/B7 HÂLÂ AÇIK)  [kullanıcı, 2026-11-08 17:30, kabul paketi 20261108-1716-cb9506f]
 Kullanıcı kabul paketinde: 3B görünümde Çizgi komutu → çizgi yok/görünmüyor.
