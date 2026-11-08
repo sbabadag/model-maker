@@ -780,8 +780,9 @@ void QtMainWindow::buildCommandHandlers() {
     h["draw.face3d"] = [this]() { app_.selectTool(DrawTool::Face3D); };
     h["draw.column"] = [this]() { app_.selectTool(DrawTool::Column); };
     // KIRIS (UI-2b): Kolon'un YATAY karsiligi. Iki nokta + ZORUNLU profil;
-    // yeni geometri yolu YOK — profilli cizgi zaten uye uretir. Profil yoksa
-    // komut baslamaz, kullaniciya soylenir ve profil alani odaga alinir.
+    // ayri DrawTool::Beam araci — CIZGI'den ayri (B6: Cizgi aktif profili
+    // yok sayar). Profil yoksa komut baslamaz, kullaniciya soylenir ve
+    // profil alani odaga alinir.
     h["draw.beam"] = [this]() {
         const std::string profile = app_.pendingProfileName();
         if (profile.empty()) {
@@ -794,7 +795,7 @@ void QtMainWindow::buildCommandHandlers() {
             }
             return;
         }
-        app_.selectTool(DrawTool::Line);
+        app_.selectTool(DrawTool::Beam);
         statusBar()->showMessage(
             QStringLiteral("Kiriş: iki nokta seçin (profil: %1)")
                 .arg(QString::fromStdString(profile)), 5000);

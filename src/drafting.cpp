@@ -939,6 +939,7 @@ const wchar_t* toolLabel(DrawTool tool) noexcept {
     case DrawTool::Circle: return L"CIRCLE";
     case DrawTool::Face3D: return L"3DFACE";
     case DrawTool::Column: return L"COLUMN";
+    case DrawTool::Beam: return L"BEAM";
     case DrawTool::Divide: return L"DIVIDE";
     }
     return L"";

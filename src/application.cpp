@@ -3116,28 +3116,35 @@ void Application::commitPoint(const Vec3& point) {
     switch (tool_) {
     case DrawTool::Line:
         if (point != start) {
-            if (!pendingProfileName_.empty()) {
-                // PROFIL CIZIM MODU: secli profil ile cizilen cizgi hemen
-                // kirişe (ekstrüde katiya) donusur — ayrica secime gerek
-                // yok, Tekla tarzi dogrudan cizim.
-                assignProfileToLine(start, point, pendingProfileName_);
-            } else {
-                // IS-DUZLEMI referansi: sonradan profil atandiginda kesit
-                // egik duzleme oturur (world UCS'ine donmez).
-                WireframeModel line = WireframeModel::line(start, point);
-                auto lineProps = line.properties();
-                const Vec3 planeN = workPlane_.normal;
-                if (std::isfinite(planeN.x) && std::isfinite(planeN.y) &&
-                    std::isfinite(planeN.z) &&
-                    (std::fabs(planeN.x) > 1e-9 || std::fabs(planeN.y) > 1e-9 ||
-                     std::fabs(planeN.z) > 1e-9)) {
-                    lineProps.sectionNormalX = planeN.x;
-                    lineProps.sectionNormalY = planeN.y;
-                    lineProps.sectionNormalZ = planeN.z;
-                    line.setProperties(std::move(lineProps));
-                }
-                addStyledModel(std::move(line));
+            // B6: CIZGI her zaman DUZ cizgi uretir — paneldeki aktif profil
+            // (pendingProfileName_) YALNIZ Kolon/Kiris komutlarinda kullanilir.
+            // IS-DUZLEMI referansi: sonradan profil atandiginda kesit
+            // egik duzleme oturur (world UCS'ine donmez).
+            WireframeModel line = WireframeModel::line(start, point);
+            auto lineProps = line.properties();
+            const Vec3 planeN = workPlane_.normal;
+            if (std::isfinite(planeN.x) && std::isfinite(planeN.y) &&
+                std::isfinite(planeN.z) &&
+                (std::fabs(planeN.x) > 1e-9 || std::fabs(planeN.y) > 1e-9 ||
+                 std::fabs(planeN.z) > 1e-9)) {
+                lineProps.sectionNormalX = planeN.x;
+                lineProps.sectionNormalY = planeN.y;
+                lineProps.sectionNormalZ = planeN.z;
+                line.setProperties(std::move(lineProps));
             }
+            addStyledModel(std::move(line));
+        }
+        anchor_.reset();
+        break;
+    case DrawTool::Beam:
+        // KIRIS: profil ZORUNLU. Qt komut kapisi (draw.beam) profilsiz
+        // baslatmaz; burada savunma olarak profilsiz kullanim hicbir sey
+        // uretmez, kullaniciya soylenir.
+        if (point != start) {
+            if (!pendingProfileName_.empty())
+                assignProfileToLine(start, point, pendingProfileName_);
+            else
+                publishStatus(L"Kiriş: profil zorunlu (Özellikler panelinden seçin)");
         }
         anchor_.reset();
         break;
