@@ -240,7 +240,20 @@ Kullanıcı: şerit çok karışık. Kural (Tekla'daki gibi):
 - Ekranda doğrula (vision): Görünüm sekmesinin ekran görüntüsü.
 - Küçük iş: B6'dan önce, ayrı commit, push.
 
-Durum: —
+Durum: BİTTİ (H-3 kodu tamam; commit ctest sonrası) — Görünüm sekmesi:
+Görünüm grubu 4 büyük düğme (2B/3B, Extents, Pencere, Sıfırla; toSurface
+çıktı) + "Görünüş Oluştur" TEK açılır (toSurface, 2N, Plan, 3N, çalışma
+düzleminde, parça ön/üst/uç/arka/alt, varsayılan, parça 3B, aks görünüşleri)
++ "Çalışma Düzlemi" TEK açılır (Yüz Aracı, XYZ∥, 1/2/3 Nokta, Görünüşe∥,
+UCS Dik, Sıfırla, Hayalet, Adlandır/Git/Sil — ayrı küçük düğme YOK). ≡
+menüde aynı iki alt menü; eski "Çalışma Düzlemi" ve "Görünüşler" menü
+sekmeleri kaldırıldı. Kısayollar aynen (F7 Hayalet vb.). Test:
+command_catalog_test'e H-3 bölümü eklendi (her görünüş/wp komutu seritte
+ve menüde TAM bir kez; Görünüm grubu 4 düğme; açılır kimlikleri
+views.create/wp.all) — YEŞİL. Ekran (vision): sekme + iki açılırın içeriği
+doğrulandı. Kanıt: C:\work\mm-hermes-shots\2026-11-08\h3\
+(h3-gorunum-sekme.png, h3-gorunus-olustur-menu.png,
+h3-calisma-duzlemi-menu.png).
 
 ## H-2 — End Plate ters rol sırasında levhayı uzağa koyuyor  [Hermes bulgusu, H-1 sırasında]
 Kullanıcı ana/ikincil üyeyi ters seçerse (önce kiriş, sonra kolon) End

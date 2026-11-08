@@ -523,8 +523,7 @@ UiPlan buildRibbonPlan() {
 
     plan.addTab(tab("Görünüm", {
         group("Görünüm", {item("view.toggle3d"), item("view.zoomExtents"),
-                          item("view.zoomWindow"), item("view.reset"),
-                          item("view.toSurface")}),
+                          item("view.zoomWindow"), item("view.reset")}),
         group("Yön", {smallMenu("view.directions", "Görünüş Yönü",
                                 {item("view.dir.front"), item("view.dir.back"),
                                  item("view.dir.left"), item("view.dir.right"),
@@ -537,9 +536,11 @@ UiPlan buildRibbonPlan() {
                                   item("view.style.hidden"), item("view.style.solid")},
                                  "style")}),
         group("Gezin", {small("view.rotateCenter"), small("view.clearRotateCenter")}),
-        group("Görünümler", {item("views.twoPoint"), item("views.plan"),
-                             menu("views.more", "Yeni Görünüş",
-                                  {item("views.threePoint"), item("views.onWorkPlane"),
+        // H-3: YENI GORUNUS ACAN HER KOMUT TEK "Gorunus Olustur" acilirinda.
+        group("Görünümler", {menu("views.create", "Görünüş Oluştur",
+                                  {item("view.toSurface"),
+                                   item("views.twoPoint"), item("views.plan"),
+                                   item("views.threePoint"), item("views.onWorkPlane"),
                                    separator(),
                                    item("views.part.front"), item("views.part.top"),
                                    item("views.part.end"), item("views.part.back"),
@@ -547,16 +548,16 @@ UiPlan buildRibbonPlan() {
                                    item("views.part.defaults"), item("views.part3d"),
                                    separator(), item("views.gridLines")},
                                   "plane")}),
-        group("Çalışma Düzlemi", {small("wp.faceTool"), small("wp.parallelXyz"),
-                                  small("wp.onePoint"), small("wp.twoPoint"),
-                                  small("wp.threePoint"), small("wp.reset"),
-                                  small("wp.ghost"),
-                                  smallMenu("wp.more", "Daha Fazla",
-                                            {item("wp.ucsPerp"), item("wp.viewParallel"),
-                                             separator(),
-                                             item("wp.named.save"), item("wp.named.goto"),
-                                             item("wp.named.delete")},
-                                            "plane")}),
+        // H-3: TUM UCS/calisma duzlemi komutlari TEK "Calisma Duzlemi" acilirinda.
+        group("Çalışma Düzlemi", {menu("wp.all", "Çalışma Düzlemi",
+                                       {item("wp.faceTool"), item("wp.parallelXyz"),
+                                        item("wp.onePoint"), item("wp.twoPoint"),
+                                        item("wp.threePoint"), item("wp.viewParallel"),
+                                        item("wp.ucsPerp"), separator(),
+                                        item("wp.reset"), item("wp.ghost"), separator(),
+                                        item("wp.named.save"), item("wp.named.goto"),
+                                        item("wp.named.delete")},
+                                       "plane")}),
         group("Teşhis", {small("view.benchmark"), small("view.gpuLines"),
                          small("view.perfOverlay")}),
         group("Pencereler", {small("view.previous"), small("view.next")}),
@@ -631,7 +632,25 @@ UiPlan buildMenuPlan() {
 
     plan.addTab(tab("G&örünüm", {group("Görünüm", {
         item("view.toggle3d"), item("view.zoomExtents"), item("view.zoomWindow"),
-        item("view.reset"), item("view.toSurface"),
+        item("view.reset"),
+        separator(),
+        // H-3: ayni iki alt menu (serit acilirlariyla birebir ayni icerik).
+        menu("views.create", "Görünüş Oluştur",
+             {item("view.toSurface"),
+              item("views.twoPoint"), item("views.plan"),
+              item("views.threePoint"), item("views.onWorkPlane"), separator(),
+              item("views.part.front"), item("views.part.top"), item("views.part.end"),
+              item("views.part.back"), item("views.part.bottom"), separator(),
+              item("views.part.defaults"), item("views.part3d"), separator(),
+              item("views.gridLines")},
+             "plane"),
+        menu("wp.all", "Çalışma Düzlemi",
+             {item("wp.faceTool"), item("wp.parallelXyz"), item("wp.onePoint"),
+              item("wp.twoPoint"), item("wp.threePoint"), item("wp.viewParallel"),
+              item("wp.ucsPerp"), separator(),
+              item("wp.reset"), item("wp.ghost"), separator(),
+              item("wp.named.save"), item("wp.named.goto"), item("wp.named.delete")},
+             "plane"),
         separator(),
         menu("view.directions", "Görünüş Yönü",
              {item("view.dir.front"), item("view.dir.back"), item("view.dir.left"),
@@ -653,25 +672,6 @@ UiPlan buildMenuPlan() {
              "snap"),
         separator(),
         item("view.benchmark"), item("view.gpuLines"), item("view.perfOverlay"),
-    })}));
-
-    plan.addTab(tab("Çalışma &Düzlemi", {group("Çalışma Düzlemi", {
-        item("wp.faceTool"), item("wp.parallelXyz"), item("wp.onePoint"),
-        item("wp.twoPoint"), item("wp.threePoint"), item("wp.viewParallel"),
-        item("wp.reset"), item("wp.ghost"), item("wp.ucsPerp"),
-        separator(),
-        item("wp.named.save"), item("wp.named.goto"), item("wp.named.delete"),
-    })}));
-
-    plan.addTab(tab("Görünüş&ler", {group("Görünüşler", {
-        item("views.twoPoint"), item("views.plan"),
-        menu("views.more", "Yeni Görünüş",
-             {item("views.threePoint"), item("views.onWorkPlane"), separator(),
-              item("views.part.front"), item("views.part.top"), item("views.part.end"),
-              item("views.part.back"), item("views.part.bottom"), separator(),
-              item("views.part.defaults"), item("views.part3d"), separator(),
-              item("views.gridLines")},
-             "plane"),
     })}));
 
     plan.addTab(tab("&Grid", {group("Grid", {

@@ -263,6 +263,77 @@ int main() {
               "view.next/view.previous ≡ menude (Pencere) mevcut");
     }
 
+    // ---- 9) H-3: tek "Görünüş Oluştur" + tek "Çalışma Düzlemi" açılırı ------
+    {
+        const mm::PlanTab* view = findTab(catalog.ribbon, "Görünüm");
+        check(view != nullptr, "H-3: Gorunum sekmesi var");
+
+        // Görünüm grubu yalniz 4 buyuk dugme: 2B/3B, Extents, Pencere, Sifirla.
+        const mm::PlanGroup* vg = nullptr;
+        if (view)
+            for (const mm::PlanGroup& g : view->groups)
+                if (g.title == "Görünüm") vg = &g;
+        check(vg != nullptr && vg->items.size() == 4,
+              "H-3: Gorunum grubu 4 dugme (toSurface YOK — acilir icinde)");
+        if (vg)
+            for (const mm::PlanItem& it : vg->items)
+                check(it.id != "view.toSurface",
+                      "H-3: view.toSurface Gorunum grubunda DEGIL");
+
+        // "Görünümler" grubu TEK acilir: views.create.
+        const mm::PlanGroup* cr = nullptr;
+        if (view)
+            for (const mm::PlanGroup& g : view->groups)
+                if (g.title == "Görünümler") cr = &g;
+        check(cr != nullptr && cr->items.size() == 1 &&
+                  cr->items[0].kind == mm::PlanItem::Kind::Menu &&
+                  cr->items[0].id == "views.create" &&
+                  cr->items[0].label == "Görünüş Oluştur",
+              "H-3: Gorunumler grubu TEK 'Gorunus Olustur' aciliri");
+
+        // "Çalışma Düzlemi" grubu TEK acilir: wp.all.
+        const mm::PlanGroup* wp = nullptr;
+        if (view)
+            for (const mm::PlanGroup& g : view->groups)
+                if (g.title == "Çalışma Düzlemi") wp = &g;
+        check(wp != nullptr && wp->items.size() == 1 &&
+                  wp->items[0].kind == mm::PlanItem::Kind::Menu &&
+                  wp->items[0].id == "wp.all" &&
+                  wp->items[0].label == "Çalışma Düzlemi",
+              "H-3: Calisma Duzlemi grubu TEK acilir (kucuk dugme yok)");
+
+        // Gorunus olusturan her komut seritte TAM BIR kez (acilirin icinde).
+        for (const mm::CommandDef& def : catalog.registry.commands()) {
+            const bool viewCmd =
+                def.id == "view.toSurface" || def.id.rfind("views.", 0) == 0;
+            const bool wpCmd = def.id.rfind("wp.", 0) == 0;
+            if (viewCmd)
+                check(catalog.ribbon.occurrences(def.id) == 1,
+                      "H-3: gorunus komutu seritte tam bir kez (acilir icinde)");
+            if (wpCmd)
+                check(catalog.ribbon.occurrences(def.id) == 1,
+                      "H-3: wp.* seritte tam bir kez (acilir icinde)");
+        }
+
+        // ≡ menude ayri 'Calisma Duzlemi' / 'Gorunusler' sekmesi YOK;
+        // her iki komut kumesi Gorunum sekmesindeki alt menulerde bir kez.
+        check(findTab(catalog.menu, "Çalışma &Düzlemi") == nullptr,
+              "H-3: menude ayri Calisma Duzlemi sekmesi YOK");
+        check(findTab(catalog.menu, "Görünüş&ler") == nullptr,
+              "H-3: menude ayri Gorunusler sekmesi YOK");
+        for (const mm::CommandDef& def : catalog.registry.commands()) {
+            const bool viewCmd =
+                def.id == "view.toSurface" || def.id.rfind("views.", 0) == 0;
+            const bool wpCmd = def.id.rfind("wp.", 0) == 0;
+            if (viewCmd)
+                check(catalog.menu.occurrences(def.id) == 1,
+                      "H-3: gorunus komutu menude tam bir kez (alt menude)");
+            if (wpCmd)
+                check(catalog.menu.occurrences(def.id) == 1,
+                      "H-3: wp.* menude tam bir kez (alt menude)");
+        }
+    }
+
     if (failures == 0) {
         std::printf("command_catalog_test: TUM KONTROLLER GECTI (%zu komut)\n",
                     catalog.registry.size());
