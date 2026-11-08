@@ -222,6 +222,11 @@ struct DraftView {
     std::vector<Vec3> facePoints;
     std::optional<Vec3> cursor;
     SnapType snapType{SnapType::None};
+    // H-6: histerezis disina cikinca GECERSIZLESEN tutulan snap'in soluk
+    // gorsel izi (holdTimeMs boyunca yalniz cizilir; tiklama/hover sonucu
+    // DEGISMEZ — H-4 kurali korunur).
+    std::optional<Vec3> fadingSnapPoint;
+    SnapType fadingSnapType{SnapType::None};
     OrthoAxis orthoAxis{OrthoAxis::None};
     bool orthoEnabled{false}; // F8: 3B ortho'da X/Y/Z eksen guide'lari icin
     bool drawingActive{true};

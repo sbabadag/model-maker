@@ -119,6 +119,18 @@ void drawSnapMarkerShape(HDC dc, const POINT& p, SnapMarkerSymbol symbol, int sc
     }
 }
 
+// H-6: soluk (silan) marker rengi — snap'in kendi rengi beyaza %55 yaklasir.
+// COLORREF duzeni 0x00BBGGRR oldugu icin kanal kanal islenir.
+unsigned long snapMarkerFadedRgb(unsigned long rgb) noexcept {
+    const unsigned long r = rgb & 0xFF;
+    const unsigned long g = (rgb >> 8) & 0xFF;
+    const unsigned long b = (rgb >> 16) & 0xFF;
+    const auto towardWhite = [](unsigned long c) {
+        return c + static_cast<unsigned long>((255 - c) * 55 / 100);
+    };
+    return towardWhite(r) | (towardWhite(g) << 8) | (towardWhite(b) << 16);
+}
+
 
 // Profil uc tutamagi isareti: ic dolu daire; aktifse dis beyaz halka (vurgu).
 void drawGripMarker(HDC dc, int x, int y, COLORREF color, bool active) {
@@ -1600,6 +1612,23 @@ void Renderer::draw(HDC target, const RECT& client, const Document& document, co
             DeleteObject(snapPen);
             drawText(dc, p.x + 10 * draft.snapMarkerScale, p.y + 8 * draft.snapMarkerScale,
                      snapTypeLabel(draft.snapType), RGB(90, 255, 145));
+        }
+        // H-6: gecersizlesen tutulan snap'in SOLUK izi — yalniz gorsel,
+        // etiketsiz ve ince kalemle; tiklama/hover sonucu DEGISMEZ (H-4).
+        if ((motionDrafting || draft.gripMoveActive) && draft.fadingSnapPoint &&
+            draft.fadingSnapType != SnapType::None) {
+            const POINT fp = projectPoint(*draft.fadingSnapPoint);
+            const unsigned long faded = snapMarkerFadedRgb(
+                snapMarkerColorRgb(draft.fadingSnapType));
+            HPEN fadePen = CreatePen(PS_SOLID, std::max(1, draft.snapMarkerPenWidth - 1),
+                RGB((faded) & 0xFF, (faded >> 8) & 0xFF, (faded >> 16) & 0xFF));
+            SelectObject(dc, fadePen);
+            HGDIOBJ oldFadeBrush = SelectObject(dc, GetStockObject(NULL_BRUSH));
+            drawSnapMarkerShape(dc, fp, snapMarkerSymbol(draft.fadingSnapType),
+                                draft.snapMarkerScale);
+            SelectObject(dc, oldFadeBrush);
+            SelectObject(dc, stockPen);
+            DeleteObject(fadePen);
         }
         if (motionDrafting && draft.dynamicInputEnabled && draft.cursor &&
             !(draft.transformCommand != TransformCommand::None &&

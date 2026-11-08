@@ -131,6 +131,46 @@ bool captureHwnd(HWND hwnd, QImage& out, bool forcePrintWindow = false) {
     return lines == h;
 }
 
+// H-6: yuzeyi OLDUGU GIBI yakala (WM_PAINT zorlamadan, BitBlt yalniz).
+// Motion feedback (snap marker + soluk iz) yalniz interaktif karelerde
+// cizilir; writeStep'in zorla tam karesi bunlari sildigi icin canli
+// yakalama gerekli.
+bool captureHwndLive(HWND hwnd, QImage& out) {
+    if (!hwnd || !IsWindow(hwnd)) return false;
+    RECT rc{};
+    if (!GetClientRect(hwnd, &rc)) return false;
+    const int w = rc.right - rc.left;
+    const int h = rc.bottom - rc.top;
+    if (w <= 0 || h <= 0) return false;
+    HDC winDc = GetDC(hwnd);
+    if (!winDc) return false;
+    HDC mem = CreateCompatibleDC(winDc);
+    HBITMAP bmp = CreateCompatibleBitmap(winDc, w, h);
+    if (!mem || !bmp) {
+        if (mem) DeleteDC(mem);
+        if (bmp) DeleteObject(bmp);
+        ReleaseDC(hwnd, winDc);
+        return false;
+    }
+    HGDIOBJ oldBmp = SelectObject(mem, bmp);
+    const bool ok = BitBlt(mem, 0, 0, w, h, winDc, 0, 0, SRCCOPY) != FALSE;
+    BITMAPINFO bi{};
+    bi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    bi.bmiHeader.biWidth = w;
+    bi.bmiHeader.biHeight = -h;  // yukaridan asagi: QImage satir duzeni
+    bi.bmiHeader.biPlanes = 1;
+    bi.bmiHeader.biBitCount = 32;
+    bi.bmiHeader.biCompression = BI_RGB;
+    out = QImage(w, h, QImage::Format_ARGB32);
+    const int lines =
+        GetDIBits(winDc, bmp, 0, h, out.bits(), &bi, DIB_RGB_COLORS);
+    SelectObject(mem, oldBmp);
+    DeleteObject(bmp);
+    DeleteDC(mem);
+    ReleaseDC(hwnd, winDc);
+    return ok && lines == h;
+}
+
 // Isim -> sanal tus; harf ise WM_CHAR metni de doner.
 bool keyToVk(const QString& name, WPARAM& vk, QString& chars) {
     const QString n = name.trimmed().toLower();
@@ -199,6 +239,16 @@ struct Runner {
             static_cast<int>(app.selectedModelIndices().size());
         selection[QStringLiteral("types")] = selectionTypes;
         out[QStringLiteral("selection")] = selection;
+
+        // H-6: tutulan snap + soluk (silan) iz durumu — zamanlama kaniti icin.
+        QJsonObject snap;
+        snap[QStringLiteral("held")] = app.heldSnapActive();
+        snap[QStringLiteral("heldType")] =
+            QString::fromWCharArray(snapTypeLabel(app.heldSnapTypeValue()));
+        snap[QStringLiteral("fading")] = app.fadingSnapVisible();
+        snap[QStringLiteral("fadingType")] =
+            QString::fromWCharArray(snapTypeLabel(app.fadingSnapTypeValue()));
+        out[QStringLiteral("snap")] = snap;
 
         out[QStringLiteral("activeTool")] = toolName(app.activeTool());
         // Kullaniciya gorunen durum cubugu metni (publishStatus yolu) — tanida
@@ -398,6 +448,32 @@ struct Runner {
             problems << QStringLiteral("selection=%1 (beklenen %2)")
                             .arg(app.selectedModelIndices().size())
                             .arg(expect[QStringLiteral("selection")].toInt(-1));
+        // "snapState": {held, fading, type} — H-6 sozlesmesi: imlec
+        // histerezis disina cikinca tutulan snap DERHAL gecersizlesir
+        // (held=false, H-4), ama marker holdTimeMs boyunca soluk iz olarak
+        // gorunur (fading=true); sure dolunca fading=false.
+        if (expect.contains(QStringLiteral("snapState"))) {
+            const QJsonObject expected = expect[QStringLiteral("snapState")].toObject();
+            if (expected.contains(QStringLiteral("held")) &&
+                app.heldSnapActive() != expected[QStringLiteral("held")].toBool())
+                problems << QStringLiteral("snapState.held=%1 (beklenen %2)")
+                                .arg(app.heldSnapActive())
+                                .arg(expected[QStringLiteral("held")].toBool());
+            if (expected.contains(QStringLiteral("fading")) &&
+                app.fadingSnapVisible() !=
+                    expected[QStringLiteral("fading")].toBool())
+                problems << QStringLiteral("snapState.fading=%1 (beklenen %2)")
+                                .arg(app.fadingSnapVisible())
+                                .arg(expected[QStringLiteral("fading")].toBool());
+            if (expected.contains(QStringLiteral("type"))) {
+                const QString actual =
+                    QString::fromWCharArray(snapTypeLabel(app.heldSnapTypeValue()));
+                if (actual != expected[QStringLiteral("type")].toString())
+                    problems << QStringLiteral("snapState.type=%1 (beklenen %2)")
+                                    .arg(actual,
+                                         expected[QStringLiteral("type")].toString());
+            }
+        }
         if (expect.contains(QStringLiteral("viewports")) &&
             window.viewportCount() != expect[QStringLiteral("viewports")].toInt(-1))
             problems << QStringLiteral("viewports=%1 (beklenen %2)")
@@ -492,8 +568,41 @@ struct Runner {
                         {props.axisFromX, props.axisFromY, props.axisFromZ}, p))
                     problems << QStringLiteral("axisScreen: model %1 ekseni tuval disinda").arg(model);
                 else if (std::abs(p.x - x) > tol || std::abs(p.y - y) > tol)
-                    problems << QStringLiteral("axisScreen: (%1,%2) beklenen (%3,%4) tol %5")
-                                    .arg(p.x).arg(p.y).arg(x).arg(y).arg(tol);
+                    problems << QStringLiteral("axisScreen: (%1,%2) beklenen (%3,%4) tol %5 [axis=%6,%7,%8]")
+                                    .arg(p.x).arg(p.y).arg(x).arg(y).arg(tol)
+                                    .arg(props.axisFromX).arg(props.axisFromY).arg(props.axisFromZ);
+            }
+        }
+        // "vertexScreen": {model, vertex, x, y, tol} — DUZ cizgi/yardimci obje
+        // eksenleri (axisFrom) doldurulmadigi icin (H-6 bulgusu) tiklama
+        // cozunurlugu KOSE izdusumuyle dogrulanir: vertices()[vertex] beklenen
+        // tuval noktasinda mi.
+        if (expect.contains(QStringLiteral("vertexScreen"))) {
+            const QJsonObject expected = expect[QStringLiteral("vertexScreen")].toObject();
+            const int model = expected[QStringLiteral("model")].toInt(-1);
+            const int vertex = expected[QStringLiteral("vertex")].toInt(0);
+            const int x = expected[QStringLiteral("x")].toInt(0);
+            const int y = expected[QStringLiteral("y")].toInt(0);
+            const int tol = expected[QStringLiteral("tol")].toInt(8);
+            if (model < 0 ||
+                static_cast<std::size_t>(model) >= app.document().models().size())
+                problems << QStringLiteral("vertexScreen: model %1 yok").arg(model);
+            else {
+                const auto& vertices = app.document().models()[model].vertices();
+                if (vertex < 0 || static_cast<std::size_t>(vertex) >= vertices.size())
+                    problems << QStringLiteral("vertexScreen: model %1 kose %2 yok (%3 kose)")
+                                    .arg(model).arg(vertex).arg(vertices.size());
+                else {
+                    POINT p{};
+                    if (!app.projectModelVertexToScreen(
+                            static_cast<std::size_t>(model),
+                            static_cast<std::size_t>(vertex), p))
+                        problems << QStringLiteral("vertexScreen: model %1 kose %2 tuval disinda")
+                                        .arg(model).arg(vertex);
+                    else if (std::abs(p.x - x) > tol || std::abs(p.y - y) > tol)
+                        problems << QStringLiteral("vertexScreen: (%1,%2) beklenen (%3,%4) tol %5")
+                                        .arg(p.x).arg(p.y).arg(x).arg(y).arg(tol);
+                }
             }
         }
         if (!problems.isEmpty())
@@ -564,6 +673,23 @@ struct Runner {
         if (step.contains(QStringLiteral("wait"))) {
             pump(step[QStringLiteral("wait")].toInt(50));
             return writeStep(step, QStringLiteral("wait"));
+        }
+        if (step.contains(QStringLiteral("snapHold"))) {
+            // H-6: holdTimeMs'i senaryoya ozgu ayarla (zamanlama kaniti:
+            // uzun sure soluk izi guvenle gozlemleyebilmek icin).
+            SnapSettings settings = window.application().snapSettings();
+            settings.holdTimeMs = step[QStringLiteral("snapHold")].toDouble(300.0);
+            window.application().setSnapSettings(settings);
+            pump(40);
+            return writeStep(step, QStringLiteral("snapHold"));
+        }
+        if (step.contains(QStringLiteral("gridSnap"))) {
+            // H-6: grid snap'i kapat — uzak nokta deterministik olarak
+            // snapsiz kalsin (aksi halde GRID snap fading'i engeller).
+            window.application().setGridSnapEnabled(
+                step[QStringLiteral("gridSnap")].toBool());
+            pump(40);
+            return writeStep(step, QStringLiteral("gridSnap"));
         }
         if (step.contains(QStringLiteral("open"))) {
             QString path = step[QStringLiteral("open")].toString();
@@ -719,6 +845,37 @@ struct Runner {
                 return fail(QStringLiteral("capture: ekran görüntüsü alınamadı"));
             image.save(outDir + QStringLiteral("/") + name + QStringLiteral(".png"));
             return writeStep(step, QStringLiteral("capture:") + name);
+        }
+        if (step.contains(QStringLiteral("captureLive"))) {
+            // H-6: motion feedback YALNIZ interaktif karelerde cizilir ve
+            // onceki adimlarin zorla tam kareleri onu siler. Bu adim: imleci
+            // "at" noktasina MOVE et (updateHover + snap-preview isareti),
+            // UpdateWindow ile ESZAMANLI interaktif kareyi cizdir, yuzeyi
+            // oldugu gibi yakala. "at" yoksa son imlec konumu kullanilir.
+            QString name = QStringLiteral("extra");
+            int mx = -1, my = -1;
+            if (step[QStringLiteral("captureLive")].isObject()) {
+                const QJsonObject cap = step[QStringLiteral("captureLive")].toObject();
+                name = cap[QStringLiteral("name")].toString(QStringLiteral("extra"));
+                const QJsonArray at = cap[QStringLiteral("at")].toArray();
+                if (at.size() >= 2) {
+                    mx = at[0].toInt();
+                    my = at[1].toInt();
+                }
+            } else {
+                name = step[QStringLiteral("captureLive")].toString(QStringLiteral("extra"));
+            }
+            HWND canvas = window.application().canvasHandle();
+            if (mx >= 0 && my >= 0) {
+                sendMouse(WM_MOUSEMOVE, 0, mx, my);
+                UpdateWindow(canvas);  // eszamanli interaktif kare (fastpath)
+            }
+            QImage image;
+            if (!captureHwndLive(canvas, image)) image = QImage();
+            if (image.isNull())
+                return fail(QStringLiteral("captureLive: ekran görüntüsü alınamadı"));
+            image.save(outDir + QStringLiteral("/") + name + QStringLiteral(".png"));
+            return writeStep(step, QStringLiteral("captureLive:") + name);
         }
         if (step.contains(QStringLiteral("expect"))) {
             if (!execExpect(step[QStringLiteral("expect")].toObject())) return false;

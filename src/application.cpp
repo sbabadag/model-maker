@@ -1558,6 +1558,15 @@ LRESULT Application::handleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
             runRenderBenchmark();
             return 0;
         }
+        if (wParam == 8) {
+            // H-6: soluk snap izinin holdTimeMs suresi doldu — izi sil,
+            // tuvali yenile (imlec hareket etmese de marker kaybolur).
+            KillTimer(window_, 8);
+            snapFadeTimerArmed_ = false;
+            fadingSnap_.reset();
+            invalidateCanvas();
+            return 0;
+        }
         if (wParam == 9) {
             // VIEWCUBE gecis animasyonu karesi (16 ms). Yumusak baslangic/bitis
             // icin smoothstep; hedefe varinca kesin apply + kilit.
@@ -8433,6 +8442,7 @@ void Application::updateHover(int x, int y) {
         clearTemporaryTracking();
         hover_.reset();
         heldSnap_.reset();  // UI-6a: komut pasifken tutulan snap de birakilir
+        clearSnapFade();    // H-6: soluk iz de birlikte kalkar
         // Bos modda imlecin altindaki secilebilir nesneyi vurgula (navigasyon
         // sirasinda gereksiz yuk olmasin).
         if (!rotating_ && !panning2D_ && !wheelNavigating_ && !viewCubeManipulating_)
@@ -8449,6 +8459,7 @@ void Application::updateHover(int x, int y) {
         temporaryPerpendicularPoints_.clear();
         hover_.reset();
         heldSnap_.reset();  // UI-6a: snapping degerlendirilmezken tutulan snap birakilir
+        clearSnapFade();    // H-6: soluk iz de birlikte kalkar
         return;
     }
     if (transformCommand_ == TransformCommand::Offset &&
@@ -8538,6 +8549,8 @@ void Application::updateHover(int x, int y) {
     // Yeni (daha yakin) bir snap bulunursa hemen ona gecilir (snap motoru en
     // yakini verir; foundSnap dali dogrudan gunceller).
     if (hover_->type != SnapType::None) {
+        // Yeni/daha yakin snap bulundu: soluk izi temizle, snap'i tut.
+        clearSnapFade();
         heldSnap_ = hover_;
         heldSnapAt_ = std::chrono::steady_clock::now();
         heldSnapScreen_ = POINT{x, y};
@@ -8548,7 +8561,13 @@ void Application::updateHover(int x, int y) {
         if (dx * dx + dy * dy <= hystPx * hystPx) {
             hover_ = heldSnap_;  // histerezis icinde: snap korunur
         } else {
-            heldSnap_.reset();  // uzak: sureye bakmaksizin gecersiz
+            // H-6: snap sureye bakmaksizin gecersizlesir (H-4), ama marker
+            // holdTimeMs boyunca SOLUK gorsel iz olarak cizilmeye devam eder.
+            // fadingSnap_ yalniz cizim icindir — tiklama/hover sonucu degismez.
+            fadingSnap_ = heldSnap_;
+            fadingSnapSince_ = std::chrono::steady_clock::now();
+            heldSnap_.reset();
+            armSnapFadeTimer();
         }
     }
     // TP adayi: TAB ile kaydedilecek HAM snap noktasi. Eskiden burada 450 ms
@@ -8850,6 +8869,7 @@ void Application::selectTool(DrawTool tool) {
     // ucundaysa) heldSnap_ oradaki endpoint'i yakalar ve holdTimeMs (300 ms)
     // penceresi sonraki aracin UZAKTAKI ilk tiklamasini o uca kacirir.
     heldSnap_.reset();
+    clearSnapFade();  // H-6: soluk iz eski aractan tasinmaz
     updateControls(); invalidateCanvas();
 }
 
@@ -12472,6 +12492,29 @@ void Application::applyGumballNumeric(double value) {
     invalidateCanvas();
 }
 
+void Application::clearSnapFade() {
+    if (snapFadeTimerArmed_) {
+        KillTimer(window_, 8);
+        snapFadeTimerArmed_ = false;
+    }
+    fadingSnap_.reset();
+}
+
+void Application::armSnapFadeTimer() {
+    if (snapFadeTimerArmed_) return;
+    // +30 ms pay: timer siniri gecmeden izin kalktigini garanti eder.
+    const double holdMs = std::clamp(snapSettings_.holdTimeMs, 1.0, 60000.0);
+    SetTimer(window_, 8, static_cast<UINT>(holdMs + 30.0), nullptr);
+    snapFadeTimerArmed_ = true;
+}
+
+bool Application::fadingSnapVisible() const noexcept {
+    if (!fadingSnap_) return false;
+    const double elapsedMs = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - fadingSnapSince_).count();
+    return elapsedMs < snapSettings_.holdTimeMs;
+}
+
 DraftView Application::draftView() const {
     DraftView view;
     view.tool = tool_; view.visualStyle = visualStyle_; view.anchor = anchor_; view.facePoints = facePoints_;
@@ -12479,6 +12522,13 @@ DraftView Application::draftView() const {
         view.cursor = hover_->point;
         view.snapType = hover_->type;
         view.orthoAxis = hover_->orthoAxis;
+    }
+    // H-6: gecersizlesen tutulan snap'in soluk gorsel izi — yalniz suresi
+    // (holdTimeMs) dolmamissa; temizlik timer 8'de de yapilir, burasi
+    // timer olmasa bile (ornegin holdTimeMs ayari degisti) dogru cizdirir.
+    if (fadingSnap_ && fadingSnapVisible()) {
+        view.fadingSnapPoint = fadingSnap_->point;
+        view.fadingSnapType = fadingSnap_->type;
     }
     view.orthoEnabled = orthoEnabled_;
     view.drawingActive = drawingActive_; view.snapEnabled = snapEnabled_;

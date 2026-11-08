@@ -144,6 +144,15 @@ public:
     // tutma suresi, tolerans carpani). Kalici — saveOptions/loadOptions.
     const SnapSettings& snapSettings() const noexcept { return snapSettings_; }
     void setSnapSettings(const SnapSettings& s) noexcept { snapSettings_ = s; }
+    // H-6 / GT-1: tutulan ve soluk snap durumu (test kosucusu okur).
+    bool heldSnapActive() const noexcept { return heldSnap_.has_value(); }
+    SnapType heldSnapTypeValue() const noexcept {
+        return heldSnap_ ? heldSnap_->type : SnapType::None;
+    }
+    bool fadingSnapVisible() const noexcept;
+    SnapType fadingSnapTypeValue() const noexcept {
+        return fadingSnap_ ? fadingSnap_->type : SnapType::None;
+    }
     const SnapTypeMask& enabledSnapTypes() const noexcept { return enabledSnapTypes_; }
     void toggleSnapType(SnapType type) noexcept;
     std::string currentLayer() const noexcept { return currentLayer_; }
@@ -1317,6 +1326,14 @@ private:
     std::optional<SnapResult> heldSnap_;
     std::chrono::steady_clock::time_point heldSnapAt_{};
     POINT heldSnapScreen_{};
+    // H-6: histerezis disina cikinca gecersizlesen snap'in YALNIZ GORSEL
+    // soluk izi. fadingSnapSince_ = gecersizlesme ani; holdTimeMs sonunda
+    // timer 8 temizler + tuval yenilenir. TIKLAMA/hover sonucunu ETKILEMEZ.
+    std::optional<SnapResult> fadingSnap_;
+    std::chrono::steady_clock::time_point fadingSnapSince_{};
+    bool snapFadeTimerArmed_{false};
+    void clearSnapFade();   // fadingSnap_ + timer temizligi (yeni snap/komut degisimi)
+    void armSnapFadeTimer();
     bool snapPanelOpen_{};
     bool layerManagerOpen_{true};
     bool showUsedLayersOnly_{};

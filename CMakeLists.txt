@@ -208,7 +208,8 @@ endif()
 option(MM_GUI_TESTS "Masaustu GUI test senaryolarini kaydet (gt1)" OFF)
 if(MM_GUI_TESTS AND WIN32 AND TARGET model-maker)
     foreach(scenario smoke_line b6_line_ignores_profile b2b7_line_visible
-                     b1_catalog_search h1_view_to_surface h4_held_snap_release_distance)
+                     b1_catalog_search h1_view_to_surface h4_held_snap_release_distance
+                     h6_held_snap_visual_hold)
         add_test(NAME model_maker_gt1_${scenario}
             COMMAND model-maker
                 --test-script ${CMAKE_CURRENT_SOURCE_DIR}/tests/gt1/${scenario}.json
