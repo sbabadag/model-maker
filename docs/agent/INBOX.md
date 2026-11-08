@@ -329,7 +329,17 @@ tıklama her zaman imlecin o anki konumuna göre çözülür. Tutma süresi yaln
 görsel marker içindir. GT-1 senaryosu: aynı komut içinde uç noktadan 200 px
 uzaklaş, 100 ms içinde tıkla → tıklama imlecin olduğu yerde (önce kırmızı).
 
-Durum: —
+Durum: BİTTİ (cb9506f) — Kök neden: heldSnap_ holdTimeMs (300 ms) boyunca
+süreye bağlı korunuyordu; imleç tutulan noktadan 200 px hızla uzaklaşıp
+300 ms içinde tıklarsa tıklama eski snap noktasına çözülüyordu (kirişin iki
+tıklaması da çizgi ucuna kaçtı, kiriş hiç üretilmedi). Düzeltme: tutma
+yalnız histerezis yarıçapına bağlı; uzaksa süreye bakmaksızın geçersiz
+(tutma süresi yalnız görsel marker). GT-1 h4_held_snap_release_distance
+(moveClick + axisScreen adımları koşucuya eklendi): önce KIRMIZI
+(profiled=0), sonra YEŞİL (14 adım; kiriş ekseni tıklanan (650,300)'de);
+vision: kiriş çizgi ucundan 200 px uzakta başlıyor. ctest -L gui 6/6,
+tam ctest 160/160. SÜREKLİ MOD kuruldu (surekli-mm cron, 30dk; gece-mm
+silindi) — bu tur ilk turdu.
 
 ## H-5 — H-1 senaryosu doğru şeyi mi ölçüyor? (planlayıcı incelemesi)
 GT-1 raporu: kirişin üst yüzüne tıklayınca "Plan Görünüşü 1 — plan, Z=0"

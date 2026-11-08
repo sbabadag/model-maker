@@ -3,6 +3,7 @@
 - Aktif makine: Asus (ev). ZBook (iş) pasif. Senkron yalnız GitHub üzerinden;
   aynı anda tek makinede çalışılır.
 - Son güncelleme: 2026-11-07 (oturum başlangıç kurulumu)
+- Son tur: 2026-11-08 17:24 — H-4 tutulan snap mesafe kuralı — BİTTİ — cb9506f — kabul: C:\work\mm-kabul\20261108-1716-cb9506f
 
 ## Git düzeni
 
@@ -63,6 +64,13 @@
       boş oturum tabanı 16.012 → 11.989 token; gereksiz araçlar kapalı,
       83+20 skill arşivli (INBOX 0a/0b/0c)
 - [x] Gece modu cron'u: `gece-mm` (40dk, kilit dosyalı, 09:00 self-delete)
+      → 2026-11-08 SÜREKLİ MOD'a geçildi: `gece-mm` silindi; `surekli-mm`
+      cron kuruldu (30dk, süresiz, catch-up kapalı, kilit
+      `C:\work\mm-hermes-surekli.lock`, workdir `C:\work\mm-hermes`)
+- [x] H-4 (tutulan snap mesafe kuralı): tutma süreye değil yalnız
+      histerezise bağlandı (tutma süresi yalnız görsel marker); GT-1
+      h4_held_snap_release_distance kırmızı→yeşil; ctest -L gui 6/6 +
+      tam ctest 160/160; kabul paketi yayınlandı (cb9506f)
 - [x] B1 (Katalog + hızlı arama): kök neden setHost→setCatalog sırası +
       arama indeksi; düzeltildi, ribbon testi kırmızı→yeşil, ekranda
       doğrulandı (INBOX 1. madde)
