@@ -366,7 +366,21 @@ olabilir), (c) çiziliyor ama kamera/kırpma dışında mı. Kök nedeni bir
 cümleyle yaz. Birim test ve önceki senaryo neden yakalamadı, bir cümle.
 ÖNCELİK: en üst (kullanıcının temel çizim akışı). H-5'ten önce.
 
-Durum: —
+Durum: BİTTİ (15a41fb) — Kök neden: GL çizici Solid stilde (faceAlpha==255)
+lineBatch'i hiç çizmiyor ve kontur üreticisi yüzü boş modelleri atlıyordu
+→ Çizgi/Polyline/Dikdörtgen/Daire hiçbir GL pass'inde yoktu (GDI'da sorun
+yok; kullanıcı GL'de olduğu için görüyordu). Model listesine ekleniyordu,
+yalnız RENDER eksikti — (b) sınıfı. Düzeltme: Solid için yüzü boş modelleri
+taşıyan ayrı freeLineBatch_ (konturun üstüne derinliksiz; HiddenLine'da
+lineBatch zaten taşır). Senaryo düzeltildi (önce KIRMIZI): b2b7_line_visible
+(gdi) + b2b7_line_visible_gl (gpu), ikisi de kesin 3B (view.dir.iso) + Solid;
+koşucuya expect.lineVisible piksel kanıtı eklendi — GL düzeltme öncesi
+KIRMIZI (0/101), sonra YEŞİL. Vision: step_008 çizgi yok → step_009 çizgi
+var (B6 sonrası "profilsiz = yardımcı" atlaması DEĞİL; B6'dan bağımsız,
+eski GL Solid tasarım açığı). Birim test/senaryo neden yakalamadı: eski
+senaryo backend'i gdi'ye zorluyordu ve yalnız model SAYISI ölçüyordu
+(visibleCount = görünürlük bayrağı, piksel değil). Kapı: ctest -L gui 8/8,
+tam ctest 162/162; kabul paketi yayınlandı.
 
 ## UI-34 — Özellikler paneli (Tekla gibi) + "..." profil seçim penceresi  [kullanıcı isteği, 2026-11-08 17:33 — H-7'den hemen sonra]
 Tam tarif: `docs/agent/ROADMAP-UI.md` → UI-3 ve UI-4 (+ K1, K2, profilsiz

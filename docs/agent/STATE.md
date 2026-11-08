@@ -3,7 +3,7 @@
 - Aktif makine: Asus (ev). ZBook (iş) pasif. Senkron yalnız GitHub üzerinden;
   aynı anda tek makinede çalışılır.
 - Son güncelleme: 2026-11-07 (oturum başlangıç kurulumu)
-- Son tur: 2026-11-08 18:46 — H-6 soluk snap izi (holdTimeMs görsel) — BİTTİ — 133fe71 — kabul: C:\work\mm-kabul\20261108-1846-133fe71
+- Son tur: 2026-11-08 19:55 — H-7 3B GL Solid çizgi görünmezliği — BİTTİ — 15a41fb — kabul: C:\work\mm-kabul\son
 
 ## Git düzeni
 
@@ -76,6 +76,11 @@
       çiziliyor (yalnız görsel; tıklama/hover değişmez); GT-1 h6 senaryosu
       kırmızı→yeşil + captureLive görsel kanıt; ctest -L gui 7/7 + tam
       ctest 161/161; kabul paketi yayınlandı (133fe71)
+- [x] H-7 (3B GL Solid çizgi görünmezliği): kök neden GL Solid'de
+      lineBatch kapısı + kontur üreticisinin yüzü boş modelleri atlaması;
+      freeLineBatch_ eklendi; b2b7 senaryosu GDI+GL ayrıldı + lineVisible
+      piksel kanıtı (GL önce kırmızı 0/101, sonra yeşil); ctest -L gui 8/8
+      + tam ctest 162/162; kabul paketi yayınlandı (15a41fb)
 - [x] B1 (Katalog + hızlı arama): kök neden setHost→setCatalog sırası +
       arama indeksi; düzeltildi, ribbon testi kırmızı→yeşil, ekranda
       doğrulandı (INBOX 1. madde)
