@@ -409,6 +409,22 @@ kaydında; başarısızlıkta tam rollback + false. Testlerin yakalamama nedeni:
 ölçmüyordu. Kalkan: GT-1 t9_haunch40_e2e (34 adım) + t9_endplate_e2e (28 adım) eklendi,
 ikisi yeşil; ctest 155/155; python props testi OK.
 
+DEVAM (2026-11-09, ikinci bulgu — kullanıcı: "haunch lar bozulmuş"): yeni kurulumda
+(panel kotu değişmeden) haunch LEVHALARI kirişin İÇİNDE ve kolon tepesinin üstünde
+çıkıyordu; varsayılan parametrelerle (240/25) üretim "iki bulon grubu alin levhasina
+sigmiyor" ile RED ediliyordu. Kök neden: Top-ankraj (varsayılan) kesitte
+memberGeometryFromProfile kanonikleştirme refNormal'i çevirince sectionCenterOffset'ı
+da işaret çeviriyor; resolveShearTabPlacement + haunchFrameAnalysis ise ankraj kaymasını
+YENİDEN kurulan p.sec (lenDir + worldUp) çerçevesinde uyguluyordu → kayma ters yöne gitti
+(yukarı), haunch gövdesi kiriş gövdesine girdi, alın levhası kırpılınca 263 mm'ye küçüldü.
+Düzeltme: kayma yönü üyenin KENDİ kanonik çerçevesinden (memberSectionFrame(beam).height;
+end plate yolunun zaten kullandığı) alınır. Kalkan: tests/haunch_topanchor_placement_test
+(20 kontrol, varsayılan parametrelerle plan OK + levha/gövde/kesim konumları) + GT-1
+t11_haunch_default_visual (22 adım, front/iso/side PNG — vision ile doğrulandı). ctest
+157/157; t9'lar ve t10 yeşil. Kullanıcının "farkli ve gercek kolon/kiris kesitleri"
+hatası ayrı bir dal: aynı parçayı iki kez seçme veya katalogda olmayan profil seçimi —
+kullanıcı modeliyle doğrulanacak (model dosyası isteniyor).
+
 ## H-7 — 3B görünümde çizgi çizilmiyor / görünmüyor (B2/B7 HÂLÂ AÇIK)  [kullanıcı, 2026-11-08 17:30, kabul paketi 20261108-1716-cb9506f]
 Kullanıcı kabul paketinde: 3B görünümde Çizgi komutu → çizgi yok/görünmüyor.
 GT-1 `b2b7_line_visible` YEŞİL ama yanlış koşulu ölçüyor: varsayılan

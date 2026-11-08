@@ -874,11 +874,21 @@ ShearTabPlacement resolveShearTabPlacement(const ComponentInput& input) noexcept
                        p.connEnd.y + p.beamDir.y * p.t,
                        p.connEnd.z + p.beamDir.z * p.t};
     // SECTION ANCHOR DUZELTMESI (kiris): eksen kesit USTUNDEN gecerse levha
-    // ust basliga oturur; govde merkezine kaydir.
+    // ust basliga oturur; govde merkezine kaydir. KAYDIRMA YONU = uyenin
+    // KENDI kanonik kesit cercevesi (memberSectionFrame: refNormal +
+    // profileRotation), YENIDEN kurulan p.sec DEGIL. Kanoniklestirme
+    // refNormal'i cevirince sectionCenterOffset da isaret degistirir;
+    // p.sec (lenDir + worldUp) o durumda TERS yone bakabilir ve facePoint
+    // bir tam kesit yuksekligi yanlis tarafa kayar (Haunch 40 Top-ankraj
+    // regresyonu: haunch govdesi kirisin ICINE girer, alin levhasi
+    // kolon tepesinin ustune cikar). End plate yolu zaten
+    // memberSectionFrame(pl.beam).height kullanir — burasi birebir ayni
+    // cerceveye gecirilir (haunch + fin plate ayni facePoint'i tuketir).
     if (std::fabs(p.beam.sectionCenterOffset) > 1e-9) {
-        p.facePoint = Vec3{p.facePoint.x + p.sec.height.x * p.beam.sectionCenterOffset,
-                           p.facePoint.y + p.sec.height.y * p.beam.sectionCenterOffset,
-                           p.facePoint.z + p.sec.height.z * p.beam.sectionCenterOffset};
+        const Vec3 anchorDir = memberSectionFrame(p.beam).height;
+        p.facePoint = Vec3{p.facePoint.x + anchorDir.x * p.beam.sectionCenterOffset,
+                           p.facePoint.y + anchorDir.y * p.beam.sectionCenterOffset,
+                           p.facePoint.z + anchorDir.z * p.beam.sectionCenterOffset};
     }
     p.ok = true;
     return p;
@@ -2181,11 +2191,17 @@ bool haunchFrameAnalysis(Haunch40Ctx& g, GenerationPlan& plan) {
             const Vec3 rel{g.p.connEnd.x - g.p.colMid.x, g.p.connEnd.y - g.p.colMid.y,
                            g.p.connEnd.z - g.p.colMid.z};
             const double off = g.p.beam.sectionCenterOffset;
-            const double offAx = off * vdot(g.p.sec.height, g.ax);
+            // Ankraj kaymasi uyenin KENDI kanonik kesit cercevesi boyunca
+            // (memberSectionFrame), yeniden kurulan g.p.sec boyunca DEGIL —
+            // aksi halde kanoniklestirilmis (isaret cevrilmis) offset ters
+            // yone kayar ve haunch govdesi kirisin ICINE girer (Top ankraj
+            // regresyonu; resolveShearTabPlacement'daki düzeltmenin devami).
+            const Vec3 anchorDir = memberSectionFrame(g.p.beam).height;
+            const double offAx = off * vdot(anchorDir, g.ax);
             const double t = (faceDist - vdot(rel, g.ax) - offAx) / den;
-            g.facePoint = Vec3{g.p.connEnd.x + g.p.beamDir.x * t + g.p.sec.height.x * off,
-                               g.p.connEnd.y + g.p.beamDir.y * t + g.p.sec.height.y * off,
-                               g.p.connEnd.z + g.p.beamDir.z * t + g.p.sec.height.z * off};
+            g.facePoint = Vec3{g.p.connEnd.x + g.p.beamDir.x * t + anchorDir.x * off,
+                               g.p.connEnd.y + g.p.beamDir.y * t + anchorDir.y * off,
+                               g.p.connEnd.z + g.p.beamDir.z * t + anchorDir.z * off};
         }
     }
     return true;

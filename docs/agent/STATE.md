@@ -3,11 +3,15 @@
 - Aktif makine: Asus (ev). ZBook (iş) pasif. Senkron yalnız GitHub üzerinden;
   aynı anda tek makinede çalışılır.
 - Son güncelleme: 2026-11-09
-- Son tur: 2026-11-09 — UI-34 BİTTİ — profil seçim penceresi (UI-4): aile ağacı,
-  filtre (`*` joker), kendi şematik motorumuzla kesit resmi (h b tw tf r), özellik
-  tablosu, Tamam/Uygula/İptal; paneldeki Profil/Malzeme "..." butonları etkin;
-  refresh timer dirty koruması (yazarken alan ezilmez). GT-1 t10_panel_profile_picker
-  25/25; offscreen picker testi; ctest 156/156; t9'lar yeşil.
+- Son tur: 2026-11-09 — H-8 DEVAM (kullanıcı: "haunch lar bozulmuş") — BİTTİ — Top-ankraj
+  kanonik çerçeve kayması: haunch levhaları kirişin İÇİNDE + kolon tepesinin üstünde
+  çıkıyordu; varsayılan parametreler (240/25) "iki bulon grubu alin levhasina sigmiyor"
+  ile reddediliyordu. Kayma artık üyenin kendi kanonik çerçevesinde (memberSectionFrame)
+  uygulanır. Kalkan: haunch_topanchor_placement_test (20 kontrol) + GT-1
+  t11_haunch_default_visual (22 adım, PNG'ler vision ile doğrulandı). ctest 157/157;
+  t9'lar, t10 yeşil. Kullanıcının "farkli ve gercek kolon/kiris kesitleri" hatası için
+  model dosyası istendi (aynı parçayı 2x seçme / katalog dışı profil şüphesi).
+  Ayrıca bu turda UI-34 BİTTİ (profil seçim penceresi — bkz. alt satır).
 - Önceki tur: 2026-11-09 — H-8 (Haunch kolon/mertek ayrıklığı) — BİTTİ — panel kot
   uygulaması artık bağlı üye uçlarını yeni kota sabitliyor (reanchorSecondaryMembers,
   diğer ucu sabit — Tekla davranışı) + End Plate/Haunch aynı undo kaydında yeniden

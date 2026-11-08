@@ -215,7 +215,8 @@ if(MM_GUI_TESTS AND WIN32 AND TARGET model-maker)
                      b2b7_line_visible_gl
                      b1_catalog_search h1_view_to_surface h4_held_snap_release_distance
                      h6_held_snap_visual_hold
-                     t9_haunch40_e2e t9_endplate_e2e)
+                     t9_haunch40_e2e t9_endplate_e2e t10_panel_profile_picker
+                     t11_haunch_default_visual)
         add_test(NAME model_maker_gt1_${scenario}
             COMMAND model-maker
                 --test-script ${CMAKE_CURRENT_SOURCE_DIR}/tests/gt1/${scenario}.json
@@ -869,6 +870,15 @@ if(BUILD_TESTING)
     target_link_libraries(model_maker_haunch_portal_face_test PRIVATE model_maker_core)
     target_compile_options(model_maker_haunch_portal_face_test PRIVATE -Wall -Wextra -Wpedantic)
     add_test(NAME model_maker_haunch_portal_face_test COMMAND model_maker_haunch_portal_face_test)
+
+    # TOP-ANKRAJ YERLESIMI (gerçek kullanıcı modeli 2026-11-09): HEB240 + IPE300
+    # egik kiriste haunch govdesi kirisin ALTINDA kalir, alin levhasi kolon
+    # yuzune oturur, varsayilan parametrelerle red YOK. Kanonik cerceve
+    # kaymasi (flippedNormal) kalkani.
+    add_executable(model_maker_haunch_topanchor_placement_test tests/haunch_topanchor_placement_test.cpp)
+    target_link_libraries(model_maker_haunch_topanchor_placement_test PRIVATE model_maker_core)
+    target_compile_options(model_maker_haunch_topanchor_placement_test PRIVATE -Wall -Wextra -Wpedantic)
+    add_test(NAME model_maker_haunch_topanchor_placement_test COMMAND model_maker_haunch_topanchor_placement_test)
 
     # GRID KESISIM SNAP TOLERANSI: tolerans disindaki aks kesisimine snap YOK,
     # obje snap'i grid'i ezer (Selahattin 2026-10-31).

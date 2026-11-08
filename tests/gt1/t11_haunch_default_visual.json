@@ -1,0 +1,28 @@
+{
+  "backend": "gdi",
+  "timeoutMs": 120000,
+  "steps": [
+    {"profile": "HEB240"},
+    {"appColumnLevels": {"top": 7000, "bottom": 0}},
+    {"placeColumn": {"x": 0, "y": 0, "z": 0}},
+    {"assignLine": {"x1": 0, "y1": 0, "z1": 7000, "x2": 6000, "y2": 0, "z2": 7500, "profile": "IPE300"}},
+    {"appComponent": {"typeId": "tekla_haunch_40", "parts": [0, 1], "params": {"haunchDepth": 240, "haunchTipDepth": 25}}},
+    {"expect": {"componentCount": {"typeId": "tekla_haunch_40", "count": 1}}},
+    {"wait": 100},
+    {"cmd": "view.dir.front"},
+    {"wait": 80},
+    {"cmd": "view.zoomExtents"},
+    {"wait": 80},
+    {"capture": "t11-haunch-default-front"},
+    {"cmd": "view.dir.iso"},
+    {"wait": 80},
+    {"cmd": "view.zoomExtents"},
+    {"wait": 80},
+    {"capture": "t11-haunch-default-iso"},
+    {"cmd": "view.dir.right"},
+    {"wait": 80},
+    {"cmd": "view.zoomExtents"},
+    {"wait": 80},
+    {"capture": "t11-haunch-default-side"}
+  ]
+}
