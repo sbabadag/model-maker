@@ -340,6 +340,16 @@ if(BUILD_TESTING)
             "-DQT_SOURCES=${MODELMAKER_QT_SOURCES}"
             "-DLIB_SOURCES=${_mmf_srcs};${_mmc_srcs};${_core_srcs}"
             -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/check_qt_exe_sources.cmake)
+    # H-1: Yuzeye Gore Gorunus tiklama->callback sozlesmesi + tani loglari.
+    # SAF Python (derleme yok, build dizini kullanilmaz) -> Windows'ta da
+    # kosar (push kapisi bu makinede tam ctest'tir). Mutasyonla dogrulanir
+    # (callback cagrisi silinirse kirmizi).
+    find_package(Python3 QUIET COMPONENTS Interpreter)
+    if(Python3_Interpreter_FOUND)
+        add_test(NAME model_maker_view_to_surface
+            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_view_to_surface.py
+                ${CMAKE_CURRENT_BINARY_DIR})
+    endif()
     # Portable harness compiles actual Win32 gumball method bodies with only
     # the UI boundary substituted. Native Qt/Win32 visual smoke is separate.
     if(UNIX AND NOT CMAKE_CROSSCOMPILING)

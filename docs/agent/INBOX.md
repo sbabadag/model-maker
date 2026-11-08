@@ -194,7 +194,25 @@ olabilir; views.* komutları da aynı yolu kullanıyor mu?). Yeniden üret:
 - Kırmızı test/senaryo → düzeltme → ekranda (vision) doğrula → push.
 Öncelik: B6'dan ÖNCE (kullanıcının günlük kullandığı komut).
 
-Durum: —
+Durum: BİTTİ (inceleme + kanıt + tanı; kod hatası HEAD'de üretilemedi) —
+Kök neden tek cümle: tıklama yolu (onLeftButtonDown ViewToSurface dalı,
+pickSceneFaceAt, twoPointViewCallback_, openTwoPointView) 9e548f3'ten beri
+DEĞİŞMEMİŞ ve ekranda hem sentez hem GERÇEK fare tıklamasıyla çalıştığı
+kanıtlandı; kullanıcı belirtisi bu derlemede üretilemedi (varsayım: kullanıcı
+exe'si bayat ya da başka yapı — p2d kaynağı 83c686f'de aynı kod). Yapılan:
+(1) TANI: startViewToSurfaceCommand + tıklama dalına model-maker-trim.log'a
+yazan VIEW-TO-SURFACE-START/CLICK/FACE/NO-FACE/NO-CALLBACK satırları — sorun
+kullanıcı makinesinde tekrarlarsa log kök nedeni gösterecek. (2) SÖZLEŞME
+TESTİ: tests/run_view_to_surface.py + CMake'te model_maker_view_to_surface
+(Windows'ta da koşar; 18 kontrol + 4 mutasyon — callback silinirse KIRMIZI).
+(3) EKRAN (gerçek tık, ön plan doğrulaması ile): kolon yüzü → "Görünüş 1 —
+yüzey görünüşü, derinlik 100/100 mm" açıldı, log normal=0,1,0 (yön doğru);
+Plan Görünüşü → "Plan Görünüşü 2 — plan, Z = 0 mm" (aynı callback yolu);
+2 Noktalı Görünüş → "Görünüş 3" açıldı. Kanıt:
+C:\work\mm-hermes-shots\2026-11-08\h1\ (h1-yuzey-gorunus-1.png,
+h1-plan-gorunus-2.png, h1-plan-diyalog.png, h1-trim-kanit.txt).
+SONRAKİ: kullanıcı kendi build'ini yenileyip deneyecek; hâlâ bozuksa
+model-maker-trim.log'daki VIEW-TO-SURFACE satırlarıyla devam.
 
 ## 2. B6 — Çizgi komutu profil çiziyor
 Çizgi, Polyline, Dikdörtgen, Daire, 3DFACE panelde aktif profili (ör.

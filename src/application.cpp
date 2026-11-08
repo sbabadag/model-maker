@@ -2093,8 +2093,17 @@ void Application::onLeftButtonDown(int x, int y) {
     if (workPlanePicking_) {
         if (pointPickPurpose_ == PointPickPurpose::ViewToSurface) {
             // YUZ -> GORUNUS: tiklanan yuzun duzlemine dik yeni gorunus acilir.
+            // TANI (H-1): tiklama komuta ulasti mi, yuz bulundu mu, callback
+            // var mi -> model-maker-trim.log. Kullanici makinasi raporu icin.
+            trimExtendLog(L"VIEW-TO-SURFACE-CLICK x=" + std::to_wstring(x) +
+                          L" y=" + std::to_wstring(y));
             const auto faceHit = pickSceneFaceAt(x, y);
             if (faceHit) {
+                trimExtendLog(L"VIEW-TO-SURFACE-FACE model=" +
+                              std::to_wstring(faceHit->model) +
+                              L" normal=" + std::to_wstring(faceHit->hit.normal.x) +
+                              L"," + std::to_wstring(faceHit->hit.normal.y) +
+                              L"," + std::to_wstring(faceHit->hit.normal.z));
                 Vec3 memberAxis{1.0, 0.0, 0.0};
                 if (faceHit->model < document_.models().size()) {
                     const auto& props = document_.models()[faceHit->model].properties();
@@ -2107,6 +2116,7 @@ void Application::onLeftButtonDown(int x, int y) {
                 cancelWorkPlaneCommand();
                 if (!twoPointViewCallback_) {
                     MessageBeep(MB_ICONWARNING);
+                    trimExtendLog(L"VIEW-TO-SURFACE-NO-CALLBACK (MDI bagli degil)");
                     publishStatus(L"Yüzeye göre görünüş: görünüş penceresi açılamadı (MDI bağlı değil)");
                 } else {
                     twoPointViewCallback_(def);
@@ -2114,6 +2124,7 @@ void Application::onLeftButtonDown(int x, int y) {
                 }
             } else {
                 MessageBeep(MB_ICONWARNING);
+                trimExtendLog(L"VIEW-TO-SURFACE-NO-FACE");
                 publishStatus(L"Yüzeye göre görünüş: imlecin altında yüz yok — parça yüzüne tıklayın");
             }
             updateControls(); invalidateCanvas(); return;
@@ -3924,6 +3935,8 @@ void Application::startViewToSurfaceCommand() {
     workPlanePoints_.clear();
     workPlanePreview_.reset();
     pointPickPurpose_ = PointPickPurpose::ViewToSurface;
+    // TANI (H-1): komutun baslatildigi kanit (kullanici makinasi raporu icin).
+    trimExtendLog(L"VIEW-TO-SURFACE-START");
     hoverFaceModel_.reset();
     hoverFaceIndices_.clear();
     hover_.reset();
