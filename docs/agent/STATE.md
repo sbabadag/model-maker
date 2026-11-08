@@ -6,9 +6,12 @@
 - Son tur: 2026-11-09 — H-8 (Haunch kolon/mertek ayrıklığı) — BİTTİ — panel kot
   uygulaması artık bağlı üye uçlarını yeni kota sabitliyor (reanchorSecondaryMembers,
   diğer ucu sabit — Tekla davranışı) + End Plate/Haunch aynı undo kaydında yeniden
-  üretiliyor; başarısızlıkta tam rollback. GT-1 kalkanı: t9_haunch40_e2e (34 adım) +
-  t9_endplate_e2e (28 adım), ikisi yeşil; ctest 155/155; python props testi OK.
-  Sıradaki: H-7 → UI-34 → H-6 → H-5 → H-2 → B8 → B5 → T-planı (INBOX Sıra).
+  üretiliyor; başarısızlıkta tam rollback. Aynı turda assignProfileToSelection da
+  uç bileşenlerini yeniden üretmeye başladı (profil değişimi de aynı sınıf açıktı).
+  GT-1 kalkanı: t9_haunch40_e2e (34 adım) + t9_endplate_e2e (35 adım — profil
+  değişim kalkanı eklendi), ikisi yeşil; ctest 155/155; python props testi OK.
+  H-7 INBOX'ta BİTTİ (15a41fb). Sıradaki: UI-34 → H-6 → H-5 → H-2 → B8 → B5 →
+  T-planı (INBOX Sıra).
 
 ## Git düzeni
 
