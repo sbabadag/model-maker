@@ -221,19 +221,24 @@ h1-plan-gorunus-2.png, h1-plan-diyalog.png, h1-trim-kanit.txt).
 SONRAKİ: kullanıcı kendi build'ini yenileyip deneyecek; hâlâ bozuksa
 model-maker-trim.log'daki VIEW-TO-SURFACE satırlarıyla devam.
 
-## H-3 — "Yüzeye Göre Görünüş" yanlış grupta; kullanıcı bulamıyor  [kullanıcı, 2026-11-08]
-H-1'in gerçek nedeni bu çıktı: kullanıcı yeni görünüşü "Görünümler" grubunda
-/ "Yeni Görünüş" açılırında arıyor; komut orada yok (src/command_catalog.cpp
-~527: "Görünüm" grubunda, zoom/sıfırla yanında; ~540 "Görünümler" grubunda
-ve ~667 ≡ menü "Görünüşler" altında YOK). Yanlış düğmeye bastı.
-- `view.toSurface`'ı şeritte "Görünüm" grubundan ÇIKAR, "Görünümler" grubuna
-  büyük düğme olarak taşı (2 Noktalı ve Plan'ın yanına), adı
-  "Yüzey Görünüşü" (ipucu: "Parça yüzüne tıkla; o yüze dik yeni görünüş").
-  Şeritte tek yer kuralı korunur.
-- ≡ menüde "Görünüşler → Yeni Görünüş" altına da ekle.
-- command_catalog_test: tüm "yeni görünüş açan" komutlar (views.* +
-  view.toSurface) aynı grupta/menüde olsun diye kontrol ekle.
-- Küçük iş: B6'dan önce yap, ayrı commit, push.
+## H-3 — Görünüm sekmesini sadeleştir: iki açılır menü  [kullanıcı kararı, 2026-11-08]
+Kullanıcı: şerit çok karışık. Kural (Tekla'daki gibi):
+- **"Görünüş Oluştur"** — TEK açılır düğme; yeni görünüş açan HER komut
+  bunun içinde: Yüzey Görünüşü (`view.toSurface`), 2 Noktalı, Plan, 3 Noktalı,
+  Çalışma Düzleminde, parça düzlemleri (ön/üst/uç/arka/alt), varsayılan parça
+  görünüşleri, parça 3B, aks görünüşleri. Başka yerde (Görünüm grubu,
+  "Görünümler" grubu) bu komutlar YOK.
+- **"Çalışma Düzlemi"** — TEK açılır düğme; tüm UCS / çalışma düzlemi
+  komutları içinde: Yüz Aracı, XYZ+D, 1/2/3 Nokta, Görünüşe ∥, UCS Dik,
+  Düzlem Sıfırla, Hayalet, Adlandır / Git / Sil. Ayrı küçük düğmeler YOK.
+- Görünüm sekmesinde geriye: Görünüm (2B/3B, Extents, Zoom Pencere, Sıfırla),
+  Yön, Stil, Gezin, Teşhis + bu iki açılır. Grup/düğme sayısını azalt.
+- ≡ menüde aynı iki alt menü (Görünüş Oluştur, Çalışma Düzlemi).
+- Kısayollar aynen çalışır (F7 Hayalet vb.).
+- command_catalog_test: view-oluşturan tüm komutlar yalnız "Görünüş Oluştur"
+  altında; wp.* yalnız "Çalışma Düzlemi" altında.
+- Ekranda doğrula (vision): Görünüm sekmesinin ekran görüntüsü.
+- Küçük iş: B6'dan önce, ayrı commit, push.
 
 Durum: —
 
