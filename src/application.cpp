@@ -12798,7 +12798,13 @@ void Application::saveDocumentAs() {
 }
 
 void Application::openDocument() {
-    const auto path = chooseFile(false); if (!path) return;
+    const auto path = chooseFile(false);
+    if (!path) return;
+    openDocumentPath(*path);
+}
+
+bool Application::openDocumentPath(const std::wstring& path) {
+    if (path.empty()) return false;
     cancelPendingComponentCommand();
     // Ilerleme penceresi: dosya okuma + acilis sonrasi agir yeniden uretim boyunca acik;
     // guard HER cikis yolunda kapatir (istisna dahil).
@@ -12809,8 +12815,8 @@ void Application::openDocument() {
         // hazir olmazsa geometri korunur ama recompute edilmez (veri kaybi yok,
         // islev kaybi var). Proje klasoru ayni typeId'yi kullanici klasorune gore
         // GOLGELER (bkz. component_package.hpp).
-        loadComponentPackagesFrom(mm::projectComponentPackagesDir(*path));
-        document_.load(*path);
+        loadComponentPackagesFrom(mm::projectComponentPackagesDir(path));
+        document_.load(path);
         // Yukleme belge icerigini TAMAMEN degistirir; Document-sahipli B-Rep
         // magazasini da Document::load() KENDISI sifirlar (MMW1..7 B-Rep
         // saklamaz → katilar yeniden uretilene kadar magaza bostur). Ayri bir
@@ -12935,7 +12941,11 @@ void Application::openDocument() {
         else cancelDrawing();
         // Dosya acildiginda icerik ekrana sigsin (zoom extents).
         zoomExtents2D();
-    } catch (const std::exception& error) { showError(L"Dosya açılamadı", error); }
+    } catch (const std::exception& error) {
+        showError(L"Dosya açılamadı", error);
+        return false;
+    }
+    return true;
 }
 
 void Application::importDxf() {

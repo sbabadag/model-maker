@@ -237,6 +237,8 @@ public:
     void saveDocument();
     void saveDocumentAs();
     void openDocument();
+    // GT-1: dosya secim diyalogu olmadan dogrudan belge yukler (test modu).
+    bool openDocumentPath(const std::wstring& path);
     // Kayitli/açik belge yolu: Ctrl+S uzerine kaydeder (Save As istisnasi).
     std::optional<std::filesystem::path> currentFilePath_;
     void importDxf();
@@ -667,6 +669,9 @@ public:
     // Ikincil gorunus pencereleri icin salt-okunur erisim.
     const Document& document() const noexcept { return document_; }
     const std::vector<std::size_t>& selectedModelIndices() const noexcept { return selectedModels_; }
+    // GT-1 (GUI test modu): durum JSON'u icin salt-okunur erisim.
+    DrawTool activeTool() const noexcept { return tool_; }
+    const Camera& camera() const noexcept { return camera_; }
     // --- SECIM MODLARI (Phase W1: Part / Assembly) ---------------------------
     // Birbirini dislayan iki secim modu. Part: yalniz tiklanan parca secilir.
     // Assembly: tiklanan parcanin assembly'sinin TUM uyeleri (main + secondary +

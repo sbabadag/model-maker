@@ -1046,6 +1046,15 @@ std::vector<DynamicMenuItem> QtMainWindow::dynamicMenu(const std::string& id) co
     return out;
 }
 
+// GT-1: hizli arama durumu (durum JSON'u) — ribbon_'a delege eder.
+QString QtMainWindow::quickSearchText() const {
+    return ribbon_ ? ribbon_->searchText() : QString();
+}
+
+QStringList QtMainWindow::quickSearchSuggestions(const QString& text, int limit) const {
+    return ribbon_ ? ribbon_->searchSuggestions(text, limit) : QStringList();
+}
+
 // Menu cizimi: plan VERISI -> QMenu (komut govdesi yok, yalniz baglama).
 void QtMainWindow::fillMenu(QMenu* menu, const std::vector<PlanItem>& items) {
     for (const PlanItem& item : items) {

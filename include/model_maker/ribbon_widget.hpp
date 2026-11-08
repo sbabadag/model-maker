@@ -102,6 +102,8 @@ public:
     // Hizli arama: metni cozer, EN IYI eslesmeyi calistirir; calisan id'yi doner.
     std::string runSearch(const QString& text);
     QStringList searchSuggestions(const QString& text, int limit = 12) const;
+    // GT-1: arama kutusunun GUNCEL metni (durum JSON'u).
+    QString searchText() const;
     // Etiketi kutusuna sigmayan dugme sayisi (DPI testi: 1.0/1.5/2.0).
     int clippedLabelCount() const;
     // Ekran goruntuleri (rapor): sekmeler + daraltilmis + arama.

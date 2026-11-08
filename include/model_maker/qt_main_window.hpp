@@ -38,6 +38,10 @@ public:
     bool toggleState(const std::string& key) const override;
     std::vector<DynamicMenuItem> dynamicMenu(const std::string& id) const override;
 
+    // ---- GT-1 (GUI test modu): hizli arama durumu (durum JSON'u) ----
+    QString quickSearchText() const;
+    QStringList quickSearchSuggestions(const QString& text, int limit = 12) const;
+
 protected:
     void resizeEvent(QResizeEvent* event) override;
     void showEvent(QShowEvent* event) override;

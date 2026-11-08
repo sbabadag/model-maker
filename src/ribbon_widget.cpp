@@ -775,6 +775,10 @@ std::vector<std::string> RibbonWidget::commandIdsInView() const {
     return out;
 }
 
+QString RibbonWidget::searchText() const {
+    return search_ ? search_->text() : QString();
+}
+
 QStringList RibbonWidget::searchSuggestions(const QString& text, int limit) const {
     QStringList out;
     for (const CommandDef* def : catalog_.registry.search(text.toStdString(),
