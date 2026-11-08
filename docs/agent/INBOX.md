@@ -177,8 +177,13 @@ hermes/work'te; wip/hermes sıfırlandı.
 Kullanıcı: "yüzeye göre yeni görüntü alma bozulmuş". Komut: Görünüm →
 Yüzeye Göre Görünüş (`view.toSurface` → `Application::startViewToSurfaceCommand`),
 "parça yüzüne tıklayarak o yüze dik görünüş aç".
-Belirti ayrıntısı: <kullanıcıdan bekleniyor — hiçbir şey olmuyor mu, yanlış
-yön mü, çökme mi>. Beklemeden kendin yeniden üret:
+Belirti (kullanıcı): yüz tarama/vurgulama çalışıyor (imleç altındaki yüz
+işaretleniyor) ama tıklayınca sonunda YENİ GÖRÜNÜŞ AÇILMIYOR. Yani seçim
+aşaması sağlam; komutun son adımı (görünüş oluşturma / pencere açma /
+tıklamanın komuta teslimi) kopuk. Önce şuna bak: tıklama komuta ulaşıyor mu
+(log), ulaşıyorsa görünüş belgeye ekleniyor ama pencere mi açılmıyor
+(UI-2'de pencere/görünüş açma çağrısı registry'ye taşınırken kaybolmuş
+olabilir; views.* komutları da aynı yolu kullanıyor mu?). Yeniden üret:
 - HEB240 kolon + IPE300 kiriş; komutu şeritten başlat; kirişin üst başlık
   yüzüne, gövde yüzüne ve levha yüzüne tıkla → her biri için o yüze dik
   yeni görünüş açılmalı (görünüş adı, yön, çalışma düzlemi doğru).
