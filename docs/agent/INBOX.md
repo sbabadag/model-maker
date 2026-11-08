@@ -410,6 +410,14 @@ kabul paketi:
 Kalan UI-3 parçaları (levha/bulon/kaynak/komponent bölümleri, K1 modsuz
 pencereler, K2 Temizle, yardımcı obje görünümü + migration) bundan sonra.
 
+Planlayıcı incelemesi (2026-11-08 23:00, 29cc028): iskelet onaylandı (Ad,
+Profil+"…", Malzeme+"…", Sınıf, Yüzey işlemi, Dönüş, kirli bayrak, mutasyon
+koşucuları 9/9-10/10). Eksik kalan UI-3a alanları — UI-4'ten SONRA ayrı
+kesit: (a) **Uç ofseti** bölümü (başlangıç/bitiş Dx Dy Dz) — modelde alan
+yoksa önce rapor et (Durum'a "modelde yok" yaz, uydurma); (b) Konum:
+düzlemde (Orta/Sol/Sağ + mm) ve derinlik (Önde/Ortada/Arkada + mm) — aynı
+kural. Başlık "<tip> (N seçili)" seçim değişince doğru mu, GT-1 ile kanıtla.
+
 Durum: KESIT 1 BİTTİ (29cc028) — UI-3a panel iskeleti: PropertiesPanel sınıfı
 (sağ dock; Genel: Ad/Profil/Malzeme/Sınıf/Yüzey işlemi, Konum: Dönüş,
 Görünüm: Katman/Çizgi Tipi, Kolon: Üst/Alt kot+Uzunluk; UYGULA+KOLON
