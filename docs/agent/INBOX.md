@@ -293,6 +293,33 @@ doğrulandı. Kanıt: C:\work\mm-hermes-shots\2026-11-08\h3\
 (h3-gorunum-sekme.png, h3-gorunus-olustur-menu.png,
 h3-calisma-duzlemi-menu.png).
 
+## H-4 — Tutulan snap tıklamayı uzak noktaya kaydırmasın (B6'nın devamı)  [planlayıcı, 2026-11-08 16:55]
+09d277e yalnız araç değişiminde `heldSnap_`'i sıfırlıyor. Aynı hata tek komut
+içinde de olur: imleç uç noktadan hızla uzaklaşıp 300 ms içinde tıklanırsa
+tıklama eski noktaya kayar. Kural: tutulan snap, imleç tutulan noktadan
+histerezis/yakalama yarıçapından uzaktaysa süreye bakmaksızın geçersizdir;
+tıklama her zaman imlecin o anki konumuna göre çözülür. Tutma süresi yalnız
+görsel marker içindir. GT-1 senaryosu: aynı komut içinde uç noktadan 200 px
+uzaklaş, 100 ms içinde tıkla → tıklama imlecin olduğu yerde (önce kırmızı).
+
+Durum: —
+
+## H-5 — H-1 senaryosu doğru şeyi mi ölçüyor? (planlayıcı incelemesi)
+GT-1 raporu: kirişin üst yüzüne tıklayınca "Plan Görünüşü 1 — plan, Z=0"
+açıldı. Şüpheli: yüzey görünüşü yüzün kendi düzleminde olmalı (kiriş üst
+yüzü Z = üst başlık kotu, 0 değil) ve başlık "yüzey görünüşü, derinlik …"
+olmalıydı (H-1'in ekran testinde öyleydi). Kontrol et: senaryo gerçekten
+`view.toSurface` mı çalıştırıyor, yoksa Plan Görünüşü mü açılıyor? Z=0 doğru
+mu (kiriş Z=0'da mı modellenmiş)? Senaryoya beklenen başlık ve kot için
+expect ekle; kiriş kotunu 0'dan farklı yap (ör. 3000) ki ayırt edici olsun.
+Ayrıca gövde (yan) yüzüne tıklama adımı ekle → dikey düzlemde görünüş.
+
+Durum: —
+
+Not (GUI testleri): MM_GUI_TESTS varsayılan OFF kalabilir, ama her push
+kapısında kullanıcı 2 dk boştaysa `ctest -L gui` de koşulur ve rapora
+yazılır; boşta değilse "GUI koşulmadı" diye belirtilir.
+
 ## H-2 — End Plate ters rol sırasında levhayı uzağa koyuyor  [Hermes bulgusu, H-1 sırasında]
 Kullanıcı ana/ikincil üyeyi ters seçerse (önce kiriş, sonra kolon) End
 Plate levhayı bağlantıdan uzağa yerleştiriyor. Kabul edilemez: sessizce
