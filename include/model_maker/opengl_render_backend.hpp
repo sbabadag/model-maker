@@ -124,6 +124,9 @@ private:
     bool compileShaders();
     void ensureBatch(const std::vector<GpuModelRef>& models,
                      std::uint64_t contentRevision = 0, std::uint64_t selectionTag = 0);
+    // H-7: yuzu bos (serbest) modellerin Solid-stil batch'i.
+    void ensureFreeLineBatch(const std::vector<GpuModelRef>& models,
+                             std::uint64_t contentRevision = 0, std::uint64_t selectionTag = 0);
     void uploadBatch(GpuLineBatch& batch);
     void renderContourLines(const std::vector<GpuModelRef>& models,
                             const Camera& camera, int width, int height, bool useProjection2D,
@@ -172,6 +175,13 @@ private:
     // tekerlek zoom'u ve pan'da pass hic calismaz.
     GpuLineBatch contourBatch_;
     ContourWorkspace contourWorkspace_;
+    // SOLID serbest cizgi batch'i (H-7): yuzu olmayan modeller (duz Cizgi/
+    // Polyline/Dikdortgen/Daire — yardimci obje) Solid stilde lineBatch_ ile
+    // cizilmiyordu (faceAlpha==255 kapisi) ve kontur ureticisi de yuzu bos
+    // modelleri atliyordu -> 3B GL Solid'de cizgi HIC gorunmuyordu. Bu batch
+    // yalniz yuzu bos modelleri tasir; Solid'de konturun ustune cizilir.
+    GpuLineBatch freeLineBatch_;
+    std::size_t freeLineTag_{};
     std::size_t contourTag_{};
     std::size_t contourModelCount_{};
     int contourWidth_{};

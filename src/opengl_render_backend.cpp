@@ -835,9 +835,6 @@ bool OpenGLRenderBackend::renderBatchToDc(
         // cizilirken bu, gizli kenarlarin ortaya cikmasina neden oldu.)
         renderContourLines(models, camera, width, height, useProjection2D, contentRevision);
     }
-    // Solid stilde (tam opak yuzler) tel kafes cizilmez: gorunum yalniz
-    // dolu yuzler + dis siluet (kontur). Ic kiris kenarlari ve arkadaki
-    // kenarlar boylece gizlenir — AutoCAD solid gorusu davranisi.
     // Wireframe (faceAlpha==0) ve saydam (0<faceAlpha<255) stillerinde
     // cizgiler her zamanki gibi cizilir. HiddenLine (alpha 255 + stil
     // bayragi) cizgileri de ister: yuz dolgusu USTUNE kenar cizgileri.
@@ -865,6 +862,22 @@ bool OpenGLRenderBackend::renderBatchToDc(
         }
         drawCalls_ = 1;
         renderedLines_ = lineBatch_.indexCount / 2;
+    }
+    // H-7: SOLID'de serbest (yuzsuz) cizgiler — duz Cizgi/Polyline/
+    // Dikdortgen/Daire (B6: yardimci obje). lineBatch_ Solid'de cizilmiyor
+    // (yukaridaki faceAlpha==255 kapisi) ve kontur ureticisi yuzu bos
+    // modelleri atliyordu -> 3B GL Solid'de kullanicinin cizdigi cizgiler
+    // HIC gorunmuyordu (model listede var, render yok — H-7). Ayri batch,
+    // konturun ustune derinliksiz cizilir (GDI paritesi: referans cizgileri
+    // katilarin arkasinda kaybolmaz). HiddenLine'da lineBatch zaten bu
+    // cizgileri tasir (cift cizim olmasin).
+    if (faceAlpha == 255 && !hiddenLineStyle_) {
+        ensureFreeLineBatch(models, contentRevision, selectionTag);
+        if (freeLineBatch_.indexCount != 0) {
+            renderBatch(freeLineBatch_, camera, width, height, useProjection2D);
+            drawCalls_ += 1;
+            renderedLines_ += freeLineBatch_.indexCount / 2;
+        }
     }
 
     glFinish();
@@ -1029,6 +1042,59 @@ void OpenGLRenderBackend::ensureBatch(
     }
     lineBatch_.indexCount = lineBatch_.indices.size();
     uploadBatch(lineBatch_);
+}
+
+// H-7: yuzu bos (serbest) modellerin Solid-stil batch'i. lineBatch_ ile AYNI
+// vertex duzeni (GpuLineBatch) — yalnizca `faces` bos ve `edges` dolu modeller
+// alinir (duz Cizgi/Polyline/Dikdortgen/Daire). Anahtar icerik surumu +
+// secim imi; Solid'de kontur pass'inin USTUNE derinliksiz cizilir.
+void OpenGLRenderBackend::ensureFreeLineBatch(
+    const std::vector<GpuModelRef>& models,
+    std::uint64_t contentRevision, std::uint64_t selectionTag) {
+    std::size_t totalVertices = 0, totalIndices = 0;
+    for (const auto& item : models) {
+        if (!item.model->faces().empty()) continue;
+        if (item.model->edges().empty()) continue;
+        totalVertices += item.model->vertices().size();
+        totalIndices += item.model->edges().size() * 2;
+    }
+    const std::uint64_t selMix = selectionTag * 0x9E3779B97F4A7C15ull;
+    const std::size_t tag = contentRevision
+        ? static_cast<std::size_t>(contentRevision ^ selMix)
+        : (totalVertices ^ (totalIndices << 8) ^ static_cast<std::size_t>(selMix >> 7));
+    if (tag == freeLineTag_ && !freeLineBatch_.dirty) return;
+
+    freeLineBatch_.versionTag = tag;
+    freeLineBatch_.dirty = true;
+    freeLineBatch_.modelCount = models.size();
+    freeLineBatch_.vertices.clear();
+    freeLineBatch_.vertices.reserve(totalVertices);
+    freeLineBatch_.indices.clear();
+    freeLineBatch_.indices.reserve(totalIndices);
+
+    std::size_t vertexBase = 0;
+    for (const auto& item : models) {
+        const auto& vertices = item.model->vertices();
+        const auto& edges = item.model->edges();
+        if (vertices.empty() || edges.empty() || !item.model->faces().empty()) continue;
+        const std::uint32_t rgba = toRGBA8(item.color);
+        for (const auto& v : vertices) {
+            GpuLineVertex gv;
+            gv.x = static_cast<float>(v.x);
+            gv.y = static_cast<float>(v.y);
+            gv.z = static_cast<float>(v.z);
+            gv.color = rgba;
+            freeLineBatch_.vertices.push_back(gv);
+        }
+        for (const auto& edge : edges) {
+            freeLineBatch_.indices.push_back(static_cast<std::uint32_t>(vertexBase + edge.from));
+            freeLineBatch_.indices.push_back(static_cast<std::uint32_t>(vertexBase + edge.to));
+        }
+        vertexBase += vertices.size();
+    }
+    freeLineBatch_.indexCount = freeLineBatch_.indices.size();
+    uploadBatch(freeLineBatch_);
+    freeLineTag_ = tag;
 }
 
 void OpenGLRenderBackend::ensureFaceBatch(
@@ -1414,6 +1480,13 @@ void OpenGLRenderBackend::cleanupGL() {
     if (lineBatch_.vao) { glDeleteVertexArrays(1, &lineBatch_.vao); lineBatch_.vao = 0; }
     if (lineBatch_.vbo) { glDeleteBuffers(1, &lineBatch_.vbo); lineBatch_.vbo = 0; }
     if (lineBatch_.ebo) { glDeleteBuffers(1, &lineBatch_.ebo); lineBatch_.ebo = 0; }
+    // H-7 serbest cizgi batch'i (Solid) — ayni omur, ayni temizlik.
+    if (freeLineBatch_.vao) { glDeleteVertexArrays(1, &freeLineBatch_.vao); freeLineBatch_.vao = 0; }
+    if (freeLineBatch_.vbo) { glDeleteBuffers(1, &freeLineBatch_.vbo); freeLineBatch_.vbo = 0; }
+    if (freeLineBatch_.ebo) { glDeleteBuffers(1, &freeLineBatch_.ebo); freeLineBatch_.ebo = 0; }
+    freeLineBatch_.indexCount = 0;
+    freeLineBatch_.dirty = true;   // baglam kaybinda onbellek anahtari gecersiz
+    freeLineTag_ = 0;
     // Kontur batch'i de onbellekli kalici bir GPU kaynagidir — baglam
     // yikilirken burada serbest birakilir; onbellek anahtari GECERSIZ kilinir
     // ki bir sonraki kare bayat buffer'a cizmesin.

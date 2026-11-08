@@ -2,11 +2,15 @@
   "backend": "gdi",
   "timeoutMs": 120000,
   "steps": [
+    {"cmd": "view.dir.iso"},
+    {"cmd": "view.style.solid"},
+    {"expect": {"backend": "gdi"}},
     {"cmd": "draw.line"},
     {"click": [500, 350]},
     {"click": [700, 350]},
     {"key": "esc"},
-    {"expect": {"models": {"count": 1, "plain": 1}, "visibleCount": 1}},
-    {"wait": 150}
+    {"expect": {"models": {"count": 1, "plain": 1, "visible": 1}}},
+    {"wait": 150},
+    {"expect": {"lineVisible": {"model": 0, "min": 15}}}
   ]
 }

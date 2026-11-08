@@ -21,6 +21,7 @@
 #include "model_maker/qt_main_window.hpp"
 
 #include <QApplication>
+#include <QColor>
 #include <QDir>
 #include <QElapsedTimer>
 #include <QEventLoop>
@@ -35,6 +36,9 @@
 #include <windows.h>
 
 #include <cstdio>
+
+#include <algorithm>
+#include <cmath>
 
 namespace mm {
 namespace {
@@ -602,6 +606,81 @@ struct Runner {
                     else if (std::abs(p.x - x) > tol || std::abs(p.y - y) > tol)
                         problems << QStringLiteral("vertexScreen: (%1,%2) beklenen (%3,%4) tol %5")
                                         .arg(p.x).arg(p.y).arg(x).arg(y).arg(tol);
+                }
+            }
+        }
+        // "lineVisible": {model, min} — H-7/B2 sozlesmesi: modelin ilk iki
+        // kosesi arasindaki EKRAN SEGMENTI uzerinde arka plana gore yeterince
+        // farkli, akromatik (cizgi rengi — eksen oklari/renkli glifler
+        // sayilmaz) piksel var mi. VISION'SIZ, deterministik piksel kaniti:
+        // "cizgi yalniz model listesinde degil, PNG'de de GORUNUYOR" (3B +
+        // GL + Solid hata sinifini yakalar: model var ama render yok).
+        if (expect.contains(QStringLiteral("lineVisible"))) {
+            const QJsonObject spec = expect[QStringLiteral("lineVisible")].toObject();
+            const int model = spec[QStringLiteral("model")].toInt(-1);
+            const int minHits = spec[QStringLiteral("min")].toInt(10);
+            if (model < 0 ||
+                static_cast<std::size_t>(model) >= app.document().models().size())
+                problems << QStringLiteral("lineVisible: model %1 yok").arg(model);
+            else {
+                const auto& vertices = app.document().models()[model].vertices();
+                POINT a{}, b{};
+                if (vertices.size() < 2)
+                    problems << QStringLiteral("lineVisible: model %1 (%2 kose) cizgi degil")
+                                    .arg(model).arg(vertices.size());
+                else if (!app.projectModelVertexToScreen(static_cast<std::size_t>(model), 0, a) ||
+                         !app.projectModelVertexToScreen(static_cast<std::size_t>(model), 1, b))
+                    problems << QStringLiteral("lineVisible: model %1 uclari tuval disinda").arg(model);
+                else {
+                    QImage image;
+                    if (!captureHwnd(window.application().canvasHandle(), image))
+                        image = window.grab().toImage();
+                    if (image.isNull()) {
+                        problems << QStringLiteral("lineVisible: gorsel alinamadi");
+                    } else {
+                        const int w = image.width(), h = image.height();
+                        // Arka plan tahmini: segmentle AYNI satirdaki sol/sag
+                        // kenar piksellerinin ortalamasi (gradient dusey).
+                        const auto bgFor = [&](int y) {
+                            const auto px = [&](int x) {
+                                if (x < 0 || x >= w || y < 0 || y >= h) return 0;
+                                return static_cast<int>(image.pixel(x, y));
+                            };
+                            int c1 = px(2), c2 = px(w - 3);
+                            return QColor((qRed(c1) + qRed(c2)) / 2,
+                                          (qGreen(c1) + qGreen(c2)) / 2,
+                                          (qBlue(c1) + qBlue(c2)) / 2);
+                        };
+                        const double dx = b.x - a.x, dy = b.y - a.y;
+                        const double len = std::hypot(dx, dy);
+                        if (len < 1.0) {
+                            problems << QStringLiteral("lineVisible: segment cok kisa");
+                        } else {
+                            long hits = 0, samples = 0;
+                            const int steps = std::max(20, static_cast<int>(len / 2.0));
+                            for (int i = 0; i <= steps; ++i) {
+                                const int x = a.x + static_cast<int>(std::lround(dx * i / steps));
+                                const int y = a.y + static_cast<int>(std::lround(dy * i / steps));
+                                if (x < 0 || x >= w || y < 0 || y >= h) continue;
+                                const QRgb p = image.pixel(x, y);
+                                const int pr = qRed(p), pg = qGreen(p), pb = qBlue(p);
+                                const QColor bg = bgFor(y);
+                                int diff = std::abs(pr - bg.red());
+                                diff = std::max(diff, std::abs(pg - bg.green()));
+                                diff = std::max(diff, std::abs(pb - bg.blue()));
+                                int hi = std::max(pr, pg), lo = std::min(pr, pg);
+                                hi = std::max(hi, pb); lo = std::min(lo, pb);
+                                ++samples;
+                                if (diff >= 24 && (hi - lo) <= 48) ++hits;
+                            }
+                            if (hits < minHits)
+                                problems << QStringLiteral(
+                                                "lineVisible: %1/%2 piksel cizgi benzeri (en az %3) "
+                                                "[segment (%4,%5)-(%6,%7)]")
+                                                .arg(hits).arg(samples).arg(minHits)
+                                                .arg(a.x).arg(a.y).arg(b.x).arg(b.y);
+                        }
+                    }
                 }
             }
         }
