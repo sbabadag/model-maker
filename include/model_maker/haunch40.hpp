@@ -49,6 +49,10 @@ struct HaunchParams {
     double haunchFlangeWidth{0.0};
     std::wstring plateMaterial{L"S235JR"};
     double topPlateThickness{10.0};
+    // Kolon ustu ile cap levhasi arasindaki bosluk (mm). 0 = levha kolon
+    // tepesine oturur; >0 = levha bosluk kadar yukari kalkar (Tekla "cap
+    // plate gap": tesviye/shim payi). Levha merkezi = kolon ustu + gap + t/2.
+    double topPlateGap{0.0};
     double stiffenerClipSize{15.0};
     bool createBeamStiffener{false};
     double stiffenerThickness{10.0};

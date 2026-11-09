@@ -1979,6 +1979,8 @@ ComponentType haunch40ComponentType() noexcept {
                     L"kolon yuzu ve alin levhasi arasi bosluk"),
         lengthParam(L"topPlateThickness", L"mm", 10.0, 0.0, 60.0,
                     L"kolon cap levhasi et kalinligi (0 = yok)"),
+        lengthParam(L"topPlateGap", L"mm", 0.0, 0.0, 100.0,
+                    L"kolon ustu ile cap levhasi arasi bosluk"),
         lengthParam(L"topPlateLength", L"mm", 230.0, 50.0, 1000.0,
                     L"eski uyumluluk alani; cap olcusu kolon kesitinden otomatik"),
         boolParam(L"createBeamStiffener", false,
@@ -2429,12 +2431,15 @@ bool haunch40CapAndStiffeners(const Haunch40Ctx& g, const ComponentInput& input,
             return false;
         }
         const Vec3 capV = vnorm(vcross(outDir, capU));
+        // KOLON USTU BOSLUGU (topPlateGap): levha merkezi = kolon ustu +
+        // gap + t/2. 0 = levha kolon tepesine oturur (eski davranis).
+        const double topGap = std::max(0.0, paramAsDouble(input.params, L"topPlateGap", 0.0));
         PlateSpec cap;
         cap.axis = outDir; cap.u = capU; cap.v = capV;
         cap.width = g.p.col.secWidth;
         cap.height = g.p.col.secHeight;
         cap.thickness = topT;
-        cap.center = vadd(columnSectionTop, vscale(outDir, topT * 0.5));
+        cap.center = vadd(columnSectionTop, vscale(outDir, topT * 0.5 + topGap));
         cap.name = L"40 - Column Cap Plate";
         pushPlateWithMaterial(plan, cap, "haunch_top_plate", g.plateMaterial);
     }
@@ -2712,6 +2717,7 @@ void applyHaunchParams(ComponentInput& in, const HaunchParams& prm) {
     setParamV(in.params, L"haunchFlangeWidth", prm.haunchFlangeWidth);
     setParamV(in.params, L"plateMaterial", prm.plateMaterial);
     setParamV(in.params, L"topPlateThickness", prm.topPlateThickness);
+    setParamV(in.params, L"topPlateGap", prm.topPlateGap);
     setParamV(in.params, L"stiffenerClipSize", prm.stiffenerClipSize);
     setParamV(in.params, L"createBeamStiffener", prm.createBeamStiffener);
     setParamV(in.params, L"stiffenerThickness", prm.stiffenerThickness);
@@ -2768,6 +2774,7 @@ HaunchParams haunchParamsFromInput(const ComponentInput& input) {
     prm.haunchFlangeWidth = paramAsDouble(input.params, L"haunchFlangeWidth", 0.0);
     prm.plateMaterial = paramAsString(input.params, L"plateMaterial", L"S235JR");
     prm.topPlateThickness = paramAsDouble(input.params, L"topPlateThickness", 10.0);
+    prm.topPlateGap = paramAsDouble(input.params, L"topPlateGap", 0.0);
     prm.stiffenerClipSize = paramAsDouble(input.params, L"stiffenerClipSize", 15.0);
     prm.createBeamStiffener = paramAsBool(input.params, L"createBeamStiffener", false);
     prm.stiffenerThickness = paramAsDouble(input.params, L"stiffenerThickness", 10.0);

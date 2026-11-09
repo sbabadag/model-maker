@@ -268,7 +268,7 @@ ComponentLivePreviewWidget::ComponentLivePreviewWidget(QWidget* parent)
     // Grouped by the physical child that the user can click.
     // Seven controls PER independent group; only the relevant vertical
     // clearance is editable in each role. No phantom opposite-edge control.
-    const std::array<std::tuple<const wchar_t*,const wchar_t*,const char*,QPointF>,25> defs{{
+    const std::array<std::tuple<const wchar_t*,const wchar_t*,const char*,QPointF>,26> defs{{
         {L"haunchLength",L"L","haunch_web",QPointF(35,-90)},
         {L"haunchDepth",L"D","haunch_web",QPointF(-150,15)},
         {L"haunchTipDepth",L"tip","haunch_web",QPointF(45,75)},
@@ -293,7 +293,8 @@ ComponentLivePreviewWidget::ComponentLivePreviewWidget(QWidget* parent)
         {L"lowerHoleDiameter",L"delik","haunch_bolts_lower",QPointF(50,-35)},
         {L"lowerBoltEdgeClear",L"eB net","haunch_bolts_lower",QPointF(55,145)},
         {L"stiffenerThickness",L"t stiff","haunch_beam_stiffener",QPointF(75,35)},
-        {L"topPlateThickness",L"t cap","haunch_top_plate",QPointF(60,-70)}
+        {L"topPlateThickness",L"t cap","haunch_top_plate",QPointF(60,-70)},
+        {L"topPlateGap",L"gap cap","haunch_top_plate",QPointF(150,-70)}
     }};
     for(const auto& def:defs) {
         Callout a;

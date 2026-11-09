@@ -19,6 +19,14 @@
   t9/t11/t13 yeşil, tam ctest **158/158**, ZBook kurulum derlemesi 665/665.
   Kullanıcı modeli için tamir: mertekleri seç → Taşı (M) → ΔY = -250 → haunch'ı
   yeniden kur (kod artık hizasız kurulumu reddediyor).
+- Ek (2026-11-09, ZBook): **cap levhası–kolon üstü boşluğu parametresi** —
+  kullanıcı: "haunch'ta cap plakası ile kolon üstü için bir parametre olmalı".
+  Yeni `topPlateGap` (mm, 0..100, varsayılan **0** = eski davranış: levha kolon
+  tepesine oturur). Cap levhası merkezi = kolon üstü + gap + t/2. Diyalog
+  "Kolon Cap" sekmesinde `t cap` + `gap cap`; 3B önizlemede `gap cap` alanı.
+  Diğer levhalar (alın levhası) kaymaz. Test: `model_maker_haunch_cap_gap_test`
+  (18 kontrol) + `component_dialog_widget_test` P4 beklentisi güncellendi
+  (cap sekmesi artık 2 alan). ctest **159/159**.
 - Önceki tur: 2026-11-09 — B-picker regresyonu + H-5 — BİTTİ —
   (1) Kullanıcı: "yeni profil ve props düzeltmesinden sonra kiriş komutu profil
   çizmiyor" — picker UYGULA/TAMAM yolu panele yazıyor ama pendingProfileName_'i

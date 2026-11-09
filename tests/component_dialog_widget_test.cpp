@@ -623,8 +623,10 @@ int main(int argc, char** argv) {
             left->selectRole("haunch_top_plate");
             QApplication::processEvents();
             const auto capFields=left->visibleOverlayParams();
-            CHECK(capFields.size()==1 && capFields.front()==L"topPlateThickness",
-                  "P4: column cap shows only its own thickness");
+            CHECK(capFields.size()==2 &&
+                  std::find(capFields.begin(),capFields.end(),L"topPlateThickness")!=capFields.end() &&
+                  std::find(capFields.begin(),capFields.end(),L"topPlateGap")!=capFields.end(),
+                  "P4: column cap shows its own thickness + column-top gap");
             left->selectRole("haunch_bolts_lower");
             QApplication::processEvents();
             const auto lower=left->visibleOverlayParams();
