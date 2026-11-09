@@ -754,6 +754,28 @@ void QtMainWindow::buildCommandHandlers() {
     auto& h = commandHandlers_;
     h.clear();
 
+    // B-picker regresyon kalkani: kullanici panel profil alanina yazip
+    // ENTER'a basmamis (kirli) ya da picker'dan secmis olabilir. Komut
+    // kapilarinda (Kiriş/Kolon) paneldeki gecerli profil benimsenir:
+    // kirli panel degeri ESKI bekleyen profilden once gelir (kullanici yeni
+    // deger yazdiysa o kullanilir); katalogda canonical eslesme bulunamazsa
+    // false doner ve kapidaki "profil zorunlu" mesaji devreye girer.
+    const auto adoptPendingProfileFromPanel = [this]() -> bool {
+        if (!propsPanel_) return false;
+        const QString text = propsPanel_->profileText().trimmed();
+        if (text.isEmpty()) return false;
+        if (!propsPanel_->isProfileDirty() && !app_.pendingProfileName().empty())
+            return true; // panel guncel, bekleyen profil zaten var
+        for (const auto& p : app_.profiles()) {
+            if (QString::fromStdString(p.name).compare(text,
+                                                       Qt::CaseInsensitive) == 0) {
+                app_.setPendingProfileName(p.name);
+                return true;
+            }
+        }
+        return false; // kirli ve katalogda yok
+    };
+
     // ---- Dosya ----
     h["file.new"] = [this]() { app_.newDocument(); };
     h["file.open"] = [this]() { app_.openDocument(); };
@@ -769,12 +791,25 @@ void QtMainWindow::buildCommandHandlers() {
     h["draw.rectangle"] = [this]() { app_.selectTool(DrawTool::Rectangle); };
     h["draw.circle"] = [this]() { app_.selectTool(DrawTool::Circle); };
     h["draw.face3d"] = [this]() { app_.selectTool(DrawTool::Face3D); };
-    h["draw.column"] = [this]() { app_.selectTool(DrawTool::Column); };
+    h["draw.column"] = [this, adoptPendingProfileFromPanel]() {
+        // Panelde ENTER'a basilMAMIS (kirli) profil varsa komut kapisinda
+        // benimsenir — picker UYGULA/TAMAM yolu pendingProfileName_'i zaten
+        // gunceller; bu SON savunma katmani (B-picker regresyon kalkani).
+        adoptPendingProfileFromPanel();
+        app_.selectTool(DrawTool::Column);
+    };
     // KIRIS (UI-2b): Kolon'un YATAY karsiligi. Iki nokta + ZORUNLU profil;
     // ayri DrawTool::Beam araci — CIZGI'den ayri (B6: Cizgi aktif profili
     // yok sayar). Profil yoksa komut baslamaz, kullaniciya soylenir ve
     // profil alani odaga alinir.
-    h["draw.beam"] = [this]() {
+    h["draw.beam"] = [this, adoptPendingProfileFromPanel]() {
+        if (!adoptPendingProfileFromPanel()) {
+            statusBar()->showMessage(
+                QStringLiteral("Kiriş için profil zorunlu: Özellikler panelindeki "
+                               "profil alanından seçin"), 6000);
+            if (propsPanel_) propsPanel_->focusProfileEdit();
+            return;
+        }
         const std::string profile = app_.pendingProfileName();
         if (profile.empty()) {
             statusBar()->showMessage(
@@ -2901,7 +2936,14 @@ void QtMainWindow::createDockPanels() {
         return profilePickerDialog_->selectedProfile();
     };
     connect(profilePickerDialog_, &ProfilePickerDialog::profileApplied,
-            propsPanel_, &PropertiesPanel::applyProfileFromPicker);
+            propsPanel_, [this](const QString& name) {
+                propsPanel_->applyProfileFromPicker(name);
+                // B-picker: secim panele yazildiginda bekleyen profil de
+                // guncellenmeli — yoksa Kiriş komutu kapisinda "profil zorunlu"
+                // hatasiyla reddedilir (regresyon: UI-4 oncesi bu yol yoktu).
+                if (!name.isEmpty())
+                    app_.setPendingProfileName(name.toStdString());
+            });
     propsPanel_->validateProfile =
         [profileCatalog, canonicalName](const QString& text) {
             const QString t = text.trimmed();

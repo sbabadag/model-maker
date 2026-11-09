@@ -1,0 +1,114 @@
+{
+  "backend": "gdi",
+  "timeoutMs": 120000,
+  "steps": [
+    {
+      "gridSnap": false
+    },
+    {
+      "pickerOpen": {}
+    },
+    {
+      "pickerFilter": {
+        "text": "IPE3*"
+      }
+    },
+    {
+      "pickerSelect": {
+        "name": "IPE300"
+      }
+    },
+    {
+      "pickerOk": {}
+    },
+    {
+      "expect": {
+        "panelProfile": {
+          "text": "IPE300"
+        }
+      }
+    },
+    {
+      "cmd": "draw.beam"
+    },
+    {
+      "click": [
+        250,
+        300
+      ]
+    },
+    {
+      "click": [
+        450,
+        300
+      ]
+    },
+    {
+      "key": "esc"
+    },
+    {
+      "expect": {
+        "models": {
+          "count": 1,
+          "profiled": 1
+        }
+      }
+    },
+    {
+      "expect": {
+        "modelProfile": {
+          "model": 0,
+          "name": "IPE300"
+        }
+      }
+    },
+    {
+      "panelType": {
+        "text": "IPE360"
+      }
+    },
+    {
+      "cmd": "draw.beam"
+    },
+    {
+      "click": [
+        600,
+        300
+      ]
+    },
+    {
+      "click": [
+        800,
+        300
+      ]
+    },
+    {
+      "key": "esc"
+    },
+    {
+      "expect": {
+        "models": {
+          "count": 2,
+          "profiled": 2
+        }
+      }
+    },
+    {
+      "expect": {
+        "modelProfile": {
+          "model": 1,
+          "name": "IPE360"
+        }
+      }
+    },
+    {
+      "capture": {
+        "name": "t12-beam-picker",
+        "target": "window"
+      }
+    },
+    {
+      "wait": 150
+    }
+  ]
+}

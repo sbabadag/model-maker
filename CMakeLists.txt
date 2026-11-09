@@ -216,7 +216,7 @@ if(MM_GUI_TESTS AND WIN32 AND TARGET model-maker)
                      b1_catalog_search h1_view_to_surface h4_held_snap_release_distance
                      h6_held_snap_visual_hold
                      t9_haunch40_e2e t9_endplate_e2e t10_panel_profile_picker
-                     t11_haunch_default_visual)
+                     t11_haunch_default_visual t12_beam_picker_regression)
         add_test(NAME model_maker_gt1_${scenario}
             COMMAND model-maker
                 --test-script ${CMAKE_CURRENT_SOURCE_DIR}/tests/gt1/${scenario}.json
