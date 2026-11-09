@@ -28,6 +28,10 @@ struct ViewDefinition {
     // Derinlik dilimi (Tekla "view depth"): gorunus duzleminin onu/arkasi.
     double depthFront{1000.0}; // izleyici tarafi (+normal)
     double depthBack{1000.0};  // arka taraf (-normal)
+    // Yuzey gorunusu mu? (view.toSurface ile acilan; baslik/etiket seciminde
+    // plan gorunusunden ayirt edilir — ust yuz gibi YATAY yuzler isPlanView
+    // tarafindan "plan" sanilabilir, oysa bunlar yuzey gorunusudur — H-5).
+    bool fromFace{false};
 };
 
 inline constexpr double kDefaultViewDepth = 1000.0; // mm
@@ -56,6 +60,7 @@ inline ViewDefinition viewFromFace(const Vec3& point, const Vec3& faceNormal,
     v.length = 0.0;          // yuz gorunusunde P1-P2 hatti yok
     v.depthFront = sane(depthFront);
     v.depthBack = sane(depthBack);
+    v.fromFace = true; // yuzey gorunusu (H-5: yatay yuzlerde de plan sanilmasin)
     return v;
 }
 

@@ -2,18 +2,112 @@
   "backend": "gdi",
   "timeoutMs": 120000,
   "steps": [
-    {"profile": "HEB240"},
-    {"cmd": "draw.beam"},
-    {"expect": {"activeTool": "draw.beam"}},
-    {"click": [250, 300]},
-    {"click": [450, 300]},
-    {"key": "esc"},
-    {"expect": {"models": {"count": 1, "profiled": 1}, "viewports": 1}},
-    {"cmd": "view.toSurface"},
-    {"expect": {"status": {"contains": "GÖRE GÖRÜNÜŞ"}}},
-    {"clickModel": {"model": 0}},
-    {"expect": {"viewports": 2, "status": {"contains": "açıldı"}}},
-    {"capture": {"name": "final", "target": "window"}},
-    {"wait": 150}
+    {
+      "assignLine": {
+        "x1": 0,
+        "y1": 0,
+        "z1": 3000,
+        "x2": 5000,
+        "y2": 0,
+        "z2": 3000,
+        "profile": "HEB240"
+      }
+    },
+    {
+      "expect": {
+        "models": {
+          "count": 1,
+          "profiled": 1
+        },
+        "viewports": 1
+      }
+    },
+    {
+      "fit": {}
+    },
+    {
+      "cmd": "view.toSurface"
+    },
+    {
+      "expect": {
+        "status": {
+          "contains": "GÖRE GÖRÜNÜŞ"
+        }
+      }
+    },
+    {
+      "faceClick": {
+        "model": 0,
+        "kind": "top"
+      }
+    },
+    {
+      "expect": {
+        "viewports": 2,
+        "status": {
+          "contains": "açıldı"
+        }
+      }
+    },
+    {
+      "expect": {
+        "viewTitle": {
+          "contains": "yüzey görünüşü",
+          "notContains": "Plan"
+        }
+      }
+    },
+    {
+      "expect": {
+        "viewOriginZ": {
+          "value": 3000,
+          "tol": 5
+        }
+      }
+    },
+    {
+      "fit": {}
+    },
+    {
+      "cmd": "view.dir.front"
+    },
+    {
+      "cmd": "view.toSurface"
+    },
+    {
+      "faceClick": {
+        "model": 0,
+        "kind": "side"
+      }
+    },
+    {
+      "expect": {
+        "viewports": 3
+      }
+    },
+    {
+      "expect": {
+        "viewTitle": {
+          "contains": "yüzey görünüşü",
+          "notContains": "Plan"
+        }
+      }
+    },
+    {
+      "expect": {
+        "viewNormalZ": {
+          "absBelow": 0.1
+        }
+      }
+    },
+    {
+      "capture": {
+        "name": "h1-yuzey-gorunusleri",
+        "target": "window"
+      }
+    },
+    {
+      "wait": 150
+    }
   ]
 }

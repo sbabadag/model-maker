@@ -58,6 +58,12 @@ public:
     MaterialPickerDialog* materialPickerDialog() const {
         return materialPickerDialog_;
     }
+    // GT-1 (H-5): son acilan gorunumun tanimi (kot/normal bekleri icin) ve
+    // aktif gorunum penceresinin basligi (baslik bekleri icin).
+    const mm::ViewDefinition& lastViewDefinition() const {
+        return lastViewDefinition_;
+    }
+    QString activeViewWindowTitle() const;
 
 protected:
     void resizeEvent(QResizeEvent* event) override;
@@ -137,6 +143,7 @@ private:
     QMdiArea* mdiArea_{};
     QMdiSubWindow* modelSubWindow_{}; // ana model gorunusu (kapatilamaz)
     int twoPointViewCounter_{};
+    mm::ViewDefinition lastViewDefinition_{}; // GT-1 (H-5): son gorunum tanimi
     QLineEdit* profileSelector_{};  // ozellikler panelindeki profil alani
     PropertiesPanel* propsPanel_{}; // UI-3a ozellikler paneli
     ProfilePickerDialog* profilePickerDialog_{};   // UI-4 profil secim penceresi

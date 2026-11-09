@@ -545,7 +545,11 @@ void QtMainWindow::openTwoPointView(const ViewDefinition& definition) {
     if (!mdiArea_) return;
     ViewDefinition view = definition;
     const bool plan = isPlanView(view);
-    view.name = (plan ? L"Plan Görünüşü " : L"Görünüş ") + std::to_wstring(++twoPointViewCounter_);
+    // YUZEY GORUNUSU (H-5): yatay yuz (normal ±Z) plan sanilmasin — yuzey
+    // gorunusunde isim "Görünüş N" ve baslik "yüzey görünüşü, derinlik …".
+    view.name = (plan && !view.fromFace ? L"Plan Görünüşü " : L"Görünüş ") +
+                std::to_wstring(++twoPointViewCounter_);
+    lastViewDefinition_ = view; // GT-1 (H-5): son acilan gorunumun tanimi
     // SIRA KRITIK: widget alt pencereye winId()/tuval olusturulmadan ONCE
     // yerlesmeli (sonradan yeniden ebeveynlenen native widget HWND'sini
     // yeniden uretir ve icindeki Win32 tuvali kaybolur). Bu yuzden once
@@ -571,15 +575,22 @@ void QtMainWindow::openTwoPointView(const ViewDefinition& definition) {
                               [widget]() { widget->editDepth(); });
     }
     // Baslik: plan gorunusunde UZUNLUK yok (P1-P2 hatti yok) — bunun yerine
-    // gorunusun Z kotu yazilir; elevasyonda eski baslik korunur.
-    sub->setWindowTitle(QString::fromStdWString(view.name) +
-                        (plan ? QStringLiteral("  —  plan, Z = %1 mm").arg(std::lround(view.origin.z))
-                              : (view.length > 0.0
-                                     ? QStringLiteral("  —  %1 mm, XY'ye dik").arg(std::lround(view.length))
-                                     // Yüzey görünüşü: P1-P2 hattı yok; başlıkta derinlik yazılır.
-                                     : QStringLiteral("  —  yüzey görünüşü, derinlik %1/%2 mm")
-                                           .arg(std::lround(view.depthFront))
-                                           .arg(std::lround(view.depthBack)))));
+    // gorunusun Z kotu yazilir; elevasyonda eski baslik korunur. YUZEY
+    // gorunusleri (H-5) her zaman "yüzey görünüşü, derinlik …" basligini alir
+    // — yatay yuzler isPlanView yuzunden plan sanilmasin.
+    sub->setWindowTitle(
+        QString::fromStdWString(view.name) +
+        (view.fromFace
+             ? QStringLiteral("  —  yüzey görünüşü, derinlik %1/%2 mm")
+                   .arg(std::lround(view.depthFront))
+                   .arg(std::lround(view.depthBack))
+             : (plan
+                    ? QStringLiteral("  —  plan, Z = %1 mm").arg(std::lround(view.origin.z))
+                    : (view.length > 0.0
+                           ? QStringLiteral("  —  %1 mm, XY'ye dik").arg(std::lround(view.length))
+                           : QStringLiteral("  —  yüzey görünüşü, derinlik %1/%2 mm")
+                                 .arg(std::lround(view.depthFront))
+                                 .arg(std::lround(view.depthBack))))));
     // Gorunus penceresi tum MDI alanini kaplasin (Tekla gibi tek gorunus).
     // MDI'da ayni anda tek pencere buyutulmus olabilir; bu, varsa buyutulmus
     // ana gorunusu otomatik normale dondurur.
@@ -756,24 +767,28 @@ void QtMainWindow::buildCommandHandlers() {
 
     // B-picker regresyon kalkani: kullanici panel profil alanina yazip
     // ENTER'a basmamis (kirli) ya da picker'dan secmis olabilir. Komut
-    // kapilarinda (Kiriş/Kolon) paneldeki gecerli profil benimsenir:
-    // kirli panel degeri ESKI bekleyen profilden once gelir (kullanici yeni
-    // deger yazdiysa o kullanilir); katalogda canonical eslesme bulunamazsa
-    // false doner ve kapidaki "profil zorunlu" mesaji devreye girer.
+    // kapilarinda (Kiriş/Kolon):
+    //   - kirli panel degeri ESKI bekleyen profilden once gelir (yeni deger
+    //     benimsenir, katalog eslesmesi yoksa komut ENGELLENIR);
+    //   - panel kirli degilse gosterim amaçlidir (secilinin profili ya da
+    //     bos); gercek kaynak bekleyen profildir — bos panel bekleyen profili
+    //     ezmez (B6/H-4 senaryolari).
     const auto adoptPendingProfileFromPanel = [this]() -> bool {
         if (!propsPanel_) return false;
-        const QString text = propsPanel_->profileText().trimmed();
-        if (text.isEmpty()) return false;
-        if (!propsPanel_->isProfileDirty() && !app_.pendingProfileName().empty())
-            return true; // panel guncel, bekleyen profil zaten var
-        for (const auto& p : app_.profiles()) {
-            if (QString::fromStdString(p.name).compare(text,
-                                                       Qt::CaseInsensitive) == 0) {
-                app_.setPendingProfileName(p.name);
-                return true;
+        if (propsPanel_->isProfileDirty()) {
+            const QString text = propsPanel_->profileText().trimmed();
+            if (!text.isEmpty()) {
+                for (const auto& p : app_.profiles()) {
+                    if (QString::fromStdString(p.name).compare(text,
+                                                               Qt::CaseInsensitive) == 0) {
+                        app_.setPendingProfileName(p.name);
+                        return true;
+                    }
+                }
+                return false; // kirli ve katalogda yok
             }
         }
-        return false; // kirli ve katalogda yok
+        return !app_.pendingProfileName().empty();
     };
 
     // ---- Dosya ----
@@ -1084,6 +1099,14 @@ QStringList QtMainWindow::quickSearchSuggestions(const QString& text, int limit)
 // GT-1: acik gorunus (MDI alt pencere) sayisi — durum JSON'u.
 int QtMainWindow::viewportCount() const {
     return mdiArea_ ? mdiArea_->subWindowList().size() : 0;
+}
+
+QString QtMainWindow::activeViewWindowTitle() const {
+    // GT-1 (H-5): aktif alt pencerenin basligi — ana model penceresi haric.
+    if (!mdiArea_) return QString();
+    QMdiSubWindow* active = mdiArea_->activeSubWindow();
+    if (!active || active == modelSubWindow_) return QString();
+    return active->windowTitle();
 }
 
 // Menu cizimi: plan VERISI -> QMenu (komut govdesi yok, yalniz baglama).

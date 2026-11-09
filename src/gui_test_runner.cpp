@@ -536,6 +536,39 @@ struct Runner {
             problems << QStringLiteral("viewports=%1 (beklenen %2)")
                             .arg(window.viewportCount())
                             .arg(expect[QStringLiteral("viewports")].toInt(-1));
+        // H-5: son acilan gorunumun basligi + tanimi. Yuzey gorunusunde baslik
+        // "yüzey görünüşü, derinlik …" olmali (yatay yuzler plan sanilmasin);
+        // origin Z = yuzey kotu; normal Z yatayligi ayirt eder (yan yuz ->
+        // dikey duzlem, |normal.z| ≈ 0).
+        if (expect.contains(QStringLiteral("viewTitle"))) {
+            const QJsonObject expected = expect[QStringLiteral("viewTitle")].toObject();
+            const QString title = window.activeViewWindowTitle();
+            if (expected.contains(QStringLiteral("contains")) &&
+                !title.contains(expected[QStringLiteral("contains")].toString()))
+                problems << QStringLiteral("viewTitle=\"%1\" (\"%2\" icermiyor)")
+                                .arg(title, expected[QStringLiteral("contains")].toString());
+            if (expected.contains(QStringLiteral("notContains")) &&
+                title.contains(expected[QStringLiteral("notContains")].toString()))
+                problems << QStringLiteral("viewTitle=\"%1\" (\"%2\" iceriyor, olmamali)")
+                                .arg(title, expected[QStringLiteral("notContains")].toString());
+        }
+        if (expect.contains(QStringLiteral("viewOriginZ"))) {
+            const QJsonObject spec = expect[QStringLiteral("viewOriginZ")].toObject();
+            const double value = spec[QStringLiteral("value")].toDouble();
+            const double tol = spec[QStringLiteral("tol")].toDouble(1.0);
+            const double actual = window.lastViewDefinition().origin.z;
+            if (std::fabs(actual - value) > tol)
+                problems << QStringLiteral("viewOriginZ=%1 (beklenen %2±%3)")
+                                .arg(actual).arg(value).arg(tol);
+        }
+        if (expect.contains(QStringLiteral("viewNormalZ"))) {
+            const QJsonObject spec = expect[QStringLiteral("viewNormalZ")].toObject();
+            const double below = spec[QStringLiteral("absBelow")].toDouble(0.1);
+            const double actual = std::fabs(window.lastViewDefinition().normal.z);
+            if (!(actual < below))
+                problems << QStringLiteral("viewNormalZ|=%1 (|.|<%2 bekleniyordu)")
+                                .arg(actual).arg(below);
+        }
         if (expect.contains(QStringLiteral("activeTool")) &&
             toolName(app.activeTool()) != expect[QStringLiteral("activeTool")].toString())
             problems << QStringLiteral("activeTool=%1 (beklenen %2)")
@@ -925,6 +958,95 @@ struct Runner {
             if (point.size() < 2) return fail(QStringLiteral("click: [x, y] bekleniyor"));
             execClick(point[0].toInt(), point[1].toInt());
             return writeStep(step, QStringLiteral("click"));
+        }
+        if (step.contains(QStringLiteral("clickWorld"))) {
+            // H-5: dunya noktasi -> ekran -> tikla. Isin o noktadan gectigi
+            // garantidir (izdusum isini ters yonde kurar); kamera tarafindaki
+            // ILK yuz carpar — yan yuz secimi icin yuzun disa bakan noktasini
+            // hedefle.
+            const QJsonObject spec = step[QStringLiteral("clickWorld")].toObject();
+            POINT target{};
+            if (!window.application().projectWorldPointToScreen(
+                    {spec[QStringLiteral("x")].toDouble(),
+                     spec[QStringLiteral("y")].toDouble(),
+                     spec[QStringLiteral("z")].toDouble()},
+                    target))
+                return fail(QStringLiteral("clickWorld: nokta tuval disinda"));
+            execClick(target.x, target.y);
+            return writeStep(step, QStringLiteral("clickWorld@(%1,%2)")
+                                           .arg(target.x).arg(target.y));
+        }
+        if (step.contains(QStringLiteral("fit"))) {
+            // H-5: ana tuvali modele sigdir — yuksek kottaki modeller
+            // baslangic kadrajinin disinda kalabilir.
+            window.application().fitViewport(window.application().canvasHandle());
+            pump(80);
+            return writeStep(step, QStringLiteral("fit"));
+        }
+        if (step.contains(QStringLiteral("faceClick"))) {
+            // H-5: yuz turune gore deterministik tik (view.toSurface icin).
+            // Aday dunya noktalari yuz uzerinde kurulur; her aday ekrana
+            // izdusulur ve pickSceneFaceAt ile DOGRU yuzun vuruldugu onaylanir
+            // (kamera hangi tarafta olursa olsun gecerli — yan yuz icin +Y/-Y
+            // iki aday denenir). Eslesen aday tıklanır.
+            const QJsonObject spec = step[QStringLiteral("faceClick")].toObject();
+            const int model = spec[QStringLiteral("model")].toInt(-1);
+            const QString kind = spec[QStringLiteral("kind")].toString(QStringLiteral("top"));
+            Application& app = window.application();
+            if (model < 0 ||
+                static_cast<std::size_t>(model) >= app.document().models().size())
+                return fail(QStringLiteral("faceClick: model %1 yok").arg(model));
+            if (kind != QStringLiteral("top") && kind != QStringLiteral("side"))
+                return fail(QStringLiteral("faceClick: kind top|side"));
+            const auto& p = app.document().models()[model].properties();
+            const double mx = (p.axisFromX + p.axisToX) / 2.0;
+            const double my = (p.axisFromY + p.axisToY) / 2.0;
+            const double mz = (p.axisFromZ + p.axisToZ) / 2.0;
+            double height = 240.0, width = 240.0;
+            for (const auto& prof : app.profiles())
+                if (prof.name == p.profileName) {
+                    height = prof.height;
+                    width = prof.width;
+                    break;
+                }
+            // Varsayilan ankraj Top: kesit eksenin ALTINDA sarkar (ust yuz =
+            // eksen koti). Adaylar yuzey UZERINDE; isin o noktadan gecer.
+            std::vector<std::pair<Vec3, QString>> candidates;
+            if (kind == QStringLiteral("top"))
+                candidates.push_back({{mx, my, mz}, QStringLiteral("top")});
+            else {
+                candidates.push_back({{mx, my + width / 2.0, mz - height / 2.0},
+                                      QStringLiteral("+Y")});
+                candidates.push_back({{mx, my - width / 2.0, mz - height / 2.0},
+                                      QStringLiteral("-Y")});
+            }
+            const auto matches = [&](const std::optional<Application::PendingFaceHit>& hit) {
+                if (!hit) return false;
+                const double nz = hit->hit.normal.z;
+                return kind == QStringLiteral("top") ? std::fabs(nz) > 0.9
+                                                     : std::fabs(nz) < 0.1;
+            };
+            QStringList diag;
+            for (const auto& [point, label] : candidates) {
+                POINT target{};
+                if (!app.projectWorldPointToScreen(point, target)) {
+                    diag << QStringLiteral("%1:ekran disi").arg(label);
+                    continue;
+                }
+                const auto hit = app.pickSceneFaceAt(target.x, target.y);
+                diag << QStringLiteral("%1@(%2,%3):%4")
+                            .arg(label).arg(target.x).arg(target.y)
+                            .arg(hit ? QStringLiteral("nz=%1")
+                                           .arg(hit->hit.normal.z, 0, 'f', 3)
+                                     : QStringLiteral("bos"));
+                if (matches(hit)) {
+                    execClick(target.x, target.y);
+                    return writeStep(step, QStringLiteral("faceClick:%1@(%2,%3)")
+                                                   .arg(label).arg(target.x).arg(target.y));
+                }
+            }
+            return fail(QStringLiteral("faceClick: %1 yuzu hicbir adaydan vurulamadi (%2)")
+                            .arg(kind, diag.join(QStringLiteral(" | "))));
         }
         if (step.contains(QStringLiteral("move"))) {
             // H-4: tiklamasiz imlec hareketi (WM_MOUSEMOVE) — snap tutma/histerezis
