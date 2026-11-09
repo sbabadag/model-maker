@@ -8,6 +8,7 @@
     {"assignLine": {"x1": 0, "y1": 0, "z1": 7000, "x2": 6000, "y2": 0, "z2": 7500, "profile": "IPE300"}},
     {"appComponent": {"typeId": "tekla_haunch_40", "parts": [0, 1], "params": {"haunchDepth": 240, "haunchTipDepth": 25}}},
     {"expect": {"componentCount": {"typeId": "tekla_haunch_40", "count": 1}}},
+    {"expect": {"componentPlateGap": {"typeId": "tekla_haunch_40", "childRole": "haunch_end_plate", "against": "main", "maxGap": 1.0}}},
     {"wait": 100},
     {"cmd": "view.dir.front"},
     {"wait": 80},

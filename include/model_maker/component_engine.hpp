@@ -525,6 +525,29 @@ MemberGeometry memberGeometryFromProfile(const Vec3& endA, const Vec3& endB,
 // Eksen sifir uzunlukta mi / kesit bilinmiyor mu? (fail-closed on kontrolu)
 bool memberGeometryUsable(const MemberGeometry& g) noexcept;
 
+// ============================================================================
+// TEMAS DENETIMI (H-9, fail-closed): secilen uyeler 3B'de birbirine DEGMIYORSA
+// baglanti KURULMAZ.
+//
+// Kusur sinifi (CUMALI KOC.mmw): mertek on gorunuste (derinlik Y=0) cizilmis,
+// kolonlar Y=-250 duzleminde kalmis. Yerlesim matematigi
+// (resolveShearTabPlacement) yalniz kolonun yuz DUZLEMINI kesistirir; kirisin
+// ucu kolonun KESITI uzerine dusuyor mu diye BAKMAZ. Sonuc: alin levhasi
+// kolondan 155 mm uzakta "havada" uretilir ama islem basarili gorunur.
+//
+// Kontrol, eksene dik yanal duzlemde iki kesitin ORTUSMESINE bakar:
+//     |offset_i| <= kiris yari kapsami_i + kolon yari kapsami_i   (i = 1,2)
+// Aksi halde inContact=false; mesaj bosluk miktarini ve kayma eksenini soyler.
+// Yerlesim aritmetigini DEGISTIRMEZ — yalniz reddeder.
+// ============================================================================
+struct ComponentContact {
+    bool checked{false};    // iki gercek uye cozuldu (false -> kontrol atlanir)
+    bool inContact{true};
+    double gap{0.0};        // temas yoksa: kesitler arasi en kisa bosluk (mm)
+    std::wstring message;   // reddedildiyse kullaniciya gosterilecek metin
+};
+ComponentContact componentContactCheck(const ComponentInput& input) noexcept;
+
 // KANONIKLIK DENETIMI (E). Bir MemberGeometry, ancak ve ancak
 // memberGeometryFromProfile'un ayni girdiyle yeniden kurdugu sonucun birebir
 // aynisiyse KANONIKTIR. Golden ve paket test girdileri kanonik OLMAK

@@ -216,7 +216,8 @@ if(MM_GUI_TESTS AND WIN32 AND TARGET model-maker)
                      b1_catalog_search h1_view_to_surface h4_held_snap_release_distance
                      h6_held_snap_visual_hold
                      t9_haunch40_e2e t9_endplate_e2e t10_panel_profile_picker
-                     t11_haunch_default_visual t12_beam_picker_regression)
+                     t11_haunch_default_visual t12_beam_picker_regression
+                     t13_haunch_offset_failclosed)
         add_test(NAME model_maker_gt1_${scenario}
             COMMAND model-maker
                 --test-script ${CMAKE_CURRENT_SOURCE_DIR}/tests/gt1/${scenario}.json
@@ -879,6 +880,14 @@ if(BUILD_TESTING)
     target_link_libraries(model_maker_haunch_topanchor_placement_test PRIVATE model_maker_core)
     target_compile_options(model_maker_haunch_topanchor_placement_test PRIVATE -Wall -Wextra -Wpedantic)
     add_test(NAME model_maker_haunch_topanchor_placement_test COMMAND model_maker_haunch_topanchor_placement_test)
+
+    # TEMAS DENETIMI (H-9): uyeler 3B'de degmiyorsa baglanti REDDEDILIR.
+    # Gercek kullanici modeli: mertek Y=0, kolon Y=-250 -> alin levhasi
+    # 155 mm havada uretiliyordu. Fail-closed kalkani + net mesaj.
+    add_executable(model_maker_component_contact_test tests/component_contact_test.cpp)
+    target_link_libraries(model_maker_component_contact_test PRIVATE model_maker_core)
+    target_compile_options(model_maker_component_contact_test PRIVATE -Wall -Wextra -Wpedantic)
+    add_test(NAME model_maker_component_contact_test COMMAND model_maker_component_contact_test)
 
     # GRID KESISIM SNAP TOLERANSI: tolerans disindaki aks kesisimine snap YOK,
     # obje snap'i grid'i ezer (Selahattin 2026-10-31).

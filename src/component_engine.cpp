@@ -2886,4 +2886,89 @@ GenerationPlan generateHaunch40(const ComponentInput& input) noexcept {
     return plan;
 }
 
+// H-9: temas denetimi (bkz. header). Yerlesim aritmetigine DOKUNMAZ; yalniz
+// "bu iki uye gercekten degiyor mu" sorusunu yanitlar. Regeneration yolu bunu
+// CAGRMAZ — eski dosyalardaki kayitlar acilirken sessizce dusmesin (bkz.
+// application.cpp: yalniz yeni kurulum reddedilir).
+ComponentContact componentContactCheck(const ComponentInput& input) noexcept {
+    ComponentContact out;
+    const ShearTabPlacement p = resolveShearTabPlacement(input);
+    if (!p.ok) return out;   // rol/eksen cozulemedi: girisi baska kontrol yakalar
+    out.checked = true;
+
+    const auto add = [](const Vec3& a, const Vec3& b) {
+        return Vec3{a.x + b.x, a.y + b.y, a.z + b.z};
+    };
+    const auto sub = [](const Vec3& a, const Vec3& b) {
+        return Vec3{a.x - b.x, a.y - b.y, a.z - b.z};
+    };
+    const auto mul = [](const Vec3& a, double k) { return Vec3{a.x * k, a.y * k, a.z * k}; };
+    const auto unit = [](const Vec3& a) {
+        const double l = std::sqrt(a.x * a.x + a.y * a.y + a.z * a.z);
+        return (l > 1e-12) ? Vec3{a.x / l, a.y / l, a.z / l} : Vec3{0.0, 0.0, 1.0};
+    };
+
+    // KONTROL CERCEVESI = KOLONUN KENDI cercevesi: kesit genisligi/yuksekligi
+    // + uye ekseni. (Kirisin eksenine dik iki yon YETMEZ: kolonun BOYU da bir
+    // yonde uzar; o yonde "bosluk" sanilan sey kolonun govdesidir.)
+    const Vec3 colAxis = unit(sub(p.col.axisTo, p.col.axisFrom));
+    const double colLen = std::sqrt(
+        std::pow(p.col.axisTo.x - p.col.axisFrom.x, 2) +
+        std::pow(p.col.axisTo.y - p.col.axisFrom.y, 2) +
+        std::pow(p.col.axisTo.z - p.col.axisFrom.z, 2));
+    const Vec3 cw = unit(p.colSec.width);
+    const Vec3 chh = unit(p.colSec.height);
+
+    // Kirisin UC KESITININ verilen eksen boyunca yari kapsami (kesit duzlemi).
+    const Vec3 bw = unit(p.sec.width);
+    const Vec3 bh = unit(p.sec.height);
+    const auto halfBeamAlong = [&](const Vec3& ax) {
+        return std::fabs(vdot(bw, ax)) * p.beam.secWidth * 0.5 +
+               std::fabs(vdot(bh, ax)) * p.beam.secHeight * 0.5;
+    };
+
+    // Kesit merkezleri: eksen + SectionAnchor kaymasi (kayma uyenin KENDI
+    // kanonik kesit cercevesinde — resolveShearTabPlacement ile ayni sozlesme).
+    const Vec3 beamAnchor = memberSectionFrame(p.beam).height;
+    const Vec3 colAnchor = memberSectionFrame(p.col).height;
+    const Vec3 bc = add(p.connEnd, mul(beamAnchor, p.beam.sectionCenterOffset));
+    const Vec3 cc = add(p.colMid, mul(colAnchor, p.col.sectionCenterOffset));
+    const Vec3 rel = sub(bc, cc);
+
+    // Uc eksende de ortusme sarti: |offset| <= kolon yari kapsami +
+    // kiris uc kesitinin o eksendeki yari kapsami.
+    const double dW = vdot(rel, cw);
+    const double dH = vdot(rel, chh);
+    const double dA = vdot(rel, colAxis);
+    const double gW = std::fabs(dW) - (p.col.secWidth * 0.5 + halfBeamAlong(cw));
+    const double gH = std::fabs(dH) - (p.col.secHeight * 0.5 + halfBeamAlong(chh));
+    const double gA = std::fabs(dA) - (colLen * 0.5 + halfBeamAlong(colAxis));
+
+    const double kTol = 1.0;  // temas payi (mm): yalniz sayisal artik
+    if (gW <= kTol && gH <= kTol && gA <= kTol) {   // uc eksende de ortusme
+        out.inContact = true;
+        return out;
+    }
+    out.inContact = false;
+    const double cWp = std::max(0.0, gW);
+    const double cHp = std::max(0.0, gH);
+    const double cAp = std::max(0.0, gA);
+    out.gap = std::sqrt(cWp * cWp + cHp * cHp + cAp * cAp);
+
+    // Baskin DUNYA ekseni: kullanici "hangi yonde kayik" bilgisini alsin.
+    const Vec3 shiftAxis = (gW >= gH && gW >= gA) ? cw : ((gH >= gA) ? chh : colAxis);
+    const double ax[3]{std::fabs(shiftAxis.x), std::fabs(shiftAxis.y),
+                       std::fabs(shiftAxis.z)};
+    const int k = (ax[0] >= ax[1] && ax[0] >= ax[2]) ? 0 : ((ax[1] >= ax[2]) ? 1 : 2);
+    const wchar_t* const names[3]{L"X", L"Y", L"Z"};
+
+    std::wostringstream msg;
+    msg.setf(std::ios::fixed);
+    msg.precision(1);
+    msg << L"kiris kolona degmiyor: kesitler arasi " << out.gap << L" mm bosluk ("
+        << names[k] << L" yonunde kayiklik) - uyeleri hizalayin; baglanti kurulmadi";
+    out.message = msg.str();
+    return out;
+}
+
 } // namespace mm

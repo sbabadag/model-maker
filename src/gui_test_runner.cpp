@@ -806,6 +806,159 @@ struct Runner {
                                     .arg(key);
             }
         }
+        // "componentPlateGap": {typeId, against:"main"|"secondary", maxGap} —
+        // levha (ownedPlateIds) ile hedef uyenin AABB'leri arasindaki en kisa
+        // mesafe. H-8'in componentAttached beklentisi yalniz EKSEN uclarini
+        // olcuyordu (maxGap 500 mm): alin levhasi kolona degmese de YESIL
+        // kaliyordu. Bu beklenti levhanin GERCEK geometrisini olcer.
+        if (expect.contains(QStringLiteral("componentPlateGap"))) {
+            const QJsonObject spec = expect[QStringLiteral("componentPlateGap")].toObject();
+            const QString typeId = spec[QStringLiteral("typeId")].toString();
+            const double maxGap = spec[QStringLiteral("maxGap")].toDouble(5.0);
+            const QString against =
+                spec.value(QStringLiteral("against")).toString(QStringLiteral("main"));
+            struct Box { bool ok = false; double lo[3]{0, 0, 0}; double hi[3]{0, 0, 0}; };
+            const auto boxOf = [](const WireframeModel& m) {
+                Box b;
+                for (const Vec3& v : m.vertices()) {
+                    const double c[3]{v.x, v.y, v.z};
+                    if (!b.ok) {
+                        for (int i = 0; i < 3; ++i) { b.lo[i] = c[i]; b.hi[i] = c[i]; }
+                        b.ok = true;
+                    } else {
+                        for (int i = 0; i < 3; ++i) {
+                            b.lo[i] = std::min(b.lo[i], c[i]);
+                            b.hi[i] = std::max(b.hi[i], c[i]);
+                        }
+                    }
+                }
+                return b;
+            };
+            const auto unionBox = [](Box& a, const Box& b) {
+                if (!b.ok) return;
+                if (!a.ok) { a = b; return; }
+                for (int i = 0; i < 3; ++i) {
+                    a.lo[i] = std::min(a.lo[i], b.lo[i]);
+                    a.hi[i] = std::max(a.hi[i], b.hi[i]);
+                }
+            };
+            const auto boxGap = [](const Box& a, const Box& b) {
+                double s = 0.0;
+                for (int i = 0; i < 3; ++i) {
+                    const double d = std::max(std::max(a.lo[i] - b.hi[i], b.lo[i] - a.hi[i]), 0.0);
+                    s += d * d;
+                }
+                return std::sqrt(s);
+            };
+            int checked = 0;
+            double worst = -1.0;
+            for (const ComponentInstanceRecord& r : app.document().componentInstances()) {
+                if (QString::fromStdWString(r.typeId) != typeId) continue;
+                Box target;
+                if (against == QStringLiteral("secondary")) {
+                    for (const EntityId sid : r.secondaryParts) {
+                        const auto si = app.document().indexOfEntity(sid);
+                        if (!si || *si >= app.document().models().size()) continue;
+                        unionBox(target, boxOf(app.document().models()[*si]));
+                    }
+                } else {
+                    const auto mi = app.document().indexOfEntity(r.mainPart);
+                    if (mi && *mi < app.document().models().size())
+                        target = boxOf(app.document().models()[*mi]);
+                }
+                if (!target.ok) continue;
+                // childRole verilirse yalniz o roldeki levha olculur
+                // (haunch alt/ust levhalari kolona degil ALIN LEVHASINA
+                // baglidir; end-plate kalinligi kadar mesafe NORMALDIR).
+                std::vector<EntityId> plates = r.ownedPlateIds;
+                const QString childRole =
+                    spec.value(QStringLiteral("childRole")).toString();
+                if (!childRole.isEmpty()) {
+                    plates.clear();
+                    for (const ComponentChildRecord& c : r.children)
+                        if (QString::fromStdString(c.roleKey) == childRole)
+                            plates.push_back(c.entityId);
+                }
+                for (const EntityId pid : plates) {
+                    const auto pi = app.document().indexOfEntity(pid);
+                    if (!pi || *pi >= app.document().models().size()) continue;
+                    const Box pb = boxOf(app.document().models()[*pi]);
+                    if (!pb.ok) continue;
+                    const double gap = boxGap(pb, target);
+                    ++checked;
+                    worst = worst < 0.0 ? gap : std::max(worst, gap);
+                    log(QStringLiteral("plateGap[%1] model=%2 vs %3 = %4 mm  plate[%5,%6,%7]-[%8,%9,%10] %11[%12,%13,%14]-[%15,%16,%17]")
+                            .arg(typeId)
+                            .arg(*pi)
+                            .arg(against)
+                            .arg(gap, 0, 'f', 2)
+                            .arg(pb.lo[0], 0, 'f', 1).arg(pb.lo[1], 0, 'f', 1).arg(pb.lo[2], 0, 'f', 1)
+                            .arg(pb.hi[0], 0, 'f', 1).arg(pb.hi[1], 0, 'f', 1).arg(pb.hi[2], 0, 'f', 1)
+                            .arg(against)
+                            .arg(target.lo[0], 0, 'f', 1).arg(target.lo[1], 0, 'f', 1).arg(target.lo[2], 0, 'f', 1)
+                            .arg(target.hi[0], 0, 'f', 1).arg(target.hi[1], 0, 'f', 1).arg(target.hi[2], 0, 'f', 1));
+                    if (gap > maxGap)
+                        problems << QStringLiteral(
+                                        "componentPlateGap[%1]: levha uyeden kopuk "
+                                        "(%2 mm > %3 mm)")
+                                        .arg(typeId)
+                                        .arg(gap, 0, 'f', 2)
+                                        .arg(maxGap, 0, 'f', 2);
+                }
+            }
+            if (checked == 0)
+                problems << QStringLiteral("componentPlateGap: %1 icin levha modeli yok")
+                                .arg(typeId);
+            else
+                log(QStringLiteral("plateGap[%1]: en buyuk bosluk %2 mm (max %3)")
+                        .arg(typeId)
+                        .arg(worst, 0, 'f', 2)
+                        .arg(maxGap, 0, 'f', 2));
+        }
+        // "modelBox": {model: i} | {all: true} — model(ler)in AABB'si + profil +
+        // eksen; yalniz LOG'a yazar (tani icin; hata uretmez). Kusur avinda
+        // "hangi uye nerede" sorusunu kod okumadan yanitlar.
+        if (expect.contains(QStringLiteral("modelBox"))) {
+            const QJsonObject spec = expect[QStringLiteral("modelBox")].toObject();
+            const auto dump = [&](int i) {
+                const auto& m = app.document().models()[static_cast<std::size_t>(i)];
+                double lo[3]{0, 0, 0}, hi[3]{0, 0, 0};
+                bool ok = false;
+                for (const Vec3& v : m.vertices()) {
+                    const double c[3]{v.x, v.y, v.z};
+                    if (!ok) {
+                        for (int k = 0; k < 3; ++k) { lo[k] = c[k]; hi[k] = c[k]; }
+                        ok = true;
+                    } else {
+                        for (int k = 0; k < 3; ++k) {
+                            lo[k] = std::min(lo[k], c[k]);
+                            hi[k] = std::max(hi[k], c[k]);
+                        }
+                    }
+                }
+                const auto& p = m.properties();
+                log(QStringLiteral("modelBox[%1] profile=%2 box[%3,%4,%5]-[%6,%7,%8] "
+                                   "axis[%9,%10,%11]->[%12,%13,%14]")
+                        .arg(i)
+                        .arg(QString::fromStdString(p.profileName))
+                        .arg(lo[0], 0, 'f', 1).arg(lo[1], 0, 'f', 1).arg(lo[2], 0, 'f', 1)
+                        .arg(hi[0], 0, 'f', 1).arg(hi[1], 0, 'f', 1).arg(hi[2], 0, 'f', 1)
+                        .arg(p.axisFromX, 0, 'f', 1).arg(p.axisFromY, 0, 'f', 1)
+                        .arg(p.axisFromZ, 0, 'f', 1)
+                        .arg(p.axisToX, 0, 'f', 1).arg(p.axisToY, 0, 'f', 1)
+                        .arg(p.axisToZ, 0, 'f', 1));
+            };
+            if (spec.value(QStringLiteral("all")).toBool(false)) {
+                for (int i = 0; i < static_cast<int>(app.document().models().size()); ++i)
+                    dump(i);
+            } else {
+                const int i = spec[QStringLiteral("model")].toInt(-1);
+                if (i < 0 || static_cast<std::size_t>(i) >= app.document().models().size())
+                    problems << QStringLiteral("modelBox: model %1 yok").arg(i);
+                else
+                    dump(i);
+            }
+        }
         // "axisScreen": {model, x, y, tol} — modelin eksen baslangicinin
         // (axisFrom, kullanici tiklamasi) tuval izdusumu beklenen noktaya tol
         // piksel icinde mi. H-4 kaniti: tutulan snap tiklamayi uzak noktaya

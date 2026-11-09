@@ -1,0 +1,17 @@
+{
+  "backend": "gdi",
+  "timeoutMs": 120000,
+  "steps": [
+    {"profile": "HEB240"},
+    {"appColumnLevels": {"top": 7000, "bottom": 0}},
+    {"placeColumn": {"x": 0, "y": -250, "z": 0}},
+    {"assignLine": {"x1": 0, "y1": 0, "z1": 7000, "x2": 6000, "y2": 0, "z2": 7500, "profile": "IPE300"}},
+    {"expect": {"models": {"count": 2, "profiled": 2}}},
+    {"appComponent": {"typeId": "tekla_haunch_40", "parts": [0, 1], "params": {"haunchDepth": 500, "haunchTipDepth": 30}}},
+    {"expect": {"componentCount": {"typeId": "tekla_haunch_40", "count": 0}}},
+    {"expect": {"status": {"contains": "degmiyor"}}},
+    {"expect": {"status": {"contains": "175.0 mm"}}},
+    {"capture": {"name": "t13-offset-reject", "target": "window"}},
+    {"wait": 100}
+  ]
+}

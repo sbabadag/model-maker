@@ -5403,6 +5403,16 @@ void Application::applyComponentFromParts(const std::wstring& typeId,
             return;
         }
     }
+    // TEMAS DENETIMI (H-9, fail-closed): uyeler 3B'de birbirine degmiyorsa
+    // baglanti KURULMAZ. Aksi halde alin levhasi kolondan uzakta "havada"
+    // uretilir, dugmeye basan kullanici basarili sanir (CUMALI KOC.mmw:
+    // mertek Y=0, kolon Y=-250 -> levha 155 mm havada). Kontrol YALNIZ yeni
+    // kurulumda; dosyadan gelen kayitlarin regeneration'i etkilenmez.
+    const mm::ComponentContact contact = mm::componentContactCheck(input);
+    if (contact.checked && !contact.inContact) {
+        componentCommandWarn(*this, display + L" uygulanmadi: " + contact.message);
+        return;
+    }
     // New Haunch40 instances must persist complete editable defaults at the
     // first commit, not only once the Properties panel is opened.
     input.params = (typeId == L"tekla_haunch_40" && type)
