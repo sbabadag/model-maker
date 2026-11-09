@@ -556,6 +556,24 @@ struct ComponentContact {
 };
 ComponentContact componentContactCheck(const ComponentInput& input) noexcept;
 
+// ============================================================================
+// ROL COZUMU (H-2, fail-closed): kiriş-kolon bağlantılarında main = KOLON
+// (dikey destek), secondary = KIRIS (ucu kolon yüzüne temas eden yatay/eğik
+// üye). Kullanıcı ters sırada seçebilir (önce kiriş, sonra kolon); dikeylikle
+// geometriden çözülür ve secim sirasi sonucu DEGISTIRMEZ. Iki üye benzer
+// dikeylikteyse (iki kiris / iki kolon) rol KESIN belirlenemez -> determinable
+// =false + reason dolu (ACIK red; sessiz yanlış geometri YOK). Bu fonksiyon
+// yalniz KARAR verir; input'u DEGISTIRMEZ.
+// ============================================================================
+struct ComponentRoleResolution {
+    bool checked{false};      // iki gerçek üye çözüldü (false → karar atlandı)
+    bool determinable{false}; // roller geometriden KESİN belirlenebildi mi
+    bool swap{false};         // main ↔ secondary yer değiştirmeli (ters seçim)
+    std::wstring reason;      // determinable=false ise red metni
+};
+ComponentRoleResolution componentRolesFromGeometry(
+    const ComponentInput& input) noexcept;
+
 // KANONIKLIK DENETIMI (E). Bir MemberGeometry, ancak ve ancak
 // memberGeometryFromProfile'un ayni girdiyle yeniden kurdugu sonucun birebir
 // aynisiyse KANONIKTIR. Golden ve paket test girdileri kanonik OLMAK

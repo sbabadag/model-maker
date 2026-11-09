@@ -889,6 +889,15 @@ if(BUILD_TESTING)
     target_compile_options(model_maker_component_contact_test PRIVATE -Wall -Wextra -Wpedantic)
     add_test(NAME model_maker_component_contact_test COMMAND model_maker_component_contact_test)
 
+    # H-2: ters secim (once kiris, sonra kolon) — rol geometriden cozulur; levha
+    # hep kolonda, kiris ucu kesimi hep kiriste, digest secim sirasindan bagimsiz.
+    add_executable(model_maker_component_role_resolution_test tests/component_role_resolution_test.cpp)
+    target_link_libraries(model_maker_component_role_resolution_test PRIVATE model_maker_core)
+    target_compile_definitions(model_maker_component_role_resolution_test PRIVATE
+        MM_PROFILES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/profiles")
+    target_compile_options(model_maker_component_role_resolution_test PRIVATE -Wall -Wextra -Wpedantic)
+    add_test(NAME model_maker_component_role_resolution_test COMMAND model_maker_component_role_resolution_test)
+
     # CAP LEVHASI KOLON USTU BOSLUGU (topPlateGap): kullanici istegi — cap
     # levhasi ile kolon ustu arasi parametre. gap=0 eski davranis (levha
     # oturur), gap>0 levha yukari kalkar; diger levhalar kaymaz.

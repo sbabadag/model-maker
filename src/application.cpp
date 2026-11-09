@@ -5363,7 +5363,7 @@ void Application::applyComponentFromParts(const std::wstring& typeId,
                              L" parca secin (su an " + std::to_wstring(parts.size()) + L" secili)");
         return;
     }
-    const std::size_t mainIdx = parts[0];
+    std::size_t mainIdx = parts[0];
     for (const std::size_t p : parts) {
         if (p >= document_.models().size()) {
             componentCommandWarn(*this, display + L": parca indeksi gecersiz (" +
@@ -5379,6 +5379,31 @@ void Application::applyComponentFromParts(const std::wstring& typeId,
 
 #ifdef MM_HAS_OCC
     ensureProfileCatalog();
+
+    // 1. Generator girdisi: main (parts[0]) + secondary (parts[1..]). pickCount
+    // metadata'si ile tutarli: 1 main + (pickCount-1) secondary.
+    mm::ComponentInput input;
+    input.main = memberGeometryFor(document_, profileCatalog_, mainIdx);
+    std::vector<std::size_t> secIdx(parts.begin() + 1, parts.end());
+    input.secondary.reserve(secIdx.size());
+    for (std::size_t i : secIdx)
+        input.secondary.push_back(memberGeometryFor(document_, profileCatalog_, i));
+
+    // H-2: ROL COZUMU (fail-closed). Kiriş-kolon bağlantılarında main=KOLON,
+    // secondary=KIRIS geometriden (dikeylik) çözülür; ters seçim düzeltilir,
+    // belirsizse açık red. Karar, cap-gap kaydırmasından VE kayıttan ÖNCE
+    // verilir ki kolon doğru kaydırılsın ve mainPart/secondaryParts geometriyle
+    // tutarlı olsun.
+    const mm::ComponentRoleResolution roles = mm::componentRolesFromGeometry(input);
+    if (roles.checked && roles.determinable && roles.swap) {
+        std::swap(input.main, input.secondary[0]);
+        std::swap(mainIdx, secIdx[0]);
+        appendStartupLog(L"[H-2] roller geometriden düzeltildi: kolon=main, "
+                         L"kiriş=secondary (seçim sırası tersti)");
+    } else if (roles.checked && !roles.determinable) {
+        componentCommandWarn(*this, display + L" uygulanmadi: " + roles.reason);
+        return;
+    }
 
     // H-10: CAP LEVHASI BOSLUGU (topPlateGap) KOLON BOYUNU DEGISTIRIR.
     // Kullanici istegi (2026-11-09): "kolon cap yeri degisince kolon ustune gore
@@ -5407,21 +5432,18 @@ void Application::applyComponentFromParts(const std::wstring& typeId,
                 publishStatus(display + L": cap levhasi boslugu uygulanamadi "
                               L"(ana parca dikey profilli degil); levha kolon "
                               L"tepesine oturdu");
+            } else {
+                // Kolon kaydırıldı: input.main geometrisi bayat — yeniden kur
+                // (H-2 düzeltmesiyle main=kolon; kaydırma sonrası geometri).
+                input.main = memberGeometryFor(document_, profileCatalog_, mainIdx);
             }
         }
     }
 
-    // 1. Generator girdisi: main (parts[0]) + secondary (parts[1..]). pickCount
-    // metadata'si ile tutarli: 1 main + (pickCount-1) secondary.
-    mm::ComponentInput input;
-    input.main = memberGeometryFor(document_, profileCatalog_, mainIdx);
-    input.secondary.reserve(parts.size() - 1);
+    // Kayıt için ikincil id'leri (kiriş; kaydırmadan etkilenmez).
     std::vector<EntityId> secondaryIds;
-    secondaryIds.reserve(parts.size() - 1);
-    for (std::size_t i = 1; i < parts.size(); ++i) {
-        input.secondary.push_back(memberGeometryFor(document_, profileCatalog_, parts[i]));
-        secondaryIds.push_back(input.secondary.back().id);
-    }
+    secondaryIds.reserve(input.secondary.size());
+    for (const auto& s : input.secondary) secondaryIds.push_back(s.id);
     // GIRDI DOGRULAMA (fail-loud): dejenere eksen / eksik kesit girdi kurulumu
     // sirasinda yakalanir — hangi parca, neden yazilir (sessiz gecis yok).
     if (!mm::memberGeometryUsable(input.main)) {

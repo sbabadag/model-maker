@@ -656,6 +656,12 @@ GenerationPlan generateEndPlate(const ComponentInput& input) noexcept {
         plan.error = perr;
         return plan;
     }
+    // H-2: rol cozumlu kiris = kolon olmayan uye (main/secondary iki uyeden
+    // hangisi kolon degilse). Ters secimde input.secondary[0] kolondur, kiris
+    // input.main'dedir; endPlatePlacementFromInput rolleri geometriden cozer
+    // (mainPartId = kolon). Kiris ucu kesimi HEP bu kirisi kesmeli.
+    const EntityId beamPartId =
+        (input.main.id == mainPartId) ? input.secondary[0].id : input.main.id;
 
     PlateSpec plate;
     plate.center = placement.plateCenter;
@@ -677,15 +683,15 @@ GenerationPlan generateEndPlate(const ComponentInput& input) noexcept {
     // Generator yalniz KULLANICI parcasini bilir (rol cozumlu kolon). Levha
     // materializasyonda parts basina eklenir ({levha, kolon}).
     bolts.parts = {mainPartId};
-    bolts.partRoles = {inputRoleFor(input, mainPartId)};
+    bolts.partRoles = {"main"};   // H-2: mainPartId = kolon (geometriden); rol hep "main"
     plan.boltGroups.push_back(bolts);
     plan.boltGroupKeys.push_back("beam_bolts");
 
     // Item 4: kiris ucunu levhanin KIRIS yuzune kes (Haunch 40 fitting deseni).
     // Kesme yoksa levha kalinligi kadar aciklik kalir (Studio fixture: 3 mm).
     CutModifier beamCut;
-    endPlateBeamCut(placement, input.secondary.front().id, beamCut);
-    beamCut.targetRole = "secondary_0";
+    endPlateBeamCut(placement, beamPartId, beamCut);
+    beamCut.targetRole = "secondary_0";   // H-2: kiris hep secondary
     plan.cuts.push_back(beamCut);
     plan.cutKeys.push_back("cut_beam_end");
 
@@ -1094,7 +1100,7 @@ GenerationPlan generateFinPlate(const ComponentInput& input) noexcept {
     b.params.hasNut = true;
     b.params.hasWasher = true;
     b.parts = {beam.id};
-    b.partRoles = {inputRoleFor(input, beam.id)};
+    b.partRoles = {"secondary_0"};   // H-2: beam = pl.beam (kiris) hep secondary
     plan.boltGroups.push_back(b);
     plan.boltGroupKeys.push_back("beam_bolts");
 
@@ -1683,7 +1689,7 @@ GenerationPlan generateShearPlateSimple146(const ComponentInput& input) noexcept
             b.shapeHoleDiameter = boltD;          // disli delik = nominal cap
         }
     }
-    if (beamDrilled) { b.parts = {beam.id}; b.partRoles = {inputRoleFor(input, beam.id)}; }
+    if (beamDrilled) { b.parts = {beam.id}; b.partRoles = {"secondary_0"}; }
     else { b.parts.clear(); b.partRoles.clear(); }
     plan.boltGroups.push_back(b);
     plan.boltGroupKeys.push_back("beam_bolts");
@@ -1693,7 +1699,7 @@ GenerationPlan generateShearPlateSimple146(const ComponentInput& input) noexcept
         CutModifier cut;
         cut.kind = CutKind::PlaneCut;
         cut.target = beam.id;
-        cut.targetRole = inputRoleFor(input, beam.id);
+        cut.targetRole = "secondary_0";   // H-2: kiris hep secondary
         cut.planeOrigin = Vec3{facePoint.x + lenDir.x * beamGap,
                                facePoint.y + lenDir.y * beamGap,
                                facePoint.z + lenDir.z * beamGap};
@@ -2264,7 +2270,7 @@ void haunchPlumbStart(Haunch40Ctx& g, const HaunchParams& prm, GenerationPlan& p
         CutModifier cut;
         cut.kind = CutKind::PlaneCut;
         cut.target = g.p.beam.id;
-        cut.targetRole = g.p.rolesSwapped ? "main" : "secondary_0";
+        cut.targetRole = "secondary_0";   // H-2: kiris hep secondary (rol geometriden)
         cut.planeOrigin = g.start;
         cut.planeNormal = g.ax;
         cut.keepPositive = true;
@@ -2635,7 +2641,7 @@ bool haunch40Bolts(const Haunch40Ctx& g, const ComponentInput& input,
         bg.holeDepth = gripLength + 2.0;
         bg.targetOwnedPlateRole = "haunch_end_plate";
         bg.parts = {g.p.col.id};
-        bg.partRoles = {g.p.rolesSwapped ? "secondary_0" : "main"};
+        bg.partRoles = {"main"};   // H-2: g.p.col = kolon (geometriden); rol hep "main"
         plan.boltGroups.push_back(std::move(bg));
         plan.boltGroupKeys.push_back(role);
     };
@@ -2653,7 +2659,7 @@ void haunch40Welds(const Haunch40Ctx& g, const ComponentInput& input,
         const auto weld = [&](const char* role, const char* plateRole) {
             WeldSpec w;
             w.partA = g.p.beam.id;
-            w.partARole = g.p.rolesSwapped ? "main" : "secondary_0";
+            w.partARole = "secondary_0";   // H-2: kiris hep secondary (rol geometriden)
             w.partBRole = plateRole;
             w.size = size;
             w.name = L"40 - Haunch Weld";
@@ -2666,7 +2672,7 @@ void haunch40Welds(const Haunch40Ctx& g, const ComponentInput& input,
         if (topT > 0.0) {
             WeldSpec capWeld;
             capWeld.partA = g.p.col.id;
-            capWeld.partARole = g.p.rolesSwapped ? "secondary_0" : "main";
+            capWeld.partARole = "main";   // H-2: g.p.col = kolon (geometriden); rol hep "main"
             capWeld.partBRole = "haunch_top_plate";
             capWeld.size = size;
             capWeld.name = L"40 - Column Cap Weld";
@@ -2976,6 +2982,37 @@ ComponentContact componentContactCheck(const ComponentInput& input) noexcept {
     msg << L"kiris kolona degmiyor: kesitler arasi " << out.gap << L" mm bosluk ("
         << names[k] << L" yonunde kayiklik) - uyeleri hizalayin; baglanti kurulmadi";
     out.message = msg.str();
+    return out;
+}
+
+// H-2: rol cozumu (bkz. header). Dikeylik = |dz|/uzunluk; 1 = dusey (kolon),
+// 0 = yatay (kiris). main daha AZ duseyse (kullanici kirisi once secmis) swap.
+ComponentRoleResolution componentRolesFromGeometry(const ComponentInput& input) noexcept {
+    ComponentRoleResolution out;
+    if (input.secondary.empty()) return out;   // tek parcali tip: karar yok
+    const auto verticality = [](const MemberGeometry& g) {
+        const double dx = g.axisTo.x - g.axisFrom.x;
+        const double dy = g.axisTo.y - g.axisFrom.y;
+        const double dz = g.axisTo.z - g.axisFrom.z;
+        const double n = std::sqrt(dx * dx + dy * dy + dz * dz);
+        return (n > 1e-9) ? std::fabs(dz) / n : 0.0;
+    };
+    out.checked = true;
+    const double vm = verticality(input.main);
+    const double vs = verticality(input.secondary[0]);
+    // Kesinlik esigi: dikeylik farki cok kucukse (iki kiris / iki kolon / benzer
+    // egim) rol KESIN belirlenemez -> fail-closed red (tahmin yok).
+    constexpr double kMinGap = 0.15;
+    if (std::fabs(vm - vs) < kMinGap) {
+        out.determinable = false;
+        std::wostringstream msg;
+        msg << L"roller belirsiz: secilen uyelerin dikeyliği ayirt edilemiyor "
+            << L"(once kolonu, sonra kirişi secin)";
+        out.reason = msg.str();
+        return out;
+    }
+    out.determinable = true;
+    out.swap = vm < vs;   // main daha az dusey -> ters secim
     return out;
 }
 
