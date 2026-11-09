@@ -76,7 +76,7 @@ Tur süresi ve öncelik (planlayıcı, 2026-11-08 18:32):
 - Kullanıcı boşta değilse GUI/ekran testini BEKLEME; GUI'siz kısmı yap,
   Durum'a "GUI doğrulaması bekliyor" yaz, turu bitir.
 - Sıra (bu satır INBOX'taki madde sırasını EZER): H-8 → H-7 → UI-34 → H-6 → H-5 →
-  H-2 → B8 → B5 → T-planı. Yarım kalan madde varsa önce onu bitir.
+  H-2 → P-1 → B8 → B5 → T-planı. Yarım kalan madde varsa önce onu bitir.
 
 Hermes kurulumu (bir kez; eski `gece-mm` işini sil, yenisini kur):
 - cron `surekli-mm`: her 30 dakikada bir, süresiz (repeat yok), workdir
@@ -592,6 +592,16 @@ yeniden kurulur (bayat geometri yok). Test: `tests/component_role_resolution_tes
 (kırmızı→yeşil: End Plate/Fin Plate/Haunch ters seçim digest eşitliği + kiriş
 ucu kesimi kirişte + bulonlar kolonda + belirsiz red); tam ctest 160/160.
 Ekran/GUI doğrulaması: bekliyor (GT-1 ters seçim senaryosu yazılmadı).
+
+## P-1 — Studio paketleri MM'de: içe aktar, kullan, güncelle  [kullanıcı, 2026-11-10 00:05 — B8'DEN ÖNCE]
+Kullanıcı: "Model Maker'a da MM Studio'daki package'ın derlenmesi için
+context ver." Paket derlenmez, recipe çalışma anında koşar; eksik olan
+MM tarafındaki içe aktarma, katalog, güncelleme ve kayıt akışı.
+Bağlam, 9 madde ve contract istekleri:
+**docs/agent/P-1-STUDIO-PAKETLERI.md** (önce tamamını oku; ilk iş "var / yok"
+listesini Durum'a yaz).
+Her madde ayrı commit + kapı + GUI senaryosu; sonunda kabul paketi.
+Durum: AÇIK
 
 ## 2. B6 — Çizgi komutu profil çiziyor
 Çizgi, Polyline, Dikdörtgen, Daire, 3DFACE panelde aktif profili (ör.
