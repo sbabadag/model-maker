@@ -3,6 +3,15 @@
 - Aktif makine: ZBook (iş makinesi; model deepseek-v4-flash, deneme). Asus (ev)
   pasif. Senkron yalnız GitHub üzerinden; aynı anda tek makinede çalışılır.
 - Son güncelleme: 2026-11-09
+- Son tur: 2026-11-09 (Asus) — H-2 (ters seçim: End Plate/Fin Plate/Haunch rol
+  çözümü) — BİTTİ — Kök neden: plan rol anahtarları `inputRoleFor` ile konumsal
+  atanıyordu; ters seçimde digest değişiyor + End Plate kiriş ucu kesimi kolonu
+  kesiyordu. Düzeltme: generator'larda rol anahtarları geometriden SABİT
+  ("main"=kolon, "secondary_0"=kiriş); yeni `componentRolesFromGeometry`
+  (dikeylik swap + belirsizde fail-closed red) `applyComponentFromParts`'te
+  cap-gap/kayıttan ÖNCE çalışıyor. Test: `component_role_resolution_test`
+  (kırmızı→yeşil) + tam ctest 160/160. GUI doğrulaması bekliyor.
+  Sıradaki: B8 → B5 → T-planı.
 - Son tur: 2026-11-09 (ZBook) — H-9 (temas etmeyen üyede bağlantı) — BİTTİ —
   Kullanıcı: "yine haunch sorunu var" (`CUMALI KOC.mmw`). Ölçüm (yeni
   `componentPlateGap` / `modelBox` beklentileri): mertek Y=0'da, kolonlar

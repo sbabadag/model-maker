@@ -575,7 +575,23 @@ ya da rolleri geometriden kesin olarak belirleyebiliyorsan düzelt —
 hangisini seçtiğini gerekçele. Haunch (40) ve Fin Plate için de aynı
 kontrol. Kırmızı test (ters sıra) → düzeltme → yeşil; ekranda kanıt.
 
-Durum: —
+Durum: BİTTİ (Asus) — Kök neden: plandaki rol anahtarları
+(bolts.partRoles / cut.targetRole / weld.partARole) `inputRoleFor` ile seçim
+sırasına göre KONUMSAL atanıyordu; ters seçimde (önce kiriş) levha geometrisi
+zaten `resolveShearTabPlacement` sayesinde kolonda kalsa da digest değişiyor,
+ayrıca End Plate kiriş ucu kesimi (`endPlateBeamCut(..., input.secondary.front())`)
+ters seçimde KOLONU kesiyordu. Düzeltme: (1) generator'larda rol anahtarları
+geometriden SABİT — "main"=kolon, "secondary_0"=kiriş (End Plate bolt+beamCut,
+Fin Plate bolt, 146 bolt+cut, Haunch 40 cut+bolt+weld+capWeld); End Plate kiriş
+ucu kesimi `beamPartId` (kolon olmayan üye) ile düzeltildi. (2) `componentRolesFromGeometry`
+(yeni, header+cpp): dikeylikle main↔secondary swap kararı; belirsizse (iki üye
+benzer dikeylik) `determinable=false` + açık red mesajı. (3) `applyComponentFromParts`:
+rol çözümü cap-gap kaydırmasından VE kayıttan ÖNCE; swap ederse main/secondary
+düzeltilir, belirsizse komut açık mesajla reddedilir; cap-gap sonrası input.main
+yeniden kurulur (bayat geometri yok). Test: `tests/component_role_resolution_test.cpp`
+(kırmızı→yeşil: End Plate/Fin Plate/Haunch ters seçim digest eşitliği + kiriş
+ucu kesimi kirişte + bulonlar kolonda + belirsiz red); tam ctest 160/160.
+Ekran/GUI doğrulaması: bekliyor (GT-1 ters seçim senaryosu yazılmadı).
 
 ## 2. B6 — Çizgi komutu profil çiziyor
 Çizgi, Polyline, Dikdörtgen, Daire, 3DFACE panelde aktif profili (ör.
