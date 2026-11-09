@@ -34,3 +34,27 @@ DIŞ hatalar yüzünden kırmızı kalabilir; ortam düzelince bu listeden
   1175)` (ReplaceFileW hedefi kilitli).
 - Çözüm: her çalıştırmada benzersiz geçici dosya adı (commit 87c1cfb).
   Test içeriği değişmedi.
+
+## 4. g++: "Cannot create temporary file in C:\Windows\: Permission denied" — ORTAM KURALI (2026-11-09, ZBook)
+
+- Belirti: tam derlemede g++/cc1plus çağrıları anında düşer ve derleyici HİÇ
+  tanı vermez; log'da yalnız `FAILED: [code=1]` + komut satırı ve
+  `Cannot create temporary file in C:\Windows\: Permission denied` görünür
+  (sürücü çökmelerinde 3221226505 = 0xC0000409). Ardışık birkaç hedef aynı anda
+  FAILED olur → hata KAYNAK KODUNDA DEĞİLDİR, kodda arama yapma.
+- Kök neden: oturumun `TMP`/`TEMP` değeri MSYS yolu (`/tmp`); native g++
+  GetTempPath ile bunu çözemeyip Windows dizinine düşüyor → geçici dosya
+  açamıyor. `-j` sayısı, RAM, disk ve antivirüs suçsuz.
+- Çözüm (PATH ve QT_PLUGIN_PATH ile AYNI komutta, her derleme/ctest için):
+
+      export PATH=/c/msys64/ucrt64/bin:$PATH
+      export QT_PLUGIN_PATH=/c/msys64/ucrt64/share/qt6/plugins
+      export TMP='C:\work\mm-tmp' TEMP='C:\work\mm-tmp' TMPDIR='C:\work\mm-tmp'
+      mkdir -p /c/work/mm-tmp
+
+  Rutin haline getir: bu üç değişken olmadan ZBook'ta hiçbir hedef derlenmez.
+- Doğrulama: configure'dan sonra tek hedef derle (ör.
+  `ninja CMakeFiles/model_maker_core.dir/src/user_catalog.cpp.obj`) — yeşilse
+  ortam doğru, tam derlemeye geç.
+- Asus'ta görülmedi (orada TMP Windows yolunu gösteriyordu); makineye özgü
+  oturum ortamı farkı.

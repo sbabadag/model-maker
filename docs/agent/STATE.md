@@ -1,9 +1,25 @@
 # STATE — devir notu
 
-- Aktif makine: Asus (ev). ZBook (iş) pasif. Senkron yalnız GitHub üzerinden;
-  aynı anda tek makinede çalışılır.
+- Aktif makine: ZBook (iş makinesi; model deepseek-v4-flash, deneme). Asus (ev)
+  pasif. Senkron yalnız GitHub üzerinden; aynı anda tek makinede çalışılır.
 - Son güncelleme: 2026-11-09
-- Son tur: 2026-11-09 — B-picker regresyonu + H-5 — BİTTİ —
+- Son tur: 2026-11-09 (ZBook) — H-9 (temas etmeyen üyede bağlantı) — BİTTİ —
+  Kullanıcı: "yine haunch sorunu var" (`CUMALI KOC.mmw`). Ölçüm (yeni
+  `componentPlateGap` / `modelBox` beklentileri): mertek Y=0'da, kolonlar
+  Y=-250'de → alın levhası kolondan **155 mm havada**; haunch matematiği doğru,
+  kusur üyelerin 3B'de ayrık olması (mertek ön görünüşte, derinlik bilgisi
+  olmadan çizilmiş). (1) engine: `componentContactCheck` (fail-closed) — kiriş
+  uç kesiti kolonun kesit+eksen kapsamıyla üç eksende örtüşmüyorsa bağlantı
+  KURULMAZ, mesaj "kiriş kolona değmiyor: N mm boşluk (eksen)". Yalnız YENİ
+  kurulum (`Application::applyComponentFromParts`); dosyadan gelen kayıtların
+  regeneration'ı etkilenmez. (2) Testler: birim testi
+  `model_maker_component_contact_test` (değen / kısmi örtüşen / ayrık / ters
+  seçim / eksik girdi) + GT-1 `t13_haunch_offset_failclosed` (red + "175.0 mm");
+  t9/t11'e `componentPlateGap` kalkanı (reanchor sonrası dahil). (3) Doğrulama:
+  t9/t11/t13 yeşil, tam ctest **158/158**, ZBook kurulum derlemesi 665/665.
+  Kullanıcı modeli için tamir: mertekleri seç → Taşı (M) → ΔY = -250 → haunch'ı
+  yeniden kur (kod artık hizasız kurulumu reddediyor).
+- Önceki tur: 2026-11-09 — B-picker regresyonu + H-5 — BİTTİ —
   (1) Kullanıcı: "yeni profil ve props düzeltmesinden sonra kiriş komutu profil
   çizmiyor" — picker UYGULA/TAMAM yolu panele yazıyor ama pendingProfileName_'i
   güncellemiyordu; Kiriş kapısı reddediyordu. profileApplied bağlantısı artık pending'i
@@ -15,7 +31,7 @@
   (viewNormalZ). Runner: faceClick/clickWorld/fit + viewTitle/viewOriginZ/viewNormalZ.
   Doğrulama: 13/13 GT-1, ctest 157/157, python props OK. Commit'ler fa8e853 (B-picker)
   + 9261441 (H-5). Sıradaki: H-2 → B8 → B5 → T-planı.
-- Önceki tur: 2026-11-09 — H-8 (Haunch kolon/mertek ayrıklığı) — BİTTİ — panel kot
+- Daha önceki tur: 2026-11-09 — H-8 (Haunch kolon/mertek ayrıklığı) — BİTTİ — panel kot
   uygulaması artık bağlı üye uçlarını yeni kota sabitliyor (reanchorSecondaryMembers,
   diğer ucu sabit — Tekla davranışı) + End Plate/Haunch aynı undo kaydında yeniden
   üretiliyor; başarısızlıkta tam rollback. Aynı turda assignProfileToSelection da
@@ -34,13 +50,19 @@
 - Yarım kalmış iş YALNIZ `wip/hermes` dalına commit edilir; `hermes/work`'e asla.
 - Detay: `docs/agent/skills/model-maker/model-maker-hermes-git/`
 
-## Derleme (Windows, Asus)
+## Derleme (Windows — Asus/ZBook)
 
 - Derleme dizini: `C:\work\mm-hermes\build-hermes` (Release, Ninja, UCRT64 g++).
-- Kabuk: Git Bash; her derleme komutundan önce:
+- Kabuk: Git Bash; her derleme/ctest komutundan önce:
 
       export PATH=/c/msys64/ucrt64/bin:$PATH
       export QT_PLUGIN_PATH=/c/msys64/ucrt64/share/qt6/plugins
+      export TMP='C:\work\mm-tmp' TEMP='C:\work\mm-tmp' TMPDIR='C:\work\mm-tmp'
+      mkdir -p /c/work/mm-tmp
+
+- **ZBook (zorunlu):** üç `TMP/TEMP/TMPDIR` değişkeni olmadan hiçbir hedef
+  derlenmez (g++ `Cannot create temporary file in C:\Windows\`) — ayrıntı
+  `docs/agent/known-failures.md` §4. Asus'ta görülmedi.
 
 - İlk configure:
 

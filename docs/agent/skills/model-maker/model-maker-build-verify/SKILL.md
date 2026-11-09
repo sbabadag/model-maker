@@ -1,7 +1,7 @@
 ---
 name: model-maker-build-verify
 description: Build and verify the affected Model-Maker target.
-version: 1.1.0
+version: 1.2.0
 author: Selahattin Model-Maker Pack
 license: MIT
 platforms: [windows]
@@ -72,6 +72,20 @@ Only use names confirmed in the repository.
   ```
 
   Skipping it yields exit 127 with no hint — a DLL-lookup tool fails silently.
+- **TMP/TEMP/TMPDIR must be a NATIVE Windows path on ZBook** (and any session whose
+  `TMP` is an MSYS path such as `/tmp`):
+
+  ```bash
+  mkdir -p /c/work/mm-tmp
+  export TMP='C:\work\mm-tmp' TEMP='C:\work\mm-tmp' TMPDIR='C:\work\mm-tmp'
+  ```
+
+  Without it every g++ call dies instantly with `Cannot create temporary file in
+  C:\Windows\: Permission denied` and NO compiler diagnostic (ninja prints only
+  `FAILED: [code=1]` + the command; sometimes 0xC0000409). Several targets fail at
+  once — that is an environment fault, not a source-code fault: do not start reading
+  code. Verify with one target (`ninja CMakeFiles/model_maker_core.dir/src/user_catalog.cpp.obj`)
+  before the full build. Details: `docs/agent/known-failures.md` §4.
 - Long builds and full ctest run in the BACKGROUND writing to a log file; monitor
   progress, and stop + report if nothing advances for 10 minutes.
 - Redirect test output to a file and read the exit code — piping through tail/head

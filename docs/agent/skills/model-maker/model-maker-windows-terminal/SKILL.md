@@ -1,7 +1,7 @@
 ---
 name: model-maker-windows-terminal
 description: Run Model-Maker commands correctly on Windows.
-version: 1.0.0
+version: 1.0.1
 author: Selahattin Model-Maker Pack
 license: MIT
 platforms: [windows]
@@ -25,6 +25,10 @@ the user's Windows computer.
 2. The shell is PowerShell unless tool output proves otherwise.
 3. Quote paths containing spaces and use Windows paths.
 4. Never fabricate terminal output.
+   Native MSYS2 tools need NATIVE temp paths: if `TMP` is an MSYS path (`/tmp`),
+   g++/linker fail instantly with `Cannot create temporary file in C:\Windows\:
+   Permission denied`. Export `TMP`/`TEMP`/`TMPDIR=C:\work\mm-tmp` in every
+   build/test command (details: `docs/agent/known-failures.md` §4).
 5. If a tool call fails, show the actual error and repair the command.
 6. Do not switch to WSL, Git Bash, Docker, or a remote shell without explicit
    permission.
