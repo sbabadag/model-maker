@@ -551,7 +551,15 @@ mu (kiriş Z=0'da mı modellenmiş)? Senaryoya beklenen başlık ve kot için
 expect ekle; kiriş kotunu 0'dan farklı yap (ör. 3000) ki ayırt edici olsun.
 Ayrıca gövde (yan) yüzüne tıklama adımı ekle → dikey düzlemde görünüş.
 
-Durum: —
+Durum: TAMAM (2026-11-09). Senaryo gerçekten view.toSurface çalıştırıyordu; sorun
+BAŞLIKTAYDI: isPlanView (normal ±Z) üst yüzü plan sanıp "Plan Görünüşü — plan, Z=0"
+yazıyordu (kiriş Z=0'da, Top ankraj → üst yüz de 0'da). Düzeltme: ViewDefinition.fromFace
+bayrağı — yüzey görünüşleri (yatay yüz dahil) her zaman "yüzey görünüşü, derinlik …"
+başlığını ve "Görünüş N" adını alır. Senaryo güncellendi: kiriş Z=3000'de (assignLine),
+üst yüz → viewTitle (yüzey görünüşü, Plan DEĞİL) + viewOriginZ=3000 bekleri; ön görünüşe
+geçilip yan yüz → viewNormalZ (|nz|<0.1) beki. Runner'a faceClick/clickWorld/fit op'ları
+ve viewTitle/viewOriginZ/viewNormalZ bekleri eklendi. 13 GT-1 + ctest 157/157 yeşil.
+Commit 9261441.
 
 Not (GUI testleri): MM_GUI_TESTS varsayılan OFF kalabilir, ama her push
 kapısında kullanıcı 2 dk boştaysa `ctest -L gui` de koşulur ve rapora

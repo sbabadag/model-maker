@@ -3,15 +3,18 @@
 - Aktif makine: Asus (ev). ZBook (iş) pasif. Senkron yalnız GitHub üzerinden;
   aynı anda tek makinede çalışılır.
 - Son güncelleme: 2026-11-09
-- Son tur: 2026-11-09 — H-8 DEVAM (kullanıcı: "haunch lar bozulmuş") — BİTTİ — Top-ankraj
-  kanonik çerçeve kayması: haunch levhaları kirişin İÇİNDE + kolon tepesinin üstünde
-  çıkıyordu; varsayılan parametreler (240/25) "iki bulon grubu alin levhasina sigmiyor"
-  ile reddediliyordu. Kayma artık üyenin kendi kanonik çerçevesinde (memberSectionFrame)
-  uygulanır. Kalkan: haunch_topanchor_placement_test (20 kontrol) + GT-1
-  t11_haunch_default_visual (22 adım, PNG'ler vision ile doğrulandı). ctest 157/157;
-  t9'lar, t10 yeşil. Kullanıcının "farkli ve gercek kolon/kiris kesitleri" hatası için
-  model dosyası istendi (aynı parçayı 2x seçme / katalog dışı profil şüphesi).
-  Ayrıca bu turda UI-34 BİTTİ (profil seçim penceresi — bkz. alt satır).
+- Son tur: 2026-11-09 — B-picker regresyonu + H-5 — BİTTİ —
+  (1) Kullanıcı: "yeni profil ve props düzeltmesinden sonra kiriş komutu profil
+  çizmiyor" — picker UYGULA/TAMAM yolu panele yazıyor ama pendingProfileName_'i
+  güncellemiyordu; Kiriş kapısı reddediyordu. profileApplied bağlantısı artık pending'i
+  günceller; komut kapısı KİRLİ panel değerini benimser (katalog dışıysa engeller), kirli
+  değilse bekleyen profil geçerli (bos panel ezmez — B6/H-4). Kalkan: t12_beam_picker_regression
+  (21 adım). (2) H-5: yüzeye göre görünüş yatay yüzlerde "Plan Görünüşü" sanılıyordu —
+  ViewDefinition.fromFace bayrağı eklendi; başlık "yüzey görünüşü, derinlik …" olur.
+  h1 senaryosu ayrımlı: kiriş Z=3000, üst yüz (viewTitle+viewOriginZ=3000) + yan yüz
+  (viewNormalZ). Runner: faceClick/clickWorld/fit + viewTitle/viewOriginZ/viewNormalZ.
+  Doğrulama: 13/13 GT-1, ctest 157/157, python props OK. Commit'ler fa8e853 (B-picker)
+  + 9261441 (H-5). Sıradaki: H-2 → B8 → B5 → T-planı.
 - Önceki tur: 2026-11-09 — H-8 (Haunch kolon/mertek ayrıklığı) — BİTTİ — panel kot
   uygulaması artık bağlı üye uçlarını yeni kota sabitliyor (reanchorSecondaryMembers,
   diğer ucu sabit — Tekla davranışı) + End Plate/Haunch aynı undo kaydında yeniden
