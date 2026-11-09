@@ -2054,6 +2054,9 @@ void ComponentDialogWidget::refreshSchematic() {
     // Girdi parametreleri diyalogun GUNCEL degerleri olsun (ornek girdi
     // yalnizca uye geometrisini tasir; parametreler formdan alinir).
     effective.params = resultParams();
+    // H-10: cap levhasi boslugu kolonun KENDI ust ucunu kaydirir; sema cizimi
+    // de gercek uygulamayla ayni geometriyi gostersin.
+    applyCapPlateGapToColumn(effective);
     GenerationPlan plan;
     if (nativePreview_ && previewInputGiven_) {
         plan = nativePreview_->previewPlan();

@@ -216,6 +216,14 @@ struct ComponentInput {
     std::vector<CompParam> params;
 };
 
+// H-10: `topPlateGap` (cap levhasi boslugu) GEOMETRIK karsiligi. Cap levhasi her
+// zaman kolon tepesine oturur; bosluk KOLONUN KENDI ust ucunu kaydirir (Tekla
+// "cap plate gap": + uzatir, - kisaltir). Motor plate uretiminde gap KULLANMAZ;
+// gercek uygulama (Application::shiftColumnTopNoUndo) ve canli onizleme ayni
+// kurali kullanir. Dikey uye = Z farki en buyuk olan uye (main/secondary fark
+// etmez). Gap 0 ise no-op. Donus: true = bir uye kaydirildi.
+bool applyCapPlateGapToColumn(ComponentInput& input);
+
 // Giris slotu rol anahtari ("main", "secondary_0", ...): EntityId'yi input.main /
 // input.secondary[N] ile eslestirir. MM-2b (1.9.0): planDigest EntityId'den
 // bagimsizdir; generator VE recipe bu anahtarla uye referanslarini isaretler.

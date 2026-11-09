@@ -1,14 +1,20 @@
 // CAP LEVHASI — KOLON USTU BOSLUGU (topPlateGap) — Selahattin 2026-11-09.
 //
-// Kullanıcı: "haunch'ta cap plakası ile kolon üstü için bir parametre olmalı".
-// Önceki durum: cap levhası her zaman kolon tepesine yapıştırılıyordu
-// (merkez = kolon üstü + t/2); tesviye/shim payı verilemiyordu.
-// Yeni davranış: merkez = kolon üstü + gap + t/2. gap = 0 -> ESKİ davranış
-// birebir (regresyon yok); gap > 0 -> levha bosluk kadar yukari kalkar.
+// Kullanıcı: "haunch'ta cap plakası ile kolon üstü için bir parametre olmalı" ve
+// ardından "kolon cap yeri değişince kolon üstüne göre uzayıp kısalmalı".
 //
-// Bu test: (1) parametre semada var ve varsayilani 0, (2) gap=0 ile cap
-// levhasi kolon tepesine oturur, (3) gap=25 + t=12 ile levha tam 25 mm
-// yukarida, (4) cap boslugu diger levhalari (alin levhasi) KAYDIRMAZ.
+// KARAR (kullanıcı onayı): boşluk levhayı havada bırakmaz — KOLONUN KENDİ üst
+// ucunu kaydırır; cap levhası hep (yeni) kolon tepesine oturur. Parametre 0'a
+// dönünce kolon eski boyuna döner. Bu yüzden motor `topPlateGap`'i levha
+// konumunda KULLANMAZ; kolon boyu değişimini uygulama katmanı
+// (Application::shiftColumnTopNoUndo) yapar, önizleme aynı kuralı
+// applyCapPlateGapToColumn ile uygular.
+//
+// Bu test: (1) parametre şemada var / varsayılan 0 / iki yönlü aralık, (2) gap=0
+// ile cap levhası kolon tepesine oturur (eski davranış birebir), (3) motor tek
+// başına levhayı KAYDIRMAZ (kolon boyu uygulama katmanının işi), (4) kolon +25 mm
+// uzatılıp yeniden üretilince levha 7025'e oturur, (5) negatif gap kolonu
+// kısaltır, (6) gap alın levhasını KAYDIRMAZ, (7) gap=0 no-op.
 #include "model_maker/component_engine.hpp"
 #include "model_maker/component_input_builder.hpp"
 #include "model_maker/geometry.hpp"
@@ -86,6 +92,8 @@ int main() {
             check(s.type == CompParamType::Length, "topPlateGap Length tipinde");
             check(near(s.defDouble, 0.0), "topPlateGap varsayilani 0 (eski davranis)");
             check(s.unit == L"mm", "topPlateGap birimi mm");
+            check(s.minDouble < -1.0 && s.maxDouble > 1.0,
+                  "topPlateGap iki yonlu (negatif = kolon kisalir)");
         }
     }
     check(specFound, "topPlateGap parametre semasinda VAR (diyalogda gorunur)");
@@ -110,27 +118,53 @@ int main() {
         }
     }
 
-    // 3) gap = 25, t = 12: levha 25 mm yukarida.
+    // 3) Motor TEK BASINA levhayi kaydirmaz (kolon boyu uygulama katmaninin isi).
     {
         ComponentInput in = makeInput();
         in.params.push_back(num(L"topPlateGap", 25.0));
         in.params.push_back(num(L"topPlateThickness", 12.0));
         const GenerationPlan plan =
             ComponentRegistry::instance().generate(L"tekla_haunch_40", in);
-        check(plan.ok, "gap=25: plan uretildi");
+        check(plan.ok, "gap=25 (kolon degismedi): plan uretildi");
         if (plan.ok) {
             bool found = false;
             const PlateSpec* cap = findPlate(plan, "haunch_top_plate", &found);
-            check(found, "gap=25: cap levhasi planda var");
+            check(found, "gap=25 (kolon degismedi): cap levhasi planda var");
             if (cap) {
                 const double bottom = cap->center.z - cap->thickness * 0.5;
-                std::printf("       gap=25: t=%.1f merkez_z=%.2f alt=%.2f\n",
+                std::printf("       gap=25, kolon 7000: t=%.1f merkez_z=%.2f alt=%.2f\n",
                             cap->thickness, cap->center.z, bottom);
                 check(near(cap->thickness, 12.0), "gap=25: cap kalinligi 12");
-                check(near(bottom, 7025.0), "gap=25: cap levhasi tabani 7025 (kolon ustu + 25)");
-                check(near(cap->center.z, 7031.0), "gap=25: merkez = 7000 + 25 + 12/2");
+                check(near(bottom, 7000.0),
+                      "gap=25: motor levhayi havada birakmaz (taban yine 7000)");
             }
-            // 4) Alin levhasi cap boslugundan ETKILENMEZ (x=120 yuzu).
+        }
+    }
+
+    // 4) GERCEK DAVRANIS: kolon +25 uzatilir, cap levhasi YENI tepeye oturur.
+    {
+        ComponentInput in = makeInput();
+        in.params.push_back(num(L"topPlateGap", 25.0));
+        in.params.push_back(num(L"topPlateThickness", 12.0));
+        const bool shifted = applyCapPlateGapToColumn(in);
+        check(shifted, "gap=25: kolon ust ucu kaydirildi");
+        check(near(in.main.axisTo.z, 7025.0), "gap=25: kolon ustu 7025 (+25 mm uzadi)");
+        const GenerationPlan plan =
+            ComponentRegistry::instance().generate(L"tekla_haunch_40", in);
+        check(plan.ok, "gap=25 (kolon uzatildi): plan uretildi");
+        if (plan.ok) {
+            bool found = false;
+            const PlateSpec* cap = findPlate(plan, "haunch_top_plate", &found);
+            check(found, "gap=25 (kolon uzatildi): cap levhasi planda var");
+            if (cap) {
+                const double bottom = cap->center.z - cap->thickness * 0.5;
+                std::printf("       gap=25, kolon 7025: merkez_z=%.2f alt=%.2f\n",
+                            cap->center.z, bottom);
+                check(near(bottom, 7025.0),
+                      "gap=25: cap levhasi tabani yeni kolon ustunde (7025)");
+                check(near(cap->center.z, 7031.0), "gap=25: merkez = 7025 + 12/2");
+            }
+            // 6) Alin levhasi cap boslugundan ETKILENMEZ (x=120 yuzu).
             bool epFound = false;
             const PlateSpec* ep = findPlate(plan, "haunch_end_plate", &epFound);
             check(epFound, "gap=25: alin levhasi planda var");
@@ -141,6 +175,37 @@ int main() {
                       "gap=25: alin levhasi kolon yuzunde kalir (x=120)");
             }
         }
+    }
+
+    // 5) Negatif gap: kolon KISALIR, levha yeni (alcalmis) tepeye oturur.
+    {
+        ComponentInput in = makeInput();
+        in.params.push_back(num(L"topPlateGap", -30.0));
+        in.params.push_back(num(L"topPlateThickness", 10.0));
+        const bool shifted = applyCapPlateGapToColumn(in);
+        check(shifted, "gap=-30: kolon ust ucu kaydirildi");
+        check(near(in.main.axisTo.z, 6970.0), "gap=-30: kolon ustu 6970 (-30 mm kisaldi)");
+        const GenerationPlan plan =
+            ComponentRegistry::instance().generate(L"tekla_haunch_40", in);
+        check(plan.ok, "gap=-30: plan uretildi");
+        if (plan.ok) {
+            bool found = false;
+            const PlateSpec* cap = findPlate(plan, "haunch_top_plate", &found);
+            check(found, "gap=-30: cap levhasi planda var");
+            if (cap) {
+                const double bottom = cap->center.z - cap->thickness * 0.5;
+                std::printf("       gap=-30, kolon 6970: alt=%.2f\n", bottom);
+                check(near(bottom, 6970.0),
+                      "gap=-30: cap levhasi tabani kisalmis kolon ustunde (6970)");
+            }
+        }
+    }
+
+    // 7) gap = 0 -> kaydirma YOK (eski davranis birebir korunur).
+    {
+        ComponentInput in = makeInput();
+        check(!applyCapPlateGapToColumn(in), "gap=0: kolon boyu degismedi (no-op)");
+        check(near(in.main.axisTo.z, 7000.0), "gap=0: kolon ustu 7000");
     }
 
     std::printf("%s\n", bad == 0 ? "TUM KONTROLLER GECTI" : "HATA VAR");

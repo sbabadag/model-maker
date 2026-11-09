@@ -1,0 +1,36 @@
+{
+  "backend": "gdi",
+  "timeoutMs": 180000,
+  "steps": [
+    { "profile": "HEB240" },
+    { "appColumnLevels": { "top": 7000, "bottom": 0 } },
+    { "placeColumn": { "x": 0, "y": 0, "z": 0 } },
+    { "expect": { "modelAxis": { "model": 0, "fromZ": 0, "toZ": 7000, "tol": 5 } } },
+    { "assignLine": { "x1": 0, "y1": 0, "z1": 7000, "x2": 6000, "y2": 0, "z2": 7500, "profile": "IPE300" } },
+    { "expect": { "models": { "count": 2, "profiled": 2 } } },
+
+    { "appComponent": { "typeId": "tekla_haunch_40", "parts": [0, 1], "params": { "haunchDepth": 240, "haunchTipDepth": 25 } } },
+    { "expect": { "componentCount": { "typeId": "tekla_haunch_40", "count": 1 } } },
+    { "expect": { "modelAxis": { "model": 0, "fromZ": 0, "toZ": 7000, "tol": 2 } } },
+    { "expect": { "componentPlateGap": { "typeId": "tekla_haunch_40", "childRole": "haunch_end_plate", "against": "main", "maxGap": 1.0 } } },
+
+    { "appComponentParams": { "typeId": "tekla_haunch_40", "params": { "topPlateGap": 25 } } },
+    { "expect": { "modelAxis": { "model": 0, "fromZ": 0, "toZ": 7025, "tol": 2 } } },
+    { "expect": { "componentPlateGap": { "typeId": "tekla_haunch_40", "childRole": "haunch_end_plate", "against": "main", "maxGap": 1.0 } } },
+    { "capture": "t14-gap-25" },
+
+    { "appComponentParams": { "typeId": "tekla_haunch_40", "params": { "topPlateGap": 50 } } },
+    { "expect": { "modelAxis": { "model": 0, "fromZ": 0, "toZ": 7050, "tol": 2 } } },
+
+    { "appComponentParams": { "typeId": "tekla_haunch_40", "params": { "topPlateGap": 0 } } },
+    { "expect": { "modelAxis": { "model": 0, "fromZ": 0, "toZ": 7000, "tol": 2 } } },
+
+    { "appComponentParams": { "typeId": "tekla_haunch_40", "params": { "topPlateGap": -30 } } },
+    { "expect": { "modelAxis": { "model": 0, "fromZ": 0, "toZ": 6970, "tol": 2 } } },
+
+    { "appComponentParams": { "typeId": "tekla_haunch_40", "params": { "topPlateGap": 0 } } },
+    { "expect": { "modelAxis": { "model": 0, "fromZ": 0, "toZ": 7000, "tol": 2 } } },
+    { "expect": { "componentPlateGap": { "typeId": "tekla_haunch_40", "childRole": "haunch_end_plate", "against": "main", "maxGap": 1.0 } } },
+    { "capture": "t14-gap-back-to-zero" }
+  ]
+}

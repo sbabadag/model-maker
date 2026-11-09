@@ -1979,8 +1979,8 @@ ComponentType haunch40ComponentType() noexcept {
                     L"kolon yuzu ve alin levhasi arasi bosluk"),
         lengthParam(L"topPlateThickness", L"mm", 10.0, 0.0, 60.0,
                     L"kolon cap levhasi et kalinligi (0 = yok)"),
-        lengthParam(L"topPlateGap", L"mm", 0.0, 0.0, 100.0,
-                    L"kolon ustu ile cap levhasi arasi bosluk"),
+        lengthParam(L"topPlateGap", L"mm", 0.0, -500.0, 500.0,
+                    L"cap levhasi boslugu: kolonun ust ucu bu kadar uzar (+) / kisalir (-)"),
         lengthParam(L"topPlateLength", L"mm", 230.0, 50.0, 1000.0,
                     L"eski uyumluluk alani; cap olcusu kolon kesitinden otomatik"),
         boolParam(L"createBeamStiffener", false,
@@ -2431,15 +2431,16 @@ bool haunch40CapAndStiffeners(const Haunch40Ctx& g, const ComponentInput& input,
             return false;
         }
         const Vec3 capV = vnorm(vcross(outDir, capU));
-        // KOLON USTU BOSLUGU (topPlateGap): levha merkezi = kolon ustu +
-        // gap + t/2. 0 = levha kolon tepesine oturur (eski davranis).
-        const double topGap = std::max(0.0, paramAsDouble(input.params, L"topPlateGap", 0.0));
+        // CAP LEVHASI KOLON TEPESINE OTURUR. `topPlateGap` burada KULLANILMAZ:
+        // bosluk, KOLONUN KENDI boyunu degistirir (uygulama katmani kolonun ust
+        // ucunu gap kadar kaydirir — Tekla "cap plate gap" davranisi), levha da
+        // yeni tepeye oturur. Motor saf geometri uretir; parca boyu degistirmez.
         PlateSpec cap;
         cap.axis = outDir; cap.u = capU; cap.v = capV;
         cap.width = g.p.col.secWidth;
         cap.height = g.p.col.secHeight;
         cap.thickness = topT;
-        cap.center = vadd(columnSectionTop, vscale(outDir, topT * 0.5 + topGap));
+        cap.center = vadd(columnSectionTop, vscale(outDir, topT * 0.5));
         cap.name = L"40 - Column Cap Plate";
         pushPlateWithMaterial(plan, cap, "haunch_top_plate", g.plateMaterial);
     }
@@ -2976,6 +2977,27 @@ ComponentContact componentContactCheck(const ComponentInput& input) noexcept {
         << names[k] << L" yonunde kayiklik) - uyeleri hizalayin; baglanti kurulmadi";
     out.message = msg.str();
     return out;
+}
+
+// H-10: cap levhasi boslugu -> KOLONUN KENDI boyu. Ayrinti: baslik bildirimi.
+bool applyCapPlateGapToColumn(ComponentInput& input) {
+    const double gap = paramAsDouble(input.params, L"topPlateGap", 0.0);
+    if (std::abs(gap) < 1e-9) return false;
+    const auto verticality = [](const MemberGeometry& m) {
+        const double dx = m.axisTo.x - m.axisFrom.x;
+        const double dy = m.axisTo.y - m.axisFrom.y;
+        const double dz = m.axisTo.z - m.axisFrom.z;
+        const double n = std::sqrt(dx * dx + dy * dy + dz * dz);
+        return n > 1e-9 ? std::abs(dz) / n : 0.0;
+    };
+    MemberGeometry* col = &input.main;
+    if (!input.secondary.empty() &&
+        verticality(input.secondary.front()) > verticality(input.main) + 1e-6)
+        col = &input.secondary.front();
+    if (verticality(*col) < 0.5) return false;   // dikey uye yok: bosluk uygulanmaz
+    if (col->axisTo.z >= col->axisFrom.z) col->axisTo.z += gap;
+    else col->axisFrom.z += gap;
+    return true;
 }
 
 } // namespace mm

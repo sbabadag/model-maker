@@ -1457,6 +1457,49 @@ struct Runner {
             pump(160);
             return writeStep(step, QStringLiteral("appComponent"));
         }
+        if (step.contains(QStringLiteral("appComponentParams"))) {
+            // H-10: MEVCUT bilesen kaydinin parametrelerini degistir (Properties /
+            // diyalog OK yolu). {typeId, params:{ad:deger}} — verilmeyen
+            // parametreler MEVCUT degerlerinde kalir (alignParamsToSpecs'in
+            // varsayilana cekmesini onlemek icin once kayittan kopyalanir).
+            const QJsonObject spec = step[QStringLiteral("appComponentParams")].toObject();
+            const std::wstring typeId =
+                spec[QStringLiteral("typeId")].toString().toStdWString();
+            EntityId compId = kInvalidEntityId;
+            std::vector<mm::CompParam> eff;
+            for (const auto& rec : window.application().document().componentInstances()) {
+                if (rec.orphan || rec.typeId != typeId) continue;
+                compId = rec.id;
+                eff = rec.params;
+                break;
+            }
+            if (compId == kInvalidEntityId)
+                return fail(QStringLiteral("appComponentParams: kayit yok (%1)")
+                                .arg(QString::fromStdWString(typeId)));
+            const QJsonObject po = spec[QStringLiteral("params")].toObject();
+            for (auto it = po.begin(); it != po.end(); ++it) {
+                const std::wstring name = it.key().toStdWString();
+                mm::CompParam p;
+                p.name = name;
+                const QJsonValue v = it.value();
+                if (v.isBool()) p.value = v.toBool();
+                else if (v.isString()) p.value = v.toString().toStdWString();
+                else p.value = v.toDouble();
+                bool replaced = false;
+                for (auto& cur : eff) {
+                    if (cur.name != name) continue;
+                    cur.value = p.value;
+                    replaced = true;
+                    break;
+                }
+                if (!replaced) eff.push_back(std::move(p));
+            }
+            if (!window.application().setSelectedComponentParams(compId, eff))
+                return fail(QStringLiteral("appComponentParams: uygulanamadi (%1)")
+                                .arg(QString::fromStdWString(typeId)));
+            pump(160);
+            return writeStep(step, QStringLiteral("appComponentParams"));
+        }
         if (step.contains(QStringLiteral("save"))) {
             QString path = step[QStringLiteral("save")].toString();
             const QFileInfo info(path);

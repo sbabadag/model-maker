@@ -21,12 +21,30 @@
   yeniden kur (kod artık hizasız kurulumu reddediyor).
 - Ek (2026-11-09, ZBook): **cap levhası–kolon üstü boşluğu parametresi** —
   kullanıcı: "haunch'ta cap plakası ile kolon üstü için bir parametre olmalı".
-  Yeni `topPlateGap` (mm, 0..100, varsayılan **0** = eski davranış: levha kolon
-  tepesine oturur). Cap levhası merkezi = kolon üstü + gap + t/2. Diyalog
-  "Kolon Cap" sekmesinde `t cap` + `gap cap`; 3B önizlemede `gap cap` alanı.
-  Diğer levhalar (alın levhası) kaymaz. Test: `model_maker_haunch_cap_gap_test`
-  (18 kontrol) + `component_dialog_widget_test` P4 beklentisi güncellendi
-  (cap sekmesi artık 2 alan). ctest **159/159**.
+  Yeni `topPlateGap` (varsayılan **0** = eski davranış). Diyalog "Kolon Cap"
+  sekmesinde `t cap` + `gap cap`; 3B önizlemede `gap cap` alanı. Diğer levhalar
+  (alın levhası) kaymaz. (Aşağıdaki H-10 bu parametrenin nihai davranışını
+  belirler.)
+- H-10 (aynı gün, devam): **cap boşluğu KOLON BOYUNU değiştirir** — kullanıcı:
+  "kolon cap yeri değişince kolon üstüne göre uzayıp kısalmalı". Karar (kullanıcı
+  onayı): levha havada kalmaz; kolonun üst ucu gap kadar kayar, cap levhası yeni
+  tepeye oturur; parametre 0'a dönünce kolon eski boyuna döner.
+  - Motor (`generateHaunch40`) artık gap'i levha konumunda KULLANMAZ (levha =
+    kolon üstü + t/2). Aralık ±500 mm (negatif = kolon kısalır).
+  - `Application::shiftColumnTopNoUndo` (yeni): dikey elemanın ust ucunu kaydırır,
+    katı profil/rotasyon/stille yeniden üretir, kesme zincirini tazeler; undo
+    kaydı AÇMAZ.
+  - `applyComponentFromParts` + `setSelectedComponentParams`: undo kaydı kolon
+    kaydırmadan ÖNCE açılır, `commit/recompute(openOwnRecord=false)` aynı kayda
+    yazar → tek geri-alma adımı; başarısızlıkta rollback. Düzenlemede **delta**
+    (yeni−eski) uygulanır: birikme yok.
+  - Önizleme: `applyCapPlateGapToColumn` (motor yardımcısı) — canlı 3B önizleme
+    ve 2B şema da kolonun uzadığını gösterir (taban geometri her recompute'ta
+    yeniden kurulur).
+  - Test: `haunch_cap_gap_test` 33 kontrol (motor gap'i yok sayar + yardımcı
+    ±gap + no-op), yeni GT senaryosu `tests/gt1/t14_haunch_cap_gap_column.json`
+    (7000→7025→7050→7000→6970→7000, alın levhası teması korunur) ve yeni runner
+    adımı `appComponentParams`.
 - Önceki tur: 2026-11-09 — B-picker regresyonu + H-5 — BİTTİ —
   (1) Kullanıcı: "yeni profil ve props düzeltmesinden sonra kiriş komutu profil
   çizmiyor" — picker UYGULA/TAMAM yolu panele yazıyor ama pendingProfileName_'i

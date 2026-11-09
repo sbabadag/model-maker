@@ -105,6 +105,11 @@ private:
         QDoubleSpinBox* spin{};
     };
     ComponentInput input_;
+    // H-10: cap levhasi boslugu kolonun KENDI boyunu degistirir; onizleme de
+    // gercek uygulamayla ayni gorunsun diye her recompute TABAN uye
+    // geometrisinden baslar (art arda kayma/birikme olmaz).
+    MemberGeometry baseMain_;
+    std::vector<MemberGeometry> baseSecondary_;
     // MM-5: onizleme tipi (yerlesik varsayilan; paket tipleri setTypeId ile).
     std::wstring typeId_{L"tekla_haunch_40"};
     // MM-6: veriyle tanimlanan onizleme (bos = yerlesik Haunch tablosu).

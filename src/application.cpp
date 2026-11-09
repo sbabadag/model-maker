@@ -5380,6 +5380,37 @@ void Application::applyComponentFromParts(const std::wstring& typeId,
 #ifdef MM_HAS_OCC
     ensureProfileCatalog();
 
+    // H-10: CAP LEVHASI BOSLUGU (topPlateGap) KOLON BOYUNU DEGISTIRIR.
+    // Kullanici istegi (2026-11-09): "kolon cap yeri degisince kolon ustune gore
+    // uzayip kisalmali". Motor levha konumunu degistirmez; kolonun ust ucu gap
+    // kadar kaydirilir, cap levhasi YENI tepeye oturur (levha havada kalmaz).
+    // Parametre semaya SIMDIDEN hizalanir, sonra kolon kaydirilir ve tum
+    // geometri yeni tepeye gore uretilir. Undo kaydi BURADA acilir; commit ayni
+    // kayda yazar (openOwnRecord=false) -> tek geri-alma adimi.
+    const std::vector<mm::CompParam> effParams =
+        (typeId == L"tekla_haunch_40" && type)
+            ? mm::alignParamsToSpecs(type->params, params) : params;
+    bool ownsRecord = false;
+    bool columnShifted = false;
+    {
+        const double capGap = mm::paramAsDouble(effParams, L"topPlateGap", 0.0);
+        if (std::abs(capGap) > 1e-9) {
+            pushUndoSnapshot();
+            ownsRecord = true;
+            columnShifted = shiftColumnTopNoUndo(document_.modelId(mainIdx), capGap);
+            if (!columnShifted) {
+                // Dikey olmayan ana parca / uretilemeyen kati: bosluk uygulanamaz,
+                // baglanti yine kurulur (levha kolon tepesine oturur). Sessiz
+                // gecis yok — durum cubuguna yazilir.
+                document_.rollbackOpenRecord();
+                ownsRecord = false;
+                publishStatus(display + L": cap levhasi boslugu uygulanamadi "
+                              L"(ana parca dikey profilli degil); levha kolon "
+                              L"tepesine oturdu");
+            }
+        }
+    }
+
     // 1. Generator girdisi: main (parts[0]) + secondary (parts[1..]). pickCount
     // metadata'si ile tutarli: 1 main + (pickCount-1) secondary.
     mm::ComponentInput input;
@@ -5394,11 +5425,13 @@ void Application::applyComponentFromParts(const std::wstring& typeId,
     // GIRDI DOGRULAMA (fail-loud): dejenere eksen / eksik kesit girdi kurulumu
     // sirasinda yakalanir — hangi parca, neden yazilir (sessiz gecis yok).
     if (!mm::memberGeometryUsable(input.main)) {
+        if (ownsRecord) document_.rollbackOpenRecord();
         componentCommandWarn(*this, display + L": ana parcanin ekseni/kestiti gecersiz (sifir uzunluk veya eksik kesit)");
         return;
     }
     for (const auto& s : input.secondary) {
         if (!mm::memberGeometryUsable(s)) {
+            if (ownsRecord) document_.rollbackOpenRecord();
             componentCommandWarn(*this, display + L": ikincil parcanin ekseni/kestiti gecersiz (sifir uzunluk veya eksik kesit)");
             return;
         }
@@ -5410,13 +5443,15 @@ void Application::applyComponentFromParts(const std::wstring& typeId,
     // kurulumda; dosyadan gelen kayitlarin regeneration'i etkilenmez.
     const mm::ComponentContact contact = mm::componentContactCheck(input);
     if (contact.checked && !contact.inContact) {
+        if (ownsRecord) document_.rollbackOpenRecord();
         componentCommandWarn(*this, display + L" uygulanmadi: " + contact.message);
         return;
     }
     // New Haunch40 instances must persist complete editable defaults at the
     // first commit, not only once the Properties panel is opened.
-    input.params = (typeId == L"tekla_haunch_40" && type)
-        ? mm::alignParamsToSpecs(type->params, params) : params;
+    // (H-10: parametreler yukarida hizalandi; kolon boyu bu degerlere gore
+    // ayarlandi — AYNI vektor kullanilir ki kayit ile geometri ayrisimasin.)
+    input.params = effParams;
 
     // 2. Registry -> generator -> GenerationPlan.
     const mm::GenerationPlan gp = mm::ComponentRegistry::instance().generate(typeId, input);
@@ -5431,6 +5466,9 @@ void Application::applyComponentFromParts(const std::wstring& typeId,
         bool hasFailingCheck = false;
         for (const auto& c : gp.checks)
             if (!c.pass) { hasFailingCheck = true; break; }
+        // H-10: kolon kaydirildiysa red ONCESI duruma don (aksi halde kullanici
+        // "uygulanmadi" mesajini gorurken kolon sessizce uzamis olurdu).
+        if (ownsRecord) document_.rollbackOpenRecord();
         if (hasFailingCheck && componentRejectDialogRequest_) {
             componentRejectDialogRequest_(typeId, parts, params);
         }
@@ -5440,6 +5478,7 @@ void Application::applyComponentFromParts(const std::wstring& typeId,
     // 3. GenerationPlan -> roleKey koruyan ComponentPlan.
     const mm::ComponentPlan plan = mm::componentPlanFromGenerationPlan(gp);
     if (!plan.ok) {
+        if (ownsRecord) document_.rollbackOpenRecord();
         componentCommandWarn(*this, display + L" plani olusturulamadi: " + plan.error);
         return;
     }
@@ -5449,6 +5488,7 @@ void Application::applyComponentFromParts(const std::wstring& typeId,
     const mm::ComponentMaterializer::Prepared prep =
         mat.prepare(plan, input.main.id, secondaryIds);
     if (!prep.ok) {
+        if (ownsRecord) document_.rollbackOpenRecord();
         componentCommandWarn(*this, display + L" hazirlanamadi: " + prep.error);
         return;
     }
@@ -5458,10 +5498,19 @@ void Application::applyComponentFromParts(const std::wstring& typeId,
     rec.mainPart = input.main.id;
     rec.secondaryParts = secondaryIds;
     rec.params = input.params;
-    const mm::ComponentMaterializer::CommitResult res = mat.commit(prep, rec);
+    // H-10: kolon kaydirildiysa undo kaydi ZATEN acik — commit ayni kayda yazar.
+    const mm::ComponentMaterializer::CommitResult res =
+        mat.commit(prep, rec, /*openOwnRecord=*/!ownsRecord);
     if (!res.ok) {
+        if (ownsRecord) document_.rollbackOpenRecord();
         componentCommandWarn(*this, display + L" uygulanamadi: " + res.error);
         return;
+    }
+    if (columnShifted) {
+        appendStartupLog(L"[H-10] cap levhasi boslugu: kolon ust ucu " +
+                         std::to_wstring(static_cast<int>(std::lround(
+                             mm::paramAsDouble(input.params, L"topPlateGap", 0.0)))) +
+                         L" mm kaydirildi");
     }
     // KAYNAK TESHIS: bilesenin urettigi weld kayitlarini ozetle. Kaynak kati
     // uretilemediyse NEDENINI durum cubuguna yaz — kullanici "weld atmiyor"
@@ -6645,20 +6694,51 @@ bool Application::setSelectedComponentParams(EntityId compId,
 
     // Parametreleri semaya hizala (migration), ardindan yeniden uret.
     ComponentInstanceRecord updated = document_.componentInstances()[*idx];
+    const ComponentInstanceRecord existing = updated;      // child/owned id tablosu
+    const std::vector<CompParam> oldParams = updated.params;  // H-10: eski gap
     updated.params = alignParamsToSpecs(type->params, newParams);
 
+    // H-10: CAP LEVHASI BOSLUGU KOLON BOYUNU DEGISTIRIR (delta = yeni - eski).
+    // Fark uygulanir (mutlak degil) -> parametre 0'a donunce kolon ESKI boyuna
+    // doner, tekrar tekrar kaymaz. Undo kaydi burada acilir; recompute ayni
+    // kayda yazar (openOwnRecord=false) -> tek geri-alma adimi.
+    bool ownsRecord = false;
+    bool columnShifted = false;
+    {
+        const double gapOld = paramAsDouble(oldParams, L"topPlateGap", 0.0);
+        const double gapNew = paramAsDouble(updated.params, L"topPlateGap", 0.0);
+        if (std::abs(gapNew - gapOld) > 1e-9) {
+            pushUndoSnapshot();
+            ownsRecord = true;
+            columnShifted = shiftColumnTopNoUndo(updated.mainPart, gapNew - gapOld);
+            if (!columnShifted) {
+                // Ana parca dikey degil / kati uretilemedi: bosluk uygulanmaz,
+                // parametre kaydi yine de yazilir (levha kolon tepesinde kalir).
+                document_.rollbackOpenRecord();
+                ownsRecord = false;
+                appendStartupLog(L"[H-10] cap levhasi boslugu uygulanamadi "
+                                 L"(ana parca dikey profilli degil)");
+            }
+        }
+    }
+
     // Guncel MemberGeometry + yeni parametrelerle generator -> plan.
+    // (H-10: kolon kaydirildiktan SONRA okunur — geometri yeni tepeye gore.)
     ensureProfileCatalog();
     ComponentInput input;
     if (const auto mi = document_.indexOfEntity(updated.mainPart))
         input.main = memberGeometryFor(document_, profileCatalog_, *mi);
-    else
+    else {
+        if (ownsRecord) document_.rollbackOpenRecord();
         return false;
+    }
     for (const EntityId sid : updated.secondaryParts) {
         if (const auto si = document_.indexOfEntity(sid))
             input.secondary.push_back(memberGeometryFor(document_, profileCatalog_, *si));
-        else
+        else {
+            if (ownsRecord) document_.rollbackOpenRecord();
             return false;
+        }
     }
     input.params = updated.params;
 
@@ -6673,19 +6753,31 @@ bool Application::setSelectedComponentParams(EntityId compId,
     for (const EntityId sid : updated.secondaryParts) ensureCutSolid(sid);
 
     const GenerationPlan gp = ComponentRegistry::instance().generate(updated.typeId, input);
-    if (!gp.ok) return false;
+    if (!gp.ok) {
+        if (ownsRecord) document_.rollbackOpenRecord();
+        return false;
+    }
     const ComponentPlan plan = componentPlanFromGenerationPlan(gp);
-    if (!plan.ok) return false;
+    if (!plan.ok) {
+        if (ownsRecord) document_.rollbackOpenRecord();
+        return false;
+    }
 
     ComponentMaterializer mat(document_);
     const ComponentMaterializer::Prepared prep =
         mat.prepare(plan, updated.mainPart, updated.secondaryParts);
-    if (!prep.ok) return false;
+    if (!prep.ok) {
+        if (ownsRecord) document_.rollbackOpenRecord();
+        return false;
+    }
 
     // Materializer.recompute kendi undo kaydini acar ve basarisizlikta kendini
     // geri alir — burada pushUndoSnapshot ACILMAZ (cift kayit olur).
-    const auto res = mat.recompute(prep, document_.componentInstances()[*idx], updated);
+    // H-10: kolon boyu bu metotta kaydirildiysa kayit ZATEN acik; recompute ayni
+    // kayda yazar (openOwnRecord=false) ve basarisizlikta cagiran rollback eder.
+    const auto res = mat.recompute(prep, existing, updated, /*openOwnRecord=*/!ownsRecord);
     if (!res.ok) {
+        if (ownsRecord) document_.rollbackOpenRecord();
         // SESSIZ BASARISIZLIK YOK: nedenini durum cubuguna yaz. Kullanici aksi
         // halde "degerleri girdim, Uygula'ya bastim, birlesim degismedi" der ve
         // sebebi hicbir yerde goremez.
@@ -6694,6 +6786,13 @@ bool Application::setSelectedComponentParams(EntityId compId,
         updateStatus();
         invalidateCanvas();
         return false;
+    }
+    if (columnShifted) {
+        appendStartupLog(L"[H-10] cap levhasi boslugu: kolon ust ucu " +
+                         std::to_wstring(static_cast<int>(std::lround(
+                             paramAsDouble(updated.params, L"topPlateGap", 0.0) -
+                             paramAsDouble(oldParams, L"topPlateGap", 0.0)))) +
+                         L" mm kaydirildi");
     }
 
     // KAYNAK TESHISI (diyalog OK yolu): kaynak kati uretilmediyse NEDENINI
@@ -10771,6 +10870,65 @@ bool Application::setSelectedEntityColumnLevels(double top, double bottom, bool 
     return true;
 }
 
+// H-10: CAP LEVHASI BOSLUGU KOLON BOYUNU DEGISTIRIR.
+//
+// Kullanici istegi (2026-11-09): "kolon cap yeri degisince kolon ustune gore
+// uzayip kisalmali". topPlateGap motor tarafinda levha konumunu degistirmez;
+// KOLONUN KENDI ust ucu gap kadar kaydirilir ve cap levhasi yeni tepeye oturur
+// (levha havada kalmaz). Cagiran acik undo kaydinin sahibidir: burada
+// pushUndoSnapshot/rollbackOpenRecord CAGRILMAZ - boylece kolon boyu + bilesen
+// yeniden uretimi TEK geri-alma adimi olur.
+bool Application::shiftColumnTopNoUndo(EntityId columnId, double deltaZ) {
+    if (std::abs(deltaZ) < 1e-9) return false;
+    const auto idx = document_.indexOfEntity(columnId);
+    if (!idx) return false;
+    const auto& model = document_.models()[*idx];
+    const auto& props = model.properties();
+    if (model.faces().empty() || props.profileName.empty()) return false;
+
+    Vec3 from{props.axisFromX, props.axisFromY, props.axisFromZ};
+    Vec3 to{props.axisToX, props.axisToY, props.axisToZ};
+    const double dx = to.x - from.x;
+    const double dy = to.y - from.y;
+    const double dz = to.z - from.z;
+    // Yalniz DUSEY (baskin dikey) eleman: yatay kirisin ucunu Z'de kaydirmak
+    // elemani eger/bukerdi (setSelectedEntityColumnLevels ile ayni kural).
+    if (std::abs(dz) < std::sqrt(dx * dx + dy * dy)) return false;
+    if (dz >= 0.0) to.z += deltaZ; else from.z += deltaZ;
+    if (std::abs(to.z - from.z) < 50.0) return false;  // dejenere boy
+
+    const auto* profile = mm::findProfile(profileCatalog_, props.profileName);
+    if (!profile) return false;
+    const TopoDS_Shape solid = mm::extrudeProfileSolid(
+        *profile, from, to, props.profileRotation,
+        Vec3{props.sectionNormalX, props.sectionNormalY, props.sectionNormalZ});
+    if (solid.IsNull()) return false;
+
+    auto solidModel = mm::shapeToWireframeWithFaces(solid, 0.15);
+    auto sp = solidModel.properties();
+    sp.profileName = props.profileName;
+    sp.profileRotation = props.profileRotation;
+    sp.profileSourceLine = props.profileSourceLine;
+    sp.axisFromX = from.x; sp.axisFromY = from.y; sp.axisFromZ = from.z;
+    sp.axisToX = to.x; sp.axisToY = to.y; sp.axisToZ = to.z;
+    sp.sectionNormalX = props.sectionNormalX;
+    sp.sectionNormalY = props.sectionNormalY;
+    sp.sectionNormalZ = props.sectionNormalZ;
+    sp.material = props.material;
+    sp.trueColor = props.trueColor;
+    sp.colorIndex = props.colorIndex;
+    sp.lineType = props.lineType;
+    sp.layer = props.layer;
+    sp.name = props.name;
+    sp.finish = props.finish;
+    solidModel.setProperties(std::move(sp));
+    document_.replaceModel(*idx, {std::move(solidModel)});
+    putOccSolid(*idx, solid);
+    // Kendi kesme zinciri (fitting/bolton) yeni tabana uygulanir.
+    recomputeCutTarget(columnId);
+    return true;
+}
+
 #else // !MM_HAS_OCC - kati (BRep) profil rotasyonu yok
 
 void Application::setSelectedEntityProfileRotation(double, bool) {
@@ -10780,6 +10938,12 @@ void Application::setSelectedEntityProfileRotation(double, bool) {
 
 bool Application::setSelectedEntityColumnLevels(double, double, bool) {
     publishStatus(L"Kolon kotu degisikligi icin OpenCASCADE gerekli (OCC kapali)");
+    return false;
+}
+
+bool Application::shiftColumnTopNoUndo(EntityId, double) {
+    // OCC kapali: kati yeniden uretilemez; cap boslugu kolon boyunu degistiremez.
+    publishStatus(L"Cap levhasi boslugu icin OpenCASCADE gerekli (OCC kapali)");
     return false;
 }
 

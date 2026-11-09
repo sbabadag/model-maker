@@ -199,6 +199,12 @@ public:
     // olan ikincil uyeler (kiris/mertek) yeni kota yeniden sabitlenir.
     // Basarisizlikta islem GERİ ALINIR ve false doner.
     bool setSelectedEntityColumnLevels(double top, double bottom, bool openUndo = true);
+    // H-10: cap levhasi boslugu (topPlateGap) KOLON BOYUNU degistirir. Kolonun
+    // ust ucu (dusey elemanin yuksek Z ucu) deltaZ kadar kaydirilir, kati ayni
+    // profil/rotasyon/stille yeniden uretilir. UNDO KAYDI ACMAZ — cagiran acik
+    // kaydin sahibidir (pushUndoSnapshot + gerekirse rollbackOpenRecord).
+    // false: eleman bulunamadi / dusey degil / kati uretilemedi (belge degismez).
+    bool shiftColumnTopNoUndo(EntityId columnId, double deltaZ);
     // Props satiri: secim VARKEN secime uygular, her durumda sonraki kolon
     // yerlesimi icin de saklar (tek kaynak; ENTER ve UYGULA ayni yolu kullanir).
     bool applyColumnLevels(double top, double bottom);

@@ -490,6 +490,9 @@ void ComponentLivePreviewWidget::setInput(ComponentInput input) {
         previewWarning_.clear();
     }
     input_=std::move(input);
+    // H-10: TABAN geometri (cap levhasi boslugu bunun uzerine uygulanir).
+    baseMain_=input_.main;
+    baseSecondary_=input_.secondary;
     haveInput_=input_.main.id!=kInvalidEntityId && !input_.secondary.empty();
     recompute();
 }
@@ -589,7 +592,15 @@ void ComponentLivePreviewWidget::recompute() {
         for(auto& c:callouts_)c.spin->hide();
         update();return;
     }
+    // H-10: CAP LEVHASI BOSLUGU KOLONUN KENDI BOYUNU DEGISTIRIR. Gercek
+    // uygulama kolonun ust ucunu gap kadar kaydirir ve cap levhasi yeni tepeye
+    // oturur; onizleme de ayni sekilde cizilsin. Her recompute TABANDAN baslar
+    // (art arda kayma/birikme yok).
+    input_.main=baseMain_;
+    if(baseSecondary_.size()==input_.secondary.size()) input_.secondary=baseSecondary_;
     input_.params=params_;
+    // H-10: cap levhasi boslugu kolonun KENDI ust ucunu kaydirir (ortak kural).
+    applyCapPlateGapToColumn(input_);
     GenerationPlan next=ComponentRegistry::instance().generate(typeId_,input_);
     if(next.ok) {
         plan_=std::move(next);
