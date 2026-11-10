@@ -880,6 +880,7 @@ void QtMainWindow::buildCommandHandlers() {
     };
     // steel.catalog: acilir icerik CALISMA ANINDA dynamicMenu() ile uretilir.
     h["steel.catalog"] = []() {};
+    h["component.importPackage"] = [this]() { importComponentPackage(); };
     h["steel.bridge.import"] = [this]() { importTeklaBridge(); };
     h["steel.bridge.native"] = [this]() { importTeklaBridgeNative(); };
     h["steel.bridge.template"] = [this]() { saveTeklaBridgeTemplate(); };
@@ -1174,6 +1175,28 @@ void QtMainWindow::bindRegistryShortcuts() {
         QObject::connect(sc, &QShortcut::activated, this,
                          [this, id = def.id]() { runCommandById(id); });
     }
+}
+
+void QtMainWindow::importComponentPackage() {
+    // P-1/1: paket KLASORUNU sectir (Studio <typeId>.mmcpkg klasoru olarak
+    // disa aktarir). "Projeye gom" istege bagli: model baskasina verilince
+    // paket de gider.
+    const QString dir = QFileDialog::getExistingDirectory(
+        this, QStringLiteral("Studio komponent paketi klasörünü seç (.mmcpkg)"));
+    if (dir.isEmpty()) return;
+    QMessageBox box(this);
+    box.setWindowTitle(QStringLiteral("Komponent paketi içe aktar"));
+    box.setIcon(QMessageBox::Question);
+    box.setText(QStringLiteral("Paket kullanıcı klasörüne kurulacak ve hemen "
+                               "kullanılabilir olacak."));
+    box.setInformativeText(QStringLiteral(
+        "Projeye de gömülsün mü? (model başkasına verilince paket de gider)"));
+    QCheckBox embed(QStringLiteral("Projeye göm"));
+    embed.setChecked(false);
+    box.setCheckBox(&embed);
+    box.setStandardButtons(QMessageBox::Ok | QMessageBox::Cancel);
+    if (box.exec() != QMessageBox::Ok) return;
+    app_.importComponentPackage(std::filesystem::path(dir.toStdWString()), embed.isChecked());
 }
 
 void QtMainWindow::importTeklaBridge() {

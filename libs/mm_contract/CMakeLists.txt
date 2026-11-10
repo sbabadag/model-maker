@@ -126,6 +126,16 @@ if(MM_CONTRACT_BUILD_TESTS)
         MM_PACKAGES_DIR="${CMAKE_CURRENT_LIST_DIR}/packages")
     add_test(NAME mm_contract_package_test COMMAND mm_contract_package_test)
 
+    # P-1/1..3 — paket KURULUMU (ice aktarma): atomik kopya + gecici klasor
+    # artigi yok, yerlesik typeId reddi, ayni/dusuk surum reddi (hedef paket
+    # korunur), yuksek surum kabulu (registry guncellenir).
+    add_executable(mm_contract_package_install_test
+        ${CMAKE_CURRENT_LIST_DIR}/tests/component_package_install_test.cpp)
+    target_link_libraries(mm_contract_package_install_test PRIVATE mm_component_contract mm_contract_version)
+    target_compile_definitions(mm_contract_package_install_test PRIVATE
+        MM_PACKAGES_DIR="${CMAKE_CURRENT_LIST_DIR}/packages")
+    add_test(NAME mm_contract_package_install_test COMMAND mm_contract_package_install_test)
+
     # MM-6 — veriyle tanimlanan onizleme: anchor cozucu + olcu hesabi.
     add_executable(mm_contract_component_preview_test
         ${CMAKE_CURRENT_LIST_DIR}/tests/component_preview_test.cpp)

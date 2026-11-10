@@ -2,7 +2,57 @@
 
 - Aktif makine: ZBook (iş makinesi; model deepseek-v4-flash, deneme). Asus (ev)
   pasif. Senkron yalnız GitHub üzerinden; aynı anda tek makinede çalışılır.
-- Son güncelleme: 2026-11-09
+- Son güncelleme: 2026-11-10
+- **P-1 turu (2026-11-10, ZBook, gece gözetimsiz)** — kaynak:
+  `docs/agent/P-1-STUDIO-PAKETLERI.md`. "Bugün olan" listesi kodda doğrulandı:
+  - MM-5 yükleyici (`loadComponentPackagesFrom`, `%APPDATA%\ModelMaker\components`
+    + `<proje>\components`, fail-closed): **VAR**.
+  - Paket → registry + diyalog kaydı (`loadComponentPackages`): **VAR**;
+    tipin paketten geldiği artık `ComponentRegistry::isPackageType()` ile
+    işaretli (`registerType(..., fromPackage)`).
+  - İçe aktarma komutu (`component.importPackage`): **YOKTU → eklendi** (madde 1).
+  - Yeniden yükleme komutu + geliştirme klasörü + `QFileSystemWatcher`: **YOK**
+    (madde 2).
+  - `schemaVersion` yükseltmesi + modeldeki örneklerin yeniden üretimi: **YOK**
+    (madde 3; kurulum katmanındaki sürüm kuralı eklendi, yeniden üretim sırada).
+  - Katalog: `pickCount` (1 ve 2) + `primaryMemberType`/`secondaryMemberType`
+    Türkçe seçim istemi: **VAR** (paket manifest `catalog` bloğu okunuyor).
+  - Diyalog (`dialog.json`, `autoSchematic`, `preview.dimensions`, String/Enum,
+    `documentedOnly` salt okunur, `check` hataları TR): **VAR**.
+  - `.mmw` bileşen kaydında `typeId` + `schemaVersion` + parametreler: **VAR**;
+    paket **checksum**'ı: **YOK** (madde 6).
+  - Studio paketleri golden fixture olarak (`tests/fixtures/studio_pkgs/`):
+    **YOK** (madde 7).
+  - GT-1 paket senaryosu: **YOKTU → `t15_package_import` eklendi** (madde 1).
+  - Kabul paketi + `NELER-YENI.txt`: **YOK** (madde 9).
+- **P-1/1 (içe aktarma) — BİTTİ (2026-11-10 21:15).**
+  - `mm::installComponentPackage(sourceDir, targetRoot, registry, dialogs, opts)`
+    (`src/component_package.cpp`): doğrula → geçici klasöre kopyala → KOPYAYI
+    yeniden doğrula (checksums bayt üzerinden) → `rename` ile atomik yerine koy.
+    Hata halinde hedefteki paket DOKUNULMAZ, `.tmp`/`.old` artığı silinir.
+  - Sürüm kuralı: yerleşik typeId → RED; paketten gelen tip + **yüksek**
+    `schemaVersion` → KABUL; aynı/düşük sürüm → RED (mevcut kayıt korunur).
+  - `ComponentRegistry::registerType(..., fromPackage)` + `isPackageType()`;
+    `ComponentDialogRegistry::unregisterDialog()` (yükseltmede eski şema düşer).
+  - `Application::importComponentPackage(sourceDir, embed, userRootOverride={})`
+    — kullanıcı klasörü + isteğe bağlı `<proje>\components` kopyası; sonuç
+    `lastComponentPackageMessage()` (GT/teşhis). `userRootOverride` boş değilse
+    oraya kurulur (GT izolasyonu).
+  - Komut `component.importPackage` (Komponent sekmesi + menü + hızlı arama) →
+    `QtMainWindow::importComponentPackage()` (klasör seçimi + "Projeye göm").
+  - `defaultUserComponentPackagesDir()`: `%APPDATA%` yoksa
+    `%USERPROFILE%\AppData\Roaming` yedeği; ikisi de yoksa AÇIK mesaj
+    ("hedef klasor bos (APPDATA/USERPROFILE yok)") — sessiz yutma yok.
+  - Testler: `model_maker_component_package_install_test` (**51/51 kontrol**),
+    GT `tests/gt1/t15_package_import` (**18/18 adım**, `plateGap 0.00 mm`,
+    `componentDigest p1 = de1c60be6ea84f32`, kaydet→aç aynı digest), yeni runner
+    adımları `appImportPackage` (+`userRoot` izolasyonu) ve
+    `componentTypeRegistered`; fixture `tests/fixtures/p1_pkg/` (`mm_p1_gt_pkg`).
+  - Kapı: tam derleme **exit=0** + tam ctest **161/161 exit=0** (21:13, `-j 4`).
+  - **DİKKAT (GT tuzağı):** MSYS `timeout` ile GUI testi koşulursa süreç
+    ORTAMSIZ başlıyor (`APPDATA`/`USERPROFILE` yok) → paket yolu boş. GT'yi
+    `timeout` olmadan koş. (Aynı tuzağa düşersen belirti: "hedef klasor bos".)
+- Son güncelleme (önceki): 2026-11-09
 - Son tur: 2026-11-09 (Asus) — H-2 (ters seçim: End Plate/Fin Plate/Haunch rol
   çözümü) — BİTTİ — Kök neden: plan rol anahtarları `inputRoleFor` ile konumsal
   atanıyordu; ters seçimde digest değişiyor + End Plate kiriş ucu kesimi kolonu

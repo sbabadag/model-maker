@@ -1500,6 +1500,58 @@ struct Runner {
             pump(160);
             return writeStep(step, QStringLiteral("appComponentParams"));
         }
+        if (step.contains(QStringLiteral("appImportPackage"))) {
+            // P-1/1: paket ICE AKTARMA yolunu uctan uca kosturur (klasor secimi
+            // yerine verilen kaynak). {"path": "<kaynak klasor>", "embed": bool}
+            // Kurulum ATOMIK; ret edilirse adim BASARISIZ olur (sessiz gecis yok).
+            const QJsonObject spec = step[QStringLiteral("appImportPackage")].toObject();
+            const QString path = spec[QStringLiteral("path")].toString();
+            const bool embed = spec[QStringLiteral("embed")].toBool(false);
+            // GT izolasyonu: paket senaryo-yerel koke kurulur (outDir/components),
+            // boylece gercek %APPDATA% kirlenmez ve senaryo TEKRAR kosabilir.
+            QString userRoot;
+            if (spec.contains(QStringLiteral("userRoot"))) {
+                userRoot = spec[QStringLiteral("userRoot")].toString();
+                const QFileInfo ur(userRoot);
+                if (ur.isRelative())
+                    userRoot = QFileInfo(outDir + QStringLiteral("/") + userRoot).absoluteFilePath();
+            }
+            if (path.isEmpty())
+                return fail(QStringLiteral("appImportPackage: 'path' eksik"));
+            // Goreli yol: senaryo dosyasinin klasorune gore (sabit fixture'lar).
+            QString resolved = path;
+            {
+                const QFileInfo info(path);
+                if (info.isRelative())
+                    resolved = QFileInfo(scriptDirPath_).dir().filePath(path);
+            }
+            if (!window.application().importComponentPackage(
+                    resolved.toStdWString(), embed, userRoot.toStdWString()))
+                return fail(QStringLiteral("appImportPackage: paket kurulmadi: %1 — %2")
+                                .arg(path,
+                                     QString::fromStdWString(
+                                         window.application().lastComponentPackageMessage())));
+            pump(120);
+            return writeStep(step, QStringLiteral("appImportPackage:") + path);
+        }
+        if (step.contains(QStringLiteral("componentTypeRegistered"))) {
+            // P-1/1: kurulumdan sonra tip registry'de HEMEN gorunmeli (yeniden
+            // baslatma yok). {"typeId": "...", "package": bool}
+            const QJsonObject spec = step[QStringLiteral("componentTypeRegistered")].toObject();
+            const std::wstring typeId = spec[QStringLiteral("typeId")].toString().toStdWString();
+            const bool wantPackage = spec[QStringLiteral("package")].toBool(true);
+            const mm::ComponentType* type = mm::ComponentRegistry::instance().findType(typeId);
+            if (type == nullptr)
+                return fail(QStringLiteral("componentTypeRegistered: tip yok: %1")
+                                .arg(QString::fromStdWString(typeId)));
+            if (wantPackage && !mm::ComponentRegistry::instance().isPackageType(typeId))
+                return fail(QStringLiteral("componentTypeRegistered: tip paket kaynagi degil: %1")
+                                .arg(QString::fromStdWString(typeId)));
+            return writeStep(step,
+                             QStringLiteral("componentTypeRegistered:") +
+                                 QString::fromStdWString(typeId) + QStringLiteral(" v") +
+                                 QString::number(type->schemaVersion));
+        }
         if (step.contains(QStringLiteral("save"))) {
             QString path = step[QStringLiteral("save")].toString();
             const QFileInfo info(path);

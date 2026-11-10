@@ -294,6 +294,9 @@ public:
     // Ayni typeId varsa REDDEDER (false); yoksa kaydeder (true). Bos typeId
     // veya bos specs de reddedilir.
     bool registerDialog(ComponentDialogDefinition def) noexcept;
+    // Kaydi geri alir (P-1/3 surum yukseltmesi: eski sema kaldirilip yenisi
+    // yazilir; kismi kayit birakilmaz). Bilinmeyen typeId -> false.
+    bool unregisterDialog(const std::wstring& typeId) noexcept;
     const ComponentDialogDefinition* find(const std::wstring& typeId) const noexcept;
     std::size_t count() const noexcept { return defs_.size(); }
     void clear() noexcept { defs_.clear(); }

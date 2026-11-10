@@ -399,10 +399,15 @@ public:
     static ComponentRegistry& instance() noexcept;
 
     // Ayni typeId varsa REDDEDER (false); yoksa kaydeder (true). Generator
-    // null olamaz.
-    bool registerType(ComponentType type, ComponentGenerator generator) noexcept;
+    // null olamaz. `fromPackage` (P-1/3): tip .mmcpkg paketinden mi geldi?
+    // Yerlesik tipler false; paket yukleyici/kurucu true yazar. Surum
+    // yukseltmesinde yalniz PAKET kaynakli tip degistirilebilir.
+    bool registerType(ComponentType type, ComponentGenerator generator,
+                      bool fromPackage = false) noexcept;
     // Kaydi geri alir (HR-10: paket yukleyici "kismi kayit yok" kurali). Tip yoksa false.
     bool unregisterType(const std::wstring& typeId) noexcept;
+    // Tip paketten mi geldi (yerlesik tip -> false, bilinmeyen tip -> false).
+    bool isPackageType(const std::wstring& typeId) const noexcept;
     const ComponentType* findType(const std::wstring& typeId) const noexcept;
     const ComponentGenerator* generator(const std::wstring& typeId) const noexcept;
     std::vector<std::wstring> typeIds() const noexcept;
@@ -419,6 +424,7 @@ private:
     struct Entry {
         ComponentType type;
         ComponentGenerator gen;
+        bool fromPackage{false};  // P-1/3: .mmcpkg paketinden mi geldi
     };
     std::vector<Entry> entries_;
 };

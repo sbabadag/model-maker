@@ -217,7 +217,8 @@ if(MM_GUI_TESTS AND WIN32 AND TARGET model-maker)
                      h6_held_snap_visual_hold
                      t9_haunch40_e2e t9_endplate_e2e t10_panel_profile_picker
                      t11_haunch_default_visual t12_beam_picker_regression
-                     t13_haunch_offset_failclosed t14_haunch_cap_gap_column)
+                     t13_haunch_offset_failclosed t14_haunch_cap_gap_column
+                     t15_package_import)
         add_test(NAME model_maker_gt1_${scenario}
             COMMAND model-maker
                 --test-script ${CMAKE_CURRENT_SOURCE_DIR}/tests/gt1/${scenario}.json
@@ -569,6 +570,19 @@ if(BUILD_TESTING)
     add_executable(model_maker_end_plate_cut_test tests/end_plate_cut_test.cpp)
     target_link_libraries(model_maker_end_plate_cut_test PRIVATE model_maker_core)
     add_test(NAME model_maker_end_plate_cut_test COMMAND model_maker_end_plate_cut_test)
+
+    # P-1/1..3 — PAKET KURULUMU (ice aktarma): atomik kopya (gecici klasor +
+    # yeniden adlandirma), yerlesik typeId reddi, ayni/dusuk surum reddi (hedef
+    # paket korunur), yuksek surum kabulu (registry guncellenir), gecici klasor
+    # artigi yok. Qt/OCC GEREKTIRMEZ.
+    add_executable(model_maker_component_package_install_test
+        libs/mm_contract/tests/component_package_install_test.cpp)
+    target_link_libraries(model_maker_component_package_install_test
+        PRIVATE mm_component_contract)
+    target_compile_definitions(model_maker_component_package_install_test PRIVATE
+        MM_PACKAGES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/libs/mm_contract/packages")
+    add_test(NAME model_maker_component_package_install_test
+             COMMAND model_maker_component_package_install_test)
 
     # MODELDEN KURULAN GIRDI ALTIN TESTI: Document -> componentInputFromDocument
     # -> generateHaunch40/generateEndPlate -> digest. Altin testlerin kor noktasi

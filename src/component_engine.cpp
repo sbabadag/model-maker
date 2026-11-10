@@ -315,15 +315,25 @@ GenerationPlan ComponentGenerator::operator()(const ComponentInput& input) const
     return fn_(input);
 }
 
-bool ComponentRegistry::registerType(ComponentType type, ComponentGenerator generator) noexcept {
+bool ComponentRegistry::registerType(ComponentType type, ComponentGenerator generator,
+                                     bool fromPackage) noexcept {
     if (type.typeId.empty() || generator.empty()) return false;
     for (const auto& e : entries_)
         if (e.type.typeId == type.typeId) return false;  // tekil
     Entry entry;
     entry.type = std::move(type);
     entry.gen = generator;
+    entry.fromPackage = fromPackage;
     entries_.push_back(std::move(entry));
     return true;
+}
+
+// P-1/3: tip paketten mi geldi? Yerlesik tipler `fromPackage=false` kaydolur;
+// surum yukseltmesinde yalniz paket kaynakli tip degistirilebilir.
+bool ComponentRegistry::isPackageType(const std::wstring& typeId) const noexcept {
+    for (const auto& e : entries_)
+        if (e.type.typeId == typeId) return e.fromPackage;
+    return false;
 }
 
 // Kayit GERI ALMA (HR-10): paket yukleyici "kismi kayit yok" kuralini uygulayabilmek

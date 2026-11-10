@@ -74,6 +74,51 @@ ComponentPackageScan loadComponentPackages(ComponentRegistry& registry,
                                            ComponentDialogRegistry& dialogs,
                                            const std::vector<std::filesystem::path>& roots);
 
+// --- P-1/1..3: ATOMIK KURULUM (ice aktarma) ---------------------------------
+//
+// Paketi `targetRoot` altina `<typeId>.mmcpkg/` olarak kurar: once gecici
+// klasore kopyalar, dogrular, sonra yeniden adlandirmayla YERINE KOYAR. Yarim
+// yazilmis klasor asla hedef adiyla gorunmez; hata halinde hedefteki eski paket
+// DOKUNULMAZ kalir (fail-closed).
+//
+// Surum kurali (P-1/3): ayni typeId
+//   - yerlesik bir tiple cakisiyorsa          -> RED (yerlesik tip ezilmez),
+//   - paketten gelmisse ve yeni surum BUYUKSE -> KABUL (upgrade),
+//   - paketten gelmisse ve surum AYNI/DUSUKSE -> RED (hedef paket korunur).
+// Kabul edilen paket registry'ye HEMEN kaydolur (yeniden baslatma gerekmez);
+// onceki kayit (varsa) kaldirilip yenisi yazilir — kismi kayit birakilmaz.
+struct ComponentPackageInstallOptions {
+    // Ayni surum + AYNI icerik (checksum'lar ayni) yeniden kurulabilir mi?
+    // Varsayilan false: ayni surum farkli icerikle gelirse RED.
+    bool allowIdenticalReinstall{false};
+};
+
+struct ComponentPackageInstallResult {
+    bool ok{false};
+    bool replaced{false};              // ayni typeId onceki PAKET kaydi vardi
+    bool upgraded{false};              // schemaVersion arttirildi
+    std::wstring typeId;
+    std::wstring displayName;
+    std::wstring message;              // Turkce; ok=false ise ret nedeni
+    std::filesystem::path targetDir;   // kurulan klasor (<root>/<typeId>.mmcpkg)
+    int previousSchemaVersion{0};
+    int schemaVersion{0};
+    ComponentPackageLoad package;      // dogrulanmis paket (yeniden uretim icin)
+    std::vector<std::wstring> warnings;
+};
+
+ComponentPackageInstallResult installComponentPackage(
+    const std::filesystem::path& sourceDir,
+    const std::filesystem::path& targetRoot,
+    ComponentRegistry& registry,
+    ComponentDialogRegistry& dialogs,
+    const ComponentPackageInstallOptions& options = {});
+
+// Paket yukleyicinin "bu typeId DAHA ONCE paketten yuklendi" bilgisi.
+// Kaba serilestirme (state dosyasi) icin: kayitli tip listesinden hesaplanir.
+bool isInstalledPackageType(const ComponentRegistry& registry, const std::wstring& typeId);
+
+
 // Kullanici paket klasoru: %APPDATA%\ModelMaker\components (Windows).
 // APPDATA yoksa (Linux/test) bos path doner; cagiran yalniz proje klasorunu tarar.
 std::filesystem::path defaultUserComponentPackagesDir();

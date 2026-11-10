@@ -310,6 +310,21 @@ public:
     // typeId'yi orphan isaretler, paket tipleri hazir olmali). Fail-closed:
     // bozuk paket atlanir, hata durum cubuguna yazilir; belge degismez.
     void loadComponentPackagesFrom(const std::filesystem::path& root);
+    // P-1/1: "Komponent paketi içe aktar…" — kaynak klasörü once DOGRULAR, sonra
+    // %APPDATA%\ModelMaker\components\<typeId>.mmcpkg altina ATOMIK kurar ve
+    // registry'ye hemen kaydeder (yeniden baslatma yok). `embedIntoProject` ise
+    // paket <proje>\components altina da kopyalanir (model baskasina verilince
+    // paket de gider). Gecersiz pakette HICBIR SEY degismez; Turkce ret mesaji
+    // durum cubuguna ve startup log'a yazilir.
+    // `userRootOverride` bos degilse paket oraya kurulur (GT: senaryo-yerel kok;
+    // uretimde bos = %APPDATA%\ModelMaker\components).
+    bool importComponentPackage(const std::filesystem::path& sourceDir, bool embedIntoProject,
+                                const std::filesystem::path& userRootOverride = {});
+    // P-1/1: son ice aktarma denemesinin Turkce sonucu (GT/teshis icin; basari
+    // mesaji da burada). Bos = henuz deneme yok.
+    const std::wstring& lastComponentPackageMessage() const noexcept {
+        return lastComponentPackageMessage_;
+    }
     // Katalog dosyasini diske yazar (mevcut registry'deki derived tipleri etkilemez).
     bool saveUserCatalog();
     // Calisma anindaki kullanici katalogu (salt-okunur erisim).
@@ -395,6 +410,7 @@ public:
     void flushStartupMessage();
     void appendStartupLog(const std::wstring& text);
     std::wstring pendingStartupMessage_;
+    std::wstring lastComponentPackageMessage_;  // P-1/1: son paket ice aktarma sonucu
     IRenderBackend* activeRenderBackend() noexcept { return renderBackend_.get(); }
 
     void startWorkPlaneCommand();

@@ -242,6 +242,11 @@ void addSteelCommands(CommandRegistry& r) {
               "Haunch bağlantısı (component 40)")
               .surface(CommandSurface::StatusBar)
               .keys("haunch 40 moment connection"));
+    // P-1/1: Studio'nun urettigi .mmcpkg paketini ice aktar (klasor secimi +
+    // istege bagli "projeye gom"). Registry'ye HEMEN kaydolur; yeniden baslatma yok.
+    r.add(Cmd("component.importPackage", "Komponent Paketi İçe Aktar...", "import",
+              "Studio komponent paketini (.mmcpkg) içe aktar")
+              .keys("paket ice aktar import mmcpkg studio komponent"));
     r.add(Cmd("steel.bridge.import", "İçe Aktar...", "import", "Bridge paketini içe aktar")
               .keys("bridge ice aktar import"));
     r.add(Cmd("steel.bridge.native", "Native Component'e Dönüştür...", "import",
@@ -488,7 +493,7 @@ UiPlan buildRibbonPlan() {
         group("Üyeler", {item("draw.beam"), item("draw.column")}),
         group("Bağlantı", {item("steel.bolt"), item("steel.weld"),
                            item("steel.endPlate"), item("steel.finPlate")}),
-        group("Katalog", {item("steel.catalog"),
+        group("Katalog", {item("steel.catalog"), item("component.importPackage"),
                           menu("steel.bridge", "Tekla Köprüsü",
                                {item("steel.bridge.import"),
                                 item("steel.bridge.native"),
@@ -616,7 +621,7 @@ UiPlan buildMenuPlan() {
     plan.addTab(tab("Çe&lik", {group("Çelik", {
         item("steel.bolt"), item("steel.weld"),
         separator(), item("steel.endPlate"), item("steel.finPlate"),
-        separator(), item("steel.catalog"),
+        separator(), item("steel.catalog"), item("component.importPackage"),
         menu("steel.bridge", "Tekla Köprüsü",
              {item("steel.bridge.import"), item("steel.bridge.native"),
               item("steel.bridge.template")},

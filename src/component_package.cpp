@@ -234,8 +234,11 @@ ComponentGenerator makeRecipeGenerator(ComponentDialogDefinition dialog, Recipe 
 
 // --- tek paket ---------------------------------------------------------------
 
-ComponentPackageLoad loadComponentPackage(const fs::path& dir,
-                                          const ComponentRegistry& registry) {
+namespace {
+// `allowExistingPackage` (P-1/3): tip daha once PAKETTEN yuklendiyse cakisma
+// REDDEDILMEZ (surum karsilastirmasi cagiranda). Yerlesik tip HER ZAMAN kazanir.
+ComponentPackageLoad loadPackageImpl(const fs::path& dir, const ComponentRegistry& registry,
+                                     bool allowExistingPackage) {
     ComponentPackageLoad out;
     out.dir = dir;
 
@@ -524,11 +527,21 @@ ComponentPackageLoad loadComponentPackage(const fs::path& dir,
     }
 
     // (8) CAKISMA — yerlesik veya daha once yuklenmis typeId REDDEDILIR.
-    if (registry.findType(out.typeId) != nullptr)
+    // P-1/3 istisnasi: `allowExistingPackage` + tip PAKET kaynakli ise gec
+    // (surum karsilastirmasi installComponentPackage'de yapilir).
+    if (registry.findType(out.typeId) != nullptr &&
+        !(allowExistingPackage && registry.isPackageType(out.typeId)))
         return fail(out, L"typeId zaten kayitli (yerlesik tip paketle EZILMEZ): " + out.typeId);
 
     out.ok = true;
     return out;
+}
+
+}  // namespace
+
+ComponentPackageLoad loadComponentPackage(const fs::path& dir,
+                                          const ComponentRegistry& registry) {
+    return loadPackageImpl(dir, registry, /*allowExistingPackage=*/false);
 }
 
 // --- kok tarama --------------------------------------------------------------
@@ -581,7 +594,8 @@ ComponentPackageScan loadComponentPackages(ComponentRegistry& registry,
                 report.shadowed.push_back(res.typeId + L" (" + pathText(dir) + L")");
                 continue;
             }
-            if (!registry.registerType(std::move(res.type), makeRecipeGenerator(res.dialog, res.recipe))) {
+            if (!registry.registerType(std::move(res.type), makeRecipeGenerator(res.dialog, res.recipe),
+                                       /*fromPackage=*/true)) {
                 report.errors.push_back(pathText(dir) + L": registry kaydi reddedildi (" +
                                         res.typeId + L")");
                 continue;
@@ -605,9 +619,14 @@ ComponentPackageScan loadComponentPackages(ComponentRegistry& registry,
 }
 
 fs::path defaultUserComponentPackagesDir() {
-    const char* appdata = std::getenv("APPDATA");
-    if (!appdata || !*appdata) return {};
-    return fs::path(appdata) / "ModelMaker" / "components";
+    // Birincil: %APPDATA%. Yedek: %USERPROFILE%\AppData\Roaming — bazi
+    // baslatma yollari (kisaltilmis ortam, servis/otomasyon) APPDATA'yi
+    // gecirmiyor; o durumda paket kurulumu SESSIZCE bos klasore gitmesin.
+    if (const char* appdata = std::getenv("APPDATA"); appdata && *appdata)
+        return fs::path(appdata) / "ModelMaker" / "components";
+    if (const char* profile = std::getenv("USERPROFILE"); profile && *profile)
+        return fs::path(profile) / "AppData" / "Roaming" / "ModelMaker" / "components";
+    return {};
 }
 
 fs::path projectComponentPackagesDir(const fs::path& projectFileOrDir) {
@@ -617,5 +636,185 @@ fs::path projectComponentPackagesDir(const fs::path& projectFileOrDir) {
         return projectFileOrDir.parent_path() / "components";
     return projectFileOrDir / "components";
 }
+
+// --- P-1/1..3: ATOMIK KURULUM -------------------------------------------------
+
+namespace {
+
+// Manifest'ten YALNIZ typeId okur (dogrulama degil; hedef klasor adi icin).
+std::wstring peekTypeId(const fs::path& dir) {
+    json mj;
+    std::wstring ignore;
+    if (!readJsonFile(dir / kPackageManifestFile, mj, ignore)) return {};
+    if (!mj.is_object() || !mj.contains("typeId") || !mj["typeId"].is_string()) return {};
+    return wideFromUtf8(mj["typeId"].get<std::string>());
+}
+
+// Tek dosya/klasor agacini kopyalar (paket duzdur, symlink izlenmez).
+bool copyTree(const fs::path& from, const fs::path& to, std::wstring& err) {
+    std::error_code ec;
+    fs::create_directories(to.parent_path(), ec);
+    fs::copy(from, to, fs::copy_options::recursive | fs::copy_options::overwrite_existing, ec);
+    if (ec) {
+        err = L"kopyalama basarisiz: " + pathText(from) + L" -> " + pathText(to) +
+              L" (" + wideAscii(ec.message()) + L")";
+        return false;
+    }
+    return true;
+}
+
+ComponentPackageInstallResult installFail(ComponentPackageInstallResult out, std::wstring msg) {
+    out.ok = false;
+    out.message = std::move(msg);
+    return out;
+}
+
+}  // namespace
+
+bool isInstalledPackageType(const ComponentRegistry& registry, const std::wstring& typeId) {
+    return registry.isPackageType(typeId);
+}
+
+ComponentPackageInstallResult installComponentPackage(
+    const fs::path& sourceDir, const fs::path& targetRoot, ComponentRegistry& registry,
+    ComponentDialogRegistry& dialogs, const ComponentPackageInstallOptions& options) {
+    ComponentPackageInstallResult out;
+    std::error_code ec;
+
+    // (0) kaynak klasor
+    if (sourceDir.empty() || !fs::is_directory(sourceDir, ec))
+        return installFail(out, L"paket klasoru bulunamadi: " + pathText(sourceDir));
+
+    // (1) typeId + mevcut kayit
+    out.typeId = peekTypeId(sourceDir);
+    if (out.typeId.empty())
+        return installFail(out, L"manifest.typeId okunamadi (" + pathText(sourceDir) + L")");
+
+    const ComponentType* existing = registry.findType(out.typeId);
+    const bool existingIsPackage = existing != nullptr && registry.isPackageType(out.typeId);
+    if (existing != nullptr && !existingIsPackage)
+        return installFail(out, L"typeId yerlesik bir tiple cakisiyor, paket kurulmaz: " +
+                                    out.typeId);
+
+    // (2) paketi DOGRULA (henuz hicbir sey yazilmadi)
+    ComponentPackageLoad load = loadPackageImpl(sourceDir, registry, existingIsPackage);
+    if (!load.ok) return installFail(out, load.message);
+
+    out.displayName = load.displayName;
+    out.schemaVersion = load.type.schemaVersion;
+    out.package = load;
+
+    // (3) surum kurali (P-1/3)
+    if (existing != nullptr) {
+        out.replaced = true;
+        out.previousSchemaVersion = existing->schemaVersion;
+        if (load.type.schemaVersion > existing->schemaVersion) {
+            out.upgraded = true;
+        } else if (load.type.schemaVersion == existing->schemaVersion &&
+                   options.allowIdenticalReinstall) {
+            out.upgraded = false;
+        } else {
+            return installFail(out, L"ayni typeId icin surum yukseltilmemis: mevcut " +
+                                        std::to_wstring(existing->schemaVersion) + L", paket " +
+                                        std::to_wstring(load.type.schemaVersion) +
+                                        L" (paket kurulmadi, mevcut kayit korundu)");
+        }
+    }
+
+    // (4) hedef klasor + gecici kopya
+    if (targetRoot.empty())
+        return installFail(out, L"hedef klasor bos (APPDATA/USERPROFILE yok): paket "
+                                    L"kullanici klasorune kurulamaz");
+    const fs::path target = targetRoot / (out.typeId + L".mmcpkg");
+    const fs::path tmp = targetRoot / (L"." + out.typeId + L".tmp");
+    const fs::path old = targetRoot / (L"." + out.typeId + L".old");
+    fs::create_directories(targetRoot, ec);
+    if (ec)
+        return installFail(out, L"hedef klasor olusturulamadi: " + pathText(targetRoot) +
+                                    L" (" + wideAscii(ec.message()) + L")");
+    fs::remove_all(tmp, ec);
+    fs::remove_all(old, ec);
+
+    std::wstring cerr;
+    if (!copyTree(sourceDir, tmp, cerr)) {
+        fs::remove_all(tmp, ec);
+        return installFail(out, cerr);
+    }
+    // Kopyanin kendisi de dogrulanir: checksums DOSYA UZERINDEN tutmali.
+    {
+        ComponentPackageLoad verify = loadPackageImpl(tmp, registry, true);
+        if (!verify.ok) {
+            fs::remove_all(tmp, ec);
+            return installFail(out, L"kopya dogrulanamadi: " + verify.message);
+        }
+    }
+
+    // (5) registry: eski kayit (varsa) saklanir, yenisi yazilir
+    ComponentType oldType;
+    ComponentDialogDefinition oldDialog;
+    ComponentGenerator oldGen;
+    bool hadOld = false;
+    if (existing != nullptr) {
+        oldType = *existing;
+        if (const ComponentDialogDefinition* d = dialogs.find(out.typeId)) oldDialog = *d;
+        if (const ComponentGenerator* g = registry.generator(out.typeId)) oldGen = *g;
+        hadOld = true;
+        registry.unregisterType(out.typeId);
+        dialogs.unregisterDialog(out.typeId);
+    }
+    const bool typeOk = registry.registerType(load.type, makeRecipeGenerator(load.dialog, load.recipe),
+                                             /*fromPackage=*/true);
+    const bool dialogOk = typeOk && dialogs.registerDialog(load.dialog);
+    if (!typeOk || !dialogOk) {
+        if (typeOk) registry.unregisterType(out.typeId);
+        if (dialogOk) dialogs.unregisterDialog(out.typeId);
+        if (hadOld) {
+            registry.registerType(oldType, oldGen, /*fromPackage=*/true);
+            dialogs.registerDialog(oldDialog);
+        }
+        fs::remove_all(tmp, ec);
+        return installFail(out, L"registry kaydi reddedildi, paket kurulmadi: " + out.typeId);
+    }
+
+    // (6) ATOMIK yer degistirme: eski -> .old, gecici -> hedef, .old silinir
+    auto restoreRegistry = [&]() {
+        registry.unregisterType(out.typeId);
+        dialogs.unregisterDialog(out.typeId);
+        if (hadOld) {
+            registry.registerType(oldType, oldGen, /*fromPackage=*/true);
+            dialogs.registerDialog(oldDialog);
+        }
+    };
+    const bool hadTarget = fs::exists(target, ec);
+    if (hadTarget) {
+        fs::rename(target, old, ec);
+        if (ec) {
+            restoreRegistry();
+            fs::remove_all(tmp, ec);
+            return installFail(out, L"mevcut paket yerinden alinamadi: " + pathText(target));
+        }
+    }
+    fs::rename(tmp, target, ec);
+    if (ec) {
+        if (hadTarget) {
+            std::error_code er;
+            fs::rename(old, target, er);
+        }
+        restoreRegistry();
+        fs::remove_all(tmp, ec);
+        return installFail(out, L"paket yerine konulamadi: " + pathText(target));
+    }
+    if (hadTarget) fs::remove_all(old, ec);
+
+    out.ok = true;
+    out.targetDir = target;
+    if (out.replaced)
+        out.message = L"paket guncellendi (surum " + std::to_wstring(out.previousSchemaVersion) +
+                      L" -> " + std::to_wstring(out.schemaVersion) + L"): " + out.displayName;
+    else
+        out.message = L"paket kuruldu: " + out.displayName + L" (" + out.typeId + L")";
+    return out;
+}
+
 
 }  // namespace mm

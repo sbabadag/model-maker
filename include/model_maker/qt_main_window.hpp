@@ -87,6 +87,9 @@ private:
     // Tekla "Grids" yoneticisi: mevcut gridleri listeler; duzenle/sil/
     // gorunurluk. Double-click grid property pane'in karsiligidir.
     void promptGridManager();
+    // P-1/1: Studio komponent paketi (.mmcpkg) KLASORUNU sectirir; "projeye
+    // gom" onayi ile app_.importComponentPackage() cagrilir (atomik kurulum).
+    void importComponentPackage();
     // Tekla Component Bridge: .mmbridge paket KLASORUNU sectirir ve
     // app_.importTeklaBridge() ile atomik import yapar (Windows GUI).
     void importTeklaBridge();

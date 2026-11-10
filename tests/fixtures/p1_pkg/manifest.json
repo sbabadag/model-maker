@@ -1,0 +1,8 @@
+{
+  "displayName": "P1 GT Bracket",
+  "formatVersion": "1.0.0",
+  "minContractVersion": "1.11.0",
+  "schemaVersion": 1,
+  "typeId": "mm_p1_gt_pkg",
+  "format": "mmcpkg"
+}

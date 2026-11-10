@@ -13738,6 +13738,52 @@ void Application::loadComponentPackagesFrom(const std::filesystem::path& root) {
     for (const auto& w : report.warnings) appendStartupLog(L"[paket-uyari] " + w);
 }
 
+// P-1/1 — "Komponent paketi içe aktar…": dogrula -> ATOMIK kur -> registry'ye
+// hemen kaydet. Gecersiz pakette HICBIR SEY degismez (fail-closed); Turkce neden
+// durum cubuguna ve startup log'a yazilir. Projeye gomme (embed) ikinci kopyadir:
+// kullanici klasoru her zaman kurulur, proje kopyasi ayrica kurulur.
+bool Application::importComponentPackage(const std::filesystem::path& sourceDir,
+                                        bool embedIntoProject,
+                                        const std::filesystem::path& userRootOverride) {
+    using mm::ComponentDialogRegistry;
+    using mm::ComponentPackageInstallOptions;
+    using mm::ComponentPackageInstallResult;
+    using mm::ComponentRegistry;
+    ComponentRegistry& registry = ComponentRegistry::instance();
+    ComponentDialogRegistry& dialogs = ComponentDialogRegistry::instance();
+
+    const std::filesystem::path userRoot =
+        userRootOverride.empty() ? mm::defaultUserComponentPackagesDir() : userRootOverride;
+    const ComponentPackageInstallResult installed = mm::installComponentPackage(
+        sourceDir, userRoot, registry, dialogs);
+    appendStartupLog(L"[paket-import] " + installed.typeId + L": " + installed.message);
+    if (!installed.ok) {
+        lastComponentPackageMessage_ = installed.message;
+        componentCommandWarn(*this, L"paket kurulmadı: " + installed.message);
+        return false;
+    }
+
+    std::wstring status = installed.message;
+    if (embedIntoProject) {
+        if (!currentFilePath_.has_value() || currentFilePath_->empty()) {
+            status += L" | proje kaydedilmemiş: gömme atlandı";
+        } else {
+            ComponentPackageInstallOptions opt;
+            opt.allowIdenticalReinstall = true;  // ayni surum proje kopyasina da kurulur
+            const ComponentPackageInstallResult inProject = mm::installComponentPackage(
+                sourceDir, mm::projectComponentPackagesDir(*currentFilePath_), registry, dialogs,
+                opt);
+            if (inProject.ok)
+                status += L" | projeye gömüldü";
+            else
+                status += L" | proje kopyası kurulamadı: " + inProject.message;
+        }
+    }
+    lastComponentPackageMessage_ = status;
+    publishStatus(status);
+    return true;
+}
+
 bool Application::saveUserCatalog() {
     std::string err;
     if (!userCatalog_.save(userCatalogPath(), err)) {

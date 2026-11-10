@@ -1,0 +1,133 @@
+{
+  "backend": "gdi",
+  "timeoutMs": 180000,
+  "_comment": "P-1/1 — Studio komponent paketi ICE AKTARMA: kurulum -> registry'de hemen gorunur -> katalog tipiyle uygula -> kaydet/ac ayni geometri. Paket fixture'i tests/fixtures/p1_pkg (yerlesik olmayan typeId).",
+  "steps": [
+    {
+      "appImportPackage": {
+        "path": "../fixtures/p1_pkg",
+        "embed": false,
+        "userRoot": "components"
+      }
+    },
+    {
+      "componentTypeRegistered": {
+        "typeId": "mm_p1_gt_pkg",
+        "package": true
+      }
+    },
+    {
+      "profile": "HEB240"
+    },
+    {
+      "appColumnLevels": {
+        "top": 7000,
+        "bottom": 0
+      }
+    },
+    {
+      "placeColumn": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      }
+    },
+    {
+      "expect": {
+        "models": {
+          "count": 1,
+          "profiled": 1
+        }
+      }
+    },
+    {
+      "assignLine": {
+        "x1": 0,
+        "y1": 0,
+        "z1": 7000,
+        "x2": 6000,
+        "y2": 0,
+        "z2": 7000,
+        "profile": "IPE300"
+      }
+    },
+    {
+      "expect": {
+        "models": {
+          "count": 2,
+          "profiled": 2
+        }
+      }
+    },
+    {
+      "appComponent": {
+        "typeId": "mm_p1_gt_pkg",
+        "parts": [
+          0,
+          1
+        ]
+      }
+    },
+    {
+      "expect": {
+        "componentCount": {
+          "typeId": "mm_p1_gt_pkg",
+          "count": 1
+        }
+      }
+    },
+    {
+      "expect": {
+        "componentPlateGap": {
+          "typeId": "mm_p1_gt_pkg",
+          "against": "main",
+          "maxGap": 2.0
+        }
+      }
+    },
+    {
+      "capture": {
+        "name": "t15-paket-ice-aktarma",
+        "target": "window"
+      }
+    },
+    {
+      "expect": {
+        "componentDigest": {
+          "typeId": "mm_p1_gt_pkg",
+          "key": "p1",
+          "remember": true
+        }
+      }
+    },
+    {
+      "save": "t15_paket.mmw"
+    },
+    {
+      "open": "t15_paket.mmw"
+    },
+    {
+      "expect": {
+        "componentCount": {
+          "typeId": "mm_p1_gt_pkg",
+          "count": 1
+        }
+      }
+    },
+    {
+      "expect": {
+        "componentDigest": {
+          "typeId": "mm_p1_gt_pkg",
+          "key": "p1",
+          "equals": true
+        }
+      }
+    },
+    {
+      "capture": {
+        "name": "t15-paket-yeniden-acildi",
+        "target": "window"
+      }
+    }
+  ]
+}

@@ -482,6 +482,17 @@ bool ComponentDialogRegistry::registerDialog(ComponentDialogDefinition def) noex
     return true;
 }
 
+// P-1/3: surum yukseltmesinde eski diyalog semasi kaldirilir.
+bool ComponentDialogRegistry::unregisterDialog(const std::wstring& typeId) noexcept {
+    for (auto it = defs_.begin(); it != defs_.end(); ++it) {
+        if (it->typeId == typeId) {
+            defs_.erase(it);
+            return true;
+        }
+    }
+    return false;
+}
+
 const ComponentDialogDefinition* ComponentDialogRegistry::find(const std::wstring& typeId) const noexcept {
     for (const auto& d : defs_)
         if (d.typeId == typeId) return &d;
