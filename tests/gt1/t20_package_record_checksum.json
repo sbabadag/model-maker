@@ -1,0 +1,212 @@
+{
+  "backend": "gdi",
+  "timeoutMs": 180000,
+  "_comment": "P-1/6 — KAYIT. .mmw bilesen kaydi paket icerik ozetini tasir. (1) v1 paketi uygula, kaydet. (2) v2 paketini ice aktar (schemaVersion 2, levha +10 mm) -> ayni .mmw acilinca ozet FARKLI: 'Paket guncellendi' + geometri yeniden uretilir (digest DEGISIR). (3) paketi kaldir -> ayni .mmw acilinca 'paket eksik' uyarisi, geometri DOSYADAKI haliyle KORUNUR (v1 digest), duzenleme KILITLI (appComponentParams reddedilir).",
+  "steps": [
+    {
+      "appImportPackage": {
+        "path": "../fixtures/p1_dialog",
+        "embed": false,
+        "userRoot": "components"
+      }
+    },
+    {
+      "componentTypeRegistered": {
+        "typeId": "mm_p1_dialog_pkg",
+        "package": true,
+        "schemaVersion": 1
+      }
+    },
+    {
+      "profile": "HEB300"
+    },
+    {
+      "appColumnLevels": {
+        "top": 3000,
+        "bottom": 0
+      }
+    },
+    {
+      "placeColumn": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      }
+    },
+    {
+      "appComponent": {
+        "typeId": "mm_p1_dialog_pkg",
+        "parts": [
+          0
+        ]
+      }
+    },
+    {
+      "expect": {
+        "componentCount": {
+          "typeId": "mm_p1_dialog_pkg",
+          "count": 1
+        }
+      }
+    },
+    {
+      "expect": {
+        "componentDigest": {
+          "typeId": "mm_p1_dialog_pkg",
+          "key": "v1",
+          "remember": true
+        }
+      }
+    },
+    {
+      "save": "t20_paket.mmw"
+    },
+    {
+      "capture": {
+        "name": "t20-v1-kaydedildi",
+        "target": "window"
+      }
+    },
+    {
+      "appImportPackage": {
+        "path": "../fixtures/p1_dialog_v2",
+        "embed": false,
+        "userRoot": "components"
+      }
+    },
+    {
+      "componentTypeRegistered": {
+        "typeId": "mm_p1_dialog_pkg",
+        "package": true,
+        "schemaVersion": 2
+      }
+    },
+    {
+      "open": "t20_paket.mmw"
+    },
+    {
+      "expect": {
+        "startupLog": {
+          "contains": "Paket güncellendi: 1 örnek"
+        }
+      }
+    },
+    {
+      "expect": {
+        "componentCount": {
+          "typeId": "mm_p1_dialog_pkg",
+          "count": 1
+        }
+      }
+    },
+    {
+      "expect": {
+        "componentDigest": {
+          "typeId": "mm_p1_dialog_pkg",
+          "key": "v1",
+          "notEquals": true
+        }
+      }
+    },
+    {
+      "expect": {
+        "componentDigest": {
+          "typeId": "mm_p1_dialog_pkg",
+          "key": "v2",
+          "remember": true
+        }
+      }
+    },
+    {
+      "fit": true
+    },
+    {
+      "capture": {
+        "name": "t20-paket-guncellendi-yeniden-uretim",
+        "target": "window"
+      }
+    },
+    {
+      "appRemovePackage": {
+        "typeId": "mm_p1_dialog_pkg",
+        "userRoot": "components",
+        "deleteDir": true
+      }
+    },
+    {
+      "open": "t20_paket.mmw"
+    },
+    {
+      "expect": {
+        "startupLog": {
+          "contains": "kayıtlı olmayan component türü"
+        }
+      }
+    },
+    {
+      "expect": {
+        "componentCount": {
+          "typeId": "mm_p1_dialog_pkg",
+          "count": 1
+        }
+      }
+    },
+    {
+      "expect": {
+        "componentDigest": {
+          "typeId": "mm_p1_dialog_pkg",
+          "key": "v1",
+          "equals": true
+        }
+      }
+    },
+    {
+      "appComponentParams": {
+        "typeId": "mm_p1_dialog_pkg",
+        "params": {
+          "bp_t": 30.0
+        },
+        "expectFail": true
+      }
+    },
+    {
+      "capture": {
+        "name": "t20-paket-eksik-duzenleme-kilitli",
+        "target": "window"
+      }
+    },
+    {
+      "appImportPackage": {
+        "path": "../fixtures/p1_dialog_v2",
+        "embed": false,
+        "userRoot": "components"
+      }
+    },
+    {
+      "open": "t20_paket.mmw"
+    },
+    {
+      "expect": {
+        "componentCount": {
+          "typeId": "mm_p1_dialog_pkg",
+          "count": 1
+        }
+      }
+    },
+    {
+      "expect": {
+        "componentDigest": {
+          "typeId": "mm_p1_dialog_pkg",
+          "key": "v2",
+          "equals": true
+        }
+      }
+    },
+    {
+      "capture": {
+        "name": "t20-paket-geri-gelince-ayni",
+        "target": "window"
+      }
+    }
+  ]
+}

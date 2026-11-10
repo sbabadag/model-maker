@@ -1,0 +1,8 @@
+{
+  "displayName": "P1/5 Diyalog Paketi",
+  "format": "mmcpkg",
+  "formatVersion": "1.0.0",
+  "minContractVersion": "1.11.0",
+  "schemaVersion": 2,
+  "typeId": "mm_p1_dialog_pkg"
+}

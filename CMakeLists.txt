@@ -219,7 +219,8 @@ if(MM_GUI_TESTS AND WIN32 AND TARGET model-maker)
                      t11_haunch_default_visual t12_beam_picker_regression
                      t13_haunch_offset_failclosed t14_haunch_cap_gap_column
                      t15_package_import t16_package_reload t17_package_version_upgrade
-                     t18_base_plate_pick1 t19_package_dialog)
+                     t18_base_plate_pick1 t19_package_dialog
+                     t20_package_record_checksum)
         add_test(NAME model_maker_gt1_${scenario}
             COMMAND model-maker
                 --test-script ${CMAKE_CURRENT_SOURCE_DIR}/tests/gt1/${scenario}.json

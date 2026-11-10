@@ -58,6 +58,8 @@ static bool sameComponent(const ComponentInstanceRecord& a, const ComponentInsta
     if (a.id != b.id || a.typeId != b.typeId || a.schemaVersion != b.schemaVersion ||
         a.mainPart != b.mainPart || a.enabled != b.enabled)
         return false;
+    // P-1/6: paket icerik ozeti .mmw'de korunmali (kaydet/ac ayni).
+    if (a.packageChecksum != b.packageChecksum) return false;
     if (a.secondaryParts != b.secondaryParts) return false;
     if (a.ownedPlateIds != b.ownedPlateIds) return false;
     if (a.ownedBoltGroupIds != b.ownedBoltGroupIds) return false;
@@ -155,6 +157,9 @@ static ComponentInstanceRecord buildRichRecord(EntityId id) {
 
     r.handles = {ConstraintHandleDef{HandleKey{"plate_face"}, HandleKind::Plane, Vec3{0, 0, 0}}};
     r.dependencies = {ConstraintDependency{HandleKey{"plate_face"}, HandleKey{"member_end"}}};
+    // P-1/6: kayit, uygulandigi paketin icerik ozetini tasir (64 hex).
+    r.packageChecksum =
+        "55d54f79ff922889f0537aec387d893fe51963ed8d55db0f58421c5661ee6121";
     return r;
 }
 
@@ -179,6 +184,8 @@ static void testCodecRoundTrip() {
         const auto& got = parsed.componentInstances[0];
         const auto& exp = doc.componentInstances[0];
         check(sameComponent(got, exp), "tum veri alanlari BIREBIR korunur");
+        check(got.packageChecksum == exp.packageChecksum && !got.packageChecksum.empty(),
+              "P-1/6 paket icerik ozeti .mmw'de korunur");
         check(got.dirty, "okunan kayit kirli (recompute bekliyor)");
         check(!got.orphan, "codec seviyesinde orphan turetilmez");
         bool gradeOk = false, refOk = false;

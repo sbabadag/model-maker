@@ -1,0 +1,49 @@
+{
+  "formatVersion": "1.0.0",
+  "groups": [
+    {
+      "asTab": true,
+      "background": "",
+      "canvasHeight": 0,
+      "canvasWidth": 0,
+      "emptyNote": "",
+      "figures": [],
+      "id": "levha",
+      "keepIfEmpty": false,
+      "layout": "",
+      "paramNames": [
+        "bp_t",
+        "bp_ext",
+        "malzeme"
+      ],
+      "partRows": [],
+      "placed": [],
+      "prefix": "",
+      "title": "Levha"
+    },
+    {
+      "asTab": true,
+      "background": "",
+      "canvasHeight": 0,
+      "canvasWidth": 0,
+      "emptyNote": "",
+      "figures": [],
+      "id": "bulon",
+      "keepIfEmpty": false,
+      "layout": "",
+      "paramNames": [
+        "kalite",
+        "notlar"
+      ],
+      "partRows": [],
+      "placed": [],
+      "prefix": "",
+      "title": "Bulon"
+    }
+  ],
+  "hotspots": [],
+  "items": [],
+  "typeId": "mm_p1_dialog_pkg",
+  "useTabs": true,
+  "weldRows": []
+}

@@ -5517,6 +5517,9 @@ void Application::applyComponentFromParts(const std::wstring& typeId,
     mm::ComponentInstanceRecord rec;
     rec.typeId = typeId;
     rec.schemaVersion = type ? type->schemaVersion : 1;
+    // P-1/6: kayit, UYGULANDIGI paket iceriginin ozetini tasir (.mmw'ye yazilir;
+    // acilista paket degistiyse yeniden uretim tetikler). Yerlesik tip -> bos.
+    rec.packageChecksum = type ? type->packageChecksum : std::string();
     rec.mainPart = input.main.id;
     rec.secondaryParts = secondaryIds;
     rec.params = input.params;
@@ -6722,9 +6725,22 @@ bool Application::setSelectedComponentParams(EntityId compId,
     const ComponentType* type =
         ComponentRegistry::instance().findType(document_.componentInstances()[*idx].typeId);
     if (!type) return false;
+    // P-1/6: PAKET EKSIKSE DUZENLEME KILITLI. Kayit (params/geometri) korunur
+    // ama recipe olmadigi icin uretim yapilamaz; sessiz false yerine nedenini
+    // yaz (aksi halde "degerleri girdim, hicbir sey olmadi" ile karsilasilir).
+    if (document_.componentInstances()[*idx].orphan) {
+        solidStatusMessage_ =
+            L"Paket eksik: " + document_.componentInstances()[*idx].typeId +
+            L" — düzenleme kilitli (önce paketi içe aktarın)";
+        updateStatus();
+        return false;
+    }
 
     // Parametreleri semaya hizala (migration), ardindan yeniden uret.
     ComponentInstanceRecord updated = document_.componentInstances()[*idx];
+    // P-1/6: parametre duzenlemesi kaydi GUNCEL paket ozetine damgalar (aksi
+    // halde her acilista "paket degisti" sanilip gereksiz yeniden uretim olur).
+    updated.packageChecksum = type->packageChecksum;
     const ComponentInstanceRecord existing = updated;      // child/owned id tablosu
     const std::vector<CompParam> oldParams = updated.params;  // H-10: eski gap
     updated.params = alignParamsToSpecs(type->params, newParams);
@@ -13371,6 +13387,47 @@ bool Application::openDocumentPath(const std::wstring& path) {
             if (prepared) commitEndPlateConnection(i, *prepared);
             progress.report(++completedSteps, totalSteps, "Uç levha bağlantıları yeniden çözülüyor");
         }
+        // P-1/6: PAKET DEGISTI MI? .mmw kaydi, uygulandigi paketin icerik
+        // ozetini tasir. Registry'deki ozet FARKLIYSA (Studio Ctrl+S / paket
+        // yeniden ice aktarildi) ornek madde 3 kuralina gore yeniden eslenir
+        // (ada gore parametre) ve asagidaki recompute ile yeniden uretilir;
+        // rapor durum cubuguna yazilir. Ozetsiz (eski dosya) kayitlar
+        // "bilinmiyor" sayilir — yalniz damgalanir, yeniden uretim zorlanmaz.
+        std::wstring packageNote;   // P-1/6: recompute SONRASI yayinlanir
+        {
+            int stale = 0;
+            std::vector<std::wstring> changed;
+            for (std::size_t i = 0; i < document_.componentInstances().size(); ++i) {
+                ComponentInstanceRecord rec = document_.componentInstances()[i];
+                if (rec.orphan) continue;
+                const ComponentType* type = ComponentRegistry::instance().findType(rec.typeId);
+                if (type == nullptr) continue;
+                if (type->packageChecksum.empty()) continue;
+                if (rec.packageChecksum == type->packageChecksum) continue;
+                const bool unknownBefore = rec.packageChecksum.empty();
+                ComponentParamRemap rep;
+                rec.params = mm::remapParamsToSpecs(type->params, rec.params, &rep);
+                rec.schemaVersion = type->schemaVersion;
+                rec.packageChecksum = type->packageChecksum;
+                if (!document_.setComponentInstance(i, rec)) continue;
+                ++stale;
+                if (!unknownBefore) changed.push_back(rec.typeId);
+            }
+            if (stale > 0) {
+                std::wstring& msg = packageNote;
+                msg = L"Paket güncellendi: " + std::to_wstring(stale) +
+                      L" örnek yeniden üretildi";
+                if (!changed.empty()) {
+                    msg += L" (";
+                    for (std::size_t k = 0; k < changed.size(); ++k) {
+                        if (k) msg += L", ";
+                        msg += changed[k];
+                    }
+                    msg += L")";
+                }
+                appendStartupLog(L"[paket-checksum] " + msg);
+            }
+        }
         // P1: AÇILIS SONRASI PARAMETRIK COMPONENT RECOMPUTE (Fin Plate vb.).
         // ComponentInstanceRecord parametreleri tasir; acilista yeniden uretilir
         // (roleKey->EntityId korunur, MMW8 'N' blogu sayesinde). Bilinmeyen typeId
@@ -13410,8 +13467,12 @@ bool Application::openDocumentPath(const std::wstring& path) {
                     msg += orphans[i];
                 }
                 publishStatus(msg);
+                appendStartupLog(L"[paket-eksik] " + msg);
             }
         }
+        // P-1/6: paket ozeti raporu EN SON yayinlanir — aksi halde recompute'in
+        // "Component otomatik yenilendi" mesaji bunu ezer.
+        if (!packageNote.empty()) publishStatus(packageNote);
         purgeStaleAxisLines();
         refreshLayerCombo();
         if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
@@ -13878,6 +13939,7 @@ int Application::reloadComponentPackages() {
         ComponentInstanceRecord updated = rec;
         updated.params = std::move(remapped);
         updated.schemaVersion = type->schemaVersion;
+        updated.packageChecksum = type->packageChecksum;   // P-1/6
         // 'dirty' BURADA set EDILMEZ: dirty "bagimlilik grafigi yeniden
         // hesaplama istiyor" demek; esleme sonrasi yeniden uretim asagida
         // ACIKCA kosar. Set edilirse basari sonrasi bayrak asili kalir ve

@@ -166,6 +166,35 @@
   - Yeni runner adımları: `componentDialogSchema {typeId, groups, tabs,
     useTabs, paramCount, titles}`; `appComponentParams` artık `expectFail`.
   - Regresyon: t18 18/18, t17, t16, t15, t14, t13 hepsi exit=0.
+- **P-1/6 (kayıt) — BİTTİ (2026-11-10 23:20).**
+  - `.mmw` bileşen kaydı artık **paket içerik özetini** taşıyor:
+    `ComponentType.packageChecksum` (checksums.json dosya özetlerinin kanonik
+    sha256'sı) + `ComponentInstanceRecord.packageChecksum`. MMW8 'I' bloğunda
+    satır SONUNA eklenir; **eski dosyalarda yoktur → boş okunur** (geriye
+    uyumlu, digest'ler değişmedi).
+  - Açılışta üç durum:
+    1. özet AYNI → hiçbir şey yapılmaz;
+    2. özet FARKLI (Studio Ctrl+S / paket yeniden içe aktarıldı) → parametre
+       ada göre yeniden eşlenir + örnek yeniden üretilir, kalıcı loga
+       `[paket-checksum] Paket güncellendi: N örnek yeniden üretildi (tip)`;
+    3. paket YOK (tip kayıtlı değil) → kayıt `orphan`, geometri **dosyadaki
+       hâliyle** korunur, `[paket-eksik] Uyarı: ...` yazılır ve **düzenleme
+       kilitlenir** (`Paket eksik: <typeId> — düzenleme kilitli (önce paketi
+       içe aktarın)`).
+  - Özet, uygulama/parametre düzenleme/reload yollarında damgalanır (aksi
+    halde her açılışta gereksiz yeniden üretim olurdu).
+  - Testler: `component_serialize_test` +1 ("P-1/6 paket içerik özeti .mmw'de
+    korunur"; 52/52, FAILURES: 0), GT `tests/gt1/t20_package_record_checksum`
+    (**31/31**: v1 uygula+kaydet → v2 içe aktar → aç: "Paket güncellendi" ve
+    digest `d3210a7a29c550ec` → `b7e01819b7d8c7ec`; paketi kaldır → aç:
+    "kayıtlı olmayan component türü", digest **dosyadaki hâline** döner
+    (`d3210a…`), düzenleme reddedilir; paketi geri kur → aç: v2 digest aynı).
+  - Yeni runner adımları: `appRemovePackage {typeId, userRoot, deleteDir}`,
+    `expect.startupLog {contains}` (kalıcı teşhis logu; durum çubuğu sonradan
+    ezilebildiği için uzun açılış raporlarının tek güvenilir kanıtı).
+  - Fixture: `tests/fixtures/p1_dialog_v2` (schemaVersion 2, levha +10 mm).
+  - Regresyon: t19 27/27, t18 18/18, t17 23/23, t16 21/21, t15 18/18,
+    t14 24/24, t13 11/11 hepsi OK.
 - Son güncelleme (önceki): 2026-11-09
 - Son tur: 2026-11-09 (Asus) — H-2 (ters seçim: End Plate/Fin Plate/Haunch rol
   çözümü) — BİTTİ — Kök neden: plan rol anahtarları `inputRoleFor` ile konumsal

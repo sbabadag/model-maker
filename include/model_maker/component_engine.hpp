@@ -368,6 +368,11 @@ struct ComponentType {
     std::wstring displayName;
     std::vector<CompParamSpec> params;
     ComponentCatalogMeta catalog;  // C7: katalog/generic UI metadatasi (bos = gizli)
+    // P-1/6: PAKET ICERIK OZETI (sha256 hex, utf8). checksums.json'daki dosya
+    // ozetlerinin kanonik bilesimi. Bos = yerlesik tip (paketten gelmedi).
+    // .mmw'ye yazilir; acilista paket degismisse (checksum farkli) ornek
+    // madde 3'teki gibi yeniden eslenip uretilir.
+    std::string packageChecksum;
 };
 
 // Generator cagrilabilir tipi (MM-5): TYPE-ERASED.
@@ -481,6 +486,10 @@ struct ComponentInstanceRecord {
     EntityId id{kInvalidEntityId};
     std::wstring typeId;
     int schemaVersion{1};
+    // P-1/6: kayit, UYGULANDIGI paket iceriginin ozetini tasir. Acilista
+    // registry'deki paket ozeti farkliysa (Studio paketi guncellendi) ornek
+    // yeniden uretilir ve raporlanir; bos = eski dosya / yerlesik tip.
+    std::string packageChecksum;
     EntityId mainPart{kInvalidEntityId};
     std::vector<EntityId> secondaryParts;
     std::vector<CompParam> params;

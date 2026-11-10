@@ -306,6 +306,10 @@ ComponentPackageLoad loadPackageImpl(const fs::path& dir, const ComponentRegistr
                 kPackageManifestFile, kPackageParametersFile,
                 kPackageDialogFile, kPackageRecipeFile};
             std::set<std::string> covered;
+            // P-1/6: PAKET ICERIK OZETI. Dosya ozetlerinin KANONIK bilesimi
+            // (anahtar sirali) -> tek sha256. .mmw'ye yazilir; acilista paket
+            // degismisse (Studio Ctrl+S) ornek yeniden uretilir.
+            std::string contentAccum;
             for (auto it = cj.begin(); it != cj.end(); ++it) {
                 const std::string key = it.key();
                 if (!isSafeRelativeKey(key))
@@ -331,11 +335,13 @@ ComponentPackageLoad loadPackageImpl(const fs::path& dir, const ComponentRegistr
                     return fail(out, msg);
                 }
                 covered.insert(key);
+                contentAccum += key + ":" + actual + "\n";
             }
             for (const auto& r : required) {
                 if (!covered.count(r))
                     return fail(out, L"checksums.json zorunlu dosyayi kapsamiyor: " + wideAscii(r));
             }
+            out.type.packageChecksum = sha256Hex(contentAccum);
         } else {
             out.warnings.push_back(L"checksums.json yok — butunluk dogrulamasi atlandi");
         }

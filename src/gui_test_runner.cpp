@@ -585,6 +585,26 @@ struct Runner {
                                  expect[QStringLiteral("backend")].toString());
         // "status": {contains: "..."} — durum cubugu metninin ALT DIZGE icermesi
         // (publishStatus/updateStatus yolu; H-1 "açıldı" kaniti gibi).
+        // "startupLog": {contains, tailLines?} — KALICI teshis logu
+        // (model-maker-startup.log). Durum cubugu sonradan ezilebildigi icin
+        // uzun acilis raporlarinin (paket guncellendi / paket eksik) tek
+        // guvenilir kaniti burasidir.
+        if (expect.contains(QStringLiteral("startupLog"))) {
+            const QJsonObject expected = expect[QStringLiteral("startupLog")].toObject();
+            const QString needle = expected[QStringLiteral("contains")].toString();
+            const QString logPath = QCoreApplication::applicationDirPath() +
+                                    QStringLiteral("/model-maker-startup.log");
+            QFile lf(logPath);
+            QString text;
+            if (lf.open(QIODevice::ReadOnly | QIODevice::Text))
+                text = QString::fromUtf8(lf.readAll());
+            if (text.isEmpty())
+                problems << QStringLiteral("startupLog: log okunamadi (%1)").arg(logPath);
+            else if (!text.contains(needle))
+                problems << QStringLiteral("startupLog \"%1\" icermiyor").arg(needle);
+            else
+                log(QStringLiteral("startupLog: \"%1\" bulundu").arg(needle));
+        }
         if (expect.contains(QStringLiteral("status"))) {
             const QJsonObject expected = expect[QStringLiteral("status")].toObject();
             const QString current = window.statusBar() &&
@@ -1518,10 +1538,15 @@ struct Runner {
             const QJsonObject spec = step[QStringLiteral("appComponentParams")].toObject();
             const std::wstring typeId =
                 spec[QStringLiteral("typeId")].toString().toStdWString();
+            // P-1/6: orphan (paket eksik) kayit da BULUNUR — "duzenleme kilitli"
+            // ancak boyle dogrulanabilir (setSelectedComponentParams reddeder).
+            const bool expectFailEarly =
+                spec.value(QStringLiteral("expectFail")).toBool(false);
             EntityId compId = kInvalidEntityId;
             std::vector<mm::CompParam> eff;
             for (const auto& rec : window.application().document().componentInstances()) {
-                if (rec.orphan || rec.typeId != typeId) continue;
+                if (rec.orphan && !expectFailEarly) continue;
+                if (rec.typeId != typeId) continue;
                 compId = rec.id;
                 eff = rec.params;
                 break;
@@ -1561,6 +1586,32 @@ struct Runner {
                                 .arg(QString::fromStdWString(typeId)));
             pump(160);
             return writeStep(step, QStringLiteral("appComponentParams"));
+        }
+        if (step.contains(QStringLiteral("appRemovePackage"))) {
+            // P-1/6: "PAKET EKSIK" SENARYOSU. Kurulu paketi registry'den ve
+            // senaryo-yerel koke (outDir/components) yazilmis klasorden siler;
+            // sonra ayni .mmw acilinca kayit "paket eksik" olmali ve duzenleme
+            // KILITLI olmali (geometri korunur).
+            const QJsonObject spec = step[QStringLiteral("appRemovePackage")].toObject();
+            const std::wstring typeId =
+                spec[QStringLiteral("typeId")].toString().toStdWString();
+            if (typeId.empty())
+                return fail(QStringLiteral("appRemovePackage: 'typeId' eksik"));
+            mm::ComponentRegistry::instance().unregisterType(typeId);
+            mm::ComponentDialogRegistry::instance().unregisterDialog(typeId);
+            if (spec.value(QStringLiteral("deleteDir")).toBool(true)) {
+                QString root = spec[QStringLiteral("userRoot")].toString();
+                if (root.isEmpty()) root = QStringLiteral("components");
+                const QFileInfo ur(root);
+                if (ur.isRelative())
+                    root = QFileInfo(outDir + QStringLiteral("/") + root).absoluteFilePath();
+                const QString dir = root + QStringLiteral("/") +
+                                    QString::fromStdWString(typeId) + QStringLiteral(".mmcpkg");
+                QDir(dir).removeRecursively();
+                printf("[paket-sil] %s\n", dir.toUtf8().constData());
+            }
+            pump(80);
+            return writeStep(step, QStringLiteral("appRemovePackage"));
         }
         if (step.contains(QStringLiteral("componentDialogSchema"))) {
             // P-1/5: PAKET DIYALOG SEMASI uygulamaya KAYITLI mi? dialog.json

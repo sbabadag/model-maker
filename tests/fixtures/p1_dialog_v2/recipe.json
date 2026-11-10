@@ -1,0 +1,39 @@
+{
+  "recipeVersion": "1.0.0",
+  "let": {},
+  "steps": [
+    {
+      "check": "param.bp_t >= 12",
+      "message": "Levha kalinligi en az 12 mm olmali"
+    },
+    {
+      "id": "b1",
+      "use": "frame.member_end",
+      "args": {
+        "end": "start",
+        "member": "main"
+      }
+    },
+    {
+      "id": "b2",
+      "use": "frame.offset",
+      "args": {
+        "dw": "0 - param.bp_t/2",
+        "frame": "b1"
+      }
+    },
+    {
+      "id": "plate",
+      "use": "plate.rect",
+      "role": "base_plate",
+      "args": {
+        "frame": "b2",
+        "w": "main.b + 2*param.bp_ext + 10",
+        "h": "main.h + 2*param.bp_ext",
+        "t": "param.bp_t",
+        "material": "param.malzeme",
+        "name": "param.kalite"
+      }
+    }
+  ]
+}

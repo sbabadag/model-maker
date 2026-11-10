@@ -264,6 +264,10 @@ void writeComponentBody(std::ostream& body, const std::vector<ComponentInstanceR
         for (const EntityId b : r.ownedBoltGroupIds) body << ' ' << b;
         body << ' ' << (r.enabled ? 1 : 0) << ' ';
         putString(body, toUtf8(r.typeId));
+        // P-1/6: PAKET ICERIK OZETI satir SONUNA eklenir (eski surumler bu
+        // alani okumaz; eski dosyalarda yoktur -> bos kalir, geriye uyumlu).
+        body << ' ';
+        putString(body, r.packageChecksum);
         body << '\n';
     }
 }
@@ -333,6 +337,21 @@ void readComponentBody(std::istream& bs, std::vector<ComponentInstanceRecord>& o
             r.ownedBoltGroupIds.push_back(static_cast<EntityId>(readUint64(ls, "component bolt id")));
         r.enabled = readBool(ls, "component enabled");
         r.typeId = fromUtf8(readString(ls));
+        // P-1/6: satir SONUNDAKI paket ozeti OPSIYONELDIR (eski dosyalarda
+        // yoktur; o zaman bos kalir ve acilista "checksum bilinmiyor" sayilir).
+        {
+            ls >> std::ws;
+            if (!ls.eof() && ls.good()) {
+                const std::streampos save = ls.tellg();
+                try {
+                    r.packageChecksum = readString(ls);
+                } catch (const std::exception&) {
+                    r.packageChecksum.clear();
+                    ls.clear();
+                    ls.seekg(save);
+                }
+            }
+        }
         r.dirty = true;    // yuklenen kayit yeniden hesaplama bekler
         r.orphan = false;  // Document yuklemede registry'ye gore yeniden kurar
         out.push_back(std::move(r));
