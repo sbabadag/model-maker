@@ -214,6 +214,49 @@ std::wstring displayNameFromJson(const json& j) {
     return {};
 }
 
+// P-1/4 — RECIPE'DEN SECIM SAYISI CIKARIMI.
+//
+// Studio manifesti 'catalog' blogu yazmadiginda komponent katalogda
+// gorunmuyordu (catalogVisible varsayilani false) ve pickCount 2 varsayiliyordu
+// (taban levhasi gibi TEK uyeli paketler "tam 2 parca secin" ile reddediliyordu).
+// Recipe uye referanslari GERCEK kaynaktir: "main" -> 1, "secondary_<n>" -> n+2.
+// Metin ifadelerin (orn "frame.member_end(main, secondary_0)") icinde de aranir.
+int inferPickCountFromRecipeJson(const json& j) {
+    int maxSecondary = -1;
+    bool anyMain = false;
+    const std::function<void(const json&)> walk = [&](const json& node) {
+        if (node.is_string()) {
+            const std::string t = node.get<std::string>();
+            for (std::size_t pos = t.find("secondary_"); pos != std::string::npos;
+                 pos = t.find("secondary_", pos + 1)) {
+                std::size_t i = pos + 10;
+                int n = 0;
+                bool digits = false;
+                while (i < t.size() && t[i] >= '0' && t[i] <= '9' && n < 1000) {
+                    n = n * 10 + (t[i] - '0');
+                    digits = true;
+                    ++i;
+                }
+                if (digits && n > maxSecondary) maxSecondary = n;
+            }
+            // "secondary" (indekssiz) = 0. uye
+            if (t.find("secondary") != std::string::npos && maxSecondary < 0) maxSecondary = 0;
+            if (t.find("main") != std::string::npos) anyMain = true;
+            return;
+        }
+        if (node.is_array()) {
+            for (const json& v : node) walk(v);
+            return;
+        }
+        if (node.is_object()) {
+            for (auto it = node.begin(); it != node.end(); ++it) walk(it.value());
+        }
+    };
+    walk(j);
+    if (maxSecondary >= 0) return maxSecondary + 2;
+    return anyMain ? 1 : 2;  // bilinmiyorsa guvenli varsayilan: 2 uye
+}
+
 ComponentPackageLoad fail(ComponentPackageLoad r, std::wstring msg) {
     r.ok = false;
     r.message = std::move(msg);
@@ -241,6 +284,11 @@ ComponentPackageLoad loadPackageImpl(const fs::path& dir, const ComponentRegistr
                                      bool allowExistingPackage) {
     ComponentPackageLoad out;
     out.dir = dir;
+    // P-1/4: katalog meta alanlari manifestte ACIKCA verildi mi? Verilmediyse
+    // paket icin guvenli varsayilanlar uygulanir (gorunur + recipe'den
+    // cikarilan secim sayisi).
+    bool catalogVisibleExplicit = false;
+    bool pickCountExplicit = false;
 
     std::error_code ec;
     if (!fs::is_directory(dir, ec))
@@ -321,8 +369,17 @@ ComponentPackageLoad loadPackageImpl(const fs::path& dir, const ComponentRegistr
         out.type.typeId = out.typeId;
         out.type.displayName = out.displayName;
         out.type.schemaVersion = mj.value("schemaVersion", 1);
-        if (mj.contains("catalog") && mj["catalog"].is_object())
+        // P-1/4: paket tipleri KATALOGDA GORUNUR (acikca false denmedikce).
+        // Yerlesik tiplerde opt-in (catalogVisible) mantigi korunur; paket
+        // yukleyicisi icin dogru varsayilan "gorunur"dur.
+        if (mj.contains("catalog") && mj["catalog"].is_object()) {
             out.type.catalog = componentCatalogMetaFromJson(mj["catalog"]);
+            catalogVisibleExplicit =
+                mj["catalog"].contains("catalogVisible") &&
+                mj["catalog"]["catalogVisible"].is_boolean();
+            pickCountExplicit = mj["catalog"].contains("pickCount") &&
+                                mj["catalog"]["pickCount"].is_number_integer();
+        }
     }
 
     // (3) CONTRACT SURUMU — TEK ALAN: minContractVersion (CONTRACT.md §4.1).
@@ -437,6 +494,25 @@ ComponentPackageLoad loadPackageImpl(const fs::path& dir, const ComponentRegistr
             return fail(out, L"recipe.json: adim yok");
         const RecipeValidation rv = validateRecipe(out.recipe, specs);
         if (!rv.ok) return fail(out, L"recipe gecersiz: " + rv.message);
+
+        // (6b) KATALOG VARSAYILANLARI (P-1/4).
+        //  - catalogVisible verilmediyse: paket katalogda GORUNUR (aksi hâlde
+        //    Studio paketi MM katalogunda ve aramasinda hic gorunmuyordu).
+        //  - pickCount verilmediyse: recipe'nin kullandigi uye sayisindan
+        //    cikarilir (tek uyeli taban levhasi paketleri "tam 2 parca secin"
+        //    ile reddediliyordu).
+        if (!catalogVisibleExplicit) out.type.catalog.catalogVisible = true;
+        if (!pickCountExplicit) {
+            const int inferred = inferPickCountFromRecipeJson(rj);
+            out.type.catalog.pickCount = inferred;
+            out.warnings.push_back(L"manifest.catalog.pickCount yok — recipe'den cikarildi: " +
+                                   std::to_wstring(inferred));
+        }
+        // Secim istemleri: manifest tur vermediyse notr Turkce metin.
+        if (out.type.catalog.primaryMemberType.empty())
+            out.type.catalog.primaryMemberType = out.type.catalog.pickCount == 1 ? L"üye" : L"ana üye";
+        if (out.type.catalog.pickCount > 1 && out.type.catalog.secondaryMemberType.empty())
+            out.type.catalog.secondaryMemberType = L"ikincil üye";
     }
 
     // (7) ALTIN TESTLER — yapisal dogrulama + DIGEST REPLAY.

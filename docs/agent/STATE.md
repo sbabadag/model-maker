@@ -108,6 +108,35 @@
     paketle üretim hep başarılı); yol `atomicRecompute` sözleşmesiyle
     (all-or-nothing) ve startup log kanıtıyla doğrulandı, ayrı bir "bozuk
     üretim" senaryosu YOK.
+- **P-1/4 (katalog ve seçim) — BİTTİ (2026-11-10 22:50).**
+  - **BULUNAN KUSUR (gerçek):** `ComponentCatalogMeta::catalogVisible` varsayılanı
+    `false` (yerleşik tipler için opt-in). Studio paketleri manifestte `catalog`
+    bloğu YAZMIYOR → paket tipi MM kataloğunda ve aramasında HİÇ görünmüyordu;
+    ayrıca `pickCount` varsayılanı 2 olduğu için tek üyeli (taban levhası)
+    paketler "tam 2 parça seçin" ile reddediliyordu.
+  - `component_package.cpp`: (a) `catalogVisible` manifestte AÇIKÇA verilmediyse
+    paket tipleri GÖRÜNÜR; (b) `pickCount` verilmediyse **recipe'deki üye
+    referanslarından** çıkarılır (`inferPickCountFromRecipeJson`: `secondary_<n>`
+    → n+2, yalnız `main` → 1, bilinmiyorsa 2) ve `warnings`'e yazılır;
+    (c) üye tipi istemleri boşsa nötr Türkçe metin ("üye" / "ana üye" /
+    "ikincil üye"). Manifest AÇIKÇA verirse o değer kazanır (test 3).
+  - `application.cpp`: tek üyeli komutta istem "«üye» seçin — sağ tık uygular";
+    kullanıcı ikinci üyeyi beklemez.
+  - Testler: `model_maker_component_catalog_pick_test` (**20/20 kontrol**:
+    Studio paketi görünür + pickCount 1, iki üyeli paket pickCount 2, açık
+    manifest kazanır, gizli paket listede yok, katalogda Türkçe ad),
+    GT `tests/gt1/t18_base_plate_pick1` (**18/18 adım**: catalogEntry pick=1
+    visible=1, TEK kolonla uygulama, `plateGap 0.00 mm`, kaydet→aç aynı
+    `d170874d915c71ec`). Fixture `tests/fixtures/p1_pick1/`.
+  - Studio paketleri fixture olarak: `tests/fixtures/studio_pkgs/`
+    (`mm_stiffened_base_plate.mmcpkg`, kaynak Studio commit `9b50ac5`) +
+    `README.md` (P-1/7'nin ilk girdisi).
+  - **P-2 İÇİN BULGU (engel):** Studio taban levhası paketi uygulanınca
+    `[component] Rijitlestirilmis taban levhasi hazirlanamadi: levha kati
+    uretilemedi: stiffener_alt_w` — `plate.polygon` bloğu materyalizatörde
+    katıya çevrilemiyor (P-2 tablosundaki "plate.polygon → dışbükey kontur"
+    satırı). P-1/4 kapsamı bunu ÇÖZMEZ; GT `t18` bu yüzden kendi tek üyeli
+    `plate.rect` fixture'ıyla koşuyor.
 - Son güncelleme (önceki): 2026-11-09
 - Son tur: 2026-11-09 (Asus) — H-2 (ters seçim: End Plate/Fin Plate/Haunch rol
   çözümü) — BİTTİ — Kök neden: plan rol anahtarları `inputRoleFor` ile konumsal

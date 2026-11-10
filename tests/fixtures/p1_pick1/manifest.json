@@ -1,0 +1,8 @@
+{
+  "displayName": "P1/4 Tek Üye Taban Levhası",
+  "format": "mmcpkg",
+  "formatVersion": "1.0.0",
+  "minContractVersion": "1.11.0",
+  "schemaVersion": 1,
+  "typeId": "mm_p1_pick1_plate"
+}

@@ -1,0 +1,31 @@
+{
+  "formatVersion": "1.0.0",
+  "groups": [
+    {
+      "asTab": false,
+      "background": "",
+      "canvasHeight": 0,
+      "canvasWidth": 0,
+      "emptyNote": "",
+      "figures": [],
+      "id": "levha",
+      "keepIfEmpty": false,
+      "layout": "",
+      "paramNames": [
+        "bp_t",
+        "bp_ext",
+        "bp_material",
+        "bp_name"
+      ],
+      "partRows": [],
+      "placed": [],
+      "prefix": "",
+      "title": "Levha"
+    }
+  ],
+  "hotspots": [],
+  "items": [],
+  "typeId": "mm_p1_pick1_plate",
+  "useTabs": false,
+  "weldRows": []
+}

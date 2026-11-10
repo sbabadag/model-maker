@@ -1,0 +1,11 @@
+{
+  "author": {
+    "tool": "Model Maker Component Studio"
+  },
+  "displayName": "Rijitlestirilmis taban levhasi",
+  "format": "mmcpkg",
+  "formatVersion": "1.0.0",
+  "minContractVersion": "1.11.0",
+  "schemaVersion": 1,
+  "typeId": "mm_stiffened_base_plate"
+}

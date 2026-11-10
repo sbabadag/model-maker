@@ -1,0 +1,453 @@
+{
+  "recipeVersion": "1.0.0",
+  "let": {},
+  "steps": [
+    {
+      "check": "param.an_hole > param.an_d",
+      "message": "Ankraj deligi capi (an_hole) ankraj capindan (an_d) buyuk olmali"
+    },
+    {
+      "check": "param.an_nx * param.an_ny <= 64",
+      "message": "Grup basina en fazla 64 ankraj (an_nx x an_ny)"
+    },
+    {
+      "check": "param.bp_t > 0",
+      "message": "Taban levhasi kalinligi (bp_t) pozitif olmali"
+    },
+    {
+      "check": "param.bp_ext_u >= 0 && param.bp_ext_v >= 0",
+      "message": "Levha taskinligi (bp_ext_u / bp_ext_v) negatif olamaz"
+    },
+    {
+      "check": "param.bp_ext_v - param.fs_edge > 0",
+      "message": "Rijitlestirici boyu (bp_ext_v - fs_edge) sifir veya negatif"
+    },
+    {
+      "check": "param.fs_H > param.fs_hTop",
+      "message": "Rijitlestirici yuksekligi (fs_H) uc duzunden (fs_hTop) buyuk olmali"
+    },
+    {
+      "check": "param.fs_c > 0",
+      "message": "Kaynak kirpigi (fs_c) pozitif olmali"
+    },
+    {
+      "check": "(param.an_nx - 1)*param.an_px/2 + 1.2*param.an_hole <= main.b/2 + param.bp_ext_u",
+      "message": "Ankraj levha kenarina cok yakin: kenar mesafesi 1.2 x an_hole'den az"
+    },
+    {
+      "check": "(param.an_ny - 1)*param.an_py/2 + 1.2*param.an_hole <= main.h/2 + param.bp_ext_v",
+      "message": "Ankraj levha kenarina cok yakin: kenar mesafesi 1.2 x an_hole'den az"
+    },
+    {
+      "check": "param.fs_count != 1 || param.an_nx != 3",
+      "message": "fs_count = 1 iken an_nx = 3: ortadaki ankraj govde hizasindaki rijitlestiriciye carpar"
+    },
+    {
+      "id": "b1",
+      "use": "frame.member_end",
+      "args": {
+        "end": "start",
+        "member": "main"
+      }
+    },
+    {
+      "id": "b2",
+      "use": "frame.offset",
+      "args": {
+        "dw": "0 - param.bp_t/2",
+        "frame": "b1"
+      }
+    },
+    {
+      "id": "bp",
+      "use": "plate.rect",
+      "role": "base_plate",
+      "args": {
+        "frame": "b2",
+        "h": "main.h + 2*param.bp_ext_v",
+        "material": "param.bp_material",
+        "name": "param.bp_name",
+        "t": "param.bp_t",
+        "w": "main.b + 2*param.bp_ext_u"
+      }
+    },
+    {
+      "id": "a1",
+      "use": "frame.offset",
+      "args": {
+        "dw": "0 - param.bp_t",
+        "frame": "b1"
+      }
+    },
+    {
+      "id": "a2",
+      "use": "frame.rotate",
+      "args": {
+        "about": "u",
+        "deg": "180",
+        "frame": "a1"
+      }
+    },
+    {
+      "id": "a3",
+      "use": "frame.offset",
+      "args": {
+        "du": "0 - (param.an_nx - 1)*param.an_px/2",
+        "dv": "0 - (param.an_ny - 1)*param.an_py/2",
+        "frame": "a2"
+      }
+    },
+    {
+      "id": "an",
+      "use": "bolts.grid",
+      "role": "anchor_bolts",
+      "args": {
+        "d": "param.an_d",
+        "frame": "a3",
+        "grade": "param.an_grade",
+        "grip": "param.an_grip",
+        "hole": "param.an_hole",
+        "nx": "param.an_nx",
+        "ny": "param.an_ny",
+        "px": "param.an_px",
+        "py": "param.an_py",
+        "through": []
+      }
+    },
+    {
+      "id": "sp0",
+      "use": "frame.rotate",
+      "args": {
+        "about": "v",
+        "deg": "-90",
+        "frame": "b1"
+      }
+    },
+    {
+      "id": "sm0",
+      "use": "frame.rotate",
+      "args": {
+        "about": "u",
+        "deg": "180",
+        "frame": "sp0"
+      }
+    },
+    {
+      "id": "s_pw",
+      "use": "frame.offset",
+      "when": "(param.fs_count == 1) || (param.fs_count >= 3)",
+      "args": {
+        "dv": "main.h/2",
+        "dw": "0 - (0)",
+        "frame": "sp0"
+      }
+    },
+    {
+      "id": "p_pw",
+      "use": "plate.polygon",
+      "role": "stiffener_ust_w",
+      "when": "(param.fs_count == 1) || (param.fs_count >= 3)",
+      "args": {
+        "frame": "s_pw",
+        "material": "param.fs_material",
+        "name": "param.fs_name",
+        "outline": [
+          "(param.fs_c),0",
+          "0,param.fs_c",
+          "0,(param.bp_ext_v - param.fs_edge)",
+          "param.fs_hTop,(param.bp_ext_v - param.fs_edge)",
+          "param.fs_H,0"
+        ],
+        "t": "param.fs_t"
+      }
+    },
+    {
+      "id": "w1_pw",
+      "use": "weld.fillet",
+      "role": "weld_stiffener_ust_w_column",
+      "when": "(param.fs_count == 1) || (param.fs_count >= 3)",
+      "args": {
+        "roleA": "stiffener_ust_w",
+        "roleB": "main",
+        "size": "param.w_stf"
+      }
+    },
+    {
+      "id": "w2_pw",
+      "use": "weld.fillet",
+      "role": "weld_stiffener_ust_w_plate",
+      "when": "(param.fs_count == 1) || (param.fs_count >= 3)",
+      "args": {
+        "roleA": "stiffener_ust_w",
+        "roleB": "base_plate",
+        "size": "param.w_stf"
+      }
+    },
+    {
+      "id": "s_pp",
+      "use": "frame.offset",
+      "when": "param.fs_count >= 2",
+      "args": {
+        "dv": "main.h/2",
+        "dw": "0 - (param.fs_e)",
+        "frame": "sp0"
+      }
+    },
+    {
+      "id": "p_pp",
+      "use": "plate.polygon",
+      "role": "stiffener_ust_p",
+      "when": "param.fs_count >= 2",
+      "args": {
+        "frame": "s_pp",
+        "material": "param.fs_material",
+        "name": "param.fs_name",
+        "outline": [
+          "(param.fs_c),0",
+          "0,param.fs_c",
+          "0,(param.bp_ext_v - param.fs_edge)",
+          "param.fs_hTop,(param.bp_ext_v - param.fs_edge)",
+          "param.fs_H,0"
+        ],
+        "t": "param.fs_t"
+      }
+    },
+    {
+      "id": "w1_pp",
+      "use": "weld.fillet",
+      "role": "weld_stiffener_ust_p_column",
+      "when": "param.fs_count >= 2",
+      "args": {
+        "roleA": "stiffener_ust_p",
+        "roleB": "main",
+        "size": "param.w_stf"
+      }
+    },
+    {
+      "id": "w2_pp",
+      "use": "weld.fillet",
+      "role": "weld_stiffener_ust_p_plate",
+      "when": "param.fs_count >= 2",
+      "args": {
+        "roleA": "stiffener_ust_p",
+        "roleB": "base_plate",
+        "size": "param.w_stf"
+      }
+    },
+    {
+      "id": "s_pm",
+      "use": "frame.offset",
+      "when": "param.fs_count >= 2",
+      "args": {
+        "dv": "main.h/2",
+        "dw": "0 - (0 - param.fs_e)",
+        "frame": "sp0"
+      }
+    },
+    {
+      "id": "p_pm",
+      "use": "plate.polygon",
+      "role": "stiffener_ust_m",
+      "when": "param.fs_count >= 2",
+      "args": {
+        "frame": "s_pm",
+        "material": "param.fs_material",
+        "name": "param.fs_name",
+        "outline": [
+          "(param.fs_c),0",
+          "0,param.fs_c",
+          "0,(param.bp_ext_v - param.fs_edge)",
+          "param.fs_hTop,(param.bp_ext_v - param.fs_edge)",
+          "param.fs_H,0"
+        ],
+        "t": "param.fs_t"
+      }
+    },
+    {
+      "id": "w1_pm",
+      "use": "weld.fillet",
+      "role": "weld_stiffener_ust_m_column",
+      "when": "param.fs_count >= 2",
+      "args": {
+        "roleA": "stiffener_ust_m",
+        "roleB": "main",
+        "size": "param.w_stf"
+      }
+    },
+    {
+      "id": "w2_pm",
+      "use": "weld.fillet",
+      "role": "weld_stiffener_ust_m_plate",
+      "when": "param.fs_count >= 2",
+      "args": {
+        "roleA": "stiffener_ust_m",
+        "roleB": "base_plate",
+        "size": "param.w_stf"
+      }
+    },
+    {
+      "id": "s_mw",
+      "use": "frame.offset",
+      "when": "(param.fs_count == 1) || (param.fs_count >= 3)",
+      "args": {
+        "dv": "main.h/2",
+        "dw": "0",
+        "frame": "sm0"
+      }
+    },
+    {
+      "id": "p_mw",
+      "use": "plate.polygon",
+      "role": "stiffener_alt_w",
+      "when": "(param.fs_count == 1) || (param.fs_count >= 3)",
+      "args": {
+        "frame": "s_mw",
+        "material": "param.fs_material",
+        "name": "param.fs_name",
+        "outline": [
+          "(param.fs_c),0",
+          "0,param.fs_c",
+          "0,(param.bp_ext_v - param.fs_edge)",
+          "param.fs_hTop,(param.bp_ext_v - param.fs_edge)",
+          "param.fs_H,0"
+        ],
+        "t": "param.fs_t"
+      }
+    },
+    {
+      "id": "w1_mw",
+      "use": "weld.fillet",
+      "role": "weld_stiffener_alt_w_column",
+      "when": "(param.fs_count == 1) || (param.fs_count >= 3)",
+      "args": {
+        "roleA": "stiffener_alt_w",
+        "roleB": "main",
+        "size": "param.w_stf"
+      }
+    },
+    {
+      "id": "w2_mw",
+      "use": "weld.fillet",
+      "role": "weld_stiffener_alt_w_plate",
+      "when": "(param.fs_count == 1) || (param.fs_count >= 3)",
+      "args": {
+        "roleA": "stiffener_alt_w",
+        "roleB": "base_plate",
+        "size": "param.w_stf"
+      }
+    },
+    {
+      "id": "s_mp",
+      "use": "frame.offset",
+      "when": "param.fs_count >= 2",
+      "args": {
+        "dv": "main.h/2",
+        "dw": "param.fs_e",
+        "frame": "sm0"
+      }
+    },
+    {
+      "id": "p_mp",
+      "use": "plate.polygon",
+      "role": "stiffener_alt_p",
+      "when": "param.fs_count >= 2",
+      "args": {
+        "frame": "s_mp",
+        "material": "param.fs_material",
+        "name": "param.fs_name",
+        "outline": [
+          "(param.fs_c),0",
+          "0,param.fs_c",
+          "0,(param.bp_ext_v - param.fs_edge)",
+          "param.fs_hTop,(param.bp_ext_v - param.fs_edge)",
+          "param.fs_H,0"
+        ],
+        "t": "param.fs_t"
+      }
+    },
+    {
+      "id": "w1_mp",
+      "use": "weld.fillet",
+      "role": "weld_stiffener_alt_p_column",
+      "when": "param.fs_count >= 2",
+      "args": {
+        "roleA": "stiffener_alt_p",
+        "roleB": "main",
+        "size": "param.w_stf"
+      }
+    },
+    {
+      "id": "w2_mp",
+      "use": "weld.fillet",
+      "role": "weld_stiffener_alt_p_plate",
+      "when": "param.fs_count >= 2",
+      "args": {
+        "roleA": "stiffener_alt_p",
+        "roleB": "base_plate",
+        "size": "param.w_stf"
+      }
+    },
+    {
+      "id": "s_mm",
+      "use": "frame.offset",
+      "when": "param.fs_count >= 2",
+      "args": {
+        "dv": "main.h/2",
+        "dw": "0 - param.fs_e",
+        "frame": "sm0"
+      }
+    },
+    {
+      "id": "p_mm",
+      "use": "plate.polygon",
+      "role": "stiffener_alt_m",
+      "when": "param.fs_count >= 2",
+      "args": {
+        "frame": "s_mm",
+        "material": "param.fs_material",
+        "name": "param.fs_name",
+        "outline": [
+          "(param.fs_c),0",
+          "0,param.fs_c",
+          "0,(param.bp_ext_v - param.fs_edge)",
+          "param.fs_hTop,(param.bp_ext_v - param.fs_edge)",
+          "param.fs_H,0"
+        ],
+        "t": "param.fs_t"
+      }
+    },
+    {
+      "id": "w1_mm",
+      "use": "weld.fillet",
+      "role": "weld_stiffener_alt_m_column",
+      "when": "param.fs_count >= 2",
+      "args": {
+        "roleA": "stiffener_alt_m",
+        "roleB": "main",
+        "size": "param.w_stf"
+      }
+    },
+    {
+      "id": "w2_mm",
+      "use": "weld.fillet",
+      "role": "weld_stiffener_alt_m_plate",
+      "when": "param.fs_count >= 2",
+      "args": {
+        "roleA": "stiffener_alt_m",
+        "roleB": "base_plate",
+        "size": "param.w_stf"
+      }
+    },
+    {
+      "id": "w_col",
+      "use": "weld.fillet",
+      "role": "weld_base_plate",
+      "args": {
+        "double": "1",
+        "roleA": "base_plate",
+        "roleB": "main",
+        "size": "param.w_col"
+      }
+    }
+  ]
+}

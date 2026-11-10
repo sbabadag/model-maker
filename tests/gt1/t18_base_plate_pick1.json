@@ -1,0 +1,25 @@
+{
+  "backend": "gdi",
+  "timeoutMs": 180000,
+  "_comment": "P-1/4 — TEK UYELI STUDIO PAKETI (pickCount=1): Studio'nun mm_p1_pick1_plate paketi (manifestte catalog blogu YOK) katalogda GORUNUR, pickCount recipe'den 1 cikarilir, TEK kolon secilerek uygulanir (ikinci uye beklenmez), taban levhasi kolon tabanina oturur, kaydet/ac ayni.",
+  "steps": [
+    {"appImportPackage": {"path": "../fixtures/p1_pick1", "embed": false, "userRoot": "components"}},
+    {"componentTypeRegistered": {"typeId": "mm_p1_pick1_plate", "package": true, "schemaVersion": 1}},
+    {"expect": {"catalogEntry": {"typeId": "mm_p1_pick1_plate", "pickCount": 1, "visible": true, "hasDialog": true}}},
+    {"profile": "HEB300"},
+    {"appColumnLevels": {"top": 3000, "bottom": 0}},
+    {"placeColumn": {"x": 0, "y": 0, "z": 0}},
+    {"expect": {"models": {"count": 1, "profiled": 1}}},
+    {"appComponent": {"typeId": "mm_p1_pick1_plate", "parts": [0]}},
+    {"expect": {"componentCount": {"typeId": "mm_p1_pick1_plate", "count": 1}}},
+    {"expect": {"componentPlateGap": {"typeId": "mm_p1_pick1_plate", "against": "main", "maxGap": 2.0}}},
+    {"fit": true},
+    {"capture": {"name": "t18-taban-levhasi-tek-uy", "target": "window"}},
+    {"expect": {"componentDigest": {"typeId": "mm_p1_pick1_plate", "key": "taban", "remember": true}}},
+    {"save": "t18_taban.mmw"},
+    {"open": "t18_taban.mmw"},
+    {"expect": {"componentCount": {"typeId": "mm_p1_pick1_plate", "count": 1}}},
+    {"expect": {"componentDigest": {"typeId": "mm_p1_pick1_plate", "key": "taban", "equals": true}}},
+    {"capture": {"name": "t18-kaydet-ac-ayni", "target": "window"}}
+  ]
+}

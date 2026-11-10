@@ -1,0 +1,136 @@
+{
+  "formatVersion": "1.0.0",
+  "groups": [
+    {
+      "asTab": true,
+      "background": "",
+      "canvasHeight": 0,
+      "canvasWidth": 0,
+      "emptyNote": "",
+      "figures": [],
+      "id": "parameters",
+      "keepIfEmpty": false,
+      "layout": "",
+      "paramNames": [
+        "bp_t",
+        "bp_ext_u",
+        "bp_ext_v",
+        "an_nx",
+        "an_ny",
+        "an_px",
+        "an_py",
+        "an_d",
+        "an_hole",
+        "fs_count",
+        "fs_e",
+        "fs_H",
+        "fs_hTop",
+        "fs_c",
+        "fs_edge"
+      ],
+      "partRows": [],
+      "placed": [],
+      "prefix": "",
+      "title": "Parametreler"
+    },
+    {
+      "asTab": true,
+      "background": "",
+      "canvasHeight": 0,
+      "canvasWidth": 0,
+      "emptyNote": "",
+      "figures": [],
+      "id": "base_plate",
+      "keepIfEmpty": false,
+      "layout": "",
+      "paramNames": [
+        "bp_material",
+        "bp_name"
+      ],
+      "partRows": [],
+      "placed": [],
+      "prefix": "",
+      "title": "base_plate"
+    },
+    {
+      "asTab": true,
+      "background": "",
+      "canvasHeight": 0,
+      "canvasWidth": 0,
+      "emptyNote": "",
+      "figures": [],
+      "id": "anchor_bolts",
+      "keepIfEmpty": false,
+      "layout": "",
+      "paramNames": [
+        "an_grip",
+        "an_grade"
+      ],
+      "partRows": [],
+      "placed": [],
+      "prefix": "",
+      "title": "anchor_bolts"
+    },
+    {
+      "asTab": true,
+      "background": "",
+      "canvasHeight": 0,
+      "canvasWidth": 0,
+      "emptyNote": "",
+      "figures": [],
+      "id": "stiffener_ust_w",
+      "keepIfEmpty": false,
+      "layout": "",
+      "paramNames": [
+        "fs_t",
+        "fs_material",
+        "fs_name"
+      ],
+      "partRows": [],
+      "placed": [],
+      "prefix": "",
+      "title": "stiffener_ust_w"
+    },
+    {
+      "asTab": true,
+      "background": "",
+      "canvasHeight": 0,
+      "canvasWidth": 0,
+      "emptyNote": "",
+      "figures": [],
+      "id": "weld_base_plate",
+      "keepIfEmpty": false,
+      "layout": "",
+      "paramNames": [
+        "w_col"
+      ],
+      "partRows": [],
+      "placed": [],
+      "prefix": "",
+      "title": "weld_base_plate"
+    },
+    {
+      "asTab": true,
+      "background": "",
+      "canvasHeight": 0,
+      "canvasWidth": 0,
+      "emptyNote": "",
+      "figures": [],
+      "id": "weld_stiffener_ust_w_column",
+      "keepIfEmpty": false,
+      "layout": "",
+      "paramNames": [
+        "w_stf"
+      ],
+      "partRows": [],
+      "placed": [],
+      "prefix": "",
+      "title": "weld_stiffener_ust_w_column"
+    }
+  ],
+  "hotspots": [],
+  "items": [],
+  "typeId": "mm_stiffened_base_plate",
+  "useTabs": true,
+  "weldRows": []
+}

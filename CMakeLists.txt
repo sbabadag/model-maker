@@ -218,7 +218,8 @@ if(MM_GUI_TESTS AND WIN32 AND TARGET model-maker)
                      t9_haunch40_e2e t9_endplate_e2e t10_panel_profile_picker
                      t11_haunch_default_visual t12_beam_picker_regression
                      t13_haunch_offset_failclosed t14_haunch_cap_gap_column
-                     t15_package_import t16_package_reload t17_package_version_upgrade)
+                     t15_package_import t16_package_reload t17_package_version_upgrade
+                     t18_base_plate_pick1)
         add_test(NAME model_maker_gt1_${scenario}
             COMMAND model-maker
                 --test-script ${CMAKE_CURRENT_SOURCE_DIR}/tests/gt1/${scenario}.json
@@ -604,6 +605,17 @@ if(BUILD_TESTING)
         PRIVATE mm_component_contract)
     add_test(NAME model_maker_component_param_remap_test
              COMMAND model_maker_component_param_remap_test)
+
+    # P-1/4 — PAKET KATALOG GORUNURLUGU + SECIM SAYISI: catalog blogu yoksa
+    # gorunur + pickCount recipe'den; manifest acikca verirse o kazanir.
+    add_executable(model_maker_component_catalog_pick_test
+        libs/mm_contract/tests/component_catalog_pick_test.cpp)
+    target_link_libraries(model_maker_component_catalog_pick_test
+        PRIVATE mm_component_contract)
+    target_compile_definitions(model_maker_component_catalog_pick_test PRIVATE
+        MM_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures")
+    add_test(NAME model_maker_component_catalog_pick_test
+             COMMAND model_maker_component_catalog_pick_test)
 
     # MODELDEN KURULAN GIRDI ALTIN TESTI: Document -> componentInputFromDocument
     # -> generateHaunch40/generateEndPlate -> digest. Altin testlerin kor noktasi

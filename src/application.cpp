@@ -5612,8 +5612,17 @@ void Application::startComponentCommand(const std::wstring& typeId) {
         cancelPendingComponentCommand();
         return;
     }
+    // P-1/4: secim istemleri manifestten (primaryMemberType/secondaryMemberType).
+    // pickCount=1 (orn. taban levhasi) TEK uye ister: ikinci uyeyi bekleyip
+    // kullaniciyi kilitlemek yok.
+    const int pendingPick = type->catalog.pickCount > 0 ? type->catalog.pickCount : 2;
     std::wstring hint = L"once MAIN, sonra SECONDARY secin — sag tik uygular";
-    if (!type->catalog.primaryMemberType.empty() && !type->catalog.secondaryMemberType.empty()) {
+    if (pendingPick == 1) {
+        hint = (type->catalog.primaryMemberType.empty() ? std::wstring(L"uyeyi")
+                                                       : type->catalog.primaryMemberType) +
+               L" secin — sag tik uygular";
+    } else if (!type->catalog.primaryMemberType.empty() &&
+               !type->catalog.secondaryMemberType.empty()) {
         hint = L"once " + type->catalog.primaryMemberType + L" (main), sonra " +
                type->catalog.secondaryMemberType + L" (secondary) secin — sag tik uygular";
     }

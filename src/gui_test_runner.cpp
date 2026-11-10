@@ -15,6 +15,7 @@
 
 #include "model_maker/application.hpp"
 #include "model_maker/camera.hpp"
+#include "model_maker/component_catalog.hpp"
 #include "model_maker/component_engine.hpp"
 #include "model_maker/document.hpp"
 #include "model_maker/drafting.hpp"
@@ -798,6 +799,38 @@ struct Runner {
                                     .arg(part, msgQ);
             }
             log(QStringLiteral("packageMessage = %1").arg(msgQ));
+        }
+        // "catalogEntry": {typeId, pickCount?, visible?, hasDialog?} — paket
+        // komponenti KATALOGDA gorunuyor mu ve secim sayisi dogru mu (P-1/4).
+        if (expect.contains(QStringLiteral("catalogEntry"))) {
+            const QJsonObject spec = expect[QStringLiteral("catalogEntry")].toObject();
+            const QString typeId = spec[QStringLiteral("typeId")].toString();
+            const std::vector<mm::CatalogEntry> cat = mm::buildComponentCatalog(
+                mm::ComponentRegistry::instance(), mm::ComponentDialogRegistry::instance());
+            const mm::CatalogEntry* found = mm::findCatalogEntry(cat, typeId.toStdWString());
+            if (found == nullptr) {
+                problems << QStringLiteral("catalogEntry: %1 katalogda YOK").arg(typeId);
+            } else {
+                log(QStringLiteral("catalogEntry[%1] pick=%2 visible=%3 dialog=%4")
+                        .arg(typeId)
+                        .arg(found->pickCount)
+                        .arg(found->catalogVisible ? QStringLiteral("1") : QStringLiteral("0"))
+                        .arg(found->hasDialog ? QStringLiteral("1") : QStringLiteral("0")));
+                if (spec.contains(QStringLiteral("pickCount")) &&
+                    found->pickCount != spec[QStringLiteral("pickCount")].toInt())
+                    problems << QStringLiteral("catalogEntry: %1 pickCount %2, beklenen %3")
+                                    .arg(typeId)
+                                    .arg(found->pickCount)
+                                    .arg(spec[QStringLiteral("pickCount")].toInt());
+                if (spec.contains(QStringLiteral("visible")) &&
+                    found->catalogVisible != spec[QStringLiteral("visible")].toBool())
+                    problems << QStringLiteral("catalogEntry: %1 catalogVisible beklenenden farkli")
+                                    .arg(typeId);
+                if (spec.contains(QStringLiteral("hasDialog")) &&
+                    found->hasDialog != spec[QStringLiteral("hasDialog")].toBool())
+                    problems << QStringLiteral("catalogEntry: %1 hasDialog beklenenden farkli")
+                                    .arg(typeId);
+            }
         }
         if (expect.contains(QStringLiteral("componentDigest"))) {
             const QJsonObject spec = expect[QStringLiteral("componentDigest")].toObject();
