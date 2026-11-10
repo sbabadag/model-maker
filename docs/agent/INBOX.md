@@ -76,7 +76,7 @@ Tur süresi ve öncelik (planlayıcı, 2026-11-08 18:32):
 - Kullanıcı boşta değilse GUI/ekran testini BEKLEME; GUI'siz kısmı yap,
   Durum'a "GUI doğrulaması bekliyor" yaz, turu bitir.
 - Sıra (bu satır INBOX'taki madde sırasını EZER): H-8 → H-7 → UI-34 → H-6 → H-5 →
-  H-2 → P-1 → B8 → B5 → T-planı. Yarım kalan madde varsa önce onu bitir.
+  H-2 → P-1 → P-2 → B8 → B5 → T-planı. Yarım kalan madde varsa önce onu bitir.
 
 Hermes kurulumu (bir kez; eski `gece-mm` işini sil, yenisini kur):
 - cron `surekli-mm`: her 30 dakikada bir, süresiz (repeat yok), workdir
@@ -601,6 +601,15 @@ Bağlam, 9 madde ve contract istekleri:
 **docs/agent/P-1-STUDIO-PAKETLERI.md** (önce tamamını oku; ilk iş "var / yok"
 listesini Durum'a yaz).
 Her madde ayrı commit + kapı + GUI senaryosu; sonunda kabul paketi.
+Durum: AÇIK
+
+## P-2 — Obje uyumluluğu: paketten gelen levha/bulon/kaynak/kesim gerçek MM nesnesi  [kullanıcı, 2026-11-10 18:50 — P-1'den hemen sonra]
+Kullanıcı: "Paralel olarak MM de bunu derleyebilsin ve obje uyumluluğu
+sağlansın." (Studio S-9: AI ile paket yazma.) Bağlam:
+**docs/agent/P-1-STUDIO-PAKETLERI.md → "P-2" bölümü** (taş → MM nesnesi
+tablosu, komponent davranışı, testler). Önce "var / yok" listesi, sonra her
+eksik ayrı commit + kapı + GUI senaryosu; sonunda kabul paketi. Contract
+istekleri (a–h) P-2'den sonra.
 Durum: AÇIK
 
 ## 2. B6 — Çizgi komutu profil çiziyor

@@ -110,3 +110,57 @@ Studio INBOX'ına planlayıcı yazar, Studio deposuna dokunma.
   ya da `bolts.anchor`).
 - f. HR-13: `member.fit {target, frame}`: profil ucunu düzleme kes ya da
   uzat (Studio'nun fitting aracı için).
+- g. Yinelenen `roleKey`: aynı `roleKey` iki adımda kullanılamıyor, bu
+  yüzden `when` ile koşullu alternatifler (pahlı / pahsız taban levhası)
+  yazılamıyor. İstek: `when` koşulları birbirini dışlıyorsa aynı `roleKey`'e
+  izin ver (çalışma anında en çok biri üretilir; ikisi birden üretilirse hata).
+- h. HR-15: `frame.bisector {a, b}`: iki üyenin buluştuğu yerde açıortay
+  düzlemi çerçevesi (apex haunch, Studio S-9).
+
+---
+
+# P-2 — Obje uyumluluğu: paketten gelen her şey gerçek MM nesnesi
+
+Planlayıcı, 2026-11-10. Kullanıcı: "Paralel olarak MM de bunu derleyebilsin
+ve obje uyumluluğu sağlansın." P-1 paketi yükler. P-2, paketin ürettiği her
+şeyin MM'de yerleşik komponentlerle (End Plate, Haunch 40) **aynı haklara**
+sahip nesne olmasını sağlar.
+
+## Taş → MM nesnesi (her biri test edilir)
+
+| Recipe çıktısı | MM'de olması gereken |
+|---|---|
+| `plate.rect` (+ `chamfers`) | levha parçası: gri, pah konturu, malzeme, ad, posNo; seçilir, listelenir |
+| `plate.polygon` | aynı; dışbükey kontur (Studio line cut'ı buradan gelir) |
+| `bolts.grid` | bulon grubu: kalite, delik, grip; `through` üyelerde ve levhalarda delik açar |
+| `bolts.grid` ankraj (`through: []`, aşağı) | üyeye delik açmaz; yalnız taban levhasında delik |
+| `weld.fillet` | kaynak nesnesi: görünür, seçilir, raporda; boyut ve iki taraf doğru |
+| `cut.plane` (fitting dahil) | üye katısı kesilir; kesim nesnesi görünür ve seçilir (B8 ile ilgili) |
+| `check` başarısız | komponent kurulmaz; Türkçe mesaj; belge değişmez |
+
+## Komponent nesnesi davranışı
+
+Yerleşik komponentle aynı olmalı:
+- **Seçim:** sembolü ve parçaları; Parça/Montaj seçim modu.
+- **Değiştir:** paket diyaloğu, modsuz (K1). Uygula → yeniden üret, tek
+  Undo adımı.
+- **Kopyala / Taşı:** üyelerle birlikte kopyalanır; kopya yeniden üretilir
+  ve kesim/levhaları görünür.
+- **Sil:** bütün çocuk nesneler gider; Undo hepsini geri getirir.
+- **Üye değişince** (profil değişimi, kolon taşıma): yeniden üretilir.
+  Başarısızsa eski hâl kalır ve uyarı verilir (fail-closed).
+- **Kayıt:** kaydet/aç → aynı `planDigest`.
+- **Malzeme listesi / rapor:** levha, bulon ve kaynak satırları.
+
+## Testler
+
+Her Studio paketi (P-1 madde 7 listesi) için:
+- MM nesne sayısı ve ölçüleri plan çıktısıyla aynı.
+- Kopyala → 2 örnek, ikisi de doğru.
+- Undo/Redo.
+- Kaydet/aç digest'i aynı.
+- HEA300→HEB300 → yeniden üretim doğru.
+- Bozuk girdi → fail-closed.
+
+GUI senaryosu (GT-1): taban levhası paketini uygula → parça seç → malzeme
+listesinde gör → kolonu taşı → taban levhası onunla gider.
