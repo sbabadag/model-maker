@@ -53,12 +53,15 @@
 #include <QHeaderView>
 #include <QInputDialog>
 #include <QTimer>
+#include <QFileSystemWatcher>
+#include <QSettings>
 #include <QSignalBlocker>
 #include <QDoubleSpinBox>
 #include <QSpinBox>
 #include <QFormLayout>
 #include <QMessageBox>
 #include <QFileDialog>
+#include <QFileInfo>
 #include <QLineEdit>
 #include <QLabel>
 #include <QWindow>
@@ -388,6 +391,8 @@ QtMainWindow::QtMainWindow(QWidget* parent)
     createMenus();
     createToolbar();
     createDockPanels();
+    // P-1/2: Studio'nun bagli paket klasorleri izlenir (ayarlardan).
+    setupComponentPackageWatcher();
 
     // UI-2: TUM kisayollar komut KAYDINDAN baglanir (tek kaynak). Tek tek
     // QShortcut tanimlanmaz; "Host" teslimli olanlar burada, "Canvas"
@@ -881,6 +886,8 @@ void QtMainWindow::buildCommandHandlers() {
     // steel.catalog: acilir icerik CALISMA ANINDA dynamicMenu() ile uretilir.
     h["steel.catalog"] = []() {};
     h["component.importPackage"] = [this]() { importComponentPackage(); };
+    h["component.reloadPackages"] = [this]() { reloadComponentPackages(); };
+    h["component.addDevFolder"] = [this]() { addComponentDevPackageDir(); };
     h["steel.bridge.import"] = [this]() { importTeklaBridge(); };
     h["steel.bridge.native"] = [this]() { importTeklaBridgeNative(); };
     h["steel.bridge.template"] = [this]() { saveTeklaBridgeTemplate(); };
@@ -1196,7 +1203,79 @@ void QtMainWindow::importComponentPackage() {
     box.setCheckBox(&embed);
     box.setStandardButtons(QMessageBox::Ok | QMessageBox::Cancel);
     if (box.exec() != QMessageBox::Ok) return;
-    app_.importComponentPackage(std::filesystem::path(dir.toStdWString()), embed.isChecked());
+    const std::filesystem::path src(dir.toStdWString());
+    if (!app_.importComponentPackage(src, embed.isChecked())) return;
+    // P-1/2: Studio bagli paketi Ctrl+S ile yaziyor; ust klasoru izlemek
+    // gelistirme turunu canli tutar (onay kullaniciya sorulur).
+    const QMessageBox::StandardButton watchAnswer = QMessageBox::question(
+        this, QStringLiteral("Geliştirme klasörü"),
+        QStringLiteral("Bu paketin klasörünü geliştirme klasörü olarak izleyeyim mi?\n\n"
+                       "İzlenirse Studio'da paket değiştiğinde Model Maker paketi "
+                       "otomatik yeniden yükler."),
+        QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+    if (watchAnswer == QMessageBox::Yes) {
+        const QString parent = QFileInfo(dir).absolutePath();
+        QStringList dirs =
+            QSettings().value(QStringLiteral("component/devPackageDirs")).toStringList();
+        if (!dirs.contains(parent)) dirs << parent;
+        applyComponentDevPackageDirs(dirs);
+    }
+}
+
+// P-1/2 — GELISTIRME PAKET KLASORLERI + YENIDEN YUKLEME.
+// Ayarlar: "component/devPackageDirs" (QStringList). Klasorler
+// QFileSystemWatcher ile izlenir; Studio paketi atomik yazdigi icin (gecici
+// klasor -> rename) olay geldikten ~1 sn sonra TEK yeniden yukleme kosar.
+void QtMainWindow::setupComponentPackageWatcher() {
+    pkgWatcher_ = new QFileSystemWatcher(this);
+    pkgReloadTimer_ = new QTimer(this);
+    pkgReloadTimer_->setSingleShot(true);
+    pkgReloadTimer_->setInterval(1000);
+    QObject::connect(pkgReloadTimer_, &QTimer::timeout, this,
+                     [this]() { reloadComponentPackages(); });
+    QObject::connect(pkgWatcher_, &QFileSystemWatcher::directoryChanged, this,
+                     [this](const QString&) { pkgReloadTimer_->start(); });
+    QSettings settings;
+    applyComponentDevPackageDirs(
+        settings.value(QStringLiteral("component/devPackageDirs")).toStringList());
+}
+
+void QtMainWindow::applyComponentDevPackageDirs(const QStringList& dirs) {
+    std::vector<std::filesystem::path> paths;
+    QStringList watched;
+    for (const QString& d : dirs) {
+        const QString trimmed = d.trimmed();
+        if (trimmed.isEmpty()) continue;
+        const std::filesystem::path p(trimmed.toStdWString());
+        std::error_code ec;
+        if (!std::filesystem::is_directory(p, ec)) continue;
+        paths.push_back(p);
+        watched << trimmed;
+    }
+    app_.setComponentDevPackageDirs(paths);
+    if (pkgWatcher_ != nullptr) {
+        const QStringList existing = pkgWatcher_->directories();
+        if (!existing.isEmpty()) pkgWatcher_->removePaths(existing);
+        if (!watched.isEmpty()) pkgWatcher_->addPaths(watched);
+    }
+    QSettings settings;
+    settings.setValue(QStringLiteral("component/devPackageDirs"), watched);
+}
+
+void QtMainWindow::addComponentDevPackageDir() {
+    const QString dir = QFileDialog::getExistingDirectory(
+        this, QStringLiteral("Geliştirme paket klasörünü seç (Studio'nun bağlı "
+                             "paketlerinin ÜST klasörü)"));
+    if (dir.isEmpty()) return;
+    QStringList dirs =
+        QSettings().value(QStringLiteral("component/devPackageDirs")).toStringList();
+    if (!dirs.contains(dir)) dirs << dir;
+    applyComponentDevPackageDirs(dirs);
+    reloadComponentPackages();
+}
+
+void QtMainWindow::reloadComponentPackages() {
+    app_.reloadComponentPackages();
 }
 
 void QtMainWindow::importTeklaBridge() {

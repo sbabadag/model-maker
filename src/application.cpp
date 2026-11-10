@@ -13784,6 +13784,75 @@ bool Application::importComponentPackage(const std::filesystem::path& sourceDir,
     return true;
 }
 
+// P-1/2 — PAKETLERI YENIDEN YUKLE
+//
+// Studio bagli paketi atomik yaziyor (gecici klasor -> yerine koy); bu yuzden
+// yarim yazilmis klasor okunmaz (yukleyici checksums ile fail-closed zaten
+// reddeder). Sira GELISTIRME -> kullanici -> proje: Studio'nun canli paketi ayni
+// typeId ile kurulu paketi GOLGELER (gelistirme turu kazanir).
+int Application::reloadComponentPackages() {
+    using mm::ComponentDialogRegistry;
+    using mm::ComponentRegistry;
+    ComponentRegistry& registry = ComponentRegistry::instance();
+    ComponentDialogRegistry& dialogs = ComponentDialogRegistry::instance();
+
+    // (1) PAKET kaynakli tipleri kaldir. Yerlesik tipler KORUNUR.
+    std::vector<std::wstring> oldTypes;
+    for (const std::wstring& id : registry.typeIds())
+        if (registry.isPackageType(id)) oldTypes.push_back(id);
+    for (const std::wstring& id : oldTypes) {
+        registry.unregisterType(id);
+        dialogs.unregisterDialog(id);
+    }
+
+    // (2) Kokleri bastan tara.
+    std::vector<std::filesystem::path> roots;
+    for (const auto& d : componentDevPackageDirs_) roots.push_back(d);
+    roots.push_back(componentUserPackageRootOverride_.empty()
+                        ? mm::defaultUserComponentPackagesDir()
+                        : componentUserPackageRootOverride_);
+    if (currentFilePath_.has_value() && !currentFilePath_->empty())
+        roots.push_back(mm::projectComponentPackagesDir(*currentFilePath_));
+    const mm::ComponentPackageScan scan = mm::loadComponentPackages(registry, dialogs, roots);
+
+    // (3) Etkilenen ornekler: yalniz yeniden yuklenen tiplerin uyeleri.
+    std::vector<EntityId> parts;
+    int affected = 0;
+    for (const auto& rec : document_.componentInstances()) {
+        bool hit = false;
+        for (const std::wstring& id : oldTypes) {
+            if (rec.typeId != id) continue;
+            hit = true;
+            break;
+        }
+        if (!hit) continue;
+        ++affected;
+        if (rec.mainPart != kInvalidEntityId) parts.push_back(rec.mainPart);
+        for (EntityId sp : rec.secondaryParts) parts.push_back(sp);
+    }
+    if (!parts.empty()) {
+        // Basarisiz ornek ESKI haliyle kalir (fail-closed); burada yalniz
+        // yeniden uretim denenir, hata yutulmaz — durum metnine yazilir.
+        if (!recomputeComponentInstancesFor(parts))
+            appendStartupLog(L"[paket-reload] bazi ornekler yeniden uretilemedi "
+                             L"(eski hâlleriyle birakildi)");
+    }
+
+    std::wstring msg = L"Paketler yeniden yüklendi: " + std::to_wstring(scan.registered.size()) +
+                       L" tip";
+    if (affected > 0) msg += L", " + std::to_wstring(affected) + L" örnek yeniden üretildi";
+    for (const auto& e : scan.errors) msg += L" | REDDEDİLDİ " + e;
+    for (const auto& w : scan.warnings) appendStartupLog(L"[paket-reload-uyari] " + w);
+    lastComponentPackageMessage_ = msg;
+    appendStartupLog(L"[paket-reload] " + msg);
+    publishStatus(msg);
+    return static_cast<int>(scan.registered.size());
+}
+
+void Application::setComponentDevPackageDirs(std::vector<std::filesystem::path> dirs) {
+    componentDevPackageDirs_ = std::move(dirs);
+}
+
 bool Application::saveUserCatalog() {
     std::string err;
     if (!userCatalog_.save(userCatalogPath(), err)) {

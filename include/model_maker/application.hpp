@@ -325,6 +325,25 @@ public:
     const std::wstring& lastComponentPackageMessage() const noexcept {
         return lastComponentPackageMessage_;
     }
+    // P-1/2: paket koklerini (GELISTIRME klasorleri -> kullanici -> proje)
+    // yeniden tarar. Once PAKET kaynakli tipler kaldirilir (yerlesik tipler
+    // korunur), sonra kokler bastan yuklenir; ardindan etkilenen bilesen
+    // ornekleri yeni recipe ile yeniden uretilir (basarisiz ornek ESKI haliyle
+    // kalir). Donus: kaydedilen paket tipi sayisi; ayrinti
+    // lastComponentPackageMessage() icinde.
+    int reloadComponentPackages();
+    // P-1/2: izlenecek gelistirme paket klasorleri (Studio'nun bagli paketi).
+    void setComponentDevPackageDirs(std::vector<std::filesystem::path> dirs);
+    // P-1/2: yeniden yuklemenin "kullanici koku" (GT izolasyonu). Bos = uretim
+    // varsayilani (%APPDATA%\ModelMaker\components). Ice aktarma test senaryosu
+    // kendi klasorune kurdugunda buraya ayni koku yazmali, yoksa reload onu
+    // goremez.
+    void setComponentUserPackageRootOverride(const std::filesystem::path& dir) {
+        componentUserPackageRootOverride_ = dir;
+    }
+    const std::vector<std::filesystem::path>& componentDevPackageDirs() const noexcept {
+        return componentDevPackageDirs_;
+    }
     // Katalog dosyasini diske yazar (mevcut registry'deki derived tipleri etkilemez).
     bool saveUserCatalog();
     // Calisma anindaki kullanici katalogu (salt-okunur erisim).
@@ -411,6 +430,8 @@ public:
     void appendStartupLog(const std::wstring& text);
     std::wstring pendingStartupMessage_;
     std::wstring lastComponentPackageMessage_;  // P-1/1: son paket ice aktarma sonucu
+    std::vector<std::filesystem::path> componentDevPackageDirs_;  // P-1/2 izlenen kokler
+    std::filesystem::path componentUserPackageRootOverride_;      // P-1/2 GT izolasyonu
     IRenderBackend* activeRenderBackend() noexcept { return renderBackend_.get(); }
 
     void startWorkPlaneCommand();

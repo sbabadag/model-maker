@@ -52,6 +52,31 @@
   - **DİKKAT (GT tuzağı):** MSYS `timeout` ile GUI testi koşulursa süreç
     ORTAMSIZ başlıyor (`APPDATA`/`USERPROFILE` yok) → paket yolu boş. GT'yi
     `timeout` olmadan koş. (Aynı tuzağa düşersen belirti: "hedef klasor bos".)
+- **P-1/2 (yeniden yükleme + geliştirme klasörü) — BİTTİ (2026-11-10 21:50).**
+  - `Application::reloadComponentPackages()`: (1) PAKET kaynaklı tipler kaldırılır
+    (`isPackageType`), YERLEŞİK tipler korunur; (2) kökler **GELİŞTİRME →
+    kullanıcı → proje** sırasıyla taranır — Studio'nun canlı klasörü aynı
+    `typeId`'yi GÖLGELER; (3) etkilenen örnekler yeni recipe ile yeniden
+    üretilir, başarısız örnek ESKİ hâliyle kalır (fail-closed).
+  - `setComponentDevPackageDirs()` + `setComponentUserPackageRootOverride()`
+    (GT izolasyonu: reload, içe aktarmanın kurduğu kökü tarar).
+  - UI: komutlar `component.reloadPackages` ("Paketleri Yeniden Yükle") ve
+    `component.addDevFolder` ("Geliştirme Paket Klasörü Ekle..."), Komponent
+    sekmesi "Katalog" grubu + menü + hızlı arama. İçe aktarma sonrası
+    "geliştirme klasörü olarak izle?" sorusu.
+  - `QFileSystemWatcher` + 1 sn debounce (`QtMainWindow::setupComponentPackageWatcher`);
+    ayar `component/devPackageDirs` (QSettings). Studio atomik yazdığı için
+    yarım klasör okunmaz (yükleyici checksums ile reddeder).
+  - Testler: `model_maker_component_package_reload_test` (**19/19 kontrol**:
+    geliştirme kökü v2 kazandırır, yerleşik tipler korunur, bozuk dev paketi
+    atlanır, v1'e dönüş), GT `tests/gt1/t16_package_reload` (**21/21 adım**:
+    v1 → v2 (dev) → v1, `componentDigest p2 = de1c60be6ea84f32` üç durumda da
+    AYNI); fixture `tests/fixtures/p1_dev/mm_p1_gt_pkg.mmcpkg` (schemaVersion 2).
+  - Kapı: tam derleme **exit=0** + tam ctest **162/162 exit=0** (21:47, `-j 4`).
+  - **varsayım:** GT'de `QFileSystemWatcher` olayı tetiklenmiyor (dosya sistemi
+    olayı zamanlaması deterministik değil); izleyici yolu `appReloadPackages`
+    adımıyla AYNI kodu çağırdığı için GT, izleyicinin çağırdığı yolu ölçüyor.
+    İzleyicinin kendisi elle GUI turunda doğrulanmalı (aşağıdaki adım).
 - Son güncelleme (önceki): 2026-11-09
 - Son tur: 2026-11-09 (Asus) — H-2 (ters seçim: End Plate/Fin Plate/Haunch rol
   çözümü) — BİTTİ — Kök neden: plan rol anahtarları `inputRoleFor` ile konumsal

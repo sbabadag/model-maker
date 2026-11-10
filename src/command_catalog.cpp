@@ -247,6 +247,14 @@ void addSteelCommands(CommandRegistry& r) {
     r.add(Cmd("component.importPackage", "Komponent Paketi İçe Aktar...", "import",
               "Studio komponent paketini (.mmcpkg) içe aktar")
               .keys("paket ice aktar import mmcpkg studio komponent"));
+    // P-1/2: paket koklerini bastan tara (gelistirme klasorleri dahil) + izlenecek
+    // gelistirme klasoru ekle.
+    r.add(Cmd("component.reloadPackages", "Paketleri Yeniden Yükle", "import",
+              "Komponent paketlerini yeniden tara ve örnekleri güncelle")
+              .keys("paket yeniden yukle reload studio"));
+    r.add(Cmd("component.addDevFolder", "Geliştirme Paket Klasörü Ekle...", "import",
+              "Studio'nun bağlı paket klasörünü izlemeye al")
+              .keys("gelistirme klasor izle studio dev watch"));
     r.add(Cmd("steel.bridge.import", "İçe Aktar...", "import", "Bridge paketini içe aktar")
               .keys("bridge ice aktar import"));
     r.add(Cmd("steel.bridge.native", "Native Component'e Dönüştür...", "import",
@@ -494,6 +502,7 @@ UiPlan buildRibbonPlan() {
         group("Bağlantı", {item("steel.bolt"), item("steel.weld"),
                            item("steel.endPlate"), item("steel.finPlate")}),
         group("Katalog", {item("steel.catalog"), item("component.importPackage"),
+                          item("component.reloadPackages"), item("component.addDevFolder"),
                           menu("steel.bridge", "Tekla Köprüsü",
                                {item("steel.bridge.import"),
                                 item("steel.bridge.native"),
@@ -622,6 +631,7 @@ UiPlan buildMenuPlan() {
         item("steel.bolt"), item("steel.weld"),
         separator(), item("steel.endPlate"), item("steel.finPlate"),
         separator(), item("steel.catalog"), item("component.importPackage"),
+        item("component.reloadPackages"), item("component.addDevFolder"),
         menu("steel.bridge", "Tekla Köprüsü",
              {item("steel.bridge.import"), item("steel.bridge.native"),
               item("steel.bridge.template")},

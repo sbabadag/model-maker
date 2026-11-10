@@ -19,6 +19,8 @@
 
 class QComboBox;
 class QLineEdit;
+class QFileSystemWatcher;
+class QTimer;
 class RibbonWidget;
 class QMdiArea;
 class QMdiSubWindow;
@@ -90,6 +92,12 @@ private:
     // P-1/1: Studio komponent paketi (.mmcpkg) KLASORUNU sectirir; "projeye
     // gom" onayi ile app_.importComponentPackage() cagrilir (atomik kurulum).
     void importComponentPackage();
+    // P-1/2: gelistirme paket klasorlerini ayarlardan yukler + QFileSystemWatcher
+    // ile izler; degisiklikten ~1 sn sonra paketler yeniden yuklenir.
+    void setupComponentPackageWatcher();
+    void applyComponentDevPackageDirs(const QStringList& dirs);
+    void reloadComponentPackages();
+    void addComponentDevPackageDir();
     // Tekla Component Bridge: .mmbridge paket KLASORUNU sectirir ve
     // app_.importTeklaBridge() ile atomik import yapar (Windows GUI).
     void importTeklaBridge();
@@ -148,6 +156,9 @@ private:
     int twoPointViewCounter_{};
     mm::ViewDefinition lastViewDefinition_{}; // GT-1 (H-5): son gorunum tanimi
     QLineEdit* profileSelector_{};  // ozellikler panelindeki profil alani
+    // P-1/2: gelistirme paket klasoru izleyicisi + 1 sn debounce.
+    QFileSystemWatcher* pkgWatcher_{};
+    QTimer* pkgReloadTimer_{};
     PropertiesPanel* propsPanel_{}; // UI-3a ozellikler paneli
     ProfilePickerDialog* profilePickerDialog_{};   // UI-4 profil secim penceresi
     MaterialPickerDialog* materialPickerDialog_{}; // UI-4 malzeme secim penceresi

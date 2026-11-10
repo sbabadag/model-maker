@@ -1515,6 +1515,9 @@ struct Runner {
                 const QFileInfo ur(userRoot);
                 if (ur.isRelative())
                     userRoot = QFileInfo(outDir + QStringLiteral("/") + userRoot).absoluteFilePath();
+                    // P-1/2: yeniden yukleme ayni koku taramali (GT izolasyonu).
+                    window.application().setComponentUserPackageRootOverride(
+                        std::filesystem::path(userRoot.toStdWString()));
             }
             if (path.isEmpty())
                 return fail(QStringLiteral("appImportPackage: 'path' eksik"));
@@ -1534,6 +1537,34 @@ struct Runner {
             pump(120);
             return writeStep(step, QStringLiteral("appImportPackage:") + path);
         }
+        if (step.contains(QStringLiteral("appReloadPackages"))) {
+            // P-1/2: paketleri yeniden yukle. {"devDirs": ["../fixtures/p1_dev"]}
+            // verilirse gelistirme klasorleri once ayarlanir (goreli yollar
+            // cikti klasorune gore cozulur) — Studio'nun canli paketi ayni
+            // typeId'yi golgeler.
+            const QJsonObject spec = step[QStringLiteral("appReloadPackages")].toObject();
+            if (spec.contains(QStringLiteral("devDirs"))) {
+                std::vector<std::filesystem::path> dirs;
+                for (const QJsonValue v : spec[QStringLiteral("devDirs")].toArray()) {
+                    QString d = v.toString();
+                    const QFileInfo info(d);
+                    if (info.isRelative()) {
+                        // fixture'lar script'e gore (tests/gt1 -> tests/fixtures)
+                        const QString viaScript =
+                            QFileInfo(scriptDirPath_).dir().filePath(d);
+                        d = QFileInfo::exists(viaScript)
+                                ? QFileInfo(viaScript).absoluteFilePath()
+                                : QFileInfo(outDir + QStringLiteral("/") + d).absoluteFilePath();
+                    }
+                    dirs.push_back(std::filesystem::path(d.toStdWString()));
+                }
+                window.application().setComponentDevPackageDirs(std::move(dirs));
+            }
+            const int loaded = window.application().reloadComponentPackages();
+            pump(160);
+            return writeStep(step, QStringLiteral("appReloadPackages:") +
+                                       QString::number(loaded));
+        }
         if (step.contains(QStringLiteral("componentTypeRegistered"))) {
             // P-1/1: kurulumdan sonra tip registry'de HEMEN gorunmeli (yeniden
             // baslatma yok). {"typeId": "...", "package": bool}
@@ -1547,6 +1578,17 @@ struct Runner {
             if (wantPackage && !mm::ComponentRegistry::instance().isPackageType(typeId))
                 return fail(QStringLiteral("componentTypeRegistered: tip paket kaynagi degil: %1")
                                 .arg(QString::fromStdWString(typeId)));
+            // P-1/2/3: {"schemaVersion": N} verilirse surum de denetlenir
+            // (gelistirme klasoru kurulu paketi golgeliyorsa surum DEGISIR).
+            if (spec.contains(QStringLiteral("schemaVersion"))) {
+                const int want = spec[QStringLiteral("schemaVersion")].toInt();
+                if (type->schemaVersion != want)
+                    return fail(QStringLiteral("componentTypeRegistered: %1 surum %2, "
+                                               "beklenen %3")
+                                    .arg(QString::fromStdWString(typeId))
+                                    .arg(type->schemaVersion)
+                                    .arg(want));
+            }
             return writeStep(step,
                              QStringLiteral("componentTypeRegistered:") +
                                  QString::fromStdWString(typeId) + QStringLiteral(" v") +
