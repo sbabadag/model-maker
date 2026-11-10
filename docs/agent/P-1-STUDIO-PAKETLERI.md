@@ -118,6 +118,10 @@ Studio INBOX'ına planlayıcı yazar, Studio deposuna dokunma.
   düzlemi çerçevesi (apex haunch, Studio S-9).
 - i. HR-16: `frame.member_face {member, face: flange_pos|flange_neg|web_pos|
   web_neg}`: yüzü adıyla seç, `toward` gerekmesin (Studio S-10 DistancePlane).
+- j. HR-17: `bolts.grid` eşit olmayan aralık (`xs[]`, `ys[]`; Tekla
+  `70 2*80 70` yazımı). Studio S-12.
+- k. HR-18: kaynak: küt kaynak tipi, kısmi uzunluk/ofset, çevre (around),
+  atölye/şantiye. Studio S-12.
 
 ---
 
