@@ -137,6 +137,35 @@
     katıya çevrilemiyor (P-2 tablosundaki "plate.polygon → dışbükey kontur"
     satırı). P-1/4 kapsamı bunu ÇÖZMEZ; GT `t18` bu yüzden kendi tek üyeli
     `plate.rect` fixture'ıyla koşuyor.
+- **P-1/5 (diyalog) — BİTTİ (2026-11-10 22:45).**
+  - Mevcut altyapı DOĞRULANDI (yeni kod gerekmedi): `dialog.json` → `useTabs`/
+    `asTab`/`groups.paramNames` + `preview.dimensions` paket yükleyicisinde
+    semaya taşınıyor; `documentedOnly` `parameters.json`dan okunup
+    `CompParamSpec.documentedOnly`'ye yazılıyor; String/Enum (malzeme, kalite)
+    `PlateSpec.material`/`name`e gidiyor.
+  - **BULUNAN İKİ GERÇEK KUSUR:**
+    1. `setSelectedComponentParams` (diyalog OK / Properties yolu) üretim
+       reddinde **SESSİZCE** `false` dönüyordu — `gp.error`/`plan.error`/
+       `prep.error` hiçbir yere yazılmıyordu (kullanıcı "Uygula" der, hiçbir
+       şey olmaz, sebebi görünmez). Artık üç dalda da durum çubuğuna
+       "«tip» — UYGULANAMADI: <Türkçe sebep>" yazılıyor.
+    2. Recipe `check` ihlali `plan.checks`'e **HİÇ** yazılmıyordu (adım erken
+       `return` ediyordu) → `applyComponentFromParts`'ın "parametreyle
+       düzeltilebilir mi?" kararı (`hasFailingCheck`) paket doğrulamaları için
+       HEP false kalıyor, red diyaloğu açılmıyordu. Artık `pass=false` +
+       Türkçe `message` ile `checks`'e ekleniyor.
+  - Testler: `model_maker_component_package_dialog_test` (**28/28**:
+    useTabs + 2 sekme adı/sırası, String malzeme → levha material, Enum kalite
+    → levha adı, `documentedOnly` işaretli + geometriyi DEĞİŞTİRMİYOR,
+    `check` ihlali ok=false + Türkçe mesaj + `checks`'te raporlanıyor),
+    fixture `tests/fixtures/p1_dialog` (2 sekme, 5 param, `bp_t>=12` check),
+    GT `tests/gt1/t19_package_dialog` (**27/27**: `componentDialogSchema`
+    adımı 2 grup/2 sekme/5 param, reddedilen düzenleme `bp_t=10` → durum
+    çubuğunda "en az 12 mm" + **digest DEĞİŞMEDİ** `d3210a7a29c550ec`, geçerli
+    düzenleme `bp_t=24/S420M/10.9` → `a12fc1e01f308fec`, kaydet→aç aynı).
+  - Yeni runner adımları: `componentDialogSchema {typeId, groups, tabs,
+    useTabs, paramCount, titles}`; `appComponentParams` artık `expectFail`.
+  - Regresyon: t18 18/18, t17, t16, t15, t14, t13 hepsi exit=0.
 - Son güncelleme (önceki): 2026-11-09
 - Son tur: 2026-11-09 (Asus) — H-2 (ters seçim: End Plate/Fin Plate/Haunch rol
   çözümü) — BİTTİ — Kök neden: plan rol anahtarları `inputRoleFor` ile konumsal

@@ -6786,11 +6786,23 @@ bool Application::setSelectedComponentParams(EntityId compId,
     const GenerationPlan gp = ComponentRegistry::instance().generate(updated.typeId, input);
     if (!gp.ok) {
         if (ownsRecord) document_.rollbackOpenRecord();
+        // P-1/5: RECIPE 'check' HATASI SESSIZ KALMAZ. Paketlerin butun
+        // dogrulamalari 'check' adimlaridir ve Turkce mesajlari
+        // GenerationPlan.error'dadir; eskiden bu dal sessizce false donuyordu
+        // (kullanici "Uygula" der, hicbir sey olmaz, sebebi gorunmez).
+        solidStatusMessage_ = type->displayName + L" — UYGULANAMADI" +
+            (gp.error.empty() ? std::wstring() : (L": " + gp.error));
+        updateStatus();
+        invalidateCanvas();
         return false;
     }
     const ComponentPlan plan = componentPlanFromGenerationPlan(gp);
     if (!plan.ok) {
         if (ownsRecord) document_.rollbackOpenRecord();
+        solidStatusMessage_ = type->displayName + L" — UYGULANAMADI" +
+            (plan.error.empty() ? std::wstring() : (L": " + plan.error));
+        updateStatus();
+        invalidateCanvas();
         return false;
     }
 
@@ -6799,6 +6811,10 @@ bool Application::setSelectedComponentParams(EntityId compId,
         mat.prepare(plan, updated.mainPart, updated.secondaryParts);
     if (!prep.ok) {
         if (ownsRecord) document_.rollbackOpenRecord();
+        solidStatusMessage_ = type->displayName + L" — UYGULANAMADI" +
+            (prep.error.empty() ? std::wstring() : (L": " + prep.error));
+        updateStatus();
+        invalidateCanvas();
         return false;
     }
 

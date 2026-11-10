@@ -219,7 +219,7 @@ if(MM_GUI_TESTS AND WIN32 AND TARGET model-maker)
                      t11_haunch_default_visual t12_beam_picker_regression
                      t13_haunch_offset_failclosed t14_haunch_cap_gap_column
                      t15_package_import t16_package_reload t17_package_version_upgrade
-                     t18_base_plate_pick1)
+                     t18_base_plate_pick1 t19_package_dialog)
         add_test(NAME model_maker_gt1_${scenario}
             COMMAND model-maker
                 --test-script ${CMAKE_CURRENT_SOURCE_DIR}/tests/gt1/${scenario}.json
@@ -616,6 +616,17 @@ if(BUILD_TESTING)
         MM_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures")
     add_test(NAME model_maker_component_catalog_pick_test
              COMMAND model_maker_component_catalog_pick_test)
+
+    # P-1/5: PAKET DIYALOGU (sekmeler, String/Enum, documentedOnly, Turkce
+    # check mesaji). Paket diyalog semasi + recipe dogrulamasi ucdan uca.
+    add_executable(model_maker_component_package_dialog_test
+        libs/mm_contract/tests/component_package_dialog_test.cpp)
+    target_link_libraries(model_maker_component_package_dialog_test
+        PRIVATE mm_component_contract)
+    target_compile_definitions(model_maker_component_package_dialog_test PRIVATE
+        MM_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures")
+    add_test(NAME model_maker_component_package_dialog_test
+             COMMAND model_maker_component_package_dialog_test)
 
     # MODELDEN KURULAN GIRDI ALTIN TESTI: Document -> componentInputFromDocument
     # -> generateHaunch40/generateEndPlate -> digest. Altin testlerin kor noktasi

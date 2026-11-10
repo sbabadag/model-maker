@@ -1975,6 +1975,16 @@ static void runRecipeCore(const Recipe& recipe,
             if (cv == 0.0) {
                 plan.ok = false;
                 plan.error = st.message.empty() ? L"check basarisiz" : wideFromUtf8(st.message);
+                // P-1/5: IHLAL EDEN CHECK RAPORLANIR. Application bu listeye
+                // bakarak "parametreyle duzeltilebilir" karari verir ve
+                // komponent diyalogunu acar. Eskiden check adimi erken
+                // dondugu icin checks bos kaliyor, paket dogrulamalari
+                // diyalog YERINE yalniz uyari gosteriyordu.
+                ComponentCheck c;
+                c.id = st.id.empty() ? std::string("check") : st.id;
+                c.pass = false;
+                c.message = plan.error;
+                plan.checks.push_back(c);
                 return;
             }
             continue;

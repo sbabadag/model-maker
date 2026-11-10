@@ -16,6 +16,7 @@
 #include "model_maker/application.hpp"
 #include "model_maker/camera.hpp"
 #include "model_maker/component_catalog.hpp"
+#include "model_maker/component_dialog.hpp"   // P-1/5: componentDialogSchema
 #include "model_maker/component_engine.hpp"
 #include "model_maker/document.hpp"
 #include "model_maker/drafting.hpp"
@@ -1546,11 +1547,75 @@ struct Runner {
                 }
                 if (!replaced) eff.push_back(std::move(p));
             }
-            if (!window.application().setSelectedComponentParams(compId, eff))
+            const bool applied = window.application().setSelectedComponentParams(compId, eff);
+            // P-1/5: "expectFail": true → adim yalniz REDDEDILIRSE gecer
+            // (recipe 'check' ihlali: belge DEGISMEMELI, Turkce mesaj durum
+            // cubugunda olmali). Beklenmedik basari da hatadir.
+            const bool expectFail =
+                spec.value(QStringLiteral("expectFail")).toBool(false);
+            if (expectFail && applied)
+                return fail(QStringLiteral("appComponentParams: reddetmeliydi ama uygulandi (%1)")
+                                .arg(QString::fromStdWString(typeId)));
+            if (!expectFail && !applied)
                 return fail(QStringLiteral("appComponentParams: uygulanamadi (%1)")
                                 .arg(QString::fromStdWString(typeId)));
             pump(160);
             return writeStep(step, QStringLiteral("appComponentParams"));
+        }
+        if (step.contains(QStringLiteral("componentDialogSchema"))) {
+            // P-1/5: PAKET DIYALOG SEMASI uygulamaya KAYITLI mi? dialog.json
+            // sekmeleri (useTabs/asTab) + parametre dagitimi diyalog
+            // registry'sinden okunur — widget'in gordugu semanin aynisi.
+            const QJsonObject spec =
+                step[QStringLiteral("componentDialogSchema")].toObject();
+            const std::wstring typeId =
+                spec[QStringLiteral("typeId")].toString().toStdWString();
+            const mm::ComponentDialogDefinition* def =
+                mm::ComponentDialogRegistry::instance().find(typeId);
+            if (!def)
+                return fail(QStringLiteral("componentDialogSchema: sema yok (%1)")
+                                .arg(QString::fromStdWString(typeId)));
+            int tabs = 0;
+            QStringList titles;
+            for (const auto& g : def->schema.groups) {
+                if (g.asTab && !g.paramNames.empty()) ++tabs;
+                titles << QString::fromStdWString(g.title);
+            }
+            const int groups = static_cast<int>(def->schema.groups.size());
+            if (spec.contains(QStringLiteral("groups")) &&
+                spec[QStringLiteral("groups")].toInt() != groups)
+                return fail(QStringLiteral("componentDialogSchema: grup sayisi %1 != %2")
+                                .arg(groups)
+                                .arg(spec[QStringLiteral("groups")].toInt()));
+            if (spec.contains(QStringLiteral("tabs")) &&
+                spec[QStringLiteral("tabs")].toInt() != tabs)
+                return fail(QStringLiteral("componentDialogSchema: sekme sayisi %1 != %2")
+                                .arg(tabs)
+                                .arg(spec[QStringLiteral("tabs")].toInt()));
+            if (spec.contains(QStringLiteral("useTabs")) &&
+                spec[QStringLiteral("useTabs")].toBool() != def->schema.useTabs)
+                return fail(QStringLiteral("componentDialogSchema: useTabs uyusmuyor"));
+            if (spec.contains(QStringLiteral("paramCount")) &&
+                spec[QStringLiteral("paramCount")].toInt() !=
+                    static_cast<int>(def->specs.size()))
+                return fail(QStringLiteral("componentDialogSchema: parametre sayisi %1 != %2")
+                                .arg(static_cast<int>(def->specs.size()))
+                                .arg(spec[QStringLiteral("paramCount")].toInt()));
+            if (spec.contains(QStringLiteral("titles"))) {
+                const QJsonArray want = spec[QStringLiteral("titles")].toArray();
+                if (want.size() != titles.size())
+                    return fail(QStringLiteral("componentDialogSchema: baslik sayisi uyusmuyor"));
+                for (int i = 0; i < want.size(); ++i)
+                    if (want.at(i).toString() != titles.at(i))
+                        return fail(QStringLiteral("componentDialogSchema: %1. sekme '%2' != '%3'")
+                                        .arg(i + 1)
+                                        .arg(titles.at(i), want.at(i).toString()));
+            }
+            printf("[diyalog-sema] %s: %d grup, %d sekme, %d parametre\n",
+                   spec[QStringLiteral("typeId")].toString().toUtf8().constData(),
+                   groups, tabs, static_cast<int>(def->specs.size()));
+            pump(80);
+            return writeStep(step, QStringLiteral("componentDialogSchema"));
         }
         if (step.contains(QStringLiteral("appImportPackage"))) {
             // P-1/1: paket ICE AKTARMA yolunu uctan uca kosturur (klasor secimi
