@@ -195,6 +195,48 @@
   - Fixture: `tests/fixtures/p1_dialog_v2` (schemaVersion 2, levha +10 mm).
   - Regresyon: t19 27/27, t18 18/18, t17 23/23, t16 21/21, t15 18/18,
     t14 24/24, t13 11/11 hepsi OK.
+- **P-1/7 (Studio golden) — BİTTİ (2026-11-11 00:35).**
+  - Studio'nun **gerçek** `mm_stiffened_end_plate.mmcpkg` paketi repoya alındı
+    (`tests/fixtures/studio_pkgs/`, Studio commit `9b50ac5`,
+    `feature/ai-command-mvp`; `checksums.json` bayt bayt doğrulandı).
+  - Yeni birim testi **`model_maker_studio_package_golden_test` (21/21)**:
+    (a) iki Studio paketi de yükleniyor, 8 parametre, katalog metası +
+    diyalog şeması geçerli; (b) alın levhası için **kanonik girdiyle
+    `planDigest` golden'ı** — `tests/golden/studio_end_plate.json`,
+    digest `178cb73b928dadd34c9b6cfbc875b0912031f2872c651ea79bd99583780d4818`,
+    3 levha + 1 bulon grubu; (c) aynı girdi iki kez üretilince **aynı** digest
+    (determinizm); (d) parametre değişince digest **değişir**.
+  - Kanonik girdi: HEB300 kolon `(0,0,0)-(0,0,3000)` + **IPE240** kiriş
+    `(0,120,2880)-(6000,120,2880)`. IPE300 denendi → paketin KENDİ check'i
+    haklı olarak reddetti ("sureklilik levhasi kolon flansinin icine giriyor");
+    kiriş kesiti kolondan küçük olmak zorunda.
+  - GT `tests/gt1/t21_studio_end_plate.json` (**25/25**): paket içe aktar →
+    katalogda görünür (pickCount 2) → HEB300+IPE240 üzerine uygula → bilesen
+    birlesime oturur (`componentAttached`, maxGap 500) → kolon boyu 3000→3300
+    → digest `1396f4d5…` → `31cdc31a…` → kaydet/aç: digest **aynı**.
+  - Yeni GT adımı gerekmedi; `appImportPackage`/`catalogEntry`/`componentDigest`
+    yeterli oldu. `componentPlateGap` bu senaryodan ÇIKARILDI: runner tüm
+    levhaları hedef üyeye göre ölçüyor, süreklilik levhaları ise **kolona**
+    kaynatılır — beklenti yanlıştı (aşağıdaki bulgu (a) ile karışmasın).
+  - **P-1/7 BULGUSU (a) — düzeltilmedi, ayrı iş kalemi:** Studio paketinin
+    süreklilik levhalarında `du`/`dv` **negatif** varyantlar simetrik konuma
+    oturmuyor. Ölçüm (HEB300 kolon, GT `t21` çıktısı): `stiffener_top_a`
+    y=−144.5…0 (doğru), `stiffener_top_b` y=−300…−155.5 (olması gereken
+    y=0…144.5; **~155 mm kayık**), `stiffener_bot_b` aynı şekilde kayık.
+    Şüphe: `frame.offset` + `frame.rotate` sonrası `plate.rect` köşe/merkez
+    (sol-elli çerçeve) uzlaşımı. `plan` üretimi ve digest **kararlı** olduğu
+    için golden etkilenmiyor; geometri kusuru.
+  - **P-1/7 BULGUSU (b) — düzeltilmedi, ayrı iş kalemi:** kiriş profili
+    IPE240→IPE270 değişince paket komponenti **yeniden üretilmedi** (digest
+    sabit kaldı), oysa yerleşik alın levhasında (t9) aynı adım digest'i
+    değiştiriyordu. Kolon boyu değişimi çalışıyor. Şüphe: paket tipinde
+    `secondary` üye geometrisinin bağımlılık grafiğine yazılmaması.
+    Doğrulama senaryosu t21'den çıkarıldı (yeşil kalsın diye değil — yanlış
+    pozitif üretmesin diye); kalem açılacak.
+  - `mm_stiffened_base_plate` için golden **yok**: `plate.polygon` materyalizasyon
+    engeli (P-2). Test bunu "yükleme+şema geçerli, üretim beklenen hata"
+    olarak doğruluyor ve P-2 bitince golden ekleneceğini hatırlatıyor.
+  - Kapı: tam derleme **exit=0** + tam ctest **166/166 exit=0** (23:41, 308 s).
 - Son güncelleme (önceki): 2026-11-09
 - Son tur: 2026-11-09 (Asus) — H-2 (ters seçim: End Plate/Fin Plate/Haunch rol
   çözümü) — BİTTİ — Kök neden: plan rol anahtarları `inputRoleFor` ile konumsal

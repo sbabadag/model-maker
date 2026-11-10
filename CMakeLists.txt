@@ -220,7 +220,7 @@ if(MM_GUI_TESTS AND WIN32 AND TARGET model-maker)
                      t13_haunch_offset_failclosed t14_haunch_cap_gap_column
                      t15_package_import t16_package_reload t17_package_version_upgrade
                      t18_base_plate_pick1 t19_package_dialog
-                     t20_package_record_checksum)
+                     t20_package_record_checksum t21_studio_end_plate)
         add_test(NAME model_maker_gt1_${scenario}
             COMMAND model-maker
                 --test-script ${CMAKE_CURRENT_SOURCE_DIR}/tests/gt1/${scenario}.json
@@ -628,6 +628,18 @@ if(BUILD_TESTING)
         MM_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures")
     add_test(NAME model_maker_component_package_dialog_test
              COMMAND model_maker_component_package_dialog_test)
+
+    # P-1/7: STUDIO UYUMLULUK (GOLDEN). Studio'nun GERCEK paketleri yuklenir,
+    # diyalog semasi dogrulanir ve kanonik girdiyle planDigest golden'a karsi
+    # kosulur (tests/golden/studio_<tip>.json).
+    add_executable(model_maker_studio_package_golden_test
+        libs/mm_contract/tests/studio_package_golden_test.cpp)
+    target_link_libraries(model_maker_studio_package_golden_test
+        PRIVATE mm_component_contract)
+    target_compile_definitions(model_maker_studio_package_golden_test PRIVATE
+        MM_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures")
+    add_test(NAME model_maker_studio_package_golden_test
+             COMMAND model_maker_studio_package_golden_test)
 
     # MODELDEN KURULAN GIRDI ALTIN TESTI: Document -> componentInputFromDocument
     # -> generateHaunch40/generateEndPlate -> digest. Altin testlerin kor noktasi

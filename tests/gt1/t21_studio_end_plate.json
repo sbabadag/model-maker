@@ -1,0 +1,183 @@
+{
+  "backend": "gdi",
+  "timeoutMs": 240000,
+  "_comment": "P-1/7 — STUDIO PAKETI UCTAN UCA (GUI). Studio'nun GERCEK mm_stiffened_end_plate paketi ice aktarilir, katalogda gorunur (pickCount 2), HEB300 kolon + IPE240 kiris ile uygulanir; bilesen birlesime oturur; kolon boyu degisince yeniden uretilir (digest degisir); kaydet/ac ayni digest. Iki BULGU STATE'te kayitli: (a) sureklilik levhalarinin 'b'/'bot' varyantlari simetrik konuma oturmuyor, (b) kiris profili degisince paket komponenti yeniden uretilmedi.",
+  "steps": [
+    {
+      "appImportPackage": {
+        "path": "../fixtures/studio_pkgs/mm_stiffened_end_plate.mmcpkg",
+        "embed": false,
+        "userRoot": "components"
+      }
+    },
+    {
+      "componentTypeRegistered": {
+        "typeId": "mm_stiffened_end_plate",
+        "package": true,
+        "schemaVersion": 1
+      }
+    },
+    {
+      "expect": {
+        "catalogEntry": {
+          "typeId": "mm_stiffened_end_plate",
+          "pickCount": 2,
+          "visible": true,
+          "hasDialog": true
+        }
+      }
+    },
+    {
+      "profile": "HEB300"
+    },
+    {
+      "appColumnLevels": {
+        "top": 3000,
+        "bottom": 0
+      }
+    },
+    {
+      "placeColumn": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      }
+    },
+    {
+      "expect": {
+        "models": {
+          "count": 1,
+          "profiled": 1
+        }
+      }
+    },
+    {
+      "assignLine": {
+        "x1": 0,
+        "y1": 0,
+        "z1": 2880,
+        "x2": 5000,
+        "y2": 0,
+        "z2": 2880,
+        "profile": "IPE240"
+      }
+    },
+    {
+      "expect": {
+        "models": {
+          "count": 2,
+          "profiled": 2
+        }
+      }
+    },
+    {
+      "appComponent": {
+        "typeId": "mm_stiffened_end_plate",
+        "parts": [
+          0,
+          1
+        ]
+      }
+    },
+    {
+      "expect": {
+        "componentCount": {
+          "typeId": "mm_stiffened_end_plate",
+          "count": 1
+        }
+      }
+    },
+    {
+      "expect": {
+        "componentAttached": {
+          "typeId": "mm_stiffened_end_plate",
+          "maxGap": 500
+        }
+      }
+    },
+    {
+      "fit": true
+    },
+    {
+      "capture": {
+        "name": "t21-studio-alin-levhasi",
+        "target": "window"
+      }
+    },
+    {
+      "expect": {
+        "componentDigest": {
+          "typeId": "mm_stiffened_end_plate",
+          "key": "s1",
+          "remember": true
+        }
+      }
+    },
+    {
+      "save": "t21_studio_alin.mmw"
+    },
+    {
+      "select": [
+        0
+      ]
+    },
+    {
+      "appColumnLevels": {
+        "top": 3300,
+        "bottom": 0
+      }
+    },
+    {
+      "expect": {
+        "componentDigest": {
+          "typeId": "mm_stiffened_end_plate",
+          "key": "s1",
+          "notEquals": true
+        }
+      }
+    },
+    {
+      "expect": {
+        "componentAttached": {
+          "typeId": "mm_stiffened_end_plate",
+          "maxGap": 500
+        }
+      }
+    },
+    {
+      "expect": {
+        "componentDigest": {
+          "typeId": "mm_stiffened_end_plate",
+          "key": "s2",
+          "remember": true
+        }
+      }
+    },
+    {
+      "open": "t21_studio_alin.mmw"
+    },
+    {
+      "expect": {
+        "componentCount": {
+          "typeId": "mm_stiffened_end_plate",
+          "count": 1
+        }
+      }
+    },
+    {
+      "expect": {
+        "componentDigest": {
+          "typeId": "mm_stiffened_end_plate",
+          "key": "s1",
+          "equals": true
+        }
+      }
+    },
+    {
+      "capture": {
+        "name": "t21-kaydet-ac-ayni",
+        "target": "window"
+      }
+    }
+  ]
+}

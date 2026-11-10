@@ -1,0 +1,11 @@
+{
+  "_comment": "P-1/7 Studio uyum golden'ı. Paket: mm_stiffened_end_plate.mmcpkg (Studio commit 9b50ac5, feature/ai-command-mvp). Girdi: kanonik HEB300 kolon (0,0,0)-(0,0,3000) + IPE240 kiriş (0,120,2880)-(6000,120,2880), varsayılan parametreler. KURAL: golden test geçsin diye YENİDEN ÜRETİLMEZ; değişecekse eski/yeni digest PR'da gösterilir ve STATE'e 'Studio REPIN gerekli: <hash>' yazılır.",
+  "package": "mm_stiffened_end_plate",
+  "packageChecksum": "tek kaynak: studio_pkgs/mm_stiffened_end_plate.mmcpkg/checksums.json",
+  "studioCommit": "9b50ac5",
+  "planDigest": "178cb73b928dadd34c9b6cfbc875b0912031f2872c651ea79bd99583780d4818",
+  "plates": 5,
+  "boltGroups": 1,
+  "welds": 5,
+  "_not": "Studio'nun KENDİ raporladığı digest ile karşılaştırma, Studio paket üretiminde planDigest raporlamaya başlayınca (REPIN) eklenecek. Şimdilik bu değer MM tarafında SABİTLENMİŞTİR: aynı girdi+paket her zaman aynı digest'i vermek zorundadır."
+}
