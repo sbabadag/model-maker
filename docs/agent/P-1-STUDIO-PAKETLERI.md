@@ -116,6 +116,8 @@ Studio INBOX'ına planlayıcı yazar, Studio deposuna dokunma.
   izin ver (çalışma anında en çok biri üretilir; ikisi birden üretilirse hata).
 - h. HR-15: `frame.bisector {a, b}`: iki üyenin buluştuğu yerde açıortay
   düzlemi çerçevesi (apex haunch, Studio S-9).
+- i. HR-16: `frame.member_face {member, face: flange_pos|flange_neg|web_pos|
+  web_neg}`: yüzü adıyla seç, `toward` gerekmesin (Studio S-10 DistancePlane).
 
 ---
 
