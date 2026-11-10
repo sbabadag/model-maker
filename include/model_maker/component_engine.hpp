@@ -149,6 +149,24 @@ CompParamValue validateParamValue(const CompParamSpec& spec,
 std::vector<CompParam> alignParamsToSpecs(const std::vector<CompParamSpec>& specs,
                                           const std::vector<CompParam>& values) noexcept;
 
+// P-1/3 — PAKET SURUM YUKSELTMESINDE PARAMETRE ESLEME RAPORU.
+// alignParamsToSpecs'ten FARKI: semadan KALKAN parametre ATILIR (yeni recipe
+// onu bilmiyor; saklamak yaniltici olur) ve ne oldugu RAPORLANIR. Esleme
+// ADA GOREDIR: ayni ad -> deger korunur (tip/aralik ihlali kelepcelenir),
+// yeni ad -> varsayilan, kalkan ad -> atilir.
+struct ComponentParamRemap {
+    int kept{0};     // adi eslesen ve degeri korunan
+    int clamped{0};  // adi eslesen ama aralik/tip yuzunden kelepcelenen
+    int added{0};    // yeni parametre -> varsayilan
+    int dropped{0};  // semadan kalkan parametre -> atildi
+    std::vector<std::wstring> droppedNames;
+    std::vector<std::wstring> addedNames;
+    bool anyChange() const noexcept { return added > 0 || dropped > 0 || clamped > 0; }
+};
+std::vector<CompParam> remapParamsToSpecs(const std::vector<CompParamSpec>& specs,
+                                         const std::vector<CompParam>& values,
+                                         ComponentParamRemap* report = nullptr) noexcept;
+
 const CompParamSpec* findParamSpec(const std::vector<CompParamSpec>& specs,
                                    const std::wstring& name) noexcept;
 const CompParam* findParam(const std::vector<CompParam>& params,

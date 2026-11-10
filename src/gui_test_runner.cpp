@@ -780,6 +780,25 @@ struct Runner {
         // equals/notEquals ayni senaryo icindeki onceki digest ile karsilastirir.
         // Kaydet-ac + yeniden uretim sonrasi digest DEGISMEMELI (geometry
         // stabil); profil degisimi sonrasi DEGISMELI (recompute calisti).
+        // "packageMessage": {contains: ["..."]} — son paket isleminin Turkce
+        // mesajinda bu parcalar GECMELI (P-1/3 parametre esleme raporu).
+        if (expect.contains(QStringLiteral("packageMessage"))) {
+            const QJsonObject spec = expect[QStringLiteral("packageMessage")].toObject();
+            const QString msgQ = QString::fromStdWString(app.lastComponentPackageMessage());
+            for (const QJsonValue v : spec[QStringLiteral("contains")].toArray()) {
+                const QString part = v.toString();
+                if (!msgQ.contains(part))
+                    problems << QStringLiteral("packageMessage: \"%1\" yok | mesaj: %2")
+                                    .arg(part, msgQ);
+            }
+            for (const QJsonValue v : spec[QStringLiteral("excludes")].toArray()) {
+                const QString part = v.toString();
+                if (msgQ.contains(part))
+                    problems << QStringLiteral("packageMessage: \"%1\" OLMAMALI | mesaj: %2")
+                                    .arg(part, msgQ);
+            }
+            log(QStringLiteral("packageMessage = %1").arg(msgQ));
+        }
         if (expect.contains(QStringLiteral("componentDigest"))) {
             const QJsonObject spec = expect[QStringLiteral("componentDigest")].toObject();
             const QString typeId = spec[QStringLiteral("typeId")].toString();

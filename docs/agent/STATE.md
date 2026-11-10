@@ -77,6 +77,37 @@
     olayı zamanlaması deterministik değil); izleyici yolu `appReloadPackages`
     adımıyla AYNI kodu çağırdığı için GT, izleyicinin çağırdığı yolu ölçüyor.
     İzleyicinin kendisi elle GUI turunda doğrulanmalı (aşağıdaki adım).
+- **P-1/3 (sürüm yükseltmesi + parametre eşleme) — BİTTİ (2026-11-10 22:15).**
+  - `mm::remapParamsToSpecs(specs, values, &report)` + `ComponentParamRemap`
+    (`component_engine.hpp/cpp`): eşleme ADA GÖRE — aynı ad → değer korunur
+    (aralık/tip dışı `validateParamValue` ile KELEPÇELENİR), yeni ad →
+    varsayılan, semadan KALKAN ad → ATILIR. Rapor: kept/clamped/added/dropped
+    + `addedNames`/`droppedNames`. (`alignParamsToSpecs` bilinmeyenleri KORUR;
+    paket yükseltmesinde bu yanıltıcı olduğu için ayrı fonksiyon.)
+  - `reloadComponentPackages()`: eşleme her etkilenen kayda YAZILIR
+    (`params` + `schemaVersion`), sonra geometri yeniden üretilir. Durum
+    çubuğu: "Paketler yeniden yüklendi: N tip, M örnek (parametre: X korundu,
+    Y yeni varsayılan, Z atıldı[, W kelepçelendi])".
+  - **DÜZELTİLEN YANLIŞ POZİTİF:** yeniden üretimden önce `updated.dirty=true`
+    set ediliyordu; materializer bu bayrağı temizlemediği için BAŞARILI
+    yeniden üretim "1 örnek ESKİ hâlinde kaldı" diye raporlanıyordu. Bayrak
+    kaldırıldı; başarısızlık artık `atomicRecompute`'nun dönüş değerinden
+    (hazırlama/commit başarısız → HİÇBİR örnek değişmez) okunur. Teşhis için
+    `solidStatusMessage_` gerekçesi startup loguna yazılır.
+  - Testler: `model_maker_component_param_remap_test` (**18/18 kontrol**:
+    korunur/eklenir/atılır/kelepçelenir, sıra, boş şema), GT
+    `tests/gt1/t17_package_version_upgrade` (**23/23 adım**): v1 üzerinde
+    `plateThickness=16` → v3 (schemaVersion 3; `plateFinish` KALKTI,
+    `plateCorner` EKLENDİ, `plateExtra` üst sınırı 20→10) → reload →
+    26 korundu / 1 yeni / 1 atıldı / 1 kelepçelendi; digest
+    `4af221b652d301da` → `daeab7ec32c15c4a` (yeniden üretim GERÇEKTEN koştu),
+    kaydet→aç sonrası AYNI digest. Fixture `tests/fixtures/p1_dev3/`.
+  - Runner'a `expect.packageMessage {contains, excludes}` eklendi (Türkçe
+    rapor metni GT'de denetlenir).
+  - **varsayım:** yeniden üretim başarısızlığı GT'de zorlanamadı (geçerli
+    paketle üretim hep başarılı); yol `atomicRecompute` sözleşmesiyle
+    (all-or-nothing) ve startup log kanıtıyla doğrulandı, ayrı bir "bozuk
+    üretim" senaryosu YOK.
 - Son güncelleme (önceki): 2026-11-09
 - Son tur: 2026-11-09 (Asus) — H-2 (ters seçim: End Plate/Fin Plate/Haunch rol
   çözümü) — BİTTİ — Kök neden: plan rol anahtarları `inputRoleFor` ile konumsal

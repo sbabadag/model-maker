@@ -215,6 +215,44 @@ std::vector<CompParam> alignParamsToSpecs(const std::vector<CompParamSpec>& spec
     return aligned;
 }
 
+std::vector<CompParam> remapParamsToSpecs(const std::vector<CompParamSpec>& specs,
+                                         const std::vector<CompParam>& values,
+                                         ComponentParamRemap* report) noexcept {
+    ComponentParamRemap local;
+    ComponentParamRemap& rep = report != nullptr ? *report : local;
+    rep = ComponentParamRemap{};
+    std::vector<CompParam> out;
+    out.reserve(specs.size());
+    std::vector<bool> matched(values.size(), false);
+    for (const auto& spec : specs) {
+        CompParam p;
+        p.name = spec.name;
+        bool found = false;
+        for (std::size_t i = 0; i < values.size(); ++i) {
+            if (values[i].name != spec.name) continue;
+            p.value = validateParamValue(spec, values[i].value);
+            matched[i] = true;
+            found = true;
+            ++rep.kept;
+            // Kelepce tespiti: dogrulama degeri degistirdiyse aralik/tip disiydi.
+            if (!(p.value == values[i].value)) ++rep.clamped;
+            break;
+        }
+        if (!found) {
+            p.value = paramDefaultValue(spec);
+            ++rep.added;
+            rep.addedNames.push_back(spec.name);
+        }
+        out.push_back(std::move(p));
+    }
+    for (std::size_t i = 0; i < values.size(); ++i) {
+        if (matched[i]) continue;
+        ++rep.dropped;
+        rep.droppedNames.push_back(values[i].name);
+    }
+    return out;
+}
+
 const CompParamSpec* findParamSpec(const std::vector<CompParamSpec>& specs,
                                    const std::wstring& name) noexcept {
     for (const auto& s : specs)

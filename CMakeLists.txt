@@ -218,7 +218,7 @@ if(MM_GUI_TESTS AND WIN32 AND TARGET model-maker)
                      t9_haunch40_e2e t9_endplate_e2e t10_panel_profile_picker
                      t11_haunch_default_visual t12_beam_picker_regression
                      t13_haunch_offset_failclosed t14_haunch_cap_gap_column
-                     t15_package_import t16_package_reload)
+                     t15_package_import t16_package_reload t17_package_version_upgrade)
         add_test(NAME model_maker_gt1_${scenario}
             COMMAND model-maker
                 --test-script ${CMAKE_CURRENT_SOURCE_DIR}/tests/gt1/${scenario}.json
@@ -595,6 +595,15 @@ if(BUILD_TESTING)
         MM_PACKAGES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/libs/mm_contract/packages")
     add_test(NAME model_maker_component_package_reload_test
              COMMAND model_maker_component_package_reload_test)
+
+    # P-1/3 — SURUM YUKSELTMESINDE PARAMETRE ESLEME: ada gore korunur,
+    # yeni -> varsayilan, kalkan -> atilir, aralik disi -> kelepce; rapor.
+    add_executable(model_maker_component_param_remap_test
+        libs/mm_contract/tests/component_param_remap_test.cpp)
+    target_link_libraries(model_maker_component_param_remap_test
+        PRIVATE mm_component_contract)
+    add_test(NAME model_maker_component_param_remap_test
+             COMMAND model_maker_component_param_remap_test)
 
     # MODELDEN KURULAN GIRDI ALTIN TESTI: Document -> componentInputFromDocument
     # -> generateHaunch40/generateEndPlate -> digest. Altin testlerin kor noktasi

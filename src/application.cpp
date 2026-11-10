@@ -13816,9 +13816,16 @@ int Application::reloadComponentPackages() {
     const mm::ComponentPackageScan scan = mm::loadComponentPackages(registry, dialogs, roots);
 
     // (3) Etkilenen ornekler: yalniz yeniden yuklenen tiplerin uyeleri.
+    //     P-1/3: parametre eslemesi ADA GOREDIR — ayni ad korunur (aralik disi
+    //     kelepcelenir), yeni ad varsayilan alir, semadan kalkan ad ATILIR ve
+    //     hepsi raporlanir. Esleme kaydin kendisine yazilir (kaydet/ac ayni
+    //     degeri tasir), sonra geometri yeniden uretilir.
     std::vector<EntityId> parts;
+    std::vector<std::size_t> affectedIdx;
+    mm::ComponentParamRemap total;
     int affected = 0;
-    for (const auto& rec : document_.componentInstances()) {
+    for (std::size_t i = 0; i < document_.componentInstances().size(); ++i) {
+        const ComponentInstanceRecord& rec = document_.componentInstances()[i];
         bool hit = false;
         for (const std::wstring& id : oldTypes) {
             if (rec.typeId != id) continue;
@@ -13827,20 +13834,57 @@ int Application::reloadComponentPackages() {
         }
         if (!hit) continue;
         ++affected;
+        affectedIdx.push_back(i);
         if (rec.mainPart != kInvalidEntityId) parts.push_back(rec.mainPart);
         for (EntityId sp : rec.secondaryParts) parts.push_back(sp);
+
+        const ComponentType* type = registry.findType(rec.typeId);
+        if (type == nullptr) continue;  // paket artik yok: kayit oldugu gibi kalir
+        ComponentParamRemap rep;
+        std::vector<CompParam> remapped =
+            mm::remapParamsToSpecs(type->params, rec.params, &rep);
+        total.kept += rep.kept;
+        total.clamped += rep.clamped;
+        total.added += rep.added;
+        total.dropped += rep.dropped;
+        for (const auto& n : rep.addedNames) total.addedNames.push_back(n);
+        for (const auto& n : rep.droppedNames) total.droppedNames.push_back(n);
+        if (!rep.anyChange() && rec.schemaVersion == type->schemaVersion) continue;
+        ComponentInstanceRecord updated = rec;
+        updated.params = std::move(remapped);
+        updated.schemaVersion = type->schemaVersion;
+        // 'dirty' BURADA set EDILMEZ: dirty "bagimlilik grafigi yeniden
+        // hesaplama istiyor" demek; esleme sonrasi yeniden uretim asagida
+        // ACIKCA kosar. Set edilirse basari sonrasi bayrak asili kalir ve
+        // "yeniden uretilemedi" tespiti yanlis pozitif verir.
+        document_.setComponentInstance(i, std::move(updated));
     }
+    int failed = 0;
     if (!parts.empty()) {
-        // Basarisiz ornek ESKI haliyle kalir (fail-closed); burada yalniz
-        // yeniden uretim denenir, hata yutulmaz — durum metnine yazilir.
-        if (!recomputeComponentInstancesFor(parts))
-            appendStartupLog(L"[paket-reload] bazi ornekler yeniden uretilemedi "
-                             L"(eski hâlleriyle birakildi)");
+        // atomicRecompute butun-kume bazinda calisir: hazirlama/commit
+        // basarisizsa HICBIR ornek degismez (fail-closed, kayit eski hâlinde).
+        // Bu yuzden basarisizlik sayisi = etkilenen ornek sayisi.
+        const bool ok = recomputeComponentInstancesFor(parts);
+        if (!ok) failed = affected;
+        if (failed > 0) {
+            std::wstring why = L"[paket-reload] " + std::to_wstring(failed) +
+                               L" ornek yeniden uretilemedi (eski hâlleriyle birakildi)";
+            if (!solidStatusMessage_.empty()) why += L" | neden: " + solidStatusMessage_;
+            appendStartupLog(why);
+        }
     }
 
     std::wstring msg = L"Paketler yeniden yüklendi: " + std::to_wstring(scan.registered.size()) +
                        L" tip";
-    if (affected > 0) msg += L", " + std::to_wstring(affected) + L" örnek yeniden üretildi";
+    if (affected > 0) msg += L", " + std::to_wstring(affected) + L" örnek";
+    if (total.anyChange())
+        msg += L" (parametre: " + std::to_wstring(total.kept) + L" korundu, " +
+               std::to_wstring(total.added) + L" yeni varsayılan, " +
+               std::to_wstring(total.dropped) + L" atıldı" +
+               (total.clamped > 0 ? L", " + std::to_wstring(total.clamped) + L" kelepçelendi"
+                                  : std::wstring()) +
+               L")";
+    if (failed > 0) msg += L"; " + std::to_wstring(failed) + L" örnek ESKİ hâlinde kaldı";
     for (const auto& e : scan.errors) msg += L" | REDDEDİLDİ " + e;
     for (const auto& w : scan.warnings) appendStartupLog(L"[paket-reload-uyari] " + w);
     lastComponentPackageMessage_ = msg;
