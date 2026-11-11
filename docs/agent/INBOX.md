@@ -603,6 +603,28 @@ listesini Durum'a yaz).
 Her madde ayrı commit + kapı + GUI senaryosu; sonunda kabul paketi.
 Durum: AÇIK
 
+## C-0 — Contract'ın KENDİ testleri kırmızı ve kapıda koşmuyor  [planlayıcı, 2026-11-11 23:00 — ŞİMDİKİ İŞİ BİTİR, SONRA İLK BU]
+Studio REPIN-2'de buldu, doğrulandı: `libs/mm_contract/tests/contract_smoke_test.cpp:22`,
+`component_codec_test.cpp:92`, `recipe_test.cpp:1294` hâlâ `kContractVersion ==
+"1.11.0"`; `recipe_test.cpp:1008` hâlâ 18 taş bekliyor (1.23.0'da 20). Yani 1.12–1.23
+arasındaki 12 contract sürümü contract'ın kendi test paketi koşmadan push edildi;
+MM kapısındaki "tam ctest yeşil" bu testleri İÇERMİYOR. Studio bunları geçici olarak
+kapattı (`MMCS_BUILD_CONTRACT_OWN_TESTS=OFF`).
+1. Kök neden: MM üst CMake'inde `MM_CONTRACT_BUILD_TESTS` neden kapalı / ctest'e
+   neden girmiyor? Kapıya ekle (MM tam ctest'i contract testlerini de koşsun).
+2. Testleri koş; kırmızıların HER BİRİNİ incele. Sürüm/taş sayısı beklentilerini
+   güncelle (sabit literal yerine `kContractVersion` ile karşılaştırma YAPMA: sürüm
+   testi bilinçli artışı yakalamak içindir; literal'i 1.23.0 yap). 18→20 taşın
+   yeni ikisini adıyla doğrula. Bunların dışında kırmızı çıkan test GERÇEK hata
+   sayılır: düzelt, testi gevşetme.
+3. 1.12–1.23 sürümlerinin her biri için contract testlerinde en az bir kapsama
+   testi var mı (yeni taş/argüman başına)? Eksikleri ekle.
+4. Ayrı commit; STATE'e "Studio: MMCS_BUILD_CONTRACT_OWN_TESTS yeniden ON
+   yapılabilir (<hash>)" yaz.
+5. Studio isteği (l): `bolts.grid` `anchorType` metin argümanı `param.*` kabul
+   etsin (TextParam); sürüm artışı + test.
+Durum: AÇIK
+
 ## P-1 kalanlar + gece bulguları (planlayıcı, 2026-11-11 sabah) — P-2'DEN ÖNCE
 Sıra:
 1. **P-1/8 + P-1/9:** GUI senaryosu tamamlama + KABUL PAKETİ (henüz yok;
