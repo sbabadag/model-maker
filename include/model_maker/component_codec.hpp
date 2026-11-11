@@ -22,6 +22,7 @@
 #include "model_maker/recipe.hpp"
 
 #include <nlohmann/json.hpp>
+#include <filesystem>
 #include <string>
 #include <vector>
 
@@ -83,7 +84,16 @@ std::string packageJsonText(const nlohmann::json& j);
 // CR bayti iceren metni REDDEDEN dosya yazici (LF-only garantisi). Windows'ta
 // metin modunda '\n' -> '\r\n' cevirilmesin diye BINARY modda yazar. '\r' iceren
 // metin yazilmaz (hata + false). Basariliysa true.
-bool writePackageJsonFile(const std::string& path, const std::string& text);
+//
+// 1.13.0 (contract istegi b): yol artik GENIS/UTF-8 guvenli.
+//  - `std::filesystem::path` imzasi TERCIH EDILIR: Windows'ta yerel genis
+//    yol kullanilir (ANSI kod sayfasi devrede degil) -> Turkce karakterli
+//    klasor adi kirilmaz.
+//  - `std::string` imzasi KORUNUR (geriye uyum): yol UTF-8 kabul edilir.
+//  - Metin SONU TEK LF ile bitmek ZORUNDA; CR iceren, LF ile bitmeyen ya
+//    da cift LF ile biten metin YAZILMAZ (false).
+bool writePackageJsonFile(const std::filesystem::path& path, const std::string& text);
+bool writePackageJsonFile(const std::string& utf8Path, const std::string& text);
 
 // --- MemberGeometry / ComponentInput (paket altin test girdisi) --------------
 // Paket icindeki tests/*.json "input" alanini tasir: uye geometrisi + parametre

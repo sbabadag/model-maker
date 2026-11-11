@@ -1363,20 +1363,34 @@ std::string packageJsonText(const nlohmann::json& j) {
     return j.dump(2) + "\n";
 }
 
-bool writePackageJsonFile(const std::string& path, const std::string& text) {
+bool writePackageJsonFile(const std::filesystem::path& path, const std::string& text) {
+    // 1.13.0 (b): yol GENIS (std::filesystem::path). Teshis metni icin UTF-8'e cevir.
+    const std::u8string u8 = path.u8string();
+    const std::string shown(u8.begin(), u8.end());
     if (text.find('\r') != std::string::npos) {
-        std::fprintf(stderr, "HATA: CR bayti iceren metin reddedildi: %s\n", path.c_str());
+        std::fprintf(stderr, "HATA: CR bayti iceren metin reddedildi: %s\n", shown.c_str());
         return false;
     }
-    // BINARY mod: Windows metin modunda '\n' -> '\r\n' cevirip LF-only garantisini
+    // 1.13.0 (b): sonda TEK LF sarti (bicim bozulmasini yazmadan yakalar).
+    if (text.empty() || text.back() != '\n' ||
+        (text.size() >= 2 && text[text.size() - 2] == '\n')) {
+        std::fprintf(stderr, "HATA: metin tek LF ile bitmiyor: %s\n", shown.c_str());
+        return false;
+    }
+    // BINARY mod: Windows metin modunda LF -> CRLF cevirip LF-only garantisini
     // bozmasin. Iki platformda da bayt-ayni dosya yazilir.
     std::ofstream out(path, std::ios::binary);
     if (!out.good()) {
-        std::fprintf(stderr, "HATA: yazilamadi: %s\n", path.c_str());
+        std::fprintf(stderr, "HATA: yazilamadi: %s\n", shown.c_str());
         return false;
     }
     out.write(text.data(), static_cast<std::streamsize>(text.size()));
     return out.good();
+}
+
+bool writePackageJsonFile(const std::string& utf8Path, const std::string& text) {
+    const std::u8string u8(utf8Path.begin(), utf8Path.end());
+    return writePackageJsonFile(std::filesystem::path(u8), text);
 }
 
 // ============================================================================

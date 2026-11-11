@@ -78,9 +78,39 @@ static void sectionA() {
     CHECK(txt.back() == '\n' && txt[txt.size() - 2] != '\n', "a: manifest tek LF ile bitmiyor");
 }
 
+// --- b) writePackageJsonFile: genis/UTF-8 yol + sonda tek LF -----------------
+static void sectionB() {
+    std::printf("[b] writePackageJsonFile genis yol + tek LF\n");
+    namespace fs = std::filesystem;
+    const fs::path dir = fs::temp_directory_path() / fs::path(u8"mm_sozlesme_turkce_\u015f\u011f\u00fc");
+    std::error_code ec;
+    fs::remove_all(dir, ec);
+    CHECK(fs::create_directories(dir, ec), "b: gecici klasor olusturulamadi");
+    const fs::path f = dir / "manifest.json";
+    const std::u8string fu8 = f.u8string();
+    const std::string fUtf8(fu8.begin(), fu8.end());
+    // gecerli: LF-only, tek LF son
+    CHECK(writePackageJsonFile(f, "{\"a\":1}\n"), "b: gecerli metin yazilmaliydi");
+    CHECK(readAll(f) == "{\"a\":1}\n", "b: yazilan baytlar farkli");
+    // RED: sonda LF yok
+    CHECK(!writePackageJsonFile(f, "{\"a\":1}"), "b: LF'siz metin REDDEDILMELIYDI");
+    // RED: cift LF
+    CHECK(!writePackageJsonFile(f, "{\"a\":1}\n\n"), "b: cift LF REDDEDILMELIYDI");
+    // RED: CR
+    CHECK(!writePackageJsonFile(f, "{\"a\":1}\r\n"), "b: CR'li metin REDDEDILMELIYDI");
+    // string (UTF-8) imzasi da ayni klasore yazabilmeli
+    const fs::path g = dir / "dialog.json";
+    const std::u8string gu8 = g.u8string();
+    const std::string gUtf8(gu8.begin(), gu8.end());
+    CHECK(writePackageJsonFile(gUtf8, "{\"b\":2}\n"), "b: UTF-8 string imzasi yazamadi");
+    CHECK(readAll(g) == "{\"b\":2}\n", "b: UTF-8 string imzasi baytlari farkli");
+    fs::remove_all(dir, ec);
+}
+
 int main() {
     std::printf("contract %s\n", kContractVersion);
     sectionA();
+    sectionB();
     if (failures == 0) std::printf("TUM TESTLER GECTI\n");
     else std::printf("%d HATA\n", failures);
     return failures == 0 ? 0 : 1;

@@ -263,6 +263,18 @@ bu kurala uymuyordu (`minContractVersion` yanlış yerdeydi); yeniden üretildi.
 Paket yükleyici anahtar sırasına DUYARLI DEĞİLDİR (sıra yalnız bayt-aynı
 üretim ve diff gürültüsü içindir).
 
+### 1.13.0 — (b) `writePackageJsonFile`: geniş/UTF-8 yol + sonda tek LF
+
+- Yeni imza `bool writePackageJsonFile(const std::filesystem::path&, const std::string&)`
+  TERCİH EDİLİR; Windows'ta yerel geniş yol kullanılır, ANSI kod sayfası devrede
+  değildir → Türkçe karakterli klasör adı (`...	ürkçe\...`) kırılmaz.
+  Eski `const std::string&` imzası KORUNUR: yol UTF-8 kabul edilir.
+- Metin **sonda tek LF** ile bitmek zorunda: CR içeren, LF ile bitmeyen ya da
+  çift LF ile biten metin YAZILMAZ (`false`). Böylece paket dosyalarında
+  biçim bozulması yazma anında yakalanır.
+- Test: `contract_requests_test` bölüm (b) — geçici klasör adı Türkçe
+  karakterli; geçerli yazım + üç ret durumu.
+
 ## Sürüm denetimi DIŞINDA olanlar (serbest)
 
 - `.cpp` iç kod (header'daki imzayı değiştirmediği sürece)
