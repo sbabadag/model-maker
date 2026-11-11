@@ -23,6 +23,8 @@
 #include "model_maker/component_engine.hpp"
 #include "model_maker/recipe.hpp"
 
+#include <nlohmann/json.hpp>
+
 #include <filesystem>
 #include <string>
 #include <vector>
@@ -59,6 +61,12 @@ ComponentGenerator makeRecipeGenerator(ComponentDialogDefinition dialog, Recipe 
 // registry okunur (yerlesik tipler + daha once yuklenmis paketler).
 ComponentPackageLoad loadComponentPackage(const std::filesystem::path& dir,
                                           const ComponentRegistry& registry);
+
+// 1.14.0 (contract istegi c): recipe.json BASLIK + arguman TURU dogrulayicisi
+// PUBLIC. Studio ayni fonksiyonu kullanarak disa aktarmadan ONCE dogrular
+// (fail-closed: recipeVersion semver + major 1, argumanlar metin/sayi; JSON
+// boolean ve bilinmeyen alanlar REDDEDILIR).
+bool validateRecipeJsonHeader(const nlohmann::json& recipeJson, std::wstring& error);
 
 // Kok dizinleri tarar (sirayla: ILK kok oncelikli = proje klasoru) ve basarili
 // paketleri kaydeder. `roots` icinde olmayan/erisilemeyen dizin sessizce atlanir

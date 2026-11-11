@@ -107,10 +107,29 @@ static void sectionB() {
     fs::remove_all(dir, ec);
 }
 
+// --- c) validateRecipeJsonHeader PUBLIC --------------------------------------
+static void sectionC() {
+    std::printf("[c] validateRecipeJsonHeader PUBLIC\n");
+    std::wstring err;
+    nlohmann::json ok;
+    ok["recipeVersion"] = "1.0.0";
+    ok["steps"] = nlohmann::json::array();
+    CHECK(mm::validateRecipeJsonHeader(ok, err), "c: gecerli recipe REDDEDILDI");
+    nlohmann::json bad = ok;
+    bad["recipeVersion"] = "2.0.0";
+    err.clear();
+    CHECK(!mm::validateRecipeJsonHeader(bad, err), "c: major 2 KABUL EDILMEMELIYDI");
+    CHECK(!err.empty(), "c: major 2 ret mesaji bos");
+    err.clear();
+    CHECK(!mm::validateRecipeJsonHeader(nlohmann::json::object(), err),
+          "c: recipeVersion'suz recipe KABUL EDILMEMELIYDI");
+}
+
 int main() {
     std::printf("contract %s\n", kContractVersion);
     sectionA();
     sectionB();
+    sectionC();
     if (failures == 0) std::printf("TUM TESTLER GECTI\n");
     else std::printf("%d HATA\n", failures);
     return failures == 0 ? 0 : 1;

@@ -275,6 +275,14 @@ Paket yükleyici anahtar sırasına DUYARLI DEĞİLDİR (sıra yalnız bayt-ayn�
 - Test: `contract_requests_test` bölüm (b) — geçici klasör adı Türkçe
   karakterli; geçerli yazım + üç ret durumu.
 
+### 1.14.0 — (c) `validateRecipeJsonHeader` PUBLIC
+
+`bool validateRecipeJsonHeader(const nlohmann::json&, std::wstring& error)` artık
+`model_maker/component_package.hpp` içinde **PUBLIC**. Studio aynı doğrulayıcıyı
+dışa aktarmadan ÖNCE koşar (tek kaynak, iki taraf aynı kuralı uygular):
+`recipeVersion` zorunlu + semver + major **1**; `let` nesnesi; adım argümanları
+metin ifade ya da sayı (JSON `true/false` REDDEDİLİR). Ret mesajı Türkçedir.
+
 ## Sürüm denetimi DIŞINDA olanlar (serbest)
 
 - `.cpp` iç kod (header'daki imzayı değiştirmediği sürece)

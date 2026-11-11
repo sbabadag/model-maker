@@ -90,7 +90,7 @@ bool parseSemver(const std::string& s, int& maj, int& min, int& patch);  // asag
 //  - recipeVersion zorunlu, semver, major 1 olmali (2.0.0 REDDEDILIR);
 //  - arguman degeri JSON boolean olamaz: metin ifade ("2*e") ya da sayi
 //    beklenir. Onceden boolean "1" metnine cevrilip sessizce gecerdi.
-bool validateRecipeJsonHeader(const json& rj, std::wstring& err) {
+bool validateRecipeJsonHeaderImpl(const json& rj, std::wstring& err) {
     if (!rj.is_object()) { err = L"recipe.json nesne degil"; return false; }
     if (!rj.contains("recipeVersion") || !rj["recipeVersion"].is_string()) {
         err = L"recipe.json recipeVersion eksik (string semver beklenir)";
@@ -493,7 +493,7 @@ ComponentPackageLoad loadPackageImpl(const fs::path& dir, const ComponentRegistr
         // metin/sayi ifade olmali — JSON boolean "1"/"0" metnine CEVİRİLMEZ.
         {
             std::wstring rerr;
-            if (!validateRecipeJsonHeader(rj, rerr)) return fail(out, rerr);
+            if (!validateRecipeJsonHeaderImpl(rj, rerr)) return fail(out, rerr);
         }
         out.recipe = recipeFromJson(rj);
         if (out.recipe.steps.empty())
@@ -898,5 +898,12 @@ ComponentPackageInstallResult installComponentPackage(
     return out;
 }
 
+
+// 1.14.0 (contract istegi c): PUBLIC dogrulayici. Govde anonim ad alanindaki
+// `validateRecipeJsonHeaderImpl`'dir (tek kaynak); bu sarmalayici Studio'nun
+// ve testlerin cagirabilmesi icin DIS baglanti verir.
+bool validateRecipeJsonHeader(const json& recipeJson, std::wstring& error) {
+    return validateRecipeJsonHeaderImpl(recipeJson, error);
+}
 
 }  // namespace mm
