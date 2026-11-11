@@ -1507,6 +1507,56 @@ struct Runner {
             pump(40);
             return writeStep(step, QStringLiteral("moveClick"));
         }
+        if (step.contains(QStringLiteral("projectModels"))) {
+            // TANI: her modelin EKRAN kutusu (kutu secimi dikdortgenini
+            // gozle degil OLCEREK kurmak icin).
+            RECT client{};
+            GetClientRect(window.application().canvasHandle(), &client);
+            const auto& models = window.application().document().models();
+            for (std::size_t i = 0; i < models.size(); ++i) {
+                double lo_x = 1e18, lo_y = 1e18, hi_x = -1e18, hi_y = -1e18;
+                for (const mm::Vec3& v : models[i].vertices()) {
+                    const mm::Vec2 p = window.application().camera().project(
+                        v, std::max(1L, client.right), std::max(1L, client.bottom));
+                    lo_x = std::min(lo_x, p.x); hi_x = std::max(hi_x, p.x);
+                    lo_y = std::min(lo_y, p.y); hi_y = std::max(hi_y, p.y);
+                }
+                std::printf("[screen] model %zu: x %.0f..%.0f  y %.0f..%.0f\n", i, lo_x, hi_x,
+                            lo_y, hi_y);
+            }
+            std::printf("[screen] tuval %ldx%ld\n", client.right, client.bottom);
+            pump(20);
+            return writeStep(step, QStringLiteral("projectModels"));
+        }
+        if (step.contains(QStringLiteral("boxSelect"))) {
+            // Kutu secimi bu uygulamada TIK-TIK ile yapilir: bos noktaya tik ->
+            // kosse, ikinci tik -> pencere tamamlanir (onLeftButtonDown).
+            // Sadece suruklemek secim uretmez; t32 bunu ayrica dogrular.
+            const QJsonArray r = step[QStringLiteral("boxSelect")].toArray();
+            if (r.size() < 4) return fail(QStringLiteral("boxSelect: [x1, y1, x2, y2] bekleniyor"));
+            const int x1 = r[0].toInt(), y1 = r[1].toInt(), x2 = r[2].toInt(), y2 = r[3].toInt();
+            // Once bekleyen kosse/tik durumunu temizle: onceki bir surukleme
+            // (drag) UP'ta kosseyi birakir ve sonraki tik yanlis noktadan
+            // pencere tamamlar. Esc ile notr duruma donulur.
+            const HWND target = focused();
+            SendMessageW(target, WM_KEYDOWN, VK_ESCAPE, 0);
+            SendMessageW(target, WM_KEYUP, VK_ESCAPE, 0);
+            pump(40);
+            sendMouse(WM_MOUSEMOVE, 0, x1, y1);
+            sendMouse(WM_LBUTTONDOWN, MK_LBUTTON, x1, y1);
+            sendMouse(WM_LBUTTONUP, 0, x1, y1);
+            pump(40);
+            const std::size_t afterFirst = window.application().selectedModelIndices().size();
+            sendMouse(WM_MOUSEMOVE, 0, x2, y2);  // kosse gorunur
+            pump(40);
+            sendMouse(WM_MOUSEMOVE, 0, x2, y2);
+            sendMouse(WM_LBUTTONDOWN, MK_LBUTTON, x2, y2);
+            sendMouse(WM_LBUTTONUP, 0, x2, y2);
+            pump(60);
+            const std::size_t afterSecond = window.application().selectedModelIndices().size();
+            std::printf("[box] ilk tik=%zu ikinci tik=%zu\n", afterFirst, afterSecond);
+            return writeStep(step, QStringLiteral("boxSelect"));
+        }
         if (step.contains(QStringLiteral("drag"))) {
             const QJsonArray rect = step[QStringLiteral("drag")].toArray();
             if (rect.size() < 4) return fail(QStringLiteral("drag: [x1, y1, x2, y2] bekleniyor"));

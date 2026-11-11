@@ -887,6 +887,27 @@ T-3: GEÇTİ (kısmi) — GT `t31_t3_kiris_mertek`, 27 adım `ok=true`.
 
 
 
+T-5: GEÇTİ (kısmi) — GT `t32_t5_secim`, 38 adım `ok=true`, GDI ve GPU aynı.
+    Tek tık (`clickModel`) → `Seçim: 1` (vision: kolon yeşil vurgulu); Esc → 0.
+    KUTU SEÇİMİ bu uygulamada TIK-TIK ile çalışır: boş noktaya tık (köşe),
+    ikinci tık penceresi tamamlar (`completeWindowSelection` `onLeftButtonDown`
+    içinde). Tek sürükleme (`drag`) SEÇİM ÜRETMEZ — `t32` bunu belgeliyor.
+    Pencere modu (sol→sağ, tam kapsama) ve crossing (sağ→sol) ikisi de 2 üyeyi
+    seçti; vision: iki kolon yeşil + `Seçim: 2`. View cube ÖN tıklaması seçimi
+    korur (2 kalır, kamera yaw=3.14159265 pitch=1.57079633). Komut sırasında
+    (`draw.line`) küp tıklaması aracı korur (`activeTool=draw.line`).
+    `sel.part` / `sel.assembly` komutları hata vermez; Parça modunda kutu
+    seçimi 2 üye seçer. Kanıt: `C:\work\mm-hermes-shots\2026-11-11	32\`
+    ve `t32gpu\`.
+    BULGU (koşucu tarafı, üretim kodu DEĞİŞMEDİ): `drag` adımı UP'ta köşeyi
+    (`selectionFirstCorner_`) bırakır; sonraki tek tık eşit noktadan pencere
+    tamamlamaya çalışıp erken döner. Yeni `boxSelect` adımı Esc ile normalize
+    eder, sonra iki tık gönderir. 3B'de boş tıklama seçimi BIRAKMAZ (temizlik
+    Esc ile) — kullanıcı beklentisi farklıysa ayrı madde.
+    ATLANDI: gimbal ekran-sabit (B3) ayrı madde; Ctrl+Tab görünüm geçişi
+    T-11 kapsamında; Montaj modunda kutu seçiminin seçim SAYISI iddia
+    edilmedi (yalnız hata vermediği + ekran görüntüsü).
+
 ## Açık soru (yanıtla, Durum'a yaz)
 - 893e770 "feat(document): çoklu seçim özellik düzenleme + tek geri alma
   adımı" istenmemişti. Ne yapıyor, hangi maddeye ait, testi var mı?

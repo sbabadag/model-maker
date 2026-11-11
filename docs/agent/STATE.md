@@ -613,5 +613,26 @@ sürerken yalnız `docs/` düzenlenir.
       görünmeyen yüzde ilk görünür yüz + log), `expect.camera {yaw, pitch, tol}`
       (±π sarmalı), `Application::editMode()` salt-okunur erişimi, zaman
       tabanlı `pump()`.
-- Kanıt: `C:\work\mm-hermes-shots6-11-11	28\` (GDI) ve `t28gpu\` (GPU).
+- Kanıt: `C:\work\mm-hermes-shots\2026-11-11	28\` (GDI) ve `t28gpu\` (GPU).
   Kapı: `b5-gate.log` **170/170**, `BUILD_EXIT=0`, `CTEST_EXIT=0`, 313.28 s.
+
+## T-5 — secim (kapandi, 2026-11-11)
+
+- GT `t32_t5_secim` 38 adim `ok=true`, GDI ve GPU ayni.
+- Tek tik (`clickModel`) -> `Secim: 1`; Esc -> 0.
+- KUTU SECIMI tik-tik ile calisir: birinci tik bos noktaya kosse, ikinci tik
+  pencereyi tamamlar (`completeWindowSelection`, `onLeftButtonDown` icinde).
+  Tek surukleme (`drag`) secim URETMEZ. Pencere (sol->sag, tam kapsama) ve
+  crossing (sag->sol) ikisi de 2 uyeyi secti.
+- View cube ON tiklamasi secimi korur (2 kalir, kamera yaw=3.14159265
+  pitch=1.57079633); `draw.line` sirasinda kup tiklamasi araci korur.
+- `sel.part` / `sel.assembly` hata vermez; Parca modunda kutu secimi 2.
+- BULGU (uretim kodu DEGISMEDI): `drag` UP'ta `selectionFirstCorner_` birakir;
+  sonraki tek tik esit noktadan pencere tamamlamaya calisip erken doner
+  (`first.x == x || first.y == y`). Kosucuya `boxSelect` adimi eklendi
+  (Esc ile normalize -> tik -> MOVE -> ikinci tik) + `projectModels` tani
+  adimi (model basina ekran kutusu, tuval olcusu).
+- 3B'de bos tiklama secimi BIRAKMAZ (temizlik yalniz Esc); `draw.line` Esc ile
+  sonmuyor (`activeTool` kaliyor) — kullanici beklentisi farkliysa ayri madde.
+- Kanit: shots\2026-11-11\t32 (GDI) ve t32gpu (GPU). Kapi: `t5-gate.log`
+  170/170, BUILD_EXIT=0, CTEST_EXIT=0, 433.94 s.

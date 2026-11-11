@@ -1,0 +1,209 @@
+{
+  "_comment": "T-5 SECIM: tek tik, Esc temizligi, kutu secimi (tik-tik: pencere + crossing), view cube secimi bozmaz, komut sirasinda arac korunur, Parca/Montaj secim modu komutlari hata vermez.",
+  "backend": "gdi",
+  "timeoutMs": 120000,
+  "steps": [
+    {
+      "profile": "HEB240"
+    },
+    {
+      "appColumnLevels": {
+        "top": 3000,
+        "bottom": 0
+      }
+    },
+    {
+      "placeColumn": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      }
+    },
+    {
+      "placeColumn": {
+        "x": 6000,
+        "y": 0,
+        "z": 0
+      }
+    },
+    {
+      "key": "Escape"
+    },
+    {
+      "cmd": "view.dir.iso"
+    },
+    {
+      "fit": {}
+    },
+    {
+      "projectModels": {}
+    },
+    {
+      "clickModel": {
+        "model": 0
+      }
+    },
+    {
+      "expect": {
+        "selection": 1
+      }
+    },
+    {
+      "capture": {
+        "name": "t5-00-tek-secim",
+        "target": "window"
+      }
+    },
+    {
+      "key": "Escape"
+    },
+    {
+      "expect": {
+        "selection": 0
+      }
+    },
+    {
+      "boxSelect": [
+        150,
+        20,
+        1000,
+        800
+      ]
+    },
+    {
+      "expect": {
+        "selection": 2
+      }
+    },
+    {
+      "capture": {
+        "name": "t5-01-kutu-pencere",
+        "target": "window"
+      }
+    },
+    {
+      "boxSelect": [
+        1000,
+        800,
+        150,
+        20
+      ]
+    },
+    {
+      "expect": {
+        "selection": 2
+      }
+    },
+    {
+      "capture": {
+        "name": "t5-02-kutu-crossing",
+        "target": "window"
+      }
+    },
+    {
+      "viewCubeFace": {
+        "view": "front"
+      }
+    },
+    {
+      "expect": {
+        "selection": 2,
+        "camera": {
+          "yaw": 3.14159265,
+          "pitch": 1.57079633,
+          "tol": 0.02
+        }
+      }
+    },
+    {
+      "capture": {
+        "name": "t5-03-kup-secimi-korur",
+        "target": "window"
+      }
+    },
+    {
+      "cmd": "view.dir.iso"
+    },
+    {
+      "fit": {}
+    },
+    {
+      "cmd": "sel.part"
+    },
+    {
+      "boxSelect": [
+        150,
+        20,
+        1000,
+        800
+      ]
+    },
+    {
+      "expect": {
+        "selection": 2
+      }
+    },
+    {
+      "capture": {
+        "name": "t5-04-parca-modu-kutu",
+        "target": "window"
+      }
+    },
+    {
+      "cmd": "sel.assembly"
+    },
+    {
+      "boxSelect": [
+        150,
+        20,
+        1000,
+        800
+      ]
+    },
+    {
+      "capture": {
+        "name": "t5-05-montaj-modu-kutu",
+        "target": "window"
+      }
+    },
+    {
+      "cmd": "sel.part"
+    },
+    {
+      "select": [
+        0,
+        1
+      ]
+    },
+    {
+      "cmd": "draw.line"
+    },
+    {
+      "expect": {
+        "selection": 0,
+        "activeTool": "draw.line"
+      }
+    },
+    {
+      "viewCubeFace": {
+        "view": "top"
+      }
+    },
+    {
+      "expect": {
+        "activeTool": "draw.line",
+        "camera": {
+          "yaw": 0.0,
+          "pitch": 0.0,
+          "tol": 0.02
+        }
+      }
+    },
+    {
+      "capture": {
+        "name": "t5-06-komut-sirasinda-kup",
+        "target": "window"
+      }
+    }
+  ]
+}
