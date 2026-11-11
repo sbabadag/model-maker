@@ -8,6 +8,7 @@
 #include "model_maker/component_live_preview_widget.hpp"
 #include "model_maker/component_catalog.hpp"
 #include "model_maker/linear_delta.hpp"
+#include "model_maker/report.hpp"
 
 #include <QApplication>
 #include <QMdiArea>
@@ -47,6 +48,8 @@
 #include <QTreeWidget>
 #include <QTreeWidgetItem>
 #include <QFont>
+#include <QPlainTextEdit>
+#include <QClipboard>
 #include <functional>
 #include <variant>
 #include <QTableWidget>
@@ -803,6 +806,7 @@ void QtMainWindow::buildCommandHandlers() {
     h["file.saveAs"] = [this]() { app_.saveDocumentAs(); };
     h["file.importDxf"] = [this]() { app_.importDxf(); };
     h["file.exportDxf"] = [this]() { app_.exportDxf(); };
+    h["report.materialList"] = [this]() { showMaterialList(); };
     h["file.exit"] = []() { QApplication::quit(); };
 
     // ---- Cizim ----
@@ -1373,6 +1377,36 @@ bool QtMainWindow::openWeldDialog(mm::WeldType& type, double& size, double& leng
     length = lenSpin->value();
     cls = static_cast<mm::WeldClass>(clsCombo->currentData().toInt());
     return true;
+}
+
+void QtMainWindow::showMaterialList() {
+    // P-2/5: MALZEME LISTESI — modeldeki uye, levha, bulon ve kaynak satirlari.
+    // Rapor saf fonksiyondan gelir (mm::materialListReport); pencere yalniz
+    // gosterir + panoya kopyalar. Ayni icerik testte de denetlenir.
+    const QString text = QString::fromStdWString(mm::materialListReport(app_.document()));
+    QDialog dlg(this);
+    dlg.setWindowTitle(QStringLiteral("Malzeme Listesi"));
+    dlg.resize(720, 520);
+    auto* layout = new QVBoxLayout(&dlg);
+    auto* view = new QPlainTextEdit(text, &dlg);
+    view->setReadOnly(true);
+    view->setLineWrapMode(QPlainTextEdit::NoWrap);
+    QFont mono = view->font();
+    mono.setFamily(QStringLiteral("Consolas"));
+    mono.setStyleHint(QFont::Monospace);
+    mono.setPointSize(9);
+    view->setFont(mono);
+    layout->addWidget(view);
+    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Close, &dlg);
+    auto* copy = buttons->addButton(QStringLiteral("Panoya Kopyala"),
+                                    QDialogButtonBox::ActionRole);
+    QObject::connect(copy, &QPushButton::clicked, &dlg, [&text]() {
+        QApplication::clipboard()->setText(text);
+    });
+    QObject::connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+    QObject::connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+    layout->addWidget(buttons);
+    dlg.exec();
 }
 
 void QtMainWindow::startWeldCommand() {

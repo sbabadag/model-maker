@@ -142,6 +142,8 @@ private:
     // secilir; OK -> app_.beginWeldCommand. Escape/Dialog iptali komut baslatmaz.
     bool openWeldDialog(mm::WeldType& type, double& size, double& length, mm::WeldClass& cls);
     void startWeldCommand();
+    // P-2/5: malzeme listesi (levha + bulon + kaynak satirlari) penceresi.
+    void showMaterialList();
     void createDockPanels();
     void resizeEmbeddedCanvas();
     void openTwoPointView(const ViewDefinition& view);

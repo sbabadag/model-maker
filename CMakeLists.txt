@@ -109,6 +109,7 @@ add_library(model_maker_core
     src/component_presets.cpp
     src/marking.cpp
     src/fabrication.cpp
+    src/report.cpp
     src/drawing.cpp
     src/drawing_layout.cpp
     src/drawing_set.cpp
@@ -850,6 +851,11 @@ if(BUILD_TESTING)
     target_link_libraries(model_maker_fabrication_test PRIVATE model_maker_core)
     target_compile_options(model_maker_fabrication_test PRIVATE -Wall -Wextra -Wpedantic)
     add_test(NAME model_maker_fabrication_test COMMAND model_maker_fabrication_test)
+    # P-2/5: MALZEME LISTESI / RAPOR (levha + bulon + kaynak satirlari).
+    add_executable(model_maker_material_list_test tests/material_list_test.cpp)
+    target_link_libraries(model_maker_material_list_test PRIVATE model_maker_core)
+    target_compile_options(model_maker_material_list_test PRIVATE -Wall -Wextra -Wpedantic)
+    add_test(NAME model_maker_material_list_test COMMAND model_maker_material_list_test)
 
     # DRAWING P2A: otomatik imalat olculeri + akilli yerlesim (fixture: uc levhasi + 2 bagimsiz grup + oteli levha).
     add_executable(model_maker_drawing_fab_test tests/drawing_fab_test.cpp)

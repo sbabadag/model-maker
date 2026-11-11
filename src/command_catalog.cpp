@@ -135,6 +135,10 @@ void addFileCommands(CommandRegistry& r) {
     r.add(Cmd("file.exportDxf", "DXF Dışa Aktar...", "export", "DXF dışa aktar")
               .keys("dxf disa aktar export")
               .surface(CommandSurface::MenuOnly));
+    // P-2/5: MALZEME LISTESI — levha + bulon + kaynak satirlari (rapor).
+    r.add(Cmd("report.materialList", "Malzeme Listesi...", "report", "Malzeme listesi / rapor")
+              .keys("malzeme liste metraj rapor bom")
+              .surface(CommandSurface::MenuOnly));
     r.add(Cmd("file.exit", "Çıkış", "exit", "Uygulamadan çık")
               .keys("cikis exit kapat")
               .surface(CommandSurface::MenuOnly));
@@ -598,6 +602,7 @@ UiPlan buildMenuPlan() {
     plan.addTab(tab("&Dosya", {group("Dosya", {
         item("file.new"), item("file.open"), item("file.save"), item("file.saveAs"),
         separator(), item("file.importDxf"), item("file.exportDxf"),
+        separator(), item("report.materialList"),
         separator(), item("file.exit"),
     })}));
 
