@@ -1,0 +1,11 @@
+{
+  "author": {
+    "tool": "Model Maker Component Studio"
+  },
+  "displayName": "Rijitlestirilmis alin levhasi (sureklilik levhali)",
+  "format": "mmcpkg",
+  "formatVersion": "1.0.0",
+  "minContractVersion": "1.11.0",
+  "schemaVersion": 2,
+  "typeId": "mm_stiffened_end_plate"
+}

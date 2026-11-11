@@ -1,0 +1,243 @@
+{
+  "backend": "gdi",
+  "timeoutMs": 300000,
+  "_comment": "P-1/8 — TEK AKISLI UCTAN UCA (GT-1). Studio'nun gercek mm_stiffened_end_plate paketi ice aktarilir -> katalogda bulunur (pickCount 2) -> HEB300 kolon + IPE240 kiris secilir -> diyalog semasi dogrulanir -> uygulanir -> parametre degistirilir (digest degisir) -> kaydet -> yeniden ac (ayni digest) -> gelistirme klasorunde paket v2'ye cikarilir (levha +10 mm) -> appReloadPackages -> ornek YENIDEN URETILIR (digest degisir) -> kaydet/ac ayni digest.",
+  "steps": [
+    {
+      "appImportPackage": {
+        "path": "../fixtures/studio_pkgs/mm_stiffened_end_plate.mmcpkg",
+        "embed": false,
+        "userRoot": "components"
+      }
+    },
+    {
+      "componentTypeRegistered": {
+        "typeId": "mm_stiffened_end_plate",
+        "package": true,
+        "schemaVersion": 1
+      }
+    },
+    {
+      "expect": {
+        "catalogEntry": {
+          "typeId": "mm_stiffened_end_plate",
+          "pickCount": 2,
+          "visible": true,
+          "hasDialog": true
+        }
+      }
+    },
+    {
+      "componentDialogSchema": {
+        "typeId": "mm_stiffened_end_plate",
+        "paramCount": 8
+      }
+    },
+    {
+      "profile": "HEB300"
+    },
+    {
+      "appColumnLevels": {
+        "top": 3000,
+        "bottom": 0
+      }
+    },
+    {
+      "placeColumn": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      }
+    },
+    {
+      "assignLine": {
+        "x1": 0,
+        "y1": 120,
+        "z1": 2880,
+        "x2": 6000,
+        "y2": 120,
+        "z2": 2880,
+        "profile": "IPE240"
+      }
+    },
+    {
+      "expect": {
+        "models": {
+          "count": 2,
+          "profiled": 2
+        }
+      }
+    },
+    {
+      "appComponent": {
+        "typeId": "mm_stiffened_end_plate",
+        "parts": [
+          0,
+          1
+        ]
+      }
+    },
+    {
+      "expect": {
+        "componentCount": {
+          "typeId": "mm_stiffened_end_plate",
+          "count": 1
+        }
+      }
+    },
+    {
+      "expect": {
+        "componentDigest": {
+          "typeId": "mm_stiffened_end_plate",
+          "key": "ilk",
+          "remember": true
+        }
+      }
+    },
+    {
+      "fit": true
+    },
+    {
+      "capture": {
+        "name": "t22-paket-uygulandi",
+        "target": "window"
+      }
+    },
+    {
+      "appComponentParams": {
+        "typeId": "mm_stiffened_end_plate",
+        "params": {
+          "st_t": 16.0
+        }
+      }
+    },
+    {
+      "expect": {
+        "componentDigest": {
+          "typeId": "mm_stiffened_end_plate",
+          "key": "duzenlendi",
+          "remember": true
+        }
+      }
+    },
+    {
+      "expect": {
+        "componentDigest": {
+          "typeId": "mm_stiffened_end_plate",
+          "key": "ilk",
+          "notEquals": true
+        }
+      }
+    },
+    {
+      "capture": {
+        "name": "t22-parametre-degisti",
+        "target": "window"
+      }
+    },
+    {
+      "save": "t22_p1_akis.mmw"
+    },
+    {
+      "open": "t22_p1_akis.mmw"
+    },
+    {
+      "expect": {
+        "componentCount": {
+          "typeId": "mm_stiffened_end_plate",
+          "count": 1
+        }
+      }
+    },
+    {
+      "expect": {
+        "componentDigest": {
+          "typeId": "mm_stiffened_end_plate",
+          "key": "duzenlendi",
+          "equals": true
+        }
+      }
+    },
+    {
+      "capture": {
+        "name": "t22-kaydet-ac-ayni",
+        "target": "window"
+      }
+    },
+    {
+      "appReloadPackages": {
+        "devDirs": [
+          "../fixtures/studio_pkgs/dev"
+        ]
+      }
+    },
+    {
+      "componentTypeRegistered": {
+        "typeId": "mm_stiffened_end_plate",
+        "package": true,
+        "schemaVersion": 2
+      }
+    },
+    {
+      "expect": {
+        "componentCount": {
+          "typeId": "mm_stiffened_end_plate",
+          "count": 1
+        }
+      }
+    },
+    {
+      "expect": {
+        "componentDigest": {
+          "typeId": "mm_stiffened_end_plate",
+          "key": "duzenlendi",
+          "notEquals": true
+        }
+      }
+    },
+    {
+      "expect": {
+        "componentDigest": {
+          "typeId": "mm_stiffened_end_plate",
+          "key": "v2",
+          "remember": true
+        }
+      }
+    },
+    {
+      "capture": {
+        "name": "t22-dev-paket-v2-yeniden-uretim",
+        "target": "window"
+      }
+    },
+    {
+      "save": "t22_p1_akis_v2.mmw"
+    },
+    {
+      "open": "t22_p1_akis_v2.mmw"
+    },
+    {
+      "expect": {
+        "componentCount": {
+          "typeId": "mm_stiffened_end_plate",
+          "count": 1
+        }
+      }
+    },
+    {
+      "expect": {
+        "componentDigest": {
+          "typeId": "mm_stiffened_end_plate",
+          "key": "v2",
+          "equals": true
+        }
+      }
+    },
+    {
+      "capture": {
+        "name": "t22-v2-kaydet-ac-ayni",
+        "target": "window"
+      }
+    }
+  ]
+}

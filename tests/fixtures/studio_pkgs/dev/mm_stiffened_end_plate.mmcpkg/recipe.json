@@ -1,0 +1,239 @@
+{
+  "recipeVersion": "1.0.0",
+  "let": {},
+  "steps": [
+    {
+      "check": "main.b/2 - main.tw/2 - param.st_gap > 0",
+      "message": "Sureklilik levhasi genisligi sifir veya negatif: st_gap govde-flans araligindan buyuk"
+    },
+    {
+      "check": "main.h - 2*main.tf > 0",
+      "message": "Kolon ic derinligi (h - 2*tf) sifir veya negatif: kesit sureklilik levhasina uygun degil"
+    },
+    {
+      "check": "param.st_t >= 6",
+      "message": "Sureklilik levhasi kalinligi en az 6 mm olmali"
+    },
+    {
+      "check": "secondary_0.h/2 - secondary_0.tf/2 + param.st_t/2 <= main.h/2 - main.tf",
+      "message": "Sureklilik levhasi kolon flansinin icine giriyor (kiris flans hizasi + st_t/2 > ic derinlik)"
+    },
+    {
+      "id": "s1",
+      "use": "endplate.placement",
+      "args": {
+        "beam": "secondary_0",
+        "main": "main",
+        "roleBolts": "beam_bolts",
+        "rolePlate": "end_plate"
+      }
+    },
+    {
+      "id": "s2",
+      "use": "frame.member_face",
+      "args": {
+        "member": "main",
+        "toward": "secondary_0"
+      }
+    },
+    {
+      "id": "f_top_a",
+      "use": "frame.offset",
+      "when": "param.st_top > 0.5",
+      "args": {
+        "du": "(main.tw/2 + main.b/2 - param.st_gap)/2",
+        "dv": "secondary_0.h/2 - secondary_0.tf/2",
+        "dw": "0 - main.h/2",
+        "frame": "s2"
+      }
+    },
+    {
+      "id": "r_top_a",
+      "use": "frame.rotate",
+      "when": "param.st_top > 0.5",
+      "args": {
+        "about": "u",
+        "deg": "90",
+        "frame": "f_top_a"
+      }
+    },
+    {
+      "id": "p_top_a",
+      "use": "plate.rect",
+      "role": "stiffener_top_a",
+      "when": "param.st_top > 0.5",
+      "args": {
+        "frame": "r_top_a",
+        "h": "main.h - 2*main.tf",
+        "material": "param.st_material",
+        "name": "param.st_name",
+        "t": "param.st_t + 10",
+        "w": "main.b/2 - main.tw/2 - param.st_gap"
+      }
+    },
+    {
+      "id": "f_top_b",
+      "use": "frame.offset",
+      "when": "param.st_top > 0.5",
+      "args": {
+        "du": "0 - (main.tw/2 + main.b/2 - param.st_gap)/2",
+        "dv": "secondary_0.h/2 - secondary_0.tf/2",
+        "dw": "0 - main.h/2",
+        "frame": "s2"
+      }
+    },
+    {
+      "id": "r_top_b",
+      "use": "frame.rotate",
+      "when": "param.st_top > 0.5",
+      "args": {
+        "about": "u",
+        "deg": "90",
+        "frame": "f_top_b"
+      }
+    },
+    {
+      "id": "p_top_b",
+      "use": "plate.rect",
+      "role": "stiffener_top_b",
+      "when": "param.st_top > 0.5",
+      "args": {
+        "frame": "r_top_b",
+        "h": "main.h - 2*main.tf",
+        "material": "param.st_material",
+        "name": "param.st_name",
+        "t": "param.st_t + 10",
+        "w": "main.b/2 - main.tw/2 - param.st_gap"
+      }
+    },
+    {
+      "id": "f_bot_a",
+      "use": "frame.offset",
+      "when": "param.st_bottom > 0.5",
+      "args": {
+        "du": "(main.tw/2 + main.b/2 - param.st_gap)/2",
+        "dv": "0 - (secondary_0.h/2 - secondary_0.tf/2)",
+        "dw": "0 - main.h/2",
+        "frame": "s2"
+      }
+    },
+    {
+      "id": "r_bot_a",
+      "use": "frame.rotate",
+      "when": "param.st_bottom > 0.5",
+      "args": {
+        "about": "u",
+        "deg": "90",
+        "frame": "f_bot_a"
+      }
+    },
+    {
+      "id": "p_bot_a",
+      "use": "plate.rect",
+      "role": "stiffener_bot_a",
+      "when": "param.st_bottom > 0.5",
+      "args": {
+        "frame": "r_bot_a",
+        "h": "main.h - 2*main.tf",
+        "material": "param.st_material",
+        "name": "param.st_name",
+        "t": "param.st_t + 10",
+        "w": "main.b/2 - main.tw/2 - param.st_gap"
+      }
+    },
+    {
+      "id": "f_bot_b",
+      "use": "frame.offset",
+      "when": "param.st_bottom > 0.5",
+      "args": {
+        "du": "0 - (main.tw/2 + main.b/2 - param.st_gap)/2",
+        "dv": "0 - (secondary_0.h/2 - secondary_0.tf/2)",
+        "dw": "0 - main.h/2",
+        "frame": "s2"
+      }
+    },
+    {
+      "id": "r_bot_b",
+      "use": "frame.rotate",
+      "when": "param.st_bottom > 0.5",
+      "args": {
+        "about": "u",
+        "deg": "90",
+        "frame": "f_bot_b"
+      }
+    },
+    {
+      "id": "p_bot_b",
+      "use": "plate.rect",
+      "role": "stiffener_bot_b",
+      "when": "param.st_bottom > 0.5",
+      "args": {
+        "frame": "r_bot_b",
+        "h": "main.h - 2*main.tf",
+        "material": "param.st_material",
+        "name": "param.st_name",
+        "t": "param.st_t + 10",
+        "w": "main.b/2 - main.tw/2 - param.st_gap"
+      }
+    },
+    {
+      "id": "w1",
+      "use": "weld.fillet",
+      "role": "weld_end_plate",
+      "args": {
+        "double": "1",
+        "roleA": "end_plate",
+        "roleB": "main",
+        "size": "param.w_plate"
+      }
+    },
+    {
+      "id": "w2",
+      "use": "weld.fillet",
+      "role": "weld_stiffener_top_a",
+      "when": "param.st_top > 0.5",
+      "args": {
+        "double": "1",
+        "roleA": "stiffener_top_a",
+        "roleB": "main",
+        "size": "param.w_stf"
+      }
+    },
+    {
+      "id": "w3",
+      "use": "weld.fillet",
+      "role": "weld_stiffener_top_b",
+      "when": "param.st_top > 0.5",
+      "args": {
+        "double": "1",
+        "roleA": "stiffener_top_b",
+        "roleB": "main",
+        "size": "param.w_stf"
+      }
+    },
+    {
+      "id": "w4",
+      "use": "weld.fillet",
+      "role": "weld_stiffener_bot_a",
+      "when": "param.st_bottom > 0.5",
+      "args": {
+        "double": "1",
+        "roleA": "stiffener_bot_a",
+        "roleB": "main",
+        "size": "param.w_stf"
+      }
+    },
+    {
+      "id": "w5",
+      "use": "weld.fillet",
+      "role": "weld_stiffener_bot_b",
+      "when": "param.st_bottom > 0.5",
+      "args": {
+        "double": "1",
+        "roleA": "stiffener_bot_b",
+        "roleB": "main",
+        "size": "param.w_stf"
+      }
+    }
+  ]
+}

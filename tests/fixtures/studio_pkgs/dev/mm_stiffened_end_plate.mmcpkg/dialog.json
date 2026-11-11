@@ -1,0 +1,86 @@
+{
+  "formatVersion": "1.0.0",
+  "groups": [
+    {
+      "asTab": true,
+      "background": "",
+      "canvasHeight": 0,
+      "canvasWidth": 0,
+      "emptyNote": "",
+      "figures": [],
+      "id": "parameters",
+      "keepIfEmpty": false,
+      "layout": "",
+      "paramNames": [
+        "st_top",
+        "st_bottom",
+        "st_t",
+        "st_gap"
+      ],
+      "partRows": [],
+      "placed": [],
+      "prefix": "",
+      "title": "Parametreler"
+    },
+    {
+      "asTab": true,
+      "background": "",
+      "canvasHeight": 0,
+      "canvasWidth": 0,
+      "emptyNote": "",
+      "figures": [],
+      "id": "stiffener_top_a",
+      "keepIfEmpty": false,
+      "layout": "",
+      "paramNames": [
+        "st_name",
+        "st_material"
+      ],
+      "partRows": [],
+      "placed": [],
+      "prefix": "",
+      "title": "stiffener_top_a"
+    },
+    {
+      "asTab": true,
+      "background": "",
+      "canvasHeight": 0,
+      "canvasWidth": 0,
+      "emptyNote": "",
+      "figures": [],
+      "id": "weld_end_plate",
+      "keepIfEmpty": false,
+      "layout": "",
+      "paramNames": [
+        "w_plate"
+      ],
+      "partRows": [],
+      "placed": [],
+      "prefix": "",
+      "title": "weld_end_plate"
+    },
+    {
+      "asTab": true,
+      "background": "",
+      "canvasHeight": 0,
+      "canvasWidth": 0,
+      "emptyNote": "",
+      "figures": [],
+      "id": "weld_stiffener_top_a",
+      "keepIfEmpty": false,
+      "layout": "",
+      "paramNames": [
+        "w_stf"
+      ],
+      "partRows": [],
+      "placed": [],
+      "prefix": "",
+      "title": "weld_stiffener_top_a"
+    }
+  ],
+  "hotspots": [],
+  "items": [],
+  "typeId": "mm_stiffened_end_plate",
+  "useTabs": true,
+  "weldRows": []
+}

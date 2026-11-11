@@ -9,6 +9,22 @@ bile değişirse paket fail-closed reddedilir).
 | `mm_stiffened_end_plate.mmcpkg` | Studio S-8 kabul paketi (`C:\work\studio-kabul\20261110-1712-stiffened-end-plate`) | `9b50ac5` (`feature/ai-command-mvp`) | P-1/7 (golden + GT `t21`) |
 | `mm_stiffened_base_plate.mmcpkg` | Studio S-6 kabul paketi (`C:\work\studio-kabul\20261110-1805-stiffened-base-plate`) | `9b50ac5` (`feature/ai-command-mvp`) | P-1/4 (pickCount=1 doğrulaması) |
 
+## `dev/` — sürüm yükseltme girdisi (P-1/8)
+
+`dev/mm_stiffened_end_plate.mmcpkg` **Studio çıktısı değildir**: yukarıdaki
+paketin P-1/8 testleri için türetilmiş v2'sidir.
+
+- `manifest.json`: `schemaVersion` 1 → **2**.
+- `recipe.json`: dört levha kalınlığı ifadesi `"t": "param.st_t"` →
+  `"t": "param.st_t + 10"` (levhalar 10 mm kalınlaşır → geometri ve digest
+  değişir).
+- `checksums.json`: düz sha256 ile yeniden üretildi.
+
+Amaç: geliştirme klasöründe paket değişince MM'nin yeniden yüklediğini,
+örnekleri **yeniden ürettiğini** ve kaydet/aç sonrası aynı digest'i verdiğini
+tek akışta göstermek (GT `t22`). Golden girdisi **değildir**; golden digest
+hesabı yalnız kök klasördeki Studio paketleriyle yapılır.
+
 ## Denetleyen testler
 
 - `model_maker_studio_package_golden_test` (P-1/7): her paket için yükleme +
