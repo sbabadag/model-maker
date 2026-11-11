@@ -1,0 +1,109 @@
+{
+  "_comment": "T-14 CIZIM: `draw.paper` (Paper Cizim) komutunun arkasindaki AYNI cekirdek — buildDrawingSet + exportSheetPdf — ile kolon ve kiris parcalari icin pafta uretildi: 1 pafta, 4 gorunus (on/ust/yan + izometrik), PDF yazildi ve >2 KB. Uretim belgeyi degistirmiyor. NOT: `draw.paper` komutu kipsel diyalog aciyor (showDrawingDialog -> exec()) ve kosucuyu kilitliyor (150 s timeout, step_007 yazilmadi) — bu yuzden UI yolu UI-3 kapsaminda ATLANDI.",
+  "backend": "gdi",
+  "timeoutMs": 180000,
+  "steps": [
+    {
+      "profile": "HEB240"
+    },
+    {
+      "appColumnLevels": {
+        "top": 3000,
+        "bottom": 0
+      }
+    },
+    {
+      "placeColumn": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      }
+    },
+    {
+      "assignLine": {
+        "x1": 0,
+        "y1": 0,
+        "z1": 3000,
+        "x2": 5000,
+        "y2": 0,
+        "z2": 3000,
+        "profile": "IPE300"
+      }
+    },
+    {
+      "key": "Escape"
+    },
+    {
+      "expect": {
+        "models": {
+          "count": 2,
+          "profiled": 2
+        }
+      }
+    },
+    {
+      "cmd": "view.dir.iso"
+    },
+    {
+      "fit": {}
+    },
+    {
+      "appPaper": {
+        "model": 0,
+        "pdf": "t42-kolon.pdf"
+      }
+    },
+    {
+      "expect": {
+        "paper": {
+          "sheets": 1,
+          "views": 4,
+          "pdfOk": true,
+          "pdfBytesAtLeast": 2000
+        }
+      }
+    },
+    {
+      "capture": {
+        "name": "t14-00-kolon-paper",
+        "target": "window"
+      }
+    },
+    {
+      "appPaper": {
+        "model": 1,
+        "pdf": "t42-kiris.pdf"
+      }
+    },
+    {
+      "expect": {
+        "paper": {
+          "sheets": 1,
+          "views": 4,
+          "pdfOk": true,
+          "pdfBytesAtLeast": 2000
+        }
+      }
+    },
+    {
+      "capture": {
+        "name": "t14-01-kiris-paper",
+        "target": "window"
+      }
+    },
+    {
+      "expect": {
+        "models": {
+          "count": 2,
+          "profiled": 2
+        }
+      }
+    },
+    {
+      "capture": {
+        "name": "t14-02-son",
+        "target": "window"
+      }
+    }
+  ]
+}

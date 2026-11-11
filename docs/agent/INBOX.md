@@ -1085,6 +1085,21 @@ T-13: GEÇTİ (kısmi) — GT `t41_t13_kisayollar`, 77 adım `ok=true`, GDI ve G
     tetiklemez" (koşucuda odak+tus adımı yok).
     Kanıt: `C:\work\mm-hermes-shots\2026-11-11\t41\` ve `t41gpu\`.
 
+T-14: GEÇTİ (kısmi) — GT `t42_t14_cizim`, 16 adım `ok=true`, GDI ve GPU aynı.
+    Paper Çizim çekirdeği (`buildDrawingSet` + `exportSheetPdf`) kolon (HEB240)
+    ve kiriş (IPE300) parçaları için çalıştırıldı: 1 pafta, **4 görünüş**
+    (TOP / FRONT / SIDE + izometrik, ölçek 1:20/A-A kesiti bölümü), PDF yazıldı
+    (~20 KB) ve üretim belgeyi değiştirmiyor (2 profilli model korunuyor).
+    PDF içeriği doğrulandı (metin katmanı): başlık bloğu "Part P1 - HEB240",
+    ÇİZİM NO/ÖLÇEK/ÇİZEN/KAĞIT alanları; kağıt **A2** seçildi.
+    ATLANDI (UI-3): `draw.paper` komutu kipsel diyalog açıyor
+    (`showDrawingDialog` → `exec()`), koşucu kilitleniyor (150 s timeout,
+    step_007 yazılmadı) — bu yüzden UI'dan pafta açma/ölçek seçme/dosya yazma
+    akışı GT'de yok; çizim çekirdeği aynı API ile kanıtlandı.
+    BULGU: varsayılan kağıt A2 (A3 seçilmiyor) — bilinçli mi, ayrı madde adayı.
+    Kanıt: `C:\work\mm-hermes-shots\2026-11-11\t42
+    (`t42-kolon.pdf`, `t42-kiris.pdf`).
+
 ## Açık soru (yanıtla, Durum'a yaz)
 - 893e770 "feat(document): çoklu seçim özellik düzenleme + tek geri alma
   adımı" istenmemişti. Ne yapıyor, hangi maddeye ait, testi var mı?

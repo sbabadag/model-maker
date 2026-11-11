@@ -21,6 +21,9 @@
 #include "model_maker/component_engine.hpp"
 #include "model_maker/document.hpp"
 #include "model_maker/drafting.hpp"
+#include "model_maker/drawing.hpp"
+#include "model_maker/drawing_set.hpp"
+#include "model_maker/drawing_sheet_widget.hpp"   // T-14: exportSheetPdf
 #include "model_maker/geometry.hpp"
 #include "model_maker/grid.hpp"
 #include "model_maker/view_cube.hpp"
@@ -279,6 +282,11 @@ struct Runner {
     int stepIndex = 0;
     // H-8: component geometric digest hafizasi (remember/equals/notEquals).
     QHash<QString, QString> digestMemory_;
+    // T-14: paper cizim cekirdeginden gelen sonuclar (belge duzeyi denetim).
+    int paperSheets_ = 0;
+    int paperViews_ = 0;
+    qint64 paperPdfBytes_ = 0;
+    bool paperPdfOk_ = false;
 
     Runner(QtMainWindow& w, QString dir) : window(w), outDir(std::move(dir)) {}
 
@@ -1104,6 +1112,28 @@ struct Runner {
                     problems << QStringLiteral("catalogEntry: %1 hasDialog beklenenden farkli")
                                     .arg(typeId);
             }
+        }
+        if (expect.contains(QStringLiteral("paper"))) {
+            // T-14: paper cizim cekirdegi sonucu (appPaper adimindan).
+            const QJsonObject spec = expect[QStringLiteral("paper")].toObject();
+            if (spec.contains(QStringLiteral("sheets")) &&
+                spec[QStringLiteral("sheets")].toInt() != paperSheets_)
+                problems << QStringLiteral("paper: pafta sayisi %1 != %2")
+                                .arg(paperSheets_)
+                                .arg(spec[QStringLiteral("sheets")].toInt());
+            if (spec.contains(QStringLiteral("views")) &&
+                spec[QStringLiteral("views")].toInt() != paperViews_)
+                problems << QStringLiteral("paper: gorunus sayisi %1 != %2")
+                                .arg(paperViews_)
+                                .arg(spec[QStringLiteral("views")].toInt());
+            if (spec.contains(QStringLiteral("pdfOk")) &&
+                spec[QStringLiteral("pdfOk")].toBool() != paperPdfOk_)
+                problems << QStringLiteral("paper: PDF yazma durumu beklenenden farkli");
+            if (spec.contains(QStringLiteral("pdfBytesAtLeast")) &&
+                paperPdfBytes_ < spec[QStringLiteral("pdfBytesAtLeast")].toInteger())
+                problems << QStringLiteral("paper: PDF boyutu %1 < %2")
+                                .arg(paperPdfBytes_)
+                                .arg(spec[QStringLiteral("pdfBytesAtLeast")].toInteger());
         }
         if (expect.contains(QStringLiteral("componentDigest"))) {
             const QJsonObject spec = expect[QStringLiteral("componentDigest")].toObject();
@@ -2114,6 +2144,44 @@ struct Runner {
                 return fail(QStringLiteral("appPlaneCut: kesme kurulamadi"));
             pump(300);
             return writeStep(step, QStringLiteral("appPlaneCut"));
+        }
+        if (step.contains(QStringLiteral("appPaper"))) {
+            // T-14: paper cizim — `draw.paper` diyalogunun ARKASINDAKI ayni
+            // cekirdek (buildDrawingSet + exportSheetPdf). Kipsel diyalog
+            // (showDrawingDialog -> exec()) GT'den surulemedigi icin uretim
+            // buradan, ayni API ile dogrulanir.
+            const QJsonObject spec = step[QStringLiteral("appPaper")].toObject();
+            const int model = spec[QStringLiteral("model")].toInt(-1);
+            Application& app = window.application();
+            const mm::Document& doc = app.document();
+            if (model < 0 || static_cast<std::size_t>(model) >= doc.models().size())
+                return fail(QStringLiteral("appPaper: model %1 yok").arg(model));
+            mm::MarkRegistry registry;
+            const mm::drawing::DrawingOptions options;
+            const mm::drawing::DrawingPreferences preferences;
+            const mm::drawing::DrawingSetResult result = mm::drawing::buildDrawingSet(
+                doc, registry, doc.modelId(static_cast<std::size_t>(model)), options,
+                preferences);
+            if (!result.ok || !result.primary())
+                return fail(QStringLiteral("appPaper: uretim basarisiz: %1")
+                                .arg(QString::fromStdString(result.error)));
+            paperSheets_ = static_cast<int>(result.document.sheets().size());
+            paperViews_ = static_cast<int>(result.primary()->views.size());
+            paperPdfOk_ = false;
+            paperPdfBytes_ = 0;
+            const QString pdf = spec[QStringLiteral("pdf")].toString();
+            if (!pdf.isEmpty()) {
+                QString path = pdf;
+                if (QFileInfo(path).isRelative())
+                    path = QFileInfo(outDir + QStringLiteral("/") + path).absoluteFilePath();
+                QString error;
+                paperPdfOk_ = mm::drawing::exportSheetPdf(*result.primary(), path, &error);
+                if (!paperPdfOk_)
+                    return fail(QStringLiteral("appPaper: PDF yazilamadi: %1").arg(error));
+                paperPdfBytes_ = QFileInfo(path).size();
+            }
+            pump(80);
+            return writeStep(step, QStringLiteral("appPaper"));
         }
         if (step.contains(QStringLiteral("appCopyModels"))) {
             // P-2/3: secili modelleri kopyala (kopya YENI kimlik + yeni konum).

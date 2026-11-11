@@ -727,3 +727,18 @@ sürerken yalnız `docs/` düzenlenir.
 - BULGU: F7 hicbir bayragi degistirmiyor.
 - KAPSAM DISI (UI-3): O/Q/D modal sayisal giris -> kosucu kilitleniyor.
 - Kanit: shots\2026-11-11\t41 (GDI) + t41gpu (GPU). Kapi: `t13-gate.log`.
+
+## T-14 — cizim / paper (kapandi, kismi, 2026-11-11)
+
+- GT `t42_t14_cizim` 16 adim `ok=true`, GDI ve GPU ayni.
+- Kosucuya `appPaper {model, pdf}` adimi eklendi: `draw.paper` diyalogunun
+  ARKASINDAKI ayni cekirdek (`buildDrawingSet` + `exportSheetPdf`).
+- Kolon (HEB240) ve kiris (IPE300) icin 1 pafta, 4 gorunus
+  (TOP/FRONT/SIDE + izometrik, 1:20 + A-A kesiti), PDF ~20 KB yazildi;
+  PDF metin katmaninda baslik blogu ("Part P1 - HEB240") dogrulandi.
+- Uretim belgeyi degistirmiyor (2 profilli model korunuyor).
+- `expect.paper {sheets, views, pdfOk, pdfBytesAtLeast}` denetimi eklendi.
+- KAPSAM DISI (UI-3): `draw.paper` kipsel diyalog (`exec()`) -> kosucu
+  kilitleniyor; UI'dan pafta acma/olcek secme akisi GT'de yok.
+- BULGU: varsayilan kagit A2 (A3 secilmiyor) — ayri madde adayi.
+- Kanit: shots\2026-11-11\t42 (GDI) + t42gpu (GPU). Kapi: `t14-gate.log`.
