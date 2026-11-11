@@ -1,0 +1,144 @@
+{
+  "_comment": "T-4 YARDIMCI CIZGI: Cizgi/Polyline/Daire profil seciliyken bile YARDIMCI obje uretir (profiled=0, Model Agaci 'Profiller' bos); kiris komutu ayni sahnede calisir.",
+  "backend": "gdi",
+  "timeoutMs": 120000,
+  "steps": [
+    {
+      "profile": "HEB240"
+    },
+    {
+      "cmd": "draw.line"
+    },
+    {
+      "expect": {
+        "activeTool": "draw.line"
+      }
+    },
+    {
+      "click": [
+        250,
+        300
+      ]
+    },
+    {
+      "click": [
+        450,
+        300
+      ]
+    },
+    {
+      "key": "Esc"
+    },
+    {
+      "expect": {
+        "models": {
+          "count": 1,
+          "plain": 1,
+          "profiled": 0
+        }
+      }
+    },
+    {
+      "cmd": "draw.polyline"
+    },
+    {
+      "click": [
+        250,
+        420
+      ]
+    },
+    {
+      "click": [
+        430,
+        420
+      ]
+    },
+    {
+      "click": [
+        430,
+        520
+      ]
+    },
+    {
+      "key": "Enter"
+    },
+    {
+      "key": "Esc"
+    },
+    {
+      "expect": {
+        "models": {
+          "count": 2,
+          "plain": 2,
+          "profiled": 0
+        }
+      }
+    },
+    {
+      "cmd": "draw.circle"
+    },
+    {
+      "click": [
+        700,
+        420
+      ]
+    },
+    {
+      "click": [
+        790,
+        420
+      ]
+    },
+    {
+      "key": "Esc"
+    },
+    {
+      "expect": {
+        "models": {
+          "count": 3,
+          "plain": 3,
+          "profiled": 0
+        }
+      }
+    },
+    {
+      "capture": {
+        "name": "t4-00-yardimci-cizgiler",
+        "target": "window"
+      }
+    },
+    {
+      "cmd": "draw.beam"
+    },
+    {
+      "click": [
+        150,
+        600
+      ]
+    },
+    {
+      "click": [
+        900,
+        600
+      ]
+    },
+    {
+      "key": "Esc"
+    },
+    {
+      "expect": {
+        "models": {
+          "count": 4,
+          "profiled": 1,
+          "plain": 3
+        }
+      }
+    },
+    {
+      "capture": {
+        "name": "t4-01-kiris-plus-yardimci",
+        "target": "window"
+      }
+    }
+  ]
+}

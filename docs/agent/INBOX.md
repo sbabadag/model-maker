@@ -908,6 +908,22 @@ T-5: GEÇTİ (kısmi) — GT `t32_t5_secim`, 38 adım `ok=true`, GDI ve GPU ayn�
     T-11 kapsamında; Montaj modunda kutu seçiminin seçim SAYISI iddia
     edilmedi (yalnız hata vermediği + ekran görüntüsü).
 
+T-4: GEÇTİ — GT `t33_t4_yardimci_cizgi`, 26 adım `ok=true`, GDI ve GPU aynı.
+    Profil (HEB240) SEÇİLİYKEN `draw.line` → 1 yardımcı çizgi (`plain=1`,
+    `profiled=0`); `draw.polyline` (3 tık + Enter) → 2. model; `draw.circle`
+    (merkez + yarıçap tıkı) → 3. model; üçü de `profiled=0` — yani Model Ağacı
+    "Profiller" altına GİRMİYOR. Vision: yatay çizgi + L polyline + elips
+    görünen daire çizili, ağaçta "Profiller" altında yalnız kirişin HEB240'ı,
+    yardımcılar "Çizgiler" altında, durum çubuğu "4 nesne". Aynı sahnede
+    `draw.beam` çalışıyor (profiled=1) — yardımcı objeler kiriş komutunu
+    engellemiyor. Kanıt: `C:\work\mm-hermes-shots\2026-11-11\t33\` ve `t33gpu\`.
+    NOT: GDI/GPU görünürlüğü çizgi için `b2b7_line_visible(.gl)` ile ayrıca
+    kanıtlı; burada polyline/daire ekran görüntüsüyle doğrulandı (piksel
+    ölçümü yok).
+    ATLANDI: "Model Ağacı 'Profiller'e girmez" iddiası `profiled=0` sayımı ve
+    ağaç görüntüsüyle kanıtlandı; ağaçtaki başlık metni GT adımıyla
+    okunmuyor (adım yok).
+
 ## Açık soru (yanıtla, Durum'a yaz)
 - 893e770 "feat(document): çoklu seçim özellik düzenleme + tek geri alma
   adımı" istenmemişti. Ne yapıyor, hangi maddeye ait, testi var mı?
