@@ -1512,8 +1512,15 @@ static bool isInputRole(const std::string& s) {
 }
 
 // roleKey formati + rezerve + tekillik + tur tutarliligi denetimi.
+// 1.15.0 (contract istegi g): AYNI roleKey, BIRBIRINI DISLAYAN `when`
+// kosullariyla birden fazla kez kullanilabilir (or. pahli / pahsiz alternatif).
+// Kosullarin gercekten dislayici oldugu statik olarak KANITLANAMAZ; ikisi
+// birden URETILIRSE runRecipeCore calisma aninda HATA verir.
 static bool checkRoleKey(const std::string& role, const std::string& kind,
-                         std::map<std::string, std::string>& roleKind, RecipeValidation& r) {
+                         const std::string& when,
+                         std::map<std::string, std::string>& roleKind,
+                         std::map<std::string, std::string>& roleWhen,
+                         RecipeValidation& r) {
     if (role.empty()) return true;
     if (!validRoleKey(role)) {
         r.ok = false;
@@ -1530,13 +1537,20 @@ static bool checkRoleKey(const std::string& role, const std::string& kind,
         if (ex->second != kind) {
             r.ok = false;
             r.message = L"roleKey farkli ture baglandi: " + wideFromUtf8(role);
-        } else {
-            r.ok = false;
-            r.message = L"yinelenen roleKey: " + wideFromUtf8(role);
+            return false;
         }
+        // 1.15.0 (g): iki adim da BOS OLMAYAN ve FARKLI `when` tasiyorsa
+        // kosullu alternatif kabul edilir.
+        const auto w = roleWhen.find(role);
+        if (!when.empty() && w != roleWhen.end() && !w->second.empty() && w->second != when) {
+            return true;
+        }
+        r.ok = false;
+        r.message = L"yinelenen roleKey: " + wideFromUtf8(role);
         return false;
     }
     roleKind[role] = kind;
+    roleWhen[role] = when;
     return true;
 }
 
@@ -1723,6 +1737,7 @@ RecipeValidation validateRecipe(const Recipe& recipe,
     for (const auto& l : recipe.lets) letNames.insert(l.first);
 
     std::map<std::string, std::string> roleKind;
+    std::map<std::string, std::string> roleWhen;  // 1.15.0 (g): roleKey -> ilk `when`
     // H: cerceve ad uzaylari — bir 'frame' argumani yalniz kendi ad uzayinda
     // ONCEKI bir adimin urettigi frame id'sini gosterebilir (tanimsiz cerceve
     // statik yakalanir; runRecipe calisma anina kadar beklenmez).
@@ -1897,7 +1912,7 @@ RecipeValidation validateRecipe(const Recipe& recipe,
         }
         const std::string kind = kindForBlock(st.use);
         if (!st.role.empty() && !kind.empty()) {
-            if (!checkRoleKey(st.role, kind, roleKind, r)) return r;
+            if (!checkRoleKey(st.role, kind, st.when, roleKind, roleWhen, r)) return r;
         }
         if (st.use == "endplate.placement") {
             std::string rp = "end_plate", rb = "beam_bolts";
@@ -1905,8 +1920,8 @@ RecipeValidation validateRecipe(const Recipe& recipe,
             if (ip != st.args.end() && !ip->second.text.empty()) rp = ip->second.text;
             const auto ib = st.args.find("roleBolts");
             if (ib != st.args.end() && !ib->second.text.empty()) rb = ib->second.text;
-            if (!checkRoleKey(rp, "plate", roleKind, r)) return r;
-            if (!checkRoleKey(rb, "bolt", roleKind, r)) return r;
+            if (!checkRoleKey(rp, "plate", st.when, roleKind, roleWhen, r)) return r;
+            if (!checkRoleKey(rb, "bolt", st.when, roleKind, roleWhen, r)) return r;
         }
         // H: 'frame' argumani (varsa) kendi ad uzayinda ONCEKI bir adimin frame
         // id'sini gostermeli; degilse ACIK ret (adim indeksiyle). frame.offset /
@@ -2001,6 +2016,24 @@ static void runRecipeCore(const Recipe& recipe,
         if (framesOut && producesGenericFrame(st.use)) {
             const auto it = ctx.frames.find(st.id);
             if (it != ctx.frames.end()) (*framesOut)[st.id] = it->second;
+        }
+    }
+    // 1.15.0 (g): kosullu alternatifler AYNI roleKey'i kullanabilir; ikisi
+    // birden uretildiyse plan REDDEDILIR (sessiz cift nesne yok).
+    {
+        const std::vector<const std::vector<std::string>*> lists = {
+            &plan.plateKeys, &plan.boltGroupKeys, &plan.cutKeys, &plan.weldKeys};
+        for (const auto* keys : lists) {
+            std::set<std::string> seen;
+            for (const auto& k : *keys) {
+                if (k.empty()) continue;
+                if (!seen.insert(k).second) {
+                    plan.ok = false;
+                    plan.error = L"roleKey iki kez uretildi (when kosullari dislayici degil): " +
+                                 wideFromUtf8(k);
+                    return;
+                }
+            }
         }
     }
 }

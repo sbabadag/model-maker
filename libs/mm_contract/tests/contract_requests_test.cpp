@@ -125,11 +125,64 @@ static void sectionC() {
           "c: recipeVersion'suz recipe KABUL EDILMEMELIYDI");
 }
 
+// --- g) ayni roleKey + dislayici `when` --------------------------------------
+static Recipe twoWeldRecipe(const std::string& whenA, const std::string& whenB) {
+    Recipe r;
+    r.recipeVersion = "1.0.0";
+    for (int i = 0; i < 2; ++i) {
+        RecipeStep s;
+        s.id = std::string("w") + (i == 0 ? "0" : "1");
+        s.use = "weld.fillet";
+        s.role = "weld_main";
+        s.when = (i == 0 ? whenA : whenB);
+        s.args["roleA"].text = "main";
+        s.args["roleB"].text = "secondary_0";
+        s.args["size"].text = "5";
+        r.steps.push_back(s);
+    }
+    return r;
+}
+
+static void sectionG() {
+    std::printf("[g] ayni roleKey + dislayici when\n");
+    std::vector<CompParamSpec> specs(1);
+    specs[0].name = L"x";
+    specs[0].type = CompParamType::Length;
+    specs[0].defDouble = 1.0;
+
+    // 1) ayni roleKey + AYNI when -> statik RED
+    const RecipeValidation v1 = validateRecipe(twoWeldRecipe("param.x > 0", "param.x > 0"), specs);
+    CHECK(!v1.ok, "g: ayni roleKey + ayni when KABUL EDILMEMELIYDI");
+
+    // 2) ayni roleKey + FARKLI when -> KABUL
+    const Recipe rec = twoWeldRecipe("param.x > 0", "param.x < 0");
+    const RecipeValidation v2 = validateRecipe(rec, specs);
+    CHECK(v2.ok, "g: dislayici when'li yinelenen roleKey KABUL EDILMELIYDI");
+
+    ComponentInput in;
+    in.params.push_back(CompParam{L"x", 5.0});
+
+    // 3) yalniz bir kosul saglanir -> tek kaynak
+    const GenerationPlan p1 = runRecipe(rec, specs, in);
+    CHECK(p1.ok, "g: tek kosul saglaninca plan gecerli olmali");
+    CHECK(p1.welds.size() == 1, "g: tek kosul saglaninca TEK kaynak uretilmeli");
+
+    // 4) ikisi birden saglanir -> calisma aninda RED
+    const Recipe both = twoWeldRecipe("param.x > 0", "param.x > 1");
+    const RecipeValidation v3 = validateRecipe(both, specs);
+    CHECK(v3.ok, "g: farkli when metinleri statik olarak kabul edilir");
+    const GenerationPlan p2 = runRecipe(both, specs, in);
+    CHECK(!p2.ok, "g: iki kosul da saglanirsa calisma aninda RED");
+    CHECK(p2.error.find(L"iki kez uretildi") != std::wstring::npos,
+          "g: ret mesaji Turkce ve aciklayici olmali");
+}
+
 int main() {
     std::printf("contract %s\n", kContractVersion);
     sectionA();
     sectionB();
     sectionC();
+    sectionG();
     if (failures == 0) std::printf("TUM TESTLER GECTI\n");
     else std::printf("%d HATA\n", failures);
     return failures == 0 ? 0 : 1;

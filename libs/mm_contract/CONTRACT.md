@@ -283,6 +283,20 @@ dışa aktarmadan ÖNCE koşar (tek kaynak, iki taraf aynı kuralı uygular):
 `recipeVersion` zorunlu + semver + major **1**; `let` nesnesi; adım argümanları
 metin ifade ya da sayı (JSON `true/false` REDDEDİLİR). Ret mesajı Türkçedir.
 
+### 1.15.0 — (g) yinelenen `roleKey` + birbirini dışlayan `when`
+
+Bir `roleKey` artık **birden fazla adımda** kullanılabilir; koşul:
+adımların `when` ifadeleri **boş olmayacak ve farklı** olacak (pahlı/pahsız
+alternatifler). Kurallar:
+
+- `when` boş ya da iki adımda AYNI → **statik RED** (`yinelenen roleKey`).
+- Farklı `when` → statik KABUL.
+- Çalışma anında **ikisi birden üretilirse** plan REDDEDİLİR:
+  `roleKey iki kez üretildi (when kosullari dislayici degil): <roleKey>`.
+  Denetim levha, bulon, kesim ve kaynak roleKey listelerinin her biri için
+  yapılır; sessiz çift nesne üretilmez.
+- `roleKey` yine tür değiştiremez (`roleKey farkli ture baglandi`).
+
 ## Sürüm denetimi DIŞINDA olanlar (serbest)
 
 - `.cpp` iç kod (header'daki imzayı değiştirmediği sürece)
