@@ -1329,6 +1329,115 @@ static bool blockCutPlane(EvalCtx& ctx, const RecipeStep& st, GenerationPlan& pl
     return true;
 }
 
+// 1.22.0 (contract istegi f / HR-13): member.fit — profil UCUNU duzleme gore
+// KESER (Studio'nun "fitting" araci). Sozdizimi:
+//   member.fit {member, frame, end?: lower|upper, keep?: positive|negative,
+//               mode?: cut|extend}
+//
+// Davranis (fail-closed, sessiz sonuc yok):
+//  - Duzlem uyeyi KESMIYORSA (iki uc da ayni tarafta) -> mode=cut icin
+//    "duzlem uyeyi kesmiyor" RED; mode=extend icin "uzatma henuz
+//    desteklenmiyor (yalniz kesme)" RED. UZATMA bu surumde YOKTUR; sessizce
+//    yutulmaz, acikca reddedilir.
+//  - `keep` tarafi uyenin YARISINDAN fazlasini aliyorsa RED (yanlis taraf:
+//    member.fit ucu keser, govdeyi degil).
+//  - `end` verilirse kesilen uç o olmali; degilse RED.
+static bool blockMemberFit(EvalCtx& ctx, const RecipeStep& st, GenerationPlan& plan) {
+    std::string target, keep, endName, mode;
+    if (!strArg(st, "member", "", target)) return false;
+    if (!strArg(st, "keep", "positive", keep)) return false;
+    if (!strArg(st, "end", "", endName)) return false;
+    if (!strArg(st, "mode", "cut", mode)) return false;
+    if (mode != "cut" && mode != "extend") {
+        ctx.error = wideFromUtf8("member.fit: gecersiz mode '" + mode + "' (cut|extend)");
+        return false;
+    }
+    if (!endName.empty() && endName != "lower" && endName != "upper" &&
+        endName != "start" && endName != "end" && endName != "from" && endName != "to") {
+        ctx.error = wideFromUtf8("member.fit: gecersiz end '" + endName + "'");
+        return false;
+    }
+    const MemberGeometry* m = memberByRole(ctx.input, target);
+    if (!m) { ctx.error = wideFromUtf8("member.fit: bilinmeyen uye '" + target + "'"); return false; }
+    MemberLocalFrame* f = frameArg(ctx, st, "frame");
+    if (!f) return false;
+    // `offset`: duzlemi KENDI normali boyunca kaydirir (mm). Tekla fitting'de
+    // kesme duzlemi genelde uydan bir miktar iceride/ disaridadir.
+    double fitOffset = 0.0;
+    if (!numArg(ctx, st, "offset", 0.0, fitOffset)) return false;
+
+    const Vec3 n = f->w;
+    const Vec3 planeOrigin{f->origin.x + n.x * fitOffset, f->origin.y + n.y * fitOffset,
+                           f->origin.z + n.z * fitOffset};
+    const Vec3 pA = m->axisFrom;
+    const Vec3 pB = m->axisTo;
+    const double dA = (pA.x - planeOrigin.x) * n.x + (pA.y - planeOrigin.y) * n.y +
+                      (pA.z - planeOrigin.z) * n.z;
+    const double dB = (pB.x - planeOrigin.x) * n.x + (pB.y - planeOrigin.y) * n.y +
+                      (pB.z - planeOrigin.z) * n.z;
+    const bool keepPositive = (keep == "positive" || keep == "1" || keep == "true");
+    // Korunan tarafin isaretli degeri: keepPositive -> d > 0 tarafi kalir.
+    const double keptA = keepPositive ? dA : -dA;
+    const double keptB = keepPositive ? dB : -dB;
+    const bool aKept = keptA > 0.0;
+    const bool bKept = keptB > 0.0;
+    if (aKept && bKept) {
+        ctx.error = (mode == "extend")
+            ? wideFromUtf8("member.fit: uzatma henuz desteklenmiyor (yalniz kesme) - uye '"
+                           + target + "' duzlemin tamamen bir tarafinda")
+            : wideFromUtf8("member.fit: duzlem uyeyi kesmiyor - uye '" + target +
+                           "' duzlemin tamamen bir tarafinda");
+        return false;
+    }
+    if (!aKept && !bKept) {
+        ctx.error = wideFromUtf8("member.fit: duzlem uyeyi tamamen kesiyor (kalan govde yok) - uye '"
+                                 + target + "'");
+        return false;
+    }
+    // Korunan taraf uyenin yarisindan fazlasini almali (govde korunur, uc kesilir).
+    const double len = std::fabs(dA - dB);
+    const double keptLen = aKept ? std::fabs(keptA) : std::fabs(keptB);
+    if (len > 1e-9 && keptLen < 0.5 * len) {
+        ctx.error = wideFromUtf8("member.fit: yanlis taraf - korunan boy " +
+                                 std::to_string(static_cast<int>(keptLen)) + " mm, uye boyu " +
+                                 std::to_string(static_cast<int>(len)) +
+                                 " mm (member.fit ucu keser, govdeyi degil)");
+        return false;
+    }
+    // `end` verildiyse KESILEN uç o olmali.
+    if (!endName.empty()) {
+        const bool endIsA = (endName == "start" || endName == "from");
+        const bool endIsB = (endName == "end" || endName == "to");
+        // `end` KESILECEK ucu soyler (lower|upper = dunya Z'ye gore).
+        bool selectedLower = false;
+        if (endName == "lower" || endName == "upper") {
+            selectedLower = (endName == "lower");
+        }
+        const bool removedIsA = !aKept;
+        const bool removedIsLower = removedIsA ? (pA.z <= pB.z) : (pB.z <= pA.z);
+        if ((endIsA || endIsB) && removedIsA != endIsA) {
+            ctx.error = wideFromUtf8("member.fit: kesilen uç istenen uç degil - uye '" + target + "'");
+            return false;
+        }
+        if ((endName == "lower" || endName == "upper") && removedIsLower != selectedLower) {
+            ctx.error = wideFromUtf8("member.fit: kesilen uç '" + endName + "' degil - uye '" +
+                                     target + "'");
+            return false;
+        }
+    }
+    CutModifier c;
+    c.kind = CutKind::PlaneCut;
+    c.target = m->id;
+    c.targetRole = target;
+    c.planeOrigin = planeOrigin;
+    c.planeNormal = n;
+    c.keepPositive = keepPositive;
+    c.hidden = true;  // component ic motor elemani
+    plan.cuts.push_back(c);
+    plan.cutKeys.push_back(st.role);
+    return true;
+}
+
 // endplate.placement: mevcut computeEndPlatePlacement mantigini SARAR (yeniden
 // yazmaz). Parametreleri generateEndPlate ile BIREBIR ayni sekilde input.params'tan
 // okur; boylece plan ciktisi (ve planDigest) generateEndPlate ile ozdes kalir.
@@ -1675,6 +1784,9 @@ static const std::vector<BlockDecl>& blockRegistry() {
         {"weld.fillet", {"size", "length", "offset"},
          {"roleA", "roleB", "double", "doubleSided", "type", "around", "site"}, {},
          &blockWeldFillet, {}, {"double", "doubleSided", "around", "site"}, {}, {}},
+        // 1.22.0 (f): member.fit — profil ucunu duzleme kes (uzatma RED).
+        {"member.fit", {"offset"}, {"member", "frame", "end", "keep", "mode"}, {},
+         &blockMemberFit, {}, {}, {}, {}},
         {"cut.plane", {}, {"target", "frame", "keep"}, {}, &blockCutPlane,
          {}, {}, {"target"}, {}},
         {"endplate.placement", {}, {"main", "beam", "rolePlate", "roleBolts"}, {},

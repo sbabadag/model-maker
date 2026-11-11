@@ -574,6 +574,91 @@ static void sectionK() {
     CHECK(!neg.ok, "k: negatif offset REDDEDILMELIYDI");
 }
 
+// --- f) member.fit: profil ucunu duzleme kes (HR-13) -------------------------
+static GenerationPlan fitPlan(const std::string& end, const std::string& keep,
+                              double planeZ) {
+    Recipe r;
+    r.recipeVersion = "1.0.0";
+    RecipeStep f;
+    f.id = "f1";
+    f.use = "frame.member_end";
+    f.args["member"].text = "main";
+    f.args["end"].text = "lower";
+    r.steps.push_back(f);
+    RecipeStep m;
+    m.id = "m1";
+    m.use = "member.fit";
+    m.role = "uc_kesimi";
+    m.args["member"].text = "main";
+    m.args["frame"].text = "f1";
+    if (planeZ != 0.0) m.args["offset"].text = std::to_string(static_cast<int>(planeZ));
+    if (!end.empty()) m.args["end"].text = end;
+    if (!keep.empty()) m.args["keep"].text = keep;
+    r.steps.push_back(m);
+    ComponentInput in;
+    in.main = memberGeometryFromProfile({0, 0, 0}, {0, 0, 3000}, /*connectionAtA=*/false,
+                                        {1, 0, 0}, 0.0,
+                                        MemberSectionSpec{300.0, 300.0, 11.0, 19.0, 0.0});
+    return runRecipe(r, {}, in);
+}
+
+static void sectionF() {
+    std::printf("[f] member.fit: ucu duzleme kes\n");
+    // n = +Z (kolon ekseni). Duzlem Z=300.
+    //  keep="positive" -> Z>300 tarafi kalir: ALT uc kesilir, govde 2700 mm kalir.
+    const GenerationPlan p = fitPlan("lower", "positive", 300.0);
+    CHECK(p.ok && p.cuts.size() == 1, "f: alt ucu kesen kesim uretilmeli");
+    if (p.ok && !p.cuts.empty()) {
+        CHECK(p.cuts[0].kind == CutKind::PlaneCut, "f: kesim turu PlaneCut");
+        CHECK(p.cuts[0].targetRole == "main", "f: hedef rol main");
+        CHECK(std::fabs(p.cuts[0].planeOrigin.z - 300.0) < 1e-6, "f: duzlem Z=300 (offset uygulandi)");
+        CHECK(p.cuts[0].keepPositive, "f: keepPositive true");
+    }
+    //  keep="negative" -> Z<300 kalir: yalniz 300 mm govde -> YANLIS TARAF, RED.
+    const GenerationPlan stub = fitPlan("", "negative", 300.0);
+    CHECK(!stub.ok, "f: govdenin %90'ini kesen taraf REDDEDILMELIYDI");
+    //  Duzlem Z=2900 + keep="negative" -> ust uc kesilir, 2900 mm kalir: gecerli.
+    const GenerationPlan top = fitPlan("upper", "negative", 2900.0);
+    CHECK(top.ok && top.cuts.size() == 1, "f: ust ucu kesen varyant gecerli olmali");
+    //  Duzlem Z=2900 + keep="positive" -> yalniz 100 mm kalir: RED.
+    const GenerationPlan thin = fitPlan("", "positive", 2900.0);
+    CHECK(!thin.ok, "f: 100 mm govde birakan taraf REDDEDILMELIYDI");
+    //  Duzlem uyeyi kesmiyor (Z=-100, keep positive) -> RED.
+    const GenerationPlan miss = fitPlan("", "positive", -100.0);
+    CHECK(!miss.ok, "f: uyeyi kesmeyen duzlem REDDEDILMELIYDI");
+    if (!miss.ok)
+        CHECK(miss.error.find(L"kesmiyor") != std::wstring::npos,
+              "f: ret mesaji 'kesmiyor' demeli");
+    //  Alt ucu kesen duzlemde end=upper -> RED (kesilen uç uyusmuyor).
+    const GenerationPlan mismatch = fitPlan("upper", "positive", 300.0);
+    CHECK(!mismatch.ok, "f: kesilen uç ile end uyusmuyorsa RED");
+    //  mode="extend": duzlem disarida -> "uzatma desteklenmiyor" acik reddi.
+    Recipe r;
+    r.recipeVersion = "1.0.0";
+    RecipeStep f;
+    f.id = "f1";
+    f.use = "frame.member_end";
+    f.args["member"].text = "main";
+    f.args["end"].text = "lower";
+    r.steps.push_back(f);
+    RecipeStep m;
+    m.id = "m1";
+    m.use = "member.fit";
+    m.args["member"].text = "main";
+    m.args["frame"].text = "f1";
+    m.args["mode"].text = "extend";
+    m.args["offset"].text = "-500";
+    r.steps.push_back(m);
+    ComponentInput in;
+    in.main = memberGeometryFromProfile({0, 0, 0}, {0, 0, 3000}, false, {1, 0, 0}, 0.0,
+                                        MemberSectionSpec{300.0, 300.0, 11.0, 19.0, 0.0});
+    const GenerationPlan ext = runRecipe(r, {}, in);
+    CHECK(!ext.ok, "f: uzatma desteklenmiyor -> RED (sessiz yutma yok)");
+    if (!ext.ok)
+        CHECK(ext.error.find(L"uzatma") != std::wstring::npos,
+              "f: ret mesaji 'uzatma' demeli");
+}
+
 int main() {
     std::printf("contract %s\n", kContractVersion);
     sectionA();
@@ -585,6 +670,7 @@ int main() {
     sectionE();
     sectionJ();
     sectionK();
+    sectionF();
     sectionG();
     if (failures == 0) std::printf("TUM TESTLER GECTI\n");
     else std::printf("%d HATA\n", failures);

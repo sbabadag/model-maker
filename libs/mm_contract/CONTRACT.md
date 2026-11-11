@@ -387,6 +387,34 @@ yazılır (`type` boş, `length/offset` 0, `around/site` false) → mevcut kayna
 içeren planların digest'i değişmez. `type: "fillet"` açıkça yazılırsa da
 varsayılana normalleşir (boş). Geçersiz `type`, negatif `length/offset` → açık ret.
 
+### 1.22.0 — (f) `member.fit`: profil ucunu düzleme kes (HR-13)
+
+```json
+{ "use": "member.fit", "member": "main", "frame": "fit_plane",
+  "end": "lower", "keep": "positive", "mode": "cut" }
+```
+
+| argüman | anlam |
+|---|---|
+| `member` | üye rolü (`main` / `secondary_N`) |
+| `frame` | kesme düzlemi çerçevesi (`w` = düzlem normali) |
+| `end` | opsiyonel: kesilmesi beklenen uç (`lower|upper|start|end`) |
+| `keep` | düzlemin hangi tarafı kalır (`positive` varsayılan) |
+| `mode` | `cut` (varsayılan) veya `extend` |
+
+**Fail-closed kurallar** (hiçbiri sessiz değil):
+
+- Düzlem üyeyi kesmiyorsa → `cut` için "düzlem üyeyi kesmiyor", `extend` için
+  **"uzatma henüz desteklenmiyor (yalnız kesme)"** açık reddi. Uç uzatma bu
+  sürümde YOKTUR; istek geldiğinde yutulmaz.
+- Korunan taraf üyenin **yarısından azını** bırakıyorsa red (yanlış taraf:
+  `member.fit` ucu keser, gövdeyi değil).
+- `end` verildiyse kesilen uç o olmalı, değilse red.
+
+Plan çıktısı: `cuts` içinde `CutModifier{kind=PlaneCut, targetRole=<member>,
+planeOrigin=frame.origin + frame.w · offset, planeNormal=frame.w, keepPositive}`;
+`cutKeys` = adımın `role` değeri. Yeni blok olduğu için mevcut digest'ler değişmez.
+
 ## Sürüm denetimi DIŞINDA olanlar (serbest)
 
 - `.cpp` iç kod (header'daki imzayı değiştirmediği sürece)
