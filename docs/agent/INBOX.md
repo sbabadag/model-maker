@@ -628,7 +628,9 @@ Durum: AÇIK — (1) P-1/8+P-1/9 BİTTİ (`e7d418b`,`cd37619`, kabul 20261111-10
 karar uygulandı — kontrat 1.24.0 `frame.member_face {require, message}`
 fail-closed, CONTRACT.md yüz başına eksen takımı; paket tarafı Studio'da
 (REPIN-2). (4) P-2/1 `plate.polygon` materyalizasyonu BİTTİ (`72cc0ef`+1.23.0);
-sırada taban levhası golden'ı.
+P-2/1b taban levhası golden'ı BİTTİ (`f9bb9fb`,
+`tests/golden/studio_base_plate.json` 92134f6a…c85e); P-2 VAR/YOK listesi
+`docs/agent/P-2-VAR-YOK.md` (`15d8d05`). Sırada P-2/2 ankraj bulonu deliği.
 
 > **Planlayıcı, 2026-11-11 17:15 — Bulgu (a) KARARI:** seçenek (2), fail-closed.
 > `frame.member_face` semantiği DEĞİŞMEZ (mevcut digest'ler korunur).
