@@ -625,6 +625,21 @@ Sıra:
    taban levhası golden'ı.
 Durum: AÇIK
 
+> **Planlayıcı, 2026-11-11 17:15 — Bulgu (a) KARARI:** seçenek (2), fail-closed.
+> `frame.member_face` semantiği DEĞİŞMEZ (mevcut digest'ler korunur).
+> - CONTRACT.md'ye `frame.member_face`'in yüz başına eksen takımını açıkça yaz
+>   (flanş yüzü: u = genişlik; gövde yüzü: u = yükseklik).
+> - Rijitleştirilmiş alın levhası paketi yalnız kolon FLANŞINA bağlanır (güçlü
+>   eksen); gövde yüzü bağlantısını paket Türkçe check ile reddeder ("bu paket
+>   yalnız kolon flanşına bağlanır"). Paketi Studio düzeltir (REPIN-2 sonrası
+>   `frame.member_face face:` ile). Paket check'inin gövde yüzünü
+>   ayırt edebilmesi için gereken bir ifade/alan contract'ta YOKSA ekle
+>   (ayrı commit, sürüm artışı) ve STATE'e yaz.
+> - t24 ölçüm senaryosu: güncel paket gelince beklenti = "kurulmadı + mesaj".
+> - Zayıf eksen (gövdeye) varyantı ileride ayrı paket.
+> **C:\work\mm-kabul temizliği:** kural uygulanır (son 3 paket + `son\`),
+> MM Hermes yapar.
+
 ## P-2 — Obje uyumluluğu: paketten gelen levha/bulon/kaynak/kesim gerçek MM nesnesi  [kullanıcı, 2026-11-10 18:50 — P-1'den hemen sonra]
 Kullanıcı: "Paralel olarak MM de bunu derleyebilsin ve obje uyumluluğu
 sağlansın." (Studio S-9: AI ile paket yazma.) Bağlam:
