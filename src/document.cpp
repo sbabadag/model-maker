@@ -558,17 +558,33 @@ void Document::cloneDependentsForCopies(const std::unordered_map<EntityId, Entit
         std::vector<CutModifier> cutClones;
         for (std::size_t i = 0; i < cutCount; ++i) {
             const CutModifier src = cutModifiers_[i];
-            if (src.target == kInvalidEntityId || !remap.count(src.target)) continue;
+            // P-2/3 (INBOX B8): KAYNAK kopyalandiysa kesme de kopyadir. Kullanici
+            // yalniz kesim DUZLEMINI kopyalarsa hedef parca degismez; kopya
+            // duzlem kendi konumundan AYNI hedefi keser. Onceden bu dal hic
+            // kurulmuyordu -> kopyalanan duzlem gorunur ama etkisiz kaliyordu
+            // (B8: "kopyalanan her nesne ... etkisini uygular").
+            const bool targetCopied =
+                src.target != kInvalidEntityId && remap.count(src.target) != 0;
+            const bool sourceCopied =
+                src.source != kInvalidEntityId && remap.count(src.source) != 0;
+            if (!targetCopied && !sourceCopied) continue;
             // Boolean kesme: ARAC parcasi da kopya degilse klonlanmaz (orijinal
             // aracla kopyayi kesmek yanlis geometri uretirdi).
             if (src.kind == CutKind::BooleanCut &&
                 (src.tool == kInvalidEntityId || !remap.count(src.tool)))
                 continue;
             CutModifier clone = src;
-            clone.target = remap[src.target];
-            clone.planeOrigin = clone.planeOrigin + displacement;
-            for (Vec3& p : clone.polygon) p = {p.x + displacement.x, p.y + displacement.y,
-                                              p.z + displacement.z};
+            if (targetCopied) {
+                clone.target = remap[src.target];
+                clone.planeOrigin = clone.planeOrigin + displacement;
+                for (Vec3& p : clone.polygon)
+                    p = {p.x + displacement.x, p.y + displacement.y, p.z + displacement.z};
+            } else {
+                // Hedef ayni: geometri kaynaktan (kopya duzlem) cozulur, ofset
+                // resolveCutModifierSource icinde gelir — burada oteleme YOK.
+                clone.source = remap[src.source];
+                if (clone.kind == CutKind::BooleanCut) clone.tool = remap[src.tool];
+            }
             if (clone.tool != kInvalidEntityId && remap.count(clone.tool)) clone.tool = remap[clone.tool];
             // KAYNAK varlik kopyalanmadiysa geometri SABIT kalir (kopyanin kendi
             // otelenmis duzlemi kullanilir) — orijinal kaynaga baglanip yanlis

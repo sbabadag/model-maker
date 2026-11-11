@@ -741,6 +741,34 @@ struct Runner {
                 problems << QStringLiteral("pickerProfile=\"%1\" (beklenen \"%2\")")
                                 .arg(dialog->selectedProfile(), expected);
         }
+        // P-2/3: BELGE SAYIMLARI — kesme modifier'i ve konstrüksiyon
+        // duzlemlerinin sayisi + GORUNURLUGU (kopya ciziliyor mu?).
+        if (expect.contains(QStringLiteral("document"))) {
+            const QJsonObject spec = expect[QStringLiteral("document")].toObject();
+            const mm::Document& doc = window.application().document();
+            int planes = 0, visiblePlanes = 0;
+            for (std::size_t i = 0; i < doc.models().size(); ++i) {
+                if (doc.models()[i].constructionKind() != mm::ConstructionKind::Plane) continue;
+                ++planes;
+                if (doc.effectiveProperties(i).visible) ++visiblePlanes;
+            }
+            const int cuts = static_cast<int>(doc.cutModifiers().size());
+            if (spec.contains(QStringLiteral("cutModifiers")) &&
+                spec[QStringLiteral("cutModifiers")].toInt() != cuts)
+                problems << QStringLiteral("document: kesme modifier sayisi %1 != %2")
+                                .arg(cuts)
+                                .arg(spec[QStringLiteral("cutModifiers")].toInt());
+            if (spec.contains(QStringLiteral("planes")) &&
+                spec[QStringLiteral("planes")].toInt() != planes)
+                problems << QStringLiteral("document: duzlem sayisi %1 != %2")
+                                .arg(planes)
+                                .arg(spec[QStringLiteral("planes")].toInt());
+            if (spec.contains(QStringLiteral("visiblePlanes")) &&
+                spec[QStringLiteral("visiblePlanes")].toInt() != visiblePlanes)
+                problems << QStringLiteral("document: GORUNUR duzlem sayisi %1 != %2")
+                                .arg(visiblePlanes)
+                                .arg(spec[QStringLiteral("visiblePlanes")].toInt());
+        }
         // P-2/7: DOSYA ICERIK KONTROLU — senaryo urettigi rapor/dokum
         // dosyalarinda beklenen metinler var mi (malzeme listesi satirlari).
         if (expect.contains(QStringLiteral("fileContains"))) {
@@ -1676,6 +1704,51 @@ struct Runner {
                 return fail(QStringLiteral("appMoveModels: tasima uygulanamadi"));
             pump(300);
             return writeStep(step, QStringLiteral("appMoveModels"));
+        }
+        if (step.contains(QStringLiteral("appConstructionPlane"))) {
+            // P-2/3: konstrüksiyon duzlemi kur (kesim duzlemi kaynagi).
+            const QJsonObject spec = step[QStringLiteral("appConstructionPlane")].toObject();
+            const QJsonArray o = spec[QStringLiteral("origin")].toArray();
+            const QJsonArray n = spec[QStringLiteral("normal")].toArray();
+            if (o.size() < 3 || n.size() < 3)
+                return fail(QStringLiteral("appConstructionPlane: 'origin' ve 'normal' 3'lu olmali"));
+            const mm::Vec3 origin{o[0].toDouble(), o[1].toDouble(), o[2].toDouble()};
+            const mm::Vec3 normal{n[0].toDouble(), n[1].toDouble(), n[2].toDouble()};
+            const double size = spec.contains(QStringLiteral("size"))
+                                    ? spec[QStringLiteral("size")].toDouble()
+                                    : 1000.0;
+            const mm::WorkPlane plane = mm::WorkPlane::fromAxisAndPoint(origin, origin + normal);
+            window.application().documentEditable().addConstructionPlane(plane, size);
+            pump(60);
+            return writeStep(step, QStringLiteral("appConstructionPlane"));
+        }
+        if (step.contains(QStringLiteral("appPlaneCut"))) {
+            // P-2/3: duzlem kesme uygula (kullanici yolunun ayni cekirdegi).
+            const QJsonObject spec = step[QStringLiteral("appPlaneCut")].toObject();
+            const int target = spec[QStringLiteral("target")].toInt(-1);
+            const int plane = spec[QStringLiteral("plane")].toInt(-1);
+            if (target < 0 || plane < 0)
+                return fail(QStringLiteral("appPlaneCut: 'target' ve 'plane' indeksleri bekleniyor"));
+            if (!window.application().applyPlaneCutForTest(
+                    static_cast<std::size_t>(target), static_cast<std::size_t>(plane)))
+                return fail(QStringLiteral("appPlaneCut: kesme kurulamadi"));
+            pump(300);
+            return writeStep(step, QStringLiteral("appPlaneCut"));
+        }
+        if (step.contains(QStringLiteral("appCopyModels"))) {
+            // P-2/3: secili modelleri kopyala (kopya YENI kimlik + yeni konum).
+            const QJsonObject spec = step[QStringLiteral("appCopyModels")].toObject();
+            std::vector<std::size_t> indices;
+            for (const auto v : spec[QStringLiteral("indices")].toArray())
+                indices.push_back(static_cast<std::size_t>(v.toInt(-1)));
+            const QJsonArray d = spec[QStringLiteral("delta")].toArray();
+            if (d.size() < 3 || indices.empty())
+                return fail(QStringLiteral("appCopyModels: 'indices' ve 3'lu 'delta' bekleniyor"));
+            if (window.application().copyModelsAndRecompute(
+                    indices, mm::Vec3{d[0].toDouble(), d[1].toDouble(), d[2].toDouble()}) == 0)
+                return fail(QStringLiteral("appCopyModels: kopya uretilemedi"));
+            pump(120);
+            return writeStep(step, QStringLiteral("appCopyModels"));
         }
         if (step.contains(QStringLiteral("componentDialogSchema"))) {
             // P-1/5: PAKET DIYALOG SEMASI uygulamaya KAYITLI mi? dialog.json

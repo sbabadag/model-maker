@@ -4090,6 +4090,17 @@ void Application::applyCutFromPair(CutKind kind, std::size_t targetIdx, std::siz
     applyCutFromTargets(kind, {targetIdx}, planeIdx);
 }
 
+bool Application::applyPlaneCutForTest(std::size_t targetIndex, std::size_t planeIndex) {
+    // GT-1 (P-2/3): kullanici "Duzlem Kesme" yolunun AYNI cekirdegi.
+    if (targetIndex >= document_.models().size() || planeIndex >= document_.models().size())
+        return false;
+    applyCutFromTargets(CutKind::PlaneCut, {targetIndex}, planeIndex);
+    // Kesme gercekten kuruldu mu? (gecersiz duzlem/parca sessiz kalmasin)
+    for (const auto& m : document_.cutModifiers())
+        if (m.kind == CutKind::PlaneCut && m.target == document_.modelId(targetIndex)) return true;
+    return false;
+}
+
 void Application::applyCutFromTargets(CutKind kind, const std::vector<std::size_t>& targets,
                                       std::size_t planeIdx) {
     // P12: TEK duzlem birden cok profili keser. Her hedefe ayni kaynak duzlemle
@@ -8416,6 +8427,7 @@ Application::CopyStepInfo Application::copySelectionBy(const Vec3& displacement)
     const std::size_t modelsBefore = document_.models().size();
     const std::size_t instBefore = document_.componentInstances().size();
     const std::size_t boltBefore = document_.boltGroups().size();
+    const std::size_t cutsBefore = document_.cutModifiers().size();
     document_.copyModels(selectedModels_, displacement);
     // Kopya komutu bitince bu indeksler secilecek (kaynak yesil kalmasin).
     pendingCopySelection_.clear();
@@ -8440,8 +8452,37 @@ Application::CopyStepInfo Application::copySelectionBy(const Vec3& displacement)
     // dogru B-Rep ile calisir.
     for (std::size_t k = modelsBefore; k < document_.models().size(); ++k)
         rebuildCutBaseSolid(document_.modelId(k));
+    // P-2/3 (INBOX B8): kopya KESIM DUZLEMI tasiyorsa hedef parca yeniden
+    // kesilir — kopyalanan nesne "etkisini uygular". Yeni modifier'lar
+    // copyModels icinde kuruldu; yalniz onlarin hedefleri tazelenir.
+    for (std::size_t ci = cutsBefore; ci < document_.cutModifiers().size(); ++ci)
+        recomputeCutTarget(document_.cutModifiers()[ci].target);
 #endif
     return info;
+}
+
+std::size_t Application::copyModelsAndRecompute(const std::vector<std::size_t>& indices,
+                                               const Vec3& displacement) {
+    // GT-1 (P-2/3): kullanici "Kopyala" akisinin AYNI cekirdegi.
+    if (indices.empty()) return 0;
+    for (const std::size_t index : indices)
+        if (index >= document_.models().size()) return 0;
+    pushUndoSnapshot();
+    const std::size_t before = document_.models().size();
+    const std::size_t cutsBefore = document_.cutModifiers().size();
+    document_.copyModels(indices, displacement);
+    const std::size_t copied = document_.models().size() - before;
+#ifdef MM_HAS_OCC
+    for (std::size_t k = before; k < document_.models().size(); ++k)
+        rebuildCutBaseSolid(document_.modelId(k));
+    for (std::size_t ci = cutsBefore; ci < document_.cutModifiers().size(); ++ci)
+        recomputeCutTarget(document_.cutModifiers()[ci].target);
+#endif
+    updateHover(cursorScreen_.x, cursorScreen_.y);
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
+    return copied;
 }
 
 // KOPYA TESHISI: "component olarak kopyalanmiyor" geri bildirimi icin gorunur

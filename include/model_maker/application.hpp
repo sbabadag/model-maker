@@ -755,6 +755,17 @@ public:
     void syncPassiveViewports();
     // Ikincil gorunus pencereleri icin salt-okunur erisim.
     const Document& document() const noexcept { return document_; }
+    // GT-1 (P-2/3): KULLANICI KESME YOLUNUN ayni cekirdegi — duzlem kesme.
+    // Ikinci bir uretim yolu acilmaz (`applyCutFromTargets` cagrilir); yalniz
+    // GUI senaryosundan cagrilabilsin diye public.
+    bool applyPlaneCutForTest(std::size_t targetIndex, std::size_t planeIndex);
+    // GT-1 (P-2/3): belgeye YAZAN kopya/konstrüksiyon adimlari icin duzenlenebilir
+    // erisim. Uretim kodu bunu KULLANMAZ (komutlar kendi yollarindan gecer).
+    Document& documentEditable() noexcept { return document_; }
+    // GT-1 (P-2/3): kullanici "Kopyala" akisinin AYNI cekirdegi — kopya
+    // B-Rep'leri tazelenir ve kopya kesim duzleminin hedefi yeniden kesilir.
+    std::size_t copyModelsAndRecompute(const std::vector<std::size_t>& indices,
+                                       const Vec3& displacement);
     const std::vector<std::size_t>& selectedModelIndices() const noexcept { return selectedModels_; }
     // GT-1 (GUI test modu): durum JSON'u icin salt-okunur erisim.
     DrawTool activeTool() const noexcept { return tool_; }
