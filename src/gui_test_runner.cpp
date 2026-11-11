@@ -41,6 +41,8 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QKeyEvent>
+#include <QComboBox>
+#include <QDoubleSpinBox>
 #include <QLineEdit>
 #include <QPushButton>
 #include <QStatusBar>
@@ -738,6 +740,50 @@ struct Runner {
                     problems << QStringLiteral("modelProfile[%1]=\"%2\" (beklenen \"%3\")")
                                     .arg(model)
                                     .arg(actual, spec[QStringLiteral("name")].toString());
+            }
+        }
+        // T-6: model ozellikleri (renk/yuzey islemi/ad) — "baska nesne degismedi"
+        // ve "coklu secimde yalniz degisen alan yazildi" iddialari icin.
+        if (expect.contains(QStringLiteral("modelProps"))) {
+            const QJsonObject spec = expect[QStringLiteral("modelProps")].toObject();
+            const int model = spec[QStringLiteral("model")].toInt(-1);
+            if (model < 0 ||
+                static_cast<std::size_t>(model) >= app.document().models().size())
+                problems << QStringLiteral("modelProps: model %1 yok").arg(model);
+            else {
+                const auto& p = app.document().models()[model].properties();
+                if (spec.contains(QStringLiteral("finish"))) {
+                    const QString actual = QString::fromStdString(p.finish);
+                    if (actual != spec[QStringLiteral("finish")].toString())
+                        problems << QStringLiteral("modelProps[%1].finish=\"%2\" (beklenen \"%3\")")
+                                        .arg(model).arg(actual,
+                                            spec[QStringLiteral("finish")].toString());
+                }
+                if (spec.contains(QStringLiteral("name"))) {
+                    const QString actual = QString::fromStdString(p.name);
+                    if (actual != spec[QStringLiteral("name")].toString())
+                        problems << QStringLiteral("modelProps[%1].name=\"%2\" (beklenen \"%3\")")
+                                        .arg(model).arg(actual,
+                                            spec[QStringLiteral("name")].toString());
+                }
+                if (spec.contains(QStringLiteral("hasTrueColor"))) {
+                    const bool actual = p.trueColor.has_value();
+                    if (actual != spec[QStringLiteral("hasTrueColor")].toBool())
+                        problems << QStringLiteral("modelProps[%1].hasTrueColor=%2 (beklenen %3)")
+                                        .arg(model).arg(actual ? 1 : 0)
+                                        .arg(spec[QStringLiteral("hasTrueColor")].toBool() ? 1 : 0);
+                }
+                if (spec.contains(QStringLiteral("trueColor"))) {
+                    const auto expected = static_cast<std::uint32_t>(
+                        spec[QStringLiteral("trueColor")].toDouble());
+                    const auto actual = p.trueColor.value_or(0u);
+                    if (!p.trueColor || actual != expected)
+                        problems << QStringLiteral("modelProps[%1].trueColor=%2 (beklenen %3)")
+                                        .arg(model)
+                                        .arg(p.trueColor ? QStringLiteral("%1").arg(actual, 0, 16)
+                                                         : QStringLiteral("yok"))
+                                        .arg(expected, 0, 16);
+                }
             }
         }
         // T-2: profil DONUSU (derece) — kayit/ac sonrasi da ayni kalmali.
@@ -1729,6 +1775,51 @@ struct Runner {
             }
             pump(80);
             return writeStep(step, QStringLiteral("panelType"));
+        }
+        if (step.contains(QStringLiteral("panelSpin"))) {
+            // T-6: panelin sayisal alanini kullanici gibi doldur (UYGULA ayri adim).
+            const QJsonObject spec = step[QStringLiteral("panelSpin")].toObject();
+            PropertiesPanel* panel = window.propertiesPanel();
+            if (!panel) return fail(QStringLiteral("panelSpin: panel yok"));
+            const QString name = spec[QStringLiteral("name")].toString();
+            auto* spin = panel->findChild<QDoubleSpinBox*>(name);
+            if (!spin) return fail(QStringLiteral("panelSpin: %1 yok").arg(name));
+            spin->setValue(spec[QStringLiteral("value")].toDouble());
+            pump(80);
+            return writeStep(step, QStringLiteral("panelSpin:") + name);
+        }
+        if (step.contains(QStringLiteral("panelColor"))) {
+            // T-6: "Sınıf" (renk kutulu) secimi — kullanici gibi `activated`
+            // yolunu tetikler (panel -> onClassPicked -> Application slotu).
+            const int index = step[QStringLiteral("panelColor")].toInt(-1);
+            PropertiesPanel* panel = window.propertiesPanel();
+            if (!panel) return fail(QStringLiteral("panelColor: panel yok"));
+            auto* combo = panel->findChild<QComboBox*>(QStringLiteral("propsClass"));
+            if (!combo) return fail(QStringLiteral("panelColor: propsClass yok"));
+            if (index < 0 || index >= combo->count())
+                return fail(QStringLiteral("panelColor: indeks %1 aralik disi (0..%2)")
+                                .arg(index).arg(combo->count() - 1));
+            combo->setCurrentIndex(index);
+            if (panel->onClassPicked) panel->onClassPicked(index);
+            pump(120);
+            return writeStep(step, QStringLiteral("panelColor"));
+        }
+        if (step.contains(QStringLiteral("panelCombo"))) {
+            // T-6: panelin acilir listesini kullanici gibi sec (Yüzey işlemi vb.).
+            const QJsonObject spec = step[QStringLiteral("panelCombo")].toObject();
+            PropertiesPanel* panel = window.propertiesPanel();
+            if (!panel) return fail(QStringLiteral("panelCombo: panel yok"));
+            const QString name = spec[QStringLiteral("name")].toString();
+            auto* combo = panel->findChild<QComboBox*>(name);
+            if (!combo) return fail(QStringLiteral("panelCombo: %1 yok").arg(name));
+            const int index = spec[QStringLiteral("index")].toInt(-1);
+            if (index < 0 || index >= combo->count())
+                return fail(QStringLiteral("panelCombo: %1 indeks %2 aralik disi (0..%3)")
+                                .arg(name).arg(index).arg(combo->count() - 1));
+            combo->setCurrentIndex(index);
+            emit combo->currentTextChanged(combo->currentText());
+            pump(80);
+            return writeStep(step, QStringLiteral("panelCombo:") + name);
         }
         if (step.contains(QStringLiteral("panelApply"))) {
             PropertiesPanel* panel = window.propertiesPanel();

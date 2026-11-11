@@ -924,6 +924,33 @@ T-4: GEÇTİ — GT `t33_t4_yardimci_cizgi`, 26 adım `ok=true`, GDI ve GPU ayn�
     ağaç görüntüsüyle kanıtlandı; ağaçtaki başlık metni GT adımıyla
     okunmuyor (adım yok).
 
+T-6: GEÇTİ (kısmi) — GT `t34_t6_ozellikler_paneli`, 47 adım `ok=true`, GDI ve GPU aynı.
+    Panelin GERÇEK widget'ları sürülerek: Dönüş (`propsRotation` + UYGULA) yalnız
+    seçili modele yazılır (model 0 = 90°, model 1 = 0° kalır); "Sınıf" (renk
+    kutusu, `propsClass`) seçimi ANINDA atanır (model 0 `trueColor` var, model 1
+    yok); seçim değiştirilip model 1'e 45° yazılınca model 0 hâlâ 90° (başka
+    nesne değişmedi). Çoklu seçimde (2 üye) Yüzey İşlemi = "Boyalı" iki modele
+    birden yazıldı, dönüş açıları (90/45) ve profiller (HEB240) KORUNDU — yalnız
+    değişen alan yazıldı. `edit.undo` TEK adımda iki nesnenin yüzey işlemini
+    birlikte geri aldı ("" oldu), dönüşler korundu; `edit.redo` geri getirdi.
+    Vision: panelde "Sınıf: Yellow", "Yüzey İşlemi: Boyalı", "Dönüş: 90,0°",
+    "(2 seçili)", durum çubuğu "Seçim: 2". Kanıt:
+    `C:\work\mm-hermes-shots\2026-11-11\t34\` ve `t34gpu\`.
+    KOŞUCUYA EKLENENLER: `panelSpin {name,value}` (panel sayısal alanı, ör.
+    propsRotation), `panelColor {index}` ("Sınıf" kutusu — kullanıcı gibi
+    `activated` yolunu tetikler), `panelCombo {name,index}` (Yüzey İşlemi vb.),
+    `expect.modelProps {model, finish?, name?, hasTrueColor?, trueColor?}`.
+    BULGU (üretim kodu DEĞİŞMEDİ): panel 500 ms'lik yoklamayla tazeleniyor ve
+    SEÇİM DEĞİŞTİKTEN hemen sonraki ilk tazeleme, o aralıkta yazılan değeri
+    eziyor (senaryoda seçimden sonra `wait 700` gerekti). Kullanıcı seçimi
+    değiştirip 500 ms içinde alan yazarsa değeri kaybolabilir — ayrı madde
+    adayı.
+    ATLANDI: renk değişimi `UYGULA`'ya değil, seçime bağlı ANINDA atanır ve
+    undo kapsamında DEĞİL (kod notu `setModelColor` — `Undo KAPSAMINDA DEGIL`);
+    T-6 bu davranışı olduğu gibi belgeliyor. Ad/Malzeme alanları GT'de
+    sürülmedi (T-6 metni renk/açı diyor; `propsName`/`propsMaterial` yolu
+    UYGULA'da aynı batch'e gidiyor).
+
 ## Açık soru (yanıtla, Durum'a yaz)
 - 893e770 "feat(document): çoklu seçim özellik düzenleme + tek geri alma
   adımı" istenmemişti. Ne yapıyor, hangi maddeye ait, testi var mı?

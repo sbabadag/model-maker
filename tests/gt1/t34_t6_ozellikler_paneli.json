@@ -1,0 +1,294 @@
+{
+  "_comment": "T-6 OZELLIKLER PANELI: UYGULA yalniz secili nesneye yazar; secim degisince diger nesne etkilenmez; coklu secimde TEK geri alma adimi, yalniz degisen alan yazilir.",
+  "backend": "gdi",
+  "timeoutMs": 150000,
+  "steps": [
+    {
+      "profile": "HEB240"
+    },
+    {
+      "appColumnLevels": {
+        "top": 3000,
+        "bottom": 0
+      }
+    },
+    {
+      "placeColumn": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      }
+    },
+    {
+      "placeColumn": {
+        "x": 6000,
+        "y": 0,
+        "z": 0
+      }
+    },
+    {
+      "key": "Escape"
+    },
+    {
+      "cmd": "view.dir.iso"
+    },
+    {
+      "fit": {}
+    },
+    {
+      "select": [
+        0
+      ]
+    },
+    {
+      "wait": 700
+    },
+    {
+      "expect": {
+        "selection": 1
+      }
+    },
+    {
+      "panelSpin": {
+        "name": "propsRotation",
+        "value": 90
+      }
+    },
+    {
+      "panelApply": {}
+    },
+    {
+      "expect": {
+        "modelRotation": {
+          "model": 0,
+          "degrees": 90,
+          "tol": 0.5
+        }
+      }
+    },
+    {
+      "expect": {
+        "modelRotation": {
+          "model": 1,
+          "degrees": 0,
+          "tol": 0.5
+        }
+      }
+    },
+    {
+      "capture": {
+        "name": "t6-00-donus-tek",
+        "target": "window"
+      }
+    },
+    {
+      "panelColor": 3
+    },
+    {
+      "expect": {
+        "modelProps": {
+          "model": 0,
+          "hasTrueColor": true
+        }
+      }
+    },
+    {
+      "expect": {
+        "modelProps": {
+          "model": 1,
+          "hasTrueColor": false
+        }
+      }
+    },
+    {
+      "capture": {
+        "name": "t6-01-renk-tek",
+        "target": "window"
+      }
+    },
+    {
+      "select": [
+        1
+      ]
+    },
+    {
+      "wait": 700
+    },
+    {
+      "expect": {
+        "modelRotation": {
+          "model": 1,
+          "degrees": 0,
+          "tol": 0.5
+        }
+      }
+    },
+    {
+      "expect": {
+        "modelProps": {
+          "model": 1,
+          "hasTrueColor": false
+        }
+      }
+    },
+    {
+      "panelSpin": {
+        "name": "propsRotation",
+        "value": 45
+      }
+    },
+    {
+      "panelApply": {}
+    },
+    {
+      "expect": {
+        "modelRotation": {
+          "model": 1,
+          "degrees": 45,
+          "tol": 0.5
+        }
+      }
+    },
+    {
+      "expect": {
+        "modelRotation": {
+          "model": 0,
+          "degrees": 90,
+          "tol": 0.5
+        }
+      }
+    },
+    {
+      "select": [
+        0,
+        1
+      ]
+    },
+    {
+      "wait": 700
+    },
+    {
+      "expect": {
+        "selection": 2
+      }
+    },
+    {
+      "panelCombo": {
+        "name": "propsFinish",
+        "index": 2
+      }
+    },
+    {
+      "panelApply": {}
+    },
+    {
+      "expect": {
+        "modelProps": {
+          "model": 0,
+          "finish": "Boyalı"
+        }
+      }
+    },
+    {
+      "expect": {
+        "modelProps": {
+          "model": 1,
+          "finish": "Boyalı"
+        }
+      }
+    },
+    {
+      "expect": {
+        "modelRotation": {
+          "model": 0,
+          "degrees": 90,
+          "tol": 0.5
+        }
+      }
+    },
+    {
+      "expect": {
+        "modelRotation": {
+          "model": 1,
+          "degrees": 45,
+          "tol": 0.5
+        }
+      }
+    },
+    {
+      "expect": {
+        "modelProfile": {
+          "model": 0,
+          "name": "HEB240"
+        }
+      }
+    },
+    {
+      "expect": {
+        "modelProfile": {
+          "model": 1,
+          "name": "HEB240"
+        }
+      }
+    },
+    {
+      "capture": {
+        "name": "t6-02-coklu-uygula",
+        "target": "window"
+      }
+    },
+    {
+      "cmd": "edit.undo"
+    },
+    {
+      "expect": {
+        "modelProps": {
+          "model": 0,
+          "finish": ""
+        }
+      }
+    },
+    {
+      "expect": {
+        "modelProps": {
+          "model": 1,
+          "finish": ""
+        }
+      }
+    },
+    {
+      "expect": {
+        "modelRotation": {
+          "model": 0,
+          "degrees": 90,
+          "tol": 0.5
+        }
+      }
+    },
+    {
+      "capture": {
+        "name": "t6-03-tek-geri-alma",
+        "target": "window"
+      }
+    },
+    {
+      "cmd": "edit.redo"
+    },
+    {
+      "expect": {
+        "modelProps": {
+          "model": 0,
+          "finish": "Boyalı"
+        }
+      }
+    },
+    {
+      "expect": {
+        "modelProps": {
+          "model": 1,
+          "finish": "Boyalı"
+        }
+      }
+    }
+  ]
+}

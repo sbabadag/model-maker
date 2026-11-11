@@ -636,3 +636,19 @@ sürerken yalnız `docs/` düzenlenir.
   sonmuyor (`activeTool` kaliyor) — kullanici beklentisi farkliysa ayri madde.
 - Kanit: shots\2026-11-11\t32 (GDI) ve t32gpu (GPU). Kapi: `t5-gate.log`
   170/170, BUILD_EXIT=0, CTEST_EXIT=0, 433.94 s.
+
+## T-6 — ozellikler paneli (kapandi, 2026-11-11)
+
+- GT `t34_t6_ozellikler_paneli` 47 adim `ok=true`, GDI ve GPU ayni.
+- Panelin gercek widget'lari suruldu: `propsRotation` + UYGULA yalniz secili
+  modele yazar; secim degisince diger nesne ETKILENMEZ; `propsClass` (Sinif =
+  renk kutusu) secimi ANINDA atanir (undo kapsami disinda); coklu secimde
+  `propsFinish` iki modele birden yazilir, donus acilari ve profiller korunur
+  (yalniz degisen alan) ve `edit.undo` TEK adimda ikisini birlikte geri alir.
+- Kosucuya eklenenler: `panelSpin`, `panelColor`, `panelCombo`,
+  `expect.modelProps {model, finish?, name?, hasTrueColor?, trueColor?}`.
+- BULGU (uretim kodu DEGISMEDI): panel 500 ms'lik yoklamayla tazelenir; SECIM
+  DEGISTIKTEN hemen sonraki ilk tazeleme o aralikta yazilan degeri ezer
+  (GT'de secimden sonra `wait 700` gerekti). Kullanici secimi degistirip
+  500 ms icinde alan yazarsa deger kaybolabilir — ayri madde adayi.
+- Kanit: shots\2026-11-11\t34 (GDI) ve t34gpu (GPU). Kapi: `t6-gate.log`.
