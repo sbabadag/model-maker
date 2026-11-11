@@ -19,6 +19,7 @@
 #include "model_maker/component_package.hpp"
 #include "model_maker/recipe.hpp"
 
+#include <cmath>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
@@ -177,11 +178,58 @@ static void sectionG() {
           "g: ret mesaji Turkce ve aciklayici olmali");
 }
 
+// --- d) frame.member_end {end: lower|upper} ----------------------------------
+static GenerationPlan endFramePlan(const std::string& end) {
+    Recipe r;
+    r.recipeVersion = "1.0.0";
+    RecipeStep f;
+    f.id = "f1";
+    f.use = "frame.member_end";
+    f.args["member"].text = "main";
+    f.args["end"].text = end;
+    r.steps.push_back(f);
+    RecipeStep p;
+    p.id = "p1";
+    p.use = "plate.rect";
+    p.role = "alt_levha";
+    p.args["frame"].text = "f1";
+    p.args["w"].text = "200";
+    p.args["h"].text = "200";
+    p.args["t"].text = "10";
+    r.steps.push_back(p);
+    ComponentInput in;
+    // KOLON YUKARIDAN ASAGI cizilmis: axisFrom Z=3000, axisTo Z=0.
+    in.main = memberGeometryFromProfile({0, 0, 3000}, {0, 0, 0}, /*connectionAtA=*/false,
+                                        {1, 0, 0}, 0.0,
+                                        MemberSectionSpec{300.0, 300.0, 11.0, 19.0, 0.0});
+    return runRecipe(r, {}, in);
+}
+
+static void sectionD() {
+    std::printf("[d] frame.member_end lower|upper (dunya Z)\n");
+    const GenerationPlan lower = endFramePlan("lower");
+    CHECK(lower.ok && lower.plates.size() == 1, "d: lower plan uretilmeli");
+    if (lower.ok && !lower.plates.empty())
+        CHECK(std::fabs(lower.plates[0].center.z) < 1e-6, "d: lower ucu Z=0 olmali");
+    const GenerationPlan upper = endFramePlan("upper");
+    CHECK(upper.ok && upper.plates.size() == 1, "d: upper plan uretilmeli");
+    if (upper.ok && !upper.plates.empty())
+        CHECK(std::fabs(upper.plates[0].center.z - 3000.0) < 1e-6, "d: upper ucu Z=3000 olmali");
+    // 'start'/'end' eski davranisi korunur (axisFrom = 3000, axisTo = 0)
+    const GenerationPlan start = endFramePlan("start");
+    if (start.ok && !start.plates.empty())
+        CHECK(std::fabs(start.plates[0].center.z - 3000.0) < 1e-6, "d: start = axisFrom (3000)");
+    // gecersiz deger -> ACIK ret
+    const GenerationPlan bad = endFramePlan("asagi");
+    CHECK(!bad.ok, "d: gecersiz end degeri REDDEDILMELIYDI");
+}
+
 int main() {
     std::printf("contract %s\n", kContractVersion);
     sectionA();
     sectionB();
     sectionC();
+    sectionD();
     sectionG();
     if (failures == 0) std::printf("TUM TESTLER GECTI\n");
     else std::printf("%d HATA\n", failures);

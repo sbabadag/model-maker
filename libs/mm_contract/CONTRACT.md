@@ -297,6 +297,21 @@ alternatifler). Kurallar:
   yapılır; sessiz çift nesne üretilmez.
 - `roleKey` yine tür değiştiremez (`roleKey farkli ture baglandi`).
 
+### 1.16.0 — (d) `frame.member_end {end: lower|upper}` (HR-12)
+
+`end` argümanı dünya koordinatına göre de seçilebilir:
+
+| değer | anlam |
+|---|---|
+| `start` / `from` | `axisFrom` ucu (eski davranış, değişmedi) |
+| `end` / `to` | `axisTo` ucu (eski davranış, değişmedi) |
+| `lower` | dünya **Z**'si küçük olan uç |
+| `upper` | dünya **Z**'si büyük olan uç |
+
+Gerekçe: yukarıdan aşağı çizilmiş kolonda `axisFrom` üstte kalır; taban levhası
+`lower` ile doğru uca gider. Başka bir metin AÇIK ret ile reddedilir
+(`gecersiz end '<x>' (start|from|end|to|lower|upper)`).
+
 ## Sürüm denetimi DIŞINDA olanlar (serbest)
 
 - `.cpp` iç kod (header'daki imzayı değiştirmediği sürece)

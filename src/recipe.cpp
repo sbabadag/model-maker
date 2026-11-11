@@ -573,7 +573,24 @@ static bool blockFrameMemberEnd(EvalCtx& ctx, const RecipeStep& st, GenerationPl
     if (!m) { ctx.error = wideFromUtf8("frame.member_end: bilinmeyen uye rolu '" + role + "'"); return false; }
     const Vec3 dir = m->axisTo - m->axisFrom;
     if (vecLen(dir) <= 1e-9) { ctx.error = wideFromUtf8("frame.member_end: uzunlugu sifir uye '" + role + "'"); return false; }
-    const bool atStart = (end == "start" || end == "from");
+    // 1.16.0 (contract istegi d / HR-12): `end` DUNYA Z'ye gore de secilebilir.
+    //  - start|from : axisFrom ucu
+    //  - end|to     : axisTo ucu
+    //  - lower      : dunya Z'si KUCUK olan uc  (yukaridan asagi cizilmis kolonda TABAN)
+    //  - upper      : dunya Z'si BUYUK olan uc
+    bool atStart = false;
+    if (end == "start" || end == "from") {
+        atStart = true;
+    } else if (end == "end" || end == "to") {
+        atStart = false;
+    } else if (end == "lower" || end == "upper") {
+        const bool fromIsLower = m->axisFrom.z <= m->axisTo.z;
+        atStart = (end == "lower") ? fromIsLower : !fromIsLower;
+    } else {
+        ctx.error = wideFromUtf8("frame.member_end: gecersiz end '" + end +
+                                "' (start|from|end|to|lower|upper)");
+        return false;
+    }
     MemberLocalFrame f;
     f.origin = atStart ? m->axisFrom : m->axisTo;
     // CERCEVE = uyenin KESIT cercevesi: profileSectionFrame(donus YOK) yerine
