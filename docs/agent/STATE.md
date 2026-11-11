@@ -295,7 +295,54 @@
   ctest **167/167 exit=0** (394.7 s; `model_maker_contract_requests_test`
   dahil, GT script'leri ctest'e dahil DEĞİL — ayrı koşulur); golden
   `178cb73b…d4818` **DEĞİŞMEDİ**; GT `t21` 25/25, GT `t22` 35/35.
+- **BULGU (b) — KAPANDI (2026-11-11 11:05, `830c735`).** Kök neden bağımlılık
+  grafiği DEĞİLDİ: yeniden üretim zaten koşuyordu; paketin kendi check'i
+  ("Süreklilik levhası kolon flanşının içine giriyor…") reddediyor ve
+  `atomicRecompute` TÜM işlemi (profil ataması dahil) geri alıyordu. Artık
+  gerçek neden geri alma mesajında (`prepWhy`) + kalıcı `CR-PREP-FAIL` logu;
+  GT `t23_package_profile_change` iki dalı kilitler: geçerli IPE240→IPE220
+  "yenilendi" + digest değişir, geçersiz IPE220→IPE270 RED + rollback
+  (digest sabit).
+- **BULGU (a) — TEŞHİS TAMAM, DÜZELTME İÇİN KARAR GEREKLİ (2026-11-11 11:20,
+  `e115737`).** `docs/agent/BULGU-A.md`. Ölçüm (`tests/gt1/t24_bulgu_a_olcum.json`,
+  HEB300 + IPE240): `stiffener_top_a` x 13.5…275.5 / y −144.5…0,
+  `stiffener_top_b` aynı x / y −300…−155.5 — ikisi de aynı tarafta ve
+  262 mm'lik boyut GENİŞLİK ekseninde (kolon kesiti x ±150 → levha dışına
+  taşıyor). Kanonik (golden) girdide plan doğru ve simetrik. Kök neden:
+  `frame.member_face` gövde yüzü dalında `u = sf.height` veriyor; recipe ise
+  `u = genişlik` varsayımıyla `du` uygulayıp 90° döndürüyor → levha 90° dönük.
+  Düzeltme iki yönlü olabilir (MM `frame.offset` semantiği ya da paketin
+  gövde yüzü bağlantısını reddetmesi); **Studio'nun raporladığı plan hâlâ
+  alınamadığı için** (`planDigest` yok) hangisinin doğru olduğu ölçülemiyor.
+- **P-2 (`plate.polygon` materyalizasyonu) — BİTTİ (2026-11-11 11:35).**
+  - Kök neden: `blockPlatePolygon` konturu `outline`'a yazıyor ama
+    `PlateSpec.width/height` **0** bırakıyordu; `ComponentMaterializer::
+    buildPlateSolid` ilk kapıda (`width/height <= 0`) boş döndürüyor →
+    "levha katı üretilemedi" ve paket uygulanamıyordu.
+  - Düzeltme (`src/recipe.cpp`, `blockPlatePolygon`): konturun **sınır
+    kutusu** `width/height`'e yazılır (PlateSpec sözleşmesi: "outline dolu ise
+    width/height yalnız sınır kutusudur"); sıfır alanlı kontur artık açık RED.
+    Haunch gövdesi aynı kuralı zaten kullanıyordu.
+  - Kanıt: `tests/gt1/t25_p2_polygon_materyalizasyon.json` —
+    `mm_stiffened_base_plate` (6 kontur levhası) içe aktar + uygula:
+    **düzeltme öncesi `componentCount=0`** (adım FAIL), düzeltme sonrası
+    komponent yerleşir ve 17 model oluşur (taban levhası + 8 ankraj +
+    6 kontur levhası + kaynaklar). `recipe_test` (HR-3) artık
+    `width/height == sınır kutusu` kontrolünü de yapar.
+  - `t24` ve `t25` CMake gt1 listesine eklendi (`MM_GUI_TESTS=ON` ile
+    `ctest -L gui` altında koşar; varsayılan ctest kapsamı 167'de kalır).
+  - **Kontrat 1.23.0.** (a) P-2 için `plate.polygon` sınır kutusu, (b) sürüm
+    alanı tutarlılığı: `kContractVersionMinor` **11'de kalmıştı** (string
+    1.22.0). `contractSupports()` sayısal alanları, paket doğrulaması string'i
+    kullandığı için `minContractVersion: "1.22.0"` bildiren Studio paketleri
+    sessizce reddedilebiliyordu — artık 1/23/0 ve `contract_requests_test`
+    bölüm `p2` ikisini de kilitler. CONTRACT.md'de 1.23.0 girişi var.
+  - Not: `libs/mm_contract/tests/recipe_test.cpp` bu build'de DERLENMİYOR
+    (kök CMakeLists o dosyayı hedefe eklemiyor; `libs/mm_contract/CMakeLists.txt`
+    add_subdirectory edilmiyor). Oraya test eklerken canlı hedefe
+    (`model_maker_contract_requests_test`) de eklenmeli.
 - Son güncelleme (önceki): 2026-11-09
+
 - Son tur: 2026-11-09 (Asus) — H-2 (ters seçim: End Plate/Fin Plate/Haunch rol
   çözümü) — BİTTİ — Kök neden: plan rol anahtarları `inputRoleFor` ile konumsal
   atanıyordu; ters seçimde digest değişiyor + End Plate kiriş ucu kesimi kolonu

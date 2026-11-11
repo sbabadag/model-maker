@@ -659,6 +659,65 @@ static void sectionF() {
               "f: ret mesaji 'uzatma' demeli");
 }
 
+// P-2 (Studio bulgusu): `plate.polygon` levhasi KATIYA cevrilebilmelidir.
+// Kontur `PlateSpec.outline`'a yazilirken width/height (sinir kutusu) bos
+// birakilirsa `ComponentMaterializer::buildPlateSolid` ilk kapida reddediyor ve
+// paket HIC uygulanamiyor ("levha kati uretilemedi"). Ayrica kontrat surumunun
+// SAYISAL alanlari ile string'i ayni kalmali: `contractSupports` sayisallari,
+// paket dogrulamasi string'i kullanir.
+static void sectionP2() {
+    std::printf("[p2] plate.polygon sinir kutusu + kontrat surum tutarliligi\n");
+    // --- kontrat surumu: string ile sayisal alanlar ayni mi? ---
+    {
+        int maj = 0, min = 0, pat = 0;
+        const std::string v(kContractVersion);
+        std::sscanf(v.c_str(), "%d.%d.%d", &maj, &min, &pat);
+        CHECK(maj == kContractVersionMajor && min == kContractVersionMinor &&
+                  pat == kContractVersionPatch,
+              "p2: kContractVersion string'i ile sayisal alanlar AYNI olmali");
+        CHECK(kContractVersionMinor >= 21,
+              "p2: minor alani gercek surumu yansitmali (1.22.0'da 11 kalmisti)");
+    }
+    // --- plate.polygon: width/height konturun sinir kutusu ---
+    const auto polygonPlan = [](std::vector<std::string> pts) {
+        Recipe r;
+        RecipeStep f;
+        f.id = "f1";
+        f.use = "frame.member_end";
+        f.args["member"].text = "main";
+        r.steps.push_back(f);
+        RecipeStep p;
+        p.id = "p1";
+        p.use = "plate.polygon";
+        p.role = "stiffener";
+        p.args["frame"].text = "f1";
+        p.args["t"].text = "12";
+        for (auto& s : pts) p.args["outline"].items.push_back({s});
+        p.args["outline"].isList = true;
+        r.steps.push_back(p);
+        ComponentInput in;
+        in.main = memberGeometryFromProfile({0, 0, 0}, {0, 0, 3000}, false, {1, 0, 0}, 0.0,
+                                            MemberSectionSpec{300.0, 300.0, 11.0, 19.0, 0.0});
+        return runRecipe(r, {}, in);
+    };
+    {
+        const GenerationPlan plan = polygonPlan({"0,0", "200,0", "0,150"});
+        CHECK(plan.ok && plan.plates.size() == 1, "p2: ucgen kontur plan uretmeli");
+        if (plan.ok && !plan.plates.empty()) {
+            const PlateSpec& pl = plan.plates[0];
+            CHECK(pl.outline.size() == 3, "p2: kontur 3 nokta");
+            CHECK(std::fabs(pl.width - 200.0) < 1e-6 && std::fabs(pl.height - 150.0) < 1e-6,
+                  "p2: width/height konturun SINIR KUTUSU olmali (0 kalamaz)");
+            CHECK(pl.width > 0.0 && pl.height > 0.0,
+                  "p2: materyalizator icin width/height > 0 sart");
+        }
+    }
+    {
+        const GenerationPlan plan = polygonPlan({"0,0", "100,0", "200,0"});
+        CHECK(!plan.ok, "p2: sifir alanli (dogrusal) kontur REDDEDILIR");
+    }
+}
+
 int main() {
     std::printf("contract %s\n", kContractVersion);
     sectionA();
@@ -672,6 +731,7 @@ int main() {
     sectionK();
     sectionF();
     sectionG();
+    sectionP2();
     if (failures == 0) std::printf("TUM TESTLER GECTI\n");
     else std::printf("%d HATA\n", failures);
     return failures == 0 ? 0 : 1;

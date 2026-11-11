@@ -637,6 +637,11 @@ static void testSt4Stones() {
             CHECK(near(pl.outline[1].first, 300.0) && near(pl.outline[2].second, 300.0),
                   "plate.polygon: ifade noktalari cozuldu");
             CHECK(near(pl.thickness, 12.0), "plate.polygon: kalinlik");
+            // P-2: kontur dolu ise width/height SINIR KUTUSUDUR. 0 kalirsa
+            // ComponentMaterializer::buildPlateSolid ilk kapida reddeder ve
+            // `plate.polygon` levhasi hic uretilemez ("levha kati uretilemedi").
+            CHECK(near(pl.width, 300.0) && near(pl.height, 300.0),
+                  "plate.polygon: width/height konturun sinir kutusu");
         }
     }
     {

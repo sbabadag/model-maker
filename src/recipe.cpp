@@ -1099,6 +1099,27 @@ static bool blockPlatePolygon(EvalCtx& ctx, const RecipeStep& st, GenerationPlan
     p.outline.clear();
     p.outline.reserve(pts.size());
     for (const auto& q : pts) p.outline.emplace_back(q.u, q.v);
+    // P-2: konturun SINIR KUTUSU width/height olarak yazilir (PlateSpec sozlesmesi:
+    // "outline dolu ise width/height yalniz sinir kutusudur"). Materyalizator
+    // (ComponentMaterializer::buildPlateSolid) ilk kapida width/height > 0 ister;
+    // 0 birakildiginda `plate.polygon` levhasi hic uretilemiyordu. Haunch govdesi
+    // de ayni kurali kullanir (component_engine.cpp, web.outline).
+    {
+        double umin = pts.front().u, umax = pts.front().u;
+        double vmin = pts.front().v, vmax = pts.front().v;
+        for (const auto& q : pts) {
+            umin = std::min(umin, q.u);
+            umax = std::max(umax, q.u);
+            vmin = std::min(vmin, q.v);
+            vmax = std::max(vmax, q.v);
+        }
+        p.width = umax - umin;
+        p.height = vmax - vmin;
+        if (!(p.width > 0.0) || !(p.height > 0.0)) {
+            ctx.error = L"plate.polygon: kontur sifir alanli (genislik/yukseklik 0)";
+            return false;
+        }
+    }
     p.name = wideFromUtf8(name);
     p.material = wideFromUtf8(material);
     p.finish = wideFromUtf8(finish);

@@ -1,0 +1,78 @@
+{
+  "backend": "gdi",
+  "timeoutMs": 240000,
+  "_comment": "P-2: `plate.polygon` levhalarinin KATIYA cevrilmesi. Onceki durum: recipe kontur uretiyor ama PlateSpec.width/height 0 kaldigi icin materyalizator 'levha kati uretilemedi' ile reddediyordu. mm_stiffened_base_plate paketi (6 kontur levhasi) uygulanip komponentin gercekten yerlesmesi beklenir.",
+  "steps": [
+    {
+      "appImportPackage": {
+        "path": "../fixtures/studio_pkgs/mm_stiffened_base_plate.mmcpkg",
+        "embed": false,
+        "userRoot": "components"
+      }
+    },
+    {
+      "componentTypeRegistered": {
+        "typeId": "mm_stiffened_base_plate",
+        "package": true,
+        "schemaVersion": 1
+      }
+    },
+    {
+      "profile": "HEB300"
+    },
+    {
+      "appColumnLevels": {
+        "top": 3000,
+        "bottom": 0
+      }
+    },
+    {
+      "placeColumn": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      }
+    },
+    {
+      "expect": {
+        "models": {
+          "count": 1,
+          "profiled": 1
+        }
+      }
+    },
+    {
+      "appComponent": {
+        "typeId": "mm_stiffened_base_plate",
+        "parts": [
+          0
+        ],
+        "params": {
+          "bp_t": 30.0,
+          "fs_count": 4
+        }
+      }
+    },
+    {
+      "expect": {
+        "componentCount": {
+          "typeId": "mm_stiffened_base_plate",
+          "count": 1
+        }
+      }
+    },
+    {
+      "expect": {
+        "modelBox": {
+          "all": true
+        }
+      }
+    },
+    {
+      "capture": {
+        "name": "t25-p2-taban-levhasi-kontur",
+        "target": "window"
+      }
+    }
+  ]
+}

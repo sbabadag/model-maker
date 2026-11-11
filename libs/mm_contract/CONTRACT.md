@@ -415,6 +415,27 @@ Plan çıktısı: `cuts` içinde `CutModifier{kind=PlaneCut, targetRole=<member>
 planeOrigin=frame.origin + frame.w · offset, planeNormal=frame.w, keepPositive}`;
 `cutKeys` = adımın `role` değeri. Yeni blok olduğu için mevcut digest'ler değişmez.
 
+### 1.23.0 — P-2: `plate.polygon` sınır kutusu + sürüm alanı tutarlılığı
+
+`plate.polygon` blok çıktısında `PlateSpec.width/height`, konturun **sınır
+kutusu** olarak yazılır (PlateSpec sözleşmesi: "outline dolu ise width/height
+yalnız sınır kutusudur"). Önce bu alanlar `0` bırakılıyordu; `ComponentMaterializer`
+ilk kapıda (`width/height <= 0`) boş katı döndürdüğü için **kontur levhası
+içeren hiçbir paket uygulanamıyordu** ("levha katı üretilemedi: <rol>").
+Sıfır alanlı (doğrusal) kontur artık açık reddedilir.
+
+Digest etkisi: yalnız `plate.polygon` kullanan planlar (kontur levhaları)
+etkilenir — bu blok ilk kez kullanılabilir hale geldiği için önceden üretilmiş
+geçerli bir digest yok. Dikdörtgen/pahlı levha, haunch (kendi `outline`'ını
+zaten sınır kutusuyla yazıyor) ve diğer tüm blokların digest'i değişmez.
+
+Ayrıca `contract_version.hpp` içindeki **sayısal alanlar** (`kContractVersionMajor/
+Minor/Patch`) ile `kContractVersion` string'i yeniden hizalandı: 1.22.0
+string'ine karşılık `Minor` 11 kalmıştı. `contractSupports()` sayısal alanları,
+paket doğrulaması string'i kullandığı için `minContractVersion: "1.22.0"`
+bildiren Studio paketleri sessizce reddedilebiliyordu.
+`model_maker_contract_requests_test` (bölüm `p2`) ikisini de kilitler.
+
 ## Sürüm denetimi DIŞINDA olanlar (serbest)
 
 - `.cpp` iç kod (header'daki imzayı değiştirmediği sürece)
