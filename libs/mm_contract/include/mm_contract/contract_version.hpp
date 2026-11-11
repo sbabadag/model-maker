@@ -15,15 +15,15 @@
 namespace mm {
 
 inline constexpr int kContractVersionMajor = 1;
-inline constexpr int kContractVersionMinor = 23;
+inline constexpr int kContractVersionMinor = 24;
 inline constexpr int kContractVersionPatch = 0;
 
-// Tek string semver: "1.23.0".
+// Tek string semver: "1.24.0".
 // NOT: sayisal alanlar ile string AYNI tutulur — `contractSupports` sayisal
 // alanlari, paket dogrulamasi string'i kullanir; ikisi ayrisirsa (1.22.0
 // string'ine karsilik minor=11 kalmasi gibi) minContractVersion bildiren
 // Studio paketleri sessizce REDDEDILIR. Test bunu kilitler (sectionP2).
-inline constexpr const char* kContractVersion = "1.23.0";
+inline constexpr const char* kContractVersion = "1.24.0";
 
 // Istenen min surum mevcut kontrat tarafindan karsilaniyor mu?
 // Semver: major FARKLIYSA desteklenmez (ne ust ne alt); ayni majorda

@@ -72,7 +72,25 @@ Ek olarak uygulama yolu üye çerçevesini `sectionCenterOffset = −150`
 Bu, `_a`/`_b` çiftinin mutlak konumunu 150 mm kaydırıyor ama **simetri**
 sorununun kaynağı değil (simetri `u` eksen takımından geliyor).
 
-## 5. Neden düzeltme şimdi yapılmadı
+## 5. KARAR (planlayıcı, 2026-11-11 17:15) — uygulandı
+
+**Seçenek (2), fail-closed.** `frame.member_face` **semantiği değişmez**
+(u/v/w aynı → mevcut digest'ler korunur). Bunun yerine:
+
+- Kontrat **1.24.0**: `frame.member_face {require: flange|web, message}` —
+  yüz türü uyuşmazsa plan REDDEDİLİR; `message` verilmişse birebir o Türkçe
+  metin döner. `require`/`message` plan çıktısına yazılmaz.
+- `CONTRACT.md`: yüz başına eksen takımı tablosu (flanş yüzünde `u`=genişlik,
+  gövde yüzünde `u`=yükseklik) ve gerekçe.
+- **Paket tarafı (Studio, REPIN-2):** `mm_stiffened_end_plate` recipe'sine
+  `"require": "flange", "message": "bu paket yalniz kolon flansina baglanir"`
+  eklenecek. `t24` beklentisi o zaman "kurulmadı + mesaj" olur; bugünkü fixture
+  eski davranışı koruyor (require yok → kurulur).
+- Zayıf eksen (gövdeye) bağlanan varyant ileride ayrı paket.
+
+Aşağıdaki bölüm karar öncesi analizi olduğu gibi koruyor.
+
+## 5b. Karar öncesi değerlendirme
 
 - Studio'nun aynı model için ürettiği plan hâlâ **raporlanamıyor**
   (`planDigest` yok) → "Studio ile aynı" şartı REPIN'e kadar ölçülemez.

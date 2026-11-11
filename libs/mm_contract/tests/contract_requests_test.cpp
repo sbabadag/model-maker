@@ -718,6 +718,88 @@ static void sectionP2() {
     }
 }
 
+// Bulgu (a) — planlayici karari (fail-closed): `frame.member_face` `require`
+// argumani ile secilen yuzun TURU zorunlu kilinir. Eksen takimi DEGISMEZ
+// (mevcut digest'ler korunur); yalniz yuz turu uymazsa plan REDDEDILIR ve
+// paket kendi Turkce mesajini verebilir.
+static void sectionRe() {
+    std::printf("[re] frame.member_face require: flange|web (fail-closed)\n");
+    // Kolon ekseni Z. refNormal X -> kesit yuksekligi X'te: +X'ten gelen kiris
+    // FLANS yuzune bakar. refNormal Y -> genislik X'te: ayni kiris GOVDE yuzune bakar.
+    const auto facePlan = [](const Vec3& refNormal, const std::string& require,
+                             const std::string& message) {
+        Recipe r;
+        RecipeStep s;
+        s.id = "s2";
+        s.use = "frame.member_face";
+        s.args["member"].text = "main";
+        s.args["toward"].text = "secondary_0";
+        if (!require.empty()) s.args["require"].text = require;
+        if (!message.empty()) s.args["message"].text = message;
+        r.steps.push_back(s);
+        RecipeStep p;
+        p.id = "p1";
+        p.use = "plate.rect";
+        p.role = "stiffener";
+        p.args["frame"].text = "s2";
+        p.args["w"].text = "100";
+        p.args["h"].text = "100";
+        p.args["t"].text = "10";
+        r.steps.push_back(p);
+        ComponentInput in;
+        in.main = memberGeometryFromProfile({0, 0, 0}, {0, 0, 3000}, false, refNormal, 0.0,
+                                            MemberSectionSpec{300.0, 300.0, 11.0, 19.0, 0.0});
+        // Kiris kolonun ORTASINDAN +X yonunde (temas denetimi bu testte yok).
+        in.secondary.push_back(memberGeometryFromProfile(
+            {0, 0, 1500}, {3000, 0, 1500}, true, {0, 0, 1}, 0.0,
+            MemberSectionSpec{120.0, 240.0, 6.2, 9.8, 0.0}));
+        return runRecipe(r, {}, in);
+    };
+    const Vec3 refFlange{1.0, 0.0, 0.0};  // kesit yuksekligi X -> FLANS yuzu
+    const Vec3 refWeb{0.0, 1.0, 0.0};     // kesit genisligi X  -> GOVDE yuzu
+
+    // 1) Flans yuzu + require flange -> plan uretir.
+    {
+        const GenerationPlan p = facePlan(refFlange, "flange", "");
+        CHECK(p.ok && p.plates.size() == 1, "re: flans yuzu + require flange -> plan ok");
+    }
+    // 2) Govde yuzu + require flange -> Turkce paket mesajiyla RED (fail-closed).
+    {
+        const GenerationPlan p = facePlan(refWeb, "flange",
+                                          "bu paket yalniz kolon flansina baglanir");
+        CHECK(!p.ok, "re: govde yuzu + require flange -> RED (sessiz yanlis geometri yok)");
+        if (!p.ok)
+            CHECK(p.error == L"bu paket yalniz kolon flansina baglanir",
+                  "re: RED mesaji paketin verdigi Turkce metin olmali");
+    }
+    // 3) Ayni girdi + require web -> plan uretir (semantik korunur).
+    {
+        const GenerationPlan p = facePlan(refWeb, "web", "");
+        CHECK(p.ok && p.plates.size() == 1, "re: govde yuzu + require web -> plan ok");
+    }
+    // 4) Mesaj verilmezse varsayilan teshis metni.
+    {
+        const GenerationPlan p = facePlan(refWeb, "flange", "");
+        CHECK(!p.ok, "re: require flange (mesajsiz) -> RED");
+        if (!p.ok)
+            CHECK(p.error.find(L"yuz turu uyusmuyor") != std::wstring::npos,
+                  "re: varsayilan mesaj 'yuz turu uyusmuyor' demeli");
+    }
+    // 5) require YOK -> eski davranis (govde yuzu kabul), digest korunur.
+    {
+        const GenerationPlan p = facePlan(refWeb, "", "");
+        CHECK(p.ok && p.plates.size() == 1, "re: require yok -> eski davranis korunur");
+    }
+    // 6) Gecersiz require degeri -> acik ret.
+    {
+        const GenerationPlan p = facePlan(refFlange, "flangee", "");
+        CHECK(!p.ok, "re: gecersiz require -> RED");
+        if (!p.ok)
+            CHECK(p.error.find(L"gecersiz require") != std::wstring::npos,
+                  "re: 'gecersiz require' mesaji");
+    }
+}
+
 int main() {
     std::printf("contract %s\n", kContractVersion);
     sectionA();
@@ -732,6 +814,7 @@ int main() {
     sectionF();
     sectionG();
     sectionP2();
+    sectionRe();
     if (failures == 0) std::printf("TUM TESTLER GECTI\n");
     else std::printf("%d HATA\n", failures);
     return failures == 0 ? 0 : 1;

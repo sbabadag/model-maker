@@ -314,6 +314,26 @@
   Düzeltme iki yönlü olabilir (MM `frame.offset` semantiği ya da paketin
   gövde yüzü bağlantısını reddetmesi); **Studio'nun raporladığı plan hâlâ
   alınamadığı için** (`planDigest` yok) hangisinin doğru olduğu ölçülemiyor.
+- **BULGU (a) — KARAR UYGULANDI: fail-closed (2026-11-11 17:20, kontrat 1.24.0).**
+  Planlayıcı kararı (INBOX 17:15): `frame.member_face` **semantiği DEĞİŞMEZ**
+  (u/v/w aynı → mevcut digest'ler korunur); paket bağlandığı yüzü bildirir.
+  - **Kontrat eklendi:** `frame.member_face {require: flange|web, message}`.
+    Yüz türü uyuşmazsa plan REDDEDİLİR; `message` verilmişse birebir o Türkçe
+    metin döner. `require`/`message` plan çıktısına yazılmaz → digest etkisi YOK.
+  - **CONTRACT.md:** yüz başına eksen takımı tablosu (flanş: `w`=±yükseklik,
+    `u`=genişlik; gövde: `w`=±genişlik, `u`=yükseklik) + 1.24.0 girişi ve
+    gerekçe (Bulgu a ölçümü).
+  - **Test:** `model_maker_contract_requests_test` bölüm `re` (6 kontrol):
+    flanş+require flange → plan; gövde+require flange → RED + paket Türkçe
+    mesajı birebir; gövde+require web → plan; mesajsız → varsayılan teshis
+    metni; `require` yok → eski davranış; geçersiz `require` → RED.
+  - **Paket tarafı Studio'da:** `mm_stiffened_end_plate` recipe'sine
+    `"require": "flange", "message": "bu paket yalniz kolon flansina baglanir"`
+    eklenmeli (REPIN-2). O gelince `t24` beklentisi "kurulmadı + mesaj" olacak;
+    bugünkü fixture eski davranışı (kurulur) koruyor.
+  - `mm-kabul` temizliği kurala göre yapıldı: son 3 paket
+    (`20261111-1205-bulgu-b-p2`, `20261111-1038-p1-butunu`,
+    `20261111-0045-p1-7-studio-golden`) + `son\` en yeni paketin kopyası.
 - **P-2 (`plate.polygon` materyalizasyonu) — BİTTİ (2026-11-11 11:35).**
   - Kök neden: `blockPlatePolygon` konturu `outline`'a yazıyor ama
     `PlateSpec.width/height` **0** bırakıyordu; `ComponentMaterializer::

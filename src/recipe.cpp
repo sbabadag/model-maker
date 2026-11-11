@@ -749,7 +749,8 @@ static bool blockFrameRotate(EvalCtx& ctx, const RecipeStep& st, GenerationPlan&
 // `toward` eksenle ayni dogrultuda (izdusum sifir) veya iki yuze esit (~45°)
 // ise ACIK ret (fail-closed).
 static bool computeMemberFace(EvalCtx& ctx, const std::string& memberRole,
-                              const std::string& towardRole, MemberLocalFrame& out) {
+                              const std::string& towardRole, MemberLocalFrame& out,
+                              bool* isWebFace = nullptr) {
     if (memberRole == towardRole) {
         ctx.error = wideFromUtf8("frame.member_face: member ve toward ayni rol: " + memberRole);
         return false;
@@ -812,12 +813,14 @@ static bool computeMemberFace(EvalCtx& ctx, const std::string& memberRole,
         offset = m->secWebThickness * 0.5;
         out.u = sf.height;
         out.v = axis;
+        if (isWebFace) *isWebFace = true;
     } else {
         // FLANS (baslik) yuzu: normal ±yukseklik, ofset h/2. u = genislik, v = eksen.
         normal = sf.height * (dotV >= 0.0 ? 1.0 : -1.0);
         offset = m->secHeight * 0.5;
         out.u = sf.width;
         out.v = axis;
+        if (isWebFace) *isWebFace = false;
     }
     out.w = normal;
     // origin: toward ucunun eksene izdusumu + kesit merkez ofseti + yuz ofseti.
@@ -888,12 +891,40 @@ static bool blockFrameMemberFace(EvalCtx& ctx, const RecipeStep& st, GenerationP
         ctx.error = L"frame.member_face: 'face' ve 'toward' birlikte verilemez";
         return false;
     }
+    // 1.24.0 (Bulgu a — planlayici karari: fail-closed): `require` secilen yuzun
+    // TURUNU zorunlu kilar. Eksen takimi (u/v/w) DEGISMEZ; yalniz yuz turu
+    // uymazsa plan REDDEDILIR. Boylece paket, govde yuzune (zayif eksen) yanlis
+    // geometri uretmek yerine kendi Turkce mesajiyla kapanir.
+    std::string require, requireMessage;
+    strArg(st, "require", "", require);
+    strArg(st, "message", "", requireMessage);
+    bool requireWeb = false;
+    if (!require.empty()) {
+        if (require != "web" && require != "flange") {
+            ctx.error = wideFromUtf8("frame.member_face: gecersiz require '" + require +
+                                     "' (web|flange)");
+            return false;
+        }
+        requireWeb = (require == "web");
+    }
     MemberLocalFrame f;
+    bool isWebFace = false;
     if (!face.empty()) {
         if (!computeMemberFaceByName(ctx, memberRole, face, st, f)) return false;
+        isWebFace = (face == "web_pos" || face == "web_neg");
     } else {
         if (towardRole.empty()) towardRole = "secondary_0";
-        if (!computeMemberFace(ctx, memberRole, towardRole, f)) return false;
+        if (!computeMemberFace(ctx, memberRole, towardRole, f, &isWebFace)) return false;
+    }
+    if (!require.empty() && isWebFace != requireWeb) {
+        if (!requireMessage.empty()) {
+            ctx.error = wideFromUtf8(requireMessage);
+        } else {
+            ctx.error = wideFromUtf8(
+                std::string("frame.member_face: yuz turu uyusmuyor — gereken '") + require +
+                "', bulunan '" + (isWebFace ? "web" : "flange") + "'");
+        }
+        return false;
     }
     ctx.frames[st.id] = f;
     return true;
@@ -1785,7 +1816,9 @@ static const std::vector<BlockDecl>& blockRegistry() {
         // 1.18.0 (h): iki uyenin bulusma yerinde acirtay duzlemi.
         {"frame.bisector", {}, {"a", "b"}, {}, &blockFrameBisector,
          {}, {}, {"a", "b"}, {}},
-        {"frame.member_face", {"at"}, {"member", "toward", "face"}, {},
+        // 1.24.0 (Bulgu a): `require` (web|flange) secilen yuzun TURUNU zorunlu
+        // kilar; uymazsa `message` (Turkce) ile RED. Eksen takimi degismez.
+        {"frame.member_face", {"at"}, {"member", "toward", "face", "require", "message"}, {},
          &blockFrameMemberFace, {}, {}, {"member", "toward"}, {}},
         // HR-3: `chamfers` listesi ("corner:type:h:v") + metin alanlari param.* kabul eder.
         {"plate.rect", {"w", "h", "t"}, {"frame", "name", "material", "finish", "posNo"},

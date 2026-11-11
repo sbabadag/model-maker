@@ -329,6 +329,22 @@ Gerekçe: yukarıdan aşağı çizilmiş kolonda `axisFrom` üstte kalır; taban
 - `face` ile `toward` **birlikte verilemez** (belirsizlik → açık ret). Geçersiz
   `face` değeri reddedilir: `(flange_pos|flange_neg|web_pos|web_neg)`.
 
+**Yüz başına eksen takımı (1.24.0'da belgelendi; semantik 1.17.0'dan beri aynı).**
+`toward` verildiğinde yüz, `toward` üyesinin yönüne göre seçilir; seçilen yüzün
+türü eksen takımını belirler:
+
+| durum (seçim) | `w` (normal) | ofset | `u` | `v` |
+|---|---|---|---|---|
+| **flanş yüzü** (`toward` yönü kesit **yükseklik** ekseninde; `av > au`) | ±yükseklik | `h/2` | **genişlik** | üye ekseni |
+| **gövde yüzü** (`toward` yönü kesit **genişlik** ekseninde; `au > av`) | ±genişlik | `tw/2` | **yükseklik** | üye ekseni |
+
+Bu fark bilinçlidir: `frame.offset`'in `du`'su **`u`** yönünde uygulanır, yani
+flanş yüzünde *genişlik* boyunca, gövde yüzünde *yükseklik* boyunca. Bir paket
+"gövdeden flanş kenarına" gibi bir ölçüyü yalnız **flanş yüzü** için yazabilir;
+gövde yüzünde `u` yükseklik olduğu için aynı `du` farklı eksene düşer. Bu yüzden
+paketler bağlandıkları yüz türünü `require` ile **açıkça** bildirir (aşağıdaki
+1.24.0) — sessiz yanlış geometri üretilmez.
+
 ### 1.18.0 — (h) `frame.bisector {a, b}` (HR-15)
 
 İki üyenin buluştuğu yerde **açıortay düzlemi** çerçevesi (apex haunch, Studio S-9).
@@ -435,6 +451,36 @@ string'ine karşılık `Minor` 11 kalmıştı. `contractSupports()` sayısal ala
 paket doğrulaması string'i kullandığı için `minContractVersion: "1.22.0"`
 bildiren Studio paketleri sessizce reddedilebiliyordu.
 `model_maker_contract_requests_test` (bölüm `p2`) ikisini de kilitler.
+
+### 1.24.0 — `frame.member_face {require: flange|web, message}` (Bulgu a, fail-closed)
+
+```json
+{ "use": "frame.member_face", "member": "main", "toward": "secondary_0",
+  "require": "flange",
+  "message": "bu paket yalniz kolon flansina baglanir" }
+```
+
+| argüman | anlam |
+|---|---|
+| `require` | opsiyonel: seçilen yüzün **türü** `flange` veya `web` olmalı |
+| `message` | opsiyonel: uyuşmazlıkta kullanılacak **Türkçe** ret metni |
+
+**Semantik DEĞİŞMEZ:** `require` verildiğinde de `u/v/w` ve `origin` aynı
+kuralla üretilir; hiçbir plan digest'i değişmez (`require`/`message` plan
+çıktısına yazılmaz). Değişen tek şey **ret davranışıdır**:
+
+- Yüz türü `require` ile uyuşmuyorsa plan REDDEDİLİR; mesaj `message` ise
+  birebir o metin, değilse `frame.member_face: yüz türü uyuşmuyor — gereken
+  '<require>', bulunan '<web|flange>'`.
+- Geçersiz `require` değeri (`web|flange` dışı) → açık ret.
+- `require` verilmezse davranış 1.17.0 ile aynıdır (gövde yüzü kabul edilir).
+
+**Gerekçe (Bulgu a):** rijitleştirilmiş alın levhası paketi `du`'yu gövdeden
+flanş kenarına ölçer; bu ölçü yalnız **flanş yüzünde** doğru eksene düşer.
+Gövde yüzüne (zayıf eksen) bağlanırsa süreklilik levhaları 90° dönük ve kesit
+dışına taşan bir plan üretiliyordu (ölçüm: `docs/agent/BULGU-A.md`). Karar:
+`frame.member_face` semantiği değişmez; paket bağlandığı yüzü `require: "flange"`
+ile bildirir ve gövde yüzünde kendi Türkçe mesajıyla kapanır.
 
 ## Sürüm denetimi DIŞINDA olanlar (serbest)
 

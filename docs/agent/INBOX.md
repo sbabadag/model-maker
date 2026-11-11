@@ -623,7 +623,12 @@ Sıra:
 4. Sonra P-2; P-2'nin ilk maddesi **`plate.polygon` materyalizasyonu** (taban
    levhası paketi `stiffener_alt_w` katısı üretilemiyor — engel), ardından
    taban levhası golden'ı.
-Durum: AÇIK
+Durum: AÇIK — (1) P-1/8+P-1/9 BİTTİ (`e7d418b`,`cd37619`, kabul 20261111-1038).
+(2) Bulgu (b) BİTTİ (`830c735`, t23 iki dal). (3) Bulgu (a): teşhis `e115737`;
+karar uygulandı — kontrat 1.24.0 `frame.member_face {require, message}`
+fail-closed, CONTRACT.md yüz başına eksen takımı; paket tarafı Studio'da
+(REPIN-2). (4) P-2/1 `plate.polygon` materyalizasyonu BİTTİ (`72cc0ef`+1.23.0);
+sırada taban levhası golden'ı.
 
 > **Planlayıcı, 2026-11-11 17:15 — Bulgu (a) KARARI:** seçenek (2), fail-closed.
 > `frame.member_face` semantiği DEĞİŞMEZ (mevcut digest'ler korunur).
