@@ -224,12 +224,92 @@ static void sectionD() {
     CHECK(!bad.ok, "d: gecersiz end degeri REDDEDILMELIYDI");
 }
 
+// --- i) frame.member_face {face: ...} ----------------------------------------
+static GenerationPlan facePlan(const std::string& face, double at) {
+    Recipe r;
+    r.recipeVersion = "1.0.0";
+    RecipeStep f;
+    f.id = "f1";
+    f.use = "frame.member_face";
+    f.args["member"].text = "main";
+    f.args["face"].text = face;
+    f.args["at"].text = std::to_string(static_cast<int>(at));
+    r.steps.push_back(f);
+    RecipeStep p;
+    p.id = "p1";
+    p.use = "plate.rect";
+    p.role = "yuz_levhasi";
+    p.args["frame"].text = "f1";
+    p.args["w"].text = "100";
+    p.args["h"].text = "100";
+    p.args["t"].text = "10";
+    r.steps.push_back(p);
+    ComponentInput in;
+    in.main = memberGeometryFromProfile({0, 0, 0}, {0, 0, 3000}, /*connectionAtA=*/false,
+                                        {1, 0, 0}, 0.0,
+                                        MemberSectionSpec{300.0, 300.0, 11.0, 19.0, 0.0});
+    return runRecipe(r, {}, in);
+}
+
+static void sectionI() {
+    std::printf("[i] frame.member_face face: web/flange (toward'suz)\n");
+    const GenerationPlan webP = facePlan("web_pos", 0.0);
+    CHECK(webP.ok && webP.plates.size() == 1, "i: web_pos plan uretilmeli");
+    const GenerationPlan webN = facePlan("web_neg", 0.0);
+    CHECK(webN.ok && webN.plates.size() == 1, "i: web_neg plan uretilmeli");
+    const GenerationPlan flP = facePlan("flange_pos", 0.0);
+    CHECK(flP.ok && flP.plates.size() == 1, "i: flange_pos plan uretilmeli");
+    const GenerationPlan flN = facePlan("flange_neg", 0.0);
+    CHECK(flN.ok && flN.plates.size() == 1, "i: flange_neg plan uretilmeli");
+    if (webP.ok && webN.ok && !webP.plates.empty() && !webN.plates.empty()) {
+        const Vec3 a = webP.plates[0].center;
+        const Vec3 b = webN.plates[0].center;
+        const double la = std::sqrt(a.x * a.x + a.y * a.y + a.z * a.z);
+        CHECK(std::fabs(la - 5.5) < 1e-6, "i: web yuzu govde kalinligi/2 = 5.5 mm");
+        CHECK(std::fabs(a.x + b.x) < 1e-6 && std::fabs(a.y + b.y) < 1e-6,
+              "i: web_pos ve web_neg SIMETRIK olmali");
+    }
+    if (flP.ok && flN.ok && !flP.plates.empty() && !flN.plates.empty()) {
+        const Vec3 a = flP.plates[0].center;
+        const Vec3 b = flN.plates[0].center;
+        const double la = std::sqrt(a.x * a.x + a.y * a.y + a.z * a.z);
+        CHECK(std::fabs(la - 150.0) < 1e-6, "i: flans yuzu kesit yuksekligi/2 = 150 mm");
+        CHECK(std::fabs(a.x + b.x) < 1e-6 && std::fabs(a.y + b.y) < 1e-6,
+              "i: flange_pos ve flange_neg SIMETRIK olmali");
+    }
+    // `at`: eksen boyunca kaydirir
+    const GenerationPlan at = facePlan("flange_pos", 1000.0);
+    if (at.ok && !at.plates.empty())
+        CHECK(std::fabs(at.plates[0].center.z - 1000.0) < 1e-6, "i: at=1000 -> Z=1000");
+    // face + toward birlikte -> RED
+    {
+        Recipe r;
+        r.recipeVersion = "1.0.0";
+        RecipeStep f;
+        f.id = "f1";
+        f.use = "frame.member_face";
+        f.args["member"].text = "main";
+        f.args["face"].text = "web_pos";
+        f.args["toward"].text = "secondary_0";
+        r.steps.push_back(f);
+        ComponentInput in;
+        in.main = memberGeometryFromProfile({0, 0, 0}, {0, 0, 3000}, false, {1, 0, 0}, 0.0,
+                                            MemberSectionSpec{300.0, 300.0, 11.0, 19.0, 0.0});
+        const GenerationPlan bad = runRecipe(r, {}, in);
+        CHECK(!bad.ok, "i: face + toward birlikte REDDEDILMELIYDI");
+    }
+    // gecersiz face -> RED
+    const GenerationPlan badFace = facePlan("ust_yuz", 0.0);
+    CHECK(!badFace.ok, "i: gecersiz face REDDEDILMELIYDI");
+}
+
 int main() {
     std::printf("contract %s\n", kContractVersion);
     sectionA();
     sectionB();
     sectionC();
     sectionD();
+    sectionI();
     sectionG();
     if (failures == 0) std::printf("TUM TESTLER GECTI\n");
     else std::printf("%d HATA\n", failures);

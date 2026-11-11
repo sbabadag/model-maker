@@ -757,12 +757,72 @@ static bool computeMemberFace(EvalCtx& ctx, const std::string& memberRole,
     return true;
 }
 
+// 1.17.0 (contract istegi i / HR-16): yuzu ADIYLA sec (Studio S-10
+// DistancePlane). `toward` gerekmez: normal, uyenin KENDI kesit cercevesinden
+// gelir; `at` eksen boyunca axisFrom'dan uzakliktir (varsayilan 0 = uc).
+static bool computeMemberFaceByName(EvalCtx& ctx, const std::string& memberRole,
+                                    const std::string& face, const RecipeStep& st,
+                                    MemberLocalFrame& out) {
+    const MemberGeometry* m = memberByRole(ctx.input, memberRole);
+    if (!m) {
+        ctx.error = wideFromUtf8("frame.member_face: bilinmeyen uye rolu '" + memberRole + "'");
+        return false;
+    }
+    if (!memberGeometryUsable(*m)) {
+        ctx.error = wideFromUtf8("frame.member_face: uye geometrisi gecersiz '" + memberRole + "'");
+        return false;
+    }
+    const Vec3 axisRaw = m->axisTo - m->axisFrom;
+    if (vecLen(axisRaw) <= 1e-9) {
+        ctx.error = wideFromUtf8("frame.member_face: uzunlugu sifir uye '" + memberRole + "'");
+        return false;
+    }
+    const Vec3 axis = vecNorm(axisRaw);
+    const ProfileSectionFrame sf = memberSectionFrame(*m);
+    double at = 0.0;
+    if (!numArg(ctx, st, "at", 0.0, at)) return false;
+    const bool isWeb = (face == "web_pos" || face == "web_neg");
+    const bool isFlange = (face == "flange_pos" || face == "flange_neg");
+    if (!isWeb && !isFlange) {
+        ctx.error = wideFromUtf8("frame.member_face: gecersiz face '" + face +
+                                 "' (flange_pos|flange_neg|web_pos|web_neg)");
+        return false;
+    }
+    const bool positive = (face == "web_pos" || face == "flange_pos");
+    Vec3 normal;
+    double offset = 0.0;
+    if (isWeb) {
+        normal = sf.width * (positive ? 1.0 : -1.0);
+        offset = m->secWebThickness * 0.5;
+        out.u = sf.height;
+    } else {
+        normal = sf.height * (positive ? 1.0 : -1.0);
+        offset = m->secHeight * 0.5;
+        out.u = sf.width;
+    }
+    out.v = axis;
+    out.w = normal;
+    const Vec3 center = m->axisFrom + axis * at + sf.height * m->sectionCenterOffset;
+    out.origin = center + normal * offset;
+    return true;
+}
+
 static bool blockFrameMemberFace(EvalCtx& ctx, const RecipeStep& st, GenerationPlan&) {
-    std::string memberRole, towardRole;
+    std::string memberRole, towardRole, face;
     strArg(st, "member", "main", memberRole);
-    strArg(st, "toward", "secondary_0", towardRole);
+    strArg(st, "toward", "", towardRole);
+    strArg(st, "face", "", face);
+    if (!face.empty() && !towardRole.empty()) {
+        ctx.error = L"frame.member_face: 'face' ve 'toward' birlikte verilemez";
+        return false;
+    }
     MemberLocalFrame f;
-    if (!computeMemberFace(ctx, memberRole, towardRole, f)) return false;
+    if (!face.empty()) {
+        if (!computeMemberFaceByName(ctx, memberRole, face, st, f)) return false;
+    } else {
+        if (towardRole.empty()) towardRole = "secondary_0";
+        if (!computeMemberFace(ctx, memberRole, towardRole, f)) return false;
+    }
     ctx.frames[st.id] = f;
     return true;
 }
@@ -1416,8 +1476,10 @@ static const std::vector<BlockDecl>& blockRegistry() {
          {}, {}, {}, {}},
         // P: uyenin `toward` uyesine BAKAN yuzunun cercevesi (baglantiya gore
         // yonlenir; dunyaya degil). member/toward = girdi rolu (main/secondary_N).
-        {"frame.member_face", {}, {"member", "toward"}, {}, &blockFrameMemberFace,
-         {}, {}, {"member", "toward"}, {}},
+        // 1.17.0 (i): `face` (flange_pos|flange_neg|web_pos|web_neg) + `at`
+        // verilirse `toward` GEREKMEZ; ikisi birlikte verilemez.
+        {"frame.member_face", {"at"}, {"member", "toward", "face"}, {},
+         &blockFrameMemberFace, {}, {}, {"member", "toward"}, {}},
         // HR-3: `chamfers` listesi ("corner:type:h:v") + metin alanlari param.* kabul eder.
         {"plate.rect", {"w", "h", "t"}, {"frame", "name", "material", "finish", "posNo"},
          {"chamfers"}, &blockPlateRect, {"name", "material", "finish", "posNo"},

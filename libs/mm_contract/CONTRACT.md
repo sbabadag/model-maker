@@ -312,6 +312,23 @@ Gerekçe: yukarıdan aşağı çizilmiş kolonda `axisFrom` üstte kalır; taban
 `lower` ile doğru uca gider. Başka bir metin AÇIK ret ile reddedilir
 (`gecersiz end '<x>' (start|from|end|to|lower|upper)`).
 
+### 1.17.0 — (i) `frame.member_face {face: ...}` (HR-16)
+
+`frame.member_face` artık yüzü **adıyla** seçebilir; `toward` gerekmez:
+
+| `face` | normal | ofset | `u` |
+|---|---|---|---|
+| `web_pos` / `web_neg` | üyenin kesit **genişlik** yönü ± | gövde kalınlığı/2 | yükseklik yönü |
+| `flange_pos` / `flange_neg` | üyenin kesit **yükseklik** yönü ± | kesit yüksekliği/2 | genişlik yönü |
+
+- `u` = ilgili kesit ekseni, `v` = üye ekseni, `w` = yüz normali. Normal, üyenin
+  KENDİ kesit çerçevesinden gelir (dünya yönüne göre değil) → döndürülmüş
+  profilde de doğru yüz.
+- `at` (sayı, mm, varsayılan 0): eksen boyunca `axisFrom`'dan uzaklık; çerçeve
+  oraya taşınır.
+- `face` ile `toward` **birlikte verilemez** (belirsizlik → açık ret). Geçersiz
+  `face` değeri reddedilir: `(flange_pos|flange_neg|web_pos|web_neg)`.
+
 ## Sürüm denetimi DIŞINDA olanlar (serbest)
 
 - `.cpp` iç kod (header'daki imzayı değiştirmediği sürece)
