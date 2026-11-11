@@ -329,6 +329,18 @@ Gerekçe: yukarıdan aşağı çizilmiş kolonda `axisFrom` üstte kalır; taban
 - `face` ile `toward` **birlikte verilemez** (belirsizlik → açık ret). Geçersiz
   `face` değeri reddedilir: `(flange_pos|flange_neg|web_pos|web_neg)`.
 
+### 1.18.0 — (h) `frame.bisector {a, b}` (HR-15)
+
+İki üyenin buluştuğu yerde **açıortay düzlemi** çerçevesi (apex haunch, Studio S-9).
+
+- `origin` = iki üyenin en yakın uç çiftinin orta noktası (buluşma noktası).
+- `dA`, `dB` = üyelerin buluşma noktasından **dışarı** bakan birim yönler.
+- `u` = `normalize(dA + dB)` (köşe açısının açıortayı),
+  `w` = `normalize(dA − dB)` (açıortay **düzleminin normali**),
+  `v` = `w × u` (sağ elli: `u × v = w`).
+- `a` ve `b` aynı üye olamaz; üyeler paralel (`dA − dB ≈ 0`) ya da zıt yönde
+  (`dA + dB ≈ 0`) ise düzlem belirsizdir → **açık ret**.
+
 ## Sürüm denetimi DIŞINDA olanlar (serbest)
 
 - `.cpp` iç kod (header'daki imzayı değiştirmediği sürece)

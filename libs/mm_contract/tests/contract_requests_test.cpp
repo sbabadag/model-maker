@@ -303,6 +303,79 @@ static void sectionI() {
     CHECK(!badFace.ok, "i: gecersiz face REDDEDILMELIYDI");
 }
 
+// --- h) frame.bisector {a, b} -----------------------------------------------
+static void sectionH() {
+    std::printf("[h] frame.bisector (acirtay duzlemi)\n");
+    Recipe r;
+    r.recipeVersion = "1.0.0";
+    RecipeStep f;
+    f.id = "bis";
+    f.use = "frame.bisector";
+    f.args["a"].text = "main";
+    f.args["b"].text = "secondary_0";
+    r.steps.push_back(f);
+    RecipeStep p;
+    p.id = "p1";
+    p.use = "plate.rect";
+    p.role = "acirtay_levhasi";
+    p.args["frame"].text = "bis";
+    p.args["w"].text = "100";
+    p.args["h"].text = "100";
+    p.args["t"].text = "10";
+    r.steps.push_back(p);
+
+    ComponentInput in;
+    // KOSE: A +X yonunde, B +Z yonunda; bulusma noktasi orijin.
+    in.main = memberGeometryFromProfile({0, 0, 0}, {3000, 0, 0}, /*connectionAtA=*/false,
+                                        {1, 0, 0}, 0.0,
+                                        MemberSectionSpec{200.0, 200.0, 8.0, 12.0, 0.0});
+    in.secondary.push_back(memberGeometryFromProfile(
+        {0, 0, 0}, {0, 0, 3000}, /*connectionAtA=*/true, {0, 0, 1}, 0.0,
+        MemberSectionSpec{200.0, 200.0, 8.0, 12.0, 0.0}));
+
+    const GenerationPlan plan = runRecipe(r, {}, in);
+    if (!plan.ok) std::printf("      [teshis] hata: %ls\n", plan.error.c_str());
+    CHECK(plan.ok && plan.plates.size() == 1, "h: acirtay levhasi uretilmeli");
+    if (plan.ok && !plan.plates.empty()) {
+        const PlateSpec& pl = plan.plates[0];
+        const double s2 = std::sqrt(0.5);
+        // u = normalize(dA+dB) = (0.707, 0, 0.707)
+        CHECK(std::fabs(pl.u.x - s2) < 1e-6 && std::fabs(pl.u.z - s2) < 1e-6,
+              "h: u = (0.707, 0, 0.707) olmali");
+        // w = normalize(dA-dB) = (0.707, 0, -0.707)
+        CHECK(std::fabs(pl.axis.x - s2) < 1e-6 && std::fabs(pl.axis.z + s2) < 1e-6,
+              "h: w = (0.707, 0, -0.707) olmali");
+        // u _|_ w
+        const double dot = pl.u.x * pl.axis.x + pl.u.y * pl.axis.y + pl.u.z * pl.axis.z;
+        CHECK(std::fabs(dot) < 1e-9, "h: u ve w DIK olmali");
+        // bulusma noktasi orijinde
+        CHECK(std::fabs(pl.center.x) < 1e-6 && std::fabs(pl.center.z) < 1e-6,
+              "h: levha merkezi bulusma noktasinda olmali");
+    }
+    // ayni uye -> RED
+    {
+        Recipe bad;
+        bad.recipeVersion = "1.0.0";
+        RecipeStep s1;
+        s1.id = "bis";
+        s1.use = "frame.bisector";
+        s1.args["a"].text = "main";
+        s1.args["b"].text = "main";
+        bad.steps.push_back(s1);
+        const GenerationPlan bp = runRecipe(bad, {}, in);
+        CHECK(!bp.ok, "h: ayni uye iki kez REDDEDILMELIYDI");
+    }
+    // paralel uyeler -> RED
+    {
+        ComponentInput par = in;
+        par.secondary[0] = memberGeometryFromProfile({0, 0, 500}, {3000, 0, 500}, true,
+                                                     {1, 0, 0}, 0.0,
+                                                     MemberSectionSpec{200.0, 200.0, 8.0, 12.0, 0.0});
+        const GenerationPlan pp = runRecipe(r, {}, par);
+        CHECK(!pp.ok, "h: paralel uyelerde acirtay REDDEDILMELIYDI");
+    }
+}
+
 int main() {
     std::printf("contract %s\n", kContractVersion);
     sectionA();
@@ -310,6 +383,7 @@ int main() {
     sectionC();
     sectionD();
     sectionI();
+    sectionH();
     sectionG();
     if (failures == 0) std::printf("TUM TESTLER GECTI\n");
     else std::printf("%d HATA\n", failures);

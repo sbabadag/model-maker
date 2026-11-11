@@ -605,6 +605,78 @@ static bool blockFrameMemberEnd(EvalCtx& ctx, const RecipeStep& st, GenerationPl
     return true;
 }
 
+// 1.18.0 (contract istegi h / HR-15): iki uyenin BULUSTUGU yerde ACIRTAY
+// DUZLEMI cercevesi (apex haunch, Studio S-9). `toward` gibi tek yuz secmez:
+// iki uyenin kose acisini ikiye bolen duzlemi verir.
+//   origin = iki uyenin en yakin uclerinin orta noktasi (bulusma noktasi)
+//   dA, dB = uyelerin bulusma noktasindan DISARI bakan birim yonleri
+//   u = normalize(dA + dB)   (kose acisinin acirtayi)
+//   w = normalize(dA - dB)   (acirtay DUZLEMININ normali)
+//   v = w x u                (sag elli: u x v = w)
+static bool blockFrameBisector(EvalCtx& ctx, const RecipeStep& st, GenerationPlan&) {
+    std::string aRole, bRole;
+    strArg(st, "a", "main", aRole);
+    strArg(st, "b", "secondary_0", bRole);
+    if (aRole == bRole) {
+        ctx.error = wideFromUtf8("frame.bisector: a ve b ayni uye olamaz: " + aRole);
+        return false;
+    }
+    const MemberGeometry* a = memberByRole(ctx.input, aRole);
+    const MemberGeometry* b = memberByRole(ctx.input, bRole);
+    if (!a || !b) {
+        ctx.error = wideFromUtf8("frame.bisector: bilinmeyen uye rolu '" + (a ? bRole : aRole) + "'");
+        return false;
+    }
+    // En yakin UC cifti = bulusma noktasi (eksen kesisimi yerine uclar; uyeler
+    // zaten bulusma noktasinda birlesir — Studio secimi boyle).
+    const Vec3 ae[2] = {a->axisFrom, a->axisTo};
+    const Vec3 be[2] = {b->axisFrom, b->axisTo};
+    double best = 1e300;
+    int bi = 0, bj = 0;
+    for (int i = 0; i < 2; ++i) {
+        for (int j = 0; j < 2; ++j) {
+            const Vec3 d = ae[i] - be[j];
+            const double len2 = d.x * d.x + d.y * d.y + d.z * d.z;
+            if (len2 < best) { best = len2; bi = i; bj = j; }
+        }
+    }
+    const Vec3 joint = (ae[bi] + be[bj]) * 0.5;
+    // Disari bakan yon: bulusma ucundan DIGER uca.
+    const Vec3 outA = ae[1 - bi] - ae[bi];
+    const Vec3 outB = be[1 - bj] - be[bj];
+    const double la = vecLen(outA), lb = vecLen(outB);
+    if (la <= 1e-9 || lb <= 1e-9) {
+        ctx.error = L"frame.bisector: uye uzunlugu sifir, acirtay belirsiz";
+        return false;
+    }
+    const Vec3 dA = outA * (1.0 / la);
+    const Vec3 dB = outB * (1.0 / lb);
+    const Vec3 sum = dA + dB;
+    const Vec3 dif = dA - dB;
+    if (vecLen(sum) <= 1e-6) {
+        ctx.error = L"frame.bisector: uyeler zit yonde (acirtay belirsiz)";
+        return false;
+    }
+    if (vecLen(dif) <= 1e-6) {
+        ctx.error = L"frame.bisector: uyeler paralel (acirtay duzlemi belirsiz)";
+        return false;
+    }
+    const Vec3 u = vecNorm(sum);
+    const Vec3 w = vecNorm(dif);
+    // v = w x u
+    Vec3 v;
+    v.x = w.y * u.z - w.z * u.y;
+    v.y = w.z * u.x - w.x * u.z;
+    v.z = w.x * u.y - w.y * u.x;
+    MemberLocalFrame f;
+    f.origin = joint;
+    f.u = u;
+    f.v = vecNorm(v);
+    f.w = w;
+    ctx.frames[st.id] = f;
+    return true;
+}
+
 static bool blockFrameOffset(EvalCtx& ctx, const RecipeStep& st, GenerationPlan&) {
     MemberLocalFrame* f = frameArg(ctx, st, "frame");
     if (!f) return false;
@@ -1478,6 +1550,9 @@ static const std::vector<BlockDecl>& blockRegistry() {
         // yonlenir; dunyaya degil). member/toward = girdi rolu (main/secondary_N).
         // 1.17.0 (i): `face` (flange_pos|flange_neg|web_pos|web_neg) + `at`
         // verilirse `toward` GEREKMEZ; ikisi birlikte verilemez.
+        // 1.18.0 (h): iki uyenin bulusma yerinde acirtay duzlemi.
+        {"frame.bisector", {}, {"a", "b"}, {}, &blockFrameBisector,
+         {}, {}, {"a", "b"}, {}},
         {"frame.member_face", {"at"}, {"member", "toward", "face"}, {},
          &blockFrameMemberFace, {}, {}, {"member", "toward"}, {}},
         // HR-3: `chamfers` listesi ("corner:type:h:v") + metin alanlari param.* kabul eder.
@@ -1743,7 +1818,8 @@ static bool cyclicLetCheck(const Recipe& recipe, RecipeValidation& r) {
 // blockRegistry() ile birebir paraleldir; yeni tas eklerken IKISINI de guncelle.
 static bool producesGenericFrame(const std::string& use) {
     return use == "frame.member_end" || use == "frame.offset" || use == "frame.rotate" ||
-           use == "frame.member_face" || use == "frame.contact";
+           use == "frame.member_face" || use == "frame.contact" ||
+           use == "frame.bisector";  // 1.18.0 (h)
 }
 static bool producesHaunchFrame(const std::string& use) {
     return use == "frame.contact" || use == "frame.plumb_face" ||
