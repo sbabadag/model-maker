@@ -14,6 +14,7 @@
 // k) weld.fillet: type/length/offset/around/site
 // ============================================================================
 #include "mm_contract/contract_version.hpp"
+#include "model_maker/bolt.hpp"
 #include "model_maker/component_codec.hpp"
 #include "model_maker/component_engine.hpp"
 #include "model_maker/component_package.hpp"
@@ -376,6 +377,70 @@ static void sectionH() {
     }
 }
 
+// --- e) ankraj bulonu (boy / gomme / tip) ------------------------------------
+static GenerationPlan anchorPlan(const std::string& anchorType, double len, double embed) {
+    Recipe r;
+    r.recipeVersion = "1.0.0";
+    RecipeStep f;
+    f.id = "f1";
+    f.use = "frame.member_end";
+    f.args["member"].text = "main";
+    f.args["end"].text = "lower";
+    r.steps.push_back(f);
+    RecipeStep b;
+    b.id = "b1";
+    b.use = "bolts.grid";
+    b.role = "ankraj";
+    b.args["frame"].text = "f1";
+    b.args["nx"].text = "2";
+    b.args["ny"].text = "2";
+    b.args["px"].text = "100";
+    b.args["py"].text = "100";
+    if (!anchorType.empty()) {
+        b.args["anchorType"].text = anchorType;
+        b.args["anchorLength"].text = std::to_string(static_cast<int>(len));
+        b.args["anchorEmbed"].text = std::to_string(static_cast<int>(embed));
+    }
+    r.steps.push_back(b);
+    ComponentInput in;
+    in.main = memberGeometryFromProfile({0, 0, 0}, {0, 0, 3000}, /*connectionAtA=*/false,
+                                        {1, 0, 0}, 0.0,
+                                        MemberSectionSpec{300.0, 300.0, 11.0, 19.0, 0.0});
+    return runRecipe(r, {}, in);
+}
+
+static void sectionE() {
+    std::printf("[e] ankraj bulonu: boy / gomme / tip\n");
+    const GenerationPlan an = anchorPlan("cast-in", 300.0, 200.0);
+    CHECK(an.ok && an.boltGroups.size() == 1, "e: ankraj plani uretilmeli");
+    if (an.ok && !an.boltGroups.empty()) {
+        const BoltGroup& g = an.boltGroups[0];
+        CHECK(g.anchorType == "cast-in", "e: anchorType cast-in olmali");
+        CHECK(std::fabs(g.anchorLength - 300.0) < 1e-9, "e: anchorLength 300");
+        CHECK(std::fabs(g.anchorEmbed - 200.0) < 1e-9, "e: anchorEmbed 200");
+    }
+    // antrasiz (normal) grup: alanlar bos/0
+    const GenerationPlan nb = anchorPlan("", 0.0, 0.0);
+    CHECK(nb.ok && nb.boltGroups.size() == 1, "e: normal grup uretilmeli");
+    if (nb.ok && !nb.boltGroups.empty())
+        CHECK(nb.boltGroups[0].anchorType.empty(), "e: normal grupta anchorType BOS olmali");
+
+    // kanonik JSON: normal grupta ankraj anahtarlari YOK (digest degismez)
+    const std::string normalJson = generationPlanCanonicalJson(nb);
+    CHECK(normalJson.find("anchorType") == std::string::npos,
+          "e: normal grupta 'anchorType' anahtari YAZILMAMALI");
+    const std::string anchorJson = generationPlanCanonicalJson(an);
+    CHECK(anchorJson.find("anchorType") != std::string::npos,
+          "e: ankraj grubunda 'anchorType' anahtari YAZILMALI");
+
+    // gomme > boy -> RED
+    const GenerationPlan bad = anchorPlan("cast-in", 200.0, 300.0);
+    CHECK(!bad.ok, "e: anchorEmbed > anchorLength REDDEDILMELIYDI");
+    // negatif -> RED
+    const GenerationPlan neg = anchorPlan("cast-in", -10.0, 0.0);
+    CHECK(!neg.ok, "e: negatif anchorLength REDDEDILMELIYDI");
+}
+
 int main() {
     std::printf("contract %s\n", kContractVersion);
     sectionA();
@@ -384,6 +449,7 @@ int main() {
     sectionD();
     sectionI();
     sectionH();
+    sectionE();
     sectionG();
     if (failures == 0) std::printf("TUM TESTLER GECTI\n");
     else std::printf("%d HATA\n", failures);

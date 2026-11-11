@@ -92,6 +92,13 @@ struct BoltGroup {
     // uretilir; grup acikligi boltGroupSpanX/Y ile alinir.
     std::vector<double> spacingXs;
     std::vector<double> spacingYs;
+    // 1.19.0 (contract istegi e / HR-4b): ANKRAJ BULONU. anchorType bos ise
+    // grup NORMAL bulon grubudur (alanlar kanonik JSON'a YAZILMAZ -> digest
+    // degismez). Dolu ise (or. "cast-in", "chemical") ankraj grubudur:
+    // anchorLength = bulon boyu (mm), anchorEmbed = gomme boyu (mm).
+    std::string anchorType;
+    double anchorLength{0.0};
+    double anchorEmbed{0.0};
     // Silinen bulonlarin 1-based numaralari (Tekla "bolts to delete" listesi).
     // Numaralama boltGroupBoltOrigins ile ayni: j*satir + i (j=0 en alt satir,
     // i soldan saga). Silinen bulonlar delik/display uretiminde atlanir.

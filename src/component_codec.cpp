@@ -929,6 +929,13 @@ json boltGroupToJson(const BoltGroup& b) {
     j["deletedBolts"] = std::move(del);
     j["holeDepth"] = b.holeDepth;
     j["gripLength"] = b.gripLength;
+    // 1.19.0 (e): ankraj alanlari YALNIZ doluysa yazilir; normal bulon
+    // gruplarinin kanonik JSON'u (ve digest'i) degismez.
+    if (!b.anchorType.empty()) {
+        j["anchorType"] = b.anchorType;
+        j["anchorLength"] = b.anchorLength;
+        j["anchorEmbed"] = b.anchorEmbed;
+    }
     j["staggerMode"] = b.staggerMode;
     j["staggerOffset"] = b.staggerOffset;
     j["createHoles"] = b.createHoles;
@@ -974,6 +981,10 @@ BoltGroup boltGroupFromJson(const json& j) {
     }
     b.holeDepth = j.value("holeDepth", 0.0);
     b.gripLength = j.value("gripLength", 0.0);
+    // 1.19.0 (e): opsiyonel ankraj alanlari (eski dosyalarda yok -> bos/0).
+    b.anchorType = j.value("anchorType", std::string());
+    b.anchorLength = j.value("anchorLength", 0.0);
+    b.anchorEmbed = j.value("anchorEmbed", 0.0);
     b.staggerMode = j.value("staggerMode", 0);
     b.staggerOffset = j.value("staggerOffset", 0.0);
     b.createHoles = j.value("createHoles", true);

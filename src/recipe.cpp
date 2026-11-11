@@ -1175,6 +1175,25 @@ static bool blockBoltsGrid(EvalCtx& ctx, const RecipeStep& st, GenerationPlan& p
     if (!hasHoleDepth) holeDepth = (grip > 0.0) ? grip + 2.0 : 0.0;
     b.gripLength = grip;
     b.holeDepth = holeDepth;
+    // 1.19.0 (contract istegi e / HR-4b): ANKRAJ. `anchorType` verilirse grup
+    // ankraj grubudur; `anchorLength` (boy) ve `anchorEmbed` (gomme) opsiyonel,
+    // negatif olamaz. Verilmezse alanlar bos/0 kalir (normal bulon grubu).
+    std::string anchorType;
+    if (!strArg(st, "anchorType", "", anchorType)) return false;
+    double anchorLength = 0.0, anchorEmbed = 0.0;
+    if (!numArg(ctx, st, "anchorLength", 0.0, anchorLength)) return false;
+    if (!numArg(ctx, st, "anchorEmbed", 0.0, anchorEmbed)) return false;
+    if (anchorLength < 0.0 || anchorEmbed < 0.0) {
+        ctx.error = L"bolts.grid: anchorLength/anchorEmbed negatif olamaz";
+        return false;
+    }
+    if (!anchorType.empty() && anchorEmbed > anchorLength && anchorLength > 0.0) {
+        ctx.error = L"bolts.grid: anchorEmbed, anchorLength'ten buyuk olamaz";
+        return false;
+    }
+    b.anchorType = anchorType;
+    b.anchorLength = anchorLength;
+    b.anchorEmbed = anchorEmbed;
     ctx.totalBolts += cx * cy;
     plan.boltGroups.push_back(b);
     plan.boltGroupKeys.push_back(st.role);
@@ -1564,8 +1583,10 @@ static const std::vector<BlockDecl>& blockRegistry() {
          {"outline"}, &blockPlatePolygon, {"name", "material", "finish", "posNo"},
          {}, {}, {"outline"}},
         // HR-4: `grip` ve `holeDepth` ankraj/grip boyunu recipe'den verir.
-        {"bolts.grid", {"nx", "ny", "px", "py", "d", "hole", "grip", "holeDepth"},
-         {"frame", "grade"}, {"through"}, &blockBoltsGrid, {"grade"},
+        // 1.19.0 (e): ankraj bulonu — anchorType (metin), anchorLength/anchorEmbed.
+        {"bolts.grid", {"nx", "ny", "px", "py", "d", "hole", "grip", "holeDepth",
+                        "anchorLength", "anchorEmbed"},
+         {"frame", "grade", "anchorType"}, {"through"}, &blockBoltsGrid, {"grade"},
          {}, {"through"}, {}},
         {"weld.fillet", {"size"}, {"roleA", "roleB", "double", "doubleSided"}, {},
          &blockWeldFillet, {}, {"double", "doubleSided"}, {}, {}},

@@ -341,6 +341,21 @@ Gerekçe: yukarıdan aşağı çizilmiş kolonda `axisFrom` üstte kalır; taban
 - `a` ve `b` aynı üye olamaz; üyeler paralel (`dA − dB ≈ 0`) ya da zıt yönde
   (`dA + dB ≈ 0`) ise düzlem belirsizdir → **açık ret**.
 
+### 1.19.0 — (e) ankraj bulonu: boy, gömme boyu, tip (HR-4b)
+
+`bolts.grid` yeni argümanlar (hepsi opsiyonel):
+
+| argüman | anlam |
+|---|---|
+| `anchorType` | metin; **boş değilse** grup ankraj grubudur (`cast-in`, `chemical`, …) |
+| `anchorLength` | bulon boyu (mm, ≥ 0) |
+| `anchorEmbed` | gömme boyu (mm, ≥ 0 ve `anchorLength`'ten büyük olamaz) |
+
+`BoltGroup` alanları: `anchorType`, `anchorLength`, `anchorEmbed`.
+**Digest kuralı:** bu üç alan kanonik JSON'a YALNIZ `anchorType` boş değilken
+yazılır → normal bulon gruplarının digest'i değişmez. Eski `.mmw`/paket
+dosyalarında alanlar yoktur; okurken boş/0'a düşer (geriye uyumlu).
+
 ## Sürüm denetimi DIŞINDA olanlar (serbest)
 
 - `.cpp` iç kod (header'daki imzayı değiştirmediği sürece)
