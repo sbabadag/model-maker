@@ -819,6 +819,40 @@ int main() {
         }
     }
 
+    // === P-2/4: ICBUKEY (concave) serbest kontur gercekten katıya cevrilir ===
+    // `plate.polygon` sozlesmesi disbukeylik sartı koymuyor; Studio line-cut
+    // konturlari (L / U profilli kesitler) icbukey olabiliyor. Sessiz bos katı
+    // yerine hacmi dogru olmali: L kontur alani 300*300 - 150*150 = 67500 mm2.
+    {
+        PlateSpec lp;
+        lp.center = {0.0, 0.0, 0.0};
+        lp.u = {1.0, 0.0, 0.0};
+        lp.v = {0.0, 1.0, 0.0};
+        lp.axis = {0.0, 0.0, 1.0};
+        lp.thickness = 10.0;
+        // Kontur levha merkezine gore: L sekli (saat yonunun TERSI).
+        lp.outline = {{-150.0, -150.0}, {150.0, -150.0}, {150.0, 0.0},
+                      {0.0, 0.0}, {0.0, 150.0}, {-150.0, 150.0}};
+        lp.width = 300.0;   // sinir kutusu (P-2 kurali)
+        lp.height = 300.0;
+        const TopoDS_Shape lsolid = ComponentMaterializer::buildPlateSolid(lp);
+        check(!lsolid.IsNull(), "P-2/4 L kontur: katı uretildi (sessiz bos yok)");
+        if (!lsolid.IsNull()) {
+            const double vol = shapeVolume(lsolid);
+            std::printf("      [olcum] L kontur hacmi: %.1f mm3 (beklenen 675000)\n", vol);
+            check(std::abs(vol - 67500.0 * 10.0) < 1.0,
+                  "P-2/4 L kontur: hacim = alan x kalinlik (icbukey dogru)");
+        }
+        // Ayni kontur TERS sirada (saat yonu) de gecerli katı vermeli.
+        PlateSpec rp = lp;
+        rp.outline.assign(lp.outline.rbegin(), lp.outline.rend());
+        const TopoDS_Shape rsolid = ComponentMaterializer::buildPlateSolid(rp);
+        check(!rsolid.IsNull(), "P-2/4 ters sira: katı uretildi");
+        if (!rsolid.IsNull())
+            check(std::abs(shapeVolume(rsolid) - 67500.0 * 10.0) < 1.0,
+                  "P-2/4 ters sira: hacim ayni");
+    }
+
     std::printf("\n%d failure(s)\n", failures);
     return failures == 0 ? 0 : 1;
 }
