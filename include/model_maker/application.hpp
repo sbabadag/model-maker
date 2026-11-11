@@ -344,6 +344,12 @@ public:
     const std::vector<std::filesystem::path>& componentDevPackageDirs() const noexcept {
         return componentDevPackageDirs_;
     }
+    // GT-1 (P-2/7): secili modelleri otele ve bagli komponentleri yeniden uret.
+    // Kullanici "Tasi" akisinin (pushUndoSnapshot -> moveModels -> kesim
+    // kaynak/hedef -> bulon senkronu -> End Plate + komponent recompute) AYNI
+    // cekirdegidir; senaryo kosumu icin public kanca.
+    bool translateModelsAndRecompute(const std::vector<std::size_t>& indices,
+                                     const mm::Vec3& displacement);
     // Katalog dosyasini diske yazar (mevcut registry'deki derived tipleri etkilemez).
     bool saveUserCatalog();
     // Calisma anindaki kullanici katalogu (salt-okunur erisim).

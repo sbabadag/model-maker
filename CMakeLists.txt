@@ -1382,6 +1382,13 @@ if(BUILD_TESTING)
         target_compile_definitions(model_maker_component_anchor_bolt_test PRIVATE
             MM_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures")
         add_test(NAME model_maker_component_anchor_bolt_test COMMAND model_maker_component_anchor_bolt_test)
+        # P-2/6: TASIMA BUTUNLUGU — uye tasininca cocuklar yeniden uretilir,
+        # basarisizsa eski hal kalir (fail-closed).
+        add_executable(model_maker_component_move_test tests/component_move_test.cpp)
+        target_link_libraries(model_maker_component_move_test PRIVATE model_maker_occ)
+        target_compile_definitions(model_maker_component_move_test PRIVATE
+            MM_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures")
+        add_test(NAME model_maker_component_move_test COMMAND model_maker_component_move_test)
         # KATALOG KOMUT YOLU (MM-REGRESYON): Document -> componentInputFromDocument
         # -> runRecipe(mm_end_plate_pkg) -> materializer -> instance. Uyumlu profil
         # instance olusturur; dar flans/egik kiris ACIK reddedilir (sessiz yok).

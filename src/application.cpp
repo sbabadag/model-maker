@@ -6311,6 +6311,32 @@ bool Application::selectedEndPlateConnection(EndPlateConnection& out) const {
 }
 
 
+// GT-1 (P-2/7): kullanici "Tasi" akisinin ayni cekirdegi — secili modelleri
+// oteler, kesim kaynaklari/hedefleri, bulon senkronu ve bagli komponentleri
+// yeniden uretir. Senaryo kosumu bu public kancayi kullanir; ikinci bir uretim
+// yolu ACILMAZ.
+bool Application::translateModelsAndRecompute(const std::vector<std::size_t>& indices,
+                                              const Vec3& displacement) {
+    if (indices.empty()) return false;
+    for (const std::size_t i : indices)
+        if (i >= document_.models().size()) return false;
+    pushUndoSnapshot();
+    const std::vector<std::size_t> moving = transformIndicesWithAttachedCutSources(indices);
+    document_.moveModels(moving, displacement);
+#ifdef MM_HAS_OCC
+    recomputeTargetsForMovedModels(moving);
+    syncBoltGroupsForMoved(moving, displacement);
+    std::vector<EntityId> movedIds;
+    movedIds.reserve(moving.size());
+    for (const std::size_t idx : moving) movedIds.push_back(document_.modelId(idx));
+    if (recomputeEndPlateConnectionsFor(movedIds)) recomputeComponentInstancesFor(movedIds);
+#endif
+    updateControls();
+    updateStatus();
+    invalidateCanvas();
+    return true;
+}
+
 bool Application::recomputeComponentInstancesFor(const std::vector<EntityId>& changedParts) {
     if (changedParts.empty()) return true;
 #ifdef MM_HAS_OCC
