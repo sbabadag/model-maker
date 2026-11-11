@@ -14,6 +14,7 @@
 #include "model_maker/gui_test_runner.hpp"
 
 #include "model_maker/application.hpp"
+#include "model_maker/report.hpp"
 #include "model_maker/camera.hpp"
 #include "model_maker/component_catalog.hpp"
 #include "model_maker/component_dialog.hpp"   // P-1/5: componentDialogSchema
@@ -739,6 +740,33 @@ struct Runner {
             else if (dialog->selectedProfile() != expected)
                 problems << QStringLiteral("pickerProfile=\"%1\" (beklenen \"%2\")")
                                 .arg(dialog->selectedProfile(), expected);
+        }
+        // P-2/7: DOSYA ICERIK KONTROLU — senaryo urettigi rapor/dokum
+        // dosyalarinda beklenen metinler var mi (malzeme listesi satirlari).
+        if (expect.contains(QStringLiteral("fileContains"))) {
+            const QJsonObject spec = expect[QStringLiteral("fileContains")].toObject();
+            QString path = spec[QStringLiteral("path")].toString();
+            if (!path.isEmpty()) {
+                const QFileInfo fi(path);
+                if (fi.isRelative()) path = outDir + QStringLiteral("/") + path;
+                QFile f(path);
+                if (!f.open(QIODevice::ReadOnly))
+                    problems << QStringLiteral("fileContains: dosya yok (%1)").arg(path);
+                else {
+                    const QString text = QString::fromUtf8(f.readAll());
+                    f.close();
+                    for (const auto v : spec[QStringLiteral("contains")].toArray()) {
+                        const QString needle = v.toString();
+                        if (!text.contains(needle))
+                            problems << QStringLiteral("fileContains: '%1' bulunamadi").arg(needle);
+                    }
+                    for (const auto v : spec[QStringLiteral("notContains")].toArray()) {
+                        const QString needle = v.toString();
+                        if (text.contains(needle))
+                            problems << QStringLiteral("fileContains: '%1' OLMAMALI").arg(needle);
+                    }
+                }
+            }
         }
         // H-8: tip eslesen component instance sayisi (haunch/end plate kuruldu mu).
         if (expect.contains(QStringLiteral("componentCount"))) {
@@ -1612,6 +1640,42 @@ struct Runner {
             }
             pump(80);
             return writeStep(step, QStringLiteral("appRemovePackage"));
+        }
+        if (step.contains(QStringLiteral("appMaterialList"))) {
+            // P-2/7: MALZEME LISTESI raporunu (levha + bulon + kaynak) dosyaya
+            // yaz — senaryo icerigi boylece dogrulanabilir kalir.
+            const QJsonObject spec = step[QStringLiteral("appMaterialList")].toObject();
+            QString path = spec[QStringLiteral("path")].toString();
+            if (path.isEmpty()) path = QStringLiteral("malzeme-listesi.txt");
+            const QFileInfo fi(path);
+            if (fi.isRelative()) path = outDir + QStringLiteral("/") + path;
+            QFile out(path);
+            if (!out.open(QIODevice::WriteOnly | QIODevice::Truncate))
+                return fail(QStringLiteral("appMaterialList: dosya yazilamadi (%1)").arg(path));
+            const QString text = QString::fromStdWString(
+                mm::materialListReport(window.application().document()));
+            out.write(text.toUtf8());
+            out.close();
+            printf("[malzeme-listesi] %s (%lld bayt)\n", path.toUtf8().constData(),
+                   static_cast<long long>(text.toUtf8().size()));
+            pump(60);
+            return writeStep(step, QStringLiteral("appMaterialList"));
+        }
+        if (step.contains(QStringLiteral("appMoveModels"))) {
+            // P-2/7: modelleri otele; bagli komponentler uretim cekirdeginden
+            // yeniden uretilir (fail-closed ise eski hal kalir).
+            const QJsonObject spec = step[QStringLiteral("appMoveModels")].toObject();
+            std::vector<std::size_t> indices;
+            for (const auto v : spec[QStringLiteral("indices")].toArray())
+                indices.push_back(static_cast<std::size_t>(v.toInt(-1)));
+            const QJsonArray d = spec[QStringLiteral("delta")].toArray();
+            if (d.size() < 3 || indices.empty())
+                return fail(QStringLiteral("appMoveModels: 'indices' ve 3'lu 'delta' bekleniyor"));
+            const mm::Vec3 delta{d[0].toDouble(), d[1].toDouble(), d[2].toDouble()};
+            if (!window.application().translateModelsAndRecompute(indices, delta))
+                return fail(QStringLiteral("appMoveModels: tasima uygulanamadi"));
+            pump(300);
+            return writeStep(step, QStringLiteral("appMoveModels"));
         }
         if (step.contains(QStringLiteral("componentDialogSchema"))) {
             // P-1/5: PAKET DIYALOG SEMASI uygulamaya KAYITLI mi? dialog.json

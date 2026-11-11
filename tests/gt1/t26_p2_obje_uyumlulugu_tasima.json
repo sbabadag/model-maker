@@ -1,0 +1,147 @@
+{
+  "backend": "gdi",
+  "timeoutMs": 240000,
+  "_comment": "P-2/7 (GT-1): PAKETTEN GELEN HER SEY GERCEK MM NESNESI. Senaryo: taban levhasi paketini uygula -> malzeme listesini al (levha+bulon+kaynak satirlari) -> kolonu tasi -> komponent AYNI kalir (yeniden uretilir, cift uretim yok) -> malzeme listesi hala ayni sayilari verir. P-2/6'nin kullanici yolundaki kanitidir.",
+  "steps": [
+    {
+      "appImportPackage": {
+        "path": "../fixtures/studio_pkgs/mm_stiffened_base_plate.mmcpkg",
+        "embed": false,
+        "userRoot": "components"
+      }
+    },
+    {
+      "componentTypeRegistered": {
+        "typeId": "mm_stiffened_base_plate",
+        "package": true,
+        "schemaVersion": 1
+      }
+    },
+    {
+      "profile": "HEB300"
+    },
+    {
+      "appColumnLevels": {
+        "top": 3000,
+        "bottom": 0
+      }
+    },
+    {
+      "placeColumn": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      }
+    },
+    {
+      "expect": {
+        "models": {
+          "count": 1,
+          "profiled": 1
+        }
+      }
+    },
+    {
+      "appComponent": {
+        "typeId": "mm_stiffened_base_plate",
+        "parts": [
+          0
+        ],
+        "params": {
+          "bp_t": 30.0,
+          "fs_count": 2
+        }
+      }
+    },
+    {
+      "expect": {
+        "componentCount": {
+          "typeId": "mm_stiffened_base_plate",
+          "count": 1
+        }
+      }
+    },
+    {
+      "appMaterialList": {
+        "path": "malzeme-once.txt"
+      }
+    },
+    {
+      "expect": {
+        "fileContains": {
+          "path": "malzeme-once.txt",
+          "contains": [
+            "MALZEME LISTESI",
+            "UYELER",
+            "HEB300",
+            "LEVHALAR",
+            "BULON GRUPLARI",
+            "M",
+            "KAYNAKLAR",
+            "TOPLAM:"
+          ],
+          "notContains": [
+            "yok"
+          ]
+        }
+      }
+    },
+    {
+      "expect": {
+        "modelBox": {
+          "all": true
+        }
+      }
+    },
+    {
+      "appMoveModels": {
+        "indices": [
+          0
+        ],
+        "delta": [
+          2000.0,
+          0.0,
+          0.0
+        ]
+      }
+    },
+    {
+      "expect": {
+        "componentCount": {
+          "typeId": "mm_stiffened_base_plate",
+          "count": 1
+        }
+      }
+    },
+    {
+      "appMaterialList": {
+        "path": "malzeme-sonra.txt"
+      }
+    },
+    {
+      "expect": {
+        "fileContains": {
+          "path": "malzeme-sonra.txt",
+          "contains": [
+            "LEVHALAR",
+            "BULON GRUPLARI",
+            "KAYNAKLAR"
+          ]
+        }
+      }
+    },
+    {
+      "expect": {
+        "modelBox": {
+          "all": true
+        }
+      }
+    },
+    {
+      "capture": {
+        "name": "t26-p2-tasima-sonrasi",
+        "target": "window"
+      }
+    }
+  ]
+}
