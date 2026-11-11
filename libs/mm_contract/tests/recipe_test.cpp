@@ -803,7 +803,7 @@ static void testWhenSkips() {
     CHECK(plan.plates.empty(), "when=0 -> levha uretilmez");
 }
 
-// J: bildirilmemis arguman fail-closed — 18 tasin her biri icin bir bilinmeyen.
+// J: bildirilmemis arguman fail-closed — 20 tasin her biri icin bir bilinmeyen.
 static void testUnknownArgRejected() {
     const char* blocks[] = {
         "frame.member_end", "frame.offset", "frame.rotate", "frame.member_face",
@@ -811,6 +811,7 @@ static void testUnknownArgRejected() {
         "endplate.placement", "frame.contact", "frame.plumb_face",
         "haunch.end_plate", "haunch.web", "haunch.flange",
         "haunch.stiffeners", "bolts.haunch_groups", "haunch.welds",
+        "frame.bisector", "member.fit",
     };
     int n = 0;
     for (const char* use : blocks) {
@@ -1002,10 +1003,10 @@ static void testExprListStatic() {
     }
 }
 
-// L: blockDeclarations() salt okunur API — 18 tas, tur ve sekil bilgisi.
+// L: blockDeclarations() salt okunur API — 20 tas, tur ve sekil bilgisi.
 static void testBlockDeclarations() {
     const std::vector<BlockDeclInfo> decls = blockDeclarations();
-    CHECK(decls.size() == 18, "L: 18 tas bildirilir");
+    CHECK(decls.size() == 20, "L: 20 tas bildirilir");
     const auto find = [&](const std::string& use) -> const BlockDeclInfo* {
         for (const auto& d : decls)
             if (d.use == use) return &d;
@@ -1291,7 +1292,7 @@ static void testFrameContactGeneric() {
 }
 
 int main() {
-    CHECK(std::string(kContractVersion) == "1.11.0", "contract surumu 1.7.0");
+    CHECK(std::string(kContractVersion) == "1.24.0", "contract surumu 1.24.0 (1.11.0 beklenirdi)");
     testExpressionEvaluator();
     testParamAccess();
     testStaticAnalysis();

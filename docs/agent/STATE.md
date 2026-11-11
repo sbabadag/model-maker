@@ -742,3 +742,13 @@ sürerken yalnız `docs/` düzenlenir.
   kilitleniyor; UI'dan pafta acma/olcek secme akisi GT'de yok.
 - BULGU: varsayilan kagit A2 (A3 secilmiyor) — ayri madde adayi.
 - Kanit: shots\2026-11-11\t42 (GDI) + t42gpu (GPU). Kapi: `t14-gate.log`.
+
+## recipe_test — kontrata baglandi (2026-11-12)
+
+- `libs/mm_contract/tests/recipe_test.cpp` kok agacta DERLENMIYORDU
+  (`add_subdirectory` yok). Hedef `model_maker_recipe_test` eklendi;
+  ctest 170 -> 171.
+- Bayat beklentiler duzeltildi: surum 1.11.0 -> 1.24.0, tas 18 -> 20
+  (`frame.bisector`, `member.fit` J listesine de eklendi).
+- Sonuc: `recipe test: OK (0 hata)`, `J: 20/20`, `L: 20 tas`.
+- Kapi: `recipe-gate.log`.

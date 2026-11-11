@@ -625,6 +625,16 @@ if(BUILD_TESTING)
     add_test(NAME model_maker_contract_requests_test
              COMMAND model_maker_contract_requests_test)
 
+    # RECIPE YORUMLAYICI (libs/mm_contract/tests/recipe_test.cpp): ifade
+    # degerlendirici, statik analiz (bilinmeyen blok/parametre/let, dongusel
+    # let, roleKey tekilligi), v0 taslarinin plan uretimi, fail-closed check,
+    # frame.offset geometrisi. Qt/OCC GEREKTIRMEZ.
+    add_executable(model_maker_recipe_test
+        libs/mm_contract/tests/recipe_test.cpp)
+    target_link_libraries(model_maker_recipe_test
+        PRIVATE mm_component_contract)
+    add_test(NAME model_maker_recipe_test COMMAND model_maker_recipe_test)
+
     # P-1/4 — PAKET KATALOG GORUNURLUGU + SECIM SAYISI: catalog blogu yoksa
     # gorunur + pickCount recipe'den; manifest acikca verirse o kazanir.
     add_executable(model_maker_component_catalog_pick_test

@@ -1085,6 +1085,18 @@ T-13: GEÇTİ (kısmi) — GT `t41_t13_kisayollar`, 77 adım `ok=true`, GDI ve G
     tetiklemez" (koşucuda odak+tus adımı yok).
     Kanıt: `C:\work\mm-hermes-shots\2026-11-11\t41\` ve `t41gpu\`.
 
+KUŞUR KAPATMA — `libs/mm_contract/tests/recipe_test.cpp` derlenmiyordu
+    Kök `CMakeLists.txt` bu testi hiç eklemiyordu (libs/mm_contract kendi
+    başına derleniyor, kök ağaçta yoktu). Hedef `model_maker_recipe_test`
+    olarak eklendi; ctest sayısı **170 → 171**.
+    Test, kontrat evrimi boyunca güncellenmediği için iki beklentisi
+    bayatlamıştı: sürüm `1.11.0` ve **18 taş**. Düzeltildi: sürüm `1.24.0`,
+    taş sayısı **20** (yeni `frame.bisector` 1.18.0-h ve `member.fit`
+    eklenerek J listesine de girdi). Sonuç: `J: 20/20 taş bilinmeyen
+    argümanı reddetti`, `L: 20 taş bildirimi doğrulandı`,
+    `recipe test: OK (0 hata)` — fail-closed davranışı korunuyor.
+    Kapı: `recipe-gate.log`.
+
 T-14: GEÇTİ (kısmi) — GT `t42_t14_cizim`, 16 adım `ok=true`, GDI ve GPU aynı.
     Paper Çizim çekirdeği (`buildDrawingSet` + `exportSheetPdf`) kolon (HEB240)
     ve kiriş (IPE300) parçaları için çalıştırıldı: 1 pafta, **4 görünüş**
