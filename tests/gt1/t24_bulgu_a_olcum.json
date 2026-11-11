@@ -1,0 +1,86 @@
+{
+  "backend": "gdi",
+  "timeoutMs": 240000,
+  "_comment": "BULGU (a) olcumu: Studio alin levhasi paketi kanonik girdiyle (HEB300 + IPE240) uygulanir; TUM modellerin AABB'si runner.log'a yazilir. Amac: stiffener_top_a / _top_b / _bot_a / _bot_b levhalarinin GERCEK dunya konumlari (plan tarafi simetrik cikti; MM materyalizasyonu kayik mi?).",
+  "steps": [
+    {
+      "appImportPackage": {
+        "path": "../fixtures/studio_pkgs/mm_stiffened_end_plate.mmcpkg",
+        "embed": false,
+        "userRoot": "components"
+      }
+    },
+    {
+      "componentTypeRegistered": {
+        "typeId": "mm_stiffened_end_plate",
+        "package": true,
+        "schemaVersion": 1
+      }
+    },
+    {
+      "profile": "HEB300"
+    },
+    {
+      "appColumnLevels": {
+        "top": 3000,
+        "bottom": 0
+      }
+    },
+    {
+      "placeColumn": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      }
+    },
+    {
+      "assignLine": {
+        "x1": 0,
+        "y1": 0,
+        "z1": 2880,
+        "x2": 5000,
+        "y2": 0,
+        "z2": 2880,
+        "profile": "IPE240"
+      }
+    },
+    {
+      "expect": {
+        "models": {
+          "count": 2,
+          "profiled": 2
+        }
+      }
+    },
+    {
+      "appComponent": {
+        "typeId": "mm_stiffened_end_plate",
+        "parts": [
+          0,
+          1
+        ]
+      }
+    },
+    {
+      "expect": {
+        "componentCount": {
+          "typeId": "mm_stiffened_end_plate",
+          "count": 1
+        }
+      }
+    },
+    {
+      "expect": {
+        "modelBox": {
+          "all": true
+        }
+      }
+    },
+    {
+      "capture": {
+        "name": "t24-bulgu-a-levha-konumlari",
+        "target": "window"
+      }
+    }
+  ]
+}
