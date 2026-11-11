@@ -841,6 +841,29 @@ T-1: GEÇTİ (kısmi — snap alt maddesi B4 kapsamında ayrı) — GT `t29_t1_a
     B4 maddesinin kapsamında; aks seçimi/silme `grid.manager` diyaloğundan
     yapılıyor — GT adımı yok, ayrı iş.
 
+T-2: GEÇTİ (kısmi) — GT `t30_t2_kolon_profil`, 28 adım `ok=true`.
+    Aks kesişimine HEB240 kolon; panelde "heb240" yazılınca ham metin korunur
+    ama GEÇERLİ sayılır (küçük harf kabul) ve UYGULA sonrası model profili
+    "HEB240" olur (`expect.modelProfile`). Olmayan profil "XXX999" → panel
+    geçersiz (kırmızı) ve UYGULA modeli DEĞİŞTİRMEZ (HEB240 kalır). Dönüş
+    90/180/270 uygulandı (`appRotation` + `expect.modelRotation`); kaydet-aç
+    sonrası profil HEB240 ve dönüş 270 AYNI (A kuralı). Kanıt:
+    `C:\work\mm-hermes-shots\2026-11-11\t30\`.
+    ATLANDI: "olmayan profil → kırmızı" rengin kendisi piksel olarak
+    ölçülmedi, panelin geçerlilik durumu (`panelProfileValid=false`) ölçüldü.
+
+T-3: GEÇTİ (kısmi) — GT `t31_t3_kiris_mertek`, 27 adım `ok=true`.
+    İki kolon tepesi arasına IPE300 kiriş GERÇEK fare yoluyla (`draw.beam` +
+    `clickWorld`) kuruldu (model 2 IPE300); iki farklı kotta eğik mertek
+    (6000,0,3000)→(3000,0,2000) kuruldu (model 3 IPE300); profilsiz
+    `draw.beam` + iki tık GEOMETRİ ÜRETMEDİ (profiled sayısı 4'te kaldı —
+    Qt komut kapısı aracı hiç başlatmıyor). Kanıt:
+    `C:\work\mm-hermes-shots\2026-11-11\t31\`.
+    ATLANDI: uç ofsetleri (GT adımı yok — paneldeki ofset alanları
+    kablolanmadı); kirişin kolon tepesine göre dikey konumu yalnız gözle
+    doğrulandı (kiriş üst bölgede, kolon gövdesine giriyor), sayısal ölçüm yok.
+
+
 
 ## Açık soru (yanıtla, Durum'a yaz)
 - 893e770 "feat(document): çoklu seçim özellik düzenleme + tek geri alma

@@ -1,0 +1,150 @@
+{
+  "backend": "gdi",
+  "timeoutMs": 180000,
+  "_comment": "T-3 KIRIS: iki kolon tepesi arasi IPE300 kiriş (gercek fare yolu: draw.beam + clickWorld); egik mertek iki farkli kot; profilsiz Kiriş komutu GEOMETRI URETMEZ.",
+  "steps": [
+    {
+      "profile": "HEB240"
+    },
+    {
+      "appColumnLevels": {
+        "top": 3000,
+        "bottom": 0
+      }
+    },
+    {
+      "placeColumn": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      }
+    },
+    {
+      "placeColumn": {
+        "x": 6000,
+        "y": 0,
+        "z": 0
+      }
+    },
+    {
+      "expect": {
+        "profiled": 2
+      }
+    },
+    {
+      "key": "Escape"
+    },
+    {
+      "cmd": "view.dir.iso"
+    },
+    {
+      "fit": {}
+    },
+    {
+      "profile": "IPE300"
+    },
+    {
+      "cmd": "draw.beam"
+    },
+    {
+      "expect": {
+        "activeTool": "draw.beam"
+      }
+    },
+    {
+      "clickWorld": {
+        "x": 0,
+        "y": 0,
+        "z": 3000
+      }
+    },
+    {
+      "clickWorld": {
+        "x": 6000,
+        "y": 0,
+        "z": 3000
+      }
+    },
+    {
+      "expect": {
+        "profiled": 3,
+        "modelProfile": {
+          "model": 2,
+          "name": "IPE300"
+        }
+      }
+    },
+    {
+      "capture": {
+        "name": "t3-00-kiris-ipe300",
+        "target": "window"
+      }
+    },
+    {
+      "clickWorld": {
+        "x": 6000,
+        "y": 0,
+        "z": 3000
+      }
+    },
+    {
+      "clickWorld": {
+        "x": 3000,
+        "y": 0,
+        "z": 2000
+      }
+    },
+    {
+      "expect": {
+        "profiled": 4,
+        "modelProfile": {
+          "model": 3,
+          "name": "IPE300"
+        }
+      }
+    },
+    {
+      "capture": {
+        "name": "t3-01-egik-mertek",
+        "target": "window"
+      }
+    },
+    {
+      "key": "Escape"
+    },
+    {
+      "profile": ""
+    },
+    {
+      "cmd": "draw.beam"
+    },
+    {
+      "clickWorld": {
+        "x": 0,
+        "y": 0,
+        "z": 1500
+      }
+    },
+    {
+      "clickWorld": {
+        "x": 3000,
+        "y": 0,
+        "z": 1500
+      }
+    },
+    {
+      "expect": {
+        "profiled": 4
+      }
+    },
+    {
+      "key": "Escape"
+    },
+    {
+      "capture": {
+        "name": "t3-02-profilsiz-kiris-uretmedi",
+        "target": "window"
+      }
+    }
+  ]
+}

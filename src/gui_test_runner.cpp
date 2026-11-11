@@ -740,6 +740,26 @@ struct Runner {
                                     .arg(actual, spec[QStringLiteral("name")].toString());
             }
         }
+        // T-2: profil DONUSU (derece) — kayit/ac sonrasi da ayni kalmali.
+        if (expect.contains(QStringLiteral("modelRotation"))) {
+            const QJsonObject spec = expect[QStringLiteral("modelRotation")].toObject();
+            const int model = spec[QStringLiteral("model")].toInt(-1);
+            const double tol = spec.contains(QStringLiteral("tol"))
+                                   ? spec[QStringLiteral("tol")].toDouble()
+                                   : 0.01;
+            if (model < 0 ||
+                static_cast<std::size_t>(model) >= app.document().models().size())
+                problems << QStringLiteral("modelRotation: model %1 yok").arg(model);
+            else {
+                const double actual =
+                    app.document().models()[model].properties().profileRotation;
+                if (std::abs(actual - spec[QStringLiteral("degrees")].toDouble()) > tol)
+                    problems << QStringLiteral("modelRotation[%1]=%2 (beklenen %3)")
+                                    .arg(model)
+                                    .arg(actual)
+                                    .arg(spec[QStringLiteral("degrees")].toDouble());
+            }
+        }
         // UI-4: ozellikler paneli profil alani (ham metin + kirmizi durum).
         if (expect.contains(QStringLiteral("panelProfile"))) {
             const QJsonObject spec = expect[QStringLiteral("panelProfile")].toObject();
@@ -1628,6 +1648,17 @@ struct Runner {
                 spec[QStringLiteral("profile")].toString().toStdString());
             pump(120);
             return writeStep(step, QStringLiteral("assignProfile"));
+        }
+        if (step.contains(QStringLiteral("appRotation"))) {
+            // T-2: profil donusu. Panelin UYGULA yolunun cagirdigi AYNI cekirdek.
+            const QJsonObject spec = step[QStringLiteral("appRotation")].toObject();
+            const int model = spec[QStringLiteral("model")].toInt(-1);
+            if (model < 0) return fail(QStringLiteral("appRotation: model eksik"));
+            window.application().selectModels({static_cast<std::size_t>(model)});
+            window.application().setSelectedEntityProfileRotation(
+                spec[QStringLiteral("degrees")].toDouble());
+            pump(120);
+            return writeStep(step, QStringLiteral("appRotation"));
         }
         // ---- UI-4 GT-1: panel + profil secim penceresi (Qt tarafi) ----
         if (step.contains(QStringLiteral("panelType"))) {

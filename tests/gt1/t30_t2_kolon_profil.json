@@ -1,0 +1,190 @@
+{
+  "backend": "gdi",
+  "timeoutMs": 180000,
+  "_comment": "T-2 KOLON: aks kesisimine HEB240 kolon; profil adi elle 'heb240' -> HEB240 (kucuk harf kabul); olmayan profil -> gecersiz (kirmizi) ve uygulanmaz; donus 0/90/180/270; kaydet-ac sonrasi profil ve donus ayni (A kurali).",
+  "steps": [
+    {
+      "profile": "HEB240"
+    },
+    {
+      "appColumnLevels": {
+        "top": 3000,
+        "bottom": 0
+      }
+    },
+    {
+      "appGrid": {
+        "x": [0, 6000],
+        "y": [0, 6000],
+        "z": [0, 3000],
+        "xLabels": ["A", "B"],
+        "yLabels": ["1", "2"],
+        "zLabels": ["0", "3000"]
+      }
+    },
+    {
+      "placeColumn": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      }
+    },
+    {
+      "expect": {
+        "profiled": 1,
+        "modelProfile": {
+          "model": 0,
+          "name": "HEB240"
+        }
+      }
+    },
+    {
+      "capture": {
+        "name": "t2-00-kolon-heb240",
+        "target": "window"
+      }
+    },
+    {
+      "panelType": {
+        "text": "heb240"
+      }
+    },
+    {
+      "expect": {
+        "panelProfile": {
+          "text": "heb240"
+        },
+        "panelProfileValid": {
+          "valid": true
+        }
+      }
+    },
+    {
+      "panelApply": {}
+    },
+    {
+      "expect": {
+        "modelProfile": {
+          "model": 0,
+          "name": "HEB240"
+        }
+      }
+    },
+    {
+      "panelType": {
+        "text": "XXX999"
+      }
+    },
+    {
+      "expect": {
+        "panelProfileValid": {
+          "valid": false
+        }
+      }
+    },
+    {
+      "panelApply": {}
+    },
+    {
+      "expect": {
+        "modelProfile": {
+          "model": 0,
+          "name": "HEB240"
+        }
+      }
+    },
+    {
+      "capture": {
+        "name": "t2-01-olmayan-profil-reddedildi",
+        "target": "window"
+      }
+    },
+    {
+      "appRotation": {
+        "model": 0,
+        "degrees": 90
+      }
+    },
+    {
+      "expect": {
+        "modelRotation": {
+          "model": 0,
+          "degrees": 90
+        }
+      }
+    },
+    {
+      "appRotation": {
+        "model": 0,
+        "degrees": 180
+      }
+    },
+    {
+      "expect": {
+        "modelRotation": {
+          "model": 0,
+          "degrees": 180
+        }
+      }
+    },
+    {
+      "appRotation": {
+        "model": 0,
+        "degrees": 270
+      }
+    },
+    {
+      "expect": {
+        "modelRotation": {
+          "model": 0,
+          "degrees": 270
+        }
+      }
+    },
+    {
+      "capture": {
+        "name": "t2-02-donus-270",
+        "target": "window"
+      }
+    },
+    {
+      "save": "t2_kolon.mm"
+    },
+    {
+      "appRotation": {
+        "model": 0,
+        "degrees": 0
+      }
+    },
+    {
+      "expect": {
+        "modelRotation": {
+          "model": 0,
+          "degrees": 0
+        }
+      }
+    },
+    {
+      "open": "t2_kolon.mm"
+    },
+    {
+      "expect": {
+        "profiled": 1,
+        "modelProfile": {
+          "model": 0,
+          "name": "HEB240"
+        },
+        "modelRotation": {
+          "model": 0,
+          "degrees": 270
+        }
+      }
+    },
+    {
+      "capture": {
+        "name": "t2-03-kaydet-ac-sonrasi",
+        "target": "window"
+      }
+    }
+  ]
+}
