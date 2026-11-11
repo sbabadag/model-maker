@@ -17,7 +17,7 @@ Kanıt sütunu: `dosya:satır` kod kanıtı, `test` adı kayıtlı test kanıtı
 | 3 | `bolts.grid` (through üyeler) | bulon grubu: kalite, delik, grip; üyelerde ve levhalarda delik açar | **VAR** | `src/bolt.cpp:223` `boltGroupHoleModifiers`, `src/document.cpp:390,2662,2718,2785` delik zinciri, `src/component_materializer.cpp:903` (levha delikleri + kesmeler) · test: `component_materializer_test`, `component_bolt_rows_reduced_test` |
 | 4 | `bolts.grid` ankraj (`through: []`, aşağı) | üyeye delik AÇMAZ; yalnız taban levhasında delik | **VAR** (P-2/2) | `component_anchor_bolt_test` A: ankraj grubunun `parts`'ında üye YOK → `boltGroupHoleModifiers` yalnız levhaları hedefler, kolonun B-Rep sürümü değişmez (delik açılmaz); B: normal grup `parts={main}` → ana üyede delik modifier'ı VAR |
 | 5 | `weld.fillet` | kaynak nesnesi: görünür, seçilir, boyut ve iki taraf doğru | **VAR** | `src/component_materializer.cpp:846,1224` (`doubleSided`), `:47` `kWeldColor`; kaynak katısı + display modeli, desteklenmiyorsa `unsupportedReason` (sessiz yanlış katı yok) · test: `component_materializer_test` |
-| 6 | `cut.plane` (fitting dahil) | üye katısı kesilir; kesim nesnesi görünür ve seçilir | **KISMI** | `src/recipe.cpp:1844` `cut.plane` bloğu, `:1368` hedef çözümü; kesme uygulanıyor · kopyalanan kesim düzlemi çizilmiyor (INBOX B8, açık) → P-2/3 |
+| 6 | `cut.plane` (fitting dahil) | üye katısı kesilir; kesim nesnesi görünür ve seçilir | **VAR** (P-2/3) | `src/recipe.cpp:1844` `cut.plane` bloğu, `:1368` hedef çözümü; kesme uygulanıyor, kesim düzlemi sarı overlay olarak çiziliyor (`renderer.cpp` `drawCutPlanes`), kaynak konstrüksiyon düzlemi varsa mavi kaynak çizilir (tek düzlem). Kopya: `cloneDependentsForCopies` `sourceCopied` dalı + `copySelectionBy`/`copyModelsAndRecompute` hedef tazeleme · test: GT `t27` (13 adım, `ok=true`: 2 düzlem, 2 görünür, 2 kesme) |
 | 7 | `check` başarısız | komponent kurulmaz; Türkçe mesaj; belge değişmez | **VAR** | `src/application.cpp` `recomputeComponentInstancesFor` (`prepWhy`, `CR-PREP-FAIL`) + `atomicRecompute` rollback · test: `component_recompute_atomic_test`, `component_move_test` bölüm B (ana üye yok → hazırlık REDDEDER, belge değişmez), GT `t23` (iki dal, 23 adım, `ok=true`) |
 | 8 | Malzeme listesi / rapor satırları (levha, bulon, kaynak) | raporda üç satır türü | **VAR** (P-2/5) | `include/model_maker/report.hpp` + `src/report.cpp`: `mm::buildMaterialList` / `materialListReport` (saf fonksiyon) → ÜYELER / LEVHALAR / BULON GRUPLARI / KAYNAKLAR + TOPLAM; aynı görünen satırlar `adet` ile toplanır; bulon/kaynak **görsel** modelleri (`displayEntityId`) sayılmaz · UI: `report.materialList` + `QtMainWindow::showMaterialList()` (Panoya Kopyala) · test: `material_list_test` · GT: `t26` (`malzeme-once.txt`/`malzeme-sonra.txt`) |
 
@@ -40,7 +40,7 @@ Kanıt sütunu: `dosya:satır` kod kanıtı, `test` adı kayıtlı test kanıtı
 | P-2/1 `plate.polygon` materyalizasyonu | **BİTTİ** (`72cc0ef`) | golden `92134f6a…c85e`, GT `t25` |
 | P-2/1b taban levhası golden'ı | **BİTTİ** (`f9bb9fb`) | `tests/golden/studio_base_plate.json` |
 | P-2/2 ankraj bulonu üyeye delik açmıyor | **BİTTİ** | `component_anchor_bolt_test` (A: ankraj → üye delinmez; B: normal grup → üye delinir) |
-| P-2/3 `cut.plane` görünür + seçilir | **AÇIK** | yalnız kod izi çıkarıldı (`copySelection` ~8388, `document.cpp:358-520` `copyModels`, `renderer.cpp:940-1010/1055-1100`, `hitTestCutModifier*`); kopya kesim düzleminin çizilmemesi INBOX B8 ile aynı kök — düzeltme yapılmadı |
+| P-2/3 `cut.plane` görünür + seçilir | **BİTTİ** | Kök neden: `cloneDependentsForCopies` kesme modifier'ını YALNIZ hedef kopyalandığında klonluyordu; yalnız düzlem kopyalanınca modifier hiç kurulmuyordu (kopya görünür + seçilir ama kesmez — B8). Düzeltme: `sourceCopied` dalı (hedef aynı, `source` kopya düzleme bağlı) + `copySelectionBy`/`copyModelsAndRecompute` kopya sonrası yeni modifier hedeflerini `recomputeCutTarget` ile tazeler. Önce kırmızı: GT `t27` "kesme modifier sayisi 1 != 2"; sonra yeşil: `t27` 13 adım `ok=true` (2 düzlem, 2'si görünür, 2 kesme) |
 | P-2/4 dışbükey olmayan kontur | **BİTTİ** | `component_materializer_test` L kontur, hacim 675000 mm³ |
 | P-2/5 BOM / malzeme listesi | **BİTTİ** | `report.hpp`/`report.cpp`, `material_list_test`, `report.materialList` + diyalog, GT `t26` |
 | P-2/6 kopyala/taşı bütünlüğü | **BİTTİ** | `component_move_test`, `Application::translateModelsAndRecompute` |
@@ -48,8 +48,9 @@ Kanıt sütunu: `dosya:satır` kod kanıtı, `test` adı kayıtlı test kanıtı
 
 ## Sıradaki commit'ler (her biri ayrı commit + kapı + GUI senaryosu)
 
-1. **P-2/3 — `cut.plane` nesnesi görünür + seçilir.** B8 ile aynı kök neden
-   (kopya çizilmiyor) — birlikte çözülmeli. **Kalan tek P-2 maddesi.**
+**P-2 maddelerinin hepsi bitti** (P-2/1, P-2/1b, P-2/2, P-2/3, P-2/4, P-2/5,
+P-2/6, P-2/7). Sıradaki adım planlayıcıya ait: P-3 / a–k kalan istekler ve
+Studio tarafı REPIN-2.
 
 Bitti sayılanlar: **P-2/1** (`plate.polygon` materyalizasyonu, `72cc0ef`),
 **P-2/1b** (taban levhası golden'ı, `tests/golden/studio_base_plate.json`, `f9bb9fb`),

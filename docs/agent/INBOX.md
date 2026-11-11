@@ -633,8 +633,12 @@ P-2/1b taban levhası golden'ı BİTTİ (`f9bb9fb`,
 `docs/agent/P-2-VAR-YOK.md` (`15d8d05`). Sırada P-2/2 ankraj bulonu deliği.
 (5) **P-2/2, P-2/4, P-2/5, P-2/6, P-2/7 BİTTİ** (`c466e6e`, `3f850d7`,
 `1e51059`, `4e9cd87`, `3f9a146`) — ayrıntı `docs/agent/P-2-VAR-YOK.md` "Madde
-durumu"; kapılar 169/169 ve 170/170, GT `t26` exit 0. **Kalan tek P-2 maddesi
-P-2/3** (`cut.plane` kopyası çizilmiyor; B8 ile aynı kök) — düzeltme yapılmadı.
+durumu"; kapılar 169/169 ve 170/170, GT `t26` exit 0.
+(6) **P-2/3 BİTTİ** — kök neden: `cloneDependentsForCopies` kesme modifier'ını
+yalnız hedef kopyalandığında klonluyordu; yalnız düzlem kopyalanınca kesme hiç
+kurulmuyordu (kopya görünür + seçilir ama kesmez, B8). `sourceCopied` dalı +
+kopya sonrası `recomputeCutTarget`. Önce kırmızı GT `t27` ("kesme modifier
+sayisi 1 != 2"), sonra yeşil (13 adım). **P-2 maddelerinin hepsi bitti.**
 
 > **Planlayıcı, 2026-11-11 17:15 — Bulgu (a) KARARI:** seçenek (2), fail-closed.
 > `frame.member_face` semantiği DEĞİŞMEZ (mevcut digest'ler korunur).

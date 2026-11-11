@@ -575,8 +575,16 @@ Sıra: `docs/agent/P-2-VAR-YOK.md`. Her madde ayrı commit + tam kapı (build + 
       (+2000 mm X) → `malzeme-sonra.txt` = `malzeme-once.txt` birebir
       (5 levha / 4 bulon 1 grup / 9 kaynak), tüm kutular X≈1888…2156.
       GT koşucusuna `appMaterialList`, `appMoveModels`, `expect.fileContains` eklendi.
-- [ ] **P-2/3** — `cut.plane` kopyası çizilmiyor (INBOX B8 ile aynı kök). Yalnız kod
-      izi çıkarıldı; düzeltme yapılmadı. **P-2'nin kalan tek maddesi.**
+- [x] **P-2/3** (`cut.plane` kopyası) — kök neden: `cloneDependentsForCopies` kesme
+      modifier'ını yalnız HEDEF kopyalandığında klonluyordu; yalnız düzlem
+      kopyalanınca modifier hiç kurulmuyordu (kopya görünür + seçilir ama kesmez,
+      INBOX B8). Düzeltme: `sourceCopied` dalı (hedef aynı, `source` kopya
+      düzleme bağlı) + `copySelectionBy` / yeni `copyModelsAndRecompute` kopya
+      sonrası yeni modifier hedeflerini `recomputeCutTarget` ile tazeler.
+      Önce KIRMIZI: GT `t27` "kesme modifier sayisi 1 != 2"; sonra YEŞİL:
+      `t27` 13 adım `ok=true` (2 düzlem, 2 görünür, 2 kesme modifier'ı).
+      GT koşucusuna `appConstructionPlane`, `appPlaneCut`, `appCopyModels`,
+      `expect.document {cutModifiers, planes, visiblePlanes}` eklendi.
 
 Kapılar: `p2-245-gate.log` **169/169** (454.71 s), `p2-67-gate.log` **170/170**
 (444.21 s), ikisi de `BUILD_EXIT=0` / `CTEST_EXIT=0`. GT `t26` exit 0.
