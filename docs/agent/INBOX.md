@@ -1041,6 +1041,26 @@ T-11: GEÇTİ (kısmi) — GT `t39_t11_gorunumler`, 40 adım `ok=true`, GDI ve G
     `wp.reset`) — koşucuda 3B nokta seçimi adımı yok.
     Kanıt: `C:\work\mm-hermes-shots\2026-11-11\t39\` ve `t39gpu\`.
 
+T-12: GEÇTİ (kısmi) — GT `t40_t12_kayit`, 34 adım `ok=true`, GDI ve GPU aynı.
+    Sahne: HEB260 kolon + IPE300 kiriş + düzlem kesme + end plate + gerçek renk
+    (Sınıf: Yellow) + kirişte 30° dönüş. `save` → `file.new` (0 nesne) → `open`.
+    Aç sonrası BİREBİR: profilli model 2, düzlem 1, bulon grubu 1, bağlantı 1 ve
+    temaslı (≤500), gerçek renk korunuyor, dönüş 30°, kiriş profili IPE300.
+    BULGU (kusur adayı, ayrı madde): dönüşlü üyede bağlantının geometrik digest'i
+    kayıt-aç sonrası DEĞİŞİYOR — 30° dönüşte `23cbf56fbf0b9e70` →
+    `a6a0488f14991650`; dönüşsüz turda digest aynı kalıyor (`t40 d1` tanısı, aynı
+    sahne dönüş olmadan save/open → eşit). Dönüş ve temas korunuyor, yani
+    kullanıcıya görünen sonuç bozulmuyor ama bağlantı yeniden üretiliyor.
+    İkinci bulgu: düzlem kesme BİLEŞENDEN SONRA kurulamıyor (`applyPlaneCut`
+    "kesme kurulamadı" döndürüyor, fail-closed); bileşenden önce kurulunca
+    çalışıyor. Ayrıca profilli kirişte düzlem kesme 9 modifier, kolonda 1 üretiyor.
+    Üçüncü not: `cutModifiers` bileşenlerin ürettiği kesimleri de sayıyor
+    (end plate ile 1 → 10), bu yüzden bilesen sonrası yalnız `planes` denetlenir.
+    ATLANDI: "eski bir model dosyası (repo örneği) açılıyor" — repoda hazır `.mmw`
+    örneği yok; eski biçim uyumu `legacy_drawing_fixture` ve ctest roundtrip
+    testleriyle kanıtlı, GT'ye sabit örnek eklenmedi.
+    Kanıt: `C:\work\mm-hermes-shots\2026-11-11\t40\` ve `t40gpu\`.
+
 ## Açık soru (yanıtla, Durum'a yaz)
 - 893e770 "feat(document): çoklu seçim özellik düzenleme + tek geri alma
   adımı" istenmemişti. Ne yapıyor, hangi maddeye ait, testi var mı?

@@ -705,3 +705,14 @@ sürerken yalnız `docs/` düzenlenir.
   kanitli.
 - KAPSAM DISI (UI-3): calisma duzlemi 3 nokta / sifirla (3B nokta secimi yok).
 - Kanit: shots\2026-11-11\t39 (GDI) + t39gpu (GPU). Kapi: `t11-gate.log`.
+
+## T-12 — kayit (kapandi, kismi, 2026-11-11)
+
+- GT `t40_t12_kayit` 34 adim `ok=true`, GDI ve GPU ayni.
+- Kaydet -> file.new -> ac: profil/duzlem/bulon grubu/baglanti/temas/renk/donus
+  birebir korunuyor (30 derece donus dahil).
+- KUSUR ADAYI: donuslu uyede baglanti geometrik digest'i kayit-ac sonrasi
+  degisiyor (23cbf56fbf0b9e70 -> a6a0488f14991650); donussuz turda ayni.
+- Duzlem kesme bilesenden SONRA kurulamiyor (fail-closed); profilli kiriste
+  9 modifier, kolonda 1; cutModifiers bilesen kesimlerini de sayiyor.
+- Kanit: shots\2026-11-11\t40 (GDI) + t40gpu (GPU). Kapi: `t12-gate.log`.

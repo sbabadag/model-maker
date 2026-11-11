@@ -1,0 +1,224 @@
+{
+  "_comment": "T-12 KAYIT: duzlem kesme + baglanti + gercek renk + 30 derece donus iceren model kaydedildi; file.new ile belge bosaltildi (0 nesne); ac sonrasi profiller, duzlem, bulon grubu, baglanti sayisi/digest/temasi, gercek renk ve donus BIREBIR ayni. NOT: kesme bilesenden ONCE kurulmali; bilesen sonrasi appPlaneCut 'kesme kurulamadi' donuyor (fail-closed); profilli kiriste duzlem kesme 9 modifier uretiyor (kolonda 1) - ayri madde adayi. NOT2: cutModifiers bilesenlerin urettigi kesimleri de sayiyor (end plate ile 1 -> 10); bu yuzden bilesen sonrasi yalniz 'planes' denetlenir. BULGU: -30 derece donuslu kiriste baglanti geometrik digest'i kayit-ac sonrasi DEGISIYOR (23cbf56fbf0b9e70 -> a6a0488f14991650); donus ve baglanti korunuyor, temas <=500 mm. Donussuz turda digest ayni kaliyor (t40 d1 tanisi).",
+  "backend": "gdi",
+  "timeoutMs": 240000,
+  "steps": [
+    {
+      "profile": "HEB260"
+    },
+    {
+      "appColumnLevels": {
+        "top": 4000,
+        "bottom": 0
+      }
+    },
+    {
+      "placeColumn": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      }
+    },
+    {
+      "assignLine": {
+        "x1": 0,
+        "y1": 0,
+        "z1": 4000,
+        "x2": 5000,
+        "y2": 0,
+        "z2": 4000,
+        "profile": "IPE300"
+      }
+    },
+    {
+      "key": "Escape"
+    },
+    {
+      "appConstructionPlane": {
+        "origin": [
+          0.0,
+          0.0,
+          2000.0
+        ],
+        "normal": [
+          1.0,
+          0.0,
+          0.0
+        ],
+        "size": 1200.0
+      }
+    },
+    {
+      "appPlaneCut": {
+        "target": 0,
+        "plane": 2
+      }
+    },
+    {
+      "expect": {
+        "document": {
+          "cutModifiers": 1,
+          "planes": 1
+        }
+      }
+    },
+    {
+      "appComponent": {
+        "typeId": "beam_to_column_end_plate",
+        "parts": [
+          0,
+          1
+        ]
+      }
+    },
+    {
+      "select": [
+        0
+      ]
+    },
+    {
+      "panelColor": 3
+    },
+    {
+      "expect": {
+        "modelProps": {
+          "model": 0,
+          "hasTrueColor": true
+        }
+      }
+    },
+    {
+      "appRotation": {
+        "model": 1,
+        "degrees": 30.0
+      }
+    },
+    {
+      "expect": {
+        "modelRotation": {
+          "model": 1,
+          "degrees": 30.0,
+          "tol": 0.01
+        }
+      }
+    },
+    {
+      "expect": {
+        "document": {
+          "planes": 1
+        }
+      }
+    },
+    {
+      "cmd": "view.dir.iso"
+    },
+    {
+      "fit": {}
+    },
+    {
+      "capture": {
+        "name": "t12-00-kayit-oncesi",
+        "target": "window"
+      }
+    },
+    {
+      "save": "t40_kayit.mmw"
+    },
+    {
+      "expect": {
+        "componentDigest": {
+          "typeId": "beam_to_column_end_plate",
+          "key": "k",
+          "remember": true
+        }
+      }
+    },
+    {
+      "cmd": "file.new"
+    },
+    {
+      "expect": {
+        "models": {
+          "count": 0
+        }
+      }
+    },
+    {
+      "capture": {
+        "name": "t12-01-yeni-belge",
+        "target": "window"
+      }
+    },
+    {
+      "open": "t40_kayit.mmw"
+    },
+    {
+      "expect": {
+        "models": {
+          "profiled": 2
+        }
+      }
+    },
+    {
+      "expect": {
+        "document": {
+          "planes": 1,
+          "boltGroups": 1
+        }
+      }
+    },
+    {
+      "expect": {
+        "componentCount": {
+          "typeId": "beam_to_column_end_plate",
+          "count": 1
+        }
+      }
+    },
+    {
+      "expect": {
+        "componentAttached": {
+          "typeId": "beam_to_column_end_plate",
+          "maxGap": 500
+        }
+      }
+    },
+    {
+      "expect": {
+        "modelProps": {
+          "model": 0,
+          "hasTrueColor": true
+        }
+      }
+    },
+    {
+      "expect": {
+        "modelRotation": {
+          "model": 1,
+          "degrees": 30.0,
+          "tol": 0.01
+        }
+      }
+    },
+    {
+      "expect": {
+        "modelProfile": {
+          "model": 1,
+          "name": "IPE300"
+        }
+      }
+    },
+    {
+      "cmd": "view.dir.iso"
+    },
+    {
+      "fit": {}
+    },
+    {
+      "capture": {
+        "name": "t12-02-kayit-sonrasi-ayni",
+        "target": "window"
+      }
+    }
+  ]
+}
