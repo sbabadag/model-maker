@@ -1,0 +1,165 @@
+{
+  "_comment": "T-12 bulgusunun kökü: uye dondurulunce bagli bilesen YENIDEN URETILMIYOR (levhalar eski yerinde, kirisin basi kesim/ofset kaybedip 142 -> 0'a uzaniyor); kaydet/ac sonrasi bilesen yeniden uretildigi icin geometri degisiyor. Bu GT mevcut davranisi sinirlarla belgeler: donus sonrasi levhalar BIREBIR ayni (maxDelta <= 1e-6), kayit/ac sonrasi EN AZ 10 mm kayma. Kusur duzeltilince 3. beklenti (atLeastDelta) ters cevrilecek.",
+  "backend": "gdi",
+  "timeoutMs": 240000,
+  "steps": [
+    {
+      "profile": "HEB260"
+    },
+    {
+      "appColumnLevels": {
+        "top": 4000,
+        "bottom": 0
+      }
+    },
+    {
+      "placeColumn": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      }
+    },
+    {
+      "key": "Escape"
+    },
+    {
+      "assignLine": {
+        "x1": 0,
+        "y1": 0,
+        "z1": 4000,
+        "x2": 5000,
+        "y2": 0,
+        "z2": 4000,
+        "profile": "IPE300"
+      }
+    },
+    {
+      "key": "Escape"
+    },
+    {
+      "appComponent": {
+        "typeId": "beam_to_column_end_plate",
+        "parts": [
+          0,
+          1
+        ]
+      }
+    },
+    {
+      "expect": {
+        "componentCount": {
+          "typeId": "beam_to_column_end_plate",
+          "count": 1
+        }
+      }
+    },
+    {
+      "appGeomCapture": "pre"
+    },
+    {
+      "cmd": "view.dir.iso"
+    },
+    {
+      "fit": {}
+    },
+    {
+      "capture": {
+        "name": "t12b-00-donus-oncesi",
+        "target": "window"
+      }
+    },
+    {
+      "appRotation": {
+        "model": 1,
+        "degrees": 30.0
+      }
+    },
+    {
+      "expect": {
+        "modelRotation": {
+          "model": 1,
+          "degrees": 30.0,
+          "tol": 0.01
+        }
+      }
+    },
+    {
+      "appGeomCompare": {
+        "tag": "pre",
+        "only": [
+          2,
+          3
+        ],
+        "maxDelta": 1e-06
+      }
+    },
+    {
+      "cmd": "view.dir.iso"
+    },
+    {
+      "fit": {}
+    },
+    {
+      "capture": {
+        "name": "t12b-01-donus-sonrasi",
+        "target": "window"
+      }
+    },
+    {
+      "appGeomCapture": "post"
+    },
+    {
+      "save": "t43_donus_bilesen.mmw"
+    },
+    {
+      "cmd": "file.new"
+    },
+    {
+      "expect": {
+        "models": {
+          "count": 0
+        }
+      }
+    },
+    {
+      "open": "t43_donus_bilesen.mmw"
+    },
+    {
+      "expect": {
+        "models": {
+          "profiled": 2
+        }
+      }
+    },
+    {
+      "expect": {
+        "componentCount": {
+          "typeId": "beam_to_column_end_plate",
+          "count": 1
+        }
+      }
+    },
+    {
+      "appGeomCompare": {
+        "tag": "post",
+        "only": [
+          2,
+          3
+        ],
+        "atLeastDelta": 10.0
+      }
+    },
+    {
+      "cmd": "view.dir.iso"
+    },
+    {
+      "fit": {}
+    },
+    {
+      "capture": {
+        "name": "t12b-02-kayit-ac-sonrasi",
+        "target": "window"
+      }
+    }
+  ]
+}

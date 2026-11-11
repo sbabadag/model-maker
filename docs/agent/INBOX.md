@@ -1085,6 +1085,33 @@ T-13: GEÇTİ (kısmi) — GT `t41_t13_kisayollar`, 77 adım `ok=true`, GDI ve G
     tetiklemez" (koşucuda odak+tus adımı yok).
     Kanıt: `C:\work\mm-hermes-shots\2026-11-11\t41\` ve `t41gpu\`.
 
+T-12 BULGUSUNUN KÖKÜ (donus + bagli bilesen) — GT `t43_t12_donus_bilesen`, 29 adim
+    `ok=true`, GDI ve GPU ayni. Kosucuya iki tani adimi eklendi:
+    `appGeomCapture {tag}` (tum modellerin kose listesi) ve
+    `appGeomCompare {tag, only, maxDelta, atLeastDelta}` (en buyuk |kose
+    farki| + eslesmeyen model sayisi).
+    OLCUM (HEB260 kolon + IPE300 kiris + `beam_to_column_end_plate`):
+    1) DONUS SONRASI BILESEN GUNCELLENMIYOR: kiris 30° donduruldugunde
+       levhalar (model 2/3) BIREBIR ayni kaliyor (`maxDelta = 0`), ama
+       kirisin basi 142 → 0 mm (bilesenin kestigi/oftsetledigi uc kayboluyor),
+       kesiti y -75..75 → -65..215 donuyor. Yani kiris levhanin ICINDEN
+       gecmeye basliyor, levha ise eski yerde.
+    2) KAYDET/AC SONRASI BILESEN YENIDEN URETILIYOR: levhalar 253 mm
+       kayiyor (`maxDelta = 2.534e+02 mm`), kiris basi yeniden 142'ye
+       cekiliyor. T-12'de gorulen `componentDigest` degisimi (23cb… → a6a0…)
+       buradan geliyor: kaydedilen durum, acilista yeniden uretilen durumla
+       ayni degil.
+    3) Ek olarak kolon (model 0) kaydet/ac sonrasi 24 → 156 kose oluyor
+       (bbox ayni): acilista profil geometrisi ayrintili uretiliyor,
+       oturumda ise basit kutu kaliyor.
+    KUSUR ADAYI (ayri madde): uye donusumu bagli bilesenleri yeniden
+    uretmiyor ve kirisin kesim/ofset payini kaybediyor. GT su an MEVCUT
+    davranisi sinirlarla belgeler (donus sonrasi levhalar birebir;
+    kayit/ac sonrasi >= 10 mm kayma); kusur duzeltilince 3. beklenti
+    (`atLeastDelta`) ters cevrilecek.
+    Kanit: `C:\work\mm-hermes-shots\2026-11-11\t43\` ve `t43gpu\`
+    (`t12b-00/01/02` ekran goruntuleri). Kapi: `t43-gate.log`.
+
 KUŞUR KAPATMA — `libs/mm_contract/tests/recipe_test.cpp` derlenmiyordu
     Kök `CMakeLists.txt` bu testi hiç eklemiyordu (libs/mm_contract kendi
     başına derleniyor, kök ağaçta yoktu). Hedef `model_maker_recipe_test`

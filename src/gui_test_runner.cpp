@@ -287,6 +287,11 @@ struct Runner {
     int paperViews_ = 0;
     qint64 paperPdfBytes_ = 0;
     bool paperPdfOk_ = false;
+    // T-12 bulgusu: kaydet/ac sonrasi geometri BIT-BIT ayni mi? Geometri
+    // yakalama (tag -> model sirasiyla kose listesi).
+    QHash<QString, QVector<QVector<Vec3>>> geomMemory_;
+    double geomMaxDelta_ = 0.0;
+    int geomMismatchModels_ = 0;
 
     Runner(QtMainWindow& w, QString dir) : window(w), outDir(std::move(dir)) {}
 
@@ -2144,6 +2149,108 @@ struct Runner {
                 return fail(QStringLiteral("appPlaneCut: kesme kurulamadi"));
             pump(300);
             return writeStep(step, QStringLiteral("appPlaneCut"));
+        }
+        if (step.contains(QStringLiteral("appGeomCapture"))) {
+            // T-12 bulgusu tanisi: o anki tum model koselerini tag ile sakla.
+            const QString tag = step[QStringLiteral("appGeomCapture")].toString();
+            QVector<QVector<Vec3>> snapshot;
+            for (const WireframeModel& m : window.application().document().models())
+                snapshot.append(QVector<Vec3>(m.vertices().begin(), m.vertices().end()));
+            geomMemory_.insert(tag, snapshot);
+            log(QStringLiteral("appGeomCapture[%1] = %2 model")
+                    .arg(tag).arg(snapshot.size()));
+            for (int i = 0; i < snapshot.size(); ++i) {
+                double lo[3] = {1e300, 1e300, 1e300}, hi[3] = {-1e300, -1e300, -1e300};
+                for (const Vec3& v : snapshot.at(i)) {
+                    lo[0] = std::min(lo[0], v.x); hi[0] = std::max(hi[0], v.x);
+                    lo[1] = std::min(lo[1], v.y); hi[1] = std::max(hi[1], v.y);
+                    lo[2] = std::min(lo[2], v.z); hi[2] = std::max(hi[2], v.z);
+                }
+                log(QStringLiteral("  oncesi[%1] nv=%2 bbox=(%3,%4,%5)-(%6,%7,%8)")
+                        .arg(i).arg(snapshot.at(i).size())
+                        .arg(lo[0], 0, 'f', 1).arg(lo[1], 0, 'f', 1).arg(lo[2], 0, 'f', 1)
+                        .arg(hi[0], 0, 'f', 1).arg(hi[1], 0, 'f', 1).arg(hi[2], 0, 'f', 1));
+            }
+            return writeStep(step, QStringLiteral("appGeomCapture"));
+        }
+        if (step.contains(QStringLiteral("appGeomCompare"))) {
+            // T-12 bulgusu tanisi: ayni tag'e gore en buyuk |kose farki|.
+            // maxDelta: izin verilen ust sinir (mm). Model sayisi/kose sayisi
+            // uyusmazsa o model "eslesmedi" sayilir.
+            const QJsonObject spec = step[QStringLiteral("appGeomCompare")].toObject();
+            const QString tag = spec[QStringLiteral("tag")].toString();
+            const double maxDelta = spec[QStringLiteral("maxDelta")].toDouble(1e-9);
+            if (!geomMemory_.contains(tag))
+                return fail(QStringLiteral("appGeomCompare: %1 yakalanmadi").arg(tag));
+            const QVector<QVector<Vec3>>& before = geomMemory_.value(tag);
+            const auto& models = window.application().document().models();
+            geomMaxDelta_ = 0.0;
+            geomMismatchModels_ = 0;
+            // `only`: yalniz bu model indeksleri olculur (kusur kanitinda
+            // levhalar gibi alt kumeler icin).
+            QVector<int> only;
+            for (const QJsonValue v : spec[QStringLiteral("only")].toArray())
+                only.append(v.toInt());
+            const auto wanted = [&](int i) {
+                return only.isEmpty() || only.contains(i);
+            };
+            const int n = static_cast<int>(std::min<qsizetype>(before.size(), static_cast<qsizetype>(models.size())));
+            for (int i = 0; i < n; ++i) {
+                if (!wanted(i)) continue;
+                const auto& a = before.at(i);
+                const auto& b = models[static_cast<std::size_t>(i)].vertices();
+                if (static_cast<int>(b.size()) != a.size()) {
+                    ++geomMismatchModels_;
+                    log(QStringLiteral("appGeomCompare[%1]: model %2 kose sayisi %3 -> %4")
+                            .arg(tag).arg(i).arg(a.size()).arg(b.size()));
+                    continue;
+                }
+                for (int k = 0; k < a.size(); ++k) {
+                    const double dx = std::abs(a[k].x - b[static_cast<std::size_t>(k)].x);
+                    const double dy = std::abs(a[k].y - b[static_cast<std::size_t>(k)].y);
+                    const double dz = std::abs(a[k].z - b[static_cast<std::size_t>(k)].z);
+                    geomMaxDelta_ = std::max(geomMaxDelta_, std::max(dx, std::max(dy, dz)));
+                }
+            }
+            if (before.size() != static_cast<int>(models.size()))
+                ++geomMismatchModels_;
+            for (int i = 0; i < static_cast<int>(models.size()); ++i) {
+                const auto& b = models[static_cast<std::size_t>(i)].vertices();
+                double lo[3] = {1e300, 1e300, 1e300}, hi[3] = {-1e300, -1e300, -1e300};
+                for (const Vec3& v : b) {
+                    lo[0] = std::min(lo[0], v.x); hi[0] = std::max(hi[0], v.x);
+                    lo[1] = std::min(lo[1], v.y); hi[1] = std::max(hi[1], v.y);
+                    lo[2] = std::min(lo[2], v.z); hi[2] = std::max(hi[2], v.z);
+                }
+                log(QStringLiteral("  sonrasi[%1] nv=%2 bbox=(%3,%4,%5)-(%6,%7,%8)")
+                        .arg(i).arg(b.size())
+                        .arg(lo[0], 0, 'f', 1).arg(lo[1], 0, 'f', 1).arg(lo[2], 0, 'f', 1)
+                        .arg(hi[0], 0, 'f', 1).arg(hi[1], 0, 'f', 1).arg(hi[2], 0, 'f', 1));
+            }
+            log(QStringLiteral("appGeomCompare[%1]: model %2/%3, eslesmeyen %4, "
+                               "maxDelta=%5 mm")
+                    .arg(tag)
+                    .arg(n)
+                    .arg(models.size())
+                    .arg(geomMismatchModels_)
+                    .arg(geomMaxDelta_, 0, 'e', 3));
+            if (geomMismatchModels_ > 0)
+                return fail(QStringLiteral("appGeomCompare: %1 model eslesmedi")
+                                .arg(geomMismatchModels_));
+            // atLeastDelta verildiginde ust sinir uygulanmaz (kusur belgeleme).
+            if (!spec.contains(QStringLiteral("atLeastDelta")) && geomMaxDelta_ > maxDelta)
+                return fail(QStringLiteral("appGeomCompare: maxDelta %1 > %2 mm")
+                                .arg(geomMaxDelta_, 0, 'e', 3)
+                                .arg(maxDelta, 0, 'e', 3));
+            // `atLeastDelta`: geometrinin GERCEKTEN degistigini kanitlamak icin
+            // alt sinir (kusur belgeleme; duzeltilince beklenti ters cevrilir).
+            const double atLeast = spec[QStringLiteral("atLeastDelta")].toDouble(0.0);
+            if (atLeast > 0.0 && geomMaxDelta_ < atLeast)
+                return fail(QStringLiteral("appGeomCompare: maxDelta %1 < %2 mm "
+                                           "(beklenen degisim yok)")
+                                .arg(geomMaxDelta_, 0, 'e', 3)
+                                .arg(atLeast, 0, 'e', 3));
+            return writeStep(step, QStringLiteral("appGeomCompare"));
         }
         if (step.contains(QStringLiteral("appPaper"))) {
             // T-14: paper cizim — `draw.paper` diyalogunun ARKASINDAKI ayni

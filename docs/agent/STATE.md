@@ -752,3 +752,18 @@ sürerken yalnız `docs/` düzenlenir.
   (`frame.bisector`, `member.fit` J listesine de eklendi).
 - Sonuc: `recipe test: OK (0 hata)`, `J: 20/20`, `L: 20 tas`.
 - Kapi: `recipe-gate.log`.
+
+## T-12 kok nedeni — donus bagli bileseni guncellemiyor (2026-11-12)
+
+- Yeni tani adimlari: `appGeomCapture {tag}`, `appGeomCompare {tag, only,
+  maxDelta, atLeastDelta}` (kose kose |fark|, eslesmeyen model sayisi).
+- GT `t43_t12_donus_bilesen` 29 adim `ok=true` (GDI + GPU).
+- Bulgu 1: kiris 30° dondurulunce levhalar BIREBIR ayni (maxDelta 0);
+  kirisin basi 142 → 0 (kesim/ofset kaybi), kesit y -75..75 → -65..215.
+- Bulgu 2: kaydet/ac sonrasi levhalar 253 mm kayiyor (bilesen yeniden
+  uretiliyor). T-12'deki digest degisiminin koku budur.
+- Bulgu 3: kolon kaydet/ac sonrasi 24 → 156 kose (bbox ayni) — oturumda
+  basit kutu, acilista ayrintili profil.
+- Kusur adayi: donus bagli bileseni yeniden uretmiyor + kesim payini
+  kaybediyor. GT mevcut davranisi sinirlarla belgeler.
+- Kanit: shots\2026-11-11\t43 (GDI) + t43gpu (GPU). Kapi: `t43-gate.log`.
