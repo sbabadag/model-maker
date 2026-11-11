@@ -603,6 +603,28 @@ listesini Durum'a yaz).
 Her madde ayrı commit + kapı + GUI senaryosu; sonunda kabul paketi.
 Durum: AÇIK
 
+## P-1 kalanlar + gece bulguları (planlayıcı, 2026-11-11 sabah) — P-2'DEN ÖNCE
+Sıra:
+1. **P-1/8 + P-1/9:** GUI senaryosu tamamlama + KABUL PAKETİ (henüz yok;
+   kullanıcı deneyemedi).
+2. **Bulgu (b) — kiriş profili değişince paket komponenti yeniden üretilmiyor**
+   (IPE240→IPE270, digest sabit; yerleşik alın levhasında çalışıyor). Kırmızı
+   test (t21'e geri ekle) → kök neden (paket tipinde secondary üye bağımlılığa
+   yazılmıyor mu?) → düzelt.
+3. **Bulgu (a) — Studio alın levhası paketinde `_b` süreklilik levhaları
+   ~155 mm kayık.** Önce contract düzeyinde ayır: aynı paket + aynı kanonik
+   girdi `runRecipe` ile (MM uygulaması olmadan) aynı kaymayı veriyor mu?
+   - Veriyorsa: ya contract `frame.offset`/`frame.rotate`/`plate.rect` uzlaşımı
+     hatalı (contract düzelt, digest değişirse SÜRÜM artışı + gerekçe, Studio
+     REPIN notu), ya da paket yanlış yazılmış → STATE'e "Studio'ya iletilecek:
+     <ölçüm>" yaz, Studio deposuna dokunma.
+   - Vermiyorsa: MM materyalizasyon hatası, burada düzelt.
+   Ölçümü (beklenen/gerçek koordinat) Durum'a yaz.
+4. Sonra P-2; P-2'nin ilk maddesi **`plate.polygon` materyalizasyonu** (taban
+   levhası paketi `stiffener_alt_w` katısı üretilemiyor — engel), ardından
+   taban levhası golden'ı.
+Durum: AÇIK
+
 ## P-2 — Obje uyumluluğu: paketten gelen levha/bulon/kaynak/kesim gerçek MM nesnesi  [kullanıcı, 2026-11-10 18:50 — P-1'den hemen sonra]
 Kullanıcı: "Paralel olarak MM de bunu derleyebilsin ve obje uyumluluğu
 sağlansın." (Studio S-9: AI ile paket yazma.) Bağlam:
