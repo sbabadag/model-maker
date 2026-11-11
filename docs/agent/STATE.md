@@ -652,3 +652,15 @@ sürerken yalnız `docs/` düzenlenir.
   (GT'de secimden sonra `wait 700` gerekti). Kullanici secimi degistirip
   500 ms icinde alan yazarsa deger kaybolabilir — ayri madde adayi.
 - Kanit: shots\2026-11-11\t34 (GDI) ve t34gpu (GPU). Kapi: `t6-gate.log`.
+
+## T-7 — duzenle (kapandi, kismi, 2026-11-11)
+
+- GT `t35_t7_duzenle` 41 adim `ok=true`, GDI ve GPU ayni.
+- Tasi / Kopyala / Ayna / Sil gercek fare ile; her islem TEK `edit.undo`.
+  Ayna kaynagi silmez (ayna kopyasi ekler). Olcumler ekran tiki kaynakli
+  (±3 mm, tuval 1064x830).
+- KAPSAM DISI: Tasi-D / Kopyala-D (`linearDeltaRequest_` sayisal giris yolu
+  kosucuda yok; denemede surec takildi) ve Dogrusal/Dairesel dizi
+  (`edit.arrayLinear/Polar` — ayni sinif). K1 (diyalog acikken ana pencere)
+  sinanmadi → UI-3.
+- Kanit: shots\2026-11-11\t35 (GDI) ve t35gpu (GPU). Kapi: `t7-gate.log`.

@@ -951,6 +951,24 @@ T-6: GEÇTİ (kısmi) — GT `t34_t6_ozellikler_paneli`, 47 adım `ok=true`, GDI
     sürülmedi (T-6 metni renk/açı diyor; `propsName`/`propsMaterial` yolu
     UYGULA'da aynı batch'e gidiyor).
 
+T-7: GEÇTİ (kısmi) — GT `t35_t7_duzenle`, 41 adım `ok=true`, GDI ve GPU aynı.
+    Gerçek fare ile: TAŞI (taban→hedef) yalnız seçili modeli kaydırdı
+    (eksen X 0 → 75 mm) ve TEK `edit.undo` tam olarak geri aldı (0 mm);
+    KOPYALA 2. modeli oluşturdu (eksen 75/-93.7) ve tek undo 1'e döndü;
+    AYNA kaynağı SİLMEDEN ayna kopyası ekledi (2 model, eksen X=110.5) ve tek
+    undo 1'e döndü; SİL model sayısını 0 yaptı, tek undo geri getirdi.
+    Vision: ayna sonrası ekranda iki paralel kolon, "Nesne: 2".
+    Kanıt: `C:\work\mm-hermes-shots\2026-11-11\t35\` ve `t35gpu\`.
+    ATLANDI: Taşı-Δ / Kopyala-Δ (`linearDeltaRequest_` sayısal giriş yolu GT
+    koşucusunda yok; denemede süreç takıldı, öldürüldü) ve Doğrusal/Dairesel
+    dizi (`edit.arrayLinear` / `edit.arrayPolar` — diyalog/sayısal giriş aynı
+    sınıf). Bunlar için koşucuya sayısal giriş adımı eklenirse ayrı madde
+    olarak ele alınmalı. K1 (diyalog açıkken ana pencere kullanılabiliyor mu)
+    sınanmadı — dizi diyalogları GT'den açılmadığı için UI-3 kapsamında
+    ATLANDI.
+    NOT: ölçülen mm değerleri ekran tıklarından geldiği için tuval boyutuna
+    bağlı (1064×830, `fit` sonrası); iddialar ±3 mm toleransla.
+
 ## Açık soru (yanıtla, Durum'a yaz)
 - 893e770 "feat(document): çoklu seçim özellik düzenleme + tek geri alma
   adımı" istenmemişti. Ne yapıyor, hangi maddeye ait, testi var mı?

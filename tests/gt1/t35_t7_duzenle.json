@@ -1,0 +1,261 @@
+{
+  "_comment": "T-7 DUZENLE: Tasi / Kopyala / Ayna / Sil gercek fare ile; her islem TEK geri alma adimi. Tasi-Δ, Kopyala-Δ, Dogrusal/Dairesel dizi kapsam disi (sayisal giris yolu GT'de yok).",
+  "backend": "gdi",
+  "timeoutMs": 150000,
+  "steps": [
+    {
+      "profile": "HEB240"
+    },
+    {
+      "appColumnLevels": {
+        "top": 3000,
+        "bottom": 0
+      }
+    },
+    {
+      "placeColumn": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      }
+    },
+    {
+      "key": "Escape"
+    },
+    {
+      "cmd": "view.dir.top"
+    },
+    {
+      "fit": {}
+    },
+    {
+      "select": [
+        0
+      ]
+    },
+    {
+      "expect": {
+        "modelAxis": {
+          "model": 0,
+          "fromX": 0,
+          "fromY": 0,
+          "fromZ": 0,
+          "toX": 0,
+          "toY": 0,
+          "toZ": 3000,
+          "tol": 0.5
+        }
+      }
+    },
+    {
+      "cmd": "edit.move"
+    },
+    {
+      "click": [
+        532,
+        415
+      ]
+    },
+    {
+      "click": [
+        760,
+        415
+      ]
+    },
+    {
+      "expect": {
+        "models": {
+          "count": 1
+        }
+      }
+    },
+    {
+      "expect": {
+        "modelAxis": {
+          "model": 0,
+          "fromX": 75,
+          "fromY": 0,
+          "fromZ": 0,
+          "toX": 75,
+          "toY": 0,
+          "toZ": 3000,
+          "tol": 3.0
+        }
+      }
+    },
+    {
+      "capture": {
+        "name": "t7-00-tasi",
+        "target": "window"
+      }
+    },
+    {
+      "cmd": "edit.undo"
+    },
+    {
+      "expect": {
+        "modelAxis": {
+          "model": 0,
+          "fromX": 0,
+          "fromY": 0,
+          "fromZ": 0,
+          "toX": 0,
+          "toY": 0,
+          "toZ": 3000,
+          "tol": 0.5
+        }
+      }
+    },
+    {
+      "select": [
+        0
+      ]
+    },
+    {
+      "cmd": "edit.copy"
+    },
+    {
+      "click": [
+        532,
+        415
+      ]
+    },
+    {
+      "click": [
+        760,
+        700
+      ]
+    },
+    {
+      "expect": {
+        "models": {
+          "count": 2
+        }
+      }
+    },
+    {
+      "expect": {
+        "modelAxis": {
+          "model": 1,
+          "fromX": 75,
+          "fromY": -93.7,
+          "fromZ": 0,
+          "toX": 75,
+          "toY": -93.7,
+          "toZ": 3000,
+          "tol": 3.0
+        }
+      }
+    },
+    {
+      "capture": {
+        "name": "t7-01-kopyala",
+        "target": "window"
+      }
+    },
+    {
+      "cmd": "edit.undo"
+    },
+    {
+      "expect": {
+        "models": {
+          "count": 1
+        }
+      }
+    },
+    {
+      "select": [
+        0
+      ]
+    },
+    {
+      "cmd": "edit.mirror"
+    },
+    {
+      "click": [
+        700,
+        200
+      ]
+    },
+    {
+      "click": [
+        700,
+        700
+      ]
+    },
+    {
+      "expect": {
+        "models": {
+          "count": 2
+        }
+      }
+    },
+    {
+      "expect": {
+        "modelAxis": {
+          "model": 1,
+          "fromX": 110.5,
+          "fromY": 0,
+          "fromZ": 0,
+          "toX": 110.5,
+          "toY": 0,
+          "toZ": 3000,
+          "tol": 3.0
+        }
+      }
+    },
+    {
+      "capture": {
+        "name": "t7-02-ayna",
+        "target": "window"
+      }
+    },
+    {
+      "cmd": "edit.undo"
+    },
+    {
+      "expect": {
+        "models": {
+          "count": 1
+        }
+      }
+    },
+    {
+      "select": [
+        0
+      ]
+    },
+    {
+      "cmd": "edit.delete"
+    },
+    {
+      "expect": {
+        "models": {
+          "count": 0
+        }
+      }
+    },
+    {
+      "capture": {
+        "name": "t7-03-sil",
+        "target": "window"
+      }
+    },
+    {
+      "cmd": "edit.undo"
+    },
+    {
+      "expect": {
+        "models": {
+          "count": 1
+        }
+      }
+    },
+    {
+      "capture": {
+        "name": "t7-04-sil-geri-al",
+        "target": "window"
+      }
+    }
+  ]
+}
