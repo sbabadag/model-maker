@@ -693,7 +693,17 @@ B2 "düzeltildi" denmişti; demek ki gerçek akışı kapsamıyor. GDI ve GPU
 çizgi görünür çizim listesinde ve ekranda. Birim test neden yakalamadı,
 bir cümle.
 
-Durum: —
+Durum: BİTTİ (H-7 ile aynı madde; kod 15a41fb, 2026-11-11'de yeniden doğrulandı).
+Kök neden: GL çizici Solid stilde `lineBatch`i hiç çizmiyor, kontur üreticisi
+yüzü boş modelleri atlıyordu → Çizgi/Polyline/Dikdörtgen/Daire hiçbir GL
+pass'inde yoktu (GDI'da sorun yok). Düzeltme: Solid için ayrı `freeLineBatch_`.
+Bu turda GDI ve GPU AYRI koşuldu, ikisi de yeşil: `b2b7_line_visible` (gdi)
+ve `b2b7_line_visible_gl` (gpu), 10'ar adım, `expect.lineVisible` piksel
+kanıtıyla; kareler
+`C:\work\mm-hermes-shots\2026-11-11\b2b7-b2b7_line_visible{,_gl}\`.
+Birim test neden yakalamıyordu: eski senaryo backend'i gdi'ye zorluyor ve
+yalnız model SAYISINI ölçüyordu (görünürlük bayrağı ≠ piksel).
+
 
 ## 4. B8 — Kopyalanan kesme düzlemi çizilmiyor, ama seçilebiliyor
 Plane Cut kopyalanınca kopya görünmüyor; o konuma tıklayınca seçiliyor.
@@ -701,7 +711,17 @@ Kural: kopyalanan her nesne (kesim, bulon, kaynak, komponent) aslı gibi
 görünür, seçilir, etkisini uygular (kesim → hedef üyeyi keser); geri al →
 kopya ve etkisi kalkar.
 
-Durum: —
+Durum: BİTTİ (P-2/3, `8e4d3a2`) — Kök neden: `Document::cloneDependentsForCopies`
+kesme modifier'ını YALNIZ hedef parça kopyalandığında klonluyordu; kullanıcı
+yalnız kesim DÜZLEMİNİ kopyalayınca modifier hiç kurulmuyordu (kopya görünür +
+seçilir ama kesmez). Düzeltme: `sourceCopied` dalı (hedef aynı kalır, `source`
+kopya düzleme bağlanır; boolean kesmede `tool` kopya değilse klonlanmaz) +
+kopya sonrası yeni modifier hedefleri `recomputeCutTarget` ile tazelenir
+(hem `copySelectionBy` hem `copyModelsAndRecompute`). Önce KIRMIZI: GT `t27`
+"kesme modifier sayisi 1 != 2"; sonra YEŞİL: `t27_b8_kesim_duzlemi_kopya`
+13 adım `ok=true` — 2 düzlem, 2'si görünür/çizilir, 2 kesme modifier'ı.
+Kanıt: `C:\work\mm-hermes-shots\2026-11-11\t27\`.
+
 
 ## 5. B5 — view cube (doğrula)
 a) view cube'a tıklamak seçimi sıfırlamasın; komut sırasında tıklama
