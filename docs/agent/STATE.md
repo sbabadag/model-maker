@@ -237,6 +237,64 @@
     engeli (P-2). Test bunu "yükleme+şema geçerli, üretim beklenen hata"
     olarak doğruluyor ve P-2 bitince golden ekleneceğini hatırlatıyor.
   - Kapı: tam derleme **exit=0** + tam ctest **166/166 exit=0** (23:41, 308 s).
+- **CONTRACT İSTEKLERİ (Studio, a–k) — BİTTİ (2026-11-11 10:30).** Her istek
+  AYRI sürüm + AYRI commit; `libs/mm_contract/CONTRACT.md` "Contract istekleri
+  (Studio) — sürüm günlüğü" bölümünde tek tek yazılı.
+  **MEVCUT DİGEST'LER DEĞİŞMEDİ**: yeni alanlar kanonik JSON'a YALNIZ varsayılan
+  dışı değerde yazılır (ankraj/kaynak), yeni bloklar eski recipe'lerde yok.
+
+  | istek | sürüm | commit | ne geldi |
+  |---|---|---|---|
+  | (a) manifest kanonik sıra | 1.12.0 | `098700e` | `end_plate_pkg/manifest.json` alfabetik |
+  | (b) `writePackageJsonFile` | 1.13.0 | `d61349d` | geniş/UTF-8 yol, CR reddi, sonda TEK LF |
+  | (c) `validateRecipeJsonHeader` | 1.14.0 | `494c973` | PUBLIC API (`Impl` + sarmalayıcı) |
+  | (g) yinelenen `roleKey` | 1.15.0 | `a48aa97` | dışlayıcı `when`; çalışma anında çift üretim RED |
+  | (d) `frame.member_end` | 1.16.0 | `b2b9373` | `end: lower|upper` (dünya Z) |
+  | (i) `frame.member_face` | 1.17.0 | `b8aef47` | `face` + `at`, `toward` gerekmez |
+  | (h) `frame.bisector` | 1.18.0 | `c4f4314` | açıortay düzlemi çerçevesi |
+  | (e) ankraj bulonu | 1.19.0 | `d683205` | `anchorType/Length/Embed` |
+  | (j) `bolts.grid xs/ys` | 1.20.0 | `79b6519` | Tekla `70 2*80 70` |
+  | (k) kaynak tipi | 1.21.0 | `b84590f` | `type/length/offset/around/site` |
+  | (f) `member.fit` | 1.22.0 | `408956b` | ucu düzleme KESER; UZATMA YOK |
+
+  (a)/(b)/(c) `git reset --soft 61b9d91` sonrası yeniden commit'lendi; SHA'lar
+  `git log --oneline c2f54af..HEAD` ile doğrulandı.
+  - Test: **`model_maker_contract_requests_test`** (a,b,c,g,d,i,h,e,j,k,f
+    bölümleri) — hepsi yeşil; `kContractVersion` **1.22.0**.
+  - **(f) sınırı:** `GenerationPlan`'da üye UZATMA modeli yok → `mode:
+    extend` "uzatma henüz desteklenmiyor (yalnız kesme)" ile AÇIK reddedilir
+    (sessiz yutma yok). Studio fitting aracı şimdilik yalnız kesme yapabilir.
+  - **(a) regresyonu:** manifest yeniden yazılırken `end_plate_pkg/checksums.json`
+    güncellenmemişti → paket fail-closed reddediliyordu (3 test kırmızı:
+    `component_plate_color_test`, `component_command_path_test`,
+    `component_dialog_widget_test`). Özet yeniden üretildi (`bc18291`).
+    **Ders: paket dosyasına dokunan her değişiklikte checksums.json yenilenir.**
+  - **Studio REPIN gerekli: contract 1.22.0.** Studio paketlerini bu sürümle
+    yeniden üretmeli; `planDigest` raporlamaya başlayınca golden karşılaştırması
+    eklenecek. Studio deposuna dokunulmadı (INBOX'a planlayıcı yazar).
+- **P-1/8 (tek akışlı uçtan uca GT) — BİTTİ (2026-11-11 10:35).**
+  - `tests/gt1/t22_p1_full_flow.json` (**35/35 adım, ok=true**): Studio
+    `mm_stiffened_end_plate` içe aktar → katalog (pickCount 2, visible,
+    hasDialog) → diyalog şeması (4 sekme, 8 parametre) → HEB300 + IPE240
+    (z=2880, **y=0**; y=120 verilince H-9 temas denetimi reddediyor) →
+    uygula (`componentAttached` maxGap 500) → digest `ilk` → `st_t=16`
+    (`duzenlendi` ≠ `ilk`) → kaydet → aç (aynı) → **dev klasörü v2** →
+    `appReloadPackages` → örnek YENİDEN ÜRETİLİR (`v2` ≠ `duzenlendi`) →
+    kaydet/aç (aynı).
+  - Fixture: `tests/fixtures/studio_pkgs/dev/mm_stiffened_end_plate.mmcpkg`
+    — golden paketin **türetilmiş** v2'si (schemaVersion 2, dört levha
+    kalınlığı `param.st_t + 10`, checksums yeniden üretildi). Golden DEĞİL;
+    README'de yazılı. Golden digest yalnız kök klasördeki Studio paketiyle.
+- **P-1/9 (P-1 bütünü kabul paketi) — BİTTİ (2026-11-11 10:40).**
+  - `C:\work\mm-kabul61111-1038-p1-butunu\`: `ekran\` 5 GT ekranı,
+    `ornekler\` Studio paketi + iki `.mmw` + `golden\studio_end_plate.json`,
+    `result.json`/`runner.log`/`t22_p1_full_flow.json`, `NELER-YENI.txt`
+    (deneme adımları + P-1/1…/9 özeti + contract 1.12.0…1.22.0 tablosu +
+    Studio REPIN notu).
+- **P-1 KAPISI (2026-11-11 10:45):** tam derleme **exit=0** (652 hedef) + tam
+  ctest **167/167 exit=0** (394.7 s; `model_maker_contract_requests_test`
+  dahil, GT script'leri ctest'e dahil DEĞİL — ayrı koşulur); golden
+  `178cb73b…d4818` **DEĞİŞMEDİ**; GT `t21` 25/25, GT `t22` 35/35.
 - Son güncelleme (önceki): 2026-11-09
 - Son tur: 2026-11-09 (Asus) — H-2 (ters seçim: End Plate/Fin Plate/Haunch rol
   çözümü) — BİTTİ — Kök neden: plan rol anahtarları `inputRoleFor` ile konumsal

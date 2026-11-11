@@ -52,10 +52,10 @@
     {
       "assignLine": {
         "x1": 0,
-        "y1": 120,
+        "y1": 0,
         "z1": 2880,
-        "x2": 6000,
-        "y2": 120,
+        "x2": 5000,
+        "y2": 0,
         "z2": 2880,
         "profile": "IPE240"
       }
@@ -75,6 +75,14 @@
           0,
           1
         ]
+      }
+    },
+    {
+      "expect": {
+        "componentAttached": {
+          "typeId": "mm_stiffened_end_plate",
+          "maxGap": 500
+        }
       }
     },
     {
