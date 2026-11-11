@@ -19,7 +19,7 @@ inline constexpr int kContractVersionMinor = 11;
 inline constexpr int kContractVersionPatch = 0;
 
 // Tek string semver: "1.11.0".
-inline constexpr const char* kContractVersion = "1.20.0";
+inline constexpr const char* kContractVersion = "1.21.0";
 
 // Istenen min surum mevcut kontrat tarafindan karsilaniyor mu?
 // Semver: major FARKLIYSA desteklenmez (ne ust ne alt); ayni majorda

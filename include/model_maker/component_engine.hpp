@@ -294,6 +294,17 @@ struct WeldSpec {
     double throat{0.0};        // legacy: bacak (leg) anlaminda tutulur
     double size{5.0};          // kaynak olcusu (bacak, mm) — generator bunu kullanir
     bool doubleSided{false};   // cift tarafli fillet kaynagi
+    // 1.21.0 (contract istegi k / HR-18): kaynak TIPI ve KISMI kaynak bilgisi.
+    // type bos ise "fillet" kabul edilir ve alanlar kanonik JSON'a YAZILMAZ
+    // (mevcut digest'ler degismez). type = "fillet" | "butt".
+    // length = kaynak uzunlugu (0 = tam boy), offset = baslangic ofseti (mm),
+    // around = eleman cevresine dolanan kaynak, site = SANTIYE kaynagi
+    // (false = atolye).
+    std::string type;
+    double length{0.0};
+    double offset{0.0};
+    bool around{false};
+    bool site{false};
     std::wstring name;
 };
 

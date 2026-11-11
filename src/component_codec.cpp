@@ -1061,6 +1061,13 @@ json weldSpecToJson(const WeldSpec& w) {
     j["throat"] = w.throat;
     j["size"] = w.size;
     j["doubleSided"] = w.doubleSided;
+    // 1.21.0 (k): tip/kismi kaynak/cevre/santiye YALNIZ varsayilan disiysa
+    // yazilir; varsayilan kaynaklarin kanonik JSON'u (ve digest'i) degismez.
+    if (!w.type.empty()) j["type"] = w.type;
+    if (w.length != 0.0) j["length"] = w.length;
+    if (w.offset != 0.0) j["offset"] = w.offset;
+    if (w.around) j["around"] = w.around;
+    if (w.site) j["site"] = w.site;
     j["name"] = utf8FromWide(w.name);
     return j;
 }
@@ -1074,6 +1081,11 @@ WeldSpec weldSpecFromJson(const json& j) {
     w.throat = j.value("throat", 0.0);
     w.size = j.value("size", 5.0);
     w.doubleSided = j.value("doubleSided", false);
+    w.type = j.value("type", std::string());
+    w.length = j.value("length", 0.0);
+    w.offset = j.value("offset", 0.0);
+    w.around = j.value("around", false);
+    w.site = j.value("site", false);
     w.name = wideFromUtf8(j.value("name", std::string()));
     return w;
 }

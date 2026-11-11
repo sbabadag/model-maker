@@ -369,6 +369,24 @@ dosyalarında alanlar yoktur; okurken boş/0'a düşer (geriye uyumlu).
 - `xs`/`ys` verilmezse davranış değişmez (`nx`/`ny` + `px`/`py`), aralık
   listeleri boş kalır → mevcut digest'ler etkilenmez.
 
+### 1.21.0 — (k) kaynak: küt tip, kısmi uzunluk/ofset, çevre, atölye/şantiye (HR-18)
+
+`weld.fillet` yeni argümanlar (hepsi opsiyonel):
+
+| argüman | anlam |
+|---|---|
+| `type` | `fillet` (varsayılan) veya `butt` (küt kaynak) |
+| `length` | kaynak uzunluğu (mm, ≥ 0); `0` = tam boy |
+| `offset` | kaynağın başlangıç ofseti (mm, ≥ 0) |
+| `around` | eleman çevresine dolanan kaynak |
+| `site` | **şantiye** kaynağı; verilmezse atölye |
+
+`WeldSpec` alanları: `type`, `length`, `offset`, `around`, `site`.
+**Digest kuralı:** alanlar kanonik JSON'a YALNIZ varsayılan dışı değerdeyken
+yazılır (`type` boş, `length/offset` 0, `around/site` false) → mevcut kaynak
+içeren planların digest'i değişmez. `type: "fillet"` açıkça yazılırsa da
+varsayılana normalleşir (boş). Geçersiz `type`, negatif `length/offset` → açık ret.
+
 ## Sürüm denetimi DIŞINDA olanlar (serbest)
 
 - `.cpp` iç kod (header'daki imzayı değiştirmediği sürece)

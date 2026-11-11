@@ -1281,6 +1281,28 @@ static bool blockWeldFillet(EvalCtx& ctx, const RecipeStep& st, GenerationPlan& 
     w.partBRole = b;
     w.size = size;
     w.doubleSided = dbl;
+    // 1.21.0 (contract istegi k / HR-18): tip + kismi kaynak + cevre + santiye.
+    std::string type;
+    if (!strArg(st, "type", "", type)) return false;
+    if (!type.empty() && type != "fillet" && type != "butt") {
+        ctx.error = wideFromUtf8("weld.fillet: gecersiz type '" + type + "' (fillet|butt)");
+        return false;
+    }
+    double wlen = 0.0, woff = 0.0;
+    if (!numArg(ctx, st, "length", 0.0, wlen)) return false;
+    if (!numArg(ctx, st, "offset", 0.0, woff)) return false;
+    if (wlen < 0.0 || woff < 0.0) {
+        ctx.error = L"weld.fillet: length/offset negatif olamaz";
+        return false;
+    }
+    bool around = false, site = false;
+    if (!boolArg(ctx, st, "around", false, around)) return false;
+    if (!boolArg(ctx, st, "site", false, site)) return false;
+    w.type = (type == "fillet") ? std::string() : type;  // fillet = varsayilan
+    w.length = wlen;
+    w.offset = woff;
+    w.around = around;
+    w.site = site;
     plan.welds.push_back(w);
     plan.weldKeys.push_back(st.role);
     return true;
@@ -1649,8 +1671,10 @@ static const std::vector<BlockDecl>& blockRegistry() {
                         "anchorLength", "anchorEmbed"},
          {"frame", "grade", "anchorType"}, {"through", "xs", "ys"},
          &blockBoltsGrid, {"grade"}, {}, {"through"}, {}},
-        {"weld.fillet", {"size"}, {"roleA", "roleB", "double", "doubleSided"}, {},
-         &blockWeldFillet, {}, {"double", "doubleSided"}, {}, {}},
+        // 1.21.0 (k): type (fillet|butt), length/offset (kismi kaynak), around, site.
+        {"weld.fillet", {"size", "length", "offset"},
+         {"roleA", "roleB", "double", "doubleSided", "type", "around", "site"}, {},
+         &blockWeldFillet, {}, {"double", "doubleSided", "around", "site"}, {}, {}},
         {"cut.plane", {}, {"target", "frame", "keep"}, {}, &blockCutPlane,
          {}, {}, {"target"}, {}},
         {"endplate.placement", {}, {"main", "beam", "rolePlate", "roleBolts"}, {},

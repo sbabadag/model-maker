@@ -515,6 +515,65 @@ static void sectionJ() {
     CHECK(!neg.ok, "j: negatif aralik REDDEDILMELIYDI");
 }
 
+// --- k) weld.fillet: tip / kismi kaynak / cevre / santiye --------------------
+static GenerationPlan weldPlan(const std::string& type, double len, double off,
+                               bool around, bool site) {
+    Recipe r;
+    r.recipeVersion = "1.0.0";
+    RecipeStep w;
+    w.id = "w1";
+    w.use = "weld.fillet";
+    w.role = "kose_kaynagi";
+    w.args["roleA"].text = "main";
+    w.args["roleB"].text = "secondary_0";
+    w.args["size"].text = "6";
+    if (!type.empty()) w.args["type"].text = type;
+    if (len != 0.0) w.args["length"].text = std::to_string(static_cast<int>(len));
+    if (off != 0.0) w.args["offset"].text = std::to_string(static_cast<int>(off));
+    if (around) w.args["around"].text = "true";
+    if (site) w.args["site"].text = "true";
+    r.steps.push_back(w);
+    ComponentInput in;
+    in.main = memberGeometryFromProfile({0, 0, 0}, {0, 0, 3000}, false, {1, 0, 0}, 0.0,
+                                        MemberSectionSpec{300.0, 300.0, 11.0, 19.0, 0.0});
+    in.secondary.push_back(memberGeometryFromProfile({0, 0, 2880}, {4000, 0, 2880}, true,
+                                                     {1, 0, 0}, 0.0,
+                                                     MemberSectionSpec{200.0, 200.0, 8.0, 12.0, 0.0}));
+    return runRecipe(r, {}, in);
+}
+
+static void sectionK() {
+    std::printf("[k] weld.fillet tip/kismi/cevre/santiye\n");
+    const GenerationPlan full = weldPlan("", 0.0, 0.0, false, false);
+    CHECK(full.ok && full.welds.size() == 1, "k: varsayilan kaynak uretilmeli");
+    if (full.ok && !full.welds.empty()) {
+        CHECK(full.welds[0].type.empty(), "k: varsayilan type BOS (fillet)");
+        const std::string cj = generationPlanCanonicalJson(full);
+        CHECK(cj.find("\"site\"") == std::string::npos, "k: varsayilan kaynakta 'site' YOK");
+        CHECK(cj.find("\"around\"") == std::string::npos, "k: varsayilan kaynakta 'around' YOK");
+        CHECK(cj.find("\"type\"") == std::string::npos, "k: varsayilan kaynakta 'type' YOK");
+    }
+    const GenerationPlan butt = weldPlan("butt", 120.0, 30.0, true, true);
+    if (!butt.ok) std::printf("      [teshis] k hata: %ls\n", butt.error.c_str());
+    CHECK(butt.ok && butt.welds.size() == 1, "k: kismi küt kaynak uretilmeli");
+    if (butt.ok && !butt.welds.empty()) {
+        const WeldSpec& wl = butt.welds[0];
+        CHECK(wl.type == "butt", "k: type butt");
+        CHECK(std::fabs(wl.length - 120.0) < 1e-9, "k: length 120");
+        CHECK(std::fabs(wl.offset - 30.0) < 1e-9, "k: offset 30");
+        CHECK(wl.around, "k: around true");
+        CHECK(wl.site, "k: site (santiye) true");
+        const std::string cj = generationPlanCanonicalJson(butt);
+        CHECK(cj.find("\"butt\"") != std::string::npos, "k: kanonik JSON'da type butt yazilmali");
+    }
+    // gecersiz tip -> RED
+    const GenerationPlan bad = weldPlan("yari", 0.0, 0.0, false, false);
+    CHECK(!bad.ok, "k: gecersiz type REDDEDILMELIYDI");
+    // negatif uzunluk -> RED
+    const GenerationPlan neg = weldPlan("fillet", 0.0, -5.0, false, false);
+    CHECK(!neg.ok, "k: negatif offset REDDEDILMELIYDI");
+}
+
 int main() {
     std::printf("contract %s\n", kContractVersion);
     sectionA();
@@ -525,6 +584,7 @@ int main() {
     sectionH();
     sectionE();
     sectionJ();
+    sectionK();
     sectionG();
     if (failures == 0) std::printf("TUM TESTLER GECTI\n");
     else std::printf("%d HATA\n", failures);
