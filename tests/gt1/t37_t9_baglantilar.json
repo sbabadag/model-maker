@@ -1,0 +1,292 @@
+{
+  "_comment": "T-9 BAGLANTILAR: End Plate (HEB260+IPE300) kuruldu/levha temasli/digest; parametre degisimi MEVCUT kaydi gunceller (appComponentParams; yeni ornek olusmaz) ve geometri degisir; Haunch(40) egik mertekte levha boslugu <=1 mm; 146 ve Fin Plate ayni sahnede; undo yalniz son baglantiyi kaldirir (digerleri kalir). Katalog/hizli arama erisimi B1 kapsaminda ayri kanitli. NOT: bilesenler kendi levha modellerini de ekler; bundan sonra models.count yerine profiled ve componentCount kullanilir.",
+  "backend": "gdi",
+  "timeoutMs": 240000,
+  "steps": [
+    {
+      "profile": "HEB260"
+    },
+    {
+      "appColumnLevels": {
+        "top": 4000,
+        "bottom": 0
+      }
+    },
+    {
+      "placeColumn": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      }
+    },
+    {
+      "assignLine": {
+        "x1": 0,
+        "y1": 0,
+        "z1": 4000,
+        "x2": 5000,
+        "y2": 0,
+        "z2": 4000,
+        "profile": "IPE300"
+      }
+    },
+    {
+      "assignLine": {
+        "x1": 0,
+        "y1": 0,
+        "z1": 4000,
+        "x2": 6000,
+        "y2": 0,
+        "z2": 4500,
+        "profile": "IPE300"
+      }
+    },
+    {
+      "key": "Escape"
+    },
+    {
+      "expect": {
+        "models": {
+          "count": 3,
+          "profiled": 3
+        }
+      }
+    },
+    {
+      "appComponent": {
+        "typeId": "beam_to_column_end_plate",
+        "parts": [
+          0,
+          1
+        ]
+      }
+    },
+    {
+      "expect": {
+        "componentCount": {
+          "typeId": "beam_to_column_end_plate",
+          "count": 1
+        }
+      }
+    },
+    {
+      "expect": {
+        "componentAttached": {
+          "typeId": "beam_to_column_end_plate",
+          "maxGap": 500
+        }
+      }
+    },
+    {
+      "expect": {
+        "componentDigest": {
+          "typeId": "beam_to_column_end_plate",
+          "key": "ep",
+          "remember": true
+        }
+      }
+    },
+    {
+      "appComponentParams": {
+        "typeId": "beam_to_column_end_plate",
+        "params": {
+          "plateThickness": 16.0,
+          "plateWidth": 200.0
+        }
+      }
+    },
+    {
+      "expect": {
+        "componentCount": {
+          "typeId": "beam_to_column_end_plate",
+          "count": 1
+        }
+      }
+    },
+    {
+      "expect": {
+        "componentAttached": {
+          "typeId": "beam_to_column_end_plate",
+          "maxGap": 500
+        }
+      }
+    },
+    {
+      "expect": {
+        "componentDigest": {
+          "typeId": "beam_to_column_end_plate",
+          "key": "ep",
+          "notEquals": true
+        }
+      }
+    },
+    {
+      "expect": {
+        "componentDigest": {
+          "typeId": "beam_to_column_end_plate",
+          "key": "ep2",
+          "remember": true
+        }
+      }
+    },
+    {
+      "cmd": "view.dir.iso"
+    },
+    {
+      "fit": {}
+    },
+    {
+      "capture": {
+        "name": "t9-00-end-plate-param",
+        "target": "window"
+      }
+    },
+    {
+      "appComponent": {
+        "typeId": "tekla_haunch_40",
+        "parts": [
+          0,
+          2
+        ],
+        "params": {
+          "haunchDepth": 500,
+          "haunchTipDepth": 30
+        }
+      }
+    },
+    {
+      "expect": {
+        "componentCount": {
+          "typeId": "tekla_haunch_40",
+          "count": 1
+        }
+      }
+    },
+    {
+      "expect": {
+        "componentPlateGap": {
+          "typeId": "tekla_haunch_40",
+          "childRole": "haunch_end_plate",
+          "against": "main",
+          "maxGap": 1.0
+        }
+      }
+    },
+    {
+      "expect": {
+        "componentAttached": {
+          "typeId": "tekla_haunch_40",
+          "maxGap": 500
+        }
+      }
+    },
+    {
+      "cmd": "fit"
+    },
+    {
+      "capture": {
+        "name": "t9-01-haunch40",
+        "target": "window"
+      }
+    },
+    {
+      "appComponent": {
+        "typeId": "tekla_shear_plate_146",
+        "parts": [
+          0,
+          1
+        ]
+      }
+    },
+    {
+      "expect": {
+        "componentCount": {
+          "typeId": "tekla_shear_plate_146",
+          "count": 1
+        }
+      }
+    },
+    {
+      "expect": {
+        "componentAttached": {
+          "typeId": "tekla_shear_plate_146",
+          "maxGap": 500
+        }
+      }
+    },
+    {
+      "appComponent": {
+        "typeId": "fin_plate",
+        "parts": [
+          0,
+          1
+        ]
+      }
+    },
+    {
+      "expect": {
+        "componentCount": {
+          "typeId": "fin_plate",
+          "count": 1
+        }
+      }
+    },
+    {
+      "expect": {
+        "componentAttached": {
+          "typeId": "fin_plate",
+          "maxGap": 500
+        }
+      }
+    },
+    {
+      "cmd": "fit"
+    },
+    {
+      "capture": {
+        "name": "t9-02-dort-baglanti",
+        "target": "window"
+      }
+    },
+    {
+      "cmd": "edit.undo"
+    },
+    {
+      "expect": {
+        "componentCount": {
+          "typeId": "fin_plate",
+          "count": 0
+        }
+      }
+    },
+    {
+      "expect": {
+        "componentCount": {
+          "typeId": "beam_to_column_end_plate",
+          "count": 1
+        }
+      }
+    },
+    {
+      "expect": {
+        "componentCount": {
+          "typeId": "tekla_haunch_40",
+          "count": 1
+        }
+      }
+    },
+    {
+      "expect": {
+        "models": {
+          "profiled": 3
+        }
+      }
+    },
+    {
+      "capture": {
+        "name": "t9-03-fin-geri-alindi",
+        "target": "window"
+      }
+    }
+  ]
+}

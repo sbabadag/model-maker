@@ -674,3 +674,14 @@ sürerken yalnız `docs/` düzenlenir.
 - KAPSAM DISI (UI-3): Line/Polygon/Part Cut ve Fitting tam akisi - kosucuda 3B
   nokta/3DFACE secimi yok. Eksenel iki kolon Part Cut'ta kesim uretmedi.
 - Kanit: shots\2026-11-11\t36 (GDI) + t36gpu (GPU). Kapi: `t8-gate.log`.
+
+## T-9 — baglantilar (kapandi, kismi, 2026-11-11)
+
+- GT `t37_t9_baglantilar` 39 adim `ok=true`, GDI ve GPU ayni.
+- End Plate / Haunch(40) / 146 / Fin Plate ayni sahnede kuruldu; parametre
+  degisimi mevcut kaydi gunceller (appComponentParams) ve digest degisir.
+- Undo yalniz son baglantiyi kaldirir. Levhalar sahnede gri.
+- Bulgu: baglanti levhalari Model Agaci'nda satir olarak gorunmuyor.
+- KAPSAM DISI (UI-3): diyalog mock view, ihlal -> kirmizi check (ctest
+  componentContactCheck), katalog/hizli arama ile acma (B1).
+- Kanit: shots\2026-11-11\t37 (GDI) + t37gpu (GPU). Kapi: `t9-gate.log`.

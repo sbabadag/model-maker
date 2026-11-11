@@ -987,6 +987,27 @@ T-8: GEÇTİ (kısmi) — GT `t36_t8_kesimler`, 46 adım `ok=true`, GDI ve GPU a
     gerçek kesici gövde gerekiyor.
     Kanıt: `C:\work\mm-hermes-shots\2026-11-11\t36\` ve `t36gpu\`.
 
+T-9: GEÇTİ (kısmi) — GT `t37_t9_baglantilar`, 39 adım `ok=true`, GDI ve GPU aynı.
+    Sahne: HEB260 kolon + IPE300 kiriş + IPE300 eğik mertek.
+    END PLATE (HEB260+IPE300): kuruldu, levha temaslı (`componentAttached` ≤500),
+    geometrik digest kaydedildi.
+    PARAMETRE DEĞİŞTİR → GÜNCELLE: `appComponentParams` MEVCUT kaydı güncelledi
+    (kopya oluşmadı, count 1 kaldı), levha teması korundu, digest DEĞİŞTİ
+    (`notEquals`) — yani geometri gerçekten yenilendi.
+    HAUNCH (40): eğik mertek + kolon, `haunch_end_plate` boşluğu ≤1 mm,
+    temas ≤500 mm.
+    146 ve FIN PLATE aynı sahnede kuruldu (her biri count 1, temaslı).
+    GERİ AL: yalnız son bağlantı (fin plate) kalktı; end plate ve haunch kaldı,
+    profilli model sayısı 3.
+    Vision: bir kolon + iki kiriş + GRİ bağlantı levhaları görünüyor.
+    Bulgu: Model Ağacı'nda yalnız "Profiller" (HEB260, IPE300, IPE300) listeleniyor;
+    bağlantı levhaları ağaçta satır olarak görünmüyor (3B'de var, durum çubuğu
+    nesne sayısına dahil). Kusur mu tasarım mı — ayrı madde adayı.
+    ATLANDI (UI-3): diyalog mock view (B1 kapsamında diyalog yolu ayrı), ihlal →
+    kırmızı check (diyalog yüzeyi; kural katmanı `componentContactCheck` ctest'te
+    kanıtlı), katalog/hızlı arama ile açma (B1 testi).
+    Kanıt: `C:\work\mm-hermes-shots\2026-11-11\t37\` ve `t37gpu\`.
+
 ## Açık soru (yanıtla, Durum'a yaz)
 - 893e770 "feat(document): çoklu seçim özellik düzenleme + tek geri alma
   adımı" istenmemişti. Ne yapıyor, hangi maddeye ait, testi var mı?

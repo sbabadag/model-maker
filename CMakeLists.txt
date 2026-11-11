@@ -228,7 +228,7 @@ if(MM_GUI_TESTS AND WIN32 AND TARGET model-maker)
                      t27_b8_kesim_duzlemi_kopya t28_b5_view_cube
                      t29_t1_aks_grid t30_t2_kolon_profil t31_t3_kiris_mertek
                      t32_t5_secim t33_t4_yardimci_cizgi t34_t6_ozellikler_paneli
-                     t35_t7_duzenle t36_t8_kesimler)
+                     t35_t7_duzenle t36_t8_kesimler t37_t9_baglantilar)
         add_test(NAME model_maker_gt1_${scenario}
             COMMAND model-maker
                 --test-script ${CMAKE_CURRENT_SOURCE_DIR}/tests/gt1/${scenario}.json
