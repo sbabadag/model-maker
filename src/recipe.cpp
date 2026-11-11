@@ -1108,6 +1108,53 @@ static bool blockPlatePolygon(EvalCtx& ctx, const RecipeStep& st, GenerationPlan
     return true;
 }
 
+// 1.20.0 (contract istegi j / HR-17): Tekla "esit olmayan aralik" yazimi.
+// Her oge tek sayi ("80") ya da "n*adim" ("2*80") olabilir; ogeler bosluk/noktali
+// virgul ile de ayrilabilir ("70 2*80 70"). Sonuc: aralik listesi
+// (bulon sayisi = liste uzunlugu + 1).
+static bool parseSpacingList(const std::vector<std::string>& items, const char* key,
+                             std::vector<double>& out, std::wstring& err) {
+    out.clear();
+    for (const auto& item : items) {
+        std::size_t i = 0;
+        while (i < item.size()) {
+            while (i < item.size() &&
+                   (item[i] == ' ' || item[i] == '	' || item[i] == ';' || item[i] == ',')) ++i;
+            if (i >= item.size()) break;
+            const std::size_t begin = i;
+            while (i < item.size() &&
+                   item[i] != ' ' && item[i] != '	' && item[i] != ';' && item[i] != ',') ++i;
+            const std::string tok = item.substr(begin, i - begin);
+            double n = 1.0;
+            double step = 0.0;
+            try {
+                const std::size_t star = tok.find('*');
+                if (star == std::string::npos) {
+                    step = std::stod(tok);
+                } else {
+                    n = std::stod(tok.substr(0, star));
+                    step = std::stod(tok.substr(star + 1));
+                }
+            } catch (...) {
+                err = wideFromUtf8(std::string(key) + ": gecersiz aralik '" + tok + "'");
+                return false;
+            }
+            const int count = static_cast<int>(std::llround(n));
+            if (count < 1 || count > 64 || !(step > 0.0)) {
+                err = wideFromUtf8(std::string(key) + ": gecersiz aralik '" + tok +
+                                   "' (n 1..64, adim > 0)");
+                return false;
+            }
+            for (int k = 0; k < count; ++k) out.push_back(step);
+        }
+    }
+    if (out.empty()) {
+        err = wideFromUtf8(std::string(key) + ": bos aralik listesi");
+        return false;
+    }
+    return true;
+}
+
 static bool blockBoltsGrid(EvalCtx& ctx, const RecipeStep& st, GenerationPlan& plan) {
     MemberLocalFrame* f = frameArg(ctx, st, "frame");
     if (!f) return false;
@@ -1136,8 +1183,20 @@ static bool blockBoltsGrid(EvalCtx& ctx, const RecipeStep& st, GenerationPlan& p
     if (!strListArg(ctx, st, "through", through)) return false;
     std::string grade;
     if (!strParamArg(ctx, st, "grade", "", grade)) return false;
-    const int cx = static_cast<int>(nx);
-    const int cy = static_cast<int>(ny);
+    // 1.20.0 (j): `xs`/`ys` verilirse araliklar ACIKCA listeden gelir; bulon
+    // sayisi = aralik sayisi + 1. Verilmezse nx/ny + px/py (eski davranis).
+    std::vector<std::string> xsItems, ysItems;
+    if (!strListArg(ctx, st, "xs", xsItems)) return false;
+    if (!strListArg(ctx, st, "ys", ysItems)) return false;
+    std::vector<double> spacXs, spacYs;
+    if (!xsItems.empty()) {
+        if (!parseSpacingList(xsItems, "bolts.grid xs", spacXs, ctx.error)) return false;
+    }
+    if (!ysItems.empty()) {
+        if (!parseSpacingList(ysItems, "bolts.grid ys", spacYs, ctx.error)) return false;
+    }
+    const int cx = spacXs.empty() ? static_cast<int>(nx) : static_cast<int>(spacXs.size()) + 1;
+    const int cy = spacYs.empty() ? static_cast<int>(ny) : static_cast<int>(spacYs.size()) + 1;
     if (cx < 1 || cy < 1) { ctx.error = L"bolts.grid: nx/ny en az 1 olmali"; return false; }
     if (cx * cy > 64) { ctx.error = L"bolts.grid: grup basina en fazla 64 bulon"; return false; }
     if (ctx.totalBolts + cx * cy > 512) { ctx.error = L"bolts.grid: toplam bulon 512'yi asiyor"; return false; }
@@ -1147,8 +1206,10 @@ static bool blockBoltsGrid(EvalCtx& ctx, const RecipeStep& st, GenerationPlan& p
     b.xDir = f->u;
     b.countX = cx;
     b.countY = cy;
-    b.spacingX = px;
-    b.spacingY = py;
+    b.spacingX = spacXs.empty() ? px : (spacXs.size() == 1 ? spacXs[0] : 0.0);
+    b.spacingY = spacYs.empty() ? py : (spacYs.size() == 1 ? spacYs[0] : 0.0);
+    b.spacingXs = spacXs;
+    b.spacingYs = spacYs;
     b.params.nominalDiameter = d;
     b.params.holeDiameter = hole;
     if (!grade.empty()) b.params.grade = grade;
@@ -1586,8 +1647,8 @@ static const std::vector<BlockDecl>& blockRegistry() {
         // 1.19.0 (e): ankraj bulonu — anchorType (metin), anchorLength/anchorEmbed.
         {"bolts.grid", {"nx", "ny", "px", "py", "d", "hole", "grip", "holeDepth",
                         "anchorLength", "anchorEmbed"},
-         {"frame", "grade", "anchorType"}, {"through"}, &blockBoltsGrid, {"grade"},
-         {}, {"through"}, {}},
+         {"frame", "grade", "anchorType"}, {"through", "xs", "ys"},
+         &blockBoltsGrid, {"grade"}, {}, {"through"}, {}},
         {"weld.fillet", {"size"}, {"roleA", "roleB", "double", "doubleSided"}, {},
          &blockWeldFillet, {}, {"double", "doubleSided"}, {}, {}},
         {"cut.plane", {}, {"target", "frame", "keep"}, {}, &blockCutPlane,

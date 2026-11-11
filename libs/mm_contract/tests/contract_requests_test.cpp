@@ -441,6 +441,80 @@ static void sectionE() {
     CHECK(!neg.ok, "e: negatif anchorLength REDDEDILMELIYDI");
 }
 
+// --- j) bolts.grid esit olmayan aralik (xs/ys, Tekla yazimi) ------------------
+static GenerationPlan spacingPlan(const std::vector<std::string>& xs,
+                                  const std::vector<std::string>& ys) {
+    Recipe r;
+    r.recipeVersion = "1.0.0";
+    RecipeStep f;
+    f.id = "f1";
+    f.use = "frame.member_end";
+    f.args["member"].text = "main";
+    f.args["end"].text = "lower";
+    r.steps.push_back(f);
+    RecipeStep b;
+    b.id = "b1";
+    b.use = "bolts.grid";
+    b.role = "bulonlar";
+    b.args["frame"].text = "f1";
+    b.args["d"].text = "20";
+    b.args["hole"].text = "22";
+    if (!xs.empty()) {
+        RecipeArg list;
+        list.isList = true;
+        for (const auto& s : xs) { RecipeArg it; it.text = s; list.items.push_back(it); }
+        b.args["xs"] = list;
+    }
+    if (!ys.empty()) {
+        RecipeArg list;
+        list.isList = true;
+        for (const auto& s : ys) { RecipeArg it; it.text = s; list.items.push_back(it); }
+        b.args["ys"] = list;
+    }
+    r.steps.push_back(b);
+    ComponentInput in;
+    in.main = memberGeometryFromProfile({0, 0, 0}, {0, 0, 3000}, /*connectionAtA=*/false,
+                                        {1, 0, 0}, 0.0,
+                                        MemberSectionSpec{300.0, 300.0, 11.0, 19.0, 0.0});
+    return runRecipe(r, {}, in);
+}
+
+static void sectionJ() {
+    std::printf("[j] bolts.grid xs/ys (Tekla aralik yazimi)\n");
+    // "70 2*80 70" tek oge icinde: 4 aralik -> 5 bulon
+    const GenerationPlan p1 = spacingPlan({"70 2*80 70"}, {});
+    CHECK(p1.ok && p1.boltGroups.size() == 1, "j: xs'li plan uretilmeli");
+    if (p1.ok && !p1.boltGroups.empty()) {
+        const BoltGroup& g = p1.boltGroups[0];
+        CHECK(g.countX == 5, "j: countX = aralik sayisi + 1 = 5");
+        CHECK(g.spacingXs.size() == 4, "j: 4 aralik yazilmali");
+        if (g.spacingXs.size() == 4) {
+            CHECK(std::fabs(g.spacingXs[0] - 70.0) < 1e-9, "j: 1. aralik 70");
+            CHECK(std::fabs(g.spacingXs[1] - 80.0) < 1e-9, "j: 2. aralik 80");
+            CHECK(std::fabs(g.spacingXs[2] - 80.0) < 1e-9, "j: 3. aralik 80");
+            CHECK(std::fabs(g.spacingXs[3] - 70.0) < 1e-9, "j: 4. aralik 70");
+        }
+    }
+    // liste formu: iki oge, her biri tek sayi -> 2 aralik, 3 bulon
+    const GenerationPlan p2 = spacingPlan({"60", "90"}, {"40", "40"});
+    if (p2.ok && !p2.boltGroups.empty()) {
+        const BoltGroup& g = p2.boltGroups[0];
+        CHECK(g.countX == 3 && g.countY == 3, "j: 2+1 x 2+1 bulon");
+        CHECK(g.spacingXs.size() == 2 && g.spacingYs.size() == 2, "j: 2 x 2 aralik");
+    }
+    // xs yok -> eski davranis (nx/px)
+    const GenerationPlan p3 = spacingPlan({}, {});
+    if (p3.ok && !p3.boltGroups.empty()) {
+        CHECK(p3.boltGroups[0].countX == 1 && p3.boltGroups[0].spacingXs.empty(),
+              "j: xs yoksa countX=1 ve aralik listesi bos");
+    }
+    // gecersiz yazim -> RED
+    const GenerationPlan bad = spacingPlan({"70 abc 70"}, {});
+    CHECK(!bad.ok, "j: gecersiz aralik yazimi REDDEDILMELIYDI");
+    const GenerationPlan neg = spacingPlan({"-10"}, {});
+    CHECK(!neg.ok, "j: negatif aralik REDDEDILMELIYDI");
+}
+
 int main() {
     std::printf("contract %s\n", kContractVersion);
     sectionA();
@@ -450,6 +524,7 @@ int main() {
     sectionI();
     sectionH();
     sectionE();
+    sectionJ();
     sectionG();
     if (failures == 0) std::printf("TUM TESTLER GECTI\n");
     else std::printf("%d HATA\n", failures);

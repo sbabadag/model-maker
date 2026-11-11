@@ -356,6 +356,19 @@ Gerekçe: yukarıdan aşağı çizilmiş kolonda `axisFrom` üstte kalır; taban
 yazılır → normal bulon gruplarının digest'i değişmez. Eski `.mmw`/paket
 dosyalarında alanlar yoktur; okurken boş/0'a düşer (geriye uyumlu).
 
+### 1.20.0 — (j) `bolts.grid` eşit olmayan aralık (`xs`, `ys`) (HR-17)
+
+`bolts.grid` artık `xs` / `ys` listeleriyle **değişken aralık** kabul eder
+(Tekla `"70 2*80 70"` yazımı):
+
+- Her öğe tek sayı (`"80"`) ya da `n*adım` (`"2*80"`) olabilir; öğe içinde
+  boşluk / `;` / `,` ile birden çok aralık yazılabilir.
+- Aralık listesi doğrudan `BoltGroup::spacingXs` / `spacingYs` alanına yazılır;
+  bulon sayısı `countX = aralık sayısı + 1`.
+- `n` 1..64, adım > 0; aksi halde **açık ret** (`gecersiz aralik '<token>'`).
+- `xs`/`ys` verilmezse davranış değişmez (`nx`/`ny` + `px`/`py`), aralık
+  listeleri boş kalır → mevcut digest'ler etkilenmez.
+
 ## Sürüm denetimi DIŞINDA olanlar (serbest)
 
 - `.cpp` iç kod (header'daki imzayı değiştirmediği sürece)
