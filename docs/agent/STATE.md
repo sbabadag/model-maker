@@ -346,6 +346,19 @@
   - Kanıt: `tests/gt1/t25_p2_polygon_materyalizasyon.json` —
     `mm_stiffened_base_plate` (6 kontur levhası) içe aktar + uygula:
     **düzeltme öncesi `componentCount=0`** (adım FAIL), düzeltme sonrası
+- **P-2 VAR/YOK listesi yazıldı:** `docs/agent/P-2-VAR-YOK.md` — her recipe
+  çıktısı için VAR / KISMI / YOK + kanıt (dosya:satır, test, GT). Eksikler
+  sırayla: ankraj bulonu deliği (P-2/2), `cut.plane` görünürlüğü (P-2/3, B8 ile
+  aynı kök), içbükey `plate.polygon` (P-2/4), BOM/malzeme listesi (P-2/5),
+  kopyala/taşı bütünlüğü (P-2/6), GT-1 GUI senaryosu (P-2/7). BOM özelliği
+  MM'de YOK; malzeme bilgisi parça özelliklerinde + `Pos_No:` açıklamasında.
+  - **Golden (2026-11-11 17:55):** `tests/golden/studio_base_plate.json`
+    (`planDigest 92134f6a…c85e`) — kanonik HEB300 kolon (yalnız kolon, pickCount 1),
+    varsayılan parametreler: 3 levha (500×500×30 taban + 2 kontur), 1 bulon
+    grubu, 5 kaynak. `studio_package_golden_test` bölüm 2 artık "P-2 engeli"
+    beklentisini DEĞİL, gerçek golden'ı denetler: 26 PASS / 0 FAIL, digest iki
+    koşumda birebir aynı. Kontur levhalarında `width/height > 0` ve
+    `outline` dolu olması ayrıca kontrol edilir (P-2 regresyon kilidi).
     komponent yerleşir ve 17 model oluşur (taban levhası + 8 ankraj +
     6 kontur levhası + kaynaklar). `recipe_test` (HR-3) artık
     `width/height == sınır kutusu` kontrolünü de yapar.
