@@ -1,0 +1,372 @@
+{
+  "_comment": "T-13 KISAYOLLAR: tuval odakli tek harf komutlari (G kolon, L cizgi, M tasi, K kopyala, I ayna, T trim, E extend) durum cubugu metniyle; Esc -> PASIF; Delete + Ctrl+Z/Ctrl+Y; Ctrl+5 plan / Ctrl+7 izometrik kamera degerleriyle; F9 GRID, F8 ORTHO, F2 stil dongusu; Alt+1..4 stilleri (Alt menu odagini alir, en sonda ve her birinden sonra Esc). Turkce karakter girisi arama alaninda. BULGU: F7 hicbir durum bayragini degistirmiyor (grid F9'da). KAPSAM DISI (UI-3): O/Q/D klavyeden modal sayisal giris aciyor ve kosucuyu bloke ediyor; Ctrl+S T-12'de; Ctrl+Tab tek gorunum; 'metin alani odaktayken tek harf tetiklemez' adimi kosucuda yok.",
+  "backend": "gdi",
+  "timeoutMs": 240000,
+  "steps": [
+    {
+      "profile": "HEB240"
+    },
+    {
+      "appColumnLevels": {
+        "top": 3000,
+        "bottom": 0
+      }
+    },
+    {
+      "placeColumn": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      }
+    },
+    {
+      "key": "Escape"
+    },
+    {
+      "expect": {
+        "models": {
+          "count": 1
+        }
+      }
+    },
+    {
+      "key": "G"
+    },
+    {
+      "expect": {
+        "status": {
+          "contains": "Araç: COLUMN"
+        }
+      }
+    },
+    {
+      "key": "Escape"
+    },
+    {
+      "expect": {
+        "status": {
+          "contains": "PASİF"
+        }
+      }
+    },
+    {
+      "key": "L"
+    },
+    {
+      "expect": {
+        "status": {
+          "contains": "Araç: LINE"
+        }
+      }
+    },
+    {
+      "key": "Escape"
+    },
+    {
+      "key": "M"
+    },
+    {
+      "expect": {
+        "status": {
+          "contains": "Komut: MOVE"
+        }
+      }
+    },
+    {
+      "key": "Escape"
+    },
+    {
+      "key": "K"
+    },
+    {
+      "expect": {
+        "status": {
+          "contains": "Komut: COPY"
+        }
+      }
+    },
+    {
+      "key": "Escape"
+    },
+    {
+      "key": "I"
+    },
+    {
+      "expect": {
+        "status": {
+          "contains": "Komut: MIRROR"
+        }
+      }
+    },
+    {
+      "key": "Escape"
+    },
+    {
+      "key": "T"
+    },
+    {
+      "expect": {
+        "status": {
+          "contains": "Komut: TRIM"
+        }
+      }
+    },
+    {
+      "key": "Escape"
+    },
+    {
+      "key": "E"
+    },
+    {
+      "expect": {
+        "status": {
+          "contains": "Komut: EXTEND"
+        }
+      }
+    },
+    {
+      "key": "Escape"
+    },
+    {
+      "expect": {
+        "status": {
+          "contains": "PASİF"
+        }
+      }
+    },
+    {
+      "capture": {
+        "name": "t13-00-kisayollar",
+        "target": "window"
+      }
+    },
+    {
+      "select": [
+        0
+      ]
+    },
+    {
+      "key": "Delete"
+    },
+    {
+      "expect": {
+        "models": {
+          "count": 0
+        }
+      }
+    },
+    {
+      "key": "Ctrl+Z"
+    },
+    {
+      "expect": {
+        "models": {
+          "count": 1
+        }
+      }
+    },
+    {
+      "key": "Ctrl+Y"
+    },
+    {
+      "expect": {
+        "models": {
+          "count": 0
+        }
+      }
+    },
+    {
+      "key": "Ctrl+Z"
+    },
+    {
+      "expect": {
+        "models": {
+          "count": 1
+        }
+      }
+    },
+    {
+      "key": "Ctrl+5"
+    },
+    {
+      "expect": {
+        "camera": {
+          "yaw": 0.0,
+          "pitch": 0.0,
+          "tol": 0.001
+        }
+      }
+    },
+    {
+      "key": "Ctrl+7"
+    },
+    {
+      "expect": {
+        "camera": {
+          "yaw": 0.7853981633974483,
+          "pitch": 0.6154797086703874,
+          "tol": 0.001
+        }
+      }
+    },
+    {
+      "key": "F9"
+    },
+    {
+      "wait": 300
+    },
+    {
+      "expect": {
+        "status": {
+          "contains": "GRID: Kapalı"
+        }
+      }
+    },
+    {
+      "key": "F9"
+    },
+    {
+      "wait": 300
+    },
+    {
+      "expect": {
+        "status": {
+          "contains": "GRID: Açık"
+        }
+      }
+    },
+    {
+      "key": "F8"
+    },
+    {
+      "wait": 300
+    },
+    {
+      "expect": {
+        "status": {
+          "contains": "ORTHO F8: Açık"
+        }
+      }
+    },
+    {
+      "key": "F8"
+    },
+    {
+      "wait": 300
+    },
+    {
+      "expect": {
+        "status": {
+          "contains": "ORTHO F8: Kapalı"
+        }
+      }
+    },
+    {
+      "key": "F7"
+    },
+    {
+      "wait": 300
+    },
+    {
+      "expect": {
+        "status": {
+          "contains": "GRID: Açık"
+        }
+      }
+    },
+    {
+      "capture": {
+        "name": "t13-01-f-tuslari",
+        "target": "window"
+      }
+    },
+    {
+      "key": "F2"
+    },
+    {
+      "expect": {
+        "status": {
+          "contains": "Görünüm: Saydam"
+        }
+      }
+    },
+    {
+      "key": "Alt+1"
+    },
+    {
+      "expect": {
+        "status": {
+          "contains": "Görünüm: Wireframe"
+        }
+      }
+    },
+    {
+      "key": "Esc"
+    },
+    {
+      "key": "Alt+2"
+    },
+    {
+      "expect": {
+        "status": {
+          "contains": "Görünüm: Saydam"
+        }
+      }
+    },
+    {
+      "key": "Esc"
+    },
+    {
+      "key": "Alt+3"
+    },
+    {
+      "expect": {
+        "status": {
+          "contains": "Görünüm: Gizli"
+        }
+      }
+    },
+    {
+      "key": "Esc"
+    },
+    {
+      "key": "Alt+4"
+    },
+    {
+      "expect": {
+        "status": {
+          "contains": "Görünüm: Solid"
+        }
+      }
+    },
+    {
+      "key": "Esc"
+    },
+    {
+      "capture": {
+        "name": "t13-02-stiller",
+        "target": "window"
+      }
+    },
+    {
+      "search": "ğüşıöç"
+    },
+    {
+      "expect": {
+        "quickSearch": {
+          "text": "ğüşıöç"
+        }
+      }
+    },
+    {
+      "key": "Escape"
+    },
+    {
+      "expect": {
+        "models": {
+          "count": 1
+        }
+      }
+    }
+  ]
+}

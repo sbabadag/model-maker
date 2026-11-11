@@ -716,3 +716,14 @@ sürerken yalnız `docs/` düzenlenir.
 - Duzlem kesme bilesenden SONRA kurulamiyor (fail-closed); profilli kiriste
   9 modifier, kolonda 1; cutModifiers bilesen kesimlerini de sayiyor.
 - Kanit: shots\2026-11-11\t40 (GDI) + t40gpu (GPU). Kapi: `t12-gate.log`.
+
+## T-13 — kisayollar (kapandi, kismi, 2026-11-11)
+
+- GT `t41_t13_kisayollar` 77 adim `ok=true`, GDI ve GPU ayni.
+- Kosucu duzeltmesi: `key` adimi artik SendInput + tuval OS odagi + modifier
+  onekleri + 150 ms pump. Eski yol hicbir kisayolu tetiklemiyordu.
+- G/L/M/K/I/T/E, Esc, Delete, Ctrl+Z/Y, Ctrl+5/7, F9 (GRID), F8 (ORTHO),
+  F2, Alt+1..4 ve Turkce karakter girisi kanitlandi.
+- BULGU: F7 hicbir bayragi degistirmiyor.
+- KAPSAM DISI (UI-3): O/Q/D modal sayisal giris -> kosucu kilitleniyor.
+- Kanit: shots\2026-11-11\t41 (GDI) + t41gpu (GPU). Kapi: `t13-gate.log`.

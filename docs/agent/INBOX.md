@@ -1061,6 +1061,30 @@ T-12: GEÇTİ (kısmi) — GT `t40_t12_kayit`, 34 adım `ok=true`, GDI ve GPU ay
     testleriyle kanıtlı, GT'ye sabit örnek eklenmedi.
     Kanıt: `C:\work\mm-hermes-shots\2026-11-11\t40\` ve `t40gpu\`.
 
+T-13: GEÇTİ (kısmi) — GT `t41_t13_kisayollar`, 77 adım `ok=true`, GDI ve GPU aynı.
+    KOŞUCU DÜZELTMESİ (üretim kodu değil): eski `key` adımı `WM_KEYDOWN/UP` +
+    `lParam=0` gönderiyordu; Qt'nin kısayol haritası ve modifier durumu
+    (`::GetKeyState`) tetiklenmiyordu, bu yüzden HİÇBİR kısayol çalışmıyordu.
+    Artık `SendInput` (gerçek girdi kuyruğu) + tuval penceresine OS odağı
+    (`SetFocus(canvasHandle)`) + `Ctrl+/Shift+/Alt+` önekleri; tuş sonrası
+    150 ms pump (durum çubuğu bir adım gecikmeli tazeleniyordu).
+    Tek harf (tuval odaklı): G → "Araç: COLUMN", L → "Araç: LINE",
+    M → "Komut: MOVE", K → "Komut: COPY", I → "Komut: MIRROR",
+    T → "Komut: TRIM", E → "Komut: EXTEND"; Esc → "PASİF".
+    Delete modeli siliyor; Ctrl+Z geri, Ctrl+Y yinele (0↔1 nesne).
+    Ctrl+5 → kamera yaw=0 pitch=0 (plan), Ctrl+7 → izometrik.
+    F9 → GRID kapalı/açık, F8 → ORTHO açık/kapalı, F2 → stil döngüsü,
+    Alt+1..4 → Wireframe/Saydam/Gizli/Solid (durum çubuğu).
+    Türkçe karakter girişi: arama alanına "ğüşıöç" yazıldı ve okundu.
+    BULGU: F7 hiçbir durum bayrağını değiştirmiyor (grid F9'da; F7 için
+    beklenen bir eylem yok) — ayrı madde adayı.
+    ATLANDI (UI-3): O (ofset), Q (pah), D (böl) klavyeden başlatılınca modal
+    sayısal giriş açıyor ve koşucuyu kilitliyor (200-260 s timeout, süreç
+    öldürüldü) — T-7'deki Taşı-Δ ile aynı sınıf. Ctrl+S (T-12 kaydet ile
+    kanıtlı), Ctrl+Tab (tek görünüm), "metin alanı odaktayken tek harf
+    tetiklemez" (koşucuda odak+tus adımı yok).
+    Kanıt: `C:\work\mm-hermes-shots\2026-11-11\t41\` ve `t41gpu\`.
+
 ## Açık soru (yanıtla, Durum'a yaz)
 - 893e770 "feat(document): çoklu seçim özellik düzenleme + tek geri alma
   adımı" istenmemişti. Ne yapıyor, hangi maddeye ait, testi var mı?

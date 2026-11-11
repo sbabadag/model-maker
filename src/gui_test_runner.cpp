@@ -444,17 +444,55 @@ struct Runner {
         return true;
     }
 
+    // T-13: tek tus olayini isletim sistemi girdi kuyruguna birakir.
+    static void sendKeyInput(WORD vk, bool down) {
+        INPUT in{};
+        in.type = INPUT_KEYBOARD;
+        in.ki.wVk = vk;
+        in.ki.wScan = static_cast<WORD>(MapVirtualKeyW(vk, MAPVK_VK_TO_VSC));
+        in.ki.dwFlags = down ? 0u : KEYEVENTF_KEYUP;
+        SendInput(1, &in, sizeof(INPUT));
+    }
+
     bool execKey(const QString& name) {
+        // T-13: GERCEK girdi uretimi. Eski yol (WM_KEYDOWN/WM_KEYUP + lParam=0)
+        // Qt'nin kisayol haritasini (QShortcutMap) tetiklemiyordu; modifier
+        // durumu ::GetKeyState'ten okundugu icin sentetik mesajla da taklit
+        // edilemiyor. SendInput ile tuslar isletim sistemi girdi kuyruguna
+        // gercek olay olarak duser: modifier durumu ve tarama kodu dogru olur.
+        QString rest = name.trimmed();
+        bool ctrl = false, shift = false, alt = false;
+        for (;;) {
+            const QString low = rest.toLower();
+            if (low.startsWith(QStringLiteral("ctrl+"))) { ctrl = true; rest = rest.mid(5); }
+            else if (low.startsWith(QStringLiteral("shift+"))) { shift = true; rest = rest.mid(6); }
+            else if (low.startsWith(QStringLiteral("alt+"))) { alt = true; rest = rest.mid(4); }
+            else break;
+        }
         WPARAM vk = 0;
         QString chars;
-        if (!keyToVk(name, vk, chars))
+        if (!keyToVk(rest, vk, chars))
             return fail(QStringLiteral("bilinmeyen tuş: %1").arg(name));
         const HWND target = focused();
-        SendMessageW(target, WM_KEYDOWN, vk, 0);
+        // T-13: tek harf kisayollari (G, L, M, K, O, I, D...) tuval penceresinin
+        // kendi proc'unda isleniyor; OS klavye odagi tuvalde olmali ki SendInput
+        // olayi oraya dussun.
+        if (HWND canvas = window.application().canvasHandle()) SetFocus(canvas);
+        if (GetForegroundWindow() != target) SetForegroundWindow(target);
+        pump(30);
+        if (ctrl) sendKeyInput(VK_CONTROL, true);
+        if (shift) sendKeyInput(VK_SHIFT, true);
+        if (alt) sendKeyInput(VK_MENU, true);
+        sendKeyInput(static_cast<WORD>(vk), true);
         for (const QChar c : chars)
             SendMessageW(target, WM_CHAR, static_cast<WPARAM>(c.unicode()), 0);
-        SendMessageW(target, WM_KEYUP, vk, 0);
-        pump(40);
+        sendKeyInput(static_cast<WORD>(vk), false);
+        if (alt) sendKeyInput(VK_MENU, false);
+        if (shift) sendKeyInput(VK_SHIFT, false);
+        if (ctrl) sendKeyInput(VK_CONTROL, false);
+        // T-13: tusun islenmesi (Qt olay dongusu + grid/ORTHO tazeleme) tek
+        // pump'ta bitmiyor; durum cubugu bir sonraki adimda guncelleniyordu.
+        pump(150);
         return true;
     }
 
