@@ -1,0 +1,76 @@
+{
+  "backend": "gdi",
+  "timeoutMs": 120000,
+  "_comment": "T-1 AKS: Tekla tarzi yapi gridi — 6x5 aks (A-F, 1-5, 6000 mm aralik), katlar 0/7000/8500; etiketler belgeye yazilir, geri al/al tek adim.",
+  "steps": [
+    {
+      "profile": "HEB300"
+    },
+    {
+      "appGrid": {
+        "name": "GRID",
+        "x": [0, 6000, 12000, 18000, 24000, 30000],
+        "y": [0, 6000, 12000, 18000, 24000],
+        "z": [0, 7000, 8500],
+        "xLabels": ["A", "B", "C", "D", "E", "F"],
+        "yLabels": ["1", "2", "3", "4", "5"],
+        "zLabels": ["0", "7000", "8500"]
+      }
+    },
+    {
+      "expect": {
+        "document": {
+          "grids": 1,
+          "gridCounts": [6, 5, 3],
+          "gridLabels": {
+            "x": "A,B,C,D,E,F",
+            "y": "1,2,3,4,5",
+            "z": "0,7000,8500"
+          }
+        }
+      }
+    },
+    {
+      "fit": {}
+    },
+    {
+      "capture": {
+        "name": "t1-00-grid-6x5",
+        "target": "window"
+      }
+    },
+    {
+      "cmd": "edit.undo"
+    },
+    {
+      "expect": {
+        "document": {
+          "grids": 0
+        }
+      }
+    },
+    {
+      "capture": {
+        "name": "t1-01-geri-al-sonrasi",
+        "target": "window"
+      }
+    },
+    {
+      "cmd": "edit.redo"
+    },
+    {
+      "expect": {
+        "document": {
+          "grids": 1,
+          "gridCounts": [6, 5, 3]
+        }
+      }
+    },
+    {
+      "capture": {
+        "name": "t1-02-ileri-al-sonrasi",
+        "target": "window"
+      }
+    }
+  ]
+}

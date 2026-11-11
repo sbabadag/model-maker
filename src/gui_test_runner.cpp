@@ -22,6 +22,7 @@
 #include "model_maker/document.hpp"
 #include "model_maker/drafting.hpp"
 #include "model_maker/geometry.hpp"
+#include "model_maker/grid.hpp"
 #include "model_maker/view_cube.hpp"
 #include "model_maker/qt_main_window.hpp"
 #include "model_maker/properties_panel.hpp"
@@ -802,6 +803,50 @@ struct Runner {
                 problems << QStringLiteral("document: GORUNUR duzlem sayisi %1 != %2")
                                 .arg(visiblePlanes)
                                 .arg(spec[QStringLiteral("visiblePlanes")].toInt());
+
+
+            // T-1: YAPI GRIDI — sayi, aks/kat adetleri ve etiketler (Tekla
+            // spesifikasyonunun belgeye yazildiginin kaniti).
+            const auto& gridList = doc.grids();
+            if (spec.contains(QStringLiteral("grids")) &&
+                spec[QStringLiteral("grids")].toInt() != static_cast<int>(gridList.size()))
+                problems << QStringLiteral("document: grid sayisi %1 != %2")
+                                .arg(gridList.size())
+                                .arg(spec[QStringLiteral("grids")].toInt());
+            if (!gridList.empty() && spec.contains(QStringLiteral("gridCounts"))) {
+                const QJsonArray want = spec[QStringLiteral("gridCounts")].toArray();
+                const mm::GridDefinition& g = gridList.front();
+                const int got[3] = {static_cast<int>(g.xCoords.size()),
+                                    static_cast<int>(g.yCoords.size()),
+                                    static_cast<int>(g.zCoords.size())};
+                for (int k = 0; k < 3 && k < want.size(); ++k)
+                    if (got[k] != want[k].toInt())
+                        problems << QStringLiteral("document: gridCounts[%1] %2 != %3")
+                                        .arg(k)
+                                        .arg(got[k])
+                                        .arg(want[k].toInt());
+            }
+            if (!gridList.empty() && spec.contains(QStringLiteral("gridLabels"))) {
+                const QJsonObject want = spec[QStringLiteral("gridLabels")].toObject();
+                const auto join = [](const std::vector<std::string>& list) {
+                    QString out;
+                    for (const auto& item : list) {
+                        if (!out.isEmpty()) out += QLatin1Char(',');
+                        out += QString::fromStdString(item);
+                    }
+                    return out;
+                };
+                const mm::GridDefinition& g = gridList.front();
+                const std::pair<const char*, QString> pairs[3] = {
+                    {"x", join(g.xLabels)}, {"y", join(g.yLabels)}, {"z", join(g.zLabels)}};
+                for (const auto& pair : pairs) {
+                    const QString key = QLatin1String(pair.first);
+                    if (!want.contains(key)) continue;
+                    if (pair.second != want[key].toString())
+                        problems << QStringLiteral("document: grid labels %1=\"%2\" (beklenen \"%3\")")
+                                        .arg(key, pair.second, want[key].toString());
+                }
+            }
         }
         // P-2/7: DOSYA ICERIK KONTROLU — senaryo urettigi rapor/dokum
         // dosyalarinda beklenen metinler var mi (malzeme listesi satirlari).
@@ -1504,6 +1549,36 @@ struct Runner {
         // bilesen zinciri). Panel ENTER/UYGULA akisinin cagirdigi AYNI public
         // API'ler kullanilir (panel kablolamasi Python testlerinde dogrulanir);
         // burada asil sozlesme BELGE uzerindeki zincirdir.
+        if (step.contains(QStringLiteral("appGrid"))) {
+            // T-1: Tekla tarzi yapi gridi. `grid.create` diyalogunun cagirdigi
+            // AYNI cekirdek (Application::createModelGrid) — ikinci uretim yolu yok.
+            const QJsonObject spec = step[QStringLiteral("appGrid")].toObject();
+            const auto numbers = [](const QJsonValue& v) {
+                std::vector<double> out;
+                for (const QJsonValue& item : v.toArray()) out.push_back(item.toDouble());
+                return out;
+            };
+            const auto strings = [](const QJsonValue& v) {
+                std::vector<std::string> out;
+                for (const QJsonValue& item : v.toArray())
+                    out.push_back(item.toString().toStdString());
+                return out;
+            };
+            mm::GridDefinition grid;
+            grid.name = spec[QStringLiteral("name")].toString(QStringLiteral("GRID"))
+                            .toStdString();
+            grid.xCoords = numbers(spec[QStringLiteral("x")]);
+            grid.yCoords = numbers(spec[QStringLiteral("y")]);
+            grid.zCoords = numbers(spec[QStringLiteral("z")]);
+            grid.xLabels = strings(spec[QStringLiteral("xLabels")]);
+            grid.yLabels = strings(spec[QStringLiteral("yLabels")]);
+            grid.zLabels = strings(spec[QStringLiteral("zLabels")]);
+            const std::size_t index = window.application().createModelGrid(std::move(grid));
+            std::printf("[grid] eklendi index=%zu, grid sayisi=%zu\n", index,
+                        window.application().document().grids().size());
+            pump(80);
+            return writeStep(step, QStringLiteral("appGrid"));
+        }
         if (step.contains(QStringLiteral("appColumnLevels"))) {
             const QJsonObject spec = step[QStringLiteral("appColumnLevels")].toObject();
             window.application().applyColumnLevels(

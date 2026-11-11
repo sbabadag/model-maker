@@ -827,6 +827,21 @@ T-14 Çizim: Paper Çizim açılır, temel görünüm üretilir (varsa).
 
 Sonuçlar:
 
+T-1: GEÇTİ (kısmi — snap alt maddesi B4 kapsamında ayrı) — GT `t29_t1_aks_grid`,
+    11 adım `ok=true`. 6×5 aks (A–F / 1–5, 6000 mm) + kotlar 0/7000/8500
+    `Application::createModelGrid` ile kuruldu (grid.create diyaloğunun aynı
+    çekirdeği); belge denetimi: `grids=1`, `gridCounts=[6,5,3]`,
+    `gridLabels x=A,B,C,D,E,F y=1,2,3,4,5 z=0,7000,8500`. Geri al → grid 0,
+    ileri al → grid 1 (tek adım). Ekran (vision): ISO'da 6+5 etiket okunuyor;
+    ön görünüşte 6 dikey aks + 3 kot çizgisi ve 0/7000/8500 etiketleri var.
+    Kanıt: `C:\work\mm-hermes-shots\2026-11-11\t29\` ve `t1f\`.
+    AÇIK ALT MADDE: ön görünüşte harf SIRASI (A solda mı) kanıtlanmadı —
+    2 akslı tanı koşumunda `fit` yalnız modeli çerçevelediği için etiketler
+    ekran dışında kaldı (`t1lab`); iddia edilmiyor. Snap (kesişim/orta nokta)
+    B4 maddesinin kapsamında; aks seçimi/silme `grid.manager` diyaloğundan
+    yapılıyor — GT adımı yok, ayrı iş.
+
+
 ## Açık soru (yanıtla, Durum'a yaz)
 - 893e770 "feat(document): çoklu seçim özellik düzenleme + tek geri alma
   adımı" istenmemişti. Ne yapıyor, hangi maddeye ait, testi var mı?
