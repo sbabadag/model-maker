@@ -869,6 +869,19 @@ struct Runner {
                 problems << QStringLiteral("document: GORUNUR duzlem sayisi %1 != %2")
                                 .arg(visiblePlanes)
                                 .arg(spec[QStringLiteral("visiblePlanes")].toInt());
+            // T-10: kaynak ve bulon grubu sayilari (belge denetimi).
+            const int welds = static_cast<int>(doc.welds().size());
+            if (spec.contains(QStringLiteral("welds")) &&
+                spec[QStringLiteral("welds")].toInt() != welds)
+                problems << QStringLiteral("document: kaynak sayisi %1 != %2")
+                                .arg(welds)
+                                .arg(spec[QStringLiteral("welds")].toInt());
+            const int boltGroups = static_cast<int>(doc.boltGroups().size());
+            if (spec.contains(QStringLiteral("boltGroups")) &&
+                spec[QStringLiteral("boltGroups")].toInt() != boltGroups)
+                problems << QStringLiteral("document: bulon grubu sayisi %1 != %2")
+                                .arg(boltGroups)
+                                .arg(spec[QStringLiteral("boltGroups")].toInt());
 
 
             // T-1: YAPI GRIDI — sayi, aks/kat adetleri ve etiketler (Tekla

@@ -1,0 +1,130 @@
+{
+  "_comment": "T-10 BULON/KAYNAK: baglanti bilesenleri belgeye bulon grubu yaziyor (end plate=1, +146=2); end plate ayrica 1 kaynak kaydi yaziyor ve bunlar 3B'de gorunuyor; bilesen geri alininca bulon grubu da kalkiyor. Bulon/kaynak KOMUTLARI (steel.bolt / steel.weld) GT'den surulemiyor: kipsel diyalog acip kosucuyu bloke ediyor (200 s timeout, step_007 yazilmadi) -> UI-3. Motor zaten ctest'te kanitli (occ_weld_*, occ_bolt_group_roundtrip, component_bolt_rows_reduced, anchor_bolt).",
+  "backend": "gdi",
+  "timeoutMs": 180000,
+  "steps": [
+    {
+      "profile": "HEB260"
+    },
+    {
+      "appColumnLevels": {
+        "top": 4000,
+        "bottom": 0
+      }
+    },
+    {
+      "placeColumn": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      }
+    },
+    {
+      "assignLine": {
+        "x1": 0,
+        "y1": 0,
+        "z1": 4000,
+        "x2": 5000,
+        "y2": 0,
+        "z2": 4000,
+        "profile": "IPE300"
+      }
+    },
+    {
+      "key": "Escape"
+    },
+    {
+      "expect": {
+        "models": {
+          "count": 2,
+          "profiled": 2
+        }
+      }
+    },
+    {
+      "appComponent": {
+        "typeId": "beam_to_column_end_plate",
+        "parts": [
+          0,
+          1
+        ]
+      }
+    },
+    {
+      "expect": {
+        "document": {
+          "boltGroups": 1
+        }
+      }
+    },
+    {
+      "expect": {
+        "componentAttached": {
+          "typeId": "beam_to_column_end_plate",
+          "maxGap": 500
+        }
+      }
+    },
+    {
+      "cmd": "view.dir.iso"
+    },
+    {
+      "fit": {}
+    },
+    {
+      "capture": {
+        "name": "t10-00-endplate-bulon",
+        "target": "window"
+      }
+    },
+    {
+      "appComponent": {
+        "typeId": "tekla_shear_plate_146",
+        "parts": [
+          0,
+          1
+        ]
+      }
+    },
+    {
+      "expect": {
+        "document": {
+          "boltGroups": 2
+        }
+      }
+    },
+    {
+      "cmd": "fit"
+    },
+    {
+      "capture": {
+        "name": "t10-01-146-bulon",
+        "target": "window"
+      }
+    },
+    {
+      "cmd": "edit.undo"
+    },
+    {
+      "expect": {
+        "document": {
+          "boltGroups": 1
+        }
+      }
+    },
+    {
+      "expect": {
+        "componentCount": {
+          "typeId": "tekla_shear_plate_146",
+          "count": 0
+        }
+      }
+    },
+    {
+      "capture": {
+        "name": "t10-02-bulon-geri-al",
+        "target": "window"
+      }
+    }
+  ]
+}

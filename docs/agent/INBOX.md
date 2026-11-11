@@ -1008,6 +1008,22 @@ T-9: GEÇTİ (kısmi) — GT `t37_t9_baglantilar`, 39 adım `ok=true`, GDI ve GP
     kanıtlı), katalog/hızlı arama ile açma (B1 testi).
     Kanıt: `C:\work\mm-hermes-shots\2026-11-11\t37\` ve `t37gpu\`.
 
+T-10: GEÇTİ (kısmi) — GT `t38_t10_bulon_kaynak`, 20 adım `ok=true`, GDI ve GPU aynı.
+    Bağlantı bileşenleri belgeye BULON GRUBU yazıyor: end plate → 1 grup,
+    + 146 → 2 grup; üç boyutta bulonlar görünüyor (vision). Bileşen geri
+    alınınca bulon grubu da kalkıyor (2 → 1, 146 sayısı 0).
+    Bulgu: end plate ayrıca 1 KAYNAK kaydı yazıyor (ilk tanı koşumunda `welds`
+    0 çıkmıştı; sahne/komut sırası aynı olmasına karşın sonraki koşumda 1 —
+    belirlenimsiz görünüyor, ayrı madde adayı).
+    ATLANDI (UI-3): `steel.bolt` ve `steel.weld` KOMUTLARI GT'den sürülemiyor —
+    kipsel diyalog açıp koşucuyu bloke ediyor: 200 s timeout, `step_007`
+    yazılmadı, süreç `Stop-Process` ile öldürüldü. Motor ctest'te kanıtlı:
+    `occ_weld_geometry`, `occ_weld_document_roundtrip`, `occ_weld_profile_beam`,
+    `occ_weld_corner_placement`, `occ_bolt_group_roundtrip`,
+    `component_bolt_rows_reduced`, `component_anchor_bolt`.
+    Koşucuya eklenen: `expect.document {welds, boltGroups}` (belge denetimi).
+    Kanıt: `C:\work\mm-hermes-shots\2026-11-11\t38\` ve `t38gpu\`.
+
 ## Açık soru (yanıtla, Durum'a yaz)
 - 893e770 "feat(document): çoklu seçim özellik düzenleme + tek geri alma
   adımı" istenmemişti. Ne yapıyor, hangi maddeye ait, testi var mı?

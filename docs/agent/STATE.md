@@ -685,3 +685,13 @@ sürerken yalnız `docs/` düzenlenir.
 - KAPSAM DISI (UI-3): diyalog mock view, ihlal -> kirmizi check (ctest
   componentContactCheck), katalog/hizli arama ile acma (B1).
 - Kanit: shots\2026-11-11\t37 (GDI) + t37gpu (GPU). Kapi: `t9-gate.log`.
+
+## T-10 — bulon/kaynak (kapandi, kismi, 2026-11-11)
+
+- GT `t38_t10_bulon_kaynak` 20 adim `ok=true`, GDI ve GPU ayni.
+- End plate 1 bulon grubu (+1 kaynak kaydi), 146 ile 2 grup; undo ile grup
+  sayisi geri dusuyor. Bulonlar 3B'de gorunuyor.
+- KAPSAM DISI (UI-3): `steel.bolt` / `steel.weld` kipsel diyalog -> kosucu
+  bloke (200 s timeout, surec olduruldu). Motor ctest'te kanitli.
+- Kosucuya `expect.document {welds, boltGroups}` eklendi.
+- Kanit: shots\2026-11-11\t38 (GDI) + t38gpu (GPU). Kapi: `t10-gate.log`.
