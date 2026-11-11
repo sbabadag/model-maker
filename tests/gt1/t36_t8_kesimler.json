@@ -1,0 +1,275 @@
+{
+  "_comment": "T-8 KESIMLER: duzlem kesme (yatay+dusey) uctan uca + tek geri alma; kesim kopya (B8: kaynak DUZLEM kopyalaninca kesme modifier'i da klonlanir - model 3 = 3. duzlem); bes kesim komutu UI'dan acilir ve sahne bozulmaz. Line/Polygon/Part Cut ve Fitting'in tam akisi kapsam disi: kosucuda 3B nokta/3DFACE secimi yok (clickModel yalnizca secim yapar, komut tiklamayi tuketmiyor). NOT: insa duzlemleri de document().models() icinde gorunur (1 kolon + 3 duzlem = 4).",
+  "backend": "gdi",
+  "timeoutMs": 180000,
+  "steps": [
+    {
+      "profile": "HEB300"
+    },
+    {
+      "appColumnLevels": {
+        "top": 3000,
+        "bottom": 0
+      }
+    },
+    {
+      "placeColumn": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      }
+    },
+    {
+      "key": "Escape"
+    },
+    {
+      "expect": {
+        "models": {
+          "count": 1,
+          "profiled": 1
+        }
+      }
+    },
+    {
+      "appConstructionPlane": {
+        "origin": [
+          0.0,
+          0.0,
+          1500.0
+        ],
+        "normal": [
+          0.0,
+          0.0,
+          1.0
+        ],
+        "size": 1200.0
+      }
+    },
+    {
+      "appPlaneCut": {
+        "target": 0,
+        "plane": 1
+      }
+    },
+    {
+      "expect": {
+        "document": {
+          "cutModifiers": 1,
+          "planes": 1,
+          "visiblePlanes": 1
+        }
+      }
+    },
+    {
+      "cmd": "view.dir.iso"
+    },
+    {
+      "fit": {}
+    },
+    {
+      "capture": {
+        "name": "t8-00-duzlem-kesme",
+        "target": "window"
+      }
+    },
+    {
+      "cmd": "edit.undo"
+    },
+    {
+      "expect": {
+        "document": {
+          "cutModifiers": 0,
+          "planes": 1
+        }
+      }
+    },
+    {
+      "appConstructionPlane": {
+        "origin": [
+          0.0,
+          0.0,
+          1500.0
+        ],
+        "normal": [
+          1.0,
+          0.0,
+          0.0
+        ],
+        "size": 1200.0
+      }
+    },
+    {
+      "appPlaneCut": {
+        "target": 0,
+        "plane": 2
+      }
+    },
+    {
+      "expect": {
+        "document": {
+          "cutModifiers": 1,
+          "planes": 2
+        }
+      }
+    },
+    {
+      "capture": {
+        "name": "t8-01-dusey-kesme",
+        "target": "window"
+      }
+    },
+    {
+      "cmd": "edit.undo"
+    },
+    {
+      "expect": {
+        "document": {
+          "cutModifiers": 0,
+          "planes": 2
+        }
+      }
+    },
+    {
+      "appConstructionPlane": {
+        "origin": [
+          0.0,
+          0.0,
+          1500.0
+        ],
+        "normal": [
+          1.0,
+          0.0,
+          0.0
+        ],
+        "size": 1200.0
+      }
+    },
+    {
+      "appPlaneCut": {
+        "target": 0,
+        "plane": 3
+      }
+    },
+    {
+      "appCopyModels": {
+        "indices": [
+          3
+        ],
+        "delta": [
+          2000.0,
+          0.0,
+          0.0
+        ]
+      }
+    },
+    {
+      "expect": {
+        "document": {
+          "planes": 4,
+          "visiblePlanes": 4,
+          "cutModifiers": 2
+        }
+      }
+    },
+    {
+      "fit": {}
+    },
+    {
+      "capture": {
+        "name": "t8-02-kesim-kopya",
+        "target": "window"
+      }
+    },
+    {
+      "cmd": "edit.undo"
+    },
+    {
+      "expect": {
+        "document": {
+          "cutModifiers": 1,
+          "planes": 3
+        }
+      }
+    },
+    {
+      "key": "Escape"
+    },
+    {
+      "key": "Escape"
+    },
+    {
+      "cmd": "construct.planeCut"
+    },
+    {
+      "capture": {
+        "name": "t8-03-cmd-plane",
+        "target": "window"
+      }
+    },
+    {
+      "key": "Escape"
+    },
+    {
+      "cmd": "construct.lineCut"
+    },
+    {
+      "capture": {
+        "name": "t8-04-cmd-line",
+        "target": "window"
+      }
+    },
+    {
+      "key": "Escape"
+    },
+    {
+      "cmd": "construct.polygonCut"
+    },
+    {
+      "capture": {
+        "name": "t8-05-cmd-polygon",
+        "target": "window"
+      }
+    },
+    {
+      "key": "Escape"
+    },
+    {
+      "cmd": "construct.partCut"
+    },
+    {
+      "capture": {
+        "name": "t8-06-cmd-part",
+        "target": "window"
+      }
+    },
+    {
+      "key": "Escape"
+    },
+    {
+      "cmd": "construct.fitting"
+    },
+    {
+      "capture": {
+        "name": "t8-07-cmd-fitting",
+        "target": "window"
+      }
+    },
+    {
+      "key": "Escape"
+    },
+    {
+      "expect": {
+        "models": {
+          "count": 4,
+          "profiled": 1
+        }
+      }
+    },
+    {
+      "capture": {
+        "name": "t8-08-son",
+        "target": "window"
+      }
+    }
+  ]
+}

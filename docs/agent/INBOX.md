@@ -969,6 +969,24 @@ T-7: GEÇTİ (kısmi) — GT `t35_t7_duzenle`, 41 adım `ok=true`, GDI ve GPU ay
     NOT: ölçülen mm değerleri ekran tıklarından geldiği için tuval boyutuna
     bağlı (1064×830, `fit` sonrası); iddialar ±3 mm toleransla.
 
+T-8: GEÇTİ (kısmi) — GT `t36_t8_kesimler`, 46 adım `ok=true`, GDI ve GPU aynı.
+    PLANE CUT uçtan uca iki doğrultuda: yatay düzlem (z=1500) ve düşey düzlem
+    (x=0) → `cutModifiers=1`; her biri TEK `edit.undo` ile geri alındı
+    (`cutModifiers=0`) — insa düzlemi geri alınmıyor, kalıyor (beklenen).
+    KESİM KOPYALA (B8): kaynak DÜZLEM kopyalanınca kesme modifier'ı da klonlanır
+    (planes 3→4, cutModifiers 1→2), tek undo 1'e döner.
+    Beş kesim komutu UI'dan açılıyor ve sahneyi bozmuyor, çökme yok:
+    `construct.planeCut`, `construct.lineCut`, `construct.polygonCut`,
+    `construct.partCut`, `construct.fitting` (durum çubuğu her biri için ne
+    isteyeceğini yazıyor). Sonuç: 4 nesne (1 kolon + 3 düzlem), profilli=1.
+    Not: insa düzlemleri de `document().models()` içinde görünüyor.
+    ATLANDI (UI-3): Line Cut / Polygon Cut / Part Cut / Fitting'in TAM akışı —
+    koşucuda 3B nokta ve 3DFACE seçimi adımı yok; `clickModel` yalnızca seçim
+    yapıyor, kesim komutu tıklamayı tüketmiyor (durum çubuğu "PASİF"e dönüyor).
+    Ayrıca eş eksenli iki kolonla Part Cut kesim üretmedi (kesişim tam) —
+    gerçek kesici gövde gerekiyor.
+    Kanıt: `C:\work\mm-hermes-shots\2026-11-11\t36\` ve `t36gpu\`.
+
 ## Açık soru (yanıtla, Durum'a yaz)
 - 893e770 "feat(document): çoklu seçim özellik düzenleme + tek geri alma
   adımı" istenmemişti. Ne yapıyor, hangi maddeye ait, testi var mı?

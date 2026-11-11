@@ -664,3 +664,13 @@ sürerken yalnız `docs/` düzenlenir.
   (`edit.arrayLinear/Polar` — ayni sinif). K1 (diyalog acikken ana pencere)
   sinanmadi → UI-3.
 - Kanit: shots\2026-11-11\t35 (GDI) ve t35gpu (GPU). Kapi: `t7-gate.log`.
+
+## T-8 — kesimler (kapandi, kismi, 2026-11-11)
+
+- GT `t36_t8_kesimler` 46 adim `ok=true`, GDI ve GPU ayni.
+- Plane Cut yatay/dusey uctan uca; her biri TEK `edit.undo` (cutModifiers 1→0,
+  duzlem kalir). Kesim kopya (B8) kaynak duzlem kopyalaninca modifier'i klonlar.
+- Bes kesim komutu UI'dan acilir; sahne bozulmaz, cokme yok.
+- KAPSAM DISI (UI-3): Line/Polygon/Part Cut ve Fitting tam akisi - kosucuda 3B
+  nokta/3DFACE secimi yok. Eksenel iki kolon Part Cut'ta kesim uretmedi.
+- Kanit: shots\2026-11-11\t36 (GDI) + t36gpu (GPU). Kapi: `t8-gate.log`.
