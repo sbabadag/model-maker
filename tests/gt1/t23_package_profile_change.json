@@ -1,0 +1,171 @@
+{
+  "backend": "gdi",
+  "timeoutMs": 240000,
+  "_comment": "BULGU (b) KAPANDI — kok neden bagimlilik grafigi DEGIL: paket komponenti kiris profili degisince ZATEN yeniden uretiliyor; IPE240->IPE270 adimi paketin KENDI check'i yuzunden (\"Sureklilik levhasi kolon flansinin icine giriyor\") fail-closed reddediliyor ve TUM islem (profil atamasi dahil) geri aliniyordu. Test iki dali da kilitler: (1) GECERLI profil degisimi IPE240->IPE220 -> komponent yeniden uretilir, digest DEGISIR; (2) GECERSIZ IPE220->IPE270 -> red + geri alma, digest DEGISMEZ, durum cubugu paketin Turkce check mesajini gosterir.",
+  "steps": [
+    {
+      "appImportPackage": {
+        "path": "../fixtures/studio_pkgs/mm_stiffened_end_plate.mmcpkg",
+        "embed": false,
+        "userRoot": "components"
+      }
+    },
+    {
+      "componentTypeRegistered": {
+        "typeId": "mm_stiffened_end_plate",
+        "package": true,
+        "schemaVersion": 1
+      }
+    },
+    {
+      "profile": "HEB300"
+    },
+    {
+      "appColumnLevels": {
+        "top": 3000,
+        "bottom": 0
+      }
+    },
+    {
+      "placeColumn": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      }
+    },
+    {
+      "assignLine": {
+        "x1": 0,
+        "y1": 0,
+        "z1": 2880,
+        "x2": 5000,
+        "y2": 0,
+        "z2": 2880,
+        "profile": "IPE240"
+      }
+    },
+    {
+      "expect": {
+        "models": {
+          "count": 2,
+          "profiled": 2
+        }
+      }
+    },
+    {
+      "appComponent": {
+        "typeId": "mm_stiffened_end_plate",
+        "parts": [
+          0,
+          1
+        ]
+      }
+    },
+    {
+      "expect": {
+        "componentCount": {
+          "typeId": "mm_stiffened_end_plate",
+          "count": 1
+        }
+      }
+    },
+    {
+      "expect": {
+        "componentAttached": {
+          "typeId": "mm_stiffened_end_plate",
+          "maxGap": 500
+        }
+      }
+    },
+    {
+      "expect": {
+        "componentDigest": {
+          "typeId": "mm_stiffened_end_plate",
+          "key": "ipe240",
+          "remember": true
+        }
+      }
+    },
+    {
+      "capture": {
+        "name": "t23-kiris-ipe240",
+        "target": "window"
+      }
+    },
+    {
+      "select": [
+        1
+      ]
+    },
+    {
+      "assignProfile": {
+        "model": 1,
+        "profile": "IPE220"
+      }
+    },
+    {
+      "expect": {
+        "status": {
+          "contains": "yenilendi"
+        }
+      }
+    },
+    {
+      "expect": {
+        "componentDigest": {
+          "typeId": "mm_stiffened_end_plate",
+          "key": "ipe220",
+          "remember": true
+        }
+      }
+    },
+    {
+      "expect": {
+        "componentDigest": {
+          "typeId": "mm_stiffened_end_plate",
+          "key": "ipe240",
+          "notEquals": true
+        }
+      }
+    },
+    {
+      "capture": {
+        "name": "t23-ipe220-yeniden-uretim",
+        "target": "window"
+      }
+    },
+    {
+      "select": [
+        1
+      ]
+    },
+    {
+      "assignProfile": {
+        "model": 1,
+        "profile": "IPE270"
+      }
+    },
+    {
+      "expect": {
+        "status": {
+          "contains": "flansinin icine giriyor"
+        }
+      }
+    },
+    {
+      "expect": {
+        "componentDigest": {
+          "typeId": "mm_stiffened_end_plate",
+          "key": "ipe220",
+          "equals": true
+        }
+      }
+    },
+    {
+      "capture": {
+        "name": "t23-ipe270-red-geri-alindi",
+        "target": "window"
+      }
+    }
+  ]
+}

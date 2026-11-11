@@ -6340,6 +6340,10 @@ bool Application::recomputeComponentInstancesFor(const std::vector<EntityId>& ch
     };
 
     // PREPARE: guncel MemberGeometry + kayitli parametrelerle generator cagir.
+    // `prepWhy`: hazirligin neden dustugu (uretim hatasi metni dahil) — geri
+    // alma mesajina eklenir; kullanici "hazirlik hatasi" yerine GERCEK nedeni
+    // (or. paketin check mesaji) gorur.
+    std::wstring prepWhy;
     const auto prepare = [&](EntityId cid) -> std::optional<ComponentMaterializer::Prepared> {
         const auto idx = indexOf(cid);
         if (!idx) return std::nullopt;
@@ -6348,25 +6352,53 @@ bool Application::recomputeComponentInstancesFor(const std::vector<EntityId>& ch
         const ComponentType* type = ComponentRegistry::instance().findType(rec.typeId);
         if (!type) return std::nullopt;
 
+        // TESHIS (Bulgu b): hazirlik neden dustu — surekli log (yalniz hata
+        // dalinda). Durum cubugu tek satir; kok nedeni buradan okunur.
+        prepWhy.clear();
+        const auto prepFail = [&](const char* why) -> std::optional<ComponentMaterializer::Prepared> {
+            prepWhy = utf8ToWide(why);
+            FILE* diag = fopen("model-maker-render.log", "a");
+            if (diag) {
+                fprintf(diag, "CR-PREP-FAIL id=%llu why=%s type=%s\n",
+                        static_cast<unsigned long long>(cid), why,
+                        utf8FromWide(rec.typeId).c_str());
+                fclose(diag);
+            }
+            return std::nullopt;
+        };
         ComponentInput input;
         if (const auto mi = document_.indexOfEntity(rec.mainPart))
             input.main = memberGeometryFor(document_, profileCatalog_, *mi);
         else
-            return std::nullopt;
+            return prepFail("ana-parca-yok");
         for (const EntityId sid : rec.secondaryParts) {
             if (const auto si = document_.indexOfEntity(sid))
                 input.secondary.push_back(memberGeometryFor(document_, profileCatalog_, *si));
             else
-                return std::nullopt;
+                return prepFail("yan-parca-yok");
         }
         input.params = rec.params;
 
         const GenerationPlan gp = ComponentRegistry::instance().generate(rec.typeId, input);
-        if (!gp.ok) return std::nullopt;
+        if (!gp.ok) {
+            prepWhy = gp.error;   // paketin KENDI Turkce mesaji (or. check ihlali)
+            FILE* diag = fopen("model-maker-render.log", "a");
+            if (diag) {
+                fprintf(diag, "CR-PREP-FAIL id=%llu why=uretim type=%s err=%s\n",
+                        static_cast<unsigned long long>(cid),
+                        utf8FromWide(rec.typeId).c_str(),
+                        utf8FromWide(gp.error).c_str());
+                fclose(diag);
+            }
+            return std::nullopt;
+        }
         const ComponentPlan plan = componentPlanFromGenerationPlan(gp);
-        if (!plan.ok) return std::nullopt;
+        if (!plan.ok) return prepFail("plan-donusumu");
         ComponentMaterializer mat(document_);
-        return mat.prepare(plan, rec.mainPart, rec.secondaryParts);
+        std::optional<ComponentMaterializer::Prepared> prepared =
+            mat.prepare(plan, rec.mainPart, rec.secondaryParts);
+        if (!prepared) return prepFail("malzeme-hazirlik");
+        return prepared;
     };
 
     // COMMIT: materializer.recompute ayni kimlikleri korur (roleKey->EntityId).
@@ -6397,6 +6429,7 @@ bool Application::recomputeComponentInstancesFor(const std::vector<EntityId>& ch
     // pushUndoSnapshot'i ile ACTI) geri al — TUM islem atomik geri doner.
     const bool rolled = document_.rollbackOpenRecord();
     std::wstring msg = L"Component recompute basarisiz";
+    if (!prepWhy.empty()) msg += L" (" + prepWhy + L")";
     if (!res.error.empty()) { msg += L": "; msg += res.error; }
     msg += rolled ? L" — islem geri alindi."
                   : L" — rollback BASARISIZ (belge tutarsiz olabilir)";
