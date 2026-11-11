@@ -695,3 +695,13 @@ sürerken yalnız `docs/` düzenlenir.
   bloke (200 s timeout, surec olduruldu). Motor ctest'te kanitli.
 - Kosucuya `expect.document {welds, boltGroups}` eklendi.
 - Kanit: shots\2026-11-11\t38 (GDI) + t38gpu (GPU). Kapi: `t10-gate.log`.
+
+## T-11 — gorunumler (kapandi, kismi, 2026-11-11)
+
+- GT `t39_t11_gorunumler` 40 adim `ok=true`, GDI ve GPU ayni.
+- Plan (0/0), 3B (0.7854/0.6155), On (pi/pi2) kamera degerleriyle; dort gorsel
+  stil + dongu; yuzeye gore gorunus 2. viewport.
+- F6 iki kosumda da backend'i degistirmedi; GPU yolu backend:"gpu" kosumuyla
+  kanitli.
+- KAPSAM DISI (UI-3): calisma duzlemi 3 nokta / sifirla (3B nokta secimi yok).
+- Kanit: shots\2026-11-11\t39 (GDI) + t39gpu (GPU). Kapi: `t11-gate.log`.

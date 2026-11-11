@@ -1,0 +1,222 @@
+{
+  "_comment": "T-11 GORUNUMLER: plan (ust) / 3B / on gorusleri kamera aci degerleriyle; dort gorsel stil + dongu durum cubuguyla; GDI oturumunda F6 backend'i degistirmez (F6 iki kosumda da backend'i degistirmiyor (GDI oturumunda GL yok); backend alaninin kosumlar arasi farki (gdi/gpu) GPU yolunun kaniti); yuzeye gore gorunus H-5 yoluyla (view.toSurface + yuz tiklamasi -> 2. viewport, viewOriginZ=3000). KAPSAM DISI (UI-3): calisma duzlemi 3 nokta / sifirla - kosucuda 3B nokta secimi yok.",
+  "backend": "gdi",
+  "timeoutMs": 200000,
+  "steps": [
+    {
+      "profile": "HEB240"
+    },
+    {
+      "appColumnLevels": {
+        "top": 3000,
+        "bottom": 0
+      }
+    },
+    {
+      "placeColumn": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      }
+    },
+    {
+      "assignLine": {
+        "x1": 0,
+        "y1": 0,
+        "z1": 3000,
+        "x2": 5000,
+        "y2": 0,
+        "z2": 3000,
+        "profile": "IPE300"
+      }
+    },
+    {
+      "key": "Escape"
+    },
+    {
+      "expect": {
+        "models": {
+          "count": 2,
+          "profiled": 2
+        }
+      }
+    },
+    {
+      "cmd": "view.dir.top"
+    },
+    {
+      "expect": {
+        "camera": {
+          "yaw": 0.0,
+          "pitch": 0.0,
+          "tol": 0.001
+        }
+      }
+    },
+    {
+      "fit": {}
+    },
+    {
+      "capture": {
+        "name": "t11-00-plan",
+        "target": "window"
+      }
+    },
+    {
+      "cmd": "view.dir.iso"
+    },
+    {
+      "expect": {
+        "camera": {
+          "yaw": 0.7853981633974483,
+          "pitch": 0.6154797086703874,
+          "tol": 0.001
+        }
+      }
+    },
+    {
+      "fit": {}
+    },
+    {
+      "capture": {
+        "name": "t11-01-3b",
+        "target": "window"
+      }
+    },
+    {
+      "cmd": "view.dir.front"
+    },
+    {
+      "expect": {
+        "camera": {
+          "yaw": 3.141592653589793,
+          "pitch": 1.5707963267948966,
+          "tol": 0.001
+        }
+      }
+    },
+    {
+      "capture": {
+        "name": "t11-02-on",
+        "target": "window"
+      }
+    },
+    {
+      "cmd": "view.style.wireframe"
+    },
+    {
+      "expect": {
+        "status": {
+          "contains": "Görünüm: Wireframe"
+        }
+      }
+    },
+    {
+      "capture": {
+        "name": "t11-03-tel-kafes",
+        "target": "window"
+      }
+    },
+    {
+      "cmd": "view.style.transparent"
+    },
+    {
+      "expect": {
+        "status": {
+          "contains": "Görünüm: Saydam"
+        }
+      }
+    },
+    {
+      "cmd": "view.style.hidden"
+    },
+    {
+      "expect": {
+        "status": {
+          "contains": "Görünüm: Gizli"
+        }
+      }
+    },
+    {
+      "capture": {
+        "name": "t11-04-gizli-cizgi",
+        "target": "window"
+      }
+    },
+    {
+      "cmd": "view.style.solid"
+    },
+    {
+      "expect": {
+        "status": {
+          "contains": "Görünüm: Solid"
+        }
+      }
+    },
+    {
+      "cmd": "view.styleCycle"
+    },
+    {
+      "expect": {
+        "status": {
+          "contains": "Görünüm: Saydam"
+        }
+      }
+    },
+    {
+      "cmd": "view.style.solid"
+    },
+    {
+      "key": "F6"
+    },
+    {
+      "expect": {
+        "models": {
+          "count": 2,
+          "profiled": 2
+        }
+      }
+    },
+    {
+      "cmd": "view.dir.iso"
+    },
+    {
+      "fit": {}
+    },
+    {
+      "cmd": "view.toSurface"
+    },
+    {
+      "expect": {
+        "status": {
+          "contains": "GÖRE GÖRÜNÜŞ"
+        }
+      }
+    },
+    {
+      "faceClick": {
+        "model": 1,
+        "kind": "top"
+      }
+    },
+    {
+      "expect": {
+        "viewports": 2
+      }
+    },
+    {
+      "expect": {
+        "viewTitle": {
+          "contains": "yüzey görünüşü",
+          "notContains": "Plan"
+        }
+      }
+    },
+    {
+      "capture": {
+        "name": "t11-05-yuzey-gorunusu",
+        "target": "window"
+      }
+    }
+  ]
+}

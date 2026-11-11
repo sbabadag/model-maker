@@ -1024,6 +1024,23 @@ T-10: GEÇTİ (kısmi) — GT `t38_t10_bulon_kaynak`, 20 adım `ok=true`, GDI ve
     Koşucuya eklenen: `expect.document {welds, boltGroups}` (belge denetimi).
     Kanıt: `C:\work\mm-hermes-shots\2026-11-11\t38\` ve `t38gpu\`.
 
+T-11: GEÇTİ (kısmi) — GT `t39_t11_gorunumler`, 40 adım `ok=true`, GDI ve GPU aynı.
+    PLAN görünüşü: kamera yaw=0 pitch=0 (paralel üstten).
+    3B: yaw≈0.7854 pitch≈0.6155 (izometrik). ÖN: yaw=π pitch=π/2 — B5'te
+    ölçülen değerlerle birebir.
+    GÖRSEL STİLLER: Tel kafes / Saydam / Gizli çizgi / Solid durum çubuğunda
+    doğrulandı; `view.styleCycle` Solid → Saydam (döngü sırası).
+    YÜZEYE GÖRE GÖRÜNÜŞ (H-5 yolu): `view.toSurface` + kiriş üst yüzü tıklaması
+    → 2. viewport açıldı, başlık "yüzey görünüşü" (Plan DEĞİL).
+    F6: iki koşumda da backend değişmedi (GDI oturumunda GL yok); backend
+    alanının koşumlar arası farkı (gdi/gpu) GPU yolunun kanıtı.
+    Bulgu: kolon üst yüzü kiriş altında kaldığı için `faceClick top` kolonda
+    vurulamıyor ("hiçbir adaydan vurulamadı, nz=0.000") — yüzey seçiminde
+    örtülü yüz adayı eleniyor, doğru davranış.
+    ATLANDI (UI-3): çalışma düzlemi 3 nokta / sıfırla (`wp.threePoint`,
+    `wp.reset`) — koşucuda 3B nokta seçimi adımı yok.
+    Kanıt: `C:\work\mm-hermes-shots\2026-11-11\t39\` ve `t39gpu\`.
+
 ## Açık soru (yanıtla, Durum'a yaz)
 - 893e770 "feat(document): çoklu seçim özellik düzenleme + tek geri alma
   adımı" istenmemişti. Ne yapıyor, hangi maddeye ait, testi var mı?
