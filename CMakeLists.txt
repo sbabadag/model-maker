@@ -1370,6 +1370,12 @@ if(BUILD_TESTING)
         target_compile_definitions(model_maker_component_plate_color_test PRIVATE
             MM_PACKAGES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/libs/mm_contract/packages")
         add_test(NAME model_maker_component_plate_color_test COMMAND model_maker_component_plate_color_test)
+        # P-2/2: ANKRAJ BULONU UYEYE DELIK ACMAZ (bos `through`), normal grup acar.
+        add_executable(model_maker_component_anchor_bolt_test tests/component_anchor_bolt_test.cpp)
+        target_link_libraries(model_maker_component_anchor_bolt_test PRIVATE model_maker_occ)
+        target_compile_definitions(model_maker_component_anchor_bolt_test PRIVATE
+            MM_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures")
+        add_test(NAME model_maker_component_anchor_bolt_test COMMAND model_maker_component_anchor_bolt_test)
         # KATALOG KOMUT YOLU (MM-REGRESYON): Document -> componentInputFromDocument
         # -> runRecipe(mm_end_plate_pkg) -> materializer -> instance. Uyumlu profil
         # instance olusturur; dar flans/egik kiris ACIK reddedilir (sessiz yok).
