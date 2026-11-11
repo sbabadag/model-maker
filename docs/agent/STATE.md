@@ -550,3 +550,37 @@
 - Kullanıcının uzun talimatları dosyada: `C:\work\HERMES-YEREL-ILK.md`
   (ilk mesaj + Sıra), `C:\work\HERMES-MESAJ-19.md` (UI-3/4/5/6b tarifi;
   repodaki kopyası `docs/agent/ROADMAP-UI.md`).
+
+## P-2 turu — "taş → MM nesnesi" eksikleri (2026-11-11, ZBook, gece gözetimsiz)
+
+Sıra: `docs/agent/P-2-VAR-YOK.md`. Her madde ayrı commit + tam kapı (build + ctest).
+
+- [x] **P-2/2** (`c466e6e`) — ankraj bulonu (`through: []`) üyeye delik AÇMIYOR.
+      `tests/component_anchor_bolt_test.cpp`: A) ankraj grubunun `parts`'ında üye
+      yok → delik modifier'ı yalnız levhaları hedefler, kolon B-Rep'i değişmez;
+      B) normal grup `parts={main}` → ana üyede delik modifier'ı var.
+- [x] **P-2/4** (`3f850d7`) — içbükey (L) `plate.polygon`: hacim **675000 mm³**
+      ((300×300 − 150×150) × 10), ters sarımda da aynı (`component_materializer_test`).
+- [x] **P-2/5** (`1e51059`) — malzeme listesi/BOM: `report.hpp` + `report.cpp`
+      (`mm::buildMaterialList` / `materialListReport`), `report.materialList` menü
+      komutu + `QtMainWindow::showMaterialList()` (Panoya Kopyala),
+      `material_list_test`. Görsel bulon/kaynak modelleri levha sayılmaz.
+- [x] **P-2/6** (`4e9cd87`) — `Application::translateModelsAndRecompute(indices, delta)`:
+      kullanıcı "Taşı" akışının tek çekirdeği; undo → move → cut target recompute →
+      bulon senkron → komponent recompute; başarısızsa fail-closed.
+      `component_move_test`: kolon +2000 mm → taban levhası birlikte, adet sabit,
+      kaynak görselleri 5/5 canlı, stale model 0, sahipsiz model 0.
+- [x] **P-2/7** (`3f9a146`) — GT-1 `tests/gt1/t26_p2_obje_uyumlulugu_tasima.json`
+      (17 adım, `ok=true`): paket uygula → `appMaterialList` → `appMoveModels`
+      (+2000 mm X) → `malzeme-sonra.txt` = `malzeme-once.txt` birebir
+      (5 levha / 4 bulon 1 grup / 9 kaynak), tüm kutular X≈1888…2156.
+      GT koşucusuna `appMaterialList`, `appMoveModels`, `expect.fileContains` eklendi.
+- [ ] **P-2/3** — `cut.plane` kopyası çizilmiyor (INBOX B8 ile aynı kök). Yalnız kod
+      izi çıkarıldı; düzeltme yapılmadı. **P-2'nin kalan tek maddesi.**
+
+Kapılar: `p2-245-gate.log` **169/169** (454.71 s), `p2-67-gate.log` **170/170**
+(444.21 s), ikisi de `BUILD_EXIT=0` / `CTEST_EXIT=0`. GT `t26` exit 0.
+
+Ders (bu turda öğrenilen): kapı koşarken kaynak/CMakeLists düzenlemek kapıyı
+yanlış kırmızıya düşürür (`qt_exe_sources_ok` configure anını okuyor) — kapı
+sürerken yalnız `docs/` düzenlenir.
