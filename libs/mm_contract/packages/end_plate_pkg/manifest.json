@@ -7,10 +7,10 @@
     "primaryMemberType": "kolon",
     "secondaryMemberType": "kiris"
   },
-  "minContractVersion": "1.4.0",
   "displayName": "End Plate (paket)",
   "format": "mmcpkg",
   "formatVersion": "1.0.0",
+  "minContractVersion": "1.4.0",
   "schemaVersion": 1,
   "typeId": "mm_end_plate_pkg"
 }

@@ -607,6 +607,16 @@ if(BUILD_TESTING)
     add_test(NAME model_maker_component_param_remap_test
              COMMAND model_maker_component_param_remap_test)
 
+    # CONTRACT ISTEKLERI (a–k): her istek kendi bolumunde; tek hedef.
+    add_executable(model_maker_contract_requests_test
+        libs/mm_contract/tests/contract_requests_test.cpp)
+    target_link_libraries(model_maker_contract_requests_test
+        PRIVATE mm_component_contract)
+    target_compile_definitions(model_maker_contract_requests_test PRIVATE
+        MM_PACKAGES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/libs/mm_contract/packages")
+    add_test(NAME model_maker_contract_requests_test
+             COMMAND model_maker_contract_requests_test)
+
     # P-1/4 — PAKET KATALOG GORUNURLUGU + SECIM SAYISI: catalog blogu yoksa
     # gorunur + pickCount recipe'den; manifest acikca verirse o kazanir.
     add_executable(model_maker_component_catalog_pick_test

@@ -248,6 +248,21 @@ kayıpsız; digest 1e-6'ya yuvarlanmış kanonik JSON üzerinden hesaplanır.
   Böylece simetrik kirişin 180° roll'ü planı değiştirmez; asimetrik kesitte de
   haunch yerçekimine göre altta kalır.
 
+## Contract istekleri (Studio) — sürüm günlüğü
+
+Her istek AYRI sürüm + AYRI commit. Kural: **mevcut planDigest'ler değişmez**
+(yeni alanlar varsayılan değerdeyken kanonik JSON'a ve dolayısıyla digest'e
+GİRMEZ).
+
+### 1.12.0 — (a) `manifest.json` kanonik anahtar sırası
+
+`manifest.json` (ve diğer paket JSON'ları) `packageJsonText` ile yazılır;
+nlohmann `json` nesnesi `std::map` tabanlıdır → anahtarlar **alfabetik** sırada
+serileşir. Depodaki örnek paket (`libs/mm_contract/packages/end_plate_pkg`)
+bu kurala uymuyordu (`minContractVersion` yanlış yerdeydi); yeniden üretildi.
+Paket yükleyici anahtar sırasına DUYARLI DEĞİLDİR (sıra yalnız bayt-aynı
+üretim ve diff gürültüsü içindir).
+
 ## Sürüm denetimi DIŞINDA olanlar (serbest)
 
 - `.cpp` iç kod (header'daki imzayı değiştirmediği sürece)
