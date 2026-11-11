@@ -1,0 +1,10 @@
+{
+  "_comment": "P-2 Studio uyum golden'ı (taban levhası). Paket: mm_stiffened_base_plate.mmcpkg. Girdi: kanonik HEB300 kolon (0,0,0)-(0,0,3000), yalnız kolon (pickCount 1), varsayılan parametreler. Bu paket `plate.polygon` kullanır; P-2 öncesi kontur levhalarının width/height değeri 0 kaldığı için katı üretilemiyordu (t25: componentCount=0). KURAL: golden test geçsin diye YENİDEN ÜRETİLMEZ; değişecekse eski/yeni digest PR'da gösterilir ve STATE'e 'Studio REPIN gerekli: <hash>' yazılır.",
+  "package": "mm_stiffened_base_plate",
+  "packageChecksum": "tek kaynak: studio_pkgs/mm_stiffened_base_plate.mmcpkg/checksums.json",
+  "planDigest": "92134f6ae8592a938504ef2b4138dc0d3fb8722973242bcd30652e3203dbc85e",
+  "plates": 3,
+  "boltGroups": 1,
+  "welds": 5,
+  "_not": "3 levha: 500x500x30 taban levhası + 2 kontur (plate.polygon) levhası (varsayılan fs_count). Kontur levhalarının width/height = konturun sınır kutusu (P-2 kuralı)."
+}

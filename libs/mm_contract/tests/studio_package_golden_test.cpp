@@ -13,10 +13,9 @@
 // (orn. Studio paketi yenilendi) eski/yeni digest PR'da gosterilir ve STATE'e
 // "Studio REPIN gerekli: <hash>" yazilir.
 //
-// BILINEN ENGEL (P-2): mm_stiffened_base_plate `plate.polygon` kullaniyor;
-// materyalizator bu blogu katıya ceviremiyor. Bu testte o paket icin
-// "yukleme + sema gecerli" dogrulanir, URETIM icin beklenen hata metni
-// denetlenir (P-2 bitince bu beklenti KALDIRILMALIDIR — test bunu hatirlatir).
+// Taban levhasi paketi `plate.polygon` (kontur) kullanir — P-2 ile birlikte
+// kontur levhalari da materyalize edilebilir; bu testte uretim + golden
+// digest dogrulanir.
 #include "model_maker/component_codec.hpp"
 #include "model_maker/component_dialog.hpp"
 #include "model_maker/component_engine.hpp"
@@ -63,6 +62,16 @@ static mm::ComponentInput canonicalInput() {
                                             {1, 0, 0}, 0.0, colSec);
     in.secondary.push_back(mm::memberGeometryFromProfile(
         {0, 120, 2880}, {6000, 120, 2880}, /*connectionAtA=*/true, {0, 0, 1}, 0.0, beamSec));
+    return in;
+}
+
+// Kanonik girdi (taban levhasi): YALNIZ kolon (pickCount 1). Taban levhasi,
+// ankraj bulonlari ve kontur (plate.polygon) rijitlestirme levhalari uretilir.
+static mm::ComponentInput basePlateInput() {
+    const mm::MemberSectionSpec colSec{300.0, 300.0, 11.0, 19.0, 0.0};   // HEB300
+    mm::ComponentInput in;
+    in.main = mm::memberGeometryFromProfile({0, 0, 0}, {0, 0, 3000}, /*connectionAtA=*/false,
+                                            {1, 0, 0}, 0.0, colSec);
     return in;
 }
 
@@ -178,7 +187,7 @@ int main() {
             check(dialogSchemaValid(load.dialog, &why), "2 diyalog semasi GECERLI");
             const mm::ComponentGenerator gen =
                 mm::makeRecipeGenerator(load.dialog, load.recipe);
-            const mm::GenerationPlan gp = gen(canonicalInput());
+            const mm::GenerationPlan gp = gen(basePlateInput());
             if (!gp.ok) std::printf("      [teshis] uretim: %ls\n", gp.error.c_str());
             check(gp.ok, "2 KANONIK girdiyle plan URETILDI (polygon levhalar dahil)");
             if (gp.ok) {
@@ -186,12 +195,23 @@ int main() {
                             "%zu kaynak\n",
                             gp.plates.size(), gp.boltGroups.size(), gp.welds.size());
                 check(!gp.plates.empty(), "2 levha uretildi");
-                // P-2 ENGELI (STATE'te kayitli): plan OK, fakat MATERYALIZATOR
-                // polygon konturunu katiya ceviremiyor ("levha kati uretilemedi").
-                // Bu yuzden bu paket icin golden DIGEST KARSILASTIRMASI YAPILMAZ;
-                // P-2 bitince golden eklenir.
-                std::printf("      [engel] taban levhasi: materyalizasyon P-2'de "
-                            "(plate.polygon konturu katiya cevrilemiyor)\n");
+                check(!gp.boltGroups.empty(), "2 ankraj bulon grubu uretildi");
+                check(!gp.welds.empty(), "2 kaynak uretildi");
+                // P-2 REGRESYONU: taban levhasi paketi `plate.polygon` kullanir.
+                // Kontur levhalarinda `outline` dolu VE width/height (sinir
+                // kutusu) > 0 olmali; 0 kalirsa materyalizator levhayi uretemez
+                // ("levha kati uretilemedi") ve paket HIC uygulanamaz.
+                int contourPlates = 0;
+                bool bboxOk = true;
+                for (const auto& pl : gp.plates) {
+                    if (pl.outline.empty()) continue;
+                    ++contourPlates;
+                    if (!(pl.width > 0.0) || !(pl.height > 0.0)) bboxOk = false;
+                }
+                check(contourPlates >= 1, "2 kontur (plate.polygon) levhasi uretildi");
+                check(bboxOk, "2 kontur levhalarinda width/height (sinir kutusu) > 0");
+                const std::string digest = mm::generationPlanDigest(gp);
+                check(goldenCompare("base_plate", digest), "2 planDigest GOLDEN ile AYNI");
             }
         }
     }
