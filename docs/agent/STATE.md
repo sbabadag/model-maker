@@ -592,3 +592,26 @@ Kapılar: `p2-245-gate.log` **169/169** (454.71 s), `p2-67-gate.log` **170/170**
 Ders (bu turda öğrenilen): kapı koşarken kaynak/CMakeLists düzenlemek kapıyı
 yanlış kırmızıya düşürür (`qt_exe_sources_ok` configure anını okuyor) — kapı
 sürerken yalnız `docs/` düzenlenir.
+
+## B5 — view cube (kapandı, 2026-11-11)
+
+- [x] **B5 (a) seçim/komut korunur** — kod tarafı `88099d5`'te zaten vardı
+      (`applyViewCubeTarget` yalnız kamerayı değiştirir; `cancelDrawing` /
+      `cancelTransformCommand` çağırmaz) ama doğrulaması YOKTU.
+      GT `t28_b5_view_cube` (31 adım, GDI): ISO'da kolon seçili → küpün
+      ÖN/ÜST/SOL yüzlerine GERÇEK fare tıklaması (`ViewCube::layout`dan yüz
+      merkezi → `WM_LBUTTONDOWN/UP`) → `selection` 1 kaldı, kamera standart
+      görünüşe oturdu (ÖN 3.14159/1.57080, ÜST 0/0, SOL 1.57080/0;
+      `view.dir.*` ile karşılaştırmalı koşum birebir aynı sonucu verdi).
+      Komut ortasında (`draw.line` aktif) küp tıklaması aracı bozmadı.
+- [x] **B5 (b) yüz kaybı** — bu derlemede ÜRETİLEMEDİ: ISO/ÖN/ÜST/SOL
+      karelerinde gövde+flanş yüzleri dolu, GDI ve GPU'da aynı (vision ile
+      incelendi). Bulunan gerçek kusur GT koşucusundaydı: `pump()` `Sleep` ile
+      bekliyordu, mesaj işlemediği için ViewCube geçiş animasyonu (16 ms
+      `SetTimer`) ilerlemiyor ve kup yarım dönmüş halde yakalanıyordu.
+- Koşucuya eklenenler: `viewCubeFace {view}` adımı (yüz merkezi layout'tan;
+      görünmeyen yüzde ilk görünür yüz + log), `expect.camera {yaw, pitch, tol}`
+      (±π sarmalı), `Application::editMode()` salt-okunur erişimi, zaman
+      tabanlı `pump()`.
+- Kanıt: `C:\work\mm-hermes-shots6-11-11	28\` (GDI) ve `t28gpu\` (GPU).
+  Kapı: `b5-gate.log` **170/170**, `BUILD_EXIT=0`, `CTEST_EXIT=0`, 313.28 s.

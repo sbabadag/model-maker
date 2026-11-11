@@ -225,7 +225,7 @@ if(MM_GUI_TESTS AND WIN32 AND TARGET model-maker)
                      t22_p1_full_flow t23_package_profile_change
                      t24_bulgu_a_olcum t25_p2_polygon_materyalizasyon
                      t26_p2_obje_uyumlulugu_tasima
-                     t27_b8_kesim_duzlemi_kopya)
+                     t27_b8_kesim_duzlemi_kopya t28_b5_view_cube)
         add_test(NAME model_maker_gt1_${scenario}
             COMMAND model-maker
                 --test-script ${CMAKE_CURRENT_SOURCE_DIR}/tests/gt1/${scenario}.json

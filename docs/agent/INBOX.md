@@ -708,7 +708,26 @@ a) view cube'a tıklamak seçimi sıfırlamasın; komut sırasında tıklama
    komutu bozmasın. b) Bazı yüzler kayboluyordu (winding/eleme). AWS'de
    "yapıldı" denmişti; Windows'ta ekranda doğrula (GDI + GPU).
 
-Durum: —
+Durum: BİTTİ (GT `t28_b5_view_cube`, GDI + GPU, 31 adım `ok=true`).
+(a) kanıt: 3B ISO'da kolon seçili → küpe sırayla ÖN/ÜST/SOL yüzlerine GERÇEK
+fare tıklaması (yüz merkezi `ViewCube::layout`'tan hesaplanır,
+`WM_LBUTTONDOWN/UP` tuval HWND'sine gider) → her adımda `selection` 1 KALDI ve
+kamera tam standart görünüşe oturdu (ÖN yaw 3.14159/pitch 1.57080, ÜST 0/0,
+SOL 1.57080/0 — `Ctrl+1..7` ile BİREBİR aynı; `view.dir.*` ile karşılaştırmalı
+koşumla doğrulandı). Komut ortasında (`draw.line` aktif) küpe tıklama aracı
+BOZMADI (`activeTool` `draw.line` kaldı; `selection` 0, çünkü komut başlarken
+seçim zaten temizlenmişti).
+(b) yüz kaybı bu derlemede ÜRETİLEMEDİ: ISO/ÖN/ÜST/SOL karelerinde gövde ve
+flanş yüzleri dolu (GDI `t28`, GPU `t28gpu`; PNG'ler vision ile incelendi).
+Aynı sınıf belirtinin görünürlük kaynağı GT koşucusuydu: `pump()` `Sleep` ile
+bekliyor, mesaj işlemiyordu → ViewCube geçiş animasyonu (16 ms `SetTimer`)
+ilerlemiyor, kup yarım dönmüş halde yakalanıyordu. `pump()` artık döngüde
+`processEvents` yapıyor (animasyon tamamlanıyor); koşucuya `expect.camera
+{yaw, pitch, tol}` anahtarı eklendi (açı farkı ±π sarmalıyla).
+Not (kapsam dışı): `view.dir.*`/`Ctrl+1..7` görünüş komutu `setStandardView`
+içinde komutu ve seçimi hâlâ iptal ediyor; küp tıklaması koruyor. Bilinçli
+kural olarak bırakıldı — ayrı madde istenirse ele alınır.
+
 
 ## 6. GT-1 — GUI test modu (tekrarlanabilir GUI testleri)
 `model-maker.exe --test-script <senaryo.json> --out <klasör>`:

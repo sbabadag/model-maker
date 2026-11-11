@@ -22,6 +22,7 @@
 #include "model_maker/document.hpp"
 #include "model_maker/drafting.hpp"
 #include "model_maker/geometry.hpp"
+#include "model_maker/view_cube.hpp"
 #include "model_maker/qt_main_window.hpp"
 #include "model_maker/properties_panel.hpp"
 #include "model_maker/profile_picker_dialog.hpp"
@@ -123,8 +124,15 @@ QString componentGeometricDigest(Application& app, const ComponentInstanceRecord
 
 // Olay dongusu calismiyorken (app.exec() cagrilmadan) bekleyen isleri bosalt.
 void pump(int ms) {
-    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-    if (ms > 0) Sleep(static_cast<DWORD>(ms));
+    // Zaman tabanli bekleme: Sleep tek basina mesaj islemez, Qt zamanlayicilari
+    // (gecis animasyonu ~180 ms) ilerlemez. Bu yuzden dongu halinde isle.
+    const DWORD start = GetTickCount();
+    for (;;) {
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
+        if (ms <= 0) break;
+        if (GetTickCount() - start >= static_cast<DWORD>(ms)) break;
+        Sleep(5);
+    }
     QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
 }
 
@@ -533,6 +541,32 @@ struct Runner {
                                     .arg(actual,
                                          expected[QStringLiteral("type")].toString());
             }
+        }
+        // B5: kup tiklamasi -> standart gorunus. Kamera aci cifti (yaw/pitch,
+        // radyan) beklenen degere toleransla esit olmali; aci farki [-pi,pi]
+        // araligina indirgenir (yaw ±pi civarinda sarmalanir).
+        if (expect.contains(QStringLiteral("camera"))) {
+            const QJsonObject expected = expect[QStringLiteral("camera")].toObject();
+            const double tol = expected.contains(QStringLiteral("tol"))
+                                   ? expected[QStringLiteral("tol")].toDouble()
+                                   : 0.02;
+            const auto angleDiff = [](double a, double b) {
+                double d = a - b;
+                while (d > 3.14159265358979323846) d -= 2.0 * 3.14159265358979323846;
+                while (d < -3.14159265358979323846) d += 2.0 * 3.14159265358979323846;
+                return std::abs(d);
+            };
+            if (expected.contains(QStringLiteral("yaw")))
+                if (angleDiff(app.camera().yaw(), expected[QStringLiteral("yaw")].toDouble()) > tol)
+                    problems << QStringLiteral("camera.yaw=%1 (beklenen %2)")
+                                    .arg(app.camera().yaw())
+                                    .arg(expected[QStringLiteral("yaw")].toDouble());
+            if (expected.contains(QStringLiteral("pitch")))
+                if (angleDiff(app.camera().pitch(),
+                              expected[QStringLiteral("pitch")].toDouble()) > tol)
+                    problems << QStringLiteral("camera.pitch=%1 (beklenen %2)")
+                                    .arg(app.camera().pitch())
+                                    .arg(expected[QStringLiteral("pitch")].toDouble());
         }
         if (expect.contains(QStringLiteral("viewports")) &&
             window.viewportCount() != expect[QStringLiteral("viewports")].toInt(-1))
@@ -1240,6 +1274,54 @@ struct Runner {
             if (point.size() < 2) return fail(QStringLiteral("click: [x, y] bekleniyor"));
             execClick(point[0].toInt(), point[1].toInt());
             return writeStep(step, QStringLiteral("click"));
+        }
+        if (step.contains(QStringLiteral("viewCubeFace"))) {
+            // B5: VIEW CUBE'a GERCEK fare ile tikla (yuz merkezi layout'tan).
+            // Amac: secim ve aktif komut KORUNUR; yuz cizimi kaybolmaz.
+            // Tiklama, uygulamanin kendi WndProc yolundan gecer (sendMouse).
+            const QJsonObject spec = step[QStringLiteral("viewCubeFace")].toObject();
+            const QString faceName = spec[QStringLiteral("view")].toString();
+            if (window.application().editMode() != mm::EditMode::View3D)
+                return fail(QStringLiteral("viewCubeFace: 3B modda degil"));
+            RECT client{};
+            HWND canvas = window.application().canvasHandle();
+            GetClientRect(canvas, &client);
+            const mm::ViewCubeLayout layout =
+                mm::ViewCube::layout(client.right, window.application().camera());
+            int target = -1;
+            // faces[] sirasi sabit (view_cube.cpp faceIndexOfNormal ile ayni):
+            // 0=Left 1=Right 2=Bottom 3=Top 4=Back 5=Front
+            static const char* const kFaceNames[6] = {"left", "right", "bottom",
+                                                      "top",  "back",  "front"};
+            for (int i = 0; i < 6; ++i) {
+                if (!layout.faces[i].visible) continue;
+                if (faceName == QLatin1String(kFaceNames[i])) target = i;
+            }
+            if (target < 0) {
+                // Istenen yuz bu bakistan GORUNMUYOR (kup arka yuzu çevirmez):
+                // gorunur yuzleri yaz ve ILK gorunur yuzu tikla — secim koruma
+                // kurali her yuz icin aynidir; hangi yuz oldugu log'ta.
+                QString seen;
+                for (int i = 0; i < 6; ++i) {
+                    if (!layout.faces[i].visible) continue;
+                    if (seen.isEmpty()) target = i;
+                    seen += QString::number(i) + QLatin1Char(',');
+                }
+                std::printf("[viewcube] '%s' gorunmuyor; gorunur yuzler: %s\n",
+                            faceName.toUtf8().constData(), seen.toUtf8().constData());
+                if (target < 0)
+                    return fail(QStringLiteral("viewCubeFace: kup uzerinde GORUNUR yuz yok"));
+            }
+            const mm::ViewCubeFace& f = layout.faces[target];
+            int cx = 0, cy = 0;
+            for (const auto& p : f.points) { cx += p.x; cy += p.y; }
+            cx /= 4;
+            cy /= 4;
+            std::printf("[viewcube] %s yuzu merkezi (%d,%d)\n", faceName.toUtf8().constData(),
+                        cx, cy);
+            execClick(cx, cy);
+            pump(400);   // gecis animasyonu ~180 ms
+            return writeStep(step, QStringLiteral("viewCubeFace"));
         }
         if (step.contains(QStringLiteral("clickWorld"))) {
             // H-5: dunya noktasi -> ekran -> tikla. Isin o noktadan gectigi

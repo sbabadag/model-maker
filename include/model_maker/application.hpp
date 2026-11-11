@@ -769,6 +769,7 @@ public:
     const std::vector<std::size_t>& selectedModelIndices() const noexcept { return selectedModels_; }
     // GT-1 (GUI test modu): durum JSON'u icin salt-okunur erisim.
     DrawTool activeTool() const noexcept { return tool_; }
+    EditMode editMode() const noexcept { return mode_; }
     const Camera& camera() const noexcept { return camera_; }
     // --- SECIM MODLARI (Phase W1: Part / Assembly) ---------------------------
     // Birbirini dislayan iki secim modu. Part: yalniz tiklanan parca secilir.

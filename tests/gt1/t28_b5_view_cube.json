@@ -1,0 +1,174 @@
+{
+  "backend": "gdi",
+  "timeoutMs": 180000,
+  "_comment": "B5 (INBOX 5): VIEW CUBE. (a) kupa tiklamak SECIMI sifirlamasin ve komut sirasindaki tiklamayi bozmasin; (b) kup yuzlerine tiklandikca model yuzleri KAYBOLMASIN (winding/eleme). Gercek fare yolu: yuz merkezi ViewCube::layout'tan hesaplanip WM_LBUTTONDOWN/UP gonderilir.",
+  "steps": [
+    {
+      "profile": "HEB300"
+    },
+    {
+      "appColumnLevels": {
+        "top": 3000,
+        "bottom": 0
+      }
+    },
+    {
+      "placeColumn": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      }
+    },
+    {
+      "key": "Escape"
+    },
+    {
+      "cmd": "view.dir.iso"
+    },
+    {
+      "fit": {}
+    },
+    {
+      "select": [
+        0
+      ]
+    },
+    {
+      "expect": {
+        "selection": 1
+      }
+    },
+    {
+      "capture": {
+        "name": "b5-00-iso-secili",
+        "target": "window"
+      }
+    },
+    {
+      "viewCubeFace": {
+        "view": "front"
+      }
+    },
+    {
+      "expect": {
+        "selection": 1,
+        "camera": {
+        "yaw": 3.14159265,
+        "pitch": 1.57079633,
+        "tol": 0.02
+        }
+      }
+    },
+    {
+      "capture": {
+        "name": "b5-01-front-secim-korundu",
+        "target": "window"
+      }
+    },
+    {
+      "cmd": "view.dir.iso"
+    },
+    {
+      "select": [
+        0
+      ]
+    },
+    {
+      "expect": {
+        "selection": 1
+      }
+    },
+    {
+      "viewCubeFace": {
+        "view": "top"
+      }
+    },
+    {
+      "expect": {
+        "selection": 1,
+        "camera": {
+        "yaw": 0.0,
+        "pitch": 0.0,
+        "tol": 0.02
+        }
+      }
+    },
+    {
+      "capture": {
+        "name": "b5-02-top-secim-korundu",
+        "target": "window"
+      }
+    },
+    {
+      "cmd": "view.dir.iso"
+    },
+    {
+      "select": [
+        0
+      ]
+    },
+    {
+      "expect": {
+        "selection": 1
+      }
+    },
+    {
+      "viewCubeFace": {
+        "view": "left"
+      }
+    },
+    {
+      "expect": {
+        "selection": 1,
+        "camera": {
+        "yaw": 1.57079633,
+        "pitch": 0.0,
+        "tol": 0.02
+        }
+      }
+    },
+    {
+      "capture": {
+        "name": "b5-03-left-secim-korundu",
+        "target": "window"
+      }
+    },
+    {
+      "cmd": "view.dir.iso"
+    },
+    {
+      "cmd": "draw.line"
+    },
+    {
+      "expect": {
+        "activeTool": "draw.line",
+        "selection": 0
+      }
+    },
+    {
+      "viewCubeFace": {
+        "view": "front"
+      }
+    },
+    {
+      "expect": {
+        "selection": 0,
+        "activeTool": "draw.line",
+        "camera": {
+        "yaw": 3.14159265,
+        "pitch": 1.57079633,
+        "tol": 0.02
+        }
+      }
+    },
+    {
+      "capture": {
+        "name": "b5-04-komut-sirasinda-kup",
+        "target": "window"
+      }
+    },
+    {
+      "key": "Escape"
+    }
+  ]
+}
