@@ -8,3 +8,9 @@ tools/model-maker-bridge/fixtures/** -text
 # baytlar uzerinden dogrulanir. Windows core.autocrlf=true bu dosyalari CRLF
 # yapinca butun paketler sessizce reddediliyordu (ZBook'da yasandi).
 libs/mm_contract/packages/** -text
+
+# MM-5 GT fixture'lari (tests/fixtures: p1_*, studio_pkgs, gt1, golden) de
+# ayni sekilde byte-ayni kalmali — paket kurulumu ve checksum dogrulama testleri
+# bu dosyalari ham bayt olarak okur. Ayni CRLF tuzagi: Windows autocrlf=true
+# checkout'ta LF -> CRLF yapip checksums.json butunlugunu bozuyordu.
+tests/fixtures/** -text
