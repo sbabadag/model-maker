@@ -1112,6 +1112,22 @@ T-12 BULGUSUNUN KÖKÜ (donus + bagli bilesen) — GT `t43_t12_donus_bilesen`, 2
     Kanit: `C:\work\mm-hermes-shots\2026-11-11\t43\` ve `t43gpu\`
     (`t12b-00/01/02` ekran goruntuleri). Kapi: `t43-gate.log`.
 
+T-13 F7 BULGUSU — OLCULDU, KUSUR ADAYI OLARAK ACIK
+    Kosucuya `expect.workPlaneGhost {true|false}` eklendi (durum cubugunda
+    metni olmadigi icin T-13'te "F7 etkisiz" gorunuyordu):
+    * `wp.ghost` KOMUT yolu bayragi dogru toggler — GT `t45_t13_f7_hayalet`
+      (10 adim, GDI + GPU `ok=true`): false -> true -> false.
+    * AYNI kosucu yolundan gonderilen **F7 TUSU bayragi degistirmiyor**
+      (F8/F9/F2 tuslari calisiyor; F7 tek basina etkisiz).
+    * F9 (GRID) ve F8 (ORTHO) bu bayragi degistirmiyor.
+    KUSUR ADAYI: F7 kisayolu tuval tus yoluna bagli degil
+    (`command_catalog.cpp` `wp.ghost` girdisi `.key("F7")` + `.toggle(
+    "workPlaneGhost")` ile kayitli; `assist.*` F-tuslari
+    `.surface(CommandSurface::StatusBar)` ile isaretli, `wp.ghost` degil —
+    ilk bakilacak yer burasi). Kullanici tusla hayalet duzlemi acamiyor;
+    menu/kurdele yolu calisiyor.
+    Kanit: `C:\work\mm-hermes-shots\2026-11-12\t45\` ve `t45gpu\`.
+
 T-10 BULGUSU KAPANDI (kaynak sayisi belirlenimsiz DEGIL) — GT `t44_t10_kaynak_sayimi`,
     18 adim `ok=true`, GDI ve GPU ayni. Kesin olcum:
     * `beam_to_column_end_plate` tek basina: **boltGroups=1, welds=0**

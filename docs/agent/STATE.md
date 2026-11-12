@@ -799,3 +799,14 @@ sürerken yalnız `docs/` düzenlenir.
 - Uc kosumda ayni sonuc (t44r1..r3) -> T-10'daki "belirlenimsiz" notu
   gecersiz; kaynak beklentisi artik GT'de sabit.
 - Kanit: shots\2026-11-12\t44 (GDI) + t44gpu (GPU). Kapi: `t44-gate.log`.
+
+## F7 olcumu (2026-11-12)
+
+- Yeni `expect.workPlaneGhost` adimi (durum cubugunda metin yok).
+- GT `t45_t13_f7_hayalet` 10 adim `ok=true` (GDI + GPU):
+  `wp.ghost` komutu false -> true -> false; F9/F8 bayragi degistirmiyor.
+- BULGU (kusur adayi): ayni kosucu yolundan gonderilen F7 tusu bayragi
+  degistirmiyor (F8/F9/F2 tuslari calisiyor) — F7 kisayolu tuval tus yoluna
+  bagli degil gibi; ilk supheli `wp.ghost` girdisinde `.surface(
+  CommandSurface::StatusBar)` olmamasi.
+- Kanit: shots\2026-11-12\t45 (GDI) + t45gpu (GPU).

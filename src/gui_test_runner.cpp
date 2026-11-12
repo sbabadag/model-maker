@@ -1140,6 +1140,20 @@ struct Runner {
                                 .arg(paperPdfBytes_)
                                 .arg(spec[QStringLiteral("pdfBytesAtLeast")].toInteger());
         }
+        if (expect.contains(QStringLiteral("workPlaneGhost"))) {
+            // T-13 F7 bulgusu: hayalet duzlem gorunurlugu DURUM BAYRAGIDIR
+            // (durum cubugunda metni yok — bu yuzden T-13'te "etkisiz"
+            // sanildi). Dogrudan API'den okunur.
+            const bool want =
+                expect[QStringLiteral("workPlaneGhost")].toBool();
+            const bool actual = window.application().workPlaneGhostVisible();
+            if (actual != want)
+                problems << QStringLiteral("workPlaneGhost: %1 != %2")
+                                .arg(actual ? QStringLiteral("acik")
+                                            : QStringLiteral("kapali"),
+                                     want ? QStringLiteral("acik")
+                                          : QStringLiteral("kapali"));
+        }
         if (expect.contains(QStringLiteral("componentDigest"))) {
             const QJsonObject spec = expect[QStringLiteral("componentDigest")].toObject();
             const QString typeId = spec[QStringLiteral("typeId")].toString();

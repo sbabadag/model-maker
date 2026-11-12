@@ -1,0 +1,50 @@
+{
+  "_comment": "T-13 F7 bulgusunun olcumu: (1) hayalet duzlem gorunurlugu Application::workPlaneGhostVisible() ile OKUNUR (durum cubugunda metni yok — T-13'te bu yuzden 'etkisiz' gorunuyordu). (2) `wp.ghost` KOMUT yolu bayragi dogru toggler. (3) AYNI kosucu yolundan gonderilen F7 TUSU bayragi DEGISTIRMIYOR (F8/F9/F2 tuslari calisiyor) — F7 kisayolunun tuval tus yoluna baglanmadigi kusur adayi olarak INBOX'a yazildi; bu GT yalniz komut yolunu ve bayragin okunabilirligini sabitler.",
+  "backend": "gdi",
+  "timeoutMs": 120000,
+  "steps": [
+    {
+      "expect": {
+        "workPlaneGhost": false
+      }
+    },
+    {
+      "cmd": "wp.ghost"
+    },
+    {
+      "expect": {
+        "workPlaneGhost": true
+      }
+    },
+    {
+      "cmd": "wp.ghost"
+    },
+    {
+      "expect": {
+        "workPlaneGhost": false
+      }
+    },
+    {
+      "key": "F9"
+    },
+    {
+      "expect": {
+        "workPlaneGhost": false
+      }
+    },
+    {
+      "key": "F8"
+    },
+    {
+      "expect": {
+        "workPlaneGhost": false
+      }
+    },
+    {
+      "capture": {
+        "name": "t13b-00-hayalet",
+        "target": "window"
+      }
+    }
+  ]
+}
