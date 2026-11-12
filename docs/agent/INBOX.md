@@ -1112,6 +1112,14 @@ T-12 BULGUSUNUN KÖKÜ (donus + bagli bilesen) — GT `t43_t12_donus_bilesen`, 2
     Kanit: `C:\work\mm-hermes-shots\2026-11-11\t43\` ve `t43gpu\`
     (`t12b-00/01/02` ekran goruntuleri). Kapi: `t43-gate.log`.
 
+TAM GT SUITI — kosucu degisikliklerinden sonra 44/44 senaryo YESIL
+    (`tests/gt1/*.json` tamami, tek tek kosuldu):
+    `C:\work\mm-logs\gt-suite-summary.txt`, ciktilar
+    `C:\work\mm-hermes-shots\2026-11-12\suite\`.
+    Kapsam: b1/b2b7/b6/h1/h4/h6/smoke + t9…t43 (T-1…T-14 dahil).
+    T-13/T-14'te kosucuya eklenen `SendInput` tus girdisi, `appPaper`,
+    `appGeomCapture`/`appGeomCompare` eski senaryolari bozmadi.
+
 KUŞUR KAPATMA — `libs/mm_contract/tests/recipe_test.cpp` derlenmiyordu
     Kök `CMakeLists.txt` bu testi hiç eklemiyordu (libs/mm_contract kendi
     başına derleniyor, kök ağaçta yoktu). Hedef `model_maker_recipe_test`

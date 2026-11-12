@@ -767,3 +767,25 @@ sürerken yalnız `docs/` düzenlenir.
 - Kusur adayi: donus bagli bileseni yeniden uretmiyor + kesim payini
   kaybediyor. GT mevcut davranisi sinirlarla belgeler.
 - Kanit: shots\2026-11-11\t43 (GDI) + t43gpu (GPU). Kapi: `t43-gate.log`.
+
+## Sabah ozeti (2026-11-12, gece kosumu)
+
+- **T-13 kisayollar**: commit `4a4ccbe` (GT `t41`, 77 adim; kosucuya
+  SendInput + tuval odagi + pump 150 ms). Kapi 170/170.
+- **T-14 cizim**: commit `5b51de1` (GT `t42`, 16 adim; `appPaper` =
+  `buildDrawingSet` + `exportSheetPdf`, 1 pafta / 4 gorunus / A2, PDF
+  ~20 KB). Kapi 170/170.
+- **recipe_test kontrata baglandi**: commit `2b577e6` (ctest 170 -> 171;
+  bayat beklentiler 1.11.0/18 tas -> 1.24.0/20 tas; `recipe test: OK`).
+- **T-12 kok nedeni**: commit `b1fe632` (GT `t43`, 29 adim; donus bagli
+  bileseni guncellemiyor; kaydet/ac sonrasi levhalar 253 mm kayiyor;
+  kolon 24 -> 156 kose). Kusur adayi — karar bekliyor.
+- **Tam GT suiti**: 44/44 senaryo yesil (`gt-suite-summary.txt`).
+- Kontrat surumu **1.24.0** degismedi; golden digest'ler degismedi
+  (end plate `178cb73b…d4818`, base plate `92134f6a…c85e`) — Studio
+  REPIN gerekmiyor.
+- ctest: **171** test (170 + recipe_test).
+- Acik isler: Studio `mm_stiffened_end_plate` recipe `require:"flange"`
+  (REPIN-2, dis taraf), `planDigest` raporlamasi, donus/bilesen kusuru,
+  F7 etkisiz, T-9 levhalar Model Agaci'nda yok, T-10 kaynak sayisi
+  belirlenimsiz, panel 500 ms tazeleme ezmesi.
