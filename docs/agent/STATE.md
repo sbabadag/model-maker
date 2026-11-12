@@ -789,3 +789,13 @@ sürerken yalnız `docs/` düzenlenir.
   (REPIN-2, dis taraf), `planDigest` raporlamasi, donus/bilesen kusuru,
   F7 etkisiz, T-9 levhalar Model Agaci'nda yok, T-10 kaynak sayisi
   belirlenimsiz, panel 500 ms tazeleme ezmesi.
+
+## T-10 bulgusu kapandi — kaynak sayimi belirlenimli (2026-11-12)
+
+- GT `t44_t10_kaynak_sayimi` 18 adim `ok=true` (GDI + GPU).
+- `beam_to_column_end_plate` tek basina: boltGroups=1, welds=**0**.
+- `tekla_shear_plate_146` ile: boltGroups=2, welds=**1** (kaynak 146'dan).
+- `edit.undo` sonrasi: boltGroups=1, welds=**0**.
+- Uc kosumda ayni sonuc (t44r1..r3) -> T-10'daki "belirlenimsiz" notu
+  gecersiz; kaynak beklentisi artik GT'de sabit.
+- Kanit: shots\2026-11-12\t44 (GDI) + t44gpu (GPU). Kapi: `t44-gate.log`.

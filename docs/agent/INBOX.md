@@ -1112,6 +1112,21 @@ T-12 BULGUSUNUN KÖKÜ (donus + bagli bilesen) — GT `t43_t12_donus_bilesen`, 2
     Kanit: `C:\work\mm-hermes-shots\2026-11-11\t43\` ve `t43gpu\`
     (`t12b-00/01/02` ekran goruntuleri). Kapi: `t43-gate.log`.
 
+T-10 BULGUSU KAPANDI (kaynak sayisi belirlenimsiz DEGIL) — GT `t44_t10_kaynak_sayimi`,
+    18 adim `ok=true`, GDI ve GPU ayni. Kesin olcum:
+    * `beam_to_column_end_plate` tek basina: **boltGroups=1, welds=0**
+      (T-10'daki "end plate 1 kaynak yaziyor" notu YANLIS; o not, sahnede
+      146 varken alinmis).
+    * `tekla_shear_plate_146` eklenince: **boltGroups=2, welds=1** — kaynak
+      kaydi 146'dan geliyor.
+    * `edit.undo` 146'yi kaldirinca: **boltGroups=1, welds=0** (alin levhasi
+      kalir) — kaynak ve bulon sayilari birlikte dusuyor.
+    Ayni senaryo uc kez kosuldu (t44r1..r3): her seferinde ayni sayilar ->
+    belirlenimsizlik yok. T-10'daki `welds` beklentileri bu yuzden geri
+    konabilir (bu GT ile konuldu).
+    Kanit: `C:\work\mm-hermes-shots\2026-11-12\t44\` ve `t44gpu\`,
+    tanilar `t44r1..r3`. Kapi: `t44-gate.log`.
+
 TAM GT SUITI — kosucu degisikliklerinden sonra 44/44 senaryo YESIL
     (`tests/gt1/*.json` tamami, tek tek kosuldu):
     `C:\work\mm-logs\gt-suite-summary.txt`, ciktilar

@@ -1,0 +1,121 @@
+{
+  "_comment": "T-10 bulgusunun kesin olcumu: kaynak kaydi ALIN LEVHASINDAN gelmiyor (0), KAYMA LEVHASI 146'dan geliyor (1). Uc kosumda da ayni sonuc (belirlenimli); T-10'daki '0 goruldu' notu 146'nin sahnede olmadigi bir tanidan geliyordu. Geri alma kaynak+bulon sayilarini birlikte dusuruyor.",
+  "backend": "gdi",
+  "timeoutMs": 180000,
+  "steps": [
+    {
+      "profile": "HEB260"
+    },
+    {
+      "appColumnLevels": {
+        "top": 4000,
+        "bottom": 0
+      }
+    },
+    {
+      "placeColumn": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      }
+    },
+    {
+      "key": "Escape"
+    },
+    {
+      "assignLine": {
+        "x1": 0,
+        "y1": 0,
+        "z1": 4000,
+        "x2": 5000,
+        "y2": 0,
+        "z2": 4000,
+        "profile": "IPE300"
+      }
+    },
+    {
+      "key": "Escape"
+    },
+    {
+      "appComponent": {
+        "typeId": "beam_to_column_end_plate",
+        "parts": [
+          0,
+          1
+        ]
+      }
+    },
+    {
+      "expect": {
+        "componentCount": {
+          "typeId": "beam_to_column_end_plate",
+          "count": 1
+        }
+      }
+    },
+    {
+      "expect": {
+        "document": {
+          "boltGroups": 1,
+          "welds": 0
+        }
+      }
+    },
+    {
+      "appComponent": {
+        "typeId": "tekla_shear_plate_146",
+        "parts": [
+          0,
+          1
+        ]
+      }
+    },
+    {
+      "expect": {
+        "componentCount": {
+          "typeId": "tekla_shear_plate_146",
+          "count": 1
+        }
+      }
+    },
+    {
+      "expect": {
+        "document": {
+          "boltGroups": 2,
+          "welds": 1
+        }
+      }
+    },
+    {
+      "cmd": "edit.undo"
+    },
+    {
+      "expect": {
+        "document": {
+          "boltGroups": 1,
+          "welds": 0
+        }
+      }
+    },
+    {
+      "expect": {
+        "componentCount": {
+          "typeId": "tekla_shear_plate_146",
+          "count": 0
+        }
+      }
+    },
+    {
+      "cmd": "view.dir.iso"
+    },
+    {
+      "fit": {}
+    },
+    {
+      "capture": {
+        "name": "t10b-00-son",
+        "target": "window"
+      }
+    }
+  ]
+}
