@@ -810,3 +810,15 @@ sürerken yalnız `docs/` düzenlenir.
   bagli degil gibi; ilk supheli `wp.ghost` girdisinde `.surface(
   CommandSurface::StatusBar)` olmamasi.
 - Kanit: shots\2026-11-12\t45 (GDI) + t45gpu (GPU).
+
+## Haunch kolon-donusu bildirimi (2026-11-14, ACIK)
+
+- Kullanici: "baglandigi kolonu 90 derece ceviriyor, oteliyor".
+- GT'de 7 varyant olculdu; kolon hicbirinde oynamadi (maxDelta 0,
+  profileRotation 0): normal, ters sira, kolon 90° donmus, kiris Y yonunde,
+  haunch iki kez, kiris 90° profil donuslu, alin levhasi + haunch.
+- Kalici GT `t46_haunch_kolon_bozulmasi` (20 adim, GDI + GPU): kolon
+  donusu/geometrisi sabit, kiris ucu >= 100 mm kayar (mevcut davranis).
+- Acik: kullanici akisinda tetiklenen yol bulunamadi. Istenen: .mmw dosyasi
+  veya pick sirasi (hangi uye once, hangi yuzey).
+- Kosucu: `appGeomCompare` `only` modunda belge buyumesi eslesmeme sayilmaz.

@@ -2226,7 +2226,9 @@ struct Runner {
                     geomMaxDelta_ = std::max(geomMaxDelta_, std::max(dx, std::max(dy, dz)));
                 }
             }
-            if (before.size() != static_cast<int>(models.size()))
+            // Yalniz belirli indeksler olculuyorsa belge buyumesi (bilesen
+            // levhalari) eslesmeme SAYILMAZ.
+            if (only.isEmpty() && before.size() != static_cast<int>(models.size()))
                 ++geomMismatchModels_;
             for (int i = 0; i < static_cast<int>(models.size()); ++i) {
                 const auto& b = models[static_cast<std::size_t>(i)].vertices();

@@ -1112,6 +1112,27 @@ T-12 BULGUSUNUN KÖKÜ (donus + bagli bilesen) — GT `t43_t12_donus_bilesen`, 2
     Kanit: `C:\work\mm-hermes-shots\2026-11-11\t43\` ve `t43gpu\`
     (`t12b-00/01/02` ekran goruntuleri). Kapi: `t43-gate.log`.
 
+HAUNCH BILDIRIMI (kullanici, 2026-11-14): "baglandigi kolonu 90 derece ceviriyor,
+    oteliyor, baglanti bozuk oluyor" — seritten Haunch 40 secilip kolon +
+    kiris tiklanarak uygulanirken. GT'de YEDI varyant olculdu, KOLON HICBIRINDE
+    oynamadi (geometri maxDelta = 0, profileRotation 0):
+    (1) kolon main / kiris secondary, (2) ters sira (kiris main),
+    (3) kolon 90° dondurulmusken, (4) kiris Y yonunde bagli,
+    (5) haunch iki kez, (6) kiris 90° profil donuslu, (7) alin levhasi +
+    haunch. Bu yuzden kalici GT `t46_haunch_kolon_bozulmasi` (20 adim,
+    GDI + GPU `ok=true`) seviye/yerlestir kolonu + cizgi kiris uzerinde
+    KOLONUN donusunu (0°) ve geometrisini (1 mm) sabitler; kirisin ucu
+    haunch nedeniyle >= 100 mm kayar (mevcut davranis).
+    ACIK MADDE: kullanici akisinda kolonun 90° dondugu yol hala
+    bulunamadi. Ayirt edici degiskenler: (a) komutun actigi secim akisi
+    (`startComponentCommand` + `pickPendingComponentAt` + sag tik) GT'nin
+    `applyComponentFromParts` cagrisindan farkli olabilir, (b) kolonun
+    cizgi mi yerlestirme mi oldugu, (c) secimde YUZEY (hoverFace) olmasi.
+    Istenen: sorunu gosteren .mmw ya da adim adim pick sirasi (hangi uye
+    once tiklandi, hangi yuzune).
+    Kosucu duzeltmesi (bu maddeyle geldi): `appGeomCompare` `only` modunda
+    belge buyumesini (bilesen levhalari) "eslesmedi" saymiyor.
+
 T-13 F7 BULGUSU — OLCULDU, KUSUR ADAYI OLARAK ACIK
     Kosucuya `expect.workPlaneGhost {true|false}` eklendi (durum cubugunda
     metni olmadigi icin T-13'te "F7 etkisiz" gorunuyordu):

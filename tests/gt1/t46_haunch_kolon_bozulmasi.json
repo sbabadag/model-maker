@@ -1,0 +1,126 @@
+{
+  "_comment": "KULLANICI BILDIRIMI (haunch): 'baglandigi kolonu 90 derece ceviriyor, oteliyor'. Bu GT, seviye/yerlestir ile uretilen kolon + cizgi kiris uzerinde haunch uygular ve KOLONUN hem profileRotation'inin (0 derece) hem geometrisinin (1 mm tolerans) DEGISMEDIGINI sabitler; kirisin ucu haunch nedeniyle kayar (>= 100 mm, mevcut davranis). Diger 6 varyant (ters sira, kolon 90 derece donmusken, kiris Y yonunde, haunch iki kez, kiris 90 derece profil donuslu, alin levhasi + haunch) elle olculdu: kolon hicbirinde oynamadi — kullanici akisinda tetiklenen farkli bir yol var (INBOX'ta acik madde).",
+  "backend": "gdi",
+  "timeoutMs": 180000,
+  "steps": [
+    {
+      "profile": "HEB260"
+    },
+    {
+      "appColumnLevels": {
+        "top": 4000,
+        "bottom": 0
+      }
+    },
+    {
+      "placeColumn": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      }
+    },
+    {
+      "key": "Escape"
+    },
+    {
+      "assignLine": {
+        "x1": 0,
+        "y1": 0,
+        "z1": 4000,
+        "x2": 5000,
+        "y2": 0,
+        "z2": 4000,
+        "profile": "IPE300"
+      }
+    },
+    {
+      "key": "Escape"
+    },
+    {
+      "expect": {
+        "models": {
+          "count": 2,
+          "profiled": 2
+        }
+      }
+    },
+    {
+      "expect": {
+        "modelRotation": {
+          "model": 0,
+          "degrees": 0.0
+        }
+      }
+    },
+    {
+      "cmd": "view.dir.iso"
+    },
+    {
+      "fit": {}
+    },
+    {
+      "capture": {
+        "name": "hc-00-oncesi",
+        "target": "window"
+      }
+    },
+    {
+      "appGeomCapture": "on"
+    },
+    {
+      "appComponent": {
+        "typeId": "tekla_haunch_40",
+        "parts": [
+          0,
+          1
+        ]
+      }
+    },
+    {
+      "expect": {
+        "componentCount": {
+          "typeId": "tekla_haunch_40",
+          "count": 1
+        }
+      }
+    },
+    {
+      "expect": {
+        "modelRotation": {
+          "model": 0,
+          "degrees": 0.0
+        }
+      }
+    },
+    {
+      "appGeomCompare": {
+        "tag": "on",
+        "only": [
+          0
+        ],
+        "maxDelta": 1.0
+      }
+    },
+    {
+      "appGeomCompare": {
+        "tag": "on",
+        "only": [
+          1
+        ],
+        "atLeastDelta": 100.0
+      }
+    },
+    {
+      "cmd": "view.dir.iso"
+    },
+    {
+      "fit": {}
+    },
+    {
+      "capture": {
+        "name": "hc-01-haunch-sonrasi",
+        "target": "window"
+      }
+    }
+  ]
+}
