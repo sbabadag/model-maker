@@ -1778,7 +1778,9 @@ EntityProperties Document::resolveEffectiveProperties(std::size_t index) const {
     result.locked = layer.locked;
     result.plottable = layer.plottable;
     result.description = layer.description;
-    if (!result.trueColor && (result.colorIndex <= 0 || result.colorIndex >= 256))
+    if (result.trueColor)
+        result.effectiveColor = *result.trueColor;
+    else if (result.colorIndex <= 0 || result.colorIndex >= 256)
         result.effectiveColor = layer.effectiveColor;
     if (result.lineType.empty() || result.lineType == "BYLAYER" || result.lineType == "BYBLOCK")
         result.effectiveLineType = layer.effectiveLineType;

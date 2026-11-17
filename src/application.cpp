@@ -10675,6 +10675,7 @@ void Application::setSelectedEntityProfileRotation(double degrees, bool openUndo
         std::int64_t profileSourceLine;
         double axisFrom[3], axisTo[3];
         double sectionNormal[3]; // kesit referans normali (yeniden uretimde korunur)
+        SectionAnchor sectionAnchor{SectionAnchor::Top}; // ankraj korunur
     };
     std::vector<TargetInfo> infos;
     infos.reserve(targets.size());
@@ -10696,6 +10697,7 @@ void Application::setSelectedEntityProfileRotation(double degrees, bool openUndo
         info.sectionNormal[0] = props.sectionNormalX;
         info.sectionNormal[1] = props.sectionNormalY;
         info.sectionNormal[2] = props.sectionNormalZ;
+        info.sectionAnchor = props.sectionAnchor;
         infos.push_back(std::move(info));
     }
 
@@ -10712,7 +10714,8 @@ void Application::setSelectedEntityProfileRotation(double degrees, bool openUndo
             std::abs(to.z - from.z) < 1e-9) continue;
         const TopoDS_Shape solid = mm::extrudeProfileSolid(
             *profile, from, to, degrees,
-            Vec3{info.sectionNormal[0], info.sectionNormal[1], info.sectionNormal[2]});
+            Vec3{info.sectionNormal[0], info.sectionNormal[1], info.sectionNormal[2]},
+            info.sectionAnchor);
         if (solid.IsNull()) continue;
         auto solidModel = mm::shapeToWireframeWithFaces(solid, 0.15);
         auto solidProps = solidModel.properties();
@@ -10726,6 +10729,7 @@ void Application::setSelectedEntityProfileRotation(double degrees, bool openUndo
         solidProps.sectionNormalX = info.sectionNormal[0];
         solidProps.sectionNormalY = info.sectionNormal[1];
         solidProps.sectionNormalZ = info.sectionNormal[2];
+        solidProps.sectionAnchor = info.sectionAnchor;
         solidProps.material = info.material;
         solidProps.trueColor = info.trueColor;
         solidProps.colorIndex = info.colorIndex;
@@ -10870,7 +10874,8 @@ std::vector<EntityId> Application::reanchorSecondaryMembers(
         if (!profile) return;
         const TopoDS_Shape solid = mm::extrudeProfileSolid(
             *profile, from, to, p.profileRotation,
-            Vec3{p.sectionNormalX, p.sectionNormalY, p.sectionNormalZ});
+            Vec3{p.sectionNormalX, p.sectionNormalY, p.sectionNormalZ},
+            p.sectionAnchor);
         if (solid.IsNull()) return;
         auto solidModel = mm::shapeToWireframeWithFaces(solid, 0.15);
         auto sp = solidModel.properties();
@@ -10882,6 +10887,7 @@ std::vector<EntityId> Application::reanchorSecondaryMembers(
         sp.sectionNormalX = p.sectionNormalX;
         sp.sectionNormalY = p.sectionNormalY;
         sp.sectionNormalZ = p.sectionNormalZ;
+        sp.sectionAnchor = p.sectionAnchor;
         sp.material = p.material;
         sp.trueColor = p.trueColor;
         sp.colorIndex = p.colorIndex;
@@ -10932,6 +10938,7 @@ bool Application::setSelectedEntityColumnLevels(double top, double bottom, bool 
         double x{}, y{};
         double rotation{};
         double sectionNormal[3]{};
+        SectionAnchor sectionAnchor{SectionAnchor::Top};
     };
     std::vector<Target> targets;
     for (const auto selIdx : selectedModels_) {
@@ -10953,6 +10960,7 @@ bool Application::setSelectedEntityColumnLevels(double top, double bottom, bool 
         target.sectionNormal[0] = props.sectionNormalX;
         target.sectionNormal[1] = props.sectionNormalY;
         target.sectionNormal[2] = props.sectionNormalZ;
+        target.sectionAnchor = props.sectionAnchor;
         targets.push_back(target);
     }
     if (targets.empty()) {
@@ -10990,7 +10998,8 @@ bool Application::setSelectedEntityColumnLevels(double top, double bottom, bool 
         const TopoDS_Shape solid = mm::extrudeProfileSolid(
             *profile, from, to, rotation,
             Vec3{target.sectionNormal[0], target.sectionNormal[1],
-                 target.sectionNormal[2]});
+                 target.sectionNormal[2]},
+            target.sectionAnchor);
         if (solid.IsNull()) continue;
         auto solidModel = mm::shapeToWireframeWithFaces(solid, 0.15);
         auto solidProps = solidModel.properties();
@@ -11003,6 +11012,7 @@ bool Application::setSelectedEntityColumnLevels(double top, double bottom, bool 
         solidProps.sectionNormalX = target.sectionNormal[0];
         solidProps.sectionNormalY = target.sectionNormal[1];
         solidProps.sectionNormalZ = target.sectionNormal[2];
+        solidProps.sectionAnchor = target.sectionAnchor;
         solidProps.material = material;
         solidProps.trueColor = trueColor;
         solidProps.colorIndex = colorIndex;
@@ -11081,7 +11091,8 @@ bool Application::shiftColumnTopNoUndo(EntityId columnId, double deltaZ) {
     if (!profile) return false;
     const TopoDS_Shape solid = mm::extrudeProfileSolid(
         *profile, from, to, props.profileRotation,
-        Vec3{props.sectionNormalX, props.sectionNormalY, props.sectionNormalZ});
+        Vec3{props.sectionNormalX, props.sectionNormalY, props.sectionNormalZ},
+        props.sectionAnchor);
     if (solid.IsNull()) return false;
 
     auto solidModel = mm::shapeToWireframeWithFaces(solid, 0.15);
@@ -11094,6 +11105,7 @@ bool Application::shiftColumnTopNoUndo(EntityId columnId, double deltaZ) {
     sp.sectionNormalX = props.sectionNormalX;
     sp.sectionNormalY = props.sectionNormalY;
     sp.sectionNormalZ = props.sectionNormalZ;
+    sp.sectionAnchor = props.sectionAnchor;
     sp.material = props.material;
     sp.trueColor = props.trueColor;
     sp.colorIndex = props.colorIndex;

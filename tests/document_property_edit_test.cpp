@@ -102,6 +102,25 @@ int main() {
     check(!doc.undo() || doc.models().empty(),
           "bos kayit siraya girmemis / yalnizca taban kaydi kaldi");
 
+    // --- 6) REGRESYON: trueColor set → effectiveColor trueColor'dan turetiliyor ---
+    // Yeniden uretim yollari (rotasyon/kolon koti/reanchor/cap gap) trueColor'ı
+    // korur ama effectiveColor'ı (varsayilan 0x68CAFF) birakiyordu.
+    // resolveEffectiveProperties trueColor varsa effectiveColor'ı ondan
+    // turetmedigi icin ACIK renkli uye CYAN'a (acik mavi) donuyordu
+    // (kullanici: "class maviye donuyor"). Bu kontrol o gerilemeyi kilitler.
+    {
+        WireframeModel colored = WireframeModel::line({0, 0, 0}, {50, 0, 0});
+        EntityProperties coloredProps = colored.properties();
+        coloredProps.trueColor = 0xFF4040u;  // kirmizi (palet Red)
+        coloredProps.colorIndex = 256;       // BYLAYER indeksi (setModelColor ile ayni)
+        // effectiveColor KASTEN default 0x68CAFF birakiliyor (yeniden uretim hatasi)
+        colored.setProperties(std::move(coloredProps));
+        doc.addModel(std::move(colored));
+        const std::size_t coloredIdx = doc.models().size() - 1;
+        check(doc.effectiveProperties(coloredIdx).effectiveColor == 0xFF4040u,
+              "trueColor set → effectiveColor trueColor'dan turetiliyor (kirmizi, CYAN degil)");
+    }
+
     std::printf("%d/%d kontrol gecti\n", g_checks - g_failures, g_checks);
     return g_failures == 0 ? 0 : 1;
 }
