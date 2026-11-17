@@ -380,6 +380,83 @@ void testUnknownBlocksPreserved() {
           "unknown block survives re-write");
 }
 
+void testViewsRoundTrip() {
+    std::printf("Test: views ('Q' block) round-trip\n");
+    Mmw8Document doc = makeDoc();
+
+    Mmw8View v1;
+    v1.name = L"Plan Görünüşü 1";  // ö/ü/ş -> UTF-8 cok baytli isim testi
+    v1.originX = 100.5; v1.originY = -200.25; v1.originZ = 3600.0;
+    v1.rightX = 1.0; v1.rightY = 0.0; v1.rightZ = 0.0;
+    v1.upX = 0.0; v1.upY = 1.0; v1.upZ = 0.0;
+    v1.normalX = 0.0; v1.normalY = 0.0; v1.normalZ = 1.0;
+    v1.length = 0.0;
+    v1.depthFront = 3000.0; v1.depthBack = 1000.0;
+    v1.fromFace = false;
+    doc.views.push_back(v1);
+
+    Mmw8View v2;
+    v2.name = L"Görünüş 2";
+    v2.originX = 0.0; v2.originY = 0.0; v2.originZ = 0.0;
+    v2.rightX = 0.7071067811865476; v2.rightY = 0.7071067811865476; v2.rightZ = 0.0;
+    v2.upX = 0.0; v2.upY = 0.0; v2.upZ = 1.0;
+    v2.normalX = 0.7071067811865476; v2.normalY = -0.7071067811865476; v2.normalZ = 0.0;
+    v2.length = 5000.0;
+    v2.depthFront = 100.0; v2.depthBack = 100.0;
+    v2.fromFace = true;
+    doc.views.push_back(v2);
+
+    const std::string bytes = serialize(doc);
+
+    Mmw8Document parsed;
+    {
+        std::istringstream is(bytes);
+        readMmw8(is, parsed);
+    }
+
+    check(parsed.views.size() == 2, "two views round-trip");
+    if (parsed.views.size() == 2) {
+        check(parsed.views[0].name == L"Plan Görünüşü 1", "view 1 name (UTF-8) preserved");
+        check(parsed.views[0].originX == 100.5 && parsed.views[0].originY == -200.25 &&
+                  parsed.views[0].originZ == 3600.0,
+              "view 1 origin preserved");
+        check(parsed.views[0].depthFront == 3000.0 && parsed.views[0].depthBack == 1000.0 &&
+                  !parsed.views[0].fromFace,
+              "view 1 depth/fromFace preserved");
+        check(parsed.views[1].name == L"Görünüş 2", "view 2 name preserved");
+        check(parsed.views[1].rightX == v2.rightX && parsed.views[1].rightY == v2.rightY &&
+                  parsed.views[1].rightZ == v2.rightZ,
+              "view 2 right (full precision) preserved");
+        check(parsed.views[1].normalX == v2.normalX && parsed.views[1].normalY == v2.normalY,
+              "view 2 normal preserved");
+        check(parsed.views[1].length == 5000.0 && parsed.views[1].fromFace,
+              "view 2 length/fromFace preserved");
+        check(parsed.views[1].upZ == 1.0, "view 2 up preserved");
+    }
+
+    // Bos views: Q blogu YAZILMAZ -> okuma sonrasi views bos.
+    {
+        Mmw8Document empty = makeDoc();
+        empty.views.clear();
+        const std::string eb = serialize(empty);
+        check(eb.find("Q ") == std::string::npos, "empty views -> no Q block written");
+        Mmw8Document back;
+        std::istringstream is(eb);
+        readMmw8(is, back);
+        check(back.views.empty(), "no Q block -> no views loaded");
+    }
+
+    // Tekrarlanan Q blogu reddedilir.
+    {
+        std::ostringstream body;
+        body << "1\n0: 0 0 0 1 0 0 0 0 1 0 -1 0 0 1000 1000 0\n";
+        const std::string bb = body.str();
+        std::string s = bytes;
+        s += "Q " + std::to_string(bb.size()) + "\n" + bb;
+        check(readThrows(s), "repeated Q block rejected");
+    }
+}
+
 } // namespace
 
 int main() {
@@ -388,6 +465,7 @@ int main() {
     testRoundTrip();
     testRejections();
     testUnknownBlocksPreserved();
+    testViewsRoundTrip();
     std::printf("checks=%d failures=%d\n", g_checks, g_failures);
     if (g_failures == 0) std::printf("MMW8 CODEC: OK\n");
     return g_failures == 0 ? 0 : 1;

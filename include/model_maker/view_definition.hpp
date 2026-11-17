@@ -36,6 +36,36 @@ struct ViewDefinition {
 
 inline constexpr double kDefaultViewDepth = 1000.0; // mm
 
+// MMW8 ('Q' blogu) serilestirmesi: ViewDefinition <-> Mmw8View (tasinabilir
+// cekirdek). name zaten wstring — codec UTF-8 kodlamasini kendisi yapar.
+inline Mmw8View toMmw8View(const ViewDefinition& v) {
+    Mmw8View out;
+    out.name = v.name;
+    out.originX = v.origin.x; out.originY = v.origin.y; out.originZ = v.origin.z;
+    out.rightX = v.right.x; out.rightY = v.right.y; out.rightZ = v.right.z;
+    out.upX = v.up.x; out.upY = v.up.y; out.upZ = v.up.z;
+    out.normalX = v.normal.x; out.normalY = v.normal.y; out.normalZ = v.normal.z;
+    out.length = v.length;
+    out.depthFront = v.depthFront;
+    out.depthBack = v.depthBack;
+    out.fromFace = v.fromFace;
+    return out;
+}
+
+inline ViewDefinition fromMmw8View(const Mmw8View& v) {
+    ViewDefinition out;
+    out.name = v.name;
+    out.origin = {v.originX, v.originY, v.originZ};
+    out.right = {v.rightX, v.rightY, v.rightZ};
+    out.up = {v.upX, v.upY, v.upZ};
+    out.normal = {v.normalX, v.normalY, v.normalZ};
+    out.length = v.length;
+    out.depthFront = v.depthFront;
+    out.depthBack = v.depthBack;
+    out.fromFace = v.fromFace;
+    return out;
+}
+
 // YUZEYE GORE GORUNUS (Tekla "view to surface"): bir parca yuzune tiklaninca o
 // yuzun duzlemine DIK yeni bir gorunus acilir (UCS'nin yuz kuraliyla ayni
 // cerceve: X = uye ekseninin yuz duzlemine izdusumu, Y = N x X, izleyici

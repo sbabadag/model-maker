@@ -1357,6 +1357,16 @@ std::optional<ViewDefinition> Application::viewportDefinition(HWND canvas) const
     return *index == activeView_ ? viewDef_ : views_[*index]->viewDef;
 }
 
+std::vector<Mmw8View> Application::openViewsSnapshot() const {
+    std::vector<Mmw8View> out;
+    out.reserve(views_.size());
+    for (std::size_t i = 1; i < views_.size(); ++i) {
+        const auto& def = (i == activeView_) ? viewDef_ : views_[i]->viewDef;
+        if (def) out.push_back(toMmw8View(*def));
+    }
+    return out;
+}
+
 void Application::setViewportDepth(HWND canvas, double front, double back) {
     const auto index = viewIndexOf(canvas);
     if (!index || *index == 0) return;
@@ -13391,7 +13401,7 @@ void Application::saveDocument() {
     if (!path) return;
     IoProgressGuard progress(&ioProgress_, "Kaydediliyor");
     try {
-        document_.save(*path);
+        document_.save(*path, openViewsSnapshot());
         currentFilePath_ = *path;
     } catch (const std::exception& error) { showError(L"Kaydetme başarısız", error); }
 }
@@ -13400,7 +13410,7 @@ void Application::saveDocumentAs() {
     const auto path = chooseFile(true); if (!path) return;
     IoProgressGuard progress(&ioProgress_, "Kaydediliyor");
     try {
-        document_.save(*path);
+        document_.save(*path, openViewsSnapshot());
         currentFilePath_ = *path;
     } catch (const std::exception& error) { showError(L"Kaydetme başarısız", error); }
 }
@@ -13410,7 +13420,7 @@ bool Application::saveDocumentPath(const std::wstring& path) {
     if (path.empty()) return false;
     IoProgressGuard progress(&ioProgress_, "Kaydediliyor");
     try {
-        document_.save(path);
+        document_.save(path, openViewsSnapshot());
         currentFilePath_ = path;
         return true;
     } catch (const std::exception& error) {
@@ -13438,7 +13448,8 @@ bool Application::openDocumentPath(const std::wstring& path) {
         // islev kaybi var). Proje klasoru ayni typeId'yi kullanici klasorune gore
         // GOLGELER (bkz. component_package.hpp).
         loadComponentPackagesFrom(mm::projectComponentPackagesDir(path));
-        document_.load(path);
+        std::vector<Mmw8View> loadedViews;
+        document_.load(path, &loadedViews);
         // Yukleme belge icerigini TAMAMEN degistirir; Document-sahipli B-Rep
         // magazasini da Document::load() KENDISI sifirlar (MMW1..7 B-Rep
         // saklamaz → katilar yeniden uretilene kadar magaza bostur). Ayri bir
@@ -13606,6 +13617,12 @@ bool Application::openDocumentPath(const std::wstring& path) {
         refreshLayerCombo();
         if (transformCommand_ != TransformCommand::None) cancelTransformCommand();
         else cancelDrawing();
+        // AÇILIS SONRASI GÖRÜNÜM RESTORE: kaydedilen ikincil görünümler yeniden
+        // açılır (Tekla gibi). Callback yoksa (MDI bağlı değil / GT) atlanır.
+        if (twoPointViewCallback_ && !loadedViews.empty()) {
+            for (const auto& v : loadedViews)
+                twoPointViewCallback_(fromMmw8View(v));
+        }
         // Dosya acildiginda icerik ekrana sigsin (zoom extents).
         zoomExtents2D();
     } catch (const std::exception& error) {

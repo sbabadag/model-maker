@@ -264,8 +264,10 @@ public:
     std::vector<std::size_t> queryBounds(const std::function<bool(const Bounds3&)>& intersects) const;
     std::vector<std::size_t> query2D(Vec3 minimum, Vec3 maximum) const;
 
-    void save(const std::filesystem::path& path) const;
-    void load(const std::filesystem::path& path);
+    void save(const std::filesystem::path& path,
+              const std::vector<Mmw8View>& views = {}) const;
+    void load(const std::filesystem::path& path,
+              std::vector<Mmw8View>* outViews = nullptr);
 
     void setNodeConstraint(const Vec3& position, NodeConstraint constraint);
     std::optional<NodeConstraint> getNodeConstraint(const Vec3& position) const;

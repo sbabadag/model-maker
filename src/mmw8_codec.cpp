@@ -955,6 +955,26 @@ void writeMmw8(std::ostream& out, const Mmw8Document& doc) {
         out.write(b.data(), static_cast<std::streamsize>(b.size()));
     }
 
+    // Kuyruk: Q blogu (acik gorunum pencereleri) — ileriye-uyumlu; eski okuyucu
+    // bilinmeyen blogu kayipsiz korur. Bos ise yazilmaz (dosya bayt-kararli kalir).
+    if (!doc.views.empty()) {
+        std::ostringstream body;
+        body << std::setprecision(17);
+        body << doc.views.size() << '\n';
+        for (const auto& v : doc.views) {
+            putString(body, toUtf8(v.name));
+            body << ' ' << v.originX << ' ' << v.originY << ' ' << v.originZ
+                 << ' ' << v.rightX << ' ' << v.rightY << ' ' << v.rightZ
+                 << ' ' << v.upX << ' ' << v.upY << ' ' << v.upZ
+                 << ' ' << v.normalX << ' ' << v.normalY << ' ' << v.normalZ
+                 << ' ' << v.length << ' ' << v.depthFront << ' ' << v.depthBack
+                 << ' ' << (v.fromFace ? 1 : 0) << '\n';
+        }
+        const std::string b = body.str();
+        out << "Q " << b.size() << '\n';
+        out.write(b.data(), static_cast<std::streamsize>(b.size()));
+    }
+
     // Kuyruk: V blogu (taban B-Rep blob'lari, Phase 4.2).
     if (!doc.baseBlobs.empty()) {
         std::ostringstream body;
@@ -1150,7 +1170,7 @@ void readMmw8(std::istream& in, Mmw8Document& doc) {
     // --- Kuyruk: etiket-gudumlu bloklar ---
     bool sawH = false, sawB = false, sawV = false, sawG = false, sawE = false, sawI = false;
     bool sawJ = false, sawD = false, sawM = false, sawN = false, sawA = false, sawT = false;
-    bool sawW = false, sawS = false;
+    bool sawW = false, sawS = false, sawQ = false;
     // 'M' bloguyla cerceve ATAYAN component id'leri — legacy turetme (origin/u/v/axis)
     // yalnizca 'M' kaydi OLMAYAN component'lere uygulanir.
     std::unordered_set<EntityId> framedComponents;
@@ -1787,6 +1807,37 @@ void readMmw8(std::istream& in, Mmw8Document& doc) {
                 a.createdAt = readString(ls);
                 a.updatedAt = readString(ls);
                 parsed.assemblies.push_back(std::move(a));
+            }
+        } else if (tag == 'Q') {
+            if (sawQ) fail("repeated Q block");
+            sawQ = true;
+            std::istringstream qs(body);
+            const std::uint64_t count = readUint64(qs, "view count");
+            if (count > kMmw8MaxViews) fail("view count exceeds limit");
+            std::string line;
+            std::getline(qs, line);  // count satırının kalanı (boş)
+            for (std::uint64_t vi = 0; vi < count; ++vi) {
+                if (!std::getline(qs, line)) fail("missing view record");
+                std::istringstream ls(line);
+                Mmw8View v;
+                v.name = fromUtf8(readString(ls));
+                v.originX = readDouble(ls, "view origin x");
+                v.originY = readDouble(ls, "view origin y");
+                v.originZ = readDouble(ls, "view origin z");
+                v.rightX = readDouble(ls, "view right x");
+                v.rightY = readDouble(ls, "view right y");
+                v.rightZ = readDouble(ls, "view right z");
+                v.upX = readDouble(ls, "view up x");
+                v.upY = readDouble(ls, "view up y");
+                v.upZ = readDouble(ls, "view up z");
+                v.normalX = readDouble(ls, "view normal x");
+                v.normalY = readDouble(ls, "view normal y");
+                v.normalZ = readDouble(ls, "view normal z");
+                v.length = readDouble(ls, "view length");
+                v.depthFront = readDouble(ls, "view depth front");
+                v.depthBack = readDouble(ls, "view depth back");
+                v.fromFace = readBool(ls, "view fromFace");
+                parsed.views.push_back(std::move(v));
             }
         } else {
             // Bilinmeyen blok: kayipsiz korunur.

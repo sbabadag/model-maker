@@ -43,6 +43,7 @@ inline constexpr std::size_t kMmw8MaxEndPlates = 100'000;
 inline constexpr std::size_t kMmw8MaxComponents = 100'000;
 inline constexpr std::size_t kMmw8MaxWelds = 100'000;
 inline constexpr std::size_t kMmw8MaxAssemblies = 100'000;
+inline constexpr std::size_t kMmw8MaxViews = 1'000;
 // Slice 2d-3: component basina param ref/kisit/handle/alt nesne sayi sinirlari
 // (ayirma oncesi dogrulanir; asiri girdi reddedilir).
 inline constexpr std::size_t kMmw8MaxFaceRefs = 100'000;
@@ -109,6 +110,21 @@ struct Mmw8TeklaGuid {
     std::string guid;  // Tekla sourceGUID (string; Model Maker EntityId'si DEGIL)
 };
 
+// Gorunum penceresi tanimi ('Q' blogu, ileriye-uyumlu): acik ikincil gorunumlerin
+// (iki noktali / plan / yuzey / aks / grid) kalicilastirilmasi. Vec3/wstring
+// icermez — tasinabilir serilestirme alanlari; ViewDefinition'a donusum
+// view_definition.hpp icindeki toMmw8View/fromMmw8View ile yapilir.
+struct Mmw8View {
+    std::wstring name;     // ViewDefinition::name (codec UTF-8 ile kodlar)
+    double originX{}, originY{}, originZ{};
+    double rightX{1.0}, rightY{0.0}, rightZ{0.0};
+    double upX{0.0}, upY{0.0}, upZ{1.0};
+    double normalX{0.0}, normalY{-1.0}, normalZ{0.0};
+    double length{};
+    double depthFront{1000.0}, depthBack{1000.0};
+    bool fromFace{false};
+};
+
 // MMW8 belge icerigi (OCCT'siz veri modeli).
 struct Mmw8Document {
     EntityId nextEntityId{1};
@@ -127,6 +143,7 @@ struct Mmw8Document {
     std::vector<Mmw8ConstructionKind> constructionKinds;         // 'K' blogu (Phase 4.1)
     std::vector<Mmw8SectionAnchor> sectionAnchors;               // 'A' blogu (Slice 2d-3)
     std::vector<Mmw8TeklaGuid> teklaGuids;                       // 'T' blogu (Tekla GUID -> EntityId)
+    std::vector<Mmw8View> views;                                 // 'Q' blogu (acik gorunumler)
     std::vector<Mmw8Blob> blobs;                                 // 'B' blogu (ETKIN B-Rep)
     std::vector<Mmw8Blob> baseBlobs;                             // 'V' blogu (TABAN B-Rep)
     std::vector<Mmw8UnknownBlock> unknownBlocks;

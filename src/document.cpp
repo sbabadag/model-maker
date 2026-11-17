@@ -2091,7 +2091,8 @@ void Document::buildMmw8(Mmw8Document& out) const {
     }
 }
 
-void Document::save(const std::filesystem::path& path) const {
+void Document::save(const std::filesystem::path& path,
+                    const std::vector<Mmw8View>& views) const {
     // OCC-kapali guvenlik: opak B-Rep varken geometri DEGISMISSE (eski B-Rep
     // yeni Wireframe ile uyumsuz) kaydetmeyi REDDET — sessiz tutarsiz dosya
     // asla yazilmaz.
@@ -2102,6 +2103,7 @@ void Document::save(const std::filesystem::path& path) const {
 
     Mmw8Document mdoc;
     buildMmw8(mdoc);
+    mdoc.views = views;
 
     // ATOMIK kayit: once gecici dosyaya yaz; basarili yazimdan sonra hedefi
     // atomik olarak degistir. Hedef yalniz tam basarili yazimda DEGISIR.
@@ -2272,7 +2274,9 @@ void Document::commitFromMmw8(Mmw8Document&& mdoc) {
     ++revision_;
 }
 
-void Document::load(const std::filesystem::path& path) {
+void Document::load(const std::filesystem::path& path,
+                    std::vector<Mmw8View>* outViews) {
+    if (outViews) outViews->clear();
     std::ifstream input(path, std::ios::binary);
     if (!input) throw std::runtime_error("Could not open file for reading");
 
@@ -2287,6 +2291,7 @@ void Document::load(const std::filesystem::path& path) {
         input.seekg(0, std::ios::beg);
         Mmw8Document mdoc;
         readMmw8(input, mdoc);
+        if (outViews) *outViews = std::move(mdoc.views);
         commitFromMmw8(std::move(mdoc));
         return;
     }

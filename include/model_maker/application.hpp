@@ -750,6 +750,10 @@ public:
     std::optional<ViewDefinition> viewportDefinition(HWND canvas) const;
     void setViewportDepth(HWND canvas, double front, double back);
     std::size_t viewportCount() const noexcept { return views_.size(); }
+    // Acik ikincil gorunumlerin kayit anlik goruntusu (mmw8 'Q' blogu icin).
+    // [0] = ana gorunus dislanir; aktif gorunum viewDef_'dan, digerleri
+    // views_[i]->viewDef'dan alinir.
+    std::vector<Mmw8View> openViewsSnapshot() const;
     // Qt kisayollari (Ctrl+Z vb.) tuval mesaji disindan degisiklik yapar;
     // Qt kabugu bunu kisa araliklarla cagirip diger pencereleri tazeler.
     void syncPassiveViewports();

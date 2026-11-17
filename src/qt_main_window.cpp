@@ -555,8 +555,25 @@ void QtMainWindow::openTwoPointView(const ViewDefinition& definition) {
     const bool plan = isPlanView(view);
     // YUZEY GORUNUSU (H-5): yatay yuz (normal ±Z) plan sanilmasin — yuzey
     // gorunusunde isim "Görünüş N" ve baslik "yüzey görünüşü, derinlik …".
-    view.name = (plan && !view.fromFace ? L"Plan Görünüşü " : L"Görünüş ") +
-                std::to_wstring(++twoPointViewCounter_);
+    // GORUNUM ADI: kayittan geri yuklenen (restore) gorunumlerde mevcut ad
+    // KORUNUR; etkilesimli olusturulanlarda sayaç ile otomatik uretilir.
+    if (view.name.empty()) {
+        view.name = (plan && !view.fromFace ? L"Plan Görünüşü " : L"Görünüş ") +
+                    std::to_wstring(++twoPointViewCounter_);
+    } else {
+        // Restore: sayaç çakışmasını önlemek için sondaki sayıyı geri al
+        // (ornegin kaydedilmiş "Görünüş 3" açılırsa bir sonraki yeni görünüş
+        // "Görünüş 4" olur, "Görünüş 1" ile çakışmaz).
+        std::size_t start = view.name.size();
+        while (start > 0 && view.name[start - 1] >= L'0' && view.name[start - 1] <= L'9')
+            --start;
+        if (start < view.name.size()) {
+            try {
+                const int n = std::stoi(view.name.substr(start));
+                if (n > twoPointViewCounter_) twoPointViewCounter_ = n;
+            } catch (...) { /* sayı ayrıştırılamadı: sayaç değişmez */ }
+        }
+    }
     lastViewDefinition_ = view; // GT-1 (H-5): son acilan gorunumun tanimi
     // SIRA KRITIK: widget alt pencereye winId()/tuval olusturulmadan ONCE
     // yerlesmeli (sonradan yeniden ebeveynlenen native widget HWND'sini
@@ -800,8 +817,11 @@ void QtMainWindow::buildCommandHandlers() {
     };
 
     // ---- Dosya ----
-    h["file.new"] = [this]() { app_.newDocument(); };
-    h["file.open"] = [this]() { app_.openDocument(); };
+    // Ac/kayit/load: ikincil gorunumler once kapatilir (eski belgenin view
+    // duzlemleri yeni belgede gecersizdir); load sonrasi kaydedilmis gorunumler
+    // Application tarafindan yeniden acilir.
+    h["file.new"] = [this]() { closeAllTwoPointViews(); app_.newDocument(); };
+    h["file.open"] = [this]() { closeAllTwoPointViews(); app_.openDocument(); };
     h["file.save"] = [this]() { app_.saveDocument(); };
     h["file.saveAs"] = [this]() { app_.saveDocumentAs(); };
     h["file.importDxf"] = [this]() { app_.importDxf(); };
