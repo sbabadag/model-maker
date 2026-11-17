@@ -435,6 +435,44 @@ struct Runner {
         return focus ? focus : window.application().canvasHandle();
     }
 
+    // F7/T-13b: execKey GERCEK OS girdisi uretiyor; tusun uygulamaya dusmesi
+    // icin pencere FOREGROUND ve klavye odagi TUVALDE olmali. Eski kod
+    // SetForegroundWindow'u odakli pencereye (cogu zaman tuvalin KENDISI ya da
+    // Qt kapsayicisi — cocuk pencere) cagiriyordu; cocuk pencerede bu cagri
+    // basarisiz olur ve tus one plandaki BASKA pencereye (terminal) gider:
+    // ilk F7 "etkisiz" gorunuyordu. Artik kok pencere hedeflenir, basarili
+    // olana kadar denenir ve dogrulanir.
+    bool ensureKeyboardToCanvas() {
+        HWND canvas = window.application().canvasHandle();
+        if (!canvas) return false;
+        HWND root = GetAncestor(canvas, GA_ROOT);
+        if (!root) root = canvas;
+        for (int attempt = 0; attempt < 40; ++attempt) {
+            if (GetForegroundWindow() != root) {
+                const HWND fg = GetForegroundWindow();
+                const DWORD fgThread =
+                    fg ? GetWindowThreadProcessId(fg, nullptr) : 0;
+                const DWORD myThread = GetCurrentThreadId();
+                bool attached = false;
+                if (fgThread && fgThread != myThread)
+                    attached = AttachThreadInput(fgThread, myThread, TRUE) != 0;
+                ShowWindow(root, SW_RESTORE);
+                BringWindowToTop(root);
+                SetForegroundWindow(root);
+                SetActiveWindow(root);
+                if (attached) AttachThreadInput(fgThread, myThread, FALSE);
+            }
+            SetFocus(canvas);
+            pump(50);
+            if (GetForegroundWindow() == root && GetFocus() == canvas) {
+                log(QStringLiteral("execKey: odak tuvalde (deneme %1)")
+                        .arg(attempt + 1));
+                return true;
+            }
+        }
+        return false;
+    }
+
     bool execClick(int x, int y) {
         sendMouse(WM_MOUSEMOVE, 0, x, y);
         sendMouse(WM_LBUTTONDOWN, MK_LBUTTON, x, y);
@@ -486,12 +524,12 @@ struct Runner {
         QString chars;
         if (!keyToVk(rest, vk, chars))
             return fail(QStringLiteral("bilinmeyen tuş: %1").arg(name));
-        const HWND target = focused();
-        // T-13: tek harf kisayollari (G, L, M, K, O, I, D...) tuval penceresinin
-        // kendi proc'unda isleniyor; OS klavye odagi tuvalde olmali ki SendInput
-        // olayi oraya dussun.
-        if (HWND canvas = window.application().canvasHandle()) SetFocus(canvas);
-        if (GetForegroundWindow() != target) SetForegroundWindow(target);
+        // T-13b: tus yalniz FOREGROUND + tuval odakliyken gonderilir; aksi
+        // halde olay baska pencereye gider ve GT sessizce yanlis olcer.
+        if (!ensureKeyboardToCanvas())
+            return fail(QStringLiteral("klavye odagi tuvale alinamadi (tus: %1)")
+                            .arg(name));
+        const HWND target = window.application().canvasHandle();
         pump(30);
         if (ctrl) sendKeyInput(VK_CONTROL, true);
         if (shift) sendKeyInput(VK_SHIFT, true);
@@ -2205,7 +2243,13 @@ struct Runner {
             QVector<int> only;
             for (const QJsonValue v : spec[QStringLiteral("only")].toArray())
                 only.append(v.toInt());
+            // `skip`: bu indeksler OLCULMEZ (uyeler disindaki levhalari
+            // karsilastirmak icin; model sayisi onceden bilinmese de calisir).
+            QVector<int> skip;
+            for (const QJsonValue v : spec[QStringLiteral("skip")].toArray())
+                skip.append(v.toInt());
             const auto wanted = [&](int i) {
+                if (skip.contains(i)) return false;
                 return only.isEmpty() || only.contains(i);
             };
             const int n = static_cast<int>(std::min<qsizetype>(before.size(), static_cast<qsizetype>(models.size())));
@@ -2228,7 +2272,7 @@ struct Runner {
             }
             // Yalniz belirli indeksler olculuyorsa belge buyumesi (bilesen
             // levhalari) eslesmeme SAYILMAZ.
-            if (only.isEmpty() && before.size() != static_cast<int>(models.size()))
+            if (only.isEmpty() && skip.isEmpty() && before.size() != static_cast<int>(models.size()))
                 ++geomMismatchModels_;
             for (int i = 0; i < static_cast<int>(models.size()); ++i) {
                 const auto& b = models[static_cast<std::size_t>(i)].vertices();

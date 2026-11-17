@@ -10787,6 +10787,23 @@ void Application::setSelectedEntityProfileRotation(double degrees, bool openUndo
             fclose(rotationDiag);
         }
     }
+    // T-12b (onayli 2026-11-17): PROFIL DONUSU kesit geometrisini degistirir;
+    // bagli komponentlerin (yerlesik + paket) levha/bulon/delikleri ESKI kesitle
+    // uretilmis kalirsa baglanti geometrisi tutmaz. Olculdu: donus sonrasi
+    // levhalar maxDelta 0 (hic degismiyor), degisim ancak kayit/ac sonrasi
+    // geliyordu (253 mm kayma). P-2 kurali: uye degisince bagli bilesen YENIDEN
+    // URETILIR. Donus ayni acik undo kaydinda oldugu icin TEK undo adimi donusu
+    // ve bilesenleri birlikte geri alir.
+    // FAIL-CLOSED: hazirlik/commit basarisizsa cagrilan taraf acik kaydi geri
+    // alir (DONUS DAHIL) + Turkce uyari verir; yarim geometri KALMAZ.
+    if (applied > 0) {
+        std::vector<EntityId> rotatedIds;
+        rotatedIds.reserve(targetIds.size());
+        for (const EntityId id : targetIds)
+            if (document_.indexOfEntity(id)) rotatedIds.push_back(id);
+        if (!recomputeEndPlateConnectionsFor(rotatedIds)) return;
+        if (!recomputeComponentInstancesFor(rotatedIds)) return;
+    }
     updateControls();
     invalidateCanvas();
 }

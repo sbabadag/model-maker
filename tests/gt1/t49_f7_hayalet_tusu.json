@@ -1,0 +1,64 @@
+{
+  "_comment": "F7 (Hayalet duzlem) TUSU: kullanici bildirimi — F7 basinca hayalet duzlem acilip kapanmiyor (F8/F9 calisiyor). Bu GT once KIRMIZI yazildi (F7 sonrasi bayrak degismiyor), sonra duzeltildi. Olcum Application::workPlaneGhostVisible() uzerinden (durum cubugunda metni yok). F7 ikinci basista kapatmali; F8 hayalet bayragini ETKILEMEMELI.",
+  "backend": "gdi",
+  "timeoutMs": 180000,
+  "steps": [
+    {
+      "expect": {
+        "workPlaneGhost": false
+      }
+    },
+    {
+      "key": "F7"
+    },
+    {
+      "expect": {
+        "workPlaneGhost": true
+      }
+    },
+    {
+      "capture": {
+        "name": "f7-01-acik",
+        "target": "window"
+      }
+    },
+    {
+      "key": "F7"
+    },
+    {
+      "expect": {
+        "workPlaneGhost": false
+      }
+    },
+    {
+      "capture": {
+        "name": "f7-02-kapali",
+        "target": "window"
+      }
+    },
+    {
+      "cmd": "wp.ghost"
+    },
+    {
+      "expect": {
+        "workPlaneGhost": true
+      }
+    },
+    {
+      "key": "F8"
+    },
+    {
+      "expect": {
+        "workPlaneGhost": true
+      }
+    },
+    {
+      "cmd": "wp.ghost"
+    },
+    {
+      "expect": {
+        "workPlaneGhost": false
+      }
+    }
+  ]
+}

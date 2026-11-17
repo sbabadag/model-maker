@@ -1,5 +1,5 @@
 {
-  "_comment": "T-12 bulgusunun kökü: uye dondurulunce bagli bilesen YENIDEN URETILMIYOR (levhalar eski yerinde, kirisin basi kesim/ofset kaybedip 142 -> 0'a uzaniyor); kaydet/ac sonrasi bilesen yeniden uretildigi icin geometri degisiyor. Bu GT mevcut davranisi sinirlarla belgeler: donus sonrasi levhalar BIREBIR ayni (maxDelta <= 1e-6), kayit/ac sonrasi EN AZ 10 mm kayma. Kusur duzeltilince 3. beklenti (atLeastDelta) ters cevrilecek.",
+  "_comment": "T-12 (DUZELTILDI, T-12b): uye donusu artik bagli bileseni YENIDEN uretir. Bu GT iki siniri kilitler: (1) 30° donus sonrasi levhalar DEGISIR (>= 10 mm), (2) kaydet/ac sonrasi geometri ARTIK KAYMAZ (<= 1 mm; eskiden 253 mm kayiyordu). Onceki surumde beklentiler bunun tersiydi (kusur belgelemesi).",
   "backend": "gdi",
   "timeoutMs": 240000,
   "steps": [
@@ -90,7 +90,7 @@
           2,
           3
         ],
-        "maxDelta": 1e-06
+        "atLeastDelta": 10.0
       }
     },
     {
@@ -146,7 +146,7 @@
           2,
           3
         ],
-        "atLeastDelta": 10.0
+        "maxDelta": 1.0
       }
     },
     {

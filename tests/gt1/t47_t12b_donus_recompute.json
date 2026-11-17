@@ -1,0 +1,206 @@
+{
+  "_comment": "T-12b (onayli, yerlesik komponent): UYE DONUSU (profil rotasyonu) degisince bagli komponent YENIDEN URETILIR. Kirmizi GT once yazildi (donus sonrasi levhalar maxDelta 0 -> HATA). Beklenti: (1) donus sonrasi levhalar >= 10 mm degisir, (2) TEK undo donus + levhalari birlikte geri alir (<= 1 mm), (3) kayit/ac sonrasi geometri ARTIK kaymaz (<= 1 mm; eskiden 253 mm kayiyordu). Paket komponent ayagi t48'de.",
+  "backend": "gdi",
+  "timeoutMs": 240000,
+  "steps": [
+    {
+      "profile": "HEB260"
+    },
+    {
+      "appColumnLevels": {
+        "top": 4000,
+        "bottom": 0
+      }
+    },
+    {
+      "placeColumn": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      }
+    },
+    {
+      "key": "Escape"
+    },
+    {
+      "assignLine": {
+        "x1": 0,
+        "y1": 0,
+        "z1": 4000,
+        "x2": 5000,
+        "y2": 0,
+        "z2": 4000,
+        "profile": "IPE300"
+      }
+    },
+    {
+      "key": "Escape"
+    },
+    {
+      "expect": {
+        "models": {
+          "count": 2,
+          "profiled": 2
+        }
+      }
+    },
+    {
+      "appComponent": {
+        "typeId": "beam_to_column_end_plate",
+        "parts": [
+          0,
+          1
+        ]
+      }
+    },
+    {
+      "expect": {
+        "componentCount": {
+          "typeId": "beam_to_column_end_plate",
+          "count": 1
+        }
+      }
+    },
+    {
+      "cmd": "view.dir.iso"
+    },
+    {
+      "fit": {}
+    },
+    {
+      "appGeomCapture": "yerlesik"
+    },
+    {
+      "capture": {
+        "name": "t12b-00-yerlesik-oncesi",
+        "target": "window"
+      }
+    },
+    {
+      "appRotation": {
+        "model": 1,
+        "degrees": 30.0
+      }
+    },
+    {
+      "expect": {
+        "modelRotation": {
+          "model": 1,
+          "degrees": 30.0,
+          "tol": 0.01
+        }
+      }
+    },
+    {
+      "appGeomCompare": {
+        "tag": "yerlesik",
+        "skip": [
+          0,
+          1
+        ],
+        "atLeastDelta": 10.0
+      }
+    },
+    {
+      "cmd": "view.dir.iso"
+    },
+    {
+      "fit": {}
+    },
+    {
+      "capture": {
+        "name": "t12b-01-yerlesik-donus",
+        "target": "window"
+      }
+    },
+    {
+      "cmd": "edit.undo"
+    },
+    {
+      "expect": {
+        "modelRotation": {
+          "model": 1,
+          "degrees": 0.0,
+          "tol": 0.01
+        }
+      }
+    },
+    {
+      "appGeomCompare": {
+        "tag": "yerlesik",
+        "skip": [
+          0,
+          1
+        ],
+        "maxDelta": 1.0
+      }
+    },
+    {
+      "cmd": "view.dir.iso"
+    },
+    {
+      "fit": {}
+    },
+    {
+      "capture": {
+        "name": "t12b-02-yerlesik-undo",
+        "target": "window"
+      }
+    },
+    {
+      "appRotation": {
+        "model": 1,
+        "degrees": 30.0
+      }
+    },
+    {
+      "appGeomCapture": "kayit"
+    },
+    {
+      "save": "t47_donus_recompute.mmw"
+    },
+    {
+      "cmd": "file.new"
+    },
+    {
+      "expect": {
+        "models": {
+          "count": 0
+        }
+      }
+    },
+    {
+      "open": "t47_donus_recompute.mmw"
+    },
+    {
+      "expect": {
+        "componentCount": {
+          "typeId": "beam_to_column_end_plate",
+          "count": 1
+        }
+      }
+    },
+    {
+      "appGeomCompare": {
+        "tag": "kayit",
+        "skip": [
+          0,
+          1
+        ],
+        "maxDelta": 1.0
+      }
+    },
+    {
+      "cmd": "view.dir.iso"
+    },
+    {
+      "fit": {}
+    },
+    {
+      "capture": {
+        "name": "t12b-03-kayit-ac",
+        "target": "window"
+      }
+    }
+  ]
+}

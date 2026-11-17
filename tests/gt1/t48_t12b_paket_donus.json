@@ -1,0 +1,168 @@
+{
+  "_comment": "T-12b PAKET ayagi: mm_end_plate_pkg (paket komponent) uzerinde UYE DONUSU -> bilesen YENIDEN URETILIR (>= 10 mm), TEK undo donus + levhalari birlikte geri alir (<= 1 mm).",
+  "backend": "gdi",
+  "timeoutMs": 240000,
+  "steps": [
+    {
+      "appImportPackage": {
+        "path": "../../libs/mm_contract/packages/end_plate_pkg",
+        "embed": false,
+        "userRoot": "components"
+      }
+    },
+    {
+      "appReloadPackages": {}
+    },
+    {
+      "expect": {
+        "catalogEntry": {
+          "typeId": "mm_end_plate_pkg"
+        }
+      }
+    },
+    {
+      "profile": "HEB260"
+    },
+    {
+      "appColumnLevels": {
+        "top": 4000,
+        "bottom": 0
+      }
+    },
+    {
+      "placeColumn": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      }
+    },
+    {
+      "key": "Escape"
+    },
+    {
+      "assignLine": {
+        "x1": 0,
+        "y1": 0,
+        "z1": 4000,
+        "x2": 5000,
+        "y2": 0,
+        "z2": 4000,
+        "profile": "IPE300"
+      }
+    },
+    {
+      "key": "Escape"
+    },
+    {
+      "expect": {
+        "models": {
+          "count": 2,
+          "profiled": 2
+        }
+      }
+    },
+    {
+      "appComponent": {
+        "typeId": "mm_end_plate_pkg",
+        "parts": [
+          0,
+          1
+        ]
+      }
+    },
+    {
+      "expect": {
+        "componentCount": {
+          "typeId": "mm_end_plate_pkg",
+          "count": 1
+        }
+      }
+    },
+    {
+      "cmd": "view.dir.iso"
+    },
+    {
+      "fit": {}
+    },
+    {
+      "appGeomCapture": "paket"
+    },
+    {
+      "capture": {
+        "name": "t12b-10-paket-oncesi",
+        "target": "window"
+      }
+    },
+    {
+      "appRotation": {
+        "model": 1,
+        "degrees": 30.0
+      }
+    },
+    {
+      "expect": {
+        "modelRotation": {
+          "model": 1,
+          "degrees": 30.0,
+          "tol": 0.01
+        }
+      }
+    },
+    {
+      "appGeomCompare": {
+        "tag": "paket",
+        "skip": [
+          0,
+          1
+        ],
+        "atLeastDelta": 10.0
+      }
+    },
+    {
+      "cmd": "view.dir.iso"
+    },
+    {
+      "fit": {}
+    },
+    {
+      "capture": {
+        "name": "t12b-11-paket-donus",
+        "target": "window"
+      }
+    },
+    {
+      "cmd": "edit.undo"
+    },
+    {
+      "expect": {
+        "modelRotation": {
+          "model": 1,
+          "degrees": 0.0,
+          "tol": 0.01
+        }
+      }
+    },
+    {
+      "appGeomCompare": {
+        "tag": "paket",
+        "skip": [
+          0,
+          1
+        ],
+        "maxDelta": 1.0
+      }
+    },
+    {
+      "cmd": "view.dir.iso"
+    },
+    {
+      "fit": {}
+    },
+    {
+      "capture": {
+        "name": "t12b-12-paket-undo",
+        "target": "window"
+      }
+    }
+  ]
+}
