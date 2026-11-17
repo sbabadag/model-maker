@@ -1257,3 +1257,73 @@ uygular (tek geri alma adımı = tek snapshot); seçim tektip değilse panel bo�
 gösterilir. Testi var: model_maker_document_property_edit_test (ctest 150.).
 Ait olduğu madde: T-6 (çoklu seçimde yalnız değişen alan yazılır) / UI-3.
 İptal gerekmiyor.
+---
+
+## T-12b KAPANDI (Hermes, 2026-11-17 16:30) — commit `80088a7` — uye donusu bagli bilesenleri YENIDEN URETIR
+
+Onay: "uye donusu -> yeniden uretim, fail-closed, tek Undo; once kirmizi GT;
+yerlesik + paket komponentlerde".
+
+**1) KIRMIZI GT (once alindi).** Duzeltilmis yapi ESKI t43 beklentisine karsi
+kosuldugunda `appGeomCompare: maxDelta 2.534e+02 > 1.000e-06 mm` (adim 14) ile
+KIRMIZI. Yani donus sonrasi alin levhalari 253 mm kayiyor; eski t43 bu 0 mm'yi
+"beklenen davranis" diye sabitliyordu (kusur belgelemesi).
+
+**2) DUZELTME (`src/application.cpp`, toplu donus sonu).** Donen uyelerin KIMLIKLERI
+toplanip bagli bilesenler AYNI acik undo kaydinda yeniden uretilir:
+`recomputeEndPlateConnectionsFor(rotatedIds)` + `recomputeComponentInstancesFor(rotatedIds)`.
+- Yerlesik (`beam_to_column_end_plate`) VE paket (`mm_end_plate_pkg`) komponentler.
+- **TEK undo**: donus + bilesenler ayni kayitta; tek Undo ikisini birlikte geri alir.
+- **FAIL-CLOSED**: hazirlik/commit basarisizsa cagrilan taraf acik kaydi geri alir
+  (donus dahil) + Turkce uyari; yarim geometri kalmaz.
+- Tani: `model-maker-render.log` icinde `ROTATION-BULK deg=... applied=...`.
+
+**3) GT'ler (hepsi GDI + GPU yesil).**
+- `t43_t12_donus_bilesen` (29 adim): beklentiler duzeltilmis davranisa CEVRILDI —
+  (a) 30° donus sonrasi levhalar `>= 10 mm` degisir, (b) kaydet/ac sonrasi
+  geometri `<= 1 mm` (eskiden 253 mm kayiyordu).
+- `t47_t12b_donus_recompute` (36 adim, YENI): yerlesik komponent; donus -> levhalar
+  degisir (olculen 253.4 mm), TEK undo donus + levhalari geri alir (0 mm),
+  kaydet/ac sonrasi 0 mm.
+- `t48_t12b_paket_donus` (28 adim, YENI): paket komponent (`mm_end_plate_pkg`,
+  `appImportPackage` + `appReloadPackages` + `expect.catalogEntry`); ayni uc sinir.
+- Kosucu: `appGeomCompare` artik `skip` dizisi kabul eder (uye govdeleri olcum
+  disinda; yalniz levhalar olculur).
+
+**4) KAPI.** Tam derleme + tam ctest: **185/185 gecti** (`t12b-gate.log`).
+GT suiti: 50 senaryo icinde 48 yesil; `h4` ve `t41` paralel elle kosumla on plan
+kavgasi nedeniyle kirmizi oldu — tek basina tekrar kosuldu, ikisi de **yesil**.
+
+## F7 MADDESI KAPANDI — KUSUR YOK, OLCUM ARTEFAKTIYDI (Hermes, 2026-11-17) — commit `80088a7`
+
+Kullanici bildirimi: "F7 basinca hayalet duzlem acilip kapanmiyor". Arastirma sonucu
+**uygulama tarafi dogru**: `wp.ghost` kaydi, `dispatchKeyChord` cozumu ve
+`toggleWorkPlaneGhost` hepsi calisiyor; `model-maker-render.log`'a eklenen gecici
+tani ile F7'nin kayda `def=wp.ghost` olarak cozuldugu ve islendigi goruldu.
+
+**Kok neden KOSUCUDAYDI:** `execKey` `SetForegroundWindow`'u odakli pencereye
+cagiriyordu; bu pencere cogu zaman **tuvalin kendisi / Qt kapsayicisi (cocuk
+pencere)** oldugu icin cagri sessizce basarisiz oluyor ve `SendInput` tusu one
+plandaki BASKA pencereye (terminal) gidiyordu. Bu yuzden ilk F7 "etkisiz"
+gorunuyordu. Not: `t45` hic F7 basmiyordu (yalniz F8/F9 basip hayaletin
+degismedigini kontrol ediyordu) — T-13'teki "F7 etkisiz" bulgusu bu yuzden
+yanlisti.
+
+**Duzeltme (`src/gui_test_runner.cpp`):** yeni `ensureKeyboardToCanvas()` —
+kok pencere (`GetAncestor(..., GA_ROOT)`) hedeflenir, gerekirse
+`AttachThreadInput` + `SetForegroundWindow` + `SetActiveWindow` uygulanir,
+`SetFocus(canvas)` sonrasi `GetForegroundWindow/GetFocus` ILE DOGRULANIR (40
+denemeye kadar); alinamazsa adim **HATA** verir (sessiz yanlis olcum yok).
+
+**GT:** `t49_f7_hayalet_tusu` (13 adim, YENI) — F7 acar, F7 kapatir, F8 hayalet
+bayragini ETKILEMEZ. Once KIRMIZI kosuldu (`gt-t49-kirmizi.log`: adim 2,
+`workPlaneGhost: kapali != acik`), duzeltmeden sonra **3/3 kararli yesil**
+(GDI + GPU).
+
+---
+
+## Siradaki
+
+- **Haunch "kolon 90° donuyor"**: kullanici verisi (.mmw ya da tikla sirasi)
+  bekleniyor; 7 varyant + `t46` kusuru yeniden uretmedi.
+- Studio tarafi: `MMCS_BUILD_CONTRACT_OWN_TESTS` yeniden ON (bkz. C-0 notu).

@@ -844,3 +844,23 @@ sürerken yalnız `docs/` düzenlenir.
   `BlockArgDecl.name` BOŞ kalıyordu → statik analiz "bilinmeyen argüman"
   diyordu (latent kusur sınıfı; 4 döngüde ad yazılır).
 - Kapsam eşlemesi: contract_requests_test bölüm a=1.12 … re=1.24, l=1.25.
+---
+
+## 2026-11-17 (aksam) — T-12b ve F7 KAPANDI (commit `80088a7`)
+
+- **T-12b (uye donusu -> bagli bilesenlerin yeniden uretimi):** `application.cpp`
+  toplu donus sonunda `recomputeEndPlateConnectionsFor` +
+  `recomputeComponentInstancesFor`; yerlesik + paket komponent; **tek undo**;
+  **fail-closed** (acik kayit geri alinir, Turkce uyari). Tani:
+  `ROTATION-BULK deg=... applied=...`. Kirmizi GT once alindi: eski t43 beklentisi
+  `maxDelta 2.534e+02 mm` ile kirmizi. Yeni GT'ler `t47` (yerlesik, 36 adim),
+  `t48` (paket, 28 adim); `t43` beklentileri duzeltilmis davranisa cevrildi
+  (donus sonrasi levhalar >= 10 mm, kaydet/ac sonrasi <= 1 mm).
+- **F7 (hayalet duzlem tusu):** kusur YOK — olcum artefakti. `execKey`
+  `SetForegroundWindow`'u cocuk pencereye cagiriyordu; tus baska pencereye
+  gidiyordu. `ensureKeyboardToCanvas()` (kok pencere + AttachThreadInput +
+  dogrulama/retry, basarisizsa HATA) eklendi. `t49_f7_hayalet_tusu` once kirmizi,
+  sonra 3/3 kararli yesil (GDI + GPU).
+- **Kapi:** tam derleme + tam ctest **185/185**. GT suiti 50 senaryo; paralel elle
+  kosum yuzunden 2 kirmizi (h4, t41) tek basina tekrar kosuldu -> yesil.
+- Kontrat degismedi (1.25.0), digest degismedi -> **Studio REPIN gerekmiyor**.
