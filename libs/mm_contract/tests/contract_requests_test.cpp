@@ -800,6 +800,137 @@ static void sectionRe() {
     }
 }
 
+// --- l) bolts.grid anchorType METIN PARAMETRESI (C-0/5, contract 1.25.0) ---
+// Studio istegi (l): `anchorType` sabit literalle sinirliydi; paketler ankraj
+// tipini kullanicinin parametresinden vermek istiyor. `param.<ad>` kabul
+// edilir; literal eskisi gibi gecerli. Digest DEGISMEZ (ayni metne cozulur).
+static CompParamSpec textSpecL(const wchar_t* name, const wchar_t* def) {
+    CompParamSpec s;
+    s.name = name;
+    s.type = CompParamType::String;
+    s.defString = def;
+    return s;
+}
+
+static GenerationPlan anchorParamPlan(const std::string& anchorTypeExpr,
+                                      const std::wstring* paramValue,
+                                      const std::vector<CompParamSpec>& specs) {
+    Recipe r;
+    r.recipeVersion = "1.0.0";
+    RecipeStep f;
+    f.id = "f1";
+    f.use = "frame.member_end";
+    f.args["member"].text = "main";
+    f.args["end"].text = "lower";
+    r.steps.push_back(f);
+    RecipeStep b;
+    b.id = "b1";
+    b.use = "bolts.grid";
+    b.role = "ankraj";
+    b.args["frame"].text = "f1";
+    b.args["nx"].text = "2";
+    b.args["ny"].text = "2";
+    b.args["px"].text = "100";
+    b.args["py"].text = "100";
+    b.args["anchorType"].text = anchorTypeExpr;
+    b.args["anchorLength"].text = "300";
+    b.args["anchorEmbed"].text = "200";
+    r.steps.push_back(b);
+    ComponentInput in;
+    in.main = memberGeometryFromProfile({0, 0, 0}, {0, 0, 3000}, /*connectionAtA=*/false,
+                                        {1, 0, 0}, 0.0,
+                                        MemberSectionSpec{300.0, 300.0, 11.0, 19.0, 0.0});
+    if (paramValue)
+        in.params.push_back(CompParam{L"anchorKind", CompParamValue{*paramValue}});
+    return runRecipe(r, specs, in);
+}
+
+static void sectionL() {
+    std::printf("[l] bolts.grid anchorType metin parametresi\n");
+    const std::vector<CompParamSpec> specs{textSpecL(L"anchorKind", L"cast-in")};
+
+    // 1) param.<ad> -> parametre degeri (literal metin DEGIL).
+    {
+        const std::wstring v(L"chemical");
+        const GenerationPlan p1 = anchorParamPlan("param.anchorKind", &v, specs);
+        CHECK(p1.ok && p1.boltGroups.size() == 1, "l: param.anchorType plan uretmeli");
+        if (p1.ok && !p1.boltGroups.empty())
+            CHECK(p1.boltGroups[0].anchorType == "chemical",
+                  "l: anchorType parametre degeri (chemical) olmali");
+    }
+
+    // 2) DIGEST DEGISMEZ: ayni metne cozulen literal yazimla birebir ayni plan.
+    {
+        const std::wstring v(L"chemical");
+        const GenerationPlan viaParam = anchorParamPlan("param.anchorKind", &v, specs);
+        const GenerationPlan viaLiteral = anchorParamPlan("chemical", nullptr, specs);
+        CHECK(viaParam.ok && viaLiteral.ok, "l: iki yazim da plan uretmeli");
+        if (viaParam.ok && viaLiteral.ok)
+            CHECK(generationPlanCanonicalJson(viaParam) == generationPlanCanonicalJson(viaLiteral),
+                  "l: param yazimi literal ile AYNI plan/digest olmali");
+    }
+
+    // 3) Girdi parametresi yoksa SEMA VARSAYILANI (paket parametresiz cagrilir).
+    {
+        const GenerationPlan p3 = anchorParamPlan("param.anchorKind", nullptr, specs);
+        CHECK(p3.ok && !p3.boltGroups.empty(), "l: varsayilanla plan uretmeli");
+        if (p3.ok && !p3.boltGroups.empty())
+            CHECK(p3.boltGroups[0].anchorType == "cast-in",
+                  "l: sema varsayilani (cast-in) kullanilmali");
+    }
+
+    // 4) SEMA YOK + GIRDI YOK -> ACIK RET (sessiz literal yanlisi yok).
+    {
+        const GenerationPlan p4 = anchorParamPlan("param.anchorKind", nullptr, {});
+        CHECK(!p4.ok, "l: tanimsiz metin parametresi REDDEDILMELIYDI");
+        // STATIK analiz once yakalar (validateRecipe strParamArgs): mesaj adim +
+        // arguman + parametre adini soyler.
+        if (!p4.ok)
+            CHECK(p4.error.find(L"bilinmeyen parametre: anchorKind") != std::wstring::npos,
+                  "l: 'bilinmeyen parametre' mesaji (statik)");
+    }
+
+    // 5) Parametre METIN DEGILSE (Integer) -> ACIK RET.
+    {
+        CompParamSpec num;
+        num.name = L"anchorKind";
+        num.type = CompParamType::Integer;
+        const std::vector<CompParamSpec> numSpecs{num};
+        const std::wstring v(L"chemical");
+        const GenerationPlan p5 = anchorParamPlan("param.anchorKind", &v, numSpecs);
+        CHECK(!p5.ok, "l: sayisal parametre metin argumani REDDEDILMELIYDI");
+        if (!p5.ok)
+            CHECK(p5.error.find(L"metin parametresi degil") != std::wstring::npos,
+                  "l: 'metin parametresi degil' mesaji (statik)");
+    }
+
+    // 6) LITERAL yazim geriye donuk uyumlu (param yok, sema bos).
+    {
+        const GenerationPlan p6 = anchorParamPlan("cast-in", nullptr, {});
+        CHECK(p6.ok && !p6.boltGroups.empty(), "l: literal anchorType hala gecerli");
+        if (p6.ok && !p6.boltGroups.empty())
+            CHECK(p6.boltGroups[0].anchorType == "cast-in", "l: literal deger korunur");
+    }
+
+    // 7) TAS BILDIRIMI: anchorType turu TextParam; tas sayisi 20 (degismedi).
+    {
+        const std::vector<BlockDeclInfo> decls = blockDeclarations();
+        CHECK(decls.size() == 20, "l: tas sayisi 20 kalmali");
+        const BlockDeclInfo* grid = nullptr;
+        for (const BlockDeclInfo& d : decls)
+            if (d.use == "bolts.grid") grid = &d;
+        CHECK(grid != nullptr, "l: bolts.grid bildirimi bulunmali");
+        if (grid) {
+            const BlockArgDecl* at = nullptr;
+            for (const BlockArgDecl& a : grid->args)
+                if (a.name == "anchorType") at = &a;
+            CHECK(at != nullptr, "l: anchorType argumani bildirilmeli");
+            if (at)
+                CHECK(at->kind == RecipeArgKind::TextParam,
+                      "l: anchorType turu TextParam olmali (param.* kabul eder)");
+        }
+    }
+}
 int main() {
     std::printf("contract %s\n", kContractVersion);
     sectionA();
@@ -815,6 +946,7 @@ int main() {
     sectionG();
     sectionP2();
     sectionRe();
+    sectionL();
     if (failures == 0) std::printf("TUM TESTLER GECTI\n");
     else std::printf("%d HATA\n", failures);
     return failures == 0 ? 0 : 1;

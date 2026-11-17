@@ -635,6 +635,147 @@ if(BUILD_TESTING)
         PRIVATE mm_component_contract)
     add_test(NAME model_maker_recipe_test COMMAND model_maker_recipe_test)
 
+    # CONTRACT SMOKE (libs/mm_contract/tests/contract_smoke_test.cpp): surum
+    # literali + contractSupports kapsami, foundation (Vec3/WorkPlane), parametre
+    # semasi/dogrulama/hizalama, dialog semasi, generator link. Qt/OCC GEREKTIRMEZ.
+    # NOT: libs/mm_contract/CMakeLists.txt add_subdirectory ILE DAHIL EDILMIYOR
+    # (mm_component_contract kokte ayri tanimli); bu yuzden o dosyadaki bagimsiz
+    # test hedefleri kokte TEK TEK eklenir — eksik kalan test kapida kosmaz.
+    add_executable(model_maker_contract_smoke_test
+        libs/mm_contract/tests/contract_smoke_test.cpp)
+    target_link_libraries(model_maker_contract_smoke_test
+        PRIVATE mm_component_contract)
+    add_test(NAME model_maker_contract_smoke_test
+             COMMAND model_maker_contract_smoke_test)
+
+    # COMPONENT CODEC (libs/mm_contract/tests/component_codec_test.cpp): surum
+    # literali, UTF-8 roundtrip, ComponentInput/MemberGeometry kanonik metin
+    # (kaydet/yukle kararliligi). Qt/OCC GEREKTIRMEZ.
+    add_executable(model_maker_contract_codec_test
+        libs/mm_contract/tests/component_codec_test.cpp)
+    target_link_libraries(model_maker_contract_codec_test
+        PRIVATE mm_component_contract)
+    target_compile_definitions(model_maker_contract_codec_test PRIVATE
+        MM_CONTRACT_GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/golden")
+    add_test(NAME model_maker_contract_codec_test
+             COMMAND model_maker_contract_codec_test)
+
+    # --------------------------------------------------------------------- C-0
+    # CONTRACT'IN KENDI TESTLERI (libs/mm_contract/tests/*): Studio bunlari
+    # `cmake -S libs/mm_contract` ile AYRI bir proje olarak derler. Kok agac
+    # o klasoru add_subdirectory ILE DAHIL ETMEZ (mm_component_contract kokte
+    # ayri tanimli), bu yuzden ayni kaynaklar burada TEK TEK hedef olarak
+    # eklenir. Amac: MM kapisindaki "tam ctest" contract testlerini de kossun
+    # — 1.12-1.24 arasi surumler bu testler kapida kosmadan push edilmisti.
+    # Qt/OCC GEREKTIRMEZ.
+
+    # kanonik recipe/paket metin yazicisi: anahtar sirasi, alfabetik args, formatVersion yok, LF-only, CR reddi, round-trip + idempotence
+    add_executable(model_maker_contract_recipe_canonical_text_test
+        libs/mm_contract/tests/recipe_canonical_text_test.cpp)
+    target_link_libraries(model_maker_contract_recipe_canonical_text_test
+        PRIVATE mm_component_contract)
+    add_test(NAME model_maker_contract_recipe_canonical_text_test
+             COMMAND model_maker_contract_recipe_canonical_text_test)
+
+    # alin levhasi paketi yolu ile yerlesik uretici AYNI geometriyi vermeli (golden digest)
+    add_executable(model_maker_contract_end_plate_equivalence_test
+        libs/mm_contract/tests/end_plate_equivalence_test.cpp)
+    target_link_libraries(model_maker_contract_end_plate_equivalence_test
+        PRIVATE mm_component_contract)
+    target_compile_definitions(model_maker_contract_end_plate_equivalence_test PRIVATE
+        MM_CONTRACT_GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/golden")
+    add_test(NAME model_maker_contract_end_plate_equivalence_test
+             COMMAND model_maker_contract_end_plate_equivalence_test)
+
+    # Haunch 40 paketi ile yerlesik bilesen AYNI plani/digest'i vermeli
+    add_executable(model_maker_contract_haunch40_equivalence_test
+        libs/mm_contract/tests/haunch40_equivalence_test.cpp)
+    target_link_libraries(model_maker_contract_haunch40_equivalence_test
+        PRIVATE mm_component_contract)
+    target_compile_definitions(model_maker_contract_haunch40_equivalence_test PRIVATE
+        MM_CONTRACT_GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/golden")
+    add_test(NAME model_maker_contract_haunch40_equivalence_test
+             COMMAND model_maker_contract_haunch40_equivalence_test)
+
+    # Haunch 40 parametre akisi: paket parametreleri plana ve digest'e dogru yansimali
+    add_executable(model_maker_contract_haunch40_param_flow_test
+        libs/mm_contract/tests/haunch40_param_flow_test.cpp)
+    target_link_libraries(model_maker_contract_haunch40_param_flow_test
+        PRIVATE mm_component_contract)
+    target_compile_definitions(model_maker_contract_haunch40_param_flow_test PRIVATE
+        MM_CONTRACT_GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/golden"
+        MM_PACKAGES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/libs/mm_contract/packages")
+    add_test(NAME model_maker_contract_haunch40_param_flow_test
+             COMMAND model_maker_contract_haunch40_param_flow_test)
+
+    # Haunch 40 simetrik yuvarlanma: ayna simetrisi plaka yerlestirmesini kaydirmamali
+    add_executable(model_maker_contract_haunch40_symmetric_roll_test
+        libs/mm_contract/tests/haunch40_symmetric_roll_test.cpp)
+    target_link_libraries(model_maker_contract_haunch40_symmetric_roll_test
+        PRIVATE mm_component_contract)
+    add_test(NAME model_maker_contract_haunch40_symmetric_roll_test
+             COMMAND model_maker_contract_haunch40_symmetric_roll_test)
+
+    # digest kimlik-bagimsizligi: golden'dan BAGIMSIZ kanit (golden yeniden uretiminden once yesil olmali)
+    add_executable(model_maker_contract_digest_identity_proof_test
+        libs/mm_contract/tests/digest_identity_proof_test.cpp)
+    target_link_libraries(model_maker_contract_digest_identity_proof_test
+        PRIVATE mm_component_contract)
+    target_compile_definitions(model_maker_contract_digest_identity_proof_test PRIVATE
+        MM_PACKAGES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/libs/mm_contract/packages")
+    add_test(NAME model_maker_contract_digest_identity_proof_test
+             COMMAND model_maker_contract_digest_identity_proof_test)
+
+    # paket manifest/checksum/recipe butunlugu ve yukleyici red kurallari
+    add_executable(model_maker_contract_component_package_test
+        libs/mm_contract/tests/component_package_test.cpp)
+    target_link_libraries(model_maker_contract_component_package_test
+        PRIVATE mm_component_contract)
+    target_compile_definitions(model_maker_contract_component_package_test PRIVATE
+        MM_PACKAGES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/libs/mm_contract/packages")
+    add_test(NAME model_maker_contract_component_package_test
+             COMMAND model_maker_contract_component_package_test)
+
+    # onizleme (preview) sahne uretimi: plan -> cizim listesi cevirisi
+    add_executable(model_maker_contract_component_preview_test
+        libs/mm_contract/tests/component_preview_test.cpp)
+    target_link_libraries(model_maker_contract_component_preview_test
+        PRIVATE mm_component_contract)
+    add_test(NAME model_maker_contract_component_preview_test
+             COMMAND model_maker_contract_component_preview_test)
+
+    # otomatik onizleme: secim/parametre degisiminde onizleme tazeleme
+    add_executable(model_maker_contract_component_preview_auto_test
+        libs/mm_contract/tests/component_preview_auto_test.cpp)
+    target_link_libraries(model_maker_contract_component_preview_auto_test
+        PRIVATE mm_component_contract)
+    add_test(NAME model_maker_contract_component_preview_auto_test
+             COMMAND model_maker_contract_component_preview_auto_test)
+
+    # paket on-kosul denetimleri (check) ve Turkce mesajlar
+    add_executable(model_maker_contract_component_checks_test
+        libs/mm_contract/tests/component_checks_test.cpp)
+    target_link_libraries(model_maker_contract_component_checks_test
+        PRIVATE mm_component_contract)
+    add_test(NAME model_maker_contract_component_checks_test
+             COMMAND model_maker_contract_component_checks_test)
+
+    # uye geometrisi kanoniklestirme: eksen/normal/secim kararliligi
+    add_executable(model_maker_contract_member_geometry_canonical_test
+        libs/mm_contract/tests/member_geometry_canonical_test.cpp)
+    target_link_libraries(model_maker_contract_member_geometry_canonical_test
+        PRIVATE mm_component_contract)
+    add_test(NAME model_maker_contract_member_geometry_canonical_test
+             COMMAND model_maker_contract_member_geometry_canonical_test)
+
+    # gorsel (visual) katman: rol renkleri ve cizim sirasi
+    add_executable(model_maker_contract_component_visual_test
+        libs/mm_contract/tests/component_visual_test.cpp)
+    target_link_libraries(model_maker_contract_component_visual_test
+        PRIVATE mm_component_contract)
+    add_test(NAME model_maker_contract_component_visual_test
+             COMMAND model_maker_contract_component_visual_test)
+
     # P-1/4 — PAKET KATALOG GORUNURLUGU + SECIM SAYISI: catalog blogu yoksa
     # gorunur + pickCount recipe'den; manifest acikca verirse o kazanir.
     add_executable(model_maker_component_catalog_pick_test

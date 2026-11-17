@@ -482,6 +482,30 @@ dışına taşan bir plan üretiliyordu (ölçüm: `docs/agent/BULGU-A.md`). Kar
 `frame.member_face` semantiği değişmez; paket bağlandığı yüzü `require: "flange"`
 ile bildirir ve gövde yüzünde kendi Türkçe mesajıyla kapanır.
 
+### 1.25.0 — `bolts.grid {anchorType: "param.<ad>"}` (C-0/5, istek l)
+
+`anchorType` artık **metin parametresi** kabul eder; sabit literal eskisi gibi
+geçerlidir (geriye dönük uyumlu ekleme).
+
+```json
+{ "use": "bolts.grid", "frame": "f1", "role": "ankraj",
+  "anchorType": "param.anchorKind",
+  "anchorLength": "param.anchorLen", "anchorEmbed": "param.anchorEmbed" }
+```
+
+- `param.<ad>` çözümü `component input.params` içinden yapılır (metin
+  parametresi: `String`/`Material`/`Profile`/`Enum`). Girdi yoksa şema
+  varsayılanı (`defString`, yoksa ilk `choices` öğesi) kullanılır.
+- Parametre **metin değilse** ya da ad schema'da yoksa **açık ret** (sessiz
+  literal yanlışı yok). Bu denetim statik analizde de yapılır (`validateRecipe`
+  strParamArgs kuralı).
+- **Digest DEĞİŞMEZ:** `anchorType` parametreden aynı metne çözülürse plan ve
+  `planDigest` literal yazımla birebir aynıdır; ankraj olmayan grupta alanlar
+  yine boş kalır (anahtar yazılmaz).
+- Taş bildirimi: `anchorType` `strParamArgs` içine taşındı (argüman türü
+  `TextParam`); `blockDeclarations()` çıktısında tür değişir, taş sayısı 20'de
+  kalır.
+
 ## Sürüm denetimi DIŞINDA olanlar (serbest)
 
 - `.cpp` iç kod (header'daki imzayı değiştirmediği sürece)

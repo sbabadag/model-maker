@@ -1291,8 +1291,11 @@ static bool blockBoltsGrid(EvalCtx& ctx, const RecipeStep& st, GenerationPlan& p
     // 1.19.0 (contract istegi e / HR-4b): ANKRAJ. `anchorType` verilirse grup
     // ankraj grubudur; `anchorLength` (boy) ve `anchorEmbed` (gomme) opsiyonel,
     // negatif olamaz. Verilmezse alanlar bos/0 kalir (normal bulon grubu).
+    // 1.25.0 (contract istegi l): `anchorType` artik METIN PARAMETRESI de
+    // olabilir (`anchorType: "param.anchorKind"`). Sabit literal eskisi gibi
+    // gecerli; parametre metin degilse/ tanimsizsa ACIK hata (sessiz yanlis yok).
     std::string anchorType;
-    if (!strArg(st, "anchorType", "", anchorType)) return false;
+    if (!strParamArg(ctx, st, "anchorType", "", anchorType)) return false;
     double anchorLength = 0.0, anchorEmbed = 0.0;
     if (!numArg(ctx, st, "anchorLength", 0.0, anchorLength)) return false;
     if (!numArg(ctx, st, "anchorEmbed", 0.0, anchorEmbed)) return false;
@@ -1830,10 +1833,11 @@ static const std::vector<BlockDecl>& blockRegistry() {
          {}, {}, {"outline"}},
         // HR-4: `grip` ve `holeDepth` ankraj/grip boyunu recipe'den verir.
         // 1.19.0 (e): ankraj bulonu — anchorType (metin), anchorLength/anchorEmbed.
+        // 1.25.0 (l): `anchorType` METIN PARAMETRESI kabul eder (strParamArg).
         {"bolts.grid", {"nx", "ny", "px", "py", "d", "hole", "grip", "holeDepth",
                         "anchorLength", "anchorEmbed"},
-         {"frame", "grade", "anchorType"}, {"through", "xs", "ys"},
-         &blockBoltsGrid, {"grade"}, {}, {"through"}, {}},
+         {"frame", "grade"}, {"through", "xs", "ys"},
+         &blockBoltsGrid, {"grade", "anchorType"}, {}, {"through"}, {}},
         // 1.21.0 (k): type (fillet|butt), length/offset (kismi kaynak), around, site.
         {"weld.fillet", {"size", "length", "offset"},
          {"roleA", "roleB", "double", "doubleSided", "type", "around", "site"}, {},
@@ -2126,10 +2130,31 @@ std::vector<BlockDeclInfo> blockDeclarations() {
             byName[k].isList = true;
             if (byName[k].kind == RecipeArgKind::Text) byName[k].kind = RecipeArgKind::List;
         }
-        for (const char* k : d.strParamArgs) byName[k].kind = RecipeArgKind::TextParam;
-        for (const char* k : d.boolParamArgs) byName[k].kind = RecipeArgKind::Logical;
-        for (const char* k : d.memberArgs) byName[k].kind = RecipeArgKind::MemberRole;
-        for (const char* k : d.exprListArgs) byName[k].exprItems = true;
+        for (const char* k : d.strParamArgs) {
+            // DIKKAT: byName[k] yoksa varsayilan BlockArgDecl olusur (name BOS).
+            // Bir arguman yalniz strParamArgs'te olabiliyor (or. bolts.grid
+            // anchorType): o zaman adi da yazilmali, yoksa bildirim tablosunda
+            // adsiz/bilinmeyen arguman gorunur ve statik analiz "bilinmeyen
+            // arguman" diye REDDEDER.
+            BlockArgDecl& a = byName[k];
+            a.name = k;
+            a.kind = RecipeArgKind::TextParam;
+        }
+        for (const char* k : d.boolParamArgs) {
+            BlockArgDecl& a = byName[k];
+            a.name = k;
+            a.kind = RecipeArgKind::Logical;
+        }
+        for (const char* k : d.memberArgs) {
+            BlockArgDecl& a = byName[k];
+            a.name = k;
+            a.kind = RecipeArgKind::MemberRole;
+        }
+        for (const char* k : d.exprListArgs) {
+            BlockArgDecl& a = byName[k];
+            a.name = k;
+            a.exprItems = true;
+        }
         for (const auto& kv : byName) info.args.push_back(kv.second);
         // ada gore alfabetik (map zaten sirali; yine de garanti).
         std::sort(info.args.begin(), info.args.end(),

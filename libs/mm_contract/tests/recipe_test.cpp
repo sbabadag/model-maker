@@ -1292,7 +1292,7 @@ static void testFrameContactGeneric() {
 }
 
 int main() {
-    CHECK(std::string(kContractVersion) == "1.24.0", "contract surumu 1.24.0 (1.11.0 beklenirdi)");
+    CHECK(std::string(kContractVersion) == "1.25.0", "contract surumu 1.25.0");
     testExpressionEvaluator();
     testParamAccess();
     testStaticAnalysis();

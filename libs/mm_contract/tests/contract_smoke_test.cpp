@@ -18,20 +18,23 @@ static int failures = 0;
 #define CHECK(cond, msg) do { if (!(cond)) { std::printf("FAIL: %s\n", msg); ++failures; } } while (0)
 
 int main() {
-    // 1) Surum.
-    CHECK(std::string(kContractVersion) == "1.11.0", "contract surumu 1.7.0");
+    // 1) Surum. LITERAL bilinclidir: her surum artisi burada GOSTERILMELI
+    // (kContractVersion ile karsilastirmak artisi gorunmez kilar).
+    CHECK(std::string(kContractVersion) == "1.25.0", "contract surumu 1.25.0");
+    CHECK(contractSupports(1, 0), "contract 1.0 desteklenir");
     CHECK(contractSupports(1, 1), "contract 1.1 desteklenir");
-    CHECK(contractSupports(1, 2), "contract 1.2 desteklenir");
-    CHECK(contractSupports(1, 3), "contract 1.3 desteklenir");
     CHECK(contractSupports(1, 4), "contract 1.4 desteklenir");
     CHECK(contractSupports(1, 7), "contract 1.7 desteklenir");
-    CHECK(contractSupports(1, 0), "contract 1.0 desteklenir");
     CHECK(!contractSupports(2, 0), "contract 2.0 desteklenmez (ust major)");
     CHECK(!contractSupports(0, 9), "contract 0.9 desteklenmez (alt major)");
-    CHECK(contractSupports(1, 9), "contract 1.9 desteklenir (mevcut minor)");
-    CHECK(contractSupports(1, 10), "contract 1.10 desteklenir (mevcut minor)");
-    CHECK(contractSupports(1, 11), "contract 1.11 desteklenir (mevcut minor)");
-    CHECK(!contractSupports(1, 12), "contract 1.12 desteklenmez (ust minor)");
+    // 1.12-1.25 arasi TUM minor'lar tek tek desteklenir: bu aralik kapida
+    // kosmayan donemde eklendi, sessizce dusmemeli.
+    for (int mi = 12; mi <= 25; ++mi) {
+        char msg[64];
+        std::snprintf(msg, sizeof(msg), "contract 1.%d desteklenir", mi);
+        CHECK(contractSupports(1, mi), msg);
+    }
+    CHECK(!contractSupports(1, 26), "contract 1.26 desteklenmez (ust minor)");
 
     // 1b) Sabitler metinle eslesiyor mu (tutarlilik regresyonu)?
     // "major.minor.patch" string'ini ayrismayip dogrudan sayilarla karsilastir.
