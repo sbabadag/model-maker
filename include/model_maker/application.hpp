@@ -272,6 +272,10 @@ public:
     bool saveDocumentPath(const std::wstring& path);
     // Kayitli/açik belge yolu: Ctrl+S uzerine kaydeder (Save As istisnasi).
     std::optional<std::filesystem::path> currentFilePath_;
+    // Son acilan dosyalar listesi icin salt-okunur erisim (Qt kabugu kullanir).
+    std::optional<std::filesystem::path> currentFilePath() const noexcept {
+        return currentFilePath_;
+    }
     void importDxf();
     void beginDxfImport(const std::filesystem::path& path);
     void finishDxfImport();

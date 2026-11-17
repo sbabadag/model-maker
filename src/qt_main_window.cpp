@@ -821,9 +821,27 @@ void QtMainWindow::buildCommandHandlers() {
     // duzlemleri yeni belgede gecersizdir); load sonrasi kaydedilmis gorunumler
     // Application tarafindan yeniden acilir.
     h["file.new"] = [this]() { closeAllTwoPointViews(); app_.newDocument(); };
-    h["file.open"] = [this]() { closeAllTwoPointViews(); app_.openDocument(); };
-    h["file.save"] = [this]() { app_.saveDocument(); };
-    h["file.saveAs"] = [this]() { app_.saveDocumentAs(); };
+    // Son acilan dosyalar: yol DEGISTIYSE listeye eklenir (diyalog iptalinde
+    // eski yol korunur; gereksiz yeniden siralama olmaz).
+    h["file.open"] = [this]() {
+        const auto before = app_.currentFilePath();
+        closeAllTwoPointViews();
+        app_.openDocument();
+        const auto after = app_.currentFilePath();
+        if (after && after != before) addToRecentFiles(QString::fromStdWString(after->wstring()));
+    };
+    h["file.save"] = [this]() {
+        const auto before = app_.currentFilePath();
+        app_.saveDocument();
+        const auto after = app_.currentFilePath();
+        if (after && after != before) addToRecentFiles(QString::fromStdWString(after->wstring()));
+    };
+    h["file.saveAs"] = [this]() {
+        const auto before = app_.currentFilePath();
+        app_.saveDocumentAs();
+        const auto after = app_.currentFilePath();
+        if (after && after != before) addToRecentFiles(QString::fromStdWString(after->wstring()));
+    };
     h["file.importDxf"] = [this]() { app_.importDxf(); };
     h["file.exportDxf"] = [this]() { app_.exportDxf(); };
     h["report.materialList"] = [this]() { showMaterialList(); };
@@ -1193,7 +1211,78 @@ void QtMainWindow::createMenus() {
     for (const PlanTab& tab : commandCatalog_.menu.tabs()) {
         QMenu* menu = appMenu_->addMenu(QString::fromUtf8(tab.title.c_str()));
         for (const PlanGroup& group : tab.groups) fillMenu(menu, group.items);
+        // Son acilan dosyalar: &Dosya menusune dinamik alt menu eklenir
+        // (plan statiktir; gecmis QSettings'ten calisma aninda dolur).
+        if (tab.title == "&Dosya") {
+            menu->addSeparator();
+            recentFilesMenu_ = menu->addMenu(QStringLiteral("Son Dosyalar"));
+            refreshRecentFilesMenu();
+        }
     }
+}
+
+// ---- Son acilan dosyalar (gecmis) ----
+namespace {
+constexpr int kMaxRecentFiles = 10;
+constexpr auto kRecentFilesKey = "recent/files";
+} // namespace
+
+QStringList QtMainWindow::recentFiles() const {
+    QSettings settings;
+    return settings.value(QLatin1String(kRecentFilesKey)).toStringList();
+}
+
+void QtMainWindow::addToRecentFiles(const QString& path) {
+    if (path.isEmpty()) return;
+    const QString abs = QFileInfo(path).absoluteFilePath();
+    QSettings settings;
+    QStringList files = settings.value(QLatin1String(kRecentFilesKey)).toStringList();
+    files.removeAll(abs);
+    files.prepend(abs);
+    while (files.size() > kMaxRecentFiles) files.removeLast();
+    settings.setValue(QLatin1String(kRecentFilesKey), files);
+    refreshRecentFilesMenu();
+}
+
+void QtMainWindow::clearRecentFiles() {
+    QSettings settings;
+    settings.remove(QLatin1String(kRecentFilesKey));
+    refreshRecentFilesMenu();
+}
+
+void QtMainWindow::refreshRecentFilesMenu() {
+    if (!recentFilesMenu_) return;
+    recentFilesMenu_->clear();
+    const QStringList files = recentFiles();
+    if (files.isEmpty()) {
+        QAction* empty = recentFilesMenu_->addAction(QStringLiteral("(liste boş)"));
+        empty->setEnabled(false);
+        return;
+    }
+    for (const QString& f : files) {
+        QAction* act = recentFilesMenu_->addAction(f, this, [this, f]() { openRecentFile(f); });
+        act->setToolTip(f);
+    }
+    recentFilesMenu_->addSeparator();
+    recentFilesMenu_->addAction(QStringLiteral("Listeyi Temizle"), this,
+                                [this]() { clearRecentFiles(); });
+}
+
+void QtMainWindow::openRecentFile(const QString& path) {
+    // Silinmis dosyaya tiklanirsa listeden cikarilir + uyarilir (menu o an
+    // kapanmis olur; refresh guvenli).
+    if (!QFileInfo::exists(path)) {
+        QSettings settings;
+        QStringList files = settings.value(QLatin1String(kRecentFilesKey)).toStringList();
+        files.removeAll(QFileInfo(path).absoluteFilePath());
+        settings.setValue(QLatin1String(kRecentFilesKey), files);
+        refreshRecentFilesMenu();
+        QMessageBox::warning(this, QStringLiteral("Dosya bulunamadı"),
+                             QStringLiteral("Dosya artık mevcut değil:\n%1").arg(path));
+        return;
+    }
+    closeAllTwoPointViews();
+    if (app_.openDocumentPath(path.toStdWString())) addToRecentFiles(path);
 }
 
 void QtMainWindow::bindRegistryShortcuts() {

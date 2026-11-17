@@ -79,6 +79,12 @@ private:
     bool runCommandById(const std::string& id);
     void createMenus();
     void fillMenu(QMenu* menu, const std::vector<PlanItem>& items);
+    // Son acilan dosyalar (gecmis): QSettings kaliciligi + Dosya menusu dolumu.
+    QStringList recentFiles() const;
+    void addToRecentFiles(const QString& path);
+    void clearRecentFiles();
+    void refreshRecentFilesMenu();
+    void openRecentFile(const QString& path);
     // Registry'deki Host teslimli kisayollari QShortcut olarak baglar
     // (odak paneldeyken de calissin). Canvas teslimliler Win32 yonlendiricisinde.
     void bindRegistryShortcuts();
@@ -167,6 +173,7 @@ private:
     bool profileUiLogged_{};
     bool startupDefaultsApplied_{}; // GL + 3B + Solid bir kez, ilk show'da
     QMenu* appMenu_{}; // Tekla tarzi: tek kok menu (menubar yerine sol ust dugme)
+    QMenu* recentFilesMenu_{}; // Dosya menusundeki "Son Dosyalar" alt menusu
     // UI-2: komut kaydi + serit
     CommandCatalog commandCatalog_;
     std::map<std::string, std::function<void()>> commandHandlers_;

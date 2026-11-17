@@ -56,6 +56,12 @@ int main(int argc, char* argv[]) {
         HINSTANCE instance = GetModuleHandleW(nullptr);
         mm::registerForceDiagramClass(instance);
 
+        // QSettings kimligi: bu olmadan varsayilan QSettings() bos kurum adiyla
+        // yazar ve kalici ayarlar (son dosyalar, dev paket klasorleri) tutmaz.
+        // Kayit: HKCU\Software\ModelMaker\model-maker (mevcut display ayari da burada).
+        QCoreApplication::setOrganizationName(QStringLiteral("ModelMaker"));
+        QCoreApplication::setApplicationName(QStringLiteral("model-maker"));
+
         QApplication app(argc, argv);
         app.setStyle("Fusion");
 
